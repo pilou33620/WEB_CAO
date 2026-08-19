@@ -1,0 +1,189 @@
+/* Éditeur PCB — feuille de style
+   Reprend les jetons de l'éditeur schématique : fond nocturne, accents
+   jaune et bleu, monospace pour tout ce qui est chiffré. */
+  :root{
+    --bg:#0f1012;
+    --panel:#17181b;
+    --panel2:#1c1e22;
+    --border:#2b2e34;
+    --border2:#3a3e46;
+    --txt:#e6e8ec;
+    --txt-dim:#8b919c;
+    --yellow:#f2c744;
+    --blue:#3fa0ea;
+    --blue-deep:#2b7fbf;
+    --red:#e8443a;
+    --cyan:#8af0ff;
+    --mono:"JetBrains Mono","SF Mono",Consolas,"Roboto Mono",monospace;
+    --ui:"Segoe UI",system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg);color:var(--txt);font-family:var(--ui);
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  /* ---------- header ---------- */
+  header{
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);
+  }
+  .brand{display:flex;align-items:baseline;gap:10px}
+  .brand b{font-size:15px;letter-spacing:.14em;text-transform:uppercase}
+  .brand span{font-family:var(--mono);font-size:10px;color:var(--txt-dim);letter-spacing:.18em}
+  .brand i{display:inline-block;width:4px;height:18px;background:var(--red);border-radius:1px;transform:translateY(3px)}
+  .tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .sep{width:1px;height:22px;background:var(--border2);margin:0 4px}
+  button.tb{
+    background:var(--panel2);color:var(--txt);border:1px solid var(--border2);
+    padding:6px 10px;border-radius:5px;font-size:12px;cursor:pointer;font-family:var(--ui);
+    display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+  }
+  button.tb:hover{border-color:var(--blue);color:#fff}
+  button.tb.on{background:var(--blue-deep);border-color:var(--blue);color:#fff}
+  button.tb kbd{font-family:var(--mono);font-size:9px;color:var(--txt-dim);border:1px solid var(--border2);border-radius:3px;padding:0 3px}
+  button.tb.on kbd{color:#dff0ff;border-color:#5cb4f0}
+  /* ---------- onglets de couches ---------- */
+  #tabs{
+    display:flex;align-items:center;gap:4px;padding:5px 10px 0;background:var(--panel2);
+    border-bottom:1px solid var(--border);overflow-x:auto;flex:none;
+  }
+  #tabs::-webkit-scrollbar{height:6px}
+  #tabs::-webkit-scrollbar-thumb{background:#31343a;border-radius:3px}
+  .tab{
+    display:inline-flex;align-items:center;gap:7px;padding:6px 9px;cursor:pointer;
+    border:1px solid var(--border);border-bottom:none;border-radius:5px 5px 0 0;
+    background:#15171a;color:var(--txt-dim);font-size:12px;white-space:nowrap;margin-bottom:-1px;
+  }
+  .tab:hover{color:var(--txt)}
+  .tab.on{background:var(--bg);color:var(--txt);border-color:var(--border2)}
+  .tab .num{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:var(--yellow);opacity:.8}
+  .tab .dot{width:9px;height:9px;border-radius:2px;flex:none;border:1px solid rgba(255,255,255,.28)}
+  .tab.hid{opacity:.4}
+  .tab .pl{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:var(--yellow);
+    border:1px solid var(--border2);border-radius:3px;padding:0 3px}
+  .tabinfo{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--txt-dim);
+    letter-spacing:.1em;padding:0 4px 5px;white-space:nowrap}
+  /* ---------- layout ---------- */
+  main{flex:1;display:flex;min-height:0}
+  aside{
+    width:212px;flex:none;background:var(--panel);border-right:1px solid var(--border);
+    display:flex;flex-direction:column;min-height:0;
+  }
+  aside.right{width:278px;border-right:none;border-left:1px solid var(--border)}
+  .panel-head{
+    padding:9px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--txt-dim);border-bottom:1px solid var(--border);
+  }
+  .scroll{overflow-y:auto;flex:1;min-height:0}
+  .scroll::-webkit-scrollbar{width:8px}
+  .scroll::-webkit-scrollbar-thumb{background:#31343a;border-radius:4px}
+  .cat{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--yellow);padding:10px 12px 4px;opacity:.85}
+  #canvasWrap{flex:1;position:relative;min-width:0}
+  canvas#board{display:block;width:100%;height:100%;cursor:crosshair;touch-action:none}
+  /* ---------- couches ---------- */
+  .lay{
+    display:flex;align-items:center;gap:8px;padding:6px 10px 6px 8px;cursor:pointer;
+    border-left:2px solid transparent;font-size:12px;
+  }
+  .lay:hover{background:#1e2126}
+  .lay.on{background:#20242a;border-left-color:var(--yellow)}
+  .lay .sw{width:12px;height:12px;border-radius:3px;flex:none;border:1px solid rgba(255,255,255,.28)}
+  .lay .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lay .tp{font-family:var(--mono);font-size:9px;color:var(--txt-dim);letter-spacing:.06em}
+  .lay .pl{font-family:var(--mono);font-size:8.5px;color:var(--yellow);
+    border:1px solid var(--border2);border-radius:3px;padding:0 3px}
+  .lay .eye{width:15px;text-align:center;font-size:11px;color:var(--txt-dim);flex:none}
+  .lay .eye:hover{color:var(--cyan)}
+  .lay.off{opacity:.42}
+  .lay.off .eye{color:#4b5058}
+  /* ---------- propriétés ---------- */
+  .prop{padding:10px 12px;border-bottom:1px solid var(--border)}
+  .prop label{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--txt-dim);margin-bottom:4px}
+  .prop input,.prop select{
+    width:100%;background:#101216;border:1px solid var(--border2);color:var(--txt);
+    border-radius:5px;padding:6px 8px;font-family:var(--mono);font-size:12.5px;
+  }
+  .prop input:focus,.prop select:focus{outline:none;border-color:var(--blue)}
+  .prop select option{color:var(--txt);background:#101216;font-family:var(--mono)}
+  .prop.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .prop.two > div{min-width:0}
+  .row{display:flex;gap:6px;margin-top:8px}
+  .row button{flex:1}
+  .empty{padding:16px 12px;font-size:12px;color:var(--txt-dim);line-height:1.5}
+  #props{overflow-y:auto;max-height:52vh}
+  #props::-webkit-scrollbar{width:8px}
+  #props::-webkit-scrollbar-thumb{background:#31343a;border-radius:4px}
+  .panel-head.split{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .panel-head label{display:inline-flex;align-items:center;gap:5px;cursor:pointer;letter-spacing:.08em}
+  .panel-head input[type=checkbox]{accent-color:var(--blue);margin:0}
+  table.bom{width:100%;border-collapse:collapse;font-size:11.5px}
+  table.bom th{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--txt-dim);text-align:left;padding:6px 12px;border-bottom:1px solid var(--border)}
+  table.bom td{padding:5px 12px;border-bottom:1px solid #202226;color:var(--txt)}
+  table.bom td.r{font-family:var(--mono);color:var(--yellow);width:60px}
+  table.bom td.v{font-family:var(--mono);color:var(--txt-dim);text-align:right}
+  table.bom td.n{font-family:var(--mono);color:var(--txt-dim);text-align:right;width:58px}
+  table.bom td.net{font-family:var(--mono);color:var(--txt)}
+  table.bom td.net .dot{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:7px}
+  table.bom tr:hover td{background:#1e2126;cursor:pointer}
+  table.bom select{
+    width:100%;max-width:96px;background:#101216;border:1px solid var(--border2);
+    color:var(--txt);border-radius:4px;padding:2px 3px;font-family:var(--mono);font-size:10px;
+  }
+  table.bom select:focus{outline:none;border-color:var(--blue)}
+  table.bom tr.on td{background:#241f13}
+  .ok{color:#6fd39b}
+  .warn{color:var(--red)}
+  .pkgcell{font-family:var(--mono);font-size:9.5px;color:var(--txt-dim);display:block;margin-top:1px}
+  /* ---------- footer ---------- */
+  footer{
+    display:flex;align-items:center;gap:16px;padding:5px 14px;background:var(--panel);
+    border-top:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--txt-dim);
+  }
+  footer b{color:var(--yellow);font-weight:600}
+  footer .push{margin-left:auto}
+  .hint{color:var(--txt-dim)}
+  .seg{display:inline-flex;border:1px solid var(--border2);border-radius:5px;overflow:hidden}
+  .segb{
+    background:transparent;border:none;color:var(--txt-dim);cursor:pointer;
+    font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;padding:4px 7px;
+  }
+  .segb:hover{color:var(--txt)}
+  .segb.on{background:var(--blue-deep);color:#fff}
+  /* ---------- boîte de dialogue ---------- */
+  .modal{position:fixed;inset:0;background:rgba(8,9,11,.74);display:flex;
+    align-items:center;justify-content:center;z-index:50}
+  .modal .box{width:600px;max-width:92vw;background:var(--panel);border:1px solid var(--border2);
+    border-radius:8px;padding:14px 16px 16px;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+  .modal h3{margin:0 0 4px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;font-weight:600}
+  .modal p{margin:0 0 10px;font-size:12px;color:var(--txt-dim);line-height:1.5}
+  .modal textarea{
+    width:100%;height:210px;resize:vertical;background:#101216;border:1px solid var(--border2);
+    color:var(--txt);border-radius:6px;padding:9px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.45;
+  }
+  .modal textarea:focus{outline:none;border-color:var(--blue)}
+  /* ---------- saisie de coordonnées ---------- */
+  #coordBox{
+    position:absolute;left:50%;bottom:14px;transform:translateX(-50%);
+    display:none;align-items:center;gap:8px;padding:7px 10px;z-index:20;
+    background:var(--panel);border:1px solid var(--border2);border-radius:7px;
+    box-shadow:0 12px 30px rgba(0,0,0,.45);
+  }
+  #coordBox.on{display:flex}
+  #coordBox label{
+    font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--txt-dim);
+    text-transform:uppercase;
+  }
+  #coordBox input{
+    width:82px;background:#101216;border:1px solid var(--border2);color:var(--txt);
+    border-radius:5px;padding:5px 7px;font-family:var(--mono);font-size:12.5px;
+  }
+  #coordBox input:focus{outline:none;border-color:var(--blue)}
+  #coordBox .cihint{font-family:var(--mono);font-size:10px;color:var(--txt-dim)}
+  @media (max-width:980px){
+    aside{width:168px}aside.right{width:206px}
+    #coordBox .cihint{display:none}
+  }

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Éditeur PCB — Dashboard nocturne</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/workspace.css">
+</head>
+<body>
+
+<header>
+  <div class="brand"><i></i><b>Éditeur PCB</b><span>V1.0 · MULTICOUCHE</span></div>
+  <div class="tools">
+    <button class="tb" onclick="window.location.href='/editeur-schematique/'" style="color: var(--blue); border-color: var(--blue);">⬅ Éditeur Schématique</button>
+    <div class="sep"></div>
+    <button class="tb on" id="mSelect">Sélection <kbd>Échap</kbd></button>
+    <button class="tb" id="mTrack">Piste <kbd>T</kbd></button>
+    <button class="tb" id="mVia">Via <kbd>V</kbd></button>
+    <button class="tb" id="mZone">Zone cuivre <kbd>Z</kbd></button>
+    <button class="tb" id="mEdge">Contour carte <kbd>E</kbd></button>
+    <button class="tb" id="mErase">Découpe <kbd>X</kbd></button>
+    <div class="sep"></div>
+    <button class="tb" id="bRot">Pivoter <kbd>R</kbd></button>
+    <button class="tb" id="bFlip">Retourner <kbd>F</kbd></button>
+    <button class="tb" id="bDel">Supprimer <kbd>Suppr</kbd></button>
+    <div class="sep"></div>
+    <button class="tb" id="bUndo">↶ Annuler</button>
+    <button class="tb" id="bRedo">↷ Rétablir</button>
+    <div class="sep"></div>
+    <button class="tb" id="bGrid">Grille</button>
+    <button class="tb" id="bAvoid">Anti-collision</button>
+    <button class="tb" id="bRats">Chevelu <kbd>N</kbd></button>
+    <button class="tb" id="bView">Vue : dessus <kbd>Y</kbd></button>
+    <button class="tb" id="bContrast">Contraste : atténué <kbd>H</kbd></button>
+    <button class="tb" id="mOrigin">Origine <kbd>O</kbd></button>
+    <button class="tb" id="bFit">Recadrer</button>
+    <div class="sep"></div>
+    <button class="tb" id="bImport">Importer netlist</button>
+    <button class="tb" id="bDrc">Contrôle DRC</button>
+    <button class="tb" id="bSave">Enregistrer .json</button>
+    <button class="tb" id="bOpen">Ouvrir</button>
+    <button class="tb" id="bPng">Exporter .png</button>
+    <button class="tb" id="bFab">Fabrication .zip</button>
+    <button class="tb" id="bNew">Nouveau</button>
+    <div class="sep"></div>
+    <button class="tb" id="bWs">Espace de travail ▾</button>
+  </div>
+  <input type="file" id="fileIn" accept=".json,application/json" style="display:none">
+  <input type="file" id="netIn" accept=".txt,.net,text/plain" style="display:none">
+</header>
+
+<div id="tabs"></div>
+
+<main id="ws">
+
+  <div class="dock" id="dockL"></div>
+  <div class="gut gv" data-dock="dockL"></div>
+
+  <div class="ctr" id="ctr">
+    <div id="canvasWrap"><canvas id="board"></canvas>
+      <div id="coordBox">
+        <span class="seg">
+          <button class="segb on" id="ciAbs">Absolu</button>
+          <button class="segb" id="ciRel">Relatif</button>
+          <button class="segb" id="ciPol">Polaire</button>
+        </span>
+        <label id="ciLa">X</label><input id="ciA" autocomplete="off">
+        <label id="ciLb">Y</label><input id="ciB" autocomplete="off">
+        <button class="tb" id="ciOk">Placer</button>
+        <span class="cihint">Entrée valide · Échap ferme · Tab rouvre</span>
+      </div>
+    </div>
+    <div class="gut gh" data-dock="dockB"></div>
+    <div class="dock" id="dockB"></div>
+  </div>
+
+  <div class="gut gv" data-dock="dockR"></div>
+  <div class="dock" id="dockR"></div>
+
+</main>
+
+<!-- réserve des panneaux : l'espace de travail les répartit au démarrage -->
+<div id="pnlStore" hidden>
+
+  <section class="pnl" data-pnl="stack" data-title="Empilage">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">Empilage</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body">
+      <div class="pnl-bar">
+        <span class="pnl-lbl">Couches cuivre</span>
+        <select id="cuCount">
+          <option value="1">1 couche</option>
+          <option value="2">2 couches</option>
+          <option value="4">4 couches</option>
+          <option value="6">6 couches</option>
+          <option value="8">8 couches</option>
+        </select>
+      </div>
+      <div class="scroll" id="layers"></div>
+    </div>
+  </section>
+
+  <section class="pnl" data-pnl="rules" data-title="Règles de tracé">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">Règles de tracé</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body"><div id="rules"></div></div>
+  </section>
+
+  <section class="pnl" data-pnl="props" data-title="Propriétés">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">Propriétés</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body"><div id="props"></div></div>
+  </section>
+
+  <section class="pnl" data-pnl="list" data-title="Nets &amp; composants">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">Nets &amp; composants</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body">
+      <div class="pnl-bar">
+        <span class="seg">
+          <button class="segb on" id="tabNets">Nets</button>
+          <button class="segb" id="tabComps">Composants</button>
+          <button class="segb" id="tabDrc">DRC</button>
+        </span>
+        <label id="unroutedWrap"><input type="checkbox" id="onlyUnrouted"> non routés</label>
+      </div>
+      <div class="scroll" id="list"></div>
+    </div>
+  </section>
+
+</div>
+
+<div id="floatLayer"></div>
+<div id="dropZone"></div>
+<div id="dragGhost"></div>
+
+<footer>
+  <span>Couche <b id="fLayer">F.Cu</b></span>
+  <span>Mode <b id="fMode">Sélection</b></span>
+  <span>X <b id="fX">0</b> · Y <b id="fY">0</b> mm</span>
+  <span>Zoom <b id="fZoom">100%</b></span>
+  <span>Empreintes <b id="fN">0</b> · Pistes <b id="fT">0</b> · Vias <b id="fV">0</b></span>
+  <span>Non routés <b id="fU">0</b></span>
+  <span>Net <b id="fNet">—</b></span>
+  <span class="push hint" id="fHint">Importez la netlist de l'éditeur schématique pour démarrer.</span>
+</footer>
+
+<script src="js/01-core.js"></script>
+<script src="js/02-connectivity.js"></script>
+<script src="js/03-render.js"></script>
+<script src="js/04-fabrication.js"></script>
+<script src="js/05-tools.js"></script>
+<script src="js/06-panels.js"></script>
+<script src="js/07-app.js"></script>
+<script src="js/08-workspace.js"></script>
+</body>
+</html>
