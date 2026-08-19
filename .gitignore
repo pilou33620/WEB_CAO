@@ -30,3 +30,6 @@ yarn-error.log
 
 # Data
 *.csv
+
+# Builds
+dist/
