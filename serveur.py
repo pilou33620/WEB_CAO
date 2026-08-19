@@ -2,6 +2,18 @@ import http.server
 import socketserver
 import socket
 import os
+import ssl
+
+try:
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives import serialization
+    import datetime
+    HAS_CRYPTO = True
+except ImportError:
+    HAS_CRYPTO = False
 
 DEFAULT_PORT = 8000
 
@@ -61,14 +73,62 @@ class DualStackServer(socketserver.TCPServer):
             pass
         super().server_bind()
 
+def generate_self_signed_cert(cert_file, key_file):
+    if not HAS_CRYPTO:
+        return False
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        return True
+    
+    print("[*] Generation d'un certificat SSL auto-signe...")
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, u"localhost"),
+    ])
+    cert = x509.CertificateBuilder().subject_name(
+        subject
+    ).issuer_name(
+        issuer
+    ).public_key(
+        key.public_key()
+    ).serial_number(
+        x509.random_serial_number()
+    ).not_valid_before(
+        datetime.datetime.utcnow()
+    ).not_valid_after(
+        datetime.datetime.utcnow() + datetime.timedelta(days=365)
+    ).add_extension(
+        x509.SubjectAlternativeName([x509.DNSName(u"localhost"), x509.DNSName(u"127.0.0.1")]),
+        critical=False,
+    ).sign(key, hashes.SHA256())
+
+    with open(key_file, "wb") as f:
+        f.write(key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption()
+        ))
+    
+    with open(cert_file, "wb") as f:
+        f.write(cert.public_bytes(serialization.Encoding.PEM))
+    
+    return True
+
 def start_server():
     port = DEFAULT_PORT
     httpd = None
+    
+    cert_file = "cert.pem"
+    key_file = "key.pem"
+    use_https = generate_self_signed_cert(cert_file, key_file)
     
     for p in [DEFAULT_PORT, 0]:
         try:
             # On utilise DualStackServer avec "" pour ecouter sur toutes les interfaces (IPv4 et IPv6)
             httpd = DualStackServer(("", p), CustomHandler)
+            if use_https:
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                context.load_cert_chain(certfile=cert_file, keyfile=key_file)
+                httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
             port = httpd.server_address[1] 
             break
         except OSError as e:
@@ -95,13 +155,17 @@ def start_server():
         print("="*50)
         print("SERVEUR CAO WEB DEMARRE")
         print("="*50)
+        protocol = "https" if use_https else "http"
         if local_ip == "127.0.0.1":
             print("\nATTENTION: Le serveur a demarre en mode local (pare-feu pro tres strict).")
             print("Il ne sera PAS accessible depuis votre iPad sur ce PC.")
         else:
             print("\nDepuis votre iPad (connecte au meme reseau WiFi),")
             print("ouvrez Safari et tapez simplement cette adresse :\n")
-            print(f"-> http://{local_ip}:{port}/")
+            print(f"-> {protocol}://{local_ip}:{port}/")
+            if use_https:
+                print("\n(Note: Safari affichera un avertissement 'Non securise' car le certificat est auto-signe.")
+                print("Cliquez sur 'Afficher les details' puis 'Visiter ce site web' pour y acceder.)")
         
         print("\n" + "="*50)
         print("(Appuyez sur Ctrl+C pour arreter le serveur)")
