@@ -49,16 +49,26 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
             pass  # Ignore silently when a client disconnects early
 
+class DualStackServer(socketserver.TCPServer):
+    address_family = socket.AF_INET6
+    allow_reuse_address = True
+
+    def server_bind(self):
+        # Desactiver IPV6_V6ONLY pour accepter a la fois IPv4 et IPv6 (Dual-Stack)
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except (AttributeError, OSError):
+            pass
+        super().server_bind()
+
 def start_server():
     port = DEFAULT_PORT
     httpd = None
     
     for p in [DEFAULT_PORT, 0]:
         try:
-            socketserver.TCPServer.allow_reuse_address = True
-            # On force a utiliser localhost ("127.0.0.1") pour eviter WinError 10013 si "" est completement bloque,
-            # mais on va d'abord essayer "0.0.0.0" pour le reseau local
-            httpd = socketserver.TCPServer(("0.0.0.0", p), CustomHandler)
+            # On utilise DualStackServer avec "" pour ecouter sur toutes les interfaces (IPv4 et IPv6)
+            httpd = DualStackServer(("", p), CustomHandler)
             port = httpd.server_address[1] 
             break
         except OSError as e:
@@ -79,7 +89,9 @@ def start_server():
                     return
 
     if httpd:
-        local_ip = get_local_ip() if httpd.server_address[0] == "0.0.0.0" else "127.0.0.1"
+        # httpd.server_address[0] peut valoir "::", "0.0.0.0" (toutes interfaces) ou "127.0.0.1", "::1" (local)
+        is_local_only = httpd.server_address[0] in ("127.0.0.1", "::1")
+        local_ip = "127.0.0.1" if is_local_only else get_local_ip()
         print("="*50)
         print("SERVEUR CAO WEB DEMARRE")
         print("="*50)
