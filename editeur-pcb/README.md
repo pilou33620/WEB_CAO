@@ -139,6 +139,41 @@ modificateur enfoncé s'ajoute à ce qui est déjà pris. Le déplacement, la
 rotation, le retournement et la suppression travaillent depuis toujours sur
 l'ensemble de la sélection.
 
+**La piste reste d'un seul tenant.** Glisser un segment n'arrache plus ses
+voisins et ne leur impose plus d'angle de travers. Le déplacement se décrit par
+ses **articulations** — les points où ce qui bouge touche ce qui reste
+(`moveJoints`, `js/05-tools.js`) :
+
+- La sélection s'étend d'abord à la **portion droite** entière (`collinearRun`) :
+  la ligne d'un coude à l'autre, sans exception. Le routeur pose un segment par
+  clic, et une ligne droite se trouve en plus coupée par tout ce qu'elle
+  rencontre — pastille traversée, via, embranchement, changement de largeur.
+  Il faut la prendre **entière**, et pas seulement jusqu'à la première coupure :
+  un morceau resté en arrière est parallèle à celui qu'on tire, donc aucune
+  intersection ne peut lui rendre son angle — il basculerait de travers. La
+  portion ne s'arrête donc qu'au vrai coude et au changement de net. Un via ne
+  l'arrête pas non plus : une ligne droite qui change de couche reste une ligne
+  droite, et la laisser derrière la coucherait de la même façon.
+- À chaque bout, le **coude voisin garde sa direction** et glisse le long
+  d'elle jusqu'à retomber sur la ligne de la portion tirée : `applyJoints`
+  calcule l'intersection des deux droites. Un 45° reste un 45°, un angle droit
+  reste droit, et la piste ne s'ouvre nulle part. Deux directions parallèles
+  n'ayant pas d'intersection, le point suit alors simplement le déplacement.
+- Un **embranchement** au bord de la portion est un voisin comme un autre : il
+  garde sa direction et se raccourcit ou s'allonge. C'est ce qui permet de
+  déplacer une ligne qui porte une dérivation sans rien mettre de travers.
+- `anchorKey` réunit sous une même clé les extrémités qu'un **via** relie :
+  la piste qui repart sur l'autre couche suit, sinon le changement de couche se
+  déchirerait. Une pastille, elle, reste fixe — c'est le coude qui glisse.
+- Les positions de départ sont relevées au premier mouvement réel et le
+  déplacement s'applique en **absolu** : on peut le suspendre (Alt) puis le
+  reprendre sans décalage, et rien ne dérive au fil des images.
+- Un segment ramené sur lui-même disparaît au dépôt (`pruneDeadTracks`), comme
+  lorsqu'on tire une extrémité sur l'autre.
+
+C'est le geste des fils de l'éditeur schématique, transposé au cuivre, avec en
+plus la contrainte d'angle que le schématique n'a pas besoin de tenir.
+
 `Ctrl+C` / `Ctrl+X` / `Ctrl+V` copient et collent ce bloc : empreintes, pistes,
 vias, zones et découpes. Le contenu est rangé relativement à son coin
 haut-gauche puis reposé sous le pointeur, les écarts internes conservés. Les
@@ -151,8 +186,29 @@ mêmes normalisations que la lecture d'un fichier.
 Ctrl servant désormais à la sélection, les gestes de géométrie sont passés sur
 **Alt** : `Alt+clic` insère un point sur une piste sélectionnée ou un sommet sur
 une arête de zone ou de contour, `Alt+glisser` sur une extrémité de piste la
-détache du coude. Alt sur le vide continue de déplacer la vue — `altTarget()`
-départage les deux.
+détache du coude, et **Alt enfoncé pendant un déplacement** laisse les voisins
+sur place au lieu de les étirer. Alt sur le vide continue de déplacer la vue —
+`altTarget()` départage les deux. **D** adoucit un angle droit en 45°.
+
+## Adoucir un angle droit
+
+Un coude à 90° se passe en 45° d'une touche : **D**, ou le bouton
+*Angle droit → 45°* du panneau des propriétés. Sélectionner n'importe quel
+morceau d'une des deux portions suffit — c'est la portion qui porte le coude,
+pas le segment cliqué (`mitreSel`, `js/05-tools.js`).
+
+Le calcul recule d'autant sur les deux portions qui se rejoignent, puis pose la
+corde entre les deux points obtenus : deux longueurs égales sur deux directions
+perpendiculaires donnent exactement 45°. La longueur retenue est celle de la
+**plus courte des deux portions** — c'est le tracé qu'aurait posé le routeur
+s'il était passé par là. Quand la portion courte y passe tout entière, elle
+disparaît et la diagonale part de son point d'attache : une piste qui sortait
+d'une pastille à angle droit en sort désormais en biais, sans se décrocher.
+
+La commande refuse tout ce qui n'est pas un angle droit franc (tolérance ~2,5°),
+un coude portant un via ou une pastille, et deux portions de largeurs
+différentes — un 45° déjà en place n'est donc jamais retouché. Elle ne pose un
+pas d'annulation que si elle a vraiment quelque chose à faire.
 
 ## Pas de grille
 

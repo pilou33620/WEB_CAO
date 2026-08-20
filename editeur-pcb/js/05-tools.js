@@ -439,6 +439,276 @@ function jointAt(x,y,l){
     if(l>=v.a&&l<=v.b&&Math.abs(v.x-x)<eps&&Math.abs(v.y-y)<eps)vias.push(v);
   return {ends,vias};
 }
+/* ==========================================================================
+   Déplacer une piste : les articulations
+   --------------------------------------------------------------------------
+   Une piste est une suite de segments. En tirer un ne doit ni décrocher ses
+   voisins, ni leur imposer un angle quelconque. On raisonne donc par
+   articulations : les points où ce qui bouge touche ce qui reste. Chacune sait
+   ce qui y est rattaché — extrémités, via — et comment elle doit suivre.
+   ========================================================================== */
+const EPS_J=0.002;
+function viaAt(l,x,y){
+  for(const v of S.vias)
+    if(l>=v.a&&l<=v.b&&Math.abs(v.x-x)<EPS_J&&Math.abs(v.y-y)<EPS_J)return v;
+  return null;
+}
+function padAt(l,x,y){
+  for(const fp of S.fps)
+    for(const q of padsWorld(fp)){
+      if(!padLayers(fp,q).includes(l))continue;
+      if(padDist(x,y,q)<=0)return q;
+    }
+  return null;
+}
+/* Clé d'un point de raccordement. Un via relie ses couches : les extrémités
+   qu'il réunit partagent la même clé, sinon un changement de couche se
+   déchirerait au premier glissement. */
+function anchorKey(l,x,y){
+  const v=viaAt(l,x,y);
+  return v?"V|"+r3(v.x)+"|"+r3(v.y):l+"|"+r3(x)+"|"+r3(y);
+}
+/* Direction d'un segment vue depuis l'extrémité `e`, et son autre bout. La
+   direction ne change pas pendant un glissement : c'est elle qui conserve les
+   angles. */
+function endDir(t,e){
+  return e===1?{x:t.x1-t.x2,y:t.y1-t.y2}:{x:t.x2-t.x1,y:t.y2-t.y1};
+}
+function endFar(t,e){return e===1?{x:t.x2,y:t.y2}:{x:t.x1,y:t.y1};}
+function crossN(a,b){
+  const la=Math.hypot(a.x,a.y), lb=Math.hypot(b.x,b.y);
+  return (!la||!lb)?0:(a.x*b.y-a.y*b.x)/(la*lb);   // sinus de l'angle entre eux
+}
+/* Portion droite dont un segment fait partie : la ligne entière, d'un coude à
+   l'autre. Le routeur pose un segment par clic, et une ligne droite se trouve
+   en plus coupée par tout ce qu'elle rencontre — pastille traversée, via,
+   embranchement, changement de largeur. Il faut la prendre entière, et pas
+   seulement jusqu'à la première de ces coupures : un morceau resté en arrière
+   est parallèle à celui qu'on tire, donc aucune intersection ne peut lui rendre
+   son angle — il basculerait de travers. On ne s'arrête donc qu'au vrai coude
+   et au changement de net. Un via ne l'arrête pas non plus : une ligne droite
+   qui change de couche reste une ligne droite, et la laisser derrière la
+   coucherait de la même façon. */
+function collinearRun(t0){
+  const run=new Set([t0]), stack=[t0];
+  while(stack.length){
+    const t=stack.pop();
+    for(const en of [1,2]){
+      const x=en===1?t.x1:t.x2, y=en===1?t.y1:t.y2;
+      let ends=jointAt(x,y,t.l).ends;
+      const v=viaAt(t.l,x,y);
+      if(v)for(let L=v.a;L<=v.b;L++)
+        if(L!==t.l)ends=ends.concat(jointAt(x,y,L).ends);
+      for(const o of ends){
+        if(o.t===t||run.has(o.t)||o.t.net!==t.net)continue;
+        if(Math.abs(crossN(endDir(t,en),endDir(o.t,o.e)))>1e-6)continue;
+        run.add(o.t);stack.push(o.t);
+      }
+    }
+  }
+  return run;
+}
+/* Relevé des articulations de la sélection courante, avec les positions de
+   départ : le déplacement s'applique ensuite en absolu, ce qui permet de le
+   suspendre (Alt) puis de le reprendre sans décalage. */
+function moveJoints(){
+  const anchors=new Set();
+  for(const t of S.sel.tracks){
+    anchors.add(anchorKey(t.l,t.x1,t.y1));
+    anchors.add(anchorKey(t.l,t.x2,t.y2));
+  }
+  for(const v of S.sel.vias)anchors.add(anchorKey(v.a,v.x,v.y));
+  const J=new Map();
+  const at=(k,x,y)=>{
+    if(!J.has(k))J.set(k,{x0:r3(x),y0:r3(y),ends:[],vias:[],slide:null});
+    return J.get(k);
+  };
+  for(const t of S.tracks)
+    for(const en of [1,2]){
+      const x=en===1?t.x1:t.x2, y=en===1?t.y1:t.y2;
+      const k=anchorKey(t.l,x,y);
+      if(anchors.has(k))
+        at(k,x,y).ends.push({t,e:en,x0:r3(x),y0:r3(y),sel:S.sel.tracks.has(t)});
+    }
+  for(const v of S.vias){
+    const k=anchorKey(v.a,v.x,v.y);
+    if(anchors.has(k))
+      at(k,v.x,v.y).vias.push({v,x0:r3(v.x),y0:r3(v.y),sel:S.sel.vias.has(v)});
+  }
+  /* Le coude glisse le long du voisin resté en place jusqu'à retomber sur la
+     ligne du segment tiré : chacun garde sa direction, donc son angle. Deux
+     directions parallèles n'ont pas d'intersection — le point suit alors
+     simplement le déplacement, comme avant. */
+  for(const j of J.values()){
+    const fix=j.ends.filter(o=>!o.sel), sel=j.ends.filter(o=>o.sel);
+    if(!fix.length||!sel.length)continue;
+    for(const f of fix){
+      const fd=endDir(f.t,f.e), F=endFar(f.t,f.e);
+      for(const g of sel){
+        const gd=endDir(g.t,g.e), G=endFar(g.t,g.e);
+        if(Math.abs(crossN(fd,gd))<1e-4)continue;             // ~0,006 degre
+        j.slide={fx:F.x,fy:F.y,fdx:fd.x,fdy:fd.y,
+                 gx:G.x,gy:G.y,gdx:gd.x,gdy:gd.y,
+                 den:fd.x*gd.y-fd.y*gd.x};
+        break;
+      }
+      if(j.slide)break;
+    }
+  }
+  return [...J.values()];
+}
+function applyJoints(J,dx,dy,detach){
+  if(!J)return;
+  const put=(o,x,y)=>{if(o.e===1){o.t.x1=x;o.t.y1=y;}else{o.t.x2=x;o.t.y2=y;}};
+  for(const j of J){
+    if(detach){                    // Alt : les voisins restent où ils sont
+      for(const o of j.ends)if(!o.sel)put(o,o.x0,o.y0);
+      for(const a of j.vias)if(!a.sel){a.v.x=a.x0;a.v.y=a.y0;}
+      continue;
+    }
+    let x=j.x0+dx, y=j.y0+dy;
+    const s=j.slide;
+    if(s){
+      // intersection de la ligne du voisin (fixe) et de celle du segment tiré
+      const u=((s.gx+dx-s.fx)*s.gdy-(s.gy+dy-s.fy)*s.gdx)/s.den;
+      x=s.fx+s.fdx*u;y=s.fy+s.fdy*u;
+    }
+    x=r3(x);y=r3(y);
+    for(const o of j.ends)put(o,x,y);
+    for(const a of j.vias){a.v.x=x;a.v.y=y;}
+  }
+}
+/* Premier déplacement réel : la sélection s'étend aux portions droites, et on
+   relève l'état de départ de tout ce qui va bouger. */
+function beginMove(){
+  for(const t of [...S.sel.tracks])
+    for(const o of collinearRun(t))S.sel.tracks.add(o);
+  drag.trk=[...S.sel.tracks].map(t=>({t,x1:t.x1,y1:t.y1,x2:t.x2,y2:t.y2}));
+  drag.via=[...S.sel.vias].map(v=>({v,x:v.x,y:v.y}));
+  drag.joints=moveJoints();
+}
+/* ==========================================================================
+   Adoucir un angle droit : le coude passe en 45°
+   --------------------------------------------------------------------------
+   On recule d'autant sur les deux portions droites qui se rejoignent, puis on
+   pose la corde entre les deux points obtenus : deux longueurs égales sur deux
+   directions perpendiculaires donnent exactement 45°. La longueur retenue est
+   celle de la plus courte des deux portions — c'est le tracé qu'aurait posé le
+   routeur s'il était passé par là.
+   ========================================================================== */
+/* Portion droite vue depuis un coude : ses segments du plus proche au plus
+   loin, chacun avec l'extrémité tournée vers le coude, et sa longueur totale. */
+function runFrom(t,e){
+  const segs=[], seen=new Set();
+  let cur=t, en=e, len=0;
+  while(cur&&!seen.has(cur)){
+    seen.add(cur);
+    segs.push({t:cur,e:en});
+    len+=dist(cur.x1,cur.y1,cur.x2,cur.y2);
+    const F=endFar(cur,en);
+    if(viaAt(cur.l,F.x,F.y)||padAt(cur.l,F.x,F.y))break;
+    const j=jointAt(F.x,F.y,cur.l);
+    if(j.ends.length!==2||j.vias.length)break;
+    const nx=j.ends.find(o=>o.t!==cur);
+    if(!nx||nx.t.w!==cur.w||nx.t.net!==cur.net)break;
+    if(Math.abs(crossN(endDir(cur,en),endDir(nx.t,nx.e)))>1e-6)break;
+    cur=nx.t;en=nx.e;
+  }
+  return {segs,len:r3(len)};
+}
+/* Raccourcit la portion de L millimètres depuis le coude : les segments
+   entièrement consommés disparaissent, le premier qui dépasse est coupé.
+   Renvoie le point atteint — c'est là que commencera la diagonale. */
+function trimRun(run,L){
+  let rest=L, pt=null;
+  for(const o of run.segs){
+    const len=dist(o.t.x1,o.t.y1,o.t.x2,o.t.y2);
+    if(rest>=len-1e-9){
+      rest=rest-len;
+      pt=endFar(o.t,o.e);
+      S.tracks=S.tracks.filter(x=>x!==o.t);
+      S.sel.tracks.delete(o.t);
+      continue;
+    }
+    const d=endDir(o.t,o.e), n=Math.hypot(d.x,d.y);
+    const near=o.e===1?{x:o.t.x1,y:o.t.y1}:{x:o.t.x2,y:o.t.y2};
+    pt={x:r3(near.x-d.x/n*rest),y:r3(near.y-d.y/n*rest)};
+    if(o.e===1){o.t.x1=pt.x;o.t.y1=pt.y;}else{o.t.x2=pt.x;o.t.y2=pt.y;}
+    break;
+  }
+  return pt;
+}
+/* `dry` : on se contente de dire si le coude s'y prête, sans rien changer —
+   c'est ce qui évite de poser un pas d'annulation pour rien. */
+function mitreAt(l,x,y,dry){
+  if(padAt(l,x,y)||viaAt(l,x,y))return false;
+  const j=jointAt(x,y,l);
+  if(j.ends.length!==2)return false;
+  const A=j.ends[0], B=j.ends[1];
+  if(A.t===B.t||A.t.w!==B.t.w||A.t.net!==B.t.net)return false;
+  // angle droit seulement : ailleurs, couper en deux ne donnerait pas 45°
+  if(Math.abs(Math.abs(crossN(endDir(A.t,A.e),endDir(B.t,B.e)))-1)>1e-3)return false;
+  const ra=runFrom(A.t,A.e), rb=runFrom(B.t,B.e);
+  const L=Math.min(ra.len,rb.len);
+  if(L<1e-3)return false;
+  if(dry)return true;
+  const lay=A.t.l, net=A.t.net, w=A.t.w;
+  const pa=trimRun(ra,L), pb=trimRun(rb,L);
+  if(!pa||!pb)return false;
+  const nt={l:lay,net,w,x1:pa.x,y1:pa.y,x2:pb.x,y2:pb.y};
+  S.tracks.push(nt);S.sel.tracks.add(nt);
+  return true;
+}
+/* Extrémités d'une portion droite : les points qu'un seul de ses segments
+   touche. Ses coudes sont là — et nulle part ailleurs. */
+function runEnds(run){
+  const cnt=new Map(), pos=new Map();
+  for(const t of run)
+    for(const en of [1,2]){
+      const x=en===1?t.x1:t.x2, y=en===1?t.y1:t.y2, k=anchorKey(t.l,x,y);
+      cnt.set(k,(cnt.get(k)||0)+1);
+      pos.set(k,{l:t.l,x,y});
+    }
+  return [...cnt.keys()].filter(k=>cnt.get(k)===1).map(k=>pos.get(k));
+}
+/* Adoucit les angles droits aux bouts des portions sélectionnées. Sélectionner
+   n'importe quel morceau d'une portion droite suffit : c'est la portion qui
+   porte le coude, pas le segment. */
+function mitreSel(){
+  if(!S.sel.tracks.size){
+    hint("Sélectionnez d'abord la piste dont il faut adoucir l'angle.");
+    return 0;
+  }
+  const seen=new Set(), pts=[];
+  for(const t of S.sel.tracks)
+    for(const p of runEnds(collinearRun(t))){
+      const k=anchorKey(p.l,p.x,p.y);
+      if(seen.has(k))continue;
+      seen.add(k);pts.push(p);
+    }
+  const todo=pts.filter(p=>mitreAt(p.l,p.x,p.y,true));
+  if(!todo.length){
+    hint("Aucun angle droit à adoucir ici : il en faut un vrai, entre deux "+
+         "portions de même largeur, sans via ni pastille au coude.");
+    return 0;
+  }
+  push();
+  let n=0;
+  for(const p of todo)if(mitreAt(p.l,p.x,p.y,false))n++;
+  touch();refreshPanels();draw();
+  hint(n>1?n+" angles droits passés en 45°.":"Angle droit passé en 45°.");
+  return n;
+}
+/* Un segment ramené sur lui-même n'a plus de cuivre à décrire : on l'efface au
+   dépôt plutôt que de laisser un point invisible dans la netlist. */
+function pruneDeadTracks(){
+  const dead=S.tracks.filter(t=>dist(t.x1,t.y1,t.x2,t.y2)<1e-6);
+  if(!dead.length)return false;
+  S.tracks=S.tracks.filter(t=>dead.indexOf(t)<0);
+  dead.forEach(t=>S.sel.tracks.delete(t));
+  touch();
+  return true;
+}
 function projOnSeg(px_,py_,t){
   const dx=t.x2-t.x1, dy=t.y2-t.y1, l2=dx*dx+dy*dy;
   if(l2<1e-12)return {x:t.x1,y:t.y1};
@@ -1250,7 +1520,8 @@ cv.addEventListener("pointerdown",e=>{
   }
   const pn=(h.pad&&h.pad.net)||null;
   if(pn)S.hlNet=pn;
-  drag={move:true,x:p.x,y:p.y,moved:false};
+  drag={move:true,x:p.x,y:p.y,moved:false,dx:0,dy:0,
+        trk:null,via:null,joints:null};
   refreshPanels();
   // la mise en avant se voit sur le canevas : on la montre aussi dans la liste
   if(pn)revealNet(pn);
@@ -1316,10 +1587,16 @@ cv.addEventListener("pointermove",e=>{
   if(drag&&drag.move){
     const dx=snapX(p.x)-snapX(drag.x), dy=snapY(p.y)-snapY(drag.y);
     if(dx||dy){
-      if(!drag.moved){push();drag.moved=true;}
+      if(!drag.moved){push();drag.moved=true;beginMove();}
+      drag.dx=r3(drag.dx+dx);drag.dy=r3(drag.dy+dy);
       for(const id of S.sel.fps){const f=fpById(id);if(f){f.x=r3(f.x+dx);f.y=r3(f.y+dy);}}
-      for(const t of S.sel.tracks){t.x1=r3(t.x1+dx);t.y1=r3(t.y1+dy);t.x2=r3(t.x2+dx);t.y2=r3(t.y2+dy);}
-      for(const v of S.sel.vias){v.x=r3(v.x+dx);v.y=r3(v.y+dy);}
+      // pistes et vias en absolu : les articulations réécrivent leurs bouts,
+      // un cumul relatif dériverait dès le deuxième mouvement
+      for(const o of drag.trk){
+        o.t.x1=r3(o.x1+drag.dx);o.t.y1=r3(o.y1+drag.dy);
+        o.t.x2=r3(o.x2+drag.dx);o.t.y2=r3(o.y2+drag.dy);
+      }
+      for(const o of drag.via){o.v.x=r3(o.x+drag.dx);o.v.y=r3(o.y+drag.dy);}
       for(const z of S.sel.zones){
         if(detachAuto(z)){buildLayers();buildTabs();}
         for(const q of z.pts){q.x=r3(q.x+dx);q.y=r3(q.y+dy);}
@@ -1328,6 +1605,8 @@ cv.addEventListener("pointermove",e=>{
         for(const q of ct.pts){q.x=r3(q.x+dx);q.y=r3(q.y+dy);}
       }
       drag.x+=dx;drag.y+=dy;
+      // Alt enfoncé pendant le geste : les voisins restent où ils sont
+      applyJoints(drag.joints,drag.dx,drag.dy,e.altKey);
       touch();draw();
     }
     return;
@@ -1347,13 +1626,12 @@ cv.addEventListener("pointermove",e=>{
 cv.addEventListener("pointerup",e=>{
   if(S.hlText){S.hlText=null;draw();}
   if(drag&&drag.tend){
-    const dead=S.tracks.filter(t=>dist(t.x1,t.y1,t.x2,t.y2)<1e-6);
-    if(dead.length){
-      S.tracks=S.tracks.filter(t=>dead.indexOf(t)<0);
-      dead.forEach(t=>S.sel.tracks.delete(t));
-      touch();
-    }
+    pruneDeadTracks();
     S.hover=null;drag=null;refreshPanels();draw();return;
+  }
+  if(drag&&drag.move&&drag.moved){
+    pruneDeadTracks();
+    drag=null;refreshPanels();draw();return;
   }
   if(drag&&drag.marquee){
     const m=S.marquee;
@@ -1450,6 +1728,7 @@ document.addEventListener("keydown",e=>{
     case "o":setMode("origin");break;
     case "r":rotateSel();break;
     case "f":flipSel();break;
+    case "d":mitreSel();break;
     case "g":setGrid(!S.showGrid);break;
     case "n":S.show.rats=!S.show.rats;$("bRats").classList.toggle("on",S.show.rats);draw();break;
     case "y":setFlip(!S.flip);break;
@@ -1515,8 +1794,10 @@ function setMode(m){
                           origin:"Origine",erase:"Gomme"}[m];
   cv.style.cursor=m==="erase"?"not-allowed":"crosshair";
   hint({
-    select:"Ctrl+clic (ou Maj+clic) ajoute à la sélection · glisser pour déplacer · "+
-           "R pivote · F retourne · Ctrl+C/Ctrl+V copie-colle · Alt+clic insère un point sur une piste sélectionnée.",
+    select:"Ctrl+clic (ou Maj+clic) ajoute à la sélection · glisser une piste emmène "+
+           "la portion droite entière, les coudes voisins glissent sans changer d'angle "+
+           "(Alt pendant le glissement les laisse sur place) · "+
+           "D passe un angle droit en 45° · R pivote · F retourne · Ctrl+C/Ctrl+V copie-colle · Alt+clic insère un point sur une piste sélectionnée.",
     track:"Clic sur une pastille pour partir · V pose un via · 1-8 change de couche · Tab saisit les coordonnées · Échap termine.",
     via:"Clic pour poser un via traversant, accroché à la pastille ou à la piste la plus proche.",
     zone:"Clic pour chaque sommet, retour sur le premier point pour fermer · Maj contraint à 45° · Entrée ferme, Échap abandonne.",

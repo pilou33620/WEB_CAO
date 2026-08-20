@@ -774,13 +774,16 @@ function propsTrack(box,t){
       '</select></div>'+
     '<div class="empty" style="padding:6px 12px">Classe '+esc(cl.name)+' : '+fmt(cl.w,2)+
       ' mm, isolation '+fmt(cl.clr,2)+' mm.<br>'+
-      'Tirez une extrémité pour la déplacer · Ctrl+glisser la détache du coude · '+
-      'Ctrl+clic sur le segment y insère un point.</div>'+
+      'Tirez une extrémité pour la déplacer · Alt+glisser la détache du coude · '+
+      'Alt+clic sur le segment y insère un point.</div>'+
     '<div class="prop"><div class="row">'+
+      '<button class="tb" id="tMit">Angle droit → 45° (D)</button></div>'+
+      '<div class="row">'+
       '<button class="tb" id="tAll">Largeur au net</button>'+
       '<button class="tb" id="tCls">Largeur de classe</button></div>'+
       '<div class="row"><button class="tb" id="tSel">Sélectionner le net ('+g.tracks.length+')</button>'+
       '<button class="tb" id="tDel">Dérouter le net</button></div></div>';
+  $("tMit").onclick=mitreSel;
   $("tL").onchange=()=>{push();t.l=+$("tL").value;touch();refreshPanels();draw();};
   $("tW").onchange=()=>{push();t.w=Math.max(0.05,parseFloat($("tW").value)||cl.w);
     touch();refreshPanels();draw();};
@@ -821,8 +824,11 @@ function propsTracks(box,list){
       '<div><label>Longueur totale</label><input value="'+
       fmt(list.reduce((a,t)=>a+dist(t.x1,t.y1,t.x2,t.y2),0),1)+' mm" disabled></div></div>'+
     '<div class="prop"><div class="row">'+
+      '<button class="tb" id="msMit">Angle droit → 45° (D)</button></div>'+
+      '<div class="row">'+
       '<button class="tb" id="msCls">Largeur de classe</button>'+
       '<button class="tb" id="msDel">Supprimer</button></div></div>';
+  $("msMit").onclick=mitreSel;
   $("msL").onchange=()=>{
     const v=$("msL").value;
     if(v==="")return;
