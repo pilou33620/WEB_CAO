@@ -1,0 +1,199 @@
+/* =============================================================================
+   recherche-composants — feuille de style (dashboard nocturne)
+   Mêmes variables et mêmes composants d'interface que les deux éditeurs :
+   en-tête, barre d'outils, panneaux dockables, pied de page.
+   ============================================================================= */
+  :root{
+    --bg:#0f1012;
+    --panel:#17181b;
+    --panel2:#1c1e22;
+    --border:#2b2e34;
+    --border2:#3a3e46;
+    --txt:#e6e8ec;
+    --txt-dim:#8b919c;
+    --yellow:#f2c744;
+    --blue:#3fa0ea;
+    --blue-deep:#2b7fbf;
+    --red:#e8443a;
+    --green:#4cc38a;
+    --cyan:#8af0ff;
+    --mono:"JetBrains Mono","SF Mono",Consolas,"Roboto Mono",monospace;
+    --ui:"Segoe UI",system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg);color:var(--txt);font-family:var(--ui);
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  /* ---------- en-tête ---------- */
+  header{
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);
+  }
+  .brand{display:flex;align-items:baseline;gap:10px}
+  .brand b{font-size:15px;letter-spacing:.14em;text-transform:uppercase}
+  .brand span{font-family:var(--mono);font-size:10px;color:var(--txt-dim);letter-spacing:.18em}
+  .brand i{display:inline-block;width:4px;height:18px;background:var(--red);border-radius:1px;transform:translateY(3px)}
+  .tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .sep{width:1px;height:22px;background:var(--border2);margin:0 4px}
+  button.tb{
+    background:var(--panel2);color:var(--txt);border:1px solid var(--border2);
+    padding:6px 10px;border-radius:5px;font-size:12px;cursor:pointer;font-family:var(--ui);
+    display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+  }
+  button.tb:hover{border-color:var(--blue);color:#fff}
+  button.tb.on{background:var(--blue-deep);border-color:var(--blue);color:#fff}
+  button.tb:disabled{opacity:.45;cursor:default;border-color:var(--border2);color:var(--txt-dim)}
+  button.tb kbd{font-family:var(--mono);font-size:9px;color:var(--txt-dim);border:1px solid var(--border2);border-radius:3px;padding:0 3px}
+  button.tb.on kbd{color:#dff0ff;border-color:#5cb4f0}
+  button.tb.mini{padding:3px 7px;font-size:10.5px}
+  /* ---------- disposition ---------- */
+  main{flex:1;display:flex;min-height:0}
+  #vue{position:absolute;inset:0;display:flex;flex-direction:column;min-height:0}
+  .scroll{overflow-y:auto;flex:1;min-height:0}
+  .scroll::-webkit-scrollbar{width:8px}
+  .scroll::-webkit-scrollbar-thumb{background:#31343a;border-radius:4px}
+  /* ---------- formulaire de recherche ---------- */
+  #form{flex:none;border-bottom:1px solid var(--border);background:var(--panel2);
+    max-height:52%;overflow-y:auto}
+  #form::-webkit-scrollbar{width:8px}
+  #form::-webkit-scrollbar-thumb{background:#31343a;border-radius:4px}
+  .form-head{padding:11px 14px 0}
+  .form-head h2{margin:0;font-size:13px;letter-spacing:.12em;text-transform:uppercase;font-weight:600}
+  .form-head p{margin:5px 0 0;font-size:11.5px;color:var(--txt-dim);line-height:1.45;max-width:900px}
+  .champs{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));
+    gap:9px;padding:11px 14px 4px;
+  }
+  .champs[hidden]{display:none}
+  .champs.avances{padding-top:4px;border-top:1px solid var(--border)}
+  .plus{padding:8px 14px 0}
+  .champ{display:flex;flex-direction:column;min-width:0}
+  .champ.large{grid-column:1/-1}
+  .champ label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--txt-dim);margin-bottom:4px}
+  .champ label .req{color:var(--red);margin-left:4px}
+  .champ input[type=text],.champ input[type=search],.champ input[type=number],.champ select,.champ textarea{
+    width:100%;background:#101216;border:1px solid var(--border2);color:var(--txt);
+    border-radius:5px;padding:6px 8px;font-family:var(--mono);font-size:12.5px;
+  }
+  .champ textarea{min-height:58px;resize:vertical;line-height:1.4}
+  .champ input:focus,.champ select:focus,.champ textarea:focus{outline:none;border-color:var(--blue)}
+  .champ select option{background:#101216;color:var(--txt);font-family:var(--mono)}
+  .champ .aide{font-size:10.5px;color:var(--txt-dim);margin-top:3px;line-height:1.35}
+  .champ.case{flex-direction:row;align-items:center;gap:7px}
+  .champ.case input{accent-color:var(--blue);margin:0}
+  .champ.case label{margin:0;letter-spacing:.1em}
+  .form-actions{display:flex;align-items:center;gap:8px;padding:6px 14px 12px;flex-wrap:wrap}
+  .err{font-size:11.5px;color:var(--red)}
+  /* ---------- panneau des outils ---------- */
+  .pnl-bar input[type=search]{
+    flex:1;min-width:0;background:#101216;border:1px solid var(--border2);color:var(--txt);
+    border-radius:4px;padding:3px 6px;font-family:var(--mono);font-size:11px;
+  }
+  .pnl-bar input[type=search]:focus{outline:none;border-color:var(--blue)}
+  #listeOutils{flex:1;min-height:0}
+  .fam{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--yellow);padding:10px 12px 4px;opacity:.85}
+  .outil{
+    display:block;width:100%;text-align:left;background:transparent;border:none;
+    border-left:2px solid transparent;color:var(--txt-dim);cursor:pointer;
+    padding:6px 12px;font-family:var(--ui);font-size:12px;line-height:1.3;
+  }
+  .outil:hover{background:#20242a;color:var(--txt)}
+  .outil.on{background:#1e2126;color:var(--txt);border-left-color:var(--yellow)}
+  .outil small{display:block;font-family:var(--mono);font-size:9px;color:#5f656f;letter-spacing:.06em}
+  /* ---------- tableau de résultats ---------- */
+  #resultats{padding:0 0 20px}
+  table.res{width:100%;border-collapse:collapse;font-size:11.5px}
+  table.res th{
+    position:sticky;top:0;z-index:1;background:var(--panel2);
+    font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--txt-dim);text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);
+  }
+  table.res td{padding:5px 10px;border-bottom:1px solid #202226;color:var(--txt);
+    max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  table.res tr{cursor:pointer}
+  table.res tr:hover td{background:#1e2126}
+  table.res tr.on td{background:#241f13}
+  table.res td.code{font-family:var(--mono);color:var(--yellow)}
+  table.res td.num{font-family:var(--mono);color:var(--txt-dim);text-align:right}
+  table.res td.dim{color:var(--txt-dim)}
+  .tag{
+    display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:.08em;
+    text-transform:uppercase;padding:1px 5px;border-radius:3px;border:1px solid var(--border2);
+    color:var(--txt-dim);
+  }
+  .tag.basic{color:var(--green);border-color:#2f5f4a}
+  .tag.preferred{color:var(--cyan);border-color:#2c5a63}
+  .tag.extended{color:var(--txt-dim)}
+  .resume{
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    padding:7px 10px;background:#15171a;border-bottom:1px solid var(--border);
+    font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--txt-dim);
+  }
+  .resume b{color:var(--yellow);font-weight:600}
+  .resume span{opacity:.5}
+  .vide{padding:18px 14px;font-size:12px;color:var(--txt-dim);line-height:1.55}
+  .vide b{color:var(--txt)}
+  .vide code{font-family:var(--mono);font-size:11.5px;color:var(--cyan)}
+  .fiche{padding-bottom:16px}
+  pre.doc{
+    margin:0;padding:9px 12px;font-family:var(--mono);font-size:11px;line-height:1.5;
+    color:var(--txt);background:#101216;border-top:1px solid var(--border);
+    border-bottom:1px solid var(--border);
+    white-space:pre-wrap;word-break:break-word;
+  }
+  /* ---------- détail ---------- */
+  #details{padding-bottom:14px}
+  .det-titre{padding:11px 12px 3px;font-size:13px;font-weight:600;line-height:1.3}
+  .det-sous{padding:0 12px 9px;font-size:11px;color:var(--txt-dim);font-family:var(--mono)}
+  .det-actions{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 10px}
+  .det-sect{font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--yellow);padding:9px 12px 4px;opacity:.85}
+  table.det{width:100%;border-collapse:collapse;font-size:11.5px}
+  table.det td{padding:4px 12px;border-bottom:1px solid #202226;vertical-align:top}
+  table.det td.k{font-family:var(--mono);font-size:10px;color:var(--txt-dim);width:44%;
+    letter-spacing:.04em}
+  table.det td.v{color:var(--txt);word-break:break-word}
+  table.det a{color:var(--blue)}
+  /* ---------- réponse brute ---------- */
+  #brut pre{
+    margin:0;padding:9px 12px;font-family:var(--mono);font-size:11px;line-height:1.45;
+    color:var(--txt-dim);white-space:pre-wrap;word-break:break-word;
+  }
+  /* ---------- pied de page ---------- */
+  footer{
+    display:flex;align-items:center;gap:16px;padding:5px 14px;background:var(--panel);
+    border-top:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--txt-dim);
+  }
+  footer b{color:var(--yellow);font-weight:600}
+  footer .push{margin-left:auto}
+  footer .hint{color:var(--txt-dim)}
+  footer .ko{color:var(--red)}
+  footer .ok{color:var(--green)}
+  /* ---------- fenêtre modale (adresse du serveur) ---------- */
+  .modal{
+    position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;
+    background:rgba(8,9,11,.72);padding:24px;
+  }
+  .modal[hidden]{display:none}
+  .modal-box{
+    width:min(520px,100%);background:var(--panel);border:1px solid var(--border2);
+    border-radius:8px;box-shadow:0 18px 60px rgba(0,0,0,.55);overflow:hidden;
+  }
+  .modal-head{
+    display:flex;align-items:center;gap:10px;padding:9px 12px;
+    background:var(--panel2);border-bottom:1px solid var(--border);
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  }
+  .modal-corps{padding:12px}
+  .modal-corps p{margin:0 0 10px;font-size:12px;color:var(--txt-dim);line-height:1.5}
+  .modal-corps code{font-family:var(--mono);color:var(--cyan);font-size:11.5px}
+  .modal-pied{display:flex;justify-content:flex-end;gap:8px;padding:0 12px 12px}
+
+  @media (max-width:980px){
+    .champs{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
+  }

@@ -8,58 +8,92 @@
   :root {
     --bg: #0f1012;
     --panel: #17181b;
+    --panel2: #1c1e22;
     --border: #2b2e34;
     --border2: #3a3e46;
     --txt: #e6e8ec;
     --txt-dim: #8b919c;
+    --yellow: #f2c744;
     --blue: #3fa0ea;
     --blue-deep: #2b7fbf;
+    --red: #e8443a;
+    --mono: "JetBrains Mono","SF Mono",Consolas,"Roboto Mono",monospace;
     --ui: "Segoe UI", system-ui, -apple-system, sans-serif;
   }
   * { box-sizing: border-box; }
   body {
     background: var(--bg); color: var(--txt); font-family: var(--ui);
     display: flex; align-items: center; justify-content: center;
-    height: 100vh; margin: 0;
+    min-height: 100vh; margin: 0; padding: 24px;
   }
   .container {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 40px;
-    text-align: center;
+    padding: 32px 34px 30px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    max-width: 880px; width: 100%;
   }
-  h1 { margin: 0 0 10px; font-size: 20px; letter-spacing: 0.1em; font-weight: 600; text-transform: uppercase; }
-  p { color: var(--txt-dim); margin-bottom: 30px; font-size: 14px; }
-  .actions { display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand i { display: inline-block; width: 4px; height: 18px; background: var(--red);
+    border-radius: 1px; transform: translateY(3px); }
+  h1 { margin: 0; font-size: 20px; letter-spacing: 0.1em; font-weight: 600; text-transform: uppercase; }
+  .brand span { font-family: var(--mono); font-size: 10px; color: var(--txt-dim); letter-spacing: 0.18em; }
+  p.intro { color: var(--txt-dim); margin: 12px 0 26px; font-size: 14px; }
+  .actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
   a.btn {
-    display: inline-block;
-    background: var(--panel);
-    color: var(--blue);
+    display: flex; flex-direction: column; gap: 7px;
+    background: var(--panel2);
+    color: var(--txt);
     border: 1px solid var(--border2);
-    padding: 12px 24px;
+    padding: 16px 18px;
     border-radius: 6px;
     text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-    transition: all 0.2s;
+    transition: all 0.15s;
   }
-  a.btn:hover {
-    border-color: var(--blue);
-    background: var(--blue-deep);
-    color: #fff;
+  a.btn b { font-size: 14px; font-weight: 600; color: var(--blue); }
+  a.btn small { font-size: 12px; color: var(--txt-dim); line-height: 1.45; }
+  a.btn em {
+    font-family: var(--mono); font-style: normal; font-size: 9px;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--yellow); opacity: 0.85;
   }
+  a.btn:hover { border-color: var(--blue); background: #20242a; }
+  a.btn:hover b { color: #fff; }
+  a.btn:hover small { color: var(--txt); }
+  footer {
+    margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border);
+    font-family: var(--mono); font-size: 11px; color: var(--txt-dim); line-height: 1.6;
+  }
+  footer code { color: var(--blue); }
 </style>
 </head>
 <body>
   <div class="container">
-    <h1>CAO Web</h1>
-    <p>Sélectionnez l'éditeur pour commencer :</p>
+    <div class="brand"><i></i><h1>CAO Web</h1><span>SCHÉMA · PCB · COMPOSANTS</span></div>
+    <p class="intro">Par quoi commencez-vous ?</p>
     <div class="actions">
-      <a href="editeur-schematique/editeur-schematique.html" class="btn">Éditeur Schématique</a>
-      <a href="editeur-pcb/editeur-pcb.html" class="btn">Éditeur PCB</a>
+      <a href="editeur-schematique/editeur-schematique.html" class="btn">
+        <em>Saisie</em>
+        <b>Éditeur schématique</b>
+        <small>Dessin du schéma, nomenclature, export de la netlist.</small>
+      </a>
+      <a href="editeur-pcb/editeur-pcb.html" class="btn">
+        <em>Routage</em>
+        <b>Éditeur PCB</b>
+        <small>Placement, routage multicouche, DRC, Gerber et Excellon.</small>
+      </a>
+      <a href="recherche-composants/recherche-composants.html" class="btn">
+        <em>Bibliothèque</em>
+        <b>Recherche de composants</b>
+        <small>Stock JLCPCB, équivalences, brochages, modèles CAO et cartes
+        de référence, via pcbparts.dev.</small>
+      </a>
     </div>
+    <footer>
+      Les deux éditeurs s'ouvrent sans serveur ni dépendance.<br>
+      La recherche de composants a besoin de la passerelle :
+      <code>python serveur-composants.py</code>
+    </footer>
   </div>
 </body>
 </html>
