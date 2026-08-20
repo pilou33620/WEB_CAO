@@ -113,7 +113,9 @@ function openImport(){
 $("mSelect").onclick=()=>setMode("select");
 $("mTrack").onclick=()=>setMode("track");
 $("mVia").onclick=()=>setMode("via");
-$("mZone").onclick=()=>setMode("zone");
+/* Le bouton passe en mode zone et déplie ses options :
+   rôle de la couche active, net du plan, deux façons de poser du cuivre. */
+$("mZone").onclick=e=>{e.stopPropagation();setMode("zone");zoneMenuToggle();};
 $("mEdge").onclick=()=>setMode("edge");
 $("mOrigin").onclick=()=>setMode("origin");
 $("mErase").onclick=()=>setMode("cut");
@@ -122,7 +124,11 @@ $("bFlip").onclick=flipSel;
 $("bDel").onclick=deleteSel;
 $("bUndo").onclick=undo;
 $("bRedo").onclick=redo;
+$("bCopy").onclick=copySelPcb;
+$("bPaste").onclick=pasteClipPcb;
 $("bGrid").onclick=()=>setGrid(!S.showGrid);
+$("selGrid").onchange=e=>setGridStep(e.target.value);
+buildGridMenu();
 $("bAvoid").onclick=()=>{
   S.avoid=!S.avoid;
   $("bAvoid").classList.toggle("on",S.avoid);
@@ -182,7 +188,17 @@ for(const id of ["ciA","ciB"])
     e.preventDefault();
     if(t==="drop"&&e.dataTransfer.files[0])openFile(e.dataTransfer.files[0]);
   }));
-window.addEventListener("resize",resize);
+document.addEventListener("pointerdown",e=>{
+  const m=$("zoneMenu");
+  if(m&&m.classList.contains("on")&&!m.contains(e.target)&&!$("mZone").contains(e.target))
+    zoneMenuClose();
+});
+document.addEventListener("keydown",e=>{
+  if(e.key!=="Escape")return;
+  const m=$("zoneMenu");
+  if(m&&m.classList.contains("on")){zoneMenuClose();e.stopPropagation();}
+},true);
+window.addEventListener("resize",()=>{zoneMenuClose();resize();});
 window.addEventListener("beforeunload",e=>{
   if(S.dirty){e.preventDefault();e.returnValue="";}
 });

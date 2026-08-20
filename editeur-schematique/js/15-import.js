@@ -10,6 +10,8 @@
    -------------------------------------------------------------------------- */
 const ROT_OK={0:1,90:1,180:1,270:1};
 function num(v,d){const n=+v;return Number.isFinite(n)?n:d;}
+// coordonnées internes d'un symbole : quelques dizaines de pas, pas davantage
+function clampIc(v){return Number.isFinite(v)?Math.max(-4000,Math.min(4000,v)):NaN;}
 function normComp(c,i){
   if(!c||typeof c!=="object"||!hasType(c.type))return null;
   const def=LIB[c.type];
@@ -28,13 +30,44 @@ function normComp(c,i){
     if(c.csvMpn) el.csvMpn = String(c.csvMpn).slice(0, 100);
     if(c.csvPartName) el.csvPartName = String(c.csvPartName).slice(0, 100);
   }
+  /* Libellés déplacés à la main : deux nombres, bornés. Un décalage aberrant
+     enverrait le repère à l'autre bout de la feuille, hors de toute prise. */
+  for(const k of ["refOff","valOff"]){
+    const d=c[k];
+    if(!Array.isArray(d)||d.length!==2)continue;
+    const x=clampIc(num(d[0],NaN)), y=clampIc(num(d[1],NaN));
+    if(Number.isFinite(x)&&Number.isFinite(y)&&(x||y))el[k]=[Math.round(x),Math.round(y)];
+  }
   if(typeof def.pins==="function"){
-    el.icShape=(c.icShape==="quad")?"quad":"dip";
+    el.icShape=(c.icShape==="quad")?"quad":(c.icShape==="libre")?"libre":"dip";
     el.npins=Math.max(el.icShape==="quad"?IC_QUAD_MIN:2,
                       Math.min(64,Math.round(num(c.npins,8))));
     el.pinNames=Array.isArray(c.pinNames)
       ? c.pinNames.slice(0,el.npins).map(v=>String(v==null?"":v).slice(0,32))
       : [];
+    // taille imposée au corps : sur la grille du symbole, et bornée
+    const w=icStep(clampIc(num(c.icW,0))), hs=icStep(clampIc(num(c.icHs,0)));
+    if(w>0)el.icW=w;
+    if(hs>0)el.icHs=hs;
+    /* Disposition libre : il faut exactement autant de couples que de broches,
+       tous finis et sur la grille. À la moindre incohérence on retombe sur le
+       rectangle — un symbole lisible vaut mieux qu'un symbole fidèle au
+       fichier mais impossible à câbler. */
+    if(el.icShape==="libre"){
+      const src=Array.isArray(c.pinPos)?c.pinPos:null;
+      const pos=(src&&src.length===el.npins)
+        ? src.map(q=>Array.isArray(q)?[icStep(clampIc(num(q[0],NaN))),
+                                       icStep(clampIc(num(q[1],NaN)))]:null)
+        : null;
+      if(pos&&pos.every(q=>q&&Number.isFinite(q[0])&&Number.isFinite(q[1])))el.pinPos=pos;
+      else el.icShape="dip";
+    }
+    const b=c.icBody;
+    if(el.pinPos&&b&&typeof b==="object"){
+      const r={x1:icStep(clampIc(num(b.x1,NaN))),y1:icStep(clampIc(num(b.y1,NaN))),
+               x2:icStep(clampIc(num(b.x2,NaN))),y2:icStep(clampIc(num(b.y2,NaN)))};
+      if(Object.values(r).every(Number.isFinite))el.icBody=r;
+    }
   }
   return el;
 }
@@ -46,6 +79,13 @@ function normWire(w){
   const o={x1,y1,x2,y2};
   const nm=String(w.net==null?"":w.net).trim().slice(0,32);
   if(nm)o.net=nm;
+  // réglages d'affichage de l'étiquette du net portée par ce fil
+  if(w.lblHide)o.lblHide=1;
+  const d=w.lblOff;
+  if(Array.isArray(d)&&d.length===2){
+    const x=clampIc(+d[0]), y=clampIc(+d[1]);
+    if(Number.isFinite(x)&&Number.isFinite(y)&&(x||y))o.lblOff=[Math.round(x),Math.round(y)];
+  }
   return o;
 }
 function normPage(p,i){

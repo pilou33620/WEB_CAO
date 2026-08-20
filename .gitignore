@@ -28,8 +28,10 @@ yarn-error.log
 # System
 .DS_Store
 
-# Data
-*.csv
+# Donnees : la bibliotheque de composants contient des references internes et
+# n'est pas versionnee. Le blanc-seing « *.csv » a ete retire : il avalait
+# aussi les jeux d'essai. Retirer la ligne ci-dessous pour suivre le fichier.
+/LIB_composants.csv
 
 # Builds
 dist/

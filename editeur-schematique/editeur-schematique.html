@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Éditeur schématique — Dashboard nocturne</title>
 <link rel="stylesheet" href="css/editeur.css">
-<link rel="stylesheet" href="css/workspace.css">
+<link rel="stylesheet" href="../commun/workspace.css">
 </head>
 <body>
 
@@ -21,12 +21,16 @@
     <button class="tb" id="bRot">Pivoter <kbd>R</kbd></button>
     <button class="tb" id="bMir">Miroir <kbd>M</kbd></button>
     <button class="tb" id="bDup">Dupliquer <kbd>D</kbd></button>
+    <button class="tb" id="bCopy">Copier <kbd>Ctrl+C</kbd></button>
+    <button class="tb" id="bPaste">Coller <kbd>Ctrl+V</kbd></button>
     <button class="tb" id="bDel">Supprimer <kbd>Suppr</kbd></button>
+    <button class="tb" id="bDelW" title="Supprimer les fils de la sélection, sans toucher aux composants">Supprimer les fils <kbd>U</kbd></button>
     <div class="sep"></div>
     <button class="tb" id="bUndo">↶ Annuler</button>
     <button class="tb" id="bRedo">↷ Rétablir</button>
     <div class="sep"></div>
     <button class="tb" id="bGrid">Grille</button>
+    <select class="tbsel" id="selGrid" title="Pas d'accrochage de la grille"></select>
     <button class="tb on" id="bNets">Nets : tous <kbd>N</kbd></button>
     <button class="tb" id="bFit">Recadrer</button>
     <div class="sep"></div>
@@ -117,6 +121,7 @@
   <span>Mode <b id="fMode">Sélection</b></span>
   <span>X <b id="fX">0</b> · Y <b id="fY">0</b></span>
   <span>Zoom <b id="fZoom">100%</b></span>
+  <span>Grille <b id="fGrid">1 carré = 2,54 mm</b></span>
   <span>Composants <b id="fN">0</b> · Fils <b id="fW">0</b> · Nets <b id="fNets">0</b></span>
   <span>Net <b id="fNet">—</b></span>
   <span class="push hint" id="fHint">Clic sur un composant de la bibliothèque puis clic sur la feuille pour le poser.</span>
@@ -131,6 +136,7 @@
      Pas de type="module" à dessein — la page reste ouvrable en double-clic,
      directement depuis le disque (file://), sans serveur web.
      ============================================================================= -->
+<script src="js/00-espace-config.js"></script>
 <script src="js/01-noyau.js"></script>
 <script src="js/02-bibliotheque.js"></script>
 <script src="js/03-boitiers.js"></script>
@@ -149,6 +155,7 @@
 <script src="js/16-demo.js"></script>
 <script src="js/17-demarrage.js"></script>
 <script src="js/18-csv.js"></script>
-<script src="js/19-workspace.js"></script>
+<script src="js/19-broches.js"></script>
+<script src="../commun/workspace.js"></script>
 </body>
 </html>

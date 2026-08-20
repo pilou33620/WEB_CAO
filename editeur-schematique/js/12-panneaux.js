@@ -18,11 +18,17 @@ function netBlock(net){
   const nodes = net.nodes.slice()
     .sort((a,b)=>String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}))
     .map(n=>n.ref+"."+n.pin+(n.label?" ("+n.label+")":""));
+  const aw=net.anchorWire||null;
+  const hidden=!!(aw&&aw.lblHide), moved=!!(aw&&aw.lblOff);
   let h='<div class="prop"><label>Net</label>'+
     '<input id="pNet" value="'+esc(net.named?net.name:"")+'" '+
     'placeholder="'+esc(net.name)+(net.named?"":" (auto)")+'" '+
     (imposed?'disabled ':'')+'>'+
-    '<div class="row"><button class="tb" id="pNetSel">Sélectionner le net</button></div></div>';
+    '<div class="row"><button class="tb" id="pNetSel">Sélectionner le net</button></div>'+
+    '<div class="row"><button class="tb'+(hidden?" on":"")+'" id="pNetHide">'+
+      (hidden?"Étiquette masquée":"Masquer l'étiquette")+'</button>'+
+      (moved?'<button class="tb" id="pNetHome">Replacer l\'étiquette</button>':"")+
+    '</div></div>';
   const g=docGroupOf(net);
   h+='<div class="pinnote">'+
      (net.global
@@ -54,7 +60,8 @@ function wireInfo(wires){
       '<div class="prop"><label>Longueur cumulée</label><input value="'+len+'" disabled>'+
       '<div class="row"><button class="tb" id="pDel">Supprimer</button></div></div>'+
       '<div class="pinnote">Glisser un fil le déplace ; les segments raccordés à ses '+
-      'extrémités s\'étirent pour rester connectés.</div>';
+      'extrémités s\'étirent pour rester connectés. Ctrl+clic ajoute ou retire un '+
+      'élément de la sélection.</div>';
   }
   const w=wires[0];
   const dir=(w.x1===w.x2)?"Fil vertical":(w.y1===w.y2)?"Fil horizontal":"Fil oblique";
@@ -65,8 +72,9 @@ function wireInfo(wires){
     '<div class="prop"><label>Arrivée</label><input value="'+esc(pt(w.x2,w.y2))+'" disabled></div>'+
     '<div class="prop"><label>Longueur</label><input value="'+len+'" disabled>'+
     '<div class="row"><button class="tb" id="pDel">Supprimer</button></div></div>'+
-    '<div class="pinnote">Saisir une poignée d\'extrémité étire le segment ; '+
-    'saisir le milieu déplace le fil entier. Ctrl+glisser détache le fil de ses voisins.</div>';
+    '<div class="pinnote">Étiquette de net : la glisser la déplace, un double-clic '+
+    'la remet en place.<br>Saisir une poignée d\'extrémité étire le segment ; '+
+    'saisir le milieu déplace le fil entier. Alt+glisser détache le fil de ses voisins.</div>';
 }
 /* Sélecteur de boîtier en deux temps : la base (SOIC, SOT-23, 0603…) puis le
    brochage. Bases conseillées pour le type de symbole en tête de liste, et ✓
@@ -169,7 +177,28 @@ function bindPkgField(el){
   };
   if(tx)tx.oninput=()=>set(tx.value);
 }
+/* Le panneau se reconstruit entièrement à chaque rafraîchissement. Sans
+   précaution, saisir le nom d'une étiquette de net revenait à taper une lettre,
+   perdre le champ — donc le focus — et voir les lettres suivantes prises pour
+   des raccourcis : « V » repassait en sélection, « W » en tracé de fil. On note
+   donc le champ actif et la position du curseur avant, on les rend après. */
+function propsFocus(){
+  const box=document.getElementById("props"), a=document.activeElement;
+  if(!box||!a||!a.id||!box.contains(a))return null;
+  const f={id:a.id};
+  try{f.s=a.selectionStart;f.e=a.selectionEnd;}catch(_){}
+  return f;
+}
+function propsRefocus(f){
+  if(!f)return;
+  const el=document.getElementById(f.id);
+  if(!el||typeof el.focus!=="function")return;
+  el.focus();
+  if(f.s!=null&&typeof el.setSelectionRange==="function")
+    try{el.setSelectionRange(f.s,f.e);}catch(_){}
+}
 function refreshPanels(){
+  const _focus=propsFocus();
   pruneSel();
   const box=document.getElementById("props");
   const els=selEls(), wires=selWires();
@@ -182,13 +211,25 @@ function refreshPanels(){
     if(els.length)parts.push(els.length+(els.length>1?" composants":" composant"));
     if(wires.length)parts.push(wires.length+(wires.length>1?" fils":" fil"));
     box.innerHTML='<div class="empty">'+(parts.length?parts.join(" et ")+" sélectionnés.":"Aucune sélection.")+
-      '<br><br>Raccourcis : <b>R</b> pivoter · <b>M</b> miroir · <b>D</b> dupliquer · <b>Suppr</b> supprimer.</div>';
+      '<br><br>Raccourcis : <b>R</b> pivoter · <b>M</b> miroir · <b>D</b> dupliquer · '+
+      '<b>Ctrl+C</b>/<b>Ctrl+V</b> copier-coller · <b>Suppr</b> supprimer · '+
+      '<b>U</b> n\'effacer que les fils.</div>'+
+      (wires.length
+        ? '<div class="prop"><div class="row"><button class="tb" id="pDelW">'+
+          'Supprimer les '+wires.length+' fil'+(wires.length>1?'s':'')+' <kbd>U</kbd>'+
+          '</button></div>'+
+          '<div class="pinnote" style="padding:8px 0 0">Les composants restent en '+
+          'place et sélectionnés : de quoi recâbler autrement sans les redésigner.'+
+          '</div></div>'
+        : "");
+    const pdw=document.getElementById("pDelW");
+    if(pdw)pdw.onclick=delWiresSel;
   }else{
     const el=els[0], def=defOf(el.type);
     let html=
       '<div class="prop"><label>Type</label><input value="'+esc(def.n)+'" disabled></div>'+
       (def.noRef?"":'<div class="prop"><label>Référence</label><input id="pRef" value="'+esc(el.ref||"")+'"></div>')+
-      '<div class="prop"><label>'+(def.propLabel||(el.type==="port"?"Nom du net":el.type==="vcc"?"Tension du rail":"Valeur"))+'</label>'+
+      '<div class="prop"><label>'+esc(def.propLabel||(el.type==="port"?"Nom du net":el.type==="vcc"?"Tension du rail":"Valeur"))+'</label>'+
       '<input id="pVal" value="'+esc(el.value||"")+'">';
       
     let csvHtml = "";
@@ -205,6 +246,9 @@ function refreshPanels(){
     html += csvHtml +
       (def.noRef?"":pkgField(el))+
       '<div class="row"><button class="tb" id="pRot">Pivoter</button><button class="tb" id="pMir">Miroir</button></div>'+
+      ((el.refOff||el.valOff)
+        ? '<div class="row"><button class="tb" id="pTxt">Replacer les textes</button></div>'
+        : "")+
       (el.type==="port"||el.type==="gport"
         ? '<div class="row"><button class="tb" id="pGlob">'+
           (el.type==="port"?"Étendre à tout le document":"Restreindre à cette feuille")+
@@ -220,14 +264,19 @@ function refreshPanels(){
     if(typeof def.pins==="function"){
       const g=icGeom(el);
       if(!el.pinNames)el.pinNames=[];
+      const named=el.pinNames.filter(x=>x&&String(x).trim()).length;
       html+='<div class="prop"><label>Nombre de broches</label>'+
             '<input id="pN" type="number" min="'+(g.quad?IC_QUAD_MIN:2)+'" max="64" step="1" value="'+g.n+'">'+
             '<label style="margin-top:8px">Représentation</label>'+
             '<select id="pShape">'+
-            '<option value="dip"'+(g.quad?"":" selected")+'>Rectangulaire — 2 rangées (DIP, SOIC…)</option>'+
-            '<option value="quad"'+(g.quad?" selected":"")+'>Carrée — 4 côtés (QFP, QFN…)</option>'+
+            '<option value="dip"'+(g.shape==="dip"?" selected":"")+'>Rectangulaire — 2 rangées (DIP, SOIC…)</option>'+
+            '<option value="quad"'+(g.shape==="quad"?" selected":"")+'>Carrée — 4 côtés (QFP, QFN…)</option>'+
+            '<option value="libre"'+(g.shape==="libre"?" selected":"")+'>Libre — broches placées à la main</option>'+
             '</select></div>'+
-            (g.quad
+            (g.shape==="libre"
+              ? '<div class="pinnote">Disposition libre : chaque broche est posée où vous '+
+                'l\'avez mise. Revenir à une forme rectangulaire ou carrée efface ce placement.</div>'
+              : g.quad
               ? '<div class="pinnote">Numérotation antihoraire depuis le repère : '+
                 'côté gauche de haut en bas, puis bas, droite, haut. Les broches se '+
                 'répartissent au mieux sur les quatre côtés ('+g.cnt.join(" + ")+').</div>'
@@ -235,12 +284,13 @@ function refreshPanels(){
               ? '<div class="pinnote">'+g.n+' broches sur deux rangées font un symbole très haut : '+
                 'la représentation carrée sera sans doute plus lisible.</div>'
               : "")+
-            '<div class="panel-head">Brochage</div><div class="pins">';
-      for(let i=0;i<g.n;i++){
-        html+='<div class="pinrow"><span class="pn">'+(i+1)+'</span>'+
-              '<input data-p="'+i+'" value="'+esc(el.pinNames[i]||"")+'" placeholder="nom de la broche"></div>';
-      }
-      html+='</div><div class="pinnote">Les noms restent ici : le schéma n\'affiche que les numéros.</div>';
+            '<div class="prop"><label>Brochage</label>'+
+            '<div class="row" style="margin-top:0">'+
+            '<button class="tb" id="pPins">Éditer les broches…</button></div></div>'+
+            '<div class="pinnote">'+g.n+' broche(s)'+
+            (named?' · '+named+' nommée(s)':'')+
+            '. L\'éditeur montre le composant avec ses pattes : on les nomme et '+
+            'on les déplace sur la grille, le câblage suit.</div>';
     }
     html+=connList(el);
     box.innerHTML=html;
@@ -249,8 +299,16 @@ function refreshPanels(){
     if(r)r.oninput=()=>{el.ref=r.value;draw();buildList();};
     // la valeur d'un symbole d'alimentation ou d'une étiquette renomme le net :
     // le panneau des connexions doit suivre la frappe
-    v.oninput=()=>{el.value=v.value;draw();
-      if(NAME_SRC[el.type])refreshPanels();else buildList();};
+    /* La valeur d'un symbole d'alimentation ou d'une étiquette renomme le net :
+       le panneau des connexions doit suivre la frappe. Sur un CI, elle décide
+       aussi de la largeur du corps : les broches s'écartent, et reshapeComp
+       emmène les fils qui y sont accrochés plutôt que de les décrocher. */
+    v.oninput=()=>{
+      if(typeof def.pins==="function")reshapeComp(el,()=>{el.value=v.value;});
+      else el.value=v.value;
+      draw();
+      if(NAME_SRC[el.type])refreshPanels();else buildList();
+    };
     bindPkgField(el);
     const pg2=document.getElementById("pGlob");
     if(pg2)pg2.onclick=()=>{
@@ -258,34 +316,25 @@ function refreshPanels(){
       el.type=(el.type==="port")?"gport":"port";
       touchWires();refreshPanels();draw();
     };
+    const ptx=document.getElementById("pTxt");
+    if(ptx)ptx.onclick=()=>{push();resetTexts([el]);refreshPanels();draw();};
     document.getElementById("pRot").onclick=rotateSel;
     document.getElementById("pMir").onclick=mirrorSel;
     document.getElementById("pDel").onclick=delSel;
-    const setPins=n=>{
-      el.npins=n;
-      el.pinNames=el.pinNames.slice(0,n);
-      while(el.pinNames.length<n)el.pinNames.push("");
-    };
     const pn=document.getElementById("pN");
     if(pn)pn.onchange=()=>{
       push();
-      const min=(icShapeOf(el)==="quad")?IC_QUAD_MIN:2;
-      setPins(Math.max(min,Math.min(64,Math.round(+pn.value||8))));
+      icSetCount(el,+pn.value||8);
       refreshPanels();draw();
     };
     const psh=document.getElementById("pShape");
     if(psh)psh.onchange=()=>{
       push();
-      const before=icAutoPkg(el);          // boîtier encore « par défaut » ?
-      el.icShape=(psh.value==="quad")?"quad":"dip";
-      if(el.icShape==="quad"&&(el.npins||0)<IC_QUAD_MIN)setPins(IC_QUAD_MIN);
-      if(el.pkg===before)el.pkg=icAutoPkg(el);
-      touchWires();                        // les broches ont bougé
+      icSetShape(el,psh.value);
       refreshPanels();draw();
     };
-    box.querySelectorAll(".pinrow input").forEach(inp=>{
-      inp.oninput=()=>{el.pinNames[+inp.dataset.p]=inp.value;};
-    });
+    const pp=document.getElementById("pPins");
+    if(pp)pp.onclick=()=>peOpen(el);
     
     // -- Logique de recherche CSV --
     const searchInp = document.getElementById("pCsvSearch");
@@ -366,6 +415,7 @@ function refreshPanels(){
     }
     // ---------------------------------
   }
+  propsRefocus(_focus);
   buildList();
 }
 /* Broche par broche : à quel net chaque patte du composant est raccordée. */
@@ -394,12 +444,28 @@ function bindNetCells(box){
 function bindNetBlock(wires){
   const inp=document.getElementById("pNet");
   const btn=document.getElementById("pNetSel");
-  if(!inp&&!btn)return;
+  const hide=document.getElementById("pNetHide");
+  const home=document.getElementById("pNetHome");
+  if(!inp&&!btn&&!hide)return;
   const N=nets(), own=new Set();
   for(const w of wires){const n=N.byWire.get(w);if(n)own.add(n);}
   if(own.size!==1)return;
   const net=[...own][0];
   if(btn)btn.onclick=()=>selectNet(net);
+  /* Masquage et déplacement de l'étiquette sont rangés sur tous les fils du
+     net : le fil qui la porte — le plus long — peut changer à la prochaine
+     scission, le réglage ne doit pas disparaître avec lui. */
+  if(hide)hide.onclick=()=>{
+    push();
+    const off=!(net.anchorWire&&net.anchorWire.lblHide);
+    for(const w of net.wires){if(off)w.lblHide=1;else delete w.lblHide;}
+    refreshPanels();draw();
+  };
+  if(home)home.onclick=()=>{
+    push();
+    for(const w of net.wires)delete w.lblOff;
+    refreshPanels();draw();
+  };
   // onchange (et non oninput) : une frappe ne doit pas remplir l'historique
   if(inp&&!inp.disabled)inp.onchange=()=>{
     setNetName(net,inp.value);
@@ -522,7 +588,7 @@ function buildBom(){
            '<th style="text-align:right">Valeur</th></tr></thead><tbody>';
   for(const {c,page} of list){
     const sheet=S.bomAll?' <span style="font-family:var(--mono);font-size:9px;opacity:.55">f'+(page+1)+'</span>':"";
-    html+='<tr data-id="'+c.id+'" data-page="'+page+'"><td class="r">'+esc(c.ref||"—")+sheet+'</td>'+
+    html+='<tr data-id="'+esc(c.id)+'" data-page="'+page+'"><td class="r">'+esc(c.ref||"—")+sheet+'</td>'+
           '<td>'+esc(defOf(c.type).n)+
             (c.pkg?'<span class="pkgcell">'+esc(c.pkg)+'</span>':"")+
           '</td><td class="v">'+esc(c.value||"")+'</td></tr>';

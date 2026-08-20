@@ -10,42 +10,176 @@ editeur-schematique/
 ├── editeur-schematique.html      structure de la page + ordre de chargement
 ├── css/
 │   └── editeur.css               thème « dashboard nocturne »
-├── js/                           17 modules, chargés dans l'ordre numéroté
+├── js/                           20 modules, chargés dans l'ordre numéroté
 ├── outils/
 │   └── build-monofichier.py      recompose un HTML unique dans dist/
+├── test/
+│   └── harness.js                banc d'essai sans navigateur
 └── dist/
-    └── editeur-schematique.html  version un-seul-fichier (générée)
+    ├── editeur-schematique.html  version un-seul-fichier (générée)
+    └── schema.js                 bundle JavaScript seul (banc d'essai)
+```
+
+Trois fichiers viennent du dossier partagé, à la racine du dépôt, et sont
+identiques pour l'éditeur PCB :
+
+```
+../commun/workspace.css          habillage de l'espace de travail
+../commun/workspace.js           panneaux détachables, paramétré par WS_CONFIG
+../commun/test/dom-stub.js       DOM minimal du banc d'essai
+../commun/outils/monofichier.py  mécanique d'assemblage
 ```
 
 ## Les modules
 
 | Fichier | Lignes | Rôle |
 |---|---:|---|
+| `js/00-espace-config.js` | 21 | `WS_CONFIG` : clé de stockage local et disposition d'usine des panneaux, lus par `../commun/workspace.js` |
 | `js/01-noyau.js` | 83 | Constantes de style (couleurs, pas de grille) et helpers de dessin (`L`, `P`, `RR`, `CIR`, `TXT`…) |
-| `js/02-bibliotheque.js` | 186 | `LIB` : définition et tracé de chaque symbole, plus `CATS` |
+| `js/02-bibliotheque.js` | 237 | `LIB` : définition et tracé de chaque symbole, plus `CATS` |
 | `js/03-boitiers.js` | 128 | `PKG_BASES`, nommage et filtrage des empreintes, accès sûr à la bibliothèque (`defOf`) |
-| `js/04-etat.js` | 142 | `S` (état global), sélection mixte, canvas, géométrie des symboles et des broches |
+| `js/04-etat.js` | 245 | `S` (état global), sélection mixte, canvas, géométrie des symboles et des broches (rectangle, carré, disposition libre) |
 | `js/05-feuilles.js` | 137 | Feuilles et onglets, historique undo/redo, `addComp` / `nextRef` |
-| `js/06-rendu-fond.js` | 74 | Cadrage, conversions monde↔écran, grille, fils, cache des jonctions |
-| `js/07-connectivite.js` | 318 | Découpe automatique des segments + extraction des nets (feuille et document) |
-| `js/08-rendu-schema.js` | 188 | Jonctions, halo de net, étiquettes, symboles, sélection, boucle `draw()` |
+| `js/06-rendu-fond.js` | 110 | Cadrage, conversions monde↔écran, grille et son échelle en millimètres, fils, cache des jonctions |
+| `js/07-connectivite.js` | 327 | Découpe automatique des segments + extraction des nets (feuille et document) |
+| `js/08-rendu-schema.js` | 189 | Jonctions, halo de net, étiquettes, symboles, sélection, boucle `draw()` |
 | `js/09-interaction.js` | 443 | Souris/tactile : pose, tracé de fils, glisser, sondes, marquee, zoom, pan |
-| `js/10-actions.js` | 112 | Pivoter, miroir, dupliquer, supprimer, recadrer, changement de mode |
+| `js/10-actions.js` | 240 | Pivoter, miroir, dupliquer, supprimer, recadrer, pas de grille, presse-papier (copier/couper/coller), changement de mode |
 | `js/11-palette.js` | 52 | Icônes de la bibliothèque et construction du panneau de gauche |
-| `js/12-panneaux.js` | 451 | Propriétés, champ boîtier, nomenclature, liste des nets |
-| `js/13-fichiers.js` | 153 | Export JSON, PNG, netlist `.txt`, nomenclature `.csv` |
-| `js/14-clavier-boutons.js` | 81 | Raccourcis clavier et branchement de la barre d'outils |
-| `js/15-import.js` | 137 | Import JSON défensif (normalisation) + sauvegarde automatique |
+| `js/12-panneaux.js` | 561 | Propriétés, champ boîtier, nomenclature, liste des nets |
+| `js/13-fichiers.js` | 169 | Export JSON, PNG, netlist `.txt`, nomenclature `.csv` |
+| `js/14-clavier-boutons.js` | 105 | Raccourcis clavier et branchement de la barre d'outils |
+| `js/15-import.js` | 164 | Import JSON défensif (normalisation) + sauvegarde automatique |
 | `js/16-demo.js` | 61 | Schéma de démonstration des deux feuilles |
-| `js/17-demarrage.js` | 24 | Séquence de démarrage — **point d'entrée**, toujours en dernier |
+| `js/17-demarrage.js` | 25 | Séquence de démarrage des données et de l'affichage |
+| `js/18-csv.js` | 108 | Bibliothèque `LIB_composants.csv` : analyse, chargement HTTP ou manuel |
+| `js/19-broches.js` | 379 | Éditeur de brochage : nombre de broches, représentation, taille du corps, noms et placement des pattes à la grille |
+| `../commun/workspace.js` | 610 | Espace de travail : docks, panneaux flottants, persistance — **chargé en dernier** |
+
+## Ce que sait faire l'éditeur, au-delà du tracé
+
+**Sélection multiple.** `Ctrl+clic` (ou `Maj+clic`) ajoute un composant, un
+fil, une étiquette à la sélection — et l'en retire au clic suivant. Un lasso
+tiré modificateur enfoncé s'ajoute lui aussi à ce qui est déjà pris. Tout ce
+qui suit vaut alors pour le groupe entier : déplacement, rotation, miroir,
+copier-coller, suppression, `U` pour n'effacer que les fils.
+
+Ctrl étant pris, le **détachement** du câblage est passé sur `Alt+glisser`.
+Alt garde ses deux usages sans qu'ils se gênent : sur le vide il déplace la vue
+(comme le bouton du milieu), sur un élément il détache. Le partage se fait dans
+`pointerdown`, qui ne prend le geste de déplacement de vue que si le pointeur
+ne survole rien.
+
+**Presse-papier.** `Ctrl+C` / `Ctrl+X` / `Ctrl+V`, ou les boutons *Copier* et
+*Coller*. Le bloc copié est rangé relativement à son coin haut-gauche puis
+reposé sous le pointeur ; les composants reçoivent un repère libre (coller deux
+fois ne crée pas deux `R1`) et les fils gardent leur nom de net. La copie passe
+aussi par le stockage local : on peut coller sur une autre feuille, après un
+rechargement, ou dans un autre onglet. Ce qui en ressort repasse par
+`normComp()` / `normWire()`, comme un fichier importé.
+
+**Effacer le câblage seul.** `U`, ou le bouton *Supprimer les fils*. Un lasso
+prend tout — composants et fils ; `U` vide le câblage de la sélection et laisse
+les symboles en place, et sélectionnés, prêts à être recâblés autrement. Sans
+fil dans la sélection, rien n'est supprimé : le pied de page le dit plutôt que
+d'emporter les composants.
+
+**Éditeur de brochage** (bouton *Éditer les broches…* du panneau Propriétés, ou
+`js/19-broches.js`). Le composant y est représenté avec ses broches : on les
+nomme, on règle leur nombre, la taille du corps, et **on déplace chaque patte à
+la grille** — le fil qui y était accroché suit. Trois représentations :
+
+| Représentation | Broches |
+|---|---|
+| Rectangulaire | deux rangées, numérotation DIP/SOIC ; largeur du corps réglable |
+| Carrée | quatre côtés, numérotation antihoraire QFP/QFN ; côté réglable |
+| Libre | chaque broche est posée à la main (`el.pinPos`), le corps est décrit par `el.icBody` |
+
+Les noms s'impriment dans le corps, à côté du numéro. Sur les côtés haut et bas
+ils ne sont écrits que si la broche voisine est assez loin — deux noms
+horizontaux à un pas d'écart se chevaucheraient. La valeur ne s'imprime au
+centre que si les colonnes de noms lui laissent la place, sinon elle descend
+sous le corps. *Ajuster aux noms* élargit le corps juste ce qu'il faut : les
+broches s'écartent d'autant, c'est une action volontaire et jamais un effet de
+bord de la frappe d'un nom.
+
+**Libellés déplaçables.** Le repère et la valeur d'un composant s'attrapent à
+la souris et se posent où on veut ; un trait pointillé — le fil de rappel —
+relie le texte à son symbole pendant le déplacement et tant que le composant
+est sélectionné, pour ne pas l'attribuer au voisin. Double-clic sur le texte,
+ou bouton *Replacer les textes*, et il retrouve sa place. Les décalages sont
+rangés sur le composant (`el.refOff`, `el.valOff`), en coordonnées monde.
+
+`compTexts()` (`js/08-rendu-schema.js`) est la source unique de ces positions :
+le tracé, l'accrochage à la souris et le fil de rappel la partagent, sinon on
+attraperait un texte à côté de l'endroit où il s'affiche. Les symboles qui
+impriment eux-mêmes leur texte en leur centre (`refIn`, `valIn` — le `R1` d'une
+résistance) n'entrent pas dans le lot : le déplacer reviendrait à défaire le
+dessin du symbole.
+
+**Étiquettes de net.** Mêmes gestes : glisser pour déplacer, double-clic pour
+remettre en place. Le clic sélectionne le net, et le panneau des propriétés
+propose alors de **masquer l'étiquette** — un schéma dense n'a pas besoin de
+voir tous ses noms. Masquage et déplacement sont rangés sur *tous* les fils du
+net (`w.lblHide`, `w.lblOff`) : le fil qui porte l'étiquette est le plus long,
+et il peut changer à la prochaine scission. Une étiquette déplacée garde un
+trait de rappel vers son fil.
+
+**Contacts broche à broche.** Deux composants mis bout à bout, broche contre
+broche, sont reliés sans qu'aucun fil ne soit tracé — l'extraction des nets les
+met dans le même groupe, et un point de jonction rouge le montre. Si l'un des
+deux s'en va (glissement, flèches, rotation), la liaison n'est pas perdue :
+`pinContacts()` relève les contacts avant le mouvement et `reconnectContacts()`
+tire un fil en équerre entre les deux broches après coup, comme si on l'avait
+posé soi-même.
+
+**Le corps d'un CI s'ajuste à ce qu'il contient.** La valeur s'imprime au
+milieu du symbole et les noms de broches en colonnes de part et d'autre :
+`icTextHalf()` calcule la largeur qu'il faut pour que tout cela tienne, marges
+comprises. Nommer un composant `IRA-S400st01A01` élargit donc son symbole au
+lieu de laisser le texte déborder sur les fils voisins. Les broches s'écartent
+d'autant — c'est ce qui garde le texte à l'intérieur — et le câblage suit
+(`reshapeComp`), de sorte qu'un symbole déjà relié ne se décroche pas. Une
+largeur saisie à la main ne fait qu'agrandir davantage ; le bouton *Largeur
+automatique* rend la main au calcul.
+
+**Pas de grille et échelle.** Une case de grille vaut **1 mm**. C'est une
+convention de dessin, pas une cote de fabrication — un schéma n'a pas d'échelle
+physique — mais elle rend tout le reste net : les symboles sont dessinés à ce
+pas, les valeurs proposées tombent juste, et une broche est toujours sur une
+ligne de la grille.
+
+| Pas offerts | 0,25 · 0,5 · 1 · 2 · 5 mm |
+|---|---|
+| Broches des symboles | sur le millimètre (multiples de 20 px) |
+| Traits des corps | sur le quart de millimètre (multiples de 5 px) |
+
+Le menu est à côté du bouton *Grille*, et le pied de page annonce ce que vaut
+une case : `1 carré = 1 mm`. Trop serrée à l'écran, la grille n'est plus tracée
+qu'une case sur deux : le pied de page annonce alors la case réellement visible
+et rappelle le pas d'accrochage — `1 carré = 2 mm · pas 0,5 mm`. Un essai du
+banc parcourt tout le catalogue et vérifie ces deux règles, symbole par
+symbole ; l'éditeur PCB, lui, garde ses pas impériaux (1,27 et 2,54 mm), qui
+sont des cotes physiques de boîtier.
+
+Changer cette échelle n'a **pas** touché aux documents existants : les
+coordonnées sont inchangées, seule la valeur annoncée en millimètres l'est.
+
+**Saisie dans les panneaux.** Le panneau Propriétés se reconstruit à chaque
+rafraîchissement ; il rend au champ actif son focus et la position du curseur.
+Sans cela, renommer un net revenait à taper une lettre, perdre le champ, et
+voir les suivantes prises pour des raccourcis. Le gestionnaire de clavier
+regarde en plus `document.activeElement` : un champ de saisie garde ses lettres
+pour lui.
 
 ## Deux règles à respecter
 
 **1. L'ordre des `<script>` compte.** Ce sont des scripts classiques, pas des
 modules ES : tout le code partage la même portée globale, exactement comme
 avant. Les déclarations `const` / `let` de premier niveau (`G`, `LIB`, `S`,
-`cv`…) doivent être évaluées avant d'être lues, et `17-demarrage.js` doit
-rester le dernier. Ajouter un module = ajouter une balise `<script>` à la
+`cv`…) doivent être évaluées avant d'être lues. `00-espace-config.js` vient en
+premier (il déclare `WS_CONFIG`) et `../commun/workspace.js` en dernier (il
+s'initialise lui-même). Ajouter un module = ajouter une balise `<script>` à la
 bonne place dans `editeur-schematique.html`.
 
 **2. Chaque fichier commence par `"use strict";`.** Le mode strict ne se
@@ -63,9 +197,31 @@ CORS des navigateurs). Là, un double-clic sur le HTML suffit toujours.
 python3 outils/build-monofichier.py     # -> dist/editeur-schematique.html
 ```
 
-Recopie le CSS et les 17 scripts dans un HTML autonome, sans minification ni
-transformation. Pratique pour envoyer l'éditeur par mail ou l'archiver ; le
-développement reste sur les fichiers séparés.
+Recopie le CSS et tous les scripts dans un HTML autonome, sans minification ni
+transformation, et écrit à côté `dist/schema.js` — le bundle JavaScript seul,
+que charge le banc d'essai. Pratique pour envoyer l'éditeur par mail ou
+l'archiver ; le développement reste sur les fichiers séparés.
+
+## Banc d'essai
+
+```bash
+python3 outils/build-monofichier.py && node test/harness.js
+```
+
+58 cas, sans navigateur : découpe automatique des fils, extraction des nets
+(union-find, labels, symboles nommants, conflits de noms), nets globaux entre
+feuilles, netlist et nomenclature, analyse du CSV de bibliothèque, espace de
+travail, échappement HTML des panneaux face à un fichier malveillant,
+presse-papier (copier/couper/coller, contenu invalide), brochage (disposition
+libre, câblage qui suit la broche déplacée, cases occupées refusées, corps
+élargi, import défensif), pas de grille, libellés déplaçables, étiquettes de
+net (déplacement, masquage, survie à une scission), contacts broche à broche
+largeur d'un CI ajustée à son texte, et le catalogue entier vérifié au pas
+(broches au millimètre, traits au quart de millimètre).
+
+Les fonctions d'export ont été scindées pour cela : `netlistText()` et
+`bomCsvText()` produisent le texte sans effet de bord, `exportNetlist()` et
+`exportBomCsv()` se contentent de l'écrire sur le disque.
 
 ## Contrôles effectués sur ce découpage
 

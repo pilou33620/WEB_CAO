@@ -20,7 +20,7 @@ function demo(){
   mk("resistor",420,280,90,"100k","R1");
   mk("vcc",420,220,0,"12V");
   mk("gnd",420,580);
-  mk("annot_volt",200,380,0,"3,30 V");
+  mk("annot_volt",240,360,0,"3,30 V");   // au-dessus du fil, dégagée de l'étiquette EN
   mk("annot_curr",500,300,0,"I = 0,12 mA");
   mk("annot_note",700,400,0,"Interrupteur côté bas|EN à 3,3 V sature Q3|R3 garde la base au repos");
   S.wires.push(

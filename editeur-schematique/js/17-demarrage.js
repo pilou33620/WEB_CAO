@@ -14,6 +14,7 @@ S.pages[0].viewed=true;
 buildTabs();
 setMode("select");
 setGrid(true);
+buildGridMenu();
 setNetLabels(S.netLabels);
 setListTab("bom");
 window.addEventListener("resize",resize);

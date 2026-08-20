@@ -55,11 +55,14 @@ function padr(s,n){s=String(s);return s+" ".repeat(Math.max(1,n-s.length));}
 function byRef(a,b){return String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true})||a.pin-b.pin;}
 /* Netlist lisible, une section par feuille. Les nets portant le même nom sur
    plusieurs feuilles sont signalés : ils forment un net global. */
-function exportNetlist(){
+/* Le texte est produit par netlistText(), sans effet de bord : c'est ce que le
+   banc d'essai vérifie. exportNetlist() se contente de l'envoyer au disque.
+   `horodatage` est injectable pour que la comparaison soit reproductible. */
+function netlistText(horodatage){
   storeCurrent();
   const D=docNets();
   const out=["* Netlist — Éditeur schématique",
-             "* "+new Date().toLocaleString("fr-FR"),
+             "* "+(horodatage||new Date().toLocaleString("fr-FR")),
              "* "+S.pages.length+" feuille(s) · "+D.groups.length+" net(s)",""];
   const rows=bomRows();
   if(rows.length){
@@ -108,7 +111,11 @@ function exportNetlist(){
     }
     out.push("");
   }
-  dl(new Blob([out.join("\n")],{type:"text/plain;charset=utf-8"}),"netlist.txt");
+  return out.join("\n");
+}
+function exportNetlist(){
+  const txt=netlistText();
+  dl(new Blob([txt],{type:"text/plain;charset=utf-8"}),"netlist.txt");
   document.getElementById("fHint").textContent="Netlist exportée dans netlist.txt.";
 }
 
@@ -133,9 +140,10 @@ function bomRows(){
     String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}));
   return rows;
 }
-function exportBomCsv(){
+/* Corps du CSV, sans marque d'ordre ni écriture disque : testable tel quel. */
+function bomCsvText(){
   const rows=bomRows();
-  if(!rows.length){alert("Document vide : rien à exporter.");return;}
+  if(!rows.length)return "";
   const out=["Repère;Composant;Valeur;Boîtier;Part Number;Feuille"];
   for(const r of rows)
     out.push([r.ref,r.type,r.value,r.pkg,r.csvMpn||r.csvPartName,r.page].map(csvCell).join(";"));
@@ -149,8 +157,13 @@ function exportBomCsv(){
   out.push("","Qté;Composant;Valeur;Boîtier;Part Number;Repères");
   for(const g of [...groups.values()].sort((a,b)=>b.refs.length-a.refs.length))
     out.push([g.refs.length,g.type,g.value,g.pkg,g.csvMpn||g.csvPartName,g.refs.join(" ")].map(csvCell).join(";"));
-  // BOM : le point-virgule et le BOM UTF-8 pour qu'Excel ouvre proprement
-  dl(new Blob(["\ufeff"+out.join("\r\n")],{type:"text/csv;charset=utf-8"}),"nomenclature.csv");
+  return out.join("\r\n");
+}
+function exportBomCsv(){
+  const txt=bomCsvText();
+  if(!txt){alert("Document vide : rien à exporter.");return;}
+  // marque d'ordre UTF-8 + point-virgule : Excel ouvre alors proprement
+  dl(new Blob(["\ufeff"+txt],{type:"text/csv;charset=utf-8"}),"nomenclature.csv");
   document.getElementById("fHint").textContent=
-    rows.length+" composant(s) exporté(s) dans nomenclature.csv.";
+    bomRows().length+" composant(s) exporté(s) dans nomenclature.csv.";
 }

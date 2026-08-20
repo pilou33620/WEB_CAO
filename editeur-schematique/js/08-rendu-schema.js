@@ -3,9 +3,29 @@
    Rendu : jonctions, halo, étiquettes, symboles, boucle draw()
    ============================================================================= */
 "use strict";
+/* Deux broches posées l'une sur l'autre sont électriquement reliées — deux
+   composants mis bout à bout n'ont pas besoin d'un fil entre eux. Encore
+   faut-il le voir : ces contacts reçoivent le même point de jonction que les
+   fils. Le calcul est refait à chaque image, sans cache : pendant un
+   glissement, les broches bougent sans que les fils changent. */
+function pinContactPoints(){
+  const seen=new Map(), out=[];
+  for(const el of S.comps){
+    if(isProbe(el))continue;
+    for(const q of allPins(el)){
+      const k=key(q.x,q.y), prev=seen.get(k);
+      if(prev===undefined){seen.set(k,el);continue;}
+      if(prev===el||prev===null)continue;     // deux broches d'un même symbole
+      seen.set(k,null);                       // déjà signalé
+      out.push(q);
+    }
+  }
+  return out;
+}
 function drawJunctions(c){
   c.fillStyle=C_RED;
   for(const p of junctions()){c.beginPath();c.arc(p[0],p[1],5,0,Math.PI*2);c.fill();}
+  for(const q of pinContactPoints()){c.beginPath();c.arc(q.x,q.y,5,0,Math.PI*2);c.fill();}
 }
 /* Halo sur le net survolé : on lit d'un coup d'œil jusqu'où va un fil. */
 function drawNetGlow(c){
@@ -23,25 +43,51 @@ function drawNetGlow(c){
   c.restore();
 }
 /* Étiquettes de net posées sur les fils.
-   S.netLabels : 0 = aucune · 1 = nets nommés seulement · 2 = tous */
+   S.netLabels : 0 = aucune · 1 = nets nommés seulement · 2 = tous
+   Deux réglages s'y ajoutent, propres à un net et rangés sur ses fils :
+   w.lblHide masque l'étiquette, w.lblOff la décale. Ils sont écrits sur tous
+   les fils du net, parce que le fil qui porte l'étiquette — le plus long —
+   peut changer au gré des scissions. */
+function netLabelAt(n){
+  if(!n||!n.anchor)return null;
+  if(S.netLabels===1 && !n.named)return null;
+  const wire=n.anchorWire||null;
+  if(wire&&wire.lblHide)return null;
+  const a=n.anchor, off=(wire&&wire.lblOff)||[0,0];
+  const t=(n.global?"⇄ ":"")+n.name+(n.conflict?" ⚠":"");
+  const w=textW(t,10.5,true)+13, h=17;
+  return {net:n,wire,t,w,h,
+          x:(a.vert?a.x+12:a.x-w/2)+off[0],
+          y:(a.vert?a.y-h/2:a.y-h-7)+off[1],
+          ax:a.x,ay:a.y,moved:!!(off[0]||off[1])};
+}
+function netLabelBoxes(){
+  if(!S.netLabels)return [];
+  const out=[];
+  for(const n of nets().list){
+    const b=netLabelAt(n);
+    if(b)out.push(b);
+  }
+  return out;
+}
 function drawNetLabels(c,force){
   if(!S.netLabels)return;
   if(!force && S.scale<.45)return;
-  const N=nets();
   c.save();
   c.lineWidth=1.2;
-  for(const n of N.list){
-    if(S.netLabels===1 && !n.named)continue;
-    const a=n.anchor;
-    if(!a)continue;
-    const col=netColor(n);
-    const t=(n.global?"⇄ ":"")+n.name+(n.conflict?" ⚠":"");
-    const w=textW(t,10.5,true)+13, h=17;
-    const x = a.vert ? a.x+12 : a.x-w/2;
-    const y = a.vert ? a.y-h/2 : a.y-h-7;
-    c.strokeStyle=n.conflict?C_RED:col;
-    RR(c,x,y,w,h,4,"#16181c");
-    TXT(c,t,x+w/2,y+h/2+.5,10.5,n.conflict?C_RED:col);
+  for(const b of netLabelBoxes()){
+    const n=b.net, col=n.conflict?C_RED:netColor(n);
+    // étiquette déplacée : un trait de rappel vers le fil, pour ne pas
+    // l'attribuer au segment voisin
+    if(b.moved){
+      c.save();
+      c.strokeStyle=col;c.globalAlpha=.5;c.setLineDash([4,3]);
+      c.beginPath();c.moveTo(b.ax,b.ay);c.lineTo(b.x+b.w/2,b.y+b.h/2);c.stroke();
+      c.restore();
+    }
+    c.strokeStyle=col;
+    RR(c,b.x,b.y,b.w,b.h,4,"#16181c");
+    TXT(c,b.t,b.x+b.w/2,b.y+b.h/2+.5,10.5,col);
   }
   c.restore();
 }
@@ -65,32 +111,83 @@ function drawComp(c,el,ghost){
   for(const p of allPins(el)){c.beginPath();c.arc(p.x,p.y,2.6,0,Math.PI*2);c.fill();}
   c.restore();
   // textes (jamais pivotés, pour rester lisibles)
-  const rot=orient(el).rot;                  // normalisé : -90 ou 450 restent gérés
-  const vert = rot===90||rot===270;
-  const off = (typeof def.tOff==="function"?def.tOff(el):def.tOff)||34;
   c.save();if(ghost)c.globalAlpha=.45;
   if(def.refIn && el.ref) TXT(c,el.ref,el.x,el.y+1,12.5,C_TXT);
   if(def.valIn && el.value) TXT(c,el.value,el.x,el.y+1,12.5,C_TXT);
-  // refIn / valIn : déjà tracé dans le symbole ci-dessus
-  // valSelf       : le symbole imprime lui-même sa valeur (CI, étiquette de net…)
-  // noRef / noVal : pas d'étiquette du tout
+  for(const t of compTexts(el)) TXT(c,t.text,t.x,t.y,t.size,t.col,t.align);
+  c.restore();
+}
+/* Libellés extérieurs d'un composant — repère et valeur — avec leur position.
+   Une seule source pour le tracé, la saisie à la souris et le fil de rappel :
+   sinon on attraperait un texte à côté de l'endroit où il s'affiche.
+   el.refOff / el.valOff : déplacement libre posé par l'utilisateur, en monde.
+   refIn / valIn : le symbole imprime lui-même le texte en son centre, il n'est
+   pas déplaçable — le déplacer reviendrait à défaire le dessin du symbole. */
+function compTexts(el){
+  const def=defOf(el.type), out=[];
+  const rot=orient(el).rot;                  // normalisé : -90 ou 450 restent gérés
+  const vert = rot===90||rot===270;
+  const off = (typeof def.tOff==="function"?def.tOff(el):def.tOff)||34;
   const showRef = el.ref && !def.refIn && !def.noRef;
   let showVal = el.value && !def.valIn && !def.valSelf && !def.noVal;
   if(el.type==="vcc"){                       // la tension se lit au-dessus du rail
     if(showVal){
       const t=locToWorld(el,0,-30);
-      TXT(c,el.value,t.x,t.y,13,C_TXT);
+      out.push({kind:"val",text:el.value,x:t.x,y:t.y,size:13,col:C_TXT,align:"center"});
     }
     showVal=false;
   }
   // une seule étiquette de valeur, à un seul endroit : sous le symbole (ou à sa
   // droite s'il est pivoté), recentrée quand aucune référence ne l'accompagne
   if(vert){
-    if(showRef) TXT(c,el.ref,el.x+off,el.y-9,12.5,C_TXT,"left");
-    if(showVal) TXT(c,el.value,el.x+off,showRef?el.y+9:el.y,12,"#cfd4db","left");
+    if(showRef)out.push({kind:"ref",text:el.ref,x:el.x+off,y:el.y-9,size:12.5,col:C_TXT,align:"left"});
+    if(showVal)out.push({kind:"val",text:el.value,x:el.x+off,y:showRef?el.y+9:el.y,size:12,col:"#cfd4db",align:"left"});
   }else{
-    if(showRef) TXT(c,el.ref,el.x,el.y-off,12.5,C_TXT);
-    if(showVal) TXT(c,el.value,el.x,el.y+off,12,"#cfd4db");
+    if(showRef)out.push({kind:"ref",text:el.ref,x:el.x,y:el.y-off,size:12.5,col:C_TXT,align:"center"});
+    if(showVal)out.push({kind:"val",text:el.value,x:el.x,y:el.y+off,size:12,col:"#cfd4db",align:"center"});
+  }
+  for(const t of out){
+    const d=textOff(el,t.kind);
+    if(d){t.x+=d[0];t.y+=d[1];t.moved=true;}
+    t.el=el;
+    t.w=textW(t.text,t.size,true);
+    t.h=t.size+7;
+  }
+  return out;
+}
+function textOff(el,kind){
+  const d=(kind==="ref")?el.refOff:el.valOff;
+  return (Array.isArray(d)&&(d[0]||d[1]))?d:null;
+}
+function setTextOff(el,kind,dx,dy){
+  const k=(kind==="ref")?"refOff":"valOff";
+  if(!dx&&!dy)delete el[k];else el[k]=[dx,dy];
+}
+// boîte d'accrochage d'un libellé, un peu plus large que le texte
+function textBox(t){
+  const x=(t.align==="left")?t.x-5:(t.align==="right"?t.x-t.w-5:t.x-t.w/2-5);
+  return {x1:x,y1:t.y-t.h/2,x2:x+t.w+10,y2:t.y+t.h/2};
+}
+/* Fil de rappel entre un libellé déplacé et son composant : c'est lui qui dit à
+   qui appartient le texte quand deux symboles se touchent presque. Tracé
+   pendant le déplacement, et sur la sélection en cours. */
+function drawTextLinks(c){
+  const shown=[];
+  const d=S.drag&&S.drag.text;
+  if(d)shown.push({el:d.el,kind:d.kind});
+  for(const el of S.comps){
+    if(!S.sel.has(el.id))continue;
+    if(el.refOff)shown.push({el,kind:"ref"});
+    if(el.valOff)shown.push({el,kind:"val"});
+  }
+  if(!shown.length)return;
+  c.save();
+  c.strokeStyle=C_SEL;c.globalAlpha=.55;c.lineWidth=1.2/S.scale;
+  c.setLineDash([4/S.scale,3/S.scale]);
+  for(const it of shown){
+    const t=compTexts(it.el).find(x=>x.kind===it.kind);
+    if(!t)continue;
+    c.beginPath();c.moveTo(it.el.x,it.el.y);c.lineTo(t.x,t.y);c.stroke();
   }
   c.restore();
 }
@@ -152,6 +249,7 @@ function draw(){
   drawJunctions(ctx);
   for(const el of S.comps) drawComp(ctx,el,false);
   drawNetLabels(ctx);
+  drawTextLinks(ctx);
   drawSel(ctx);
 
   // aperçu de pose
@@ -182,6 +280,7 @@ function draw(){
   }
   ctx.setTransform(1,0,0,1,0,0);
   document.getElementById("fZoom").textContent=Math.round(S.scale*100)+"%";
+  updateGridInfo();
   document.getElementById("fN").textContent=S.comps.length;
   document.getElementById("fW").textContent=S.wires.length;
   document.getElementById("fNets").textContent=nets().list.length;

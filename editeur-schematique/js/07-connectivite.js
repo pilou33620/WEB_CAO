@@ -54,6 +54,10 @@ function splitWireArray(wires,onSplit){
     const a={x1:w.x1,y1:w.y1,x2:hit.x,y2:hit.y};
     const b={x1:hit.x,y1:hit.y,x2:w.x2,y2:w.y2};
     if(w.net){a.net=w.net;b.net=w.net;}   // le label survit à la scission
+    // les réglages d'affichage de l'étiquette aussi : masquage et déplacement
+    // sont rangés sur les fils du net, ils doivent suivre les deux moitiés
+    if(w.lblHide){a.lblHide=1;b.lblHide=1;}
+    if(w.lblOff){a.lblOff=w.lblOff.slice();b.lblOff=w.lblOff.slice();}
     wires.splice(i,1,a,b);
     if(onSplit)onSplit(w,a,b);
     splits++;
@@ -190,6 +194,9 @@ function computeNets(comps,wires){
     n.min={x:mx,y:my};
     let best=null;
     for(const w of n.wires) if(!best||segLen(w)>segLen(best))best=w;
+    // le fil le plus long porte l'étiquette : c'est aussi lui qui garde ses
+    // réglages d'affichage (masquée, déplacée)
+    n.anchorWire = best;
     n.anchor = best
       ? {x:(best.x1+best.x2)/2, y:(best.y1+best.y2)/2, vert:best.x1===best.x2}
       : (n.pts.length?{x:n.pts[0].x,y:n.pts[0].y,vert:false}:null);
@@ -212,13 +219,25 @@ function computeNets(comps,wires){
 
 /* Cache : la signature couvre tout ce qui peut changer la connectivité — fils,
    position/orientation des composants, et valeurs des symboles nommants. */
+/* Empreinte d'un composant : tout ce qui peut déplacer une broche ou renommer
+   un net. Les positions libres sont résumées par un condensé — les recopier
+   entièrement à chaque image coûterait plus cher que le calcul qu'elles
+   évitent. */
+function posHash(pp){
+  let h=0;
+  if(Array.isArray(pp))for(const p of pp)h=(h*31+((+p[0])|0)*7+((+p[1])|0)*13)|0;
+  return h;
+}
+function compSig(c){
+  return c.type+","+c.x+","+c.y+","+(c.rot|0)+(c.mir?"m":"")+(c.npins||0)+
+    (c.icShape==="quad"?"q":c.icShape==="libre"?("f"+posHash(c.pinPos)):"")+
+    ((c.icW||c.icHs)?("w"+(c.icW||0)+"/"+(c.icHs||0)):"")+
+    (NAME_SRC[c.type]?(","+c.value):"");
+}
 let _netCache=null, _netSig="";
 function netSig(){
   let s=S.wireVer+"|"+S.wires.length+"|"+S.page+"|"+S.comps.length;
-  for(const c of S.comps)
-    s+="|"+c.type+","+c.x+","+c.y+","+(c.rot|0)+(c.mir?"m":"")+(c.npins||0)+
-       (c.icShape==="quad"?"q":"")+
-       (NAME_SRC[c.type]?(","+c.value):"");
+  for(const c of S.comps) s+="|"+compSig(c);
   for(const w of S.wires) if(w.net) s+="|@"+w.x1+","+w.y1+","+w.net;
   return s;
 }
@@ -234,10 +253,7 @@ function nets(){
    nets portant le même nom global, sur deux feuilles, ne font qu'un. */
 function pageSig(comps,wires){
   let s=comps.length+"/"+wires.length, h=0;
-  for(const c of comps)
-    s+="|"+c.type+","+c.x+","+c.y+","+(c.rot|0)+(c.mir?"m":"")+(c.npins||0)+
-       (c.icShape==="quad"?"q":"")+
-       (NAME_SRC[c.type]?(","+c.value):"");
+  for(const c of comps) s+="|"+compSig(c);
   for(const w of wires){
     h=(h+w.x1*3+w.y1*5+w.x2*7+w.y2*11)|0;
     if(w.net)s+="|@"+w.x1+","+w.y1+","+w.net;

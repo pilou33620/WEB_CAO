@@ -485,6 +485,51 @@ function runDrc(){
       msg:"Zone "+zi.net+" sur "+cuId(zi.l,S.cu)+" : cuivre coupé en "+zi.islands+
           " îlots reliés à des broches"});
   }
+  /* ---------- ce que l'empilage impose ----------
+     Le rapport d'aspect et la nature des vias ne se voient pas sur le dessin :
+     c'est la pile qui les décide, d'où leur place ici plutôt que dans le seul
+     panneau d'empilage. Les entrées portent le via fautif, pour qu'un clic
+     dans la liste le sélectionne. */
+  for(const v of S.vias){
+    const len=stackSpan(v.a,v.b), r=aspectOf(len,v.drill);
+    const dit=fmt(len,2)+" mm percés pour "+fmt(v.drill,2)+" mm";
+    if(r>ASPECT_MAX)
+      out.push({via:v,x:v.x,y:v.y,l:v.a,
+        msg:"Rapport d'aspect "+fmt(r,1)+" : 1 ("+dit+
+            ") : au-delà de "+ASPECT_MAX+" : 1, peu de fabricants suivent"});
+    else if(r>ASPECT_WARN)
+      out.push({info:true,via:v,x:v.x,y:v.y,l:v.a,
+        msg:"Rapport d'aspect "+fmt(r,1)+" : 1 ("+dit+
+            ") : au-delà de "+ASPECT_WARN+" : 1 la métallisation du trou se paie"});
+    const b=viaBuild(v.a,v.b);
+    if(!b.ok)
+      out.push({info:true,via:v,x:v.x,y:v.y,l:v.a,
+        msg:"Via "+cuId(v.a,S.cu)+" → "+cuId(v.b,S.cu)+" : "+b.why});
+  }
+  /* les pastilles traversantes se regroupent par diamètre de perçage : une
+     entrée par trou noierait la liste sur un connecteur */
+  const byDrill=new Map();
+  for(const p of pads){
+    if(!(p.q.drill>0))continue;
+    const k=fmt(p.q.drill,3);
+    if(!byDrill.has(k))byDrill.set(k,{n:0,p:p});
+    byDrill.get(k).n++;
+  }
+  for(const [k,g] of byDrill){
+    const r=aspectOf(stackLam(),g.p.q.drill);
+    if(r<=ASPECT_WARN)continue;
+    out.push({info:r<=ASPECT_MAX,x:g.p.q.x,y:g.p.q.y,l:0,
+      msg:g.n+" perçage(s) de "+k+" mm : rapport d'aspect "+fmt(r,1)+" : 1 sur "+
+          fmt(stackLam(),2)+" mm de stratifié (ex. "+g.p.tag+")"});
+  }
+  /* ---------- le rôle annoncé contre le cuivre posé ---------- */
+  for(let i=0;i<S.cu;i++){
+    const rc=roleCheck(i);
+    if(rc)out.push({info:true,layer:i,x:bcx(),y:S.board.y+S.board.h/2,l:i,
+      msg:cuId(i,S.cu)+" annoncée « "+CU_ROLES[layerRole(i)]+" » : "+rc.msg+
+          " — "+rc.hint});
+  }
+
   for(const n of c.nets.values())
     if(n.miss>0)
       out.push({info:true,x:n.pads[0].q.x,y:n.pads[0].q.y,l:0,

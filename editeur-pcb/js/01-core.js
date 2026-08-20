@@ -27,6 +27,9 @@ const PWR_RE = /^(gnd|agnd|dgnd|pgnd|masse|0v|vcc|vdd|vee|vss|\+?\d+v\d*|v\+|v-)
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => v<a?a:(v>b?b:v);
 const r3 = v => Math.round(v*1000)/1000;
+/* le cuivre se compte en dizaines de micromètres : trois décimales de
+   millimètre ne suffisent pas à écrire 17,5 µm sans le déformer */
+const r4 = v => Math.round(v*10000)/10000;
 const fmt = (v,n) => Number(v).toFixed(n==null?2:n);
 function esc(s){
   return String(s).replace(/[&<>"'`]/g,ch=>
@@ -54,18 +57,388 @@ function cuColor(i,n){
 }
 
 /* ==========================================================================
+   Rôle d'une couche de cuivre
+   `plane` reste la vérité pour tout ce qui fabrique du cuivre — zone pleine
+   carte, DRC, Gerber. Le rôle en est la lecture humaine, et il en dit plus :
+   un plan de masse et un plan d'alimentation se ressemblent pour le graveur,
+   pas pour celui qui lit l'empilage. setLayerRole() garde les deux d'accord ;
+   c'est par là que passent le panneau d'empilage et le menu « Zone cuivre ».
+   ========================================================================== */
+const CU_ROLES={signal:"Signal",mixed:"Mixte (signal + cuivre)",
+                gnd:"Plan de masse",pwr:"Plan d'alimentation",shield:"Blindage"};
+const CU_ROLE_SHORT={signal:"Signal",mixed:"Mixte",gnd:"Masse",
+                     pwr:"Alim.",shield:"Blindage"};
+const GND_RE=/^(gnd|agnd|dgnd|pgnd|masse|0v|vss|vee)$/i;
+/* les trois rôles qui entretiennent une zone pleine carte */
+function rolePlane(r){return r==="gnd"||r==="pwr"||r==="shield";}
+/* rôle déduit de l'ancien couple (plane, net) : c'est ce que voient les
+   fichiers écrits avant que le rôle existe */
+function roleFromPlane(plane,net){
+  if(!plane)return "signal";
+  return GND_RE.test(String(net||"").replace(/\s/g,""))?"gnd":"pwr";
+}
+/* Un rôle qui contredit le cuivre réellement posé ne veut rien dire : `plane`
+   tranche, comme partout ailleurs. Cette règle sert à l'affichage, à la
+   reconstruction de l'empilage et à la lecture d'un document. */
+function coherentRole(role,plane,net){
+  const r=CU_ROLES[role]?role:null;
+  return (r&&rolePlane(r)===!!plane)?r:roleFromPlane(!!plane,net);
+}
+function layerRole(i){
+  const L=S.cuL[i];
+  return L?coherentRole(L.role,L.plane,L.net):"signal";
+}
+function roleLabel(i){
+  const r=layerRole(i), L=S.cuL[i]||{};
+  return CU_ROLE_SHORT[r]+(rolePlane(r)&&L.net?" "+L.net:"");
+}
+/* net proposé d'office à un plan : la masse pour un plan de masse ou un
+   blindage, la première alimentation trouvée sinon */
+function roleNet(role){
+  const nets=netTable();
+  if(role==="pwr"){
+    const p=nets.find(n=>isPower(n.name)&&!GND_RE.test(n.name));
+    return p?p.name:"";
+  }
+  const g=nets.find(n=>GND_RE.test(n.name));
+  return g?g.name:"GND";
+}
+function setLayerRole(i,role,net){
+  const L=S.cuL[i];
+  if(!L||!CU_ROLES[role])return false;
+  L.role=role;
+  L.plane=rolePlane(role);
+  if(L.plane){
+    if(net!==undefined)L.net=net||"";
+    if(!L.net)L.net=roleNet(role);
+  }else L.net="";
+  syncAutoZones();
+  return true;
+}
+
+/* ==========================================================================
+   Ce que la pile impose au perçage
+   Un trou métallisé doit être plaqué sur toute sa longueur : le rapport entre
+   cette longueur et son diamètre décide de la faisabilité. Et un via qui ne
+   traverse pas la carte doit tomber dans ce qu'un pressage sait faire.
+   ========================================================================== */
+const ASPECT_WARN=8, ASPECT_MAX=10;
+function aspectOf(len,d){return d>0?len/d:0;}
+/* Une carte pressée en une seule fois ne sait percer, hors traversant, que :
+     - un via enterré dans une âme, percé et métallisé avant pressage ;
+     - un via borgne qui ne franchit que le diélectrique extérieur, au laser.
+   Tout le reste suppose un laminage séquentiel : c'est faisable, mais c'est un
+   autre prix et il faut le dire plutôt que de le découvrir sur le devis. */
+function viaBuild(a,b){
+  if(b<a){const k=a;a=b;b=k;}
+  const n=S.cu;
+  if(a<=0&&b>=n-1)return {kind:"through",ok:true,why:"traversant"};
+  if(a===0||b===n-1){
+    const outer=(a===0)?0:n-2;            // diélectrique extérieur franchi
+    const depth=(a===0)?b:(n-1-a);
+    const k=diAt(outer).k;
+    if(depth>1)
+      return {kind:"blind",ok:false,
+              why:"borgne sur "+depth+" diélectriques : il faut un laminage séquentiel"};
+    if(k==="core")
+      return {kind:"blind",ok:false,
+              why:"borgne à travers une âme : perçage à profondeur contrôlée, "+
+                  "pas de micro-via laser"};
+    return {kind:"blind",ok:true,
+            why:"borgne dans le "+DI_KIND[k].toLowerCase()+" extérieur, au laser"};
+  }
+  if(b===a+1&&diAt(a).k==="core")
+    return {kind:"buried",ok:true,
+            why:"enterré dans le diélectrique "+(a+1)+", percé avant pressage"};
+  if(b===a+1)
+    return {kind:"buried",ok:false,
+            why:"enterré de part et d'autre d'un "+DI_KIND[diAt(a).k].toLowerCase()+
+                " : sans âme entre les deux couches, il faut un laminage séquentiel"};
+  return {kind:"buried",ok:false,
+          why:"enterré sur "+(b-a)+" diélectriques : un seul pressage n'y suffit pas"};
+}
+/* comptage des vias par nature, et ceux qui demandent plus d'un pressage */
+function viaCensus(){
+  const out={through:0,blind:0,buried:0,seq:0};
+  for(const v of S.vias){
+    const b=viaBuild(v.a,v.b);
+    out[b.kind]++;
+    if(!b.ok)out.seq++;
+  }
+  return out;
+}
+
+/* ==========================================================================
+   Traitement des vias — IPC-4761
+   Le masque n'ouvre que sur un via laissé nu ; les trois autres traitements le
+   ferment, mais ne coûtent pas la même chose et ne servent pas à la même
+   chose : le bouchage plaqué est ce qui permet une pastille sur le via.
+   ========================================================================== */
+const VIA_FINISH={
+  open   :"Ouverts au masque",
+  tented :"Recouverts de vernis (type II)",
+  plugged:"Bouchés résine (type V)",
+  filled :"Bouchés et plaqués — via-in-pad (type VII)"
+};
+function viaTented(){return S.rule.viaFinish!=="open";}
+
+/* ==========================================================================
+   Cohérence du rôle annoncé
+   Un rôle qui ne ressemble pas au cuivre posé est pire qu'un rôle absent : on
+   le lit sur la feuille d'empilage et on le croit.
+   ========================================================================== */
+function roleCheck(i){
+  const r=layerRole(i);
+  let tr=0;
+  for(const t of S.tracks)if(t.l===i)tr++;
+  const A=Math.abs(S.board.w*S.board.h);
+  let any=0, big=0;
+  for(const z of S.zones){
+    if(z.l!==i)continue;
+    any++;
+    if(A>0&&Math.abs(signedArea(z.pts))>=0.6*A)big++;
+  }
+  if(rolePlane(r)&&tr)
+    return {msg:"plan qui porte "+tr+" segment"+(tr>1?"s":"")+" de piste",
+            hint:"« Mixte » décrirait mieux cette couche."};
+  if(r==="signal"&&big)
+    return {msg:"couche de signal qui porte une zone pleine carte",
+            hint:"« Mixte », ou un rôle de plan, serait plus juste."};
+  if(r==="mixed"&&!any)
+    return {msg:"couche annoncée mixte sans aucune zone de cuivre",
+            hint:"« Signal » suffirait."};
+  return null;
+}
+
+/* ==========================================================================
+   Empilage physique
+   S.cuL décrit l'empilage logique : combien de couches de cuivre, comment
+   elles s'appellent, laquelle porte un plan. S.stack décrit la même carte
+   telle que le fabricant la presse — épaisseur de chaque cuivre, diélectrique
+   entre deux cuivres, masque, finition. C'est de là que sortent l'épaisseur
+   totale et le rapport d'aspect des perçages.
+
+   Toutes les épaisseurs sont en millimètres, le cuivre compris. L'interface le
+   montre en micromètres parce que c'est ainsi qu'il se commande, mais rien ici
+   ne change d'unité en chemin.
+
+   Deux tableaux et rien d'autre :
+     stack.cu[i]  épaisseur du cuivre de la couche i        (S.cu entrées)
+     stack.di[i]  diélectrique entre les cuivres i et i+1   (S.cu-1 entrées)
+   Une carte simple face n'a aucun intervalle entre deux cuivres : son unique
+   entrée de diélectrique décrit alors l'âme qui la porte, d'où le max(1, …).
+   ========================================================================== */
+const OZ=0.0348;                      // 1 oz/pi² de cuivre ≈ 34,8 µm
+const CU_UM=[12,17.5,35,70,105];      // épaisseurs de cuivre courantes, en µm
+const DI_KIND={core:"Âme (core)",prepreg:"Prépreg",film:"Film adhésif"};
+const MASK_COLORS=["vert","rouge","bleu","noir","blanc","jaune","violet","ambre"];
+const SILK_COLORS=["blanc","noir","jaune"];
+const FINISHES=["ENIG (or chimique)","HASL étain-plomb","HASL sans plomb",
+                "OSP","Argent chimique","Or dur (contacts)"];
+/* Modèles d'usine : cuivre en µm, diélectriques en mm sous la forme
+   [rôle, épaisseur, εr, tan δ, matière]. Chacun tombe sur l'épaisseur qu'il
+   annonce, masque compris — c'est ce que vérifie le banc d'essai. */
+const STACK_PRESETS=[
+  {n:1,th:1.6,name:"1 couche · FR-4 1,6 mm",
+   cu:[35],di:[["core",1.54,4.5,0.02,"FR-4"]]},
+  {n:2,th:1.6,name:"2 couches · FR-4 1,6 mm · cuivre 35 µm",
+   cu:[35,35],di:[["core",1.48,4.5,0.02,"FR-4"]]},
+  {n:2,th:1.6,name:"2 couches · FR-4 1,6 mm · cuivre 70 µm",
+   cu:[70,70],di:[["core",1.41,4.5,0.02,"FR-4"]]},
+  {n:2,th:0.8,name:"2 couches · FR-4 0,8 mm",
+   cu:[35,35],di:[["core",0.68,4.5,0.02,"FR-4"]]},
+  {n:2,th:0.21,name:"2 couches · polyimide souple 0,21 mm",
+   cu:[18,18],di:[["core",0.125,3.4,0.005,"Polyimide"]]},
+  {n:4,th:1.6,name:"4 couches · FR-4 1,6 mm",
+   cu:[35,17.5,17.5,35],
+   di:[["prepreg",0.21,4.3,0.02,"FR-4 1080 x2"],["core",1.025,4.5,0.02,"FR-4"],
+       ["prepreg",0.21,4.3,0.02,"FR-4 1080 x2"]]},
+  {n:4,th:1,name:"4 couches · FR-4 1,0 mm",
+   cu:[35,17.5,17.5,35],
+   di:[["prepreg",0.2,4.3,0.02,"FR-4 1080 x2"],["core",0.445,4.5,0.02,"FR-4"],
+       ["prepreg",0.2,4.3,0.02,"FR-4 1080 x2"]]},
+  {n:6,th:1.6,name:"6 couches · FR-4 1,6 mm",
+   cu:[35,17.5,17.5,17.5,17.5,35],
+   di:[["prepreg",0.24,4.3,0.02,"FR-4"],["core",0.345,4.5,0.02,"FR-4"],
+       ["prepreg",0.24,4.3,0.02,"FR-4"],["core",0.345,4.5,0.02,"FR-4"],
+       ["prepreg",0.24,4.3,0.02,"FR-4"]]},
+  {n:8,th:1.6,name:"8 couches · FR-4 1,6 mm",
+   cu:[35,17.5,17.5,17.5,17.5,17.5,17.5,35],
+   di:[["prepreg",0.145,4.3,0.02,"FR-4"],["core",0.265,4.5,0.02,"FR-4"],
+       ["prepreg",0.145,4.3,0.02,"FR-4"],["core",0.265,4.5,0.02,"FR-4"],
+       ["prepreg",0.145,4.3,0.02,"FR-4"],["core",0.265,4.5,0.02,"FR-4"],
+       ["prepreg",0.145,4.3,0.02,"FR-4"]]}
+];
+function diCount(n){return Math.max(1,n-1);}
+function presetsFor(n){return STACK_PRESETS.filter(p=>p.n===n);}
+function diFrom(a){
+  return {k:DI_KIND[a[0]]?a[0]:"core",t:a[1],er:a[2],
+          df:a[3]==null?0.02:a[3],mat:a[4]||"FR-4"};
+}
+/* empilage d'usine pour n couches : le premier modèle qui correspond */
+function stackDefaults(n){
+  const p=presetsFor(n)[0]||null, cu=[], di=[];
+  for(let i=0;i<n;i++)cu.push({t:r4(((p&&p.cu[i])||35)/1000)});
+  for(let i=0;i<diCount(n);i++)
+    di.push(diFrom((p&&p.di[i])||["core",1.48,4.5,0.02,"FR-4"]));
+  return {target:p?p.th:1.6,finish:FINISHES[0],
+          maskT:0.025,maskEr:3.8,maskColor:"vert",silkColor:"blanc",
+          cu:cu,di:di};
+}
+/* Lectures tolérantes : le panneau et les fichiers de fabrication passent tous
+   par là, et rien ne garantit que S.stack ait la longueur de S.cuL au moment
+   précis où l'un d'eux s'exécute. */
+function cuT(i){
+  const c=S.stack&&S.stack.cu[i];
+  return c?c.t:0.035;
+}
+function diAt(i){
+  const d=S.stack&&S.stack.di[i];
+  return d||{k:"core",t:0,er:4.5,df:0.02,mat:"FR-4"};
+}
+function maskFaces(){return S.cu>1?2:1;}
+function stackCuT(){let s=0;for(let i=0;i<S.cu;i++)s+=cuT(i);return r4(s);}
+function stackDiT(){let s=0;for(let i=0;i<diCount(S.cu);i++)s+=diAt(i).t;return r4(s);}
+/* épaisseur du stratifié nu, puis épaisseur totale masque compris */
+function stackLam(){return r4(stackCuT()+stackDiT());}
+function stackTotal(){return r4(stackLam()+maskFaces()*S.stack.maskT);}
+/* Longueur du perçage qui relie les cuivres a et b : c'est elle qui donne le
+   rapport d'aspect, et elle est plus courte qu'une carte entière dès qu'un via
+   est borgne ou enterré. */
+function stackSpan(a,b){
+  if(b<a){const k=a;a=b;b=k;}
+  a=clamp(a,0,S.cu-1);b=clamp(b,0,S.cu-1);
+  let s=0;
+  for(let i=a;i<=b;i++)s+=cuT(i);
+  for(let i=a;i<b;i++)s+=diAt(i).t;
+  return r4(s);
+}
+/* Rapport d'aspect le plus défavorable de la carte : au-delà de 8 pour 1, la
+   métallisation d'un trou devient délicate et se paie. */
+function worstAspect(){
+  let out=null;
+  const add=(len,d)=>{
+    if(!(d>0)||!(len>0))return;
+    const r=len/d;
+    if(!out||r>out.ratio)out={ratio:r,drill:d,len:len};
+  };
+  for(const v of S.vias)add(stackSpan(v.a,v.b),v.drill);
+  for(const fp of S.fps)
+    for(const q of padsOf(fp))
+      if(q.drill>0)add(stackLam(),q.drill);
+  return out;
+}
+/* Ajuste les diélectriques pour tomber sur l'épaisseur visée. Le cuivre et le
+   masque ne bougent pas : on ne choisit pas une épaisseur de cuivre pour faire
+   tomber juste une épaisseur de carte. */
+function stackFit(){
+  const fixed=stackCuT()+maskFaces()*S.stack.maskT;
+  const want=S.stack.target-fixed, have=stackDiT();
+  if(!(want>0.02)||!(have>0))return false;
+  const k=want/have;
+  for(const d of S.stack.di)d.t=Math.max(0.005,r4(d.t*k));
+  return true;
+}
+/* Un empilage asymétrique se voile à la cuisson : le fabricant le refuse ou le
+   compense. Plutôt qu'un verdict, la liste des paires qui ne se répondent pas —
+   c'est elle qui dit quoi corriger. Symétriser, c'est faire la moyenne des
+   couches deux à deux. */
+function stackAsym(){
+  const cu=S.stack.cu, di=S.stack.di, e=1e-4, out=[];
+  for(let i=0,j=cu.length-1;i<j;i++,j--)
+    if(Math.abs(cu[i].t-cu[j].t)>e)
+      out.push({what:"cu",i:i,j:j,a:umLabel(cu[i].t),b:umLabel(cu[j].t)});
+  for(let i=0,j=di.length-1;i<j;i++,j--){
+    if(Math.abs(di[i].t-di[j].t)>e)
+      out.push({what:"di",i:i,j:j,a:fmt(di[i].t,3)+" mm",b:fmt(di[j].t,3)+" mm"});
+    else if(di[i].k!==di[j].k)
+      out.push({what:"di",i:i,j:j,a:DI_KIND[di[i].k],b:DI_KIND[di[j].k]});
+    else if(Math.abs(di[i].er-di[j].er)>e)
+      out.push({what:"di",i:i,j:j,a:"Dk "+fmt(di[i].er,2),b:"Dk "+fmt(di[j].er,2)});
+  }
+  return out;
+}
+function stackSym(){return stackAsym().length===0;}
+/* « Diélectrique 1 (0.210 mm) contre le 3 (0.500 mm) » */
+function asymLabel(x){
+  const nm=x.what==="cu"?"Cuivre ":"Diélectrique ";
+  return nm+(x.i+1)+" ("+x.a+") contre le "+(x.j+1)+" ("+x.b+")";
+}
+function stackMirror(){
+  const cu=S.stack.cu, di=S.stack.di;
+  for(let i=0,j=cu.length-1;i<j;i++,j--){
+    const t=r4((cu[i].t+cu[j].t)/2);cu[i].t=t;cu[j].t=t;
+  }
+  for(let i=0,j=di.length-1;i<j;i++,j--){
+    const t=r4((di[i].t+di[j].t)/2);
+    di[i].t=t;di[j].t=t;
+    di[j].k=di[i].k;di[j].er=di[i].er;di[j].df=di[i].df;di[j].mat=di[i].mat;
+  }
+}
+/* Le nombre de couches vient de changer : les diélectriques d'un 4 couches ne
+   veulent plus rien dire sur un 6 couches. On reprend donc le modèle d'usine
+   du nouveau compte en gardant ce qui n'en dépend pas — épaisseur visée,
+   masque, finition, cuivres extérieurs, qui sont des choix de commande — puis
+   on répartit les diélectriques sur l'épaisseur visée. */
+function stackResize(n){
+  const old=S.stack||stackDefaults(n), d=stackDefaults(n);
+  d.target=old.target;d.finish=old.finish;
+  d.maskT=old.maskT;d.maskEr=old.maskEr;
+  d.maskColor=old.maskColor;d.silkColor=old.silkColor;
+  if(old.cu.length){
+    d.cu[0].t=old.cu[0].t;
+    d.cu[d.cu.length-1].t=old.cu[old.cu.length-1].t;
+  }
+  S.stack=d;
+  stackFit();
+}
+function applyPreset(p){
+  if(!p||p.n!==S.cu)return false;
+  const st=S.stack;
+  st.target=p.th;
+  for(let i=0;i<S.cu;i++)st.cu[i]={t:r4((p.cu[i]||35)/1000)};
+  for(let i=0;i<diCount(S.cu);i++)st.di[i]=diFrom(p.di[i]||p.di[p.di.length-1]);
+  return true;
+}
+
+/* La coupe complète, du dessus vers le dessous : sérigraphie, masque, puis
+   cuivres et diélectriques en alternance. La sérigraphie y figure parce qu'un
+   empilage se lit ainsi chez le fabricant, mais elle ne pèse rien — quelques
+   micromètres d'encre que personne ne facture en épaisseur. */
+function stackRows(){
+  const rows=[{kind:"silk",i:0},{kind:"mask",i:0}];
+  for(let i=0;i<S.cu;i++){
+    rows.push({kind:"cu",i:i});
+    if(i<diCount(S.cu))rows.push({kind:"di",i:i});
+  }
+  if(S.cu>1)rows.push({kind:"mask",i:1},{kind:"silk",i:1});
+  return rows;
+}
+function rowT(r){
+  if(r.kind==="cu")return cuT(r.i);
+  if(r.kind==="di")return diAt(r.i).t;
+  return r.kind==="mask"?S.stack.maskT:0;
+}
+function umLabel(t){return fmt(t*1000,(t*1000)<100?1:0)+" µm";}
+function ozLabel(t){
+  const o=t/OZ, r=Math.round(o*2)/2;
+  return (Math.abs(o-r)<0.06?fmt(r,r%1?1:0):fmt(o,2))+" oz";
+}
+
+/* ==========================================================================
    État
    ========================================================================== */
 const S = {
   cu:2,                       // nombre de couches cuivre
   cuL:[],                     // {name,color,vis,plane,net}
+  stack:stackDefaults(2),     // empilage physique : épaisseurs, matières, finition
   active:0,                   // couche cuivre active (indice)
   pair:[0,1],                 // paire de couches pour le changement rapide
   show:{silkT:true,silkB:true,edge:true,rats:true,plane:true,drc:true,
         maskT:false,maskB:false,pasteT:false,pasteB:false},
   board:{x:0,y:0,w:100,h:80,pts:null},   // pts = contour libre, sinon rectangle
   fps:[], tracks:[], vias:[], zones:[], cuts:[],
-  rule:{edge:0.4,thermal:0.5,mask:0.05,paste:0.0,tented:true},
+  rule:{edge:0.4,thermal:0.5,mask:0.05,paste:0.0,viaFinish:"tented"},
   classes:[{name:"Défaut",      w:0.3, clr:0.25, via:0.8, drill:0.4},
            {name:"Alimentation",w:0.6, clr:0.25, via:0.9, drill:0.45}],
   netClass:{},                // net → nom de classe ; absent = classe par défaut
@@ -109,7 +482,8 @@ function setCuCount(n,silent){
       color:(src&&src.color&&src.custom)?src.color:cuColor(i,n),
       vis:src?src.vis!==false:true,
       plane:!!(src&&src.plane),
-      net:(src&&src.net)||"GND"
+      net:(src&&src.net)||"GND",
+      role:coherentRole(src&&src.role,src&&src.plane,(src&&src.net)||"")
     });
   }
   const map=i=>{
@@ -125,6 +499,7 @@ function setCuCount(n,silent){
     if(v.a===v.b){v.a=0;v.b=n-1;}
   }
   S.cu=n; S.cuL=L;
+  if(old!==n)stackResize(n);           // l'empilage physique suit le compte
   syncAutoZones();
   S.active=clamp(S.active,0,n-1);
   S.pair=[0,n-1];

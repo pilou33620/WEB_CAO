@@ -14,10 +14,36 @@ function resize(){
   cv.style.width=r.width+"px";cv.style.height=r.height+"px";
   draw();
 }
+/* Pas réellement affiché : trop serrée à l'écran, la grille devient un aplat.
+   On n'en trace alors qu'une case sur deux, sur quatre… et c'est cette case-là,
+   celle que l'œil voit, que le pied de page annonce. */
+function gridShownStep(){
+  let w=S.grid>0?S.grid:0.5;
+  for(let i=0;i<20&&w*S.scale<7;i++)w*=2;
+  return w;
+}
+/* Ce que l'œil voit d'abord — la case tracée — puis, quand le zoom a forcé à
+   n'en tracer qu'une sur deux, le pas d'accrochage réel. */
+function gridLabel(){
+  const w=gridShownStep();
+  return "1 carré = "+String(r3(w)).replace(".",",")+" mm"+
+         (w!==S.grid?" · pas "+String(r3(S.grid)).replace(".",",")+" mm":"");
+}
+function updateGridInfo(){
+  const b=$("fGrid");
+  if(!b)return;
+  const w=gridShownStep();
+  b.textContent=gridLabel();
+  b.parentElement.title="Accrochage : "+String(r3(S.grid)).replace(".",",")+" mm"+
+    (w!==S.grid?"\nÀ ce niveau de zoom, une case affichée en vaut plusieurs.":"");
+  const sel=$("selGrid");
+  if(sel&&parseFloat(sel.value)!==S.grid)sel.value=String(S.grid);
+  const rg=$("rGrid");
+  if(rg&&parseFloat(rg.value)!==S.grid)rg.value=String(S.grid);
+}
 function drawGrid(c,w,h){
   if(!S.showGrid)return;
-  let step=S.grid*S.scale;
-  while(step>0&&step<7)step*=2;
+  const step=gridShownStep()*S.scale;
   if(step<7)return;
   // la grille part de l'origine utilisateur, pas du zéro absolu
   const o=w2s(S.origin.x,S.origin.y);
@@ -552,6 +578,7 @@ function draw(){
   const dpr=window.devicePixelRatio||1;
   paint(ctx,dpr,cv.width,cv.height,false);
   $("fZoom").textContent=Math.round(S.scale*20)+"%";
+  updateGridInfo();
   $("fN").textContent=S.fps.length;
   $("fT").textContent=S.tracks.length;
   $("fV").textContent=S.vias.length;

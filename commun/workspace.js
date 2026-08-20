@@ -1,30 +1,61 @@
 "use strict";
-function $(id){return document.getElementById(id);}
-function hint(t){const el=$("fHint");if(el)el.textContent=t;}
 /* ==========================================================================
-   Éditeur PCB — espace de travail modulaire
+   Espace de travail modulaire — module commun aux deux éditeurs
    Les panneaux latéraux sont détachables : on les glisse par leur en-tête
    vers un dock (gauche, droite, bas), on les fait flotter au-dessus du
    canevas, on les replie ou on les ferme. Tailles et positions sont
    conservées dans le stockage local.
+
+   Ce fichier ne connaît rien de l'éditeur qui l'héberge : tout ce qui diffère
+   entre le PCB et le schématique est déclaré dans un objet global WS_CONFIG,
+   défini par un script chargé AVANT celui-ci — voir, dans chaque éditeur,
+   js/00-espace-config.js :
+
+     const WS_CONFIG = {
+       key: "pcb.espace-travail.v1",        // clé de stockage local
+       layout: {                            // disposition d'usine
+         docks : {dockL:212, dockR:278, dockB:200},
+         order : {dockL:["stack","rules"], dockR:["props","list"], dockB:[]},
+         panels: { stack:{grow:1, collapsed:false, x:90, y:150,
+                          w:250, h:300, last:"dockL"}, ... }
+       }
+     };
+
+   Les identifiants de panneau doivent correspondre aux attributs data-pnl
+   des sections .pnl de la page.
    ========================================================================== */
 
-const WS_KEY="schema.espace-travail.v1";
+/* ---------- adaptation à la page hôte ---------- */
+function wsQ(id){return document.getElementById(id);}
+/* message d'état : la fonction hint() de l'éditeur si elle existe, sinon #fHint */
+function wsHint(t){
+  const h=(typeof hint==="function")?hint:null;
+  if(h){h(t);return;}
+  const el=wsQ("fHint");
+  if(el)el.textContent=t;
+}
+function wsEsc(s){
+  return String(s).replace(/[&<>"'`]/g,ch=>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"}[ch]));
+}
+if(typeof WS_CONFIG!=="object"||!WS_CONFIG||!WS_CONFIG.key||!WS_CONFIG.layout)
+  throw new Error("workspace.js : WS_CONFIG manquant ou incomplet "+
+                  "(clés attendues : key, layout).");
+
+const WS_KEY=WS_CONFIG.key;
 const WS_DOCKS=["dockL","dockR","dockB"];
 const WS_MIN_DOCK=150, WS_MIN_PNL=64, WS_MIN_FW=210, WS_MIN_FH=130, WS_EDGE=74;
 
-/* disposition d'usine */
+/* disposition d'usine : copie fraîche de la config, jamais l'objet lui-même —
+   wsDefault() sert de gabarit à chaque réinitialisation. */
 function wsDefault(){
-  return {
-    docks:{dockL:212,dockR:278,dockB:200},
-    order:{dockL:["palette"],dockR:["props","list"],dockB:[]},
-    floats:[],hidden:[],
-    panels:{
-      palette:{grow:1  ,collapsed:false,x:90 ,y:150,w:250,h:600,last:"dockL"},
-      props:{grow:1.2,collapsed:false,x:150,y:150,w:300,h:400,last:"dockR"},
-      list :{grow:1  ,collapsed:false,x:190,y:230,w:420,h:340,last:"dockR"}
-    }
-  };
+  const L=WS_CONFIG.layout, out={docks:{},order:{},floats:[],hidden:[],panels:{}};
+  for(const k of WS_DOCKS){
+    out.docks[k]=L.docks[k];
+    out.order[k]=(L.order[k]||[]).slice();
+  }
+  for(const id in L.panels)out.panels[id]=Object.assign({},L.panels[id]);
+  return out;
 }
 let WS=wsDefault();
 
@@ -116,10 +147,10 @@ function wsCanvasSync(){
   wsRaf=requestAnimationFrame(function(){wsRaf=0;if(typeof resize==="function")resize();});
 }
 function wsApply(save){
-  const store=$("pnlStore"), fl=$("floatLayer");
+  const store=wsQ("pnlStore"), fl=wsQ("floatLayer");
   /* --- docks --- */
   for(const k of WS_DOCKS){
-    const dk=$(k), ids=WS.order[k];
+    const dk=wsQ(k), ids=WS.order[k];
     /* on vide le dock sans détruire les panneaux */
     for(const ch of Array.prototype.slice.call(dk.children)){
       if(ch.classList.contains("psplit"))ch.remove();
@@ -216,7 +247,7 @@ function wsHeadMove(e){
     document.body.classList.add("ws-drag");
     wsEl[id].classList.add("dragging");
     if(wsPlaceOf(id)!=="float"){
-      const g=$("dragGhost");
+      const g=wsQ("dragGhost");
       g.textContent=wsEl[id].dataset.title;g.classList.add("on");
       wsEl[id].classList.add("drop-src");
     }
@@ -227,7 +258,7 @@ function wsHeadMove(e){
     wsEl[id].style.left=Math.round(p.x)+"px";
     wsEl[id].style.top=Math.round(p.y)+"px";
   }else{
-    const g=$("dragGhost");
+    const g=wsQ("dragGhost");
     g.style.left=(e.clientX+14)+"px";g.style.top=(e.clientY+12)+"px";
   }
   const hit=wsHit(e.clientX,e.clientY);
@@ -237,8 +268,8 @@ function wsHeadMove(e){
 function wsHeadUp(e){
   window.removeEventListener("pointermove",wsHeadMove);
   const id=wsDrag.id;wsDrag.id=null;
-  $("dragGhost").classList.remove("on");
-  $("dropZone").classList.remove("on","line");
+  wsQ("dragGhost").classList.remove("on");
+  wsQ("dropZone").classList.remove("on","line");
   document.body.classList.remove("ws-drag");
   if(!id)return;
   wsEl[id].classList.remove("dragging","drop-src");
@@ -253,23 +284,23 @@ function wsHeadUp(e){
       p.h=Math.max(WS_MIN_FH,Math.round(r.height));
       p.x=e.clientX-Math.min(wsDrag.dx,p.w-40);p.y=e.clientY-wsDrag.dy;
       wsMove(id,"float");
-      hint("Panneau « "+el.dataset.title+" » détaché : glissez-le vers un bord pour le rattacher.");
+      wsHint("Panneau « "+el.dataset.title+" » détaché : glissez-le vers un bord pour le rattacher.");
     }
   }else if(WS_DOCKS.indexOf(t)>=0){
     wsMove(id,t,wsDrag.index);
-    hint("Panneau « "+wsEl[id].dataset.title+" » placé à "+wsLabel(id)+".");
+    wsHint("Panneau « "+wsEl[id].dataset.title+" » placé à "+wsLabel(id)+".");
   }else{
     wsApply();
   }
 }
 /* zone visée par le curseur */
 function wsHit(x,y){
-  const ws=$("ws").getBoundingClientRect();
+  const ws=wsQ("ws").getBoundingClientRect();
   if(x<ws.left-40||x>ws.right+40||y<ws.top-40||y>ws.bottom+40)return {target:"float"};
   /* dock déjà occupé sous le curseur */
   for(const k of WS_DOCKS){
     if(!WS.order[k].length)continue;
-    const r=$(k).getBoundingClientRect();
+    const r=wsQ(k).getBoundingClientRect();
     if(x>=r.left-3&&x<=r.right+3&&y>=r.top-3&&y<=r.bottom+3)
       return {target:k,index:wsIndexIn(k,x,y)};
   }
@@ -291,11 +322,11 @@ function wsIndexIn(dock,x,y){
 }
 /* aperçu de la cible */
 function wsShowZone(hit){
-  const z=$("dropZone");
+  const z=wsQ("dropZone");
   if(!hit||hit.target==="float"){z.classList.remove("on","line");return;}
-  const dock=hit.target, ws=$("ws").getBoundingClientRect();
+  const dock=hit.target, ws=wsQ("ws").getBoundingClientRect();
   if(WS.order[dock].length){
-    const r=$(dock).getBoundingClientRect();
+    const r=wsQ(dock).getBoundingClientRect();
     const ids=WS.order[dock], horiz=dock==="dockB", i=Math.min(hit.index,ids.length);
     let pos;
     if(i>=ids.length){
@@ -321,7 +352,7 @@ function wsShowZone(hit){
   if(dock==="dockL")r={left:ws.left,top:ws.top,width:sz,height:ws.height};
   else if(dock==="dockR")r={left:ws.right-sz,top:ws.top,width:sz,height:ws.height};
   else{
-    const c=$("ctr").getBoundingClientRect();
+    const c=wsQ("ctr").getBoundingClientRect();
     r={left:c.left,top:ws.bottom-sz,width:c.width,height:sz};
   }
   z.classList.add("on");z.classList.remove("line");
@@ -346,14 +377,14 @@ function wsGutDown(e){
   if(!WS.order[dock].length)return;
   const vert=dock!=="dockB", start=vert?e.clientX:e.clientY, base=WS.docks[dock];
   const sign=dock==="dockL"?1:-1;
-  const ws=$("ws").getBoundingClientRect();
+  const ws=wsQ("ws").getBoundingClientRect();
   const max=vert?Math.max(WS_MIN_DOCK,ws.width-320):Math.max(WS_MIN_DOCK,ws.height-200);
   g.classList.add("act");
   document.body.classList.add(vert?"ws-resize-v":"ws-resize-h");
   const mv=function(ev){
     const d=((vert?ev.clientX:ev.clientY)-start)*sign;
     WS.docks[dock]=Math.min(max,Math.max(WS_MIN_DOCK,Math.round(base+d)));
-    const dk=$(dock);
+    const dk=wsQ(dock);
     if(vert)dk.style.width=WS.docks[dock]+"px";else dk.style.height=WS.docks[dock]+"px";
     wsCanvasSync();
   };
@@ -441,7 +472,7 @@ function wsToggleFloat(id){
   if(wsPlaceOf(id)==="float"){
     const t=WS_DOCKS.indexOf(WS.panels[id].last)>=0?WS.panels[id].last:"dockR";
     wsMove(id,t);
-    hint("Panneau « "+wsEl[id].dataset.title+" » rattaché à "+wsLabel(id)+".");
+    wsHint("Panneau « "+wsEl[id].dataset.title+" » rattaché à "+wsLabel(id)+".");
   }else{
     const r=wsEl[id].getBoundingClientRect(), p=WS.panels[id];
     if(r.width>40){
@@ -450,12 +481,12 @@ function wsToggleFloat(id){
       p.x=Math.round(r.left+26);p.y=Math.round(r.top+26);
     }
     wsMove(id,"float");
-    hint("Panneau « "+wsEl[id].dataset.title+" » détaché.");
+    wsHint("Panneau « "+wsEl[id].dataset.title+" » détaché.");
   }
 }
 function wsClose(id){
   wsMove(id,"hidden");
-  hint("Panneau « "+wsEl[id].dataset.title+" » fermé — le menu « Espace de travail » le rouvre.");
+  wsHint("Panneau « "+wsEl[id].dataset.title+" » fermé — le menu « Espace de travail » le rouvre.");
 }
 function wsShow(id){
   const t=WS_DOCKS.indexOf(WS.panels[id].last)>=0?WS.panels[id].last:"dockR";
@@ -466,13 +497,13 @@ function wsShow(id){
    Menu « espace de travail »
    ========================================================================== */
 function wsMenuBuild(){
-  let m=$("wsMenu");
+  let m=wsQ("wsMenu");
   if(!m){m=document.createElement("div");m.id="wsMenu";document.body.appendChild(m);}
   let h='<div class="mtitle">Panneaux</div>';
   for(const id in WS.panels){
     const el=wsEl[id], vis=wsPlaceOf(id)!=="hidden";
     h+='<button class="mi'+(vis?"":" off")+'" data-tgl="'+id+'">'+
-       '<span class="ck">'+(vis?"✓":"")+'</span>'+esc(el.dataset.title)+
+       '<span class="ck">'+(vis?"✓":"")+'</span>'+wsEsc(el.dataset.title)+
        '<span class="st">'+wsLabel(id)+'</span></button>';
   }
   h+='<div class="msep"></div>'+
@@ -499,9 +530,9 @@ function wsMenuBuild(){
           WS.panels[id].collapsed=false;
           WS.panels[id].grow=d.panels[id].grow;
         }
-        wsApply();hint("Disposition remise en colonnes.");
+        wsApply();wsHint("Disposition remise en colonnes.");
       }else if(c==="reset"){
-        WS=wsDefault();wsApply();hint("Espace de travail réinitialisé.");
+        WS=wsDefault();wsApply();wsHint("Espace de travail réinitialisé.");
       }
       wsMenuClose();
     };
@@ -509,15 +540,15 @@ function wsMenuBuild(){
   return m;
 }
 function wsMenuSync(){
-  const m=$("wsMenu");
+  const m=wsQ("wsMenu");
   if(m&&m.classList.contains("on"))wsMenuBuild().classList.add("on");
 }
 function wsMenuClose(){
-  const m=$("wsMenu");if(m)m.classList.remove("on");
-  $("bWs").classList.remove("on");
+  const m=wsQ("wsMenu");if(m)m.classList.remove("on");
+  wsQ("bWs").classList.remove("on");
 }
 function wsMenuOpen(){
-  const m=wsMenuBuild(), b=$("bWs"), r=b.getBoundingClientRect();
+  const m=wsMenuBuild(), b=wsQ("bWs"), r=b.getBoundingClientRect();
   m.classList.add("on");
   const w=m.offsetWidth||220, hg=m.offsetHeight||200;
   m.style.left=Math.max(6,Math.min(innerWidth-w-6,r.left))+"px";
@@ -555,19 +586,19 @@ function wsMenuOpen(){
     g.addEventListener("pointerdown",wsGutDown);
   });
 
-  $("bWs").onclick=function(e){
+  wsQ("bWs").onclick=function(e){
     e.stopPropagation();
-    const m=$("wsMenu");
+    const m=wsQ("wsMenu");
     if(m&&m.classList.contains("on"))wsMenuClose();else wsMenuOpen();
   };
   document.addEventListener("pointerdown",function(e){
-    const m=$("wsMenu");
-    if(m&&m.classList.contains("on")&&!m.contains(e.target)&&e.target!==$("bWs"))
+    const m=wsQ("wsMenu");
+    if(m&&m.classList.contains("on")&&!m.contains(e.target)&&e.target!==wsQ("bWs"))
       wsMenuClose();
   });
   document.addEventListener("keydown",function(e){
     if(e.key!=="Escape")return;
-    const m=$("wsMenu");
+    const m=wsQ("wsMenu");
     if(m&&m.classList.contains("on")){wsMenuClose();e.stopPropagation();}
   },true);
   window.addEventListener("resize",function(){if(WS.floats.length)wsApply(false);});

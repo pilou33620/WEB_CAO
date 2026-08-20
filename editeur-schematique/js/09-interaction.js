@@ -27,6 +27,25 @@ function hitComp(wx,wy){
   }
   return null;
 }
+/* Libellés : ils passent devant les symboles et les fils. Un repère posé sur
+   un fil voisin doit rester attrapable, et c'est le texte affiché — compTexts,
+   décalage compris — qui sert de cible, pas sa position théorique. */
+function hitText(wx,wy){
+  for(let i=S.comps.length-1;i>=0;i--){
+    const el=S.comps[i];
+    for(const t of compTexts(el)){
+      const b=textBox(t);
+      if(wx>=b.x1&&wx<=b.x2&&wy>=b.y1&&wy<=b.y2)return {el,kind:t.kind};
+    }
+  }
+  return null;
+}
+function hitNetLabel(wx,wy){
+  if(!S.netLabels||S.scale<.45)return null;
+  for(const b of netLabelBoxes())
+    if(wx>=b.x&&wx<=b.x+b.w&&wy>=b.y&&wy<=b.y+b.h)return b;
+  return null;
+}
 function hitWire(wx,wy){
   const tol=6/S.scale;
   for(let i=S.wires.length-1;i>=0;i--){
@@ -208,9 +227,11 @@ function moveSelBy(dx,dy){
   const anchors=anchorKeys(els,wires);
   const ends=endsAt(anchors);
   const probes=probeFollowers(anchors,new Set(els));
+  const contacts=pinContacts(els);
   for(const el of els){el.x+=dx;el.y+=dy;}
   applyProbes(probes,dx,dy);
   applyEnds(ends,dx,dy);
+  reconnectContacts(contacts);   // une flèche suffit à décoller deux broches
   draw();
 }
 /* Prépare un glissement.
@@ -241,6 +262,7 @@ function beginDrag(p,handle,detach){
           items:els.map(c=>({el:c,x0:c.x,y0:c.y})),
           probes:probeFollowers(anchors,new Set(els)),   // vide si Ctrl+glisser
           probe:null,
+          contacts:pinContacts(els),   // broches collées à un symbole qui reste
           ends};
   // sonde seule, sans Ctrl : glissement accroché (coulisse ou étire le fil)
   if(!handle&&!detach&&!wires.length&&els.length===1&&isProbe(els[0])){
@@ -253,6 +275,8 @@ function finishDrag(){
   if(!S.drag)return;
   if(S.drag.moved){
     push(S.drag.before);                 // instantané pris au premier déplacement réel
+    // deux broches qui se séparent gardent leur liaison : un fil la matérialise
+    reconnectContacts(S.drag.contacts);
     resolveSplits();                     // découpe seulement au dépôt, pas pendant le glissement
   }
   S.drag=null;refreshPanels();draw();
@@ -290,7 +314,13 @@ cv.addEventListener("pointerdown",e=>{
   try{cv.setPointerCapture(e.pointerId);}catch(_){}
 
   const p=mpos(e);
-  if(e.button===1||(e.button===0&&e.altKey)){
+  /* Alt sert à deux choses qui ne se marchent pas dessus : sur le vide, il
+     déplace la vue comme le bouton du milieu ; sur un élément, il détache le
+     câblage pendant le glissement. Ctrl est désormais pris par la sélection
+     multiple, il fallait bien loger le détachement quelque part. */
+  const onSomething = e.altKey && S.mode==="select" && !!(
+    hitText(p.x,p.y)||hitNetLabel(p.x,p.y)||hitComp(p.x,p.y)||hitWire(p.x,p.y)>=0);
+  if(e.button===1||(e.button===0&&e.altKey&&!onSomething)){
     S.pan={x:e.clientX,y:e.clientY,ox:S.ox,oy:S.oy};e.preventDefault();return;
   }
   if(e.button===2)return;
@@ -304,6 +334,8 @@ cv.addEventListener("pointerdown",e=>{
     clearSel();S.sel.add(el.id);
     refreshPanels();draw();return;
   }
+  // Ctrl et Maj font la même chose : ajouter à la sélection (ou en retirer)
+  const addSel=e.shiftKey||e.ctrlKey||e.metaKey;
   if(S.mode==="wire"){
     const pin=nearestPin(p.x,p.y,(e.pointerType==="mouse"?12:20)/S.scale);
     const pt=pin?{x:pin.x,y:pin.y}:{x:snap(p.x),y:snap(p.y)};
@@ -322,35 +354,69 @@ cv.addEventListener("pointerdown",e=>{
     if(wi>=0){push();S.selW.delete(S.wires[wi]);S.wires.splice(wi,1);touchWires();refreshPanels();draw();}
     return;
   }
+  // libellé de composant : il se saisit avant le symbole
+  const ht=hitText(p.x,p.y);
+  if(ht){
+    if(!addSel&&!S.sel.has(ht.el.id)){clearSel();S.sel.add(ht.el.id);}
+    const cur=textOff(ht.el,ht.kind)||[0,0];
+    S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:false,items:[],
+            probes:[],probe:null,ends:[],contacts:[],
+            text:{el:ht.el,kind:ht.kind,x0:cur[0],y0:cur[1]}};
+    document.getElementById("fHint").textContent=
+      "Glisser le texte le déplace · double-clic pour le remettre à sa place.";
+    refreshPanels();draw();return;
+  }
+  // étiquette de net : elle se déplace de la même façon, et le clic sélectionne
+  // le net pour que le panneau propose de la masquer
+  const hn=hitNetLabel(p.x,p.y);
+  if(hn){
+    const cur=(hn.wire&&hn.wire.lblOff)||[0,0];
+    if(!addSel)selectNet(hn.net);
+    S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:false,items:[],
+            probes:[],probe:null,ends:[],contacts:[],
+            netLbl:{wires:hn.net.wires.slice(),x0:cur[0],y0:cur[1]}};
+    document.getElementById("fHint").textContent=
+      "Glisser l'étiquette la déplace · double-clic pour la remettre en place · "+
+      "le panneau des propriétés permet de la masquer.";
+    draw();return;
+  }
   // sélection : composant d'abord, puis fil
   const el=hitComp(p.x,p.y);
   if(el){
-    if(e.shiftKey){S.sel.has(el.id)?S.sel.delete(el.id):S.sel.add(el.id);}
+    if(addSel){
+      // Ctrl (ou Maj) + clic : on ajoute, ou on retire. Retirer ne doit pas
+      // enchaîner sur un glissement, sinon le geste déplacerait le reste
+      if(S.sel.has(el.id)){S.sel.delete(el.id);refreshPanels();draw();return;}
+      S.sel.add(el.id);
+    }
     else if(!S.sel.has(el.id)){clearSel();S.sel.add(el.id);}
-    beginDrag(p,null,e.ctrlKey||e.metaKey);
+    beginDrag(p,null,e.altKey);
     refreshPanels();draw();return;
   }
   const wi=hitWire(p.x,p.y);
   if(wi>=0){
     const w=S.wires[wi];
-    if(e.shiftKey){S.selW.has(w)?S.selW.delete(w):S.selW.add(w);}
+    if(addSel){
+      if(S.selW.has(w)){S.selW.delete(w);refreshPanels();draw();return;}
+      S.selW.add(w);
+    }
     else if(!S.selW.has(w)){clearSel();S.selW.add(w);}
     // extrémité saisie : on étire le segment au lieu de le translater
     let handle=null;
-    if(!e.shiftKey&&S.selW.has(w)){
+    if(!addSel&&S.selW.has(w)){
       const tol=(e.pointerType==="mouse"?9:18)/S.scale;
       if(Math.hypot(p.x-w.x1,p.y-w.y1)<=tol)handle={w,e:1};
       else if(Math.hypot(p.x-w.x2,p.y-w.y2)<=tol)handle={w,e:2};
     }
-    beginDrag(p,handle,e.ctrlKey||e.metaKey);
+    beginDrag(p,handle,e.altKey);
     refreshPanels();draw();return;
   }
   if(e.pointerType!=="mouse"){
     // au doigt, glisser sur le vide déplace la vue : plus naturel qu'un lasso
     S.pan={x:e.clientX,y:e.clientY,ox:S.ox,oy:S.oy};
-    if(!e.shiftKey)clearSel();
+    if(!addSel)clearSel();
   }else{
-    if(!e.shiftKey)clearSel();
+    if(!addSel)clearSel();          // Ctrl ou Maj : le lasso s'ajoute à l'existant
     S.marquee={x1:p.x,y1:p.y,x2:p.x,y2:p.y};
   }
   refreshPanels();draw();
@@ -372,8 +438,11 @@ cv.addEventListener("pointermove",e=>{
   }
 
   const p=mpos(e);S.mouse=p;
-  document.getElementById("fX").textContent=Math.round(p.x/G);
-  document.getElementById("fY").textContent=Math.round(p.y/G);
+  // coordonnées en pas de grille ; une décimale dès que l'accrochage est plus
+  // fin qu'un pas, sinon l'affichage arrondirait ce que la souris vient de poser
+  const dec=(S.grid||G)<G?1:0;
+  document.getElementById("fX").textContent=(p.x/G).toFixed(dec);
+  document.getElementById("fY").textContent=(p.y/G).toFixed(dec);
   if(S.pan){
     S.ox=S.pan.ox+(e.clientX-S.pan.x);S.oy=S.pan.oy+(e.clientY-S.pan.y);draw();return;
   }
@@ -382,6 +451,19 @@ cv.addEventListener("pointermove",e=>{
     if((dx||dy)&&!S.drag.moved){
       S.drag.moved=true;
       S.drag.before=serialize();   // l'état est encore intact à cet instant
+    }
+    if(S.drag.text){
+      const t=S.drag.text;
+      setTextOff(t.el,t.kind,t.x0+dx,t.y0+dy);
+      draw();return;
+    }
+    if(S.drag.netLbl){
+      const n=S.drag.netLbl;
+      for(const w of n.wires){
+        if(!(n.x0+dx)&&!(n.y0+dy))delete w.lblOff;
+        else w.lblOff=[n.x0+dx,n.y0+dy];
+      }
+      draw();return;
     }
     if(S.drag.probe){probeDragMove(p);draw();return;}
     for(const it of S.drag.items){it.el.x=it.x0+dx;it.el.y=it.y0+dy;}
@@ -406,8 +488,10 @@ cv.addEventListener("pointermove",e=>{
       : "—";
   }
   if(S.mode==="select"){
-    // indice de survol : le curseur annonce ce qui est saisissable
-    cv.style.cursor=(hitComp(p.x,p.y)||wi>=0)?"move":"crosshair";
+    // indice de survol : le curseur annonce ce qui est saisissable — libellés
+    // compris, sans quoi personne ne devinerait qu'ils se déplacent
+    cv.style.cursor=(hitText(p.x,p.y)||hitNetLabel(p.x,p.y)||hitComp(p.x,p.y)||wi>=0)
+      ? "move" : "crosshair";
   }
   S.hoverPin = (S.mode==="wire")?nearestPin(p.x,p.y,12/S.scale):null;
   if(S.mode==="wire"||S.place||hoverChanged)draw();
@@ -429,7 +513,20 @@ cv.addEventListener("contextmenu",e=>{
   if(S.wireStart){S.wireStart=null;draw();}
   else if(S.place){S.place=null;setPalette(null);draw();}
 });
-cv.addEventListener("dblclick",()=>{if(S.wireStart){S.wireStart=null;draw();}});
+cv.addEventListener("dblclick",e=>{
+  if(S.wireStart){S.wireStart=null;draw();return;}
+  const p=mpos(e);
+  const ht=hitText(p.x,p.y);
+  if(ht&&textOff(ht.el,ht.kind)){
+    push();setTextOff(ht.el,ht.kind,0,0);draw();return;
+  }
+  const hn=hitNetLabel(p.x,p.y);
+  if(hn&&hn.moved){
+    push();
+    for(const w of hn.net.wires)delete w.lblOff;
+    draw();
+  }
+});
 cv.addEventListener("auxclick",e=>{if(e.button===1)e.preventDefault();});
 cv.addEventListener("wheel",e=>{
   e.preventDefault();

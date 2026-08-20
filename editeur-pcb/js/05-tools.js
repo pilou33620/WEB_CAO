@@ -8,7 +8,8 @@
    Historique
    ========================================================================== */
 function docObj(){
-  return {format:"pcbedit-1",cu:S.cu,cuL:S.cuL,show:S.show,board:S.board,rule:S.rule,
+  return {format:"pcbedit-1",cu:S.cu,cuL:S.cuL,stack:S.stack,show:S.show,
+          board:S.board,rule:S.rule,
           classes:S.classes,netClass:S.netClass,origin:S.origin,fabOrigin:S.fabOrigin,
           fps:S.fps,tracks:S.tracks,vias:S.vias,zones:S.zones,cuts:S.cuts,
           active:S.active,nextId:S.nextId};
@@ -19,26 +20,288 @@ function push(){
   if(S.undo.length>80)S.undo.shift();
   S.redo.length=0;S.dirty=true;
 }
-function loadDoc(d,keepView){
-  S.cu=clamp(d.cu||2,1,8);
-  if(d.cuL&&d.cuL.length===S.cu)S.cuL=d.cuL;
-  else{
-    S.cuL=[];
-    for(let i=0;i<S.cu;i++)
-      S.cuL.push({name:cuLabel(i,S.cu),color:cuColor(i,S.cu),vis:true});
+/* ==========================================================================
+   Lecture d'un document — rien de ce qui vient du fichier n'est cru sur parole
+   Un .json peut venir d'une version antérieure, avoir été retouché à la main
+   ou être franchement hostile. Chaque enregistrement est donc reconstruit
+   champ par champ : types forcés, bornes appliquées, enregistrements
+   inutilisables écartés. C'est le pendant de normComp() côté schématique.
+
+   Les panneaux échappent déjà ce qu'ils affichent ; ce qu'on évite ici, c'est
+   qu'une valeur absurde — couche inexistante, largeur négative, polygone à un
+   sommet, couleur qui n'est pas une couleur — traverse le rendu, le DRC et
+   les fichiers de fabrication.
+
+   Contrainte forte : la normalisation doit être NEUTRE sur un document que
+   l'éditeur a lui-même produit, parce que loadDoc() sert aussi à annuler et
+   rétablir. Un essai du banc vérifie qu'un aller-retour ne change rien.
+   ========================================================================== */
+function dNum(v,def){const n=+v;return Number.isFinite(n)?n:def;}
+function dRange(v,def,min,max){return clamp(dNum(v,def),min,max);}
+function dInt(v,def,min,max){return Math.round(dRange(v,def,min,max));}
+function dStr(v,max){return String(v==null?"":v).slice(0,max);}
+function dNet(v){return dStr(v,64).trim();}
+/* une couleur de couche finit dans un attribut style : on n'accepte que la
+   notation produite par le sélecteur de couleur */
+const HEX_COLOR=/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+function dColor(v,def){
+  const s=String(v==null?"":v).trim();
+  return HEX_COLOR.test(s)?s:def;
+}
+const FP_ROT_OK={0:1,45:1,90:1,135:1,180:1,225:1,270:1,315:1};
+const COORD=1e5;                    // garde-fou de coordonnée, en mm
+
+/* polygone : les sommets exploitables, ou null s'il en reste moins de `min` */
+function dPts(a,min){
+  if(!Array.isArray(a))return null;
+  const out=[];
+  for(const p of a){
+    if(!p||typeof p!=="object")continue;
+    const x=+p.x, y=+p.y;
+    if(!Number.isFinite(x)||!Number.isFinite(y))continue;
+    out.push({x:clamp(x,-COORD,COORD),y:clamp(y,-COORD,COORD)});
   }
-  S.show=Object.assign({silkT:true,silkB:true,edge:true,rats:true,plane:true,drc:true,
-    maskT:false,maskB:false,pasteT:false,pasteB:false},d.show||{});
-  S.board=Object.assign({x:0,y:0,w:100,h:80,pts:null},d.board||{});
-  S.origin=Object.assign({x:0,y:0},d.origin||{});
-  S.fabOrigin=!!d.fabOrigin;
-  if(S.board.pts&&S.board.pts.length<3)S.board.pts=null;
-  const r=d.rule||{};
-  S.rule={edge:r.edge!=null?r.edge:0.4, thermal:r.thermal!=null?r.thermal:0.5,
-          mask:r.mask!=null?r.mask:0.05, paste:r.paste!=null?r.paste:0,
-          tented:r.tented!==false};
-  if(d.classes&&d.classes.length){
-    S.classes=d.classes;S.netClass=d.netClass||{};
+  return out.length>=min?out:null;
+}
+/* broche -> net : on garde les numéros de broche entiers positifs, même
+   au-delà du nombre de broches courant — réduire `pins` puis l'augmenter
+   à nouveau doit retrouver les nets. */
+function dNets(o){
+  const out={};
+  if(!o||typeof o!=="object")return out;
+  for(const k in o){
+    const n=+k;
+    if(!Number.isInteger(n)||n<1||n>4096)continue;
+    const net=dNet(o[k]);
+    if(net)out[n]=net;
+  }
+  return out;
+}
+function normLayer(L,i,n){
+  const src=(L&&typeof L==="object")?L:{};
+  const custom=!!src.custom;
+  const out={
+    name:dStr(src.name,40).trim()||cuLabel(i,n),
+    custom:custom,
+    color:dColor(src.color,cuColor(i,n)),
+    vis:src.vis!==false
+  };
+  /* le rôle « plan » et son net font partie de la forme d'une couche
+     (setCuCount les écrit toujours) : on les conserve tels quels, loadDoc()
+     en fait son affaire ensuite. */
+  out.plane=!!src.plane;
+  out.net=dNet(src.net);
+  /* le rôle est la lecture humaine de ce couple : signal, mixte, plan de masse,
+     plan d'alimentation, blindage. Il ne peut pas contredire `plane`. */
+  out.role=coherentRole(dStr(src.role,16),out.plane,out.net);
+  return out;
+}
+/* Empilage physique. Les longueurs sont imposées par le nombre de couches,
+   les listes fermées le sont vraiment — un `finish` inventé finirait dans la
+   feuille d'empilage envoyée au fabricant — et le reste est borné. */
+function normStack(s,cu){
+  const def=stackDefaults(cu);
+  const src=(s&&typeof s==="object")?s:{};
+  const one=(v,list,d)=>{const x=dStr(v,48);return list.indexOf(x)>=0?x:d;};
+  const out={
+    target:dRange(src.target,def.target,0.05,50),
+    finish:one(src.finish,FINISHES,def.finish),
+    maskT:dRange(src.maskT,def.maskT,0,1),
+    maskEr:dRange(src.maskEr,def.maskEr,1,20),
+    maskColor:one(src.maskColor,MASK_COLORS,def.maskColor),
+    silkColor:one(src.silkColor,SILK_COLORS,def.silkColor),
+    cu:[],di:[]
+  };
+  const sc=Array.isArray(src.cu)?src.cu:[], sd=Array.isArray(src.di)?src.di:[];
+  for(let i=0;i<cu;i++){
+    const o=(sc[i]&&typeof sc[i]==="object")?sc[i]:{};
+    out.cu.push({t:dRange(o.t,def.cu[i].t,0.001,2)});
+  }
+  for(let i=0;i<diCount(cu);i++){
+    const o=(sd[i]&&typeof sd[i]==="object")?sd[i]:{};
+    const d=def.di[Math.min(i,def.di.length-1)];
+    const k=dStr(o.k,16);
+    out.di.push({k:DI_KIND[k]?k:d.k,
+                 t:dRange(o.t,d.t,0.005,20),
+                 er:dRange(o.er,d.er,1,30),
+                 df:dRange(o.df,d.df,0,1),
+                 mat:dStr(o.mat,40).trim()||d.mat});
+  }
+  return out;
+}
+function normClass(c,i){
+  const src=(c&&typeof c==="object")?c:{};
+  const via=dRange(src.via,0.8,0.2,20);
+  return {
+    name:dStr(src.name,40).trim()||("Classe "+(i+1)),
+    w:dRange(src.w,0.3,0.05,50),
+    clr:dRange(src.clr,0.25,0.02,50),
+    via:via,
+    /* r3 sur la borne seulement : un perçage légitime garde sa précision,
+       mais un perçage aberrant ne se replie pas sur 0.15000000000000002 */
+    drill:dRange(src.drill,Math.min(0.4,via-0.1),0.05,r3(via-0.05))
+  };
+}
+function normFp(f,i){
+  if(!f||typeof f!=="object")return null;
+  const style=STYLES[f.style]?f.style:defaultStyle(dInt(f.pins,2,1,4096));
+  const g=defaultGeom(style);
+  const out={
+    id:dInt(f.id,i+1,1,Number.MAX_SAFE_INTEGER),
+    ref:dStr(f.ref,32).trim()||("U"+(i+1)),
+    value:dStr(f.value,240),
+    pkg:dStr(f.pkg,40),
+    pins:dInt(f.pins,2,1,4096),
+    style:style,
+    pitch:dRange(f.pitch,g.pitch,0.05,100),
+    span:dRange(f.span,g.span,0.05,1000),
+    x:dRange(f.x,0,-COORD,COORD),
+    y:dRange(f.y,0,-COORD,COORD),
+    rot:FP_ROT_OK[dNum(f.rot,0)]?dNum(f.rot,0):0,
+    side:f.side?1:0,
+    nets:dNets(f.nets)
+  };
+  /* décalages du repère et de la valeur : présents seulement si déplacés */
+  for(const k of ["refOffX","refOffY","valOffX","valOffY"])
+    if(f[k]!=null&&Number.isFinite(+f[k]))out[k]=clamp(+f[k],-COORD,COORD);
+  return out;
+}
+function normTrack(t,cu){
+  if(!t||typeof t!=="object")return null;
+  const x1=+t.x1,y1=+t.y1,x2=+t.x2,y2=+t.y2;
+  if(![x1,y1,x2,y2].every(Number.isFinite))return null;
+  if(x1===x2&&y1===y2)return null;                 // segment nul : rien à tracer
+  return {l:dInt(t.l,0,0,cu-1),net:dNet(t.net),w:dRange(t.w,0.3,0.01,100),
+          x1:clamp(x1,-COORD,COORD),y1:clamp(y1,-COORD,COORD),
+          x2:clamp(x2,-COORD,COORD),y2:clamp(y2,-COORD,COORD)};
+}
+function normVia(v,cu){
+  if(!v||typeof v!=="object")return null;
+  const x=+v.x,y=+v.y;
+  if(!Number.isFinite(x)||!Number.isFinite(y))return null;
+  const d=dRange(v.d,0.8,0.1,20);
+  let a=dInt(v.a,0,0,cu-1), b=dInt(v.b,cu-1,0,cu-1);
+  if(a>b){const s=a;a=b;b=s;}
+  if(a===b){a=0;b=cu-1;}                           // un via doit relier deux couches
+  return {x:clamp(x,-COORD,COORD),y:clamp(y,-COORD,COORD),
+          d:d,drill:dRange(v.drill,Math.min(0.4,d-0.1),0.05,r3(d-0.05)),
+          a:a,b:b,net:dNet(v.net)};
+}
+function normZone(z,cu,i){
+  if(!z||typeof z!=="object")return null;
+  const pts=dPts(z.pts,3);
+  if(!pts)return null;                             // moins de 3 sommets : pas une zone
+  const out={id:dInt(z.id,i+1,1,Number.MAX_SAFE_INTEGER),
+             l:dInt(z.l,0,0,cu-1),net:dNet(z.net),pts:pts};
+  if(z.auto)out.auto=true;
+  return out;
+}
+function normCut(c,cu,i){
+  if(!c||typeof c!=="object")return null;
+  const pts=dPts(c.pts,3);
+  if(!pts)return null;
+  return {id:dInt(c.id,i+1,1,Number.MAX_SAFE_INTEGER),
+          l:dInt(c.l,0,0,cu-1),pts:pts};
+}
+/* identifiants uniques : un fichier peut en porter deux fois le même, ce qui
+   ferait pointer la sélection et fpById() sur le mauvais objet */
+function uniqueIds(list){
+  const seen=new Set();
+  let max=0;
+  for(const o of list){
+    while(seen.has(o.id))o.id++;
+    seen.add(o.id);
+    if(o.id>max)max=o.id;
+  }
+  return max;
+}
+function normDoc(d){
+  const src=(d&&typeof d==="object")?d:{};
+  const cu=dInt(src.cu,2,1,8);
+  const out={format:"pcbedit-1",cu:cu};
+
+  /* --- empilage : toujours exactement `cu` couches --- */
+  const srcL=Array.isArray(src.cuL)?src.cuL:[];
+  out.cuL=[];
+  for(let i=0;i<cu;i++)out.cuL.push(normLayer(srcL[i],i,cu));
+  out.stack=normStack(src.stack,cu);
+
+  /* --- calques affichés --- */
+  const show=(src.show&&typeof src.show==="object")?src.show:{};
+  out.show={};
+  for(const k in S.show)
+    out.show[k]=(show[k]===undefined)?S.show[k]:!!show[k];
+
+  /* --- carte, origine, règles --- */
+  const b=(src.board&&typeof src.board==="object")?src.board:{};
+  out.board={x:dRange(b.x,0,-COORD,COORD),y:dRange(b.y,0,-COORD,COORD),
+             w:dRange(b.w,100,1,COORD),h:dRange(b.h,80,1,COORD),
+             pts:dPts(b.pts,3)};
+  const o=(src.origin&&typeof src.origin==="object")?src.origin:{};
+  out.origin={x:dRange(o.x,0,-COORD,COORD),y:dRange(o.y,0,-COORD,COORD)};
+  out.fabOrigin=!!src.fabOrigin;
+  const r=(src.rule&&typeof src.rule==="object")?src.rule:{};
+  /* `tented` n'avait que deux valeurs : les fichiers qui le portent encore
+     deviennent « recouverts » ou « ouverts ». */
+  const vf=dStr(r.viaFinish,16);
+  out.rule={edge:dRange(r.edge,0.4,0,100),thermal:dRange(r.thermal,0.5,0,100),
+            mask:dRange(r.mask,0.05,-100,100),paste:dRange(r.paste,0,-100,100),
+            viaFinish:VIA_FINISH[vf]?vf:(r.tented===false?"open":"tented")};
+  /* largeurs de la V1.0 : loadDoc() en tire deux classes quand `classes`
+     manque, on les laisse donc passer */
+  for(const k of ["w","clr","via","drill","wPwr"])
+    if(r[k]!=null&&Number.isFinite(+r[k]))out.rule[k]=+r[k];
+
+  /* --- classes de net : absentes = fichier V1.0, loadDoc() les reconstruit --- */
+  if(Array.isArray(src.classes)&&src.classes.length){
+    const seen=new Set();
+    out.classes=[];
+    src.classes.forEach((c,i)=>{
+      const cl=normClass(c,i);
+      let n=cl.name, k=2;
+      while(seen.has(n))n=cl.name+" ("+(k++)+")";   // les noms doivent rester distincts
+      cl.name=n;seen.add(n);
+      out.classes.push(cl);
+    });
+    const names=new Set(out.classes.map(c=>c.name)), def=out.classes[0].name;
+    out.netClass={};
+    const nc=(src.netClass&&typeof src.netClass==="object")?src.netClass:{};
+    for(const net in nc){
+      const name=dStr(nc[net],40);
+      // un rattachement orphelin ou vers la classe par défaut ne se stocke pas
+      if(names.has(name)&&name!==def)out.netClass[dNet(net)]=name;
+    }
+  }
+
+  /* --- contenu de la carte --- */
+  const arr=v=>Array.isArray(v)?v:[];
+  out.fps=arr(src.fps).map(normFp).filter(Boolean);
+  out.tracks=arr(src.tracks).map(t=>normTrack(t,cu)).filter(Boolean);
+  out.vias=arr(src.vias).map(v=>normVia(v,cu)).filter(Boolean);
+  out.zones=arr(src.zones).map((z,i)=>normZone(z,cu,i)).filter(Boolean);
+  out.cuts=arr(src.cuts).map((c,i)=>normCut(c,cu,i)).filter(Boolean);
+  if(cu<2)out.vias=[];                    // une seule couche : aucun via ne relie rien
+
+  const maxId=Math.max(uniqueIds(out.fps),uniqueIds(out.zones),uniqueIds(out.cuts));
+  out.active=dInt(src.active,0,0,cu-1);
+  out.nextId=Math.max(dInt(src.nextId,1,1,Number.MAX_SAFE_INTEGER),maxId+1);
+  return out;
+}
+
+function loadDoc(d,keepView){
+  d=normDoc(d);                     // au-delà d'ici, chaque champ est exploitable
+  S.cu=d.cu;
+  S.cuL=d.cuL;
+  S.stack=d.stack;
+  S.show=d.show;
+  S.board=d.board;
+  S.origin=d.origin;
+  S.fabOrigin=d.fabOrigin;
+  const r=d.rule;
+  S.rule={edge:r.edge, thermal:r.thermal, mask:r.mask, paste:r.paste,
+          viaFinish:r.viaFinish};
+  if(d.classes){
+    S.classes=d.classes;S.netClass=d.netClass;
   }else{
     /* fichiers antérieurs aux classes : les deux largeurs deviennent deux
        classes, et les nets d'alimentation sont rattachés comme avant */
@@ -47,18 +310,21 @@ function loadDoc(d,keepView){
                 via:r.via||0.8,drill:r.drill||0.4}];
     S.netClass={};
   }
-  S.fps=d.fps||[];S.tracks=d.tracks||[];S.vias=d.vias||[];
-  S.zones=d.zones||[];S.cuts=d.cuts||[];
-  /* fichiers de la V1.0 : le rôle « plan » portait sur la couche entière.
-     On le convertit en une zone rectangulaire, qui se modifie ensuite. */
+  S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
+  S.zones=d.zones;S.cuts=d.cuts;
+  S.active=d.active;S.pair=[0,S.cu-1];
+  S.nextId=d.nextId;
+  /* Fichiers de la V1.0 : le rôle « plan » portait sur la couche entière, sans
+     zone correspondante. On le convertit en zone rectangulaire, modifiable
+     ensuite. Depuis, le rôle et sa zone auto coexistent — et loadDoc() sert
+     aussi à annuler/rétablir : sans ce garde-fou, chaque Ctrl+Z dupliquait la
+     zone et effaçait le rôle. */
   S.cuL.forEach((L,i)=>{
-    if(L.plane){
-      S.zones.push({id:S.nextId++,l:i,net:L.net||"",pts:boardZonePts()});
-      delete L.plane;delete L.net;
-    }
+    if(!L.plane)return;
+    if(S.zones.some(z=>z.auto&&z.l===i))return;      // rien à migrer
+    S.zones.push({id:S.nextId++,l:i,net:L.net||"",pts:boardZonePts()});
+    L.plane=false;L.net="";L.role="mixed";   // le cuivre reste, le rôle le dit
   });
-  S.active=clamp(d.active||0,0,S.cu-1);S.pair=[0,S.cu-1];
-  S.nextId=d.nextId||(Math.max(0,...S.fps.map(f=>f.id||0))+1);
   clearSel();S.route=null;S.zoneDraft=null;S.edgeDraft=null;S.drc=[];S.hlNet=null;
   zoneCache.clear();touch();
   if(!d.classes)autoClass();
@@ -109,7 +375,7 @@ function hitTest(x,y,e){
     const z=S.zones[i];
     if(layerAlpha(z.l)<=0||z.pts.length<2)continue;
     if(polyEdgeDist(x,y,z.pts)<=px(5))return {zone:z};
-    if(e&&(e.ctrlKey||e.shiftKey||e.metaKey)&&inPoly(x,y,z.pts))return {zone:z};
+    if(e&&(e.ctrlKey||e.shiftKey||e.metaKey||e.altKey)&&inPoly(x,y,z.pts))return {zone:z};
   }
   for(let i=S.cuts.length-1;i>=0;i--){
     const c=S.cuts[i];
@@ -127,6 +393,37 @@ function selectHit(h,add){
   else if(h.zone)S.sel.zones.add(h.zone);
   else if(h.cut)S.sel.cuts.add(h.cut);
   else if(h.edge)S.sel.edge=true;
+}
+/* Ctrl+clic (ou Maj+clic) sur un élément : il entre dans la sélection, ou il en
+   sort. Renvoie vrai s'il vient d'en sortir — l'appelant n'enchaîne alors pas
+   sur un glissement, qui déplacerait tout le reste. */
+function toggleHit(h){
+  if(!h)return false;
+  const t=(set,v)=>{if(set.has(v)){set.delete(v);return true;}set.add(v);return false;};
+  if(h.fp)return t(S.sel.fps,h.fp.id);
+  if(h.track)return t(S.sel.tracks,h.track);
+  if(h.via)return t(S.sel.vias,h.via);
+  if(h.zone)return t(S.sel.zones,h.zone);
+  if(h.cut)return t(S.sel.cuts,h.cut);
+  if(h.edge){S.sel.edge=!S.sel.edge;return !S.sel.edge;}
+  return false;
+}
+/* Points où Alt a un sens : extrémité ou corps d'une piste déjà sélectionnée,
+   arête d'une zone ou du contour sélectionnés. Ailleurs, Alt déplace la vue —
+   c'est ce qui permet de garder les deux usages sans se gêner. */
+function altTarget(x,y){
+  if(S.mode!=="select")return false;
+  for(const t of S.sel.tracks){
+    for(const en of [1,2]){
+      const ex=en===1?t.x1:t.x2, ey=en===1?t.y1:t.y2;
+      if(dist(x,y,ex,ey)<=px(6))return true;
+    }
+    if(segDist(x,y,t.x1,t.y1,t.x2,t.y2)<=t.w/2+px(4))return true;
+  }
+  if(S.sel.edge&&S.board.pts&&polyEdgeDist(x,y,S.board.pts)<=px(6))return true;
+  for(const z of S.sel.zones)
+    if(polyEdgeDist(x,y,z.pts)<=px(6))return true;
+  return false;
 }
 /* Toutes les extrémités (et le via éventuel) réunies en un même point : les
    déplacer ensemble évite de déchirer un coude en le tirant. */
@@ -185,6 +482,131 @@ function deleteSel(){
   S.zones=S.zones.filter(z=>!S.sel.zones.has(z));
   S.cuts=S.cuts.filter(c=>!S.sel.cuts.has(c));
   clearSel();touch();refreshPanels();draw();
+}
+/* ==========================================================================
+   Presse-papier
+   Ce qui est sélectionné — empreintes, pistes, vias, zones, découpes — est
+   rangé relativement à son coin haut-gauche, puis reposé sous le pointeur. La
+   copie est doublée dans le stockage local : on peut coller après avoir rouvert
+   l'éditeur. Ce qui en ressort repasse par les mêmes normalisations que la
+   lecture d'un fichier — un presse-papier d'une autre version, ou trafiqué,
+   n'est pas cru sur parole.
+
+   Les nets des pastilles, des pistes et des vias sont conservés : dupliquer un
+   condensateur de découplage avec son routage n'aurait pas de sens si la copie
+   se retrouvait en l'air. Les repères, eux, sont refaits pour rester uniques.
+   ========================================================================== */
+const PCB_CLIP_KEY="pcbedit.clipboard";
+let PCB_CLIP=null;
+function pcbClipContent(){
+  if(!selCount())return null;
+  const fps=S.fps.filter(f=>S.sel.fps.has(f.id));
+  const tracks=S.tracks.filter(t=>S.sel.tracks.has(t));
+  const vias=S.vias.filter(v=>S.sel.vias.has(v));
+  const zones=S.zones.filter(z=>S.sel.zones.has(z));
+  const cuts=S.cuts.filter(c=>S.sel.cuts.has(c));
+  let x=1e9,y=1e9;
+  for(const f of fps){x=Math.min(x,f.x);y=Math.min(y,f.y);}
+  for(const t of tracks){x=Math.min(x,t.x1,t.x2);y=Math.min(y,t.y1,t.y2);}
+  for(const v of vias){x=Math.min(x,v.x);y=Math.min(y,v.y);}
+  for(const z of zones.concat(cuts))
+    for(const q of z.pts){x=Math.min(x,q.x);y=Math.min(y,q.y);}
+  if(x>1e8)return null;
+  const cp=o=>JSON.parse(JSON.stringify(o));
+  const poly=o=>{
+    const c=cp(o);
+    c.pts=c.pts.map(q=>({x:r3(q.x-x),y:r3(q.y-y)}));
+    delete c.id;delete c.auto;      // une copie est un tracé à la main
+    return c;
+  };
+  return {
+    fps:fps.map(f=>{const c=cp(f);c.x=r3(c.x-x);c.y=r3(c.y-y);delete c.id;return c;}),
+    tracks:tracks.map(t=>{const c=cp(t);
+      c.x1=r3(c.x1-x);c.y1=r3(c.y1-y);c.x2=r3(c.x2-x);c.y2=r3(c.y2-y);return c;}),
+    vias:vias.map(v=>{const c=cp(v);c.x=r3(c.x-x);c.y=r3(c.y-y);return c;}),
+    zones:zones.map(poly), cuts:cuts.map(poly)
+  };
+}
+function pcbSetClip(c){
+  PCB_CLIP=c;
+  try{localStorage.setItem(PCB_CLIP_KEY,JSON.stringify(c));}catch(_){/* quota, mode privé */}
+}
+function pcbGetClip(){
+  if(PCB_CLIP)return PCB_CLIP;
+  try{
+    const raw=localStorage.getItem(PCB_CLIP_KEY);
+    if(raw)PCB_CLIP=JSON.parse(raw);
+  }catch(_){PCB_CLIP=null;}
+  return PCB_CLIP;
+}
+// « R12 » → « R13 », « R14 »… le premier libre ; un repère sans chiffre reçoit
+// un numéro
+function freeFpRef(ref,used){
+  const m=/^(.*?)(\d*)$/.exec(String(ref||"U"));
+  const base=m[1]||"U";
+  let n=m[2]?parseInt(m[2],10):1;
+  let r=base+n;
+  while(used.has(r))r=base+(++n);
+  return r;
+}
+function copySelPcb(){
+  const c=pcbClipContent();
+  if(!c){hint("Rien à copier : sélectionnez d'abord des éléments (Ctrl+clic pour en ajouter).");return false;}
+  pcbSetClip(c);
+  hint(c.fps.length+" empreinte(s), "+c.tracks.length+" piste(s), "+c.vias.length+
+       " via(s) copiés — Ctrl+V colle sous le pointeur.");
+  return true;
+}
+function cutSelPcb(){if(copySelPcb())deleteSel();}
+function pasteClipPcb(){
+  const c=pcbGetClip();
+  if(!c||typeof c!=="object"){hint("Presse-papier vide : copiez d'abord une sélection (Ctrl+C).");return;}
+  const arr=v=>Array.isArray(v)?v:[];
+  if(!arr(c.fps).length&&!arr(c.tracks).length&&!arr(c.vias).length&&
+     !arr(c.zones).length&&!arr(c.cuts).length){hint("Presse-papier vide.");return;}
+  const bx=snapX(S.mouse.x), by=snapY(S.mouse.y);
+  push();
+  clearSel();
+  let dropped=0;
+  const used=new Set(S.fps.map(f=>f.ref));
+  for(const src of arr(c.fps)){
+    const f=normFp(src,0);
+    if(!f){dropped++;continue;}
+    f.id=S.nextId++;
+    f.x=r3(f.x+bx);f.y=r3(f.y+by);
+    f.ref=freeFpRef(f.ref,used);used.add(f.ref);
+    S.fps.push(f);S.sel.fps.add(f.id);
+  }
+  for(const src of arr(c.tracks)){
+    const t=normTrack(src,S.cu);
+    if(!t){dropped++;continue;}
+    t.x1=r3(t.x1+bx);t.y1=r3(t.y1+by);t.x2=r3(t.x2+bx);t.y2=r3(t.y2+by);
+    S.tracks.push(t);S.sel.tracks.add(t);
+  }
+  for(const src of arr(c.vias)){
+    const v=normVia(src,S.cu);
+    if(!v){dropped++;continue;}
+    v.x=r3(v.x+bx);v.y=r3(v.y+by);
+    S.vias.push(v);S.sel.vias.add(v);
+  }
+  for(const src of arr(c.zones)){
+    const z=normZone(src,S.cu,0);
+    if(!z){dropped++;continue;}
+    z.id=S.nextId++;
+    z.pts=z.pts.map(q=>({x:r3(q.x+bx),y:r3(q.y+by)}));
+    S.zones.push(z);S.sel.zones.add(z);
+  }
+  for(const src of arr(c.cuts)){
+    const ct=normCut(src,S.cu,0);
+    if(!ct){dropped++;continue;}
+    ct.id=S.nextId++;
+    ct.pts=ct.pts.map(q=>({x:r3(q.x+bx),y:r3(q.y+by)}));
+    S.cuts.push(ct);S.sel.cuts.add(ct);
+  }
+  zoneCache.clear();
+  touch();refreshPanels();draw();
+  hint(S.sel.fps.size+" empreinte(s), "+S.sel.tracks.size+" piste(s), "+
+       S.sel.vias.size+" via(s) collés."+(dropped?" "+dropped+" élément(s) ignoré(s).":""));
 }
 function rotateSel(){
   const list=[...S.sel.fps];
@@ -480,7 +902,9 @@ function askZoneNet(def, Z, isFullBoard){
     const val = sel.value;
     d.close(); d.remove();
     push();
-    const z = {id:S.nextId++, l:Z.l, net:val, pts: isFullBoard ? boardZonePts() : Z.pts.map(p=>({x:r3(p.x),y:r3(p.y)}))};
+    // fullBoardZone() n'a pas d'esquisse : le plan se pose sur la couche active
+    const z = {id:S.nextId++, l:Z?Z.l:S.active, net:val,
+               pts: isFullBoard ? boardZonePts() : Z.pts.map(p=>({x:r3(p.x),y:r3(p.y)}))};
     S.zones.push(z);
     clearSel();S.sel.zones.add(z);
     touch();refreshPanels();draw();
@@ -698,9 +1122,11 @@ function evPos(e){
   return s2w(e.clientX-r.left,e.clientY-r.top);
 }
 cv.addEventListener("pointerdown",e=>{
-  cv.setPointerCapture(e.pointerId);
+  // la capture échoue si le pointeur n'est plus actif : ce n'est pas une raison
+  // pour abandonner le clic
+  try{cv.setPointerCapture(e.pointerId);}catch(_){}
   const p=evPos(e);
-  if(e.button===1||(e.button===0&&e.altKey)){
+  if(e.button===1||(e.button===0&&e.altKey&&!altTarget(p.x,p.y))){
     drag={pan:true,sx:e.clientX,sy:e.clientY,ox:S.ox,oy:S.oy};
     return;
   }
@@ -747,14 +1173,14 @@ cv.addEventListener("pointerdown",e=>{
     for(const en of [1,2]){
       const ex=en===1?t.x1:t.x2, ey=en===1?t.y1:t.y2;
       if(dist(p.x,p.y,ex,ey)<=px(6)){
-        // Ctrl : on détache cette extrémité au lieu d'emmener tout le coude
-        const g=(e.ctrlKey||e.metaKey)?{ends:[{t,e:en}],vias:[]}:jointAt(ex,ey,t.l);
+        // Alt : on détache cette extrémité au lieu d'emmener tout le coude
+        const g=e.altKey?{ends:[{t,e:en}],vias:[]}:jointAt(ex,ey,t.l);
         drag={tend:g,l:t.l,moved:false};
         return;
       }
     }
   }
-  if(e.ctrlKey||e.metaKey)
+  if(e.altKey)                       // Alt+clic sur une piste : on y insère un point
     for(const t of S.sel.tracks)
       if(segDist(p.x,p.y,t.x1,t.y1,t.x2,t.y2)<=t.w/2+px(4)){
         push();
@@ -770,7 +1196,7 @@ cv.addEventListener("pointerdown",e=>{
       if(dist(p.x,p.y,P[i].x,P[i].y)<=px(6)){
         drag={vert:{z:S.board,i},board:true,moved:false};return;
       }
-    if((e.ctrlKey||e.metaKey)&&polyEdgeDist(p.x,p.y,P)<=px(6)){
+    if(e.altKey&&polyEdgeDist(p.x,p.y,P)<=px(6)){
       let bi=0,bd=1e9;
       for(let i=0,j=P.length-1;i<P.length;j=i++){
         const d=segDist(p.x,p.y,P[j].x,P[j].y,P[i].x,P[i].y);
@@ -788,8 +1214,8 @@ cv.addEventListener("pointerdown",e=>{
       if(dist(p.x,p.y,z.pts[i].x,z.pts[i].y)<=px(6)){
         drag={vert:{z,i},moved:false};return;
       }
-    if((e.ctrlKey||e.metaKey)&&polyEdgeDist(p.x,p.y,z.pts)<=px(6)){
-      // Ctrl+clic sur une arête : on y insère un sommet, prêt à être tiré
+    if(e.altKey&&polyEdgeDist(p.x,p.y,z.pts)<=px(6)){
+      // Alt+clic sur une arête : on y insère un sommet, prêt à être tiré
       let bi=0,bd=1e9;
       for(let i=0,j=z.pts.length-1;i<z.pts.length;j=i++){
         const d=segDist(p.x,p.y,z.pts[j].x,z.pts[j].y,z.pts[i].x,z.pts[i].y);
@@ -801,24 +1227,34 @@ cv.addEventListener("pointerdown",e=>{
     }
   }
   const h=hitTest(p.x,p.y,e);
+  // Ctrl et Maj font la même chose : ajouter à la sélection, ou en retirer
+  const add=e.shiftKey||e.ctrlKey||e.metaKey;
   if(h && h.fpText) {
-    if(!e.shiftKey) {clearSel();S.hlNet=null;}
+    if(!add) {clearSel();S.hlNet=null;}
     S.hlText = h;
     drag={moveText:h, x:snapX(p.x), y:snapY(p.y), moved:false};
     refreshPanels();draw();return;
   }
   if(!h){
-    if(!e.shiftKey){clearSel();S.hlNet=null;}
+    if(!add){clearSel();S.hlNet=null;}
     S.marquee={x1:p.x,y1:p.y,x2:p.x,y2:p.y};
-    drag={marquee:true};
+    drag={marquee:true,add:add};
     refreshPanels();draw();return;
   }
-  const already=(h.fp&&S.sel.fps.has(h.fp.id))||(h.track&&S.sel.tracks.has(h.track))||
-                (h.via&&S.sel.vias.has(h.via));
-  if(!already)selectHit(h,e.shiftKey);
-  if(h.pad&&h.pad.net)S.hlNet=h.pad.net;
+  if(add){
+    if(toggleHit(h)){refreshPanels();draw();return;}   // retiré : pas de glissement
+  }else{
+    const already=(h.fp&&S.sel.fps.has(h.fp.id))||(h.track&&S.sel.tracks.has(h.track))||
+                  (h.via&&S.sel.vias.has(h.via));
+    if(!already)selectHit(h,false);
+  }
+  const pn=(h.pad&&h.pad.net)||null;
+  if(pn)S.hlNet=pn;
   drag={move:true,x:p.x,y:p.y,moved:false};
-  refreshPanels();draw();
+  refreshPanels();
+  // la mise en avant se voit sur le canevas : on la montre aussi dans la liste
+  if(pn)revealNet(pn);
+  draw();
 });
 cv.addEventListener("pointermove",e=>{
   const p=evPos(e);
@@ -965,9 +1401,15 @@ cv.addEventListener("wheel",e=>{
 /* ==========================================================================
    Clavier
    ========================================================================== */
+/* Un champ de saisie garde ses lettres pour lui. On regarde la cible de
+   l'événement ET le champ qui a réellement le focus : les deux peuvent
+   diverger selon la façon dont la frappe arrive. */
+function isField(n){
+  const tag=(n&&n.tagName||"").toLowerCase();
+  return tag==="input"||tag==="textarea"||tag==="select"||!!(n&&n.isContentEditable);
+}
 document.addEventListener("keydown",e=>{
-  const t=e.target;
-  if(t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="SELECT"))return;
+  if(isField(e.target)||isField(document.activeElement))return;
   const k=e.key.toLowerCase();
   if(e.key==="Tab"){e.preventDefault();S.coord.open?coordClose():coordOpen();return;}
   if((e.ctrlKey||e.metaKey)&&k==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
@@ -980,6 +1422,19 @@ document.addEventListener("keydown",e=>{
     S.vias.forEach(v=>S.sel.vias.add(v));
     refreshPanels();draw();return;
   }
+  // Ctrl+C sur du texte sélectionné appartient au navigateur : on ne lui prend
+  // le raccourci que lorsqu'il n'y a rien à copier à l'écran
+  if((e.ctrlKey||e.metaKey)&&k==="c"){
+    const sel=window.getSelection&&window.getSelection();
+    if(sel&&!sel.isCollapsed)return;
+    e.preventDefault();copySelPcb();return;
+  }
+  if((e.ctrlKey||e.metaKey)&&k==="x"){e.preventDefault();cutSelPcb();return;}
+  if((e.ctrlKey||e.metaKey)&&k==="v"){e.preventDefault();pasteClipPcb();return;}
+  /* Toute autre combinaison avec Ctrl/Cmd ou Alt appartient au navigateur :
+     sans ce garde-fou, Ctrl+R faisait pivoter la sélection puis rechargeait la
+     page, et Ctrl+F la retournait avant d'ouvrir la recherche. */
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
   if(e.key>="1"&&e.key<="8"){
     const i=+e.key-1;
     if(i<S.cu){e.preventDefault();routeToLayer(i);draw();}
@@ -1050,6 +1505,7 @@ function setMode(m){
   if(S.zoneDraft&&m!=="zone")S.zoneDraft=null;
   if(S.edgeDraft&&m!=="edge")S.edgeDraft=null;
   S.mode=m;S.hover=null;
+  if(m!=="zone")zoneMenuClose();
   for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],
                         ["mZone","zone"],["mEdge","edge"],["mOrigin","origin"],
                         ["mErase","erase"]])
@@ -1059,7 +1515,8 @@ function setMode(m){
                           origin:"Origine",erase:"Gomme"}[m];
   cv.style.cursor=m==="erase"?"not-allowed":"crosshair";
   hint({
-    select:"Glisser pour déplacer · R pivote · F retourne · une piste sélectionnée montre ses extrémités, Ctrl+clic y insère un point.",
+    select:"Ctrl+clic (ou Maj+clic) ajoute à la sélection · glisser pour déplacer · "+
+           "R pivote · F retourne · Ctrl+C/Ctrl+V copie-colle · Alt+clic insère un point sur une piste sélectionnée.",
     track:"Clic sur une pastille pour partir · V pose un via · 1-8 change de couche · Tab saisit les coordonnées · Échap termine.",
     via:"Clic pour poser un via traversant, accroché à la pastille ou à la piste la plus proche.",
     zone:"Clic pour chaque sommet, retour sur le premier point pour fermer · Maj contraint à 45° · Entrée ferme, Échap abandonne.",
@@ -1070,6 +1527,27 @@ function setMode(m){
   draw();
 }
 function setGrid(v){S.showGrid=!!v;$("bGrid").classList.toggle("on",S.showGrid);draw();}
+/* Pas d'accrochage : une seule porte d'entrée pour le menu de la barre
+   d'outils, celui du panneau Règles et le pied de page. */
+/* Des millimètres ronds d'abord, plus les deux pas impériaux dont on ne peut
+   pas se passer : 1,27 et 2,54 mm (0,05 et 0,1 pouce), l'écartement des
+   broches de la plupart des boîtiers traversants. */
+const GRID_STEPS=[0.05,0.1,0.25,0.5,1,1.27,2,2.54,5];
+function setGridStep(v){
+  const g=parseFloat(v);
+  if(!Number.isFinite(g)||g<=0||g===S.grid)return;
+  S.grid=g;
+  updateGridInfo();
+  hint("Grille d'accrochage : "+String(r3(g)).replace(".",",")+" mm.");
+  draw();
+}
+function buildGridMenu(){
+  const sel=$("selGrid");
+  if(!sel)return;
+  sel.innerHTML=GRID_STEPS.map(g=>
+    '<option value="'+g+'"'+(g===S.grid?" selected":"")+'>Grille '+
+    String(g).replace(".",",")+' mm</option>').join("");
+}
 function setFlip(v){
   S.flip=!!v;
   $("bView").innerHTML="Vue : "+(S.flip?"dessous":"dessus")+' <kbd>Y</kbd>';

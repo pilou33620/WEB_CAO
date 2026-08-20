@@ -15,10 +15,51 @@ function resize(){
 function w2s(x,y){return {x:x*S.scale+S.ox, y:y*S.scale+S.oy};}
 function s2w(x,y){return {x:(x-S.ox)/S.scale, y:(y-S.oy)/S.scale};}
 
+/* Pas de grille et lecture de l'échelle.
+   S.grid est le pas d'accrochage choisi par l'utilisateur, exprimé en pixels
+   monde. Trop serrée à l'écran, la grille devient un aplat : on n'en trace
+   alors qu'une case sur deux, sur quatre… et c'est cette case-là, celle que
+   l'œil voit, que le pied de page annonce. */
+/* Échelle du schématique : une case de grille — G pixels monde — vaut 1 mm.
+   C'est une convention de dessin, pas une cote de fabrication : un schéma n'a
+   pas d'échelle physique. Le millimètre a été retenu parce que tous les
+   symboles sont dessinés à ce pas (broches sur le millimètre, traits au quart
+   de millimètre) : les pas offerts tombent donc juste, sans reste, et une
+   broche est toujours sur une ligne de la grille. */
+const MM_PER_STEP=1;
+const PX_PER_MM=G/MM_PER_STEP;
+const GRID_STEPS=[0.25,0.5,1,2,5].map(mm=>mm*PX_PER_MM);   // 5 · 10 · 20 · 40 · 100 px
+function gridMm(w){return w/G*MM_PER_STEP;}
+function fmtMm(v){return String(Math.round(v*1000)/1000).replace(".",",");}
+function gridShownStep(){
+  let w=S.grid||G;
+  if(!S.showGrid)return w;
+  for(let i=0;i<12&&w*S.scale<7;i++)w*=2;
+  return w;
+}
+/* Ce que l'œil voit d'abord — la case tracée — puis, quand le zoom a forcé à
+   n'en tracer qu'une sur deux, le pas d'accrochage réel entre parenthèses. */
+function gridLabel(){
+  const w=gridShownStep(), g=S.grid||G;
+  return "1 carré = "+fmtMm(gridMm(w))+" mm"+
+         (w!==g?" · pas "+fmtMm(gridMm(g))+" mm":"");
+}
+function updateGridInfo(){
+  const b=document.getElementById("fGrid");
+  if(!b)return;
+  const w=gridShownStep();
+  b.textContent=gridLabel();
+  b.parentElement.title=
+    "Accrochage : "+fmtMm(gridMm(S.grid||G))+" mm"+
+    (w!==(S.grid||G)?"\nÀ ce niveau de zoom, une case affichée en vaut plusieurs.":"");
+  const sel=document.getElementById("selGrid");
+  if(sel&&+sel.value!==(S.grid||G))sel.value=String(S.grid||G);
+}
 function drawGrid(c,w,h){
+  S.gridShown=gridShownStep();
   if(!S.showGrid)return;
-  const step=G*S.scale;
-  if(step<6)return;
+  const step=S.gridShown*S.scale;
+  if(step<7)return;
   const x0=((S.ox%step)+step)%step, y0=((S.oy%step)+step)%step;
   c.lineWidth=1;
   c.strokeStyle=C_GRID;

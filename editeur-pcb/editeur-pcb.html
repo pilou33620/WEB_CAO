@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Éditeur PCB — Dashboard nocturne</title>
 <link rel="stylesheet" href="css/style.css">
-<link rel="stylesheet" href="css/workspace.css">
+<link rel="stylesheet" href="../commun/workspace.css">
 </head>
 <body>
 
@@ -17,18 +17,21 @@
     <button class="tb on" id="mSelect">Sélection <kbd>Échap</kbd></button>
     <button class="tb" id="mTrack">Piste <kbd>T</kbd></button>
     <button class="tb" id="mVia">Via <kbd>V</kbd></button>
-    <button class="tb" id="mZone">Zone cuivre <kbd>Z</kbd></button>
+    <button class="tb" id="mZone">Zone cuivre <kbd>Z</kbd> <span class="car">▾</span></button>
     <button class="tb" id="mEdge">Contour carte <kbd>E</kbd></button>
     <button class="tb" id="mErase">Découpe <kbd>X</kbd></button>
     <div class="sep"></div>
     <button class="tb" id="bRot">Pivoter <kbd>R</kbd></button>
     <button class="tb" id="bFlip">Retourner <kbd>F</kbd></button>
     <button class="tb" id="bDel">Supprimer <kbd>Suppr</kbd></button>
+    <button class="tb" id="bCopy">Copier <kbd>Ctrl+C</kbd></button>
+    <button class="tb" id="bPaste">Coller <kbd>Ctrl+V</kbd></button>
     <div class="sep"></div>
     <button class="tb" id="bUndo">↶ Annuler</button>
     <button class="tb" id="bRedo">↷ Rétablir</button>
     <div class="sep"></div>
     <button class="tb" id="bGrid">Grille</button>
+    <select class="tbsel" id="selGrid" title="Pas d'accrochage de la grille"></select>
     <button class="tb" id="bAvoid">Anti-collision</button>
     <button class="tb" id="bRats">Chevelu <kbd>N</kbd></button>
     <button class="tb" id="bView">Vue : dessus <kbd>Y</kbd></button>
@@ -107,6 +110,24 @@
     </div>
   </section>
 
+  <section class="pnl" data-pnl="stackup" data-title="Empilage physique">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">Empilage physique</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body">
+      <div class="pnl-bar">
+        <span class="pnl-lbl">Modèle d'usine</span>
+        <select id="stkPreset"></select>
+      </div>
+      <div class="scroll" id="stk"></div>
+    </div>
+  </section>
+
   <section class="pnl" data-pnl="rules" data-title="Règles de tracé">
     <header class="pnl-head">
       <span class="pnl-grip">⠿</span><span class="pnl-title">Règles de tracé</span>
@@ -164,12 +185,14 @@
   <span>Mode <b id="fMode">Sélection</b></span>
   <span>X <b id="fX">0</b> · Y <b id="fY">0</b> mm</span>
   <span>Zoom <b id="fZoom">100%</b></span>
+  <span>Grille <b id="fGrid">1 carré = 0,5 mm</b></span>
   <span>Empreintes <b id="fN">0</b> · Pistes <b id="fT">0</b> · Vias <b id="fV">0</b></span>
   <span>Non routés <b id="fU">0</b></span>
   <span>Net <b id="fNet">—</b></span>
   <span class="push hint" id="fHint">Importez la netlist de l'éditeur schématique pour démarrer.</span>
 </footer>
 
+<script src="js/00-espace-config.js"></script>
 <script src="js/01-core.js"></script>
 <script src="js/02-connectivity.js"></script>
 <script src="js/03-render.js"></script>
@@ -177,6 +200,6 @@
 <script src="js/05-tools.js"></script>
 <script src="js/06-panels.js"></script>
 <script src="js/07-app.js"></script>
-<script src="js/08-workspace.js"></script>
+<script src="../commun/workspace.js"></script>
 </body>
 </html>

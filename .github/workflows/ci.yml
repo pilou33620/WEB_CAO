@@ -1,0 +1,47 @@
+name: bancs d'essai
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  essais:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Vérification syntaxique des scripts Python
+        run: |
+          python -m compileall -q serveur.py commun/outils \
+            editeur-pcb/outils editeur-schematique/outils
+
+      - name: Éditeur PCB — assemblage puis banc d'essai
+        run: |
+          python editeur-pcb/outils/build-monofichier.py
+          node --check editeur-pcb/dist/pcb.js
+          node editeur-pcb/test/harness.js
+
+      - name: Éditeur schématique — assemblage puis banc d'essai
+        run: |
+          python editeur-schematique/outils/build-monofichier.py
+          node --check editeur-schematique/dist/schema.js
+          node editeur-schematique/test/harness.js
+
+      - name: Le monofichier doit être reproductible
+        run: |
+          # deux assemblages d'affilée donnent le même résultat : rien
+          # d'horodaté ni d'aléatoire ne se glisse dans la sortie
+          cp editeur-pcb/dist/pcb.js /tmp/pcb-1.js
+          cp editeur-schematique/dist/schema.js /tmp/schema-1.js
+          python editeur-pcb/outils/build-monofichier.py
+          python editeur-schematique/outils/build-monofichier.py
+          diff -q /tmp/pcb-1.js editeur-pcb/dist/pcb.js
+          diff -q /tmp/schema-1.js editeur-schematique/dist/schema.js

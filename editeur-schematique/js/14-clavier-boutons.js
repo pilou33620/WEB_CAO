@@ -7,16 +7,37 @@
    Clavier
    ========================================================================== */
 let arrowStamp=0, arrowSplit=0;
+/* Un champ de saisie garde ses lettres pour lui : sans ce garde-fou, taper le
+   nom d'un net poserait un fil (W), repasserait en sélection (V)… On regarde la
+   cible de l'événement ET le champ qui a réellement le focus, les deux pouvant
+   diverger selon la façon dont la frappe arrive. */
+function isField(n){
+  const tag=(n&&n.tagName||"").toLowerCase();
+  return tag==="input"||tag==="textarea"||tag==="select"||!!(n&&n.isContentEditable);
+}
 window.addEventListener("keydown",e=>{
-  const t=e.target;
-  const tag=(t&&t.tagName||"").toLowerCase();
-  if(tag==="input"||tag==="textarea"||tag==="select"||(t&&t.isContentEditable))return;
+  if(isField(e.target)||isField(document.activeElement))return;
   const k=e.key.toLowerCase();
   const mod=e.ctrlKey||e.metaKey;
+  /* Fenêtre de brochage ouverte : elle prend Échap pour se fermer, et rien
+     d'autre ne doit agir sur la feuille pendant ce temps. */
+  if(typeof peIsOpen==="function"&&peIsOpen()){
+    if(k==="escape"){e.preventDefault();peClose();}
+    return;
+  }
   if(mod&&k==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
   if(mod&&k==="y"){e.preventDefault();redo();return;}
   if(mod&&k==="s"){e.preventDefault();saveJson();return;}
   if(mod&&k==="a"){e.preventDefault();S.comps.forEach(c=>S.sel.add(c.id));S.wires.forEach(w=>S.selW.add(w));refreshPanels();draw();return;}
+  // Ctrl+C sur du texte sélectionné appartient au navigateur : on ne lui prend
+  // le raccourci que lorsqu'il n'y a rien à copier à l'écran
+  if(mod&&k==="c"){
+    const sel=window.getSelection&&window.getSelection();
+    if(sel&&!sel.isCollapsed)return;
+    e.preventDefault();copySel();return;
+  }
+  if(mod&&k==="x"){e.preventDefault();cutSel();return;}
+  if(mod&&k==="v"){e.preventDefault();pasteClip();return;}
   // toute autre combinaison avec Ctrl/Cmd appartient au navigateur :
   // sans ce garde-fou, Ctrl+R faisait pivoter la sélection puis rechargeait la page
   if(mod||e.altKey)return;
@@ -31,9 +52,13 @@ window.addEventListener("keydown",e=>{
   if(k==="d"){dupSel();return;}
   if(k==="g"){setGrid(!S.showGrid);return;}
   if(k==="n"){cycleNetLabels();return;}
+  if(k==="u"){delWiresSel();return;}
   if(k==="delete"||k==="backspace"){e.preventDefault();delSel();return;}
   if(k.startsWith("arrow")){
-    const d={arrowleft:[-G,0],arrowright:[G,0],arrowup:[0,-G],arrowdown:[0,G]}[k];
+    // le pas d'une flèche est celui de la grille : ce qu'on voit est ce qu'on
+    // déplace, y compris en demi-pas
+    const g=S.grid||G;
+    const d={arrowleft:[-g,0],arrowright:[g,0],arrowup:[0,-g],arrowdown:[0,g]}[k];
     if(!d||!selCount())return;
     e.preventDefault();
     // une rafale de flèches ne compte que pour une entrée d'historique
@@ -59,9 +84,13 @@ document.getElementById("bRot").onclick=rotateSel;
 document.getElementById("bMir").onclick=mirrorSel;
 document.getElementById("bDup").onclick=dupSel;
 document.getElementById("bDel").onclick=delSel;
+document.getElementById("bDelW").onclick=delWiresSel;
 document.getElementById("bUndo").onclick=undo;
 document.getElementById("bRedo").onclick=redo;
+document.getElementById("bCopy").onclick=copySel;
+document.getElementById("bPaste").onclick=pasteClip;
 document.getElementById("bGrid").onclick=()=>setGrid(!S.showGrid);
+document.getElementById("selGrid").onchange=e=>setGridStep(+e.target.value);
 document.getElementById("bFit").onclick=fit;
 document.getElementById("bSave").onclick=saveJson;
 document.getElementById("bPng").onclick=exportPng;

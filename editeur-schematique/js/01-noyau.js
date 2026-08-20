@@ -49,9 +49,20 @@ function ARR(c,x,y,ang,s,col){ // pointe de flèche pleine
   c.fillStyle=col||C_COMP;c.fill();c.restore();
 }
 const _meas=document.createElement("canvas").getContext("2d");
+/* La largeur d'un texte sert maintenant à dimensionner les symboles : elle est
+   demandée pour chaque broche, à chaque image. measureText coûte cher répété
+   des milliers de fois par seconde — on garde le résultat, la police ne changeant
+   jamais en cours de route. */
+const _measCache=new Map();
 function textW(t,size,bold){
+  const k=(bold?"b":"n")+(size||12)+"\u0000"+t;
+  let w=_measCache.get(k);
+  if(w!==undefined)return w;
   _meas.font=(bold?"bold ":"")+(size||12)+'px "Segoe UI",system-ui,sans-serif';
-  return _meas.measureText(String(t)).width;
+  w=_meas.measureText(String(t)).width;
+  if(_measCache.size>4000)_measCache.clear();
+  _measCache.set(k,w);
+  return w;
 }
 // « | » sépare les lignes d'une annotation
 function annotBox(el,size,padX,padY,fallback){

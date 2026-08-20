@@ -41,6 +41,9 @@
   }
   button.tb:hover{border-color:var(--blue);color:#fff}
   button.tb.on{background:var(--blue-deep);border-color:var(--blue);color:#fff}
+  /* un bouton sans effet le dit : son attribut title explique pourquoi */
+  button.tb[disabled]{opacity:.4;cursor:default}
+  button.tb[disabled]:hover{border-color:var(--border2);color:var(--txt)}
   button.tb kbd{font-family:var(--mono);font-size:9px;color:var(--txt-dim);border:1px solid var(--border2);border-radius:3px;padding:0 3px}
   button.tb.on kbd{color:#dff0ff;border-color:#5cb4f0}
   /* ---------- onglets de couches ---------- */
@@ -98,10 +101,76 @@
   .lay .eye:hover{color:var(--cyan)}
   .lay.off{opacity:.42}
   .lay.off .eye{color:#4b5058}
+  /* ---------- empilage physique ---------- */
+  /* La coupe se lit comme le tableau d'un fabricant : une ligne par élément,
+     les chiffres alignés à droite en monospace. Les huit colonnes ne tiennent
+     pas dans un dock étroit — d'où le défilement horizontal, qui évite de
+     sacrifier une colonne. */
+  .stkwrap{overflow-x:auto;border-bottom:1px solid var(--border)}
+  .stkwrap::-webkit-scrollbar{height:6px}
+  .stkwrap::-webkit-scrollbar-thumb{background:#31343a;border-radius:3px}
+  table.stk{width:100%;min-width:390px;border-collapse:collapse;font-size:11.5px}
+  table.stk th{
+    background:var(--panel2);
+    font-family:var(--mono);font-size:8.5px;letter-spacing:.11em;text-transform:uppercase;
+    color:var(--txt-dim);text-align:left;padding:5px 6px;white-space:nowrap;
+    border-bottom:1px solid var(--border2);
+  }
+  table.stk th.r,table.stk td.r{text-align:right}
+  table.stk td{
+    padding:4px 6px;border-bottom:1px solid #202226;white-space:nowrap;color:var(--txt);
+  }
+  table.stk td.n{
+    font-family:var(--mono);font-size:9.5px;color:var(--yellow);text-align:center;
+    width:16px;padding:4px 3px;box-shadow:inset 3px 0 0 var(--sw,transparent);
+  }
+  table.stk td.nm{max-width:120px;overflow:hidden;text-overflow:ellipsis}
+  /* le tableau des impédances n'a pas de colonne « # » : le liseré de couleur
+     passe sur la première cellule */
+  table.stk.imp{min-width:340px}
+  table.stk.imp td:first-child{
+    box-shadow:inset 3px 0 0 var(--sw,transparent);padding-left:9px;
+  }
+  table.stk td.mat{color:var(--txt-dim)}
+  table.stk td.ty,table.stk td.r{font-family:var(--mono);font-size:10px;letter-spacing:.04em}
+  table.stk td.ty{color:var(--txt-dim)}
+  /* le type de couche se voit à la teinte, sans lire la colonne « type » */
+  table.stk tr.cu td{background:rgba(242,199,68,.05)}
+  table.stk tr.cu td.nm{color:var(--txt)}
+  table.stk tr.gnd td{background:rgba(63,160,234,.09)}
+  table.stk tr.gnd td.ty{color:var(--blue)}
+  table.stk tr.pwr td{background:rgba(232,68,58,.09)}
+  table.stk tr.pwr td.ty{color:#f0796f}
+  table.stk tr.shield td{background:rgba(138,240,255,.07)}
+  table.stk tr.shield td.ty{color:var(--cyan)}
+  table.stk tr.tech td{background:rgba(111,211,155,.05);color:var(--txt-dim)}
+  table.stk tr.di td{background:transparent}
+  table.stk tbody tr{cursor:pointer}
+  table.stk tbody tr:hover td{background:#1e2126}
+  table.stk tbody tr.on td{background:#2b2415;color:var(--txt)}
+  table.stk tbody tr.on td.n{box-shadow:inset 3px 0 0 var(--yellow)}
+  table.stk tfoot td{
+    background:var(--panel2);border-bottom:none;border-top:1px solid var(--border2);
+    font-family:var(--mono);font-size:10px;color:var(--txt-dim);letter-spacing:.06em;
+  }
+  table.stk tfoot td.r{color:var(--yellow)}
+  .stkinfo{padding:6px 12px 9px;font-family:var(--mono);font-size:10.5px;
+    color:var(--txt-dim);line-height:1.6;border-bottom:1px solid var(--border)}
+  .stkinfo b{color:var(--txt);font-weight:600}
+  .stkinfo b.warn,.stkinfo .warn{color:var(--red)}
+  .stkinfo b.ok{color:#6fd39b}
   /* ---------- propriétés ---------- */
   .prop{padding:10px 12px;border-bottom:1px solid var(--border)}
   .prop label{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;
     text-transform:uppercase;color:var(--txt-dim);margin-bottom:4px}
+  /* ---------- menu déroulant de la barre d'outils ---------- */
+  select.tbsel{
+    background:var(--panel2);color:var(--txt);border:1px solid var(--border2);
+    padding:6px 8px;border-radius:5px;font-size:12px;cursor:pointer;font-family:var(--ui);
+  }
+  select.tbsel:hover{border-color:var(--blue);color:#fff}
+  select.tbsel:focus{outline:none;border-color:var(--blue)}
+  select.tbsel option{background:#101216;color:var(--txt);font-family:var(--mono)}
   .prop input,.prop select{
     width:100%;background:#101216;border:1px solid var(--border2);color:var(--txt);
     border-radius:5px;padding:6px 8px;font-family:var(--mono);font-size:12.5px;
@@ -134,7 +203,8 @@
     color:var(--txt);border-radius:4px;padding:2px 3px;font-family:var(--mono);font-size:10px;
   }
   table.bom select:focus{outline:none;border-color:var(--blue)}
-  table.bom tr.on td{background:#241f13}
+  table.bom tr.on td{background:#2b2415}
+  table.bom tr.on td:first-child{box-shadow:inset 2px 0 0 var(--yellow)}
   .ok{color:#6fd39b}
   .warn{color:var(--red)}
   .pkgcell{font-family:var(--mono);font-size:9.5px;color:var(--txt-dim);display:block;margin-top:1px}
@@ -183,6 +253,22 @@
   }
   #coordBox input:focus{outline:none;border-color:var(--blue)}
   #coordBox .cihint{font-family:var(--mono);font-size:10px;color:var(--txt-dim)}
+  /* ---------- menu du bouton « zone cuivre » ---------- */
+  button.tb .car{font-size:9px;color:var(--txt-dim)}
+  button.tb.on .car{color:#dff0ff}
+  #zoneMenu{
+    position:fixed;display:none;z-index:80;width:250px;
+    background:var(--panel);border:1px solid var(--border2);border-radius:7px;
+    box-shadow:0 18px 40px rgba(0,0,0,.55);overflow:hidden;
+  }
+  #zoneMenu.on{display:block}
+  #zoneMenu .mtitle{font-family:var(--mono);font-size:9px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--txt-dim);padding:8px 12px 6px}
+  #zoneMenu .prop{border-bottom:1px solid var(--border)}
+  #zoneMenu .prop:last-child{border-bottom:none}
+  #zoneMenu .row{margin-top:0}
+  #zoneMenu .row+.row{margin-top:6px}
+  #zoneMenu .note{padding:0 12px 10px;font-size:11.5px;color:var(--txt-dim);line-height:1.45}
   @media (max-width:980px){
     aside{width:168px}aside.right{width:206px}
     #coordBox .cihint{display:none}

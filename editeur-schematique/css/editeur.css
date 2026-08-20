@@ -165,4 +165,45 @@
   .netcell:hover{border-color:var(--border2);background:#101216}
   .netcell.none{color:var(--txt-dim);cursor:default}
   .netcell.none:hover{border-color:transparent;background:none}
+  /* ---------- menu déroulant de la barre d'outils ---------- */
+  select.tbsel{
+    background:var(--panel2);color:var(--txt);border:1px solid var(--border2);
+    padding:6px 8px;border-radius:5px;font-size:12px;cursor:pointer;font-family:var(--ui);
+  }
+  select.tbsel:hover{border-color:var(--blue);color:#fff}
+  select.tbsel:focus{outline:none;border-color:var(--blue)}
+  select.tbsel option{background:#101216;color:var(--txt);font-family:var(--mono)}
+  /* ---------- fenêtre modale (éditeur de brochage) ---------- */
+  .modal{
+    position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
+    background:rgba(8,9,11,.72);padding:24px;
+  }
+  .modal[hidden]{display:none}
+  .modal-box{
+    display:flex;flex-direction:column;min-height:0;
+    width:min(940px,100%);height:min(640px,100%);
+    background:var(--panel);border:1px solid var(--border2);border-radius:8px;
+    box-shadow:0 18px 60px rgba(0,0,0,.55);overflow:hidden;
+  }
+  .modal-head{
+    display:flex;align-items:center;gap:10px;padding:9px 12px;
+    background:var(--panel2);border-bottom:1px solid var(--border);
+  }
+  .modal-title{
+    flex:1;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--txt);
+  }
+  .modal-body{display:flex;min-height:0;flex:1}
+  .pe-view{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;
+    border-right:1px solid var(--border)}
+  .pe-view canvas{flex:1;min-height:0;width:100%;display:block;cursor:crosshair;touch-action:none}
+  .pe-side{width:300px;flex:none;display:flex;flex-direction:column;min-height:0}
+  .pe-side .prop input[type=number]{width:100%}
+  .pe-side .pins{overflow-y:auto;flex:1;min-height:0}
+  .pinrow.on{background:#1b2733;border-radius:5px;padding:2px 4px;margin-left:-4px}
+  .pinrow .pxy{
+    font-family:var(--mono);font-size:9.5px;color:var(--txt-dim);width:52px;
+    text-align:right;flex:none;
+  }
+  .pinrow:not(.on) .pxy{opacity:.65}
   @media (max-width:900px){}

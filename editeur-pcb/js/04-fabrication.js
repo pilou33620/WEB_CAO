@@ -21,7 +21,7 @@ function maskOpenings(side){
       if(!padLayers(fp,q).includes(l))continue;
       out.push({q,grow:S.rule.mask});
     }
-  if(!S.rule.tented)
+  if(!viaTented())
     for(const v of S.vias)
       if(l>=v.a&&l<=v.b)
         out.push({q:{x:v.x,y:v.y,w:v.d,h:v.d,shape:"circ",rot:0,drill:v.drill,net:v.net},
@@ -324,6 +324,7 @@ function drillFile(){
   for(const v of S.vias)add(v.drill,v.x,v.y);
   const keys=[...tools.keys()].sort((a,b)=>parseFloat(a)-parseFloat(b));
   const out=["M48","; Editeur PCB - percage metallise (PTH)",
+             "; epaisseur du stratifie "+fmt(stackLam(),3)+" mm",
              "; "+new Date().toISOString(),"METRIC,TZ"];
   keys.forEach((k,i)=>out.push("T"+(i+1)+"C"+k));
   out.push("%","G90","G05");
@@ -337,6 +338,107 @@ function drillFile(){
   return {text:out.join("\n")+"\n",tools:keys.length,
           holes:[...tools.values()].reduce((a,v)=>a+v.length,0)};
 }
+/* ==========================================================================
+   Feuille d'empilage
+   Ce que le fabricant doit reproduire : la coupe de la carte, ses matières et
+   ses épaisseurs. Les Gerber ne portent pas cette information — d'où un
+   fichier à part, joint à l'archive et exportable seul depuis le panneau.
+   Pas d'accent dans ce fichier : il traverse des chaînes d'outils CAM qui n'en
+   veulent pas toujours, comme le LISEZ-MOI et l'Excellon.
+   ========================================================================== */
+function stackReport(){
+  const st=S.stack, L=[];
+  const pad=(s,n)=>{s=String(s);return s.length>=n?s:s+" ".repeat(n-s.length);};
+  const lpad=(s,n)=>{s=String(s);return s.length>=n?s:" ".repeat(n-s.length)+s;};
+  L.push("Editeur PCB - feuille d'empilage");
+  L.push(new Date().toLocaleString("fr-FR"));
+  L.push("");
+  L.push("Carte "+fmt(S.board.w,2)+" x "+fmt(S.board.h,2)+" mm, "+
+         S.cu+" couche(s) de cuivre.");
+  L.push("Epaisseur visee "+fmt(st.target,3)+" mm, obtenue "+fmt(stackTotal(),3)+
+         " mm (masque compris).");
+  L.push("Stratifie nu "+fmt(stackLam(),3)+" mm : cuivre "+fmt(stackCuT(),3)+
+         " mm + dielectrique "+fmt(stackDiT(),3)+" mm.");
+  L.push("Finition du cuivre : "+st.finish+".");
+  L.push("Masque "+st.maskColor+", "+fmt(st.maskT,3)+" mm par face, er "+
+         fmt(st.maskEr,2)+".");
+  L.push("Serigraphie "+st.silkColor+".");
+  L.push("Traitement des vias : "+VIA_TXT[S.rule.viaFinish]+".");
+  const asym=stackAsym();
+  if(!asym.length)L.push("Empilage symetrique.");
+  else{
+    L.push("Empilage ASYMETRIQUE, a compenser ou a valider :");
+    for(const x of asym)
+      L.push("  "+(x.what==="cu"?"cuivre ":"dielectrique ")+(x.i+1)+
+             " ("+x.a+") contre le "+(x.j+1)+" ("+x.b+")");
+  }
+  const a=worstAspect();
+  if(a)L.push("Rapport d'aspect le plus defavorable : "+fmt(a.ratio,1)+
+              " pour 1 (percage "+fmt(a.drill,2)+" mm sur "+fmt(a.len,2)+" mm)"+
+              (a.ratio>ASPECT_WARN?", au-dela de "+ASPECT_WARN+" pour 1.":"."));
+  const vc=viaCensus();
+  if(S.vias.length){
+    L.push("Vias : "+vc.through+" traversant(s), "+vc.blind+" borgne(s), "+
+           vc.buried+" enterre(s)"+
+           (vc.seq?" dont "+vc.seq+" hors d'un pressage unique :":"."));
+    for(const v of S.vias){
+      const b=viaBuild(v.a,v.b);
+      if(!b.ok)L.push("  "+cuId(v.a,S.cu)+" vers "+cuId(v.b,S.cu)+" : "+noAcc(b.why));
+    }
+  }
+  L.push("");
+  L.push("Coupe, de la face composants vers la face soudure :");
+  L.push("");
+  L.push("  "+pad("Element",26)+pad("Role",14)+pad("Matiere",18)+
+         lpad("Epaisseur",11)+lpad("er",6)+lpad("tan d",7));
+  L.push("  "+"-".repeat(80));
+  for(const r of stackRows()){
+    let el="", role="", mat="", th="", er="", df="";
+    if(r.kind==="silk"){
+      el="Serigraphie "+(r.i?"dessous":"dessus");
+      role="-";mat="encre "+st.silkColor;
+      th="-";er="-";df="-";
+    }else if(r.kind==="mask"){
+      el="Masque "+(r.i?"dessous":"dessus");
+      role="-";mat="vernis "+st.maskColor;
+      th=fmt(st.maskT,3)+" mm";er=fmt(st.maskEr,2);df="-";
+    }else if(r.kind==="cu"){
+      el=(r.i+1)+" "+cuId(r.i,S.cu);
+      role=roleLabel(r.i);
+      mat="cuivre "+ozLabel(cuT(r.i));
+      th=fmt(cuT(r.i)*1000,1)+" um";er="-";df="-";
+    }else{
+      const d=diAt(r.i);
+      el="  "+(d.k==="core"?"Ame (core)":(d.k==="prepreg"?"Prepreg":"Film"));
+      role="-";mat=d.mat;
+      th=fmt(d.t,3)+" mm";er=fmt(d.er,2);df=fmt(d.df,3);
+    }
+    L.push("  "+pad(el,26)+pad(role,14)+pad(mat,18)+lpad(th,11)+lpad(er,6)+lpad(df,7));
+  }
+  L.push("");
+  L.push("Tolerance usuelle du fabricant sur l'epaisseur totale : +/- 10 %.");
+  L.push("Les epaisseurs de cuivre sont celles apres depot : une couche interne");
+  L.push("commandee en 17,5 um sort a 17,5 um, une couche externe en 35 um sort");
+  L.push("plus epaisse si un cuivrage de trous s'y ajoute.");
+  return L.join("\n")+"\n";
+}
+/* Les libellés de l'interface portent des accents ; ces fichiers-là n'en
+   veulent pas. Ce qui vient de l'utilisateur — noms de couche, de net, de
+   matière — passe tel quel : le déformer serait pire que de l'accentuer. */
+function noAcc(s){
+  const M={"à":"a","â":"a","ä":"a","ç":"c","é":"e","è":"e","ê":"e","ë":"e",
+           "î":"i","ï":"i","ô":"o","ö":"o","ù":"u","û":"u","ü":"u","ÿ":"y",
+           "œ":"oe","æ":"ae","É":"E","È":"E","Ê":"E","À":"A","Â":"A","Ç":"C",
+           "Î":"I","Ô":"O","Û":"U","«":'"',"»":'"',"’":"'","—":"-","–":"-",
+           "…":"...","·":"-","µ":"u","Ω":"ohm","²":"2"};
+  return String(s).replace(/[^ -~]/g,ch=>M[ch]===undefined?ch:M[ch]);
+}
+const VIA_TXT={
+  open   :"ouverts au masque",
+  tented :"recouverts de vernis (IPC-4761 type II)",
+  plugged:"bouches resine, non plaques (IPC-4761 type V)",
+  filled :"bouches et plaques, via-in-pad (IPC-4761 type VII)"
+};
 function fabReadme(files,dr){
   const L=[];
   L.push("Editeur PCB — dossier de fabrication");
@@ -345,6 +447,8 @@ function fabReadme(files,dr){
   L.push("Carte : "+fmt(S.board.w,2)+" x "+fmt(S.board.h,2)+" mm"+
          (S.board.pts?" (contour libre, "+S.board.pts.length+" sommets)":" (rectangle)")+
          ", "+S.cu+" couche(s) de cuivre.");
+  L.push("Empilage : "+fmt(stackTotal(),3)+" mm, finition "+S.stack.finish+
+         " ; la coupe complete est dans EMPILAGE.txt.");
   L.push("Origine des coordonnees : "+(S.fabOrigin
     ? "origine utilisateur (les coordonnees peuvent etre negatives)"
     : "coin inferieur gauche de la carte")+".");
@@ -360,7 +464,7 @@ function fabReadme(files,dr){
            " mm, via "+fmt(c.via,2)+"/"+fmt(c.drill,2)+" mm");
   L.push("  dilatation du masque : "+fmt(S.rule.mask,2)+" mm");
   L.push("  retrait de la pate : "+fmt(S.rule.paste,2)+" mm");
-  L.push("  vias "+(S.rule.tented?"recouverts de vernis":"ouverts au masque"));
+  L.push("  traitement des vias : "+VIA_TXT[S.rule.viaFinish]);
   L.push("  percages : "+dr.tools+" outil(s), "+dr.holes+" trou(s)");
   L.push("");
   L.push("Les zones de cuivre utilisent la polarite negative (LPC) pour leurs");
@@ -383,6 +487,7 @@ function buildFabFiles(){
   files.push({name:base+".GKO",text:gerberEdge()});
   const dr=drillFile();
   files.push({name:base+".TXT",text:dr.text});
+  files.push({name:"EMPILAGE.txt",text:stackReport()});
   files.push({name:"LISEZ-MOI.txt",text:fabReadme(files,dr)});
   return {files,drill:dr};
 }
