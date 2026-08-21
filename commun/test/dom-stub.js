@@ -137,6 +137,8 @@ function install(opts){
 
   const listeners={doc:{},cv:{},win:{}};
   const byId=new Map();
+  /* l'élément qui a le focus, ou null pour le corps de page */
+  let focused=null;
 
   function descendants(root){
     const out=[];
@@ -202,7 +204,12 @@ function install(opts){
     };
     e.matches=sel=>matches(sel,e,e);
     e.addEventListener=noop;e.removeEventListener=noop;
-    e.focus=noop;e.select=noop;e.blur=noop;e.click=noop;
+    /* Le focus est modélisé : les raccourcis d'une seule touche se taisent
+       lorsqu'un champ l'a, et un clic sur le plan de travail doit le rendre.
+       Sans cela l'essai ne verrait pas la différence. */
+    e.focus=()=>{focused=e;};
+    e.blur=()=>{if(focused===e)focused=null;};
+    e.select=noop;e.click=noop;
     /* <dialog> : ouvert/fermé sans rien afficher — le banc d'essai déclenche
        lui-même le bouton voulu (voir dom.dialog()) */
     e.open=false;
@@ -270,6 +277,7 @@ function install(opts){
     nodeType:9,
     body:body,
     documentElement:body,
+    get activeElement(){return focused||body;},
     getElementById(id){
       if(!byId.has(id))byId.set(id,el("div",id));
       return byId.get(id);

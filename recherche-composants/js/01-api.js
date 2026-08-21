@@ -1,14 +1,14 @@
 "use strict";
 /* =============================================================================
    recherche-composants — 01-api.js
-   Dialogue avec serveur-composants.py, qui relaie vers pcbparts.dev. La page
-   ne parle jamais directement au serveur MCP : sans passerelle locale, ni le
-   CORS ni le protocole ne le permettraient.
+   Dialogue avec le serveur local, qui relaie vers pcbparts.dev. La page ne
+   parle jamais directement au serveur MCP : sans passerelle locale, ni le CORS
+   ni le protocole ne le permettraient.
 
    L'adresse de la passerelle est cherchée dans cet ordre :
      1. celle mémorisée par l'utilisateur (bouton « Serveur… ») ;
-     2. l'origine qui sert la page (cas normal : tout tourne sur le 8420) ;
-     3. le même hôte sur le port 8420 (page servie par serveur.py, port 8000) ;
+     2. l'origine qui sert la page (cas normal : serveur.py relaie lui-même) ;
+     3. le même hôte sur le port 8420 (serveur-composants.py à côté) ;
      4. http://127.0.0.1:8420 (page ouverte en file://).
    ============================================================================= */
 

@@ -468,6 +468,53 @@ function runDrc(){
     if(!inBoard(p.q.x,p.q.y,0))
       out.push({x:p.q.x,y:p.q.y,l:p.layers[0],msg:"Pastille "+p.tag+" hors du contour"});
 
+  /* ---------- échardes de gravure ----------
+     Un décrochement plus court que la piste qu'il prolonge n'est pas un coude :
+     c'est une languette de cuivre plus fine que le reste du trait, que le bain
+     sous-grave et que le fabricant compte parmi ses défauts — *sliver* dans un
+     rapport de DFM. Le tracé aimante maintenant l'arrivée pour ne plus en
+     produire ; ceux que d'anciens clics ont posés, ou qu'une arrivée sur une
+     pastille hors grille impose, ne se voient que d'ici.
+     On ne juge que les décrochements — un segment pris entre deux autres. Un
+     moignon entre une pastille et un via est court par nécessité, et un via
+     ancre le cuivre autour de lui : dans les deux cas, rien à redresser. */
+  const tEnds=new Map();
+  const eKey=(l,x,y)=>l+"|"+r3(x)+"|"+r3(y);
+  for(const t of S.tracks){
+    for(const k of [eKey(t.l,t.x1,t.y1),eKey(t.l,t.x2,t.y2)])
+      tEnds.set(k,(tEnds.get(k)||0)+1);
+  }
+  for(const t of S.tracks){
+    const L=dist(t.x1,t.y1,t.x2,t.y2);
+    if(L<1e-9||L>=t.w-1e-6)continue;
+    if((tEnds.get(eKey(t.l,t.x1,t.y1))||0)<2)continue;
+    if((tEnds.get(eKey(t.l,t.x2,t.y2))||0)<2)continue;
+    if(viaAt(t.l,t.x1,t.y1)||viaAt(t.l,t.x2,t.y2))continue;
+    out.push({info:true,x:(t.x1+t.x2)/2,y:(t.y1+t.y2)/2,l:t.l,
+      msg:"Décrochement de "+fmt(L,3)+" mm sur "+(t.net||"?")+" : plus court que la "+
+          "piste ("+fmt(t.w,2)+" mm), le graveur en fera une écharde"});
+  }
+
+  /* ---------- angles bâtards ----------
+     Un segment qui ne tombe sur aucun des huit sens du tracé est un
+     *off-angle track* : le rendu Gerber ne l'optimise plus, et certains
+     fabricants le refusent au contrôle d'entrée. Il ne naît pas du routeur —
+     qui ne pose que du 45° — mais d'un sommet déplacé à la main entre deux
+     bouts fixes, là où aucun arrangement de coudes ne rend l'angle.
+     La règle se tait quand l'angle libre est celui qu'on a demandé : c'est
+     alors un choix, pas un accident. */
+  if(cornerMode()!=="free")
+    for(const t of S.tracks){
+      if(dist(t.x1,t.y1,t.x2,t.y2)<1e-9)continue;
+      const dx=t.x2-t.x1, dy=t.y2-t.y1;
+      const off=angleOff(dx,dy);
+      if(off<=ANG_TOL)continue;
+      out.push({info:true,x:(t.x1+t.x2)/2,y:(t.y1+t.y2)/2,l:t.l,
+        msg:"Segment à "+fmt(angleDeg(dx,dy),1)+"° sur "+(t.net||"?")+
+            " : hors des huit sens du tracé, à "+fmt(off*180/Math.PI,1)+
+            "° du plus proche"});
+    }
+
   for(const z of S.zones){
     const b=polyBBox(z.pts);
     if(!z.net)out.push({x:(b.x1+b.x2)/2,y:(b.y1+b.y2)/2,l:z.l,

@@ -7,8 +7,8 @@ règles de conception.
 
 Contrairement aux éditeurs, **cette page a besoin d'un serveur** : le
 navigateur ne peut pas appeler le serveur MCP de pcbparts.dev directement (ni
-le CORS ni le protocole ne le permettent). La passerelle
-`../serveur-composants.py` fait le relais et sert aussi le reste du dépôt.
+le CORS ni le protocole ne le permettent). `../serveur.py` fait le relais —
+c'est le même serveur que celui des éditeurs, aucune dépendance à installer.
 
 ```
 recherche-composants/
@@ -31,6 +31,7 @@ Deux fichiers viennent du dossier partagé, identiques pour les deux éditeurs :
 |---|---:|---|
 | `js/00-espace-config.js` | 21 | `WS_CONFIG` : clé de stockage local et disposition d'usine des trois panneaux |
 | `js/01-api.js` | 94 | Découverte de la passerelle (origine courante, port 8420, adresse mémorisée), appels `/api/tools` et `/api/tool` |
+| `../passerelle_mcp.py` | 200 | Client MCP partagé par les deux serveurs : session, liste blanche, déballage des réponses |
 | `js/02-outils.js` | 284 | Catalogue des 14 outils : familles, libellés français, champs et colonnes de résultats |
 | `js/03-formulaire.js` | 230 | Formulaire construit en croisant le catalogue et le schéma d'arguments du serveur ; lecture et validation des champs |
 | `js/04-resultats.js` | 193 | Tableau, fiche ou bloc de texte selon la réponse ; exports `.csv` et `.json` |
@@ -40,20 +41,17 @@ Deux fichiers viennent du dossier partagé, identiques pour les deux éditeurs :
 ## Démarrage
 
 ```bash
-pip install fastapi httpx uvicorn
+python serveur.py
 ```
 
-```bash
-python serveur-composants.py
-```
+Puis l'adresse affichée au démarrage : la page d'accueil propose les deux
+éditeurs et la recherche de composants, et la recherche passe par ce même
+serveur. `--local` limite l'écoute à cette machine, `--port` change le port.
 
-Puis <http://127.0.0.1:8420/> : la page d'accueil propose les deux éditeurs et
-la recherche de composants. `--reseau` ouvre l'accès aux autres appareils du
-réseau WiFi, `--port` change le port.
-
-La page fonctionne aussi servie par `serveur.py` (port 8000) : elle cherche
-alors la passerelle sur le port 8420 du même hôte. Le bouton **Serveur…**
-permet d'indiquer une autre adresse, mémorisée dans le navigateur.
+`serveur-composants.py` reste disponible pour qui préfère uvicorn
+(`pip install fastapi uvicorn`, port 8420 par défaut). La page essaie dans
+l'ordre : l'adresse mémorisée par le bouton **Serveur…**, l'origine qui la
+sert, le port 8420 du même hôte, puis `http://127.0.0.1:8420`.
 
 ## Ce que fait l'interface
 

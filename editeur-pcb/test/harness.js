@@ -53,11 +53,19 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "layerRole","roleLabel","setLayerRole","coherentRole","roleFromPlane",
   "roleNet","STACK_PRESETS","FINISHES","MASK_COLORS","DI_KIND","OZ","r4",
   /* sélection multiple et presse-papier */
-  "selectHit","toggleHit","altTarget","selCount","deleteSel","copySelPcb","cutSelPcb",
+  "selectHit","toggleHit","altTarget","selCount","deleteSel","unrouteSel","copySelPcb","cutSelPcb",
   "pasteClipPcb","pcbClipContent","pcbSetClip","pcbGetClip","freeFpRef","GRID_STEPS",
   "setGridStep","gridShownStep","gridLabel","fpById",
   /* import défensif (normDoc) et aller-retour de document */
-  "docObj","normDoc","setNetClass"];
+  "docObj","normDoc","setNetClass",
+  /* rendu et fusion des lignes droites */
+  "drawTracks","sameLine","routeVia",
+  /* géométrie du tracé 45° et posture du coude */
+  "route45","routeCorner","minJog","autoPosture","routePosture","dir8",
+  "angleOff","angleOk","angleDeg","ANG_TOL","DIR8","tendMagnet",
+  "cornerMode","setCornerMode","CORNER_MODES",
+  /* anti-collision et ménage du dépôt */
+  "moveClearBad","pruneHooks","pruneDeadTracks","hookAt","endFar","endDir"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -141,6 +149,10 @@ NET "N$2"
     U1.2
     C1.1
 `;
+
+/* Réglages d'usine, relevés avant que le premier essai ne les remue : c'est ce
+   que voit l'utilisateur qui ouvre l'éditeur. */
+const USINE={grid:S.grid,corner:S.rule.corner};
 
 let ok=0,ko=0;
 function T(name,fn){
@@ -358,6 +370,276 @@ T("largeur de classe au tracé",()=>{
   if(S.route)commitRoute();
   setMode("select");
 });
+/* Le routeur pose un segment par clic, et route45 en pose deux. Suivre une même
+   direction sur plusieurs clics laissait autant de morceaux bout à bout là où
+   l'œil ne voit qu'un trait — et les coutures se voyaient à l'écran. */
+T("une ligne droite tracée en plusieurs clics fait un seul segment",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  S.avoid=false;
+  setMode("track");S.active=0;
+  startRoute(0,0,true);
+  updateRoute(10,10);stepRoute();         // 45° plein
+  updateRoute(20,20);stepRoute();         // on continue dans le même axe
+  updateRoute(30,30);stepRoute();
+  updateRoute(40,30);stepRoute();         // changement de direction : nouveau segment
+  commitRoute();
+  setMode("select");
+  if(S.tracks.length!==2)
+    throw new Error("un segment par direction attendu, "+S.tracks.length+" : "
+      +S.tracks.map(t=>`(${t.x1},${t.y1})->(${t.x2},${t.y2})`).join(" "));
+  const d=S.tracks[0];
+  if(Math.abs(d.x2-30)>1e-9||Math.abs(d.y2-30)>1e-9)
+    throw new Error("la diagonale devait aller d'un bout à l'autre : "+d.x2+","+d.y2);
+  S.avoid=true;
+  undo();
+});
+/* Le chemin en L chanfreiné se décompose en une diagonale et une portion
+   droite. Prise comme |dx| - |dy|, la seconde devient négative dès que le trajet
+   est plus haut que large : elle repart en arrière par-dessus la diagonale et le
+   contour se recroise — le papillon, cette auto-intersection que la spec Gerber
+   refuse dans une région G36/G37. */
+T("route45 : deux longueurs positives, quel que soit le trajet",()=>{
+  const cas=[[3,10],[-3,10],[3,-10],[-3,-10],[10,3],[10,-3],[-10,3],[-10,-3],
+             [0.5,7],[7,0.5],[1,1000]];
+  for(const p of [false,true])
+    for(const [bx,by] of cas){
+      const segs=route45({x:0,y:0},{x:bx,y:by},p);
+      if(segs.length!==2)
+        throw new Error(`(${bx},${by}) posture ${p} : deux segments attendus, `+segs.length);
+      let px=0,py=0;
+      for(const s of segs){
+        const dx=Math.abs(s.x2-s.x1), dy=Math.abs(s.y2-s.y1);
+        if(dx<1e-9&&dy<1e-9)
+          throw new Error(`(${bx},${by}) posture ${p} : segment de longueur nulle`);
+        if(dx>1e-9&&dy>1e-9&&Math.abs(dx-dy)>1e-9)
+          throw new Error(`(${bx},${by}) posture ${p} : segment de biais`);
+        // bout à bout, et jamais un retour en arrière sur le précédent
+        if(Math.abs(s.x1-px)>1e-9||Math.abs(s.y1-py)>1e-9)
+          throw new Error(`(${bx},${by}) posture ${p} : la polyligne s'est ouverte`);
+        px=s.x2;py=s.y2;
+      }
+      const u={x:segs[0].x2-segs[0].x1,y:segs[0].y2-segs[0].y1};
+      const v={x:segs[1].x2-segs[1].x1,y:segs[1].y2-segs[1].y1};
+      if(u.x*v.x+u.y*v.y<=0)
+        throw new Error(`(${bx},${by}) posture ${p} : la portion droite repart en arrière`);
+      if(Math.abs(px-bx)>1e-9||Math.abs(py-by)>1e-9)
+        throw new Error(`(${bx},${by}) posture ${p} : l'arrivée n'y est pas`);
+    }
+  // trajets dégénérés : un seul segment, pas de point milieu
+  for(const [bx,by] of [[10,0],[0,10],[10,10],[-10,10]])
+    if(route45({x:0,y:0},{x:bx,y:by},false).length!==1||
+       route45({x:0,y:0},{x:bx,y:by},true).length!==1)
+      throw new Error(`(${bx},${by}) : un seul segment attendu`);
+  if(route45({x:5,y:5},{x:5,y:5},false).length!==0)throw new Error("sur place : rien à poser");
+});
+/* Le papillon mort, l'écharde restait. `s` n'est plus négatif, mais avec un
+   curseur libre il ne vaut jamais exactement zéro : trois centièmes de
+   décrochement, une languette plus fine que la piste qu'elle prolonge, que le
+   bain de gravure sous-attaque. `minSeg` déplace alors l'arrivée pour forcer le
+   rail — c'est l'aimant angulaire du routeur de KiCad. */
+T("route45 : le décrochement sous le seuil s'aimante sur le rail",()=>{
+  const W=0.3;
+  for(const sx of [1,-1])
+    for(const sy of [1,-1]){
+      const segs=route45({x:0,y:0},{x:sx*10,y:sy*9.97},false,W);
+      if(segs.length!==1)
+        throw new Error("un seul segment attendu : "+JSON.stringify(segs));
+      const s=segs[0];
+      if(Math.abs(Math.abs(s.x2-s.x1)-Math.abs(s.y2-s.y1))>1e-9)
+        throw new Error("l'aimant devait donner un 45° exact : "+JSON.stringify(s));
+      if(Math.abs(s.x2-sx*9.985)>1e-9||Math.abs(s.y2-sy*9.985)>1e-9)
+        throw new Error("l'arrivée devait venir sur la diagonale : "+JSON.stringify(s));
+      // diagonale trop courte : c'est l'axe qui aimante
+      const ax=route45({x:0,y:0},{x:sx*10,y:sy*0.03},false,W);
+      if(ax.length!==1||Math.abs(ax[0].y2-ax[0].y1)>1e-9||Math.abs(ax[0].x2-sx*10)>1e-9)
+        throw new Error("l'aimant devait redresser sur l'axe : "+JSON.stringify(ax));
+    }
+  if(route45({x:0,y:0},{x:10,y:9.5},false,W).length!==2)
+    throw new Error("un décrochement franc reste un décrochement");
+  // aucun segment plus court que le seuil, sur tout le balayage de la zone morte
+  for(let i=0;i<=400;i++){
+    const y=Math.round(i*25)/1000;
+    for(const p of [false,true])
+      for(const s of route45({x:0,y:0},{x:10,y:y},p,W)){
+        const L=Math.hypot(s.x2-s.x1,s.y2-s.y1);
+        if(L>1e-9&&L<W-1e-9)
+          throw new Error("écharde de "+L.toFixed(3)+" mm à y="+y);
+      }
+  }
+  // sans seuil, la géométrie reste celle d'avant : l'aimant ne s'invite pas
+  if(route45({x:0,y:0},{x:10,y:9.97},false).length!==2)
+    throw new Error("sans seuil, le décrochement se pose tel quel");
+});
+/* Le seuil se prend sur la largeur de la piste, et le tracé le porte de
+   lui-même : une grille au dixième sous une piste de trois dixièmes fabriquait
+   des échardes à la chaîne. */
+T("le tracé ne pose plus d'écharde sous la largeur de piste",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  S.avoid=false;setMode("track");S.active=0;S.grid=0.1;
+  startRoute(0,0,true);
+  const W=S.route.w;
+  updateRoute(10,9.9);                       // un décrochement d'un pas de grille
+  if(S.route.preview.length!==1)
+    throw new Error("l'aimant devait tout ramener sur la diagonale : "+
+                    JSON.stringify(S.route.preview));
+  stepRoute();
+  updateRoute(14,9.9);stepRoute();           // puis une horizontale franche
+  commitRoute();
+  for(const t of S.tracks){
+    const L=Math.hypot(t.x2-t.x1,t.y2-t.y1);
+    if(L<W-1e-9)
+      throw new Error("écharde de "+L.toFixed(3)+" mm posée : "+JSON.stringify(t));
+  }
+  setMode("select");
+});
+/* Celles qu'un ancien clic a posées, ou qu'une arrivée sur une pastille hors
+   grille impose, ne se voient qu'au contrôle. */
+T("le DRC signale le décrochement plus court que la piste",()=>{
+  const keep=serialize();
+  S.fps=[];S.vias=[];S.zones=[];
+  S.tracks=[{l:0,net:"A",w:0.3,x1:0,y1:0,x2:5,y2:0},
+            {l:0,net:"A",w:0.3,x1:5,y1:0,x2:5.03,y2:0.03},
+            {l:0,net:"A",w:0.3,x1:5.03,y1:0.03,x2:10,y2:0.03}];
+  touch();
+  if(!runDrc().some(e=>/écharde/.test(e.msg)))
+    throw new Error("le décrochement de 0,03 mm devrait être signalé");
+  // un bout de piste libre est court par nécessité, pas par accident
+  S.tracks=[{l:0,net:"A",w:0.3,x1:0,y1:0,x2:5,y2:0},
+            {l:0,net:"A",w:0.3,x1:5,y1:0,x2:5.1,y2:0}];
+  touch();
+  if(runDrc().some(e=>/écharde/.test(e.msg)))
+    throw new Error("un moignon en bout de piste n'est pas une écharde");
+  loadDoc(JSON.parse(keep),true);
+});
+/* La posture ne se mémorise pas : la retenir verrouille le coude en angle droit,
+   et le chanfrein ne réapparaît plus. Elle se relève à chaque mouvement de la
+   direction déjà prise — la piste continue tout droit, puis tourne. */
+T("la posture se recalcule à chaque mouvement",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  S.avoid=false;setMode("track");S.active=0;
+  startRoute(0,0,true);
+  updateRoute(30,0);stepRoute();                  // une horizontale
+  updateRoute(36,4);
+  let p=S.route.preview;
+  if(p.length!==2||Math.abs(p[0].y2)>1e-9)
+    throw new Error("la droite devait continuer avant de tourner : "+JSON.stringify(p));
+  updateRoute(40,10);stepRoute();                 // puis un 45° plein
+  if(S.route.done[S.route.done.length-1].x2!==40)
+    throw new Error("le 45° devait être posé : "+JSON.stringify(S.route.done));
+  updateRoute(48,14);
+  p=S.route.preview;
+  if(p.length!==2)throw new Error("le chanfrein devait revenir : "+JSON.stringify(p));
+  if(Math.abs(Math.abs(p[0].x2-p[0].x1)-Math.abs(p[0].y2-p[0].y1))>1e-9)
+    throw new Error("après un 45°, la diagonale devait passer devant : "+JSON.stringify(p));
+  commitRoute();setMode("select");
+});
+/* Repartir en arrière posait la portion droite par-dessus le cuivre qu'on venait
+   de poser : deux segments bout à bout en sens contraire, un recouvrement de
+   surface nulle. La diagonale, elle, quitte le point tout de suite. */
+T("la portion droite ne double pas le cuivre posé",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  S.avoid=false;setMode("track");S.active=0;
+  startRoute(0,0,true);
+  updateRoute(30,0);stepRoute();
+  updateRoute(20,3);
+  const p=S.route.preview;
+  if(p.length!==2)throw new Error("deux segments attendus : "+JSON.stringify(p));
+  if(Math.abs(Math.abs(p[0].x2-p[0].x1)-Math.abs(p[0].y2-p[0].y1))>1e-9)
+    throw new Error("la diagonale devait partir la première : "+JSON.stringify(p));
+  commitRoute();setMode("select");
+});
+/* « / » bascule la posture à la main, comme le routeur de KiCad — et la bascule
+   ne vaut que pour le coude en cours. */
+T("la touche / bascule la posture, rendue au dépôt",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  S.avoid=false;setMode("track");S.active=0;
+  startRoute(0,0,true);
+  fire("pointermove",sc(10,4));                   // la bascule repart du curseur
+  const droit=S.route.preview.map(s=>[s.x2,s.y2].join());
+  if(Math.abs(S.route.preview[0].y2)>1e-9)
+    throw new Error("la portion droite devait partir la première : "+JSON.stringify(S.route.preview));
+  key("/");
+  const diag=S.route.preview.map(s=>[s.x2,s.y2].join());
+  if(droit.join()===diag.join())throw new Error("la posture n'a pas basculé");
+  if(Math.abs(S.route.preview[0].x2-4)>1e-9||Math.abs(S.route.preview[0].y2-4)>1e-9)
+    throw new Error("la diagonale devait passer devant : "+JSON.stringify(S.route.preview));
+  stepRoute();
+  if(S.route.flip)throw new Error("la bascule devait être rendue au dépôt");
+  commitRoute();setMode("select");
+});
+T("un via garde la césure au milieu d'une ligne droite",()=>{
+  if(S.cu<2)setCuCount(2);
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  S.avoid=false;
+  setMode("track");S.active=0;
+  startRoute(0,0,true);
+  updateRoute(0,10);stepRoute();
+  routeVia();                             // B : via, et on revient sur la couche 0
+  routeToLayer(0);
+  updateRoute(0,20);stepRoute();
+  commitRoute();
+  setMode("select");
+  if(S.tracks.length!==2)
+    throw new Error("le via devait garder la césure, "+S.tracks.length+" segment(s)");
+  S.avoid=true;
+  undo();
+});
+/* Deux segments bout à bout se recouvrent au coude : peints l'un après l'autre,
+   ils y déposent deux fois l'encre et la couture se voit. */
+T("les segments d'une même piste ne sont peints qu'une fois",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];touch();
+  const a={l:0,net:"T",w:0.3,x1:0, y1:0,x2:10,y2:0};
+  const b={l:0,net:"T",w:0.3,x1:10,y1:0,x2:20,y2:0};
+  const e={l:0,net:"T",w:0.5,x1:20,y1:0,x2:30,y2:0};   // autre largeur : son propre lot
+  S.tracks.push(a,b,e);touch();
+  clearSel();S.sel.tracks.add(a);S.sel.tracks.add(b);
+  const cx=ctxStub();
+  let n=0;cx.stroke=()=>n++;
+  drawTracks(cx,0,1);
+  if(n!==3)throw new Error("3 coups de pinceau attendus (halo, 0,3 mm, 0,5 mm), "+n);
+  clearSel();
+});
+/* Le centre d'une pastille de 2 mm est à plus d'un millimètre de son bord :
+   mesurer l'accroche depuis le centre ne l'attrapait qu'en visant le milieu.
+   Manqué de peu, le point retombait sur le quadrillage — hors de l'axe de la
+   pastille, et court d'un rien : la piste n'entrait plus au centre. */
+function deuxPastilles(netB){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  setGridStep(0.5);S.scale=20;S.ox=0;S.oy=0;S.origin.x=0;S.origin.y=0;
+  const A=mkFp("J8","","",2);A.style="row";A.pitch=2.54;A.x=10;A.y=10;A.nets={1:"T",2:""};
+  const B=mkFp("J9","","",2);B.style="row";B.pitch=2.54;B.x=40;B.y=25;B.nets={1:netB,2:""};
+  S.fps.push(A,B);touch();
+  const a=padsWorld(A).find(p=>p.n===1), b=padsWorld(B).find(p=>p.n===1);
+  if(Math.abs(b.x-snapX(b.x))<1e-9)throw new Error("le décor voulait une pastille hors grille");
+  return {a,b};
+}
+T("une pastille attire depuis son cuivre, pas depuis son centre",()=>{
+  const {b}=deuxPastilles("T");
+  S.active=0;
+  const m=magnet(b.x-b.w/2-px(4),b.y+b.h/4,0);   // juste dehors, près du bord
+  if(!m||!m.pad)throw new Error("la pastille devait accrocher depuis son bord");
+  if(Math.abs(m.x-b.x)>1e-9||Math.abs(m.y-b.y)>1e-9)
+    throw new Error("l'accroche devait rendre le centre : "+m.x+","+m.y);
+  if(magnet(b.x-b.w/2-px(30),b.y,0))
+    throw new Error("loin de la pastille, plus rien ne doit accrocher");
+});
+T("la piste entre au centre de la pastille d'arrivée",()=>{
+  const {a,b}=deuxPastilles("T");
+  S.avoid=false;
+  setMode("track");S.active=0;
+  startRoute(a.x,a.y);
+  updateRoute(b.x-b.w/2-px(4),b.y+b.h/4);      // on vise le bord, pas le milieu
+  stepRoute();
+  if(S.route)commitRoute();
+  setMode("select");
+  const last=S.tracks[S.tracks.length-1];
+  if(!last)throw new Error("aucune piste posée");
+  if(Math.abs(last.x2-b.x)>1e-9||Math.abs(last.y2-b.y)>1e-9)
+    throw new Error("la piste devait finir au centre : "+last.x2+","+last.y2+
+                    " au lieu de "+b.x+","+b.y);
+  S.avoid=true;
+  undo();
+});
 T("édition des extrémités de piste",()=>{
   S.tracks=[];S.vias=[];touch();
   const a={l:0,net:"T",w:0.3,x1:10,y1:10,x2:20,y2:10};
@@ -373,6 +655,53 @@ T("édition des extrémités de piste",()=>{
   if(Math.abs(a.x2-24)>0.6||Math.abs(b.x1-24)>0.6)
     throw new Error("les deux extrémités devaient suivre : "+a.x2+" / "+b.x1);
   if(Math.abs(a.x1-10)>1e-9)throw new Error("l'autre bout ne devait pas bouger");
+});
+/* Un centre de pastille tombe rarement sur la grille : une rangée au pas de
+   2,54 mm pose ses colonnes à 1,27 mm de son axe. Accrocher la suite du tracé
+   au seul quadrillage faisait sortir la piste de travers du centre — d'un
+   décalage plus large que la piste elle-même. */
+function pastilleHorsGrille(){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  const j=mkFp("J9","","",2);
+  j.style="row";j.pitch=2.54;j.x=10;j.y=10;j.nets={1:"T"};
+  S.fps.push(j);touch();
+  setGridStep(0.5);S.scale=20;S.ox=0;S.oy=0;S.origin.x=0;S.origin.y=0;
+  const q=padsWorld(j).find(p=>p.n===1);
+  if(Math.abs(q.x-snapX(q.x))<1e-9)throw new Error("le décor voulait une pastille hors grille");
+  return q;
+}
+T("la piste sort droit du centre d'une pastille hors grille",()=>{
+  const q=pastilleHorsGrille();
+  S.avoid=false;
+  setMode("track");S.active=0;
+  startRoute(q.x,q.y);
+  if(Math.abs(S.route.pt.x-q.x)>1e-9)throw new Error("le départ doit être le centre de la pastille");
+  updateRoute(q.x+0.1,q.y+8);stepRoute();     // la main vise la colonne de la pastille
+  if(S.route)commitRoute();
+  setMode("select");
+  if(S.tracks.length!==1)throw new Error("un seul segment attendu, "+S.tracks.length);
+  const t=S.tracks[0];
+  if(Math.abs(t.x1-q.x)>1e-9||Math.abs(t.x2-q.x)>1e-9)
+    throw new Error("la piste devait rester sur la colonne de la pastille : "+t.x1+" → "+t.x2);
+  S.avoid=true;
+});
+T("recentrer une piste sur le centre d'une pastille",()=>{
+  const q=pastilleHorsGrille();
+  const g=snapX(q.x);                         // là où la grille seule posait le bout
+  const a={l:0,net:"T",w:0.3,x1:g,y1:q.y,x2:g,y2:q.y+8};
+  const b={l:0,net:"T",w:0.3,x1:g,y1:q.y+8,x2:g+10,y2:q.y+8};
+  S.tracks=[a,b];touch();
+  setMode("select");S.active=0;
+  clearSel();S.sel.tracks.add(a);
+  fire("pointerdown",sc(a.x1,a.y1));
+  fire("pointermove",sc(q.x,q.y));
+  fire("pointerup",sc(q.x,q.y));
+  if(Math.abs(a.x1-q.x)>1e-9)throw new Error("le bout devait rejoindre le centre : "+a.x1);
+  if(Math.abs(a.x2-q.x)>1e-9)throw new Error("le segment devait se redresser : "+a.x2);
+  if(Math.abs(b.x1-q.x)>1e-9)throw new Error("le coude devait suivre : "+b.x1);
+  if(Math.abs(b.y1-(q.y+8))>1e-9)throw new Error("le voisin devait rester horizontal : "+b.y1);
+  if(Math.abs(b.x2-(g+10))>1e-9)throw new Error("l'autre bout du voisin ne devait pas bouger");
+  undo();
 });
 T("glisser un segment : la piste reste d'un seul tenant",()=>{
   S.tracks=[];S.vias=[];touch();
@@ -395,7 +724,7 @@ T("glisser un segment : la piste reste d'un seul tenant",()=>{
 /* Le décor de la capture : une pastille, un 45°, une longue portion droite
    découpée en trois segments par le routeur, un second 45°. */
 function pisteEnZ(){
-  S.tracks=[];S.vias=[];touch();
+  S.fps=[];S.tracks=[];S.vias=[];touch();   // le décor est nu : on juge la géométrie
   const d ={l:0,net:"T",w:0.3,x1:0, y1:0, x2:10,y2:10};
   const r1={l:0,net:"T",w:0.3,x1:10,y1:10,x2:20,y2:10};
   const r2={l:0,net:"T",w:0.3,x1:20,y1:10,x2:40,y2:10};
@@ -439,6 +768,274 @@ T("les coudes voisins glissent sans changer d'angle",()=>{
     throw new Error("la piste s'est ouverte à droite");
   if(Math.abs(d.x1)>1e-9||Math.abs(d.y1)>1e-9)throw new Error("le bout sur la pastille ne devait pas bouger");
   if(Math.abs(e.x2-60)>1e-9||Math.abs(e.y2-20)>1e-9)throw new Error("l'autre bout ne devait pas bouger");
+  undo();
+});
+/* Tirer la portion plus loin que la naissance de son coude faisait repartir le
+   45° en arrière : la piste se repliait en crochet au-dessus de son départ.
+   Sans mur derrière lui, le coude se retourne — son angle intact. */
+T("le coude se retourne au lieu de partir en crochet",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];touch();
+  const d={l:0,net:"T",w:0.3,x1:0,y1:0,x2:10,y2:10};
+  const v={l:0,net:"T",w:0.3,x1:10,y1:10,x2:10,y2:30};
+  S.tracks.push(d,v);touch();
+  setMode("select");S.active=0;clearSel();S.sel.tracks.add(v);
+  fire("pointerdown",sc(10,20));
+  fire("pointermove",sc(-4,20));
+  fire("pointerup",sc(-4,20));
+  if(d.y2<d.y1)throw new Error("la piste repart en crochet au-dessus de son départ : "+d.y2);
+  if(Math.abs(Math.abs(d.x2-d.x1)-Math.abs(d.y2-d.y1))>1e-9)
+    throw new Error("le 45° devait rester un 45° : "+d.x2+","+d.y2);
+  if(Math.abs(d.x2+4)>0.6||Math.abs(d.y2-4)>0.6)
+    throw new Error("le coude devait passer de l'autre côté : "+d.x2+","+d.y2);
+  if(Math.abs(v.x1-d.x2)>1e-9||Math.abs(v.y1-d.y2)>1e-9)throw new Error("la piste s'est ouverte");
+  if(Math.abs(d.x1)>1e-9||Math.abs(d.y1)>1e-9)throw new Error("le départ ne devait pas bouger");
+  undo();
+});
+/* Le décor de la capture : une pastille tenue par une horizontale, un 45°, une
+   verticale. Tirer la verticale au-delà du 45° doit replier celui-ci et laisser
+   l'horizontale tenir le coude — pas dessiner un crochet. */
+function pisteEnEquerre(){
+  S.fps=[];S.tracks=[];S.vias=[];touch();
+  const h={l:0,net:"T",w:0.3,x1:-20,y1:0,x2:0, y2:0};
+  const d={l:0,net:"T",w:0.3,x1:0,  y1:0,x2:10,y2:10};
+  const v={l:0,net:"T",w:0.3,x1:10, y1:10,x2:10,y2:30};
+  S.tracks.push(h,d,v);touch();
+  setMode("select");S.active=0;clearSel();S.sel.tracks.add(v);
+  return {h,d,v};
+}
+T("le coude dépassé se replie, le mur suivant prend le relais",()=>{
+  const {h,d,v}=pisteEnEquerre();
+  fire("pointerdown",sc(10,20));
+  fire("pointermove",sc(-4,20));
+  fire("pointerup",sc(-4,20));
+  if(S.tracks.indexOf(d)>=0)throw new Error("le 45° replié devait disparaître au dépôt");
+  if(S.tracks.length!==2)throw new Error("deux segments attendus, "+S.tracks.length);
+  if(Math.abs(h.y2)>1e-9)throw new Error("l'horizontale devait rester horizontale : "+h.y2);
+  if(Math.abs(h.x2+4)>0.6)throw new Error("l'horizontale devait tenir le coude : "+h.x2);
+  if(Math.abs(v.x1-h.x2)>1e-9||Math.abs(v.y1-h.y2)>1e-9)throw new Error("la piste s'est ouverte");
+  if(Math.abs(h.x1+20)>1e-9)throw new Error("l'autre bout ne devait pas bouger");
+  undo();
+});
+T("revenir en arrière rend le coude replié",()=>{
+  const {h,d,v}=pisteEnEquerre();
+  fire("pointerdown",sc(10,20));
+  fire("pointermove",sc(-4,20));            // le 45° est mangé
+  fire("pointermove",sc(14,20));            // ... et on revient
+  fire("pointerup",sc(14,20));
+  if(S.tracks.length!==3)throw new Error("les trois segments devaient revenir, "+S.tracks.length);
+  if(Math.abs(d.x1)>1e-9||Math.abs(d.y1)>1e-9)
+    throw new Error("le coude replié devait retrouver sa place : "+d.x1+","+d.y1);
+  if(Math.abs(Math.abs(d.x2-d.x1)-Math.abs(d.y2-d.y1))>1e-9)
+    throw new Error("le 45° devait rester un 45° : "+d.x2+","+d.y2);
+  if(Math.abs(h.x2)>1e-9)throw new Error("l'horizontale devait retrouver son bout : "+h.x2);
+  undo();
+});
+/* Le décor de la capture : deux 45° pris entre trois horizontales. Tirer
+   l'horizontale du milieu par-dessus l'un des coudes laissait son mur suivant
+   parallèle au segment tiré — donc sans appui — et l'articulation se contentait
+   alors de suivre la souris : le 45° partait de biais, ni droit ni à 45°, en
+   travers de la grille. */
+function pisteEnZigzag(){
+  S.fps=[];S.tracks=[];S.vias=[];touch();
+  const h1={l:0,net:"T",w:0.3,x1:10,y1:10,x2:16,y2:10};
+  const d1={l:0,net:"T",w:0.3,x1:16,y1:10,x2:20,y2:14};
+  const h2={l:0,net:"T",w:0.3,x1:20,y1:14,x2:30,y2:14};
+  const d2={l:0,net:"T",w:0.3,x1:30,y1:14,x2:34,y2:18};
+  const h3={l:0,net:"T",w:0.3,x1:34,y1:18,x2:44,y2:18};
+  S.tracks.push(h1,d1,h2,d2,h3);touch();
+  setMode("select");S.active=0;clearSel();S.sel.tracks.add(h2);
+  return {h1,d1,h2,d2,h3};
+}
+/* Aucun segment de biais : tout reste droit ou à 45°. */
+function angles(nom){
+  for(const t of S.tracks){
+    const dx=Math.abs(t.x2-t.x1), dy=Math.abs(t.y2-t.y1);
+    if(dx<1e-9||dy<1e-9||Math.abs(dx-dy)<1e-9)continue;
+    throw new Error(nom+" : segment de biais ("+t.x1+","+t.y1+") → ("+t.x2+","+t.y2+")");
+  }
+}
+/* Aucune auto-intersection : deux segments qui ne se touchent pas par un bout
+   ne doivent pas se croiser. La polyligne qui se recroise — le papillon — est
+   interdite par la spec Gerber dans une région G36/G37. */
+function croisements(nom){
+  const cote=(p,q,r)=>(q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p.x);
+  const bout=(a,b)=>[[a.x1,a.y1],[a.x2,a.y2]].some(u=>
+    [[b.x1,b.y1],[b.x2,b.y2]].some(v=>Math.abs(u[0]-v[0])<1e-9&&Math.abs(u[1]-v[1])<1e-9));
+  for(let i=0;i<S.tracks.length;i++)
+    for(let j=i+1;j<S.tracks.length;j++){
+      const a=S.tracks[i], b=S.tracks[j];
+      if(a.l!==b.l||bout(a,b))continue;
+      const A={x:a.x1,y:a.y1},B={x:a.x2,y:a.y2},C={x:b.x1,y:b.y1},D={x:b.x2,y:b.y2};
+      const d1=cote(C,D,A),d2=cote(C,D,B),d3=cote(A,B,C),d4=cote(A,B,D);
+      if(((d1>1e-9&&d2<-1e-9)||(d1<-1e-9&&d2>1e-9))&&
+         ((d3>1e-9&&d4<-1e-9)||(d3<-1e-9&&d4>1e-9)))
+        throw new Error(nom+" : papillon ("+a.x1+","+a.y1+")→("+a.x2+","+a.y2+
+                        ") croise ("+b.x1+","+b.y1+")→("+b.x2+","+b.y2+")");
+    }
+}
+T("par-dessus le coude, le mur parallèle ne casse pas l'angle",()=>{
+  const {h1,d1,h2}=pisteEnZigzag();
+  fire("pointerdown",sc(25,14));
+  for(let i=1;i<=12;i++)fire("pointermove",sc(25,14-i*0.5));
+  fire("pointerup",sc(25,8));
+  angles("vers le haut");
+  if(Math.abs(h2.y1-8)>0.6||Math.abs(h2.y2-8)>0.6)
+    throw new Error("le segment tiré devait monter : "+h2.y1+" / "+h2.y2);
+  if(Math.abs(h1.y1-10)>1e-9||Math.abs(h1.y2-10)>1e-9)
+    throw new Error("l'horizontale d'en face ne devait pas bouger : "+h1.y2);
+  if(Math.abs(d1.x1-16)>1e-9||Math.abs(d1.y1-10)>1e-9)
+    throw new Error("la naissance du coude ne devait pas bouger : "+d1.x1+","+d1.y1);
+  if(Math.abs(d1.x2-h2.x1)>1e-9||Math.abs(d1.y2-h2.y1)>1e-9)throw new Error("la piste s'est ouverte");
+  undo();
+});
+T("le même geste vers le bas garde ses angles",()=>{
+  pisteEnZigzag();
+  fire("pointerdown",sc(25,14));
+  for(let i=1;i<=12;i++)fire("pointermove",sc(25,14+i*0.5));
+  fire("pointerup",sc(25,20));
+  angles("vers le bas");
+  undo();
+});
+/* Les deux bouts d'une portion glissent chacun le long de son mur, et rien ne
+   les empêchait de se croiser : la portion prenait une longueur négative et la
+   piste se recroisait au-dessus d'elle-même — le papillon. Quand le
+   retournement du coude renverse la portion, c'est l'appui du premier mur,
+   au-delà de sa naissance, qui reprend la main : l'angle est gardé et rien ne
+   se croise. */
+T("la portion tirée ne se renverse pas : pas de papillon",()=>{
+  for(const [dx,dy] of [[-16,-16],[-14,-12],[-16,12],[-10,16],[-16,-10]]){
+    const {h1,h2,h3}=pisteEnZigzag();
+    fire("pointerdown",sc(25,14));
+    for(let i=1;i<=8;i++)fire("pointermove",sc(25+dx*i/8,14+dy*i/8));
+    croisements(`pendant d=(${dx},${dy})`);
+    fire("pointerup",sc(25+dx,14+dy));
+    croisements(`après d=(${dx},${dy})`);
+    angles(`d=(${dx},${dy})`);
+    if(h2.x2<h2.x1)
+      throw new Error(`d=(${dx},${dy}) : la portion tirée est à l'envers `+
+        `(${h2.x1},${h2.y1})→(${h2.x2},${h2.y2})`);
+    if(Math.abs(h1.y1-10)>1e-9||Math.abs(h1.x1-10)>1e-9)
+      throw new Error("le bout libre d'en face ne devait pas bouger");
+    if(Math.abs(h3.x2-44)>1e-9||Math.abs(h3.y2-18)>1e-9)
+      throw new Error("l'autre bout non plus");
+    undo();
+  }
+});
+/* Deux 45° qui convergent tiennent une verticale : leurs lignes se rencontrent
+   en (10,10). Tirée au-delà, la verticale se retournait entre ses deux murs, qui
+   se croisaient alors l'un par-dessus l'autre — le papillon en grand. Aucun
+   arrangement de coudes ne rattrape cela : le geste bute, comme sur un obstacle
+   d'isolation, et la piste reste lisible. */
+function pisteEnEntonnoir(){
+  S.fps=[];S.tracks=[];S.vias=[];touch();
+  const w1={l:0,net:"T",w:0.3,x1:0,y1:0, x2:5,y2:5};
+  const v ={l:0,net:"T",w:0.3,x1:5,y1:5, x2:5,y2:15};
+  const w2={l:0,net:"T",w:0.3,x1:5,y1:15,x2:0,y2:20};
+  S.tracks.push(w1,v,w2);touch();
+  setMode("select");S.active=0;clearSel();S.sel.tracks.add(v);
+  return {w1,v,w2};
+}
+T("la portion tirée bute au lieu de croiser ses deux murs",()=>{
+  const {v}=pisteEnEntonnoir();
+  fire("pointerdown",sc(5,10));
+  for(let x=5.5;x<=8;x+=0.5)fire("pointermove",sc(x,10));
+  croisements("avant la rencontre");
+  if(Math.abs(v.x1-8)>1e-9||v.y1>=v.y2)
+    throw new Error("la verticale devait suivre en se raccourcissant : "+
+                    `(${v.x1},${v.y1})→(${v.x2},${v.y2})`);
+  for(let x=8.5;x<=20;x+=0.5)fire("pointermove",sc(x,10));
+  croisements("au-delà de la rencontre");
+  angles("au-delà de la rencontre");
+  fire("pointerup",sc(20,10));
+  croisements("au dépôt");
+  angles("au dépôt");
+  if(S.tracks.length!==2)
+    throw new Error("le coude devait rester net : "+
+      S.tracks.map(t=>`(${t.x1},${t.y1})→(${t.x2},${t.y2})`).join(" "));
+  const c=S.tracks.find(t=>Math.abs(t.x2-10)<1e-9&&Math.abs(t.y2-10)<1e-9);
+  if(!c)throw new Error("les deux murs devaient se rejoindre en (10,10)");
+  undo();
+});
+/* Le coude mangé laissait ses deux voisins bout à bout dans le même sens : la
+   piste repartait en arrière sur son propre cuivre, puis en l'air — le V refermé
+   des captures. Au dépôt, le crochet se défait. */
+function pisteEnV(){
+  S.fps=[];S.tracks=[];S.vias=[];touch();
+  const h1={l:0,net:"T",w:0.3,x1:0,y1:0, x2:8, y2:0};
+  const d ={l:0,net:"T",w:0.3,x1:8,y1:0, x2:2, y2:-6};      // 45° qui remonte
+  const h2={l:0,net:"T",w:0.3,x1:2,y1:-6,x2:10,y2:-6};
+  S.tracks.push(h1,d,h2);touch();
+  setMode("select");S.active=0;clearSel();S.sel.tracks.add(h2);
+  return {h1,d,h2};
+}
+T("le crochet se défait au dépôt",()=>{
+  pisteEnV();
+  fire("pointerdown",sc(6,-6));
+  for(let i=1;i<=6;i++)fire("pointermove",sc(6-i,-6+i));    // on ramène le haut sur le bas
+  fire("pointerup",sc(0,0));
+  for(const t of S.tracks)
+    for(const e of [1,2])
+      if(hookAt(t,e))throw new Error("un crochet est resté");
+  if(S.tracks.some(t=>dist(t.x1,t.y1,t.x2,t.y2)<1e-6))throw new Error("un segment mort est resté");
+  if(S.tracks.length!==1)throw new Error("il ne devait rester qu'un segment, "+S.tracks.length);
+  const t=S.tracks[0];
+  if(Math.abs(t.y1)>1e-9||Math.abs(t.y2)>1e-9)throw new Error("la piste devait rester d'aplomb");
+  const x1=Math.min(t.x1,t.x2), x2=Math.max(t.x1,t.x2);
+  if(Math.abs(x1)>1e-9||Math.abs(x2-4)>1e-9)
+    throw new Error("le cuivre en double devait partir, pas la liaison : "+x1+" → "+x2);
+  undo();
+});
+/* Le routeur refuse d'avancer sous l'isolation ; le glissement, lui, ne
+   regardait rien : on traversait un boîtier entier sans un mot, et seul le DRC,
+   après coup, le disait. */
+function pisteSurBoitier(){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  const u=mkFp("U9","NE555","DIP-8",8);
+  u.x=40;u.y=20;u.nets={1:"GND",2:"N$2",3:"N$1",8:"+5V"};
+  S.fps.push(u);
+  const t={l:0,net:"AUTRE",w:0.3,x1:30,y1:12,x2:50,y2:12};   // au-dessus du boîtier
+  S.tracks.push(t);touch();
+  setMode("select");S.active=0;clearSel();S.sel.tracks.add(t);
+  return {u,t};
+}
+function glisseSur(t,de,vers){
+  fire("pointerdown",sc(de.x,de.y));
+  for(let i=1;i<=16;i++)
+    fire("pointermove",sc(de.x+(vers.x-de.x)*i/16,de.y+(vers.y-de.y)*i/16));
+  fire("pointerup",sc(vers.x,vers.y));
+}
+T("une piste tirée bute sur les pastilles d'un autre net",()=>{
+  const {t}=pisteSurBoitier();
+  glisseSur(t,{x:40,y:12},{x:40,y:18.7});    // 18,73 : la rangée du haut, net N$2
+  if(segClearBad(t,0,t.net,t.w,null))
+    throw new Error("la piste s'est posée sous l'isolation : y="+t.y1);
+  if(Math.abs(t.y1-12)<1e-9)throw new Error("elle devait tout de même avancer jusqu'à l'obstacle");
+  undo();
+});
+T("anti-collision coupée : le geste passe quand même",()=>{
+  const {t}=pisteSurBoitier();
+  S.avoid=false;
+  glisseSur(t,{x:40,y:12},{x:40,y:20});
+  S.avoid=true;
+  if(Math.abs(t.y1-20)>0.6)throw new Error("sans anti-collision, rien ne doit retenir : "+t.y1);
+  undo();
+});
+/* Une carte déjà en faute doit rester réparable : sinon le geste se fige et
+   l'on ne peut plus sortir la piste de là où elle n'aurait jamais dû être. */
+T("une piste déjà en faute peut encore être déplacée",()=>{
+  const {t}=pisteSurBoitier();
+  t.y1=t.y2=18.73;touch();                 // posée en plein sur une rangée
+  if(!segClearBad(t,0,t.net,t.w,null))throw new Error("le décor voulait une faute");
+  glisseSur(t,{x:40,y:18.73},{x:40,y:17.5});
+  if(Math.abs(t.y1-18.73)<1e-9)throw new Error("le geste s'est figé sur une faute d'avant");
+  undo();
+});
+T("un bout de piste tiré bute aussi sur l'obstacle",()=>{
+  const {t}=pisteSurBoitier();
+  clearSel();S.sel.tracks.add(t);
+  glisseSur(t,{x:t.x2,y:t.y2},{x:43.81,y:18.73});   // droit sur la pastille 7
+  if(segClearBad(t,0,t.net,t.w,null))
+    throw new Error("le bout s'est posé sous l'isolation : "+t.x2+","+t.y2);
   undo();
 });
 T("Alt pendant le glissement détache le voisin",()=>{
@@ -607,6 +1204,31 @@ T("l'angle droit s'adoucit depuis n'importe quel morceau de la portion",()=>{
   if(mitreSel()!==1)throw new Error("le coude de la portion devait être trouvé");
   undo();
 });
+/* Le chanfrein recule d'autant des deux côtés — c'est ce qui fait le 45°. La
+   portion la plus longue gardait donc l'écart des deux longueurs : un reste de
+   onze centièmes sous une piste de trois dixièmes, l'écharde que le tracé
+   s'interdit maintenant de poser. */
+T("le chanfrein ne laisse pas d'écharde derrière lui",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];
+  const h={l:0,net:"T",w:0.3,x1:0,   y1:0,x2:5.11,y2:0};
+  const v={l:0,net:"T",w:0.3,x1:5.11,y1:0,x2:5.11,y2:5};
+  S.tracks.push(h,v);touch();
+  setMode("select");S.active=0;clearSel();S.sel.tracks.add(h);
+  if(mitreSel()!==1)throw new Error("l'angle droit devait être adouci");
+  for(const t of S.tracks){
+    const L=Math.hypot(t.x2-t.x1,t.y2-t.y1);
+    if(L<t.w-1e-9)
+      throw new Error("écharde de "+L.toFixed(3)+" mm : "+JSON.stringify(t));
+    if(!angleOk(t.x2-t.x1,t.y2-t.y1))
+      throw new Error("segment de biais : "+JSON.stringify(t));
+  }
+  // un chanfrein plus court que la piste ne veut rien dire
+  S.tracks=[{l:0,net:"T",w:0.3,x1:0,y1:0,x2:0.2,y2:0},
+            {l:0,net:"T",w:0.3,x1:0.2,y1:0,x2:0.2,y2:0.2}];
+  touch();clearSel();S.sel.tracks.add(S.tracks[0]);
+  if(mitreSel()!==0)throw new Error("un chanfrein sous la largeur de piste se refuse");
+  undo();
+});
 T("un 45° déjà en place n'est pas retouché",()=>{
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];
   const a={l:0,net:"T",w:0.3,x1:0, y1:0, x2:20,y2:0};
@@ -616,6 +1238,86 @@ T("un 45° déjà en place n'est pas retouché",()=>{
   const n=S.tracks.length;
   if(mitreSel()!==0)throw new Error("un 45° n'est pas un angle droit");
   if(S.tracks.length!==n)throw new Error("rien ne devait changer");
+});
+/* Un champ garde ses lettres pour lui — sans quoi taper « 0,3 » dans l'isolation
+   basculerait de couche. Mais le canevas n'est pas focusable : cliquer dessus ne
+   retirait pas le focus du dernier réglage touché, et les raccourcis d'une seule
+   touche restaient muets pour le reste de la séance. D ne cassait plus aucun
+   angle droit, et rien ne le disait. */
+T("cliquer le plan de travail rend les raccourcis d'une touche",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];
+  const a={l:0,net:"T",w:0.3,x1:0, y1:0, x2:20,y2:0};
+  const b={l:0,net:"T",w:0.3,x1:20,y1:0, x2:20,y2:20};
+  S.tracks.push(a,b);touch();
+  setMode("select");S.active=0;clearSel();S.sel.tracks.add(a);
+  /* le champ « isolation » du panneau Règles : celui qu'on touche juste avant
+     de revenir router */
+  const champ=document.createElement("input");
+  champ.focus();
+  if(!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName))
+    throw new Error("le banc d'essai ne modélise pas le focus");
+  const n=S.tracks.length;
+  key("d");
+  if(S.tracks.length!==n)throw new Error("un champ focusé doit garder la touche D");
+  // le clic sur le plan de travail rend la main aux raccourcis
+  fire("pointerdown",sc(-40,-40));fire("pointerup",sc(-40,-40));
+  clearSel();S.sel.tracks.add(a);
+  key("d");
+  // deux jambes de même longueur : le chanfrein les mange, il reste la diagonale
+  if(S.tracks.length!==1||Math.abs(S.tracks[0].x2-S.tracks[0].y2)>1e-9)
+    throw new Error("D devait adoucir l'angle droit après un clic sur le canevas : "+
+                    JSON.stringify(S.tracks.map(t=>[t.x1,t.y1,t.x2,t.y2])));
+});
+/* Le sommet déplacé à la main était le dernier endroit d'où sortait un angle
+   bâtard : les deux jambes partaient de biais, ni droites ni à 45°. Le geste
+   reste libre, mais les places d'aplomb sont magnétiques. */
+T("l'aimant angulaire redresse le sommet tiré",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  S.avoid=false;setMode("select");S.active=0;S.grid=0.1;
+  const h={l:0,net:"T",w:0.3,x1:0, y1:0,x2:10,y2:0};
+  const v={l:0,net:"T",w:0.3,x1:10,y1:0,x2:10,y2:10};
+  S.tracks.push(h,v);touch();clearSel();S.sel.tracks.add(h);
+  fire("pointerdown",sc(10,0));
+  fire("pointermove",sc(0.2,9.9));            // près d'une place d'aplomb : (0,10)
+  fire("pointerup",sc(0.2,9.9));
+  if(Math.abs(h.x2)>1e-9||Math.abs(h.y2-10)>1e-9)
+    throw new Error("le sommet devait s'aimanter sur (0,10) : "+h.x2+","+h.y2);
+  for(const t of [h,v])
+    if(!angleOk(t.x2-t.x1,t.y2-t.y1))
+      throw new Error("jambe bâtarde : "+JSON.stringify(t));
+  // un bout libre se projette sur le rail le plus proche des huit
+  S.tracks=[{l:0,net:"T",w:0.3,x1:0,y1:0,x2:10,y2:0}];
+  const t=S.tracks[0];
+  touch();clearSel();S.sel.tracks.add(t);
+  fire("pointerdown",sc(10,0));
+  fire("pointermove",sc(14.2,0.2));
+  fire("pointerup",sc(14.2,0.2));
+  if(Math.abs(t.y2)>1e-9||Math.abs(t.x2-14.2)>1e-9)
+    throw new Error("le bout devait revenir sur l'axe : "+t.x2+","+t.y2);
+  // loin de toute place d'aplomb, le geste reste libre
+  fire("pointerdown",sc(t.x2,t.y2));
+  fire("pointermove",sc(18,5));
+  fire("pointerup",sc(18,5));
+  if(Math.abs(t.x2-18)>1e-9||Math.abs(t.y2-5)>1e-9)
+    throw new Error("hors de portée de l'aimant, le point suit la souris : "+
+                    t.x2+","+t.y2);
+});
+/* Ce que l'aimant ne peut pas empêcher — deux bouts fixes ne laissent pas
+   toujours de place d'aplomb — le contrôle le dit avant l'export. */
+T("le DRC signale l'angle bâtard",()=>{
+  const keep=serialize();
+  S.fps=[];S.vias=[];S.zones=[];
+  S.tracks=[{l:0,net:"A",w:0.3,x1:0, y1:0,x2:10,y2:0},
+            {l:0,net:"A",w:0.3,x1:10,y1:0,x2:20,y2:6.25}];      // 32°
+  touch();
+  const e=runDrc().filter(x=>/hors des huit sens/.test(x.msg));
+  if(e.length!==1)throw new Error("un seul segment de biais attendu : "+e.length);
+  if(!/32,?\.?0°|32.0°/.test(e[0].msg))throw new Error("l'angle devait être dit : "+e[0].msg);
+  setCornerMode("free");
+  if(runDrc().some(x=>/hors des huit sens/.test(x.msg)))
+    throw new Error("en angle libre, c'est un choix : le contrôle se tait");
+  setCornerMode("45");
+  loadDoc(JSON.parse(keep),true);
 });
 T("découpe d'un segment (Alt+clic)",()=>{
   S.tracks=[{l:0,net:"T",w:0.3,x1:10,y1:10,x2:20,y2:10},
@@ -2015,6 +2717,56 @@ T("une sélection multiple se déplace d'un bloc",()=>{
   if(Math.abs(c1.x-(x1+5))>0.6)throw new Error("la seconde n'a pas bougé");
   undo();
 });
+/* La touche U de l'éditeur schématique, portée sur la carte : le lasso prend
+   tout, U ne retire que le cuivre routé — segments et vias — et laisse les
+   empreintes en place, et sélectionnées. Les zones ne sont pas du routage. */
+T("U ne déroute que le cuivre de la sélection",()=>{
+  const [u1,c1]=deuxEmpreintes();
+  setMode("select");S.active=0;
+  S.tracks=[{l:0,net:"N$1",w:0.3,x1:10,y1:10,x2:20,y2:10},
+            {l:0,net:"N$1",w:0.3,x1:20,y1:10,x2:20,y2:20}];
+  S.vias=[{x:20,y:20,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"N$1"}];
+  S.zones=[{l:0,net:"GND",pts:[{x:0,y:0},{x:30,y:0},{x:30,y:30},{x:0,y:30}]}];
+  touch();clearSel();
+  // le lasso a tout pris : deux empreintes, deux segments, un via, une zone
+  S.sel.fps.add(u1.id);S.sel.fps.add(c1.id);
+  S.tracks.forEach(t=>S.sel.tracks.add(t));
+  S.vias.forEach(v=>S.sel.vias.add(v));
+  S.zones.forEach(z=>S.sel.zones.add(z));
+  const n=unrouteSel();
+  if(n!==3)throw new Error("2 segments et 1 via devaient partir, "+n);
+  if(S.tracks.length)throw new Error(S.tracks.length+" segment(s) restent");
+  if(S.vias.length)throw new Error("le via devait partir avec sa piste");
+  if(S.fps.length!==2)throw new Error("les empreintes devaient rester");
+  if(S.sel.fps.size!==2)throw new Error("les empreintes devaient rester sélectionnées");
+  if(S.zones.length!==1||S.sel.zones.size!==1)
+    throw new Error("une zone de cuivre n'est pas du routage : elle reste");
+  // sélection sans cuivre routé : rien ne bouge, et surtout pas les empreintes
+  if(unrouteSel())throw new Error("il n'y avait plus rien à dérouter");
+  if(S.fps.length!==2)throw new Error("une sélection sans piste ne doit rien supprimer");
+  if(S.zones.length!==1)throw new Error("la zone ne devait pas partir non plus");
+  // seul le cuivre sélectionné part
+  S.tracks=[{l:0,net:"N$1",w:0.3,x1:0,y1:0,x2:10,y2:0},
+            {l:0,net:"N$2",w:0.3,x1:0,y1:5,x2:10,y2:5}];
+  touch();clearSel();S.sel.tracks.add(S.tracks[1]);
+  if(unrouteSel()!==1)throw new Error("un seul segment devait partir");
+  if(S.tracks.length!==1)throw new Error("il devait rester un segment");
+  if(S.tracks[0].net!=="N$1")throw new Error("le mauvais segment est parti");
+  // et le geste se défait
+  undo();
+  if(S.tracks.length!==2)throw new Error("Ctrl+Z devait rendre le segment déroutés");
+  // rien de sélectionné du tout : U le dit et ne touche à rien
+  clearSel();
+  if(unrouteSel())throw new Error("sans sélection, U ne supprime rien");
+  if(S.tracks.length!==2)throw new Error("le cuivre non sélectionné ne bouge pas");
+  // la touche elle-même, et le bouton de la barre d'outils
+  S.sel.tracks.add(S.tracks[0]);
+  key("u");
+  if(S.tracks.length!==1)throw new Error("la touche U n'est pas branchée");
+  S.sel.tracks.add(S.tracks[0]);
+  $("bUnroute").onclick();
+  if(S.tracks.length!==0)throw new Error("le bouton « Dérouter » n'est pas branché");
+});
 T("copier / coller une sélection",()=>{
   const u1=deuxEmpreintes()[0];
   S.tracks=[{l:0,net:"N$1",w:0.3,x1:10,y1:10,x2:20,y2:10}];
@@ -2056,6 +2808,124 @@ T("repère libre : R12 devient R13 puis R14",()=>{
   if(freeFpRef("R12",used)!=="R14")throw new Error(freeFpRef("R12",used));
   if(freeFpRef("Q1",used)!=="Q1")throw new Error("un repère libre ne doit pas changer");
   if(freeFpRef("",used)!=="U1")throw new Error("un repère vide reçoit un numéro");
+});
+T("réglages d'usine : grille 0,1 mm et pistes à 45°",()=>{
+  if(USINE.grid!==0.1)throw new Error("grille d'usine attendue à 0,1 mm : "+USINE.grid);
+  if(USINE.corner!=="45")throw new Error("angle d'usine attendu à 45° : "+USINE.corner);
+  if(!GRID_STEPS.includes(0.1))throw new Error("0,1 mm doit rester dans les pas proposés");
+});
+/* Trois règles d'angle pour le tracé. Le contrat est le même pour les trois :
+   des segments bout à bout, aucun de longueur nulle, et l'arrivée où on l'a
+   demandée. La posture bascule le départ du coude dans les deux règles qui en
+   posent deux. */
+T("angle des pistes : 45°, 90° et libre",()=>{
+  const attendu={
+    "45":{droit:[[0,0,6,0],[6,0,10,4]], autre:[[0,0,4,4],[4,4,10,4]]},
+    "90":{droit:[[0,0,10,0],[10,0,10,4]],autre:[[0,0,0,4],[0,4,10,4]]},
+    "free":{droit:[[0,0,10,4]],          autre:[[0,0,10,4]]}
+  };
+  for(const m in attendu)
+    for(const pose of ["droit","autre"]){
+      const got=routeCorner({x:0,y:0},{x:10,y:4},pose==="autre",m)
+                  .map(s=>[s.x1,s.y1,s.x2,s.y2].join());
+      const want=attendu[m][pose].map(v=>v.join());
+      if(got.join(" ")!==want.join(" "))
+        throw new Error(m+" / "+pose+" : "+got.join(" ")+" au lieu de "+want.join(" "));
+    }
+  // trajets dégénérés : un seul segment, quelle que soit la règle
+  for(const m in CORNER_MODES){
+    if(routeCorner({x:0,y:0},{x:10,y:0},false,m).length!==1)
+      throw new Error(m+" : un trajet droit ne fait qu'un segment");
+    if(routeCorner({x:3,y:3},{x:3,y:3},false,m).length!==0)
+      throw new Error(m+" : sur place, rien à poser");
+  }
+  if(routeCorner({x:0,y:0},{x:10,y:10},false,"90").length!==2)
+    throw new Error("à 90°, un trajet en diagonale reste un coude");
+});
+T("la règle d'angle s'applique au tracé et se défait",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  S.avoid=false;setMode("track");S.active=0;
+  setCornerMode("90");
+  if(cornerMode()!=="90")throw new Error("la règle n'a pas pris");
+  startRoute(0,0,true);
+  fire("pointermove",sc(10,4));            // la bascule repart du curseur
+  const p=S.route.preview;
+  if(p.length!==2||Math.abs(p[0].y2)>1e-9||Math.abs(p[1].x2-p[1].x1)>1e-9)
+    throw new Error("coude à 90° attendu : "+JSON.stringify(p));
+  key("/");
+  if(Math.abs(S.route.preview[0].x2)>1e-9)
+    throw new Error("la posture devait basculer sur l'autre axe : "+
+                    JSON.stringify(S.route.preview));
+  commitRoute();
+  setCornerMode("free");
+  startRoute(0,0,true);updateRoute(10,4);
+  if(S.route.preview.length!==1)throw new Error("en libre, un seul segment");
+  cancelRoute();setMode("select");
+  undo();                                  // la règle est dans le document
+  if(cornerMode()!=="90")throw new Error("l'annulation devait rendre 90° : "+cornerMode());
+  setCornerMode("45");
+  if(setCornerMode("zigzag")||cornerMode()!=="45")
+    throw new Error("une règle inconnue ne doit rien changer");
+});
+/* La règle « 45 » dit le L chanfreiné. `routeCorner` ne voit pourtant que la
+   jambe du clic en cours : un clic franchement horizontal suivi d'un clic
+   franchement vertical ne posait qu'un segment chacun, et les deux mis bout à
+   bout faisaient l'angle droit franc que la touche D sert à rattraper. */
+T("le routeur en règle 45° ne laisse pas d'angle droit",()=>{
+  const coudes=()=>{
+    const vus=new Set(), out=[];
+    for(const t of S.tracks)for(const en of [1,2]){
+      const x=en===1?t.x1:t.x2, y=en===1?t.y1:t.y2, k=x+","+y;
+      if(vus.has(k))continue;
+      const j=jointAt(x,y,t.l);
+      if(j.ends.length!==2||j.ends[0].t===j.ends[1].t)continue;
+      vus.add(k);
+      const a=endDir(j.ends[0].t,j.ends[0].e), b=endDir(j.ends[1].t,j.ends[1].e);
+      const c=(a.x*b.x+a.y*b.y)/(Math.hypot(a.x,a.y)*Math.hypot(b.x,b.y));
+      out.push({at:k,deg:Math.acos(Math.max(-1,Math.min(1,c)))*180/Math.PI});
+    }
+    return out;
+  };
+  const trace=pts=>{
+    S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();clearSel();
+    S.avoid=false;setMode("track");S.active=0;
+    startRoute(pts[0].x,pts[0].y,true);
+    for(const p of pts.slice(1)){updateRoute(p.x,p.y);stepRoute();}
+    if(S.route)commitRoute();
+    setMode("select");
+  };
+  setCornerMode("45");
+  for(const [nom,pts] of [
+        ["horizontal puis vertical",[{x:0,y:0},{x:10,y:0},{x:10,y:-8}]],
+        ["vertical puis horizontal",[{x:0,y:0},{x:0,y:10},{x:9,y:10}]],
+        ["deux coudes francs",     [{x:0,y:0},{x:12,y:0},{x:12,y:12},{x:24,y:12}]]]){
+    trace(pts);
+    const droits=coudes().filter(o=>Math.abs(o.deg-90)<0.5);
+    if(droits.length)
+      throw new Error(nom+" : "+droits.length+" angle(s) droit(s) posé(s) en règle 45° — "+
+                      JSON.stringify(S.tracks.map(t=>[t.x1,t.y1,t.x2,t.y2])));
+    for(const t of S.tracks)
+      if(!angleOk(t.x2-t.x1,t.y2-t.y1))
+        throw new Error(nom+" : angle bâtard posé "+JSON.stringify([t.x1,t.y1,t.x2,t.y2]));
+    if(S.sel.tracks.size)throw new Error(nom+" : un dépôt ne doit rien sélectionner");
+  }
+  // en règle 90°, l'angle droit est ce qu'on demande : on n'y touche pas
+  setCornerMode("90");
+  trace([{x:0,y:0},{x:10,y:0},{x:10,y:-8}]);
+  if(!coudes().some(o=>Math.abs(o.deg-90)<0.5))
+    throw new Error("la règle 90° doit garder son angle droit : "+
+                    JSON.stringify(S.tracks.map(t=>[t.x1,t.y1,t.x2,t.y2])));
+  setCornerMode("45");
+  S.avoid=true;
+});
+T("import : la règle d'angle est une liste fermée",()=>{
+  const d=normDoc({rule:{corner:"90"}});
+  if(d.rule.corner!=="90")throw new Error("une règle valide doit passer");
+  for(const v of ["<script>",42,null,"120",""])
+    if(normDoc({rule:{corner:v}}).rule.corner!=="45")
+      throw new Error("valeur refusée attendue à 45° : "+JSON.stringify(v));
+  if(normDoc({}).rule.corner!=="45")
+    throw new Error("un fichier antérieur au réglage se lit à 45°");
 });
 T("pas de grille : valeurs rondes et pas impériaux",()=>{
   for(const g of [0.1,0.5,1,1.27,2.54])

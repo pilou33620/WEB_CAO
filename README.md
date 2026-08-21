@@ -40,30 +40,35 @@ Pour travailler depuis une tablette du même réseau WiFi :
 python serveur.py
 ```
 
+Sous Windows, un double-clic sur `serveur.py` suffit : la console s'ouvre et
+reste ouverte — le journal des requêtes défile dedans — et le navigateur
+s'ouvre tout seul sur la bonne adresse. Elle ne se referme plus toute seule :
+en cas d'échec du démarrage, le message d'erreur reste affiché jusqu'à ce que
+vous appuyiez sur Entrée.
+
 Le serveur affiche l'adresse à saisir sur l'autre appareil. Il sert le dossier
 du dépôt en lecture seule, sans authentification : **à réserver à un réseau de
 confiance.** `python serveur.py --local` limite l'écoute à cette machine ;
-`--host` et `--port` permettent de choisir l'interface et le port.
+`--host` et `--port` permettent de choisir l'interface et le port,
+`--sans-navigateur` empêche l'ouverture automatique du navigateur.
 
 ## Recherche de composants
 
 `recherche-composants/` interroge [pcbparts.dev](https://pcbparts.dev/) : stock
 et prix JLCPCB, équivalences, brochages, symboles et empreintes KiCad, cartes
 de référence libres, règles de conception. Le navigateur ne pouvant pas appeler
-ce service directement, `serveur-composants.py` fait la passerelle — et sert du
-même coup l'accueil et les deux éditeurs :
+ce service directement, `serveur.py` fait lui-même la passerelle sur
+`/api/tools` et `/api/tool` — sans aucune dépendance à installer :
 
 ```bash
-pip install fastapi httpx uvicorn
+python serveur.py
 ```
 
-```bash
-python serveur-composants.py
-```
+La page se sert de l'origine qui l'a chargée : rien d'autre à démarrer. La
+passerelle n'expose que les quatorze outils de sa liste blanche.
 
-Tout se retrouve alors sur <http://127.0.0.1:8420/>. `--reseau` ouvre l'accès
-aux autres appareils du réseau WiFi, `--port` change le port. La passerelle
-n'expose que les quatorze outils de sa liste blanche. Détails dans
+`serveur-composants.py` rend le même service sous uvicorn, sur le port 8420
+(`pip install fastapi uvicorn`) ; il est désormais optionnel. Détails dans
 [recherche-composants/README.md](recherche-composants/README.md).
 
 ## Version un seul fichier

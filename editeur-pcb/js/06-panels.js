@@ -193,9 +193,19 @@ function buildRules(){
       '<div><label>Grille (mm)</label><select id="rGrid">'+
       GRID_STEPS.map(g=>
         '<option value="'+g+'"'+(g===S.grid?" selected":"")+'>'+g+'</option>').join("")+
-      '</select></div>'+numProp("bW","Carte L (mm)",S.board.w,1,1)+'</div>'+
-    '<div class="prop two">'+numProp("bH","Carte H (mm)",S.board.h,1,1)+
-      numProp("rMask","Masque ±",S.rule.mask,0.01)+'</div>'+
+      '</select></div>'+
+      /* l'angle imposé aux pistes tracées : 45° par défaut, c'est la règle de
+         l'art — « / » bascule l'arrangement du coude pendant le tracé */
+      '<div><label title="Angle imposé aux pistes tracées. Pendant le tracé, '+
+      '« / » bascule l’arrangement du coude.">Angle des pistes</label>'+
+      '<select id="rCorner">'+
+      Object.keys(CORNER_MODES).map(k=>
+        '<option value="'+k+'"'+(k===cornerMode()?" selected":"")+'>'+
+        esc(CORNER_MODES[k])+'</option>').join("")+
+      '</select></div></div>'+
+    '<div class="prop two">'+numProp("bW","Carte L (mm)",S.board.w,1,1)+
+      numProp("bH","Carte H (mm)",S.board.h,1,1)+'</div>'+
+    '<div class="prop">'+numProp("rMask","Masque ±",S.rule.mask,0.01)+'</div>'+
     '<div class="cat">Origine</div>'+
     '<div class="prop two">'+numProp("oX","Origine X",r3(S.origin.x),0.5,-1e4)+
       numProp("oY","Origine Y",r3(S.origin.y),0.5,-1e4)+'</div>'+
@@ -234,6 +244,7 @@ function buildRules(){
   bindNum("rMask",v=>S.rule.mask=v);
   bindNum("rPaste",v=>S.rule.paste=v);
   $("rGrid").onchange=()=>setGridStep($("rGrid").value);
+  $("rCorner").onchange=()=>setCornerMode($("rCorner").value);
   $("clNew").onclick=()=>{
     const n=(prompt("Nom de la nouvelle classe :","Classe "+(S.classes.length+1))||"").trim();
     if(!n)return;
@@ -625,9 +636,24 @@ function buildProps(){
   if(zo.length===1&&only(1))return propsZone(box,zo[0]);
   if(tr.length>1&&only(tr.length))return propsTracks(box,tr);
   if(!only(0)){
+    /* Le cuivre routé de la sélection se retire à part : c'est le geste qu'on
+       fait avant de replacer un boîtier, et un lasso ne sait pas le distinguer.
+       Le bouton ne paraît que s'il y a quelque chose à dérouter. */
+    const cu=tr.length+vi.length;
     box.innerHTML='<div class="empty">'+fps.length+' empreinte(s), '+tr.length+
       ' segment(s), '+vi.length+' via(s), '+zo.length+
-      ' zone(s) sélectionnés.<br>R pivote · F retourne · Suppr supprime.</div>';
+      ' zone(s) sélectionnés.<br>R pivote · F retourne · Suppr supprime.</div>'+
+      (cu?'<div class="prop"><div class="row"><button class="tb" id="pUnroute">'+
+          'Dérouter '+(tr.length?tr.length+' segment'+(tr.length>1?'s':''):'')+
+          (tr.length&&vi.length?' et ':'')+
+          (vi.length?vi.length+' via'+(vi.length>1?'s':''):'')+' <kbd>U</kbd>'+
+          '</button></div>'+
+          '<div class="empty" style="padding:6px 12px">Les empreintes restent en '+
+          'place et sélectionnées : de quoi les replacer avant de router autrement. '+
+          'Les zones de cuivre ne sont pas du routage, elles ne partent pas.</div></div>'
+        :"");
+    const pu=$("pUnroute");
+    if(pu)pu.onclick=unrouteSel;
     return;
   }
   const c=conn();

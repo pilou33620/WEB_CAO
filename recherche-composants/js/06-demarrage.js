@@ -111,12 +111,13 @@ function fenetreServeur(){
       '<div class="modal-box">'+
         '<div class="modal-head">Adresse de la passerelle</div>'+
         '<div class="modal-corps">'+
-          "<p>La recherche passe par <code>serveur-composants.py</code>, qui relaie "+
-          "les requêtes vers pcbparts.dev. Démarrez-le puis indiquez son adresse, "+
-          "ou laissez le champ vide pour la détection automatique.</p>"+
-          '<p><code>python serveur-composants.py</code></p>'+
+          "<p>La recherche passe par un serveur local, qui relaie les requêtes "+
+          "vers pcbparts.dev. <code>serveur.py</code> le fait lui-même : laissez "+
+          "le champ vide pour la détection automatique, ou indiquez l'adresse "+
+          "d'un autre serveur.</p>"+
+          '<p><code>python serveur.py</code></p>'+
           '<div class="champ"><label for="mdBase">Racine</label>'+
-          '<input type="text" id="mdBase" placeholder="http://127.0.0.1:8420" spellcheck="false"></div>'+
+          '<input type="text" id="mdBase" placeholder="laisser vide = détection automatique" spellcheck="false"></div>'+
         "</div>"+
         '<div class="modal-pied">'+
           '<button class="tb" id="mdAnnule">Annuler</button>'+
@@ -161,13 +162,13 @@ async function connecter(){
       "n'est pas démarrée.";
     q("resultats").innerHTML=
       '<div class="vide"><b>Passerelle introuvable.</b><br>'+
-      "Cette page a besoin de <b>serveur-composants.py</b>, qui relaie les requêtes "+
-      "vers pcbparts.dev (le navigateur ne peut pas l'appeler directement).<br><br>"+
+      "Cette page a besoin d'un serveur local pour relayer les requêtes vers "+
+      "pcbparts.dev (le navigateur ne peut pas l'appeler directement). "+
+      "<b>serveur.py</b> s'en charge, sans dépendance à installer.<br><br>"+
       "Dans le dossier du dépôt :<br>"+
-      "<code>pip install fastapi httpx uvicorn</code><br>"+
-      "<code>python serveur-composants.py</code><br><br>"+
-      "puis ouvrez <code>http://127.0.0.1:8420/recherche-composants/</code>, ou "+
-      "indiquez l'adresse du serveur avec le bouton « Serveur… ».<br><br>"+
+      "<code>python serveur.py</code><br><br>"+
+      "puis ouvrez la page depuis l'adresse affichée au démarrage. Si le serveur "+
+      "tourne ailleurs, indiquez son adresse avec le bouton « Serveur… ».<br><br>"+
       '<span class="err">'+esc((e&&e.message)||String(e))+"</span></div>";
     hint("Passerelle introuvable.");
     return false;

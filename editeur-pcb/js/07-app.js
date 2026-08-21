@@ -121,6 +121,7 @@ $("mOrigin").onclick=()=>setMode("origin");
 $("mErase").onclick=()=>setMode("cut");
 $("bRot").onclick=rotateSel;
 $("bFlip").onclick=flipSel;
+$("bUnroute").onclick=unrouteSel;
 $("bDel").onclick=deleteSel;
 $("bUndo").onclick=undo;
 $("bRedo").onclick=redo;

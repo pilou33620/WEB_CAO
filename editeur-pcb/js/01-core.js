@@ -10,6 +10,10 @@
 const C_BG      = "#141416";
 const C_GRID    = "#232529";
 const C_GRIDMAJ = "#32353c";
+/* La grille se reprend sur la carte : le substrat y est plus clair que le
+   fond, ses lignes le sont donc d'autant, sinon elle s'y efface. */
+const C_GRID_S  = "#26302d";
+const C_GRIDMAJ_S = "#35423e";
 const C_SUB     = "#182120";        // substrat de la carte
 const C_EDGE    = "#e6e8ec";        // contour de carte
 const C_SILK_T  = "#eef1f5";
@@ -36,6 +40,28 @@ function esc(s){
     ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"}[ch]));
 }
 function dist(x1,y1,x2,y2){return Math.hypot(x2-x1,y2-y1);}
+/* ---------- les huit sens du tracé ----------
+   Un segment qui ne tombe pas sur un multiple de 45° est un **angle bâtard**
+   (*off-angle track*) : il casse l'optimisation des Gerber, et certains
+   fabricants le refusent au contrôle d'entrée. `angleOff` en donne l'écart au
+   plus proche des huit sens, en radians ; la tolérance est serrée, l'arrondi au
+   micron d'un vrai 45° restant mille fois en dessous. Un trajet nul n'a pas
+   d'angle : son écart est nul. */
+const ANG_TOL=0.1*Math.PI/180;                 // 0,1°
+const DIR8=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]
+  .map(d=>{const n=Math.hypot(d[0],d[1]);return {x:d[0]/n,y:d[1]/n};});
+function angleOff(dx,dy){
+  if(Math.abs(dx)<1e-12&&Math.abs(dy)<1e-12)return 0;
+  const a=Math.atan2(dy,dx), q=Math.PI/4;
+  return Math.abs(a-Math.round(a/q)*q);
+}
+function angleOk(dx,dy){return angleOff(dx,dy)<=ANG_TOL;}
+/* l'angle du segment tel qu'on le lit, entre 0 et 180° */
+function angleDeg(dx,dy){
+  let a=Math.atan2(dy,dx)*180/Math.PI;
+  if(a<0)a+=180;
+  return a>=180-1e-9?0:a;
+}
 /* distance d'un point au segment [a,b] */
 function segDist(px,py,x1,y1,x2,y2){
   const dx=x2-x1, dy=y2-y1, l2=dx*dx+dy*dy;
@@ -438,12 +464,15 @@ const S = {
         maskT:false,maskB:false,pasteT:false,pasteB:false},
   board:{x:0,y:0,w:100,h:80,pts:null},   // pts = contour libre, sinon rectangle
   fps:[], tracks:[], vias:[], zones:[], cuts:[],
-  rule:{edge:0.4,thermal:0.5,mask:0.05,paste:0.0,viaFinish:"tented"},
+  /* `corner` : l'angle imposé aux pistes tracées — « 45 » par défaut, c'est la
+     règle de l'art ; « 90 » pour un tracé orthogonal strict, « free » pour un
+     angle quelconque. */
+  rule:{edge:0.4,thermal:0.5,mask:0.05,paste:0.0,viaFinish:"tented",corner:"45"},
   classes:[{name:"Défaut",      w:0.3, clr:0.25, via:0.8, drill:0.4},
            {name:"Alimentation",w:0.6, clr:0.25, via:0.9, drill:0.45}],
   netClass:{},                // net → nom de classe ; absent = classe par défaut
   scale:5, ox:0, oy:0,
-  grid:0.5, showGrid:true, flip:false, contrast:1,
+  grid:0.1, showGrid:true, flip:false, contrast:1,   // pas d'accrochage au démarrage
   origin:{x:0,y:0}, fabOrigin:false,   // origine utilisateur ; repère des fichiers
   coord:{open:false,mode:"abs"},       // saisie de coordonnées au clavier
   avoid:true,                          // le tracé se tient à distance des obstacles
@@ -531,6 +560,21 @@ function snapTo(v,o){return S.grid>0?r3(Math.round((v-o)/S.grid)*S.grid+o):r3(v)
 function snapX(v){return snapTo(v,S.origin.x);}
 function snapY(v){return snapTo(v,S.origin.y);}
 function snap(v){return snapX(v);}
+/* Accrochage relatif à une ancre hors grille. Les centres de pastilles tombent
+   rarement sur le quadrillage : un DIP au pas de 2,54 mm pose ses colonnes à
+   3,81 mm de son axe, ce qu'une grille au demi-millimètre ignore. Accrocher la
+   suite du tracé au seul quadrillage décalerait la piste de 0,23 mm par rapport
+   au centre de la pastille — plus que la largeur de la piste elle-même. Quand
+   la case visée est celle de l'ancre, on garde donc l'axe de l'ancre : c'est ce
+   que la main visait, et la piste sort droit du centre. */
+function snapNear(v,anchor,o){
+  if(anchor==null||!(S.grid>0))return snapTo(v,o);
+  // l'ancre tient une case à elle, centrée sur son axe : viser cet axe suffit,
+  // et les nœuds voisins restent atteignables de part et d'autre
+  return Math.abs(v-anchor)<S.grid/2?r3(anchor):snapTo(v,o);
+}
+function snapXn(v,anchor){return snapNear(v,anchor,S.origin.x);}
+function snapYn(v,anchor){return snapNear(v,anchor,S.origin.y);}
 /* coordonnées telles que l'utilisateur les lit et les saisit */
 function ux(x){return r3(x-S.origin.x);}
 function uy(y){return r3(y-S.origin.y);}

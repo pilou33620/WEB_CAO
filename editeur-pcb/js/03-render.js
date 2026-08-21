@@ -15,15 +15,24 @@ function resize(){
   draw();
 }
 /* Pas réellement affiché : trop serrée à l'écran, la grille devient un aplat.
-   On n'en trace alors qu'une case sur deux, sur quatre… et c'est cette case-là,
+   On n'en trace alors qu'une case sur deux, sur cinq… et c'est cette case-là,
    celle que l'œil voit, que le pied de page annonce. */
 function gridShownStep(){
   let w=S.grid>0?S.grid:0.5;
-  for(let i=0;i<20&&w*S.scale<7;i++)w*=2;
+  /* On élargit par 2, sauf au passage de 2 où l'on prend 2,5 : la case tracée
+     grimpe alors l'échelle 1 · 2 · 5 · 10 du pas de départ. Doubler à chaque
+     fois annonçait des cases de 1,6 puis 3,2 mm à partir d'un pas de 0,1 —
+     personne ne compte en 1,6 mm, et la case ne retombait jamais sur le
+     millimètre. Un pas impérial garde de même ses multiples : 1,27 puis 2,54
+     puis 5,08 mm. */
+  for(let i=0;i<20&&w*S.scale<7;i++){
+    const d=Math.pow(10,Math.floor(Math.log10(w)+1e-9)), m=w/d;
+    w=r3(w*(m>=1.5&&m<2.2?2.5:2));
+  }
   return w;
 }
 /* Ce que l'œil voit d'abord — la case tracée — puis, quand le zoom a forcé à
-   n'en tracer qu'une sur deux, le pas d'accrochage réel. */
+   n'en tracer qu'une sur deux ou sur cinq, le pas d'accrochage réel. */
 function gridLabel(){
   const w=gridShownStep();
   return "1 carré = "+String(r3(w)).replace(".",",")+" mm"+
@@ -41,23 +50,47 @@ function updateGridInfo(){
   const rg=$("rGrid");
   if(rg&&parseFloat(rg.value)!==S.grid)rg.value=String(S.grid);
 }
-function drawGrid(c,w,h){
-  if(!S.showGrid)return;
-  const step=gridShownStep()*S.scale;
-  if(step<7)return;
+function gridPass(c,w,h,step,col,maj){
   // la grille part de l'origine utilisateur, pas du zéro absolu
   const o=w2s(S.origin.x,S.origin.y);
   const x0=((o.x%step)+step)%step, y0=((o.y%step)+step)%step;
-  c.lineWidth=1;c.strokeStyle=C_GRID;c.beginPath();
+  c.lineWidth=1;c.strokeStyle=col;c.beginPath();
   for(let x=x0;x<w;x+=step){c.moveTo(Math.round(x)+.5,0);c.lineTo(Math.round(x)+.5,h);}
   for(let y=y0;y<h;y+=step){c.moveTo(0,Math.round(y)+.5);c.lineTo(w,Math.round(y)+.5);}
   c.stroke();
   const big=step*5;
   const bx=((o.x%big)+big)%big, by=((o.y%big)+big)%big;
-  c.strokeStyle=C_GRIDMAJ;c.beginPath();
+  c.strokeStyle=maj;c.beginPath();
   for(let x=bx;x<w;x+=big){c.moveTo(Math.round(x)+.5,0);c.lineTo(Math.round(x)+.5,h);}
   for(let y=by;y<big+h;y+=big){c.moveTo(0,Math.round(y)+.5);c.lineTo(w,Math.round(y)+.5);}
   c.stroke();
+}
+/* Le contour de carte, en pixels écran : c'est le repère où se trace la grille,
+   pour que ses traits gardent leur épaisseur d'un pixel à tout zoom. */
+function boardClipPx(c){
+  const P=boardPoly();
+  if(!P||P.length<3)return false;
+  c.beginPath();
+  for(let i=0;i<P.length;i++){
+    const q=w2s(P[i].x,P[i].y);
+    if(i)c.lineTo(q.x,q.y);else c.moveTo(q.x,q.y);
+  }
+  c.closePath();c.clip();
+  return true;
+}
+/* La grille passe PAR-DESSUS le substrat. Peinte dessous, la carte l'avalait :
+   dès qu'on entrait dans le contour — là où l'on vise, justement — plus rien ne
+   disait où tomberait le point suivant. Le substrat étant plus clair que le
+   fond, ses lignes le sont d'autant : même quadrillage, deux teintes, et la
+   lisibilité ne change pas au passage du bord. */
+function drawGrid(c,w,h){
+  if(!S.showGrid)return;
+  const step=gridShownStep()*S.scale;
+  if(step<7)return;
+  gridPass(c,w,h,step,C_GRID,C_GRIDMAJ);
+  c.save();
+  if(boardClipPx(c))gridPass(c,w,h,step,C_GRID_S,C_GRIDMAJ_S);
+  c.restore();
 }
 /* ordre de peinture : de la couche la plus lointaine à la plus proche, la
    couche active toujours en dernier pour rester lisible */
@@ -175,7 +208,9 @@ function zoneCanvas(i){
   zoneCache.set(i,rec);
   return rec;
 }
-function padFill(c,q,grow,color){
+/* Trace le contour de la pastille dans le repère du canevas et laisse l'état
+   sauvegardé : à l'appelant de peindre puis de restaurer. */
+function padPath(c,q,grow){
   c.save();c.translate(q.x,q.y);c.rotate(q.rot);
   const g=grow||0;
   c.beginPath();
@@ -187,8 +222,17 @@ function padFill(c,q,grow,color){
     c.arcTo(-w/2,h/2,-w/2,-h/2,r);c.arcTo(-w/2,-h/2,w/2,-h/2,r);
     c.closePath();
   }
+}
+function padFill(c,q,grow,color){
+  padPath(c,q,grow);
   if(color)c.fillStyle=color;
   c.fill();
+  c.restore();
+}
+function padOutline(c,q,color,lw){
+  padPath(c,q,0);
+  c.strokeStyle=color;c.lineWidth=lw;
+  c.stroke();
   c.restore();
 }
 function polyPath(c,pts){
@@ -213,10 +257,16 @@ function clipToBoard(c,x1,y1,x2,y2){
     c.strokeStyle="#000";c.stroke();
   }
 }
-function drawBoard(c){
+/* Substrat et contour se peignent en deux temps : la grille se glisse entre
+   les deux. Tracée après le contour, elle en entaillait le trait à chaque
+   croisement. */
+function drawSub(c){
   const P=boardPoly();
   c.fillStyle=C_SUB;
   c.beginPath();polyPath(c,P);c.fill();
+}
+function drawBoard(c){
+  const P=boardPoly();
   if(S.show.edge){
     c.strokeStyle=S.sel.edge?C_SEL:C_EDGE;
     c.lineWidth=px(S.sel.edge?2:1.6);
@@ -262,21 +312,50 @@ function drawEdgeDraft(c){
   c.strokeStyle=C_SEL;c.lineWidth=px(1.6);
   c.beginPath();c.arc(Z.pts[0].x,Z.pts[0].y,px(6),0,Math.PI*2);c.stroke();
 }
+/* La sélection s'annonce par un halo posé sous le cuivre. Une bande tracée
+   à l'intérieur de la piste, comme avant, masquait son axe : sur un segment
+   presque — mais pas tout à fait — droit, cet axe traverse la largeur du
+   cuivre et le trait de sélection semblait alors dériver le long du bord.
+   Or c'est justement l'axe qu'on regarde pour juger du centrage. */
+/* Un segment se peint d'un bout rond, et deux segments bout à bout se
+   recouvrent donc au coude. Peints l'un après l'autre, ils y déposent deux fois
+   l'encre : la couture se voit comme un cran en travers de la piste, d'autant
+   plus net que la couche est en retrait ou le net en veille — le halo de
+   sélection, lui, passait carrément au travers. Réunis dans le même chemin, ils
+   ne sont peints qu'une fois : la ligne est continue, coupée ou non. */
+function strokeRuns(c,segs){
+  c.beginPath();
+  for(const t of segs){c.moveTo(t.x1,t.y1);c.lineTo(t.x2,t.y2);}
+  c.stroke();
+}
 function drawTracks(c,i,a){
   c.lineCap="round";c.lineJoin="round";
   const col=layerColor(i);
+  // un lot par largeur (et par transparence pour le cuivre) : le pinceau ne
+  // sait faire qu'une largeur à la fois
+  const halo=new Map(), cu=new Map();
+  const lot=(m,k)=>{let v=m.get(k);if(!v)m.set(k,v=[]);return v;};
   for(const t of S.tracks){
     if(t.l!==i)continue;
-    c.globalAlpha=a*netAlpha(t.net);
-    c.strokeStyle=col;c.lineWidth=t.w;
-    c.beginPath();c.moveTo(t.x1,t.y1);c.lineTo(t.x2,t.y2);c.stroke();
-    if(S.sel.tracks.has(t)){
-      c.globalAlpha=a;c.strokeStyle=C_SEL;c.lineWidth=Math.max(t.w*0.35,px(1.5));
-      c.beginPath();c.moveTo(t.x1,t.y1);c.lineTo(t.x2,t.y2);c.stroke();
-    }
+    if(S.sel.tracks.has(t))lot(halo,t.w).push(t);
+    lot(cu,t.w+"|"+netAlpha(t.net)).push(t);
+  }
+  c.globalAlpha=a*0.55;c.strokeStyle=C_SEL;
+  for(const [w,segs] of halo){c.lineWidth=w+px(3.4);strokeRuns(c,segs);}
+  c.strokeStyle=col;
+  for(const [k,segs] of cu){
+    const s=k.split("|");
+    c.globalAlpha=a*(+s[1]);c.lineWidth=+s[0];
+    strokeRuns(c,segs);
   }
   c.globalAlpha=1;
 }
+/* Comme le cuivre traversant, la pastille SMD est peinte AVANT les pistes de sa
+   couche. Peinte par-dessus, elle avalait la fin de la piste : arrivée au centre
+   ou arrêtée de travers au bord, on voyait la même chose — un trait qui disparaît
+   sous le rectangle. Elle reste peinte après les zones, donc lisible sous un
+   plan ; sous la piste qui la rejoint, c'est le cuivre autour du trait qui donne
+   sa forme — un contour serait de la couleur de la piste et n'apprendrait rien. */
 function drawSmdPads(c,i,a){
   const col=layerColor(i);
   for(const fp of S.fps){
@@ -289,12 +368,27 @@ function drawSmdPads(c,i,a){
   }
   c.globalAlpha=1;
 }
+/* Cuivre traversant et cuivre des vias : peints AVANT les pistes.
+   Peints par-dessus, ils avalaient la fin de la piste, et l'on ne pouvait plus
+   voir si elle rejoignait vraiment le centre de la pastille : ce qui sortait de
+   l'anneau, centré ou de travers, avait la même allure. Le contour et le
+   perçage, eux, repassent au-dessus (drawThruMarks / drawViaMarks) pour que la
+   pastille reste reconnaissable sous un plan ou une piste de passage. */
 function drawThruPads(c){
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(!(q.drill>0))continue;
       c.globalAlpha=netAlpha(q.net);
       padFill(c,q,0,C_THRU);
+    }
+  c.globalAlpha=1;
+}
+function drawThruMarks(c){
+  for(const fp of S.fps)
+    for(const q of padsWorld(fp)){
+      if(!(q.drill>0))continue;
+      c.globalAlpha=netAlpha(q.net);
+      padOutline(c,q,C_THRU,px(1.2));
       c.fillStyle=C_DRILL;
       c.beginPath();c.arc(q.x,q.y,q.drill/2,0,Math.PI*2);c.fill();
     }
@@ -310,9 +404,19 @@ function drawVias(c){
       c.strokeStyle=layerColor(v.b);c.lineWidth=v.d*0.22;
       c.beginPath();c.arc(v.x,v.y,v.d/2-v.d*0.11,0,Math.PI*2);c.stroke();
     }
+  }
+  c.globalAlpha=1;
+}
+function drawViaMarks(c){
+  for(const v of S.vias){
+    c.globalAlpha=netAlpha(v.net);
+    const thru=(v.a===0&&v.b===S.cu-1);
+    c.strokeStyle=thru?C_THRU:layerColor(v.b);c.lineWidth=px(1.2);
+    c.beginPath();c.arc(v.x,v.y,v.d/2,0,Math.PI*2);c.stroke();
     c.fillStyle=C_DRILL;
     c.beginPath();c.arc(v.x,v.y,v.drill/2,0,Math.PI*2);c.fill();
     if(S.sel.vias.has(v)){
+      c.globalAlpha=1;
       c.strokeStyle=C_SEL;c.lineWidth=px(1.6);
       c.beginPath();c.arc(v.x,v.y,v.d/2+px(2),0,Math.PI*2);c.stroke();
     }
@@ -488,14 +592,10 @@ function drawRoute(c){
   const col=layerColor(R.layer);
   c.lineCap="round";c.lineJoin="round";
   c.globalAlpha=0.85;c.strokeStyle=col;c.lineWidth=R.w;
-  for(const s of R.done){
-    c.beginPath();c.moveTo(s.x1,s.y1);c.lineTo(s.x2,s.y2);c.stroke();
-  }
+  strokeRuns(c,R.done);               // d'un seul trait : sinon les coutures se voient
   c.setLineDash([px(6),px(4)]);
   if(R.bad)c.strokeStyle=C_ERR;       // l'aperçu passe au rouge s'il ne respecte pas l'isolation
-  for(const s of R.preview){
-    c.beginPath();c.moveTo(s.x1,s.y1);c.lineTo(s.x2,s.y2);c.stroke();
-  }
+  strokeRuns(c,R.preview);
   c.setLineDash([]);
   c.globalAlpha=1;
   c.fillStyle=C_SEL;
@@ -530,11 +630,15 @@ function drawHover(c){
 function paint(c,dpr,w,h,noGrid){
   c.setTransform(1,0,0,1,0,0);
   c.fillStyle=C_BG;c.fillRect(0,0,w,h);
-  if(!noGrid){c.save();c.scale(dpr,dpr);drawGrid(c,w/dpr,h/dpr);c.restore();}
 
   setWorld(c,dpr);
+  drawSub(c);
+  // après le substrat, avant le cuivre : la grille se voit là où l'on travaille
+  if(!noGrid){c.save();c.setTransform(dpr,0,0,dpr,0,0);drawGrid(c,w/dpr,h/dpr);c.restore();}
   drawBoard(c);
 
+  drawVias(c);                                 // cuivre : sous les pistes
+  drawThruPads(c);
   for(const i of layerOrder()){
     const a=layerAlpha(i);
     if(a<=0)continue;
@@ -548,11 +652,11 @@ function paint(c,dpr,w,h,noGrid){
       }
       drawZones(c,i,a);
     }
+    drawSmdPads(c,i,a);                        // cuivre : sous les pistes
     drawTracks(c,i,a);
-    drawSmdPads(c,i,a);
   }
-  drawVias(c);
-  drawThruPads(c);
+  drawViaMarks(c);                             // contour et perçage : par-dessus
+  drawThruMarks(c);
   drawNetPads(c);
   drawRats(c);
   drawSilk(c);

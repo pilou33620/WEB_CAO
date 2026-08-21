@@ -244,9 +244,13 @@ function normDoc(d){
   /* `tented` n'avait que deux valeurs : les fichiers qui le portent encore
      deviennent « recouverts » ou « ouverts ». */
   const vf=dStr(r.viaFinish,16);
+  // l'angle des pistes : liste fermée, 45° pour tout ce qui n'en dit rien —
+  // les fichiers antérieurs à ce réglage ont été tracés ainsi
+  const cm=dStr(r.corner,8);
   out.rule={edge:dRange(r.edge,0.4,0,100),thermal:dRange(r.thermal,0.5,0,100),
             mask:dRange(r.mask,0.05,-100,100),paste:dRange(r.paste,0,-100,100),
-            viaFinish:VIA_FINISH[vf]?vf:(r.tented===false?"open":"tented")};
+            viaFinish:VIA_FINISH[vf]?vf:(r.tented===false?"open":"tented"),
+            corner:CORNER_MODES[cm]?cm:"45"};
   /* largeurs de la V1.0 : loadDoc() en tire deux classes quand `classes`
      manque, on les laisse donc passer */
   for(const k of ["w","clr","via","drill","wPwr"])
@@ -299,7 +303,7 @@ function loadDoc(d,keepView){
   S.fabOrigin=d.fabOrigin;
   const r=d.rule;
   S.rule={edge:r.edge, thermal:r.thermal, mask:r.mask, paste:r.paste,
-          viaFinish:r.viaFinish};
+          viaFinish:r.viaFinish, corner:r.corner};
   if(d.classes){
     S.classes=d.classes;S.netClass=d.netClass;
   }else{
@@ -475,6 +479,51 @@ function endDir(t,e){
   return e===1?{x:t.x1-t.x2,y:t.y1-t.y2}:{x:t.x2-t.x1,y:t.y2-t.y1};
 }
 function endFar(t,e){return e===1?{x:t.x2,y:t.y2}:{x:t.x1,y:t.y1};}
+/* Axes à conserver pendant qu'on tire une articulation : ceux des points d'en
+   face. Un segment tiré depuis le centre d'une pastille hors grille resterait
+   sinon légèrement de biais — vertical à l'œil, mais dérivant d'une largeur de
+   piste sur sa longueur. On retient l'axe le plus proche de la case visée :
+   tirer le coude sous une pastille recentre ainsi la piste sur son centre. */
+function tendAnchor(g,x,y){
+  let ax=null,ay=null,bx=1e9,by=1e9;
+  for(const o of g.ends){
+    const f=endFar(o.t,o.e);
+    const dx=Math.abs(f.x-x), dy=Math.abs(f.y-y);
+    if(dx<bx){bx=dx;ax=f.x;}
+    if(dy<by){by=dy;ay=f.y;}
+  }
+  return {x:ax,y:ay};
+}
+/* Poser une extrémité au centre d'une pastille ne recentre pas la piste : son
+   autre bout reste sur la grille et le segment part de biais — vertical à
+   l'œil, mais dérivant d'une largeur de piste sur sa longueur. Au relâchement,
+   si ce bout est à moins d'un demi-pas de l'axe du point d'arrivée, on l'y
+   ramène : le segment se redresse, et l'articulation emmène ses voisins. Un
+   bout tenu par une pastille ou un via, lui, ne bouge pas. */
+function straightenTend(g,to){
+  if(!to||!(S.grid>0))return false;
+  const tol=S.grid/2-1e-9;
+  // on relève d'abord, puis on déplace : une articulation partagée par deux
+  // segments tirés ne doit être redressée qu'une fois, et sur un seul axe
+  const moves=[];
+  for(const o of g.ends){
+    const t=o.t, f=endFar(t,o.e);
+    if(padAt(t.l,f.x,f.y)||viaAt(t.l,f.x,f.y))continue;
+    if(moves.some(m=>m.l===t.l&&Math.abs(m.f.x-f.x)<EPS_J&&Math.abs(m.f.y-f.y)<EPS_J))continue;
+    const dx=Math.abs(f.x-to.x), dy=Math.abs(f.y-to.y);
+    let nx=f.x, ny=f.y;
+    if(dx>1e-9&&dx<tol&&dy>=dx)nx=to.x;             // quasi vertical : même colonne
+    else if(dy>1e-9&&dy<tol&&dx>=dy)ny=to.y;        // quasi horizontal : même ligne
+    else continue;
+    moves.push({l:t.l,f,x:r3(nx),y:r3(ny)});
+  }
+  for(const m of moves)
+    for(const k of jointAt(m.f.x,m.f.y,m.l).ends){
+      if(k.e===1){k.t.x1=m.x;k.t.y1=m.y;}
+      else{k.t.x2=m.x;k.t.y2=m.y;}
+    }
+  return moves.length>0;
+}
 function crossN(a,b){
   const la=Math.hypot(a.x,a.y), lb=Math.hypot(b.x,b.y);
   return (!la||!lb)?0:(a.x*b.y-a.y*b.x)/(la*lb);   // sinus de l'angle entre eux
@@ -508,6 +557,40 @@ function collinearRun(t0){
   }
   return run;
 }
+/* ==========================================================================
+   Les murs d'une articulation
+   --------------------------------------------------------------------------
+   Le coude glisse le long de son voisin resté en place : ce voisin est le mur
+   contre lequel l'articulation vient buter. Tirer plus loin que sa naissance
+   n'a pas de sens — la ligne du mur y repart en arrière et la piste se replie
+   en crochet, cette forme qu'on ne dessine jamais à la main.
+   On relève donc, derrière le premier mur, ceux qui le suivent : la suite des
+   segments non tirés, de coude en coude. Passé la naissance du premier, c'est
+   le mur suivant qui prend le relais et le coude dépassé se replie sur
+   l'articulation — il disparaîtra au relâchement. La piste se tend alors
+   comme un fil, sans jamais revenir sur elle-même.
+   La chaîne s'arrête à ce qui ne peut pas se replier : une pastille, un via,
+   un embranchement, ou simplement un bout de piste libre.
+   ========================================================================== */
+const WALL_MAX=8;
+function wallChain(f){
+  const walls=[];
+  let cur=f, near=null;
+  while(walls.length<WALL_MAX){
+    const A=endFar(cur.t,cur.e), d=endDir(cur.t,cur.e);
+    walls.push({ax:A.x,ay:A.y,dx:d.x,dy:d.y,near});
+    // un point tenu par du cuivre traversant ne se replie pas
+    if(padAt(cur.t.l,A.x,A.y)||viaAt(cur.t.l,A.x,A.y))break;
+    const at=jointAt(A.x,A.y,cur.t.l);
+    // un embranchement non plus : replier l'un tirerait les autres de travers
+    if(at.ends.length!==2||at.vias.length)break;
+    const nx=at.ends.filter(o=>o.t!==cur.t&&!S.sel.tracks.has(o.t)&&o.t.net===cur.t.net);
+    if(nx.length!==1)break;
+    near=at.ends.map(o=>({t:o.t,e:o.e,x0:r3(A.x),y0:r3(A.y)}));
+    cur=nx[0];
+  }
+  return walls;
+}
 /* Relevé des articulations de la sélection courante, avec les positions de
    départ : le déplacement s'applique ensuite en absolu, ce qui permet de le
    suspendre (Alt) puis de le reprendre sans décalage. */
@@ -528,7 +611,8 @@ function moveJoints(){
       const x=en===1?t.x1:t.x2, y=en===1?t.y1:t.y2;
       const k=anchorKey(t.l,x,y);
       if(anchors.has(k))
-        at(k,x,y).ends.push({t,e:en,x0:r3(x),y0:r3(y),sel:S.sel.tracks.has(t)});
+        at(k,x,y).ends.push({t,e:en,x0:r3(x),y0:r3(y),f0:endFar(t,en),
+                             sel:S.sel.tracks.has(t)});
     }
   for(const v of S.vias){
     const k=anchorKey(v.a,v.x,v.y);
@@ -543,13 +627,11 @@ function moveJoints(){
     const fix=j.ends.filter(o=>!o.sel), sel=j.ends.filter(o=>o.sel);
     if(!fix.length||!sel.length)continue;
     for(const f of fix){
-      const fd=endDir(f.t,f.e), F=endFar(f.t,f.e);
+      const fd=endDir(f.t,f.e);
       for(const g of sel){
         const gd=endDir(g.t,g.e), G=endFar(g.t,g.e);
         if(Math.abs(crossN(fd,gd))<1e-4)continue;             // ~0,006 degre
-        j.slide={fx:F.x,fy:F.y,fdx:fd.x,fdy:fd.y,
-                 gx:G.x,gy:G.y,gdx:gd.x,gdy:gd.y,
-                 den:fd.x*gd.y-fd.y*gd.x};
+        j.slide={gx:G.x,gy:G.y,gdx:gd.x,gdy:gd.y,walls:wallChain(f)};
         break;
       }
       if(j.slide)break;
@@ -557,25 +639,111 @@ function moveJoints(){
   }
   return [...J.values()];
 }
+/* Le mur retourné : sa direction renvoyée par la ligne du segment tiré. Un
+   45° reste un 45°, un angle droit un angle droit — seul le côté change. C'est
+   ce que fait la main quand le coude passe de l'autre bord de la pastille, et
+   c'est la seule issue quand il n'y a plus de mur à replier derrière. */
+function wallFlip(w,gdx,gdy){
+  const L2=gdx*gdx+gdy*gdy;
+  if(!L2)return {x:w.dx,y:w.dy};
+  const k=(w.dx*gdx+w.dy*gdy)/L2;          // part du mur portée par le segment tiré
+  return {x:2*k*gdx-w.dx,y:2*k*gdy-w.dy};  // l'autre part change de signe
+}
+/* Où l'articulation peut tomber, et combien de coudes elle a mangés pour y
+   arriver — par ordre de préférence, car la première place n'est pas toujours
+   tenable. `u` compte depuis la naissance du mur : 1 à l'articulation de
+   départ, 0 à sa naissance. Négatif, le mur est consommé — au suivant.
+   Trois places, dans cet ordre :
+   1. l'appui franc du premier mur qui en offre un ;
+   2. le retournement du dernier mur consommé, quand plus rien n'offre d'appui.
+      Se contenter de translater l'articulation, comme avant, cassait son angle
+      — le voisin partait alors de biais, ni droit ni à 45°, et la piste se
+      mettait en travers de la grille. Le cas se présente dès qu'un mur
+      parallèle au segment tiré suit le coude : un 45° pris entre deux droites
+      de même sens ;
+   3. l'appui du premier mur **au-delà de sa naissance** : le coude repart en
+      arrière, ce qu'on évite tant qu'on peut, mais qui garde son angle sans
+      renverser la portion tirée. C'est l'issue de secours quand le
+      retournement, lui, la renverserait — voir `applyJoints`. */
+function slideAt(s,dx,dy){
+  const Gx=s.gx+dx, Gy=s.gy+dy, W=s.walls, out=[];
+  let last=null, over=null;                           // dernier mur consommé, premier dépassé
+  for(let k=0;k<W.length;k++){
+    const w=W[k], den=w.dx*s.gdy-w.dy*s.gdx;
+    if(Math.abs(den)<1e-12)continue;                  // mur parallèle : pas d'appui
+    const u=((Gx-w.ax)*s.gdy-(Gy-w.ay)*s.gdx)/den;
+    if(u>=0){out.push({x:w.ax+w.dx*u,y:w.ay+w.dy*u,eat:k});break;}
+    if(!over)over={x:w.ax+w.dx*u,y:w.ay+w.dy*u,eat:k};
+    last={w:w,u:u,k:k};                               // un mur derrière : il prend le relais
+  }
+  if(last){
+    const d=wallFlip(last.w,s.gdx,s.gdy);
+    out.push({x:last.w.ax-d.x*last.u,y:last.w.ay-d.y*last.u,eat:last.k});
+  }
+  if(over)out.push(over);
+  return out;
+}
+/* La portion tirée repart-elle en arrière depuis cette articulation ? Ses deux
+   bouts glissent chacun le long de son mur, et rien ne les empêche de se
+   croiser : le segment prend alors une longueur négative, la piste se recroise
+   au-dessus d'elle-même et dessine un **papillon** — l'auto-intersection que le
+   Gerber refuse dans une région G36/G37, et qu'on ne trace jamais à la main.
+   On compare la direction d'aujourd'hui à celle du départ : un produit scalaire
+   négatif, c'est le segment retourné. */
+function jointFlips(j){
+  for(const o of j.ends){
+    if(!o.sel)continue;
+    const P=o.e===1?{x:o.t.x1,y:o.t.y1}:{x:o.t.x2,y:o.t.y2}, F=endFar(o.t,o.e);
+    if((F.x-P.x)*(o.f0.x-o.x0)+(F.y-P.y)*(o.f0.y-o.y0)<-1e-9)return true;
+  }
+  return false;
+}
 function applyJoints(J,dx,dy,detach){
   if(!J)return;
   const put=(o,x,y)=>{if(o.e===1){o.t.x1=x;o.t.y1=y;}else{o.t.x2=x;o.t.y2=y;}};
-  for(const j of J){
-    if(detach){                    // Alt : les voisins restent où ils sont
-      for(const o of j.ends)if(!o.sel)put(o,o.x0,o.y0);
-      for(const a of j.vias)if(!a.sel){a.v.x=a.x0;a.v.y=a.y0;}
-      continue;
-    }
-    let x=j.x0+dx, y=j.y0+dy;
-    const s=j.slide;
-    if(s){
-      // intersection de la ligne du voisin (fixe) et de celle du segment tiré
-      const u=((s.gx+dx-s.fx)*s.gdy-(s.gy+dy-s.fy)*s.gdx)/s.den;
-      x=s.fx+s.fdx*u;y=s.fy+s.fdy*u;
-    }
-    x=r3(x);y=r3(y);
+  /* Poser une articulation à l'une de ses places : ses extrémités, ses vias, et
+     les coudes mangés qui se replient sur elle. Les autres retournent d'où ils
+     venaient — le glissement s'applique en absolu, revenir en arrière doit les
+     rendre intacts. */
+  const place=(j,c)=>{
+    const W=j.slide?j.slide.walls:[];
+    // sans appui, l'articulation suit simplement le déplacement
+    const x=r3(c?c.x:j.x0+dx), y=r3(c?c.y:j.y0+dy), eat=c?c.eat:0;
     for(const o of j.ends)put(o,x,y);
     for(const a of j.vias){a.v.x=x;a.v.y=y;}
+    for(let k=1;k<W.length;k++){
+      const n=W[k].near;
+      if(!n)continue;
+      if(k<=eat)for(const o of n)put(o,x,y);
+      else for(const o of n)put(o,o.x0,o.y0);
+    }
+  };
+  for(const j of J){
+    if(detach){                    // Alt : les voisins restent où ils sont
+      const W=j.slide?j.slide.walls:[];
+      for(const o of j.ends)if(!o.sel)put(o,o.x0,o.y0);
+      for(const a of j.vias)if(!a.sel){a.v.x=a.x0;a.v.y=a.y0;}
+      for(const w of W)if(w.near)for(const o of w.near)put(o,o.x0,o.y0);
+      continue;
+    }
+    // intersection de la ligne du voisin (fixe) et de celle du segment tiré
+    j.opt=j.slide?slideAt(j.slide,dx,dy):[];
+    j.pick=0;
+    place(j,j.opt[0]||null);
+  }
+  if(detach)return;
+  /* Aucune portion tirée ne doit repartir en arrière sur elle-même : c'est le
+     papillon. Une articulation qui renverse la sienne passe à la place
+     suivante. Le voisin d'en face pouvant bouger à son tour, on repasse : deux
+     tours suffisent, la liste des places étant courte. */
+  for(let pass=0;pass<2;pass++){
+    let stable=true;
+    for(const j of J){
+      while(j.pick<j.opt.length-1&&jointFlips(j)){
+        place(j,j.opt[++j.pick]);stable=false;
+      }
+    }
+    if(stable)break;
   }
 }
 /* Premier déplacement réel : la sélection s'étend aux portions droites, et on
@@ -586,6 +754,73 @@ function beginMove(){
   drag.trk=[...S.sel.tracks].map(t=>({t,x1:t.x1,y1:t.y1,x2:t.x2,y2:t.y2}));
   drag.via=[...S.sel.vias].map(v=>({v,x:v.x,y:v.y}));
   drag.joints=moveJoints();
+  armClear([...movedTracks()],[...S.sel.vias],[...S.sel.fps].map(fpById).filter(Boolean));
+  // un boîtier emmène ses pastilles, une zone son contour : c'est un autre
+  // problème que l'isolation d'une piste, on laisse alors le geste libre — et
+  // le retour en arrière ne saurait de toute façon pas replacer le boîtier
+  if(S.sel.fps.size||S.sel.zones.size||S.sel.cuts.size){drag.clear=null;drag.cross=null;}
+}
+/* État de départ de l'anti-collision : ce que le geste emmène, et ce qui était
+   déjà en faute avant qu'il ne commence. */
+function armClear(tracks,vias,fps){
+  const skip=new Set([...tracks,...vias,...fps]);
+  drag.clear={list:tracks,skip,was:moveClearBad(tracks,null,skip),warned:false};
+  drag.cross={list:tracks,was:crossPairs(tracks),warned:false};
+}
+/* Les paires de segments qui se croisent vraiment : bout à bout ne compte pas,
+   un embranchement en T non plus — seul un croisement franc, chacun au travers
+   de l'autre, fait un papillon. */
+function crossPairs(list){
+  const set=new Set();
+  for(let i=0;i<list.length;i++)
+    for(let j=i+1;j<list.length;j++){
+      const a=list[i], b=list[j];
+      if(a.l!==b.l)continue;
+      const d1=a.x2-a.x1, d2=a.y2-a.y1, d3=b.x2-b.x1, d4=b.y2-b.y1;
+      const den=d1*d4-d2*d3;
+      if(Math.abs(den)<1e-12)continue;
+      const ex=b.x1-a.x1, ey=b.y1-a.y1;
+      const t=(ex*d4-ey*d3)/den, u=(ex*d2-ey*d1)/den;
+      if(t>1e-9&&t<1-1e-9&&u>1e-9&&u<1-1e-9)set.add(i+"|"+j);
+    }
+  return set;
+}
+/* Le cuivre déplacé se recroise-t-il ? Les deux bouts d'une portion tirée
+   glissent chacun le long de son mur ; passé le point où ces deux murs se
+   rencontrent, ils repartent l'un par-dessus l'autre et la piste se recroise —
+   le papillon. Aucun arrangement de coudes ne rattrape cela : la seule réponse
+   juste est de buter, comme sur un obstacle d'isolation. Le geste reprend dès
+   qu'on repart de l'autre côté.
+   Un croisement déjà présent au départ ne bloque rien : une carte en faute doit
+   rester réparable à la main. */
+function crossStop(){
+  const c=drag&&drag.cross;
+  if(!c)return false;
+  const now=crossPairs(c.list);
+  let neuf=false;
+  for(const k of now)if(!c.was.has(k)){neuf=true;break;}
+  if(!neuf)return false;
+  if(!c.warned){
+    c.warned=true;
+    hint("La piste se recroiserait sur elle-même : le geste bute. "+
+         "Tirez de l'autre côté, ou reprenez le coude voisin.");
+  }
+  return true;
+}
+/* Le cuivre déplacé traverse-t-il ce qu'il ne devrait pas ? Si oui, on le dit
+   une fois et on rend la main à l'appelant, qui remet le geste où il était. */
+function clearStop(){
+  const c=drag&&drag.clear;
+  if(!c)return false;
+  const bad=moveClearBad(c.list,c.was,c.skip);
+  if(!bad.size)return false;
+  if(!c.warned){
+    c.warned=true;
+    const t=[...bad][0];
+    hint("Isolation de "+fmt(classOf(t.net).clr,2)+" mm : la piste bute sur l'obstacle. "+
+         "Contournez-le, ou coupez l'anti-collision pour forcer.");
+  }
+  return true;
 }
 /* ==========================================================================
    Adoucir un angle droit : le coude passe en 45°
@@ -649,8 +884,17 @@ function mitreAt(l,x,y,dry){
   // angle droit seulement : ailleurs, couper en deux ne donnerait pas 45°
   if(Math.abs(Math.abs(crossN(endDir(A.t,A.e),endDir(B.t,B.e)))-1)>1e-3)return false;
   const ra=runFrom(A.t,A.e), rb=runFrom(B.t,B.e);
-  const L=Math.min(ra.len,rb.len);
-  if(L<1e-3)return false;
+  /* On recule d'autant des deux côtés — c'est ce qui fait le 45°. La portion la
+     plus longue garde donc l'écart des deux longueurs : sous la largeur de
+     piste, ce reste est une écharde, celle-là même que le tracé s'interdit
+     maintenant de poser. On recule alors des deux côtés d'une largeur de plus,
+     ce qui rend du cuivre aux deux restes au lieu d'en laisser un famélique.
+     Un chanfrein plus court que la piste ne veut rien dire : on n'y touche pas. */
+  const MIN=minJog(A.t.w);
+  const gap=Math.abs(ra.len-rb.len);
+  let L=Math.min(ra.len,rb.len);
+  if(gap>1e-9&&gap<MIN)L=r3(L-MIN);
+  if(L<MIN)return false;
   if(dry)return true;
   const lay=A.t.l, net=A.t.net, w=A.t.w;
   const pa=trimRun(ra,L), pb=trimRun(rb,L);
@@ -689,7 +933,8 @@ function mitreSel(){
   const todo=pts.filter(p=>mitreAt(p.l,p.x,p.y,true));
   if(!todo.length){
     hint("Aucun angle droit à adoucir ici : il en faut un vrai, entre deux "+
-         "portions de même largeur, sans via ni pastille au coude.");
+         "portions de même largeur et d'au moins une largeur de piste, sans "+
+         "via ni pastille au coude.");
     return 0;
   }
   push();
@@ -698,6 +943,50 @@ function mitreSel(){
   touch();refreshPanels();draw();
   hint(n>1?n+" angles droits passés en 45°.":"Angle droit passé en 45°.");
   return n;
+}
+/* ==========================================================================
+   Le crochet
+   --------------------------------------------------------------------------
+   Quand un coude est mangé, ses deux voisins se retrouvent bout à bout. S'ils
+   repartent du même point dans le MÊME sens, la piste se replie sur elle-même :
+   elle va jusqu'au bout de l'un, revient sur ses pas et repart au bout de
+   l'autre — un V refermé, du cuivre posé deux fois, et une pointe en l'air qui
+   ne mène nulle part. C'est la forme qu'on ne dessine jamais à la main.
+   Au dépôt, le crochet se défait : les deux segments n'en font plus qu'un, d'un
+   bout à l'autre. La liaison est conservée — le cuivre en trop, lui, s'en va.
+   Un point tenu par une pastille, un via ou un embranchement ne se défait pas :
+   il y a là une raison pour que la piste rebrousse chemin.
+   ========================================================================== */
+function hookAt(t,e){
+  const x=e===1?t.x1:t.x2, y=e===1?t.y1:t.y2;
+  if(padAt(t.l,x,y)||viaAt(t.l,x,y))return null;
+  const j=jointAt(x,y,t.l);
+  if(j.ends.length!==2||j.vias.length)return null;
+  const [A,B]=j.ends;
+  if(A.t===B.t||A.t.net!==B.t.net||A.t.w!==B.t.w)return null;
+  // direction depuis l'articulation : même sens = crochet
+  const a=endDir(A.t,A.e), b=endDir(B.t,B.e);
+  if(Math.abs(crossN(a,b))>1e-6||a.x*b.x+a.y*b.y<=0)return null;
+  return {A,B};
+}
+function pruneHooks(list){
+  let n=0;
+  for(let pass=0;pass<16;pass++){
+    let h=null;
+    for(const t of list){
+      if(S.tracks.indexOf(t)<0)continue;
+      h=hookAt(t,1)||hookAt(t,2);
+      if(h)break;
+    }
+    if(!h)break;
+    const {A,B}=h, F=endFar(B.t,B.e);
+    if(A.e===1){A.t.x1=F.x;A.t.y1=F.y;}else{A.t.x2=F.x;A.t.y2=F.y;}
+    S.tracks=S.tracks.filter(x=>x!==B.t);
+    S.sel.tracks.delete(B.t);
+    n++;
+  }
+  if(n)touch();
+  return n>0;
 }
 /* Un segment ramené sur lui-même n'a plus de cuivre à décrire : on l'efface au
    dépôt plutôt que de laisser un point invisible dans la netlist. */
@@ -708,6 +997,69 @@ function pruneDeadTracks(){
   dead.forEach(t=>S.sel.tracks.delete(t));
   touch();
   return true;
+}
+/* Le ménage du dépôt, dans l'ordre. Les segments repliés partent d'abord :
+   tant qu'un point mort traîne sur une articulation, elle compte quatre
+   extrémités et le crochet passe inaperçu. Défaire un crochet peut à son tour
+   annuler un segment — d'où le second passage. */
+/* ==========================================================================
+   L'aimant angulaire d'un bout tiré
+   --------------------------------------------------------------------------
+   Le routeur ne pose que du 45° ; le déplacement d'un sommet, lui, était libre.
+   On tirait un coude de quelques dixièmes et les deux jambes partaient de
+   biais — 32°, ni droit ni 45° : l'**angle bâtard** que les fabricants
+   refusent parfois au contrôle d'entrée.
+   Le geste reste libre — il faut bien pouvoir sortir d'une pastille de
+   travers — mais les positions où les jambes retombent d'aplomb deviennent
+   **magnétiques**, à quelques pixels près, comme les pastilles le sont déjà.
+   Deux cas, selon ce que le sommet tiré a en face de lui :
+     un seul point d'appui — un bout libre, une extrémité détachée — et le
+       curseur se projette sur le rail le plus proche des huit ;
+     deux points d'appui — un vrai coude — et les places d'aplomb sont les
+       intersections des deux éventails de rails. Elles sont peu nombreuses :
+       deux bouts fixes ne laissent pas le choix, c'est la géométrie qui le dit
+       et non l'aimant. Pour aller ailleurs en gardant l'angle, il faut poser un
+       segment de plus — ce que fait le chanfrein, touche D.
+   Rien ne s'aimante si la grille pose déjà le sommet d'aplomb, ni en angle
+   libre : c'est alors un choix. */
+function tendMagnet(g,mx,my,nx,ny,tol){
+  if(cornerMode()==="free")return null;
+  const F=[];
+  for(const o of g.ends){
+    const f=endFar(o.t,o.e);
+    if(!F.some(q=>Math.abs(q.x-f.x)<EPS_J&&Math.abs(q.y-f.y)<EPS_J))F.push(f);
+  }
+  if(!F.length||F.length>2)return null;
+  if(F.every(f=>angleOk(nx-f.x,ny-f.y)))return null;   // déjà d'aplomb
+  let best=null;
+  const keep=(x,y)=>{
+    for(const f of F)if(dist(x,y,f.x,f.y)<1e-9)return;  // jambe écrasée
+    const d=dist(x,y,mx,my);
+    if(d<=tol&&(!best||d<best.d))best={x:r3(x),y:r3(y),d};
+  };
+  if(F.length===1){
+    for(const u of DIR8){
+      const t=(mx-F[0].x)*u.x+(my-F[0].y)*u.y;          // projection sur le rail
+      if(t>1e-9)keep(F[0].x+u.x*t,F[0].y+u.y*t);
+    }
+  }else{
+    const ex=F[1].x-F[0].x, ey=F[1].y-F[0].y;
+    for(const ua of DIR8)
+      for(const ub of DIR8){
+        const den=ua.x*ub.y-ua.y*ub.x;
+        if(Math.abs(den)<1e-12)continue;                // rails parallèles
+        const ta=(ex*ub.y-ey*ub.x)/den;
+        if(ta<=1e-9)continue;                           // la jambe repartirait en arrière
+        const x=F[0].x+ua.x*ta, y=F[0].y+ua.y*ta;
+        if((x-F[1].x)*ub.x+(y-F[1].y)*ub.y<=1e-9)continue;
+        keep(x,y);
+      }
+  }
+  return best;
+}
+function pruneAfterDrag(list){
+  pruneDeadTracks();
+  if(pruneHooks(list))pruneDeadTracks();
 }
 function projOnSeg(px_,py_,t){
   const dx=t.x2-t.x1, dy=t.y2-t.y1, l2=dx*dx+dy*dy;
@@ -741,6 +1093,43 @@ function deleteNetRouting(net){
   S.vias=S.vias.filter(v=>v.net!==net);
   clearSel();touch();refreshPanels();draw();
   hint("Routage du net "+net+" supprimé.");
+}
+/* Dérouter la sélection : le cuivre routé s'en va, le reste ne bouge pas.
+   C'est la touche U de l'éditeur schématique (`delWiresSel`), portée sur la
+   carte. Un lasso prend tout — empreintes, pistes, vias, zones ; jusqu'ici il
+   fallait désigner les segments un à un pour ne pas emporter les boîtiers avec
+   eux. `U` vide le routage de la sélection et laisse les empreintes en place,
+   et sélectionnées, prêtes à être replacées avant de router autrement.
+   Le routage, c'est le cuivre du chemin : les segments **et** les vias qui les
+   font changer de couche. Un via resté seul au milieu de rien n'est pas du
+   routage, c'est un trou dans la carte — on ne le laisse pas derrière.
+   Les zones de cuivre, le contour et les découpes ne sont pas du routage : un
+   plan de masse décrit la carte, il ne relie pas deux pastilles. `Suppr`
+   reste là pour tout emporter.
+   Sans piste ni via dans la sélection, rien n'est supprimé : le pied de page le
+   dit plutôt que d'emporter les empreintes. */
+function unrouteSel(){
+  const tr=S.tracks.filter(t=>S.sel.tracks.has(t));
+  const vi=S.vias.filter(v=>S.sel.vias.has(v));
+  if(!tr.length&&!vi.length){
+    hint(selCount()
+      ? "Aucune piste ni via dans la sélection : U n'efface que le cuivre routé."
+      : "Sélectionnez des pistes (Ctrl+clic pour en ajouter), puis U pour n'effacer "+
+        "qu'elles — les empreintes restent en place.");
+    return;
+  }
+  push();
+  S.tracks=S.tracks.filter(t=>!S.sel.tracks.has(t));
+  S.vias=S.vias.filter(v=>!S.sel.vias.has(v));
+  S.sel.tracks.clear();S.sel.vias.clear();
+  touch();
+  const dit=[];
+  if(tr.length)dit.push(tr.length+" segment"+(tr.length>1?"s":""));
+  if(vi.length)dit.push(vi.length+" via"+(vi.length>1?"s":""));
+  hint(dit.join(" et ")+(tr.length+vi.length>1?" supprimés":" supprimé")+
+       (S.sel.fps.size?" · "+S.sel.fps.size+" empreinte(s) laissée(s) en place.":"."));
+  refreshPanels();draw();
+  return tr.length+vi.length;
 }
 function deleteSel(){
   if(!selCount())return;
@@ -896,29 +1285,166 @@ function flipSel(){
 /* ==========================================================================
    Tracé de pistes
    ========================================================================== */
-function route45(a,b,posture){
+/* Le chemin en L chanfreiné : une diagonale et une portion droite. La
+   **posture** dit laquelle vient en premier — diagonale d'abord, ou droit
+   d'abord. C'est le terme de KiCad, dont le routeur la bascule sur `/`.
+
+   Les deux longueurs se prennent sur les valeurs absolues : `d` la projection
+   de la diagonale, `s` ce qui reste de la portion droite. Écrite `|dx| - |dy|`,
+   cette dernière devient négative dès que le trajet est plus haut que large :
+   la portion droite repart alors en arrière par-dessus la diagonale, et le
+   contour se recroise — le **papillon**, cette auto-intersection que la spec
+   Gerber RS-274X refuse dans une région G36/G37. `Math.abs(adx-ady)` et
+   `Math.min(adx,ady)` la rendent structurellement impossible : deux longueurs
+   positives, toujours.
+   Les cas dégénérés — trajet droit, trajet à 45° plein — ne posent qu'un seul
+   segment : un point milieu confondu avec un bout laisserait un segment de
+   longueur nulle dans le document, dans le .json et dans le Gerber.
+
+   Reste la zone morte entre les deux : `s` positif mais minuscule. Le papillon
+   est mort, l'écharde le remplace — un décrochement de trois centièmes, une
+   languette de cuivre plus fine que la piste qu'elle prolonge, que la gravure
+   sous-attaque. Le test d'égalité stricte ne l'attrape pas : avec un curseur
+   libre, `s` ne vaut jamais exactement zéro, et une grille au dixième en fabrique
+   à la chaîne sous une piste de trois dixièmes.
+   D'où `minSeg`, le seuil d'écrasement : en deçà, on ne supprime pas le point
+   milieu — ça laisserait un angle bâtard — on **déplace l'arrivée** pour forcer
+   le 45° pur ou l'orthogonal pur. C'est l'aimant angulaire du routeur de KiCad :
+   la piste colle aux huit rails, et le décrochement ne peut plus naître dans la
+   zone morte. `minSeg` absent ou nul rend la géométrie pure, sans aimant. */
+function route45(a,b,posture,minSeg){
   const dx=b.x-a.x, dy=b.y-a.y;
   const adx=Math.abs(dx), ady=Math.abs(dy);
-  if(adx<1e-9&&ady<1e-9)return [];
-  const sx=Math.sign(dx), sy=Math.sign(dy), m=Math.min(adx,ady);
+  const sx=Math.sign(dx), sy=Math.sign(dy);
+  const d=Math.min(adx,ady);            // projection de la diagonale
+  const s=Math.abs(adx-ady);            // portion droite : jamais négative
+  const m=minSeg>0?minSeg:0;            // seuil d'écrasement ; 0 = géométrie pure
+  if(d<1e-9&&s<1e-9)return [];          // sur place : rien à poser
+  if(d<1e-9||s<1e-9)                    // un seul segment, pas de point milieu
+    return [{x1:a.x,y1:a.y,x2:b.x,y2:b.y}];
+  if(s<m){                              // décrochement trop court : diagonale pure
+    // la demi-somme arrondie au micron : les deux axes bougent d'autant, l'angle
+    // reste un 45° exact et non un 45° à un micron près
+    const L=r3((adx+ady)/2);
+    if(L<1e-9)return [];
+    return [{x1:a.x,y1:a.y,x2:a.x+sx*L,y2:a.y+sy*L}];
+  }
+  if(d<m)                               // diagonale trop courte : H ou V pur
+    return adx>ady?[{x1:a.x,y1:a.y,x2:b.x,y2:a.y}]
+                  :[{x1:a.x,y1:a.y,x2:a.x,y2:b.y}];
   const mid=posture
-    ? {x:a.x+sx*m, y:a.y+sy*m}
-    : (adx>ady?{x:a.x+sx*(adx-ady),y:a.y}:{x:a.x,y:a.y+sy*(ady-adx)});
-  const out=[];
-  if(dist(a.x,a.y,mid.x,mid.y)>1e-9)out.push({x1:a.x,y1:a.y,x2:mid.x,y2:mid.y});
-  if(dist(mid.x,mid.y,b.x,b.y)>1e-9)out.push({x1:mid.x,y1:mid.y,x2:b.x,y2:b.y});
-  return out;
+    ? {x:a.x+sx*d, y:a.y+sy*d}                                  // diagonale d'abord
+    : (adx>ady?{x:a.x+sx*s,y:a.y}:{x:a.x,y:a.y+sy*s});          // droit d'abord
+  return [{x1:a.x,y1:a.y,x2:mid.x,y2:mid.y},
+          {x1:mid.x,y1:mid.y,x2:b.x,y2:b.y}];
+}
+/* Direction d'un segment ramenée à l'un des huit sens du tracé. */
+function dir8(s){
+  return {x:Math.sign(s.x2-s.x1), y:Math.sign(s.y2-s.y1)};
+}
+/* ==========================================================================
+   L'angle imposé aux pistes
+   --------------------------------------------------------------------------
+   Trois règles, choisies dans le panneau *Règles de tracé* et rangées avec le
+   document (`S.rule.corner`) :
+     « 45 »   le L chanfreiné — la règle de l'art, et le défaut ;
+     « 90 »   deux segments orthogonaux, l'angle droit franc ;
+     « free » un seul segment, l'angle qu'on veut.
+   ========================================================================== */
+const CORNER_MODES={"45":"45°","90":"90°","free":"libre"};
+function cornerMode(){
+  const m=S.rule&&S.rule.corner;
+  return CORNER_MODES[m]?m:"45";
+}
+/* Longueur en deçà de laquelle un décrochement n'est plus du cuivre utile. Le
+   seuil se prend sur la largeur de la piste : un épaulement plus court que la
+   piste n'est pas un coude, c'est une écharde de gravure. */
+function minJog(w){
+  const t=+w;
+  return Number.isFinite(t)&&t>0?t:0.3;
+}
+/* Le coude d'un clic, selon la règle en vigueur. `route45` reste la géométrie
+   du chanfrein ; les deux autres règles se posent à côté, sur le même contrat :
+   des segments bout à bout, aucun de longueur nulle. `minSeg` est l'aimant
+   angulaire — voir `route45` ; l'angle droit s'y range aussi, une marche de
+   trois centièmes n'y est pas plus fabricable qu'ailleurs. */
+function routeCorner(a,b,posture,mode,minSeg){
+  const m=mode||cornerMode();
+  const dx=b.x-a.x, dy=b.y-a.y;
+  const adx=Math.abs(dx), ady=Math.abs(dy);
+  if(adx<1e-9&&ady<1e-9)return [];               // sur place : rien à poser
+  if(m==="free")return [{x1:a.x,y1:a.y,x2:b.x,y2:b.y}];
+  if(m==="90"){
+    if(adx<1e-9||ady<1e-9)return [{x1:a.x,y1:a.y,x2:b.x,y2:b.y}];
+    if(minSeg>0&&Math.min(adx,ady)<minSeg)       // marche trop courte : tout droit
+      return adx>ady?[{x1:a.x,y1:a.y,x2:b.x,y2:a.y}]
+                    :[{x1:a.x,y1:a.y,x2:a.x,y2:b.y}];
+    // posture : l'axe le plus long d'abord, ou l'autre
+    const mid=posture!==(adx>ady)?{x:b.x,y:a.y}:{x:a.x,y:b.y};
+    return [{x1:a.x,y1:a.y,x2:mid.x,y2:mid.y},
+            {x1:mid.x,y1:mid.y,x2:b.x,y2:b.y}];
+  }
+  return route45(a,b,posture,minSeg);
+}
+/* Les deux départs possibles d'un coude : celui de la posture au repos — l'axe
+   le plus avancé — et celui de la posture basculée, diagonale en 45°, axe
+   restant en 90°. */
+function cornerLegs(a,b,mode){
+  const dx=b.x-a.x, dy=b.y-a.y;
+  const sx=Math.sign(dx), sy=Math.sign(dy);
+  const long=Math.abs(dx)>Math.abs(dy);
+  return {droit:{x:long?sx:0, y:long?0:sy},
+          autre:mode==="90"?{x:long?0:sx, y:long?sy:0}:{x:sx,y:sy}};
+}
+/* La posture ne se mémorise pas : elle se recalcule à chaque mouvement de la
+   souris. La retenir dans la piste en cours la verrouille — une fois posé un
+   segment droit, le chanfrein ne réapparaît plus, et la piste reste en angle
+   droit quoi qu'on fasse.
+   La règle : la piste **continue dans sa direction** puis tourne. Si le dernier
+   segment posé part en diagonale et que la nouvelle diagonale suit le même
+   sens, on remet la diagonale devant ; sinon la portion droite passe en
+   premier. Deux clics dans le même axe ne font ainsi qu'un seul segment. */
+function autoPosture(a,b,prev,mode){
+  const m=mode||cornerMode();
+  if(!prev||m==="free")return false;
+  const dx=b.x-a.x, dy=b.y-a.y;
+  const adx=Math.abs(dx), ady=Math.abs(dy);
+  if(adx<1e-9||ady<1e-9)return false;                           // rien à départager
+  if(m!=="90"&&Math.abs(adx-ady)<1e-9)return false;             // 45° plein : un seul segment
+  const {droit,autre}=cornerLegs(a,b,m);
+  /* Un départ à l'exact opposé du segment qu'on vient de poser repasse sur son
+     cuivre : deux segments bout à bout en sens contraire se recouvrent, et ce
+     recouvrement de surface nulle est ce qu'un Gerber ne sait pas rendre.
+     L'autre arrangement, lui, quitte le point tout de suite. */
+  if(prev.x===-droit.x&&prev.y===-droit.y)return true;
+  if(prev.x===-autre.x&&prev.y===-autre.y)return false;
+  return prev.x===autre.x&&prev.y===autre.y;                    // on continue la direction
+}
+/* Posture retenue pour le tracé en cours : celle que la géométrie appelle,
+   inversée si l'utilisateur l'a basculée à la main (`/` ou Espace). La bascule
+   ne vaut que pour le coude en cours — elle est rendue au dépôt du segment,
+   comme le fait KiCad. */
+function routePosture(R,b){
+  const last=R.done.length?R.done[R.done.length-1]:null;
+  return R.flip!==autoPosture(R.pt,b,last?dir8(last):null);
 }
 /* accroche : une pastille, une extrémité de piste ou un via sur la couche
-   active attire le curseur — sans cela, un net « presque » relié est trop facile */
+   active attire le curseur — sans cela, un net « presque » relié est trop facile.
+   Une pastille attire depuis son **cuivre**, et non depuis son seul centre : le
+   centre d'une pastille de 2 mm est à plus d'un millimètre de son bord, si bien
+   qu'arriver dessus ne l'accrochait qu'en visant le milieu. Manqué de peu, le
+   point retombait sur le quadrillage — hors de l'axe de la pastille, et court
+   d'un rien. C'est `padDist` qui mesure cette distance au cuivre, négative à
+   l'intérieur : la portée s'ajoute au bord de la pastille, quelle que soit sa
+   taille. Le point rendu reste le centre — c'est là que la piste doit entrer. */
 function magnet(x,y,layer,skip){
   const R=px(9);
   let best=null,bd=R;
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(!padLayers(fp,q).includes(layer))continue;
-      if(padDist(x,y,q)<=0)return {x:q.x,y:q.y,net:q.net,pad:true,obj:q};
-      const d=dist(x,y,q.x,q.y);
+      const d=padDist(x,y,q);
+      if(d<=0)return {x:q.x,y:q.y,net:q.net,pad:true,obj:q};
       if(d<bd){bd=d;best={x:q.x,y:q.y,net:q.net,pad:true,obj:q};}
     }
   for(const v of S.vias){
@@ -970,22 +1496,60 @@ function pushClear(pt,l,net,w){
   }
   return {x:p.x,y:p.y,pushed:moved};
 }
-/* Le point repoussé ne garantit pas le segment : on vérifie le trajet complet. */
-function segClearBad(s,l,net,w,ignoreObj){
+/* Le point repoussé ne garantit pas le segment : on vérifie le trajet complet.
+   `skip` réunit ce qui bouge avec le segment examiné : deux morceaux emmenés par
+   le même geste ne se gênent pas entre eux, ils gardent leur écart. */
+function segClearBad(s,l,net,w,ignoreObj,skip){
+  const hors=o=>(ignoreObj&&ignoreObj===o)||(skip&&skip.has(o));
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
-      if(!padLayers(fp,q).includes(l)||q.net===net||(ignoreObj&&ignoreObj===q))continue;
+      if(!padLayers(fp,q).includes(l)||q.net===net||hors(q)||hors(fp))continue;
       if(segPadDist({x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2,w},q)<clrPair(net,q.net)-1e-4)return true;
     }
   for(const v of S.vias){
-    if(l<v.a||l>v.b||v.net===net||(ignoreObj&&ignoreObj===v))continue;
+    if(l<v.a||l>v.b||v.net===net||hors(v))continue;
     if(segDist(v.x,v.y,s.x1,s.y1,s.x2,s.y2)-v.d/2-w/2<clrPair(net,v.net)-1e-4)return true;
   }
   for(const t of S.tracks){
-    if(t.l!==l||t.net===net||(ignoreObj&&ignoreObj===t))continue;
+    if(t.l!==l||t.net===net||hors(t))continue;
     if(segSegDist({x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2},t)-t.w/2-w/2<clrPair(net,t.net)-1e-4)return true;
   }
   return false;
+}
+/* ==========================================================================
+   L'anti-collision pendant un glissement
+   --------------------------------------------------------------------------
+   Le routeur refuse d'avancer sous l'isolation ; le glissement, lui, ne
+   regardait rien : on traversait un boîtier entier sans qu'un seul avertissement
+   ne se lève, et il ne restait que le DRC, après coup, pour le dire. Le cuivre
+   tiré bute donc maintenant sur l'obstacle — le geste s'arrête là et reprend dès
+   qu'on repart de l'autre côté.
+   Deux précautions. On ne juge que ce qui était propre AVANT le geste : une
+   carte déjà en faute doit rester réparable à la main, et non se figer. Et ce
+   que le geste emmène ne se juge pas contre lui-même — sinon un coude collerait
+   à son propre voisin dès le premier millimètre.
+   ========================================================================== */
+function moveClearBad(list,was,skip){
+  const bad=new Set();
+  if(!S.avoid)return bad;
+  for(const t of list){
+    if(!t.net||(was&&was.has(t)))continue;
+    if(dist(t.x1,t.y1,t.x2,t.y2)<1e-9)continue;      // replié : plus de cuivre à juger
+    if(segClearBad(t,t.l,t.net,t.w,null,skip))bad.add(t);
+  }
+  return bad;
+}
+/* Tout le cuivre qu'un geste peut réécrire : la sélection étendue, les
+   articulations et les coudes qu'elles replient. */
+function movedTracks(){
+  const set=new Set();
+  for(const o of drag.trk||[])set.add(o.t);
+  for(const j of drag.joints||[]){
+    for(const o of j.ends)set.add(o.t);
+    for(const w of (j.slide?j.slide.walls:[]))
+      if(w.near)for(const o of w.near)set.add(o.t);
+  }
+  return set;
 }
 function routeBad(segs,l,net,w,ignoreObj){
   if(!S.avoid||!net)return false;
@@ -1000,7 +1564,10 @@ function routeTarget(x,y){
   if(m&&(!net||!m.net||m.net===net)){S.hover={x:m.x,y:m.y};return m;}
   S.hover=null;
   const w=S.route?S.route.w:defaultWidth(net);
-  const p=pushClear({x:snapX(x),y:snapY(y)},l,net,w);
+  // le point de départ sert d'ancre : depuis un centre de pastille hors grille,
+  // le quadrillage seul ferait sortir la piste de travers dès le premier segment
+  const a=S.route?S.route.pt:null;
+  const p=pushClear({x:snapXn(x,a?a.x:null),y:snapYn(y,a?a.y:null)},l,net,w);
   return {x:p.x,y:p.y,net:null,pushed:p.pushed};
 }
 function startRoute(x,y,exact){
@@ -1008,16 +1575,28 @@ function startRoute(x,y,exact){
                  net:(netAtPoint(x,y,S.active)||{}).net||""}:routeTarget(x,y);
   const net=t.net||"";
   S.route={layer:S.active,net,w:defaultWidth(net),
-           pt:{x:t.x,y:t.y},done:[],vias:[],preview:[],posture:false,bad:false,pushed:false};
+           pt:{x:t.x,y:t.y},done:[],vias:[],preview:[],flip:false,bad:false,pushed:false};
   if(net)buildList();
-  hint("Clic pour poser un coude · B pose un via et change de couche · touches 1-8 : couche · Échap termine.");
+  hint("Clic pour poser un coude · « / » bascule la posture du coude · V pose un via et "+
+       "change de couche · touches 1-8 : couche · Échap termine.");
+}
+/* L'aimant angulaire ne joue qu'en l'air. Une arrivée ancrée — pastille, via,
+   bout de piste — se pose au point exact : déplacer l'arrivée de quelques
+   centièmes pour effacer un décrochement raterait le centre visé, et la liaison
+   avec elle. Le décrochement qui subsiste au pied d'une pastille hors grille,
+   c'est le contrôle DRC qui le dit, après coup. */
+function routeJog(R,t){
+  return (t&&(t.obj||t.net))?0:minJog(R.w);
 }
 function updateRoute(x,y){
   const R=S.route;
   if(!R)return;
   const t=routeTarget(x,y);
-  R.preview=route45(R.pt,{x:t.x,y:t.y},R.posture).map(s=>Object.assign({l:R.layer},s));
+  R.preview=routeCorner(R.pt,{x:t.x,y:t.y},routePosture(R,t),null,routeJog(R,t))
+                 .map(s=>Object.assign({l:R.layer},s));
   R.end=t;R.pushed=!!t.pushed;
+  const last=R.preview[R.preview.length-1];
+  if(last){R.end.x=last.x2;R.end.y=last.y2;}     // l'aimant a pu déplacer l'arrivée
   R.bad=routeBad(R.preview,R.layer,R.net,R.w,R.end.obj);
 }
 /* même chose qu'updateRoute, mais vers un point imposé : c'est la saisie au
@@ -1025,8 +1604,11 @@ function updateRoute(x,y){
 function routeToPoint(pt){
   const R=S.route;
   if(!R)return;
-  R.preview=route45(R.pt,pt,R.posture).map(s=>Object.assign({l:R.layer},s));
-  R.end={x:pt.x,y:pt.y,net:(netAtPoint(pt.x,pt.y,R.layer)||{}).net||null,pad:false};
+  const at=netAtPoint(pt.x,pt.y,R.layer);
+  R.preview=routeCorner(R.pt,pt,routePosture(R,pt),null,at?0:minJog(R.w))
+                 .map(s=>Object.assign({l:R.layer},s));
+  const last=R.preview[R.preview.length-1];
+  R.end={x:last?last.x2:pt.x,y:last?last.y2:pt.y,net:(at||{}).net||null,pad:false};
   R.pushed=false;
   R.bad=routeBad(R.preview,R.layer,R.net,R.w,R.end.obj);
 }
@@ -1042,6 +1624,7 @@ function stepRoute(){
   const last=R.preview[R.preview.length-1];
   R.pt={x:last.x2,y:last.y2};
   R.preview=[];
+  R.flip=false;                  // la bascule ne valait que pour ce coude
   if(R.end) {
     if (R.end.via && !R.end.net && R.net && R.end.obj) {
       R.end.obj.net = R.net;
@@ -1077,15 +1660,71 @@ function placeVia(x,y,net,a,b,inRoute){
   touch();
   return v;
 }
+/* Deux segments bout à bout dans le même axe ne font qu'une ligne droite : la
+   coupure ne veut rien dire. Le routeur pose pourtant un segment par clic — et
+   route45 en pose deux, la portion droite puis la diagonale. Suivre une même
+   direction sur trois clics laissait donc trois morceaux là où l'œil, le
+   fichier et le DRC ne voient qu'un trait.
+   `sameLine` reconnaît la suite d'une ligne : même couche, bout à bout, même
+   direction — et rien au coude qui justifie de garder la césure. Un via en est
+   une : il ancre le changement de couche, et on doit pouvoir le tirer. */
+function sameLine(a,b){
+  if(a.l!==b.l)return false;
+  if(Math.abs(a.x2-b.x1)>1e-9||Math.abs(a.y2-b.y1)>1e-9)return false;
+  const u={x:a.x2-a.x1,y:a.y2-a.y1}, v={x:b.x2-b.x1,y:b.y2-b.y1};
+  if(Math.abs(crossN(u,v))>1e-6)return false;       // pas le même axe
+  if(u.x*v.x+u.y*v.y<=0)return false;               // repli sur soi : ce n'est pas une suite
+  return !viaAt(a.l,a.x2,a.y2);
+}
 function commitRoute(){
   const R=S.route;
   S.route=null;
   if(!R)return;
   if(!R.done.length){touch();draw();return;}
   push();
-  for(const s of R.done)
-    S.tracks.push({l:s.l,net:R.net,w:R.w,x1:r3(s.x1),y1:r3(s.y1),x2:r3(s.x2),y2:r3(s.y2)});
+  let prev=null;
+  const posed=[];
+  for(const s of R.done){
+    const t={l:s.l,net:R.net,w:R.w,x1:r3(s.x1),y1:r3(s.y1),x2:r3(s.x2),y2:r3(s.y2)};
+    // l'arrondi au micron peut avaler un segment : rien à poser, et un segment
+    // de longueur nulle salit le .json comme le Gerber
+    if(t.x1===t.x2&&t.y1===t.y2)continue;
+    if(prev&&sameLine(prev,t)){prev.x2=t.x2;prev.y2=t.y2;continue;}
+    S.tracks.push(t);prev=t;posed.push(t);
+  }
+  chamferPosed(posed);
   touch();refreshPanels();draw();
+}
+/* ==========================================================================
+   L'angle droit que le routeur laissait derrière lui
+   --------------------------------------------------------------------------
+   `routeCorner` ne connaît que sa propre jambe : celle du clic en cours. Un
+   clic franchement horizontal ne pose qu'un segment, un clic franchement
+   vertical de même — et les deux mis bout à bout font un angle droit franc, en
+   plein dans la règle « 45 » qui dit le L chanfreiné. C'est l'angle que la
+   touche D sert à rattraper à la main ; il n'y a pas de raison de le poser.
+   On le rattrape au dépôt, sur les coudes que le trajet vient de former — y
+   compris celui de son départ, là où il rejoint le cuivre déjà en place.
+   `mitreAt` refuse de lui-même ce qui ne s'y prête pas : une pastille ou un via
+   au coude, deux largeurs différentes, un chanfrein plus court que la piste. Le
+   coude reste alors tel quel, et c'est au contrôle DRC de le dire.
+   Le chanfrein ne fait que couper l'intérieur du coude : il n'approche aucun
+   voisin, et ne peut donc pas créer de faute d'isolation là où il n'y en avait
+   pas. La sélection, elle, n'a rien à voir avec un dépôt : on la remet comme on
+   l'a trouvée, `mitreAt` ayant l'habitude d'y ranger ce qu'il chanfreine. */
+function chamferPosed(posed){
+  if(cornerMode()!=="45"||!posed.length)return;
+  const keep=[...S.sel.tracks];
+  const seen=new Set(), pts=[];
+  for(const t of posed)
+    for(const en of [1,2]){
+      const x=en===1?t.x1:t.x2, y=en===1?t.y1:t.y2, k=anchorKey(t.l,x,y);
+      if(seen.has(k))continue;
+      seen.add(k);pts.push({l:t.l,x,y});
+    }
+  for(const p of pts)mitreAt(p.l,p.x,p.y,false);
+  S.sel.tracks.clear();
+  for(const t of keep)if(S.tracks.indexOf(t)>=0)S.sel.tracks.add(t);
 }
 function cancelRoute(){
   const R=S.route;
@@ -1395,6 +2034,16 @@ cv.addEventListener("pointerdown",e=>{
   // la capture échoue si le pointeur n'est plus actif : ce n'est pas une raison
   // pour abandonner le clic
   try{cv.setPointerCapture(e.pointerId);}catch(_){}
+  /* Le canevas n'est pas un élément focusable : cliquer dessus ne retire pas le
+     focus du champ qu'on vient de quitter. Or les raccourcis d'une seule touche
+     se taisent dès qu'un champ a le focus — sans quoi taper « 0,3 » dans
+     l'isolation basculerait de couche. Le focus restait donc sur le dernier
+     réglage touché, et D, R, F, T, S ne répondaient plus du reste de la
+     séance : la touche partait bien, le garde-fou la mangeait. On rend la main
+     au plan de travail dès le clic — le champ quitté valide sa saisie au
+     passage, comme il le ferait n'importe où ailleurs sur la page. */
+  const af=document.activeElement;
+  if(isField(af)&&af.blur)af.blur();
   const p=evPos(e);
   if(e.button===1||(e.button===0&&e.altKey&&!altTarget(p.x,p.y))){
     drag={pan:true,sx:e.clientX,sy:e.clientY,ox:S.ox,oy:S.oy};
@@ -1445,7 +2094,7 @@ cv.addEventListener("pointerdown",e=>{
       if(dist(p.x,p.y,ex,ey)<=px(6)){
         // Alt : on détache cette extrémité au lieu d'emmener tout le coude
         const g=e.altKey?{ends:[{t,e:en}],vias:[]}:jointAt(ex,ey,t.l);
-        drag={tend:g,l:t.l,moved:false};
+        drag={tend:g,l:t.l,moved:false,at:{x:ex,y:ey}};
         return;
       }
     }
@@ -1456,7 +2105,8 @@ cv.addEventListener("pointerdown",e=>{
         push();
         const pt=projOnSeg(p.x,p.y,t), nt=splitTrack(t,pt);
         S.sel.tracks.add(nt);
-        drag={tend:{ends:[{t,e:2},{t:nt,e:1}],vias:[]},l:t.l,moved:true};
+        drag={tend:{ends:[{t,e:2},{t:nt,e:1}],vias:[]},l:t.l,moved:true,at:{x:pt.x,y:pt.y}};
+        armClear([t,nt],[],[]);
         touch();refreshPanels();draw();
         return;
       }
@@ -1543,16 +2193,30 @@ cv.addEventListener("pointermove",e=>{
     S.marquee.x2=p.x;S.marquee.y2=p.y;draw();return;
   }
   if(drag&&drag.tend){
-    if(!drag.moved){push();drag.moved=true;}
+    if(!drag.moved){
+      push();drag.moved=true;
+      armClear(drag.tend.ends.map(o=>o.t),drag.tend.vias,[]);
+    }
     const skip=new Set(drag.tend.ends.map(o=>o.t));
     const m=magnet(p.x,p.y,drag.l,skip);
-    const nx=m?m.x:snapX(p.x), ny=m?m.y:snapY(p.y);
-    S.hover=m?{x:m.x,y:m.y}:null;
-    for(const o of drag.tend.ends){
-      if(o.e===1){o.t.x1=r3(nx);o.t.y1=r3(ny);}
-      else{o.t.x2=r3(nx);o.t.y2=r3(ny);}
+    const an=tendAnchor(drag.tend,p.x,p.y);
+    let nx=m?m.x:snapXn(p.x,an.x), ny=m?m.y:snapYn(p.y,an.y);
+    if(!m){                                   // l'aimant angulaire, à défaut de cuivre
+      const g8=tendMagnet(drag.tend,p.x,p.y,nx,ny,px(6));
+      if(g8){nx=g8.x;ny=g8.y;}
     }
-    for(const v of drag.tend.vias){v.x=r3(nx);v.y=r3(ny);}
+    const put=(x,y)=>{
+      for(const o of drag.tend.ends){
+        if(o.e===1){o.t.x1=r3(x);o.t.y1=r3(y);}
+        else{o.t.x2=r3(x);o.t.y2=r3(y);}
+      }
+      for(const v of drag.tend.vias){v.x=r3(x);v.y=r3(y);}
+    };
+    const landed=m?{x:nx,y:ny}:null;     // arrivée accrochée : à redresser au relâchement
+    put(nx,ny);
+    // le bout bute sur l'obstacle : il reste où il était, l'accroche avec lui
+    if((clearStop()||crossStop())&&drag.at){put(drag.at.x,drag.at.y);}
+    else{drag.at={x:nx,y:ny};drag.landed=landed;S.hover=m?{x:m.x,y:m.y}:null;}
     touch();draw();return;
   }
   if(drag&&drag.vert){
@@ -1588,6 +2252,7 @@ cv.addEventListener("pointermove",e=>{
     const dx=snapX(p.x)-snapX(drag.x), dy=snapY(p.y)-snapY(drag.y);
     if(dx||dy){
       if(!drag.moved){push();drag.moved=true;beginMove();}
+      const kx=drag.dx, ky=drag.dy;               // dernière position sans faute
       drag.dx=r3(drag.dx+dx);drag.dy=r3(drag.dy+dy);
       for(const id of S.sel.fps){const f=fpById(id);if(f){f.x=r3(f.x+dx);f.y=r3(f.y+dy);}}
       // pistes et vias en absolu : les articulations réécrivent leurs bouts,
@@ -1607,6 +2272,17 @@ cv.addEventListener("pointermove",e=>{
       drag.x+=dx;drag.y+=dy;
       // Alt enfoncé pendant le geste : les voisins restent où ils sont
       applyJoints(drag.joints,drag.dx,drag.dy,e.altKey);
+      /* Le déplacement s'applique en absolu : revenir au décalage précédent
+         suffit à replacer tout ce que le geste avait touché, coudes compris. */
+      if(clearStop()||crossStop()){
+        drag.dx=kx;drag.dy=ky;drag.x-=dx;drag.y-=dy;
+        for(const o of drag.trk){
+          o.t.x1=r3(o.x1+drag.dx);o.t.y1=r3(o.y1+drag.dy);
+          o.t.x2=r3(o.x2+drag.dx);o.t.y2=r3(o.y2+drag.dy);
+        }
+        for(const o of drag.via){o.v.x=r3(o.x+drag.dx);o.v.y=r3(o.y+drag.dy);}
+        applyJoints(drag.joints,drag.dx,drag.dy,e.altKey);
+      }
       touch();draw();
     }
     return;
@@ -1626,11 +2302,13 @@ cv.addEventListener("pointermove",e=>{
 cv.addEventListener("pointerup",e=>{
   if(S.hlText){S.hlText=null;draw();}
   if(drag&&drag.tend){
-    pruneDeadTracks();
+    if(drag.moved&&straightenTend(drag.tend,drag.landed))
+      hint("Piste redressée sur le centre de l'arrivée : le coude a suivi.");
+    pruneAfterDrag(drag.moved?drag.tend.ends.map(o=>o.t):[]);
     S.hover=null;drag=null;refreshPanels();draw();return;
   }
   if(drag&&drag.move&&drag.moved){
-    pruneDeadTracks();
+    pruneAfterDrag([...movedTracks()]);
     drag=null;refreshPanels();draw();return;
   }
   if(drag&&drag.marquee){
@@ -1729,12 +2407,23 @@ document.addEventListener("keydown",e=>{
     case "r":rotateSel();break;
     case "f":flipSel();break;
     case "d":mitreSel();break;
+    case "u":unrouteSel();break;
     case "g":setGrid(!S.showGrid);break;
     case "n":S.show.rats=!S.show.rats;$("bRats").classList.toggle("on",S.show.rats);draw();break;
     case "y":setFlip(!S.flip);break;
     case "h":setContrast((S.contrast+1)%3);break;
+    /* Bascule de posture : « / » comme le routeur de KiCad, Espace pour la
+       main gauche. Elle inverse l'arrangement que la géométrie a choisi, le
+       temps du coude en cours. */
+    case "/":
     case " ":
-      if(S.route){S.route.posture=!S.route.posture;updateRoute(S.mouse.x,S.mouse.y);draw();e.preventDefault();}
+      if(S.route){
+        S.route.flip=!S.route.flip;
+        updateRoute(S.mouse.x,S.mouse.y);draw();e.preventDefault();
+        hint("Posture : "+(S.route.preview.length<2?"trajet direct"
+             :routePosture(S.route,S.route.end||S.mouse)?"diagonale d'abord"
+             :"portion droite d'abord")+" — « / » pour l'autre arrangement.");
+      }
       break;
     case "escape":
       // Échap termine ce qui est en cours puis rend la main à la sélection
@@ -1797,7 +2486,7 @@ function setMode(m){
     select:"Ctrl+clic (ou Maj+clic) ajoute à la sélection · glisser une piste emmène "+
            "la portion droite entière, les coudes voisins glissent sans changer d'angle "+
            "(Alt pendant le glissement les laisse sur place) · "+
-           "D passe un angle droit en 45° · R pivote · F retourne · Ctrl+C/Ctrl+V copie-colle · Alt+clic insère un point sur une piste sélectionnée.",
+           "D passe un angle droit en 45° · U déroute la sélection sans toucher aux empreintes · R pivote · F retourne · Ctrl+C/Ctrl+V copie-colle · Alt+clic insère un point sur une piste sélectionnée.",
     track:"Clic sur une pastille pour partir · V pose un via · 1-8 change de couche · Tab saisit les coordonnées · Échap termine.",
     via:"Clic pour poser un via traversant, accroché à la pastille ou à la piste la plus proche.",
     zone:"Clic pour chaque sommet, retour sur le premier point pour fermer · Maj contraint à 45° · Entrée ferme, Échap abandonne.",
@@ -1821,6 +2510,21 @@ function setGridStep(v){
   updateGridInfo();
   hint("Grille d'accrochage : "+String(r3(g)).replace(".",",")+" mm.");
   draw();
+}
+/* L'angle imposé aux pistes se range avec le document : il décrit la carte, au
+   même titre que l'isolation ou la marge de bord, et se défait donc d'un
+   Ctrl+Z. Le tracé en cours s'y remet aussitôt, sans qu'on ait à bouger la
+   souris. Rien de ce qui est déjà posé ne bouge : la règle vaut pour la suite. */
+function setCornerMode(m){
+  if(!CORNER_MODES[m]||m===cornerMode())return;
+  push();
+  S.rule.corner=m;
+  touch();
+  if(S.route){S.route.flip=false;updateRoute(S.mouse.x,S.mouse.y);}
+  buildRules();draw();
+  hint("Angle des pistes : "+CORNER_MODES[m]+
+       (m==="free"?" — le tracé ne contraint plus rien."
+        :" — « / » bascule l'arrangement du coude."));
 }
 function buildGridMenu(){
   const sel=$("selGrid");
