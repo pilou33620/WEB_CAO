@@ -57,6 +57,9 @@ const EXPOSE=[
   "netlistText","bomRows","bomCsvText","csvCell","serialize","loadJsonText",
   /* CSV de bibliothèque (18) */
   "parseCSVLine","loadCSVFromString","loadCSVLib",
+  /* session d'onglet commune (commun/session.js) */
+  "sessBrancher","sessEnregistrer","sessLire","sessEcrire","sessEffacer",
+  "sessTient","sessUrl","sessQuitte","sessionSchema","restoreBackup","clearBackup",
   /* espace de travail commun */
   "wsDefault","wsApply","wsMove","wsPlaceOf","wsLabel","wsToggleFloat",
   "wsToggleCollapse","wsClose","wsShow","wsMenuBuild","wsLoad","wsSave","wsEl","WS_KEY"
@@ -354,6 +357,26 @@ T("netlist : entête, composants, nets",()=>{
   if(txt.indexOf('NET "GND"')<0)throw new Error("net GND absent :\n"+txt);
   if(txt.indexOf("=== Nets globaux")<0)throw new Error("section des nets globaux absente");
   if(!/R1\.[12]/.test(txt))throw new Error("nœud de R1 absent :\n"+txt);
+});
+T("netlist : le boîtier reste la troisième colonne, même sans valeur",()=>{
+  /* l'éditeur de PCB découpe la ligne sur deux espaces au moins : une valeur
+     vide doit garder sa colonne, sinon le boîtier passe pour une valeur et
+     l'empreinte importée n'a plus rien à voir avec celle choisie ici */
+  const j=C("header",0,0,{ref:"J1",pkg:"DIP-8"});
+  const r=C("resistor",8,0,{ref:"R1",value:"10 k ohms",pkg:"0603"});
+  sheet([j,r],[]);
+  const txt=netlistText("x");
+  const ligne=n=>txt.split(String.fromCharCode(10)).find(l=>l.trim().indexOf(n+" ")===0)||"";
+  const col=n=>ligne(n).trim().split(/\s{2,}/);
+  const cj=col("J1");
+  if(cj.length!==3)throw new Error("trois colonnes attendues : "+JSON.stringify(cj));
+  if(cj[1]!=="—")throw new Error("la valeur vide devait tenir sa colonne : "+cj[1]);
+  if(cj[2]!=="DIP-8")throw new Error("boîtier en troisième colonne : "+JSON.stringify(cj));
+  const cr=col("R1");
+  if(cr.length!==3||cr[2]!=="0603")throw new Error("colonnes de R1 : "+JSON.stringify(cr));
+  if(cr[1]!=="10 k ohms")
+    throw new Error("les espaces d'une valeur sont réduits, pas supprimés : "+cr[1]);
+  if(/\s$/.test(ligne("R1")))throw new Error("pas d'espaces en fin de ligne");
 });
 T("netlist : les broches en l'air sont signalées",()=>{
   const r1=C("resistor",0,0,{ref:"R1",value:"10k"});
@@ -823,6 +846,75 @@ T("catalogue : broches au millimètre, traits au quart de millimètre",()=>{
   }
   if(horsPas.length)throw new Error("broches hors du millimètre : "+horsPas.join(" · "));
   if(horsEmprise.length)throw new Error("emprises hors du quart de millimètre : "+horsEmprise.join(" · "));
+});
+
+/* ==========================================================================
+   Session d'onglet (commun/session.js)
+   Passer au routage, revenir vérifier une valeur : le schéma doit être là,
+   tel quel, tant que l'onglet est ouvert.
+   ========================================================================== */
+T("session : le schéma repart dans l'état où il a été laissé",()=>{
+  dom.session.clear();
+  sheet([C("resistor",2,2,{ref:"R1",value:"10k",pkg:"0603"}),
+         C("capacitor",6,2,{ref:"C1",value:"100n",pkg:"0603"})],
+        [W(2,2,6,2,"N1")]);
+  S.pages[0].scale=2.5;S.pages[0].ox=42;S.pages[0].oy=-17;
+  S.scale=2.5;S.ox=42;S.oy=-17;
+  S.dirty=true;
+  if(!sessEnregistrer())throw new Error("le schéma n'a pas été mis de côté");
+  /* la page est rechargée : on retombe sur le schéma de démonstration */
+  sheet([],[]);S.dirty=false;S.scale=1;S.ox=0;S.oy=0;
+  if(!sessionSchema())throw new Error("reprise refusée");
+  if(S.comps.length!==2||S.wires.length!==1)
+    throw new Error("contenu perdu : "+S.comps.length+" composant(s), "+
+                    S.wires.length+" fil(s)");
+  const r=S.comps.find(c=>c.ref==="R1"), c1=S.comps.find(c=>c.ref==="C1");
+  if(!r||!c1)throw new Error("les repères ne sont pas revenus");
+  if(r.value!=="10k"||r.pkg!=="0603")
+    throw new Error("valeur ou boîtier perdus : "+r.value+" / "+r.pkg);
+  if(r.x!==2*G||r.y!==2*G||c1.x!==6*G)throw new Error("positions déplacées");
+  if(S.wires[0].net!=="N1")throw new Error("nom de net perdu");
+  if(S.scale!==2.5||S.ox!==42||S.oy!==-17)
+    throw new Error("le cadrage doit revenir aussi, pas un recadrage d'office");
+  if(!S.dirty)throw new Error("l'état « modifié » doit revenir : sans lui, "+
+    "fermer l'onglet ne dirait rien d'un schéma jamais enregistré");
+  if(S.hist.length)throw new Error("l'historique de la démonstration n'a plus de sens");
+});
+T("session : elle passe avant la sauvegarde automatique",()=>{
+  dom.session.clear();dom.storage.clear();
+  /* deux filets tendus en même temps : celui de l'onglet doit gagner, c'est le
+     plus récent et le seul qui n'ait rien à demander à l'utilisateur */
+  sheet([C("resistor",1,1,{ref:"R9",value:"session"})],[]);
+  S.dirty=true;
+  sessEnregistrer();
+  dom.storage.setItem("schemedit.autosave",JSON.stringify({t:Date.now(),
+    doc:{pages:[{name:"Sauvegarde",comps:[C("resistor",1,1,{ref:"R8",value:"secours"})],
+                 wires:[]}],page:0}}));
+  sheet([],[]);
+  if(!sessionSchema())throw new Error("la session devait être reprise");
+  if(S.comps[0].value!=="session")
+    throw new Error("c'est la sauvegarde de secours qui a été reprise");
+  /* sans session, le filet de secours reprend son rôle (confirm() dit oui) */
+  dom.session.clear();
+  sheet([],[]);
+  if(sessionSchema())throw new Error("plus de session : rien à reprendre");
+  if(!restoreBackup())throw new Error("la sauvegarde automatique devait servir");
+  if(S.comps[0].value!=="secours")throw new Error("mauvais document repris");
+  dom.storage.clear();
+});
+T("session : un état illisible ou hostile ne casse pas le démarrage",()=>{
+  dom.session.setItem("cao.session.v1.schema","pas du json");
+  if(sessLire("schema"))throw new Error("du texte quelconque ne doit rien donner");
+  dom.session.setItem("cao.session.v1.schema",
+    JSON.stringify({v:1,t:1,etat:{doc:{pages:"beaucoup"}}}));
+  if(sessionSchema())throw new Error("un document sans feuille doit être refusé");
+  if(sessLire("schema"))throw new Error("l'état refusé devait être effacé");
+  dom.session.setItem("cao.session.v1.schema",JSON.stringify({v:1,t:1,etat:{
+    doc:{pages:[{name:"Piégée",comps:[{type:"inconnu",x:"ici"},null],wires:[{x1:"?"}]}],
+         page:0},sale:true}}));
+  if(!sessionSchema())throw new Error("le document devait être repris, filtré");
+  if(S.comps.length)throw new Error("aucun composant ne devait survivre au tamis");
+  dom.session.clear();
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

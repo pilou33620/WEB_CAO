@@ -175,15 +175,60 @@ async function connecter(){
   }
 }
 
+/* ---------- session d'onglet ----------
+   La recherche n'a pas de document à perdre, mais elle a un contexte : l'outil
+   choisi, la requête saisie, le résultat reçu. Repartir de zéro après un
+   aller-retour vers le schéma reviendrait à ressaisir la recherche et à
+   redemander à pcbparts.dev ce qu'on avait déjà. Tout cela tient dans la
+   session de l'onglet (commun/session.js). */
+function etatComposants(){
+  if(!OUTIL_COURANT)return null;
+  let args;
+  /* le formulaire est photographié tel qu'il est, même incomplet : c'est une
+     saisie en cours, pas une requête à valider */
+  try{args=lireFormulaire();}catch(_){args=(RESULTAT&&RESULTAT.args)||{};}
+  const base={outil:OUTIL_COURANT,args:args,filtre:q("filtreOutils").value||""};
+  const complet=Object.assign({},base,{
+    resOutil:RESULTAT.outil,resArgs:RESULTAT.args,data:RESULTAT.data,
+    index:RESULTAT.index,historique:HISTORIQUE.slice(-5)
+  });
+  /* une réponse volumineuse ne doit pas emporter le reste : à défaut du
+     résultat, on garde au moins la requête en cours */
+  return sessTient(complet)?complet:base;
+}
+/* Reprise. Appelée seulement quand la passerelle répond : sans elle, la page
+   affiche son diagnostic, et le recouvrir d'anciens résultats laisserait
+   croire que la recherche fonctionne. */
+function sessionComposants(repris){
+  if(!repris)return false;
+  const e=repris.etat;
+  const outil=e.outil;
+  if(!outil||(!OUTILS[outil]&&API_NOMS.indexOf(outil)<0))return false;
+  try{
+    if(e.filtre){q("filtreOutils").value=e.filtre;construireListeOutils(e.filtre);}
+    remplirFormulaire(outil,e.args||{});
+    if(Array.isArray(e.historique))HISTORIQUE=e.historique;
+    if(e.data!==undefined&&e.data!==null){
+      afficherResultat(e.resOutil||outil,e.resArgs||e.args||{},e.data);
+      const i=Number(e.index);
+      if(Number.isFinite(i)&&i>=0)choisirLigne(i,true);
+      hint("Recherche reprise : le dernier résultat est retrouvé, sans nouvelle requête.");
+    }else{
+      hint("Recherche reprise : formulaire tel que vous l'aviez laissé.");
+    }
+  }catch(_){
+    sessEffacer("composants");
+    return false;
+  }
+  majBoutons();
+  return true;
+}
+
 /* ---------- démarrage ---------- */
 (function demarrer(){
-  const fichier=location.protocol==="file:";
-  q("bHome").onclick=function(){location.href=fichier?"../index.html":"/";};
-  q("bSch").onclick=function(){
-    location.href=fichier?"../editeur-schematique/editeur-schematique.html"
-                         :"/editeur-schematique/";};
-  q("bPcb").onclick=function(){
-    location.href=fichier?"../editeur-pcb/editeur-pcb.html":"/editeur-pcb/";};
+  /* les boutons de navigation sont câblés par commun/session.js
+     (data-cao-nav), qui met le contexte de côté avant de changer de page */
+  const repris=sessBrancher("composants",etatComposants);
 
   q("bRun").onclick=q("bRun2").onclick=function(){lancer();};
   q("bReset").onclick=q("bReset2").onclick=function(){
@@ -209,5 +254,5 @@ async function connecter(){
 
   brancherActions();
   majBoutons();
-  connecter();
+  connecter().then(function(ok){ if(ok)sessionComposants(repris); });
 })();

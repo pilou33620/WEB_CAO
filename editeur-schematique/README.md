@@ -20,12 +20,14 @@ editeur-schematique/
     └── schema.js                 bundle JavaScript seul (banc d'essai)
 ```
 
-Trois fichiers viennent du dossier partagé, à la racine du dépôt, et sont
+Ces fichiers viennent du dossier partagé, à la racine du dépôt, et sont
 identiques pour l'éditeur PCB :
 
 ```
 ../commun/workspace.css          habillage de l'espace de travail
 ../commun/workspace.js           panneaux détachables, paramétré par WS_CONFIG
+../commun/session.css            habillage des boutons de navigation
+../commun/session.js             travail conservé en changeant d'outil (session d'onglet)
 ../commun/test/dom-stub.js       DOM minimal du banc d'essai
 ../commun/outils/monofichier.py  mécanique d'assemblage
 ```
@@ -47,13 +49,14 @@ identiques pour l'éditeur PCB :
 | `js/10-actions.js` | 240 | Pivoter, miroir, dupliquer, supprimer, recadrer, pas de grille, presse-papier (copier/couper/coller), changement de mode |
 | `js/11-palette.js` | 52 | Icônes de la bibliothèque et construction du panneau de gauche |
 | `js/12-panneaux.js` | 561 | Propriétés, champ boîtier, nomenclature, liste des nets |
-| `js/13-fichiers.js` | 169 | Export JSON, PNG, netlist `.txt`, nomenclature `.csv` |
+| `js/13-fichiers.js` | 182 | Export JSON, PNG, netlist `.txt`, nomenclature `.csv` |
 | `js/14-clavier-boutons.js` | 105 | Raccourcis clavier et branchement de la barre d'outils |
-| `js/15-import.js` | 164 | Import JSON défensif (normalisation) + sauvegarde automatique |
+| `js/15-import.js` | 216 | Import JSON défensif (normalisation), sauvegarde automatique et reprise de la session d'onglet (`sessionSchema`) |
 | `js/16-demo.js` | 61 | Schéma de démonstration des deux feuilles |
-| `js/17-demarrage.js` | 25 | Séquence de démarrage des données et de l'affichage |
+| `js/17-demarrage.js` | 30 | Séquence de démarrage des données et de l'affichage, puis reprise du travail laissé dans l'onglet |
 | `js/18-csv.js` | 108 | Bibliothèque `LIB_composants.csv` : analyse, chargement HTTP ou manuel |
 | `js/19-broches.js` | 379 | Éditeur de brochage : nombre de broches, représentation, taille du corps, noms et placement des pattes à la grille |
+| `../commun/session.js` | 190 | Session d'onglet : le schéma part et revient quand on passe au PCB ou à la recherche — **chargé en premier** |
 | `../commun/workspace.js` | 610 | Espace de travail : docks, panneaux flottants, persistance — **chargé en dernier** |
 
 ## Ce que sait faire l'éditeur, au-delà du tracé
@@ -63,6 +66,23 @@ fil, une étiquette à la sélection — et l'en retire au clic suivant. Un lass
 tiré modificateur enfoncé s'ajoute lui aussi à ce qui est déjà pris. Tout ce
 qui suit vaut alors pour le groupe entier : déplacement, rotation, miroir,
 copier-coller, suppression, `U` pour n'effacer que les fils.
+
+**Le schéma attend le retour quand on change d'outil.** Les boutons *Éditeur
+PCB*, *Composants* et *Accueil* mettent le document de côté dans la session de
+l'onglet avant de changer de page (`commun/session.js`), et `sessionSchema()`
+le reprend à l'arrivée : feuilles, fils, cadrage, feuille courante et état
+« modifié ». Aller vérifier une empreinte sur le PCB, puis revenir, ne coûte
+plus rien — et le va-et-vient peut se répéter autant qu'on veut.
+
+Deux filets se superposent alors, et ils ne servent pas à la même chose. La
+session de l'onglet vient du même travail, poursuivi il y a quelques secondes :
+elle se reprend sans rien demander. La sauvegarde automatique de
+`15-import.js`, elle, vise le plantage et la fermeture accidentelle : elle vit
+dans le stockage local, peut dater de la veille, et demande donc confirmation.
+Au démarrage la session passe d'abord ; la sauvegarde ne sert qu'à défaut.
+Aucune des deux ne remplace *Enregistrer .json* : fermer l'onglet efface la
+première, et c'est pour cela que l'avertissement de fermeture reste posé sur un
+schéma modifié.
 
 Ctrl étant pris, le **détachement** du câblage est passé sur `Alt+glisser`.
 Alt garde ses deux usages sans qu'ils se gênent : sur le vide il déplace la vue
@@ -94,6 +114,12 @@ la grille** — le fil qui y était accroché suit. Trois représentations :
 | Rectangulaire | deux rangées, numérotation DIP/SOIC ; largeur du corps réglable |
 | Carrée | quatre côtés, numérotation antihoraire QFP/QFN ; côté réglable |
 | Libre | chaque broche est posée à la main (`el.pinPos`), le corps est décrit par `el.icBody` |
+
+`Ctrl+Z` et `Ctrl+Y` agissent aussi la fenêtre ouverte : c'est là qu'on vient
+de se tromper. Annuler recharge la feuille et remplace ses composants, celui en
+cours de brochage compris — `peReattach()` le reprend par son identifiant, ou
+ferme la fenêtre s'il a disparu. `Échap` ferme, et rien d'autre n'agit sur la
+feuille pendant ce temps.
 
 Les noms s'impriment dans le corps, à côté du numéro. Sur les côtés haut et bas
 ils ne sont écrits que si la broche voisine est assez loin — deux noms
@@ -172,14 +198,30 @@ voir les suivantes prises pour des raccourcis. Le gestionnaire de clavier
 regarde en plus `document.activeElement` : un champ de saisie garde ses lettres
 pour lui.
 
+**Le boîtier voyage jusqu'au PCB.** Le boîtier choisi dans le panneau
+Propriétés n'est pas une donnée de schéma : c'est le lien avec le routage. Il
+part donc dans la netlist, troisième colonne de la section `=== Composants ===`,
+et c'est lui qui pose l'empreinte à l'import côté PCB — `SOIC-8` y arrive en
+deux rangées CMS au pas de 1,27 mm, `TQFP-64` en quatre côtés, `0603` en puce.
+
+Les colonnes sont séparées par **deux espaces au moins** et un champ vide reçoit
+un tiret (`nlCol()`, `js/13-fichiers.js`). Ce n'est pas une coquetterie de
+présentation : l'éditeur de PCB découpe la ligne sur ces doubles espaces, et
+tant que la valeur pouvait laisser sa colonne vide, le boîtier d'un composant
+sans valeur — un connecteur, un trou — passait pour une valeur et l'empreinte
+importée n'avait plus rien à voir avec celle choisie ici. Les espaces internes
+d'une valeur sont réduits à un pour la même raison, une ligne de titre en
+commentaire annonce les colonnes, et un essai du banc vérifie le découpage.
+
 ## Deux règles à respecter
 
 **1. L'ordre des `<script>` compte.** Ce sont des scripts classiques, pas des
 modules ES : tout le code partage la même portée globale, exactement comme
 avant. Les déclarations `const` / `let` de premier niveau (`G`, `LIB`, `S`,
-`cv`…) doivent être évaluées avant d'être lues. `00-espace-config.js` vient en
-premier (il déclare `WS_CONFIG`) et `../commun/workspace.js` en dernier (il
-s'initialise lui-même). Ajouter un module = ajouter une balise `<script>` à la
+`cv`…) doivent être évaluées avant d'être lues. `../commun/session.js` ouvre la
+marche (il câble les boutons de navigation de l'entête et déclare
+`sessBrancher()`), `00-espace-config.js` le suit (il déclare `WS_CONFIG`) et
+`../commun/workspace.js` ferme (il s'initialise lui-même). Ajouter un module = ajouter une balise `<script>` à la
 bonne place dans `editeur-schematique.html`.
 
 **2. Chaque fichier commence par `"use strict";`.** Le mode strict ne se
@@ -208,9 +250,10 @@ l'archiver ; le développement reste sur les fichiers séparés.
 python3 outils/build-monofichier.py && node test/harness.js
 ```
 
-58 cas, sans navigateur : découpe automatique des fils, extraction des nets
+59 cas, sans navigateur : découpe automatique des fils, extraction des nets
 (union-find, labels, symboles nommants, conflits de noms), nets globaux entre
-feuilles, netlist et nomenclature, analyse du CSV de bibliothèque, espace de
+feuilles, netlist (dont les colonnes qui portent le boîtier jusqu'au PCB) et
+nomenclature, analyse du CSV de bibliothèque, espace de
 travail, échappement HTML des panneaux face à un fichier malveillant,
 presse-papier (copier/couper/coller, contenu invalide), brochage (disposition
 libre, câblage qui suit la broche déplacée, cases occupées refusées, corps

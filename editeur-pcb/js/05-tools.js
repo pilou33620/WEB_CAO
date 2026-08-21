@@ -49,6 +49,44 @@ function dColor(v,def){
   return HEX_COLOR.test(s)?s:def;
 }
 const FP_ROT_OK={0:1,45:1,90:1,135:1,180:1,225:1,270:1,315:1};
+/* Pastilles posées à la main. Une pastille sans centre exploitable est
+   écartée ; si rien ne reste, l'empreinte redevient paramétrique — mieux vaut
+   une empreinte calculée qu'une empreinte sans cuivre. Le champ produit est
+   exactement celui de padClone(), sans quoi l'aller-retour d'un document ne
+   serait plus neutre. */
+function dPads(a){
+  if(!Array.isArray(a))return null;
+  const out=[];
+  for(const q of a){
+    if(!q||typeof q!=="object")continue;
+    const x=+q.x, y=+q.y;
+    if(!Number.isFinite(x)||!Number.isFinite(y))continue;
+    out.push({n:dInt(q.n,out.length+1,1,4096),
+              x:clamp(r4(x),-COORD,COORD), y:clamp(r4(y),-COORD,COORD),
+              w:r4(dRange(q.w,1,0.05,200)), h:r4(dRange(q.h,1,0.05,200)),
+              shape:padShape(q.shape), drill:r4(dRange(q.drill,0,0,200)),
+              rot:padRot(q.rot)});
+  }
+  if(!out.length)return null;
+  for(const q of out){
+    const lim=r4(Math.min(q.w,q.h)-0.05);
+    if(q.drill>0&&q.drill>lim)q.drill=Math.max(0.05,lim);
+  }
+  return out;
+}
+/* rectangle de sérigraphie imposé : quatre nombres, ordonnés, non dégénéré */
+function dBody(b){
+  if(!b||typeof b!=="object")return null;
+  const v=[+b.x1,+b.y1,+b.x2,+b.y2];
+  if(!v.every(Number.isFinite))return null;
+  const o={x1:clamp(r4(Math.min(v[0],v[2])),-COORD,COORD),
+           y1:clamp(r4(Math.min(v[1],v[3])),-COORD,COORD),
+           x2:clamp(r4(Math.max(v[0],v[2])),-COORD,COORD),
+           y2:clamp(r4(Math.max(v[1],v[3])),-COORD,COORD)};
+  if(o.x2-o.x1<0.1)o.x2=r4(o.x1+0.1);
+  if(o.y2-o.y1<0.1)o.y2=r4(o.y1+0.1);
+  return o;
+}
 const COORD=1e5;                    // garde-fou de coordonnée, en mm
 
 /* polygone : les sommets exploitables, ou null s'il en reste moins de `min` */
@@ -164,6 +202,29 @@ function normFp(f,i){
   /* décalages du repère et de la valeur : présents seulement si déplacés */
   for(const k of ["refOffX","refOffY","valOffX","valOffY"])
     if(f[k]!=null&&Number.isFinite(+f[k]))out[k]=clamp(+f[k],-COORD,COORD);
+  /* empreinte dessinée à la main : la liste de pastilles l'emporte sur les
+     cotes, et le brochage se relit dessus — un fichier retouché qui annonce
+     deux broches pour huit pastilles ne doit pas perdre six nets */
+  const pads=dPads(f.pads);
+  if(pads){
+    out.pads=pads;
+    let m=1;
+    for(const q of pads)m=Math.max(m,q.n);
+    out.pins=clamp(m,1,4096);
+  }
+  const body=dBody(f.body);
+  if(body)out.body=body;
+  /* Repère de broche 1 : `false` veut dire « retiré à la main », et c'est une
+     décision qu'un document doit garder — sans quoi la règle automatique la
+     déferait à la lecture. Tout le reste qu'un fichier pourrait porter là est
+     ramené à un point exploitable, ou écarté. */
+  if(f.mark===false)out.mark=false;
+  else if(f.mark&&typeof f.mark==="object"){
+    const mx=+f.mark.x, my=+f.mark.y;
+    if(Number.isFinite(mx)&&Number.isFinite(my))
+      out.mark={x:clamp(r4(mx),-COORD,COORD), y:clamp(r4(my),-COORD,COORD),
+                d:dRange(f.mark.d,MARK_D,0.1,10)};
+  }
   return out;
 }
 function normTrack(t,cu){
@@ -2367,6 +2428,31 @@ function isField(n){
 document.addEventListener("keydown",e=>{
   if(isField(e.target)||isField(document.activeElement))return;
   const k=e.key.toLowerCase();
+  /* Fenêtre d'empreinte ouverte : elle prend Échap pour se fermer, et rien
+     d'autre ne doit agir sur la carte pendant ce temps — Suppr y effacerait
+     une empreinte qu'on est en train de dessiner, et annuler remplacerait
+     l'empreinte sous les mains de la fenêtre. */
+  if(typeof feIsOpen==="function"&&feIsOpen()){
+    if(k==="escape"){e.preventDefault();feClose();return;}
+    /* Annuler et rétablir traversent : c'est dans la fenêtre qu'on vient de se
+       tromper, et y renoncer en la fermant d'abord n'aurait aucun sens.
+       loadDoc() remplace les empreintes de la carte, celle de la fenêtre
+       comprise : feReattach() la reprend par son identifiant. */
+    if((e.ctrlKey||e.metaKey)&&(k==="z"||k==="y")){
+      e.preventDefault();
+      (k==="y"||e.shiftKey)?redo():undo();
+      feReattach();
+      return;
+    }
+    /* `R` tourne la pastille sélectionnée, comme il tourne une empreinte sur
+       la carte : le même geste, un cran plus bas. */
+    if(k==="r"&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
+      e.preventDefault();
+      feRotatePad(e.shiftKey?-90:90);
+      return;
+    }
+    return;
+  }
   if(e.key==="Tab"){e.preventDefault();S.coord.open?coordClose():coordOpen();return;}
   if((e.ctrlKey||e.metaKey)&&k==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
   if((e.ctrlKey||e.metaKey)&&k==="y"){e.preventDefault();redo();return;}

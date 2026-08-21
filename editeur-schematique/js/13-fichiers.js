@@ -52,6 +52,15 @@ function setNetLabels(v){
 function cycleNetLabels(){setNetLabels(S.netLabels+1);}
 
 function padr(s,n){s=String(s);return s+" ".repeat(Math.max(1,n-s.length));}
+/* Colonne de la section « Composants ». Deux espaces au moins entre les
+   champs, et un tiret pour un champ vide : c'est ce qui permet à l'éditeur de
+   PCB de retrouver le boîtier — troisième colonne — même sans valeur, et donc
+   de poser la bonne empreinte. Les espaces internes sont réduits pour que le
+   séparateur reste reconnaissable dans une valeur en deux mots. */
+function nlCol(v,n){
+  const t=String(v==null?"":v).replace(/\s+/g," ").trim()||"—";
+  return t+" ".repeat(Math.max(2,n-t.length));
+}
 function byRef(a,b){return String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true})||a.pin-b.pin;}
 /* Netlist lisible, une section par feuille. Les nets portant le même nom sur
    plusieurs feuilles sont signalés : ils forment un net global. */
@@ -67,9 +76,13 @@ function netlistText(horodatage){
   const rows=bomRows();
   if(rows.length){
     out.push("=== Composants ===");
+    /* ligne de titre en commentaire : le tiret d'un champ vide se lit alors
+       sans deviner, et l'éditeur de PCB saute les lignes en « ; » */
+    out.push(("  ; "+nlCol("repère",8)+nlCol("valeur",18)+nlCol("boîtier",18)+
+      (S.pages.length>1?"feuille":"")).replace(/\s+$/,""));
     for(const r of rows)
-      out.push("    "+padr(r.ref,8)+padr(r.value,18)+padr(r.pkg||"—",18)+
-        (S.pages.length>1?"f"+r.page:""));
+      out.push(("    "+nlCol(r.ref,8)+nlCol(r.value,18)+nlCol(r.pkg,18)+
+        (S.pages.length>1?"f"+r.page:"")).replace(/\s+$/,""));
     out.push("");
   }
   const globals=D.groups.filter(g=>g.global);

@@ -6,15 +6,16 @@
 <title>Recherche de composants — Dashboard nocturne</title>
 <link rel="stylesheet" href="css/recherche.css">
 <link rel="stylesheet" href="../commun/workspace.css">
+<link rel="stylesheet" href="../commun/session.css">
 </head>
 <body>
 
 <header>
   <div class="brand"><i></i><b>Recherche de composants</b><span>V1.0 · PCBPARTS.DEV</span></div>
   <div class="tools">
-    <button class="tb" id="bHome" style="color: var(--blue); border-color: var(--blue);">⌂ Accueil</button>
-    <button class="tb" id="bSch">Éditeur schématique</button>
-    <button class="tb" id="bPcb">Éditeur PCB</button>
+    <button class="tb" data-cao-nav="accueil" title="Page d'accueil">⌂ Accueil</button>
+    <button class="tb" data-cao-nav="schema" title="Revenir au schéma — il est resté dans l'onglet">Éditeur schématique</button>
+    <button class="tb" data-cao-nav="pcb" title="Revenir au routage — la carte est restée dans l'onglet">Éditeur PCB</button>
     <div class="sep"></div>
     <button class="tb on" id="bRun">Rechercher <kbd>Entrée</kbd></button>
     <button class="tb" id="bReset">Réinitialiser</button>
@@ -118,6 +119,7 @@
   <span class="push" id="fApi">serveur : —</span>
 </footer>
 
+<script src="../commun/session.js"></script>
 <script src="js/00-espace-config.js"></script>
 <script src="js/01-api.js"></script>
 <script src="js/02-outils.js"></script>

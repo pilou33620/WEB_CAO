@@ -29,15 +29,18 @@ js/05-tools.js           historique, sélection, tracé, zones, contour, souris,
 js/06-panels.js          onglets de couches, listes, règles, propriétés,
                          empilage physique
 js/07-app.js             fichiers, câblage des boutons, initialisation
+js/08-empreinte.js       fenêtre d'édition d'empreinte, bibliothèque personnelle
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
 
-Deux fichiers viennent du dossier partagé, à la racine du dépôt :
+Ces fichiers viennent du dossier partagé, à la racine du dépôt :
 
 ```
 ../commun/workspace.css  habillage de l'espace de travail
 ../commun/workspace.js   panneaux détachables, paramétré par WS_CONFIG
+../commun/session.css    habillage des boutons de navigation
+../commun/session.js     travail conservé en changeant d'outil (session d'onglet)
 ../commun/test/dom-stub.js  DOM minimal du banc d'essai
 ../commun/outils/monofichier.py  mécanique d'assemblage
 ```
@@ -51,18 +54,32 @@ Les scripts partagent une seule portée globale ; les `const` de haut
 niveau d'un fichier sont visibles des suivants, mais **pas** des précédents au
 moment où ils s'exécutent. La règle pratique :
 
-1. `00-espace-config` déclare `WS_CONFIG`, lu par `../commun/workspace.js`
+1. `../commun/session.js` ouvre la marche : il câble les boutons de
+   navigation dès que l'entête est là, et déclare `sessBrancher()` dont
+   `07-app` se sert à la dernière ligne de `init()`.
+2. `00-espace-config` déclare `WS_CONFIG`, lu par `../commun/workspace.js`
    chargé en dernier.
-2. `01-core` déclare `S`, l'état commun. Rien avant lui, hors la config.
-3. `03-render` récupère le canevas (`cv`, `ctx`) : il lui faut le DOM, d'où les
+3. `01-core` déclare `S`, l'état commun. Rien avant lui, hors la config.
+4. `03-render` récupère le canevas (`cv`, `ctx`) : il lui faut le DOM, d'où les
    scripts en fin de `<body>`.
-4. `05-tools` pose les écouteurs sur `cv` : il vient donc après `03-render`.
-5. `07-app` appelle `init()` en dernière ligne, quand tout est défini.
-6. `../commun/workspace.js` s'initialise tout seul et appelle `resize()` puis
+5. `05-tools` pose les écouteurs sur `cv` : il vient donc après `03-render`.
+6. `07-app` appelle `init()` en dernière ligne, quand tout est défini.
+7. `08-empreinte` ne s'exécute pas au chargement : il ne déclare que la
+   fenêtre d'empreinte et la bibliothèque, appelées au clic. Il vient donc
+   après `07-app`, comme `19-broches.js` côté schématique.
+8. `../commun/workspace.js` s'initialise tout seul et appelle `resize()` puis
    `fit()` : il ferme la marche.
 
 À l'intérieur d'un fichier, une fonction peut en appeler une autre définie
 n'importe où : seules les instructions de haut niveau sont sensibles à l'ordre.
+
+Le revers de cette portée unique : **deux fichiers ne peuvent pas donner le même
+nom à deux fonctions différentes**, la seconde déclaration effaçant la première
+sans un mot. C'est arrivé — `padOutline()` du rendu (contour d'une pastille) et
+`padOutline()` de la fabrication (contour d'une ouverture, avec dilatation)
+avaient le même nom et deux signatures : l'anneau des pastilles traversantes
+était tracé avec une couleur en guise de dilatation, donc pas tracé du tout. La
+seconde s'appelle désormais `padOpening()`.
 
 ## Dépendances entre fichiers
 
@@ -130,6 +147,223 @@ laissés nus, recouverts de vernis, bouchés résine, ou bouchés et plaqués po
 une pastille sur le via (IPC-4761). Seul le premier ouvre le masque. Il
 remplace l'ancien booléen `tented`, que les fichiers antérieurs portent encore
 et que `normDoc` convertit à la lecture.
+
+## Le boîtier choisi au schéma décide de l'empreinte
+
+L'éditeur schématique fait choisir un boîtier par composant (`0603`, `SOIC-8`,
+`TQFP-64`, `BGA-256`…) et le recopie dans la netlist, troisième colonne de la
+section `=== Composants ===`. C'est ce nom qui pose l'empreinte à l'import :
+sans lui, tout se déduisait du seul nombre de broches et un SOIC-8 arrivait en
+DIP traversant au pas de 2,54 mm, à replacer et à re-régler à la main.
+
+`PKG_LIB` (`js/01-core.js`) donne, par famille, le style et les cotes :
+
+| famille | style d'empreinte | ce que le nom fixe |
+| --- | --- | --- |
+| `01005` … `2512`, `SMA`/`SMB`/`SMC`, `MELF`, `SOD-123` | puce | l'écartement des deux bornes |
+| `SOT-23`, `SOT-89`, `SOT-223`, `TO-252`, `TO-263` | deux rangées CMS | pas et écartement, languette non dessinée |
+| `TO-92`, `TO-220`, `TO-247` | une rangée traversante | le pas des pattes |
+| `SOIC`, `SOP`, `SSOP`, `TSSOP`, `MSOP`, `DFN` | deux rangées CMS | pas, et largeur qui suit le brochage |
+| `DIP` | deux rangées traversantes | 7,62 mm jusqu'à 28 broches, 15,24 au-delà |
+| `LQFP`, `TQFP`, `QFP`, `PQFP`, `QFN`, `PLCC`, `LCC` | quatre côtés | pas selon le brochage, écartement calculé |
+| `BGA`, `WLCSP`, `CSP` | grille de billes | le pas de la grille |
+
+`pkgGeom()` lit le nom sans se soucier de la casse ni des séparateurs, écarte le
+surnom entre parenthèses que propose le schématique (`TO-252 (DPAK)`) et prend
+le brochage porté par le nom : `SOT-23-5`, `SOT23-5` et `sot 23 5` désignent le
+même boîtier à cinq broches. Un nom hors table — `SOD-80`, `boîtier maison` —
+ne renvoie rien : l'empreinte retombe alors sur le style déduit du brochage,
+exactement comme avant, et le nom saisi est conservé tel quel.
+
+Deux garde-fous :
+
+- **Une broche câblée ne reste jamais sans pastille.** Le plus grand numéro de
+  broche vu dans la netlist fait plancher : un `SOIC-8` dont la netlist cite
+  `U1.14` arrive avec quatorze pastilles, pas huit. Le brochage annoncé par le
+  boîtier l'emporte partout ailleurs, y compris pour le réduire quand le schéma
+  passe de `SOIC-8` à `SOT-23-5`.
+- **Réimporter ne défait pas le travail fait sur la carte.** À boîtier
+  inchangé, position, rotation et cotes retouchées à la main restent en place.
+  Seul un boîtier *différent* de celui déjà porté par l'empreinte la refait — et
+  sans la déplacer. Le compte des empreintes refaites est annoncé dans le pied
+  de page avec le reste du bilan d'import.
+
+Le panneau *Propriétés* dit sous le champ *Boîtier* ce que le nom a décidé
+(style, brochage, pas, écartement) ou pourquoi il n'a rien décidé. Saisir un
+boîtier connu y repose l'empreinte ; si les cotes en place ne sont plus celles
+du boîtier — parce qu'on les a retouchées à la main, puis regrettées — un
+bouton *Reposer l'empreinte sur le boîtier* les remet. Il ne paraît que dans ce
+cas, faute de quoi il n'y aurait rien à reposer. Les deux styles ajoutés
+pour l'occasion — quatre côtés et grille de billes — sont proposés dans la liste
+*Empreinte générique* comme les autres, et se relisent dans un document
+enregistré.
+
+Les cotes restent celles d'une empreinte paramétrique, au dixième de
+millimètre : de quoi router juste, pas de quoi remplacer la fiche du fabricant.
+Sur un boîtier à quatre côtés, la broche 1 est en haut à gauche et la
+numérotation tourne dans le sens trigonométrique, comme sur le boîtier réel.
+
+## Dessiner une empreinte à la main, l'enregistrer, la réutiliser
+
+Le boîtier nommé couvre le cas courant, pas tous les cas : une languette de
+DPAK, une pastille thermique de QFN, un connecteur maison, un brochage relevé
+sur une fiche. Le bouton *Modifier l'empreinte…* du panneau *Propriétés* ouvre
+une fenêtre où l'empreinte se voit — pastilles, numéros, contour de
+sérigraphie, origine, point de repère — et se règle pastille par pastille
+(`js/08-empreinte.js`). C'est la fenêtre de brochage du schématique
+(`19-broches.js`), transposée au cuivre, et la mécanique est la même.
+
+**Deux états, un seul basculement.** Une empreinte reste *calculée* tant que
+ses trois cotes suffisent : style, pas, écartement. Le premier geste manuel —
+glisser une pastille, la retailler, la percer, changer son numéro — la fige en
+liste explicite (`fp.pads`, `fpFreeze()`), et les cotes génériques ne
+commandent plus rien : le panneau les grise et le dit. Figer ne déplace aucun
+cuivre : les pastilles calculées sont recopiées telles quelles, contour compris
+— un essai du banc le vérifie au dixième de micromètre, faute de quoi passer en
+dessin manuel décalerait le routage déjà posé. *Revenir au calcul* rend la main
+au boîtier ; c'est un geste explicite, et `Ctrl+Z` le rattrape.
+
+**Ce qui se règle sur une pastille** : le numéro de broche, le centre, la
+largeur, la hauteur, la rotation, la forme et le perçage. Un perçage non nul
+fait la pastille traversante — elle apparaît alors sur toutes les couches, part
+au fichier de perçage, et reste plus étroite que la pastille, sinon il n'en
+resterait pas de cuivre. *Appliquer à toutes* recopie dimensions, forme et
+perçage sur les autres pastilles ; *Carré* recopie la largeur sur la hauteur.
+Le contour de sérigraphie se saisit en largeur et hauteur autour du centre, ou
+se rend au calcul automatique.
+
+**Quatre formes, un seul paramètre** (`PAD_SHAPES`, `padRadius`) : le rayon des
+coins.
+
+| forme | rayon des coins | à quoi elle sert |
+| --- | --- | --- |
+| Rectangle (coins adoucis) | 0,22 × petit côté | la forme des empreintes calculées, celle des plages brasées d'un CMS |
+| Rectangle (angles droits) | nul | pastille franche, et **carré** quand la hauteur égale la largeur |
+| Oblong (bouts ronds) | moitié du petit côté | traversant à souder à la vague, pastille de connecteur |
+| Rond | — | perçage, bille de BGA |
+
+Un carré n'est pas une forme de plus : c'est un rectangle dont les deux côtés
+sont égaux, d'où le bouton *Carré* plutôt qu'une cinquième entrée dans la liste.
+
+La **rotation** est propre à chaque pastille, en degrés, dans le repère de
+l'empreinte ; elle s'ajoute à celle de l'empreinte entière et s'inverse quand
+celle-ci passe au dessous — un miroir renverse le sens des angles. Elle est
+suivie partout : à l'écran, dans l'encombrement du contour (`padHalf`), dans la
+distance au cuivre du DRC et du routeur (`padDist`), et dans les ouvertures
+Gerber — `R` ou `O` aux quarts de tour, macro d'ouverture (`RRECT`, `OBR`) pour
+un angle quelconque. L'oblong est mesuré pour ce qu'il est, un rectangle à
+bouts ronds : sans cela une piste qui rejoint son extrémité en biais se
+croirait déjà dans le cuivre.
+
+Le **numéro de broche est l'identité de la patte**, pas son rang dans la liste :
+c'est lui qui porte le net. Supprimer la pastille 3 ne renumérote donc rien, et
+le net de la broche 5 reste celui de la broche 5. Le brochage de l'empreinte se
+relit sur le plus grand numéro présent — c'est ce que lit l'import de netlist
+pour rattacher les nets.
+
+**L'origine est visible et se déplace.** La croix jaune — la même que
+l'origine de la carte — marque le point d'accrochage : `fp.x`, `fp.y`. C'est
+par lui que l'empreinte se déplace, autour de lui qu'elle pivote, et de lui que
+se placent le repère et la valeur sur la sérigraphie (`fpTextPos`). On le
+glisse à la souris ou on le décale au clavier ; le cuivre ne bouge pas d'un
+micron pour autant — les pastilles reculent exactement de ce que `fp.x`/`fp.y`
+avancent (`fpMoveOrigin`).
+
+**À la fermeture de la fenêtre, l'origine revient au centre du composant**
+(`fpCenterOrigin`). Une poignée restée sur un coin, ou pire à côté de la pièce,
+se saisit là où on ne la cherche pas, fait pivoter l'empreinte autour du vide
+et envoie le repère de sérigraphie hors du contour. Le recentrage est donc
+systématique, et il est annoncé dans le pied de page. Une empreinte calculée est
+centrée par construction : elle n'est pas figée pour rien au passage
+(`fpIsCentered` tranche avant tout).
+
+**Le repère de broche 1 est un point de sérigraphie**, et rien d'autre :
+`fp.mark`, un disque en coordonnées locales, avec son diamètre (0,4 mm par
+défaut). Ce qui s'affiche est exactement ce qui sortira sur le film — l'écran
+montrait jusqu'ici un large anneau translucide autour de la pastille 1, qui
+n'existait dans aucun fichier et masquait le cuivre. Il se glisse à la souris,
+se grossit, et une case à cocher le retire.
+
+Il ne paraît pas d'office sur un composant symétrique : sur une résistance, une
+inductance, une ferrite, un quartz ou un condensateur CMS, les deux pattes se
+valent et le point ne dit rien (`fpMarkWanted`, repères `R`, `RN`, `RV`, `L`,
+`FB`, `FL`, `Y`, `X`, et `C` en boîtier puce). Un condensateur en boîtier
+radial ou tantale le garde : il est presque toujours polarisé, et un doute sur
+la polarité coûte plus cher qu'un point de trop. La case tranche dans les deux
+sens, composant par composant, et **ce choix est écrit dans le document**
+(`fp.mark=false` pour un retrait) — sans quoi la règle automatique le déferait
+à la relecture.
+
+**Les gestes sont ceux de la carte.** Une pastille — comme l'origine ou le
+point de repère — se prend et se maintient pour la déplacer ; un clic dans le
+vide ne fait rien. Le déplacement applique le **décalage** entre deux positions
+accrochées à la grille, exactement comme le déplacement d'une empreinte sur la
+carte : ce qu'on tient ne saute pas sous le pointeur, une pastille se prend par
+son bord et garde son écart au curseur, et une cote qui ne tombe pas sur la
+grille — un pas de 0,65 mm — n'y est pas ramenée de force. `Alt` relâche
+l'accrochage, `R` tourne la pastille sélectionnée d'un quart de tour et
+`Maj+R` dans l'autre sens : le même raccourci qu'`R` sur la carte, un cran plus
+bas.
+
+**Zoom et déplacement de la vue.** Le cadrage suit l'empreinte tant qu'on n'y
+touche pas. La molette zoome autour du pointeur, les boutons `+` et `−` de
+l'en-tête autour du centre, `⤢` (ou un double-clic sur le dessin) recadre. La
+vue se déplace au bouton du milieu ou avec `Maj` enfoncée. Le facteur est
+affiché dans l'en-tête, dans la même unité que le pied de page de la carte.
+
+Pendant un geste, le cadrage automatique se tait et reprend au relâcher : sans
+cela il se recalculait à chaque millimètre parcouru, le dessin glissait sous le
+pointeur et ce qu'on tenait dérivait. Déplacer l'origine demande la même
+précaution en sens inverse — le repère local recule, donc la vue avance
+d'autant (`feOriginMove`) : à l'écran le cuivre ne bouge pas, ce qui est la
+vérité de l'opération, et seule la croix suit le pointeur.
+
+**Annuler et rétablir traversent la fenêtre** : `Ctrl+Z` et `Ctrl+Y` y agissent
+sur la carte comme ailleurs. Annuler recharge le document et remplace les
+empreintes : la fenêtre reprend la sienne par son identifiant (`feReattach`),
+ou se ferme si elle a disparu. La fenêtre de brochage du schématique fait de
+même (`peReattach`).
+
+**Deux pastilles superposées** sont cerclées de rouge dans la fenêtre. Ce n'est
+pas interdit — une traversante peut recouvrir une plage — mais si elles portent
+deux nets différents, c'est un court-circuit, et le DRC le signale. Le contrôle
+ne compare pas l'isolation *entre pastilles d'une même empreinte* : un QFN au
+pas de 0,5 mm n'a pas 0,25 mm entre ses plages, et ce n'est pas un défaut de la
+carte. Seul le recouvrement franc est repris.
+
+**Ni le boîtier ni la netlist ne refont un dessin manuel.** `applyPkgGeom()`
+refuse de toucher à une empreinte dessinée, et réimporter une netlist où le
+schéma a changé de boîtier note le nouveau nom sans effacer le travail : le nom
+ne sert plus qu'à la nomenclature, le panneau le dit. Une broche câblée
+au-delà du dessin reçoit malgré tout sa pastille — rien de ce que porte la
+netlist ne peut rester sans cuivre.
+
+**La bibliothèque personnelle**, au bas de la fenêtre :
+
+- *Enregistrer* range l'empreinte sous un nom, dans le stockage du navigateur
+  (clé `pcbedit.empreintes.v1`). Une empreinte calculée s'enregistre aussi :
+  seules ses cotes sont retenues, et elle se recalculera à l'arrivée.
+- *Appliquer* pose une empreinte enregistrée sur le composant en cours. Seule
+  la forme change : le repère, la valeur, le boîtier, la position, la face, la
+  rotation et les nets appartiennent à la carte et n'y touchent pas.
+- *Exporter .json* écrit `empreintes.json` (`{"format":"pcbfp-1",
+  "footprints":[…]}`), *Importer .json…* le relit. C'est ce qui emporte une
+  empreinte sur une autre machine ou dans un autre projet — le stockage du
+  navigateur, lui, ne suit pas. Un nom déjà pris par une empreinte *différente*
+  n'est jamais écrasé en silence : la nouvelle reçoit un suffixe, et la fenêtre
+  le dit. Le même fichier importé deux fois ne fait qu'une entrée.
+
+Tout ce qui entre — fichier, stockage du navigateur — passe par `normFpDef()`,
+aussi défensif que `normFp()` : une pastille sans centre exploitable est
+écartée, une liste vide rend l'empreinte au calcul, un contenu illisible est
+ignoré sans rien casser.
+
+L'accrochage de la fenêtre reprend le pas de grille de la carte, pour qu'une
+pastille tombe sur la trame des pistes qui viendront la rejoindre ; `Alt` le
+relâche, pour les cotes qui ne tombent pas dessus (un pas de 0,65 mm, par
+exemple). Les pastilles dessinées et le contour imposé sont enregistrés dans le
+`.json` de la carte (`fp.pads`, `fp.body`) et font l'aller-retour sans perte —
+même essai de neutralité que le reste du document.
 
 ## Sélection multiple et presse-papier
 
@@ -587,6 +821,34 @@ décrivent la matière commandée, et c'est un solveur de ligne de transmission 
 portent pas l'empilage, il faut donc l'écrire à côté. Le panneau sait aussi
 l'exporter seul.
 
+## Le travail reste dans l'onglet quand on change d'outil
+
+Un routage s'interrompt sans arrêt pour aller relire le schéma ou chercher une
+référence. Les boutons *Éditeur schématique*, *Composants* et *Accueil* de
+l'entête ne perdent plus la carte : avant de changer de page, `sessAller()`
+demande à l'éditeur sa photographie — le document complet (`docObj()`), le
+cadrage, la face regardée et l'état « modifié » — et la range dans la session
+de l'onglet. Au retour, `sessionPcb()` la relit, la passe par `normDoc()` comme
+n'importe quel fichier importé, et le pied de page annonce la reprise.
+
+Trois détails comptent :
+
+- **L'état « modifié » voyage avec le document.** Sans lui, revenir sur la carte
+  la ferait passer pour propre, et l'onglet se fermerait sans un mot sur un
+  travail jamais enregistré.
+- **La garde de sortie se tait, mais seulement pour un changement d'outil.**
+  `sessQuitte()` distingue les deux : changer d'outil ne demande rien, fermer
+  l'onglet sur une carte modifiée avertit toujours.
+- **Le cadrage revient aussi**, sinon chaque aller-retour recadrerait la vue et
+  il faudrait rezoomer sur la zone en cours de routage.
+
+La portée est l'onglet, pas la machine : `sessionStorage` survit à la
+navigation et à F5, disparaît à la fermeture, et ne se mélange pas d'un onglet
+à l'autre. Ce n'est pas un enregistrement : *Enregistrer .json* reste le seul
+moyen de garder une carte au-delà de la session. Dans la version un seul
+fichier (`dist/`), les autres outils ne sont pas à côté : les boutons de
+navigation s'effacent d'eux-mêmes.
+
 ## Banc d'essai
 
 ```
@@ -594,7 +856,8 @@ python3 outils/build-monofichier.py && node test/harness.js
 ```
 
 Le banc s'appuie sur le DOM minimal partagé (`../commun/test/dom-stub.js`),
-exécute `dist/pcb.js` et couvre 138 cas : import de netlist, chevelu
+exécute `dist/pcb.js` et couvre 160 cas : import de netlist, boîtiers nommés
+et empreintes qu'ils posent, chevelu
 multicouche, vias, îlots de cuivre, classes de net, édition des pistes,
 géométrie du L chanfreiné, posture du coude et règle d'angle (45° / 90° /
 libre), non-croisement du cuivre tiré, réglages d'usine,
@@ -625,10 +888,23 @@ différence — c'est lui qui garde cette propriété.
 
 ## Limites connues
 
-- Pas de bibliothèque d'empreintes : les pastilles sont paramétriques.
-- Ni trous non métallisés, ni pastilles libres, ni texte de sérigraphie libre.
+- Pas de bibliothèque d'empreintes livrée avec l'éditeur : les empreintes de
+  départ sont paramétriques et le nom du boîtier venu du schéma en fixe le
+  style et les cotes (`PKG_LIB`). Les languettes de dissipation (DPAK,
+  SOT-223), les pastilles thermiques centrales (QFN) et le brochage réel d'un
+  BGA — lettres et colonnes — ne sont pas dessinés d'avance ; ils se dessinent
+  à la main dans la fenêtre d'empreinte, et s'enregistrent ensuite dans la
+  bibliothèque personnelle.
+- Une pastille est rectangulaire (coins adoucis ou angles droits), oblongue ou
+  ronde, avec sa rotation propre. Pas de forme quelconque : ni pastille en
+  polygone, ni plage thermique découpée, ni chanfrein.
+- Ni trous non métallisés, ni texte de sérigraphie libre. Une pastille sans net
+  fait office de pastille libre, mais elle appartient toujours à une
+  empreinte.
 - Pas d'arcs : pistes, zones et contour sont faits de segments.
-- Pas de copier/coller, pas de sauvegarde automatique.
+- Pas de sauvegarde automatique sur disque. Le travail tient dans l'onglet
+  tant qu'il est ouvert (voir plus haut), mais fermer l'onglet sans
+  « Enregistrer .json » le perd.
 - Aucun calcul de ligne de transmission : l'empilage note les matières et leurs
   constantes diélectriques, mais rien n'en tire d'impédance pour l'instant.
 - Le contrôle des vias borgnes et enterrés suppose un pressage unique. Un

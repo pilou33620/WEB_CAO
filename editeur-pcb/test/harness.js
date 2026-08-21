@@ -38,6 +38,10 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
   "pushClear","magnet","mitreSel","mitreAt","collinearRun","runFrom","segClearBad","setActive","segSegDist","segCross","routeBad","focusNet","cancelRoute","updateRoute","classOf","syncAutoZones","detachAuto","zoneCanvas","inPoly","hitTest","px","dist","boardZonePts",
+  /* session d'onglet commune (commun/session.js) */
+  "sessBrancher","sessEnregistrer","sessLire","sessEcrire","sessEffacer",
+  "sessPoids","sessTient","sessUrl","sessAller","sessQuitte","sessAutonome",
+  "sessBarre","sessionPcb","SESS_CLE","SESS_MAX",
   /* espace de travail commun (commun/workspace.js) */
   "wsDefault","wsApply","wsMove","wsPlaceOf","wsLabel","wsToggleFloat",
   "wsToggleCollapse","wsClose","wsShow","wsMenuBuild","wsLoad","wsSave","wsEl","WS_KEY",
@@ -65,13 +69,33 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "angleOff","angleOk","angleDeg","ANG_TOL","DIR8","tendMagnet",
   "cornerMode","setCornerMode","CORNER_MODES",
   /* anti-collision et ménage du dépôt */
-  "moveClearBad","pruneHooks","pruneDeadTracks","hookAt","endFar","endDir"];
+  "moveClearBad","pruneHooks","pruneDeadTracks","hookAt","endFar","endDir",
+  /* boîtiers nommés : le nom venu du schéma décide de l'empreinte */
+  "PKG_LIB","pkgKey","pkgGeom","fpGeomFor","applyPkgGeom","fpWiredPins",
+  "parseNetlist","parseCompLine","applyNetlist","STYLES","bodyOf",
+  /* empreintes dessinees a la main et bibliotheque personnelle */
+  "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
+  "fpMovePad","fpSetPad","fpAddPad","fpDelPad","fpSetPins","fpSetBody",
+  "dPads","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
+  "fpLibNames","fpLibGet","fpLibPut","fpLibDel","fpLibFile","fpLibParse",
+  "fpLibMerge","feOverlap","FPLIB_KEY","FPLIB_FORMAT","FE","feIsOpen","feClose",
+  /* formes de pastille, rotation, origine de l'empreinte */
+  "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
+  "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
+  "apSet","apForPad","fePad",
+  /* repère de broche 1 */
+  "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
+  "fpMoveMark","fpSetMarkD","fpXform","feZoom","feRefit","feReattach"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
      +EXPOSE.map(n=>"globalThis."+n+"="+n+";").join("\n")+"\n"
      +'Object.defineProperty(globalThis,"WS",'
-     +'{get:()=>WS,set:v=>{WS=v;},configurable:true});');
+     +'{get:()=>WS,set:v=>{WS=v;},configurable:true});'
+     /* SESS_QUITTE bascule à la sortie vers un autre outil : le banc
+        d'essai doit pouvoir le remettre à zéro entre deux essais */
+     +'Object.defineProperty(globalThis,"SESS_QUITTE",'
+     +'{get:()=>SESS_QUITTE,set:v=>{SESS_QUITTE=v;},configurable:true});');
 
 const fire=dom.fire, key=dom.key;
 /* Première différence entre deux documents, ou null s'ils sont équivalents.
@@ -2938,6 +2962,850 @@ T("pas de grille : valeurs rondes et pas impériaux",()=>{
   S.scale=5;                       // trop serré : on n'en trace qu'une sur deux
   if(gridShownStep()<=S.grid)throw new Error("la case affichée devait être élargie");
   setGridStep(0.5);S.scale=20;
+});
+
+/* ==========================================================================
+   Boîtiers nommés (01-core.js) et netlist qui les transporte (02-connectivity.js)
+   Le boîtier choisi côté schématique doit décider de l'empreinte : c'est le
+   seul lien entre « SOIC-8 » écrit dans la netlist et des pastilles au bon pas.
+   ========================================================================== */
+T("boîtier reconnu : style, pas et brochage",()=>{
+  const cas=[
+    ["0603",2,"chip",1.5],
+    ["0805",2,"chip",1.9],
+    ["SOIC-8",8,"sop",1.27],
+    ["DIP-8",8,"dip",2.54],
+    ["DIP-40",40,"dip",2.54],
+    ["TSSOP-20",20,"sop",0.65],
+    ["SOT-23",3,"sop",0.95],
+    ["SOT-23-5",5,"sop",0.95],
+    ["TO-220",3,"row",2.54],
+    ["TO-252 (DPAK)",3,"sop",2.3],       // le surnom entre parenthèses n'est pas un brochage
+    ["TQFP-64",64,"quad",0.5],
+    ["LQFP-44",44,"quad",0.8],
+    ["QFN-32",32,"quad",0.5],
+    ["BGA-256",256,"bga",0.8],
+    ["sot 23",3,"sop",0.95],             // séparateurs et casse indifférents
+    ["QFN32",32,"quad",0.5]
+  ];
+  for(const [nom,pins,style,pitch] of cas){
+    const g=pkgGeom(nom,0);
+    if(!g)throw new Error(nom+" : boîtier non reconnu");
+    if(g.style!==style)throw new Error(nom+" : style "+g.style+" au lieu de "+style);
+    if(g.pins!==pins)throw new Error(nom+" : "+g.pins+" broches au lieu de "+pins);
+    if(Math.abs(g.pitch-pitch)>1e-9)throw new Error(nom+" : pas "+g.pitch+" au lieu de "+pitch);
+    if(!(g.span>0))throw new Error(nom+" : écartement nul");
+  }
+  // le SOIC passe en large au delà de 16 broches, le DIP à 32
+  if(!(pkgGeom("SOIC-28",0).span>pkgGeom("SOIC-16",0).span))
+    throw new Error("SOIC-28 devait être plus large que SOIC-16");
+  if(!(pkgGeom("DIP-40",0).span>pkgGeom("DIP-16",0).span))
+    throw new Error("DIP-40 devait être plus large que DIP-16");
+  // l'écartement d'un boîtier à quatre côtés suit le brochage
+  if(!(pkgGeom("TQFP-100",0).span>pkgGeom("TQFP-64",0).span))
+    throw new Error("TQFP-100 devait être plus grand que TQFP-64");
+});
+T("boîtier hors table : rien n'est inventé",()=>{
+  for(const nom of ["","SOD-80","XYZ-12","0805X7R","boîtier maison"])
+    if(pkgGeom(nom,4))throw new Error("« "+nom+" » n'aurait pas dû être reconnu");
+  // repli sur le brochage, comme avant les boîtiers nommés
+  const g=fpGeomFor("XYZ-12",8);
+  if(g.style!=="dip"||g.pins!==8)throw new Error("repli incorrect : "+JSON.stringify(g));
+});
+T("boîtier : une broche câblée ne reste jamais sans pastille",()=>{
+  const g=pkgGeom("SOIC-8",14);
+  if(g.pins!==14)throw new Error("14 broches câblées attendues, "+g.pins);
+  if(g.style!=="sop")throw new Error("le style du boîtier devait rester : "+g.style);
+  const c=pkgGeom("0603",3);
+  if(c.pins!==3)throw new Error("une puce à trois broches câblées : "+c.pins);
+});
+T("empreinte à quatre côtés : numérotation trigonométrique",()=>{
+  const fp=mkFp("U9","","TQFP-32",0);
+  if(fp.style!=="quad"||fp.pins!==32)throw new Error("empreinte quad attendue");
+  const ps=padsOf(fp);
+  if(ps.length!==32)throw new Error("32 pastilles attendues, "+ps.length);
+  const at=n=>ps[n-1];
+  const sp=fp.span;
+  if(Math.abs(at(1).x+sp/2)>1e-9||!(at(1).y<0))throw new Error("broche 1 en haut à gauche");
+  if(Math.abs(at(8).x+sp/2)>1e-9||!(at(8).y>0))throw new Error("broche 8 en bas à gauche");
+  if(Math.abs(at(9).y-sp/2)>1e-9||!(at(9).x<0))throw new Error("broche 9 en bas à gauche");
+  if(Math.abs(at(17).x-sp/2)>1e-9||!(at(17).y>0))throw new Error("broche 17 en bas à droite");
+  if(Math.abs(at(25).y+sp/2)>1e-9||!(at(25).x>0))throw new Error("broche 25 en haut à droite");
+  const vus=new Set(ps.map(q=>q.x.toFixed(3)+";"+q.y.toFixed(3)));
+  if(vus.size!==32)throw new Error("pastilles superposées : "+vus.size+" positions");
+  for(const q of ps)
+    if(q.drill)throw new Error("un QFP n'a pas de trou traversant");
+  // les pastilles des côtés gauche et droit sont couchées, celles du haut et du bas debout
+  if(!(at(1).w>at(1).h)||!(at(9).h>at(9).w))throw new Error("pastilles mal orientées");
+});
+T("empreinte quad : brochage non multiple de quatre",()=>{
+  const fp=mkFp("U8","","QFN-14",14);
+  fp.style="quad";fp.pins=14;
+  const ps=padsOf(fp);
+  if(ps.length!==14)throw new Error("14 pastilles attendues, "+ps.length);
+  const vus=new Set(ps.map(q=>q.x.toFixed(3)+";"+q.y.toFixed(3)));
+  if(vus.size!==14)throw new Error("pastilles superposées");
+});
+T("empreinte en grille : un BGA tient son pas",()=>{
+  const fp=mkFp("U7","","BGA-16",0);
+  if(fp.style!=="bga"||fp.pins!==16)throw new Error("grille attendue : "+fp.style+"/"+fp.pins);
+  const ps=padsOf(fp);
+  if(ps.length!==16)throw new Error("16 billes attendues, "+ps.length);
+  const xs=[...new Set(ps.map(q=>q.x.toFixed(3)))].sort();
+  if(xs.length!==4)throw new Error("grille 4×4 attendue, "+xs.length+" colonnes");
+  const d=Math.abs(+xs[1]-+xs[0]);
+  if(Math.abs(d-fp.pitch)>1e-9)throw new Error("pas de la grille : "+d);
+});
+T("deux rangées : la rangée impaire est recentrée",()=>{
+  const q=mkFp("Q1","","SOT-23",0);
+  const ps=padsOf(q);
+  if(ps.length!==3)throw new Error("3 pastilles attendues, "+ps.length);
+  if(Math.abs(ps[2].y)>1e-9)throw new Error("la broche 3 d'un SOT-23 est dans l'axe : "+ps[2].y);
+  if(Math.abs(ps[0].y+ps[1].y)>1e-9)throw new Error("broches 1 et 2 dissymétriques");
+  if(!(ps[0].x<0&&ps[2].x>0))throw new Error("les deux rangées sont de part et d'autre");
+  // brochage pair : rien ne change par rapport aux DIP d'avant, la broche 8
+  // reste en face de la 1 et la 5 en face de la 4
+  const u=mkFp("U1","","DIP-8",8), pu=padsOf(u);
+  if(Math.abs(pu[7].y-pu[0].y)>1e-9||Math.abs(pu[4].y-pu[3].y)>1e-9)
+    throw new Error("un DIP-8 doit rester face à face : "+pu.map(q=>q.y).join(" "));
+});
+T("netlist : le boîtier survit à une valeur absente",()=>{
+  // format courant : « — » tient la colonne de la valeur
+  const a=parseCompLine("    J1      —                 DIP-8");
+  if(a.pkg!=="DIP-8"||a.value!=="")throw new Error("colonnes mal relues : "+JSON.stringify(a));
+  // format d'avant : la colonne vide laissait les deux champs collés
+  const b=parseCompLine("    J1                        DIP-8");
+  if(b.pkg!=="DIP-8"||b.value!=="")throw new Error("ancienne netlist : "+JSON.stringify(b));
+  // valeur seule, sans boîtier : elle reste une valeur
+  const c=parseCompLine("    R1      10k               —      f2");
+  if(c.value!=="10k"||c.pkg!=="")throw new Error("valeur seule : "+JSON.stringify(c));
+  const d=parseCompLine("    R2      10k               0603   f3");
+  if(d.value!=="10k"||d.pkg!=="0603")throw new Error("trois colonnes : "+JSON.stringify(d));
+  // le numéro de feuille n'est pas un boîtier
+  if(parseCompLine("    C1      100n              f1").pkg)
+    throw new Error("« f1 » n'est pas un boîtier");
+  if(parseCompLine("    ; repère  valeur  boîtier")===null){}   // les titres sont écartés en amont
+});
+T("import netlist : le boîtier pose l'empreinte",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  importNetlist(`=== Composants ===
+    R1      10k               0603
+    U1      MCP6001           SOT-23-5
+    U2      STM32F030         TQFP-48
+    J1      —                 DIP-8
+    U3      —                 XYZ-99
+
+=== Feuille 1 — Principale ===
+NET "N$1"
+    R1.1
+    U1.1
+NET "N$2"
+    U2.1
+    J1.2
+    U3.3
+`,true);
+  const f=r=>S.fps.find(x=>x.ref===r);
+  if(S.fps.length!==5)throw new Error("5 empreintes attendues, "+S.fps.length);
+  if(f("R1").style!=="chip"||Math.abs(f("R1").span-1.5)>1e-9)
+    throw new Error("R1 devait arriver en puce 0603 : "+JSON.stringify(f("R1")));
+  if(f("U1").style!=="sop"||f("U1").pins!==5)
+    throw new Error("U1 devait arriver en SOT-23-5 : "+JSON.stringify(f("U1")));
+  if(f("U2").style!=="quad"||f("U2").pins!==48)
+    throw new Error("U2 devait arriver en TQFP-48 : "+JSON.stringify(f("U2")));
+  // valeur absente : le boîtier passe quand même, et c'est bien un DIP
+  if(f("J1").pkg!=="DIP-8"||f("J1").style!=="dip"||f("J1").pins!==8)
+    throw new Error("J1 a perdu son boîtier : "+JSON.stringify(f("J1")));
+  if(f("J1").value)throw new Error("le tiret n'est pas une valeur : "+f("J1").value);
+  // boîtier inconnu : repli sur le brochage, et le nom est conservé tel quel
+  if(f("U3").pkg!=="XYZ-99"||f("U3").style!=="row")
+    throw new Error("U3 : repli attendu sur le brochage : "+JSON.stringify(f("U3")));
+  // les nets sont bien accrochés aux pastilles créées par le boîtier
+  if(f("U2").nets[1]!=="N$2")throw new Error("U2.1 devait porter N$2");
+  if(padsOf(f("U2")).length!==48)throw new Error("48 pastilles attendues sur U2");
+});
+T("réimport : boîtier inchangé, réglages manuels conservés",()=>{
+  const u=S.fps.find(x=>x.ref==="U1");
+  u.x=12;u.y=8;u.pitch=1.1;u.span=3.4;u.rot=90;
+  const res=applyNetlist(`=== Composants ===
+    U1      MCP6001           SOT-23-5
+
+=== Feuille 1 — Principale ===
+NET "N$1"
+    U1.1
+`,false);
+  if(res.repkg)throw new Error("aucun boîtier n'a changé : "+res.repkg+" refonte(s)");
+  const v=S.fps.find(x=>x.ref==="U1");
+  if(v.x!==12||v.y!==8||v.rot!==90)throw new Error("l'empreinte a bougé");
+  if(Math.abs(v.pitch-1.1)>1e-9||Math.abs(v.span-3.4)>1e-9)
+    throw new Error("les cotes retouchées à la main devaient rester : "+v.pitch+"/"+v.span);
+});
+T("réimport : boîtier changé au schéma, empreinte refaite",()=>{
+  const before=S.fps.find(x=>x.ref==="U1");
+  before.x=12;before.y=8;
+  const res=applyNetlist(`=== Composants ===
+    U1      MCP6001           MSOP-8
+
+=== Feuille 1 — Principale ===
+NET "N$1"
+    U1.1
+`,false);
+  if(res.repkg!==1)throw new Error("une refonte attendue, "+res.repkg);
+  const u=S.fps.find(x=>x.ref==="U1");
+  if(u.pkg!=="MSOP-8"||u.pins!==8)throw new Error("U1 devait passer en MSOP-8 : "+JSON.stringify(u));
+  if(Math.abs(u.pitch-0.65)>1e-9)throw new Error("pas du MSOP : "+u.pitch);
+  if(u.x!==12||u.y!==8)throw new Error("changer de boîtier ne déplace pas l'empreinte");
+});
+T("panneau Propriétés : saisir un boîtier repose l'empreinte",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const fp=mkFp("U1","","",8);
+  fp.x=20;fp.y=20;fp.nets={1:"GND",8:"+5V"};
+  S.fps.push(fp);S.sel.fps.add(fp.id);touch();
+  buildProps();
+  const inp=$("pPkg");
+  if(!inp)throw new Error("champ Boîtier absent du panneau");
+  inp.value="TSSOP-8";inp.onchange();
+  if(fp.style!=="sop"||Math.abs(fp.pitch-0.65)>1e-9)
+    throw new Error("l'empreinte devait suivre le boîtier saisi : "+JSON.stringify(fp));
+  // brochage câblé respecté : une broche 8 tenue par un net garde sa pastille
+  inp.value="SOT-23";inp.onchange();
+  if(fp.pins<8)throw new Error("les broches câblées devaient tenir : "+fp.pins);
+  // boîtier hors table : la géométrie reste telle quelle
+  const avant=JSON.stringify([fp.style,fp.pitch,fp.span,fp.pins]);
+  inp.value="boîtier maison";inp.onchange();
+  if(JSON.stringify([fp.style,fp.pitch,fp.span,fp.pins])!==avant)
+    throw new Error("un boîtier inconnu ne doit rien changer");
+  if(fp.pkg!=="boîtier maison")throw new Error("le nom saisi doit être conservé");
+});
+T("document : les styles quad et bga se relisent",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const a=mkFp("U1","","TQFP-32",0), b=mkFp("U2","","BGA-16",0);
+  a.x=10;a.y=10;b.x=30;b.y=20;
+  S.fps.push(a,b);touch();
+  const doc=normDoc(JSON.parse(JSON.stringify(docObj())));
+  const ra=doc.fps.find(f=>f.ref==="U1"), rb=doc.fps.find(f=>f.ref==="U2");
+  if(ra.style!=="quad"||ra.pins!==32)throw new Error("style quad perdu : "+JSON.stringify(ra));
+  if(rb.style!=="bga"||rb.pins!==16)throw new Error("style bga perdu : "+JSON.stringify(rb));
+  if(Math.abs(ra.pitch-0.8)>1e-9)throw new Error("pas du TQFP-32 perdu : "+ra.pitch);
+  // un style inventé retombe sur le brochage, comme les autres champs
+  if(normDoc({fps:[{ref:"U3",pins:8,style:"quadrifoglio"}]}).fps[0].style!=="dip")
+    throw new Error("un style inconnu doit retomber sur le brochage");
+});
+
+/* netlist de réimport : U1 change de boîtier au schéma et gagne une broche 10 */
+const NET_MANUEL = [
+  "=== Composants ===",
+  "    U1      NE555             MSOP-8",
+  "",
+  "=== Feuille 1 — Principale ===",
+  'NET "N$1"',
+  "    U1.10",
+  ""].join("\n");
+
+/* =============================================================================
+   Empreintes dessinées à la main
+   ============================================================================= */
+/* Figer une empreinte ne doit rien changer à l'œil : c'est le même cuivre, au
+   micron près, seulement décrit autrement. Sans cela, passer en dessin manuel
+   déplacerait le cuivre déjà routé. */
+T("figer une empreinte ne déplace pas une pastille",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const fp=mkFp("U1","","DIP-8",8);
+  fp.x=30;fp.y=25;S.fps.push(fp);touch();
+  const avant=JSON.stringify(padsOf(fp)), bAvant=JSON.stringify(bodyOf(fp));
+  if(fpFree(fp))throw new Error("une empreinte neuve est calculée");
+  if(!fpFreeze(fp))throw new Error("le figeage devait avoir lieu");
+  if(!fpFree(fp))throw new Error("l'empreinte devait passer en liste explicite");
+  if(JSON.stringify(padsOf(fp))!==avant)
+    throw new Error("les pastilles ont bougé :\n"+avant+"\n"+JSON.stringify(padsOf(fp)));
+  if(JSON.stringify(bodyOf(fp))!==bAvant)throw new Error("le contour a bougé");
+  if(fpFreeze(fp))throw new Error("figer deux fois ne fait rien de plus");
+});
+T("glisser une pastille fait passer l'empreinte en dessin à la main",()=>{
+  S.fps=[];clearSel();touch();
+  const fp=mkFp("U1","","SOIC-8",8);
+  S.fps.push(fp);touch();
+  const avant=padsOf(fp);
+  if(!fpMovePad(fp,0,-4,-3))throw new Error("le déplacement devait aboutir");
+  if(!fpFree(fp))throw new Error("le premier déplacement fige l'empreinte");
+  const apres=padsOf(fp);
+  if(apres[0].x!==-4||apres[0].y!==-3)
+    throw new Error("pastille 1 mal posée : "+JSON.stringify(apres[0]));
+  for(let i=1;i<apres.length;i++)
+    if(apres[i].x!==avant[i].x||apres[i].y!==avant[i].y)
+      throw new Error("la pastille "+apres[i].n+" n'avait pas à bouger");
+  if(fpMovePad(fp,0,-4,-3))throw new Error("reposer au même endroit ne change rien");
+  /* les cotes génériques ne commandent plus : le pas ne redessine rien */
+  const fige=JSON.stringify(padsOf(fp));
+  fp.pitch=5;
+  if(JSON.stringify(padsOf(fp))!==fige)
+    throw new Error("le pas ne doit plus rien commander sur une empreinte libre");
+});
+T("pastille : dimensions, forme et perçage bornés",()=>{
+  S.fps=[];clearSel();touch();
+  const fp=mkFp("J1","","",4);
+  S.fps.push(fp);touch();
+  fpSetPad(fp,0,"w",1.6);fpSetPad(fp,0,"h",1.6);fpSetPad(fp,0,"shape","circ");
+  fpSetPad(fp,0,"drill",9);
+  const q=padsOf(fp)[0];
+  if(q.shape!=="circ")throw new Error("forme non prise : "+q.shape);
+  if(q.drill>q.w-0.049)
+    throw new Error("un perçage plus large que la pastille ne laisse pas de cuivre : "+
+      q.drill+" pour "+q.w);
+  fpSetPad(fp,0,"w",0.5);
+  if(padsOf(fp)[0].drill>0.451)
+    throw new Error("retailler la pastille doit recaler le perçage : "+padsOf(fp)[0].drill);
+  fpSetPad(fp,0,"w",-3);
+  if(padsOf(fp)[0].w<0.05)throw new Error("une pastille garde une largeur positive");
+  if(fpSetPad(fp,0,"couleur","rouge"))throw new Error("champ inconnu : rien à faire");
+});
+T("supprimer une pastille ne renumérote pas les autres",()=>{
+  S.fps=[];clearSel();touch();
+  const fp=mkFp("U1","","DIP-8",8);
+  fp.nets={1:"GND",4:"N$1",8:"+5V"};
+  S.fps.push(fp);touch();
+  fpFreeze(fp);
+  if(!fpDelPad(fp,2))throw new Error("la pastille 3 devait partir");
+  const ns=padsOf(fp).map(q=>q.n).join(" ");
+  if(ns!=="1 2 4 5 6 7 8")throw new Error("numéros attendus 1 2 4 5 6 7 8, obtenus "+ns);
+  if(fp.pins!==8)throw new Error("le brochage reste celui du plus grand numéro : "+fp.pins);
+  const q4=padsOf(fp).find(q=>q.n===4);
+  if(q4.net!=="N$1")throw new Error("le net de la broche 4 devait suivre son numéro");
+  /* la dernière pastille ne se retire pas : une empreinte sans cuivre ne
+     s'attrape plus à la souris */
+  while(fp.pads.length>1)fpDelPad(fp,0);
+  if(fpDelPad(fp,0))throw new Error("la dernière pastille devait résister");
+  if(!padsOf(fp).length)throw new Error("une empreinte garde au moins une pastille");
+});
+T("nombre de pastilles : ajout à la suite, retrait par la fin",()=>{
+  S.fps=[];clearSel();touch();
+  const fp=mkFp("J1","","",4);
+  S.fps.push(fp);touch();
+  fpFreeze(fp);
+  const avant=padsOf(fp).map(q=>[q.x,q.y].join()).join(" ");
+  fpSetPins(fp,6);
+  const ps=padsOf(fp);
+  if(ps.length!==6)throw new Error("6 pastilles attendues, "+ps.length);
+  if(ps.map(q=>[q.x,q.y].join()).slice(0,4).join(" ")!==avant)
+    throw new Error("les pastilles déjà placées n'avaient pas à bouger");
+  if(ps[4].n!==5||ps[5].n!==6)throw new Error("les nouvelles se numérotent à la suite");
+  fpSetPins(fp,3);
+  if(padsOf(fp).length!==3)throw new Error("3 pastilles attendues après retrait");
+  if(fp.pins!==3)throw new Error("le brochage suit : "+fp.pins);
+});
+T("retour au calcul : le boîtier reprend la main",()=>{
+  S.fps=[];clearSel();touch();
+  const fp=mkFp("U1","","TSSOP-8",8);
+  S.fps.push(fp);touch();
+  const attendu=JSON.stringify(padsOf(fp));
+  fpMovePad(fp,0,-9,-9);
+  fpSetBody(fp,{x1:-9,y1:-9,x2:9,y2:9});
+  if(!fpGeneric(fp))throw new Error("le retour au calcul devait avoir lieu");
+  if(fpFree(fp)||fp.body)throw new Error("ni pastilles ni contour ne doivent rester");
+  if(JSON.stringify(padsOf(fp))!==attendu)
+    throw new Error("le TSSOP-8 devait être reposé à l'identique");
+  if(fpGeneric(fp))throw new Error("une empreinte déjà calculée n'a rien à rendre");
+});
+T("contour de sérigraphie imposé puis rendu au calcul",()=>{
+  S.fps=[];clearSel();touch();
+  const fp=mkFp("U1","","DIP-8",8);
+  S.fps.push(fp);touch();
+  const auto=JSON.stringify(fpAutoBody(fp));
+  fpSetBody(fp,{x1:2,y1:2,x2:-6,y2:-4});             // coins dans le désordre
+  const b=bodyOf(fp);
+  if(b.x1!==-6||b.y1!==-4||b.x2!==2||b.y2!==2)
+    throw new Error("le rectangle devait être remis d'aplomb : "+JSON.stringify(b));
+  if(JSON.stringify(fpAutoBody(fp))!==auto)
+    throw new Error("le contour automatique ne dépend pas du contour imposé");
+  fpSetBody(fp,{x1:0,y1:0,x2:0,y2:0});
+  const d=bodyOf(fp);
+  if(d.x2-d.x1<0.1||d.y2-d.y1<0.1)throw new Error("un contour plat n'est pas un contour");
+  fpSetBody(fp,null);
+  if(JSON.stringify(bodyOf(fp))!==auto)throw new Error("le calcul devait reprendre la main");
+});
+T("pastilles superposées : la fenêtre les montre, le DRC les compte",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const fp=mkFp("U1","","",2);
+  fp.x=40;fp.y=30;fp.nets={1:"GND",2:"+5V"};
+  S.fps.push(fp);
+  fpFreeze(fp);
+  fpSetPad(fp,1,"x",padsOf(fp)[0].x);                // la pastille 2 sur la 1
+  fpSetPad(fp,1,"y",padsOf(fp)[0].y);
+  touch();
+  const bad=feOverlap(padsOf(fp));
+  if(bad.size!==2)throw new Error("les deux pastilles devaient être signalées");
+  if(!runDrc().some(e=>/superpos/.test(e.msg)))
+    throw new Error("deux nets superposés sont un court-circuit : le DRC doit le dire");
+  /* mêmes pastilles, même net : c'est un choix de dessin, pas un défaut */
+  fp.nets={1:"GND",2:"GND"};touch();
+  if(runDrc().some(e=>/superpos/.test(e.msg)))
+    throw new Error("deux pastilles d'un même net peuvent se recouvrir");
+});
+T("document : une empreinte dessinée fait l'aller-retour sans rien perdre",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const fp=mkFp("U1","NE555","DIP-8",8);
+  fp.x=20;fp.y=15;fp.nets={1:"GND",8:"+5V"};
+  S.fps.push(fp);
+  fpFreeze(fp);
+  fpMovePad(fp,0,-3.81,-4.5);
+  fpSetPad(fp,0,"shape","circ");
+  fpSetPad(fp,0,"drill",0.8);
+  fpSetBody(fp,{x1:-4,y1:-5,x2:4,y2:5});
+  touch();
+  const doc=docObj();
+  const d=firstDiff(JSON.parse(JSON.stringify(doc)),
+                    normDoc(JSON.parse(JSON.stringify(doc))),"doc");
+  if(d)throw new Error("la relecture a changé le document : "+d);
+  /* fichier retouché à la main : le brochage se relit sur les pastilles */
+  const bricole=normDoc({fps:[{ref:"U9",pins:2,
+    pads:[{n:1,x:0,y:0,w:1,h:1},{n:7,x:2,y:0,w:1,h:1},{x:"nulle part"}]}]});
+  if(bricole.fps[0].pins!==7)
+    throw new Error("sept broches attendues d'après les pastilles : "+bricole.fps[0].pins);
+  if(bricole.fps[0].pads.length!==2)
+    throw new Error("la pastille sans centre devait être écartée");
+  if(normDoc({fps:[{ref:"U9",pins:8,pads:[]}]}).fps[0].pads)
+    throw new Error("une liste vide rend l'empreinte au calcul");
+});
+T("empreinte dessinée : ni le boîtier ni la netlist ne la refont",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const fp=mkFp("U1","","DIP-8",8);
+  fp.x=20;fp.y=15;S.fps.push(fp);touch();
+  fpMovePad(fp,0,-5,-5);
+  const dessin=JSON.stringify(padsOf(fp));
+  if(applyPkgGeom(fp))throw new Error("le boîtier ne doit pas refaire un dessin manuel");
+  const res=applyNetlist(NET_MANUEL,false);
+  if(res.repkg)throw new Error("aucune refonte ne doit être annoncée : "+res.repkg);
+  const u=S.fps.find(f=>f.ref==="U1");
+  if(u.pkg!=="MSOP-8")throw new Error("le nom du boîtier suit le schéma");
+  const apres=JSON.parse(dessin), maintenant=padsOf(u);
+  for(const q of apres){
+    const r=maintenant.find(x=>x.n===q.n);
+    if(!r||r.x!==q.x||r.y!==q.y)throw new Error("la pastille "+q.n+" a bougé");
+  }
+  /* une broche câblée au-delà du dessin reçoit une pastille : rien de ce que
+     porte la netlist ne peut rester sans cuivre */
+  if(u.pins<10)throw new Error("la broche 10 câblée doit avoir sa pastille : "+u.pins);
+  if(!padsOf(u).some(q=>q.n===10))throw new Error("pastille 10 absente");
+});
+
+/* =============================================================================
+   Bibliothèque d'empreintes
+   ============================================================================= */
+T("fenêtre d'empreinte ouverte : le clavier de la carte se tait",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const fp=mkFp("U1","","DIP-8",8);
+  fp.x=20;fp.y=15;S.fps.push(fp);S.sel.fps.add(fp.id);touch();
+  FE.open=true;FE.fp=fp;                    /* la fenêtre elle-même a besoin du DOM */
+  key("Delete");
+  if(S.fps.length!==1)throw new Error("Suppr ne doit pas effacer l'empreinte en cours d'édition");
+  key("r");
+  if(fp.rot!==0)throw new Error("R ne doit pas faire pivoter la carte sous la fenêtre");
+  key("Escape");
+  if(feIsOpen())throw new Error("Échap devait fermer la fenêtre");
+  key("Delete");
+  if(S.fps.length!==0)throw new Error("fenêtre fermée : le clavier reprend la main");
+});
+
+T("bibliothèque : enregistrer, relire, appliquer",()=>{
+  localStorage.removeItem(FPLIB_KEY);
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const src=mkFp("U1","","DIP-8",8);
+  src.x=20;src.y=15;S.fps.push(src);
+  fpMovePad(src,0,-6,-6);
+  fpSetPad(src,0,"drill",0.9);
+  const def=fpLibPut(fpDefOf(src,"DIP-8 maison"));
+  if(!def)throw new Error("l'enregistrement a échoué");
+  if(fpLibNames().join()!=="DIP-8 maison")throw new Error("bibliothèque : "+fpLibNames());
+  const cible=mkFp("U2","LM358","SOIC-8",8);
+  cible.x=60;cible.y=40;cible.rot=90;cible.side=1;cible.nets={1:"GND",8:"+5V"};
+  S.fps.push(cible);touch();
+  if(!fpApplyDef(cible,fpLibGet("DIP-8 maison")))throw new Error("application refusée");
+  const forme=ps=>JSON.stringify(ps.map(q=>[q.n,q.x,q.y,q.w,q.h,q.shape,q.drill]));
+  if(forme(padsOf(cible))!==forme(padsOf(src)))
+    throw new Error("le cuivre devait être le même");
+  if(cible.ref!=="U2"||cible.value!=="LM358"||cible.pkg!=="SOIC-8")
+    throw new Error("le repère, la valeur et le boîtier appartiennent à la carte");
+  if(cible.x!==60||cible.y!==40||cible.rot!==90||cible.side!==1)
+    throw new Error("la position et la face ne bougent pas");
+  if(padsOf(cible).find(q=>q.n===8).net!=="+5V")throw new Error("les nets devaient rester");
+  /* une empreinte calculée s'enregistre aussi : elle se recalcule à l'arrivée */
+  const gen=mkFp("R1","","0805",2);
+  const d2=fpLibPut(fpDefOf(gen,"0805 large"));
+  if(d2.pads)throw new Error("une empreinte calculée ne porte pas de pastilles");
+  if(!fpApplyDef(cible,d2))throw new Error("application de l'empreinte calculée refusée");
+  if(fpFree(cible))throw new Error("elle devait rendre la cible au calcul");
+  if(cible.style!=="chip")throw new Error("style attendu chip : "+cible.style);
+  if(cible.pins<8)throw new Error("les broches câblées font plancher : "+cible.pins);
+  localStorage.removeItem(FPLIB_KEY);
+});
+T("bibliothèque : lecture défensive et fusion des noms",()=>{
+  localStorage.removeItem(FPLIB_KEY);
+  if(!fpLibParse("ceci n'est pas du json").err)
+    throw new Error("un fichier illisible doit se dire");
+  if(!fpLibParse('{"format":"pcbfp-1","footprints":[]}').err)
+    throw new Error("un fichier sans empreinte exploitable doit se dire");
+  if(!fpLibParse('[{"pins":8}]').err)throw new Error("une empreinte sans nom est refusée");
+  /* définition seule, sans enveloppe : acceptée */
+  const r=fpLibParse('{"name":"pont 4 broches","pins":4,"style":"row","pitch":2.54}');
+  if(r.err)throw new Error("une définition seule devait passer : "+r.err);
+  if(r.defs[0].name!=="pont 4 broches")throw new Error("nom perdu");
+  fpLibMerge(r.defs);
+  /* même nom, même empreinte : une seule entrée */
+  fpLibMerge(fpLibParse('{"name":"pont 4 broches","pins":4,"style":"row","pitch":2.54}').defs);
+  if(fpLibNames().length!==1)throw new Error("le doublon exact ne crée rien : "+fpLibNames());
+  /* même nom, empreinte différente : renommée, jamais écrasée en silence */
+  const m=fpLibMerge(fpLibParse('{"name":"pont 4 broches","pins":6,"style":"row","pitch":2}').defs);
+  if(m.renamed.length!==1)throw new Error("le conflit devait renommer : "+JSON.stringify(m));
+  if(fpLibNames().length!==2)throw new Error("deux entrées attendues : "+fpLibNames());
+  if(fpLibGet("pont 4 broches").pins!==4)throw new Error("l'originale ne bouge pas");
+  /* aller-retour par le fichier d'échange */
+  const f=fpLibFile(null);
+  if(f.format!==FPLIB_FORMAT||f.footprints.length!==2)
+    throw new Error("fichier d'échange : "+JSON.stringify(f).slice(0,120));
+  localStorage.removeItem(FPLIB_KEY);
+  const back=fpLibParse(JSON.stringify(f));
+  if(back.err||back.defs.length!==2)throw new Error("le fichier ne se relit pas");
+  fpLibMerge(back.defs);
+  if(fpLibNames().length!==2)throw new Error("les deux empreintes devaient revenir");
+  /* un stockage pollué ne casse rien */
+  localStorage.setItem(FPLIB_KEY,'{"x":{"name":"","pins":"beaucoup"},"y":42}');
+  if(Object.keys(fpLibAll()).length)throw new Error("des entrées invalides devaient partir");
+  localStorage.setItem(FPLIB_KEY,"pas du json");
+  if(Object.keys(fpLibAll()).length)throw new Error("un contenu illisible devait être ignoré");
+  if(fpLibDel("absente"))throw new Error("supprimer l'absent ne fait rien");
+  localStorage.removeItem(FPLIB_KEY);
+});
+
+/* =============================================================================
+   Formes de pastille, rotation, origine de l'empreinte
+   ============================================================================= */
+T("quatre formes de pastille, un rayon de coin chacune",()=>{
+  if(padRadius("sharp",2,1)!==0)throw new Error("les angles droits n'ont pas de rayon");
+  if(padRadius("oval",2,1)!==0.5)throw new Error("l'oblong s'arrondit sur son petit côté");
+  if(Math.abs(padRadius("rect",2,1)-0.22)>1e-9)throw new Error("le rectangle reste adouci");
+  /* une forme inconnue retombe sur celle des empreintes calculées */
+  if(padShape("étoile")!=="rect")throw new Error("forme inconnue : rectangle adouci");
+  if(padShape("oval")!=="oval")throw new Error("l'oblong doit être reconnu");
+  /* l'oblong est mesuré pour ce qu'il est : un rectangle à bouts ronds */
+  const ov={x:0,y:0,w:2,h:1,shape:"oval",rot:0};
+  const sh={x:0,y:0,w:2,h:1,shape:"sharp",rot:0};
+  if(Math.abs(padDist(1,0.5,ov)-(Math.hypot(0.5,0.5)-0.5))>1e-9)
+    throw new Error("coin d'un oblong : "+padDist(1,0.5,ov));
+  if(padDist(1,0.5,sh)!==0)throw new Error("le coin d'un rectangle droit est du cuivre");
+  /* tournée d'un quart de tour, la même pastille se mesure dans l'autre sens */
+  const t={x:0,y:0,w:2,h:1,shape:"sharp",rot:Math.PI/2};
+  if(Math.abs(padDist(0,1,t))>1e-9)throw new Error("tournée de 90°, elle atteint y=1");
+  if(Math.abs(padDist(1,0,t)-0.5)>1e-9)throw new Error("et ne va plus qu'à x=0,5");
+});
+T("rotation d'une pastille : cumulée à l'empreinte, inversée par le miroir",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const fp=mkFp("J1","","",2);
+  fp.x=20;fp.y=20;S.fps.push(fp);touch();
+  fpSetPad(fp,0,"rot",30);
+  if(padsOf(fp)[0].rot!==30)throw new Error("rotation en degrés sur la pastille");
+  if(Math.abs(padsWorld(fp)[0].rot-30*Math.PI/180)>1e-9)
+    throw new Error("padsWorld donne des radians : "+padsWorld(fp)[0].rot);
+  fp.rot=90;
+  if(Math.abs(padsWorld(fp)[0].rot-120*Math.PI/180)>1e-9)
+    throw new Error("les deux rotations s'ajoutent : "+padsWorld(fp)[0].rot);
+  fp.side=1;
+  if(Math.abs(padsWorld(fp)[0].rot-60*Math.PI/180)>1e-9)
+    throw new Error("retournée, la rotation propre s'inverse : "+padsWorld(fp)[0].rot);
+  /* angle ramené dans [0, 360[ : -90° et 270° sont la même pastille */
+  fpSetPad(fp,0,"rot",-90);
+  if(padsOf(fp)[0].rot!==270)throw new Error("angle attendu 270, obtenu "+padsOf(fp)[0].rot);
+  /* l'encombrement d'une pastille tournée est la boîte droite qui la contient */
+  const h0=padHalf({w:4,h:1,rot:0}), h90=padHalf({w:4,h:1,rot:90});
+  if(Math.abs(h0.x-2)>1e-9||Math.abs(h0.y-0.5)>1e-9)
+    throw new Error("sans rotation, c'est w/2 et h/2 : "+JSON.stringify(h0));
+  if(Math.abs(h90.x-0.5)>1e-9||Math.abs(h90.y-2)>1e-9)
+    throw new Error("tournée de 90°, les deux s'échangent : "+JSON.stringify(h90));
+  /* et le contour de sérigraphie suit cet encombrement */
+  const plat=mkFp("J2","","",1);
+  S.fps.push(plat);
+  fpSetPad(plat,0,"w",4);fpSetPad(plat,0,"h",1);fpSetPad(plat,0,"shape","sharp");
+  const large=fpAutoBody(plat);
+  if(large.x2-large.x1<large.y2-large.y1)throw new Error("contour couché attendu");
+  fpSetPad(plat,0,"rot",90);
+  const haut=fpAutoBody(plat);
+  if(haut.y2-haut.y1<haut.x2-haut.x1)
+    throw new Error("pastille debout : contour debout : "+JSON.stringify(haut));
+  if(Math.abs((haut.y2-haut.y1)-(large.x2-large.x1)-0.2)>1e-6)
+    throw new Error("le contour garde ses marges : 0,35 en haut et en bas, "+
+      "0,25 à gauche et à droite : "+JSON.stringify(haut));
+});
+T("ouvertures Gerber : rond, rectangle, oblong, et leurs rotations",()=>{
+  const ap=q=>{const A=apSet();apForPad(A,q,0);return A.defs.join(" ")+" "+A.macros.join(" ");};
+  if(!/ADD10C,1\.5/.test(ap({x:0,y:0,w:1.5,h:1.5,shape:"circ",rot:0})))
+    throw new Error("le rond est une ouverture C : "+ap({x:0,y:0,w:1.5,h:1.5,shape:"circ",rot:0}));
+  if(!/ADD10R,2\.0*X1\.0*/.test(ap({x:0,y:0,w:2,h:1,shape:"sharp",rot:0})))
+    throw new Error("le rectangle est une ouverture R : "+ap({x:0,y:0,w:2,h:1,shape:"sharp",rot:0}));
+  /* tourné d'un quart de tour, un rectangle échange ses côtés : pas de macro */
+  const r90=ap({x:0,y:0,w:2,h:1,shape:"sharp",rot:Math.PI/2});
+  if(!/ADD10R,1\.0*X2\.0*/.test(r90))throw new Error("R tournée : "+r90);
+  /* l'oblong a son ouverture O, et une macro dès qu'il est de biais */
+  const o=ap({x:0,y:0,w:2,h:1,shape:"oval",rot:0});
+  if(!/ADD10O,2\.0*X1\.0*/.test(o))throw new Error("l'oblong est une ouverture O : "+o);
+  const ov=ap({x:0,y:0,w:1,h:2,shape:"oval",rot:0});
+  if(!/ADD10O,1\.0*X2\.0*/.test(ov))
+    throw new Error("oblong vertical : le grand axe reste le grand axe : "+ov);
+  const ob=ap({x:0,y:0,w:2,h:1,shape:"oval",rot:Math.PI/6});
+  if(!/AMOBR/.test(ob)||!/ADD10OBR,/.test(ob))
+    throw new Error("oblong de biais : macro attendue : "+ob);
+  /* un angle quelconque sur un rectangle garde la macro de rectangle tourné */
+  if(!/AMRRECT/.test(ap({x:0,y:0,w:2,h:1,shape:"sharp",rot:Math.PI/6})))
+    throw new Error("rectangle de biais : macro RRECT attendue");
+});
+T("déplacer l'origine ne déplace pas le cuivre",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const fp=mkFp("U1","","DIP-8",8);
+  fp.x=30;fp.y=25;fp.rot=90;S.fps.push(fp);touch();
+  const avant=padsWorld(fp).map(q=>[q.n,q.x,q.y].join());
+  const cible=padsOf(fp)[0];                  // l'origine s'en va sur la pastille 1
+  if(!fpMoveOrigin(fp,cible.x,cible.y))throw new Error("le déplacement devait aboutir");
+  if(!fpFree(fp))throw new Error("déplacer l'origine fige l'empreinte");
+  const apres=padsWorld(fp).map(q=>[q.n,q.x,q.y].join());
+  if(apres.join(" ")!==avant.join(" "))
+    throw new Error("le cuivre a bougé :\n"+avant.join(" ")+"\n"+apres.join(" "));
+  /* la pastille 1 est maintenant à l'origine du repère local */
+  const p1=padsOf(fp)[0];
+  if(Math.abs(p1.x)>1e-9||Math.abs(p1.y)>1e-9)
+    throw new Error("la pastille 1 devait tomber sur l'origine : "+JSON.stringify(p1));
+  if(fpMoveOrigin(fp,0,0))throw new Error("ne rien déplacer ne change rien");
+});
+T("origine ramenée au centre du composant",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const fp=mkFp("U1","","DIP-8",8);
+  fp.x=30;fp.y=25;S.fps.push(fp);touch();
+  /* une empreinte calculée est centrée d'office : on ne la fige pas pour rien */
+  if(!fpIsCentered(fp))throw new Error("une empreinte calculée est centrée");
+  if(fpCenterOrigin(fp))throw new Error("rien à recentrer");
+  if(fpFree(fp))throw new Error("recentrer une empreinte centrée ne doit pas la figer");
+  /* un dessin décentré revient au centre, sans déplacer le cuivre */
+  fpMovePad(fp,0,-12,-9);
+  if(fpIsCentered(fp))throw new Error("le dessin est maintenant décentré");
+  const avant=padsWorld(fp).map(q=>[q.n,q.x,q.y].join()).join(" ");
+  if(!fpCenterOrigin(fp))throw new Error("le recentrage devait avoir lieu");
+  if(!fpIsCentered(fp))throw new Error("après recentrage, l'origine est au centre");
+  if(padsWorld(fp).map(q=>[q.n,q.x,q.y].join()).join(" ")!==avant)
+    throw new Error("recentrer l'origine ne déplace pas le cuivre");
+  /* le centre est celui de l'encombrement : pastilles et contour réunis */
+  const b=fpLocalBox(fp);
+  if(Math.abs(b.x1+b.x2)>1e-3||Math.abs(b.y1+b.y2)>1e-3)
+    throw new Error("encombrement mal centré : "+JSON.stringify(b));
+});
+T("document : formes, rotations et origine déplacée se relisent",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const fp=mkFp("J1","","",4);
+  fp.x=20;fp.y=15;fp.nets={1:"GND"};S.fps.push(fp);
+  fpFreeze(fp);
+  fpSetPad(fp,0,"shape","oval");fpSetPad(fp,0,"rot",45);
+  fpSetPad(fp,1,"shape","sharp");
+  fpSetPad(fp,2,"shape","circ");
+  fpMoveOrigin(fp,1.27,0);
+  touch();
+  const doc=docObj();
+  const d=firstDiff(JSON.parse(JSON.stringify(doc)),
+                    normDoc(JSON.parse(JSON.stringify(doc))),"doc");
+  if(d)throw new Error("la relecture a changé le document : "+d);
+  const relu=normDoc(JSON.parse(JSON.stringify(doc))).fps[0];
+  if(relu.pads[0].shape!=="oval"||relu.pads[0].rot!==45)
+    throw new Error("forme ou rotation perdue : "+JSON.stringify(relu.pads[0]));
+  if(relu.pads[1].shape!=="sharp")throw new Error("angles droits perdus");
+  /* un fichier retouché : forme inventée, angle absurde */
+  const b=normDoc({fps:[{ref:"U9",pins:1,
+    pads:[{n:1,x:0,y:0,w:1,h:1,shape:"losange",rot:"beaucoup"},
+          {n:2,x:2,y:0,w:1,h:1,shape:"oval",rot:-450}]}]}).fps[0];
+  if(b.pads[0].shape!=="rect"||b.pads[0].rot!==0)
+    throw new Error("forme et angle illisibles : valeurs sûres attendues : "+
+      JSON.stringify(b.pads[0]));
+  if(b.pads[1].rot!==270)throw new Error("-450° vaut 270° : "+b.pads[1].rot);
+});
+
+/* =============================================================================
+   Repère de broche 1
+   ============================================================================= */
+T("repère de broche 1 : d'office là où il sert, pas sur un passif",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const mk=(ref,pkg,pins)=>{const f=mkFp(ref,"",pkg,pins||0);f.x=40;f.y=30;
+    S.fps.push(f);return f;};
+  const u1=mk("U1","SOIC-8",8), r1=mk("R1","0603"), c1=mk("C1","0603");
+  const l1=mk("L1","0805"), d1=mk("D1","SOD-123"), ce=mk("C2","TO-92",2);
+  touch();
+  if(!fpMark(u1))throw new Error("un circuit intégré a besoin de son repère");
+  if(fpMark(r1))throw new Error("une résistance n'a pas de sens de pose");
+  if(fpMark(l1))throw new Error("une inductance non plus");
+  if(fpMark(c1))throw new Error("un condensateur CMS non polarisé non plus");
+  if(!fpMark(d1))throw new Error("une diode est polarisée : le repère reste");
+  if(!fpMark(ce))throw new Error("un condensateur non-CMS peut être polarisé : "+
+    "le repère vaut mieux qu'un doute");
+  /* la place d'usine est dehors, du côté de la broche 1 */
+  const m=fpMark(u1), p1=padsOf(u1)[0];
+  if(Math.hypot(m.x-p1.x,m.y-p1.y)<Math.max(p1.w,p1.h)/2)
+    throw new Error("le point ne doit pas être posé sur le cuivre");
+  if(Math.abs(m.x)<Math.abs(p1.x))throw new Error("il est plus dehors que la pastille");
+  if(m.d!==MARK_D)throw new Error("diamètre d'usine attendu : "+m.d);
+});
+T("repère de broche 1 : montré, déplacé, retiré, et le document s'en souvient",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const fp=mkFp("R1","10k","0603",2);
+  fp.x=30;fp.y=20;S.fps.push(fp);touch();
+  if(fpMark(fp))throw new Error("une résistance n'en a pas d'office");
+  /* on en veut un quand même : il est écrit, et la règle ne décide plus */
+  fpSetMark(fp,true);
+  const m=fpMark(fp);
+  if(!m)throw new Error("la case cochée devait poser un point");
+  if(!fpMoveMark(fp,1.5,-1.2))throw new Error("le déplacement devait aboutir");
+  if(fpMoveMark(fp,1.5,-1.2))throw new Error("reposer au même endroit ne change rien");
+  fpSetMarkD(fp,0.8);
+  const m2=fpMark(fp);
+  if(m2.x!==1.5||m2.y!==-1.2||m2.d!==0.8)throw new Error("point mal réglé : "+JSON.stringify(m2));
+  /* déplacer l'origine emmène le point : il est posé dans le repère local */
+  const avant=fpXform(fp)(m2.x,m2.y);
+  fpMoveOrigin(fp,0.5,0.5);
+  const apres=fpXform(fp)(fpMark(fp).x,fpMark(fp).y);
+  if(Math.abs(avant.x-apres.x)>1e-6||Math.abs(avant.y-apres.y)>1e-6)
+    throw new Error("le point a sauté sur la carte : "+JSON.stringify([avant,apres]));
+  /* retiré à la main : la règle automatique ne doit pas le faire revenir */
+  fpSetMark(fp,false);
+  if(fpMark(fp))throw new Error("retiré, il reste retiré");
+  const u=mkFp("U1","","SOIC-8",8);
+  u.x=50;u.y=20;fpSetMark(u,false);S.fps.push(u);touch();
+  if(fpMark(u))throw new Error("retiré sur un CI aussi");
+  /* aller-retour par le document, dans les deux états */
+  const doc=docObj();
+  const d=firstDiff(JSON.parse(JSON.stringify(doc)),
+                    normDoc(JSON.parse(JSON.stringify(doc))),"doc");
+  if(d)throw new Error("la relecture a changé le document : "+d);
+  const relu=normDoc(JSON.parse(JSON.stringify(doc)));
+  if(fpMark(relu.fps.find(f=>f.ref==="U1")))
+    throw new Error("le retrait devait survivre à la relecture");
+  /* un fichier retouché : ni point illisible, ni diamètre absurde */
+  const b=normDoc({fps:[{ref:"U9",pins:2,mark:{x:"ici",y:0}},
+                        {ref:"U8",pins:2,mark:{x:1,y:1,d:900}},
+                        {ref:"U7",pins:2,mark:"oui"}]}).fps;
+  if(b[0].mark)throw new Error("un point sans coordonnées est écarté");
+  if(b[1].mark.d>10)throw new Error("diamètre borné : "+b[1].mark.d);
+  if(b[2].mark)throw new Error("un point qui n'est pas un point est écarté");
+});
+T("sérigraphie : le point sort sur le film, et seulement s'il existe",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  const u=mkFp("U1","","SOIC-8",8);
+  u.x=30;u.y=25;S.fps.push(u);touch();
+  const film=gerberSilk(0);
+  if(!/%ADD\d+C,0\.4000\*%/.test(film))
+    throw new Error("le point de repère devait donner une ouverture C,0.4");
+  /* le diamètre réglé est celui du film */
+  fpSetMark(u,true);fpSetMarkD(u,0.9);touch();
+  if(!/%ADD\d+C,0\.9000\*%/.test(gerberSilk(0)))
+    throw new Error("le diamètre réglé devait sortir tel quel");
+  /* retiré : plus rien */
+  fpSetMark(u,false);touch();
+  if(/%ADD\d+C,0\.[49]000\*%/.test(gerberSilk(0)))
+    throw new Error("point retiré : rien ne doit sortir");
+  /* une résistance n'en a pas, et le film s'en passe aussi */
+  S.fps=[];
+  const r=mkFp("R1","","0603",2);
+  r.x=30;r.y=25;S.fps.push(r);touch();
+  if(/%ADD\d+C,0\.4000\*%/.test(gerberSilk(0)))
+    throw new Error("pas de repère sur un passif, film compris");
+});
+
+/* ==========================================================================
+   Session d'onglet (commun/session.js)
+   Aller vérifier une valeur sur le schéma, puis revenir : le routage en cours
+   doit être là, intact, tant que l'onglet n'a pas été fermé.
+   ========================================================================== */
+function carteVide(){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];S.drc=[];
+  clearSel();touch();
+}
+T("session : la carte mise de côté revient à l'identique",()=>{
+  dom.session.clear();
+  carteVide();
+  importNetlist(NET,false);
+  const u1=S.fps.find(f=>f.ref==="U1");
+  u1.x=20;u1.y=15;touch();
+  S.dirty=true;
+  const avant=JSON.parse(JSON.stringify(docObj()));
+  if(!sessEnregistrer())throw new Error("la carte n'a pas été mise de côté");
+  /* la page est rechargée : l'éditeur repart d'une carte vierge */
+  carteVide();S.dirty=false;
+  if(!sessionPcb())throw new Error("reprise refusée");
+  const d=firstDiff(avant,JSON.parse(JSON.stringify(docObj())),"doc");
+  if(d)throw new Error("la carte a changé en chemin : "+d);
+  if(!S.dirty)throw new Error("l'état « modifié » doit revenir aussi, sinon "+
+    "l'onglet se fermerait sans un mot sur un travail jamais enregistré");
+});
+T("session : un état illisible, périmé ou hostile est écarté",()=>{
+  dom.session.setItem(SESS_CLE+"pcb","pas du json");
+  if(sessLire("pcb"))throw new Error("du texte quelconque ne doit rien donner");
+  dom.session.setItem(SESS_CLE+"pcb",JSON.stringify({v:99,t:1,etat:{doc:{}}}));
+  if(sessLire("pcb"))throw new Error("une autre version du format doit être ignorée");
+  dom.session.setItem(SESS_CLE+"pcb",JSON.stringify({v:1,t:1,etat:"bonjour"}));
+  if(sessLire("pcb"))throw new Error("un état qui n'est pas un objet doit être ignoré");
+  /* un état retouché à la main : normDoc() le passe au tamis, comme à l'import */
+  carteVide();
+  dom.session.setItem(SESS_CLE+"pcb",JSON.stringify({v:1,t:1,etat:{
+    doc:{format:"pcbedit-1",fps:"beaucoup",tracks:[{x1:"ici"}],cu:99},sale:true}}));
+  sessionPcb();
+  if(S.fps.length)throw new Error("aucune empreinte ne devait sortir de ce document");
+  dom.session.clear();
+});
+T("session : un état qui déborde ne laisse pas de carte périmée derrière lui",()=>{
+  dom.session.clear();
+  const gros={pave:"x".repeat(SESS_MAX)};
+  if(sessTient(gros))throw new Error("cet état devait être jugé trop gros");
+  if(sessEcrire("pcb",gros))throw new Error("il ne devait pas être écrit");
+  if(sessLire("pcb"))throw new Error("rien ne doit rester en session");
+  /* quota atteint pendant l'écriture : l'état précédent, devenu faux, s'en va */
+  dom.session.setItem(SESS_CLE+"pcb",JSON.stringify({v:1,t:1,etat:{doc:{}}}));
+  const vrai=dom.session.setItem;
+  dom.session.setItem=()=>{throw new Error("quota");};
+  const ecrit=sessEcrire("pcb",{doc:{}});
+  dom.session.setItem=vrai;
+  if(ecrit)throw new Error("l'écriture aurait dû échouer");
+  if(sessLire("pcb"))throw new Error("l'état périmé devait être retiré");
+});
+T("session : changer d'outil met de côté et fait taire la garde de sortie",()=>{
+  dom.session.clear();
+  SESS_QUITTE=false;
+  carteVide();importNetlist(NET,false);S.dirty=true;
+  sessAller("schema");
+  if(location.href!=="../editeur-schematique/editeur-schematique.html")
+    throw new Error("adresse inattendue : "+location.href);
+  if(!sessLire("pcb"))throw new Error("la carte devait partir en session");
+  if(!sessQuitte())throw new Error("la garde de sortie devait se taire");
+  let barre=false;
+  const ev=()=>({preventDefault(){barre=true;},returnValue:""});
+  dom.fireWin("beforeunload",ev());
+  if(barre)throw new Error("changer d'outil ne doit rien demander");
+  /* une vraie fermeture d'onglet, elle, reste protégée */
+  SESS_QUITTE=false;
+  dom.fireWin("beforeunload",ev());
+  if(!barre)throw new Error("fermer sur une carte non enregistrée doit avertir");
+  dom.session.clear();
+});
+T("session : chemins relatifs, et pas de barre dans la version un seul fichier",()=>{
+  if(sessUrl("pcb")!=="../editeur-pcb/editeur-pcb.html")
+    throw new Error("chemin du PCB : "+sessUrl("pcb"));
+  if(sessUrl("schema")!=="../editeur-schematique/editeur-schematique.html")
+    throw new Error("chemin du schéma : "+sessUrl("schema"));
+  if(sessUrl("accueil")!=="../index.html")throw new Error("chemin de l'accueil");
+  if(sessUrl("inconnu")!==null)throw new Error("une cible inconnue ne mène nulle part");
+  const b1=document.createElement("button"), b2=document.createElement("button");
+  b1.setAttribute("data-cao-nav","composants");
+  b2.setAttribute("data-cao-nav","ailleurs");
+  document.body.appendChild(b1);document.body.appendChild(b2);
+  if(sessBarre()!==1)throw new Error("un seul bouton était câblable");
+  if(typeof b1.onclick!=="function")throw new Error("bouton non câblé");
+  if(!b2.hidden)throw new Error("une cible inconnue doit disparaître");
+  const chemin=dom.location.pathname;
+  dom.location.pathname="/editeur-pcb/dist/editeur-pcb.html";
+  if(!sessAutonome())throw new Error("la version un seul fichier doit se reconnaître");
+  if(sessBarre()!==0)throw new Error("elle ne doit câbler aucun bouton");
+  if(!b1.hidden)throw new Error("les boutons doivent s'effacer");
+  dom.location.pathname=chemin;
+  b1.remove();b2.remove();
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

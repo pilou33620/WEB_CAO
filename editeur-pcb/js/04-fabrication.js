@@ -42,13 +42,17 @@ function pasteOpenings(side){
   }
   return out;
 }
-function padOutline(c,q,grow,color,lw){
+/* Contour d'une OUVERTURE (masque, pochoir) : la pastille dilatée ou
+   rétreinte de `grow`. À ne pas confondre avec padOutline() du rendu, qui
+   cerne une pastille telle qu'elle est — les deux portaient le même nom, et
+   la seconde déclaration effaçait la première. */
+function padOpening(c,q,grow,color,lw){
   c.save();c.translate(q.x,q.y);c.rotate(q.rot);
   const g=grow||0;
   c.beginPath();
   if(q.shape==="circ")c.arc(0,0,Math.max(q.w,q.h)/2+g,0,Math.PI*2);
   else{
-    const w=Math.max(0.02,q.w+2*g), h=Math.max(0.02,q.h+2*g), r=Math.min(w,h)*0.22;
+    const w=Math.max(0.02,q.w+2*g), h=Math.max(0.02,q.h+2*g), r=padRadius(q.shape,w,h);
     c.moveTo(-w/2+r,-h/2);
     c.arcTo(w/2,-h/2,w/2,h/2,r);c.arcTo(w/2,h/2,-w/2,h/2,r);
     c.arcTo(-w/2,h/2,-w/2,-h/2,r);c.arcTo(-w/2,-h/2,w/2,-h/2,r);
@@ -60,9 +64,9 @@ function padOutline(c,q,grow,color,lw){
 function drawTech(c){
   for(const [side,keyM,keyP] of [[0,"maskT","pasteT"],[1,"maskB","pasteB"]]){
     if(S.show[keyM])
-      for(const o of maskOpenings(side))padOutline(c,o.q,o.grow,C_MASK,px(1.1));
+      for(const o of maskOpenings(side))padOpening(c,o.q,o.grow,C_MASK,px(1.1));
     if(S.show[keyP])
-      for(const o of pasteOpenings(side))padOutline(c,o.q,o.grow,C_PASTE,px(1));
+      for(const o of pasteOpenings(side))padOpening(c,o.q,o.grow,C_PASTE,px(1));
   }
 }
 
@@ -145,11 +149,25 @@ function apSet(){
     }};
 }
 const AM_RECT="%AMRRECT*\n21,1,$1,$2,0,0,$3*%";
+/* Oblong tourné d'un angle quelconque : un rectangle et deux disques à ses
+   bouts. Les décalages des disques sont calculés ici et passés en paramètres —
+   une macro Gerber ne sait pas prendre un cosinus. */
+const AM_OBR="%AMOBR*\n21,1,$1,$2,0,0,$5*\n1,1,$2,$3,$4*\n1,1,$2,-$3,-$4*%";
 function apForPad(A,q,grow){
   const g=grow||0;
   if(q.shape==="circ")return A.get("C,"+fmt(Math.max(0.01,Math.max(q.w,q.h)+2*g),4));
   let w=Math.max(0.01,q.w+2*g), h=Math.max(0.01,q.h+2*g);
-  const deg=((Math.round((q.rot||0)*180/Math.PI)%360)+360)%360;
+  let deg=((Math.round((q.rot||0)*180/Math.PI)%360)+360)%360;
+  if(q.shape==="oval"){
+    /* le grand axe passe en x, quitte à tourner d'un quart de tour : c'est la
+       convention de l'ouverture O, et celle de la macro */
+    if(h>w){const t=w;w=h;h=t;deg=(deg+90)%360;}
+    if(deg===0||deg===180)return A.get("O,"+fmt(w,4)+"X"+fmt(h,4));
+    if(deg===90||deg===270)return A.get("O,"+fmt(h,4)+"X"+fmt(w,4));
+    const a=deg*Math.PI/180, d=(w-h)/2;
+    return A.get("OBR,"+fmt(w,4)+"X"+fmt(h,4)+"X"+fmt(d*Math.cos(a),4)+
+                 "X"+fmt(d*Math.sin(a),4)+"X"+deg,AM_OBR);
+  }
   if(deg===0||deg===180)return A.get("R,"+fmt(w,4)+"X"+fmt(h,4));
   if(deg===90||deg===270)return A.get("R,"+fmt(h,4)+"X"+fmt(w,4));
   return A.get("RRECT,"+fmt(w,4)+"X"+fmt(h,4)+"X"+deg,AM_RECT);
@@ -288,12 +306,12 @@ function gerberSilk(side){
     const T=fpXform(fp), bb=bodyOf(fp);
     const c=[T(bb.x1,bb.y1),T(bb.x2,bb.y1),T(bb.x2,bb.y2),T(bb.x1,bb.y2)];
     for(let k=0;k<4;k++)gSeg(body,A,c[k].x,c[k].y,c[(k+1)%4].x,c[(k+1)%4].y,lw);
-    const ps=padsWorld(fp);
-    if(ps.length){                       // point de repère de la broche 1
-      const p1=ps[0], r=Math.max(p1.w,p1.h)/2+0.4;
-      const a0=Math.atan2(p1.y-fp.y,p1.x-fp.x)||Math.PI;
-      gFlash(body,A,A.get("C,"+fmt(0.4,4)),
-        p1.x+Math.cos(a0)*r,p1.y+Math.sin(a0)*r);
+    /* point de repère de la broche 1, là où l'écran le montre — un composant
+       symétrique n'en a pas, et celui qu'on a retiré ne revient pas ici */
+    const mk=fpMark(fp);
+    if(mk){
+      const w=T(mk.x,mk.y);
+      gFlash(body,A,A.get("C,"+fmt(mk.d,4)),w.x,w.y);
     }
     const h=clamp((bb.x2-bb.x1)*0.34,0.8,1.6);
     // sur la face inférieure, le texte doit être en miroir dans le fichier

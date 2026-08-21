@@ -102,6 +102,20 @@ function peOpen(el){
     (el.value?" · "+el.value:"");
   peSync();
 }
+/* Reprise après un Ctrl+Z. Annuler recharge le document entier : la feuille,
+   ses composants, et donc celui que la fenêtre est en train de brocher. On le
+   retrouve par son identifiant ; s'il a disparu — annulation de son ajout, ou
+   retour sur une autre feuille — la fenêtre se ferme plutôt que de continuer
+   sur un objet qui n'appartient plus au document. */
+function peReattach(){
+  if(!PE.open)return;
+  const id=PE.el?PE.el.id:null;
+  const el=(id==null)?null:S.comps.find(c=>c.id===id);
+  if(!el){peClose();return;}
+  PE.el=el;
+  PE.pushed=false;            // la prochaine retouche reprendra un instantané
+  peSync();
+}
 function peClose(){
   if(!PE.open)return;
   PE.open=false;PE.drag=null;

@@ -584,15 +584,19 @@ function px(n){return n/S.scale;}          // n pixels écran, exprimés en mm
 
 /* ==========================================================================
    Empreintes génériques
-   La bibliothèque de boîtiers n'est pas gérée : chaque composant reçoit une
-   empreinte paramétrique (rangée, DIP, SOIC, puce) dérivée du nombre de
-   broches. Les dimensions restent modifiables dans le panneau Propriétés.
+   La bibliothèque de boîtiers n'est pas dessinée au centième : chaque
+   composant reçoit une empreinte paramétrique (puce, rangée, DIP, SOIC,
+   quatre côtés, grille de billes). Le nom du boîtier choisi côté schématique
+   en fixe le style et les cotes ; à défaut, elles se déduisent du nombre de
+   broches. Tout reste modifiable dans le panneau Propriétés.
    ========================================================================== */
 const STYLES={
   chip:{n:"Puce 2 pastilles (CMS)", thru:false},
   row :{n:"1 rangée (traversant)",  thru:true },
   dip :{n:"2 rangées DIP (traversant)", thru:true },
-  sop :{n:"2 rangées SOIC (CMS)",   thru:false}
+  sop :{n:"2 rangées SOIC (CMS)",   thru:false},
+  quad:{n:"4 côtés (QFP, QFN)",     thru:false},
+  bga :{n:"Grille de billes (BGA)", thru:false}
 };
 function defaultStyle(pins){
   if(pins<=2)return "chip";
@@ -603,66 +607,566 @@ function defaultGeom(style){
   if(style==="chip")return {pitch:2.4, span:2.4};
   if(style==="row") return {pitch:2.54,span:2.54};
   if(style==="dip") return {pitch:2.54,span:7.62};
+  if(style==="quad")return {pitch:0.5, span:11.1};
+  if(style==="bga") return {pitch:0.8, span:0.8};
   return {pitch:1.27,span:5.2};
 }
+/* --------------------------------------------------------------------------
+   Boîtiers nommés
+   Le schématique enregistre un boîtier sur chaque composant et le recopie
+   dans la netlist : c'est ce nom qui doit décider de l'empreinte à l'import,
+   sinon un SOIC-8 arriverait en DIP traversant. La table donne, par famille,
+   le style et les cotes ; `pins` fixe le brochage quand le nom ne le porte
+   pas (une puce CMS a deux bornes, toujours), `pitch` et `span` acceptent une
+   fonction du brochage, et `lead` sert aux boîtiers à quatre côtés, dont
+   l'écartement des rangées dépend du nombre de pastilles.
+   Les cotes sont celles du pas et de l'écartement des rangées, au dixième de
+   millimètre : de quoi router juste, pas de quoi remplacer la fiche du
+   fabricant. Les boîtiers de puissance à languette (DPAK, SOT-223…) sont
+   ramenés à deux rangées : leurs pastilles y sont, la languette reste à
+   ajouter à la main.
+   -------------------------------------------------------------------------- */
+const PKG_LIB={
+  /* puces CMS : le nom code les dimensions en centièmes de pouce */
+  "01005":{style:"chip",pins:2,span:0.35},
+  "0201":{style:"chip",pins:2,span:0.55},
+  "0402":{style:"chip",pins:2,span:0.95},
+  "0603":{style:"chip",pins:2,span:1.5},
+  "0805":{style:"chip",pins:2,span:1.9},
+  "1206":{style:"chip",pins:2,span:3.1},
+  "1210":{style:"chip",pins:2,span:3.1},
+  "2512":{style:"chip",pins:2,span:6.2},
+  /* diodes CMS moulées et cylindriques */
+  "SMA":{style:"chip",pins:2,span:5},
+  "SMB":{style:"chip",pins:2,span:5.2},
+  "SMC":{style:"chip",pins:2,span:7},
+  "MELF":{style:"chip",pins:2,span:5},
+  "MiniMELF":{style:"chip",pins:2,span:3.2},
+  "SOD-123":{style:"chip",pins:2,span:3.6},
+  "SOD-323":{style:"chip",pins:2,span:2.4},
+  /* petits boîtiers CMS : deux rangées, la rangée impaire recentrée */
+  "SOT-23":{style:"sop",pins:3,pitch:0.95,span:2.6},
+  "SOT-89":{style:"sop",pins:3,pitch:1.5,span:3},
+  "SOT-223":{style:"sop",pins:4,pitch:2.3,span:6.3},
+  /* puissance : la languette n'est pas dessinée */
+  "TO-252":{style:"sop",pins:3,pitch:2.3,span:6.5},
+  "TO-263":{style:"sop",pins:3,pitch:2.54,span:8.6},
+  "TO-92":{style:"row",pins:3,pitch:2.54},
+  "TO-220":{style:"row",pins:3,pitch:2.54},
+  "TO-247":{style:"row",pins:3,pitch:5.45},
+  /* CI à deux rangées : au delà de 16 broches, le SOIC passe en large */
+  "SOIC":{style:"sop",pitch:1.27,span:n=>n>16?9.4:5.4},
+  "SOP":{style:"sop",pitch:1.27,span:n=>n>16?9.4:5.4},
+  "SSOP":{style:"sop",pitch:0.65,span:5.7},
+  "TSSOP":{style:"sop",pitch:0.65,span:5.9},
+  "MSOP":{style:"sop",pitch:0.65,span:4.4},
+  "DFN":{style:"sop",pitch:0.5,span:2.6},
+  "DIP":{style:"dip",pitch:2.54,span:n=>n>=32?15.24:7.62},
+  /* quatre côtés : à pattes (QFP) ou sans pattes (QFN, PLCC) */
+  "LQFP":{style:"quad",pitch:n=>n<=44?0.8:0.5,lead:3.6},
+  "TQFP":{style:"quad",pitch:n=>n<=44?0.8:0.5,lead:3.6},
+  "QFP":{style:"quad",pitch:n=>n<=44?0.8:0.5,lead:3.6},
+  "PQFP":{style:"quad",pitch:n=>n<=44?0.8:0.5,lead:3.6},
+  "QFN":{style:"quad",pitch:n=>n<=32?0.5:0.4,lead:1.1},
+  "PLCC":{style:"quad",pitch:1.27,lead:3},
+  "LCC":{style:"quad",pitch:1.27,lead:2},
+  /* billes : le pas fait tout, la grille se remplit en lignes */
+  "BGA":{style:"bga",pitch:0.8},
+  "WLCSP":{style:"bga",pitch:0.4},
+  "CSP":{style:"bga",pitch:0.5}
+};
+/* Clé de comparaison : majuscules, surnom entre parenthèses écarté (le
+   schématique propose « TO-252 (DPAK) »), séparateurs ignorés. « SOT-23-5 »,
+   « SOT23-5 » et « sot 23 5 » désignent alors le même boîtier à cinq broches. */
+function pkgKey(s){
+  return String(s==null?"":s).toUpperCase()
+    .replace(/\([^)]*\)/g," ").replace(/[^A-Z0-9]+/g,"");
+}
+function quadSide(pins){return Math.max(1,Math.ceil(pins/4));}
+/* Nom de boîtier → empreinte, ou null si le nom est hors table : l'appelant
+   retombe alors sur le style déduit du brochage. Le brochage porté par le nom
+   (« SOIC-8 ») l'emporte sur celui de la table, et `pinsHint` — le plus grand
+   numéro de broche vu dans la netlist — ne peut que l'augmenter : une broche
+   câblée ne doit jamais se retrouver sans pastille. */
+function pkgGeom(pkg,pinsHint){
+  const key=pkgKey(pkg);
+  if(!key)return null;
+  let hit=null;
+  for(const name of Object.keys(PKG_LIB)){
+    const k=pkgKey(name);
+    if(!key.startsWith(k))continue;
+    const rest=key.slice(k.length);
+    if(rest&&!/^\d+$/.test(rest))continue;      // « 0805X7R » n'est pas un brochage
+    if(!hit||k.length>hit.k.length)hit={k:k,name:name,pins:rest?+rest:0};
+  }
+  if(!hit)return null;
+  const d=PKG_LIB[hit.name];
+  const pins=clamp(Math.max(hit.pins||d.pins||0,pinsHint|0)||2,1,4096);
+  const pitch=Math.max(0.05,r3(typeof d.pitch==="function"?d.pitch(pins):
+    (d.pitch!=null?d.pitch:(d.span||2.4))));
+  let span=typeof d.span==="function"?d.span(pins,pitch):d.span;
+  if(span==null)
+    span=d.style==="quad"?(quadSide(pins)-1)*pitch+(d.lead||2):
+         d.style==="bga" ?pitch:defaultGeom(d.style).span;
+  return {style:d.style,pitch:pitch,span:Math.max(0.05,r3(span)),pins:pins,pkg:hit.name};
+}
+/* Style et cotes d'un composant : le boîtier nommé d'abord, le brochage
+   ensuite. Point de passage unique entre « SOIC-8 » et des pastilles. */
+function fpGeomFor(pkg,pins){
+  const n=Math.max(1,pins|0);
+  const g=pkgGeom(pkg,n);
+  if(g)return g;
+  const style=defaultStyle(n), d=defaultGeom(style);
+  return {style:style,pitch:d.pitch,span:d.span,pins:n};
+}
+/* Plus haut numéro de broche câblé : le brochage peut se réduire quand le
+   boîtier change, jamais en dessous de ce qui porte un net. */
+function fpWiredPins(fp){
+  let m=0;
+  for(const k of Object.keys(fp.nets||{})){const n=+k;if(n>m&&fp.nets[k])m=n;}
+  return m;
+}
+/* Repose une empreinte existante sur son boîtier. Boîtier hors table : rien ne
+   bouge, le réglage fait à la main garde le dernier mot. */
+function applyPkgGeom(fp){
+  if(fpFree(fp))return false;
+  const g=pkgGeom(fp.pkg,fpWiredPins(fp));
+  if(!g)return false;
+  fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
+  return true;
+}
 function mkFp(ref,value,pkg,pins){
-  const style=defaultStyle(pins), g=defaultGeom(style);
+  const g=fpGeomFor(pkg,pins);
   return {id:S.nextId++, ref:ref||("U"+S.nextId), value:value||"", pkg:pkg||"",
-          pins:Math.max(1,pins|0), style, pitch:g.pitch, span:g.span,
+          pins:g.pins, style:g.style, pitch:g.pitch, span:g.span,
           x:0, y:0, rot:0, side:0, nets:{}};
 }
 /* pastilles en coordonnées locales, dans l'ordre des numéros de broche */
+/* --------------------------------------------------------------------------
+   Empreintes dessinées à la main
+   Une empreinte reste paramétrique aussi longtemps que ses trois cotes
+   suffisent : style, pas, écartement. Dès qu'une pastille est déplacée,
+   retaillée ou percée à part, la liste explicite `fp.pads` prend le relais et
+   les cotes génériques ne commandent plus rien — c'est la disposition
+   « libre » du brochage schématique, transposée au cuivre. `fp.body` fait de
+   même pour le rectangle de sérigraphie.
+
+   Une pastille libre porte exactement ce que padsOf() produit : numéro de
+   broche, centre, dimensions, forme, perçage. Le numéro est l'identité de la
+   patte — c'est lui qui porte le net — et non son rang dans la liste : on
+   peut donc supprimer la pastille 3 sans renuméroter les suivantes.
+   -------------------------------------------------------------------------- */
+/* ---------- formes de pastille ----------
+   Quatre formes, un seul paramètre : le rayon des coins. Le rectangle adouci
+   est celui des empreintes calculées — c'est la forme des plages brasées d'un
+   boîtier CMS réel, et elle reste la valeur par défaut. Les angles droits, le
+   rond et l'oblong s'obtiennent en poussant ce rayon à 0, au maximum, ou à la
+   moitié du petit côté. Un carré est un rectangle dont les deux côtés sont
+   égaux : le bouton « Carré » de la fenêtre d'empreinte les recopie l'un sur
+   l'autre, il n'y a pas de forme de plus pour cela. */
+const PAD_SHAPES={
+  rect :"Rectangle (coins adoucis)",
+  sharp:"Rectangle (angles droits)",
+  oval :"Oblong (bouts ronds)",
+  circ :"Rond"
+};
+/* Forme inconnue — fichier d'une autre version, .json retouché — : le
+   rectangle adouci, celle qu'ont toujours eue les empreintes calculées. */
+function padShape(s){return PAD_SHAPES[s]?s:"rect";}
+function padRadius(shape,w,h){
+  if(shape==="sharp")return 0;
+  if(shape==="oval") return Math.min(w,h)/2;
+  return Math.min(w,h)*0.22;
+}
+function fpFree(fp){
+  return (fp&&Array.isArray(fp.pads)&&fp.pads.length)?fp.pads:null;
+}
+/* Copie normalisée d'une pastille. L'arrondi est au dixième de micromètre,
+   comme pour les épaisseurs de cuivre : les cotes calculées sont des produits
+   (2,54 × 0,68 = 1,7272 mm de pastille traversante), et arrondir au micromètre
+   déplacerait le cuivre au moment de figer l'empreinte. */
+/* L'ordre des champs suit celui des pastilles calculées — n, x, y, w, h,
+   forme, perçage, rotation — pour qu'une empreinte figée et la même encore
+   calculée s'écrivent exactement pareil. */
+function padClone(q){
+  return {n:Math.max(1,Math.round(q.n)||1), x:r4(q.x), y:r4(q.y),
+          w:Math.max(0.05,r4(q.w)), h:Math.max(0.05,r4(q.h)),
+          shape:padShape(q.shape), drill:Math.max(0,r4(q.drill||0)),
+          rot:padRot(q.rot)};
+}
+/* Rotation d'une pastille, en degrés, dans le repère de l'empreinte — comme
+   `fp.rot` pour l'empreinte entière. Ramenée dans [0, 360[ : deux pastilles
+   tournées de -90° et de 270° sont la même, et le document ne doit pas en
+   garder deux écritures. */
+function padRot(v){
+  const a=+v;
+  if(!Number.isFinite(a))return 0;
+  return r3(((a%360)+360)%360);
+}
 function padsOf(fp){
   const out=[], n=fp.pins, p=fp.pitch, sp=fp.span;
-  if(fp.style==="chip"){
-    const w=Math.max(0.8,sp*0.55), h=Math.max(0.9,sp*0.62);
+  const free=fpFree(fp);
+  if(free){
+    for(const q of free)out.push(padClone(q));
+  }else if(fp.style==="chip"){
+    /* les plus petites puces (0201, 01005) ont des bornes plus fines que le
+       plancher d'un connecteur : les pastilles suivent l'écartement */
+    const w=Math.max(0.4,sp*0.55), h=Math.max(0.45,sp*0.62);
     for(let i=0;i<n;i++)
       out.push({n:i+1, x:(i-(n-1)/2)*sp, y:0, w, h, shape:"rect", drill:0});
   }else if(fp.style==="row"){
     for(let i=0;i<n;i++)
       out.push({n:i+1, x:(i-(n-1)/2)*p, y:0, w:p*0.68, h:p*0.68,
                 shape:i===0?"rect":"circ", drill:Math.min(1.0,p*0.34)});
+  }else if(fp.style==="quad"){
+    /* Quatre côtés, broche 1 en haut à gauche, numérotation dans le sens
+       trigonométrique : côté gauche de haut en bas, côté bas de gauche à
+       droite, côté droit de bas en haut, côté haut de droite à gauche. Un
+       brochage non multiple de quatre remplit les premiers côtés d'abord. */
+    const b=Math.floor(n/4), rr=n%4;
+    const per=[b+(rr>0?1:0), b+(rr>1?1:0), b+(rr>2?1:0), b];
+    const lg=Math.max(0.6,p*1.8), br=Math.max(0.22,p*0.55);
+    let k=1;
+    for(let s=0;s<4;s++)
+      for(let i=0;i<per[s];i++){
+        const t=(i-(per[s]-1)/2)*p;
+        if(s===0)     out.push({n:k++, x:-sp/2, y:t,     w:lg, h:br, shape:"rect", drill:0});
+        else if(s===1)out.push({n:k++, x:t,     y:sp/2,  w:br, h:lg, shape:"rect", drill:0});
+        else if(s===2)out.push({n:k++, x:sp/2,  y:-t,    w:lg, h:br, shape:"rect", drill:0});
+        else          out.push({n:k++, x:-t,    y:-sp/2, w:br, h:lg, shape:"rect", drill:0});
+      }
+  }else if(fp.style==="bga"){
+    /* grille au pas donné, remplie en lignes : le brochage réel d'un BGA se
+       lit sur sa fiche, mais le compte, le pas et l'encombrement y sont */
+    const cols=Math.max(1,Math.ceil(Math.sqrt(n))), rows=Math.ceil(n/cols);
+    const d=Math.max(0.2,p*0.5);
+    for(let i=0;i<n;i++)
+      out.push({n:i+1, x:((i%cols)-(cols-1)/2)*p, y:(Math.floor(i/cols)-(rows-1)/2)*p,
+                w:d, h:d, shape:"circ", drill:0});
   }else{
-    const h=Math.ceil(n/2), smd=fp.style==="sop";
+    /* deux rangées. Un brochage impair (SOT-23, DPAK) met une pastille de
+       moins à droite : cette rangée est recentrée, comme sur le boîtier. */
+    const h=Math.ceil(n/2), rg=n-h, smd=fp.style==="sop";
     const pw=smd?Math.max(0.9,sp*0.30):p*0.68, ph=smd?p*0.55:p*0.68;
     for(let i=0;i<h;i++)                       // colonne gauche : 1 → h
       out.push({n:i+1, x:-sp/2, y:(i-(h-1)/2)*p, w:pw, h:ph,
                 shape:(smd||i===0)?"rect":"circ", drill:smd?0:Math.min(1.0,p*0.34)});
     for(let i=h;i<n;i++){                      // colonne droite : h+1 → n, de bas en haut
       const k=n-1-i;
-      out.push({n:i+1, x:sp/2, y:(k-(h-1)/2)*p, w:pw, h:ph,
+      out.push({n:i+1, x:sp/2, y:(k-(rg-1)/2)*p, w:pw, h:ph,
                 shape:smd?"rect":"circ", drill:smd?0:Math.min(1.0,p*0.34)});
     }
   }
-  for(const q of out){q.net=fp.nets[q.n]||"";}
+  /* `rot` est en DEGRÉS ici, comme sur la pastille enregistrée : c'est
+     padsWorld() qui le convertit en radians et y ajoute la rotation de
+     l'empreinte. Les empreintes calculées ne tournent pas leurs pastilles —
+     un côté vertical de QFP échange largeur et hauteur, il ne pivote pas. */
+  for(const q of out){q.rot=padRot(q.rot);q.net=fp.nets[q.n]||"";}
   return out;
 }
 /* enveloppe du corps (sérigraphie) en coordonnées locales */
-function bodyOf(fp){
+/* Demi-encombrement d'une pastille tournée : la boîte droite qui la contient.
+   Une pastille non tournée retrouve exactement w/2 et h/2. */
+function padHalf(q){
+  const a=(q.rot||0)*Math.PI/180, ca=Math.abs(Math.cos(a)), sa=Math.abs(Math.sin(a));
+  return {x:(q.w*ca+q.h*sa)/2, y:(q.w*sa+q.h*ca)/2};
+}
+function fpAutoBody(fp){
   const ps=padsOf(fp);
   let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
   for(const q of ps){
-    x1=Math.min(x1,q.x-q.w/2);x2=Math.max(x2,q.x+q.w/2);
-    y1=Math.min(y1,q.y-q.h/2);y2=Math.max(y2,q.y+q.h/2);
+    const hf=padHalf(q);
+    x1=Math.min(x1,q.x-hf.x);x2=Math.max(x2,q.x+hf.x);
+    y1=Math.min(y1,q.y-hf.y);y2=Math.max(y2,q.y+hf.y);
   }
   if(x1>x2)return {x1:-1,y1:-1,x2:1,y2:1};
-  if(fp.style==="dip"||fp.style==="sop"){
+  /* Le contour s'arrondit comme les pastilles dont il se déduit : figer une
+     empreinte recopie ce rectangle, et deux arrondis différents feraient
+     bouger la sérigraphie d'un dixième de micromètre à ce moment-là. */
+  if(!fpFree(fp)&&(fp.style==="dip"||fp.style==="sop")){
     const in1=fp.span/2-(fp.style==="dip"?1.3:0.9);
-    return {x1:-in1, y1:y1-0.4, x2:in1, y2:y2+0.4};
+    return {x1:r4(-in1), y1:r4(y1-0.4), x2:r4(in1), y2:r4(y2+0.4)};
   }
-  return {x1:x1-0.25,y1:y1-0.35,x2:x2+0.25,y2:y2+0.35};
+  return {x1:r4(x1-0.25),y1:r4(y1-0.35),x2:r4(x2+0.25),y2:r4(y2+0.35)};
+}
+function bodyOf(fp){
+  const b=fp.body;
+  if(b&&Number.isFinite(b.x1)&&Number.isFinite(b.y1)&&
+        Number.isFinite(b.x2)&&Number.isFinite(b.y2))
+    return {x1:Math.min(b.x1,b.x2), y1:Math.min(b.y1,b.y2),
+            x2:Math.max(b.x1,b.x2), y2:Math.max(b.y1,b.y2)};
+  return fpAutoBody(fp);
+}
+/* ---------- modifications d'une empreinte ----------
+   Ces fonctions sont le seul endroit qui touche aux pastilles : la fenêtre
+   d'édition et le panneau Propriétés passent par elles. L'historique reste à
+   l'appelant, comme partout ailleurs (push() avant, touch() après). */
+
+/* Le brochage d'une empreinte libre est le plus grand numéro de pastille :
+   c'est lui que lit l'import de netlist pour rattacher les nets, et le
+   panneau pour lister les broches. */
+function fpSyncPins(fp){
+  const free=fpFree(fp);
+  if(!free)return;
+  let m=1;
+  for(const q of free)m=Math.max(m,Math.round(q.n)||1);
+  fp.pins=clamp(m,1,4096);
+}
+/* Passage en liste explicite. Rien ne bouge à l'écran : les pastilles
+   calculées sont figées telles quelles, contour compris. Ce qui change, c'est
+   que chacune devient modifiable à part. */
+function fpFreeze(fp){
+  if(fpFree(fp))return false;
+  const b=fpAutoBody(fp);
+  fp.pads=padsOf(fp).map(padClone);
+  fp.body={x1:r4(b.x1),y1:r4(b.y1),x2:r4(b.x2),y2:r4(b.y2)};
+  fpSyncPins(fp);
+  return true;
+}
+/* Retour au calcul automatique : le boîtier reprend la main s'il est connu,
+   sinon le style et les cotes en place. Le dessin fait à la main est perdu —
+   c'est un geste explicite, et Ctrl+Z le rattrape. */
+function fpGeneric(fp){
+  if(!fpFree(fp)&&!fp.body)return false;
+  delete fp.pads;delete fp.body;
+  if(!applyPkgGeom(fp)){
+    const g=fpGeomFor(fp.pkg,fp.pins);
+    fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;
+  }
+  return true;
+}
+/* Pose d'une pastille, en coordonnées locales. Le premier déplacement fige
+   l'empreinte : on ne déplace pas une pastille calculée, on quitte le calcul.
+   Deux pastilles superposées ne sont pas refusées — une traversante peut
+   recouvrir une plage — mais la fenêtre les signale et le DRC les rattrape si
+   elles portent des nets différents. */
+function fpMovePad(fp,i,x,y){
+  fpFreeze(fp);
+  const q=fp.pads[i];
+  if(!q)return false;
+  const nx=r4(x), ny=r4(y);
+  if(q.x===nx&&q.y===ny)return false;
+  q.x=nx;q.y=ny;
+  return true;
+}
+/* Retouche d'une pastille : numéro, dimensions, forme, perçage. Un perçage
+   non nul fait la pastille traversante — elle apparaît alors sur toutes les
+   couches, padLayers() s'en occupe — et reste plus étroit que la pastille,
+   sans quoi il n'en resterait pas de cuivre. */
+function fpSetPad(fp,i,k,v){
+  fpFreeze(fp);
+  const q=fp.pads[i];
+  if(!q)return false;
+  if(k==="shape"){q.shape=padShape(v);}
+  else if(k==="rot"){q.rot=padRot(v);}
+  else if(k==="n"){q.n=clamp(Math.round(+v)||1,1,4096);fpSyncPins(fp);}
+  else if(k==="x"||k==="y"){
+    if(!Number.isFinite(+v))return false;
+    q[k]=clamp(r4(+v),-COORD,COORD);
+  }else if(k==="w"||k==="h"){
+    q[k]=clamp(r4(+v||0),0.05,200);
+  }else if(k==="drill"){
+    q.drill=clamp(r4(+v||0),0,200);
+  }else return false;
+  /* le perçage se recale après coup : retailler la pastille au-dessous de son
+     trou ne doit pas laisser un anneau négatif */
+  const lim=r4(Math.min(q.w,q.h)-0.05);
+  if(q.drill>0&&q.drill>lim)q.drill=Math.max(0.05,lim);
+  return true;
+}
+/* Nouvelle pastille : numérotée à la suite, posée à droite du nuage — visible,
+   hors de tout ce qui existe, prête à être placée. */
+function fpAddPad(fp){
+  fpFreeze(fp);
+  const ps=fp.pads;
+  let mx=-1e9, my=0, mn=0;
+  for(const q of ps){
+    if(q.x+q.w/2>mx){mx=q.x+q.w/2;my=q.y;}
+    mn=Math.max(mn,q.n);
+  }
+  const ref=ps[ps.length-1]||{w:1,h:1,shape:"rect",drill:0};
+  ps.push(padClone({n:mn+1, x:mx+Math.max(0.6,ref.w), y:my,
+                    w:ref.w, h:ref.h, shape:ref.shape, drill:ref.drill}));
+  fpSyncPins(fp);
+  return ps.length-1;
+}
+/* Suppression d'une pastille. Les numéros des autres ne bougent pas : le net
+   de la broche 5 reste celui de la broche 5. La dernière ne se retire pas —
+   une empreinte sans cuivre ne se sélectionne plus. */
+function fpDelPad(fp,i){
+  fpFreeze(fp);
+  if(fp.pads.length<=1||i<0||i>=fp.pads.length)return false;
+  fp.pads.splice(i,1);
+  fpSyncPins(fp);
+  return true;
+}
+/* Nombre de pastilles. Empreinte calculée : c'est `pins`, et tout se
+   redessine. Empreinte libre : les pastilles déjà placées ne bougent pas, on
+   ajoute à la suite ou on retire par la fin. */
+function fpSetPins(fp,n){
+  n=clamp(Math.round(n)||1,1,4096);
+  if(!fpFree(fp)){fp.pins=n;return true;}
+  while(fp.pads.length>n&&fp.pads.length>1)fp.pads.pop();
+  while(fp.pads.length<n)fpAddPad(fp);
+  fpSyncPins(fp);
+  return true;
+}
+/* ---------- repère de la broche 1 ----------
+   Un point de sérigraphie dit dans quel sens poser la pièce. Il n'a jamais été
+   qu'un point sur le film — le gros anneau qu'affichait l'écran ne partait
+   nulle part —, et c'est maintenant le même objet des deux côtés : un disque
+   qu'on déplace où il est lisible, qu'on grossit, ou qu'on retire.
+
+   `fp.mark` absent : la règle automatique décide. `fp.mark=false` : retiré à la
+   main. `fp.mark={x,y,d}` : posé à la main, en coordonnées locales. La fenêtre
+   d'empreinte écrit toujours l'un des deux derniers — dès qu'on y touche, le
+   choix est explicite et ne dépend plus d'une règle.
+
+   Sur un composant symétrique — résistance, inductance, ferrite, quartz,
+   condensateur non polarisé — le repère ne dit rien : les deux pattes se
+   valent, et la sérigraphie s'encombre pour rien. Il ne paraît donc pas
+   d'office sur ces repères-là. Le condensateur est le cas délicat : une puce
+   CMS n'est pas polarisée, un boîtier radial ou tantale l'est presque
+   toujours — et un doute sur la polarité coûte plus cher qu'un point de trop.
+   La case à cocher tranche dans les deux sens, composant par composant. */
+const MARK_D=0.4;                       // diamètre d'usine, en millimètres
+const PASSIF_REF=/^(R|RN|RV|L|FB|FL|Y|X)\d/i;
+/* Nombre de pastilles sans les construire : le rendu passe ici à chaque
+   image, pour chaque empreinte. */
+function fpPadCount(fp){
+  const free=fpFree(fp);
+  return free?free.length:Math.max(1,fp.pins|0);
+}
+function fpMarkWanted(fp){
+  if(fpPadCount(fp)!==2)return true;
+  const ref=String(fp.ref||"");
+  if(PASSIF_REF.test(ref))return false;
+  if(/^C/i.test(ref))return fp.style!=="chip";
+  return true;
+}
+/* Place d'usine : dehors, dans le prolongement du centre vers la broche 1 —
+   là où un dessinateur le met, et où il ne recouvre pas de cuivre. */
+function fpMarkAuto(fp){
+  const ps=padsOf(fp);
+  if(!ps.length)return null;
+  const p1=ps[0], r=Math.max(p1.w,p1.h)/2+0.4;
+  const a=(p1.x||p1.y)?Math.atan2(p1.y,p1.x):Math.PI;
+  return {x:r4(p1.x+Math.cos(a)*r), y:r4(p1.y+Math.sin(a)*r), d:MARK_D};
+}
+function fpMark(fp){
+  const m=fp.mark;
+  if(m===false)return null;
+  if(m&&typeof m==="object"&&Number.isFinite(+m.x)&&Number.isFinite(+m.y))
+    return {x:r4(+m.x), y:r4(+m.y), d:clamp(r4(+m.d||MARK_D),0.1,10)};
+  return fpMarkWanted(fp)?fpMarkAuto(fp):null;
+}
+/* Montrer ou retirer : les deux s'écrivent, pour que la règle automatique ne
+   revienne pas décider à la place de l'utilisateur. */
+function fpSetMark(fp,on){
+  if(!on){fp.mark=false;return true;}
+  const m=fpMark(fp)||fpMarkAuto(fp);
+  fp.mark=m?{x:m.x,y:m.y,d:m.d}:{x:0,y:0,d:MARK_D};
+  return true;
+}
+function fpMoveMark(fp,x,y){
+  const m=fpMark(fp);
+  if(!m)return false;
+  const nx=r4(x), ny=r4(y);
+  if(fp.mark&&typeof fp.mark==="object"&&fp.mark.x===nx&&fp.mark.y===ny)return false;
+  fp.mark={x:nx,y:ny,d:m.d};
+  return true;
+}
+function fpSetMarkD(fp,d){
+  const m=fpMark(fp);
+  if(!m)return false;
+  fp.mark={x:m.x,y:m.y,d:clamp(r4(d),0.1,10)};
+  return true;
+}
+
+/* ---------- origine de l'empreinte ----------
+   L'origine du repère local, c'est le point d'accrochage : `fp.x`, `fp.y` sur
+   la carte. C'est par lui que l'empreinte se déplace, autour de lui qu'elle
+   pivote, et de lui que se placent le repère et la valeur sur la sérigraphie
+   (fpTextPos). Une empreinte calculée l'a d'office en son centre ; un dessin
+   fait à la main peut l'en écarter sans le vouloir, en déplaçant une pastille.
+
+   `fpMoveOrigin` prend un point du repère local et en fait la nouvelle
+   origine : les pastilles et le contour reculent d'autant, `fp.x`/`fp.y`
+   avancent d'autant sur la carte. Le cuivre ne bouge donc pas d'un micron —
+   seule change la poignée par laquelle on le tient. */
+function fpLocalBox(fp){
+  const b=bodyOf(fp);
+  let x1=b.x1,y1=b.y1,x2=b.x2,y2=b.y2;
+  for(const q of padsOf(fp)){
+    const hf=padHalf(q);
+    x1=Math.min(x1,q.x-hf.x);x2=Math.max(x2,q.x+hf.x);
+    y1=Math.min(y1,q.y-hf.y);y2=Math.max(y2,q.y+hf.y);
+  }
+  return {x1:x1,y1:y1,x2:x2,y2:y2};
+}
+function fpMoveOrigin(fp,lx,ly){
+  const dx=r4(lx), dy=r4(ly);
+  if(!Number.isFinite(dx)||!Number.isFinite(dy))return false;
+  if(!dx&&!dy)return false;
+  const c=fpXform(fp)(dx,dy);          // où ce point se trouve sur la carte
+  fpFreeze(fp);                        // une empreinte calculée se recentre seule
+  for(const q of fp.pads){q.x=r4(q.x-dx);q.y=r4(q.y-dy);}
+  const b=fp.body;
+  if(b){b.x1=r4(b.x1-dx);b.y1=r4(b.y1-dy);b.x2=r4(b.x2-dx);b.y2=r4(b.y2-dy);}
+  /* le point de repère est posé dans le repère local : il recule comme le
+     reste, sinon il sauterait sur la sérigraphie */
+  const m=fp.mark;
+  if(m&&typeof m==="object"){m.x=r4(m.x-dx);m.y=r4(m.y-dy);}
+  fp.x=r3(c.x);fp.y=r3(c.y);
+  return true;
+}
+/* Origine au centre de l'encombrement. C'est l'état dans lequel la fenêtre
+   d'empreinte rend toujours l'empreinte : une poignée au milieu du composant
+   se saisit là où on la cherche, la rotation tourne autour du composant et non
+   à côté, et le repère de sérigraphie — placé à mi-hauteur du contour, de part
+   et d'autre de l'origine — retombe où il faut. Déjà centrée : rien à faire,
+   et surtout pas figer une empreinte calculée pour rien. */
+function fpOffCenter(fp){
+  const b=fpLocalBox(fp);
+  return {x:r4((b.x1+b.x2)/2), y:r4((b.y1+b.y2)/2)};
+}
+/* Un demi-micromètre d'écart n'est pas un décentrage : c'est un arrondi. */
+function fpIsCentered(fp){
+  const c=fpOffCenter(fp);
+  return Math.abs(c.x)<5e-4&&Math.abs(c.y)<5e-4;
+}
+function fpCenterOrigin(fp){
+  if(fpIsCentered(fp))return false;
+  const c=fpOffCenter(fp);
+  return fpMoveOrigin(fp,c.x,c.y);
+}
+/* Rectangle de sérigraphie imposé, en coordonnées locales. `null` rend la
+   main au contour automatique. */
+function fpSetBody(fp,b){
+  if(!b){delete fp.body;return true;}
+  const x1=+b.x1, y1=+b.y1, x2=+b.x2, y2=+b.y2;
+  if(![x1,y1,x2,y2].every(Number.isFinite))return false;
+  fp.body={x1:r4(Math.min(x1,x2)), y1:r4(Math.min(y1,y2)),
+           x2:r4(Math.max(x1,x2)), y2:r4(Math.max(y1,y2))};
+  if(fp.body.x2-fp.body.x1<0.1)fp.body.x2=r4(fp.body.x1+0.1);
+  if(fp.body.y2-fp.body.y1<0.1)fp.body.y2=r4(fp.body.y1+0.1);
+  return true;
 }
 /* transformation locale → monde */
 function fpXform(fp){
   const a=(fp.rot||0)*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a), m=fp.side?-1:1;
   return (x,y)=>({x:fp.x+(m*x)*ca-y*sa, y:fp.y+(m*x)*sa+y*ca});
 }
+/* Pastilles en coordonnées monde. `rot` y est en RADIANS : c'est l'angle du
+   dessin, empreinte et pastille cumulées, tel que l'attendent padPath(),
+   padDist() et les ouvertures Gerber. Sur une empreinte retournée, la
+   rotation propre d'une pastille s'inverse avec le miroir. */
 function padsWorld(fp){
-  const T=fpXform(fp), a=(fp.rot||0)*Math.PI/180;
+  const T=fpXform(fp), a=(fp.rot||0)*Math.PI/180, m=fp.side?-1:1;
   return padsOf(fp).map(q=>{
     const c=T(q.x,q.y);
     return {n:q.n, x:r3(c.x), y:r3(c.y), w:q.w, h:q.h, shape:q.shape,
-            drill:q.drill, net:q.net, rot:a, fp};
+            drill:q.drill, net:q.net, rot:a+m*(q.rot||0)*Math.PI/180, fp};
   });
 }
 function padLayers(fp,pad){

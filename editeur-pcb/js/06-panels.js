@@ -158,9 +158,10 @@ function zoneMenuSync(){
 }
 /* `val` vient souvent du document chargé : un fichier trafiqué pourrait y
    glisser autre chose qu'un nombre, d'où l'échappement. */
-function numProp(id,label,val,step,min){
+function numProp(id,label,val,step,min,off){
   return '<div><label>'+esc(label)+'</label><input id="'+esc(id)+'" type="number" step="'+
-    (step||0.05)+'" min="'+(min==null?0:min)+'" value="'+esc(val)+'"></div>';
+    (step||0.05)+'" min="'+(min==null?0:min)+'" value="'+esc(val)+'"'+
+    (off?" disabled":"")+'></div>';
 }
 let _clsSel=0;
 function buildRules(){
@@ -669,17 +670,57 @@ function buildProps(){
   const b=$("pArr");
   if(b)b.onclick=()=>{push();arrange(S.fps.slice());touch();draw();};
 }
+/* Ce que le nom du boîtier a décidé — ou pourquoi il n'a rien décidé. Le
+   schématique laisse saisir n'importe quel nom : autant dire lequel est
+   compris, et laisser reposer l'empreinte d'un clic quand les cotes ont été
+   retouchées puis regrettées. */
+function pkgNote(fp){
+  /* Empreinte dessinée à la main : les cotes ne commandent plus, et le nom du
+     boîtier n'est plus qu'une étiquette de nomenclature. Le dire ici évite de
+     chercher pourquoi « pas 1,27 » ne déplace rien. */
+  if(fpFree(fp))
+    return '<div class="empty" style="padding:4px 12px 8px">Empreinte dessinée '+
+      'à la main : '+padsOf(fp).length+' pastille(s) placées une à une. '+
+      (fp.pkg?esc(fp.pkg)+' ne sert plus qu&rsquo;à la nomenclature. ':"")+
+      'Les cotes ci-dessous ne commandent plus rien.</div>';
+  if(!fp.pkg)
+    return '<div class="empty" style="padding:4px 12px 8px">Sans boîtier, '+
+      'l&rsquo;empreinte se déduit du nombre de broches.</div>';
+  const g=pkgGeom(fp.pkg,fpWiredPins(fp));
+  if(!g)
+    return '<div class="empty" style="padding:4px 12px 8px">Boîtier hors table : '+
+      'l&rsquo;empreinte reste celle réglée ici.</div>';
+  const same=fp.style===g.style&&fp.pins===g.pins&&
+             Math.abs(fp.pitch-g.pitch)<1e-6&&Math.abs(fp.span-g.span)<1e-6;
+  /* Le bouton ne paraît que si les cotes en place ne sont plus celles du
+     boîtier : il n'y a rien à reposer autrement. Un bouton, et non un lien —
+     le bleu du navigateur ne se lisait pas sur ce fond, et cliquer là fait
+     bien quelque chose à la carte. */
+  return '<div class="empty" style="padding:4px 12px 8px">'+esc(fp.pkg)+' : '+
+    esc(STYLES[g.style].n)+', '+g.pins+' broches, pas '+fmt(g.pitch,2)+' mm'+
+    (g.style==="bga"?"":", écartement "+fmt(g.span,2)+" mm")+'.'+
+    (same?"":'<br>Les cotes en place ne sont plus celles-là.'+
+      '<div class="row"><button class="tb" id="pPkgApply">'+
+      'Reposer l&rsquo;empreinte sur le boîtier</button></div>')+
+    '</div>';
+}
 function propsFp(box,fp){
   const ps=padsOf(fp);
+  const free=!!fpFree(fp), dis=free?" disabled":"";
   let h='<div class="prop"><label>Repère</label><input id="pRef" value="'+esc(fp.ref)+'"></div>'+
     '<div class="prop two"><div><label>Valeur</label><input id="pVal" value="'+esc(fp.value||"")+'"></div>'+
     '<div><label>Boîtier</label><input id="pPkg" value="'+esc(fp.pkg||"")+'"></div></div>'+
-    '<div class="prop"><label>Empreinte générique</label><select id="pStyle">'+
+    pkgNote(fp)+
+    '<div class="prop"><label>Empreinte générique</label><select id="pStyle"'+dis+'>'+
     Object.keys(STYLES).map(k=>'<option value="'+esc(k)+'"'+(fp.style===k?" selected":"")+'>'+
       esc(STYLES[k].n)+'</option>').join("")+'</select></div>'+
+    '<div class="prop"><div class="row" style="margin-top:0">'+
+      '<button class="tb" id="pFpEd">Modifier l&rsquo;empreinte…</button>'+
+      (free?'<button class="tb" id="pFpGen">Revenir au générique</button>':"")+
+    '</div></div>'+
     '<div class="prop two">'+numProp("pPins","Broches",fp.pins,1,1)+
-      numProp("pPitch","Pas (mm)",fp.pitch,0.01,0.2)+'</div>'+
-    '<div class="prop two">'+numProp("pSpan","Écartement",fp.span,0.01,0.2)+
+      numProp("pPitch","Pas (mm)",fp.pitch,0.01,0.2,free)+'</div>'+
+    '<div class="prop two">'+numProp("pSpan","Écartement",fp.span,0.01,0.2,free)+
       '<div><label>Face</label><select id="pSide">'+
       '<option value="0"'+(fp.side?"":" selected")+'>Dessus</option>'+
       '<option value="1"'+(fp.side?" selected":"")+'>Dessous</option></select></div></div>'+
@@ -703,15 +744,32 @@ function propsFp(box,fp){
   };
   upd("pRef",v=>fp.ref=v.trim()||fp.ref);
   upd("pVal",v=>fp.value=v);
-  upd("pPkg",v=>fp.pkg=v);
+  /* le boîtier nommé commande l'empreinte, ici comme à l'import de la netlist :
+     saisir « SOIC-8 » repose les pastilles, un nom hors table ne touche à rien */
+  upd("pPkg",v=>{fp.pkg=v.trim();applyPkgGeom(fp);});
   upd("pStyle",v=>{fp.style=v;const g=defaultGeom(v);fp.pitch=g.pitch;fp.span=g.span;});
-  upd("pPins",v=>fp.pins=Math.max(1,Math.round(v)),true);
+  upd("pPins",v=>fpSetPins(fp,v),true);
   upd("pPitch",v=>fp.pitch=Math.max(0.2,v),true);
   upd("pSpan",v=>fp.span=Math.max(0.2,v),true);
   upd("pSide",v=>fp.side=+v,true);
   upd("pX",v=>fp.x=wxu(v),true);
   upd("pY",v=>fp.y=wyu(v),true);
   upd("pRot",v=>fp.rot=+v,true);
+  const ap=$("pPkgApply");
+  if(ap)ap.onclick=e=>{
+    e.preventDefault();
+    push();applyPkgGeom(fp);touch();refreshPanels();draw();
+    hint("Empreinte reposée sur le boîtier "+fp.pkg+".");
+  };
+  const fe=$("pFpEd");
+  if(fe)fe.onclick=()=>feOpen(fp);
+  const fg=$("pFpGen");
+  if(fg)fg.onclick=()=>{
+    if(!confirm("Revenir à l'empreinte calculée ? Les pastilles placées à la "+
+                "main seront perdues (Ctrl+Z les rendra)."))return;
+    push();fpGeneric(fp);touch();refreshPanels();draw();
+    hint("Empreinte "+fp.ref+" rendue au calcul automatique.");
+  };
   box.querySelectorAll("tr[data-net]").forEach(tr=>{
     tr.onclick=()=>{
       const n=tr.dataset.net;

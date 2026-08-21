@@ -22,7 +22,16 @@ window.addEventListener("keydown",e=>{
   /* Fenêtre de brochage ouverte : elle prend Échap pour se fermer, et rien
      d'autre ne doit agir sur la feuille pendant ce temps. */
   if(typeof peIsOpen==="function"&&peIsOpen()){
-    if(k==="escape"){e.preventDefault();peClose();}
+    if(k==="escape"){e.preventDefault();peClose();return;}
+    /* Annuler et rétablir traversent : c'est dans la fenêtre qu'on vient de se
+       tromper. restore() recharge la feuille, donc le composant en cours de
+       brochage : peReattach() le reprend par son identifiant. */
+    if(mod&&(k==="z"||k==="y")){
+      e.preventDefault();
+      (k==="y"||e.shiftKey)?redo():undo();
+      peReattach();
+      return;
+    }
     return;
   }
   if(mod&&k==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}

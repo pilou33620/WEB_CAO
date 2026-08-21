@@ -3,9 +3,10 @@
   "configurations": [
     {
       "name": "web-cao",
+      "autoPort": false,
       "runtimeExecutable": "python",
-      "runtimeArgs": ["serveur.py", "--port", "8177"],
-      "port": 8177
+      "runtimeArgs": ["serveur.py", "--port", "8188", "--local", "--sans-navigateur", "--sans-pause"],
+      "port": 8188
     }
   ]
 }

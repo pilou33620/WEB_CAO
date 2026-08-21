@@ -22,4 +22,9 @@ resize();
 fit();
 refreshPanels();
 S.dirty=false;              // le schéma de démonstration n'est pas un travail à protéger
-restoreBackup();            // propose de reprendre la session précédente si elle existe
+/* Deux filets, dans cet ordre. La session d'onglet d'abord : elle vient du
+   même travail, poursuivi il y a quelques secondes dans un autre outil, et
+   se reprend sans rien demander. À défaut seulement, la sauvegarde
+   automatique du navigateur, qui elle peut dater et demande confirmation. */
+if(!sessionSchema())
+  restoreBackup();          // propose de reprendre la session précédente si elle existe

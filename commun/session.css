@@ -1,0 +1,18 @@
+/* =============================================================================
+   commun/session.css
+   Habillage des boutons de navigation entre les trois outils (data-cao-nav).
+   Les trois pages ayant chacune sa feuille de style, la règle est ici pour
+   qu'un seul endroit décide de l'allure de la barre — et pour qu'elle
+   disparaisse proprement dans la version un seul fichier, où session.js
+   masque les boutons.
+   ============================================================================= */
+button.tb[data-cao-nav]{
+  color:var(--blue);
+  border-color:var(--blue-deep);
+}
+button.tb[data-cao-nav]:hover{
+  background:var(--blue-deep);
+  border-color:var(--blue);
+  color:#fff;
+}
+button.tb[data-cao-nav][hidden]{display:none}

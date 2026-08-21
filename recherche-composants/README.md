@@ -23,6 +23,8 @@ Deux fichiers viennent du dossier partagé, identiques pour les deux éditeurs :
 ```
 ../commun/workspace.css           habillage de l'espace de travail
 ../commun/workspace.js            panneaux détachables, paramétré par WS_CONFIG
+../commun/session.css             habillage des boutons de navigation
+../commun/session.js              contexte conservé en changeant d'outil
 ```
 
 ## Les modules
@@ -36,7 +38,7 @@ Deux fichiers viennent du dossier partagé, identiques pour les deux éditeurs :
 | `js/03-formulaire.js` | 231 | Formulaire construit en croisant le catalogue et le schéma d'arguments du serveur ; lecture et validation des champs |
 | `js/04-resultats.js` | 193 | Tableau, fiche ou bloc de texte selon la réponse ; exports `.csv` et `.json` |
 | `js/05-details.js` | 146 | Panneau de détail, enchaînements (équivalences, brochage, KiCad, distributeurs), échappement systématique |
-| `js/06-demarrage.js` | 213 | Câblage des boutons, liste des outils, historique, fenêtre « Serveur… » |
+| `js/06-demarrage.js` | 258 | Câblage des boutons, liste des outils, historique, fenêtre « Serveur… », session d'onglet |
 
 ## Démarrage
 
@@ -79,6 +81,17 @@ n'y a plus qu'un serveur à démarrer, et il n'a rien à installer.
 
 Les panneaux se détachent, se replient et se déplacent comme dans les éditeurs ;
 la disposition est conservée dans le stockage local.
+
+**Une recherche survit à un aller-retour vers les éditeurs.** Les boutons
+*Éditeur schématique*, *Éditeur PCB* et *Accueil* rangent le contexte dans la
+session de l'onglet (`commun/session.js`) : outil choisi, requête saisie,
+résultat reçu, ligne sélectionnée, filtre du panneau Outils. En revenant, tout
+est là — sans nouvelle requête à pcbparts.dev. Si la réponse est trop
+volumineuse pour la session, la requête est conservée seule : on la relance
+d'un clic plutôt que de la ressaisir. La reprise n'a lieu que si la passerelle
+répond : sinon la page garde son diagnostic à l'écran plutôt que d'afficher
+d'anciens résultats sous un serveur injoignable.
+
 
 ## Sécurité
 

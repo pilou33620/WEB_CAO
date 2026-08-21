@@ -11,7 +11,11 @@
      · classList, dataset, style, innerHTML (texte brut, non analysé) ;
      · querySelector(All) et closest sur un sous-ensemble de sélecteurs CSS
        (tag, .classe, #id, [attr], [attr="val"], :scope, descendant et « > ») ;
-     · localStorage en mémoire, pour tester la persistance de la disposition ;
+     · localStorage et sessionStorage en mémoire : la persistance de la
+       disposition d'un côté, le travail mis de côté en changeant d'outil de
+       l'autre (commun/session.js) ;
+     · un objet location, que session.js interroge pour savoir s'il tourne
+       dans la version un seul fichier ;
      · les écouteurs de document / window / canevas, déclenchables à la main.
 
    Usage :
@@ -278,6 +282,7 @@ function install(opts){
     body:body,
     documentElement:body,
     get activeElement(){return focused||body;},
+    visibilityState:"visible",
     getElementById(id){
       if(!byId.has(id))byId.set(id,el("div",id));
       return byId.get(id);
@@ -311,15 +316,23 @@ function install(opts){
     }
   };
 
-  /* ---------- stockage local en mémoire ---------- */
-  const mem=new Map();
-  const storage={
-    getItem:k=>mem.has(String(k))?mem.get(String(k)):null,
-    setItem:(k,v)=>{mem.set(String(k),String(v));},
-    removeItem:k=>{mem.delete(String(k));},
-    clear:()=>mem.clear(),
-    _map:mem
-  };
+  /* ---------- stockages en mémoire ---------- */
+  /* Deux stockages distincts, comme dans un navigateur : localStorage pour ce
+     qui survit à la fermeture (disposition des panneaux, bibliothèque
+     d'empreintes), sessionStorage pour ce qui ne vit que le temps de l'onglet
+     (le travail mis de côté en changeant d'outil, commun/session.js). */
+  function memStorage(){
+    const mem=new Map();
+    return {
+      getItem:k=>mem.has(String(k))?mem.get(String(k)):null,
+      setItem:(k,v)=>{mem.set(String(k),String(v));},
+      removeItem:k=>{mem.delete(String(k));},
+      clear:()=>mem.clear(),
+      _map:mem
+    };
+  }
+  const storage=memStorage();
+  const session=memStorage();
 
   /* ---------- globales ---------- */
   global.document=doc;
@@ -327,6 +340,16 @@ function install(opts){
   global.innerWidth=win.innerWidth;
   global.innerHeight=win.innerHeight;
   global.localStorage=storage;
+  global.sessionStorage=session;
+  /* window.sessionStorage : c'est par là que passe commun/session.js, qui teste
+     d'abord si le stockage répond avant de s'en servir */
+  win.localStorage=storage;
+  win.sessionStorage=session;
+  /* une adresse plausible : session.js y lit s'il tourne dans la version un
+     seul fichier (dist/), auquel cas il efface sa barre de navigation */
+  const loc={protocol:"http:",host:"localhost:8000",pathname:"/editeur/page.html",
+             href:"http://localhost:8000/editeur/page.html"};
+  global.location=loc;win.location=loc;
   /* navigator est en lecture seule sur les Node récents : on ne le remplace pas,
      on ajoute seulement ce qui manque */
   if(!global.navigator)global.navigator={userAgent:"node"};
@@ -373,7 +396,8 @@ function install(opts){
   const api={
     ctxStub:ctxStub,realCanvas:realCanvas,listeners:listeners,el:el,matches:matches,
     document:doc,window:win,body:body,ws:ws,ctr:ctr,docks:docks,
-    store:store,floatLayer:floatLayer,panels:panels,storage:storage,canvas:canvas,
+    store:store,floatLayer:floatLayer,panels:panels,storage:storage,
+    session:session,location:loc,canvas:canvas,
     fire:(t,ev)=>fireOn(listeners.cv,t,ev),
     fireDoc:(t,ev)=>fireOn(listeners.doc,t,ev),
     fireWin:(t,ev)=>fireOn(listeners.win,t,ev),

@@ -20,9 +20,11 @@ LIB_composants.csv             bibliothèque de références (optionnelle)
 editeur-schematique/           saisie du schéma, netlist, nomenclature
 editeur-pcb/                   routage, empilage, DRC, Gerber, Excellon
 recherche-composants/          recherche de références via pcbparts.dev
-commun/                        code partagé par les éditeurs
+commun/                        code partagé par les trois outils
 ├── workspace.js               panneaux détachables et dockables
 ├── workspace.css              habillage de l'espace de travail
+├── session.js                 le travail suit l'utilisateur d'un outil à l'autre
+├── session.css                habillage des boutons de navigation
 ├── outils/monofichier.py      assemblage en un HTML autonome
 └── test/dom-stub.js           DOM minimal pour les bancs d'essai
 ```
@@ -112,17 +114,62 @@ python editeur-schematique/outils/build-monofichier.py && node editeur-schematiq
 Chaque banc reconstruit un DOM minimal (`commun/test/dom-stub.js`) et exécute
 le bundle sans navigateur. Le PCB couvre la netlist, le chevelu multicouche,
 les vias, les îlots de cuivre, les classes de net, le contour libre, les rôles de
-couche, l'empilage physique et ses contrôles de perçage, le Gerber, l'Excellon et l'import défensif d'un document ; le schématique couvre la
+couche, l'empilage physique et ses contrôles de perçage, le Gerber, l'Excellon,
+les empreintes dessinées à la main avec leur bibliothèque et l'import défensif d'un document ; le schématique couvre la
 découpe des fils, l'extraction des nets, les nets globaux entre feuilles, la
 netlist, la nomenclature et l'analyse du CSV de bibliothèque. Les deux
-vérifient l'espace de travail commun et l'échappement HTML des panneaux face à
-un fichier malveillant.
+vérifient l'espace de travail commun, la session d'onglet — document mis de
+côté puis repris à l'identique, état illisible ou trop gros écarté, garde de
+sortie qui se tait pour un changement d'outil mais pas pour une fermeture — et
+l'échappement HTML des panneaux face à un fichier malveillant.
 
 Installer `canvas` (`npm i canvas`) est facultatif : sans lui, les quelques
 essais qui rasterisent réellement le cuivre sont ignorés, les autres tournent.
 
 L'intégration continue (`.github/workflows/ci.yml`) rejoue les deux bancs à
 chaque poussée et à chaque demande de fusion.
+
+## Passer d'un outil à l'autre sans rien perdre
+
+Le schéma, le PCB et la recherche de composants sont trois pages distinctes :
+y aller, c'est quitter la page en cours. Le travail non enregistré les suit
+désormais. Les boutons d'entête — *Éditeur PCB*, *Éditeur schématique*,
+*Composants*, *Accueil* — mettent le document de côté avant de changer de page,
+et l'outil le reprend en arrivant, dans l'état exact où il a été laissé :
+composants et fils, empreintes et pistes, cadrage, feuille courante, requête en
+cours et son dernier résultat. Aller vérifier une valeur sur le schéma au
+milieu d'un routage ne coûte donc plus rien, et on peut faire l'aller-retour
+autant de fois qu'on veut.
+
+La portée est **l'onglet** : c'est `sessionStorage` qui porte tout cela
+(`commun/session.js`). Le travail survit à la navigation et à un rechargement
+(F5), deux onglets ouverts sur deux projets ne se mélangent pas, et fermer
+l'onglet efface tout — d'où l'avertissement qui reste posé à la fermeture d'un
+document jamais enregistré. **Ce n'est pas un enregistrement** : un projet qu'on
+veut garder passe toujours par *Enregistrer .json*.
+
+Si la place manque (le stockage de session plafonne autour de 5 Mo pour les
+trois outils), l'éditeur le dit au lieu de laisser croire que c'est passé : la
+recherche de composants abandonne d'abord le résultat pour ne garder que la
+requête, et les éditeurs demandent confirmation avant de changer d'outil.
+
+## Du schéma au PCB : le boîtier pose l'empreinte
+
+Le boîtier choisi sur un composant (`0603`, `SOIC-8`, `TQFP-64`…) part dans la
+netlist et pose l'empreinte à l'import côté PCB : style, pas, écartement et
+brochage en découlent, sans rien replacer à la main. Réimporter une netlist
+retouchée ne défait pas le travail fait sur la carte : seule une empreinte dont
+le boîtier a changé est refaite, et sans bouger de place.
+
+Quand le boîtier nommé ne suffit pas — languette de DPAK, pastille thermique de
+QFN, connecteur maison — le bouton *Modifier l'empreinte…* du panneau
+*Propriétés* ouvre une fenêtre d'édition : les pastilles se placent, se
+retaillent et se percent une par une, comme les broches d'un symbole dans la
+fenêtre de brochage du schématique. L'empreinte obtenue s'enregistre sous un
+nom, se réapplique sur n'importe quel autre composant sans toucher à son
+repère, sa position ni ses nets, et s'exporte en `.json` pour une autre machine
+ou un autre projet. Détails dans
+[editeur-pcb/README.md](editeur-pcb/README.md#dessiner-une-empreinte-à-la-main-lenregistrer-la-réutiliser).
 
 ## Bibliothèque de composants
 

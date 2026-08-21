@@ -44,6 +44,7 @@ function importNetlist(txt,dropMissing){
   if(!S.tracks.length)fit();else draw();
   hint("Netlist importée : "+res.added+" empreinte(s) créée(s), "+res.kept+" mise(s) à jour, "+
        res.nets+" net(s)"+(res.removed?", "+res.removed+" supprimée(s)":"")+
+       (res.repkg?", "+res.repkg+" empreinte(s) refaite(s) sur un nouveau boîtier":"")+
        ". Les nouvelles empreintes attendent à droite de la carte — « Placement auto » les fait entrer.");
 }
 function exportPng(){
@@ -77,7 +78,7 @@ function openImport(){
   const m=document.createElement("div");
   m.className="modal";
   m.innerHTML='<div class="box"><h3>Importer une netlist</h3>'+
-    '<p>Collez le contenu du fichier <b>netlist.txt</b> exporté par l\'éditeur schématique, ou choisissez-le sur le disque. Les empreintes déjà posées gardent leur position ; seules les nouvelles sont ajoutées.</p>'+
+    '<p>Collez le contenu du fichier <b>netlist.txt</b> exporté par l\'éditeur schématique, ou choisissez-le sur le disque. Les empreintes déjà posées gardent leur position ; seules les nouvelles sont ajoutées. Le boîtier indiqué par le schéma (0603, SOIC-8, TQFP-64…) fixe le style et les cotes de l\'empreinte : il n\'y a qu\'à replacer et router.</p>'+
     '<textarea id="nlTxt" placeholder="=== Composants ===&#10;    R1      10k        0603&#10;&#10;=== Feuille 1 — Principale ===&#10;NET &quot;+5V&quot;&#10;    U1.8&#10;    C1.1"></textarea>'+
     '<label style="display:flex;align-items:center;gap:7px;margin-top:9px;font-size:12px;color:var(--txt-dim)">'+
     '<input type="checkbox" id="nlDrop" style="accent-color:var(--blue)"> supprimer les empreintes absentes de la netlist</label>'+
@@ -201,8 +202,45 @@ document.addEventListener("keydown",e=>{
 },true);
 window.addEventListener("resize",()=>{zoneMenuClose();resize();});
 window.addEventListener("beforeunload",e=>{
+  /* Changer d'outil met la carte en session : il n'y a rien à perdre, la
+     question ne se pose plus. Elle reste posée pour une vraie fermeture. */
+  if(sessQuitte())return;
   if(S.dirty){e.preventDefault();e.returnValue="";}
 });
+
+/* ==========================================================================
+   Session d'onglet : le travail suit l'utilisateur d'un outil à l'autre
+   Aller vérifier une valeur sur le schéma, ou chercher une référence, ne doit
+   plus coûter le routage en cours. Le document, la vue et l'état « modifié »
+   partent en session (commun/session.js) et reviennent tels quels ; l'état
+   « modifié » compte autant que le reste, sans lui la garde de sortie
+   laisserait fermer l'onglet sans un mot sur une carte jamais enregistrée.
+   ========================================================================== */
+function sessionPcb(){
+  const repris=sessBrancher("pcb",()=>({
+    doc:docObj(),
+    sale:S.dirty,
+    vue:{scale:S.scale,ox:S.ox,oy:S.oy,flip:S.flip}
+  }));
+  if(!repris)return false;
+  try{
+    loadDoc(repris.etat.doc,true);       // normDoc() se charge de tout vérifier
+  }catch(_){
+    sessEffacer("pcb");
+    hint("Reprise impossible : la carte mise de côté était illisible.");
+    return false;
+  }
+  const v=repris.etat.vue||{};
+  if(Number.isFinite(+v.scale)&&+v.scale>0){
+    S.scale=+v.scale;S.ox=+v.ox||0;S.oy=+v.oy||0;
+  }
+  setFlip(!!v.flip);
+  S.dirty=!!repris.etat.sale;
+  draw();
+  hint("Carte reprise dans l'état où vous l'aviez laissée en changeant d'outil"+
+       (repris.etat.sale?" — pensez à l'enregistrer avant de fermer l'onglet.":"."));
+  return true;
+}
 
 /* ==========================================================================
    Démarrage
@@ -216,5 +254,6 @@ function init(){
   $("bAvoid").classList.toggle("on",S.avoid);
   refreshPanels();
   resize();fit();
+  sessionPcb();          // en dernier : reprend la carte laissée dans l'onglet
 }
 init();

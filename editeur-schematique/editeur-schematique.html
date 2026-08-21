@@ -6,14 +6,16 @@
 <title>Éditeur schématique — Dashboard nocturne</title>
 <link rel="stylesheet" href="css/editeur.css">
 <link rel="stylesheet" href="../commun/workspace.css">
+<link rel="stylesheet" href="../commun/session.css">
 </head>
 <body>
 
 <header>
   <div class="brand"><i></i><b>Éditeur schématique</b><span>V1.7 · BOÎTIERS</span></div>
   <div class="tools">
-    <button class="tb" onclick="window.location.href='/editeur-pcb/'" style="color: var(--blue); border-color: var(--blue);">➔ Éditeur PCB</button>
-    <button class="tb" onclick="window.location.href='/recherche-composants/'">⌕ Composants</button>
+    <button class="tb" data-cao-nav="pcb" title="Passer au routage — le schéma en cours reste dans l'onglet">➔ Éditeur PCB</button>
+    <button class="tb" data-cao-nav="composants" title="Chercher une référence — le schéma reste dans l'onglet">⌕ Composants</button>
+    <button class="tb" data-cao-nav="accueil" title="Page d'accueil">⌂ Accueil</button>
     <div class="sep"></div>
     <button class="tb on" id="mSelect">Sélection <kbd>V</kbd></button>
     <button class="tb" id="mWire">Fil <kbd>W</kbd></button>
@@ -137,6 +139,7 @@
      Pas de type="module" à dessein — la page reste ouvrable en double-clic,
      directement depuis le disque (file://), sans serveur web.
      ============================================================================= -->
+<script src="../commun/session.js"></script>
 <script src="js/00-espace-config.js"></script>
 <script src="js/01-noyau.js"></script>
 <script src="js/02-bibliotheque.js"></script>

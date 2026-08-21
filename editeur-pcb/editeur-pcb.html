@@ -6,14 +6,16 @@
 <title>Éditeur PCB — Dashboard nocturne</title>
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="../commun/workspace.css">
+<link rel="stylesheet" href="../commun/session.css">
 </head>
 <body>
 
 <header>
   <div class="brand"><i></i><b>Éditeur PCB</b><span>V1.0 · MULTICOUCHE</span></div>
   <div class="tools">
-    <button class="tb" onclick="window.location.href='/editeur-schematique/'" style="color: var(--blue); border-color: var(--blue);">⬅ Éditeur Schématique</button>
-    <button class="tb" onclick="window.location.href='/recherche-composants/'">⌕ Composants</button>
+    <button class="tb" data-cao-nav="schema" title="Aller au schéma — le routage en cours reste dans l'onglet">⬅ Éditeur schématique</button>
+    <button class="tb" data-cao-nav="composants" title="Chercher une référence — la carte reste dans l'onglet">⌕ Composants</button>
+    <button class="tb" data-cao-nav="accueil" title="Page d'accueil">⌂ Accueil</button>
     <div class="sep"></div>
     <button class="tb on" id="mSelect">Sélection <kbd>Échap</kbd></button>
     <button class="tb" id="mTrack">Piste <kbd>T</kbd></button>
@@ -194,6 +196,7 @@
   <span class="push hint" id="fHint">Importez la netlist de l'éditeur schématique pour démarrer.</span>
 </footer>
 
+<script src="../commun/session.js"></script>
 <script src="js/00-espace-config.js"></script>
 <script src="js/01-core.js"></script>
 <script src="js/02-connectivity.js"></script>
@@ -202,6 +205,7 @@
 <script src="js/05-tools.js"></script>
 <script src="js/06-panels.js"></script>
 <script src="js/07-app.js"></script>
+<script src="js/08-empreinte.js"></script>
 <script src="../commun/workspace.js"></script>
 </body>
 </html>

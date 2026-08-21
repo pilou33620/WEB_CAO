@@ -348,13 +348,20 @@ function netAtPoint(x,y,layer){
   return null;
 }
 /* distance d'un point au bord d'une pastille (négative à l'intérieur) */
+/* Distance d'un point au cuivre d'une pastille, négative à l'intérieur.
+   L'oblong est traité pour ce qu'il est — un rectangle à bouts ronds : sans
+   cela, une piste rejoignant son extrémité en biais se croirait déjà dans le
+   cuivre. Le rectangle adouci, lui, reste mesuré comme un rectangle : ses
+   coins ne mangent que 0,22 fois le petit côté, et l'écart va dans le sens
+   prudent. */
 function padDist(px,py,q){
   const dx=px-q.x, dy=py-q.y, ca=Math.cos(-q.rot), sa=Math.sin(-q.rot);
   const lx=dx*ca-dy*sa, ly=dx*sa+dy*ca;
   if(q.shape==="circ")return Math.hypot(lx,ly)-Math.max(q.w,q.h)/2;
-  const ex=Math.abs(lx)-q.w/2, ey=Math.abs(ly)-q.h/2;
-  if(ex<=0&&ey<=0)return Math.max(ex,ey);
-  return Math.hypot(Math.max(ex,0),Math.max(ey,0));
+  const r=(q.shape==="oval")?Math.min(q.w,q.h)/2:0;
+  const ex=Math.abs(lx)-(q.w/2-r), ey=Math.abs(ly)-(q.h/2-r);
+  if(ex<=0&&ey<=0)return Math.max(ex,ey)-r;
+  return Math.hypot(Math.max(ex,0),Math.max(ey,0))-r;
 }
 
 /* ==========================================================================
@@ -446,7 +453,19 @@ function runDrc(){
   for(let i=0;i<pads.length;i++)
     for(let j=i+1;j<pads.length;j++){
       const a=pads[i], b=pads[j];
-      if(a.fp===b.fp)continue;
+      /* Deux pastilles d'une même empreinte se touchent presque, par
+         construction : un QFN au pas de 0,5 mm n'a pas 0,25 mm entre ses
+         plages, et ce n'est pas un défaut de la carte. Le recouvrement franc,
+         lui, ne peut venir que d'un dessin fait à la main — et deux nets qui
+         se recouvrent sont un court-circuit. */
+      if(a.fp===b.fp){
+        if(!(a.q.net&&b.q.net&&a.q.net!==b.q.net))continue;
+        if(padDist(a.q.x,a.q.y,b.q)-Math.min(a.q.w,a.q.h)/2<-1e-6)
+          out.push({x:(a.q.x+b.q.x)/2,y:(a.q.y+b.q.y)/2,l:a.layers[0],
+            msg:"Pastilles superposées : "+a.tag+" / "+b.tag+
+                " ("+a.q.net+" / "+b.q.net+")"});
+        continue;
+      }
       if(!a.layers.some(l=>b.layers.includes(l)))continue;
       if(a.q.net&&b.q.net&&a.q.net===b.q.net)continue;
       const d=padDist(a.q.x,a.q.y,b.q)-Math.min(a.q.w,a.q.h)/2;
@@ -588,6 +607,24 @@ function runDrc(){
 /* ==========================================================================
    Netlist : lecture du fichier produit par l'éditeur schématique
    ========================================================================== */
+/* Une ligne de la section « Composants » : repère, valeur, boîtier, puis le
+   numéro de feuille. Les colonnes sont séparées par deux espaces au moins —
+   le schématique s'en assure — et « — » marque un champ vide, si bien que le
+   boîtier est toujours le deuxième champ. Les netlists produites avant cette
+   garantie pouvaient coller les colonnes d'un composant sans valeur : il ne
+   reste alors qu'un champ, et c'est un boîtier s'il en a le nom. Le boîtier
+   décide de l'empreinte : le laisser filer, c'est router un SOIC-8 en DIP. */
+function parseCompLine(line){
+  let p=line.trim().split(/\s{2,}/);
+  if(p.length<2)p=line.trim().split(/\s+/);
+  const ref=p[0];
+  if(!ref||!/^[A-Za-z]/.test(ref))return null;
+  const f=p.slice(1).map(t=>t.trim()).filter(t=>t&&!/^f\d+$/.test(t));
+  const val=t=>(t==null||t==="—")?"":t;
+  let value=val(f[0]), pkg=val(f[1]);
+  if(f.length===1&&value&&pkgGeom(value)){pkg=value;value="";}
+  return {ref:ref,value:value,pkg:pkg};
+}
 function parseNetlist(txt){
   const lines=String(txt).split(/\r?\n/);
   const comps=new Map(), nets=new Map();
@@ -601,11 +638,8 @@ function parseNetlist(txt){
     if(nm){cur=nm[1].trim();sect="nets";if(!nets.has(cur))nets.set(cur,[]);continue;}
     if(/^\s*[;*]/.test(line))continue;
     if(sect==="comps"){
-      let p=line.trim().split(/\s{2,}/);
-      if(p.length<2)p=line.trim().split(/\s+/);
-      if(p[0]&&/^[A-Za-z]/.test(p[0]))
-        comps.set(p[0],{ref:p[0],value:(p[1]||"").trim(),
-          pkg:(p[2]&&p[2]!=="—"&&!/^f\d+$/.test(p[2]))?p[2].trim():""});
+      const m=parseCompLine(line);
+      if(m)comps.set(m.ref,m);
       continue;
     }
     if(cur){
@@ -629,7 +663,7 @@ function applyNetlist(txt,dropMissing){
   if(!refs.size)return {err:"Aucun composant reconnu dans ce fichier."};
   push();
   const byRef=new Map(S.fps.map(f=>[f.ref,f]));
-  const added=[], kept=[];
+  const added=[], kept=[], repkg=[];
   for(const ref of refs){
     const meta=comps.get(ref)||{value:"",pkg:""};
     const pins=Math.max(1,pinCount.get(ref)||2);
@@ -639,9 +673,25 @@ function applyNetlist(txt,dropMissing){
       S.fps.push(fp);added.push(fp);
     }else{
       fp.value=meta.value||fp.value;
-      fp.pkg=meta.pkg||fp.pkg;
+      /* le boîtier choisi au schéma commande l'empreinte : s'il a changé, la
+         géométrie suit ; s'il n'a pas bougé, les cotes retouchées à la main
+         sur la carte restent en place — c'est tout l'intérêt de réimporter. */
+      if(meta.pkg&&meta.pkg!==fp.pkg){
+        fp.pkg=meta.pkg;
+        /* le brochage du nouveau boîtier l'emporte sur celui de l'ancien ;
+           seules les broches câblées font plancher.
+           Empreinte dessinée à la main : le nouveau nom est noté, le dessin
+           reste. Le refaire effacerait un travail que la netlist ne sait pas
+           reproduire — la fenêtre d'empreinte le dit et laisse rendre la main
+           au calcul d'un clic. */
+        if(!fpFree(fp)){
+          const g=fpGeomFor(meta.pkg,pins);
+          fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
+          repkg.push(fp);
+        }
+      }
       kept.push(fp);
-      if(pins>fp.pins)fp.pins=pins;
+      if(pins>fp.pins)fpSetPins(fp,pins);
     }
     fp.nets={};
     for(let p=1;p<=fp.pins;p++){
@@ -660,7 +710,7 @@ function applyNetlist(txt,dropMissing){
      cela, une carte fraîchement importée laisse la classe Alimentation vide */
   autoClass();
   touch();
-  return {added:added.length,kept:kept.length,removed,nets:nets.size};
+  return {added:added.length,kept:kept.length,removed,repkg:repkg.length,nets:nets.size};
 }
 /* Rangement en lignes le long du bord droit de la carte : visible, ordonné,
    et sans recouvrement — le placement fin reste manuel. */

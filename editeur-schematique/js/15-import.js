@@ -174,6 +174,43 @@ function restoreBackup(){
 setInterval(autosave,4000);
 window.addEventListener("beforeunload",e=>{
   autosave();
+  /* Changer d'outil met le schéma en session (commun/session.js) : rien à
+     perdre, donc rien à demander. La question reste posée pour une vraie
+     fermeture d'onglet, elle, sans retour. */
+  if(sessQuitte())return;
   if(!S.dirty)return;
   e.preventDefault();e.returnValue="";
 });
+
+/* --------------------------------------------------------------------------
+   Session d'onglet : le schéma attend le retour de l'utilisateur
+   Passer au routage puis revenir vérifier une valeur ne doit rien coûter. Le
+   document, la feuille courante, le cadrage et l'état « modifié » partent en
+   session et reviennent tels quels. C'est plus fin que la sauvegarde
+   automatique ci-dessus, qui elle vise le plantage et demande confirmation :
+   ici, l'utilisateur n'a rien perdu, il n'y a donc rien à lui demander.
+   -------------------------------------------------------------------------- */
+function sessionSchema(){
+  const repris=sessBrancher("schema",()=>({
+    doc:JSON.parse(serialize()),
+    sale:S.dirty
+  }));
+  if(!repris)return false;
+  try{
+    loadDoc(repris.etat.doc);        // normPage() vérifie tout au passage
+  }catch(_){
+    sessEffacer("schema");
+    return false;
+  }
+  S.hist.length=0;S.redo.length=0;   // l'historique de la démo n'a plus de sens
+  const p=S.pages[S.page];
+  if(p){                             // loadDoc() recadre : on reprend la vue
+    S.scale=p.scale||1;S.ox=p.ox||0;S.oy=p.oy||0;p.viewed=true;
+  }
+  S.dirty=!!repris.etat.sale;
+  draw();
+  document.getElementById("fHint").textContent=
+    "Schéma repris dans l'état où vous l'aviez laissé en changeant d'outil"+
+    (S.dirty?" — pensez à l'enregistrer avant de fermer l'onglet.":".");
+  return true;
+}

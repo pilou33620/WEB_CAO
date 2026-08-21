@@ -216,7 +216,11 @@ function padPath(c,q,grow){
   c.beginPath();
   if(q.shape==="circ")c.arc(0,0,Math.max(q.w,q.h)/2+g,0,Math.PI*2);
   else{
-    const w=q.w+2*g, h=q.h+2*g, r=Math.min(w,h)*0.22;
+    /* Les trois autres formes ne diffèrent que par le rayon des coins : nul
+       pour les angles droits, la moitié du petit côté pour l'oblong. Le rayon
+       se prend sur la pastille dilatée — un masque plus large qu'une plage
+       reste de la même famille de formes. */
+    const w=q.w+2*g, h=q.h+2*g, r=padRadius(q.shape,w,h);
     c.moveTo(-w/2+r,-h/2);
     c.arcTo(w/2,-h/2,w/2,h/2,r);c.arcTo(w/2,h/2,-w/2,h/2,r);
     c.arcTo(-w/2,h/2,-w/2,-h/2,r);c.arcTo(-w/2,-h/2,w/2,-h/2,r);
@@ -441,13 +445,15 @@ function drawSilk(c){
     if(sel){
       c.fillStyle="rgba(138,240,255,.10)";c.fill();
     }
-    // repère de broche 1
-    const ps=padsWorld(fp);
-    if(ps.length){
-      const p1=ps[0];
+    /* Repère de broche 1 : le point de sérigraphie, tel qu'il sortira sur le
+       film — même place, même diamètre. L'écran montrait un anneau large
+       autour de la pastille, qui n'existait dans aucun fichier et masquait le
+       cuivre ; ce qu'on voit est maintenant ce qui sera imprimé. */
+    const mk=fpMark(fp);
+    if(mk){
+      const w=T(mk.x,mk.y);
       c.fillStyle=sel?C_SEL:(top?C_SILK_T:C_SILK_B);
-      c.beginPath();c.arc(p1.x,p1.y,Math.max(p1.w,p1.h)/2+px(2.2),0,Math.PI*2);
-      c.globalAlpha=(S.hlNet?0.5:0.85);c.fill();c.globalAlpha=S.hlNet?0.55:1;
+      c.beginPath();c.arc(w.x,w.y,mk.d/2,0,Math.PI*2);c.fill();
     }
     // repère + valeur
     const tp = fpTextPos(fp);
