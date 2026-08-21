@@ -33,5 +33,22 @@ yarn-error.log
 # aussi les jeux d'essai. Retirer la ligne ci-dessous pour suivre le fichier.
 /LIB_composants.csv
 
+# Doublons crees par l'explorateur Windows (« serveur - Copie.py »)
+* - Copie.*
+* - Copy.*
+
+# Claude Code : .claude/launch.json est suivi (il decrit comment lancer le
+# serveur de developpement), les reglages et sessions locaux ne le sont pas.
+.claude/settings.local.json
+.claude/*.local.json
+.claude/sessions/
+.claude/todos/
+
+# Sources de reference deposees a la racine pour consultation (les fichiers
+# C++ du routeur KiCad, par exemple) : elles ne font pas partie du depot.
+/*.cpp
+/*.cxx
+/*.hpp
+
 # Builds
 dist/

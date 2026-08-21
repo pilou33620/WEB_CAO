@@ -1,0 +1,32 @@
+# =============================================================================
+# WEB_CAO -- dependances Python
+#
+# Aucune. Volontairement.
+#
+#     pip install -r requirements.txt      # n'installe rien, et c'est le but
+#
+# Tout le code Python du depot n'utilise que la bibliotheque standard :
+#
+#   serveur.py                              http.server, socketserver, ssl,
+#                                           webbrowser, argparse
+#   passerelle_mcp.py                       urllib.request, json, threading
+#   commun/outils/monofichier.py            assemblage du HTML autonome
+#   editeur-pcb/outils/*.py
+#   editeur-schematique/outils/*.py
+#
+# Verifie sur Python 3.10 et 3.12 (l'integration continue utilise 3.12).
+#
+# Ce fichier existe pour rendre la garantie explicite et verifiable : le jour
+# ou une ligne de paquet y apparait, le depot perd ce qui fait son interet --
+# un double-clic sur serveur.py fonctionne sur n'importe quelle machine ou
+# Python est installe, sans reseau, sans environnement virtuel, sans droits
+# d'administration, sans proxy d'entreprise a negocier.
+#
+# C'est pour cette raison que serveur-composants.py (FastAPI + uvicorn +
+# pydantic, port 8420) a ete supprime : il exposait les deux memes routes
+# /api/tools et /api/tool que serveur.py, alors que toute la logique de
+# protocole MCP vit dans passerelle_mcp.py, en bibliotheque standard.
+#
+# Les bancs d'essai tournent sous Node, pas sous Python (voir README.md) ; le
+# paquet npm facultatif « canvas » n'a rien a faire ici.
+# =============================================================================

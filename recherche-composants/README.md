@@ -30,13 +30,13 @@ Deux fichiers viennent du dossier partagé, identiques pour les deux éditeurs :
 | Fichier | Lignes | Rôle |
 |---|---:|---|
 | `js/00-espace-config.js` | 21 | `WS_CONFIG` : clé de stockage local et disposition d'usine des trois panneaux |
-| `js/01-api.js` | 94 | Découverte de la passerelle (origine courante, port 8420, adresse mémorisée), appels `/api/tools` et `/api/tool` |
-| `../passerelle_mcp.py` | 200 | Client MCP partagé par les deux serveurs : session, liste blanche, déballage des réponses |
+| `js/01-api.js` | 98 | Découverte de la passerelle (adresse mémorisée, origine courante, secours en 8000), appels `/api/tools` et `/api/tool` |
+| `../passerelle_mcp.py` | 218 | Client MCP : session, liste blanche, déballage des réponses. Toute la logique de protocole est là, `serveur.py` ne fait que l'exposer |
 | `js/02-outils.js` | 284 | Catalogue des 14 outils : familles, libellés français, champs et colonnes de résultats |
-| `js/03-formulaire.js` | 230 | Formulaire construit en croisant le catalogue et le schéma d'arguments du serveur ; lecture et validation des champs |
+| `js/03-formulaire.js` | 231 | Formulaire construit en croisant le catalogue et le schéma d'arguments du serveur ; lecture et validation des champs |
 | `js/04-resultats.js` | 193 | Tableau, fiche ou bloc de texte selon la réponse ; exports `.csv` et `.json` |
 | `js/05-details.js` | 146 | Panneau de détail, enchaînements (équivalences, brochage, KiCad, distributeurs), échappement systématique |
-| `js/06-demarrage.js` | 211 | Câblage des boutons, liste des outils, historique, fenêtre « Serveur… » |
+| `js/06-demarrage.js` | 213 | Câblage des boutons, liste des outils, historique, fenêtre « Serveur… » |
 
 ## Démarrage
 
@@ -48,10 +48,18 @@ Puis l'adresse affichée au démarrage : la page d'accueil propose les deux
 éditeurs et la recherche de composants, et la recherche passe par ce même
 serveur. `--local` limite l'écoute à cette machine, `--port` change le port.
 
-`serveur-composants.py` reste disponible pour qui préfère uvicorn
-(`pip install fastapi uvicorn`, port 8420 par défaut). La page essaie dans
-l'ordre : l'adresse mémorisée par le bouton **Serveur…**, l'origine qui la
-sert, le port 8420 du même hôte, puis `http://127.0.0.1:8420`.
+La page cherche sa passerelle dans l'ordre : l'adresse mémorisée par le bouton
+**Serveur…**, l'origine qui la sert, le port 8000 du même hôte, puis
+`http://127.0.0.1:8000`. Dans le cas normal — page ouverte depuis l'adresse
+qu'affiche `serveur.py` — c'est la deuxième qui répond et rien d'autre n'est
+tenté ; les deux dernières ne servent qu'à la page ouverte en `file://`.
+
+Le second serveur `serveur-composants.py` (FastAPI et uvicorn, port 8420) a été
+supprimé. Il exposait exactement les mêmes routes `/api/tools` et `/api/tool`
+que `serveur.py`, au prix de `fastapi`, `uvicorn` et `pydantic`, alors que la
+logique de protocole vit dans `../passerelle_mcp.py` — en bibliothèque
+standard, donc partageable. Si la page affiche « Passerelle introuvable », il
+n'y a plus qu'un serveur à démarrer, et il n'a rien à installer.
 
 ## Ce que fait l'interface
 

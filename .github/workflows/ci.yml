@@ -20,7 +20,7 @@ jobs:
 
       - name: Vérification syntaxique des scripts Python
         run: |
-          python -m compileall -q serveur.py commun/outils \
+          python -m compileall -q serveur.py passerelle_mcp.py commun/outils \
             editeur-pcb/outils editeur-schematique/outils
 
       - name: Éditeur PCB — assemblage puis banc d'essai

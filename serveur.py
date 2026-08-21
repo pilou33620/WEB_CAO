@@ -2,6 +2,16 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.2.0
+# Date: 2026-08-21
+# Explication: serveur-composants.py (FastAPI/uvicorn, port 8420) est
+#   supprime : ce serveur exposait deja /api/tools et /api/tool en
+#   bibliotheque standard, et la page recherche-composants interroge d'abord
+#   l'origine qui la sert. Seule route qui manquait ici : /favicon.ico, absent
+#   du depot -- soit un 404 dans le journal a chaque onglet ouvert. On repond
+#   204 desormais. WEB_CAO n'a plus aucune dependance Python (requirements.txt).
+# Fonctions modifiees : send_head (204 sur /favicon.ico absent)
+#
 # Version: 2.1.1
 # Date: 2026-08-21
 # Explication: Le double-clic ouvrait une console qui affichait « Python est
@@ -11,7 +21,7 @@
 #   (WindowsApps\python3.exe), qui n'installe rien et rend la main aussitot.
 #   Le shebang « #!/usr/bin/python3 » est une commande virtuelle : py.exe
 #   utilise directement le Python enregistre (3.12 ici). Meme correction dans
-#   serveur-composants.py et passerelle_mcp.py.
+#   passerelle_mcp.py.
 # Fonctions modifiees : aucune (ligne 1 uniquement)
 #
 # Version: 2.1.0
@@ -187,6 +197,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         # le filtrage se fait ici : translate_path est aussi appele par
         # list_directory, ou renvoyer une erreur n'est pas possible
         rel = urllib.parse.urlsplit(self.path).path
+        # Le depot n'a pas de favicon : repondre « rien a afficher » plutot
+        # qu'un 404 par onglet ouvert dans le journal des requetes.
+        if rel == "/favicon.ico" and                 not os.path.exists(os.path.join(ROOT, "favicon.ico")):
+            self.send_response(204)
+            self.end_headers()
+            return None
         target = self.translate_path(posixpath.normpath(rel))
         if self._hidden(target):
             self.send_error(404, "File not found")

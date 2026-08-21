@@ -2,6 +2,16 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 1.1.0
+# Date: 2026-08-21
+# Explication: serveur-composants.py (FastAPI/uvicorn) est supprime. Depuis que
+#   ce module existe, serveur.py expose exactement les memes routes en
+#   bibliotheque standard, et la page interroge d'abord l'origine qui la sert :
+#   le second serveur ne dupliquait plus que deux routes, au prix de fastapi +
+#   uvicorn + pydantic. Ce module reste le seul detenteur de la logique de
+#   protocole MCP ; il n'a plus qu'un appelant.
+# Fonctions modifiees : aucune (documentation)
+#
 # Version: 1.0.0
 # Date: 2026-08-21
 # Explication: Le client MCP vers pcbparts.dev vivait dans
@@ -20,7 +30,7 @@
 
 Le navigateur ne peut pas appeler pcbparts.dev directement (CORS + protocole
 MCP), il faut donc un relais local. Ce module en contient toute la logique ;
-serveur.py et serveur-composants.py ne font que l'exposer en HTTP.
+serveur.py ne fait que l'exposer en HTTP.
 """
 
 import json

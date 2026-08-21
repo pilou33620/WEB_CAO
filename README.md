@@ -13,7 +13,8 @@ modèles CAO), qui elle a besoin d'une petite passerelle Python.
 ```
 index.html                     page d'accueil : schéma, PCB ou composants
 serveur.py                     serveur HTTP local, pour ouvrir depuis un iPad
-serveur-composants.py          passerelle vers pcbparts.dev + service du dépôt
+passerelle_mcp.py              relais vers pcbparts.dev (bibliothèque standard)
+requirements.txt               aucune dépendance : le fichier le dit et l'explique
 LIB_composants.csv             bibliothèque de références (optionnelle)
 
 editeur-schematique/           saisie du schéma, netlist, nomenclature
@@ -27,6 +28,16 @@ commun/                        code partagé par les éditeurs
 ```
 
 Chaque outil a son propre `README.md` détaillant ses modules.
+
+## Dépendances
+
+Aucune, ni côté navigateur ni côté Python : `serveur.py` et `passerelle_mcp.py`
+n'utilisent que la bibliothèque standard (vérifié sur Python 3.10 et 3.12).
+`requirements.txt` ne contient donc aucun paquet — il documente la garantie au
+lieu de lister quoi installer, et `pip install -r requirements.txt` n'a rien à
+faire. C'est pour tenir cette propriété que le second serveur
+`serveur-composants.py` (FastAPI, uvicorn, pydantic) a été supprimé : il
+exposait les deux mêmes routes que `serveur.py`.
 
 ## Utilisation
 
@@ -67,9 +78,7 @@ python serveur.py
 La page se sert de l'origine qui l'a chargée : rien d'autre à démarrer. La
 passerelle n'expose que les quatorze outils de sa liste blanche.
 
-`serveur-composants.py` rend le même service sous uvicorn, sur le port 8420
-(`pip install fastapi uvicorn`) ; il est désormais optionnel. Détails dans
-[recherche-composants/README.md](recherche-composants/README.md).
+Détails dans [recherche-composants/README.md](recherche-composants/README.md).
 
 ## Version un seul fichier
 
