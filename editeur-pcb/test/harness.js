@@ -2963,6 +2963,52 @@ T("pas de grille : valeurs rondes et pas impériaux",()=>{
   if(gridShownStep()<=S.grid)throw new Error("la case affichée devait être élargie");
   setGridStep(0.5);S.scale=20;
 });
+/* Changer de pas ne déplace rien — une carte ne doit pas bouger toute seule —
+   mais ce qui a été posé sur l'ancienne grille doit pouvoir rejoindre la
+   nouvelle. C'est le premier déplacement qui s'en charge : le point saisi
+   tombe sur le quadrillage courant, le reste de la sélection suit du même
+   décalage. */
+T("changer de pas : le déplacement suivant repose la sélection sur la grille",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  setGridStep(0.1);S.scale=20;S.ox=0;S.oy=0;S.origin.x=0;S.origin.y=0;
+  const a=mkFp("U9","","",8), b=mkFp("R9","","",2);
+  a.style="sop";a.pitch=1.27;a.x=10.1;a.y=10.1;
+  b.style="chip";b.x=20.1;b.y=10.1;
+  S.fps.push(a,b);touch();
+  setMode("select");S.active=0;
+  clearSel();S.sel.fps.add(a.id);S.sel.fps.add(b.id);
+  setGridStep(0.5);
+  if(a.x!==10.1||a.y!==10.1)throw new Error("changer de pas ne doit rien déplacer");
+  fire("pointerdown",sc(a.x,a.y));
+  fire("pointermove",sc(a.x+2.03,a.y));
+  fire("pointerup",sc(a.x+2.03,a.y));
+  if(Math.abs(a.x-snapX(a.x))>1e-9||Math.abs(a.y-snapY(a.y))>1e-9)
+    throw new Error("l'empreinte saisie devait rejoindre la grille : "+a.x+","+a.y);
+  if(Math.abs(a.x-12)>1e-9||Math.abs(a.y-10)>1e-9)
+    throw new Error("elle devait suivre la souris à la case près : "+a.x+","+a.y);
+  if(Math.abs((b.x-a.x)-10)>1e-9||Math.abs(b.y-a.y)>1e-9)
+    throw new Error("le reste de la sélection devait suivre sans se déformer : "+
+                    b.x+","+b.y);
+  S.fps=[];clearSel();touch();
+});
+T("changer de pas : la piste tirée repose son bout sur la grille",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];clearSel();
+  setGridStep(0.1);S.scale=20;S.ox=0;S.oy=0;S.origin.x=0;S.origin.y=0;
+  const t={l:0,net:"T",w:0.3,x1:10.1,y1:10.1,x2:20.1,y2:10.1};
+  S.tracks=[t];touch();
+  setMode("select");S.active=0;clearSel();S.sel.tracks.add(t);
+  setGridStep(0.5);
+  const mid={x:(t.x1+t.x2)/2,y:t.y1};
+  fire("pointerdown",sc(mid.x,mid.y));
+  fire("pointermove",sc(mid.x,mid.y+2.03));
+  fire("pointerup",sc(mid.x,mid.y+2.03));
+  if(Math.abs(t.x1-10)>1e-9||Math.abs(t.y1-12)>1e-9)
+    throw new Error("le bout saisi devait rejoindre la grille : "+t.x1+","+t.y1);
+  if(Math.abs(t.x2-20)>1e-9||Math.abs(t.y2-12)>1e-9)
+    throw new Error("l'autre bout devait suivre du même décalage : "+t.x2+","+t.y2);
+  S.tracks=[];clearSel();touch();
+  setGridStep(0.5);S.scale=20;
+});
 
 /* ==========================================================================
    Boîtiers nommés (01-core.js) et netlist qui les transporte (02-connectivity.js)
@@ -2971,8 +3017,8 @@ T("pas de grille : valeurs rondes et pas impériaux",()=>{
    ========================================================================== */
 T("boîtier reconnu : style, pas et brochage",()=>{
   const cas=[
-    ["0603",2,"chip",1.5],
-    ["0805",2,"chip",1.9],
+    ["0603",2,"chip",1.665],
+    ["0805",2,"chip",1.825],
     ["SOIC-8",8,"sop",1.27],
     ["DIP-8",8,"dip",2.54],
     ["DIP-40",40,"dip",2.54],
@@ -2980,7 +3026,7 @@ T("boîtier reconnu : style, pas et brochage",()=>{
     ["SOT-23",3,"sop",0.95],
     ["SOT-23-5",5,"sop",0.95],
     ["TO-220",3,"row",2.54],
-    ["TO-252 (DPAK)",3,"sop",2.3],       // le surnom entre parenthèses n'est pas un brochage
+    ["TO-252 (DPAK)",3,"sop",2.28],       // le surnom entre parenthèses n'est pas un brochage
     ["TQFP-64",64,"quad",0.5],
     ["LQFP-44",44,"quad",0.8],
     ["QFN-32",32,"quad",0.5],
@@ -3004,6 +3050,100 @@ T("boîtier reconnu : style, pas et brochage",()=>{
   // l'écartement d'un boîtier à quatre côtés suit le brochage
   if(!(pkgGeom("TQFP-100",0).span>pkgGeom("TQFP-64",0).span))
     throw new Error("TQFP-100 devait être plus grand que TQFP-64");
+});
+/* Table de référence IPC-7351B, densité nominale. Les valeurs viennent de la
+   bibliothèque KiCad officielle, relevée empreinte par empreinte : c'est la
+   même norme, générée par un autre outil, ce qui en fait un contrôle
+   indépendant. Les tolérances sont larges à dessein — on vérifie que le
+   calcul est celui de la norme, pas qu'il produit le même arrondi. */
+const IPC_REF={
+  /* boîtier : [entraxe, longueur de pastille, largeur de pastille, perçage] */
+  "01005":[0.50,0.40,0.30], "0201":[0.64,0.46,0.40], "0402":[1.02,0.54,0.64],
+  "0603":[1.65,0.80,0.95], "0805":[1.825,1.025,1.40], "1206":[2.925,1.125,1.75],
+  "1210":[2.925,1.125,2.65], "2512":[5.925,1.225,3.35],
+  "SMA":[4.00,2.50,1.80], "SMB":[4.30,2.50,2.30], "SMC":[6.80,3.30,2.50],
+  "MELF":[4.80,1.50,2.70], "SOD-123":[3.30,0.90,1.20], "SOD-323":[2.10,0.60,0.45],
+  "SOT-23-3":[1.875,1.475,0.60], "SOT-89-3":[3.45,1.30,0.90],
+  /* SOT-223 : KiCad élargit la pastille à 1,5 mm pour la reprise à la main ;
+     la patte fait 0,60 à 0,89 mm, et la norme donne 0,95 mm. On garde la norme. */
+  "SOT-223-4":[6.30,2.00,0.95], "TO-252-3":[6.30,2.20,1.20], "TO-263-3":[9.15,4.60,1.10],
+  "SOIC-8":[4.95,1.95,0.60], "SOIC-16":[4.95,1.95,0.60], "SSOP-16":[5.25,1.65,0.40],
+  "TSSOP-16":[5.725,1.475,0.40], "MSOP-8":[4.225,1.625,0.40],
+  "LQFP-32":[8.35,1.50,0.50], "LQFP-64":[11.35,1.55,0.30],
+  "QFN-32":[4.875,0.875,0.25], "PLCC-44":[16.0,1.70,0.60],
+  "DIP-8":[7.62,1.60,1.60,0.80], "TO-92-3":[null,1.50,1.50,0.75],
+  "TO-220-3":[null,1.905,1.905,1.10], "TO-247-3":[null,2.50,2.50,1.50]
+};
+T("cotes IPC : l'empreinte calculée retombe sur la table de référence",()=>{
+  const dur=[];
+  for(const nom of Object.keys(IPC_REF)){
+    const [sp,pl,pw,dr]=IPC_REF[nom];
+    const g=pkgGeom(nom,0);
+    if(!g)throw new Error(nom+" : boîtier non reconnu");
+    const dit=(q,v,r,t)=>{
+      if(r==null)return;
+      if(Math.abs(v-r)>t)dur.push(nom+" "+q+" : "+v+" au lieu de "+r+" (±"+t+")");
+    };
+    dit("entraxe",g.span,sp,0.25);
+    dit("longueur de pastille",g.padL,pl,0.35);
+    dit("largeur de pastille",g.padW,pw,0.30);
+    dit("perçage",g.drill||0,dr,0.10);
+  }
+  if(dur.length)throw new Error(dur.length+" écart(s) :\n  "+dur.join("\n  "));
+});
+T("aucune empreinte calculée ne met deux pastilles en court-circuit",()=>{
+  /* Le 01005 sortait deux pastilles qui se chevauchaient de 0,05 mm : une
+     carte non fabricable, et rien pour le dire. On balaie donc toute la table,
+     à tous les brochages plausibles. Deux pastilles de même numéro peuvent se
+     recouvrir — la languette d'un DPAK prolonge sa patte — les autres non. */
+  const brochages=[0,2,3,4,5,8,14,16,20,24,28,32,44,48,64,100];
+  const dur=[];
+  for(const nom of Object.keys(PKG_LIB))for(const n of brochages){
+    const g=pkgGeom(nom,n);
+    if(!g)continue;
+    const ps=padsOf(Object.assign({nets:{}},g));
+    for(let i=0;i<ps.length;i++)for(let j=i+1;j<ps.length;j++){
+      const a=ps[i], b=ps[j];
+      if(a.n===b.n)continue;
+      if(Math.abs(a.x-b.x)<(a.w+b.w)/2-1e-9&&Math.abs(a.y-b.y)<(a.h+b.h)/2-1e-9)
+        dur.push(nom+"-"+g.pins+" : pastilles "+a.n+" et "+b.n+" se touchent");
+    }
+  }
+  if(dur.length)throw new Error(dur.length+" chevauchement(s) :\n  "+dur.slice(0,8).join("\n  "));
+});
+T("languette et plage thermique : posées, numérotées, et à distance",()=>{
+  // SOT-223 : trois pattes d'un côté, la languette de l'autre, en broche 4
+  const s=pkgGeom("SOT-223",0), ps=padsOf(Object.assign({nets:{}},s));
+  if(ps.length!==4)throw new Error("4 pastilles attendues, "+ps.length);
+  const lang=ps[3];
+  if(lang.n!==4||!(lang.x>0))throw new Error("la languette est la broche 4, en face");
+  if(!(lang.h>2*ps[0].h))throw new Error("une languette est plus large qu'une patte");
+  for(let i=0;i<3;i++)if(!(ps[i].x<0))throw new Error("les trois pattes sont du même côté");
+  // DPAK : la languette prolonge la broche 2 et en porte donc le net
+  const d=pkgGeom("TO-252",0), pd=padsOf(Object.assign({nets:{2:"VOUT"}},d));
+  const tab=pd[pd.length-1];
+  if(tab.n!==2||tab.net!=="VOUT")throw new Error("la languette d'un DPAK porte le net de sa broche");
+  // QFN : plage au centre, numérotée après la dernière patte, à 0,2 mm des pastilles
+  const q=pkgGeom("QFN-32",0), pq=padsOf(Object.assign({nets:{}},q));
+  if(pq.length!==33)throw new Error("32 pattes + plage attendues, "+pq.length);
+  const ep=pq[32];
+  if(ep.n!==33||ep.x!==0||ep.y!==0)throw new Error("la plage est au centre, en broche 33");
+  const jeu=(q.span-q.padL)/2-ep.w/2;
+  if(!(jeu>=0.199))throw new Error("plage trop proche des pastilles : "+jeu.toFixed(3)+" mm");
+});
+T("traversant : le perçage vient de la patte, pas du pas",()=>{
+  /* Un TO-247 au pas de 5,45 mm recevait un perçage déduit du pas : 1 mm pour
+     une patte de 1,1 × 0,8. La patte ne passait pas. */
+  const cas=[["TO-247",1.5],["TO-220",1.15],["TO-92",0.75],["DIP-8",0.8]];
+  for(const [nom,d] of cas){
+    const g=pkgGeom(nom,0);
+    if(Math.abs((g.drill||0)-d)>1e-9)
+      throw new Error(nom+" : perçage "+g.drill+" au lieu de "+d);
+    if(!(g.padL-g.drill>=0.7))
+      throw new Error(nom+" : anneau trop mince ("+((g.padL-g.drill)/2).toFixed(2)+" mm)");
+  }
+  // et un CMS ne perce rien
+  if(pkgGeom("SOIC-8",0).drill)throw new Error("un SOIC ne perce pas la carte");
 });
 T("boîtier hors table : rien n'est inventé",()=>{
   for(const nom of ["","SOD-80","XYZ-12","0805X7R","boîtier maison"])
@@ -3042,9 +3182,17 @@ T("empreinte quad : brochage non multiple de quatre",()=>{
   const fp=mkFp("U8","","QFN-14",14);
   fp.style="quad";fp.pins=14;
   const ps=padsOf(fp);
-  if(ps.length!==14)throw new Error("14 pastilles attendues, "+ps.length);
-  const vus=new Set(ps.map(q=>q.x.toFixed(3)+";"+q.y.toFixed(3)));
+  /* quatorze pattes, plus la plage thermique du QFN : elle est au centre et
+     porte le numéro qui suit la dernière patte */
+  if(ps.length!==15)throw new Error("14 pattes + plage attendues, "+ps.length);
+  const ep=ps[ps.length-1];
+  if(ep.n!==15||ep.x!==0||ep.y!==0)
+    throw new Error("la plage thermique est au centre : "+JSON.stringify(ep));
+  const vus=new Set(ps.slice(0,14).map(q=>q.x.toFixed(3)+";"+q.y.toFixed(3)));
   if(vus.size!==14)throw new Error("pastilles superposées");
+  // sans plage déclarée, il ne reste que les pattes
+  delete fp.ep;
+  if(padsOf(fp).length!==14)throw new Error("14 pastilles attendues sans plage");
 });
 T("empreinte en grille : un BGA tient son pas",()=>{
   const fp=mkFp("U7","","BGA-16",0);
@@ -3106,7 +3254,7 @@ NET "N$2"
 `,true);
   const f=r=>S.fps.find(x=>x.ref===r);
   if(S.fps.length!==5)throw new Error("5 empreintes attendues, "+S.fps.length);
-  if(f("R1").style!=="chip"||Math.abs(f("R1").span-1.5)>1e-9)
+  if(f("R1").style!=="chip"||Math.abs(f("R1").span-1.665)>1e-9)
     throw new Error("R1 devait arriver en puce 0603 : "+JSON.stringify(f("R1")));
   if(f("U1").style!=="sop"||f("U1").pins!==5)
     throw new Error("U1 devait arriver en SOT-23-5 : "+JSON.stringify(f("U1")));

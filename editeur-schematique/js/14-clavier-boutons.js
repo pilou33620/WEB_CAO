@@ -74,7 +74,11 @@ window.addEventListener("keydown",e=>{
     const now=Date.now();
     if(now-arrowStamp>700)push();
     arrowStamp=now;
-    moveSelBy(d[0],d[1]);
+    // comme au glissement, la sélection se repose sur la grille courante : une
+    // flèche vaut un pas, et le premier pas rattrape le décalage hérité de
+    // l'ancienne grille
+    const t=gridDelta(selAnchor(),d[0],d[1]);
+    moveSelBy(t.dx,t.dy);
     // la découpe attend la fin de la rafale : sinon on sèmerait un point de
     // coupe à chaque case traversée
     clearTimeout(arrowSplit);

@@ -747,7 +747,10 @@ function propsFp(box,fp){
   /* le boîtier nommé commande l'empreinte, ici comme à l'import de la netlist :
      saisir « SOIC-8 » repose les pastilles, un nom hors table ne touche à rien */
   upd("pPkg",v=>{fp.pkg=v.trim();applyPkgGeom(fp);});
-  upd("pStyle",v=>{fp.style=v;const g=defaultGeom(v);fp.pitch=g.pitch;fp.span=g.span;});
+  /* Changer de style à la main, c'est quitter le boîtier : les cotes de
+     pastille qu'il avait posées ne décrivent plus rien, on les oublie. */
+  upd("pStyle",v=>{fp.style=v;const g=defaultGeom(v);fp.pitch=g.pitch;fp.span=g.span;
+                   fpClearGeom(fp);});
   upd("pPins",v=>fpSetPins(fp,v),true);
   upd("pPitch",v=>fp.pitch=Math.max(0.2,v),true);
   upd("pSpan",v=>fp.span=Math.max(0.2,v),true);

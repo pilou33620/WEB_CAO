@@ -612,68 +612,210 @@ function defaultGeom(style){
   return {pitch:1.27,span:5.2};
 }
 /* --------------------------------------------------------------------------
+   Empreintes IPC-7351B
+   Une empreinte juste ne se déduit pas de l'entraxe des pastilles : elle se
+   déduit du composant. La table ci-dessous ne donne donc plus des cotes de
+   cuivre, mais les dimensions de la pièce — envergure hors-tout `L`, largeur
+   de borne `W`, longueur de borne `T`, chacune avec l'étendue de sa tolérance
+   (`tL`, `tW`, `tT`) — et le calcul en tire les pastilles.
+
+   Le calcul est celui de la norme, au niveau de densité B (nominal, le choix
+   de la carte de série) :
+
+       Z = Lmin + 2·congé de pointe + √(tL² + F² + P²)      bord externe
+       G = Smax − 2·congé de talon  + √(tS² + F² + P²)      bord interne
+       X = Wmin + 2·congé latéral   + √(tW² + F² + P²)      largeur
+
+   où S = L − 2T est la distance entre bornes, F la tolérance de fabrication
+   du circuit et P la précision de placement. L'entraxe vaut alors (Z+G)/2 et
+   la longueur de pastille (Z−G)/2.
+
+   Deux réserves, écrites ici pour qu'on ne les redécouvre pas :
+
+   — les congés ne sont pas les mêmes selon la façon dont la patte se pose. Un
+     boîtier à pattes en L (SOIC, QFP) veut un talon franc parce que le congé
+     s'y forme ; une puce sans patte n'en veut aucun. D'où IPC_FILLET.
+   — pour les composants à deux bornes, la norme publie directement ses
+     tables plutôt que de les calculer : la tolérance sur la longueur de borne
+     y pèse tellement que la forme statistique donne des pastilles trop
+     longues. On garde la même écriture — congés sur L, W, T — mais sur les
+     cotes nominales. Les congés de chipFillet() reproduisent la table publiée
+     à 0,05 mm près, du 01005 au 2512.
+
+   Ce que le calcul ne donne pas et qu'on ne devine pas : la plage thermique
+   sous un QFN et la languette d'un boîtier de puissance. Elles sont dans la
+   table, en clair (`ep`, `tab`), et restent à confronter à la fiche du
+   fabricant — leurs cotes varient d'un fondeur à l'autre.
+   -------------------------------------------------------------------------- */
+const IPC_F=0.05;          // tolérance de fabrication du circuit imprimé
+const IPC_P=0.025;         // précision de placement de la machine
+const ipcRss=c=>Math.sqrt(c*c+IPC_F*IPC_F+IPC_P*IPC_P);
+/* Congés de brasure, niveau de densité B. `gwF` est la variante des pas fins
+   (≤ 0,625 mm) : la norme y rentre le congé latéral pour éviter les ponts. */
+const IPC_FILLET={
+  gw    :{toe:0.35,heel:0.35,side:0.03},
+  gwF   :{toe:0.35,heel:0.35,side:-0.02},
+  jlead :{toe:0.00,heel:0.35,side:0.03},
+  nolead:{toe:0.30,heel:0.00,side:-0.04}
+};
+/* Congés des composants à deux bornes. Les seuils suivent la taille : une
+   0402 ne se pose pas comme une 2512, et la norme sépare bien les deux. */
+function chipFillet(L){
+  return {toe:L<1.2?0.25:0.425, heel:L<1.8?0.06:0.15, side:L<0.8?0.05:0.075};
+}
+const MOLDED_FILLET={toe:0.70,heel:0.50,side:0.10};   // diodes moulées, MELF
+/* Motif d'implantation d'un composant : bord externe, bord interne, largeur.
+   `d.fam` choisit le jeu de congés et, avec lui, la forme du calcul. */
+function ipcLand(d){
+  const twoLead=(d.fam==="chip"||d.fam==="molded");
+  const f=twoLead?(d.fam==="molded"?MOLDED_FILLET:chipFillet(d.L)):
+                  (IPC_FILLET[d.fam]||IPC_FILLET.gw);
+  let Z,G,X;
+  if(twoLead){
+    Z=d.L+2*f.toe;
+    G=(d.L-2*d.T)-2*f.heel;
+    X=d.W+2*f.side;
+  }else{
+    const Lmin=d.L-d.tL/2, Lmax=d.L+d.tL/2;
+    const Tmin=d.T-d.tT/2, Tmax=d.T+d.tT/2;
+    const Smax=Lmax-2*Tmin, Smin=Lmin-2*Tmax;
+    Z=Lmin+2*f.toe+ipcRss(d.tL);
+    G=Smax-2*f.heel-ipcRss(Smax-Smin);
+    X=(d.W-d.tW/2)+2*f.side+ipcRss(d.tW);
+  }
+  /* Garde-fou : une pastille a une longueur, et deux pastilles opposées ne se
+     touchent pas. Une fiche mal recopiée ne doit pas sortir un court-circuit. */
+  if(!(G<Z-0.2))G=Z-0.2;
+  if(G<0)G=0;
+  return {Z:r3(Z), G:r3(G), X:r3(Math.max(0.1,X))};
+}
+/* Motif → cotes d'empreinte : entraxe des rangées, longueur et largeur de
+   pastille. C'est le seul point de passage entre la norme et le cuivre. */
+function ipcGeom(d){
+  const l=ipcLand(d);
+  return {span:r3((l.Z+l.G)/2), padL:r3((l.Z-l.G)/2), padW:l.X};
+}
+/* Traversant : la norme raisonne sur le diamètre de patte, pas sur le pas.
+   Perçage = patte + 0,25 mm (niveau B), pastille = perçage + 0,8 mm, ce qui
+   laisse 0,4 mm d'anneau — de quoi survivre au désaxage du foret. */
+function thtGeom(leadD){
+  const drill=r3(leadD+0.25);
+  return {drill:drill, padL:r3(drill+0.8), padW:r3(drill+0.8)};
+}
+
+/* --------------------------------------------------------------------------
    Boîtiers nommés
    Le schématique enregistre un boîtier sur chaque composant et le recopie
    dans la netlist : c'est ce nom qui doit décider de l'empreinte à l'import,
-   sinon un SOIC-8 arriverait en DIP traversant. La table donne, par famille,
-   le style et les cotes ; `pins` fixe le brochage quand le nom ne le porte
-   pas (une puce CMS a deux bornes, toujours), `pitch` et `span` acceptent une
-   fonction du brochage, et `lead` sert aux boîtiers à quatre côtés, dont
-   l'écartement des rangées dépend du nombre de pastilles.
-   Les cotes sont celles du pas et de l'écartement des rangées, au dixième de
-   millimètre : de quoi router juste, pas de quoi remplacer la fiche du
-   fabricant. Les boîtiers de puissance à languette (DPAK, SOT-223…) sont
-   ramenés à deux rangées : leurs pastilles y sont, la languette reste à
-   ajouter à la main.
+   sinon un SOIC-8 arriverait en DIP traversant.
+
+   Chaque entrée donne le style de pose, la famille de congés, le pas, et les
+   dimensions du composant. `dim` accepte une fonction du brochage : le corps
+   d'un QFP et la largeur d'un DIP en dépendent. `leads` dit combien de
+   pastilles tient la rangée principale quand ce n'est pas la moitié, et `tab`
+   décrit la languette des boîtiers de puissance — numéro de broche compris,
+   parce qu'elle porte un net comme les autres.
    -------------------------------------------------------------------------- */
+/* Corps normalisés des boîtiers à quatre côtés : brochage → [pas, envergure].
+   Pour un QFP l'envergure est celle des pointes de pattes, pour un QFN celle
+   du corps — c'est ce que mesure `L` dans les deux cas. */
+const QFP_BODY={32:[0.8,9],44:[0.8,12],48:[0.5,9],64:[0.5,12],80:[0.5,14],
+                100:[0.5,16],144:[0.5,22],176:[0.5,26],208:[0.5,30]};
+const QFN_BODY={8:[0.5,3],12:[0.5,3],16:[0.5,4],20:[0.5,4],24:[0.5,4],
+                32:[0.5,5],40:[0.5,6],48:[0.5,7],64:[0.5,9]};
+const PLCC_BODY={20:[1.27,9.9],28:[1.27,12.4],32:[1.27,14],44:[1.27,17.5],
+                 52:[1.27,20.1],68:[1.27,25.1],84:[1.27,30.2]};
+/* Repli quand le brochage n'est pas dans la table : le pas reste celui de la
+   famille — un PLCC est au pas de 1,27 mm qu'il ait huit broches ou quatre-
+   vingt-quatre — et le corps se déduit du nombre de pastilles par côté. */
+function quadBody(tab,pins,pitch,margin){
+  const hit=tab[pins];
+  if(hit)return {pitch:hit[0], L:hit[1]};
+  const p=Math.max(0.05,r3(typeof pitch==="function"?pitch(pins):pitch));
+  return {pitch:p, L:r3(quadSide(pins)*p+margin)};
+}
 const PKG_LIB={
-  /* puces CMS : le nom code les dimensions en centièmes de pouce */
-  "01005":{style:"chip",pins:2,span:0.35},
-  "0201":{style:"chip",pins:2,span:0.55},
-  "0402":{style:"chip",pins:2,span:0.95},
-  "0603":{style:"chip",pins:2,span:1.5},
-  "0805":{style:"chip",pins:2,span:1.9},
-  "1206":{style:"chip",pins:2,span:3.1},
-  "1210":{style:"chip",pins:2,span:3.1},
-  "2512":{style:"chip",pins:2,span:6.2},
-  /* diodes CMS moulées et cylindriques */
-  "SMA":{style:"chip",pins:2,span:5},
-  "SMB":{style:"chip",pins:2,span:5.2},
-  "SMC":{style:"chip",pins:2,span:7},
-  "MELF":{style:"chip",pins:2,span:5},
-  "MiniMELF":{style:"chip",pins:2,span:3.2},
-  "SOD-123":{style:"chip",pins:2,span:3.6},
-  "SOD-323":{style:"chip",pins:2,span:2.4},
-  /* petits boîtiers CMS : deux rangées, la rangée impaire recentrée */
-  "SOT-23":{style:"sop",pins:3,pitch:0.95,span:2.6},
-  "SOT-89":{style:"sop",pins:3,pitch:1.5,span:3},
-  "SOT-223":{style:"sop",pins:4,pitch:2.3,span:6.3},
-  /* puissance : la languette n'est pas dessinée */
-  "TO-252":{style:"sop",pins:3,pitch:2.3,span:6.5},
-  "TO-263":{style:"sop",pins:3,pitch:2.54,span:8.6},
-  "TO-92":{style:"row",pins:3,pitch:2.54},
-  "TO-220":{style:"row",pins:3,pitch:2.54},
-  "TO-247":{style:"row",pins:3,pitch:5.45},
-  /* CI à deux rangées : au delà de 16 broches, le SOIC passe en large */
-  "SOIC":{style:"sop",pitch:1.27,span:n=>n>16?9.4:5.4},
-  "SOP":{style:"sop",pitch:1.27,span:n=>n>16?9.4:5.4},
-  "SSOP":{style:"sop",pitch:0.65,span:5.7},
-  "TSSOP":{style:"sop",pitch:0.65,span:5.9},
-  "MSOP":{style:"sop",pitch:0.65,span:4.4},
-  "DFN":{style:"sop",pitch:0.5,span:2.6},
-  "DIP":{style:"dip",pitch:2.54,span:n=>n>=32?15.24:7.62},
-  /* quatre côtés : à pattes (QFP) ou sans pattes (QFN, PLCC) */
-  "LQFP":{style:"quad",pitch:n=>n<=44?0.8:0.5,lead:3.6},
-  "TQFP":{style:"quad",pitch:n=>n<=44?0.8:0.5,lead:3.6},
-  "QFP":{style:"quad",pitch:n=>n<=44?0.8:0.5,lead:3.6},
-  "PQFP":{style:"quad",pitch:n=>n<=44?0.8:0.5,lead:3.6},
-  "QFN":{style:"quad",pitch:n=>n<=32?0.5:0.4,lead:1.1},
-  "PLCC":{style:"quad",pitch:1.27,lead:3},
-  "LCC":{style:"quad",pitch:1.27,lead:2},
-  /* billes : le pas fait tout, la grille se remplit en lignes */
-  "BGA":{style:"bga",pitch:0.8},
-  "WLCSP":{style:"bga",pitch:0.4},
-  "CSP":{style:"bga",pitch:0.5}
+  /* ---- puces à deux bornes : le nom code les dimensions en centièmes de pouce ---- */
+  "01005":{style:"chip",pins:2,dim:{fam:"chip",L:0.40,tL:0.04,W:0.20,tW:0.04,T:0.10,tT:0.06}},
+  "0201" :{style:"chip",pins:2,dim:{fam:"chip",L:0.60,tL:0.06,W:0.30,tW:0.06,T:0.15,tT:0.10}},
+  "0402" :{style:"chip",pins:2,dim:{fam:"chip",L:1.00,tL:0.10,W:0.50,tW:0.10,T:0.20,tT:0.10}},
+  "0603" :{style:"chip",pins:2,dim:{fam:"chip",L:1.60,tL:0.15,W:0.80,tW:0.15,T:0.30,tT:0.15}},
+  "0805" :{style:"chip",pins:2,dim:{fam:"chip",L:2.00,tL:0.20,W:1.25,tW:0.20,T:0.45,tT:0.20}},
+  "1206" :{style:"chip",pins:2,dim:{fam:"chip",L:3.20,tL:0.20,W:1.60,tW:0.20,T:0.55,tT:0.25}},
+  "1210" :{style:"chip",pins:2,dim:{fam:"chip",L:3.20,tL:0.20,W:2.50,tW:0.20,T:0.55,tT:0.25}},
+  "2512" :{style:"chip",pins:2,dim:{fam:"chip",L:6.30,tL:0.20,W:3.20,tW:0.20,T:0.65,tT:0.25}},
+  /* ---- diodes moulées et cylindriques ---- */
+  "SMA":{style:"chip",pins:2,dim:{fam:"molded",L:5.10,tL:0.48,W:1.60,tW:0.30,T:1.30,tT:0.38}},
+  "SMB":{style:"chip",pins:2,dim:{fam:"molded",L:5.30,tL:0.48,W:2.10,tW:0.30,T:1.30,tT:0.38}},
+  "SMC":{style:"chip",pins:2,dim:{fam:"molded",L:8.30,tL:0.38,W:2.30,tW:0.30,T:1.90,tT:0.40}},
+  "MELF":{style:"chip",pins:2,dim:{fam:"molded",L:5.00,tL:0.40,W:2.60,tW:0.20,T:0.50,tT:0.20}},
+  "MiniMELF":{style:"chip",pins:2,dim:{fam:"molded",L:3.60,tL:0.30,W:1.60,tW:0.20,T:0.40,tT:0.20}},
+  "SOD-123":{style:"chip",pins:2,dim:{fam:"chip",L:3.35,tL:0.30,W:1.10,tW:0.20,T:0.30,tT:0.20}},
+  "SOD-323":{style:"chip",pins:2,dim:{fam:"chip",L:1.80,tL:0.20,W:0.35,tW:0.10,T:0.15,tT:0.10}},
+  /* ---- petits boîtiers CMS à pattes en L ---- */
+  "SOT-23":{style:"sop",pins:3,pitch:0.95,
+            dim:{fam:"gw",L:2.40,tL:0.30,W:0.45,tW:0.20,T:0.55,tT:0.30}},
+  /* ---- boîtiers à languette : la languette est une pastille comme une autre,
+         et elle porte le net de la broche qu'elle prolonge ---- */
+  "SOT-89":{style:"sop",pins:3,pitch:1.5,leads:3,
+            dim:{fam:"gw",L:3.90,tL:0.30,W:0.70,tW:0.16,T:0.30,tT:0.30},
+            tab:{w:1.6,h:2.6,pin:2}},
+  "SOT-223":{style:"sop",pins:4,pitch:2.3,leads:3,
+             dim:{fam:"gw",L:7.30,tL:0.40,W:0.79,tW:0.20,T:1.00,tT:0.30},
+             tab:{w:2,h:3.8,pin:4}},
+  "TO-252":{style:"sop",pins:3,pitch:2.28,leads:3,
+            dim:{fam:"gw",L:7.30,tL:0.40,W:0.75,tW:0.25,T:1.00,tT:0.30},
+            tab:{w:6.4,h:5.8,pin:2}},
+  "TO-263":{style:"sop",pins:3,pitch:2.54,leads:3,
+            dim:{fam:"gw",L:12.80,tL:0.50,W:0.85,tW:0.30,T:3.45,tT:0.40},
+            tab:{w:9.4,h:10.8,pin:2}},
+  /* ---- puissance traversant : c'est le diamètre de patte qui commande ---- */
+  "TO-92":{style:"row",pins:3,pitch:2.54,lead:0.50},
+  "TO-220":{style:"row",pins:3,pitch:2.54,lead:0.90},
+  "TO-247":{style:"row",pins:3,pitch:5.45,lead:1.25},
+  /* ---- CI à deux rangées ---- */
+  "SOIC":{style:"sop",pitch:1.27,
+          dim:n=>({fam:"gw",L:n>16?10.30:6.00,tL:n>16?0.30:0.40,
+                   W:0.42,tW:0.20,T:0.725,tT:0.65})},
+  "SOP":{style:"sop",pitch:1.27,
+         dim:n=>({fam:"gw",L:n>16?10.30:6.00,tL:n>16?0.30:0.40,
+                  W:0.42,tW:0.20,T:0.725,tT:0.65})},
+  "SSOP":{style:"sop",pitch:0.635,
+          dim:{fam:"gwF",L:5.90,tL:0.40,W:0.30,tW:0.15,T:0.65,tT:0.30}},
+  "TSSOP":{style:"sop",pitch:0.65,
+           dim:{fam:"gwF",L:6.40,tL:0.20,W:0.30,tW:0.15,T:0.60,tT:0.35}},
+  "MSOP":{style:"sop",pitch:0.65,
+          dim:{fam:"gwF",L:4.90,tL:0.40,W:0.30,tW:0.15,T:0.60,tT:0.35}},
+  "DFN":{style:"sop",pitch:0.5,ep:n=>({w:1.6,h:Math.max(1.2,(Math.ceil(n/2)-1)*0.5)}),
+         dim:{fam:"nolead",L:3.00,tL:0.10,W:0.25,tW:0.10,T:0.40,tT:0.15}},
+  "DIP":{style:"dip",pitch:2.54,lead:0.55,span:n=>n>=24?15.24:7.62},
+  /* ---- quatre côtés ---- */
+  "LQFP":{style:"quad",quad:QFP_BODY,margin:2,pitch:n=>n<=44?0.8:0.5,
+          dim:(n,b)=>({fam:b.pitch<=0.625?"gwF":"gw",L:b.L,tL:0.30,
+                       W:b.pitch<=0.625?0.22:0.37,tW:b.pitch<=0.625?0.10:0.16,
+                       T:0.60,tT:0.30})},
+  "TQFP":{style:"quad",quad:QFP_BODY,margin:2,pitch:n=>n<=44?0.8:0.5,
+          dim:(n,b)=>({fam:b.pitch<=0.625?"gwF":"gw",L:b.L,tL:0.30,
+                       W:b.pitch<=0.625?0.22:0.37,tW:b.pitch<=0.625?0.10:0.16,
+                       T:0.60,tT:0.30})},
+  "QFP":{style:"quad",quad:QFP_BODY,margin:2,pitch:n=>n<=44?0.8:0.5,
+         dim:(n,b)=>({fam:b.pitch<=0.625?"gwF":"gw",L:b.L,tL:0.30,
+                      W:b.pitch<=0.625?0.22:0.37,tW:b.pitch<=0.625?0.10:0.16,
+                      T:0.60,tT:0.30})},
+  "PQFP":{style:"quad",quad:QFP_BODY,margin:2,pitch:n=>n<=44?0.8:0.5,
+          dim:(n,b)=>({fam:b.pitch<=0.625?"gwF":"gw",L:b.L,tL:0.30,
+                       W:b.pitch<=0.625?0.22:0.37,tW:b.pitch<=0.625?0.10:0.16,
+                       T:0.60,tT:0.30})},
+  "QFN":{style:"quad",quad:QFN_BODY,margin:1.1,pitch:n=>n<=32?0.5:0.4,ep:(n,b)=>({w:r3(b.L-1.55),h:r3(b.L-1.55)}),
+         dim:(n,b)=>({fam:"nolead",L:b.L,tL:0.10,W:0.25,tW:0.10,T:0.40,tT:0.15})},
+  "PLCC":{style:"quad",quad:PLCC_BODY,margin:3,pitch:1.27,
+          dim:(n,b)=>({fam:"jlead",L:b.L,tL:0.30,W:0.46,tW:0.14,T:1.10,tT:0.40})},
+  "LCC":{style:"quad",quad:PLCC_BODY,margin:2,pitch:1.27,
+         dim:(n,b)=>({fam:"nolead",L:r3(b.L-1.2),tL:0.20,W:0.55,tW:0.15,T:0.65,tT:0.20})},
+  /* ---- billes : le pas fait tout, la bille fixe la pastille (NSMD, 80 %) ---- */
+  "BGA":{style:"bga",pitch:0.8,ball:0.5},
+  "WLCSP":{style:"bga",pitch:0.4,ball:0.25},
+  "CSP":{style:"bga",pitch:0.5,ball:0.3}
 };
 /* Clé de comparaison : majuscules, surnom entre parenthèses écarté (le
    schématique propose « TO-252 (DPAK) »), séparateurs ignorés. « SOT-23-5 »,
@@ -702,13 +844,64 @@ function pkgGeom(pkg,pinsHint){
   if(!hit)return null;
   const d=PKG_LIB[hit.name];
   const pins=clamp(Math.max(hit.pins||d.pins||0,pinsHint|0)||2,1,4096);
-  const pitch=Math.max(0.05,r3(typeof d.pitch==="function"?d.pitch(pins):
-    (d.pitch!=null?d.pitch:(d.span||2.4))));
-  let span=typeof d.span==="function"?d.span(pins,pitch):d.span;
-  if(span==null)
-    span=d.style==="quad"?(quadSide(pins)-1)*pitch+(d.lead||2):
-         d.style==="bga" ?pitch:defaultGeom(d.style).span;
-  return {style:d.style,pitch:pitch,span:Math.max(0.05,r3(span)),pins:pins,pkg:hit.name};
+  const out={style:d.style, pins:pins, pkg:hit.name};
+  /* Boîtier à quatre côtés : le corps se lit dans la table du brochage, et
+     c'est lui qui donne à la fois le pas et les dimensions du composant. */
+  const b=d.quad?quadBody(d.quad,pins,d.pitch,d.margin):null;
+  out.pitch=b?b.pitch:Math.max(0.05,r3(typeof d.pitch==="function"?d.pitch(pins):d.pitch||2.54));
+  if(d.lead!=null){
+    /* traversant : perçage et pastille viennent de la patte */
+    const t=thtGeom(d.lead);
+    out.drill=t.drill;out.padL=t.padL;out.padW=t.padW;
+    out.span=typeof d.span==="function"?d.span(pins):(d.span!=null?d.span:out.pitch);
+  }else if(d.style==="bga"){
+    out.span=out.pitch;
+    out.padL=out.padW=r3(Math.max(0.15,d.ball*0.8));
+  }else{
+    const dim=typeof d.dim==="function"?d.dim(pins,b||{pitch:out.pitch}):d.dim;
+    const g=ipcGeom(dim);
+    out.span=g.span;out.padL=g.padL;out.padW=g.padW;
+  }
+  /* Garde géométrique. Le brochage peut venir d'une netlist fantaisiste — un
+     « LQFP-4 » se saisit aussi bien qu'un LQFP-64 — et le corps calculé devient
+     alors petit devant les pastilles : les quatre rangées se rejoignent dans
+     les coins, deux rangées se recouvrent. On raccourcit la pastille plutôt
+     que de dessiner un court-circuit. */
+  /* Deux pastilles voisines d'une même rangée gardent 0,1 mm entre elles :
+     c'est le pas qui commande, jamais la largeur calculée. */
+  if(out.padW>0&&out.pitch>0&&(out.style==="quad"||out.style==="sop"||out.style==="dip"))
+    out.padW=r3(Math.min(out.padW,Math.max(0.15,out.pitch-0.1)));
+  if(out.padL>0&&out.span>0){
+    /* Sur quatre côtés, ce que la pastille doit éviter n'est pas la rangée
+       d'en face mais celle d'à côté : son extrémité intérieure passe devant
+       le bout de la rangée perpendiculaire. La rangée s'étend latéralement de
+       (n/côté − 1)·pas/2 plus une demi-largeur de pastille ; l'extrémité
+       intérieure est à (entraxe − longueur)/2 du centre. On garde 0,1 mm
+       entre les deux — c'est le jeu qu'un QFN au pas de 0,5 mm laisse déjà
+       dans ses coins. */
+    const max=out.style==="quad"
+      ? out.span-(quadSide(pins)-1)*out.pitch-out.padW-0.20
+      : out.span-0.15;
+    if(out.padL>max)out.padL=r3(Math.max(0.15,max));
+  }
+  /* Une puce à deux bornes n'a pas de pas propre : ses deux pastilles se font
+     face, et le pas qu'on lit dans le panneau est cet entraxe-là. */
+  if(out.style==="chip")out.pitch=out.span;
+  if(d.leads)out.leads=d.leads;
+  const tab=typeof d.tab==="function"?d.tab(pins,b):d.tab;
+  if(tab)out.tab={w:tab.w,h:tab.h,pin:tab.pin};
+  const ep=typeof d.ep==="function"?d.ep(pins,b||{}):d.ep;
+  if(ep){
+    /* La plage thermique ne vient pas toucher les pastilles : la norme veut
+       0,2 mm entre les deux. Une valeur de table trop généreuse est rabotée
+       plutôt que refusée — mieux vaut une plage un peu petite qu'un pont de
+       brasure sous le boîtier. Un boîtier à deux rangées n'est bordé que sur
+       la largeur : sa hauteur n'a rien à esquiver. */
+    const lim=r3((out.span-out.padL)-0.4);
+    out.ep={w:Math.max(0.2,Math.min(ep.w,lim)),
+            h:out.style==="quad"?Math.max(0.2,Math.min(ep.h,lim)):ep.h};
+  }
+  return out;
 }
 /* Style et cotes d'un composant : le boîtier nommé d'abord, le brochage
    ensuite. Point de passage unique entre « SOIC-8 » et des pastilles. */
@@ -718,6 +911,18 @@ function fpGeomFor(pkg,pins){
   if(g)return g;
   const style=defaultStyle(n), d=defaultGeom(style);
   return {style:style,pitch:d.pitch,span:d.span,pins:n};
+}
+/* Champs qu'une empreinte tient de son boîtier. Les recopier tous ou les
+   effacer tous : une empreinte qui garderait la languette d'un DPAK après
+   être passée en SOIC-8 dessinerait du cuivre que plus rien ne justifie. */
+const FP_GEOM_KEYS=["padL","padW","drill","leads","tab","ep"];
+function fpClearGeom(fp){for(const k of FP_GEOM_KEYS)delete fp[k];}
+function fpSetGeom(fp,g){
+  fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
+  for(const k of FP_GEOM_KEYS){
+    if(g[k]!=null)fp[k]=g[k];
+    else delete fp[k];
+  }
 }
 /* Plus haut numéro de broche câblé : le brochage peut se réduire quand le
    boîtier change, jamais en dessous de ce qui porte un net. */
@@ -732,14 +937,16 @@ function applyPkgGeom(fp){
   if(fpFree(fp))return false;
   const g=pkgGeom(fp.pkg,fpWiredPins(fp));
   if(!g)return false;
-  fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
+  fpSetGeom(fp,g);
   return true;
 }
 function mkFp(ref,value,pkg,pins){
   const g=fpGeomFor(pkg,pins);
-  return {id:S.nextId++, ref:ref||("U"+S.nextId), value:value||"", pkg:pkg||"",
-          pins:g.pins, style:g.style, pitch:g.pitch, span:g.span,
-          x:0, y:0, rot:0, side:0, nets:{}};
+  const fp={id:S.nextId++, ref:ref||("U"+S.nextId), value:value||"", pkg:pkg||"",
+            pins:g.pins, style:g.style, pitch:g.pitch, span:g.span,
+            x:0, y:0, rot:0, side:0, nets:{}};
+  for(const k of FP_GEOM_KEYS)if(g[k]!=null)fp[k]=g[k];
+  return fp;
 }
 /* pastilles en coordonnées locales, dans l'ordre des numéros de broche */
 /* --------------------------------------------------------------------------
@@ -806,18 +1013,25 @@ function padRot(v){
 function padsOf(fp){
   const out=[], n=fp.pins, p=fp.pitch, sp=fp.span;
   const free=fpFree(fp);
+  /* Cotes de pastille venues du boîtier, par le calcul IPC. Un boîtier hors
+     table n'en a pas : on retombe alors sur les proportions d'autrefois —
+     approximatives, mais une empreinte sans cuivre serait pire. */
+  const PL=fp.padL>0?fp.padL:0, PW=fp.padW>0?fp.padW:0, DR=fp.drill>0?fp.drill:0;
   if(free){
     for(const q of free)out.push(padClone(q));
-  }else if(fp.style==="chip"){
+    return finishPads(out,fp);
+  }
+  if(fp.style==="chip"){
     /* les plus petites puces (0201, 01005) ont des bornes plus fines que le
        plancher d'un connecteur : les pastilles suivent l'écartement */
-    const w=Math.max(0.4,sp*0.55), h=Math.max(0.45,sp*0.62);
+    const w=PL||Math.max(0.4,sp*0.55), h=PW||Math.max(0.45,sp*0.62);
     for(let i=0;i<n;i++)
       out.push({n:i+1, x:(i-(n-1)/2)*sp, y:0, w, h, shape:"rect", drill:0});
   }else if(fp.style==="row"){
+    const w=PL||p*0.68, h=PW||p*0.68, d=DR||Math.min(1.0,p*0.34);
     for(let i=0;i<n;i++)
-      out.push({n:i+1, x:(i-(n-1)/2)*p, y:0, w:p*0.68, h:p*0.68,
-                shape:i===0?"rect":"circ", drill:Math.min(1.0,p*0.34)});
+      out.push({n:i+1, x:(i-(n-1)/2)*p, y:0, w:w, h:h,
+                shape:i===0?"rect":"circ", drill:d});
   }else if(fp.style==="quad"){
     /* Quatre côtés, broche 1 en haut à gauche, numérotation dans le sens
        trigonométrique : côté gauche de haut en bas, côté bas de gauche à
@@ -825,7 +1039,7 @@ function padsOf(fp){
        brochage non multiple de quatre remplit les premiers côtés d'abord. */
     const b=Math.floor(n/4), rr=n%4;
     const per=[b+(rr>0?1:0), b+(rr>1?1:0), b+(rr>2?1:0), b];
-    const lg=Math.max(0.6,p*1.8), br=Math.max(0.22,p*0.55);
+    const lg=PL||Math.max(0.6,p*1.8), br=PW||Math.max(0.22,p*0.55);
     let k=1;
     for(let s=0;s<4;s++)
       for(let i=0;i<per[s];i++){
@@ -835,32 +1049,56 @@ function padsOf(fp){
         else if(s===2)out.push({n:k++, x:sp/2,  y:-t,    w:lg, h:br, shape:"rect", drill:0});
         else          out.push({n:k++, x:-t,    y:-sp/2, w:br, h:lg, shape:"rect", drill:0});
       }
+    addEp(out,fp,n);
   }else if(fp.style==="bga"){
     /* grille au pas donné, remplie en lignes : le brochage réel d'un BGA se
        lit sur sa fiche, mais le compte, le pas et l'encombrement y sont */
     const cols=Math.max(1,Math.ceil(Math.sqrt(n))), rows=Math.ceil(n/cols);
-    const d=Math.max(0.2,p*0.5);
+    const d=PL||Math.max(0.2,p*0.5);
     for(let i=0;i<n;i++)
       out.push({n:i+1, x:((i%cols)-(cols-1)/2)*p, y:(Math.floor(i/cols)-(rows-1)/2)*p,
                 w:d, h:d, shape:"circ", drill:0});
   }else{
-    /* deux rangées. Un brochage impair (SOT-23, DPAK) met une pastille de
-       moins à droite : cette rangée est recentrée, comme sur le boîtier. */
-    const h=Math.ceil(n/2), rg=n-h, smd=fp.style==="sop";
-    const pw=smd?Math.max(0.9,sp*0.30):p*0.68, ph=smd?p*0.55:p*0.68;
+    /* Deux rangées. `fp.leads` dit combien de pastilles tient la rangée
+       principale quand ce n'est pas la moitié : un SOT-223 aligne ses trois
+       pattes d'un côté et sa languette de l'autre. À défaut, un brochage
+       impair met une pastille de moins à droite, et cette rangée est
+       recentrée comme sur le boîtier. */
+    const smd=fp.style==="sop";
+    const tab=smd?fp.tab:null;
+    const h=fp.leads>0?clamp(Math.round(fp.leads),1,n):Math.ceil(n/2);
+    const rg=n-h;
+    const pw=PL||(smd?Math.max(0.9,sp*0.30):p*0.68), ph=PW||(smd?p*0.55:p*0.68);
+    const dl=smd?0:(DR||Math.min(1.0,p*0.34));
     for(let i=0;i<h;i++)                       // colonne gauche : 1 → h
       out.push({n:i+1, x:-sp/2, y:(i-(h-1)/2)*p, w:pw, h:ph,
-                shape:(smd||i===0)?"rect":"circ", drill:smd?0:Math.min(1.0,p*0.34)});
-    for(let i=h;i<n;i++){                      // colonne droite : h+1 → n, de bas en haut
+                shape:(smd||i===0)?"rect":"circ", drill:dl});
+    if(tab)                                    // languette : une seule pastille en face
+      out.push({n:clamp(Math.round(tab.pin)||n,1,4096), x:sp/2, y:0,
+                w:Math.max(0.05,tab.w), h:Math.max(0.05,tab.h), shape:"rect", drill:0});
+    else for(let i=h;i<n;i++){                 // colonne droite : h+1 → n, de bas en haut
       const k=n-1-i;
       out.push({n:i+1, x:sp/2, y:(k-(rg-1)/2)*p, w:pw, h:ph,
-                shape:smd?"rect":"circ", drill:smd?0:Math.min(1.0,p*0.34)});
+                shape:smd?"rect":"circ", drill:dl});
     }
+    addEp(out,fp,n);
   }
-  /* `rot` est en DEGRÉS ici, comme sur la pastille enregistrée : c'est
-     padsWorld() qui le convertit en radians et y ajoute la rotation de
-     l'empreinte. Les empreintes calculées ne tournent pas leurs pastilles —
-     un côté vertical de QFP échange largeur et hauteur, il ne pivote pas. */
+  return finishPads(out,fp);
+}
+/* Plage thermique d'un boîtier sans pattes : une pastille de plus, au centre,
+   numérotée juste après la dernière patte. Elle porte un net comme les autres
+   — c'est presque toujours la masse — et sans elle un QFN ne dissipe rien.
+   Ses cotes viennent de la table ; la fiche du fabricant reste l'autorité. */
+function addEp(out,fp,n){
+  const e=fp.ep;
+  if(!e||!(e.w>0)||!(e.h>0))return;
+  out.push({n:clamp(n+1,1,4096), x:0, y:0, w:e.w, h:e.h, shape:"rect", drill:0});
+}
+/* `rot` est en DEGRÉS ici, comme sur la pastille enregistrée : c'est
+   padsWorld() qui le convertit en radians et y ajoute la rotation de
+   l'empreinte. Les empreintes calculées ne tournent pas leurs pastilles —
+   un côté vertical de QFP échange largeur et hauteur, il ne pivote pas. */
+function finishPads(out,fp){
   for(const q of out){q.rot=padRot(q.rot);q.net=fp.nets[q.n]||"";}
   return out;
 }
@@ -929,10 +1167,7 @@ function fpFreeze(fp){
 function fpGeneric(fp){
   if(!fpFree(fp)&&!fp.body)return false;
   delete fp.pads;delete fp.body;
-  if(!applyPkgGeom(fp)){
-    const g=fpGeomFor(fp.pkg,fp.pins);
-    fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;
-  }
+  if(!applyPkgGeom(fp))fpSetGeom(fp,fpGeomFor(fp.pkg,fp.pins));
   return true;
 }
 /* Pose d'une pastille, en coordonnées locales. Le premier déplacement fige

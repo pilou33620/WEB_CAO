@@ -35,6 +35,10 @@ function fpDefOf(fp,name){
   const def={name:String(name||fp.pkg||fp.ref||"empreinte").slice(0,48).trim(),
              pkg:fp.pkg||"", pins:fp.pins, style:fp.style,
              pitch:r3(fp.pitch), span:r3(fp.span)};
+  /* Les cotes de pastille posées par le calcul IPC voyagent avec la
+     définition : sans elles, un SOT-223 exporté puis relu perdrait sa
+     languette et se recalculerait en deux rangées quelconques. */
+  for(const k of FP_GEOM_KEYS)if(fp[k]!=null)def[k]=fp[k];
   const free=fpFree(fp);
   if(free){
     def.pads=free.map(padClone);
@@ -54,6 +58,8 @@ function normFpDef(d){
   const out={name:name, pkg:dStr(d.pkg,40), pins:dInt(d.pins,2,1,4096),
              style:style, pitch:dRange(d.pitch,g.pitch,0.05,100),
              span:dRange(d.span,g.span,0.05,1000)};
+  const geo=dGeom(d);
+  for(const k of Object.keys(geo))out[k]=geo[k];
   const pads=dPads(d.pads);
   if(pads){
     out.pads=pads;
@@ -73,7 +79,7 @@ function normFpDef(d){
 function fpApplyDef(fp,def){
   const d=normFpDef(def);
   if(!d)return false;
-  fp.style=d.style;fp.pitch=d.pitch;fp.span=d.span;fp.pins=d.pins;
+  fpSetGeom(fp,d);
   if(d.pads){
     fp.pads=d.pads.map(padClone);
     if(d.body)fp.body={x1:d.body.x1,y1:d.body.y1,x2:d.body.x2,y2:d.body.y2};
@@ -507,6 +513,7 @@ function feWire(){
     fp.style=st.value;
     const g=defaultGeom(fp.style);
     fp.pitch=g.pitch;fp.span=g.span;
+    fpClearGeom(fp);
     feSync();
   };
   feNum("fePins",v=>fpSetPins(fp,v));

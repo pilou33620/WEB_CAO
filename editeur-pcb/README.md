@@ -156,17 +156,59 @@ section `=== Composants ===`. C'est ce nom qui pose l'empreinte à l'import :
 sans lui, tout se déduisait du seul nombre de broches et un SOIC-8 arrivait en
 DIP traversant au pas de 2,54 mm, à replacer et à re-régler à la main.
 
-`PKG_LIB` (`js/01-core.js`) donne, par famille, le style et les cotes :
+### Les pastilles se calculent, elles ne se recopient pas
 
-| famille | style d'empreinte | ce que le nom fixe |
+`PKG_LIB` (`js/01-core.js`) ne stocke pas des cotes de cuivre mais les
+dimensions de la pièce : envergure hors-tout `L`, largeur de borne `W`,
+longueur de borne `T`, chacune avec l'étendue de sa tolérance. `ipcLand()` en
+tire l'implantation par les équations de l'IPC-7351B, au niveau de densité B
+(nominal, le choix d'une carte de série) :
+
+    Z = Lmin + 2·congé de pointe + √(tL² + F² + P²)      bord externe
+    G = Smax − 2·congé de talon  − √(tS² + F² + P²)      bord interne
+    X = Wmin + 2·congé latéral   + √(tW² + F² + P²)      largeur
+
+où `S = L − 2T` est la distance entre bornes, `F` la tolérance de fabrication
+du circuit et `P` la précision de placement. L'entraxe des rangées vaut alors
+`(Z+G)/2` et la longueur de pastille `(Z−G)/2`.
+
+Les congés ne sont pas les mêmes selon la façon dont la patte se pose : une
+patte en L veut un talon franc parce que le congé s'y forme, une puce sans
+patte n'en veut aucun. `IPC_FILLET` les tient par famille. Deux exceptions
+assumées, écrites dans le code :
+
+- **les composants à deux bornes.** La norme publie ses tables plutôt que de
+  les calculer, parce que la tolérance sur la longueur de borne y pèse trop
+  pour la forme statistique. On garde la même écriture — congés sur `L`, `W`,
+  `T` — mais sur les cotes nominales ; `chipFillet()` reproduit la table
+  publiée à 0,05 mm près, du 01005 au 2512.
+- **le traversant.** L'IPC-2222 raisonne sur le diamètre de patte, pas sur le
+  pas : perçage = patte + 0,25 mm, pastille = perçage + 0,8 mm.
+
+| famille | style d'empreinte | ce que la table stocke |
 | --- | --- | --- |
-| `01005` … `2512`, `SMA`/`SMB`/`SMC`, `MELF`, `SOD-123` | puce | l'écartement des deux bornes |
-| `SOT-23`, `SOT-89`, `SOT-223`, `TO-252`, `TO-263` | deux rangées CMS | pas et écartement, languette non dessinée |
-| `TO-92`, `TO-220`, `TO-247` | une rangée traversante | le pas des pattes |
-| `SOIC`, `SOP`, `SSOP`, `TSSOP`, `MSOP`, `DFN` | deux rangées CMS | pas, et largeur qui suit le brochage |
-| `DIP` | deux rangées traversantes | 7,62 mm jusqu'à 28 broches, 15,24 au-delà |
-| `LQFP`, `TQFP`, `QFP`, `PQFP`, `QFN`, `PLCC`, `LCC` | quatre côtés | pas selon le brochage, écartement calculé |
-| `BGA`, `WLCSP`, `CSP` | grille de billes | le pas de la grille |
+| `01005` … `2512`, `SOD-123`, `SOD-323` | puce | `L`, `W`, `T` de la puce |
+| `SMA`/`SMB`/`SMC`, `MELF` | puce | idem, avec les congés des corps moulés |
+| `SOT-23` | deux rangées CMS | envergure des pattes et longueur de patte |
+| `SOT-89`, `SOT-223`, `TO-252`, `TO-263` | deux rangées CMS | idem, **plus la languette** : dessinée, dimensionnée, numérotée |
+| `TO-92`, `TO-220`, `TO-247` | une rangée traversante | le diamètre de patte |
+| `SOIC`, `SOP`, `SSOP`, `TSSOP`, `MSOP`, `DFN` | deux rangées CMS | envergure et patte, selon le brochage |
+| `DIP` | deux rangées traversantes | 7,62 mm jusqu'à 22 broches, 15,24 au-delà |
+| `LQFP`, `TQFP`, `QFP`, `PQFP` | quatre côtés | le corps normalisé, par brochage |
+| `QFN`, `PLCC`, `LCC` | quatre côtés | idem ; le QFN reçoit **sa plage thermique** |
+| `BGA`, `WLCSP`, `CSP` | grille de billes | le diamètre de bille (pastille à 80 %) |
+
+Trois garde-fous géométriques valent d'être connus, parce qu'ils peuvent
+raboter une cote calculée plutôt que de sortir une carte non fabricable : deux
+pastilles voisines d'une rangée gardent 0,1 mm entre elles, la pastille d'un
+boîtier à quatre côtés ne vient pas croiser la rangée perpendiculaire dans les
+coins, et la plage thermique reste à 0,2 mm des pastilles.
+
+Le banc d'essai tient une table de référence relevée dans la bibliothèque
+KiCad officielle — même norme, autre outil, donc contrôle indépendant — et
+vérifie que trente-deux boîtiers y retombent (essai « cotes IPC »). Un autre
+essai balaie toute la table à tous les brochages plausibles et refuse le
+moindre chevauchement de pastilles.
 
 `pkgGeom()` lit le nom sans se soucier de la casse ni des séparateurs, écarte le
 surnom entre parenthèses que propose le schématique (`TO-252 (DPAK)`) et prend
@@ -889,12 +931,17 @@ différence — c'est lui qui garde cette propriété.
 ## Limites connues
 
 - Pas de bibliothèque d'empreintes livrée avec l'éditeur : les empreintes de
-  départ sont paramétriques et le nom du boîtier venu du schéma en fixe le
-  style et les cotes (`PKG_LIB`). Les languettes de dissipation (DPAK,
-  SOT-223), les pastilles thermiques centrales (QFN) et le brochage réel d'un
-  BGA — lettres et colonnes — ne sont pas dessinés d'avance ; ils se dessinent
-  à la main dans la fenêtre d'empreinte, et s'enregistrent ensuite dans la
-  bibliothèque personnelle.
+  départ se calculent depuis les dimensions de composant de `PKG_LIB`, que le
+  nom du boîtier venu du schéma désigne. Les languettes de dissipation (DPAK,
+  D²PAK, SOT-223, SOT-89) et les plages thermiques de QFN et DFN sont posées
+  et numérotées, mais leurs cotes varient d'un fondeur à l'autre : la fiche du
+  fabricant reste l'autorité. Le brochage réel d'un BGA — lettres et colonnes —
+  n'est toujours pas dessiné d'avance : la grille se remplit en lignes. Tout
+  cela se retouche à la main dans la fenêtre d'empreinte, et s'enregistre
+  ensuite dans la bibliothèque personnelle.
+- Les cotes visent l'IPC-7351B au niveau de densité B (nominal). Les niveaux A
+  (reprise à la main, congés élargis) et C (haute densité) ne sont pas
+  proposés : `IPC_FILLET` ne porte qu'un jeu de congés.
 - Une pastille est rectangulaire (coins adoucis ou angles droits), oblongue ou
   ronde, avec sa rotation propre. Pas de forme quelconque : ni pastille en
   polygone, ni plage thermique découpée, ni chanfrein.
