@@ -1,0 +1,21 @@
+{
+  "name": "WEB_CAO - Éditeurs CAO Electronique",
+  "short_name": "WEB_CAO",
+  "description": "Éditeurs schématique et PCB en HTML/JavaScript sans dépendance",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f1012",
+  "theme_color": "#0f1012",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%230f1012'/><text y='380' x='50' font-size='400'>⚡</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "productivity"],
+  "lang": "fr",
+  "dir": "ltr"
+}
