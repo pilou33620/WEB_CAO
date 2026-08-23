@@ -63,23 +63,32 @@ Le serveur affiche l'adresse à saisir sur l'autre appareil. Il sert le dossier
 du dépôt en lecture seule, sans authentification : **à réserver à un réseau de
 confiance.** `python serveur.py --local` limite l'écoute à cette machine ;
 `--host` et `--port` permettent de choisir l'interface et le port,
-`--sans-navigateur` empêche l'ouverture automatique du navigateur.
+`--sans-navigateur` empêche l'ouverture automatique du navigateur, `--dossier`
+sert un autre dossier que celui du script.
 
 ### Sur iPad, avec Pyto
 
 `serveur.py` tourne aussi directement sur l'iPad (Pyto, bibliothèque standard
-uniquement) : on sert alors le dépôt à `127.0.0.1` et on ouvre Safari sur la
-même machine. Trois particularités du système :
+uniquement) : on sert alors le dépôt à `127.0.0.1` et on l'ouvre sur la même
+machine. Deux particularités du système :
 
-- **le navigateur n'est pas ouvert automatiquement** — passer à Safari mettrait
-  Pyto en arrière-plan, et iOS suspend aussitôt l'interpréteur. Le serveur
-  affiche l'adresse, à saisir à la main dans Safari ;
-- **laissez Pyto au premier plan** dans une fenêtre partagée (Split View) à
-  côté de Safari : sinon le serveur est mis en pause et les pages ne chargent
-  plus ;
+- Pyto ouvre l'adresse dans son navigateur intégré, l'application reste donc au
+  premier plan et le serveur continue de répondre. **Gardez Pyto au premier
+  plan** : dès que l'application passe en arrière-plan, iOS suspend
+  l'interpréteur et les pages ne chargent plus. En Split View à côté de Safari,
+  les deux restent actifs ;
 - la première tentative d'accès au réseau local déclenche la demande
   d'autorisation « Réseau local ». Refusée, l'adresse réseau affichée est
-  inutilisable ; `--local` suffit pour un usage sur l'iPad seul.
+  inutilisable ; `--local` suffit pour un usage sur l'iPad seul ;
+- **le dossier servi doit être accessible à l'application.** Le serveur le
+  déduit de `__file__` ; si Pyto n'a pas accès au dossier, ou si `__file__` ne
+  le désigne pas, le navigateur affiche « 404 — No permission to list
+  directory ». Le serveur signale désormais le problème au démarrage, et
+  `--dossier <chemin>` permet de désigner le dépôt explicitement :
+
+```bash
+python serveur.py --local --dossier ~/Documents/WEB_CAO
+```
 
 La recherche de composants (`/api/*`) a besoin de `ssl` : si Pyto ne le fournit
 pas, le serveur démarre quand même et ces deux routes répondent

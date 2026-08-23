@@ -4,25 +4,31 @@
 # VERSIONING
 # Version: 2.3.0
 # Date: 2026-08-23
-# Explication: le serveur ne demarrait plus sous Pyto (iPad). Quatre causes,
-#   toutes apparues apres la version d'origine qui y fonctionnait :
+# Explication: le serveur ne demarrait plus sous Pyto (iPad), et quand il
+#   demarrait il repondait « 404 -- No permission to list directory ». Cette
+#   page vient de list_directory : os.listdir(ROOT) a leve une OSError, donc le
+#   dossier servi n'etait pas le depot (bac a sable iOS, ou __file__ relatif
+#   resolu depuis un autre repertoire courant). Meme cause pour le non-
+#   demarrage : le fichier voisin passerelle_mcp.py etait illisible lui aussi.
+#   D'ou --dossier et un diagnostic explicite au demarrage. Autres causes :
 #   1. « import passerelle_mcp » en tete de fichier : sous Pyto le dossier du
 #      script n'est pas toujours dans sys.path et le module ssl peut manquer.
 #      Un import rate empechait TOUT le serveur de demarrer, alors que seules
 #      les deux routes /api/* en dependent. L'import est desormais tolerant et
 #      /api/* repond 503 « passerelle indisponible » le cas echeant.
-#   2. ouverture automatique du navigateur : sous iOS, ouvrir une URL quitte
-#      l'application, et le systeme suspend aussitot l'interpreteur -- le
-#      serveur cesse de repondre. Desactivee sur iOS.
-#   3. make_server n'essayait QUE la double pile IPv6 quand --host est vide :
+#   2. make_server n'essayait QUE la double pile IPv6 quand --host est vide :
 #      si AF_INET6 n'est pas disponible, on retombait en silence sur
 #      127.0.0.1 et un port aleatoire (« inaccessible depuis l'iPad »).
 #      IPv4 est maintenant essaye en second, et la vraie erreur est affichee
 #      au lieu d'etre avalee par « except OSError: continue ».
-#   4. get_local_ip : la ruse UDP vers 10.255.255.255 echoue sur iOS sans
+#   3. get_local_ip : la ruse UDP vers 10.255.255.255 echoue sur iOS sans
 #      l'autorisation « Reseau local » et l'adresse affichee etait inutilisable.
+#   L'ouverture automatique du navigateur, elle, fonctionne sous Pyto (browser
+#   integre, l'application reste au premier plan) : elle est conservee, avec un
+#   rappel a l'ecran puisque quitter Pyto met le serveur en pause.
 # Fonctions modifiees/ajoutees :
-# - sur_ios (nouvelle), get_local_ip, make_server, start_server
+# - sur_ios, verifier_dossier (nouvelles), get_local_ip, make_server
+# - start_server (parametre dossier), main (--dossier)
 # - CustomHandler._api (passerelle absente -> 503)
 #
 # Version: 2.2.0
@@ -155,8 +161,8 @@ def get_local_ip():
 
 
 def sur_ios():
-    """Vrai sous Pyto (iPad/iPhone) : ouvrir une URL y quitte l'application,
-    et iOS suspend alors l'interpreteur -- le serveur cesse de repondre."""
+    """Vrai sous Pyto (iPad/iPhone) : le systeme suspend l'interpreteur des que
+    l'application passe en arriere-plan, ce qui merite un rappel a l'ecran."""
     if sys.platform in ("ios", "ipados"):
         return True
     # Pyto ne se signale pas autrement que par ses modules maison ; ils sont
@@ -170,6 +176,32 @@ def sur_ios():
                    for nom in marqueurs)
     except Exception:                                  # noqa: BLE001
         return False
+
+
+def verifier_dossier(root):
+    """Dit a l'ecran pourquoi le dossier servi ne donnera rien de bon.
+
+    Sans ce controle, un ROOT illisible ne se voyait qu'a l'usage, sous la
+    forme d'un « 404 -- No permission to list directory » dans le navigateur.
+    """
+    if not os.path.isdir(root):
+        print("[X] Dossier servi introuvable : %s" % root)
+        return False
+    try:
+        contenu = os.listdir(root)
+    except OSError as exc:
+        print("[X] Dossier servi illisible : %s" % root)
+        print("    %s" % exc)
+        print("    Sous Pyto (iPad), Python ne voit un dossier exterieur a")
+        print("    l'application que si celle-ci y a acces : ouvrez le dossier")
+        print("    dans Pyto, ou indiquez-le avec --dossier <chemin>.")
+        return False
+    if "index.html" not in contenu:
+        print("[!] %s ne contient pas index.html :" % root)
+        print("    ce n'est probablement pas le dossier du depot. Le chemin est")
+        print("    deduit de __file__ ; s'il est faux, utilisez --dossier.")
+        return False
+    return True
 
 
 def adresse_locale(host, port):
@@ -410,6 +442,9 @@ def make_server(host, port):
 
 
 def start_server(host, port, navigateur=True):
+    # Avant toute chose : le dossier servi est-il exploitable ? On previent et
+    # on continue -- un serveur qui repond, meme mal, reste diagnosticable.
+    verifier_dossier(ROOT)
     httpd = make_server(host, port)
     if httpd is None and port != 0:
         print("[!] Le port %d est bloque (securite entreprise ou deja utilise)." % port)
@@ -451,13 +486,12 @@ def start_server(host, port, navigateur=True):
     print()
 
     if navigateur and sur_ios():
-        # Basculer vers Safari ferait passer Pyto en arriere-plan : iOS
-        # suspend l'interpreteur et le serveur ne repond plus.
-        print("  iOS detecte : ouvrez Safari a la main sur %s" % url)
-        print("  (laissez cet ecran au premier plan, sinon le systeme met le")
-        print("  serveur en pause).")
+        # Pyto ouvre l'URL dans un navigateur integre : l'application reste au
+        # premier plan et le serveur continue de repondre. En revanche, si l'on
+        # quitte Pyto, iOS suspend l'interpreteur -- d'ou le rappel.
+        print("  iOS : gardez Pyto au premier plan, le systeme met le serveur")
+        print("  en pause des que l'application passe en arriere-plan.")
         print()
-        navigateur = False
 
     if navigateur:
         print("  Ouverture du navigateur sur %s" % url)
@@ -486,7 +520,13 @@ def main(argv=None):
     ap.add_argument("--sans-pause", action="store_true",
                     help="rendre la main sans attendre Entree a la fermeture"
                          " (Windows)")
+    ap.add_argument("--dossier", default=None,
+                    help="dossier a servir (defaut : celui de ce script ;"
+                         " utile quand __file__ ne le designe pas, sous Pyto)")
     args = ap.parse_args(argv)
+    if args.dossier:
+        global ROOT
+        ROOT = os.path.abspath(os.path.expanduser(args.dossier))
     host = "127.0.0.1" if args.local else args.host
     return start_server(host, args.port, args.navigateur)
 
