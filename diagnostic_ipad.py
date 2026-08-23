@@ -2,6 +2,14 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 1.2.0
+# Date: 2026-08-23
+# Explication: le diagnostic disait ce qui echouait, pas ou aller ensuite.
+#   Quand iCloud Drive est refuse par le systeme, la sortie est le dossier
+#   propre a l'application : on l'imprime, on verifie qu'il est lisible, et on
+#   signale toute copie du depot qui s'y trouve deja (avec la commande prete).
+# Fonctions modifiees : main (section « ou Python a les pleins droits »)
+#
 # Version: 1.1.0
 # Date: 2026-08-23
 # Explication: le diagnostic s'arretait lui-meme sur PermissionError, sous
@@ -93,6 +101,25 @@ def main():
                 ligne("premiers octets", len(f.read(64)))
         except OSError as exc:
             print("  ECHEC open : %s" % exc)
+
+    titre("ou Python a les pleins droits")
+    # Sous Pyto, le dossier propre a l'application est toujours lisible : c'est
+    # la qu'il faut poser le depot quand iCloud Drive est refuse.
+    for nom, chemin in (("~", os.path.expanduser("~")),
+                        ("~/Documents", os.path.expanduser("~/Documents"))):
+        lisible = sans_echec(lambda c=chemin: len(os.listdir(c)))
+        ligne(nom, chemin)
+        ligne("  lisible", lisible)
+        entrees = sans_echec(lambda c=chemin: os.listdir(c))
+        if isinstance(entrees, list):
+            candidats = [e for e in entrees if "WEB_CAO" in e or "web_cao" in e]
+            if candidats:
+                ligne("  depot trouve", ", ".join(candidats))
+                for cand in candidats:
+                    plein = os.path.join(chemin, cand)
+                    if sans_echec(lambda c=plein: "index.html" in os.listdir(c)) is True:
+                        print("  >> utilisable : python serveur.py --dossier "
+                              "'%s'" % plein)
 
     titre("modules dont depend serveur.py")
     for nom in ("http.server", "socketserver", "ssl", "webbrowser",

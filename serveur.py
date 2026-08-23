@@ -2,6 +2,28 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.5.0
+# Date: 2026-08-23
+# Explication: verifier_dossier jugeait le dossier servi sur os.listdir, et
+#   trouver_dossier cherchait index.html dans un listage. Or servir un fichier
+#   ne demande jamais de lister son dossier : sous Pyto (iPad), un dossier peut
+#   etre non listable et parfaitement lisible -- c'est ainsi que les versions
+#   2.2.0 et anterieures fonctionnaient la ou la 2.3.0 renoncait. Le verdict se
+#   fonde desormais sur la lecture reelle d'index.html, et le message distingue
+#   les deux causes : autorisation refusee, ou chemin faux.
+# Fonctions ajoutees/modifiees :
+# - lisible (nouvelle), verifier_dossier (verdict par open, plus par listdir),
+#   trouver_dossier (idem)
+#
+# Version: 2.4.2
+# Date: 2026-08-23
+# Explication: la page d'erreur conseillait « relancez avec --dossier » la ou
+#   le systeme refuse une autorisation -- --dossier ne peut rien contre un
+#   EPERM. Elle nomme desormais les deux vraies issues (« Ouvrir dossier »
+#   dans Pyto, ou depot deplace dans le dossier propre a Pyto) et precise
+#   qu'un script Python ne peut pas faire la copie lui-meme.
+# Fonctions modifiees : CustomHandler.list_directory (texte)
+#
 # Version: 2.4.1
 # Date: 2026-08-23
 # Explication: sous Windows, le port 8000 refuse (WinError 10013, courant en
@@ -236,6 +258,21 @@ def chemin_absolu(brut):
         return ""
 
 
+def lisible(fichier):
+    """Vrai si ce fichier peut vraiment etre ouvert et lu.
+
+    Le service des fichiers ne liste jamais le dossier : sous Pyto (iPad),
+    os.listdir peut etre refuse alors que open() fonctionne. Juger sur le
+    listage ferait renoncer un serveur qui aurait tres bien fonctionne.
+    """
+    try:
+        with open(fichier, "rb") as flux:
+            flux.read(1)
+        return True
+    except OSError:
+        return False
+
+
 def trouver_dossier():
     """Dossier du depot, avec repli quand __file__ ne le designe pas.
 
@@ -252,42 +289,42 @@ def trouver_dossier():
         if chemin and chemin not in candidats:
             candidats.append(chemin)
     for chemin in candidats:
-        try:
-            if "index.html" in os.listdir(chemin):
-                return chemin
-        except OSError:
-            continue
+        if lisible(os.path.join(chemin, "index.html")):
+            return chemin
     return ""                     # rien de lisible : le message suffira
 
 
 def verifier_dossier(root):
     """Dit a l'ecran pourquoi le dossier servi ne donnera rien de bon.
 
-    Sans ce controle, un ROOT illisible ne se voyait qu'a l'usage, sous la
-    forme d'un « 404 -- No permission to list directory » dans le navigateur.
+    Le verdict se fonde sur la lecture d'index.html, seule chose dont le
+    serveur ait besoin : un dossier non listable mais lisible fonctionne, et
+    l'ancienne version le declarait perdu a tort. Quand la lecture echoue, on
+    distingue les deux causes -- autorisation refusee, ou mauvais chemin.
     """
-    if not os.path.isdir(root):
-        print("[X] Dossier servi introuvable : %s" % root)
-        return False
+    accueil = os.path.join(root, "index.html")
+    if lisible(accueil):
+        return True
+
+    print("[X] Page d'accueil illisible : %s" % accueil)
     try:
-        contenu = os.listdir(root)
+        with open(accueil, "rb"):
+            pass
     except OSError as exc:
-        print("[X] Dossier servi illisible : %s" % root)
         print("    %s" % exc)
-        print("    Le systeme refuse la lecture de ce dossier : --dossier n'y")
-        print("    changera rien, c'est une question d'autorisation.")
-        print("    Sous Pyto (iPad), Python ne voit un dossier exterieur a")
-        print("    l'application que si celle-ci en detient l'autorisation :")
-        print("    barre laterale > « Ouvrir dossier » > choisir le dossier du")
-        print("    depot (une fois pour toutes), ou deplacer le depot dans le")
-        print("    dossier de Pyto lui-meme.")
-        return False
-    if "index.html" not in contenu:
-        print("[!] %s ne contient pas index.html :" % root)
-        print("    ce n'est probablement pas le dossier du depot. Le chemin est")
-        print("    deduit de __file__ ; s'il est faux, utilisez --dossier.")
-        return False
-    return True
+    try:
+        os.listdir(root)
+    except OSError as exc:
+        print("    Le dossier n'est pas listable non plus : %s" % exc)
+        print("    C'est une autorisation qui manque, non un chemin : sous")
+        print("    Pyto, barre laterale > « Ouvrir dossier » > ce dossier, ou")
+        print("    deplacer le depot dans le dossier propre a Pyto")
+        print("    (Fichiers > Sur mon iPad > Pyto).")
+    else:
+        print("    Le dossier est lisible mais index.html n'y est pas : le")
+        print("    chemin deduit de __file__ n'est pas celui du depot.")
+        print("    --dossier <chemin> le corrige.")
+    return False
 
 
 def adresse_locale(host, port):
@@ -383,10 +420,14 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(
                 404, "Dossier illisible",
                 "%s\n%s\n\nDossier servi (ROOT) : %s\n\n"
-                "L'application n'a pas acces a ce dossier (bac a sable iOS /"
-                " Pyto), ou le chemin deduit de __file__ ne designe pas le"
-                " depot. Relancez le serveur avec --dossier <chemin du depot>,"
-                " ou donnez a Pyto l'acces au dossier."
+                "Le systeme refuse la lecture de ce dossier : c'est une"
+                " autorisation qui manque, et --dossier n'y changera rien."
+                " Sous Pyto (iPad), deux issues : barre laterale >"
+                " « Ouvrir dossier » > choisir ce dossier ; ou, plus sur,"
+                " deplacer le depot dans le dossier propre a Pyto"
+                " (Fichiers > Sur mon iPad > Pyto) et le relancer de la."
+                " Le copier depuis Python est impossible : la lecture du"
+                " dossier d'origine est justement ce que le systeme refuse."
                 % (path, exc, ROOT))
             return None
         return super().list_directory(path)
