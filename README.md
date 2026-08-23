@@ -95,10 +95,6 @@ machine. Deux particularités du système :
 python serveur.py --local --dossier ~/Documents/WEB_CAO
 ```
 
-Le script [diagnostic_ipad.py](diagnostic_ipad.py) imprime en un écran tout ce
-qui sert à trancher : `__file__`, répertoire courant, dossier déduit, lecture du
-dossier, modules disponibles, essai d'écoute, adresse locale.
-
 La recherche de composants (`/api/*`) a besoin de `ssl` : si Pyto ne le fournit
 pas, le serveur démarre quand même et ces deux routes répondent
 « passerelle indisponible » — les deux éditeurs, eux, fonctionnent.
