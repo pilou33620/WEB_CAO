@@ -28,7 +28,9 @@
 #   rappel a l'ecran puisque quitter Pyto met le serveur en pause.
 # Fonctions modifiees/ajoutees :
 # - sur_ios, verifier_dossier (nouvelles), get_local_ip, make_server
-# - start_server (parametre dossier), main (--dossier)
+# - CustomHandler.list_directory (nouvelle : dit pourquoi le dossier est
+#   illisible, dans la page d'erreur elle-meme)
+# - start_server, main (--dossier)
 # - CustomHandler._api (passerelle absente -> 503)
 #
 # Version: 2.2.0
@@ -114,7 +116,11 @@ import urllib.parse
 import webbrowser
 
 DEFAULT_PORT = 8000
+# Le chemin evident, dont depend l'import de la passerelle. start_server peut
+# le remplacer par un repli si le depot n'est pas la -- sauf si --dossier a
+# tranche explicitement, auquel cas on obeit sans discuter.
 ROOT = os.path.dirname(os.path.abspath(__file__))
+DOSSIER_IMPOSE = False
 
 # La passerelle composants n'est pas indispensable pour servir les editeurs :
 # sous Pyto (iPad) le dossier du script n'est pas toujours dans sys.path et le
@@ -176,6 +182,31 @@ def sur_ios():
                    for nom in marqueurs)
     except Exception:                                  # noqa: BLE001
         return False
+
+
+def trouver_dossier():
+    """Dossier du depot, avec repli quand __file__ ne le designe pas.
+
+    Sous Pyto (iPad), le script peut etre execute depuis une copie temporaire
+    ou avec un __file__ relatif resolu depuis un tout autre repertoire : le
+    dossier deduit ne contient alors pas index.html, et le serveur repondait
+    « No permission to list directory ». On regarde les autres candidats
+    plausibles avant de renoncer.
+    """
+    candidats = [os.path.dirname(os.path.abspath(__file__)), os.getcwd()]
+    if sys.argv and sys.argv[0]:
+        candidats.append(os.path.dirname(os.path.abspath(sys.argv[0])))
+    vus = []
+    for chemin in candidats:
+        if not chemin or chemin in vus:
+            continue
+        vus.append(chemin)
+        try:
+            if "index.html" in os.listdir(chemin):
+                return chemin, vus[0] != chemin
+        except OSError:
+            continue
+    return vus[0], False
 
 
 def verifier_dossier(root):
@@ -283,6 +314,27 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 return candidate
 
         return filepath
+
+    def list_directory(self, path):
+        """Meme role que la version d'origine, mais l'echec est explique.
+
+        « 404 -- No permission to list directory » n'apprend rien a celui qui
+        le lit dans Safari, et sur iPad la console de Pyto n'est pas toujours
+        visible : on dit quel dossier, quelle erreur systeme, et quoi faire.
+        """
+        try:
+            os.listdir(path)
+        except OSError as exc:
+            self.send_error(
+                404, "Dossier illisible",
+                "%s\n%s\n\nDossier servi (ROOT) : %s\n\n"
+                "L'application n'a pas acces a ce dossier (bac a sable iOS /"
+                " Pyto), ou le chemin deduit de __file__ ne designe pas le"
+                " depot. Relancez le serveur avec --dossier <chemin du depot>,"
+                " ou donnez a Pyto l'acces au dossier."
+                % (path, exc, ROOT))
+            return None
+        return super().list_directory(path)
 
     def send_head(self):
         # le filtrage se fait ici : translate_path est aussi appele par
@@ -444,7 +496,13 @@ def make_server(host, port):
 def start_server(host, port, navigateur=True):
     # Avant toute chose : le dossier servi est-il exploitable ? On previent et
     # on continue -- un serveur qui repond, meme mal, reste diagnosticable.
-    verifier_dossier(ROOT)
+    global ROOT
+    if not verifier_dossier(ROOT) and not DOSSIER_IMPOSE:
+        secours, remplace = trouver_dossier()
+        if remplace:
+            print("[*] Dossier de secours retenu (il contient index.html) :")
+            print("    %s" % secours)
+            ROOT = secours
     httpd = make_server(host, port)
     if httpd is None and port != 0:
         print("[!] Le port %d est bloque (securite entreprise ou deja utilise)." % port)
@@ -525,8 +583,9 @@ def main(argv=None):
                          " utile quand __file__ ne le designe pas, sous Pyto)")
     args = ap.parse_args(argv)
     if args.dossier:
-        global ROOT
+        global ROOT, DOSSIER_IMPOSE
         ROOT = os.path.abspath(os.path.expanduser(args.dossier))
+        DOSSIER_IMPOSE = True
     host = "127.0.0.1" if args.local else args.host
     return start_server(host, args.port, args.navigateur)
 
