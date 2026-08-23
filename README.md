@@ -18,7 +18,7 @@ requirements.txt               aucune dépendance : le fichier le dit et l'expli
 LIB_composants.csv             bibliothèque de références (optionnelle)
 
 editeur-schematique/           saisie du schéma, netlist, nomenclature
-editeur-pcb/                   routage, empilage, DRC, Gerber, Excellon
+editeur-pcb/                   routage, paires diff., empilage, DRC, Gerber
 recherche-composants/          recherche de références via pcbparts.dev
 commun/                        code partagé par les trois outils
 ├── workspace.js               panneaux détachables et dockables
@@ -115,7 +115,9 @@ Chaque banc reconstruit un DOM minimal (`commun/test/dom-stub.js`) et exécute
 le bundle sans navigateur. Le PCB couvre la netlist, le chevelu multicouche,
 les vias, les îlots de cuivre, les classes de net, le contour libre, les rôles de
 couche, l'empilage physique et ses contrôles de perçage, le Gerber, l'Excellon,
-les empreintes dessinées à la main avec leur bibliothèque et l'import défensif d'un document ; le schématique couvre la
+les empreintes dessinées à la main avec leur bibliothèque, les paires
+différentielles — tracé couplé, vias en éventail, longueur découplée,
+impédance — et l'import défensif d'un document ; le schématique couvre la
 découpe des fils, l'extraction des nets, les nets globaux entre feuilles, la
 netlist, la nomenclature et l'analyse du CSV de bibliothèque. Les deux
 vérifient l'espace de travail commun, la session d'onglet — document mis de
@@ -170,6 +172,26 @@ nom, se réapplique sur n'importe quel autre composant sans toucher à son
 repère, sa position ni ses nets, et s'exporte en `.json` pour une autre machine
 ou un autre projet. Détails dans
 [editeur-pcb/README.md](editeur-pcb/README.md#dessiner-une-empreinte-à-la-main-lenregistrer-la-réutiliser).
+
+## Router une paire différentielle
+
+USB, Ethernet, LVDS, CAN : deux nets qui portent le même signal en opposition ne
+se routent pas l'un après l'autre. Sélectionnez les deux pistes, cliquez
+*Créer depuis la sélection* dans le panneau **Paires différentielles** — ou
+*Détecter*, qui lit les noms de net (`USB_DP`/`USB_DM`, `CAN_P`/`CAN_N`, `D+`/`D-`) —
+puis routez la paire d'un seul geste avec la touche **P**.
+
+Les deux pistes sortent des pastilles en éventail, se mettent au pas et le
+gardent : l'écart est tenu dans les coudes comme dans les lignes droites, les
+vias se posent par deux en s'écartant juste ce qu'il faut, et l'arrivée se
+referme toute seule sur les pastilles d'en face. Le panneau règle les six cotes
+— largeur et écart, mini, préféré, maxi —, couche par couche s'il le faut, et
+calcule l'impédance différentielle sur l'empilage déclaré : choisissez un profil
+(D90 pour l'USB 2.0, D100 pour l'Ethernet…) et l'éditeur résout la largeur ou
+l'écart qui tombe dessus. Le contrôle DRC ajoute ce qui ne se voit pas à l'œil :
+la longueur restée découplée, l'écart de longueur entre les deux pistes.
+
+Détails dans [editeur-pcb/README.md](editeur-pcb/README.md#paires-différentielles).
 
 ## Bibliothèque de composants
 

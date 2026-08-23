@@ -20,6 +20,7 @@
     <button class="tb on" id="mSelect">Sélection <kbd>Échap</kbd></button>
     <button class="tb" id="mTrack">Piste <kbd>T</kbd></button>
     <button class="tb" id="mVia">Via <kbd>V</kbd></button>
+    <button class="tb" id="mDiff" title="Router deux nets en paire différentielle : écart tenu, coudes couplés, vias en éventail">Paire diff. <kbd>P</kbd></button>
     <button class="tb" id="mZone">Zone cuivre <kbd>Z</kbd> <span class="car">▾</span></button>
     <button class="tb" id="mEdge">Contour carte <kbd>E</kbd></button>
     <button class="tb" id="mErase">Découpe <kbd>X</kbd></button>
@@ -144,6 +145,18 @@
     <div class="pnl-body"><div id="rules"></div></div>
   </section>
 
+  <section class="pnl" data-pnl="dpair" data-title="Paires différentielles">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">Paires différentielles</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body"><div class="scroll" id="dpair"></div></div>
+  </section>
+
   <section class="pnl" data-pnl="props" data-title="Propriétés">
     <header class="pnl-head">
       <span class="pnl-grip">⠿</span><span class="pnl-title">Propriétés</span>
@@ -206,6 +219,7 @@
 <script src="js/06-panels.js"></script>
 <script src="js/07-app.js"></script>
 <script src="js/08-empreinte.js"></script>
+<script src="js/09-diffpair.js"></script>
 <script src="../commun/workspace.js"></script>
 </body>
 </html>

@@ -14,7 +14,7 @@ const path=require("path");
 const dom=require(path.join(__dirname,"..","..","commun","test","dom-stub.js")).install({
   panels:{stack:"Empilage",rules:"Règles de tracé",
           props:"Propriétés",list:"Nets & composants",
-          stackup:"Empilage physique"},
+          stackup:"Empilage physique",dpair:"Paires différentielles"},
   canvasId:"board"
 });
 const realCanvas=dom.realCanvas;
@@ -37,7 +37,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
-  "pushClear","magnet","mitreSel","mitreAt","collinearRun","runFrom","segClearBad","setActive","segSegDist","segCross","routeBad","focusNet","cancelRoute","updateRoute","classOf","syncAutoZones","detachAuto","zoneCanvas","inPoly","hitTest","px","dist","boardZonePts",
+  "pushClear","magnet","projOnSeg","mitreSel","mitreAt","collinearRun","runFrom","segClearBad","setActive","segSegDist","segCross","routeBad","focusNet","cancelRoute","updateRoute","classOf","syncAutoZones","detachAuto","zoneCanvas","inPoly","hitTest","px","dist","boardZonePts",
   /* session d'onglet commune (commun/session.js) */
   "sessBrancher","sessEnregistrer","sessLire","sessEcrire","sessEffacer",
   "sessPoids","sessTient","sessUrl","sessAller","sessQuitte","sessAutonome",
@@ -62,6 +62,19 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "setGridStep","gridShownStep","gridLabel","fpById",
   /* import défensif (normDoc) et aller-retour de document */
   "docObj","normDoc","setNetClass",
+  /* paires différentielles : modèle, règles, tracé couplé, contrôle */
+  "DP_SUF","DP_FALLBACK","DP_KEYS","DP_PROFILES","DP_MITER","DP_STEP",
+  "dpSplit","dpMateName","dpMatch","dpDetect","dpById","dpByName","dpOfNet",
+  "dpMateNet","dpFreeName","dpRuleFor","dpValues","dpMinGap","dpGeom","dpUid",
+  "dpProfile","dpIsPlane","dpDiBetween","dpStripGeom","dpZ0","dpZdiff",
+  "dpSolveW","dpSolveGap","normDpPair","normDpRule",
+  "dpPts","dpSegs","dpDir","dpPerp","dpCross","dpDot","dpOffset","dpLeg",
+  "dpFreeEnd","dpAnchors","dpNearest","dpPrimPair","dpPairAt","dpPush",
+  "dpSelected","dpSelect","dpViaSpread","dpPosture","dpGate","dpMid","dpTarget",
+  "dpStart","dpUpdate","dpStep","dpVia","dpToLayer","dpCommit","dpCancel",
+  "dpBack","drawDp","dpCoupling","dpDrc","dpFromSel","dpAutoAll","dpDelete",
+  "dpPanelRule","dpMaterialize","dpFigure","dpLayerCells","buildDiffPairs",
+  "dpLayerEdit",
   /* rendu et fusion des lignes droites */
   "drawTracks","sameLine","routeVia",
   /* géométrie du tracé 45° et posture du coude */
@@ -2588,7 +2601,7 @@ T("disposition d'usine appliquée au démarrage",()=>{
   if(e.panels.props.grow===99)throw new Error("wsDefault() partage ses panneaux");
   if(JSON.stringify(dom.dockIds("dockL"))!==JSON.stringify(["stack","rules"]))
     throw new Error("dock gauche : "+dom.dockIds("dockL"));
-  if(JSON.stringify(dom.dockIds("dockR"))!==JSON.stringify(["props","list","stackup"]))
+  if(JSON.stringify(dom.dockIds("dockR"))!==JSON.stringify(["props","list","stackup","dpair"]))
     throw new Error("dock droit : "+dom.dockIds("dockR"));
   if(dom.dockIds("dockB").length)throw new Error("le dock du bas devrait être vide");
   if(!dom.docks.dockB.classList.contains("empty"))
@@ -2604,7 +2617,7 @@ T("déplacer un panneau d'un dock à l'autre",()=>{
   if(wsLabel("props")!=="bas")throw new Error("libellé : "+wsLabel("props"));
   if(dom.panels.props.parentNode!==dom.docks.dockB)
     throw new Error("le panneau n'a pas suivi dans l'arbre");
-  if(JSON.stringify(dom.dockIds("dockR"))!==JSON.stringify(["list","stackup"]))
+  if(JSON.stringify(dom.dockIds("dockR"))!==JSON.stringify(["list","stackup","dpair"]))
     throw new Error("dock droit après départ : "+dom.dockIds("dockR"));
   // l'ordre demandé est respecté
   wsMove("stack","dockB",0);
@@ -3708,6 +3721,424 @@ T("sérigraphie : le point sort sur le film, et seulement s'il existe",()=>{
   r.x=30;r.y=25;S.fps.push(r);touch();
   if(/%ADD\d+C,0\.4000\*%/.test(gerberSilk(0)))
     throw new Error("pas de repère sur un passif, film compris");
+});
+
+/* ==========================================================================
+   Paires différentielles
+   Le couple de nets, la règle qui le borne, le tracé couplé et son contrôle.
+   ========================================================================== */
+const NET_DP=`* Netlist — Éditeur schématique
+* 1 feuille(s) · 2 net(s)
+
+=== Composants ===
+    J1      USB               DIP-4             f1
+    J2      USB               DIP-4             f1
+
+=== Feuille 1 — Principale ===
+
+NET "USB_DP"
+    J1.2
+    J2.2
+
+NET "USB_DM"
+    J1.3
+    J2.3
+`;
+/* Deux connecteurs posés à plat, la paire à router de l'un à l'autre. Rendu :
+   les deux pastilles de départ, les deux d'arrivée. */
+function carteDp(cu){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];S.dpPairs=[];S.dpRules=[];
+  S.dp=null;clearSel();
+  setCuCount(cu||2,true);
+  importNetlist(NET_DP,true);
+  const j1=S.fps.find(f=>f.ref==="J1"), j2=S.fps.find(f=>f.ref==="J2");
+  j1.x=20;j1.y=20;j2.x=60;j2.y=40;
+  touch();
+  const pads=f=>{
+    const l=padsWorld(f);
+    return {p:l.find(q=>q.net==="USB_DP"),n:l.find(q=>q.net==="USB_DM")};
+  };
+  return {j1:j1,j2:j2,a:pads(j1),b:pads(j2)};
+}
+/* Écart entre bords de cuivre au point le plus proche : c'est ce que la règle
+   borne, et ce que le graveur verra. */
+function ecartDp(x,y,l){
+  const P=S.tracks.filter(t=>t.net==="USB_DP"&&t.l===l);
+  const N=S.tracks.filter(t=>t.net==="USB_DM"&&t.l===l);
+  let best=Infinity;
+  for(const t of P){
+    const c=projOnSeg(x,y,t);
+    if(dist(x,y,c.x,c.y)>0.6)continue;
+    for(const o of N){
+      const d=projOnSeg(c.x,c.y,o);
+      best=Math.min(best,dist(c.x,c.y,d.x,d.y)-t.w/2-o.w/2);
+    }
+  }
+  return best;
+}
+T("les noms de net trahissent le couple",()=>{
+  const m=dpMatch("USB_DP","USB_DM");
+  if(!m||m.p!=="USB_DP"||m.n!=="USB_DM")throw new Error("USB_DP/USB_DM : "+JSON.stringify(m));
+  if(dpMatch("USB_DM","USB_DP").p!=="USB_DP")
+    throw new Error("l'ordre des arguments ne doit rien changer");
+  const s=dpMatch("CAN_P","CAN_N");
+  if(!s||s.base!=="CAN")throw new Error("CAN_P/CAN_N : "+JSON.stringify(s));
+  if(!dpMatch("D+","D-"))throw new Error("D+/D- devait former une paire");
+  if(dpMatch("GND","VCC"))throw new Error("GND et VCC ne forment pas une paire");
+  if(dpMatch("USB_DP","CAN_N"))throw new Error("deux bases différentes ne s'apparient pas");
+  // la casse du suffixe se recopie : usb_dp appelle usb_dm, pas usb_DM
+  const bas=dpSplit("usb_dp").find(x=>x.suf==="dp");
+  if(dpMateName(bas)!=="usb_dm")throw new Error("casse perdue : "+dpMateName(bas));
+});
+T("détection : seules les paires dont les deux nets existent",()=>{
+  carteDp();
+  const d=dpDetect();
+  if(d.length!==1)throw new Error("1 paire attendue, "+d.length);
+  if(d[0].p!=="USB_DP"||d[0].n!=="USB_DM"||d[0].name!=="USB")
+    throw new Error("paire déduite : "+JSON.stringify(d[0]));
+  if(dpAutoAll()!==1)throw new Error("la détection devait créer une paire");
+  if(dpAutoAll()!==0)throw new Error("une paire déjà déclarée ne se recrée pas");
+  if(dpOfNet("USB_DP")!==dpOfNet("USB_DM"))
+    throw new Error("les deux nets doivent désigner la même paire");
+  if(dpMateNet("USB_DP")!=="USB_DM")throw new Error("net complémentaire perdu");
+});
+T("créer une paire depuis deux pistes sélectionnées",()=>{
+  carteDp();
+  push();
+  const t1={l:0,net:"USB_DP",w:0.2,x1:10,y1:10,x2:20,y2:10};
+  const t2={l:0,net:"USB_DM",w:0.2,x1:10,y1:11,x2:20,y2:11};
+  S.tracks.push(t1,t2);
+  clearSel();S.sel.tracks.add(t1);
+  if(dpFromSel())throw new Error("une seule piste ne fait pas une paire");
+  S.sel.tracks.add(t2);
+  const q=dpFromSel();
+  if(!q)throw new Error("deux pistes de deux nets devaient faire une paire");
+  if(q.p!=="USB_DP"||q.n!=="USB_DM")throw new Error("P et N mal rangés : "+JSON.stringify(q));
+  if(q.name!=="USB")throw new Error("nom de paire : "+q.name);
+  // un net déjà pris ne se reprend pas
+  const t3={l:0,net:"GND",w:0.3,x1:10,y1:12,x2:20,y2:12};
+  S.tracks.push(t3);
+  clearSel();S.sel.tracks.add(t1);S.sel.tracks.add(t3);
+  if(dpFromSel()!==q)throw new Error("un net déjà apparié doit renvoyer sa paire");
+  if(S.dpPairs.length!==1)throw new Error("aucune seconde paire ne devait naître");
+});
+T("l'écart d'une paire passe devant l'isolation de sa classe",()=>{
+  carteDp();
+  dpAutoAll();
+  const q=S.dpPairs[0];
+  if(clrPair("USB_DP","GND")!==0.25)throw new Error("isolation ordinaire changée");
+  if(Math.abs(clrPair("USB_DP","USB_DM")-DP_FALLBACK.minGap)>1e-9)
+    throw new Error("entre les deux nets de la paire : "+clrPair("USB_DP","USB_DM"));
+  if(clrPair("USB_DM","USB_DP")!==clrPair("USB_DP","USB_DM"))
+    throw new Error("l'isolation ne dépend pas de l'ordre");
+  dpDelete(q);
+  if(clrPair("USB_DP","USB_DM")!==0.25)
+    throw new Error("la paire supprimée, l'isolation de classe reprend");
+});
+T("tracé couplé : deux pistes au pas, de même longueur",()=>{
+  const c=carteDp();
+  dpAutoAll();
+  const q=S.dpPairs[0], g=dpGeom(q,0);
+  setMode("dpair");
+  if(!dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2))
+    throw new Error("départ refusé entre les deux pastilles");
+  if(S.dp.pair!==q)throw new Error("mauvaise paire accrochée");
+  dpUpdate(40,32);
+  if(!S.dp.prevP.length||!S.dp.prevN.length)throw new Error("aperçu vide");
+  if(S.dp.bad)throw new Error("ce trajet ne rencontre rien");
+  dpStep();
+  dpUpdate(c.b.p.x,c.b.p.y);
+  if(!S.dp.snap)throw new Error("le survol de la pastille d'arrivée doit accrocher");
+  dpStep();                                   // l'accroche termine et dépose
+  if(S.dp)throw new Error("la paire arrivée devait se déposer");
+  const P=S.tracks.filter(t=>t.net==="USB_DP"), N=S.tracks.filter(t=>t.net==="USB_DM");
+  if(!P.length||!N.length)throw new Error("les deux pistes devaient être posées");
+  const lg=l=>l.reduce((a,t)=>a+dist(t.x1,t.y1,t.x2,t.y2),0);
+  if(Math.abs(lg(P)-lg(N))>0.05)
+    throw new Error("longueurs désappariées : "+fmt(lg(P),3)+" / "+fmt(lg(N),3));
+  // chaque piste part bien de SA pastille et finit sur SA pastille
+  const touche=(list,pt)=>list.some(t=>dist(t.x1,t.y1,pt.x,pt.y)<1e-6||
+                                        dist(t.x2,t.y2,pt.x,pt.y)<1e-6);
+  if(!touche(P,c.a.p)||!touche(P,c.b.p))throw new Error("la piste P ne relie pas ses pastilles");
+  if(!touche(N,c.a.n)||!touche(N,c.b.n))throw new Error("la piste N ne relie pas ses pastilles");
+  // au milieu du parcours, l'écart est celui de la règle
+  const cp=dpCoupling(q);
+  if(cp.coupled<cp.len*0.7)
+    throw new Error("trop peu de couplage : "+fmt(cp.coupled,1)+" sur "+fmt(cp.len,1));
+  const e=ecartDp((P[2].x1+P[2].x2)/2,(P[2].y1+P[2].y2)/2,0);
+  if(Math.abs(e-g.gap)>0.002)throw new Error("écart mesuré "+fmt(e,3)+" pour "+fmt(g.gap,3));
+});
+T("l'éventail : la paire sort perpendiculairement à l'axe des pastilles",()=>{
+  const c=carteDp();
+  dpAutoAll();
+  setMode("dpair");
+  dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2);
+  dpUpdate(40,45);
+  /* Les deux pastilles sont côte à côte sur l'axe X : la paire doit descendre,
+     et non partir vers la droite en repassant sur la pastille voisine. */
+  const s0=S.dp.prevP[0];
+  if(Math.abs(s0.y2-s0.y1)<1e-9)throw new Error("la paire n'est pas sortie de l'axe des pastilles");
+  const gate=dpGate(S.dp.aP,S.dp.aN,{x:40,y:45},S.dp.gap+S.dp.w,1,S.dp.w);
+  if(Math.abs(gate.n.x)>1e-9||gate.n.y<=0)
+    throw new Error("sens de sortie : "+JSON.stringify(gate.n));
+  if(gate.lead<=Math.abs(dist(S.dp.aP.x,S.dp.aP.y,S.dp.aN.x,S.dp.aN.y)-S.dp.gap-S.dp.w)/2)
+    throw new Error("la porte doit dégager le coude de l'éventail");
+  // les deux jambes de l'éventail ont la même longueur : la paire reste appariée
+  const lp=dist(S.dp.prevP[0].x1,S.dp.prevP[0].y1,S.dp.prevP[0].x2,S.dp.prevP[0].y2);
+  const ln=dist(S.dp.prevN[0].x1,S.dp.prevN[0].y1,S.dp.prevN[0].x2,S.dp.prevN[0].y2);
+  if(Math.abs(lp-ln)>1e-6)throw new Error("éventail dissymétrique : "+lp+" / "+ln);
+  dpCancel();
+});
+T("le tracé couplé ne laisse ni écharde ni angle bâtard",()=>{
+  const c=carteDp();
+  dpAutoAll();
+  setMode("dpair");
+  dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2);
+  dpUpdate(42,32);dpStep();
+  dpUpdate(c.b.p.x,c.b.p.y);dpStep();
+  for(const t of S.tracks){
+    if(!angleOk(t.x2-t.x1,t.y2-t.y1))
+      throw new Error("segment hors des huit sens : "+fmt(angleDeg(t.x2-t.x1,t.y2-t.y1),2)+"°");
+    if(dist(t.x1,t.y1,t.x2,t.y2)<1e-9)throw new Error("segment de longueur nulle posé");
+  }
+  const err=runDrc().filter(e=>!e.info);
+  if(err.length)throw new Error("le tracé couplé devait passer le DRC : "+err[0].msg);
+});
+T("vias de paire : écartés de quoi ne pas se toucher",()=>{
+  const c=carteDp(4);
+  dpAutoAll();
+  const q=S.dpPairs[0];
+  setMode("dpair");
+  dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2);
+  dpUpdate(40,45);dpStep();
+  const av=S.vias.length;
+  dpVia();
+  if(S.vias.length!==av+2)throw new Error("un via par piste : "+(S.vias.length-av));
+  const [v1,v2]=S.vias.slice(-2);
+  if(v1.net===v2.net)throw new Error("les deux vias doivent porter les deux nets");
+  const d=dist(v1.x,v1.y,v2.x,v2.y);
+  if(d<dpViaSpread(q)-1e-3)
+    throw new Error("vias trop proches : "+fmt(d,3)+" pour "+fmt(dpViaSpread(q),3)+" attendus");
+  if(S.dp.layer===0)throw new Error("le via devait changer de couche");
+  if(S.active!==S.dp.layer)throw new Error("la couche active suit la paire");
+  // le retour arrière défait l'éventail ET les deux vias
+  dpBack();
+  if(S.vias.length!==av)throw new Error("les vias devaient repartir : "+S.vias.length);
+  if(S.dp.layer!==0)throw new Error("la couche devait revenir");
+  dpCancel();
+});
+T("retour arrière : la paire recule d'un coude, pas d'un segment",()=>{
+  const c=carteDp();
+  dpAutoAll();
+  setMode("dpair");
+  dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2);
+  dpUpdate(40,45);dpStep();
+  const p1=S.dp.doneP.length, n1=S.dp.doneN.length;
+  dpUpdate(50,50);dpStep();
+  if(S.dp.doneP.length<=p1)throw new Error("le second coude n'a rien posé");
+  dpBack();
+  if(S.dp.doneP.length!==p1||S.dp.doneN.length!==n1)
+    throw new Error("retour incomplet : "+S.dp.doneP.length+" / "+S.dp.doneN.length);
+  dpBack();
+  if(S.dp.doneP.length||S.dp.doneN.length)throw new Error("le premier coude devait partir aussi");
+  dpBack();                                   // rien à défaire : sans effet
+  dpCancel();
+  if(S.tracks.length)throw new Error("un tracé abandonné ne laisse pas de cuivre");
+});
+T("contrôle : longueur découplée et largeur hors bornes",()=>{
+  carteDp();
+  dpAutoAll();
+  const q=S.dpPairs[0];
+  push();
+  S.dpRules.push(Object.assign({},DP_FALLBACK,{name:"R1",uid:dpUid(),
+    layers:{},maxUncoupled:1}));
+  /* Deux pistes parallèles au bon écart sur 20 mm, puis 10 mm chacune dans son
+     coin : vingt millimètres couplés, vingt découplés. */
+  S.tracks.push({l:0,net:"USB_DP",w:0.2,x1:10,y1:10,x2:30,y2:10},
+                {l:0,net:"USB_DM",w:0.2,x1:10,y1:10.35,x2:30,y2:10.35},
+                {l:0,net:"USB_DP",w:0.2,x1:30,y1:10,x2:40,y2:0},
+                {l:0,net:"USB_DM",w:0.2,x1:30,y1:10.35,x2:40,y2:20});
+  touch();
+  const cp=dpCoupling(q);
+  if(Math.abs(cp.coupled-20)>0.5)throw new Error("couplé : "+fmt(cp.coupled,2)+" mm");
+  if(cp.uncoupled<10)throw new Error("découplé : "+fmt(cp.uncoupled,2)+" mm");
+  let e=[];dpDrc(e);
+  if(!e.some(x=>/découplés/.test(x.msg)))throw new Error("le découplage devait être signalé");
+  // une piste plus fine que le mini de la règle
+  S.tracks[0].w=0.05;
+  e=[];dpDrc(e);
+  if(!e.some(x=>/hors des bornes/.test(x.msg)))throw new Error("largeur hors bornes non vue");
+  // ... et la classe de net, elle, ne réclame plus rien sur une piste de paire
+  if(runDrc().some(x=>/de la classe/.test(x.msg)))
+    throw new Error("la classe ne commande pas la largeur d'une paire");
+  // un net disparu de la carte se signale, sans faire tomber le contrôle
+  S.dpPairs.push({id:S.nextId++,name:"FANTOME",p:"RX_P",n:"RX_N"});
+  e=[];dpDrc(e);
+  if(!e.some(x=>/absent/.test(x.msg)))throw new Error("paire orpheline non signalée");
+});
+T("impédance : microruban dehors, triplaque dedans",()=>{
+  carteDp(4);
+  setLayerRole(1,"gnd","GND");
+  setLayerRole(2,"pwr","+5V");
+  const dehors=dpStripGeom(0), dedans=dpStripGeom(3);
+  if(dehors.kind!=="micro")throw new Error("la couche 1 est un microruban");
+  if(dpStripGeom(1).kind!=="micro"&&dpStripGeom(1).kind!=="strip"){/* plan : peu importe */}
+  const mid=dpStripGeom(0);
+  if(!mid.ref)throw new Error("le plan de la couche 2 devait servir de référence");
+  if(dedans.kind!=="micro")throw new Error("la couche 4 n'a de plan que d'un côté");
+  // une couche de signal prise entre deux plans : triplaque
+  setCuCount(6,true);
+  setLayerRole(1,"gnd","GND");
+  setLayerRole(3,"gnd","GND");
+  if(dpStripGeom(2).kind!=="strip")throw new Error("entre deux plans : triplaque");
+  if(dpStripGeom(2).b<=0)throw new Error("écart entre plans nul");
+  // l'impédance décroît quand la piste s'élargit, croît quand l'écart grandit
+  const z1=dpZdiff(0.15,0.15,2), z2=dpZdiff(0.30,0.15,2), z3=dpZdiff(0.15,0.40,2);
+  if(!(z1>z2))throw new Error("élargir la piste doit faire baisser Zdiff");
+  if(!(z3>z1))throw new Error("écarter les pistes doit faire monter Zdiff");
+  // et la dichotomie retombe sur la cible
+  const w=dpSolveW(90,0.15,2);
+  if(Math.abs(dpZdiff(w,0.15,2)-90)>1)throw new Error("largeur résolue : Zdiff "+dpZdiff(w,0.15,2));
+  const gp=dpSolveGap(90,w,2);
+  if(Math.abs(dpZdiff(w,gp,2)-90)>1)throw new Error("écart résolu : Zdiff "+dpZdiff(w,gp,2));
+});
+T("règles : la plus précise l'emporte, et les couches se retouchent",()=>{
+  carteDp();
+  dpAutoAll();
+  const q=S.dpPairs[0];
+  if(dpRuleFor(q)!==DP_FALLBACK)throw new Error("sans règle écrite, celle d'usine sert");
+  S.dpRules.push(Object.assign({},DP_FALLBACK,{name:"Générale",uid:dpUid(),
+    layers:{},prefW:0.25}));
+  if(dpRuleFor(q).name!=="Générale")throw new Error("la règle générale devait s'appliquer");
+  S.dpRules.push(Object.assign({},DP_FALLBACK,{name:"USB seule",uid:dpUid(),
+    layers:{},scope:"USB",prefW:0.18}));
+  if(dpRuleFor(q).name!=="USB seule")throw new Error("une règle nommant la paire passe devant");
+  const r=dpRuleFor(q);
+  r.allLayers=false;r.layers[1]={prefW:0.12,prefGap:0.1,minGap:0.09};
+  if(dpValues(r,0).prefW!==0.18)throw new Error("la couche 1 garde les valeurs générales");
+  if(dpValues(r,1).prefW!==0.12)throw new Error("la couche 2 devait être retouchée");
+  if(dpGeom(q,1).gap!==0.1)throw new Error("le tracé suit la retouche de couche");
+  // le mini le plus bas de toutes les couches fait l'isolation
+  r.layers[1].minGap=0.08;
+  if(Math.abs(dpMinGap(q)-0.08)>1e-9)throw new Error("écart mini : "+dpMinGap(q));
+  // les valeurs préférées restent bornées par le mini et le maxi
+  r.prefW=9;
+  if(dpGeom(q,0).w!==r.maxW)throw new Error("une préférée aberrante se ramène au maxi");
+});
+T("document : paires et règles se relisent, aller-retour neutre",()=>{
+  carteDp();
+  dpAutoAll();
+  push();
+  S.dpRules.push(Object.assign({},DP_FALLBACK,{name:"USB 90 Ω",comment:"USB 2.0",
+    uid:"ABCDEFGH",scope:"USB",allLayers:false,useImp:true,imp:"D90",
+    layers:{0:{prefW:0.22,prefGap:0.16}},maxUncoupled:5}));
+  touch();
+  const av=docObj(), ap=normDoc(JSON.parse(JSON.stringify(av)));
+  const d=firstDiff(JSON.parse(JSON.stringify(av)),JSON.parse(JSON.stringify(ap)),"doc");
+  if(d)throw new Error("l'aller-retour a changé quelque chose : "+d);
+  loadDoc(JSON.parse(JSON.stringify(av)),true);
+  if(S.dpPairs.length!==1||S.dpPairs[0].name!=="USB")throw new Error("paire perdue à la relecture");
+  if(S.dpRules.length!==1||S.dpRules[0].uid!=="ABCDEFGH")throw new Error("règle perdue");
+  if(S.dpRules[0].layers[0].prefW!==0.22)throw new Error("retouche de couche perdue");
+});
+T("document : une paire venue d'ailleurs ne passe pas telle quelle",()=>{
+  carteDp();
+  const d=normDoc({cu:2,
+    dpPairs:[{id:"x",name:"<script>",p:"A_P",n:"A_N"},
+             {name:"vide",p:"",n:"B"},              // sans les deux nets : rejetée
+             {name:"boucle",p:"C",n:"C"},           // un net avec lui-même : rejetée
+             {id:1,name:"<script>",p:"D_P",n:"D_N"}],
+    dpRules:[{name:"R",uid:"a b<>c",scope:"inconnue",minW:-5,maxW:1e9,
+              maxUncoupled:"beaucoup",imp:"D999",layers:{7:{prefW:1},x:{prefW:1},
+              0:{prefW:"non"}}}]});
+  if(d.dpPairs.length!==2)throw new Error("2 paires exploitables attendues, "+d.dpPairs.length);
+  if(d.dpPairs[0].name===d.dpPairs[1].name)throw new Error("deux paires ne peuvent partager un nom");
+  if(d.dpPairs[0].id===d.dpPairs[1].id)throw new Error("identifiants distincts attendus");
+  const r=d.dpRules[0];
+  if(/[^A-Za-z0-9]/.test(r.uid))throw new Error("identifiant non filtré : "+r.uid);
+  if(r.scope!=="")throw new Error("une portée vers une paire absente ne vise plus rien");
+  if(r.minW<0.01||r.maxW>100)throw new Error("largeurs non bornées");
+  if(r.maxUncoupled!==DP_FALLBACK.maxUncoupled)throw new Error("longueur illisible non redressée");
+  if(r.imp!=="")throw new Error("profil inconnu accepté");
+  if(Object.keys(r.layers).length)throw new Error("retouches de couche fantômes gardées");
+});
+T("panneau des paires : ce qu'il montre, et ce qu'il échappe",()=>{
+  carteDp();
+  dpAutoAll();
+  S.dpPairs[0].name='<img src=x onerror="alert(1)">';
+  buildDiffPairs();
+  const h=$("dpair").innerHTML;
+  if(h.indexOf("onerror=\"alert")>=0)throw new Error("un nom de paire hostile est passé tel quel");
+  if(h.indexOf("&lt;img")<0)throw new Error("le nom devait être échappé");
+  if(h.indexOf("Contraintes")<0)throw new Error("la section des contraintes manque");
+  if(h.indexOf("Largeur préférée")<0||h.indexOf("Écart préféré")<0)
+    throw new Error("les six cotes doivent être là");
+  if(h.indexOf("toutes les couches")<0)throw new Error("la case « toutes les couches » manque");
+  if(h.indexOf("Profil d")<0)throw new Error("le profil d'impédance manque");
+  for(let i=0;i<S.cu;i++)
+    if(h.indexOf('data-dpl="'+i+'"')<0)throw new Error("couche "+i+" absente du tableau");
+  if(h.indexOf('data-dpp="0"')<0)throw new Error("la paire manque à la liste");
+  // la règle d'usine ne s'inscrit dans le document qu'à la première retouche
+  if(S.dpRules.length)throw new Error("aucune règle ne devait être écrite d'office");
+  if(!dpPanelRule().draft)throw new Error("la règle affichée devait être celle d'usine");
+  $("dpMinW").value="0.12";
+  $("dpMinW").onchange();
+  if(S.dpRules.length!==1)throw new Error("la retouche devait inscrire la règle");
+  if(S.dpRules[0].minW!==0.12)throw new Error("valeur non reprise : "+S.dpRules[0].minW);
+  if(!/^[A-Z]{8}$/.test(S.dpRules[0].uid))throw new Error("identifiant : "+S.dpRules[0].uid);
+  const uid=S.dpRules[0].uid;
+  $("dpPrefW").value="0.21";$("dpPrefW").onchange();
+  if(S.dpRules[0].uid!==uid)throw new Error("l'identifiant ne doit plus bouger");
+  if(S.dpRules.length!==1)throw new Error("une seule règle après deux retouches");
+});
+T("la figure du panneau suit les cotes en vigueur",()=>{
+  carteDp();
+  dpAutoAll();
+  const f=dpFigure(0.2,0.15);
+  if(f.indexOf("<svg")<0)throw new Error("pas de figure");
+  if(f.indexOf("0.200")<0||f.indexOf("0.150")<0)throw new Error("les cotes ne sont pas écrites");
+  if(f.indexOf("0.350")<0)throw new Error("le pas de la paire manque");
+});
+T("mode paire : la barre, le clavier et le pied de page",()=>{
+  carteDp();
+  dpAutoAll();
+  setMode("dpair");
+  if(S.mode!=="dpair")throw new Error("mode non pris");
+  if(!$("mDiff").classList.contains("on"))throw new Error("bouton non allumé");
+  if($("fMode").textContent!=="Paire différentielle")throw new Error("pied de page : "+$("fMode").textContent);
+  key("t");
+  if(S.mode!=="track")throw new Error("T doit rendre la main au tracé simple");
+  key("p");
+  if(S.mode!=="dpair")throw new Error("P doit revenir à la paire");
+  setMode("select");
+  if($("mDiff").classList.contains("on"))throw new Error("bouton resté allumé");
+});
+T("changer d'outil dépose la paire en cours",()=>{
+  const c=carteDp();
+  dpAutoAll();
+  setMode("dpair");
+  dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2);
+  dpUpdate(40,45);dpStep();
+  if(!S.dp)throw new Error("tracé perdu");
+  setMode("select");
+  if(S.dp)throw new Error("le tracé devait se déposer");
+  if(!S.tracks.length)throw new Error("le cuivre tracé devait rester");
+  const nets=new Set(S.tracks.map(t=>t.net));
+  if(!nets.has("USB_DP")||!nets.has("USB_DM"))throw new Error("les deux nets devaient être posés");
+});
+T("supprimer une paire laisse le cuivre en place",()=>{
+  const c=carteDp();
+  dpAutoAll();
+  setMode("dpair");
+  dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2);
+  dpUpdate(40,45);dpStep();dpCommit();
+  const n=S.tracks.length;
+  if(!n)throw new Error("rien n'a été posé");
+  dpDelete(S.dpPairs[0]);
+  if(S.dpPairs.length)throw new Error("la paire devait partir");
+  if(S.tracks.length!==n)throw new Error("le cuivre ne devait pas bouger");
+  undo();
+  if(S.dpPairs.length!==1)throw new Error("annuler devait rendre la paire");
 });
 
 /* ==========================================================================

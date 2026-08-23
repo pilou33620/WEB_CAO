@@ -471,6 +471,8 @@ const S = {
   classes:[{name:"Défaut",      w:0.3, clr:0.25, via:0.8, drill:0.4},
            {name:"Alimentation",w:0.6, clr:0.25, via:0.9, drill:0.45}],
   netClass:{},                // net → nom de classe ; absent = classe par défaut
+  dpPairs:[],                 // paires différentielles : {id,name,p,n}
+  dpRules:[],                 // règles de paire ; vide = la règle d'usine
   scale:5, ox:0, oy:0,
   grid:0.1, showGrid:true, flip:false, contrast:1,   // pas d'accrochage au démarrage
   origin:{x:0,y:0}, fabOrigin:false,   // origine utilisateur ; repère des fichiers
@@ -479,6 +481,7 @@ const S = {
   mode:"select",
   sel:{fps:new Set(),tracks:new Set(),vias:new Set(),zones:new Set(),cuts:new Set(),edge:false},
   route:null,                 // tracé de piste en cours
+  dp:null,                    // tracé de paire différentielle en cours
   zoneDraft:null,             // zone en cours de saisie
   cutDraft:null,              // découpe de zone en cours
   hlNet:null,                 // net mis en avant
@@ -1329,8 +1332,19 @@ function setNetClass(net,name){
   else S.netClass[net]=name;
 }
 function defaultWidth(net){return classOf(net).w;}
-/* isolation entre deux nets : la plus exigeante des deux classes l'emporte */
-function clrPair(a,b){return Math.max(classOf(a).clr,classOf(b).clr);}
+/* Isolation entre deux nets : la plus exigeante des deux classes l'emporte.
+   Sauf entre les deux nets d'une paire différentielle : là, c'est l'écart mini
+   de la règle de paire qui fait loi. Une paire tenue à 0,15 mm sous une classe
+   qui exige 0,25 mm n'est pas une carte en faute — c'est le principe même de la
+   paire, et sans cette exception le routeur refuserait de la poser, le DRC la
+   condamnerait et les zones de cuivre l'écarteraient à tort. */
+function clrPair(a,b){
+  if(a&&b&&a!==b){
+    const d=dpOfNet(a);
+    if(d&&(d.p===b||d.n===b))return dpMinGap(d);
+  }
+  return Math.max(classOf(a).clr,classOf(b).clr);
+}
 function maxClr(){
   let m=0;
   for(const c of S.classes)m=Math.max(m,c.clr);
@@ -1358,4 +1372,272 @@ function netTable(){
   return [...m.values()].sort((a,b)=>
     (isPower(b.name)?1:0)-(isPower(a.name)?1:0) ||
     String(a.name).localeCompare(String(b.name),"fr",{numeric:true}));
+}
+
+/* ==========================================================================
+   Paires différentielles — le modèle
+   --------------------------------------------------------------------------
+   Une paire, c'est deux nets qu'on route ensemble : la piste P et la piste N,
+   côte à côte, à écartement constant. Ce qui la définit tient en trois choses
+   — le couple de nets, la largeur des pistes et l'écart entre elles — et c'est
+   ce couple largeur/écart qui fixe l'impédance différentielle. Tout le reste
+   du programme continue de ne voir que deux nets ordinaires : une paire ne
+   crée aucun objet sur la carte, elle dit seulement comment les router et ce
+   que le contrôle DRC doit vérifier.
+
+   Les **règles** sont rangées à part, comme les classes de net : une règle
+   nomme un jeu de contraintes (mini, préféré, maxi, pour la largeur comme pour
+   l'écart) et s'applique aux paires qu'elle vise. La première règle qui vise
+   la paire l'emporte — la priorité, c'est l'ordre de la liste, comme dans les
+   règles de conception dont ce panneau reprend la disposition.
+   ========================================================================== */
+/* Les suffixes qui font une paire, du plus explicite au plus court. C'est la
+   règle de KiCad (« les noms doivent se terminer par N/P ou +/- »), élargie
+   aux notations qu'on rencontre sur les bus série : USB_DP/USB_DM, D+/D-,
+   TXP/TXN. La détection ne propose une paire que si les DEUX nets existent :
+   « VCCN » tout seul n'a jamais fait un net différentiel. */
+const DP_SUF=[["dp","dm"],["dp","dn"],["d+","d-"],["tp","tn"],["rp","rn"],
+              ["hsp","hsm"],["+","-"],["p","n"]];
+const DP_SEP=/[_\-.]$/;
+/* Découpe un nom de net en (base, séparateur, suffixe) pour chacun des
+   arrangements possibles. Le suffixe le plus long est essayé d'abord : sans
+   cela « USB_DP » se lirait « USB_D » + « P », et son complémentaire serait
+   « USB_DN » au lieu de « USB_DM ». */
+function dpSplit(net){
+  const s=String(net||"");
+  const out=[];
+  for(const [a,b] of DP_SUF)
+    for(const [suf,pol] of [[a,"p"],[b,"n"]]){
+      if(s.length<=suf.length)continue;
+      const tail=s.slice(s.length-suf.length);
+      if(tail.toLowerCase()!==suf)continue;
+      let base=s.slice(0,s.length-suf.length), sep="";
+      if(DP_SEP.test(base)){sep=base.slice(-1);base=base.slice(0,-1);}
+      if(!base)continue;
+      out.push({base:base,sep:sep,pol:pol,suf:tail,mate:pol==="p"?b:a});
+    }
+  return out;
+}
+/* Le nom complémentaire, écrit comme l'original : suffixe en capitales si
+   l'original l'était, en minuscules sinon. « USB_DP » donne « USB_DM », et
+   « usb_dp » donne « usb_dm ». */
+function dpMateName(sp){
+  const up=sp.suf===sp.suf.toUpperCase();
+  return sp.base+sp.sep+(up?sp.mate.toUpperCase():sp.mate);
+}
+/* La paire que forment deux nets, s'ils en forment une : {p,n,base}. L'ordre
+   des arguments n'a pas d'importance, c'est le suffixe qui décide qui est P. */
+function dpMatch(a,b){
+  for(const sp of dpSplit(a))
+    if(dpMateName(sp)===b)
+      return sp.pol==="p"?{p:a,n:b,base:sp.base}:{p:b,n:a,base:sp.base};
+  return null;
+}
+/* Les paires que la netlist contient sans qu'on ait rien déclaré. Sert au
+   bouton « Détecter » du panneau : c'est le DpNetPair du routeur de KiCad,
+   appliqué à toute la carte d'un coup plutôt qu'au net cliqué. */
+function dpDetect(){
+  const nets=netTable().map(n=>n.name), seen=new Set(), out=[];
+  for(const a of nets){
+    if(seen.has(a))continue;
+    for(const sp of dpSplit(a)){
+      const b=dpMateName(sp);
+      if(b===a||nets.indexOf(b)<0||seen.has(b))continue;
+      const m=dpMatch(a,b);
+      if(!m)continue;
+      seen.add(a);seen.add(b);
+      out.push({name:m.base,p:m.p,n:m.n});
+      break;
+    }
+  }
+  return out;
+}
+/* ---------- accès aux paires ---------- */
+function dpById(id){return S.dpPairs.find(x=>x.id===id)||null;}
+function dpByName(name){return S.dpPairs.find(x=>x.name===name)||null;}
+/* La paire à laquelle appartient un net, ou null. Un net n'est que dans une
+   paire à la fois : la première trouvée est la bonne. */
+function dpOfNet(net){
+  if(!net)return null;
+  return S.dpPairs.find(x=>x.p===net||x.n===net)||null;
+}
+/* Le net d'en face, dans la paire d'un net donné. */
+function dpMateNet(net){
+  const d=dpOfNet(net);
+  return d?(d.p===net?d.n:d.p):null;
+}
+/* Un nom de paire libre, dérivé de la base commune aux deux nets. */
+function dpFreeName(base){
+  const b=String(base||"PAIRE").replace(/[_\-.]+$/,"")||"PAIRE";
+  if(!dpByName(b))return b;
+  for(let k=2;k<999;k++)if(!dpByName(b+"_"+k))return b+"_"+k;
+  return b+"_"+S.nextId;
+}
+/* ---------- règles ----------
+   La règle d'usine sert tant qu'aucune n'a été écrite : mêmes valeurs que la
+   classe par défaut pour la largeur, et un écart de 0,15 mm — de quoi tenir
+   90 Ω sur un FR-4 de 1,6 mm en quatre couches. `defClass()` a le même rôle
+   pour les classes de net, et le même garde-fou : une carte sans règle se
+   route quand même. */
+const DP_FALLBACK={name:"PairesDiff_1",comment:"",uid:"",scope:"",
+                   allLayers:true,
+                   minW:0.15,prefW:0.2,maxW:0.4,
+                   minGap:0.13,prefGap:0.15,maxGap:0.4,
+                   maxUncoupled:12.7,useImp:false,imp:"",layers:{}};
+/* La règle qui vise une paire : la première de la liste qui la nomme, sinon la
+   première qui ne restreint rien, sinon la règle d'usine. `scope` vide vise
+   toutes les paires — c'est le « aucune paire visée » du panneau, qui laisse
+   la règle s'appliquer partout. */
+function dpRuleFor(pair){
+  const nm=pair&&pair.name;
+  for(const r of S.dpRules)if(r.scope&&nm&&r.scope===nm)return r;
+  for(const r of S.dpRules)if(!r.scope)return r;
+  return S.dpRules[0]||DP_FALLBACK;
+}
+/* Les six contraintes, résolues pour une couche donnée. Une règle porte des
+   valeurs générales et, si elle ne s'applique pas à toutes les couches, des
+   retouches couche par couche : c'est le tableau du bas du panneau. */
+const DP_KEYS=["minW","prefW","maxW","minGap","prefGap","maxGap"];
+function dpValues(rule,layer){
+  const r=rule||DP_FALLBACK, out={};
+  for(const k of DP_KEYS)out[k]=r[k];
+  if(!r.allLayers&&r.layers){
+    const o=r.layers[layer];
+    if(o)for(const k of DP_KEYS)if(Number.isFinite(+o[k]))out[k]=+o[k];
+  }
+  out.maxUncoupled=r.maxUncoupled;
+  return out;
+}
+/* Le plus petit écart que la règle admette, toutes couches confondues : c'est
+   la distance dont l'isolation ne doit jamais descendre entre les deux nets de
+   la paire. `clrPair` s'en sert, et il ne connaît pas la couche. */
+function dpMinGap(pair){
+  const r=dpRuleFor(pair);
+  let m=r.minGap;
+  if(!r.allLayers&&r.layers)
+    for(const k in r.layers){
+      const v=+r.layers[k].minGap;
+      if(Number.isFinite(v)&&v<m)m=v;
+    }
+  return Math.max(0.02,m);
+}
+/* Largeur et écart de tracé d'une paire sur une couche : les valeurs
+   préférées, ramenées entre le mini et le maxi — une règle retouchée à la main
+   peut se contredire, et le routeur ne doit pas poser du cuivre hors bornes. */
+function dpGeom(pair,layer){
+  const v=dpValues(dpRuleFor(pair),layer==null?S.active:layer);
+  const w=clamp(v.prefW,Math.min(v.minW,v.maxW),Math.max(v.minW,v.maxW));
+  const g=clamp(v.prefGap,Math.min(v.minGap,v.maxGap),Math.max(v.minGap,v.maxGap));
+  return {w:Math.max(0.05,w),gap:Math.max(0.02,g),v:v};
+}
+/* Identifiant de règle : huit lettres, comme celui que les logiciels de CAO
+   collent sur chaque règle. Il ne sert qu'à la désigner sans ambiguïté dans un
+   échange — deux règles renommées pareil restent distinctes — et se range avec
+   le document. */
+function dpUid(){
+  let s="";
+  for(let i=0;i<8;i++)s+="ABCDEFGHIJKLMNOPQRSTUVWXYZ"[Math.floor(Math.random()*26)];
+  return s;
+}
+
+/* ==========================================================================
+   Impédance différentielle
+   --------------------------------------------------------------------------
+   L'empilage physique dit déjà tout ce qu'il faut : l'épaisseur qui sépare la
+   piste de son plan de référence, la constante diélectrique du stratifié et
+   l'épaisseur du cuivre. Reste à en tirer l'impédance, avec les formules
+   approchées de l'IPC-2141 — celles que tout le monde emploie pour dégrossir,
+   à ±10 % près. Le fabricant, lui, tranchera au calcul de champ : ce panneau
+   sert à partir avec des cotes plausibles, pas à signer une commande.
+   ========================================================================== */
+/* Profils courants : ce que demandent les bus qu'on route en paire. */
+const DP_PROFILES=[{id:"D90",z:90,n:"D90 — USB 2.0"},
+                   {id:"D100",z:100,n:"D100 — Ethernet, LVDS"},
+                   {id:"D85",z:85,n:"D85 — PCIe, USB 3"},
+                   {id:"D120",z:120,n:"D120 — CAN, RS-485"}];
+function dpProfile(id){return DP_PROFILES.find(p=>p.id===id)||null;}
+/* Une couche porte un plan de référence si son rôle en est un, ou si une zone
+   pleine carte y a été posée — même vérité que pour le DRC : le cuivre
+   réellement en place, pas l'intention. */
+function dpIsPlane(i){
+  if(rolePlane(layerRole(i)))return true;
+  return S.zones.some(z=>z.l===i&&z.auto);
+}
+/* Épaisseur de diélectrique entre deux couches de cuivre, et Dk moyen pondéré
+   par l'épaisseur. */
+function dpDiBetween(a,b){
+  if(b<a){const k=a;a=b;b=k;}
+  let t=0,s=0;
+  for(let i=a;i<b;i++){const d=diAt(i);t+=d.t;s+=d.t*d.er;}
+  return {t:r4(t),er:t>0?r4(s/t):4.5};
+}
+/* La géométrie vue par les formules : microruban quand la couche n'a de plan
+   que d'un côté — les deux faces extérieures —, triplaque quand elle en a de
+   part et d'autre. `h` est la distance au plan le plus proche ; pour la
+   triplaque, `b` est la distance entre les deux plans. */
+function dpStripGeom(layer){
+  const i=clamp(layer==null?S.active:layer,0,S.cu-1);
+  let up=null,dn=null;
+  for(let k=i-1;k>=0;k--)if(dpIsPlane(k)){up=k;break;}
+  for(let k=i+1;k<S.cu;k++)if(dpIsPlane(k)){dn=k;break;}
+  const t=cuT(i);
+  if(up!=null&&dn!=null){
+    const a=dpDiBetween(up,i), c=dpDiBetween(i,dn);
+    return {kind:"strip",h:Math.min(a.t,c.t),b:r4(a.t+c.t+t),
+            er:r4((a.er*a.t+c.er*c.t)/Math.max(1e-6,a.t+c.t)),t:t,ref:2};
+  }
+  const near=up!=null?up:dn;
+  if(near==null){                       // aucun plan : on se rabat sur le voisin
+    const j=i===0?Math.min(1,S.cu-1):i-1;
+    const d=dpDiBetween(i,j);
+    return {kind:"micro",h:d.t||0.2,b:0,er:d.er,t:t,ref:0};
+  }
+  const d=dpDiBetween(i,near);
+  return {kind:"micro",h:d.t||0.2,b:0,er:d.er,t:t,ref:1};
+}
+/* Impédance caractéristique d'une piste seule, puis impédance différentielle
+   de la paire — IPC-2141A, microruban et triplaque symétrique. `s` est l'écart
+   entre bords de cuivre. */
+function dpZ0(g,w){
+  if(!(w>0))return 0;
+  if(g.kind==="strip"){
+    const b=Math.max(g.b,1e-4);
+    const x=4*b/(0.67*Math.PI*(0.8*w+g.t));
+    return x>1?60/Math.sqrt(g.er)*Math.log(x):0;
+  }
+  const x=5.98*g.h/(0.8*w+g.t);
+  return x>1?87/Math.sqrt(g.er+1.41)*Math.log(x):0;
+}
+function dpZdiff(w,s,layer){
+  const g=dpStripGeom(layer), z0=dpZ0(g,w);
+  if(!(z0>0))return 0;
+  const k=g.kind==="strip"
+    ? 1-0.347*Math.exp(-2.9*s/Math.max(g.b,1e-4))
+    : 1-0.48 *Math.exp(-0.96*s/Math.max(g.h,1e-4));
+  return r3(2*z0*Math.max(0.05,k));
+}
+/* La largeur qui tombe sur l'impédance visée, à écart fixé — par dichotomie,
+   l'impédance étant décroissante en largeur. Rien de mieux à faire : ces
+   formules ne s'inversent pas. */
+function dpSolveW(target,s,layer){
+  let lo=0.05,hi=2;
+  if(dpZdiff(hi,s,layer)>target)return r3(hi);
+  if(dpZdiff(lo,s,layer)<target)return r3(lo);
+  for(let i=0;i<48;i++){
+    const m=(lo+hi)/2;
+    if(dpZdiff(m,s,layer)>target)lo=m;else hi=m;
+  }
+  return r3((lo+hi)/2);
+}
+/* Et l'écart qui tombe sur l'impédance visée, à largeur fixée : croissant,
+   celui-là — écarter les pistes les découple et fait monter Zdiff. */
+function dpSolveGap(target,w,layer){
+  let lo=0.05,hi=3;
+  if(dpZdiff(w,lo,layer)>target)return r3(lo);
+  if(dpZdiff(w,hi,layer)<target)return r3(hi);
+  for(let i=0;i<48;i++){
+    const m=(lo+hi)/2;
+    if(dpZdiff(w,m,layer)<target)lo=m;else hi=m;
+  }
+  return r3((lo+hi)/2);
 }

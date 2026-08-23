@@ -623,7 +623,10 @@ function buildStackup(){
 }
 /* buildStackup() suit le mouvement : les rôles de couche et les zones changent
    sous lui, et la coupe les montre. */
-function refreshPanels(){buildProps();buildList();buildTabs();buildStackup();}
+function refreshPanels(){
+  buildProps();buildList();buildTabs();buildStackup();
+  if(typeof buildDiffPairs==="function")buildDiffPairs();
+}
 
 function buildProps(){
   const box=$("props");

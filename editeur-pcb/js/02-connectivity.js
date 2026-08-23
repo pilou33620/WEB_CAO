@@ -476,7 +476,10 @@ function runDrc(){
   /* largeur, net manquant, débordement */
   for(const t of S.tracks){
     const cl=classOf(t.net);
-    if(t.w<cl.w-1e-6)
+    /* Une piste de paire différentielle est plus fine que sa classe par
+       construction : c'est l'impédance qui décide de sa largeur, pas la classe
+       de net. C'est la règle de paire qui la borne, et `dpDrc` le vérifie. */
+    if(t.w<cl.w-1e-6&&!(typeof dpOfNet==="function"&&dpOfNet(t.net)))
       out.push({x:(t.x1+t.x2)/2,y:(t.y1+t.y2)/2,l:t.l,
         msg:"Piste de "+fmt(t.w,3)+" mm sous les "+fmt(cl.w,2)+
             " mm de la classe "+cl.name});
@@ -600,6 +603,10 @@ function runDrc(){
     if(n.miss>0)
       out.push({info:true,x:n.pads[0].q.x,y:n.pads[0].q.y,l:0,
         msg:"Net "+n.name+" : "+n.miss+" liaison(s) non routée(s)"});
+  /* les paires différentielles : largeur hors bornes, trajet découplé trop
+     long, net disparu — le module qui les connaît fait lui-même le contrôle */
+  if(typeof dpDrc==="function")dpDrc(out);
+
   S.drc=out; S.drcRun=true;
   return out;
 }

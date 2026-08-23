@@ -132,6 +132,12 @@
     box-shadow:inset 3px 0 0 var(--sw,transparent);padding-left:9px;
   }
   table.stk td.mat{color:var(--txt-dim)}
+  /* une cote retouchée pour cette couche-là seulement : l'étiquette se lit
+     comme celle d'un plan dans l'onglet de couche */
+  table.stk td .pl{
+    font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:var(--yellow);
+    border:1px solid var(--border2);border-radius:3px;padding:0 3px;margin-left:4px;
+  }
   table.stk td.ty,table.stk td.r{font-family:var(--mono);font-size:10px;letter-spacing:.04em}
   table.stk td.ty{color:var(--txt-dim)}
   /* le type de couche se voit à la teinte, sans lire la colonne « type » */
@@ -159,6 +165,19 @@
   .stkinfo b{color:var(--txt);font-weight:600}
   .stkinfo b.warn,.stkinfo .warn{color:var(--red)}
   .stkinfo b.ok{color:#6fd39b}
+  /* ---------- figure du panneau des paires différentielles ----------
+     Une règle de paire se lit mal en colonne de nombres : la figure dit
+     lequel est la largeur et lequel est l'écart, une fois pour toutes. Elle
+     reprend les couleurs de la couche active, comme le reste du panneau. */
+  .dpfig{
+    padding:8px 12px 10px;border-bottom:1px solid var(--border);
+    background:#131519;
+  }
+  .dpfig svg{display:block;width:100%;height:auto;max-height:110px}
+  .dpfignote{
+    margin-top:4px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;
+    color:var(--txt-dim);text-align:center;
+  }
   /* ---------- propriétés ---------- */
   .prop{padding:10px 12px;border-bottom:1px solid var(--border)}
   .prop label{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;

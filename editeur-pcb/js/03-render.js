@@ -668,6 +668,7 @@ function paint(c,dpr,w,h,noGrid){
   drawSilk(c);
   drawTech(c);
   drawRoute(c);
+  if(typeof drawDp==="function")drawDp(c);
   drawZoneDraft(c);
   drawCutDraft(c);
   drawEdgeDraft(c);

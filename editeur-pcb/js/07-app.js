@@ -69,6 +69,7 @@ function newDoc(){
   if(S.fps.length&&!confirm("Repartir d'une carte vide ? Le travail en cours sera perdu."))return;
   push();
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.drc=[];S.drcRun=false;S.hlNet=null;
+  S.dpPairs=[];S.dp=null;   // les règles restent : elles décrivent un métier, pas une carte
   clearSel();zoneCache.clear();touch();
   refreshPanels();draw();
   hint("Carte vide. Importez une netlist pour commencer.");
@@ -114,6 +115,7 @@ function openImport(){
 $("mSelect").onclick=()=>setMode("select");
 $("mTrack").onclick=()=>setMode("track");
 $("mVia").onclick=()=>setMode("via");
+$("mDiff").onclick=()=>setMode("dpair");
 /* Le bouton passe en mode zone et déplie ses options :
    rôle de la couche active, net du plan, deux façons de poser du cuivre. */
 $("mZone").onclick=e=>{e.stopPropagation();setMode("zone");zoneMenuToggle();};

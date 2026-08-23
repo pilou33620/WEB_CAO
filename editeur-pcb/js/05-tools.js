@@ -10,7 +10,9 @@
 function docObj(){
   return {format:"pcbedit-1",cu:S.cu,cuL:S.cuL,stack:S.stack,show:S.show,
           board:S.board,rule:S.rule,
-          classes:S.classes,netClass:S.netClass,origin:S.origin,fabOrigin:S.fabOrigin,
+          classes:S.classes,netClass:S.netClass,
+          dpPairs:S.dpPairs,dpRules:S.dpRules,
+          origin:S.origin,fabOrigin:S.fabOrigin,
           fps:S.fps,tracks:S.tracks,vias:S.vias,zones:S.zones,cuts:S.cuts,
           active:S.active,nextId:S.nextId};
 }
@@ -180,6 +182,52 @@ function normClass(c,i){
     drill:dRange(src.drill,Math.min(0.4,via-0.1),0.05,r3(via-0.05))
   };
 }
+/* ---------- paires différentielles et leurs règles ----------
+   Une paire ne vaut que par ses deux nets : sans eux, ou s'ils sont les mêmes,
+   l'enregistrement ne décrit rien et part à la poubelle. La règle, elle, se
+   borne comme une classe de net — et son identifiant se recopie tel quel :
+   c'est une étiquette, pas une valeur à recalculer. */
+function normDpPair(d,i){
+  if(!d||typeof d!=="object")return null;
+  const p=dNet(d.p), n=dNet(d.n);
+  if(!p||!n||p===n)return null;
+  return {id:dInt(d.id,i+1,1,Number.MAX_SAFE_INTEGER),
+          name:dStr(d.name,40).trim()||("PAIRE"+(i+1)),
+          p:p,n:n};
+}
+function normDpRule(d,i,cu){
+  const src=(d&&typeof d==="object")?d:{};
+  const F=DP_FALLBACK;
+  const num=(v,def)=>dRange(v,def,0.01,100);
+  const out={
+    name:dStr(src.name,40).trim()||("PairesDiff_"+(i+1)),
+    comment:dStr(src.comment,120),
+    uid:dStr(src.uid,16).replace(/[^A-Za-z0-9]/g,""),
+    scope:dStr(src.scope,40).trim(),
+    allLayers:src.allLayers===undefined?true:!!src.allLayers,
+    minW:num(src.minW,F.minW), prefW:num(src.prefW,F.prefW),
+    maxW:num(src.maxW,F.maxW),
+    minGap:num(src.minGap,F.minGap), prefGap:num(src.prefGap,F.prefGap),
+    maxGap:num(src.maxGap,F.maxGap),
+    maxUncoupled:dRange(src.maxUncoupled,F.maxUncoupled,0,1e4),
+    useImp:!!src.useImp,
+    imp:dpProfile(dStr(src.imp,8))?dStr(src.imp,8):"",
+    layers:{}
+  };
+  /* Les retouches couche par couche : seules celles qui visent une couche
+     existante et qui portent au moins une valeur exploitable sont gardées. */
+  const L=(src.layers&&typeof src.layers==="object")?src.layers:{};
+  for(const k in L){
+    const i2=Math.round(+k);
+    if(!Number.isFinite(i2)||i2<0||i2>=cu)continue;
+    const o=(L[k]&&typeof L[k]==="object")?L[k]:{};
+    const row={};
+    for(const key of DP_KEYS)
+      if(Number.isFinite(+o[key]))row[key]=num(o[key],out[key]);
+    if(Object.keys(row).length)out.layers[i2]=row;
+  }
+  return out;
+}
 function normFp(f,i){
   if(!f||typeof f!=="object")return null;
   const style=STYLES[f.style]?f.style:defaultStyle(dInt(f.pins,2,1,4096));
@@ -338,6 +386,27 @@ function normDoc(d){
     }
   }
 
+  /* --- paires différentielles ---
+     Une paire dont un net a disparu de la carte n'est pas effacée pour autant :
+     réimporter une netlist retouchée ne doit pas défaire des règles écrites à
+     la main. C'est le panneau qui signale la paire orpheline, pas le lecteur. */
+  {
+    const seen=new Set();
+    out.dpPairs=[];
+    (Array.isArray(src.dpPairs)?src.dpPairs:[]).forEach((d,i)=>{
+      const q=normDpPair(d,i);
+      if(!q)return;
+      let nm=q.name, k=2;
+      while(seen.has(nm))nm=q.name+" ("+(k++)+")";
+      q.name=nm;seen.add(nm);
+      out.dpPairs.push(q);
+    });
+    const names=new Set(out.dpPairs.map(q=>q.name));
+    out.dpRules=(Array.isArray(src.dpRules)?src.dpRules:[]).map((d,i)=>normDpRule(d,i,cu));
+    // une règle qui vise une paire disparue ne vise plus rien : elle redevient générale
+    for(const r of out.dpRules)if(r.scope&&!names.has(r.scope))r.scope="";
+  }
+
   /* --- contenu de la carte --- */
   const arr=v=>Array.isArray(v)?v:[];
   out.fps=arr(src.fps).map(normFp).filter(Boolean);
@@ -347,7 +416,8 @@ function normDoc(d){
   out.cuts=arr(src.cuts).map((c,i)=>normCut(c,cu,i)).filter(Boolean);
   if(cu<2)out.vias=[];                    // une seule couche : aucun via ne relie rien
 
-  const maxId=Math.max(uniqueIds(out.fps),uniqueIds(out.zones),uniqueIds(out.cuts));
+  const maxId=Math.max(uniqueIds(out.fps),uniqueIds(out.zones),uniqueIds(out.cuts),
+                       uniqueIds(out.dpPairs));
   out.active=dInt(src.active,0,0,cu-1);
   out.nextId=Math.max(dInt(src.nextId,1,1,Number.MAX_SAFE_INTEGER),maxId+1);
   return out;
@@ -375,6 +445,7 @@ function loadDoc(d,keepView){
                 via:r.via||0.8,drill:r.drill||0.4}];
     S.netClass={};
   }
+  S.dpPairs=d.dpPairs;S.dpRules=d.dpRules;
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
   S.zones=d.zones;S.cuts=d.cuts;
   S.active=d.active;S.pair=[0,S.cu-1];
@@ -390,7 +461,7 @@ function loadDoc(d,keepView){
     S.zones.push({id:S.nextId++,l:i,net:L.net||"",pts:boardZonePts()});
     L.plane=false;L.net="";L.role="mixed";   // le cuivre reste, le rôle le dit
   });
-  clearSel();S.route=null;S.zoneDraft=null;S.edgeDraft=null;S.drc=[];S.hlNet=null;
+  clearSel();S.route=null;S.dp=null;S.zoneDraft=null;S.edgeDraft=null;S.drc=[];S.hlNet=null;
   zoneCache.clear();touch();
   if(!d.classes)autoClass();
   $("cuCount").value=String(S.cu);
@@ -2116,6 +2187,11 @@ cv.addEventListener("pointerdown",e=>{
     else{updateRoute(p.x,p.y);stepRoute();}
     draw();return;
   }
+  if(S.mode==="dpair"){
+    if(!S.dp){if(dpStart(p.x,p.y))dpUpdate(p.x,p.y);}
+    else{dpUpdate(p.x,p.y);dpStep();}
+    draw();return;
+  }
   if(S.mode==="zone"){
     zoneClick(p.x,p.y);draw();return;
   }
@@ -2352,6 +2428,19 @@ cv.addEventListener("pointermove",e=>{
   if(S.mode==="cut"&&S.cutDraft){cutMove(p.x,p.y,e.shiftKey);draw();return;}
   if(S.mode==="edge"&&S.edgeDraft){edgeMove(p.x,p.y,e.shiftKey);draw();return;}
   if(S.mode==="track"&&S.route){updateRoute(p.x,p.y);draw();return;}
+  if(S.mode==="dpair"&&S.dp){dpUpdate(p.x,p.y);draw();return;}
+  if(S.mode==="dpair"){
+    /* Sans tracé en cours, on montre où la paire s'accrocherait : le milieu du
+       couple d'ancres, et non la pastille la plus proche — une paire part
+       d'entre les deux. */
+    const q=dpPairAt(p.x,p.y,S.active);
+    const a=q?dpPrimPair(q,p.x,p.y,S.active,Math.max(px(20),20)):null;
+    const h=a?{x:r3((a.P.x+a.N.x)/2),y:r3((a.P.y+a.N.y)/2)}:null;
+    if((h&&!S.hover)||(!h&&S.hover)||(h&&S.hover&&(h.x!==S.hover.x||h.y!==S.hover.y))){
+      S.hover=h;draw();
+    }
+    return;
+  }
   if(S.mode==="track"||S.mode==="via"){
     const m=magnet(p.x,p.y,S.active);
     const h=m?{x:m.x,y:m.y}:null;
@@ -2399,7 +2488,8 @@ cv.addEventListener("contextmenu",e=>{
   else{S.hlNet=null;refreshPanels();draw();}
 });
 cv.addEventListener("dblclick",()=>{
-  if(S.route)commitRoute();
+  if(S.dp)dpCommit();
+  else if(S.route)commitRoute();
   else if(S.zoneDraft)closeZone();
   else if(S.edgeDraft)closeEdge();
 });
@@ -2479,13 +2569,24 @@ document.addEventListener("keydown",e=>{
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   if(e.key>="1"&&e.key<="8"){
     const i=+e.key-1;
-    if(i<S.cu){e.preventDefault();routeToLayer(i);draw();}
+    if(i<S.cu){
+      e.preventDefault();
+      if(S.dp)dpToLayer(i);else routeToLayer(i);
+      draw();
+    }
     return;
   }
   switch(k){
     case "s":setMode("select");break;
     case "t":setMode("track");break;
-    case "v":if(S.route){routeVia();draw();}else setMode("via");break;
+    case "v":
+      if(S.dp){dpVia();dpUpdate(S.mouse.x,S.mouse.y);draw();}
+      else if(S.route){routeVia();draw();}
+      else setMode("via");
+      break;
+    /* P comme paire : le tracé couplé. Le raccourci ne prend rien à personne —
+       la piste seule est en T, le via en V. */
+    case "p":setMode("dpair");break;
     case "z":setMode("zone");break;
     case "x":setMode("cut");break;
     case "e":setMode("edge");break;
@@ -2503,6 +2604,12 @@ document.addEventListener("keydown",e=>{
        temps du coude en cours. */
     case "/":
     case " ":
+      if(S.dp){
+        S.dp.flip=!S.dp.flip;
+        dpUpdate(S.mouse.x,S.mouse.y);draw();e.preventDefault();
+        hint("Posture de la paire : « / » pour l'autre arrangement du coude.");
+        break;
+      }
       if(S.route){
         S.route.flip=!S.route.flip;
         updateRoute(S.mouse.x,S.mouse.y);draw();e.preventDefault();
@@ -2513,7 +2620,8 @@ document.addEventListener("keydown",e=>{
       break;
     case "escape":
       // Échap termine ce qui est en cours puis rend la main à la sélection
-      if(S.route)commitRoute();
+      if(S.dp)dpCommit();
+      else if(S.route)commitRoute();
       else if(S.zoneDraft){S.zoneDraft=null;hint("Zone abandonnée.");}
       else if(S.cutDraft){S.cutDraft=null;hint("Découpe abandonnée.");}
       else if(S.edgeDraft){S.edgeDraft=null;hint("Contour abandonné.");}
@@ -2522,13 +2630,15 @@ document.addEventListener("keydown",e=>{
       draw();
       break;
     case "enter":
-      if(S.route)commitRoute();
+      if(S.dp)dpCommit();
+      else if(S.route)commitRoute();
       else if(S.zoneDraft)closeZone();
       else if(S.cutDraft)closeCut();
       else if(S.edgeDraft)closeEdge();
       break;
     case "backspace":
-      if(S.route){backRoute();e.preventDefault();}
+      if(S.dp){dpBack();e.preventDefault();}
+      else if(S.route){backRoute();e.preventDefault();}
       else if(S.zoneDraft){
         S.zoneDraft.pts.pop();
         if(!S.zoneDraft.pts.length)S.zoneDraft=null;
@@ -2555,16 +2665,19 @@ document.addEventListener("keydown",e=>{
 function hint(t){$("fHint").textContent=t;}
 function setMode(m){
   if(S.route&&m!=="track")commitRoute();
+  if(S.dp&&m!=="dpair")dpCommit();
   if(S.coord.open&&!coordUsable())coordClose();
   if(S.zoneDraft&&m!=="zone")S.zoneDraft=null;
   if(S.edgeDraft&&m!=="edge")S.edgeDraft=null;
   S.mode=m;S.hover=null;
   if(m!=="zone")zoneMenuClose();
   for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],
+                        ["mDiff","dpair"],
                         ["mZone","zone"],["mEdge","edge"],["mOrigin","origin"],
                         ["mErase","erase"]])
     $(id).classList.toggle("on",m===md);
   $("fMode").textContent={select:"Sélection",track:"Piste",via:"Via",
+                          dpair:"Paire différentielle",
                           zone:"Zone de cuivre",edge:"Contour de carte",
                           origin:"Origine",erase:"Gomme"}[m];
   cv.style.cursor=m==="erase"?"not-allowed":"crosshair";
@@ -2575,6 +2688,9 @@ function setMode(m){
            "D passe un angle droit en 45° · U déroute la sélection sans toucher aux empreintes · R pivote · F retourne · Ctrl+C/Ctrl+V copie-colle · Alt+clic insère un point sur une piste sélectionnée.",
     track:"Clic sur une pastille pour partir · V pose un via · 1-8 change de couche · Tab saisit les coordonnées · Échap termine.",
     via:"Clic pour poser un via traversant, accroché à la pastille ou à la piste la plus proche.",
+    dpair:"Clic sur une pastille de la paire pour partir — l'autre net est trouvé tout seul · "+
+          "V pose les deux vias en éventail · « / » bascule la posture · 1-8 change de couche · "+
+          "arrivée sur les pastilles d'en face pour terminer · Échap dépose ce qui est tracé.",
     zone:"Clic pour chaque sommet, retour sur le premier point pour fermer · Maj contraint à 45° · Entrée ferme, Échap abandonne.",
     edge:"Dessinez le contour de la carte, sommet par sommet · retour sur le premier point pour fermer · Maj contraint à 45°.",
     origin:"Cliquez le point qui servira d'origine — une pastille proche l'attire.",

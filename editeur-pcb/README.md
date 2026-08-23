@@ -30,6 +30,7 @@ js/06-panels.js          onglets de couches, listes, règles, propriétés,
                          empilage physique
 js/07-app.js             fichiers, câblage des boutons, initialisation
 js/08-empreinte.js       fenêtre d'édition d'empreinte, bibliothèque personnelle
+js/09-diffpair.js        paires différentielles : règles, tracé couplé, impédance
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -67,7 +68,16 @@ moment où ils s'exécutent. La règle pratique :
 7. `08-empreinte` ne s'exécute pas au chargement : il ne déclare que la
    fenêtre d'empreinte et la bibliothèque, appelées au clic. Il vient donc
    après `07-app`, comme `19-broches.js` côté schématique.
-8. `../commun/workspace.js` s'initialise tout seul et appelle `resize()` puis
+8. `09-diffpair` vient après `07-app` pour la même raison — son panneau et son
+   outil ne servent qu'au clic — mais il a besoin d'un premier affichage : sa
+   dernière ligne appelle `buildDiffPairs()` elle-même. L'appeler depuis
+   `init()` ne marcherait qu'en version un seul fichier, où tout est concaténé
+   et les déclarations remontées ; en pages séparées, la fonction n'existe pas
+   encore quand `init()` s'exécute. Les points d'entrée que les fichiers
+   antérieurs lui empruntent — `drawDp()` dans `paint()`, `dpDrc()` dans
+   `runDrc()`, `buildDiffPairs()` dans `refreshPanels()`, `dpOfNet()` dans
+   `clrPair()` — passent donc tous par un `typeof … === "function"`.
+9. `../commun/workspace.js` s'initialise tout seul et appelle `resize()` puis
    `fit()` : il ferme la marche.
 
 À l'intérieur d'un fichier, une fonction peut en appeler une autre définie
@@ -660,6 +670,192 @@ emmène ses propres pastilles — c'est un autre problème que l'isolation d'une
 piste, et le geste y reste libre. Traverser un obstacle *en passant*, pendant le
 geste, ne compte pas non plus : seul l'endroit où le cuivre se pose est jugé.
 
+## Paires différentielles
+
+Deux nets qui portent le même signal en opposition — USB, Ethernet, LVDS, CAN —
+ne se routent pas l'un après l'autre. Ce qui compte est **ce qui se passe entre
+les deux** : un écart tenu au centième sur toute la longueur, parce que c'est le
+couple largeur/écart qui fixe l'impédance différentielle, et le peu de trajet où
+il ne l'est pas. Router la P puis la N donne deux pistes qui se ressemblent ;
+router la paire donne une paire.
+
+L'outil tient dans `js/09-diffpair.js` et le panneau *Paires différentielles*.
+Le reste de l'éditeur continue de ne voir que deux nets ordinaires : **une paire
+ne crée aucun objet sur la carte**, elle dit seulement comment router ces deux
+nets et ce que le contrôle DRC doit y vérifier.
+
+### Déclarer la paire
+
+Trois chemins, du plus explicite au plus rapide :
+
+- **Deux pistes sélectionnées** → *Créer depuis la sélection*. C'est le geste de
+  départ : on montre les deux pistes (ou les deux segments amorcés à la main),
+  l'éditeur en tire le couple de nets, le nom et, si les noms le disent, lequel
+  est P et lequel est N.
+- **Détecter** lit tous les noms de net d'un coup. Sont reconnus les suffixes
+  `P`/`N`, `+`/`-`, `DP`/`DM`, `DP`/`DN`, `D+`/`D-`, `TP`/`TN`, `RP`/`RN`,
+  `HSP`/`HSM`, avec ou sans séparateur (`USB_DP`, `CAN-P`, `TXP`). C'est la
+  règle de KiCad, élargie aux notations des bus série. Une paire n'est proposée
+  que si **les deux** nets existent : `VCCN` tout seul n'a jamais fait un net
+  différentiel.
+- **À la main**, en renommant une paire déjà créée.
+
+Le suffixe le plus long est essayé d'abord — sans quoi `USB_DP` se lirait
+`USB_D` + `P`, et son complémentaire serait `USB_DN` au lieu de `USB_DM`. La
+casse se recopie : `usb_dp` appelle `usb_dm`, pas `usb_DM`.
+
+### La règle : six cotes, trois lignes
+
+Le panneau reprend la disposition des règles de conception des logiciels du
+commerce, parce que c'est celle que connaissent ceux qui routent des paires :
+un entête qui nomme la règle (nom, commentaire, identifiant), *Objets visés* qui
+dit à quoi elle s'applique, *Contraintes* qui aligne les six cotes en trois
+lignes — mini, préféré, maxi, pour la largeur comme pour l'écart —, puis le
+tableau qui les décline couche par couche. L'habillage, lui, est celui de
+l'éditeur : mêmes jetons de couleur, même monospace, mêmes tableaux que
+l'empilage physique.
+
+Une **figure** en tête dit lequel des deux chiffres est la largeur et lequel est
+l'écart, avec le pas de la paire (largeur + écart) — la cote qui commande
+réellement le tracé, puisque c'est de ce pas que l'axe se dédouble.
+
+Plusieurs règles peuvent coexister. **La première qui vise la paire l'emporte** ;
+une règle sans portée les vise toutes. C'est la priorité par l'ordre de la
+liste, comme les classes de net. Tant qu'aucune règle n'a été écrite, celle
+d'usine sert (`DP_FALLBACK`, 0,20 mm de piste et 0,15 mm d'écart) : une carte
+sans règle se route quand même, et la **première retouche inscrit la règle dans
+le document**, identifiant compris. Le bouton *Paires visées* dit lesquelles la
+reçoivent — utile quand une règle plus haut dans la liste passe devant.
+
+*Ces valeurs s'appliquent à toutes les couches* décochée, chaque couche reçoit
+ses propres cotes : un microruban extérieur et une triplaque intérieure ne
+tiennent pas la même impédance avec la même largeur.
+
+### L'écart d'une paire passe devant l'isolation de classe
+
+Une paire à 0,15 mm sous une classe qui exige 0,25 mm n'est pas une carte en
+faute : c'est le principe même de la paire. `clrPair()` le sait — **entre les
+deux nets d'une paire, c'est l'écart mini de la règle qui fait loi**, partout
+ailleurs c'est la plus exigeante des deux classes. Cette exception unique suffit
+à mettre d'accord le routeur (qui refusait d'avancer), le contrôle DRC (qui
+condamnait le tracé) et les zones de cuivre (qui l'écartaient à tort).
+
+De même, la largeur d'une piste de paire échappe au minimum de sa classe : c'est
+l'impédance qui la décide, et ce sont les bornes de la règle qui la vérifient.
+
+### Le tracé couplé
+
+Touche **P**, ou le bouton *Paire diff.* de la barre. L'algorithme reprend celui
+du routeur de KiCad — `pns_diff_pair_placer.cpp`, à la racine du dépôt —, ramené
+à ce que cet éditeur sait faire :
+
+1. **Le couple d'ancres** (`FindDpPrimitivePair`). On clique près d'une pastille
+   — ou entre les deux —, le routeur va chercher tout seul l'ancre
+   complémentaire la plus proche dans l'autre net. Comme chez KiCad, un bout de
+   piste ne fait une ancre que s'il est **libre** : repartir du milieu d'une
+   piste déjà posée ne relie rien.
+2. **La porte** (`DP_GATEWAYS::BuildFromPrimitivePair`). Deux pastilles côte à
+   côte n'ont qu'une façon d'ouvrir une paire : sortir **perpendiculairement à
+   leur axe**. Prendre le sens de marche du curseur ferait repartir la piste N
+   sur la pastille P — deux pistes qui se recouvrent, ce qu'aucun Gerber ne sait
+   rendre. La porte est le point d'où la paire est déjà au pas ; les deux jambes
+   qui y mènent forment l'**éventail**, deux diagonales de même longueur, si
+   bien que les deux pistes restent appariées dès le premier millimètre.
+3. **L'axe.** Le trajet se calcule au milieu des deux pistes, avec la géométrie
+   45° de l'éditeur (`routeCorner`, donc la règle d'angle en vigueur), puis se
+   dédouble de part et d'autre au demi-pas. C'est ce que fait
+   `DP_GATEWAYS::FitGateways`, sans son catalogue de portes : décaler l'axe
+   suffit tant que le pas de la paire quantifie les décrochements, ce dont
+   `minSeg` se charge. Aux coudes, les deux droites décalées se coupent — le
+   décalage **à onglet** : l'intérieur du coude se raccourcit, l'extérieur
+   s'allonge, et l'écart reste constant. C'est pourquoi le tracé de paire, seul
+   de tout l'éditeur, **ne passe pas par le chanfrein automatique du dépôt** :
+   reprendre chaque angle une piste à la fois le déferait.
+4. **La tête repoussée** (`propagateDpHeadForces`). Le point visé s'écarte des
+   obstacles comme s'il portait un via du diamètre de la paire entière, écart
+   compris (`gap + 2 × largeur`) : la paire ne se glisse jamais à moitié dans un
+   couloir trop étroit.
+5. **L'arrivée.** Survoler une pastille d'en face accroche le couple d'arrivée,
+   et la paire s'y referme par son propre éventail. Le clic dépose et termine.
+   Si les deux pastilles d'arrivée se présentent dans l'ordre inverse — le
+   trajet fait demi-tour, et une paire ne change pas de côté sans se croiser —
+   l'aperçu passe au rouge et **le dépôt est refusé** : ce serait un
+   court-circuit franc, pas un tracé.
+
+Pendant le tracé : `/` ou Espace bascule la posture du coude, `V` pose les deux
+vias, `1`-`8` changent de couche (deux vias au passage), Retour arrière recule
+d'un coude — vias compris —, Échap ou Entrée dépose ce qui est tracé.
+
+### Les vias en éventail
+
+Deux vias ne tiennent pas au pas des pistes : leur cuivre se toucherait.
+`dpViaSpread()` calcule l'écartement qu'il leur faut — diamètre plus isolation
+entre les deux nets — et la paire **s'ouvre en éventail juste avant**, une jambe
+à 45° de chaque côté, avant de poser les deux vias. De l'autre côté, sur la
+nouvelle couche, l'éventail d'entrée la referme tout seul : les ancres sont
+écartées, la porte les ramène au pas. C'est l'`EffectiveDiffPairViaGap` de
+KiCad, avec sa conséquence géométrique explicite.
+
+La couche d'arrivée peut imposer d'autres cotes : la largeur et l'écart sont
+relus dans la règle après chaque changement de couche.
+
+### Longueur découplée, et ce que le DRC en dit
+
+Une paire tenue à son écart est couplée ; partout ailleurs elle ne l'est plus —
+dans l'éventail de départ, autour d'un obstacle contourné d'un seul côté, de
+part et d'autre d'une paire de vias. C'est cette **longueur découplée** que la
+règle borne (500 mil ≈ 12,7 mm par défaut, la valeur usuelle).
+
+`dpCoupling()` la mesure en parcourant la piste P au pas de 0,1 mm et en
+regardant, à chaque pas, si la piste N est bien là où elle doit être — écart
+entre bords de cuivre compris entre le mini et le maxi de la couche. Rien de
+plus fin ne servirait : la mesure sert à décider si un contournement est trop
+long, pas à publier un chiffre. Le pas se desserre au-delà de quarante mille
+échantillons, pour qu'une carte entière reste analysable.
+
+Le contrôle DRC ajoute donc quatre entrées propres aux paires :
+
+- une piste **hors des bornes de largeur** de sa règle, couche par couche ;
+- une **longueur découplée** au-delà de ce que la règle admet ;
+- un **écart de longueur** entre les deux pistes au-delà d'un demi-millimètre,
+  en remarque : c'est un décalage temporel entre les deux fronts, et le
+  corriger demande un serpentin que cet éditeur ne pose pas encore ;
+- une paire dont **un net a disparu** de la carte, en remarque également. Une
+  paire orpheline n'est pas effacée pour autant : réimporter une netlist
+  retouchée ne doit pas défaire des règles écrites à la main.
+
+### Impédance différentielle
+
+L'empilage physique dit déjà tout ce qu'il faut : l'épaisseur qui sépare la
+piste de son plan de référence, la constante diélectrique du stratifié et
+l'épaisseur du cuivre. `dpStripGeom()` cherche les plans de part et d'autre de
+la couche — rôle de plan, ou zone pleine carte, la même vérité que pour le DRC :
+le cuivre réellement posé, pas l'intention — et en déduit la géométrie :
+**microruban** quand la couche n'a de plan que d'un côté, **triplaque** quand
+elle en a des deux.
+
+`dpZdiff()` applique ensuite les formules approchées de l'IPC-2141A. Cocher
+*Profil d'impédance* affiche la cible et l'écart ; *Ajuster la largeur* et
+*Ajuster l'écart* résolvent par dichotomie (ces formules ne s'inversent pas) et
+écrivent la cote dans la règle. Quatre profils sont proposés — D90 (USB 2.0),
+D100 (Ethernet, LVDS), D85 (PCIe, USB 3), D120 (CAN, RS-485).
+
+**Ce que cela vaut :** ±10 % au mieux. C'est de quoi partir avec des cotes
+plausibles, pas de quoi signer une commande — le fabricant, lui, tranchera au
+calcul de champ, et le panneau le dit. Sans plan de référence dans l'empilage,
+il le dit aussi plutôt que d'afficher un nombre qui ne veut rien dire.
+
+### Ce que le module ne fait pas
+
+- **Pas de shove** : la paire ne repousse pas le cuivre déjà posé. L'éditeur ne
+  le fait pour aucun tracé, il n'y avait pas de raison de commencer ici.
+- **Pas de serpentin d'appariement** : l'écart de longueur entre P et N est
+  mesuré et signalé, jamais corrigé.
+- **Pas de contournement automatique** : la tête repoussée écarte le point visé,
+  elle ne cherche pas de chemin autour d'un obstacle.
+- Une paire ne vit que sur **une couche à la fois** ; c'est le via en éventail
+  qui la fait passer, pas un tracé simultané sur deux couches.
+
 ## Pas de grille
 
 L'éditeur ouvre sur un pas de **0,1 mm** : assez fin pour tomber sur le centre
@@ -813,9 +1009,10 @@ qui porte des pistes, une couche de signal sous une zone pleine carte, une
 couche mixte sans aucune zone. `roleCheck()` sert à la fois au DRC, à l'éditeur
 de la ligne et au marquage de la colonne « Rôle » dans la coupe.
 
-Le Dk et le Df de chaque diélectrique n'entrent dans aucun calcul ici : ils
-décrivent la matière commandée, et c'est un solveur de ligne de transmission —
-à venir, dans sa propre section — qui les lira.
+Le Dk de chaque diélectrique, lui, a fini par servir : c'est
+`dpStripGeom()`/`dpZdiff()` qui le lisent, pour l'impédance différentielle des
+paires (voir *Paires différentielles*). Le Df ne sert toujours à rien ici — il
+décrit la matière commandée, et il faudrait un calcul de pertes pour l'exploiter.
 
 `EMPILAGE.txt` reprend tout cela dans l'archive de fabrication : les Gerber ne
 portent pas l'empilage, il faut donc l'écrire à côté. Le panneau sait aussi
@@ -856,7 +1053,7 @@ python3 outils/build-monofichier.py && node test/harness.js
 ```
 
 Le banc s'appuie sur le DOM minimal partagé (`../commun/test/dom-stub.js`),
-exécute `dist/pcb.js` et couvre 160 cas : import de netlist, boîtiers nommés
+exécute `dist/pcb.js` et couvre 206 cas : import de netlist, boîtiers nommés
 et empreintes qu'ils posent, chevelu
 multicouche, vias, îlots de cuivre, classes de net, édition des pistes,
 géométrie du L chanfreiné, posture du coude et règle d'angle (45° / 90° /
@@ -864,7 +1061,10 @@ libre), non-croisement du cuivre tiré, réglages d'usine,
 contour libre, origine utilisateur, saisie au clavier, anti-collision, rôles de
 couche, empilage physique et ce qu'il impose au perçage, Gerber, Excellon, archive ZIP, espace de travail (docks,
 flottants, persistance), sélection multiple au Ctrl+clic, presse-papier
-(copier/coller, contenu invalide, repères refaits), pas de grille, import
+(copier/coller, contenu invalide, repères refaits), pas de grille, paires
+différentielles (détection des couples, tracé couplé et son écart tenu,
+éventail de départ, vias écartés, retour arrière, longueur découplée,
+impédance et résolution des cotes, priorité des règles), import
 défensif d'un document et échappement HTML face à une netlist ou un `.json`
 malveillant.
 
@@ -905,8 +1105,12 @@ différence — c'est lui qui garde cette propriété.
 - Pas de sauvegarde automatique sur disque. Le travail tient dans l'onglet
   tant qu'il est ouvert (voir plus haut), mais fermer l'onglet sans
   « Enregistrer .json » le perd.
-- Aucun calcul de ligne de transmission : l'empilage note les matières et leurs
-  constantes diélectriques, mais rien n'en tire d'impédance pour l'instant.
+- Le calcul de ligne de transmission se limite à l'impédance différentielle
+  des paires, par les formules approchées de l'IPC-2141A (±10 %). Ni impédance
+  simple, ni pertes (le Df reste inexploité), ni prise en compte de la gravure
+  en trapèze ou du vernis épargne.
+- Pas de serpentin d'appariement de longueur : l'écart entre les deux pistes
+  d'une paire est mesuré et signalé, jamais corrigé.
 - Le contrôle des vias borgnes et enterrés suppose un pressage unique. Un
   empilage à laminage séquentiel est signalé comme tel, mais sa séquence ne se
   décrit pas : il n'y a qu'une liste de diélectriques, pas de sous-ensembles.
