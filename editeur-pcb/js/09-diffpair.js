@@ -355,8 +355,8 @@ function dpStart(x,y){
   if(!pair){
     hint(S.dpPairs.length
       ? "Aucune paire différentielle par ici : cliquez sur une pastille de la paire visée."
-      : "Aucune paire différentielle déclarée. Sélectionnez deux pistes et cliquez "+
-        "« Créer depuis la sélection » dans le panneau, ou « Détecter ».");
+      : "Aucune paire différentielle déclarée. Choisissez ses deux nets dans le "+
+        "panneau puis « Créer la paire », ou « Détecter ».");
     return false;
   }
   const a=dpPrimPair(pair,x,y,S.active,Math.max(px(20),5));
@@ -774,20 +774,18 @@ function dpDrc(out){
 /* ==========================================================================
    Créer une paire
    ========================================================================== */
-/* Deux pistes sélectionnées, deux nets : voilà une paire. C'est le geste de
-   départ — on montre les deux pistes, l'éditeur en tire le couple, le nom et
-   l'ordre P/N s'il sait les lire dans les noms de net. */
-function dpFromSel(){
-  const nets=[];
-  for(const t of S.sel.tracks)if(t.net&&nets.indexOf(t.net)<0)nets.push(t.net);
-  for(const v of S.sel.vias)if(v.net&&nets.indexOf(v.net)<0)nets.push(v.net);
-  if(nets.length!==2){
-    hint(nets.length<2
-      ? "Sélectionnez deux pistes de deux nets différents pour en faire une paire."
-      : "Trop de nets dans la sélection ("+nets.length+") : une paire n'en réunit que deux.");
-    return null;
-  }
-  const [a,b]=nets;
+/* Deux nets, une paire. Tout passe par ici — les deux listes du panneau, la
+   détection, l'ancienne sélection de deux pistes — parce que les vérifications
+   sont les mêmes partout : deux nets distincts, aucun des deux déjà apparié.
+
+   `keepOrder` dit si l'appelant a déjà tranché qui est P. Les deux listes du
+   panneau le savent (c'est justement ce qu'on y désigne), une sélection de deux
+   pistes non : là, les suffixes des noms de net décident, et faute de suffixe
+   lisible l'ordre reste celui d'arrivée. */
+function dpMakePair(a,b,keepOrder){
+  a=String(a||"");b=String(b||"");
+  if(!a||!b){hint("Une paire demande deux nets : choisissez le net P et le net N.");return null;}
+  if(a===b){hint("Le net "+a+" ne peut pas faire une paire avec lui-même.");return null;}
   const exist=dpOfNet(a)||dpOfNet(b);
   if(exist){
     hint("Le net "+(dpOfNet(a)?a:b)+" appartient déjà à la paire "+exist.name+".");
@@ -799,14 +797,31 @@ function dpFromSel(){
   push();
   const pair={id:S.nextId++,
               name:dpFreeName(m?m.base:a),
-              p:m?m.p:a, n:m?m.n:b};
+              p:keepOrder?a:(m?m.p:a),
+              n:keepOrder?b:(m?m.n:b)};
   S.dpPairs.push(pair);
   _dpSel=S.dpPairs.length-1;
   touch();refreshPanels();draw();
   hint("Paire "+pair.name+" créée : "+pair.p+" en P, "+pair.n+" en N"+
-       (m?"":" — l'ordre vient de la sélection, les noms ne disent pas lequel est lequel.")+
+       (keepOrder||m?"":" — l'ordre vient de la sélection, les noms ne disent pas "+
+        "lequel est lequel.")+
        " Touche P pour la router.");
   return pair;
+}
+/* Deux pistes sélectionnées, deux nets : voilà une paire. Le panneau ne s'en
+   sert plus — il a ses deux listes — mais le geste garde son intérêt quand on
+   vient de tirer deux amorces à la main et qu'on ne sait plus leurs noms. */
+function dpFromSel(){
+  const nets=[];
+  for(const t of S.sel.tracks)if(t.net&&nets.indexOf(t.net)<0)nets.push(t.net);
+  for(const v of S.sel.vias)if(v.net&&nets.indexOf(v.net)<0)nets.push(v.net);
+  if(nets.length!==2){
+    hint(nets.length<2
+      ? "Sélectionnez deux pistes de deux nets différents pour en faire une paire."
+      : "Trop de nets dans la sélection ("+nets.length+") : une paire n'en réunit que deux.");
+    return null;
+  }
+  return dpMakePair(nets[0],nets[1],false);
 }
 /* Toutes les paires que les noms de net trahissent, d'un coup. */
 function dpAutoAll(){
@@ -846,6 +861,42 @@ function dpDelete(pair){
    les décline couche par couche. L'habillage, lui, est celui de l'éditeur —
    mêmes jetons de couleur, même monospace, mêmes tableaux que l'empilage.
    ========================================================================== */
+/* ---------- les deux listes de nets ----------
+   Une paire se déclare en désignant ses deux nets, pas en montrant deux pistes :
+   c'est le seul geste qui marche avant qu'une seule piste soit tirée, et le seul
+   où l'on choisit soi-même qui est P. Les deux choix en attente vivent dans
+   `01-core` (`_dpNewP`, `_dpNewN`) : voir là-bas pourquoi.
+
+   Un net utilisable : il existe dans la netlist et n'est pas déjà apparié. */
+function dpNetFree(names,n){
+  return !!n&&names.indexOf(n)>=0&&!dpOfNet(n);
+}
+/* Les options d'une des deux listes. Un net déjà apparié reste visible, grisé,
+   suivi du nom de sa paire : le voir disparaître ne dirait pas pourquoi. Le net
+   retenu dans l'autre liste se grise aussi — une paire, c'est deux nets. */
+function dpNetOpts(names,cur,other){
+  let h='<option value=""'+(cur?"":" selected")+'>— net —</option>';
+  for(const n of names){
+    const own=dpOfNet(n), off=!!own||n===other;
+    h+='<option value="'+esc(n)+'"'+(n===cur?" selected":"")+
+       (off&&n!==cur?" disabled":"")+'>'+esc(n)+(own?" · "+esc(own.name):"")+
+       '</option>';
+  }
+  return h;
+}
+/* Le net d'en face, quand le nom du premier le dit. On ne le propose que si le
+   net choisi se lit comme le côté P : c'est la liste P qui l'a reçu, et
+   retourner la polarité derrière le dos de celui qui vient de la désigner
+   serait pire que de ne rien proposer. */
+function dpMateGuess(names,net){
+  for(const sp of dpSplit(net)){
+    if(sp.pol!=="p")continue;
+    const mate=dpMateName(sp);
+    if(mate!==net&&dpNetFree(names,mate))return mate;
+  }
+  return "";
+}
+
 let _dpRule=0;
 /* La règle affichée. Tant qu'aucune n'a été écrite, on montre celle d'usine :
    la première retouche l'inscrit dans le document. */
@@ -1005,9 +1056,7 @@ function buildDiffPairs(){
   /* ---------- les paires de la carte ---------- */
   h+='<div class="cat">Paires de la carte</div>';
   if(!S.dpPairs.length)
-    h+='<div class="empty">Aucune paire déclarée.<br><br>Sélectionnez les deux pistes '+
-       '(ou les deux nets) et cliquez « Créer depuis la sélection ». « Détecter » lit '+
-       'les noms de net : USB_DP/USB_DM, CAN_P/CAN_N, D+/D−.</div>';
+    h+='<div class="empty">Aucune paire déclarée.</div>';
   else{
     h+='<div class="stkwrap"><table class="stk imp"><thead><tr>'+
        '<th>Paire</th><th>Net P</th><th>Net N</th><th class="r">Longueur</th>'+
@@ -1024,8 +1073,27 @@ function buildDiffPairs(){
     });
     h+='</tbody></table></div>';
   }
-  h+='<div class="prop"><div class="row" style="margin-top:0">'+
-       '<button class="tb" id="dpNew">Créer depuis la sélection</button>'+
+  /* ---------- déclarer une paire à la main ---------- */
+  const netNames=netTable().map(n=>n.name);
+  if(!dpNetFree(netNames,_dpNewP))_dpNewP="";
+  if(!dpNetFree(netNames,_dpNewN))_dpNewN="";
+  const canMake=!!_dpNewP&&!!_dpNewN&&_dpNewP!==_dpNewN;
+  h+='<div class="prop two">'+
+       '<div><label>Net P</label><select id="dpNetP">'+
+         dpNetOpts(netNames,_dpNewP,_dpNewN)+'</select></div>'+
+       '<div><label>Net N</label><select id="dpNetN">'+
+         dpNetOpts(netNames,_dpNewN,_dpNewP)+'</select></div>'+
+     '</div>'+
+     '<div class="stkinfo">'+
+     (netNames.length
+      ? "Désignez les deux nets, P d'abord : c'est là qu'on choisit la polarité, "+
+        "et le nom de la paire suit la base commune aux deux noms. Un net déjà "+
+        "apparié est grisé.<br>« Détecter » les lit tous d'un coup : USB_DP/USB_DM, "+
+        "CAN_P/CAN_N, D+/D−."
+      : "Aucun net sur la carte : rien à apparier tant que la netlist est vide.")+
+     '</div>'+
+     '<div class="prop"><div class="row" style="margin-top:0">'+
+       '<button class="tb" id="dpNew"'+(canMake?"":" disabled")+'>Créer la paire</button>'+
        '<button class="tb" id="dpAuto">Détecter</button></div>'+
      '<div class="row">'+
        '<button class="tb" id="dpGo">Router la paire <kbd>P</kbd></button>'+
@@ -1111,8 +1179,23 @@ function buildDiffPairs(){
     rr.prefGap=dpSolveGap(prof.z,g.w,S.active);
     rr.minGap=Math.min(rr.minGap,rr.prefGap);rr.maxGap=Math.max(rr.maxGap,rr.prefGap);
   });
+  const np_=$("dpNetP");
+  if(np_)np_.onchange=()=>{
+    _dpNewP=np_.value;
+    /* La liste N vide se remplit toute seule quand le nom du net P désigne son
+       complémentaire. Elle reste modifiable : c'est une proposition. */
+    if(_dpNewP&&!_dpNewN)_dpNewN=dpMateGuess(netNames,_dpNewP);
+    buildDiffPairs();
+  };
+  const nn_=$("dpNetN");
+  if(nn_)nn_.onchange=()=>{_dpNewN=nn_.value;buildDiffPairs();};
   const nw=$("dpNew");
-  if(nw)nw.onclick=dpFromSel;
+  if(nw)nw.onclick=()=>{
+    const a=_dpNewP, b=_dpNewN;
+    if(!dpMakePair(a,b,true))return;
+    _dpNewP="";_dpNewN="";
+    buildDiffPairs();
+  };
   const au=$("dpAuto");
   if(au)au.onclick=dpAutoAll;
   const go=$("dpGo");

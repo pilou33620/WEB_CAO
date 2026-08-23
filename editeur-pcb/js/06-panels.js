@@ -649,7 +649,10 @@ function buildProps(){
   if(vi.length===1&&only(1))return propsVia(box,vi[0]);
   if(S.sel.edge&&only(0))return propsBoard(box);
   if(zo.length===1&&only(1))return propsZone(box,zo[0]);
-  if(tr.length>1&&only(tr.length))return propsTracks(box,tr);
+  /* Une piste prise entière — Maj+clic, ou Maj+double-clic qui la suit d'une
+     couche à l'autre — arrive ici avec ses vias : c'est un seul objet, et le
+     panneau la traite comme telle plutôt que de la compter comme un lasso. */
+  if(tr.length&&only(tr.length+vi.length))return propsTracks(box,tr,vi);
   if(!only(0)){
     /* Le cuivre routé de la sélection se retire à part : c'est le geste qu'on
        fait avant de replacer un boîtier, et un lasso ne sait pas le distinguer.
@@ -855,6 +858,127 @@ function propsZone(box,z){
   $("zDel").onclick=()=>{push();detachAuto(z);S.zones=S.zones.filter(o=>o!==z);clearSel();
     touch();buildLayers();buildTabs();refreshPanels();draw();};
 }
+/* ==========================================================================
+   Ligne de transmission : ce que la sélection vaut électriquement
+   --------------------------------------------------------------------------
+   Le même bloc sert au segment seul et à la piste entière — un segment n'est
+   qu'une ligne à un tronçon. Il paraît dès qu'il y a du cuivre sélectionné :
+   les cotes de l'empilage physique sont toujours renseignées, il n'y a jamais
+   rien à demander avant d'afficher un chiffre.
+   ========================================================================== */
+const LT_KIND={micro:"Microruban",strip:"Triplaque"};
+/* Secondes, farads, henrys → l'unité dans laquelle on en parle. Une piste de
+   carte se compte en picosecondes et en picofarads ; les valeurs mille fois
+   plus grandes existent quand même, sur une longue liaison ou un plan entier. */
+function ltT(t){
+  const ps=t*1e12;
+  return ps>=1000?fmt(ps/1000,3)+" ns":fmt(ps,1)+" ps";
+}
+function ltC(c){
+  const p=c*1e12;
+  return p>=1000?fmt(p/1000,3)+" nF":fmt(p,3)+" pF";
+}
+function ltL(l){
+  const n=l*1e9;
+  return n>=1000?fmt(n/1000,3)+" µH":fmt(n,3)+" nH";
+}
+/* « 4,30 » si tous les tronçons s'accordent, « 4,30 … 4,50 » sinon : une
+   sélection qui change de couche n'a pas une valeur unique à montrer. */
+function ltRange(gs,pick,dec,unit){
+  let lo=null,hi=null;
+  for(const g of gs){
+    const v=pick(g);
+    if(v==null||!isFinite(v))continue;
+    lo=lo==null?v:Math.min(lo,v);hi=hi==null?v:Math.max(hi,v);
+  }
+  if(lo==null)return "—";
+  const s=(hi-lo)<Math.pow(10,-dec)?fmt(lo,dec):fmt(lo,dec)+" … "+fmt(hi,dec);
+  return unit?s+" "+unit:s;
+}
+function ltRO(label,val,tip){
+  return '<div><label>'+esc(label)+'</label><input value="'+esc(val)+'" disabled'+
+    (tip?' title="'+esc(tip)+'"':"")+'></div>';
+}
+/* Le détail par tronçon, dès que l'impédance n'est plus uniforme : c'est à
+   chacune de ces frontières qu'une part du front repart en arrière. */
+function ltTable(e){
+  let h='<table class="bom"><thead><tr><th>Tronçon</th><th>Largeur</th>'+
+        '<th>Longueur</th><th>Z₀</th><th>Retard</th></tr></thead><tbody>';
+  for(const g of e.groups)
+    h+='<tr><td class="net">'+esc(cuId(g.l,S.cu))+'<span class="pkgcell">'+
+       esc(LT_KIND[g.kind]||g.kind)+
+       (g.kind==="strip"?' · b '+fmt(g.b,3):' · h '+fmt(g.h,3))+' mm</span></td>'+
+       '<td class="n">'+fmt(g.w,3)+'</td>'+
+       '<td class="n">'+fmt(g.len,2)+'</td>'+
+       '<td class="n">'+(g.z0>0?fmt(g.z0,1):"—")+'</td>'+
+       '<td class="n">'+fmt(g.tpd*1e12,1)+'</td></tr>';
+  return h+'</tbody></table>';
+}
+function ltSection(tracks,vias){
+  const e=ltLine(tracks,vias);
+  if(!e.n)return "";
+  const vi=e.vias.n>0;
+  const topo=e.kinds.length>1
+    ? "Mixte — "+e.kinds.map(k=>(LT_KIND[k]||k).toLowerCase()).join(" et ")
+    : (LT_KIND[e.kinds[0]]||"—");
+  let h='<div class="cat">Ligne de transmission</div>'+
+    '<div class="prop two">'+
+      ltRO("Topologie",topo,
+           "Microruban : un seul plan de référence, la piste voit l'air de l'autre "+
+           "côté. Triplaque : un plan de part et d'autre.")+
+      ltRO("Hauteur au plan",e.noRef&&e.groups.every(g=>!g.ref)
+             ?"— aucun plan —":ltRange(e.groups,g=>g.h,3,"mm"),
+           "Distance au plan de référence le plus proche. En triplaque, c'est "+
+           "l'écart entre les deux plans qui commande l'impédance : le tableau "+
+           "des tronçons le donne.")+
+    '</div>'+
+    '<div class="prop two">'+
+      ltRO("εr stratifié",ltRange(e.groups,g=>g.er,2))+
+      ltRO("εr effective",ltRange(e.groups,g=>g.eeff,2),
+           "Ce que la ligne voit vraiment : le stratifié, et l'air pour un microruban.")+
+    '</div>'+
+    '<div class="prop two">'+
+      ltRO("Impédance Z₀",ltRange(e.groups,g=>g.z0>0?g.z0:null,1,"Ω"))+
+      ltRO("Longueur cuivre",fmt(e.len,2)+" mm")+
+    '</div>'+
+    '<div class="prop two">'+
+      ltRO(vi?"Retard total":"Retard t_pd",ltT(e.tpdAll),
+           vi?"Traversée des vias comprise.":"")+
+      ltRO("Retard par mm",e.psmm?fmt(e.psmm,3)+" ps/mm":"—")+
+    '</div>'+
+    '<div class="prop two">'+
+      ltRO("Capacité totale",ltC(e.cAll))+
+      ltRO("Inductance totale",ltL(e.indAll))+
+    '</div>';
+  if(vi)
+    h+='<div class="prop two">'+
+        ltRO("Vias franchis",e.vias.n+" · "+fmt(e.vias.h,3)+" mm percés")+
+        ltRO("Retard des vias",ltT(e.vias.tpd))+
+      '</div>'+
+      '<div class="prop two">'+
+        ltRO("Self des vias",ltL(e.vias.ind),
+             "Formule de Johnson sur la longueur percée et le diamètre de perçage.")+
+        ltRO("Capacité des vias",ltC(e.vias.cap),
+             "Pastille contre le dégagement du plan, déduit de l'isolation de classe.")+
+      '</div>';
+  if(!e.uniform)
+    h+='<div class="prop two">'+
+        ltRO("Z₀ équivalente",e.z0eq?fmt(e.z0eq,1)+" Ω":"—",
+             "√(L/C) sur la ligne entière : ce que voit un front qui la parcourt.")+
+        ltRO("Tronçons",e.groups.length+" · "+e.n+" segment"+(e.n>1?"s":""))+
+      '</div>'+ltTable(e);
+  h+='<div class="empty" style="padding:6px 12px">'+
+    (e.noRef?'<span class="warn">Aucun plan de référence dans l\'empilage sous '+
+      'cette couche : les cotes sont prises sur le diélectrique voisin, '+
+      'l\'impédance n\'a pas de sens tant qu\'un plan ne lui répond pas.</span><br>':"")+
+    (e.uniform?"":'Z₀ n\'est pas uniforme : chaque changement de largeur ou de '+
+      'couche renvoie une part du front en arrière.<br>')+
+    'Hammerstad pour εr effective, Wheeler pour le microruban, IPC-2141A pour '+
+    'la triplaque : ±5 % au mieux, l\'épaisseur du cuivre non comptée. De quoi '+
+    'dégrossir un tracé, pas de quoi signer une commande — le fabricant, lui, '+
+    'tranchera au calcul de champ.</div>';
+  return h;
+}
 function propsTrack(box,t){
   const len=dist(t.x1,t.y1,t.x2,t.y2), cl=classOf(t.net);
   const g=netTracks(t.net);
@@ -880,7 +1004,8 @@ function propsTrack(box,t){
       '<button class="tb" id="tAll">Largeur au net</button>'+
       '<button class="tb" id="tCls">Largeur de classe</button></div>'+
       '<div class="row"><button class="tb" id="tSel">Sélectionner le net ('+g.tracks.length+')</button>'+
-      '<button class="tb" id="tDel">Dérouter le net</button></div></div>';
+      '<button class="tb" id="tDel">Dérouter le net</button></div></div>'+
+    ltSection([t],[]);
   $("tMit").onclick=mitreSel;
   $("tL").onchange=()=>{push();t.l=+$("tL").value;touch();refreshPanels();draw();};
   $("tW").onchange=()=>{push();t.w=Math.max(0.05,parseFloat($("tW").value)||cl.w);
@@ -909,10 +1034,13 @@ function propsTrack(box,t){
     if(confirm("Supprimer tout le routage du net "+t.net+" ?"))deleteNetRouting(t.net);
   };
 }
-function propsTracks(box,list){
+function propsTracks(box,list,vias){
   const nets=[...new Set(list.map(t=>t.net||"—"))];
+  const vi=vias||[];
   box.innerHTML=
-    '<div class="empty">'+list.length+' segments sélectionnés · net'+(nets.length>1?"s":"")+
+    '<div class="empty">'+list.length+' segment'+(list.length>1?"s":"")+
+      (vi.length?' et '+vi.length+' via'+(vi.length>1?'s':""):"")+
+      ' sélectionné'+(list.length+vi.length>1?"s":"")+' · net'+(nets.length>1?"s":"")+
       ' '+esc(nets.join(", "))+'</div>'+
     '<div class="prop"><label>Couche</label><select id="msL">'+
       '<option value="">— inchangée —</option>'+
@@ -925,7 +1053,8 @@ function propsTracks(box,list){
       '<button class="tb" id="msMit">Angle droit → 45° (D)</button></div>'+
       '<div class="row">'+
       '<button class="tb" id="msCls">Largeur de classe</button>'+
-      '<button class="tb" id="msDel">Supprimer</button></div></div>';
+      '<button class="tb" id="msDel">Supprimer</button></div></div>'+
+    ltSection(list,vi);
   $("msMit").onclick=mitreSel;
   $("msL").onchange=()=>{
     const v=$("msL").value;
@@ -944,6 +1073,7 @@ function propsTracks(box,list){
   $("msDel").onclick=deleteSel;
 }
 function propsVia(box,v){
+  const lt=ltVia(v);
   box.innerHTML=
     '<div class="prop two">'+numProp("vD","Diamètre",v.d,0.05,0.2)+
       numProp("vDr","Perçage",v.drill,0.05,0.1)+'</div>'+
@@ -963,7 +1093,11 @@ function propsVia(box,v){
       " Perçage de "+fmt(stackSpan(v.a,v.b),3)+" mm de long, rapport d'aspect "+
       fmt(stackSpan(v.a,v.b)/Math.max(0.01,v.drill),1)+" : 1"+
       (stackSpan(v.a,v.b)/Math.max(0.01,v.drill)>8
-        ? " — au-delà de 8 : 1, à valider avec le fabricant." : ".")+'</div>';
+        ? " — au-delà de 8 : 1, à valider avec le fabricant." : ".")+
+      /* Ce que le tube ajoute à la ligne qui le franchit : le panneau de la
+         piste entière les compte, autant les lire aussi sur le via seul. */
+      '<br>Il ajoute à la piste qui le franchit '+ltL(lt.ind)+' de self et '+
+      ltC(lt.cap)+' de capacité.</div>';
   const f=()=>{
     push();
     const cl=classOf(v.net);

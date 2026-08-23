@@ -65,6 +65,26 @@ confiance.** `python serveur.py --local` limite l'écoute à cette machine ;
 `--host` et `--port` permettent de choisir l'interface et le port,
 `--sans-navigateur` empêche l'ouverture automatique du navigateur.
 
+### Sur iPad, avec Pyto
+
+`serveur.py` tourne aussi directement sur l'iPad (Pyto, bibliothèque standard
+uniquement) : on sert alors le dépôt à `127.0.0.1` et on ouvre Safari sur la
+même machine. Trois particularités du système :
+
+- **le navigateur n'est pas ouvert automatiquement** — passer à Safari mettrait
+  Pyto en arrière-plan, et iOS suspend aussitôt l'interpréteur. Le serveur
+  affiche l'adresse, à saisir à la main dans Safari ;
+- **laissez Pyto au premier plan** dans une fenêtre partagée (Split View) à
+  côté de Safari : sinon le serveur est mis en pause et les pages ne chargent
+  plus ;
+- la première tentative d'accès au réseau local déclenche la demande
+  d'autorisation « Réseau local ». Refusée, l'adresse réseau affichée est
+  inutilisable ; `--local` suffit pour un usage sur l'iPad seul.
+
+La recherche de composants (`/api/*`) a besoin de `ssl` : si Pyto ne le fournit
+pas, le serveur démarre quand même et ces deux routes répondent
+« passerelle indisponible » — les deux éditeurs, eux, fonctionnent.
+
 ## Recherche de composants
 
 `recherche-composants/` interroge [pcbparts.dev](https://pcbparts.dev/) : stock

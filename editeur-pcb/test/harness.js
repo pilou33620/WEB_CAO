@@ -72,8 +72,12 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "dpFreeEnd","dpAnchors","dpNearest","dpPrimPair","dpPairAt","dpPush",
   "dpSelected","dpSelect","dpViaSpread","dpPosture","dpGate","dpMid","dpTarget",
   "dpStart","dpUpdate","dpStep","dpVia","dpToLayer","dpCommit","dpCancel",
-  "dpBack","drawDp","dpCoupling","dpDrc","dpFromSel","dpAutoAll","dpDelete",
+  "dpBack","drawDp","dpCoupling","dpDrc","dpMakePair","dpFromSel","dpAutoAll","dpDelete",
+  "dpNetFree","dpNetOpts","dpMateGuess",
   "dpPanelRule","dpMaterialize","dpFigure","dpLayerCells","buildDiffPairs",
+  /* ligne de transmission : impédance, retard, C et L de la sélection */
+  "LT_C0","LT_KIND","ltEeff","ltZ0","ltSeg","ltVia","ltLine",
+  "ltT","ltC","ltL","ltRange","ltTable","ltSection","propsTrack","propsTracks",
   "dpLayerEdit",
   /* rendu et fusion des lignes droites */
   "drawTracks","sameLine","routeVia",
@@ -3993,6 +3997,32 @@ T("créer une paire depuis deux pistes sélectionnées",()=>{
   if(dpFromSel()!==q)throw new Error("un net déjà apparié doit renvoyer sa paire");
   if(S.dpPairs.length!==1)throw new Error("aucune seconde paire ne devait naître");
 });
+T("deux listes de nets : la polarité choisie fait loi",()=>{
+  carteDp();
+  S.tracks.push({l:0,net:"GND",w:0.3,x1:10,y1:12,x2:20,y2:12});
+  const noms=netTable().map(n=>n.name);
+  // le net d'en face se devine depuis le côté P, et pas depuis le côté N
+  if(dpMateGuess(noms,"USB_DP")!=="USB_DM")
+    throw new Error("complémentaire non proposé : "+dpMateGuess(noms,"USB_DP"));
+  if(dpMateGuess(noms,"USB_DM")!=="")
+    throw new Error("le côté N ne doit rien proposer, la polarité est déjà donnée");
+  if(dpMateGuess(noms,"GND")!=="")throw new Error("GND n'a pas de complémentaire");
+  // l'ordre des listes passe devant les suffixes des noms
+  const q=dpMakePair("USB_DM","USB_DP",true);
+  if(!q)throw new Error("deux nets libres devaient faire une paire");
+  if(q.p!=="USB_DM"||q.n!=="USB_DP")
+    throw new Error("la polarité désignée doit tenir : "+JSON.stringify(q));
+  if(q.name!=="USB")throw new Error("nom de paire : "+q.name);
+  // un net déjà apparié n'est plus libre, et ne refait pas de paire
+  if(dpNetFree(noms,"USB_DP"))throw new Error("un net apparié reste offert");
+  if(!dpNetFree(noms,"GND"))throw new Error("GND devait rester libre");
+  if(dpMakePair("USB_DP","GND",true)!==q)
+    throw new Error("un net déjà apparié doit renvoyer sa paire");
+  // deux fois le même net, ou un net manquant : rien
+  if(dpMakePair("GND","GND",true))throw new Error("un net ne s'apparie pas à lui-même");
+  if(dpMakePair("","GND",true))throw new Error("une paire demande deux nets");
+  if(S.dpPairs.length!==1)throw new Error("aucune seconde paire ne devait naître");
+});
 T("l'écart d'une paire passe devant l'isolation de sa classe",()=>{
   carteDp();
   dpAutoAll();
@@ -5233,6 +5263,204 @@ T("un coude déjà franc avant le glissement le reste",()=>{
   if(!S.tracks.some(t=>Math.abs(t.x1-t.x2)>1e-9&&Math.abs(t.y1-t.y2)<1e-9))
     throw new Error("l'horizontale devait rester horizontale");
   undo();
+});
+
+/* =============================================================================
+   Ligne de transmission : impédance, retard, C et L de la sélection
+   ============================================================================= */
+/* Une carte 4 couches avec ses deux plans internes : la couche 0 est un
+   microruban sur le prépreg, la couche 1 une triplaque entre les deux plans.
+   C'est l'empilage sur lequel on route vraiment de la ligne contrôlée. */
+function carte4c(){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  setCuCount(4);applyPreset(presetsFor(4)[0]);
+  S.board={x:0,y:0,w:60,h:40,pts:null};boardChanged();
+  setLayerRole(0,"signal");setLayerRole(1,"gnd");
+  setLayerRole(2,"pwr");setLayerRole(3,"signal");
+  setActive(0);S.grid=0;touch();
+}
+/* Le 6 couches est le premier empilage qui offre une couche de signal entre
+   deux plans : sur un 4 couches, les deux internes sont les plans. C'est là
+   qu'on éprouve la triplaque. */
+function carte6c(){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  setCuCount(6);applyPreset(presetsFor(6)[0]);
+  S.board={x:0,y:0,w:60,h:40,pts:null};boardChanged();
+  setLayerRole(0,"signal");setLayerRole(1,"gnd");setLayerRole(2,"signal");
+  setLayerRole(3,"signal");setLayerRole(4,"pwr");setLayerRole(5,"signal");
+  setActive(0);S.grid=0;touch();
+}
+function pisteLT(l,w,x1,x2,net){
+  const t={l:l,net:net||"CLK",w:w,x1:x1,y1:10,x2:x2,y2:10};
+  S.tracks.push(t);touch();
+  return t;
+}
+T("εr effective : entre l'air et le stratifié, et d'autant plus haute que la piste est large",()=>{
+  carte4c();
+  const g=dpStripGeom(0);
+  if(g.kind!=="micro")throw new Error("la couche extérieure est un microruban, pas "+g.kind);
+  const bas=(g.er+1)/2, e1=ltEeff(g,0.1), e2=ltEeff(g,0.5);
+  if(!(e1>bas&&e1<g.er))throw new Error("εeff hors de [ (εr+1)/2 , εr ] : "+e1);
+  if(!(e2>e1))throw new Error("une piste large voit plus de stratifié : "+e1+" → "+e2);
+  /* la triplaque est noyée : elle ne voit que le stratifié */
+  carte6c();
+  const s=dpStripGeom(2);
+  if(s.kind!=="strip")throw new Error("la couche 2 du 6 couches est entre deux plans");
+  if(Math.abs(ltEeff(s,0.2)-s.er)>1e-3)throw new Error("noyée, εeff vaut εr");
+});
+T("les deux branches de Wheeler se raccordent en w = h",()=>{
+  carte4c();
+  const g=dpStripGeom(0), h=g.h;
+  const a=ltZ0(g,h*0.999), b=ltZ0(g,h*1.001);
+  if(!(a>0&&b>0))throw new Error("impédance nulle au raccord");
+  if(Math.abs(a-b)/a>0.01)
+    throw new Error("marche de "+fmt(100*Math.abs(a-b)/a,2)+" % au passage d'une branche à l'autre");
+});
+T("Z₀ tombe quand la piste s'élargit, monte quand le plan s'éloigne",()=>{
+  carte4c();
+  const g=dpStripGeom(0);
+  if(!(ltZ0(g,0.5)<ltZ0(g,0.2)))throw new Error("élargir une piste baisse son impédance");
+  const loin=Object.assign({},g,{h:g.h*2});
+  if(!(ltZ0(loin,0.2)>ltZ0(g,0.2)))throw new Error("éloigner le plan monte l'impédance");
+});
+T("l'empilage commande : doubler le diélectrique monte l'impédance",()=>{
+  carte4c();
+  const t=pisteLT(0,0.2,5,25);
+  const avant=ltSeg(t).z0;
+  S.stack.di[0].t=r4(S.stack.di[0].t*2);touch();
+  const apres=ltSeg(t).z0;
+  if(!(apres>avant+1))
+    throw new Error("le panneau doit suivre l'empilage : "+avant+" → "+apres);
+});
+T("retard : de l'ordre de 6 ps/mm sur du FR-4, et C avec L le retrouve",()=>{
+  carte4c();
+  const t=pisteLT(0,0.2,5,25);                 // 20 mm de microruban
+  const s=ltSeg(t);
+  const psmm=s.tpd*1e12/s.len;
+  if(!(psmm>4.5&&psmm<7.5))throw new Error(fmt(psmm,2)+" ps/mm : hors de tout FR-4 connu");
+  /* C = t/Z₀ et L = t·Z₀ : le produit rend le retard au carré, le rapport rend
+     l'impédance. C'est la définition même de la ligne. */
+  if(Math.abs(Math.sqrt(s.ind*s.c)-s.tpd)/s.tpd>1e-9)throw new Error("√(L·C) doit rendre le retard");
+  if(Math.abs(Math.sqrt(s.ind/s.c)-s.z0)/s.z0>1e-9)throw new Error("√(L/C) doit rendre Z₀");
+});
+T("la ligne somme ses tronçons et n'invente pas d'impédance unique",()=>{
+  carte4c();
+  const a=pisteLT(0,0.2,5,15), b=pisteLT(0,0.4,15,25);
+  const e=ltLine([a,b],[]);
+  const sa=ltSeg(a), sb=ltSeg(b);
+  if(Math.abs(e.len-(sa.len+sb.len))>1e-9)throw new Error("la longueur est une somme");
+  if(Math.abs(e.tpd-(sa.tpd+sb.tpd))>1e-18)throw new Error("le retard est une somme");
+  if(Math.abs(e.c-(sa.c+sb.c))>1e-18)throw new Error("la capacité est une somme");
+  if(Math.abs(e.ind-(sa.ind+sb.ind))>1e-18)throw new Error("l'inductance est une somme");
+  if(e.uniform)throw new Error("deux largeurs : l'impédance n'est pas uniforme");
+  if(e.groups.length!==2)throw new Error("2 tronçons attendus, "+e.groups.length);
+  if(!(e.z0eq>Math.min(sa.z0,sb.z0)&&e.z0eq<Math.max(sa.z0,sb.z0)))
+    throw new Error("l'équivalente √(L/C) tient entre les deux : "+e.z0eq);
+  /* le plus long passe devant : c'est lui qui décide de la ligne */
+  if(e.groups[0].len<e.groups[1].len)
+    throw new Error("les tronçons se lisent du plus long au plus court");
+});
+T("un coude à 45° ne fait qu'un tronçon : même couche, même largeur",()=>{
+  carte4c();
+  const a=pisteLT(0,0.2,5,15);
+  const b={l:0,net:"CLK",w:0.2,x1:15,y1:10,x2:18,y2:13};
+  const c={l:0,net:"CLK",w:0.2,x1:18,y1:13,x2:28,y2:13};
+  S.tracks.push(b,c);touch();
+  const e=ltLine([a,b,c],[]);
+  if(e.groups.length!==1)throw new Error("un seul tronçon attendu, "+e.groups.length);
+  if(!e.uniform)throw new Error("rien n'a changé en chemin : l'impédance est uniforme");
+  if(e.groups[0].n!==3)throw new Error("les 3 segments du coude sont dans ce tronçon");
+  if(Math.abs(e.groups[0].len-e.len)>1e-9)throw new Error("et toute la longueur avec");
+});
+T("changer de couche change l'impédance : le tronçon suit la couche",()=>{
+  carte6c();
+  const a=pisteLT(0,0.25,5,15), b=pisteLT(2,0.25,15,25);
+  const e=ltLine([a,b],[]);
+  if(e.groups.length!==2)throw new Error("deux couches, deux tronçons");
+  if(e.kinds.length!==2)throw new Error("microruban dessus, triplaque dedans : "+e.kinds.join("+"));
+  if(Math.abs(ltSeg(a).z0-ltSeg(b).z0)<1)
+    throw new Error("la même largeur ne donne pas la même impédance d'une topologie à l'autre");
+});
+T("un via ajoute self, capacité et retard, et le total les compte",()=>{
+  carte4c();
+  const a=pisteLT(0,0.2,5,15), b=pisteLT(3,0.2,15,25);
+  const v={x:15,y:10,d:0.8,drill:0.4,a:0,b:3,net:"CLK"};
+  S.vias.push(v);touch();
+  const nu=ltLine([a,b],[]), avec=ltLine([a,b],[v]);
+  const x=ltVia(v);
+  if(!(x.ind>0.2e-9&&x.ind<3e-9))
+    throw new Error("self de via hors du plausible : "+(x.ind*1e9)+" nH");
+  if(!(x.cap>0.05e-12&&x.cap<2e-12))
+    throw new Error("capacité de via hors du plausible : "+(x.cap*1e12)+" pF");
+  if(Math.abs(avec.indAll-(nu.ind+x.ind))>1e-18)throw new Error("la self du via entre dans le total");
+  if(Math.abs(avec.cAll-(nu.c+x.cap))>1e-18)throw new Error("la capacité du via entre dans le total");
+  if(!(avec.tpdAll>nu.tpdAll))throw new Error("traverser le tube prend du temps");
+  if(avec.vias.n!==1)throw new Error("un via compté");
+  /* un via borgne perce moins loin : moins de self, moins de capacité */
+  const court={x:15,y:10,d:0.8,drill:0.4,a:0,b:1,net:"CLK"};
+  const y=ltVia(court);
+  if(!(y.ind<x.ind&&y.cap<x.cap))throw new Error("un via borgne pèse moins qu'un traversant");
+});
+T("le panneau donne la ligne du segment seul comme de la piste entière",()=>{
+  carte4c();
+  const a=pisteLT(0,0.2,5,15), b=pisteLT(3,0.3,15,25);
+  const v={x:15,y:10,d:0.8,drill:0.4,a:0,b:3,net:"CLK"};
+  S.vias.push(v);touch();
+  clearSel();S.sel.tracks.add(a);buildProps();
+  const un=$("props").innerHTML;
+  if(un.indexOf("Ligne de transmission")<0)throw new Error("un segment seul a déjà une impédance");
+  if(un.indexOf("Vias franchis")>=0)throw new Error("aucun via dans cette sélection");
+  /* Maj+clic : la piste entière d'une couche */
+  clearSel();S.sel.tracks.add(a);S.sel.tracks.add(b);buildProps();
+  const deux=$("props").innerHTML;
+  if(deux.indexOf("Ligne de transmission")<0)throw new Error("la piste entière aussi");
+  if(deux.indexOf("équivalente")<0)throw new Error("deux largeurs : l'équivalente doit paraître");
+  /* Maj+double-clic : les vias de passage sont de la sélection */
+  clearSel();S.sel.tracks.add(a);S.sel.tracks.add(b);S.sel.vias.add(v);buildProps();
+  const tout=$("props").innerHTML;
+  if(tout.indexOf("Vias franchis")<0)
+    throw new Error("le doublé prend les vias : le panneau doit les compter");
+  if(tout.indexOf("Retard total")<0)throw new Error("le retard annoncé comprend alors les vias");
+});
+T("Maj+double-clic sur une piste multicouche : le panneau reste celui de la piste",()=>{
+  carte4c();
+  const a=pisteLT(0,0.3,5,15), b=pisteLT(3,0.3,15,25);
+  const v={x:15,y:10,d:0.8,drill:0.4,a:0,b:3,net:"CLK"};
+  S.vias.push(v);touch();
+  setMode("select");clearSel();
+  const r=trackRun(a,true);
+  r.tracks.forEach(t=>S.sel.tracks.add(t));
+  r.vias.forEach(x=>S.sel.vias.add(x));
+  if(!S.sel.vias.size)throw new Error("le doublé devait prendre le via");
+  buildProps();
+  const h=$("props").innerHTML;
+  if(h.indexOf("Ligne de transmission")<0)
+    throw new Error("une piste prise avec ses vias n'est pas un lasso : elle garde son panneau");
+  if(h.indexOf("Dérouter ")>=0)throw new Error("ce n'est plus le panneau de sélection mêlée");
+});
+T("sans plan de référence, le panneau le dit plutôt que d'afficher un nombre net",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  setCuCount(2);                                  // deux couches signal, aucun plan
+  setLayerRole(0,"signal");setLayerRole(1,"signal");
+  S.board={x:0,y:0,w:60,h:40,pts:null};boardChanged();touch();
+  const t=pisteLT(0,0.25,5,25);
+  if(!ltLine([t],[]).noRef)throw new Error("aucune couche ne porte de plan : il faut le signaler");
+  clearSel();S.sel.tracks.add(t);buildProps();
+  if($("props").innerHTML.indexOf("Aucun plan de référence")<0)
+    throw new Error("l'avertissement doit paraître dans le panneau");
+  /* poser un plan de masse dessous suffit à rendre la mesure honnête */
+  setLayerRole(1,"gnd");touch();
+  if(ltLine([t],[]).noRef)throw new Error("le plan posé, l'avertissement tombe");
+});
+T("une zone pleine carte vaut plan de référence, comme pour le DRC",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  setCuCount(2);setLayerRole(0,"signal");setLayerRole(1,"signal");
+  S.board={x:0,y:0,w:60,h:40,pts:null};boardChanged();touch();
+  const t=pisteLT(0,0.25,5,25);
+  if(!ltLine([t],[]).noRef)throw new Error("rien n'est encore posé");
+  S.zones.push({l:1,net:"GND",pts:boardZonePts(),auto:true});touch();
+  if(ltLine([t],[]).noRef)
+    throw new Error("le cuivre réellement posé compte, pas seulement le rôle de couche");
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

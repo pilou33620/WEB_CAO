@@ -121,6 +121,9 @@ Gerber décrivent le même cuivre.
 - `04-fabrication` reprend les mêmes règles de dégagement et de liaison
   thermique que `03-render`.
 - `06-panels` et `07-app` ne sont appelés que par l'interface.
+- `01-core` calcule la ligne de transmission d'une piste (`ltLine`) sur la
+  géométrie que `dpStripGeom` cherchait pour les paires différentielles : un
+  même tracé n'a pas deux géométries selon le panneau qui le regarde.
 
 ## Empilage physique
 
@@ -862,10 +865,16 @@ nets et ce que le contrôle DRC doit y vérifier.
 
 Trois chemins, du plus explicite au plus rapide :
 
-- **Deux pistes sélectionnées** → *Créer depuis la sélection*. C'est le geste de
-  départ : on montre les deux pistes (ou les deux segments amorcés à la main),
-  l'éditeur en tire le couple de nets, le nom et, si les noms le disent, lequel
-  est P et lequel est N.
+- **Deux listes de nets**, *Net P* et *Net N*, puis *Créer la paire*. C'est le
+  geste de départ, et le seul qui marche avant qu'une seule piste soit tirée :
+  la paire se déclare sur la netlist, pas sur du cuivre. C'est aussi le seul où
+  **la polarité est choisie** — la liste où atterrit un net décide, les suffixes
+  des noms ne servent plus qu'à nommer la paire. Un net déjà apparié y reste
+  visible mais grisé, suivi du nom de sa paire : le voir disparaître ne dirait
+  pas pourquoi. Et quand le net P se lit comme un côté P (`USB_DP`), la liste N
+  vide se remplit toute seule de son complémentaire — une proposition, pas une
+  contrainte. Dans l'autre sens rien n'est proposé : retourner la polarité
+  derrière le dos de qui vient de la désigner serait pire que de se taire.
 - **Détecter** lit tous les noms de net d'un coup. Sont reconnus les suffixes
   `P`/`N`, `+`/`-`, `DP`/`DM`, `DP`/`DN`, `D+`/`D-`, `TP`/`TN`, `RP`/`RN`,
   `HSP`/`HSM`, avec ou sans séparateur (`USB_DP`, `CAN-P`, `TXP`). C'est la
@@ -873,6 +882,13 @@ Trois chemins, du plus explicite au plus rapide :
   que si **les deux** nets existent : `VCCN` tout seul n'a jamais fait un net
   différentiel.
 - **À la main**, en renommant une paire déjà créée.
+
+`dpMakePair(p, n, keepOrder)` est le passage obligé des trois : deux nets
+distincts, aucun des deux déjà apparié, et un nom tiré de la base commune.
+`keepOrder` dit si l'appelant a déjà tranché la polarité — les deux listes le
+savent, `dpFromSel()` (deux pistes sélectionnées, resté accessible pour le cas
+où l'on vient de tirer deux amorces sans se rappeler leurs noms) s'en remet aux
+suffixes, et faute de suffixe lisible à l'ordre d'arrivée.
 
 Le suffixe le plus long est essayé d'abord — sans quoi `USB_DP` se lirait
 `USB_D` + `P`, et son complémentaire serait `USB_DN` au lieu de `USB_DM`. La
@@ -1028,6 +1044,95 @@ il le dit aussi plutôt que d'afficher un nombre qui ne veut rien dire.
   de couche par un via en éventail. Le trajet est signalé, il ne se pose pas.
 - Une paire ne vit que sur **une couche à la fois** ; c'est le via en éventail
   qui la fait passer, pas un tracé simultané sur deux couches.
+
+## Ce qu'une piste sélectionnée vaut électriquement
+
+Sélectionner du cuivre routé ouvre, en bas du panneau *Propriétés*, une section
+**Ligne de transmission**. Elle paraît dans les trois cas où la sélection est
+une piste : un segment seul, la piste entière prise au `Maj+clic`, la piste
+entière sur toutes les couches prise au `Maj+double-clic` — vias de passage
+compris.
+
+Une piste n'est pas un fil : c'est une ligne, et l'empilage physique dit déjà
+tout ce qu'il faut pour la calculer. `dpStripGeom()` (`js/01-core.js`) cherchait
+déjà les plans de référence pour les paires différentielles ; le calcul s'en
+sert tel quel, ce qui garantit qu'un même tracé n'a pas deux géométries selon le
+panneau qui le regarde. **Microruban** quand la couche n'a de plan que d'un
+côté, **triplaque** quand elle en a des deux ; un plan est soit un rôle de
+couche, soit une zone pleine carte réellement posée — la même vérité que pour le
+DRC.
+
+### Les cinq grandeurs, et d'où elles sortent
+
+| Grandeur | Formule | Fonction |
+| --- | --- | --- |
+| ε<sub>r</sub> effective | Hammerstad : (ε<sub>r</sub>+1)/2 + (ε<sub>r</sub>−1)/2 · (1+12h/w)<sup>−1/2</sup> | `ltEeff` |
+| Z₀ microruban | Wheeler, deux branches selon w/h | `ltZ0` |
+| Z₀ triplaque | IPC-2141A, comme `dpZ0` | `ltZ0` |
+| Retard t<sub>pd</sub> | L·√ε<sub>eff</sub> / c | `ltSeg` |
+| C et L | C = t<sub>pd</sub>/Z₀, L = t<sub>pd</sub>·Z₀ | `ltSeg` |
+
+Le microruban a de l'air d'un côté : il voit une moyenne entre l'air et le
+stratifié, et d'autant plus de stratifié que la piste est large devant la
+hauteur du diélectrique. La triplaque, noyée, ne voit que le stratifié —
+ε<sub>eff</sub> y vaut ε<sub>r</sub>, et le retard y est plus long qu'en surface
+à longueur égale. Wheeler tient en deux branches parce qu'aucune des deux
+expressions ne suit la courbe sur toute sa longueur ; elles se raccordent à
+0,4 % près en w = h, ce que le banc d'essai vérifie.
+
+Tout est calculé en millimètres et en secondes — la vitesse de la lumière avec,
+en mm/s. Les retards sortent alors en secondes, les capacités en farads et les
+inductances en henrys sans facteur caché en chemin ; c'est le panneau qui les
+remet en picosecondes et en picofarads.
+
+**C'est du JavaScript et cela reste dans le navigateur.** Quelques dizaines de
+multiplications par segment : la section se recalcule à chaque changement de
+sélection sans qu'on y pense, là où un calcul de champ 2D demanderait un
+aller-retour au serveur pour gagner quelques pour cent sur des formules déjà
+à ±5 %.
+
+### Une piste change de largeur et de couche en route
+
+L'impédance ne se somme pas. Le retard, la capacité et l'inductance, si.
+`ltLine()` calcule donc chaque segment seul, somme ce qui se somme, et regroupe
+les segments par **tronçon** — même couche, même largeur. Un coude à 45° en
+compte trois et n'en fait qu'un : rien n'y change électriquement.
+
+Dès qu'il y a plus d'un tronçon, la section affiche l'étendue de Z₀ plutôt qu'un
+nombre unique, l'**équivalente √(L/C)** — ce que voit un front qui parcourt la
+ligne entière —, et le tableau des tronçons du plus long au plus court. C'est à
+chacune de ces frontières qu'une part du front repart en arrière, et le panneau
+le dit.
+
+### Les vias comptent
+
+Un via n'est pas un fil non plus : c'est un tube inductif, et une pastille qui
+regarde les plans à travers leur dégagement. `ltVia()` applique les formules de
+Johnson sur la géométrie réellement en place — longueur percée tirée de
+`stackSpan()`, donc plus courte pour un via borgne, diamètre de perçage,
+pastille, et dégagement déduit de l'isolation de classe du net. Sur un
+traversant de 1,6 mm percé à 0,4 mm cela donne de l'ordre de 1,2 nH et 0,6 pF,
+ce qui est bien l'ordre de grandeur attendu.
+
+Ce que le `Maj+double-clic` a pris entre dans le total : la self, la capacité et
+le retard de traversée des vias s'ajoutent à ceux du cuivre, et le détail se lit
+sur ses deux lignes. Sélectionner un via seul donne les deux mêmes valeurs, à
+côté de son rapport d'aspect.
+
+### Ce que cela vaut
+
+**±5 % au mieux.** Wheeler ne tient pas compte de l'épaisseur du cuivre,
+contrairement à la forme IPC que `dpZ0()` applique au microruban : sur du FR-4
+courant les deux s'écartent de quelques pour cent, la première lisant un peu
+plus haut. La triplaque est supposée symétrique. La capacité d'un via
+traversant est un majorant — elle est calculée sur la longueur percée entière,
+comme si le tube croisait des plans partout.
+
+C'est de quoi dégrossir un tracé, pas de quoi signer une commande : le
+fabricant, lui, tranchera au calcul de champ, et la section le dit. Sans plan de
+référence dans l'empilage sous la couche, elle le dit aussi — les cotes sont
+alors prises sur le diélectrique voisin, et une impédance à laquelle aucun plan
+ne répond ne veut rien dire.
 
 ## Pas de grille
 
@@ -1226,7 +1331,7 @@ python3 outils/build-monofichier.py && node test/harness.js
 ```
 
 Le banc s'appuie sur le DOM minimal partagé (`../commun/test/dom-stub.js`),
-exécute `dist/pcb.js` et couvre 238 cas : import de netlist, boîtiers nommés
+exécute `dist/pcb.js` et couvre 260 cas : import de netlist, boîtiers nommés
 et empreintes qu'ils posent, chevelu
 multicouche, vias, îlots de cuivre, classes de net, édition des pistes,
 géométrie du L chanfreiné, posture du coude et règle d'angle (45° / 90° /
@@ -1238,7 +1343,13 @@ entière au Maj+clic et de toutes ses couches au doublé, presse-papier
 (copier/coller, contenu invalide, repères refaits), pas de grille, paires
 différentielles (détection des couples, tracé couplé et son écart tenu,
 éventail de départ, vias écartés, retour arrière, longueur découplée,
-impédance et résolution des cotes, priorité des règles), moteur de routage
+impédance et résolution des cotes, priorité des règles), ligne de transmission
+d'une piste sélectionnée (ε<sub>r</sub> effective bornée par l'air et le
+stratifié, raccord des deux branches de Wheeler, sens de variation avec la
+largeur et la hauteur du diélectrique, √(L·C) qui rend le retard et √(L/C)
+l'impédance, tronçons regroupés et sommes, parasites d'un via traversant contre
+un borgne, panneau du segment seul comme de la piste entière avec ses vias,
+avertissement sans plan de référence), moteur de routage
 (enveloppes convexes et leur marge, index spatial confronté au balayage
 complet sur une carte tirée au sort, branche et versement, assemblage des
 polylignes, trame 45°, contournement d'un et de deux obstacles et choix du
@@ -1296,10 +1407,13 @@ différence — c'est lui qui garde cette propriété.
 - Pas de sauvegarde automatique sur disque. Le travail tient dans l'onglet
   tant qu'il est ouvert (voir plus haut), mais fermer l'onglet sans
   « Enregistrer .json » le perd.
-- Le calcul de ligne de transmission se limite à l'impédance différentielle
-  des paires, par les formules approchées de l'IPC-2141A (±10 %). Ni impédance
-  simple, ni pertes (le Df reste inexploité), ni prise en compte de la gravure
-  en trapèze ou du vernis épargne.
+- Le calcul de ligne de transmission tient aux formules approchées
+  (Hammerstad, Wheeler, IPC-2141A) : ±5 % sur une piste seule, ±10 % sur une
+  paire. Pas de pertes — le Df de l'empilage reste inexploité, il n'y a donc ni
+  atténuation ni résistance série. Ni gravure en trapèze, ni vernis épargne sur
+  le microruban, ni triplaque asymétrique : le plan le plus proche décide, et la
+  formule la suppose centrée. Le couplage entre deux pistes voisines n'est pris
+  en compte que pour une paire différentielle déclarée.
 - Pas de serpentin d'appariement de longueur : l'écart entre les deux pistes
   d'une paire est mesuré et signalé, jamais corrigé.
 - Le contrôle des vias borgnes et enterrés suppose un pressage unique. Un

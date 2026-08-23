@@ -2,6 +2,29 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.3.0
+# Date: 2026-08-23
+# Explication: le serveur ne demarrait plus sous Pyto (iPad). Quatre causes,
+#   toutes apparues apres la version d'origine qui y fonctionnait :
+#   1. « import passerelle_mcp » en tete de fichier : sous Pyto le dossier du
+#      script n'est pas toujours dans sys.path et le module ssl peut manquer.
+#      Un import rate empechait TOUT le serveur de demarrer, alors que seules
+#      les deux routes /api/* en dependent. L'import est desormais tolerant et
+#      /api/* repond 503 « passerelle indisponible » le cas echeant.
+#   2. ouverture automatique du navigateur : sous iOS, ouvrir une URL quitte
+#      l'application, et le systeme suspend aussitot l'interpreteur -- le
+#      serveur cesse de repondre. Desactivee sur iOS.
+#   3. make_server n'essayait QUE la double pile IPv6 quand --host est vide :
+#      si AF_INET6 n'est pas disponible, on retombait en silence sur
+#      127.0.0.1 et un port aleatoire (« inaccessible depuis l'iPad »).
+#      IPv4 est maintenant essaye en second, et la vraie erreur est affichee
+#      au lieu d'etre avalee par « except OSError: continue ».
+#   4. get_local_ip : la ruse UDP vers 10.255.255.255 echoue sur iOS sans
+#      l'autorisation « Reseau local » et l'adresse affichee etait inutilisable.
+# Fonctions modifiees/ajoutees :
+# - sur_ios (nouvelle), get_local_ip, make_server, start_server
+# - CustomHandler._api (passerelle absente -> 503)
+#
 # Version: 2.2.0
 # Date: 2026-08-21
 # Explication: serveur-composants.py (FastAPI/uvicorn, port 8420) est
@@ -84,10 +107,20 @@ import traceback
 import urllib.parse
 import webbrowser
 
-import passerelle_mcp
-
 DEFAULT_PORT = 8000
 ROOT = os.path.dirname(os.path.abspath(__file__))
+
+# La passerelle composants n'est pas indispensable pour servir les editeurs :
+# sous Pyto (iPad) le dossier du script n'est pas toujours dans sys.path et le
+# module ssl peut manquer. On ne laisse plus cet import faire tomber le serveur.
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+try:
+    import passerelle_mcp
+    ERREUR_PASSERELLE = None
+except Exception as _exc:                              # noqa: BLE001
+    passerelle_mcp = None
+    ERREUR_PASSERELLE = _exc
 
 # Taille maximale d'un corps POST : les arguments d'outil sont minuscules.
 MAX_CORPS = 64 * 1024
@@ -106,11 +139,37 @@ def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(('10.255.255.255', 1))
-        return s.getsockname()[0]
+        ip = s.getsockname()[0]
     except OSError:
-        return '127.0.0.1'
+        ip = ''
     finally:
         s.close()
+    if ip in ('', '0.0.0.0'):
+        # iOS refuse la sortie vers le reseau local tant que l'autorisation
+        # « Reseau local » n'est pas accordee : la ruse UDP ne renvoie rien.
+        try:
+            ip = socket.gethostbyname(socket.gethostname())
+        except OSError:
+            ip = '127.0.0.1'
+    return ip
+
+
+def sur_ios():
+    """Vrai sous Pyto (iPad/iPhone) : ouvrir une URL y quitte l'application,
+    et iOS suspend alors l'interpreteur -- le serveur cesse de repondre."""
+    if sys.platform in ("ios", "ipados"):
+        return True
+    # Pyto ne se signale pas autrement que par ses modules maison ; ils sont
+    # integres a l'interpreteur, donc deja charges ou trouvables.
+    marqueurs = ("pyto", "pyto_ui", "pyto_core", "pythonista", "objc_util")
+    if any(nom in sys.modules for nom in marqueurs):
+        return True
+    try:
+        import importlib.util
+        return any(importlib.util.find_spec(nom) is not None
+                   for nom in marqueurs)
+    except Exception:                                  # noqa: BLE001
+        return False
 
 
 def adresse_locale(host, port):
@@ -235,6 +294,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _api(self, action):
         """Execute action() et traduit les erreurs en JSON {"detail": ...}."""
+        if passerelle_mcp is None:
+            self._envoyer_json({"detail": "Passerelle composants indisponible"
+                                          " : %s" % ERREUR_PASSERELLE}, 503)
+            return
         try:
             self._envoyer_json(action())
         except passerelle_mcp.ErreurPasserelle as exc:
@@ -281,13 +344,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self._route() == "/api/tools":
-            self._api(passerelle_mcp.liste_outils)
+            # lambda et non passerelle_mcp.liste_outils : le module peut etre
+            # absent (import tolerant), _api repond alors 503.
+            self._api(lambda: passerelle_mcp.liste_outils())
             return
         super().do_GET()
 
     def do_HEAD(self):
         if self._route() == "/api/tools":
-            self._api(passerelle_mcp.liste_outils)
+            self._api(lambda: passerelle_mcp.liste_outils())
             return
         super().do_HEAD()
 
@@ -325,15 +390,22 @@ class DualStackServer(ThreadedServer):
 
 def make_server(host, port):
     """Ouvre un serveur sur (host, port). Renvoie None en cas d'echec."""
-    families = [DualStackServer]
-    if host not in ("", "::"):
+    if host in ("", "::"):
+        # Double pile d'abord, IPv4 seule ensuite : AF_INET6 n'est pas
+        # disponible partout (Pyto sur iPad, certains conteneurs). Sans ce
+        # repli, on retombait en silence sur un acces local uniquement.
+        families = [DualStackServer, ThreadedServer]
+    else:
         # une adresse explicite peut etre IPv4 : le serveur dual-stack echouerait
-        families.insert(0, ThreadedServer)
+        families = [ThreadedServer, DualStackServer]
+    echecs = []
     for cls in families:
         try:
             return cls((host, port), CustomHandler)
-        except OSError:
-            continue
+        except OSError as exc:
+            echecs.append("%s(%s:%d) : %s" % (cls.__name__, host or "*", port, exc))
+    for ligne in echecs:                    # la raison ne doit pas etre avalee
+        print("  [!] %s" % ligne)
     return None
 
 
@@ -377,6 +449,15 @@ def start_server(host, port, navigateur=True):
     print("=" * 60)
     print("(Ctrl+C pour arreter)")
     print()
+
+    if navigateur and sur_ios():
+        # Basculer vers Safari ferait passer Pyto en arriere-plan : iOS
+        # suspend l'interpreteur et le serveur ne repond plus.
+        print("  iOS detecte : ouvrez Safari a la main sur %s" % url)
+        print("  (laissez cet ecran au premier plan, sinon le systeme met le")
+        print("  serveur en pause).")
+        print()
+        navigateur = False
 
     if navigateur:
         print("  Ouverture du navigateur sur %s" % url)

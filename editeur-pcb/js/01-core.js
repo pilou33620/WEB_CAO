@@ -1477,6 +1477,19 @@ function dpFreeName(base){
   for(let k=2;k<999;k++)if(!dpByName(b+"_"+k))return b+"_"+k;
   return b+"_"+S.nextId;
 }
+/* ---------- les deux nets en attente, côté panneau ----------
+   Ce que le panneau des paires retient entre deux reconstructions : les deux
+   nets désignés dans ses listes, tant que « Créer la paire » n'a pas été
+   cliqué. Rien n'en va dans le document — ce n'est pas de l'état de carte,
+   c'est un geste en cours.
+
+   Pourquoi ici et non dans `09-diffpair`, où vit le panneau : `init()` appelle
+   `refreshPanels()`, donc `buildDiffPairs()`, avant que les déclarations de
+   `09` se soient exécutées. En un seul fichier les fonctions y sont remontées,
+   mais pas les `let` — un `let` de `09` lu à cet instant lève une erreur de
+   zone morte. Déclarés dans `01-core`, qui ouvre la marche, ils sont prêts. */
+let _dpNewP="", _dpNewN="";
+
 /* ---------- règles ----------
    La règle d'usine sert tant qu'aucune n'a été écrite : mêmes valeurs que la
    classe par défaut pour la largeur, et un écart de 0,15 mm — de quoi tenir
@@ -1644,4 +1657,141 @@ function dpSolveGap(target,w,layer){
     if(dpZdiff(w,m,layer)<target)lo=m;else hi=m;
   }
   return r3((lo+hi)/2);
+}
+
+/* ==========================================================================
+   Ligne de transmission — ce qu'une piste vaut électriquement
+   --------------------------------------------------------------------------
+   Une piste n'est pas un fil : c'est une ligne, et l'empilage physique dit
+   déjà tout ce qu'il faut pour la calculer — la hauteur de diélectrique qui la
+   sépare de son plan de référence, la permittivité du stratifié, l'épaisseur
+   du cuivre. `dpStripGeom()` a cherché ces plans pour la paire différentielle,
+   on s'en sert tel quel : microruban quand la couche n'a de plan que d'un
+   côté, triplaque quand elle en a des deux.
+
+   Les formules sont analytiques et fermées — Hammerstad pour la permittivité
+   effective, Wheeler pour l'impédance du microruban, IPC-2141A pour la
+   triplaque. Elles tiennent en quelques multiplications : le panneau les
+   recalcule à chaque changement de sélection sans qu'on ait à s'en soucier,
+   là où un calcul de champ 2D demanderait un aller-retour au serveur.
+
+   Les longueurs sont en millimètres comme partout ailleurs, et la vitesse de
+   la lumière avec elles : les retards sortent alors en secondes, les capacités
+   en farads et les inductances en henrys, sans facteur de conversion caché en
+   chemin. C'est le panneau qui les remet en picosecondes et en picofarads.
+   ========================================================================== */
+const LT_C0=2.99792458e11;              // vitesse de la lumière, en mm/s
+
+/* Permittivité effective vue par la ligne (Hammerstad). Le microruban a de
+   l'air d'un côté : il voit une moyenne entre l'air et le stratifié, et
+   d'autant plus de stratifié que la piste est large devant la hauteur du
+   diélectrique. La triplaque, noyée, ne voit que le stratifié. */
+function ltEeff(g,w){
+  if(g.kind==="strip")return r3(g.er);
+  const h=Math.max(g.h,1e-4), x=Math.max(w,1e-4);
+  return r3((g.er+1)/2+(g.er-1)/2/Math.sqrt(1+12*h/x));
+}
+/* Impédance caractéristique. Microruban : Wheeler, en deux branches selon que
+   la piste est plus étroite ou plus large que la hauteur du diélectrique —
+   c'est la même courbe, mais aucune des deux expressions ne la suit sur toute
+   sa longueur. Triplaque : l'approximation de l'IPC-2141A, celle qu'emploie
+   déjà le panneau des paires différentielles.
+
+   Wheeler ne tient pas compte de l'épaisseur du cuivre, contrairement à la
+   forme IPC que `dpZ0()` applique au microruban : sur du FR-4 courant, les
+   deux s'écartent de quelques pour cent, la première lisant un peu plus haut.
+   Aucune des deux ne vaut mieux que ±5 % — le panneau le dit plutôt que de
+   laisser croire à un chiffre signé. */
+function ltZ0(g,w){
+  if(!(w>0))return 0;
+  if(g.kind==="strip"){
+    const b=Math.max(g.b,1e-4);
+    const x=4*b/(0.67*Math.PI*(0.8*w+g.t));
+    return x>1?r3(60/Math.sqrt(g.er)*Math.log(x)):0;
+  }
+  const h=Math.max(g.h,1e-4), e=Math.sqrt(ltEeff(g,w)), u=w/h;
+  return r3(u<=1
+    ? 60/e*Math.log(8/u+u/4)
+    : 120*Math.PI/(e*(u+1.393+0.667*Math.log(u+1.444))));
+}
+/* Ce qu'un segment vaut : sa géométrie, son impédance, son retard, et les deux
+   éléments répartis qui s'en déduisent — C = t/Z₀, L = t·Z₀. La géométrie de
+   couche peut être fournie par l'appelant : elle ne dépend que de la couche,
+   inutile de rechercher les plans de référence une fois par segment. */
+function ltSeg(t,g){
+  const geo=g||dpStripGeom(t.l), eeff=ltEeff(geo,t.w), z0=ltZ0(geo,t.w);
+  const len=dist(t.x1,t.y1,t.x2,t.y2), tpd=len*Math.sqrt(eeff)/LT_C0;
+  return {l:t.l,w:t.w,len:len,g:geo,eeff:eeff,z0:z0,tpd:tpd,
+          c:z0>0?tpd/z0:0,ind:tpd*z0};
+}
+/* Un via n'est pas un fil non plus : c'est un tube inductif, et une pastille
+   qui regarde les plans à travers leur dégagement. Les deux formules sont
+   celles de Johnson (« High-Speed Digital Design »), écrites en pouces à
+   l'origine — 5,08/25,4 donne le 0,2 de l'inductance, et la capacité ne
+   dépend que de rapports sauf pour l'épaisseur traversée.
+
+   L'épaisseur retenue est la longueur percée entière : un via traversant
+   croise tous les plans, et la capacité qui en sort est un majorant. Le
+   dégagement du plan n'est pas dessiné, il se déduit de l'isolation de classe
+   du net — c'est bien ce que le rendu et le DRC dégagent autour d'un via. */
+function ltVia(v){
+  const h=Math.max(stackSpan(v.a,v.b),1e-3), d=Math.max(0.05,v.drill||0.2);
+  const er=dpDiBetween(v.a,v.b).er;
+  const d1=Math.max(d+0.05,v.d||d+0.2);                 // pastille
+  const d2=d1+2*Math.max(0.05,classOf(v.net).clr);      // dégagement dans le plan
+  return {h:h,er:er,
+          ind:Math.max(0,0.2*h*(Math.log(4*h/d)+1))*1e-9,
+          cap:Math.max(0,1.41*er*(h/25.4)*d1/Math.max(1e-3,d2-d1))*1e-12,
+          tpd:h*Math.sqrt(er)/LT_C0};
+}
+/* La ligne entière. La sélection peut changer de largeur, changer de couche,
+   franchir des vias : chaque segment se calcule seul, puis on somme ce qui se
+   somme — les retards, les capacités, les inductances. L'impédance, elle, ne
+   se somme pas. On en donne l'étendue, l'équivalent √(L/C) que voit un front
+   parcourant la ligne entière, et le détail par tronçon dès qu'elle cesse
+   d'être uniforme : c'est là que les réflexions naissent.
+
+   Les tronçons regroupent les segments de même couche et même largeur — un
+   coude à 45° en fait trois, ils n'ont qu'une ligne à eux tous. */
+function ltLine(tracks,vias){
+  const geos=new Map(), geoOf=l=>{
+    if(!geos.has(l))geos.set(l,dpStripGeom(l));
+    return geos.get(l);
+  };
+  const segs=(tracks||[]).map(t=>ltSeg(t,geoOf(t.l))).filter(s=>s.len>1e-9);
+  const out={n:segs.length,len:0,tpd:0,c:0,ind:0,groups:[],kinds:[],
+             z0min:null,z0max:null,noRef:false,
+             vias:{n:0,h:0,ind:0,cap:0,tpd:0}};
+  const key=new Map();
+  for(const s of segs){
+    out.len+=s.len;out.tpd+=s.tpd;out.c+=s.c;out.ind+=s.ind;
+    if(!s.g.ref)out.noRef=true;
+    if(out.kinds.indexOf(s.g.kind)<0)out.kinds.push(s.g.kind);
+    if(s.z0>0){
+      out.z0min=out.z0min==null?s.z0:Math.min(out.z0min,s.z0);
+      out.z0max=out.z0max==null?s.z0:Math.max(out.z0max,s.z0);
+    }
+    const k=s.l+"|"+r3(s.w);
+    let gr=key.get(k);
+    if(!gr){
+      gr={l:s.l,w:r3(s.w),n:0,len:0,tpd:0,c:0,ind:0,
+          z0:s.z0,eeff:s.eeff,kind:s.g.kind,h:s.g.h,b:s.g.b,ref:s.g.ref,er:s.g.er};
+      key.set(k,gr);out.groups.push(gr);
+    }
+    gr.n++;gr.len+=s.len;gr.tpd+=s.tpd;gr.c+=s.c;gr.ind+=s.ind;
+  }
+  for(const v of (vias||[])){
+    const x=ltVia(v);
+    out.vias.n++;out.vias.h+=x.h;out.vias.ind+=x.ind;
+    out.vias.cap+=x.cap;out.vias.tpd+=x.tpd;
+  }
+  out.groups.sort((a,b)=>b.len-a.len||a.l-b.l);
+  out.z0eq=out.c>0?r3(Math.sqrt(out.ind/out.c)):0;
+  out.uniform=out.groups.length<2;
+  /* totaux vias compris : le tube ajoute son retard, sa self et sa capacité */
+  out.tpdAll=out.tpd+out.vias.tpd;
+  out.cAll=out.c+out.vias.cap;
+  out.indAll=out.ind+out.vias.ind;
+  out.psmm=out.len>0?r3(out.tpd*1e12/out.len):0;   // retard par millimètre
+  return out;
 }
