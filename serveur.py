@@ -2,6 +2,37 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.4.1
+# Date: 2026-08-23
+# Explication: sous Windows, le port 8000 refuse (WinError 10013, courant en
+#   entreprise) faisait defiler deux lignes d'erreur AVANT l'explication, alors
+#   que le repli sur un port libre fonctionnait : on croyait a un plantage.
+#   make_server ne parle plus, il rend compte ; start_server annonce la cause,
+#   puis les details indentes, puis la resolution -- et nomme le port retenu.
+#   Les tentatives sont designees par « IPv4 »/« IPv6 » plutot que par le nom
+#   des classes internes.
+# Fonctions modifiees : make_server (renvoie un couple), start_server
+#
+# Version: 2.4.0
+# Date: 2026-08-23
+# Explication: diagnostic confirme sur l'iPad (Pyto 19.0.1, Python 3.10,
+#   sys.platform == "ios"). Le depot etait dans iCloud Drive, hors du
+#   conteneur de l'application : os.listdir y repond « [Errno 1] Operation not
+#   permitted ». Le serveur servait donc un dossier illisible -- d'ou le
+#   « 404 -- No permission to list directory » dans Safari. Ce n'est pas un
+#   defaut de chemin : c'est une autorisation, que seul Pyto peut accorder
+#   (« Ouvrir dossier » dans la barre laterale, ou depot place dans le dossier
+#   de Pyto). Le message le dit maintenant, et la page d'erreur aussi.
+#   Corrige au passage un defaut introduit par la version precedente : sous
+#   Pyto, os.getcwd() leve PermissionError des que le repertoire courant est
+#   hors de portee. trouver_dossier() plantait donc la ou il devait aider.
+# Fonctions ajoutees/modifiees :
+# - repertoire_courant, chemin_absolu (nouvelles : plus aucun getcwd nu)
+# - trouver_dossier (renvoie un chemin ou "", la decision revient a
+#   start_server), verifier_dossier (message : autorisation, pas --dossier)
+# - CustomHandler.list_directory (nouvelle : la page d'erreur nomme le dossier,
+#   l'erreur systeme et la marche a suivre)
+#
 # Version: 2.3.0
 # Date: 2026-08-23
 # Explication: le serveur ne demarrait plus sous Pyto (iPad), et quand il
@@ -28,8 +59,6 @@
 #   rappel a l'ecran puisque quitter Pyto met le serveur en pause.
 # Fonctions modifiees/ajoutees :
 # - sur_ios, verifier_dossier (nouvelles), get_local_ip, make_server
-# - CustomHandler.list_directory (nouvelle : dit pourquoi le dossier est
-#   illisible, dans la page d'erreur elle-meme)
 # - start_server, main (--dossier)
 # - CustomHandler._api (passerelle absente -> 503)
 #
@@ -184,6 +213,29 @@ def sur_ios():
         return False
 
 
+def repertoire_courant():
+    """Repertoire courant, ou chaine vide s'il est hors de portee.
+
+    Sous Pyto (iPad), os.getcwd() lui-meme leve PermissionError [Errno 1]
+    quand le repertoire courant appartient a un dossier auquel l'application
+    n'a pas acces : aucun appel nu a getcwd dans ce fichier.
+    """
+    try:
+        return os.getcwd()
+    except OSError:
+        return ""
+
+
+def chemin_absolu(brut):
+    """dirname(abspath(brut)), ou chaine vide si le systeme s'y oppose."""
+    if not brut:
+        return ""
+    try:
+        return os.path.dirname(os.path.abspath(brut))
+    except OSError:                       # abspath appelle getcwd si relatif
+        return ""
+
+
 def trouver_dossier():
     """Dossier du depot, avec repli quand __file__ ne le designe pas.
 
@@ -191,22 +243,21 @@ def trouver_dossier():
     ou avec un __file__ relatif resolu depuis un tout autre repertoire : le
     dossier deduit ne contient alors pas index.html, et le serveur repondait
     « No permission to list directory ». On regarde les autres candidats
-    plausibles avant de renoncer.
+    plausibles avant de renoncer. Renvoie "" si aucun ne tient debout.
     """
-    candidats = [os.path.dirname(os.path.abspath(__file__)), os.getcwd()]
-    if sys.argv and sys.argv[0]:
-        candidats.append(os.path.dirname(os.path.abspath(sys.argv[0])))
-    vus = []
+    candidats = []
+    for chemin in (chemin_absolu(__file__),
+                   repertoire_courant(),
+                   chemin_absolu(sys.argv[0] if sys.argv else "")):
+        if chemin and chemin not in candidats:
+            candidats.append(chemin)
     for chemin in candidats:
-        if not chemin or chemin in vus:
-            continue
-        vus.append(chemin)
         try:
             if "index.html" in os.listdir(chemin):
-                return chemin, vus[0] != chemin
+                return chemin
         except OSError:
             continue
-    return vus[0], False
+    return ""                     # rien de lisible : le message suffira
 
 
 def verifier_dossier(root):
@@ -223,9 +274,13 @@ def verifier_dossier(root):
     except OSError as exc:
         print("[X] Dossier servi illisible : %s" % root)
         print("    %s" % exc)
+        print("    Le systeme refuse la lecture de ce dossier : --dossier n'y")
+        print("    changera rien, c'est une question d'autorisation.")
         print("    Sous Pyto (iPad), Python ne voit un dossier exterieur a")
-        print("    l'application que si celle-ci y a acces : ouvrez le dossier")
-        print("    dans Pyto, ou indiquez-le avec --dossier <chemin>.")
+        print("    l'application que si celle-ci en detient l'autorisation :")
+        print("    barre laterale > « Ouvrir dossier » > choisir le dossier du")
+        print("    depot (une fois pour toutes), ou deplacer le depot dans le")
+        print("    dossier de Pyto lui-meme.")
         return False
     if "index.html" not in contenu:
         print("[!] %s ne contient pas index.html :" % root)
@@ -473,7 +528,12 @@ class DualStackServer(ThreadedServer):
 
 
 def make_server(host, port):
-    """Ouvre un serveur sur (host, port). Renvoie None en cas d'echec."""
+    """Ouvre un serveur sur (host, port).
+
+    Renvoie (serveur ou None, tentatives ratees). C'est a l'appelant de dire
+    ce qu'il en pense : une tentative ratee suivie d'un repli reussi n'est pas
+    une erreur, et l'afficher comme telle donne l'impression d'un plantage.
+    """
     if host in ("", "::"):
         # Double pile d'abord, IPv4 seule ensuite : AF_INET6 n'est pas
         # disponible partout (Pyto sur iPad, certains conteneurs). Sans ce
@@ -484,13 +544,12 @@ def make_server(host, port):
         families = [ThreadedServer, DualStackServer]
     echecs = []
     for cls in families:
+        pile = "IPv6 (double pile)" if cls is DualStackServer else "IPv4"
         try:
-            return cls((host, port), CustomHandler)
+            return cls((host, port), CustomHandler), echecs
         except OSError as exc:
-            echecs.append("%s(%s:%d) : %s" % (cls.__name__, host or "*", port, exc))
-    for ligne in echecs:                    # la raison ne doit pas etre avalee
-        print("  [!] %s" % ligne)
-    return None
+            echecs.append("%s, %s:%d -- %s" % (pile, host or "toutes", port, exc))
+    return None, echecs
 
 
 def start_server(host, port, navigateur=True):
@@ -498,27 +557,40 @@ def start_server(host, port, navigateur=True):
     # on continue -- un serveur qui repond, meme mal, reste diagnosticable.
     global ROOT
     if not verifier_dossier(ROOT) and not DOSSIER_IMPOSE:
-        secours, remplace = trouver_dossier()
-        if remplace:
+        secours = trouver_dossier()
+        if secours and secours != ROOT:
             print("[*] Dossier de secours retenu (il contient index.html) :")
             print("    %s" % secours)
             ROOT = secours
-    httpd = make_server(host, port)
+    def detailler(echecs):
+        for ligne in echecs:
+            print("      %s" % ligne)
+
+    httpd, echecs = make_server(host, port)
     if httpd is None and port != 0:
-        print("[!] Le port %d est bloque (securite entreprise ou deja utilise)." % port)
+        print("[!] Le port %d est refuse (securite entreprise, ou deja"
+              " utilise) :" % port)
+        detailler(echecs)
         print("[*] Recherche automatique d'un port alternatif autorise...")
-        httpd = make_server(host, 0)
+        httpd, echecs = make_server(host, 0)
     if httpd is None and host != "127.0.0.1":
-        print("[*] Tentative en mode local uniquement (inaccessible depuis l'iPad)...")
-        httpd = make_server("127.0.0.1", 0)
+        print("[!] Aucune interface reseau n'accepte l'ecoute :")
+        detailler(echecs)
+        print("[*] Tentative en mode local uniquement (inaccessible depuis"
+              " l'iPad)...")
+        httpd, echecs = make_server("127.0.0.1", 0)
     if httpd is None:
-        print("[X] Impossible de demarrer le serveur.")
+        print("[X] Impossible de demarrer le serveur :")
+        detailler(echecs)
         return 1
 
     bound_host, bound_port = httpd.server_address[0], httpd.server_address[1]
     is_local_only = bound_host in ("127.0.0.1", "::1")
     url = adresse_locale(bound_host, bound_port)
 
+    if bound_port != port and port != 0:
+        print("[*] Port retenu a la place de %d : %d" % (port, bound_port))
+        print()
     print("=" * 60)
     print("SERVEUR CAO WEB DEMARRE")
     print("=" * 60)

@@ -2,6 +2,14 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 1.1.0
+# Date: 2026-08-23
+# Explication: le diagnostic s'arretait lui-meme sur PermissionError, sous
+#   Pyto, des la ligne « repertoire courant » : os.getcwd() est refuse quand le
+#   repertoire courant est un dossier auquel l'application n'a pas acces. Un
+#   diagnostic doit rapporter l'echec, jamais s'y arreter.
+# Fonctions ajoutees : sans_echec
+#
 # Version: 1.0.0
 # Date: 2026-08-23
 # Explication: sous Pyto (iPad), serveur.py demarrait sans servir le depot
@@ -24,6 +32,16 @@ pourquoi serveur.py ne sert pas le depot.
 import os
 import socket
 import sys
+
+
+def sans_echec(action, defaut="ECHEC"):
+    """Valeur de action(), ou le message d'erreur : sous Pyto, os.getcwd() et
+    os.listdir peuvent lever PermissionError -- un diagnostic ne doit surtout
+    pas s'arreter la."""
+    try:
+        return action()
+    except Exception as exc:                           # noqa: BLE001
+        return "%s : %s" % (defaut, exc)
 
 
 def titre(texte):
@@ -49,10 +67,10 @@ def main():
 
     titre("chemins")
     ligne("__file__", __file__)
-    ligne("repertoire courant", os.getcwd())
+    ligne("repertoire courant", sans_echec(os.getcwd))
     root = os.path.dirname(os.path.abspath(__file__))
     ligne("ROOT (deduit)", root)
-    ligne("ROOT est un dossier", os.path.isdir(root))
+    ligne("ROOT est un dossier", sans_echec(lambda: os.path.isdir(root)))
     ligne("sys.path[0]", sys.path[0] if sys.path else "(vide)")
 
     titre("lecture du dossier servi")

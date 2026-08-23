@@ -80,15 +80,24 @@ machine. Deux particularités du système :
 - la première tentative d'accès au réseau local déclenche la demande
   d'autorisation « Réseau local ». Refusée, l'adresse réseau affichée est
   inutilisable ; `--local` suffit pour un usage sur l'iPad seul ;
-- **le dossier servi doit être accessible à l'application.** Le serveur le
-  déduit de `__file__` ; si Pyto n'a pas accès au dossier, ou si `__file__` ne
-  le désigne pas, le navigateur affiche « 404 — No permission to list
-  directory ». Le serveur signale désormais le problème au démarrage, et
-  `--dossier <chemin>` permet de désigner le dépôt explicitement :
+- **le dossier servi doit être autorisé.** C'est le piège principal : un dépôt
+  posé dans iCloud Drive ou « Fichiers » est hors du conteneur de Pyto, et
+  `os.listdir` y répond `[Errno 1] Operation not permitted` — le navigateur
+  affiche alors « 404 — No permission to list directory » alors que le serveur
+  tourne. `--dossier` n'y change rien, c'est une autorisation : dans la barre
+  latérale de Pyto, **« Ouvrir dossier »** puis choisir le dossier du dépôt (une
+  fois pour toutes), ou déplacer le dépôt dans le dossier propre à Pyto. Le
+  serveur nomme désormais le dossier fautif et l'erreur système, au démarrage
+  et dans la page d'erreur elle-même. `--dossier <chemin>` reste utile quand
+  c'est le chemin, et non l'autorisation, qui est faux :
 
 ```bash
 python serveur.py --local --dossier ~/Documents/WEB_CAO
 ```
+
+Le script [diagnostic_ipad.py](diagnostic_ipad.py) imprime en un écran tout ce
+qui sert à trancher : `__file__`, répertoire courant, dossier déduit, lecture du
+dossier, modules disponibles, essai d'écoute, adresse locale.
 
 La recherche de composants (`/api/*`) a besoin de `ssl` : si Pyto ne le fournit
 pas, le serveur démarre quand même et ces deux routes répondent
