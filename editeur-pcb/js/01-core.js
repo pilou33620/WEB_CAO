@@ -467,7 +467,11 @@ const S = {
   /* `corner` : l'angle imposé aux pistes tracées — « 45 » par défaut, c'est la
      règle de l'art ; « 90 » pour un tracé orthogonal strict, « free » pour un
      angle quelconque. */
-  rule:{edge:0.4,thermal:0.5,mask:0.05,paste:0.0,viaFinish:"tented",corner:"45"},
+  /* `route` : ce que le routeur fait d'un obstacle — « shove » le pousse,
+     « walk » le contourne, « mark » le signale et s'arrête. Le défaut est le
+     même que celui de KiCad : on pousse. */
+  rule:{edge:0.4,thermal:0.5,mask:0.05,paste:0.0,viaFinish:"tented",corner:"45",
+        route:"shove"},
   classes:[{name:"Défaut",      w:0.3, clr:0.25, via:0.8, drill:0.4},
            {name:"Alimentation",w:0.6, clr:0.25, via:0.9, drill:0.45}],
   netClass:{},                // net → nom de classe ; absent = classe par défaut

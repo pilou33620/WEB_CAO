@@ -203,6 +203,16 @@ function buildRules(){
       Object.keys(CORNER_MODES).map(k=>
         '<option value="'+k+'"'+(k===cornerMode()?" selected":"")+'>'+
         esc(CORNER_MODES[k])+'</option>').join("")+
+      '</select></div>'+
+      /* ce que le routeur fait d'un obstacle : le pousser, le contourner, ou
+         seulement le signaler. C'est le choix de mode du routeur de KiCad. */
+      '<div><label title="Conduite du tracé face à un obstacle : pousser le '+
+      'cuivre gênant, le contourner sans y toucher, ou seulement signaler la '+
+      'collision.">Face à un obstacle</label>'+
+      '<select id="rRoute">'+
+      Object.keys(ROUTE_MODES).map(k=>
+        '<option value="'+k+'"'+(k===routeMode()?" selected":"")+'>'+
+        esc(ROUTE_MODES[k])+'</option>').join("")+
       '</select></div></div>'+
     '<div class="prop two">'+numProp("bW","Carte L (mm)",S.board.w,1,1)+
       numProp("bH","Carte H (mm)",S.board.h,1,1)+'</div>'+
@@ -246,6 +256,7 @@ function buildRules(){
   bindNum("rPaste",v=>S.rule.paste=v);
   $("rGrid").onchange=()=>setGridStep($("rGrid").value);
   $("rCorner").onchange=()=>setCornerMode($("rCorner").value);
+  $("rRoute").onchange=()=>setRouteMode($("rRoute").value);
   $("clNew").onclick=()=>{
     const n=(prompt("Nom de la nouvelle classe :","Classe "+(S.classes.length+1))||"").trim();
     if(!n)return;

@@ -52,12 +52,12 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "worstAspect","applyPreset","presetsFor","diCount","cuT","diAt","maskFaces",
   "stackAsym","asymLabel","viaBuild","viaCensus","aspectOf","viaTented",
   "VIA_FINISH","roleCheck","ASPECT_WARN","ASPECT_MAX",
-  "umLabel","ozLabel","buildStackup","stackReport",
+  "umLabel","ozLabel","buildStackup","stackReport","r3","padLayers","segPadDist",
   "normStack","stkPick","CU_ROLES","CU_ROLE_SHORT","rolePlane",
   "layerRole","roleLabel","setLayerRole","coherentRole","roleFromPlane",
   "roleNet","STACK_PRESETS","FINISHES","MASK_COLORS","DI_KIND","OZ","r4",
   /* sélection multiple et presse-papier */
-  "selectHit","toggleHit","altTarget","selCount","deleteSel","unrouteSel","copySelPcb","cutSelPcb",
+  "selectHit","toggleHit","altTarget","selCount","trackRun","selectRun","deleteSel","unrouteSel","copySelPcb","cutSelPcb",
   "pasteClipPcb","pcbClipContent","pcbSetClip","pcbGetClip","freeFpRef","GRID_STEPS",
   "setGridStep","gridShownStep","gridLabel","fpById",
   /* import défensif (normDoc) et aller-retour de document */
@@ -80,9 +80,22 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* géométrie du tracé 45° et posture du coude */
   "route45","routeCorner","minJog","autoPosture","routePosture","dir8",
   "angleOff","angleOk","angleDeg","ANG_TOL","DIR8","tendMagnet",
-  "cornerMode","setCornerMode","CORNER_MODES",
+  "cornerMode","setCornerMode","CORNER_MODES","MITRE_AUTO",
   /* anti-collision et ménage du dépôt */
   "moveClearBad","pruneHooks","pruneDeadTracks","hookAt","endFar","endDir",
+  "diagTracks","mitreAfterDrag","chamferPosed","pruneAfterDrag",
+  /* moteur de routage : géométrie (10-pns-geom) et modèle du monde (11-pns-node) */
+  "pnsOnEdge","pnsInHull","pnsSegPolyHits","pnsSegs","pnsPts","pnsLen",
+  "pnsSimplify","pnsSplice","pnsDirOk","pnsIs45","pnsSnap45","pnsSnap45One",
+  "PNS_CELL","PNS_EPS","PNS_MARGIN","pnsItemPad","pnsItemVia","pnsItemSeg",
+  "pnsItemTrack","pnsMaxClr","pnsClr","pnsGap","pnsPairGap",
+  "pnsNode","pnsBuild","pnsWorld","pnsInvalidate","pnsStamp","pnsHullOct",
+  "PNS_D8","PNS_D4","pnsSupPad","pnsSupVia","pnsSupSeg","pnsPlaneMeet","pnsOct","pnsUnloop",
+  "PNS_WALK_MAX","pnsSurCarte","pnsHullWalk","pnsWalkCross","pnsWalkSide","pnsWalkaround","routeSegsTo",
+  "PNS_SHOVE_MAX","PNS_SHOVE_RANG","pnsPushOut","pnsShoveAside","pnsRelink","pnsShoveVia",
+  "pnsShove","pnsShoveHeads","pnsApply","pnsSlideOut","pnsBoutsLibres","crossN","ROUTE_MODES","routeMode","setRouteMode","pushSnap","drawShove",
+  "pnsLineItems","pnsViaEscape","pnsViaSuites","pnsPointEscape","dpNets","dpLine","dpAxis","dpAxisDirect","dpPose",
+  "PNS_OPT_WIN","pnsAnchors","pnsMergeTry","pnsOptimize","routeOptimizeTail",
   /* boîtiers nommés : le nom venu du schéma décide de l'empreinte */
   "PKG_LIB","pkgKey","pkgGeom","fpGeomFor","applyPkgGeom","fpWiredPins",
   "parseNetlist","parseCompLine","applyNetlist","STYLES","bodyOf",
@@ -740,6 +753,130 @@ T("recentrer une piste sur le centre d'une pastille",()=>{
   if(Math.abs(b.x2-(g+10))>1e-9)throw new Error("l'autre bout du voisin ne devait pas bouger");
   undo();
 });
+/* Décor de la prise à la piste entière : une piste en L sur la couche du
+   dessus, avec un embranchement, qui plonge par un via vers un segment de la
+   couche 1 ; à côté, un morceau d'un autre net qui ne doit jamais suivre. */
+function pisteDeuxCouches(){
+  setCuCount(4);
+  S.fps=[];S.tracks=[];S.vias=[];touch();
+  const a ={l:0,net:"T",w:0.3,x1: 0,y1:0, x2:10,y2: 0};
+  const b ={l:0,net:"T",w:0.3,x1:10,y1:0, x2:20,y2: 0};
+  const c ={l:0,net:"T",w:0.3,x1:20,y1:0, x2:20,y2:10};   // vers le via
+  const br={l:0,net:"T",w:0.3,x1:20,y1:0, x2:30,y2: 0};   // embranchement
+  const d ={l:1,net:"T",w:0.3,x1:20,y1:10,x2:30,y2:10};   // de l'autre côté du via
+  const o ={l:0,net:"U",w:0.3,x1: 0,y1:5, x2:10,y2: 5};   // net voisin
+  S.tracks.push(a,b,c,br,d,o);
+  const v={x:20,y:10,d:0.6,h:0.3,a:0,b:3,net:"T"};
+  S.vias.push(v);touch();
+  setMode("select");S.active=0;clearSel();
+  return {a,b,c,br,d,o,v};
+}
+T("Maj+clic prend la piste entière sur sa couche",()=>{
+  const {a,b,c,br,d,o}=pisteDeuxCouches();
+  fire("pointerdown",Object.assign(sc(15,0),{shiftKey:true}));
+  fire("pointerup",Object.assign(sc(15,0),{shiftKey:true}));
+  for(const [nom,t] of [["a",a],["b",b],["c",c],["embranchement",br]])
+    if(!S.sel.tracks.has(t))throw new Error(nom+" devait entrer dans la sélection");
+  if(S.sel.tracks.has(d))throw new Error("la couche d'en dessous ne se prend qu'au doublé");
+  if(S.sel.tracks.has(o))throw new Error("le net voisin n'a rien à faire dans la sélection");
+  if(S.sel.vias.size)throw new Error("le via tient la piste à l'autre couche : pas au premier clic");
+  if(S.sel.tracks.size!==4)throw new Error("4 segments attendus, "+S.sel.tracks.size);
+});
+T("le doublé Maj+clic étend la piste à toutes les couches",()=>{
+  const {a,b,c,br,d,o,v}=pisteDeuxCouches();
+  const clic=()=>{
+    fire("pointerdown",Object.assign(sc(15,0),{shiftKey:true}));
+    fire("pointerup",Object.assign(sc(15,0),{shiftKey:true}));
+  };
+  clic();clic();
+  for(const [nom,t] of [["a",a],["b",b],["c",c],["embranchement",br],["couche 1",d]])
+    if(!S.sel.tracks.has(t))throw new Error(nom+" devait entrer dans la sélection");
+  if(S.sel.tracks.has(o))throw new Error("le net voisin n'a rien à faire dans la sélection");
+  if(!S.sel.vias.has(v))throw new Error("le via qui relie les deux couches devait suivre");
+  if(S.sel.tracks.size!==5)throw new Error("5 segments attendus, "+S.sel.tracks.size);
+});
+T("Maj+clic remplace la sélection, Ctrl+Maj l'y ajoute",()=>{
+  const {a,o}=pisteDeuxCouches();
+  S.sel.tracks.add(o);
+  fire("pointerdown",Object.assign(sc(15,0),{shiftKey:true}));
+  fire("pointerup",Object.assign(sc(15,0),{shiftKey:true}));
+  if(S.sel.tracks.has(o))throw new Error("Maj seul repart d'une sélection vide");
+  clearSel();S.sel.tracks.add(o);
+  fire("pointerdown",Object.assign(sc(15,0),{shiftKey:true,ctrlKey:true}));
+  fire("pointerup",Object.assign(sc(15,0),{shiftKey:true,ctrlKey:true}));
+  if(!S.sel.tracks.has(o))throw new Error("Ctrl+Maj devait garder ce qui était pris");
+  if(!S.sel.tracks.has(a))throw new Error("Ctrl+Maj devait ajouter la piste entière");
+});
+/* Le cas qui manquait : la piste change de couche, revient, et repart. Le
+   parcours doit franchir autant de vias qu'il en rencontre — s'arrêter au
+   premier laissait le bout du dessus derrière. */
+function pisteAllerRetour(){
+  setCuCount(2);
+  S.fps=[];S.tracks=[];S.vias=[];touch();
+  const A={l:0,net:"T",w:0.3,x1: 5,y1:5,x2:15,y2:5};
+  const B={l:1,net:"T",w:0.3,x1:15,y1:5,x2:25,y2:5};
+  const C={l:0,net:"T",w:0.3,x1:25,y1:5,x2:35,y2:5};
+  const D={l:1,net:"T",w:0.3,x1:35,y1:5,x2:45,y2:5};
+  S.tracks.push(A,B,C,D);
+  const v1={x:15,y:5,d:0.8,h:0.4,a:0,b:1,net:"T"};
+  const v2={x:25,y:5,d:0.8,h:0.4,a:0,b:1,net:"T"};
+  const v3={x:35,y:5,d:0.8,h:0.4,a:0,b:1,net:"T"};
+  S.vias.push(v1,v2,v3);touch();
+  setMode("select");S.active=0;clearSel();
+  return {A,B,C,D,v1,v2,v3};
+}
+T("le doublé franchit tous les vias, pas seulement le premier",()=>{
+  const {A,B,C,D}=pisteAllerRetour();
+  const r=trackRun(A,true);
+  for(const [nom,t] of [["dessus 1",A],["dessous 1",B],["dessus 2",C],["dessous 2",D]])
+    if(!r.tracks.has(t))throw new Error(nom+" manque : la piste s'est arrêtée en route");
+  if(r.vias.size!==3)throw new Error("les 3 vias de passage devaient suivre, "+r.vias.size);
+});
+T("le doublé part aussi bien du bout que du milieu de la piste",()=>{
+  const {A,C,D}=pisteAllerRetour();
+  for(const [nom,dep] of [["du milieu",C],["de la fin",D]]){
+    const r=trackRun(dep,true);
+    if(r.tracks.size!==4)throw new Error("en partant "+nom+" : 4 segments attendus, "+r.tracks.size);
+    if(!r.tracks.has(A))throw new Error("en partant "+nom+" : le tout premier bout manque");
+  }
+});
+/* Un bout posé dans le cuivre du via sans tomber pile sur son axe y est relié
+   pour de bon — la connectivité le dit, la sélection doit le dire aussi. */
+T("un via franchit même si les bouts ne tombent pas sur son axe",()=>{
+  const {A,B,C,v2}=pisteAllerRetour();
+  v2.x=25.2;v2.y=5.15;touch();                 // via décalé, mais toujours dessus
+  const r=trackRun(A,true);
+  if(!r.tracks.has(C))throw new Error("le bout d'après le via décalé manque");
+  if(!r.vias.has(v2))throw new Error("le via décalé devait entrer dans la sélection");
+  if(!r.tracks.has(B))throw new Error("le dessous ne devait pas se perdre au passage");
+});
+T("un via posé au milieu d'une ligne relie quand même",()=>{
+  setCuCount(2);
+  S.fps=[];S.tracks=[];S.vias=[];touch();
+  const A={l:0,net:"T",w:0.3,x1:0,y1:0,x2:30,y2:0};
+  const B={l:1,net:"T",w:0.3,x1:15,y1:0,x2:15,y2:20};
+  S.tracks.push(A,B);
+  const v={x:15,y:0,d:0.8,h:0.4,a:0,b:1,net:"T"};
+  S.vias.push(v);touch();
+  setMode("select");S.active=0;clearSel();
+  const r=trackRun(A,true);
+  if(!r.tracks.has(B))throw new Error("la branche du dessous, prise en cours de ligne, manque");
+  if(!r.vias.has(v))throw new Error("le via du milieu devait suivre");
+});
+T("le franchissement s'arrête au via d'un autre net",()=>{
+  const {A,v1}=pisteAllerRetour();
+  v1.net="V";touch();
+  const r=trackRun(A,true);
+  if(r.tracks.size!==1)throw new Error("un via nommé autrement n'est pas de la piste, "+r.tracks.size);
+  if(r.vias.size)throw new Error("et il n'entre pas dans la sélection");
+});
+T("trackRun ne franchit pas un via qui change de net",()=>{
+  const {c,d,v}=pisteDeuxCouches();
+  d.net="V";v.net="V";touch();
+  const r=trackRun(c,true);
+  if(r.tracks.has(d))throw new Error("un net différent arrête la piste, via ou non");
+  if(r.tracks.size!==4)throw new Error("4 segments attendus, "+r.tracks.size);
+});
 T("glisser un segment : la piste reste d'un seul tenant",()=>{
   S.tracks=[];S.vias=[];touch();
   const a={l:0,net:"T",w:0.3,x1:10,y1:10,x2:20,y2:10};
@@ -840,18 +977,49 @@ function pisteEnEquerre(){
   setMode("select");S.active=0;clearSel();S.sel.tracks.add(v);
   return {h,d,v};
 }
-T("le coude dépassé se replie, le mur suivant prend le relais",()=>{
+/* Le coude dépassé se replie — le 45° d'origine disparaît, le mur suivant prend
+   le relais. Mais le coude, lui, ne doit pas redevenir franc pour autant : le
+   relâchement lui rend un chanfrein borné (`mitreAfterDrag`). Raccourcir une
+   piste ne doit pas se payer d'un angle droit à reprendre à la main. */
+T("le coude dépassé se replie, mais le 45° est rendu au relâchement",()=>{
   const {h,d,v}=pisteEnEquerre();
   fire("pointerdown",sc(10,20));
   fire("pointermove",sc(-4,20));
   fire("pointerup",sc(-4,20));
   if(S.tracks.indexOf(d)>=0)throw new Error("le 45° replié devait disparaître au dépôt");
-  if(S.tracks.length!==2)throw new Error("deux segments attendus, "+S.tracks.length);
+  if(S.tracks.length!==3)
+    throw new Error("l'horizontale, le chanfrein rendu et la verticale : 3 segments, "+
+                    S.tracks.length);
   if(Math.abs(h.y2)>1e-9)throw new Error("l'horizontale devait rester horizontale : "+h.y2);
-  if(Math.abs(h.x2+4)>0.6)throw new Error("l'horizontale devait tenir le coude : "+h.x2);
-  if(Math.abs(v.x1-h.x2)>1e-9||Math.abs(v.y1-h.y2)>1e-9)throw new Error("la piste s'est ouverte");
   if(Math.abs(h.x1+20)>1e-9)throw new Error("l'autre bout ne devait pas bouger");
+  if(Math.abs(v.x1+4)>0.6)throw new Error("la verticale devait tenir le coude : "+v.x1);
+  // la piste reste d'un seul tenant, et sans angle droit d'axe
+  const bouts=new Map();
+  for(const t of S.tracks)
+    for(const k of [t.x1+"|"+t.y1,t.x2+"|"+t.y2])bouts.set(k,(bouts.get(k)||0)+1);
+  if([...bouts.values()].filter(n=>n===1).length!==2)
+    throw new Error("la piste s'est ouverte : "+[...bouts.entries()].map(e=>e[0]+"×"+e[1]));
+  const axe=t=>Math.abs(t.x1-t.x2)<1e-9?"V":(Math.abs(t.y1-t.y2)<1e-9?"H":"D");
+  if(!S.tracks.some(t=>axe(t)==="D"))throw new Error("le chanfrein n'a pas été rendu");
+  for(const a of S.tracks)
+    for(const b of S.tracks){
+      if(a===b)continue;
+      const touche=dist(a.x2,a.y2,b.x1,b.y1)<1e-9||dist(a.x2,a.y2,b.x2,b.y2)<1e-9||
+                   dist(a.x1,a.y1,b.x1,b.y1)<1e-9||dist(a.x1,a.y1,b.x2,b.y2)<1e-9;
+      if(!touche)continue;
+      if((axe(a)==="H"&&axe(b)==="V")||(axe(a)==="V"&&axe(b)==="H"))
+        throw new Error("le coude est redevenu franc");
+    }
+  /* Ctrl+Z défait le glissement ET le chanfrein rendu d'un seul coup : le
+     `push()` du premier mouvement couvre les deux. On juge la géométrie, non
+     les objets — `loadDoc` reconstruit des pistes neuves. */
   undo();
+  if(S.tracks.length!==3)
+    throw new Error("Ctrl+Z devait rendre les trois segments d'origine, "+S.tracks.length);
+  if(!S.tracks.some(t=>dist(t.x1,t.y1,0,0)<1e-9&&dist(t.x2,t.y2,10,10)<1e-9))
+    throw new Error("le 45° d'origine devait revenir tel quel");
+  if(!S.tracks.some(t=>dist(t.x1,t.y1,-20,0)<1e-9&&dist(t.x2,t.y2,0,0)<1e-9))
+    throw new Error("l'horizontale d'origine devait revenir telle quelle");
 });
 T("revenir en arrière rend le coude replié",()=>{
   const {h,d,v}=pisteEnEquerre();
@@ -1674,10 +1842,13 @@ T("raccourcis et retour à la sélection",()=>{
   if(S.mode!=="select")throw new Error("puis revenir à la sélection");
   S.vias=[];touch();
 });
-T("anti-collision au tracé",()=>{
+/* La conduite « signaler » : celle de l'éditeur avant le moteur PNS, et qui
+   reste disponible. Rien ne s'écarte, rien ne se contourne — le point visé est
+   repoussé hors des obstacles, et un trajet qui traverse est refusé. */
+T("anti-collision au tracé, conduite « signaler »",()=>{
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
   setCuCount(2);S.board={x:0,y:0,w:60,h:40,pts:null};boardChanged();
-  setActive(0);S.avoid=true;
+  setActive(0);S.avoid=true;S.rule.route="mark";
   const cl=classOf("SIG").clr;
   // une piste étrangère en travers de la route
   S.tracks.push({l:0,net:"AUTRE",w:0.4,x1:20,y1:0,x2:20,y2:40});
@@ -1708,7 +1879,7 @@ T("anti-collision au tracé",()=>{
   if(S.route.bad)throw new Error("anti-collision coupé : plus de refus");
   stepRoute();
   if(!S.route.done.length)throw new Error("le trajet forcé doit passer");
-  S.avoid=true;cancelRoute();
+  S.avoid=true;S.rule.route="shove";cancelRoute();
 });
 T("halo sur les pastilles du net suivi",()=>{
   S.fps=[];touch();
@@ -4237,6 +4408,831 @@ T("session : chemins relatifs, et pas de barre dans la version un seul fichier",
   if(!b1.hidden)throw new Error("les boutons doivent s'effacer");
   dom.location.pathname=chemin;
   b1.remove();b2.remove();
+});
+
+/* ==========================================================================
+   Le moteur de routage : géométrie et modèle du monde
+   --------------------------------------------------------------------------
+   Deux propriétés portent tout le reste, et se vérifient ici plutôt qu'en
+   observant le tracé : une enveloppe qui n'est jamais trop petite — sinon le
+   routeur pose du cuivre que le DRC refuse — et un index qui rend exactement
+   ce que rendait le balayage complet, ni plus ni moins.
+   ========================================================================== */
+/* Un générateur reproductible : deux exécutions du banc doivent tomber sur la
+   même carte, faute de quoi un échec ne se rejoue pas. */
+function alea(graine){
+  let s=graine>>>0;
+  return ()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};
+}
+/* L'enveloppe se juge sur deux propriétés, et ce sont les deux seules qui
+   comptent :
+     · elle **contient** la forme gonflée — sinon le routeur poserait du cuivre
+       que le DRC refuse ;
+     · chacun de ses huit pans **touche** cette forme — sinon elle serait plus
+       grasse qu'il ne faut, et refuserait des passages qui tiennent.
+   La seconde est la définition même du plus petit octogone de cette
+   orientation : aucune constante d'ajustement à choisir, aucune tolérance à
+   débattre. */
+const PNS_D8T=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]
+  .map(d=>{const n=Math.hypot(d[0],d[1]);return {x:d[0]/n,y:d[1]/n};});
+/* Le contour de la forme gonflée de `infl`, échantillonné : pour chaque
+   direction, le rayon où `mesure` vaut exactement `infl`. */
+function contourGonfle(cx,cy,mesure,infl,n){
+  const out=[];
+  for(let i=0;i<(n||96);i++){
+    const a=i*2*Math.PI/(n||96);
+    let lo=0, hi=40;
+    for(let k=0;k<64;k++){
+      const m=(lo+hi)/2;
+      if(mesure(cx+Math.cos(a)*m,cy+Math.sin(a)*m)<infl)lo=m;else hi=m;
+    }
+    out.push({x:cx+Math.cos(a)*lo,y:cy+Math.sin(a)*lo});
+  }
+  return out;
+}
+function verifieOctogone(nom,sup,infl,H,bord){
+  if(H.length<4)throw new Error(nom+" : enveloppe dégénérée ("+H.length+" sommets)");
+  /* Le pan touche la forme : son appui vaut EXACTEMENT celui de la forme
+     gonflée. On le compare à la fonction d'appui elle-même et non à un contour
+     échantillonné — un échantillonnage radial rate le point extrémal d'une
+     forme allongée, et ferait passer pour de la graisse ce qui n'est que le
+     pas de l'échantillon. */
+  for(const d of PNS_D8T){
+    let hh=-1e18;
+    for(const q of H)hh=Math.max(hh,q.x*d.x+q.y*d.y);
+    const att=sup(d.x,d.y)+infl;
+    if(Math.abs(hh-att)>1e-9)
+      throw new Error(nom+" : le pan à "+fmt(Math.atan2(d.y,d.x)*180/Math.PI,0)+
+                      "° est à "+fmt(hh-att,6)+" mm de son appui");
+  }
+  /* Et la forme gonflée tient dedans — conséquence de ce qui précède, vérifiée
+     tout de même : c'est la propriété dont dépend l'absence de faute DRC. */
+  for(const p of bord)
+    if(!inPoly(p.x,p.y,H)&&!pnsOnEdge(p.x,p.y,H,1e-6))
+      throw new Error(nom+" : la forme gonflée déborde de son enveloppe en "+
+                      fmt(p.x,3)+","+fmt(p.y,3));
+}
+T("enveloppe : elle contient la forme gonflée, et chaque pan la touche",()=>{
+  setCornerMode("45");
+  const infl=0.35;
+  const formes=[
+    {shape:"circ",w:1.2,h:1.2,rot:0},
+    {shape:"rect",w:1.6,h:0.8,rot:0},
+    {shape:"sharp",w:1.6,h:0.8,rot:30*Math.PI/180},
+    {shape:"oval",w:2.0,h:0.9,rot:-0.7}
+  ];
+  for(const f of formes){
+    const q=Object.assign({x:7.3,y:-2.1,net:"",n:1,drill:0},f);
+    const sup=(dx,dy)=>pnsSupPad(q,dx,dy);
+    verifieOctogone(f.shape,sup,infl,pnsOct(sup,infl),
+                    contourGonfle(q.x,q.y,(x,y)=>padDist(x,y,q),infl));
+  }
+});
+T("enveloppe : le via et le segment suivent la même règle",()=>{
+  setCornerMode("45");
+  const infl=0.28;
+  const v={x:3,y:4,d:0.8,a:0,b:1,net:""};
+  const supV=(dx,dy)=>pnsSupVia(v,dx,dy);
+  verifieOctogone("via",supV,infl,pnsOct(supV,infl),
+                  contourGonfle(v.x,v.y,(x,y)=>dist(x,y,v.x,v.y)-v.d/2,infl));
+  const t={x1:2,y1:2,x2:9,y2:6,w:0.5};
+  const supS=(dx,dy)=>pnsSupSeg(t,dx,dy);
+  const H=pnsOct(supS,infl);
+  verifieOctogone("segment",supS,infl,H,
+    contourGonfle((t.x1+t.x2)/2,(t.y1+t.y2)/2,
+                  (x,y)=>segDist(x,y,t.x1,t.y1,t.x2,t.y2)-t.w/2,infl));
+  if(!inPoly(t.x1,t.y1,H)||!inPoly(t.x2,t.y2,H))
+    throw new Error("l'enveloppe d'un segment doit couvrir ses extrémités");
+});
+T("enveloppe : en règle « 90 », l'octogone devient le rectangle englobant",()=>{
+  const q={x:0,y:0,w:1.6,h:0.8,rot:0,shape:"rect",net:"",n:1,drill:0};
+  const H=pnsOct((dx,dy)=>pnsSupPad(q,dx,dy),0.2,"90");
+  if(H.length!==4)throw new Error("quatre sommets attendus, "+H.length);
+  for(const p of H)
+    if(Math.abs(Math.abs(p.x)-1.0)>1e-9||Math.abs(Math.abs(p.y)-0.6)>1e-9)
+      throw new Error("sommet inattendu : "+fmt(p.x,3)+","+fmt(p.y,3));
+});
+T("index : le voisinage rend exactement ce que rendait le balayage complet",()=>{
+  const rnd=alea(20260823);
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  setCuCount(4);S.board={x:0,y:0,w:60,h:60,pts:null};boardChanged();
+  const nets=["A","B","C",""];
+  for(let i=0;i<8;i++){
+    const f=mkFp("U"+i,"","",4);
+    f.style="row";f.pitch=2.54;
+    f.x=r3(4+rnd()*50);f.y=r3(4+rnd()*50);f.rot=Math.floor(rnd()*4)*90;
+    f.side=rnd()<0.3?1:0;
+    f.nets={1:nets[Math.floor(rnd()*4)],2:nets[Math.floor(rnd()*4)],
+            3:nets[Math.floor(rnd()*4)],4:nets[Math.floor(rnd()*4)]};
+    S.fps.push(f);
+  }
+  for(let i=0;i<40;i++){
+    const x=r3(2+rnd()*56), y=r3(2+rnd()*56);
+    S.tracks.push({l:Math.floor(rnd()*4), net:nets[Math.floor(rnd()*4)],
+                   w:0.2+r3(rnd()*0.4), x1:x, y1:y,
+                   x2:r3(x+(rnd()-0.5)*14), y2:r3(y+(rnd()-0.5)*14)});
+  }
+  for(let i=0;i<10;i++)
+    S.vias.push({x:r3(2+rnd()*56), y:r3(2+rnd()*56), d:0.8, drill:0.4,
+                 a:0, b:3, net:nets[Math.floor(rnd()*4)]});
+  touch();
+
+  const cle=o=>{
+    if(o.k==="P")return "P"+o.fp.id+"."+o.q.n;
+    if(o.k==="V")return "V"+S.vias.indexOf(o.v);
+    return "T"+S.tracks.indexOf(o.src);
+  };
+  /* la référence : l'ancien balayage, mot pour mot, au seuil du DRC */
+  const naif=(s,l,net,w,self)=>{
+    const out=[];
+    for(const fp of S.fps)
+      for(const q of padsWorld(fp)){
+        if(!padLayers(fp,q).includes(l))continue;
+        if(net&&q.net===net)continue;
+        if(segPadDist({x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2,w},q)<clrPair(net,q.net)-PNS_EPS)
+          out.push("P"+fp.id+"."+q.n);
+      }
+    S.vias.forEach((v,i)=>{
+      if(l<v.a||l>v.b)return;
+      if(net&&v.net===net)return;
+      if(segDist(v.x,v.y,s.x1,s.y1,s.x2,s.y2)-v.d/2-w/2<clrPair(net,v.net)-PNS_EPS)
+        out.push("V"+i);
+    });
+    S.tracks.forEach((t,i)=>{
+      if(t===self||t.l!==l)return;
+      if(net&&t.net===net)return;
+      if(segSegDist({x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2},t)-t.w/2-w/2<clrPair(net,t.net)-PNS_EPS)
+        out.push("T"+i);
+    });
+    return out.sort().join(",");
+  };
+  const N=pnsWorld();
+  let vus=0;
+  for(const t of S.tracks){
+    const att=naif(t,t.l,t.net,t.w,t);
+    const got=N.segColliding(t,t.l,t.net,t.w,new Set([t])).map(cle).sort().join(",");
+    if(att!==got)
+      throw new Error("voisinage différent sur T"+S.tracks.indexOf(t)+
+                      "\n  balayage : "+att+"\n  index    : "+got);
+    if(att)vus++;
+  }
+  if(vus<5)throw new Error("le décor devait produire des conflits, il en a "+vus);
+});
+T("index : une branche essaie sans salir son parent",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  setCuCount(2);S.board={x:0,y:0,w:40,h:40,pts:null};boardChanged();
+  const gene={l:0,net:"GENE",w:0.4,x1:20,y1:0,x2:20,y2:40};
+  S.tracks.push(gene);touch();
+  const R=pnsWorld();
+  const seg={x1:10,y1:20,x2:30,y2:20};
+  if(!R.segBad(seg,0,"SIG",0.3))throw new Error("la piste en travers doit gêner");
+
+  const B=R.branch();
+  const it=[...B.query(0,0,19,19,21,21)].find(o=>o.src===gene);
+  if(!it)throw new Error("la branche doit voir le cuivre de son parent");
+  B.remove(it);
+  if(B.segBad(seg,0,"SIG",0.3))throw new Error("la branche l'a retiré, elle ne doit plus le voir");
+  if(!R.segBad(seg,0,"SIG",0.3))throw new Error("le parent, lui, n'a pas bougé");
+  // du cuivre neuf, posé là où le parent n'a rien : à gauche de la génératrice
+  const sonde={x1:5,y1:23,x2:5,y2:27};
+  B.add(pnsItemSeg(0,"GENE",0.4,2,25,8,25,null));
+  if(!B.segBad(sonde,0,"SIG",0.3))
+    throw new Error("le cuivre posé dans la branche doit gêner dans la branche");
+  if(R.segBad(sonde,0,"SIG",0.3))
+    throw new Error("il ne doit pas exister pour le parent");
+
+  B.commit();
+  if(R.segBad(seg,0,"SIG",0.3))throw new Error("après versement, le retrait vaut pour le parent");
+  if(!R.segBad(sonde,0,"SIG",0.3))
+    throw new Error("après versement, l'ajout vaut pour le parent");
+});
+T("assemblage : des segments bout à bout font une ligne, un embranchement l'arrête",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  setCuCount(2);S.board={x:0,y:0,w:40,h:40,pts:null};boardChanged();
+  const a={l:0,net:"T",w:0.3,x1:5,y1:5,x2:10,y2:5};
+  const b={l:0,net:"T",w:0.3,x1:10,y1:5,x2:15,y2:10};
+  const c={l:0,net:"T",w:0.3,x1:15,y1:10,x2:15,y2:20};
+  S.tracks.push(a,b,c);touch();
+  const N=pnsWorld();
+  const item=[...N.all()].find(o=>o.src===b);
+  const L=N.assemble(item);
+  if(L.pts.length!==4)
+    throw new Error("trois segments font quatre sommets, pas "+L.pts.length);
+  if(dist(L.pts[0].x,L.pts[0].y,5,5)>1e-9&&dist(L.pts[0].x,L.pts[0].y,15,20)>1e-9)
+    throw new Error("la ligne doit partir d'un bout libre : "+L.pts[0].x+","+L.pts[0].y);
+  if(Math.abs(pnsLen(L.pts)-(5+Math.hypot(5,5)+10))>1e-6)
+    throw new Error("longueur assemblée : "+fmt(pnsLen(L.pts),3));
+
+  // un embranchement en T coupe l'assemblage net
+  S.tracks.push({l:0,net:"T",w:0.3,x1:10,y1:5,x2:10,y2:0});touch();
+  const N2=pnsWorld();
+  const it2=[...N2.all()].find(o=>o.src===b);
+  const L2=N2.assemble(it2);
+  if(L2.items.length!==2)
+    throw new Error("l'assemblage doit s'arrêter à l'embranchement, "+L2.items.length+" segments");
+});
+T("trame 45° : un tronçon bâtard se redresse, les deux postures sont rendues",()=>{
+  setCornerMode("45");
+  const droite=[{x:0,y:0},{x:5,y:5},{x:10,y:5}];
+  const r1=pnsSnap45(droite);
+  if(r1.length!==1)throw new Error("une ligne déjà droite ne se dédouble pas");
+  if(!pnsIs45(r1[0]))throw new Error("elle doit rester droite");
+
+  const biais=[{x:0,y:0},{x:10,y:3}];
+  const r2=pnsSnap45(biais);
+  if(r2.length!==2)throw new Error("un tronçon bâtard doit rendre deux postures");
+  for(const p of r2){
+    if(!pnsIs45(p))throw new Error("posture non redressée");
+    if(dist(p[0].x,p[0].y,0,0)>1e-9)throw new Error("le départ ne doit pas bouger");
+    const f=p[p.length-1];
+    if(dist(f.x,f.y,10,3)>1e-9)throw new Error("l'arrivée ne doit pas bouger");
+  }
+  if(pnsLen(r2[0])<=pnsLen(biais)-1e-9)throw new Error("redresser ne raccourcit pas");
+  // en angle libre, rien n'est bâtard
+  setCornerMode("free");
+  if(!pnsIs45(biais))throw new Error("en angle libre, tout tronçon est droit");
+  setCornerMode("45");
+});
+
+/* ==========================================================================
+   Le contournement
+   ========================================================================== */
+/* Un plateau nu : la carte, une couche active, l'anti-collision en marche. */
+function plateau(w,h,mode){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  setCuCount(2);S.board={x:0,y:0,w:w||60,h:h||40,pts:null};boardChanged();
+  setActive(0);S.avoid=true;setCornerMode("45");
+  S.rule.route=mode||"shove";
+  S.grid=0;S.origin.x=0;S.origin.y=0;
+  touch();
+}
+/* Ce que tout trajet posé doit respecter, quel que soit le chemin pris. */
+function trajetPropre(nom,segs,net,w){
+  const N=pnsWorld();
+  for(const s of segs){
+    if(!pnsDirOk({x:s.x1,y:s.y1},{x:s.x2,y:s.y2}))
+      throw new Error(nom+" : segment hors des huit sens ("+
+                      fmt(s.x1,2)+","+fmt(s.y1,2)+" → "+fmt(s.x2,2)+","+fmt(s.y2,2)+")");
+    const gene=N.segColliding(s,s.l,net,w);
+    if(gene.length)
+      throw new Error(nom+" : isolation violée par "+gene.length+" objet(s) sur le segment "+
+                      fmt(s.x1,2)+","+fmt(s.y1,2)+" → "+fmt(s.x2,2)+","+fmt(s.y2,2));
+  }
+}
+T("contournement : la piste fait le tour de l'obstacle au lieu de buter",()=>{
+  plateau(60,40,"walk");
+  S.vias.push({x:30,y:20,d:1.0,drill:0.5,a:0,b:1,net:"AUTRE"});touch();
+  setMode("track");
+  startRoute(10,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:50,y:20});
+  if(S.route.bad)throw new Error("le trajet devait être contourné, pas refusé");
+  if(!S.route.contourne)throw new Error("le contournement devait servir");
+  const P=S.route.preview;
+  if(!P.length)throw new Error("aucun trajet");
+  if(Math.abs(P[0].x1-10)>1e-9||Math.abs(P[0].y1-20)>1e-9)
+    throw new Error("le départ ne doit pas bouger");
+  const f=P[P.length-1];
+  if(Math.abs(f.x2-50)>1e-9||Math.abs(f.y2-20)>1e-9)
+    throw new Error("l'arrivée ne doit pas bouger : "+fmt(f.x2,3)+","+fmt(f.y2,3));
+  if(!P.some(s=>Math.abs(s.y1-20)>0.3))
+    throw new Error("le trajet est resté droit : il n'a rien contourné");
+  trajetPropre("contournement",P,"SIG",0.3);
+  stepRoute();commitRoute();setMode("select");
+  const d=runDrc().filter(e=>!e.info);
+  if(d.length)throw new Error("le DRC doit être muet, il dit : "+d[0].msg);
+});
+T("contournement : le côté le plus court l'emporte",()=>{
+  plateau(60,40,"walk");
+  /* L'obstacle mord la route, mais décentré vers le haut : son bord inférieur
+     est à 0,6 mm de l'axe, son bord supérieur à 2,2 mm. Le tour par le bas est
+     donc le plus court, et c'est celui que le contournement doit trouver. */
+  S.vias.push({x:30,y:19.2,d:2.0,drill:0.6,a:0,b:1,net:"AUTRE"});touch();
+  setMode("track");
+  startRoute(10,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:50,y:20});
+  if(S.route.bad)throw new Error("le trajet devait passer");
+  const ymax=Math.max(...S.route.preview.map(s=>Math.max(s.y1,s.y2)));
+  const ymin=Math.min(...S.route.preview.map(s=>Math.min(s.y1,s.y2)));
+  if(!(ymax-20>20-ymin))
+    throw new Error("le tour devait passer par le bas (y croissant) : "+
+                    fmt(ymin,2)+" → "+fmt(ymax,2));
+  trajetPropre("côté court",S.route.preview,"SIG",0.3);
+  cancelRoute();
+});
+T("contournement : sans passage, le trajet reste refusé",()=>{
+  plateau(60,40,"walk");
+  // deux pastilles laissant moins que l'isolation entre elles
+  const cl=classOf("SIG").clr;
+  const e=0.3+2*cl-0.1;                       // largeur de piste + isolations, moins un poil
+  const A=mkFp("J1","","",1);A.style="row";A.x=30;A.y=20-e/2-0.5;A.nets={1:"A"};
+  const B=mkFp("J2","","",1);B.style="row";B.x=30;B.y=20+e/2+0.5;B.nets={1:"B"};
+  S.fps.push(A,B);touch();
+  setMode("track");
+  startRoute(28,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:32,y:20});
+  // le couloir est trop étroit, et la carte trop courte pour un grand tour
+  if(!S.route.bad&&!S.route.contourne)
+    throw new Error("sans passage ni contournement, le trajet doit être signalé");
+  if(S.route.contourne)trajetPropre("faufilé",S.route.preview,"SIG",0.3);
+  cancelRoute();
+});
+T("contournement : le détour ne sort pas de la carte",()=>{
+  plateau(60,40,"walk");
+  // une génératrice qui barre toute la hauteur : le seul tour possible sort
+  S.tracks.push({l:0,net:"AUTRE",w:0.4,x1:30,y1:0,x2:30,y2:40});touch();
+  setMode("track");
+  startRoute(10,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:50,y:20});
+  if(!S.route.bad)
+    throw new Error("le tour par l'extérieur de la carte ne doit pas être proposé");
+  if(S.route.contourne)throw new Error("aucun contournement n'était possible");
+  const avant=S.tracks.length;
+  stepRoute();
+  if(S.tracks.length!==avant)throw new Error("un trajet en défaut ne se pose pas");
+  cancelRoute();
+});
+T("contournement : deux obstacles à la file se contournent l'un après l'autre",()=>{
+  plateau(80,40,"walk");
+  S.vias.push({x:26,y:20,d:1.0,drill:0.5,a:0,b:1,net:"A"});
+  S.vias.push({x:40,y:20,d:1.0,drill:0.5,a:0,b:1,net:"B"});
+  touch();
+  setMode("track");
+  startRoute(10,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:60,y:20});
+  if(S.route.bad)throw new Error("les deux obstacles devaient se contourner");
+  trajetPropre("deux obstacles",S.route.preview,"SIG",0.3);
+  stepRoute();commitRoute();setMode("select");
+  const d=runDrc().filter(e=>!e.info);
+  if(d.length)throw new Error("le DRC doit être muet, il dit : "+d[0].msg);
+});
+
+/* ==========================================================================
+   Le shove
+   ========================================================================== */
+/* Un bout de piste existe-t-il encore, au point où on l'avait laissé ? Le shove
+   a le droit de déformer une ligne, jamais d'en détacher les bouts. */
+function boutTenu(x,y,l){
+  for(const t of S.tracks){
+    if(t.l!==l)continue;
+    if(dist(t.x1,t.y1,x,y)<1e-6||dist(t.x2,t.y2,x,y)<1e-6)return true;
+  }
+  return false;
+}
+/* Toutes les pistes d'un net forment-elles encore une seule ligne continue ? */
+function drcMuet(quoi){
+  const d=runDrc().filter(e=>!e.info);
+  if(d.length)throw new Error(quoi+" : le DRC dit « "+d[0].msg+" »");
+}
+T("shove : la piste gênante s'écarte au lieu de bloquer",()=>{
+  plateau();
+  const G={l:0,net:"GENE",w:0.3,x1:10,y1:20.3,x2:50,y2:20.3};
+  S.tracks.push(G);touch();
+  setMode("track");
+  startRoute(15,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:45,y:20});
+  if(S.route.bad)throw new Error("le trajet devait passer en poussant");
+  if(!S.route.shove||!S.route.shove.lignes.length)
+    throw new Error("aucune ligne n'a été poussée");
+  if(S.route.shove.lignes.length!==1)
+    throw new Error("une seule ligne devait bouger, "+S.route.shove.lignes.length);
+  // l'aperçu ne touche pas encore la carte
+  if(S.tracks.length!==1)throw new Error("l'aperçu ne doit rien poser");
+  stepRoute();commitRoute();setMode("select");
+  if(!boutTenu(10,20.3,0)||!boutTenu(50,20.3,0))
+    throw new Error("les bouts de la piste poussée ne doivent pas bouger");
+  // la piste poussée s'est bien écartée du couloir
+  const ecart=S.tracks.filter(t=>t.net==="GENE")
+                      .some(t=>Math.max(t.y1,t.y2)>20.5);
+  if(!ecart)throw new Error("la piste n'a pas été écartée");
+  for(const t of S.tracks)
+    if(!pnsDirOk({x:t.x1,y:t.y1},{x:t.x2,y:t.y2}))
+      throw new Error("segment hors des huit sens après poussée");
+  drcMuet("après poussée");
+});
+T("shove : la poussée se propage de piste en piste",()=>{
+  plateau();
+  for(let k=0;k<3;k++)
+    S.tracks.push({l:0,net:"G"+k,w:0.3,x1:10,y1:20.3+k*0.6,x2:50,y2:20.3+k*0.6});
+  touch();
+  setMode("track");
+  startRoute(15,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:45,y:20});
+  if(S.route.bad)throw new Error("le trajet devait passer");
+  const bouge=new Set(S.route.shove.lignes.map(L=>L.net));
+  if(bouge.size!==3)
+    throw new Error("les trois pistes devaient s'écarter, "+bouge.size+" l'ont fait");
+  stepRoute();commitRoute();setMode("select");
+  for(let k=0;k<3;k++)
+    if(!boutTenu(10,20.3+k*0.6,0)||!boutTenu(50,20.3+k*0.6,0))
+      throw new Error("les bouts de G"+k+" ne doivent pas bouger");
+  drcMuet("après propagation");
+});
+T("shove : une pastille ne se pousse pas, la tête la contourne",()=>{
+  plateau();
+  const A=mkFp("J1","","",1);A.style="row";A.x=30;A.y=20;A.nets={1:"AUTRE"};
+  S.fps.push(A);touch();
+  setMode("track");
+  startRoute(15,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:45,y:20});
+  if(S.route.bad)throw new Error("la pastille devait être contournée");
+  if(S.route.shove&&S.route.shove.lignes.length)
+    throw new Error("rien ne devait être poussé");
+  const fp=S.fps[0];
+  if(Math.abs(fp.x-30)>1e-9||Math.abs(fp.y-20)>1e-9)
+    throw new Error("le boîtier ne doit pas avoir bougé");
+  trajetPropre("pastille contournée",S.route.preview,"SIG",0.3);
+  cancelRoute();
+});
+T("shove : sans issue, on se rabat sans jamais casser le DRC",()=>{
+  plateau();
+  /* Une arrivée visée en plein sur une pastille étrangère : il n'y a pas de
+     trajet, ni en poussant — une pastille ne se pousse pas — ni en
+     contournant : le bout est DANS l'obstacle. Le seul comportement juste est
+     de le dire et de ne rien poser. */
+  const A=mkFp("J1","","",1);A.style="row";A.x=30;A.y=20;A.nets={1:"AUTRE"};
+  S.fps.push(A);touch();
+  const q=padsWorld(A)[0];
+  setMode("track");
+  startRoute(15,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:q.x,y:q.y});
+  if(!S.route.bad)throw new Error("aucun trajet ne passe : il faut le dire");
+  const avant=S.tracks.length;
+  stepRoute();
+  if(S.tracks.length!==avant)throw new Error("un trajet en défaut ne se pose pas");
+  if(S.route.done.length)throw new Error("aucun segment ne doit être retenu");
+  cancelRoute();
+  drcMuet("après un refus");
+});
+T("shove : un via s'écarte et emmène ce qui s'y raccroche",()=>{
+  plateau();
+  const V={x:30,y:20,d:0.8,drill:0.4,a:0,b:1,net:"AUTRE"};
+  S.vias.push(V);
+  S.tracks.push({l:0,net:"AUTRE",w:0.3,x1:30,y1:20,x2:30,y2:32});
+  touch();
+  setMode("track");
+  startRoute(15,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:45,y:20});
+  if(S.route.bad)throw new Error("le via devait s'écarter");
+  if(!S.route.shove||!S.route.shove.vias.length)
+    throw new Error("aucun via n'a bougé");
+  stepRoute();commitRoute();setMode("select");
+  if(Math.abs(V.y-20)<1e-6&&Math.abs(V.x-30)<1e-6)
+    throw new Error("le via n'a pas bougé");
+  // la piste qui y était raccrochée l'a suivi
+  if(!boutTenu(V.x,V.y,0))
+    throw new Error("la piste doit toujours toucher le via, à sa nouvelle place");
+  if(!boutTenu(30,32,0))throw new Error("l'autre bout ne doit pas bouger");
+  drcMuet("après poussée d'un via");
+});
+T("shove : Ctrl+Z et l'abandon remettent le cuivre poussé en place",()=>{
+  plateau();
+  S.tracks.push({l:0,net:"GENE",w:0.3,x1:10,y1:20.3,x2:50,y2:20.3});
+  touch();
+  const avant=serialize();
+
+  // abandon en cours de route (Échap)
+  setMode("track");
+  startRoute(15,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:45,y:20});
+  stepRoute();
+  if(S.tracks.length<2)throw new Error("le clic devait poser du cuivre");
+  cancelRoute();
+  if(serialize()!==avant)
+    throw new Error("l'abandon devait remettre la carte comme avant");
+
+  // dépôt puis Ctrl+Z
+  startRoute(15,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:45,y:20});
+  stepRoute();commitRoute();setMode("select");
+  if(serialize()===avant)throw new Error("le dépôt devait changer la carte");
+  undo();
+  if(serialize()!==avant)
+    throw new Error("Ctrl+Z devait défaire le tracé ET la poussée");
+});
+T("shove : la conduite face à l'obstacle se règle et se range avec le document",()=>{
+  plateau();
+  if(routeMode()!=="shove")throw new Error("le défaut est « pousser »");
+  setRouteMode("walk");
+  if(routeMode()!=="walk")throw new Error("le réglage n'a pas pris");
+  const d=JSON.parse(serialize());
+  if(d.rule.route!=="walk")throw new Error("le réglage doit suivre le document");
+  loadDoc(normDoc(d),true);
+  if(routeMode()!=="walk")throw new Error("il doit se relire");
+  // un document muet se pousse, comme KiCad
+  delete d.rule.route;
+  loadDoc(normDoc(d),true);
+  if(routeMode()!=="shove")throw new Error("un fichier muet vaut « pousser »");
+  undo();
+});
+
+/* ==========================================================================
+   L'optimiseur
+   ========================================================================== */
+T("optimiseur : un détour inutile se résorbe, les bouts ne bougent pas",()=>{
+  plateau();
+  const pts=[{x:10,y:20},{x:15,y:20},{x:15,y:25},{x:35,y:25},{x:35,y:20},{x:40,y:20}];
+  const opt=pnsOptimize(pnsWorld(),{l:0,net:"SIG",w:0.3,pts},null,0);
+  if(dist(opt[0].x,opt[0].y,10,20)>1e-9)throw new Error("le départ a bougé");
+  const f=opt[opt.length-1];
+  if(dist(f.x,f.y,40,20)>1e-9)throw new Error("l'arrivée a bougé");
+  if(!pnsIs45(opt))throw new Error("le résultat doit rester à 45°");
+  if(pnsLen(opt)>30+1e-6)
+    throw new Error("le détour devait se résorber entièrement : "+fmt(pnsLen(opt),3)+
+                    " mm au lieu de 30");
+});
+T("optimiseur : il ne raccourcit jamais à travers un obstacle",()=>{
+  plateau();
+  S.vias.push({x:25,y:20,d:1.2,drill:0.6,a:0,b:1,net:"AUTRE"});touch();
+  const pts=[{x:10,y:20},{x:15,y:20},{x:15,y:25},{x:35,y:25},{x:35,y:20},{x:40,y:20}];
+  const N=pnsWorld();
+  const opt=pnsOptimize(N,{l:0,net:"SIG",w:0.3,pts},null,0);
+  if(N.firstObstacle({l:0,net:"SIG",w:0.3,pts:opt}))
+    throw new Error("l'optimiseur a raccourci à travers le via");
+  if(pnsLen(opt)<=30+1e-6)
+    throw new Error("il ne pouvait pas descendre jusqu'à la ligne droite");
+});
+T("optimiseur : un sommet tenu par un via ne se déplace pas",()=>{
+  plateau();
+  // le via est du même net : ce n'est pas un obstacle, c'est une ancre
+  S.vias.push({x:15,y:25,d:0.8,drill:0.4,a:0,b:1,net:"SIG"});touch();
+  const pts=[{x:10,y:20},{x:15,y:20},{x:15,y:25},{x:35,y:25},{x:35,y:20},{x:40,y:20}];
+  const opt=pnsOptimize(pnsWorld(),{l:0,net:"SIG",w:0.3,pts},null,0);
+  if(!opt.some(p=>dist(p.x,p.y,15,25)<1e-9))
+    throw new Error("le sommet posé sur le via devait être conservé");
+});
+T("optimiseur : il nettoie le tour d'enveloppe, jamais le coude voulu",()=>{
+  plateau(60,40,"walk");
+  S.vias.push({x:30,y:20,d:1.0,drill:0.5,a:0,b:1,net:"AUTRE"});touch();
+  setMode("track");
+  startRoute(10,20,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:50,y:20});
+  stepRoute();
+  const apres=pnsLen(pnsPts(S.route.done));
+  if(!pnsIs45(pnsPts(S.route.done)))throw new Error("le tracé doit rester à 45°");
+  if(apres<20-1e-9)throw new Error("plus court que la ligne droite : impossible");
+  commitRoute();setMode("select");
+  drcMuet("après optimisation d'un contournement");
+
+  // un coude posé au doigt, sans obstacle : l'optimiseur ne doit pas y toucher
+  plateau(60,40,"walk");
+  setMode("track");
+  startRoute(10,10,true);
+  S.route.net="SIG";S.route.w=0.3;
+  routeToPoint({x:10,y:30});stepRoute();
+  routeToPoint({x:40,y:30});stepRoute();
+  const p=pnsPts(S.route.done);
+  if(!p.some(q=>dist(q.x,q.y,10,30)<1e-6))
+    throw new Error("le coude voulu par l'utilisateur doit être conservé");
+  cancelRoute();
+});
+
+/* ==========================================================================
+   Les paires différentielles sur le moteur
+   ========================================================================== */
+/* Les deux pastilles de la paire, sur un connecteur donné. */
+function padsPaire(f){
+  const l=padsWorld(f);
+  return {p:l.find(q=>q.net==="USB_DP"),n:l.find(q=>q.net==="USB_DM")};
+}
+T("paire : la ligne équivalente porte les deux nets de la paire",()=>{
+  const c=carteDp();
+  dpAutoAll();
+  const q=S.dpPairs[0], g=dpGeom(q,0);
+  // du cuivre de la paire elle-même, en travers de l'axe
+  S.tracks.push({l:0,net:q.n,w:g.w,x1:30,y1:26,x2:50,y2:26});touch();
+  const D={layer:0,pair:q,w:g.w,gap:g.gap};
+  const L=dpLine(D,[{x:40,y:20},{x:40,y:34}]);
+  if(!L.nets.has(q.p)||!L.nets.has(q.n))
+    throw new Error("la ligne doit connaître ses deux nets");
+  if(Math.abs(L.w-(g.gap+2*g.w))>1e-9)
+    throw new Error("la largeur doit valoir l'encombrement de la paire");
+  if(pnsWorld().firstObstacle(L))
+    throw new Error("son propre jumeau n'est pas un obstacle");
+  // le même trajet, sans les nets jumeaux : là, il gêne
+  const seul=Object.assign({},L);delete seul.nets;
+  if(!pnsWorld().firstObstacle(seul))
+    throw new Error("le décor devait produire un conflit");
+});
+T("paire : le cuivre gênant s'écarte devant la paire",()=>{
+  const c=carteDp();
+  dpAutoAll();
+  S.rule.route="shove";S.avoid=true;
+  S.board={x:0,y:0,w:90,h:60,pts:null};boardChanged();
+  const q=S.dpPairs[0];
+  /* Une génératrice étrangère qui LONGE le trajet de la paire, d'un peu trop
+     près. Ses bouts sont libres : elle peut se déformer pour laisser passer.
+     Une barrière en travers, elle, n'aurait pas de solution — une paire ne
+     traverse pas du cuivre étranger sans changer de couche. */
+  S.tracks.push({l:0,net:"GENE",w:0.3,x1:30,y1:25.9,x2:44,y2:25.9});touch();
+  setMode("dpair");
+  if(!dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2))
+    throw new Error("départ refusé");
+  dpUpdate(c.b.p.x,c.b.p.y);
+  if(S.dp.bad)throw new Error("la paire devait passer en poussant : "+
+                              (S.dp.cross?"croisement":"isolation"));
+  if(!S.dp.shove||!S.dp.shove.lignes.length)
+    throw new Error("la génératrice devait s'écarter");
+  dpStep();
+  if(S.dp)dpCommit();
+  setMode("select");
+  /* La génératrice est libre à ses deux bouts : elle se translate en bloc.
+     Elle a donc bougé, mais elle n'a ni changé de longueur ni été coupée. */
+  const G=S.tracks.filter(t=>t.net==="GENE");
+  const lg=G.reduce((s2,t)=>s2+dist(t.x1,t.y1,t.x2,t.y2),0);
+  if(Math.abs(lg-14)>1e-6)
+    throw new Error("la génératrice a changé de longueur : "+fmt(lg,3));
+  if(!G.some(t=>Math.abs(t.y1-25.9)>1e-6||Math.abs(t.y2-25.9)>1e-6))
+    throw new Error("la génératrice n'a pas bougé");
+  drcMuet("après poussée devant une paire");
+  // et l'écart de la paire est resté celui de la règle
+  const cp=dpCoupling(q);
+  if(cp.coupled<cp.len*0.6)
+    throw new Error("le couplage s'est perdu : "+fmt(cp.coupled,1)+" sur "+fmt(cp.len,1));
+});
+T("paire : l'abandon et le Ctrl+Z remettent le cuivre poussé en place",()=>{
+  const c=carteDp();
+  dpAutoAll();
+  S.rule.route="shove";S.avoid=true;
+  S.board={x:0,y:0,w:90,h:60,pts:null};boardChanged();
+  S.tracks.push({l:0,net:"GENE",w:0.3,x1:30,y1:25.9,x2:44,y2:25.9});touch();
+  const avant=serialize();
+  setMode("dpair");
+  dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2);
+  dpUpdate(c.b.p.x,c.b.p.y);
+  dpStep();
+  if(S.dp&&serialize()===avant)throw new Error("le clic devait changer la carte");
+  if(S.dp)dpCancel();else undo();
+  if(serialize()!==avant)
+    throw new Error("l'abandon devait remettre la carte comme avant");
+});
+
+T("un départ qui n'accroche rien le dit tout de suite",()=>{
+  plateau();
+  const f=mkFp("R1","10k","0603",2);f.style="row";f.pitch=2.54;f.x=10;f.y=12;f.rot=90;
+  f.nets={1:"NET1",2:""};
+  S.fps.push(f);touch();
+  const q=padsWorld(f).find(p=>p.n===1);
+  S.scale=20;                              // l'aimant porte alors à 0,45 mm
+  setMode("track");
+  // dans le cuivre de la pastille : on accroche, et on hérite du net
+  startRoute(q.x,q.y);
+  if(S.route.net!=="NET1")throw new Error("le net de la pastille devait être repris");
+  if(dist(S.route.pt.x,S.route.pt.y,q.x,q.y)>1e-9)
+    throw new Error("le départ devait être le centre de la pastille");
+  cancelRoute();
+  // un demi-millimètre à côté du cuivre : hors de portée, et il faut le dire
+  startRoute(q.x-q.w/2-0.5,q.y-0.3);
+  if(S.route.net!=="")throw new Error("aucun net ne pouvait être accroché");
+  const dit=$("fHint").textContent;
+  if(!/aucun net/.test(dit))
+    throw new Error("le départ sur rien doit être annoncé, or le pied dit : "+dit);
+  cancelRoute();
+});
+T("la touche D casse l'angle droit sans lâcher la pastille",()=>{
+  plateau(60,40,"walk");
+  const f=mkFp("R1","10k","0603",2);f.style="row";f.pitch=2.54;f.x=10;f.y=12;f.rot=90;
+  f.nets={1:"NET1",2:""};
+  S.fps.push(f);touch();
+  const q=padsWorld(f).find(p=>p.n===1);
+  setCornerMode("45");
+  /* La topologie qui pose problème : une longue horizontale depuis la
+     pastille, une courte verticale, puis un 45° déjà en place. */
+  const T1={l:0,net:"NET1",w:0.3,x1:q.x,y1:q.y,x2:37,y2:q.y};
+  const T2={l:0,net:"NET1",w:0.3,x1:37,y1:q.y,x2:37,y2:13.7};
+  const T3={l:0,net:"NET1",w:0.3,x1:37,y1:13.7,x2:35.4,y2:15.3};
+  S.tracks.push(T1,T2,T3);touch();
+  if(!mitreAt(0,37,q.y,true))throw new Error("l'angle droit devait être adoucissable");
+  setMode("select");clearSel();S.sel.tracks.add(T2);
+  if(mitreSel()!==1)throw new Error("un angle devait être adouci");
+  /* Le coude visé n'est plus un angle droit d'axe — une horizontale qui
+     rencontre une verticale. Deux diagonales qui se rejoignent à 90°, en
+     revanche, sont du 45° parfaitement fabricable : ce n'est pas ce qu'on
+     cherchait à casser, et `mitreAt` accepterait pourtant de les reprendre. */
+  const axe=t=>Math.abs(t.x1-t.x2)<1e-9?"V":(Math.abs(t.y1-t.y2)<1e-9?"H":"D");
+  for(const a of S.tracks)
+    for(const b of S.tracks){
+      if(a===b||dist(a.x2,a.y2,b.x1,b.y1)>1e-6)continue;
+      const ka=axe(a), kb=axe(b);
+      if((ka==="H"&&kb==="V")||(ka==="V"&&kb==="H"))
+        throw new Error("il reste un angle droit d'axe en "+fmt(a.x2,2)+","+fmt(a.y2,2));
+    }
+  // et la pastille n'a pas été lâchée
+  if(!S.tracks.some(t=>dist(t.x1,t.y1,q.x,q.y)<1e-9||dist(t.x2,t.y2,q.x,q.y)<1e-9))
+    throw new Error("le chanfrein a décroché la piste de sa pastille");
+  for(const t of S.tracks)
+    if(!pnsDirOk({x:t.x1,y:t.y1},{x:t.x2,y:t.y2}))
+      throw new Error("segment hors des huit sens après chanfrein");
+});
+
+T("le chanfrein posé d'office casse l'angle sans déplacer le coude",()=>{
+  plateau(80,50);
+  setCornerMode("45");S.grid=0.25;
+  const R1=mkFp("R1","10k","0603",2);R1.style="row";R1.pitch=2.54;
+  R1.x=10;R1.y=12;R1.rot=90;R1.nets={1:"NET1",2:""};
+  S.fps.push(R1);touch();
+  const q=padsWorld(R1).find(p=>p.n===1);
+  setMode("track");
+  startRoute(q.x,q.y);
+  const w=S.route.w;
+  routeToPoint({x:55,y:q.y});stepRoute();     // longue horizontale : 45 mm
+  routeToPoint({x:55,y:30});stepRoute();      // verticale : 19 mm
+  commitRoute();setMode("select");
+
+  /* Le coude reste à x = 55 : le chanfrein l'a cassé, pas déplacé. Maximal, il
+     aurait ramené le coude à 55 − 19 = 36 mm, et le clic aurait disparu. */
+  const borne=MITRE_AUTO*w;
+  const proche=S.tracks.filter(t=>Math.min(t.x1,t.x2)>55-borne-1e-6);
+  if(!proche.length)throw new Error("plus rien près du coude cliqué");
+  const xmin=Math.min(...S.tracks.map(t=>Math.min(t.x1,t.x2)));
+  if(Math.abs(xmin-q.x)>1e-9)throw new Error("le tracé doit toujours partir de la pastille");
+  const droite=S.tracks.find(t=>Math.abs(t.y1-q.y)<1e-9&&Math.abs(t.y2-q.y)<1e-9);
+  if(!droite)throw new Error("l'horizontale de départ a disparu");
+  const bout=Math.max(droite.x1,droite.x2);
+  if(Math.abs(bout-(55-borne))>1e-6)
+    throw new Error("le chanfrein devait valoir "+fmt(borne,3)+" mm, l'horizontale "+
+                    "s'arrête à "+fmt(bout,3)+" au lieu de "+fmt(55-borne,3));
+  // plus aucun angle droit d'axe, et tout est à 45°
+  const axe=t=>Math.abs(t.x1-t.x2)<1e-9?"V":(Math.abs(t.y1-t.y2)<1e-9?"H":"D");
+  for(const a of S.tracks)
+    for(const b of S.tracks){
+      if(a===b||dist(a.x2,a.y2,b.x1,b.y1)>1e-6)continue;
+      if((axe(a)==="H"&&axe(b)==="V")||(axe(a)==="V"&&axe(b)==="H"))
+        throw new Error("angle droit d'axe restant en "+fmt(a.x2,2)+","+fmt(a.y2,2));
+    }
+  for(const t of S.tracks)
+    if(!pnsDirOk({x:t.x1,y:t.y1},{x:t.x2,y:t.y2}))
+      throw new Error("segment hors des huit sens");
+  drcMuet("après un chanfrein borné");
+});
+T("borné ou maximal : la touche D chanfreine bien plus large que le dépôt",()=>{
+  plateau();
+  setCornerMode("45");
+  const w=0.3;
+  const pose=cap=>{
+    S.tracks=[];clearSel();
+    S.tracks.push({l:0,net:"T",w,x1:5,y1:20,x2:40,y2:20});    // 35 mm
+    S.tracks.push({l:0,net:"T",w,x1:40,y1:20,x2:40,y2:32});   // 12 mm
+    touch();
+    if(!mitreAt(0,40,20,false,cap))throw new Error("chanfrein refusé (cap="+cap+")");
+    const d=S.tracks.find(t=>Math.abs(t.x1-t.x2)>1e-9&&Math.abs(t.y1-t.y2)>1e-9);
+    return Math.abs(d.x2-d.x1);
+  };
+  const borne=pose(MITRE_AUTO), max=pose(0);
+  if(Math.abs(borne-MITRE_AUTO*w)>1e-6)
+    throw new Error("le chanfrein borné doit valoir "+fmt(MITRE_AUTO*w,3)+", il vaut "+fmt(borne,3));
+  if(Math.abs(max-12)>1e-6)
+    throw new Error("le chanfrein maximal doit valoir la jambe courte (12 mm), il vaut "+fmt(max,3));
+});
+T("un coude entre deux jambes courtes se chanfreine entièrement",()=>{
+  plateau();
+  setCornerMode("45");
+  /* Deux jambes plus courtes que la borne : le chanfrein les mange en entier,
+     comme avant. Borner ne doit pas empêcher le petit coude de disparaître. */
+  const w=0.3, L=0.8;                       // 0,8 mm < MITRE_AUTO × 0,3 = 1,2 mm
+  const A={l:0,net:"T",w,x1:20,y1:20,x2:20+L,y2:20};
+  const B={l:0,net:"T",w,x1:20+L,y1:20,x2:20+L,y2:20+L};
+  S.tracks.push(A,B);touch();
+  if(!mitreAt(0,20+L,20,true,MITRE_AUTO))throw new Error("ce coude devait être adoucissable");
+  mitreAt(0,20+L,20,false,MITRE_AUTO);
+  const d=S.tracks.filter(t=>Math.abs(t.x1-t.x2)>1e-9&&Math.abs(t.y1-t.y2)>1e-9);
+  if(d.length!==1)throw new Error("une diagonale attendue, "+d.length);
+  if(dist(d[0].x1,d[0].y1,20,20)>1e-6&&dist(d[0].x2,d[0].y2,20,20)>1e-6)
+    throw new Error("la diagonale devait partir du début de la première jambe");
+});
+
+T("un coude déjà franc avant le glissement le reste",()=>{
+  /* Le pendant du précédent : on ne rend un 45° que s'il y en avait un. Un
+     angle droit voulu ne doit pas être réécrit par un geste qui ne demandait
+     que de raccourcir. */
+  S.fps=[];S.tracks=[];S.vias=[];touch();
+  setCuCount(2);S.board={x:0,y:0,w:60,h:60,pts:null};boardChanged();
+  setCornerMode("45");S.avoid=false;
+  const h={l:0,net:"T",w:0.3,x1:5,y1:20,x2:30,y2:20};
+  const v={l:0,net:"T",w:0.3,x1:30,y1:20,x2:30,y2:45};
+  S.tracks.push(h,v);touch();
+  setMode("select");S.active=0;clearSel();S.sel.tracks.add(v);
+  const n0=S.tracks.length;
+  glisseSur(v,{x:30,y:35},{x:24,y:35});
+  S.avoid=true;
+  if(S.tracks.length!==n0)
+    throw new Error("aucun chanfrein ne devait naître : "+S.tracks.length+
+                    " segments au lieu de "+n0);
+  if(!S.tracks.some(t=>Math.abs(t.x1-t.x2)>1e-9&&Math.abs(t.y1-t.y2)<1e-9))
+    throw new Error("l'horizontale devait rester horizontale");
+  undo();
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

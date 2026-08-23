@@ -32,9 +32,10 @@
        tiennent pas au pas des pistes. La paire s'ouvre en éventail juste avant,
        et se referme de l'autre côté.
 
-   Ce que ce module n'emprunte pas à KiCad : le shove (repousser le cuivre déjà
-   posé). L'éditeur ne le fait pour aucun tracé, il n'y a pas de raison de le
-   faire ici.
+   Le **shove** et le **contournement** ne sont plus à part : depuis le moteur
+   `1x-pns-*`, la paire les obtient en se présentant à lui comme une seule ligne
+   large, celle de son axe (`dpLine`, `dpAxis`). Le cuivre gênant s'écarte donc
+   devant une paire comme devant une piste seule, et par le même code.
    ============================================================================= */
 
 /* ==========================================================================
@@ -203,46 +204,71 @@ function dpPairAt(x,y,layer){
 }
 
 /* ==========================================================================
-   La tête repoussée
+   La paire vue par le moteur de routage
    --------------------------------------------------------------------------
-   `pushClear` écarte un point des obstacles d'un seul net ; une paire en a
-   deux, et occupe la largeur de ses deux pistes plus l'écart. On refait donc le
-   calcul ici avec cette largeur-là — c'est exactement ce que fait
-   propagateDpHeadForces, qui se donne un via virtuel du diamètre de la paire
-   entière plutôt que de raffiner la forme réelle.
+   Une paire occupe la largeur de ses deux pistes plus l'écart. Tout le moteur
+   (`11-pns-node.js` et la suite) sait travailler sur une ligne de largeur
+   quelconque : il suffit donc de lui présenter la paire comme **une seule
+   ligne large**, celle de son axe. Le contournement et le shove s'y appliquent
+   alors sans une ligne de code de plus, et le dédoublement se fait après, comme
+   il se faisait déjà.
+   C'est exactement le raisonnement de KiCad, qui se donne un via virtuel du
+   diamètre de la paire entière plutôt que de raffiner la forme réelle.
    ========================================================================== */
+/* Les deux nets d'une paire, sous la forme que le moteur attend. */
+function dpNets(pair){return new Set([pair.p,pair.n]);}
+/* La ligne équivalente à la paire : l'axe, à la largeur de tout ce qu'elle
+   occupe. Deux nets circulent dessous, le sien et celui de son jumeau ; `nets`
+   les réunit, faute de quoi la paire se prendrait elle-même pour un obstacle
+   dès le premier millimètre. */
+function dpLine(D,pts,ext){
+  return {l:D.layer, net:D.pair.p, nets:dpNets(D.pair),
+          w:ext==null?(D.gap+2*D.w):ext, pts};
+}
+/* Le point visé, ramené hors de ce qui ne s'écartera pas. Même règle que pour
+   une piste seule : en mode « pousser », seules les pastilles repoussent le
+   curseur, le reste s'effacera de lui-même. */
 function dpPush(pt,l,pair,ext){
   if(!S.avoid)return {x:pt.x,y:pt.y,pushed:false};
-  const mine=n=>n===pair.p||n===pair.n;
+  const dur=routeMode()==="shove"?"P":"PSV";
+  const nets=dpNets(pair);
+  const N=pnsWorld();
   let p={x:pt.x,y:pt.y}, moved=false;
-  for(let it=0;it<8;it++){
+  for(let k=0;k<8;k++){
+    const sonde=pnsItemSeg(l,pair.p,ext,p.x,p.y,p.x,p.y,null);
+    sonde.nets=nets;
     let best=null;
-    const test=(d,need,dx,dy)=>{
-      const def=need-d;
-      if(def>1e-4&&(!best||def>best.def)){
-        const len=Math.hypot(dx,dy);
-        best={def:def,dx:len?dx/len:1,dy:len?dy/len:0};
-      }
-    };
-    for(const fp of S.fps)
-      for(const q of padsWorld(fp)){
-        if(!padLayers(fp,q).includes(l)||mine(q.net))continue;
-        test(padDist(p.x,p.y,q)-ext/2,clrPair(pair.p,q.net),p.x-q.x,p.y-q.y);
-      }
-    for(const v of S.vias){
-      if(l<v.a||l>v.b||mine(v.net))continue;
-      test(dist(p.x,p.y,v.x,v.y)-v.d/2-ext/2,clrPair(pair.p,v.net),p.x-v.x,p.y-v.y);
-    }
-    for(const t of S.tracks){
-      if(t.l!==l||mine(t.net))continue;
-      const c=projOnSeg(p.x,p.y,t);
-      test(dist(p.x,p.y,c.x,c.y)-t.w/2-ext/2,clrPair(pair.p,t.net),p.x-c.x,p.y-c.y);
+    for(const o of N.colliding(sonde)){
+      if(dur.indexOf(o.k)<0)continue;
+      const e=pnsPointEscape(o,p,pair.p,ext);
+      if(e&&(!best||e.def>best.def))best=e;
     }
     if(!best)break;
     p={x:r3(p.x+best.dx*(best.def+0.005)),y:r3(p.y+best.dy*(best.def+0.005))};
     moved=true;
   }
   return {x:p.x,y:p.y,pushed:moved};
+}
+/* L'axe direct, de la porte de départ au point visé.
+   `minSeg` reste au pas de la paire : un décrochement plus court que
+   l'écartement ne survivrait pas au décalage — l'onglet mangerait le segment et
+   la piste repartirait sur elle-même. C'est la quantification que KiCad obtient
+   par son catalogue de portes. */
+function dpAxisDirect(D,from,to,snap){
+  const pitch=D.gap+D.w;
+  return routeCorner(from,to,dpPosture(D,from,to),null,snap?0:pitch);
+}
+/* Le même axe, mais faufilé autour de ce qui le gêne : la paire y passe pour
+   une seule ligne large, et le contournement fait le reste. Rend `null` quand
+   il n'y a rien à contourner ou qu'aucun tour ne passe. */
+function dpAxis(D,from,to,snap){
+  const direct=dpAxisDirect(D,from,to,snap);
+  if(!direct.length||!S.avoid)return null;
+  const N=pnsWorld();
+  const line=dpLine(D,pnsPts(direct),D.gap+2*D.w);
+  if(!N.firstObstacle(line))return null;
+  const t=pnsWalkaround(N,line,null);
+  return t.ok?pnsSegs(t.pts):null;
 }
 
 /* ==========================================================================
@@ -345,7 +371,11 @@ function dpStart(x,y){
         pt:{x:r3((a.P.x+a.N.x)/2),y:r3((a.P.y+a.N.y)/2)},
         aP:{x:a.P.x,y:a.P.y}, aN:{x:a.N.x,y:a.N.y},
         side:1, mid:[], doneP:[], doneN:[], prevP:[], prevN:[], midPrev:[],
-        vias:[], steps:[], flip:false, bad:false, end:null, snap:false};
+        vias:[], steps:[], flip:false, bad:false, end:null, snap:false,
+        /* `doc` : la carte avant le geste. Le shove écarte du cuivre dès le
+           premier clic ; sans cet instantané, ni l'abandon ni le Ctrl+Z ne
+           sauraient le remettre en place. */
+        shove:null, shoved:false, doc:serialize()};
   S.hlNet=null;
   hint("Paire "+pair.name+" — "+pair.p+" / "+pair.n+" : "+fmt(g.w,3)+" mm de piste, "+
        fmt(g.gap,3)+" mm d'écart. Clic pour poser un coude · « / » bascule la posture · "+
@@ -374,11 +404,38 @@ function dpUpdate(x,y){
   D.pt=gA.mid;
   const gB=t.snap?dpGate(t.tP,t.tN,gA.gate,pitch,D.side,D.w):null;
   const to=gB?gB.gate:{x:t.x,y:t.y};
-  /* `minSeg` au pas de la paire : un décrochement plus court que l'écartement
-     ne survivrait pas au décalage — l'onglet mangerait le segment et la piste
-     repartirait sur elle-même. C'est la quantification que KiCad obtient par
-     son catalogue de portes. */
-  const axis=routeCorner(gA.gate,to,dpPosture(D,gA.gate,to),null,t.snap?0:pitch);
+  const direct=dpAxisDirect(D,gA.gate,to,t.snap);
+  D.shove=null;D.detour=false;
+
+  /* Trois tentatives, dans l'ordre de la règle en vigueur. Chacune se juge sur
+     les DEUX pistes réellement obtenues, éventails compris : c'est la seule
+     géométrie qui compte, et près des pastilles la paire s'ouvre bien au-delà
+     de son pas — un axe large ne la représenterait pas.
+       1. la route directe, si elle est libre ;
+       2. la poussée, à partir des deux pistes telles qu'elles sont ;
+       3. le faufilage, qui redessine l'axe autour de l'obstacle.
+     Faute de quoi le trajet est signalé, et ne se posera pas. */
+  if(dpPose(D,gA,gB,t,direct,null)){D.bad=false;return;}
+  const mode=routeMode();
+  if(mode==="shove"&&S.avoid){
+    const r=pnsShoveHeads(pnsWorld(),
+      [{l:D.layer,net:pair.p,w:D.w,pts:pnsPts(D.prevP)},
+       {l:D.layer,net:pair.n,w:D.w,pts:pnsPts(D.prevN)}],null,Date.now());
+    if(r.ok&&dpPose(D,gA,gB,t,direct,r)){D.bad=false;return;}
+  }
+  if(mode!=="mark"){
+    const tour=dpAxis(D,gA.gate,to,t.snap);
+    if(tour&&dpPose(D,gA,gB,t,tour,null)){D.detour=true;D.bad=false;return;}
+  }
+  dpPose(D,gA,gB,t,direct,null);
+  D.bad=true;
+}
+/* Une tentative : l'axe donné, dédoublé en deux pistes, rangé dans `D`, puis
+   jugé. Rend `true` si le résultat tient — c'est-à-dire s'il n'y a plus rien à
+   essayer. */
+function dpPose(D,gA,gB,t,axis,shove){
+  const pair=D.pair, pitch=D.gap+D.w;
+  D.shove=shove||null;
   D.midPrev=axis.map(sg=>Object.assign({l:D.layer},sg));
   let pts=axis.length?dpPts(axis):[{x:gA.gate.x,y:gA.gate.y}];
   /* Le point d'appui, en arrière de la porte : il ne sera pas posé, il ne sert
@@ -404,7 +461,7 @@ function dpUpdate(x,y){
     oP=[{x:r3(gA.gate.x+pr.x*gA.side*pitch/2),y:r3(gA.gate.y+pr.y*gA.side*pitch/2)}];
     oN=[{x:r3(gA.gate.x-pr.x*gA.side*pitch/2),y:r3(gA.gate.y-pr.y*gA.side*pitch/2)}];
   }
-  if(!oP.length||!oN.length){D.prevP=[];D.prevN=[];D.bad=false;return;}
+  if(!oP.length||!oN.length){D.prevP=[];D.prevN=[];D.cross=false;return true;}
   let chP=dpLeg(D.aP,oP[0]).concat(dpSegs(oP));
   let chN=dpLeg(D.aN,oN[0]).concat(dpSegs(oN));
   D.cross=false;
@@ -422,9 +479,25 @@ function dpUpdate(x,y){
   }
   D.prevP=chP.map(sg=>Object.assign({l:D.layer},sg));
   D.prevN=chN.map(sg=>Object.assign({l:D.layer},sg));
-  D.bad=D.cross||
-        routeBad(D.prevP,D.layer,pair.p,D.w,t.snap?t.tP.obj:null)||
-        routeBad(D.prevN,D.layer,pair.n,D.w,t.snap?t.tN.obj:null);
+  if(D.cross)return false;
+  /* Le contrôle se fait sur le monde TEL QU'IL SERA : quand le shove a écarté
+     du cuivre, c'est la branche qu'il faut relire, pas la carte d'avant. Sans
+     cela, la paire se verrait refuser le passage que la poussée vient
+     justement d'ouvrir. Les deux pistes qu'on a soumises à la poussée ne
+     comptent évidemment pas contre elles-mêmes. */
+  const NB=(shove&&shove.node)||pnsWorld();
+  const hors=new Set(shove&&shove.tete?shove.tete:[]);
+  const chaineBad=(segs,net,ignore)=>{
+    if(!S.avoid||!net)return false;
+    for(const sg of segs){
+      const sk=new Set(hors);
+      if(ignore)sk.add(ignore);
+      if(NB.segBad(sg,D.layer,net,D.w,sk))return true;
+    }
+    return false;
+  };
+  return !chaineBad(D.prevP,pair.p,t.snap?t.tP.obj:null)&&
+         !chaineBad(D.prevN,pair.n,t.snap?t.tN.obj:null);
 }
 /* Un clic : le trajet en cours passe du côté « posé ». Comme pour une piste
    seule, un trajet qui ne respecte pas l'isolation ne se pose pas — on le dit
@@ -451,6 +524,7 @@ function dpStep(){
     return;
   }
   dpMark(D);
+  if(D.shove&&pnsApply(D.shove)){D.shoved=true;D.shove=null;refreshPanels();}
   for(const s of D.prevP)D.doneP.push(s);
   for(const s of D.prevN)D.doneN.push(s);
   for(const s of D.midPrev)D.mid.push(s);
@@ -524,8 +598,8 @@ function dpCommit(){
   const D=S.dp;
   S.dp=null;
   if(!D)return;
-  if(!D.doneP.length&&!D.doneN.length){touch();draw();return;}
-  push();
+  if(!D.doneP.length&&!D.doneN.length&&!D.shoved){touch();draw();return;}
+  pushSnap(D.doc);
   const posed=[];
   for(const [segs,net] of [[D.doneP,D.pair.p],[D.doneN,D.pair.n]]){
     let prev=null;
@@ -548,8 +622,11 @@ function dpCommit(){
 function dpCancel(){
   const D=S.dp;
   if(!D)return;
+  S.dp=null;
+  // le cuivre poussé se remet en place, comme pour une piste seule
+  if(D.shoved&&D.doc){loadDoc(JSON.parse(D.doc),true);return;}
   for(const v of D.vias){const i=S.vias.indexOf(v);if(i>=0)S.vias.splice(i,1);}
-  S.dp=null;touch();draw();
+  touch();draw();
 }
 /* Revenir d'un coude : les deux pistes reculent ensemble, l'axe aussi, et les
    vias posés en chemin repartent avec. Le marque-page dit exactement où
@@ -578,6 +655,7 @@ function dpBack(){
 function drawDp(c){
   const D=S.dp;
   if(!D)return;
+  drawShove(c,D.shove);            // le cuivre que la paire écarterait
   const col=layerColor(D.layer);
   c.lineCap="round";c.lineJoin="round";
   c.globalAlpha=0.85;c.strokeStyle=col;c.lineWidth=D.w;

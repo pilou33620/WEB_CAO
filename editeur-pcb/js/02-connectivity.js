@@ -407,72 +407,86 @@ function runDrc(){
     for(const q of padsWorld(fp))
       pads.push({q,fp,layers:padLayers(fp,q),tag:fp.ref+"."+q.n});
 
-  /* piste ↔ piste */
-  for(let i=0;i<S.tracks.length;i++){
-    const a=S.tracks[i];
-    for(let j=i+1;j<S.tracks.length;j++){
-      const b=S.tracks[j];
-      if(a.l!==b.l)continue;
-      if(a.net&&b.net&&a.net===b.net)continue;
-      const clr=clrPair(a.net,b.net);
-      const d=segSegDist(a,b)-a.w/2-b.w/2;
-      if(d<clr-1e-6)
-        out.push({x:(a.x1+a.x2+b.x1+b.x2)/4, y:(a.y1+a.y2+b.y1+b.y2)/4, l:a.l,
-          msg:"Isolation piste/piste "+fmt(Math.max(0,d),3)+" mm ("+(a.net||"?")+" / "+(b.net||"?")+")"});
+  /* ---------- isolations ----------
+     Les conflits se comptaient deux à deux : toutes les pistes contre toutes
+     les pistes, toutes les pastilles contre toutes les pastilles. Le coût y
+     était le carré du nombre d'objets, et c'était le vrai point noir du
+     contrôle sur une carte chargée. Le modèle du monde (`11-pns-node.js`) range
+     le cuivre dans un index spatial : on n'interroge plus qu'un voisinage.
+     Les mesures et les seuils n'ont pas bougé d'un micron — `pnsPairGap`
+     rappelle exactement les fonctions d'ici, et `PNS_EPS` vaut la tolérance de
+     ce contrôle. Les messages sont rangés par famille avant d'être versés :
+     l'index, lui, rend le voisinage dans l'ordre du hachage.
+     Deux nouveautés, que le balayage croisé ne voyait pas : deux vias trop
+     proches — le contrôle les ignorait purement et simplement — et le fait que
+     le routeur, désormais, juge du même œil. */
+  const N=pnsWorld();
+  const vu=new Set(), idOf=new Map();
+  const uid=it=>{let k=idOf.get(it);if(k==null)idOf.set(it,k=idOf.size);return k;};
+  const neuf=(a,b)=>{
+    const i=uid(a), j=uid(b), k=i<j?i+"|"+j:j+"|"+i;
+    if(vu.has(k))return false;
+    vu.add(k);return true;
+  };
+  const tagOf=it=>it.fp.ref+"."+it.q.n;
+  const bTT=[], bTP=[], bV=[], bPP=[];
+  for(const a of N.all())
+    for(const b of N.colliding(a)){
+      if(!neuf(a,b))continue;
+      const d=fmt(Math.max(0,pnsPairGap(a,b)),3);
+      if(a.k==="S"&&b.k==="S")
+        bTT.push({x:(a.seg.x1+a.seg.x2+b.seg.x1+b.seg.x2)/4,
+                  y:(a.seg.y1+a.seg.y2+b.seg.y1+b.seg.y2)/4, l:a.l0,
+          msg:"Isolation piste/piste "+d+" mm ("+(a.net||"?")+" / "+(b.net||"?")+")"});
+      else if(a.k==="P"&&b.k==="P"){
+        // même empreinte : jugée plus bas, sur une autre règle et sans couches
+        if(a.fp!==b.fp)
+          bPP.push({x:(a.q.x+b.q.x)/2,y:(a.q.y+b.q.y)/2,l:a.l0,
+            msg:"Pastilles trop proches : "+tagOf(a)+" / "+tagOf(b)});
+      }else if(a.k==="V"&&b.k==="V")
+        bV.push({x:(a.v.x+b.v.x)/2,y:(a.v.y+b.v.y)/2,l:a.l0,
+          msg:"Isolation via/via "+d+" mm ("+(a.net||"?")+" / "+(b.net||"?")+")"});
+      else{
+        const s=a.k==="S"?a:(b.k==="S"?b:null);
+        const v=a.k==="V"?a:(b.k==="V"?b:null);
+        const p=a.k==="P"?a:(b.k==="P"?b:null);
+        if(s&&p)bTP.push({x:p.q.x,y:p.q.y,l:s.l0,
+          msg:"Isolation piste/pastille "+tagOf(p)+" : "+d+" mm"});
+        else if(v&&s)bV.push({x:v.v.x,y:v.v.y,l:s.l0,msg:"Isolation via/piste "+d+" mm"});
+        else if(v&&p)bV.push({x:v.v.x,y:v.v.y,l:v.l0,msg:"Isolation via/pastille "+tagOf(p)});
+      }
     }
-  }
-  /* piste ↔ pastille */
-  for(const t of S.tracks)
-    for(const p of pads){
-      if(!p.layers.includes(t.l))continue;
-      if(t.net&&p.q.net&&t.net===p.q.net)continue;
-      const clr=clrPair(t.net,p.q.net);
-      const d=segPadDist(t,p.q);
-      if(d<clr-1e-6)
-        out.push({x:p.q.x,y:p.q.y,l:t.l,
-          msg:"Isolation piste/pastille "+p.tag+" : "+fmt(Math.max(0,d),3)+" mm"});
-    }
-  /* via ↔ piste et via ↔ pastille */
-  for(const v of S.vias){
-    for(const t of S.tracks){
-      if(t.l<v.a||t.l>v.b)continue;
-      if(t.net&&v.net&&t.net===v.net)continue;
-      const d=segDist(v.x,v.y,t.x1,t.y1,t.x2,t.y2)-t.w/2-v.d/2;
-      if(d<clrPair(v.net,t.net)-1e-6)out.push({x:v.x,y:v.y,l:t.l,msg:"Isolation via/piste "+fmt(Math.max(0,d),3)+" mm"});
-    }
-    for(const p of pads){
-      if(!p.layers.some(l=>l>=v.a&&l<=v.b))continue;
-      if(v.net&&p.q.net&&v.net===p.q.net)continue;
-      const d=padDist(v.x,v.y,p.q)-v.d/2;
-      if(d<clrPair(v.net,p.q.net)-1e-6)out.push({x:v.x,y:v.y,l:v.a,msg:"Isolation via/pastille "+p.tag});
-    }
+  for(const e of bTT)out.push(e);
+  for(const e of bTP)out.push(e);
+  for(const e of bV)out.push(e);
+  for(const v of S.vias)
     if(!inBoard(v.x,v.y,S.rule.edge))
       out.push({x:v.x,y:v.y,l:v.a,msg:"Via hors du contour de carte"});
+  for(const e of bPP)out.push(e);
+  /* ---------- pastilles d'une même empreinte ----------
+     Deux pastilles d'une même empreinte se touchent presque, par construction :
+     un QFN au pas de 0,5 mm n'a pas 0,25 mm entre ses plages, et ce n'est pas
+     un défaut de la carte. Le recouvrement franc, lui, ne peut venir que d'un
+     dessin fait à la main — et deux nets qui se recouvrent sont un
+     court-circuit. La règle ne regarde pas les couches : une pastille dessinée
+     par-dessus une autre est fautive où qu'elle soit. C'est pour cela qu'elle
+     reste hors de l'index, qui ne rapproche que ce qui partage une couche. */
+  const parFp=new Map();
+  for(const p of pads){
+    let a=parFp.get(p.fp);
+    if(!a)parFp.set(p.fp,a=[]);
+    a.push(p);
   }
-  /* pastille ↔ pastille */
-  for(let i=0;i<pads.length;i++)
-    for(let j=i+1;j<pads.length;j++){
-      const a=pads[i], b=pads[j];
-      /* Deux pastilles d'une même empreinte se touchent presque, par
-         construction : un QFN au pas de 0,5 mm n'a pas 0,25 mm entre ses
-         plages, et ce n'est pas un défaut de la carte. Le recouvrement franc,
-         lui, ne peut venir que d'un dessin fait à la main — et deux nets qui
-         se recouvrent sont un court-circuit. */
-      if(a.fp===b.fp){
+  for(const g of parFp.values())
+    for(let i=0;i<g.length;i++)
+      for(let j=i+1;j<g.length;j++){
+        const a=g[i], b=g[j];
         if(!(a.q.net&&b.q.net&&a.q.net!==b.q.net))continue;
         if(padDist(a.q.x,a.q.y,b.q)-Math.min(a.q.w,a.q.h)/2<-1e-6)
           out.push({x:(a.q.x+b.q.x)/2,y:(a.q.y+b.q.y)/2,l:a.layers[0],
             msg:"Pastilles superposées : "+a.tag+" / "+b.tag+
                 " ("+a.q.net+" / "+b.q.net+")"});
-        continue;
       }
-      if(!a.layers.some(l=>b.layers.includes(l)))continue;
-      if(a.q.net&&b.q.net&&a.q.net===b.q.net)continue;
-      const d=padDist(a.q.x,a.q.y,b.q)-Math.min(a.q.w,a.q.h)/2;
-      if(d<clrPair(a.q.net,b.q.net)-1e-6)
-        out.push({x:(a.q.x+b.q.x)/2,y:(a.q.y+b.q.y)/2,l:a.layers[0],
-          msg:"Pastilles trop proches : "+a.tag+" / "+b.tag});
-    }
   /* largeur, net manquant, débordement */
   for(const t of S.tracks){
     const cl=classOf(t.net);

@@ -592,9 +592,36 @@ function drawCutDraft(c){
   c.strokeStyle=C_SEL;c.lineWidth=px(1.6);
   c.beginPath();c.arc(C.pts[0].x,C.pts[0].y,px(6),0,Math.PI*2);c.stroke();
 }
+/* Le cuivre que le tracé en cours pousserait s'il se posait ici. Il n'existe
+   encore nulle part — ni dans `S.tracks`, ni sur la carte — mais le montrer est
+   toute la différence entre « pousser » et « avoir poussé » : on voit le voisin
+   s'écarter pendant qu'on vise, et on peut renoncer avant de cliquer.
+   Chaque ligne est peinte de la couleur de sa couche, en pointillé, pour qu'on
+   la distingue du cuivre déjà posé qu'elle recouvre. */
+function drawShove(c,sh){
+  const R=sh||(S.route&&S.route.shove);
+  if(!R||!R.lignes)return;
+  c.lineCap="round";c.lineJoin="round";
+  c.globalAlpha=0.8;c.setLineDash([px(3),px(3)]);
+  for(const L of R.lignes){
+    if(!L.pts||L.pts.length<2)continue;
+    c.strokeStyle=layerColor(L.l);c.lineWidth=L.w;
+    c.beginPath();
+    c.moveTo(L.pts[0].x,L.pts[0].y);
+    for(let k=1;k<L.pts.length;k++)c.lineTo(L.pts[k].x,L.pts[k].y);
+    c.stroke();
+  }
+  for(const v of (R.vias||[])){
+    if(!v)continue;
+    c.strokeStyle=C_SEL;c.lineWidth=px(1.4);
+    c.beginPath();c.arc(v.x,v.y,v.orig.d/2,0,Math.PI*2);c.stroke();
+  }
+  c.setLineDash([]);c.globalAlpha=1;
+}
 function drawRoute(c){
   const R=S.route;
   if(!R)return;
+  drawShove(c);
   const col=layerColor(R.layer);
   c.lineCap="round";c.lineJoin="round";
   c.globalAlpha=0.85;c.strokeStyle=col;c.lineWidth=R.w;

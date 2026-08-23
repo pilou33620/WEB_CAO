@@ -173,6 +173,27 @@ repère, sa position ni ses nets, et s'exporte en `.json` pour une autre machine
 ou un autre projet. Détails dans
 [editeur-pcb/README.md](editeur-pcb/README.md#dessiner-une-empreinte-à-la-main-lenregistrer-la-réutiliser).
 
+## Le routeur pousse le cuivre
+
+Face à un obstacle, une piste qu'on tire ne bute plus : elle demande au cuivre
+gênant de s'écarter, et celui-ci pousse à son tour ses propres voisins, aussi
+loin qu'il faut. C'est la méthode du routeur de KiCad — le **PNS**, *Push and
+Shove* — réimplémentée dans l'éditeur.
+
+Trois conduites, au choix dans *Règles de tracé*, ligne **Face à un obstacle** :
+**pousser le cuivre** (le défaut), **contourner** — la piste se faufile, rien
+d'autre ne bouge — ou **signaler**, l'ancienne conduite de l'éditeur, où le
+trajet fautif s'affiche en rouge et refuse de se poser. Les trois se rabattent
+l'une sur l'autre : ce qui ne peut pas être poussé est contourné, ce qui ne peut
+pas être contourné est signalé. Une pastille, elle, ne se pousse jamais.
+
+Tant que la souris se déplace, le cuivre qui s'écarte n'est qu'un aperçu : le
+clic seul l'installe, Échap remet tout en place, et un tracé entier — pistes
+posées **et** cuivre poussé — ne fait qu'un seul Ctrl+Z. Les paires
+différentielles y ont droit aussi.
+
+Détails dans [editeur-pcb/README.md](editeur-pcb/README.md#le-routeur--pousser-contourner-signaler).
+
 ## Router une paire différentielle
 
 USB, Ethernet, LVDS, CAN : deux nets qui portent le même signal en opposition ne

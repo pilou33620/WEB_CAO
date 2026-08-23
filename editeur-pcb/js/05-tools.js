@@ -17,8 +17,13 @@ function docObj(){
           active:S.active,nextId:S.nextId};
 }
 function serialize(){return JSON.stringify(docObj());}
-function push(){
-  S.undo.push(serialize());
+function push(){pushSnap(null);}
+/* Un instantané choisi plutôt que l'instant présent. Le tracé s'en sert : le
+   shove écarte du cuivre dès le premier clic, bien avant le dépôt, si bien que
+   l'état à retenir pour un Ctrl+Z est celui d'AVANT le geste — pas celui d'un
+   tracé à moitié fait, cuivre déjà poussé et pistes pas encore posées. */
+function pushSnap(snap){
+  S.undo.push(snap||serialize());
   if(S.undo.length>80)S.undo.shift();
   S.redo.length=0;S.dirty=true;
 }
@@ -356,10 +361,13 @@ function normDoc(d){
   // l'angle des pistes : liste fermée, 45° pour tout ce qui n'en dit rien —
   // les fichiers antérieurs à ce réglage ont été tracés ainsi
   const cm=dStr(r.corner,8);
+  // idem pour la conduite face à un obstacle : les fichiers muets se poussent
+  const rm=dStr(r.route,8);
   out.rule={edge:dRange(r.edge,0.4,0,100),thermal:dRange(r.thermal,0.5,0,100),
             mask:dRange(r.mask,0.05,-100,100),paste:dRange(r.paste,0,-100,100),
             viaFinish:VIA_FINISH[vf]?vf:(r.tented===false?"open":"tented"),
-            corner:CORNER_MODES[cm]?cm:"45"};
+            corner:CORNER_MODES[cm]?cm:"45",
+            route:ROUTE_MODES[rm]?rm:"shove"};
   /* largeurs de la V1.0 : loadDoc() en tire deux classes quand `classes`
      manque, on les laisse donc passer */
   for(const k of ["w","clr","via","drill","wPwr"])
@@ -434,7 +442,7 @@ function loadDoc(d,keepView){
   S.fabOrigin=d.fabOrigin;
   const r=d.rule;
   S.rule={edge:r.edge, thermal:r.thermal, mask:r.mask, paste:r.paste,
-          viaFinish:r.viaFinish, corner:r.corner};
+          viaFinish:r.viaFinish, corner:r.corner, route:r.route};
   if(d.classes){
     S.classes=d.classes;S.netClass=d.netClass;
   }else{
@@ -689,6 +697,81 @@ function collinearRun(t0){
   }
   return run;
 }
+/* Cuivre d'une couche que la pastille d'un via touche : l'extrémité posée
+   dessus, mais aussi le segment qui ne fait que la traverser — rien n'oblige
+   un via à tomber au bout d'une ligne. C'est le critère électrique, le même
+   que celui de la connectivité : deux cuivres qui se recouvrent sont reliés.
+   L'exiger au micron sur le centre du via, c'est arrêter la piste au premier
+   changement de couche dont les bouts ne tombent pas pile sur l'axe. */
+function viaTracks(v,L,net){
+  const out=[];
+  for(const t of S.tracks){
+    if(t.l!==L||t.net!==net)continue;
+    if(segDist(v.x,v.y,t.x1,t.y1,t.x2,t.y2)<=v.d/2+t.w/2+EPS_J)out.push(t);
+  }
+  return out;
+}
+/* Piste entière : on part d'un segment et on suit de proche en proche les
+   extrémités qui se touchent, tant qu'on reste sur le même net. Les
+   embranchements sont pris eux aussi — « toute la piste » veut dire tout le
+   cuivre d'un seul tenant, pas seulement la ligne posée sous le pointeur.
+
+   `tousNiv` fait franchir les vias, autant de fois qu'il en faut : top, puis
+   bottom, puis top à nouveau, la piste est prise en entier sur toutes les
+   couches qu'elle traverse, vias compris — les laisser derrière déchirerait le
+   changement de couche au premier glissement. Le franchissement se juge sur le
+   segment entier et non sur ses seules extrémités : un via posé au milieu
+   d'une ligne relie tout autant. Chaque via n'est ouvert qu'une fois, ce qui
+   borne le balayage à ceux que la piste touche vraiment. */
+function trackRun(t0,tousNiv){
+  const tracks=new Set([t0]), vias=new Set(), stack=[t0];
+  const prendre=t=>{
+    if(tracks.has(t)||t.net!==t0.net)return;
+    tracks.add(t);stack.push(t);
+  };
+  while(stack.length){
+    const t=stack.pop();
+    for(const en of [1,2]){
+      const x=en===1?t.x1:t.x2, y=en===1?t.y1:t.y2;
+      for(const o of jointAt(x,y,t.l).ends)prendre(o.t);
+    }
+    if(!tousNiv)continue;
+    for(const v of S.vias){
+      if(vias.has(v)||t.l<v.a||t.l>v.b)continue;
+      // un via nommé autrement n'est pas de cette piste ; sans nom, il suit
+      if(v.net&&t0.net&&v.net!==t0.net)continue;
+      if(segDist(v.x,v.y,t.x1,t.y1,t.x2,t.y2)>v.d/2+t.w/2+EPS_J)continue;
+      vias.add(v);
+      for(let L=v.a;L<=v.b;L++)
+        if(L!==t.l)for(const q of viaTracks(v,L,t.net))prendre(q);
+    }
+  }
+  return {tracks,vias};
+}
+/* Maj+clic sur une piste : la sélection prend la piste entière, sur la couche
+   où elle est. Un second Maj+clic au même endroit, aussitôt derrière, l'étend
+   aux autres couches en franchissant les vias. Le doublé se reconnaît ici même
+   et non sur `dblclick` : celui-ci arrive après les deux `pointerdown`, la
+   sélection est déjà faite et le glissement déjà armé. On retient la piste
+   prise au clic précédent — le second clic peut tomber sur un autre de ses
+   segments, il compte quand même. */
+const RUN_DBL=500;                     // ms entre les deux clics du doublé
+let runClick=null;
+function selectRun(t0,e){
+  const now=Date.now();
+  const twice=!!(runClick&&runClick.at&&now-runClick.at<=RUN_DBL&&runClick.set.has(t0));
+  const r=trackRun(t0,twice);
+  // Ctrl en plus de Maj : la piste entière s'ajoute à ce qui est déjà pris
+  if(!(e&&(e.ctrlKey||e.metaKey)))clearSel();
+  for(const t of r.tracks)S.sel.tracks.add(t);
+  for(const v of r.vias)S.sel.vias.add(v);
+  runClick={at:now,set:r.tracks};
+  const n=r.tracks.size;
+  hint(twice
+    ? "Piste entière sur toutes les couches : "+n+" segment(s), "+r.vias.size+" via(s)."
+    : "Piste entière : "+n+" segment(s). Un second Maj+clic la prend sur toutes les couches.");
+  return r;
+}
 /* ==========================================================================
    Les murs d'une articulation
    --------------------------------------------------------------------------
@@ -887,6 +970,8 @@ function beginMove(){
   drag.via=[...S.sel.vias].map(v=>({v,x:v.x,y:v.y}));
   drag.joints=moveJoints();
   armClear([...movedTracks()],[...S.sel.vias],[...S.sel.fps].map(fpById).filter(Boolean));
+  // les chanfreins présents AVANT le geste : ce sont eux qu'on rendra s'ils se replient
+  drag.diag=diagTracks([...movedTracks()]);
   // un boîtier emmène ses pastilles, une zone son contour : c'est un autre
   // problème que l'isolation d'une piste, on laisse alors le geste libre — et
   // le retour en arrière ne saurait de toute façon pas replacer le boîtier
@@ -1007,7 +1092,18 @@ function trimRun(run,L){
 }
 /* `dry` : on se contente de dire si le coude s'y prête, sans rien changer —
    c'est ce qui évite de poser un pas d'annulation pour rien. */
-function mitreAt(l,x,y,dry){
+/* Longueur du chanfrein posé d'office au dépôt, en largeurs de piste. Le seuil
+   se prend sur la largeur comme tous les autres de ce fichier : il est ainsi
+   juste pour une piste de 0,2 mm comme pour une de 1 mm, sans réglage.
+   Pourquoi le borner : sans borne, le chanfrein vaut la jambe la plus courte du
+   coude — sur un coude de 45 mm par 16, il remplace les DEUX jambes par une
+   seule diagonale de 16 mm, et le coude se retrouve 16 mm avant l'endroit
+   cliqué. Géométriquement c'est le tracé qu'aurait posé le routeur d'un seul
+   clic ; à l'usage, c'est un clic qui disparaît. La touche D, elle, garde le
+   chanfrein maximal : là, c'est un geste voulu. */
+const MITRE_AUTO=4;
+/* `cap` borne le chanfrein à `cap` largeurs de piste ; 0 ou absent = maximal. */
+function mitreAt(l,x,y,dry,cap){
   if(padAt(l,x,y)||viaAt(l,x,y))return false;
   const j=jointAt(x,y,l);
   if(j.ends.length!==2)return false;
@@ -1023,9 +1119,14 @@ function mitreAt(l,x,y,dry){
      ce qui rend du cuivre aux deux restes au lieu d'en laisser un famélique.
      Un chanfrein plus court que la piste ne veut rien dire : on n'y touche pas. */
   const MIN=minJog(A.t.w);
-  const gap=Math.abs(ra.len-rb.len);
   let L=Math.min(ra.len,rb.len);
-  if(gap>1e-9&&gap<MIN)L=r3(L-MIN);
+  if(cap>0)L=Math.min(L,r3(cap*A.t.w));
+  /* Ce qui reste d'une jambe après le chanfrein : nul quand le chanfrein l'a
+     mangée entière, sinon la différence. Un reste plus court que la piste est
+     une écharde — celle-là même que le tracé s'interdit de poser. On recule
+     alors d'une largeur de plus, ce qui rend du cuivre aux DEUX restes. */
+  const maigre=v=>v>1e-9&&v<MIN;
+  if(maigre(r3(ra.len-L))||maigre(r3(rb.len-L)))L=r3(L-MIN);
   if(L<MIN)return false;
   if(dry)return true;
   const lay=A.t.l, net=A.t.net, w=A.t.w;
@@ -1189,9 +1290,41 @@ function tendMagnet(g,mx,my,nx,ny,tol){
   }
   return best;
 }
+/* ==========================================================================
+   Le ménage du relâchement
+   --------------------------------------------------------------------------
+   Tirer une piste raccourcit ses jambes. Passé un certain point, le chanfrein
+   qu'elles portaient se replie sur l'articulation — c'est voulu, `wallChain`
+   tend la piste comme un fil plutôt que de la laisser revenir sur elle-même —
+   et le coude redevient FRANC. On voulait raccourcir, on récolte un angle
+   droit, qu'il faudrait ensuite reprendre à la main.
+   Le dépôt d'un tracé rattrape déjà cela (`chamferPosed`). Le glissement le
+   rattrape ici, à la même borne et sur les seules articulations que le geste a
+   touchées. Le `push()` du premier mouvement couvre l'ensemble : le chanfrein
+   se défait avec le glissement, d'un seul Ctrl+Z.
+   Au relâchement, et non pendant : le glissement s'applique en absolu depuis
+   les positions relevées au départ (`drag.trk`, `drag.joints`). Créer ou
+   supprimer du cuivre en cours de geste détacherait ces références, et la
+   piste cesserait de suivre la souris.
+   ========================================================================== */
 function pruneAfterDrag(list){
   pruneDeadTracks();
   if(pruneHooks(list))pruneDeadTracks();
+}
+/* Les chanfreins que le geste emmène : les segments en diagonale du cuivre
+   concerné. Si l'un d'eux a disparu au relâchement, c'est qu'il s'est replié
+   sur son articulation — et le coude qu'il adoucissait est redevenu franc. */
+function diagTracks(list){
+  return list.filter(t=>Math.abs(t.x1-t.x2)>1e-9&&Math.abs(t.y1-t.y2)>1e-9);
+}
+/* Rendre au coude le 45° que le glissement lui a pris. On ne touche QU'À cela :
+   un coude déjà franc avant le geste le reste — le glissement n'est pas le
+   moment de réécrire un tracé qu'on n'a pas demandé à réécrire. */
+function mitreAfterDrag(list,avant){
+  if(!avant||!avant.length)return false;
+  if(!avant.some(t=>S.tracks.indexOf(t)<0))return false;   // aucun chanfrein perdu
+  chamferPosed(list.filter(t=>S.tracks.indexOf(t)>=0));
+  return true;
 }
 function projOnSeg(px_,py_,t){
   const dx=t.x2-t.x1, dy=t.y2-t.y1, l2=dx*dx+dy*dy;
@@ -1488,6 +1621,35 @@ function cornerMode(){
   const m=S.rule&&S.rule.corner;
   return CORNER_MODES[m]?m:"45";
 }
+/* ==========================================================================
+   Ce que le routeur fait d'un obstacle
+   --------------------------------------------------------------------------
+   Les trois conduites du routeur de KiCad, rangées avec le document
+   (`S.rule.route`) :
+     « shove » pousser  — le cuivre gênant s'écarte, de proche en proche ;
+     « walk »  contourner — on se faufile, rien ne bouge ;
+     « mark »  signaler — le trajet fautif s'affiche et refuse de se poser.
+   Le défaut est « shove », comme dans KiCad. « mark » est l'ancienne conduite
+   de cet éditeur : elle reste disponible pour qui veut poser lui-même chaque
+   coude, et sert de dernier recours aux deux autres quand rien ne passe.
+   ========================================================================== */
+const ROUTE_MODES={shove:"pousser le cuivre",walk:"contourner",mark:"signaler"};
+function routeMode(){
+  const m=S.rule&&S.rule.route;
+  return ROUTE_MODES[m]?m:"shove";
+}
+function setRouteMode(m){
+  if(!ROUTE_MODES[m]||m===routeMode())return;
+  push();
+  S.rule.route=m;
+  touch();
+  if(S.route)updateRoute(S.mouse.x,S.mouse.y);
+  buildRules();draw();
+  hint("Face à un obstacle : "+ROUTE_MODES[m]+
+       (m==="shove"?" — le cuivre voisin s'écarte pour laisser passer."
+        :m==="walk"?" — la piste se faufile, rien d'autre ne bouge."
+        :" — le trajet fautif est signalé, à vous de le contourner."));
+}
 /* Longueur en deçà de laquelle un décrochement n'est plus du cuivre utile. Le
    seuil se prend sur la largeur de la piste : un épaulement plus court que la
    piste n'est pas un coude, c'est une écharde de gravure. */
@@ -1595,32 +1757,25 @@ function magnet(x,y,layer,skip){
 }
 /* Repousse un point hors des obstacles de sa couche : on cherche à chaque
    passe le manque d'isolation le plus criant et on s'en écarte, jusqu'à ce que
-   plus rien ne dépasse. Quelques passes suffisent, même dans un couloir. */
+   plus rien ne dépasse. Quelques passes suffisent, même dans un couloir.
+   Le balayage des trois listes est passé dans l'index (`11-pns-node.js`), et
+   surtout : **on ne fuit plus que ce qui ne s'écarte pas**. En mode
+   « pousser », une piste ou un via gênants vont s'effacer d'eux-mêmes ; en
+   repoussant le curseur par-dessus, on ferait deux fois le même travail, l'un
+   contre l'autre, et l'arrivée fuirait le cuivre que le shove vient justement
+   de dégager. Une pastille, elle, ne bouge jamais, sous aucun mode. */
 function pushClear(pt,l,net,w){
   if(!S.avoid||!net)return {x:pt.x,y:pt.y,pushed:false};
+  const dur=routeMode()==="shove"?"P":"PSV";
+  const N=pnsWorld();
   let p={x:pt.x,y:pt.y}, moved=false;
-  for(let it=0;it<8;it++){
+  for(let k=0;k<8;k++){
+    const sonde=pnsItemSeg(l,net,w,p.x,p.y,p.x,p.y,null);
     let best=null;
-    const test=(d,need,dx,dy)=>{
-      const def=need-d;
-      if(def>1e-4&&(!best||def>best.def)){
-        const len=Math.hypot(dx,dy);
-        best={def,dx:len?dx/len:1,dy:len?dy/len:0};
-      }
-    };
-    for(const fp of S.fps)
-      for(const q of padsWorld(fp)){
-        if(!padLayers(fp,q).includes(l)||q.net===net)continue;
-        test(padDist(p.x,p.y,q)-w/2,clrPair(net,q.net),p.x-q.x,p.y-q.y);
-      }
-    for(const v of S.vias){
-      if(l<v.a||l>v.b||v.net===net)continue;
-      test(dist(p.x,p.y,v.x,v.y)-v.d/2-w/2,clrPair(net,v.net),p.x-v.x,p.y-v.y);
-    }
-    for(const t of S.tracks){
-      if(t.l!==l||t.net===net)continue;
-      const c=projOnSeg(p.x,p.y,t);
-      test(dist(p.x,p.y,c.x,c.y)-t.w/2-w/2,clrPair(net,t.net),p.x-c.x,p.y-c.y);
+    for(const o of N.colliding(sonde)){
+      if(dur.indexOf(o.k)<0)continue;
+      const e=pnsPointEscape(o,p,net,w);
+      if(e&&(!best||e.def>best.def))best=e;
     }
     if(!best)break;
     p={x:r3(p.x+best.dx*(best.def+0.005)),y:r3(p.y+best.dy*(best.def+0.005))};
@@ -1630,23 +1785,19 @@ function pushClear(pt,l,net,w){
 }
 /* Le point repoussé ne garantit pas le segment : on vérifie le trajet complet.
    `skip` réunit ce qui bouge avec le segment examiné : deux morceaux emmenés par
-   le même geste ne se gênent pas entre eux, ils gardent leur écart. */
+   le même geste ne se gênent pas entre eux, ils gardent leur écart.
+   Le balayage des trois listes est passé dans le modèle du monde
+   (`11-pns-node.js`) : même mesure, même tolérance — celle du DRC, désormais,
+   et non plus un dixième de micron plus large — mais interrogée par l'index
+   spatial au lieu de la carte entière. Le glissement d'une piste sur une carte
+   chargée ne balaie plus dix mille pastilles à chaque pixel.
+   Le geste peut muter du cuivre sans passer par `touch()` : c'est sans danger
+   ici, tout ce qu'il déplace étant justement dans `skip`. */
 function segClearBad(s,l,net,w,ignoreObj,skip){
-  const hors=o=>(ignoreObj&&ignoreObj===o)||(skip&&skip.has(o));
-  for(const fp of S.fps)
-    for(const q of padsWorld(fp)){
-      if(!padLayers(fp,q).includes(l)||q.net===net||hors(q)||hors(fp))continue;
-      if(segPadDist({x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2,w},q)<clrPair(net,q.net)-1e-4)return true;
-    }
-  for(const v of S.vias){
-    if(l<v.a||l>v.b||v.net===net||hors(v))continue;
-    if(segDist(v.x,v.y,s.x1,s.y1,s.x2,s.y2)-v.d/2-w/2<clrPair(net,v.net)-1e-4)return true;
-  }
-  for(const t of S.tracks){
-    if(t.l!==l||t.net===net||hors(t))continue;
-    if(segSegDist({x1:s.x1,y1:s.y1,x2:s.x2,y2:s.y2},t)-t.w/2-w/2<clrPair(net,t.net)-1e-4)return true;
-  }
-  return false;
+  const sk=new Set(skip||[]);
+  if(ignoreObj)sk.add(ignoreObj);
+  sk.add(s);                          // une piste ne se gêne jamais elle-même
+  return pnsWorld().segBad(s,l,net,w,sk);
 }
 /* ==========================================================================
    L'anti-collision pendant un glissement
@@ -1706,9 +1857,27 @@ function startRoute(x,y,exact){
   const t=exact?{x:r3(x),y:r3(y),
                  net:(netAtPoint(x,y,S.active)||{}).net||""}:routeTarget(x,y);
   const net=t.net||"";
+  /* `snap` : l'état de la carte avant le geste. Le shove déplace du cuivre dès
+     le premier clic ; sans cet instantané, ni l'abandon ni le Ctrl+Z ne
+     sauraient le remettre en place. */
   S.route={layer:S.active,net,w:defaultWidth(net),
-           pt:{x:t.x,y:t.y},done:[],vias:[],preview:[],flip:false,bad:false,pushed:false};
+           pt:{x:t.x,y:t.y},done:[],vias:[],preview:[],flip:false,bad:false,pushed:false,
+           shove:null,shoved:false,snap:serialize()};
   if(net)buildList();
+  /* Un départ qui n'accroche rien donne une piste SANS NET, et une piste sans
+     net n'est reliée à personne : le chevelu la compte toujours comme non
+     routée, l'anti-collision se tait — un net vide n'a pas d'isolation à
+     défendre — et le DRC en fait trois défauts après coup. On visait la
+     pastille et on l'a manquée de peu : l'aimant ne porte que sur quelques
+     pixels d'écran, et le cuivre posé passe alors À CÔTÉ de la pastille au lieu
+     d'entrer dedans. C'était silencieux ; ça se dit maintenant, au moment où
+     c'est encore rattrapable d'un Échap. */
+  if(!net){
+    hint("Départ sur rien : cette piste n'aura aucun net, et ne reliera donc "+
+         "rien. Échap pour reprendre — visez le cuivre de la pastille, du via "+
+         "ou du bout de piste à prolonger.");
+    return;
+  }
   hint("Clic pour poser un coude · « / » bascule la posture du coude · V pose un via et "+
        "change de couche · touches 1-8 : couche · Échap termine.");
 }
@@ -1720,16 +1889,61 @@ function startRoute(x,y,exact){
 function routeJog(R,t){
   return (t&&(t.obj||t.net))?0:minJog(R.w);
 }
+/* ==========================================================================
+   Le trajet d'un clic
+   --------------------------------------------------------------------------
+   Le coude à 45° du clic donne la route directe. Si elle est libre, c'est
+   celle-là, et il n'y a rien à décider. Sinon la règle en vigueur
+   (`S.rule.route`) dit quoi faire :
+
+     « shove » on demande au cuivre gênant de s'écarter (`pnsShove`). En cas
+               d'échec — un couloir sans issue, une pastille des deux côtés —
+               on se rabat sur le contournement, puis sur le signalement ;
+     « walk »  on se faufile seulement (`pnsWalkaround`) ;
+     « mark »  on ne tente rien : le trajet fautif s'affiche et refuse de se
+               poser. C'est l'ancienne conduite de l'éditeur.
+
+   Le résultat du shove n'est pas appliqué ici : il voyage dans `R.shove`
+   jusqu'au clic, et c'est `stepRoute` qui le verse. Tant que la souris bouge,
+   ce n'est qu'un aperçu — que le rendu dessine, pour qu'on voie le cuivre
+   s'écarter avant de s'engager.
+   ========================================================================== */
+function routeSegsTo(R,t){
+  const seg=s=>Object.assign({l:R.layer},s);
+  // `jog` imposé : c'est la saisie au clavier qui décide, pas l'aimant angulaire
+  const jog=(t&&t.jog!=null)?t.jog:routeJog(R,t);
+  const direct=routeCorner(R.pt,{x:t.x,y:t.y},routePosture(R,t),null,jog);
+  if(!direct.length)return {segs:[],bad:false};
+  if(!S.avoid||!R.net)return {segs:direct.map(seg),bad:false};
+  const N=pnsWorld();
+  // l'arrivée accrochée est une destination, pas un obstacle
+  const skip=new Set();
+  if(t&&t.obj)skip.add(t.obj);
+  const line={l:R.layer,net:R.net,w:R.w,pts:pnsPts(direct)};
+  if(!N.firstObstacle(line,skip))return {segs:direct.map(seg),bad:false};
+  const mode=routeMode();
+  if(mode==="shove"){
+    const r=pnsShove(N,line,skip,Date.now());
+    if(r.ok)
+      return {segs:pnsSegs(r.pts).map(seg),bad:false,
+              contourne:pnsLen(r.pts)>pnsLen(line.pts)+1e-6,shove:r};
+  }
+  if(mode!=="mark"){
+    const tour=pnsWalkaround(N,line,skip);
+    if(tour.ok)return {segs:pnsSegs(tour.pts).map(seg),bad:false,contourne:true};
+  }
+  return {segs:direct.map(seg),bad:true};
+}
 function updateRoute(x,y){
   const R=S.route;
   if(!R)return;
   const t=routeTarget(x,y);
-  R.preview=routeCorner(R.pt,{x:t.x,y:t.y},routePosture(R,t),null,routeJog(R,t))
-                 .map(s=>Object.assign({l:R.layer},s));
-  R.end=t;R.pushed=!!t.pushed;
+  const r=routeSegsTo(R,t);
+  R.preview=r.segs;
+  R.end=t;R.pushed=!!t.pushed;R.contourne=!!r.contourne;R.shove=r.shove||null;
   const last=R.preview[R.preview.length-1];
   if(last){R.end.x=last.x2;R.end.y=last.y2;}     // l'aimant a pu déplacer l'arrivée
-  R.bad=routeBad(R.preview,R.layer,R.net,R.w,R.end.obj);
+  R.bad=r.bad;
 }
 /* même chose qu'updateRoute, mais vers un point imposé : c'est la saisie au
    clavier qui décide, pas le curseur */
@@ -1737,12 +1951,13 @@ function routeToPoint(pt){
   const R=S.route;
   if(!R)return;
   const at=netAtPoint(pt.x,pt.y,R.layer);
-  R.preview=routeCorner(R.pt,pt,routePosture(R,pt),null,at?0:minJog(R.w))
-                 .map(s=>Object.assign({l:R.layer},s));
+  const t={x:pt.x,y:pt.y,net:(at||{}).net||null,pad:false,jog:at?0:minJog(R.w)};
+  const r=routeSegsTo(R,t);
+  R.preview=r.segs;
   const last=R.preview[R.preview.length-1];
-  R.end={x:last?last.x2:pt.x,y:last?last.y2:pt.y,net:(at||{}).net||null,pad:false};
-  R.pushed=false;
-  R.bad=routeBad(R.preview,R.layer,R.net,R.w,R.end.obj);
+  R.end={x:last?last.x2:pt.x,y:last?last.y2:pt.y,net:t.net,pad:false};
+  R.pushed=false;R.contourne=!!r.contourne;R.shove=r.shove||null;
+  R.bad=r.bad;
 }
 function stepRoute(){
   const R=S.route;
@@ -1752,10 +1967,21 @@ function stepRoute(){
          " mm : contournez l'obstacle, ou coupez l'anti-collision pour forcer.");
     return;
   }
+  /* Le cuivre que le shove a écarté se pose ici, en même temps que le trajet
+     qui l'a poussé : l'aperçu devient la carte. */
+  /* L'optimiseur ne nettoie que ce que le ROUTEUR a produit — un tour
+     d'enveloppe, une poussée. Un coude posé au doigt est une intention, pas un
+     détour : le raccourcir serait manger le clic de l'utilisateur. */
+  const auto=!!R.contourne||!!R.shove;
+  if(R.shove&&pnsApply(R.shove)){R.shoved=true;R.shove=null;refreshPanels();}
   for(const s of R.preview)R.done.push(s);
   const last=R.preview[R.preview.length-1];
   R.pt={x:last.x2,y:last.y2};
   R.preview=[];
+  /* Le coude qu'on vient de figer repasse à l'optimiseur : un tour d'enveloppe
+     laisse des sommets dont plus rien ne justifie l'existence une fois
+     l'obstacle passé. C'est ce qui donne au tracé son allure finie. */
+  if(auto)routeOptimizeTail(R);
   R.flip=false;                  // la bascule ne valait que pour ce coude
   if(R.end) {
     if (R.end.via && !R.end.net && R.net && R.end.obj) {
@@ -1812,8 +2038,8 @@ function commitRoute(){
   const R=S.route;
   S.route=null;
   if(!R)return;
-  if(!R.done.length){touch();draw();return;}
-  push();
+  if(!R.done.length&&!R.shoved){touch();draw();return;}
+  pushSnap(R.snap);
   let prev=null;
   const posed=[];
   for(const s of R.done){
@@ -1840,10 +2066,16 @@ function commitRoute(){
    `mitreAt` refuse de lui-même ce qui ne s'y prête pas : une pastille ou un via
    au coude, deux largeurs différentes, un chanfrein plus court que la piste. Le
    coude reste alors tel quel, et c'est au contrôle DRC de le dire.
+   Le chanfrein posé ici est **borné** (`MITRE_AUTO`) : il casse l'angle sans
+   déplacer le coude. Maximal, il aurait remplacé les deux jambes par la plus
+   grande diagonale possible — et le clic qui avait posé ce coude aurait
+   disparu. C'est la touche D qui donne le chanfrein maximal, sur demande.
    Le chanfrein ne fait que couper l'intérieur du coude : il n'approche aucun
    voisin, et ne peut donc pas créer de faute d'isolation là où il n'y en avait
    pas. La sélection, elle, n'a rien à voir avec un dépôt : on la remet comme on
-   l'a trouvée, `mitreAt` ayant l'habitude d'y ranger ce qu'il chanfreine. */
+   l'a trouvée, `mitreAt` ayant l'habitude d'y ranger ce qu'il chanfreine.
+   Le glissement passe par la même porte, au relâchement — voir
+   `pruneAfterDrag`. « Posé » s'y lit donc « ce que le geste vient d'écrire ». */
 function chamferPosed(posed){
   if(cornerMode()!=="45"||!posed.length)return;
   const keep=[...S.sel.tracks];
@@ -1854,15 +2086,20 @@ function chamferPosed(posed){
       if(seen.has(k))continue;
       seen.add(k);pts.push({l:t.l,x,y});
     }
-  for(const p of pts)mitreAt(p.l,p.x,p.y,false);
+  for(const p of pts)mitreAt(p.l,p.x,p.y,false,MITRE_AUTO);
   S.sel.tracks.clear();
   for(const t of keep)if(S.tracks.indexOf(t)>=0)S.sel.tracks.add(t);
 }
 function cancelRoute(){
   const R=S.route;
   if(!R)return;
+  S.route=null;
+  /* Le shove a déjà écarté du cuivre : abandonner le tracé doit le remettre où
+     il était. On repart de l'instantané du départ — une poussée s'étant
+     propagée de proche en proche, c'est le seul retour sûr. */
+  if(R.shoved&&R.snap){loadDoc(JSON.parse(R.snap),true);return;}
   for(const v of R.vias){const i=S.vias.indexOf(v);if(i>=0)S.vias.splice(i,1);}
-  S.route=null;touch();draw();
+  touch();draw();
 }
 function backRoute(){
   const R=S.route;
@@ -2224,7 +2461,11 @@ cv.addEventListener("pointerdown",e=>{
   if(S.mode==="cut"){
     cutClick(p.x,p.y);draw();return;
   }
-  // sélection : les extrémités d'une piste déjà sélectionnée passent devant tout
+  /* sélection : les extrémités d'une piste déjà sélectionnée passent devant
+     tout — sauf sous Maj, réservé à la prise de la piste entière : sinon un
+     Maj+clic tombant sur un bout déjà pris partirait en glissement au lieu de
+     sélectionner. */
+  if(!e.shiftKey)
   for(const t of S.sel.tracks){
     for(const en of [1,2]){
       const ex=en===1?t.x1:t.x2, ey=en===1?t.y1:t.y2;
@@ -2284,6 +2525,17 @@ cv.addEventListener("pointerdown",e=>{
     }
   }
   const h=hitTest(p.x,p.y,e);
+  /* Maj+clic sur une piste : c'est la piste entière qui est prise, et le
+     doublé l'étend à toutes les couches (`selectRun`). Ailleurs — empreinte,
+     via, zone, vide — Maj garde son rôle d'ajout, comme Ctrl. */
+  if(e.shiftKey&&h&&h.track){
+    selectRun(h.track,e);
+    const tn=h.track.net||null;
+    if(tn){S.hlNet=tn;revealNet(tn);}
+    drag={move:true,x:p.x,y:p.y,moved:false,dx:0,dy:0,
+          trk:null,via:null,joints:null};
+    refreshPanels();draw();return;
+  }
   // Ctrl et Maj font la même chose : ajouter à la sélection, ou en retirer
   const add=e.shiftKey||e.ctrlKey||e.metaKey;
   if(h && h.fpText) {
@@ -2458,7 +2710,11 @@ cv.addEventListener("pointerup",e=>{
     S.hover=null;drag=null;refreshPanels();draw();return;
   }
   if(drag&&drag.move&&drag.moved){
-    pruneAfterDrag([...movedTracks()]);
+    const bouge=[...movedTracks()], avant=drag.diag;
+    pruneAfterDrag(bouge);
+    if(mitreAfterDrag(bouge,avant))
+      hint("Le coude a repris son 45° : le chanfrein s'était replié en "+
+           "raccourcissant la piste.");
     drag=null;refreshPanels();draw();return;
   }
   if(drag&&drag.marquee){

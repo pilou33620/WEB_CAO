@@ -7,7 +7,8 @@ de la netlist produite par l'éditeur schématique.
 
 - **Projet éclaté** : ouvrir `editeur-pcb.html`. C'est la version à modifier.
 - **Fichier unique** : `dist/editeur-pcb.html`, autonome, à envoyer ou archiver.
-  Il est régénéré par `python3 outils/build-monofichier.py`.
+  Il est régénéré par `python3 outils/build-monofichier.py` (sous Windows,
+  `python` : `python3` y renvoie vers le raccourci du Microsoft Store).
 
 Les scripts sont des scripts classiques, pas des modules : `editeur-pcb.html`
 s'ouvre directement depuis le disque, sans serveur local.
@@ -31,6 +32,11 @@ js/06-panels.js          onglets de couches, listes, règles, propriétés,
 js/07-app.js             fichiers, câblage des boutons, initialisation
 js/08-empreinte.js       fenêtre d'édition d'empreinte, bibliothèque personnelle
 js/09-diffpair.js        paires différentielles : règles, tracé couplé, impédance
+js/10-pns-geom.js        routeur : enveloppes convexes, polylignes, trame 45°
+js/11-pns-node.js        routeur : modèle du monde, index spatial, branches
+js/12-pns-walk.js        routeur : contournement d'obstacle
+js/13-pns-shove.js       routeur : poussée du cuivre gênant, de proche en proche
+js/14-pns-placer.js      routeur : optimiseur du trajet posé
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -77,7 +83,14 @@ moment où ils s'exécutent. La règle pratique :
    antérieurs lui empruntent — `drawDp()` dans `paint()`, `dpDrc()` dans
    `runDrc()`, `buildDiffPairs()` dans `refreshPanels()`, `dpOfNet()` dans
    `clrPair()` — passent donc tous par un `typeof … === "function"`.
-9. `../commun/workspace.js` s'initialise tout seul et appelle `resize()` puis
+9. `10-pns-*` à `14-pns-*` — le moteur de routage — viennent après
+   `09-diffpair` pour la même raison qu'`08` et `09` : rien n'y tourne au
+   chargement, tout y est appelé au clic. `05-tools` et `09-diffpair` les
+   appellent donc sans précaution particulière, la résolution se faisant au
+   moment de l'appel. Entre eux l'ordre compte, en revanche, et il est celui
+   des numéros : la géométrie, puis le monde, puis le contournement, puis la
+   poussée qui s'en sert, puis l'optimiseur.
+10. `../commun/workspace.js` s'initialise tout seul et appelle `resize()` puis
    `fit()` : il ferme la marche.
 
 À l'intérieur d'un fichier, une fonction peut en appeler une autre définie
@@ -100,6 +113,11 @@ Gerber décrivent le même cuivre.
 
 - `02-connectivity` appelle `padFill` et `clipToBoard` de `03-render` pour
   rasteriser le remplissage réel des zones.
+- `02-connectivity` (le DRC) et `05-tools` (le tracé et le glissement)
+  interrogent tous deux l'index spatial de `11-pns-node`. C'est voulu, et c'est
+  la garantie que le routeur et le contrôle jugent le même cuivre au même
+  seuil : `pnsPairGap` rappelle les mesures de `02-connectivity`, et `PNS_EPS`
+  vaut sa tolérance.
 - `04-fabrication` reprend les mêmes règles de dégagement et de liaison
   thermique que `03-render`.
 - `06-panels` et `07-app` ne sont appelés que par l'interface.
@@ -383,6 +401,42 @@ modificateur enfoncé s'ajoute à ce qui est déjà pris. Le déplacement, la
 rotation, le retournement et la suppression travaillent depuis toujours sur
 l'ensemble de la sélection.
 
+**Prendre une piste entière.** Sur une piste, `Maj` fait autre chose qu'ajouter
+un segment : `Maj+clic` prend la **piste entière**, tout le cuivre d'un seul
+tenant à partir du segment cliqué (`trackRun`, `js/05-tools.js`). Le parcours
+suit les extrémités qui se touchent tant qu'il reste sur le même net, et prend
+les embranchements avec — une piste n'est pas une ligne, c'est ce qui tient
+ensemble. Le routeur pose un segment par clic et une ligne droite se retrouve
+coupée par tout ce qu'elle rencontre : sans ce geste, déplacer une liaison
+demandait de rattraper ses morceaux un par un.
+
+`Maj+double-clic` **étend la prise à toutes les couches** : le second clic
+franchit les vias et emporte la piste sur chaque couche qu'elle traverse, les
+vias de passage compris — les laisser derrière déchirerait le changement de
+couche au premier glissement. Il en franchit **autant qu'il en faut** : dessus,
+dessous, dessus à nouveau, la piste est prise en entier. Le doublé se reconnaît
+dans `pointerdown` (`selectRun`) et non sur l'événement `dblclick` : celui-ci
+n'arrive qu'après les deux appuis, quand la sélection est déjà faite et le
+glissement déjà armé. Le second clic n'a pas à retomber sur le même segment —
+n'importe lequel de ceux que le premier venait de prendre fait l'affaire.
+
+Le franchissement se juge **géométriquement**, sur le critère électrique de la
+connectivité : un via est de la piste dès que sa pastille recouvre le cuivre
+(`viaTracks`, `js/05-tools.js`), et non seulement quand son axe tombe au micron
+sur une extrémité. Un bout posé un peu de travers dans la pastille, un via
+planté au milieu d'une ligne : dans les deux cas le courant passe, donc la
+sélection passe. Le test porte sur le **segment entier** et pas sur ses seules
+extrémités, et chaque via n'est ouvert qu'une fois — le balayage reste borné à
+ceux que la piste touche vraiment. Un via portant un autre nom de net arrête
+net le parcours : ce n'est pas cette piste-là.
+
+`Ctrl` garde son rôle d'ajout par-dessus : `Ctrl+Maj+clic` **ajoute** la piste
+entière à ce qui est déjà sélectionné au lieu de repartir de zéro. Et comme
+`Maj` est pris, il n'attrape plus les extrémités d'une piste déjà sélectionnée :
+un `Maj+clic` tombant sur un bout sélectionne au lieu de partir en glissement.
+Le pied de page dit ce qui vient d'être pris — nombre de segments, et de vias
+au doublé.
+
 **Dérouter la sélection seule.** `U`, ou le bouton *Dérouter* de la barre
 d'outils, ou celui que le panneau Propriétés propose sur une sélection mêlée
 (`unrouteSel`, `js/05-tools.js`). C'est la touche `U` de l'éditeur schématique,
@@ -610,6 +664,87 @@ sur liste fermée — un fichier antérieur à ce réglage, ou qui raconte n'imp
 quoi, se lit à 45°. Rien de ce qui est déjà posé ne bouge quand on en change :
 la règle vaut pour la suite du tracé.
 
+## Le routeur : pousser, contourner, signaler
+
+Face à un obstacle, le tracé ne bute plus. Le moteur `1x-pns-*` reprend la
+méthode du routeur de KiCad — le **PNS**, *Push and Shove* — réimplémentée
+ici à partir de la description de ses algorithmes.
+
+Le choix se fait dans *Règles de tracé*, ligne **Face à un obstacle**, et se
+range avec le document (`S.rule.route`) :
+
+| Règle | Ce qui se passe |
+|---|---|
+| **pousser le cuivre** (défaut) | le cuivre gêné s'écarte, et pousse à son tour ses propres voisins |
+| **contourner** | la piste se faufile autour de l'obstacle ; rien d'autre ne bouge |
+| **signaler** | le trajet fautif s'affiche en rouge et refuse de se poser |
+
+Les trois se rabattent l'une sur l'autre dans cet ordre : ce qui ne peut pas
+être poussé est contourné, ce qui ne peut pas être contourné est signalé. Une
+pastille, elle, ne se pousse jamais — elle appartient à un boîtier placé, ce
+n'est pas au routeur de déménager un composant.
+
+### Ce sur quoi tout repose : l'enveloppe
+
+Une **enveloppe** est le polygone convexe qui entoure un obstacle, gonflé de
+l'isolation exigée plus la demi-largeur de la piste qui circule. La piste
+devient alors une ligne sans épaisseur, et « cette piste respecte-t-elle
+l'isolation ? » se ramène à « cette ligne entre-t-elle dans ce polygone ? ».
+Contourner, c'est longer le bord ; pousser, c'est demander à la ligne adverse
+de longer la nôtre.
+
+L'enveloppe que le routeur longe est un **octogone aligné sur les axes** : ses
+huit pans sont exactement dans les huit sens du tracé. Le tour est donc
+nativement à 45°, sans rien à redresser après coup — et sans risque de
+retomber dans l'obstacle qu'on venait d'éviter en le redressant.
+
+### La branche
+
+Un **nœud** est une vue de tout le cuivre de la carte ; une **branche** est une
+couche mince posée par-dessus, qui ne retient que ce qu'elle ajoute et ce
+qu'elle masque. Le shove essaie dans une branche : si l'essai rate, on jette la
+branche et rien n'a bougé. Tant que la souris se déplace, ce qu'on voit
+s'écarter n'existe que là ; le clic verse la branche dans la carte.
+
+Un traçé entier — les pistes posées **et** tout le cuivre qu'il a poussé — ne
+fait qu'un seul Ctrl+Z. Échap en cours de route remet tout en place de même.
+
+### L'index spatial
+
+Le même nœud sert au tracé, au glissement et au DRC. Le contrôle comptait
+auparavant les conflits deux à deux — le carré du nombre d'objets ; il
+interroge maintenant un voisinage. Sur une carte de 3 000 pistes, 300 vias et
+960 pastilles, la seule partie « isolations » de l'ancien contrôle prenait
+1 258 ms ; le contrôle complet en prend désormais 73.
+
+Les mesures et les seuils n'ont pas bougé d'un micron : `pnsPairGap` rappelle
+les fonctions de `02-connectivity`, et `PNS_EPS` vaut la tolérance du DRC. Un
+routeur plus tolérant que son contrôle poserait du cuivre que le contrôle
+refuse ensuite ; plus sévère, il refuserait des passages qui tiennent.
+
+### L'optimiseur
+
+Chaque tour d'enveloppe laisse derrière lui les sommets du polygone qu'il a
+longé, y compris ceux dont plus rien ne justifie l'existence une fois
+l'obstacle passé. Après chaque clic, la portion qu'on vient de figer repasse
+donc à l'optimiseur, qui essaie de remplacer chaque fenêtre de sommets par le
+coude direct et garde le remplacement s'il est plus court, à 45°, sur la carte
+et sans faute d'isolation.
+
+Il ne nettoie que ce que le **routeur** a produit. Un coude posé au doigt est
+une intention, pas un détour : le raccourcir serait manger le clic. Et un
+sommet tenu par une pastille, un via ou un embranchement ne bouge jamais —
+raccourcir en décrochant une connexion ne serait pas une optimisation.
+
+### Les paires différentielles
+
+La paire se présente au moteur comme **une seule ligne large**, celle de son
+axe, portant ses deux nets. Elle obtient ainsi le contournement sans une ligne
+de code de plus. Pour la poussée, en revanche, ce sont les **deux pistes
+réelles** qui sont soumises au moteur, éventails compris : près des pastilles
+la paire s'ouvre bien au-delà de son pas, et un axe large ne la
+représenterait pas.
+
 ## Adoucir un angle droit
 
 Un coude à 90° se passe en 45° d'une touche : **D**, ou le bouton
@@ -637,6 +772,45 @@ un chanfrein plus court que la largeur de piste — il ne voudrait rien dire —
 un coude portant un via ou une pastille, et deux portions de largeurs
 différentes — un 45° déjà en place n'est donc jamais retouché. Elle ne pose un
 pas d'annulation que si elle a vraiment quelque chose à faire.
+
+### Le même chanfrein, posé d'office, est borné
+
+Le tracé chanfreine tout seul les coudes qu'il vient de former, au dépôt
+(`chamferPosed`). Là, le chanfrein maximal ne convient pas : sur un coude de
+45 mm par 16, il remplacerait les **deux** jambes par une seule diagonale de
+16 mm, et le coude se retrouverait 16 mm avant l'endroit cliqué. Géométriquement
+c'est le tracé qu'aurait posé le routeur d'un seul clic ; à l'usage, c'est un
+clic qui disparaît.
+
+Le chanfrein automatique est donc borné à `MITRE_AUTO` largeurs de piste — 4,
+soit 1,2 mm sur une piste de 0,3. Il casse l'angle, il ne déplace pas le coude.
+Un coude entre deux jambes plus courtes que cette borne y passe toujours en
+entier : c'est le petit coude qu'on veut voir disparaître.
+
+La touche **D** garde le chanfrein maximal. Là, c'est un geste voulu : on
+demande explicitement la plus grande diagonale que la géométrie autorise.
+
+### Le glissement rend le 45° qu'il avait replié
+
+Tirer une piste raccourcit ses jambes. Passé un certain point, le chanfrein
+qu'elles portaient se replie sur son articulation — c'est voulu, `wallChain`
+tend la piste comme un fil plutôt que de la laisser revenir sur elle-même. Mais
+le coude, lui, redevenait alors **franc** : on voulait raccourcir, on récoltait
+un angle droit à reprendre à la main.
+
+Le relâchement le rend (`mitreAfterDrag`), à la même borne que le dépôt, et
+**seulement si un chanfrein a réellement été perdu** : les segments en diagonale
+du cuivre concerné sont relevés au départ du geste, et si l'un d'eux a disparu à
+l'arrivée, les articulations touchées repassent au chanfrein. Un coude déjà
+franc avant le geste le reste — un glissement n'est pas le moment de réécrire un
+tracé qu'on n'a pas demandé à réécrire.
+
+Au relâchement, et non pendant : le glissement s'applique en absolu depuis les
+positions relevées au départ (`drag.trk`, `drag.joints`). Créer ou supprimer du
+cuivre en cours de geste détacherait ces références, et la piste cesserait de
+suivre la souris. L'angle droit se voit donc le temps du glissement, et se
+referme au lâcher. Le `push()` du premier mouvement couvre l'ensemble : le
+chanfrein rendu se défait avec le glissement, d'un seul Ctrl+Z.
 
 ### L'anti-collision pendant un glissement
 
@@ -847,12 +1021,11 @@ il le dit aussi plutôt que d'afficher un nombre qui ne veut rien dire.
 
 ### Ce que le module ne fait pas
 
-- **Pas de shove** : la paire ne repousse pas le cuivre déjà posé. L'éditeur ne
-  le fait pour aucun tracé, il n'y avait pas de raison de commencer ici.
 - **Pas de serpentin d'appariement** : l'écart de longueur entre P et N est
   mesuré et signalé, jamais corrigé.
-- **Pas de contournement automatique** : la tête repoussée écarte le point visé,
-  elle ne cherche pas de chemin autour d'un obstacle.
+- Une paire ne **traverse pas** du cuivre étranger qui barre tout son passage :
+  la poussée déforme un voisin, elle ne le supprime pas. Il faut alors changer
+  de couche par un via en éventail. Le trajet est signalé, il ne se pose pas.
 - Une paire ne vit que sur **une couche à la fois** ; c'est le via en éventail
   qui la fait passer, pas un tracé simultané sur deux couches.
 
@@ -1053,18 +1226,26 @@ python3 outils/build-monofichier.py && node test/harness.js
 ```
 
 Le banc s'appuie sur le DOM minimal partagé (`../commun/test/dom-stub.js`),
-exécute `dist/pcb.js` et couvre 206 cas : import de netlist, boîtiers nommés
+exécute `dist/pcb.js` et couvre 238 cas : import de netlist, boîtiers nommés
 et empreintes qu'ils posent, chevelu
 multicouche, vias, îlots de cuivre, classes de net, édition des pistes,
 géométrie du L chanfreiné, posture du coude et règle d'angle (45° / 90° /
 libre), non-croisement du cuivre tiré, réglages d'usine,
 contour libre, origine utilisateur, saisie au clavier, anti-collision, rôles de
 couche, empilage physique et ce qu'il impose au perçage, Gerber, Excellon, archive ZIP, espace de travail (docks,
-flottants, persistance), sélection multiple au Ctrl+clic, presse-papier
+flottants, persistance), sélection multiple au Ctrl+clic, prise de la piste
+entière au Maj+clic et de toutes ses couches au doublé, presse-papier
 (copier/coller, contenu invalide, repères refaits), pas de grille, paires
 différentielles (détection des couples, tracé couplé et son écart tenu,
 éventail de départ, vias écartés, retour arrière, longueur découplée,
-impédance et résolution des cotes, priorité des règles), import
+impédance et résolution des cotes, priorité des règles), moteur de routage
+(enveloppes convexes et leur marge, index spatial confronté au balayage
+complet sur une carte tirée au sort, branche et versement, assemblage des
+polylignes, trame 45°, contournement d'un et de deux obstacles et choix du
+côté le plus court, poussée d'une piste puis en cascade, poussée d'un via avec
+le cuivre qui s'y raccroche, repli propre quand rien ne passe, Ctrl+Z et
+abandon qui remettent le cuivre poussé en place, optimiseur et ses ancres,
+poussée devant une paire différentielle), import
 défensif d'un document et échappement HTML face à une netlist ou un `.json`
 malveillant.
 
@@ -1102,6 +1283,16 @@ différence — c'est lui qui garde cette propriété.
   fait office de pastille libre, mais elle appartient toujours à une
   empreinte.
 - Pas d'arcs : pistes, zones et contour sont faits de segments.
+- Le routeur ne reprend pas le `SMART_PADS` de KiCad, qui décale l'entrée d'une
+  piste vers le bord d'une grosse pastille. Cet éditeur fait le choix inverse,
+  explicitement : l'aimant accroche au **centre** de la pastille. Les deux
+  règles ne peuvent pas coexister.
+- Le retour arrière du tracé (Retour arrière) recule d'un coude, mais ne remet
+  pas en place le cuivre que ce coude avait poussé. Échap ou Ctrl+Z le font,
+  eux, en une fois.
+- Pas d'auto-routeur : le moteur assiste un geste, il ne route pas une carte
+  tout seul. Il n'y a ni recherche de chemin global, ni ordonnancement des
+  nets.
 - Pas de sauvegarde automatique sur disque. Le travail tient dans l'onglet
   tant qu'il est ouvert (voir plus haut), mais fermer l'onglet sans
   « Enregistrer .json » le perd.
