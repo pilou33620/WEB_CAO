@@ -272,9 +272,4 @@ function snap(v){
   // toute la connectivité repose sur cette égalité
   return Math.round(Math.round(v/g)*g*1e4)/1e4;
 }
-/* Même arrondi, appliqué cette fois au résultat d'un calcul. Un décalage qui
-   remet un symbole d'aplomb sur une grille qui vient de changer n'est plus un
-   multiple du pas : sans cet arrondi, une broche atterrit à 10.000000000000002
-   et le fil qui la touchait ne la reconnaît plus. */
-function q4(v){return Math.round(v*1e4)/1e4;}
 function key(x,y){return x+","+y;}

@@ -45,7 +45,7 @@ const EXPOSE=[
   /* presse-papier et grille (10) */
   "copySel","cutSel","pasteClip","clipContent","setClip","getClip","setGridStep","snap","delSel",
   "delWiresSel",
-  "gridLabel","gridShownStep","normComp","normWire","gridDelta","selAnchor","q4",
+  "gridLabel","gridShownStep","normComp","normWire",
   /* connectivité (07) */
   "computeNets","nets","docNets","splitWireArray","resolveSplits","endpointList",
   "insideSeg","netAt","netAtLive","isRealNet","setNetName","selectNet","netColor",
@@ -697,27 +697,6 @@ T("pas de grille : accrochage et échelle suivent le réglage",()=>{
   if(gridLabel()!==attendu)
     throw new Error("le pied de page doit annoncer la case tracée et le pas : "+gridLabel());
   S.scale=1;setGridStep(G);
-});
-/* Changer de pas ne déplace rien de ce qui est posé — un schéma ne bouge pas
-   tout seul — mais le déplacement suivant doit remettre la sélection d'aplomb
-   sur la nouvelle grille : c'est le point saisi qui tombe sur le quadrillage,
-   les autres suivent du même décalage. */
-T("changer de pas : le déplacement suivant repose la sélection sur la grille",()=>{
-  S.scale=1;setGridStep(G);
-  const r1=C("resistor",0,0,{ref:"R1"}), r2=C("resistor",8,0,{ref:"R2"});
-  sheet([r1,r2],[]);
-  setGridStep(G/2);                     // posés au demi-pas...
-  r1.x=q4(r1.x+G/2);r2.x=q4(r2.x+G/2);
-  setGridStep(G);                       // ...puis retour au pas plein
-  if(r1.x!==G/2)throw new Error("changer de pas ne doit rien déplacer");
-  clearSel();S.sel.add(r1.id);S.sel.add(r2.id);
-  const t=gridDelta(selAnchor(),G,0);   // une flèche vers la droite
-  moveSelBy(t.dx,t.dy);
-  if(r1.x!==snap(r1.x)||r1.y!==snap(r1.y))
-    throw new Error("le symbole saisi devait rejoindre la grille : "+r1.x+","+r1.y);
-  if(r1.x!==2*G)throw new Error("un pas de plus était demandé : "+r1.x);
-  if(q4(r2.x-r1.x)!==8*G)throw new Error("l'écart devait être conservé : "+(r2.x-r1.x));
-  setGridStep(G);
 });
 
 /* ==========================================================================

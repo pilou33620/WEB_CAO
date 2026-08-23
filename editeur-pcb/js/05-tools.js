@@ -74,26 +74,6 @@ function dPads(a){
   }
   return out;
 }
-/* Cotes de pastille posées par le boîtier — longueur, largeur, perçage, taille
-   de la rangée principale, languette, plage thermique. Toutes facultatives :
-   une carte enregistrée avant le calcul IPC n'en porte aucune et se recalcule
-   toute seule à l'ouverture. Ce qui est là est relu, ce qui manque est ignoré,
-   et rien n'est inventé — un boîtier hors table garde ses proportions. */
-function dGeom(f){
-  const o={};
-  if(+f.padL>0)o.padL=r4(dRange(f.padL,1,0.05,200));
-  if(+f.padW>0)o.padW=r4(dRange(f.padW,1,0.05,200));
-  if(+f.drill>0)o.drill=r4(dRange(f.drill,0,0.05,200));
-  if(+f.leads>0)o.leads=dInt(f.leads,1,1,4096);
-  const t=f.tab;
-  if(t&&typeof t==="object"&&+t.w>0&&+t.h>0)
-    o.tab={w:r4(dRange(t.w,1,0.05,200)), h:r4(dRange(t.h,1,0.05,200)),
-           pin:dInt(t.pin,1,1,4096)};
-  const e=f.ep;
-  if(e&&typeof e==="object"&&+e.w>0&&+e.h>0)
-    o.ep={w:r4(dRange(e.w,1,0.05,200)), h:r4(dRange(e.h,1,0.05,200))};
-  return o;
-}
 /* rectangle de sérigraphie imposé : quatre nombres, ordonnés, non dégénéré */
 function dBody(b){
   if(!b||typeof b!=="object")return null;
@@ -219,8 +199,6 @@ function normFp(f,i){
     side:f.side?1:0,
     nets:dNets(f.nets)
   };
-  const geo=dGeom(f);
-  for(const k of Object.keys(geo))out[k]=geo[k];
   /* décalages du repère et de la valeur : présents seulement si déplacés */
   for(const k of ["refOffX","refOffY","valOffX","valOffY"])
     if(f[k]!=null&&Number.isFinite(+f[k]))out[k]=clamp(+f[k],-COORD,COORD);
@@ -2109,43 +2087,6 @@ function placeOrigin(x,y){
    Souris
    ========================================================================== */
 let drag=null;
-/* Un glissement se comptait jusqu'ici en pas de grille : le décalage de départ
-   survivait au geste. Une empreinte importée sur une grille au dixième, puis
-   déplacée après être passé au demi-millimètre, gardait donc ses 0,1 mm de
-   travers — le quadrillage a changé, ce qui est posé ne le rejoint jamais. On
-   pose désormais sur la grille le point saisi — l'ancre — et le reste de la
-   sélection suit du même décalage, sans se déformer. Changer de pas suffit
-   alors à tout remettre d'aplomb au premier mouvement.
-
-   L'ancre est le repère propre de ce qu'on a attrapé : l'origine d'une
-   empreinte, le centre d'un via, l'extrémité de piste la plus proche du clic,
-   le sommet le plus proche pour une zone ou une découpe. Les pastilles d'un
-   DIP restent donc à 3,81 mm de leur axe, comme il se doit — c'est le boîtier
-   qui se pose sur la grille, pas chacune de ses broches. */
-function moveAnchor(h,x,y){
-  if(!h)return null;
-  if(h.fp)return {x:h.fp.x,y:h.fp.y};
-  if(h.via)return {x:h.via.x,y:h.via.y};
-  if(h.track){
-    const t=h.track;
-    return dist(x,y,t.x1,t.y1)<=dist(x,y,t.x2,t.y2)?{x:t.x1,y:t.y1}:{x:t.x2,y:t.y2};
-  }
-  const pts=(h.zone&&h.zone.pts)||(h.cut&&h.cut.pts)||null;
-  if(pts&&pts.length){
-    let b=pts[0],bd=1e9;
-    for(const q of pts){const d=dist(x,y,q.x,q.y);if(d<bd){bd=d;b=q;}}
-    return {x:b.x,y:b.y};
-  }
-  return null;
-}
-/* Décalage total demandé depuis le début du geste : la souris commande, mais
-   c'est l'ancre qui tombe sur le quadrillage. Sans ancre — rien de saisissable
-   sous le curseur — on retombe sur l'ancien calcul, en pas entiers. */
-function dragDelta(d,p){
-  const rx=p.x-d.x, ry=p.y-d.y;
-  if(!d.anc)return {dx:r3(snapX(d.x+rx)-snapX(d.x)), dy:r3(snapY(d.y+ry)-snapY(d.y))};
-  return {dx:r3(snapX(d.anc.x+rx)-d.anc.x), dy:r3(snapY(d.anc.y+ry)-d.anc.y)};
-}
 function evPos(e){
   const r=cv.getBoundingClientRect();
   return s2w(e.clientX-r.left,e.clientY-r.top);
@@ -2272,11 +2213,7 @@ cv.addEventListener("pointerdown",e=>{
   if(h && h.fpText) {
     if(!add) {clearSel();S.hlNet=null;}
     S.hlText = h;
-    /* le texte se pose lui aussi sur la grille : son ancre est là où il
-       s'affiche, décalage d'empreinte compris */
-    const tp0=fpTextPos(h.fpText)[h.kind==="ref"?"ref":"val"];
-    drag={moveText:h, x:p.x, y:p.y, moved:false, dx:0, dy:0,
-          anc:{x:tp0.x,y:tp0.y}};
+    drag={moveText:h, x:snapX(p.x), y:snapY(p.y), moved:false};
     refreshPanels();draw();return;
   }
   if(!h){
@@ -2295,7 +2232,6 @@ cv.addEventListener("pointerdown",e=>{
   const pn=(h.pad&&h.pad.net)||null;
   if(pn)S.hlNet=pn;
   drag={move:true,x:p.x,y:p.y,moved:false,dx:0,dy:0,
-        anc:moveAnchor(h,p.x,p.y),
         trk:null,via:null,joints:null};
   refreshPanels();
   // la mise en avant se voit sur le canevas : on la montre aussi dans la liste
@@ -2357,8 +2293,7 @@ cv.addEventListener("pointermove",e=>{
     draw();return;
   }
   if(drag&&drag.moveText){
-    const tot=dragDelta(drag,p);
-    const dx=r3(tot.dx-drag.dx), dy=r3(tot.dy-drag.dy);
+    const dx=snapX(p.x)-snapX(drag.x), dy=snapY(p.y)-snapY(drag.y);
     if(dx||dy){
       if(!drag.moved){push();drag.moved=true;}
       const f = drag.moveText.fpText;
@@ -2369,18 +2304,17 @@ cv.addEventListener("pointermove",e=>{
         f.valOffX = r3((f.valOffX||0)+dx);
         f.valOffY = r3((f.valOffY||0)+dy);
       }
-      drag.dx=tot.dx;drag.dy=tot.dy;
+      drag.x+=dx;drag.y+=dy;
       touch();draw();
     }
     return;
   }
   if(drag&&drag.move){
-    const tot=dragDelta(drag,p);
-    const dx=r3(tot.dx-drag.dx), dy=r3(tot.dy-drag.dy);
+    const dx=snapX(p.x)-snapX(drag.x), dy=snapY(p.y)-snapY(drag.y);
     if(dx||dy){
       if(!drag.moved){push();drag.moved=true;beginMove();}
       const kx=drag.dx, ky=drag.dy;               // dernière position sans faute
-      drag.dx=tot.dx;drag.dy=tot.dy;
+      drag.dx=r3(drag.dx+dx);drag.dy=r3(drag.dy+dy);
       for(const id of S.sel.fps){const f=fpById(id);if(f){f.x=r3(f.x+dx);f.y=r3(f.y+dy);}}
       // pistes et vias en absolu : les articulations réécrivent leurs bouts,
       // un cumul relatif dériverait dès le deuxième mouvement
@@ -2396,12 +2330,13 @@ cv.addEventListener("pointermove",e=>{
       for(const ct of S.sel.cuts){
         for(const q of ct.pts){q.x=r3(q.x+dx);q.y=r3(q.y+dy);}
       }
+      drag.x+=dx;drag.y+=dy;
       // Alt enfoncé pendant le geste : les voisins restent où ils sont
       applyJoints(drag.joints,drag.dx,drag.dy,e.altKey);
       /* Le déplacement s'applique en absolu : revenir au décalage précédent
          suffit à replacer tout ce que le geste avait touché, coudes compris. */
       if(clearStop()||crossStop()){
-        drag.dx=kx;drag.dy=ky;
+        drag.dx=kx;drag.dy=ky;drag.x-=dx;drag.y-=dy;
         for(const o of drag.trk){
           o.t.x1=r3(o.x1+drag.dx);o.t.y1=r3(o.y1+drag.dy);
           o.t.x2=r3(o.x2+drag.dx);o.t.y2=r3(o.y2+drag.dy);
@@ -2659,9 +2594,7 @@ function setGridStep(v){
   if(!Number.isFinite(g)||g<=0||g===S.grid)return;
   S.grid=g;
   updateGridInfo();
-  hint("Grille d'accrochage : "+String(r3(g)).replace(".",",")+" mm — "+
-       "rien ne bouge, mais le prochain déplacement repose sur cette grille "+
-       "ce que l'on saisit.");
+  hint("Grille d'accrochage : "+String(r3(g)).replace(".",",")+" mm.");
   draw();
 }
 /* L'angle imposé aux pistes se range avec le document : il décrit la carte, au

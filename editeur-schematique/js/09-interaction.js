@@ -100,7 +100,7 @@ function probeFollowers(anchors,moving){
   return out;
 }
 function applyProbes(probes,dx,dy){
-  for(const pr of probes){pr.el.x=q4(pr.x0+dx);pr.el.y=q4(pr.y0+dy);}
+  for(const pr of probes){pr.el.x=pr.x0+dx;pr.el.y=pr.y0+dy;}
 }
 const PROBE_SNAP=3*G;              // portée d'accrochage d'une sonde, en px monde
 function clamp(v,a,b){return Math.min(Math.max(v,Math.min(a,b)),Math.max(a,b));}
@@ -216,8 +216,8 @@ function endsAt(anchors){
 }
 function applyEnds(ends,dx,dy){
   for(const a of ends){
-    if(a.e===1){a.w.x1=q4(a.x0+dx);a.w.y1=q4(a.y0+dy);}
-    else{a.w.x2=q4(a.x0+dx);a.w.y2=q4(a.y0+dy);}
+    if(a.e===1){a.w.x1=a.x0+dx;a.w.y1=a.y0+dy;}
+    else{a.w.x2=a.x0+dx;a.w.y2=a.y0+dy;}
   }
   if(ends.length)touchWires();
 }
@@ -228,44 +228,16 @@ function moveSelBy(dx,dy){
   const ends=endsAt(anchors);
   const probes=probeFollowers(anchors,new Set(els));
   const contacts=pinContacts(els);
-  for(const el of els){el.x=q4(el.x+dx);el.y=q4(el.y+dy);}
+  for(const el of els){el.x+=dx;el.y+=dy;}
   applyProbes(probes,dx,dy);
   applyEnds(ends,dx,dy);
   reconnectContacts(contacts);   // une flèche suffit à décoller deux broches
   draw();
 }
-/* Un déplacement se mesurait en pas de grille : le décalage de départ
-   survivait au geste. Un symbole posé sur une grille au demi-pas, puis déplacé
-   après retour au pas plein, gardait donc son demi-pas de travers — la grille
-   a changé, ce qui est posé ne la rejoint jamais. On pose désormais sur la
-   grille le point saisi, l'ancre ; le reste de la sélection suit du même
-   décalage, sans se déformer, et les fils raccordés avec lui. */
-function dragAnchor(grab,items,ends){
-  if(grab)return {x:grab.x,y:grab.y};
-  if(items&&items.length)return {x:items[0].x0,y:items[0].y0};
-  if(ends&&ends.length)return {x:ends[0].x0,y:ends[0].y0};
-  return null;
-}
-/* Point de référence d'un déplacement au clavier : le premier élément
-   sélectionné, à défaut le premier fil. */
-function selAnchor(){
-  const els=selEls();
-  if(els.length)return {x:els[0].x,y:els[0].y};
-  const ws=selWires();
-  if(ws.length)return {x:ws[0].x1,y:ws[0].y1};
-  return null;
-}
-/* Décalage à appliquer pour que l'ancre tombe sur la grille courante. Sans
-   ancre, on retombe sur l'ancien calcul : un déplacement en pas entiers. */
-function gridDelta(a,rx,ry){
-  if(!a)return {dx:snap(rx),dy:snap(ry)};
-  return {dx:q4(snap(a.x+rx)-a.x), dy:q4(snap(a.y+ry)-a.y)};
-}
 /* Prépare un glissement.
    handle non nul = une seule extrémité de fil est saisie : le segment s'étire.
-   detach     = les voisins raccordés restent en place au lieu de suivre.
-   grab       = l'élément réellement attrapé, celui qui sert d'ancre. */
-function beginDrag(p,handle,detach,grab){
+   detach     = les voisins raccordés restent en place au lieu de suivre. */
+function beginDrag(p,handle,detach){
   const els=handle?[]:selEls();
   const wires=handle?[]:selWires();
   let ends, anchors=null;
@@ -286,13 +258,8 @@ function beginDrag(p,handle,detach,grab){
     anchors=anchorKeys(els,wires);
     ends=endsAt(anchors);
   }
-  const items=els.map(c=>({el:c,x0:c.x,y0:c.y}));
   S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:!!handle,
-          anc:handle
-            ?{x:handle.e===1?handle.w.x1:handle.w.x2,
-              y:handle.e===1?handle.w.y1:handle.w.y2}
-            :dragAnchor(grab,items,ends),
-          items:items,
+          items:els.map(c=>({el:c,x0:c.x,y0:c.y})),
           probes:probeFollowers(anchors,new Set(els)),   // vide si Ctrl+glisser
           probe:null,
           contacts:pinContacts(els),   // broches collées à un symbole qui reste
@@ -394,7 +361,6 @@ cv.addEventListener("pointerdown",e=>{
     const cur=textOff(ht.el,ht.kind)||[0,0];
     S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:false,items:[],
             probes:[],probe:null,ends:[],contacts:[],
-            anc:{x:cur[0],y:cur[1]},
             text:{el:ht.el,kind:ht.kind,x0:cur[0],y0:cur[1]}};
     document.getElementById("fHint").textContent=
       "Glisser le texte le déplace · double-clic pour le remettre à sa place.";
@@ -408,7 +374,6 @@ cv.addEventListener("pointerdown",e=>{
     if(!addSel)selectNet(hn.net);
     S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:false,items:[],
             probes:[],probe:null,ends:[],contacts:[],
-            anc:{x:cur[0],y:cur[1]},
             netLbl:{wires:hn.net.wires.slice(),x0:cur[0],y0:cur[1]}};
     document.getElementById("fHint").textContent=
       "Glisser l'étiquette la déplace · double-clic pour la remettre en place · "+
@@ -425,7 +390,7 @@ cv.addEventListener("pointerdown",e=>{
       S.sel.add(el.id);
     }
     else if(!S.sel.has(el.id)){clearSel();S.sel.add(el.id);}
-    beginDrag(p,null,e.altKey,el);
+    beginDrag(p,null,e.altKey);
     refreshPanels();draw();return;
   }
   const wi=hitWire(p.x,p.y);
@@ -443,7 +408,7 @@ cv.addEventListener("pointerdown",e=>{
       if(Math.hypot(p.x-w.x1,p.y-w.y1)<=tol)handle={w,e:1};
       else if(Math.hypot(p.x-w.x2,p.y-w.y2)<=tol)handle={w,e:2};
     }
-    beginDrag(p,handle,e.altKey,null);
+    beginDrag(p,handle,e.altKey);
     refreshPanels();draw();return;
   }
   if(e.pointerType!=="mouse"){
@@ -482,27 +447,26 @@ cv.addEventListener("pointermove",e=>{
     S.ox=S.pan.ox+(e.clientX-S.pan.x);S.oy=S.pan.oy+(e.clientY-S.pan.y);draw();return;
   }
   if(S.drag){
-    const tot=gridDelta(S.drag.anc,p.x-S.drag.sx,p.y-S.drag.sy);
-    const dx=tot.dx, dy=tot.dy;
+    const dx=snap(p.x-S.drag.sx), dy=snap(p.y-S.drag.sy);
     if((dx||dy)&&!S.drag.moved){
       S.drag.moved=true;
       S.drag.before=serialize();   // l'état est encore intact à cet instant
     }
     if(S.drag.text){
       const t=S.drag.text;
-      setTextOff(t.el,t.kind,q4(t.x0+dx),q4(t.y0+dy));
+      setTextOff(t.el,t.kind,t.x0+dx,t.y0+dy);
       draw();return;
     }
     if(S.drag.netLbl){
       const n=S.drag.netLbl;
       for(const w of n.wires){
-        if(!q4(n.x0+dx)&&!q4(n.y0+dy))delete w.lblOff;
-        else w.lblOff=[q4(n.x0+dx),q4(n.y0+dy)];
+        if(!(n.x0+dx)&&!(n.y0+dy))delete w.lblOff;
+        else w.lblOff=[n.x0+dx,n.y0+dy];
       }
       draw();return;
     }
     if(S.drag.probe){probeDragMove(p);draw();return;}
-    for(const it of S.drag.items){it.el.x=q4(it.x0+dx);it.el.y=q4(it.y0+dy);}
+    for(const it of S.drag.items){it.el.x=it.x0+dx;it.el.y=it.y0+dy;}
     applyProbes(S.drag.probes,dx,dy);
     applyEnds(S.drag.ends,dx,dy);  // aucune copie profonde : les extrémités
     draw();return;                 // concernées sont repérées une fois au départ
