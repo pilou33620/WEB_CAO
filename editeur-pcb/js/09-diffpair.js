@@ -1031,8 +1031,8 @@ function buildDiffPairs(){
       '<div><label>Commentaire</label><input id="dpCom" value="'+esc(r.comment)+'"></div>'+
     '</div>'+
     '<div class="prop two">'+
-      '<div><label>Identifiant</label><input value="'+esc(r.uid||"— non inscrite —")+
-        '" disabled title="Identifiant unique de la règle, attribué à sa création."></div>'+
+      reFact("Identifiant",r.uid||"— non inscrite —",
+        "Identifiant unique de la règle, attribué à sa création.")+
       '<div><label>Règle</label><select id="dpRuleSel">'+
         (draft?'<option>'+esc(r.name)+' (usine)</option>'
               :S.dpRules.map((x,i)=>'<option value="'+i+'"'+(i===_dpRule?" selected":"")+
@@ -1045,7 +1045,7 @@ function buildDiffPairs(){
       '<button class="tb" id="dpRuleTest">Paires visées</button></div></div>'+
     '<div class="cat">Objets visés</div>'+
     '<div class="prop two">'+
-      '<div><label>Critère</label><input value="Paire différentielle" disabled></div>'+
+      reFact("Critère","Paire différentielle")+
       '<div><label>Paire</label><select id="dpScope">'+
         '<option value=""'+(r.scope?"":" selected")+'>— toutes les paires —</option>'+
         S.dpPairs.map(q=>'<option'+(q.name===r.scope?" selected":"")+'>'+esc(q.name)+
@@ -1065,8 +1065,7 @@ function buildDiffPairs(){
       '</label></div>'+
     '<div class="prop two">'+
       numProp("dpUnc","Long. découplée maxi",fmt(r.maxUncoupled,2),0.5,0)+
-      '<div><label>Pas de la paire</label><input value="'+fmt(g.w+g.gap,3)+
-        ' mm" disabled></div></div>'+
+      reFact("Pas de la paire",fmt(g.w+g.gap,3)+" mm")+'</div>'+
     '<div class="prop"><label class="check"><input type="checkbox" id="dpImpOn"'+
       (r.useImp?" checked":"")+'> Profil d\'impédance</label></div>'+
     '<div class="prop two">'+
@@ -1075,8 +1074,7 @@ function buildDiffPairs(){
         DP_PROFILES.map(p=>'<option value="'+p.id+'"'+(p.id===r.imp?" selected":"")+'>'+
           esc(p.n)+'</option>').join("")+
       '</select></div>'+
-      '<div><label>Zdiff obtenue</label><input value="'+(z?fmt(z,1)+" Ω":"—")+
-        '" disabled></div></div>';
+      reFact("Zdiff obtenue",z?fmt(z,1)+" Ω":"—")+'</div>';
 
   /* ---------- ce que l'empilage impose ---------- */
   h+='<div class="stkinfo">'+

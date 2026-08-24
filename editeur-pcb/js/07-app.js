@@ -14,6 +14,7 @@ function dl(blob,name){
 function saveJson(){
   dl(new Blob([JSON.stringify(docObj(),null,1)],{type:"application/json"}),"carte.json");
   S.dirty=false;
+  if(typeof profNoterDocument==="function")profNoterDocument("pcb","carte.json");
   hint("Carte enregistrée dans carte.json.");
 }
 function openFile(f){
@@ -28,7 +29,9 @@ function openFile(f){
           alert("Ce fichier est un schéma (.json).\n\nDans l'éditeur schématique, cliquez sur « Netlist .txt », puis importez ce fichier ici.");
           return;
         }
-        push();loadDoc(d);hint("Carte "+f.name+" chargée.");
+        push();loadDoc(d);
+        if(typeof profNoterDocument==="function")profNoterDocument("pcb",f.name);
+        hint("Carte "+f.name+" chargée.");
       }catch(err){alert("Fichier illisible : "+err.message);}
     }else{
       importNetlist(txt,false);
@@ -136,6 +139,7 @@ buildGridMenu();
 $("bAvoid").onclick=()=>{
   S.avoid=!S.avoid;
   $("bAvoid").classList.toggle("on",S.avoid);
+  if(typeof profilNoter==="function")profilNoter();
   if(S.route)updateRoute(S.mouse.x,S.mouse.y);
   draw();
   hint(S.avoid?"Anti-collision actif : le tracé se tient à la distance d'isolation.":
@@ -153,8 +157,13 @@ $("bDrc").onclick=()=>{
     $(id).classList.toggle("on",t==="drc");
   buildList();draw();
   const hard=e.filter(x=>!x.info).length;
+  if(typeof reIsOpen==="function"&&reIsOpen())reSync();
   hint(hard?hard+" erreur(s) de règles détectée(s).":"Contrôle DRC : aucune erreur de règles.");
 };
+/* La fenêtre des règles. Elle a remplacé les panneaux « Règles de tracé » et
+   « Paires différentielles » du dock : c'est désormais le seul endroit où une
+   règle de conception s'écrit, et ce bouton est sa porte. */
+$("bRules").onclick=()=>reOpen();
 $("bSave").onclick=saveJson;
 $("bOpen").onclick=()=>$("fileIn").click();
 $("fileIn").onchange=()=>{const f=$("fileIn").files[0];if(f)openFile(f);$("fileIn").value="";};
@@ -171,9 +180,14 @@ for(const [id,t] of [["tabNets","nets"],["tabComps","comps"],["tabDrc","drc"]])
     S.listTab=t;
     for(const [i2,t2] of [["tabNets","nets"],["tabComps","comps"],["tabDrc","drc"]])
       $(i2).classList.toggle("on",t2===t);
+    if(typeof profilNoter==="function")profilNoter();
     buildList();
   };
-$("onlyUnrouted").onchange=()=>{S.onlyUnrouted=$("onlyUnrouted").checked;buildList();};
+$("onlyUnrouted").onchange=()=>{
+  S.onlyUnrouted=$("onlyUnrouted").checked;
+  if(typeof profilNoter==="function")profilNoter();
+  buildList();
+};
 
 $("ciAbs").onclick=()=>coordMode("abs");
 $("ciRel").onclick=()=>coordMode("rel");
@@ -218,6 +232,9 @@ window.addEventListener("beforeunload",e=>{
    « modifié » compte autant que le reste, sans lui la garde de sortie
    laisserait fermer l'onglet sans un mot sur une carte jamais enregistrée.
    ========================================================================== */
+/* Vrai quand la session d'onglet a rétabli la vue : 16-profil.js ne la
+   contredit pas avec la vue enregistrée dans le profil, plus ancienne. */
+let PCB_REPRISE=false;
 function sessionPcb(){
   const repris=sessBrancher("pcb",()=>({
     doc:docObj(),
@@ -250,12 +267,16 @@ function sessionPcb(){
 function init(){
   setCuCount(2,true);
   $("cuCount").value="2";
-  buildLayers();buildTabs();buildRules();
+  /* Pas de `reSync()` ici : la fenêtre des règles vit dans un fichier chargé
+     APRÈS celui-ci, et son état (`RE`) n'existe pas encore quand `init()`
+     s'exécute en pages séparées. Elle est fermée au démarrage, il n'y a donc
+     rien à rafraîchir — `reOpen()` la remplira le jour où on l'ouvre. */
+  buildLayers();buildTabs();
   setMode("select");setGrid(true);setContrast(1);setFlip(false);
   $("bRats").classList.add("on");
   $("bAvoid").classList.toggle("on",S.avoid);
   refreshPanels();
   resize();fit();
-  sessionPcb();          // en dernier : reprend la carte laissée dans l'onglet
+  PCB_REPRISE=sessionPcb();   // en dernier : reprend la carte laissée dans l'onglet
 }
 init();

@@ -164,7 +164,7 @@ function pnsViaEscape(it,gene,sens){
     let pire=null;
     for(const s of pnsSegs(gene.pts)){
       const g=pnsItemSeg(gene.l,gene.net,gene.w,s.x1,s.y1,s.x2,s.y2,null);
-      const need=pnsClr(g,it.net)+it.v.d/2+g.w/2+PNS_MARGIN;
+      const need=pnsClr(g,it.net,"via")+it.v.d/2+g.w/2+PNS_MARGIN;
       const def=need-segDist(p.x,p.y,s.x1,s.y1,s.x2,s.y2);
       if(def>1e-6&&(!pire||def>pire.def)){
         const dx=s.x2-s.x1, dy=s.y2-s.y1, ln=Math.hypot(dx,dy)||1;

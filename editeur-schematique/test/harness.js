@@ -62,7 +62,14 @@ const EXPOSE=[
   "sessTient","sessUrl","sessQuitte","sessionSchema","restoreBackup","clearBackup",
   /* espace de travail commun */
   "wsDefault","wsApply","wsMove","wsPlaceOf","wsLabel","wsToggleFloat",
-  "wsToggleCollapse","wsClose","wsShow","wsMenuBuild","wsLoad","wsSave","wsEl","WS_KEY"
+  "wsToggleCollapse","wsClose","wsShow","wsMenuBuild","wsLoad","wsSave","wsEl","WS_KEY",
+  "WS_SECTION",
+  /* profils utilisateur communs (commun/profils.js) */
+  "profNom","profListe","profChoisir","profCreer","profSupprimer","profLire",
+  "profEcrire","profOublier","profRecents","profNoterDocument","profNomValide",
+  /* réglages d'affichage propres à l'utilisateur (20-profil.js) */
+  "profilEtat","profilNoter","profilAppliquer",
+  "setGrid","setGridStep","setNetLabels","setListTab"
 ];
 /* les noms absents du bundle sont ignorés : le banc d'essai reste utilisable
    même si un module est renommé, les essais concernés échoueront tout seuls */
@@ -915,6 +922,50 @@ T("session : un état illisible ou hostile ne casse pas le démarrage",()=>{
   if(!sessionSchema())throw new Error("le document devait être repris, filtré");
   if(S.comps.length)throw new Error("aucun composant ne devait survivre au tamis");
   dom.session.clear();
+});
+
+
+/* ==========================================================================
+   Profils utilisateur (commun/profils.js, 20-profil.js)
+   ========================================================================== */
+T("la disposition du schématique va dans le profil, pas dans la clé nue",()=>{
+  wsMove("palette","dockB",0);
+  const d=profLire(WS_SECTION);
+  if(!d||d.order.dockB.indexOf("palette")<0)
+    throw new Error("disposition non enregistrée dans le profil");
+  if(dom.storage.getItem(WS_KEY))
+    throw new Error("la disposition traîne encore hors du profil");
+  WS=wsDefault();wsApply(false);
+});
+T("réglages d'affichage : ils suivent l'utilisateur, pas le schéma",()=>{
+  setGridStep(20);setNetLabels(0);setListTab("nets");
+  const av=profLire("reglages:schema");
+  if(!av)throw new Error("rien enregistré sous reglages:schema");
+  if(av.grille!==20)throw new Error("pas de grille : "+av.grille);
+  if(av.nets!==0)throw new Error("étiquettes de net : "+av.nets);
+  if(av.liste!=="nets")throw new Error("onglet de liste : "+av.liste);
+  /* rien de tout cela n'a le droit d'entrer dans le document */
+  const doc=JSON.parse(serialize());
+  for(const k of ["grid","showGrid","netLabels","listTab"])
+    if(k in doc)throw new Error("« "+k+" » s'est glissé dans le document");
+  setGridStep(10);setNetLabels(2);setListTab("bom");
+  profEcrire("reglages:schema",av);
+  profilAppliquer();
+  if(S.grid!==20)throw new Error("grille non rétablie : "+S.grid);
+  if(S.netLabels!==0)throw new Error("étiquettes non rétablies : "+S.netLabels);
+  if(S.listTab!=="nets")throw new Error("onglet non rétabli : "+S.listTab);
+  setGridStep(10);setNetLabels(2);setListTab("bom");
+});
+T("un utilisateur neuf part de la disposition d'usine",()=>{
+  wsMove("palette","dockB",0);
+  if(!profCreer("Marie"))throw new Error("création refusée");
+  if(wsPlaceOf("palette")!=="dockL")
+    throw new Error("disposition d'usine attendue : "+wsPlaceOf("palette"));
+  profChoisir("Pilou");
+  if(wsPlaceOf("palette")!=="dockB")
+    throw new Error("Pilou n'a pas retrouvé la sienne : "+wsPlaceOf("palette"));
+  profSupprimer("Marie");
+  WS=wsDefault();wsApply(false);
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

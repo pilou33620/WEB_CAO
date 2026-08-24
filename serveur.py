@@ -2,6 +2,25 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.6.0
+# Date: 2026-08-24
+# Explication: chaque utilisateur a desormais son espace de travail, garde
+#   dans profils/<nom>.json -- panneaux, reglages d'affichage, derniers
+#   documents. Le navigateur en garde une copie (localStorage) pour le cas ou
+#   la page est ouverte en double-clic, mais un fichier est ce qu'on
+#   sauvegarde et ce qu'on emporte : ce serveur lui ouvre trois routes. Le
+#   dossier profils/ n'est pas servi en tant que fichiers (HIDDEN) : une seule
+#   porte, qui verifie le nom demande, plutot que deux chemins a surveiller.
+#   Rien de tout cela ne depend de la passerelle composants -- un profil doit
+#   se lire meme quand pcbparts.dev est hors de portee, d'ou _profil_api a
+#   cote de _api.
+# Fonctions ajoutees/modifiees :
+# - ErreurProfil, dossier_profils, nom_profil (nouvelles)
+# - CustomHandler._profil_api, _profil_nom, _profil_corps, _profils_index,
+#   _profil_lire, _profil_ecrire, _profil_effacer (nouvelles)
+# - CustomHandler.do_GET / do_HEAD / do_OPTIONS (routage), do_PUT / do_DELETE
+#   (nouvelles), HIDDEN (profils)
+#
 # Version: 2.5.0
 # Date: 2026-08-23
 # Explication: verifier_dossier jugeait le dossier servi sur os.listdir, et
@@ -188,6 +207,50 @@ except Exception as _exc:                              # noqa: BLE001
 # Taille maximale d'un corps POST : les arguments d'outil sont minuscules.
 MAX_CORPS = 64 * 1024
 
+# -- profils utilisateur ----------------------------------------------------
+# Un fichier par utilisateur, portant son nom : profils/Pilou.json. Le
+# navigateur en garde une copie (localStorage) pour le cas ou la page est
+# ouverte en double-clic, mais c'est ce fichier-ci qui fait foi -- c'est lui
+# qu'on sauvegarde et qu'on emporte. Voir commun/profils.js.
+PROFILS = "profils"
+MAX_PROFIL = 512 * 1024        # un profil, ce sont des reglages : quelques Ko
+NOM_INTERDIT = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+NOMS_RESERVES = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])$", re.I)
+
+
+class ErreurProfil(Exception):
+    """Refus explicite d'une route de profil : code HTTP + message lisible."""
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def dossier_profils():
+    """Le dossier des profils, a cote d'index.html (ROOT peut changer)."""
+    return os.path.join(ROOT, PROFILS)
+
+
+def nom_profil(brut):
+    """Nom d'utilisateur -> nom de fichier sur, ou None.
+
+    Le nom vient du navigateur : il n'a le droit ni de traverser un dossier,
+    ni de designer un fichier reserve de Windows. On refuse plutot que de
+    corriger en silence -- a moitie nettoye, un nom ne designe plus la meme
+    personne, et la page sait dire pourquoi il est refuse.
+    """
+    nom = " ".join(str(brut or "").split())
+    if not nom or len(nom) > 40:
+        return None
+    if NOM_INTERDIT.search(nom):
+        return None
+    if nom.strip(".") == "" or nom[0] == "." or nom[-1] in ". ":
+        return None
+    if NOMS_RESERVES.match(nom):
+        return None
+    return nom
+
 # Origines autorisees a appeler l'API : cette machine et les reseaux prives,
 # pour le cas ou la page serait servie depuis un autre port.
 ORIGINES = re.compile(
@@ -370,7 +433,11 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     """Sert ROOT, sans cache, avec redirection vers <dossier>/<dossier>.html."""
 
     # les fichiers de travail n'ont rien a faire sur le reseau
-    HIDDEN = ('.git', '.github', '.gitignore', '.venv', '__pycache__', '.env')
+    # profils/ n'est pas cache par pudeur : il n'a qu'une porte, /api/profil,
+    # qui verifie le nom demande. Servir le dossier en plus n'ajouterait
+    # rien et donnerait un second chemin a surveiller.
+    HIDDEN = ('.git', '.github', '.gitignore', '.venv', '__pycache__', '.env',
+              'profils')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
@@ -498,8 +565,129 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError):
             raise passerelle_mcp.ErreurPasserelle(400, "Corps JSON illisible")
 
+    # -- profils utilisateur ----------------------------------------------
+    # Trois routes, et un seul dossier : profils/. La page d'accueil liste les
+    # utilisateurs, chaque outil lit et reecrit celui qui travaille.
+
+    def _profil_api(self, action):
+        """Execute action() et traduit les refus en JSON {"detail": ...}.
+
+        Jumeau de _api pour les profils, a une difference pres qui compte :
+        rien ici ne depend de la passerelle composants. Un profil doit se lire
+        et s'ecrire meme quand pcbparts.dev est hors de portee.
+        """
+        try:
+            self._envoyer_json(action())
+        except ErreurProfil as exc:
+            self.close_connection = True    # le corps n'a peut-etre pas ete lu
+            self._envoyer_json({"detail": exc.message}, exc.code)
+        except Exception as exc:                       # noqa: BLE001
+            self.close_connection = True
+            self._envoyer_json({"detail": "Erreur interne : %s" % exc}, 500)
+
+    def _profil_nom(self):
+        params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        nom = nom_profil((params.get("nom") or [""])[0])
+        if not nom:
+            raise ErreurProfil(400, "Nom d'utilisateur invalide")
+        return nom
+
+    def _profil_corps(self):
+        try:
+            taille = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise ErreurProfil(400, "Content-Length invalide")
+        if taille > MAX_PROFIL:
+            raise ErreurProfil(413, "Profil trop volumineux")
+        try:
+            return json.loads(self.rfile.read(taille) or b"{}")
+        except (ValueError, UnicodeDecodeError):
+            raise ErreurProfil(400, "Corps JSON illisible")
+
+    def _profils_index(self):
+        """La liste des utilisateurs, c'est le contenu du dossier."""
+        try:
+            fichiers = sorted(os.listdir(dossier_profils()))
+        except OSError:
+            fichiers = []                   # dossier absent : aucun profil, pas une erreur
+        out = []
+        for f in fichiers:
+            if not f.lower().endswith(".json"):
+                continue
+            nom = nom_profil(f[:-len(".json")])
+            if not nom:
+                continue
+            try:
+                quand = int(os.path.getmtime(os.path.join(dossier_profils(), f)) * 1000)
+            except OSError:
+                quand = 0
+            out.append({"nom": nom, "t": quand})
+        return {"profils": out}
+
+    def _profil_lire(self):
+        nom = self._profil_nom()
+        chemin = os.path.join(dossier_profils(), nom + ".json")
+        try:
+            with open(chemin, encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            raise ErreurProfil(404, "Aucun profil pour « %s »" % nom)
+        except OSError as exc:
+            raise ErreurProfil(500, "Profil illisible : %s" % exc)
+        except ValueError:
+            raise ErreurProfil(422, "Profil illisible : ce n'est pas du JSON")
+
+    def _profil_ecrire(self):
+        # le corps d'abord : un nom refuse ne doit pas laisser la requete a
+        # moitie lue dans la connexion
+        charge = self._profil_corps()
+        nom = self._profil_nom()
+        if not isinstance(charge, dict) or charge.get("format") != "cao-profil-1":
+            raise ErreurProfil(400, "Ce n'est pas un profil (format attendu :"
+                                    " cao-profil-1)")
+        dos = dossier_profils()
+        try:
+            os.makedirs(dos, exist_ok=True)
+        except OSError as exc:
+            raise ErreurProfil(500, "Dossier profils/ impossible a creer : %s" % exc)
+        charge["nom"] = nom
+        chemin = os.path.join(dos, nom + ".json")
+        temp = chemin + ".tmp"
+        # ecriture en deux temps : une coupure de courant au mauvais moment
+        # laisse l'ancien profil entier plutot qu'un fichier a moitie ecrit
+        try:
+            with open(temp, "w", encoding="utf-8") as f:
+                f.write(json.dumps(charge, ensure_ascii=False, indent=1))
+            os.replace(temp, chemin)
+        except OSError as exc:
+            try:
+                os.remove(temp)
+            except OSError:
+                pass
+            raise ErreurProfil(500, "Profil non enregistre : %s" % exc)
+        return {"ok": True, "nom": nom, "t": charge.get("t", 0)}
+
+    def _profil_effacer(self):
+        nom = self._profil_nom()
+        try:
+            os.remove(os.path.join(dossier_profils(), nom + ".json"))
+        except FileNotFoundError:
+            pass                            # deja parti : le resultat est celui voulu
+        except OSError as exc:
+            raise ErreurProfil(500, "Profil non supprime : %s" % exc)
+        return {"ok": True, "nom": nom}
+
     def do_OPTIONS(self):
-        if self._route() not in ("/api/tools", "/api/tool"):
+        route = self._route()
+        if route in ("/api/profils", "/api/profil"):
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Methods",
+                             "GET, PUT, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self._cors()
+            self.end_headers()
+            return
+        if route not in ("/api/tools", "/api/tool"):
             self.send_error(405, "Unsupported method (OPTIONS)")
             return
         self.send_response(204)
@@ -507,6 +695,18 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self._cors()
         self.end_headers()
+
+    def do_PUT(self):
+        if self._route() != "/api/profil":
+            self.send_error(405, "Unsupported method (PUT)")
+            return
+        self._profil_api(self._profil_ecrire)
+
+    def do_DELETE(self):
+        if self._route() != "/api/profil":
+            self.send_error(405, "Unsupported method (DELETE)")
+            return
+        self._profil_api(self._profil_effacer)
 
     def do_POST(self):
         if self._route() != "/api/tool":
@@ -523,16 +723,30 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self._api(appel)
 
     def do_GET(self):
-        if self._route() == "/api/tools":
+        route = self._route()
+        if route == "/api/tools":
             # lambda et non passerelle_mcp.liste_outils : le module peut etre
             # absent (import tolerant), _api repond alors 503.
             self._api(lambda: passerelle_mcp.liste_outils())
             return
+        if route == "/api/profils":
+            self._profil_api(self._profils_index)
+            return
+        if route == "/api/profil":
+            self._profil_api(self._profil_lire)
+            return
         super().do_GET()
 
     def do_HEAD(self):
-        if self._route() == "/api/tools":
+        route = self._route()
+        if route == "/api/tools":
             self._api(lambda: passerelle_mcp.liste_outils())
+            return
+        if route == "/api/profils":
+            self._profil_api(self._profils_index)
+            return
+        if route == "/api/profil":
+            self._profil_api(self._profil_lire)
             return
         super().do_HEAD()
 

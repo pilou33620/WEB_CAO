@@ -73,12 +73,26 @@ function pnsItemTrack(t){return pnsItemSeg(t.l,t.net,t.w,t.x1,t.y1,t.x2,t.y2,t);
 function pnsMaxClr(){
   let m=0;
   for(const c of S.classes){const v=+c.clr;if(Number.isFinite(v)&&v>m)m=v;}
-  return m;
+  return Math.max(m,matMax());
 }
-/* L'isolation exigée entre un item et une piste du net `net`. C'est le seul
-   endroit du moteur où la classe de net entre en jeu — le reste ne connaît que
-   des polygones. */
-function pnsClr(it,net){return clrPair(net,it.net);}
+/* La nature d'un item au sens de la matrice des règles : une pastille percée
+   est une pastille traversante, une pastille pleine une pastille CMS. Le
+   cuivre plein des zones n'entre pas dans l'index — c'est le masque de zone
+   qui l'écarte, et il demande sa case lui-même. */
+function pnsKind(it){
+  if(!it)return "trk";
+  if(it.k==="V")return "via";
+  if(it.k==="P")return (it.q&&it.q.drill>0)?"th":"smd";
+  return "trk";
+}
+/* L'isolation exigée entre un item et du cuivre du net `net`, de nature
+   `kind` — une piste par défaut, ce que le routeur pose. C'est le seul endroit
+   du moteur où les classes de net et la matrice entrent en jeu ; le reste ne
+   connaît que des polygones. */
+function pnsClr(it,net,kind){return clrK(net,it.net,kind||"trk",pnsKind(it));}
+/* L'isolation exigée entre deux items quelconques : les deux natures viennent
+   de l'index. C'est la mesure du contrôle DRC. */
+function pnsClrPair(a,b){return clrK(a.net,b.net,pnsKind(a),pnsKind(b));}
 /* L'enveloppe d'un item, vue par une piste de largeur `w` sur ce net : la forme
    gonflée de l'isolation, de la demi-largeur de la piste et d'un micron de
    marge, ramenée à l'octogone aligné sur les huit sens du tracé. C'est ce
@@ -237,7 +251,7 @@ function pnsNode(parent){
          son jumeau. `nets` les réunit, faute de quoi la paire se prendrait
          elle-même pour un obstacle dès le premier millimètre. */
       if(probe.nets&&it.net&&probe.nets.has(it.net))continue;
-      if(pnsPairGap(probe,it)<pnsClr(it,probe.net)-PNS_EPS)hits.push(it);
+      if(pnsPairGap(probe,it)<pnsClrPair(probe,it)-PNS_EPS)hits.push(it);
     }
     return hits;
   };

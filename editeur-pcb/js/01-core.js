@@ -148,7 +148,20 @@ function setLayerRole(i,role,net){
    cette longueur et son diamètre décide de la faisabilité. Et un via qui ne
    traverse pas la carte doit tomber dans ce qu'un pressage sait faire.
    ========================================================================== */
+/* Les deux seuils du rapport d'aspect, en usage courant : au-delà de 8 : 1 la
+   métallisation du trou se paie, au-delà de 10 : 1 peu de fabricants suivent.
+   Ce sont des VALEURS D'USINE et non des vérités : un fabricant qui annonce du
+   12 : 1 existe, et une série bon marché peut vouloir se tenir à 6 : 1. D'où
+   les deux réglages du document, qui prennent le pas quand ils sont écrits. */
 const ASPECT_WARN=8, ASPECT_MAX=10;
+function aspWarn(){
+  const v=+S.rule.aspWarn;
+  return Number.isFinite(v)&&v>0?v:ASPECT_WARN;
+}
+function aspMax(){
+  const v=+S.rule.aspMax;
+  return Number.isFinite(v)&&v>0?Math.max(v,aspWarn()):ASPECT_MAX;
+}
 function aspectOf(len,d){return d>0?len/d:0;}
 /* Une carte pressée en une seule fois ne sait percer, hors traversant, que :
      - un via enterré dans une âme, percé et métallisé avant pressage ;
@@ -470,8 +483,17 @@ const S = {
   /* `route` : ce que le routeur fait d'un obstacle — « shove » le pousse,
      « walk » le contourne, « mark » le signale et s'arrête. Le défaut est le
      même que celui de KiCad : on pousse. */
+  /* `mat` : la matrice des natures de cuivre — une case par couple
+     piste/pastille/via/cuivre, en minimum qui s'ajoute à la classe de net.
+     Vide d'usine : la classe décide seule tant qu'on n'a rien écrit.
+     `short` : autoriser deux nets à se toucher. Faux, évidemment — mais joindre
+     deux masses en un point précis est une pratique, et le contrôle n'a alors
+     pas à la condamner quinze fois.
+     `aspWarn`/`aspMax` : les seuils du rapport d'aspect, que le fabricant
+     annonce et qui ne sont donc pas les mêmes partout. */
   rule:{edge:0.4,thermal:0.5,mask:0.05,paste:0.0,viaFinish:"tented",corner:"45",
-        route:"shove",hole:0.25},
+        route:"shove",hole:0.25,mat:{},short:false,
+        aspWarn:ASPECT_WARN,aspMax:ASPECT_MAX},
   classes:[{name:"Défaut",      w:0.3, clr:0.25, via:0.8, drill:0.4},
            {name:"Alimentation",w:0.6, clr:0.25, via:0.9, drill:0.45}],
   netClass:{},                // net → nom de classe ; absent = classe par défaut
@@ -1353,23 +1375,100 @@ function holeClr(){
   const v=+S.rule.hole;
   return Number.isFinite(v)&&v>=0?v:0.25;
 }
-/* Isolation entre deux nets : la plus exigeante des deux classes l'emporte.
-   Sauf entre les deux nets d'une paire différentielle : là, c'est l'écart mini
-   de la règle de paire qui fait loi. Une paire tenue à 0,15 mm sous une classe
-   qui exige 0,25 mm n'est pas une carte en faute — c'est le principe même de la
-   paire, et sans cette exception le routeur refuserait de la poser, le DRC la
-   condamnerait et les zones de cuivre l'écarteraient à tort. */
-function clrPair(a,b){
-  if(a&&b&&a!==b){
+/* ---------- la matrice des natures de cuivre ----------
+   La classe de net dit ce qu'un net exige de tout le monde. Elle ne sait pas
+   dire qu'un via demande plus de place qu'une piste, ni qu'une pastille CMS
+   supporte d'être serrée là où une pastille traversante ne le supporte pas —
+   et c'est pourtant ainsi que les fabricants écrivent leurs règles, dans un
+   tableau à double entrée que tout éditeur de CAO reprend.
+   La matrice comble ce manque, et rien de plus : chaque case est un MINIMUM
+   qui s'ajoute à la classe, jamais un remplacement. Une case à zéro — l'état
+   d'usine, et celui de tous les documents écrits avant elle — laisse donc la
+   classe seule maîtresse, et le contrôle rend exactement ce qu'il rendait.
+   La case trou/trou est l'exception : il y avait déjà une règle pour elle
+   (`S.rule.hole`), le foret n'attend pas de savoir ce qu'est un net, et elle
+   se lit et s'écrit donc là où elle a toujours vécu. Le reste de la ligne
+   « trou » n'existe pas : un perçage n'a d'isolation qu'avec un autre perçage,
+   sa rondelle se charge du cuivre. */
+const DRC_KINDS=[["trk","Piste"],["smd","Pastille CMS"],["th","Pastille TH"],
+                 ["via","Via"],["cu","Cuivre"],["hole","Trou"]];
+const DRC_ORDER=DRC_KINDS.map(k=>k[0]);
+const DRC_KIND_NAME={};
+for(const [k,n] of DRC_KINDS)DRC_KIND_NAME[k]=n;
+/* Une case n'a qu'un nom, quel que soit le sens dans lequel on la demande :
+   l'isolation piste/via est celle du via/piste. */
+function matKey(a,b){
+  const i=DRC_ORDER.indexOf(a), j=DRC_ORDER.indexOf(b);
+  return i<=j?a+"|"+b:b+"|"+a;
+}
+/* Les cases que la matrice porte vraiment : tout sauf la ligne « trou », dont
+   seule la diagonale existe et vit dans `S.rule.hole`. */
+function matHas(a,b){
+  if(DRC_ORDER.indexOf(a)<0||DRC_ORDER.indexOf(b)<0)return false;
+  if(a==="hole"||b==="hole")return a===b;
+  return true;
+}
+function matGet(a,b){
+  if(a==="hole"&&b==="hole")return holeClr();
+  if(!matHas(a,b))return 0;
+  const m=S.rule.mat;
+  const v=(m&&typeof m==="object")?+m[matKey(a,b)]:0;
+  return Number.isFinite(v)&&v>0?v:0;
+}
+function matSet(a,b,v){
+  if(a==="hole"&&b==="hole"){S.rule.hole=Math.max(0,+v||0);return;}
+  if(!matHas(a,b))return;
+  if(!S.rule.mat||typeof S.rule.mat!=="object")S.rule.mat={};
+  const k=matKey(a,b), n=+v;
+  if(Number.isFinite(n)&&n>0)S.rule.mat[k]=n;
+  else delete S.rule.mat[k];
+}
+/* La plus grande case de la matrice, hors trou : elle entre dans la marge des
+   fenêtres d'interrogation, comme l'isolation des classes. */
+function matMax(){
+  const m=S.rule.mat;
+  if(!m||typeof m!=="object")return 0;
+  let x=0;
+  for(const k in m){
+    if(k.indexOf("hole")>=0)continue;
+    const v=+m[k];
+    if(Number.isFinite(v)&&v>x)x=v;
+  }
+  return x;
+}
+/* L'exception de la paire différentielle, isolée pour que les deux mesures —
+   celle des classes et celle de la matrice — la respectent à l'identique.
+   Une paire tenue à 0,15 mm sous une classe qui exige 0,25 mm n'est pas une
+   carte en faute : c'est le principe même de la paire, et sans cette exception
+   le routeur refuserait de la poser, le DRC la condamnerait et les zones de
+   cuivre l'écarteraient à tort. C'est aussi pour cela que la matrice ne peut
+   pas la relever : une case piste/piste plus large la condamnerait de nouveau,
+   par la porte de derrière. */
+function dpGapPair(a,b){
+  if(a&&b&&a!==b&&typeof dpOfNet==="function"){
     const d=dpOfNet(a);
     if(d&&(d.p===b||d.n===b))return dpMinGap(d);
   }
+  return null;
+}
+/* Isolation entre deux nets : la plus exigeante des deux classes l'emporte. */
+function clrPair(a,b){
+  const g=dpGapPair(a,b);
+  if(g!=null)return g;
   return Math.max(classOf(a).clr,classOf(b).clr);
+}
+/* La même, natures comprises : c'est celle-ci que le contrôle, le routeur et
+   les zones de cuivre appliquent. `ka` et `kb` disent de quoi il s'agit —
+   piste, pastille CMS, pastille traversante, via, cuivre plein. */
+function clrK(a,b,ka,kb){
+  const g=dpGapPair(a,b);
+  if(g!=null)return g;
+  return Math.max(classOf(a).clr,classOf(b).clr,matGet(ka,kb));
 }
 function maxClr(){
   let m=0;
   for(const c of S.classes)m=Math.max(m,c.clr);
-  return m||FALLBACK_CLASS.clr;
+  return Math.max(m||FALLBACK_CLASS.clr,matMax());
 }
 /* rattache d'office les nets d'alimentation à la classe du même nom, si elle
    existe : c'est ce que faisait l'ancienne largeur « alimentation » */

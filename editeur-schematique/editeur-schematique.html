@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="css/editeur.css">
 <link rel="stylesheet" href="../commun/workspace.css">
 <link rel="stylesheet" href="../commun/session.css">
+<link rel="stylesheet" href="../commun/profils.css">
 </head>
 <body>
 
@@ -16,6 +17,7 @@
     <button class="tb" data-cao-nav="pcb" title="Passer au routage — le schéma en cours reste dans l'onglet">➔ Éditeur PCB</button>
     <button class="tb" data-cao-nav="composants" title="Chercher une référence — le schéma reste dans l'onglet">⌕ Composants</button>
     <button class="tb" data-cao-nav="accueil" title="Page d'accueil">⌂ Accueil</button>
+    <button class="tb" id="bProfil" data-cao-profil title="Utilisateur : panneaux, réglages et derniers documents lui appartiennent">👤 …</button>
     <div class="sep"></div>
     <button class="tb on" id="mSelect">Sélection <kbd>V</kbd></button>
     <button class="tb" id="mWire">Fil <kbd>W</kbd></button>
@@ -140,6 +142,7 @@
      directement depuis le disque (file://), sans serveur web.
      ============================================================================= -->
 <script src="../commun/session.js"></script>
+<script src="../commun/profils.js"></script>
 <script src="js/00-espace-config.js"></script>
 <script src="js/01-noyau.js"></script>
 <script src="js/02-bibliotheque.js"></script>
@@ -160,6 +163,7 @@
 <script src="js/17-demarrage.js"></script>
 <script src="js/18-csv.js"></script>
 <script src="js/19-broches.js"></script>
+<script src="js/20-profil.js"></script>
 <script src="../commun/workspace.js"></script>
 </body>
 </html>

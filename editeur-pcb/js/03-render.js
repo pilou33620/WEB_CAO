@@ -170,21 +170,21 @@ function zoneCanvas(i){
   for(const t of S.tracks){
     if(t.l!==i)continue;
     if(sameNet((t.x1+t.x2)/2,(t.y1+t.y2)/2,t.net))continue;
-    c.lineWidth=t.w+2*clrPair(zoneNetAt(i,(t.x1+t.x2)/2,(t.y1+t.y2)/2),t.net);
+    c.lineWidth=t.w+2*clrK(zoneNetAt(i,(t.x1+t.x2)/2,(t.y1+t.y2)/2),t.net,"cu","trk");
     c.beginPath();c.moveTo(t.x1,t.y1);c.lineTo(t.x2,t.y2);c.stroke();
   }
   for(const v of S.vias){
     if(i<v.a||i>v.b)continue;
     const same=sameNet(v.x,v.y,v.net);
     c.beginPath();
-    c.arc(v.x,v.y,same?v.drill/2:v.d/2+clrPair(zoneNetAt(i,v.x,v.y),v.net),0,Math.PI*2);
+    c.arc(v.x,v.y,same?v.drill/2:v.d/2+clrK(zoneNetAt(i,v.x,v.y),v.net,"cu","via"),0,Math.PI*2);
     c.fill();
   }
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(!padLayers(fp,q).includes(i))continue;
       const same=sameNet(q.x,q.y,q.net);
-      padFill(c,q,same?clr:clrPair(zoneNetAt(i,q.x,q.y),q.net));
+      padFill(c,q,same?clr:clrK(zoneNetAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd"));
       if(same)thermals.push(q);
       else if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2+clr,0,Math.PI*2);c.fill();}
     }

@@ -4,7 +4,9 @@
    Les panneaux latéraux sont détachables : on les glisse par leur en-tête
    vers un dock (gauche, droite, bas), on les fait flotter au-dessus du
    canevas, on les replie ou on les ferme. Tailles et positions sont
-   conservées dans le stockage local.
+   conservées dans le profil de l'utilisateur courant (commun/profils.js),
+   donc dans profils/<nom>.json : deux personnes sur le même poste ne se
+   défont plus mutuellement leur disposition.
 
    Ce fichier ne connaît rien de l'éditeur qui l'héberge : tout ce qui diffère
    entre le PCB et le schématique est déclaré dans un objet global WS_CONFIG,
@@ -62,15 +64,26 @@ let WS=wsDefault();
 /* ==========================================================================
    Stockage
    ========================================================================== */
+/* La disposition appartient à quelqu'un : elle est rangée dans le profil de
+   l'utilisateur courant (commun/profils.js), sous une section nommée d'après
+   la clé de l'éditeur. Sans ce module — page ouverte seule, essai isolé — on
+   retombe sur le stockage local nu, comme avant les profils. */
+const WS_SECTION="espace:"+WS_KEY;
 function wsSave(){
+  if(typeof profEcrire==="function"){profEcrire(WS_SECTION,WS);return;}
   try{localStorage.setItem(WS_KEY,JSON.stringify(WS));}catch(e){}
 }
 function wsLoad(){
-  let raw=null;
-  try{raw=localStorage.getItem(WS_KEY);}catch(e){}
-  if(!raw)return;
   let d=null;
-  try{d=JSON.parse(raw);}catch(e){return;}
+  if(typeof profLire==="function")d=profLire(WS_SECTION);
+  if(!d){
+    /* Héritage : la disposition d'avant les profils. Elle sert une dernière
+       fois — au premier enregistrement, elle sera écrite dans le profil. */
+    let raw=null;
+    try{raw=localStorage.getItem(WS_KEY);}catch(e){}
+    if(!raw)return;
+    try{d=JSON.parse(raw);}catch(e){return;}
+  }
   if(!d||typeof d!=="object")return;
   const def=wsDefault(), out=wsDefault();
   for(const k of WS_DOCKS)
@@ -605,6 +618,11 @@ function wsMenuOpen(){
 
   wsLoad();
   wsApply(false);
+  /* Changer d'utilisateur, ou voir arriver son fichier de profil après coup,
+     change la disposition sous nos pieds : on la relit et on la réapplique,
+     sans réécrire (elle vient justement d'être lue). */
+  if(typeof profSurChangement==="function")
+    profSurChangement(function(){WS=wsDefault();wsLoad();wsApply(false);});
   if(typeof resize==="function")resize();
   if(typeof fit==="function")fit();
 })();

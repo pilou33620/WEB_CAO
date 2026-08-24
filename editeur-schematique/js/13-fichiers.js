@@ -13,6 +13,7 @@ function saveJson(){
   dl(blob,"schema.json");
   S.dirty=false;            // le travail est sur disque : plus d'alerte à la fermeture
   clearBackup();
+  if(typeof profNoterDocument==="function")profNoterDocument("schema","schema.json");
   document.getElementById("fHint").textContent="Document enregistré dans schema.json.";
 }
 function dl(blob,name){
@@ -47,6 +48,7 @@ function setNetLabels(v){
   const b=document.getElementById("bNets");
   b.classList.toggle("on",S.netLabels>0);
   b.innerHTML="Nets : "+["aucun","nommés","tous"][S.netLabels]+' <kbd>N</kbd>';
+  if(typeof profilNoter==="function")profilNoter();
   draw();
 }
 function cycleNetLabels(){setNetLabels(S.netLabels+1);}

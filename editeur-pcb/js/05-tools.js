@@ -55,6 +55,23 @@ function dColor(v,def){
   const s=String(v==null?"":v).trim();
   return HEX_COLOR.test(s)?s:def;
 }
+/* La matrice des natures de cuivre. Seules les cases que le modèle connaît
+   survivent : une clé inventée n'entrerait nulle part dans le contrôle, mais
+   elle traverserait l'aller-retour du document et fausserait la comparaison du
+   banc d'essai. Une case à zéro ne se stocke pas — c'est l'état d'usine. */
+function dMat(v){
+  const src=(v&&typeof v==="object")?v:{};
+  const out={};
+  for(const a of DRC_ORDER)
+    for(const b of DRC_ORDER){
+      if(a==="hole"||b==="hole"||!matHas(a,b))continue;   // trou/trou vit dans `hole`
+      const k=matKey(a,b);
+      if(out[k]!==undefined)continue;
+      const n=+src[k];
+      if(Number.isFinite(n)&&n>0)out[k]=clamp(n,0,100);
+    }
+  return out;
+}
 const FP_ROT_OK={0:1,45:1,90:1,135:1,180:1,225:1,270:1,315:1};
 /* Pastilles posées à la main. Une pastille sans centre exploitable est
    écartée ; si rien ne reste, l'empreinte redevient paramétrique — mieux vaut
@@ -370,7 +387,17 @@ function normDoc(d){
             route:ROUTE_MODES[rm]?rm:"shove",
             /* le trou à trou n'existait pas : les fichiers muets prennent le
                minimum de fabrication courant, qu'ils respectaient déjà */
-            hole:dRange(r.hole,0.25,0,100)};
+            hole:dRange(r.hole,0.25,0,100),
+            /* la matrice des natures : absente des fichiers antérieurs, et
+               vide d'usine — dans les deux cas la classe de net décide seule,
+               exactement comme avant qu'elle existe */
+            mat:dMat(r.mat),
+            /* le court-circuit toléré et les deux seuils de rapport d'aspect :
+               absents des fichiers antérieurs, qui prenaient donc les valeurs
+               d'usine — celles qu'ils appliquaient déjà */
+            short:!!r.short,
+            aspWarn:dRange(r.aspWarn,ASPECT_WARN,1,100),
+            aspMax:dRange(r.aspMax,ASPECT_MAX,1,100)};
   /* largeurs de la V1.0 : loadDoc() en tire deux classes quand `classes`
      manque, on les laisse donc passer */
   for(const k of ["w","clr","via","drill","wPwr"])
@@ -445,7 +472,8 @@ function loadDoc(d,keepView){
   S.fabOrigin=d.fabOrigin;
   const r=d.rule;
   S.rule={edge:r.edge, thermal:r.thermal, mask:r.mask, paste:r.paste,
-          viaFinish:r.viaFinish, corner:r.corner, route:r.route, hole:r.hole};
+          viaFinish:r.viaFinish, corner:r.corner, route:r.route, hole:r.hole,
+          mat:r.mat, short:r.short, aspWarn:r.aspWarn, aspMax:r.aspMax};
   if(d.classes){
     S.classes=d.classes;S.netClass=d.netClass;
   }else{
@@ -476,7 +504,15 @@ function loadDoc(d,keepView){
   zoneCache.clear();touch();
   if(!d.classes)autoClass();
   $("cuCount").value=String(S.cu);
-  buildLayers();buildTabs();buildRules();refreshPanels();
+  buildLayers();buildTabs();
+  /* La fenêtre des règles est dans un fichier chargé APRÈS celui de l'amorçage,
+     et loadDoc() tourne dès le démarrage : c'est ainsi que revient la carte
+     laissée dans l'onglet. L'appel doit donc survivre à une fenêtre qui
+     n'existe pas encore — sans cette garde, la reprise échouait à tous les
+     coups et la session était effacée. Fermée, reSync() ne fait rien de toute
+     façon : la garde ne change rien à l'usage courant. */
+  if(typeof reSync==="function")reSync();
+  refreshPanels();
   if(!keepView)fit();else draw();
 }
 function undo(){
@@ -1655,7 +1691,7 @@ function setRouteMode(m){
   S.rule.route=m;
   touch();
   if(S.route)updateRoute(S.mouse.x,S.mouse.y);
-  buildRules();draw();
+  reSync();draw();
   hint("Face à un obstacle : "+ROUTE_MODES[m]+
        (m==="shove"?" — le cuivre voisin s'écarte pour laisser passer."
         :m==="walk"?" — la piste se faufile, rien d'autre ne bouge."
@@ -2096,7 +2132,7 @@ function viaIsole(v,nets,skip){
              it.k==="P"?("de la pastille "+it.fp.ref+"."+it.q.n):
                         ("de la piste "+(it.net||"sans net"));
   return "à "+fmt(Math.max(0,pire.g),3)+" mm "+quoi+", l'isolation en exige "+
-         fmt(pnsClr(it,v.net),3)+" mm";
+         fmt(pnsClr(it,v.net,"via"),3)+" mm";
 }
 /* Le trou à trou. La fenêtre d'interrogation se prend sur le CUIVRE du via,
    élargi de la règle : la rondelle d'un objet enveloppe toujours son perçage,
@@ -2437,7 +2473,7 @@ function closeEdge(){
   S.board.pts=Z.pts.map(p=>({x:r3(p.x),y:r3(p.y)}));
   boardChanged();
   clearSel();S.sel.edge=true;
-  refreshPanels();buildRules();draw();
+  refreshPanels();reSync();draw();
   const out=S.fps.filter(f=>!inBoard(f.x,f.y,0)).length;
   hint("Contour redéfini : "+S.board.pts.length+" sommets, "+
        fmt(S.board.w,1)+" × "+fmt(S.board.h,1)+" mm"+
@@ -2534,7 +2570,7 @@ function placeOrigin(x,y){
   push();
   S.origin={x:m?r3(m.x):r3(Math.round(x/S.grid)*S.grid),
             y:m?r3(m.y):r3(Math.round(y/S.grid)*S.grid)};
-  touch();buildRules();refreshPanels();draw();
+  touch();reSync();refreshPanels();draw();
   hint("Origine posée en "+fmt(S.origin.x,2)+" ; "+fmt(S.origin.y,2)+
        (m?" (sur une pastille)":"")+" — la grille et les coordonnées la suivent.");
 }
@@ -2922,6 +2958,19 @@ function isField(n){
 document.addEventListener("keydown",e=>{
   if(isField(e.target)||isField(document.activeElement))return;
   const k=e.key.toLowerCase();
+  /* Fenêtre des règles ouverte : Échap la ferme, annuler et rétablir la
+     traversent — c'est là qu'on vient de se tromper de cote — et rien d'autre
+     n'agit sur la carte, qu'on ne voit pas. */
+  if(typeof reIsOpen==="function"&&reIsOpen()){
+    if(k==="escape"){e.preventDefault();reClose();return;}
+    if((e.ctrlKey||e.metaKey)&&(k==="z"||k==="y")){
+      e.preventDefault();
+      (k==="y"||e.shiftKey)?redo():undo();
+      reSync();
+      return;
+    }
+    return;
+  }
   /* Fenêtre d'empreinte ouverte : elle prend Échap pour se fermer, et rien
      d'autre ne doit agir sur la carte pendant ce temps — Suppr y effacerait
      une empreinte qu'on est en train de dessiner, et annuler remplacerait
@@ -3102,7 +3151,12 @@ function setMode(m){
   }[m]);
   draw();
 }
-function setGrid(v){S.showGrid=!!v;$("bGrid").classList.toggle("on",S.showGrid);draw();}
+function setGrid(v){
+  S.showGrid=!!v;
+  $("bGrid").classList.toggle("on",S.showGrid);
+  if(typeof profilNoter==="function")profilNoter();
+  draw();
+}
 /* Pas d'accrochage : une seule porte d'entrée pour le menu de la barre
    d'outils, celui du panneau Règles et le pied de page. */
 /* Des millimètres ronds d'abord, plus les deux pas impériaux dont on ne peut
@@ -3114,6 +3168,7 @@ function setGridStep(v){
   if(!Number.isFinite(g)||g<=0||g===S.grid)return;
   S.grid=g;
   updateGridInfo();
+  if(typeof profilNoter==="function")profilNoter();
   hint("Grille d'accrochage : "+String(r3(g)).replace(".",",")+" mm.");
   draw();
 }
@@ -3127,7 +3182,7 @@ function setCornerMode(m){
   S.rule.corner=m;
   touch();
   if(S.route){S.route.flip=false;updateRoute(S.mouse.x,S.mouse.y);}
-  buildRules();draw();
+  reSync();draw();
   hint("Angle des pistes : "+CORNER_MODES[m]+
        (m==="free"?" — le tracé ne contraint plus rien."
         :" — « / » bascule l'arrangement du coude."));
@@ -3143,6 +3198,7 @@ function setFlip(v){
   S.flip=!!v;
   $("bView").innerHTML="Vue : "+(S.flip?"dessous":"dessus")+' <kbd>Y</kbd>';
   $("bView").classList.toggle("on",S.flip);
+  if(typeof profilNoter==="function")profilNoter();
   draw();
 }
 function setContrast(v){
@@ -3150,6 +3206,7 @@ function setContrast(v){
   const n=["complet","atténué","couche seule"][v];
   $("bContrast").innerHTML="Contraste : "+n+' <kbd>H</kbd>';
   $("bContrast").classList.toggle("on",v>0);
+  if(typeof profilNoter==="function")profilNoter();
   draw();
 }
 function setActive(i){

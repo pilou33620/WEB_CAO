@@ -95,20 +95,20 @@ function zoneMask(l,net){
   c.strokeStyle="#000";c.fillStyle="#000";c.lineCap="round";c.lineJoin="round";
   for(const t of S.tracks){
     if(t.l!==l||t.net===net)continue;
-    c.lineWidth=t.w+2*clrPair(net,t.net);
+    c.lineWidth=t.w+2*clrK(net,t.net,"cu","trk");
     c.beginPath();c.moveTo(t.x1,t.y1);c.lineTo(t.x2,t.y2);c.stroke();
   }
   for(const v of S.vias){
     if(l<v.a||l>v.b)continue;
     c.beginPath();
-    c.arc(v.x,v.y,v.net===net?v.drill/2:v.d/2+clrPair(net,v.net),0,Math.PI*2);
+    c.arc(v.x,v.y,v.net===net?v.drill/2:v.d/2+clrK(net,v.net,"cu","via"),0,Math.PI*2);
     c.fill();
   }
   const thermals=[];
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(!padLayers(fp,q).includes(l))continue;
-      padFill(c,q,q.net===net?clr:clrPair(net,q.net));
+      padFill(c,q,q.net===net?clr:clrK(net,q.net,"cu",q.drill>0?"th":"smd"));
       if(q.net===net)thermals.push(q);
       else if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2+clr,0,Math.PI*2);c.fill();}
     }
@@ -434,10 +434,14 @@ function runDrc(){
     for(const b of N.colliding(a)){
       if(!neuf(a,b))continue;
       const d=fmt(Math.max(0,pnsPairGap(a,b)),3);
+      /* La cote exigée est dite en clair : sans elle, une case de la matrice
+         relevée pour les vias seulement resterait invisible dans la liste, et
+         deux défauts de 0,2 mm se liraient comme le même défaut. */
+      const req=" : la règle en exige "+fmt(pnsClrPair(a,b),3)+" mm";
       if(a.k==="S"&&b.k==="S")
         bTT.push({x:(a.seg.x1+a.seg.x2+b.seg.x1+b.seg.x2)/4,
                   y:(a.seg.y1+a.seg.y2+b.seg.y1+b.seg.y2)/4, l:a.l0,
-          msg:"Isolation piste/piste "+d+" mm ("+(a.net||"?")+" / "+(b.net||"?")+")"});
+          msg:"Isolation piste/piste "+d+" mm ("+(a.net||"?")+" / "+(b.net||"?")+")"+req});
       else if(a.k==="P"&&b.k==="P"){
         // même empreinte : jugée plus bas, sur une autre règle et sans couches
         if(a.fp!==b.fp)
@@ -445,15 +449,17 @@ function runDrc(){
             msg:"Pastilles trop proches : "+tagOf(a)+" / "+tagOf(b)});
       }else if(a.k==="V"&&b.k==="V")
         bV.push({x:(a.v.x+b.v.x)/2,y:(a.v.y+b.v.y)/2,l:a.l0,
-          msg:"Isolation via/via "+d+" mm ("+(a.net||"?")+" / "+(b.net||"?")+")"});
+          msg:"Isolation via/via "+d+" mm ("+(a.net||"?")+" / "+(b.net||"?")+")"+req});
       else{
         const s=a.k==="S"?a:(b.k==="S"?b:null);
         const v=a.k==="V"?a:(b.k==="V"?b:null);
         const p=a.k==="P"?a:(b.k==="P"?b:null);
         if(s&&p)bTP.push({x:p.q.x,y:p.q.y,l:s.l0,
-          msg:"Isolation piste/pastille "+tagOf(p)+" : "+d+" mm"});
-        else if(v&&s)bV.push({x:v.v.x,y:v.v.y,l:s.l0,msg:"Isolation via/piste "+d+" mm"});
-        else if(v&&p)bV.push({x:v.v.x,y:v.v.y,l:v.l0,msg:"Isolation via/pastille "+tagOf(p)});
+          msg:"Isolation piste/pastille "+tagOf(p)+" : "+d+" mm"+req});
+        else if(v&&s)bV.push({x:v.v.x,y:v.v.y,l:s.l0,
+          msg:"Isolation via/piste "+d+" mm"+req});
+        else if(v&&p)bV.push({x:v.v.x,y:v.v.y,l:v.l0,
+          msg:"Isolation via/pastille "+tagOf(p)+" : "+d+" mm"+req});
       }
     }
   for(const e of bTT)out.push(e);
@@ -517,6 +523,11 @@ function runDrc(){
     if(!a)parFp.set(p.fp,a=[]);
     a.push(p);
   }
+  /* Joindre deux nets en un point est parfois voulu — deux masses réunies sous
+     un convertisseur, un pont de zéro ohm dessiné en cuivre. La règle
+     « autoriser les court-circuits » se tait alors, plutôt que de répéter
+     quinze fois un défaut qu'on a posé exprès. */
+  if(!S.rule.short)
   for(const g of parFp.values())
     for(let i=0;i<g.length;i++)
       for(let j=i+1;j<g.length;j++){
@@ -616,14 +627,14 @@ function runDrc(){
   for(const v of S.vias){
     const len=stackSpan(v.a,v.b), r=aspectOf(len,v.drill);
     const dit=fmt(len,2)+" mm percés pour "+fmt(v.drill,2)+" mm";
-    if(r>ASPECT_MAX)
+    if(r>aspMax())
       out.push({via:v,x:v.x,y:v.y,l:v.a,
         msg:"Rapport d'aspect "+fmt(r,1)+" : 1 ("+dit+
-            ") : au-delà de "+ASPECT_MAX+" : 1, peu de fabricants suivent"});
-    else if(r>ASPECT_WARN)
+            ") : au-delà de "+aspMax()+" : 1, peu de fabricants suivent"});
+    else if(r>aspWarn())
       out.push({info:true,via:v,x:v.x,y:v.y,l:v.a,
         msg:"Rapport d'aspect "+fmt(r,1)+" : 1 ("+dit+
-            ") : au-delà de "+ASPECT_WARN+" : 1 la métallisation du trou se paie"});
+            ") : au-delà de "+aspWarn()+" : 1 la métallisation du trou se paie"});
     const b=viaBuild(v.a,v.b);
     if(!b.ok)
       out.push({info:true,via:v,x:v.x,y:v.y,l:v.a,
@@ -640,8 +651,8 @@ function runDrc(){
   }
   for(const [k,g] of byDrill){
     const r=aspectOf(stackLam(),g.p.q.drill);
-    if(r<=ASPECT_WARN)continue;
-    out.push({info:r<=ASPECT_MAX,x:g.p.q.x,y:g.p.q.y,l:0,
+    if(r<=aspWarn())continue;
+    out.push({info:r<=aspMax(),x:g.p.q.x,y:g.p.q.y,l:0,
       msg:g.n+" perçage(s) de "+k+" mm : rapport d'aspect "+fmt(r,1)+" : 1 sur "+
           fmt(stackLam(),2)+" mm de stratifié (ex. "+g.p.tag+")"});
   }

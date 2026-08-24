@@ -28,6 +28,9 @@ identiques pour l'éditeur PCB :
 ../commun/workspace.js           panneaux détachables, paramétré par WS_CONFIG
 ../commun/session.css            habillage des boutons de navigation
 ../commun/session.js             travail conservé en changeant d'outil (session d'onglet)
+../commun/profils.css            habillage du bouton d'utilisateur et de son menu
+../commun/profils.js             profils : panneaux et réglages par utilisateur,
+                                 dans profils/<nom>.json
 ../commun/test/dom-stub.js       DOM minimal du banc d'essai
 ../commun/outils/monofichier.py  mécanique d'assemblage
 ```
@@ -56,6 +59,8 @@ identiques pour l'éditeur PCB :
 | `js/17-demarrage.js` | 30 | Séquence de démarrage des données et de l'affichage, puis reprise du travail laissé dans l'onglet |
 | `js/18-csv.js` | 108 | Bibliothèque `LIB_composants.csv` : analyse, chargement HTTP ou manuel |
 | `js/19-broches.js` | 379 | Éditeur de brochage : nombre de broches, représentation, taille du corps, noms et placement des pattes à la grille |
+| `js/20-profil.js` | 83 | Réglages d'affichage rangés dans le profil de l'utilisateur : grille, étiquettes de net, onglet de liste |
+| `../commun/profils.js` | 555 | Profils utilisateur : qui travaille, ses panneaux, ses réglages, ses derniers documents — **chargé en premier**, avant l'espace de travail qui l'interroge |
 | `../commun/session.js` | 190 | Session d'onglet : le schéma part et revient quand on passe au PCB ou à la recherche — **chargé en premier** |
 | `../commun/workspace.js` | 610 | Espace de travail : docks, panneaux flottants, persistance — **chargé en dernier** |
 

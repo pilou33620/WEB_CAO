@@ -25,8 +25,12 @@ commun/                        code partagé par les trois outils
 ├── workspace.css              habillage de l'espace de travail
 ├── session.js                 le travail suit l'utilisateur d'un outil à l'autre
 ├── session.css                habillage des boutons de navigation
+├── profils.js                 espace de travail propre à chaque utilisateur
+├── profils.css                habillage du bouton d'utilisateur et de son menu
 ├── outils/monofichier.py      assemblage en un HTML autonome
 └── test/dom-stub.js           DOM minimal pour les bancs d'essai
+
+profils/                       un fichier par utilisateur : Pilou.json
 ```
 
 Chaque outil a son propre `README.md` détaillant ses modules.
@@ -99,6 +103,33 @@ La recherche de composants (`/api/*`) a besoin de `ssl` : si Pyto ne le fournit
 pas, le serveur démarre quand même et ces deux routes répondent
 « passerelle indisponible » — les deux éditeurs, eux, fonctionnent.
 
+## Utilisateurs
+
+Chacun a son espace de travail. La page d'accueil porte la liste des
+utilisateurs — **Pilou** au départ — et c'est là qu'on en ajoute ou qu'on en
+efface un ; dans les éditeurs, le bouton `👤` de la barre d'outils dit qui
+travaille et permet d'en changer sans repasser par l'accueil.
+
+Ce qui suit la personne :
+
+- la disposition des panneaux de chaque outil : docks, tailles, panneaux
+  flottants, repliés ou fermés ;
+- les réglages d'affichage : pas de grille, anti-collision, vue dessus/dessous,
+  contraste, étiquettes de net, onglet du panneau de listes ;
+- les derniers documents ouverts ou enregistrés (leur nom et leur date : le
+  navigateur ne sait pas rouvrir un fichier tout seul).
+
+Ce qui ne le suit pas : les schémas et les cartes. Ce sont des fichiers, les
+mêmes pour tout le monde, et rien de ce qui décrit le circuit — couches,
+classes de net, règles de conception — n'est rangé dans un profil.
+
+Chaque profil est un fichier, `profils/<nom>.json`, écrit par `serveur.py`.
+Ouverte en double-clic (`file://`), une page ne peut rien écrire sur le disque :
+les préférences sont alors gardées dans le stockage local du navigateur, et le
+fichier se remet à jour au prochain passage par le serveur — c'est la date
+inscrite dans chacun qui les départage. Supprimer un utilisateur depuis
+l'accueil efface ses préférences, jamais son travail.
+
 ## Recherche de composants
 
 `recherche-composants/` interroge [pcbparts.dev](https://pcbparts.dev/) : stock
@@ -148,7 +179,10 @@ python editeur-schematique/outils/build-monofichier.py && node editeur-schematiq
 Chaque banc reconstruit un DOM minimal (`commun/test/dom-stub.js`) et exécute
 le bundle sans navigateur. Le PCB couvre la netlist, le chevelu multicouche,
 les vias, les îlots de cuivre, les classes de net, le contour libre, les rôles de
-couche, l'empilage physique et ses contrôles de perçage, le Gerber, l'Excellon,
+couche, l'empilage physique et ses contrôles de perçage, les règles de
+conception — matrice des natures de cuivre, figures cotées, comptes par règle,
+et le fait que chacun de leurs champs écrive vraiment dans le document —,
+le Gerber, l'Excellon,
 les empreintes dessinées à la main avec leur bibliothèque, les paires
 différentielles — tracé couplé, vias en éventail, longueur découplée,
 impédance — et l'import défensif d'un document ; le schématique couvre la
@@ -206,6 +240,43 @@ nom, se réapplique sur n'importe quel autre composant sans toucher à son
 repère, sa position ni ses nets, et s'exporte en `.json` pour une autre machine
 ou un autre projet. Détails dans
 [editeur-pcb/README.md](editeur-pcb/README.md#dessiner-une-empreinte-à-la-main-lenregistrer-la-réutiliser).
+
+## Les règles DRC, avec leurs figures
+
+Le bouton *Règles…* ouvre une fenêtre bâtie comme les éditeurs de règles des
+logiciels du métier : l'arbre des contraintes à gauche, la règle choisie à
+droite — son nom, ce qu'elle vise, une **figure cotée** et ses champs. Huit
+familles, dix-sept règles : classe de net, isolation, court-circuit, liaison non
+routée, largeur de piste, angle des pistes, conduite face à un obstacle, écharde
+de gravure, style de via, via à via / trou à trou, rapport d'aspect, bras
+thermique, zone de cuivre, paires différentielles, masque et pâte, marge au
+bord, dimensions et origine de la carte.
+
+C'est le **seul** endroit où une règle s'écrit : les panneaux *Règles de tracé*
+et *Paires différentielles* ont quitté le dock, qui ne garde que ce qu'on
+regarde en routant — l'empilage, les propriétés, les listes. Et tout ce qui
+ressemble à un champ s'y modifie : ce qui ne se règle pas (un compte de défauts,
+une cote calculée, un seuil venu de l'empilage) se présente en valeur lue, sans
+cadre de saisie, plutôt qu'en champ grisé.
+
+Les figures sont dessinées à partir du document, à l'échelle, avec les couleurs
+de la couche active : la piste, le via, la pastille percée, la coupe du
+stratifié, la cote fléchée entre les deux. Elles bougent quand on change un
+champ — c'est ce qui permet de voir qu'on a écrit 2,5 au lieu de 0,25 avant que
+le contrôle le dise. Chaque page porte le nombre de défauts que le dernier
+contrôle a relevés *pour cette règle*, l'arbre en montre le compte, et
+*Contrôler maintenant* relance le DRC sans quitter la fenêtre.
+
+La page *Isolation* ajoute ce que les classes de net ne savaient pas dire : une
+**matrice des natures de cuivre** — piste, pastille CMS, pastille traversante,
+via, cuivre plein, trou. Chaque case est un minimum qui s'ajoute à la classe,
+jamais un remplacement ; une case vide laisse la classe seule maîtresse, si bien
+qu'un document écrit avant elle se contrôle à l'identique. La case choisie est
+celle que la figure dessine. Le routeur applique la même cote que le contrôle :
+un via qu'il refuse de poser est un via que le contrôle aurait signalé, et il
+dit les deux cotes — celle qu'on a, celle que la règle exige.
+
+Détails dans [editeur-pcb/README.md](editeur-pcb/README.md#les-règles-de-conception-et-leurs-figures).
 
 ## Le routeur pousse le cuivre
 

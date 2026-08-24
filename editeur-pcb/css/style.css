@@ -178,6 +178,85 @@
     margin-top:4px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;
     color:var(--txt-dim);text-align:center;
   }
+  /* ---------- éditeur de règles et contraintes ----------
+     L'arbre à gauche, la règle à droite : la disposition des éditeurs de règles
+     du métier, tenue avec les jetons de la maison — fond nocturne, cotes en
+     jaune, monospace pour tout ce qui est chiffré. */
+  .re-tree{
+    width:214px;flex:none;background:#141619;
+    border-right:1px solid var(--border);
+  }
+  .re-cat{
+    font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--yellow);padding:10px 12px 4px;opacity:.85;
+  }
+  .re-node{
+    display:flex;align-items:center;gap:7px;padding:5px 12px 5px 20px;cursor:pointer;
+    font-size:12px;color:var(--txt-dim);border-left:2px solid transparent;
+  }
+  .re-node:hover{background:#1e2126;color:var(--txt)}
+  .re-node.on{background:#20242a;color:var(--txt);border-left-color:var(--yellow)}
+  .re-node .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .re-node .ct{
+    font-family:var(--mono);font-size:9px;color:#fff;background:var(--red);
+    border-radius:8px;padding:0 5px;flex:none;
+  }
+  .re-page{flex:1;min-width:0}
+  /* le bouton d'ouverture, dans la barre d'un panneau : plus petit qu'un bouton
+     de barre d'outils, poussé à droite de son étiquette */
+  .pnl-bar button.tb{margin-left:auto;padding:3px 7px;font-size:11px}
+  /* la figure d'une règle : le dessin coté, et sa ligne de chiffres */
+  .refig{padding:10px 14px 11px;border-bottom:1px solid var(--border);background:#131519}
+  .refig svg{display:block;width:100%;height:auto;max-height:190px}
+  .refignote{
+    margin-top:5px;font-family:var(--mono);font-size:10px;letter-spacing:.05em;
+    color:var(--txt-dim);text-align:center;line-height:1.5;
+  }
+  /* Une valeur LUE et non saisie : un compte de défauts, une cote calculée, le
+     nom d'une règle. Elle ne prend pas l'habit d'un champ — pas de cadre, pas
+     de fond de saisie — pour qu'on ne cherche pas à cliquer dedans. C'est la
+     contrepartie de la promesse de la fenêtre : tout ce qui ressemble à un
+     champ s'y modifie. */
+  .reval{
+    padding:6px 0 5px;font-family:var(--mono);font-size:12.5px;color:var(--txt);
+    border-bottom:1px dotted #2f333a;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  /* le commentaire d'une règle : une phrase, pas une étiquette de champ */
+  .restate{font-size:11.5px;color:var(--txt-dim);line-height:1.5}
+  .restate.pad{padding:9px 14px 12px;border-bottom:1px solid var(--border)}
+  .restate i{color:var(--txt)}
+  /* la matrice des natures de cuivre : moitié basse d'un tableau à double
+     entrée, la case choisie en évidence. Les six colonnes ne tiennent pas
+     toujours dans la largeur — d'où le défilement, comme pour la coupe. */
+  .mxwrap{overflow-x:auto;border-bottom:1px solid var(--border)}
+  .mxwrap::-webkit-scrollbar{height:6px}
+  .mxwrap::-webkit-scrollbar-thumb{background:#31343a;border-radius:3px}
+  table.mx{width:100%;min-width:430px;border-collapse:collapse;font-size:11px}
+  table.mx th{
+    background:var(--panel2);font-family:var(--mono);font-size:8.5px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--txt-dim);text-align:left;padding:5px 6px;
+    white-space:nowrap;border-bottom:1px solid var(--border2);font-weight:400;
+  }
+  table.mx th.r{text-align:right}
+  table.mx tbody th{
+    background:var(--panel2);border-bottom:1px solid #202226;border-right:1px solid var(--border2);
+    text-transform:none;letter-spacing:.04em;font-size:10px;color:var(--txt);
+  }
+  table.mx td{
+    padding:4px 6px;border-bottom:1px solid #202226;border-right:1px solid #202226;
+    text-align:right;font-family:var(--mono);font-size:10.5px;color:var(--txt-dim);
+    white-space:nowrap;
+  }
+  table.mx td.v{cursor:pointer;color:var(--txt)}
+  table.mx td.v:hover{background:#1e2126}
+  /* une case écrite se voit sans la lire : c'est elle qui relève la classe */
+  table.mx td.set{color:var(--yellow);background:rgba(242,199,68,.07)}
+  table.mx td.on{background:#2b2415;box-shadow:inset 0 0 0 1px var(--yellow);color:var(--txt)}
+  table.mx td.nil{background:transparent;border-right-color:transparent}
+  table.mx td.off{color:#4b5058;text-align:center;cursor:default}
+  table.mx.cls td.v{cursor:default;color:var(--txt)}
+  table.mx.cls td.v:hover{background:transparent}
   /* ---------- propriétés ---------- */
   .prop{padding:10px 12px;border-bottom:1px solid var(--border)}
   .prop label{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;

@@ -37,6 +37,10 @@ js/11-pns-node.js        routeur : modèle du monde, index spatial, branches
 js/12-pns-walk.js        routeur : contournement d'obstacle
 js/13-pns-shove.js       routeur : poussée du cuivre gênant, de proche en proche
 js/14-pns-placer.js      routeur : optimiseur du trajet posé
+js/15-regles.js          fenêtre des règles : arbre, figures cotées, matrice
+                         des natures de cuivre
+js/16-profil.js          réglages d'affichage rangés dans le profil de
+                         l'utilisateur : grille, vue, contraste, anti-collision
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -48,6 +52,9 @@ Ces fichiers viennent du dossier partagé, à la racine du dépôt :
 ../commun/workspace.js   panneaux détachables, paramétré par WS_CONFIG
 ../commun/session.css    habillage des boutons de navigation
 ../commun/session.js     travail conservé en changeant d'outil (session d'onglet)
+../commun/profils.css    habillage du bouton d'utilisateur et de son menu
+../commun/profils.js     profils : panneaux et réglages par utilisateur,
+                         dans profils/<nom>.json
 ../commun/test/dom-stub.js  DOM minimal du banc d'essai
 ../commun/outils/monofichier.py  mécanique d'assemblage
 ```
@@ -90,7 +97,24 @@ moment où ils s'exécutent. La règle pratique :
    moment de l'appel. Entre eux l'ordre compte, en revanche, et il est celui
    des numéros : la géométrie, puis le monde, puis le contournement, puis la
    poussée qui s'en sert, puis l'optimiseur.
-10. `../commun/workspace.js` s'initialise tout seul et appelle `resize()` puis
+10. `15-regles` — la fenêtre des règles — vient après `07-app` pour la même
+   raison, mais `05-tools` l'appelle, lui, depuis `loadDoc()`, et `loadDoc()`
+   tourne DÈS LE DÉMARRAGE : c'est ainsi que revient la carte laissée dans
+   l'onglet, à la dernière ligne d'`init()`. L'appel est donc gardé
+   (`typeof reSync === "function"`), et `RE` — l'état de la fenêtre — est un
+   `var` et non un `const` : en version un seul fichier la fonction est
+   remontée mais un `const` serait encore dans sa zone morte, et
+   `reIsOpen()` doit pouvoir répondre « non » à tout moment de la vie de la
+   page, y compris avant que son propre fichier ait été exécuté. Sans cela,
+   `loadDoc()` levait, `sessionPcb()` attrapait, et le travail mis de côté
+   était déclaré illisible puis effacé à chaque aller-retour entre les outils.
+11. `16-profil` lit le profil de l'utilisateur et rétablit ses réglages
+   d'affichage : il vient après `07-app` parce qu'il remplace ce qu'`init()`
+   vient de poser. Le chemin inverse — les setters de `05-tools` qui notent le
+   réglage dans le profil — passe par un `typeof profilNoter === "function"`,
+   et le drapeau `PCB_PROFIL_PRET` est un `var` pour la raison exposée au
+   point précédent.
+12. `../commun/workspace.js` s'initialise tout seul et appelle `resize()` puis
    `fit()` : il ferme la marche.
 
 À l'intérieur d'un fichier, une fonction peut en appeler une autre définie
@@ -124,6 +148,11 @@ Gerber décrivent le même cuivre.
 - `01-core` calcule la ligne de transmission d'une piste (`ltLine`) sur la
   géométrie que `dpStripGeom` cherchait pour les paires différentielles : un
   même tracé n'a pas deux géométries selon le panneau qui le regarde.
+- `15-regles` ne calcule rien : il montre et il écrit. Chaque cote de ses pages
+  vient de là où elle vit — `S.rule`, les classes de net, l'empilage, les règles
+  de paire — et y retourne. La seule chose qu'il ait à lui, la matrice des
+  natures, vit dans `01-core` avec les classes, parce que c'est le contrôle et
+  le routeur qui l'appliquent, pas la fenêtre.
 
 ## Empilage physique
 
@@ -178,6 +207,143 @@ laissés nus, recouverts de vernis, bouchés résine, ou bouchés et plaqués po
 une pastille sur le via (IPC-4761). Seul le premier ouvre le masque. Il
 remplace l'ancien booléen `tented`, que les fichiers antérieurs portent encore
 et que `normDoc` convertit à la lecture.
+
+## Les règles de conception, et leurs figures
+
+Les règles vivaient dans deux panneaux du dock : *Règles de tracé* et *Paires
+différentielles*. Une colonne de 280 pixels tient les nombres, mais elle ne dit
+pas ce que chaque cote mesure. Une isolation de 0,25 mm entre quoi et quoi ? Un
+rapport d'aspect de 10 : 1, compté sur quelle épaisseur ? Ces questions se
+répondent avec un dessin, et un dessin ne rentre pas dans une colonne.
+
+**Les deux panneaux ont donc disparu du dock.** Le bouton *Règles…* de la barre
+d'outils ouvre la fenêtre qui les remplace : l'arbre des contraintes à gauche,
+la règle choisie à droite, avec son nom, ce qu'elle vise, une **figure cotée**
+et ses champs. Huit familles, dix-sept règles :
+
+| Famille | Règles |
+| --- | --- |
+| Classes de net | classe de net (nom, piste, isolation, via, perçage) |
+| Électrique | isolation, court-circuit, liaison non routée |
+| Routage | largeur de piste, angle des pistes, face à un obstacle, écharde de gravure |
+| Vias et perçage | style de via, via à via / trou à trou, rapport d'aspect |
+| Plans et zones | bras thermique, zone de cuivre |
+| Paires différentielles | règle et paires |
+| Fabrication | masque et pâte, marge au bord |
+| Carte et repères | dimensions et origine |
+
+Le dock ne garde que ce qu'on regarde **en routant** : l'empilage, les
+propriétés, les listes.
+
+### Tout ce qui ressemble à un champ s'y modifie
+
+C'est la règle de la fenêtre, et un essai du banc la tient : aucune page ne
+porte de champ grisé. Ce qui ne se règle pas — un compte de défauts, une cote
+calculée, le nom d'une règle, un seuil venu de l'empilage — se présente en
+**valeur lue** : même monospace, même gouttière, mais sans cadre de saisie. On
+ne cherche pas à cliquer dans ce qui ne s'écrit pas.
+
+Trois réglages sont nés de cette exigence, parce qu'ils s'affichaient en
+lecture seule alors qu'ils avaient de bonnes raisons de se régler :
+
+- **Autoriser deux nets à se toucher** (page *Court-circuit*). Joindre deux
+  masses en un point est une pratique ; le contrôle n'a alors pas à la
+  condamner quinze fois. La case fait taire cette règle-là, et elle seule.
+- **Les deux seuils du rapport d'aspect** (page *Rapport d'aspect*). 8 : 1 et
+  10 : 1 sont les usages, pas des vérités : un fabricant qui annonce du 12 : 1
+  existe, et une série bon marché peut vouloir se tenir à 6 : 1.
+- **Le traitement des vias**, jusque-là réservé au panneau *Empilage physique*,
+  se règle aussi depuis *Style de via* et *Masque et pâte* — c'est lui qui
+  décide de l'ouverture du masque sur un via.
+
+Le panneau des paires différentielles, lui, n'a pas été réécrit : il s'affiche
+entier dans la page *Règle et paires*. `buildDiffPairs()` écrit toujours dans
+`#dpair`, et c'est cette page qui fournit désormais l'élément — son
+comportement, ses cotes et sa figure n'ont pas bougé d'un micron.
+
+La page *Dimensions et origine* recueille ce que l'ancien panneau portait sans
+que ce soient des règles : les dimensions de la carte, l'origine utilisateur, le
+repère des fichiers de fabrication et le pas de la grille. Sa figure dessine le
+contour à l'échelle, libre ou rectangulaire, avec l'origine posée dessus.
+
+Les figures ne sont pas des illustrations : elles sont dessinées à partir des
+valeurs du document, à l'échelle, avec les couleurs de la couche active, et
+elles bougent quand on change un champ. C'est ce qui permet de voir qu'on a
+écrit 2,5 au lieu de 0,25 avant que le contrôle le dise.
+
+Chaque page porte aussi son **état au dernier contrôle** : le nombre de défauts
+qui relèvent de cette règle, pris sur la liste du DRC lui-même. L'arbre en
+montre le compte en pastille rouge, et *Contrôler maintenant* relance le
+contrôle sans quitter la fenêtre. Les motifs de reconnaissance ne se recouvrent
+pas : un défaut est compté par une règle et une seule — un essai du banc le
+vérifie sur un document fautif.
+
+Aucune de ces règles n'est nouvelle : la fenêtre montre et écrit les cotes que
+le contrôle applique déjà, prises là où elles vivent (`S.rule`, les classes de
+net, l'empilage, les règles de paire). Trois règles ne produisent aucun défaut
+parce qu'elles règlent un geste et non un dessin — l'angle imposé, la conduite
+face à un obstacle, le bras thermique : leur page le dit en clair plutôt que de
+laisser croire à un contrôle réussi.
+
+### Deux vias voisins : le cuivre d'abord, le foret ensuite
+
+La page *Via à via, trou à trou* porte deux contraintes, et deux physiques.
+
+Le **cuivre à cuivre** sépare deux nets : il se mesure de rondelle à rondelle,
+c'est la case *Via ↔ Via* de la matrice — éditable depuis cette page, sans avoir
+à revenir à l'isolation —, et il s'annule entre deux vias du même net, du cuivre
+déjà relié n'ayant rien à isoler.
+
+Le **trou à trou** est ce que réclame le foret, et lui ne sait pas ce qu'est un
+net : deux trous trop voisins, c'est une paroi qui casse au perçage ; deux trous
+qui se recouvrent, c'est un seul trou déchiré, que le fichier de perçage rend
+illisible. Cette règle vaut donc aussi entre deux vias d'un même net, là où le
+cuivre se tait.
+
+Entre deux vias, **c'est presque toujours le cuivre qui décide** : une rondelle
+de 0,8 mm percée à 0,4 mm porte 0,2 mm de couronne de chaque côté, si bien que
+le cuivre se rencontre 0,4 mm avant les trous. La figure place donc les deux
+vias à l'écart que la règle *contraignante* impose, et cote les deux — celle qui
+décide en jaune, celle qui a du mou en pointillé gris, avec l'écart d'axe en axe
+qui en résulte. Elle ne dessine jamais deux rondelles qui se recouvrent, ce qui
+serait un court-circuit franc et non une carte conforme.
+
+### La matrice des natures de cuivre
+
+Une seule chose s'ajoute au modèle, et c'est ce que la page *Isolation* porte
+sous sa figure : un tableau à double entrée entre les six natures de cuivre —
+**piste, pastille CMS, pastille traversante, via, cuivre plein, trou**.
+
+Une classe de net dit ce qu'un net exige de tout le monde. Elle ne sait pas
+dire qu'un via demande plus de place qu'une piste, ni qu'une pastille CMS
+supporte d'être serrée là où une traversante ne le supporte pas — et c'est
+pourtant ainsi que les fabricants écrivent leurs règles. La matrice comble ce
+manque, et rien de plus :
+
+- chaque case est un **minimum qui s'ajoute** à la classe, jamais un
+  remplacement ; l'isolation retenue est la plus exigeante des deux classes en
+  présence **et** de la case ;
+- une case vide — l'état d'usine, et celui de tous les documents écrits avant
+  elle — laisse la classe seule maîtresse : le contrôle rend exactement ce
+  qu'il rendait ;
+- la case **trou/trou** *est* la règle de trou à trou (`S.rule.hole`) : elle se
+  lit et s'écrit là où elle a toujours vécu. Le reste de la ligne « trou »
+  n'existe pas, un perçage n'ayant d'isolation qu'avec un autre perçage ;
+- les deux nets d'une **paire différentielle** échappent à la matrice comme ils
+  échappaient déjà aux classes : leur écart est celui de la règle de paire.
+  Sans cette exception, une case piste/piste relevée condamnerait toutes les
+  paires par la porte de derrière.
+
+La case choisie est celle que la figure dessine : cliquer *Via ↔ Pastille TH*
+montre un via et une pastille percée face à face, avec l'écart coté entre eux.
+Un tableau de vingt nombres redevient lisible.
+
+Le contrôle et le routeur appliquent la même cote, au même endroit : `clrK` dans
+`01-core`, appelée par `pnsClrPair` (l'index spatial de `11-pns-node`), par le
+masque de zone de `02-connectivity`, par l'aperçu de `03-render` et par le
+Gerber de `04-fabrication`. Un via que le routeur refuse de poser est un via que
+le contrôle aurait signalé, et le message dit les deux cotes — celle qu'on a et
+celle que la règle exige.
 
 ## Le boîtier choisi au schéma décide de l'empreinte
 

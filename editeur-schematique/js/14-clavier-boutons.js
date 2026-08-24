@@ -103,8 +103,16 @@ document.getElementById("selGrid").onchange=e=>setGridStep(+e.target.value);
 document.getElementById("bFit").onclick=fit;
 document.getElementById("bSave").onclick=saveJson;
 document.getElementById("bPng").onclick=exportPng;
-document.getElementById("bomAll").onchange=e=>{S.bomAll=e.target.checked;buildList();};
-document.getElementById("netAll").onchange=e=>{S.netAll=e.target.checked;buildList();};
+document.getElementById("bomAll").onchange=e=>{
+  S.bomAll=e.target.checked;
+  if(typeof profilNoter==="function")profilNoter();
+  buildList();
+};
+document.getElementById("netAll").onchange=e=>{
+  S.netAll=e.target.checked;
+  if(typeof profilNoter==="function")profilNoter();
+  buildList();
+};
 document.getElementById("tabBom").onclick=()=>setListTab("bom");
 document.getElementById("tabNets").onclick=()=>setListTab("nets");
 document.getElementById("bNets").onclick=cycleNetLabels;

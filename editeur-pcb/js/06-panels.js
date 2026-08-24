@@ -163,135 +163,10 @@ function numProp(id,label,val,step,min,off){
     (step||0.05)+'" min="'+(min==null?0:min)+'" value="'+esc(val)+'"'+
     (off?" disabled":"")+'></div>';
 }
-let _clsSel=0;
-function buildRules(){
-  const box=$("rules");
-  _clsSel=clamp(_clsSel,0,S.classes.length-1);
-  const c=S.classes[_clsSel]||defClass();
-  const used=new Map();
-  for(const n of netTable()){
-    const k=className(n.name);
-    used.set(k,(used.get(k)||0)+1);
-  }
-  box.innerHTML=
-    '<div class="prop"><label>Classe</label><select id="clSel">'+
-      S.classes.map((x,i)=>'<option value="'+i+'"'+(i===_clsSel?" selected":"")+'>'+
-        esc(x.name)+' ('+(used.get(x.name)||0)+' net'+((used.get(x.name)||0)>1?"s":"")+')'+
-        '</option>').join("")+'</select></div>'+
-    '<div class="prop two">'+numProp("clW","Piste (mm)",c.w,0.05,0.05)+
-      numProp("clClr","Isolation",c.clr,0.05,0.02)+'</div>'+
-    '<div class="prop two">'+numProp("clVia","Via Ø",c.via,0.05,0.2)+
-      numProp("clDr","Perçage",c.drill,0.05,0.1)+'</div>'+
-    '<div class="prop"><div class="row">'+
-      '<button class="tb" id="clNew">Nouvelle</button>'+
-      '<button class="tb" id="clRen">Renommer</button>'+
-      (_clsSel>0?'<button class="tb" id="clDel">Supprimer</button>':"")+'</div>'+
-      '<div class="row"><button class="tb" id="clApply">Appliquer au routage</button></div></div>'+
-    '<div class="cat">Règles générales</div>'+
-    '<div class="prop two">'+numProp("rEdge","Marge bord",S.rule.edge,0.05)+
-      numProp("rTh","Bras thermique",S.rule.thermal,0.05)+'</div>'+
-    /* Le trou à trou ne peut pas vivre dans une classe de net : c'est le foret
-       qui le réclame, pas l'électricité, et il vaut donc entre deux vias d'un
-       même net comme entre deux nets étrangers. Sa place est ici, avec la marge
-       de bord, l'autre contrainte que la carte impose au dessin. */
-    '<div class="prop">'+
-      numProp("rHole","Trou à trou (mm)",holeClr(),0.05,0)+'</div>'+
-    '<div class="prop two">'+
-      '<div><label>Grille (mm)</label><select id="rGrid">'+
-      GRID_STEPS.map(g=>
-        '<option value="'+g+'"'+(g===S.grid?" selected":"")+'>'+g+'</option>').join("")+
-      '</select></div>'+
-      /* l'angle imposé aux pistes tracées : 45° par défaut, c'est la règle de
-         l'art — « / » bascule l'arrangement du coude pendant le tracé */
-      '<div><label title="Angle imposé aux pistes tracées. Pendant le tracé, '+
-      '« / » bascule l’arrangement du coude.">Angle des pistes</label>'+
-      '<select id="rCorner">'+
-      Object.keys(CORNER_MODES).map(k=>
-        '<option value="'+k+'"'+(k===cornerMode()?" selected":"")+'>'+
-        esc(CORNER_MODES[k])+'</option>').join("")+
-      '</select></div>'+
-      /* ce que le routeur fait d'un obstacle : le pousser, le contourner, ou
-         seulement le signaler. C'est le choix de mode du routeur de KiCad. */
-      '<div><label title="Conduite du tracé face à un obstacle : pousser le '+
-      'cuivre gênant, le contourner sans y toucher, ou seulement signaler la '+
-      'collision.">Face à un obstacle</label>'+
-      '<select id="rRoute">'+
-      Object.keys(ROUTE_MODES).map(k=>
-        '<option value="'+k+'"'+(k===routeMode()?" selected":"")+'>'+
-        esc(ROUTE_MODES[k])+'</option>').join("")+
-      '</select></div></div>'+
-    '<div class="prop two">'+numProp("bW","Carte L (mm)",S.board.w,1,1)+
-      numProp("bH","Carte H (mm)",S.board.h,1,1)+'</div>'+
-    '<div class="prop">'+numProp("rMask","Masque ±",S.rule.mask,0.01)+'</div>'+
-    '<div class="cat">Origine</div>'+
-    '<div class="prop two">'+numProp("oX","Origine X",r3(S.origin.x),0.5,-1e4)+
-      numProp("oY","Origine Y",r3(S.origin.y),0.5,-1e4)+'</div>'+
-    '<div class="prop"><label>Repère des fichiers de fabrication</label>'+
-      '<select id="oFab"><option value="0"'+(S.fabOrigin?"":" selected")+
-      '>coin de la carte</option><option value="1"'+(S.fabOrigin?" selected":"")+
-      '>origine utilisateur</option></select></div>'+
-    '<div class="prop"><div class="row">'+
-      '<button class="tb" id="oSet">Placer <kbd>O</kbd></button>'+
-      '<button class="tb" id="oZero">Remettre à zéro</button></div></div>'+
-    '<div class="cat">Fabrication</div>'+
-    '<div class="prop two">'+numProp("rPaste","Retrait pâte",S.rule.paste,0.01)+
-      '<div><label>Vias</label><input value="'+esc(VIA_FINISH[S.rule.viaFinish])+
-      '" disabled title="Le traitement des vias se règle dans le panneau '+
-      'Empilage physique."></div></div>';
-
-  const bindNum=(id,fn)=>{
-    const el=$(id);
-    if(el)el.onchange=()=>{push();fn(parseFloat(el.value)||0);touch();zoneCache.clear();
-      buildRules();refreshPanels();draw();};
-  };
-  $("clSel").onchange=()=>{_clsSel=+$("clSel").value;buildRules();};
-  bindNum("clW",v=>c.w=Math.max(0.05,v));
-  bindNum("clClr",v=>c.clr=Math.max(0.02,v));
-  bindNum("clVia",v=>c.via=Math.max(0.2,v));
-  bindNum("clDr",v=>c.drill=clamp(v,0.1,c.via-0.1));
-  bindNum("rEdge",v=>{S.rule.edge=v;boardChanged();});
-  bindNum("rTh",v=>S.rule.thermal=v);
-  bindNum("rHole",v=>S.rule.hole=Math.max(0,v));
-  bindNum("bW",v=>setBoardSize(v,S.board.h));
-  bindNum("bH",v=>setBoardSize(S.board.w,v));
-  bindNum("oX",v=>S.origin.x=v);
-  bindNum("oY",v=>S.origin.y=v);
-  $("oFab").onchange=()=>{push();S.fabOrigin=$("oFab").value==="1";touch();};
-  $("oSet").onclick=()=>setMode("origin");
-  $("oZero").onclick=()=>{push();S.origin={x:0,y:0};touch();buildRules();draw();};
-  bindNum("rMask",v=>S.rule.mask=v);
-  bindNum("rPaste",v=>S.rule.paste=v);
-  $("rGrid").onchange=()=>setGridStep($("rGrid").value);
-  $("rCorner").onchange=()=>setCornerMode($("rCorner").value);
-  $("rRoute").onchange=()=>setRouteMode($("rRoute").value);
-  $("clNew").onclick=()=>{
-    const n=(prompt("Nom de la nouvelle classe :","Classe "+(S.classes.length+1))||"").trim();
-    if(!n)return;
-    if(S.classes.some(x=>x.name===n)){alert("Ce nom est déjà pris.");return;}
-    push();
-    S.classes.push({name:n,w:c.w,clr:c.clr,via:c.via,drill:c.drill});
-    _clsSel=S.classes.length-1;
-    touch();buildRules();refreshPanels();
-  };
-  $("clRen").onclick=()=>{
-    const n=(prompt("Nouveau nom :",c.name)||"").trim();
-    if(!n||n===c.name)return;
-    if(S.classes.some(x=>x.name===n)){alert("Ce nom est déjà pris.");return;}
-    push();
-    for(const k in S.netClass)if(S.netClass[k]===c.name)S.netClass[k]=n;
-    c.name=n;
-    touch();buildRules();refreshPanels();
-  };
-  const del=$("clDel");
-  if(del)del.onclick=()=>{
-    push();
-    for(const k in S.netClass)if(S.netClass[k]===c.name)delete S.netClass[k];
-    S.classes.splice(_clsSel,1);
-    _clsSel=0;touch();zoneCache.clear();buildRules();refreshPanels();draw();
-    hint("Classe supprimée : ses nets repassent à « "+defClass().name+" ».");
-  };
-  $("clApply").onclick=()=>applyClasses();
-}
+/* Les règles de conception ne vivent plus dans une colonne du dock : la
+   fenêtre « Règles et contraintes » (`15-regles.js`) les tient toutes, avec
+   leurs figures cotées. `numProp` reste ici — c'est le gabarit de champ commun
+   à tous les panneaux, et cette fenêtre s'en sert aussi. */
 /* Recale le routage déjà posé sur les règles des classes. C'est explicite :
    changer une largeur ne doit pas remuer la carte sans qu'on l'ait demandé. */
 function applyClasses(){
@@ -822,12 +697,12 @@ function propsBoard(box){
       (S.board.pts?'<button class="tb" id="bpRect">Revenir au rectangle</button>':"")+
       '</div></div>';
   $("bpW").onchange=()=>{push();setBoardSize(parseFloat($("bpW").value)||S.board.w,S.board.h);
-    buildRules();refreshPanels();draw();};
+    reSync();refreshPanels();draw();};
   $("bpH").onchange=()=>{push();setBoardSize(S.board.w,parseFloat($("bpH").value)||S.board.h);
-    buildRules();refreshPanels();draw();};
+    reSync();refreshPanels();draw();};
   $("bpDraw").onclick=()=>setMode("edge");
   const r=$("bpRect");
-  if(r)r.onclick=()=>{push();setBoardRect();buildRules();refreshPanels();draw();
+  if(r)r.onclick=()=>{push();setBoardRect();reSync();refreshPanels();draw();
     hint("Contour ramené au rectangle englobant.");};
 }
 function propsZone(box,z){
@@ -1022,7 +897,7 @@ function propsTrack(box,t){
     if(!t.net){alert("Cette piste n'est rattachée à aucun net : la classe ne s'applique pas.");
       buildProps();return;}
     push();setNetClass(t.net,$("tC").value);touch();zoneCache.clear();
-    buildRules();refreshPanels();draw();
+    reSync();refreshPanels();draw();
   };
   $("tAll").onclick=()=>{
     if(!t.net)return;
@@ -1159,7 +1034,7 @@ function listNets(box){
   box.querySelectorAll("select.netcls").forEach(sel=>{
     sel.onchange=()=>{
       push();setNetClass(sel.dataset.net,sel.value);
-      touch();zoneCache.clear();buildRules();buildList();draw();
+      touch();zoneCache.clear();reSync();buildList();draw();
       hint("Net "+sel.dataset.net+" rattaché à la classe "+sel.value+
            " — « Appliquer au routage » recale les pistes déjà posées.");
     };

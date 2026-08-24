@@ -50,5 +50,13 @@ yarn-error.log
 /*.cxx
 /*.hpp
 
+# Profils utilisateur : profils/<nom>.json est l'espace de travail d'une
+# personne (panneaux, reglages d'affichage, derniers documents). Il change a
+# chaque panneau deplace et n'a donc rien a faire dans l'historique ; le
+# dossier et son LISEZ-MOI, eux, sont suivis. Le premier utilisateur, Pilou,
+# n'a pas besoin d'etre versionne : commun/profils.js le cree au besoin.
+# Retirer la ligne ci-dessous pour suivre les profils.
+/profils/*.json
+
 # Builds
 dist/

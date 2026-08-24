@@ -65,12 +65,71 @@
     font-family: var(--mono); font-size: 11px; color: var(--txt-dim); line-height: 1.6;
   }
   footer code { color: var(--blue); }
+
+  /* ---------- utilisateurs ---------- */
+  .users {
+    margin: 0 0 22px; padding: 14px 16px 12px;
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
+  }
+  .users h2 {
+    margin: 0 0 10px; font-family: var(--mono); font-size: 9px;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--txt-dim); font-weight: 400;
+  }
+  .ulist { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ulist button {
+    display: flex; align-items: center; gap: 7px;
+    background: var(--panel); color: var(--txt);
+    border: 1px solid var(--border2); border-radius: 5px;
+    padding: 7px 12px; font-family: var(--ui); font-size: 13px; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .ulist button:hover { border-color: var(--blue); }
+  .ulist button.on { border-color: var(--yellow); color: #fff; background: #26241a; }
+  .ulist button .ck { color: var(--yellow); font-size: 10px; width: 9px; }
+  .urow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .urow input {
+    flex: 1 1 180px; min-width: 0;
+    background: var(--bg); color: var(--txt);
+    border: 1px solid var(--border2); border-radius: 5px;
+    padding: 7px 10px; font-family: var(--ui); font-size: 13px;
+  }
+  .urow input:focus { outline: none; border-color: var(--blue); }
+  .urow button {
+    background: var(--panel); color: var(--txt);
+    border: 1px solid var(--border2); border-radius: 5px;
+    padding: 7px 13px; font-family: var(--ui); font-size: 12px; cursor: pointer;
+  }
+  .urow button:hover { border-color: var(--blue); color: #fff; }
+  .urow button.danger:hover { border-color: var(--red); color: var(--red); }
+  .uinfo { margin-top: 10px; font-size: 11px; line-height: 1.6; color: var(--txt-dim); }
+  .uinfo code { font-family: var(--mono); color: var(--blue); }
+  .urec { margin-top: 8px; font-size: 11px; line-height: 1.7; color: var(--txt-dim); }
+  .urec b { color: var(--txt); font-weight: 600; }
+  .urec em { font-family: var(--mono); font-style: normal; color: var(--yellow); opacity: .85; }
 </style>
 </head>
 <body>
   <div class="container">
     <div class="brand"><i></i><h1>CAO Web</h1><span>SCHÉMA · PCB · COMPOSANTS</span></div>
     <p class="intro">Par quoi commencez-vous ?</p>
+
+    <!-- Qui travaille : panneaux, réglages d'affichage et derniers documents
+         appartiennent à la personne choisie ici, et la suivent d'un outil à
+         l'autre. Voir commun/profils.js. -->
+    <div class="users">
+      <h2>Utilisateur</h2>
+      <div class="ulist" id="uList"></div>
+      <div class="urow">
+        <input id="uNom" maxlength="40" autocomplete="off"
+               placeholder="Nom d'un nouvel utilisateur…"
+               aria-label="Nom d'un nouvel utilisateur">
+        <button id="uAdd">Ajouter</button>
+        <button id="uDel" class="danger">Supprimer celui-ci</button>
+      </div>
+      <div class="uinfo" id="uInfo"></div>
+      <div class="urec" id="uRec"></div>
+    </div>
+
     <div class="actions">
       <a href="editeur-schematique/editeur-schematique.html" class="btn">
         <em>Saisie</em>
@@ -97,5 +156,100 @@
       <code>python serveur.py</code>
     </footer>
   </div>
+
+<script src="commun/profils.js"></script>
+<script>
+"use strict";
+/* ==========================================================================
+   La liste des utilisateurs
+   Le module commun (commun/profils.js) sait déjà lire, écrire et synchroniser
+   un profil ; il ne connaît de l'accueil que ceci : c'est ici qu'on choisit
+   qui travaille, qu'on ajoute quelqu'un et qu'on efface ses préférences. Les
+   éditeurs, eux, n'ont qu'un bouton pour en changer.
+   ========================================================================== */
+function uEsc(s){
+  return String(s).replace(/[&<>"']/g, ch =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+}
+function uQuand(t){
+  if(!t) return "";
+  try{ return new Date(t).toLocaleDateString("fr-FR"); }catch(_){ return ""; }
+}
+function uRendreListe(){
+  const box = document.getElementById("uList"), courant = profNom();
+  box.innerHTML = profListe().map(n =>
+    '<button data-nom="' + uEsc(n) + '"' + (n === courant ? ' class="on"' : '') + '>' +
+    '<span class="ck">' + (n === courant ? "✓" : "") + '</span>' + uEsc(n) +
+    '</button>').join("");
+  box.querySelectorAll("[data-nom]").forEach(function(b){
+    b.onclick = function(){ profChoisir(b.dataset.nom); uRendre(); };
+  });
+}
+function uRendreInfo(){
+  const etat = profEtat();
+  let txt = "Panneaux, réglages d'affichage et derniers documents de <b>" +
+            uEsc(etat.nom) + "</b> — ";
+  if(etat.serveur === true)
+    txt += "enregistrés dans <code>" + uEsc(etat.fichier) + "</code>.";
+  else if(etat.enLigne)
+    txt += "en attente du serveur ; pour l'instant dans ce navigateur seulement.";
+  else
+    txt += "gardés dans ce navigateur : ouverte en double-clic, une page ne peut " +
+           "rien écrire sur le disque. Lancez <code>python serveur.py</code> " +
+           "pour que le fichier suive.";
+  document.getElementById("uInfo").innerHTML = txt;
+}
+function uRendreRecents(){
+  const outils = [["schema", "Schéma"], ["pcb", "PCB"]];
+  let h = "";
+  for(const [cle, titre] of outils){
+    const r = profRecents(cle);
+    if(!r.length) continue;
+    h += "<div><em>" + titre + "</em> " + r.slice(0, 4).map(function(e){
+      const q = uQuand(e.t);
+      return "<b>" + uEsc(e.nom) + "</b>" + (q ? " (" + q + ")" : "");
+    }).join(" · ") + "</div>";
+  }
+  document.getElementById("uRec").innerHTML = h;
+}
+function uRendre(){ uRendreListe(); uRendreInfo(); uRendreRecents(); }
+
+document.getElementById("uAdd").onclick = function(){
+  const champ = document.getElementById("uNom");
+  const nom = champ.value;
+  if(!nom.trim()) { champ.focus(); return; }
+  if(!profCreer(nom)){
+    alert("Nom refusé : ce nom devient un nom de fichier.\n\n" +
+          "Évitez \\ / : * ? \" < > | et le point en début ou en fin, " +
+          "et tenez-vous en à 40 caractères.");
+    return;
+  }
+  champ.value = "";
+  uRendre();
+};
+document.getElementById("uNom").addEventListener("keydown", function(e){
+  if(e.key === "Enter") document.getElementById("uAdd").click();
+});
+document.getElementById("uDel").onclick = function(){
+  const nom = profNom();
+  if(profListe().length < 2){
+    alert("« " + nom + " » est le seul utilisateur : il en faut bien un.\n\n" +
+          "Ajoutez-en un autre d'abord.");
+    return;
+  }
+  if(!confirm("Effacer les préférences de « " + nom + " » ?\n\n" +
+              "Panneaux, réglages d'affichage et derniers documents seront " +
+              "perdus. Les schémas et les cartes, eux, sont des fichiers à " +
+              "part : ils ne sont pas touchés."))
+    return;
+  profSupprimer(nom);
+  uRendre();
+};
+/* Le fichier de profil arrive après coup, quand le serveur répond : la liste
+   et le nom du fichier se remettent à jour tout seuls. */
+profSurChangement(uRendre);
+profSurListe(uRendre);
+uRendre();
+</script>
 </body>
 </html>

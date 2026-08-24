@@ -244,14 +244,14 @@ function gerberCopper(i){
       if(t.l!==i)continue;
       const z=zn((t.x1+t.x2)/2,(t.y1+t.y2)/2);
       if(z===null||z===t.net)continue;
-      gSeg(body,A,t.x1,t.y1,t.x2,t.y2,t.w+2*clrPair(z,t.net));
+      gSeg(body,A,t.x1,t.y1,t.x2,t.y2,t.w+2*clrK(z,t.net,"cu","trk"));
     }
     for(const v of S.vias){
       if(i<v.a||i>v.b)continue;
       const z=zn(v.x,v.y);
       if(z===null)continue;
       if(z===v.net)gFlash(body,A,A.get("C,"+fmt(v.drill,4)),v.x,v.y);
-      else gFlash(body,A,A.get("C,"+fmt(v.d+2*clrPair(z,v.net),4)),v.x,v.y);
+      else gFlash(body,A,A.get("C,"+fmt(v.d+2*clrK(z,v.net,"cu","via"),4)),v.x,v.y);
     }
     const thermals=[];
     for(const fp of S.fps)
@@ -260,10 +260,11 @@ function gerberCopper(i){
         const z=zn(q.x,q.y);
         if(z===null)continue;
         const same=(z===q.net&&q.net);
-        gFlash(body,A,apForPad(A,q,same?classOf(z).clr:clrPair(z,q.net)),q.x,q.y);
+        gFlash(body,A,apForPad(A,q,same?classOf(z).clr:
+          clrK(z,q.net,"cu",q.drill>0?"th":"smd")),q.x,q.y);
         if(same)thermals.push(q);
         else if(q.drill>0)
-          gFlash(body,A,A.get("C,"+fmt(q.drill+2*clrPair(z,q.net),4)),q.x,q.y);
+          gFlash(body,A,A.get("C,"+fmt(q.drill+2*clrK(z,q.net,"cu","th"),4)),q.x,q.y);
       }
     body.push("%LPD*%");
     const tw=S.rule.thermal;
@@ -393,7 +394,7 @@ function stackReport(){
   const a=worstAspect();
   if(a)L.push("Rapport d'aspect le plus defavorable : "+fmt(a.ratio,1)+
               " pour 1 (percage "+fmt(a.drill,2)+" mm sur "+fmt(a.len,2)+" mm)"+
-              (a.ratio>ASPECT_WARN?", au-dela de "+ASPECT_WARN+" pour 1.":"."));
+              (a.ratio>aspWarn()?", au-dela de "+aspWarn()+" pour 1.":"."));
   const vc=viaCensus();
   if(S.vias.length){
     L.push("Vias : "+vc.through+" traversant(s), "+vc.blind+" borgne(s), "+

@@ -191,6 +191,7 @@ function fit(){
 function setGrid(v){
   S.showGrid=!!v;
   document.getElementById("bGrid").classList.toggle("on",S.showGrid);
+  if(typeof profilNoter==="function")profilNoter();
   draw();
 }
 /* Menu des pas de grille : les intitulés sortent d'un seul calcul, ils ne
@@ -209,6 +210,7 @@ function setGridStep(v){
   if(w===S.grid)return;
   S.grid=w;
   updateGridInfo();
+  if(typeof profilNoter==="function")profilNoter();
   draw();
 }
 

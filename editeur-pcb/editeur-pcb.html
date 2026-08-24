@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="../commun/workspace.css">
 <link rel="stylesheet" href="../commun/session.css">
+<link rel="stylesheet" href="../commun/profils.css">
 </head>
 <body>
 
@@ -16,6 +17,7 @@
     <button class="tb" data-cao-nav="schema" title="Aller au schéma — le routage en cours reste dans l'onglet">⬅ Éditeur schématique</button>
     <button class="tb" data-cao-nav="composants" title="Chercher une référence — la carte reste dans l'onglet">⌕ Composants</button>
     <button class="tb" data-cao-nav="accueil" title="Page d'accueil">⌂ Accueil</button>
+    <button class="tb" id="bProfil" data-cao-profil title="Utilisateur : panneaux, réglages et derniers documents lui appartiennent">👤 …</button>
     <div class="sep"></div>
     <button class="tb on" id="mSelect">Sélection <kbd>Échap</kbd></button>
     <button class="tb" id="mTrack">Piste <kbd>T</kbd></button>
@@ -46,6 +48,7 @@
     <div class="sep"></div>
     <button class="tb" id="bImport">Importer netlist</button>
     <button class="tb" id="bDrc">Contrôle DRC</button>
+    <button class="tb" id="bRules" title="Règles et contraintes de conception : classes de net, isolations, largeurs, vias, perçages, paires différentielles, fabrication — chaque règle avec sa figure cotée">Règles…</button>
     <button class="tb" id="bSave">Enregistrer .json</button>
     <button class="tb" id="bOpen">Ouvrir</button>
     <button class="tb" id="bPng">Exporter .png</button>
@@ -133,30 +136,6 @@
     </div>
   </section>
 
-  <section class="pnl" data-pnl="rules" data-title="Règles de tracé">
-    <header class="pnl-head">
-      <span class="pnl-grip">⠿</span><span class="pnl-title">Règles de tracé</span>
-      <span class="pnl-acts">
-        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
-        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
-        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
-      </span>
-    </header>
-    <div class="pnl-body"><div id="rules"></div></div>
-  </section>
-
-  <section class="pnl" data-pnl="dpair" data-title="Paires différentielles">
-    <header class="pnl-head">
-      <span class="pnl-grip">⠿</span><span class="pnl-title">Paires différentielles</span>
-      <span class="pnl-acts">
-        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
-        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
-        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
-      </span>
-    </header>
-    <div class="pnl-body"><div class="scroll" id="dpair"></div></div>
-  </section>
-
   <section class="pnl" data-pnl="props" data-title="Propriétés">
     <header class="pnl-head">
       <span class="pnl-grip">⠿</span><span class="pnl-title">Propriétés</span>
@@ -210,6 +189,7 @@
 </footer>
 
 <script src="../commun/session.js"></script>
+<script src="../commun/profils.js"></script>
 <script src="js/00-espace-config.js"></script>
 <script src="js/01-core.js"></script>
 <script src="js/02-connectivity.js"></script>
@@ -225,6 +205,8 @@
 <script src="js/12-pns-walk.js"></script>
 <script src="js/13-pns-shove.js"></script>
 <script src="js/14-pns-placer.js"></script>
+<script src="js/15-regles.js"></script>
+<script src="js/16-profil.js"></script>
 <script src="../commun/workspace.js"></script>
 </body>
 </html>

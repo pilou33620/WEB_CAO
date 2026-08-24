@@ -25,12 +25,12 @@ function noop(){}
 const code=fs.readFileSync(path.join(__dirname,"..","dist","pcb.js"),"utf8");
 const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
-  "buildLayers","buildRules","refreshPanels","buildList","buildProps","clearSel","rotateSel",
+  "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
   "flipSel","push","undo","redo","touch","padsWorld","cuId","serialize","loadDoc","exportPng",
   "setFlip","setContrast","autoPlace","conn","netTable","fit","zoneClick","zoneMove",
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "clrPair","applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
-  "deleteNetRouting","autoClass","mkFp","w2s","buildRules","runDrc","padsOf",
+  "deleteNetRouting","autoClass","mkFp","w2s","runDrc","padsOf",
   "buildFabFiles","gerberCopper","gerberMask","gerberPaste","gerberSilk","gerberEdge",
   "drillFile","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
   "edgeClick","edgeMove","closeEdge","boardPoly","setBoardSize","setBoardRect","inBoard",
@@ -45,6 +45,13 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* espace de travail commun (commun/workspace.js) */
   "wsDefault","wsApply","wsMove","wsPlaceOf","wsLabel","wsToggleFloat",
   "wsToggleCollapse","wsClose","wsShow","wsMenuBuild","wsLoad","wsSave","wsEl","WS_KEY",
+  "WS_SECTION",
+  /* profils utilisateur communs (commun/profils.js) */
+  "profNom","profListe","profChoisir","profCreer","profSupprimer","profLire",
+  "profEcrire","profOublier","profRecents","profNoterDocument","profNomValide",
+  "profEtat","profSurChangement","profSurListe","profBarre","PROF_CLE",
+  /* réglages d'affichage propres à l'utilisateur (16-profil.js) */
+  "profilEtat","profilNoter","profilAppliquer",
   "esc","fmt","$",
   /* empilage physique et rôles de couche */
   "stackDefaults","stackResize","stackRows","rowT","stackTotal","stackLam",
@@ -115,7 +122,16 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "apSet","apForPad","fePad",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
-  "fpMoveMark","fpSetMarkD","fpXform","feZoom","feRefit","feReattach"];
+  "fpMoveMark","fpSetMarkD","fpXform","feZoom","feRefit","feReattach",
+  /* matrice des natures de cuivre et éditeur de règles */
+  "DRC_KINDS","DRC_ORDER","DRC_KIND_NAME","matKey","matHas","matGet","matSet",
+  "matMax","matEff","clrK","dpGapPair","dMat","pnsKind","pnsClrPair",
+  "defClass","maxClr","FALLBACK_CLASS",
+  "RE_TREE","RE_MATCH","RE_PAGE","reIsOpen","reOpen","reClose","reGo",
+  "reSync","reTree","reBind","reTitle","reCat","reFindings","reMatrix","reObj",
+  "figClr","figWidth","figVia","figHole","figAspect","figTherm","figEdge","figMask",
+  "figShort","figClass","figBoard","reHoleCase","reDimHSoft","reFact","reClassTable",
+  "reClassSel","reFinishSel","aspWarn","aspMax","ASPECT_WARN","ASPECT_MAX"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -125,7 +141,12 @@ eval(code.replace(/^"use strict";/,"")+"\n"
      /* SESS_QUITTE bascule à la sortie vers un autre outil : le banc
         d'essai doit pouvoir le remettre à zéro entre deux essais */
      +'Object.defineProperty(globalThis,"SESS_QUITTE",'
-     +'{get:()=>SESS_QUITTE,set:v=>{SESS_QUITTE=v;},configurable:true});');
+     +'{get:()=>SESS_QUITTE,set:v=>{SESS_QUITTE=v;},configurable:true});'
+     /* RE, l'état de la fenêtre des règles : en accesseur lui aussi, pour
+        qu'un essai puisse le remettre à l'état où il est au démarrage —
+        pas encore initialisé — et vérifier que rien n'en dépend. */
+     +'Object.defineProperty(globalThis,"RE",'
+     +'{get:()=>RE,set:v=>{RE=v;},configurable:true});');
 
 const fire=dom.fire, key=dom.key;
 /* Première différence entre deux documents, ou null s'ils sont équivalents.
@@ -410,7 +431,7 @@ T("classes de net",()=>{
   if(classOf("N$2").name!=="Défaut")throw new Error("un net de signal ne doit pas bouger");
   setNetClass("N$1","Défaut");
   if(S.netClass["N$1"])throw new Error("le rattachement par défaut ne doit rien stocker");
-  buildRules();
+  reSync();
 });
 T("largeur de classe au tracé",()=>{
   setNetClass("N$2","Alimentation");
@@ -1954,7 +1975,7 @@ T("panneaux",()=>{
   if(!S.vias.length)S.vias.push({x:5,y:5,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"GND"});
   if(!S.zones.length)S.zones.push({id:S.nextId++,l:0,net:"GND",pts:boardZonePts()});
   touch();
-  buildTabs();buildLayers();buildRules();refreshPanels();
+  buildTabs();buildLayers();reSync();refreshPanels();
   clearSel();S.sel.tracks.add(S.tracks[0]);S.sel.tracks.add(S.tracks[0]);buildProps();
   clearSel();S.sel.zones.add(S.zones[0]);buildProps();
   S.listTab="comps";buildList();
@@ -2053,7 +2074,7 @@ T("netlist malveillante : panneaux et listes restent propres",()=>{
   if(!fp||fp.value.indexOf("<img")<0)throw new Error("la valeur n'a pas été reprise");
   if(!netTable().some(n=>n.name.indexOf("<img")>=0))
     throw new Error("le nom de net n'a pas été repris");
-  buildRules();buildLayers();buildTabs();
+  reSync();buildLayers();buildTabs();
   S.listTab="comps";buildList();
   assertPropre($("list").innerHTML,"liste des composants");
   assertPresent($("list").innerHTML,"liste des composants");
@@ -2087,11 +2108,21 @@ T("document .json trafiqué : les textes libres arrivent échappés",()=>{
   loadDoc(doc,true);
   if(S.cuL[0].name.indexOf("<img")<0)throw new Error("nom de couche non repris : essai vide");
   if(S.classes[0].name.indexOf("<img")<0)throw new Error("nom de classe non repris");
-  buildLayers();buildTabs();buildRules();
+  buildLayers();buildTabs();reSync();
   assertPropre($("layers").innerHTML,"empilage");
   assertPresent($("layers").innerHTML,"empilage");
-  assertPropre($("rules").innerHTML,"règles de tracé");
-  assertPresent($("rules").innerHTML,"règles de tracé");
+  /* Le nom de classe s'affichait dans le panneau « Règles de tracé » ; il
+     s'affiche maintenant dans la fenêtre des règles. On juge le balisage qui
+     interpole vraiment du texte du document : le tableau des classes et son
+     sélecteur. `assertPropre` refuse toute balise <svg>, or les figures en
+     portent une par construction — la figure se juge donc à part, sur la seule
+     balise que l'injection produirait. */
+  assertPropre(reClassTable()+reClassSel(),"tableau des classes de net");
+  assertPresent(reClassTable(),"tableau des classes de net");
+  if(figClass().indexOf("<img")>=0)
+    throw new Error("figure de classe : balise injectée telle quelle");
+  if(figClass().indexOf("&lt;img")<0)
+    throw new Error("figure de classe : la charge n'apparaît pas, l'essai ne prouve rien");
   S.listTab="comps";buildList();
   assertPropre($("list").innerHTML,"liste des composants");
   S.listTab="nets";buildList();
@@ -2170,13 +2201,13 @@ T("import : un document vide ou absurde ne casse rien",()=>{
   if(S.cu!==2||S.cuL.length!==2)throw new Error("empilage par défaut attendu");
   if(S.fps.length||S.tracks.length)throw new Error("carte vide attendue");
   if(!S.classes.length)throw new Error("il faut au moins une classe");
-  draw();runDrc();buildLayers();buildRules();refreshPanels();buildList();
+  draw();runDrc();buildLayers();reSync();refreshPanels();buildList();
   loadDoc({cu:"beaucoup",cuL:"non",fps:"non",tracks:{},vias:null,zones:0,
            board:"grande",rule:[],classes:[],netClass:"x",active:-4},true);
   if(S.cu<1||S.cu>8)throw new Error("nombre de couches hors bornes : "+S.cu);
   if(S.cuL.length!==S.cu)throw new Error("empilage incohérent");
   if(S.active<0||S.active>=S.cu)throw new Error("couche active hors empilage : "+S.active);
-  draw();runDrc();buildLayers();buildRules();refreshPanels();buildList();
+  draw();runDrc();buildLayers();reSync();refreshPanels();buildList();
 });
 T("import : rattachement de classe orphelin écarté",()=>{
   const doc=JSON.parse(serialize());
@@ -2774,17 +2805,19 @@ T("disposition d'usine appliquée au démarrage",()=>{
   const e=wsDefault();
   if(e.order.dockL.indexOf("intrus")>=0)throw new Error("wsDefault() partage son tableau");
   if(e.panels.props.grow===99)throw new Error("wsDefault() partage ses panneaux");
-  if(JSON.stringify(dom.dockIds("dockL"))!==JSON.stringify(["stack","rules"]))
+  if(JSON.stringify(dom.dockIds("dockL"))!==JSON.stringify(["stack"]))
     throw new Error("dock gauche : "+dom.dockIds("dockL"));
-  if(JSON.stringify(dom.dockIds("dockR"))!==JSON.stringify(["props","list","stackup","dpair"]))
+  if(JSON.stringify(dom.dockIds("dockR"))!==JSON.stringify(["props","list","stackup"]))
     throw new Error("dock droit : "+dom.dockIds("dockR"));
   if(dom.dockIds("dockB").length)throw new Error("le dock du bas devrait être vide");
   if(!dom.docks.dockB.classList.contains("empty"))
     throw new Error("un dock vide porte la classe « empty »");
 });
 T("séparateur entre panneaux d'un même dock",()=>{
-  const n=dom.docks.dockL.children.filter(c=>c.classList.contains("psplit")).length;
-  if(n!==1)throw new Error("2 panneaux = 1 séparateur, obtenu "+n);
+  const n=dom.docks.dockR.children.filter(c=>c.classList.contains("psplit")).length;
+  if(n!==2)throw new Error("3 panneaux = 2 séparateurs, obtenu "+n);
+  const g=dom.docks.dockL.children.filter(c=>c.classList.contains("psplit")).length;
+  if(g!==0)throw new Error("1 panneau = aucun séparateur, obtenu "+g);
 });
 T("déplacer un panneau d'un dock à l'autre",()=>{
   wsMove("props","dockB",0);
@@ -2792,7 +2825,7 @@ T("déplacer un panneau d'un dock à l'autre",()=>{
   if(wsLabel("props")!=="bas")throw new Error("libellé : "+wsLabel("props"));
   if(dom.panels.props.parentNode!==dom.docks.dockB)
     throw new Error("le panneau n'a pas suivi dans l'arbre");
-  if(JSON.stringify(dom.dockIds("dockR"))!==JSON.stringify(["list","stackup","dpair"]))
+  if(JSON.stringify(dom.dockIds("dockR"))!==JSON.stringify(["list","stackup"]))
     throw new Error("dock droit après départ : "+dom.dockIds("dockR"));
   // l'ordre demandé est respecté
   wsMove("stack","dockB",0);
@@ -2826,31 +2859,33 @@ T("fermer et rouvrir un panneau",()=>{
     throw new Error("le panneau devrait revenir à son dernier dock");
 });
 T("replier un panneau",()=>{
-  wsToggleCollapse("rules");
-  if(!dom.panels.rules.classList.contains("collapsed"))throw new Error("repli sans effet");
-  wsToggleCollapse("rules");
-  if(dom.panels.rules.classList.contains("collapsed"))throw new Error("dépli sans effet");
+  wsToggleCollapse("stackup");
+  if(!dom.panels.stackup.classList.contains("collapsed"))throw new Error("repli sans effet");
+  wsToggleCollapse("stackup");
+  if(dom.panels.stackup.classList.contains("collapsed"))throw new Error("dépli sans effet");
 });
-T("la disposition est écrite dans le stockage local",()=>{
-  const raw=dom.storage.getItem(WS_KEY);
-  if(!raw)throw new Error("rien sous la clé "+WS_KEY);
-  const d=JSON.parse(raw);
+T("la disposition est écrite dans le profil de l'utilisateur",()=>{
+  const d=profLire(WS_SECTION);
+  if(!d)throw new Error("rien sous la section "+WS_SECTION);
   if(d.order.dockB.indexOf("stack")<0)
     throw new Error("le déplacement n'a pas été enregistré : "+JSON.stringify(d.order));
+  // et la copie locale porte bien le nom de l'utilisateur, pas la clé nue
+  if(dom.storage.getItem(WS_KEY))
+    throw new Error("la disposition traîne encore hors du profil");
 });
 T("relecture d'une disposition enregistrée",()=>{
-  const saved=dom.storage.getItem(WS_KEY);
+  const saved=JSON.stringify(profLire(WS_SECTION));
   WS=wsDefault();wsApply(false);
-  if(JSON.stringify(dom.dockIds("dockL"))!==JSON.stringify(["stack","rules"]))
+  if(JSON.stringify(dom.dockIds("dockL"))!==JSON.stringify(["stack"]))
     throw new Error("réinitialisation ratée");
   wsLoad();wsApply(false);
   if(wsPlaceOf("stack")!=="dockB")throw new Error("disposition non relue");
-  if(dom.storage.getItem(WS_KEY)!==saved)
-    throw new Error("wsApply(false) ne doit pas réécrire le stockage");
+  if(JSON.stringify(profLire(WS_SECTION))!==saved)
+    throw new Error("wsApply(false) ne doit pas réécrire le profil");
 });
 T("une disposition corrompue retombe sur l'usine",()=>{
-  dom.storage.setItem(WS_KEY,
-    '{"order":{"dockL":["stack","fantome","stack"]},"docks":{"dockL":-9}}');
+  profEcrire(WS_SECTION,
+    {order:{dockL:["stack","fantome","stack"]},docks:{dockL:-9}});
   WS=wsDefault();wsLoad();wsApply(false);
   if(wsPlaceOf("fantome")!=="hidden")
     throw new Error("un panneau inconnu ne doit pas être placé");
@@ -2858,12 +2893,29 @@ T("une disposition corrompue retombe sur l'usine",()=>{
     throw new Error("doublon accepté : "+dom.dockIds("dockL"));
   if(WS.docks.dockL<150)throw new Error("largeur négative acceptée : "+WS.docks.dockL);
   // les panneaux absents du fichier retrouvent leur place d'usine
-  for(const id of ["rules","props","list"])
+  for(const id of ["stackup","props","list"])
     if(wsPlaceOf(id)==="hidden")throw new Error(id+" a disparu");
-  dom.storage.setItem(WS_KEY,"{ceci n'est pas du JSON");
+  profOublier(WS_SECTION);
   WS=wsDefault();wsLoad();wsApply(false);
-  if(JSON.stringify(dom.dockIds("dockL"))!==JSON.stringify(["stack","rules"]))
-    throw new Error("JSON illisible : la disposition d'usine devait s'appliquer");
+  if(JSON.stringify(dom.dockIds("dockL"))!==JSON.stringify(["stack"]))
+    throw new Error("section absente : la disposition d'usine devait s'appliquer");
+});
+T("la disposition d'avant les profils est reprise une dernière fois",()=>{
+  // Un dépôt mis à jour trouve une disposition sous la clé nue : elle sert
+  // encore, faute de quoi chacun retrouverait ses panneaux d'usine un matin.
+  profOublier(WS_SECTION);
+  dom.storage.setItem(WS_KEY,JSON.stringify({
+    docks:{dockL:212,dockR:330,dockB:200},
+    order:{dockL:[],dockR:["props","list","stackup"],dockB:["stack"]},
+    panels:{}}));
+  WS=wsDefault();wsLoad();wsApply(false);
+  if(wsPlaceOf("stack")!=="dockB")
+    throw new Error("héritage ignoré : "+wsPlaceOf("stack"));
+  wsSave();
+  if(!profLire(WS_SECTION))throw new Error("l'héritage n'a pas rejoint le profil");
+  dom.storage.removeItem(WS_KEY);
+  profOublier(WS_SECTION);
+  WS=wsDefault();wsApply(false);      // la suite part de la disposition d'usine
 });
 T("menu de l'espace de travail : titres échappés",()=>{
   dom.panels.list.dataset.title='Nets <img src=x onerror="pan()">';
@@ -2880,9 +2932,9 @@ T("poignée d'un dock vide neutralisée",()=>{
   const g=document.querySelectorAll(".gut[data-dock]").find(x=>x.dataset.dock==="dockL");
   if(!g)throw new Error("poignée de dock introuvable");
   if(g.classList.contains("off"))throw new Error("un dock peuplé garde sa poignée active");
-  wsMove("stack","hidden");wsMove("rules","hidden");
+  wsMove("stack","hidden");
   if(!g.classList.contains("off"))throw new Error("un dock vide neutralise sa poignée");
-  wsShow("stack");wsShow("rules");
+  wsShow("stack");
 });
 /* ==========================================================================
    Sélection multiple au Ctrl+clic et presse-papier
@@ -5865,6 +5917,727 @@ T("une zone pleine carte vaut plan de référence, comme pour le DRC",()=>{
   S.zones.push({l:1,net:"GND",pts:boardZonePts(),auto:true});touch();
   if(ltLine([t],[]).noRef)
     throw new Error("le cuivre réellement posé compte, pas seulement le rôle de couche");
+});
+
+/* ==========================================================================
+   Matrice des natures de cuivre, et la fenêtre des règles qui l'édite
+   ========================================================================== */
+/* Une carte nue : deux couches, un contour, aucune classe retouchée. Chaque
+   essai de cette section repart de là, sinon l'isolation mesurée serait celle
+   qu'un essai précédent a laissée. */
+function carteRegles(){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];
+  S.dpPairs=[];S.dpRules=[];clearSel();
+  setCuCount(2);
+  S.classes=[{name:"Défaut",w:0.25,clr:0.25,via:0.8,drill:0.4}];
+  S.netClass={};
+  S.rule.mat={};S.rule.hole=0.25;S.rule.short=false;
+  S.rule.aspWarn=ASPECT_WARN;S.rule.aspMax=ASPECT_MAX;
+  S.board={x:0,y:0,w:60,h:40,pts:null};boardChanged();
+  S.grid=0;S.avoid=true;touch();
+}
+/* Deux pistes parallèles de nets étrangers, séparées de `gap` millimètres de
+   cuivre à cuivre. */
+function deuxPistes(gap,w){
+  const e=w||0.25;
+  S.tracks.push({l:0,net:"A",w:e,x1:5,y1:10,x2:40,y2:10});
+  S.tracks.push({l:0,net:"B",w:e,x1:5,y1:10+e+gap,x2:40,y2:10+e+gap});
+  touch();
+}
+T("matrice : une case relève l'isolation là où les classes se taisent",()=>{
+  carteRegles();
+  deuxPistes(0.30);
+  if(runDrc().some(e=>/^Isolation piste\/piste/.test(e.msg)))
+    throw new Error("0,30 mm passe la classe à 0,25 mm : rien à signaler");
+  matSet("trk","trk",0.40);
+  const e=runDrc().filter(x=>/^Isolation piste\/piste/.test(x.msg));
+  if(e.length!==1)throw new Error("un défaut attendu, "+e.length);
+  if(e[0].msg.indexOf("0.400 mm")<0)
+    throw new Error("la cote exigée doit être dite : "+e[0].msg);
+  if(e[0].msg.indexOf("0.300 mm")<0)
+    throw new Error("la cote mesurée doit être dite : "+e[0].msg);
+  /* la case rendue à zéro rend la carte saine, sans avoir touché la classe */
+  matSet("trk","trk",0);
+  if(runDrc().some(x=>/^Isolation piste\/piste/.test(x.msg)))
+    throw new Error("case libre : la classe seule décide, et elle est tenue");
+  if(defClass().clr!==0.25)throw new Error("la classe n'a pas à bouger");
+});
+T("matrice : chaque couple de natures a sa propre case",()=>{
+  carteRegles();
+  /* une piste et un via de nets étrangers, à 0,30 mm : la case piste/piste ne
+     doit rien y changer, la case piste/via si */
+  S.tracks.push({l:0,net:"A",w:0.25,x1:5,y1:10,x2:40,y2:10});
+  S.vias.push({x:20,y:10+0.125+0.30+0.4,d:0.8,drill:0.4,a:0,b:1,net:"B"});
+  touch();
+  const vias=()=>runDrc().filter(e=>/^Isolation via\/piste/.test(e.msg)).length;
+  if(vias())throw new Error("0,30 mm tient la classe : rien à signaler");
+  matSet("trk","trk",0.40);
+  if(vias())throw new Error("la case piste/piste ne juge pas un via");
+  matSet("trk","trk",0);
+  matSet("trk","via",0.40);
+  if(vias()!==1)throw new Error("la case piste/via devait relever le défaut");
+  /* et l'ordre des natures ne compte pas : c'est la même case */
+  if(matGet("via","trk")!==0.40)throw new Error("la case doit se lire dans les deux sens");
+  if(matKey("via","trk")!==matKey("trk","via"))throw new Error("deux noms pour une case");
+});
+T("matrice : une pastille percée n'est pas une pastille CMS",()=>{
+  carteRegles();
+  importNetlist(NET,true);
+  const th=[], smd=[];
+  for(const fp of S.fps)
+    for(const q of padsWorld(fp))(q.drill>0?th:smd).push(q);
+  if(!th.length||!smd.length)
+    throw new Error("la netlist doit donner des deux sortes : "+th.length+" / "+smd.length);
+  if(pnsKind({k:"P",q:th[0]})!=="th")throw new Error("une pastille percée est traversante");
+  if(pnsKind({k:"P",q:smd[0]})!=="smd")throw new Error("une pastille pleine est CMS");
+  if(pnsKind({k:"V"})!=="via"||pnsKind({k:"S"})!=="trk")
+    throw new Error("via et piste mal reconnus");
+});
+T("matrice : la case trou/trou EST la règle de trou à trou",()=>{
+  carteRegles();
+  if(matGet("hole","hole")!==holeClr())
+    throw new Error("la case doit lire la règle de perçage");
+  matSet("hole","hole",0.31);
+  if(S.rule.hole!==0.31)throw new Error("la case doit écrire dans S.rule.hole");
+  if(Object.keys(S.rule.mat).length)
+    throw new Error("elle n'a rien à ranger dans la matrice : "+JSON.stringify(S.rule.mat));
+  /* le reste de la ligne « trou » n'existe pas : la rondelle s'occupe du cuivre */
+  for(const [k] of DRC_KINDS){
+    if(k==="hole")continue;
+    if(matHas("hole",k))throw new Error("trou ↔ "+k+" ne devrait pas exister");
+    matSet("hole",k,0.5);
+    if(matGet("hole",k)!==0)throw new Error("trou ↔ "+k+" a pourtant retenu une valeur");
+  }
+  S.rule.hole=0.25;
+});
+T("matrice : elle ne peut pas relever l'écart d'une paire différentielle",()=>{
+  carteRegles();
+  const pair=dpMakePair("USB_DP","USB_DM",true);
+  if(!pair)throw new Error("la paire n'a pas été créée");
+  const g=dpMinGap(pair);
+  matSet("trk","trk",Math.max(1,g*4));
+  if(Math.abs(clrK("USB_DP","USB_DM","trk","trk")-g)>1e-9)
+    throw new Error("l'écart de paire doit tenir contre la matrice : "+
+      clrK("USB_DP","USB_DM","trk","trk")+" au lieu de "+g);
+  /* contre un net tiers, en revanche, la case s'applique pleinement */
+  if(clrK("USB_DP","GND","trk","trk")<1)
+    throw new Error("hors de la paire, la case vaut : "+clrK("USB_DP","GND","trk","trk"));
+  S.dpPairs=[];S.rule.mat={};touch();
+});
+T("matrice : le routeur juge au même seuil que le contrôle",()=>{
+  carteRegles();
+  S.tracks.push({l:0,net:"A",w:0.25,x1:5,y1:10,x2:40,y2:10});
+  touch();
+  const y=10+0.125+0.30+0.4;                 // 0,30 mm de cuivre à cuivre
+  if(!placeVia(20,y,"B",0,1,false))
+    throw new Error("0,30 mm tient la classe : le via devait passer");
+  S.vias.length=0;touch();
+  matSet("trk","via",0.40);
+  if(placeVia(20,y,"B",0,1,false))
+    throw new Error("la case relevée, le via devait être refusé");
+  const gene=viaObstacle(mkVia(20,y,"B",0,1),null);
+  if(gene.indexOf("0.400")<0)
+    throw new Error("le refus doit dire la cote exigée : "+gene);
+  /* la fenêtre d'interrogation doit s'élargir avec la matrice, sans quoi un
+     obstacle dont l'isolation porte loin passerait inaperçu */
+  if(pnsMaxClr()<0.40)throw new Error("la marge d'interrogation ignore la matrice");
+  if(maxClr()<0.40)throw new Error("la résolution des zones ignore la matrice");
+  S.rule.mat={};touch();
+});
+T("matrice : le dégagement d'un plan se prend sur la ligne « Cuivre »",()=>{
+  carteRegles();
+  if(clrK("GND","A","cu","trk")!==0.25)throw new Error("au départ, la classe décide");
+  matSet("cu","trk",0.45);
+  if(clrK("GND","A","cu","trk")!==0.45)
+    throw new Error("la case cuivre/piste doit valoir : "+clrK("GND","A","cu","trk"));
+  if(clrK("GND","A","trk","trk")!==0.25)
+    throw new Error("elle ne doit pas déborder sur piste/piste");
+  matSet("cu","via",0.6);
+  if(clrK("GND","A","cu","via")!==0.6)throw new Error("cuivre/via doit valoir aussi");
+  S.rule.mat={};touch();
+});
+T("document : la matrice se range, se relit, et l'aller-retour est neutre",()=>{
+  carteRegles();
+  matSet("trk","via",0.33);
+  matSet("cu","th",0.42);
+  matSet("smd","smd",0.18);
+  S.rule.hole=0.3;
+  touch();
+  const a=docObj();
+  loadDoc(JSON.parse(JSON.stringify(a)),true);
+  const d=firstDiff(a,docObj(),"doc");
+  if(d)throw new Error("l'aller-retour a changé le document : "+d);
+  if(matGet("trk","via")!==0.33||matGet("cu","th")!==0.42)
+    throw new Error("les cases ne sont pas revenues");
+  if(holeClr()!==0.3)throw new Error("le trou à trou n'est pas revenu");
+  /* un document hostile : clés inventées, valeurs absurdes, ligne « trou » */
+  const sale=JSON.parse(JSON.stringify(a));
+  sale.rule.mat={"trk|via":"0.5","piste|via":9,"trk|trk":-3,"hole|trk":1,
+                 "hole|hole":7,"cu|cu":1e9};
+  loadDoc(sale,true);
+  const m=S.rule.mat;
+  if(Math.abs(matGet("trk","via")-0.5)>1e-9)
+    throw new Error("une valeur lisible devait passer : "+matGet("trk","via"));
+  if(m["piste|via"]!==undefined)throw new Error("une nature inventée est entrée");
+  if(m["trk|trk"]!==undefined)throw new Error("une valeur négative est entrée");
+  if(m["hole|trk"]!==undefined||m["hole|hole"]!==undefined)
+    throw new Error("la ligne « trou » n'a rien à faire dans la matrice");
+  if(matGet("cu","cu")!==100)throw new Error("une valeur démesurée doit être bornée");
+  carteRegles();
+});
+T("règles : l'arbre porte toutes les pages, et chaque page se construit",()=>{
+  carteRegles();
+  importNetlist(NET,true);
+  reOpen();
+  if(!reIsOpen())throw new Error("la fenêtre devait s'ouvrir");
+  const arbre=$("reTree").innerHTML;
+  for(const g of RE_TREE){
+    if(arbre.indexOf(esc(g.cat))<0)throw new Error("famille absente de l'arbre : "+g.cat);
+    for(const [id,t] of g.n){
+      if(arbre.indexOf('data-page="'+id+'"')<0)
+        throw new Error("règle absente de l'arbre : "+id);
+      reGo(id);
+      const h=$("rePage").innerHTML;
+      if(!h||h.length<200)throw new Error("page vide : "+id);
+      if(h.indexOf(esc(t))<0)throw new Error("la page ne se nomme pas : "+id);
+      if(h.indexOf("DRC-"+id.toUpperCase())<0)
+        throw new Error("identifiant absent de la page : "+id);
+      if(h.indexOf("<svg")<0&&id!=="dp")throw new Error("page sans figure : "+id);
+    }
+  }
+  reClose();
+  if(reIsOpen())throw new Error("la fenêtre devait se fermer");
+});
+T("règles : les figures portent les cotes du document, pas des valeurs d'exemple",()=>{
+  carteRegles();
+  S.rule.hole=0.32;S.rule.edge=0.55;S.rule.thermal=0.44;S.rule.mask=0.07;
+  S.classes[0].w=0.35;S.classes[0].via=0.9;S.classes[0].drill=0.45;
+  touch();
+  reOpen("hole");
+  if($("rePage").innerHTML.indexOf("0.320")<0)
+    throw new Error("la figure du trou à trou ignore la règle");
+  reGo("edge");
+  if($("rePage").innerHTML.indexOf("0.550")<0)
+    throw new Error("la figure de la marge ignore la règle");
+  reGo("therm");
+  if($("rePage").innerHTML.indexOf("0.440")<0)
+    throw new Error("la figure du bras thermique ignore la règle");
+  reGo("width");
+  if($("rePage").innerHTML.indexOf("0.350")<0)
+    throw new Error("la figure de largeur ignore la classe");
+  reGo("via");
+  const h=$("rePage").innerHTML;
+  if(h.indexOf("0.900")<0||h.indexOf("0.450")<0)
+    throw new Error("la figure du via ignore la classe");
+  if(h.indexOf("0.225")<0)throw new Error("la couronne doit être calculée : (0,9-0,45)/2");
+  reClose();
+  carteRegles();
+});
+T("règles : la figure d'isolation dessine la case choisie",()=>{
+  carteRegles();
+  matSet("trk","via",0.47);
+  reOpen("clr");
+  RE.mx={a:"trk",b:"trk"};
+  let f=figClr();
+  if(f.indexOf("0.250")<0)throw new Error("piste/piste : la classe décide encore");
+  if(f.indexOf("0.470")>=0)throw new Error("la case du via n'a rien à faire ici");
+  RE.mx={a:"trk",b:"via"};
+  f=figClr();
+  if(f.indexOf("0.470")<0)throw new Error("la figure doit porter la case choisie");
+  if(f.indexOf(DRC_KIND_NAME.via)<0)throw new Error("la figure doit nommer les natures");
+  /* la case libre se lit comme telle, et le dessin montre la classe */
+  RE.mx={a:"smd",b:"smd"};
+  if(figClr().indexOf("la case est libre")<0)
+    throw new Error("une case libre doit le dire : "+figClr().slice(-200));
+  reClose();
+  S.rule.mat={};touch();
+});
+T("règles : chaque défaut se compte une fois, et sous la bonne règle",()=>{
+  carteRegles();
+  importNetlist(NET,true);
+  S.avoid=false;
+  deuxPistes(0.05);                                  // isolation
+  S.tracks.push({l:0,net:"",w:0.25,x1:5,y1:20,x2:15,y2:20});     // piste sans net
+  S.tracks.push({l:0,net:"A",w:0.05,x1:5,y1:25,x2:15,y2:25});    // sous la classe
+  S.vias.push({x:-5,y:20,d:0.8,drill:0.4,a:0,b:1,net:"A"});      // hors contour
+  S.zones.push({id:S.nextId++,l:1,net:"",pts:boardZonePts()});   // zone sans net
+  touch();
+  const drc=runDrc();
+  if(!drc.length)throw new Error("le document devait produire des défauts");
+  for(const e of drc){
+    const vus=Object.keys(RE_MATCH).filter(k=>RE_MATCH[k].test(e.msg));
+    if(vus.length>1)
+      throw new Error("« "+e.msg+" » compté par "+vus.length+" règles : "+vus.join(", "));
+  }
+  const iso=reFindings("clr");
+  if(!iso.length)throw new Error("l'isolation devait relever quelque chose");
+  if(!reFindings("width").length)throw new Error("la largeur devait relever quelque chose");
+  if(!reFindings("edge").length)throw new Error("la marge devait relever le via sorti");
+  if(!reFindings("zone").length)throw new Error("la zone sans net devait remonter");
+  /* une règle sans motif ne compte rien, et sa page le dit plutôt que de
+     laisser croire à un contrôle réussi */
+  if(reFindings("obst")!==null)throw new Error("« face à un obstacle » ne juge rien");
+  reOpen("obst");
+  if($("rePage").innerHTML.indexOf("ne produit pas de défaut")<0)
+    throw new Error("la page doit dire qu'elle ne produit pas de défaut");
+  reClose();
+  S.avoid=true;carteRegles();
+});
+T("règles : les champs de la fenêtre écrivent dans le document, annulables",()=>{
+  carteRegles();
+  const av=holeClr();
+  reOpen("hole");
+  const el=$("reHole");
+  el.value="0.42";
+  if(el.onchange)el.onchange();
+  if(Math.abs(holeClr()-0.42)>1e-9)
+    throw new Error("le champ devait écrire la règle : "+holeClr());
+  undo();
+  if(Math.abs(holeClr()-av)>1e-9)
+    throw new Error("Ctrl+Z devait rendre la règle d'avant : "+holeClr());
+  reClose();
+});
+
+T("via à via : la figure cote le cuivre, pas seulement le trou",()=>{
+  carteRegles();
+  /* La rondelle porte de la couronne de part et d'autre du trou : entre deux
+     vias, c'est donc le cuivre qui se rencontre le premier, et la figure ne
+     doit jamais les dessiner en recouvrement. */
+  const q=reHoleCase();
+  if(!q.cuiMene)
+    throw new Error("Ø 0,8 percé à 0,4 : le cuivre doit décider, pas le foret");
+  if(Math.abs(q.axe-(q.d+q.cu))>1e-9)
+    throw new Error("l'axe en axe doit valoir Ø + cuivre : "+q.axe);
+  if(q.gapCu<=0)throw new Error("les rondelles se recouvrent dans le dessin");
+  if(q.gapTr<=q.gapCu)throw new Error("le trou a plus de mou que le cuivre, pas moins");
+  reOpen("hole");
+  const h=$("rePage").innerHTML;
+  if(h.indexOf("cuivre à cuivre")<0)throw new Error("la page doit nommer le cuivre à cuivre");
+  if(h.indexOf("le cuivre qui décide")<0)
+    throw new Error("la figure doit dire quelle règle décide");
+  /* la case Via ↔ Via s'édite sur cette page comme dans la matrice */
+  const el=$("reV2V");
+  el.value="0.55";
+  if(el.onchange)el.onchange();
+  if(matGet("via","via")!==0.55)
+    throw new Error("le champ doit écrire la case de la matrice : "+matGet("via","via"));
+  if(Math.abs(reHoleCase().axe-1.35)>1e-9)
+    throw new Error("l'écart imposé doit suivre : "+reHoleCase().axe);
+  undo();
+  if(matGet("via","via")!==0)throw new Error("Ctrl+Z devait rendre la case libre");
+  /* une règle de perçage démesurée reprend la main, et la figure le dit */
+  S.rule.hole=0.9;touch();
+  if(reHoleCase().cuiMene)throw new Error("0,9 mm de trou à trou passe devant le cuivre");
+  reSync();
+  if($("rePage").innerHTML.indexOf("le foret qui décide")<0)
+    throw new Error("la figure doit dire que le foret décide");
+  reClose();
+  carteRegles();
+});
+T("via à via : les deux règles se contrôlent chacune de son côté",()=>{
+  carteRegles();
+  /* deux vias de nets ÉTRANGERS à 0,30 mm de cuivre : la classe tient à 0,25,
+     rien à dire — puis la case Via ↔ Via relevée les condamne */
+  S.vias.push({x:20,y:20,d:0.8,drill:0.4,a:0,b:1,net:"A"});
+  S.vias.push({x:21.1,y:20,d:0.8,drill:0.4,a:0,b:1,net:"B"});
+  touch();
+  const iso=()=>runDrc().filter(e=>/^Isolation via\/via/.test(e.msg));
+  const trou=()=>runDrc().filter(e=>/Trou à trou/.test(e.msg));
+  if(iso().length)throw new Error("0,30 mm de cuivre tient la classe");
+  if(trou().length)throw new Error("0,70 mm de trou à trou tient la règle");
+  matSet("via","via",0.45);
+  if(iso().length!==1)throw new Error("la case cuivre devait condamner : "+iso().length);
+  if(iso()[0].msg.indexOf("0.450")<0)
+    throw new Error("le message doit dire la cote de cuivre exigée : "+iso()[0].msg);
+  if(trou().length)throw new Error("le foret n'a rien à redire : ses 0,70 mm tiennent");
+  /* et l'inverse : deux vias du MÊME net, que le cuivre laisse passer, mais
+     dont les trous se serrent — c'est le foret seul qui parle */
+  matSet("via","via",0);
+  S.vias[1].net="A";S.vias[1].x=20.5;touch();
+  if(iso().length)throw new Error("même net : le cuivre n'a rien à isoler");
+  if(trou().length!==1)throw new Error("0,10 mm de trou à trou devait être signalé");
+  carteRegles();
+});
+T("court-circuit : la figure montre deux pistes qui se croisent",()=>{
+  carteRegles();
+  reOpen("short");
+  const h=$("rePage").innerHTML;
+  /* deux tracés de cuivre, pas deux plages superposées : une tache unique ne
+     laissait voir ni les deux nets ni ce qui les relie */
+  const pistes=(h.match(/<path d="M18 /g)||[]).length;
+  if(pistes!==2)throw new Error("deux pistes attendues dans la figure, "+pistes);
+  if(h.indexOf("<rect")>=0)throw new Error("plus de plages superposées dans cette figure");
+  if(h.indexOf("le cuivre les relie")<0)throw new Error("le point de croisement doit se nommer");
+  if(h.indexOf("défaut sans cote")<0)
+    throw new Error("un court-circuit n'est pas une distance : la note doit le dire");
+  reClose();
+});
+
+/* ==========================================================================
+   La fenêtre est le seul éditeur de règles : les deux panneaux ont disparu
+   ========================================================================== */
+T("règles : tout ce qui ressemble à un champ s'écrit",()=>{
+  carteRegles();
+  importNetlist(NET,true);
+  reOpen("cls");
+  /* La promesse de la fenêtre : aucun champ grisé. Ce qui ne se règle pas se
+     présente en valeur lue (`reFact`), pas en saisie bloquée — sans quoi on
+     passe son temps à cliquer dans du vide. La page des paires est la seule
+     exception admise : son profil d'impédance est désactivé par SA case à
+     cocher, ce qui est un usage et non une valeur bloquée. */
+  /* On ne compte que les CHAMPS : un bouton sans effet a le droit de se griser,
+     c'est ainsi qu'il dit qu'il n'y a rien à faire. Le motif se vérifie d'abord
+     sur des témoins — un motif qui ne reconnaît rien ferait passer l'essai pour
+     de mauvaises raisons (ce fut le cas : un caractère parasite le rendait
+     inerte, et l'essai passait sans rien juger). */
+  const off=h=>(h.match(/<(?:input|select)\b[^>]*\sdisabled/g)||[]).length;
+  if(off('<input value="x" disabled>')!==1||off('<select disabled></select>')!==1)
+    throw new Error("le motif de champ grisé ne reconnaît rien : l'essai ne prouve rien");
+  if(off('<button class="tb" disabled>x</button>'))
+    throw new Error("le motif compte les boutons : il ne devrait pas");
+  for(const g of RE_TREE)
+    for(const [id] of g.n){
+      reGo(id);
+      if(id==="dp")continue;                 // son contenu vit dans #dpair
+      const h=$("rePage").innerHTML;
+      const n=off(h);
+      if(n)throw new Error("page « "+id+" » : "+n+" champ(s) grisé(s)");
+      if(h.indexOf('class="reval"')<0)
+        throw new Error("page « "+id+"» : aucune valeur lue, l'entête en porte");
+    }
+  const nd=off($("dpair").innerHTML);
+  if(nd>1)throw new Error("panneau des paires : "+nd+" champ(s) grisé(s), 1 admis");
+  reClose();
+  carteRegles();
+});
+T("règles : chaque champ de la fenêtre écrit dans le document",()=>{
+  carteRegles();
+  const set=(page,id,v)=>{
+    reGo(page);
+    const el=$(id);
+    if(!el)throw new Error("champ absent : "+page+"/"+id);
+    if(v===true||v===false)el.checked=v;else el.value=String(v);
+    if(el.onchange)el.onchange();
+  };
+  reOpen("cls");
+  set("cls","clsW",0.42);      set("cls","clsClr",0.31);
+  set("cls","clsVia",0.95);    set("cls","clsDrill",0.5);
+  set("board","reBW",120);     set("board","reBH",90);
+  set("board","reOX",7.5);     set("board","reOY",3.25);
+  set("aspect","reAspW",6);    set("aspect","reAspM",12);
+  set("zone","reCuTrk",0.4);   set("zone","reCuVia",0.5);
+  set("therm","reTh",0.6);     set("mask","reMask",0.08);
+  set("mask","rePaste",0.02);  set("edge","reEdge",0.7);
+  set("hole","reHole",0.3);    set("hole","reV2V",0.35);
+  set("short","reShort",true);
+  set("via","reFinish","filled");
+  set("board","reFab","1");
+  reClose();
+  const c=S.classes[0];
+  const veut={
+    "classe.w":[c.w,0.42], "classe.clr":[c.clr,0.31],
+    "classe.via":[c.via,0.95], "classe.drill":[c.drill,0.5],
+    "carte.w":[S.board.w,120], "carte.h":[S.board.h,90],
+    "origine.x":[S.origin.x,7.5], "origine.y":[S.origin.y,3.25],
+    "aspWarn":[aspWarn(),6], "aspMax":[aspMax(),12],
+    "cu/piste":[matGet("cu","trk"),0.4], "cu/via":[matGet("cu","via"),0.5],
+    "thermal":[S.rule.thermal,0.6], "mask":[S.rule.mask,0.08],
+    "paste":[S.rule.paste,0.02], "edge":[S.rule.edge,0.7],
+    "hole":[S.rule.hole,0.3], "via/via":[matGet("via","via"),0.35]
+  };
+  for(const k in veut)
+    if(Math.abs(veut[k][0]-veut[k][1])>1e-9)
+      throw new Error(k+" : "+veut[k][0]+" au lieu de "+veut[k][1]);
+  if(S.rule.short!==true)throw new Error("la case du court-circuit n'a pas écrit");
+  if(S.rule.viaFinish!=="filled")throw new Error("le traitement des vias n'a pas écrit");
+  if(S.fabOrigin!==true)throw new Error("le repère des fichiers n'a pas écrit");
+  /* et tout cela s'annule : chaque champ prend son instantané */
+  undo();
+  if(S.fabOrigin!==false)throw new Error("Ctrl+Z devait rendre le repère d'avant");
+  carteRegles();
+});
+T("règles : les seuils du rapport d'aspect sont ceux du document",()=>{
+  carteRegles();
+  if(aspWarn()!==ASPECT_WARN||aspMax()!==ASPECT_MAX)
+    throw new Error("sans réglage, les valeurs d'usine");
+  /* une pile de 1,6 mm percée à 0,2 mm fait 8 : 1 — sous le refus d'usine,
+     au-dessus d'un refus resserré à 6 : 1 */
+  S.vias.push({x:20,y:20,d:0.5,drill:0.2,a:0,b:1,net:"A"});touch();
+  const dur=()=>runDrc().filter(e=>/Rapport d'aspect/.test(e.msg)&&!e.info).length;
+  S.rule.aspWarn=8;S.rule.aspMax=10;touch();
+  const avant=dur();
+  S.rule.aspWarn=3;S.rule.aspMax=4;touch();
+  if(dur()<=avant)throw new Error("un refus resserré doit condamner davantage");
+  /* et le seuil de refus ne peut pas passer sous celui de l'alerte */
+  S.rule.aspWarn=9;S.rule.aspMax=2;
+  if(aspMax()<aspWarn())throw new Error("refus sous alerte : "+aspMax()+" < "+aspWarn());
+  carteRegles();
+});
+T("règles : le court-circuit admis fait taire le contrôle, et lui seul",()=>{
+  carteRegles();
+  /* deux pastilles de nets différents superposées dans une même empreinte */
+  const fp=mkFp("U9","","",2);
+  fp.x=40;fp.y=30;fp.nets={1:"A",2:"B"};
+  S.fps.push(fp);
+  fpFreeze(fp);
+  fpSetPad(fp,1,"x",padsOf(fp)[0].x);
+  fpSetPad(fp,1,"y",padsOf(fp)[0].y);
+  touch();
+  const cc=()=>runDrc().filter(e=>/Pastilles superposées/.test(e.msg)).length;
+  if(!cc())throw new Error("le recouvrement devait être signalé");
+  S.rule.short=true;touch();
+  if(cc())throw new Error("court-circuit admis : le contrôle doit se taire");
+  /* mais il ne fait taire QUE cela : l'isolation continue de juger */
+  S.tracks.push({l:0,net:"C",w:0.25,x1:5,y1:10,x2:40,y2:10});
+  S.tracks.push({l:0,net:"D",w:0.25,x1:5,y1:10.3,x2:40,y2:10.3});
+  touch();
+  if(!runDrc().some(e=>/^Isolation piste\/piste/.test(e.msg)))
+    throw new Error("l'isolation n'a pas à se taire pour autant");
+  carteRegles();
+});
+T("document : court-circuit admis et seuils d'aspect font l'aller-retour",()=>{
+  carteRegles();
+  S.rule.short=true;S.rule.aspWarn=6.5;S.rule.aspMax=11;touch();
+  const a=docObj();
+  loadDoc(JSON.parse(JSON.stringify(a)),true);
+  const d=firstDiff(a,docObj(),"doc");
+  if(d)throw new Error("l'aller-retour a changé le document : "+d);
+  if(S.rule.short!==true)throw new Error("le court-circuit admis n'est pas revenu");
+  if(aspWarn()!==6.5||aspMax()!==11)throw new Error("les seuils ne sont pas revenus");
+  /* un fichier hostile : seuils absurdes, drapeau qui n'est pas un booléen */
+  const sale=JSON.parse(JSON.stringify(a));
+  sale.rule.aspWarn="beaucoup";sale.rule.aspMax=-4;sale.rule.short="oui";
+  loadDoc(sale,true);
+  if(aspWarn()!==ASPECT_WARN)throw new Error("un seuil illisible reprend l'usine");
+  if(aspMax()<aspWarn())throw new Error("un seuil négatif ne doit pas passer");
+  if(S.rule.short!==true)throw new Error("« oui » est vrai, et reste un booléen");
+  if(typeof S.rule.short!=="boolean")throw new Error("le drapeau doit être un booléen");
+  carteRegles();
+});
+T("le dock ne garde que ce qu'on regarde en routant",()=>{
+  /* Les règles de conception et les paires différentielles ont quitté le dock
+     pour la fenêtre : leurs panneaux n'existent plus, et une disposition
+     enregistrée avant le changement ne doit pas les ressusciter. */
+  const d=wsDefault();
+  if(d.panels.rules||d.panels.dpair)
+    throw new Error("la disposition d'usine porte encore un panneau supprimé");
+  if(JSON.stringify(d.order.dockL)!==JSON.stringify(["stack"]))
+    throw new Error("dock gauche d'usine : "+d.order.dockL);
+  if(JSON.stringify(d.order.dockR)!==JSON.stringify(["props","list","stackup"]))
+    throw new Error("dock droit d'usine : "+d.order.dockR);
+  const av=profLire(WS_SECTION);
+  profEcrire(WS_SECTION,{
+    docks:{dockL:212,dockR:330,dockB:200},
+    order:{dockL:["stack","rules"],dockR:["props","list","stackup","dpair"],dockB:[]},
+    panels:{rules:{grow:1.5,last:"dockL"},dpair:{grow:1.4,last:"dockR"}}});
+  WS=wsDefault();wsLoad();wsApply(false);
+  if(wsPlaceOf("rules")!=="hidden"||wsPlaceOf("dpair")!=="hidden")
+    throw new Error("un panneau supprimé est revenu du stockage");
+  if(JSON.stringify(dom.dockIds("dockL"))!==JSON.stringify(["stack"]))
+    throw new Error("dock gauche après relecture : "+dom.dockIds("dockL"));
+  if(wsMenuBuild().innerHTML.indexOf('data-tgl="dpair"')>=0)
+    throw new Error("le menu propose encore un panneau supprimé");
+  if(av==null)profOublier(WS_SECTION);else profEcrire(WS_SECTION,av);
+  WS=wsDefault();wsApply(false);
+});
+T("règles : le panneau des paires vit dans la page qui le porte",()=>{
+  carteRegles();
+  importNetlist(NET,true);
+  reOpen("dp");
+  /* La page pose `#dpair`, `buildDiffPairs()` le remplit : le panneau est
+     entier, cotes et figure comprises, et il s'édite de là. */
+  if($("rePage").innerHTML.indexOf('id="dpair"')<0)
+    throw new Error("la page doit poser l'élément que le panneau remplit");
+  const h=$("dpair").innerHTML;
+  if(h.indexOf("Règle de paire différentielle")<0)
+    throw new Error("le panneau des paires n'est pas rempli");
+  if(h.indexOf("<svg")<0)throw new Error("sa figure doit y être");
+  const el=$("dpMinG");
+  el.value="0.18";
+  if(el.onchange)el.onchange();
+  if(!S.dpRules.length)throw new Error("la retouche devait inscrire la règle d'usine");
+  if(Math.abs(S.dpRules[0].minGap-0.18)>1e-9)
+    throw new Error("l'écart mini n'a pas été écrit : "+S.dpRules[0].minGap);
+  reClose();
+  carteRegles();
+});
+
+
+/* ==========================================================================
+   Profils utilisateur (commun/profils.js)
+   Ce qui est vérifié ici : un nom devient un nom de fichier, deux personnes
+   ne se marchent pas dessus, et changer d'utilisateur replace vraiment les
+   panneaux et les réglages. Le fichier profils/<nom>.json, lui, est du
+   ressort de serveur.py — le banc d'essai n'a pas de serveur, et le module
+   doit s'en passer sans broncher : c'est le cas du double-clic (file://).
+   ========================================================================== */
+T("premier utilisateur : Pilou",()=>{
+  if(profNom()!=="Pilou")
+    throw new Error("utilisateur au démarrage : "+profNom());
+  if(profListe().indexOf("Pilou")<0)throw new Error("liste : "+profListe());
+});
+T("un nom d'utilisateur reste un nom de fichier",()=>{
+  if(profNomValide("Pilou")!=="Pilou")throw new Error("un nom simple est refusé");
+  if(profNomValide("  Zoé   Marie ")!=="Zoé Marie")
+    throw new Error("espaces mal recollés : "+profNomValide("  Zoé   Marie "));
+  for(const mauvais of ["..",".","a/b","a"+String.fromCharCode(92)+"b","C:","x?","y*",
+                        String.fromCharCode(34),"a<b","a|b",".cache","fin.","CON",
+                        "lpt3",""," ","x".repeat(41)])
+    if(profNomValide(mauvais)!=="")
+      throw new Error("nom accepté à tort : "+JSON.stringify(mauvais)+
+                      " -> "+JSON.stringify(profNomValide(mauvais)));
+  /* Une espace en trop se rattrape ; un point final, non — il disparaîtrait
+     du nom de fichier sous Windows, et le profil ne se retrouverait plus. */
+  if(profNomValide("fin ")!=="fin")throw new Error("espace finale non rattrapée");
+});
+T("deux utilisateurs ne partagent rien",()=>{
+  profEcrire("essai:cloison",{v:"pilou"});
+  if(!profCreer("Marie"))throw new Error("création refusée");
+  if(profNom()!=="Marie")throw new Error("bascule ratée : "+profNom());
+  if(profLire("essai:cloison"))throw new Error("Marie voit les réglages de Pilou");
+  profEcrire("essai:cloison",{v:"marie"});
+  profChoisir("Pilou");
+  const p=profLire("essai:cloison");
+  if(!p||p.v!=="pilou")throw new Error("Pilou a perdu les siens : "+JSON.stringify(p));
+  profChoisir("Marie");
+  if(profLire("essai:cloison").v!=="marie")throw new Error("aller-retour perdu");
+  profChoisir("Pilou");
+});
+T("changer d'utilisateur replace les panneaux",()=>{
+  wsMove("stack","dockB",0);                 // Pilou range l'empilage en bas
+  if(!profCreer("Marie2"))throw new Error("création refusée");
+  if(wsPlaceOf("stack")!=="dockL")
+    throw new Error("un utilisateur neuf part de la disposition d'usine : "+
+                    wsPlaceOf("stack"));
+  profChoisir("Pilou");
+  if(wsPlaceOf("stack")!=="dockB")
+    throw new Error("Pilou n'a pas retrouvé la sienne : "+wsPlaceOf("stack"));
+  wsMove("stack","dockL",0);
+  profSupprimer("Marie2");
+  if(profListe().indexOf("Marie2")>=0)throw new Error("suppression sans effet");
+});
+T("le dernier utilisateur ne se supprime pas",()=>{
+  for(const n of profListe())if(n!=="Pilou")profSupprimer(n);
+  if(profListe().length!==1)throw new Error("il devait rester Pilou seul : "+profListe());
+  if(profSupprimer("Pilou"))throw new Error("le seul utilisateur a été supprimé");
+  if(profNom()!=="Pilou")throw new Error("utilisateur courant perdu : "+profNom());
+});
+T("derniers documents : sans doublon, le plus récent d'abord, et borné",()=>{
+  profOublier("recents:pcb");
+  for(let i=1;i<=10;i++)profNoterDocument("pcb","carte"+i+".json");
+  profNoterDocument("pcb","carte3.json");
+  const r=profRecents("pcb");
+  if(r.length!==8)throw new Error("liste non bornée : "+r.length);
+  if(r[0].nom!=="carte3.json")throw new Error("ordre : "+r[0].nom);
+  if(r.filter(e=>e.nom==="carte3.json").length!==1)
+    throw new Error("doublon dans la liste");
+  if(!r[0].t)throw new Error("date manquante");
+  profOublier("recents:pcb");
+});
+T("réglages d'affichage : ils suivent l'utilisateur, pas la carte",()=>{
+  setGridStep(0.5);setContrast(2);setFlip(true);
+  const av=profLire("reglages:pcb");
+  if(!av)throw new Error("rien enregistré sous reglages:pcb");
+  if(Math.abs(av.grille-0.5)>1e-9)throw new Error("pas de grille : "+av.grille);
+  if(av.contraste!==2)throw new Error("contraste : "+av.contraste);
+  if(av.vue!=="dessous")throw new Error("vue : "+av.vue);
+  /* rien de tout cela n'a le droit d'entrer dans le document */
+  const doc=docObj();
+  for(const k of ["grid","showGrid","flip","contrast","avoid"])
+    if(k in doc)throw new Error("« "+k+" » s'est glissé dans la carte");
+  /* Retour aux valeurs d'usine — ce que fait init() au démarrage — puis on
+     remet dans le profil ce qu'il contenait : c'est exactement la situation
+     d'une page qui s'ouvre, ou d'un changement d'utilisateur. */
+  setGridStep(0.1);setContrast(0);setFlip(false);
+  profEcrire("reglages:pcb",av);
+  profilAppliquer(false);
+  if(Math.abs(S.grid-0.5)>1e-9)throw new Error("grille non rétablie : "+S.grid);
+  if(S.contrast!==2)throw new Error("contraste non rétabli : "+S.contrast);
+  if(!S.flip)throw new Error("vue non rétablie");
+  /* `garderVue` : la session d'onglet vient de trancher, on ne la contredit pas */
+  setFlip(false);
+  profEcrire("reglages:pcb",av);
+  profilAppliquer(true);
+  if(S.flip)throw new Error("la vue de la session d'onglet a été écrasée");
+  if(Math.abs(S.grid-0.5)>1e-9)throw new Error("le reste devait être rétabli");
+  setGridStep(0.1);setContrast(1);setFlip(false);
+});
+T("un contrôle DRC ne devient pas une habitude",()=>{
+  S.listTab="drc";
+  if(profilEtat().liste!=="nets")
+    throw new Error("l'onglet DRC a été retenu : "+profilEtat().liste);
+  S.listTab="nets";
+});
+T("sans stockage, l'éditeur s'ouvre quand même",()=>{
+  /* Mode privé, stockage coupé par une stratégie : profEcrire renonce, mais
+     rien ne lève — c'est tout ce qui compte ici. */
+  const vrai=dom.storage.setItem;
+  dom.storage.setItem=()=>{throw new Error("stockage refusé");};
+  try{
+    profEcrire("essai:refus",{a:1});
+    wsSave();
+    wsApply(false);
+  }finally{ dom.storage.setItem=vrai; }
+  profOublier("essai:refus");
+  profOublier("essai:cloison");
+});
+
+
+/* ==========================================================================
+   Ordre de chargement : ce qui tourne au démarrage ne peut compter sur rien
+   de ce qui vient après
+   --------------------------------------------------------------------------
+   init() (fin de 07-app.js) se termine par sessionPcb(), qui rappelle
+   loadDoc() pour ramener la carte laissée dans l'onglet. Or 15-regles.js est
+   chargé APRÈS 07-app.js : à cet instant précis, la fenêtre des règles
+   n'existe pas — ni sa fonction en pages séparées, ni son état dans la
+   version un seul fichier, où la fonction est hoistée mais où `RE` est encore
+   sur le pas de la porte. loadDoc() a levé pendant tout un temps pour cette
+   raison, et sessionPcb(), qui attrape, déclarait la carte illisible et
+   effaçait la session : le travail était perdu à chaque aller-retour entre le
+   schéma et le PCB.
+   ========================================================================== */
+T("pages séparées : l'appel du démarrage est gardé à la source",()=>{
+  /* Le banc d'essai tourne sur le bundle, où toutes les fonctions sont
+     hoistées : il ne peut pas voir qu'en pages séparées reSync n'existe pas
+     encore au moment où loadDoc l'appelle. C'est donc la source qu'on lit. */
+  const src=fs.readFileSync(path.join(__dirname,"..","js","05-tools.js"),"utf8");
+  const corps=src.slice(src.indexOf("function loadDoc("),
+                        src.indexOf("function undo("));
+  if(!/typeof\s+reSync\s*===\s*"function"/.test(corps))
+    throw new Error("loadDoc() appelle la fenêtre des règles sans garde : "+
+                    "en pages séparées, elle n'est pas encore chargée quand "+
+                    "la carte de la session revient");
+});
+T("reprise au démarrage : loadDoc ne dépend pas de la fenêtre des règles",()=>{
+  const sauve=RE, doc=JSON.parse(serialize());
+  RE=undefined;                       // l'état de la fenêtre, avant son fichier
+  try{
+    if(reIsOpen())throw new Error("une fenêtre inexistante ne peut pas être ouverte");
+    reSync();                         // ne doit rien faire, surtout pas lever
+    loadDoc(doc,true);
+  }catch(e){
+    throw new Error("le démarrage lève : "+e.message);
+  }finally{
+    RE=sauve;
+  }
+  const d=firstDiff(doc,docObj(),"doc");
+  if(d)throw new Error("la carte n'a pas été relue à l'identique : "+d);
+});
+T("session : la carte revient même quand la page vient de démarrer",()=>{
+  /* Le même défaut, vu du côté de l'utilisateur : c'est sessionPcb() qui
+     décide, et un échec ici efface silencieusement le travail mis de côté. */
+  const doc=JSON.parse(serialize());
+  sessEcrire("pcb",{doc:doc,sale:true,vue:{scale:S.scale,ox:S.ox,oy:S.oy,flip:false}});
+  const sauve=RE;
+  RE=undefined;
+  let repris=false;
+  try{ repris=sessionPcb(); }finally{ RE=sauve; }
+  if(!repris)throw new Error("la carte mise de côté n'a pas été reprise : "+
+                             $("fHint").textContent);
+  if(!S.dirty)throw new Error("l'état « modifié » devait revenir avec elle");
+  sessEffacer("pcb");
+  S.dirty=false;
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

@@ -1,0 +1,38 @@
+/* =============================================================================
+   commun/profils.css
+   Habillage du bouton d'utilisateur (data-cao-profil) et de son menu.
+   Même parti pris que session.css : les trois pages ont chacune leur feuille
+   de style, mais un seul endroit décide de l'allure de ce qui est commun.
+   Le menu reprend celui de l'espace de travail (#wsMenu) — c'est le même
+   geste, il doit avoir la même tête.
+   ============================================================================= */
+button.tb[data-cao-profil]{
+  color:var(--yellow);
+  border-color:var(--border2);
+  font-weight:600;
+}
+button.tb[data-cao-profil]:hover,
+button.tb[data-cao-profil].on{
+  background:#2a2a20;
+  border-color:var(--yellow);
+  color:#fff;
+}
+
+#profMenu{
+  position:fixed;display:none;z-index:80;min-width:216px;max-width:290px;padding:5px;
+  background:var(--panel);border:1px solid var(--border2);border-radius:7px;
+  box-shadow:0 18px 40px rgba(0,0,0,.55);
+}
+#profMenu.on{display:block}
+#profMenu .mi{
+  display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;
+  background:transparent;border:none;border-radius:5px;color:var(--txt);
+  font-family:var(--ui);font-size:12px;cursor:pointer;text-align:left;
+}
+#profMenu .mi:hover{background:#22252b}
+#profMenu .mi .ck{width:11px;flex:none;color:var(--yellow);font-size:10px}
+#profMenu .mtitle{font-family:var(--mono);font-size:9px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--txt-dim);padding:6px 8px 4px}
+#profMenu .msep{height:1px;background:var(--border);margin:4px 2px}
+#profMenu .mnote{padding:4px 8px 6px;font-size:10px;line-height:1.5;color:var(--txt-dim)}
+#profMenu .mnote code{font-family:var(--mono);color:var(--blue)}

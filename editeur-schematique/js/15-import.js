@@ -135,6 +135,7 @@ document.getElementById("fileIn").onchange=e=>{
   rd.onload=()=>{
     try{
       const dropped=loadDoc(JSON.parse(rd.result));
+      if(typeof profNoterDocument==="function")profNoterDocument("schema",f.name);
       document.getElementById("fHint").textContent = dropped
         ? dropped+" élément(s) ignoré(s) : type inconnu ou coordonnées invalides."
         : "Document importé.";

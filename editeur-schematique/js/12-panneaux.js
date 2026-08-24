@@ -479,6 +479,7 @@ function setListTab(t){
   document.getElementById("tabNets").classList.toggle("on",t==="nets");
   document.getElementById("bomAllWrap").style.display=(t==="bom")?"":"none";
   document.getElementById("netAllWrap").style.display=(t==="nets")?"":"none";
+  if(typeof profilNoter==="function")profilNoter();
   buildList();
 }
 function buildList(){
