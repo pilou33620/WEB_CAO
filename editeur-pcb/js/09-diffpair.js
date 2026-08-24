@@ -753,12 +753,12 @@ function dpCoupling(pair){
   const out={len:0,coupled:0,uncoupled:0,lenN:0};
   if(!P.length||!N.length)return out;
   let total=0;
-  for(const t of P)total+=dist(t.x1,t.y1,t.x2,t.y2);
-  for(const t of N)out.lenN+=dist(t.x1,t.y1,t.x2,t.y2);
+  for(const t of P)total+=trkLen(t);
+  for(const t of N)out.lenN+=trkLen(t);
   out.len=r3(total);
   const step=Math.max(DP_STEP,total/DP_SAMPLES);
   for(const t of P){
-    const L=dist(t.x1,t.y1,t.x2,t.y2);
+    const L=trkLen(t);
     if(L<1e-9)continue;
     const v=dpValues(dpRuleFor(pair),t.l);
     const n=Math.max(1,Math.ceil(L/step)), dl=L/n;

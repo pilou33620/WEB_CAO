@@ -131,7 +131,11 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "reSync","reTree","reBind","reTitle","reCat","reFindings","reMatrix","reObj",
   "figClr","figWidth","figVia","figHole","figAspect","figTherm","figEdge","figMask",
   "figShort","figClass","figBoard","reHoleCase","reDimHSoft","reFact","reClassTable",
-  "reClassSel","reFinishSel","aspWarn","aspMax","ASPECT_WARN","ASPECT_MAX"];
+  "reClassSel","reFinishSel","aspWarn","aspMax","ASPECT_WARN","ASPECT_MAX",
+  /* pistes circulaires : l'arc rangé comme une piste de plus */
+  "ARC_MIN","ARC_MAX","ARC_SAG","isArc","arcOf","arcSweep","arcOn",
+  "trkLen","trkAt","trkMid","trkDist","trkBBox","trkSegs","trkPath",
+  "normTrack","gTrk","pnsItemsTrack"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -6597,6 +6601,249 @@ T("sans stockage, l'éditeur s'ouvre quand même",()=>{
    effaçait la session : le travail était perdu à chaque aller-retour entre le
    schéma et le PCB.
    ========================================================================== */
+/* ==========================================================================
+   Pistes circulaires
+   --------------------------------------------------------------------------
+   Le cas qui les amène : une antenne NFC ronde. Elle arrive d'un fichier — le
+   routeur ne pose que du 45° — et l'éditeur doit savoir la montrer, la
+   mesurer, la relier, la contrôler et la sortir en Gerber sans la redresser.
+   Chacun de ces passages a son essai ici.
+   ========================================================================== */
+/* Un demi-cercle de rayon 5 mm, allant de gauche à droite : les deux bouts
+   sont sur l'horizontale, l'angle balayé fait un demi-tour. */
+function arcDemi(sens){
+  return {l:0,net:"ANT",w:0.3,x1:15,y1:15,x2:25,y2:15,ca:sens*Math.PI};
+}
+T("arc : centre, rayon et angles se déduisent de la corde",()=>{
+  const A=arcOf(arcDemi(1));
+  if(!A)throw new Error("un demi-tour devrait donner un arc");
+  if(Math.abs(A.r-5)>1e-9)throw new Error("rayon 5 mm attendu, "+A.r);
+  if(Math.abs(A.cx-20)>1e-9||Math.abs(A.cy-15)>1e-9)
+    throw new Error("le centre d'un demi-tour est au milieu de la corde : "+A.cx+","+A.cy);
+  /* Les deux bouts sont bien sur le cercle : c'est toute la raison de ranger
+     l'angle plutôt que le centre. */
+  for(const p of [{x:15,y:15},{x:25,y:15}])
+    if(Math.abs(Math.hypot(p.x-A.cx,p.y-A.cy)-A.r)>1e-9)
+      throw new Error("un bout a quitté le cercle");
+  if(isArc({l:0,net:"",w:0.3,x1:0,y1:0,x2:1,y2:0}))
+    throw new Error("sans ca, la piste est droite");
+});
+T("arc : le sens décide du côté où passe le cuivre",()=>{
+  const haut=trkMid(arcDemi(1)), bas=trkMid(arcDemi(-1));
+  /* Sens des aiguilles d'une montre pour un angle positif : d'un bout gauche à
+     un bout droit, l'arc passe par le haut — de 9 h à 3 h en passant par midi. */
+  if(!(haut.y<15-4.9))throw new Error("l'arc positif devrait passer par le haut, y="+haut.y);
+  if(!(bas.y>15+4.9))throw new Error("l'arc négatif devrait passer par le bas, y="+bas.y);
+  if(Math.abs(haut.x-20)>1e-9||Math.abs(bas.x-20)>1e-9)
+    throw new Error("le milieu d'un demi-tour est au sommet du ventre");
+});
+T("arc : la longueur est celle du cuivre, pas celle de la corde",()=>{
+  const t=arcDemi(1);
+  if(Math.abs(trkLen(t)-Math.PI*5)>1e-9)
+    throw new Error("pi*R attendu pour un demi-tour, "+trkLen(t));
+  const droit={l:0,net:"",w:0.3,x1:0,y1:0,x2:3,y2:4};
+  if(Math.abs(trkLen(droit)-5)>1e-12)throw new Error("une piste droite mesure sa corde");
+});
+T("arc : la boîte englobe le ventre, pas seulement la corde",()=>{
+  const b=trkBBox(arcDemi(1));
+  if(Math.abs(b.y1-10)>1e-9)
+    throw new Error("le ventre monte à 10 mm, la boîte s'arrête à "+b.y1);
+  if(Math.abs(b.y2-15)>1e-9||Math.abs(b.x1-15)>1e-9||Math.abs(b.x2-25)>1e-9)
+    throw new Error("la boîte déborde du demi-cercle : "+JSON.stringify(b));
+});
+T("arc : on l'attrape sur son ventre, pas sur sa corde",()=>{
+  const t=arcDemi(1);
+  if(trkDist(20,10,t)>1e-9)throw new Error("le sommet du ventre est sur l'axe");
+  if(trkDist(20,15,t)<4.9)throw new Error("le milieu de la corde est loin du cuivre");
+  /* Sous la corde, on est hors du balayage : c'est le bout le plus proche qui
+     compte, le cuivre s'arrête là et ne fait pas le tour du cercle. */
+  if(Math.abs(trkDist(20,20,t)-Math.hypot(5,5))>1e-9)
+    throw new Error("sous la corde, le bout le plus proche fait la distance");
+  const sauve=S.tracks, act=S.active;
+  S.tracks=[t];S.active=0;touch();
+  try{
+    const h=hitTest(20,10,null);
+    if(!h||h.track!==t)throw new Error("le clic sur le ventre n'attrape pas la piste");
+    const c=hitTest(20,15,null);
+    if(c&&c.track===t)throw new Error("le clic sur la corde attrape du cuivre absent");
+  }finally{S.tracks=sauve;S.active=act;touch();}
+});
+T("arc : les cordes de découpe restent sous la flèche tolérée",()=>{
+  const t=arcDemi(1), A=arcOf(t), segs=trkSegs(t);
+  if(segs.length<4)throw new Error("un demi-tour ne tient pas en "+segs.length+" cordes");
+  for(const s of segs){
+    const d=Math.hypot(s.x2-s.x1,s.y2-s.y1);
+    const f=A.r-Math.sqrt(Math.max(0,A.r*A.r-d*d/4));   // flèche de la corde
+    if(f>ARC_SAG+1e-9)throw new Error("corde trop longue : flèche de "+f+" mm");
+  }
+  /* Les cordes vont bien d'un bout à l'autre, sans trou ni saut. */
+  if(Math.abs(segs[0].x1-15)>1e-9||Math.abs(segs[segs.length-1].x2-25)>1e-9)
+    throw new Error("la découpe ne part pas des bouts de la piste");
+  const droit={l:0,net:"",w:0.3,x1:0,y1:0,x2:3,y2:4};
+  if(trkSegs(droit).length!==1)throw new Error("une piste droite rend un seul segment");
+});
+T("document : l'angle fait l'aller-retour, et lui seul",()=>{
+  const doc=normDoc({cu:2,tracks:[{l:0,net:"ANT",w:0.3,x1:15,y1:15,x2:25,y2:15,ca:Math.PI},
+                                  {l:0,net:"N1",w:0.3,x1:0,y1:0,x2:5,y2:0}]});
+  const a=doc.tracks[0], b=doc.tracks[1];
+  if(Math.abs(a.ca-r4(Math.PI))>1e-9)throw new Error("l'angle est perdu à la relecture");
+  if("ca" in b)throw new Error("une piste droite ne doit pas écrire la clé : "+
+                               "un document sans arc doit ressortir inchangé");
+  /* Un fichier écrit à la main peut dire n'importe quoi : le tour complet n'a
+     pas de corde, et un angle absurde ne doit pas faire de NaN. */
+  const fou=normDoc({cu:2,tracks:[{l:0,net:"",w:0.3,x1:0,y1:0,x2:5,y2:0,ca:99},
+                                  {l:0,net:"",w:0.3,x1:0,y1:1,x2:5,y2:1,ca:"oui"}]});
+  if(Math.abs(fou.tracks[0].ca)>ARC_MAX)throw new Error("l'angle n'est pas borné");
+  if("ca" in fou.tracks[1])throw new Error("un angle illisible doit disparaître");
+  const A=arcOf(fou.tracks[0]);
+  if(!A||!Number.isFinite(A.r)||!Number.isFinite(A.cx))
+    throw new Error("un angle borné doit encore donner un cercle");
+});
+T("arc : couper en deux garde le cercle",()=>{
+  const sauve=S.tracks;
+  const t=arcDemi(1);
+  S.tracks=[t];touch();
+  try{
+    const A0=arcOf(t);
+    const pt=projOnSeg(20,5,t);             // au-dessus du ventre : retombe sur le sommet
+    if(Math.abs(pt.x-20)>1e-3||Math.abs(pt.y-10)>1e-3)
+      throw new Error("la projection quitte le cuivre : "+pt.x+","+pt.y);
+    const nt=splitTrack(t,pt);
+    if(Math.abs(t.ca+nt.ca-Math.PI)>1e-3)
+      throw new Error("les deux moitiés ne se partagent pas l'angle");
+    for(const m of [t,nt]){
+      const A=arcOf(m);
+      if(!A||Math.abs(A.r-A0.r)>1e-3||Math.abs(A.cx-A0.cx)>1e-3||Math.abs(A.cy-A0.cy)>1e-3)
+        throw new Error("un morceau a changé de cercle : R="+(A&&A.r));
+    }
+  }finally{S.tracks=sauve;touch();}
+});
+T("antenne ronde : deux demi-tours font un net d'un seul tenant",()=>{
+  const sFps=S.fps, sTr=S.tracks, sVia=S.vias, sZ=S.zones;
+  S.fps=[];S.vias=[];S.zones=[];
+  /* Une boucle fermée s'écrit en deux demi-tours : deux bouts confondus ne
+     seraient plus une piste. C'est ainsi qu'une antenne se range. */
+  S.tracks=[{l:0,net:"ANT",w:0.3,x1:15,y1:15,x2:25,y2:15,ca:Math.PI},
+            {l:0,net:"ANT",w:0.3,x1:25,y1:15,x2:15,y2:15,ca:Math.PI},
+            /* une piste droite qui vient toucher le ventre du haut, en T */
+            {l:0,net:"ANT",w:0.3,x1:20,y1:10,x2:20,y2:4}];
+  touch();
+  try{
+    const c=conn(true);
+    if(c.find("T0a")!==c.find("T1a"))
+      throw new Error("les deux demi-tours ne se rejoignent pas");
+    if(c.find("T0a")!==c.find("T2a"))
+      throw new Error("une piste posée sur le ventre de l'arc devrait s'y relier");
+    /* Le même point, sur la corde et non sur le cuivre, ne relie rien. */
+    S.tracks[2]={l:0,net:"ANT",w:0.3,x1:20,y1:15,x2:20,y2:2};
+    touch();
+    const c2=conn(true);
+    if(c2.find("T0a")===c2.find("T2a"))
+      throw new Error("une piste posée sur la corde ne touche aucun cuivre");
+  }finally{S.fps=sFps;S.tracks=sTr;S.vias=sVia;S.zones=sZ;touch();}
+});
+T("Gerber : l'arc sort en arc, pas en escalier",()=>{
+  const sTr=S.tracks;
+  S.tracks=[{l:0,net:"ANT",w:0.3,x1:15,y1:15,x2:25,y2:15,ca:Math.PI}];
+  touch();
+  try{
+    const g=gerberCopper(0);
+    if(g.indexOf("G75*")<0)throw new Error("le mode multi-quadrant doit être déclaré");
+    const m=/G0([23])X(-?\d+)Y(-?\d+)I(-?\d+)J(-?\d+)D01\*/.exec(g);
+    if(!m)throw new Error("aucune interpolation circulaire dans le fichier");
+    /* L'axe Y du Gerber monte, celui du document descend : l'arc horaire à
+       l'écran s'écrit antihoraire dans le fichier. */
+    if(m[1]!=="2")throw new Error("sens d'arc inversé : G0"+m[1]);
+    /* I et J vont du départ au centre : cinq millimètres vers la droite,
+       rien en Y — le centre est au milieu de la corde. */
+    if(+m[4]!==5000000||+m[5]!==0)
+      throw new Error("décalages I/J faux : I="+m[4]+" J="+m[5]);
+    if((g.match(/D01\*/g)||[]).length>3)
+      throw new Error("l'arc a été découpé en segments au lieu d'être écrit en arc");
+    if(g.slice(g.indexOf("G75*")).indexOf("G01*")<0)
+      throw new Error("le trait droit doit être rétabli derrière l'arc");
+  }finally{S.tracks=sTr;touch();}
+});
+T("DRC : un arc trop près se signale une fois, pas vingt",()=>{
+  const sFps=S.fps, sTr=S.tracks, sVia=S.vias, sZ=S.zones;
+  S.fps=[];S.vias=[];S.zones=[];
+  /* La droite passe juste sous le ventre du demi-tour : le défaut court sur
+     tout l'arc, donc sur toutes ses cordes. C'est UNE piste en faute. */
+  S.tracks=[{l:0,net:"ANT",w:0.3,x1:15,y1:15,x2:25,y2:15,ca:Math.PI},
+            {l:0,net:"N1", w:0.3,x1:14,y1:9.69,x2:26,y2:9.69}];
+  touch();
+  try{
+    const d=runDrc().filter(e=>/Isolation piste\/piste/.test(e.msg));
+    if(!d.length)throw new Error("l'arc frôle la piste : le défaut n'est pas vu — "+
+                                 "c'est la corde qui a été mesurée");
+    if(d.length>1)throw new Error(d.length+" fois le même défaut : une par corde");
+    /* Écartée de deux millimètres, la même piste ne dérange plus personne. */
+    S.tracks[1].y1=S.tracks[1].y2=7;
+    touch();
+    if(runDrc().some(e=>/Isolation piste\/piste/.test(e.msg)))
+      throw new Error("défaut inventé là où l'isolation est tenue");
+    /* Et la corde, elle, ne doit gêner personne : une piste qui la longe passe. */
+    S.tracks[1]={l:0,net:"N1",w:0.3,x1:16,y1:15,x2:24,y2:15};
+    touch();
+    if(runDrc().some(e=>/Isolation piste\/piste/.test(e.msg)))
+      throw new Error("la corde d'un arc a été prise pour du cuivre");
+  }finally{S.fps=sFps;S.tracks=sTr;S.vias=sVia;S.zones=sZ;touch();}
+});
+T("arc : ni écharde de gravure, ni angle bâtard",()=>{
+  const sFps=S.fps, sTr=S.tracks, sVia=S.vias, sZ=S.zones;
+  S.fps=[];S.vias=[];S.zones=[];
+  /* Un congé plus court que la piste n'est large. Droit, ce serait une écharde
+     de gravure ; courbe, c'est un raccord, et sa corde n'est pas un angle. */
+  S.tracks=[{l:0,net:"N1",w:0.3,x1:10,y1:15,x2:20,y2:15},
+            {l:0,net:"N1",w:0.3,x1:20,y1:15,x2:20.09,y2:15.21,ca:Math.PI/2},
+            {l:0,net:"N1",w:0.3,x1:20.09,y1:15.21,x2:20.09,y2:25}];
+  touch();
+  try{
+    for(const e of runDrc()){
+      if(/Décrochement/.test(e.msg))throw new Error("un congé pris pour une écharde");
+      if(/hors des huit sens/.test(e.msg))
+        throw new Error("la corde d'un arc prise pour un angle bâtard");
+    }
+  }finally{S.fps=sFps;S.tracks=sTr;S.vias=sVia;S.zones=sZ;touch();}
+});
+T("arc : ses propres cordes ne se prennent pas les unes pour des obstacles",()=>{
+  const sFps=S.fps, sTr=S.tracks, sVia=S.vias, sZ=S.zones;
+  S.fps=[];S.vias=[];S.zones=[];
+  /* Sans net, deux cuivres voisins ne se reconnaissent pas comme reliés : les
+     cordes d'un même arc se seraient déclarées en défaut d'isolation les unes
+     contre les autres, alors qu'elles sont un seul trait de cuivre. */
+  S.tracks=[{l:0,w:0.3,net:"",x1:15,y1:15,x2:25,y2:15,ca:Math.PI}];
+  touch();
+  try{
+    for(const e of runDrc())
+      if(/Isolation piste\/piste/.test(e.msg))
+        throw new Error("l'arc se prend lui-même pour un obstacle : "+e.msg);
+  }finally{S.fps=sFps;S.tracks=sTr;S.vias=sVia;S.zones=sZ;touch();}
+});
+T("arc : le routeur ne le redresse pas en le poussant",()=>{
+  const sFps=S.fps, sTr=S.tracks, sVia=S.vias, sZ=S.zones;
+  S.fps=[];S.vias=[];S.zones=[];
+  const arc={l:0,net:"ANT",w:0.3,x1:15,y1:15,x2:25,y2:15,ca:Math.PI};
+  S.tracks=[arc];
+  touch();
+  try{
+    /* Le modèle du monde le range en cordes — sans quoi le contrôle mesurerait
+       une droite — mais chacune porte la piste d'origine et la marque `arc` :
+       c'est elle qui interdit au shove de l'enfiler dans une polyligne, puis
+       de la rendre à `S.tracks` en segments droits. */
+    const its=pnsItemsTrack(arc);
+    if(its.length<4)throw new Error("l'arc doit entrer en plusieurs cordes");
+    if(!its.every(i=>i.arc===arc&&i.src===arc))
+      throw new Error("une corde a perdu la piste dont elle vient");
+    const N=pnsWorld();
+    const seed=[...N.all()].find(i=>i.arc===arc);
+    if(!seed)throw new Error("les cordes de l'arc n'entrent pas dans le monde");
+    const L=N.assemble(seed);
+    if(L.items.length!==1)
+      throw new Error("l'assemblage a enfilé "+L.items.length+" cordes : "+
+                      "poussées, elles seraient rendues en segments droits");
+  }finally{S.fps=sFps;S.tracks=sTr;S.vias=sVia;S.zones=sZ;touch();}
+});
 T("pages séparées : l'appel du démarrage est gardé à la source",()=>{
   /* Le banc d'essai tourne sur le bundle, où toutes les fonctions sont
      hoistées : il ne peut pas voir qu'en pages séparées reSync n'existe pas

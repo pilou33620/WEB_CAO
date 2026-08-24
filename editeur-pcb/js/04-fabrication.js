@@ -189,6 +189,26 @@ function gSeg(body,A,x1,y1,x2,y2,w){
   body.push(gXY(x1,y1)+"D02*");
   body.push(gXY(x2,y2)+"D01*");
 }
+/* Une piste, droite ou circulaire. L'arc sort en arc — le Gerber sait le dire
+   depuis toujours (G02/G03, mode multi-quadrant G75) — et non en escalier de
+   cordes : le fabricant lit un cercle rond là où une découpe lui aurait donné
+   un polygone, et le fichier tient en trois lignes au lieu de cent.
+   Le sens s'inverse au passage : l'axe Y du Gerber monte, celui du document
+   descend, si bien qu'un arc horaire à l'écran est antihoraire dans le
+   fichier. Les décalages I/J vont du départ au centre, signés — c'est ce que
+   le mode multi-quadrant attend, et il faut le déclarer, la norme ne fixant
+   pas le mode d'arc au démarrage. On revient en G01 derrière : tout ce qui
+   suit est de nouveau du trait droit. */
+function gTrk(body,A,t,w){
+  const arc=arcOf(t);
+  if(!arc){gSeg(body,A,t.x1,t.y1,t.x2,t.y2,w);return;}
+  body.push("D"+A.get("C,"+fmt(Math.max(0.01,w),4))+"*");
+  body.push(gXY(t.x1,t.y1)+"D02*");
+  body.push("G75*");
+  body.push((t.ca>0?"G02":"G03")+gXY(t.x2,t.y2)+
+            "I"+gNum(arc.cx-t.x1)+"J"+gNum(t.y1-arc.cy)+"D01*");
+  body.push("G01*");
+}
 function gFlash(body,A,ap,x,y){
   body.push("D"+ap+"*");
   body.push(gXY(x,y)+"D03*");
@@ -242,9 +262,9 @@ function gerberCopper(i){
     const zn=(x,y)=>{const z=zoneAt(i,x,y);return z?z.net:null;};
     for(const t of S.tracks){
       if(t.l!==i)continue;
-      const z=zn((t.x1+t.x2)/2,(t.y1+t.y2)/2);
+      const m=trkMid(t), z=zn(m.x,m.y);
       if(z===null||z===t.net)continue;
-      gSeg(body,A,t.x1,t.y1,t.x2,t.y2,t.w+2*clrK(z,t.net,"cu","trk"));
+      gTrk(body,A,t,t.w+2*clrK(z,t.net,"cu","trk"));
     }
     for(const v of S.vias){
       if(i<v.a||i>v.b)continue;
@@ -281,7 +301,7 @@ function gerberCopper(i){
     }
   }
   for(const t of S.tracks)
-    if(t.l===i)gSeg(body,A,t.x1,t.y1,t.x2,t.y2,t.w);
+    if(t.l===i)gTrk(body,A,t,t.w);
   for(const v of S.vias)
     if(i>=v.a&&i<=v.b)gFlash(body,A,A.get("C,"+fmt(v.d,4)),v.x,v.y);
   for(const fp of S.fps)

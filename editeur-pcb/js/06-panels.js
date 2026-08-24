@@ -862,7 +862,7 @@ function ltSection(tracks,vias){
   return h;
 }
 function propsTrack(box,t){
-  const len=dist(t.x1,t.y1,t.x2,t.y2), cl=classOf(t.net);
+  const len=trkLen(t), cl=classOf(t.net);
   const g=netTracks(t.net);
   box.innerHTML=
     '<div class="prop"><label>Couche</label><select id="tL">'+
@@ -870,6 +870,16 @@ function propsTrack(box,t){
         esc(L.name)+' — '+cuId(i,S.cu)+'</option>').join("")+'</select></div>'+
     '<div class="prop two">'+numProp("tW","Largeur (mm)",t.w,0.05,0.05)+
       '<div><label>Longueur</label><input value="'+fmt(len,2)+' mm" disabled></div></div>'+
+    /* Une piste circulaire le dit : sans cela, la longueur affichée — celle de
+       l'arc — n'aurait aucun rapport visible avec les deux bouts, et l'on
+       aurait cru à une erreur. Le rayon vient avec, c'est la cote qu'on
+       vérifie sur une antenne. */
+    (arcOf(t)
+      ? '<div class="prop two"><div><label>Arc</label><input value="'+
+          fmt(Math.abs(t.ca)*180/Math.PI,1)+'°" disabled></div>'+
+        '<div><label>Rayon</label><input value="'+fmt(arcOf(t).r,3)+
+          ' mm" disabled></div></div>'
+      : '')+
     '<div class="prop"><label>Net</label><select id="tN"><option value="">— libre —</option>'+
       netTable().map(n=>'<option'+(n.name===t.net?" selected":"")+'>'+esc(n.name)+'</option>').join("")+
       '</select></div>'+
@@ -930,7 +940,7 @@ function propsTracks(box,list,vias){
       '</select></div>'+
     '<div class="prop two">'+numProp("msW","Largeur (mm)",list[0].w,0.05,0.05)+
       '<div><label>Longueur totale</label><input value="'+
-      fmt(list.reduce((a,t)=>a+dist(t.x1,t.y1,t.x2,t.y2),0),1)+' mm" disabled></div></div>'+
+      fmt(list.reduce((a,t)=>a+trkLen(t),0),1)+' mm" disabled></div></div>'+
     '<div class="prop"><div class="row">'+
       '<button class="tb" id="msMit">Angle droit → 45° (D)</button></div>'+
       '<div class="row">'+

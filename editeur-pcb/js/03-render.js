@@ -169,9 +169,10 @@ function zoneCanvas(i){
   }
   for(const t of S.tracks){
     if(t.l!==i)continue;
-    if(sameNet((t.x1+t.x2)/2,(t.y1+t.y2)/2,t.net))continue;
-    c.lineWidth=t.w+2*clrK(zoneNetAt(i,(t.x1+t.x2)/2,(t.y1+t.y2)/2),t.net,"cu","trk");
-    c.beginPath();c.moveTo(t.x1,t.y1);c.lineTo(t.x2,t.y2);c.stroke();
+    const m=trkMid(t);
+    if(sameNet(m.x,m.y,t.net))continue;
+    c.lineWidth=t.w+2*clrK(zoneNetAt(i,m.x,m.y),t.net,"cu","trk");
+    c.beginPath();trkPath(c,t);c.stroke();
   }
   for(const v of S.vias){
     if(i<v.a||i>v.b)continue;
@@ -329,7 +330,7 @@ function drawEdgeDraft(c){
    ne sont peints qu'une fois : la ligne est continue, coupée ou non. */
 function strokeRuns(c,segs){
   c.beginPath();
-  for(const t of segs){c.moveTo(t.x1,t.y1);c.lineTo(t.x2,t.y2);}
+  for(const t of segs)trkPath(c,t);
   c.stroke();
 }
 function drawTracks(c,i,a){

@@ -64,6 +64,21 @@ function pnsItemSeg(l,net,w,x1,y1,x2,y2,src){
           bx2:Math.max(x1,x2)+r, by2:Math.max(y1,y2)+r};
 }
 function pnsItemTrack(t){return pnsItemSeg(t.l,t.net,t.w,t.x1,t.y1,t.x2,t.y2,t);}
+/* Une piste circulaire entre dans le monde en cordes — le modèle ne sait
+   mesurer que des segments — mais elle y entre **figée** : `arc` marque les
+   morceaux qu'aucun assemblage ne doit reprendre. Sans cette marque, le shove
+   aurait enfilé les cordes en polyligne, poussé la polyligne, et rendu à
+   `S.tracks` une suite de segments droits : l'arc aurait disparu au premier
+   coup de coude d'une autre piste. Comme obstacle, en revanche, il vaut
+   exactement ce qu'il est — c'est ce que le contrôle d'isolation mesure. */
+function pnsItemsTrack(t){
+  if(!isArc(t))return [pnsItemTrack(t)];
+  return trkSegs(t).map(s=>{
+    const it=pnsItemSeg(t.l,t.net,t.w,s.x1,s.y1,s.x2,s.y2,t);
+    it.arc=t;
+    return it;
+  });
+}
 
 /* L'isolation la plus large que le document puisse exiger. Elle donne la marge
    des fenêtres d'interrogation : chercher plus près serait rater un obstacle
@@ -245,6 +260,10 @@ function pnsNode(parent){
     for(const it of N.query(probe.l0,probe.l1,probe.bx1-r,probe.by1-r,
                                               probe.bx2+r,probe.by2+r)){
       if(it===probe)continue;
+      /* Deux cordes d'un même arc sont un seul trait de cuivre. Sans net pour
+         les reconnaître reliées, elles se seraient déclarées en défaut
+         d'isolation l'une contre l'autre — elles se touchent par construction. */
+      if(it.arc&&probe.arc&&it.arc===probe.arc)continue;
       if(skip&&(skip.has(it)||(it.src&&skip.has(it.src))||(it.fp&&skip.has(it.fp))))continue;
       if(probe.net&&it.net===probe.net)continue;
       /* Une paire différentielle circule sous DEUX nets : le sien et celui de
@@ -317,6 +336,7 @@ function pnsNode(parent){
         if(j.vias.length||j.pads.length||j.ends.length!==2)break;
         const nx=j.ends.find(o=>o.it!==cur);
         if(!nx||vus.has(nx.it))break;
+        if(nx.it.arc)break;                 // une courbe ne se pousse pas : elle se redresserait
         if(nx.it.net!==cur.net||Math.abs(nx.it.w-cur.w)>1e-9)break;
         vus.add(nx.it);
         if(e===1)segs.unshift(nx.it);else segs.push(nx.it);
@@ -366,7 +386,7 @@ function pnsBuild(){
   for(const fp of S.fps)
     for(const q of padsWorld(fp))N.add(pnsItemPad(fp,q));
   for(const v of S.vias)N.add(pnsItemVia(v));
-  for(const t of S.tracks)N.add(pnsItemTrack(t));
+  for(const t of S.tracks)for(const it of pnsItemsTrack(t))N.add(it);
   return N;
 }
 function pnsWorld(){

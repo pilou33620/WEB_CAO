@@ -96,7 +96,7 @@ function zoneMask(l,net){
   for(const t of S.tracks){
     if(t.l!==l||t.net===net)continue;
     c.lineWidth=t.w+2*clrK(net,t.net,"cu","trk");
-    c.beginPath();c.moveTo(t.x1,t.y1);c.lineTo(t.x2,t.y2);c.stroke();
+    c.beginPath();trkPath(c,t);c.stroke();
   }
   for(const v of S.vias){
     if(l<v.a||l>v.b)continue;
@@ -200,7 +200,7 @@ function computeConn(exact){
       a.push(i);
     }
   }
-  S.tracks.forEach((t,i)=>addSeg(t.l,i,t.x1,t.y1,t.x2,t.y2));
+  S.tracks.forEach((t,i)=>{const b=trkBBox(t);addSeg(t.l,i,b.x1,b.y1,b.x2,b.y2);});
   function near(l,x,y,r){
     const out=new Set();
     for(let cx=Math.floor((x-r)/CELL);cx<=Math.floor((x+r)/CELL);cx++)
@@ -237,7 +237,7 @@ function computeConn(exact){
   function touchSeg(l,x,y,rad,k){
     for(const i of near(l,x,y,rad+1)){
       const t=S.tracks[i];
-      if(segDist(x,y,t.x1,t.y1,t.x2,t.y2)<=rad+t.w/2+1e-6)uni(k,"T"+i+"a");
+      if(trkDist(x,y,t)<=rad+t.w/2+1e-6)uni(k,"T"+i+"a");
     }
   }
   S.tracks.forEach((t,i)=>{
@@ -288,9 +288,10 @@ function computeConn(exact){
     });
     S.tracks.forEach((t,i)=>{
       if(t.l!==g.l||t.net!==g.net)return;
+      const m=trkMid(t);
       const labs=maskLabels(M,t.x1,t.y1,t.w/2,0)
         .concat(maskLabels(M,t.x2,t.y2,t.w/2,0))
-        .concat(maskLabels(M,(t.x1+t.x2)/2,(t.y1+t.y2)/2,t.w/2,0));
+        .concat(maskLabels(M,m.x,m.y,t.w/2,0));
       link("T"+i+"a",labs);
     });
     zoneIslands.push({l:g.l,net:g.net,islands:seen.size,total:M.count});
@@ -342,7 +343,7 @@ function netAtPoint(x,y,layer){
       if(padDist(x,y,q)<=0)return {net:q.net,pad:q,fp};
     }
   for(const t of S.tracks)
-    if(t.l===layer && segDist(x,y,t.x1,t.y1,t.x2,t.y2)<=t.w/2)return {net:t.net,track:t};
+    if(t.l===layer && trkDist(x,y,t)<=t.w/2)return {net:t.net,track:t};
   for(const v of S.vias)
     if(layer>=v.a&&layer<=v.b&&dist(x,y,v.x,v.y)<=v.d/2)return {net:v.net,via:v};
   return null;
@@ -386,11 +387,11 @@ function segSegDist(a,b){
     segDist(b.x2,b.y2,a.x1,a.y1,a.x2,a.y2));
 }
 function segPadDist(t,q){
-  const n=Math.min(24,Math.max(2,Math.ceil(dist(t.x1,t.y1,t.x2,t.y2)/0.3)));
+  const n=Math.min(48,Math.max(2,Math.ceil(trkLen(t)/0.3)));
   let best=1e9;
   for(let i=0;i<=n;i++){
-    const u=i/n;
-    best=Math.min(best,padDist(t.x1+(t.x2-t.x1)*u, t.y1+(t.y2-t.y1)*u, q));
+    const p=trkAt(t,i/n);
+    best=Math.min(best,padDist(p.x,p.y,q));
   }
   return best-t.w/2;
 }
@@ -422,7 +423,10 @@ function runDrc(){
      le routeur, désormais, juge du même œil. */
   const N=pnsWorld();
   const vu=new Set(), idOf=new Map();
-  const uid=it=>{let k=idOf.get(it);if(k==null)idOf.set(it,k=idOf.size);return k;};
+  /* Une piste circulaire entre dans le monde en une vingtaine de cordes : sans
+     cela, un même défaut d'isolation se serait écrit vingt fois, une par corde.
+     C'est la piste qui compte, pas le morceau par lequel on l'a mesurée. */
+  const uid=it=>{const o=it.arc||it;let k=idOf.get(o);if(k==null)idOf.set(o,k=idOf.size);return k;};
   const neuf=(a,b)=>{
     const i=uid(a), j=uid(b), k=i<j?i+"|"+j:j+"|"+i;
     if(vu.has(k))return false;
@@ -540,16 +544,16 @@ function runDrc(){
       }
   /* largeur, net manquant, débordement */
   for(const t of S.tracks){
-    const cl=classOf(t.net);
+    const cl=classOf(t.net), m=trkMid(t);
     /* Une piste de paire différentielle est plus fine que sa classe par
        construction : c'est l'impédance qui décide de sa largeur, pas la classe
        de net. C'est la règle de paire qui la borne, et `dpDrc` le vérifie. */
     if(t.w<cl.w-1e-6&&!(typeof dpOfNet==="function"&&dpOfNet(t.net)))
-      out.push({x:(t.x1+t.x2)/2,y:(t.y1+t.y2)/2,l:t.l,
+      out.push({x:m.x,y:m.y,l:t.l,
         msg:"Piste de "+fmt(t.w,3)+" mm sous les "+fmt(cl.w,2)+
             " mm de la classe "+cl.name});
     if(!t.net)
-      out.push({x:(t.x1+t.x2)/2,y:(t.y1+t.y2)/2,l:t.l,msg:"Piste sans net"});
+      out.push({x:m.x,y:m.y,l:t.l,msg:"Piste sans net"});
   }
   for(const p of pads)
     if(!inBoard(p.q.x,p.q.y,0))
@@ -572,6 +576,9 @@ function runDrc(){
       tEnds.set(k,(tEnds.get(k)||0)+1);
   }
   for(const t of S.tracks){
+    /* Un arc court n'est pas une écharde : c'est un congé, et le graveur en
+       fait un cuivre continu — la règle ne juge que les segments droits. */
+    if(isArc(t))continue;
     const L=dist(t.x1,t.y1,t.x2,t.y2);
     if(L<1e-9||L>=t.w-1e-6)continue;
     if((tEnds.get(eKey(t.l,t.x1,t.y1))||0)<2)continue;
@@ -592,6 +599,9 @@ function runDrc(){
      alors un choix, pas un accident. */
   if(cornerMode()!=="free")
     for(const t of S.tracks){
+      /* La corde d'un arc tombe où elle veut : ce n'est pas un angle bâtard,
+         c'est une courbe, et le Gerber la sort telle quelle (G02/G03). */
+      if(isArc(t))continue;
       if(dist(t.x1,t.y1,t.x2,t.y2)<1e-9)continue;
       const dx=t.x2-t.x1, dy=t.y2-t.y1;
       const off=angleOff(dx,dy);

@@ -72,6 +72,137 @@ function segDist(px,py,x1,y1,x2,y2){
 }
 
 /* ==========================================================================
+   Pistes circulaires
+   --------------------------------------------------------------------------
+   Une piste droite porte deux bouts ; une piste courbe porte les mêmes deux
+   bouts, plus l'angle qu'elle balaie entre eux — `t.ca`, en radians, signé.
+   Absent ou nul, la piste est droite et rien ne change : tout ce qui suit
+   retombe alors exactement sur `dist`, `segDist` et un `lineTo`.
+
+   Pourquoi l'angle balayé plutôt qu'un centre et un rayon enregistrés à part :
+   les bouts restent les bouts. La connectivité les compare au micron, un coude
+   tiré à la souris les réécrit, le .json les relit — aucun de ces codes n'a à
+   savoir que la piste est courbe. Un centre rangé à côté, lui, aurait dérivé
+   au premier sommet déplacé, et l'arc ne serait plus passé par ses propres
+   bouts : du cuivre qui ne touche plus ce qu'il relie.
+
+   Le signe suit le sens des angles du canevas, où l'axe Y descend : positif,
+   l'arc tourne dans le sens des aiguilles d'une montre à l'écran ; négatif,
+   dans l'autre. Un tour complet n'a pas de corde — deux bouts confondus ne
+   sont plus une piste — : `normTrack` borne l'angle juste en deçà, et une
+   boucle fermée s'écrit en deux demi-tours, comme partout ailleurs.
+
+   Ce que ça sert : une antenne NFC ronde, une boucle d'accord, un coude
+   adouci. C'est toujours la même chose — quelques arcs bout à bout, chacun
+   rangé comme une piste de plus, avec sa couche, sa largeur et son net. Le
+   routeur, lui, n'en pose pas : il ne sait faire que du 45°. Les arcs
+   arrivent d'un fichier, et l'éditeur doit savoir les montrer, les mesurer,
+   les contrôler et les sortir en Gerber sans les redresser au passage. */
+const ARC_MIN=1e-4;              // en deçà, l'arc ne se distingue plus de sa corde
+const ARC_MAX=r4(2*Math.PI-1e-3);// un tour complet n'a pas de corde ; arrondi
+                                 // comme l'angle enregistré, pour qu'un angle
+                                 // borné reste sous sa propre borne
+const ARC_SAG=0.005;             // flèche tolérée d'une corde de découpe, en mm
+function isArc(t){return !!(t&&Number.isFinite(t.ca)&&Math.abs(t.ca)>ARC_MIN);}
+/* Centre, rayon et angles de l'arc, ou null si la piste est droite. Tout se
+   déduit de la corde et de l'angle : le centre est sur la médiatrice, à la
+   distance que donne la moitié de l'angle — un demi-tour l'amène pile au
+   milieu de la corde, un angle rasant l'envoie au loin. */
+function arcOf(t){
+  if(!isArc(t))return null;
+  const dx=t.x2-t.x1, dy=t.y2-t.y1, d=Math.hypot(dx,dy);
+  if(d<1e-9)return null;
+  const h=t.ca/2, s=Math.sin(h);
+  if(Math.abs(s)<1e-9)return null;
+  const r=Math.abs(d/(2*s)), k=(d/2)/Math.tan(h);
+  const cx=(t.x1+t.x2)/2-(dy/d)*k, cy=(t.y1+t.y2)/2+(dx/d)*k;
+  const a1=Math.atan2(t.y1-cy,t.x1-cx);
+  return {cx,cy,r,a1,a2:a1+t.ca,ca:t.ca};
+}
+/* L'angle `a`, vu du centre, ramené à ce qu'il a parcouru du balayage depuis
+   le premier bout : 0 au départ, |ca| à l'arrivée, davantage s'il tombe dans
+   le secteur que l'arc ne couvre pas. */
+function arcSweep(A,a){
+  const d=(a-A.a1)*(A.ca<0?-1:1);
+  return ((d%(2*Math.PI))+2*Math.PI)%(2*Math.PI);
+}
+function arcOn(A,a){return arcSweep(A,a)<=Math.abs(A.ca);}
+/* Longueur de cuivre : la corde pour une droite, le rayon fois l'angle pour un
+   arc. C'est cette longueur-là que réclament la ligne de transmission et le
+   tableau des nets — mesurer la corde raccourcirait un demi-tour d'un tiers. */
+function trkLen(t){
+  const A=arcOf(t);
+  return A?A.r*Math.abs(A.ca):dist(t.x1,t.y1,t.x2,t.y2);
+}
+/* Le point à la fraction `u` du parcours, sur l'axe de la piste. */
+function trkAt(t,u){
+  const A=arcOf(t);
+  if(!A)return {x:t.x1+(t.x2-t.x1)*u, y:t.y1+(t.y2-t.y1)*u};
+  const a=A.a1+A.ca*u;
+  return {x:A.cx+A.r*Math.cos(a), y:A.cy+A.r*Math.sin(a)};
+}
+/* Le milieu — celui qui pointe un défaut, celui qui interroge la zone sous la
+   piste. Pris sur l'axe et non sur la corde : le milieu d'un demi-tour est au
+   sommet du ventre, pas au centre du cercle, où il n'y a pas de cuivre. */
+function trkMid(t){return trkAt(t,0.5);}
+/* Distance d'un point à l'axe de la piste. Hors du balayage, c'est le bout le
+   plus proche qui compte : le cuivre s'arrête là, il ne fait pas le tour. */
+function trkDist(px_,py_,t){
+  const A=arcOf(t);
+  if(!A)return segDist(px_,py_,t.x1,t.y1,t.x2,t.y2);
+  if(arcOn(A,Math.atan2(py_-A.cy,px_-A.cx)))
+    return Math.abs(Math.hypot(px_-A.cx,py_-A.cy)-A.r);
+  return Math.min(dist(px_,py_,t.x1,t.y1),dist(px_,py_,t.x2,t.y2));
+}
+/* Boîte de l'axe. Le ventre de l'arc sort de la boîte de sa corde : les points
+   cardinaux qui tombent dans le balayage la repoussent. Sans eux, l'index
+   spatial rangerait la piste dans des cases qu'elle ne traverse pas — et le
+   contrôle d'isolation manquerait ce qu'elle frôle. */
+function trkBBox(t){
+  const b={x1:Math.min(t.x1,t.x2), y1:Math.min(t.y1,t.y2),
+           x2:Math.max(t.x1,t.x2), y2:Math.max(t.y1,t.y2)};
+  const A=arcOf(t);
+  if(!A)return b;
+  for(let q=0;q<4;q++){
+    const a=q*Math.PI/2;
+    if(!arcOn(A,a))continue;
+    const x=A.cx+A.r*Math.cos(a), y=A.cy+A.r*Math.sin(a);
+    b.x1=Math.min(b.x1,x);b.y1=Math.min(b.y1,y);
+    b.x2=Math.max(b.x2,x);b.y2=Math.max(b.y2,y);
+  }
+  return b;
+}
+/* L'arc en cordes, pour tout ce qui ne sait mesurer que des segments : le
+   modèle du monde du routeur, donc le contrôle d'isolation avec lui. Le pas
+   est celui qui garde la corde à moins d'une flèche de l'arc — au-delà, le
+   contrôle jugerait un cuivre qui n'est pas là. Une piste droite rend son
+   unique segment : les appelants n'ont pas deux chemins à tenir. */
+function trkSegs(t,sag){
+  const A=arcOf(t);
+  if(!A)return [{x1:t.x1,y1:t.y1,x2:t.x2,y2:t.y2}];
+  const f=Math.min(A.r,sag>0?sag:ARC_SAG);
+  const step=2*Math.acos(clamp(1-f/A.r,-1,1));
+  const n=clamp(Math.ceil(Math.abs(A.ca)/Math.max(step,1e-3)),1,512);
+  const out=[];
+  let ax=t.x1, ay=t.y1;
+  for(let i=1;i<=n;i++){
+    const p=i===n?{x:t.x2,y:t.y2}:trkAt(t,i/n);
+    out.push({x1:ax,y1:ay,x2:p.x,y2:p.y});
+    ax=p.x;ay=p.y;
+  }
+  return out;
+}
+/* L'axe de la piste posé dans le chemin courant, arc compris. Le drapeau du
+   canevas se lit à l'envers du signe : ses angles croissent dans le sens des
+   aiguilles d'une montre, l'axe Y descendant. */
+function trkPath(c,t){
+  const A=arcOf(t);
+  c.moveTo(t.x1,t.y1);
+  if(A)c.arc(A.cx,A.cy,A.r,A.a1,A.a2,t.ca<0);
+  else c.lineTo(t.x2,t.y2);
+}
+
+/* ==========================================================================
    Couches
    ========================================================================== */
 function cuId(i,n){return i===0?"L1_Top":(i===n-1?"L"+n+"_Bottom":"L"+(i+1)+"_Inner");}
@@ -1855,7 +1986,7 @@ function ltZ0(g,w){
    inutile de rechercher les plans de référence une fois par segment. */
 function ltSeg(t,g){
   const geo=g||dpStripGeom(t.l), eeff=ltEeff(geo,t.w), z0=ltZ0(geo,t.w);
-  const len=dist(t.x1,t.y1,t.x2,t.y2), tpd=len*Math.sqrt(eeff)/LT_C0;
+  const len=trkLen(t), tpd=len*Math.sqrt(eeff)/LT_C0;
   return {l:t.l,w:t.w,len:len,g:geo,eeff:eeff,z0:z0,tpd:tpd,
           c:z0>0?tpd/z0:0,ind:tpd*z0};
 }

@@ -1432,6 +1432,83 @@ il s'écarte, et la règle **se tait en angle libre** : c'est alors ce qu'on a
 demandé. Comme les deux autres, elle sort en remarque : le cuivre est
 électriquement juste, c'est l'atelier qui s'en plaindra.
 
+## Les pistes circulaires
+
+Une antenne NFC ronde, une boucle d'accord, un congé au lieu d'un angle : tout
+cela est du cuivre courbe, et un éditeur qui ne sait poser que des segments le
+redresse ou l'ignore. `S.tracks` range désormais les deux.
+
+Une piste courbe est **une piste comme les autres**, avec un champ de plus :
+`ca`, l'**angle balayé** entre ses deux bouts, en radians, signé. Absent ou nul,
+la piste est droite et rien ne change — un document sans arc ressort au
+caractère près comme avant, et l'essai d'aller-retour de `normDoc()` le vérifie.
+
+**Pourquoi l'angle et non un centre.** Un centre et un rayon enregistrés à côté
+auraient dérivé au premier sommet déplacé : l'arc ne serait plus passé par ses
+propres bouts, et le cuivre aurait quitté ce qu'il relie. Avec l'angle balayé,
+les bouts restent les bouts. La connectivité les compare au micron, un coude
+tiré à la souris les réécrit, le `.json` les relit — aucun de ces codes n'a à
+savoir que la piste est courbe. Le centre, le rayon et les deux angles se
+déduisent de la corde à la demande (`arcOf`).
+
+Le signe suit le sens des angles du canevas, où l'axe Y descend : **positif,
+l'arc tourne dans le sens des aiguilles d'une montre à l'écran**. Un tour
+complet n'a pas de corde — deux bouts confondus ne sont plus une piste — :
+`normTrack()` borne l'angle juste en deçà, et une boucle fermée s'écrit en deux
+demi-tours, comme une spirale d'antenne s'écrit en une suite de demi-cercles.
+
+**Une seule famille de fonctions**, dans `01-core`, et une piste droite y
+retombe toujours sur le calcul d'avant :
+
+| | |
+|---|---|
+| `isArc` / `arcOf` | la piste est-elle courbe ; son centre, son rayon, ses angles |
+| `trkLen` | la longueur du **cuivre** — le rayon fois l'angle, pas la corde |
+| `trkAt` / `trkMid` | un point du parcours ; le milieu, pris sur l'axe |
+| `trkDist` | la distance d'un point à l'axe, hors du balayage comprise |
+| `trkBBox` | la boîte de l'axe, **ventre de l'arc compris** |
+| `trkSegs` | l'arc en cordes, pour ce qui ne sait mesurer que des segments |
+| `trkPath` | l'axe posé dans un chemin de canevas |
+
+Ce que chaque passage en fait :
+
+- **Le rendu** (`03-render`) trace l'arc avec `trkPath` : un `arc()` de canevas,
+  pas un escalier. Le dégagement d'une zone de cuivre suit la même courbe — le
+  plan se creuse le long de l'arc, à l'isolation de la classe.
+- **La connectivité** (`02-connectivity`) indexe la piste sur `trkBBox` — sans le
+  ventre, l'arc aurait été rangé dans des cases qu'il ne traverse pas — et juge
+  les jonctions en T sur `trkDist`. Une piste qui rejoint le ventre de l'arc s'y
+  relie ; une piste posée sur sa **corde** ne relie rien, puisqu'il n'y a pas de
+  cuivre là.
+- **Le contrôle** (`runDrc`) mesure l'isolation par le modèle du monde, qui range
+  l'arc en cordes assez fines pour que la flèche reste sous 5 µm (`ARC_SAG`).
+  Un même défaut ne s'écrit qu'une fois : c'est la piste qui compte, pas la
+  corde par laquelle on l'a mesurée. Et deux cordes d'un même arc ne se jugent
+  pas entre elles — elles se touchent par construction, et un arc sans net
+  n'aurait eu aucun moyen de se reconnaître relié à lui-même. Deux règles se taisent devant un arc —
+  l'**écharde de gravure**, parce qu'un congé court est un raccord et non une
+  languette, et l'**angle bâtard**, parce que la corde d'un arc n'est pas une
+  direction de tracé.
+- **Le Gerber** (`04-fabrication`) sort l'arc **en arc** : mode multi-quadrant
+  `G75`, puis `G02`/`G03` avec les décalages `I`/`J` du départ vers le centre.
+  Le sens s'inverse au passage, l'axe Y du Gerber montant là où celui du
+  document descend. Une spirale de six tours tient en douze lignes au lieu de
+  mille, et le fabricant lit un cercle rond.
+- **Le routeur** ne pose pas d'arcs — il ne sait faire que du 45° — et surtout
+  **il n'en défait pas**. Les cordes entrent dans le modèle du monde marquées
+  `arc` : l'assemblage s'y arrête, et le *shove* refuse de pousser une courbe
+  plutôt que de la rendre à `S.tracks` en segments droits. Face à elle, le tracé
+  contourne, comme il contourne une pastille.
+- **Les gestes** qui supposent une droite se retirent devant un arc : la
+  sélection colinéaire, le chanfrein, le crochet, la fusion au dépôt. Deux
+  gestes, eux, le suivent : la **désignation** (on attrape la piste sur son
+  ventre, pas sur sa corde) et la **coupure** — poser un via au milieu d'un arc
+  partage l'angle balayé, et les deux moitiés restent sur le même cercle.
+
+Le panneau Propriétés d'une piste courbe affiche son **angle** et son **rayon** à
+côté de la longueur : sans eux, une longueur d'arc n'aurait aucun rapport
+visible avec les deux bouts, et l'on aurait cru à une erreur.
+
 ## Ce que l'empilage apprend au DRC
 
 Deux contrôles ne se voient pas sur le dessin, seulement dans la pile :
@@ -1559,7 +1636,10 @@ différence — c'est lui qui garde cette propriété.
 - Ni trous non métallisés, ni texte de sérigraphie libre. Une pastille sans net
   fait office de pastille libre, mais elle appartient toujours à une
   empreinte.
-- Pas d'arcs : pistes, zones et contour sont faits de segments.
+- Les **pistes** savent être circulaires (voir plus haut) ; les zones de
+  cuivre, les coupes et le contour de carte restent des polygones. Le
+  routeur ne pose pas d'arc : ils arrivent d'un fichier, et l'éditeur les
+  montre, les mesure, les contrôle et les sort en Gerber sans les redresser.
 - Le routeur ne reprend pas le `SMART_PADS` de KiCad, qui décale l'entrée d'une
   piste vers le bord d'une grosse pastille. Cet éditeur fait le choix inverse,
   explicitement : l'aimant accroche au **centre** de la pastille. Les deux

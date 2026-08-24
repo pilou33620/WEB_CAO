@@ -302,9 +302,18 @@ function normTrack(t,cu){
   const x1=+t.x1,y1=+t.y1,x2=+t.x2,y2=+t.y2;
   if(![x1,y1,x2,y2].every(Number.isFinite))return null;
   if(x1===x2&&y1===y2)return null;                 // segment nul : rien à tracer
-  return {l:dInt(t.l,0,0,cu-1),net:dNet(t.net),w:dRange(t.w,0.3,0.01,100),
-          x1:clamp(x1,-COORD,COORD),y1:clamp(y1,-COORD,COORD),
-          x2:clamp(x2,-COORD,COORD),y2:clamp(y2,-COORD,COORD)};
+  const out={l:dInt(t.l,0,0,cu-1),net:dNet(t.net),w:dRange(t.w,0.3,0.01,100),
+             x1:clamp(x1,-COORD,COORD),y1:clamp(y1,-COORD,COORD),
+             x2:clamp(x2,-COORD,COORD),y2:clamp(y2,-COORD,COORD)};
+  /* Piste circulaire : l'angle balayé s'ajoute aux deux bouts, et rien de
+     plus. Une piste droite n'écrit pas la clé — un document sans arc doit
+     ressortir au caractère près comme avant, et le banc d'essai le vérifie.
+     L'angle est borné juste en deçà du tour complet : au-delà, les deux bouts
+     se rejoindraient et il n'y aurait plus de corde d'où déduire le centre. */
+  const ca=+t.ca;
+  if(Number.isFinite(ca)&&Math.abs(ca)>ARC_MIN)
+    out.ca=r4(clamp(ca,-ARC_MAX,ARC_MAX));
+  return out;
 }
 function normVia(v,cu){
   if(!v||typeof v!=="object")return null;
@@ -537,7 +546,7 @@ function hitTest(x,y,e){
   for(const v of S.vias)
     if(layerAlpha(v.a)>0&&dist(x,y,v.x,v.y)<=v.d/2+tol)return {via:v};
   for(const t of S.tracks)
-    if(t.l===S.active&&segDist(x,y,t.x1,t.y1,t.x2,t.y2)<=t.w/2+tol)return {track:t};
+    if(t.l===S.active&&trkDist(x,y,t)<=t.w/2+tol)return {track:t};
   for(let i=S.fps.length-1;i>=0;i--){
     const fp=S.fps[i];
     const tp = fpTextPos(fp);
@@ -552,7 +561,7 @@ function hitTest(x,y,e){
     if(lx>=b.x1&&lx<=b.x2&&ly>=b.y1&&ly<=b.y2)return {fp};
   }
   for(const t of S.tracks)
-    if(layerAlpha(t.l)>0&&segDist(x,y,t.x1,t.y1,t.x2,t.y2)<=t.w/2+tol)return {track:t};
+    if(layerAlpha(t.l)>0&&trkDist(x,y,t)<=t.w/2+tol)return {track:t};
   /* une zone s'attrape par son contour, sauf si on maintient Ctrl/Shift pour l'attraper de l'intérieur */
   for(let i=S.zones.length-1;i>=0;i--){
     const z=S.zones[i];
@@ -718,6 +727,9 @@ function crossN(a,b){
    qui change de couche reste une ligne droite, et la laisser derrière la
    coucherait de la même façon. */
 function collinearRun(t0){
+  /* Une courbe n'est colinéaire de rien : sa corde dit une direction que son
+     cuivre ne suit pas. Elle reste seule, et le geste ne prend qu'elle. */
+  if(isArc(t0))return new Set([t0]);
   const run=new Set([t0]), stack=[t0];
   while(stack.length){
     const t=stack.pop();
@@ -728,7 +740,7 @@ function collinearRun(t0){
       if(v)for(let L=v.a;L<=v.b;L++)
         if(L!==t.l)ends=ends.concat(jointAt(x,y,L).ends);
       for(const o of ends){
-        if(o.t===t||run.has(o.t)||o.t.net!==t.net)continue;
+        if(o.t===t||run.has(o.t)||o.t.net!==t.net||isArc(o.t))continue;
         if(Math.abs(crossN(endDir(t,en),endDir(o.t,o.e)))>1e-6)continue;
         run.add(o.t);stack.push(o.t);
       }
@@ -746,7 +758,7 @@ function viaTracks(v,L,net){
   const out=[];
   for(const t of S.tracks){
     if(t.l!==L||t.net!==net)continue;
-    if(segDist(v.x,v.y,t.x1,t.y1,t.x2,t.y2)<=v.d/2+t.w/2+EPS_J)out.push(t);
+    if(trkDist(v.x,v.y,t)<=v.d/2+t.w/2+EPS_J)out.push(t);
   }
   return out;
 }
@@ -1033,7 +1045,7 @@ function crossPairs(list){
   for(let i=0;i<list.length;i++)
     for(let j=i+1;j<list.length;j++){
       const a=list[i], b=list[j];
-      if(a.l!==b.l)continue;
+      if(a.l!==b.l||isArc(a)||isArc(b))continue;     // la corde d'un arc n'est pas son cuivre
       const d1=a.x2-a.x1, d2=a.y2-a.y1, d3=b.x2-b.x1, d4=b.y2-b.y1;
       const den=d1*d4-d2*d3;
       if(Math.abs(den)<1e-12)continue;
@@ -1156,6 +1168,9 @@ function mitreAt(l,x,y,dry,cap){
   if(j.ends.length!==2)return false;
   const A=j.ends[0], B=j.ends[1];
   if(A.t===B.t||A.t.w!==B.t.w||A.t.net!==B.t.net)return false;
+  /* Couper un angle suppose deux droites. Là où l'une des jambes est un arc,
+     le raccord est déjà courbe : il n'y a pas d'angle à casser. */
+  if(isArc(A.t)||isArc(B.t))return false;
   // angle droit seulement : ailleurs, couper en deux ne donnerait pas 45°
   if(Math.abs(Math.abs(crossN(endDir(A.t,A.e),endDir(B.t,B.e)))-1)>1e-3)return false;
   const ra=runFrom(A.t,A.e), rb=runFrom(B.t,B.e);
@@ -1244,6 +1259,7 @@ function hookAt(t,e){
   if(j.ends.length!==2||j.vias.length)return null;
   const [A,B]=j.ends;
   if(A.t===B.t||A.t.net!==B.t.net||A.t.w!==B.t.w)return null;
+  if(isArc(A.t)||isArc(B.t))return null;   // deux arcs bout à bout ne font pas un crochet
   // direction depuis l'articulation : même sens = crochet
   const a=endDir(A.t,A.e), b=endDir(B.t,B.e);
   if(Math.abs(crossN(a,b))>1e-6||a.x*b.x+a.y*b.y<=0)return null;
@@ -1362,7 +1378,7 @@ function pruneAfterDrag(list){
    concerné. Si l'un d'eux a disparu au relâchement, c'est qu'il s'est replié
    sur son articulation — et le coude qu'il adoucissait est redevenu franc. */
 function diagTracks(list){
-  return list.filter(t=>Math.abs(t.x1-t.x2)>1e-9&&Math.abs(t.y1-t.y2)>1e-9);
+  return list.filter(t=>!isArc(t)&&Math.abs(t.x1-t.x2)>1e-9&&Math.abs(t.y1-t.y2)>1e-9);
 }
 /* Rendre au coude le 45° que le glissement lui a pris. On ne touche QU'À cela :
    un coude déjà franc avant le geste le reste — le glissement n'est pas le
@@ -1374,13 +1390,36 @@ function mitreAfterDrag(list,avant){
   return true;
 }
 function projOnSeg(px_,py_,t){
+  const A=arcOf(t);
+  if(A){
+    /* Sur un arc, le point le plus proche est celui du même angle, rabattu sur
+       le rayon — hors du balayage, c'est le bout le plus proche. C'est là que
+       le via se posera, et il doit tomber sur le cuivre, pas sur la corde. */
+    const a=Math.atan2(py_-A.cy,px_-A.cx);
+    if(!arcOn(A,a))
+      return dist(px_,py_,t.x1,t.y1)<=dist(px_,py_,t.x2,t.y2)
+        ? {x:r3(t.x1),y:r3(t.y1)} : {x:r3(t.x2),y:r3(t.y2)};
+    return {x:r3(A.cx+A.r*Math.cos(a)), y:r3(A.cy+A.r*Math.sin(a))};
+  }
   const dx=t.x2-t.x1, dy=t.y2-t.y1, l2=dx*dx+dy*dy;
   if(l2<1e-12)return {x:t.x1,y:t.y1};
   const u=clamp(((px_-t.x1)*dx+(py_-t.y1)*dy)/l2,0,1);
   return {x:r3(t.x1+dx*u),y:r3(t.y1+dy*u)};
 }
+/* Couper une piste en deux au point donné — un via posé en plein milieu. Sur un
+   arc, les deux morceaux se partagent l'angle balayé : couper la corde en deux
+   aurait donné deux arcs d'un autre rayon, et le cuivre aurait quitté le
+   cercle qu'il suivait. */
 function splitTrack(t,pt){
   const nt={l:t.l,net:t.net,w:t.w,x1:pt.x,y1:pt.y,x2:t.x2,y2:t.y2};
+  const A=arcOf(t);
+  if(A){
+    const part=arcSweep(A,Math.atan2(pt.y-A.cy,pt.x-A.cx))*(t.ca<0?-1:1);
+    t.ca=r4(part);
+    nt.ca=r4(A.ca-part);
+    if(!isArc(t))delete t.ca;
+    if(!isArc(nt))delete nt.ca;
+  }
   t.x2=pt.x;t.y2=pt.y;
   S.tracks.push(nt);
   return nt;
@@ -1865,7 +1904,14 @@ function moveClearBad(list,was,skip){
   for(const t of list){
     if(!t.net||(was&&was.has(t)))continue;
     if(dist(t.x1,t.y1,t.x2,t.y2)<1e-9)continue;      // replié : plus de cuivre à juger
-    if(segClearBad(t,t.l,t.net,t.w,null,skip))bad.add(t);
+    /* Une piste circulaire se juge corde par corde, comme dans le modèle du
+       monde : sa corde unique passerait à côté de tout ce que son ventre frôle. */
+    let mauvais=false;
+    for(const c of trkSegs(t)){
+      c.src=t;
+      if(segClearBad(c,t.l,t.net,t.w,null,skip)){mauvais=true;break;}
+    }
+    if(mauvais)bad.add(t);
   }
   return bad;
 }
@@ -2211,7 +2257,7 @@ function placeVia(x,y,net,a,b,inRoute,nets){
    direction — et rien au coude qui justifie de garder la césure. Un via en est
    une : il ancre le changement de couche, et on doit pouvoir le tirer. */
 function sameLine(a,b){
-  if(a.l!==b.l)return false;
+  if(a.l!==b.l||isArc(a)||isArc(b))return false;
   if(Math.abs(a.x2-b.x1)>1e-9||Math.abs(a.y2-b.y1)>1e-9)return false;
   const u={x:a.x2-a.x1,y:a.y2-a.y1}, v={x:b.x2-b.x1,y:b.y2-b.y1};
   if(Math.abs(crossN(u,v))>1e-6)return false;       // pas le même axe
@@ -2910,9 +2956,11 @@ cv.addEventListener("pointerup",e=>{
         const b=fpBBox(fp);
         if(b.x1>=x1&&b.x2<=x2&&b.y1>=y1&&b.y2<=y2)S.sel.fps.add(fp.id);
       }
-      for(const t of S.tracks)
-        if(layerAlpha(t.l)>0&&t.x1>=x1&&t.x1<=x2&&t.y1>=y1&&t.y1<=y2&&
-           t.x2>=x1&&t.x2<=x2&&t.y2>=y1&&t.y2<=y2)S.sel.tracks.add(t);
+      for(const t of S.tracks){
+        if(layerAlpha(t.l)<=0)continue;
+        const b=trkBBox(t);
+        if(b.x1>=x1&&b.x2<=x2&&b.y1>=y1&&b.y2<=y2)S.sel.tracks.add(t);
+      }
       for(const v of S.vias)
         if(v.x>=x1&&v.x<=x2&&v.y>=y1&&v.y<=y2)S.sel.vias.add(v);
     }

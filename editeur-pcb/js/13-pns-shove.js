@@ -189,6 +189,7 @@ function pnsViaSuites(B,it,p){
        c'est un nœud d'alimentation : on ne le déménage pas. */
     if(j.ends.length>4)return null;
     for(const o of j.ends){
+      if(o.it.arc)return null;             // une courbe part du fichier, pas du routeur
       const L=B.assemble(o.it);
       if(L.pts.length<2)return null;
       const pts=L.pts.slice();
@@ -312,6 +313,10 @@ function pnsShoveHeads(node,heads,skip,t0){
     const ob=B.firstObstacle({l:cur.l,net:cur.net,w:cur.w,nets:cur.nets,pts:cur.pts},moi);
     if(!ob){pile.pop();continue;}
     if(ob.it.k==="P")return {ok:false,cause:"pastille"};
+    /* Une piste circulaire ne se pousse pas : la pousser voudrait dire la
+       rendre en segments droits, et l'arc serait perdu. Le tracé la contourne,
+       comme il contourne une pastille. */
+    if(ob.it.arc)return {ok:false,cause:"courbe"};
     if(cur.rang>=PNS_SHOVE_RANG)return {ok:false,cause:"profondeur"};
 
     if(ob.it.k==="V"){
