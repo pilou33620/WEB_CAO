@@ -471,7 +471,7 @@ const S = {
      « walk » le contourne, « mark » le signale et s'arrête. Le défaut est le
      même que celui de KiCad : on pousse. */
   rule:{edge:0.4,thermal:0.5,mask:0.05,paste:0.0,viaFinish:"tented",corner:"45",
-        route:"shove"},
+        route:"shove",hole:0.25},
   classes:[{name:"Défaut",      w:0.3, clr:0.25, via:0.8, drill:0.4},
            {name:"Alimentation",w:0.6, clr:0.25, via:0.9, drill:0.45}],
   netClass:{},                // net → nom de classe ; absent = classe par défaut
@@ -1336,6 +1336,23 @@ function setNetClass(net,name){
   else S.netClass[net]=name;
 }
 function defaultWidth(net){return classOf(net).w;}
+/* Le perçage réellement fait pour un via de cette classe : la cote demandée,
+   sans jamais manger la rondelle au point de la faire disparaître. `mkVia` pose
+   d'après cette formule ; tout ce qui a besoin de connaître le trou AVANT que le
+   via existe la lit ici plutôt que de la recopier. */
+function viaDrill(cl){return Math.min(cl.drill,cl.via-0.1);}
+/* ---------- trou à trou ----------
+   La bande de stratifié que le fabricant exige entre deux perçages. Elle ne
+   dépend d'AUCUN net : c'est le foret qui la réclame, pas l'électricité. Deux
+   vias de masse qui se rejoignent ne font pas deux trous, ils en font un seul,
+   déchiré — le foret casse, et le fichier de perçage devient illisible. C'est
+   pour cela qu'elle ne peut pas vivre dans les classes de net, où l'isolation,
+   elle, s'annule d'office entre deux cuivres déjà reliés.
+   0,25 mm est le minimum courant en fabrication standard. */
+function holeClr(){
+  const v=+S.rule.hole;
+  return Number.isFinite(v)&&v>=0?v:0.25;
+}
 /* Isolation entre deux nets : la plus exigeante des deux classes l'emporte.
    Sauf entre les deux nets d'une paire différentielle : là, c'est l'écart mini
    de la règle de paire qui fait loi. Une paire tenue à 0,15 mm sous une classe
@@ -1537,6 +1554,25 @@ function dpMinGap(pair){
       if(Number.isFinite(v)&&v<m)m=v;
     }
   return Math.max(0.02,m);
+}
+/* ---------- l'isolation entre les DEUX VIAS d'une paire ----------
+   `clrPair` rend, entre les deux nets d'une paire, l'écart de la règle de paire
+   — 0,13 mm typiquement, bien en deçà de ce que la classe exigerait. C'est le
+   principe même de la paire, et c'est juste POUR LES PISTES : l'écart tenu au
+   centième sur toute la longueur, c'est ce qui fait l'impédance différentielle,
+   et le refuser reviendrait à interdire la paire.
+
+   Sur les VIAS, ce raisonnement ne tient plus. Là, le couplage est déjà rompu —
+   c'est même ce que mesure la longueur découplée — et ce qui reste face à face,
+   c'est du cuivre d'un net contre du cuivre d'un autre, que le graveur traite
+   comme partout ailleurs. Les deux vias d'une paire se tenaient donc plus
+   serrés que deux vias posés à la main, sans que rien ne le justifie : c'est
+   visible à l'œil sur une carte qui mélange les deux.
+   D'où cette cote à part : l'isolation ORDINAIRE des deux classes, et jamais
+   moins que le minimum de la règle de paire — une paire plus large que sa
+   classe reste une paire. */
+function dpViaGap(pair){
+  return Math.max(classOf(pair.p).clr, classOf(pair.n).clr, dpMinGap(pair));
 }
 /* Largeur et écart de tracé d'une paire sur une couche : les valeurs
    préférées, ramenées entre le mini et le maxi — une règle retouchée à la main

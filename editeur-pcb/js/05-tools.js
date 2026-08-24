@@ -367,7 +367,10 @@ function normDoc(d){
             mask:dRange(r.mask,0.05,-100,100),paste:dRange(r.paste,0,-100,100),
             viaFinish:VIA_FINISH[vf]?vf:(r.tented===false?"open":"tented"),
             corner:CORNER_MODES[cm]?cm:"45",
-            route:ROUTE_MODES[rm]?rm:"shove"};
+            route:ROUTE_MODES[rm]?rm:"shove",
+            /* le trou à trou n'existait pas : les fichiers muets prennent le
+               minimum de fabrication courant, qu'ils respectaient déjà */
+            hole:dRange(r.hole,0.25,0,100)};
   /* largeurs de la V1.0 : loadDoc() en tire deux classes quand `classes`
      manque, on les laisse donc passer */
   for(const k of ["w","clr","via","drill","wPwr"])
@@ -442,7 +445,7 @@ function loadDoc(d,keepView){
   S.fabOrigin=d.fabOrigin;
   const r=d.rule;
   S.rule={edge:r.edge, thermal:r.thermal, mask:r.mask, paste:r.paste,
-          viaFinish:r.viaFinish, corner:r.corner, route:r.route};
+          viaFinish:r.viaFinish, corner:r.corner, route:r.route, hole:r.hole};
   if(d.classes){
     S.classes=d.classes;S.netClass=d.netClass;
   }else{
@@ -981,7 +984,9 @@ function beginMove(){
    déjà en faute avant qu'il ne commence. */
 function armClear(tracks,vias,fps){
   const skip=new Set([...tracks,...vias,...fps]);
-  drag.clear={list:tracks,skip,was:moveClearBad(tracks,null,skip),warned:false};
+  drag.clear={list:tracks,vias:vias,skip,
+              was:moveClearBad(tracks,null,skip),
+              wasV:moveViaBad(vias,null,skip),warned:false};
   drag.cross={list:tracks,was:crossPairs(tracks),warned:false};
 }
 /* Les paires de segments qui se croisent vraiment : bout à bout ne compte pas,
@@ -1030,12 +1035,18 @@ function clearStop(){
   const c=drag&&drag.clear;
   if(!c)return false;
   const bad=moveClearBad(c.list,c.was,c.skip);
-  if(!bad.size)return false;
+  const badV=moveViaBad(c.vias||[],c.wasV,c.skip);
+  if(!bad.size&&!badV.size)return false;
   if(!c.warned){
     c.warned=true;
-    const t=[...bad][0];
-    hint("Isolation de "+fmt(classOf(t.net).clr,2)+" mm : la piste bute sur l'obstacle. "+
-         "Contournez-le, ou coupez l'anti-collision pour forcer.");
+    if(bad.size){
+      const t=[...bad][0];
+      hint("Isolation de "+fmt(classOf(t.net).clr,2)+" mm : la piste bute sur l'obstacle. "+
+           "Contournez-le, ou coupez l'anti-collision pour forcer.");
+    }else{
+      hint("Le via bute : il passerait "+[...badV.values()][0]+". Posez-le ailleurs, "+
+           "ou coupez l'anti-collision pour forcer.");
+    }
   }
   return true;
 }
@@ -1822,6 +1833,24 @@ function moveClearBad(list,was,skip){
   }
   return bad;
 }
+/* Le même verdict pour les VIAS que le geste emmène. Ils ne s'y trouvaient pas :
+   `moveClearBad` ne parcourait que des pistes, et un via tiré à la main entrait
+   donc dans le cuivre du voisin — ou dans un autre via — sans qu'un seul
+   avertissement ne se lève. La pose, elle, refusait déjà ; le glissement
+   contournait le contrôle par la porte de derrière, et c'est de loin le geste le
+   plus courant pour placer un via de masse à l'endroit voulu.
+   La raison est gardée avec le fautif : c'est elle que le bandeau montrera, et
+   elle est déjà écrite en clair par `viaObstacle`. */
+function moveViaBad(list,was,skip){
+  const bad=new Map();
+  if(!S.avoid)return bad;
+  for(const v of list){
+    if(was&&was.has(v))continue;
+    const gene=viaObstacle(v,null,skip);
+    if(gene)bad.set(v,gene);
+  }
+  return bad;
+}
 /* Tout le cuivre qu'un geste peut réécrire : la sélection étendue, les
    articulations et les coudes qu'elles replient. */
 function movedTracks(){
@@ -1995,7 +2024,9 @@ function routeVia(){
   const R=S.route;
   if(!R||S.cu<2)return;
   const other=(R.layer===S.pair[0])?S.pair[1]:S.pair[0];
-  placeVia(R.pt.x,R.pt.y,R.net,Math.min(R.layer,other),Math.max(R.layer,other),true);
+  /* Le via refusé ne fait pas changer de couche : sans ce garde-fou la piste
+     repartait sur l'autre face sans rien pour l'y amener. */
+  if(!placeVia(R.pt.x,R.pt.y,R.net,Math.min(R.layer,other),Math.max(R.layer,other),true))return;
   R.layer=other;S.active=other;
   buildTabs();buildLayers();refreshPanels();
 }
@@ -2003,15 +2034,132 @@ function routeToLayer(i){
   const R=S.route;
   if(!R){setActive(i);return;}
   if(i===R.layer)return;
-  placeVia(R.pt.x,R.pt.y,R.net,Math.min(R.layer,i),Math.max(R.layer,i),true);
+  if(!placeVia(R.pt.x,R.pt.y,R.net,Math.min(R.layer,i),Math.max(R.layer,i),true))return;
   R.layer=i;setActive(i);
 }
-function placeVia(x,y,net,a,b,inRoute){
-  if(S.cu<2){hint("Une seule couche de cuivre : un via n'aurait rien à relier.");return null;}
+/* Le via tel qu'il sera posé : diamètre et perçage de la classe du net, plage de
+   couches ramenée à la carte entière quand elle est dégénérée. Séparé de la
+   pose pour que l'anti-collision puisse le juger AVANT qu'il existe. */
+function mkVia(x,y,net,a,b){
   const cl=classOf(net||"");
-  const v={x:r3(x),y:r3(y),d:cl.via,drill:Math.min(cl.drill,cl.via-0.1),
+  const v={x:r3(x),y:r3(y),d:cl.via,drill:viaDrill(cl),
            a:a==null?0:a,b:b==null?S.cu-1:b,net:net||""};
   if(v.a===v.b){v.a=0;v.b=S.cu-1;}
+  return v;
+}
+/* ==========================================================================
+   L'anti-collision, pour un via
+   --------------------------------------------------------------------------
+   Le trajet d'une piste ne dit rien de la rondelle qu'on pose au bout. Un via
+   est plus large que la piste qui l'amène — 0,8 mm contre 0,3 — et il traverse
+   TOUTES les couches de sa plage, où d'autre cuivre passe peut-être. Un passage
+   libre pour la piste ne l'est donc pas pour son via, et jusqu'ici rien ne le
+   disait : la touche V posait le cuivre par-dessus le voisin, et il fallait
+   attendre le contrôle DRC pour l'apprendre.
+
+   DEUX règles, et non une, car elles ne disent pas la même chose :
+
+     · l'**isolation**, entre nets DIFFÉRENTS seulement — deux cuivres déjà
+       reliés n'ont rien à tenir l'un vis-à-vis de l'autre. C'est ce que le
+       monde du routeur mesure, avec `pnsPairGap`, exactement comme le DRC ;
+     · le **trou à trou**, qui ne regarde AUCUN net. Deux perçages qui se
+       rejoignent ne font pas deux vias : ils font un seul trou déchiré, que le
+       foret casse. C'est vrai de deux vias de masse comme de deux nets
+       étrangers, et c'est la règle qui manquait — l'isolation, en s'annulant
+       d'office au sein d'un net, laissait passer deux vias l'un dans l'autre.
+
+   Chacune rend sa gêne en clair, ou "" quand la place est libre.
+   ========================================================================== */
+function viaIsole(v,nets,skip){
+  /* Une piste sans net ne se fait pas juger (`routePush`, `segClearBad`) : c'est
+     du cuivre libre, dessiné exprès, et le programme n'a pas à en décider. Un
+     via sans net, lui, n'est pas un dessin : c'est un via dont le net n'a pas
+     été reconnu — l'outil « Via » cliqué à côté du cuivre en pose un à chaque
+     fois. L'exempter revenait à laisser poser un via en plein milieu d'une
+     piste étrangère sans un mot, ce qui n'est jamais ce qu'on voulait. Il se
+     juge donc comme les autres, à l'isolation de la classe par défaut, que
+     `clrPair` rend déjà pour un net vide. */
+  const probe=pnsItemVia(v);
+  /* Les deux nets d'une paire différentielle ne se gênent pas l'un l'autre :
+     leur écartement, c'est l'éventail qui le tient, et il le tient au plus
+     juste. Sans cette réunion le second via de la paire se verrait refuser par
+     le premier. */
+  if(nets)probe.nets=nets;
+  let pire=null;
+  for(const it of pnsWorld().colliding(probe,skip)){
+    const g=pnsPairGap(probe,it);
+    if(!pire||g<pire.g)pire={it:it,g:g};
+  }
+  if(!pire)return "";
+  const it=pire.it;
+  const quoi=it.k==="V"?("d'un via "+(it.net?"de "+it.net:"sans net")):
+             it.k==="P"?("de la pastille "+it.fp.ref+"."+it.q.n):
+                        ("de la piste "+(it.net||"sans net"));
+  return "à "+fmt(Math.max(0,pire.g),3)+" mm "+quoi+", l'isolation en exige "+
+         fmt(pnsClr(it,v.net),3)+" mm";
+}
+/* Le trou à trou. La fenêtre d'interrogation se prend sur le CUIVRE du via,
+   élargi de la règle : la rondelle d'un objet enveloppe toujours son perçage,
+   donc deux trous à portée ont forcément leurs rondelles à portée. Rien ne peut
+   échapper à cette fenêtre, et elle reste petite. */
+function viaTrou(v,skip){
+  if(!(v.drill>0))return "";
+  const h=holeClr(), r=v.d/2+h;
+  let pire=null;
+  for(const it of pnsWorld().query(v.a,v.b,v.x-r,v.y-r,v.x+r,v.y+r)){
+    /* On interroge l'index en direct, sans passer par `colliding` : le tri de
+       ce qu'un geste emmène est donc à refaire ici, à l'identique. */
+    if(skip&&(skip.has(it)||(it.src&&skip.has(it.src))||(it.fp&&skip.has(it.fp))))continue;
+    let d=0,cx=0,cy=0,qui="";
+    if(it.k==="V"){d=it.v.drill;cx=it.v.x;cy=it.v.y;
+      qui="d'un autre via"+(it.net?" ("+it.net+")":"");}
+    else if(it.k==="P"&&it.q.drill>0){d=it.q.drill;cx=it.q.x;cy=it.q.y;
+      qui="du perçage de "+it.fp.ref+"."+it.q.n;}
+    else continue;
+    const e=dist(v.x,v.y,cx,cy)-v.drill/2-d/2;
+    if(e>=h-1e-6)continue;
+    if(!pire||e<pire.e)pire={e:e,qui:qui};
+  }
+  if(!pire)return "";
+  return "à "+fmt(Math.max(0,pire.e),3)+" mm de trou à trou "+pire.qui+
+         ", la règle en exige "+fmt(h,3)+" mm";
+}
+/* Les deux vias d'une même paire différentielle. `viaIsole` ne peut pas s'en
+   charger : il mesure à `clrPair`, qui rend entre deux nets appariés l'écart
+   serré de la règle de paire — celui des PISTES. Sur deux vias c'est
+   l'isolation ordinaire qui vaut, et `dpViaGap` dit pourquoi. Cette cote-là est
+   aussi celle que le contrôle applique (`dpDrc`) : le geste et le contrôle ne
+   peuvent pas juger différemment. */
+function viaPaire(v,skip){
+  const pair=v.net?dpOfNet(v.net):null;
+  if(!pair)return "";
+  const jumeau=pair.p===v.net?pair.n:pair.p;
+  const g=dpViaGap(pair), r=v.d/2+g;
+  let pire=null;
+  for(const it of pnsWorld().query(v.a,v.b,v.x-r,v.y-r,v.x+r,v.y+r)){
+    if(it.k!=="V"||it.net!==jumeau)continue;
+    if(skip&&(skip.has(it)||(it.src&&skip.has(it.src))))continue;
+    const e=dist(v.x,v.y,it.v.x,it.v.y)-v.d/2-it.v.d/2;
+    if(e>=g-1e-6)continue;
+    if(!pire||e<pire.e)pire={e:e};
+  }
+  if(!pire)return "";
+  return "à "+fmt(Math.max(0,pire.e),3)+" mm du via de "+jumeau+
+         ", l'isolation en exige "+fmt(g,3)+" mm";
+}
+function viaObstacle(v,nets,skip){
+  if(!S.avoid)return "";
+  return viaIsole(v,nets,skip)||viaPaire(v,skip)||viaTrou(v,skip);
+}
+function placeVia(x,y,net,a,b,inRoute,nets){
+  if(S.cu<2){hint("Une seule couche de cuivre : un via n'aurait rien à relier.");return null;}
+  const v=mkVia(x,y,net,a,b);
+  const gene=viaObstacle(v,nets);
+  if(gene){
+    hint("Via refusé : il passerait "+gene+". Décalez-le, ou coupez "+
+         "l'anti-collision pour forcer.");
+    return null;
+  }
   if(!inRoute)push();
   S.vias.push(v);
   if(S.route)S.route.vias.push(v);

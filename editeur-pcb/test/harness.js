@@ -98,7 +98,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "PNS_WALK_MAX","pnsSurCarte","pnsHullWalk","pnsWalkCross","pnsWalkSide","pnsWalkaround","routeSegsTo",
   "PNS_SHOVE_MAX","PNS_SHOVE_RANG","pnsPushOut","pnsShoveAside","pnsRelink","pnsShoveVia",
   "pnsShove","pnsShoveHeads","pnsApply","pnsSlideOut","pnsBoutsLibres","crossN","ROUTE_MODES","routeMode","setRouteMode","pushSnap","drawShove",
-  "pnsLineItems","pnsViaEscape","pnsViaSuites","pnsPointEscape","dpNets","dpLine","dpAxis","dpAxisDirect","dpPose",
+  "placeVia","mkVia","viaObstacle","viaIsole","viaTrou","viaPaire","dpViaGap","holeClr","viaDrill","pnsItemVia","pnsPairGap","pnsWorld","pnsClr","pnsLineItems","pnsViaEscape","pnsViaSuites","pnsPointEscape","dpNets","dpLine","dpAxis","dpAxisDirect","dpPose",
   "PNS_OPT_WIN","pnsAnchors","pnsMergeTry","pnsOptimize","routeOptimizeTail",
   /* boîtiers nommés : le nom venu du schéma décide de l'empreinte */
   "PKG_LIB","pkgKey","pkgGeom","fpGeomFor","applyPkgGeom","fpWiredPins",
@@ -4127,6 +4127,410 @@ T("vias de paire : écartés de quoi ne pas se toucher",()=>{
   if(S.vias.length!==av)throw new Error("les vias devaient repartir : "+S.vias.length);
   if(S.dp.layer!==0)throw new Error("la couche devait revenir");
   dpCancel();
+});
+T("vias de paire : l'éventail s'ouvre du bon côté quel que soit le curseur",()=>{
+  /* `D.side` suit le DERNIER mouvement de souris, pas le sens de marche de la
+     paire : ramener le curseur en arrière le faisait basculer, l'éventail
+     partait à l'envers et les deux vias se recouvraient. Le côté se lit
+     désormais sur les ancres, qui ne mentent pas. */
+  for(const vise of [{x:40,y:55},{x:40,y:30},{x:55,y:45},{x:25,y:45}]){
+    const c=carteDp(4);
+    dpAutoAll();
+    const q=S.dpPairs[0];
+    setMode("dpair");
+    dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2);
+    dpUpdate(40,45);dpStep();
+    dpUpdate(vise.x,vise.y);              // le curseur bouge AVANT la touche V
+    dpVia();
+    const [v1,v2]=S.vias.slice(-2);
+    if(!v1||!v2)throw new Error("curseur en "+vise.x+","+vise.y+" : vias non posés");
+    const d=dist(v1.x,v1.y,v2.x,v2.y);
+    if(d<dpViaSpread(q)-1e-3)
+      throw new Error("curseur en "+vise.x+","+vise.y+" : entraxe "+fmt(d,3)+
+                      " pour "+fmt(dpViaSpread(q),3)+" attendus");
+    if(d-v1.d/2-v2.d/2<-1e-6)
+      throw new Error("curseur en "+vise.x+","+vise.y+" : le cuivre des deux vias se touche");
+    /* chaque via sous SON net, et du côté de sa propre piste : un éventail
+       retourné écarte bien les vias mais croise les deux pistes */
+    const vP=v1.net==="USB_DP"?v1:v2, vN=v1.net==="USB_DP"?v2:v1;
+    if(vP.net!=="USB_DP"||vN.net!=="USB_DM")
+      throw new Error("nets des vias : "+v1.net+" / "+v2.net);
+    if(dist(vP.x,vP.y,S.dp.aP.x,S.dp.aP.y)>1e-6||dist(vN.x,vN.y,S.dp.aN.x,S.dp.aN.y)>1e-6)
+      throw new Error("les vias ne sont pas sous les ancres de leur piste");
+    dpCancel();
+  }
+});
+T("anti-collision : un via ne se pose pas dans le cuivre du voisin",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];S.dpPairs=[];S.dpRules=[];
+  clearSel();setCuCount(4,true);
+  S.avoid=true;
+  if(!placeVia(30,30,"A",0,3,false))throw new Error("le premier via devait tenir");
+  /* un via est plus large que la piste qui l'amène : le passage libre pour la
+     piste ne l'est pas pour la rondelle, et rien ne le disait */
+  if(placeVia(30.1,30,"B",0,3,false))throw new Error("un via posé dans un autre");
+  if(S.vias.length!==1)throw new Error("le via refusé a quand même été posé");
+  const clr=clrPair("A","B");
+  if(placeVia(30+S.vias[0].d+clr-0.01,30,"B",0,3,false))
+    throw new Error("un via posé sous l'isolation exigée");
+  if(!placeVia(30+S.vias[0].d+clr+0.01,30,"B",0,3,false))
+    throw new Error("un via au-delà de l'isolation devait tenir");
+  // même net : pas d'isolation à tenir, la couture de masse reste possible
+  S.vias.length=0;touch();
+  placeVia(30,30,"GND",0,3,false);
+  if(!placeVia(30.9,30,"GND",0,3,false))throw new Error("deux vias de masse voisins refusés");
+  // l'anti-collision coupée, on force comme pour une piste
+  S.vias.length=0;touch();S.avoid=false;
+  placeVia(30,30,"A",0,3,false);
+  if(!placeVia(30.1,30,"B",0,3,false))throw new Error("anti-collision coupée : le forçage doit passer");
+  S.avoid=true;
+});
+T("anti-collision : le changement de couche refusé ne change pas de couche",()=>{
+  const c=carteDp(4);
+  dpAutoAll();
+  setMode("dpair");
+  S.avoid=true;
+  dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2);
+  dpUpdate(40,45);dpStep();
+  /* deux vias d'un autre net posés pile là où la paire voudrait les siens */
+  S.avoid=false;
+  placeVia(S.dp.aP.x,S.dp.aP.y,"GND",0,3,false);
+  placeVia(S.dp.aN.x,S.dp.aN.y,"GND",0,3,false);
+  S.avoid=true;
+  const av=S.vias.length, cu=S.dp.layer, pas=S.dp.steps.length;
+  const dp=S.dp.doneP.length;
+  dpVia();
+  if(S.vias.length!==av)throw new Error("les vias de la paire ont été posés dans du cuivre étranger");
+  if(S.dp.layer!==cu)throw new Error("la couche a changé sans via pour l'y amener");
+  if(S.dp.steps.length!==pas)throw new Error("un marque-page est resté derrière");
+  if(S.dp.doneP.length!==dp)throw new Error("l'éventail a été posé pour rien");
+  dpCancel();
+  S.vias.length=0;touch();
+});
+/* Le geste le plus courant pour placer un via de masse : on le pose, puis on le
+   TIRE là où on le veut. La pose se faisait juger ; le glissement, lui, ne
+   parcourait que des pistes — un via emmené entrait donc dans le cuivre du
+   voisin par la porte de derrière. */
+function viaATirer(){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];S.dpPairs=[];S.dpRules=[];
+  clearSel();setCuCount(4,true);S.avoid=true;S.grid=0.1;
+  setMode("select");S.active=0;fit();
+  return null;
+}
+T("un via tiré à la main bute sur un autre via",()=>{
+  viaATirer();
+  const cible=placeVia(30,30,"SIG",0,3,false);
+  const gnd=placeVia(34,30,"GND",0,3,false);
+  clearSel();S.sel.vias.add(gnd);
+  glisseSur(gnd,{x:34,y:30},{x:30.1,y:30});
+  const e=dist(gnd.x,gnd.y,cible.x,cible.y)-gnd.d/2-cible.d/2;
+  if(e<clrPair("GND","SIG")-1e-6)
+    throw new Error("le via s'est posé sous l'isolation : "+fmt(e,3)+" mm");
+  if(Math.abs(gnd.x-34)<1e-9)
+    throw new Error("il devait tout de même avancer jusqu'à l'obstacle");
+  undo();
+});
+T("un via tiré à la main bute sur une piste d'un autre net",()=>{
+  viaATirer();
+  S.tracks.push({l:0,net:"SIG",w:0.3,x1:20,y1:30,x2:40,y2:30});touch();
+  const v=placeVia(30,36,"GND",0,3,false);
+  clearSel();S.sel.vias.add(v);
+  glisseSur(v,{x:30,y:36},{x:30,y:30});
+  const e=Math.abs(v.y-30)-v.d/2-0.15;
+  if(e<clrPair("GND","SIG")-1e-6)
+    throw new Error("le via a traversé la piste : "+fmt(e,3)+" mm");
+  if(Math.abs(v.y-36)<1e-9)throw new Error("il devait avancer jusqu'à l'obstacle");
+  if(runDrc().some(x=>!x.info))throw new Error("le glissement a laissé une faute");
+  undo();
+});
+T("un via tiré : l'anti-collision coupée ne retient rien",()=>{
+  viaATirer();
+  placeVia(30,30,"SIG",0,3,false);
+  const gnd=placeVia(34,30,"GND",0,3,false);
+  clearSel();S.sel.vias.add(gnd);
+  S.avoid=false;
+  glisseSur(gnd,{x:34,y:30},{x:30.1,y:30});
+  S.avoid=true;
+  if(Math.abs(gnd.x-30.1)>0.2)
+    throw new Error("anti-collision coupée : rien ne doit retenir, x="+fmt(gnd.x,3));
+  undo();
+});
+T("un via déjà en faute peut encore être dégagé",()=>{
+  /* Même principe que pour une piste : on ne juge que ce qui était propre AVANT
+     le geste, sinon la carte se fige et l'on ne peut plus sortir le via de là où
+     il n'aurait jamais dû être. On le force sur une piste étrangère — un seul
+     via sur la carte, donc aucune ambiguïté sur ce que le clic attrape. */
+  viaATirer();
+  S.tracks.push({l:0,net:"SIG",w:0.3,x1:20,y1:30,x2:40,y2:30});touch();
+  S.avoid=false;
+  const v=placeVia(30,30,"GND",0,3,false);
+  S.avoid=true;
+  if(!v)throw new Error("anti-collision coupée : le via devait se poser");
+  clearSel();S.sel.vias.add(v);
+  glisseSur(v,{x:30,y:30},{x:33,y:30});        // le long de la piste, toujours dedans
+  if(Math.abs(v.x-33)>0.3)
+    throw new Error("un via déjà en faute doit rester déplaçable, x="+fmt(v.x,3));
+  undo();
+});
+T("outil « Via » : un via sans net se fait juger comme les autres",()=>{
+  /* Un via posé à côté du cuivre n'a pas de net — l'aimant n'a rien accroché.
+     Ce n'est pas du cuivre libre dessiné exprès, comme une piste sans net :
+     c'est un via dont le net n'a pas été reconnu, et l'exempter revenait à le
+     laisser tomber en plein milieu d'une piste étrangère. */
+  viaATirer();
+  S.tracks.push({l:0,net:"SIG",w:0.3,x1:20,y1:30,x2:40,y2:30});touch();
+  setMode("via");
+  fire("pointerdown",sc(30,30.5));fire("pointerup",sc(30,30.5));
+  if(S.vias.length)throw new Error("un via sans net posé sur une piste étrangère");
+  // plus loin, il tient : l'isolation de la classe par défaut suffit à trancher
+  const loin=30+0.15+0.4+clrPair("","SIG")+0.05;
+  fire("pointerdown",sc(30,loin));fire("pointerup",sc(30,loin));
+  if(S.vias.length!==1)throw new Error("au-delà de l'isolation, le via devait tenir");
+  setMode("select");
+  if(runDrc().some(x=>!x.info))throw new Error("le via posé a laissé une faute");
+});
+T("trou à trou : la règle qui ne connaît pas les nets",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];S.dpPairs=[];S.dpRules=[];
+  clearSel();setCuCount(4,true);S.avoid=true;
+  /* L'isolation s'annule d'office au sein d'un net — du cuivre relié n'a rien à
+     tenir — et laissait donc deux vias de masse entrer l'un dans l'autre. Le
+     foret, lui, ne sait pas ce qu'est un net. */
+  const v=placeVia(30,30,"GND",0,3,false);
+  if(!v)throw new Error("le premier via devait tenir");
+  if(placeVia(30.2,30,"GND",0,3,false))
+    throw new Error("deux vias d'un même net posés l'un dans l'autre");
+  if(S.vias.length!==1)throw new Error("le via refusé a quand même été posé");
+  // la limite est bien celle de la règle, mesurée de trou à trou
+  const lim=v.drill+holeClr();
+  if(placeVia(30+lim-0.02,30,"GND",0,3,false))
+    throw new Error("un via sous la règle du trou à trou est passé");
+  if(!placeVia(30+lim+0.02,30,"GND",0,3,false))
+    throw new Error("un via au-delà de la règle devait tenir");
+  // la règle se règle : desserrée, elle laisse passer ; resserrée, elle refuse
+  S.vias.length=0;touch();
+  placeVia(30,30,"GND",0,3,false);
+  S.rule.hole=0.05;
+  if(!placeVia(30+v.drill+0.1,30,"GND",0,3,false))
+    throw new Error("règle desserrée : le via devait passer");
+  S.vias.length=1;touch();
+  S.rule.hole=1;
+  if(placeVia(30+v.drill+0.1,30,"GND",0,3,false))
+    throw new Error("règle resserrée : le via devait être refusé");
+  // un via sans net échappe à l'isolation, jamais au trou à trou
+  S.vias.length=0;touch();S.rule.hole=0.25;
+  placeVia(30,30,"",0,3,false);
+  if(placeVia(30.2,30,"",0,3,false))
+    throw new Error("deux perçages sans net se recouvrent quand même");
+  // le contrôle mesure comme la pose : un manque sans recouvrement se dit aussi
+  S.vias.length=0;touch();S.avoid=false;
+  placeVia(30,30,"GND",0,3,false);
+  placeVia(30+v.drill+0.1,30,"GND",0,3,false);
+  if(!runDrc().some(e=>/Trou à trou/.test(e.msg)))
+    throw new Error("le manque de trou à trou n'est pas signalé");
+  S.vias.length=0;touch();S.avoid=true;
+});
+T("trou à trou : une pastille traversante est un perçage comme un autre",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];S.dpPairs=[];S.dpRules=[];
+  clearSel();setCuCount(4,true);S.avoid=true;
+  importNetlist(NET,true);
+  const u1=S.fps.find(f=>f.ref==="U1");
+  u1.x=40;u1.y=40;touch();
+  const q=padsWorld(u1).find(o=>o.drill>0&&o.net);
+  if(!q)throw new Error("le DIP-8 devait porter des pastilles traversantes");
+  /* Le via porte le net de la pastille : l'isolation se tait d'office, et seul
+     le trou à trou peut encore refuser. C'est bien lui qu'on éprouve. */
+  const dr=viaDrill(classOf(q.net));
+  if(placeVia(q.x+0.05,q.y,q.net,0,3,false))
+    throw new Error("un via percé dans le trou d'une pastille du même net");
+  const loin=q.x+q.drill/2+dr/2+holeClr()+0.05;
+  if(!placeVia(loin,q.y,q.net,0,3,false))
+    throw new Error("au-delà de la règle, le via devait tenir");
+  S.vias.length=0;touch();
+});
+T("vias de paire : la même isolation que deux vias posés à la main",()=>{
+  /* L'écart serré de la règle de paire fait l'impédance des PISTES. Sur deux
+     vias le couplage est rompu : il ne reste que du cuivre étranger, et rien ne
+     justifiait que les vias de la paire se tiennent plus serrés que ceux qu'on
+     pose à la main — ce qui se voyait à l'œil sur une carte qui mêle les deux. */
+  const c=carteDp(4);
+  dpAutoAll();
+  const q=S.dpPairs[0], cl=classOf("USB_DP");
+  if(dpViaGap(q)!==cl.clr)
+    throw new Error("l'isolation des vias devait être celle de la classe : "+
+                    fmt(dpViaGap(q),3));
+  setMode("dpair");S.avoid=true;
+  dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2);
+  dpUpdate(40,45);dpStep();
+  dpVia();
+  const [p1,p2]=S.vias.slice(-2);
+  if(!p1||!p2)throw new Error("les deux vias de la paire devaient tenir");
+  const paire=dist(p1.x,p1.y,p2.x,p2.y)-p1.d/2-p2.d/2;
+  dpCancel();
+  if(paire<cl.clr-1e-6)
+    throw new Error("vias de paire sous l'isolation : "+fmt(paire,3)+
+                    " pour "+fmt(cl.clr,3)+" mm");
+  /* Deux vias posés à la main, poussés au plus près que l'anti-collision
+     tolère : c'est la référence que l'œil compare. */
+  S.vias.length=0;touch();
+  const h1=placeVia(10,10,"A",0,3,false);
+  let h2=null;
+  for(let d=cl.via;d<cl.via+2&&!h2;d+=0.005)h2=placeVia(10+d,10,"B",0,3,false);
+  if(!h2)throw new Error("impossible de poser le via de référence");
+  const main=dist(h1.x,h1.y,h2.x,h2.y)-h1.d/2-h2.d/2;
+  if(Math.abs(paire-main)>0.01)
+    throw new Error("les vias de paire ne serrent pas comme ceux de la main : "+
+                    fmt(paire,3)+" contre "+fmt(main,3));
+  S.vias.length=0;touch();
+});
+T("vias de paire : une règle plus large que la classe l'emporte quand même",()=>{
+  /* `dpViaGap` prend l'isolation ordinaire, mais jamais moins que le minimum de
+     la règle : une paire tenue plus large que sa classe reste une paire. */
+  const c=carteDp(4);
+  dpAutoAll();
+  const q=S.dpPairs[0], cl=classOf("USB_DP");
+  const gR=S.dpRules.slice();
+  S.dpRules=[Object.assign({},DP_FALLBACK,{name:"LARGE",uid:dpUid(),
+    minGap:cl.clr+0.3,prefGap:cl.clr+0.3,maxGap:cl.clr+0.5,layers:{}})];
+  const g=dpViaGap(q), mini=dpMinGap(q);
+  S.dpRules=gR;
+  if(g<mini-1e-9)
+    throw new Error("la règle de paire devait l'emporter : "+fmt(g,3)+" < "+fmt(mini,3));
+});
+T("contrôle : deux vias de paire rapprochés à la main sont signalés",()=>{
+  /* Le contrôle général mesure entre deux nets appariés à `clrPair` — l'écart
+     de la règle — et les laisserait donc passer bien plus près. La règle des
+     vias est propre aux paires : c'est `dpDrc` qui la porte. */
+  const c=carteDp(4);
+  dpAutoAll();
+  const q=S.dpPairs[0], cl=classOf("USB_DP");
+  S.avoid=false;
+  placeVia(30,30,"USB_DP",0,3,false);
+  placeVia(30+cl.via+cl.clr-0.05,30,"USB_DM",0,3,false);
+  S.avoid=true;
+  const e=[];dpDrc(e);
+  if(!e.some(x=>/vias USB_DP et USB_DM/.test(x.msg)))
+    throw new Error("deux vias de paire sous l'isolation non signalés");
+  // écartés comme il faut, plus rien
+  S.vias[1].x=30+cl.via+cl.clr+0.05;touch();
+  const e2=[];dpDrc(e2);
+  if(e2.some(x=>/vias USB_DP et USB_DM/.test(x.msg)))
+    throw new Error("des vias corrects ne doivent rien lever");
+  S.vias.length=0;touch();
+});
+T("un via de paire tiré à la main bute sur son jumeau",()=>{
+  const c=carteDp(4);
+  dpAutoAll();
+  const cl=classOf("USB_DP");
+  S.vias.length=0;touch();
+  S.avoid=true;S.grid=0.1;setMode("select");S.active=0;fit();
+  const vp=placeVia(30,30,"USB_DP",0,3,false);
+  const vn=placeVia(34,30,"USB_DM",0,3,false);
+  if(!vp||!vn)throw new Error("les deux vias devaient se poser");
+  clearSel();S.sel.vias.add(vn);
+  glisseSur(vn,{x:34,y:30},{x:30.9,y:30});
+  const e=dist(vp.x,vp.y,vn.x,vn.y)-vp.d/2-vn.d/2;
+  if(e<cl.clr-1e-6)
+    throw new Error("le via de paire a franchi l'isolation : "+fmt(e,3)+" mm");
+  if(Math.abs(vn.x-34)<1e-9)throw new Error("il devait avancer jusqu'à l'obstacle");
+  S.vias.length=0;touch();
+});
+T("vias de paire : l'écartement tient le cuivre ET les perçages",()=>{
+  const c=carteDp(4);
+  dpAutoAll();
+  const q=S.dpPairs[0];
+  const cl=classOf("USB_DP");
+  /* Cotes d'usine : c'est le cuivre qui commande, la couronne débordant
+     largement du trou. Et l'isolation retenue est l'ORDINAIRE, pas l'écart
+     serré de la règle de paire : sur deux vias le couplage est rompu, il ne
+     reste que du cuivre étranger. */
+  if(dpViaGap(q)<=clrPair(q.p,q.n))
+    throw new Error("l'isolation des vias doit dépasser l'écart de la règle de paire");
+  const parCuivre=cl.via+dpViaGap(q);
+  if(dpViaSpread(q)<parCuivre-1e-9||dpViaSpread(q)>parCuivre+0.01)
+    throw new Error("cotes d'usine : le cuivre devait commander, "+fmt(dpViaSpread(q),3));
+  /* Couronne mince et règle de trou à trou sévère : c'est le foret qui commande,
+     et l'éventail doit s'ouvrir davantage — sinon les deux trous se rejoignent
+     alors même que le cuivre, lui, tient l'écart.
+     Les cotes se remettent AVANT tout verdict : la classe et la règle sont
+     partagées, et un essai qui s'arrête en chemin les laisserait de travers
+     pour les suivants. */
+  const gVia=cl.via, gDr=cl.drill, gH=S.rule.hole;
+  cl.via=0.5;cl.drill=0.4;S.rule.hole=0.5;touch();
+  const vise=viaDrill(cl)+holeClr(), spread=dpViaSpread(q);
+  setMode("dpair");
+  dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2);
+  dpUpdate(40,45);dpStep();
+  dpVia();
+  const [v1,v2]=S.vias.slice(-2);
+  const trou=(v1&&v2)?dist(v1.x,v1.y,v2.x,v2.y)-v1.drill/2-v2.drill/2:null;
+  const err=runDrc().filter(e=>/Trou à trou|recouvrent|même point/.test(e.msg));
+  dpCancel();
+  cl.via=gVia;cl.drill=gDr;S.rule.hole=gH;touch();
+  if(spread<vise-1e-9)
+    throw new Error("le trou à trou n'a pas commandé : "+fmt(spread,3)+
+                    " pour "+fmt(vise,3));
+  if(trou==null)throw new Error("les deux vias de la paire devaient tenir");
+  if(trou<0.5-1e-6)
+    throw new Error("les deux perçages de la paire sont sous la règle : "+fmt(trou,4));
+  if(err.length)throw new Error("la paire posée devait passer sa propre règle : "+err[0].msg);
+});
+T("anti-collision : la paire ne change pas deux fois de couche au même point",()=>{
+  /* C'est le cas de la capture : deux vias corrects, puis deux autres posés
+     par-dessus. Ils portaient le MÊME net que les premiers — l'isolation ne les
+     voyait donc pas, et quatre perçages se retrouvaient en deux trous. */
+  const c=carteDp(4);
+  dpAutoAll();
+  setMode("dpair");
+  S.avoid=true;
+  dpStart((c.a.p.x+c.a.n.x)/2,(c.a.p.y+c.a.n.y)/2);
+  dpUpdate(40,45);dpStep();
+  dpVia();
+  const n=S.vias.length, cu=S.dp.layer;
+  if(n!==2)throw new Error("le premier changement devait poser deux vias");
+  dpVia();                                   // aussitôt, sans avancer
+  if(S.vias.length!==n)throw new Error("quatre vias en deux trous : "+S.vias.length);
+  if(S.dp.layer!==cu)throw new Error("la couche a changé sans via pour l'y amener");
+  dpCancel();
+});
+T("document : le trou à trou se range avec la carte",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];S.dpPairs=[];S.dpRules=[];
+  clearSel();setCuCount(2,true);
+  S.rule.hole=0.35;touch();
+  loadDoc(JSON.parse(serialize()),true);
+  if(Math.abs(S.rule.hole-0.35)>1e-9)throw new Error("trou à trou perdu : "+S.rule.hole);
+  // un fichier antérieur à la règle prend le minimum de fabrication courant
+  const d=JSON.parse(serialize());
+  delete d.rule.hole;
+  loadDoc(d,true);
+  if(Math.abs(S.rule.hole-0.25)>1e-9)
+    throw new Error("fichier muet : 0,25 mm attendu, "+S.rule.hole);
+});
+T("contrôle : deux vias qui se recouvrent, même sur un même net",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.cuts=[];S.dpPairs=[];S.dpRules=[];
+  clearSel();setCuCount(4,true);S.avoid=false;
+  /* l'isolation ne juge que les nets différents : deux perçages d'un même net
+     qui se recouvrent passaient sans un mot */
+  placeVia(30,30,"GND",0,3,false);
+  placeVia(30.2,30,"GND",0,3,false);
+  if(!runDrc().some(e=>/recouvrent/.test(e.msg)))
+    throw new Error("le recouvrement de deux vias de masse n'est pas signalé");
+  S.vias.length=0;touch();
+  placeVia(30,30,"GND",0,3,false);
+  placeVia(30,30,"GND",0,3,false);
+  if(!runDrc().some(e=>/même point/.test(e.msg)))
+    throw new Error("deux vias au même point ne sont pas signalés");
+  // une couture de masse au pas normal ne réclame rien
+  S.vias.length=0;touch();
+  placeVia(30,30,"GND",0,3,false);
+  placeVia(31.5,30,"GND",0,3,false);
+  if(runDrc().some(e=>/recouvrent|même point/.test(e.msg)))
+    throw new Error("une couture de masse au pas normal ne doit rien lever");
+  // deux vias enterrés empilés sur des plages disjointes : une technique, pas un défaut
+  S.vias.length=0;touch();
+  placeVia(30,30,"GND",0,1,false);
+  placeVia(30,30,"GND",2,3,false);
+  if(runDrc().some(e=>/recouvrent|même point/.test(e.msg)))
+    throw new Error("un empilage de vias enterrés disjoints est légitime");
+  S.vias.length=0;touch();S.avoid=true;
 });
 T("retour arrière : la paire recule d'un coude, pas d'un segment",()=>{
   const c=carteDp();

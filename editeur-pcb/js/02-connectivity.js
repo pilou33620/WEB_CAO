@@ -459,6 +459,46 @@ function runDrc(){
   for(const e of bTT)out.push(e);
   for(const e of bTP)out.push(e);
   for(const e of bV)out.push(e);
+  /* ---------- trou à trou ----------
+     L'isolation ci-dessus ne juge que les nets DIFFÉRENTS : deux vias d'un même
+     net, elle les laisse passer, et à juste titre — du cuivre déjà relié n'a
+     aucune isolation à tenir. Les deux PERÇAGES, eux, ne s'en moquent pas : la
+     bande de stratifié qui les sépare, c'est le foret qui la réclame, et il ne
+     sait pas ce qu'est un net. Deux trous trop voisins, c'est une paroi qui
+     casse au perçage ; deux trous qui se recouvrent, c'est un seul trou déchiré,
+     que le fichier de perçage rend illisible. Le cas naît d'un double clic sur
+     une couture de masse, d'un via reposé sur un via déjà là, ou d'une paire
+     différentielle qui change deux fois de couche au même endroit — et rien ne
+     le signalait.
+     La mesure est celle que l'anti-collision applique à la pose (`viaTrou`) :
+     le routeur et le contrôle ne peuvent pas juger différemment.
+     On ne rapproche que ce qui partage une couche : deux vias enterrés sur des
+     plages disjointes empilés au même point sont une technique, pas un défaut.
+     Les pastilles traversantes comptent comme des perçages, ce qu'elles sont. */
+  const hcl=holeClr();
+  for(const a of N.all()){
+    if(a.k!=="V"||!(a.v.drill>0))continue;
+    const r=a.v.d/2+hcl;
+    for(const b of N.query(a.l0,a.l1,a.v.x-r,a.v.y-r,a.v.x+r,a.v.y+r)){
+      if(b===a||!neuf(a,b))continue;
+      let d=0,cx=0,cy=0,qui="";
+      if(b.k==="V"){d=b.v.drill;cx=b.v.x;cy=b.v.y;
+        qui="deux vias ("+(a.net||"sans net")+" / "+(b.net||"sans net")+")";}
+      else if(b.k==="P"&&b.q.drill>0){d=b.q.drill;cx=b.q.x;cy=b.q.y;
+        qui="un via et la pastille "+b.fp.ref+"."+b.q.n;}
+      else continue;
+      const e=dist(a.v.x,a.v.y,cx,cy)-a.v.drill/2-d/2;
+      if(e>=hcl-1e-6)continue;
+      out.push({via:a.v,x:(a.v.x+cx)/2,y:(a.v.y+cy)/2,l:a.l0,
+        msg:dist(a.v.x,a.v.y,cx,cy)<1e-6
+          ? "Deux perçages au même point ("+qui+") : un seul suffit"
+          : e<-1e-6
+          ? "Perçages qui se recouvrent de "+fmt(-e,3)+" mm ("+qui+
+            ") : les deux trous n'en font qu'un, déchiré"
+          : "Trou à trou de "+fmt(e,3)+" mm ("+qui+") : la règle en exige "+
+            fmt(hcl,3)+" mm"});
+    }
+  }
   for(const v of S.vias)
     if(!inBoard(v.x,v.y,S.rule.edge))
       out.push({x:v.x,y:v.y,l:v.a,msg:"Via hors du contour de carte"});

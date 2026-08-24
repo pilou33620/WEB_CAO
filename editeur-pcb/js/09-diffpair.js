@@ -286,11 +286,36 @@ function dpSelect(i){
   _dpSel=clamp(i,0,Math.max(0,S.dpPairs.length-1));
   buildDiffPairs();
 }
-/* Écartement de deux vias de la paire : leur diamètre plus ce que l'isolation
-   exige entre les deux nets. En deçà, le cuivre des deux vias se touche. */
+/* Écartement de deux vias de la paire. DEUX contraintes le commandent, et il
+   faut les tenir toutes les deux :
+
+     · le CUIVRE — les deux rondelles gardent entre elles l'isolation ordinaire
+       (`dpViaGap`), et non l'écart serré de la règle de paire : celui-ci vaut
+       pour les pistes, où il fait l'impédance, pas pour deux vias où le
+       couplage est de toute façon rompu ;
+     · les PERÇAGES — les deux trous gardent leur bande de stratifié, que le
+       foret réclame et qui, elle, ne connaît pas les nets.
+
+   La plus exigeante commande. C'est ainsi que KiCad résout son
+   EffectiveDiffPairViaGap : il ne choisit pas une règle, il prend le maximum
+   de celles qui s'appliquent. Ne retenir que le cuivre, comme on le faisait,
+   suffit tant que la rondelle déborde largement du trou — ce qui est le cas des
+   cotes d'usine — mais une classe à faible couronne passait au travers.
+   Les deux nets peuvent relever de classes différentes : on prend chacun la
+   sienne, ce qui redonne exactement l'ancienne formule quand ils partagent la
+   même. */
+/* Ce que l'éventail se garde en plus. Les deux bouts de ses jambes sont arrondis
+   au micron, et un point arrondi recule d'au plus un demi-micron en x comme en
+   y : deux points, et l'écartement obtenu peut manquer le calculé d'un millième
+   et demi. Sans marge, une règle serrée refusait ensuite le second via de la
+   paire — pour un millième. Deux microns remettent le résultat du bon côté, et
+   restent mille fois sous ce qu'un graveur sait tenir. C'est le PNS_MARGIN du
+   moteur, appliqué là où c'est une distance entre deux points qu'on arrondit. */
+const DP_VIA_MARGE=0.002;
 function dpViaSpread(pair){
-  const cl=classOf(pair.p);
-  return r3(cl.via+clrPair(pair.p,pair.n));
+  const cP=classOf(pair.p), cN=classOf(pair.n);
+  return r3(Math.max((cP.via+cN.via)/2+dpViaGap(pair),
+                     (viaDrill(cP)+viaDrill(cN))/2+holeClr())+DP_VIA_MARGE);
 }
 /* ---------- la porte d'un couple d'ancres ----------
    C'est le BuildFromPrimitivePair de KiCad, ramené à un point et un sens. Deux
@@ -543,35 +568,64 @@ function dpStep(){
 function dpVia(){
   const D=S.dp;
   if(!D||S.cu<2)return;
-  const pair=D.pair, pitch=D.gap+D.w, spread=dpViaSpread(pair);
+  const pair=D.pair, spread=dpViaSpread(pair);
+  /* L'écartement des deux ancres TEL QU'IL EST, et non le pas des pistes : au
+     départ d'un couple de pastilles il dépasse déjà souvent l'écartement des
+     vias, et l'éventail n'a alors rien à ouvrir. Le mesurer évite aussi de
+     rattraper deux fois le même retard. */
+  const ecart=dist(D.aP.x,D.aP.y,D.aN.x,D.aN.y);
+  const ouvre=spread>ecart+1e-6;
   let u=null;
-  dpMark(D);
   const lm=D.mid.length?D.mid[D.mid.length-1]:(D.midPrev.length?D.midPrev[D.midPrev.length-1]:null);
   if(lm)u=dpDir({x:lm.x1,y:lm.y1},{x:lm.x2,y:lm.y2});
-  if((!u||(!u.x&&!u.y))&&spread>pitch+1e-6){
-    D.steps.pop();
+  if(ouvre&&(!u||(!u.x&&!u.y))){
     hint("Posez d'abord un bout de paire : l'éventail des vias a besoin d'un sens "+
          "de marche pour s'ouvrir.");
     return;
   }
-  if(spread>pitch+1e-6){
-    const k=r3((spread-pitch)/Math.SQRT2);        // jambe à 45°, de chaque côté
-    const nP={x:dpPerp(u).x*D.side,y:dpPerp(u).y*D.side};
-    const fan=(a,sg)=>{
-      const b={x:r3(a.x+(u.x+nP.x*sg)/Math.SQRT2*k),
-               y:r3(a.y+(u.y+nP.y*sg)/Math.SQRT2*k)};
-      return {b:b,seg:{l:D.layer,x1:a.x,y1:a.y,x2:b.x,y2:b.y}};
-    };
-    const fP=fan(D.aP,1), fN=fan(D.aN,-1);
-    D.doneP.push(fP.seg);D.doneN.push(fN.seg);
-    const before=D.pt;
-    D.aP=fP.b;D.aN=fN.b;D.pt=dpMid(D);
-    D.mid.push({l:D.layer,x1:before.x,y1:before.y,x2:D.pt.x,y2:D.pt.y});
+  /* Où se trouve P, cela se lit sur les ancres elles-mêmes — pas sur `D.side`.
+     Celui-ci ne dit que le sens de sortie du DERNIER mouvement de souris :
+     ramener le curseur en arrière le fait basculer, alors que la paire, elle,
+     marche toujours dans le même sens. L'éventail partait alors à l'envers, le
+     via de P du côté de N : au lieu de s'écarter de `spread` les deux vias se
+     rapprochaient à |2·pas − spread| et leur cuivre se recouvrait franchement.
+     `D.side` ne sert plus que d'ultime recours, quand les deux ancres sont
+     confondues et n'ont donc aucun côté à indiquer. */
+  let pP={x:D.aP.x,y:D.aP.y}, pN={x:D.aN.x,y:D.aN.y};
+  if(ouvre){
+    const k=(spread-ecart)/Math.SQRT2;            // jambe à 45°, de chaque côté
+    let nP=dpPerp(u);
+    const h=dpDot({x:D.aP.x-D.aN.x,y:D.aP.y-D.aN.y},nP);
+    if(h<-1e-9)nP={x:-nP.x,y:-nP.y};
+    else if(h<=1e-9)nP={x:nP.x*D.side,y:nP.y*D.side};
+    const fan=(a,sg)=>({x:r3(a.x+(u.x+nP.x*sg)/Math.SQRT2*k),
+                        y:r3(a.y+(u.y+nP.y*sg)/Math.SQRT2*k)});
+    pP=fan(D.aP,1);pN=fan(D.aN,-1);
   }
   const other=(D.layer===S.pair[0])?S.pair[1]:S.pair[0];
   const a=Math.min(D.layer,other), b=Math.max(D.layer,other);
-  const vP=placeVia(D.aP.x,D.aP.y,pair.p,a,b,true);
-  const vN=placeVia(D.aN.x,D.aN.y,pair.n,a,b,true);
+  /* L'anti-collision vaut aussi pour ces deux vias. On les juge AVANT de rien
+     poser : l'éventail est du cuivre, et une paire à moitié changée de couche
+     — un via posé, l'autre refusé — serait pire que pas de via du tout. */
+  const nets=dpNets(pair);
+  const gene=viaObstacle(mkVia(pP.x,pP.y,pair.p,a,b),nets)||
+             viaObstacle(mkVia(pN.x,pN.y,pair.n,a,b),nets);
+  if(gene){
+    hint("Les vias de la paire "+pair.name+" ne tiennent pas ici : ils passeraient "+
+         gene+". Décalez le changement de couche, ou coupez "+
+         "l'anti-collision pour forcer.");
+    return;
+  }
+  dpMark(D);
+  if(ouvre){
+    D.doneP.push({l:D.layer,x1:D.aP.x,y1:D.aP.y,x2:pP.x,y2:pP.y});
+    D.doneN.push({l:D.layer,x1:D.aN.x,y1:D.aN.y,x2:pN.x,y2:pN.y});
+    const before=D.pt;
+    D.aP=pP;D.aN=pN;D.pt=dpMid(D);
+    D.mid.push({l:D.layer,x1:before.x,y1:before.y,x2:D.pt.x,y2:D.pt.y});
+  }
+  const vP=placeVia(D.aP.x,D.aP.y,pair.p,a,b,true,nets);
+  const vN=placeVia(D.aN.x,D.aN.y,pair.n,a,b,true,nets);
   if(vP)D.vias.push(vP);
   if(vN)D.vias.push(vN);
   D.layer=other;S.active=other;
@@ -580,7 +634,8 @@ function dpVia(){
   D.w=g.w;D.gap=g.gap;
   buildTabs();buildLayers();refreshPanels();
   hint("Paire "+pair.name+" sur "+cuId(other,S.cu)+" : "+fmt(g.w,3)+" mm de piste, "+
-       fmt(g.gap,3)+" mm d'écart · vias écartés de "+fmt(spread,3)+" mm.");
+       fmt(g.gap,3)+" mm d'écart · vias écartés de "+
+       fmt(dist(D.aP.x,D.aP.y,D.aN.x,D.aN.y),3)+" mm.");
 }
 /* Changement de couche direct (touches 1-8) : deux vias et on continue. */
 function dpToLayer(i){
@@ -760,6 +815,21 @@ function dpDrc(out){
         msg:"Paire "+pair.name+" : "+fmt(cp.uncoupled,2)+" mm découplés pour "+
             fmt(r.maxUncoupled,2)+" mm admis"});
     }
+    /* Les deux vias de la paire, jugés à l'isolation ORDINAIRE et non à l'écart
+       serré de la règle : `dpViaGap` dit pourquoi. Le contrôle général, lui,
+       les mesure à `clrPair` — l'écart de paire — et les laisserait donc passer
+       bien plus près. La règle est propre aux paires : sa place est ici. */
+    const gV=dpViaGap(pair);
+    const vP=S.vias.filter(v=>v.net===pair.p), vN=S.vias.filter(v=>v.net===pair.n);
+    for(const a of vP)
+      for(const b of vN){
+        if(a.b<b.a||b.b<a.a)continue;             // pas une couche en commun
+        const e=dist(a.x,a.y,b.x,b.y)-a.d/2-b.d/2;
+        if(e>=gV-1e-6)continue;
+        out.push({via:a,x:(a.x+b.x)/2,y:(a.y+b.y)/2,l:Math.max(a.a,b.a),
+          msg:"Paire "+pair.name+" : vias "+pair.p+" et "+pair.n+" à "+fmt(e,3)+
+              " mm, l'isolation en exige "+fmt(gV,3)+" mm"});
+      }
     /* Deux pistes de longueurs franchement différentes, c'est un décalage
        temporel entre les deux fronts — le désappariement. On le signale pour
        information : le corriger demande un serpentin, que cet éditeur ne pose

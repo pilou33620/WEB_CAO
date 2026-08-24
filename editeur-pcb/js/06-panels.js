@@ -190,6 +190,12 @@ function buildRules(){
     '<div class="cat">Règles générales</div>'+
     '<div class="prop two">'+numProp("rEdge","Marge bord",S.rule.edge,0.05)+
       numProp("rTh","Bras thermique",S.rule.thermal,0.05)+'</div>'+
+    /* Le trou à trou ne peut pas vivre dans une classe de net : c'est le foret
+       qui le réclame, pas l'électricité, et il vaut donc entre deux vias d'un
+       même net comme entre deux nets étrangers. Sa place est ici, avec la marge
+       de bord, l'autre contrainte que la carte impose au dessin. */
+    '<div class="prop">'+
+      numProp("rHole","Trou à trou (mm)",holeClr(),0.05,0)+'</div>'+
     '<div class="prop two">'+
       '<div><label>Grille (mm)</label><select id="rGrid">'+
       GRID_STEPS.map(g=>
@@ -245,6 +251,7 @@ function buildRules(){
   bindNum("clDr",v=>c.drill=clamp(v,0.1,c.via-0.1));
   bindNum("rEdge",v=>{S.rule.edge=v;boardChanged();});
   bindNum("rTh",v=>S.rule.thermal=v);
+  bindNum("rHole",v=>S.rule.hole=Math.max(0,v));
   bindNum("bW",v=>setBoardSize(v,S.board.h));
   bindNum("bH",v=>setBoardSize(S.board.w,v));
   bindNum("oX",v=>S.origin.x=v);
