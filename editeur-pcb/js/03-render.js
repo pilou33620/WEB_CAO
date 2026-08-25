@@ -711,6 +711,11 @@ function paint(c,dpr,w,h,noGrid){
       Math.abs(m.x2-m.x1),Math.abs(m.y2-m.y1));
     c.setLineDash([]);
   }
+  /* La cote de mesure passe en dernier : c'est une annotation de travail, elle
+     doit rester lisible par-dessus le cuivre le plus dense. Elle suit la grille
+     — absente de l'image exportee, comme elle : ni l'une ni l'autre ne
+     decrivent la carte. */
+  if(!noGrid&&typeof rpMesTrace==="function")rpMesTrace(c,dpr);
   c.setTransform(1,0,0,1,0,0);
 }
 function draw(){

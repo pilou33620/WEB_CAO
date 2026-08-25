@@ -41,6 +41,9 @@ js/15-regles.js          fenêtre des règles : arbre, figures cotées, matrice
                          des natures de cuivre
 js/16-profil.js          réglages d'affichage rangés dans le profil de
                          l'utilisateur : grille, vue, contraste, anti-collision
+js/17-exemples.js        les deux cartes d'exemple et la fenêtre qui les ouvre
+js/18-reperage.js        ce que la recherche et la mesure valent sur une carte :
+                         aimant, cibles, cadrage
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -55,6 +58,9 @@ Ces fichiers viennent du dossier partagé, à la racine du dépôt :
 ../commun/profils.css    habillage du bouton d'utilisateur et de son menu
 ../commun/profils.js     profils : panneaux et réglages par utilisateur,
                          dans profils/<nom>.json
+../commun/reperage.css   habillage de la boîte de recherche
+../commun/reperage.js    chercher un repère, mesurer une distance — paramétré
+                         par l'adaptateur de js/18-reperage.js
 ../commun/test/dom-stub.js  DOM minimal du banc d'essai
 ../commun/outils/monofichier.py  mécanique d'assemblage
 ```
@@ -114,7 +120,12 @@ moment où ils s'exécutent. La règle pratique :
    réglage dans le profil — passe par un `typeof profilNoter === "function"`,
    et le drapeau `PCB_PROFIL_PRET` est un `var` pour la raison exposée au
    point précédent.
-12. `../commun/workspace.js` s'initialise tout seul et appelle `resize()` puis
+12. `17-exemples` construit les cartes d'exemple. Il vient après tout le reste
+   parce qu'il s'en sert : `routeCorner` de `05-tools` pour la géométrie 45°,
+   `dpOffset` et `dpLeg` de `09-diffpair` pour la paire, `fpGeomFor` et
+   `padsWorld` de `01-core` pour les empreintes. Au chargement il ne fait qu'une
+   chose, câbler son bouton ; les cartes ne se construisent qu'au clic.
+13. `../commun/workspace.js` s'initialise tout seul et appelle `resize()` puis
    `fit()` : il ferme la marche.
 
 À l'intérieur d'un fichier, une fonction peut en appeler une autre définie
@@ -148,11 +159,42 @@ Gerber décrivent le même cuivre.
 - `01-core` calcule la ligne de transmission d'une piste (`ltLine`) sur la
   géométrie que `dpStripGeom` cherchait pour les paires différentielles : un
   même tracé n'a pas deux géométries selon le panneau qui le regarde.
+- `18-reperage` n'est appelé que par l'interface, et n'appelle que ce qui
+  existe déjà : `magnet` pour l'aimant, `fpBBox` et `netTable` pour les cibles,
+  `selectNetRouting` pour la mise en avant. Il ne connaît rien du comportement
+  de la recherche ni de la mesure — c'est `../commun/reperage.js` qui l'a, et
+  qui ne connaît rien de la carte.
 - `15-regles` ne calcule rien : il montre et il écrit. Chaque cote de ses pages
   vient de là où elle vit — `S.rule`, les classes de net, l'empilage, les règles
   de paire — et y retourne. La seule chose qu'il ait à lui, la matrice des
   natures, vit dans `01-core` avec les classes, parce que c'est le contrôle et
   le routeur qui l'appliquent, pas la fenêtre.
+
+## Exemples de routage
+
+Le bouton **Exemples…** ouvre deux cartes finies. Elles se chargent comme un
+fichier ouvert : tout y marche — sélection, DRC, fenêtre des règles, export de
+fabrication — et rien n'y est figé. Un exemple ouvert par-dessus un travail en
+cours le remplace, et le demande d'abord.
+
+| Carte | Empilage | Ce qu'elle montre |
+|---|---|---|
+| **Commande 12 V** (50 × 32 mm) | 2 couches, le dos entier en plan de masse | La carte du schéma de démonstration de l'éditeur schématique : régulateur 12 V → 5 V, étage de commande NPN. Aucune piste de masse ne traverse la carte — chaque pastille CMS descend au plan par son via, les pastilles traversantes des borniers y touchent sans rien de plus. Le 12 V du collecteur longe le bord : sur deux couches dont l'une est un plan, on contourne plutôt que de croiser. |
+| **Interface USB 2.0** (60 × 40 mm) | 4 couches : signal / masse / 3,3 V / signal | Connecteur micro-B, régulateur 3,3 V, TQFP-32, connecteur SWD. Les alimentations ne se routent plus : deux couches internes entières, et un via par broche pour y descendre. La **paire différentielle USB** est tracée sur le dessus, 0,25 mm de piste et 0,15 mm d'écart tenus d'un bout à l'autre, sans changement de couche — le plan de masse de L2 lui sert de référence sur toute sa longueur. Sa règle de paire (profil D90) est dans la fenêtre *Règles…*. Le bus SWD passe au dos par deux vias. |
+
+Les deux cartes sont **construites en code**, dans `js/17-exemples.js`, et non
+rangées en `.json`. Elles suivent donc les cotes réelles des empreintes — les
+pistes partent du centre de pastille que rend `padsWorld`, et un boîtier qui
+changerait de cotes emmènerait le routage avec lui. La paire différentielle,
+elle, est posée par la géométrie de l'outil de tracé couplé : un axe, décalé de
+part et d'autre au demi-pas par `dpOffset`, et deux éventails par `dpLeg`. Les
+deux pistes en ressortent à la même longueur au micron près.
+
+Le banc d'essai les charge et leur passe le contrôle : **zéro liaison non
+routée, zéro remarque au DRC**, aller-retour de document neutre, et pour la
+carte à quatre couches, longueur découplée et appariement des deux pistes de la
+paire. Un exemple qui ne serait plus conforme casse un essai plutôt que
+d'enseigner le contraire de ce qu'il prétend montrer.
 
 ## Empilage physique
 
@@ -569,6 +611,32 @@ la sélection, et l'en retire au clic suivant (`toggleHit`). Un lasso tiré
 modificateur enfoncé s'ajoute à ce qui est déjà pris. Le déplacement, la
 rotation, le retournement et la suppression travaillent depuis toujours sur
 l'ensemble de la sélection.
+
+**Prendre un plan de cuivre.** Une zone s'attrape par son contour — mais un
+plan de masse ou d'alimentation couvre toute la carte : son contour se confond
+avec celui de la carte et n'offre rien à viser. Trois prises s'y ajoutent, dans
+`hitTest` et autour :
+
+- **Un clic dans son cuivre.** `hitTest` rend la zone dont le plein contient le
+  point, mais en **dernier ressort** — après les pistes, les empreintes, les
+  vias, les contours de zone et de carte — et marquée `inside`. Ce drapeau dit à
+  l'appelant de ne pas trancher tout de suite : le geste part en lasso, et c'est
+  le relâchement qui décide. Lasso resté fermé, c'était un clic : la zone est
+  prise. Lasso ouvert, c'est un lasso — sans quoi on ne pourrait plus en tirer
+  un seul au-dessus d'un plan. Une zone déjà prise, elle, se glisse directement
+  depuis son plein, comme n'importe quel autre objet.
+- **Le lasso.** Zones et découpes entrent dans la sélection rectangulaire au
+  même titre que le reste, dès que leur emprise y tient entière. `Ctrl+A` les
+  prend aussi.
+- **Le pastillon de la couche.** Dans la liste des calques, le repère `PLAN`
+  (ou le compte de zones) est un bouton : il sélectionne tout le cuivre plein de
+  sa couche, la rend visible et la rend active (`selectLayerZones`). Le menu
+  *Zone cuivre* offre le même geste pour la couche active. C'est la prise sûre,
+  celle qui ne dépend d'aucune visée.
+
+La gomme, elle, ignore les prises par le plein : un clic destiné à une piste
+emporterait sinon le cuivre de toute la couche. Son contour reste une cible
+franche.
 
 **Prendre une piste entière.** Sur une piste, `Maj` fait autre chose qu'ajouter
 un segment : `Maj+clic` prend la **piste entière**, tout le cuivre d'un seul
@@ -1574,7 +1642,7 @@ python3 outils/build-monofichier.py && node test/harness.js
 ```
 
 Le banc s'appuie sur le DOM minimal partagé (`../commun/test/dom-stub.js`),
-exécute `dist/pcb.js` et couvre 260 cas : import de netlist, boîtiers nommés
+exécute `dist/pcb.js` et couvre 349 cas : import de netlist, boîtiers nommés
 et empreintes qu'ils posent, chevelu
 multicouche, vias, îlots de cuivre, classes de net, édition des pistes,
 géométrie du L chanfreiné, posture du coude et règle d'angle (45° / 90° /
@@ -1601,7 +1669,15 @@ le cuivre qui s'y raccroche, repli propre quand rien ne passe, Ctrl+Z et
 abandon qui remettent le cuivre poussé en place, optimiseur et ses ancres,
 poussée devant une paire différentielle), import
 défensif d'un document et échappement HTML face à une netlist ou un `.json`
-malveillant.
+malveillant, cartes d'exemple (chargement, routage complet, contrôle DRC sans
+remarque, aller-retour de document, paire couplée et appariée, plan pleine
+carte qui n'est pas compté hors du contour), repérage (cote 3-4-5 et son angle
+lu à l'écran, aimant qui prend le centre de la pastille et grille qui reprend
+hors de sa portée, cote figée que la souris ne bouge plus, effacement au
+changement de mode, classement d'un repère tapé en entier devant ses homonymes
+plus longs, empreinte sélectionnée et amenée au centre, net dont le cuivre
+sort, net absent qui ne fait pas sauter le cadrage, liste échappée face à un
+document malveillant).
 
 Installer `canvas` (`npm i canvas`) est facultatif mais recommandé : sans lui,
 les essais qui rasterisent réellement le cuivre sont ignorés.
@@ -1620,6 +1696,77 @@ document que l'éditeur a lui-même produit**, parce que `loadDoc()` sert aussi
 légitime. L'essai « import : neutre sur un document produit par l'éditeur »
 compare la structure avant et après un aller-retour et signale la première
 différence — c'est lui qui garde cette propriété.
+
+## Chercher un repère, mesurer une distance
+
+Deux gestes que le schématique partage mot pour mot : mêmes touches, même
+boîte, même lecture. Le comportement est dans `../commun/reperage.js` ;
+`js/18-reperage.js` ne fournit que ce que ce fichier ne peut pas deviner —
+l'aimant, la liste des cibles, le cadrage — par un adaptateur remis à
+`rpInit()`, exactement comme `WS_CONFIG` paramètre l'espace de travail.
+
+### Rechercher — `Ctrl+F`
+
+Un champ, une liste, `Entrée`. La recherche atteint deux familles, et deux
+seulement, parce que ce sont les deux seules choses qu'on cherche en routant :
+
+| On tape | On trouve | Ce que « y aller » fait |
+|---|---|---|
+| `C47`, `R1`, `U3` | l'empreinte | elle est sélectionnée, la vue se cadre sur elle |
+| `GND`, `USB_DP` | le net | tout son cuivre est sélectionné et mis en avant, la vue cadre sur son étendue |
+
+Le classement va du plus sûr au plus large : ce qu'on a tapé en entier d'abord,
+puis ce qui commence par, puis ce qui contient — et en dernier ce que seul le
+libellé rattrape, la valeur ou le boîtier. Taper `R1` met donc `R1` avant `R10`
+et `R100`, sans quoi la frappe la plus courte, qui est la plus fréquente,
+serait la plus mal servie. Les flèches choisissent, `Entrée` y va, `Échap`
+ferme. Le champ vide n'affiche rien : on invite, on ne déroule pas les cent
+empreintes de la carte.
+
+`Ctrl+F` est pris à la barre de recherche du navigateur, volontairement : les
+repères et les nets ne sont pas du texte du document HTML, elle ne les
+trouverait jamais.
+
+### Le cadrage ne bouge que s'il le faut
+
+`rpCadrer()` ne touche à l'échelle que dans deux cas : la cible déborde de
+l'écran — on recule juste assez —, ou elle est trop petite pour se voir — on
+s'approche, sans dépasser `RP_ZOOM_MIN` (12 px/mm, de quoi lire une 0603 et ses
+deux pastilles). Le reste du temps le zoom ne bouge pas. Un recadrage qui
+zoome sans raison désoriente : on ne sait plus si la carte a tourné ou si c'est
+la vue qui a bougé.
+
+Un net déclaré par la netlist mais posé nulle part — ni pastille, ni piste, ni
+via — ne rend pas de boîte (`rpNetBox` renvoie `null`) et la vue reste où elle
+est, plutôt que de cadrer sur un rectangle vide.
+
+### Mesurer — `K`
+
+Un clic pose le départ, le suivant fige l'arrivée, le troisième repart
+d'ailleurs : on enchaîne les cotes sans repasser par un bouton. `Échap` efface
+la cote sans quitter le mode ; un second `Échap` rend la main à la sélection.
+
+Le point s'accroche avec **l'aimant du tracé** (`magnet`), sur la couche
+active : pastilles, vias, sommets de piste. Mesurer d'un centre de pastille à
+l'autre est le geste courant, et c'est exactement ce que cet aimant attrape.
+Hors de sa portée, la grille reprend la main — jamais le point brut, sans quoi
+on relèverait 3,4712 mm là où on visait 3,5.
+
+La cote se dessine **en pixels d'écran**, pas dans le repère de la carte. Ce
+n'est pas un détail d'implémentation : dessinée dans le monde, l'étiquette
+serait retournée en vue dessous et changerait de taille à chaque cran de zoom.
+Seuls les deux points passent par `w2s`. Le triangle rectangle en pointillé
+montre ΔX et ΔY d'un coup d'œil — ce que deux nombres seuls ne montrent pas —
+et n'est tracé que s'il a une surface, sinon il doublerait le trait principal.
+
+Ici, la cote **est** la cote de fabrication : la lecture ne la relativise pas.
+C'est ce que dit `physique:true` dans l'adaptateur, et c'est toute la
+différence avec le schématique, où une case vaut 1 mm par convention de dessin
+et où la lecture le précise.
+
+La cote est une annotation de travail : `paint()` ne la trace que lorsqu'il
+trace aussi la grille, c'est-à-dire jamais dans le `.png` exporté — ni l'une ni
+l'autre ne décrivent la carte. Quitter le mode l'efface (`setMode`).
 
 ## Limites connues
 

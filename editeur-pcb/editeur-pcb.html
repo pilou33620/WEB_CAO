@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="../commun/workspace.css">
 <link rel="stylesheet" href="../commun/session.css">
 <link rel="stylesheet" href="../commun/profils.css">
+<link rel="stylesheet" href="../commun/reperage.css">
 </head>
 <body>
 
@@ -26,6 +27,7 @@
     <button class="tb" id="mZone">Zone cuivre <kbd>Z</kbd> <span class="car">▾</span></button>
     <button class="tb" id="mEdge">Contour carte <kbd>E</kbd></button>
     <button class="tb" id="mErase">Découpe <kbd>X</kbd></button>
+    <button class="tb" id="mMesure" title="Mesurer une distance : deux points, la cote et les deltas X/Y">Mesure <kbd>K</kbd></button>
     <div class="sep"></div>
     <button class="tb" id="bRot">Pivoter <kbd>R</kbd></button>
     <button class="tb" id="bFlip">Retourner <kbd>F</kbd></button>
@@ -44,9 +46,11 @@
     <button class="tb" id="bView">Vue : dessus <kbd>Y</kbd></button>
     <button class="tb" id="bContrast">Contraste : atténué <kbd>H</kbd></button>
     <button class="tb" id="mOrigin">Origine <kbd>O</kbd></button>
+    <button class="tb" id="bFind" title="Chercher une empreinte par son repère, ou un net par son nom">⌕ Rechercher <kbd>Ctrl+F</kbd></button>
     <button class="tb" id="bFit">Recadrer</button>
     <div class="sep"></div>
     <button class="tb" id="bImport">Importer netlist</button>
+    <button class="tb" id="bExemples" title="Deux cartes routées à ouvrir : 2 couches avec plan de masse, 4 couches avec paire différentielle">Exemples…</button>
     <button class="tb" id="bDrc">Contrôle DRC</button>
     <button class="tb" id="bRules" title="Règles et contraintes de conception : classes de net, isolations, largeurs, vias, perçages, paires différentielles, fabrication — chaque règle avec sa figure cotée">Règles…</button>
     <button class="tb" id="bSave">Enregistrer .json</button>
@@ -70,6 +74,16 @@
 
   <div class="ctr" id="ctr">
     <div id="canvasWrap"><canvas id="board"></canvas>
+      <div id="rpBox">
+        <div class="rphead">
+          <span class="rpico">&#8981;</span>
+          <input id="rpQ" autocomplete="off" spellcheck="false"
+                 placeholder="Repere ou nom de net">
+          <button class="rpx" id="rpX" title="Fermer">&#10005;</button>
+        </div>
+        <div id="rpRes"></div>
+        <div class="rpfoot">Fleches pour choisir &middot; Entree pour y aller &middot; Echap ferme</div>
+      </div>
       <div id="coordBox">
         <span class="seg">
           <button class="segb on" id="ciAbs">Absolu</button>
@@ -185,11 +199,12 @@
   <span>Empreintes <b id="fN">0</b> · Pistes <b id="fT">0</b> · Vias <b id="fV">0</b></span>
   <span>Non routés <b id="fU">0</b></span>
   <span>Net <b id="fNet">—</b></span>
-  <span class="push hint" id="fHint">Importez la netlist de l'éditeur schématique pour démarrer.</span>
+  <span class="push hint" id="fHint">Importez la netlist de l'éditeur schématique pour démarrer, ou ouvrez une carte d'exemple.</span>
 </footer>
 
 <script src="../commun/session.js"></script>
 <script src="../commun/profils.js"></script>
+<script src="../commun/reperage.js"></script>
 <script src="js/00-espace-config.js"></script>
 <script src="js/01-core.js"></script>
 <script src="js/02-connectivity.js"></script>
@@ -207,6 +222,8 @@
 <script src="js/14-pns-placer.js"></script>
 <script src="js/15-regles.js"></script>
 <script src="js/16-profil.js"></script>
+<script src="js/17-exemples.js"></script>
+<script src="js/18-reperage.js"></script>
 <script src="../commun/workspace.js"></script>
 </body>
 </html>

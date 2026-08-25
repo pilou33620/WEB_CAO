@@ -336,6 +336,7 @@ cv.addEventListener("pointerdown",e=>{
   }
   // Ctrl et Maj font la même chose : ajouter à la sélection (ou en retirer)
   const addSel=e.shiftKey||e.ctrlKey||e.metaKey;
+  if(S.mode==="mesure"){rpMesClic(p.x,p.y);draw();return;}
   if(S.mode==="wire"){
     const pin=nearestPin(p.x,p.y,(e.pointerType==="mouse"?12:20)/S.scale);
     const pt=pin?{x:pin.x,y:pin.y}:{x:snap(p.x),y:snap(p.y)};
@@ -471,6 +472,7 @@ cv.addEventListener("pointermove",e=>{
     applyEnds(S.drag.ends,dx,dy);  // aucune copie profonde : les extrémités
     draw();return;                 // concernées sont repérées une fois au départ
   }
+  if(S.mode==="mesure"){if(rpMesBouge(p.x,p.y))draw();return;}
   if(S.marquee){S.marquee.x2=p.x;S.marquee.y2=p.y;draw();return;}
   // net survolé : halo sur tout le net et rappel dans la barre d'état
   const wi=hitWire(p.x,p.y);

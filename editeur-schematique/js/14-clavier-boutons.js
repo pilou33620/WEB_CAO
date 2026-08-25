@@ -47,15 +47,25 @@ window.addEventListener("keydown",e=>{
   }
   if(mod&&k==="x"){e.preventDefault();cutSel();return;}
   if(mod&&k==="v"){e.preventDefault();pasteClip();return;}
+  /* Ctrl+F cherche dans le schéma, pas dans la page : les repères et les nets
+     ne sont pas du texte du document HTML, la recherche du navigateur ne les
+     trouverait jamais — et elle ne saurait pas changer de feuille. */
+  if(mod&&k==="f"){e.preventDefault();rpQOuvrir();return;}
   // toute autre combinaison avec Ctrl/Cmd appartient au navigateur :
   // sans ce garde-fou, Ctrl+R faisait pivoter la sélection puis rechargeait la page
   if(mod||e.altKey)return;
   if(e.key==="PageDown"){e.preventDefault();gotoPage(S.page+1);return;}
   if(e.key==="PageUp"){e.preventDefault();gotoPage(S.page-1);return;}
+  /* Échap efface d'abord la cote en cours : on enchaîne les mesures sans
+     quitter le mode, et c'est seulement une fois la cote effacée qu'Échap rend
+     la main à la sélection. */
+  if(k==="escape"&&S.mode==="mesure"&&rpMesEnCours()){rpMesRaz();rpMesDire();draw();return;}
   if(k==="escape"){setMode("select");S.wireStart=null;S.place=null;clearSel();setPalette(null);refreshPanels();draw();return;}
   if(k==="v"){setMode("select");return;}
   if(k==="w"){setMode("wire");return;}
   if(k==="x"){setMode("erase");return;}
+  /* K comme « kote » : M fait déjà le miroir, C le copier. */
+  if(k==="k"){setMode("mesure");return;}
   if(k==="r"){if(S.place){S.placeRot=((S.placeRot||0)+90)%360;draw();}else rotateSel();return;}
   if(k==="m"){mirrorSel();return;}
   if(k==="d"){dupSel();return;}

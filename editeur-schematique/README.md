@@ -10,7 +10,7 @@ editeur-schematique/
 ├── editeur-schematique.html      structure de la page + ordre de chargement
 ├── css/
 │   └── editeur.css               thème « dashboard nocturne »
-├── js/                           20 modules, chargés dans l'ordre numéroté
+├── js/                           22 modules, chargés dans l'ordre numéroté
 ├── outils/
 │   └── build-monofichier.py      recompose un HTML unique dans dist/
 ├── test/
@@ -31,6 +31,9 @@ identiques pour l'éditeur PCB :
 ../commun/profils.css            habillage du bouton d'utilisateur et de son menu
 ../commun/profils.js             profils : panneaux et réglages par utilisateur,
                                  dans profils/<nom>.json
+../commun/reperage.css           habillage de la boîte de recherche
+../commun/reperage.js            chercher un repère, mesurer une distance —
+                                 paramétré par l'adaptateur de js/21-reperage.js
 ../commun/test/dom-stub.js       DOM minimal du banc d'essai
 ../commun/outils/monofichier.py  mécanique d'assemblage
 ```
@@ -60,6 +63,8 @@ identiques pour l'éditeur PCB :
 | `js/18-csv.js` | 108 | Bibliothèque `LIB_composants.csv` : analyse, chargement HTTP ou manuel |
 | `js/19-broches.js` | 379 | Éditeur de brochage : nombre de broches, représentation, taille du corps, noms et placement des pattes à la grille |
 | `js/20-profil.js` | 83 | Réglages d'affichage rangés dans le profil de l'utilisateur : grille, étiquettes de net, onglet de liste |
+| `js/21-reperage.js` | 127 | Ce que la recherche et la mesure valent sur un schéma : aimant sur les broches, cibles de toutes les feuilles, cadrage |
+| `../commun/reperage.js` | 294 | Chercher un repère, mesurer une distance — le geste, partagé avec l'éditeur PCB et paramétré par l'adaptateur de `21-reperage.js` |
 | `../commun/profils.js` | 555 | Profils utilisateur : qui travaille, ses panneaux, ses réglages, ses derniers documents — **chargé en premier**, avant l'espace de travail qui l'interroge |
 | `../commun/session.js` | 190 | Session d'onglet : le schéma part et revient quand on passe au PCB ou à la recherche — **chargé en premier** |
 | `../commun/workspace.js` | 610 | Espace de travail : docks, panneaux flottants, persistance — **chargé en dernier** |
@@ -218,6 +223,43 @@ importée n'avait plus rien à voir avec celle choisie ici. Les espaces internes
 d'une valeur sont réduits à un pour la même raison, une ligne de titre en
 commentaire annonce les colonnes, et un essai du banc vérifie le découpage.
 
+**Chercher un repère — `Ctrl+F`.** Un champ, une liste, `Entrée`. On tape
+`R1`, `C47` ou un nom de net, et la vue arrive dessus en le sélectionnant. La
+recherche **traverse les feuilles** : c'est justement quand `R1` est ailleurs
+qu'on le cherche. La ligne annonce alors sa feuille — sans quoi la choisir
+ferait sauter la vue sans qu'on comprenne où l'on vient d'atterrir — et y aller
+change de feuille avant de sélectionner.
+
+Les nets viennent de `docNets()`, vue document : un net global n'apparaît qu'une
+fois pour toutes les feuilles qu'il traverse, et la ligne le dit. Changer de
+feuille refait les nets, si bien que l'objet retenu par la ligne n'est plus
+celui du document affiché : `rpNetFrais()` le reprend par son premier fil — les
+fils, eux, sont les mêmes objets d'un calcul à l'autre — et par le nom pour un
+net sans fil.
+
+Le classement va du plus sûr au plus large : ce qu'on a tapé en entier d'abord,
+puis ce qui commence par, puis ce qui contient. Taper `R1` met donc `R1` avant
+`R10` et `R100`. Un symbole sans repère — une masse, une étiquette de net — ne
+figure pas dans la liste : une ligne vide ne mène nulle part.
+
+Le cadrage ne touche à l'échelle que s'il le faut, et c'est le **symbole** qu'il
+amène au centre, pas son point d'ancrage : le corps d'un CI ne se dessine pas
+autour de son origine, et centrer l'ancre laisserait le symbole à moitié sorti
+de l'écran.
+
+**Mesurer — `K`.** Un clic pose le départ, le suivant fige l'arrivée, le
+troisième repart d'ailleurs ; `Échap` efface. Les broches attirent le point,
+la grille prend le relais hors de leur portée. La cote se lit sur la feuille —
+distance, ΔX, ΔY — et le pied de page ajoute l'angle.
+
+Ce que la lecture dit et que le PCB ne dit pas : **une case vaut 1 mm par
+convention de dessin, pas par cote de fabrication.** Un schéma n'a pas
+d'échelle physique ; la mesure sert à aligner et à espacer, et le rappeler en
+toutes lettres évite qu'on prenne le nombre pour une dimension de carte. C'est
+la seule différence de fond entre les deux mesures, et elle tient à un booléen
+de l'adaptateur (`physique:false`, `js/21-reperage.js`) — tout le reste du
+geste est le même code, `../commun/reperage.js`, partagé avec le PCB.
+
 ## Deux règles à respecter
 
 **1. L'ordre des `<script>` compte.** Ce sont des scripts classiques, pas des
@@ -255,7 +297,7 @@ l'archiver ; le développement reste sur les fichiers séparés.
 python3 outils/build-monofichier.py && node test/harness.js
 ```
 
-59 cas, sans navigateur : découpe automatique des fils, extraction des nets
+75 cas, sans navigateur : découpe automatique des fils, extraction des nets
 (union-find, labels, symboles nommants, conflits de noms), nets globaux entre
 feuilles, netlist (dont les colonnes qui portent le boîtier jusqu'au PCB) et
 nomenclature, analyse du CSV de bibliothèque, espace de
@@ -264,8 +306,13 @@ presse-papier (copier/couper/coller, contenu invalide), brochage (disposition
 libre, câblage qui suit la broche déplacée, cases occupées refusées, corps
 élargi, import défensif), pas de grille, libellés déplaçables, étiquettes de
 net (déplacement, masquage, survie à une scission), contacts broche à broche
-largeur d'un CI ajustée à son texte, et le catalogue entier vérifié au pas
-(broches au millimètre, traits au quart de millimètre).
+largeur d'un CI ajustée à son texte, le catalogue entier vérifié au pas
+(broches au millimètre, traits au quart de millimètre), et le repérage (cote
+3-4-5 et son angle, aimant sur la broche, lecture qui annonce la convention de
+dessin plutôt qu'une cote, effacement au changement de mode, classement d'un
+repère tapé en entier, composant d'une autre feuille qui fait changer de
+feuille et arrive centré, net global trouvé et repris frais après le
+changement, symbole sans repère écarté de la liste, liste échappée).
 
 Les fonctions d'export ont été scindées pour cela : `netlistText()` et
 `bomCsvText()` produisent le texte sans effet de bord, `exportNetlist()` et

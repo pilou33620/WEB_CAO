@@ -27,13 +27,16 @@ commun/                        code partagé par les trois outils
 ├── session.css                habillage des boutons de navigation
 ├── profils.js                 espace de travail propre à chaque utilisateur
 ├── profils.css                habillage du bouton d'utilisateur et de son menu
+├── reperage.js                chercher un repère, mesurer une distance
+├── reperage.css               habillage de la boîte de recherche
 ├── outils/monofichier.py      assemblage en un HTML autonome
 └── test/dom-stub.js           DOM minimal pour les bancs d'essai
 
 profils/                       un fichier par utilisateur : Pilou.json
 ```
 
-Chaque outil a son propre `README.md` détaillant ses modules.
+Chaque outil a son propre `README.md` détaillant ses modules, et
+[A-FAIRE.md](A-FAIRE.md) garde ce qui manque encore.
 
 ## Dépendances
 
@@ -185,10 +188,13 @@ et le fait que chacun de leurs champs écrive vraiment dans le document —,
 le Gerber, l'Excellon,
 les empreintes dessinées à la main avec leur bibliothèque, les paires
 différentielles — tracé couplé, vias en éventail, longueur découplée,
-impédance — et l'import défensif d'un document ; le schématique couvre la
+impédance —, les deux cartes d'exemple — routage complet et contrôle DRC sans
+remarque — et l'import défensif d'un document ; le schématique couvre la
 découpe des fils, l'extraction des nets, les nets globaux entre feuilles, la
 netlist, la nomenclature et l'analyse du CSV de bibliothèque. Les deux
-vérifient l'espace de travail commun, la session d'onglet — document mis de
+vérifient le repérage commun — le classement des résultats, le cadrage, la cote
+et ses aimants, et la recherche qui change de feuille au schématique —,
+l'espace de travail commun, la session d'onglet — document mis de
 côté puis repris à l'identique, état illisible ou trop gros écarté, garde de
 sortie qui se tait pour un changement d'outil mais pas pour une fermeture — et
 l'échappement HTML des panneaux face à un fichier malveillant.
@@ -318,6 +324,72 @@ l'écart qui tombe dessus. Le contrôle DRC ajoute ce qui ne se voit pas à l'œ
 la longueur restée découplée, l'écart de longueur entre les deux pistes.
 
 Détails dans [editeur-pcb/README.md](editeur-pcb/README.md#paires-différentielles).
+
+## Chercher un repère, mesurer une distance
+
+Deux gestes que les deux éditeurs partagent — mêmes touches, même boîte, même
+lecture — parce qu'il n'y a aucune raison de les apprendre deux fois. Le
+comportement tient dans `commun/reperage.js` ; chaque éditeur ne fournit que ce
+que ce fichier ne peut pas deviner : l'aimant, la liste des cibles, le cadrage.
+
+**Rechercher — `Ctrl+F`.** Un champ, une liste, `Entrée`. On tape un repère
+(`C47`, `R1`) ou un nom de net, et la vue arrive dessus en le sélectionnant.
+Le classement va du plus sûr au plus large : ce qu'on a tapé en entier d'abord,
+puis ce qui commence par, puis ce qui contient — taper `R1` met donc `R1` avant
+`R10` et `R100`, sans quoi la frappe la plus courte, qui est la plus fréquente,
+serait la plus mal servie. Les flèches choisissent, `Échap` ferme.
+
+Côté PCB, la recherche atteint les empreintes et les nets : un net trouvé sort
+tout son cuivre, sélectionné et mis en avant. Côté schématique, elle
+**traverse les feuilles** — c'est justement quand `R1` est ailleurs qu'on le
+cherche : la ligne annonce sa feuille, et y aller change de feuille avant de
+sélectionner. Le cadrage ne touche à l'échelle que s'il le faut : une cible qui
+déborde de l'écran le fait reculer, une cible trop petite pour se voir le fait
+s'approcher, et le reste du temps rien ne bouge — un zoom sans raison fait
+croire que le document a changé.
+
+**Mesurer — `K`.** Un clic pose le départ, le suivant fige l'arrivée, le
+troisième repart d'ailleurs : on enchaîne les cotes sans repasser par un
+bouton, et `Échap` efface. La cote se lit sur le plan de travail — la distance,
+et sous elle ΔX et ΔY — avec le triangle rectangle qui dit d'un coup d'œil ce
+que deux nombres seuls ne montrent pas. Le pied de page ajoute l'angle.
+
+Les deux mesures ne disent pas la même chose, et l'éditeur ne fait pas semblant
+du contraire :
+
+- au **PCB**, c'est une cote de fabrication. Les pastilles, les vias et les
+  sommets de piste de la couche active attirent le point — mesurer d'un centre
+  de pastille à l'autre est le geste courant — et hors de leur portée c'est la
+  grille qui prend la main, jamais le pixel visé : on ne relève pas 3,4712 mm
+  là où on visait 3,5 ;
+- au **schématique**, non. Une case vaut 1 mm par convention de dessin, pas par
+  cote physique — un schéma n'a pas d'échelle. La mesure sert à aligner et à
+  espacer, les broches attirent le point, et la lecture le dit en toutes
+  lettres plutôt que de laisser prendre le nombre pour une dimension de carte.
+
+La cote est une annotation de travail : elle ne va ni dans le `.png` exporté ni
+dans les Gerber, et quitter le mode l'efface.
+
+## Deux cartes d'exemple
+
+L'éditeur schématique démarre sur un schéma de démonstration ; l'éditeur PCB,
+lui, ouvre les siens à la demande, par le bouton **Exemples…**. Deux cartes
+finies, à regarder plutôt qu'à décrire :
+
+- **Commande 12 V**, 2 couches — la carte du schéma de démonstration :
+  régulateur 12 V → 5 V et étage NPN, le dos entier en plan de masse, chaque
+  pastille CMS qui y descend par son via ;
+- **Interface USB 2.0**, 4 couches — connecteur micro-B, régulateur 3,3 V,
+  TQFP-32 et connecteur SWD, avec les deux couches internes données à la masse
+  et au 3,3 V, la **paire différentielle USB** tracée sur le dessus au-dessus du
+  plan de masse — 0,25 mm de piste, 0,15 mm d'écart, sans changement de couche —
+  et un bus SWD passé au dos par vias.
+
+Elles se chargent comme un fichier ouvert : DRC, fenêtre des règles et export de
+fabrication marchent dessus comme sur une carte à soi. Le banc d'essai les
+vérifie à chaque poussée — routage complet, aucune remarque au contrôle.
+
+Détails dans [editeur-pcb/README.md](editeur-pcb/README.md#exemples-de-routage).
 
 ## Bibliothèque de composants
 

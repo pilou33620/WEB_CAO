@@ -33,6 +33,7 @@ const EXPOSE=[
   "S","G","newPage","loadPage","storeCurrent","gotoPage","addPage","clearSel",
   "push","undo","redo","touchWires","buildTabs","draw","fit","resize",
   /* bibliothèque et géométrie */
+  "bbox",
   "defOf","allPins","pinCount","icGeom","key","LIB","pinsOf",
   /* brochage (04 + 19) */
   "icPins","icBodyOf","icSideOf","icPinLabel","icFree","icShapeOf","icStep","IC_STEP",
@@ -57,6 +58,13 @@ const EXPOSE=[
   "netlistText","bomRows","bomCsvText","csvCell","serialize","loadJsonText",
   /* CSV de bibliothèque (18) */
   "parseCSVLine","loadCSVFromString","loadCSVLib",
+  /* repérage commun : chercher un repère, mesurer une distance
+     (commun/reperage.js + le module d'adaptation de l'éditeur) */
+  "cv","setMode","w2s","s2w","setGrid","gridMm",
+  "RP","rpInit","rpMesClic","rpMesBouge","rpMesRaz","rpMesEnCours","rpMesPaire",
+  "rpMesCotes","rpMesLecture","rpMesDire","rpMesTrace","rpRang","rpTrouve",
+  "rpQBuild","rpQOuvrir","rpQFermer","rpQAller","rpQBascule","rpCadrer","rpNetBox",
+  "RP_SCH","rpNetFrais",
   /* session d'onglet commune (commun/session.js) */
   "sessBrancher","sessEnregistrer","sessLire","sessEcrire","sessEffacer",
   "sessTient","sessUrl","sessQuitte","sessionSchema","restoreBackup","clearBackup",
@@ -966,6 +974,149 @@ T("un utilisateur neuf part de la disposition d'usine",()=>{
     throw new Error("Pilou n'a pas retrouvé la sienne : "+wsPlaceOf("palette"));
   profSupprimer("Marie");
   WS=wsDefault();wsApply(false);
+});
+
+
+/* ==========================================================================
+   Repérage : chercher un repère, mesurer une distance
+   --------------------------------------------------------------------------
+   Le comportement est dans commun/reperage.js, partagé avec l'éditeur PCB ; ce
+   que le schéma en fait est dans 21-reperage.js. Deux choses lui sont propres,
+   et ce sont elles qu'on éprouve ici : la recherche traverse les feuilles, et
+   la mesure dit qu'elle n'est pas une cote de fabrication.
+   ========================================================================== */
+T("mesure : deux points, la cote, les deltas et l'angle",()=>{
+  sheet([],[]);
+  S.scale=1;
+  setMode("mesure");
+  /* Feuille vide : aucune broche à proximité, la grille décide seule. Trois
+     cases sur X, quatre sur Y — une case vaut 1 mm. */
+  rpMesClic(10*G,10*G);
+  rpMesClic(13*G,14*G);
+  const c=rpMesCotes();
+  if(!c)throw new Error("aucune cote après deux clics");
+  if(Math.abs(c.dx-3)>1e-6||Math.abs(c.dy-4)>1e-6)
+    throw new Error("deltas faux : dX "+c.dx+" dY "+c.dy);
+  if(Math.abs(c.d-5)>1e-6)throw new Error("3-4-5 attendu, "+c.d+" mm");
+  if(Math.abs(c.ang+53.13)>0.02)throw new Error("angle : "+c.ang+" degrés");
+  setMode("select");
+});
+T("mesure : la lecture dit que le millimètre est une convention, pas une cote",()=>{
+  sheet([],[]);
+  S.scale=1;
+  setMode("mesure");
+  rpMesClic(10*G,10*G);rpMesClic(13*G,14*G);
+  const L=rpMesLecture();
+  if(L.indexOf("Mesure 5 mm")!==0)throw new Error("lecture : "+L);
+  /* C'est la différence de fond avec le PCB : un schéma n'a pas d'échelle
+     physique, et la lecture ne doit pas laisser croire à une dimension de
+     carte. */
+  if(L.indexOf("convention de dessin")<0)
+    throw new Error("la convention de dessin n'est pas dite : "+L);
+  if(L.indexOf("cote figée")>=0)
+    throw new Error("le schématique parle de cote figée comme le PCB : "+L);
+  setMode("select");
+});
+T("mesure : le point s'accroche à la broche, pas au pixel visé",()=>{
+  const r=C("resistor",6,6,{ref:"R1"});
+  sheet([r],[]);
+  S.scale=1;
+  setMode("mesure");
+  const p=allPins(r)[0];
+  rpMesClic(p.x+3,p.y-2);           // visé à côté, dans la portée de l'aimant
+  const a=RP.mes.a;
+  if(a.quoi!=="broche")throw new Error("accroché sur "+a.quoi);
+  if(a.x!==p.x||a.y!==p.y)throw new Error("le point n'est pas sur la broche");
+  setMode("select");
+});
+T("mesure : quitter le mode efface la cote",()=>{
+  sheet([],[]);
+  S.scale=1;
+  setMode("mesure");
+  rpMesClic(0,0);rpMesClic(4*G,0);
+  if(!rpMesEnCours())throw new Error("rien de mesuré");
+  setMode("select");
+  if(rpMesEnCours())throw new Error("la cote survit au retour à la sélection");
+});
+T("recherche : le repère tapé en entier passe devant ses homonymes plus longs",()=>{
+  sheet([C("resistor",0,0,{ref:"R1"}),
+         C("resistor",4,0,{ref:"R10"}),
+         C("resistor",8,0,{ref:"R100"})],[]);
+  const res=rpTrouve("R1");
+  if(res.length<3)throw new Error("3 résultats attendus, "+res.length);
+  if(res[0].cle!=="R1")throw new Error("premier résultat : "+res[0].cle);
+});
+T("recherche : un composant d'une autre feuille fait changer de feuille",()=>{
+  const p1=newPage("f1"), p2=newPage("f2");
+  p1.comps=[C("resistor",0,0,{ref:"R1"})];p1.wires=[];
+  const r2=C("capacitor",20,12,{ref:"C47"});
+  p2.comps=[r2];p2.wires=[];
+  S.pages=[p1,p2];loadPage(0);touchWires();
+  /* Le cas qui motive la recherche : C47 n'est pas sur la feuille regardée. */
+  const cible=rpTrouve("C47").find(x=>x.cle==="C47");
+  if(!cible)throw new Error("C47 ne se trouve pas depuis l'autre feuille");
+  if(cible.detail.indexOf("f2")<0)
+    throw new Error("la ligne ne dit pas sur quelle feuille il est : "+cible.detail);
+  cible.aller();
+  if(S.page!==1)throw new Error("la feuille n'a pas changé : page "+S.page);
+  const el=S.comps.find(c=>c.ref==="C47");
+  if(!el||!S.sel.has(el.id))throw new Error("C47 n'est pas sélectionné à l'arrivée");
+  /* C'est le symbole qu'on amène au centre, pas son point d'ancrage : le corps
+     d'un CI ne se dessine pas autour de son origine, et centrer l'ancre
+     laisserait le symbole à moitié sorti de l'écran. */
+  const b=bbox(el), p=w2s((b.x1+b.x2)/2,(b.y1+b.y2)/2);
+  if(Math.abs(p.x-cv.clientWidth/2)>2||Math.abs(p.y-cv.clientHeight/2)>2)
+    throw new Error("C47 n'est pas au centre : "+Math.round(p.x)+" ; "+Math.round(p.y));
+});
+T("recherche : un net global se trouve, et par sa feuille d'origine",()=>{
+  const mkPage=(ref,nom)=>{
+    const r=C("resistor",0,0,{ref:ref});
+    const g=C("gport",0,4,{value:nom});
+    const p=allPins(r), pg=allPins(g);
+    const pgz=newPage("f");
+    pgz.comps=[r,g];
+    pgz.wires=[{x1:p[1].x,y1:p[1].y,x2:pg[0].x,y2:pg[0].y}];
+    return pgz;
+  };
+  S.pages=[mkPage("R1","BUS"),mkPage("R2","BUS")];
+  loadPage(0);touchWires();
+  const cible=rpTrouve("BUS").find(x=>x.cle==="BUS");
+  if(!cible)throw new Error("le net BUS ne se trouve pas");
+  if(cible.type!=="net global")throw new Error("trouvé comme "+cible.type);
+  if(cible.detail.indexOf("2 feuilles")<0)
+    throw new Error("la ligne ne dit pas qu'il court sur deux feuilles : "+cible.detail);
+  cible.aller();
+  if(!S.selW.size)throw new Error("aucun fil du net sélectionné");
+});
+T("recherche : le net repris après changement de feuille est celui de l'arrivée",()=>{
+  /* docNets() calcule sur les feuilles rangées ; arriver sur l'une d'elles
+     refait ses nets, et l'objet retenu par la cible n'est alors plus celui du
+     document affiché. rpNetFrais() le reprend par son premier fil. */
+  const r=C("resistor",0,0,{ref:"R1"});
+  const g=C("port",0,4,{value:"LOCAL"});
+  const p=allPins(r), pg=allPins(g);
+  const pgz=newPage("f1");
+  pgz.comps=[r,g];
+  pgz.wires=[{x1:p[1].x,y1:p[1].y,x2:pg[0].x,y2:pg[0].y}];
+  S.pages=[pgz];loadPage(0);touchWires();
+  const vieux=docNets().groups.find(x=>x.name==="LOCAL").members[0].net;
+  const frais=rpNetFrais(vieux);
+  const vivant=netNamed("LOCAL");
+  if(frais!==vivant)
+    throw new Error("le net repris n'est pas celui de la feuille affichée");
+});
+T("recherche : un symbole sans repère ne se cherche pas",()=>{
+  /* Une étiquette de net, une masse : elles n'ont pas de repère, et une ligne
+     vide dans la liste ne mène nulle part. */
+  sheet([C("resistor",0,0,{ref:"R1"}),C("gnd",4,0,{})],[]);
+  for(const t of RP_SCH.cibles())
+    if(!t.cle)throw new Error("une cible sans clé dans la liste");
+});
+T("recherche : la liste échappe ce qui vient du document",()=>{
+  sheet([C("resistor",0,0,{ref:"R1",value:XSS})],[]);
+  document.getElementById("rpQ").value="R1";
+  rpQBuild();
+  assertPropre(document.getElementById("rpRes").innerHTML,"liste de recherche");
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

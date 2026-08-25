@@ -616,7 +616,13 @@ function runDrc(){
     const b=polyBBox(z.pts);
     if(!z.net)out.push({x:(b.x1+b.x2)/2,y:(b.y1+b.y2)/2,l:z.l,
       msg:"Zone de cuivre sans net : elle reste isolée"});
-    if(z.pts.some(p=>!inBoard(p.x,p.y,0)))
+    /* Un sommet posé exactement SUR le contour n'en déborde pas : c'est le cas
+       de tout plan pleine carte, que le rôle de couche dessine précisément aux
+       dimensions de la carte (`boardZonePts`). `inPoly` ne tranche pas sur sa
+       propre frontière — un coin y passe, le suivant non — d'où la distance au
+       contour, qui vaut zéro sur le trait et grandit dès qu'on en sort. */
+    const dehors=p=>!inBoard(p.x,p.y,0)&&polyEdgeDist(p.x,p.y,boardPoly())>1e-6;
+    if(z.pts.some(dehors))
       out.push({x:(b.x1+b.x2)/2,y:(b.y1+b.y2)/2,l:z.l,
         msg:"Zone débordant du contour de carte (le remplissage y est rogné)"});
   }

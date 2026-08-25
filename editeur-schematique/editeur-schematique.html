@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="../commun/workspace.css">
 <link rel="stylesheet" href="../commun/session.css">
 <link rel="stylesheet" href="../commun/profils.css">
+<link rel="stylesheet" href="../commun/reperage.css">
 </head>
 <body>
 
@@ -22,6 +23,7 @@
     <button class="tb on" id="mSelect">Sélection <kbd>V</kbd></button>
     <button class="tb" id="mWire">Fil <kbd>W</kbd></button>
     <button class="tb" id="mErase">Gomme <kbd>X</kbd></button>
+    <button class="tb" id="mMesure" title="Mesurer une distance : deux points, la cote et les deltas X/Y">Mesure <kbd>K</kbd></button>
     <div class="sep"></div>
     <button class="tb" id="bRot">Pivoter <kbd>R</kbd></button>
     <button class="tb" id="bMir">Miroir <kbd>M</kbd></button>
@@ -37,6 +39,7 @@
     <button class="tb" id="bGrid">Grille</button>
     <select class="tbsel" id="selGrid" title="Pas d'accrochage de la grille"></select>
     <button class="tb on" id="bNets">Nets : tous <kbd>N</kbd></button>
+    <button class="tb" id="bFind" title="Chercher un composant par son repère (toutes feuilles), ou un net par son nom">⌕ Rechercher <kbd>Ctrl+F</kbd></button>
     <button class="tb" id="bFit">Recadrer</button>
     <div class="sep"></div>
     <button class="tb" id="bWs">Espace de travail ▾</button>
@@ -58,7 +61,18 @@
   <div class="gut gv" data-dock="dockL"></div>
 
   <div class="ctr" id="ctr">
-    <div id="canvasWrap"><canvas id="sheet"></canvas></div>
+    <div id="canvasWrap"><canvas id="sheet"></canvas>
+      <div id="rpBox">
+        <div class="rphead">
+          <span class="rpico">&#8981;</span>
+          <input id="rpQ" autocomplete="off" spellcheck="false"
+                 placeholder="Repere ou nom de net">
+          <button class="rpx" id="rpX" title="Fermer">&#10005;</button>
+        </div>
+        <div id="rpRes"></div>
+        <div class="rpfoot">Fleches pour choisir &middot; Entree pour y aller &middot; Echap ferme</div>
+      </div>
+    </div>
     <div class="gut gh" data-dock="dockB"></div>
     <div class="dock" id="dockB"></div>
   </div>
@@ -143,6 +157,7 @@
      ============================================================================= -->
 <script src="../commun/session.js"></script>
 <script src="../commun/profils.js"></script>
+<script src="../commun/reperage.js"></script>
 <script src="js/00-espace-config.js"></script>
 <script src="js/01-noyau.js"></script>
 <script src="js/02-bibliotheque.js"></script>
@@ -164,6 +179,7 @@
 <script src="js/18-csv.js"></script>
 <script src="js/19-broches.js"></script>
 <script src="js/20-profil.js"></script>
+<script src="js/21-reperage.js"></script>
 <script src="../commun/workspace.js"></script>
 </body>
 </html>

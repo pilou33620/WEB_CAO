@@ -278,6 +278,10 @@ function draw(){
     ctx.strokeRect(Math.min(m.x1,m.x2),Math.min(m.y1,m.y2),Math.abs(m.x2-m.x1),Math.abs(m.y2-m.y1));
     ctx.setLineDash([]);
   }
+  /* La cote de mesure passe en dernier : c'est une annotation de travail, elle
+     doit rester lisible par-dessus le câblage le plus dense. Elle ne va pas
+     dans le .png — `exportPng` redessine la feuille elle-même, sans elle. */
+  if(typeof rpMesTrace==="function")rpMesTrace(ctx,dpr);
   ctx.setTransform(1,0,0,1,0,0);
   document.getElementById("fZoom").textContent=Math.round(S.scale*100)+"%";
   updateGridInfo();

@@ -304,15 +304,25 @@ function pasteClip(){
 function setMode(m){
   S.mode=m;S.wireStart=null;S.hoverPin=null;
   if(m!=="select"){S.place=null;setPalette(null);}
-  for(const [id,md] of [["mSelect","select"],["mWire","wire"],["mErase","erase"]])
-    document.getElementById(id).classList.toggle("on",S.mode===md);
-  document.getElementById("fMode").textContent={select:"Sélection",wire:"Fil",erase:"Gomme"}[m];
+  /* La cote appartient au mode : la garder affichée en revenant à la sélection
+     laisserait une annotation qu'aucun geste ne reprend. */
+  if(m!=="mesure"&&typeof rpMesRaz==="function")rpMesRaz();
+  for(const [id,md] of [["mSelect","select"],["mWire","wire"],["mErase","erase"],
+                        ["mMesure","mesure"]]){
+    const b=document.getElementById(id);
+    if(b)b.classList.toggle("on",S.mode===md);
+  }
+  document.getElementById("fMode").textContent=
+    {select:"Sélection",wire:"Fil",erase:"Gomme",mesure:"Mesure"}[m];
   cv.style.cursor = m==="erase"?"not-allowed":"crosshair";
   document.getElementById("fHint").textContent = {
     select:"Ctrl+clic (ou Maj+clic) ajoute à la sélection · glisser pour déplacer · "+
            "Alt+glisser détache le câblage · Alt sur le vide déplace la vue.",
     wire:"Clic pour démarrer, clic pour poser un coude, clic sur une broche pour terminer · Clic droit ou Échap annule.",
-    erase:"Clic sur un composant ou un fil pour le supprimer."
+    erase:"Clic sur un composant ou un fil pour le supprimer.",
+    mesure:"Cliquez le premier point, puis le second : la cote se fige · les broches "+
+           "attirent le point · un nouveau clic repart d'ailleurs · Échap efface. "+
+           "Une case vaut 1 mm par convention de dessin, pas par cote de fabrication."
   }[m];
   draw();
 }

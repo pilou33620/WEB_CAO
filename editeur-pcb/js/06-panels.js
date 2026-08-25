@@ -38,7 +38,10 @@ function buildLayers(){
     h+='<div class="lay'+(i===S.active?" on":"")+(L.vis?"":" off")+'" data-i="'+i+'">'+
        '<i class="sw" style="background:'+esc(L.color)+'"></i>'+
        '<span class="nm">'+esc(L.name)+'</span>'+
-       (L.plane?'<span class="pl">PLAN</span>':(zn[i]?'<span class="pl">'+zn[i]+'</span>':""))+
+       (L.plane||zn[i]
+         ? '<span class="pl" data-zone="'+i+'" title="Sélectionner le cuivre plein de cette couche">'+
+           (L.plane?"PLAN":zn[i])+'</span>'
+         : "")+
        '<span class="tp">'+cuId(i,S.cu)+' · '+cnt[i]+'</span>'+
        '<span class="eye" data-eye="'+i+'">'+(L.vis?"◉":"○")+'</span></div>';
   }
@@ -63,6 +66,10 @@ function buildLayers(){
       const i=+el.dataset.i;
       if(ev.target.dataset.eye!==undefined){
         S.cuL[i].vis=!S.cuL[i].vis;touch();buildLayers();buildTabs();draw();
+      }else if(ev.target.dataset.zone!==undefined){
+        // le pastillon « PLAN » est la poignée du plan : au milieu de la carte
+        // il n'y a aucun bord à viser, ici il y en a un
+        selectLayerZones(i);
       }else{routeToLayer(i);draw();}
     };
   });
@@ -114,7 +121,10 @@ function zoneMenuBuild(){
       '</select></div>':"")+
     '<div class="prop"><div class="row">'+
       '<button class="tb" id="zmZone">Zone à main levée <kbd>Z</kbd></button></div>'+
-      '<div class="row"><button class="tb" id="zmFull">Zone pleine carte (libre)</button></div></div>';
+      '<div class="row"><button class="tb" id="zmFull">Zone pleine carte (libre)</button></div>'+
+      (S.zones.some(z=>z.l===S.active)
+        ? '<div class="row"><button class="tb" id="zmSel">Sélectionner le cuivre de la couche</button></div>'
+        : "")+'</div>';
   const rl=$("zmRole");
   if(rl)rl.onchange=()=>{
     const r=rl.value;
@@ -134,6 +144,8 @@ function zoneMenuBuild(){
   if(z)z.onclick=()=>{setMode("zone");zoneMenuClose();};
   const f=$("zmFull");
   if(f)f.onclick=()=>{zoneMenuClose();fullBoardZone();};
+  const sl=$("zmSel");
+  if(sl)sl.onclick=()=>{zoneMenuClose();selectLayerZones(S.active);};
   return m;
 }
 function zoneMenuOpen(){
@@ -725,6 +737,7 @@ function propsZone(box,z){
         (info?" ("+info.pads.length+" pastille(s) sur ce net)":"")+"."
            :"Sans net, la zone est du cuivre isolé : elle dégage tout ce qu'elle rencontre.")+
       '<br>Glissez les poignées pour déformer · Ctrl+clic sur une arête ajoute un sommet.'+
+      '<br>Se reprend par un clic dans son cuivre, au lasso, ou par le pastillon de la couche.'+
       (z.auto?'<br><span style="color:var(--yellow)">Plan de couche : il suit le contour de la carte tant qu\'on ne le déforme pas.</span>':"")+'</div>'+
     '<div class="prop"><div class="row">'+
       '<button class="tb" id="zFull">Étendre à la carte</button>'+

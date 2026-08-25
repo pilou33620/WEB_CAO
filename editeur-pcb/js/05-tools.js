@@ -574,7 +574,46 @@ function hitTest(x,y,e){
     if(layerAlpha(c.l)>0&&c.pts.length>1&&polyEdgeDist(x,y,c.pts)<=px(5))return {cut:c};
   }
   if(S.show.edge&&polyEdgeDist(x,y,boardPoly())<=px(5))return {edge:true};
+  /* Dernier recours : le plein d'une zone. Un plan de masse ou d'alimentation
+     couvre toute la carte — son contour se confond avec celui de la carte et
+     n'offre rien à viser. On le rend donc attrapable par son intérieur, mais
+     seulement une fois tout le reste écarté, et marqué `inside` : l'appelant
+     attend le relâchement pour trancher, sinon le moindre lasso tiré au-dessus
+     d'un plan commencerait par emporter le plan. */
+  if(S.show.plane){
+    const zi=zoneUnder(x,y);
+    if(zi)return {zone:zi,inside:true};
+  }
   return null;
+}
+/* Zone visible dont le plein contient le point. La couche active passe devant
+   les autres — c'est celle sur laquelle on travaille — et une découpe rend son
+   creux au reste : là il n'y a pas de cuivre, donc rien à prendre. */
+function zoneUnder(x,y){
+  let best=null;
+  for(let i=S.zones.length-1;i>=0;i--){
+    const z=S.zones[i];
+    if(layerAlpha(z.l)<=0||z.pts.length<3)continue;
+    if(!inPoly(x,y,z.pts))continue;
+    if(S.cuts.some(c=>c.l===z.l&&c.pts.length>2&&inPoly(x,y,c.pts)))continue;
+    if(z.l===S.active)return z;
+    if(!best)best=z;
+  }
+  return best;
+}
+/* Tout le cuivre plein d'une couche, pris d'un coup : c'est la poignée du plan
+   de masse ou d'alimentation, qui n'a pas de bord commode à viser. */
+function selectLayerZones(i){
+  const zs=S.zones.filter(z=>z.l===i);
+  if(!zs.length){hint("Aucune zone de cuivre sur "+cuId(i,S.cu)+".");return;}
+  if(S.cuL[i]&&!S.cuL[i].vis)S.cuL[i].vis=true;   // sélectionner ce qu'on ne voit pas n'apprend rien
+  clearSel();
+  for(const z of zs)S.sel.zones.add(z);
+  S.active=i;
+  buildLayers();refreshPanels();draw();
+  hint(zs.length===1
+    ? "Zone de "+cuId(i,S.cu)+" sélectionnée"+(zs[0].net?" — net "+zs[0].net:"")+"."
+    : zs.length+" zones de "+cuId(i,S.cu)+" sélectionnées.");
 }
 function selectHit(h,add){
   if(!add)clearSel();
@@ -2649,6 +2688,7 @@ cv.addEventListener("pointerdown",e=>{
     return;
   }
   if(e.button!==0)return;
+  if(S.mode==="mesure"){rpMesClic(p.x,p.y);draw();return;}
   if(S.mode==="track"){
     if(!S.route)startRoute(p.x,p.y);
     else{updateRoute(p.x,p.y);stepRoute();}
@@ -2675,8 +2715,11 @@ cv.addEventListener("pointerdown",e=>{
     refreshPanels();draw();return;
   }
   if(S.mode==="erase"){
+    /* La gomme ne prend pas une zone par son plein : un plan couvre la carte,
+       et le clic destiné à une piste emporterait le cuivre de toute la couche.
+       Son contour, lui, reste une cible franche. */
     const h=hitTest(p.x,p.y,e);
-    if(h){
+    if(h&&!h.inside){
       push();
       if(h.fp)S.fps=S.fps.filter(f=>f!==h.fp);
       else if(h.track)S.tracks=S.tracks.filter(t=>t!==h.track);
@@ -2774,10 +2817,15 @@ cv.addEventListener("pointerdown",e=>{
     drag={moveText:h, x:snapX(p.x), y:snapY(p.y), moved:false};
     refreshPanels();draw();return;
   }
-  if(!h){
+  /* Rien sous le curseur — ou seulement le plein d'une zone pas encore prise :
+     dans les deux cas on arme le lasso. S'il ne s'ouvre pas, le relâchement le
+     lit comme un clic et prend la zone. Un plan pleine carte se sélectionne
+     ainsi d'un clic n'importe où, sans coûter le lasso qu'on tire par-dessus ;
+     une fois pris, il se glisse comme n'importe quel autre objet. */
+  if(!h||(h.inside&&!S.sel.zones.has(h.zone))){
     if(!add){clearSel();S.hlNet=null;}
     S.marquee={x1:p.x,y1:p.y,x2:p.x,y2:p.y};
-    drag={marquee:true,add:add};
+    drag={marquee:true,add:add,zone:h?h.zone:null};
     refreshPanels();draw();return;
   }
   if(add){
@@ -2906,6 +2954,7 @@ cv.addEventListener("pointermove",e=>{
     }
     return;
   }
+  if(S.mode==="mesure"){if(rpMesBouge(p.x,p.y))draw();return;}
   if(S.mode==="zone"&&S.zoneDraft){zoneMove(p.x,p.y,e.shiftKey);draw();return;}
   if(S.mode==="cut"&&S.cutDraft){cutMove(p.x,p.y,e.shiftKey);draw();return;}
   if(S.mode==="edge"&&S.edgeDraft){edgeMove(p.x,p.y,e.shiftKey);draw();return;}
@@ -2963,6 +3012,23 @@ cv.addEventListener("pointerup",e=>{
       }
       for(const v of S.vias)
         if(v.x>=x1&&v.x<=x2&&v.y>=y1&&v.y<=y2)S.sel.vias.add(v);
+      /* Le cuivre plein entre aussi dans le lasso : sans cela une zone ne
+         s'attrapait qu'à la souris posée sur son bord. */
+      for(const z of S.zones){
+        if(layerAlpha(z.l)<=0||z.pts.length<2)continue;
+        const b=polyBBox(z.pts);
+        if(b.x1>=x1&&b.x2<=x2&&b.y1>=y1&&b.y2<=y2)S.sel.zones.add(z);
+      }
+      for(const ct of S.cuts){
+        if(layerAlpha(ct.l)<=0||ct.pts.length<2)continue;
+        const b=polyBBox(ct.pts);
+        if(b.x1>=x1&&b.x2<=x2&&b.y1>=y1&&b.y2<=y2)S.sel.cuts.add(ct);
+      }
+    }else if(drag.zone){
+      // lasso resté fermé : c'était un clic dans le plein d'une zone
+      if(drag.add)toggleHit({zone:drag.zone});
+      else S.sel.zones.add(drag.zone);
+      if(drag.zone.net){S.hlNet=drag.zone.net;revealNet(drag.zone.net);}
     }
     S.marquee=null;refreshPanels();draw();
   }
@@ -3053,6 +3119,8 @@ document.addEventListener("keydown",e=>{
     S.fps.forEach(f=>S.sel.fps.add(f.id));
     S.tracks.forEach(x=>S.sel.tracks.add(x));
     S.vias.forEach(v=>S.sel.vias.add(v));
+    S.zones.forEach(z=>S.sel.zones.add(z));
+    S.cuts.forEach(x=>S.sel.cuts.add(x));
     refreshPanels();draw();return;
   }
   // Ctrl+C sur du texte sélectionné appartient au navigateur : on ne lui prend
@@ -3064,9 +3132,14 @@ document.addEventListener("keydown",e=>{
   }
   if((e.ctrlKey||e.metaKey)&&k==="x"){e.preventDefault();cutSelPcb();return;}
   if((e.ctrlKey||e.metaKey)&&k==="v"){e.preventDefault();pasteClipPcb();return;}
+  /* Ctrl+F cherche dans la carte, pas dans la page : les repères et les nets
+     ne sont pas du texte du document HTML, la recherche du navigateur ne les
+     trouverait jamais. Le raccourci prenait déjà `f` au passage — il
+     retournait la sélection avant que le navigateur n'ouvre sa barre. */
+  if((e.ctrlKey||e.metaKey)&&k==="f"){e.preventDefault();rpQOuvrir();return;}
   /* Toute autre combinaison avec Ctrl/Cmd ou Alt appartient au navigateur :
      sans ce garde-fou, Ctrl+R faisait pivoter la sélection puis rechargeait la
-     page, et Ctrl+F la retournait avant d'ouvrir la recherche. */
+     page. */
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   if(e.key>="1"&&e.key<="8"){
     const i=+e.key-1;
@@ -3092,6 +3165,9 @@ document.addEventListener("keydown",e=>{
     case "x":setMode("cut");break;
     case "e":setMode("edge");break;
     case "o":setMode("origin");break;
+    /* K comme « kote » — C est pris par le copier, M par rien mais se confond
+       avec le miroir du schématique. */
+    case "k":setMode("mesure");break;
     case "r":rotateSel();break;
     case "f":flipSel();break;
     case "d":mitreSel();break;
@@ -3126,6 +3202,7 @@ document.addEventListener("keydown",e=>{
       else if(S.zoneDraft){S.zoneDraft=null;hint("Zone abandonnée.");}
       else if(S.cutDraft){S.cutDraft=null;hint("Découpe abandonnée.");}
       else if(S.edgeDraft){S.edgeDraft=null;hint("Contour abandonné.");}
+      else if(S.mode==="mesure"&&rpMesEnCours()){rpMesRaz();rpMesDire();draw();break;}
       else{clearSel();S.hlNet=null;refreshPanels();}
       if(S.mode!=="select")setMode("select");
       draw();
@@ -3170,17 +3247,23 @@ function setMode(m){
   if(S.coord.open&&!coordUsable())coordClose();
   if(S.zoneDraft&&m!=="zone")S.zoneDraft=null;
   if(S.edgeDraft&&m!=="edge")S.edgeDraft=null;
+  /* La cote appartient au mode : la garder affichee en revenant a la selection
+     laisserait une annotation qu'aucun geste ne reprend. */
+  if(m!=="mesure"&&typeof rpMesRaz==="function")rpMesRaz();
   S.mode=m;S.hover=null;
   if(m!=="zone")zoneMenuClose();
   for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],
                         ["mDiff","dpair"],
                         ["mZone","zone"],["mEdge","edge"],["mOrigin","origin"],
-                        ["mErase","erase"]])
-    $(id).classList.toggle("on",m===md);
+                        ["mErase","erase"],["mMesure","mesure"]]){
+    const b=$(id);
+    if(b)b.classList.toggle("on",m===md);
+  }
   $("fMode").textContent={select:"Sélection",track:"Piste",via:"Via",
                           dpair:"Paire différentielle",
                           zone:"Zone de cuivre",edge:"Contour de carte",
-                          origin:"Origine",erase:"Gomme"}[m];
+                          origin:"Origine",erase:"Gomme",
+                          mesure:"Mesure"}[m];
   cv.style.cursor=m==="erase"?"not-allowed":"crosshair";
   hint({
     select:"Ctrl+clic (ou Maj+clic) ajoute à la sélection · glisser une piste emmène "+
@@ -3195,7 +3278,10 @@ function setMode(m){
     zone:"Clic pour chaque sommet, retour sur le premier point pour fermer · Maj contraint à 45° · Entrée ferme, Échap abandonne.",
     edge:"Dessinez le contour de la carte, sommet par sommet · retour sur le premier point pour fermer · Maj contraint à 45°.",
     origin:"Cliquez le point qui servira d'origine — une pastille proche l'attire.",
-    erase:"Clic sur une piste, un via ou une empreinte pour le supprimer."
+    erase:"Clic sur une piste, un via ou une empreinte pour le supprimer.",
+    mesure:"Cliquez le premier point, puis le second : la cote se fige · les pastilles, "+
+           "les vias et les sommets de piste de la couche active attirent le point · "+
+           "un nouveau clic repart d'ailleurs · Échap efface."
   }[m]);
   draw();
 }

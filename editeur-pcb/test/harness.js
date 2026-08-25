@@ -38,6 +38,14 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
   "pushClear","magnet","projOnSeg","mitreSel","mitreAt","collinearRun","runFrom","segClearBad","setActive","segSegDist","segCross","routeBad","focusNet","cancelRoute","updateRoute","classOf","syncAutoZones","detachAuto","zoneCanvas","inPoly","hitTest","px","dist","boardZonePts",
+  "selectLayerZones","zoneUnder",
+  /* repérage commun : chercher un repère, mesurer une distance
+     (commun/reperage.js + le module d'adaptation de l'éditeur) */
+  "cv",
+  "RP","rpInit","rpMesClic","rpMesBouge","rpMesRaz","rpMesEnCours","rpMesPaire",
+  "rpMesCotes","rpMesLecture","rpMesDire","rpMesTrace","rpRang","rpTrouve",
+  "rpQBuild","rpQOuvrir","rpQFermer","rpQAller","rpQBascule","rpCadrer","rpNetBox",
+  "RP_PCB",
   /* session d'onglet commune (commun/session.js) */
   "sessBrancher","sessEnregistrer","sessLire","sessEcrire","sessEffacer",
   "sessPoids","sessTient","sessUrl","sessAller","sessQuitte","sessAutonome",
@@ -86,6 +94,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "LT_C0","LT_KIND","ltEeff","ltZ0","ltSeg","ltVia","ltLine",
   "ltT","ltC","ltL","ltRange","ltTable","ltSection","propsTrack","propsTracks",
   "dpLayerEdit",
+  /* cartes d'exemple (17-exemples.js) */
+  "EXEMPLES","exemple1","exemple2","exCharger","exOuvrir","exDoc","exPlane",
+  "exFp","exPin","exWire","exVia","exStub","exPair","exPower",
   /* rendu et fusion des lignes droites */
   "drawTracks","sameLine","routeVia",
   /* géométrie du tracé 45° et posture du coude */
@@ -332,8 +343,33 @@ T("sélection par le contour et poignées",()=>{
   const z=S.zones[0];
   const h=hitTest(z.pts[0].x,z.pts[0].y);
   if(!h||h.zone!==z)throw new Error("la zone devrait s'attraper par son contour");
-  const inside=hitTest((z.pts[0].x+z.pts[2].x)/2,(z.pts[0].y+z.pts[2].y)/2);
-  if(inside&&inside.zone)throw new Error("cliquer au milieu ne doit pas saisir la zone");
+  if(h.inside)throw new Error("le contour est une prise franche, pas un repli");
+});
+/* Le plein d'une zone la désigne aussi — c'est la seule prise qu'offre un plan
+   pleine carte — mais en dernier ressort, et marqué : le clic ne tranche qu'au
+   relâchement, pour que le lasso tiré au-dessus d'un plan reste possible. */
+T("sélection par le plein, en dernier ressort",()=>{
+  const z=S.zones[0];
+  const mx=(z.pts[0].x+z.pts[2].x)/2, my=(z.pts[0].y+z.pts[2].y)/2;
+  const inside=hitTest(mx,my);
+  if(!inside||inside.zone!==z)throw new Error("le plein devrait désigner la zone");
+  if(!inside.inside)throw new Error("une prise par le plein doit s'annoncer comme telle");
+  // ce qui est posé par-dessus garde la priorité
+  const onEdge=hitTest(z.pts[0].x,z.pts[0].y);
+  if(onEdge.inside)throw new Error("le contour passe avant le plein");
+  // zones masquées : rien à attraper
+  S.show.plane=false;
+  if(hitTest(mx,my))throw new Error("zones masquées : le plein ne doit rien rendre");
+  S.show.plane=true;
+});
+T("le cuivre d'une couche se prend par sa couche",()=>{
+  const z=S.zones[0], act=S.active;
+  clearSel();
+  selectLayerZones(z.l);
+  if(!S.sel.zones.has(z))throw new Error("selectLayerZones devrait prendre la zone");
+  const seules=S.zones.filter(o=>o.l===z.l).length;
+  if(S.sel.zones.size!==seules)throw new Error("toutes les zones de la couche, et elles seules");
+  clearSel();S.active=act;
 });
 T("plan pleine carte",()=>{
   const n=S.zones.length;
@@ -6885,6 +6921,249 @@ T("session : la carte revient même quand la page vient de démarrer",()=>{
   if(!S.dirty)throw new Error("l'état « modifié » devait revenir avec elle");
   sessEffacer("pcb");
   S.dirty=false;
+});
+
+
+/* ==========================================================================
+   Cartes d'exemple (17-exemples.js)
+   Une carte d'exemple est là pour montrer du travail fini. Si elle laissait un
+   net ouvert, ou si le contrôle avait quelque chose à lui reprocher, elle
+   apprendrait exactement le contraire de ce qu'elle prétend montrer — et
+   personne ne s'en apercevrait, puisqu'on l'ouvre justement pour ne pas avoir
+   à vérifier soi-même. D'où ces essais : les exemples se chargent comme le
+   fait le bouton « Exemples… », et subissent tout ce qu'un utilisateur leur
+   ferait subir.
+   ========================================================================== */
+EXEMPLES.forEach(ex=>{
+  T("exemple « "+ex.titre+" » : entièrement routé, et sans remarque au contrôle",()=>{
+    loadDoc(ex.build());
+    if(S.fps.length<5)throw new Error("carte trop maigre : "+S.fps.length+" empreinte(s)");
+    if(!S.tracks.length)throw new Error("aucune piste");
+    let miss=0;
+    for(const n of conn(true).nets.values())miss+=n.miss;
+    if(miss)throw new Error(miss+" liaison(s) non routée(s)");
+    const e=runDrc();
+    if(e.length)throw new Error(e.length+" remarque(s), la première : "+e[0].msg);
+  });
+  T("exemple « "+ex.titre+" » : l'aller-retour du document ne le change pas",()=>{
+    /* Un exemple s'enregistre et s'annule comme une carte à soi : il passe donc
+       par normDoc(), qui doit le rendre tel quel. */
+    loadDoc(ex.build());
+    const a=JSON.parse(serialize());
+    loadDoc(a);
+    const d=firstDiff(a,docObj(),"doc");
+    if(d)throw new Error("le document a changé en chemin : "+d);
+  });
+});
+T("exemple 4 couches : deux plans internes, une paire couplée, un dos qui sert",()=>{
+  loadDoc(exemple2());
+  if(S.cu!==4)throw new Error("4 couches attendues, "+S.cu);
+  if(layerRole(1)!=="gnd")throw new Error("L2 devrait être un plan de masse");
+  if(layerRole(2)!=="pwr")throw new Error("L3 devrait être un plan d'alimentation");
+  for(const t of S.tracks)
+    if(t.l===1||t.l===2)throw new Error("une piste traverse un plan interne");
+  if(!S.tracks.some(t=>t.l===S.cu-1))throw new Error("le dos ne porte aucune piste");
+  const q=S.dpPairs[0];
+  if(!q)throw new Error("aucune paire différentielle déclarée");
+  for(const t of S.tracks)
+    if((t.net===q.p||t.net===q.n)&&t.l!==0)
+      throw new Error("la paire change de couche : elle perdrait son plan de référence");
+  const cp=dpCoupling(q);
+  if(Math.abs(cp.len-cp.lenN)>0.05)
+    throw new Error("les deux pistes de la paire n'ont pas la même longueur : "+
+                    fmt(Math.abs(cp.len-cp.lenN),3)+" mm d'écart");
+  const r=dpRuleFor(q);
+  if(cp.uncoupled>r.maxUncoupled)
+    throw new Error(fmt(cp.uncoupled,2)+" mm découplés pour "+r.maxUncoupled+" admis");
+  if(cp.coupled<cp.len*0.9)
+    throw new Error("paire couplée sur "+fmt(cp.coupled,1)+" mm seulement, pour "+
+                    fmt(cp.len,1)+" mm de piste");
+});
+T("plan pleine carte : ses sommets sont SUR le contour, pas dehors",()=>{
+  /* Le rôle de couche dessine sa zone aux dimensions exactes de la carte : ses
+     quatre sommets tombent sur le trait du contour. `inPoly` ne tranche pas sur
+     sa propre frontière — un coin y passait, le suivant non — et toute carte à
+     plan se voyait donc reprocher un débordement qu'elle n'avait pas. */
+  loadDoc(exemple1());
+  if(runDrc().some(x=>/débordant/.test(x.msg)))
+    throw new Error("le plan pleine carte est compté hors du contour");
+  /* Une zone réellement dehors, elle, doit toujours être signalée. */
+  push();
+  S.zones.push({id:S.nextId++,l:0,net:"GND",
+                pts:[{x:-8,y:-8},{x:-2,y:-8},{x:-2,y:-2},{x:-8,y:-2}]});
+  touch();
+  if(!runDrc().some(x=>/débordant/.test(x.msg)))
+    throw new Error("une zone posée hors de la carte passe inaperçue");
+  undo();
+});
+
+
+/* ==========================================================================
+   Repérage : chercher un repère, mesurer une distance
+   --------------------------------------------------------------------------
+   Le comportement est dans commun/reperage.js, ce que la carte en fait est
+   dans 18-reperage.js. Les deux se vérifient ici par le geste, pas par l'état
+   interne : on clique, et on lit ce que la cote annonce.
+   ========================================================================== */
+T("mesure : deux points, la cote, les deltas et l'angle",()=>{
+  loadDoc(exemple1());
+  S.scale=20;                       // portée de l'aimant : px(9) = 0,45 mm
+  setMode("mesure");
+  /* Hors de la carte : rien à quoi s'accrocher, la grille décide seule. */
+  rpMesClic(-10,-10);
+  rpMesClic(-7,-6);
+  const c=rpMesCotes();
+  if(!c)throw new Error("aucune cote après deux clics");
+  if(Math.abs(c.dx-3)>1e-6||Math.abs(c.dy-4)>1e-6)
+    throw new Error("deltas faux : dX "+c.dx+" dY "+c.dy);
+  if(Math.abs(c.d-5)>1e-6)throw new Error("3-4-5 attendu, "+c.d+" mm");
+  /* L'angle est celui qu'on lit à l'écran : Y descend, il est donc négatif. */
+  if(Math.abs(c.ang+53.13)>0.02)throw new Error("angle : "+c.ang+" degrés");
+  setMode("select");
+});
+T("mesure : le point s'accroche au centre de la pastille, pas au pixel visé",()=>{
+  loadDoc(exemple1());
+  S.scale=20;setActive(0);
+  setMode("mesure");
+  const r1=S.fps.find(f=>f.ref==="R1");
+  const q=padsWorld(r1)[0];
+  rpMesClic(q.x+0.08,q.y-0.06);     // visé à côté, dans la portée de l'aimant
+  const a=RP.mes.a;
+  if(a.quoi!=="pastille")throw new Error("accroché sur "+a.quoi);
+  if(Math.abs(a.x-q.x)>1e-9||Math.abs(a.y-q.y)>1e-9)
+    throw new Error("le point n'est pas au centre de la pastille");
+  setMode("select");
+});
+T("mesure : hors de portée d'un aimant, c'est la grille — jamais le point brut",()=>{
+  loadDoc(exemple1());
+  S.scale=20;setGridStep(0.5);
+  setMode("mesure");
+  rpMesClic(-10.31,-10.19);
+  const a=RP.mes.a;
+  if(a.quoi!=="grille")throw new Error("accroché sur "+a.quoi);
+  if(a.x!==snapX(-10.31)||a.y!==snapY(-10.19))
+    throw new Error("relevé au pixel visé : "+a.x+" ; "+a.y);
+  setMode("select");
+});
+T("mesure : la cote se fige, et un clic de plus repart d'ailleurs",()=>{
+  loadDoc(exemple1());
+  S.scale=20;
+  setMode("mesure");
+  rpMesClic(-10,-10);
+  rpMesClic(-7,-6);
+  /* Figée : la souris qui passe ne doit plus la bouger — c'est ce qui permet
+     de relire une cote posée. */
+  const avant=rpMesCotes().d;
+  rpMesBouge(-30,-30);
+  if(Math.abs(rpMesCotes().d-avant)>1e-9)
+    throw new Error("la cote figée a suivi la souris");
+  rpMesClic(0,0);                   // troisième clic : nouvelle mesure
+  if(RP.mes.b)throw new Error("le troisième clic n'a pas rouvert une mesure");
+  if(RP.mes.a.x!==0||RP.mes.a.y!==0)
+    throw new Error("le nouveau départ n'est pas là où l'on a cliqué");
+  setMode("select");
+});
+T("mesure : quitter le mode efface la cote, Échap aussi",()=>{
+  loadDoc(exemple1());
+  S.scale=20;
+  setMode("mesure");
+  rpMesClic(-10,-10);rpMesClic(-7,-6);
+  if(!rpMesEnCours())throw new Error("rien de mesuré");
+  rpMesRaz();
+  if(rpMesEnCours()||rpMesPaire())throw new Error("Échap laisse la cote en place");
+  rpMesClic(-10,-10);rpMesClic(-7,-6);
+  setMode("select");
+  if(rpMesEnCours())
+    throw new Error("la cote survit au retour à la sélection");
+});
+T("mesure : la lecture donne des millimètres, et dit que c'est une cote",()=>{
+  loadDoc(exemple1());
+  S.scale=20;
+  setMode("mesure");
+  rpMesClic(-10,-10);rpMesClic(-7,-6);
+  const L=rpMesLecture();
+  if(!/^Mesure 5 mm/.test(L))throw new Error("lecture : "+L);
+  if(L.indexOf("cote figée")<0)throw new Error("la cote figée ne se dit pas : "+L);
+  /* Au PCB la mesure EST la cote de fabrication : rien ne doit la relativiser,
+     contrairement au schématique. */
+  if(L.indexOf("convention de dessin")>=0)
+    throw new Error("le PCB relativise une cote qui est pourtant physique");
+  setMode("select");
+});
+T("recherche : le repère tapé en entier passe devant ses homonymes plus longs",()=>{
+  loadDoc(exemple1());
+  /* R1 existe ; on lui ajoute deux voisins qui le contiennent. Sans classement,
+     R1 sortirait après R10 et R100 — c'est-à-dire que la frappe la plus courte,
+     la plus fréquente, serait la plus mal servie. */
+  for(const r of ["R10","R100"]){
+    const f=mkFp(r,"1k","0603",2);
+    f.x=40;f.y=30;S.fps.push(f);
+  }
+  const res=rpTrouve("R1");
+  if(!res.length)throw new Error("R1 introuvable");
+  if(res[0].cle!=="R1")throw new Error("premier résultat : "+res[0].cle);
+  const cles=res.map(x=>x.cle);
+  if(cles.indexOf("R10")<0||cles.indexOf("R100")<0)
+    throw new Error("les homonymes ont disparu de la liste : "+cles.join(", "));
+});
+T("recherche : aller sur une empreinte la sélectionne et l'amène au centre",()=>{
+  loadDoc(exemple1());
+  S.scale=2;clearSel();
+  const cible=rpTrouve("Q3").find(x=>x.cle==="Q3");
+  if(!cible)throw new Error("Q3 introuvable");
+  cible.aller();
+  const q3=S.fps.find(f=>f.ref==="Q3");
+  if(!S.sel.fps.has(q3.id))throw new Error("Q3 n'est pas sélectionné");
+  const p=w2s(q3.x,q3.y);
+  if(Math.abs(p.x-cv.clientWidth/2)>2||Math.abs(p.y-cv.clientHeight/2)>2)
+    throw new Error("Q3 n'est pas au centre : "+fmt(p.x,0)+" ; "+fmt(p.y,0));
+  /* Un SOT-23 vu de trop loin ne se verrait pas : le cadrage s'approche. */
+  if(S.scale<2)throw new Error("le cadrage a reculé au lieu de s'approcher");
+});
+T("recherche : un net se trouve par son nom et sort son cuivre",()=>{
+  loadDoc(exemple1());
+  clearSel();S.hlNet=null;
+  const cible=rpTrouve("SORTIE").find(x=>x.cle==="SORTIE");
+  if(!cible)throw new Error("le net SORTIE ne se trouve pas");
+  if(cible.type!=="net")throw new Error("trouvé comme "+cible.type);
+  cible.aller();
+  if(S.hlNet!=="SORTIE")throw new Error("le net n'est pas mis en avant");
+  if(!S.sel.tracks.size)throw new Error("aucun segment de SORTIE sélectionné");
+  for(const t of S.sel.tracks)
+    if(t.net!=="SORTIE")throw new Error("du cuivre étranger dans la sélection");
+});
+T("recherche : un net déclaré mais nulle part ne fait pas sauter le cadrage",()=>{
+  loadDoc(exemple1());
+  S.scale=7;
+  const s0=S.scale, ox=S.ox, oy=S.oy;
+  /* rpNetBox ne rend rien pour un net sans pastille ni cuivre : l'appelant doit
+     garder sa vue plutôt que de cadrer sur une boîte vide. */
+  if(rpNetBox("NET_FANTOME"))throw new Error("une boîte pour un net absent");
+  const cible=rpTrouve("SORTIE").find(x=>x.cle==="SORTIE");
+  cible.aller();
+  if(S.scale===s0&&S.ox===ox&&S.oy===oy)
+    throw new Error("un net bien présent, lui, doit recadrer");
+});
+T("recherche : la liste échappe ce qui vient du document",()=>{
+  loadDoc(exemple1());
+  const f=mkFp("R9",XSS,"0603",2);
+  f.x=40;f.y=30;S.fps.push(f);
+  $("rpQ").value="R9";
+  rpQBuild();
+  assertPropre($("rpRes").innerHTML,"liste de recherche");
+  assertPresent($("rpRes").innerHTML,"liste de recherche");
+});
+T("recherche : la boîte s'ouvre, se ferme, et ne liste rien sur un champ vide",()=>{
+  loadDoc(exemple1());
+  $("rpQ").value="";
+  rpQOuvrir();
+  if(!RP.q.ouvert)throw new Error("la boîte ne s'ouvre pas");
+  if(!$("rpBox").classList.contains("on"))throw new Error("la boîte reste cachée");
+  /* Champ vide : on invite, on ne liste pas les cent empreintes de la carte. */
+  if(RP.q.res.length)throw new Error("une liste sortie d'un champ vide");
+  rpQFermer();
+  if(RP.q.ouvert||$("rpBox").classList.contains("on"))
+    throw new Error("la boîte ne se ferme pas");
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
