@@ -2,6 +2,23 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.8.0
+# Date: 2026-08-26
+# Explication: la visionneuse IPC-2581 (visionneuse-ipc2581/) affiche une carte
+#   livree par un fabricant, mais le parseur qui la lit est en Python
+#   (ipc2581_parser.py) : un navigateur ne peut pas l'executer. D'ou une route
+#   de plus, /api/ipc2581 -- la page envoie le fichier tel quel, le serveur
+#   rend le modele en JSON. Rien n'est ecrit sur le disque et rien n'est garde
+#   apres la reponse : cette route ne lit pas le disque, elle traduit ce qu'on
+#   lui donne. C'est aussi pourquoi elle n'a pas le garde-fou d'ecoute locale
+#   des routes de projet -- il n'y a pas de chemin a franchir. Import tolerant
+#   comme la passerelle : un parseur absent ne doit pas empecher de servir les
+#   editeurs, la route repond alors 503 et la page le dit.
+# Fonctions ajoutees/modifiees :
+# - ErreurIPC (nouvelle), MAX_IPC, import tolerant de ipc2581_json
+# - CustomHandler._ipc2581_etat, _ipc2581_importer, _ipc_api (nouvelles)
+# - CustomHandler.do_POST / do_GET / do_HEAD / do_OPTIONS (routage)
+#
 # Version: 2.7.0
 # Date: 2026-08-26
 # Explication: un projet est desormais un dossier sur le disque, avec un
@@ -229,6 +246,32 @@ except Exception as _exc:                              # noqa: BLE001
 
 # Taille maximale d'un corps POST : les arguments d'outil sont minuscules.
 MAX_CORPS = 64 * 1024
+
+# -- import IPC-2581 --------------------------------------------------------
+# Le parseur est en Python : un navigateur ne peut pas l'executer, d'ou la
+# route /api/ipc2581 que la visionneuse appelle avec le fichier tel quel.
+# Import tolerant, pour la meme raison que la passerelle : ces trois modules
+# ne doivent pas empecher les editeurs d'etre servis s'ils manquent.
+try:
+    import ipc2581_json
+    ERREUR_IPC2581 = None
+except Exception as _exc:                              # noqa: BLE001
+    ipc2581_json = None
+    ERREUR_IPC2581 = _exc
+
+# Un IPC-2581 est un XML bavard : une carte de taille moyenne pese quelques
+# dizaines de mega-octets, et l'archive ZIP d'un fabricant guere moins une fois
+# ouverte. Le plafond protege la memoire du serveur, rien d'autre.
+MAX_IPC = 192 * 1024 * 1024
+
+
+class ErreurIPC(Exception):
+    """Refus explicite de la route d'import : code HTTP + message lisible."""
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
 
 # -- profils utilisateur ----------------------------------------------------
 # Un fichier par utilisateur, portant son nom : profils/Pilou.json. Le
@@ -1072,6 +1115,70 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self._projet_fichier_ecrire(chemin, charge, "Le document %s" % outil)
         return {"ok": True, "fichier": os.path.basename(chemin)}
 
+    # -- import IPC-2581 ---------------------------------------------------
+    # La visionneuse envoie le fichier tel quel, le serveur rend le modele en
+    # JSON. Le parseur est en Python (ipc2581_parser.py) : c'est la seule
+    # raison pour laquelle cette route existe -- le navigateur ne peut pas
+    # l'executer. Rien n'est ecrit sur le disque, rien n'est garde en memoire
+    # au-dela de la reponse : le fichier arrive, il repart traduit.
+
+    def _ipc2581_etat(self):
+        """Ce que le serveur sait faire : la page le demande avant d'ouvrir."""
+        if ipc2581_json is None:
+            return {"dispo": False,
+                    "detail": "Parseur IPC-2581 indisponible : %s" % ERREUR_IPC2581}
+        return {"dispo": True, "format": ipc2581_json.FORMAT,
+                "extensions": list(ipc2581_json.EXTENSIONS) + [".zip"],
+                "max": MAX_IPC}
+
+    def _ipc2581_importer(self):
+        """Corps de la requete (XML ou ZIP) -> modele JSON de la carte."""
+        if ipc2581_json is None:
+            raise ErreurIPC(503, "Parseur IPC-2581 indisponible : %s"
+                                 % ERREUR_IPC2581)
+        try:
+            taille = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise ErreurIPC(400, "Content-Length invalide")
+        if taille <= 0:
+            raise ErreurIPC(400, "Fichier vide")
+        if taille > MAX_IPC:
+            raise ErreurIPC(413, "Fichier trop grand : %.1f Mo, maximum %d Mo"
+                                 % (taille / 1048576.0, MAX_IPC // 1048576))
+
+        data = self.rfile.read(taille)
+        params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        nom = os.path.basename((params.get("nom") or [""])[0])[:200]
+
+        try:
+            modele = ipc2581_json.ipc2581_en_dict(data, nom)
+        except ipc2581_json.IPC2581ParseError as exc:
+            raise ErreurIPC(422, str(exc))
+        except MemoryError:
+            raise ErreurIPC(413, "Fichier trop volumineux pour la memoire"
+                                 " disponible")
+        sys.stderr.write("  IPC-2581 « %s » : %d composant(s), %d piste(s),"
+                         " %d percage(s)\n"
+                         % (nom or "(sans nom)", modele["stats"]["composants"],
+                            modele["stats"]["pistes"],
+                            modele["stats"]["percages"]))
+        return modele
+
+    def _ipc_api(self, action):
+        """Execute action() et traduit les refus en JSON {"detail": ...}.
+
+        Troisieme jumeau de _api, pour la meme raison que _profil_api : un
+        import IPC-2581 ne depend ni de pcbparts.dev ni des dossiers de projet.
+        """
+        try:
+            self._envoyer_json(action())
+        except ErreurIPC as exc:
+            self.close_connection = True    # le corps n'a peut-etre pas ete lu
+            self._envoyer_json({"detail": exc.message}, exc.code)
+        except Exception as exc:                       # noqa: BLE001
+            self.close_connection = True
+            self._envoyer_json({"detail": "Erreur interne : %s" % exc}, 500)
+
     def do_OPTIONS(self):
         route = self._route()
         if route in ("/api/profils", "/api/profil",
@@ -1083,7 +1190,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self._cors()
             self.end_headers()
             return
-        if route not in ("/api/tools", "/api/tool"):
+        if route not in ("/api/tools", "/api/tool", "/api/ipc2581"):
             self.send_error(405, "Unsupported method (OPTIONS)")
             return
         self.send_response(204)
@@ -1112,7 +1219,11 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self._profil_api(self._profil_effacer)
 
     def do_POST(self):
-        if self._route() != "/api/tool":
+        route = self._route()
+        if route == "/api/ipc2581":
+            self._ipc_api(self._ipc2581_importer)
+            return
+        if route != "/api/tool":
             self.send_error(404, "File not found")
             return
 
@@ -1147,6 +1258,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/projet/doc":
             self._projet_api(self._projet_doc_lire)
             return
+        if route == "/api/ipc2581":
+            self._ipc_api(self._ipc2581_etat)
+            return
         super().do_GET()
 
     def do_HEAD(self):
@@ -1168,6 +1282,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/projet/doc":
             self._projet_api(self._projet_doc_lire)
+            return
+        if route == "/api/ipc2581":
+            self._ipc_api(self._ipc2581_etat)
             return
         super().do_HEAD()
 

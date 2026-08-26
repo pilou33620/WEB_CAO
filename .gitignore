@@ -50,6 +50,18 @@ yarn-error.log
 /*.cxx
 /*.hpp
 
+# Cartes d'essai de la visionneuse IPC-2581 deposees a la racine. Un IPC-2581
+# est un XML bavard : la carte servant de reference ici pese 10 Mo, et sa place
+# n'est pas dans l'historique -- elle vient du fabricant, elle se retelecharge.
+# Le motif est ancre a la racine (« /*.xml » et non « *.xml ») pour la meme
+# raison que le blanc-seing « *.csv » a ete retire plus haut : un jeu d'essai
+# range dans un dossier test/ doit, lui, rester suivi.
+/*.xml
+/*.cvg
+/*.ipc
+/*.ipc2581
+/*.zip
+
 # Profils utilisateur : profils/<nom>.json est l'espace de travail d'une
 # personne (panneaux, reglages d'affichage, derniers documents). Il change a
 # chaque panneau deplace et n'a donc rien a faire dans l'historique ; le

@@ -234,13 +234,21 @@
         <small>Stock JLCPCB, équivalences, brochages, modèles CAO et cartes
         de référence, via pcbparts.dev.</small>
       </a>
+      <a href="visionneuse-ipc2581/visionneuse-ipc2581.html" class="btn">
+        <em>Import</em>
+        <b>Visionneuse IPC-2581</b>
+        <small>Ouvrir la carte livrée par un fabricant : empilage, cuivre,
+        perçages, composants et nets, couche par couche.</small>
+      </a>
     </div>
     <footer>
       Les deux éditeurs s'ouvrent sans serveur ni dépendance.<br>
       Une fois un outil ouvert, les boutons de son entête mènent aux deux autres
       sans perdre le travail en cours, tant que l'onglet reste ouvert.<br>
-      La recherche de composants a besoin du serveur du dépôt :
-      <code>python serveur.py</code>
+      La recherche de composants et la visionneuse IPC-2581 ont besoin du
+      serveur du dépôt : <code>python serveur.py</code><br>
+      Le parseur IPC-2581 est en Python — d'où le serveur ; une fois la carte
+      traduite, son <code>.json</code> se rouvre en double-clic.
     </footer>
   </div>
 

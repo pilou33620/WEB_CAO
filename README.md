@@ -5,21 +5,26 @@ schéma, on exporte la netlist, on route le circuit imprimé et on sort le
 dossier de fabrication. Les deux éditeurs s'ouvrent par double-clic sur leur
 fichier HTML — aucun serveur, aucun `npm install`, aucun outil de compilation.
 
-S'y ajoute une recherche de composants (stock JLCPCB, équivalences, brochages,
-modèles CAO), qui elle a besoin d'une petite passerelle Python.
+S'y ajoutent deux outils qui, eux, ont besoin de la petite passerelle Python :
+une recherche de composants (stock JLCPCB, équivalences, brochages, modèles
+CAO), et une visionneuse IPC-2581 pour ouvrir la carte livrée par un fabricant.
 
 ## Structure du projet
 
 ```
-index.html                     page d'accueil : schéma, PCB ou composants
+index.html                     page d'accueil : schéma, PCB, composants, IPC-2581
 serveur.py                     serveur HTTP local, pour ouvrir depuis un iPad
 passerelle_mcp.py              relais vers pcbparts.dev (bibliothèque standard)
+ipc2581_data.py                modèle d'une carte IPC-2581 (Point, Track, Pad…)
+ipc2581_parser.py              lecture d'un fichier IPC-2581 -> IPCDesign
+ipc2581_json.py                IPCDesign -> JSON, pour la visionneuse
 requirements.txt               aucune dépendance : le fichier le dit et l'explique
 LIB_composants.csv             bibliothèque de références (optionnelle)
 
 editeur-schematique/           saisie du schéma, netlist, nomenclature
 editeur-pcb/                   routage, paires diff., empilage, DRC, Gerber
 recherche-composants/          recherche de références via pcbparts.dev
+visionneuse-ipc2581/           import et affichage d'une carte IPC-2581
 commun/                        code partagé par les trois outils
 ├── workspace.js               panneaux détachables et dockables
 ├── workspace.css              habillage de l'espace de travail
@@ -150,6 +155,44 @@ passerelle n'expose que les quatorze outils de sa liste blanche.
 
 Détails dans [recherche-composants/README.md](recherche-composants/README.md).
 
+## Visionneuse IPC-2581
+
+`visionneuse-ipc2581/` ouvre une carte au format IPC-2581 — le format d'échange
+qui décrit une carte entière dans un seul fichier XML : empilage, cuivre, plans,
+perçages, pastilles, composants et nets. C'est ce que livre un fabricant, et ce
+qu'on reçoit d'un bureau d'études qui ne travaille pas sur le même outil. La
+page l'affiche couche par couche ; elle ne modifie rien.
+
+Le parseur est en Python (`ipc2581_parser.py`), qu'un navigateur ne peut pas
+exécuter : la page envoie le fichier à `serveur.py` sur `/api/ipc2581` et
+reçoit le modèle traduit en JSON. Rien n'est écrit sur le disque, rien n'est
+gardé après la réponse.
+
+```bash
+python serveur.py
+```
+
+Le fichier se choisit au bouton ou se dépose sur la page : `.xml`, `.cvg`,
+l'archive `.zip` qui en contient un — c'est souvent la forme d'un dossier de
+fabrication — et le `.json` déjà exporté depuis cette page. Ce dernier se
+rouvre **sans serveur**, en double-clic : de quoi archiver une carte lue à un
+instant donné, ou la consulter sur une machine sans Python.
+
+Le cuivre du dessus est rouge, celui du dessous bleu, les internes prennent la
+suite de la palette. Un clic sur une piste ou une pastille met son net en
+évidence, un clic sur un boîtier ouvre sa fiche avec le net de chaque broche,
+et `B` retourne la carte comme on la retournerait dans la main.
+
+Une piste sélectionnée donne aussi ce qu'elle vaut électriquement — topologie,
+plan de référence, impédance Z₀, retard, capacité et self réparties —, avec les
+formules de l'éditeur PCB pour que les deux outils s'accordent. L'empilage
+venant ici du fichier et non d'une saisie, ce qui y manque est écrit sous le
+tableau plutôt que supposé en silence — et se complète à la main dans le
+panneau « La carte », où chaque épaisseur et chaque permittivité est un champ.
+Ce qu'on y écrit suit l'utilisateur d'une ouverture à l'autre.
+
+Détails dans [visionneuse-ipc2581/README.md](visionneuse-ipc2581/README.md).
+
 ## Version un seul fichier
 
 Chaque éditeur sait s'assembler en un HTML autonome, pratique à envoyer par
@@ -207,13 +250,13 @@ chaque poussée et à chaque demande de fusion.
 
 ## Passer d'un outil à l'autre sans rien perdre
 
-Le schéma, le PCB et la recherche de composants sont trois pages distinctes :
-y aller, c'est quitter la page en cours. Le travail non enregistré les suit
-désormais. Les boutons d'entête — *Éditeur PCB*, *Éditeur schématique*,
-*Composants*, *Accueil* — mettent le document de côté avant de changer de page,
-et l'outil le reprend en arrivant, dans l'état exact où il a été laissé :
-composants et fils, empreintes et pistes, cadrage, feuille courante, requête en
-cours et son dernier résultat. Aller vérifier une valeur sur le schéma au
+Le schéma, le PCB, la recherche de composants et la visionneuse IPC-2581 sont
+quatre pages distinctes : y aller, c'est quitter la page en cours. Le travail
+non enregistré les suit désormais. Les boutons d'entête — *Éditeur PCB*,
+*Éditeur schématique*, *Composants*, *Accueil* — mettent le document de côté
+avant de changer de page, et l'outil le reprend en arrivant, dans l'état exact
+où il a été laissé : composants et fils, empreintes et pistes, cadrage, feuille
+courante, requête en cours et son dernier résultat, carte importée et vue. Aller vérifier une valeur sur le schéma au
 milieu d'un routage ne coûte donc plus rien, et on peut faire l'aller-retour
 autant de fois qu'on veut.
 
@@ -225,9 +268,12 @@ document jamais enregistré. **Ce n'est pas un enregistrement** : un projet qu'o
 veut garder passe toujours par *Enregistrer .json*.
 
 Si la place manque (le stockage de session plafonne autour de 5 Mo pour les
-trois outils), l'éditeur le dit au lieu de laisser croire que c'est passé : la
+quatre outils), l'éditeur le dit au lieu de laisser croire que c'est passé : la
 recherche de composants abandonne d'abord le résultat pour ne garder que la
-requête, et les éditeurs demandent confirmation avant de changer d'outil.
+requête, les éditeurs demandent confirmation avant de changer d'outil, et la
+visionneuse — dont une carte de fabrication dépasse souvent à elle seule ce
+plafond — renonce à mettre la sienne de côté plutôt que d'en garder une moitié.
+Le fichier, lui, se rouvre.
 
 ## Du schéma au PCB : le boîtier pose l'empreinte
 

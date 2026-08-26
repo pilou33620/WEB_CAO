@@ -41,6 +41,7 @@ const SESS_OUTILS = {
   schema:     {titre:"Éditeur schématique",     page:"editeur-schematique/editeur-schematique.html"},
   pcb:        {titre:"Éditeur PCB",             page:"editeur-pcb/editeur-pcb.html"},
   composants: {titre:"Recherche de composants", page:"recherche-composants/recherche-composants.html"},
+  ipc2581:    {titre:"Visionneuse IPC-2581",     page:"visionneuse-ipc2581/visionneuse-ipc2581.html"},
   accueil:    {titre:"Accueil",                 page:"index.html"}
 };
 

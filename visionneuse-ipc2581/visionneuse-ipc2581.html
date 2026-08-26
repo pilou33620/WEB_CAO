@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visionneuse IPC-2581 — Dashboard nocturne</title>
+<link rel="stylesheet" href="css/visionneuse.css">
+<link rel="stylesheet" href="../commun/workspace.css">
+<link rel="stylesheet" href="../commun/session.css">
+<link rel="stylesheet" href="../commun/profils.css">
+</head>
+<body>
+
+<header>
+  <div class="brand"><i></i><b>Visionneuse IPC-2581</b><span>V1.0 · IMPORT &amp; AFFICHAGE</span></div>
+  <div class="tools">
+    <button class="tb" data-cao-nav="accueil" title="Page d'accueil">⌂ Accueil</button>
+    <button class="tb" data-cao-nav="schema" title="Revenir au schéma — il est resté dans l'onglet">Éditeur schématique</button>
+    <button class="tb" data-cao-nav="pcb" title="Revenir au routage — la carte est restée dans l'onglet">Éditeur PCB</button>
+    <button class="tb" data-cao-nav="composants" title="Recherche de composants">Composants</button>
+    <button class="tb" id="bProfil" data-cao-profil title="Utilisateur : panneaux, réglages et derniers documents lui appartiennent">👤 …</button>
+    <div class="sep"></div>
+    <button class="tb on" id="bOuvrir" title="Choisir un fichier IPC-2581 (.xml, .cvg) ou son archive .zip">📂 Ouvrir un fichier…</button>
+    <button class="tb" id="bJson" title="Enregistrer le modèle traduit : il se rouvre ici sans serveur">Exporter .json</button>
+    <button class="tb" id="bPng" title="Image de ce qui est affiché">Exporter .png</button>
+    <div class="sep"></div>
+    <button class="tb" id="bFit" title="Voir toute la carte">Ajuster <kbd>F</kbd></button>
+    <button class="tb" id="bFlip" title="Regarder la carte par en dessous"><span id="bFlipTxt">Dessous</span> <kbd>B</kbd></button>
+    <button class="tb" id="bRefs" title="Afficher les repères des composants">Repères <kbd>R</kbd></button>
+    <button class="tb" id="bTrous" title="Afficher les perçages">Perçages <kbd>D</kbd></button>
+    <button class="tb" id="bPlans" title="Afficher les plans de cuivre">Plans <kbd>P</kbd></button>
+    <div class="sep"></div>
+    <button class="tb" id="bWs">Espace de travail ▾</button>
+  </div>
+</header>
+
+<main id="ws">
+  <div class="dock" id="dockL"></div>
+  <div class="gut gv" data-dock="dockL"></div>
+
+  <div class="ctr" id="ctr">
+    <div id="canvasWrap">
+      <canvas id="carte"></canvas>
+
+      <!-- Tant qu'aucune carte n'est chargée, le canevas n'a rien à montrer :
+           c'est cet écran-ci qui occupe la place, et il ne dit qu'une chose,
+           celle qu'il faut faire. -->
+      <div id="accueil">
+        <div class="vide">
+          <h2>Ouvrir une carte IPC-2581</h2>
+          <p>IPC-2581 est le format d'échange qui décrit une carte entière —
+             empilage, cuivre, perçages, composants — dans un seul fichier XML.
+             C'est ce que livre un fabricant, et ce que cet outil affiche.</p>
+          <div class="depot" id="depot">
+            <b>Déposez le fichier ici</b>
+            <small>… ou cliquez pour le choisir.<br>
+              Formats acceptés : <code>.xml</code>, <code>.cvg</code>,
+              l'archive <code>.zip</code> qui en contient un, et le
+              <code>.json</code> déjà exporté depuis cette page.</small>
+            <button class="tb on" id="bOuvrir2">📂 Choisir un fichier…</button>
+            <span class="err" id="depotErr"></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="attente" hidden>
+        <div><b id="attenteTitre">Lecture du fichier…</b>
+          <span id="attenteDetail">le parseur travaille sur le serveur</span></div>
+      </div>
+    </div>
+    <div class="gut gh" data-dock="dockB"></div>
+    <div class="dock" id="dockB"></div>
+  </div>
+
+  <div class="gut gv" data-dock="dockR"></div>
+  <div class="dock" id="dockR"></div>
+</main>
+
+<input type="file" id="fichier" accept=".xml,.cvg,.ipc,.ipc2581,.zip,.json" hidden>
+
+<div id="pnlStore" hidden>
+  <section class="pnl" data-pnl="couches" data-title="Couches">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">Couches</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body">
+      <div class="pnl-bar">
+        <button class="tb mini" id="bCchTout">Tout</button>
+        <button class="tb mini" id="bCchRien">Rien</button>
+        <button class="tb mini" id="bCchCuivre" title="Ne garder que le cuivre">Cuivre seul</button>
+      </div>
+      <!-- Ce qu'on dessine, par nature d'objet : une couche peut être visible
+           sans qu'on veuille voir ses plans de cuivre, qui couvrent tout. -->
+      <div class="pnl-bar" id="barElements"></div>
+      <div class="scroll" id="listeCouches"></div>
+    </div>
+  </section>
+
+  <section class="pnl" data-pnl="carte" data-title="La carte">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">La carte</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body"><div class="scroll" id="infos"></div></div>
+  </section>
+
+  <section class="pnl" data-pnl="nets" data-title="Nets">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">Nets</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body">
+      <div class="pnl-bar">
+        <input type="search" id="filtreNets" placeholder="filtrer…" autocomplete="off">
+        <button class="tb mini" id="bNetRien" title="Ne plus mettre de net en évidence">✕</button>
+      </div>
+      <div class="scroll" id="listeNets"></div>
+    </div>
+  </section>
+
+  <section class="pnl" data-pnl="composants" data-title="Composants">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">Composants</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body">
+      <div class="pnl-bar">
+        <input type="search" id="filtreComps" placeholder="repère, valeur, boîtier…" autocomplete="off">
+      </div>
+      <div class="scroll" id="listeComps"></div>
+    </div>
+  </section>
+
+  <section class="pnl" data-pnl="detail" data-title="Sélection">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">Sélection</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body"><div class="scroll" id="detail"></div></div>
+  </section>
+</div>
+
+<div id="floatLayer"></div>
+<div id="dropZone"></div>
+<div id="dragGhost"></div>
+
+<footer>
+  <span>Fichier <b id="fNom">—</b></span>
+  <span>Composants <b id="fComps">0</b></span>
+  <span>Nets <b id="fNets">0</b></span>
+  <span>Perçages <b id="fTrous">0</b></span>
+  <span id="fHint" class="hint">Démarrage…</span>
+  <span class="push" id="fPos">—</span>
+  <span id="fZoom">100 %</span>
+  <span id="fFace">dessus</span>
+</footer>
+
+<script src="../commun/session.js"></script>
+<script src="../commun/profils.js"></script>
+<script src="js/00-espace-config.js"></script>
+<script src="js/01-api.js"></script>
+<script src="js/02-modele.js"></script>
+<script src="js/03-rendu.js"></script>
+<script src="js/04-interaction.js"></script>
+<script src="js/05-panneaux.js"></script>
+<script src="js/06-demarrage.js"></script>
+<script src="../commun/workspace.js"></script>
+</body>
+</html>
