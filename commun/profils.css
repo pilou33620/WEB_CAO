@@ -1,7 +1,7 @@
 /* =============================================================================
    commun/profils.css
    Habillage du bouton d'utilisateur (data-cao-profil) et de son menu.
-   Même parti pris que session.css : les trois pages ont chacune leur feuille
+   Même parti pris que session.css : les quatre pages ont chacune leur feuille
    de style, mais un seul endroit décide de l'allure de ce qui est commun.
    Le menu reprend celui de l'espace de travail (#wsMenu) — c'est le même
    geste, il doit avoir la même tête.

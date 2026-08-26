@@ -165,6 +165,10 @@ class Component:
     value: str = ""  # Valeur du composant (ex: 10k, 100nF)
     tolerance: str = ""  # Tolérance du composant (ex: +-0.1pF, 5%)
     package_obj: Optional[Package] = None
+    # Broche -> nom de net, tel que le donnent les <LogicalNet><PinRef> du
+    # fichier -- pas les <Pad> internes a un <Pin>, quasi toujours absents
+    # d'un export reel. Cle : le numero de broche (Pin.number), tel quel.
+    pin_nets: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

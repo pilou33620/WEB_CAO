@@ -25,7 +25,9 @@ visionneuse-ipc2581/
 ├── visionneuse-ipc2581.html      structure de la page + ordre de chargement
 ├── css/
 │   └── visionneuse.css           thème « dashboard nocturne »
-└── js/                           7 modules, chargés dans l'ordre numéroté
+├── js/                           7 modules, chargés dans l'ordre numéroté
+└── test/
+    └── banc-essai.py             banc d'essai du parseur, carte d'essai incluse
 ```
 
 Côté Python, trois fichiers à la racine du dépôt :
@@ -36,7 +38,7 @@ Côté Python, trois fichiers à la racine du dépôt :
 ../ipc2581_json.py                IPCDesign -> JSON compact pour cette page
 ```
 
-et quatre du dossier partagé, identiques aux autres outils :
+et ceux du dossier partagé, identiques aux autres outils :
 
 ```
 ../commun/workspace.css           habillage de l'espace de travail
@@ -44,6 +46,8 @@ et quatre du dossier partagé, identiques aux autres outils :
 ../commun/session.css             habillage des boutons de navigation
 ../commun/session.js              contexte conservé en changeant d'outil
 ../commun/profils.js              réglages d'affichage propres à l'utilisateur
+../commun/projet.js               le nom du projet, d'où découlent les exports
+../commun/projet-disque.js        le dossier du projet, où la carte se range
 ```
 
 ## Les modules
@@ -57,7 +61,7 @@ et quatre du dossier partagé, identiques aux autres outils :
 | `js/03-rendu.js` | 374 | Canevas : repère écran/monde, ordre de dessin, couches, perçages, textes, mise en évidence, règle d'échelle |
 | `js/04-interaction.js` | 302 | Déplacement, zoom, pincement à deux doigts, désignation (piste, pastille, perçage, boîtier), clavier |
 | `js/05-panneaux.js` | 505 | Les cinq panneaux : couches, la carte, nets, composants, sélection — et la fiche de ligne de transmission |
-| `js/06-demarrage.js` | 266 | Ouverture d'un fichier (bouton, dépôt, reprise de session), exports `.json` et `.png`, réglages de l'utilisateur |
+| `js/06-demarrage.js` | 333 | Ouverture d'un fichier (bouton, dépôt, reprise de session), exports `.json` et `.png`, réglages de l'utilisateur |
 
 ## Démarrage
 
@@ -180,6 +184,56 @@ oublie les valeurs saisies pour revenir à ce que dit le fichier.
 | `R`, `D`, `P` | Repères, perçages, plans |
 | `O` | Ouvrir un fichier |
 | `Échap` | Ne plus rien sélectionner |
+
+## La carte dans le projet
+
+Un projet est un dossier, et ce dossier porte le schéma, le circuit imprimé et
+— depuis cet outil — la carte du fabricant :
+
+```
+carte PIR/
+    projet.cao.json
+    carte PIR-SCH.json
+    carte PIR-PCB.json
+    carte PIR-IPC.json     <- ce que cette page a lu
+```
+
+Ce troisième document n'a rien d'obligatoire : un projet sans lui est un projet
+normal, et l'accueil l'annonce simplement absent. Mais quand un dossier est
+rattaché, « Exporter .json » y range la carte au lieu de la télécharger, et la
+page la rouvre en arrivant — comme les deux éditeurs rouvrent le leur. Ce qui
+est déjà ouvert l'emporte : une carte reprise de la session n'est jamais
+effacée par celle du disque.
+
+Sans dossier de projet, rien ne change : le fichier se télécharge, sous le nom
+du projet s'il y en a un (« carte PIR-IPC.json »), sous celui du fichier lu
+sinon.
+
+Un modèle traduit pèse lourd — 8 Mo pour une 4 couches de taille moyenne. La
+voie serveur plafonne à 16 Mo (`MAX_PROJET`, `serveur.py`) : au-delà,
+l'écriture est refusée et le téléchargement prend le relais, en le disant.
+
+## Banc d'essai
+
+```bash
+python visionneuse-ipc2581/test/banc-essai.py
+```
+
+Le seul banc d'essai en Python du dépôt, et pour la raison qui fait exister la
+route `/api/ipc2581` : ce qui se teste ici ne tourne pas dans le navigateur.
+38 cas sur le parseur et le modèle JSON — empilage et permittivités, contour,
+largeurs de piste dans les deux écritures, pastilles, perçages, vias,
+composants et boîtiers, index des couches et des nets, archive `.zip`, et les
+refus (fichier vide, XML tronqué, archive illisible, archive sans IPC-2581).
+
+Il porte sa propre carte d'essai, écrite dans le fichier : deux couches, une
+piste coudée de 20 + 10 mm, un via là où elle s'arrête, un Dk de 4,37 rangé
+dans une `<Spec>`. Un IPC-2581 réel pèse une dizaine de mégaoctets et n'a pas
+sa place dans l'historique ; une carte dont chaque valeur se vérifie à la main
+prouve davantage. C'est elle qui a montré que le lien composant → empreinte
+suivait `part` au lieu de `packageRef` — sur la carte de référence, 282
+composants sur 285 ressortaient sans empreinte, donc sans broches, et la fiche
+d'un boîtier annonçait « 0 broche ».
 
 ## Limites connues
 

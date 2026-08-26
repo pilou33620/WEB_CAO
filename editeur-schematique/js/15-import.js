@@ -191,11 +191,29 @@ window.addEventListener("beforeunload",e=>{
    automatique ci-dessus, qui elle vise le plantage et demande confirmation :
    ici, l'utilisateur n'a rien perdu, il n'y a donc rien à lui demander.
    -------------------------------------------------------------------------- */
+/* Cross-probing vers le PCB : ce que « voir sur le PCB » doit y chercher.
+   Un seul composant sélectionné d'abord -- « ce R1 précisément » --, et à
+   défaut le net du premier fil sélectionné : cliquer un fil suffit, pas
+   besoin de connaitre son nom. Rien de sélectionné -> rien à sonder, le clic
+   sur « Éditeur PCB » reste la navigation simple d'avant. */
+function schSonde(cible){
+  if(cible!=="pcb")return null;
+  if(S.sel.size===1){
+    const el=S.comps.find(c=>c.id===[...S.sel][0]);
+    if(el&&el.ref)return {quoi:"ref",valeur:el.ref};
+  }
+  if(S.selW.size){
+    const w=[...S.selW][0];
+    const n=nets().byWire.get(w);
+    if(n&&n.name)return {quoi:"net",valeur:n.name};
+  }
+  return null;
+}
 function sessionSchema(){
   const repris=sessBrancher("schema",()=>({
     doc:JSON.parse(serialize()),
     sale:S.dirty
-  }));
+  }),schSonde);
   if(!repris)return false;
   try{
     loadDoc(repris.etat.doc);        // normPage() vérifie tout au passage

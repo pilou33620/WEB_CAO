@@ -125,3 +125,30 @@ const RP_SCH={
   }
 };
 rpInit(RP_SCH);
+
+/* ==========================================================================
+   Cross-probing depuis le PCB
+   --------------------------------------------------------------------------
+   sessAller() (commun/session.js) a pu laisser une cible à destination de
+   "schema" -- une référence ou un net choisi au PCB, juste avant le départ.
+   On la reprend ici, après rpInit() ci-dessus : `cibles()` (RP_SCH) a besoin
+   de S.pages et de docNets(), qui n'existent que si le schéma est déjà
+   chargé -- c'est le cas dès que ce script s'exécute, puisque 17-demarrage.js,
+   chargé avant lui, a déjà repris la session d'onglet de manière synchrone.
+
+   Exact seulement : une correspondance partielle amènerait sur le mauvais
+   composant sans le dire, pire qu'une absence de saut. */
+function schSonderCible(){
+  const c=(typeof sessCiblePrendre==="function")?sessCiblePrendre("schema"):null;
+  if(!c)return;
+  const q=String(c.valeur).toLowerCase();
+  const t=rpTrouve(c.valeur).find(x=>String(x.cle).toLowerCase()===q);
+  const h=document.getElementById("fHint");
+  if(!t){
+    if(h)h.textContent="Depuis le PCB : « "+c.valeur+" » introuvable sur ce schéma.";
+    return;
+  }
+  t.aller();
+  if(h)h.textContent="Depuis le PCB : "+t.libelle+".";
+}
+schSonderCible();

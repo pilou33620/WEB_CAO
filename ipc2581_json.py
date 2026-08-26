@@ -269,8 +269,19 @@ def design_en_dict(design: IPCDesign, fichier: str = "") -> dict:
         paquet = comp.package_obj
         if paquet:
             item["pads"] = [_pad_en_dict(p, nets) for p in paquet.pads]
-            item["pins"] = [{"num": pin.number, "x": _r(pin.x), "y": _r(pin.y)}
-                            for pin in paquet.pins]
+            broches = []
+            for pin in paquet.pins:
+                b = {"num": pin.number, "x": _r(pin.x), "y": _r(pin.y)}
+                # Le net d'une broche vient de <LogicalNet>, pas des <Pad> d'un
+                # <Pin> -- ceux-la sont quasiment toujours absents d'un export
+                # reel. comp.pin_nets est indexe par _parse_logical_nets.
+                net_nom = comp.pin_nets.get(pin.number)
+                if net_nom:
+                    rang = nets.rang(net_nom)
+                    if rang >= 0:
+                        b["n"] = rang
+                broches.append(b)
+            item["pins"] = broches
         composants.append(item)
 
     padstacks = {}

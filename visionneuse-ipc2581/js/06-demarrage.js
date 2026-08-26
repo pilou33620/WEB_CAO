@@ -146,17 +146,44 @@ function telecharger(blob,nom){
   setTimeout(function(){URL.revokeObjectURL(url);},4000);
 }
 function nomBase(){
-  return (V.fichier||"carte").replace(/\.[^.]+$/,"")||"carte";
+  const repli=(V.fichier||"carte").replace(/\.[^.]+$/,"")||"carte";
+  /* Avec un projet ouvert, les exports portent son nom — « carte PIR-IPC.json »
+     comme le schéma porte « carte PIR-SCH.json ». Sans projet, le nom du
+     fichier ouvert, exactement comme avant. */
+  return (typeof projBase==="function")?projBase(PREF,repli):repli;
 }
 /* Le modèle traduit, tel qu'il est arrivé du serveur. Les champs calculés à
    l'affichage (boîtes de composants, boîtes de pistes) sont retirés : ils se
    recalculent en une passe, et les garder doublerait le fichier. */
-function exportJson(){
-  if(!V.modele)return;
-  const texte=JSON.stringify(V.modele,function(cle,valeur){
+function modeleTexte(){
+  return JSON.stringify(V.modele,function(cle,valeur){
     return (cle==="boite"||cle==="_b")?undefined:valeur;
   });
-  telecharger(new Blob([texte],{type:"application/json"}),nomBase()+".json");
+}
+/* Avec un dossier de projet rattaché, la carte lue s'y range à côté du schéma
+   et du circuit imprimé ; sans dossier, elle se télécharge comme avant. Le
+   repli n'est pas un luxe : sur un .json rouvert en double-clic, aucun accès
+   disque n'est possible.
+
+   Un modèle traduit pèse lourd — 8 Mo pour une 4 couches de taille moyenne —
+   et la voie serveur plafonne à 16 Mo (MAX_PROJET, serveur.py). Au-delà,
+   l'écriture est refusée et le téléchargement prend le relais, en le disant. */
+function exportJson(){
+  if(!V.modele)return;
+  if(typeof projdLie==="function"&&projdLie()){
+    projdDocEcrire(PREF,JSON.parse(modeleTexte())).then(function(nom){
+      if(typeof profNoterDocument==="function")profNoterDocument(PREF,nom);
+      hint("Carte rangée dans le dossier du projet ("+nom+").");
+    }).catch(function(e){
+      hint("Écriture refusée : "+e.message+" — export en téléchargement.");
+      exportJsonTelecharger();
+    });
+    return;
+  }
+  exportJsonTelecharger();
+}
+function exportJsonTelecharger(){
+  telecharger(new Blob([modeleTexte()],{type:"application/json"}),nomBase()+".json");
   hint("Modèle exporté : il se rouvre ici sans serveur.");
 }
 function exportPng(){
@@ -224,6 +251,44 @@ function exportPng(){
 })();
 
 /* ==========================================================================
+   La carte du projet
+   --------------------------------------------------------------------------
+   Un dossier de projet porte le schéma, le circuit imprimé, et — depuis que
+   cet outil existe — la carte livrée par le fabricant : « carte PIR-IPC.json ».
+   Rien n'oblige à en avoir une ; s'il y en a une, on la remet en place en
+   arrivant, comme les deux éditeurs rouvrent la leur.
+
+   Ce qui est déjà ouvert l'emporte : une carte reprise de la session ou un
+   fichier déposé pendant la lecture ne doit pas être effacé par le disque.
+   ========================================================================== */
+let IPC_PROJET_LU=false;
+
+function ipcChargerProjet(){
+  if(IPC_PROJET_LU)return;
+  if(typeof projdLie!=="function")return;
+  /* Dossier retrouvé mais autorisation perdue : une demande sans geste de
+     l'utilisateur échoue, et il n'y a pas de geste à offrir ici. On le dit. */
+  if(!projdLie()){
+    const a=(typeof projdAReconnecter==="function")?projdAReconnecter():"";
+    if(a)hint("Dossier « "+a+" » à rouvrir : passez par l'accueil.");
+    return;
+  }
+  IPC_PROJET_LU=true;
+  projdDocLire(PREF).then(function(d){
+    if(!d)return;                 // projet sans carte de fabricant : rien à faire
+    if(V.modele)return;           // une carte est déjà là : on n'écrase pas
+    if(!Array.isArray(d.couches))
+      throw new Error("ce fichier n'est pas un modèle de carte");
+    poser(d,(typeof projdNomDoc==="function")?projdNomDoc(PREF):"carte-IPC.json");
+    hint("Carte du projet ouverte : « "+V.fichier+" ».");
+  }).catch(function(e){
+    IPC_PROJET_LU=false;          // un échec ne condamne pas les essais suivants
+    hint("Carte du projet illisible : "+e.message);
+  });
+}
+try{ projSurChangement(ipcChargerProjet); }catch(_){}
+
+/* ==========================================================================
    Démarrage
    ========================================================================== */
 (function(){
@@ -255,6 +320,8 @@ function exportPng(){
     if(typeof apiConnecter==="function")
       apiConnecter().catch(function(e){ erreur(e.message); });
   }
+
+  ipcChargerProjet();
 
   /* Changer d'utilisateur change les réglages d'affichage, pas la carte. */
   if(typeof profSurChangement==="function")

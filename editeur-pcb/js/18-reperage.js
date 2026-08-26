@@ -109,3 +109,29 @@ const RP_PCB={
   }
 };
 rpInit(RP_PCB);
+
+/* ==========================================================================
+   Cross-probing depuis le schéma
+   --------------------------------------------------------------------------
+   sessAller() (commun/session.js) a pu laisser une cible à destination de
+   "pcb" -- une référence ou un net choisi au schéma, juste avant le départ.
+   On la reprend ici, après rpInit() ci-dessus : `cibles()` (RP_PCB) a besoin
+   de S.fps et de netTable(), qui n'existent que si la carte est déjà chargée
+   -- c'est le cas dès que ce script s'exécute, puisque 07-app.js, chargé
+   avant lui, a déjà repris la session d'onglet de manière synchrone.
+
+   Exact seulement : une correspondance partielle amènerait sur le mauvais
+   composant sans le dire, pire qu'une absence de saut. */
+function pcbSonderCible(){
+  const c=(typeof sessCiblePrendre==="function")?sessCiblePrendre("pcb"):null;
+  if(!c)return;
+  const q=String(c.valeur).toLowerCase();
+  const t=rpTrouve(c.valeur).find(x=>String(x.cle).toLowerCase()===q);
+  if(!t){
+    hint("Depuis le schéma : « "+c.valeur+" » introuvable sur cette carte.");
+    return;
+  }
+  t.aller();
+  hint("Depuis le schéma : "+t.libelle+".");
+}
+pcbSonderCible();

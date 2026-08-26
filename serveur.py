@@ -2,6 +2,19 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.9.0
+# Date: 2026-08-26
+# Explication: la visionneuse IPC-2581 rejoint la gestion de projet. Un projet
+#   est un dossier, et ce dossier porte desormais un troisieme document :
+#   <nom>-IPC.json, le modele traduit de la carte livree par le fabricant. Il
+#   n'a rien d'obligatoire -- absent, il est simplement annonce absent --, mais
+#   quand il est la, la visionneuse le rouvre en arrivant comme les deux
+#   editeurs rouvrent le leur. PROJET_SUFFIXE est la moitie serveur de
+#   PROJD_SUFFIXE (commun/projet-disque.js) : les deux tables se tiennent.
+# Fonctions ajoutees/modifiees :
+# - PROJET_SUFFIXE (entree ipc2581)
+# - CustomHandler._projet_outil (message d'erreur deduit de la table)
+#
 # Version: 2.8.0
 # Date: 2026-08-26
 # Explication: la visionneuse IPC-2581 (visionneuse-ipc2581/) affiche une carte
@@ -338,7 +351,13 @@ PROJETS_OUVERT = False            # vrai seulement si l'ecoute est locale
 MAX_PROJET = 16 * 1024 * 1024     # un schema ou une carte : quelques centaines de Ko
 PROJET_FICHIER = "projet.cao.json"
 PROJET_FORMAT = "cao-projet-1"
-PROJET_SUFFIXE = {"schema": "-SCH.json", "pcb": "-PCB.json"}
+# Un document de projet par outil. La visionneuse IPC-2581 y figure comme
+# les deux editeurs : ce qu'elle range dans le dossier est le modele traduit
+# d'une carte recue, piece du projet au meme titre que le schema et le
+# circuit imprime. Cette table est la moitie serveur de PROJD_SUFFIXE
+# (commun/projet-disque.js) : les deux se lisent ensemble.
+PROJET_SUFFIXE = {"schema": "-SCH.json", "pcb": "-PCB.json",
+                  "ipc2581": "-IPC.json"}
 
 
 class ErreurProjet(Exception):
@@ -930,8 +949,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def _projet_outil(self):
         outil = (self._projet_params().get("doc") or [""])[0]
         if outil not in PROJET_SUFFIXE:
-            raise ErreurProjet(400, "Document inconnu : « %s » (attendu :"
-                                    " schema ou pcb)" % outil)
+            # La liste attendue se lit dans la table : un outil de plus ne
+            # doit pas laisser un message qui en annonce deux.
+            raise ErreurProjet(400, "Document inconnu : « %s » (attendu : %s)"
+                                    % (outil, ", ".join(PROJET_SUFFIXE)))
         return outil
 
     def _projet_corps(self):

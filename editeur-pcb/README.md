@@ -1768,6 +1768,21 @@ La cote est une annotation de travail : `paint()` ne la trace que lorsqu'il
 trace aussi la grille, c'est-à-dire jamais dans le `.png` exporté — ni l'une ni
 l'autre ne décrivent la carte. Quitter le mode l'efface (`setMode`).
 
+### Cross-probing vers le schéma
+
+Une empreinte sélectionnée -- une seule -- ou, à défaut, le net mis en
+évidence (`S.hlNet`) : cliquer *Éditeur schématique* dans l'entête y amène
+directement sur ce même repère, feuille retrouvée comprise. Rien de
+sélectionné, et le bouton fait ce qu'il a toujours fait -- changer de page.
+
+Le mécanisme ne réinvente rien : `pcbSonde()` (`js/07-app.js`) répond « quoi
+chercher », `sessAller()` (`../commun/session.js`) l'écrit dans un second canal
+de `sessionStorage`, distinct du document transporté et qui ne survit qu'à une
+seule navigation, et `pcbSonderCible()` (`js/18-reperage.js`) le consomme à
+l'arrivée en s'appuyant sur `rpTrouve()` -- la même recherche par repère que
+`Ctrl+F`, sur laquelle `pcbSonderCible()` s'appelle exactement comme
+`rpQAller()`.
+
 ## Limites connues
 
 - Pas de bibliothèque d'empreintes livrée avec l'éditeur : les empreintes de

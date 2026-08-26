@@ -1,3 +1,38 @@
+# [2026-08-26] Version 1.72: le net d'une broche vient enfin de <LogicalNet>
+# Description:
+#              - La fiche d'un boitier, dans la visionneuse, promet le net de
+#                chaque broche. Rien ne le lisait : le seul chemin envisage
+#                passait par les <Pad> internes a un <Pin>, presque toujours
+#                absents d'un export reel -- 0 sur 285 composants sur la carte
+#                de reference. Le lien existe pourtant dans le fichier, sous
+#                une autre forme : <LogicalNet name="..."><PinRef
+#                componentRef="U1" pin="3"/>, un element par net logique dans
+#                <Ecad><CadData><Step>.
+#              - Component.pin_nets (broche -> net) est rempli par
+#                _parse_logical_nets, appelee juste apres les composants -- il
+#                lui faut l'index refDes -> Component deja construit.
+#
+# Liste des fonctions ajoutées/modifiées :
+# - ✨ _parse_logical_nets
+# - ✏️ _parse_ecad (appel de _parse_logical_nets)
+#
+# [2026-08-26] Version 1.71: le lien composant -> empreinte enfin suivi
+# Description:
+#              - _process_component lisait l'attribut « part » la ou IPC-2581
+#                met le lien vers l'empreinte, « packageRef ». Les deux ne se
+#                ressemblent pas : sur un export du commerce, part vaut
+#                « CONN_8-2mm-reflow » quand packageRef vaut
+#                « CONN_8pts-2mm_reflow ». Le rattrapage par sous-chaine qui
+#                suit n'y pouvait rien, et 282 composants sur 285 ressortaient
+#                sans package_obj -- donc sans broches ni pastilles dans le
+#                modele JSON, et la fiche d'un boitier annoncait « 0 broche »
+#                dans la visionneuse.
+#              - Trouve par le banc d'essai neuf
+#                (visionneuse-ipc2581/test/banc-essai.py).
+#
+# Liste des fonctions modifiées :
+# - ✏️ _process_component
+#
 # [2026-08-26] Version 1.70: les <Spec> de matériau enfin lues
 # Description:
 #              - La permittivité d'un stratifié ne vit jamais sur la couche
@@ -896,6 +931,9 @@ class IPC2581Parser:
         for comp in components:
             self._process_component(comp)
 
+        logger.info("Parsing des LogicalNet (broche -> net)...")
+        self._parse_logical_nets(step)
+
         layer_features = step.findall(self._tag("LayerFeature"))
         logger.info(f"Parsing des {len(layer_features)} éléments LayerFeature (pistes, polygones, textes)...")
         for layer_feature in layer_features:
@@ -1098,6 +1136,36 @@ class IPC2581Parser:
 
         self.design.packages[name] = package
 
+    def _parse_logical_nets(self, step_elem: ET.Element):
+        """<LogicalNet name="..."><PinRef componentRef="U1" pin="3"/>...
+
+        C'est la seule source fiable du net d'une broche : les <Pad> internes
+        a un <Pin> qui permettraient de le deduire autrement sont quasiment
+        toujours absents d'un export reel (verifie sur un export du commerce
+        de 10 Mo, aucun composant n'en porte). Sans cette lecture, la fiche
+        d'un boitier ne peut pas repondre a la question qu'on lui pose le plus
+        souvent -- "la broche 3, elle va ou ?".
+        """
+        index = {c.ref_des: c for c in self.design.components}
+        compte = 0
+        for net_elem in step_elem.findall(self._tag("LogicalNet")):
+            net_name = net_elem.attrib.get("name")
+            if not net_name:
+                continue
+            for ref in net_elem.findall(self._tag("PinRef")):
+                comp = index.get(ref.attrib.get("componentRef", ""))
+                pin = ref.attrib.get("pin")
+                if comp is None or not pin:
+                    continue
+                # Le premier net gagne : deux <LogicalNet> ne devraient jamais
+                # revendiquer la meme broche, mais un fichier mal forme ne
+                # doit pas faire clignoter la valeur au hasard de l'ordre.
+                comp.pin_nets.setdefault(pin, net_name)
+                compte += 1
+        if compte:
+            logger.info("%d lien(s) broche -> net indexe(s) depuis %d LogicalNet.",
+                        compte, len(step_elem.findall(self._tag("LogicalNet"))))
+
     def _process_component(self, comp_elem: ET.Element):
         ref_des = comp_elem.attrib.get("refDes")
         if not ref_des:
@@ -1114,7 +1182,14 @@ class IPC2581Parser:
             if pkg_name not in self.design.packages:
                 self._process_package(inline_pkg)
         else:
-            actual_pkg_ref = comp_elem.attrib.get("part", "Unknown")
+            # C'est « packageRef » qui designe le <Package> : « part » est le
+            # nom de la reference (celui de la nomenclature), qui n'a aucune
+            # raison de ressembler au nom de l'empreinte -- sur un fichier
+            # reel, part="CONN_8-2mm-reflow" pour packageRef="CONN_8pts-2mm_reflow".
+            # Lire « part » ici laissait donc les composants sans empreinte,
+            # donc sans broches : la fiche d'un boitier annonçait « 0 broche ».
+            actual_pkg_ref = (comp_elem.attrib.get("packageRef")
+                              or comp_elem.attrib.get("part", "Unknown"))
 
         layer = comp_elem.attrib.get("layerRef", "TOP")
         mount = comp_elem.attrib.get("mountType", "UNKNOWN")

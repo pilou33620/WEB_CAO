@@ -1,6 +1,6 @@
 "use strict";
 /* ==========================================================================
-   Profils utilisateur — module commun aux trois outils
+   Profils utilisateur — module commun aux quatre outils
    Un profil, c'est la façon dont QUELQU'UN se sert de la suite : ses panneaux
    à gauche plutôt qu'à droite, sa grille, son chevelu, ses derniers documents.
    Rien du contenu des cartes ni des schémas — ceux-là vivent dans leurs

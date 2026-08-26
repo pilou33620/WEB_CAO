@@ -314,17 +314,26 @@ function pnlDetail(){
         +(comp.pads?comp.pads.length:0)+" pastilles)")
       +"</table>";
     /* Les broches et leur net : c'est la question qu'on pose à un boîtier
-       neuf fois sur dix — « la 3, elle va où ? ». */
-    if(comp.pads&&comp.pads.length){
+       neuf fois sur dix — « la 3, elle va où ? ».
+
+       La source, c'est comp.pins (num, x, y, et n s'il y a un net) : le net
+       vient des <LogicalNet> du fichier, la seule source fiable -- les <Pad>
+       internes à un <Pin> (comp.pads) sont quasiment toujours absents d'un
+       export réel. On ne s'y rabat que si comp.pins n'a rien à dire, pour
+       le cas rare d'un fichier qui les porte sans porter de LogicalNet. */
+    const broches=(comp.pins&&comp.pins.length)?comp.pins
+      :(comp.pads||[]).map(function(p){return {num:p.pin,n:p.n};});
+    if(broches.length){
       h+="<h3>Broches</h3><table>";
-      for(const p of comp.pads.slice(0,80)){
-        const nom=(p.n==null||p.n<0)?"—":mdlNetNom(p.n);
-        h+='<tr><td class="g">'+mdlEsc(p.pin||"?")+'</td><td>'
-          +'<span class="lien" data-vnet="'+(p.n==null?-1:p.n)+'">'
+      for(const p of broches.slice(0,80)){
+        const rang=(p.n==null?-1:p.n);
+        const nom=rang<0?"—":mdlNetNom(rang);
+        h+='<tr><td class="g">'+mdlEsc(p.num||"?")+'</td><td>'
+          +'<span class="lien" data-vnet="'+rang+'">'
           +mdlEsc(nom)+"</span></td></tr>";
       }
-      if(comp.pads.length>80)
-        h+='<tr><td colspan="2">… et '+(comp.pads.length-80)+" autres</td></tr>";
+      if(broches.length>80)
+        h+='<tr><td colspan="2">… et '+(broches.length-80)+" autres</td></tr>";
       h+="</table>";
     }
     h+="</div>";

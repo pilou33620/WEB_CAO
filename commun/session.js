@@ -1,8 +1,9 @@
 "use strict";
 /* ==========================================================================
-   Session de travail — module commun aux trois outils
-   Le schéma, le PCB et la recherche de composants sont trois pages HTML
-   distinctes : passer de l'une à l'autre, c'est quitter la page. Sans filet,
+   Session de travail — module commun aux quatre outils
+   Le schéma, le PCB, la recherche de composants et la visionneuse IPC-2581
+   sont quatre pages HTML distinctes : passer de l'une à l'autre, c'est
+   quitter la page. Sans filet,
    tout ce qui n'était pas enregistré sur disque disparaissait — aller vérifier
    une valeur sur le schéma coûtait le routage en cours.
 
@@ -30,11 +31,11 @@
    n'est pas relu de travers, il est simplement ignoré. */
 const SESS_CLE = "cao.session.v1.";
 /* Garde-fou de quota : sessionStorage plafonne autour de 5 Mo par origine, et
-   les trois outils se le partagent. Au-delà, on préfère renoncer proprement
+   les quatre outils se le partagent. Au-delà, on préfère renoncer proprement
    (et le dire) plutôt que de faire échouer l'écriture au dernier moment. */
 const SESS_MAX = 3 * 1024 * 1024;
 
-/* Les trois outils et la page d'accueil, avec leur chemin depuis le dossier
+/* Les quatre outils et la page d'accueil, avec leur chemin depuis le dossier
    d'un outil. Chemins RELATIFS à dessein : « /editeur-pcb/ » ne marche qu'avec
    un serveur, et pas en double-clic sur le fichier (file://). */
 const SESS_OUTILS = {
@@ -47,6 +48,7 @@ const SESS_OUTILS = {
 
 let SESS_OUTIL = null;      // nom de l'outil hôte, une fois branché
 let SESS_CAPTURE = null;    // fonction fournissant l'état à conserver
+let SESS_SONDE = null;      // fonction (cible) -> {quoi,valeur}|null, pour le cross-probing
 let SESS_QUITTE = false;    // vrai pendant une sortie vers un autre outil
 let SESS_DISPO;             // undefined = pas encore testé
 
@@ -113,13 +115,59 @@ function sessEffacer(outil){
 }
 
 /* ==========================================================================
+   Cross-probing : « va voir CE composant, CE net, sur l'autre outil »
+   --------------------------------------------------------------------------
+   Un canal distinct du document transporté ci-dessus : celui-ci ne vit qu'une
+   navigation, jamais relu au retour ni au rechargement. sessAller() l'écrit
+   juste avant de partir, quand l'outil d'origine a déclaré un `sonde` à
+   sessBrancher() et que ce sonde répond quelque chose pour la destination ;
+   l'outil d'arrivée le consomme lui-même une fois son document en place, avec
+   sessCiblePrendre() — ce fichier ne sait pas ce qu'est une « référence » ou
+   un « net », il ne fait que porter la valeur d'un outil à l'autre.
+   ========================================================================== */
+const SESS_CLE_CIBLE = SESS_CLE + "cible";
+
+function sessCibleEcrire(cible, quoi, valeur){
+  const s = sessStock();
+  if(!s || !cible || !quoi || !valeur) return;
+  try{
+    s.setItem(SESS_CLE_CIBLE,
+      JSON.stringify({v:1, outil:cible, quoi:quoi, valeur:String(valeur)}));
+  }catch(_){}
+}
+/* Rend {quoi, valeur} pour CET outil, ou null — et ne rend qu'une fois : une
+   cible consommée ne doit pas ressurgir à un rechargement de page, ni à un
+   aller-retour ultérieur qui ne l'a pas redemandée. `outil` doit correspondre
+   à la destination déclarée par sessCibleEcrire() : une cible écrite pour le
+   PCB ne doit pas être reprise par la visionneuse si elle démarre la première. */
+function sessCiblePrendre(outil){
+  const s = sessStock();
+  if(!s || !outil) return null;
+  let raw = null;
+  try{ raw = s.getItem(SESS_CLE_CIBLE); }catch(_){ return null; }
+  if(!raw) return null;
+  try{ s.removeItem(SESS_CLE_CIBLE); }catch(_){}   // consommée, quel que soit le résultat
+  let o = null;
+  try{ o = JSON.parse(raw); }catch(_){ return null; }
+  if(!o || o.v !== 1 || o.outil !== outil || !o.quoi || !o.valeur) return null;
+  return {quoi: o.quoi, valeur: o.valeur};
+}
+
+/* ==========================================================================
    Branchement d'un outil
    ========================================================================== */
 /* `capture` doit renvoyer un objet sérialisable, ou rien s'il n'y a rien à
    conserver. Renvoie l'état trouvé pour cet outil dans l'onglet, ou null. */
-function sessBrancher(outil, capture){
+/* `sonde`, s'il est fourni, répond à « si je pars vers TEL outil maintenant,
+   que doit-il regarder ? » -- {quoi:"ref"|"net", valeur} ou rien. C'est ce qui
+   fait qu'un clic sur « Éditeur PCB » depuis un composant sélectionné au
+   schéma amène directement dessus, sans bouton ni geste supplémentaire :
+   quand rien n'est sélectionné, sonde() ne répond rien et la navigation reste
+   celle d'avant. */
+function sessBrancher(outil, capture, sonde){
   SESS_OUTIL = outil;
   SESS_CAPTURE = (typeof capture === "function") ? capture : null;
+  SESS_SONDE = (typeof sonde === "function") ? sonde : null;
   /* pagehide plutôt que beforeunload : il part aussi quand la page est mise en
      cache par la navigation arrière, et il n'est pas escamoté sur mobile. */
   try{ window.addEventListener("pagehide", sessEnregistrer); }catch(_){}
@@ -163,6 +211,16 @@ function sessUrl(cible){
 function sessAller(cible){
   const url = sessUrl(cible);
   if(!url) return;
+  /* La cible du cross-probing s'écrit AVANT sessEnregistrer() : les deux
+     canaux sont indépendants, et l'ordre n'a pas d'effet l'un sur l'autre --
+     mais un échec de la sonde (elle est exécutée dans le try) ne doit jamais
+     empêcher le départ. */
+  if(SESS_SONDE){
+    try{
+      const s = SESS_SONDE(cible);
+      if(s && s.quoi && s.valeur) sessCibleEcrire(cible, s.quoi, s.valeur);
+    }catch(_){}
+  }
   if(!sessEnregistrer() &&
      !confirm("Le travail en cours n'a pas pu être mis de côté " +
               "(stockage de session plein ou indisponible).\n\n" +

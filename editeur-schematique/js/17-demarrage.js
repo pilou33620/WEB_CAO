@@ -61,6 +61,10 @@ function schChargerProjet(){
     S.dirty=false;
     const h=document.getElementById("fHint");
     if(h)h.textContent="Schéma chargé depuis le dossier du projet.";
+    /* La cible du cross-probing n'a pu être reprise au démarrage (21-reperage.js,
+       juste après cette page) que si la session d'onglet avait déjà un schéma :
+       un schéma lu APRÈS coup, comme ici, doit retenter une fois chargé. */
+    if(typeof schSonderCible==="function")schSonderCible();
   }).catch(function(e){
     SCH_PROJET_LU=false;     // un échec ne condamne pas les essais suivants
     const h=document.getElementById("fHint");

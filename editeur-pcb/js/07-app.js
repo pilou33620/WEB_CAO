@@ -258,13 +258,28 @@ window.addEventListener("beforeunload",e=>{
    ========================================================================== */
 /* Vrai quand la session d'onglet a rétabli la vue : 16-profil.js ne la
    contredit pas avec la vue enregistrée dans le profil, plus ancienne. */
+/* Cross-probing vers le schéma : ce que « voir sur le schéma » doit y chercher.
+   Une seule empreinte sélectionnée d'abord -- c'est le cas net, « ce R1
+   précisément » --, et à défaut le net mis en évidence (S.hlNet), qui lui
+   n'exige pas de sélection : cliquer une piste ou une ligne du panneau Nets
+   suffit. Rien de sélectionné -> rien à sonder, et le clic sur « Éditeur
+   schématique » reste la navigation simple d'avant. */
+function pcbSonde(cible){
+  if(cible!=="schema")return null;
+  if(S.sel.fps.size===1){
+    const fp=fpById([...S.sel.fps][0]);
+    if(fp&&fp.ref)return {quoi:"ref",valeur:fp.ref};
+  }
+  if(S.hlNet)return {quoi:"net",valeur:S.hlNet};
+  return null;
+}
 let PCB_REPRISE=false;
 function sessionPcb(){
   const repris=sessBrancher("pcb",()=>({
     doc:docObj(),
     sale:S.dirty,
     vue:{scale:S.scale,ox:S.ox,oy:S.oy,flip:S.flip}
-  }));
+  }),pcbSonde);
   if(!repris)return false;
   try{
     loadDoc(repris.etat.doc,true);       // normDoc() se charge de tout vérifier
@@ -333,6 +348,10 @@ function pcbChargerProjet(){
     loadDoc(d);
     draw();
     hint("Carte chargée depuis le dossier du projet.");
+    /* La cible du cross-probing n'a pu être reprise au démarrage (18-reperage.js,
+       juste après cette page) que si la session d'onglet avait déjà une carte :
+       une carte lue APRÈS coup, comme ici, doit retenter une fois chargée. */
+    if(typeof pcbSonderCible==="function")pcbSonderCible();
   }).catch(function(e){
     PCB_PROJET_LU=false;       // un échec ne doit pas condamner les essais suivants
     hint("Carte du projet illisible : "+e.message);

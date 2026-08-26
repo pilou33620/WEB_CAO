@@ -383,11 +383,14 @@ function pDosMsg(txt, ennui){
   el.innerHTML = ennui ? "<i>" + uEsc(txt) + "</i>" : txt;
 }
 /* Ce que le dossier contient déjà — c'est la réponse à « et mes fichiers ? ».
-   Un projet neuf n'a ni l'un ni l'autre ; un projet repris a le schéma, la
-   carte, ou les deux, et les éditeurs les chargent à leur ouverture. */
+   Un projet neuf n'a rien ; un projet repris a le schéma, la carte, la carte
+   IPC-2581 lue chez le fabricant, ou plusieurs des trois, et chaque outil
+   charge le sien à son ouverture. Aucun n'est obligatoire : beaucoup de
+   projets n'auront jamais d'IPC-2581, et « absent » n'est pas un reproche. */
 function pDosDocs(){
   const d = projdDocuments();
-  return [["schema", "Schéma"], ["pcb", "PCB"]].map(function(x){
+  return [["schema", "Schéma"], ["pcb", "PCB"],
+          ["ipc2581", "IPC-2581"]].map(function(x){
     const e = d[x[0]];
     return "<span>" + x[1] + " : "
       + (e.present ? uEsc(e.fichier) : "<i>absent</i>") + "</span>";
@@ -500,10 +503,16 @@ function pDosFait(etat){
   const quoi = [];
   if(d.schema.present) quoi.push("le schéma");
   if(d.pcb.present) quoi.push("la carte");
+  if(d.ipc2581.present) quoi.push("la carte IPC-2581");
   pDosMsg("Projet <b>" + uEsc(nom) + "</b> ouvert depuis <b>"
     + uEsc(projdChemin()) + "</b>"
+    /* Trois documents possibles : « le schéma et la carte » se disait bien
+       avec un join, « le schéma et la carte et la carte IPC-2581 » non. */
     + (quoi.length
-        ? " — " + quoi.join(" et ") + (quoi.length > 1 ? " seront chargés" : " sera chargé")
+        ? " — " + (quoi.length > 1
+                    ? quoi.slice(0, -1).join(", ") + " et " + quoi[quoi.length - 1]
+                    : quoi[0])
+          + (quoi.length > 1 ? " seront chargés" : " sera chargé")
           + " à l'ouverture de l'éditeur."
         : " — ni schéma ni carte pour l'instant.")
     + "<br>" + pDosDocs());

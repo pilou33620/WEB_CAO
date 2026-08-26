@@ -25,7 +25,8 @@ editeur-schematique/           saisie du schéma, netlist, nomenclature
 editeur-pcb/                   routage, paires diff., empilage, DRC, Gerber
 recherche-composants/          recherche de références via pcbparts.dev
 visionneuse-ipc2581/           import et affichage d'une carte IPC-2581
-commun/                        code partagé par les trois outils
+└── test/banc-essai.py         banc d'essai du parseur, avec sa carte d'essai
+commun/                        code partagé par les quatre outils
 ├── workspace.js               panneaux détachables et dockables
 ├── workspace.css              habillage de l'espace de travail
 ├── session.js                 le travail suit l'utilisateur d'un outil à l'autre
@@ -222,6 +223,10 @@ python editeur-pcb/outils/build-monofichier.py && node editeur-pcb/test/harness.
 python editeur-schematique/outils/build-monofichier.py && node editeur-schematique/test/harness.js
 ```
 
+```bash
+python visionneuse-ipc2581/test/banc-essai.py
+```
+
 Chaque banc reconstruit un DOM minimal (`commun/test/dom-stub.js`) et exécute
 le bundle sans navigateur. Le PCB couvre la netlist, le chevelu multicouche,
 les vias, les îlots de cuivre, les classes de net, le contour libre, les rôles de
@@ -242,11 +247,28 @@ côté puis repris à l'identique, état illisible ou trop gros écarté, garde 
 sortie qui se tait pour un changement d'outil mais pas pour une fermeture — et
 l'échappement HTML des panneaux face à un fichier malveillant.
 
+Le troisième banc est en Python, et c'est le seul : il porte sur la moitié de
+la visionneuse IPC-2581 qui ne tourne pas dans le navigateur — le parseur
+(`ipc2581_parser.py`) et le modèle JSON qu'il alimente. Il couvre l'empilage et
+ses permittivités (celles qui vivent dans une `<Spec>` pointée par un
+`<SpecRef>`, la forme des outils du commerce), le contour, les largeurs de
+piste des deux écritures, pastilles, perçages, vias, composants et boîtiers,
+l'index des couches et des nets du modèle, l'archive `.zip`, et les refus —
+fichier vide, XML tronqué, archive illisible, archive sans IPC-2581.
+
+Il porte sa propre carte d'essai, écrite dans le fichier : un IPC-2581 réel
+pèse une dizaine de mégaoctets et n'a pas sa place dans l'historique, et une
+carte de quarante lignes dont chaque valeur se vérifie à la main prouve
+davantage. C'est elle qui a montré que le lien composant → empreinte suivait le
+mauvais attribut — 282 composants sur 285 sans empreinte, donc sans broches,
+sur une carte réelle.
+
 Installer `canvas` (`npm i canvas`) est facultatif : sans lui, les quelques
 essais qui rasterisent réellement le cuivre sont ignorés, les autres tournent.
 
-L'intégration continue (`.github/workflows/ci.yml`) rejoue les deux bancs à
-chaque poussée et à chaque demande de fusion.
+L'intégration continue (`.github/workflows/ci.yml`) rejoue les trois bancs à
+chaque poussée et à chaque demande de fusion, et passe au compilateur tous les
+scripts Python du dépôt.
 
 ## Passer d'un outil à l'autre sans rien perdre
 
@@ -274,6 +296,24 @@ requête, les éditeurs demandent confirmation avant de changer d'outil, et la
 visionneuse — dont une carte de fabrication dépasse souvent à elle seule ce
 plafond — renonce à mettre la sienne de côté plutôt que d'en garder une moitié.
 Le fichier, lui, se rouvre.
+
+### Cross-probing schéma ↔ PCB
+
+Un clic sur *Éditeur PCB* depuis un composant sélectionné au schéma y amène
+directement dessus — même feuille retrouvée, même sélection, la carte cadrée
+dessus. Dans l'autre sens aussi : un clic sur *Éditeur schématique* depuis une
+piste ou un net mis en évidence au PCB va chercher ce même net au schéma. Rien
+de sélectionné, et le bouton retombe sur la navigation simple d'avant.
+
+C'est un second canal de `sessionStorage`, distinct du document transporté
+ci-dessus et qui ne survit qu'à une seule navigation : `sessAller()` l'écrit au
+départ si l'outil d'origine a une sélection à signaler (`pcbSonde()`,
+`schSonde()`), l'outil d'arrivée le consomme une fois son document en place
+(`pcbSonderCible()`, `schSonderCible()`, dans `18-reperage.js` et
+`21-reperage.js`) en s'appuyant sur la recherche par repère déjà commune aux
+deux éditeurs (`commun/reperage.js`) — c'est elle qui sait retrouver « ce R1 »
+ou « ce net » et cadrer la vue dessus, cette fonctionnalité n'a eu qu'à
+l'appeler depuis l'autre outil.
 
 ## Du schéma au PCB : le boîtier pose l'empreinte
 

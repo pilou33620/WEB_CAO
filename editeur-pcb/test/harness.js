@@ -52,6 +52,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "sessBrancher","sessEnregistrer","sessLire","sessEcrire","sessEffacer",
   "sessPoids","sessTient","sessUrl","sessAller","sessQuitte","sessAutonome",
   "sessBarre","sessionPcb","SESS_CLE","SESS_MAX",
+  "sessCibleEcrire","sessCiblePrendre","pcbSonde","pcbSonderCible",
   /* espace de travail commun (commun/workspace.js) */
   "wsDefault","wsApply","wsMove","wsPlaceOf","wsLabel","wsToggleFloat",
   "wsToggleCollapse","wsClose","wsShow","wsMenuBuild","wsLoad","wsSave","wsEl","WS_KEY",
@@ -5102,6 +5103,74 @@ T("session : la carte mise de côté revient à l'identique",()=>{
   if(d)throw new Error("la carte a changé en chemin : "+d);
   if(!S.dirty)throw new Error("l'état « modifié » doit revenir aussi, sinon "+
     "l'onglet se fermerait sans un mot sur un travail jamais enregistré");
+});
+/* ==========================================================================
+   Cross-probing schéma ↔ PCB (commun/session.js + pcbSonde/pcbSonderCible)
+   « ce U1 » sélectionné ici doit amener sur ce même U1 là-bas — et rien de
+   sélectionné ne doit rien changer à la navigation d'avant.
+   ========================================================================== */
+T("cross-probing : pcbSonde répond pour une empreinte, un net, ou rien",()=>{
+  dom.session.clear();
+  carteVide();importNetlist(NET,false);
+  const u1=S.fps.find(f=>f.ref==="U1");
+  clearSel();S.sel.fps.add(u1.id);
+  const s=pcbSonde("schema");
+  if(!s||s.quoi!=="ref"||s.valeur!=="U1")
+    throw new Error("une empreinte seule sélectionnée doit sonder sa référence : "+JSON.stringify(s));
+  if(pcbSonde("composants")!==null)
+    throw new Error("pcbSonde ne répond que pour \"schema\"");
+  clearSel();S.hlNet="GND";
+  const sn=pcbSonde("schema");
+  if(!sn||sn.quoi!=="net"||sn.valeur!=="GND")
+    throw new Error("un net mis en évidence doit se sonder par son nom : "+JSON.stringify(sn));
+  clearSel();S.hlNet=null;
+  if(pcbSonde("schema")!==null)
+    throw new Error("rien de sélectionné ne doit rien sonder");
+});
+T("cross-probing : sessAller écrit la cible, l'arrivée la consomme une seule fois",()=>{
+  dom.session.clear();
+  carteVide();importNetlist(NET,false);
+  sessBrancher("pcb",()=>({doc:docObj(),sale:S.dirty}),pcbSonde);
+  const u1=S.fps.find(f=>f.ref==="U1");
+  clearSel();S.sel.fps.add(u1.id);
+  sessAller("schema");              // écrit la cible {outil:"schema", quoi:"ref", valeur:"U1"}
+  const c=sessCiblePrendre("schema");
+  if(!c||c.quoi!=="ref"||c.valeur!=="U1")
+    throw new Error("la cible écrite pour le schéma ne revient pas telle quelle : "+JSON.stringify(c));
+  if(sessCiblePrendre("schema")!==null)
+    throw new Error("une cible consommée ne doit pas resservir");
+  dom.session.clear();
+});
+T("cross-probing : arrivée sans sélection ne pose aucune cible",()=>{
+  dom.session.clear();
+  carteVide();importNetlist(NET,false);
+  sessBrancher("pcb",()=>({doc:docObj(),sale:S.dirty}),pcbSonde);
+  clearSel();
+  sessAller("schema");
+  if(sessCiblePrendre("schema")!==null)
+    throw new Error("sans sélection, la navigation ne doit pas déposer de cible");
+  dom.session.clear();
+});
+T("cross-probing : pcbSonderCible sélectionne et cadre l'empreinte visée",()=>{
+  dom.session.clear();
+  carteVide();importNetlist(NET,false);
+  clearSel();S.scale=1;S.ox=0;S.oy=0;
+  sessCibleEcrire("pcb","ref","D1");
+  pcbSonderCible();
+  const d1=S.fps.find(f=>f.ref==="D1");
+  if(!S.sel.fps.has(d1.id))throw new Error("D1 devait être sélectionné après le saut");
+  if(sessCiblePrendre("pcb")!==null)
+    throw new Error("pcbSonderCible doit consommer la cible");
+  dom.session.clear();
+});
+T("cross-probing : une cible introuvable ne casse rien et ne sélectionne rien",()=>{
+  dom.session.clear();
+  carteVide();importNetlist(NET,false);
+  clearSel();
+  sessCibleEcrire("pcb","ref","N_EXISTE_PAS");
+  pcbSonderCible();                 // ne doit pas lever
+  if(S.sel.fps.size)throw new Error("rien ne devait être sélectionné");
+  dom.session.clear();
 });
 T("session : un état illisible, périmé ou hostile est écarté",()=>{
   dom.session.setItem(SESS_CLE+"pcb","pas du json");

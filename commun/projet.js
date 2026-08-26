@@ -1,6 +1,6 @@
 "use strict";
 /* ==========================================================================
-   Nom de projet, commun aux trois outils
+   Nom de projet, commun aux quatre outils
    --------------------------------------------------------------------------
    Une carte porte un nom — « carte PIR » — et ce nom vaut pour le schéma
    comme pour le circuit imprimé. Les deux éditeurs en dérivent le leur :
@@ -28,9 +28,14 @@ const PROJ_CLE = "cao.projet.v1";
 const PROJ_NOM_MAX = 60;
 const PROJ_MEMOIRE = 12;        // projets récents gardés dans la liste
 
-/* Suffixes par outil. C'est la seule table à toucher si un quatrième outil
-   arrive un jour. */
-const PROJ_SUFFIXE = {schema:"-SCH", pcb:"-PCB"};
+/* Suffixes par outil. C'est la seule table à toucher quand un outil arrive :
+   la visionneuse IPC-2581 est le quatrième, et n'a demandé que cette ligne.
+
+   Pourquoi la visionneuse y figure alors qu'elle ne modifie rien : elle
+   exporte. Le modèle traduit d'une carte reçue est une pièce du projet au
+   même titre que le schéma et le circuit imprimé -- c'est la carte telle que
+   le fabricant l'a livrée --, et son fichier se nomme comme les autres. */
+const PROJ_SUFFIXE = {schema:"-SCH", pcb:"-PCB", ipc2581:"-IPC"};
 
 let PROJ_ETAT = null;           // {nom, liste:[{nom,t}]} — chargé à la demande
 let PROJ_ABONNES = [];

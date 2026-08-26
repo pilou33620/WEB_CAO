@@ -63,10 +63,10 @@ identiques pour l'éditeur PCB :
 | `js/18-csv.js` | 108 | Bibliothèque `LIB_composants.csv` : analyse, chargement HTTP ou manuel |
 | `js/19-broches.js` | 379 | Éditeur de brochage : nombre de broches, représentation, taille du corps, noms et placement des pattes à la grille |
 | `js/20-profil.js` | 83 | Réglages d'affichage rangés dans le profil de l'utilisateur : grille, étiquettes de net, onglet de liste |
-| `js/21-reperage.js` | 127 | Ce que la recherche et la mesure valent sur un schéma : aimant sur les broches, cibles de toutes les feuilles, cadrage |
+| `js/21-reperage.js` | 154 | Ce que la recherche et la mesure valent sur un schéma : aimant sur les broches, cibles de toutes les feuilles, cadrage, cross-probing vers le PCB |
 | `../commun/reperage.js` | 294 | Chercher un repère, mesurer une distance — le geste, partagé avec l'éditeur PCB et paramétré par l'adaptateur de `21-reperage.js` |
 | `../commun/profils.js` | 555 | Profils utilisateur : qui travaille, ses panneaux, ses réglages, ses derniers documents — **chargé en premier**, avant l'espace de travail qui l'interroge |
-| `../commun/session.js` | 190 | Session d'onglet : le schéma part et revient quand on passe au PCB ou à la recherche — **chargé en premier** |
+| `../commun/session.js` | 249 | Session d'onglet : le schéma part et revient quand on passe au PCB ou à la recherche, et porte le cross-probing entre les deux — **chargé en premier** |
 | `../commun/workspace.js` | 610 | Espace de travail : docks, panneaux flottants, persistance — **chargé en dernier** |
 
 ## Ce que sait faire l'éditeur, au-delà du tracé
@@ -259,6 +259,21 @@ toutes lettres évite qu'on prenne le nombre pour une dimension de carte. C'est
 la seule différence de fond entre les deux mesures, et elle tient à un booléen
 de l'adaptateur (`physique:false`, `js/21-reperage.js`) — tout le reste du
 geste est le même code, `../commun/reperage.js`, partagé avec le PCB.
+
+### Cross-probing vers le PCB
+
+Un composant sélectionné -- un seul -- ou, à défaut, le net du premier fil
+retenu : cliquer *Éditeur PCB* dans l'entête y amène directement sur ce même
+repère. Rien de sélectionné, et le bouton fait ce qu'il a toujours fait --
+changer de page.
+
+Le mécanisme ne réinvente rien : `schSonde()` (`js/15-import.js`) répond « quoi
+chercher », `sessAller()` (`../commun/session.js`) l'écrit dans un second canal
+de `sessionStorage`, distinct du document transporté et qui ne survit qu'à une
+seule navigation, et `schSonderCible()` (`js/21-reperage.js`) le consomme à
+l'arrivée en s'appuyant sur `rpTrouve()` -- la même recherche par repère que
+`Ctrl+F`, sur laquelle `schSonderCible()` s'appelle exactement comme
+`rpQAller()`.
 
 ## Deux règles à respecter
 

@@ -71,6 +71,7 @@ const EXPOSE=[
   /* session d'onglet commune (commun/session.js) */
   "sessBrancher","sessEnregistrer","sessLire","sessEcrire","sessEffacer",
   "sessTient","sessUrl","sessQuitte","sessionSchema","restoreBackup","clearBackup",
+  "sessCibleEcrire","sessCiblePrendre","schSonde","schSonderCible","sessAller",
   /* espace de travail commun */
   "wsDefault","wsApply","wsMove","wsPlaceOf","wsLabel","wsToggleFloat",
   "wsToggleCollapse","wsClose","wsShow","wsMenuBuild","wsLoad","wsSave","wsEl","WS_KEY",
@@ -933,6 +934,84 @@ T("session : un état illisible ou hostile ne casse pas le démarrage",()=>{
   if(!sessionSchema())throw new Error("le document devait être repris, filtré");
   if(S.comps.length)throw new Error("aucun composant ne devait survivre au tamis");
   dom.session.clear();
+});
+
+/* ==========================================================================
+   Cross-probing schéma ↔ PCB (commun/session.js + schSonde/schSonderCible)
+   « ce R1 » sélectionné ici doit amener sur ce même R1 là-bas — et rien de
+   sélectionné ne doit rien changer à la navigation d'avant.
+   ========================================================================== */
+T("cross-probing : schSonde répond pour un composant, un net, ou rien",()=>{
+  dom.session.clear();
+  sheet([C("resistor",2,2,{ref:"R1",value:"10k",pkg:"0603"}),
+         C("capacitor",6,2,{ref:"C1",value:"100n",pkg:"0603"})],
+        [W(2,2,6,2,"N1")]);
+  const r1=S.comps.find(c=>c.ref==="R1");
+  clearSel();S.sel.add(r1.id);
+  const s=schSonde("pcb");
+  if(!s||s.quoi!=="ref"||s.valeur!=="R1")
+    throw new Error("un composant seul sélectionné doit sonder sa référence : "+JSON.stringify(s));
+  if(schSonde("composants")!==null)
+    throw new Error("schSonde ne répond que pour \"pcb\"");
+  clearSel();S.selW.add(S.wires[0]);
+  const sn=schSonde("pcb");
+  if(!sn||sn.quoi!=="net"||sn.valeur!=="N1")
+    throw new Error("un fil sélectionné doit sonder le nom de son net : "+JSON.stringify(sn));
+  clearSel();
+  if(schSonde("pcb")!==null)
+    throw new Error("rien de sélectionné ne doit rien sonder");
+});
+T("cross-probing : sessAller écrit la cible, l'arrivée la consomme une seule fois",()=>{
+  dom.session.clear();
+  sheet([C("resistor",2,2,{ref:"R1",value:"10k",pkg:"0603"})],[]);
+  sessBrancher("schema",()=>({doc:JSON.parse(serialize()),sale:S.dirty}),schSonde);
+  clearSel();S.sel.add(S.comps[0].id);
+  sessAller("pcb");                 // écrit la cible {outil:"pcb", quoi:"ref", valeur:"R1"}
+  const c=sessCiblePrendre("pcb");
+  if(!c||c.quoi!=="ref"||c.valeur!=="R1")
+    throw new Error("la cible écrite pour le PCB ne revient pas telle quelle : "+JSON.stringify(c));
+  if(sessCiblePrendre("pcb")!==null)
+    throw new Error("une cible consommée ne doit pas resservir");
+});
+T("cross-probing : une cible ne sert qu'à sa destination, jamais à une autre",()=>{
+  dom.session.clear();
+  sessCibleEcrire("pcb","ref","R1");
+  /* Lue par le mauvais outil, elle ne doit ni répondre ni rester en attente
+     pour un lecteur ultérieur qui, lui, tomberait juste : une cible n'a de
+     sens qu'à destination d'UN départ précis. */
+  if(sessCiblePrendre("schema")!==null)
+    throw new Error("une cible pour \"pcb\" ne doit pas répondre à \"schema\"");
+  if(sessCiblePrendre("pcb")!==null)
+    throw new Error("une lecture, même ratée, doit consommer la cible");
+});
+T("cross-probing : arrivée sans sélection ne pose aucune cible",()=>{
+  dom.session.clear();
+  sheet([C("resistor",2,2,{ref:"R1",value:"10k",pkg:"0603"})],[]);
+  sessBrancher("schema",()=>({doc:JSON.parse(serialize()),sale:S.dirty}),schSonde);
+  clearSel();
+  sessAller("pcb");
+  if(sessCiblePrendre("pcb")!==null)
+    throw new Error("sans sélection, la navigation ne doit pas déposer de cible");
+});
+T("cross-probing : schSonderCible sélectionne et cadre le composant visé",()=>{
+  dom.session.clear();
+  sheet([C("resistor",2,2,{ref:"R1",value:"10k",pkg:"0603"}),
+         C("capacitor",30,30,{ref:"C9",value:"100n",pkg:"0603"})],[]);
+  clearSel();S.scale=1;S.ox=0;S.oy=0;
+  sessCibleEcrire("schema","ref","C9");
+  schSonderCible();
+  const c9=S.comps.find(c=>c.ref==="C9");
+  if(!S.sel.has(c9.id))throw new Error("C9 devait être sélectionné après le saut");
+  if(sessCiblePrendre("schema")!==null)
+    throw new Error("schSonderCible doit consommer la cible");
+});
+T("cross-probing : une cible introuvable ne casse rien et ne sélectionne rien",()=>{
+  dom.session.clear();
+  sheet([C("resistor",2,2,{ref:"R1",value:"10k",pkg:"0603"})],[]);
+  clearSel();
+  sessCibleEcrire("schema","ref","N_EXISTE_PAS");
+  schSonderCible();               // ne doit pas lever
+  if(S.sel.size)throw new Error("rien ne devait être sélectionné");
 });
 
 

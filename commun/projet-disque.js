@@ -6,6 +6,7 @@
            projet.cao.json          <- le nom, la revision, les liens
            carte PIR-SCH.json
            carte PIR-PCB.json
+           carte PIR-IPC.json       <- la carte du fabricant, telle que lue
 
    Repartition avec commun/projet.js : celui-la tient l'identite du projet (son
    nom, la liste des recents, les accesseurs synchrones dont tout le monde se
@@ -32,7 +33,12 @@ const PROJD_CLE = "cao.projet.dossier.v1";
 const PROJD_DEST = "cao.projet.destination.v1";   // ou ranger les nouveaux projets
 const PROJD_FICHIER = "projet.cao.json";
 const PROJD_FORMAT = "cao-projet-1";
-const PROJD_SUFFIXE = {schema:"-SCH.json", pcb:"-PCB.json"};
+/* Un document par outil. La visionneuse IPC-2581 y a sa place bien qu'elle
+   ne modifie rien : ce qu'elle range la est le modele traduit d'une carte
+   recue, et c'est une piece du projet -- la carte telle que le fabricant l'a
+   livree, a cote du schema et du circuit imprime. Absent, il n'a rien de
+   fautif : projdDocuments() dit « present » ou « absent », sans exiger. */
+const PROJD_SUFFIXE = {schema:"-SCH.json", pcb:"-PCB.json", ipc2581:"-IPC.json"};
 const PROJD_BD = "cao-projet";           // base IndexedDB du dossier retenu
 const PROJD_BD_CLE = "dossier";
 
@@ -95,12 +101,19 @@ function projdNomDocDe(fichier, outil){
   const nom = (fichier && fichier.nom) || projNom();
   return nom ? nom + suf : "";
 }
+/* Les noms de fichiers d'un projet neuf, deduits de la table elle-meme :
+   ajouter un outil ne doit pas demander de repasser ici. */
+function projdFichiersDe(nom){
+  const out = {};
+  for(const outil in PROJD_SUFFIXE) out[outil] = nom + PROJD_SUFFIXE[outil];
+  return out;
+}
 /* Un fichier projet neuf. Le nom est la seule chose qu'on exige. */
 function projdNeuf(nom){
   const t = new Date().toISOString();
   return {format:PROJD_FORMAT, nom:nom, revision:"A", auteur:"",
           cree:t, modifie:t,
-          fichiers:{schema:nom+PROJD_SUFFIXE.schema, pcb:nom+PROJD_SUFFIXE.pcb},
+          fichiers:projdFichiersDe(nom),
           notes:""};
 }
 

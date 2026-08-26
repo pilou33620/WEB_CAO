@@ -9,7 +9,12 @@ connues » de [editeur-pcb/README.md](editeur-pcb/README.md#limites-connues).
 
 Ce qui en sort est retiré d'ici et documenté là où il vit. **Fait :** l'outil de
 mesure et la recherche par repère, dans les deux éditeurs
-(`commun/reperage.js`).
+(`commun/reperage.js`) ; le fichier de placement et la nomenclature côté PCB
+(`positions.csv`, `bom.csv`, dans `buildFabFiles()`,
+[editeur-pcb/js/04-fabrication.js:750](editeur-pcb/js/04-fabrication.js:750)) ; le
+cross-probing schéma ↔ PCB (`pcbSonde`/`schSonde` et `sessAller()`,
+[commun/session.js](commun/session.js), documenté dans
+[README.md](README.md#passer-dun-outil-à-lautre-sans-rien-perdre)).
 
 ## Fabrication
 
@@ -28,27 +33,6 @@ c'est juste l'export qui n'a pas suivi. Il faut un fichier par portée
 
 C'est un défaut de fabrication silencieux, pas un manque de fonction : une
 carte multicouche exportée aujourd'hui part fausse chez le fabricant.
-
-### Fichier de placement et nomenclature côté PCB
-
-Pas de fichier de placement ni de BOM côté PCB. L'assemblage (JLCPCB, PCBA en
-général) demande un `positions.csv` — repère, valeur, empreinte, X, Y,
-rotation, face — et un `bom.csv`.
-
-Toutes les données sont dans `S.fps`, c'est un export à écrire, pas une
-fonction à inventer. Les deux fichiers rejoignent l'archive de
-`buildFabFiles()`
-([editeur-pcb/js/04-fabrication.js:513](editeur-pcb/js/04-fabrication.js:513)).
-
-## Les deux éditeurs
-
-### Cross-probing schéma ↔ PCB
-
-Pas de cross-probing schéma ↔ PCB. La session transporte les deux documents
-mais rien ne relie « ce R1 » à « ce R1 ».
-
-Le transport existe déjà (`commun/session.js`) ; ce qui manque, c'est le lien
-de sélection dans les deux sens.
 
 ## Éditeur schématique
 
