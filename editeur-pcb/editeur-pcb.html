@@ -13,7 +13,7 @@
 <body>
 
 <header>
-  <div class="brand"><i></i><b>Éditeur PCB</b><span>V1.0 · MULTICOUCHE</span></div>
+  <div class="brand"><i></i><b>Éditeur PCB</b><span>V1.0 · MULTICOUCHE</span><span class="proj" data-cao-projet="pcb" hidden></span></div>
   <div class="tools">
     <button class="tb" data-cao-nav="schema" title="Aller au schéma — le routage en cours reste dans l'onglet">⬅ Éditeur schématique</button>
     <button class="tb" data-cao-nav="composants" title="Chercher une référence — la carte reste dans l'onglet">⌕ Composants</button>
@@ -204,12 +204,15 @@
 
 <script src="../commun/session.js"></script>
 <script src="../commun/profils.js"></script>
+<script src="../commun/projet.js"></script>
+<script src="../commun/projet-disque.js"></script>
 <script src="../commun/reperage.js"></script>
 <script src="js/00-espace-config.js"></script>
 <script src="js/01-core.js"></script>
 <script src="js/02-connectivity.js"></script>
 <script src="js/03-render.js"></script>
 <script src="js/04-fabrication.js"></script>
+<script src="js/04-pdf-masterdraw.js"></script>
 <script src="js/05-tools.js"></script>
 <script src="js/06-panels.js"></script>
 <script src="js/07-app.js"></script>

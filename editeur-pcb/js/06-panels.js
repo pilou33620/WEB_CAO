@@ -49,7 +49,7 @@ function buildLayers(){
   const tech=[["silkT","Sérigraphie dessus","F.SilkS"],["silkB","Sérigraphie dessous","B.SilkS"],
               ["maskT","Masque dessus","F.Mask"],["maskB","Masque dessous","B.Mask"],
               ["pasteT","Pâte dessus","F.Paste"],["pasteB","Pâte dessous","B.Paste"],
-              ["edge","Contour de carte","Edge.Cuts"],["plane","Zones de cuivre","Zones"],
+              ["edge","Contour de carte","Board Outline"],["plane","Zones de cuivre","Zones"],
               ["rats","Chevelu","Ratsnest"],["drc","Erreurs DRC","DRC"]];
   for(const [k,n,id] of tech)
     h+='<div class="lay'+(S.show[k]?"":" off")+'" data-show="'+k+'">'+

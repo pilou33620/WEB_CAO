@@ -101,17 +101,104 @@
   }
   .urow button:hover { border-color: var(--blue); color: #fff; }
   .urow button.danger:hover { border-color: var(--red); color: var(--red); }
+  .urow select {
+    background: var(--bg); color: var(--txt);
+    border: 1px solid var(--border2); border-radius: 5px;
+    padding: 7px 10px; font-family: var(--ui); font-size: 13px; cursor: pointer;
+  }
+  .urow select:focus { outline: none; border-color: var(--blue); }
+  /* La rangée de destination : séparée du champ d'ouverture, parce que ce
+     sont deux logiques distinctes — ouvrir tape ce qui existe, créer choisit
+     où ranger. */
+  .urow#pNeufRow {
+    margin-top: 6px; padding-top: 10px; border-top: 1px dashed var(--border2);
+  }
+  .urow#pNeufRow input { flex: 1 1 160px; }
   .uinfo { margin-top: 10px; font-size: 11px; line-height: 1.6; color: var(--txt-dim); }
   .uinfo code { font-family: var(--mono); color: var(--blue); }
   .urec { margin-top: 8px; font-size: 11px; line-height: 1.7; color: var(--txt-dim); }
   .urec b { color: var(--txt); font-weight: 600; }
   .urec em { font-family: var(--mono); font-style: normal; color: var(--yellow); opacity: .85; }
+
+  /* ---------- projet ---------- */
+  /* Le nom courant, bien lisible : c'est lui qui se retrouve sur le Master
+     Drawing et dans les noms de fichiers exportés. */
+  .pcur {
+    margin-top: 10px; font-family: var(--mono); font-size: 12px;
+    line-height: 1.8; color: var(--txt-dim);
+  }
+  .pcur b { color: var(--yellow); font-weight: 600; font-size: 14px; }
+  .pcur span { color: var(--blue); }
+  .pcur i { font-style: normal; color: var(--txt-dim); opacity: .8; }
+  /* Le dossier sur le disque : séparé du nom par un filet, parce que ce sont
+     deux choses distinctes — on peut nommer un projet sans le rattacher. */
+  .pdos {
+    margin-top: 14px; padding-top: 12px;
+    border-top: 1px dashed var(--border2);
+  }
+  .pdos .pcur span { display: inline-block; margin-left: 10px; color: var(--txt-dim); }
+  /* Le geste principal de cette rangée : ouvrir l'explorateur. Les autres
+     boutons sont des replis, ils n'ont pas à lui disputer le regard. */
+  .urow button.fort { border-color: var(--blue); color: #fff; }
+  .urow button.fort:hover { background: #20242a; }
 </style>
 </head>
 <body>
   <div class="container">
     <div class="brand"><i></i><h1>CAO Web</h1><span>SCHÉMA · PCB · COMPOSANTS</span></div>
     <p class="intro">Par quoi commencez-vous ?</p>
+
+    <!-- Sur quoi on travaille : un nom global, dont les deux éditeurs dérivent
+         le leur (« carte PIR » donne « carte PIR-SCH » et « carte PIR-PCB »).
+         C'est ce nom qui part sur le Master Drawing et sur les fichiers
+         exportés. Voir commun/projet.js. -->
+    <div class="users">
+      <h2>Projet</h2>
+      <div class="ulist" id="pList"></div>
+      <div class="urow">
+        <input id="pNom" maxlength="60" autocomplete="off"
+               placeholder="Nom d'un nouveau projet… (ex. carte PIR)"
+               aria-label="Nom d'un nouveau projet">
+        <button id="pAdd">Nouveau projet</button>
+        <button id="pDel" class="danger">Oublier celui-ci</button>
+      </div>
+      <div class="pcur" id="pCur"></div>
+
+      <!-- Dossier sur le disque. « Ouvrir » ouvre l'explorateur : c'est le
+           même geste pour un projet existant et pour un nouveau, seule la
+           présence d'un projet.cao.json dans le dossier choisi fait la
+           différence. Le champ de chemin reste là pour les navigateurs sans
+           sélecteur de dossier, où c'est serveur.py qui tient le disque.
+           Voir commun/projet-disque.js. -->
+      <div class="pdos">
+        <div class="urow">
+          <button id="pOuvre" class="fort">📁 Ouvrir un dossier…</button>
+          <input id="pChem" maxlength="400" autocomplete="off"
+                 placeholder="…ou un chemin écrit à la main (ex. carte PIR, ou D:\projets\carte PIR)"
+                 aria-label="Dossier du projet">
+          <button id="pChemGo">Ouvrir ce chemin</button>
+          <button id="pDetach" class="danger">Détacher</button>
+        </div>
+
+        <!-- Créer un projet sans boîte de dialogue : c'est le repli des
+             navigateurs sans sélecteur de dossier, où « Ouvrir » ne peut rien
+             désigner. La racine se choisit parmi celles déclarées au démarrage
+             du serveur — jamais ici, c'est ce qui en fait une frontière — et le
+             sous-dossier est libre. Masquée dès que l'explorateur est là. -->
+        <div class="urow" id="pNeufRow">
+          <!-- Masqué tant que le serveur n'a pas dit ses racines : un menu
+               déroulant vide n'est pas un choix, c'est une question sans
+               réponse. Il ne se montre que s'il y a plus d'une racine. -->
+          <select id="pRac" aria-label="Racine où créer le projet" hidden></select>
+          <input id="pSous" maxlength="200" autocomplete="off"
+                 placeholder="Sous-dossier… (facultatif, ex. clients/acme)"
+                 aria-label="Sous-dossier où créer le projet">
+          <button id="pCree">Créer le projet ici</button>
+        </div>
+        <div class="pcur" id="pDosEtat"></div>
+        <div class="ulist" id="pDosList"></div>
+      </div>
+    </div>
 
     <!-- Qui travaille : panneaux, réglages d'affichage et derniers documents
          appartiennent à la personne choisie ici, et la suivent d'un outil à
@@ -158,6 +245,8 @@
   </div>
 
 <script src="commun/profils.js"></script>
+<script src="commun/projet.js"></script>
+<script src="commun/projet-disque.js"></script>
 <script>
 "use strict";
 /* ==========================================================================
@@ -213,6 +302,281 @@ function uRendreRecents(){
   document.getElementById("uRec").innerHTML = h;
 }
 function uRendre(){ uRendreListe(); uRendreInfo(); uRendreRecents(); }
+
+/* ==========================================================================
+   Le projet en cours
+   Un projet, c'est un nom — « carte PIR » — et les deux éditeurs en dérivent
+   le leur : « carte PIR-SCH » pour le schéma, « carte PIR-PCB » pour la
+   carte. Le nom vit dans localStorage (commun/projet.js) et non dans la
+   session : un projet ne meurt pas à la fermeture de l'onglet.
+   ========================================================================== */
+function pRendre(){
+  const nom = projNom();
+  /* Le nom en cours, et les deux noms qu'il donne aux éditeurs : on les
+     montre pour qu'on n'ait pas à deviner ce qui partira sur les fichiers. */
+  document.getElementById("pCur").innerHTML = nom
+    ? "Projet en cours : <b>" + uEsc(nom) + "</b>"
+      + "<span>" + uEsc(projDoc("schema")) + "</span>"
+      + "<span>" + uEsc(projDoc("pcb")) + "</span>"
+    : "<i>Aucun projet nommé. Les exports garderont leurs noms par défaut "
+      + "(<b>schema</b>, <b>carte</b>) et le Master Drawing un repère "
+      + "générique.</i>";
+  document.getElementById("pDel").hidden = !nom;
+  /* Les projets déjà nommés, pour y revenir sans les retaper */
+  const box = document.getElementById("pList");
+  box.innerHTML = projListe().map(function(e){
+    const on = projMemeNom(e.nom, nom);
+    return '<button data-projet="' + uEsc(e.nom) + '"'
+      + (on ? ' class="on"' : '') + '>'
+      + '<span class="ck">' + (on ? "\u2713" : "") + '</span>'
+      + uEsc(e.nom) + '</button>';
+  }).join("");
+  box.querySelectorAll("[data-projet]").forEach(function(b){
+    b.onclick = function(){ projOuvrir(b.dataset.projet); pRendre(); };
+  });
+}
+document.getElementById("pAdd").onclick = function(){
+  const champ = document.getElementById("pNom");
+  const nom = champ.value;
+  if(!nom.trim()){ champ.focus(); return; }
+  if(!projOuvrir(nom)){
+    alert("Nom refusé : ce nom devient un préfixe de nom de fichier.\n\n"
+      + "Évitez \\ / : * ? \" < > | et le point en début ou en fin, "
+      + "et tenez-vous en à 60 caractères.");
+    return;
+  }
+  champ.value = "";
+  pRendre();
+};
+document.getElementById("pNom").addEventListener("keydown", function(e){
+  if(e.key === "Enter") document.getElementById("pAdd").click();
+});
+document.getElementById("pDel").onclick = function(){
+  const nom = projNom();
+  if(!nom) return;
+  if(!confirm("Oublier le projet « " + nom + " » ?\n\n"
+    + "Seul le nom est oublié. Les schémas et les cartes sont des fichiers "
+    + "à part : ils ne sont pas touchés."))
+    return;
+  projOublier(nom);
+  pRendre();
+};
+/* ==========================================================================
+   Le dossier du projet
+   Un projet nommé, c'est déjà des noms de fichiers cohérents. Un projet
+   rattaché à un dossier, c'est mieux : les éditeurs y lisent et y réécrivent
+   leur document, et le fichier projet.cao.json fait le lien.
+   Deux voies, car un navigateur ne peut pas ouvrir un chemin qu'on lui tape :
+   serveur.py (chemin écrit à la main) ou le sélecteur de dossier du navigateur.
+   Voir commun/projet-disque.js.
+   ========================================================================== */
+function pDosMsg(txt, ennui){
+  const el = document.getElementById("pDosEtat");
+  el.innerHTML = ennui ? "<i>" + uEsc(txt) + "</i>" : txt;
+}
+/* Ce que le dossier contient déjà — c'est la réponse à « et mes fichiers ? ».
+   Un projet neuf n'a ni l'un ni l'autre ; un projet repris a le schéma, la
+   carte, ou les deux, et les éditeurs les chargent à leur ouverture. */
+function pDosDocs(){
+  const d = projdDocuments();
+  return [["schema", "Schéma"], ["pcb", "PCB"]].map(function(x){
+    const e = d[x[0]];
+    return "<span>" + x[1] + " : "
+      + (e.present ? uEsc(e.fichier) : "<i>absent</i>") + "</span>";
+  }).join("");
+}
+function pDosRendre(){
+  const e = projdEtat();
+  /* Un dossier retrouvé dont l'autorisation s'est perdue au rechargement :
+     il ne manque qu'un clic, et un clic ne peut venir que de l'utilisateur. */
+  const rouvrir = projdAReconnecter();
+  document.getElementById("pDetach").hidden = !e.mode && !rouvrir;
+  /* Le bouton dit ce qu'il va faire. Sans sélecteur de dossier — hors
+     Chrome/Edge, ou en double-clic — il ne reste que le chemin écrit à la
+     main, et c'est lui qui prend la place. */
+  const bo = document.getElementById("pOuvre");
+  if(rouvrir){
+    bo.textContent = "📁 Rouvrir « " + rouvrir + " »";
+    bo.title = "Le dossier de la dernière fois est retrouvé ; le navigateur "
+             + "redemande l'autorisation d'y écrire.";
+  }else if(projdSelecteurDispo()){
+    bo.textContent = "📁 Ouvrir un dossier…";
+    bo.title = "Choisir le dossier du projet. S'il contient un projet.cao.json, "
+             + "le projet s'ouvre avec ses documents ; sinon, il en devient un.";
+  }else{
+    bo.textContent = "Ouvrir ce chemin";
+    bo.title = "Ce navigateur n'a pas de sélecteur de dossier : écrivez le "
+             + "chemin, serveur.py s'en occupe.";
+  }
+  document.getElementById("pChemGo").hidden = !projdSelecteurDispo();
+  if(e.mode){
+    const rev = projdRevision();
+    pDosMsg("Dossier rattaché (" + (e.mode === "serveur" ? "serveur" : "navigateur")
+      + ") : <b>" + uEsc(e.chemin) + "</b><span>révision " + uEsc(rev) + "</span>"
+      + "<br>" + pDosDocs());
+  }else if(rouvrir){
+    pDosMsg("Dossier « " + rouvrir + " » retrouvé, mais le navigateur redemande "
+      + "l'autorisation d'y écrire : cliquez sur « Rouvrir ».", true);
+  }else{
+    pDosMsg("Aucun dossier rattaché : les documents s'ouvrent et se "
+      + "téléchargent à la main.", true);
+  }
+  /* La liste des projets du disque n'existe que par le serveur : le sélecteur
+     de dossier ne donne accès qu'au dossier choisi, jamais à son voisinage. */
+  const box = document.getElementById("pDosList");
+  projdServeurDispo().then(function(dispo){
+    /* Créer par le serveur — une racine déclarée, un sous-dossier — n'a de sens
+       que là où l'on ne peut pas désigner de dossier. Dès que l'explorateur est
+       disponible, « Ouvrir » fait déjà les deux gestes, et deux façons de créer
+       un projet, c'est une de trop : on ne montre celle-ci qu'en repli. */
+    document.getElementById("pNeufRow").hidden = !dispo || projdSelecteurDispo();
+    /* Le chemin écrit à la main n'a de sens que si le serveur tient le disque :
+       sans lui, un champ où taper un chemin ne mène nulle part. */
+    document.getElementById("pChem").hidden = !dispo;
+    document.getElementById("pChemGo").hidden = !dispo || !projdSelecteurDispo();
+    /* Ni serveur ni sélecteur : le bouton ne pourrait rien ouvrir. On le
+       retire plutôt que de le laisser répondre par un refus. */
+    document.getElementById("pOuvre").hidden = !dispo && !projdSelecteurDispo();
+    if(!dispo){
+      box.innerHTML = "";
+      if(!projdSelecteurDispo() && !e.mode && !rouvrir)
+        pDosMsg("Aucun dossier : lancez « python serveur.py --local » pour "
+          + "taper un chemin, ou utilisez Chrome/Edge pour choisir un dossier.",
+          true);
+      return;
+    }
+    return projdListerServeur().then(function(r){
+      /* Les racines viennent du serveur, jamais de la page : c'est la
+         frontière, et elle se déclare au démarrage (--projets). */
+      const dest = projdDestination();
+      const sel = document.getElementById("pRac");
+      sel.innerHTML = r.racines.map(function(rac){
+        return '<option value="' + uEsc(rac) + '"'
+          + (rac === dest.racine ? " selected" : "") + ">" + uEsc(rac) + "</option>";
+      }).join("");
+      sel.hidden = r.racines.length < 2;   // une seule racine : rien à choisir
+      if(!document.getElementById("pSous").value && dest.sous)
+        document.getElementById("pSous").value = dest.sous;
+
+      box.innerHTML = r.projets.map(function(p){
+        const on = e.chemin && e.chemin === p.chemin;
+        return '<button data-chemin="' + uEsc(p.chemin) + '"'
+          + ' data-racine="' + uEsc(p.racine) + '"'
+          + (on ? ' class="on"' : '') + '>'
+          + '<span class="ck">' + (on ? "\u2713" : "") + '</span>'
+          + uEsc(p.nom)
+          + (p.chemin !== p.nom ? ' <i>' + uEsc(p.chemin) + '</i>' : '')
+          + '</button>';
+      }).join("");
+      box.querySelectorAll("[data-chemin]").forEach(function(b){
+        b.onclick = function(){ pDosOuvrir(b.dataset.chemin, b.dataset.racine); };
+      });
+      if(!r.projets.length)
+        box.innerHTML = '<i>Aucun projet sous ' + uEsc(r.racines.join(" ; ")) + '</i>';
+    });
+  }).catch(function(err){ pDosMsg(err.message, true); });
+}
+/* Après l'ouverture : dire lequel des deux gestes vient d'avoir lieu — on n'a
+   pas fait la même chose selon que le dossier était un projet ou non — et ce
+   qu'on y a trouvé. */
+function pDosFait(etat){
+  pRendre(); pDosRendre();
+  const nom = projNom() || projdChemin();
+  if(etat && etat.neuf){
+    pDosMsg("Nouveau projet <b>" + uEsc(nom) + "</b> : <b>projet.cao.json</b> "
+      + "écrit dans <b>" + uEsc(projdChemin()) + "</b>. Ouvrez un éditeur "
+      + "ci-dessous : il enregistrera dans ce dossier.");
+    return;
+  }
+  const d = projdDocuments();
+  const quoi = [];
+  if(d.schema.present) quoi.push("le schéma");
+  if(d.pcb.present) quoi.push("la carte");
+  pDosMsg("Projet <b>" + uEsc(nom) + "</b> ouvert depuis <b>"
+    + uEsc(projdChemin()) + "</b>"
+    + (quoi.length
+        ? " — " + quoi.join(" et ") + (quoi.length > 1 ? " seront chargés" : " sera chargé")
+          + " à l'ouverture de l'éditeur."
+        : " — ni schéma ni carte pour l'instant.")
+    + "<br>" + pDosDocs());
+}
+function pDosOuvrir(ou, racine){
+  pDosMsg("Ouverture…");
+  projdOuvrirServeur(ou, racine).then(pDosFait)
+    .catch(function(e){ pDosMsg(e.message, true); });
+}
+/* Le chemin écrit à la main : la voie du serveur, pour les navigateurs sans
+   sélecteur de dossier. */
+function pChemOuvrir(){
+  const champ = document.getElementById("pChem");
+  if(!champ.value.trim()){ champ.focus(); return; }
+  pDosOuvrir(champ.value.trim());
+}
+/* « Ouvrir », c'est l'explorateur — un projet existant et un nouveau projet,
+   c'est le même geste : on désigne un dossier. Ce qu'il contient tranche.
+   Un dossier avec projet.cao.json s'ouvre avec son schéma et sa carte ; un
+   dossier sans en reçoit un, et le projet commence là. */
+document.getElementById("pOuvre").onclick = function(){
+  const rouvrir = projdAReconnecter();
+  if(rouvrir){
+    pDosMsg("Réouverture de « " + rouvrir + " »…");
+    projdReconnecter().then(pDosFait)
+      .catch(function(e){ pDosMsg(e.message, true); });
+    return;
+  }
+  if(!projdSelecteurDispo()){ pChemOuvrir(); return; }
+  pDosMsg("En attente du dossier…");
+  /* Un dossier vide devient un projet sans qu'on demande — c'est le geste
+     « nouveau projet », et le dossier vient d'être créé pour ça. Un dossier
+     déjà rempli, en revanche, peut être celui qu'on visait de travers : on y
+     écrit projet.cao.json seulement après un mot. */
+  projdChoisirDossier(function(d){
+    if(d.vide) return true;
+    return confirm("« " + d.nom + " » ne contient pas de projet CAO "
+      + "(pas de projet.cao.json), mais " + d.noms.length + " élément(s).\n\n"
+      + "En faire un nouveau projet nommé « " + d.nom + " » ?");
+  }).then(pDosFait).catch(function(e){
+    /* Refermer la boîte de dialogue sans rien choisir n'est pas une erreur :
+       on remet l'état d'avant plutôt que d'afficher un reproche. */
+    if(e && e.name === "AbortError"){ pDosRendre(); return; }
+    pDosMsg(e.message, true);
+  });
+};
+document.getElementById("pChemGo").onclick = pChemOuvrir;
+document.getElementById("pChem").addEventListener("keydown", function(e){
+  if(e.key === "Enter") pChemOuvrir();
+});
+document.getElementById("pCree").onclick = function(){
+  /* Le nom vient du champ du haut (ou du projet en cours), la destination des
+     deux champs d'à côté : une racine déclarée, et un sous-dossier libre. */
+  const champ = document.getElementById("pChem");
+  const nom = (champ.value.trim() || projNom());
+  if(!nom){ champ.focus(); return; }
+  const racine = document.getElementById("pRac").value;
+  const sous = document.getElementById("pSous").value.trim()
+                 .replace(/^[\\\/]+/, "").replace(/[\\\/]+$/, "");
+  const ou = (sous ? sous + "/" : "") + nom;
+  pDosMsg("Création de " + uEsc(ou) + "…");
+  projdCreerServeur(nom, {racine:racine, sous:sous}).then(function(etat){
+    champ.value = "";
+    pDosFait(etat);
+  }).catch(function(e){ pDosMsg(e.message, true); });
+};
+document.getElementById("pDetach").onclick = function(){
+  if(!confirm("Détacher le dossier du projet ?\n\n"
+    + "Rien n'est supprimé : les fichiers restent sur le disque, c'est le lien "
+    + "qui se défait."))
+    return;
+  projdDetacher();
+  pDosRendre();
+};
+
+/* Un autre onglet peut changer de projet : on suit sans recharger. */
+projSurChangement(function(){ pRendre(); pDosRendre(); });
+pRendre();
+/* La reprise du dossier est asynchrone : projet-disque.js s'en occupe au
+   chargement, et prévient par projSignaler() une fois le fichier lu. */
+pDosRendre();
 
 document.getElementById("uAdd").onclick = function(){
   const champ = document.getElementById("uNom");

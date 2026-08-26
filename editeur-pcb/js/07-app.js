@@ -11,11 +11,34 @@ function dl(blob,name){
   a.href=URL.createObjectURL(blob);a.download=name;a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 }
+/* Les noms de fichiers viennent de pcbFile() (04-fabrication.js) : une seule
+   source pour l'archive de fabrication comme pour les exports d'ici.
+   Avec un dossier de projet rattaché, enregistrer écrit dans ce dossier ; sans
+   dossier, on télécharge comme avant. Le repli n'est pas un luxe : en
+   double-clic sur le monofichier, aucun accès disque n'est possible. */
 function saveJson(){
-  dl(new Blob([JSON.stringify(docObj(),null,1)],{type:"application/json"}),"carte.json");
+  const doc=docObj();
+  if(typeof projdLie==="function" && projdLie()){
+    projdDocEcrire("pcb",doc).then(function(nom){
+      S.dirty=false;
+      if(typeof profNoterDocument==="function")profNoterDocument("pcb",nom);
+      hint("Carte enregistrée dans le dossier du projet ("+nom+").");
+    }).catch(function(e){
+      /* On ne fait pas semblant : si l'écriture échoue, le travail n'est pas
+         sauvé, et on le dit avant de proposer le téléchargement. */
+      hint("Écriture refusée : "+e.message+" — enregistrement en téléchargement.");
+      saveJsonTelecharger(doc);
+    });
+    return;
+  }
+  saveJsonTelecharger(doc);
+}
+function saveJsonTelecharger(doc){
+  const nom=pcbFile(".json","carte.json");
+  dl(new Blob([JSON.stringify(doc||docObj(),null,1)],{type:"application/json"}),nom);
   S.dirty=false;
-  if(typeof profNoterDocument==="function")profNoterDocument("pcb","carte.json");
-  hint("Carte enregistrée dans carte.json.");
+  if(typeof profNoterDocument==="function")profNoterDocument("pcb",nom);
+  hint("Carte enregistrée dans "+nom+".");
 }
 function openFile(f){
   const r=new FileReader();
@@ -63,10 +86,11 @@ function exportPng(){
   S.scale=save.scale;S.ox=save.ox;S.oy=save.oy;
   o.toBlob(bl=>{
     if(!bl){alert("Export impossible : image trop grande.");return;}
-    dl(bl,"carte.png");
+    dl(bl,pcbFile(".png","carte.png"));
   });
   draw();
-  hint("Vue exportée dans carte.png (couches visibles, orientation courante).");
+  hint("Vue exportée dans "+pcbFile(".png","carte.png")+
+       " (couches visibles, orientation courante).");
 }
 function newDoc(){
   if(S.fps.length&&!confirm("Repartir d'une carte vide ? Le travail en cours sera perdu."))return;
@@ -278,5 +302,41 @@ function init(){
   refreshPanels();
   resize();fit();
   PCB_REPRISE=sessionPcb();   // en dernier : reprend la carte laissée dans l'onglet
+  pcbChargerProjet();
 }
+
+/* Charge la carte depuis le dossier du projet, quand il y en a un.
+   Trois précautions, et chacune répare un dégât possible :
+     - la session d'onglet passe devant : elle porte le travail en cours, plus
+       récent que le fichier ;
+     - on ne remplace jamais un travail non enregistré ;
+     - une seule fois, sinon chaque signal de changement de projet rechargerait
+       la carte sous les doigts.
+   Le rattachement du dossier est asynchrone (projet-disque.js le reprend au
+   chargement) : d'où l'abonnement, en plus de l'appel depuis init(). */
+let PCB_PROJET_LU=false;
+function pcbChargerProjet(){
+  if(PCB_PROJET_LU||PCB_REPRISE||S.dirty)return;
+  if(typeof projdLie!=="function")return;
+  /* Dossier retrouvé mais autorisation perdue : une demande sans geste de
+     l'utilisateur échoue, et il n'y a pas de geste à offrir ici. On le dit. */
+  if(!projdLie()){
+    const a=(typeof projdAReconnecter==="function")?projdAReconnecter():"";
+    if(a)hint("Dossier « "+a+" » à rouvrir : passez par l'accueil, la carte "
+      +"en cours reste dans l'onglet.");
+    return;
+  }
+  PCB_PROJET_LU=true;
+  projdDocLire("pcb").then(function(d){
+    if(!d)return;              // dossier sans carte : il n'y a rien à reprendre
+    if(S.dirty)return;         // travail commencé pendant la lecture : on n'écrase pas
+    loadDoc(d);
+    draw();
+    hint("Carte chargée depuis le dossier du projet.");
+  }).catch(function(e){
+    PCB_PROJET_LU=false;       // un échec ne doit pas condamner les essais suivants
+    hint("Carte du projet illisible : "+e.message);
+  });
+}
+try{ projSurChangement(pcbChargerProjet); }catch(_){}
 init();

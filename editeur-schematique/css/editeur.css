@@ -32,6 +32,9 @@
   .brand b{font-size:15px;letter-spacing:.14em;text-transform:uppercase}
   .brand span{font-family:var(--mono);font-size:10px;color:var(--txt-dim);letter-spacing:.18em}
   .brand i{display:inline-block;width:4px;height:18px;background:var(--red);border-radius:1px;transform:translateY(3px)}
+/* Nom du projet : plus lisible que la version, sans voler la vedette au titre */
+.brand span.proj{color:var(--txt);letter-spacing:.06em;font-size:11px;
+  border:1px solid var(--border2);border-radius:3px;padding:1px 6px}
   .tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
   .sep{width:1px;height:22px;background:var(--border2);margin:0 4px}
   button.tb{

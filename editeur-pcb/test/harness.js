@@ -31,8 +31,10 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "clrPair","applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","mkFp","w2s","runDrc","padsOf",
-  "buildFabFiles","gerberCopper","gerberMask","gerberPaste","gerberSilk","gerberEdge",
+  "buildFabFiles","gerberCopper","gerberMask","gerberPaste","gerberSilk",
+  "gerberEdge","gerberOutline","ipcNetlist","masterDrawingPdf","noAcc",
   "drillFile","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
+  "positionsCsvText","bomPcbCsvText","pcbCsvCell",
   "edgeClick","edgeMove","closeEdge","boardPoly","setBoardSize","setBoardRect","inBoard",
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
@@ -146,7 +148,14 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* pistes circulaires : l'arc rangé comme une piste de plus */
   "ARC_MIN","ARC_MAX","ARC_SAG","isArc","arcOf","arcSweep","arcOn",
   "trkLen","trkAt","trkMid","trkDist","trkBBox","trkSegs","trkPath",
-  "normTrack","gTrk","pnsItemsTrack"];
+  "normTrack","gTrk","pnsItemsTrack",
+  /* nom de projet commun (commun/projet.js) et nommage des exports */
+  "projNom","projOuvrir","projFermer","projDoc","projListe","projOublier",
+  "projNomValide","projSurChangement","projPeindre","PROJ_CLE",
+  "pcbProjNom","fabBase","fabDocNum","pcbFile",
+  /* dossier de projet sur le disque (commun/projet-disque.js) */
+  "projdEtat","projdLie","projdChemin","projdRevision","projdAuteur",
+  "projdNomDoc","projdNeuf","projdAdopter","projdDetacher","PROJD_FORMAT"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -1693,19 +1702,29 @@ T("Gerber : masque, pâte, sérigraphie, contour",()=>{
   const sk=gerberSilk(0);
   if(sk.indexOf("Legend,Top")<0)throw new Error("fonction de la sérigraphie");
   if((sk.match(/D01\*/g)||[]).length<8)throw new Error("contours et texte attendus");
+  /* Le profil de découpe porte l'attribut normalisé, le keepout ne doit PAS le
+     porter : deux fichiers annonçant le profil, et le fabricant ne sait plus
+     lequel découper. */
+  const ol=gerberOutline();
+  if(ol.indexOf("Profile,NP")<0)throw new Error("fonction du profil de découpe");
+  if((ol.match(/D01\*/g)||[]).length!==4)throw new Error("le profil a quatre côtés");
   const ed=gerberEdge();
-  if(ed.indexOf("Profile,NP")<0)throw new Error("fonction du contour");
-  if((ed.match(/D01\*/g)||[]).length!==4)throw new Error("le contour a quatre côtés");
+  if(ed.indexOf("Other,Keepout")<0)throw new Error("fonction du keepout");
+  if(ed.indexOf("Profile")>=0)throw new Error("le keepout ne doit pas s'annoncer profil");
+  if((ed.match(/D01\*/g)||[]).length!==4)throw new Error("le keepout a quatre côtés");
 });
 T("perçage Excellon",()=>{
   const d=drillFile();
-  if(d.text.indexOf("M48")!==0)throw new Error("entête M48");
-  if(d.text.indexOf("METRIC,TZ")<0)throw new Error("unité manquante");
-  if(!/T1C[\d.]+/.test(d.text))throw new Error("aucun outil");
-  if(d.text.indexOf("M30")<0)throw new Error("fin de fichier");
+  // drillFile() retourne maintenant un tableau de fichiers
+  if(!d.files.length)throw new Error("aucun fichier de perçage");
+  const txt=d.files[0].text;
+  if(txt.indexOf("M48")!==0)throw new Error("entête M48");
+  if(txt.indexOf("METRIC,TZ")<0)throw new Error("unité manquante");
+  if(!/T1C[\d.]+/.test(txt))throw new Error("aucun outil");
+  if(txt.indexOf("M30")<0)throw new Error("fin de fichier");
   if(d.holes!==8+1)throw new Error("8 trous du DIP + 1 via, "+d.holes);
   // origine au coin inférieur gauche : plus de coordonnée négative
-  const xs=d.text.match(/^X(-?[\d.]+)Y(-?[\d.]+)$/gm)||[];
+  const xs=txt.match(/^X(-?[\d.]+)Y(-?[\d.]+)$/gm)||[];
   if(!xs.length)throw new Error("aucune coordonnée");
   if(xs.some(l=>/-/.test(l)))throw new Error("coordonnée négative : origine mal placée");
 });
@@ -1714,15 +1733,234 @@ T("dossier de fabrication complet",()=>{
   const names=files.map(f=>f.name);
   for(const n of ["carte.GTL","carte.GBL","carte.GTS","carte.GBS",
                   "carte.GTP","carte.GBP","carte.GTO","carte.GBO",
-                  "carte.GKO","carte.TXT","LISEZ-MOI.txt"])
+                  "carte.GM1","carte.GKO","carte-0-1.TXT","carte.ipc",
+                  "LISEZ-MOI.txt",
+                  "positions.csv","bom.csv","EMPILAGE.txt"])
     if(names.indexOf(n)<0)throw new Error("fichier manquant : "+n+" — obtenus : "+names.join(" "));
-  if(files.some(f=>!f.text||!f.text.length))throw new Error("fichier vide");
+  /* Un fichier binaire (le Master Drawing PDF) porte f.data et non f.text :
+     les deux comptent, mais aucun ne doit être vide. */
+  if(files.some(f=>{
+    const body=f.data||f.text;
+    return !body||!body.length;
+  }))throw new Error("fichier vide");
   if(drill.tools<1)throw new Error("aucun outil de perçage");
   // 4 couches : autant de fichiers cuivre (GTL, GL2, GL3, GBL)
   setCuCount(4);
   const f4=buildFabFiles().files.filter(f=>/\.(GTL|GBL|GL\d+)$/.test(f.name));
   if(f4.length!==4)throw new Error("4 fichiers cuivre attendus, "+f4.length);
   setCuCount(2);
+});
+T("netlist IPC-D-356",()=>{
+  const txt=ipcNetlist();
+  if(!txt)throw new Error("ipcNetlist() retourne du vide");
+  if(txt.indexOf("IPC-D-356")<0)throw new Error("en-tete IPC-D-356 absente");
+  const nets=netTable();
+  if(nets.length){
+    const n=noAcc(String(nets[0].name)).toUpperCase().slice(0,14);
+    if(txt.indexOf(n)<0)throw new Error("net '"+nets[0].name+"' absent de la netlist");
+  }
+  const fp=S.fps[0];
+  if(fp){
+    const pads=padsOf(fp);
+    if(pads.length){
+      const p=pads.find(q=>q.net);
+      if(p&&txt.indexOf("317")<0)throw new Error("aucun 317 dans la netlist");
+    }
+  }
+  if(txt.indexOf("999")<0)throw new Error("fin 999 absente");
+});
+T("master drawing PDF",()=>{
+  const {files}=buildFabFiles();
+  const md=files.find(f=>/-MASTER-DRAWING\.pdf$/.test(f.name));
+  if(!md)throw new Error("PDF absent du dossier de fab — obtenus : "
+    +files.map(f=>f.name).join(" "));
+  if(!(md.data instanceof Uint8Array)||!md.data.length)
+    throw new Error("PDF vide ou non binaire");
+  const head=String.fromCharCode(...md.data.slice(0,8));
+  if(!head.startsWith("%PDF-1.4"))throw new Error("signature PDF absente : "+head);
+  const tail=String.fromCharCode(...md.data.slice(-32));
+  if(tail.indexOf("%%EOF")<0)throw new Error("marqueur %%EOF absent");
+  /* Le binaire en chaîne latin1 pour chercher la structure. L'espace final de
+     « /Type /Page » écarte « /Type /Pages », l'arbre. Le document fait trois
+     pages nominales ; un débordement peut en ajouter une, ce qui reste valide
+     — ce qui ne l'est pas, c'est un /Count qui mentirait sur le compte. */
+  let bin="";
+  for(let i=0;i<md.data.length;i+=0x8000)
+    bin+=String.fromCharCode.apply(null,md.data.subarray(i,i+0x8000));
+  let count=0, idx=0;
+  while((idx=bin.indexOf("/Type /Page ",idx))>=0){count++;idx++;}
+  if(count<3)throw new Error("au moins 3 objets Page attendus, "+count);
+  if(bin.indexOf("/Count "+count)<0)
+    throw new Error("/Count incohérent : "+count+" objets Page dans le fichier");
+  /* Un objet Page par entrée de /Kids, et autant de cartouches numérotés */
+  let sheets=0, si=0;
+  while((si=bin.indexOf("SHEET: ",si))>=0){sheets++;si++;}
+  if(sheets!==count)
+    throw new Error(count+" cartouche(s) attendu(s), "+sheets);
+  if(bin.indexOf("/BaseFont /Helvetica-Bold")<0)
+    throw new Error("fonte Helvetica-Bold absente");
+  if(bin.indexOf("/Contents ")<0)throw new Error("référence /Contents absente");
+});
+T("fichier de placement positions.csv",()=>{
+  // le projet de test charge par défaut : vérifier le contenu
+  const txt=positionsCsvText();
+  if(!txt)throw new Error("positionsCsvText() retourne du vide");
+  const lines=txt.trim().split(/\r?\n/);
+  // en-tête + une ligne par empreinte
+  if(lines.length!==1+S.fps.length)
+    throw new Error("lignes attendues : "+(1+S.fps.length)+", obtenues : "+lines.length);
+  // colonnes
+  const head=lines[0].split(",");
+  if(head.join(",")!=="Designator,Value,Package,X,Y,Rotation,Side")
+    throw new Error("en-tete inattendu : "+head.join(","));
+  // la dernière colonne est une face nommée, jamais un 0/1
+  for(const l of lines.slice(1)){
+    const side=l.split(",").pop();
+    if(side!=="Top"&&side!=="Bottom")
+      throw new Error("la face doit etre Top ou Bottom : "+side);
+  }
+  // origine au coin inférieur gauche : aucune coordonnée négative
+  for(const l of lines.slice(1)){
+    const col=l.split(",");
+    if(+col[3]<0||+col[4]<0)
+      throw new Error("coordonnee negative : origine mal placee sur "+col[0]);
+  }
+  // la marque d'ordre est posée par l'archive, pas par le texte : la doubler
+  // dans les deux ferait un fichier à deux BOM, illisible pour un tableur
+  if(txt.charCodeAt(0)===0xFEFF)
+    throw new Error("le texte ne porte pas la marque d'ordre : zipBlob() l'ajoute");
+});
+T("nomenclature bom.csv pour assemblage",()=>{
+  const txt=bomPcbCsvText();
+  if(!txt)throw new Error("bomPcbCsvText() retourne du vide");
+  const lines=txt.trim().split(/\r?\n/);
+  if(lines.length<2)throw new Error("au moins en-tete + 1 ligne, "+lines.length);
+  // en-tête de la section principale
+  if(lines[0]!=="Reference,Value,Package")
+    throw new Error("en-tete inattendu : "+lines[0]);
+  // la marque d'ordre vient de l'archive, pas d'ici
+  if(txt.charCodeAt(0)===0xFEFF)
+    throw new Error("le texte ne porte pas la marque d'ordre : zipBlob() l'ajoute");
+  // tri par repère (alphabétique et numérique à la fois)
+  const refs=lines.slice(1,1+S.fps.length).map(l=>l.split(",")[0]);
+  const sorted=[...refs].sort((a,b)=>String(a).localeCompare(String(b),"fr",{numeric:true}));
+  if(refs.join("|")!==sorted.join("|"))
+    throw new Error("les repères ne sont pas tries : "+refs.join(" "));
+  /* Le récapitulatif suit une ligne vide, et porte son propre en-tête : il a
+     quatre colonnes là où la section principale en a trois, les nommer évite
+     au monteur de compter les virgules. */
+  const emptyIdx=lines.indexOf("");
+  if(emptyIdx<0)throw new Error("pas de separateur avant le recapitulatif");
+  if(lines[emptyIdx+1]!=="Qty,Value,Package,References")
+    throw new Error("en-tete du recapitulatif inattendu : "+lines[emptyIdx+1]);
+  const recap=lines[emptyIdx+2];
+  if(!/^\d+,.*,.*,/.test(recap))
+    throw new Error("le recapitulatif doit commencer par une quantite : "+recap);
+  // la somme des quantités doit retomber sur le nombre d'empreintes
+  let qty=0;
+  for(const l of lines.slice(emptyIdx+2))qty+=+l.split(",")[0]||0;
+  if(qty!==S.fps.length)
+    throw new Error("somme des quantites "+qty+" pour "+S.fps.length+" empreinte(s)");
+});
+T("placement : un composant sur chaque face",()=>{
+  // empreinte top et bottom, vérification de la face dans le CSV
+  const save=serialize();
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
+  S.board={x:0,y:0,w:50,h:50,pts:null};touch();
+  const top=mkFp("U1","MCU","QFN-32",32);top.x=10;top.y=10;top.side=0;S.fps.push(top);
+  const bot=mkFp("U2","EEPROM","SOIC-8",8);bot.x=20;bot.y=20;bot.side=1;S.fps.push(bot);
+  touch();
+  const txt=positionsCsvText();
+  if(txt.indexOf("Top")<0)throw new Error("pas de face Top");
+  if(txt.indexOf("Bottom")<0)throw new Error("pas de face Bottom");
+  if(txt.indexOf("Top")>txt.indexOf("Bottom"))
+    throw new Error("U1 (top) devrait precede U2 (bottom) en Y");
+  loadDoc(JSON.parse(save),true);touch();
+});
+T("placement et bom.csv dans l'archive de fabrication",()=>{
+  const {files}=buildFabFiles();
+  const names=files.map(f=>f.name);
+  if(names.indexOf("positions.csv")<0)throw new Error("positions.csv absent de l'archive");
+  if(names.indexOf("bom.csv")<0)throw new Error("bom.csv absent de l'archive");
+  // BOM UTF-8 ajouté par l'archive ZIP, pas par le texte source
+  const pos=files.find(f=>f.name==="positions.csv");
+  if(!pos.text.trim())throw new Error("positions.csv est vide");
+  const bom=files.find(f=>f.name==="bom.csv");
+  if(!bom.text.trim())throw new Error("bom.csv est vide");
+  // chaque CSV a son en-tête correct
+  if(pos.text.indexOf("Designator,Value,Package,X,Y,Rotation,Side")<0)
+    throw new Error("en-tete positions.csv incorrect");
+  if(bom.text.indexOf("Reference,Value,Package")<0)
+    throw new Error("en-tete bom.csv incorrect");
+  /* le LISEZ-MOI recense l'archive : les deux CSV doivent y figurer, sans quoi
+     le monteur croit avoir reçu un dossier sans placement */
+  const rm=files.find(f=>f.name==="LISEZ-MOI.txt").text;
+  for(const n of ["positions.csv","bom.csv"])
+    if(rm.indexOf(n)<0)throw new Error("le LISEZ-MOI ne cite pas "+n);
+});
+/* Un Excellon par portée : le défaut de fabrication silencieux qu'on vient de
+   corriger. Sur 4 couches avec un via borgne 1-2 et un traversant 1-4, le
+   fabricant doit recevoir deux fichiers distincts, sinon il perce de part en
+   part un trou qui devait s'arrêter à la couche 2. */
+T("perçage Excellon : un fichier par portée de via",()=>{
+  const save=serialize();
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  setCuCount(4);
+  S.board={x:0,y:0,w:40,h:30,pts:null};
+  const cls=classOf(null);
+  // via traversant 1-4, via borgne 1-2, via enterré 2-3
+  S.vias.push({x:10,y:10,d:cls.via,drill:cls.drill,net:null,a:0,b:3});
+  S.vias.push({x:15,y:10,d:cls.via,drill:cls.drill,net:null,a:0,b:1});
+  S.vias.push({x:20,y:10,d:cls.via,drill:cls.drill,net:null,a:1,b:2});
+  touch();
+  const d=drillFile();
+  const names=d.files.map(f=>f.name);
+  for(const n of ["carte-0-3.TXT","carte-0-1.TXT","carte-1-2.TXT"])
+    if(names.indexOf(n)<0)
+      throw new Error("fichier de portée manquant : "+n+" — obtenus : "+names.join(" "));
+  if(d.files.length!==3)
+    throw new Error("3 portées attendues, "+d.files.length+" : "+names.join(" "));
+  // chaque fichier ne contient QUE les trous de sa portée
+  const byName=new Map(d.files.map(f=>[f.name,f]));
+  for(const n of names)
+    if(byName.get(n).holes!==1)
+      throw new Error(n+" devrait porter 1 trou, "+byName.get(n).holes);
+  // la nature de la portée est annoncée dans l'entête
+  if(byName.get("carte-0-1.TXT").text.indexOf("borgne")<0)
+    throw new Error("la portée 0-1 devrait s'annoncer borgne");
+  if(byName.get("carte-1-2.TXT").text.indexOf("enterre")<0)
+    throw new Error("la portée 1-2 devrait s'annoncer enterree");
+  if(byName.get("carte-0-3.TXT").text.indexOf("traverse")<0)
+    throw new Error("la portée 0-3 devrait s'annoncer traversante");
+  // les pastilles traversantes ne partent que dans le fichier traversant
+  const fp=mkFp("U9","","",8);fp.style="dip";fp.x=25;fp.y=20;S.fps.push(fp);touch();
+  const d2=drillFile();
+  const m2=new Map(d2.files.map(f=>[f.name,f]));
+  if(m2.get("carte-0-3.TXT").holes!==1+8)
+    throw new Error("traversant : 1 via + 8 pastilles, "+m2.get("carte-0-3.TXT").holes);
+  if(m2.get("carte-0-1.TXT").holes!==1)
+    throw new Error("le borgne ne doit pas recevoir les pastilles, "+
+                    m2.get("carte-0-1.TXT").holes);
+  // l'archive porte bien un fichier par portée
+  const fabNames=buildFabFiles().files.map(f=>f.name);
+  for(const n of ["carte-0-3.TXT","carte-0-1.TXT","carte-1-2.TXT"])
+    if(fabNames.indexOf(n)<0)throw new Error("archive : "+n+" manquant");
+  loadDoc(JSON.parse(save),true);setCuCount(2);touch();
+});
+/* Sans via, les pastilles traversantes sortent quand meme : un simple deux
+   couches percé ne doit pas repartir sans fichier de perçage. */
+T("perçage Excellon : pastilles sans via",()=>{
+  const save=serialize();
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  setCuCount(2);
+  const fp=mkFp("U8","","",8);fp.style="dip";fp.x=20;fp.y=15;S.fps.push(fp);touch();
+  const d=drillFile();
+  if(d.files.length!==1)
+    throw new Error("un seul fichier attendu, "+d.files.length);
+  if(d.files[0].name!=="carte-0-1.TXT")
+    throw new Error("nom du fichier traversant : "+d.files[0].name);
+  if(d.holes!==8)throw new Error("8 trous du DIP, "+d.holes);
+  loadDoc(JSON.parse(save),true);touch();
 });
 T("archive ZIP",()=>{
   if(crc32(new TextEncoder().encode("123456789"))!==0xCBF43926)
@@ -1825,7 +2063,8 @@ T("origine utilisateur",()=>{
   S.fabOrigin=true;
   if(Math.abs(gOrigin().x-S.origin.x)>1e-9)throw new Error("repère utilisateur");
   const d=drillFile();
-  if(d.text.indexOf("X0.000Y0.000")<0&&!/X-?0\./.test(d.text))
+  const txt=d.files[0].text;
+  if(txt.indexOf("X0.000Y0.000")<0&&!/X-?0\./.test(txt))
     throw new Error("le perçage devrait suivre l'origine choisie");
   S.fabOrigin=false;S.origin={x:0,y:0};touch();
 });
@@ -2776,7 +3015,7 @@ T("feuille d'empilage dans le dossier de fabrication",()=>{
   const rm=files.find(x=>x.name==="LISEZ-MOI.txt");
   if(rm.text.indexOf("EMPILAGE.txt")<0)
     throw new Error("le LISEZ-MOI devrait renvoyer à la feuille d'empilage");
-  if(drillFile().text.indexOf("epaisseur du stratifie")<0)
+  if(drillFile().files.some(f=>f.text.indexOf("epaisseur du stratifie")<0))
     throw new Error("l'Excellon devrait rappeler l'épaisseur");
   S.cuL[1].plane=false;S.zones=[];syncAutoZones();
 });
@@ -7164,6 +7403,122 @@ T("recherche : la boîte s'ouvre, se ferme, et ne liste rien sur un champ vide",
   rpQFermer();
   if(RP.q.ouvert||$("rpBox").classList.contains("on"))
     throw new Error("la boîte ne se ferme pas");
+});
+
+/* ==========================================================================
+   Nom de projet : d'où viennent les noms de fichiers
+   --------------------------------------------------------------------------
+   Le nom du projet est choisi à l'accueil et vit dans localStorage. Tous les
+   noms de fichiers en découlent — et sans projet, ils doivent rester ceux
+   d'avant, au caractère près.
+   ========================================================================== */
+const PROJ_FIXES=new Set(["LISEZ-MOI.txt","positions.csv","bom.csv","EMPILAGE.txt"]);
+T("noms de fichiers : le projet les mène, et sans projet rien ne change",()=>{
+  loadDoc(exemple1());
+  projFermer();
+  const avant=buildFabFiles().files.map(f=>f.name);
+  for(const n of ["carte.GTL","carte.GM1","carte.ipc","carte-MASTER-DRAWING.pdf"])
+    if(!avant.includes(n))throw new Error("sans projet, "+n+" a changé de nom");
+  projOuvrir("carte PIR");
+  try{
+    if(fabBase()!=="carte PIR-PCB")throw new Error("fabBase : "+fabBase());
+    const apres=buildFabFiles().files.map(f=>f.name);
+    if(apres.length!==avant.length)
+      throw new Error(avant.length+" fichiers sans projet, "+apres.length+" avec");
+    /* Un projet ne doit rien faire d'autre que préfixer : même liste, même
+       ordre, seule la base change. Les fichiers à nom fixe ne bougent pas. */
+    for(let i=0;i<avant.length;i++){
+      const attendu=PROJ_FIXES.has(avant[i])?avant[i]
+                    :avant[i].replace(/^carte/,"carte PIR-PCB");
+      if(apres[i]!==attendu)
+        throw new Error(attendu+" attendu, "+apres[i]+" obtenu");
+    }
+  }finally{ projFermer(); }
+});
+T("master drawing : le PDF n'annonce aucun fichier que l'archive n'écrit pas",()=>{
+  loadDoc(exemple1());
+  projOuvrir("carte PIR");
+  try{
+    const files=buildFabFiles().files;
+    const noms=files.map(f=>f.name);
+    const pdf=files.find(f=>/MASTER-DRAWING\.pdf$/.test(f.name));
+    if(!pdf)throw new Error("pas de master drawing dans l'archive");
+    const txt=Buffer.from(pdf.data).toString("latin1");
+    if(txt.indexOf("P01x")>=0)throw new Error("le nom figé P01xXXX est resté");
+    const annonces=[...new Set(txt.match(/carte PIR-PCB[-\w]*\.[A-Za-z0-9]{2,4}/g)||[])];
+    if(!annonces.length)throw new Error("le PDF n'annonce plus aucun nom de fichier");
+    const manquants=annonces.filter(n=>!noms.includes(n));
+    if(manquants.length)
+      throw new Error("annoncé dans le PDF mais absent de l'archive : "+manquants.join(", "));
+  }finally{ projFermer(); }
+});
+T("entête : le nom du projet s'affiche, et s'effface à sa fermeture",()=>{
+  const el=document.createElement("span");
+  el.setAttribute("data-cao-projet","pcb");
+  document.body.appendChild(el);
+  try{
+    projOuvrir("carte PIR");
+    projPeindre();
+    if(el.textContent!=="carte PIR-PCB")throw new Error("affiché : "+el.textContent);
+    if(el.hidden)throw new Error("le nom reste masqué");
+    projFermer();
+    projPeindre();
+    if(el.textContent!=="")throw new Error("le nom subsiste : "+el.textContent);
+    if(!el.hidden)throw new Error("la place reste visible sans projet");
+  }finally{ projFermer(); }
+});
+
+/* ==========================================================================
+   Dossier de projet (commun/projet-disque.js)
+   --------------------------------------------------------------------------
+   Une couche au-dessus du nom : un fichier projet.cao.json qui porte la
+   révision et les liens vers le schéma et la carte. Le miroir synchrone fait
+   que projdRevision() et les autres répondent sans attendre, alors que le
+   fichier est asynchrone.
+   ========================================================================== */
+T("dossier : miroir synchrone, détacher, et le nom de fichier se déduit du projet",()=>{
+  projdDetacher();
+  if(projdLie())throw new Error("détaché mais encore lié");
+  projOuvrir("carte PIR");
+  const f=projdNeuf(projNom());
+  f.revision="B";
+  f.fichiers.pcb="carte PIR-PCB.json";
+  projdAdopter("test","C:\\test\\carte PIR",f);
+  if(projdChemin()!=="C:\\test\\carte PIR")throw new Error("chemin: "+projdChemin());
+  if(projdRevision()!=="B")throw new Error("révision: "+projdRevision());
+  if(projdNomDoc("pcb")!=="carte PIR-PCB.json")
+    throw new Error("nom du document pcb: "+projdNomDoc("pcb"));
+  if(projdNomDoc("schema")!=="carte PIR-SCH.json")
+    throw new Error("nom du document schéma: "+projdNomDoc("schema"));
+  projdDetacher();
+  if(projdLie())throw new Error("re-détaché mais encore lié");
+  if(projdChemin()!=="")throw new Error("le chemin subsiste");
+  /* Le nom du projet survit au détachement : on peut nommer sans attacher. */
+  if(projNom()!=="carte PIR")throw new Error("le nom du projet est effacé");
+  projFermer();
+});
+T("dossier : la révision du fichier projet alimente le master drawing",()=>{
+  projdDetacher();
+  loadDoc(exemple1());
+  const avant=buildFabFiles();
+  if(!avant||!avant.files.length)throw new Error("aucun fichier de fabrication");
+  const pdf1=avant.files.find(f=>/MASTER-DRAWING\.pdf$/i.test(f.name));
+  if(!pdf1)throw new Error("pas de master drawing");
+  const txt1=Buffer.from(pdf1.data).toString("latin1");
+  if(txt1.indexOf("REV: A")<0)throw new Error("révision A attendue, absente");
+  projOuvrir("carte PIR");
+  const f=projdNeuf(projNom());
+  f.revision="C3";
+  projdAdopter("test","C:\\test\\carte PIR",f);
+  const apres=buildFabFiles();
+  const pdf2=apres.files.find(f=>/MASTER-DRAWING\.pdf$/i.test(f.name));
+  const txt2=Buffer.from(pdf2.data).toString("latin1");
+  if(txt2.indexOf("REV: C3")<0)throw new Error("révision C3 attendue, absente du PDF");
+  if(txt2.indexOf("REV: A")>=0)throw new Error("révision A subsiste dans le PDF");
+  /* Elle figure aussi dans le tableau de la page 1, pas seulement au cartouche */
+  if(txt2.indexOf("[C3]")<0)throw new Error("révision absente du tableau de la page 1");
+  projdDetacher();
+  projFermer();
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

@@ -6,15 +6,52 @@
 /* ==========================================================================
    Fichiers
    ========================================================================== */
+/* Nom d'un fichier exporté. Avec un projet ouvert, « carte PIR » donne
+   « carte PIR-SCH.json », « carte PIR-SCH-netlist.txt ». Sans projet, on rend
+   `repli` — exactement le nom d'avant, pour ne rien changer à l'habitude de
+   ceux qui n'en nomment pas.
+   Le nom du projet vient de commun/projet.js ; hors navigateur (banc d'essai)
+   la fonction n'existe pas, d'où le garde-fou. */
+function schFile(suffixe, repli){
+  try{
+    if(typeof projDoc==="function"){
+      const n=projDoc("schema","");
+      if(n)return n+suffixe;
+    }
+  }catch(_){}
+  return repli;
+}
+/* Avec un dossier de projet rattaché, enregistrer écrit dans ce dossier ; sans
+   dossier, on télécharge comme avant — en double-clic sur le monofichier,
+   aucun accès disque n'est possible. */
 function saveJson(){
   storeCurrent();
   const doc={format:"schemedit-2",pages:S.pages,page:S.page};
+  if(typeof projdLie==="function" && projdLie()){
+    projdDocEcrire("schema",doc).then(function(nom){
+      S.dirty=false;
+      clearBackup();
+      if(typeof profNoterDocument==="function")profNoterDocument("schema",nom);
+      document.getElementById("fHint").textContent=
+        "Document enregistré dans le dossier du projet ("+nom+").";
+    }).catch(function(e){
+      /* Rien n'est sauvé : on le dit, puis on retombe sur le téléchargement. */
+      document.getElementById("fHint").textContent=
+        "Écriture refusée : "+e.message+" — enregistrement en téléchargement.";
+      saveJsonTelecharger(doc);
+    });
+    return;
+  }
+  saveJsonTelecharger(doc);
+}
+function saveJsonTelecharger(doc){
   const blob=new Blob([JSON.stringify(doc,null,1)],{type:"application/json"});
-  dl(blob,"schema.json");
+  const nom=schFile(".json","schema.json");
+  dl(blob,nom);
   S.dirty=false;            // le travail est sur disque : plus d'alerte à la fermeture
   clearBackup();
-  if(typeof profNoterDocument==="function")profNoterDocument("schema","schema.json");
-  document.getElementById("fHint").textContent="Document enregistré dans schema.json.";
+  if(typeof profNoterDocument==="function")profNoterDocument("schema",nom);
+  document.getElementById("fHint").textContent="Document enregistré dans "+nom+".";
 }
 function dl(blob,name){
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();
@@ -36,7 +73,7 @@ function exportPng(){
   drawNetLabels(c,true);          // le zoom écran ne doit pas décider de l'export
   o.toBlob(b=>{
     if(!b){alert("Export impossible : image trop grande pour le navigateur.");return;}
-    dl(b,"schema.png");
+    dl(b,schFile(".png","schema.png"));
   });
 }
 
@@ -130,8 +167,9 @@ function netlistText(horodatage){
 }
 function exportNetlist(){
   const txt=netlistText();
-  dl(new Blob([txt],{type:"text/plain;charset=utf-8"}),"netlist.txt");
-  document.getElementById("fHint").textContent="Netlist exportée dans netlist.txt.";
+  const nom=schFile("-netlist.txt","netlist.txt");
+  dl(new Blob([txt],{type:"text/plain;charset=utf-8"}),nom);
+  document.getElementById("fHint").textContent="Netlist exportée dans "+nom+".";
 }
 
 /* Nomenclature exploitable : une ligne par composant, plus un récapitulatif
@@ -178,7 +216,8 @@ function exportBomCsv(){
   const txt=bomCsvText();
   if(!txt){alert("Document vide : rien à exporter.");return;}
   // marque d'ordre UTF-8 + point-virgule : Excel ouvre alors proprement
-  dl(new Blob(["\ufeff"+txt],{type:"text/csv;charset=utf-8"}),"nomenclature.csv");
+  const nom=schFile("-nomenclature.csv","nomenclature.csv");
+  dl(new Blob(["\ufeff"+txt],{type:"text/csv;charset=utf-8"}),nom);
   document.getElementById("fHint").textContent=
-    bomRows().length+" composant(s) exporté(s) dans nomenclature.csv.";
+    bomRows().length+" composant(s) exporté(s) dans "+nom+".";
 }

@@ -2,6 +2,29 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.7.0
+# Date: 2026-08-26
+# Explication: un projet est desormais un dossier sur le disque, avec un
+#   fichier principal projet.cao.json qui porte le nom, la revision et les
+#   liens vers le schema et la carte. Donner ce dossier suffit : les outils y
+#   trouvent leurs documents et y reecrivent. Un navigateur ne pouvant pas
+#   ouvrir un chemin qu'on lui tape, c'est ce serveur qui tient le disque --
+#   d'ou trois routes de plus, batties sur le modele de /api/profil.
+#   Deux garde-fous, et ils commandent tout le reste : rien ne sort de la
+#   racine declaree (--projets, verdict par realpath, liens symboliques
+#   compris), et les routes n'existent pas si l'ecoute n'est pas locale. Une
+#   API qui ecrit un chemin venu du navigateur, offerte a un reseau sans mot
+#   de passe, donnerait le disque entier a qui le demande.
+# Fonctions ajoutees/modifiees :
+# - ErreurProjet, racine_projets, nom_projet, sous_racine, chemin_projet,
+#   nom_fichier_doc (nouvelles)
+# - CustomHandler._projet_api, _projet_garde, _projet_params, _projet_dossier,
+#   _projet_outil, _projet_corps, _projet_fichier_lire, _projet_fichier_ecrire,
+#   _projet_charge, _projet_doc_chemin, _projets_index, _projet_lire,
+#   _projet_ecrire, _projet_doc_lire, _projet_doc_ecrire (nouvelles)
+# - CustomHandler.do_GET / do_HEAD / do_PUT / do_OPTIONS (routage)
+# - start_server (PROJETS_OUVERT selon l'adresse obtenue), main (--projets)
+#
 # Version: 2.6.0
 # Date: 2026-08-24
 # Explication: chaque utilisateur a desormais son espace de travail, garde
@@ -250,6 +273,151 @@ def nom_profil(brut):
     if NOMS_RESERVES.match(nom):
         return None
     return nom
+
+
+# -- dossiers de projet -----------------------------------------------------
+# Un dossier par projet, et dedans un fichier principal projet.cao.json qui
+# porte le nom et fait le lien vers le schema et la carte :
+#
+#     D:\projets\carte PIR\
+#         projet.cao.json          <- le nom, la revision, les liens
+#         carte PIR-SCH.json
+#         carte PIR-PCB.json
+#
+# Deux garde-fous, et ils ne sont pas negociables : tout reste sous une racine
+# declaree (--projets), et la route ne s'ouvre pas si le serveur ecoute sur le
+# reseau. Sans cela, une API qui ecrit un chemin venu du navigateur donnerait a
+# quiconque sur le reseau un acces en ecriture a tout le disque.
+PROJETS = "projets"               # racine par defaut, a cote d'index.html
+RACINES_PROJETS = []              # fixees au demarrage par --projets
+PROJETS_PROFONDEUR = 3            # niveaux explores en listant (clients/acme/carte)
+PROJETS_OUVERT = False            # vrai seulement si l'ecoute est locale
+MAX_PROJET = 16 * 1024 * 1024     # un schema ou une carte : quelques centaines de Ko
+PROJET_FICHIER = "projet.cao.json"
+PROJET_FORMAT = "cao-projet-1"
+PROJET_SUFFIXE = {"schema": "-SCH.json", "pcb": "-PCB.json"}
+
+
+class ErreurProjet(Exception):
+    """Refus explicite d'une route de projet : code HTTP + message lisible."""
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def racines_projets():
+    """Les racines declarees, sous lesquelles tout projet doit se trouver.
+
+    Plusieurs, parce que les projets ne vivent pas tous au meme endroit -- un
+    disque de travail, un dossier client. Elles se declarent au demarrage et
+    nulle part ailleurs : c'est ce qui fait de cette liste une frontiere. Si le
+    navigateur pouvait en ajouter une, il n'y aurait plus de frontiere du tout.
+    """
+    if RACINES_PROJETS:
+        return list(RACINES_PROJETS)
+    return [os.path.abspath(os.path.join(ROOT, PROJETS))]
+
+
+def racine_projets():
+    """La racine par defaut : celle ou l'on cree quand rien n'est precise."""
+    return racines_projets()[0]
+
+
+def nom_projet(brut):
+    """Nom de projet -> nom de dossier sur, ou None.
+
+    Memes regles que pour un profil : ni traversee de dossier, ni nom reserve
+    de Windows, et un refus franc plutot qu'un nettoyage silencieux.
+    """
+    nom = " ".join(str(brut or "").split())
+    if not nom or len(nom) > 60:
+        return None
+    if NOM_INTERDIT.search(nom):
+        return None
+    if nom.strip(".") == "" or nom[0] == "." or nom[-1] in ". ":
+        return None
+    if NOMS_RESERVES.match(nom):
+        return None
+    return nom
+
+
+def sous_racine(chemin):
+    """La racine qui contient ce chemin, ou None s'il n'en a aucune.
+
+    Le verdict se fonde sur realpath : un lien symbolique qui sortirait des
+    racines est donc vu comme ce qu'il est, et refuse. C'est la vraie frontiere
+    de securite -- les controles de nom, eux, ne font que donner des messages
+    clairs.
+    """
+    cible = os.path.realpath(chemin)
+    for racine in racines_projets():
+        vraie = os.path.realpath(racine)
+        if cible == vraie or cible.startswith(vraie + os.sep):
+            return racine
+    return None
+
+
+def chemin_projet(brut, base=None):
+    """Ce que le navigateur designe -> dossier de projet, ou une erreur.
+
+    On accepte un simple nom (« carte PIR »), un chemin relatif avec des
+    sous-dossiers (« clients/acme/carte PIR ») et un chemin complet
+    (« D:\\projets\\carte PIR ») : dire ou un projet se range est justement ce
+    qu'on veut pouvoir faire. Mais tape ou construit, il doit tomber sous une
+    des racines declarees.
+
+    `base` designe la racine visee pour un chemin relatif ; a defaut c'est la
+    premiere. Elle doit elle-meme etre declaree -- sinon il suffirait de
+    l'inventer pour sortir.
+    """
+    brut = str(brut or "").strip().strip('"')
+    if not brut:
+        raise ErreurProjet(400, "Aucun projet indique")
+    if len(brut) > 400:
+        raise ErreurProjet(400, "Chemin de projet trop long")
+    if "\x00" in brut:
+        raise ErreurProjet(400, "Chemin de projet invalide")
+    depart = racine_projets()
+    if base:
+        depart = sous_racine(base)
+        if not depart or os.path.realpath(base) != os.path.realpath(depart):
+            raise ErreurProjet(403, "Racine inconnue : « %s ». Declarez-la au"
+                                    " demarrage avec --projets." % base)
+    dossier = os.path.abspath(os.path.join(depart, os.path.expanduser(brut)))
+    racine = sous_racine(dossier)
+    if not racine:
+        raise ErreurProjet(403, "Hors des racines declarees : refuse. Racines :"
+                                " %s" % " ; ".join(racines_projets()))
+    # Chaque element du chemin doit etre un nom acceptable : le confinement
+    # suffirait a la surete, mais un « .. » avale en silence rendrait le
+    # message incomprehensible le jour ou il faudra le lire.
+    reste = os.path.relpath(dossier, racine)
+    if reste != ".":
+        for part in reste.replace(os.altsep or os.sep, os.sep).split(os.sep):
+            if not nom_projet(part):
+                raise ErreurProjet(400, "Element de chemin invalide : « %s »" % part)
+    return dossier
+
+
+def nom_fichier_doc(valeur):
+    """Nom de fichier declare dans projet.cao.json -> sur, ou None.
+
+    Ce nom vient d'un fichier sur le disque, pas d'un champ de formulaire :
+    a demi confiance seulement. Un simple nom de fichier .json, sans dossier.
+    """
+    nom = str(valeur or "").strip()
+    if not nom or len(nom) > 120:
+        return None
+    if os.path.basename(nom) != nom:
+        return None
+    if not nom.lower().endswith(".json"):
+        return None
+    if NOM_INTERDIT.search(nom) or nom[0] == ".":
+        return None
+    return nom
+
 
 # Origines autorisees a appeler l'API : cette machine et les reseaux prives,
 # pour le cas ou la page serait servie depuis un autre port.
@@ -677,9 +845,237 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurProfil(500, "Profil non supprime : %s" % exc)
         return {"ok": True, "nom": nom}
 
+    # -- dossiers de projet -----------------------------------------------
+    # Un dossier, un fichier principal (projet.cao.json), les documents a
+    # cote. La page d'accueil designe le dossier ; chaque outil y lit et y
+    # reecrit le sien, et c'est ainsi que schema et carte restent lies.
+
+    def _projet_api(self, action):
+        """Jumeau de _profil_api pour les projets."""
+        try:
+            self._envoyer_json(action())
+        except ErreurProjet as exc:
+            self.close_connection = True    # le corps n'a peut-etre pas ete lu
+            self._envoyer_json({"detail": exc.message}, exc.code)
+        except Exception as exc:                       # noqa: BLE001
+            self.close_connection = True
+            self._envoyer_json({"detail": "Erreur interne : %s" % exc}, 500)
+
+    def _projet_garde(self):
+        """Ces routes n'existent que sur une ecoute locale.
+
+        Ecrire sur le disque a la demande du navigateur est deja beaucoup ;
+        l'offrir au reseau serait offrir le disque. Le refus dit quoi faire.
+        """
+        if not PROJETS_OUVERT:
+            raise ErreurProjet(403, "Dossiers de projet refuses : ce serveur"
+                                    " ecoute sur le reseau. Relancez-le avec"
+                                    " --local pour ouvrir cette route.")
+
+    def _projet_params(self):
+        return urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+
+    def _projet_dossier(self):
+        self._projet_garde()
+        params = self._projet_params()
+        brut = (params.get("chemin") or params.get("nom") or [""])[0]
+        # « racine » dit sous laquelle des racines declarees ranger un chemin
+        # relatif ; elle doit etre declaree, sinon l'inventer suffirait a sortir
+        base = (params.get("racine") or [""])[0]
+        return chemin_projet(brut, base or None)
+
+    def _projet_outil(self):
+        outil = (self._projet_params().get("doc") or [""])[0]
+        if outil not in PROJET_SUFFIXE:
+            raise ErreurProjet(400, "Document inconnu : « %s » (attendu :"
+                                    " schema ou pcb)" % outil)
+        return outil
+
+    def _projet_corps(self):
+        try:
+            taille = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise ErreurProjet(400, "Content-Length invalide")
+        if taille > MAX_PROJET:
+            raise ErreurProjet(413, "Fichier trop volumineux")
+        try:
+            return json.loads(self.rfile.read(taille) or b"{}")
+        except (ValueError, UnicodeDecodeError):
+            raise ErreurProjet(400, "Corps JSON illisible")
+
+    def _projet_fichier_lire(self, chemin, quoi):
+        try:
+            with open(chemin, encoding="utf-8") as flux:
+                return json.load(flux)
+        except FileNotFoundError:
+            raise ErreurProjet(404, "%s : introuvable" % quoi)
+        except OSError as exc:
+            raise ErreurProjet(500, "%s : illisible (%s)" % (quoi, exc))
+        except ValueError:
+            raise ErreurProjet(422, "%s : ce n'est pas du JSON" % quoi)
+
+    def _projet_fichier_ecrire(self, chemin, charge, quoi):
+        try:
+            os.makedirs(os.path.dirname(chemin), exist_ok=True)
+        except OSError as exc:
+            raise ErreurProjet(500, "Dossier impossible a creer : %s" % exc)
+        temp = chemin + ".tmp"
+        # ecriture en deux temps, comme pour les profils : une coupure de
+        # courant laisse l'ancien fichier entier plutot qu'un fichier a
+        # moitie ecrit -- et un schema a moitie ecrit, c'est du travail perdu
+        try:
+            with open(temp, "w", encoding="utf-8") as flux:
+                flux.write(json.dumps(charge, ensure_ascii=False, indent=1))
+            os.replace(temp, chemin)
+        except OSError as exc:
+            try:
+                os.remove(temp)
+            except OSError:
+                pass
+            raise ErreurProjet(500, "%s : non enregistre (%s)" % (quoi, exc))
+
+    def _projet_charge(self, dossier):
+        return self._projet_fichier_lire(
+            os.path.join(dossier, PROJET_FICHIER),
+            "Le fichier projet (%s)" % PROJET_FICHIER)
+
+    def _projet_doc_chemin(self, dossier, outil, charge=None, lire=False):
+        """Le fichier d'un outil dans ce dossier.
+
+        projet.cao.json a le dernier mot : c'est lui qui fait le lien. A
+        defaut de declaration lisible, le nom se deduit du projet -- un
+        dossier prepare a la main reste donc utilisable.
+
+        `lire` autorise un dernier repli, et seulement en lecture : si le nom
+        attendu ne designe rien, on prend le premier fichier du dossier qui
+        porte le suffixe de l'outil. Un projet renomme, ou un dossier rempli a
+        la main, s'ouvre ainsi au lieu de paraitre vide -- mais on n'ecrit
+        jamais sur un fichier trouve de cette facon : ce qu'on ecrit porte le
+        nom canonique.
+        """
+        nom = None
+        if isinstance(charge, dict):
+            fichiers = charge.get("fichiers")
+            if isinstance(fichiers, dict):
+                nom = nom_fichier_doc(fichiers.get(outil))
+        if not nom:
+            base = nom_projet(charge.get("nom")) if isinstance(charge, dict) else None
+            base = base or os.path.basename(dossier.rstrip(os.sep + (os.altsep or ""))) 
+            nom = base + PROJET_SUFFIXE[outil]
+        chemin = os.path.join(dossier, nom)
+        if lire and not lisible(chemin):
+            trouve = self._projet_doc_trouver(dossier, outil)
+            if trouve:
+                return trouve
+        return chemin
+
+    def _projet_doc_trouver(self, dossier, outil):
+        """Le premier fichier du dossier qui porte le suffixe de l'outil."""
+        suffixe = PROJET_SUFFIXE[outil].lower()
+        try:
+            entrees = sorted(os.listdir(dossier))
+        except OSError:
+            return None
+        for entree in entrees:
+            if not entree.lower().endswith(suffixe):
+                continue
+            chemin = os.path.join(dossier, entree)
+            if nom_fichier_doc(entree) and lisible(chemin):
+                return chemin
+        return None
+
+    def _projets_index(self):
+        """Les projets, c'est ce que contiennent les racines declarees.
+
+        Un dossier compte comme projet s'il porte un projet.cao.json ; le
+        reste du disque n'est pas notre affaire. On explore les sous-dossiers
+        jusqu'a une profondeur fixee : clients/acme/carte PIR, c'est un projet
+        range dans sa filiere, et on veut qu'il remonte dans l'index.
+        """
+        self._projet_garde()
+        out = []
+        for racine in racines_projets():
+            try:
+                self._explorer_projets(racine, racine, 0, out)
+            except OSError:
+                pass               # racine absente : aucun projet, pas une erreur
+        out.sort(key=lambda p: (-p["t"], p["chemin"].lower()))
+        return {"racines": racines_projets(), "projets": out}
+
+    def _explorer_projets(self, racine, courant, niveau, accumule):
+        """Parcourt recursivement un dossier pour trouver les projets."""
+        if niveau > PROJETS_PROFONDEUR:
+            return
+        for entree in sorted(os.listdir(courant)):
+            chemin = os.path.join(courant, entree)
+            if not os.path.isdir(chemin):
+                continue
+            principal = os.path.join(chemin, PROJET_FICHIER)
+            if lisible(principal):
+                relatif = os.path.relpath(chemin, racine)
+                nom = relatif
+                try:
+                    with open(principal, encoding="utf-8") as flux:
+                        nom = nom_projet(json.load(flux).get("nom")) or relatif
+                except (OSError, ValueError):
+                    pass               # illisible : liste sous son nom de dossier
+                try:
+                    quand = int(os.path.getmtime(principal) * 1000)
+                except OSError:
+                    quand = 0
+                accumule.append({"nom": nom, "chemin": relatif, "racine": racine, "t": quand})
+            else:
+                self._explorer_projets(racine, chemin, niveau + 1, accumule)
+
+    def _projet_lire(self):
+        dossier = self._projet_dossier()
+        charge = self._projet_charge(dossier)
+        etat = {}
+        for outil in PROJET_SUFFIXE:
+            chemin = self._projet_doc_chemin(dossier, outil, charge, lire=True)
+            etat[outil] = {"fichier": os.path.basename(chemin),
+                           "present": lisible(chemin)}
+        return {"projet": charge, "dossier": dossier, "documents": etat}
+
+    def _projet_ecrire(self):
+        # le corps d'abord : un chemin refuse ne doit pas laisser la requete a
+        # moitie lue dans la connexion
+        charge = self._projet_corps()
+        dossier = self._projet_dossier()
+        if not isinstance(charge, dict) or charge.get("format") != PROJET_FORMAT:
+            raise ErreurProjet(400, "Ce n'est pas un fichier projet (format"
+                                    " attendu : %s)" % PROJET_FORMAT)
+        if not nom_projet(charge.get("nom")):
+            raise ErreurProjet(400, "Le fichier projet n'a pas de nom valide")
+        self._projet_fichier_ecrire(os.path.join(dossier, PROJET_FICHIER),
+                                    charge, "Le fichier projet")
+        return {"ok": True, "dossier": dossier, "nom": charge.get("nom")}
+
+    def _projet_doc_lire(self):
+        dossier = self._projet_dossier()
+        outil = self._projet_outil()
+        chemin = self._projet_doc_chemin(dossier, outil, self._projet_charge(dossier),
+                                         lire=True)
+        return {"document": self._projet_fichier_lire(chemin,
+                                                      "Le document %s" % outil),
+                "fichier": os.path.basename(chemin)}
+
+    def _projet_doc_ecrire(self):
+        charge = self._projet_corps()
+        dossier = self._projet_dossier()
+        outil = self._projet_outil()
+        if not isinstance(charge, dict):
+            raise ErreurProjet(400, "Document illisible")
+        # le fichier projet est l'ancre : sans lui, ce dossier n'est pas un
+        # projet et on n'y ecrit pas de document
+        chemin = self._projet_doc_chemin(dossier, outil, self._projet_charge(dossier))
+        self._projet_fichier_ecrire(chemin, charge, "Le document %s" % outil)
+        return {"ok": True, "fichier": os.path.basename(chemin)}
+
     def do_OPTIONS(self):
         route = self._route()
-        if route in ("/api/profils", "/api/profil"):
+        if route in ("/api/profils", "/api/profil",
+                     "/api/projets", "/api/projet", "/api/projet/doc"):
             self.send_response(204)
             self.send_header("Access-Control-Allow-Methods",
                              "GET, PUT, DELETE, OPTIONS")
@@ -697,10 +1093,17 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_PUT(self):
-        if self._route() != "/api/profil":
-            self.send_error(405, "Unsupported method (PUT)")
+        route = self._route()
+        if route == "/api/profil":
+            self._profil_api(self._profil_ecrire)
             return
-        self._profil_api(self._profil_ecrire)
+        if route == "/api/projet":
+            self._projet_api(self._projet_ecrire)
+            return
+        if route == "/api/projet/doc":
+            self._projet_api(self._projet_doc_ecrire)
+            return
+        self.send_error(405, "Unsupported method (PUT)")
 
     def do_DELETE(self):
         if self._route() != "/api/profil":
@@ -735,6 +1138,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/profil":
             self._profil_api(self._profil_lire)
             return
+        if route == "/api/projets":
+            self._projet_api(self._projets_index)
+            return
+        if route == "/api/projet":
+            self._projet_api(self._projet_lire)
+            return
+        if route == "/api/projet/doc":
+            self._projet_api(self._projet_doc_lire)
+            return
         super().do_GET()
 
     def do_HEAD(self):
@@ -747,6 +1159,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/profil":
             self._profil_api(self._profil_lire)
+            return
+        if route == "/api/projets":
+            self._projet_api(self._projets_index)
+            return
+        if route == "/api/projet":
+            self._projet_api(self._projet_lire)
+            return
+        if route == "/api/projet/doc":
+            self._projet_api(self._projet_doc_lire)
             return
         super().do_HEAD()
 
@@ -843,6 +1264,12 @@ def start_server(host, port, navigateur=True):
     is_local_only = bound_host in ("127.0.0.1", "::1")
     url = adresse_locale(bound_host, bound_port)
 
+    # Les dossiers de projet ne s'ouvrent que sur une ecoute locale. Le choix
+    # se fait ici, sur l'adresse reellement obtenue -- pas sur l'intention :
+    # un repli sur 127.0.0.1 apres un port refuse doit compter comme local.
+    global PROJETS_OUVERT
+    PROJETS_OUVERT = is_local_only
+
     if bound_port != port and port != 0:
         print("[*] Port retenu a la place de %d : %d" % (port, bound_port))
         print()
@@ -851,6 +1278,13 @@ def start_server(host, port, navigateur=True):
     print("=" * 60)
     print("  dossier servi : %s" % ROOT)
     print("  passerelle    : /api/tools et /api/tool -> pcbparts.dev")
+    if PROJETS_OUVERT:
+        print("  projets       : /api/projets, /api/projet, /api/projet/doc")
+        for i, racine in enumerate(racines_projets()):
+            print("                  %s %s"
+                  % ("racine :" if i == 0 else "        ", racine))
+        if len(racines_projets()) > 1:
+            print("                  (la premiere sert de defaut a la creation)")
     if is_local_only:
         print("  adresse       : %s" % url)
         print()
@@ -865,6 +1299,10 @@ def start_server(host, port, navigateur=True):
         print("  ATTENTION : le serveur ecoute sur toutes les interfaces et n'a")
         print("  aucune authentification. A reserver a un reseau de confiance ;")
         print("  utilisez --local pour un acces limite a cette machine.")
+        print()
+        print("  Les dossiers de projet sont refuses dans ce mode : lire et")
+        print("  ecrire sur le disque ne s'ouvre pas a un reseau sans mot de")
+        print("  passe. Relancez avec --local pour les utiliser.")
     print()
     print("=" * 60)
     print("(Ctrl+C pour arreter)")
@@ -908,11 +1346,30 @@ def main(argv=None):
     ap.add_argument("--dossier", default=None,
                     help="dossier a servir (defaut : celui de ce script ;"
                          " utile quand __file__ ne le designe pas, sous Pyto)")
+    ap.add_argument("--projets", action="append", default=None, metavar="DOSSIER",
+                    help="racine des dossiers de projet (defaut : projets/ a"
+                         " cote d'index.html). Repetable, ou plusieurs chemins"
+                         " separes par « %s ». Aucun projet ne peut etre lu ni"
+                         " ecrit hors de ces racines" % os.pathsep)
     args = ap.parse_args(argv)
     if args.dossier:
         global ROOT, DOSSIER_IMPOSE
         ROOT = os.path.abspath(os.path.expanduser(args.dossier))
         DOSSIER_IMPOSE = True
+    if args.projets:
+        global RACINES_PROJETS
+        # --projets se repete, et chaque valeur peut en contenir plusieurs :
+        # « --projets D:\projets;E:\clients » comme « --projets a --projets b »
+        vues = []
+        for brut in args.projets:
+            for part in str(brut).split(os.pathsep):
+                part = part.strip().strip('"')
+                if not part:
+                    continue
+                chemin = os.path.abspath(os.path.expanduser(part))
+                if chemin not in vues:
+                    vues.append(chemin)
+        RACINES_PROJETS = vues
     host = "127.0.0.1" if args.local else args.host
     return start_server(host, args.port, args.navigateur)
 

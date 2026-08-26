@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 /* ==========================================================================
    Éditeur PCB — fabrication
    Masque et pâte, Gerber RS-274X, perçage Excellon, archive ZIP.
@@ -343,39 +343,243 @@ function gerberSilk(side){
   }
   return gAssemble(gHeader("Legend,"+(side?"Bot":"Top")),A,body);
 }
-function gerberEdge(){
-  const A=apSet(), body=[], c=boardPoly();
+/* ==========================================================================
+   Contour de carte — profil de découpe et keepout
+   --------------------------------------------------------------------------
+   Deux fichiers pour deux choses que l'on confond souvent :
+
+     .GM1  Mechanical Layer 1 — le PROFIL DE DÉCOUPE. C'est lui qui dit où la
+           fraise passe. Il porte l'attribut X2 « Profile,NP » (Not Plated),
+           et il doit être unique dans le dossier : deux fichiers annonçant
+           le profil, et le fabricant demande lequel croire.
+
+     .GKO  Keep-Out Layer — l'interdiction de cuivre. Même géométrie ici,
+           mais ce n'est PAS le même propos : un keepout ne se découpe pas.
+
+   Historiquement l'éditeur n'écrivait que le .GKO, avec l'attribut de profil
+   dedans. Le contour était donc juste, mais son extension annonçait un
+   keepout : les chaînes CAM issues d'Altium lisent l'extension d'abord, et
+   affichaient « Keepout Layer Gerber Data » — d'où un dossier refusé au
+   contrôle d'entrée pour contour mécanique manquant. Les deux sont maintenant
+   écrits séparément, chacun avec l'attribut qui le décrit.
+   ========================================================================== */
+function edgeSegs(body,A){
+  const c=boardPoly();
   for(let k=0;k<c.length;k++)
     gSeg(body,A,c[k].x,c[k].y,c[(k+1)%c.length].x,c[(k+1)%c.length].y,0.1);
+}
+/* Le profil de découpe. « NP » : le bord n'est pas métallisé — un contour
+   plaqué existe (bords dorés, connecteur de carte) mais se commande à part. */
+function gerberOutline(){
+  const A=apSet(), body=[];
+  edgeSegs(body,A);
   return gAssemble(gHeader("Profile,NP"),A,body);
 }
-/* ---------- perçage Excellon ---------- */
-function drillFile(){
-  const tools=new Map();
-  const add=(d,x,y)=>{
-    const k=fmt(d,3);
-    if(!tools.has(k))tools.set(k,[]);
-    tools.get(k).push({x,y});
+/* Le keepout. « Other » est la fonction X2 des couches qui ne relèvent
+   d'aucune catégorie normalisée ; le nom qui suit la qualifie. */
+function gerberEdge(){
+  const A=apSet(), body=[];
+  edgeSegs(body,A);
+  return gAssemble(gHeader("Other,Keepout"),A,body);
+}
+
+/* ==========================================================================
+   Netlist IPC-D-356
+   --------------------------------------------------------------------------
+   Ce que le fabricant met sur son testeur : la liste des points de contact,
+   chacun avec le net auquel il appartient. Le testeur pique deux points d'un
+   même net et vérifie qu'ils se touchent ; il pique deux points de nets
+   différents et vérifie qu'ils ne se touchent pas. Sans ce fichier, il ne
+   sait pas ce qu'il doit trouver, et la gravure part sans test electrique
+   — un court-circuit sous une puce ne se voit pas à l'oeil.
+
+   Le format est à colonnes fixes, hérité de la carte perforée : chaque champ
+   occupe une position imposée, et un champ décalé d'un caractère fait un
+   fichier illisible. D'où pad() partout plutôt qu'une concaténation libre.
+
+   Enregistrement 317 (point de test) :
+     col 1-3    "317"
+     col 4-17   nom du net, 14 caractères
+     col 18-20  "   "
+     col 21-26  repère du composant  (-XXXXX)
+     col 27-31  numéro de broche     (-YYYY)
+     col 32     drapeau de trou métallisé : "A" traversant, blanc sinon
+     col 33-38  diamètre du trou     (Dnnnnn), en 0,0001 pouce
+     col 39     "P" plaqué, "U" non plaqué
+     col 40-42  accès aux couches    (Ann) : A00 = toutes, A01 = dessus…
+     col 43-49  X                    (X±nnnnnn), en 0,0001 pouce
+     col 50-56  Y                    (Y±nnnnnn)
+   Les unités du format sont impériales : tout ce qui sort d'ici est converti
+   depuis le millimètre, et l'origine est celle des Gerber pour que les deux
+   se superposent chez le fabricant.
+   ========================================================================== */
+const IPC_MM=1/0.0254;                 // mm vers 0,0001 pouce
+function ipcNum(mm,digits){
+  const v=Math.round(Math.abs(mm)*IPC_MM);
+  return String(v).padStart(digits,"0").slice(-digits);
+}
+/* Coordonnée signée : le signe occupe sa propre colonne, le format ne connaît
+   pas le moins collé au chiffre. */
+function ipcCoord(mm){
+  return (mm<0?"-":"+")+ipcNum(mm,6);
+}
+/* Les noms de net du format tiennent en 14 caractères, sans accent ni espace :
+   un testeur qui lit « ALIM 5V » y voit deux champs. */
+function ipcName(net){
+  return noAcc(String(net||"")).toUpperCase()
+    .replace(/[^A-Z0-9_+\-.$]/g,"_").slice(0,14);
+}
+/* Le champ d'accès dit sur quelles couches le point est piquable : A00 pour un
+   trou traversant, A01 pour la face composants, A02 pour la face soudure.
+   C'est ce qui permet au testeur de choisir ses aiguilles. */
+function ipcAccess(layers){
+  if(layers.length>=S.cu&&S.cu>1)return "A00";
+  return layers.indexOf(0)>=0?"A01":"A02";
+}
+/* Un enregistrement 317, champs à leur colonne. `pin` vide pour un via : le
+   format admet un point de test qui n'appartient à aucun composant. */
+function ipc317(net,ref,pin,drill,plated,layers,x,y){
+  const o=gOrigin();
+  let s="317";
+  s+=ipcName(net).padEnd(14," ");
+  s+="   ";
+  s+=(ref?"-"+noAcc(String(ref)).toUpperCase().slice(0,5).padEnd(5," "):"      ");
+  s+=(pin!==""&&pin!=null?"-"+String(pin).slice(0,4).padEnd(4," "):"     ");
+  s+=(drill>0&&layers.length>=S.cu&&S.cu>1?"A":" ");
+  s+=(drill>0?"D"+ipcNum(drill,5):"      ");
+  s+=(drill>0?(plated?"P":"U"):" ");
+  s+=ipcAccess(layers);
+  s+="X"+ipcCoord(x-o.x);
+  s+="Y"+ipcCoord(o.y-y);       // le Y du format monte, celui du document descend
+  return s;
+}
+/* Le fichier complet. Les points sont groupés par net, et les nets triés comme
+   dans le tableau des nets : un fabricant qui l'ouvre y retrouve l'ordre de
+   l'éditeur, et un diff entre deux révisions reste lisible. */
+function ipcNetlist(){
+  const L=["C  IPC-D-356 - Editeur PCB",
+           "C  "+new Date().toISOString(),
+           "C  carte "+fmt(S.board.w,2)+" x "+fmt(S.board.h,2)+" mm, "+
+             S.cu+" couche(s) de cuivre",
+           "C  origine "+(S.fabOrigin?"utilisateur":"coin inferieur gauche")+
+             ", identique aux Gerber",
+           "C  unites 0,0001 pouce",
+           "P  UNITS CUST 0",
+           "C"];
+  /* Points par net : une pastille est un point, un via en est un autre. Les
+     pastilles sans net ne se testent pas — un point isolé n'a rien à vérifier
+     — et les vias sans net non plus. */
+  const byNet=new Map();
+  const add=(net,rec)=>{
+    if(!net)return;
+    if(!byNet.has(net))byNet.set(net,[]);
+    byNet.get(net).push(rec);
   };
   for(const fp of S.fps)
     for(const q of padsWorld(fp))
-      if(q.drill>0)add(q.drill,q.x,q.y);
-  for(const v of S.vias)add(v.drill,v.x,v.y);
-  const keys=[...tools.keys()].sort((a,b)=>parseFloat(a)-parseFloat(b));
-  const out=["M48","; Editeur PCB - percage metallise (PTH)",
-             "; epaisseur du stratifie "+fmt(stackLam(),3)+" mm",
-             "; "+new Date().toISOString(),"METRIC,TZ"];
-  keys.forEach((k,i)=>out.push("T"+(i+1)+"C"+k));
-  out.push("%","G90","G05");
-  const o=gOrigin();
-  keys.forEach((k,i)=>{
-    out.push("T"+(i+1));
-    for(const p of tools.get(k))
-      out.push("X"+fmt(p.x-o.x,3)+"Y"+fmt(o.y-p.y,3));
+      add(q.net,ipc317(q.net,fp.ref,q.n,q.drill,true,padLayers(fp,q),q.x,q.y));
+  /* Un via recouvert de vernis n'est pas piquable : le testeur ne traverse pas
+     le masque. On le déclare quand même — il porte la continuité du net entre
+     deux couches, et le fabricant en a besoin pour bâtir son modèle — mais
+     sans repère de composant, ce qui le désigne comme point de passage. */
+  for(const v of S.vias){
+    const ls=[];
+    for(let i=Math.min(v.a,v.b);i<=Math.max(v.a,v.b);i++)ls.push(i);
+    add(v.net,ipc317(v.net,"","",v.drill,true,ls,v.x,v.y));
+  }
+  const nets=netTable().map(n=>n.name);
+  for(const n of byNet.keys())if(nets.indexOf(n)<0)nets.push(n);
+  for(const n of nets){
+    const recs=byNet.get(n);
+    if(!recs||!recs.length)continue;
+    for(const r of recs)L.push(r);
+  }
+  L.push("999");
+  return L.join("\n")+"\n";
+}
+
+/* ---------- perçage Excellon ---------- */
+/* Génère UN fichier Excellon par portée de via (traversant, borgne, enterré).
+   Les pastilles traversantes (drill>0) atterrissent dans le fichier de la
+   portée la plus large — en pratique, toujours le traversant s'il existe.
+   Les fichiers portent un nom explicite : carte-0-3.TXT, carte-0-2.TXT… */
+function drillFile(){
+  /* Construit le contenu d'un fichier Excellon pour la liste de trous donnée.
+     holes : [{drill, x, y}] */
+  const buildOne=(name,holes)=>{
+    const tools=new Map();
+    for(const {drill:d,x,y} of holes){
+      const k=fmt(d,3);
+      if(!tools.has(k))tools.set(k,[]);
+      tools.get(k).push({x,y});
+    }
+    const keys=[...tools.keys()].sort((a,b)=>parseFloat(a)-parseFloat(b));
+    const out=["M48","; Editeur PCB - "+name,
+               "; epaisseur du stratifie "+fmt(stackLam(),3)+" mm",
+               "; "+new Date().toISOString(),"METRIC,TZ"];
+    keys.forEach((k,i)=>out.push("T"+(i+1)+"C"+k));
+    out.push("%","G90","G05");
+    const o=gOrigin();
+    keys.forEach((k,i)=>{
+      out.push("T"+(i+1));
+      for(const p of tools.get(k))
+        out.push("X"+fmt(p.x-o.x,3)+"Y"+fmt(o.y-p.y,3));
+    });
+    out.push("T0","M30");
+    return {text:out.join("\n")+"\n",
+            tools:keys.length,
+            holes:[...tools.values()].reduce((a,v)=>a+v.length,0)};
+  };
+
+  /* Collecte les drills des pastilles brasées. Une pastille traversante est
+     codée avec toutes les couches, mais padLayers() retourne [0..cu-1].
+     Elle aterrit donc toujours dans le span traversant (0-cu-1). */
+  const padDrills=[];
+  for(const fp of S.fps){
+    for(const q of padsWorld(fp)){
+      if(q.drill>0)padDrills.push({drill:q.drill,x:q.x,y:q.y});
+    }
+  }
+
+  /* Collecte les drills des vias par span. */
+  const viaSpans=new Map();  // key="a-b" -> [{drill,x,y}]
+  for(const v of S.vias){
+    let a=v.a, b=v.b;
+    if(b<a){const k=a;a=b;b=k;}
+    const key=a+"-"+b;
+    if(!viaSpans.has(key))viaSpans.set(key,[]);
+    viaSpans.get(key).push({drill:v.drill,x:v.x,y:v.y});
+  }
+
+  /* Détermine les spans effectivement requis : chaque span de via, plus le
+     span traversant (0-cu-1) s'il y a des pastilles ou des vias qui le font.
+     Les spans sont triés par portée décroissante (traversant d'abord). */
+  const allSpans=new Set(viaSpans.keys());
+  const throughSpan="0-"+(S.cu-1);
+  if(padDrills.length)allSpans.add(throughSpan); // pastilles → fichier traversant
+  const sortedSpans=[...allSpans].sort((a,b)=>{
+    const ra=a.split("-").map(Number), rb=b.split("-").map(Number);
+    return (rb[1]-rb[0])-(ra[1]-ra[0]); // portée la plus large en premier
   });
-  out.push("T0","M30");
-  return {text:out.join("\n")+"\n",tools:keys.length,
-          holes:[...tools.values()].reduce((a,v)=>a+v.length,0)};
+
+  const files=[];
+  for(const k of sortedSpans){
+    const viaHoles=viaSpans.get(k)||[];
+    // les pastilles ne vont que dans le span le plus large (traversant)
+    const holes=k===throughSpan ? viaHoles.concat(padDrills) : viaHoles;
+    if(!holes.length)continue;
+    const [a,b]=k.split("-").map(Number);
+    const bInfo=viaBuild(a,b);
+    const kind=bInfo.kind==="blind"?"borgne":(bInfo.kind==="buried"?"enterre":"traverse");
+    const la=a+1, lb=b+1;
+    files.push({name:fabBase()+"-"+k+".TXT",
+                 ...buildOne("percage "+kind+" - L"+la+"-L"+lb,holes)});
+  }
+
+  /* Stats agrégées pour le résumé */
+  const totalTools=files.reduce((a,f)=>a+f.tools,0);
+  const totalHoles=files.reduce((a,f)=>a+f.holes,0);
+  return {files, tools:totalTools, holes:totalHoles};
 }
 /* ==========================================================================
    Feuille d'empilage
@@ -493,6 +697,18 @@ function fabReadme(files,dr){
     : "coin inferieur gauche de la carte")+".");
   L.push("Gerber RS-274X, millimetres, format 4.6, polarite positive.");
   L.push("Percage Excellon metrique, trous metallises.");
+  L.push("Board Outline (carte.GM1) : Mechanical Layer 1, PROFIL DE DECOUPE.");
+  L.push("C'est ce fichier qui definit le detourage de la carte. Il porte");
+  L.push("l'attribut Gerber X2 << Profile,NP >> (bord non metallise).");
+  L.push("carte.GKO reprend la meme geometrie en Keep-Out Layer : interdiction");
+  L.push("de cuivre, et non une consigne de decoupe. En cas de doute, c'est");
+  L.push("carte.GM1 qui fait foi pour l'usinage.");
+  L.push("IPC-D-356 (carte.ipc) : netlist de test electrique (E-test / flying probe).");
+  L.push("Sans ce fichier, le fabricant ne peut pas verifier la conformite");
+  L.push("electrique de la gravure par rapport au schema.");
+  L.push("positions.csv et bom.csv servent a l'assemblage : millimetres,");
+  L.push("rotation en degres dans le sens antihoraire, meme origine que les");
+  L.push("Gerber. Ils ne concernent pas le fabricant du circuit nu.");
   L.push("");
   L.push("Fichiers :");
   for(const f of files)L.push("  "+f.name);
@@ -510,8 +726,103 @@ function fabReadme(files,dr){
   L.push("degagements, conformement a la norme RS-274X.");
   return L.join("\n")+"\n";
 }
+
+/* ==========================================================================
+   Fichiers de placement (positions.csv) et nomenclature (bom.csv)
+   Destinés à l'assemblage (JLCPCB, PCBA…).  Les conventions suivent celles
+   de la nomenclature du schéma : échappement CSV, BOM UTF-8.
+   ========================================================================== */
+
+/* Échappement CSV. Ces fichiers-là sont séparés par la virgule, et non par le
+   point-virgule de la nomenclature du schéma : c'est ce qu'attendent les
+   assembleurs. C'est donc la virgule qu'il faut protéger — une valeur comme
+   « 10k, 1% » couperait la ligne en deux sans cela. */
+function pcbCsvCell(v){
+  const t=String(v==null?"":v);
+  return /[",\r\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;
+}
+
+/* Fichier de placement : une ligne par empreinte.
+   Colonnes : Designator, Value, Package, X (mm), Y (mm), Rotation (°), Side.
+   La rotation est positive dans le sens horaire (convention JLCPCB).
+   La face est "Top" ou "Bottom" comme sur la plupart des assembleurs.
+   L'origine est la même que pour les Gerber. */
+function positionsCsvText(){
+  const o=gOrigin(), rows=[];
+  rows.push("Designator,Value,Package,X,Y,Rotation,Side");
+  for(const fp of S.fps){
+    const x=fmt(fp.x-o.x,4);
+    const y=fmt(o.y-fp.y,4);   // Y Gerber monte, le document descend
+    const rot=fp.rot||0;
+    const side=fp.side?"Bottom":"Top";
+    rows.push([
+      fp.ref,
+      fp.value||"",
+      fp.pkg||"",
+      x,y,rot,side
+    ].map(pcbCsvCell).join(","));
+  }
+  return rows.join("\r\n")+"\r\n";
+}
+
+/* Nomenclature pour assemblage : regroupement par (valeur, empreinte).
+   Chaque ligne donne un composant unique avec ses repères, puis un
+   récapitulatif avec les quantités.  C'est la même structure que la
+   nomenclature du schéma, mais les données viennent du PCB. */
+function bomPcbCsvText(){
+  const rows=[];
+  for(const fp of S.fps)
+    rows.push({ref:fp.ref||"", value:fp.value||"", pkg:fp.pkg||""});
+  rows.sort((a,b)=>String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}));
+  const out=["Reference,Value,Package"];
+  for(const r of rows)
+    out.push([r.ref,r.value,r.pkg].map(pcbCsvCell).join(","));
+  // récapitulatif par référence de commande
+  const groups=new Map();
+  for(const r of rows){
+    const k=r.value+"|"+r.pkg;
+    if(!groups.has(k))groups.set(k,{...r,refs:[]});
+    groups.get(k).refs.push(r.ref);
+  }
+  out.push("","Qty,Value,Package,References");
+  for(const g of [...groups.values()].sort((a,b)=>b.refs.length-a.refs.length))
+    out.push([g.refs.length,g.value,g.pkg,g.refs.join(" ")].map(pcbCsvCell).join(","));
+  return out.join("\r\n")+"\r\n";
+}
+
+/* Base de tous les noms de fichiers du dossier de fabrication.
+   UNE seule source : le PDF annonce ces noms dans sa page « Files included »,
+   et l'archive les génère. Deux littéraux « carte » séparés se seraient mis à
+   mentir l'un sur l'autre dès qu'un projet est nommé.
+   Sans projet ouvert — ou hors navigateur, au banc d'essai — on garde
+   « carte », le nom d'avant. */
+/* Le nom du document PCB dérivé du projet ouvert, ou "" s'il n'y en a pas.
+   Le nom vient de commun/projet.js ; hors navigateur (banc d'essai) la
+   fonction n'existe pas, d'où le garde-fou. */
+function pcbProjNom(){
+  try{
+    if(typeof projDoc==="function"){
+      const n=projDoc("pcb","");
+      if(n)return n;
+    }
+  }catch(_){}
+  return "";
+}
+function fabBase(){ return pcbProjNom()||"carte"; }
+/* Nom du master drawing, sans extension. Il sert deux fois : de numéro de
+   document imprimé dans le cartouche, et de nom du fichier dans l'archive.
+   Une seule source, sinon le document s'annonce sous un nom que l'archive
+   n'écrit pas — le défaut même qu'on corrige ici. */
+function fabDocNum(){ return fabBase()+"-MASTER-DRAWING"; }
+/* Nom d'un fichier exporté : « carte PIR-PCB.png » avec un projet, sinon
+   `repli` — exactement le nom d'avant, pour ne rien changer à l'habitude de
+   ceux qui n'en nomment pas. */
+function pcbFile(suffixe, repli){
+  const n=pcbProjNom();
+  return n?n+suffixe:repli;
+}
 function buildFabFiles(){
-  const base="carte";
+  const base=fabBase();
   const files=[];
   for(let i=0;i<S.cu;i++){
     const ext = i===0?".GTL":(i===S.cu-1?".GBL":".GL"+(i+1));
@@ -523,10 +834,24 @@ function buildFabFiles(){
   if(S.cu>1)files.push({name:base+".GBP",text:gerberPaste(1)});
   files.push({name:base+".GTO",text:gerberSilk(0)});
   if(S.cu>1)files.push({name:base+".GBO",text:gerberSilk(1)});
-  files.push({name:base+".GKO",text:gerberEdge()});
+  files.push({name:base+".GM1",text:gerberOutline()});   // profil de découpe
+  files.push({name:base+".GKO",text:gerberEdge()});      // keepout (même géométrie)
   const dr=drillFile();
-  files.push({name:base+".TXT",text:dr.text});
+  for(const f of dr.files)files.push(f);
+  /* La netlist de test : elle vient après les Gerber et le perçage, parce
+     qu'elle décrit ce que ces fichiers-là auront gravé. */
+  files.push({name:base+".ipc",text:ipcNetlist()});
+  /* Le Master Drawing PDF : trois pages IPC (PCB Details, Files, Stack-up).
+     Pur JS, zero dépendance. On passe la liste déjà construite pour éviter
+     une récursion buildFabFiles → masterDrawingPdf → buildFabFiles. */
+  const md=masterDrawingPdf(files);
+  if(md)files.push({name:fabDocNum()+".pdf",data:md});
   files.push({name:"EMPILAGE.txt",text:stackReport()});
+  /* Placement et nomenclature avant le LISEZ-MOI : celui-ci liste les fichiers
+     de l'archive, et une liste qui s'arrête avant les deux derniers vaudrait
+     un dossier incomplet aux yeux du monteur. */
+  files.push({name:"positions.csv",text:positionsCsvText()});
+  files.push({name:"bom.csv",text:bomPcbCsvText()});
   files.push({name:"LISEZ-MOI.txt",text:fabReadme(files,dr)});
   return {files,drill:dr};
 }
@@ -558,7 +883,12 @@ function zipBlob(files){
   const time=((now.getHours()<<11)|(now.getMinutes()<<5)|(now.getSeconds()>>1))&0xFFFF;
   const date=(((now.getFullYear()-1980)<<9)|((now.getMonth()+1)<<5)|now.getDate())&0xFFFF;
   for(const f of files){
-    const name=enc.encode(f.name), data=enc.encode(f.text);
+    const name=enc.encode(f.name);
+    // les CSV doivent porter la marque d'ordre UTF-8 pour Excel et les
+    // outils d'assemblage (JLCPCB, PCBA…)
+    const csvBOM=f.name.endsWith(".csv")?"\ufeff":"";
+    // f.data pour les fichiers binaires (PDF…), f.text pour le reste
+    const data=f.data||enc.encode(csvBOM+f.text);
     const crc=crc32(data);
     const head=[].concat(u32(0x04034b50),u16(20),u16(0x0800),u16(0),
       u16(time),u16(date),u32(crc),u32(data.length),u32(data.length),
@@ -586,8 +916,10 @@ function exportFab(){
     return null;
   }
   const {files,drill}=buildFabFiles();
-  dl(zipBlob(files),"fabrication.zip");
-  hint(files.length+" fichier(s) exportés dans fabrication.zip — "+
-       drill.holes+" trou(s), "+drill.tools+" outil(s) de perçage.");
+  const zipNom=pcbFile("-fabrication.zip","fabrication.zip");
+  dl(zipBlob(files),zipNom);
+  hint(files.length+" fichier(s) exportés dans "+zipNom+" — "+
+       drill.holes+" trou(s), "+drill.tools+" outil(s) de perçage, "+
+       S.fps.length+" empreinte(s).");
   return files;
 }

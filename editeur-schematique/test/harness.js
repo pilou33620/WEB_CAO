@@ -56,6 +56,9 @@ const EXPOSE=[
   "netBlock","pkgField","esc",
   /* fichiers (13) */
   "netlistText","bomRows","bomCsvText","csvCell","serialize","loadJsonText",
+  "schFile",
+  /* nom de projet commun (commun/projet.js) */
+  "projNom","projOuvrir","projFermer","projDoc","projPeindre",
   /* CSV de bibliothèque (18) */
   "parseCSVLine","loadCSVFromString","loadCSVLib",
   /* repérage commun : chercher un repère, mesurer une distance
@@ -1117,6 +1120,49 @@ T("recherche : la liste échappe ce qui vient du document",()=>{
   document.getElementById("rpQ").value="R1";
   rpQBuild();
   assertPropre(document.getElementById("rpRes").innerHTML,"liste de recherche");
+});
+
+/* ==========================================================================
+   Nom de projet : d'où viennent les noms de fichiers exportés
+   --------------------------------------------------------------------------
+   Le nom est choisi à l'accueil, commun aux deux éditeurs, et le schéma en
+   dérive le suffixe -SCH. Sans projet, les noms restent ceux d'avant.
+   ========================================================================== */
+T("noms de fichiers : le projet les mène, et sans projet rien ne change",()=>{
+  const cas=[[".json","schema.json"],[".png","schema.png"],
+             ["-netlist.txt","netlist.txt"],
+             ["-nomenclature.csv","nomenclature.csv"]];
+  projFermer();
+  for(const [suf,repli] of cas)
+    if(schFile(suf,repli)!==repli)
+      throw new Error("sans projet, "+repli+" devient "+schFile(suf,repli));
+  projOuvrir("carte PIR");
+  try{
+    if(projDoc("schema","")!=="carte PIR-SCH")
+      throw new Error("document schéma : "+projDoc("schema",""));
+    /* Le PCB tire son propre nom du même projet : les deux éditeurs doivent
+       parler du même ouvrage sans jamais se recopier l'un l'autre. */
+    if(projDoc("pcb","")!=="carte PIR-PCB")
+      throw new Error("document PCB : "+projDoc("pcb",""));
+    for(const [suf,repli] of cas)
+      if(schFile(suf,repli)!=="carte PIR-SCH"+suf)
+        throw new Error("carte PIR-SCH"+suf+" attendu, "+schFile(suf,repli)+" obtenu");
+  }finally{ projFermer(); }
+});
+T("entête : le nom du projet s'affiche, et s'effface à sa fermeture",()=>{
+  const el=document.createElement("span");
+  el.setAttribute("data-cao-projet","schema");
+  document.body.appendChild(el);
+  try{
+    projOuvrir("carte PIR");
+    projPeindre();
+    if(el.textContent!=="carte PIR-SCH")throw new Error("affiché : "+el.textContent);
+    if(el.hidden)throw new Error("le nom reste masqué");
+    projFermer();
+    projPeindre();
+    if(el.textContent!=="")throw new Error("le nom subsiste : "+el.textContent);
+    if(!el.hidden)throw new Error("la place reste visible sans projet");
+  }finally{ projFermer(); }
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
