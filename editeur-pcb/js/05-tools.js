@@ -3168,6 +3168,9 @@ document.addEventListener("keydown",e=>{
     /* K comme « kote » — C est pris par le copier, M par rien mais se confond
        avec le miroir du schématique. */
     case "k":setMode("mesure");break;
+    /* Montrer la sélection sur le schéma resté ouvert dans un autre onglet.
+       Le geste vit dans js/18-reperage.js, chargé après celui-ci. */
+    case "l":if(typeof pcbMontrerAilleurs==="function")pcbMontrerAilleurs();break;
     case "r":rotateSel();break;
     case "f":flipSel();break;
     case "d":mitreSel();break;

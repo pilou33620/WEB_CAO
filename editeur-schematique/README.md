@@ -63,10 +63,10 @@ identiques pour l'éditeur PCB :
 | `js/18-csv.js` | 108 | Bibliothèque `LIB_composants.csv` : analyse, chargement HTTP ou manuel |
 | `js/19-broches.js` | 379 | Éditeur de brochage : nombre de broches, représentation, taille du corps, noms et placement des pattes à la grille |
 | `js/20-profil.js` | 83 | Réglages d'affichage rangés dans le profil de l'utilisateur : grille, étiquettes de net, onglet de liste |
-| `js/21-reperage.js` | 154 | Ce que la recherche et la mesure valent sur un schéma : aimant sur les broches, cibles de toutes les feuilles, cadrage, cross-probing vers le PCB |
+| `js/21-reperage.js` | 223 | Ce que la recherche et la mesure valent sur un schéma : aimant sur les broches, cibles de toutes les feuilles, cadrage, cross-probing vers le PCB |
 | `../commun/reperage.js` | 294 | Chercher un repère, mesurer une distance — le geste, partagé avec l'éditeur PCB et paramétré par l'adaptateur de `21-reperage.js` |
 | `../commun/profils.js` | 555 | Profils utilisateur : qui travaille, ses panneaux, ses réglages, ses derniers documents — **chargé en premier**, avant l'espace de travail qui l'interroge |
-| `../commun/session.js` | 249 | Session d'onglet : le schéma part et revient quand on passe au PCB ou à la recherche, et porte le cross-probing entre les deux — **chargé en premier** |
+| `../commun/session.js` | 362 | Session d'onglet : le schéma part et revient quand on passe au PCB ou à la recherche, et porte le cross-probing entre les deux — **chargé en premier** |
 | `../commun/workspace.js` | 610 | Espace de travail : docks, panneaux flottants, persistance — **chargé en dernier** |
 
 ## Ce que sait faire l'éditeur, au-delà du tracé
@@ -274,6 +274,21 @@ seule navigation, et `schSonderCible()` (`js/21-reperage.js`) le consomme à
 l'arrivée en s'appuyant sur `rpTrouve()` -- la même recherche par repère que
 `Ctrl+F`, sur laquelle `schSonderCible()` s'appelle exactement comme
 `rpQAller()`.
+
+### Montrer sur l'onglet d'à côté — `L`
+
+L'autre façon de travailler : le schéma ici, le PCB dans une seconde fenêtre.
+Le bouton **⇱ Montrer au PCB** (touche `L`) fait sauter l'onglet voisin sur le
+composant sélectionné, ou sur le net du fil retenu ; celui-ci ne bouge pas.
+
+Sur demande, et non en suivi permanent : un onglet qui saute à chaque clic
+d'à côté devient impossible à utiliser. Le transport est un
+`BroadcastChannel` (`../commun/session.js`), qui ne dit jamais s'il a été
+entendu — l'onglet qui reçoit accuse donc réception, et le pied de page
+distingue *montré*, *ce repère n'y est pas*, *aucun onglet ouvert sur le PCB*,
+et *ce navigateur ne partage rien entre onglets*. En `file://`, deux onglets
+n'ont pas la même origine et le canal n'existe pas : le bouton se désactive au
+lieu de disparaître.
 
 ## Deux règles à respecter
 

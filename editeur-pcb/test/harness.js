@@ -22,6 +22,26 @@ const ctxStub=dom.ctxStub;
 const listeners=dom.listeners;
 function noop(){}
 
+/* BroadcastChannel simulé : Node en fournit un vrai, mais il livre les messages
+   de façon asynchrone alors que ce banc d'essai est synchrone. Celui-ci
+   respecte la seule règle qui compte ici — un canal ne reçoit jamais ses
+   propres messages — et livre tout de suite. Installé AVANT le bundle : c'est
+   au chargement que commun/session.js ouvre le canal. */
+const bcBus={};
+global.BroadcastChannel=function(nom){
+  this.name=nom;this.onmessage=null;
+  (bcBus[nom]=bcBus[nom]||[]).push(this);
+};
+global.BroadcastChannel.prototype.postMessage=function(data){
+  for(const c of (bcBus[this.name]||[]).slice())
+    if(c!==this&&typeof c.onmessage==="function")
+      c.onmessage({data:JSON.parse(JSON.stringify(data))});
+};
+global.BroadcastChannel.prototype.close=function(){
+  const a=bcBus[this.name]||[],i=a.indexOf(this);
+  if(i>=0)a.splice(i,1);
+};
+
 const code=fs.readFileSync(path.join(__dirname,"..","dist","pcb.js"),"utf8");
 const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
@@ -53,6 +73,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "sessPoids","sessTient","sessUrl","sessAller","sessQuitte","sessAutonome",
   "sessBarre","sessionPcb","SESS_CLE","SESS_MAX",
   "sessCibleEcrire","sessCiblePrendre","pcbSonde","pcbSonderCible",
+  "sessCibleAuChargement","sessCanalDispo","sessMontrerAilleurs",
+  "sessEcouterProbe","SESS_CANAL","pcbMontrerAilleurs","pcbCibleTrouver",
+  "pcbCibleAller",
   /* espace de travail commun (commun/workspace.js) */
   "wsDefault","wsApply","wsMove","wsPlaceOf","wsLabel","wsToggleFloat",
   "wsToggleCollapse","wsClose","wsShow","wsMenuBuild","wsLoad","wsSave","wsEl","WS_KEY",
@@ -5162,6 +5185,111 @@ T("cross-probing : pcbSonderCible sélectionne et cadre l'empreinte visée",()=>
   if(sessCiblePrendre("pcb")!==null)
     throw new Error("pcbSonderCible doit consommer la cible");
   dom.session.clear();
+});
+/* ==========================================================================
+   Cross-probing entre deux onglets (BroadcastChannel)
+   Deux onglets côte à côte ne partagent pas sessionStorage : c'est ce canal-ci
+   qui porte « montre-moi ça » de l'un à l'autre, sur demande.
+   ========================================================================== */
+function pied(){ return document.getElementById("fHint").textContent||""; }
+function voisinOnglet(){
+  /* un onglet d'à côté : il écoute le même canal sans être le nôtre */
+  const bc=new BroadcastChannel(SESS_CANAL);
+  bc.recu=[];
+  bc.onmessage=ev=>{bc.recu.push(ev.data);};
+  return bc;
+}
+T("2 onglets : le canal est disponible et la demande part avec le bon repère",()=>{
+  const voisin=voisinOnglet();
+  carteVide();importNetlist(NET,false);
+  const u1=S.fps.find(f=>f.ref==="U1");
+  clearSel();S.sel.fps.add(u1.id);
+  if(!sessCanalDispo())throw new Error("le canal devait être disponible");
+  pcbMontrerAilleurs();
+  const m=voisin.recu.find(x=>x.type==="montre");
+  if(!m)throw new Error("aucune demande n'est partie vers l'onglet voisin");
+  if(m.outil!=="schema"||m.quoi!=="ref"||m.valeur!=="U1")
+    throw new Error("demande inattendue : "+JSON.stringify(m));
+  voisin.close();
+});
+T("2 onglets : sans sélection, rien ne part et on le dit",()=>{
+  const voisin=voisinOnglet();
+  carteVide();importNetlist(NET,false);
+  clearSel();S.hlNet=null;
+  pcbMontrerAilleurs();
+  if(voisin.recu.length)
+    throw new Error("rien ne devait partir : "+JSON.stringify(voisin.recu));
+  voisin.close();
+});
+T("2 onglets : l'accusé de réception distingue « vu » de « absent »",()=>{
+  const voisin=voisinOnglet();
+  carteVide();importNetlist(NET,false);
+  const u1=S.fps.find(f=>f.ref==="U1");
+  clearSel();S.sel.fps.add(u1.id);
+  /* l'onglet voisin répond qu'il l'a trouvé */
+  voisin.onmessage=ev=>{
+    if(ev.data.type==="montre")
+      voisin.postMessage({v:1,type:"vu",outil:"schema",ok:true});
+  };
+  pcbMontrerAilleurs();
+  if(!/montré sur le schéma/.test(pied()))
+    throw new Error("« vu » devait être annoncé : "+pied());
+  /* et maintenant qu'il ne l'a pas */
+  voisin.onmessage=ev=>{
+    if(ev.data.type==="montre")
+      voisin.postMessage({v:1,type:"vu",outil:"schema",ok:false});
+  };
+  pcbMontrerAilleurs();
+  if(!/n'est pas sur le schéma/.test(pied()))
+    throw new Error("« absent » devait être annoncé : "+pied());
+  voisin.close();
+});
+T("2 onglets : une demande venue d'à côté sélectionne et répond « vu »",()=>{
+  const voisin=voisinOnglet();
+  carteVide();importNetlist(NET,false);
+  clearSel();
+  voisin.postMessage({v:1,type:"montre",outil:"pcb",quoi:"ref",valeur:"D1"});
+  const d1=S.fps.find(f=>f.ref==="D1");
+  if(!S.sel.fps.has(d1.id))throw new Error("D1 devait être sélectionné");
+  const vu=voisin.recu.find(x=>x.type==="vu");
+  if(!vu||vu.ok!==true)throw new Error("l'accusé « vu » devait revenir : "+JSON.stringify(vu));
+  /* un repère absent : on répond, mais en disant que non */
+  voisin.recu.length=0;clearSel();
+  voisin.postMessage({v:1,type:"montre",outil:"pcb",quoi:"ref",valeur:"ZZ99"});
+  const non=voisin.recu.find(x=>x.type==="vu");
+  if(!non||non.ok!==false)throw new Error("l'accusé devait dire « pas trouvé »");
+  if(S.sel.fps.size)throw new Error("rien ne devait être sélectionné");
+  voisin.close();
+});
+T("2 onglets : une demande adressée à un autre outil est ignorée",()=>{
+  const voisin=voisinOnglet();
+  carteVide();importNetlist(NET,false);
+  clearSel();
+  voisin.postMessage({v:1,type:"montre",outil:"schema",quoi:"ref",valeur:"D1"});
+  if(S.sel.fps.size)throw new Error("le PCB ne doit pas répondre à une demande pour le schéma");
+  if(voisin.recu.some(x=>x.type==="vu"))throw new Error("aucun accusé ne devait partir");
+  voisin.close();
+});
+T("cross-probing : le saut attend la fin du chargement, sinon fit() l'efface",()=>{
+  /* Régression : commun/workspace.js est chargé APRÈS js/18-reperage.js et se
+     termine par resize() puis fit(). Consommée au fil du script, la cible
+     était bien trouvée et sélectionnée, puis fit() recadrait sur la carte
+     entière — la sélection devenait un point invisible et le saut paraissait
+     n'avoir rien fait. sessCibleAuChargement() diffère jusqu'à « load », qui
+     passe forcément après le dernier script de la page. */
+  let appels=0;
+  const marque=()=>{appels++;};
+  sessCibleAuChargement(marque);
+  if(appels)throw new Error("le document n'est pas « complete » : il fallait attendre");
+  dom.fireWin("load",{});
+  if(appels!==1)throw new Error("« load » devait déclencher le saut, "+appels+" appel(s)");
+  /* une page déjà chargée n'a rien à attendre : on ne diffère pas pour rien */
+  const sauve=document.readyState;
+  document.readyState="complete";
+  let direct=0;
+  sessCibleAuChargement(()=>{direct++;});
+  document.readyState=sauve;
+  if(direct!==1)throw new Error("document complete : le saut devait partir tout de suite");
 });
 T("cross-probing : une cible introuvable ne casse rien et ne sélectionne rien",()=>{
   dom.session.clear();

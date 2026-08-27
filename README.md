@@ -315,6 +315,48 @@ deux éditeurs (`commun/reperage.js`) — c'est elle qui sait retrouver « ce R1
 ou « ce net » et cadrer la vue dessus, cette fonctionnalité n'a eu qu'à
 l'appeler depuis l'autre outil.
 
+À l'arrivée, le PCB **allume un phare** sur la cible : deux traits qui
+traversent la vue et se croisent dessus, un cercle qui se resserre, puis le
+cadre de l'empreinte. Il s'éteint seul en 2,5 s, et n'apparaît pas dans le
+`.png` exporté. Sans lui, la sélection d'une 0603 sur une carte dense se
+cherchait autant que l'empreinte — c'est-à-dire ce qu'on venait d'éviter.
+
+Deux choses à savoir, parce qu'elles ressemblent à une panne sans en être une :
+
+- **Les deux documents sont indépendants.** Le saut cherche le repère dans la
+  carte ouverte ; si la netlist du schéma n'y a jamais été importée, il n'y a
+  rien à trouver. Le pied de page le dit alors en toutes lettres plutôt que de
+  ne rien faire.
+- **Ce canal-là est propre à l'onglet**, comme le reste de la session :
+  `sessionStorage` ne franchit pas la frontière d'un onglet, et c'est ce qui
+  évite que deux cartes ouvertes en parallèle se mélangent. Deux onglets côte
+  à côte ont donc leur propre mécanisme, juste en dessous.
+
+### Deux onglets côte à côte
+
+L'autre façon de travailler : le schéma dans une fenêtre, le PCB dans l'autre,
+et l'on veut désigner dans l'une ce qu'on regarde dans l'autre — sans quitter
+ni l'une ni l'autre. C'est le bouton **⇱ Montrer au PCB** (ou *Montrer au
+schéma*), touche `L` : l'onglet voisin saute sur le repère sélectionné et
+reste ouvert, celui d'où part la demande ne bouge pas.
+
+**Sur demande, et non en suivi permanent** : l'onglet voisin ne saute que
+lorsqu'on le lui demande. Un suivi automatique le ferait bouger à chaque clic,
+et il deviendrait impossible d'y travailler.
+
+Le transport est un `BroadcastChannel` (`commun/session.js`) — pas de serveur,
+pas de stockage, le message passe directement d'une page à l'autre. Il ne dit
+jamais s'il a été entendu : l'onglet qui reçoit accuse donc réception, et le
+pied de page distingue les quatre réponses possibles — *montré*, *ce repère
+n'y est pas*, *aucun onglet ouvert sur cet outil*, *ce navigateur ne partage
+rien entre onglets*. Une demande partie dans le vide ne reste jamais muette.
+
+Une limite à connaître : **en double-clic sur les fichiers (`file://`), deux
+onglets n'ont pas la même origine** au sens du navigateur, et le message ne
+passe pas. Il faut alors servir le dépôt (`python serveur.py`), comme pour la
+recherche de composants. Le bouton se désactive de lui-même là où le canal
+n'existe pas, plutôt que de disparaître sans explication.
+
 ## Du schéma au PCB : le boîtier pose l'empreinte
 
 Le boîtier choisi sur un composant (`0603`, `SOIC-8`, `TQFP-64`…) part dans la

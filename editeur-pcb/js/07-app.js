@@ -351,7 +351,8 @@ function pcbChargerProjet(){
     /* La cible du cross-probing n'a pu être reprise au démarrage (18-reperage.js,
        juste après cette page) que si la session d'onglet avait déjà une carte :
        une carte lue APRÈS coup, comme ici, doit retenter une fois chargée. */
-    if(typeof pcbSonderCible==="function")pcbSonderCible();
+    if(typeof sessCibleAuChargement==="function")
+      sessCibleAuChargement(pcbSonderCible);
   }).catch(function(e){
     PCB_PROJET_LU=false;       // un échec ne doit pas condamner les essais suivants
     hint("Carte du projet illisible : "+e.message);

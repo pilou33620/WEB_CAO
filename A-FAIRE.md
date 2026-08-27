@@ -12,9 +12,14 @@ mesure et la recherche par repère, dans les deux éditeurs
 (`commun/reperage.js`) ; le fichier de placement et la nomenclature côté PCB
 (`positions.csv`, `bom.csv`, dans `buildFabFiles()`,
 [editeur-pcb/js/04-fabrication.js:750](editeur-pcb/js/04-fabrication.js:750)) ; le
-cross-probing schéma ↔ PCB (`pcbSonde`/`schSonde` et `sessAller()`,
+cross-probing schéma ↔ PCB, en trois morceaux — le saut par changement d'outil
+(`pcbSonde`/`schSonde` et `sessAller()`), le même geste entre deux onglets
+ouverts côte à côte (`sessMontrerAilleurs()`/`sessEcouterProbe()`, un
+`BroadcastChannel`, bouton « ⇱ Montrer » et touche `L`), et le phare qui
+désigne l'arrivée sur le PCB (`rpPhare()`,
+[editeur-pcb/js/18-reperage.js](editeur-pcb/js/18-reperage.js)) — le tout dans
 [commun/session.js](commun/session.js), documenté dans
-[README.md](README.md#passer-dun-outil-à-lautre-sans-rien-perdre)).
+[README.md](README.md#passer-dun-outil-à-lautre-sans-rien-perdre).
 
 ## Fabrication
 

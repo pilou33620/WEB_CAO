@@ -138,17 +138,86 @@ rpInit(RP_SCH);
 
    Exact seulement : une correspondance partielle amènerait sur le mauvais
    composant sans le dire, pire qu'une absence de saut. */
+function schDire(txt){
+  const h=document.getElementById("fHint");
+  if(h)h.textContent=txt;
+}
+/* Le repère demandé, s'il est sur ce schéma. Exact seulement : une
+   correspondance partielle amènerait sur le mauvais composant sans le dire,
+   pire qu'une absence de saut. */
+function schCibleTrouver(valeur){
+  const q=String(valeur==null?"":valeur).toLowerCase();
+  if(!q)return null;
+  return rpTrouve(valeur).find(x=>String(x.cle).toLowerCase()===q)||null;
+}
+/* Y aller. Renvoie la cible atteinte, ou null — c'est ce que l'onglet voisin
+   attend en retour pour savoir s'il a été entendu utilement. */
+function schCibleAller(valeur){
+  const t=schCibleTrouver(valeur);
+  if(t)t.aller();
+  return t;
+}
 function schSonderCible(){
   const c=(typeof sessCiblePrendre==="function")?sessCiblePrendre("schema"):null;
   if(!c)return;
-  const q=String(c.valeur).toLowerCase();
-  const t=rpTrouve(c.valeur).find(x=>String(x.cle).toLowerCase()===q);
-  const h=document.getElementById("fHint");
+  const t=schCibleAller(c.valeur);
   if(!t){
-    if(h)h.textContent="Depuis le PCB : « "+c.valeur+" » introuvable sur ce schéma.";
+    /* Le cas courant n'est pas une faute de frappe : c'est un schéma d'où ce
+       repère ne vient pas. Les deux documents sont indépendants, et le dire
+       évite de chercher un défaut ailleurs. */
+    schDire("Depuis le PCB : « "+c.valeur+" » n'est pas sur ce schéma — "
+           +"la carte vient-elle bien de lui ?");
     return;
   }
-  t.aller();
-  if(h)h.textContent="Depuis le PCB : "+t.libelle+".";
+  schDire("Depuis le PCB : "+t.libelle+".");
 }
-schSonderCible();
+sessCibleAuChargement(schSonderCible);
+
+/* ==========================================================================
+   Montrer sur le PCB resté ouvert dans un autre onglet
+   --------------------------------------------------------------------------
+   L'autre moitié du cross-probing : au lieu de changer d'outil dans cet
+   onglet, on désigne ce qu'on regarde à l'onglet d'à côté, qui saute dessus
+   et reste ouvert. Le geste est le même que pour la navigation (`schSonde`
+   dit quoi montrer), seul le transport change : BroadcastChannel au lieu de
+   sessionStorage.
+   ========================================================================== */
+function schMontrerAilleurs(){
+  if(typeof sessMontrerAilleurs!=="function")return;
+  const s=(typeof schSonde==="function")?schSonde("pcb"):null;
+  if(!s){
+    schDire("Rien à montrer : sélectionnez un composant, ou un fil du net.");
+    return;
+  }
+  const quoi=(s.quoi==="net")?("net "+s.valeur):s.valeur;
+  sessMontrerAilleurs("pcb",s.quoi,s.valeur,function(etat){
+    if(etat==="vu")            schDire(quoi+" montré sur le PCB, dans l'autre onglet.");
+    else if(etat==="absent")   schDire(quoi+" n'est pas sur la carte de l'autre onglet — "
+                                      +"la netlist y a-t-elle été importée ?");
+    else if(etat==="personne") schDire("Aucun onglet ouvert sur le PCB. Ouvrez-le à "
+                                      +"côté, ou passez-y par le bouton de l'entête.");
+    else                       schDire("Ce navigateur ne partage rien entre onglets — "
+                                      +"passez au PCB par le bouton de l'entête.");
+  });
+}
+/* Et l'inverse : le PCB d'à côté demande à voir quelque chose ici. */
+/* Le bouton de l'entête. Il n'est pas câblé par rpInit() (commun/reperage.js)
+   comme « Rechercher » : celui-ci ne cherche pas dans le document, il parle à
+   un autre onglet -- ce n'est pas le même métier. Absent de la page (version
+   un seul fichier), il n'y a rien à câbler. */
+(function(){
+  const b=document.getElementById("bProbe");
+  if(!b)return;
+  /* Un navigateur sans BroadcastChannel, ou un double-clic en file:// : le
+     bouton ne servirait à rien et le dit en restant là, plutôt que de
+     disparaître sans explication. */
+  if(typeof sessCanalDispo==="function"&&!sessCanalDispo())b.disabled=true;
+  b.onclick=schMontrerAilleurs;
+})();
+
+if(typeof sessEcouterProbe==="function")
+  sessEcouterProbe("schema",function(quoi,valeur){
+    const t=schCibleAller(valeur);
+    if(t)schDire("Montré depuis le PCB (autre onglet) : "+t.libelle+".");
+    return !!t;
+  });

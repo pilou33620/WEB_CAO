@@ -716,6 +716,10 @@ function paint(c,dpr,w,h,noGrid){
      — absente de l'image exportee, comme elle : ni l'une ni l'autre ne
      decrivent la carte. */
   if(!noGrid&&typeof rpMesTrace==="function")rpMesTrace(c,dpr);
+  /* Le phare du cross-probing, tout en haut de la pile : il désigne, il ne
+     décrit pas. Comme la cote, il est absent du .png exporté — ni l'un ni
+     l'autre ne font partie de la carte. */
+  if(!noGrid&&typeof rpPhareTrace==="function")rpPhareTrace(c,dpr);
   c.setTransform(1,0,0,1,0,0);
 }
 function draw(){

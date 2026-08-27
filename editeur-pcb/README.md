@@ -43,7 +43,7 @@ js/16-profil.js          réglages d'affichage rangés dans le profil de
                          l'utilisateur : grille, vue, contraste, anti-collision
 js/17-exemples.js        les deux cartes d'exemple et la fenêtre qui les ouvre
 js/18-reperage.js        ce que la recherche et la mesure valent sur une carte :
-                         aimant, cibles, cadrage
+                         aimant, cibles, cadrage, cross-probing et son phare
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -1782,6 +1782,44 @@ seule navigation, et `pcbSonderCible()` (`js/18-reperage.js`) le consomme à
 l'arrivée en s'appuyant sur `rpTrouve()` -- la même recherche par repère que
 `Ctrl+F`, sur laquelle `pcbSonderCible()` s'appelle exactement comme
 `rpQAller()`.
+
+### Le phare : dire où l'on vient d'atterrir
+
+Sélectionner ne suffit pas. Sur une carte dense, la surbrillance d'une 0603 se
+cherche autant que l'empreinte elle-même — c'est précisément ce qu'on venait
+d'éviter en sautant depuis le schéma. Toute arrivée de cross-probing allume
+donc un repère franc et **temporaire** : deux traits qui traversent la vue et
+se croisent sur la cible, un cercle qui se resserre depuis le bord, puis le
+cadre exact de l'empreinte. Il bat trois fois et s'éteint seul en 2,5 s — un
+marquage permanent finirait par masquer le cuivre qu'on est venu regarder.
+
+Le magenta n'est la couleur de rien d'autre sur la carte : ni le cuivre, ni la
+sélection (cyan), ni le DRC (rouge), ni la pastille traversante (jaune). Rien à
+confondre avec le document.
+
+Le compte à rebours part de la **première image peinte**, pas de l'instant où
+le phare est allumé : un onglet en arrière-plan ne peint pas (le navigateur y
+suspend `requestAnimationFrame`), et le phare aurait expiré avant d'être vu —
+or c'est justement le cas du cross-probing entre deux onglets.
+
+Comme la cote de mesure, il est **absent du `.png` exporté** : il désigne, il ne
+décrit pas. Trois réglages, en tête de `js/18-reperage.js` : `RP_PHARE_MS` la
+durée, `RP_PHARE_COL` la couleur, et le `shadowBlur` du tracé pour le halo.
+
+### Montrer sur l'onglet d'à côté — `L`
+
+L'autre façon de travailler : le PCB ici, le schéma dans une seconde fenêtre.
+Le bouton **⇱ Montrer au schéma** (touche `L`) fait sauter l'onglet voisin sur
+l'empreinte sélectionnée, ou sur le net désigné ; celui-ci ne bouge pas.
+
+Sur demande, et non en suivi permanent : un onglet qui saute à chaque clic
+d'à côté devient impossible à utiliser. Le transport est un
+`BroadcastChannel` (`../commun/session.js`), qui ne dit jamais s'il a été
+entendu — l'onglet qui reçoit accuse donc réception, et le pied de page
+distingue *montré*, *ce repère n'y est pas*, *aucun onglet ouvert sur le
+schéma*, et *ce navigateur ne partage rien entre onglets*. En `file://`, deux
+onglets n'ont pas la même origine et le canal n'existe pas : le bouton se
+désactive au lieu de disparaître.
 
 ## Limites connues
 

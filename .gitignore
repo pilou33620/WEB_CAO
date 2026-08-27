@@ -72,3 +72,7 @@ yarn-error.log
 
 # Builds
 dist/
+# Sortie d'outils d'analyse de code passes en local (graphify, etc.) et leurs
+# fichiers de config personnels : ni l'un ni l'autre ne fait partie du depot.
+/graphify-out/
+/opencode.json

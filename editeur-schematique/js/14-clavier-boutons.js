@@ -68,6 +68,9 @@ window.addEventListener("keydown",e=>{
   if(k==="k"){setMode("mesure");return;}
   if(k==="r"){if(S.place){S.placeRot=((S.placeRot||0)+90)%360;draw();}else rotateSel();return;}
   if(k==="m"){mirrorSel();return;}
+  /* Montrer la sélection sur le PCB resté ouvert dans un autre onglet.
+     Le geste vit dans js/21-reperage.js, chargé après celui-ci. */
+  if(k==="l"){if(typeof schMontrerAilleurs==="function")schMontrerAilleurs();return;}
   if(k==="d"){dupSel();return;}
   if(k==="g"){setGrid(!S.showGrid);return;}
   if(k==="n"){cycleNetLabels();return;}

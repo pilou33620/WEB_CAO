@@ -140,6 +140,23 @@ function sessCibleEcrire(cible, quoi, valeur){
    aller-retour ultérieur qui ne l'a pas redemandée. `outil` doit correspondre
    à la destination déclarée par sessCibleEcrire() : une cible écrite pour le
    PCB ne doit pas être reprise par la visionneuse si elle démarre la première. */
+/* Consommer une cible APRES que la page a fini de se mettre en place.
+
+   Pourquoi pas tout de suite : commun/workspace.js est charge EN DERNIER dans
+   les deux editeurs, et il se termine par resize() puis fit() -- un cadrage
+   sur le document entier. Appelee au fil du script, la cible etait bien
+   trouvee et selectionnee, puis fit() effacait aussitot le cadrage fait sur
+   elle : sur une carte un peu grande, la selection devenait un point invisible
+   et le saut paraissait n'avoir rien fait. L'evenement « load » passe
+   forcement apres le dernier script de la page. */
+function sessCibleAuChargement(fn){
+  if(typeof fn !== "function") return;
+  let pret = false;
+  try{ pret = (document.readyState === "complete"); }catch(_){}
+  if(pret){ fn(); return; }
+  try{ window.addEventListener("load", function(){ fn(); }, {once:true}); }
+  catch(_){ fn(); }
+}
 function sessCiblePrendre(outil){
   const s = sessStock();
   if(!s || !outil) return null;
@@ -151,6 +168,102 @@ function sessCiblePrendre(outil){
   try{ o = JSON.parse(raw); }catch(_){ return null; }
   if(!o || o.v !== 1 || o.outil !== outil || !o.quoi || !o.valeur) return null;
   return {quoi: o.quoi, valeur: o.valeur};
+}
+
+/* ==========================================================================
+   Cross-probing entre deux onglets ouverts cote a cote
+   --------------------------------------------------------------------------
+   Le canal ci-dessus passe par sessionStorage : il suit UNE navigation, dans
+   UN onglet. Deux onglets cote a cote -- l'un sur le schema, l'autre sur le
+   PCB -- ne le partagent donc pas, et c'est voulu : sessionStorage est propre
+   a l'onglet, c'est ce qui evite que deux cartes ouvertes en parallele se
+   melangent.
+
+   Celui-ci repond a l'autre besoin : montrer, dans l'onglet d'a cote, ce qui
+   est selectionne ici. BroadcastChannel porte le message entre deux pages de
+   meme origine, sans serveur ni stockage.
+
+   SUR DEMANDE, et non en suivi permanent : l'onglet voisin ne saute que
+   lorsqu'on le lui demande. Un suivi automatique le ferait bouger a chaque
+   clic, et il deviendrait impossible d'y travailler.
+
+   Deux limites, dites plutot que subies :
+     - un navigateur sans BroadcastChannel ne partage rien (sessCanalDispo) ;
+     - en double-clic sur les fichiers (file://), deux onglets n'ont pas la
+       meme origine au sens du navigateur : le message ne passe pas. Il faut
+       alors servir le depot (python serveur.py), comme pour la recherche de
+       composants.
+   ========================================================================== */
+const SESS_CANAL = "cao.probe.v1";
+const SESS_ACK_MS = 400;      // au-dela, personne n'ecoute a cote
+
+let SESS_BC;                  // undefined = pas encore tente, null = indisponible
+let SESS_BC_ACK = null;       // fonction attendant l'accuse de reception
+
+function sessCanal(){
+  if(SESS_BC !== undefined) return SESS_BC;
+  SESS_BC = null;
+  try{
+    if(typeof BroadcastChannel === "function")
+      SESS_BC = new BroadcastChannel(SESS_CANAL);
+  }catch(_){ SESS_BC = null; }
+  return SESS_BC;
+}
+function sessCanalDispo(){ return !!sessCanal(); }
+
+/* CET onglet ecoute pour `outil`. `fn(quoi, valeur)` doit renvoyer vrai si la
+   cible a ete trouvee et montree : l'onglet qui a demande l'apprend en retour
+   et peut le dire, au lieu de laisser croire que c'est parti dans le vide.
+
+   Pas de window.focus() ici : l'interet du geste est de regarder l'autre
+   fenetre deja visible, pas de la faire passer devant -- et la plupart des
+   navigateurs refusent de toute facon de donner le focus a une page qui le
+   reclame seule. */
+function sessEcouterProbe(outil, fn){
+  const bc = sessCanal();
+  if(!bc || !outil || typeof fn !== "function") return false;
+  bc.onmessage = function(ev){
+    const m = ev && ev.data;
+    if(!m || m.v !== 1) return;
+    if(m.type === "vu"){
+      if(SESS_BC_ACK) SESS_BC_ACK(m);
+      return;
+    }
+    if(m.type !== "montre" || m.outil !== outil) return;
+    let trouve = false;
+    try{ trouve = !!fn(m.quoi, m.valeur); }catch(_){ trouve = false; }
+    try{ bc.postMessage({v:1, type:"vu", outil:outil, ok:trouve}); }catch(_){}
+  };
+  return true;
+}
+
+/* Demande a l'onglet voisin de montrer `valeur`. `retour(etat)` recoit :
+     "vu"           l'autre onglet l'a trouve et s'est place dessus
+     "absent"       il ecoute, mais ce repere n'est pas dans son document
+     "personne"     aucun onglet ouvert sur cet outil
+     "indisponible" ce navigateur ne sait pas partager entre onglets
+   BroadcastChannel ne dit jamais s'il a ete entendu : seule l'absence de
+   reponse au bout d'un court delai le dit. */
+function sessMontrerAilleurs(cible, quoi, valeur, retour){
+  const bc = sessCanal();
+  const dire = function(etat){ if(typeof retour === "function") retour(etat); };
+  if(!bc || !cible || !quoi || !valeur){ dire("indisponible"); return false; }
+  let repondu = false;
+  const fini = function(etat){
+    if(repondu) return;
+    repondu = true; SESS_BC_ACK = null; dire(etat);
+  };
+  SESS_BC_ACK = function(m){
+    if(!m || m.outil !== cible) return;
+    fini(m.ok ? "vu" : "absent");
+  };
+  try{
+    bc.postMessage({v:1, type:"montre", outil:cible,
+                    quoi:quoi, valeur:String(valeur)});
+  }catch(_){ fini("indisponible"); return false; }
+  try{ setTimeout(function(){ fini("personne"); }, SESS_ACK_MS); }
+  catch(_){ fini("personne"); }
+  return true;
 }
 
 /* ==========================================================================

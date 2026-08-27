@@ -27,6 +27,26 @@ const dom=require(path.join(ROOT,"commun","test","dom-stub.js")).install({
   files:CSV_TEXT?{"../LIB_composants.csv":CSV_TEXT}:{}
 });
 
+/* BroadcastChannel simulé : Node en fournit un vrai, mais il livre les messages
+   de façon asynchrone alors que ce banc d'essai est synchrone. Celui-ci
+   respecte la seule règle qui compte ici — un canal ne reçoit jamais ses
+   propres messages — et livre tout de suite. Installé AVANT le bundle : c'est
+   au chargement que commun/session.js ouvre le canal. */
+const bcBus={};
+global.BroadcastChannel=function(nom){
+  this.name=nom;this.onmessage=null;
+  (bcBus[nom]=bcBus[nom]||[]).push(this);
+};
+global.BroadcastChannel.prototype.postMessage=function(data){
+  for(const c of (bcBus[this.name]||[]).slice())
+    if(c!==this&&typeof c.onmessage==="function")
+      c.onmessage({data:JSON.parse(JSON.stringify(data))});
+};
+global.BroadcastChannel.prototype.close=function(){
+  const a=bcBus[this.name]||[],i=a.indexOf(this);
+  if(i>=0)a.splice(i,1);
+};
+
 const code=fs.readFileSync(path.join(__dirname,"..","dist","schema.js"),"utf8");
 const EXPOSE=[
   /* état et feuilles */
@@ -72,6 +92,8 @@ const EXPOSE=[
   "sessBrancher","sessEnregistrer","sessLire","sessEcrire","sessEffacer",
   "sessTient","sessUrl","sessQuitte","sessionSchema","restoreBackup","clearBackup",
   "sessCibleEcrire","sessCiblePrendre","schSonde","schSonderCible","sessAller",
+  "sessCanalDispo","sessMontrerAilleurs","sessEcouterProbe","SESS_CANAL",
+  "schMontrerAilleurs","schCibleTrouver","schCibleAller","sessCibleAuChargement",
   /* espace de travail commun */
   "wsDefault","wsApply","wsMove","wsPlaceOf","wsLabel","wsToggleFloat",
   "wsToggleCollapse","wsClose","wsShow","wsMenuBuild","wsLoad","wsSave","wsEl","WS_KEY",
@@ -1004,6 +1026,72 @@ T("cross-probing : schSonderCible sélectionne et cadre le composant visé",()=>
   if(!S.sel.has(c9.id))throw new Error("C9 devait être sélectionné après le saut");
   if(sessCiblePrendre("schema")!==null)
     throw new Error("schSonderCible doit consommer la cible");
+});
+/* ==========================================================================
+   Cross-probing entre deux onglets (BroadcastChannel)
+   Deux onglets côte à côte ne partagent pas sessionStorage : c'est ce canal-ci
+   qui porte « montre-moi ça » de l'un à l'autre, sur demande.
+   ========================================================================== */
+function pied(){ return document.getElementById("fHint").textContent||""; }
+function voisinOnglet(){
+  const bc=new BroadcastChannel(SESS_CANAL);
+  bc.recu=[];
+  bc.onmessage=ev=>{bc.recu.push(ev.data);};
+  return bc;
+}
+T("2 onglets : la demande part avec le bon repère, et rien sans sélection",()=>{
+  const voisin=voisinOnglet();
+  sheet([C("resistor",2,2,{ref:"R1",value:"10k",pkg:"0603"})],[]);
+  clearSel();S.sel.add(S.comps[0].id);
+  if(!sessCanalDispo())throw new Error("le canal devait être disponible");
+  schMontrerAilleurs();
+  const m=voisin.recu.find(x=>x.type==="montre");
+  if(!m||m.outil!=="pcb"||m.quoi!=="ref"||m.valeur!=="R1")
+    throw new Error("demande inattendue : "+JSON.stringify(m));
+  voisin.recu.length=0;
+  clearSel();
+  schMontrerAilleurs();
+  if(voisin.recu.length)throw new Error("rien ne devait partir sans sélection");
+  voisin.close();
+});
+T("2 onglets : l'accusé de réception distingue « vu » de « absent »",()=>{
+  const voisin=voisinOnglet();
+  sheet([C("resistor",2,2,{ref:"R1",value:"10k",pkg:"0603"})],[]);
+  clearSel();S.sel.add(S.comps[0].id);
+  voisin.onmessage=ev=>{
+    if(ev.data.type==="montre")voisin.postMessage({v:1,type:"vu",outil:"pcb",ok:true});
+  };
+  schMontrerAilleurs();
+  if(!/montré sur le PCB/.test(pied()))
+    throw new Error("« vu » devait être annoncé : "+pied());
+  voisin.onmessage=ev=>{
+    if(ev.data.type==="montre")voisin.postMessage({v:1,type:"vu",outil:"pcb",ok:false});
+  };
+  schMontrerAilleurs();
+  if(!/n'est pas sur la carte/.test(pied()))
+    throw new Error("« absent » devait être annoncé : "+pied());
+  voisin.close();
+});
+T("2 onglets : une demande venue d'à côté sélectionne et répond « vu »",()=>{
+  const voisin=voisinOnglet();
+  sheet([C("resistor",2,2,{ref:"R1",value:"10k",pkg:"0603"}),
+         C("capacitor",6,2,{ref:"C9",value:"100n",pkg:"0603"})],[]);
+  clearSel();
+  voisin.postMessage({v:1,type:"montre",outil:"schema",quoi:"ref",valeur:"C9"});
+  const c9=S.comps.find(c=>c.ref==="C9");
+  if(!S.sel.has(c9.id))throw new Error("C9 devait être sélectionné");
+  const vu=voisin.recu.find(x=>x.type==="vu");
+  if(!vu||vu.ok!==true)throw new Error("l'accusé « vu » devait revenir");
+  /* un repère absent, et une demande adressée à l'autre outil */
+  voisin.recu.length=0;clearSel();
+  voisin.postMessage({v:1,type:"montre",outil:"schema",quoi:"ref",valeur:"ZZ99"});
+  const non=voisin.recu.find(x=>x.type==="vu");
+  if(!non||non.ok!==false)throw new Error("l'accusé devait dire « pas trouvé »");
+  voisin.recu.length=0;
+  voisin.postMessage({v:1,type:"montre",outil:"pcb",quoi:"ref",valeur:"C9"});
+  if(S.sel.size)throw new Error("le schéma ne doit pas répondre à une demande pour le PCB");
+  if(voisin.recu.some(x=>x.type==="vu"))throw new Error("aucun accusé ne devait partir");
+  voisin.close();
 });
 T("cross-probing : une cible introuvable ne casse rien et ne sélectionne rien",()=>{
   dom.session.clear();
