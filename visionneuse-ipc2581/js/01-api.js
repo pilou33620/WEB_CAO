@@ -4,8 +4,8 @@
    Le fichier part au serveur, le modèle en revient.
 
    Pourquoi passer par un serveur alors que les deux éditeurs se passent de
-   tout ? Parce que le parseur IPC-2581 est en Python (ipc2581_parser.py, à la
-   racine du dépôt) et qu'un navigateur ne peut pas l'exécuter. Le rendu, lui,
+   tout ? Parce que le parseur IPC-2581 est en Python (python/ipc2581_parser.py)
+   et qu'un navigateur ne peut pas l'exécuter. Le rendu, lui,
    est bien ici : une fois le modèle traduit en JSON, la page n'a plus besoin
    de personne — c'est aussi pourquoi « Exporter .json » existe, et pourquoi le
    .json exporté se rouvre en double-clic, serveur éteint.

@@ -31,7 +31,7 @@ import sys
 import zipfile
 
 RACINE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, RACINE)
+sys.path.insert(0, os.path.join(RACINE, "python"))
 
 import ipc2581_json                                          # noqa: E402
 from ipc2581_parser import IPC2581ParseError                 # noqa: E402

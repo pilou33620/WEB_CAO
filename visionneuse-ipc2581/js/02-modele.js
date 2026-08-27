@@ -1,7 +1,7 @@
 "use strict";
 /* =============================================================================
    visionneuse IPC-2581 — 02-modele.js
-   Le modèle reçu du serveur (voir ipc2581_json.py) est compact : les couches et
+   Le modèle reçu du serveur (voir python/ipc2581_json.py) est compact : les couches et
    les nets y sont des index, les points des tableaux plats. C'est ce qu'il faut
    pour le transporter ; ce n'est pas ce qu'il faut pour dessiner.
 

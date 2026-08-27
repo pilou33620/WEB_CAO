@@ -2,6 +2,19 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.10.0
+# Date: 2026-08-27
+# Explication: les modules Python autres que ce serveur rangent desormais dans
+#   python/ -- ipc2581_data.py, ipc2581_parser.py, ipc2581_json.py et
+#   passerelle_mcp.py. Seul serveur.py reste a la racine : c'est lui qu'on
+#   double-clique sous Windows, et c'est le seul module dont le chemin est
+#   ecrit en dur ailleurs (.claude/launch.json). Les imports restent des
+#   imports de module ordinaires (« import passerelle_mcp », pas
+#   « import python.passerelle_mcp ») : c'est sys.path qui est complete, pas
+#   le nom des modules qui change -- rien d'autre dans ce fichier n'a bouge.
+# Fonctions ajoutees/modifiees :
+# - DOSSIER_PYTHON (nouveau)
+#
 # Version: 2.9.0
 # Date: 2026-08-26
 # Explication: la visionneuse IPC-2581 rejoint la gestion de projet. Un projet
@@ -245,11 +258,22 @@ DEFAULT_PORT = 8000
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DOSSIER_IMPOSE = False
 
+# La passerelle et le parseur IPC-2581 vivent dans python/, a cote de ce
+# fichier : serveur.py reste seul a la racine, double-cliquable, pendant que
+# le reste des modules Python range dans un dossier qui dit ce qu'il est.
+# La ligne suivante est ce qui rend « import passerelle_mcp » et
+# « import ipc2581_json » possibles sans les faire bouger de la : ce sont des
+# imports de module ordinaires, pas des imports de paquet -- python/ n'a pas
+# de __init__.py et n'en a pas besoin.
+#
 # La passerelle composants n'est pas indispensable pour servir les editeurs :
 # sous Pyto (iPad) le dossier du script n'est pas toujours dans sys.path et le
 # module ssl peut manquer. On ne laisse plus cet import faire tomber le serveur.
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
+DOSSIER_PYTHON = os.path.join(ROOT, "python")
+if DOSSIER_PYTHON not in sys.path:
+    sys.path.insert(0, DOSSIER_PYTHON)
 try:
     import passerelle_mcp
     ERREUR_PASSERELLE = None
@@ -1138,7 +1162,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     # -- import IPC-2581 ---------------------------------------------------
     # La visionneuse envoie le fichier tel quel, le serveur rend le modele en
-    # JSON. Le parseur est en Python (ipc2581_parser.py) : c'est la seule
+    # JSON. Le parseur est en Python (python/ipc2581_parser.py) : c'est la seule
     # raison pour laquelle cette route existe -- le navigateur ne peut pas
     # l'executer. Rien n'est ecrit sur le disque, rien n'est garde en memoire
     # au-dela de la reponse : le fichier arrive, il repart traduit.

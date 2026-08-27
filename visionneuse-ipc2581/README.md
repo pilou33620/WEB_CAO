@@ -11,7 +11,7 @@ Elle ne modifie rien — ce n'est pas un éditeur, et rien de ce qui s'y passe n
 touche le fichier.
 
 Comme la recherche de composants, **cette page a besoin d'un serveur**, et pour
-une raison précise : le parseur IPC-2581 est en Python (`../ipc2581_parser.py`),
+une raison précise : le parseur IPC-2581 est en Python (`../python/ipc2581_parser.py`),
 un navigateur ne peut pas l'exécuter. La page envoie le fichier à
 `../serveur.py`, qui renvoie le modèle traduit en JSON — et à partir de là, tout
 se passe dans le navigateur.
@@ -30,12 +30,12 @@ visionneuse-ipc2581/
     └── banc-essai.py             banc d'essai du parseur, carte d'essai incluse
 ```
 
-Côté Python, trois fichiers à la racine du dépôt :
+Côté Python, trois fichiers dans python/, à la racine du dépôt :
 
 ```
-../ipc2581_data.py                le modèle : Point, Track, Pad, Component…
-../ipc2581_parser.py              le parseur XML -> IPCDesign
-../ipc2581_json.py                IPCDesign -> JSON compact pour cette page
+../python/ipc2581_data.py         le modèle : Point, Track, Pad, Component…
+../python/ipc2581_parser.py       le parseur XML -> IPCDesign
+../python/ipc2581_json.py         IPCDesign -> JSON compact pour cette page
 ```
 
 et ceux du dossier partagé, identiques aux autres outils :
@@ -56,7 +56,7 @@ et ceux du dossier partagé, identiques aux autres outils :
 |---|---:|---|
 | `js/00-espace-config.js` | 25 | `WS_CONFIG` : clé de stockage local et disposition d'usine des cinq panneaux |
 | `js/01-api.js` | 121 | Découverte du serveur (origine courante, secours en 8000), envoi du fichier à `/api/ipc2581`, relecture d'un `.json` déjà traduit |
-| `../ipc2581_json.py` | 419 | Traduction `IPCDesign` → dictionnaire JSON : couches et nets deviennent des index, les polygones des tableaux plats. Ouvre aussi les archives `.zip` |
+| `../python/ipc2581_json.py` | 419 | Traduction `IPCDesign` → dictionnaire JSON : couches et nets deviennent des index, les polygones des tableaux plats. Ouvre aussi les archives `.zip` |
 | `js/02-modele.js` | 804 | Table des couches et couleurs, rangement par couche et par net, placement des pastilles, assemblage des `Path2D`, et la ligne de transmission (impédance, retard, capacité, self) |
 | `js/03-rendu.js` | 374 | Canevas : repère écran/monde, ordre de dessin, couches, perçages, textes, mise en évidence, règle d'échelle |
 | `js/04-interaction.js` | 302 | Déplacement, zoom, pincement à deux doigts, désignation (piste, pastille, perçage, boîtier), clavier |
@@ -286,7 +286,7 @@ sert la saisie du panneau « La carte ».
 Pour voir ce qu'un fichier donne vraiment, sans passer par le navigateur :
 
 ```bash
-python ipc2581_json.py votre-carte.xml
+python python/ipc2581_json.py votre-carte.xml
 ```
 
 La sortie liste l'empilage couche par couche — type, épaisseur, Dk, Df,

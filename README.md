@@ -14,10 +14,13 @@ CAO), et une visionneuse IPC-2581 pour ouvrir la carte livrée par un fabricant.
 ```
 index.html                     page d'accueil : schéma, PCB, composants, IPC-2581
 serveur.py                     serveur HTTP local, pour ouvrir depuis un iPad
-passerelle_mcp.py              relais vers pcbparts.dev (bibliothèque standard)
-ipc2581_data.py                modèle d'une carte IPC-2581 (Point, Track, Pad…)
-ipc2581_parser.py              lecture d'un fichier IPC-2581 -> IPCDesign
-ipc2581_json.py                IPCDesign -> JSON, pour la visionneuse
+                               -- seul module Python à rester à la racine, pour
+                               le double-clic Windows
+python/                        les autres modules Python, aucun à lancer seul
+├── passerelle_mcp.py          relais vers pcbparts.dev (bibliothèque standard)
+├── ipc2581_data.py            modèle d'une carte IPC-2581 (Point, Track, Pad…)
+├── ipc2581_parser.py          lecture d'un fichier IPC-2581 -> IPCDesign
+└── ipc2581_json.py            IPCDesign -> JSON, pour la visionneuse
 requirements.txt               aucune dépendance : le fichier le dit et l'explique
 LIB_composants.csv             bibliothèque de références (optionnelle)
 
@@ -46,7 +49,7 @@ Chaque outil a son propre `README.md` détaillant ses modules, et
 
 ## Dépendances
 
-Aucune, ni côté navigateur ni côté Python : `serveur.py` et `passerelle_mcp.py`
+Aucune, ni côté navigateur ni côté Python : `serveur.py` et `python/passerelle_mcp.py`
 n'utilisent que la bibliothèque standard (vérifié sur Python 3.10 et 3.12).
 `requirements.txt` ne contient donc aucun paquet — il documente la garantie au
 lieu de lister quoi installer, et `pip install -r requirements.txt` n'a rien à
@@ -164,7 +167,7 @@ perçages, pastilles, composants et nets. C'est ce que livre un fabricant, et ce
 qu'on reçoit d'un bureau d'études qui ne travaille pas sur le même outil. La
 page l'affiche couche par couche ; elle ne modifie rien.
 
-Le parseur est en Python (`ipc2581_parser.py`), qu'un navigateur ne peut pas
+Le parseur est en Python (`python/ipc2581_parser.py`), qu'un navigateur ne peut pas
 exécuter : la page envoie le fichier à `serveur.py` sur `/api/ipc2581` et
 reçoit le modèle traduit en JSON. Rien n'est écrit sur le disque, rien n'est
 gardé après la réponse.
@@ -249,7 +252,7 @@ l'échappement HTML des panneaux face à un fichier malveillant.
 
 Le troisième banc est en Python, et c'est le seul : il porte sur la moitié de
 la visionneuse IPC-2581 qui ne tourne pas dans le navigateur — le parseur
-(`ipc2581_parser.py`) et le modèle JSON qu'il alimente. Il couvre l'empilage et
+(`python/ipc2581_parser.py`) et le modèle JSON qu'il alimente. Il couvre l'empilage et
 ses permittivités (celles qui vivent dans une `<Spec>` pointée par un
 `<SpecRef>`, la forme des outils du commerce), le contour, les largeurs de
 piste des deux écritures, pastilles, perçages, vias, composants et boîtiers,

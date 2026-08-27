@@ -403,7 +403,7 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 2:
-        print("usage: python ipc2581_json.py <fichier.xml|.zip> [sortie.json]")
+        print("usage: python python/ipc2581_json.py <fichier.xml|.zip> [sortie.json]")
         raise SystemExit(2)
     with open(sys.argv[1], "rb") as fichier_entree:
         modele_sortie = ipc2581_en_dict(fichier_entree.read(), sys.argv[1])

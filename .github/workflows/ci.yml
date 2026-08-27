@@ -20,8 +20,7 @@ jobs:
 
       - name: Vérification syntaxique des scripts Python
         run: |
-          python -m compileall -q serveur.py passerelle_mcp.py commun/outils \
-            ipc2581_data.py ipc2581_parser.py ipc2581_json.py \
+          python -m compileall -q serveur.py python commun/outils \
             editeur-pcb/outils editeur-schematique/outils
 
       - name: Visionneuse IPC-2581 — banc d'essai du parseur
