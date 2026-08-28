@@ -175,90 +175,414 @@ def find_layer_at_z(z: float, stackup: Dict) -> Optional[int]:
     return None
 
 
-def apply_dcim(stackup: Dict, num_images: int = 10, freq: float = 1e9) -> List[ComplexImage]:
+# ==========================================================================
+# LA FONCTION DE GREEN STRATIFIEE, PAR LIGNES DE TRANSMISSION
+# --------------------------------------------------------------------------
+# CE QUI ETAIT LA AVANT, ET POURQUOI IL FALLAIT LE JETER. `apply_dcim` posait
+# ses images a la main : une serie geometrique de reflexions de Fresnel a
+# incidence normale, amortie par un « exp(-0,1 n) » qui ne venait d'aucun
+# calcul. Sa propre docstring le disait -- « pour une vraie DCIM, il faudrait
+# GPOF ». Une fonction de Green fausse fait une matrice d'impedance fausse, et
+# aucune correction en aval ne la rattrape : Z0 = racine(L/C) n'a pas de raison
+# de tomber juste si C ne tombe pas juste. Rien ne le contredisait, parce que
+# rien ne le mesurait.
+#
+# CE QUI LA REMPLACE est la methode telle qu'elle se fait :
+#
+#   1. LE SPECTRE EXACT DU MILIEU STRATIFIE. Un milieu en couches EST un
+#      circuit de lignes de transmission -- c'est la formulation TLGF, exacte,
+#      pas un modele. Chaque couche est une ligne d'impedance caracteristique
+#      Z_i = k_zi/(omega eps_i) en TM, de longueur electrique k_zi d_i. On
+#      cascade depuis le plan de masse (court-circuit) jusqu'au plan de la
+#      piste, on cascade depuis l'air (ligne adaptee) jusqu'au meme plan, et la
+#      tension au plan source est la mise en PARALLELE des deux : c'est la
+#      reponse a une source de courant, donc la fonction de Green spectrale du
+#      potentiel scalaire.
+#
+#   2. UN AJUSTEMENT PAR GPOF (Hua & Sarkar). Le spectre est echantillonne le
+#      long des chemins de Chow, puis approche par une somme d'exponentielles
+#      en k_z. GPOF extrait amplitudes et exposants par un probleme aux VALEURS
+#      PROPRES, sans valeur initiale a deviner, contrairement a Prony.
+#
+#   3. L'IDENTITE DE SOMMERFELD ferme la boucle : chaque exponentielle
+#      exp(-j k_z d) du spectre EST une onde spherique exp(-j k r)/(4 pi r)
+#      partant d'une image a la profondeur COMPLEXE d. C'est tout ce que veut
+#      dire « image complexe », et c'est pourquoi `green_spatial` n'a plus qu'a
+#      sommer des ondes spheriques.
+#
+# CE QUE CETTE VERSION NE FAIT PAS, ET QU'IL FAUT SAVOIR EN LISANT UN CHIFFRE :
+#   · l'ajustement vaut pour UN plan source, celui des pistes. Un empilage a
+#     deux couches de signal demanderait un jeu d'images par couche ;
+#   · c'est le noyau TM (potentiel SCALAIRE) qui est ajuste, parce que c'est
+#     lui qui porte les charges, donc la capacite, donc Z0. `mom_engine` s'en
+#     sert AUSSI pour le potentiel vecteur, ce qui est une approximation qui
+#     lui est propre et que ce module ne peut pas corriger ;
+#   · les ondes de surface ne sont pas extraites separement. Sur du FR-4 mince
+#     en dessous de quelques gigahertz elles ne portent rien ; au-dela, il
+#     faudrait les sortir avant l'ajustement.
+# ==========================================================================
+
+# Les chemins d'echantillonnage de Chow.
+#
+# T0 NE PEUT PAS ETRE UNE CONSTANTE, et c'est ce qui a coute le plus cher a
+# comprendre. La litterature donne T0 ~ 10, mais elle vise des substrats dont
+# l'epaisseur est une fraction non negligeable de la longueur d'onde. Un
+# stratifie de 0,37 mm a 1 GHz ne l'est pas du tout : le plus grand k_rho
+# atteint vaut alors 10 k, soit 440 rad/m, quand il faudrait depasser 1/h =
+# 2700 rad/m pour voir le spectre s'aplatir. L'ajustement travaillait donc sur
+# une fenetre ou la fonction ne s'etait pas encore rangee.
+DCIM_T0_MIN = 10.0
+DCIM_KRHO_H = 10.0          # combien de 1/h le chemin lointain doit atteindre
+DCIM_ECHANTILLONS = 256
+
+
+def _kz(k, k_rho):
+    """La composante verticale, sur la bonne feuille de Riemann.
+
+    Im(k_z) <= 0 : c'est la condition de rayonnement pour la convention
+    exp(-j k z) utilisee partout ici. La racine principale de numpy rend
+    Re >= 0, ce qui n'est pas la meme chose -- et prendre la mauvaise feuille
+    fait CROITRE les ondes au lieu de les amortir.
     """
-    Applique la méthode DCIM pour approximer la fonction de Green par sources images
-    
-    CORRECTION: Implémentation améliorée basée sur l'extraction de pôles réels
-    de l'intégrale de Sommerfeld. Pour une vraie DCIM, il faudrait GPOF,
-    mais cette version heuristique améliorée donne de meilleurs résultats.
-    
-    Args:
-        stackup: Structure du PCB
-        num_images: Nombre d'images complexes à générer
-        freq: Fréquence de référence pour l'extraction des pôles
-        
-    Returns:
-        Liste des sources images complexes
+    kz = np.sqrt(k ** 2 - k_rho ** 2 + 0j)
+    return np.where(np.imag(kz) > 0, -kz, kz)
+
+
+def _impedance_vue(k_rho, omega, couches, court_circuit):
+    """L'impedance TM vue depuis le plan source, en regardant vers l'exterieur.
+
+    `couches` est la liste des milieux traverses, du plus proche du plan source
+    au plus lointain : [(epaisseur, epsilon_complexe), ...]. Quand la pile ne
+    bute pas sur un plan de masse, la DERNIERE entree est le demi-espace
+    terminal et son epaisseur est ignoree.
+
+    La cascade est ecrite en exponentielles DECROISSANTES plutot qu'en
+    tangentes : sur les echantillons evanescents profonds, tan(k_z d) deborde,
+    et c'est precisement la que l'ajustement a besoin de precision.
     """
-    logger.debug("Application de la méthode DCIM améliorée")
-    
-    images = []
-    layers = stackup['layers']
+    def z_car(eps_c):
+        k = omega * np.sqrt(MU_0 * EPSILON_0 * eps_c)
+        kz = _kz(k, k_rho)
+        return kz / (omega * EPSILON_0 * eps_c), kz
+
+    if not couches:
+        return z_car(1.0 + 0j)[0]
+
+    if court_circuit:
+        z_l = np.zeros_like(np.asarray(k_rho, dtype=complex))
+        a_traverser = list(reversed(couches))
+    else:
+        z_l = z_car(couches[-1][1])[0]
+        a_traverser = list(reversed(couches[:-1]))
+
+    for epaisseur, eps_c in a_traverser:
+        z_i, kz = z_car(eps_c)
+        u = np.exp(-2j * kz * epaisseur)      # |u| <= 1 par construction de _kz
+        num = z_l * (1 + u) + z_i * (1 - u)
+        den = z_i * (1 + u) + z_l * (1 - u)
+        z_l = z_i * num / den
+
+    return z_l
+
+
+def profil_spectral(stackup, z_src=None):
+    """Ce que le spectre a besoin de savoir : deux piles et un milieu de reference.
+
+    Rend (bas, haut, masse_en_bas, masse_en_haut, eps_ref, z_src).
+
+    `bas` et `haut` sont les milieux traverses de part et d'autre du plan des
+    pistes, du plus proche au plus lointain. Le cuivre n'y figure pas : il est
+    soit un plan de masse -- et alors c'est une TERMINAISON, pas un milieu --,
+    soit une couche de signal, que le maillage represente et qui n'a pas
+    d'epaisseur electrique ici.
+
+    QUI EST LE PLAN DE MASSE. Le role, quand l'empilage le porte -- c'est pour
+    cela que `extract_stackup` le recopie. Sinon le cuivre le plus bas, ce qui
+    est le cas d'une carte deux couches et le repli le moins surprenant.
+    """
+    couches = stackup['layers']
+
+    cuivres = [i for i, c in enumerate(couches) if c.get('type') == 'copper']
+    plans = [i for i in cuivres if str(couches[i].get('role', '')) == 'plane']
+    if not plans and cuivres:
+        plans = [cuivres[0]]
+
+    # Le plan des pistes : le cuivre de SIGNAL le plus haut, ou le plus haut
+    # tout court si tout est plan.
+    i_src = None
+    if z_src is not None:
+        for i in cuivres:
+            if abs(couches[i].get('z_top', 0.0) - z_src) < 1e-12:
+                i_src = i
+                break
+    if i_src is None:
+        signaux = [i for i in cuivres if i not in plans]
+        i_src = (signaux[-1] if signaux else (cuivres[-1] if cuivres else 0))
+        z_src = couches[i_src].get('z_top', 0.0) if couches else 0.0
+
+    def eps_c(c):
+        return c.get('epsilon_r', 1.0) * (1 - 1j * c.get('tan_delta', 0.0))
+
+    def pile(indices):
+        """Les milieux dans l'ordre, et si la pile bute sur un plan de masse."""
+        out = []
+        for i in indices:
+            c = couches[i]
+            if c.get('type') == 'copper':
+                if i in plans:
+                    return out, True          # plan de masse : terminaison
+                continue                      # cuivre de signal : transparent
+            e = c.get('thickness', 0.0)
+            if e > 0:
+                out.append((e, eps_c(c)))
+        return out, False
+
+    bas, masse_bas = pile(range(i_src - 1, -1, -1))
+    haut, masse_haut = pile(range(i_src + 1, len(couches)))
+
+    # Un demi-espace ferme la pile qui ne bute sur rien : de l'air au-dessus de
+    # la carte, et en dessous le dernier stratifie prolonge.
+    if not masse_haut:
+        haut.append((0.0, 1.0 + 0j))
+    if not masse_bas:
+        bas.append((0.0, bas[-1][1] if bas else 1.0 + 0j))
+
+    # LE MILIEU DE REFERENCE est celui qui porte le champ, donc le stratifie
+    # sous la piste. Il fixe le nombre d'onde des images, et sa permittivite
+    # normalise l'ajustement.
+    eps_ref = bas[0][1] if bas else (1.0 + 0j)
+    return bas, haut, masse_bas, masse_haut, eps_ref, z_src
+
+
+def green_spectral_tm(k_rho, stackup, freq, profil=None):
+    """Le noyau spectral TM au plan des pistes, normalise comme l'espace libre.
+
+    Rend F(k_rho) tel que, dans un milieu HOMOGENE de permittivite de
+    reference, F vaille exactement 1 : c'est ce qui rend l'ajustement lisible
+    -- une image d'amplitude 1 a la profondeur 0 EST le terme direct.
+
+        F = 2 omega eps_ref V_TM / k_z_ref      avec V_TM = Z_haut // Z_bas
+
+    et G_spectral = F / (2 j k_z_ref), dont l'identite de Sommerfeld fait
+    exp(-j k r)/(4 pi r).
+    """
+    if profil is None:
+        profil = profil_spectral(stackup)
+    bas, haut, masse_bas, masse_haut, eps_ref, _ = profil
+
     omega = 2 * np.pi * freq
-    
-    # Pour chaque interface diélectrique, générer des images
-    for interface_idx in range(len(layers) - 1):
-        layer_bottom = layers[interface_idx]
-        layer_top = layers[interface_idx + 1]
-        
-        # Skip interfaces non-diélectriques
-        if layer_bottom['type'] == 'copper' and layer_top['type'] == 'copper':
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
+    kz_ref = _kz(k_ref, k_rho)
+
+    z_bas = _impedance_vue(k_rho, omega, bas, masse_bas)
+    z_haut = _impedance_vue(k_rho, omega, haut, masse_haut)
+
+    somme = z_bas + z_haut
+    # Les deux impedances s'annulent quand le plan source EST le plan de masse.
+    somme = np.where(np.abs(somme) < 1e-30, 1e-30, somme)
+    v_tm = z_bas * z_haut / somme
+
+    return 2.0 * omega * EPSILON_0 * eps_ref * v_tm / kz_ref
+
+
+def gpof(y, ordre, pinceau=None):
+    """GPOF : y[n] = somme_i c_i z_i^n, retrouver les c_i et les z_i.
+
+    C'est la methode de Hua et Sarkar (1989). Elle passe par un probleme aux
+    VALEURS PROPRES la ou Prony passe par les racines d'un polynome : pas de
+    valeur initiale a fournir, et une robustesse au bruit sans commune mesure.
+
+    `pinceau` (le « pencil parameter » L) vaut N/3 par defaut, ce que la
+    litterature donne comme optimum de variance. La troncature aux `ordre`
+    premieres valeurs singulieres filtre le bruit numerique : sans elle, on
+    ajuste les derniers chiffres du calcul en virgule flottante.
+    """
+    y = np.asarray(y, dtype=complex)
+    n = len(y)
+    if pinceau is None:
+        pinceau = max(2, n // 3)
+    pinceau = int(min(pinceau, n - 2))
+    ordre = int(max(1, min(ordre, pinceau)))
+
+    lignes = n - pinceau
+    hankel = np.empty((lignes, pinceau + 1), dtype=complex)
+    for i in range(lignes):
+        hankel[i, :] = y[i:i + pinceau + 1]
+    y0 = hankel[:, :pinceau]
+    y1 = hankel[:, 1:]
+
+    u, s, vh = np.linalg.svd(y0, full_matrices=False)
+    garde = int(min(ordre, int(np.sum(s > s[0] * 1e-12)))) if s.size else 0
+    if garde < 1:
+        return np.array([0.0 + 0j]), np.array([1.0 + 0j])
+
+    u_m = u[:, :garde]
+    s_m = s[:garde]
+    v_m = vh[:garde, :].conj().T
+
+    noyau = np.diag(1.0 / s_m) @ u_m.conj().T @ y1 @ v_m
+    z = np.linalg.eigvals(noyau)
+    z = z[np.abs(z) > 1e-14]
+    if z.size == 0:
+        return np.array([0.0 + 0j]), np.array([1.0 + 0j])
+
+    # Les amplitudes : un Vandermonde et un moindre carre. Rien de plus.
+    vander = z[np.newaxis, :] ** np.arange(n)[:, np.newaxis]
+    c, *_ = np.linalg.lstsq(vander, y, rcond=None)
+    return c, z
+
+
+def _echelles(profil):
+    """(h_min, h_max) des dielectriques traverses, en metres."""
+    ep = [e for e, _ in (profil[0] + profil[1]) if e > 0]
+    if not ep:
+        return 1e-3, 1e-3
+    return min(ep), max(ep)
+
+
+def _chemins(stackup, freq, profil):
+    """LES DEUX CHEMINS de la DCIM a deux niveaux, et leur parametrisation.
+
+    POURQUOI DEUX. Un chemin unique ne peut pas servir les deux regimes a la
+    fois. Le spectre d'un microruban a deux echelles tres separees : l'onde, en
+    1/lambda, et la geometrie, en 1/h. Sur du FR-4 de 0,37 mm a 1 GHz elles
+    different d'un facteur soixante. Un chemin assez long pour atteindre
+    l'evanescent de la geometrie n'accorde alors que quelques echantillons a la
+    region propagative -- celle qui commande le champ LOIN de la source --, et
+    l'ajustement y devient faux. Le banc l'a mesure : juste a 0,2 mm, faux de
+    dix-sept pour cent a 3 mm.
+
+    C'est la DCIM a deux niveaux d'Aksun, et la separation est celle-la :
+
+      · le chemin LOINTAIN, purement imaginaire, k_z = -j k t, qui balaie
+        l'evanescent jusqu'a une dizaine de 1/h. Il capte le comportement
+        quasi-statique, celui des images proches ;
+      · le chemin PROCHE, k_z = k(1 - t/T0 - j t), qui couvre le propagatif et
+        le debut de l'evanescent. On l'ajuste sur ce que le premier niveau a
+        LAISSE, et il capte ce qui porte le champ a distance.
+
+    Chacun est AFFINE en son parametre, et c'est toute l'astuce : exp(-j k_z d)
+    devient une suite geometrique en l'indice d'echantillon, ce que GPOF sait
+    defaire.
+    """
+    eps_ref = profil[4]
+    omega = 2 * np.pi * freq
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
+    h_min, _ = _echelles(profil)
+
+    t0_proche = DCIM_T0_MIN
+    t0_loin = max(2.0 * t0_proche, DCIM_KRHO_H / (abs(k_ref) * h_min))
+
+    n = DCIM_ECHANTILLONS
+    t_loin = np.linspace(t0_proche, t0_loin, n)
+    kz_loin = -1j * k_ref * t_loin
+
+    t_proche = np.linspace(0.0, t0_proche, n)
+    kz_proche = k_ref * (1.0 - t_proche / t0_proche - 1j * t_proche)
+
+    def krho(kz):
+        return np.sqrt(k_ref ** 2 - kz ** 2 + 0j)
+
+    return {
+        'k_ref': k_ref,
+        'loin': (kz_loin, krho(kz_loin), kz_loin[0], kz_loin[1] - kz_loin[0]),
+        'proche': (kz_proche, krho(kz_proche),
+                   kz_proche[0], kz_proche[1] - kz_proche[0]),
+    }
+
+
+def _images_dun_chemin(y, kz0, dkz, ordre, portee):
+    """GPOF sur un chemin, puis retour aux profondeurs complexes.
+
+    k_z(n) = kz0 + n dkz, donc exp(-j k_z(n) d) = exp(-j kz0 d) rapport^n avec
+    rapport = exp(-j dkz d) : le pole rendu par GPOF EST ce rapport, et
+    l'amplitude porte le exp(-j kz0 d) qu'on lui rend.
+    """
+    c, z = gpof(y, ordre)
+    out = []
+    for c_i, z_i in zip(c, z):
+        d = 1j * np.log(z_i) / dkz
+        amp = c_i * np.exp(1j * kz0 * d)
+        if not (np.isfinite(amp) and np.isfinite(d)):
             continue
-        
-        # Position de l'interface
-        z_interface = layer_bottom['z_top']
-        
-        # Permittivités complexes
-        eps_bottom = layer_bottom['epsilon_r'] * (1 - 1j * layer_bottom['tan_delta'])
-        eps_top = layer_top['epsilon_r'] * (1 - 1j * layer_top['tan_delta'])
-        
-        # Coefficient de réflexion de Fresnel à l'interface
-        sqrt_eps_bottom = np.sqrt(eps_bottom)
-        sqrt_eps_top = np.sqrt(eps_top)
-        r_fresnel = (sqrt_eps_bottom - sqrt_eps_top) / (sqrt_eps_bottom + sqrt_eps_top)
-        
-        # Génération des images: série géométrique des réflexions multiples
-        for n in range(num_images):
-            if n == 0:
-                # Image directe à l'interface
-                z_img = z_interface
-                amplitude = 1.0 + 0j
-            else:
-                # Images des réflexions multiples
-                # Alternance au-dessus et en-dessous de l'interface
-                sign = 1 if n % 2 == 0 else -1
-                
-                # Distance complexe: partie imaginaire pour atténuation
-                d_real = n * layer_bottom['thickness']
-                d_imag = 0.05 * d_real * np.sqrt(eps_bottom.imag) if eps_bottom.imag > 0 else 0
-                
-                z_img = z_interface + sign * (d_real + 1j * d_imag)
-                
-                # Amplitude: produit des réflexions (série géométrique)
-                amplitude = r_fresnel**n * np.exp(-0.1 * n)
-            
-            image = ComplexImage(
-                amplitude=amplitude,
-                position=z_img,
-                layer_index=interface_idx
-            )
-            
-            images.append(image)
-    
-    # Ajouter une image directe dans la couche source principale
-    if len(layers) > 0:
-        layer_main = layers[0]
-        z_main = (layer_main['z_bottom'] + layer_main['z_top']) / 2
-        images.insert(0, ComplexImage(
-            amplitude=1.0 + 0j,
-            position=z_main,
-            layer_index=0
-        ))
-    
-    logger.debug(f"  {len(images)} sources images générées (DCIM améliorée)")
-    
-    return images
+        # UNE IMAGE PLUS LOIN QUE LA CARTE N'EST PAS PHYSIQUE : c'est un pole
+        # parasite de l'ajustement, et le sommer n'ajoute que du bruit avec un
+        # poids arbitraire.
+        if abs(d) > portee:
+            continue
+        if abs(amp) < 1e-12:
+            continue
+        out.append((complex(amp), complex(d)))
+    return out
+
+
+def apply_dcim(stackup, num_images=10, freq=1e9, z_src=None):
+    """La fonction de Green stratifiee, mise en images complexes par GPOF.
+
+    TROIS MORCEAUX, ET CHACUN A SA RAISON :
+
+      1. LE TERME NON DECROISSANT, SORTI A LA MAIN. En k_rho grand le noyau ne
+         tend pas vers zero mais vers la constante 2 eps1/(eps1+eps2) -- celle
+         qui donne le milieu moyen du microruban. Ajuster une fonction qui ne
+         decroit pas par une somme d'exponentielles revient a demander a GPOF
+         de fabriquer un pole de module 1 par compensation entre poles
+         voisins : exact sur les points d'echantillonnage, absurde ailleurs. Le
+         banc l'a mesure -- 0,000 % sur le chemin, 52 % dans le domaine
+         spatial. Or sa transformee est EXACTEMENT une image d'amplitude c_inf
+         a la profondeur zero, alors on la pose.
+      2. LE NIVEAU LOINTAIN, qui ajuste le reste dans l'evanescent profond.
+      3. LE NIVEAU PROCHE, qui ajuste ce que le niveau lointain a laisse dans
+         la region propagative. C'est lui qui porte le champ a distance.
+
+    Args:
+        stackup: l'empilage, tel que `extract_stackup` le rend
+        num_images: le nombre d'images ajustees PAR NIVEAU
+        freq: la frequence. Les images en dependent, il faut les refaire a
+              chaque point de la bande, et `main.py` le fait
+        z_src: le plan des pistes. Deduit de l'empilage quand il manque
+
+    Returns:
+        La liste des images. `position` est une PROFONDEUR COMPLEXE mesuree
+        depuis le plan source, et non une altitude absolue : c'est ce que
+        l'identite de Sommerfeld produit, et ce que `green_spatial` attend.
+    """
+    profil = profil_spectral(stackup, z_src)
+    chemins = _chemins(stackup, freq, profil)
+    h_min, h_max = _echelles(profil)
+    portee = 200.0 * h_max
+
+    def spectre(k_rho):
+        return green_spectral_tm(k_rho, stackup, freq, profil)
+
+    # 1. La constante evanescente, prise tres loin sur l'axe REEL -- et non au
+    #    bout d'un chemin, qui n'y est pas forcement arrive. « Tres loin » se
+    #    mesure en 1/h : c'est la seule echelle qui compte, l'onde oubliee.
+    c_inf = complex(spectre(np.array([1e4 / h_min]))[0])
+    if not np.isfinite(c_inf):
+        c_inf = 0.0 + 0j
+
+    images = [(complex(c_inf), 0.0 + 0j)]
+
+    def somme(kz, paires):
+        out = np.zeros_like(kz)
+        for amp, d in paires:
+            out = out + amp * np.exp(-1j * kz * d)
+        return out
+
+    # 2. puis 3. Chaque niveau ajuste ce que le precedent a laisse.
+    for nom in ('loin', 'proche'):
+        kz, k_rho, kz0, dkz = chemins[nom]
+        f = spectre(k_rho)
+        if not np.all(np.isfinite(f)):
+            logger.warning("Spectre non fini sur le chemin « %s »", nom)
+            continue
+        reste = f - somme(kz, images)
+        images.extend(_images_dun_chemin(reste, kz0, dkz, num_images, portee))
+
+    logger.debug("  %d images complexes ajustees par GPOF a deux niveaux",
+                 len(images))
+    return [ComplexImage(amplitude=a, position=d, layer_index=0)
+            for a, d in images]
 
 
 def calculate_effective_reflection(layer: Dict, stackup: Dict) -> complex:
@@ -344,20 +668,29 @@ def green_spatial(rho: float, z: float, z_prime: float, images: List[ComplexImag
 
     omega = 2 * np.pi * freq
 
-    # Nombre d'onde complexe dans le milieu effectif (inclut les pertes tanδ)
-    eps_eff = effective_epsilon(stackup)
-    k_eff = omega * np.sqrt(MU_0 * EPSILON_0 * eps_eff)
+    # LE NOMBRE D'ONDE EST CELUI DU MILIEU DE REFERENCE de l'ajustement, et non
+    # une moyenne ponderee de tout l'empilage : les images ont ete obtenues en
+    # normalisant le spectre par CE milieu-la, et les sommer avec un autre k
+    # reviendrait a lire l'ajustement dans une unite qui n'est pas la sienne.
+    eps_ref = profil_spectral(stackup)[4] if stackup else 1.0 + 0j
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
+
+    # LA PROFONDEUR D'IMAGE EST RELATIVE AU PLAN SOURCE depuis que l'ajustement
+    # est un vrai GPOF : c'est ce que l'identite de Sommerfeld produit. L'ecart
+    # vertical entre les deux points s'y ajoute -- nul dans le cas courant, ou
+    # source et observation sont sur la meme couche de cuivre.
+    dz = z - z_prime
 
     for image in images:
-        # Distance de la source image au point d'observation.
-        # La position d'image est complexe (DCIM) : on conserve la partie
-        # imaginaire, qui porte l'atténuation.
-        z_img = image.position
-        r = np.sqrt(rho**2 + (z - z_img)**2 + 0j)
+        d = image.position + dz
+        r = np.sqrt(rho ** 2 + d ** 2 + 0j)
+        # La racine principale peut sortir du bon demi-plan sur un d complexe ;
+        # une distance de partie reelle negative ferait CROITRE l'onde.
+        if np.real(r) < 0:
+            r = -r
 
-        if np.abs(r) > 1e-10:
-            g_image = image.amplitude * np.exp(-1j * k_eff * r) / (4 * np.pi * r)
-            g_total += g_image
+        if np.abs(r) > 1e-12:
+            g_total += image.amplitude * np.exp(-1j * k_ref * r) / (4 * np.pi * r)
 
     return g_total
 
