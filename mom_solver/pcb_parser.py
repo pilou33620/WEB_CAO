@@ -64,6 +64,13 @@ def extract_stackup(data: Dict) -> Dict:
         layer_info = {
             'index': i,
             'type': layer_type,
+            # LE ROLE VOYAGE AVEC LA COUCHE. Il etait lu par personne, et la
+            # fonction de Green stratifiee en a besoin : c'est lui qui dit
+            # quel cuivre est un PLAN DE MASSE, donc ou la cascade de lignes
+            # de transmission bute sur un court-circuit. Sans lui, un empilage
+            # a quatre couches se calcule comme s'il n'avait pas de retour.
+            'role': layer.get('role', ''),
+            'name': layer.get('name', ''),
             'thickness': thickness * 1e-3,  # conversion mm -> m
             'epsilon_r': epsilon_r,
             'tan_delta': tan_delta,
