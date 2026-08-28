@@ -179,6 +179,12 @@ function peindre(c,dpr,W,H){
   }
 
   if(V.net>=0||V.mev.seul)peindreNet(c,dpr);
+  /* La carte de chaleur de la simulation d'impédance (07-simulation.js), quand
+     le panneau est ouvert sur ce mode : elle repeint les pistes désignées
+     selon leur écart à l'impédance visée. Après la mise en évidence du net —
+     c'est un jugement sur ce que celle-ci vient de montrer — et avant les
+     composants et les textes, qui doivent rester lisibles par-dessus. */
+  if(typeof simZTrace==="function")simZTrace(c,dpr);
   if(V.aff.composants)peindreComposants(c,dpr);
   peindreTextes(c,dpr);
   if(V.comp)peindreCompChoisi(c,dpr);

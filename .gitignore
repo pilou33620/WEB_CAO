@@ -25,6 +25,12 @@ node_modules/
 npm-debug.log
 yarn-error.log
 
+# Solveur EM
+# mom_solver/main.py, en ligne de commande, ouvre un journal a cote de lui.
+# Le serveur, lui, n'ecrit rien : /api/simulation calcule et rend, sans disque.
+mom_solver.log
+exports/
+
 # System
 .DS_Store
 

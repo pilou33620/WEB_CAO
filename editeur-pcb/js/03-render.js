@@ -715,6 +715,13 @@ function paint(c,dpr,w,h,noGrid){
      doit rester lisible par-dessus le cuivre le plus dense. Elle suit la grille
      — absente de l'image exportee, comme elle : ni l'une ni l'autre ne
      decrivent la carte. */
+  /* La carte de chaleur de la simulation d'impédance (19-simulation.js), quand
+     le panneau est ouvert sur ce mode : elle repeint le cuivre sélectionné
+     selon son écart à l'impédance visée. Elle passe après le DRC — les deux
+     jugent le tracé, et celui qui répond à la question posée à l'instant doit
+     rester au-dessus — mais avant la cote et le phare, qui désignent au lieu
+     de décrire. Absente du .png exporté, pour la même raison qu'eux. */
+  if(!noGrid&&typeof simZTrace==="function")simZTrace(c);
   if(!noGrid&&typeof rpMesTrace==="function")rpMesTrace(c,dpr);
   /* Le phare du cross-probing, tout en haut de la pile : il désigne, il ne
      décrit pas. Comme la cote, il est absent du .png exporté — ni l'un ni

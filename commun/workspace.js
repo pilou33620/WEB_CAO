@@ -56,6 +56,15 @@ function wsDefault(){
     out.docks[k]=L.docks[k];
     out.order[k]=(L.order[k]||[]).slice();
   }
+  /* `hidden` d'usine : un panneau qui existe mais qui n'encombre pas le dock
+     tant qu'on ne l'a pas demandé. La simulation EM est le premier — on
+     l'ouvre la piste posée, pas en routant —, et son bouton de barre d'outils
+     est ce qui la rend trouvable. Sans cette liste, la règle « un panneau
+     absent du fichier retrouve sa place d'usine » plus bas l'aurait poussé
+     dans le dock chez ceux qui ont déjà un profil, et laissé masqué chez les
+     autres : deux comportements pour une même version. */
+  out.floats=(L.floats||[]).slice();
+  out.hidden=(L.hidden||[]).slice();
   for(const id in L.panels)out.panels[id]=Object.assign({},L.panels[id]);
   return out;
 }
@@ -100,9 +109,13 @@ function wsLoad(){
     if(known.includes(id)&&!seen.has(id)){seen.add(id);out.floats.push(id);}
   for(const id of (Array.isArray(d.hidden)?d.hidden:[]))
     if(known.includes(id)&&!seen.has(id)){seen.add(id);out.hidden.push(id);}
-  /* un panneau absent du fichier retrouve sa place d'usine */
+  /* un panneau absent du fichier retrouve sa place d'usine -- son dock, ou la
+     réserve quand la disposition d'usine l'y range */
   for(const id of known)
-    if(!seen.has(id))out.order[def.panels[id].last].push(id);
+    if(!seen.has(id)){
+      if(def.hidden.indexOf(id)>=0)out.hidden.push(id);
+      else out.order[def.panels[id].last].push(id);
+    }
   for(const id of known){
     const s=(d.panels&&d.panels[id])||{}, t=out.panels[id];
     if(isFinite(s.grow)&&s.grow>0)t.grow=+s.grow;
@@ -538,7 +551,7 @@ function wsMenuBuild(){
         for(const id of WS.hidden.slice())wsShow(id);
       }else if(c==="cols"){
         const d=wsDefault();
-        WS.order=d.order;WS.floats=[];WS.hidden=[];WS.docks=d.docks;
+        WS.order=d.order;WS.floats=d.floats;WS.hidden=d.hidden;WS.docks=d.docks;
         for(const id in WS.panels){
           WS.panels[id].collapsed=false;
           WS.panels[id].grow=d.panels[id].grow;

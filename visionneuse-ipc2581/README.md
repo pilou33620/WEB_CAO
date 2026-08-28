@@ -48,6 +48,10 @@ et ceux du dossier partagé, identiques aux autres outils :
 ../commun/profils.js              réglages d'affichage propres à l'utilisateur
 ../commun/projet.js               le nom du projet, d'où découlent les exports
 ../commun/projet-disque.js        le dossier du projet, où la carte se range
+../commun/simulation-em.js        le panneau de simulation EM : saisie, envoi
+                                  au serveur, courbe, exports. L'éditeur PCB
+                                  charge exactement le même
+../commun/simulation-em.css       habillage de ce panneau
 ```
 
 ## Les modules
@@ -62,6 +66,9 @@ et ceux du dossier partagé, identiques aux autres outils :
 | `js/04-interaction.js` | 302 | Déplacement, zoom, pincement à deux doigts, désignation (piste, pastille, perçage, boîtier), clavier |
 | `js/05-panneaux.js` | 505 | Les cinq panneaux : couches, la carte, nets, composants, sélection — et la fiche de ligne de transmission |
 | `js/06-demarrage.js` | 333 | Ouverture d'un fichier (bouton, dépôt, reprise de session), exports `.json` et `.png`, réglages de l'utilisateur |
+| `js/07-simulation.js` | 804 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes |
+| `../python/simulation_em.py` | 889 | Pont vers `python/ligne_mom.py` : empilage à plat -> section droite, résolution par tronçon, cascade ABCD -> JSON |
+| `test/harness-sim.js` | 560 | Banc d'essai de la mesure de masse coplanaire, sous Node : `node test/harness-sim.js` |
 
 ## Démarrage
 
@@ -184,6 +191,158 @@ oublie les valeurs saisies pour revenir à ce que dit le fichier.
 | `R`, `D`, `P` | Repères, perçages, plans |
 | `O` | Ouvrir un fichier |
 | `Échap` | Ne plus rien sélectionner |
+
+## Simuler : l'impédance, peinte sur la carte
+
+Le panneau **« Simulation EM »** — bouton du même nom dans la barre d'outils —
+envoie la section droite des pistes désignées au solveur du dépôt
+(`../python/ligne_mom.py`), qui la résout par méthode des moments
+et rend leur impédance caractéristique. La carte se colore et la valeur s'écrit
+dessus. C'est le même panneau que celui de l'éditeur PCB, au mot près : le code
+est dans `../commun/simulation-em.js`, et seul l'adaptateur
+`js/07-simulation.js` change — il décrit une carte lue là où l'autre décrit
+une carte routée.
+
+```bash
+pip install numpy scipy
+python serveur.py
+```
+
+**L'empilage envoyé est celui du calcul**, `LT` — le même que celui de la fiche
+de ligne de transmission, dressé par `ltPreparer()`. C'est délibéré : deux
+empilages pour une même carte donneraient deux réponses à la même question, et
+rien ne dirait laquelle croire. Ce que le fichier ne dit pas et que vous avez
+saisi dans « La carte » sert donc ici aussi, et ce qui manque encore est écrit
+sous le résultat plutôt que supposé en silence.
+
+### Les gestes commandent l'étendue du calcul
+
+| Geste | Ce qui est calculé et peint |
+| --- | --- |
+| Clic sur une piste | cette piste, sur sa couche |
+| `Maj`+clic | tout le net, sur toutes les couches où il court |
+
+Il n'y a pas de troisième portée ici, contrairement à l'éditeur PCB : le
+double-clic est pris — il cadre la carte — et une visionneuse n'a pas de
+« tronçon » à isoler, IPC-2581 décrivant une piste comme une polyligne
+entière. Une polyligne porte une seule largeur et une seule couche — mais pas
+forcément un seul écart au plan coplanaire : elle est donc découpée en **plages
+d'écart constant**, une ligne de tableau par plage, chacune peinte à sa propre
+couleur. La portée affichée est celle que la fiche annonce déjà (`pnlPortee()`),
+reprise mot pour mot.
+
+La case **« suivre »**, armée dès le premier calcul, relance à chaque
+changement de désignation.
+
+### La carte de chaleur
+
+On saisit une **cible**, une **tolérance** et une **fréquence centrale** —
+c'est à celle-ci que l'impédance est donnée et la carte peinte :
+
+- **bleu** — dans la tolérance ;
+- **rouge** — trop élevé ;
+- **vert** — trop faible.
+
+**Le vert ne veut pas dire « bon »** mais « trop bas ». La légende du panneau
+le redit en toutes lettres. La clarté porte l'écart — pâle au bord de la
+bande, pleine une tolérance plus loin — et la valeur s'écrit dans un cartouche,
+une étiquette par impédance distincte.
+
+Le halo coloré est plus large que la piste : la mise en évidence du net peint
+déjà le cuivre en blanc à 85 % (`peindreNet`), et un trait coloré à la seule
+largeur du cuivre y disparaissait.
+
+### Ce que ça vaut
+
+Ce n'est pas la formule de la fiche de ligne, c'est un calcul de champ sur la
+section — et il traite des cas que la formule ne traite pas, à commencer par
+la **triplaque décentrée**, que les « Limites connues » plus bas signalent
+comme un défaut de la formule IPC-2141A. Vérifié contre étalons extérieurs
+(`../python/test/banc-ligne-mom.py`, 51 cas) : **0,42 %** d'écart
+au pire contre Hammerstad-Jensen sur le microruban, **0,30 %** contre la
+solution exacte en intégrales elliptiques sur la triplaque. La géométrie qui
+mesure la masse coplanaire sur le cuivre lu a son propre banc,
+`test/harness-sim.js` (20 cas), qui tourne sous Node sans navigateur.
+
+Ce qu'il ne voit pas : une suite de sections uniformes, rien d'autre — ni les
+coudes, ni les transitions de perçage, ni le rayonnement. Le calcul est
+quasi-statique, la dispersion venant du modèle de Getsinger. Le panneau le dit
+sous chaque résultat.
+
+Le panneau donne aussi le bilan de la liaison, les **paramètres S** obtenus en
+mettant les tronçons bout à bout, et trois exports : `.csv`, `.s2p` et `.json`.
+
+### La section résolue est écrite sous la fiche
+
+Une ligne, avant les notes, qui dit sur QUOI l'impédance a été obtenue :
+
+```
+Section Conductor-4 — microruban : plan Conductor-3, h 0,380 mm, εr 4,44,
+tan δ 0,0200, cuivre 35 µm, piste 0,520 mm → ε_eff 3,080.
+Cuivre, h, εr du fichier ; tan δ supposé, à saisir dans « La carte ».
+Empilage nominal du fichier, pas la carte pressée : quarante microns de
+diélectrique valent deux ohms et demi sur une ligne à 50 Ω.
+Le masque de soudure n'est pas dans l'empilage : sur une couche extérieure
+il fait baisser Z₀ de deux à trois pour cent, non comptés ici.
+```
+
+Elle n'y était pas, et c'était le trou : la fiche montrait un chiffre sans
+montrer ses entrées. Or **c'est là que se trouve la cause** quand le calcul ne
+tombe pas sur la carte réelle — le solveur, lui, est vérifié à 0,25 % contre la
+transformation conforme. Retrouver la hauteur au plan demandait d'inverser le
+résultat.
+
+Une ligne **par section distincte**, pas par tronçon : une piste découpée en
+trois plages d'écart a la même section verticale, seuls ses bords changent. La
+provenance de chaque cote vient de l'outil, pas du serveur — lui seul sait si
+une épaisseur a été lue, saisie ou remplacée par un repli. Les mêmes colonnes
+sont dans le `.csv` : `plan_reference`, `h_mm`, `er`, `tan_delta`, `cuivre_mm`,
+`couverture_mm`.
+
+### La masse coplanaire : ce qu'il faut lui dire
+
+Le cuivre qui borde une piste **sur sa propre couche** fait tomber son impédance
+de vingt pour cent et davantage. Cet outil doit le MESURER — il lit une carte
+livrée, il ne connaît pas la règle d'isolation qui a creusé le plan — et il a
+donc trois questions à trancher que le fichier ne tranche pas.
+
+**Quel net est la masse ?** Un fichier IPC-2581 ne le déclare pas. La barre
+**« Masse »**, en tête du panneau, porte une pastille par net candidat, et la
+proposition est *devinée* sur trois indices : le nom (`GND`, `AGND`, `VSS`…),
+la part de la carte que son cuivre plein couvre, et son nombre de perçages.
+Aucune masse nommée ? Le plus gros plan est proposé faute de mieux — un net qui
+couvre 40 % de la carte est un plan, quel que soit son nom, et c'est déjà le
+parti pris de `ltEstPlan()` pour l'empilage.
+
+Deviner, c'est se tromper parfois : d'où les pastilles. Ce qu'on décoche cesse
+de compter comme plan de retour, et ressort en **note de couplage** avec son
+écart et la longueur sur laquelle il longe la piste — un îlot d'un autre signal
+n'est pas une masse, mais le taire remplacerait une erreur par un silence.
+Aucune masse retenue, et le panneau le dit : toute piste noyée dans un plan
+arrosé ressortirait en microruban, soit vingt pour cent trop haut.
+
+**De quel côté, et sur quelle longueur ?** L'axe est échantillonné tous les
+quarts de millimètre, et les **deux côtés sont mesurés séparément** — le signe
+du produit vectoriel de la tangente par le vecteur qui va au cuivre trouvé
+donne le côté. Une piste qui longe une découpe d'un côté et du plan serré de
+l'autre part donc avec un écart d'un côté et rien de l'autre. Puis les
+échantillons se regroupent en plages homogènes, et chaque plage devient un
+tronçon avec sa propre impédance.
+
+Le cuivre qui se trouve **devant** la piste plutôt qu'à côté est écarté : c'est
+ce qui referme le couloir du plan au bout d'une piste, et le compter donnait un
+écart coplanaire fantôme à chaque extrémité.
+
+**Ce cuivre est-il vraiment à la masse ?** Le solveur le tient à zéro volt ; sur
+une carte, il ne l'est qu'autant que des vias le ramènent au plan d'en face. Le
+panneau mesure le plus grand espacement entre deux coutures consécutives, par
+côté, dans un couloir de 2 mm, et le compare à λ/20 et λ/10 dans le stratifié
+**en haut de la bande analysée**. Trois verdicts — serrée, limite, trop lâche —
+et un quatrième dit en toutes lettres quand aucun via de masse ne borde la
+piste. Ce n'est pas une modélisation, c'est un contrôle : ses limites sont dans
+`../A-FAIRE.md`, section *« Ce que la masse coplanaire suppose »*. La principale
+ici : un perçage IPC-2581 ne dit pas sa plage de couches, donc un via borgne qui
+n'atteint pas le plan de référence compte quand même comme une couture.
 
 ## La carte dans le projet
 

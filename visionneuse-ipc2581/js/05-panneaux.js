@@ -290,6 +290,14 @@ function pnlComps(){
    Sélection
    ========================================================================== */
 function pnlDetail(){
+  /* Le panneau de simulation suit la MÊME horloge que cette fiche-ci, et pas
+     celle de `pnlTout()` : c'est la sélection qu'il mesure, et la sélection
+     change par ici — un clic sur la carte appelle `pnlDetail()` puis
+     `dessiner()`, sans passer par le rafraîchissement général. L'argument vrai
+     lui dit de ne pas redemander de dessin : celui qui suit lira la nouvelle
+     liste de segments de toute façon. Gardé par un `typeof` parce que
+     07-simulation.js est chargé après ce fichier. */
+  if(typeof simRafraichir==="function")simRafraichir(true);
   const box=$("detail");
   if(!V.modele){
     box.innerHTML='<div class="rien">Aucune carte ouverte.</div>';

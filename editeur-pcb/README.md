@@ -27,8 +27,8 @@ js/03-render.js          canevas, ordre des couches, remplissage des zones, calq
 js/04-fabrication.js     masque et pâte, Gerber RS-274X, Excellon, feuille
                          d'empilage, archive ZIP
 js/05-tools.js           historique, sélection, tracé, zones, contour, souris, clavier
-js/06-panels.js          onglets de couches, listes, règles, propriétés,
-                         empilage physique
+js/06-panels.js          onglets de couches, listes, règles, propriétés
+                         (objet seul et groupes de sélection), empilage physique
 js/07-app.js             fichiers, câblage des boutons, initialisation
 js/08-empreinte.js       fenêtre d'édition d'empreinte, bibliothèque personnelle
 js/09-diffpair.js        paires différentielles : règles, tracé couplé, impédance
@@ -44,6 +44,11 @@ js/16-profil.js          réglages d'affichage rangés dans le profil de
 js/17-exemples.js        les deux cartes d'exemple et la fenêtre qui les ouvre
 js/18-reperage.js        ce que la recherche et la mesure valent sur une carte :
                          aimant, cibles, cadrage, cross-probing et son phare
+js/19-simulation.js      simulation EM : la carte de chaleur d'impédance sur la
+                         sélection, et l'empilage / le cuivre d'un net mis au
+                         format du solveur MoM, ports compris. C'est aussi lui
+                         qui lit la masse coplanaire — nets de référence, un
+                         écart par côté, plages d'écart, couture de vias
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -61,6 +66,11 @@ Ces fichiers viennent du dossier partagé, à la racine du dépôt :
 ../commun/reperage.css   habillage de la boîte de recherche
 ../commun/reperage.js    chercher un repère, mesurer une distance — paramétré
                          par l'adaptateur de js/18-reperage.js
+../commun/simulation-em.css  habillage du panneau de simulation EM
+../commun/simulation-em.js   le panneau lui-même : saisie, envoi au serveur,
+                         courbe, exports — paramétré par l'adaptateur de
+                         js/19-simulation.js. La visionneuse IPC-2581 charge
+                         exactement le même
 ../commun/test/dom-stub.js  DOM minimal du banc d'essai
 ../commun/outils/monofichier.py  mécanique d'assemblage
 ```
@@ -249,6 +259,54 @@ laissés nus, recouverts de vernis, bouchés résine, ou bouchés et plaqués po
 une pastille sur le via (IPC-4761). Seul le premier ouvre le masque. Il
 remplace l'ancien booléen `tented`, que les fichiers antérieurs portent encore
 et que `normDoc` convertit à la lecture.
+
+### La nature d'un via se choisit, la portée suit
+
+`viaBuild()` dit ce qu'une portée **vaut** une fois la carte pressée. Le panneau
+*Propriétés* offre l'autre sens : une liste *Type de via* — traversant, borgne
+dessus, borgne dessous, enterré — qui **pose** les couches (`viaSetKind`,
+`js/01-core.js`). Quatre entrées et non trois : « borgne » ne dit pas de quel
+côté, et c'est justement ce qu'on veut désigner d'un geste.
+
+Les deux listes de couches restent la commande fine, pour ce qui ne se nomme
+pas — un borgne qui descend de trois couches. La nature choisie garde d'ailleurs
+la profondeur en place quand elle a un sens : un borgne dessus qui reste borgne
+dessus ne remonte pas à une couche.
+
+L'empilage ferme ce qu'il ne permet pas : deux couches n'offrent que le
+traversant, un enterré demande deux couches internes, donc au moins quatre en
+tout. Proposer le reste offrirait un choix qui se corrigerait tout seul au
+premier clic.
+
+Sous les champs, le panneau donne le verdict de `viaBuild()` en clair — « borgne
+dans le prépreg extérieur, au laser », « enterré dans le diélectrique 2, percé
+avant pressage » — et prévient quand un seul pressage n'y suffit pas. Un
+laminage séquentiel se découvre sinon sur le devis.
+
+La liste vaut pour **toute une sélection** : cinq vias pris au `Ctrl+clic`
+passent en borgne dessus d'un seul choix, par le panneau de groupes (voir
+[Sélection multiple](#sélection-multiple-et-presse-papier)).
+
+### Un fichier de perçage par portée
+
+Un via borgne ne se perce pas de part en part. L'export écrit donc **un
+Excellon par portée** (`drillFile()`, `js/04-fabrication.js`) : les vias sont
+groupés par couple `a`-`b`, chaque groupe donne un fichier, et les pastilles
+traversées rejoignent le fichier de la portée la plus large. Un seul `.TXT` pour
+tous les trous, c'est une quatre couches qui repart percée de bout en bout — un
+défaut silencieux, que rien ne rattrape après gravure.
+
+Les couches sont numérotées **à partir de 1** dans le nom, comme chez le
+fabricant : `carte-1-4.TXT` traverse une quatre couches, `carte-1-2.TXT`
+s'arrête au cuivre 2. Il n'existe pas de couche 0, et un dossier qui en annonce
+une se fait retourner au contrôle d'entrée.
+
+Chaque fichier porte sa portée en clair dans son en-tête (`; percage borgne -
+L1-L2`), le LISEZ-MOI en donne la légende — nature, portée, nombre de trous et
+d'outils — et le master drawing les liste avec la même portée. Celle-ci
+**voyage avec le fichier** (`a`, `b`, `kind`) au lieu d'être relue dans son
+nom : le nom commence par celui du projet, et « carte 2 » y aurait glissé son
+chiffre.
 
 ## Les règles de conception, et leurs figures
 
@@ -611,6 +669,38 @@ la sélection, et l'en retire au clic suivant (`toggleHit`). Un lasso tiré
 modificateur enfoncé s'ajoute à ce qui est déjà pris. Le déplacement, la
 rotation, le retournement et la suppression travaillent depuis toujours sur
 l'ensemble de la sélection.
+
+**Le panneau Propriétés d'une sélection multiple.** Ce qui est pris se range par
+familles — empreintes, segments, vias, zones, découpes — et, dans chaque
+famille, par **cotes identiques** (`MP_KINDS`, `js/06-panels.js`). Cinq vias
+dont trois partagent diamètre, perçage, portée et net donnent trois lignes :
+« ×3 · Ø 0.80 · perçage 0.40 », puis les deux isolés. La ligne choisie ouvre ses
+champs sous le tableau, et le champ commande le **groupe entier** : les trois
+vias changent de diamètre en une saisie, et un seul `Ctrl+Z` les rend — un
+`push()` pour tout le groupe, pas un par objet.
+
+La ligne « tous » vient en tête dès qu'il y a plus d'un groupe : elle vise la
+sélection entière, et les propriétés qui diffèrent d'un objet à l'autre y
+portent « mixte ». Un champ resté sur « mixte » n'écrit rien — sans quoi ouvrir
+le panneau alignerait la sélection sur le premier objet venu. C'est ce qui
+permet de ne changer *que* le diamètre d'une sélection qui diffère aussi par le
+net et par les couches.
+
+Le groupe ouvert est retenu par **l'objet qui l'ancre** et non par son rang :
+changer un diamètre refait les groupes, et la ligne qu'on avait ouverte doit
+rester ouverte sous la souris. Les cotes impossibles sont bornées à
+l'application, comme sur un objet seul : un perçage ne dépasse pas sa pastille,
+un via garde deux couches distinctes.
+
+Deux propriétés restent hors du lot : le **repère** d'une empreinte et sa
+**position**. Deux boîtiers ne partagent ni l'un ni l'autre, et les empiler au
+même X serait la seule chose que le champ saurait faire. Une empreinte dessinée
+à la main dans la sélection grise les cotes génériques, comme dans son panneau
+seul.
+
+Une piste prise entière (`Maj+clic`, `Maj+double-clic`) garde son propre
+panneau — impédance, retard, tronçons — et gagne le même tableau pour ses vias
+de passage. Une découpe seule, qui n'affichait rien, a maintenant sa couche.
 
 **Prendre un plan de cuivre.** Une zone s'attrape par son contour — mais un
 plan de masse ou d'alimentation couvre toute la carte : son contour se confond
@@ -1367,6 +1457,232 @@ fabricant, lui, tranchera au calcul de champ, et la section le dit. Sans plan de
 référence dans l'empilage sous la couche, elle le dit aussi — les cotes sont
 alors prises sur le diélectrique voisin, et une impédance à laquelle aucun plan
 ne répond ne veut rien dire.
+
+## Le panneau « Simulation EM » : l'impédance, peinte sur la piste
+
+La section précédente dégrossit — une formule fermée, une piste, un plan. Le
+panneau **« Simulation EM »**, ouvert par le bouton du même nom dans la barre
+d'outils, fait l'autre calcul : la **section droite** de chaque tronçon
+sélectionné part au solveur `python/ligne_mom.py`, qui la résout
+par méthode des moments et rend son impédance caractéristique. La carte se
+colore, et la valeur s'écrit dessus.
+
+```bash
+pip install numpy scipy
+```
+
+Le solveur est en Python et en numpy : le navigateur ne peut pas l'exécuter, et
+c'est la seule raison pour laquelle cette fonction passe par le serveur —
+exactement comme la lecture d'un IPC-2581. Le panneau, lui, est commun aux deux
+outils (`../commun/simulation-em.js`) ; seul l'adaptateur `js/19-simulation.js`
+est d'ici.
+
+### Les trois gestes commandent l'étendue du calcul
+
+Ils sont ceux qu'on connaît déjà — ce fichier ne lit que `S.sel.tracks`, il les
+suit sans les connaître :
+
+| Geste | Ce qui est calculé et peint |
+| --- | --- |
+| Clic | le tronçon cliqué, seul |
+| `Maj`+clic | la piste entière, sur sa couche |
+| `Maj`+clic à nouveau | la piste sur toutes les couches, vias de passage compris |
+
+La case **« suivre »** s'arme au premier calcul réussi : à partir de là,
+changer de sélection relance tout seul, après un court repos — déplacer la
+sélection à la souris déclenche des dizaines de rafraîchissements, et on
+n'envoie pas dix requêtes pour un geste. Avant ce premier calcul, non : on ne
+lance pas de requête réseau dans le dos de quelqu'un qui n'a rien demandé.
+
+### La carte de chaleur
+
+On saisit une **cible**, une **tolérance** (en pourcentage, redite en ohms à
+côté du champ) et une **fréquence centrale** — c'est à celle-ci que
+l'impédance est donnée et la carte peinte. Puis :
+
+- **bleu** — dans la tolérance ;
+- **rouge** — trop élevé : piste trop étroite, ou trop loin de son plan ;
+- **vert** — trop faible : piste trop large, ou trop près de son plan.
+
+**Le vert ne veut pas dire « bon »** mais « trop bas ». C'est contraire à
+l'habitude et c'est assumé : sur une carte de chaleur ce sont les deux *sens*
+de l'écart qu'il faut distinguer d'un coup d'œil. La légende du panneau le
+redit en toutes lettres.
+
+La clarté porte l'écart — pâle au bord de la bande, pleine une tolérance plus
+loin. La teinte, elle, ne bouge pas : une piste hors bande est rouge, plus ou
+moins soutenu, jamais autre chose. Interpoler depuis le bleu, comme on l'a
+d'abord fait, donnait du mauve d'un côté et du turquoise de l'autre.
+
+Changer la cible ou la tolérance **ne relance pas le calcul** : elles ne
+changent pas l'impédance, seulement la bande dans laquelle on la juge — la
+carte se repeint donc au fil de la frappe, sans toucher au serveur. Changer la
+fréquence, si : le résultat affiché ne lui correspond plus, et le panneau le
+dit au lieu de laisser croire.
+
+Le halo coloré est **plus large que le halo de sélection** — lequel fait déjà
+`w + 3,4 px` en cyan (`drawTracks`, `js/03-render.js`). C'est délibéré, et
+c'était le défaut de la première version : peinte à la seule largeur du
+cuivre, la teinte tombait *à l'intérieur* du halo cyan et ne se voyait pas.
+Elle l'encadre désormais, et le cyan reste lisible entre les deux — on
+continue de voir ce qui est pris.
+
+La valeur s'écrit dans un cartouche sombre bordé de la couleur du verdict,
+**une étiquette par impédance distincte**, posée au milieu du plus long
+tronçon qui la porte : une piste de cinquante segments de même largeur a une
+seule impédance, et cinquante fois « 48,0 Ω » empilés ne se liraient pas. Le
+texte est tracé en pixels écran et ne grossit donc pas avec le zoom.
+
+La carte de chaleur est **absente du `.png` exporté**, comme la cote de mesure
+et le phare du cross-probing : ni l'une ni l'autre ne décrivent la carte.
+
+### Ce qui part, et ce qui revient
+
+| Ce que le solveur reçoit | D'où ça vient |
+| --- | --- |
+| L'empilage entier, cuivre et diélectriques alternés | `S.stack` — `cuT()`, `diAt()` |
+| Le rôle de chaque cuivre (signal ou plan) | `layerRole()`, la même vérité que pour le DRC |
+| Les tronçons sélectionnés, découpés par plage d'écart au plan | `S.sel.tracks`, `simPlages()` |
+| La longueur de CUIVRE de chaque tronçon | `trkLen()`, au prorata de la plage — mesurer la corde raccourcirait un demi-tour d'un tiers |
+| **L'écart au cuivre de masse, un par côté** | `clrK()` pour la valeur, une sonde par côté pour savoir laquelle s'applique |
+| **Les nets tenus pour de la masse** | les pastilles « Masse » du panneau, proposées d'après `layerRole()` et le nom des nets de zone |
+| La cible, la tolérance, la fréquence, la bande | Ce qui est saisi dans le panneau |
+
+C'est le serveur qui cherche les plans de référence dans l'empilage
+(`section_de_couche`, `../python/simulation_em.py`), avec la même règle que
+`dpStripGeom()` ici : le premier conducteur de rôle « plan » au-dessus et en
+dessous. Un empilage 4 couches dissymétrique est traité **tel quel**, ruban là
+où il est — c'est justement ce que la formule IPC de la section précédente ne
+sait pas faire, elle qui suppose le ruban centré.
+
+En retour : l'impédance de chaque tronçon, sa permittivité effective, son
+retard et ses pertes ; le bilan de la liaison (minimum, maximum, moyenne
+pondérée par la longueur) ; et les **paramètres S** de l'ensemble, obtenus en
+mettant les matrices ABCD des tronçons bout à bout — un rétrécissement au
+milieu d'une piste s'y lit comme une remontée de S₁₁, ce qui est bien ce qu'un
+rétrécissement fait. Trois exports : `.csv`, `.s2p` et `.json`.
+
+### La section résolue est écrite sous la fiche
+
+Une ligne, avant les notes, qui dit sur QUOI l'impédance a été obtenue :
+
+```
+Section Conductor-4 — microruban : plan Conductor-3, h 0,380 mm, εr 4,44,
+tan δ 0,0200, cuivre 35 µm, piste 0,520 mm → ε_eff 3,080.
+Cuivre, h, εr du fichier ; tan δ supposé, à saisir dans « La carte ».
+Empilage nominal du fichier, pas la carte pressée : quarante microns de
+diélectrique valent deux ohms et demi sur une ligne à 50 Ω.
+Le masque de soudure n'est pas dans l'empilage : sur une couche extérieure
+il fait baisser Z₀ de deux à trois pour cent, non comptés ici.
+```
+
+Elle n'y était pas, et c'était le trou : la fiche montrait un chiffre sans
+montrer ses entrées. Or **c'est là que se trouve la cause** quand le calcul ne
+tombe pas sur la carte réelle — le solveur, lui, est vérifié à 0,25 % contre la
+transformation conforme. Retrouver la hauteur au plan demandait d'inverser le
+résultat.
+
+Une ligne **par section distincte**, pas par tronçon : une piste découpée en
+trois plages d'écart a la même section verticale, seuls ses bords changent. La
+provenance de chaque cote vient de l'outil, pas du serveur — lui seul sait si
+une épaisseur a été lue, saisie ou remplacée par un repli. Les mêmes colonnes
+sont dans le `.csv` : `plan_reference`, `h_mm`, `er`, `tan_delta`, `cuivre_mm`,
+`couverture_mm`.
+
+### La masse coplanaire : trois questions, et qui y répond
+
+Une piste noyée dans un plan arrosé n'est pas un microruban. Le cuivre qui la
+borde **sur sa propre couche** lui prend une part de son champ et fait tomber
+son impédance de vingt pour cent et davantage — c'est le cas ordinaire d'un
+tracé RF. Le calcul le traite, mais il a besoin de trois réponses que le cuivre
+ne donne pas seul.
+
+**Quel cuivre est de la masse ?** La barre **« Masse »**, en tête du panneau,
+porte une pastille par net candidat ; celles qui sont allumées comptent comme
+plan de retour. Sont proposées d'office les nets d'une couche de rôle *masse*,
+*alimentation* ou *blindage*, et tout net dont le NOM est celui d'une masse —
+un arrosage `GND` sur une couche de signal est le cas ordinaire, et le rôle de
+la couche ne le dit pas. Les autres nets arrosés sont là, éteints : une
+alimentation qu'on n'a pas déclarée en plan est peut-être une masse RF, mais
+c'est un choix, pas une évidence.
+
+Décocher une pastille efface le résultat affiché et le dit : l'hypothèse a
+changé, donc l'impédance. Le choix tient jusqu'à l'ouverture d'une autre carte ;
+*« revenir à la proposition »* le rend à l'outil. Et le cuivre écarté n'est pas
+tu : un net non-référence qui longe la piste ressort en note de couplage, avec
+son écart et la longueur sur laquelle il la longe. Il n'entre pas dans Z₀ — ce
+n'est pas un plan de retour — mais le modèle de ligne ne voit pas le couplage,
+et le taire remplacerait une erreur par un silence.
+
+**De quel côté, et sur quelle longueur ?** Chaque côté est sondé
+**séparément**, tout le long du parcours. Une piste qui longe une découpe d'un
+côté et du plan serré de l'autre part donc avec un écart d'un côté et rien de
+l'autre, ce qui est ce qu'elle est : la calculer symétrique faisait tomber Z₀ de
+plusieurs ohms. Le tableau des tronçons écrit *« coplanaire, un seul côté »*
+quand c'est le cas, et les deux écarts quand ils diffèrent.
+
+Et l'écart n'est plus une valeur pour toute la piste : elle est **découpée en
+plages d'écart constant** — deux échantillons vont ensemble si leurs deux côtés
+s'accordent à dix pour cent près —, chaque plage devenant un tronçon avec sa
+propre impédance et sa propre couleur sur la carte. Une plage de moins d'un demi
+millimètre n'est pas une section mais une discontinuité, que le modèle de ligne
+ne sait pas traiter : elle rejoint sa voisine.
+
+La valeur, elle, ne se mesure pas — c'est le luxe de l'éditeur. Le plan est
+creusé autour du cuivre à `clrK(net du plan, net de la piste, "cu", "trk")`,
+celle-là même que le Gerber applique. La sonde ne sert qu'à savoir QUELLE zone
+borde ce côté-là, découpes comprises : `zoneAt()` ne connaît pas les découpes,
+et une piste qui longe une découpe trouvait du plan là où il n'y a rien.
+
+**Ce cuivre latéral est-il vraiment à la masse ?** Le solveur le tient à zéro
+volt ; sur une carte, il ne l'est qu'autant que des vias le ramènent au plan
+d'en face. Le panneau mesure le **plus grand espacement entre deux coutures
+consécutives**, par côté, dans un couloir de 2 mm depuis le bord du cuivre, et
+le compare à λ/20 et λ/10 dans le stratifié **en haut de la bande analysée** —
+c'est là que le risque est le plus fort, pas à f₀ :
+
+| Espacement | Ce que dit le panneau |
+| --- | --- |
+| ≤ λ/20 | couture serrée : l'hypothèse coplanaire tient |
+| λ/20 … λ/10 | couture limite : la marge est mince, resserrez si la bande monte |
+| > λ/10 | couture trop lâche : le cuivre latéral peut résonner au lieu de servir de masse |
+| aucun via | dit en toutes lettres : rien ne ramène ce cuivre au plan d'en face |
+
+Ce n'est pas une modélisation — il faudrait l'onde complète — mais un contrôle.
+Ses limites sont dans `A-FAIRE.md`, section *« Ce que la masse coplanaire
+suppose »* : un via borgne qui n'atteint pas le plan compte quand même, et le
+couloir de 2 mm est fixe plutôt que déduit de la hauteur au plan.
+
+### Ce que ça vaut
+
+Ce n'est pas une formule de plus : c'est un calcul de champ sur la section, qui
+converge quand on raffine. Il est vérifié contre des étalons extérieurs, et le
+banc d'essai le refait à chaque exécution
+(`../python/test/banc-ligne-mom.py`, 43 cas) :
+
+| Géométrie | Étalon | Écart maximal |
+| --- | --- | --- |
+| Microruban, εr de 2,2 à 10,2, w/h de 0,5 à 5 | Hammerstad-Jensen (±1 %) | **0,42 %** |
+| Triplaque, εr 3,5 et 4,5, w/b de 0,3 à 2,5 | solution exacte, intégrales elliptiques | **0,30 %** |
+
+Ce qu'il ne voit pas, et le panneau le dit sous chaque résultat :
+
+- **une suite de sections uniformes**, rien d'autre. Les coudes, les moignons,
+  les transitions de via et le rayonnement n'y sont pas — ce qui se passe *au
+  raccord* entre deux tronçons n'est pas modélisé ;
+- le calcul est **quasi-statique** ; la dispersion vient du modèle de
+  Getsinger, qui est un modèle et non un calcul ;
+- le **masque de soudure** n'est pas dans l'empilage envoyé. L'ajouter en tête
+  décalerait tous les indices de couche (`simCuIndex`) pour un effet marginal
+  sur un microruban : à faire d'un coup, pas à moitié ;
+- le **rouge de la carte de chaleur est celui des marqueurs DRC**. Les formes
+  diffèrent — un trait le long de la piste contre des croix —, mais sur une
+  carte qui affiche des erreurs DRC, mieux vaut le savoir.
+
+La 2,5D pleine onde — `mom_engine.py`, `green_layered.py` — **n'est pas dans le
+chemin de calcul** et ne doit pas y revenir en l'état : sa formulation EFIE a
+perdu tout son terme de potentiel scalaire, celui qui porte les charges. C'est
+écrit en tête du fichier et détaillé dans [../A-FAIRE.md](../A-FAIRE.md).
 
 ## Pas de grille
 

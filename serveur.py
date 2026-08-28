@@ -2,6 +2,26 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.11.0
+# Date: 2026-08-27
+# Explication: le solveur electromagnetique (methode des moments sur la
+#   section droite) rejoint la chaine, d'ou une cinquieme route :
+#   /api/simulation. Meme
+#   raison d'etre que /api/ipc2581 -- le solveur est en Python et en numpy, un
+#   navigateur ne peut pas l'executer -- et donc meme forme : GET pour savoir
+#   si le serveur en est capable, POST pour lui donner le cuivre et recevoir
+#   les parametres S. Rien n'est ecrit sur le disque, la ou le solveur en
+#   ligne de commande deposait un .s2p : le Touchstone repart dans la reponse.
+#   Import tolerant comme les deux autres -- numpy et scipy ne sont pas des
+#   dependances du depot, et leur absence doit couter cette route-la, pas le
+#   serveur. Le pont est dans python/simulation_em.py : ce fichier ne connait
+#   ni maillage ni matrice d'impedance, il route et il traduit les refus.
+# Fonctions ajoutees/modifiees :
+# - MAX_SIM, import tolerant de simulation_em (ErreurIPC suffit aux refus)
+# - CustomHandler._simulation_etat, _simulation_lancer (nouvelles)
+# - CustomHandler.do_POST / do_GET / do_HEAD / do_OPTIONS (routage)
+# - start_server (ligne de journal au demarrage)
+#
 # Version: 2.10.0
 # Date: 2026-08-27
 # Explication: les modules Python autres que ce serveur rangent desormais dans
@@ -295,6 +315,22 @@ try:
 except Exception as _exc:                              # noqa: BLE001
     ipc2581_json = None
     ERREUR_IPC2581 = _exc
+
+# -- solveur electromagnetique ---------------------------------------------
+# Meme motif que le parseur IPC-2581, et une raison de plus d'etre tolerant :
+# le solveur de section a besoin de numpy, que le depot ne demande a personne
+# d'installer. Sans lui, /api/simulation repond 503 en le disant, et tout le
+# reste du serveur continue comme avant.
+try:
+    import simulation_em
+    ERREUR_SIM = None
+except Exception as _exc:                              # noqa: BLE001
+    simulation_em = None
+    ERREUR_SIM = _exc
+
+# Un document de simulation ne porte qu'un net et son empilage : il est petit.
+MAX_SIM = getattr(simulation_em, "MAX_CORPS", 4 * 1024 * 1024)
+
 
 # Un IPC-2581 est un XML bavard : une carte de taille moyenne pese quelques
 # dizaines de mega-octets, et l'archive ZIP d'un fabricant guere moins une fois
@@ -1209,6 +1245,55 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                             modele["stats"]["percages"]))
         return modele
 
+    # -- simulation electromagnetique --------------------------------------
+    # L'editeur PCB et la visionneuse envoient le meme document : un empilage,
+    # le cuivre d'un net, deux ports et une bande de frequence. Le solveur est
+    # en Python et en numpy -- c'est la seule raison pour laquelle cette route
+    # existe, exactement comme pour l'IPC-2581. Rien n'est ecrit sur le disque :
+    # le Touchstone repart dans la reponse, la page l'enregistre si elle veut.
+
+    def _simulation_etat(self):
+        """Ce que le serveur sait calculer : la page le demande avant de lancer."""
+        if simulation_em is None:
+            return {"dispo": False,
+                    "detail": "Solveur EM indisponible : %s" % ERREUR_SIM,
+                    "conseil": "Le solveur a besoin de numpy :"
+                               " « pip install numpy »."}
+        return simulation_em.etat()
+
+    def _simulation_lancer(self):
+        """Corps de la requete (document JSON) -> parametres S de la ligne."""
+        if simulation_em is None:
+            raise ErreurIPC(503, "Solveur EM indisponible : %s" % ERREUR_SIM)
+        try:
+            taille = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise ErreurIPC(400, "Content-Length invalide")
+        if taille <= 0:
+            raise ErreurIPC(400, "Document vide")
+        if taille > MAX_SIM:
+            raise ErreurIPC(413, "Document trop grand : %.1f Mo, maximum %d Mo"
+                                 % (taille / 1048576.0, MAX_SIM // 1048576))
+
+        corps = self.rfile.read(taille)
+        try:
+            doc = json.loads(corps.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
+
+        try:
+            resultat = simulation_em.simuler(doc, journal=sys.stderr.write)
+        except simulation_em.ErreurSimulation as exc:
+            # Le refus et ce qu'il faut changer partent ensemble, separes d'une
+            # ligne : les deux pages affichent « detail » tel quel.
+            detail = exc.message
+            if exc.conseil:
+                detail += "\n" + exc.conseil
+            raise ErreurIPC(422, detail)
+        except MemoryError:
+            raise ErreurIPC(413, "Maillage trop lourd pour la memoire disponible")
+        return resultat
+
     def _ipc_api(self, action):
         """Execute action() et traduit les refus en JSON {"detail": ...}.
 
@@ -1235,7 +1320,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self._cors()
             self.end_headers()
             return
-        if route not in ("/api/tools", "/api/tool", "/api/ipc2581"):
+        if route not in ("/api/tools", "/api/tool", "/api/ipc2581",
+                         "/api/simulation"):
             self.send_error(405, "Unsupported method (OPTIONS)")
             return
         self.send_response(204)
@@ -1267,6 +1353,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         route = self._route()
         if route == "/api/ipc2581":
             self._ipc_api(self._ipc2581_importer)
+            return
+        if route == "/api/simulation":
+            self._ipc_api(self._simulation_lancer)
             return
         if route != "/api/tool":
             self.send_error(404, "File not found")
@@ -1306,6 +1395,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/ipc2581":
             self._ipc_api(self._ipc2581_etat)
             return
+        if route == "/api/simulation":
+            self._ipc_api(self._simulation_etat)
+            return
         super().do_GET()
 
     def do_HEAD(self):
@@ -1330,6 +1422,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/ipc2581":
             self._ipc_api(self._ipc2581_etat)
+            return
+        if route == "/api/simulation":
+            self._ipc_api(self._simulation_etat)
             return
         super().do_HEAD()
 
@@ -1440,6 +1535,14 @@ def start_server(host, port, navigateur=True):
     print("=" * 60)
     print("  dossier servi : %s" % ROOT)
     print("  passerelle    : /api/tools et /api/tool -> pcbparts.dev")
+    # Le solveur EM n'est pas une dependance du depot : la ligne dit lequel des
+    # deux etats est en vigueur plutot que de laisser la page le decouvrir.
+    if simulation_em is None:
+        print("  simulation EM : /api/simulation -> indisponible (%s)"
+              % ERREUR_SIM)
+    else:
+        print("  simulation EM : /api/simulation ->"
+              " MoM sur la section droite (python/ligne_mom.py)")
     if PROJETS_OUVERT:
         print("  projets       : /api/projets, /api/projet, /api/projet/doc")
         for i, racine in enumerate(racines_projets()):

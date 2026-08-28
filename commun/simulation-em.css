@@ -1,0 +1,256 @@
+/* =============================================================================
+   commun/simulation-em.css
+   Le panneau de simulation EM, identique dans l'éditeur PCB et la visionneuse.
+
+   Comme la boîte de recherche (reperage.css), il emprunte les jetons visuels de
+   la page qui le charge — --panel, --border, --yellow, --mono… — que les deux
+   outils déclarent sous les mêmes noms. Il n'a donc pas de couleur à lui, et
+   suivra le jour où l'un des deux thèmes bougera.
+   ============================================================================= */
+
+/* ---------- les deux rangées d'onglets ---------- */
+/* La famille d'abord (SI / PI), l'analyse ensuite. Deux rangées et non une :
+   ce sont deux choix de nature différente, et les mettre sur la même ligne
+   ferait passer « Impédance » pour une troisième famille.
+
+   Le sigle est en gras devant le nom entier. Un panneau de dock fait 330 px :
+   à cette largeur le nom se replie et il ne reste que « SI » et « PI », ce qui
+   suffit à qui a déjà cliqué une fois. */
+.simFam{
+  display:flex;gap:4px;padding:6px 8px 0;flex-wrap:wrap;
+}
+.simAna{
+  display:flex;gap:4px;align-items:center;padding:5px 8px 6px;
+  flex-wrap:wrap;border-bottom:1px solid var(--border2);
+}
+.simOnglet{
+  background:var(--panel2);border:1px solid var(--border2);color:var(--txt-dim);
+  border-radius:4px;padding:3px 8px;font-size:11px;line-height:1.4;
+  cursor:pointer;white-space:nowrap;
+}
+.simOnglet b{font-family:var(--mono);font-size:10px;letter-spacing:.06em}
+.simOnglet:hover{color:var(--txt);border-color:var(--border)}
+.simOnglet.on{
+  color:var(--txt);border-color:var(--blue);
+  box-shadow:inset 2px 0 0 var(--blue);
+}
+.simOnglet.mini{padding:2px 7px;font-size:10.5px}
+.simAnaVide{
+  font-family:var(--mono);font-size:10px;color:var(--txt-dim);opacity:.8;
+}
+@media (max-width:420px){
+  .simFam .simOnglet{font-size:0}
+  .simFam .simOnglet b{font-size:11px}
+}
+
+/* ---------- la barre de saisie ---------- */
+/* Les champs sont étroits à dessein : une bande de fréquence, un nombre de
+   points et une taille de maille tiennent en quatre chiffres. Un panneau de
+   dock fait 330 px de large — trois lignes de saisie y entrent, pas six. */
+.simU,.simSep{font-family:var(--mono);font-size:10px;color:var(--txt-dim)}
+
+/* ---------- la simulation d'impédance ---------- */
+#simZCible,#simZTol,#simFc,#simZ0,#simF1,#simF2,#simN{
+  width:54px;background:#101216;border:1px solid var(--border2);color:var(--txt);
+  border-radius:4px;padding:3px 5px;font-family:var(--mono);font-size:11.5px;
+}
+#simZCible:focus,#simZTol:focus,#simFc:focus,#simZ0:focus,
+#simF1:focus,#simF2:focus,#simN:focus{outline:none;border-color:var(--blue)}
+/* « suivre » : recalculer a chaque changement de selection. */
+.simSuivre{
+  display:inline-flex;align-items:center;gap:4px;margin-left:auto;
+  font-family:var(--mono);font-size:9.5px;color:var(--txt-dim);cursor:pointer;
+}
+.simSuivre input{margin:0}
+
+/* ---------- la masse de reference ---------- */
+/* Des PASTILLES et non une liste deroulante : le panneau est etroit, et ce
+   qu'il faut voir sans cliquer c'est justement quels nets comptent comme masse.
+   Une pastille allumee est dans le calcul coplanaire ; eteinte, son cuivre ne
+   compte pas comme plan de retour. Elles passent a la ligne plutot que de
+   pousser la barre : sur une carte a cinq alimentations il y en a cinq. */
+.simRefBar{align-items:flex-start}
+.simRefNet{
+  background:#101216;border:1px solid var(--border2);color:var(--txt-dim);
+  border-radius:9px;padding:2px 8px;cursor:pointer;
+  font-family:var(--mono);font-size:10px;letter-spacing:.02em;
+}
+.simRefNet:hover{border-color:var(--border);color:var(--txt)}
+.simRefNet.on{
+  border-color:var(--blue);color:var(--txt);
+  background:color-mix(in srgb,var(--blue) 18%,#101216);
+}
+.simRefEtat,.simRefVide{
+  font-family:var(--mono);font-size:9.5px;color:var(--txt-dim);opacity:.85;
+}
+.simRefEtat{margin-left:auto}
+/* Le retour a la proposition : un lien, defini ici parce que le « .lien » de la
+   visionneuse vit sous « .fiche » et que cette barre n'y est pas -- et que
+   l'editeur PCB, lui, ne l'a pas du tout. */
+.simRefRaz{color:var(--blue);cursor:pointer;text-decoration:underline dotted}
+.simRefVide{max-width:100%}
+@media (max-width:560px){
+  .simRefEtat{margin-left:0;flex-basis:100%}
+}
+/* Le repere de la frequence centrale sur la courbe : c'est la qu'a ete lue
+   l'impedance peinte sur la carte. */
+.simCourbe .simFc{stroke:var(--txt-dim);stroke-width:1;stroke-dasharray:3 3;opacity:.7}
+.simCourbe .simFcTxt{fill:var(--txt-dim);opacity:.9}
+#simZTolAbs{color:var(--txt);opacity:.85}
+.simAstuce{
+  font-family:var(--mono);font-size:9.5px;color:var(--txt-dim);
+  letter-spacing:.04em;
+}
+
+/* Le verdict d'ensemble : la réponse à la question posée, en une ligne, avant
+   le détail. Bleu quand tout tient dans la bande, jaune sinon — le rouge et le
+   vert sont pris par les deux sens de l'écart, et les reprendre ici ferait
+   croire à un troisième verdict. */
+.simVerdict{
+  margin:0 0 8px;padding:6px 8px;border-radius:4px;font-size:11.5px;
+  line-height:1.5;background:var(--panel2);border-left:2px solid var(--border2);
+}
+.simVerdict.dedans{border-left-color:var(--blue);color:var(--txt)}
+.simVerdict.dehors{border-left-color:var(--yellow);color:var(--yellow)}
+.simVerdict span{
+  display:block;margin-top:2px;font-family:var(--mono);font-size:10px;
+  color:var(--txt-dim);
+}
+
+/* La légende. Elle ne se replie pas : le vert veut dire « trop faible » ici,
+   pas « correct », et c'est la seule chose de ce panneau qu'un lecteur pressé
+   lira de travers. */
+.simLegZ{
+  display:flex;flex-wrap:wrap;gap:4px 12px;margin-bottom:8px;
+  font-size:10.5px;color:var(--txt-dim);
+}
+.simLegZ i{
+  display:inline-block;width:10px;height:10px;margin-right:5px;
+  vertical-align:-1px;border-radius:2px;border:1px solid #0006;
+}
+.simPuce{
+  display:inline-block;width:8px;height:8px;margin-right:5px;
+  vertical-align:0;border-radius:2px;border:1px solid #0006;
+}
+/* La colonne « Écart » porte les couleurs de la carte, et pas d'autres. Elle a
+   été jaune dans les deux sens : la légende venait d'apprendre au lecteur que
+   le rouge est au-dessus et le vert en dessous, et la colonne qui chiffre
+   justement cet écart le lui reprenait aussitôt. Le jaune reste au verdict
+   d'ensemble, où il ne désigne aucun sens — seulement « il y a quelque
+   chose ». */
+.simTabZ td:first-child{color:var(--txt)}
+.simTabZ .z0ok{color:var(--blue)}
+.simTabZ .z0haut{color:#e8443a}
+.simTabZ .z0bas{color:#4cc38a}
+
+/* ---------- la zone de sortie ---------- */
+#simSortie{padding:8px 10px;font-size:12px;line-height:1.6}
+.simEtat{margin:0;color:var(--txt-dim);font-size:11.5px;line-height:1.55}
+.simEtat small{display:block;margin-top:6px;font-size:10.5px;opacity:.9}
+.simEtat code{font-family:var(--mono);color:var(--blue)}
+
+/* Un refus du serveur arrive en deux lignes : ce qui n'a pas marché, puis quoi
+   changer. `pre-wrap` est ce qui garde la seconde lisible. */
+.simErr{
+  margin:0;color:var(--red);font-size:11.5px;line-height:1.55;
+  white-space:pre-wrap;
+}
+
+/* L'avertissement sur ce que valent les résultats. Il est en tête, en jaune, et
+   il ne se replie pas : tant que le noyau numérique n'est pas validé, c'est la
+   seule chose qui empêche de prendre la courbe pour une mesure. */
+.simAvert{
+  margin:0 0 8px;padding:6px 8px;border-radius:4px;
+  background:#241f13;border-left:2px solid var(--yellow);
+  color:var(--yellow);font-size:10.5px;line-height:1.5;
+}
+
+/* Ce que l'outil sait du modèle et que le serveur ne peut pas deviner : vias
+   non modélisés, accès laissés en l'air, empilage incomplet. En gris : ce sont
+   des limites du modèle, pas des doutes sur le calcul. */
+.simNote{
+  margin:0 0 4px;padding-left:2px;
+  color:var(--txt-dim);font-size:10.5px;line-height:1.5;
+}
+.simNote:last-of-type{margin-bottom:8px}
+
+/* ---------- la section resolue ---------- */
+/* CE N'EST PAS UNE RESERVE, c'est le probleme lui-meme : la hauteur au plan, la
+   permittivite, la couche de reference. Elle se distingue donc des notes grises
+   qui la suivent -- texte plus clair, filet a gauche, chiffres en monospace pour
+   qu'on les compare d'un coup d'oeil a une fiche d'empilage. La PROVENANCE, en
+   italique, est plus discrete : c'est un commentaire sur les chiffres, pas un
+   chiffre de plus. */
+.simSection{
+  margin:0 0 6px;padding:4px 8px;border-left:2px solid var(--border2);
+  background:var(--panel2);border-radius:0 3px 3px 0;
+  font-family:var(--mono);font-size:10px;line-height:1.6;color:var(--txt);
+}
+.simSection b{font-family:inherit;letter-spacing:.06em;color:var(--txt-dim)}
+.simSection i{
+  font-style:normal;opacity:.75;color:var(--txt-dim);
+  /* La provenance est de la PROSE, pas une cote : en monospace elle se lirait
+     mal et prendrait deux fois la place. Les deux pages ne declarent qu'un
+     jeton pour le monospace, d'ou cette pile ecrite en clair. */
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:10.5px;
+}
+.simSection sub{font-size:.8em}
+
+/* ---------- l'en-tête chiffré ---------- */
+.simMeta{
+  display:flex;flex-wrap:wrap;gap:4px 10px;margin-bottom:6px;
+  font-family:var(--mono);font-size:10px;color:var(--txt-dim);
+}
+.simMeta span:first-child{color:var(--txt)}
+
+/* ---------- la courbe ---------- */
+/* Le SVG est redessiné à la largeur réelle du panneau (`simLargeurTrace`), et
+   non étiré depuis une largeur fixe : sans cela, un panneau mis en plein écran
+   agrandissait tout — cotes comprises —, et « 100,0 MHz » finissait en trente
+   pixels de haut. `width:100%` ne fait donc plus que le dernier ajustement,
+   de l'ordre du pixel. */
+.simCourbe{width:100%;height:auto;display:block;margin:2px 0 4px}
+.simCourbe .simGrille{stroke:var(--border);stroke-width:1}
+.simCourbe .simCote{
+  fill:var(--txt-dim);font-family:var(--mono);font-size:9px;
+}
+.simCourbe .simUnite{fill:var(--txt-dim);opacity:.7}
+.simCourbe .simTrace{fill:none;stroke-width:1.6;stroke-linejoin:round}
+/* Le curseur de lecture. Le rectangle de survol couvre l'aire tracée et rien
+   d'autre : sortir de la courbe rend la ligne de lecture à son texte de repos
+   plutôt que de laisser un chiffre figé qui n'est plus pointé par rien. */
+.simCourbe #simCurZone{cursor:crosshair}
+.simCourbe .simCurTrait{stroke:var(--txt-dim);stroke-width:1;opacity:.55}
+.simCourbe .simCurPt{stroke:var(--panel);stroke-width:1.2}
+.simLeg{
+  display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin-bottom:8px;
+  font-family:var(--mono);font-size:10px;color:var(--txt-dim);
+}
+.simLeg i{
+  display:inline-block;width:10px;height:2px;margin-right:5px;
+  vertical-align:middle;border-radius:1px;
+}
+/* La lecture prend toute la place qui reste et passe à la ligne sur un panneau
+   étroit : elle porte cinq valeurs, et les tronquer en ferait perdre une. */
+.simLecture{margin-left:auto;opacity:.7;font-size:9.5px;white-space:nowrap}
+.simLecture.on{opacity:1;color:var(--txt);letter-spacing:.01em}
+@media (max-width:560px){
+  .simLecture{margin-left:0;white-space:normal;flex-basis:100%}
+}
+.simNoteBas{margin-top:-4px}
+
+/* ---------- le tableau ---------- */
+.simTab{width:100%;border-collapse:collapse;font-size:11px}
+.simTab th{
+  text-align:right;padding:2px 6px 4px 0;font-weight:500;
+  font-family:var(--mono);font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--txt-dim);
+  border-bottom:1px solid var(--border);
+}
+.simTab th:first-child,.simTab td:first-child{text-align:left}
+.simTab td{
+  padding:2px 6px 2px 0;text-align:right;
+  font-family:var(--mono);color:var(--txt);
+}
+.simTab td:first-child{color:var(--txt-dim)}

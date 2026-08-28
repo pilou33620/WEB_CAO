@@ -416,11 +416,12 @@ function masterDrawingPdf(fabFiles){
     "GTP":"Paste mask Top","GBP":"Paste mask Bottom",
     "GTO":"Silk screen Top","GBO":"Silk screen Bottom",
     "GM1":"Board outline (Mechanical 1, profile)","GKO":"Keep-out layer"};
-  const drillDesc=k=>{
-    const [a,b]=k.split("-").map(Number);
-    const kind=(a===0&&b===S.cu-1)?"Through hole"
-      :(a===0||b===S.cu-1)?"Blind (laser)":"Buried";
-    return kind+" Excellon drill file (plated)";
+  /* La portée vient du fichier lui-même (drillFile la pose dessus) et non de
+     son nom : celui-ci commence par le nom du projet, chiffres compris. */
+  const drillDesc=f=>{
+    const a=f.a|0, b=(f.b==null?S.cu-1:f.b);
+    const kind=f.kind==="blind"?"Blind":f.kind==="buried"?"Buried":"Through hole";
+    return kind+" Excellon drill file (plated), copper layer "+(a+1)+" to "+(b+1);
   };
   const gFiles=(fabFiles||[]).filter(f=>/\.(GTL|GBL|GL\d+|GTS|GBS|GTP|GBP|GTO|GBO|GM1|GKO)$/.test(f.name));
   const dFiles=(fabFiles||[]).filter(f=>/\.TXT$/.test(f.name));
@@ -433,7 +434,7 @@ function masterDrawingPdf(fabFiles){
     tableRow(f.name,gerberDesc[ext]||"Gerber data",true,alt=!alt);
   }
   for(const f of dFiles)
-    tableRow(f.name,drillDesc(f.name.replace(/^\D+/,"").replace(".TXT","")),true,alt=!alt);
+    tableRow(f.name,drillDesc(f),true,alt=!alt);
   tableRow(fbase+".ipc","IPC-D-356 netlist (E-test / flying probe)",!!ipcF,alt=!alt);
   tableRow("positions.csv","Component positions (pick & place)",true,alt=!alt);
   tableRow("bom.csv","Bill of materials",true,alt=!alt);

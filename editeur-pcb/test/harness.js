@@ -14,7 +14,8 @@ const path=require("path");
 const dom=require(path.join(__dirname,"..","..","commun","test","dom-stub.js")).install({
   panels:{stack:"Empilage",rules:"Règles de tracé",
           props:"Propriétés",list:"Nets & composants",
-          stackup:"Empilage physique",dpair:"Paires différentielles"},
+          stackup:"Empilage physique",dpair:"Paires différentielles",
+          sim:"Simulation EM"},
   canvasId:"board"
 });
 const realCanvas=dom.realCanvas;
@@ -46,6 +47,10 @@ const code=fs.readFileSync(path.join(__dirname,"..","dist","pcb.js"),"utf8");
 const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
+  /* sélection multiple : les groupes du panneau Propriétés */
+  "mpOuvert","mpRaz","mpIdx","mpSection","mpRangs","MP_MIX",
+  /* nature d'un via : traversant, borgne dessus/dessous, enterre */
+  "VIA_KINDS","viaKindOf","viaKindTxt","viaKindsAvail","viaSetKind","viaBuild","fabBase",
   "flipSel","push","undo","redo","touch","padsWorld","cuId","serialize","loadDoc","exportPng",
   "setFlip","setContrast","autoPlace","conn","netTable","fit","zoneClick","zoneMove",
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
@@ -179,7 +184,14 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "pcbProjNom","fabBase","fabDocNum","pcbFile",
   /* dossier de projet sur le disque (commun/projet-disque.js) */
   "projdEtat","projdLie","projdChemin","projdRevision","projdAuteur",
-  "projdNomDoc","projdNeuf","projdAdopter","projdDetacher","PROJD_FORMAT"];
+  "projdNomDoc","projdNeuf","projdAdopter","projdDetacher","PROJD_FORMAT",
+  /* simulation EM : la masse de référence, l'écart par côté, le découpage en
+     plages, la couture de vias (commun/simulation-em.js + 19-simulation.js) */
+  "SIM","SIM_PCB","simRefSet","simRefListe","simRefCandidats",
+  "simRefCandidatsPcb","simPlagesDe","simMemeEcart","simZoneEn","simCoteEn",
+  "simEcartsA","simPlages","simSegments","simCouturePcb","simEspacement",
+  "simProjU","simTangente","simStackup","simCuIndex",
+  "SIM_ECART_MAX","SIM_COULOIR","SIM_PLAGE_MIN","SIM_PAS"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -1757,7 +1769,7 @@ T("dossier de fabrication complet",()=>{
   const names=files.map(f=>f.name);
   for(const n of ["carte.GTL","carte.GBL","carte.GTS","carte.GBS",
                   "carte.GTP","carte.GBP","carte.GTO","carte.GBO",
-                  "carte.GM1","carte.GKO","carte-0-1.TXT","carte.ipc",
+                  "carte.GM1","carte.GKO","carte-1-2.TXT","carte.ipc",
                   "LISEZ-MOI.txt",
                   "positions.csv","bom.csv","EMPILAGE.txt"])
     if(names.indexOf(n)<0)throw new Error("fichier manquant : "+n+" — obtenus : "+names.join(" "));
@@ -1939,7 +1951,7 @@ T("perçage Excellon : un fichier par portée de via",()=>{
   touch();
   const d=drillFile();
   const names=d.files.map(f=>f.name);
-  for(const n of ["carte-0-3.TXT","carte-0-1.TXT","carte-1-2.TXT"])
+  for(const n of ["carte-1-4.TXT","carte-1-2.TXT","carte-2-3.TXT"])
     if(names.indexOf(n)<0)
       throw new Error("fichier de portée manquant : "+n+" — obtenus : "+names.join(" "));
   if(d.files.length!==3)
@@ -1950,24 +1962,24 @@ T("perçage Excellon : un fichier par portée de via",()=>{
     if(byName.get(n).holes!==1)
       throw new Error(n+" devrait porter 1 trou, "+byName.get(n).holes);
   // la nature de la portée est annoncée dans l'entête
-  if(byName.get("carte-0-1.TXT").text.indexOf("borgne")<0)
+  if(byName.get("carte-1-2.TXT").text.indexOf("borgne")<0)
     throw new Error("la portée 0-1 devrait s'annoncer borgne");
-  if(byName.get("carte-1-2.TXT").text.indexOf("enterre")<0)
+  if(byName.get("carte-2-3.TXT").text.indexOf("enterre")<0)
     throw new Error("la portée 1-2 devrait s'annoncer enterree");
-  if(byName.get("carte-0-3.TXT").text.indexOf("traverse")<0)
+  if(byName.get("carte-1-4.TXT").text.indexOf("traverse")<0)
     throw new Error("la portée 0-3 devrait s'annoncer traversante");
   // les pastilles traversantes ne partent que dans le fichier traversant
   const fp=mkFp("U9","","",8);fp.style="dip";fp.x=25;fp.y=20;S.fps.push(fp);touch();
   const d2=drillFile();
   const m2=new Map(d2.files.map(f=>[f.name,f]));
-  if(m2.get("carte-0-3.TXT").holes!==1+8)
-    throw new Error("traversant : 1 via + 8 pastilles, "+m2.get("carte-0-3.TXT").holes);
-  if(m2.get("carte-0-1.TXT").holes!==1)
+  if(m2.get("carte-1-4.TXT").holes!==1+8)
+    throw new Error("traversant : 1 via + 8 pastilles, "+m2.get("carte-1-4.TXT").holes);
+  if(m2.get("carte-1-2.TXT").holes!==1)
     throw new Error("le borgne ne doit pas recevoir les pastilles, "+
-                    m2.get("carte-0-1.TXT").holes);
+                    m2.get("carte-1-2.TXT").holes);
   // l'archive porte bien un fichier par portée
   const fabNames=buildFabFiles().files.map(f=>f.name);
-  for(const n of ["carte-0-3.TXT","carte-0-1.TXT","carte-1-2.TXT"])
+  for(const n of ["carte-1-4.TXT","carte-1-2.TXT","carte-2-3.TXT"])
     if(fabNames.indexOf(n)<0)throw new Error("archive : "+n+" manquant");
   loadDoc(JSON.parse(save),true);setCuCount(2);touch();
 });
@@ -1981,7 +1993,7 @@ T("perçage Excellon : pastilles sans via",()=>{
   const d=drillFile();
   if(d.files.length!==1)
     throw new Error("un seul fichier attendu, "+d.files.length);
-  if(d.files[0].name!=="carte-0-1.TXT")
+  if(d.files[0].name!=="carte-1-2.TXT")
     throw new Error("nom du fichier traversant : "+d.files[0].name);
   if(d.holes!==8)throw new Error("8 trous du DIP, "+d.holes);
   loadDoc(JSON.parse(save),true);touch();
@@ -7716,6 +7728,577 @@ T("dossier : la révision du fichier projet alimente le master drawing",()=>{
   if(txt2.indexOf("[C3]")<0)throw new Error("révision absente du tableau de la page 1");
   projdDetacher();
   projFermer();
+});
+
+/* ==========================================================================
+   Sélection multiple : les groupes du panneau Propriétés
+   ========================================================================== */
+/* Cinq vias, dont trois de mêmes cotes : c'est le cas que le panneau doit
+   ramener à deux lignes plus la ligne « tous ». */
+function cinqVias(){
+  carte4c();
+  S.vias=[{x:5,y:5,d:0.8,drill:0.4,a:0,b:3,net:"GND"},
+          {x:8,y:5,d:0.8,drill:0.4,a:0,b:3,net:"GND"},
+          {x:11,y:5,d:0.8,drill:0.4,a:0,b:3,net:"GND"},
+          {x:14,y:5,d:0.6,drill:0.3,a:0,b:3,net:"VCC"},
+          {x:17,y:5,d:0.5,drill:0.25,a:0,b:1,net:"CLK"}];
+  touch();
+  clearSel();S.vias.forEach(v=>S.sel.vias.add(v));
+  mpRaz();
+  buildProps();
+  return S.vias;
+}
+T("cinq vias sélectionnés : trois de mêmes cotes tiennent sur une ligne",()=>{
+  const v=cinqVias();
+  const h=$("props").innerHTML;
+  if(h.indexOf("Vias · 5")<0)throw new Error("la section doit annoncer les cinq vias");
+  if(h.indexOf("×3")<0)throw new Error("les trois vias identiques doivent tenir sur une ligne");
+  if(h.indexOf("tous")<0)throw new Error("la ligne « tous » manque");
+  /* deux groupes d'un seul via : autant de lignes ×1 */
+  if(h.split("×1").length-1!==2)throw new Error("deux vias isolés, deux lignes ×1");
+  /* la ligne « tous » est ouverte d'office : les cotes diffèrent, elle le dit */
+  if(h.indexOf('id="mpViaD" type="number" step="0.05" min="0.2" placeholder="mixte"')<0)
+    throw new Error("diamètres différents : le champ doit porter « mixte »");
+  if(h.indexOf("— mixte —")<0)throw new Error("le net diffère : l'option « mixte » manque");
+  if(v.length!==5)throw new Error("le panneau ne doit toucher à rien");
+});
+T("le groupe de trois change de diamètre sans entraîner les deux autres",()=>{
+  const v=cinqVias();
+  /* le clic sur la ligne du groupe : le banc d'essai le fait par l'index */
+  const r=mpIdx["vias:0"];
+  if(!r||r.list.length!==3)throw new Error("le premier groupe devrait être celui des trois");
+  mpOuvert.vias=r.ancre;
+  buildProps();
+  const h=$("props").innerHTML;
+  if(h.indexOf('id="mpViaD" type="number" step="0.05" min="0.2" value="0.80"')<0)
+    throw new Error("le groupe partage un diamètre : le champ doit le montrer");
+  $("mpViaD").value="1.2";
+  $("mpViaD").onchange();
+  if(!v.slice(0,3).every(x=>Math.abs(x.d-1.2)<1e-9))
+    throw new Error("les trois vias du groupe devaient suivre");
+  if(Math.abs(v[3].d-0.6)>1e-9||Math.abs(v[4].d-0.5)>1e-9)
+    throw new Error("les deux autres vias ne sont pas du groupe");
+  /* un seul coup d'annulation pour les trois */
+  undo();
+  if(!S.vias.slice(0,3).every(x=>Math.abs(x.d-0.8)<1e-9))
+    throw new Error("Ctrl+Z devait rendre les trois diamètres d'un coup");
+});
+T("un perçage ne peut pas dépasser la pastille, même changé en groupe",()=>{
+  const v=cinqVias();
+  mpOuvert.vias=mpIdx["vias:0"].ancre;
+  buildProps();
+  $("mpViaDr").value="5";
+  $("mpViaDr").onchange();
+  for(const x of v.slice(0,3))
+    if(!(x.drill<=x.d-0.1+1e-9))throw new Error("perçage plus large que la pastille : "+x.drill);
+});
+T("la ligne « tous » aligne toute la sélection sur le champ renseigné",()=>{
+  const v=cinqVias();
+  if(mpOuvert.vias!=="tous")throw new Error("plusieurs groupes : « tous » s'ouvre d'office");
+  $("mpViaD").value="0.7";
+  $("mpViaD").onchange();
+  if(!v.every(x=>Math.abs(x.d-0.7)<1e-9))throw new Error("les cinq vias devaient suivre");
+  /* le net, lui, n'a pas été touché : « mixte » laissé tel quel ne change rien */
+  if(v[0].net!=="GND"||v[3].net!=="VCC"||v[4].net!=="CLK")
+    throw new Error("un champ laissé sur « mixte » ne doit rien écrire");
+});
+T("le champ laissé sur « mixte » ne touche à rien",()=>{
+  const v=cinqVias();
+  $("mpViaN").value=MP_MIX;
+  $("mpViaN").onchange();
+  if(v[0].net!=="GND"||v[3].net!=="VCC")throw new Error("« mixte » a écrasé les nets");
+  /* renseigné, en revanche, il rattache toute la sélection */
+  $("mpViaN").value="GND";
+  $("mpViaN").onchange();
+  if(!v.every(x=>x.net==="GND"))throw new Error("le net choisi devait s'appliquer aux cinq");
+});
+T("le groupe ouvert le reste après la modification qui l'a déplacé",()=>{
+  const v=cinqVias();
+  mpOuvert.vias=mpIdx["vias:0"].ancre;
+  buildProps();
+  const ancre=mpOuvert.vias;
+  $("mpViaD").value="1.4";
+  $("mpViaD").onchange();
+  /* les cotes ont changé, donc la signature du groupe aussi : c'est l'objet
+     d'ancrage qui doit le retrouver, pas son rang */
+  if(mpIdx[Object.keys(mpIdx).find(k=>mpIdx[k].ouvert)].list.indexOf(ancre)<0)
+    throw new Error("la ligne ouverte devait rester celle du groupe modifié");
+  if(mpIdx[Object.keys(mpIdx).find(k=>mpIdx[k].ouvert)].list.length!==3)
+    throw new Error("le groupe compte toujours ses trois vias");
+});
+T("empreintes sélectionnées : mêmes boîtier et valeur, une seule ligne",()=>{
+  carte4c();
+  S.fps=[mkFp("C1","100nF","0402",2),mkFp("C2","100nF","0402",2),
+         mkFp("C3","100nF","0402",2),mkFp("R1","10k","0603",2)];
+  S.fps.forEach((f,i)=>{f.x=5+i*4;f.y=20;});
+  touch();
+  clearSel();S.fps.forEach(f=>S.sel.fps.add(f.id));
+  mpRaz();
+  buildProps();
+  const h=$("props").innerHTML;
+  if(h.indexOf("Empreintes · 4")<0)throw new Error("la section doit annoncer les quatre");
+  if(h.indexOf("×3")<0)throw new Error("les trois condensateurs devaient se grouper");
+  if(h.indexOf("C1, C2, C3")<0)throw new Error("la ligne doit nommer ses repères");
+  /* le repère et la position ne sont pas modifiables en groupe */
+  if(h.indexOf('id="mpFpRef"')>=0||h.indexOf('id="mpFpX"')>=0)
+    throw new Error("ni repère ni position en groupe");
+  mpOuvert.fps=mpIdx["fps:0"].ancre;
+  buildProps();
+  $("mpFpRot").value="90";
+  $("mpFpRot").onchange();
+  const c=S.fps.filter(f=>f.value==="100nF");
+  if(!c.every(f=>f.rot===90))throw new Error("les trois condensateurs devaient pivoter");
+  if(S.fps.find(f=>f.ref==="R1").rot!==0)throw new Error("R1 n'est pas du groupe");
+  $("mpFpVal").value="220nF";
+  $("mpFpVal").onchange();
+  if(!S.fps.filter(f=>f.rot===90).every(f=>f.value==="220nF"))
+    throw new Error("la valeur devait suivre sur les trois");
+});
+T("une découpe seule a maintenant son panneau",()=>{
+  carte4c();
+  S.cuts=[{id:S.nextId++,l:0,pts:[{x:5,y:5},{x:9,y:5},{x:9,y:9}]}];
+  clearSel();S.sel.cuts.add(S.cuts[0]);
+  mpRaz();
+  buildProps();
+  const h=$("props").innerHTML;
+  if(h.indexOf("Découpes · 1")<0)throw new Error("la découpe sélectionnée n'est plus « rien »");
+  if(h.indexOf('id="mpCtL"')<0)throw new Error("sa couche doit être modifiable");
+  S.cuts=[];clearSel();
+});
+T("sélection mêlée : une section par famille, et le cuivre se déroute à part",()=>{
+  carte4c();
+  S.fps=[mkFp("U1","","SOIC-8",8)];S.fps[0].x=20;S.fps[0].y=20;
+  S.tracks=[{l:0,net:"GND",w:0.3,x1:2,y1:2,x2:9,y2:2}];
+  S.vias=[{x:5,y:5,d:0.8,drill:0.4,a:0,b:3,net:"GND"}];
+  S.zones=[{id:S.nextId++,l:0,net:"GND",pts:boardZonePts()}];
+  touch();
+  clearSel();
+  S.sel.fps.add(S.fps[0].id);S.sel.tracks.add(S.tracks[0]);
+  S.sel.vias.add(S.vias[0]);S.sel.zones.add(S.zones[0]);
+  mpRaz();
+  buildProps();
+  const h=$("props").innerHTML;
+  for(const t of ["Empreintes · 1","Segments · 1","Vias · 1","Zones · 1"])
+    if(h.indexOf(t)<0)throw new Error("section manquante : "+t);
+  if(h.indexOf("Dérouter 1 segment et 1 via")<0)
+    throw new Error("le bouton de déroutage doit rester");
+  /* un seul groupe par famille : pas de tableau à choisir */
+  if(h.indexOf('data-mp=')>=0)throw new Error("une famille homogène n'a rien à choisir");
+  $("mpTrW").value="0.5";
+  $("mpTrW").onchange();
+  if(Math.abs(S.tracks[0].w-0.5)>1e-9)throw new Error("la largeur devait s'appliquer");
+});
+T("panneau de groupes : ce qui vient du document reste échappé",()=>{
+  carte4c();
+  S.fps=[mkFp("R1",XSS,XSS,2),mkFp("R2",XSS,XSS,2)];
+  S.fps.forEach((f,i)=>{f.x=5+i*4;f.y=20;});
+  S.vias=[{x:5,y:5,d:0.8,drill:0.4,a:0,b:3,net:XSS},
+          {x:9,y:5,d:0.6,drill:0.3,a:0,b:3,net:"GND"}];
+  touch();
+  clearSel();
+  S.fps.forEach(f=>S.sel.fps.add(f.id));
+  S.vias.forEach(v=>S.sel.vias.add(v));
+  mpRaz();
+  buildProps();
+  assertPropre($("props").innerHTML,"panneau de groupes");
+  assertPresent($("props").innerHTML,"panneau de groupes");
+});
+
+/* ==========================================================================
+   Perçage : la portée dans le nom, et la nature qu'on choisit
+   ========================================================================== */
+T("perçage Excellon : les couches du nom se comptent à partir de 1",()=>{
+  const save=serialize();
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  setCuCount(4);
+  S.board={x:0,y:0,w:40,h:30,pts:null};
+  const cls=classOf(null);
+  S.vias.push({x:10,y:10,d:cls.via,drill:cls.drill,net:null,a:0,b:3});
+  S.vias.push({x:15,y:10,d:cls.via,drill:cls.drill,net:null,a:0,b:1});
+  touch();
+  const d=drillFile();
+  const names=d.files.map(f=>f.name);
+  /* Il n'existe pas de couche 0 : un dossier qui en annonce une se fait
+     retourner au contrôle d'entrée. */
+  if(names.some(n=>/-0-|-0\.TXT/.test(n)))
+    throw new Error("couche 0 dans un nom de fichier : "+names.join(" "));
+  const bl=d.files.find(f=>f.kind==="blind");
+  if(!bl)throw new Error("le borgne manque");
+  if(bl.name!=="carte-1-2.TXT")throw new Error("le borgne va de L1 à L2 : "+bl.name);
+  if(bl.a!==0||bl.b!==1)throw new Error("la portée doit voyager avec le fichier");
+  /* Trois .TXT dans une archive ne se distinguent pas sans légende. */
+  const rm=buildFabFiles().files.find(f=>f.name==="LISEZ-MOI.txt").text;
+  if(rm.indexOf("carte-1-2.TXT : percage borgne L1-L2")<0)
+    throw new Error("le LISEZ-MOI devrait donner la portée de chaque fichier");
+  if(rm.indexOf("carte-1-4.TXT : percage traversant L1-L4")<0)
+    throw new Error("le traversant aussi");
+  loadDoc(JSON.parse(save),true);setCuCount(2);touch();
+});
+/* La portée se lisait dans le nom du fichier, à coups d'expression régulière.
+   Le nom commence par celui du projet : un chiffre dedans, et le master drawing
+   annonçait n'importe quoi. Elle voyage maintenant avec le fichier. */
+T("master drawing : la portée du perçage ne se relit pas dans le nom du projet",()=>{
+  const save=serialize();
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  setCuCount(4);
+  S.board={x:0,y:0,w:40,h:30,pts:null};
+  const cls=classOf(null);
+  S.vias.push({x:10,y:10,d:cls.via,drill:cls.drill,net:null,a:0,b:1});
+  touch();
+  projOuvrir("carte 2");
+  try{
+    const files=buildFabFiles().files;
+    const dr=files.filter(f=>/\.TXT$/.test(f.name));
+    if(dr.length!==1)throw new Error("un seul perçage attendu, "+dr.length);
+    if(dr[0].name!==fabBase()+"-1-2.TXT")throw new Error("nom du fichier : "+dr[0].name);
+    const pdf=files.find(f=>/MASTER-DRAWING\.pdf$/i.test(f.name));
+    const txt=Buffer.from(pdf.data).toString("latin1");
+    if(txt.indexOf("copper layer 1 to 2")<0)
+      throw new Error("le master drawing devrait annoncer la portée L1-L2");
+  }finally{ projFermer(); }
+  loadDoc(JSON.parse(save),true);setCuCount(2);touch();
+});
+T("type de via : la nature choisie pose la portée",()=>{
+  carte4c();
+  const v={x:10,y:10,d:0.8,drill:0.4,a:0,b:3,net:"GND"};
+  S.vias=[v];touch();
+  if(viaKindOf(v)!=="through")throw new Error("0-3 sur quatre couches : traversant");
+  clearSel();S.sel.vias.add(v);buildProps();
+  if($("props").innerHTML.indexOf('id="vK"')<0)
+    throw new Error("le panneau d'un via doit offrir sa nature");
+  $("vK").value="blindTop";$("vK").onchange();
+  if(v.a!==0||v.b!==1)throw new Error("borgne dessus : L1-L2, obtenu "+v.a+"-"+v.b);
+  if(viaKindOf(v)!=="blindTop")throw new Error("relu, c'est toujours un borgne dessus");
+  $("vK").value="blindBot";$("vK").onchange();
+  if(v.a!==2||v.b!==3)throw new Error("borgne dessous : L3-L4, obtenu "+v.a+"-"+v.b);
+  $("vK").value="buried";$("vK").onchange();
+  if(!(v.a>0&&v.b<S.cu-1))throw new Error("enterré : deux couches internes, "+v.a+"-"+v.b);
+  $("vK").value="through";$("vK").onchange();
+  if(v.a!==0||v.b!==S.cu-1)throw new Error("traversant : de bout en bout");
+  /* chaque nature est un coup d'annulation */
+  undo();
+  if(viaKindOf(S.vias[0])!=="buried")throw new Error("Ctrl+Z devait rendre l'enterré");
+});
+T("le panneau d'un via dit ce qu'un seul pressage permet",()=>{
+  carte4c();
+  const v={x:10,y:10,d:0.8,drill:0.4,a:0,b:2,net:"GND"};   // borgne sur deux diélectriques
+  S.vias=[v];touch();
+  clearSel();S.sel.vias.add(v);buildProps();
+  const h=$("props").innerHTML;
+  if(h.indexOf("laminage séquentiel")<0)
+    throw new Error("un borgne sur deux diélectriques demande un laminage séquentiel");
+  if(h.indexOf("valider avec le fabricant")<0)
+    throw new Error("et cela doit se voir, pas se découvrir sur le devis");
+});
+T("l'empilage ferme les natures qu'il ne permet pas",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();
+  setCuCount(2);touch();
+  const k2=viaKindsAvail().map(x=>x[0]);
+  if(k2.length!==1||k2[0]!=="through")
+    throw new Error("deux couches : le traversant est la seule nature, "+k2.join(" "));
+  setCuCount(4);touch();
+  const k4=viaKindsAvail().map(x=>x[0]);
+  for(const k of ["through","blindTop","blindBot","buried"])
+    if(k4.indexOf(k)<0)throw new Error("quatre couches : "+k+" devrait être offert");
+});
+T("Ctrl+clic sur plusieurs vias : la nature se change pour tout le groupe",()=>{
+  carte4c();
+  S.vias=[{x:5,y:5,d:0.8,drill:0.4,a:0,b:3,net:"GND"},
+          {x:9,y:5,d:0.8,drill:0.4,a:0,b:3,net:"GND"},
+          {x:13,y:5,d:0.6,drill:0.3,a:0,b:3,net:"VCC"}];
+  touch();
+  clearSel();S.vias.forEach(x=>S.sel.vias.add(x));
+  mpRaz();buildProps();
+  const h=$("props").innerHTML;
+  if(h.indexOf('id="mpViaK"')<0)throw new Error("le groupe doit offrir la nature du via");
+  if(h.indexOf("traversant")<0)throw new Error("la ligne doit dire ce que sont ces vias");
+  $("mpViaK").value="blindTop";$("mpViaK").onchange();
+  if(!S.vias.every(x=>x.a===0&&x.b===1))
+    throw new Error("les trois vias devaient passer en borgne dessus");
+  undo();
+  if(!S.vias.every(x=>x.b===3))throw new Error("un seul coup d'annulation pour les trois");
+  /* et le perçage qui en sort tient dans un fichier de portée L1-L2 */
+  clearSel();S.vias.forEach(x=>S.sel.vias.add(x));
+  mpRaz();buildProps();
+  $("mpViaK").value="blindTop";$("mpViaK").onchange();
+  const names=drillFile().files.map(f=>f.name);
+  if(names.length!==1||names[0]!=="carte-1-2.TXT")
+    throw new Error("le dossier devrait porter le seul borgne L1-L2 : "+names.join(" "));
+});
+
+/* ==========================================================================
+   SIMULATION EM : LA MASSE COPLANAIRE
+   --------------------------------------------------------------------------
+   Trois hypothèses tacites sont tombées dans `19-simulation.js`, et ce sont
+   elles qu'on éprouve ici — pas le solveur, qui a son propre banc
+   (python/test/banc-ligne-mom.py) :
+
+     · l'écart n'était mesuré QU'AU MILIEU de la piste ;
+     · il était posé DES DEUX CÔTÉS, symétriquement ;
+     · TOUT cuivre d'un autre net comptait comme masse.
+
+   Chacune a son essai, plus un pour la découpe — que `zoneAt` ne voyait pas —
+   et un pour la couture de vias. Ils partent tous de la même carte : un plan de
+   masse ARROSÉ SUR LA COUCHE DE LA PISTE, ce qui est le cas ordinaire d'un
+   tracé RF et le seul où la coplanaire existe.
+   ========================================================================== */
+/* La carte des essais : 4 couches, une piste droite de 40 mm sur Top, et rien
+   d'autre. Chaque essai pose le cuivre latéral qu'il veut éprouver. */
+const SIM_Y=20, SIM_X1=10, SIM_X2=50, SIM_W=0.4;
+function simCarte(){
+  carte4c();
+  S.cuts=[];
+  S.tracks.push({l:0, net:"N$1", w:SIM_W,
+                 x1:SIM_X1, y1:SIM_Y, x2:SIM_X2, y2:SIM_Y});
+  clearSel(); S.sel.tracks.add(S.tracks[S.tracks.length-1]);
+  /* La proposition de masse se refait : `simRefSet` ne reprend la main que sur
+     une AUTRE carte, et ici c'est toujours la même. */
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  touch();
+  return S.tracks[S.tracks.length-1];
+}
+/* Un rectangle de zone, sur la couche 0. */
+function simZone(net,x1,y1,x2,y2){
+  const z={id:S.nextId++, l:0, net:net,
+           pts:[{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}]};
+  S.zones.push(z); touch();
+  return z;
+}
+function simCoupe(x1,y1,x2,y2){
+  S.cuts.push({id:S.nextId++, l:0,
+               pts:[{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}]});
+  touch();
+}
+
+T("masse de référence : GND est proposée, un net de signal ne l'est pas",()=>{
+  simCarte();
+  simZone("GND",5,10,55,30);
+  simZone("N$2",5,32,55,38);
+  const c=simRefCandidats();
+  const gnd=c.find(o=>o.net==="GND"), n2=c.find(o=>o.net==="N$2");
+  if(!gnd)throw new Error("GND devrait être candidate : "+c.map(o=>o.net));
+  if(!gnd.defaut)throw new Error("GND devrait être proposée d'office");
+  if(!n2)throw new Error("N$2 porte du cuivre plein : elle doit être candidate");
+  if(n2.defaut)throw new Error("un net de signal ne doit pas être proposé");
+  /* Le plan de couche 1 (rôle « gnd ») est proposé lui aussi : c'est ce que
+     « plan de référence » veut dire dans cet outil. */
+  if(!simRefSet().has("GND"))throw new Error("l'ensemble retenu doit porter GND");
+  if(simRefSet().has("N$2"))throw new Error("N$2 ne doit pas y être");
+});
+
+T("écart symétrique : c'est la règle d'isolation, des deux côtés",()=>{
+  const t=simCarte();
+  simZone("GND",5,10,55,30);
+  const regle=r3(clrK("GND","N$1","cu","trk"));
+  const g=simSegments();
+  if(g.envoi.length!==1)
+    throw new Error("un plan uniforme donne UNE plage, pas "+g.envoi.length);
+  const o=g.envoi[0];
+  if(Math.abs(o.gap_left-regle)>1e-6||Math.abs(o.gap_right-regle)>1e-6)
+    throw new Error("les deux écarts devraient valoir la règle "+regle+
+                    " : "+o.gap_left+" / "+o.gap_right);
+  if(Math.abs(o.length-(SIM_X2-SIM_X1))>1e-6)
+    throw new Error("longueur "+o.length+" au lieu de "+(SIM_X2-SIM_X1));
+  if(!g.voisins.length===false)throw new Error("aucun voisin hors masse attendu");
+});
+
+T("masse d'un seul côté : l'autre reste à zéro, il n'est pas recopié",()=>{
+  simCarte();
+  /* Le plan ne couvre que le dessus de la piste, à trois dixièmes de son axe.
+     C'EST LE CAS QUI ÉTAIT FAUX : l'écart mesuré d'un côté était posé des deux,
+     et Z0 tombait deux fois trop. */
+  simZone("GND",5,SIM_Y+0.5,55,30);
+  const g=simSegments();
+  const o=g.envoi[0];
+  const plein=Math.max(o.gap_left,o.gap_right);
+  const vide=Math.min(o.gap_left,o.gap_right);
+  if(!(plein>0))throw new Error("le côté qui porte le plan doit avoir un écart");
+  if(vide!==0)
+    throw new Error("le côté sans plan doit rester à zéro, pas "+vide);
+  /* 0,5 mm de l'axe moins 0,2 mm de demi-piste : trois dixièmes, et la règle
+     d'isolation est plus serrée que cela — c'est donc la mesure qui commande. */
+  if(Math.abs(plein-0.3)>0.02)
+    throw new Error("écart mesuré "+plein+" au lieu de 0,30 mm environ");
+  /* Et c'est bien le côté du plan : la normale gauche pointe vers les y
+     croissants, là où on a posé le cuivre. */
+  if(!(o.gap_left>0)||o.gap_right!==0)
+    throw new Error("le plan est en +y, donc à gauche du sens de parcours : "+
+                    o.gap_left+" / "+o.gap_right);
+});
+
+T("une découpe ôte la masse de son côté : zoneAt seule ne la voyait pas",()=>{
+  simCarte();
+  simZone("GND",5,10,55,30);
+  simCoupe(5,SIM_Y+0.21,55,30);          // le cuivre du dessus est évidé
+  const g=simSegments();
+  const o=g.envoi[0];
+  if(o.gap_left!==0)
+    throw new Error("la découpe est en +y : ce côté ne doit plus porter de "+
+                    "masse, écart "+o.gap_left);
+  if(!(o.gap_right>0))
+    throw new Error("le côté intact doit garder son écart");
+});
+
+T("un îlot d'un autre signal n'est pas de la masse, et il est signalé",()=>{
+  simCarte();
+  simZone("N$2",5,SIM_Y+0.5,55,30);      // du cuivre serré, mais pas une masse
+  const g=simSegments();
+  const o=g.envoi[0];
+  if(o.gap_left!==0||o.gap_right!==0)
+    throw new Error("un net de signal ne doit pas entrer dans l'écart : "+
+                    o.gap_left+" / "+o.gap_right);
+  const v=g.voisins.find(x=>x.net==="N$2");
+  if(!v)throw new Error("le cuivre écarté doit être signalé comme couplage");
+  if(Math.abs(v.ecart-0.3)>0.05)
+    throw new Error("le couplage devrait être relevé à 0,30 mm, pas "+v.ecart);
+  if(Math.abs(v.longueur-(SIM_X2-SIM_X1))>1)
+    throw new Error("il longe toute la piste : "+v.longueur+" mm relevés");
+});
+
+T("le plan qui s'arrête à mi-parcours découpe la piste en deux plages",()=>{
+  simCarte();
+  /* LE CAS QUE LE MINIMUM SUR TOUTE LA LONGUEUR ÉCRASAIT : la moitié serrée
+     donnait son écart aux quarante millimètres. */
+  simZone("GND",5,10,30,30);
+  const g=simSegments();
+  if(g.envoi.length!==2)
+    throw new Error("deux plages attendues, pas "+g.envoi.length+
+                    " ("+g.envoi.map(o=>o.gap_left+"/"+o.gap_right).join(" ")+")");
+  const a=g.envoi[0], b=g.envoi[1];
+  if(!(a.gap_left>0&&a.gap_right>0))
+    throw new Error("la première moitié est dans le plan : "+a.gap_left);
+  if(b.gap_left!==0||b.gap_right!==0)
+    throw new Error("la seconde n'a plus de plan : "+b.gap_left+"/"+b.gap_right);
+  const som=a.length+b.length;
+  if(Math.abs(som-(SIM_X2-SIM_X1))>1e-6)
+    throw new Error("les plages doivent couvrir toute la piste : "+som);
+  if(Math.abs(a.length-20)>0.5)
+    throw new Error("la rupture est à mi-parcours : "+a.length+" mm");
+  /* Les deux plages sont bout à bout : sans cela la mise en cascade
+     signalerait une rupture de parcours. */
+  if(Math.abs(a.end[0]-b.start[0])>1e-6||Math.abs(a.end[1]-b.start[1])>1e-6)
+    throw new Error("les plages doivent se toucher");
+});
+
+T("une plage plus courte qu'un demi-millimètre rejoint sa voisine",()=>{
+  simCarte();
+  simZone("GND",5,10,55,30);
+  /* Une encoche de deux dixièmes : c'est une discontinuité, pas une section.
+     Le modèle de ligne ne sait pas traiter une discontinuité — elle doit donc
+     disparaître dans sa voisine plutôt que d'entrer comme une ligne. */
+  simCoupe(29.9,SIM_Y+0.21,30.1,30);
+  const g=simSegments();
+  if(g.envoi.length!==1)
+    throw new Error("l'encoche ne doit pas créer de tronçon : "+
+                    g.envoi.length+" envoyés");
+});
+
+T("couture d'un seul côté : l'autre côté pèse, et c'est voulu",()=>{
+  simCarte();
+  simZone("GND",5,10,55,30);             // du plan des DEUX côtés de la piste
+  for(let x=11;x<=49;x+=4)
+    S.vias.push({x:x, y:SIM_Y+1, d:0.8, drill:0.4, a:0, b:3, net:"GND"});
+  touch();
+  const c=simSegments().couture;
+  if(!c)throw new Error("la couture devrait être mesurée");
+  if(c.n<10)throw new Error("dix vias au moins dans le couloir, "+c.n+" vus");
+  /* LE CONTRÔLE EST PAR CÔTÉ, et c'est le sens de la mesure : le plan du côté
+     −y porte du cuivre et AUCUNE couture. Son trou vaut donc la piste entière,
+     et c'est bien ce qu'il faut annoncer — ce cuivre-là n'est ramené à la masse
+     nulle part, et le solveur le tient pourtant à zéro volt. */
+  if(Math.abs(c.ecartMax-(SIM_X2-SIM_X1))>1e-6)
+    throw new Error("le côté non cousu doit ressortir avec ses 40 mm, pas "+
+                    c.ecartMax);
+});
+
+T("couture des deux côtés : l'espacement mesuré est celui des vias",()=>{
+  simCarte();
+  simZone("GND",5,10,55,30);
+  for(let x=11;x<=49;x+=4){
+    S.vias.push({x:x, y:SIM_Y+1, d:0.8, drill:0.4, a:0, b:3, net:"GND"});
+    S.vias.push({x:x, y:SIM_Y-1, d:0.8, drill:0.4, a:0, b:3, net:"GND"});
+  }
+  touch();
+  const c=simSegments().couture;
+  if(!c)throw new Error("la couture devrait être mesurée");
+  if(c.n<20)throw new Error("vingt vias attendus dans le couloir, "+c.n);
+  /* Un via tous les 4 mm, le premier à 1 mm du bout et le dernier à 1 mm de
+     l'autre : le plus grand trou est de 4 mm, bouts compris. */
+  if(c.ecartMax>4.05)
+    throw new Error("espacement max attendu 4 mm, mesuré "+c.ecartMax);
+  /* Un via HORS du couloir ne compte pas : il ne coud pas le cuivre qui borde
+     la piste, il coud le plan trois millimètres plus loin. */
+  S.vias.push({x:30, y:SIM_Y+9, d:0.8, drill:0.4, a:0, b:3, net:"GND"});
+  touch();
+  if(simSegments().couture.n!==c.n)
+    throw new Error("un via à 9 mm de l'axe est hors du couloir de 2 mm");
+});
+
+T("aucun via de masse : le trou vaut toute la longueur de la piste",()=>{
+  simCarte();
+  simZone("GND",5,10,55,30);
+  S.vias=[]; touch();
+  const c=simSegments().couture;
+  if(!c)throw new Error("la couture devrait être mesurée");
+  if(c.n!==0)throw new Error("aucun via attendu, "+c.n+" comptés");
+  if(Math.abs(c.ecartMax-(SIM_X2-SIM_X1))>1e-6)
+    throw new Error("le trou devrait valoir les 40 mm de la piste, pas "+
+                    c.ecartMax);
+});
+
+T("un arc part avec la longueur de son CUIVRE, pas celle de ses cordes",()=>{
+  simCarte();
+  S.tracks.length=0;
+  const t={l:0, net:"N$1", w:SIM_W, x1:10, y1:20, x2:30, y2:20,
+           ca:Math.PI};
+  S.tracks.push(t);
+  clearSel(); S.sel.tracks.add(t);
+  simZone("GND",0,0,60,40);
+  const attendu=trkLen(t);                 // r·|ca| = 10·π ≈ 31,42 mm
+  const g=simSegments();
+  const som=g.envoi.reduce((a,o)=>a+o.length,0);
+  if(Math.abs(som-attendu)>0.05)
+    throw new Error("longueur envoyée "+som.toFixed(3)+" au lieu de "+
+                    attendu.toFixed(3)+" (la corde ne vaut que 20 mm)");
+});
+
+T("aucune masse retenue : l'écart tombe à zéro et le panneau le dit",()=>{
+  simCarte();
+  simZone("GND",5,10,55,30);
+  /* Le panneau a d'abord affiché la proposition — c'est ce premier appel qui
+     retient la carte —, puis l'utilisateur a tout décoché. Sans lui, la
+     vérification « est-ce une autre carte ? » reprendrait la main juste après
+     et reproposerait GND. */
+  simRefSet();
+  SIM.refAuto=false; SIM.ref=new Set();
+  const g=simSegments();
+  if(g.envoi[0].gap_left!==0||g.envoi[0].gap_right!==0)
+    throw new Error("sans masse retenue, il n'y a pas d'écart coplanaire");
+  const p=SIM_PCB.probleme({z0:50,f1:1e8,f2:5e9,points:11,fc:1e9});
+  if(!p.notes.some(n=>/Aucun net de masse/.test(n)))
+    throw new Error("le panneau doit signaler qu'aucune masse n'est retenue");
+  SIM.refAuto=true; SIM.ref=null;
+});
+
+T("les plages : dix pour cent d'écart les sépare, un demi-millimètre les fond",()=>{
+  /* `simPlagesDe` est dans commun/simulation-em.js : c'est un choix de
+     MODÉLISATION, partagé par les deux outils, et il vaut d'être éprouvé seul. */
+  if(!simMemeEcart(0.20,0.21))throw new Error("0,20 et 0,21 : même plage");
+  if(simMemeEcart(0.20,0.30))throw new Error("0,20 et 0,30 : plages distinctes");
+  if(simMemeEcart(0,0.20))throw new Error("l'absence de masse est sa propre classe");
+  if(!simMemeEcart(0,0))throw new Error("deux absences vont ensemble");
+  /* Une piste de 10 mm dont le millimètre central est serré : le serré fait
+     moins d'un demi-millimètre ? non, un millimètre — il tient. */
+  const r=simPlagesDe(10,u=>({g:(u>0.45&&u<0.55)?0.1:0.4, d:0.4}));
+  if(r.plages.length!==3)
+    throw new Error("trois plages attendues, "+r.plages.length);
+  if(Math.abs(r.plages.reduce((a,p)=>a+p.longueur,0)-10)>1e-9)
+    throw new Error("les plages doivent couvrir toute la longueur");
+  /* Le même creux réduit à deux dixièmes de millimètre disparaît. */
+  const r2=simPlagesDe(10,u=>({g:(u>0.49&&u<0.51)?0.1:0.4, d:0.4}));
+  if(r2.plages.length!==1)
+    throw new Error("un creux de 0,2 mm n'est pas une section : "+
+                    r2.plages.length+" plages");
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

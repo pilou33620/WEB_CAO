@@ -327,6 +327,46 @@ function viaBuild(a,b){
   return {kind:"buried",ok:false,
           why:"enterré sur "+(b-a)+" diélectriques : un seul pressage n'y suffit pas"};
 }
+/* ---------- la nature d'un via, telle qu'on la choisit ----------
+   `viaBuild` dit ce qu'une portée VAUT une fois la carte pressée ; ce qui suit
+   est l'autre sens — on nomme la nature voulue, la portée s'en déduit. Quatre
+   entrées et non trois : « borgne » ne dit pas de quel côté, et c'est justement
+   ce qu'on veut désigner d'un geste.
+
+   Ce n'est qu'un raccourci : les deux listes de couches restent la commande
+   fine, un borgne qui descend de trois couches se règle là. La nature choisie
+   garde d'ailleurs la profondeur en place quand elle a un sens — un borgne
+   dessus qui reste borgne dessus ne remonte pas à une couche. */
+const VIA_KINDS=[["through","Traversant"],["blindTop","Borgne dessus"],
+                 ["blindBot","Borgne dessous"],["buried","Enterré"]];
+function viaKindOf(v){
+  const k=viaBuild(v.a,v.b).kind;
+  return k!=="blind"?k:(Math.min(v.a,v.b)===0?"blindTop":"blindBot");
+}
+function viaKindTxt(k){
+  const e=VIA_KINDS.find(x=>x[0]===k);
+  return e?e[1]:k;
+}
+/* Ce que l'empilage permet : sans couche interne, un via ne peut être que
+   traversant, et il en faut deux pour un enterré. Proposer le reste offrirait
+   un choix qui se corrigerait tout seul au premier clic. */
+function viaKindsAvail(){
+  const n=S.cu;
+  return VIA_KINDS.filter(([k])=>k==="through"?true:(k==="buried"?n>=4:n>=3));
+}
+function viaSetKind(v,kind){
+  const n=S.cu;
+  let a=Math.min(v.a,v.b), b=Math.max(v.a,v.b);
+  if(kind==="through"){a=0;b=n-1;}
+  else if(kind==="blindTop"){b=(a===0&&b<n-1)?b:1;a=0;}
+  else if(kind==="blindBot"){a=(b===n-1&&a>0)?a:n-2;b=n-1;}
+  else if(kind==="buried"&&!(a>0&&b<n-1)){a=1;b=2;}
+  v.a=clamp(a,0,n-1);v.b=clamp(b,0,n-1);
+  /* un via qui ne relie qu'une couche à elle-même n'est pas un via */
+  if(v.a===v.b)v.b=Math.min(n-1,v.a+1);
+  if(v.a===v.b)v.a=Math.max(0,v.b-1);
+  return v;
+}
 /* comptage des vias par nature, et ceux qui demandent plus d'un pressage */
 function viaCensus(){
   const out={through:0,blind:0,buried:0,seq:0};
@@ -1879,17 +1919,18 @@ function dpStripGeom(layer){
   return {kind:"micro",h:d.t||0.2,b:0,er:d.er,t:t,ref:1};
 }
 /* Impédance caractéristique d'une piste seule, puis impédance différentielle
-   de la paire — IPC-2141A, microruban et triplaque symétrique. `s` est l'écart
-   entre bords de cuivre. */
+   de la paire. `s` est l'écart entre bords de cuivre.
+
+   UNE SEULE FORMULE LÉGÈRE POUR TOUT L'ÉDITEUR. Le microruban passait ici par
+   la forme IPC-2141A — 87/√(εr+1,41)·ln(5,98h/(0,8w+t)) — pendant que la fiche
+   « Ligne de transmission » passait par Hammerstad-Jensen : 45,9 Ω contre
+   51,0 Ω sur la même piste, dans le même outil, sans rien pour trancher. C'est
+   `ltZ0()` qui tranche, parce qu'elle est celle des deux qui se recoupe avec
+   le solveur de section (48,0 Ω) une fois l'épaisseur du cuivre prise en
+   compte. La forme IPC reste pour la triplaque, où les deux ne différaient
+   pas. Le facteur de couplage `k` ci-dessous, lui, ne bouge pas. */
 function dpZ0(g,w){
-  if(!(w>0))return 0;
-  if(g.kind==="strip"){
-    const b=Math.max(g.b,1e-4);
-    const x=4*b/(0.67*Math.PI*(0.8*w+g.t));
-    return x>1?60/Math.sqrt(g.er)*Math.log(x):0;
-  }
-  const x=5.98*g.h/(0.8*w+g.t);
-  return x>1?87/Math.sqrt(g.er+1.41)*Math.log(x):0;
+  return ltZ0(g,w);
 }
 function dpZdiff(w,s,layer){
   const g=dpStripGeom(layer), z0=dpZ0(g,w);
@@ -1952,22 +1993,45 @@ const LT_C0=2.99792458e11;              // vitesse de la lumière, en mm/s
    l'air d'un côté : il voit une moyenne entre l'air et le stratifié, et
    d'autant plus de stratifié que la piste est large devant la hauteur du
    diélectrique. La triplaque, noyée, ne voit que le stratifié. */
+/* L'ÉPAISSEUR DU CUIVRE, RAMENÉE À UNE LARGEUR (Wheeler).
+
+   Hammerstad-Jensen traite un ruban d'épaisseur nulle. Un ruban épais porte de
+   la charge sur ses flancs : il se comporte comme un ruban mince un peu plus
+   large. Sans cette correction, la fiche lisait systématiquement HAUT — 51,0 Ω
+   là où le solveur de section du panneau « Simulation EM » donne 48,0 —, et
+   l'écart passait pour le prix de la formule légère alors que c'était un terme
+   manquant. Avec elle, la même formule donne 48,1.
+
+   C'est mot pour mot `_largeur_effective()` de python/ligne_mom.py, et c'est
+   voulu : les deux modes doivent partir de la même section pour que leur
+   comparaison veuille dire quelque chose. */
+function ltWeff(g,w){
+  const t=g.t||0, h=Math.max(g.h,1e-4);
+  if(!(t>0)||!(w>0))return w;
+  return w+(t/Math.PI)*(1+Math.log(2*h/t));
+}
 function ltEeff(g,w){
   if(g.kind==="strip")return r3(g.er);
-  const h=Math.max(g.h,1e-4), x=Math.max(w,1e-4);
+  const h=Math.max(g.h,1e-4), x=Math.max(ltWeff(g,w),1e-4);
   return r3((g.er+1)/2+(g.er-1)/2/Math.sqrt(1+12*h/x));
 }
-/* Impédance caractéristique. Microruban : Wheeler, en deux branches selon que
-   la piste est plus étroite ou plus large que la hauteur du diélectrique —
-   c'est la même courbe, mais aucune des deux expressions ne la suit sur toute
-   sa longueur. Triplaque : l'approximation de l'IPC-2141A, celle qu'emploie
-   déjà le panneau des paires différentielles.
+/* Impédance caractéristique. Microruban : Hammerstad-Jensen, en deux branches
+   selon que la piste est plus étroite ou plus large que la hauteur du
+   diélectrique — c'est la même courbe, mais aucune des deux expressions ne la
+   suit sur toute sa longueur. Triplaque : l'approximation de l'IPC-2141A.
 
-   Wheeler ne tient pas compte de l'épaisseur du cuivre, contrairement à la
-   forme IPC que `dpZ0()` applique au microruban : sur du FR-4 courant, les
-   deux s'écartent de quelques pour cent, la première lisant un peu plus haut.
-   Aucune des deux ne vaut mieux que ±5 % — le panneau le dit plutôt que de
-   laisser croire à un chiffre signé. */
+   IL N'Y A PLUS QU'UNE FORMULE LÉGÈRE DANS CET ÉDITEUR. `dpZ0()`, qui sert les
+   paires différentielles, appelait sa propre forme IPC pour le microruban et
+   sortait 45,9 Ω là où celle-ci sortait 51,0 : deux panneaux du même outil, la
+   même piste, 11 % d'écart, et rien pour dire lequel croire. `dpZ0()` passe
+   maintenant par ici pour le microruban. La triplaque, elle, garde l'IPC-2141A
+   des deux côtés — c'est la même expression depuis toujours.
+
+   CE QUE CETTE FORMULE EST, ET CE QU'ELLE N'EST PAS. C'est l'aperçu : elle
+   répond au clic, sans serveur ni Python. Elle ne voit pas ce que voit le
+   panneau « Simulation EM » — une triplaque décentrée, une piste interne
+   couverte, une section hors du domaine d'ajustement. Les deux ne se
+   remplacent pas ; ils se recoupent, et c'est le recoupement qui informe. */
 function ltZ0(g,w){
   if(!(w>0))return 0;
   if(g.kind==="strip"){
@@ -1975,7 +2039,7 @@ function ltZ0(g,w){
     const x=4*b/(0.67*Math.PI*(0.8*w+g.t));
     return x>1?r3(60/Math.sqrt(g.er)*Math.log(x)):0;
   }
-  const h=Math.max(g.h,1e-4), e=Math.sqrt(ltEeff(g,w)), u=w/h;
+  const h=Math.max(g.h,1e-4), e=Math.sqrt(ltEeff(g,w)), u=ltWeff(g,w)/h;
   return r3(u<=1
     ? 60/e*Math.log(8/u+u/4)
     : 120*Math.PI/(e*(u+1.393+0.667*Math.log(u+1.444))));

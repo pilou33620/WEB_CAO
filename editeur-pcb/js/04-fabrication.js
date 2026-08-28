@@ -502,7 +502,15 @@ function ipcNetlist(){
 /* Génère UN fichier Excellon par portée de via (traversant, borgne, enterré).
    Les pastilles traversantes (drill>0) atterrissent dans le fichier de la
    portée la plus large — en pratique, toujours le traversant s'il existe.
-   Les fichiers portent un nom explicite : carte-0-3.TXT, carte-0-2.TXT… */
+
+   Les couches sont numérotées **à partir de 1** dans le nom, comme chez le
+   fabricant : `carte-1-2.TXT` va du cuivre 1 au cuivre 2, `carte-1-4.TXT` est
+   le traversant d'une quatre couches. Il n'existe pas de couche 0, et un
+   dossier qui en annonce une se fait retourner au contrôle d'entrée.
+
+   La portée voyage AVEC le fichier (`a`, `b`, `kind`) : le master drawing et le
+   LISEZ-MOI la lisent là plutôt que de la relire dans le nom, qui commence par
+   celui du projet — « carte 2 » y aurait glissé son chiffre. */
 function drillFile(){
   /* Construit le contenu d'un fichier Excellon pour la liste de trous donnée.
      holes : [{drill, x, y}] */
@@ -572,7 +580,7 @@ function drillFile(){
     const bInfo=viaBuild(a,b);
     const kind=bInfo.kind==="blind"?"borgne":(bInfo.kind==="buried"?"enterre":"traverse");
     const la=a+1, lb=b+1;
-    files.push({name:fabBase()+"-"+k+".TXT",
+    files.push({name:fabBase()+"-"+la+"-"+lb+".TXT", a:a, b:b, kind:bInfo.kind,
                  ...buildOne("percage "+kind+" - L"+la+"-L"+lb,holes)});
   }
 
@@ -697,6 +705,13 @@ function fabReadme(files,dr){
     : "coin inferieur gauche de la carte")+".");
   L.push("Gerber RS-274X, millimetres, format 4.6, polarite positive.");
   L.push("Percage Excellon metrique, trous metallises.");
+  /* Un dossier peut porter trois .TXT : sans legende, le fabricant ne sait pas
+     lequel s'arrete en route. Les couches se comptent a partir de 1. */
+  L.push("Un fichier de percage par portee, couches numerotees a partir de 1 :");
+  for(const f of dr.files)
+    L.push("  "+f.name+" : percage "+
+           (f.kind==="blind"?"borgne":f.kind==="buried"?"enterre":"traversant")+
+           " L"+(f.a+1)+"-L"+(f.b+1)+", "+f.holes+" trou(s), "+f.tools+" outil(s).");
   L.push("Board Outline (carte.GM1) : Mechanical Layer 1, PROFIL DE DECOUPE.");
   L.push("C'est ce fichier qui definit le detourage de la carte. Il porte");
   L.push("l'attribut Gerber X2 << Profile,NP >> (bord non metallise).");

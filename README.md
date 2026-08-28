@@ -20,7 +20,23 @@ python/                        les autres modules Python, aucun à lancer seul
 ├── passerelle_mcp.py          relais vers pcbparts.dev (bibliothèque standard)
 ├── ipc2581_data.py            modèle d'une carte IPC-2581 (Point, Track, Pad…)
 ├── ipc2581_parser.py          lecture d'un fichier IPC-2581 -> IPCDesign
-└── ipc2581_json.py            IPCDesign -> JSON, pour la visionneuse
+├── ipc2581_json.py            IPCDesign -> JSON, pour la visionneuse
+├── ligne_mom.py               CE QUI CALCULE la simulation : MoM sur la
+│                              section droite — impédance, dispersion, pertes,
+│                              cascade ABCD (numpy, scipy)
+├── simulation_em.py           pont : cuivre -> sections droites, résultat ->
+│                              JSON, et les garde-fous
+└── test/banc-ligne-mom.py     51 cas, contre étalons extérieurs
+mom_solver/                    moteur 2,5D pleine onde, TEL QU'IL A ÉTÉ LIVRÉ
+                               — non modifié, et hors du chemin de calcul :
+                               son noyau n'est pas valide (voir A-FAIRE.md)
+├── pcb_parser.py              document de simulation -> géométrie et empilage
+├── mesher.py                  maillage triangulaire, fonctions de base RWG
+├── green_layered.py           fonction de Green du milieu stratifié (DCIM)
+├── mom_engine.py              matrice d'impédance, vecteur d'excitation
+├── solver_extract.py          résolution, paramètres S, Touchstone
+├── main.py                    ligne de commande
+└── tests/test_basic.py        banc d'essai de la chaîne pleine onde
 requirements.txt               aucune dépendance : le fichier le dit et l'explique
 LIB_composants.csv             bibliothèque de références (optionnelle)
 
@@ -28,8 +44,13 @@ editeur-schematique/           saisie du schéma, netlist, nomenclature
 editeur-pcb/                   routage, paires diff., empilage, DRC, Gerber
 recherche-composants/          recherche de références via pcbparts.dev
 visionneuse-ipc2581/           import et affichage d'une carte IPC-2581
-└── test/banc-essai.py         banc d'essai du parseur, avec sa carte d'essai
+├── test/banc-essai.py         banc d'essai du parseur, avec sa carte d'essai
+└── test/harness-sim.js        banc d'essai de la mesure de masse coplanaire
 commun/                        code partagé par les quatre outils
+├── simulation-em.js           panneau de simulation, commun au PCB et à la
+│                              visionneuse : carte de chaleur d'impédance sur
+│                              la sélection, paramètres S, courbe et exports
+├── simulation-em.css          habillage de ce panneau
 ├── workspace.js               panneaux détachables et dockables
 ├── workspace.css              habillage de l'espace de travail
 ├── session.js                 le travail suit l'utilisateur d'un outil à l'autre
@@ -51,6 +72,15 @@ Chaque outil a son propre `README.md` détaillant ses modules, et
 
 Aucune, ni côté navigateur ni côté Python : `serveur.py` et `python/passerelle_mcp.py`
 n'utilisent que la bibliothèque standard (vérifié sur Python 3.10 et 3.12).
+
+Une seule exception, et elle est facultative : le solveur d'impédance
+`python/ligne_mom.py` a besoin de **numpy**, et de numpy seul
+(`pip install numpy`). Rien d'autre n'en dépend — sans lui, les deux éditeurs
+s'ouvrent, le serveur démarre et sert tout le reste, et seule la route
+`/api/simulation` répond « solveur indisponible » en nommant ce qui manque.
+Scipy n'est demandé que par le banc d'essai, pour les intégrales elliptiques de
+son étalon de triplaque. [requirements.txt](requirements.txt) explique pourquoi
+aucun de ces paquets n'y est écrit.
 `requirements.txt` ne contient donc aucun paquet — il documente la garantie au
 lieu de lister quoi installer, et `pip install -r requirements.txt` n'a rien à
 faire. C'est pour tenir cette propriété que le second serveur
@@ -197,6 +227,163 @@ Ce qu'on y écrit suit l'utilisateur d'une ouverture à l'autre.
 
 Détails dans [visionneuse-ipc2581/README.md](visionneuse-ipc2581/README.md).
 
+## Simulation
+
+Le bouton **« Simulation EM… »** de l'éditeur PCB et de la visionneuse IPC-2581
+ouvre le même panneau, et il répond à une seule question : *que vaut, en
+impédance, le cuivre que je viens de sélectionner ?*
+
+Le serveur résout la **section droite** de chaque tronçon par méthode des
+moments (`python/ligne_mom.py`), rend son impédance caractéristique
+à la fréquence choisie, et les paramètres S de la liaison entière par mise en
+cascade. La page peint le résultat **sur la piste** et y écrit la valeur.
+
+```bash
+pip install numpy scipy      # les deux seules dépendances du dépôt, facultatives
+python serveur.py
+```
+
+### La carte de chaleur
+
+On saisit une **impédance visée**, une **tolérance** et une **fréquence
+centrale** — c'est à celle-ci que l'impédance est donnée et la carte peinte.
+Le cuivre sélectionné se colore :
+
+- **bleu** — dans la tolérance ;
+- **rouge** — trop élevé : piste trop étroite, ou trop loin de son plan ;
+- **vert** — trop faible : piste trop large, ou trop près de son plan.
+
+**Le vert ne veut donc pas dire « bon »** mais « trop bas » : sur une carte de
+chaleur ce sont les deux *sens* de l'écart qu'il faut distinguer d'un coup
+d'œil, et la légende du panneau le redit en toutes lettres. La clarté porte
+l'écart — pâle en bord de bande, pleine une tolérance plus loin.
+
+La valeur est écrite sur la piste, dans un cartouche : une étiquette par
+impédance distincte, posée sur le plus long tronçon qui la porte — cinquante
+fois « 48,0 Ω » empilés ne se liraient pas.
+
+**Les gestes de sélection commandent l'étendue du calcul.** Dans l'éditeur
+PCB : clic pour le tronçon seul, `Maj`+clic pour la piste entière, `Maj`+clic à
+nouveau pour la piste sur toutes les couches. Dans la visionneuse : clic pour
+la piste sur sa couche, `Maj`+clic pour tout le net. La case **« suivre »**,
+armée dès le premier calcul, relance à chaque changement de sélection.
+
+Le panneau donne aussi le bilan de la liaison (minimum, maximum, moyenne
+pondérée par la longueur, retard, pertes), la courbe S₁₁ / S₂₁ sur la bande
+avec le repère de la fréquence centrale, et trois exports : `.csv` (le tableau
+des tronçons), `.s2p` (Touchstone) et `.json` (le problème lui-même).
+
+### Ce que vaut le calcul, et ce qu'il ne couvre pas
+
+Ce n'est pas une formule fermée de plus : c'est un calcul de champ sur la
+section, qui converge quand on raffine et qui traite des cas que les formules
+ne savent pas traiter — à commencer par la **triplaque décentrée**, que la
+formule IPC suppose centrée alors qu'un empilage 4 couches ne l'est jamais.
+
+Il est vérifié contre des étalons extérieurs, et le banc d'essai le refait à
+chaque exécution (`python/test/banc-ligne-mom.py`, 51 cas) :
+
+| Géométrie | Étalon | Écart maximal |
+| --- | --- | --- |
+| Microruban, εr de 2,2 à 10,2, w/h de 0,5 à 5 | Hammerstad-Jensen (±1 %) | **0,42 %** |
+| Triplaque, εr 3,5 et 4,5, w/b de 0,3 à 2,5 | solution exacte, intégrales elliptiques | **0,30 %** |
+| Piste interne couverte, enterrée | ε_eff = εr et Z₀ = Z₀(air)/√εr, exacts en milieu homogène | **0,06 %** |
+| Ligne coplanaire sur plan, écarts serrés | transformation conforme (Wen) | **0,4 %** |
+| Masse coplanaire d'un seul côté | encadrée par le microruban nu et le coplanaire symétrique, et miroir gauche/droite | **exact** |
+
+Les topologies traitées : microruban nu (couche extérieure), **microruban
+couvert** (couche interne qui n'a de plan que d'un côté — elle a du stratifié
+au-dessus, pas de l'air, et la prendre pour un microruban nu coûtait une
+dizaine de pour cent), triplaque y compris décentrée, et **ligne coplanaire**.
+
+Cette dernière n'est pas un cas d'école : une piste noyée dans un plan arrosé
+— le tracé RF ordinaire — a du cuivre de masse sur sa propre couche à deux ou
+trois dixièmes de millimètre, et le prendre pour un microruban surestime Z₀ de
+**vingt à vingt-cinq pour cent**, avec le signe de l'écart inversé. L'écart au
+cuivre n'est pas saisi : l'éditeur PCB le tient de la règle d'isolation qui
+creuse le plan, la visionneuse le **mesure** sur le cuivre du fichier, au point
+le plus serré.
+
+Ce qu'il ne voit pas, et le panneau le dit sous chaque résultat :
+
+- **une suite de sections uniformes**, rien d'autre. Les coudes, les moignons,
+  les transitions de via et le rayonnement n'y sont pas — ce qui se passe *au
+  raccord* entre deux tronçons n'est pas modélisé ;
+- le calcul de section est **quasi-statique** ; la dispersion est ajoutée par
+  le modèle de Getsinger, qui est un modèle et non un calcul. Au-delà de
+  quelques gigahertz sur stratifié courant, l'écart se creuse ;
+- le **masque de soudure** n'est pas dans l'empilage envoyé ;
+- **la mise en cascade suppose une chaîne**, parcourue dans l'ordre envoyé. Un
+  net qui se ramifie n'en est pas une : les impédances par tronçon et la carte
+  de chaleur restent justes — chacune ne dépend que de sa section —, mais les
+  paramètres S, le retard total et les pertes totales ne veulent alors rien
+  dire. Le serveur vérifie la continuité de la sélection et le dit quand elle
+  n'y est pas.
+
+### Lire la courbe
+
+Deux traces : **S₁₁** (ce que le port d'entrée réfléchit) et **S₂₁** (ce qui
+passe). S₁₂ n'est pas tracé — le modèle est réciproque, il vaut S₂₁ — et S₂₂
+non plus : sur une piste de largeur constante il égale S₁₁ et viendrait le
+masquer. Quand la liaison est dissymétrique, l'écart S₂₂ − S₁₁ est signalé sous
+la courbe, et les deux sont dans le `.s2p`.
+
+**Au survol**, la courbe donne la fréquence, les deux modules en décibels, le
+ROS et surtout **l'impédance vue par le port** — Z = Z_réf(1+S₁₁)/(1−S₁₁), en
+complexe. C'est ce qu'un circuit d'attaque trouverait devant lui : sur une
+piste de 61 Ω lue à travers 50 Ω, le quart d'onde affiche 73,8 − j0,2 Ω, très
+exactement le Z₀²/Z_réf = 74,7 Ω du transformateur quart d'onde. La lecture se
+cale sur le point **calculé** le plus proche, jamais sur une interpolation.
+
+Si le pas de la bande est trop large pour la ligne — moins de vingt points par
+période de résonance —, le panneau le dit et propose un nombre. Ce n'est pas
+cosmétique : sur une piste de 28,7 mm, 21 points **ratent** le creux de S₁₁ et
+l'annoncent à −33 dB au lieu de −39,5.
+
+### Le panneau se range en SI et PI
+
+Deux familles d'analyse : **SI**, intégrité du signal — ce qu'un front devient
+en parcourant le cuivre — et **PI**, intégrité de l'alimentation — ce que le
+réseau de distribution laisse passer. SI porte aujourd'hui **Impédance**, et
+c'est tout ce qui est écrit ; PI est vide et le dit. Le découpage est posé
+maintenant parce qu'il coûte moins cher à poser qu'à retailler ensuite autour
+de six analyses. Ce qu'il resterait à y mettre est listé dans
+[A-FAIRE.md](A-FAIRE.md).
+
+Changer de famille n'efface pas le résultat : la carte de chaleur s'éteint —
+elle appartient à l'analyse d'impédance et n'a rien à dire sous un autre onglet
+— et revenir la rallume telle quelle, sans recalcul.
+
+### Deux modes, et ils ne répondent pas à la même question
+
+Cliquer une piste donne son impédance tout de suite, sans serveur : c'est
+`ltZ0()`, Hammerstad-Jensen avec la correction d'épaisseur de Wheeler, la même
+expression dans les deux outils. Le panneau « Simulation EM » passe, lui, par
+le solveur de section. Sur un microruban courant les deux s'accordent à **0,2 %**
+— l'aperçu n'est pas une version dégradée, c'est la même physique par un chemin
+plus court. Ils divergent là où la formule sort de son domaine : triplaque
+décentrée, piste interne couverte, section inhabituelle. **C'est le désaccord
+qui informe**, et c'est pourquoi les deux existent.
+
+### Pourquoi pas l'onde complète, et pourquoi `mom_solver/` est intact
+
+Le paquet `mom_solver/` vise la 2,5D pleine onde : maillage triangulaire,
+fonctions de base RWG, matrice d'impédance, paramètres S. **Il n'a pas été
+modifié** — pas une ligne — et il n'est pas dans le chemin de calcul. Rien de
+la simulation n'en dépend, pas même pour démarrer.
+
+Il n'y est pas parce que son noyau ne peut pas rendre d'impédance en l'état :
+dans `mom_engine.py`, la formulation EFIE est amputée de son terme de potentiel
+scalaire — celui qui porte les charges. Sans charges il n'y a pas de capacité,
+et Z₀ = √(L/C) ne peut pas en sortir, quels que soient les ports. Les images
+complexes de `green_layered.py` sont, elles, posées sur des constantes
+arbitraires plutôt qu'ajustées sur l'intégrale de Sommerfeld.
+
+Le détail, et le cas de non-régression à viser, sont dans
+[A-FAIRE.md](A-FAIRE.md). Le jour où ce noyau sera juste, il apportera ce que le
+modèle de ligne ne peut pas donner — les coudes, les résonances, le
+rayonnement — et les deux se compléteront.
+
 ## Version un seul fichier
 
 Chaque éditeur sait s'assembler en un HTML autonome, pratique à envoyer par
@@ -228,6 +415,10 @@ python editeur-schematique/outils/build-monofichier.py && node editeur-schematiq
 
 ```bash
 python visionneuse-ipc2581/test/banc-essai.py
+```
+
+```bash
+node visionneuse-ipc2581/test/harness-sim.js
 ```
 
 Chaque banc reconstruit un DOM minimal (`commun/test/dom-stub.js`) et exécute
@@ -377,6 +568,42 @@ nom, se réapplique sur n'importe quel autre composant sans toucher à son
 repère, sa position ni ses nets, et s'exporte en `.json` pour une autre machine
 ou un autre projet. Détails dans
 [editeur-pcb/README.md](editeur-pcb/README.md#dessiner-une-empreinte-à-la-main-lenregistrer-la-réutiliser).
+
+## Modifier plusieurs objets d'un coup
+
+Une sélection de plusieurs objets n'affichait qu'un décompte. Le panneau
+*Propriétés* la range maintenant par familles — empreintes, segments, vias,
+zones, découpes — et, dans chaque famille, par **cotes identiques** : cinq vias
+dont trois partagent diamètre, perçage, portée et net tiennent sur trois lignes,
+« ×3 », « ×1 », « ×1 ». La ligne choisie ouvre ses champs, et le champ commande
+tout le groupe : changer le diamètre des trois vias, c'est une saisie et un seul
+`Ctrl+Z` pour la défaire.
+
+La ligne « tous », en tête, vise la sélection entière. Les propriétés qui
+diffèrent d'un objet à l'autre y portent « mixte » : le champ ne touche à rien
+tant qu'on ne le renseigne pas, de sorte qu'on peut aligner le seul diamètre
+d'une sélection qui diffère aussi par le net. Le repère et la position d'une
+empreinte restent hors du lot — deux boîtiers ne partagent ni l'un ni l'autre.
+Détails dans
+[editeur-pcb/README.md](editeur-pcb/README.md#sélection-multiple-et-presse-papier).
+
+## Un fichier de perçage par portée
+
+Un via borgne ne se perce pas de part en part : le dossier de fabrication porte
+**un Excellon par portée**, et non un seul fichier pour tous les trous — sinon
+la quatre couches repart percée de bout en bout, un défaut que rien ne rattrape
+après gravure. Les couches y sont numérotées à partir de 1, comme chez le
+fabricant : `carte-1-4.TXT` traverse une quatre couches, `carte-1-2.TXT`
+s'arrête au cuivre 2. Chaque fichier annonce sa portée dans son en-tête, le
+LISEZ-MOI en donne la légende, et le master drawing les liste avec la même
+portée.
+
+La **nature d'un via** se choisit d'ailleurs par son nom plutôt que par ses
+couches : la liste *Type de via* du panneau *Propriétés* — traversant, borgne
+dessus, borgne dessous, enterré — pose la portée, et vaut pour toute une
+sélection prise au `Ctrl+clic`. L'empilage ferme ce qu'il ne permet pas (pas
+d'enterré sous quatre couches), et le panneau prévient quand un seul pressage
+n'y suffit pas : un laminage séquentiel se découvre sinon sur le devis.
 
 ## Les règles DRC, avec leurs figures
 

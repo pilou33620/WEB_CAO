@@ -709,6 +709,7 @@ function mdlCheminsNet(i,mev){
 const LT_C0=2.99792458e11;     // vitesse de la lumière, en mm/s
 const LT_ER=4.3;               // εr de repli : FR-4 courant, faute de mieux
 const LT_EP_CU=0.035;          // épaisseur de cuivre de repli, en mm (1 oz)
+const LT_DF=0.02;              // tan δ de repli : FR-4 courant, faute de mieux
 /* Part de la carte qu'une zone de cuivre doit couvrir pour qu'on la tienne
    pour un plan de référence. Un plan de masse découpé descend rarement sous la
    moitié ; un simple îlot de cuivre n'y arrive jamais. */
@@ -756,8 +757,16 @@ function ltPreparer(){
       const c=parNom.get(e.nom);
       const genre=c?c.genre:mdlGenre(e.nom,e);
       const dk=parseFloat(String(e.dk||"").replace(",","."));
+      /* Le Df voyage AVEC le Dk. Il ne servait à rien tant que seule
+         l'impédance était calculée — elle n'en a pas besoin —, mais la
+         simulation EM en tire les pertes diélectriques, et il était perdu ici :
+         `LT.pile` le laissait tomber, si bien que le panneau reprenait son
+         repli 0,02 sur toutes les cartes, y compris celles qui portent la
+         valeur dans leur fichier. */
+      const df=parseFloat(String(e.df||"").replace(",","."));
       return {nom:e.nom, genre:genre, cuivre:genre==="cuivre",
               ep:(e.ep||0)*k, er:isFinite(dk)&&dk>0?dk:0,
+              df:isFinite(df)&&df>0?df:0,
               type:e.type||"", couche:c?c.i:-1};
     });
 
@@ -780,13 +789,17 @@ function ltPreparer(){
   LT.gap=[];
   for(let i=0;i+1<LT.cu.length;i++){
     const a=LT.cu[i], b=LT.cu[i+1];
-    let t=0,s=0,connu=false;
+    let t=0,s=0,sdf=0,tdf=0,connu=false,dfConnu=false;
     for(let r=a.rang+1;r<b.rang;r++){
       const e=LT.pile[r];
       if(!e||e.cuivre)continue;
       const er=e.er||LT_ER;
       if(e.er)connu=true;
       t+=e.ep; s+=e.ep*er;
+      /* Le Df se moyenne comme le Dk, pondéré par l'épaisseur — mais sur les
+         seules couches qui en portent un : moyenner un repli avec une valeur
+         mesurée donnerait un chiffre qui n'est ni l'un ni l'autre. */
+      if(e.df>0){tdf+=e.ep; sdf+=e.ep*e.df; dfConnu=true;}
     }
     const cle=ltCleGap(a.nom,b.nom);
     const tSaisi=ltSaisi("gap_t",cle), erSaisi=ltSaisi("gap_er",cle);
@@ -794,7 +807,9 @@ function ltPreparer(){
       cle:cle, a:a.nom, b:b.nom,
       t:tSaisi||t, tSrc:tSaisi?"saisi":(t>0?"fichier":""),
       er:erSaisi||(t>0?s/t:0)||LT_ER,
-      erSrc:erSaisi?"saisi":(connu?"fichier":"")
+      erSrc:erSaisi?"saisi":(connu?"fichier":""),
+      df:dfConnu&&tdf>0?sdf/tdf:LT_DF,
+      dfSrc:dfConnu?"fichier":""
     });
   }
 
@@ -904,19 +919,43 @@ function ltGeom(coucheIdx){
           planBas:bas>=0?LT.cu[bas].nom:"",
           kHaut:haut, kBas:bas};
 }
+/* L'ÉPAISSEUR DU CUIVRE, RAMENÉE À UNE LARGEUR (Wheeler).
+
+   Hammerstad-Jensen traite un ruban d'épaisseur nulle. Un ruban épais porte de
+   la charge sur ses flancs : il se comporte comme un ruban mince un peu plus
+   large. Sans cette correction, la fiche lisait systématiquement HAUT — 51,0 Ω
+   là où le solveur de section donne 48,0 —, et l'écart passait pour le prix de
+   la formule légère alors que c'était un terme manquant. Avec elle, la même
+   formule donne 48,1 : le mode rapide et le mode Simulation EM s'accordent
+   désormais à quelques dixièmes de pour cent, et quand ils divergent c'est que
+   la géométrie sort du domaine de la formule — ce qui est une information.
+
+   C'est mot pour mot `_largeur_effective()` de python/ligne_mom.py. */
+function ltWeff(g,w){
+  const t=g.t||0, h=Math.max(g.h,1e-4);
+  if(!(t>0)||!(w>0))return w;
+  return w+(t/Math.PI)*(1+Math.log(2*h/t));
+}
 /* Permittivité effective (Hammerstad). Le microruban a de l'air d'un côté :
    il voit une moyenne entre l'air et le stratifié, et d'autant plus de
    stratifié que la piste est large devant la hauteur du diélectrique. La
    triplaque, noyée, ne voit que le stratifié. */
 function ltEeff(g,w){
   if(g.kind==="strip")return g.er;
-  const h=Math.max(g.h,1e-4), x=Math.max(w,1e-4);
+  const h=Math.max(g.h,1e-4), x=Math.max(ltWeff(g,w),1e-4);
   return (g.er+1)/2+(g.er-1)/2/Math.sqrt(1+12*h/x);
 }
-/* Impédance caractéristique. Microruban : Wheeler, en deux branches selon que
-   la piste est plus étroite ou plus large que la hauteur du diélectrique —
-   c'est la même courbe, mais aucune des deux expressions ne la suit sur toute
-   sa longueur. Triplaque : l'approximation de l'IPC-2141A. */
+/* Impédance caractéristique. Microruban : Hammerstad-Jensen, en deux branches
+   selon que la piste est plus étroite ou plus large que la hauteur du
+   diélectrique — c'est la même courbe, mais aucune des deux expressions ne la
+   suit sur toute sa longueur. Triplaque : l'approximation de l'IPC-2141A.
+
+   CE QUE CETTE FORMULE EST, ET CE QU'ELLE N'EST PAS. C'est l'aperçu : elle
+   répond au clic, sans serveur ni Python, et elle vaut mieux que le pour cent
+   sur un microruban courant. Elle ne voit pas ce que voit le panneau
+   « Simulation EM » — une triplaque décentrée, une piste interne couverte, une
+   section qui sort de son domaine d'ajustement. Les deux ne se remplacent pas
+   l'un l'autre ; ils se recoupent, et c'est le recoupement qui informe. */
 function ltZ0(g,w){
   if(!(w>0))return 0;
   if(g.kind==="strip"){
@@ -925,7 +964,7 @@ function ltZ0(g,w){
     return x>1?60/Math.sqrt(g.er)*Math.log(x):0;
   }
   if(!(g.h>0))return 0;
-  const h=g.h, e=Math.sqrt(ltEeff(g,w)), u=w/h;
+  const h=g.h, e=Math.sqrt(ltEeff(g,w)), u=ltWeff(g,w)/h;
   return u<=1 ? 60/e*Math.log(8/u+u/4)
               : 120*Math.PI/(e*(u+1.393+0.667*Math.log(u+1.444)));
 }

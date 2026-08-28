@@ -531,13 +531,23 @@ function buildStackup(){
 function refreshPanels(){
   buildProps();buildList();buildTabs();buildStackup();
   if(typeof buildDiffPairs==="function")buildDiffPairs();
+  /* Le panneau de simulation suit la même horloge que les autres : entre deux
+     regards, on a routé, et surtout on a changé de sélection — c'est elle que
+     la simulation d'impédance mesure. L'argument vrai lui dit de ne PAS
+     redemander un dessin : `refreshPanels()` est presque toujours suivi d'un
+     `draw()`, qui lira la nouvelle liste de segments de toute façon. Gardé par
+     un `typeof` comme les autres appels vers un fichier chargé plus tard. */
+  if(typeof simRafraichir==="function")simRafraichir(true);
 }
 
 function buildProps(){
   const box=$("props");
   const fps=[...S.sel.fps].map(fpById).filter(Boolean);
   const tr=[...S.sel.tracks], vi=[...S.sel.vias], zo=[...S.sel.zones];
-  const only=n=>fps.length+tr.length+vi.length+zo.length===n;
+  /* Les découpes comptent dans le total : sans cela une découpe prise avec une
+     empreinte laissait croire que l'empreinte était seule sélectionnée. */
+  const ct=[...S.sel.cuts];
+  const only=n=>fps.length+tr.length+vi.length+zo.length+ct.length===n;
   if(fps.length===1&&only(1))return propsFp(box,fps[0]);
   if(tr.length===1&&only(1))return propsTrack(box,tr[0]);
   if(vi.length===1&&only(1))return propsVia(box,vi[0]);
@@ -547,27 +557,10 @@ function buildProps(){
      couche à l'autre — arrive ici avec ses vias : c'est un seul objet, et le
      panneau la traite comme telle plutôt que de la compter comme un lasso. */
   if(tr.length&&only(tr.length+vi.length))return propsTracks(box,tr,vi);
-  if(!only(0)){
-    /* Le cuivre routé de la sélection se retire à part : c'est le geste qu'on
-       fait avant de replacer un boîtier, et un lasso ne sait pas le distinguer.
-       Le bouton ne paraît que s'il y a quelque chose à dérouter. */
-    const cu=tr.length+vi.length;
-    box.innerHTML='<div class="empty">'+fps.length+' empreinte(s), '+tr.length+
-      ' segment(s), '+vi.length+' via(s), '+zo.length+
-      ' zone(s) sélectionnés.<br>R pivote · F retourne · Suppr supprime.</div>'+
-      (cu?'<div class="prop"><div class="row"><button class="tb" id="pUnroute">'+
-          'Dérouter '+(tr.length?tr.length+' segment'+(tr.length>1?'s':''):'')+
-          (tr.length&&vi.length?' et ':'')+
-          (vi.length?vi.length+' via'+(vi.length>1?'s':''):'')+' <kbd>U</kbd>'+
-          '</button></div>'+
-          '<div class="empty" style="padding:6px 12px">Les empreintes restent en '+
-          'place et sélectionnées : de quoi les replacer avant de router autrement. '+
-          'Les zones de cuivre ne sont pas du routage, elles ne partent pas.</div></div>'
-        :"");
-    const pu=$("pUnroute");
-    if(pu)pu.onclick=unrouteSel;
-    return;
-  }
+  /* Tout le reste — cinq vias au lasso, dix empreintes, un mélange — passe par
+     le panneau de groupes : une ligne par jeu de cotes identiques, et les
+     champs commandent le groupe entier. */
+  if(!only(0))return propsMulti(box,fps,tr,vi,zo,ct);
   const c=conn();
   box.innerHTML='<div class="empty">Rien de sélectionné.<br><br>'+
     S.fps.length+' empreinte(s) · '+c.unrouted+' liaison(s) restant à router.'+
@@ -942,6 +935,7 @@ function propsTrack(box,t){
 function propsTracks(box,list,vias){
   const nets=[...new Set(list.map(t=>t.net||"—"))];
   const vi=vias||[];
+  mpNeuf();
   box.innerHTML=
     '<div class="empty">'+list.length+' segment'+(list.length>1?"s":"")+
       (vi.length?' et '+vi.length+' via'+(vi.length>1?'s':""):"")+
@@ -951,7 +945,9 @@ function propsTracks(box,list,vias){
       '<option value="">— inchangée —</option>'+
       S.cuL.map((L,i)=>'<option value="'+i+'">'+esc(L.name)+' — '+cuId(i,S.cu)+'</option>').join("")+
       '</select></div>'+
-    '<div class="prop two">'+numProp("msW","Largeur (mm)",list[0].w,0.05,0.05)+
+    /* Une piste qui change de largeur en route ne montre pas celle du premier
+       tronçon : le champ dit « mixte », et le renseigner les aligne tous. */
+    '<div class="prop two">'+mpNum("msW","Largeur (mm)",list,t=>t.w,2,0.05,0.05)+
       '<div><label>Longueur totale</label><input value="'+
       fmt(list.reduce((a,t)=>a+trkLen(t),0),1)+' mm" disabled></div></div>'+
     '<div class="prop"><div class="row">'+
@@ -959,6 +955,9 @@ function propsTracks(box,list,vias){
       '<div class="row">'+
       '<button class="tb" id="msCls">Largeur de classe</button>'+
       '<button class="tb" id="msDel">Supprimer</button></div></div>'+
+    /* Les vias de passage sont de la sélection : autant pouvoir en changer le
+       diamètre ici, groupés par cotes, plutôt qu'un par un au clic. */
+    mpSection("vias",vi)+
     ltSection(list,vi);
   $("msMit").onclick=mitreSel;
   $("msL").onchange=()=>{
@@ -966,22 +965,24 @@ function propsTracks(box,list,vias){
     if(v==="")return;
     push();list.forEach(t=>t.l=+v);touch();refreshPanels();draw();
   };
-  $("msW").onchange=()=>{
-    push();
-    const w=Math.max(0.05,parseFloat($("msW").value)||0.3);
-    list.forEach(t=>t.w=w);
-    touch();refreshPanels();draw();
-  };
+  mpBranche("msW",list,(t,v)=>{t.w=Math.max(0.05,v);},1);
   $("msCls").onclick=()=>{
     push();list.forEach(t=>t.w=classOf(t.net).w);touch();refreshPanels();draw();
   };
   $("msDel").onclick=deleteSel;
+  mpBrancher(box);
 }
 function propsVia(box,v){
-  const lt=ltVia(v);
+  const lt=ltVia(v), bd=viaBuild(v.a,v.b);
   box.innerHTML=
     '<div class="prop two">'+numProp("vD","Diamètre",v.d,0.05,0.2)+
       numProp("vDr","Perçage",v.drill,0.05,0.1)+'</div>'+
+    /* La nature d'abord, les couches ensuite : on veut « borgne dessus » plus
+       souvent qu'on ne veut « de L1 à L2 », et l'un pose l'autre. */
+    '<div class="prop"><label>Type de via</label><select id="vK">'+
+      viaKindsAvail().map(([k,t])=>'<option value="'+k+'"'+
+        (viaKindOf(v)===k?" selected":"")+'>'+esc(t)+'</option>').join("")+
+      '</select></div>'+
     '<div class="prop two"><div><label>De la couche</label><select id="vA">'+
       S.cuL.map((L,i)=>'<option value="'+i+'"'+(v.a===i?" selected":"")+'>'+cuId(i,S.cu)+'</option>').join("")+
       '</select></div><div><label>À la couche</label><select id="vB">'+
@@ -993,8 +994,11 @@ function propsVia(box,v){
     /* l'empilage physique donne la longueur réellement percée : un via borgne
        s'arrête en route, et c'est elle qui décide du rapport d'aspect */
     '<div class="empty" style="padding:6px 12px">'+
-      (v.a===0&&v.b===S.cu-1?"Via traversant.":"Via borgne ou enterré : "+
-      cuId(v.a,S.cu)+" → "+cuId(v.b,S.cu)+".")+
+      esc(cuId(v.a,S.cu))+" → "+esc(cuId(v.b,S.cu))+" : "+esc(bd.why)+"."+
+      /* `viaBuild` sait ce qu'un seul pressage permet ; le dire ici évite de
+         découvrir le laminage séquentiel sur le devis. */
+      (bd.ok?"":' <span class="warn">Un seul pressage n\'y suffit pas : '+
+        'à valider avec le fabricant.</span>')+
       " Perçage de "+fmt(stackSpan(v.a,v.b),3)+" mm de long, rapport d'aspect "+
       fmt(stackSpan(v.a,v.b)/Math.max(0.01,v.drill),1)+" : 1"+
       (stackSpan(v.a,v.b)/Math.max(0.01,v.drill)>8
@@ -1003,6 +1007,11 @@ function propsVia(box,v){
          piste entière les compte, autant les lire aussi sur le via seul. */
       '<br>Il ajoute à la piste qui le franchit '+ltL(lt.ind)+' de self et '+
       ltC(lt.cap)+' de capacité.</div>';
+  /* La nature a son propre gestionnaire : `f` relit les deux listes de couches,
+     et celles-ci portent encore l'ancienne portée au moment du changement. */
+  $("vK").onchange=()=>{
+    push();viaSetKind(v,$("vK").value);touch();refreshPanels();draw();
+  };
   const f=()=>{
     push();
     const cl=classOf(v.net);
@@ -1015,6 +1024,307 @@ function propsVia(box,v){
     touch();refreshPanels();draw();
   };
   ["vD","vDr","vA","vB","vN"].forEach(id=>$(id).onchange=f);
+}
+
+/* ==========================================================================
+   Sélection multiple : une ligne par groupe, modifiable d'un coup
+   --------------------------------------------------------------------------
+   Cinq vias pris au lasso, ce n'est pas cinq panneaux à faire défiler. Ceux
+   qui portent les mêmes cotes tiennent sur une seule ligne, avec leur compte :
+   « ×3 · Ø 0.80 · GND ». On clique la ligne, on change le diamètre, et les
+   trois vias suivent — un seul coup d'annulation pour les trois.
+
+   La ligne « tous » vient en tête dès qu'il y a plus d'un groupe : c'est là
+   qu'on ramène toute la sélection à une même valeur. Les champs qui diffèrent
+   d'un objet à l'autre y portent « mixte » et ne changent rien tant qu'on ne
+   les renseigne pas — sans quoi ouvrir le panneau alignerait la sélection sur
+   le premier venu, ce que personne n'a demandé.
+
+   Ce qui n'est PAS modifiable en groupe : le repère d'une empreinte et sa
+   position. Deux boîtiers ne partagent ni l'un ni l'autre — les empiler au
+   même X serait la seule chose que le champ saurait faire.
+   ========================================================================== */
+const MP_MIX=" mixte";   /* valeur de l'option « — mixte — » : aucun net ne la porte */
+const mpOuvert={};            /* par type : l'objet dont le groupe est déplié, ou "tous" */
+/* Repartir des lignes ouvertes d'office. Rien ne l'appelle en marche normale :
+   une ancre qui ne se retrouve plus dans la sélection est ignorée d'elle-même. */
+function mpRaz(){for(const k in mpOuvert)delete mpOuvert[k];}
+const mpIdx={};               /* lignes de la dernière construction, pour les clics */
+/* Vidé sur place plutôt que remplacé : le banc d'essai en garde la référence. */
+function mpNeuf(){for(const k in mpIdx)delete mpIdx[k];}
+
+/* Toutes les valeurs de la liste sont-elles la même ? Les cotes sont des
+   flottants venus du fichier : on les compare à la tolérance du micromètre. */
+function mpMeme(list,pick){
+  const a=pick(list[0]);
+  for(const o of list){
+    const b=pick(o);
+    if(typeof a==="number"&&typeof b==="number"){if(Math.abs(a-b)>1e-6)return false;}
+    else if(b!==a)return false;
+  }
+  return true;
+}
+/* La valeur commune mise en forme, ou « mixte » : sert aux lignes du tableau. */
+function mpDit(list,pick,fn){
+  if(!mpMeme(list,pick))return "mixte";
+  const v=pick(list[0]);
+  return fn?fn(v):String(v==null||v===""?"—":v);
+}
+function mpNum(id,label,list,pick,dec,step,min,off){
+  const m=mpMeme(list,pick);
+  return '<div><label>'+esc(label)+'</label><input id="'+esc(id)+'" type="number" step="'+
+    (step||0.05)+'" min="'+(min==null?0:min)+'"'+
+    (m?' value="'+esc(fmt(pick(list[0]),dec==null?2:dec))+'"':' placeholder="mixte"')+
+    (off?" disabled":"")+'></div>';
+}
+function mpTexte(id,label,list,pick,off){
+  const m=mpMeme(list,pick);
+  return '<div><label>'+esc(label)+'</label><input id="'+esc(id)+'"'+
+    (m?' value="'+esc(pick(list[0])||"")+'"':' placeholder="mixte"')+
+    (off?" disabled":"")+'></div>';
+}
+/* `opts` : [valeur, texte]. La valeur est comparée en texte — une couche et
+   une face sont des indices, un net est un nom. */
+function mpChoix(id,label,list,pick,opts,off){
+  const m=mpMeme(list,pick);
+  const v=m?String(pick(list[0])==null?"":pick(list[0])):null;
+  return '<div><label>'+esc(label)+'</label><select id="'+esc(id)+'"'+(off?" disabled":"")+'>'+
+    (m?"":'<option value="'+esc(MP_MIX)+'">— mixte —</option>')+
+    opts.map(o=>'<option value="'+esc(o[0])+'"'+(m&&v===String(o[0])?" selected":"")+'>'+
+      esc(o[1])+'</option>').join("")+'</select></div>';
+}
+function mpCouches(){return S.cuL.map((L,i)=>[i,L.name+" — "+cuId(i,S.cu)]);}
+function mpNets(vide){
+  return [["",vide||"— libre —"]].concat(netTable().map(n=>[n.name,n.name]));
+}
+/* Un champ qui commande tout un groupe. Le « mixte » laissé tel quel ne touche
+   à rien : c'est ce qui permet de ne changer QUE le diamètre sur une sélection
+   qui diffère aussi par le net et par les couches. */
+function mpBranche(id,list,fn,num,apres){
+  const el=$(id);
+  if(!el)return;
+  el.onchange=()=>{
+    const s=el.value;
+    if(s===MP_MIX)return;
+    let v=s;
+    if(num){
+      v=parseFloat(s);
+      if(!isFinite(v))return;
+    }else if(s===""&&el.placeholder)return;
+    push();
+    for(const o of list)fn(o,v);
+    if(apres)apres();
+    touch();refreshPanels();draw();
+  };
+}
+/* Un via reste percé du plus petit au plus grand, sur deux couches distinctes,
+   et son perçage tient dans sa pastille : changer une cote sur tout un groupe
+   ne doit pas produire de tube impossible. */
+function mpViaFix(v){
+  if(v.a>v.b){const k=v.a;v.a=v.b;v.b=k;}
+  if(v.a===v.b)v.b=Math.min(S.cu-1,v.a+1);
+  if(v.a===v.b)v.a=Math.max(0,v.b-1);
+  v.d=Math.max(0.2,v.d);
+  v.drill=Math.max(0.1,Math.min(v.drill,v.d-0.1));
+}
+/* Les cinq familles d'objets qu'un lasso ramène. Chacune dit comment grouper
+   (`sig`), ce qu'une ligne montre (`cell`), et quels champs commandent le
+   groupe (`form` / `wire`). */
+const MP_KINDS={
+  fps:{titre:"Empreintes",nom:["empreinte","empreintes"],
+    sig:f=>[f.pkg||"",f.value||"",f.style,fmt(f.pitch,3),fmt(f.span,3),f.pins,
+            f.side?1:0,f.rot||0,fpFree(f)?"L":"G"].join("|"),
+    cell:list=>{
+      const r=list.map(f=>String(f.ref)).sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
+      return esc(r.slice(0,6).join(", ")+(r.length>6?" … +"+(r.length-6):""))+
+        '<span class="pkgcell">'+esc(mpDit(list,f=>f.value||""))+' · '+
+        esc(mpDit(list,f=>f.pkg||""))+' · '+
+        esc(mpDit(list,f=>(f.side?1:0),v=>v?"dessous":"dessus"))+' · '+
+        esc(mpDit(list,f=>(f.rot||0),v=>v+"°"))+'</span>';
+    },
+    form:list=>{
+      const libre=list.some(f=>fpFree(f)), off=libre?1:0;
+      return '<div class="prop two">'+
+          mpTexte("mpFpVal","Valeur",list,f=>f.value||"")+
+          mpTexte("mpFpPkg","Boîtier",list,f=>f.pkg||"")+'</div>'+
+        '<div class="prop">'+mpChoix("mpFpStyle","Empreinte générique",list,f=>f.style,
+            Object.keys(STYLES).map(k=>[k,STYLES[k].n]),off)+'</div>'+
+        '<div class="prop two">'+
+          mpNum("mpFpPins","Broches",list,f=>f.pins,0,1,1)+
+          mpNum("mpFpPitch","Pas (mm)",list,f=>f.pitch,2,0.01,0.2,off)+'</div>'+
+        '<div class="prop two">'+
+          mpNum("mpFpSpan","Écartement",list,f=>f.span,2,0.01,0.2,off)+
+          mpChoix("mpFpSide","Face",list,f=>(f.side?1:0),[[0,"Dessus"],[1,"Dessous"]])+'</div>'+
+        '<div class="prop">'+mpChoix("mpFpRot","Rotation",list,f=>(f.rot||0),
+            [0,45,90,135,180,225,270,315].map(a=>[a,a+"°"]))+'</div>'+
+        (libre?'<div class="empty" style="padding:2px 12px 8px">Empreinte dessinée '+
+          'à la main dans la sélection : les cotes génériques ne commandent plus '+
+          'rien pour elle, elles restent grisées.</div>':"");
+    },
+    wire:list=>{
+      const geo=list.filter(f=>!fpFree(f));
+      mpBranche("mpFpVal",list,(f,v)=>{f.value=v;});
+      mpBranche("mpFpPkg",list,(f,v)=>{f.pkg=v.trim();applyPkgGeom(f);});
+      mpBranche("mpFpStyle",geo,(f,v)=>{f.style=v;const g=defaultGeom(v);f.pitch=g.pitch;f.span=g.span;});
+      mpBranche("mpFpPins",list,(f,v)=>fpSetPins(f,v),1);
+      mpBranche("mpFpPitch",geo,(f,v)=>{f.pitch=Math.max(0.2,v);},1);
+      mpBranche("mpFpSpan",geo,(f,v)=>{f.span=Math.max(0.2,v);},1);
+      mpBranche("mpFpSide",list,(f,v)=>{f.side=+v;},1);
+      mpBranche("mpFpRot",list,(f,v)=>{f.rot=+v;},1);
+    }},
+  tracks:{titre:"Segments",nom:["segment","segments"],
+    sig:t=>t.l+"|"+fmt(t.w,3)+"|"+(t.net||""),
+    cell:list=>esc(mpDit(list,t=>t.w,v=>fmt(v,2)+" mm"))+
+      '<span class="pkgcell">'+esc(mpDit(list,t=>t.l,v=>cuId(v,S.cu)))+' · '+
+      esc(mpDit(list,t=>t.net||"",v=>v||"libre"))+' · '+
+      fmt(list.reduce((a,t)=>a+trkLen(t),0),1)+' mm</span>',
+    form:list=>'<div class="prop">'+mpChoix("mpTrL","Couche",list,t=>t.l,mpCouches())+'</div>'+
+      '<div class="prop two">'+mpNum("mpTrW","Largeur (mm)",list,t=>t.w,2,0.05,0.05)+
+        '<div><label>Longueur cumulée</label><input value="'+
+        fmt(list.reduce((a,t)=>a+trkLen(t),0),2)+' mm" disabled></div></div>'+
+      '<div class="prop">'+mpChoix("mpTrN","Net",list,t=>t.net||"",mpNets())+'</div>',
+    wire:list=>{
+      mpBranche("mpTrL",list,(t,v)=>{t.l=+v;},1);
+      mpBranche("mpTrW",list,(t,v)=>{t.w=Math.max(0.05,v);},1);
+      mpBranche("mpTrN",list,(t,v)=>{t.net=v;});
+    }},
+  vias:{titre:"Vias",nom:["via","vias"],
+    sig:v=>fmt(v.d,3)+"|"+fmt(v.drill,3)+"|"+v.a+"|"+v.b+"|"+(v.net||""),
+    cell:list=>'Ø '+esc(mpDit(list,v=>v.d,x=>fmt(x,2)))+' · perçage '+
+      esc(mpDit(list,v=>v.drill,x=>fmt(x,2)))+
+      '<span class="pkgcell">'+esc(mpDit(list,v=>v.a,x=>cuId(x,S.cu)))+' → '+
+      esc(mpDit(list,v=>v.b,x=>cuId(x,S.cu)))+' · '+
+      esc(mpDit(list,v=>viaKindOf(v),k=>viaKindTxt(k).toLowerCase()))+' · '+
+      esc(mpDit(list,v=>v.net||"",x=>x||"libre"))+'</span>',
+    form:list=>'<div class="prop two">'+
+        mpNum("mpViaD","Diamètre",list,v=>v.d,2,0.05,0.2)+
+        mpNum("mpViaDr","Perçage",list,v=>v.drill,2,0.05,0.1)+'</div>'+
+      /* Le geste qu'on vient chercher ici : cinq vias pris au Ctrl+clic passent
+         tous en borgne dessus d'une seule liste. */
+      '<div class="prop">'+mpChoix("mpViaK","Type de via",list,v=>viaKindOf(v),
+        viaKindsAvail())+'</div>'+
+      '<div class="prop two">'+
+        mpChoix("mpViaA","De la couche",list,v=>v.a,S.cuL.map((L,i)=>[i,cuId(i,S.cu)]))+
+        mpChoix("mpViaB","À la couche",list,v=>v.b,S.cuL.map((L,i)=>[i,cuId(i,S.cu)]))+'</div>'+
+      '<div class="prop">'+mpChoix("mpViaN","Net",list,v=>v.net||"",mpNets())+'</div>',
+    wire:list=>{
+      mpBranche("mpViaK",list,(v,x)=>{viaSetKind(v,x);mpViaFix(v);});
+      mpBranche("mpViaD",list,(v,x)=>{v.d=x;mpViaFix(v);},1);
+      mpBranche("mpViaDr",list,(v,x)=>{v.drill=x;mpViaFix(v);},1);
+      mpBranche("mpViaA",list,(v,x)=>{v.a=+x;mpViaFix(v);},1);
+      mpBranche("mpViaB",list,(v,x)=>{v.b=+x;mpViaFix(v);},1);
+      mpBranche("mpViaN",list,(v,x)=>{v.net=x;});
+    }},
+  zones:{titre:"Zones",nom:["zone","zones"],
+    sig:z=>z.l+"|"+(z.net||""),
+    cell:list=>esc(mpDit(list,z=>z.l,v=>cuId(v,S.cu)))+
+      '<span class="pkgcell">'+esc(mpDit(list,z=>z.net||"",v=>v||"cuivre isolé"))+' · '+
+      list.reduce((a,z)=>a+z.pts.length,0)+' sommets</span>',
+    form:list=>'<div class="prop">'+mpChoix("mpZoL","Couche",list,z=>z.l,mpCouches())+'</div>'+
+      '<div class="prop">'+mpChoix("mpZoN","Net rattaché",list,z=>z.net||"",
+        mpNets("— aucun (cuivre isolé) —"))+'</div>',
+    wire:list=>{
+      /* déformer un plan de couche le détache déjà : le déplacer aussi */
+      mpBranche("mpZoL",list,(z,v)=>{detachAuto(z);z.l=+v;},1,()=>{buildLayers();});
+      mpBranche("mpZoN",list,(z,v)=>{
+        z.net=v;
+        if(z.auto&&S.cuL[z.l])S.cuL[z.l].net=v;
+      },0,()=>{buildLayers();});
+    }},
+  cuts:{titre:"Découpes",nom:["découpe","découpes"],
+    sig:c=>String(c.l),
+    cell:list=>esc(mpDit(list,c=>c.l,v=>cuId(v,S.cu)))+
+      '<span class="pkgcell">'+list.reduce((a,c)=>a+c.pts.length,0)+' sommets</span>',
+    form:list=>'<div class="prop">'+mpChoix("mpCtL","Couche",list,c=>c.l,mpCouches())+'</div>',
+    wire:list=>{mpBranche("mpCtL",list,(c,v)=>{c.l=+v;},1,()=>{buildLayers();});}}
+};
+/* Les groupes d'un type, du plus nombreux au plus rare, précédés de la ligne
+   « tous » quand il y en a plusieurs. Le groupe déplié se retrouve par l'objet
+   qui l'ancre et non par son rang : changer un diamètre refait les groupes, et
+   la ligne qu'on avait ouverte doit rester ouverte. */
+function mpRangs(k,list){
+  const D=MP_KINDS[k], m=new Map();
+  for(const o of list){
+    const s=D.sig(o);
+    if(!m.has(s))m.set(s,[]);
+    m.get(s).push(o);
+  }
+  const gs=[...m.values()].sort((a,b)=>b.length-a.length);
+  const rows=gs.map((g,i)=>({k:k,id:k+":"+i,list:g,ancre:g[0]}));
+  if(gs.length>1)rows.unshift({k:k,id:k+":tous",list:list,ancre:"tous"});
+  const a=mpOuvert[k];
+  let cur=null;
+  if(a==="tous")cur=rows.find(r=>r.ancre==="tous");
+  else if(a)cur=rows.find(r=>r.ancre!=="tous"&&r.list.indexOf(a)>=0);
+  if(!cur)cur=rows[0];
+  cur.ouvert=true;
+  mpOuvert[k]=cur.ancre;
+  for(const r of rows)mpIdx[r.id]=r;
+  return rows;
+}
+function mpSection(k,list){
+  if(!list.length)return "";
+  const D=MP_KINDS[k], rows=mpRangs(k,list), cur=rows.find(r=>r.ouvert);
+  let h='<div class="cat">'+esc(D.titre)+' · '+list.length+'</div>';
+  if(rows.length>1){
+    h+='<table class="bom"><tbody>';
+    for(const r of rows)
+      h+='<tr data-mp="'+esc(r.id)+'"'+(r.ouvert?' class="on"':"")+'>'+
+         '<td class="n">'+(r.ancre==="tous"?"tous":"×"+r.list.length)+'</td>'+
+         '<td class="net">'+D.cell(r.list)+'</td></tr>';
+    h+='</tbody></table>';
+  }
+  h+=D.form(cur.list);
+  if(list.length>1)
+    h+='<div class="empty" style="padding:2px 12px 8px">'+
+       (cur.ancre==="tous"
+        ? "Toute la sélection. « mixte » marque ce qui diffère d'un "+esc(D.nom[0])+
+          " à l'autre : le champ ne touche à rien tant qu'on ne le renseigne pas."
+        : "Ligne choisie : "+cur.list.length+" "+
+          esc(D.nom[cur.list.length>1?1:0])+" modifié"+(cur.list.length>1?"s":"")+
+          " ensemble, en un seul coup d'annulation.")+'</div>';
+  return h;
+}
+/* Les clics sur les lignes, puis les champs du groupe ouvert de chaque type. */
+function mpBrancher(box){
+  box.querySelectorAll("tr[data-mp]").forEach(tr=>{
+    tr.onclick=()=>{
+      const r=mpIdx[tr.dataset.mp];
+      if(!r)return;
+      mpOuvert[r.k]=r.ancre;
+      buildProps();
+    };
+  });
+  for(const id in mpIdx){
+    const r=mpIdx[id];
+    if(r.ouvert)MP_KINDS[r.k].wire(r.list);
+  }
+}
+function propsMulti(box,fps,tr,vi,zo,ct){
+  const cu=tr.length+vi.length;
+  const dire=(n,s)=>n?n+" "+s+(n>1?"s":""):"";
+  mpNeuf();
+  box.innerHTML='<div class="empty">Sélection : '+
+      [dire(fps.length,"empreinte"),dire(tr.length,"segment"),dire(vi.length,"via"),
+       dire(zo.length,"zone"),dire(ct.length,"découpe")].filter(Boolean).join(" · ")+
+      '.<br>R pivote · F retourne · Suppr supprime.</div>'+
+    /* Le cuivre routé de la sélection se retire à part : c'est le geste qu'on
+       fait avant de replacer un boîtier, et un lasso ne sait pas le distinguer.
+       Le bouton ne paraît que s'il y a quelque chose à dérouter. */
+    (cu?'<div class="prop"><div class="row"><button class="tb" id="pUnroute">'+
+        'Dérouter '+(tr.length?tr.length+' segment'+(tr.length>1?'s':''):'')+
+        (tr.length&&vi.length?' et ':'')+
+        (vi.length?vi.length+' via'+(vi.length>1?'s':''):'')+' <kbd>U</kbd>'+
+        '</button></div>'+
+        '<div class="empty" style="padding:6px 12px">Les empreintes restent en '+
+        'place et sélectionnées : de quoi les replacer avant de router autrement. '+
+        'Les zones de cuivre ne sont pas du routage, elles ne partent pas.</div></div>'
+      :"")+
+    mpSection("fps",fps)+mpSection("tracks",tr)+mpSection("vias",vi)+
+    mpSection("zones",zo)+mpSection("cuts",ct);
+  const pu=$("pUnroute");
+  if(pu)pu.onclick=unrouteSel;
+  mpBrancher(box);
 }
 
 /* ---------- liste de droite ---------- */

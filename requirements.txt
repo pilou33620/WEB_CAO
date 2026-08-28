@@ -29,4 +29,40 @@
 #
 # Les bancs d'essai tournent sous Node, pas sous Python (voir README.md) ; le
 # paquet npm facultatif « canvas » n'a rien a faire ici.
+#
+# -----------------------------------------------------------------------------
+# UNE EXCEPTION, ET ELLE EST HORS DE CE FICHIER : le solveur electromagnetique
+#
+# python/ligne_mom.py -- methode des moments sur la section droite, qui donne
+# l'impedance d'une piste -- a besoin de NUMPY, et de numpy seul. Ce paquet
+# n'est PAS liste ici, et ce n'est pas un oubli : la garantie ci-dessus tient
+# toujours, parce que rien de ce que le depot fait par ailleurs n'en depend.
+#
+# SCIPY N'EST PAS UNE DEPENDANCE DU SOLVEUR, contrairement a ce que trois
+# messages de ce depot ont longtemps affirme. Seul le banc d'essai l'importe,
+# pour les integrales elliptiques de son etalon de triplaque -- et un banc
+# d'essai n'a pas a peser sur ce qu'il faut installer pour se servir de
+# l'outil. (mom_solver/, le moteur 2,5D pleine onde livre a part, demande bien
+# numpy, scipy et numba -- mais il n'est pas dans le chemin de calcul.)
+#
+#   · les deux editeurs s'ouvrent en double-clic, sans Python du tout ;
+#   · serveur.py demarre, sert les pages, la recherche de composants, les
+#     profils, les projets et la lecture IPC-2581 sans numpy ;
+#   · seule la route /api/simulation manque a l'appel. Elle repond alors 503 en
+#     nommant ce qui manque, le panneau « Simulation EM » l'affiche, et son
+#     bouton « Exporter .json » continue de servir : le probleme s'enregistre et
+#     se donne au solveur en ligne de commande sur une autre machine.
+#
+# Autrement dit : ce paquet achete une fonction de plus, il n'est le prix
+# d'aucune de celles qui existaient. L'ecrire ici le rendrait
+# obligatoire -- « pip install -r requirements.txt » echouerait derriere un
+# proxy d'entreprise, et le depot perdrait exactement ce que ce fichier
+# protege. Pour s'en servir :
+#
+#     pip install numpy
+#
+# Le banc d'essai du solveur se lance sans pytest. Lui seul demande scipy :
+#
+#     pip install scipy
+#     python python/test/banc-ligne-mom.py
 # =============================================================================
