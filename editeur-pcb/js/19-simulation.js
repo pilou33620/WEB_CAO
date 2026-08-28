@@ -578,17 +578,37 @@ const SIM_PCB={
   /* D'OÙ VIENNENT LES COTES DE LA SECTION. Ici, d'un seul endroit : le panneau
      « Empilage physique ». Rien n'est supposé, rien n'est lu dans un fichier
      tiers — il n'y a donc pas de provenance à détailler valeur par valeur comme
-     le fait la visionneuse.
-
-     RESTE LA MÊME RÉSERVE, et c'est celle qui compte : l'empilage saisi est le
-     NOMINAL, celui qu'on commande. La carte pressée n'a pas exactement ces
-     cotes, et sur une ligne à 50 Ω quarante microns de diélectrique valent deux
-     ohms et demi. Le dire sous la section, à côté du h qui vient d'être affiché,
-     est le seul endroit où cela sert vraiment. */
+     le fait la visionneuse. Le dire sous la section, à côté du h qui vient
+     d'être affiché, est le seul endroit où cela sert vraiment. */
   provenance:function(){
-    return "Empilage nominal, saisi dans « Empilage physique » : la carte "+
-           "pressée s'en écarte, et quarante microns de diélectrique valent "+
-           "deux ohms et demi sur une ligne à 50 Ω.";
+    return "Empilage saisi dans « Empilage physique ».";
+  },
+
+  /* CE QU'IL Y A AU BOUT DE LA CHAÎNE. Le panneau nomme ses deux ports avec
+     ça, et c'est la seule vérification qui se fasse d'un coup d'œil : « port 1
+     sur la pastille J1.1 » se contrôle sans quitter la fiche, un couple de
+     coordonnées non.
+
+     LA PASTILLE D'ABORD, LE VIA ENSUITE : les deux se superposent souvent —
+     un via en pied de pastille — et c'est la pastille qui porte le nom utile.
+     `padDist` rend une distance SIGNÉE au bord, négative dedans ; la tolérance
+     de deux centièmes rattrape le bout de piste qui s'arrête au ras du cuivre
+     plutôt qu'en son centre.
+
+     L'indice `layer` du document désigne une entrée de l'empilage à plat, pas
+     un rang de cuivre : c'est l'inverse de `simCuIndex()`. */
+  bout:function(pt,obj){
+    if(!(pt&&pt.length>=2))return "";
+    const cu=Math.floor(((obj&&obj.layer)||0)/2);
+    for(const fp of S.fps)
+      for(const q of padsWorld(fp))
+        if(padLayers(fp,q).indexOf(cu)>=0&&padDist(pt[0],pt[1],q)<=0.02)
+          return "la pastille "+(fp.ref||"?")+"."+(q.n==null?"?":q.n);
+    for(const v of S.vias)
+      if(cu>=Math.min(v.a,v.b)&&cu<=Math.max(v.a,v.b)&&
+         Math.hypot(v.x-pt[0],v.y-pt[1])<=Math.max((v.d||0)/2,0.02))
+        return "un via";
+    return "";
   },
 
   /* Le problème complet, tiré de la sélection. Les refus sont explicites et

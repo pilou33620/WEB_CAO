@@ -56,7 +56,9 @@ const FICHIERS=[
   path.join(RACINE,"..","commun","simulation-em.js"),
   path.join(RACINE,"js","07-simulation.js")
 ];
-const EXPOSE=["V","LT","ltAire","ltPreparer","LT_SEUIL_PLAN","mdlLongueur",
+const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
+  "simSaisie","simPorts",
+  "V","LT","ltAire","ltPreparer","LT_SEUIL_PLAN","mdlLongueur",
   "mdlNetNom","mdlNb","mdlCharger","mdlCouches",
   "SIM","SIM_IPC","simRefSet","simRefListe","simRefCandidats",
   "simRefCandidatsIpc",
@@ -119,7 +121,18 @@ function carte(opts){
        nom-la. */
     couches:["Top","Bottom"],
     pistes:[piste],
-    arcs:[], plans:(opts.plans||[]), textes:[], pads:[], composants:[],
+    arcs:[], plans:(opts.plans||[]), textes:[],
+    /* Pastilles et composants : vides par defaut -- la plupart des essais
+       n'eprouvent que du cuivre. `padstacks` doit exister meme vide :
+       `mdlPadPlace` y cherche la definition avant tout autre test, et un
+       modele sans ce champ leverait la ou il devrait retomber sur son repli. */
+    padstacks:(opts.padstacks||{}),
+    /* Les deux dictionnaires de formes, vides mais PRESENTS : `mdlForme` y
+       cherche toute forme nommee par un padstack, et un modele sans ces
+       champs leve au chargement la ou il devrait rendre null. Le vrai modele
+       les porte toujours. */
+    formes:(opts.formes||{}), formesuser:(opts.formesuser||{}),
+    pads:(opts.pads||[]), composants:(opts.composants||[]),
     percages:(opts.percages||[])
   };
   mdlCharger(modele);
@@ -660,9 +673,14 @@ T("la provenance dit si chaque cote vient du fichier, d'une saisie ou d'un repli
   const p=SIM_IPC.provenance(Object.assign({},SECT,{plan_bas:"Bottom"}));
   if(!/du fichier/.test(p))
     throw new Error("les valeurs lues doivent être annoncées comme telles : "+p);
-  if(!/[Nn]ominal/.test(p))
-    throw new Error("la réserve nominal/pressé doit y être — c'est elle qui "+
-                    "explique les trois ohms : "+p);
+  /* ET RIEN D'AUTRE QUE LA PROVENANCE. La phrase portait une réserve générale
+     sur l'empilage nominal et la carte pressée ; elle a été retirée, et le
+     banc le garde retiré. Elle se répétait à l'identique sous chaque section,
+     elle ne se rapportait à aucune des cotes qu'elle suivait, et une réserve
+     qu'on lit à chaque calcul cesse d'être lue. */
+  if(/[Nn]ominal|press/.test(p))
+    throw new Error("la provenance dit d'où viennent les cotes, et rien "+
+                    "d'autre : "+p);
   /* Une valeur SAISIE se distingue d'une valeur lue : c'est l'utilisateur qui
      répond du chiffre, et il doit le savoir. */
   V.sur.cu["Top"]=0.070;
@@ -693,6 +711,85 @@ T("une cote qui manque au fichier est annoncée SUPPOSÉE, avec où la saisir",(
     throw new Error("une valeur absente du fichier doit être dite supposée : "+p);
   if(!/La carte/.test(p))
     throw new Error("il faut dire OÙ la saisir, sinon l'avertir n'aide pas : "+p);
+});
+
+
+/* ==========================================================================
+   L'UNITÉ DES FRÉQUENCES
+   --------------------------------------------------------------------------
+   La faute qu'on cherche à rendre impossible : écrire 868 dans un champ qui
+   attend des gigahertz. Elle ne produisait ni refus ni champ vide — seulement
+   une bande ramenée de force par le serveur, des pertes fausses d'un facteur
+   trois, et le repère f₀ posé au mauvais endroit sur la courbe.
+
+   CE QUI EST ÉPROUVÉ ICI est l'invariant qui compte : changer d'unité CONVERTIT
+   l'écriture, il ne réinterprète pas la valeur. Les hertz ne bougent pas.
+   ========================================================================== */
+T("changer d'unité ne change pas la fréquence, seulement son écriture",()=>{
+  /* ON PASSE PAR LES CHAMPS, parce que c'est par là que passe l'utilisateur :
+     `simSaisie()` lit le DOM et le DOM l'emporte sur `SIM.saisie`. Poser la
+     valeur en mémoire seule éprouverait un chemin que personne n'emprunte. */
+  const ch=id=>document.getElementById(id);
+  SIM.saisie.unite="MHz";
+  ch("simFc").value="868"; ch("simF1").value="100"; ch("simF2").value="3000";
+  simSaisie();
+  if(SIM.saisie.fc!==868e6)
+    throw new Error("868 en MHz vaut 868 MHz, pas "+SIM.saisie.fc+" Hz");
+  simUniteChanger("GHz");
+  if(SIM.saisie.unite!=="GHz")throw new Error("l'unité doit avoir changé");
+  if(SIM.saisie.fc!==868e6)
+    throw new Error("changer d'unité ne déplace pas f₀ : "+SIM.saisie.fc+" Hz");
+  if(SIM.saisie.f1!==1e8||SIM.saisie.f2!==3e9)
+    throw new Error("la bande ne doit pas bouger non plus");
+  /* ET LE CHAMP A ÉTÉ RÉÉCRIT dans la nouvelle unité : c'est la moitié
+     visible du contrat. Sans cela on lirait 868 sous une étiquette GHz. */
+  if(ch("simFc").value!=="0,868")
+    throw new Error("le champ doit montrer 0,868 : « "+ch("simFc").value+" »");
+  /* Et l'aller-retour retombe exactement où il était : sans cela, choisir son
+     unité deux fois de suite ferait dériver la valeur. */
+  simUniteChanger("MHz");
+  simUniteChanger("GHz");
+  if(SIM.saisie.fc!==868e6)throw new Error("aller-retour : "+SIM.saisie.fc);
+  /* Une unité inconnue ne fait rien plutôt que de poser un facteur absent :
+     `simUnite()` retomberait sur GHz et multiplierait par un milliard. */
+  simUniteChanger("parsecs");
+  if(SIM.saisie.unite!=="GHz")throw new Error("une unité inconnue est refusée");
+});
+
+T("les quatre unités portent le bon facteur, et GHz reste le défaut",()=>{
+  const attendu={Hz:1, kHz:1e3, MHz:1e6, GHz:1e9};
+  for(const u of SIM_UNITES)
+    if(u.f!==attendu[u.cle])throw new Error(u.cle+" vaut "+u.f);
+  SIM.saisie.unite="GHz";
+  if(simUnite().cle!=="GHz")throw new Error("le défaut est le gigahertz");
+  /* Une division par un milliard laisse des décimales parasites ; le champ
+     doit montrer 0,868, pas 0,8680000000000001. */
+  if(simNbLibre(868e6/1e9)!=="0,868")
+    throw new Error("écriture du champ : "+simNbLibre(868e6/1e9));
+});
+
+/* ==========================================================================
+   LES DEUX BOUTS DE LA CHAÎNE
+   --------------------------------------------------------------------------
+   Le panneau nomme ses ports avec `bout()`. « Port 1 sur la pastille J1.1 » se
+   vérifie sans quitter la fiche ; un couple de coordonnées oblige à aller
+   regarder la carte, et c'est cette vérification-là qu'on saute.
+   ========================================================================== */
+T("le bout de la chaîne nomme la pastille et son composant",()=>{
+  carte({composants:[{ref:"J1", c:0, x:0, y:0, r:0, m:0,
+                      pads:[{x:X1, y:Y, r:0, m:0, ps:"P1", pin:"1", n:0}]}],
+         padstacks:{P1:{pad:0.8, pads:[{c:"Top", d:0.8}]}}});
+  const obj={layer:simRangCu(0)};
+  const t=SIM_IPC.bout([X1,Y],obj);
+  if(!/J1[.]1/.test(t))throw new Error("la pastille doit être nommée : « "+t+" »");
+  /* Loin de tout cuivre on ne dit RIEN, plutôt que d'attraper la pastille la
+     plus proche : un nom faux est pire qu'une coordonnée seule. */
+  if(SIM_IPC.bout([X2,Y],obj)!=="")
+    throw new Error("l'autre bout ne porte aucune pastille");
+  /* Une couche qui n'est pas celle de la pastille ne la voit pas : la même
+     coordonnée sur le plan du dessous n'est pas la même chose. */
+  if(SIM_IPC.bout([X1,Y],{layer:simRangCu(1)})!=="")
+    throw new Error("la pastille est sur Top, pas sur Bottom");
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

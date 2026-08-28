@@ -1562,6 +1562,31 @@ mettant les matrices ABCD des tronçons bout à bout — un rétrécissement au
 milieu d'une piste s'y lit comme une remontée de S₁₁, ce qui est bien ce qu'un
 rétrécissement fait. Trois exports : `.csv`, `.s2p` et `.json`.
 
+### L'unité des fréquences se choisit dans une liste
+
+Les trois champs de fréquence — `f₀`, début et fin de bande — partagent une
+**liste déroulante** Hz / kHz / MHz / GHz. Elle n'existe pas par confort :
+écrire `868` dans un champ étiqueté GHz est une faute qui ne se voit pas. Elle
+ne produit ni refus ni champ vide, seulement une bande trois cents fois trop
+haute que le serveur ramène au bord de la sienne — avec des **pertes fausses
+d'un facteur trois** et le repère `f₀` posé ailleurs qu'où on le croit sur la
+courbe S. L'impédance et le retard, eux, restent justes : ils ne dépendent
+presque pas de la fréquence.
+
+Deux règles, et ce sont elles qui font le travail :
+
+- **changer d'unité convertit, ça ne réinterprète pas.** `868` en MHz devient
+  `0,868` en GHz, jamais `868` GHz. La valeur physique ne bouge pas, donc aucun
+  résultat déjà calculé n'est effacé au passage — on peut choisir son unité
+  après avoir tapé ;
+- **une seule liste pour les trois champs.** Trois listes séparées
+  permettraient d'écrire la bande en mégahertz et sa fréquence centrale en
+  gigahertz, ce qui est exactement l'erreur qu'on cherche à rendre impossible.
+
+Et si `f₀` tombe malgré tout hors de la bande, le panneau le dit **pendant la
+saisie**. Le serveur le signalait déjà, mais dans les avertissements du
+résultat : après coup, sous un chiffre déjà lu.
+
 ### La section résolue est écrite sous la fiche
 
 Une ligne, avant les notes, qui dit sur QUOI l'impédance a été obtenue :
@@ -1570,8 +1595,6 @@ Une ligne, avant les notes, qui dit sur QUOI l'impédance a été obtenue :
 Section Conductor-4 — microruban : plan Conductor-3, h 0,380 mm, εr 4,44,
 tan δ 0,0200, cuivre 35 µm, piste 0,520 mm → ε_eff 3,080.
 Cuivre, h, εr du fichier ; tan δ supposé, à saisir dans « La carte ».
-Empilage nominal du fichier, pas la carte pressée : quarante microns de
-diélectrique valent deux ohms et demi sur une ligne à 50 Ω.
 Le masque de soudure n'est pas dans l'empilage : sur une couche extérieure
 il fait baisser Z₀ de deux à trois pour cent, non comptés ici.
 ```
@@ -1588,6 +1611,36 @@ provenance de chaque cote vient de l'outil, pas du serveur — lui seul sait si
 une épaisseur a été lue, saisie ou remplacée par un repli. Les mêmes colonnes
 sont dans le `.csv` : `plan_reference`, `h_mm`, `er`, `tan_delta`, `cuivre_mm`,
 `couverture_mm`.
+
+### Les deux ports se déduisent, et ils se nomment
+
+Personne ne place de port, et c'est voulu : le modèle est une **chaîne** de
+lignes uniformes, elle a exactement deux bouts, il n'y a rien à choisir. Le
+port 1 est le départ du premier tronçon envoyé, le port 2 l'arrivée du
+dernier, tous deux ramenés à l'impédance du champ *« Réf. »*.
+
+La fiche les **nomme** quand l'outil sait ce qu'il y a là :
+
+```
+Ports déduits, non placés : 1 au départ du premier tronçon, sur la pastille
+J1.1 (12,40 ; 8,15), 2 à l'arrivée du dernier, sur la pastille U3.7
+(23,09 ; 8,15), tous deux sur 50 Ω.
+```
+
+Les coordonnées restent — elles départagent deux pastilles du même repère —
+mais elles ne sont plus la seule chose écrite : *« port 1 sur J1.1 »* se
+vérifie sans quitter la fiche, un couple de nombres oblige à aller regarder la
+carte, et c'est cette vérification-là qu'on saute. L'adaptateur répond par
+`bout(pt, obj)` ; celui qui ne sait pas répondre rend une chaîne vide, et on
+retombe sur les coordonnées seules. On ne prend que la pastille **la plus
+proche**, et rien du tout au-delà de son rayon : un nom faux serait pire qu'une
+coordonnée nue.
+
+Nommer la pastille et dire qu'elle n'est pas modélisée n'est pas une
+contradiction, c'est le point entier — **le port est posé là où elle est, et
+son cuivre à elle ne compte pas**. Ni pastille, ni via, ni connecteur, ni
+longueur d'accès à retrancher : S₁₁ est la réflexion du cuivre nu, et il est
+donc nécessairement meilleur qu'une mesure au VNA sur la vraie carte.
 
 ### La masse coplanaire : trois questions, et qui y répond
 

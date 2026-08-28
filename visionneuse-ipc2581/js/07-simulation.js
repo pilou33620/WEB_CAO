@@ -585,12 +585,6 @@ function simSegments(){
    fiche de ligne de transmission s'en sert de son côté ; c'est la même vérité,
    et ce doit rester la même.
 
-   ET UNE RÉSERVE QUI VAUT POUR TOUT FICHIER IPC-2581, même complet : l'empilage
-   qu'il porte est le NOMINAL, celui du dossier de fabrication, pas celui de la
-   carte pressée. Un prepreg annoncé à 0,36 mm sort couramment à 0,32, et
-   quarante microns de moins valent deux ohms et demi sur une ligne à 50. C'est
-   la première chose à vérifier quand le calcul ne tombe pas sur la mesure, et
-   l'outil ne peut que la signaler.
    ========================================================================== */
 function simProvenanceIpc(seg){
   if(!LT.pret)return "";
@@ -643,11 +637,7 @@ function simProvenanceIpc(seg){
                (par.suppose.length>1?"s":"")+", à saisir dans « La carte »");
   let t=bouts.join(" ; ");
   t=t.charAt(0).toUpperCase()+t.slice(1);
-  /* LA RÉSERVE QUI VAUT MÊME QUAND TOUT EST LU DANS LE FICHIER, et qui est la
-     première chose à vérifier quand le calcul ne tombe pas sur la mesure. */
-  return t+". Empilage nominal du fichier, pas la carte pressée : quarante "+
-         "microns de diélectrique valent deux ohms et demi sur une ligne à "+
-         "50 Ω.";
+  return t+".";
 }
 
 /* ==========================================================================
@@ -772,6 +762,41 @@ const SIM_IPC={
 
   refCandidats:simRefCandidatsIpc,
   provenance:simProvenanceIpc,
+
+  /* CE QU'IL Y A AU BOUT DE LA CHAÎNE, pour que le panneau nomme ses deux
+     ports. « Port 1 sur la pastille J1.1 » se vérifie sans quitter la fiche ;
+     un couple de coordonnées oblige à aller regarder sur la carte, et c'est
+     cette vérification-là qu'on saute.
+
+     LA PLUS PROCHE, PAS LA PREMIÈRE TROUVÉE : deux pastilles voisines d'un pas
+     de 0,5 mm se recouvrent presque, et prendre celle qui sort d'abord de la
+     liste donnerait un nom une fois sur deux. Le rayon de recherche est celui
+     de la pastille, jamais moins de cinq centièmes — un bout de piste s'arrête
+     au ras du cuivre, pas toujours au centre.
+
+     L'indice `layer` du document désigne une entrée de l'empilage à plat :
+     c'est l'inverse de `simRangCu()`, et `LT.cu[k].couche` ramène ensuite à la
+     couche du modèle, qui est celle qui porte les pastilles. */
+  bout:function(pt,obj){
+    if(!(pt&&pt.length>=2)||!LT.pret)return "";
+    const cu=LT.cu[Math.floor(((obj&&obj.layer)||0)/2)];
+    const c=cu?V.couches[cu.couche]:null;
+    if(!c)return "";
+    let mieux=null;
+    for(const q of (c.pads||[])){
+      const d=Math.hypot(q.x-pt[0],q.y-pt[1]);
+      if(d<=Math.max((q.d||0)/2,0.05)&&(!mieux||d<mieux.d))mieux={d:d,q:q};
+    }
+    if(!mieux)return "";
+    const q=mieux.q;
+    const ref=(q.hote&&q.hote.ref)?String(q.hote.ref):"";
+    const pin=(q.pad&&q.pad.pin!=null)?String(q.pad.pin):"";
+    /* Une pastille sans composant hôte est une pastille libre — un via, un
+       point de test. On ne lui invente pas de repère : dire « une pastille »
+       est vrai, « la pastille .1 » ne l'est pas. */
+    if(!ref)return "une pastille";
+    return "la pastille "+ref+(pin?"."+pin:"");
+  },
 
   probleme:function(opts){
     if(!V.modele)

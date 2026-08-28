@@ -51,6 +51,12 @@
                                          proposés d'office
      probleme(opts)   -> {doc, objets, portee, notes, couture, voisins}
                          ou {erreur, conseil}
+     bout(pt, obj)    -> texte           ce qu'il y a au point `pt` [x,y] sur
+                                         la couche de `obj` (l'objet du
+                                         document d'échange) : « pastille
+                                         J1.1 », « via », ou "" si l'outil ne
+                                         sait pas. Sert à NOMMER les deux
+                                         ports. Facultatif
      redessiner()                        redessine le canevas de l'outil
      astuce(txt)                         la ligne de pied de page
 
@@ -104,8 +110,27 @@ const SIM={
      démarre sur ce qui existe — SI, impédance —, parce qu'ouvrir un panneau
      sur une famille vide n'apprendrait rien à qui vient de cliquer. */
   famille:"si", analyse:"impedance",
-  saisie:{f1:1e8, f2:5e9, points:21, fc:1e9, z0:50, cible:50, tolPct:10}
+  /* Les fréquences vivent EN HERTZ ici et jusqu'au serveur ; `unite` ne dit
+     que dans quoi on les écrit et les relit à l'écran. Séparer les deux est
+     tout l'objet de la liste déroulante : saisir 868 en croyant écrire des
+     mégahertz alors que le champ attendait des gigahertz donnait une bande
+     ramenée de force, des pertes fausses d'un facteur trois, et rien à
+     l'écran pour le voir avant le calcul. */
+  saisie:{f1:1e8, f2:5e9, points:21, fc:1e9, z0:50, cible:50, tolPct:10,
+          unite:"GHz"}
 };
+
+/* Les unités offertes, du hertz au gigahertz. Elles ne changent RIEN au
+   calcul : elles multiplient ce qu'on tape et divisent ce qu'on relit. */
+const SIM_UNITES=[
+  {cle:"Hz",  f:1},
+  {cle:"kHz", f:1e3},
+  {cle:"MHz", f:1e6},
+  {cle:"GHz", f:1e9}
+];
+function simUnite(){
+  return SIM_UNITES.find(u=>u.cle===SIM.saisie.unite)||SIM_UNITES[3];
+}
 
 function simEsc(s){
   return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
@@ -687,9 +712,8 @@ function simFiche(){
    ET C'EST PRESQUE TOUJOURS LÀ QUE SE TROUVE LA RÉPONSE. Le solveur est vérifié
    à 0,25 % contre la transformation conforme sur la section coplanaire, à 0,42 %
    contre Hammerstad-Jensen sur le microruban : quand il ne tombe pas sur la
-   carte réelle, ce sont ses ENTRÉES qui diffèrent. Un fichier IPC-2581 porte
-   l'empilage NOMINAL — un prepreg annoncé à 0,36 mm sort couramment à 0,32, et
-   quarante microns de moins valent deux ohms et demi.
+   carte réelle, ce sont ses ENTRÉES qui diffèrent — et c'est la provenance de
+   chaque cote, écrite en italique sous la section, qui le dit.
 
    UNE LIGNE PAR SECTION DISTINCTE, et non par tronçon : une piste découpée en
    trois plages d'écart a la même section droite verticale — même couche, même
@@ -1094,20 +1118,39 @@ function simVoisins(){
        sens de parcours électrique. Sur une chaîne c'est sans conséquence pour
        S₂₁ ; pour S₁₁ contre S₂₂, cela dit lequel est « l'entrée ».
 
-   On affiche les coordonnées quand le document les porte : c'est le seul moyen
-   de vérifier d'un coup d'œil que le port 1 est bien là où on croit. */
+   ON LES NOMME QUAND L'OUTIL SAIT CE QU'IL Y A LÀ. « Port 1 sur la pastille
+   J1.1 » se vérifie d'un coup d'œil ; « (12,40 ; 8,15) » oblige à aller
+   regarder, et c'est justement la vérification qu'on saute. Les coordonnées
+   restent — elles départagent deux pastilles du même repère —, mais elles ne
+   sont plus la seule chose écrite. L'adaptateur répond par `bout()` ; celui
+   qui ne sait pas répondre rend une chaîne vide, et on retombe sur les
+   coordonnées seules. */
 function simPorts(res){
   const objs=(SIM.doc&&SIM.doc.geometry&&SIM.doc.geometry.objects)||[];
   const zr=res.impedance_reference||SIM.saisie.z0;
-  const pt=p=>(p&&p.length>=2)
-    ?" ("+simNb(p[0],2)+" ; "+simNb(p[1],2)+")":"";
-  const a=objs.length?pt(objs[0].start):"";
-  const b=objs.length?pt(objs[objs.length-1].end):"";
+  const ou=function(p,obj){
+    if(!(p&&p.length>=2))return "";
+    const xy=" ("+simNb(p[0],2)+" ; "+simNb(p[1],2)+")";
+    const nom=(SIM_ED&&typeof SIM_ED.bout==="function")
+      ? (SIM_ED.bout(p,obj)||"") : "";
+    return (nom?", sur "+nom:"")+xy;
+  };
+  const pre=objs.length?objs[0]:null;
+  const der=objs.length?objs[objs.length-1]:null;
+  const a=pre?ou(pre.start,pre):"";
+  const b=der?ou(der.end,der):"";
+  /* NOMMER LA PASTILLE ET DIRE QU'ELLE N'EST PAS MODÉLISÉE n'est pas une
+     contradiction, c'est le point entier : le port est posé LÀ où elle est,
+     et son cuivre à elle ne compte pas. Sans les deux phrases côte à côte, on
+     lit S₁₁ comme s'il comprenait la pastille. */
   return '<p class="simNote">· Ports déduits, non placés : <b>1</b> au départ '+
     "du premier tronçon"+simEsc(a)+", <b>2</b> à l'arrivée du dernier"+
-    simEsc(b)+", tous deux sur "+simNb(zr,0)+" Ω. Ils sont idéaux — ni "+
-    "pastille, ni via, ni connecteur, ni longueur d'accès à retrancher : "+
-    "S₁₁ est la réflexion du cuivre nu.</p>";
+    simEsc(b)+", tous deux sur "+simNb(zr,0)+" Ω. Le modèle est une chaîne : "+
+    "elle a exactement deux bouts, il n'y a donc rien à placer. Ils sont "+
+    "idéaux — le port est posé là, mais ni la pastille, ni le via, ni le "+
+    "connecteur, ni la longueur d'accès n'entrent dans le modèle : S₁₁ est la "+
+    "réflexion du cuivre nu, et il est nécessairement meilleur qu'une mesure "+
+    "au VNA.</p>";
 }
 
 /* Le nom de la section. « Microruban couvert » n'est pas une coquetterie : une
@@ -1155,16 +1198,36 @@ function simCoplanaire(res){
       simNb(ecarts[ecarts.length-1],3)+" mm"
     : "à "+simNb(ecarts[0],3)+" mm";
   const refs=simRefListe();
-  let h='<p class="simNote">· Ligne <b>coplanaire</b> : du cuivre de masse '+
-    "borde la piste sur sa propre couche, "+quoi+". Il est dans le calcul — "+
-    "il fait tomber Z₀ de plusieurs ohms, et l'ignorer donnerait un chiffre "+
-    "nettement trop haut. Chaque côté est mesuré SÉPARÉMENT et entre dans le "+
-    "calcul pour ce qu'il est. L'écart vient "+
+  /* CE N'EST PAS UNE RÉSERVE, C'EST LE CALCUL QUI A ÉTÉ FAIT, et la phrase
+     doit le dire dans cet ordre. Écrite comme un avertissement — « du cuivre
+     borde la piste », « l'ignorer donnerait un chiffre trop haut » — elle se
+     lisait comme un défaut de la carte, alors qu'une piste RF noyée dans un
+     plan arrosé et cousu est le cas NORMAL, que c'est ce qui la fait tomber à
+     l'impédance voulue, et que l'outil l'a pris en compte. Le chiffre affiché
+     est celui de la carte ; c'est un calculateur de microruban ordinaire qui
+     se tromperait ici, pas celui-ci. */
+  let h='<p class="simNote">· Ligne <b>coplanaire</b> — le cas ordinaire sur '+
+    "une carte RF arrosée : du cuivre de masse borde la piste sur sa propre "+
+    "couche, "+quoi+". Ce cuivre prend une part du champ et abaisse Z₀ de "+
+    "plusieurs ohms, et <b>l'impédance affichée en tient compte</b> : c'est "+
+    "pour cela qu'elle décrit votre carte, là où un calculateur de microruban "+
+    "ordinaire sortirait nettement plus haut sur la même piste. Chaque côté "+
+    "est mesuré SÉPARÉMENT et entre dans le calcul pour ce qu'il est. "+
+    "L'écart vient "+
     (SIM_ED&&SIM_ED.outil==="editeur-pcb"
       ? "de la règle d'isolation qui creuse le plan"
       : "d'une mesure sur le cuivre du fichier")+
     (refs.length?", et « masse » veut dire "+simEsc(refs.join(", ")):"")+
-    ".</p>";
+    "."+
+    /* CE QUE CE CALCUL SUPPOSE est contrôlé par la note suivante, et les deux
+       ne se lisent bien qu'ensemble : le cuivre latéral n'est tenu à zéro volt
+       que si des vias l'y ramènent. Renvoyer explicitement évite qu'on lise
+       l'une sans l'autre. */
+    (SIM.couture
+      ? " Ce que ce calcul suppose — que ce cuivre soit vraiment de la masse — "+
+        "est contrôlé juste en dessous."
+      : "")+
+    "</p>";
 
   /* CE QUE LA DISSYMÉTRIE A CHANGÉ. Une piste dont les deux bords ne voient
      pas la même chose est le cas ordinaire dès qu'un plan s'arrête, et c'est
@@ -1232,6 +1295,26 @@ function simGrouper(segments){
 function simChamp(id,titre,large){
   return '<input id="'+id+'" type="text" inputmode="decimal" spellcheck="false"'+
          (large?' class="large"':"")+' title="'+simEsc(titre)+'">';
+}
+/* L'UNITÉ DES FRÉQUENCES, EN LISTE PLUTÔT QU'EN ÉTIQUETTE. Le champ portait
+   « GHz » écrit à côté, et écrire 868 dans un champ qui attend des gigahertz
+   est une faute qu'on ne voit pas : elle ne produit ni refus ni champ vide,
+   seulement une bande de trois cents fois trop haut que le serveur ramène au
+   bord — avec des pertes fausses d'un facteur trois et le repère f₀ posé
+   ailleurs qu'où on croit. Une liste ne se trompe pas de la même façon : on y
+   choisit MHz, et 868 veut alors dire ce qu'on voulait dire.
+
+   UNE SEULE LISTE POUR LES TROIS CHAMPS — f₀, début et fin de bande. Trois
+   listes séparées permettraient d'écrire une bande en mégahertz et sa
+   fréquence centrale en gigahertz, ce qui est précisément l'erreur qu'on
+   cherche à rendre impossible. */
+function simChampUnite(){
+  let h='<select class="simU simUSel" id="simFUnite" title="Unité des '+
+        "trois champs de fréquence : f₀, début et fin de bande. En changer "+
+        'CONVERTIT ce qui est écrit, cela ne le réinterprète pas.">';
+  for(const u of SIM_UNITES)
+    h+='<option value="'+u.cle+'">'+u.cle+"</option>";
+  return h+"</select>";
 }
 /* ==========================================================================
    DEUX FAMILLES, ET DES ANALYSES DEDANS
@@ -1383,20 +1466,25 @@ function simCorpsImpedance(){
     '<span class="pnl-lbl">Fréquence</span>'+
     simChamp("simFc","Fréquence centrale : c'est à celle-ci que l'impédance "+
                      "est donnée et que la carte est peinte")+
-    '<span class="simU">GHz</span>'+
+    simChampUnite()+
     '<span class="pnl-lbl">Réf.</span>'+
     simChamp("simZ0","Impédance de référence des ports, pour les paramètres S")+
     '<span class="simU">Ω</span>'+
   '</div>'+
   '<div class="pnl-bar">'+
     '<span class="pnl-lbl">Bande S</span>'+
-    simChamp("simF1","Début de bande, en GHz")+
+    simChamp("simF1","Début de bande, dans l'unité choisie ci-dessus")+
     '<span class="simSep">→</span>'+
-    simChamp("simF2","Fin de bande, en GHz")+
-    '<span class="simU">GHz</span>'+
+    simChamp("simF2","Fin de bande, dans l'unité choisie ci-dessus")+
+    '<span class="simU" id="simUBande">GHz</span>'+
     '<span class="pnl-lbl">Points</span>'+
     simChamp("simN","Nombre de points de la courbe S")+
   '</div>'+
+  /* CE QUE LE SERVEUR AURAIT CORRIGÉ EN SILENCE, dit AVANT le calcul. Il
+     ramène bien une f₀ hors bande au bord et le signale — mais il le signale
+     APRÈS, sous un résultat déjà lu, dont les pertes portent alors sur une
+     autre fréquence que celle qu'on croyait avoir demandée. */
+  '<div class="pnl-bar simFAvertBar"><span id="simFAvert"></span></div>'+
   '<div class="pnl-bar">'+
     '<button class="tb mini on" id="simGo" title="Calculer la sélection">▶ Calculer</button>'+
     '<button class="tb mini" id="simCsv" title="Le tableau des tronçons, à joindre à un dossier de fabrication">.csv</button>'+
@@ -1410,34 +1498,83 @@ function simZTolEcrire(){
   const el=simEl("simZTolAbs");
   if(el)el.textContent="± "+simNb(simZTolAbs(),1)+" Ω";
 }
+/* Un nombre écrit comme on le saisirait : virgule décimale, et pas les douze
+   décimales parasites que laisse une division par un million. */
+function simNbLibre(v){
+  if(!isFinite(v))return "";
+  return String(Number(Number(v).toPrecision(12))).replace(".",",");
+}
+
 function simSaisieEcrire(){
   const s=SIM.saisie, pose=(id,v)=>{const e=simEl(id);if(e)e.value=v;};
-  const g=v=>String(v/1e9).replace(".",",");
-  pose("simF1",g(s.f1)); pose("simF2",g(s.f2)); pose("simFc",g(s.fc));
+  const k=simUnite().f;
+  pose("simF1",simNbLibre(s.f1/k));
+  pose("simF2",simNbLibre(s.f2/k));
+  pose("simFc",simNbLibre(s.fc/k));
   pose("simN",s.points); pose("simZ0",s.z0);
   pose("simZCible",String(s.cible).replace(".",","));
   pose("simZTol",String(s.tolPct).replace(".",","));
+  const sel=simEl("simFUnite");
+  if(sel)sel.value=simUnite().cle;
+  const ub=simEl("simUBande");
+  if(ub)ub.textContent=simUnite().cle;
   simZTolEcrire();
+  simFAvertEcrire();
 }
 /* Ce que l'utilisateur a saisi, ramené aux unités du document : les fréquences
-   se saisissent en GHz et circulent en hertz. Une saisie vide ou aberrante
-   retombe sur la valeur précédente plutôt que sur zéro — une bande nulle est
-   un refus du serveur, pas une intention. */
+   se saisissent dans l'unité choisie et circulent en hertz. Une saisie vide ou
+   aberrante retombe sur la valeur précédente plutôt que sur zéro — une bande
+   nulle est un refus du serveur, pas une intention.
+
+   LE PLANCHER SUIT L'UNITÉ : un hertz, quelle que soit la case dans laquelle
+   on l'écrit. Il était figé à 1e-6, ce qui voulait dire un kilohertz en GHz —
+   et aurait voulu dire un millionième de hertz en Hz. */
 function simSaisie(){
   const lu=(id,defaut,mini)=>{
     const el=simEl(id);
     const v=el?parseFloat(String(el.value).replace(",",".")):NaN;
     return (isFinite(v)&&v>=(mini==null?0:mini))?v:defaut;
   };
-  const s=SIM.saisie;
-  s.f1=lu("simF1",s.f1/1e9,1e-6)*1e9;
-  s.f2=lu("simF2",s.f2/1e9,1e-6)*1e9;
-  s.fc=lu("simFc",s.fc/1e9,1e-6)*1e9;
+  const s=SIM.saisie, k=simUnite().f, plancher=1/k;
+  s.f1=lu("simF1",s.f1/k,plancher)*k;
+  s.f2=lu("simF2",s.f2/k,plancher)*k;
+  s.fc=lu("simFc",s.fc/k,plancher)*k;
   s.points=Math.round(lu("simN",s.points,1));
   s.z0=lu("simZ0",s.z0,1);
   s.cible=lu("simZCible",s.cible,0.1);
   s.tolPct=lu("simZTol",s.tolPct,0);
   return s;
+}
+
+/* CHANGER D'UNITÉ CONVERTIT, ÇA NE RÉINTERPRÈTE PAS. 868 en MHz devient 0,868
+   en GHz, jamais 868 GHz : la valeur physique ne bouge pas, seule son écriture
+   change. C'est ce qui fait qu'on peut choisir son unité APRÈS avoir tapé, et
+   qu'aucun résultat déjà calculé n'est invalidé au passage. */
+function simUniteChanger(cle){
+  if(!SIM_UNITES.some(u=>u.cle===cle))return;
+  simSaisie();                       // fige ce qui est écrit, ancienne unité
+  SIM.saisie.unite=cle;
+  simSaisieEcrire();                 // le réécrit dans la nouvelle
+}
+
+/* CE QUE LE SERVEUR AURAIT CORRIGÉ EN SILENCE. Il ramène bien une f₀ hors
+   bande au bord le plus proche et le dit — mais dans les avertissements du
+   RÉSULTAT, donc après coup, sous des pertes qui portent alors sur une autre
+   fréquence que celle qu'on croyait avoir demandée. Le dire pendant la saisie
+   coûte deux comparaisons. */
+function simFAvertEcrire(){
+  const el=simEl("simFAvert");
+  if(!el)return;
+  const s=SIM.saisie;
+  const f1=Math.min(s.f1,s.f2), f2=Math.max(s.f1,s.f2);
+  const txt=(s.fc<f1||s.fc>f2)
+    ? "f₀ "+simFreq(s.fc)+" est hors de la bande "+simFreq(f1)+" – "+
+      simFreq(f2)+" : le serveur la ramènera au bord, et les pertes affichées "+
+      "ne seront pas celles de f₀."
+    : "";
+  el.textContent=txt;
+  const bar=el.parentNode;
+  if(bar)bar.style.display=txt?"flex":"none";
 }
 
 /* Ce qu'affiche la zone de sortie, selon là où on en est. Un seul endroit
@@ -1726,12 +1863,17 @@ function simBrancherImpedance(){
   for(const id of ["simFc","simF1","simF2","simN","simZ0"])
     pose(id,"oninput",function(){
       simSaisie();
+      simFAvertEcrire();
       if(SIM.res&&!SIM.occupe){
         SIM.res=null; SIM.objets=[];
         SIM.err="La fréquence a changé : relancez le calcul.";
         simRendre(); simRepeindre();
       }
     });
+  /* L'UNITÉ NE CHANGE AUCUNE VALEUR, donc elle n'efface aucun résultat : elle
+     réécrit les mêmes hertz dans une autre case. C'est la différence avec les
+     champs ci-dessus, et c'est ce qui permet de la choisir après coup. */
+  pose("simFUnite","onchange",function(){simUniteChanger(this.value);});
 }
 
 /* La sélection a bougé — ou la carte. L'outil appelle, le panneau suit.

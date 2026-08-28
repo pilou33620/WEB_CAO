@@ -48,6 +48,26 @@
    points et une taille de maille tiennent en quatre chiffres. Un panneau de
    dock fait 330 px de large — trois lignes de saisie y entrent, pas six. */
 .simU,.simSep{font-family:var(--mono);font-size:10px;color:var(--txt-dim)}
+/* L'unite des frequences est une LISTE, pas une etiquette : ecrire 868 dans
+   un champ qui attend des gigahertz est une faute qui ne se voit pas, et une
+   liste la rend impossible. Elle se style comme un champ, pas comme un
+   selecteur de formulaire : c'est une commande de la meme barre. */
+select.simUSel{
+  background:#101216;border:1px solid var(--border2);color:var(--txt-dim);
+  border-radius:4px;padding:2px 3px;font-family:var(--mono);font-size:10px;
+  cursor:pointer;
+}
+select.simUSel:hover{color:var(--txt);border-color:var(--border)}
+select.simUSel:focus{outline:none;border-color:var(--blue);color:var(--txt)}
+/* L'avertissement de saisie, quand f0 tombe hors de la bande. La barre est
+   MASQUEE tant qu'il n'y a rien a dire -- une barre toujours visible pour un
+   message rare deplacerait les commandes du panneau a chaque frappe -- et
+   c'est simFAvertEcrire() qui l'affiche, pas un selecteur : `:empty` ne voit
+   pas un <span> vide, et `:has` n'est pas partout. */
+.simFAvertBar{display:none}
+.simFAvertBar #simFAvert{
+  font-size:10.5px;line-height:1.45;color:var(--yellow);
+}
 
 /* ---------- la simulation d'impédance ---------- */
 #simZCible,#simZTol,#simFc,#simZ0,#simF1,#simF2,#simN{
