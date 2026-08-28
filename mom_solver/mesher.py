@@ -10,6 +10,8 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+from green_layered import indices_plans_masse      # noqa: E402
+
 
 @dataclass
 class Edge:
@@ -56,29 +58,77 @@ def generate_2d_mesh(geometry: Dict, mesh_size: Optional[float] = None) -> Dict:
         mesh_size = dimension / 50  # ~50 éléments par dimension
         logger.debug(f"  Taille de maille automatique : {mesh_size*1000:.3f} mm")
     
+    # CE QUE LE MAILLAGE NE DOIT PAS CONTENIR, ET POURQUOI. Un plan de masse
+    # que la fonction de Green stratifiee traite ANALYTIQUEMENT -- c'est-a-dire
+    # comme le court-circuit ou bute la cascade de lignes de transmission -- ne
+    # doit pas etre maille en plus : son courant serait compte DEUX FOIS. Le
+    # maillage precedent prenait tous les polygones, plans compris.
+    #
+    # La regle vient de `green_layered.indices_plans_masse`, et pas d'ici :
+    # deux endroits qui en decident separement finiront par ne plus etre
+    # d'accord, et une matrice d'impedance fausse ne se voit pas.
+    #
+    # RESERVE A ECRIRE DANS LE CODE : le plan ainsi ecarte est suppose INFINI
+    # et parfait. C'est l'hypothese ordinaire du 2,5D, et elle cesse d'etre
+    # bonne quand le plan est etroit devant la hauteur, ou fendu sous la piste.
+    stackup = geometry.get('stackup') or {}
+    plans_analytiques = set(indices_plans_masse(stackup)) if stackup else set()
+
+    # LE Z DE CHAQUE COUCHE, ET NON ZERO POUR TOUTES. `mesh_polygon` pose ses
+    # sommets a z = 0 ; le maillage precedent gardait ce zero, si bien qu'une
+    # piste et son plan de masse se retrouvaient CONFONDUS dans l'espace. La
+    # distance entre deux points de couches differentes valait alors leur seule
+    # distance horizontale.
+    z_couches = {i: c.get('z_top', 0.0)
+                 for i, c in enumerate(stackup.get('layers', []))}
+
     # Maillage de chaque polygone
     all_vertices = []
     all_elements = []
     all_layer_ids = []
     vertex_offset = 0
-    
+    ecartes = 0
+
     for poly_idx, polygon in enumerate(geometry['polygons']):
         vertices = polygon['vertices']
         layer = polygon['layer']
-        
+
+        if layer in plans_analytiques:
+            ecartes += 1
+            logger.debug(f"  Polygone {poly_idx} (couche {layer}) ecarte : "
+                         "la fonction de Green le compte deja")
+            continue
+
         # Maillage du polygone
         poly_mesh = mesh_polygon(vertices, mesh_size)
-        
+
+        sommets = np.asarray(poly_mesh['vertices'], dtype=float).copy()
+        if sommets.shape[1] < 3:
+            sommets = np.hstack([sommets,
+                                 np.zeros((len(sommets), 3 - sommets.shape[1]))])
+        sommets[:, 2] = z_couches.get(layer, 0.0)
+
         # Ajout au maillage global avec offset
-        all_vertices.append(poly_mesh['vertices'])
+        all_vertices.append(sommets)
         elements_with_offset = poly_mesh['elements'] + vertex_offset
         all_elements.append(elements_with_offset)
         all_layer_ids.extend([layer] * len(poly_mesh['elements']))
-        
-        vertex_offset += len(poly_mesh['vertices'])
-        
+
+        vertex_offset += len(sommets)
+
         logger.debug(f"  Polygone {poly_idx} : {len(poly_mesh['elements'])} triangles")
-    
+
+    if ecartes:
+        logger.info(f"  {ecartes} plan(s) de masse non maille(s) : comptes "
+                    "analytiquement par la fonction de Green")
+
+    if not all_vertices:
+        raise ValueError(
+            "generate_2d_mesh : rien a mailler. Tous les polygones sont sur "
+            "des couches que la fonction de Green traite en plan de masse. "
+            "Un solveur 2,5D a besoin d'au moins un conducteur de signal."
+        )
+
     # Assemblage final
     vertices = np.vstack(all_vertices)
     elements = np.vstack(all_elements)

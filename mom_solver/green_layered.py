@@ -6,8 +6,8 @@ Implémentation DCIM (Discrete Complex Image Method) pour approximation efficace
 import numpy as np
 import logging
 from typing import Dict, List, Tuple, Optional
-from scipy.integrate import quad
-from scipy.optimize import fsolve
+from scipy.optimize import brentq
+from scipy.special import hankel2
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -26,153 +26,10 @@ class ComplexImage:
     layer_index: int  # Couche source
 
 
-def calculate_reflection_coefs(k_rho: float, stackup: Dict, freq: float) -> np.ndarray:
-    """
-    Calcule les coefficients de réflexion généralisés aux interfaces diélectriques
-    
-    Args:
-        k_rho: Nombre d'onde radial (spectral)
-        stackup: Structure du PCB
-        freq: Fréquence en Hz
-        
-    Returns:
-        Array des coefficients de réflexion pour chaque interface
-    """
-    layers = stackup['layers']
-    num_layers = len(layers)
-    omega = 2 * np.pi * freq
-    
-    # Coefficients de réflexion
-    reflection_coefs = np.zeros(num_layers - 1, dtype=complex)
-    
-    for i in range(num_layers - 1):
-        layer_i = layers[i]
-        layer_ip1 = layers[i + 1]
-        
-        # Permittivités complexes (avec pertes)
-        eps_i = layer_i['epsilon_r'] * (1 - 1j * layer_i['tan_delta'])
-        eps_ip1 = layer_ip1['epsilon_r'] * (1 - 1j * layer_ip1['tan_delta'])
-        
-        # Nombres d'onde dans chaque couche
-        k_i = omega * np.sqrt(MU_0 * EPSILON_0 * eps_i)
-        k_ip1 = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ip1)
-        
-        # Composantes verticales
-        k_z_i = np.sqrt(k_i**2 - k_rho**2 + 0j)
-        k_z_ip1 = np.sqrt(k_ip1**2 - k_rho**2 + 0j)
-        
-        # Coefficient de réflexion TE (polarisation transverse électrique)
-        r_te = (k_z_i - k_z_ip1) / (k_z_i + k_z_ip1)
-        
-        reflection_coefs[i] = r_te
-    
-    return reflection_coefs
 
 
-def green_spectral(k_rho: float, z: float, z_prime: float, stackup: Dict, freq: float) -> complex:
-    """
-    Évalue la fonction de Green dans le domaine spectral (transformée de Hankel)
-    
-    Args:
-        k_rho: Nombre d'onde radial
-        z: Altitude du point d'observation
-        z_prime: Altitude de la source
-        stackup: Structure du PCB
-        freq: Fréquence
-        
-    Returns:
-        Valeur spectrale de la fonction de Green
-    """
-    omega = 2 * np.pi * freq
-    
-    # Détermination de la couche contenant la source
-    source_layer = find_layer_at_z(z_prime, stackup)
-    obs_layer = find_layer_at_z(z, stackup)
-    
-    if source_layer is None or obs_layer is None:
-        return 0.0 + 0j
-    
-    layer = stackup['layers'][source_layer]
-    eps_r = layer['epsilon_r'] * (1 - 1j * layer['tan_delta'])
-    k = omega * np.sqrt(MU_0 * EPSILON_0 * eps_r)
-    
-    # Composante verticale
-    k_z = np.sqrt(k**2 - k_rho**2 + 0j)
-    
-    if source_layer == obs_layer:
-        # Même couche : terme direct + réflexions
-        g_direct = np.exp(-1j * k_z * np.abs(z - z_prime)) / (2j * k_z)
-        
-        # Réflexions aux interfaces
-        r_coefs = calculate_reflection_coefs(k_rho, stackup, freq)
-        
-        # Réflexion en haut et en bas
-        g_reflected = 0.0 + 0j
-        if source_layer > 0:
-            r_down = r_coefs[source_layer - 1]
-            d_down = 2 * (z_prime - layer['z_bottom'])
-            g_reflected += r_down * np.exp(-1j * k_z * d_down) / (2j * k_z)
-        
-        if source_layer < len(stackup['layers']) - 1:
-            r_up = r_coefs[source_layer]
-            d_up = 2 * (layer['z_top'] - z_prime)
-            g_reflected += r_up * np.exp(-1j * k_z * d_up) / (2j * k_z)
-        
-        return g_direct + g_reflected
-    
-    else:
-        # CORRECTION: Couches différentes - calcul physique des coefficients de transmission
-        # Calcul des coefficients de transmission entre couches
-        num_layers = len(stackup['layers'])
-        
-        # Déterminer le sens de propagation
-        if source_layer < obs_layer:
-            # Propagation vers le haut
-            layer_range = range(source_layer, obs_layer + 1)
-        else:
-            # Propagation vers le bas
-            layer_range = range(obs_layer, source_layer + 1)
-        
-        # Produit des coefficients de transmission à chaque interface
-        transmission_coef = 1.0 + 0j
-        
-        for layer_idx in layer_range:
-            if layer_idx > 0 and layer_idx < num_layers:
-                # Coefficient de transmission de Fresnel entre couches adjacentes
-                layer_current = stackup['layers'][layer_idx]
-                if layer_idx > 0:
-                    layer_prev = stackup['layers'][layer_idx - 1]
-                    eps_prev = layer_prev['epsilon_r'] * (1 - 1j * layer_prev['tan_delta'])
-                    eps_curr = layer_current['epsilon_r'] * (1 - 1j * layer_current['tan_delta'])
-                    
-                    # Coefficient de transmission: T = 2*n1/(n1+n2)
-                    n_prev = np.sqrt(eps_prev)
-                    n_curr = np.sqrt(eps_curr)
-                    t = 2 * n_prev / (n_prev + n_curr)
-                    transmission_coef *= t
-        
-        # Terme de propagation avec atténuation
-        distance = np.abs(z - z_prime)
-        g_transmission = transmission_coef * np.exp(-1j * k_z * distance) / (2j * k_z)
-        
-        return g_transmission
 
 
-def find_layer_at_z(z: float, stackup: Dict) -> Optional[int]:
-    """
-    Trouve l'indice de la couche contenant l'altitude z
-    
-    Args:
-        z: Altitude
-        stackup: Structure du PCB
-        
-    Returns:
-        Indice de la couche ou None
-    """
-    for i, layer in enumerate(stackup['layers']):
-        if layer['z_bottom'] <= z <= layer['z_top']:
-            return i
-    return None
 
 
 # ==========================================================================
@@ -248,8 +105,36 @@ def _kz(k, k_rho):
     return np.where(np.imag(kz) > 0, -kz, kz)
 
 
-def _impedance_vue(k_rho, omega, couches, court_circuit):
-    """L'impedance TM vue depuis le plan source, en regardant vers l'exterieur.
+def _impedance_caracteristique(k_rho, omega, eps_c, mode):
+    """(Z_i, k_zi) de la ligne equivalente a UN milieu, dans le mode demande.
+
+    UN MILIEU STRATIFIE EST DEUX CIRCUITS, ET PAS UN. Le champ s'y separe en
+    deux familles qui ne se parlent pas, et chacune voit sa propre ligne :
+
+        TM, mode « e »   Z_i = k_zi / (omega eps_i)
+        TE, mode « h »   Z_i = omega mu_i / k_zi
+
+    C'est la SEULE difference entre les deux cascades. Longueurs electriques,
+    terminaisons, mise en parallele : tout le reste est identique, et c'est
+    pourquoi une seule fonction les sert toutes les deux.
+
+    Le mu ne varie pas ici -- aucun stratifie de circuit imprime n'est
+    magnetique. Si un jour il y en a un, c'est cette ligne-la qu'il faut
+    ouvrir, et `profil_spectral` devra transporter un mu par couche.
+    """
+    k = omega * np.sqrt(MU_0 * EPSILON_0 * eps_c)
+    kz = _kz(k, k_rho)
+    # Au point de branchement k_z s'annule et l'impedance TE diverge. Le plancher
+    # ne sert que la : aucun echantillon des chemins de Chow n'y tombe, mais une
+    # couche intermediaire peut avoir son propre branchement sur le trajet.
+    kz = np.where(np.abs(kz) < 1e-30, 1e-30, kz)
+    if mode == 'te':
+        return omega * MU_0 / kz, kz
+    return kz / (omega * EPSILON_0 * eps_c), kz
+
+
+def _impedance_vue(k_rho, omega, couches, court_circuit, mode='tm'):
+    """L'impedance vue depuis le plan source, en regardant vers l'exterieur.
 
     `couches` est la liste des milieux traverses, du plus proche du plan source
     au plus lointain : [(epaisseur, epsilon_complexe), ...]. Quand la pile ne
@@ -261,9 +146,7 @@ def _impedance_vue(k_rho, omega, couches, court_circuit):
     et c'est precisement la que l'ajustement a besoin de precision.
     """
     def z_car(eps_c):
-        k = omega * np.sqrt(MU_0 * EPSILON_0 * eps_c)
-        kz = _kz(k, k_rho)
-        return kz / (omega * EPSILON_0 * eps_c), kz
+        return _impedance_caracteristique(k_rho, omega, eps_c, mode)
 
     if not couches:
         return z_car(1.0 + 0j)[0]
@@ -285,6 +168,28 @@ def _impedance_vue(k_rho, omega, couches, court_circuit):
     return z_l
 
 
+def indices_plans_masse(stackup):
+    """Les couches de cuivre que la fonction de Green traite en PLAN DE MASSE.
+
+    LE ROLE, QUAND L'EMPILAGE LE PORTE -- c'est pour cela que `extract_stackup`
+    le recopie. Sinon le cuivre le plus bas, ce qui est le cas d'une carte deux
+    couches et le repli le moins surprenant.
+
+    CETTE FONCTION EST PUBLIQUE POUR UNE RAISON PRECISE. Le mailleur doit
+    savoir exactement la meme chose : un plan que la fonction de Green compte
+    ANALYTIQUEMENT ne doit pas etre maille en plus, sinon son courant est
+    compte deux fois. Deux endroits qui decident cela separement finiront par
+    ne plus etre d'accord, et l'erreur qui s'ensuit est invisible -- une
+    matrice d'impedance plausible et fausse.
+    """
+    couches = stackup.get('layers', [])
+    cuivres = [i for i, c in enumerate(couches) if c.get('type') == 'copper']
+    plans = [i for i in cuivres if str(couches[i].get('role', '')) == 'plane']
+    if not plans and cuivres:
+        plans = [cuivres[0]]
+    return plans
+
+
 def profil_spectral(stackup, z_src=None):
     """Ce que le spectre a besoin de savoir : deux piles et un milieu de reference.
 
@@ -303,9 +208,7 @@ def profil_spectral(stackup, z_src=None):
     couches = stackup['layers']
 
     cuivres = [i for i, c in enumerate(couches) if c.get('type') == 'copper']
-    plans = [i for i in cuivres if str(couches[i].get('role', '')) == 'plane']
-    if not plans and cuivres:
-        plans = [cuivres[0]]
+    plans = indices_plans_masse(stackup)
 
     # Le plan des pistes : le cuivre de SIGNAL le plus haut, ou le plus haut
     # tout court si tout est plan.
@@ -354,35 +257,152 @@ def profil_spectral(stackup, z_src=None):
     return bas, haut, masse_bas, masse_haut, eps_ref, z_src
 
 
+# ==========================================================================
+# DEUX POTENTIELS, DONC DEUX NOYAUX
+# --------------------------------------------------------------------------
+# CE QU'IL Y AVAIT AVANT : un seul noyau, celui de la ligne TM, que
+# `mom_engine` employait pour le potentiel VECTEUR autant que pour le
+# potentiel SCALAIRE. Le terme inductif recevait donc la fonction de Green du
+# terme capacitif. Comparer un Z0 = racine(L/C) dans cet etat n'aurait mesure
+# que cette erreur-la.
+#
+# CE QUE DIT LA FORMULATION MIXTE. On veut E = -j omega A - grad Phi avec
+#
+#     A_tangentiel = G_A * J        Phi = G_q * q       q = -div(J)/(j omega)
+#
+# Dans le plan spectral la reponse du milieu s'ecrit exactement (Michalski &
+# Zheng, formulation C) :
+#
+#     E_u = -V_i^e J_u        E_v = -V_i^h J_v
+#
+# ou u est la direction de k_rho, v la perpendiculaire, et V_i la TENSION au
+# plan source pour un courant unite sur la ligne du mode. En separant les deux
+# potentiels a partir de ces deux equations il vient, SANS approximation :
+#
+#     G_A^xx  = V_i^h / (j omega)                     -- la ligne TE, seule
+#     G_q     = omega (V_i^h - V_i^e) / (j k_rho^2)   -- la DIFFERENCE des deux
+#
+# LE POTENTIEL SCALAIRE N'EST DONC PAS « LA LIGNE TM ». C'est un raccourci
+# repandu, et il n'est juste qu'a la limite quasi-statique : quand k_rho tend
+# vers l'infini les deux ecritures coincident -- le TE ne porte rien
+# d'electrostatique -- et c'est exactement pour cela que la version precedente
+# donnait une capacite plausible. Elles se separent en O((k/k_rho)^2), c'est-a-
+# dire la ou le rayonnement commence.
+#
+# VERIFICATION EN MILIEU HOMOGENE, qui est ce qui fixe les normalisations :
+# V_i^h = omega mu/(2 k_z), V_i^e = k_z/(2 omega eps), leur difference vaut
+# k_rho^2/(2 omega eps k_z), et l'on retrouve G_A = mu/(2 j k_z) et
+# G_q = 1/(2 j k_z eps). L'identite de Sommerfeld en fait mu exp(-jkr)/(4 pi r)
+# et exp(-jkr)/(4 pi r eps). Le banc l'eprouve.
+#
+# LES TROIS FONCTIONS CI-DESSOUS RENDENT TOUTES UN F NORMALISE de la meme
+# maniere : F = 1 dans un milieu homogene de permittivite de reference. C'est
+# ce qui rend un ajustement lisible -- une image d'amplitude 1 a la profondeur
+# zero EST le terme direct -- et ce qui permet a UN SEUL ajusteur de les servir
+# toutes les trois. Le facteur physique se remet a la sortie :
+#
+#     G_A = mu_0        * F_te / (2 j k_z_ref)
+#     G_q = 1/(eps_ref) * F_q  / (2 j k_z_ref)
+# ==========================================================================
+
+def _v_plan_source(k_rho, omega, profil, mode):
+    """La tension au plan source pour un courant unite : Z_bas // Z_haut.
+
+    C'est la reponse du circuit equivalent, donc la fonction de Green spectrale
+    du mode -- a la normalisation pres, que les appelants appliquent.
+    """
+    bas, haut, masse_bas, masse_haut = profil[0], profil[1], profil[2], profil[3]
+
+    z_bas = _impedance_vue(k_rho, omega, bas, masse_bas, mode)
+    z_haut = _impedance_vue(k_rho, omega, haut, masse_haut, mode)
+
+    somme = z_bas + z_haut
+    # Les deux impedances s'annulent quand le plan source EST le plan de masse.
+    # Elles s'annulent AUSSI sur le pole de l'onde de surface, et c'est le
+    # chantier suivant : ici on ne fait que ne pas diviser par zero.
+    somme = np.where(np.abs(somme) < 1e-30, 1e-30, somme)
+    return z_bas * z_haut / somme
+
+
 def green_spectral_tm(k_rho, stackup, freq, profil=None):
-    """Le noyau spectral TM au plan des pistes, normalise comme l'espace libre.
+    """Le noyau spectral de la seule ligne TM, normalise comme l'espace libre.
 
-    Rend F(k_rho) tel que, dans un milieu HOMOGENE de permittivite de
-    reference, F vaille exactement 1 : c'est ce qui rend l'ajustement lisible
-    -- une image d'amplitude 1 a la profondeur 0 EST le terme direct.
+        F_tm = 2 omega eps_ref V_i^e / k_z_ref
 
-        F = 2 omega eps_ref V_TM / k_z_ref      avec V_TM = Z_haut // Z_bas
-
-    et G_spectral = F / (2 j k_z_ref), dont l'identite de Sommerfeld fait
-    exp(-j k r)/(4 pi r).
+    CE N'EST PAS le noyau du potentiel scalaire -- voir `green_spectral_q` et
+    le commentaire au-dessus. On le garde parce qu'il a une limite
+    quasi-statique qui s'ecrit a la main, donc parce qu'il est MESURABLE : les
+    asymptotes du banc (2 er th(k_rho h)/(er + th), 2 eps1/(eps1+eps2)) sont
+    les siennes, et ce sont aussi celles de F_q. Il sert d'etalon interieur.
     """
     if profil is None:
         profil = profil_spectral(stackup)
-    bas, haut, masse_bas, masse_haut, eps_ref, _ = profil
+    eps_ref = profil[4]
 
     omega = 2 * np.pi * freq
     k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
     kz_ref = _kz(k_ref, k_rho)
 
-    z_bas = _impedance_vue(k_rho, omega, bas, masse_bas)
-    z_haut = _impedance_vue(k_rho, omega, haut, masse_haut)
+    v_e = _v_plan_source(k_rho, omega, profil, 'tm')
+    return 2.0 * omega * EPSILON_0 * eps_ref * v_e / kz_ref
 
-    somme = z_bas + z_haut
-    # Les deux impedances s'annulent quand le plan source EST le plan de masse.
-    somme = np.where(np.abs(somme) < 1e-30, 1e-30, somme)
-    v_tm = z_bas * z_haut / somme
 
-    return 2.0 * omega * EPSILON_0 * eps_ref * v_tm / kz_ref
+def green_spectral_te(k_rho, stackup, freq, profil=None):
+    """Le noyau du POTENTIEL VECTEUR : la ligne TE, et rien d'autre.
+
+        G_A^xx = V_i^h/(j omega),  soit  F_te = 2 k_z_ref V_i^h / (omega mu_0)
+
+    Sa limite en k_rho grand vaut 1 -- le potentiel vecteur de tres pres est
+    mu_0/(4 pi r), quelle que soit la permittivite : le mu ne change pas d'une
+    couche a l'autre. C'est ce qui rend l'ajustement du potentiel vecteur plus
+    facile que celui du potentiel scalaire, et non l'inverse.
+    """
+    if profil is None:
+        profil = profil_spectral(stackup)
+    eps_ref = profil[4]
+
+    omega = 2 * np.pi * freq
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
+    kz_ref = _kz(k_ref, k_rho)
+
+    v_h = _v_plan_source(k_rho, omega, profil, 'te')
+    return 2.0 * kz_ref * v_h / (omega * MU_0)
+
+
+def green_spectral_q(k_rho, stackup, freq, profil=None):
+    """Le noyau du POTENTIEL SCALAIRE : la difference des deux lignes.
+
+        G_q = omega (V_i^h - V_i^e)/(j k_rho^2)
+        F_q = 2 k_z_ref eps_0 eps_ref omega (V_i^h - V_i^e) / k_rho^2
+
+    LE ZERO EN k_rho = 0 EST UN VRAI ZERO, PAS UNE SINGULARITE. A incidence
+    normale les deux lignes sont la MEME ligne : Z^e = k/(omega eps) = eta =
+    omega mu/k = Z^h couche par couche, et les terminaisons ne distinguent pas
+    les modes. Donc V^h - V^e s'annule en k_rho = 0, comme k_rho^2 puisque le
+    noyau est pair, et le quotient reste fini. Mais 0/0 rend nan, et le chemin
+    d'echantillonnage PROCHE demarre exactement la (k_z = k_ref, donc
+    k_rho = 0). On evalue donc a un k_rho plancher, a un millieme de k_ref :
+    l'erreur relative qui s'ensuit est de l'ordre de (10^-3)^2 = 10^-6, et la
+    soustraction y garde une dizaine de chiffres significatifs.
+    """
+    if profil is None:
+        profil = profil_spectral(stackup)
+    eps_ref = profil[4]
+
+    omega = 2 * np.pi * freq
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
+
+    k_rho = np.asarray(k_rho, dtype=complex)
+    plancher = 1e-3 * abs(k_ref)
+    k_rho = np.where(np.abs(k_rho) < plancher, plancher, k_rho)
+
+    kz_ref = _kz(k_ref, k_rho)
+
+    v_h = _v_plan_source(k_rho, omega, profil, 'te')
+    v_e = _v_plan_source(k_rho, omega, profil, 'tm')
+
+    return (2.0 * kz_ref * EPSILON_0 * eps_ref * omega
+            * (v_h - v_e) / (k_rho ** 2))
 
 
 def gpof(y, ordre, pinceau=None):
@@ -516,11 +536,379 @@ def _images_dun_chemin(y, kz0, dkz, ordre, portee):
     return out
 
 
-def apply_dcim(stackup, num_images=10, freq=1e9, z_src=None):
-    """La fonction de Green stratifiee, mise en images complexes par GPOF.
+# Les noyaux qu'on sait ajuster, et leur nom court.
+#
+#   'a' -> le potentiel VECTEUR, donc la ligne TE. C'est ce que le terme
+#          inductif de la MPIE attend.
+#   'q' -> le potentiel SCALAIRE, donc la difference des deux lignes. C'est ce
+#          que le terme de charge attend.
+#   'tm' -> la seule ligne TM. N'est le potentiel de personne ; on le garde
+#          parce que ses asymptotes s'ecrivent a la main, donc parce qu'il est
+#          l'etalon interieur du banc.
+# ==========================================================================
+# L'ONDE DE SURFACE, EXTRAITE AVANT L'AJUSTEMENT
+# --------------------------------------------------------------------------
+# CE QUI MANQUAIT, ET CE QUE CA COUTAIT. Un stratifie sur plan de masse guide
+# une onde de surface TM0, et elle n'a pas de frequence de coupure : elle
+# existe toujours. Dans le plan spectral c'est un POLE, et un pole ne
+# s'approche pas par une somme finie d'exponentielles -- il decroit en
+# 1/racine(rho) la ou les images decroissent en 1/rho. Le banc le mesurait et
+# le bornait, sans le corriger : 0,5 a 0,7 % a 5 mm sur le potentiel scalaire,
+# 7 a 10 % a 10 mm.
+#
+# POURQUOI LE POTENTIEL SCALAIRE SOUFFRE PLUS QUE LE VECTEUR, mesure aussi :
+# 0,04 % contre 0,74 % a 5 mm. Deux raisons qui vont dans le meme sens. Le
+# pole est celui de la ligne TM, et le potentiel vecteur ne la voit pas -- le
+# TE0 d'une lame de 0,37 mm de FR-4 a sa coupure vers 110 GHz, donc pas de
+# pole TE en bande. Et le noyau du potentiel scalaire porte un 1/k_rho^2, qui
+# PONDERE la region propagative -- justement celle ou le pole vit.
+#
+# COMMENT ON L'EXTRAIT, en trois gestes :
+#
+#   1. LE LOCALISER. Le pole est la ou la mise en parallele explose, donc ou
+#      Z_bas + Z_haut = 0 : c'est la relation de dispersion du mode guide, et
+#      pour un microruban elle se lit k_z1 tan(k_z1 h) = er alpha_0, ce que
+#      les manuels ecrivent pour la lame dielectrique sur plan de masse. Sans
+#      pertes cette somme est purement imaginaire entre k_air et k_substrat,
+#      et sa partie imaginaire y change de signe UNE fois : un balayage, un
+#      Brent, puis deux pas de Newton complexes pour suivre le pole hors de
+#      l'axe reel quand le tan delta l'y pousse.
+#
+#   2. EN SORTIR LE RESIDU. V = Z_bas Z_haut/(Z_bas + Z_haut) a un pole
+#      SIMPLE, donc son residu vaut N(k_p)/D'(k_p) -- pas besoin de contour :
+#      D est analytique la, parce qu'une couche d'epaisseur FINIE contribue au
+#      cascade par une fonction PAIRE de son k_z (verifiable : la cascade est
+#      invariante par k_z -> -k_z). Seuls les demi-espaces terminaux portent
+#      un point de branchement, et il est ailleurs.
+#
+#   3. LE RETRANCHER SOUS UNE FORME DONT ON CONNAIT LA TRANSFORMEE. On ote du
+#      spectre, non pas R/(k - k_p) qui n'est pas pair, mais
+#
+#          F_pole(k) = 2 R k_p k_z(k) / (k_z(k_p) (k^2 - k_p^2))
+#
+#      Le facteur k_z(k)/k_z(k_p) n'est pas decoratif : c'est lui qui fait que
+#      la fonction RETRANCHEE A G_TILDE soit RATIONNELLE -- sans point de
+#      branchement --, seule condition pour que le contour se ferme et donne
+#      exactement, par le theoreme des residus,
+#
+#          G_onde(rho) = -(R k_p / (4 k_z(k_p))) H_0^(2)(k_p rho)
+#
+#      H_0^(2) et non H_0^(1), parce que la convention de ce module est
+#      exp(-j k r) : l'onde qui sort, en deux dimensions, c'est H_0^(2).
+#
+# CE QUE CETTE EXTRACTION NE FAIT TOUJOURS PAS :
+#   · elle vaut au PLAN SOURCE. Le residu porte le profil vertical du mode, et
+#     on ne l'a pas : pour un dz non nul le terme de Hankel serait a corriger.
+#     Sans consequence tant qu'il n'y a qu'un plan de signal -- ce qui est
+#     l'autre limite connue du module ;
+#   · elle ne cherche le pole qu'entre le plus rapide des demi-espaces
+#     terminaux et le plus lent des milieux. Un empilage FERME des deux cotes
+#     -- piste entre deux plans de masse -- n'a pas d'onde de surface au sens
+#     ou on l'entend ici, mais des modes de cavite ; la fonction rend alors une
+#     liste vide, et c'est correct pour la fonction de Green, pas pour une
+#     resonance de plan.
+# ==========================================================================
 
-    TROIS MORCEAUX, ET CHACUN A SA RAISON :
+@dataclass
+class PoleSurface:
+    """Un pole d'onde de surface, et de quoi le rendre au domaine spatial."""
+    k_p: complex        # le nombre d'onde longitudinal du mode guide
+    residu: complex     # R_F : le residu du noyau NORMALISE, pas du potentiel
+    kz_p: complex       # k_z du milieu de reference AU pole
+    mode: str           # 'tm' ou 'te'
 
+
+def _k_milieu(omega, eps_c):
+    return omega * np.sqrt(MU_0 * EPSILON_0 * eps_c)
+
+
+def _denominateur_modal(k_rho, omega, profil, mode):
+    """(Z_bas + Z_haut, Z_bas * Z_haut) : le denominateur et le numerateur.
+
+    Le pole de V = N/D est le zero de D, et son residu N/D'. Les deux sortent
+    du meme calcul, alors on les rend ensemble.
+    """
+    z_bas = _impedance_vue(k_rho, omega, profil[0], profil[2], mode)
+    z_haut = _impedance_vue(k_rho, omega, profil[1], profil[3], mode)
+    return z_bas + z_haut, z_bas * z_haut
+
+
+def _intervalle_pole(profil, omega):
+    """Ou chercher : entre le plus RAPIDE dehors et le plus LENT dedans.
+
+    Un mode guide est plus lent que le milieu qui le porte et plus rapide que
+    ce qui l'entoure -- sinon il fuit. Ses bornes sont donc le plus grand k des
+    demi-espaces TERMINAUX (l'air, en general) et le plus grand k de tous les
+    milieux traverses. Quand les deux cotes butent sur du cuivre il n'y a pas
+    de demi-espace, donc rien a guider au sens ouvert : on rend None.
+    """
+    bas, haut, masse_bas, masse_haut = profil[0], profil[1], profil[2], profil[3]
+
+    terminaux = []
+    if not masse_bas and bas:
+        terminaux.append(bas[-1][1])
+    if not masse_haut and haut:
+        terminaux.append(haut[-1][1])
+    if not terminaux:
+        return None
+
+    k_ouvert = max(abs(_k_milieu(omega, e)) for e in terminaux)
+    k_dense = max(abs(_k_milieu(omega, e)) for _, e in (bas + haut))
+
+    if k_dense <= k_ouvert * (1.0 + 1e-9):
+        return None
+    return k_ouvert, k_dense
+
+
+def _newton_pole(depart, omega, profil, mode, iterations=12):
+    """Affine un zero de D dans le plan COMPLEXE, a partir d'un depart reel.
+
+    Le tan delta pousse le pole sous l'axe reel, et c'est la qu'il doit etre :
+    une onde guidee qui s'amortit s'ecrit exp(-j k_p rho) avec Im(k_p) < 0.
+    Newton en differences finies suffit -- D est analytique ici, c'est le
+    point 2 du commentaire ci-dessus.
+    """
+    k = complex(depart)
+    for _ in range(iterations):
+        pas_h = 1e-7 * max(abs(k), 1.0)
+        d0 = complex(_denominateur_modal(np.array([k]), omega, profil, mode)[0][0])
+        d_p = complex(_denominateur_modal(np.array([k + pas_h]), omega, profil, mode)[0][0])
+        d_m = complex(_denominateur_modal(np.array([k - pas_h]), omega, profil, mode)[0][0])
+        derivee = (d_p - d_m) / (2.0 * pas_h)
+        if abs(derivee) < 1e-300 or not np.isfinite(derivee):
+            return None
+        delta = d0 / derivee
+        k = k - delta
+        if abs(delta) < 1e-13 * abs(k):
+            break
+    if not np.isfinite(k):
+        return None
+    return k
+
+
+def _poles_modaux(profil, omega, mode, n_grille=2001):
+    """Les zeros de Z_bas + Z_haut, donc les modes guides du mode donne.
+
+    Le balayage porte sur la PARTIE IMAGINAIRE : sans pertes les deux
+    impedances sont purement imaginaires dans l'intervalle, et le changement
+    de signe est net. Avec des pertes ordinaires -- un tan delta de quelques
+    pour cent -- il l'est encore assez pour amorcer Newton, qui finit le
+    travail dans le plan complexe.
+    """
+    bornes = _intervalle_pole(profil, omega)
+    if bornes is None:
+        return []
+    a, b = bornes
+
+    x = np.linspace(a * (1.0 + 1e-7), b * (1.0 - 1e-7), n_grille)
+    d, _ = _denominateur_modal(x, omega, profil, mode)
+    im = np.imag(d)
+    fini = np.isfinite(im)
+    if not np.all(fini):
+        im = np.where(fini, im, 0.0)
+
+    def imag_d(t):
+        return float(np.imag(_denominateur_modal(
+            np.array([t]), omega, profil, mode)[0][0]))
+
+    poles = []
+    for i in np.where(np.sign(im[:-1]) * np.sign(im[1:]) < 0)[0]:
+        try:
+            x0 = brentq(imag_d, x[i], x[i + 1], xtol=1e-12, rtol=1e-14)
+        except (ValueError, RuntimeError):
+            continue
+        k_p = _newton_pole(x0, omega, profil, mode)
+        if k_p is None:
+            continue
+        # Le pole doit etre reste dans son intervalle : un Newton qui s'echappe
+        # a suivi autre chose, et sommer ce « autre chose » en Hankel ajouterait
+        # une onde qui n'existe pas.
+        if not (a * 0.99 < abs(k_p) < b * 1.01):
+            logger.debug("  pole %s hors intervalle [%g ; %g], ecarte",
+                         k_p, a, b)
+            continue
+        if np.imag(k_p) > 0:
+            k_p = np.conj(k_p)      # la feuille physique est Im <= 0
+        poles.append(complex(k_p))
+
+    return poles
+
+
+def _residu_v(k_p, omega, profil, mode):
+    """Le residu de V = N/D au pole simple k_p : N(k_p)/D'(k_p)."""
+    pas_h = 1e-7 * max(abs(k_p), 1.0)
+    d_p, num = _denominateur_modal(np.array([k_p + pas_h]), omega, profil, mode)
+    d_m, _ = _denominateur_modal(np.array([k_p - pas_h]), omega, profil, mode)
+    _, num0 = _denominateur_modal(np.array([k_p]), omega, profil, mode)
+    derivee = (complex(d_p[0]) - complex(d_m[0])) / (2.0 * pas_h)
+    if abs(derivee) < 1e-300:
+        return 0.0 + 0j
+    return complex(num0[0]) / derivee
+
+
+def poles_du_noyau(profil, omega, noyau, k_ref):
+    """Les poles du NOYAU demande, residus deja mis a son echelle.
+
+    Chaque noyau ne voit que les modes qui le composent :
+      · 'tm' voit V^e, donc le pole TM ;
+      · 'te'/'a' voient V^h, donc le pole TE -- il n'y en a pas en dessous de
+        la coupure du TE0, et la recherche rend alors une liste vide toute
+        seule, sans qu'on ait a le supposer ;
+      · 'q' voit la DIFFERENCE V^h - V^e, donc les deux, avec le signe qui va.
+    """
+    eps_ref = profil[4]
+    sortie = []
+
+    for mode in ('tm', 'te'):
+        if noyau == 'tm' and mode != 'tm':
+            continue
+        if noyau in ('te', 'a') and mode != 'te':
+            continue
+
+        for k_p in _poles_modaux(profil, omega, mode):
+            r_v = _residu_v(k_p, omega, profil, mode)
+            if r_v == 0:
+                continue
+            kz_p = complex(_kz(k_ref, np.array([k_p]))[0])
+            if abs(kz_p) < 1e-30:
+                continue
+
+            if noyau == 'tm':
+                r_f = 2.0 * omega * EPSILON_0 * eps_ref * r_v / kz_p
+            elif noyau in ('te', 'a'):
+                r_f = 2.0 * kz_p * r_v / (omega * MU_0)
+            else:                                     # 'q'
+                signe = 1.0 if mode == 'te' else -1.0
+                r_f = (2.0 * kz_p * EPSILON_0 * eps_ref * omega
+                       * signe * r_v / (k_p ** 2))
+
+            sortie.append(PoleSurface(k_p=complex(k_p), residu=complex(r_f),
+                                      kz_p=kz_p, mode=mode))
+
+    return sortie
+
+
+def _spectre_des_poles(k_rho, poles, k_ref):
+    """La part de pole, ecrite pour que sa transformee soit un Hankel exact.
+
+        F_pole(k) = somme  2 R k_p k_z(k) / (k_z(k_p) (k^2 - k_p^2))
+    """
+    k_rho = np.asarray(k_rho, dtype=complex)
+    out = np.zeros(k_rho.shape, dtype=complex)
+    if not poles:
+        return out
+
+    kz = _kz(k_ref, k_rho)
+    for p in poles:
+        ecart = k_rho ** 2 - p.k_p ** 2
+        ecart = np.where(np.abs(ecart) < 1e-30, 1e-30, ecart)
+        out = out + 2.0 * p.residu * p.k_p * kz / (p.kz_p * ecart)
+    return out
+
+
+def _somme_ondes_surface(poles, rho):
+    """Les ondes de surface, en Hankel, dans les unites de `_somme_ondes`.
+
+        G_onde(rho) = - somme  (R k_p / (4 k_z(k_p))) H_0^(2)(k_p rho)
+    """
+    rho = np.asarray(rho, dtype=float)
+    out = np.zeros(rho.shape, dtype=complex)
+    if not poles:
+        return out
+
+    # H_0^(2) diverge en logarithme a l'origine, et la part d'images porte le
+    # 1/rho qui domine : le plancher ne sert qu'a ne pas rendre un inf.
+    r = np.where(rho < 1e-12, 1e-12, rho)
+    for p in poles:
+        out = out - (p.residu * p.k_p / (4.0 * p.kz_p)) * hankel2(0, p.k_p * r)
+    return out
+
+
+NOYAUX_SPECTRAUX = {
+    'a': lambda kr, st, f, pr: green_spectral_te(kr, st, f, pr),
+    'te': lambda kr, st, f, pr: green_spectral_te(kr, st, f, pr),
+    'q': lambda kr, st, f, pr: green_spectral_q(kr, st, f, pr),
+    'tm': lambda kr, st, f, pr: green_spectral_tm(kr, st, f, pr),
+}
+
+
+@dataclass
+class Ajustement:
+    """UN noyau, entierement represente : des images ET des ondes de surface.
+
+    LES DEUX SONT NECESSAIRES, et c'est le fond de l'affaire : une somme finie
+    d'exponentielles ne peut pas rendre un pole. Les images portent la partie
+    en 1/rho, les poles la partie en 1/racine(rho). Manipuler l'une sans
+    l'autre, c'est ce que faisait la version precedente, et ca se payait a
+    partir de quelques millimetres.
+    """
+    images: List[ComplexImage]
+    poles: List[PoleSurface]
+    k_ref: complex
+    noyau: str
+
+    # POURQUOI L'IMAGE A LA PROFONDEUR ZERO EST MISE A PART. C'est la SEULE
+    # qui soit singuliere quand les deux points se rejoignent : les autres
+    # sont a une profondeur complexe non nulle, donc leur 1/R reste borne dans
+    # le plan des pistes. Un solveur qui integre sur des panneaux voisins doit
+    # traiter celle-la analytiquement et les autres par quadrature ordinaire ;
+    # les melanger, c'est demander a Gauss d'integrer un 1/R.
+    #
+    # SEUIL EN LONGUEUR ET NON EN RELATIF : un nanometre est en dessous de
+    # toute geometrie de circuit imprime, et GPOF rend parfois une image a une
+    # profondeur minuscule mais non nulle qu'il faut compter avec la directe.
+    SEUIL_COINCIDENT = 1e-9
+
+    @property
+    def amplitude_directe(self):
+        """L'amplitude de l'image confondue avec la source : celle qui pique."""
+        return sum((im.amplitude for im in self.images
+                    if abs(im.position) < self.SEUIL_COINCIDENT), 0.0 + 0j)
+
+    @property
+    def images_ecartees(self):
+        """Toutes les autres : leur noyau est borne dans le plan source."""
+        return [im for im in self.images
+                if abs(im.position) >= self.SEUIL_COINCIDENT]
+
+    def valeur_reste(self, rho, dz=0.0):
+        """Tout sauf l'image confondue : borne, donc integrable par Gauss.
+
+        L'onde de surface y figure. Elle porte un logarithme a l'origine, qui
+        est integrable mais que Gauss rend mal ; son amplitude est de cinq
+        ordres de grandeur sous celle de l'image directe sur les empilages
+        vises, et c'est ce qui autorise a la laisser ici plutot que de lui
+        faire son propre traitement. Sur un substrat epais a haute frequence,
+        c'est une chose a revoir.
+        """
+        total = _somme_ondes(self.images_ecartees, self.k_ref, rho, dz)
+        if self.poles:
+            total = total + _somme_ondes_surface(self.poles, rho)
+        return total
+
+    def valeur(self, rho, dz=0.0):
+        """Le noyau NORMALISE au point (rho, dz) : images + ondes de surface.
+
+        Le terme de Hankel vaut au plan source ; `dz` ne le corrige pas, faute
+        du profil vertical du mode. Sans consequence tant qu'il n'y a qu'un
+        plan de signal, ce qui est l'autre limite connue de ce module.
+        """
+        total = _somme_ondes(self.images, self.k_ref, rho, dz)
+        if self.poles:
+            total = total + _somme_ondes_surface(self.poles, rho)
+        return total
+
+
+def ajuster_noyau(stackup, freq, noyau='q', num_images=10, z_src=None,
+                  extraire_poles=True):
+    """UN noyau spectral, mis en images complexes par GPOF, pole compris.
+
+    QUATRE MORCEAUX, ET CHACUN A SA RAISON :
+
+      0. L'ONDE DE SURFACE, SORTIE AVANT TOUT LE RESTE. C'est un pole, et un
+         pole ne s'ajuste pas par des exponentielles -- voir le grand
+         commentaire au-dessus de `PoleSurface`. On le localise, on en prend le
+         residu, on le retranche du spectre, et on le rendra en Hankel.
       1. LE TERME NON DECROISSANT, SORTI A LA MAIN. En k_rho grand le noyau ne
          tend pas vers zero mais vers la constante 2 eps1/(eps1+eps2) -- celle
          qui donne le milieu moyen du microruban. Ajuster une fonction qui ne
@@ -536,23 +924,38 @@ def apply_dcim(stackup, num_images=10, freq=1e9, z_src=None):
 
     Args:
         stackup: l'empilage, tel que `extract_stackup` le rend
-        num_images: le nombre d'images ajustees PAR NIVEAU
-        freq: la frequence. Les images en dependent, il faut les refaire a
+        freq: la frequence. L'ajustement en depend, il faut le refaire a
               chaque point de la bande, et `main.py` le fait
+        noyau: 'a' (potentiel vecteur), 'q' (potentiel scalaire), 'tm'
+        num_images: le nombre d'images ajustees PAR NIVEAU
         z_src: le plan des pistes. Deduit de l'empilage quand il manque
+        extraire_poles: mettre a False n'a qu'un usage, MESURER ce que
+              l'extraction apporte. Le banc s'en sert ; un calcul, jamais.
 
     Returns:
-        La liste des images. `position` est une PROFONDEUR COMPLEXE mesuree
-        depuis le plan source, et non une altitude absolue : c'est ce que
-        l'identite de Sommerfeld produit, et ce que `green_spatial` attend.
+        Un `Ajustement`. La `position` d'une image est une PROFONDEUR COMPLEXE
+        mesuree depuis le plan source, et non une altitude absolue : c'est ce
+        que l'identite de Sommerfeld produit.
     """
     profil = profil_spectral(stackup, z_src)
     chemins = _chemins(stackup, freq, profil)
     h_min, h_max = _echelles(profil)
     portee = 200.0 * h_max
+    omega = 2 * np.pi * freq
+    k_ref = chemins['k_ref']
+
+    if noyau not in NOYAUX_SPECTRAUX:
+        raise ValueError("noyau inconnu : %r (attendu %s)"
+                         % (noyau, sorted(NOYAUX_SPECTRAUX)))
+    fonction = NOYAUX_SPECTRAUX[noyau]
+
+    # 0. L'onde de surface d'abord : tout ce qui suit ajuste ce qu'elle laisse.
+    poles = (poles_du_noyau(profil, omega, noyau, k_ref)
+             if extraire_poles else [])
 
     def spectre(k_rho):
-        return green_spectral_tm(k_rho, stackup, freq, profil)
+        brut = fonction(k_rho, stackup, freq, profil)
+        return brut - _spectre_des_poles(k_rho, poles, k_ref)
 
     # 1. La constante evanescente, prise tres loin sur l'axe REEL -- et non au
     #    bout d'un chemin, qui n'y est pas forcement arrive. « Tres loin » se
@@ -579,63 +982,142 @@ def apply_dcim(stackup, num_images=10, freq=1e9, z_src=None):
         reste = f - somme(kz, images)
         images.extend(_images_dun_chemin(reste, kz0, dkz, num_images, portee))
 
-    logger.debug("  %d images complexes ajustees par GPOF a deux niveaux",
-                 len(images))
-    return [ComplexImage(amplitude=a, position=d, layer_index=0)
-            for a, d in images]
+    logger.debug("  noyau %s : %d images complexes et %d onde(s) de surface",
+                 noyau, len(images), len(poles))
+    return Ajustement(
+        images=[ComplexImage(amplitude=a, position=d, layer_index=0)
+                for a, d in images],
+        poles=poles,
+        k_ref=complex(k_ref),
+        noyau=noyau,
+    )
 
 
-def calculate_effective_reflection(layer: Dict, stackup: Dict) -> complex:
+def apply_dcim(stackup, num_images=10, freq=1e9, z_src=None, noyau='tm'):
+    """Les IMAGES SEULES d'un noyau -- sans son onde de surface.
+
+    Cette enveloppe existe pour ce qui veut juger l'ajustement exponentiel tout
+    seul : le banc s'en sert pour verifier que GPOF retrouve exactement deux
+    images sur le cas soluble, et l'onde de surface n'a rien a faire dans ce
+    decompte-la. Pour un calcul, c'est `ajuster_noyau` ou `noyaux_green` qu'il
+    faut appeler -- eux rendent la fonction ENTIERE.
     """
-    Calcule un coefficient de réflexion effectif moyen pour une couche
-    
-    Args:
-        layer: Couche diélectrique
-        stackup: Structure complète
-        
-    Returns:
-        Coefficient de réflexion effectif
+    return ajuster_noyau(stackup, freq, noyau, num_images, z_src).images
+
+
+def _somme_ondes(images, k_ref, rho, dz=0.0):
+    """La somme des ondes spheriques des images, VECTORISEE sur rho.
+
+    `rho` peut etre un scalaire ou un tableau de n'importe quelle forme ; le
+    resultat a la meme. C'est ce qui permet a `mom_engine` d'evaluer une
+    quadrature 7x7 en un appel au lieu de quarante-neuf : l'assemblage de la
+    matrice Z passe son temps ici, et une boucle Python par point de Gauss
+    coutait deux ordres de grandeur.
     """
-    eps_r = layer['epsilon_r'] * (1 - 1j * layer['tan_delta'])
-    
-    # Coefficient de réflexion de Fresnel simplifié (incidence normale)
-    # r = (sqrt(eps_r) - 1) / (sqrt(eps_r) + 1)
-    sqrt_eps = np.sqrt(eps_r)
-    r_eff = (sqrt_eps - 1) / (sqrt_eps + 1)
-    
-    return r_eff
+    rho = np.asarray(rho, dtype=float)
+    total = np.zeros(rho.shape, dtype=complex)
+
+    for im in images:
+        d = im.position + dz
+        r = np.sqrt(rho ** 2 + d ** 2 + 0j)
+        # La racine principale peut sortir du bon demi-plan sur un d complexe ;
+        # une distance de partie reelle negative ferait CROITRE l'onde.
+        r = np.where(np.real(r) < 0, -r, r)
+        r = np.where(np.abs(r) < 1e-15, 1e-15, r)
+        total = total + im.amplitude * np.exp(-1j * k_ref * r) / (4 * np.pi * r)
+
+    return total
 
 
-def effective_epsilon(stackup: Dict) -> complex:
+@dataclass
+class NoyauxGreen:
+    """LES DEUX fonctions de Green du plan des pistes, prêtes a l'emploi.
+
+    C'est le seul objet que `mom_engine` doit connaitre. Il porte les deux jeux
+    d'images -- un par potentiel -- ET les constantes qui vont avec : le nombre
+    d'onde de reference, qui est celui dans lequel les images ont ete ajustees,
+    et la permittivite de reference, qui normalise le potentiel scalaire.
+
+    POURQUOI ELLES SORTENT DEJA MISES A L'ECHELLE (`g_a` porte son mu_0, `g_q`
+    son 1/eps). Parce que sinon l'appelant doit choisir un eps, et il l'a
+    choisi de travers : `get_effective_epsilon` moyennait les epaisseurs de
+    TOUT l'empilage, alors que l'ajustement a normalise par le SEUL milieu
+    porteur -- le stratifie sous la piste. Lire un ajustement dans une autre
+    unite que la sienne, c'est se tromper de racine(eps) sur la vitesse.
     """
-    Permittivité relative effective du substrat (moyenne pondérée en épaisseur)
+    ajust_a: Ajustement               # potentiel vecteur, ligne TE
+    ajust_q: Ajustement               # potentiel scalaire, difference TE - TM
+    k_ref: complex                    # nombre d'onde du milieu porteur
+    eps_ref: complex                  # sa permittivite relative
+    z_src: float                      # le plan des pistes, en metres
+    freq: float
 
-    Args:
-        stackup: Structure du PCB
+    def g_a(self, rho, dz=0.0):
+        """G_A^xx, en henry par metre : A_x = G_A * J_x. Porte son mu_0."""
+        return MU_0 * self.ajust_a.valeur(rho, dz)
 
-    Returns:
-        Permittivité relative complexe effective
+    def g_q(self, rho, dz=0.0):
+        """G_q : Phi = G_q * q. Porte son 1/(eps_0 eps_ref)."""
+        return self.ajust_q.valeur(rho, dz) / (EPSILON_0 * self.eps_ref)
+
+    # --- la meme chose, coupee en deux, pour qui doit desingulariser ---------
+    #
+    # LE MOTEUR EN A BESOIN, ET PAS QU'UN PEU. Les panneaux qui se touchent
+    # portent l'essentiel de la matrice d'impedance, et leur integrale a un
+    # 1/R dedans : une quadrature de Gauss, meme a sept points, ne l'integre
+    # pas -- elle l'echantillonne. Le decoupage ci-dessous laisse le moteur
+    # traiter la part singuliere par un changement de variable polaire et le
+    # reste par Gauss, sans que ni l'un ni l'autre ait a savoir combien
+    # d'images il y a.
+
+    @property
+    def amplitude_directe_a(self):
+        """Le coefficient du 1/(4 pi R) singulier du potentiel vecteur."""
+        return MU_0 * self.ajust_a.amplitude_directe
+
+    @property
+    def amplitude_directe_q(self):
+        """Le coefficient du 1/(4 pi R) singulier du potentiel scalaire."""
+        return self.ajust_q.amplitude_directe / (EPSILON_0 * self.eps_ref)
+
+    def g_a_reste(self, rho, dz=0.0):
+        """G_A sans son image confondue : borne, donc bon pour Gauss."""
+        return MU_0 * self.ajust_a.valeur_reste(rho, dz)
+
+    def g_q_reste(self, rho, dz=0.0):
+        """G_q sans son image confondue : borne, donc bon pour Gauss."""
+        return self.ajust_q.valeur_reste(rho, dz) / (EPSILON_0 * self.eps_ref)
+
+
+def noyaux_green(stackup, freq, num_images=10, z_src=None):
+    """Les deux ajustements, faits ensemble, et ce qu'il faut pour les lire.
+
+    DEUX AJUSTEMENTS ET NON UN, parce que ce sont deux fonctions differentes --
+    voir le grand commentaire au-dessus de `green_spectral_te`. Ils partagent
+    le profil, les chemins d'echantillonnage et le nombre d'onde ; ils ne
+    partagent ni leurs poles ni leurs profondeurs.
+
+    A refaire a chaque point de frequence : les images en dependent.
     """
-    if not stackup:
-        return 1.0 + 0j
+    profil = profil_spectral(stackup, z_src)
+    eps_ref = profil[4]
+    z_plan = profil[5]
 
-    num = 0.0 + 0j
-    den = 0.0
+    omega = 2 * np.pi * freq
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
 
-    for layer in stackup.get('layers', []):
-        if layer.get('type') == 'copper':
-            continue
-        t = layer.get('thickness', 0.0)
-        if t <= 0:
-            continue
-        eps_r = layer.get('epsilon_r', 1.0) * (1 - 1j * layer.get('tan_delta', 0.0))
-        num += eps_r * t
-        den += t
+    return NoyauxGreen(
+        ajust_a=ajuster_noyau(stackup, freq, 'a', num_images, z_plan),
+        ajust_q=ajuster_noyau(stackup, freq, 'q', num_images, z_plan),
+        k_ref=complex(k_ref),
+        eps_ref=complex(eps_ref),
+        z_src=float(z_plan),
+        freq=float(freq),
+    )
 
-    if den <= 0:
-        return 1.0 + 0j
 
-    return num / den
+
+
 
 
 def green_spatial(rho: float, z: float, z_prime: float, images: List[ComplexImage], 
@@ -695,111 +1177,28 @@ def green_spatial(rho: float, z: float, z_prime: float, images: List[ComplexImag
     return g_total
 
 
-def green_2d_layered(r_obs: np.ndarray, r_src: np.ndarray, freq: float, 
-                     stackup: Dict, images: List[ComplexImage]) -> complex:
-    """
-    Fonction de Green complète pour structures 2.5D (planaires)
-    
-    Args:
-        r_obs: Position d'observation [x, y, z]
-        r_src: Position source [x', y', z']
-        freq: Fréquence
-        stackup: Structure du PCB
-        images: Sources images DCIM
-        
-    Returns:
-        Valeur de la fonction de Green
-    """
-    # Distance radiale
-    rho = np.sqrt((r_obs[0] - r_src[0])**2 + (r_obs[1] - r_src[1])**2)
-    
-    z = r_obs[2]
-    z_prime = r_src[2]
-    
-    # CORRECTION: Propagation de la fréquence ET du stackup à green_spatial
-    g = green_spatial(rho, z, z_prime, images, freq, stackup)
-    
-    # Correction pour singularité en rho=0
-    if rho < 1e-10:
-        # Utilisation du terme quasi-statique
-        omega = 2 * np.pi * freq
-        k = omega / C_0
-        g += 1j * omega * MU_0 / (4 * np.pi)
-    
-    return g
-
-
-def self_interaction_term(area: float, freq: float) -> complex:
-    """
-    Calcule le terme d'auto-interaction (élément diagonal singulier)
-    
-    Pour les éléments très proches ou confondus, l'intégration nécessite
-    un traitement analytique de la singularité 1/R.
-    
-    Args:
-        area: Aire de l'élément triangulaire
-        freq: Fréquence
-        
-    Returns:
-        Valeur de l'auto-impédance
-    """
-    omega = 2 * np.pi * freq
-    k = omega / C_0
-    
-    # Approximation quasi-statique pour terme singulier
-    # Z_self ≈ j*ω*μ₀/(4π) * [log(A) + constant]
-    
-    # Rayon équivalent du triangle
-    r_eq = np.sqrt(area / np.pi)
-    
-    # Terme logarithmique (extraction de la singularité)
-    z_self = 1j * omega * MU_0 / (4 * np.pi) * np.log(2 * r_eq)
-    
-    return z_self
-
-
-def dyadic_green_tensor(r_obs: np.ndarray, r_src: np.ndarray, freq: float,
-                        stackup: Dict, images: List[ComplexImage]) -> np.ndarray:
-    """
-    Calcule le tenseur dyadique de Green pour les courants surfaciques
-    
-    Args:
-        r_obs: Position d'observation
-        r_src: Position source
-        freq: Fréquence
-        stackup: Stackup
-        images: Sources images
-        
-    Returns:
-        Tenseur 3x3
-    """
-    omega = 2 * np.pi * freq
-    k = omega / C_0
-    
-    # Fonction de Green scalaire
-    g = green_2d_layered(r_obs, r_src, freq, stackup, images)
-    
-    # Tenseur dyadique : G_bar = (I + 1/k² ∇∇) * g
-    # Pour 2.5D, simplification : composantes tangentielles dominantes
-    
-    tensor = np.zeros((3, 3), dtype=complex)
-    
-    # Composantes tangentielles (x, y)
-    tensor[0, 0] = g
-    tensor[1, 1] = g
-    
-    # CORRECTION: Composante verticale correcte pour le tenseur dyadique
-    # Pour la composante z, terme différentiel du tenseur
-    r_vec = r_obs - r_src
-    r_mag = np.linalg.norm(r_vec)
-    
-    if r_mag > 1e-10:
-        # Terme gradient pour composante verticale: (1 + jkr - k²r²/3) * g / r²
-        kr = k * r_mag
-        grad_factor = (1 + 1j * kr) / r_mag**2
-        tensor[2, 2] = g * grad_factor
-    else:
-        # Limite quand r->0: terme singulier
-        tensor[2, 2] = g / 3.0
-    
-    return tensor
+# ==========================================================================
+# CE QUI A ETE RETIRE D'ICI, ET POURQUOI ON NE L'A PAS SEULEMENT LAISSE
+# --------------------------------------------------------------------------
+# La reecriture du noyau a rendu orphelines huit fonctions. Deux raisons de les
+# supprimer plutot que de les garder « au cas ou » :
+#
+#   · `green_spectral` et `calculate_reflection_coefs` implementaient L'ANCIEN
+#     MODELE -- une serie de reflexions de Fresnel a incidence normale, avec un
+#     coefficient de transmission « 2 n1/(n1+n2) » applique couche par couche.
+#     C'est faux, et c'etait appelable. Du code faux qu'on peut appeler finit
+#     par etre appele ;
+#   · `green_2d_layered` rendait UN scalaire pour « la » fonction de Green du
+#     milieu stratifie. Il n'y en a pas une : le potentiel vecteur suit la
+#     ligne TE, le potentiel scalaire la difference des deux. Cette signature
+#     ETAIT le defaut n° 1, et la garder c'etait garder la porte par laquelle
+#     il revient. Ce qui la remplace est `NoyauxGreen`, qui rend les deux, avec
+#     leurs constantes.
+#
+# Les six autres -- `find_layer_at_z`, `calculate_effective_reflection`,
+# `effective_epsilon`, `self_interaction_term`, `dyadic_green_tensor` -- ne
+# servaient qu'a celles-la, ou a personne.
+#
+# `green_spatial` est conserve : le banc s'en sert pour juger un jeu d'images
+# tout seul, sans son onde de surface, et c'est un usage legitime.
+# ==========================================================================

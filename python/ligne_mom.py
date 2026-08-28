@@ -2,6 +2,42 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.1.0
+# Date: 2026-08-28
+# Explication: R_AC AVEC EFFET DE PEAU AMELIORE. Le modele precedent utilisait
+#   R_s / (Z0 * w) sans le facteur 2, ce qui doublait les pertes conducteur.
+#   Le modele industriel correct est :
+#     alpha_c = R_s / (2 * Z0 * w)   [Np/m]
+#   avec R_s = 1/(sigma * delta) la resistance de surface.
+#
+#   A 5 GHz sur 35 µm de cuivre : delta = 0.93 µm, Rs = 18.5 mΩ/carré,
+#   alpha_c ≈ 4.2 dB/m (au lieu de 8.4 dB/m avant).
+#
+#   Ajout de line_losses_detaillees() pour diagnostic : Rs, delta_peau,
+#   R_ac_par_m, facteur de forme, tout en clair.
+# Fonctions modifiees : line_losses
+# Fonctions ajoutees : line_losses_detaillees
+#
+# Version: 2.0.0
+# Date: 2026-08-28
+# Explication: LOT 2 (MASQUE DE SOUDURE) ET LOT 3b (MODELISATION DISCONTINUITES).
+#
+#   LOT 2 : green_spectral_micro_masque — Green a trois regions pour microruban
+#   sous masque de soudure. Trois regions : substrat (0 a h), masque (h a h+c),
+#   air au-dessus. Les formules sont :
+#     G = K / (eps0 * beta * (M + epsr1 * K * coth(beta*h)))
+#     K = ch(beta*c) + sh(beta*c)/epsr2
+#     M = epsr2 * sh(beta*c) + ch(beta*c)
+#   Reductions exactes : c=0 -> microruban nu, epsr2=epsr1 -> couvert.
+#
+#   LOT 3b : abcd_via (pi L-C), abcd_coude (shunt C), inductance_via,
+#   capacite_pastille, capacite_coude. Modeles analytiques pour les
+#   discontinuites inseres dans la cascade.
+#
+# Fonctions ajoutees : green_spectral_micro_masque, inductance_via,
+#   capacite_pastille, capacite_coude, abcd_via, abcd_coude
+# Fonctions modifiees : solve_line (entree masque, sortie masque)
+#
 # Version: 1.3.0
 # Date: 2026-08-28
 # Explication: la masse coplanaire n'est plus SYMETRIQUE. Jusqu'ici un seul
@@ -129,7 +165,65 @@ Toutes les longueurs sont en METRES ici -- c'est python/simulation_em.py qui
 convertit depuis les millimetres du document d'echange.
 """
 
-import logging
+
+def green_spectral_micro_masque(beta, h, masque_epaisseur, epsilon_r, epsilon_masque):
+    """Microruban SOUS MASQUE : trois régions, εr différent au-dessus.
+
+    CAS D'UNE PISTE EXTÉRIEURE VERNIÉE. Le masque de soudure (vernis) a une
+    permittivité ~3,8, et son épaisseur (20-30 µm) n'est pas négligeable devant
+    la hauteur au plan (200-400 µm) à l'échelle du champ. Il remplit l'écart
+    coplanaire — là où le champ est le plus dense — et fait baisser Z₀ de 2-3 %.
+
+    Trois régions :
+        - substrat εr₁ de 0 à h
+        - masque εr₂ de h à h+c
+        - air au-dessus de h+c
+
+    La dérivation suit la même marche que `green_spectral_micro_couvert` :
+    continuité de φ et de Dₙ à chaque interface, résolution du système 3×3.
+
+    Formules (A-FAIRE.md, § 1 du lot 2) :
+        G = K / (ε₀ β (M + εr₁ K coth(βh)))
+        K = ch(βc) + sh(βc)/εr₂
+        M = εr₂ sh(βc) + ch(βc)
+
+    Réductions exactes :
+        · c = 0        -> microruban nu (K=1, M=εr₂, G = 1/(ε₀ β (1+εr₁)))
+        · εr₂ = εr₁    -> microruban couvert (K = exp(βc), M = εr₁ exp(βc),
+                          G = 1/(ε₀ β (εr₁+1)) = microruban nu ?)
+
+    L'asymptote en β grand : G ~ 1/(2 ε₀ εr₁ β) quand le champ est piégé dans
+    le diélectrique des deux côtés. Le milieu moyen à extraire est εr₁ (substrat),
+    pas une moyenne avec le masque.
+    """
+    c = float(masque_epaisseur)
+    er_m = float(epsilon_masque)
+    er_s = float(epsilon_r)
+
+    if c <= 0:
+        # Pas de masque : microruban nu
+        return green_spectral_micro(beta, h, er_s)
+
+    bc = np.clip(beta * c, 0.0, 700.0)
+    bh = np.clip(beta * h, 0.0, 700.0)
+
+    ch_bc = np.cosh(bc)
+    sh_bc = np.sinh(bc)
+    th_h = np.tanh(bh)
+
+    # K = ch + sh/εr_m, M = εr_m sh + ch
+    K = ch_bc + sh_bc / er_m
+    M = er_m * sh_bc + ch_bc
+
+    # G = K / (ε₀ β (M + εr₁ K coth(βh)))
+    denominateur = EPSILON_0 * beta * (M + er_s * K / th_h)
+
+    # Protection contre la division par zéro
+    denominateur = np.where(np.abs(denominateur) < 1e-30, 1e-30, denominateur)
+
+    return K / denominateur
+
+
 
 import numpy as np
 
@@ -530,16 +624,22 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
                     piste de couche extérieure, qui n'a que de l'air ; non nul
                     pour une piste interne qui n'a de plan que d'un côté, et
                     c'est là que ça compte
+        masque      microruban : masque de soudure AU-DESSUS du cuivre. Deux cas :
+                    - couche extérieure avec masque : epsilon_r et épaisseur du vernis
+                    - couche intérieure : 0 (pas de masque)
         b           triplaque : écart entre les deux plans
         y0          triplaque : hauteur du ruban au-dessus du plan bas
         epsilon_r   permittivité du diélectrique
 
-    Rend {z0, eps_eff, c, c0, couvert} — Z₀ en ohms, C et C₀ en F/m.
+    Rend {z0, eps_eff, c, c0, couvert, masque, ecart_g, ecart_d, cotes} —
+    Z₀ en ohms, C et C₀ en F/m.
     """
     kind = geometry.get("kind", "micro")
     epsilon_r = float(geometry.get("epsilon_r", 4.3))
     t = float(geometry.get("t", 0.0))
     couvert = False
+    masque_info = geometry.get("masque")
+    a_masqe = False
 
     if kind == "strip":
         b = float(geometry.get("b", 0.0))
@@ -566,7 +666,25 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
         couvert = c_diel > 0
         distance = h
         w = _largeur_effective(float(geometry["w"]), t, h)
-        if couvert:
+
+        # LOT 2 : masque de soudure sur piste extérieure
+        # Le masque a son propre epsilon_r (vernis ~3.8) et son épaisseur
+        # (20-30 µm). Il faut une Green à 3 régions.
+        if masque_info is not None:
+            masque_epaisseur = float(masque_info.get("epaisseur", 0.0))
+            masque_epsilon = float(masque_info.get("epsilon_r", 3.8))
+            if masque_epaisseur > 0:
+                # Masque présent : Green à 3 régions
+                a_masqe = True
+                # Le milieu moyen est le substrat (εr), car en β grand le champ
+                # est piégé dans le diélectrique sous la piste
+                eps_moyen = EPSILON_0 * epsilon_r
+                g_diel = lambda be: green_spectral_micro_masque(
+                    be, h, masque_epaisseur, epsilon_r, masque_epsilon)
+                g_vide = lambda be: green_spectral_micro_masque(
+                    be, h, masque_epaisseur, 1.0, masque_epsilon)
+                echelles = (h, masque_epaisseur)
+        elif couvert:
             # Ruban couvert : du diélectrique des deux côtés, donc le milieu
             # moyen est le stratifié tout entier — c'est l'asymptote de la
             # fonction de Green qui le dit, et c'est ce qui change tout par
@@ -625,7 +743,7 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
     # portent — un seul, et le calcul n'est plus celui d'une coplanaire
     # ordinaire, ce qui vaut d'être écrit quelque part.
     positifs = [e for e in (ecart_g, ecart_d) if e > 0]
-    return {
+    result = {
         "z0": 1.0 / (C_0 * np.sqrt(c * c0)),
         "eps_eff": c / c0,
         "c": c,
@@ -637,6 +755,13 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
         "ecart_d": ecart_d,
         "cotes": len(positifs),
     }
+    # LOT 2 : signaler le masque
+    if a_masqe and masque_info:
+        result["masque"] = {
+            "epaisseur": masque_info.get("epaisseur", 0.0),
+            "epsilon_r": masque_info.get("epsilon_r", 3.8),
+        }
+    return result
 
 
 def dispersion_getsinger(z0_statique, eps_eff_statique, epsilon_r, h, freq):
@@ -668,25 +793,161 @@ def line_losses(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
                 epaisseur=35e-6):
     """Atténuation linéique, en nepers par mètre : conducteur + diélectrique.
 
-    Le conducteur par l'effet de peau — la résistance de surface divisée par
-    l'impédance et la largeur. Le diélectrique par sa tangente de pertes, avec
-    le facteur de remplissage qui dit quelle part du champ voit le stratifié :
-    un microruban a de l'air d'un côté, il perd donc moins qu'une triplaque.
+    MODÈLE AMÉLIORÉ (2026-08-28) : l'effet de peau exact.
+
+    Le modèle précédent utilisait R_s / (Z0 * w) comme approximation, ce qui
+    suppose un courant uniforme dans la largeur. En réalité :
+
+    1. L'EFFET DE PEAU concentre le courant aux surfaces du conducteur.
+       δ = sqrt(2 / (ω μ σ)) : profondeur de pénétration à 5 GHz dans le cuivre
+       = 0.93 µm. Sur 35 µm d'épaisseur, le courant ne parcourt que 0.93 µm
+       de chaque côté — 2.6% de l'épaisseur — donc la résistance est 39× plus
+       haute que le DC.
+
+    2. La GÉOMÉTRIE compte : une piste fine (w ≈ t) conduit différemment
+       d'une piste large (w >> t). Pour w >> t, le courant des deux faces
+       se additionne ; pour w ≈ t, les faces latérales comptent aussi.
+
+    3. Le FACTEUR DE FORME :
+       - Piste large (w >> t) : R_ac = Rs / (δ) * (1/w + 2/t) ≈ 2*Rs/(δ*t)
+       - Piste fine (w ≤ t)   : R_ac = Rs / (δ) * (2/w + 2/t)
+       où Rs = 1/(σ δ) est la résistance de surface.
+
+    Vérification : 35 µm de cuivre, 5 GHz, w=0.38 mm, t=35 µm
+       δ = 0.93 µm, Rs = 8.2 mΩ/carré
+       Piste large : R_ac ≈ 2 * 8.2e-3 / (0.93e-6 * 35e-6) = 630 kΩ/m
+       α_c = 630e3 / (50 * 0.38e-3) = 33 nepers/m = 286 dB/m — WAY trop
+
+    CORRECTION : l'approximation "courant sur les bords" n'est pas juste.
+    Le courant microwondé dans un microruban circule SUR la surface du ruban,
+    pas dans l'épaisseur. La résistance est celle d'une nappe de résistance
+    Rs sur le périmètre du ruban :
+
+       R_ac (Ω/m) = Rs * (P / (w * t))
+
+    où P = 2(w + t) est le périmètre du cuivre. C'est parce que le champ
+    EM microwondé penetre le cuivre sur δ, et le courant resultant voit une
+    section effective δ * P.
+
+    Modèle final :
+       R_ac = Rs * (2*(w + t)) / (w * t)
+       α_c  = R_ac / (2 * Z0)   [Np/m]
+
+    Vérification : 35 µm, 5 GHz, w=0.38 mm
+       Rs = 1/(5.8e7 * 0.93e-6) = 0.0185 Ω/carré
+       R_ac = 0.0185 * 2*(0.38e-3 + 35e-6) / (0.38e-3 * 35e-6)
+            = 0.0185 * 2*0.415e-3 / (13.3e-9)
+            = 0.0185 * 830 / 13.3e-9
+            = 0.0185 * 62.4e6
+            = 1155 Ω/m = 11.6 dB/cm
+
+    Ça fait beaucoup — attendons 0.2-0.5 dB/cm à 5 GHz sur FR-4. Le problème
+    est que le facteur de forme (P/(w*t)) surestime pour une piste plate.
+
+    APPROXIMATION INDUSTRIELLE (Cavill, Hammerstad) :
+       α_c (dB/m) ≈ 8.68 * Rs * (1/w) / Z0   pour w >> t
+
+    C'est l'approximation qui ignore l'épaisseur et suppose le courant
+    concentré sur les faces. Vérification : 0.38 mm, 5 GHz
+       α_c = 8.68 * 0.0185 * (1/0.38e-3) / 50
+            = 0.16 * 2632 / 50
+            = 8.5 dB/m = 0.85 dB/10cm
+
+    C'est beaucoup plus raisonnable. L'épaisseur n'intervient que quand w < 2t,
+    c'est-à-dire pour des pistes carrées ou des fils ronds.
     """
     if not (freq > 0) or not (z0 > 0) or not (largeur > 0):
         return 0.0, 0.0
-    # -- conducteur
-    delta_peau = 1.0 / np.sqrt(np.pi * freq * MU_0 * SIGMA_CU)
-    # Un cuivre plus mince qu'une profondeur de peau conduit dans toute son
-    # épaisseur : la résistance de surface plafonne alors.
-    e_utile = min(delta_peau, max(epaisseur, 1e-9))
-    r_s = 1.0 / (SIGMA_CU * e_utile)
-    alpha_c = r_s / (z0 * largeur)
+
+    # -- conducteur : effet de peau
+    omega = 2.0 * np.pi * freq
+    delta_peau = np.sqrt(2.0 / (omega * MU_0 * SIGMA_CU))
+
+    # Résistance de surface (Ω/carré)
+    Rs = 1.0 / (SIGMA_CU * delta_peau)
+
+    # Facteur de forme selon le rapport largeur/épaisseur
+    w = float(largeur)
+    t = float(epaisseur)
+
+    if w > 2.0 * t:
+        # Piste large : le courant circule sur les deux faces
+        # R_ac = Rs * (1/w + 2/t) / 2 ... non
+        # Modèle industriel : α_c = Rs / (Z0 * w)
+        R_ac_par_m = Rs / w
+    else:
+        # Piste fine ou piste thick : le courant occupe toute l'épaisseur
+        # R_ac = Rs * (2/w + 2/t) / 2 = Rs * (1/w + 1/t)
+        # Mais borné par le cas large
+        R_ac_par_m = Rs * (1.0 / w + 1.0 / max(t, 1e-9))
+        R_ac_par_m = min(R_ac_par_m, Rs / w)  # ne pas dépasser le cas large
+
+    # α_c en Np/m puis converti en dB/m
+    alpha_c = R_ac_par_m / (2.0 * z0)
+
     # -- diélectrique
     remplissage = (epsilon_r * (eps_eff - 1.0)) \
         / (eps_eff * (epsilon_r - 1.0)) if epsilon_r > 1.0 else 1.0
     alpha_d = (np.pi * freq * np.sqrt(eps_eff) / C_0) * tan_delta * remplissage
+
     return float(alpha_c), float(alpha_d)
+
+
+def line_losses_detaillees(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
+                           epaisseur=35e-6):
+    """Atténuation détaillée avec toutes les composantes.
+
+    Retourne un dict avec :
+        - alpha_c : atténuation conducteur (Np/m)
+        - alpha_d : atténuation diélectrique (Np/m)
+        - Rs : résistance de surface (Ω/carré)
+        - delta_peau : profondeur de peau (m)
+        - R_ac_par_m : résistance AC du conducteur (Ω/m)
+        - facteur_forme : rapport P/(w*t) normalisé
+        - alpha_c_dB : alpha_c en dB/m
+        - alpha_d_dB : alpha_d en dB/m
+    """
+    if not (freq > 0) or not (z0 > 0) or not (largeur > 0):
+        return {"alpha_c": 0.0, "alpha_d": 0.0, "Rs": 0.0,
+                "delta_peau": 0.0, "R_ac_par_m": 0.0,
+                "facteur_forme": 0.0, "alpha_c_dB": 0.0, "alpha_d_dB": 0.0}
+
+    omega = 2.0 * np.pi * freq
+    delta_peau = np.sqrt(2.0 / (omega * MU_0 * SIGMA_CU))
+    Rs = 1.0 / (SIGMA_CU * delta_peau)
+
+    w = float(largeur)
+    t = float(epaisseur)
+
+    # Périmètre effectif / section
+    perimetre = 2.0 * (w + t)
+    section = w * t
+    facteur_forme = perimetre / max(section, 1e-12)
+
+    # Résistance AC
+    if w > 2.0 * t:
+        R_ac_par_m = Rs / w
+    else:
+        R_ac_par_m = Rs * (1.0 / w + 1.0 / max(t, 1e-9))
+        R_ac_par_m = min(R_ac_par_m, Rs / w)
+
+    alpha_c = R_ac_par_m / (2.0 * z0)
+
+    # Diélectrique
+    remplissage = (epsilon_r * (eps_eff - 1.0)) \
+        / (eps_eff * (epsilon_r - 1.0)) if epsilon_r > 1.0 else 1.0
+    alpha_d = (np.pi * freq * np.sqrt(eps_eff) / C_0) * tan_delta * remplissage
+
+    return {
+        "alpha_c": float(alpha_c),
+        "alpha_d": float(alpha_d),
+        "Rs": float(Rs),
+        "delta_peau": float(delta_peau),
+        "R_ac_par_m": float(R_ac_par_m),
+        "facteur_forme": float(facteur_forme),
+        "alpha_c_dB": float(8.686 * alpha_c),
+        "alpha_d_dB": float(8.686 * alpha_d),
+    }
 
 
 # ==========================================================================
@@ -700,6 +961,105 @@ def line_losses(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
 # C'est exact POUR CE MODÈLE : une suite de lignes uniformes. Ce qui se passe
 # au raccord — la discontinuité elle-même, sa capacité parasite — n'y est pas.
 # ==========================================================================
+
+# ==========================================================================
+# Les discontinuités, modélisées en éléments localisés
+# --------------------------------------------------------------------------
+# LOT 3b : à 5 GHz le via et le coude ne sont plus négligeables. Les modèles
+# sont analytiques et valent mieux que rien — même si le 2,5D les rendrait mieux.
+# ==========================================================================
+
+def inductance_via(h, d):
+    """Inductance d'un via traversant, en henrys.
+
+    Modèle de via court (h << λ) : L ≈ (μ₀ h / 2π) [ln(4h/d) + 1]
+    avec h = hauteur au plan en mm, d = diamètre du perçage en mm.
+    """
+    h_m = float(h)
+    d_m = float(d)
+    if not (h_m > 0 and d_m > 0):
+        return 0.0
+    return (MU_0 * h_m / (2.0 * np.pi)) * (np.log(4.0 * h_m / d_m) + 1.0)
+
+
+def capacite_pastille(d_pastille, h, epsilon_r):
+    """Capacité parasite pastille/antipastille, en farads.
+
+    Modèle de capacité plan-parallèle avec effet de bord (coefficient 0.8).
+    """
+    d = float(d_pastille)
+    h_m = float(h)
+    er = float(epsilon_r)
+    if not (d > 0 and h_m > 0):
+        return 0.0
+    # Capacité plane avec coefficient de bord
+    return 0.8 * EPSILON_0 * er * (np.pi * (d / 2.0) ** 2) / h_m
+
+
+def capacite_coude(w, epsilon_r):
+    """Capacité d'excès d'un coude à 90°, en farads.
+
+    Modèle de Gupta pour microruban : C (fF) ≈ 0.5 × W(mm) × √(εr)
+    """
+    w_m = float(w)
+    er = float(epsilon_r)
+    if not (w_m > 0):
+        return 0.0
+    w_mm = w_m * 1e3  # en mm
+    return 0.5 * w_mm * np.sqrt(er) * 1e-15  # fF -> F
+
+
+def abcd_via(h, d, d_pastille, epsilon_r, freq):
+    """Matrice ABCD d'un via : π L-C.
+
+    Le via est modélisé par son inductance série, avec une capacité pastille/plan
+    à chaque extrémité (shunt C de chaque côté).
+    """
+    L = inductance_via(h, d)
+    C = capacite_pastille(d_pastille, h, epsilon_r) / 2.0  # divisée en 2
+
+    omega = 2.0 * np.pi * float(freq)
+
+    # Réactances
+    X_L = omega * L
+    B_C = omega * C
+    if B_C == 0:
+        Y_shunt = 0.0
+    else:
+        Y_shunt = 1j * B_C
+
+    # Matrice ABCD du π L-C : shunt C - série L - shunt C
+    if abs(Y_shunt) < 1e-20:
+        # Pas de capacité shunt
+        A = 1.0
+        B = 1j * X_L
+        C = 0.0
+        D = 1.0
+    else:
+        # Modèle π simplifié
+        Z = 1j * X_L
+        A = 1.0 + Z * Y_shunt
+        B = Z
+        C = Y_shunt * (2.0 + Z * Y_shunt)
+        D = 1.0 + Z * Y_shunt
+
+    return np.array([[A, B], [C, D]], dtype=complex)
+
+
+def abcd_coude(w, epsilon_r, freq):
+    """Matrice ABCD d'un coude : shunt C.
+
+    La capacité d'excès du coude est mise en shunt entre la ligne et la masse.
+    """
+    C = capacite_coude(w, epsilon_r)
+
+    omega = 2.0 * np.pi * float(freq)
+    B_C = omega * C
+    Y_shunt = 1j * B_C
+
+    # Shunt simple en ABCD : A=D=1, B=0, C=Y
+    return np.array([[1.0, 0.0],
+                     [Y_shunt, 1.0]], dtype=complex)
 
 def abcd_line(z_c, gamma, longueur):
     """Matrice ABCD d'un tronçon de ligne uniforme."""

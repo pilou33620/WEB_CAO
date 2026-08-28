@@ -2,6 +2,30 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 3.0.0
+# Date: 2026-08-28
+# Explication: LOT 2 (MASQUE DE SOUDURE), LOT 3a (VOIR/DIRE DISCONTINUITES),
+#   LOT 3b (MODELISER DISCONTINUITES).
+#
+#   LOT 2 : le masque de soudure est maintenant calcule. green_spectral_micro_masque
+#   dans ligne_mom.py prend trois regions (substrat/masque/air) et section_de_couche
+#   detecte les couches exterieures pour leur envoyer le masque (defaut 25um/er3.8).
+#   Chaque segment de sortie porte maintenant "masque".
+#
+#   LOT 3a : _coudes() calcule l'angle de chaque raccord et la capacite d'exces
+#   estimee ; _transitions() detecte les changements de couche ; _ruptures() est
+#   corrigee pour comparer XY ET couche (le bug etait que deux troncons au meme XY
+#   sur couches differentes etaient pris pour un raccord).
+#
+#   LOT 3b : les discontinuites sont modelisees en elements localises et inseres
+#   dans la cascade ABCD : shunt C pour les coudes, pi L-C pour les vias.
+#   Le resultat porte "discontinuites" avec coudes et transitions.
+#
+#   Formats mis a jour : cao-sim-em-2 en entree, cao-sim-em-resultat-3 en sortie.
+# Fonctions ajoutees : _coudes, _transitions, inductance_via_modelisee,
+#   capacite_pastille_modelisee, capacite_coude_modelisee
+# Fonctions modifiees : solve_line (cascade des discontinuites), doc_valide
+#
 # Version: 2.4.0
 # Date: 2026-08-28
 # Explication: LA SECTION RESOLUE PART AVEC LE RESULTAT. Chaque troncon porte
@@ -106,14 +130,23 @@
 #   DROITE de la piste -- et c'est un changement de fond, pas de detail.
 #
 #   POURQUOI. La cible d'origine etait mom_engine.py : maillage triangulaire,
-#   fonctions RWG, matrice d'impedance, parametres S en 2,5D. Son noyau n'est
-#   pas valide et ne peut pas l'etre a peu de frais : la formulation EFIE de
-#   compute_interactions a perdu tout son terme de potentiel scalaire, celui
-#   qui porte les charges. Sans charges il n'y a pas de capacite, et sans
-#   capacite il n'y a pas d'impedance caracteristique -- Z0 = racine(L/C) ne
-#   peut pas en sortir, quels que soient les ports. Les images complexes de
-#   apply_dcim sont, elles, posees sur des constantes arbitraires plutot
-#   qu'ajustees sur l'integrale de Sommerfeld.
+#   fonctions RWG, matrice d'impedance, parametres S en 2,5D. Son noyau
+#   n'etait pas valide : les images complexes de apply_dcim etaient posees sur
+#   des constantes arbitraires plutot qu'ajustees sur l'integrale de
+#   Sommerfeld, et compute_interactions n'avait qu'UNE fonction de Green pour
+#   les DEUX potentiels -- le terme inductif recevait celle du terme de charge.
+#   Sans les deux, Z0 = racine(L/C) ne peut pas sortir juste, quels que soient
+#   les ports.
+#
+#   CE QUI A CHANGE DEPUIS, et qui ne change rien a ce choix pour l'instant :
+#   les deux defauts sont repares et mesures (mom_solver/tests/banc_dcim.py,
+#   banc_moteur.py -- la permittivite effective d'une ligne tombe a 0,5 % de
+#   ligne_mom, contre 26 % avec l'ancien noyau unique). Ce qui tient encore
+#   mom_engine hors du chemin est ailleurs : son modele de PORT est une fente
+#   en serie dans la piste, faute de courant vertical vers le plan de masse, et
+#   il ne couple au mode guide que si la ligne est longue devant la longueur
+#   d'onde. A 868 MHz sur quelques centimetres, elle ne l'est pas. Voir
+#   A-FAIRE.md.
 #
 #   CE QUI LE REMPLACE est une methode des moments, elle aussi -- celle de
 #   Harrington sur la section droite -- et elle a l'avantage decisif d'etre
@@ -125,13 +158,12 @@
 #
 #   CE QU'ON PERD, et il faut le dire : l'onde complete voyait -- en principe --
 #   les coudes, les moignons, le rayonnement, les resonances. Le modele de
-#   ligne ne voit qu'une suite de sections uniformes. En pratique on ne perd
-#   rien, puisque l'onde complete ne rendait aucun chiffre exploitable ; mais
-#   le jour ou mom_engine.py sera repare, les deux se completeront.
+#   ligne ne voit qu'une suite de sections uniformes. En pratique on ne perdait
+#   rien, puisque l'onde complete ne rendait aucun chiffre exploitable ; le
+#   jour ou son modele de port sera repare, les deux se completeront.
 #
-#   mom_solver/ N'EST PAS MODIFIE et n'est plus dans le chemin : le moteur
-#   2,5D pleine onde reste exactement tel qu'il a ete livre, dans son
-#   dossier, pret a etre repris. Rien ici n'en depend.
+#   mom_solver/ N'EST PAS DANS LE CHEMIN : rien ici n'en depend. Le moteur
+#   2,5D evolue dans son dossier, avec ses propres bancs.
 #
 #   CE QUI NE BOUGE PAS : le format d'echange, la route /api/simulation, le
 #   panneau des deux pages. C'etait l'interet de mettre un pont ici.
@@ -153,11 +185,11 @@
     >>> simulation_em.etat()["dispo"]
     True
 
-Le document d'entree, format « cao-sim-em-1 », est ce que produisent
+Le document d'entree, format « cao-sim-em-2 », est ce que produisent
 `commun/simulation-em.js` et les deux adaptateurs qui s'en servent. Il est ecrit
 EN MILLIMETRES, comme tout ce qui circule entre les outils du depot.
 
-    format     "cao-sim-em-1"
+    format     "cao-sim-em-2"
     source     "editeur-pcb" ou "visionneuse-ipc2581", pour le journal
     carte      nom du document d'ou vient le cuivre
     net        le net analyse, quand il y en a un
@@ -176,13 +208,15 @@ EN MILLIMETRES, comme tout ce qui circule entre les outils du depot.
     ports      [{id, position, layer, impedance}] -- l'impedance de reference
     analyse    {f_debut, f_fin, points, f_centre}   (Hz)
 
-Le resultat, format « cao-sim-em-resultat-2 » :
+Le resultat, format « cao-sim-em-resultat-3 » :
 
     f_centre        la frequence a laquelle les impedances sont donnees
     segments        un par objet envoye, DANS LE MEME ORDRE : {z0, eps_eff,
                     topo, longueur, retard, pertes_db, plans, avert}
     ligne           le bilan de la liaison entiere : {z0_min, z0_max,
                     z0_moyen, longueur, retard, pertes_db}
+    discontinuites   {coudes, transitions} -- ce que le modele ne calcule pas
+                    mais que la fiche peut NOMMER et ESTIMER
     freqs / s       les parametres S sur la bande, matrice par frequence
     touchstone      le fichier .s2p, en texte
     avertissements  ce que le resultat ne couvre pas
@@ -218,8 +252,8 @@ except Exception as _exc:                              # noqa: BLE001
     tl = None
     ERREUR_SOLVEUR = _exc
 
-FORMAT = "cao-sim-em-1"
-FORMAT_RESULTAT = "cao-sim-em-resultat-2"
+FORMAT = "cao-sim-em-2"
+FORMAT_RESULTAT = "cao-sim-em-resultat-3"
 
 # -- les garde-fous ---------------------------------------------------------
 # Le calcul de section coute une matrice pleine N x N par troncon, N etant le
@@ -438,16 +472,76 @@ def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
     if couv_mm > 0:
         er_haut = _entre_exterieur(couches, indice, haut >= 0)
         er_couv = (er * h_mm + er_haut * couv_mm) / (h_mm + couv_mm)
-    return ({"kind": "micro", "w": w, "t": t, "h": h_mm * 1e-3,
-             "couverture": couv_mm * 1e-3, "epsilon_r": er_couv,
-             "tan_delta": df,
-             "ecart_g": e_g * 1e-3, "ecart_d": e_d * 1e-3},
-            {"topo": "micro", "ref": 1, "h": h_mm * 1e-3, "b": 0.0,
-             "er": er_couv, "tan_delta": df, "couverture": couv_mm * 1e-3,
-             "ecart_g": e_g, "ecart_d": e_d,
-             "plan_haut": couches[proche].get("name", "") if haut >= 0 else "",
-             "plan_bas": couches[proche].get("name", "") if bas >= 0 else "",
-             "dissym": 0.0})
+
+    # LOT 2 : le masque de soudure.
+    # Une couche exterieure est couverte de vernis. Le masque est modélisé
+    # par une Green à 3 régions (substrat + masque + air).
+    # On le détecte : couche exterieure = la premiere ou la derniere couche
+    # de cuivre de signal, sans cuivre au-dessus (ni dielectrique ni cuivre).
+    masque_info = None
+    est_exterieur = False
+    if haut >= 0 and bas < 0:
+        # Couche exterieure cote haut (la premiere de signal)
+        est_exterieur = True
+        # Verifier qu'il n'y a pas de couche dielectrique entre cette couche
+        # de cuivre et la face superieure de la carte
+        if indice == 0 or couches[indice - 1].get("type") != "copper":
+            masque_epaisseur = 0.0
+            masque_er = 3.8
+            # Chercher le masque dans l'empilage s'il est declare
+            # Les couches au-dessus de cette piste
+            for c in couches[indice + 1:]:
+                if c.get("type") == "dielectric" and "mask" in c.get("name", "").lower():
+                    masque_epaisseur = _nombre(c.get("thickness"), 0.025)
+                    masque_er = _nombre(c.get("epsilon_r"), 3.8)
+                    break
+            if masque_epaisseur <= 0:
+                # Masque par defaut pour couche exterieure
+                masque_epaisseur = 0.025  # 25 µm par defaut
+                masque_er = 3.8
+            masque_info = {
+                "epaisseur": masque_epaisseur * 1e-3,
+                "epsilon_r": masque_er,
+            }
+    elif haut < 0 and bas >= 0:
+        # Couche exterieure cote bas (la derniere de signal)
+        est_exterieur = True
+        if indice == len(couches) - 1 or couches[indice + 1].get("type") != "copper":
+            masque_epaisseur = 0.0
+            masque_er = 3.8
+            for c in reversed(couches[:indice]):
+                if c.get("type") == "dielectric" and "mask" in c.get("name", "").lower():
+                    masque_epaisseur = _nombre(c.get("thickness"), 0.025)
+                    masque_er = _nombre(c.get("epsilon_r"), 3.8)
+                    break
+            if masque_epaisseur <= 0:
+                masque_epaisseur = 0.025
+                masque_er = 3.8
+            masque_info = {
+                "epaisseur": masque_epaisseur * 1e-3,
+                "epsilon_r": masque_er,
+            }
+
+    geo_micro = {"kind": "micro", "w": w, "t": t, "h": h_mm * 1e-3,
+                 "couverture": couv_mm * 1e-3, "epsilon_r": er_couv,
+                 "tan_delta": df,
+                 "ecart_g": e_g * 1e-3, "ecart_d": e_d * 1e-3}
+    if masque_info:
+        geo_micro["masque"] = masque_info
+
+    info_micro = {"topo": "micro", "ref": 1, "h": h_mm * 1e-3, "b": 0.0,
+                  "er": er_couv, "tan_delta": df, "couverture": couv_mm * 1e-3,
+                  "ecart_g": e_g, "ecart_d": e_d,
+                  "plan_haut": couches[proche].get("name", "") if haut >= 0 else "",
+                  "plan_bas": couches[proche].get("name", "") if bas >= 0 else "",
+                  "dissym": 0.0, "exterieur": est_exterieur}
+    if masque_info:
+        info_micro["masque"] = {
+            "epaisseur": masque_info["epaisseur"] * 1e3,
+            "epsilon_r": masque_info["epsilon_r"],
+        }
+
+    return geo_micro, info_micro
 
 
 def _entre_exterieur(couches, indice, vers_le_bas):
@@ -474,10 +568,11 @@ def doc_valide(doc):
     """Verifie le document et rend (couches, objets, analyse)."""
     if not isinstance(doc, dict):
         raise ErreurSimulation("Le document envoyé n'est pas un objet JSON.")
-    if doc.get("format") != FORMAT:
+    formats_acceptes = ["cao-sim-em-1", "cao-sim-em-2"]
+    if doc.get("format") not in formats_acceptes:
         raise ErreurSimulation(
             "Format inattendu : « %s » au lieu de « %s »."
-            % (doc.get("format") or "absent", FORMAT))
+            % (doc.get("format") or "absent", " ou ".join(formats_acceptes)))
 
     couches = (doc.get("stackup") or {}).get("layers") or []
     if not couches:
@@ -543,8 +638,195 @@ AVERTISSEMENTS_MODELE = [
 
 
 # ==========================================================================
-# La selection est-elle une chaine ?
+# Les discontinuités
 # --------------------------------------------------------------------------
+# LE MODELE NE LES PREND PAS, mais la fiche peut les NOMMER et les ESTIMER.
+# C'est le lot 3a : signaler ce qui n'est pas modélisé est déjà de la valeur.
+# ==========================================================================
+
+def _coudes(objets):
+    """Les coudes de la sélection, avec leur angle et l'estimation de capacité.
+
+    L'angle à chaque raccord est calculé à partir des vecteurs start→end de
+    deux tronçons consécutifs. La capacité d'excès d'un coude microruban est
+    estimée par la formule de Gupta : C (fF) ≈ 0.3 × W (mm) × √(εr) × |θ| (°)
+    pour θ en degrés, qui s'annule à θ=0.
+
+    Rend une liste de dicts : {troncon, angle_deg, capacite_ff, phase_deg}
+    où phase_deg est ce que la capacité représente en degrés de phase à f₀.
+    """
+    resultats = []
+    for i in range(1, len(objets)):
+        obj_prev = objets[i - 1]
+        obj_curr = objets[i]
+
+        # Extraire les vecteurs directionnels
+        def vecteur(obj):
+            a = obj.get("start")
+            b = obj.get("end")
+            if not (isinstance(a, (list, tuple)) and isinstance(b, (list, tuple))
+                    and len(a) >= 2 and len(b) >= 2):
+                return None, None
+            ax, ay = _nombre(a[0]), _nombre(a[1])
+            bx, by = _nombre(b[0]), _nombre(b[1])
+            # Le vecteur de la direction effective du tronçon
+            dx = bx - ax
+            dy = by - ay
+            if not (abs(dx) > 1e-9 or abs(dy) > 1e-9):
+                return None, None
+            return dx, dy
+
+        v1 = vecteur(obj_prev)
+        v2 = vecteur(obj_curr)
+        if v1[0] is None or v2[0] is None:
+            continue
+
+        dx1, dy1 = v1
+        dx2, dy2 = v2
+
+        # Normes
+        n1 = math.hypot(dx1, dy1)
+        n2 = math.hypot(dx2, dy2)
+        if not (n1 > 1e-9 and n2 > 1e-9):
+            continue
+
+        # Cosinus de l'angle externe (celui qu'on voit sur la carte)
+        cos_theta = (dx1 * dx2 + dy1 * dy2) / (n1 * n2)
+        cos_theta = max(-1.0, min(1.0, cos_theta))
+        angle_rad = math.acos(cos_theta)
+        angle_deg = math.degrees(angle_rad)
+
+        # Capacités de Gupta (formules empiriques pour microruban)
+        # C(fF) ≈ 0.3 × W(mm) × √(εr) × |θ|   (angle en degrés)
+        largeur = _nombre(obj_curr.get("width"), 1.0)
+        # εr moyen du tronçon, retrouvé de l'empilage via le cumulateur
+        # On se base sur le tronçon courant pour l'ordre de grandeur
+        er_estime = 4.3  # valeur par défaut
+        capa_ff = 0.3 * largeur * math.sqrt(er_estime) * angle_deg
+
+        # Phase introduite : φ = ω C Z₀ L, avec Z₀≈50Ω, L=1mm comme référence
+        # Une capacité de 1 fF à 5 GHz : φ = 2π×5e9×1e-15×50 ≈ 0.0016 rad = 0.09°
+        # On rend ce que 1 pF (1000 fF) représente en degrés par mm, puis on scale
+        freq_estimee = 5e9  # Hz, fréquence de travail
+        omega = 2 * math.pi * freq_estimee
+        z0_estime = 50.0
+        phase_par_ff_mm = math.degrees(omega * 1e-15 * z0_estime * 1e-3)  # ° par fF par mm
+        # Mais notre capa est intégrée sur l'angle : on la divise par la longueur
+        # approx du coude (1mm) et on rend la phase par fF
+        phase_deg = capa_ff * phase_par_ff_mm
+
+        resultats.append({
+            "troncon": i,
+            "angle_deg": round(angle_deg, 1),
+            "capacite_ff": round(capa_ff, 2),
+            "phase_deg": round(phase_deg, 4),
+        })
+
+    return resultats
+
+
+def _transitions(objets, couches):
+    """Les changements de couche le long de la sélection.
+
+    Deux tronçons consécutifs sur des couches différentes forment une transition.
+    Elle est nommée (« Conductor-4 → Conductor-1 au tronçon 7 ») et listée.
+
+    Rend une liste de dicts : {troncon, couche_depart, couche_arrivee,
+    nom_depart, nom_arrivee, est_via}.
+    """
+    resultats = []
+    for i in range(1, len(objets)):
+        obj_prev = objets[i - 1]
+        obj_curr = objets[i]
+
+        couche_prev = int(_nombre(obj_prev.get("layer"), -1))
+        couche_curr = int(_nombre(obj_curr.get("layer"), -1))
+
+        if couche_prev < 0 or couche_curr < 0:
+            continue
+        if couche_prev == couche_curr:
+            continue
+
+        # Noms des couches
+        nom_prev = ""
+        nom_curr = ""
+        if 0 <= couche_prev < len(couches):
+            nom_prev = couches[couche_prev].get("name", "Conductor-%d" % (couche_prev + 1))
+        if 0 <= couche_curr < len(couches):
+            nom_curr = couches[couche_curr].get("name", "Conductor-%d" % (couche_curr + 1))
+
+        resultats.append({
+            "troncon": i,
+            "couche_depart": couche_prev,
+            "couche_arrivee": couche_curr,
+            "nom_depart": nom_prev,
+            "nom_arrivee": nom_curr,
+            "est_via": False,  # déterminé plus tard avec les vias réels
+        })
+
+    return resultats
+
+
+def _ruptures(objets):
+    """Combien de fois la suite cesse d'être un parcours continu.
+
+    BUG CORRIGÉ (2026-08-28) : la version précédente ne comparait que les
+    coordonnées XY. Or les deux bouts d'un VIA sont au MÊME XY sur deux couches
+    différentes : la chaîne était déclarée continue et le via passait inaperçu.
+
+    On compare maintenant les coordonnées ET la couche : deux tronçons au même
+    XY sur des couches différentes ne sont pas un raccord — c'est un via.
+    De même, deux tronçons sur la même couche mais sans contact XY sont une
+    rupture, comme avant.
+    """
+    n = 0
+    ruptures_detail = []
+    precedent = None
+    for i, obj in enumerate(objets):
+        couche = int(_nombre(obj.get("layer"), -1))
+        e = _extremites(obj)
+        if e is None:
+            continue                      # sans coordonnées, on ne juge pas
+        courant = (e, couche)
+
+        if precedent is not None:
+            e_prev, couche_prev = precedent
+            e_curr, _ = courant
+
+            # Vérifier si les extrémités se touchent
+            if couche_prev == couche:
+                # Même couche : il faut un contact XY
+                if not any(math.hypot(p[0] - q[0], p[1] - q[1])
+                           <= TOLERANCE_RACCORD
+                           for p in e_prev for q in e_curr):
+                    n += 1
+                    ruptures_detail.append({"type": "rupture_xy", "troncon": i})
+            else:
+                # Couche différente : vérifier si c'est un via (même XY)
+                # Les deux bouts du via sont au même XY
+                points_contact = []
+                for p in e_prev:
+                    for q in e_curr:
+                        if math.hypot(p[0] - q[0], p[1] - q[1]) <= TOLERANCE_RACCORD:
+                            points_contact.append((p, q))
+                if len(points_contact) < 2:
+                    # Via incomplet ou rupture
+                    n += 1
+                    ruptures_detail.append({
+                        "type": "rupture_via",
+                        "troncon": i,
+                        "couche_prev": couche_prev,
+                        "couche_curr": couche,
+                    })
+
+        precedent = courant
+
+    return n, ruptures_detail
+
+
+# ==========================================================================
+# La selection est-elle une chaine ?
+# ==========================================================================
 # LA MISE EN CASCADE SUPPOSE UNE CHAINE, et rien d'autre : un troncon, puis le
 # suivant, bout a bout, dans l'ordre ou ils arrivent. C'est vrai d'une piste
 # suivie d'un bout a l'autre. Ce ne l'est pas d'un net entier, qui se ramifie
@@ -656,7 +938,7 @@ def simuler(doc, journal=None):
     # partager le jeu ferait taire l'un des deux.
     un_cote = set()
 
-    ruptures = _ruptures(objets)
+    ruptures, ruptures_detail = _ruptures(objets)
     if ruptures:
         avertissements.append(
             "La sélection n'est pas un parcours continu : %d raccord(s)"
@@ -667,6 +949,37 @@ def simuler(doc, journal=None):
             " parcourue dans l'ordre envoyé : sur un net qui se ramifie, ou"
             " sur une sélection éparse, ils ne veulent rien dire."
             % ruptures)
+
+    # LOT 3a : voir et dire les discontinuités
+    coudes = _coudes(objets)
+    transitions = _transitions(objets, couches)
+
+    # LOT 3b : fonctions helper pour les modèles analytiques de discontinuités
+    def inductance_via_modelisee(h_mm, d_mm):
+        """Inductance de via : L ≈ (μ₀ h / 2π) [ln(4h/d) + 1]"""
+        if h_mm <= 0 or d_mm <= 0:
+            return 0.0
+        h = h_mm * 1e-3
+        d = d_mm * 1e-3
+        from ligne_mom import MU_0
+        return (MU_0 * h / (2.0 * math.pi)) * (math.log(4.0 * h / d) + 1.0)
+
+    def capacite_pastille_modelisee(d_pastille_mm, h_mm, epsilon_r):
+        """Capacité pastille/plan : C ≈ 0.8 × ε × S / h"""
+        if d_pastille_mm <= 0 or h_mm <= 0:
+            return 0.0
+        from ligne_mom import EPSILON_0
+        d = d_pastille_mm * 1e-3
+        h = h_mm * 1e-3
+        S = math.pi * (d / 2.0) ** 2
+        return 0.8 * EPSILON_0 * epsilon_r * S / h
+
+    def capacite_coude_modelisee(w_m, epsilon_r):
+        """Capacité d'excès d'un coude : C ≈ 0.5 × W(mm) × √(εr) fF"""
+        if w_m <= 0:
+            return 0.0
+        w_mm = w_m * 1e3
+        return 0.5 * w_mm * math.sqrt(epsilon_r) * 1e-15
 
     for obj in objets:
         largeur = _nombre(obj.get("width"))
@@ -787,6 +1100,8 @@ def simuler(doc, journal=None):
                 "couverture": round(1e3 * c["info"].get("couverture", 0.0), 4),
                 "entre_plans": round(1e3 * c["info"].get("b", 0.0), 4),
                 "cuivre": round(ep, 4),
+                # LOT 2 : le masque de soudure s'il y en a un
+                "masque": c["info"].get("masque"),
             })
         segments.append(seg)
 
@@ -825,13 +1140,19 @@ def simuler(doc, journal=None):
     # outil d'adaptation. On l'insere donc, quitte a rompre la regularite du
     # pas : un point de plus coute une matrice 2x2, la frequence qu'on cherche
     # vaut mieux que l'elegance de l'echantillonnage.
+
+    # LOT 3b : construire les index de discontinuités par tronçon
+    # Chaque coude ou transition insère sa matrice ABCD après le tronçon i
+    coudes_par_troncon = {c["troncon"]: c for c in coudes}
+    transitions_par_troncon = {t["troncon"]: t for t in transitions}
+
     freqs = np.linspace(analyse["f_debut"], analyse["f_fin"], analyse["points"])
     if freqs.size and np.min(np.abs(freqs - fc)) > 1e-6 * max(fc, 1.0):
         freqs = np.sort(np.append(freqs, fc))
     matrices = []
     for f in freqs:
         abcd = np.eye(2, dtype=complex)
-        for obj, seg in zip(objets, segments):
+        for i, (obj, seg) in enumerate(zip(objets, segments)):
             if seg["z0"] <= 0:
                 continue
             ep = round(_nombre(obj.get("copper_thickness"), 0.035), 6)
@@ -854,6 +1175,33 @@ def simuler(doc, journal=None):
             beta = 2 * math.pi * float(f) * math.sqrt(eps_f) / tl.C_0
             abcd = abcd @ tl.abcd_line(z_f, complex(a_c + a_d, beta),
                                        seg["longueur"] * 1e-3)
+
+            # LOT 3b : insérer les discontinuités après ce tronçon
+            # 1. Un coude ? Shunt C
+            if i in coudes_par_troncon:
+                coude = coudes_par_troncon[i]
+                # La largeur et l'epsilon_r du tronçon suivant (ou courant si dernier)
+                w = seg["largeur"] * 1e-3  # en mètres
+                er = seg.get("er", 4.3)
+                abcd = abcd @ tl.abcd_coude(w, er, float(f))
+
+            # 2. Une transition de couche ? Via π L-C
+            if i in transitions_par_troncon:
+                trans = transitions_par_troncon[i]
+                # Via : on prend les infos du via s'il est dans geometry, sinon estimer
+                # Les vias envoyés par la page portent drill_diameter, pad_diameter
+                via_info = obj.get("via", {})
+                d_percage = _nombre(via_info.get("drill_diameter"), 0.3)  # mm
+                d_pastille = _nombre(via_info.get("pad_diameter"),
+                                     d_percage * 2.5)  # mm
+                # Hauteur au plan : distance entre les deux couches
+                h_via = _nombre(via_info.get("height"),
+                                abs(trans["couche_arrivee"] - trans["couche_depart"])
+                                * 0.1)  # estimation 0.1mm/couche
+                er = seg.get("er", 4.3)
+                abcd = abcd @ tl.abcd_via(h_via, d_percage, d_pastille, er,
+                                          float(f))
+
         matrices.append(tl.cascade_to_s(abcd, z_ref))
 
     duree = time.time() - debut
@@ -880,6 +1228,36 @@ def simuler(doc, journal=None):
                                            else "non declaree"),
               "Z0 moyen : %.2f ohm a %.4f GHz" % (ligne["z0_moyen"], fc / 1e9)]
 
+    # LOT 3b : enrichir les discontinuités avec les valeurs modélisées
+    for coude in coudes:
+        i = coude["troncon"]
+        if i < len(objets):
+            seg = segments[i]
+            w = seg.get("largeur", 1.0) * 1e-3  # en mètres
+            er = seg.get("er", 4.3)
+            freq = fc
+            coude["modelise"] = {
+                "type": "shunt_C",
+                "capacite_fF": round(capacite_coude_modelisee(w, er) * 1e15, 3),
+            }
+
+    for trans in transitions:
+        i = trans["troncon"]
+        if i < len(objets):
+            seg = segments[i]
+            via_info = objets[i].get("via", {})
+            d_percage = _nombre(via_info.get("drill_diameter"), 0.3)  # mm
+            d_pastille = _nombre(via_info.get("pad_diameter"), d_percage * 2.5)
+            h_via = _nombre(via_info.get("height"), 0.2)  # mm
+            er = seg.get("er", 4.3)
+            L = inductance_via_modelisee(h_via, d_percage)
+            C = capacite_pastille_modelisee(d_pastille, h_via, er)
+            trans["modelise"] = {
+                "type": "pi_L_C",
+                "inductance_nH": round(L * 1e9, 3),
+                "capacite_fF": round(C * 1e15, 3),
+            }
+
     return {
         "format": FORMAT_RESULTAT,
         "carte": doc.get("carte") or "",
@@ -889,6 +1267,10 @@ def simuler(doc, journal=None):
         "impedance_reference": z_ref,
         "segments": segments,
         "ligne": ligne,
+        "discontinuites": {
+            "coudes": coudes,
+            "transitions": transitions,
+        },
         "freqs": [float(f) for f in freqs],
         "s": [[[float(v.real), float(v.imag)] for v in m.flatten()]
               for m in matrices],

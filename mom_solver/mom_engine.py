@@ -1,17 +1,15 @@
 """
 Module d'assemblage de la matrice d'impédance et construction du système MoM
-Implémentation de l'équation intégrale EFIE avec accélération Numba
+Formulation MPIE (Mixed Potential Integral Equation) en milieu stratifié
 """
 
 import numpy as np
 import logging
-from typing import List, Dict
+from typing import Dict, List, Optional, Tuple
 from numba import njit, prange
-from scipy.spatial.distance import cdist
 
-from mesher import RWGBasis, get_rwg_center
-from green_layered import (green_2d_layered, self_interaction_term, 
-                           dyadic_green_tensor, ComplexImage)
+from mesher import RWGBasis
+from green_layered import NoyauxGreen, noyaux_green
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +17,43 @@ logger = logging.getLogger(__name__)
 MU_0 = 4 * np.pi * 1e-7
 EPSILON_0 = 8.854187817e-12
 ETA_0 = np.sqrt(MU_0 / EPSILON_0)  # Impédance du vide (~377 Ω)
+
+
+# ==========================================================================
+# CE QUE CE MODULE ASSEMBLE, ET AVEC QUOI
+# --------------------------------------------------------------------------
+# LA FORMULATION. Z_mn = -<f_m, E(f_n)> avec E = -j omega A - grad Phi donne,
+# après intégration par parties sur des fonctions RWG (qui n'ont pas de
+# composante normale au bord de leur support) :
+#
+#     Z_mn = j omega  ∫∫ f_m·f_n G_A  +  1/(j omega) ∫∫ (div f_m)(div f_n) G_q
+#
+# DEUX FONCTIONS DE GREEN, ET C'ÉTAIT LE PREMIER DÉFAUT. La version précédente
+# appelait `green_2d_layered` -- un seul scalaire -- pour les deux termes. Or
+# G_A suit la ligne de transmission TE et G_q la différence des deux lignes :
+# ce sont deux fonctions distinctes, et le terme inductif recevait celle du
+# terme capacitif. Mesuré dans `banc_dcim.py` : les deux noyaux normalisés
+# diffèrent d'un facteur 1,63 dans la limite quasi-statique du FR-4. Un
+# Z0 = racine(L/C) calculé ainsi ne mesurait pas la ligne, il mesurait cette
+# erreur-là. `green_layered.noyaux_green` rend maintenant les deux.
+#
+# LA PERMITTIVITÉ N'EST PLUS CHOISIE ICI, et c'était le deuxième défaut.
+# `get_effective_epsilon` moyennait les épaisseurs de tout l'empilage, alors
+# que l'ajustement DCIM normalise par le seul milieu porteur -- le stratifié
+# sous la piste. Lire un ajustement dans une autre unité que la sienne se paie
+# en racine(eps) sur la vitesse de phase. Les noyaux sortent désormais de
+# `green_layered` avec leur mu_0 et leur 1/(eps_0 eps_ref) déjà dedans, et ce
+# module n'a plus de permittivité à connaître.
+#
+# LA QUADRATURE INTÈGRE VRAIMENT LE 1/R, et c'était le troisième. Une règle de
+# Gauss, même à sept points, n'intègre pas une singularité : elle
+# l'échantillonne. La version précédente compensait par une correction
+# logarithmique additive dont le poids -- « 1,0 si triangle partagé, 0,3 si
+# sommet partagé » -- ne venait d'aucun calcul. Elle est supprimée. À la place,
+# la part singulière -- l'image confondue avec la source, la seule qui pique --
+# est intégrée par un changement de variable POLAIRE qui annule le 1/R contre
+# son jacobien, exactement ; le reste, qui est borné, passe par Gauss.
+# ==========================================================================
 
 
 # Quadratures de Gauss sur triangle (coordonnées barycentriques + poids)
@@ -45,375 +80,388 @@ GAUSS_TRI_7 = (
               0.125939180544827, 0.125939180544827, 0.125939180544827])
 )
 
+def _gauss_01(n):
+    """Gauss-Legendre à n points, ramenée sur [0, 1]."""
+    x, w = np.polynomial.legendre.leggauss(n)
+    return 0.5 * (x + 1.0), 0.5 * w
 
-def select_quadrature(distance: float, size: float):
-    """
-    Choisit l'ordre de quadrature selon la séparation des triangles
 
-    CORRECTION (point 2.2): l'ancienne intégration évaluait la fonction de
-    Green en 1 seul point (le centroïde), ce qui produit des erreurs massives
-    en champ proche. On utilise 7 points quand les triangles sont proches
-    (< 3 tailles caractéristiques) et 3 points au-delà.
+# LES DEUX DIRECTIONS DU SECTEUR POLAIRE NE SE RESSEMBLENT PAS, et c'est mesuré.
+#
+# LE LONG DU RAYON (t), l'intégrande est exp(-jkR) fois une fonction linéaire.
+# Sur une maille de circuit imprimé kR reste très petit devant 1 : quatre
+# points sont déjà généreux.
+#
+# LE LONG DE LA BASE (s), l'intégrande est 1/|w(s)| et il PIQUE -- d'autant
+# plus que le point d'observation approche la droite de l'arête, ce qui est
+# précisément le cas des panneaux adjacents et celui d'un point proche d'un
+# sommet. Ajouter des points de Gauss n'y répond pas bien : de cinq à seize
+# points, l'écart contre la formule fermée de Wilton passait de 2,8 % à 0,04 %
+# sur un point proche d'un sommet, et sans être monotone -- signe qu'on
+# échantillonne un pic au lieu de l'intégrer.
+#
+# ON COUPE DONC L'INTERVALLE AU PIED DE LA PERPENDICULAIRE, là où |w(s)| est
+# minimal, et on intègre les deux moitiés séparément : de chaque côté la
+# fonction est monotone, et Gauss retrouve sa précision. Six points par moitié
+# -- même coût que douze d'un seul tenant -- ramènent le pire cas à 0,001 %.
+ORDRE_POLAIRE_S = 6           # PAR MOITIÉ : douze points en tout
+ORDRE_POLAIRE_T = 4
+GAUSS_POLAIRE = (_gauss_01(ORDRE_POLAIRE_S), _gauss_01(ORDRE_POLAIRE_T))
+
+# À partir de combien de tailles de triangle une paire est « éloignée », donc
+# traitable par la seule règle de Gauss. En dessous, la part singulière passe
+# par les polaires. Trois tailles est la valeur usuelle ; c'est aussi celle qui
+# était déjà écrite ici pour choisir entre 3 et 7 points.
+SEUIL_PROCHE = 3.0
+
+# Sous quelle dénivelée deux triangles sont considérés coplanaires, donc la
+# désingularisation polaire (qui se fait DANS le plan) applicable. Un
+# micromètre est très en dessous de toute épaisseur de cuivre.
+SEUIL_COPLANAIRE = 1e-6
+
+
+def _normale(verts: np.ndarray) -> np.ndarray:
+    """La normale unitaire d'un triangle donné par ses trois sommets."""
+    n = np.cross(verts[1] - verts[0], verts[2] - verts[0])
+    norme = np.linalg.norm(n)
+    if norme < 1e-30:
+        return np.array([0.0, 0.0, 1.0])
+    return n / norme
+
+
+def points_polaires(r_obs: np.ndarray, verts: np.ndarray, ordre=None):
+    """Points et poids de ∫_T f(r')/|r_obs - r'| dS', DÉSINGULARISÉE.
+
+    UNE SINGULARITÉ EN 1/R SE MANGE PAR UN CHANGEMENT DE VARIABLE, pas par des
+    points en plus. On découpe le triangle en trois secteurs ayant `r_obs` pour
+    sommet, et on paramètre chaque secteur par
+
+        r'(t, s) = r_obs + t · w(s),   w(s) = (a - r_obs) + s (b - a)
+
+    avec t et s dans [0, 1]. Alors R = t |w(s)| et le jacobien vaut
+    t |w × (b-a)| : le t s'annule EXACTEMENT, et
+
+        ∫_secteur f/R dS' = 2 A_secteur ∫∫ f(r_obs + t w(s)) / |w(s)| dt ds
+
+    où A_secteur est l'aire SIGNÉE -- ce qui fait que la formule reste juste
+    quand `r_obs` est hors du triangle, les trois secteurs se compensant alors
+    comme il faut. Il ne reste rien de singulier à intégrer, et une règle de
+    Gauss-Legendre ordinaire retrouve toute sa précision.
+
+    VALABLE DANS LE PLAN DU TRIANGLE. `r_obs` doit y être : c'est le cas du
+    2,5D, où source et observation sont sur la même couche de cuivre. Hors du
+    plan le noyau n'est de toute façon plus singulier, et l'appelant retombe
+    sur Gauss.
 
     Args:
-        distance: Distance entre centroïdes
-        size: Taille caractéristique des triangles
+        r_obs: point d'observation, coplanaire au triangle
+        verts: 3x3, les sommets
+        ordre: ((noeuds_s, poids_s), (noeuds_t, poids_t)) sur [0,1] ;
+               GAUSS_POLAIRE par défaut
 
     Returns:
-        (points barycentriques, poids)
+        (points Nx3, poids N) tels que Σ w_i f(p_i) ≈ ∫_T f/R dS'
     """
-    if distance < 3.0 * size:
-        return GAUSS_TRI_7
-    return GAUSS_TRI_3
+    if ordre is None:
+        ordre = GAUSS_POLAIRE
+    (noeuds_s, poids_s), (noeuds_t, poids_t) = ordre
+    n_hat = _normale(verts)
+
+    # Les trois secteurs d'un coup : c'est le point chaud de l'assemblage, il
+    # est appele une fois par point d'observation et par paire proche.
+    a = verts                                   # (3, 3) : les origines d'arete
+    b = np.roll(verts, -1, axis=0)              # (3, 3) : leurs extremites
+
+    d1 = a - r_obs                              # (3, 3)
+    d2 = b - a                                  # (3, 3)
+    aires = 0.5 * (np.cross(d1, b - r_obs) @ n_hat)          # (3,)
+
+    # LE PIED DE LA PERPENDICULAIRE, par secteur : s* = -(d1·d2)/|d2|^2, borné
+    # à [0, 1]. C'est le minimum de |w(s)|, donc le sommet du pic.
+    d2_carre = np.sum(d2 * d2, axis=1)
+    d2_carre = np.where(d2_carre < 1e-300, 1.0, d2_carre)
+    pied = np.clip(-np.sum(d1 * d2, axis=1) / d2_carre, 0.0, 1.0)      # (3,)
+
+    # Les nœuds en s, DEUX MOITIÉS par secteur, avec leurs poids remis à
+    # l'échelle de la moitié qu'ils couvrent.
+    s_bas = pied[:, None] * noeuds_s[None, :]
+    s_haut = pied[:, None] + (1.0 - pied)[:, None] * noeuds_s[None, :]
+    n_s = np.concatenate([s_bas, s_haut], axis=1)                      # (3,2S)
+    w_s = np.concatenate([pied[:, None] * poids_s[None, :],
+                          (1.0 - pied)[:, None] * poids_s[None, :]], axis=1)
+
+    w_vec = d1[:, None, :] + n_s[:, :, None] * d2[:, None, :]          # (3,2S,3)
+    norme = np.linalg.norm(w_vec, axis=2)                              # (3,2S)
+
+    valide = ((np.abs(aires)[:, None] > 1e-30) & (norme > 1e-30))
+    norme_sure = np.where(valide, norme, 1.0)
+
+    facteur = 2.0 * aires[:, None] * w_s / norme_sure                  # (3,2S)
+
+    pts = r_obs + noeuds_t[None, None, :, None] * w_vec[:, :, None, :]  # (3,S,T,3)
+    wts = facteur[:, :, None] * poids_t[None, None, :]                 # (3,S,T)
+    wts = np.where(valide[:, :, None], wts, 0.0)
+
+    return pts.reshape(-1, 3), wts.reshape(-1)
 
 
-def _bary_to_cart(verts: np.ndarray, bary: np.ndarray) -> np.ndarray:
-    """Convertit des coordonnées barycentriques en points cartésiens"""
-    return bary @ verts
+def _distances(pts_m: np.ndarray, pts_n: np.ndarray):
+    """(rho, dz, R) entre deux jeux de points, en grille."""
+    d = pts_m[:, None, :] - pts_n[None, :, :]
+    rho = np.sqrt(d[..., 0] ** 2 + d[..., 1] ** 2)
+    dz = d[..., 2]
+    return rho, dz, np.sqrt(rho ** 2 + dz ** 2)
+
+
+class MomentsTriangles:
+    """Les moments de la fonction de Green sur une paire de triangles.
+
+    POURQUOI DES MOMENTS ET NON DES IMPÉDANCES. Un triangle appartient jusqu'à
+    trois fonctions RWG, donc une même paire de triangles est visitée jusqu'à
+    neuf fois pendant l'assemblage. Ce qui change d'une visite à l'autre, c'est
+    le sommet libre v et la longueur d'arête -- pas la géométrie d'intégration.
+    En développant
+
+        (p_m - v_m)·(p_n - v_n) = p_m·p_n - v_n·p_m - v_m·p_n + v_m·v_n
+
+    tout ce qui dépend de v se lit sur quatre moments calculés UNE fois :
+
+        q00 = ∫∫ G_q            le terme de charge, entier
+        a00 = ∫∫ G_A
+        a10 = ∫∫ p_m G_A        (vecteur)
+        a01 = ∫∫ p_n G_A        (vecteur)
+        a11 = ∫∫ p_m ⊗ p_n G_A  (tenseur, dont seule la trace sert ici)
+
+    Le gain mesuré sur un maillage de ligne est proche d'un facteur sept, et il
+    est gratuit : c'est de l'algèbre, pas une approximation.
+    """
+
+    __slots__ = ('q00', 'a00', 'a10', 'a01', 'a11')
+
+    def __init__(self, q00, a00, a10, a01, a11):
+        self.q00 = q00
+        self.a00 = a00
+        self.a10 = a10
+        self.a01 = a01
+        self.a11 = a11
+
+    def terme_charge(self):
+        """∫∫ G_q : le terme de charge ne dépend d'aucun sommet libre."""
+        return self.q00
+
+    def terme_courant(self, v_m: np.ndarray, v_n: np.ndarray):
+        """∫∫ (p_m - v_m)·(p_n - v_n) G_A, reconstruit depuis les moments."""
+        return (np.trace(self.a11)
+                - np.dot(v_n, self.a10)
+                - np.dot(v_m, self.a01)
+                + float(np.dot(v_m, v_n)) * self.a00)
+
+
+def _moments_gauss(verts_m, verts_n, aire_m, aire_n, noyaux, bary, poids,
+                   reste_seulement=False):
+    """Les moments par la seule règle de Gauss, sur les deux triangles."""
+    pts_m = bary @ verts_m
+    pts_n = bary @ verts_n
+    rho, dz, _ = _distances(pts_m, pts_n)
+
+    if reste_seulement:
+        g_a = noyaux.g_a_reste(rho, dz)
+        g_q = noyaux.g_q_reste(rho, dz)
+    else:
+        g_a = noyaux.g_a(rho, dz)
+        g_q = noyaux.g_q(rho, dz)
+
+    w = (poids[:, None] * poids[None, :]) * (aire_m * aire_n)
+
+    wa = w * g_a
+    q00 = np.sum(w * g_q)
+    a00 = np.sum(wa)
+    a10 = np.einsum('mn,mi->i', wa, pts_m)
+    a01 = np.einsum('mn,ni->i', wa, pts_n)
+    a11 = np.einsum('mn,mi,nj->ij', wa, pts_m, pts_n)
+    return q00, a00, a10, a01, a11
+
+
+def _moments_singuliers(verts_m, verts_n, aire_m, noyaux, bary, poids):
+    """Les moments de la SEULE image confondue, par désingularisation polaire.
+
+    L'intégrale extérieure reste une règle de Gauss sur le triangle test ; pour
+    chacun de ses points, l'intégrale intérieure passe par les secteurs
+    polaires. Le noyau y est amplitude · exp(-j k R)/(4 pi R) : c'est le 1/R
+    que les polaires annulent, et le exp(-j k R) est régulier.
+    """
+    pts_m = bary @ verts_m
+    k_ref = noyaux.k_ref
+    amp_a = noyaux.amplitude_directe_a
+    amp_q = noyaux.amplitude_directe_q
+
+    q00 = 0.0 + 0j
+    a00 = 0.0 + 0j
+    a10 = np.zeros(3, dtype=complex)
+    a01 = np.zeros(3, dtype=complex)
+    a11 = np.zeros((3, 3), dtype=complex)
+
+    for p_m, w_m in zip(pts_m, poids):
+        pts_n, w_n = points_polaires(p_m, verts_n)
+        if len(pts_n) == 0:
+            continue
+
+        r = np.linalg.norm(p_m[None, :] - pts_n, axis=1)
+        # exp(-j k R)/(4 pi) : le 1/R est déjà dans les poids polaires.
+        commun = np.exp(-1j * k_ref * r) / (4 * np.pi) * w_n
+        poids_ext = w_m * aire_m
+
+        contrib_a = poids_ext * amp_a * commun
+        q00 += poids_ext * amp_q * np.sum(commun)
+        a00 += np.sum(contrib_a)
+        a10 += np.sum(contrib_a) * p_m
+        a01 += contrib_a @ pts_n
+        a11 += np.outer(p_m, contrib_a @ pts_n)
+
+    return q00, a00, a10, a01, a11
+
+
+def moments_triangles(verts_m, verts_n, aire_m, aire_n,
+                      noyaux: NoyauxGreen) -> MomentsTriangles:
+    """Les moments de la paire, en choisissant le traitement qui convient.
+
+    ÉLOIGNÉE : le noyau est lisse sur les deux domaines, une règle de Gauss à
+    trois points suffit et c'est le cas le plus fréquent.
+
+    PROCHE OU CONFONDUE : on sépare. L'image confondue avec la source porte le
+    1/R et passe par les polaires ; tout le reste -- les autres images, l'onde
+    de surface -- est borné et passe par Gauss à sept points. Les deux parts
+    s'additionnent, et aucune n'est corrigée après coup.
+
+    NON COPLANAIRE : la désingularisation polaire se fait dans le plan du
+    triangle source, elle n'a donc pas de sens hors plan -- mais hors plan le
+    noyau n'est plus singulier non plus, et Gauss reprend ses droits.
+    """
+    c_m = verts_m.mean(axis=0)
+    c_n = verts_n.mean(axis=0)
+    distance = float(np.linalg.norm(c_m - c_n))
+    taille = max(np.sqrt(aire_m), np.sqrt(aire_n))
+    coplanaire = abs(c_m[2] - c_n[2]) < SEUIL_COPLANAIRE
+
+    if distance > SEUIL_PROCHE * taille or not coplanaire:
+        bary, poids = (GAUSS_TRI_3 if distance > SEUIL_PROCHE * taille
+                       else GAUSS_TRI_7)
+        return MomentsTriangles(*_moments_gauss(
+            verts_m, verts_n, aire_m, aire_n, noyaux, bary, poids))
+
+    bary, poids = GAUSS_TRI_7
+    reg = _moments_gauss(verts_m, verts_n, aire_m, aire_n, noyaux,
+                         bary, poids, reste_seulement=True)
+    sing = _moments_singuliers(verts_m, verts_n, aire_m, noyaux, bary, poids)
+    return MomentsTriangles(*[r + s for r, s in zip(reg, sing)])
+
+
+def _triangles_de(rwg: RWGBasis, vertices, elements):
+    """Les deux triangles d'une RWG : (signe, sommet libre, aire, sommets)."""
+    return (
+        (+1.0, vertices[rwg.vertex_plus], rwg.area_plus,
+         vertices[elements[rwg.tri_plus]], rwg.tri_plus),
+        (-1.0, vertices[rwg.vertex_minus], rwg.area_minus,
+         vertices[elements[rwg.tri_minus]], rwg.tri_minus),
+    )
 
 
 def compute_interactions(rwg_m: RWGBasis, rwg_n: RWGBasis, freq: float,
-                        images: List[ComplexImage], stackup: Dict,
-                        vertices: np.ndarray, elements: np.ndarray) -> complex:
-    """
-    Évalue l'interaction électromagnétique entre deux fonctions RWG
+                         noyaux: NoyauxGreen, vertices: np.ndarray,
+                         elements: np.ndarray, cache: Optional[Dict] = None
+                         ) -> complex:
+    """L'impédance mutuelle Z_mn de la formulation MPIE.
 
-    CORRECTION: Implémente la formulation MPIE (Mixed Potential Integral
-    Equation) complète. L'ancienne version présentait deux erreurs majeures :
+        Z_mn = j omega ∫∫ f_m·f_n G_A + 1/(j omega) ∫∫ (div f_m)(div f_n) G_q
 
-    1. Le terme de charge (potentiel scalaire) était totalement absent.
-       Seul le potentiel vecteur était calculé, alors que le terme de
-       divergence domine en basse fréquence et pour les structures planaires.
-    2. Le produit f_m·f_n était calculé comme un produit de magnitudes
-       scalaires, ignorant la direction vectorielle des fonctions RWG.
+    avec, sur chaque triangle T^p :  f = s_p (l/2A_p)(r - v_p)  et
+    div f = s_p l/A_p. Les deux fonctions de Green sortent de `noyaux`, mises à
+    l'échelle : G_A porte son mu_0, G_q son 1/(eps_0 eps_ref). Ce module n'a
+    donc aucune constante de milieu à choisir, et c'est voulu -- voir l'en-tête.
 
-    Formulation correcte :
-        Z_mn = jωμ₀ ∫∫ f_m·f_n G dS dS'
-             + 1/(jωε) ∫∫ (∇·f_m)(∇·f_n) G dS dS'
-
-    avec, sur chaque triangle T^p :
-        f(r)   = s_p · (l/2A_p) · (r - v_p)
-        ∇·f(r) = s_p · (l/A_p)
+    L'ÉLÉMENT DIAGONAL N'EST PLUS UN CAS À PART. L'ancienne version avait une
+    fonction séparée qui, entre autres, appelait la fonction de Green avec une
+    liste d'images VIDE pour les contributions croisées T+/T- : le couplage
+    entre les deux moitiés de la fonction de base valait donc zéro. Ici les
+    quatre paires de triangles passent par le même chemin, diagonale comprise ;
+    c'est la quadrature qui sait qu'une paire est confondue, pas l'appelant.
 
     Args:
-        rwg_m: Fonction de base test (observation)
-        rwg_n: Fonction de base source
-        freq: Fréquence
-        images: Sources images DCIM
-        stackup: Stackup du PCB
-        vertices: Sommets du maillage
-        elements: Éléments du maillage
-
-    Returns:
-        Valeur de l'impédance Z_mn
+        rwg_m, rwg_n: les deux fonctions de base
+        freq: la fréquence (elle ne sert plus qu'à omega : les noyaux la
+              portent déjà)
+        noyaux: les deux fonctions de Green, de `green_layered.noyaux_green`
+        vertices, elements: le maillage
+        cache: dictionnaire de moments par paire de triangles, partagé par
+               l'assemblage. Facultatif, mais il divise le travail par ~7.
     """
     omega = 2 * np.pi * freq
-
-    # Si m == n : élément diagonal (auto-interaction)
-    if rwg_m.edge_index == rwg_n.edge_index:
-        return compute_self_interaction(rwg_m, freq, vertices, elements, stackup)
 
     l_m = rwg_m.edge_length
     l_n = rwg_n.edge_length
 
-    # Description des 4 triangles : (signe, sommet libre, aire, sommets)
-    tris_m = [
-        (+1.0, rwg_m.vertex_plus,  rwg_m.area_plus,  vertices[elements[rwg_m.tri_plus]]),
-        (-1.0, rwg_m.vertex_minus, rwg_m.area_minus, vertices[elements[rwg_m.tri_minus]]),
-    ]
-    tris_n = [
-        (+1.0, rwg_n.vertex_plus,  rwg_n.area_plus,  vertices[elements[rwg_n.tri_plus]]),
-        (-1.0, rwg_n.vertex_minus, rwg_n.area_minus, vertices[elements[rwg_n.tri_minus]]),
-    ]
+    acc_courant = 0.0 + 0j     # ∫∫ f_m·f_n G_A, sans les coefficients
+    acc_charge = 0.0 + 0j      # ∫∫ (div f_m)(div f_n) G_q
 
-    # Accumulateurs des deux potentiels
-    acc_vector = 0.0 + 0j   # ∫∫ f_m·f_n G
-    acc_scalar = 0.0 + 0j   # ∫∫ (∇·f_m)(∇·f_n) G
-
-    for s_m, v_m_idx, area_m, verts_m in tris_m:
-        if area_m <= 0:
+    for s_m, v_m, aire_m, verts_m, i_m in _triangles_de(rwg_m, vertices, elements):
+        if aire_m <= 0:
             continue
-        v_m = vertices[v_m_idx]
-        size_m = np.sqrt(area_m)
-
-        for s_n, v_n_idx, area_n, verts_n in tris_n:
-            if area_n <= 0:
+        for s_n, v_n, aire_n, verts_n, i_n in _triangles_de(rwg_n, vertices, elements):
+            if aire_n <= 0:
                 continue
-            v_n = vertices[v_n_idx]
-            size_n = np.sqrt(area_n)
 
-            # Quadrature adaptative selon la proximité des triangles
-            c_m = verts_m.mean(axis=0)
-            c_n = verts_n.mean(axis=0)
-            dist = np.linalg.norm(c_m - c_n)
-            bary, weights = select_quadrature(dist, max(size_m, size_n))
+            cle = (i_m, i_n) if i_m <= i_n else (i_n, i_m)
+            moments = None if cache is None else cache.get(cle)
 
-            pts_m = _bary_to_cart(verts_m, bary)
-            pts_n = _bary_to_cart(verts_n, bary)
+            if moments is None:
+                if cle[0] == i_m:
+                    moments = moments_triangles(verts_m, verts_n,
+                                                aire_m, aire_n, noyaux)
+                else:
+                    # Le cache est indexé par paire NON ordonnée ; on calcule
+                    # dans l'ordre de la clé et on lira transposé.
+                    moments = moments_triangles(verts_n, verts_m,
+                                                aire_n, aire_m, noyaux)
+                if cache is not None:
+                    cache[cle] = moments
 
-            # Divergences (constantes par triangle)
-            div_m = s_m * l_m / area_m
-            div_n = s_n * l_n / area_n
+            if cle[0] == i_m:
+                courant = moments.terme_courant(v_m, v_n)
+            else:
+                # Les moments ont été calculés (n, m) : m devient le second.
+                courant = moments.terme_courant(v_n, v_m)
 
-            sum_vec = 0.0 + 0j
-            sum_sca = 0.0 + 0j
+            charge = moments.terme_charge()
 
-            for i, w_i in enumerate(weights):
-                p_m = pts_m[i]
-                # Vecteur RWG en p_m : s_m · (l_m/2A_m) · (p_m - v_m)
-                f_m_vec = s_m * (l_m / (2 * area_m)) * (p_m - v_m)
+            acc_courant += (s_m * s_n * (l_m / (2 * aire_m))
+                            * (l_n / (2 * aire_n)) * courant)
+            acc_charge += (s_m * l_m / aire_m) * (s_n * l_n / aire_n) * charge
 
-                for j, w_j in enumerate(weights):
-                    p_n = pts_n[j]
-                    f_n_vec = s_n * (l_n / (2 * area_n)) * (p_n - v_n)
-
-                    g = green_2d_layered(p_m, p_n, freq, stackup, images)
-
-                    # Produit scalaire vectoriel correct
-                    sum_vec += w_i * w_j * np.dot(f_m_vec, f_n_vec) * g
-                    sum_sca += w_i * w_j * g
-
-            # Jacobiens : les poids sont normalisés, on applique les aires
-            acc_vector += sum_vec * area_m * area_n
-            acc_scalar += div_m * div_n * sum_sca * area_m * area_n
-
-    # Permittivité effective du substrat (cohérente avec la fonction de Green)
-    eps = EPSILON_0 * get_effective_epsilon(stackup)
-
-    # Z_mn = jωμ₀ · A_term + 1/(jωε) · Phi_term
-    z_mn = 1j * omega * MU_0 * acc_vector + acc_scalar / (1j * omega * eps)
-
-    # Traitement de la quasi-singularité pour fonctions adjacentes
-    # (CORRECTION point 2.1 : integrate_singular_term était défini mais jamais appelé)
-    z_mn += integrate_singular_term(rwg_m, rwg_n, vertices, elements, freq, stackup)
-
-    return z_mn
+    return 1j * omega * acc_courant + acc_charge / (1j * omega)
 
 
-def get_effective_epsilon(stackup: Dict) -> complex:
-    """
-    Permittivité relative effective du substrat
-
-    Moyenne pondérée par l'épaisseur des couches diélectriques. Assure la
-    cohérence entre le terme de charge MPIE et la fonction de Green.
-
-    Args:
-        stackup: Stackup du PCB
-
-    Returns:
-        Permittivité relative complexe effective
-    """
-    layers = stackup.get('layers', [])
-
-    num = 0.0 + 0j
-    den = 0.0
-
-    for layer in layers:
-        if layer.get('type') == 'copper':
-            continue
-        t = layer.get('thickness', 0.0)
-        if t <= 0:
-            continue
-        eps_r = layer.get('epsilon_r', 1.0) * (1 - 1j * layer.get('tan_delta', 0.0))
-        num += eps_r * t
-        den += t
-
-    if den <= 0:
-        return 1.0 + 0j
-
-    return num / den
-
-
-def compute_self_interaction(rwg: RWGBasis, freq: float,
-                             vertices: np.ndarray, elements: np.ndarray,
-                             stackup: Dict = None) -> complex:
-    """
-    Calcule l'auto-impédance (élément diagonal) avec extraction de singularité
-
-    CORRECTION: Ajout du terme de potentiel scalaire (charge), absent de
-    l'ancienne version. Pour l'élément diagonal, les deux contributions
-    self de T+ et T- s'ajoutent avec (∇·f)² > 0, et les termes croisés
-    T+/T- entrent avec un signe négatif.
-
-    Args:
-        rwg: Fonction de base RWG
-        freq: Fréquence
-        vertices: Sommets
-        elements: Éléments
-        stackup: Stackup (pour la permittivité effective)
-
-    Returns:
-        Auto-impédance Z_nn
-    """
-    omega = 2 * np.pi * freq
-    l_e = rwg.edge_length
-
-    eps_r = get_effective_epsilon(stackup) if stackup else 1.0 + 0j
-    eps = EPSILON_0 * eps_r
-
-    tris = [
-        (+1.0, rwg.vertex_plus,  rwg.area_plus,  vertices[elements[rwg.tri_plus]]),
-        (-1.0, rwg.vertex_minus, rwg.area_minus, vertices[elements[rwg.tri_minus]]),
-    ]
-
-    acc_vector = 0.0 + 0j
-    acc_scalar = 0.0 + 0j
-
-    bary, weights = GAUSS_TRI_7
-
-    for s_p, v_p_idx, area_p, verts_p in tris:
-        if area_p <= 0:
-            continue
-        v_p = vertices[v_p_idx]
-        div_p = s_p * l_e / area_p
-
-        # --- Contribution self du triangle (singulière) ---
-        # ∫∫ 1/R sur un triangle : approximation par rayon équivalent
-        r_eq = np.sqrt(area_p / np.pi)
-
-        # Moment moyen de |r - v_p|² sur le triangle (exact par quadrature)
-        pts_p = _bary_to_cart(verts_p, bary)
-        rho_sq = np.sum(weights[:, None] * (pts_p - v_p)**2)
-
-        # Terme vecteur : (l/2A)² · <|r-v|²> · ∫∫G ≈ ... · A/(4π r_eq)
-        coef_p = (l_e / (2 * area_p))**2
-        g_self = area_p / (4 * np.pi * r_eq)
-        acc_vector += coef_p * rho_sq * g_self * area_p
-
-        # Terme charge : (∇·f)² · ∫∫G
-        acc_scalar += div_p**2 * g_self * area_p
-
-        # --- Contribution croisée T+ / T- ---
-        for s_q, v_q_idx, area_q, verts_q in tris:
-            if s_q == s_p or area_q <= 0:
-                continue
-            v_q = vertices[v_q_idx]
-            div_q = s_q * l_e / area_q
-
-            pts_q = _bary_to_cart(verts_q, bary)
-
-            sum_vec = 0.0 + 0j
-            sum_sca = 0.0 + 0j
-
-            for i, w_i in enumerate(weights):
-                f_p_vec = s_p * (l_e / (2 * area_p)) * (pts_p[i] - v_p)
-                for j, w_j in enumerate(weights):
-                    f_q_vec = s_q * (l_e / (2 * area_q)) * (pts_q[j] - v_q)
-                    g = green_2d_layered(pts_p[i], pts_q[j], freq, stackup, [])
-                    sum_vec += w_i * w_j * np.dot(f_p_vec, f_q_vec) * g
-                    sum_sca += w_i * w_j * g
-
-            # 0.5 : chaque paire croisée est visitée deux fois
-            acc_vector += 0.5 * sum_vec * area_p * area_q
-            acc_scalar += 0.5 * div_p * div_q * sum_sca * area_p * area_q
-
-    z_self = 1j * omega * MU_0 * acc_vector + acc_scalar / (1j * omega * eps)
-
-    return z_self
-
-
-def integrate_singular_term(rwg_m: RWGBasis, rwg_n: RWGBasis,
-                            vertices: np.ndarray, elements: np.ndarray,
-                            freq: float, stackup: Dict = None) -> complex:
-    """
-    Correction de quasi-singularité pour fonctions RWG adjacentes
-
-    CORRECTION (point 2.1): cette fonction était définie mais jamais appelée.
-    Elle est maintenant invoquée depuis compute_interactions pour toute paire
-    de fonctions partageant un triangle ou un sommet.
-
-    Elle retourne une correction *additive* qui compense le déficit de la
-    quadrature de Gauss lorsque le noyau 1/R varie fortement sur le domaine
-    d'intégration. La correction porte sur le terme de charge (dominant dans
-    la singularité) et est déjà mise à l'échelle en ohms.
-
-    Limite connue : il s'agit d'une extraction logarithmique standard, pas de
-    l'intégrale analytique exacte de Wilton-Rao sur triangles adjacents.
-    L'erreur résiduelle décroît avec le raffinement du maillage.
-
-    Args:
-        rwg_m: Fonction test
-        rwg_n: Fonction source
-        vertices: Sommets
-        elements: Éléments
-        freq: Fréquence
-        stackup: Stackup (permittivité effective)
-
-    Returns:
-        Correction d'impédance en ohms (0 si non adjacentes)
-    """
-    triangles_m = {rwg_m.tri_plus, rwg_m.tri_minus}
-    triangles_n = {rwg_n.tri_plus, rwg_n.tri_minus}
-
-    shares_triangle = len(triangles_m & triangles_n) > 0
-
-    verts_m = set(rwg_m.edge_vertices)
-    verts_n = set(rwg_n.edge_vertices)
-    shares_vertex = len(verts_m & verts_n) > 0
-
-    if not (shares_triangle or shares_vertex):
-        return 0.0 + 0j
-
-    # Un triangle partagé implique une singularité plus forte qu'un simple
-    # sommet commun : on pondère la correction en conséquence.
-    strength = 1.0 if shares_triangle else 0.3
-
-    omega = 2 * np.pi * freq
-    eps = EPSILON_0 * (get_effective_epsilon(stackup) if stackup else 1.0 + 0j)
-
-    edge_length = 0.5 * (rwg_m.edge_length + rwg_n.edge_length)
-    area_avg = 0.25 * (rwg_m.area_plus + rwg_m.area_minus +
-                       rwg_n.area_plus + rwg_n.area_minus)
-
-    if area_avg <= 0:
-        return 0.0 + 0j
-
-    r_eq = np.sqrt(area_avg / np.pi)
-
-    # Déficit logarithmique de l'intégrale de 1/R
-    log_arg = 2 * edge_length / (r_eq + 1e-15)
-    if log_arg <= 1.0:
-        return 0.0 + 0j
-
-    # Correction sur le terme de charge : (l/A)² · A² · Δ(∫G) / (jωε)
-    delta_g = strength * np.log(log_arg) / (4 * np.pi)
-    charge_corr = (edge_length / area_avg)**2 * area_avg**2 * delta_g
-
-    return charge_corr / (1j * omega * eps)
-
-
-def fill_z_matrix(rwg_basis: List[RWGBasis], freq: float, 
-                  images: List[ComplexImage], stackup: Dict,
+def fill_z_matrix(rwg_basis: List[RWGBasis], freq: float,
+                  noyaux: NoyauxGreen,
                   vertices: np.ndarray = None,
                   elements: np.ndarray = None) -> np.ndarray:
-    """
-    Remplit la matrice d'impédance complète Z
+    """Assemble la matrice d'impédance complète Z.
 
-    CORRECTION: deux changements par rapport à l'ancienne version.
+    Deux économies, toutes deux exactes :
 
-    1. vertices/elements sont désormais obligatoires. L'ancien code se
-       rabattait silencieusement sur `np.zeros((100, 3))`, produisant une
-       matrice Z calculée sur une géométrie nulle sans aucune erreur visible.
-    2. Exploitation de la réciprocité (Z_mn = Z_nm) : seul le triangle
-       supérieur est calculé, ce qui divise le coût d'assemblage par ~2.
-       C'est un gain réel, contrairement au noyau Numba qui ne connaissait
-       pas le milieu stratifié (voir fill_z_matrix_freespace_numba).
+      · la RÉCIPROCITÉ. Z_mn = Z_nm, donc seul le triangle supérieur est
+        calculé. Facteur deux.
+      · le CACHE DE MOMENTS par paire de triangles. Un triangle appartient
+        jusqu'à trois RWG, donc une paire de triangles est visitée jusqu'à neuf
+        fois ; ses moments ne dépendent que de la géométrie. Voir
+        `MomentsTriangles`.
 
-    Args:
-        rwg_basis: Liste des fonctions de base RWG
-        freq: Fréquence
-        images: Sources images DCIM
-        stackup: Stackup
-        vertices: Sommets du maillage (obligatoire)
-        elements: Éléments du maillage (obligatoire)
-
-    Returns:
-        Matrice d'impédance NxN complexe
+    `vertices` et `elements` sont obligatoires : l'ancienne version se rabattait
+    silencieusement sur `np.zeros((100, 3))`, ce qui produisait une matrice Z
+    calculée sur une géométrie nulle sans lever la moindre erreur.
     """
     n_basis = len(rwg_basis)
     logger.info(f"Assemblage de la matrice Z ({n_basis}x{n_basis})")
 
-    # CORRECTION: échec explicite au lieu d'un repli silencieux sur des zéros
     if vertices is None or elements is None:
         raise ValueError(
             "fill_z_matrix: 'vertices' et 'elements' sont obligatoires. "
@@ -422,8 +470,8 @@ def fill_z_matrix(rwg_basis: List[RWGBasis], freq: float,
         )
 
     z_matrix = np.zeros((n_basis, n_basis), dtype=complex)
+    cache = {}
 
-    # Réciprocité : n_basis(n_basis+1)/2 évaluations au lieu de n_basis²
     total = n_basis * (n_basis + 1) // 2
     computed = 0
     log_interval = max(1, total // 10)
@@ -431,8 +479,8 @@ def fill_z_matrix(rwg_basis: List[RWGBasis], freq: float,
     for m in range(n_basis):
         for n in range(m, n_basis):
             z_val = compute_interactions(
-                rwg_basis[m], rwg_basis[n], freq, images,
-                stackup, vertices, elements
+                rwg_basis[m], rwg_basis[n], freq, noyaux,
+                vertices, elements, cache
             )
 
             z_matrix[m, n] = z_val
@@ -443,7 +491,7 @@ def fill_z_matrix(rwg_basis: List[RWGBasis], freq: float,
             if computed % log_interval == 0:
                 logger.info(f"  Progression : {100 * computed / total:.1f}%")
 
-    logger.info("  Matrice Z assemblée")
+    logger.info(f"  Matrice Z assemblée ({len(cache)} paires de triangles)")
 
     return z_matrix
 
@@ -466,10 +514,12 @@ def fill_z_matrix_freespace_numba(centers: np.ndarray, edge_lengths: np.ndarray,
     Il évalue en outre la fonction de Green au centre de l'arête (1 point),
     ce qui est précisément l'erreur de quadrature corrigée au point 2.2.
 
-    Pour accélérer réellement l'assemblage stratifié, il faudrait tabuler
-    green_2d_layered sur une grille (rho, z, z') par fréquence puis
+    Pour accélérer réellement l'assemblage stratifié, il faudrait tabuler les
+    deux noyaux de `NoyauxGreen` sur une grille de rho par fréquence puis
     interpoler dans un noyau nopython. C'est un chantier distinct, avec sa
-    propre validation d'erreur d'interpolation.
+    propre validation d'erreur d'interpolation. Le cache de moments par paire
+    de triangles (voir `MomentsTriangles`) est le gain qui a été pris, parce
+    qu'il est exact ; celui-là ne l'est pas.
 
     Conservé comme référence analytique pour tests de non-régression : sur une
     géométrie sans substrat (epsilon_r = 1), le chemin Python doit converger
@@ -513,137 +563,230 @@ def fill_z_matrix_freespace_numba(centers: np.ndarray, edge_lengths: np.ndarray,
     return z_matrix
 
 
-def map_ports_to_rwg(ports: List[Dict], rwg_basis: List[RWGBasis],
-                     vertices: np.ndarray, tolerance: float = None) -> List[int]:
-    """
-    Associe chaque port à l'indice de la fonction RWG la plus proche géométriquement
+# ==========================================================================
+# UN PORT EST UNE COUPE DU CONDUCTEUR, PAS UNE ARETE
+# --------------------------------------------------------------------------
+# CE QUI ETAIT LA AVANT, ET CE QUE CA VALAIT. `map_ports_to_rwg` associait a
+# chaque port UNE fonction de base : la plus proche geometriquement, sans
+# regarder son orientation. `build_v_vector` posait la tension sur cette
+# unique arete. Mesure sur un microruban de 6 mm maille sur trois cellules de
+# largeur (`banc_chaine.py`) :
+#
+#     |Y21 / Y11| = 1,5 . 10^-5      |S11| = 1,0000     |S21| = 0,0000
+#
+# CE N'EST PAS UNE IMPRECISION, C'EST UN COURT-CIRCUIT. Une tension imposee sur
+# une seule arete interne d'un ruban continu est contournee par le metal d'a
+# cote : le courant fait le tour de la « fente » par les triangles voisins sans
+# jamais descendre la ligne. L'admittance vue est celle de cette boucle locale
+# -- pres d'un siemens, soit une impedance d'entree de l'ordre de l'ohm -- et
+# elle noie completement le chemin utile. Le solveur rendait donc |S21| = 0
+# quelle que soit la geometrie, et aucun travail sur la fonction de Green ne
+# l'aurait montre.
+#
+# ORIENTER MIEUX L'ARETE NE SUFFIT PAS, et c'est mesure aussi : en prenant la
+# mieux alignee sur l'axe de la ligne, |Y21/Y11| tombe a 3,4 . 10^-6 -- ca
+# empire. En excitant toutes les aretes bien alignees du voisinage, 5 . 10^-4.
+# Toujours rien.
+#
+# CE QU'IL FAUT EST UNE COUPE COMPLETE : un ensemble d'aretes tel que TOUT
+# chemin de courant d'un cote a l'autre en traverse une. Alors la tension n'est
+# plus contournable, et le modele delta-gap redevient ce qu'il est cense etre.
+#
+# ET UNE COUPE SE RECONNAIT SANS GEOMETRIE COMPLIQUEE. On coupe l'ensemble des
+# TRIANGLES par un plan ; les aretes de la coupe sont exactement celles dont les
+# deux triangles tombent de part et d'autre. C'est, par construction, la
+# frontiere entre les deux paquets de triangles : rien ne passe d'un paquet a
+# l'autre sans franchir une de ces aretes. Le critere ne suppose ni maillage
+# regulier, ni piste rectiligne, et il vaut aussi bien pour un port au bord
+# qu'au milieu d'un plan.
+#
+# CE QUE CETTE VERSION NE FAIT TOUJOURS PAS -- le « lot 5 bis » de A-FAIRE :
+#   · pas de DE-EMBARQUEMENT. La coupe porte encore la reactance de la
+#     discontinuite d'acces ; sur une ligne courte elle n'est pas negligeable.
+#     Se fait par la methode des deux longueurs, et demande deux resolutions ;
+#   · pas de pastille, de via, ni de connecteur : le port est une fente idelae
+#     dans le plan du cuivre ;
+#   · la DIRECTION du port est deduite -- du champ 'direction' quand le JSON le
+#     porte, sinon du centre de gravite du maillage. Juste pour un acces en
+#     bout de piste, ce qui est le cas courant ; a revoir pour un port au
+#     milieu d'une structure.
+# ==========================================================================
 
-    CORRECTION: Remplace la logique arbitraire (currents[:n//2]) par un vrai
-    mapping géométrique basé sur la position réelle des ports et le centre
-    des arêtes RWG générées par le mailleur.
+def _cotes_du_plan(vertices, elements, point, normale):
+    """De quel cote du plan tombe chaque triangle (par son centre de gravite)."""
+    centres = vertices[elements].mean(axis=1)
+    return (centres - np.asarray(point, dtype=float)) @ np.asarray(normale,
+                                                                   dtype=float)
+
+
+def aretes_de_coupe(rwg_basis: List[RWGBasis], vertices: np.ndarray,
+                    elements: np.ndarray, point, normale
+                    ) -> List[Tuple[int, float]]:
+    """Les aretes RWG que le plan (point, normale) coupe, avec leur sens.
+
+    Le courant d'une fonction RWG va de T+ vers T-. Si T+ est du cote negatif
+    et T- du cote positif, ce courant traverse le plan dans le sens de la
+    normale, et le signe rendu est +1 ; dans l'autre sens, -1.
+
+    L'ENSEMBLE RENDU EST UNE COUPE, et pas seulement une collection d'aretes :
+    c'est la frontiere exacte entre les triangles du cote negatif et ceux du
+    cote positif. Aucun courant ne passe d'un cote a l'autre sans en traverser
+    une -- c'est ce qui fait qu'une tension imposee dessus n'est pas
+    contournable.
+    """
+    cotes = _cotes_du_plan(vertices, elements, point, normale)
+
+    coupe = []
+    for n, r in enumerate(rwg_basis):
+        a = cotes[r.tri_plus]
+        b = cotes[r.tri_minus]
+        if a < 0.0 <= b:
+            coupe.append((n, +1.0))
+        elif b < 0.0 <= a:
+            coupe.append((n, -1.0))
+    return coupe
+
+
+def _direction_du_port(port: Dict, position: np.ndarray,
+                       vertices: np.ndarray) -> np.ndarray:
+    """Vers ou regarde le port : la normale du plan de coupe.
+
+    Le champ 'direction' du port quand il existe -- c'est a l'editeur de le
+    dire, il connait l'axe de la piste. Sinon la direction du centre de gravite
+    du maillage, ce qui est juste pour un acces en bout de piste.
+    """
+    d = port.get('direction')
+    if d is not None:
+        d = np.asarray(d, dtype=float).ravel()
+        if len(d) == 2:
+            d = np.array([d[0], d[1], 0.0])
+        if np.linalg.norm(d) > 0:
+            return d / np.linalg.norm(d)
+
+    v = vertices.mean(axis=0) - position
+    v[2] = 0.0
+    norme = np.linalg.norm(v)
+    if norme < 1e-15:
+        return np.array([1.0, 0.0, 0.0])
+    return v / norme
+
+
+def localiser_ports(ports: List[Dict], rwg_basis: List[RWGBasis],
+                    vertices: np.ndarray, elements: np.ndarray,
+                    taille_maille: float = None
+                    ) -> List[List[Tuple[int, float]]]:
+    """Associe a chaque port la COUPE d'aretes qui le represente.
+
+    LE PLAN EST DECALE VERS L'INTERIEUR, et il faut qu'il le soit : pose
+    exactement sur la position du port -- c'est-a-dire sur le bord du cuivre --
+    tous les triangles tombent du meme cote et la coupe est vide. On decale
+    donc d'une maille, et on essaie plus loin si besoin.
 
     Args:
-        ports: Liste des ports (avec clé 'position')
-        rwg_basis: Liste des fonctions RWG
-        vertices: Sommets du maillage
-        tolerance: Distance max acceptée (None = automatique)
+        ports: la liste des ports, avec 'position' et facultativement
+               'direction'
+        rwg_basis, vertices, elements: le maillage et ses fonctions de base
+        taille_maille: l'echelle du decalage. Deduite des aretes si absente
 
     Returns:
-        Liste des indices RWG, un par port (-1 si aucun candidat valide)
+        Une liste par port, de couples (indice RWG, signe). Une liste VIDE
+        signale un port non localise, et l'appelant doit le traiter comme un
+        echec -- pas comme un port muet.
     """
-    if len(rwg_basis) == 0:
-        return [-1] * len(ports)
+    if not rwg_basis:
+        return [[] for _ in ports]
 
-    # Pré-calcul des centres d'arêtes RWG (vectorisé)
-    edge_centers = np.array([
-        (vertices[rwg.edge_vertices[0]] + vertices[rwg.edge_vertices[1]]) / 2
-        for rwg in rwg_basis
-    ])
+    if taille_maille is None:
+        taille_maille = float(np.mean([r.edge_length for r in rwg_basis]))
 
-    # Tolérance automatique : basée sur la longueur d'arête moyenne
-    if tolerance is None:
-        mean_edge = np.mean([rwg.edge_length for rwg in rwg_basis])
-        tolerance = 5.0 * mean_edge
-
-    port_map = []
-    used = set()
-
+    coupes = []
     for port in ports:
-        port_pos = np.asarray(port['position'], dtype=float)
+        position = np.asarray(port['position'], dtype=float).ravel()
+        if len(position) == 2:
+            position = np.array([position[0], position[1], 0.0])
+        normale = _direction_du_port(port, position, vertices)
 
-        # Distance 2D (projection dans le plan du PCB)
-        d = np.sqrt((edge_centers[:, 0] - port_pos[0])**2 +
-                    (edge_centers[:, 1] - port_pos[1])**2)
-
-        # Un port ne peut pas partager son arête avec un autre port
-        order = np.argsort(d)
-        chosen = -1
-        for idx in order:
-            if idx not in used:
-                chosen = int(idx)
+        coupe = []
+        for facteur in (1.0, 2.0, 3.0, 5.0, 8.0):
+            candidat = aretes_de_coupe(
+                rwg_basis, vertices, elements,
+                position + facteur * taille_maille * normale, normale)
+            if candidat:
+                coupe = candidat
                 break
 
-        if chosen < 0 or d[chosen] > tolerance:
+        if not coupe:
             logger.warning(
-                f"  Port {port.get('id', '?')} non mappé "
-                f"(distance min={d[chosen]*1e3:.3f}mm > tol={tolerance*1e3:.3f}mm)"
-            )
-            port_map.append(-1)
+                "  Port %s : aucune coupe trouvee autour de (%.3f, %.3f) mm. "
+                "Le plan de coupe ne rencontre aucun conducteur -- position "
+                "hors du cuivre, ou direction du port fausse.",
+                port.get('id', '?'), position[0] * 1e3, position[1] * 1e3)
         else:
-            used.add(chosen)
-            port_map.append(chosen)
-            logger.debug(
-                f"  Port {port.get('id', '?')} -> RWG {chosen} "
-                f"(distance={d[chosen]*1e3:.3f}mm)"
-            )
+            logger.debug("  Port %s -> coupe de %d aretes, normale "
+                         "(%.2f, %.2f)", port.get('id', '?'), len(coupe),
+                         normale[0], normale[1])
+        coupes.append(coupe)
 
-    return port_map
+    return coupes
+
+
+def vecteur_de_coupe(rwg_basis: List[RWGBasis], coupe: List[Tuple[int, float]],
+                     n_basis: int, v_gap: float = 1.0) -> np.ndarray:
+    """Le second membre d'une excitation en fente sur une coupe.
+
+    UN CHAMP E = v_gap delta(plan) DONNE V_m = v_gap l_m s_m, exactement : le
+    produit de la tension par le flux de la fonction de base a travers la
+    coupe, qui vaut l_m s_m. Rien n'est approche ici, et c'est pourquoi la
+    somme des courants sur la coupe est le courant du port.
+    """
+    v = np.zeros(n_basis, dtype=complex)
+    for n, signe in coupe:
+        v[n] = v_gap * signe * rwg_basis[n].edge_length
+    return v
+
+
+def courant_de_coupe(courants: np.ndarray, rwg_basis: List[RWGBasis],
+                     coupe: List[Tuple[int, float]]) -> complex:
+    """Le courant total qui traverse une coupe, dans le sens de sa normale."""
+    return sum(courants[n] * rwg_basis[n].edge_length * signe
+               for n, signe in coupe)
 
 
 def build_v_vector(rwg_basis: List[RWGBasis], ports: List[Dict], freq: float,
-                   vertices: np.ndarray = None, port_map: List[int] = None,
-                   excited_port: int = 0, v_amplitude: float = 1.0) -> np.ndarray:
-    """
-    Crée le vecteur second membre V représentant l'excitation delta-gap
+                   vertices: np.ndarray = None, elements: np.ndarray = None,
+                   coupes: List[List[Tuple[int, float]]] = None,
+                   excited_port: int = 0, v_amplitude: float = 1.0
+                   ) -> np.ndarray:
+    """Le vecteur second membre : une fente sur la coupe du port excite.
 
-    CORRECTION: L'excitation est appliquée sur l'arête RWG réellement située
-    au port (via port_map), et non arbitrairement sur v_vector[0].
-
-    Modèle delta-gap : V_m = l_m * E_gap pour l'arête du port excité,
-    0 ailleurs (les autres ports sont court-circuités, V_k = 0).
-
-    Args:
-        rwg_basis: Liste des fonctions RWG
-        ports: Liste des ports d'excitation
-        freq: Fréquence
-        vertices: Sommets du maillage
-        port_map: Mapping port -> indice RWG (calculé si None)
-        excited_port: Indice du port à exciter
-        v_amplitude: Tension appliquée au gap (V)
-
-    Returns:
-        Vecteur V de taille N (complexe)
+    Les autres ports sont court-circuites (V = 0), ce qui est le modele
+    delta-gap ordinaire.
     """
     n_basis = len(rwg_basis)
-    v_vector = np.zeros(n_basis, dtype=complex)
-
     if n_basis == 0:
-        return v_vector
+        return np.zeros(0, dtype=complex)
 
-    if len(ports) == 0:
-        logger.warning("Aucun port défini, excitation par défaut sur RWG 0")
-        v_vector[0] = v_amplitude * rwg_basis[0].edge_length
-        return v_vector
+    if coupes is None:
+        if vertices is None or elements is None:
+            raise ValueError("build_v_vector : 'coupes', ou bien 'vertices' "
+                             "et 'elements', sont necessaires")
+        coupes = localiser_ports(ports, rwg_basis, vertices, elements)
 
-    # Mapping géométrique des ports
-    if port_map is None:
-        if vertices is None:
-            raise ValueError("build_v_vector: vertices ou port_map requis")
-        port_map = map_ports_to_rwg(ports, rwg_basis, vertices)
+    if excited_port >= len(coupes):
+        raise ValueError("build_v_vector : port %d hors limites (%d ports)"
+                         % (excited_port, len(coupes)))
 
-    if excited_port >= len(port_map):
+    coupe = coupes[excited_port]
+    if not coupe:
         raise ValueError(
-            f"build_v_vector: port {excited_port} hors limites ({len(port_map)} ports)"
-        )
+            "build_v_vector : le port %d n'a pas de coupe. Exciter un vecteur "
+            "nul rendrait des courants nuls et des parametres S plausibles et "
+            "faux -- on echoue ici." % excited_port)
 
-    rwg_idx = port_map[excited_port]
-
-    if rwg_idx < 0:
-        logger.error(
-            f"Port {excited_port} non mappé géométriquement, "
-            "excitation impossible (vecteur nul)"
-        )
-        return v_vector
-
-    # Excitation delta-gap : V_m = l_m * V_gap sur l'arête du port
-    v_vector[rwg_idx] = v_amplitude * rwg_basis[rwg_idx].edge_length
-
-    logger.debug(
-        f"  V construit : port {excited_port} -> RWG {rwg_idx}, "
-        f"|V|={np.abs(v_vector[rwg_idx]):.3e}"
-    )
-
-    return v_vector
+    v = vecteur_de_coupe(rwg_basis, coupe, n_basis, v_amplitude)
+    logger.debug("  V construit : port %d sur %d aretes, |V| = %.3e",
+                 excited_port, len(coupe), np.linalg.norm(v))
+    return v
 
 
 def apply_preconditioner(z_matrix: np.ndarray) -> np.ndarray:

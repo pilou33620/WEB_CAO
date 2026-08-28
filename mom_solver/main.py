@@ -11,8 +11,8 @@ from pathlib import Path
 
 from pcb_parser import load_json, extract_stackup, extract_polygons, build_geometry_model
 from mesher import generate_2d_mesh, extract_edges, build_rwg_basis
-from green_layered import apply_dcim
-from mom_engine import fill_z_matrix, build_v_vector, map_ports_to_rwg
+from green_layered import noyaux_green
+from mom_engine import fill_z_matrix, build_v_vector, localiser_ports
 from solver_extract import solve_currents, compute_s_parameters, export_touchstone
 
 
@@ -159,18 +159,26 @@ def main():
         logger.info(f"  ✓ Arêtes : {len(edges)} arêtes internes")
         logger.info(f"  ✓ Fonctions RWG : {len(rwg_basis)}")
         
-        # Étape 4 : Mapping géométrique des ports sur le maillage
+        # Étape 4 : localisation des ports sur le maillage
+        #
+        # UN PORT EST UNE COUPE DU CONDUCTEUR, et non une arête : une tension
+        # posée sur une seule arête interne est contournée par le métal d'à
+        # côté, et le solveur rendait |S21| = 0. Voir le commentaire de
+        # `mom_engine.localiser_ports`.
         logger.info("Étape 4/6 : Localisation des ports sur le maillage")
         ports = geometry['ports']
-        port_map = map_ports_to_rwg(ports, rwg_basis, mesh['vertices'])
+        coupes = localiser_ports(ports, rwg_basis, mesh['vertices'],
+                                 mesh['elements'], mesh.get('mesh_size'))
 
-        unmapped = [ports[i].get('id', i) for i, idx in enumerate(port_map) if idx < 0]
-        if unmapped:
+        muets = [ports[i].get('id', i) for i, c in enumerate(coupes) if not c]
+        if muets:
             raise RuntimeError(
-                f"Ports non localisés sur le maillage : {unmapped}. "
-                "Affinez le maillage (--mesh_size) ou vérifiez les positions de ports."
+                f"Ports non localisés sur le maillage : {muets}. "
+                "Affinez le maillage (--mesh_size), vérifiez les positions de "
+                "ports, ou donnez-leur une direction explicite."
             )
-        logger.info(f"  ✓ {len(port_map)} ports associés à leurs arêtes RWG")
+        logger.info("  ✓ %d ports, coupes de %s arêtes"
+                    % (len(coupes), [len(c) for c in coupes]))
 
         # Étape 5 : Assemblage et résolution pour chaque fréquence
         logger.info("Étape 5/6 : Assemblage de la matrice d'impédance et résolution")
@@ -185,15 +193,14 @@ def main():
         for i, freq in enumerate(freq_array):
             logger.info(f"  Fréquence {i+1}/{args.freq_points} : {freq/1e9:.2f} GHz")
 
-            # CORRECTION: les images DCIM dépendent de la fréquence, elles
-            # doivent être recalculées à chaque point du balayage.
-            images = apply_dcim(stackup, freq=freq)
+            # LES DEUX FONCTIONS DE GREEN, refaites à chaque point de la
+            # bande : les images en dépendent. Deux et non une -- le potentiel
+            # vecteur suit la ligne TE, le potentiel scalaire la différence des
+            # deux lignes ; voir l'en-tête de `mom_engine`.
+            noyaux = noyaux_green(stackup, freq)
 
-            # Assemblage de la matrice d'impédance Z
-            # CORRECTION: vertices/elements sont maintenant transmis. Sans eux,
-            # fill_z_matrix se rabattait sur une géométrie nulle.
             z_matrix = fill_z_matrix(
-                rwg_basis, freq, images, stackup,
+                rwg_basis, freq, noyaux,
                 vertices=mesh['vertices'], elements=mesh['elements']
             )
 
@@ -201,16 +208,14 @@ def main():
             # (la résolution multi-RHS est faite en interne, factorisation LU
             #  réutilisée pour tous les ports)
             s_matrix = compute_s_parameters(
-                z_matrix, rwg_basis, ports, freq, port_map
+                z_matrix, rwg_basis, ports, freq, coupes
             )
             s_params.append(s_matrix)
 
             if args.export_currents:
                 # Cartographie pour l'excitation du port 1
                 v_vector = build_v_vector(
-                    rwg_basis, ports, freq,
-                    vertices=mesh['vertices'], port_map=port_map,
-                    excited_port=0
+                    rwg_basis, ports, freq, coupes=coupes, excited_port=0
                 )
                 currents = solve_currents(z_matrix, v_vector)
                 current_maps.append({

@@ -11,6 +11,8 @@ from scipy.sparse.linalg import gmres, spsolve
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import LinearOperator
 
+from mom_engine import courant_de_coupe, vecteur_de_coupe
+
 logger = logging.getLogger(__name__)
 
 # Constantes
@@ -78,102 +80,92 @@ def solve_currents(z_matrix: np.ndarray, v_vector: np.ndarray) -> np.ndarray:
 
 
 def compute_s_parameters(z_matrix: np.ndarray, rwg_basis: List, ports: List[Dict],
-                        freq: float, port_map: List[int],
-                        v_amplitude: float = 1.0) -> np.ndarray:
-    """
-    Calcule les paramètres S via la matrice d'admittance multi-port
+                         freq: float, coupes: List[List] = None,
+                         v_amplitude: float = 1.0) -> np.ndarray:
+    """Les parametres S, par la matrice d'admittance multi-port.
 
-    CORRECTION: Remplace l'ancienne approche (découpe currents[:n//2] et
-    rapports de puissance scalaires) par le formalisme rigoureux :
+    1. Pour chaque port j, excitation en fente sur SA COUPE (V_j = 1, les
+       autres court-circuites)
+    2. Resolution Z I = V_j -- une seule factorisation LU pour tous les ports
+    3. Courant du port i : la somme algebrique sur sa coupe
+    4. Y_ij = I_i / V_j
+    5. Y -> S, normalise par l'impedance de reference de chaque port
 
-    1. Pour chaque port j, excitation delta-gap unitaire (V_j = 1, V_k≠j = 0)
-    2. Résolution Z·I = V_j -> courants
-    3. Courant au port i : I_i = c_i * l_i (coefficient RWG x longueur d'arête)
-    4. Admittance : Y_ij = I_i / V_j
-    5. Conversion Y -> S : S = (I - Z0·Y)·(I + Z0·Y)^(-1)
-
-    Cette méthode conserve l'amplitude ET la phase de chaque port
-    indépendamment, et respecte la géométrie du maillage.
+    LE PORT EST UNE COUPE, PAS UNE ARETE, et c'est le changement qui compte.
+    L'ancienne version prenait `port_map`, une arete par port : une tension sur
+    une seule arete interne d'un ruban continu est CONTOURNEE par le metal d'a
+    cote, et le solveur rendait |S21| = 0,0000 quelle que soit la geometrie.
+    Voir le grand commentaire de `mom_engine.localiser_ports`, qui porte les
+    mesures.
 
     Args:
-        z_matrix: Matrice d'impédance MoM (N x N)
-        rwg_basis: Liste des fonctions RWG
-        ports: Liste des ports avec leurs propriétés
-        freq: Fréquence
-        port_map: Mapping port -> indice RWG (depuis map_ports_to_rwg)
-        v_amplitude: Amplitude de la tension d'excitation
+        z_matrix: la matrice d'impedance MoM (N x N)
+        rwg_basis: les fonctions de base
+        ports: les ports, pour leur impedance de reference
+        freq: la frequence (non utilisee ici, gardee pour la trace)
+        coupes: une liste par port de couples (indice RWG, signe), telle que
+                `mom_engine.localiser_ports` la rend
+        v_amplitude: la tension de la fente
 
     Returns:
-        Matrice S (num_ports x num_ports)
+        La matrice S (num_ports x num_ports)
     """
     num_ports = len(ports)
-    logger.debug(f"Calcul des paramètres S ({num_ports} ports) via matrice Y")
+    logger.debug(f"Calcul des parametres S ({num_ports} ports) par la matrice Y")
 
     if num_ports == 0:
-        logger.warning("Aucun port défini, retour matrice identité 2x2")
+        logger.warning("Aucun port defini, retour d'une matrice nulle 2x2")
         return np.zeros((2, 2), dtype=complex)
 
-    # Validation du mapping
-    if port_map is None or len(port_map) != num_ports:
+    if coupes is None or len(coupes) != num_ports:
         raise ValueError(
-            f"compute_s_parameters: port_map invalide "
-            f"({len(port_map) if port_map else 0} entrées pour {num_ports} ports)"
-        )
+            "compute_s_parameters : il faut une coupe par port (%d fournies "
+            "pour %d ports). Utiliser mom_engine.localiser_ports."
+            % (0 if coupes is None else len(coupes), num_ports))
 
-    invalid = [i for i, idx in enumerate(port_map) if idx < 0]
-    if invalid:
-        logger.error(f"Ports non mappés géométriquement : {invalid}")
+    muets = [i for i, c in enumerate(coupes) if not c]
+    if muets:
+        # ON REND DES NAN, ET C'EST VOULU. Une matrice de zeros passerait pour
+        # une structure parfaitement reflechissante, ce qui est plausible et
+        # faux ; un nan se remarque.
+        logger.error(f"Ports sans coupe : {muets}")
         return np.full((num_ports, num_ports), np.nan, dtype=complex)
 
     n_basis = z_matrix.shape[0]
-
-    # Impédances de référence de chaque port
     z0_ports = np.array([p.get('impedance', 50.0) for p in ports], dtype=float)
-
-    # Factorisation LU unique : réutilisée pour toutes les excitations
-    y_matrix = np.zeros((num_ports, num_ports), dtype=complex)
 
     try:
         lu, piv = lu_factor(z_matrix)
         use_lu = True
     except (np.linalg.LinAlgError, ValueError) as e:
-        logger.warning(f"Factorisation LU échouée ({e}), passage en lstsq")
+        logger.warning(f"Factorisation LU echouee ({e}), passage en lstsq")
         use_lu = False
 
-    for j in range(num_ports):
-        # Excitation delta-gap sur le port j uniquement
-        v_vector = np.zeros(n_basis, dtype=complex)
-        rwg_j = port_map[j]
-        l_j = rwg_basis[rwg_j].edge_length
-        v_vector[rwg_j] = v_amplitude * l_j
+    y_matrix = np.zeros((num_ports, num_ports), dtype=complex)
 
-        # Résolution du système
+    for j in range(num_ports):
+        v_vector = vecteur_de_coupe(rwg_basis, coupes[j], n_basis, v_amplitude)
+
         if use_lu:
             currents = lu_solve((lu, piv), v_vector)
         else:
             currents = np.linalg.lstsq(z_matrix, v_vector, rcond=1e-10)[0]
 
-        # Extraction du courant à chaque port (amplitude + phase conservées)
         for i in range(num_ports):
-            rwg_i = port_map[i]
-            l_i = rwg_basis[rwg_i].edge_length
+            y_matrix[i, j] = (courant_de_coupe(currents, rwg_basis, coupes[i])
+                              / v_amplitude)
 
-            # Courant total traversant l'arête du port i
-            i_port = currents[rwg_i] * l_i
-
-            # Y_ij = I_i / V_j
-            y_matrix[i, j] = i_port / v_amplitude
-
-    # Symétrisation : impose la réciprocité (Y = Y^T) pour milieux réciproques
+    # Symetrisation : impose la reciprocite (Y = Y^T) pour milieux reciproques
     y_matrix = 0.5 * (y_matrix + y_matrix.T)
 
-    # Conversion Y -> S avec normalisation par port
     s_matrix = convert_y_to_s(y_matrix, z0_ports)
 
     if num_ports >= 2:
         logger.debug(
-            f"  S11 = {np.abs(s_matrix[0,0]):.4f}∠{np.degrees(np.angle(s_matrix[0,0])):.1f}°, "
-            f"S21 = {np.abs(s_matrix[1,0]):.4f}∠{np.degrees(np.angle(s_matrix[1,0])):.1f}°"
+            f"  S11 = {np.abs(s_matrix[0,0]):.4f} angle "
+            f"{np.degrees(np.angle(s_matrix[0,0])):.1f} deg, "
+            f"S21 = {np.abs(s_matrix[1,0]):.4f} angle "
+            f"{np.degrees(np.angle(s_matrix[1,0])):.1f} deg"
         )
 
     return s_matrix
