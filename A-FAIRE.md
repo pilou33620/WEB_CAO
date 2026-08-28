@@ -76,36 +76,173 @@ l'œil**, qui n'est que la réponse impulsionnelle des paramètres S déjà calc
 
 ### Réparer l'onde complète, ou l'assumer morte
 
-`mom_engine.py` et `green_layered.py` sont **hors du chemin de calcul**, et
-c'est un avertissement en tête de fichier, pas un oubli. Deux choses les en
-tiennent écartés :
+`mom_engine.py` est **hors du chemin de calcul**, et c'est un avertissement en
+tête de fichier, pas un oubli. Ce qui l'en tient écarté a changé : deux des
+trois reproches d'origine sont levés, le troisième est nouveau et c'est
+maintenant le seul qui compte.
 
-1. **La formulation EFIE est amputée de moitié.** `compute_interactions`
-   ([mom_solver/mom_engine.py](mom_solver/mom_engine.py)) écrit
+**Ce qui est réparé.**
 
-       Z_mn = jωμ ∫∫ f_m·f_n G
+1. ~~La formulation EFIE est amputée de moitié.~~ **Faux depuis la 2026-08-28.**
+   `compute_interactions` implémente la MPIE complète — terme de potentiel
+   scalaire compris, et produit scalaire vectoriel f_m·f_n, non plus un produit
+   de modules. Cette page l'affirmait encore après la correction ; c'est
+   corrigé ici.
+2. ~~Les images complexes sont inventées.~~ **Réécrit.** `apply_dcim` passe
+   désormais par la fonction de Green spectrale **exacte** du milieu stratifié
+   (cascade de lignes de transmission, TLGF), un vrai **GPOF** de Hua-Sarkar à
+   **deux niveaux** (Aksun), et l'identité de Sommerfeld. Éprouvé par
+   [mom_solver/tests/banc_dcim.py](mom_solver/tests/banc_dcim.py), 13 essais :
+   sur le cas exactement soluble — plan de masse dans l'air, où le noyau vaut
+   `1 − exp(−2j k_z h)` — GPOF rend exactement deux images, la directe et le
+   miroir à −1,0000 pour 0,7400 mm quand 2h vaut 0,7400 mm, et la
+   reconstruction spatiale tombe à **0,000 %** de 0,1 à 50 mm. Sur un
+   microruban FR-4 contre une intégrale de Sommerfeld numérique : **moins de
+   0,2 % jusqu'à 5 mm**.
 
-   et s'arrête là. Il manque le terme de potentiel scalaire,
-   −(j/ωε) ∫∫ (∇·f_m)(∇·f_n) G, qui porte les charges — sans lui il n'y a
-   aucune capacité dans le modèle, et Z₀ = √(L/C) ne peut pas en sortir. La
-   quadrature à un point et le produit scalaire f_m·f_n traité comme un produit
-   de modules sont deux autres approximations à reprendre au passage.
+**Ce qui reste, par ordre de gravité.**
 
-2. **Les images complexes sont inventées.** `apply_dcim`
-   ([mom_solver/green_layered.py](mom_solver/green_layered.py)) pose
-   `(1 + 0.1j)` et `exp(-0.1n)` à la main là où il faudrait ajuster
-   l'intégrale de Sommerfeld par GPOF. Le commentaire du code le dit lui-même.
+1. **`mom_engine` n'a qu'UN noyau pour DEUX potentiels.** `green_2d_layered`
+   rend un seul scalaire, et `compute_interactions` s'en sert à la fois pour le
+   potentiel vecteur et pour le potentiel scalaire. Ce sont deux fonctions de
+   Green différentes : `G_A^xx` suit la ligne de transmission **TE**, `G_q` la
+   **TM**. Celle qui est ajustée aujourd'hui est la TM — choix délibéré, c'est
+   elle qui porte les charges, donc la capacité, donc Z₀ — mais le terme
+   inductif reçoit la mauvaise. **C'est le premier chantier**, et il est dans
+   `mom_engine.py`, pas dans `green_layered.py` : ce dernier sait déjà cascader
+   les deux modes, il suffit de lui demander le TE (`Z_i = ωμ/k_zi` au lieu de
+   `k_zi/(ωε_i)`), d'ajuster deux jeux d'images, et de les passer séparément.
+2. **L'onde de surface n'est pas extraite.** Un stratifié sur plan de masse
+   porte une TM0 sans fréquence de coupure : dans le plan spectral c'est un
+   **pôle**, et un pôle ne s'approche pas par une somme finie d'exponentielles
+   — il décroît en 1/√ρ là où les images décroissent en 1/ρ. Le banc le mesure
+   et le borne : l'écart ne dépend que de k·ρ (0,2 % à k·ρ ≤ 0,25 ; 1 % à 0,44 ;
+   7 % à 0,88 ; 35 % à 2,2). **Sans conséquence pour une matrice d'impédance**
+   — à ces distances le noyau vaut six ordres de grandeur de moins qu'en champ
+   proche — **décisif pour un calcul de rayonnement**. À faire : localiser le
+   pôle par recherche de racine sur `Z_bas + Z_haut = 0`, en extraire le résidu,
+   l'ôter avant l'ajustement et le rajouter analytiquement en Hankel.
+3. **Un seul plan source.** L'ajustement vaut pour la couche des pistes. Un
+   empilage à deux couches de signal demande un jeu d'images par couche, et un
+   jeu croisé par paire de couches.
+4. **La quadrature de `compute_interactions` est à un point.** Correcte en
+   ordre, insuffisante pour des panneaux voisins : il faut au moins une règle à
+   7 points sur triangle, et un traitement analytique de la singularité 1/R
+   pour les paires proches.
+5. **`test_basic.py` est périmé et ne mesure rien.** Il appelle
+   `compute_s_parameters()` sans son argument `port_map`, et pour le reste il
+   vérifie des imports et des dimensions de matrices — jamais une valeur. C'est
+   ce qui a permis à un noyau faux de passer tous les essais du dépôt pendant
+   des mois. À refondre sur le modèle de `banc_dcim.py` : des étalons
+   extérieurs, ou rien.
 
-Ce que l'onde complète apporterait, et que le modèle de ligne ne peut pas
-donner : les coudes, les moignons, les transitions de via, les résonances, le
-rayonnement. **Le cas de non-régression est écrit d'avance** : une ligne
-microruban 50 Ω de 20 mm doit rendre |S₂₁| proche de 1 et |S₁₁| bas —
-`ligne_mom.py` le donne déjà, et sert donc d'étalon au jour où le
-noyau pleine onde sera repris.
+**Le cas de non-régression est écrit d'avance** : une ligne microruban 50 Ω de
+20 mm doit rendre |S₂₁| proche de 1 et |S₁₁| bas — `ligne_mom.py` le donne déjà,
+et sert donc d'étalon. **Cette comparaison n'a pas encore été faite** : c'est
+l'étape qui décide si le moteur 2,5D peut remplacer le modèle de ligne, et elle
+ne veut rien dire tant que le point 1 ci-dessus n'est pas réglé.
 
-Si personne ne le reprend, la question honnête est de retirer `mesher.py`,
-`mom_engine.py`, `green_layered.py`, `solver_extract.py` et `main.py` plutôt
-que de garder cinq fichiers qui ont l'air de calculer.
+Les dépendances de maillage (`gmsh`, `meshio`, `pygmsh`) sont désormais
+installées ; le solveur va jusqu'aux paramètres S.
+
+### Ce qu'il reste au panneau de simulation
+
+Quatre chantiers, chiffrés et indépendants. Les trois premiers ont été
+spécifiés en détail ; le dernier attend le moteur.
+
+#### 1. Le masque de soudure dans le calcul  *(le plus gros gain immédiat)*
+
+Une piste de couche extérieure est sous vernis. Le masque remplit l'écart
+coplanaire — là où le champ est le plus dense — et fait **baisser Z₀ de 2 à
+3 %**, soit environ 1,5 Ω sur une ligne à 50. La fiche le signale ; le calcul ne
+le compte pas.
+
+**Ne pas se contenter de l'ajouter à l'empilage** : `_couverture()`
+([python/simulation_em.py](python/simulation_em.py)) accumule tout le non-cuivre
+au-dessus sans regarder ce que c'est, `_entre_exterieur()` en fait une moyenne
+d'εr appliquée à **toute** la région 0→h+c — y compris entre la piste et le
+plan, où il n'y a pas de masque —, et `solve_line` jette toute couverture plus
+mince que le cuivre (`c_diel < max(t, 1e-9)`), donc un masque de 25 µm sous
+35 µm de cuivre disparaît **en silence**.
+
+Ce qu'il faut :
+
+- **une fonction de Green à trois régions** dans `ligne_mom.py` : stratifié εr₁
+  de 0 à h, masque εr₂ de h à h+c, air au-dessus. Elle se dérive comme
+  l'existante et **subsume les deux** :
+
+      G = K / (ε₀ β (M + εr₁ K coth(βh)))
+      K = ch(βc) + sh(βc)/εr₂       M = εr₂ sh(βc) + ch(βc)
+
+  avec c = 0 qui redonne le microruban nu et εr₂ = εr₁ le couvert. L'asymptote
+  devient ε₀(εr₁+εr₂)/2, ce qui unifie les deux extractions de milieu moyen
+  aujourd'hui écrites en branches séparées dans `solve_line` ;
+- **baisser le seuil** qui jette les couvertures minces ;
+- `section_de_couche` ne doit plus **homogénéiser** : `_couverture()` rend
+  (épaisseur, εr) et la couverture part telle quelle ;
+- côté pages : `simStackupIpc` ajoute la couche masque en tête et en queue, lue
+  du fichier IPC-2581 quand il la porte (`SOLDERMASK`, déjà reconnu par
+  [visionneuse-ipc2581/js/02-modele.js](visionneuse-ipc2581/js/02-modele.js)),
+  sinon saisissable avec repli 25 µm / εr 3,8 — et **la provenance le dit** ;
+  côté éditeur PCB, `S.stack.maskT`/`maskEr` existent déjà, il n'y a qu'à les
+  envoyer ;
+- `simTopoNom` doit distinguer **« microruban sous masque »** de « microruban
+  couvert », sinon une piste externe vernie et une piste interne portent le
+  même mot ;
+- **réserve à écrire dans le code** : le masque est modélisé en nappe uniforme,
+  le vrai est conforme — plus mince sur le sommet du cuivre que dans l'écart.
+  Second ordre devant les 2–3 %, mais ça doit être écrit.
+
+Non-régression : trois réductions exactes (c = 0, εr₂ = εr₁, c → grand) dans
+[python/test/banc-ligne-mom.py](python/test/banc-ligne-mom.py).
+
+#### 2. Voir et dire les discontinuités  *(peu cher, gros gain de lisibilité)*
+
+Le modèle ne change pas ; la fiche cesse d'être muette.
+
+- **`_coudes()`** dans `simulation_em.py` : l'angle à chaque raccord, à partir
+  des `start`/`end` déjà envoyés. Rendre le nombre de coudes, leur angle, et la
+  **capacité d'excès estimée** en femtofarads avec ce qu'elle vaut en degrés de
+  phase à f₀. Une note qui **chiffre** la négligeabilité vaut mieux qu'une note
+  qui l'affirme ;
+- **`_transitions()`** : détecter les changements de `layer` **le long de la
+  chaîne** et les nommer (« Conductor-4 → Conductor-1 au tronçon 7 »). Ça
+  remplace la note « N vias du net », qui compte le mauvais ensemble — les vias
+  du net entier, y compris hors sélection ;
+- **`_ruptures()`** gagne un contrôle de couche : deux tronçons au même XY sur
+  deux couches différentes ne sont pas un raccord, c'est un via. Aujourd'hui il
+  ne compare que les coordonnées, or les deux bouts d'un via sont au même XY :
+  la chaîne est déclarée continue et le via passe inaperçu.
+
+À savoir, et qui est déjà juste : la **longueur** envoyée est celle du cuivre
+(`trkLen`, au prorata de la plage), pas la corde — un demi-tour n'est pas
+raccourci, et le retard est bon. Seule la discontinuité manque.
+
+#### 3. Modéliser les discontinuités  *(à décider après le 2)*
+
+Insérer dans la cascade ABCD un élément localisé par discontinuité : shunt C
+pour le coude (Gupta), π L-C pour le via (`L ≈ (µ₀h/2π)[ln(4h/d)+1]`, C de
+pastille/antipastille). Demande que les pages **envoient les vias de la
+chaîne** (perçage, pastille, portée) — la visionneuse les a, l'éditeur aussi.
+Le format `cao-sim-em-1` gagne alors un tableau `transitions` et passe à `-2`.
+
+**À 868 MHz ça ne déplacera aucun chiffre lisible** : λ vaut 197 mm dans le
+stratifié, un coude à 45° pèse quelques femtofarads. À faire seulement si la
+bande monte au-delà de 2–3 GHz.
+
+#### 4. Les ports chargés, et le dé-embarquement
+
+Les ports se nomment désormais, mais restent **idéaux**. Trois choses qu'un
+port placé à la main permettrait, et qu'aucune ne fait aujourd'hui :
+
+- **déplacer le plan de référence** ailleurs qu'au bout du cuivre (retrancher
+  une longueur d'accès) ;
+- **charger le port** d'une pastille, d'un via ou d'un connecteur, pour que S₁₁
+  soit comparable à une mesure au VNA — aujourd'hui il est nécessairement
+  meilleur, et la fiche le dit ;
+- découper une chaîne en **plus de deux accès** (té, moignon) — mais ça, la
+  cascade ABCD ne sait pas le faire du tout : c'est un autre modèle, et il
+  appartient au chantier 3.
 
 ### La section résolue est désormais lisible
 
