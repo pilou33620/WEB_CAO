@@ -2,6 +2,42 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.2.0
+# Date: 2026-08-29
+# Explication: LE MODULE NE S'IMPORTAIT PLUS, et le masque etait faux.
+#
+#   1. green_spectral_micro_masque avait ete inseree AVANT les imports, entre
+#      la docstring du module et « import numpy as np », et le module posait
+#      « logger = logging.getLogger(__name__) » sans jamais importer logging.
+#      L'import levait donc NameError : simulation_em.py rattrapait, et les
+#      DEUX panneaux affichaient « Solveur EM indisponible » depuis la 2.1.0.
+#      La fonction est remise a sa place, avec les deux autres Green ; le
+#      logger, jamais utilise, est retire.
+#
+#   2. LE MASQUE PRENAIT SA REFERENCE A VIDE AVEC LE MASQUE ENCORE LA :
+#      g_vide appelait la Green a trois regions avec er_substrat = 1 mais
+#      er_masque = 3,8. C0 gonflait, eps_eff BAISSAIT quand on vernissait la
+#      piste -- l'inverse de la physique -- et Z0 tombait de 7,8 % au lieu des
+#      2 a 3 % attendus. Le milieu moyen extrait etait lui aussi celui du
+#      substrat seul, alors que l'asymptote de la Green vaut
+#      eps0 (er1 + er2)/2. Corriges tous les deux : 25 um de vernis a er 3,8
+#      donnent -2,53 % sur Z0, et eps_eff monte de 3,288 a 3,461.
+#      Un masque a er = 1 redonne exactement le microruban nu.
+#
+#   3. LES DISCONTINUITES : une seule implementation, et les vraies formules.
+#      capacite_coude etait donnee pour du Gupta et n'en etait pas -- ni
+#      hauteur au plan, qui est le parametre dominant, ni angle : un coude a
+#      dix degres pesait autant qu'un coude a angle droit. elements_coude
+#      pose le modele publie (C/w et L/h de Gupta) et rend le couple (L, C) ;
+#      abcd_coude monte le T complet au lieu d'un shunt seul. inductance_via
+#      et capacite_pastille disent EN METRES dans leur docstring : la cascade
+#      de simulation_em les appelait en millimetres, et l'inductance sortait
+#      mille fois trop grande.
+# Fonctions ajoutees : elements_coude
+# Fonctions modifiees : capacite_coude (signature), abcd_coude (signature),
+#   abcd_via (pi exact), solve_line (reference a vide et milieu moyen du
+#   masque, masque d'epaisseur nulle qui retombe sur le cas nu)
+#
 # Version: 2.1.0
 # Date: 2026-08-28
 # Explication: R_AC AVEC EFFET DE PEAU AMELIORE. Le modele precedent utilisait
@@ -166,68 +202,9 @@ convertit depuis les millimetres du document d'echange.
 """
 
 
-def green_spectral_micro_masque(beta, h, masque_epaisseur, epsilon_r, epsilon_masque):
-    """Microruban SOUS MASQUE : trois régions, εr différent au-dessus.
-
-    CAS D'UNE PISTE EXTÉRIEURE VERNIÉE. Le masque de soudure (vernis) a une
-    permittivité ~3,8, et son épaisseur (20-30 µm) n'est pas négligeable devant
-    la hauteur au plan (200-400 µm) à l'échelle du champ. Il remplit l'écart
-    coplanaire — là où le champ est le plus dense — et fait baisser Z₀ de 2-3 %.
-
-    Trois régions :
-        - substrat εr₁ de 0 à h
-        - masque εr₂ de h à h+c
-        - air au-dessus de h+c
-
-    La dérivation suit la même marche que `green_spectral_micro_couvert` :
-    continuité de φ et de Dₙ à chaque interface, résolution du système 3×3.
-
-    Formules (A-FAIRE.md, § 1 du lot 2) :
-        G = K / (ε₀ β (M + εr₁ K coth(βh)))
-        K = ch(βc) + sh(βc)/εr₂
-        M = εr₂ sh(βc) + ch(βc)
-
-    Réductions exactes :
-        · c = 0        -> microruban nu (K=1, M=εr₂, G = 1/(ε₀ β (1+εr₁)))
-        · εr₂ = εr₁    -> microruban couvert (K = exp(βc), M = εr₁ exp(βc),
-                          G = 1/(ε₀ β (εr₁+1)) = microruban nu ?)
-
-    L'asymptote en β grand : G ~ 1/(2 ε₀ εr₁ β) quand le champ est piégé dans
-    le diélectrique des deux côtés. Le milieu moyen à extraire est εr₁ (substrat),
-    pas une moyenne avec le masque.
-    """
-    c = float(masque_epaisseur)
-    er_m = float(epsilon_masque)
-    er_s = float(epsilon_r)
-
-    if c <= 0:
-        # Pas de masque : microruban nu
-        return green_spectral_micro(beta, h, er_s)
-
-    bc = np.clip(beta * c, 0.0, 700.0)
-    bh = np.clip(beta * h, 0.0, 700.0)
-
-    ch_bc = np.cosh(bc)
-    sh_bc = np.sinh(bc)
-    th_h = np.tanh(bh)
-
-    # K = ch + sh/εr_m, M = εr_m sh + ch
-    K = ch_bc + sh_bc / er_m
-    M = er_m * sh_bc + ch_bc
-
-    # G = K / (ε₀ β (M + εr₁ K coth(βh)))
-    denominateur = EPSILON_0 * beta * (M + er_s * K / th_h)
-
-    # Protection contre la division par zéro
-    denominateur = np.where(np.abs(denominateur) < 1e-30, 1e-30, denominateur)
-
-    return K / denominateur
-
-
 
 import numpy as np
 
-logger = logging.getLogger(__name__)
 
 EPSILON_0 = 8.854187817e-12
 MU_0 = 4 * np.pi * 1e-7
@@ -319,6 +296,64 @@ def green_spectral_micro_couvert(beta, h, couverture, epsilon_r):
     num = -np.expm1(-a) * (p + m * np.exp(-b))
     den = 2.0 * EPSILON_0 * epsilon_r * beta * (p + m * np.exp(-(a + b)))
     return num / den
+
+
+def green_spectral_micro_masque(beta, h, masque_epaisseur, epsilon_r, epsilon_masque):
+    """Microruban SOUS MASQUE : trois régions, εr différent au-dessus.
+
+    CAS D'UNE PISTE EXTÉRIEURE VERNIÉE. Le masque de soudure (vernis) a une
+    permittivité ~3,8, et son épaisseur (20-30 µm) n'est pas négligeable devant
+    la hauteur au plan (200-400 µm) à l'échelle du champ. Il remplit l'écart
+    coplanaire — là où le champ est le plus dense — et fait baisser Z₀ de 2-3 %.
+
+    Trois régions :
+        - substrat εr₁ de 0 à h
+        - masque εr₂ de h à h+c
+        - air au-dessus de h+c
+
+    La dérivation suit la même marche que `green_spectral_micro_couvert` :
+    continuité de φ et de Dₙ à chaque interface, résolution du système 3×3.
+
+    Formules (A-FAIRE.md, § 1 du lot 2) :
+        G = K / (ε₀ β (M + εr₁ K coth(βh)))
+        K = ch(βc) + sh(βc)/εr₂
+        M = εr₂ sh(βc) + ch(βc)
+
+    Réductions exactes :
+        · c = 0        -> microruban nu (K=1, M=εr₂, G = 1/(ε₀ β (1+εr₁)))
+        · εr₂ = εr₁    -> microruban couvert (K = exp(βc), M = εr₁ exp(βc),
+                          G = 1/(ε₀ β (εr₁+1)) = microruban nu ?)
+
+    L'asymptote en β grand : G ~ 1/(2 ε₀ εr₁ β) quand le champ est piégé dans
+    le diélectrique des deux côtés. Le milieu moyen à extraire est εr₁ (substrat),
+    pas une moyenne avec le masque.
+    """
+    c = float(masque_epaisseur)
+    er_m = float(epsilon_masque)
+    er_s = float(epsilon_r)
+
+    if c <= 0:
+        # Pas de masque : microruban nu
+        return green_spectral_micro(beta, h, er_s)
+
+    bc = np.clip(beta * c, 0.0, 700.0)
+    bh = np.clip(beta * h, 0.0, 700.0)
+
+    ch_bc = np.cosh(bc)
+    sh_bc = np.sinh(bc)
+    th_h = np.tanh(bh)
+
+    # K = ch + sh/εr_m, M = εr_m sh + ch
+    K = ch_bc + sh_bc / er_m
+    M = er_m * sh_bc + ch_bc
+
+    # G = K / (ε₀ β (M + εr₁ K coth(βh)))
+    denominateur = EPSILON_0 * beta * (M + er_s * K / th_h)
+
+    # Protection contre la division par zéro
+    denominateur = np.where(np.abs(denominateur) < 1e-30, 1e-30, denominateur)
+
+    return K / denominateur
 
 
 def green_spectral_strip(beta, y0, b, epsilon_r):
@@ -670,20 +705,34 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
         # LOT 2 : masque de soudure sur piste extérieure
         # Le masque a son propre epsilon_r (vernis ~3.8) et son épaisseur
         # (20-30 µm). Il faut une Green à 3 régions.
+        masque_epaisseur = 0.0
+        masque_epsilon = 3.8
         if masque_info is not None:
-            masque_epaisseur = float(masque_info.get("epaisseur", 0.0))
+            masque_epaisseur = float(masque_info.get("epaisseur", 0.0) or 0.0)
             masque_epsilon = float(masque_info.get("epsilon_r", 3.8))
-            if masque_epaisseur > 0:
-                # Masque présent : Green à 3 régions
-                a_masqe = True
-                # Le milieu moyen est le substrat (εr), car en β grand le champ
-                # est piégé dans le diélectrique sous la piste
-                eps_moyen = EPSILON_0 * epsilon_r
-                g_diel = lambda be: green_spectral_micro_masque(
-                    be, h, masque_epaisseur, epsilon_r, masque_epsilon)
-                g_vide = lambda be: green_spectral_micro_masque(
-                    be, h, masque_epaisseur, 1.0, masque_epsilon)
-                echelles = (h, masque_epaisseur)
+            # Un masque plus mince que le nanomètre n'est pas un masque : on le
+            # laisse tomber et la piste retombe sur le cas nu ou couvert.
+            if masque_epaisseur < 1e-9:
+                masque_epaisseur = 0.0
+        if masque_epaisseur > 0:
+            # Masque présent : Green à 3 régions
+            a_masqe = True
+            # LE MILIEU MOYEN EST L'ASYMPTOTE DE LA GREEN, pas le substrat.
+            # Quand β → ∞ : coth(βh) → 1, K → (1+1/εr₂)e^{βc}/2 et
+            # M → (εr₂+1)e^{βc}/2, donc G → 1/(ε₀ β (εr₁+εr₂)). Le milieu
+            # moyen est donc ε₀(εr₁+εr₂)/2 — la moyenne des deux diélectriques
+            # qui bordent le ruban, exactement comme le microruban nu donne
+            # ε₀(1+εr)/2 avec l'air pour second milieu. Poser le substrat seul
+            # décalait l'extraction de la partie singulière.
+            eps_moyen = EPSILON_0 * (epsilon_r + masque_epsilon) / 2.0
+            g_diel = lambda be: green_spectral_micro_masque(
+                be, h, masque_epaisseur, epsilon_r, masque_epsilon)
+            # LE VIDE, C'EST TOUT LE DIÉLECTRIQUE RETIRÉ — le masque compris.
+            # Le laisser à son εr dans la référence gonflait C₀, et ε_eff
+            # BAISSAIT quand on vernissait la piste : l'inverse de la physique.
+            g_vide = lambda be: green_spectral_micro_masque(
+                be, h, masque_epaisseur, 1.0, 1.0)
+            echelles = (h, masque_epaisseur)
         elif couvert:
             # Ruban couvert : du diélectrique des deux côtés, donc le milieu
             # moyen est le stratifié tout entier — c'est l'asymptote de la
@@ -969,11 +1018,63 @@ def line_losses_detaillees(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
 # sont analytiques et valent mieux que rien — même si le 2,5D les rendrait mieux.
 # ==========================================================================
 
-def inductance_via(h, d):
-    """Inductance d'un via traversant, en henrys.
+def elements_coude(w, h, epsilon_r, angle_deg=90.0):
+    """Le coude de microruban en T : (L serie, C shunt), en SI.
 
-    Modèle de via court (h << λ) : L ≈ (μ₀ h / 2π) [ln(4h/d) + 1]
-    avec h = hauteur au plan en mm, d = diamètre du perçage en mm.
+    LE MODELE DE GUPTA, celui de Microstrip Lines and Slotlines, et non une
+    formule inventee. Ce qui etait ecrit ici avant -- « C(fF) = 0,5 W(mm)
+    racine(er) », donnee pour du Gupta -- n'avait ni la hauteur au plan, qui
+    est le parametre DOMINANT, ni l'angle : un coude a dix degres pesait autant
+    qu'un coude a angle droit.
+
+        w/h < 1 :  C/w = (14 er + 12,5) w/h - (1,83 er - 2,25)/racine(w/h)
+        w/h >= 1 : C/w = (9,5 er + 1,25) w/h + 5,2 er + 7,0     [pF/m]
+        L/h = 100 (4 racine(w/h) - 4,21)                        [nH/m]
+
+    L'ANGLE. Gupta est publie pour l'angle DROIT, et lui seul. La reactance
+    d'exces s'annule a angle nul et croit avec l'angle ; on interpole donc
+    lineairement en theta/90. Ce n'est pas Gupta, c'est une interpolation entre
+    Gupta et zero -- et il faut le lire ainsi.
+
+    Rend (L, C) en henrys et en farads. C'est la MEME fonction qui sert au
+    calcul et a l'affichage : deux formules pour la meme grandeur, c'est deux
+    chiffres differents dans la meme fiche.
+    """
+    w_m = float(w)
+    h_m = float(h)
+    er = float(epsilon_r)
+    theta = abs(float(angle_deg))
+    if not (w_m > 0 and h_m > 0) or theta <= 0:
+        return 0.0, 0.0
+
+    u = w_m / h_m
+    if u < 1.0:
+        c_sur_w = (14.0 * er + 12.5) * u - (1.83 * er - 2.25) / np.sqrt(u)
+    else:
+        c_sur_w = (9.5 * er + 1.25) * u + 5.2 * er + 7.0
+    c = max(c_sur_w, 0.0) * 1e-12 * w_m          # pF/m * m -> F
+
+    l_sur_h = 100.0 * (4.0 * np.sqrt(u) - 4.21)
+    l = max(l_sur_h, 0.0) * 1e-9 * h_m           # nH/m * m -> H
+
+    part = min(theta, 180.0) / 90.0
+    return l * part, c * part
+
+
+def capacite_coude(w, h, epsilon_r, angle_deg=90.0):
+    """La seule capacite d'exces du coude -- voir `elements_coude`."""
+    return elements_coude(w, h, epsilon_r, angle_deg)[1]
+
+
+def inductance_via(h, d):
+    """Inductance d'un via traversant, en henrys. TOUT EN METRES.
+
+        L = (mu0 h / 2pi) [ln(4h/d) + 1]
+
+    `h` est la hauteur traversee, `d` le diametre du percage. Le rapport h/d
+    est sans dimension, donc le logarithme survit a une erreur d'unite -- mais
+    le prefacteur mu0*h, lui, non : appeler ceci en millimetres rend une
+    inductance MILLE FOIS trop grande, et le resultat reste plausible a l'oeil.
     """
     h_m = float(h)
     d_m = float(d)
@@ -983,83 +1084,50 @@ def inductance_via(h, d):
 
 
 def capacite_pastille(d_pastille, h, epsilon_r):
-    """Capacité parasite pastille/antipastille, en farads.
+    """Capacite parasite pastille/plan, en farads. TOUT EN METRES.
 
-    Modèle de capacité plan-parallèle avec effet de bord (coefficient 0.8).
+    Plan parallele avec un coefficient de bord de 0,8. Meme avertissement
+    d'unite que `inductance_via`, et il est pire ici : C va comme d^2/h, donc
+    une saisie en millimetres se trompe d'un facteur mille.
     """
     d = float(d_pastille)
     h_m = float(h)
     er = float(epsilon_r)
     if not (d > 0 and h_m > 0):
         return 0.0
-    # Capacité plane avec coefficient de bord
     return 0.8 * EPSILON_0 * er * (np.pi * (d / 2.0) ** 2) / h_m
 
 
-def capacite_coude(w, epsilon_r):
-    """Capacité d'excès d'un coude à 90°, en farads.
-
-    Modèle de Gupta pour microruban : C (fF) ≈ 0.5 × W(mm) × √(εr)
-    """
-    w_m = float(w)
-    er = float(epsilon_r)
-    if not (w_m > 0):
-        return 0.0
-    w_mm = w_m * 1e3  # en mm
-    return 0.5 * w_mm * np.sqrt(er) * 1e-15  # fF -> F
-
-
 def abcd_via(h, d, d_pastille, epsilon_r, freq):
-    """Matrice ABCD d'un via : π L-C.
-
-    Le via est modélisé par son inductance série, avec une capacité pastille/plan
-    à chaque extrémité (shunt C de chaque côté).
-    """
+    """Matrice ABCD d'un via : reseau en pi, C/2 - L - C/2. TOUT EN METRES."""
     L = inductance_via(h, d)
-    C = capacite_pastille(d_pastille, h, epsilon_r) / 2.0  # divisée en 2
+    C = capacite_pastille(d_pastille, h, epsilon_r) / 2.0
 
     omega = 2.0 * np.pi * float(freq)
+    Z = 1j * omega * L
+    Y = 1j * omega * C
 
-    # Réactances
-    X_L = omega * L
-    B_C = omega * C
-    if B_C == 0:
-        Y_shunt = 0.0
-    else:
-        Y_shunt = 1j * B_C
-
-    # Matrice ABCD du π L-C : shunt C - série L - shunt C
-    if abs(Y_shunt) < 1e-20:
-        # Pas de capacité shunt
-        A = 1.0
-        B = 1j * X_L
-        C = 0.0
-        D = 1.0
-    else:
-        # Modèle π simplifié
-        Z = 1j * X_L
-        A = 1.0 + Z * Y_shunt
-        B = Z
-        C = Y_shunt * (2.0 + Z * Y_shunt)
-        D = 1.0 + Z * Y_shunt
-
-    return np.array([[A, B], [C, D]], dtype=complex)
+    # Le pi exact : [1 0; Y 1] [1 Z; 0 1] [1 0; Y 1]
+    return np.array([[1.0 + Z * Y, Z],
+                     [Y * (2.0 + Z * Y), 1.0 + Z * Y]], dtype=complex)
 
 
-def abcd_coude(w, epsilon_r, freq):
-    """Matrice ABCD d'un coude : shunt C.
+def abcd_coude(w, h, epsilon_r, freq, angle_deg=90.0):
+    """Matrice ABCD d'un coude : le T de Gupta, L/2 - C - L/2. EN METRES.
 
-    La capacité d'excès du coude est mise en shunt entre la ligne et la masse.
+    L'ancienne version ne posait qu'un shunt C, ce qui jette la moitie du
+    modele : c'est l'inductance serie qui porte l'essentiel de l'exces au-dela
+    de quelques gigahertz.
     """
-    C = capacite_coude(w, epsilon_r)
-
+    L, C = elements_coude(w, h, epsilon_r, angle_deg)
     omega = 2.0 * np.pi * float(freq)
-    B_C = omega * C
-    Y_shunt = 1j * B_C
+    Z = 1j * omega * L / 2.0          # une moitie de chaque cote
+    Y = 1j * omega * C
 
-    # Shunt simple en ABCD : A=D=1, B=0, C=Y
-    return np.array([[1.0, 0.0],
-                     [Y_shunt, 1.0]], dtype=complex)
+    # [1 Z; 0 1] [1 0; Y 1] [1 Z; 0 1]
+    return np.array([[1.0 + Z * Y, 2.0 * Z + Z * Z * Y],
+                     [Y, 1.0 + Z * Y]], dtype=complex)
+
 
 def abcd_line(z_c, gamma, longueur):
     """Matrice ABCD d'un tronçon de ligne uniforme."""

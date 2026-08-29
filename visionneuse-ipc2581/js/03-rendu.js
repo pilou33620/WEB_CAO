@@ -185,6 +185,16 @@ function peindre(c,dpr,W,H){
      c'est un jugement sur ce que celle-ci vient de montrer — et avant les
      composants et les textes, qui doivent rester lisibles par-dessus. */
   if(typeof simZTrace==="function")simZTrace(c,dpr);
+  /* La carte de POTENTIEL (chute DC). Elle ne s'affiche jamais en même
+     temps que celle des impédances : `simDCActif()` exige l'onglet DC,
+     `simZActif()` l'onglet Impédance. La couche montrée est celle de la
+     borne source — le panneau n'en peint qu'une, deux potentiels
+     superposés ne se liraient pas. */
+  if(typeof simDCTrace==="function"&&typeof simDCCoucheVue==="function")
+    simDCTrace(c,simDCCoucheVue());
+  /* L'étiquette de la sonde, au-dessus de la carte : elle désigne un point,
+     elle ne décrit pas le cuivre. */
+  if(typeof simDCTraceSonde==="function")simDCTraceSonde(c,dpr,w2s);
   if(V.aff.composants)peindreComposants(c,dpr);
   peindreTextes(c,dpr);
   if(V.comp)peindreCompChoisi(c,dpr);

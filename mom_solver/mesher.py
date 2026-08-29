@@ -10,7 +10,14 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-from green_layered import indices_plans_masse      # noqa: E402
+# Import RELATIF d'abord, A PLAT ensuite. Les bancs de mom_solver/tests
+# mettent mom_solver/ dans sys.path et importent a plat ; le paquet, lui,
+# s'importe en relatif. Sans ce couple, l'un des deux chemins casse -- et
+# c'etait `import mom_solver` qui cassait.
+try:
+    from .green_layered import indices_plans_masse
+except ImportError:                                    # noqa: BLE001
+    from green_layered import indices_plans_masse      # noqa: E402
 
 
 @dataclass

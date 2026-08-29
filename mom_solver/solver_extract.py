@@ -11,7 +11,10 @@ from scipy.sparse.linalg import gmres, spsolve
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import LinearOperator
 
-from mom_engine import courant_de_coupe, vecteur_de_coupe
+try:
+    from .mom_engine import courant_de_coupe, vecteur_de_coupe
+except ImportError:                                    # noqa: BLE001
+    from mom_engine import courant_de_coupe, vecteur_de_coupe
 
 logger = logging.getLogger(__name__)
 

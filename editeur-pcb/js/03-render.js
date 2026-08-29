@@ -722,6 +722,16 @@ function paint(c,dpr,w,h,noGrid){
      rester au-dessus — mais avant la cote et le phare, qui désignent au lieu
      de décrire. Absente du .png exporté, pour la même raison qu'eux. */
   if(!noGrid&&typeof simZTrace==="function")simZTrace(c);
+  /* La carte de POTENTIEL (chute DC), sur la couche affichée. Elle passe au
+     même rang que la carte d'impédance et pour la même raison — les deux
+     jugent le tracé —, et jamais en même temps qu'elle : `simDCActif()` exige
+     l'onglet DC, `simZActif()` l'onglet impédance. */
+  if(!noGrid&&typeof simDCTrace==="function")simDCTrace(c,S.active);
+  /* L'étiquette de la sonde, tout au-dessus de la carte de chaleur : elle
+     désigne un point, elle ne décrit pas le cuivre. Comme la cote, elle est
+     absente du .png exporté. */
+  if(!noGrid&&typeof simDCTraceSonde==="function")
+    simDCTraceSonde(c,dpr,w2s);
   if(!noGrid&&typeof rpMesTrace==="function")rpMesTrace(c,dpr);
   /* Le phare du cross-probing, tout en haut de la pile : il désigne, il ne
      décrit pas. Comme la cote, il est absent du .png exporté — ni l'un ni

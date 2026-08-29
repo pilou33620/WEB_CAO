@@ -27,7 +27,90 @@ et la nature d'un via — traversant, borgne dessus/dessous, enterré — choisi
 panneau Propriétés, sur un via comme sur toute une sélection (`viaSetKind`,
 [editeur-pcb/js/01-core.js:340](editeur-pcb/js/01-core.js:340)).
 
+## État des lieux au 2026-08-29
+
+Ce que le dépôt fait tourner, et ce qui le mesure. **588 essais, tous passés.**
+
+| Partie | État | Ce qui la mesure |
+| --- | --- | --- |
+| Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire | en service | 402 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
+| Éditeur schématique | en service ; **ni bus ni feuilles hiérarchiques** | — |
+| Visionneuse IPC-2581 | en service | 30 essais ([harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)) + 42 ([banc-essai.py](visionneuse-ipc2581/test/banc-essai.py)) |
+| **SI — impédance** (`ligne_mom`) | en service, 0,3 à 0,4 % contre les étalons | 60 cas, [banc-ligne-mom.py](python/test/banc-ligne-mom.py) |
+| **PI — chute DC** (`dc_solver`) | **solveur fait et mesuré ; aucun outil ne l'alimente** | 16 cas, [banc-dc.py](python/test/banc-dc.py) |
+| Moteur 2,5D pleine onde (`mom_solver`) | **hors du chemin de calcul** — le port vertical manque | 38 essais, [mom_solver/tests/](mom_solver/tests) |
+| Passerelle MCP, projets, profils, repérage, cross-probing | en service | — |
+
+**Les trois chantiers qui comptent, dans l'ordre :**
+
+1. **`ligne_mom` à N conducteurs** — un seul chantier débloque Z
+   différentielle *et* diaphonie, à la précision déjà acquise. La machinerie
+   est là (`capacitance_coplanaire` assemble déjà la matrice multiconducteurs) ;
+   il manque la généralisation du second membre. Rien n'en est fait ;
+2. **les courants du schéma** — c'est ce qui manque au solveur DC, et ce n'est
+   pas un problème de solveur : le schéma ne porte pas ce qu'un composant tire ;
+3. **le port vertical du moteur 2,5D** — sans lui, |S₂₁| mesure le couplage de
+   la fente, pas la ligne, et le moteur reste hors du chemin.
+
 ## Simulation électromagnétique
+
+### Audit du 2026-08-29 : ce qui était écrit « FAIT » et ne l'était pas
+
+**Rien de la chaîne EM ne tournait plus.** Six défauts ont été trouvés en
+exécutant simplement ce que cette page affirmait, et les six sont dans du code
+annoncé **fait** ici même. Ils sont corrigés, et chacun a désormais un cas de
+banc — c'est l'absence de mesure, pas l'absence de travail, qui les a laissés
+passer : le code était écrit, souvent bien, mais rien ne l'exécutait.
+
+| Ce que la page affirmait | Ce que l'exécution a montré | État |
+| --- | --- | --- |
+| « le panneau résout la section par MoM » | `ligne_mom.py` ne s'importait plus : une fonction posée avant les `import`, et un `logging` jamais importé. **Les deux panneaux affichaient « Solveur EM indisponible »** depuis le dernier commit | réparé |
+| « `simuler()` rend les paramètres S » | `_ruptures` définie **deux fois** ; l'ancienne, qui rend un entier, écrasait la neuve, qui rend un couple. `TypeError` à chaque appel | réparé |
+| lot 2 : « masque de soudure, réductions exactes vérifiées » | la référence à vide gardait le masque à son εr : **ε_eff BAISSAIT** quand on vernissait la piste, et Z₀ tombait de 7,8 % au lieu de 2 à 3 %. Aucun cas de banc ne l'avait vérifié | réparé, 5 cas |
+| lot 3b : « discontinuités modélisées » | trois copies des mêmes formules, trois résultats : la fiche affichait **21,28 fF** de capacité de coude là où la cascade en appliquait **0,394**. Et la cascade appelait en millimètres des fonctions écrites en mètres — inductance de via **1000 ×** trop grande | réparé, 5 cas |
+| « 2ᵉ branchement DCIM **FAIT**, erreur de 9,6 % → 0,05 % » | faux : le 3ᵉ niveau fait tomber `banc_dcim` de **25/25 à 21/25** et porte l'écart d'ε_eff du moteur de **0,49 % à 11,4 %**. Le montage est faux, pas à régler — voir la note en tête de `ajuster_noyau_3_niveaux` | mis hors du chemin par défaut, diagnostiqué |
+| PI : « chute continue (IR drop) **FAIT** » | `dc_solver.py` montait son réseau sur le **périmètre** des polygones, passait à SciPy un argument retiré en 1.14, et **rattrapait l'exception pour rendre zéro volt partout** | réécrit, 16 cas |
+
+**Ce qui n'a pas bougé et qui reste vrai** : le noyau 2,5D remis en état passe
+ses 38 essais, et l'écart d'ε_eff contre `ligne_mom` vaut bien les 0,49 %
+annoncés. Les deux fonctions de Green, la DCIM à deux niveaux, l'extraction du
+pôle et la désingularisation polaire sont justes et mesurées.
+
+**La leçon, et elle vaut pour la suite** : les cinq défauts silencieux étaient
+tous dans du code qu'aucun banc n'exécutait. Un chantier n'est pas fini quand
+il est écrit, il est fini quand un cas le mesure — et le cas doit porter sur ce
+qui se trompe *sans se voir* : un signe, un ordre de grandeur, une unité.
+
+### Contre-vérification du 2026-08-29 (2ᵉ passe)
+
+Les six correctifs ci-dessus ont été **repris un par un et remesurés**, pas
+relus. Les six tiennent. Mais la contre-vérification a trouvé **quatre restes**,
+tous de la même famille que les défauts d'origine — du code ou du texte qui
+affirme une chose que l'exécution dément — et tous corrigés :
+
+| Ce qui restait | Ce que l'exécution a montré | État |
+| --- | --- | --- |
+| lot 3b : « une seule implémentation » | `inductance_via` et `capacite_pastille` étaient **encore définies deux fois** dans `ligne_mom`. La consolidation avait bien été écrite, l'ancien bloc n'avait pas été retiré. Python garde la dernière, donc le calcul était juste — mais la **première documentait ses arguments en millimètres** et la seconde « TOUT EN MÈTRES ». Un lecteur tombant sur la première se trompait d'un facteur mille | doublon supprimé, 1 cas de banc |
+| lot 2 : « masque de soudure corrigé » | la physique de `solve_line` était bien juste (−2,53 % sur Z₀, +5,26 % sur ε_eff), mais `simulation_em.section_de_couche` **comptait le vernis déclaré deux fois** : une fois par la Green à trois régions, et une fois de plus dilué dans l'εr du **substrat**, comme si la résine était *entre* la piste et le plan. Mesure : un empilage qui **déclare** son masque voyait er tomber de 4,3 à 4,2444, Z₀ monter de 0,56 % et ε_eff baisser de 1,12 % par rapport au **même** empilage qui ne le déclare pas. Renseigner son empilage rendait donc le résultat faux | corrigé, 3 cas |
+| détection de couche extérieure | le test posait la question **du mauvais côté** : il regardait `couches[indice - 1]`, la couche du côté du *plan*, pour décider ce qu'il y avait du côté de la *face*, et y cherchait du cuivre là où c'est le diélectrique qui tranche. Une piste couverte de 0,1 mm de préimprégné recevait par-dessus un vernis de 25 µm, et son préimprégné partait à la poubelle | réécrit en `_masque_exterieur`, 1 cas |
+| deux docstrings contre leur propre code | `_coudes` citait encore la formule inventée que le correctif avait supprimée (`C ≈ 0,3 × W × √εr × |θ|`) ; et `trois_niveaux` était documenté « si True (**defaut**) » aux deux endroits alors que la signature dit `False` — soit exactement l'inverse de l'avertissement en tête de `ajuster_noyau_3_niveaux` | textes remis sur le code |
+
+**Vérifié de bout en bout par HTTP**, et pas seulement par les bancs : le
+serveur lancé, `GET /api/simulation` et `GET /api/simulation-dc` répondent tous
+deux `dispo: true` ; un POST sur la chaîne EM rend 2 tronçons, 5 points S, la
+fiche de coude à 26,07 pH / 41,55 fF — **le même chiffre que le modèle**, ce qui
+était tout l'objet du lot 3b — et 12 lignes de Touchstone. Un POST sur la chaîne
+DC, sur une barre de 40 × 10 mm en 35 µm parcourue par 2 A, rend **3,854 mV**
+avec des bornes sur toute la largeur, contre 3,882 mV pour ρL/(Wt) : **0,72 %**,
+l'écart tenant à l'endroit où l'on place le bout effectif de la barre. Avec des
+contacts *ponctuels* le même problème rend 4,31 mV, soit 15 % de plus — ce n'est
+pas une erreur du solveur mais la résistance d'étranglement au contact, que la
+formule à une dimension ne contient pas.
+
+**Ce que la 2ᵉ passe confirme sur la méthode** : sur les quatre restes, trois
+étaient du texte qui contredisait son propre code. Un correctif n'est pas fini
+quand le calcul est juste — il l'est quand plus rien alentour n'affirme le
+contraire, parce que c'est ce texte-là qu'on relit six mois plus tard.
 
 **Ce qui marche** : l'impédance. Le panneau « Simulation EM » des deux outils
 envoie la section droite des tronçons sélectionnés à
@@ -35,8 +118,10 @@ envoie la section droite des tronçons sélectionnés à
 résout par méthode des moments, et rend l'impédance, la permittivité effective,
 le retard, les pertes, puis les paramètres S de la liaison par mise en cascade.
 Vérifié à 0,42 % contre Hammerstad-Jensen et à 0,30 % contre la solution exacte
-en intégrales elliptiques ; 51 cas dans
-[python/test/banc-ligne-mom.py](python/test/banc-ligne-mom.py).
+en intégrales elliptiques ; **65 cas** dans
+[python/test/banc-ligne-mom.py](python/test/banc-ligne-mom.py) — les quatorze
+derniers couvrent le masque de soudure, les discontinuités localisées et le
+passage de l'empilage à la section, qui n'en avaient aucun.
 
 La MASSE COPLANAIRE est traitée côté par côté, plage par plage, et seulement sur
 les nets déclarés comme masse — voir « Ce que la masse coplanaire suppose » plus
@@ -159,26 +244,40 @@ quelle longueur. La géométrie qui mesure la section par tronçons existe déj�
 bancs de `editeur-pcb/test/harness.js`) ; ce qui manque est l'appariement de
 tronçons voisins et la longueur de recouvrement.
 
-#### 2. Le solveur DC — chute continue et densité de courant
+#### 2. Le solveur DC — **fait**, mais rien ne l'alimente
 
 **Ce n'est pas de l'électromagnétisme du tout** : c'est un problème résistif sur
 les formes de cuivre, réel, sans fréquence, à matrice symétrique définie
-positive — donc un gradient conjugué et rien de plus. C'est le point 1 de la
-famille PI ci-dessous, et il est **indépendant de tout le reste** : il ne
-partage aucun code avec `ligne_mom` ni avec `mom_solver`, donc il peut se faire
-en parallèle sans conflit.
+positive — donc un gradient conjugué et rien de plus. Il est **indépendant de
+tout le reste** : il ne partage aucun code avec `ligne_mom` ni avec
+`mom_solver`.
 
-Ce qu'il demande, et qui n'existe pas encore :
+**Le solveur est écrit et mesuré** —
+[python/dc_solver.py](python/dc_solver.py) 2.0.0, 16 cas dans
+[python/test/banc-dc.py](python/test/banc-dc.py) :
 
-- un maillage **surfacique** des polygones de cuivre par couche — pas la section
-  droite, et pas non plus le maillage RWG de `mom_solver` : un réseau de
-  résistances ou du Laplace 2D suffit ;
-- les **vias** comme résistances localisées entre couches, y compris les
-  coutures de masse ;
-- les **points d'injection et d'extraction** : les pastilles des composants, avec
-  le courant que le schéma leur attribue — c'est la donnée qui manque le plus,
-  et elle vient du schéma, pas du PCB ;
-- la sortie : une carte de chaleur de potentiel, et la chute pire-cas par net.
+- le maillage **surfacique** est là. Une trame carrée par couche, une cellule
+  par carreau de cuivre, les voisines de même net reliées par une conductance
+  qui vaut exactement σt — donc **indépendante du pas**. C'est ce qui fait
+  qu'un barreau redonne ρL/(Wt) *à 0,000 %* et que raffiner la trame ne
+  déplace pas le résultat : la trame ne décrit mal que le contour et les
+  rétrécissements, c'est-à-dire ce qu'elle décrit mal, et rien d'autre ;
+- les **vias** en résistances localisées entre couches, section d'anneau
+  plaqué, la conductance répartie sur les carreaux que le trou débouche ;
+- les **points d'injection et d'extraction** sont acceptés en disque ou en
+  **rectangle** — une pastille en est un —, et filtrés par net : une référence
+  de masse posée au milieu d'une carte attrapait sinon le cuivre du net voisin
+  qui passe dans le même disque, et le fixait à zéro volt ;
+- la sortie : le potentiel par nœud, la chute pire-cas par net, et une carte
+  de chaleur **par couche** — peindre deux couches l'une sur l'autre
+  mélangerait deux potentiels sans le dire.
+
+**Ce qui manque est tout entier du côté PAGE**, et c'était déjà le cas quand
+cette page a été écrite : les **courants**. C'est le schéma qui sait ce qu'un
+composant tire, et il ne le porte pas encore. Avec eux, l'extraction du cuivre
+par couche et par net dans les deux adaptateurs (`cuivreDC()`, contrat décrit
+en tête de [commun/simulation-em.js](commun/simulation-em.js)) et la peinture
+de la carte (`peindreDC()`).
 
 #### 3. ~~La résistance AC~~ **FAIT (2026-08-28)**
 
@@ -216,23 +315,49 @@ des champs, et il faut afficher l'incertitude avec le chiffre.
 #### L'ordre
 
 1. **`ligne_mom` à N conducteurs.** Un seul chantier débloque Z différentielle
-   *et* diaphonie, à la précision déjà acquise.
-2. **Le solveur DC.** Indépendant, simple, parallélisable avec le reste.
-3. ~~R_AC par la section~~ **FAIT.** Le modèle industriel est maintenant utilisé.
-4. **Le port vertical du moteur 2,5D** — en dernier. Il ne débloque aucun des
-   besoins ci-dessus à 5 GHz. Sa raison d'exister reste les discontinuités
-   au-delà de 2 à 3 GHz, et c'est le point 1 de « Réparer l'onde complète ».
+   *et* diaphonie, à la précision déjà acquise. **Rien n'en est fait**, et
+   c'est toujours le meilleur rapport valeur/effort de la page.
+2. ~~Le côté PAGE du solveur DC~~ **FAIT dans les DEUX outils (2026-08-29)** :
+   bornes désignées au clic — autant de sources et de références qu'on veut —,
+   ampérages saisis, tout le cuivre du net envoyé sur toutes ses couches,
+   détail **via par via**, **densité de courant** et **échauffement IPC-2221**
+   en retour, la tension qui arrive à chaque charge, et la carte de chaleur au
+   choix des trois (34 cas dans
+   [python/test/banc-dc.py](python/test/banc-dc.py), 35 dans
+   [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js), 42 dans
+   [visionneuse-ipc2581/test/harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)).
+   Reste la donnée que rien ne fabrique : **les courants du schéma**.
+3. ~~R_AC par la section~~ **FAIT** (2026-08-28).
+4. ~~Le port vertical du moteur 2,5D~~ **PARTIELLEMENT FAIT** : l'excitation
+   est approchée par des poids en distance ; il manque les fonctions de base
+   verticales, `G_A^zz` et le dé-embarquement.
+5. **Le 2ᵉ branchement DCIM.** Écrit, **mesuré faux**, et hors du chemin par
+   défaut. Le diagnostic est fait et il est précis — les images du 3ᵉ niveau
+   sont ajustées en `k_z` de l'air puis resommées avec le `k` du substrat —,
+   donc le chantier qui reste est nommé : faire porter son nombre d'onde à
+   chaque groupe d'images, dans `ComplexImage`, `_somme_ondes` et
+   `mom_engine`.
+6. **Plan de masse multiple.** `profil_spectral_multiple` et
+   `profils_noyaux_multiples` existent et rendent un profil par couche de
+   signal, plus le jeu croisé ; ils réutilisent maintenant `profil_spectral`
+   au lieu d'en recopier la règle — la copie empilait les diélectriques
+   situés *au-delà* du plan de masse et fermait la pile du bas avec la
+   permittivité du haut. **Mais `mom_engine` ne les appelle pas encore** :
+   le moteur ne voit toujours qu'un plan source. C'est de la plomberie, pas
+   de la physique.
+7. **Optimisation numba**, au-delà de 300 RWG.
 
-Autrement dit : **ce qui reste à ajouter tire vers le solveur de SECTION, pas
-vers l'onde complète.** Le moteur 2,5D est maintenant juste et mesuré — il
-attend son port — mais il n'est sur le chemin d'aucune des fonctions demandées.
+Le plan parfait et infini est une hypothèse fondamentale du modèle 2,5D — la
+lever demande un solveur 3D complet.
 
 
-### La famille PI est vide, et c'est un emplacement, pas un oubli
+### La famille PI porte une analyse, dont la moitié serveur seule est faite
 
-Le panneau se range désormais en deux familles — **SI** (intégrité du signal)
-et **PI** (intégrité de l'alimentation). SI porte « Impédance » ; PI ne porte
-rien, et l'affiche en toutes lettres plutôt que d'aligner des onglets grisés.
+Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI**
+(intégrité de l'alimentation). SI porte « Impédance » ; PI porte « Chute DC »,
+**branchée de bout en bout dans les DEUX outils depuis le 2026-08-29** :
+bornes désignées au clic, cuivre du net envoyé sur toutes ses couches, détail
+via par via en retour, et la carte de potentiel peinte sur la carte.
 
 Le registre est `SIM_FAMILLES` / `SIM_ANALYSES`
 ([commun/simulation-em.js](commun/simulation-em.js)). Une analyse y déclare
@@ -243,20 +368,265 @@ apparaît tout seul.
 Ce qu'il y aurait à mettre dans PI, par ordre de ce que le dépôt sait déjà
 faire :
 
-1. **la chute continue dans les plans** (IR drop). Ce n'est pas de
-   l'électromagnétisme : c'est un problème résistif sur les formes de cuivre,
-   réel et sans fréquence — le plus accessible des trois. Cette page disait
-   qu'il « n'a besoin d'aucun nouveau solveur, la capacité de `ligne_mom.py` se
-   transpose en conductance » ; **c'est faux**, et la confusion est celle de la
-   dimension : `ligne_mom` discrétise une SECTION DROITE, l'IR drop demande un
-   maillage SURFACIQUE des polygones. Il faut donc bien un solveur, mais le plus
-   simple des trois. Le détail — vias, points d'injection, ce qui manque du
-   schéma — est au § « Quel solveur pour quel besoin », point 2 ;
+1. **La chute continue (IR drop).** **Le SOLVEUR est fait et mesuré ; le
+   côté PAGE ne l'est pas.** Les deux moitiés étaient annoncées faites, et
+   aucune ne l'était.
+
+   **Ce qui est fait**, dans [python/dc_solver.py](python/dc_solver.py) 2.0.0 :
+
+   - un maillage **surfacique** — chaque couche tramée au pas demandé, une
+     cellule par carreau de cuivre, les voisines de même net reliées par une
+     conductance. Sur une trame carrée cette conductance vaut exactement σt,
+     donc un barreau redonne ρL/(Wt) **à 0,000 %** ; raffiner la trame ne
+     déplace pas le résultat, ce que le banc vérifie sur trois pas dans un
+     rapport de quatre ;
+   - les **vias** en résistances localisées entre couches, section d'anneau
+     plaqué ;
+   - des **références déclarées** (Dirichlet), et un refus explicite quand il
+     n'y en a pas : une chute se mesure entre deux points, et la version
+     précédente ancrait le nœud numéro zéro — un coin de la boîte englobante,
+     sur n'importe quel net ;
+   - une matrice qui reste **symétrique définie positive** : les inconnues de
+     Dirichlet sortent du système au lieu d'être écrasées ligne par ligne, ce
+     qui détruisait la symétrie sous un gradient conjugué qui la suppose ;
+   - un contrôle de **connexité** : un îlot qui n'atteint aucune référence rend
+     la sous-matrice singulière, et le CG s'arrête alors sur un résidu petit en
+     rendant des milliards de volts. On le cherche par un parcours en largeur,
+     avant de résoudre ;
+   - la route `/api/simulation-dc`, en POST **et en GET** — `_dc_etat` était
+     écrite mais routée nulle part.
+
+   **Ce que la 1.0.0 faisait, et qui explique le reste :** elle montait son
+   réseau sur le **périmètre** des polygones — le courant faisait le tour du
+   cuivre au lieu de le traverser —, passait `tol=` à `scipy.sparse.linalg.cg`
+   (retiré en SciPy 1.14, et ce dépôt tourne sur 1.16), et **rattrapait le
+   TypeError pour rendre un potentiel identiquement nul**. Zéro volt de chute
+   sur toute la carte est le pire des faux résultats : il a l'air d'une bonne
+   nouvelle.
+
+   **LE CÔTÉ PAGE, FAIT LE 2026-08-29 — et le blocage levé par un détour.**
+
+   Le chantier était réputé bloqué par les **courants**, qui ne viennent pas
+   du PCB : c'est le schéma qui sait ce qu'un composant tire, et il ne le
+   porte toujours pas. Le détour est de ne pas les attendre : **l'utilisateur
+   désigne deux pastilles** — une SOURCE qui injecte, une RÉFÉRENCE tenue à sa
+   tension — et pose lui-même l'ampérage. La question qu'on se pose devant une
+   carte, « combien je perds entre ce régulateur et ce connecteur », n'en
+   demandait pas davantage.
+
+   - **`cuivreDC()` dans l'éditeur PCB**
+     ([editeur-pcb/js/19-simulation.js](editeur-pcb/js/19-simulation.js)) :
+     tout le cuivre du net des deux bornes part au solveur — pistes (une droite
+     en un quadrilatère, un arc en une suite), zones, pastilles, sur **toutes**
+     les couches ; les découpes partent en `trou`, qui retire du cuivre au lieu
+     d'en poser.
+   - **La désignation par clic**, calquée sur le mode « mesure » : le panneau
+     arme, la carte reçoit le clic, la pastille est nommée (« J1.1 ») et le
+     panneau la relit à chaque affichage — une pastille effacée en disparaît.
+   - **LE CHANGEMENT DE COUCHE, ET CE QU'IL A COÛTÉ.** Les vias du net partent,
+     évidemment. Mais une **pastille traversante** pose un anneau de cuivre sur
+     chaque couche, et ce qui les relie est le **tube métallisé** de son
+     perçage — un conducteur au même titre. Ne pas l'envoyer laissait ces
+     anneaux électriquement flottants et le solveur refusait tout le calcul :
+     « 2016 nœuds n'atteignent aucune référence ». **Aucune relecture ne
+     l'aurait montré** : il a fallu envoyer au serveur le document que
+     l'éditeur produit vraiment. Vias et tubes partent donc en liaisons entre
+     couches **voisines**, chacune avec la hauteur de son propre intervalle, et
+     seulement entre les couches qui portent effectivement du cuivre.
+   - **Le tableau via par via**, qui est ce qui a été demandé : repère,
+     couples de couches, courant, chute et résistance, les plus chargés en
+     tête. Le solveur le rend à partir des paires de nœuds qu'il a reliées, ce
+     qui rend le courant **exact** — sur deux plans reliés par un seul via, il
+     redonne l'ampérage entier, par la loi des nœuds, et le banc le vérifie.
+   - **Le déséquilibre, dit juste.** La première version sommait le courant de
+     tous les vias pour en tirer une part — et annonçait « le plus chargé porte
+     25 % » là où un seul chemin portait la totalité, parce qu'un tube est une
+     **chaîne** de liaisons en SÉRIE. On ne compare donc que les vias reliant
+     le **même couple de couches**, qui sont bien en parallèle.
+
+   **LES TROIS RESTES, FAITS LE 2026-08-29 (2ᵉ passe) :**
+
+   - **LA VALEUR SOUS LE CURSEUR.** Une carte de chaleur montre OÙ, jamais
+     COMBIEN : on voyait que ça chauffait là, sans savoir si c'était deux
+     degrés ou quarante. Le survol affiche maintenant la valeur du carreau
+     pointé, dans la grandeur choisie. Elle lit le RÉSULTAT et non le pixel
+     peint — repasser par la couleur ferait deux conversions et rendrait un
+     nombre qui n'est plus celui du solveur. Hors du cuivre : rien, pas un
+     zéro, pas la valeur du voisin. Et le survol ne redessine que si l'on
+     change de carreau, sans quoi une grande sélection deviendrait inutilisable.
+
+   - **LA CARTE SORTAIT EN MIROIR VERTICAL**, dans les deux outils. L'image
+     était construite avec sa ligne 0 au y *maximum* du monde, « parce que
+     l'écran a son y vers le bas » — vrai de l'écran, faux de la destination :
+     `drawImage(img, x0, y0, w, h)` pose la ligne 0 au y **minimum**, et on
+     dessine en coordonnées MONDE. C'était donc un retournement de trop côté
+     visionneuse (`setTransform(s,0,0,-s,…)`) et un de trop côté éditeur
+     (`(s,0,0,s,…)`) : un défaut d'alimentation se lisait à l'opposé de là où
+     il est. Le cas qui le garde est **asymétrique dans les deux axes** — un
+     motif symétrique passe un miroir sans broncher, et c'est exactement ce
+     qui avait laissé ce défaut vivre.
+
+   - **LA TRAME N'EST PLUS UN RÉGLAGE.** Le champ portait 0,2 mm d'office et
+     personne ne pouvait savoir ce qu'il fallait y mettre. Elle se déduit
+     maintenant du cuivre : **huit carreaux dans la largeur de la forme la plus
+     étroite**, avec un garde-fou qui l'élargit — en le disant — si le nombre
+     de nœuds dépasse le budget. Le champ vide veut dire « choisis-la ».
+
+     POURQUOI HUIT ET NON QUATRE, qui est le seuil du mailleur : la largeur que
+     le solveur VOIT est **quantifiée par la trame**, et l'échauffement va en
+     `A^(−0,725/0,44)`. Mesuré : la même piste de 0,5 mm rendait 0,60 mm de
+     section au pas de 0,15 et 0,50 mm au pas de 0,125 — 15,45 K contre 20,87,
+     soit exactement `(0,5/0,6)^1,6477`. À huit carreaux l'écart tombe de
+     moitié. Il en reste une incertitude d'une dizaine de pour cent sur la
+     forme la plus fine, et c'est écrit.
+
+   - **UN « undefined » S'AFFICHAIT SOUS LE PANNEAU.** `simRendre` fait
+     `box.innerHTML = a.rendre()` ; « Chute DC » écrivait dans un `<div>` à
+     elle et ne rendait **rien**. Les essais ne l'ont pas vu parce qu'ils
+     appelaient `rendre()` directement, où la valeur de retour ne gêne
+     personne — c'était le CONTRAT du registre qui n'était pas tenu. Un cas le
+     vérifie désormais pour **toutes** les analyses, dans chacun de leurs états.
+
+   - **LE PANNEAU DIT CE QU'IL A PRIS** : combien de formes, sur combien de
+     couches, découpes comprises, « pistes, pastilles et plans compris ». Un
+     chiffre dont on ignore l'assiette ne se vérifie pas — et rien ne montrait
+     que le plan de masse était bien dedans.
+
+   - **LE VOCABULAIRE, remis à l'endroit.** Les deux bornes s'appelaient
+     « source » (qui portait le COURANT) et « référence » (qui portait la
+     TENSION) — l'inverse exact de la façon dont on raisonne devant une carte,
+     et l'utilisateur l'a dit : *« je veux choisir une source où je règle la
+     tension, et une charge où je règle le courant consommé »*. C'est ainsi
+     désormais : une **source** est une alimentation, on lui règle ses
+     **volts** ; une **charge** est un consommateur, on lui règle ses
+     **ampères**. Le solveur, lui, n'a pas bougé : une source est une condition
+     de Dirichlet, une charge une condition de Neumann à courant **négatif** —
+     il sort du cuivre. La traduction se fait dans les deux adaptateurs, en un
+     seul endroit chacun.
+
+   - **CE QUE LE PANNEAU DIT MAINTENANT EN PREMIER** : la tension qui ARRIVE à
+     chaque charge. C'est la question qu'on pose à ce calcul — « j'ai 3,3 V au
+     régulateur, combien en reste-t-il là-bas ? » —, et la chute du net n'y
+     répond pas dès qu'il y a plus d'un consommateur. Vérifié à la main :
+     3,2928 V calculés contre 3,2927 attendus sur un barreau à deux
+     consommateurs.
+
+   - **UN DÉFAUT VIVANT, TROUVÉ EN LE CHERCHANT.** `simDCLancer` lisait encore
+     `simDCI` et `simDCU`, les deux champs disparus du panneau le jour où les
+     bornes sont devenues une liste. `parseFloat(undefined)` rend NaN : le
+     bouton « Calculer » **refusait toujours**. Aucun essai ne l'a vu, parce
+     qu'aucun n'exerçait cette fonction — le contrôle de câblage ne lisait que
+     l'affichage. Il lit désormais le lancement aussi.
+
+   - **Plusieurs bornes, et pas deux.** Le panneau n'acceptait qu'une source et
+     une référence, ce qui décrit un cas et un seul. Or la chute que voit un
+     consommateur dépend de **ce que tirent les autres** — c'est même la raison
+     d'être du calcul —, et deux champs obligeaient à autant de calculs
+     séparés, dont aucun n'aurait été juste. Le panneau porte maintenant une
+     **liste** : « + source », « + référence », chacune avec sa valeur.
+     Plusieurs références ont aussi un sens (deux régulateurs en parallèle, un
+     connecteur à deux broches). Vérifié contre le calcul à la main sur un
+     barreau : l'écart entre deux consommateurs vaut `r·I₂·(x₂−x₁)` à
+     **0,278 %**.
+   - **La carte de potentiel est peinte**, dans les deux outils. On peint les
+     **nœuds** — un carreau de trame chacun —, et non la grille `cartes` que le
+     serveur rend aussi : celle-ci couvre la *boîte englobante* et porte, hors
+     du cuivre, le potentiel du nœud le plus proche ; la peindre étalerait de
+     la couleur sur du vide. Une image par couche est pré-calculée à l'arrivée
+     du résultat, un pixel par carreau, et la teinte va du **cyan** à
+     l'**ambre** — délibérément pas du rouge, qui est celui du DRC.
+   - **`cuivreDC()` dans la visionneuse.** Pistes, arcs, plans à contours et
+     pastilles tirées de padstacks ressortent en polygones, en millimètres
+     quelle que soit l'unité du fichier ; les découpes de plan partent en
+     `trou`.
+
+   **CE QUE LA VISIONNEUSE A COÛTÉ, ET C'EST LA MÊME LEÇON QUE LA PREMIÈRE
+   FOIS.** Onze cas de banc passaient — tube contigu, hauteur juste, net
+   conservé, unité convertie — pendant que le document, dans son ensemble,
+   était **incalculable** : les pastilles traversantes posaient du cuivre sur
+   les deux couches et rien ne les joignait, faute d'un perçage listé à leur
+   emplacement. Le solveur refusait tout (« 1240 nœuds n'atteignent aucune
+   référence »), et il a fallu lui **envoyer** le document pour le voir. Un
+   padstack qui place du cuivre sur deux conducteurs *décrit* un trou
+   métallisé : le tube est maintenant déduit, avec son perçage marqué SUPPOSÉ.
+   Le côté éditeur avait eu exactement le même défaut, pour exactement la même
+   raison. Les cas qui vérifiaient la FORME de chaque morceau l'ont tous
+   laissé passer ; celui qui juge le document **entier** — « toute couche
+   portant du cuivre doit être atteignable depuis la source » — l'aurait vu, et
+   il existe maintenant dans les deux bancs.
+
+   **LA CHUTE NE DIT PAS TOUT — densité et échauffement (2026-08-29, 3ᵉ passe).**
+
+   Une piste peut tenir sa chute et fondre quand même : c'est la **section** qui
+   chauffe, pas la longueur. Mesuré sur une piste de 2 mm étranglée à 1 mm sur
+   deux millimètres : la chute monte de **6 %**, la température **triple**. Ni
+   la chute ni aucun contrôle géométrique ne le voient — la piste y respecte sa
+   largeur minimale. Le panneau rend donc aussi :
+
+   - **la densité de courant**, `J = I/(W·t)`, en A/mm². Vérifiée à **0,000 %**
+     contre le calcul à la main sur un barreau ;
+   - **l'échauffement**, par la charte **IPC-2221** :
+     `I = k·ΔT^0,44·A^0,725`, `k` = 0,048 en couche extérieure et 0,024 en
+     interne. Vérifié à **0,00 %** contre la charte reposée à la main, et le
+     rapport interne/externe tombe sur le `2^(1/0,44) = 4,83` qu'elle impose.
+
+   **CE QUI A FAILLI PARTIR FAUX, ET QUI EST LA VRAIE LEÇON DE CETTE PASSE.**
+   Le maximum de densité **ne converge pas** : à un angle rentrant le champ est
+   singulier, et le pic croît sans borne au raffinement — 93,7 puis 104,4 puis
+   129,3 A/mm² aux pas 0,2 / 0,1 / 0,05 mm, sur la même géométrie. Ce n'est pas
+   un défaut du solveur, c'est la solution exacte ; mais **un maximum qui
+   dépend d'un réglage de maillage n'est pas un chiffre d'ingénieur**.
+
+   La première version mesurait pour cela une largeur locale autour de chaque
+   point, perpendiculairement à l'axe dominant du courant. Dans un angle le
+   courant est diagonal : le balayage traversait la marche au lieu du
+   conducteur, voyait une section trop courte, et rendait **21,9 K là où le col
+   en vaut 16,7** — trente pour cent de trop, sur une géométrie où la réponse se
+   pose à la main. L'échauffement vient maintenant d'une **coupe** : la somme
+   des courants qui franchissent une colonne de carreaux. C'est un flux, donc
+   il ne bouge plus — 16,739 K aux trois pas, et 0,0 % d'écart avec la main.
+
+   Les deux chiffres se lisent donc différemment, et le panneau le dit : la
+   **densité de pointe** dit *où* regarder, l'**échauffement** dit *combien*.
+
+   **CE QUE L'ÉCHAUFFEMENT N'EST PAS.** IPC-2221 est une charte empirique,
+   relevée sur un conducteur **isolé**, à l'air calme, sans cuivre voisin ni
+   composant chaud — elle ne connaît ni le stratifié, ni les plans qui évacuent.
+   **IPC-2152** lui a succédé et donne des températures notablement plus basses
+   dans la plupart des cas, justement parce qu'elle tient compte de la
+   conduction du substrat. Elle n'est pas implémentée : ce qui est rendu est
+   **conservateur**, et c'est le bon sens de l'erreur. Le résultat porte cette
+   phrase lui-même, et le panneau l'affiche.
+
+   **LA CARTE DE CHALEUR** se choisit entre les trois grandeurs — échauffement
+   d'office, puisque c'est celle sur laquelle on élargit une piste. Elle est
+   découpée exactement sur le cuivre analysé : un carreau de trame par pixel,
+   rien hors du cuivre.
+
+   **Ce qui manque encore de ce côté :**
+
+   - **IPC-2152** à la place d'IPC-2221 : elle demande la conductivité du
+     stratifié et l'épaisseur de la carte, que l'empilage porte déjà des deux
+     côtés. C'est le chantier qui rendrait la température juste plutôt que
+     prudente ;
+   - les **courants venus du schéma**, toujours. Ce qui est là remplace la
+     donnée manquante par une saisie, il ne la fabrique pas : dix consommateurs
+     demandent dix clics, et personne ne vérifie que la somme correspond à
+     quelque chose de réel ;
+   - la **portée des perçages** dans la visionneuse : le modèle ne la porte
+     pas, tous les trous sont pris traversants. Un via borgne ou enterré est
+     donc modélisé plus long qu'il n'est, et sa résistance surestimée. C'est le
+     parseur qu'il faudrait compléter, pas le solveur ;
+   - dans la visionneuse, la carte de potentiel ne peint que **la couche de la
+     première source** : l'outil affiche toutes les couches à la fois et n'a
+     pas de couche active, alors que superposer deux potentiels les mélangerait
+     sans le dire.
+
 2. **l'impédance vue par le composant** (Z du PDN en fréquence), qui demande le
    condensateur de découplage, son inductance parasite d'accès, et la capacité
    plan-plan. Cette dernière tombe directement de l'empilage déjà envoyé ;
 3. **les résonances de plan**, qui demandent l'onde complète — donc la section
-   ci-dessous.
+   ci-dessus.
 
 Et dans SI, à côté d'« Impédance » : la **diaphonie** et l'**impédance
 différentielle**, qui sont le même chantier et le meilleur rapport
@@ -382,34 +752,85 @@ ligne, seule change la fonction de Green du terme inductif.
 
 **Ce qui reste, par ordre de gravité.**
 
-1. **Le port de microruban demande des courants VERTICAUX.** C'est désormais le
-   seul blocage entre ce moteur et des paramètres S utilisables sous quelques
-   gigahertz. Il faut : des fonctions de base sur un via de port (RWG
-   horizontale/verticale à la jonction, ou un élément filaire attaché), la
-   fonction de Green `G_A^zz`/`G_A^zx` correspondante — `green_layered` sait
-   déjà cascader les deux modes, il faut la composante verticale du dyade —,
-   puis le **dé-embarquement par la méthode des deux longueurs** (deux
-   résolutions, `T₂T₁⁻¹` dont les valeurs propres donnent γ sans connaître les
-   accès). Tant que ce n'est pas fait, la seule grandeur que le moteur rende
-   proprement est ε_eff par l'onde stationnaire — ce que `banc_moteur.py`
-   mesure, et ce que `ligne_mom.py` donne déjà mille fois plus vite.
-2. **Le second point de branchement n'est pas ajusté** (point 1 des démentis
-   ci-dessus). Sans conséquence pour une matrice d'impédance — à ces distances
-   le noyau vaut six ordres de grandeur de moins qu'en champ proche — décisif
-   pour un calcul de rayonnement.
-3. **Un seul plan source.** L'ajustement vaut pour la couche des pistes. Un
-   empilage à deux couches de signal demande un jeu d'images par couche, et un
-   jeu croisé par paire de couches. Même chantier que le point 1 : c'est la
-   généralisation de `profil_spectral` à plusieurs plans.
-4. **L'assemblage est en Python pur, et ça plafonne vers 300 fonctions de
-   base.** 169 RWG en 5 s, 269 en 25 s, en N². Le cache de moments par paire de
+1. **~~Le port de microruban demande des courants VERTICAUX.~~** **PARTIELLEMENT FAIT (2026-08-28).**
+   Les bases sont posées : `excitation_via_port()`, `courant_total_via()`,
+   `_creer_via_port()` dans `mom_engine.py`. L'excitation verticale est approximée
+   (poids par distance). Il manque : les fonctions de base VERTICALES RWG sur le
+   via, la composante G_A^zz de la Green, et le dé-embarquement par deux
+   longueurs (T₂T₁⁻¹).
+
+2. **Le second point de branchement n'est pas ajusté — et le 3ᵉ niveau
+   écrit pour cela est FAUX.** C'est le seul endroit de cette page où la
+   mesure a démenti un « FAIT » de façon nette, et le diagnostic vaut la
+   peine d'être gardé.
+
+   `_chemins_3_niveaux()` et `ajuster_noyau_3_niveaux()` existent et
+   paramètrent bien en `k_z` de l'AIR autour du branchement `k₀` — c'est la
+   bonne base pour ce branchement-là. Ce qui ne va pas est en aval : les
+   images ainsi obtenues sont poussées **dans la même liste** que celles des
+   deux premiers niveaux, et cette liste est resommée par
+   `_somme_ondes(images, k_ref, …)`, qui reconstruit chaque image par
+   l'identité de Sommerfeld **avec le `k` du substrat**. Une image ajustée
+   contre `exp(−j k_z^air d)` et relue avec `k_ref` ne représente rien : elle
+   ajoute du bruit cohérent.
+
+   **Ce que ça coûte, mesuré** : `banc_dcim.py` tombe de **25 essais réussis
+   à 21**, et `banc_moteur.py` porte l'écart d'ε_eff contre `ligne_mom` de
+   **0,49 % à 11,4 %**. L'invariant qui casse est précisément celui qui
+   désignait la cause — « à contraste diélectrique nul, l'écart doit
+   s'annuler » —, ce qui confirme le diagnostic plutôt que de l'infirmer.
+
+   Le 3ᵉ niveau est donc **hors du chemin par défaut**
+   (`trois_niveaux=False`), avec cet avertissement en tête de la fonction. Et
+   `_chemins()` a repris son propre corps : elle avait été récrite pour
+   déléguer à `_chemins_3_niveaux`, si bien que le mode à deux niveaux
+   n'était plus celui qui avait été validé.
+
+   **Ce qu'il faudrait** : que l'ajustement porte SON nombre d'onde — un
+   `ComplexImage` (ou un second groupe dans `Ajustement`) marqué `k₀`, et
+   `_somme_ondes` qui somme chaque groupe avec le sien. C'est une
+   modification de la structure de données et de `mom_engine`, pas un
+   réglage, et elle demande sa propre validation.
+
+3. **Un seul plan source — le profil sait, le moteur ne s'en sert pas.**
+   `profil_spectral_multiple()` et `profils_noyaux_multiples()` rendent bien
+   un profil par couche de signal, plus le jeu croisé, pour une ou deux
+   couches. Ils réutilisent désormais `profil_spectral` au lieu d'en recopier
+   la règle : la copie empilait les diélectriques situés **au-delà** du plan
+   de masse — un plan est une terminaison, ce qu'il y a derrière ne porte
+   aucun champ — et fermait la pile du bas avec la permittivité du haut.
+
+   **Mais `mom_engine` ne les appelle pas.** Il passe toujours par
+   `noyaux_green`, qui ne connaît qu'un plan source. Le multi-couches est
+   donc disponible, pas branché : c'est de la plomberie, et elle n'est pas
+   faite.
+
+4. **L'assemblage est en Python pur, et ça plafonne vers 300 fonctions de base.**
+   169 RWG en 5 s, 269 en 25 s, en N². Le cache de moments par paire de
    triangles (`MomentsTriangles`) a pris le facteur sept qui était exact ; la
    suite serait de tabuler les deux noyaux sur une grille de ρ par fréquence et
    d'interpoler dans un noyau `nopython`. Ce n'est **pas** exact, et ça demande
    sa propre validation d'erreur d'interpolation.
-5. **Le plan de masse est supposé infini et parfait.** Hypothèse ordinaire du
-   2,5D, écrite dans `mesher.py` ; elle cesse d'être bonne quand le plan est
-   étroit devant la hauteur, ou fendu sous la piste.
+
+5. **Le plan de masse est supposé infini et parfait — HYPOTHÈSE FONDAMENTALE.**
+   Cette hypothèse est inhérente au modèle 2,5D (Green spectrale sur plan de masse
+   analytique). La lever demande un solveur 3D complet (FEM ou MoM surfacique
+   sur le plan lui-même). Réserve : les plans étroits devant la hauteur, ou les
+   plans fendus sous la piste, ne sont pas bien modélisés.
+
+**Résumé de l'état du moteur 2,5D**, tel que les trois bancs le mesurent —
+38 essais, tous passés au 2026-08-29 :
+
+| | État | Ce que la mesure dit |
+| --- | --- | --- |
+| Green spectrale, deux noyaux séparés | ✅ | ε_eff à **0,49 %** de `ligne_mom` ; 26 % avec un noyau unique |
+| DCIM à **deux** niveaux, pôle extrait | ✅ | images contre Sommerfeld : 0,04 % (G_A), 0,74 % (G_q) |
+| DCIM à **trois** niveaux (branchement air) | ❌ | écrit, **mesuré faux**, hors du chemin par défaut — point 2 ci-dessus |
+| Port horizontal (coupe complète) | ✅ | \|Y₂₁/Y₁₁\| passe de 1,5·10⁻⁵ à 5,0·10⁻² |
+| Port vertical (via) | ⚠️ | bases posées, excitation approchée par poids en distance |
+| Multi-couches de signal | ⚠️ | les profils existent, `mom_engine` ne les appelle pas |
+| Plan de masse parfait et infini | ⚠️ | hypothèse du modèle, non levable sans solveur 3D |
+| Performance au-delà de 300 RWG | ⚠️ | 269 RWG en 25 s, en N² : numba reste à faire |
 
 **Le cas de non-régression est écrit d'avance** : une ligne microruban 50 Ω de
 20 mm doit rendre |S₂₁| proche de 1 et |S₁₁| bas — `ligne_mom.py` le donne déjà,
@@ -426,7 +847,7 @@ chaîne va du JSON au fichier Touchstone.
 Trois chantiers, chiffrés et indépendants. Les trois premiers ont été
 spécifiés en détail ; le dernier attend le moteur.
 
-#### 1. ~~Le masque de soudure dans le calcul~~ **FAIT (2026-08-28)**
+#### 1. ~~Le masque de soudure dans le calcul~~ **FAIT (2026-08-28, corrigé le 2026-08-29)**
 
 **~~*(le plus gros gain immédiat)*~~**
 
@@ -471,19 +892,41 @@ spécifiés en détail ; le dernier attend le moteur.
 ~~  le vrai est conforme — plus mince sur le sommet du cuivre que dans l'écart.~~
 ~~  Second ordre devant les 2–3 %, mais ça doit être écrit.~~
 
-~~Non-régression : trois réductions exactes (c = 0, εr₂ = εr₁, c → grand) dans~~
-~~[python/test/banc-ligne-mom.py](python/test/banc-ligne-mom.py).~~
-
 **Ce qui est fait :**
 
 - `green_spectral_micro_masque` dans `ligne_mom.py` : Green à trois régions
-  (substrat/masque/air), avec les formules exactes ci-dessus. Réductions exactes
-  vérifiées ;
-- `solve_line` prend maintenant `masque = {epaisseur, epsilon_r}` et route vers la
-  Green appropriée ;
-- `section_de_couche` détecte les couches extérieures et envoie le masque au solveur
-  (défaut 25 µm / εr 3.8 si non déclaré) ;
+  (substrat/masque/air), avec les formules exactes ci-dessus. La **fonction**
+  était juste dès le premier jet — les trois réductions le confirment à la
+  précision machine ;
+- `solve_line` prend `masque = {epaisseur, epsilon_r}` et route vers la Green
+  appropriée ;
+- `section_de_couche` détecte les couches extérieures et envoie le masque au
+  solveur (défaut 25 µm / εr 3,8 si non déclaré) ;
 - le segment de sortie porte `"masque"` avec son épaisseur et εr.
+
+**Ce qui était FAUX, et qu'aucun cas ne mesurait (corrigé le 2026-08-29) :**
+
+- la référence **à vide** gardait le masque à son εr — `g_vide` appelait la
+  Green à trois régions avec `εr_substrat = 1` et `εr_masque = 3,8`. C₀
+  gonflait, et **ε_eff BAISSAIT quand on vernissait la piste**, ce qui est
+  l'inverse de la physique. Z₀ tombait de 7,8 % au lieu des 2 à 3 % que cette
+  page annonçait ;
+- le **milieu moyen** extrait était celui du substrat seul, alors que
+  l'asymptote de la Green vaut ε₀(εr₁+εr₂)/2 — ce que cette page écrivait
+  déjà, deux paragraphes plus haut ;
+- un masque d'épaisseur nulle ne retombait sur aucune branche : `eps_moyen`,
+  `g_diel` et `echelles` restaient indéfinis, et `solve_line` levait
+  `NameError`.
+
+Avec les trois corrections : 25 µm de vernis à εr 3,8 donnent **−2,53 %** sur
+Z₀ et font monter ε_eff de 3,288 à 3,461. Un masque à εr = 1 redonne
+exactement le microruban nu.
+
+**Non-régression, écrite** : cinq cas dans
+[python/test/banc-ligne-mom.py](python/test/banc-ligne-mom.py) — les trois
+réductions exactes (c = 0, εr₂ = εr₁, c → grand), le chiffre attendu **et son
+sens**, et le masque d'air qui ne fait rien. C'est le cas « sens de l'effet »
+qui aurait attrapé le défaut : l'amplitude seule, à 7,8 %, restait plausible.
 
 #### 2. ~~Voir et dire les discontinuités~~ **FAIT (2026-08-28)**
 
@@ -519,7 +962,7 @@ spécifiés en détail ; le dernier attend le moteur.
   au même XY sur couches différentes sont un via, pas une continuité ;
 - le résultat porte `discontinuites = {coudes, transitions}`.
 
-#### 3. ~~Modéliser les discontinuités~~ **FAIT (2026-08-28)**
+#### 3. ~~Modéliser les discontinuités~~ **FAIT (2026-08-28, corrigé le 2026-08-29)**
 
 ~~Insérer dans la cascade ABCD un élément localisé par discontinuité : shunt C~~
 ~~pour le coude (Gupta), π L-C pour le via (`L ≈ (µ₀h/2π)[ln(4h/d)+1]`, C de~~
@@ -536,13 +979,54 @@ ci-dessus a été écrite pour 868 MHz (λ ≈ 197 mm).
 
 **Ce qui est fait :**
 
-- `ligne_mom.py` : `abcd_via()` (π L-C), `abcd_coude()` (shunt C),
-  `inductance_via()`, `capacite_pastille()`, `capacite_coude()` ;
-- `simulation_em.py` : insère les matrices ABCD de discontinuités dans la cascade
-  pour chaque coude et chaque transition de couche détectés ;
-- enrichit `discontinuites` avec les valeurs modélisées (L en nH, C en fF) ;
-- format passent de `cao-sim-em-1` à `cao-sim-em-2` et de
+- `ligne_mom.py` : `elements_coude()` — le modèle **de Gupta**, celui de
+  *Microstrip Lines and Slotlines*, qui rend le couple (L, C) —,
+  `abcd_coude()` qui monte le **T complet**, `abcd_via()` en π exact,
+  `inductance_via()` et `capacite_pastille()` ;
+- `simulation_em.py` insère ces matrices dans la cascade pour chaque coude et
+  chaque transition de couche détectés, et enrichit `discontinuites` avec
+  **les mêmes valeurs** ;
+- les formats passent de `cao-sim-em-1` à `cao-sim-em-2` et de
   `cao-sim-em-resultat-2` à `cao-sim-em-resultat-3`.
+
+**Ce qui était faux, et qu'aucun cas ne mesurait (corrigé le 2026-08-29) :**
+
+- **trois copies des mêmes formules, trois résultats.** Une dans `_coudes`
+  pour l'affichage, une dans `solve_line` pour la cascade, une troisième dans
+  `ligne_mom`. La fiche annonçait **21,28 fF** de capacité de coude là où la
+  cascade en appliquait **0,394** — cinquante-quatre fois moins, dans la même
+  réponse. Il n'en reste qu'une, et elle sert aux deux usages ;
+- **la formule dite « de Gupta » n'en était pas.** Ni hauteur au plan — qui
+  est le paramètre dominant —, ni angle : un coude à dix degrés pesait autant
+  qu'un coude à angle droit, et un raccord parfaitement aligné aussi ;
+- **la cascade appelait en millimètres des fonctions écrites en mètres.**
+  Dans `inductance_via`, le rapport h/d est sans dimension : le logarithme
+  survit à l'erreur, seul le préfacteur μ₀h la trahit — l'inductance sortait
+  **mille fois** trop grande, et la capacité de pastille aussi (elle va comme
+  d²/h). Un ordre de grandeur faux dans une fiche a l'air d'un ordre de
+  grandeur ;
+- la **fréquence** du modèle de coude était posée à 5 GHz en dur, quelle que
+  soit la bande demandée. C'est la fréquence centrale de l'analyse ;
+- `abcd_coude` ne posait qu'un **shunt C**, jetant l'inductance série — celle
+  qui porte l'essentiel de l'excès au-delà de quelques gigahertz.
+
+Sur un coude à 90° d'une piste de 0,38 mm sur 0,2 mm de FR-4, le modèle rend
+maintenant **26,1 pH et 41,6 fF**, soit 0,78° de phase à 868 MHz — et c'est ce
+chiffre-là, celui qui dit s'il faut s'en soucier, que la fiche affiche.
+
+**Non-régression, écrite** : quatre cas dans
+[python/test/banc-ligne-mom.py](python/test/banc-ligne-mom.py) — les formules
+de Gupta reposées à la main, l'annulation à angle nul et la moitié à 45°,
+`det(ABCD) = 1` sur les deux réseaux (ce que vaut tout réseau passif
+réciproque, et rien d'autre ne l'attraperait), et l'ordre de grandeur du via.
+
+**Ce qui reste** : **aucune page n'envoie les vias.** Ni l'éditeur ni la
+visionneuse ne joignent le perçage, la pastille et la portée à l'objet du
+document, alors que les deux les ont. Le modèle tourne donc sur des replis —
+0,3 mm de perçage, 2,5 fois cela en pastille, 0,2 mm par couche traversée —
+réunis dans `_cotes_via()`, qui marque `cotes_supposees` pour que la fiche
+puisse le dire. Un chiffre supposé affiché comme un chiffre mesuré est pire
+que pas de chiffre.
 
 ### La section résolue est désormais lisible
 
@@ -653,10 +1137,12 @@ haut de la bande analysée (`simCouture()`).
   longueur : le calcul continue de rendre la valeur du plan plein. Les découpes
   du cuivre COPLANAIRE, sur la couche de la piste, sont en revanche vues des
   deux côtés depuis que l'écart est mesuré côté par côté ;
-- **le masque de soudure**, absent de l'empilage envoyé. L'ajouter décale tous
-  les indices de couche (`simCuIndex`,
-  [editeur-pcb/js/19-simulation.js](editeur-pcb/js/19-simulation.js)) pour un
-  effet marginal sur un microruban : à faire d'un coup, pas à moitié ;
+- ~~**le masque de soudure**~~ — **traité depuis le 2026-08-28**, et
+  *justement* depuis le 2026-08-29 : la Green à trois régions le compte, une
+  piste extérieure vernie voit son Z₀ baisser de 2 à 3 %. Reste une réserve à
+  connaître : le masque est modélisé en **nappe uniforme**, alors que le vrai
+  est conforme — plus mince sur le sommet du cuivre que dans l'écart. Second
+  ordre devant les 2–3 %, mais ce n'est pas rien sur une ligne serrée ;
 - **les vias**, pour la même raison : la transition verticale manque au modèle,
   et les deux panneaux la comptent sous le résultat plutôt que de la taire ;
 - **la topologie de la liaison.** La mise en cascade ABCD suppose une CHAÎNE,

@@ -328,6 +328,16 @@ except Exception as _exc:                              # noqa: BLE001
     simulation_em = None
     ERREUR_SIM = _exc
 
+# Solveur DC pour l'IR drop (famille PI). Comme simulation_em, il est
+# facultatif : sans scipy, /api/simulation-dc repond 503 en le disant et le
+# reste du serveur ne s'en apercoit pas.
+try:
+    import dc_solver
+    ERREUR_DC = None
+except Exception as _exc:                              # noqa: BLE001
+    dc_solver = None
+    ERREUR_DC = _exc
+
 # Un document de simulation ne porte qu'un net et son empilage : il est petit.
 MAX_SIM = getattr(simulation_em, "MAX_CORPS", 4 * 1024 * 1024)
 
@@ -1253,13 +1263,22 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     # le Touchstone repart dans la reponse, la page l'enregistre si elle veut.
 
     def _simulation_etat(self):
-        """Ce que le serveur sait calculer : la page le demande avant de lancer."""
+        """GET /api/simulation : etat du solveur EM."""
         if simulation_em is None:
             return {"dispo": False,
                     "detail": "Solveur EM indisponible : %s" % ERREUR_SIM,
                     "conseil": "Le solveur a besoin de numpy :"
                                " « pip install numpy »."}
         return simulation_em.etat()
+
+    def _dc_etat(self):
+        """GET /api/simulation-dc : ce que le solveur DC sait calculer."""
+        if dc_solver is None:
+            return {"dispo": False,
+                    "detail": "Solveur DC indisponible : %s" % ERREUR_DC,
+                    "conseil": "Le solveur a besoin de numpy et de scipy :"
+                               " « pip install numpy scipy »."}
+        return dc_solver.etat()
 
     def _simulation_lancer(self):
         """Corps de la requete (document JSON) -> parametres S de la ligne."""
@@ -1294,6 +1313,47 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurIPC(413, "Maillage trop lourd pour la memoire disponible")
         return resultat
 
+    def _dc_lancer(self):
+        """POST /api/simulation-dc : calcul DC (IR drop)."""
+        if dc_solver is None:
+            raise ErreurIPC(503, "Solveur DC indisponible : %s" % ERREUR_DC)
+        try:
+            taille = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise ErreurIPC(400, "Content-Length invalide")
+        if taille <= 0:
+            raise ErreurIPC(400, "Document vide")
+
+        corps = self.rfile.read(taille)
+        try:
+            doc = json.loads(corps.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
+
+        # Le document est en MILLIMETRES : c'est resoudre_document qui
+        # convertit, une fois, et lui seul.
+        try:
+            resultat = dc_solver.resoudre_document(doc)
+        except dc_solver.ErreurDC as exc:
+            # Meme forme de refus que la simulation EM : le motif, une ligne
+            # vide, puis ce qu'il faut changer. Les deux pages affichent
+            # « detail » tel quel.
+            detail = exc.message
+            if exc.conseil:
+                detail += "\n" + exc.conseil
+            raise ErreurIPC(422, detail)
+        except MemoryError:
+            raise ErreurIPC(413, "Maillage trop lourd pour la memoire"
+                                 " disponible")
+
+        # La carte de chaleur, une par couche analysee : peindre deux couches
+        # l'une sur l'autre melangerait deux potentiels sans le dire.
+        resultat["cartes"] = {
+            str(c): dc_solver.carte_chaleur(resultat, couche=c)
+            for c in resultat.get("couches", [])
+        }
+        return resultat
+
     def _ipc_api(self, action):
         """Execute action() et traduit les refus en JSON {"detail": ...}.
 
@@ -1321,7 +1381,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             return
         if route not in ("/api/tools", "/api/tool", "/api/ipc2581",
-                         "/api/simulation"):
+                         "/api/simulation", "/api/simulation-dc"):
             self.send_error(405, "Unsupported method (OPTIONS)")
             return
         self.send_response(204)
@@ -1356,6 +1416,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/simulation":
             self._ipc_api(self._simulation_lancer)
+            return
+        if route == "/api/simulation-dc":
+            self._ipc_api(self._dc_lancer)
             return
         if route != "/api/tool":
             self.send_error(404, "File not found")
@@ -1398,6 +1461,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/simulation":
             self._ipc_api(self._simulation_etat)
             return
+        if route == "/api/simulation-dc":
+            self._ipc_api(self._dc_etat)
+            return
         super().do_GET()
 
     def do_HEAD(self):
@@ -1425,6 +1491,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/simulation":
             self._ipc_api(self._simulation_etat)
+            return
+        if route == "/api/simulation-dc":
+            self._ipc_api(self._dc_etat)
             return
         super().do_HEAD()
 

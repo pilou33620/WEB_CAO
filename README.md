@@ -26,17 +26,29 @@ python/                        les autres modules Python, aucun à lancer seul
 │                              cascade ABCD (numpy, scipy)
 ├── simulation_em.py           pont : cuivre -> sections droites, résultat ->
 │                              JSON, et les garde-fous
-└── test/banc-ligne-mom.py     51 cas, contre étalons extérieurs
-mom_solver/                    moteur 2,5D pleine onde, TEL QU'IL A ÉTÉ LIVRÉ
-                               — non modifié, et hors du chemin de calcul :
-                               son noyau n'est pas valide (voir A-FAIRE.md)
+├── dc_solver.py               CE QUI CALCULE la chute continue (IR drop) :
+│                              réseau résistif surfacique, gradient conjugué
+│                              (numpy, scipy). Rend la CHUTE, la DENSITÉ DE
+│                              COURANT et l'ÉCHAUFFEMENT (IPC-2221), plus le
+│                              détail via par via. Branché dans les DEUX
+│                              outils : bornes désignées au clic, autant
+│                              qu'on veut, carte de chaleur au choix des trois
+├── test/banc-ligne-mom.py     65 cas, contre étalons extérieurs
+└── test/banc-dc.py            34 cas, contre rho L/(W t) et la charte IPC
+mom_solver/                    moteur 2,5D pleine onde. Son NOYAU est valide et
+                               mesuré (38 essais) ; ce qui le tient hors du
+                               chemin de calcul est le MODÈLE DE PORT — un port
+                               de microruban demande un courant vertical, donc
+                               un via. Voir A-FAIRE.md
 ├── pcb_parser.py              document de simulation -> géométrie et empilage
 ├── mesher.py                  maillage triangulaire, fonctions de base RWG
 ├── green_layered.py           fonction de Green du milieu stratifié (DCIM)
 ├── mom_engine.py              matrice d'impédance, vecteur d'excitation
 ├── solver_extract.py          résolution, paramètres S, Touchstone
 ├── main.py                    ligne de commande
-└── tests/test_basic.py        banc d'essai de la chaîne pleine onde
+├── tests/banc_dcim.py         25 essais : Green stratifiée et DCIM par GPOF
+├── tests/banc_moteur.py       7 essais : assemblage, quadrature, deux noyaux
+└── tests/banc_chaine.py       6 essais : la chaîne du JSON au Touchstone
 requirements.txt               aucune dépendance : le fichier le dit et l'explique
 LIB_composants.csv             bibliothèque de références (optionnelle)
 
@@ -73,13 +85,20 @@ Chaque outil a son propre `README.md` détaillant ses modules, et
 Aucune, ni côté navigateur ni côté Python : `serveur.py` et `python/passerelle_mcp.py`
 n'utilisent que la bibliothèque standard (vérifié sur Python 3.10 et 3.12).
 
-Une seule exception, et elle est facultative : le solveur d'impédance
-`python/ligne_mom.py` a besoin de **numpy**, et de numpy seul
-(`pip install numpy`). Rien d'autre n'en dépend — sans lui, les deux éditeurs
-s'ouvrent, le serveur démarre et sert tout le reste, et seule la route
-`/api/simulation` répond « solveur indisponible » en nommant ce qui manque.
-Scipy n'est demandé que par le banc d'essai, pour les intégrales elliptiques de
-son étalon de triplaque. [requirements.txt](requirements.txt) explique pourquoi
+Deux exceptions, et les deux sont facultatives :
+
+- le solveur d'impédance `python/ligne_mom.py` a besoin de **numpy**, et de
+  numpy seul (`pip install numpy`) ;
+- le solveur de chute continue `python/dc_solver.py` a besoin en plus de
+  **scipy** (`pip install scipy`), pour ses matrices creuses et son gradient
+  conjugué.
+
+Rien d'autre n'en dépend — sans eux, les deux éditeurs s'ouvrent, le serveur
+démarre et sert tout le reste, et seules les routes `/api/simulation` et
+`/api/simulation-dc` répondent « solveur indisponible » **en nommant ce qui
+manque et la commande qui l'installe**. Scipy est aussi demandé par le banc de
+`ligne_mom`, pour les intégrales elliptiques de son étalon de triplaque, et par
+tout `mom_solver/`. [requirements.txt](requirements.txt) explique pourquoi
 aucun de ces paquets n'y est écrit.
 `requirements.txt` ne contient donc aucun paquet — il documente la garantie au
 lieu de lister quoi installer, et `pip install -r requirements.txt` n'a rien à
@@ -365,24 +384,36 @@ plus court. Ils divergent là où la formule sort de son domaine : triplaque
 décentrée, piste interne couverte, section inhabituelle. **C'est le désaccord
 qui informe**, et c'est pourquoi les deux existent.
 
-### Pourquoi pas l'onde complète, et pourquoi `mom_solver/` est intact
+### Pourquoi pas l'onde complète, et ce qui tient `mom_solver/` à l'écart
 
 Le paquet `mom_solver/` vise la 2,5D pleine onde : maillage triangulaire,
-fonctions de base RWG, matrice d'impédance, paramètres S. **Il n'a pas été
-modifié** — pas une ligne — et il n'est pas dans le chemin de calcul. Rien de
-la simulation n'en dépend, pas même pour démarrer.
+fonctions de base RWG, matrice d'impédance, paramètres S. Il n'est pas dans le
+chemin de calcul, et rien de la simulation n'en dépend — pas même pour
+démarrer. Mais la raison a changé, et il faut la dire à jour.
 
-Il n'y est pas parce que son noyau ne peut pas rendre d'impédance en l'état :
-dans `mom_engine.py`, la formulation EFIE est amputée de son terme de potentiel
-scalaire — celui qui porte les charges. Sans charges il n'y a pas de capacité,
-et Z₀ = √(L/C) ne peut pas en sortir, quels que soient les ports. Les images
-complexes de `green_layered.py` sont, elles, posées sur des constantes
-arbitraires plutôt qu'ajustées sur l'intégrale de Sommerfeld.
+**Son noyau est désormais juste, et mesuré.** La formulation est la MPIE
+complète, terme de potentiel scalaire compris ; les deux potentiels ont chacun
+leur fonction de Green — c'était le défaut principal, et il pesait 26 % sur
+ε_eff ; les images complexes sont ajustées par un vrai GPOF à deux niveaux sur
+la Green spectrale exacte du milieu stratifié, et non posées sur des
+constantes. 38 essais le mesurent, dont la comparaison d'ε_eff contre
+`ligne_mom` : **0,49 %** — deux méthodes qui ne partagent aucun code tombent
+sur le même chiffre, ce qui est un certificat de validité et non un concours
+de précision.
 
-Le détail, et le cas de non-régression à viser, sont dans
-[A-FAIRE.md](A-FAIRE.md). Le jour où ce noyau sera juste, il apportera ce que le
-modèle de ligne ne peut pas donner — les coudes, les résonances, le
-rayonnement — et les deux se compléteront.
+**Ce qui le tient à l'écart est le MODÈLE DE PORT.** Un port de microruban est
+une tension entre la piste et le plan de masse : il demande un courant
+**vertical**, donc un via. Le port actuel est une coupe complète du
+conducteur, c'est-à-dire une fente **en série** — elle ne couple au mode guidé
+que sur une ligne longue devant la longueur d'onde, et c'est mesuré
+(|S₂₁| = 0,007 à L/λ_g = 0,07, 0,540 à 1,50). Tant que ce port n'existe pas,
+|S₂₁| mesure le couplage de la fente et non la ligne.
+
+Le détail, les mesures et le cas de non-régression à viser sont dans
+[A-FAIRE.md](A-FAIRE.md). Le jour où ce port sera là, le moteur apportera ce
+que le modèle de ligne ne peut pas donner — les coudes réels, les résonances,
+le rayonnement, la diaphonie entre pistes non parallèles — et les deux se
+compléteront.
 
 ## Version un seul fichier
 

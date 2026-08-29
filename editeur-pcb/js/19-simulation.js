@@ -564,6 +564,234 @@ function simZValeurs(c){
 }
 
 /* ==========================================================================
+   LA CHUTE CONTINUE — le cuivre, les vias, et les deux bornes
+   --------------------------------------------------------------------------
+   CE QUE L'UTILISATEUR FAIT, et le vocabulaire est celui du schéma :
+
+     · une SOURCE est une alimentation — un régulateur, une arrivée. On lui
+       règle sa TENSION, en volts. C'est elle qui tient le potentiel.
+     · une CHARGE est un consommateur. On lui règle le COURANT qu'il tire, en
+       ampères. C'est lui qui fait chuter.
+
+   Autant de l'une et de l'autre qu'on veut : un rail nourrit dix composants,
+   et ce que chacun voit dépend de ce que tirent les autres.
+
+   CE QUE ÇA DEVIENT POUR LE SOLVEUR. Une source est une condition de
+   DIRICHLET (potentiel imposé), une charge une condition de NEUMANN (courant
+   imposé) — et le courant d'une charge est NÉGATIF, puisqu'il SORT du cuivre.
+   C'est la seule traduction, elle se fait ici, et elle explique pourquoi le
+   document parle encore de `sources` et de `references` : ce sont les deux
+   listes du solveur, pas les deux mots de l'utilisateur.
+
+   Les courants ne viennent pas du PCB — c'est le schéma qui sait ce qu'un
+   composant tire, et il ne le porte pas encore. C'est donc à la main.
+
+   POURQUOI LES DEUX BORNES SUFFISENT À TOUT DÉTERMINER. Le net des deux
+   pastilles décide du cuivre à envoyer : ses pistes, ses zones, ses pastilles
+   et SES VIAS, sur TOUTES les couches. Le changement de couche n'est donc pas
+   une option qu'on coche — il est là dès qu'un via du net existe, et c'est le
+   solveur qui décide quelle part du courant l'emprunte.
+
+   CE QUI EST ENVOYÉ, ET CE QUI NE L'EST PAS. Est envoyé : tout le cuivre du
+   net. N'est PAS envoyé : le cuivre des autres nets, qui ne conduit pas le
+   courant de celui-ci. Les découpes de zone partent en `trou` — un plan évidé
+   qu'on calculerait plein rendrait une chute trop faible, du côté qui rassure.
+   ========================================================================== */
+
+/* Les bornes vivent ici, et non dans le panneau : c'est la carte qui les
+   porte, et elles doivent survivre à un aller-retour dans un autre onglet.
+
+   UNE LISTE, ET PAS DEUX CASES. Un net d'alimentation nourrit plusieurs
+   composants, et la chute que chacun voit dépend de ce que tirent les autres :
+   c'est même tout l'intérêt du calcul. Deux cases obligeaient à autant de
+   calculs séparés, dont aucun n'aurait été juste. */
+const SIM_DCB={bornes:[], attente:null};
+
+/* Un cercle en polygone. Vingt-quatre côtés : à 0,4 mm de diamètre, l'écart au
+   cercle vrai est de trois micromètres — très en dessous de la trame la plus
+   fine que le solveur accepte. */
+function simDCCercle(x,y,r,n){
+  const pts=[]; n=n||24;
+  for(let i=0;i<n;i++){
+    const a=2*Math.PI*i/n;
+    pts.push([x+r*Math.cos(a), y+r*Math.sin(a)]);
+  }
+  return pts;
+}
+
+/* Une pastille en polygone, dans ses coordonnées monde et sa rotation.
+   L'oblong est rendu par ses deux demi-cercles et le rectangle entre eux —
+   le traiter en rectangle plein lui donnerait des coins qui n'existent pas,
+   et un peu de cuivre en trop justement là où le courant tourne. */
+function simDCPolyPastille(q){
+  const c=Math.cos(q.rot), s=Math.sin(q.rot);
+  const mo=(lx,ly)=>[q.x+lx*c-ly*s, q.y+lx*s+ly*c];
+  if(q.shape==="circ")return simDCCercle(q.x,q.y,Math.max(q.w,q.h)/2);
+  if(q.shape==="oval"){
+    const r=Math.min(q.w,q.h)/2;
+    const dx=Math.max(0,q.w/2-r), dy=Math.max(0,q.h/2-r);
+    const pts=[];
+    for(let i=0;i<=12;i++){                    // le bout « positif »
+      const a=-Math.PI/2+Math.PI*i/12;
+      pts.push(mo(dx+r*Math.cos(a), dy*0+r*Math.sin(a)+dy));
+    }
+    for(let i=0;i<=12;i++){                    // le bout opposé
+      const a=Math.PI/2+Math.PI*i/12;
+      pts.push(mo(-dx+r*Math.cos(a), -dy+r*Math.sin(a)));
+    }
+    return pts;
+  }
+  return [mo(-q.w/2,-q.h/2), mo(q.w/2,-q.h/2),
+          mo(q.w/2,q.h/2), mo(-q.w/2,q.h/2)];
+}
+
+/* Une piste en polygones. UN SEUL QUADRILATÈRE pour une droite ; pour un arc,
+   une suite de quadrilatères le long de l'axe — les faire se chevaucher ne
+   coûte rien, le solveur pose ses carreaux et l'union se fait toute seule,
+   alors qu'un contour décalé d'un arc serré se recouperait lui-même.
+
+   LES BOUTS SONT ALLONGÉS D'UNE DEMI-LARGEUR : le cuivre d'une piste finit en
+   demi-disque, pas au ras de l'axe. Sans cela, deux pistes qui se rejoignent à
+   angle droit laisseraient un carreau vide à leur coin — une coupure franche
+   là où la carte est pleine. */
+function simDCPolysPiste(t){
+  const w=Math.max(t.w||0,1e-4), A=(typeof arcOf==="function")?arcOf(t):null;
+  const n=A?Math.max(2,Math.min(64,Math.ceil(trkLen(t)/Math.max(w,0.05)))):1;
+  const out=[];
+  for(let i=0;i<n;i++){
+    const a=trkAt(t,i/n), b=trkAt(t,(i+1)/n);
+    let dx=b.x-a.x, dy=b.y-a.y;
+    const L=Math.hypot(dx,dy);
+    if(L<1e-9){dx=1;dy=0;}else{dx/=L;dy/=L;}
+    const e=w/2;                                   // l'allonge des deux bouts
+    const ax=a.x-dx*e, ay=a.y-dy*e, bx=b.x+dx*e, by=b.y+dy*e;
+    const nx=-dy*e, ny=dx*e;
+    out.push([[ax+nx,ay+ny],[bx+nx,by+ny],[bx-nx,by-ny],[ax-nx,ay-ny]]);
+  }
+  return out;
+}
+
+/* La hauteur traversée par un via, en millimètres : les diélectriques entre
+   ses deux couches, et le cuivre des couches intermédiaires. C'est cette
+   longueur-là qui fait sa résistance — la prendre pour l'épaisseur de la carte
+   surestimerait un via enterré. */
+function simDCHauteurVia(a,b){
+  const lo=Math.min(a,b), hi=Math.max(a,b);
+  let h=0;
+  for(let i=lo;i<hi;i++)h+=(diAt(i)||{}).t||0;
+  for(let i=lo+1;i<hi;i++)h+=cuT(i);
+  return h>0?h:0.2;
+}
+
+/* Un point est-il dans ce polygone ? Lancer de rayon, sur la liste de couples
+   que le document d'échange transporte — `inPoly` de l'éditeur travaille, lui,
+   sur des {x,y}. */
+function simDCDedans(x,y,pts){
+  let d=false;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    const yi=pts[i][1], yj=pts[j][1];
+    if((yi>y)!==(yj>y)&&
+       x<(pts[j][0]-pts[i][0])*(y-yi)/(yj-yi)+pts[i][0])d=!d;
+  }
+  return d;
+}
+
+/* LES COUCHES QUE LE TUBE TOUCHE VRAIMENT.
+
+   Un perçage métallisé est UN conducteur qui traverse la carte : son tube
+   touche toutes les couches qu'il croise, pas seulement les deux extrêmes. La
+   première version n'en reliait que deux, et le cuivre des couches
+   intermédiaires — l'anneau d'une pastille traversante, par exemple — restait
+   ÉLECTRIQUEMENT FLOTTANT. Le solveur refusait alors le calcul en bloc, pour
+   la bonne raison : « 2016 nœuds n'atteignent aucune référence ». C'est une
+   erreur qui ne se voit qu'en envoyant le document au serveur ; aucune
+   relecture ne l'aurait montrée.
+
+   On ne retient QUE les couches où le net porte effectivement du cuivre sous
+   le trou. Relier une couche vide ne servirait à rien et ferait un via « hors
+   calcul » de plus dans le tableau, pour rien. */
+function simDCCouchesTouchees(x,y,a,b,polygones){
+  const lo=Math.min(a,b), hi=Math.max(a,b), out=[];
+  for(let c=lo;c<=hi;c++)
+    if(polygones.some(g=>!g.trou&&g.couche===c&&simDCDedans(x,y,g.vertices)))
+      out.push(c);
+  return out;
+}
+
+/* Le tube, en autant de liaisons qu'il y a d'intervalles entre les couches
+   qu'il touche. Chacune porte SA hauteur : deux couches voisines sont bien
+   plus proches que les deux faces de la carte. */
+function simDCTube(x,y,a,b,percage,net,repere,polygones,vias){
+  const cs=simDCCouchesTouchees(x,y,a,b,polygones);
+  if(cs.length<2)return 0;
+  let n=0;
+  for(let k=0;k<cs.length-1;k++){
+    vias.push({x:x, y:y, couche_a:cs[k], couche_b:cs[k+1],
+               percage:percage, placage:0.025,
+               hauteur:simDCHauteurVia(cs[k],cs[k+1]),
+               net:net,
+               repere:repere+(cs.length>2?(" "+(cs[k]+1)+"→"+(cs[k+1]+1)):"")});
+    n++;
+  }
+  return n;
+}
+
+/* La borne sous le curseur : une pastille, et rien d'autre. Un via ou un bout
+   de piste ferait un point d'injection valable pour le solveur, mais pas une
+   borne qu'on puisse NOMMER — et une borne sans nom ne se vérifie pas d'un
+   coup d'œil dans le panneau. */
+function simDCBornePastille(x,y){
+  let best=null,bd=1e9;
+  for(const fp of S.fps)
+    for(const q of padsWorld(fp)){
+      const couches=padLayers(fp,q);
+      const d=padDist(x,y,q);
+      if(d<bd){
+        bd=d;
+        const cu=couches.indexOf(S.active)>=0?S.active:couches[0];
+        best={nom:(fp.ref||"?")+"."+(q.n==null?"?":q.n),
+              x:q.x, y:q.y, couche:cu, net:q.net||"",
+              w:q.w, h:q.h, shape:q.shape, rot:q.rot,
+              couches:couches.slice()};
+      }
+    }
+  /* Une pastille à plus d'un millimètre du clic n'est pas celle qu'on visait :
+     rendre la plus proche de toute la carte serait pire que ne rien rendre. */
+  return (best&&bd<=1.0)?best:null;
+}
+
+/* Le clic qui désigne une borne. Appelé par l'outil (05-tools.js) quand le
+   mode « borne DC » est armé.
+
+   UNE PASTILLE DÉJÀ PRISE EST REMPLACÉE, pas doublée : cliquer deux fois la
+   même pastille est une correction de tir, pas une demande d'y injecter deux
+   fois le courant. */
+function simDCClic(x,y){
+  const role=SIM_DCB.attente;
+  SIM_DCB.attente=null;
+  if(typeof setMode==="function")setMode("select");
+  const b=simDCBornePastille(x,y);
+  if(!b){
+    if(typeof hint==="function")
+      hint("Aucune pastille sous le clic : visez le cuivre d'une pastille.");
+  }else if(role){
+    b.role=role;
+    /* Une valeur d'usine UTILISABLE : 3,3 V pour une alimentation, un ampère
+       pour un consommateur. Un champ vide au premier calcul, c'est un refus
+       au premier clic. */
+    b.valeur=(role==="source")?3.3:1;
+    const k=SIM_DCB.bornes.findIndex(o=>o.nom===b.nom);
+    if(k>=0){b.valeur=SIM_DCB.bornes[k].valeur;SIM_DCB.bornes[k]=b;}
+    else SIM_DCB.bornes.push(b);
+    if(typeof hint==="function")
+      hint((role==="source"?"Source (tension imposée)"
+                           :"Charge (courant tiré)")+" : "+b.nom+
+           (b.net?" (net "+b.net+")":" — cette pastille n'a pas de net"));
+  }
+  if(typeof simDCBorneChoisie==="function")simDCBorneChoisie();
+}
+
+/* ==========================================================================
    L'adaptateur
    ========================================================================== */
 const SIM_PCB={
@@ -659,6 +887,189 @@ const SIM_PCB={
       couture:g.couture,
       voisins:g.voisins
     };
+  },
+
+
+  /* ---------------------------------------------------------------------
+     LA CHUTE CONTINUE
+     --------------------------------------------------------------------- */
+
+  /* Les bornes telles que la carte les porte, dans l'ordre où on les a
+     posées. Le panneau les affiche et n'en garde pas de copie : une pastille
+     effacée entre deux calculs doit disparaître du panneau, pas y rester
+     comme un souvenir. */
+  dcBornes:function(){
+    SIM_DCB.bornes=SIM_DCB.bornes.filter(b=>{
+      for(const fp of S.fps)
+        for(const q of padsWorld(fp))
+          if(Math.abs(q.x-b.x)<1e-6&&Math.abs(q.y-b.y)<1e-6)return true;
+      return false;                      // la pastille n'est plus là
+    });
+    return SIM_DCB.bornes;
+  },
+
+  /* Armer la désignation. Le clic suivant sur la carte choisit la pastille. */
+  dcChoisir:function(role){
+    SIM_DCB.attente=(role==="charge")?"charge":"source";
+    if(typeof setMode==="function")setMode("select");
+    if(typeof hint==="function")
+      hint("Cliquez la pastille "+
+           (SIM_DCB.attente==="source"
+              ? "de la SOURCE — l'alimentation, dont on impose la tension"
+              : "de la CHARGE — le consommateur, dont on impose le courant")+".");
+    return true;
+  },
+
+  /* La valeur d'une borne : des ampères pour une source, des volts pour une
+     référence. Le panneau la pose, l'adaptateur la garde avec la pastille. */
+  dcValeur:function(k,v){
+    const b=SIM_DCB.bornes[k];
+    if(b)b.valeur=(+v)||0;
+  },
+
+  dcOublier:function(k){
+    if(k==null)SIM_DCB.bornes=[];
+    else SIM_DCB.bornes.splice(k,1);
+    SIM_DCB.attente=null;
+  },
+
+  /* Le problème résistif complet, tiré des deux bornes.
+
+     LES REFUS SONT EXPLICITES ET DISENT QUOI FAIRE. Un panneau qui répond
+     « erreur » laisse chercher ; ici chaque refus nomme ce qui manque et le
+     geste qui le comble. */
+  cuivreDC:function(){
+    const B=this.dcBornes();
+    const alims=B.filter(b=>b.role==="source");
+    const charges=B.filter(b=>b.role==="charge");
+    if(!alims.length||!charges.length)
+      return {erreur:"Il faut au moins une source et une charge.",
+              conseil:"« + source » désigne l'alimentation, dont on impose la "+
+                      "TENSION ; « + charge » le consommateur, dont on impose "+
+                      "le COURANT."};
+    const sansNet=B.filter(b=>!b.net);
+    if(sansNet.length)
+      return {erreur:"Sans net : "+sansNet.map(b=>b.nom).join(", ")+".",
+              conseil:"La chute se calcule le long d'un net : reliez ces "+
+                      "pastilles, ou retirez-les des bornes."};
+    const nets=[...new Set(B.map(b=>b.net))];
+    if(nets.length>1)
+      return {erreur:"Les bornes ne sont pas toutes sur le même net ("+
+                     nets.join(", ")+").",
+              conseil:"Le courant ne passe pas d'un net à l'autre : "+
+                      "n'en gardez qu'un."};
+
+    const net=nets[0];
+    const polygones=[], vias=[];
+
+    /* LE CUIVRE DU NET, sur toutes ses couches. */
+    for(const t of S.tracks){
+      if(t.net!==net)continue;
+      for(const pts of simDCPolysPiste(t))
+        polygones.push({vertices:pts, couche:t.l, net:net,
+                        epaisseur:cuT(t.l)});
+    }
+    for(const z of S.zones){
+      if(z.net!==net||!z.pts||z.pts.length<3)continue;
+      polygones.push({vertices:z.pts.map(q=>[q.x,q.y]), couche:z.l, net:net,
+                      epaisseur:cuT(z.l)});
+    }
+    for(const fp of S.fps)
+      for(const q of padsWorld(fp)){
+        if(q.net!==net)continue;
+        const pts=simDCPolyPastille(q);
+        for(const cu of padLayers(fp,q))
+          polygones.push({vertices:pts, couche:cu, net:net,
+                          epaisseur:cuT(cu)});
+      }
+    /* LES DÉCOUPES EN DERNIER, et en `trou` : elles retirent du cuivre. Une
+       découpe ne porte pas de net — elle évide ce qu'elle recouvre —, donc on
+       prend celles de la couche, quel que soit le net dessous. */
+    for(const ct of S.cuts){
+      if(!ct.pts||ct.pts.length<3)continue;
+      polygones.push({vertices:ct.pts.map(q=>[q.x,q.y]), couche:ct.l,
+                      net:net, epaisseur:cuT(ct.l), trou:true});
+    }
+
+    if(!polygones.length)
+      return {erreur:"Le net "+net+" ne porte aucun cuivre.",
+              conseil:"Routez-le avant d'en calculer la chute."};
+
+    /* CE QUI FAIT CHANGER DE COUCHE, et c'est DEUX choses, pas une.
+
+       Les VIAS, évidemment. Mais aussi le PERÇAGE MÉTALLISÉ D'UNE PASTILLE
+       TRAVERSANTE : son tube est un conducteur au même titre, et c'est lui
+       qui relie l'anneau de cuivre que la pastille pose sur chaque couche.
+       L'oublier laissait ces anneaux flottants, et le solveur refusait tout
+       le calcul plutôt que de rendre un chiffre sur un cuivre en morceaux. */
+    let n=0;
+    for(const v of S.vias){
+      if(v.net!==net)continue;
+      n++;
+      simDCTube(v.x, v.y, v.a, v.b,
+                v.drill||Math.max((v.d||0.8)-0.1,0.1),
+                net, "V"+n, polygones, vias);
+    }
+    for(const fp of S.fps)
+      for(const q of padsWorld(fp)){
+        if(q.net!==net||!(q.drill>0))continue;
+        const cs=padLayers(fp,q);
+        if(cs.length<2)continue;
+        simDCTube(q.x, q.y, cs[0], cs[cs.length-1], q.drill, net,
+                  (fp.ref||"?")+"."+(q.n==null?"?":q.n), polygones, vias);
+      }
+
+    /* LA BORNE, EN BOÎTE ET NON EN POINT. Une pastille couvre plusieurs
+       carreaux ; l'injecter en un point ferait entrer tout l'ampérage par un
+       seul nœud et créerait une constriction qui n'existe pas sur la carte. */
+    const boite=b=>{
+      const r=Math.max(b.w||0,b.h||0)/2;
+      return [b.x-r, b.y-r, b.x+r, b.y+r];
+    };
+    /* LA TRADUCTION, et c'est le seul endroit qui la fait.
+       `sources` est la liste NEUMANN du solveur — les courants imposés —, donc
+       elle porte les CHARGES, et leur courant est NÉGATIF : il sort du cuivre.
+       `references` est la liste DIRICHLET — les potentiels imposés —, donc
+       elle porte les SOURCES. Les noms du document sont ceux du solveur ; ceux
+       du panneau sont ceux du schéma. */
+    return {
+      polygones:polygones,
+      vias:vias,
+      sources:charges.map(b=>({couche:b.couche, net:net,
+                               courant:-Math.abs((+b.valeur)||0),
+                               boite:boite(b), repere:b.nom})),
+      references:alims.map(b=>({couche:b.couche, net:net,
+                                tension:(+b.valeur)||0, boite:boite(b),
+                                repere:b.nom})),
+      net:net,
+      /* QUELLES COUCHES SONT A L'AIR LIBRE. IPC-2221 leur donne le double du
+         coefficient d'une interne, et un coefficient double rend une
+         température presque CINQ FOIS plus basse (2^(1/0,44) = 4,83). Se
+         tromper là-dessus ne se rattrape pas : l'éditeur connaît son
+         empilage, il le dit. La première et la dernière couche de cuivre,
+         par définition. */
+      couches_externes:[0, S.cu-1],
+      bornes:B.map(b=>b.nom)
+    };
+  },
+
+  /* Le canevas hors écran de la carte de potentiel. C'est l'outil qui le
+     fabrique : le module commun ne connaît pas le DOM sous lequel il tourne,
+     et un banc d'essai peut n'en avoir aucun — l'absence doit alors se
+     traduire par « on ne peint pas », pas par une pile d'appels. */
+  canevasHorsEcran:function(w,h){
+    try{
+      const o=document.createElement("canvas");
+      o.width=w; o.height=h;
+      return (o.getContext&&o.getContext("2d"))?o:null;
+    }catch(_){return null;}
+  },
+
+  /* La carte est déjà construite par le module commun ; il ne reste qu'à
+     redemander un tracé. La méthode existe pour que le panneau sache que cet
+     outil PEINT — un outil qui ne la déclare pas n'aura pas de carte. */
+  peindreDC:function(){
+    if(typeof draw==="function")draw();
   },
 
   redessiner:function(){

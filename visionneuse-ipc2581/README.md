@@ -68,7 +68,7 @@ et ceux du dossier partagé, identiques aux autres outils :
 | `js/06-demarrage.js` | 333 | Ouverture d'un fichier (bouton, dépôt, reprise de session), exports `.json` et `.png`, réglages de l'utilisateur |
 | `js/07-simulation.js` | 804 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes |
 | `../python/simulation_em.py` | 889 | Pont vers `python/ligne_mom.py` : empilage à plat -> section droite, résolution par tronçon, cascade ABCD -> JSON |
-| `test/harness-sim.js` | 560 | Banc d'essai de la mesure de masse coplanaire, sous Node : `node test/harness-sim.js` |
+| `test/harness-sim.js` | 1099 | Banc d'essai de la masse coplanaire et de la chute continue, sous Node : `node test/harness-sim.js` |
 
 ## Démarrage
 
@@ -262,7 +262,10 @@ comme un défaut de la formule IPC-2141A. Vérifié contre étalons extérieurs
 au pire contre Hammerstad-Jensen sur le microruban, **0,30 %** contre la
 solution exacte en intégrales elliptiques sur la triplaque. La géométrie qui
 mesure la masse coplanaire sur le cuivre lu a son propre banc,
-`test/harness-sim.js` (20 cas), qui tourne sous Node sans navigateur.
+`test/harness-sim.js` (47 cas), qui tourne sous Node sans navigateur — il
+couvre aussi l'extraction du cuivre pour la CHUTE CONTINUE : les polygones
+envoyés au solveur, les tubes métallisés qui font changer de couche, et
+l'invariant qui compte, « aucune couche de cuivre sans chemin vertical ».
 
 Ce qu'il ne voit pas : une suite de sections uniformes, rien d'autre — ni les
 coudes, ni les transitions de perçage, ni le rayonnement. Le calcul est

@@ -2689,6 +2689,14 @@ cv.addEventListener("pointerdown",e=>{
   }
   if(e.button!==0)return;
   if(S.mode==="mesure"){rpMesClic(p.x,p.y);draw();return;}
+  /* DÉSIGNER UNE BORNE DE CHUTE CONTINUE. Le panneau de simulation arme
+     l'attente ; le clic suivant choisit la pastille et rend la main au mode
+     « sélection ». Le test passe par `typeof` parce que 19-simulation.js est
+     chargé APRÈS ce fichier — et parce qu'un banc d'essai peut ne pas le
+     charger du tout. */
+  if(typeof SIM_DCB!=="undefined"&&SIM_DCB&&SIM_DCB.attente){
+    simDCClic(p.x,p.y);draw();return;
+  }
   if(S.mode==="track"){
     if(!S.route)startRoute(p.x,p.y);
     else{updateRoute(p.x,p.y);stepRoute();}
@@ -2955,6 +2963,12 @@ cv.addEventListener("pointermove",e=>{
     return;
   }
   if(S.mode==="mesure"){if(rpMesBouge(p.x,p.y))draw();return;}
+  /* LA SONDE DE LA CARTE DE CHALEUR. Elle passe AVANT les modes de tracé :
+     lire une valeur ne doit pas demander de quitter ce qu'on faisait. Elle ne
+     RETOURNE PAS, elle non plus — le mode en cours garde la main derrière.
+     `simDCSurvol` ne rend vrai que si l'on a changé de carreau, sans quoi on
+     redessinerait la carte à chaque pixel parcouru. */
+  if(typeof simDCSurvol==="function"&&simDCSurvol(p.x,p.y,S.active))draw();
   if(S.mode==="zone"&&S.zoneDraft){zoneMove(p.x,p.y,e.shiftKey);draw();return;}
   if(S.mode==="cut"&&S.cutDraft){cutMove(p.x,p.y,e.shiftKey);draw();return;}
   if(S.mode==="edge"&&S.edgeDraft){edgeMove(p.x,p.y,e.shiftKey);draw();return;}

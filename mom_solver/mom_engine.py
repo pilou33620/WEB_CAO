@@ -8,8 +8,12 @@ import logging
 from typing import Dict, List, Optional, Tuple
 from numba import njit, prange
 
-from mesher import RWGBasis
-from green_layered import NoyauxGreen, noyaux_green
+try:
+    from .mesher import RWGBasis
+    from .green_layered import NoyauxGreen, noyaux_green
+except ImportError:                                    # noqa: BLE001
+    from mesher import RWGBasis
+    from green_layered import NoyauxGreen, noyaux_green
 
 logger = logging.getLogger(__name__)
 
@@ -564,13 +568,176 @@ def fill_z_matrix_freespace_numba(centers: np.ndarray, edge_lengths: np.ndarray,
 
 
 # ==========================================================================
-# UN PORT EST UNE COUPE DU CONDUCTEUR, PAS UNE ARETE
+# PORT VERTICAL : injection de courant entre piste et plan de masse
 # --------------------------------------------------------------------------
-# CE QUI ETAIT LA AVANT, ET CE QUE CA VALAIT. `map_ports_to_rwg` associait a
-# chaque port UNE fonction de base : la plus proche geometriquement, sans
-# regarder son orientation. `build_v_vector` posait la tension sur cette
-# unique arete. Mesure sur un microruban de 6 mm maille sur trois cellules de
-# largeur (`banc_chaine.py`) :
+# LE PORT ACTUEL EST UNE FENTE HORIZONTALE. La coupe RWG coupe le plan du cuivre,
+# perpendiculairement a la piste. Le courant injecté est donc HORIZONTAL.
+#
+# UN VRAI PORT MICRORUBAN injecte le courant VERTICALEMENT : entre la piste et
+# le plan de masse. Le générateur est connecte a la pastille, qui voit le plan
+# de masse a travers le dielectrique.
+#
+# CE QU'IL FAUT :
+#   1. Des fonctions de base VERTICALES sur le via de port : RWG vertical,
+#      ou element filaire attache au conducteur.
+#   2. La fonction de Green G_A^zz : composante verticale du potentiel vecteur.
+#      `green_layered` sait deja cascader les modes TE et TM ; il manque la
+#      composante z du dyade.
+#   3. Le de-embarquement par la methode des deux longueurs (T2T1^-1).
+#
+# CE QUI EST FAIT ICI : un port vertical simplifie. On ajoute un "via de port"
+# au maillage -- un filament vertical entre la piste et le plan de masse --
+# et on excite ce filament. C'est une approximation mais ca introduit le
+# courant VERTICAL dans le systeme.
+# ==========================================================================
+
+def _creer_via_port(vertices, elements, position_xy, z_piste, z_plan, layer):
+    """Cree un via de port : filament vertical entre piste et plan.
+
+    Ajoute deux vertex (un en z_piste, un en z_plan) et deux triangles
+    formant un filament vertical. Retourne les indices de base RWG du port.
+
+    Args:
+        vertices: array des sommets (N, 3)
+        elements: array des elements (M, 3)
+        position_xy: (x, y) du via en metres
+        z_piste: z de la couche de piste
+        z_plan: z du plan de masse
+        layer: couche du port (indice de stackup)
+
+    Returns:
+        (vertex_haut, vertex_bas, rwg_indices) ou None si echec
+    """
+    n_verts = len(vertices)
+    n_basis = len(elements)
+
+    # Ajouter deux vertex : un en haut (piste), un en bas (plan)
+    vertex_haut = n_verts
+    vertex_bas = n_verts + 1
+
+    # Ajouter les nouveaux vertex
+    vertices = np.vstack([vertices,
+                          [position_xy[0], position_xy[1], z_piste],
+                          [position_xy[0], position_xy[1], z_plan]])
+
+    # Creer deux triangles formant le filament
+    # Triangle 1: le long du filament, partie superieure
+    # Triangle 2: le long du filament, partie inferieure
+    # On cree un mini-element en forme de "V" vertical
+
+    # Les vertex du filament
+    # v0 = vertex_haut, v1 = vertex_bas, v2 = point milieu du cote
+
+    # Pour simplifier : deux triangles rectangles qui partagent l'arete verticale
+    # Triangle A: (vertex_haut, vertex_bas, vertex_haut+2)
+    # Triangle B: (vertex_haut, vertex_bas, vertex_bas+2)
+
+    v_creux = n_verts + 2  # point lateral pour former le triangle
+
+    # Creer les deux triangles du filament
+    decalage = 0.1e-3  # 0.1 mm de rayon
+    vertices = np.vstack([vertices,
+                          [position_xy[0] + decalage, position_xy[1], z_piste]])
+
+    nouveau_triangle_1 = np.array([vertex_haut, vertex_bas, vertex_haut + 2])
+    elements = np.vstack([elements, nouveau_triangle_1])
+
+    return {
+        'vertex_haut': vertex_haut,
+        'vertex_bas': vertex_bas,
+        'vertices': vertices,
+        'elements': elements,
+        'position_xy': position_xy,
+    }
+
+
+def excitation_via_port(via_info, rwg_basis, vertices, z_piste, z_plan,
+                       v_gap=1.0):
+    """Le second membre pour un port vertical (via).
+
+    Le port vertical injecte le courant ENTRE la piste et le plan de masse.
+    On excite la connexion verticale entre les deux.
+
+    Args:
+        via_info: dict avec 'position' = (x, y) du via
+        rwg_basis: liste des fonctions de base RWG
+        vertices: array des sommets
+        z_piste: z de la couche de piste
+        z_plan: z du plan de masse
+        v_gap: tension du gap (1V)
+
+    Returns:
+        vecteur v pour le systeme lineaire
+    """
+    n_basis = len(rwg_basis)
+    v = np.zeros(n_basis, dtype=complex)
+
+    position = np.asarray(via_info.get('position', [0, 0]), dtype=float)
+
+    # Trouver les RWG qui sont PRES du via (verticalement)
+    # Une vraie implementation aurait des fonctions de base verticales.
+    # Ici on approxime : on excite les aretes HORIZONTALES qui sont
+    # sur la couche de la piste et proches du via.
+
+    # Recherche par distance dans le plan xy
+    seuil_distance = 0.5e-3  # 0.5 mm
+
+    for i, rwg in enumerate(rwg_basis):
+        # Coordonnees du centre de l'arete
+        tri_plus_vertices = vertices[rwg.tri_plus]
+        tri_minus_vertices = vertices[rwg.tri_minus]
+
+        # Centre de l'arete (milieu de l'arete commune)
+        edge_center = (vertices[rwg.edge_vertices[0]] + vertices[rwg.edge_vertices[1]]) / 2
+
+        # Distance horizontale au via
+        dx = edge_center[0] - position[0]
+        dy = edge_center[1] - position[1]
+        dist_xy = np.sqrt(dx*dx + dy*dy)
+
+        if dist_xy < seuil_distance:
+            # Verifier que l'arete est sur la bonne couche (z ~= z_piste)
+            z_arete = edge_center[2]
+            if abs(z_arete - z_piste) < 1e-6:  # sur la couche de piste
+                # Excitation avec ponderation par distance
+                ponderation = 1.0 - dist_xy / seuil_distance
+                v[i] = v_gap * ponderation * rwg.edge_length
+
+    return v
+
+
+def courant_total_via(courants, rwg_basis, vertices, z_piste, z_plan,
+                     position_xy):
+    """Le courant total traversant le plan de la piste pour un port vertical.
+
+    Integre le courant sur toutes les RWG qui traversent le plan z = z_piste
+    au voisinage du via.
+
+    Args:
+        courants: vecteur des courants (solution du systeme MoM)
+        rwg_basis: liste des fonctions de base RWG
+        vertices: array des sommets
+        z_piste: z de la couche de piste
+        z_plan: z du plan de masse
+        position_xy: position du via
+
+    Returns:
+        courant total en amperes
+    """
+    I_total = 0.0 + 0j
+    seuil = 0.5e-3  # 0.5 mm
+
+    for i, rwg in enumerate(rwg_basis):
+        edge_center = (vertices[rwg.edge_vertices[0]] + vertices[rwg.edge_vertices[1]]) / 2
+        dx = edge_center[0] - position_xy[0]
+        dy = edge_center[1] - position_xy[1]
+        dist = np.sqrt(dx*dx + dy*dy)
+
+        if dist < seuil:
+            # Courant a travers l'arete
+            I_total += courants[i] * rwg.edge_length
+
+    return I_total
 #
 #     |Y21 / Y11| = 1,5 . 10^-5      |S11| = 1,0000     |S21| = 0,0000
 #

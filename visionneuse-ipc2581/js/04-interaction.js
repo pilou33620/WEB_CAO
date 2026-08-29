@@ -251,6 +251,11 @@ cv.addEventListener("pointermove",function(e){
   const w=s2w(p.x,p.y);
   document.getElementById("fPos").textContent=
     "X "+mdlNb(w.x)+"  Y "+mdlNb(w.y)+"  "+V.unite;
+  /* LA SONDE DE LA CARTE DE CHALEUR, quand elle est affichée. Elle ne rend
+     vrai que si l'on a changé de carreau : sans cela on redessinerait toute
+     la carte à chaque pixel parcouru. */
+  if(typeof simDCSurvol==="function"&&typeof simDCCoucheVue==="function"&&
+     simDCSurvol(w.x,w.y,simDCCoucheVue()))redessiner();
   const avant=V.survol;
   V.survol=designer(w.x,w.y);
   const t=resume(V.survol);
@@ -269,7 +274,16 @@ function fin(e){
   try{cv.releasePointerCapture(e.pointerId);}catch(_){}
   if(!V.modele||!glisse||glisse.bouge)return;
   /* Un clic, pas un déplacement : on désigne. */
-  const p=pos(e), w=s2w(p.x,p.y), s=designer(w.x,w.y);
+  const p=pos(e), w=s2w(p.x,p.y);
+  /* DÉSIGNER UNE BORNE DE CHUTE CONTINUE. Le panneau de simulation arme
+     l'attente ; ce clic-là choisit la pastille et ne touche ni au net montré
+     ni à la sélection — on désigne un point de mesure, on ne navigue pas.
+     Le test passe par `typeof` : 07-simulation.js est chargé après ce
+     fichier, et un banc d'essai peut ne pas le charger du tout. */
+  if(typeof SIM_DCB!=="undefined"&&SIM_DCB&&SIM_DCB.attente){
+    simDCClic(w.x,w.y);dessiner();return;
+  }
+  const s=designer(w.x,w.y);
   if(!s){choisirRien();return;}
   if(s.type==="composant"){
     choisirComp(s.ref,false);

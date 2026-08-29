@@ -46,7 +46,11 @@ sys.path.insert(0, os.path.join(RACINE, "python"))
 
 from ligne_mom import (EPSILON_0, solve_line, dispersion_getsinger,   # noqa: E402
                        line_losses, abcd_line, cascade_to_s,
-                       green_spectral_micro, green_spectral_micro_couvert)
+                       green_spectral_micro, green_spectral_micro_couvert,
+                       green_spectral_micro_masque, elements_coude,
+                       inductance_via, abcd_via, abcd_coude)
+import ligne_mom as _tl                                              # noqa: E402
+import simulation_em as _se                                          # noqa: E402
 
 H = 0.2e-3
 ok = ko = 0
@@ -218,6 +222,166 @@ def couvert_tend_vers_noye():
 
 T("couverture epaisse : la Green couverte redonne le ruban noye",
   couvert_tend_vers_noye)
+
+
+# -----------------------------------------------------------------------------
+# LE MASQUE DE SOUDURE -- trois reductions EXACTES, et le sens de l'effet
+# -----------------------------------------------------------------------------
+# La Green a trois regions doit SUBSUMER les deux autres. Ces trois cas sont ce
+# qui separe une derivation juste d'une formule qui "donne des chiffres
+# plausibles" : chacun ramene la fonction a un cas dont on connait la reponse
+# fermee, et un seul terme mal place les fait tomber.
+
+def masque_nul_redonne_le_nu():
+    """Masque d'epaisseur nulle -> le microruban nu, a la precision machine."""
+    betas = np.array([1e-3, 1.0, 1e2, 5e3, 1e5])
+    for er in (1.0, 4.3, 10.2):
+        nu = green_spectral_micro(betas, H, er)
+        mq = green_spectral_micro_masque(betas, H, 1e-15, er, 3.8)
+        ecart = float(np.max(np.abs(mq - nu) / np.abs(nu)))
+        assert ecart < 1e-7, "er=%.1f : ecart %.2e" % (er, ecart)
+
+
+T("masque nul : la Green a trois regions redonne le microruban nu",
+  masque_nul_redonne_le_nu)
+
+
+def masque_de_meme_er_redonne_le_couvert():
+    """Masque de meme permittivite que le substrat -> le ruban couvert."""
+    betas = np.array([1e-3, 1.0, 1e2, 5e3, 1e5])
+    er = 4.3
+    for c in (25e-6, 200e-6, 2e-3):
+        cv = green_spectral_micro_couvert(betas, H, c, er)
+        mq = green_spectral_micro_masque(betas, H, c, er, er)
+        ecart = float(np.max(np.abs(mq - cv) / np.abs(cv)))
+        assert ecart < 1e-10, "c=%.0f um : ecart %.2e" % (c * 1e6, ecart)
+
+
+T("masque de meme er que le substrat : c'est le ruban couvert, au bit pres",
+  masque_de_meme_er_redonne_le_couvert)
+
+
+def masque_epais_tend_vers_deux_dielectriques():
+    """Masque epais -> l'asymptote est 1/(eps0 beta (er2 + er1 coth(beta h))).
+
+    C'est CETTE limite qui fixe le milieu moyen a extraire dans `solve_line` :
+    eps0 (er1 + er2)/2, et non le substrat seul. Poser le substrat seul
+    decalait l'extraction de la partie singuliere.
+    """
+    betas = np.array([2e4, 5e4, 1e5])
+    er1, er2 = 4.3, 3.8
+    mq = green_spectral_micro_masque(betas, H, 10e-3, er1, er2)
+    ref = 1.0 / (EPSILON_0 * betas * (er2 + er1 / np.tanh(betas * H)))
+    ecart = float(np.max(np.abs(mq - ref) / np.abs(ref)))
+    assert ecart < 1e-9, "ecart %.2e" % ecart
+
+
+T("masque epais : l'asymptote est celle des deux dielectriques",
+  masque_epais_tend_vers_deux_dielectriques)
+
+
+def le_vernis_baisse_z0_de_deux_a_trois_pour_cent():
+    """LE CHIFFRE ATTENDU, et surtout LE SENS de l'effet.
+
+    Un vernis de 25 um sur une piste exterieure fait baisser Z0 de 2 a 3 % et
+    MONTER eps_eff -- il y a plus de dielectrique autour du ruban. La premiere
+    version prenait la reference "a vide" en LAISSANT le masque a son er : C0
+    gonflait, eps_eff BAISSAIT en vernissant la piste, et Z0 tombait de huit
+    pour cent. C'est le sens de l'effet qui l'a trahie, pas son amplitude.
+    """
+    base = {"kind": "micro", "w": 0.38e-3, "t": 35e-6, "h": H,
+            "epsilon_r": 4.3}
+    nu = solve_line(dict(base))
+    vernie = solve_line(dict(base, masque={"epaisseur": 25e-6,
+                                           "epsilon_r": 3.8}))
+    baisse = 100.0 * (nu["z0"] - vernie["z0"]) / nu["z0"]
+    assert 1.5 < baisse < 3.5, "Z0 baisse de %.2f %%, attendu 2 a 3 %%" % baisse
+    assert vernie["eps_eff"] > nu["eps_eff"], (
+        "eps_eff BAISSE en vernissant : %.4f contre %.4f"
+        % (vernie["eps_eff"], nu["eps_eff"]))
+
+
+T("le vernis baisse Z0 de deux a trois pour cent, et monte eps_eff",
+  le_vernis_baisse_z0_de_deux_a_trois_pour_cent)
+
+
+def un_masque_dair_ne_fait_rien():
+    """Un masque de permittivite 1 est de l'air : Z0 ne doit pas bouger."""
+    base = {"kind": "micro", "w": 0.38e-3, "t": 35e-6, "h": H,
+            "epsilon_r": 4.3}
+    nu = solve_line(dict(base))
+    air = solve_line(dict(base, masque={"epaisseur": 25e-6, "epsilon_r": 1.0}))
+    proche(air["z0"], nu["z0"], 1e-4, "Z0 sous un masque d'air")
+
+
+T("un masque de permittivite 1 ne change rien", un_masque_dair_ne_fait_rien)
+
+
+# -----------------------------------------------------------------------------
+# LES DISCONTINUITES LOCALISEES
+# -----------------------------------------------------------------------------
+def le_coude_suit_gupta():
+    """Le coude a angle droit : les formules publiees, reposees a la main."""
+    w, h, er = 0.38e-3, 0.2e-3, 4.3
+    u = w / h
+    c_ref = ((9.5 * er + 1.25) * u + 5.2 * er + 7.0) * 1e-12 * w
+    l_ref = 100.0 * (4.0 * np.sqrt(u) - 4.21) * 1e-9 * h
+    L, C = elements_coude(w, h, er, 90.0)
+    proche(C, c_ref, 1e-9, "capacite du coude")
+    proche(L, l_ref, 1e-9, "inductance du coude")
+
+
+T("le coude a angle droit suit les formules de Gupta", le_coude_suit_gupta)
+
+
+def le_coude_sannule_a_angle_nul():
+    """Un troncon qui continue tout droit n'est PAS une discontinuite.
+
+    L'ancienne formule n'avait pas d'angle du tout : un raccord aligne pesait
+    autant qu'un coude a angle droit.
+    """
+    L, C = elements_coude(0.38e-3, 0.2e-3, 4.3, 0.0)
+    assert L == 0.0 and C == 0.0, "L=%.3e C=%.3e a angle nul" % (L, C)
+    C45 = elements_coude(0.38e-3, 0.2e-3, 4.3, 45.0)[1]
+    C90 = elements_coude(0.38e-3, 0.2e-3, 4.3, 90.0)[1]
+    proche(C45, C90 / 2.0, 1e-9, "capacite du coude a 45 degres")
+
+
+T("un raccord aligne ne coute rien, un coude a 45 la moitie d'un coude droit",
+  le_coude_sannule_a_angle_nul)
+
+
+def les_discontinuites_sont_reciproques():
+    """det(ABCD) = 1 : c'est ce que vaut tout reseau passif RECIPROQUE.
+
+    Un signe inverse ou un facteur oublie dans le montage du T ou du pi le
+    casse, et rien d'autre ne l'attraperait.
+    """
+    for f in (1e8, 1e9, 1e10):
+        d = abcd_coude(0.38e-3, 0.2e-3, 4.3, f, 90.0)
+        proche(abs(np.linalg.det(d)), 1.0, 1e-9, "det du coude")
+        d = abcd_via(1.6e-3, 0.3e-3, 0.75e-3, 4.3, f)
+        proche(abs(np.linalg.det(d)), 1.0, 1e-9, "det du via")
+
+
+T("les matrices de discontinuite sont reciproques : det = 1",
+  les_discontinuites_sont_reciproques)
+
+
+def linductance_du_via_est_en_metres():
+    """UN VIA DE 1,6 mm PESE ENVIRON UN NANOHENRY, pas un microhenry.
+
+    Le rapport h/d est sans dimension : le logarithme survit a une erreur
+    d'unite, et seul le prefacteur mu0*h la trahit. La cascade appelait ces
+    fonctions EN MILLIMETRES et rendait donc mille fois trop -- un ordre de
+    grandeur faux dans une fiche a l'air d'un ordre de grandeur.
+    """
+    L = inductance_via(1.6e-3, 0.3e-3)
+    assert 0.5e-9 < L < 3e-9, "L = %.3e H pour un via de 1,6 mm" % L
+
+
+T("un via de 1,6 mm vaut environ un nanohenry",
+  linductance_du_via_est_en_metres)
 
 
 def enterre_vaut_le_milieu_homogene():
@@ -487,6 +651,143 @@ def puissance():
 
 
 T("la puissance se conserve sans pertes", puissance)
+
+
+# -----------------------------------------------------------------------------
+# DE L'EMPILAGE A LA SECTION -- simulation_em.section_de_couche
+# -----------------------------------------------------------------------------
+# Le solveur ci-dessus n'est juste que si on lui donne la BONNE SECTION, et
+# c'est `section_de_couche` qui la lui donne. C'est du code qu'aucun banc
+# n'executait : les defauts ci-dessous y ont vecu tels quels, sans rien casser
+# de visible.
+# -----------------------------------------------------------------------------
+
+def _cu(nom, role):
+    return {"name": nom, "type": "copper", "thickness": 0.035, "role": role}
+
+
+def _di(nom, ep, er):
+    return {"name": nom, "type": "dielectric", "thickness": ep,
+            "epsilon_r": er, "tan_delta": 0.02}
+
+
+_FACE = [_cu("Bot", "plane"), _di("Core", 0.2, 4.3), _cu("Top", "signal")]
+
+
+def declarer_le_masque_ne_change_pas_le_resultat():
+    """LE MEME empilage physique doit rendre LE MEME chiffre.
+
+    Une piste exterieure porte du vernis, qu'on l'ait ecrit dans l'empilage ou
+    non : le repli est de 25 um a er 3,8, et c'est exactement ce que vaut le
+    masque declare ici. Les deux doivent donc coincider AU BIT PRES.
+
+    Ils ne coincidaient pas. Le vernis declare etait compte DEUX FOIS : une
+    fois par la Green a trois regions, ce qui est juste, et une fois de plus en
+    moyenne ponderee dans l'epsilon du SUBSTRAT, ce qui ne l'est pas -- comme
+    si la resine se trouvait ENTRE la piste et le plan alors qu'elle est
+    au-dessus. er tombait de 4,3 a 4,2444, Z0 montait de 0,56 % et eps_eff
+    baissait de 1,12 %. Autrement dit : renseigner son empilage rendait le
+    resultat faux, et le taire le rendait juste.
+    """
+    geo_i, _ = _se.section_de_couche(_FACE, 2, 0.38, 0.035)
+    geo_d, _ = _se.section_de_couche(
+        _FACE + [_di("Solder Mask", 0.025, 3.8)], 2, 0.38, 0.035)
+    proche(geo_d["epsilon_r"], 4.3, 1e-12,
+           "l'epsilon du substrat sous un masque declare")
+    r_i, r_d = solve_line(geo_i), solve_line(geo_d)
+    proche(r_d["z0"], r_i["z0"], 1e-9, "Z0, masque declare contre implicite")
+    proche(r_d["eps_eff"], r_i["eps_eff"], 1e-9,
+           "eps_eff, masque declare contre implicite")
+
+
+T("declarer le masque dans l'empilage ne change pas le resultat",
+  declarer_le_masque_ne_change_pas_le_resultat)
+
+
+def un_masque_plus_epais_pese_plus():
+    """Plus de vernis, c'est plus de dielectrique autour du ruban : Z0 baisse
+    et eps_eff monte. On verifie le SENS et la MONOTONIE."""
+    r = []
+    for ep in (0.015, 0.025, 0.050):
+        geo, _ = _se.section_de_couche(
+            _FACE + [_di("Solder Mask", ep, 3.8)], 2, 0.38, 0.035)
+        r.append(solve_line(geo))
+    for a, b in zip(r, r[1:]):
+        assert b["z0"] < a["z0"], (
+            "Z0 ne baisse pas : %.4f puis %.4f" % (a["z0"], b["z0"]))
+        assert b["eps_eff"] > a["eps_eff"], (
+            "eps_eff ne monte pas : %.4f puis %.4f"
+            % (a["eps_eff"], b["eps_eff"]))
+
+
+T("un masque plus epais baisse Z0 et monte eps_eff",
+  un_masque_plus_epais_pese_plus)
+
+
+def une_piste_enterree_ne_recoit_pas_de_vernis():
+    """Sous du prepreg, la piste est ENTERREE, pas vernie.
+
+    Le test d'exterieur posait la question du MAUVAIS COTE : il regardait la
+    couche d'indice - 1, celle du cote du PLAN, pour decider ce qu'il y avait
+    du cote de la FACE, et il y cherchait du cuivre la ou c'est le dielectrique
+    qui tranche. Une piste couverte de 0,1 mm de prepreg recevait donc par
+    dessus un vernis de 25 um, et son prepreg -- le dielectrique qui compte --
+    partait a la poubelle.
+    """
+    geo, _ = _se.section_de_couche(
+        _FACE + [_di("PP2", 0.1, 3.6)], 2, 0.38, 0.035)
+    assert geo.get("masque") is None, (
+        "vernis invente sur une piste enterree : %r" % (geo.get("masque"),))
+    proche(geo["couverture"], 0.1e-3, 1e-9, "la couverture de prepreg")
+    proche(geo["epsilon_r"], (4.3 * 0.2 + 3.6 * 0.1) / 0.3, 1e-12,
+           "l'epsilon melange de la piste enterree")
+
+
+T("une piste enterree sous prepreg ne recoit pas de vernis invente",
+  une_piste_enterree_ne_recoit_pas_de_vernis)
+
+
+def couverture_et_masque_ne_sont_jamais_les_deux():
+    """La meme resine ne doit pas etre nommee deux fois.
+
+    Ou bien la piste est a la face et ce qui la couvre est un MASQUE, ou bien
+    elle est enterree et c'est une COUVERTURE. Jamais les deux a la fois : la
+    section porterait deux fois la meme epaisseur de dielectrique.
+    """
+    for cs in (_FACE,
+               _FACE + [_di("Solder Mask", 0.025, 3.8)],
+               _FACE + [_di("PP2", 0.1, 3.6)]):
+        geo, _ = _se.section_de_couche(cs, 2, 0.38, 0.035)
+        deux = geo.get("masque") is not None and geo.get("couverture", 0.0) > 0
+        assert not deux, ("masque ET couverture sur %s"
+                          % [c["name"] for c in cs])
+
+
+T("couverture et masque ne decrivent jamais la meme resine",
+  couverture_et_masque_ne_sont_jamais_les_deux)
+
+
+def une_seule_definition_par_fonction():
+    """Deux `def` du meme nom, c'est la derniere qui gagne -- en silence.
+
+    `inductance_via` et `capacite_pastille` etaient definies DEUX FOIS dans
+    ligne_mom : la premiere documentait ses arguments en MILLIMETRES, la
+    seconde en METRES, et seule la seconde s'executait. Un lecteur qui tombait
+    sur la premiere l'appelait en mm et se trompait d'un facteur mille sans que
+    rien ne le lui dise.
+    """
+    import io as _io
+    noms = []
+    for ligne in _io.open(_tl.__file__, encoding="utf-8"):
+        if ligne.startswith("def "):
+            noms.append(ligne[4:].split("(")[0].strip())
+    doubles = sorted({n for n in noms if noms.count(n) > 1})
+    assert not doubles, "definies plusieurs fois dans ligne_mom : %s" % doubles
+
+
+T("chaque fonction de ligne_mom n'est definie qu'une fois",
+  une_seule_definition_par_fonction)
+
 
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko else "%d en echec" % ko))

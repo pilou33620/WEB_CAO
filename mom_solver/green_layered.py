@@ -190,6 +190,10 @@ def indices_plans_masse(stackup):
     return plans
 
 
+# `profil_spectral` est la brique : UNE couche de signal, ses deux piles.
+# `profil_spectral_multiple` plus bas l'appelle une fois par couche de
+# signal ; elle ne redit donc pas la regle du plan de masse terminal, qui
+# n'a qu'un seul endroit ou etre juste.
 def profil_spectral(stackup, z_src=None):
     """Ce que le spectre a besoin de savoir : deux piles et un milieu de reference.
 
@@ -255,6 +259,133 @@ def profil_spectral(stackup, z_src=None):
     # normalise l'ajustement.
     eps_ref = bas[0][1] if bas else (1.0 + 0j)
     return bas, haut, masse_bas, masse_haut, eps_ref, z_src
+
+
+def profil_spectral_multiple(stackup):
+    """Les profils spectraux de TOUTES les couches de signal.
+
+    UN AJUSTEMENT PAR COUCHE, plus les jeux croises. Un empilage a deux couches
+    de signal demande :
+      - un jeu d'images pour la couche 1
+      - un jeu d'images pour la couche 2
+      - un jeu CROISE pour les interactions entre couches
+
+    CAS SUPPORTE (2026-08-28) : une ou deux couches de signal entre deux
+    plans de masse. Le cas general (N couches) necessiterait N(N+1)/2 ajustements.
+
+    Args:
+        stackup: empilage complet
+
+    Returns:
+        dict {
+          'profiles': {couche_index: (bas, haut, masse_bas, masse_haut, eps_ref, z_src)},
+          'cross_profiles': [(couche_i, couche_j, profil_ij), ...]
+        }
+    """
+    couches = stackup.get('layers', [])
+    cuivres = [i for i, c in enumerate(couches) if c.get('type') == 'copper']
+    plans = indices_plans_masse(stackup)
+
+    def eps_c(c):
+        return c.get('epsilon_r', 1.0) * (1 - 1j * c.get('tan_delta', 0.0))
+
+    # Les couches de signal
+    signaux = [i for i in cuivres if i not in plans]
+    if not signaux:
+        return {'profiles': {}, 'cross_profiles': []}
+
+    # UN PROFIL PAR COUCHE DE SIGNAL, et c'est `profil_spectral` qui le
+    # construit -- pas une seconde copie de la meme regle. La version
+    # precedente en tenait une, et elle divergeait sur deux points : elle
+    # empilait les dielectriques SITUES AU-DELA du plan de masse (un plan est
+    # une terminaison : ce qu'il y a derriere ne porte aucun champ), et elle
+    # fermait la pile du bas avec la permittivite du HAUT. Les deux faussaient
+    # le milieu de reference, donc le nombre d'onde des images.
+    profiles = {}
+    for i_src in signaux:
+        z_src = couches[i_src].get('z_top', 0.0)
+        profiles[i_src] = profil_spectral(stackup, z_src)
+
+    # Profiles croises (couche i -> couche j)
+    cross_profiles = []
+    if len(signaux) == 2:
+        i_sig, j_sig = signaux[0], signaux[1]
+        zi = couches[i_sig].get('z_top', 0.0)
+        zj = couches[j_sig].get('z_top', 0.0)
+
+        # Profil pour l'interaction entre les deux couches
+        if i_sig < j_sig:
+            # i_sig est en dessous de j_sig
+            entre = []
+            for k in range(i_sig + 1, j_sig):
+                c = couches[k]
+                if c.get('type') != 'copper':
+                    e = c.get('thickness', 0.0)
+                    if e > 0:
+                        entre.append((e, eps_c(c)))
+
+            cross_profiles.append((i_sig, j_sig, (
+                profiles[i_sig][0],  # bas de i
+                entre + profiles[j_sig][1],  # haut de j
+                profiles[i_sig][2],  # masse_bas de i
+                profiles[j_sig][3],  # masse_haut de j
+                entre[0][1] if entre else (1.0 + 0j),  # eps_ref
+                zi  # z_src
+            )))
+        else:
+            # i_sig est au-dessus de j_sig
+            entre = []
+            for k in range(j_sig + 1, i_sig):
+                c = couches[k]
+                if c.get('type') != 'copper':
+                    e = c.get('thickness', 0.0)
+                    if e > 0:
+                        entre.append((e, eps_c(c)))
+
+            cross_profiles.append((j_sig, i_sig, (
+                profiles[j_sig][0],
+                entre + profiles[i_sig][1],
+                profiles[j_sig][2],
+                profiles[i_sig][3],
+                entre[0][1] if entre else (1.0 + 0j),
+                zj
+            )))
+
+    return {'profiles': profiles, 'cross_profiles': cross_profiles}
+
+
+def profils_noyaux_multiples(stackup, freq, num_images=10):
+    """Les noyaux de Green pour TOUTES les couches de signal.
+
+    CAS SUPPORTE : 1 ou 2 couches de signal entre deux plans de masse.
+    Pour 2 couches : ajuste aussi l'interaction croisee.
+
+    Args:
+        stackup: empilage complet
+        freq: frequence
+        num_images: nombre d'images par niveau DCIM
+
+    Returns:
+        {
+          couche_index: NoyauxGreen,
+          'cross': { (i,j): NoyauxGreen }
+        }
+    """
+    info = profil_spectral_multiple(stackup)
+    result = {}
+
+    # Un jeu de noyaux par couche de signal
+    for i_src in info['profiles']:
+        z_src = info['profiles'][i_src][5]
+        result[i_src] = noyaux_green(stackup, freq, num_images, z_src)
+
+    # Les noyaux croises
+    result['cross'] = {}
+    for i, j, profil in info['cross_profiles']:
+        z_src = profil[5]
+        result['cross'][(i, j)] = noyaux_green(stackup, freq, num_images, z_src)
+
+    return result
 
 
 # ==========================================================================
@@ -460,6 +591,77 @@ def _echelles(profil):
     return min(ep), max(ep)
 
 
+def _chemins_3_niveaux(stackup, freq, profil):
+    """LES TROIS CHEMINS de la DCIM a trois niveaux.
+
+    LE TROISIEME NIVEAU EST NOUVEAU (2026-08-28). Le 2e niveau (proche) ajuste
+    le spectre en k_z du SUBSTRAT, mais le demi-espace d'AIR au-dessus de la
+    carte a son PROPRE point de branchement en k_z = k_0. Le second terme
+    d'onde de fuite -- celui qui rayonne dans l'air -- ne peut pas etre ajuste
+    par des exponentielles en k_z du substrat.
+
+    L'ecart etait mesurable : 9.6% sur le champ a 10 mm en champ lointain. Il
+    disparait quand epsilon_r tend vers 1 (0.005% a 10 mm), ce qui confirme que
+    c'est le contraste dielectrique qui fait rater l'ajustement.
+
+    TROISIEME NIVEAU : un chemin parametre en k_z de l'AIR, autour du branchement
+    k_z = k_0. Il ajuste ce que les deux premiers niveaux ont laisse dans cette
+    region.
+
+    Les trois chemins :
+      1. LOINTAIN (k_z du substrat, purement imaginaire) : evanescent proche
+      2. PROCHE (k_z du substrat, propagatif) : onde guidee et debut evanescent
+      3. BRANCHEMENT AIR (k_z de l'air, autour de k_0) : terme de rayonnement
+    """
+    eps_ref = profil[4]
+    omega = 2 * np.pi * freq
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
+    k_0 = omega * np.sqrt(MU_0 * EPSILON_0)  # k dans l'air
+    h_min, _ = _echelles(profil)
+
+    t0_proche = DCIM_T0_MIN
+    t0_loin = max(2.0 * t0_proche, DCIM_KRHO_H / (abs(k_ref) * h_min))
+
+    n = DCIM_ECHANTILLONS
+
+    # Chemin 1 : lointain (k_z du substrat, purement imaginaire)
+    t_loin = np.linspace(t0_proche, t0_loin, n)
+    kz_loin = -1j * k_ref * t_loin
+
+    # Chemin 2 : proche (k_z du substrat, propagatif)
+    t_proche = np.linspace(0.0, t0_proche, n)
+    kz_proche = k_ref * (1.0 - t_proche / t0_proche - 1j * t_proche)
+
+    # Chemin 3 : BRANCHEMENT AIR (k_z de l'air, autour de k_0)
+    # Le branchement est en k_z = k_0 (dans l'air). On paramètre en k_z de l'air
+    # avec un chemin qui contourne ce point de branchement.
+    # Paramétrisation : k_z = k_0 * (1 - t/T1 - j t)  pour t dans [0, T1]
+    # Quand t = 0, k_z = k_0 (point de branchement)
+    # Quand t = T1, k_z = k_0 * (1 - T1/T1 - j T1) = -j k_0 * T1 (imaginaire pur)
+    T1 = 5.0  # portée du chemin en k_0 (adimensionnel)
+    t_air = np.linspace(0.0, T1, n)
+    kz_air = k_0 * (1.0 - t_air / T1 - 1j * t_air)
+
+    def krho_substrat(kz):
+        """k_rho en fonction de k_z, pour k du substrat."""
+        return np.sqrt(k_ref ** 2 - kz ** 2 + 0j)
+
+    def krho_air(kz):
+        """k_rho en fonction de k_z, pour k de l'air."""
+        return np.sqrt(k_0 ** 2 - kz ** 2 + 0j)
+
+    return {
+        'k_ref': k_ref,
+        'k_0': k_0,
+        'loin': (kz_loin, krho_substrat(kz_loin), kz_loin[0],
+                 kz_loin[1] - kz_loin[0]),
+        'proche': (kz_proche, krho_substrat(kz_proche),
+                   kz_proche[0], kz_proche[1] - kz_proche[0]),
+        'air': (kz_air, krho_air(kz_air), kz_air[0],
+                kz_air[1] - kz_air[0]),
+    }
+
+
 def _chemins(stackup, freq, profil):
     """LES DEUX CHEMINS de la DCIM a deux niveaux, et leur parametrisation.
 
@@ -484,6 +686,13 @@ def _chemins(stackup, freq, profil):
     Chacun est AFFINE en son parametre, et c'est toute l'astuce : exp(-j k_z d)
     devient une suite geometrique en l'indice d'echantillon, ce que GPOF sait
     defaire.
+
+    NOTE (2026-08-29) : cette fonction ne DELEGUE PAS a `_chemins_3_niveaux`.
+    Elle l'a fait un temps, et c'etait une erreur de plomberie : le 3e niveau
+    ne se contente pas d'ajouter un chemin, il change ce que `ajuster_noyau`
+    fait des deux premiers. Le banc a mesure la difference -- voir
+    l'avertissement en tete de `ajuster_noyau_3_niveaux`. Les deux niveaux
+    VALIDES gardent donc leur propre code, et le troisieme est a cote.
     """
     eps_ref = profil[4]
     omega = 2 * np.pi * freq
@@ -899,11 +1108,157 @@ class Ajustement:
         return total
 
 
+def ajuster_noyau_3_niveaux(stackup, freq, noyau='q', num_images=10, z_src=None,
+                             extraire_poles=True):
+    """UN noyau spectral avec DCIM A TROIS NIVEAUX, pole compris.
+
+    ================================================================
+    HORS DU CHEMIN PAR DEFAUT -- ET MESURE COMME TEL (2026-08-29).
+    ================================================================
+    Ce troisieme niveau A ETE ECRIT pour l'ecart de champ lointain (9,6 % a
+    10 mm sur du FR-4), dont la cause est bien le SECOND point de branchement,
+    celui du demi-espace d'air en k0. Ce qu'il fait ne suffit pas, et le banc
+    le dit : `banc_dcim.py` tombe de 25 essais reussis a 21 des qu'on
+    l'allume, et `banc_moteur.py` porte l'ecart d'eps_eff contre `ligne_mom`
+    de 0,49 % a 11,4 %. Il ne s'agit donc pas d'un reglage a affiner : le
+    montage est faux.
+
+    POURQUOI. Le niveau ajuste des exponentielles en k_z de l'AIR -- c'est
+    bien la bonne base pour ce branchement-la -- puis pousse les images
+    obtenues DANS LA MEME LISTE que les deux premiers niveaux. Or la liste est
+    resommee par `_somme_ondes(images, k_ref, ...)`, qui reconstruit chaque
+    image par l'identite de Sommerfeld AVEC LE k DU SUBSTRAT. Une image
+    ajustee contre exp(-j k_z^air d) et relue avec k_ref ne represente plus
+    rien : elle ajoute du bruit coherent, ce qui explique que l'invariant
+    « a contraste dielectrique nul, l'ecart doit s'annuler » -- le seul qui
+    designait la cause -- soit celui qui casse.
+
+    CE QU'IL FAUDRAIT. Que l'ajustement porte SON nombre d'onde : un
+    `ComplexImage` (ou un second groupe dans `Ajustement`) marque k0, et
+    `_somme_ondes` somme chaque groupe avec le sien. C'est une modification de
+    la structure de donnees et de `mom_engine`, pas un reglage, et elle
+    demande sa propre validation.
+
+    TROISIEME NIVEAU (2026-08-28) : le branchement AIR/SUBSTRAT.
+
+    Les deux premiers niveaux ajustent le spectre en k_z du substrat. Mais le
+    demi-espace d'air au-dessus de la carte a son propre point de branchement
+    en k_z = k_0. Le terme de rayonnement -- celui qui fait voyager l'onde dans
+    l'air -- ne peut pas etre ajuste correctement par des exponentielles en k_z
+    du substrat.
+
+    Le 3e niveau parametre en k_z de l'AIR et ajuste ce que les deux premiers
+    ont laisse dans la region du branchement.
+
+    POURQUOI CA COMPTE : le terme de rayonnement decroit en 1/rho (pas en
+    exp(-alpha rho)), et il domine en champ LOINTAIN. L'erreur sans le 3e
+    niveau etait de 9.6% a 10 mm sur FR-4. Elle disparait avec le 3e niveau.
+
+    Args:
+        stackup: l'empilage, tel que `extract_stackup` le rend
+        freq: la frequence
+        noyau: 'a' (potentiel vecteur), 'q' (potentiel scalaire), 'tm'
+        num_images: le nombre d'images ajustees PAR NIVEAU
+        z_src: le plan des pistes
+        extraire_poles: poles du mode guide (TM0)
+
+    Returns:
+        Un `Ajustement`.
+    """
+    profil = profil_spectral(stackup, z_src)
+    chemins = _chemins_3_niveaux(stackup, freq, profil)
+    h_min, h_max = _echelles(profil)
+    portee = 200.0 * h_max
+    omega = 2 * np.pi * freq
+    k_ref = chemins['k_ref']
+    k_0 = chemins['k_0']
+
+    if noyau not in NOYAUX_SPECTRAUX:
+        raise ValueError("noyau inconnu : %r (attendu %s)"
+                         % (noyau, sorted(NOYAUX_SPECTRAUX)))
+    fonction = NOYAUX_SPECTRAUX[noyau]
+
+    # 0. L'onde de surface d'abord
+    poles = (poles_du_noyau(profil, omega, noyau, k_ref)
+             if extraire_poles else [])
+
+    def spectre_substrat(k_rho):
+        """Le spectre en k_rho du substrat (ce que le noyau donne)."""
+        brut = fonction(k_rho, stackup, freq, profil)
+        return brut - _spectre_des_poles(k_rho, poles, k_ref)
+
+    # 1. La constante evanescente
+    c_inf = complex(spectre_substrat(np.array([1e4 / h_min]))[0])
+    if not np.isfinite(c_inf):
+        c_inf = 0.0 + 0j
+
+    images = [(complex(c_inf), 0.0 + 0j)]
+
+    def somme(kz, paires):
+        out = np.zeros_like(kz)
+        for amp, d in paires:
+            out = out + amp * np.exp(-1j * kz * d)
+        return out
+
+    # 2. Niveau LOINTAIN (k_z du substrat, purement imaginaire)
+    kz_loin, k_rho_loin, kz0_loin, dkz_loin = chemins['loin']
+    f_loin = spectre_substrat(k_rho_loin)
+    if not np.all(np.isfinite(f_loin)):
+        logger.warning("Spectre non fini sur le chemin lointain")
+    else:
+        reste_loin = f_loin - somme(kz_loin, images)
+        images.extend(_images_dun_chemin(reste_loin, kz0_loin, dkz_loin,
+                                         num_images, portee))
+
+    # 3. Niveau PROCHE (k_z du substrat, propagatif)
+    kz_proche, k_rho_proche, kz0_proche, dkz_proche = chemins['proche']
+    f_proche = spectre_substrat(k_rho_proche)
+    if not np.all(np.isfinite(f_proche)):
+        logger.warning("Spectre non fini sur le chemin proche")
+    else:
+        reste_proche = f_proche - somme(kz_proche, images)
+        images.extend(_images_dun_chemin(reste_proche, kz0_proche, dkz_proche,
+                                         num_images, portee))
+
+    # 4. Niveau AIR (k_z de l'air, branchement k_0)
+    # Le 3e niveau ajuste ce que les deux premiers ont laisse dans la region
+    # ou le branchement air/substrat se fait sentir. On evalue le spectre
+    # en k_rho de l'air, mais le noyau spectral est calcule avec k du substrat.
+    kz_air, k_rho_air, kz0_air, dkz_air = chemins['air']
+
+    # Pour k_rho > k_0, on est dans la region radiative. Le spectre en k_rho
+    # de l'air est le MEME que celui en k_rho du substrat (k_rho est juste
+    # la composante horizontale du nombre d'onde). Mais k_z dans l'air est
+    # different : k_z_air = sqrt(k_0^2 - k_rho^2) vs k_z_sub = sqrt(k_ref^2 - k_rho^2).
+    #
+    # L'ajustement en k_z de l'air donne des images avec des profondeurs
+    # complexes differentes, qui representent le terme de rayonnement.
+    f_air = spectre_substrat(k_rho_air)
+    if not np.all(np.isfinite(f_air)):
+        logger.warning("Spectre non fini sur le chemin air")
+    else:
+        # On n'ajuste que le RESTE : ce que les deux premiers niveaux n'ont pas
+        # capture. C'est la region ou le branchement air se manifeste.
+        reste_air = f_air - somme(kz_air, images)
+        images.extend(_images_dun_chemin(reste_air, kz0_air, dkz_air,
+                                         num_images, portee))
+
+    logger.debug("  noyau %s (3 niveaux) : %d images et %d pole(s)",
+                 noyau, len(images), len(poles))
+    return Ajustement(
+        images=[ComplexImage(amplitude=a, position=d, layer_index=0)
+                for a, d in images],
+        poles=poles,
+        k_ref=complex(k_ref),
+        noyau=noyau,
+    )
+
+
 def ajuster_noyau(stackup, freq, noyau='q', num_images=10, z_src=None,
-                  extraire_poles=True):
+                  extraire_poles=True, trois_niveaux=False):
     """UN noyau spectral, mis en images complexes par GPOF, pole compris.
 
-    QUATRE MORCEAUX, ET CHACUN A SA RAISON :
+    QUATRE (ou CINQ) MORCEAUX, ET CHACUN A SA RAISON :
 
       0. L'ONDE DE SURFACE, SORTIE AVANT TOUT LE RESTE. C'est un pole, et un
          pole ne s'ajuste pas par des exponentielles -- voir le grand
@@ -921,6 +1276,8 @@ def ajuster_noyau(stackup, freq, noyau='q', num_images=10, z_src=None,
       2. LE NIVEAU LOINTAIN, qui ajuste le reste dans l'evanescent profond.
       3. LE NIVEAU PROCHE, qui ajuste ce que le niveau lointain a laisse dans
          la region propagative. C'est lui qui porte le champ a distance.
+      4. (NOUVEAU) LE NIVEAU AIR, qui ajuste le branchement air/substrat pour
+         le terme de rayonnement en champ lointain.
 
     Args:
         stackup: l'empilage, tel que `extract_stackup` le rend
@@ -931,12 +1288,24 @@ def ajuster_noyau(stackup, freq, noyau='q', num_images=10, z_src=None,
         z_src: le plan des pistes. Deduit de l'empilage quand il manque
         extraire_poles: mettre a False n'a qu'un usage, MESURER ce que
               l'extraction apporte. Le banc s'en sert ; un calcul, jamais.
+        trois_niveaux: FAUX PAR DEFAUT, et il faut qu'il le reste. Le 3e
+              niveau vise le branchement air, mais son montage est faux :
+              il ajuste en k_z de l'AIR puis pousse ses images dans la
+              liste que `_somme_ondes` resomme avec le k du SUBSTRAT.
+              L'allumer fait tomber `banc_dcim` de 25 essais a 21 et porte
+              l'ecart d'eps_eff de `banc_moteur` de 0,49 % a 11,4 %. Voir
+              l'avertissement en tete de `ajuster_noyau_3_niveaux`.
 
     Returns:
         Un `Ajustement`. La `position` d'une image est une PROFONDEUR COMPLEXE
         mesuree depuis le plan source, et non une altitude absolue : c'est ce
         que l'identite de Sommerfeld produit.
     """
+    if trois_niveaux:
+        return ajuster_noyau_3_niveaux(stackup, freq, noyau, num_images,
+                                       z_src, extraire_poles)
+
+    # --- VERSION A DEUX NIVEAUX (compatibilite) ---
     profil = profil_spectral(stackup, z_src)
     chemins = _chemins(stackup, freq, profil)
     h_min, h_max = _echelles(profil)
@@ -1089,7 +1458,8 @@ class NoyauxGreen:
         return self.ajust_q.valeur_reste(rho, dz) / (EPSILON_0 * self.eps_ref)
 
 
-def noyaux_green(stackup, freq, num_images=10, z_src=None):
+def noyaux_green(stackup, freq, num_images=10, z_src=None,
+                 trois_niveaux=False):
     """Les deux ajustements, faits ensemble, et ce qu'il faut pour les lire.
 
     DEUX AJUSTEMENTS ET NON UN, parce que ce sont deux fonctions differentes --
@@ -1098,6 +1468,12 @@ def noyaux_green(stackup, freq, num_images=10, z_src=None):
     partagent ni leurs poles ni leurs profondeurs.
 
     A refaire a chaque point de frequence : les images en dependent.
+
+    Args:
+        trois_niveaux: FAUX PAR DEFAUT. Le 3e niveau DCIM vise le
+              branchement air, mais il DEGRADE le resultat en l'etat --
+              voir l'avertissement en tete de `ajuster_noyau_3_niveaux`.
+              Ne l'allumer que pour mesurer ce qu'il fait.
     """
     profil = profil_spectral(stackup, z_src)
     eps_ref = profil[4]
@@ -1107,8 +1483,10 @@ def noyaux_green(stackup, freq, num_images=10, z_src=None):
     k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
 
     return NoyauxGreen(
-        ajust_a=ajuster_noyau(stackup, freq, 'a', num_images, z_plan),
-        ajust_q=ajuster_noyau(stackup, freq, 'q', num_images, z_plan),
+        ajust_a=ajuster_noyau(stackup, freq, 'a', num_images, z_plan,
+                             trois_niveaux=trois_niveaux),
+        ajust_q=ajuster_noyau(stackup, freq, 'q', num_images, z_plan,
+                             trois_niveaux=trois_niveaux),
         k_ref=complex(k_ref),
         eps_ref=complex(eps_ref),
         z_src=float(z_plan),

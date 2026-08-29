@@ -10,10 +10,18 @@ import json
 from pathlib import Path
 
 from pcb_parser import load_json, extract_stackup, extract_polygons, build_geometry_model
-from mesher import generate_2d_mesh, extract_edges, build_rwg_basis
-from green_layered import noyaux_green
-from mom_engine import fill_z_matrix, build_v_vector, localiser_ports
-from solver_extract import solve_currents, compute_s_parameters, export_touchstone
+try:
+    from .mesher import generate_2d_mesh, extract_edges, build_rwg_basis
+    from .green_layered import noyaux_green
+    from .mom_engine import fill_z_matrix, build_v_vector, localiser_ports
+    from .solver_extract import (solve_currents, compute_s_parameters,
+                                 export_touchstone)
+except ImportError:                                    # noqa: BLE001
+    from mesher import generate_2d_mesh, extract_edges, build_rwg_basis
+    from green_layered import noyaux_green
+    from mom_engine import fill_z_matrix, build_v_vector, localiser_ports
+    from solver_extract import (solve_currents, compute_s_parameters,
+                                export_touchstone)
 
 
 def setup_logging(verbose: bool = False):

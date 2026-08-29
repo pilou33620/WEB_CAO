@@ -67,7 +67,11 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simPlagesIpc","simCoutureIpc","simSegments","simCuDe","simRangCu",
   "simTopo","simTopoNom","simCoplanaire","simCouture","simVoisins",
   "simNb","simSection","simProvenanceIpc",
-  "SIM_GAP_MAX","SIM_COULOIR","SIM_GND_RE","SIM_REF_TAUX"];
+  "SIM_GAP_MAX","SIM_COULOIR","SIM_GND_RE","SIM_REF_TAUX",
+  /* chute continue : le cuivre livre, les bornes, les percages */
+  "SIM_DCB","simDCClic","simDCBornePastilleIpc","simDCPolysPisteIpc",
+  "simDCPolysArcIpc","simDCPadPolysIpc","simDCFormeIpc","simDCRangIpc",
+  "simDCHauteurIpc","simDCCoucheVue","simDCCercleIpc"];
 
 /* Un seul `eval`, sur les trois fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -791,6 +795,305 @@ T("le bout de la chaîne nomme la pastille et son composant",()=>{
   if(SIM_IPC.bout([X1,Y],{layer:simRangCu(1)})!=="")
     throw new Error("la pastille est sur Top, pas sur Bottom");
 });
+
+
+/* ==========================================================================
+   LA CHUTE CONTINUE : le cuivre d'une carte LIVREE
+   --------------------------------------------------------------------------
+   Le solveur a ses propres etalons (python/test/banc-dc.py, contre rho L/(W t)).
+   Ce qui se joue ici est l'autre moitie : ce que la visionneuse LUI ENVOIE.
+   Un solveur juste nourri d'un mauvais cuivre rend un mauvais chiffre, et rien
+   dans le panneau ne le dirait.
+   ========================================================================== */
+
+/* Une carte a deux couches, deux pastilles traversantes du meme net, une piste
+   par couche et un percage au milieu : le courant DOIT changer de couche. */
+function dcCarteIpc(opts){
+  opts=opts||{};
+  const r=carte({
+    nets:["VDD","GND"],
+    piste:{c:0, n:0, w:0.5, p:[10,20, 30,20]},
+    formes:{rond:{t:"CIRCLE", d:1.4}},
+    padstacks:{PS:{pad:1.4, pads:[{c:"Top", d:1.4, f:"rond"},
+                                  {c:"Bottom", d:1.4, f:"rond"}]}},
+    pads:[{ps:"PS", x:10, y:20, n:0, pin:1},
+          {ps:"PS", x:50, y:20, n:0, pin:2}],
+    percages:opts.percages||[{x:30, y:20, d:0.4, p:"PLATED", n:0}]
+  });
+  /* La seconde piste, sur la couche du bas. `carte()` n'en pose qu'une. */
+  V.modele.pistes.push({c:1, n:0, w:0.5, p:[30,20, 50,20]});
+  mdlCharger(V.modele);
+  ltPreparer();
+  SIM_IPC.dcOublier();
+  return r;
+}
+function dcBorneIpc(role,x,y){
+  SIM_IPC.dcChoisir(role);
+  simDCClic(x,y);
+}
+
+T("chute DC : sans empilage pret, un refus qui dit ou aller",()=>{
+  dcCarteIpc();
+  const garde=LT.pret;
+  try{
+    LT.pret=false;
+    const r=SIM_IPC.cuivreDC();
+    if(!r.erreur)throw new Error("calcul lance sans empilage");
+    if(!/[Ee]mpilage/.test(r.erreur))throw new Error("refus muet : "+r.erreur);
+    if(!/La carte/.test(r.conseil||""))
+      throw new Error("le refus ne dit pas ou completer : "+r.conseil);
+  }finally{LT.pret=garde;}
+});
+
+T("chute DC : sans les deux bornes, un refus explicite",()=>{
+  dcCarteIpc();
+  const r=SIM_IPC.cuivreDC();
+  if(!r.erreur)throw new Error("aucun refus sans borne");
+  if(!/au moins une source et une charge/.test(r.erreur))
+    throw new Error("refus muet : "+r.erreur);
+});
+
+T("chute DC : le clic prend la pastille et la nomme par son net",()=>{
+  dcCarteIpc();
+  dcBorneIpc("source",10,20);
+  const B=SIM_IPC.dcBornes();
+  if(B.length!==1)throw new Error(B.length+" borne(s) apres un clic");
+  if(B[0].net!=="VDD")throw new Error("net faux : "+B[0].net);
+  if(B[0].role!=="source")throw new Error("role faux : "+B[0].role);
+  if(B[0].couche!==0)throw new Error("couche fausse : "+B[0].couche);
+});
+
+T("chute DC : un clic loin de tout ne pose rien",()=>{
+  dcCarteIpc();
+  dcBorneIpc("source",5,38);
+  if(SIM_IPC.dcBornes().length)
+    throw new Error("une borne posee la ou il n'y a pas de pastille");
+});
+
+T("chute DC : le cuivre part sur les DEUX couches, avec son epaisseur",()=>{
+  dcCarteIpc();
+  dcBorneIpc("source",10,20);
+  dcBorneIpc("charge",50,20);
+  const r=SIM_IPC.cuivreDC();
+  if(r.erreur)throw new Error("refus inattendu : "+r.erreur);
+  const couches=[...new Set(r.polygones.map(g=>g.couche))].sort();
+  if(couches.join()!=="0,1")
+    throw new Error("couches envoyees : "+couches.join()+" au lieu de 0,1");
+  for(const g of r.polygones){
+    if(g.net!=="VDD")throw new Error("cuivre d'un autre net : "+g.net);
+    if(!(g.epaisseur>0))throw new Error("epaisseur nulle sur la couche "+g.couche);
+    if(Math.abs(g.epaisseur-LT.cu[g.couche].ep)>1e-12)
+      throw new Error("epaisseur "+g.epaisseur+" au lieu de "+
+                      LT.cu[g.couche].ep);
+  }
+});
+
+T("chute DC : le percage part comme un tube, entre couches voisines",()=>{
+  dcCarteIpc();
+  dcBorneIpc("source",10,20);
+  dcBorneIpc("charge",50,20);
+  const r=SIM_IPC.cuivreDC();
+  const tubes=r.vias.filter(v=>/^T\d/.test(v.repere));
+  if(!tubes.length)throw new Error("aucun tube : le courant ne peut pas "+
+                                   "changer de couche");
+  for(const v of tubes){
+    if(Math.abs(v.couche_b-v.couche_a)!==1)
+      throw new Error("liaison non contigue : "+v.couche_a+"→"+v.couche_b);
+    if(!(v.hauteur>0))throw new Error("hauteur nulle");
+    if(v.net!=="VDD")throw new Error("le tube a perdu son net");
+  }
+  /* LE FICHIER NE DIT PAS LA PORTEE d'un percage : on le suppose traversant,
+     et il faut que le panneau le DISE plutot que de le taire. */
+  if(!(r.notes||[]).some(t=>/TRAVERSANT/.test(t)))
+    throw new Error("l'hypothese de percage traversant n'est pas dite : "+
+                    (r.notes||[]).join(" | "));
+});
+
+T("chute DC : un percage NON metallise ne conduit rien, et c'est dit",()=>{
+  dcCarteIpc({percages:[{x:30, y:20, d:0.4, p:"NON_PLATED", n:0}]});
+  dcBorneIpc("source",10,20);
+  dcBorneIpc("charge",50,20);
+  const r=SIM_IPC.cuivreDC();
+  /* Les tubes des PASTILLES traversantes restent, eux : ils sont legitimes.
+     Ce qu'on verifie, c'est qu'aucun tube ne s'est pose SUR le trou nu. */
+  const en30=r.vias.filter(v=>Math.abs(v.x-30)<1e-6&&Math.abs(v.y-20)<1e-6);
+  if(en30.length)
+    throw new Error("un trou non metallise a ete monte : "+en30.length);
+  if(!(r.notes||[]).some(t=>/non m/.test(t)))
+    throw new Error("l'ecart n'est pas dit : "+(r.notes||[]).join(" | "));
+});
+
+T("chute DC : un trou NU sous une pastille ne se metallise pas tout seul",()=>{
+  /* La regle « pastille sur deux couches donc tube » ne doit pas passer par
+     dessus ce que le fichier DIT : un trou declare non metallise n'est pas
+     plaque, et les anneaux qu'il traverse ne sont pas joints. */
+  dcCarteIpc({percages:[{x:10, y:20, d:0.6, p:"NON_PLATED", n:0}]});
+  dcBorneIpc("source",10,20);
+  dcBorneIpc("charge",50,20);
+  const r=SIM_IPC.cuivreDC();
+  const en10=r.vias.filter(v=>Math.abs(v.x-10)<1e-6&&Math.abs(v.y-20)<1e-6);
+  if(en10.length)
+    throw new Error("la regle de pastille a metallise un trou declare nu");
+});
+
+T("chute DC : les decoupes d'un plan partent en trou",()=>{
+  const r0=carte({
+    nets:["VDD","GND"],
+    piste:{c:0, n:0, w:0.5, p:[10,20, 50,20]},
+    plans:[{c:0, n:0, g:[{o:rect(5,10,55,30), t:[rect(28,18,32,22)]}]}]
+  });
+  ltPreparer();
+  SIM_IPC.dcOublier();
+  /* Sans pastille, on pose les bornes a la main : ce cas n'eprouve que le
+     plan. */
+  SIM_DCB.bornes=[
+    {role:"source", nom:"A", x:10, y:20, couche:0, net:"VDD", d:1, valeur:3.3},
+    {role:"charge", nom:"B", x:50, y:20, couche:0, net:"VDD", d:1, valeur:1}
+  ];
+  const r=SIM_IPC.cuivreDC.call({dcBornes:()=>SIM_DCB.bornes});
+  if(r.erreur)throw new Error("refus inattendu : "+r.erreur);
+  const trous=r.polygones.filter(g=>g.trou);
+  if(trous.length!==1)throw new Error(trous.length+" trou(s) au lieu d'un");
+  if(!r.polygones[r.polygones.length-1].trou)
+    throw new Error("la decoupe n'est pas en fin de liste : posee avant le "+
+                    "plan, elle n'evide rien");
+});
+
+T("chute DC : aucun cuivre du net n'est laisse sans liaison verticale",()=>{
+  /* L'INVARIANT QUI COMPTE, ET CE QU'IL A COUTE DE NE PAS L'AVOIR.
+
+     Les cas ci-dessus verifient la FORME de ce qui part -- un tube contigu,
+     une hauteur juste, un net conserve. Tous passaient pendant que le
+     document, dans son ensemble, etait INCALCULABLE : les pastilles
+     traversantes posaient du cuivre sur les deux couches et rien ne les
+     joignait, faute d'un percage liste a leur emplacement. Le solveur
+     refusait tout -- « 1240 noeuds n'atteignent aucune reference » -- et il
+     a fallu lui envoyer le document pour le voir.
+
+     Celui-ci le voit sans serveur : toute couche ou le net pose du cuivre
+     doit etre atteignable depuis la couche de la source en suivant les
+     liaisons envoyees. C'est le seul cas de cette section qui juge le
+     document ENTIER plutot qu'un morceau. */
+  dcCarteIpc();
+  dcBorneIpc("source",10,20);
+  dcBorneIpc("charge",50,20);
+  const r=SIM_IPC.cuivreDC();
+  if(r.erreur)throw new Error("refus inattendu : "+r.erreur);
+  const couches=[...new Set(r.polygones.filter(g=>!g.trou).map(g=>g.couche))];
+  const vus=new Set([r.sources[0].couche]);
+  for(let passe=0;passe<couches.length+1;passe++)
+    for(const v of r.vias){
+      if(vus.has(v.couche_a))vus.add(v.couche_b);
+      if(vus.has(v.couche_b))vus.add(v.couche_a);
+    }
+  const orphelines=couches.filter(l=>!vus.has(l));
+  if(orphelines.length)
+    throw new Error("cuivre sans chemin vertical sur la ou les couches "+
+                    orphelines.map(l=>l+1).join(", ")+" : le solveur refusera "+
+                    "tout le calcul");
+});
+
+T("chute DC : une pastille posee sur deux couches emporte son tube",()=>{
+  /* Un padstack qui place du cuivre sur deux conducteurs DECRIT un trou
+     metallise : c'est le tube qui joint ses anneaux. Le fichier ne liste pas
+     toujours le percage a cet endroit -- il faut donc le deduire, et le DIRE. */
+  dcCarteIpc({percages:[]});          // aucun percage liste
+  dcBorneIpc("source",10,20);
+  dcBorneIpc("charge",50,20);
+  const r=SIM_IPC.cuivreDC();
+  if(r.erreur)throw new Error("refus inattendu : "+r.erreur);
+  if(r.vias.length<2)
+    throw new Error("les pastilles traversantes n'ont pas de tube : "+
+                    r.vias.length);
+  if(!(r.notes||[]).some(t=>/SUPPOS/.test(t)))
+    throw new Error("le percage suppose n'est pas annonce : "+
+                    (r.notes||[]).join(" | "));
+});
+
+T("chute DC : un percage sous une pastille ne compte qu'une fois",()=>{
+  /* Un percage tombe presque toujours SOUS une pastille. Le compter deux fois
+     mettrait deux resistances en parallele la ou il n'y a qu'un tube, et la
+     chute ressortirait trop faible -- du cote qui rassure. */
+  dcCarteIpc({percages:[{x:10, y:20, d:0.6, p:"PLATED", n:0},
+                        {x:30, y:20, d:0.4, p:"PLATED", n:0}]});
+  dcBorneIpc("source",10,20);
+  dcBorneIpc("charge",50,20);
+  const r=SIM_IPC.cuivreDC();
+  const en10=r.vias.filter(v=>Math.abs(v.x-10)<1e-6&&Math.abs(v.y-20)<1e-6);
+  if(en10.length!==1)
+    throw new Error(en10.length+" tubes au meme endroit : le percage et la "+
+                    "pastille ont ete comptes chacun de leur cote");
+  /* Et c'est le percage DU FICHIER qui gagne sur le repli. */
+  if(Math.abs(en10[0].percage-0.6)>1e-9)
+    throw new Error("le percage suppose l'emporte sur celui du fichier : "+
+                    en10[0].percage);
+});
+
+T("chute DC : une piste rend un quadrilatere par segment, allonge aux bouts",()=>{
+  const g=simDCPolysPisteIpc({p:[0,0, 10,0], w:1},1);
+  if(g.length!==1)throw new Error(g.length+" morceaux pour un segment");
+  const xs=g[0].map(p=>p[0]), ys=g[0].map(p=>p[1]);
+  if(Math.abs(Math.min.apply(null,xs)+0.5)>1e-9)
+    throw new Error("bout non allonge : x min = "+Math.min.apply(null,xs));
+  if(Math.abs(Math.max.apply(null,ys)-0.5)>1e-9)
+    throw new Error("largeur fausse : y max = "+Math.max.apply(null,ys));
+  const b=simDCPolysPisteIpc({p:[0,0, 10,0, 10,10], w:1},1);
+  if(b.length!==2)throw new Error("une ligne brisee de deux segments rend "+
+                                  b.length+" morceaux");
+});
+
+T("chute DC : le pouce se convertit en millimetres",()=>{
+  /* LE DOCUMENT D'ECHANGE EST EN MILLIMETRES, toujours. Une carte en pouces
+     dont le cuivre partirait tel quel serait 25,4 fois trop petite, et sa
+     resistance 25,4 fois trop faible -- du cote qui rassure. */
+  const g=simDCPolysPisteIpc({p:[0,0, 1,0], w:0.1},simKUnite());
+  const avant=Math.max.apply(null,g[0].map(p=>p[0]));
+  V.unite="in";
+  const h=simDCPolysPisteIpc({p:[0,0, 1,0], w:0.1},simKUnite());
+  const apres=Math.max.apply(null,h[0].map(p=>p[0]));
+  V.unite="mm";
+  if(Math.abs(apres-avant*25.4)>1e-9)
+    throw new Error("le pouce ne vaut pas 25,4 mm ici : "+apres+" contre "+
+                    (avant*25.4));
+});
+
+T("chute DC : une forme de pastille ronde rend un polygone place et tourne",()=>{
+  V.modele={formes:{rond:{t:"CIRCLE", d:2}}, formesuser:{}};
+  const g=simDCPadPolysIpc({forme:"rond", x:5, y:7, rot:0, mir:0, d:2},1);
+  if(g.plein.length!==1)throw new Error("aucun contour");
+  const xs=g.plein[0].map(p=>p[0]), ys=g.plein[0].map(p=>p[1]);
+  const cx=(Math.min.apply(null,xs)+Math.max.apply(null,xs))/2;
+  const cy=(Math.min.apply(null,ys)+Math.max.apply(null,ys))/2;
+  if(Math.abs(cx-5)>1e-9||Math.abs(cy-7)>1e-9)
+    throw new Error("centre en "+cx+" ; "+cy+" au lieu de 5 ; 7");
+  if(Math.abs(Math.max.apply(null,xs)-6)>1e-9)
+    throw new Error("rayon faux : x max = "+Math.max.apply(null,xs));
+});
+
+T("chute DC : un rectangle tourne de 90 degres echange ses cotes",()=>{
+  V.modele={formes:{r:{t:"RECTCENTER", w:4, h:2}}, formesuser:{}};
+  const d=simDCPadPolysIpc({forme:"r", x:0, y:0, rot:0, mir:0},1).plein[0];
+  const t=simDCPadPolysIpc({forme:"r", x:0, y:0, rot:90, mir:0},1).plein[0];
+  const larg=a=>Math.max.apply(null,a.map(p=>p[0]))-
+                Math.min.apply(null,a.map(p=>p[0]));
+  const haut=a=>Math.max.apply(null,a.map(p=>p[1]))-
+                Math.min.apply(null,a.map(p=>p[1]));
+  if(Math.abs(larg(d)-4)>1e-9||Math.abs(haut(d)-2)>1e-9)
+    throw new Error("droit : "+larg(d)+" x "+haut(d));
+  if(Math.abs(larg(t)-2)>1e-9||Math.abs(haut(t)-4)>1e-9)
+    throw new Error("tourne : "+larg(t)+" x "+haut(t));
+});
+
+T("chute DC : la couche peinte est celle de la charge",()=>{
+  SIM_DCB.bornes=[];
+  if(simDCCoucheVue()!==-1)
+    throw new Error("une couche est peinte sans borne");
+  SIM_DCB.bornes=[{role:"source", couche:1},{role:"charge", couche:0}];
+  if(simDCCoucheVue()!==0)
+    throw new Error("couche peinte : "+simDCCoucheVue()+" au lieu de 0");
+  SIM_DCB.bornes=[];
+});
+
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
 process.exit(ko?1:0);

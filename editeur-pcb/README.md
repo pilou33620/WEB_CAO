@@ -2011,13 +2011,17 @@ python3 outils/build-monofichier.py && node test/harness.js
 ```
 
 Le banc s'appuie sur le DOM minimal partagé (`../commun/test/dom-stub.js`),
-exécute `dist/pcb.js` et couvre 349 cas : import de netlist, boîtiers nommés
+exécute `dist/pcb.js` et couvre 461 cas : import de netlist, boîtiers nommés
 et empreintes qu'ils posent, chevelu
 multicouche, vias, îlots de cuivre, classes de net, édition des pistes,
 géométrie du L chanfreiné, posture du coude et règle d'angle (45° / 90° /
 libre), non-croisement du cuivre tiré, réglages d'usine,
 contour libre, origine utilisateur, saisie au clavier, anti-collision, rôles de
-couche, empilage physique et ce qu'il impose au perçage, Gerber, Excellon, archive ZIP, espace de travail (docks,
+couche, chute continue (le cuivre du net envoyé au solveur, les tubes
+métallisés qui font changer de couche, plusieurs sources et références,
+sources en volts et charges en ampères, la tension qui arrive à chaque
+charge, le tableau via par via, la carte de chaleur, ses trois grandeurs et la
+valeur lue au survol), empilage physique et ce qu'il impose au perçage, Gerber, Excellon, archive ZIP, espace de travail (docks,
 flottants, persistance), sélection multiple au Ctrl+clic, prise de la piste
 entière au Maj+clic et de toutes ses couches au doublé, presse-papier
 (copier/coller, contenu invalide, repères refaits), pas de grille, paires

@@ -2,6 +2,38 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 3.1.0
+# Date: 2026-08-29
+# Explication: simuler() LEVAIT A CHAQUE APPEL, et les discontinuites
+#   affichaient d'autres chiffres que ceux qu'elles appliquaient.
+#
+#   1. _ruptures ETAIT DEFINIE DEUX FOIS. La seconde definition -- l'ancienne,
+#      qui ne rend qu'un entier -- ecrasait la nouvelle, qui rend un couple.
+#      L'appelant faisait « ruptures, detail = _ruptures(objets) » sur un
+#      entier : TypeError a chaque simulation. L'ancienne est supprimee.
+#
+#   2. TROIS COPIES DES MODELES DE DISCONTINUITE, et trois resultats. Une dans
+#      _coudes pour l'affichage, une dans solve_line pour la cascade, une
+#      troisieme dans ligne_mom : la fiche annoncait 21,28 fF de capacite de
+#      coude la ou le modele en appliquait 0,394 -- cinquante fois moins. Il
+#      n'en reste aucune ici : ligne_mom.elements_coude, .inductance_via et
+#      .capacite_pastille servent l'affichage ET la cascade.
+#
+#   3. LES APPELS SE FAISAIENT EN MILLIMETRES vers des fonctions qui attendent
+#      des metres : l'inductance du via sortait mille fois trop grande, la
+#      capacite de pastille mille fois aussi.
+#
+#   4. La frequence du modele de coude etait POSEE A 5 GHz en dur, quelle que
+#      soit la bande demandee. C'est la frequence centrale de l'analyse.
+#
+#   5. Les cotes du via sont reunies dans _cotes_via, qui marque
+#      `cotes_supposees` : aucune page n'envoie encore les vias, et le modele
+#      tourne sur des replis qu'il faut afficher comme tels.
+# Fonctions ajoutees : _cotes_via
+# Fonctions retirees : _ruptures (doublon), inductance_via_modelisee,
+#   capacite_pastille_modelisee, capacite_coude_modelisee
+# Fonctions modifiees : _coudes (ne calcule plus que l'angle), simuler
+#
 # Version: 3.0.0
 # Date: 2026-08-28
 # Explication: LOT 2 (MASQUE DE SOUDURE), LOT 3a (VOIR/DIRE DISCONTINUITES),
@@ -466,12 +498,8 @@ def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
     # une couche exterieure -- de l'air, et c'est le microruban nu. Du
     # stratifie pour une couche interne, et alors ce n'est plus le meme calcul.
     couv_mm = _couverture(couches, indice, vers_le_bas=(haut >= 0))
-    # La permittivite du modele couvert est celle du stratifie tout entier, de
-    # la piste au plan ET au-dessus : on la pondere par les deux epaisseurs.
-    er_couv = er
-    if couv_mm > 0:
-        er_haut = _entre_exterieur(couches, indice, haut >= 0)
-        er_couv = (er * h_mm + er_haut * couv_mm) / (h_mm + couv_mm)
+    # Le melange d'epsilon est plus bas : il depend de la presence d'un masque,
+    # qui n'est detecte qu'apres.
 
     # LOT 2 : le masque de soudure.
     # Une couche exterieure est couverte de vernis. Le masque est modélisé
@@ -481,46 +509,37 @@ def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
     masque_info = None
     est_exterieur = False
     if haut >= 0 and bas < 0:
-        # Couche exterieure cote haut (la premiere de signal)
         est_exterieur = True
-        # Verifier qu'il n'y a pas de couche dielectrique entre cette couche
-        # de cuivre et la face superieure de la carte
-        if indice == 0 or couches[indice - 1].get("type") != "copper":
-            masque_epaisseur = 0.0
-            masque_er = 3.8
-            # Chercher le masque dans l'empilage s'il est declare
-            # Les couches au-dessus de cette piste
-            for c in couches[indice + 1:]:
-                if c.get("type") == "dielectric" and "mask" in c.get("name", "").lower():
-                    masque_epaisseur = _nombre(c.get("thickness"), 0.025)
-                    masque_er = _nombre(c.get("epsilon_r"), 3.8)
-                    break
-            if masque_epaisseur <= 0:
-                # Masque par defaut pour couche exterieure
-                masque_epaisseur = 0.025  # 25 µm par defaut
-                masque_er = 3.8
-            masque_info = {
-                "epaisseur": masque_epaisseur * 1e-3,
-                "epsilon_r": masque_er,
-            }
+        masque_info = _masque_exterieur(couches, indice, vers_le_bas=True)
     elif haut < 0 and bas >= 0:
-        # Couche exterieure cote bas (la derniere de signal)
         est_exterieur = True
-        if indice == len(couches) - 1 or couches[indice + 1].get("type") != "copper":
-            masque_epaisseur = 0.0
-            masque_er = 3.8
-            for c in reversed(couches[:indice]):
-                if c.get("type") == "dielectric" and "mask" in c.get("name", "").lower():
-                    masque_epaisseur = _nombre(c.get("thickness"), 0.025)
-                    masque_er = _nombre(c.get("epsilon_r"), 3.8)
-                    break
-            if masque_epaisseur <= 0:
-                masque_epaisseur = 0.025
-                masque_er = 3.8
-            masque_info = {
-                "epaisseur": masque_epaisseur * 1e-3,
-                "epsilon_r": masque_er,
-            }
+        masque_info = _masque_exterieur(couches, indice, vers_le_bas=False)
+
+    # La permittivite du modele couvert : le stratifie de la piste au plan ET
+    # au-dessus, pondere par les deux epaisseurs. C'est le cas de la piste
+    # ENTERREE, celle qui porte du stratifie par-dessus.
+    #
+    # UNE PISTE EXTERIEURE VERNIE N'EST PAS CE CAS. Le vernis qui la couvre est
+    # deja porte par `masque_info`, que `solve_line` rend par la Green a trois
+    # regions -- substrat, masque, air. Le melanger AUSSI dans l'epsilon du
+    # substrat, c'est compter la meme resine DEUX FOIS, et du mauvais cote : la
+    # moyenne fait BAISSER l'epsilon du stratifie, comme si le vernis etait
+    # ENTRE la piste et le plan alors qu'il est au-dessus.
+    #
+    # MESURE. Un empilage qui DECLARE son masque de 25 um voyait er tomber de
+    # 4,3 a 4,2444, Z0 monter de 0,56 % et eps_eff baisser de 1,12 % par rapport
+    # au MEME empilage qui ne le declare pas et recoit le masque par defaut.
+    # Declarer le masque rendait donc le resultat faux, et le taire le rendait
+    # juste : exactement l'inverse de ce qu'on attend d'un empilage renseigne.
+    er_couv = er
+    if couv_mm > 0 and masque_info is None:
+        er_haut = _entre_exterieur(couches, indice, haut >= 0)
+        er_couv = (er * h_mm + er_haut * couv_mm) / (h_mm + couv_mm)
+
+    # Couverture et masque nomment la MEME resine quand les deux sont la.
+    # `solve_line` ignore deja `couverture` des qu'un masque est pose ; on la
+    # met a zero pour que ni la geometrie ni la fiche ne la comptent en double.
+    couv_mm = 0.0 if masque_info else couv_mm
 
     geo_micro = {"kind": "micro", "w": w, "t": t, "h": h_mm * 1e-3,
                  "couverture": couv_mm * 1e-3, "epsilon_r": er_couv,
@@ -542,6 +561,49 @@ def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
         }
 
     return geo_micro, info_micro
+
+
+def _masque_exterieur(couches, indice, vers_le_bas):
+    """Le vernis qui couvre une piste exterieure, ou None s'il n'y en a pas.
+
+    On marche vers la FACE de la carte en partant de la piste, et ce qu'on
+    rencontre decide :
+
+      - un conducteur          -> la piste n'est pas a la face : pas de vernis,
+                                  et c'est la couverture qui parlera ;
+      - un dielectrique nomme  -> c'est le masque declare : on prend SON
+        « mask »                  epaisseur et SON epsilon ;
+      - un dielectrique autre  -> du stratifie. La piste est ENTERREE sous du
+                                  prepreg, pas vernie : pas de vernis, et la
+                                  aussi c'est la couverture qui parlera ;
+      - plus rien              -> la piste est nue a la face, et une piste nue
+                                  a la face porte du vernis : 25 um a er 3,8,
+                                  le repli d'usage.
+
+    CE QUI ETAIT ECRIT ICI AVANT posait la question du MAUVAIS COTE : le test
+    regardait `couches[indice - 1]` -- la couche du cote du PLAN -- pour decider
+    ce qu'il y avait du cote de la FACE, et il y cherchait du cuivre la ou c'est
+    du dielectrique qui compte. Consequence mesuree : une piste couverte de
+    0,1 mm de prepreg recevait quand meme un vernis de 25 um par defaut, et son
+    prepreg partait a la poubelle.
+    """
+    pas = 1 if vers_le_bas else -1
+    i = indice + pas
+    while 0 <= i < len(couches):
+        c = couches[i]
+        if c.get("type") == "copper":
+            return None
+        if c.get("type") == "dielectric":
+            e = _nombre(c.get("thickness"))
+            if e <= 0:
+                i += pas
+                continue
+            if "mask" in (c.get("name") or "").lower():
+                return {"epaisseur": e * 1e-3,
+                        "epsilon_r": _nombre(c.get("epsilon_r"), 3.8)}
+            return None            # du stratifie : piste enterree, pas vernie
+        i += pas
+    return {"epaisseur": 0.025 * 1e-3, "epsilon_r": 3.8}
 
 
 def _entre_exterieur(couches, indice, vers_le_bas):
@@ -645,15 +707,16 @@ AVERTISSEMENTS_MODELE = [
 # ==========================================================================
 
 def _coudes(objets):
-    """Les coudes de la sélection, avec leur angle et l'estimation de capacité.
+    """Les coudes de la sélection : leur rang de tronçon et leur ANGLE SEUL.
 
     L'angle à chaque raccord est calculé à partir des vecteurs start→end de
-    deux tronçons consécutifs. La capacité d'excès d'un coude microruban est
-    estimée par la formule de Gupta : C (fF) ≈ 0.3 × W (mm) × √(εr) × |θ| (°)
-    pour θ en degrés, qui s'annule à θ=0.
+    deux tronçons consécutifs. Rien d'autre n'est calculé ici : la capacité
+    d'excès et l'inductance série demandent la hauteur au plan et l'epsilon
+    du tronçon, que seule la section résolue connaît. Elles sont ajoutées
+    plus bas par `tl.elements_coude`, qui est AUSSI ce que la cascade
+    applique — une seule formule pour une seule grandeur.
 
-    Rend une liste de dicts : {troncon, angle_deg, capacite_ff, phase_deg}
-    où phase_deg est ce que la capacité représente en degrés de phase à f₀.
+    Rend une liste de dicts : {troncon, angle_deg}.
     """
     resultats = []
     for i in range(1, len(objets)):
@@ -696,33 +759,43 @@ def _coudes(objets):
         angle_rad = math.acos(cos_theta)
         angle_deg = math.degrees(angle_rad)
 
-        # Capacités de Gupta (formules empiriques pour microruban)
-        # C(fF) ≈ 0.3 × W(mm) × √(εr) × |θ|   (angle en degrés)
-        largeur = _nombre(obj_curr.get("width"), 1.0)
-        # εr moyen du tronçon, retrouvé de l'empilage via le cumulateur
-        # On se base sur le tronçon courant pour l'ordre de grandeur
-        er_estime = 4.3  # valeur par défaut
-        capa_ff = 0.3 * largeur * math.sqrt(er_estime) * angle_deg
-
-        # Phase introduite : φ = ω C Z₀ L, avec Z₀≈50Ω, L=1mm comme référence
-        # Une capacité de 1 fF à 5 GHz : φ = 2π×5e9×1e-15×50 ≈ 0.0016 rad = 0.09°
-        # On rend ce que 1 pF (1000 fF) représente en degrés par mm, puis on scale
-        freq_estimee = 5e9  # Hz, fréquence de travail
-        omega = 2 * math.pi * freq_estimee
-        z0_estime = 50.0
-        phase_par_ff_mm = math.degrees(omega * 1e-15 * z0_estime * 1e-3)  # ° par fF par mm
-        # Mais notre capa est intégrée sur l'angle : on la divise par la longueur
-        # approx du coude (1mm) et on rend la phase par fF
-        phase_deg = capa_ff * phase_par_ff_mm
-
+        # L'ANGLE SEUL EST CALCULE ICI. La capacite d'exces et l'inductance
+        # demandent la HAUTEUR AU PLAN et l'epsilon du troncon, que seule la
+        # section resolue connait : elles sont ajoutees plus bas, par
+        # `tl.elements_coude`, et ce sont EXACTEMENT celles que la cascade
+        # applique. La version precedente en posait une troisieme ici -- une
+        # formule lineaire en l'angle, sans hauteur au plan, donnee pour du
+        # Gupta -- et la fiche affichait 21 fF la ou le modele en appliquait
+        # 0,4 : deux chiffres pour la meme grandeur, cinquante fois l'un de
+        # l'autre.
         resultats.append({
             "troncon": i,
             "angle_deg": round(angle_deg, 1),
-            "capacite_ff": round(capa_ff, 2),
-            "phase_deg": round(phase_deg, 4),
         })
 
     return resultats
+
+
+def _cotes_via(obj, trans):
+    """Les cotes du via d'une transition, EN MILLIMETRES, et d'ou elles viennent.
+
+    LES PAGES N'ENVOIENT PAS ENCORE LES VIAS. Ni l'editeur ni la visionneuse
+    ne joignent le percage, la pastille et la portee du via a l'objet du
+    document ; le modele tourne donc sur des replis -- 0,3 mm de percage,
+    2,5 fois cela en pastille, 0,2 mm par couche traversee. Ces replis sont
+    reunis ICI, en un seul endroit, et la transition emporte
+    `cotes_supposees` pour que la fiche puisse le dire : un chiffre suppose
+    affiche comme un chiffre mesure est pire que pas de chiffre.
+    """
+    via = (obj or {}).get("via") or {}
+    supposees = not via
+    d_percage = _nombre(via.get("drill_diameter"), 0.3)
+    d_pastille = _nombre(via.get("pad_diameter"), d_percage * 2.5)
+    sauts = abs(int(_nombre(trans.get("couche_arrivee"), 0))
+                - int(_nombre(trans.get("couche_depart"), 0))) or 1
+    h_via = _nombre(via.get("height"), 0.2 * sauts)
+    trans["cotes_supposees"] = supposees
+    return h_via, d_percage, d_pastille
 
 
 def _transitions(objets, couches):
@@ -888,23 +961,6 @@ def _extremites(obj):
     return ((_nombre(a[0]), _nombre(a[1])), (_nombre(b[0]), _nombre(b[1])))
 
 
-def _ruptures(objets):
-    """Combien de fois la suite envoyee cesse d'etre un parcours continu."""
-    n = 0
-    precedent = None
-    for obj in objets:
-        e = _extremites(obj)
-        if e is None:
-            return 0                    # sans coordonnees, on ne juge pas
-        if precedent is not None:
-            if not any(math.hypot(p[0] - q[0], p[1] - q[1])
-                       <= TOLERANCE_RACCORD
-                       for p in precedent for q in e):
-                n += 1
-        precedent = e
-    return n
-
-
 # ==========================================================================
 # Le calcul
 # ==========================================================================
@@ -954,33 +1010,12 @@ def simuler(doc, journal=None):
     coudes = _coudes(objets)
     transitions = _transitions(objets, couches)
 
-    # LOT 3b : fonctions helper pour les modèles analytiques de discontinuités
-    def inductance_via_modelisee(h_mm, d_mm):
-        """Inductance de via : L ≈ (μ₀ h / 2π) [ln(4h/d) + 1]"""
-        if h_mm <= 0 or d_mm <= 0:
-            return 0.0
-        h = h_mm * 1e-3
-        d = d_mm * 1e-3
-        from ligne_mom import MU_0
-        return (MU_0 * h / (2.0 * math.pi)) * (math.log(4.0 * h / d) + 1.0)
-
-    def capacite_pastille_modelisee(d_pastille_mm, h_mm, epsilon_r):
-        """Capacité pastille/plan : C ≈ 0.8 × ε × S / h"""
-        if d_pastille_mm <= 0 or h_mm <= 0:
-            return 0.0
-        from ligne_mom import EPSILON_0
-        d = d_pastille_mm * 1e-3
-        h = h_mm * 1e-3
-        S = math.pi * (d / 2.0) ** 2
-        return 0.8 * EPSILON_0 * epsilon_r * S / h
-
-    def capacite_coude_modelisee(w_m, epsilon_r):
-        """Capacité d'excès d'un coude : C ≈ 0.5 × W(mm) × √(εr) fF"""
-        if w_m <= 0:
-            return 0.0
-        w_mm = w_m * 1e3
-        return 0.5 * w_mm * math.sqrt(epsilon_r) * 1e-15
-
+    # LES MODELES DE DISCONTINUITE VIVENT DANS ligne_mom.py, et nulle part
+    # ailleurs. Ce fichier en portait trois copies -- une pour l'affichage, une
+    # pour la cascade, une troisieme dans `_coudes` -- et elles ne donnaient
+    # pas le meme chiffre. Il n'en reste aucune : `tl.elements_coude`,
+    # `tl.inductance_via` et `tl.capacite_pastille` servent les deux usages, et
+    # elles prennent des METRES.
     for obj in objets:
         largeur = _nombre(obj.get("width"))
         indice = int(_nombre(obj.get("layer"), 0))
@@ -1180,27 +1215,22 @@ def simuler(doc, journal=None):
             # 1. Un coude ? Shunt C
             if i in coudes_par_troncon:
                 coude = coudes_par_troncon[i]
-                # La largeur et l'epsilon_r du tronçon suivant (ou courant si dernier)
-                w = seg["largeur"] * 1e-3  # en mètres
-                er = seg.get("er", 4.3)
-                abcd = abcd @ tl.abcd_coude(w, er, float(f))
+                # TOUT EN METRES, et la HAUTEUR AU PLAN avec : c'est le
+                # parametre dominant du modele de Gupta, et il manquait.
+                abcd = abcd @ tl.abcd_coude(seg["largeur"] * 1e-3,
+                                            max(seg.get("h", 0.0), 1e-9) * 1e-3,
+                                            seg.get("er", 4.3), float(f),
+                                            coude["angle_deg"])
 
             # 2. Une transition de couche ? Via π L-C
             if i in transitions_par_troncon:
                 trans = transitions_par_troncon[i]
                 # Via : on prend les infos du via s'il est dans geometry, sinon estimer
                 # Les vias envoyés par la page portent drill_diameter, pad_diameter
-                via_info = obj.get("via", {})
-                d_percage = _nombre(via_info.get("drill_diameter"), 0.3)  # mm
-                d_pastille = _nombre(via_info.get("pad_diameter"),
-                                     d_percage * 2.5)  # mm
-                # Hauteur au plan : distance entre les deux couches
-                h_via = _nombre(via_info.get("height"),
-                                abs(trans["couche_arrivee"] - trans["couche_depart"])
-                                * 0.1)  # estimation 0.1mm/couche
-                er = seg.get("er", 4.3)
-                abcd = abcd @ tl.abcd_via(h_via, d_percage, d_pastille, er,
-                                          float(f))
+                h_via, d_percage, d_pastille = _cotes_via(obj, trans)
+                abcd = abcd @ tl.abcd_via(h_via * 1e-3, d_percage * 1e-3,
+                                          d_pastille * 1e-3,
+                                          seg.get("er", 4.3), float(f))
 
         matrices.append(tl.cascade_to_s(abcd, z_ref))
 
@@ -1229,34 +1259,47 @@ def simuler(doc, journal=None):
               "Z0 moyen : %.2f ohm a %.4f GHz" % (ligne["z0_moyen"], fc / 1e9)]
 
     # LOT 3b : enrichir les discontinuités avec les valeurs modélisées
+    # CE QUI EST AFFICHE EST CE QUI EST APPLIQUE. Les memes fonctions, les
+    # memes entrees, et la phase que l'element vaut A LA FREQUENCE CENTRALE de
+    # l'analyse -- pas a 5 GHz pose en dur, ce qu'ecrivait la version
+    # precedente quelle que soit la bande demandee.
+    omega_c = 2 * math.pi * fc
     for coude in coudes:
         i = coude["troncon"]
-        if i < len(objets):
-            seg = segments[i]
-            w = seg.get("largeur", 1.0) * 1e-3  # en mètres
-            er = seg.get("er", 4.3)
-            freq = fc
-            coude["modelise"] = {
-                "type": "shunt_C",
-                "capacite_fF": round(capacite_coude_modelisee(w, er) * 1e15, 3),
-            }
+        if i >= len(segments):
+            continue
+        seg = segments[i]
+        L, C = tl.elements_coude(seg.get("largeur", 0.0) * 1e-3,
+                                 max(seg.get("h", 0.0), 1e-9) * 1e-3,
+                                 seg.get("er", 4.3), coude["angle_deg"])
+        z0 = seg.get("z0") or 50.0
+        coude["modelise"] = {
+            "type": "T_L_C_Gupta",
+            "inductance_pH": round(L * 1e12, 2),
+            "capacite_fF": round(C * 1e15, 2),
+            # Ce que l'element pese, en degres de phase, a la frequence
+            # centrale : c'est CE chiffre qui dit s'il faut s'en soucier.
+            "phase_deg": round(math.degrees(omega_c * (L / z0 + C * z0)), 4),
+        }
 
     for trans in transitions:
         i = trans["troncon"]
-        if i < len(objets):
-            seg = segments[i]
-            via_info = objets[i].get("via", {})
-            d_percage = _nombre(via_info.get("drill_diameter"), 0.3)  # mm
-            d_pastille = _nombre(via_info.get("pad_diameter"), d_percage * 2.5)
-            h_via = _nombre(via_info.get("height"), 0.2)  # mm
-            er = seg.get("er", 4.3)
-            L = inductance_via_modelisee(h_via, d_percage)
-            C = capacite_pastille_modelisee(d_pastille, h_via, er)
-            trans["modelise"] = {
-                "type": "pi_L_C",
-                "inductance_nH": round(L * 1e9, 3),
-                "capacite_fF": round(C * 1e15, 3),
-            }
+        if i >= len(segments):
+            continue
+        seg = segments[i]
+        h_via, d_percage, d_pastille = _cotes_via(
+            objets[i] if i < len(objets) else {}, trans)
+        L = tl.inductance_via(h_via * 1e-3, d_percage * 1e-3)
+        C = tl.capacite_pastille(d_pastille * 1e-3, h_via * 1e-3,
+                                 seg.get("er", 4.3))
+        z0 = seg.get("z0") or 50.0
+        trans["modelise"] = {
+            "type": "pi_L_C",
+            "inductance_nH": round(L * 1e9, 3),
+            "capacite_fF": round(C * 1e15, 3),
+            "phase_deg": round(math.degrees(omega_c * (L / z0 + C * z0)), 4),
+            "cotes_supposees": trans.get("cotes_supposees", True),
+        }
 
     return {
         "format": FORMAT_RESULTAT,

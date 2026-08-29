@@ -5,10 +5,11 @@
    DEUX FAMILLES, ET UNE SEULE ANALYSE POUR L'INSTANT. Le panneau se range en
    **SI** — intégrité du signal, ce qu'un front devient en parcourant le
    cuivre — et **PI** — intégrité de l'alimentation, ce que le réseau de
-   distribution laisse passer. SI porte aujourd'hui « Impédance », et rien
-   d'autre ; PI ne porte rien encore et le dit. Le découpage est posé
-   maintenant, alors qu'il n'y a qu'une analyse, précisément parce qu'il est
-   moins cher à poser qu'à retailler autour de six.
+   distribution laisse passer. SI porte « Impédance » ; PI porte « Chute DC »,
+   dont le SOLVEUR est fait et mesuré (`python/dc_solver.py`, 16 cas dans
+   `python/test/banc-dc.py`) mais dont AUCUN des deux outils ne sait encore
+   extraire le cuivre ni les courants — l'onglet le dit lui-même, en toutes
+   lettres, plutôt que de laisser croire à une erreur de sélection.
 
    Le registre est `SIM_FAMILLES` / `SIM_ANALYSES`, plus bas : une analyse y
    déclare son nom, ses commandes, son branchement, sa sortie, et si elle peint
@@ -60,6 +61,13 @@
      redessiner()                        redessine le canevas de l'outil
      astuce(txt)                         la ligne de pied de page
 
+   Et pour l'analyse « Chute DC », deux méthodes FACULTATIVES — un outil qui
+   ne les déclare pas voit l'onglet dire pourquoi il ne calcule pas :
+
+     cuivreDC()   -> {polygones, vias, sources, references, pas}
+                     ou {erreur, conseil}    le problème résistif, en mm
+     peindreDC(r)                        peint la carte de potentiel
+
    `doc` est le document d'échange, `objets` la liste des objets de l'outil
    ALIGNÉE sur `doc.geometry.objects` : c'est par cet alignement que le
    résultat du serveur retrouve la piste à peindre. `opts` porte ce que
@@ -77,6 +85,1018 @@
 
 const SIM_PORT=8000;                   // DEFAULT_PORT de serveur.py
 const SIM_ROUTE="/api/simulation";
+const SIM_DC_ROUTE="/api/simulation-dc";
+const SIM_DC_FORMAT="cao-sim-dc-1";   // FORMAT de python/dc_solver.py
+
+/* ===========================================================================
+   L'ANALYSE « CHUTE DC » (IR drop), famille PI
+
+   CE QUE C'EST. Pas de l'électromagnétisme : un problème résistif sur les
+   formes de cuivre, sans fréquence — `python/dc_solver.py`, un réseau de
+   résistances sur une trame carrée et un gradient conjugué. Vérifié contre
+   ρL/(Wt), qui se pose à la main : 16 cas dans `python/test/banc-dc.py`.
+
+   LE VOCABULAIRE, ET IL EST CELUI DU SCHÉMA. Deux sortes de bornes, et elles
+   ne se règlent pas avec la même grandeur :
+
+     · une SOURCE est une alimentation — un régulateur, une arrivée de
+       connecteur. On lui règle sa TENSION, en volts.
+     · une CHARGE est un consommateur. On lui règle le COURANT qu'il tire, en
+       ampères.
+
+   Autant de l'une et de l'autre qu'on veut. Le calcul rend alors CE QUI ARRIVE
+   à chaque charge — « il reste 3,29 V à U5.1 » —, ce qui est la question qu'on
+   se pose vraiment devant une carte.
+
+   D'OÙ VIENNENT LES COURANTS. Pas du PCB, et pas encore du schéma : de
+   l'utilisateur. Attendre que le schéma porte la consommation de chaque
+   composant, c'était n'avoir aucune analyse DC du tout.
+
+   POURQUOI PAS LE MOTEUR MoM, puisqu'il est là. Parce qu'il ne répond pas à
+   cette question : MoM résout la SECTION d'une ligne pour son impédance, à une
+   fréquence donnée. La chute continue n'a pas de fréquence — c'est un problème
+   résistif sur des surfaces, et le résoudre par un réseau de résistances est
+   exact, pas approché : un barreau y redonne ρL/(Wt) à 0,000 %.
+
+   LE CHANGEMENT DE COUCHE N'EST PAS UNE OPTION. Le net des deux pastilles
+   décide du cuivre envoyé : ses pistes, ses zones, ses pastilles et SES VIAS,
+   sur toutes les couches. Dès qu'un via du net existe, le courant peut le
+   prendre, et c'est le solveur qui dit quelle part le prend vraiment. Le
+   panneau rend ensuite CE QUE CHAQUE VIA A PORTÉ — c'est le seul chiffre qui
+   permette de décider d'en doubler un.
+
+   L'ADAPTATEUR :
+
+     dcBornes()        -> {source, reference}, chacune {nom, x, y, couche, net}
+                          ou null. Relues à chaque affichage : une pastille
+                          effacée doit disparaître du panneau.
+     dcChoisir(role)   -> arme la désignation ; le clic suivant sur la carte
+                          choisit la pastille et rappelle simDCBorneChoisie()
+     dcOublier(role)   -> efface une borne, ou les deux si role est absent
+     cuivreDC(opts)    -> {polygones, vias, sources, references, net, bornes}
+                          ou {erreur, conseil} ; `opts` porte {courant, tension}
+
+   avec, EN MILLIMÈTRES comme tout le reste du document d'échange :
+
+     polygones   [{vertices:[[x,y],…], couche, net, epaisseur, trou?}]
+     vias        [{x, y, couche_a, couche_b, percage, placage, hauteur, net,
+                   repere}]
+     sources     [{couche, net, courant, x, y | boite:[x0,y0,x1,y1]}]
+     references  [{couche, net, tension, x, y | boite:[x0,y0,x1,y1]}]
+
+   `trou` retire du cuivre au lieu d'en poser : c'est une découpe de plan.
+   ========================================================================== */
+
+/* La chute par net, telle que le solveur la rend. `SIM.resDC` porte aussi
+   `cartes`, une carte de chaleur par couche, que l'outil peut peindre s'il
+   déclare `peindreDC()`. */
+function simCorpsDC(){
+  return ''+
+  '<div class="pnl-bar">'+
+    '<span class="pnl-lbl">Ajouter</span>'+
+    '<button class="tb mini" id="simDCAddSrc" '+
+            'title="Une SOURCE est une alimentation — un régulateur, une '+
+            'arrivée de connecteur. On lui règle sa TENSION, en volts. '+
+            'Cliquez ici, puis la pastille sur la carte.">'+
+            '+ source (V)</button>'+
+    '<button class="tb mini" id="simDCAddRef" '+
+            'title="Une CHARGE est un consommateur. On lui règle le COURANT '+
+            'qu\'il tire, en ampères. Cliquez ici, puis la pastille sur la '+
+            'carte. Un rail qui nourrit dix composants en porte dix.">'+
+            '+ charge (A)</button>'+
+    '<button class="tb mini" id="simDCRaz" '+
+            'title="Oublier toutes les bornes">Effacer</button>'+
+  '</div>'+
+  '<div id="simDCListe"></div>'+
+  '<div class="pnl-bar">'+
+    '<span class="pnl-lbl">Trame</span>'+
+    simChamp("simDCPas","Le côté du carreau de maillage, en millimètres — la "+
+                        "finesse du calcul. LAISSEZ VIDE : elle est choisie "+
+                        "pour que la forme la plus étroite du cuivre reçoive "+
+                        "au moins quatre carreaux dans sa largeur, ce qui est "+
+                        "ce qu'il faut pour qu'une résistance veuille dire "+
+                        "quelque chose. N'y touchez que pour raffiner un "+
+                        "rétrécissement, ou pour alléger un calcul trop lourd.")+
+    '<span class="pnl-u">mm</span>'+
+    '<button class="tb mini on" id="simDCGo" '+
+            'title="Calculer la chute de tension continue">▶ Calculer</button>'+
+  '</div>'+
+  '<div class="pnl-bar">'+
+    '<span class="pnl-lbl">Carte</span>'+
+    simCarteDCListe()+
+  '</div>';
+}
+
+/* CE QUE LA CARTE MONTRE, en liste. Les trois grandeurs arrivent ensemble du
+   serveur : en changer ne relance rien, cela ne coûte qu'une image. */
+function simCarteDCListe(){
+  let h='<select class="simU simUSel" id="simDCQuoi" title="La grandeur '+
+        'peinte sur le cuivre analysé.">';
+  for(const g of SIM_DC_GRANDEURS)
+    h+='<option value="'+g.cle+'">'+simEsc(g.nom)+'</option>';
+  return h+"</select>";
+}
+
+function simBrancherDC(){
+  const btn=simEl("simDCGo");
+  if(btn)btn.onclick=simDCLancer;
+  const q=simEl("simDCQuoi");
+  if(q){
+    q.value=SIM.dcQuoi;
+    q.onchange=()=>{simDCRepeindre(q.value);simRendre();};
+  }
+  const as=simEl("simDCAddSrc");
+  if(as)as.onclick=()=>simDCArmer("source");
+  const ar=simEl("simDCAddRef");
+  if(ar)ar.onclick=()=>simDCArmer("charge");
+  const raz=simEl("simDCRaz");
+  if(raz)raz.onclick=()=>{
+    if(SIM_ED&&SIM_ED.dcOublier)SIM_ED.dcOublier();
+    SIM.resDC=null;SIM.erreurDC="";SIM.dcImages=null;SIM.dcFinesse=null;SIM.dcIndex=null;SIM.dcSonde=null;
+    simRendre();
+  };
+  /* PAS DE VALEUR D'USINE : le champ vide veut dire « choisis-la ». Y écrire
+     0,2 mm d'office, c'était imposer une finesse qui ne convient ni à une
+     piste de 0,15 mm — deux carreaux, une résistance qui ne veut rien dire —
+     ni à un plan de cinquante millimètres, qu'elle fait payer cher pour rien. */
+  const pas=simEl("simDCPas");
+  if(pas)pas.placeholder="auto";
+  simRendre();
+}
+
+/* Armer la désignation d'une borne. Le panneau ne fait que le demander : c'est
+   la carte qui reçoit le clic, parce que c'est elle qui sait ce qu'il y a
+   dessous. */
+function simDCArmer(role){
+  if(!(SIM_ED&&SIM_ED.dcChoisir))return;
+  SIM_ED.dcChoisir(role);
+  simRendre();
+}
+
+/* Rappelée par l'outil quand une borne vient d'être choisie. */
+function simDCBorneChoisie(){
+  simRendre();
+}
+
+/* ===========================================================================
+   LA LISTE DES BORNES
+
+   POURQUOI UNE LISTE, ET PAS DEUX CHAMPS. La première version n'acceptait
+   qu'une source et une référence, ce qui décrit un cas et un seul : un
+   régulateur, un consommateur. Un net d'alimentation en nourrit dix, et la
+   chute que chacun voit dépend de ce que TIRENT LES AUTRES — c'est même tout
+   l'intérêt du calcul. Deux champs obligeaient à dix calculs séparés, dont
+   aucun n'aurait été juste.
+
+   PLUSIEURS RÉFÉRENCES ONT AUSSI UN SENS : deux régulateurs en parallèle, ou
+   un connecteur d'alimentation à deux broches. Le solveur les tient toutes à
+   leur tension et répartit le courant entre elles.
+   ========================================================================== */
+function simRendreBornes(){
+  const el=simEl("simDCListe");
+  if(!el)return;
+  const bornes=(SIM_ED&&SIM_ED.dcBornes)?SIM_ED.dcBornes():[];
+  if(!bornes.length){
+    el.innerHTML='<p class="pnl-note">Aucune borne.<br>'+
+      '<b>Source</b> = l\'alimentation, on lui règle sa <b>tension</b> (V).<br>'+
+      '<b>Charge</b> = un consommateur, on lui règle le <b>courant</b> qu\'il '+
+      'tire (A).<br>Il en faut au moins une de chaque.</p>';
+    return;
+  }
+  let h='';
+  bornes.forEach((b,k)=>{
+    const src=b.role==="source";
+    h+='<div class="pnl-bar">'+
+       '<span class="pnl-lbl" title="'+(src
+          ? "Alimentation : sa tension est imposée"
+          : "Consommateur : son courant est imposé")+'">'+
+       (src?"source":"charge")+'</span>'+
+       '<span class="pnl-u" title="'+simEsc("net "+(b.net||"aucun")+
+           ", couche "+(b.couche+1))+'">'+simEsc(b.nom)+'</span>'+
+       '<input id="simDCV'+k+'" type="text" inputmode="decimal" '+
+       'spellcheck="false" value="'+simEsc(simNbLibre(b.valeur))+'" '+
+       'title="'+(src
+          ? "La TENSION que cette alimentation impose, en volts."
+          : "Le COURANT que ce composant tire, en ampères.")+'">'+
+       '<span class="pnl-u">'+(src?"V":"A")+'</span>'+
+       '<button class="tb mini" id="simDCDel'+k+'" '+
+       'title="Retirer cette borne">×</button>'+
+       '</div>';
+  });
+  el.innerHTML=h;
+  bornes.forEach((b,k)=>{
+    const ch=simEl("simDCV"+k);
+    if(ch)ch.onchange=()=>{
+      const v=parseFloat(String(ch.value).replace(",","."));
+      if(SIM_ED.dcValeur)SIM_ED.dcValeur(k,isFinite(v)?v:0);
+    };
+    const del=simEl("simDCDel"+k);
+    if(del)del.onclick=()=>{
+      if(SIM_ED.dcOublier)SIM_ED.dcOublier(k);
+      SIM.resDC=null;SIM.erreurDC="";SIM.dcImages=null;SIM.dcFinesse=null;SIM.dcIndex=null;SIM.dcSonde=null;
+      simRendre();
+    };
+  });
+}
+
+
+
+/* ===========================================================================
+   LA FINESSE DE LA TRAME, CHOISIE TOUTE SEULE
+
+   CE QUE LA TRAME EST. Le solveur découpe le cuivre en carreaux carrés et
+   relie les voisins par une conductance. Le pas est le côté du carreau.
+
+   POURQUOI ELLE NE DOIT PAS ÊTRE UN RÉGLAGE. Trop grossière, la forme la plus
+   étroite ne reçoit qu'un ou deux carreaux : sa résistance sort de la position
+   de deux points, pas de sa géométrie, et le solveur refuse carrément en
+   dessous de quatre. Trop fine, le nombre de nœuds va comme 1/pas² et le
+   calcul rampe pour une précision dont personne n'a besoin sur un plan.
+   Entre les deux, la bonne valeur se DÉDUIT du cuivre — il n'y a rien à
+   deviner.
+
+   LA RÈGLE : HUIT carreaux dans la largeur de la forme la plus étroite.
+
+   POURQUOI HUIT ET NON QUATRE, qui est le seuil du mailleur. Parce que la
+   largeur que le solveur VOIT est quantifiée par la trame : selon la phase du
+   cuivre sur la grille, une piste tombe sur n ou n+1 carreaux. À quatre, c'est
+   ±12 % sur la largeur — et l'échauffement va en A^(−0,725/0,44), donc ±19 %
+   sur la température. Mesuré : la même piste de 0,5 mm rendait 0,60 mm de
+   section au pas de 0,15 et 0,50 mm au pas de 0,125, soit 15,45 K contre
+   20,87 — un rapport de 0,740, exactement (0,5/0,6)^1,6477. À huit carreaux
+   l'écart tombe de moitié, pour quatre fois plus de nœuds ; c'est le prix
+   d'un chiffre qu'on peut lire.
+
+   IL EN RESTE UNE INCERTITUDE, et il faut la connaître : ±6 % sur la largeur
+   vue, donc une dizaine de pour cent sur la température de la forme la plus
+   fine. Les formes plus larges, elles, sont bien mieux résolues.
+
+   LE GARDE-FOU : si cette finesse-là demande plus de nœuds que le solveur n'en
+   accepte, on l'élargit — et on le DIT, parce qu'à partir de là les
+   rétrécissements les plus fins ne sont plus décrits.
+   ========================================================================== */
+const SIM_DC_CARREAUX_MINI=8;      // dans la largeur de la forme la plus fine
+const SIM_DC_NOEUDS_CIBLE=250000;  // MAX_NOEUDS de dc_solver.py est à 400 000
+
+function simDCFinesse(polygones){
+  const pleins=(polygones||[]).filter(g=>!g.trou&&g.vertices&&
+                                          g.vertices.length>=3);
+  if(!pleins.length)return null;
+  let mini=Infinity, aireCuivre=0;
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  const couches=new Set();
+  for(const g of pleins){
+    couches.add(g.couche);
+    let a=Infinity,b=Infinity,c=-Infinity,d=-Infinity;
+    for(const v of g.vertices){
+      if(v[0]<a)a=v[0]; if(v[0]>c)c=v[0];
+      if(v[1]<b)b=v[1]; if(v[1]>d)d=v[1];
+    }
+    /* L'AIRE RÉELLE DE LA FORME, par la formule du lacet. C'est elle qui dit
+       combien de carreaux le maillage coûtera — la boîte englobante de tout le
+       cuivre, elle, compte le vide entre deux pistes éloignées et ferait
+       élargir la trame pour rien. Des formes qui se recouvrent sont comptées
+       deux fois : l'estimation penche du côté prudent, ce qui est le bon
+       côté pour un budget. */
+    let lacet=0;
+    for(let i=0,j=g.vertices.length-1;i<g.vertices.length;j=i++)
+      lacet+=(g.vertices[j][0]*g.vertices[i][1]
+              -g.vertices[i][0]*g.vertices[j][1]);
+    aireCuivre+=Math.abs(lacet)/2;
+    /* LE PETIT CÔTÉ de la boîte d'une forme est sa largeur : pour le
+       quadrilatère d'un tronçon de piste c'est sa largeur de cuivre, pour une
+       pastille son plus petit diamètre, pour un plan c'est grand — et c'est
+       juste, un plan n'impose aucune finesse. */
+    const court=Math.min(c-a,d-b);
+    if(court>1e-6&&court<mini)mini=court;
+    if(a<x0)x0=a; if(c>x1)x1=c;
+    if(b<y0)y0=b; if(d>y1)y1=d;
+  }
+  if(!isFinite(mini))return null;
+
+  let pas=mini/SIM_DC_CARREAUX_MINI;
+  /* Le cuivre EFFECTIF, borné par la boîte : deux quadrilatères qui se
+     recouvrent ne font pas plus de cuivre que la surface qu'ils occupent. */
+  const boite=Math.max((x1-x0)*(y1-y0),1e-9)*Math.max(couches.size,1);
+  const aire=Math.max(Math.min(aireCuivre,boite),1e-9);
+  let note="";
+  if(aire/(pas*pas)>SIM_DC_NOEUDS_CIBLE){
+    const large=Math.sqrt(aire/SIM_DC_NOEUDS_CIBLE);
+    note="Trame élargie à "+simNb(large,3)+" mm pour tenir le calcul : la "+
+         "forme la plus étroite ("+simNb(mini,3)+" mm) n'y reçoit que "+
+         simNb(mini/large,1)+" carreau(x), et les rétrécissements plus fins "+
+         "qu'elle ne sont pas décrits.";
+    pas=large;
+  }
+  return {pas:pas, mini:mini, couches:couches.size, formes:pleins.length,
+          trous:(polygones||[]).length-pleins.length, note:note};
+}
+
+/* ===========================================================================
+   LA CARTE DE POTENTIEL
+
+   CE QU'ON PEINT, ET CE QU'ON REFUSE DE PEINDRE. Le serveur rend aussi
+   `cartes` — une grille régulière de 120 × 120 par couche, interpolée AU PLUS
+   PROCHE. On ne s'en sert pas : cette grille couvre la BOÎTE ENGLOBANTE du
+   cuivre, et hors du cuivre elle porte le potentiel du nœud le plus proche.
+   La peindre telle quelle étalerait de la couleur sur du vide — une chute
+   affichée là où il n'y a pas de conducteur. On peint donc les NŒUDS, un
+   carreau de trame chacun : exactement le cuivre qui a été calculé, et rien
+   d'autre.
+
+   UNE IMAGE PRÉ-CALCULÉE, PAS DES MILLIERS DE RECTANGLES. Un maillage courant
+   porte des dizaines de milliers de nœuds ; les redessiner à chaque
+   rafraîchissement rendrait la vue inutilisable. On construit donc UNE image
+   par couche, à la résolution de la trame — un pixel par carreau —, et le
+   canevas ne fait plus que l'étirer.
+
+   LA TEINTE ÉVITE LE ROUGE, ET C'EST DÉLIBÉRÉ. `SIM_Z_ROUGE` vaut exactement
+   la couleur d'erreur du DRC, et la carte d'impédance s'y confond déjà (voir
+   A-FAIRE.md). Celle-ci va du CYAN (au potentiel de référence) au VIOLET puis
+   à l'AMBRE (le plus loin) : trois teintes qu'aucun autre calque n'emploie,
+   donc lisibles par-dessus un DRC allumé.
+   ========================================================================== */
+
+/* LES TROIS GRANDEURS QU'ON PEUT PEINDRE, et ce qu'elles disent.
+
+   LA CHUTE NE DIT PAS TOUT, et c'est la raison d'être des deux autres. Une
+   piste peut tenir sa chute et fondre quand même : c'est la SECTION qui
+   chauffe, pas la longueur. Un rétrécissement de deux millimètres ne pèse
+   presque rien sur la tension — mesuré : +6 % — et il multiplie la
+   température par TROIS. Aucun contrôle géométrique ne le voit non plus, parce
+   que la piste y respecte sa largeur minimale.
+
+   `cle` est le tableau que le serveur rend, un nombre par nœud ; `unite` et
+   `facteur` disent comment l'écrire. */
+const SIM_DC_GRANDEURS=[
+  {cle:"echauffement", nom:"Échauffement", unite:"K", facteur:1, dec:2,
+   aide:"La montée en température au-dessus de l'ambiante, par IPC-2221. "+
+        "C'est un chiffre : il ne dépend pas de la finesse du maillage."},
+  {cle:"densite", nom:"Densité", unite:"A/mm²", facteur:1, dec:1,
+   aide:"Le courant par unité de section. Elle montre OÙ le courant se "+
+        "presse ; à un angle vif elle est singulière, donc son maximum "+
+        "dépend du maillage — c'est un repère, pas un chiffre."},
+  {cle:"potentiel", nom:"Potentiel", unite:"mV", facteur:1e3, dec:2,
+   aide:"La tension en chaque point du cuivre. L'écart d'un bout à l'autre "+
+        "est la chute."}
+];
+function simDCGrandeur(cle){
+  return SIM_DC_GRANDEURS.find(g=>g.cle===(cle||SIM.dcQuoi))
+         ||SIM_DC_GRANDEURS[0];
+}
+
+/* La rampe, en trois arrêts. `t` va de 0 (au potentiel de référence) à 1 (le
+   point le plus éloigné électriquement). */
+const SIM_DC_RAMPE=[[ 34,197,213],    // cyan   : on est à la référence
+                    [124, 92,214],    // violet : à mi-chemin
+                    [240,166, 46]];   // ambre  : le pire point du net
+function simDCCouleur(t){
+  const u=Math.max(0,Math.min(1,t))*(SIM_DC_RAMPE.length-1);
+  const k=Math.min(SIM_DC_RAMPE.length-2,Math.floor(u)), f=u-k;
+  const a=SIM_DC_RAMPE[k], b=SIM_DC_RAMPE[k+1];
+  return [Math.round(a[0]+(b[0]-a[0])*f),
+          Math.round(a[1]+(b[1]-a[1])*f),
+          Math.round(a[2]+(b[2]-a[2])*f)];
+}
+
+/* Peint-on ? Il faut l'onglet DC ouvert ET un résultat. La carte d'impédance
+   et celle-ci ne s'affichent jamais ensemble : elles répondent à deux
+   questions, et superposées on ne saurait plus laquelle. */
+function simDCActif(){
+  return SIM.ouvert&&SIM.analyse==="dc"&&!!SIM.resDC&&!!SIM.dcImages;
+}
+
+/* Les images, une par couche, construites une fois pour toutes à l'arrivée du
+   résultat. Rend {images:Map(couche -> {canvas,x0,y0,pas,nx,ny}), vmin, vmax}
+   ou null. `fabrique` crée un canevas hors écran — le DOM du banc d'essai n'en
+   fournit pas toujours, et l'absence doit se traduire par « on ne peint pas »,
+   pas par une pile d'appels. */
+function simDCConstruireImages(res,fabrique,quoi){
+  if(!res||!res.noeuds||!res.noeuds.length)return null;
+  const g=simDCGrandeur(quoi);
+  const v=res[g.cle]||[], pas=res.pas||0.2;
+  if(v.length!==res.noeuds.length)return null;
+  let vmin=Infinity,vmax=-Infinity;
+  for(const x of v){if(x<vmin)vmin=x;if(x>vmax)vmax=x;}
+  if(!(isFinite(vmin)&&isFinite(vmax)))return null;
+  const etendue=(vmax-vmin)||1;
+
+  /* Un groupe par couche : peindre deux potentiels l'un sur l'autre les
+     mélangerait sans le dire. */
+  const par=new Map();
+  res.noeuds.forEach((n,i)=>{
+    const c=n[2];
+    if(!par.has(c))par.set(c,{x0:Infinity,y0:Infinity,x1:-Infinity,y1:-Infinity,
+                             idx:[]});
+    const g=par.get(c);
+    g.idx.push(i);
+    if(n[0]<g.x0)g.x0=n[0]; if(n[0]>g.x1)g.x1=n[0];
+    if(n[1]<g.y0)g.y0=n[1]; if(n[1]>g.y1)g.y1=n[1];
+  });
+
+  const images=new Map();
+  for(const [c,g] of par){
+    const nx=Math.round((g.x1-g.x0)/pas)+1, ny=Math.round((g.y1-g.y0)/pas)+1;
+    if(!(nx>0&&ny>0)||nx*ny>4e6)continue;
+    const cv=fabrique(nx,ny);
+    if(!cv)return null;
+    const ctx=cv.getContext("2d");
+    if(!ctx)return null;
+    const img=ctx.createImageData(nx,ny);
+    const d=img.data;
+    for(const i of g.idx){
+      const n=res.noeuds[i];
+      const ix=Math.round((n[0]-g.x0)/pas);
+      /* PAS DE MIROIR ICI, et c'est le contrat de `drawImage` qui le dit :
+         `drawImage(img, x0, y0, w, h)` pose la LIGNE 0 de l'image au y
+         MINIMUM de la destination, et la dernière ligne au maximum. La ligne 0
+         porte donc le monde en y0, comme la colonne 0 porte le monde en x0.
+
+         La première version retournait l'image « parce que l'écran a son y
+         vers le bas ». C'est vrai de l'ÉCRAN, pas de la destination : on
+         dessine en coordonnées MONDE, et la transformation du canevas s'occupe
+         du reste — d'autant qu'elle n'est pas la même dans les deux outils,
+         `setTransform(s,0,0,s,…)` côté éditeur et `(s,0,0,-s,…)` côté
+         visionneuse. Retourner ici, c'était retourner DEUX fois là où le
+         canevas retourne déjà, et zéro fois là où il ne retourne pas : la
+         carte sortait en miroir des deux côtés, et un défaut d'alimentation se
+         lisait à l'opposé de là où il est. */
+      const iy=Math.round((n[1]-g.y0)/pas);
+      if(ix<0||iy<0||ix>=nx||iy>=ny)continue;
+      const rgb=simDCCouleur((v[i]-vmin)/etendue);
+      const o=(iy*nx+ix)*4;
+      d[o]=rgb[0]; d[o+1]=rgb[1]; d[o+2]=rgb[2]; d[o+3]=255;
+    }
+    ctx.putImageData(img,0,0);
+    images.set(c,{canvas:cv, x0:g.x0-pas/2, y0:g.y0-pas/2,
+                  w:nx*pas, h:ny*pas});
+  }
+  return images.size?{images:images, vmin:vmin, vmax:vmax, quoi:g.cle}:null;
+}
+
+/* Reconstruire pour une autre grandeur. Le calcul n'est pas refait : les trois
+   tableaux arrivent ensemble, changer de carte ne coûte qu'une image. */
+function simDCRepeindre(quoi){
+  SIM.dcQuoi=simDCGrandeur(quoi).cle;
+  SIM.dcImages=(SIM.resDC&&SIM_ED&&SIM_ED.canevasHorsEcran)
+    ? simDCConstruireImages(SIM.resDC,SIM_ED.canevasHorsEcran,SIM.dcQuoi)
+    : null;
+  if(SIM_ED&&SIM_ED.redessiner)SIM_ED.redessiner();
+}
+
+/* Le tracé, appelé par le canevas des deux outils. `couche` est le rang de
+   cuivre à montrer — celui que l'outil affiche. */
+function simDCTrace(c,couche){
+  if(!simDCActif())return;
+  const e=SIM.dcImages.images.get(couche);
+  if(!e)return;
+  c.save();
+  c.globalAlpha=0.85;
+  /* PAS DE LISSAGE : un carreau de trame est un carreau, et l'interpoler
+     inventerait un dégradé entre deux nœuds qui n'ont rien entre eux. */
+  c.imageSmoothingEnabled=false;
+  /* EN COORDONNÉES MONDE, et rien d'autre. Le rectangle va de (x0, y0) à
+     (x0+w, y0+h) du monde ; la transformation du canevas — qui n'est pas la
+     même dans les deux outils — le pose ensuite où il faut à l'écran. */
+  try{c.drawImage(e.canvas,e.x0,e.y0,e.w,e.h);}catch(_){}
+  c.restore();
+}
+
+
+/* ===========================================================================
+   LA SONDE : LA VALEUR SOUS LE CURSEUR
+
+   POURQUOI ELLE MANQUAIT. Une carte de chaleur montre OÙ, jamais COMBIEN : on
+   voit que ça chauffe là, sans savoir si c'est deux degrés ou quarante. Le
+   tableau donne le pire point de chaque net, et c'est tout — pour tout le
+   reste il fallait deviner à la couleur. Or ce qu'on veut savoir devant une
+   carte, c'est « et ICI, ça fait combien ».
+
+   ELLE NE LIT PAS L'IMAGE, ELLE LIT LE RÉSULTAT. Repasser par le pixel peint
+   ferait relire une couleur pour en redéduire un nombre — deux conversions,
+   deux arrondis, et une valeur qui ne serait plus celle du solveur. On va
+   chercher le NŒUD, et on rend SA valeur.
+
+   HORS DU CUIVRE, RIEN. Pas de zéro, pas de valeur du voisin le plus proche :
+   il n'y a pas de conducteur là, donc il n'y a pas de valeur. Inventer la plus
+   proche, c'est ce que fait la grille interpolée du serveur, et c'est
+   précisément ce qu'on a refusé de peindre.
+   ========================================================================== */
+
+/* La table du carreau vers le nœud. Les nœuds sont posés sur une grille de pas
+   `res.pas` ancrée au coin du maillage : on indexe donc par le rang du carreau
+   et non par la coordonnée, qui ne se compare pas au flottant près. */
+function simDCIndexer(res){
+  if(!res||!res.noeuds||!res.noeuds.length)return null;
+  const pas=res.pas||0.2;
+  let xmin=Infinity, ymin=Infinity;
+  for(const n of res.noeuds){
+    if(n[0]<xmin)xmin=n[0];
+    if(n[1]<ymin)ymin=n[1];
+  }
+  const table=new Map();
+  res.noeuds.forEach((n,i)=>{
+    table.set(n[2]+"|"+Math.round((n[0]-xmin)/pas)+"|"+
+              Math.round((n[1]-ymin)/pas), i);
+  });
+  return {table:table, xmin:xmin, ymin:ymin, pas:pas};
+}
+
+/* Le nœud sous un point du monde, ou -1. */
+function simDCNoeudEn(x,y,couche){
+  const ix=SIM.dcIndex;
+  if(!ix)return -1;
+  const k=couche+"|"+Math.round((x-ix.xmin)/ix.pas)+"|"+
+          Math.round((y-ix.ymin)/ix.pas);
+  const i=ix.table.get(k);
+  return (i===undefined)?-1:i;
+}
+
+/* Ce que la sonde affiche. Rend null hors du cuivre. */
+function simDCLireEn(x,y,couche){
+  if(!SIM.resDC||!SIM.dcIndex)return null;
+  const i=simDCNoeudEn(x,y,couche);
+  if(i<0)return null;
+  const g=simDCGrandeur(SIM.dcQuoi);
+  const v=(SIM.resDC[g.cle]||[])[i];
+  if(v===undefined)return null;
+  return {rang:i, valeur:v,
+          texte:simNb(v*g.facteur,g.dec)+" "+g.unite,
+          x:SIM.resDC.noeuds[i][0], y:SIM.resDC.noeuds[i][1]};
+}
+
+/* Le survol, appelé par l'outil. Rend VRAI quand l'affichage a changé — c'est
+   ce qui évite de redessiner toute la carte à chaque pixel parcouru. */
+function simDCSurvol(x,y,couche){
+  if(!simDCActif()){
+    if(!SIM.dcSonde)return false;
+    SIM.dcSonde=null;
+    return true;
+  }
+  const lu=simDCLireEn(x,y,couche);
+  const avant=SIM.dcSonde;
+  if(!lu){
+    if(!avant)return false;
+    SIM.dcSonde=null;
+    return true;
+  }
+  /* On ne redessine que si on a changé de CARREAU : bouger de trois pixels
+     dans le même carreau ne change rien à ce qui est écrit. */
+  if(avant&&avant.rang===lu.rang)return false;
+  SIM.dcSonde=lu;
+  return true;
+}
+
+/* L'étiquette, en pixels d'écran et non en millimètres : un texte qui grandit
+   au zoom devient illisible de près et minuscule de loin. `w2s` est celle de
+   l'outil — c'est lui qui sait où le monde tombe sur son canevas. */
+function simDCTraceSonde(c,dpr,w2s){
+  const s=SIM.dcSonde;
+  if(!s||!simDCActif()||typeof w2s!=="function")return;
+  const p=w2s(s.x,s.y);
+  if(!p||!isFinite(p.x)||!isFinite(p.y))return;
+  const txt=s.texte;
+  c.save();
+  c.setTransform(dpr||1,0,0,dpr||1,0,0);
+  c.font="12px ui-monospace, Menlo, Consolas, monospace";
+  const l=c.measureText(txt).width, h=18, m=6;
+  /* L'étiquette se pose EN HAUT À DROITE du curseur, et bascule quand elle
+     sortirait du canevas : une bulle coupée au bord ne se lit pas. */
+  let x=p.x+12, y=p.y-h-8;
+  const W=(c.canvas.width||0)/(dpr||1), H=(c.canvas.height||0)/(dpr||1);
+  if(W&&x+l+2*m>W)x=p.x-12-l-2*m;
+  if(y<2)y=p.y+12;
+  if(H&&y+h>H)y=H-h-2;
+  c.fillStyle="rgba(18,20,24,0.92)";
+  c.strokeStyle="rgba("+simDCCouleur(0.5).join(",")+",0.9)";
+  c.lineWidth=1;
+  if(c.roundRect){c.beginPath();c.roundRect(x,y,l+2*m,h,4);c.fill();c.stroke();}
+  else{c.fillRect(x,y,l+2*m,h);c.strokeRect(x,y,l+2*m,h);}
+  c.fillStyle="#e6e8ec";
+  c.textAlign="left"; c.textBaseline="middle";
+  c.fillText(txt,x+m,y+h/2+0.5);
+  /* Un point sur le carreau lu : sans lui, on ne sait pas de QUEL carreau
+     l'étiquette parle quand le curseur est entre deux. */
+  c.beginPath();
+  c.arc(p.x,p.y,2.5,0,2*Math.PI);
+  c.fillStyle="rgba("+simDCCouleur(1).join(",")+",1)";
+  c.fill();
+  c.restore();
+}
+
+/* L'échelle, en toutes lettres sous le tableau : une teinte sans son échelle
+   ne se lit pas. */
+function simDCEchelle(){
+  if(!SIM.dcImages)return '';
+  const g=simDCGrandeur(SIM.dcImages.quoi);
+  const bas=SIM.dcImages.vmin*g.facteur, haut=SIM.dcImages.vmax*g.facteur;
+  return '<p class="pnl-note"><b>'+simEsc(g.nom)+'</b> peint sur le cuivre : '+
+         'du <b>cyan</b> ('+simNb(bas,g.dec)+' '+g.unite+') à l\'<b>ambre</b> ('+
+         simNb(haut,g.dec)+' '+g.unite+'). Un carreau de trame par pixel — '+
+         'hors du cuivre, rien n\'est peint.<br>'+simEsc(g.aide)+'</p>';
+}
+
+/* CE QUE L'ONGLET DIT QUAND IL N'A RIEN À CALCULER. Trois états distincts, et
+   les confondre serait mentir sur l'un des trois :
+     · l'outil ne sait pas fournir le cuivre — c'est un manque de l'outil ;
+     · le serveur n'a pas le solveur — c'est un manque d'installation ;
+     · l'utilisateur n'a rien désigné — c'est à lui de jouer.
+
+   ELLE REND UNE CHAÎNE, comme toutes les analyses du registre : c'est
+   `simRendre` qui la pose dans la zone de sortie. Cette fonction-ci écrivait
+   dans un `<div>` à elle et ne rendait RIEN — donc `simRendre` posait
+   `undefined` dans la zone de sortie, et le mot s'affichait sous le panneau.
+   Les essais ne l'ont pas vu : ils appelaient `simRendreDC` directement, où
+   la valeur de retour ne gêne personne. C'est le CONTRAT du registre qui
+   n'était pas tenu, et c'est lui qu'un cas vérifie désormais. */
+function simRendreDC(){
+  const btn=simEl("simDCGo");
+
+  if(!(SIM_ED&&typeof SIM_ED.cuivreDC==="function")){
+    if(btn)btn.disabled=true;
+    for(const id of ["simDCAddSrc","simDCAddRef","simDCRaz"]){
+      const b=simEl(id);
+      if(b)b.disabled=true;
+    }
+    const l=simEl("simDCListe");
+    if(l)l.innerHTML="";
+    return '<p class="simEtat">Le solveur de chute continue existe et '+
+      'est vérifié (<code>python/dc_solver.py</code>), mais '+
+      (SIM_ED&&SIM_ED.outil?'<b>'+SIM_ED.outil+'</b>':'cet outil')+
+      ' ne sait pas encore lui livrer le cuivre à analyser.</p>';
+  }
+  if(btn)btn.disabled=false;
+
+  /* LES BORNES, RELUES À CHAQUE FOIS. Le panneau n'en garde pas de copie :
+     une pastille effacée entre deux calculs doit disparaître d'ici, pas y
+     rester comme un souvenir. */
+  simRendreBornes();
+  const bornes=(SIM_ED.dcBornes?SIM_ED.dcBornes():[])||[];
+  const nSrc=bornes.filter(b=>b.role==="source").length;
+  const nCharge=bornes.filter(b=>b.role==="charge").length;
+
+  if(SIM.occupeDC)
+    return '<p class="simEtat">Le solveur travaille…<br><small>Un réseau '+
+      'résistif sur tout le cuivre du net, puis un gradient conjugué.</small></p>';
+  if(SIM.erreurDC)
+    return '<p class="simErr">'+simEsc(SIM.erreurDC)+'</p>';
+  if(!SIM.resDC){
+    return '<p class="simEtat">'+
+      (nSrc&&nCharge
+        ? 'Pas encore de calcul.'
+        : (!nSrc?'Il manque une <b>source</b> — l\'alimentation, dont on '+
+                 'règle la tension.'
+                :'Il manque une <b>charge</b> — un consommateur, dont on '+
+                 'règle le courant.')+
+          '<br>Tout le cuivre de leur net part au solveur : pistes, plans, '+
+          'pastilles et vias, sur toutes les couches.')+'</p>';
+  }
+
+  const res=SIM.resDC;
+  let html=simTableauBornes(res);
+  const ch=res.chute_par_net||{};
+  const cour=res.courant_par_net||{};
+  const refs=res.reference_nets||[];
+  html+='<table class="pnl-tab"><tr><th>Net</th><th>Courant</th>'+
+        '<th>Chute</th></tr>';
+  Object.keys(ch).sort().forEach(net=>{
+    const i=cour[net]||0;
+    /* Un net de RÉFÉRENCE est tenu à sa tension : sa « chute » est celle du
+       cuivre entre ses points d'ancrage, ce qui n'est pas la même grandeur
+       que la chute d'un net alimenté. On le marque plutôt que de laisser
+       lire les deux dans la même colonne. */
+    const ref=refs.indexOf(net)>=0?' <span class="pnl-u">(réf.)</span>':'';
+    html+='<tr><td>'+simEsc(net)+ref+'</td>'+
+          '<td>'+(i?simNb(i,3)+' A':'—')+'</td>'+
+          '<td>'+simNb(ch[net]*1e3,2)+' mV</td></tr>';
+  });
+  html+='</table>';
+  html+=simTableauPire(res);
+  html+=simTableauVias(res);
+  html+=simDCEchelle();
+  html+=simDCCuivrePris(res);
+  (res.avertissements||[]).forEach(a=>{
+    html+='<p class="pnl-note">'+simEsc(a)+'</p>';
+  });
+  return html;
+}
+
+
+
+
+/* ===========================================================================
+   CE QUI A ÉTÉ ANALYSÉ, ET AVEC QUELLE FINESSE
+
+   POURQUOI LE DIRE. Le panneau prend tout le cuivre du net des bornes — ses
+   pistes, ses pastilles, SES PLANS, sur TOUTES les couches, plus les vias et
+   les tubes qui les relient. C'est ce qu'on veut, mais rien à l'écran ne le
+   montrait : on ne pouvait pas savoir si le plan de masse était dedans ou si
+   seule la piste avait été prise. Un chiffre dont on ignore l'assiette ne se
+   vérifie pas.
+
+   ET LA TRAME AVEC. Elle n'est plus un réglage : elle se déduit de la forme la
+   plus étroite. Le dire, c'est permettre de la contester — « 0,037 mm parce
+   que ta piste la plus fine fait 0,15 » se discute, « trame 0,2 » ne se
+   discute pas.
+   ========================================================================== */
+function simDCCuivrePris(res){
+  const f=SIM.dcFinesse;
+  let h='<p class="pnl-note">';
+  if(f){
+    h+='<b>Cuivre analysé</b> : '+f.formes+' forme(s) sur '+f.couches+
+       ' couche(s)'+(f.trous?', '+f.trous+' découpe(s) retirée(s)':'')+
+       ', tout le cuivre du net — pistes, pastilles et plans compris.<br>';
+    h+='<b>Trame</b> : '+simNb(res.pas,4)+' mm, '+
+       (f.impose
+         ? 'que vous avez imposée'
+         : 'choisie pour que la forme la plus étroite ('+simNb(f.mini,3)+
+           ' mm) reçoive '+simNb(f.mini/res.pas,1)+' carreaux')+'.<br>';
+  }else{
+    h+='<b>Trame</b> : '+simNb(res.pas,4)+' mm.<br>';
+  }
+  h+=res.n_noeuds+' nœuds, '+res.n_aretes+' liaisons, '+res.n_vias+
+     ' trou(s) métallisé(s) relié(s).</p>';
+  if(f&&f.note)h+='<p class="pnl-note">'+simEsc(f.note)+'</p>';
+  return h;
+}
+
+/* ===========================================================================
+   CE QUI ARRIVE À CHAQUE BORNE
+
+   C'EST LE TABLEAU QU'ON VIENT LIRE, et il passe donc en premier. La question
+   posée à ce calcul n'est pas « quelle est la chute du net » — elle n'a de
+   sens qu'avec un seul consommateur — mais « j'ai 3,3 V au régulateur, combien
+   en reste-t-il à CE composant-là ». Dès qu'un rail en nourrit plusieurs, ce
+   que chacun voit dépend de ce que tirent les autres, et seul un tableau par
+   borne le dit.
+
+   LE SIGNE DU COURANT. Une charge TIRE : son courant sort du cuivre, donc il
+   est négatif dans la convention du solveur. On l'écrit en valeur absolue —
+   « 1,5 A » se lit, « −1,5 A » fait douter.
+   ========================================================================== */
+function simTableauBornes(res){
+  const bornes=(res&&res.bornes)||[];
+  if(!bornes.length)return '';
+  const alims=bornes.filter(b=>b.role==="tension");
+  const charges=bornes.filter(b=>b.role==="courant");
+  let html='<table class="pnl-tab"><tr><th>Borne</th><th>Réglage</th>'+
+           '<th>Tension</th><th>Perdu</th></tr>';
+  const ligne=(b,src)=>{
+    html+='<tr><td>'+simEsc(b.repere||"—")+
+          ' <span class="pnl-u">'+(src?"source":"charge")+'</span></td>'+
+          '<td>'+(src?simNb(b.consigne,3)+' V'
+                     :simNb(Math.abs(b.consigne),3)+' A')+'</td>'+
+          '<td>'+simNb(b.tension,4)+' V</td>'+
+          '<td>'+(src?'—':('−'+simNb(b.chute*1e3,2)+' mV'))+'</td></tr>';
+  };
+  alims.forEach(b=>ligne(b,true));
+  charges.forEach(b=>ligne(b,false));
+  html+='</table>';
+  if(charges.length){
+    /* LA PIRE CHARGE, dite en une phrase : c'est la décision qu'on prend en
+       lisant ce panneau, et la faire chercher dans dix lignes est une perte
+       de temps. */
+    const pire=charges.reduce((a,b)=>(b.chute>a.chute?b:a));
+    const ref=alims.length?alims[0].consigne:0;
+    html+='<p class="pnl-note">La charge la plus mal servie est <b>'+
+          simEsc(pire.repere||"—")+'</b> : il lui arrive '+
+          simNb(pire.tension,4)+' V, soit '+simNb(pire.chute*1e3,2)+
+          ' mV de moins qu\'à la source'+
+          (ref?' ('+simNb(100*pire.chute/ref,2)+' %)':'')+'.</p>';
+  }
+  return html;
+}
+
+/* ===========================================================================
+   LE PIRE POINT DE CHAQUE NET
+
+   POURQUOI CE TABLEAU EST LE PLUS UTILE DES TROIS. La chute dit ce qu'on perd,
+   et c'est ce qu'on vient chercher. Mais une piste peut tenir sa chute et
+   fondre quand même — c'est la SECTION qui chauffe, pas la longueur —, et
+   c'est ici qu'on le voit : sur un rétrécissement de deux millimètres, mesuré,
+   la chute monte de 6 % et la température TRIPLE.
+
+   LES DEUX CHIFFRES NE SE LISENT PAS PAREIL, et le tableau doit le dire.
+   L'ÉCHAUFFEMENT est un chiffre : il vient d'un flux à travers une coupe, il
+   ne bouge pas quand on raffine la trame. La DENSITÉ de pointe, elle, est
+   singulière à un angle vif — son maximum croît sans borne au raffinement
+   (93,7 puis 104,4 puis 129,3 A/mm² aux pas 0,2 / 0,1 / 0,05 sur la même
+   géométrie). Elle dit OÙ regarder, jamais COMBIEN.
+   ========================================================================== */
+function simTableauPire(res){
+  const pires=res&&res.pire_par_net;
+  if(!pires||!Object.keys(pires).length)return '';
+  let html='<table class="pnl-tab"><tr><th>Net</th><th>Échauffement</th>'+
+           '<th>Section</th><th>Densité de pointe</th></tr>';
+  for(const net of Object.keys(pires).sort()){
+    const p=pires[net];
+    const ou=p.echauffement_en
+      ? " en "+simNb(p.echauffement_en[0],2)+" ; "+
+        simNb(p.echauffement_en[1],2)+" mm, couche "+(p.echauffement_en[2]+1)
+      : "";
+    html+='<tr><td>'+simEsc(net)+'</td>'+
+          '<td title="'+simEsc("Le plus chaud"+ou)+'">+'+
+          simNb(p.echauffement,2)+' K</td>'+
+          '<td>'+simNb(p.largeur_chaude,2)+' mm</td>'+
+          '<td title="'+simEsc("Maximum ponctuel : il dit où regarder, pas "+
+            "combien. À un angle vif il croît quand on affine la trame.")+
+          '">'+simNb(p.densite,1)+' A/mm²</td></tr>';
+  }
+  html+='</table>';
+  if(res.modele_thermique)
+    html+='<p class="pnl-note">'+simEsc(res.modele_thermique)+
+          ' Couche(s) prise(s) pour extérieure(s) : '+
+          ((res.couches_externes||[]).map(c=>c+1).join(", ")||"aucune")+
+          '.</p>';
+  return html;
+}
+
+/* ===========================================================================
+   CE QUE CHAQUE VIA A PORTÉ
+
+   POURQUOI CE TABLEAU EXISTE, ET PAS SEULEMENT UN COMPTE. « 12 vias » ne dit
+   rien : ce qu'on veut savoir, c'est si l'UN d'eux prend la moitié du courant
+   pendant que les onze autres se reposent. C'est ce chiffre-là, et lui seul,
+   qui décide d'en ajouter un — et il ne se devine pas de la géométrie, parce
+   qu'il dépend de tout le reste du cuivre.
+
+   LES PLUS CHARGÉS EN TÊTE : le serveur les rend déjà triés, et c'est le seul
+   ordre qui ne demande pas de relire tout le tableau. Au-delà de quinze on
+   s'arrête, en disant combien restent : une liste de deux cents lignes dans un
+   panneau latéral n'est pas une lecture, c'est un déversement.
+
+   UN VIA NON RELIÉ EST MONTRÉ QUAND MÊME, et marqué. Il est dans la carte, il
+   n'est pas dans le calcul : le passer sous silence laisserait croire que le
+   résultat porte sur la carte entière.
+   ========================================================================== */
+const SIM_DC_VIAS_MAX=15;
+function simTableauVias(res){
+  const vias=(res&&res.vias)||[];
+  if(!vias.length)
+    return '<p class="pnl-note">Aucun via sur ce net : tout le courant reste '+
+           'sur une seule couche.</p>';
+
+  const relies=vias.filter(v=>v.relie);
+  let html='<table class="pnl-tab"><tr><th>Via</th><th>Couches</th>'+
+           '<th>Courant</th><th>Chute</th><th>R</th></tr>';
+  vias.slice(0,SIM_DC_VIAS_MAX).forEach(v=>{
+    if(!v.relie){
+      html+='<tr><td>'+simEsc(v.repere||"—")+'</td>'+
+            '<td>'+(v.couche_a+1)+'→'+(v.couche_b+1)+'</td>'+
+            '<td colspan="3"><span class="pnl-u">hors calcul — '+
+            simEsc(v.motif||"non relié")+'</span></td></tr>';
+      return;
+    }
+    /* Le courant en MILLIAMPÈRES sous l'ampère : « 0,043 A » se lit mal, et
+       c'est précisément dans cette plage que se tiennent les vias qui ne
+       travaillent pas. */
+    const i=Math.abs(v.courant);
+    const ia=(i>=1)?simNb(i,3)+' A':simNb(i*1e3,1)+' mA';
+    html+='<tr><td title="'+simEsc('en '+simNb(v.x,3)+' ; '+simNb(v.y,3)+
+          ' mm')+'">'+simEsc(v.repere||"—")+'</td>'+
+          '<td>'+(v.couche_a+1)+'→'+(v.couche_b+1)+'</td>'+
+          '<td>'+ia+'</td>'+
+          '<td>'+simNb(v.chute*1e3,3)+' mV</td>'+
+          '<td>'+simNb(v.resistance*1e3,3)+' mΩ</td></tr>';
+  });
+  html+='</table>';
+  if(vias.length>SIM_DC_VIAS_MAX)
+    html+='<p class="pnl-note">'+(vias.length-SIM_DC_VIAS_MAX)+
+          ' via(s) de plus, moins chargés que ceux-ci.</p>';
+
+  html+=simDesequilibreVias(relies);
+  return html;
+}
+
+/* LE DÉSÉQUILIBRE, dit en une phrase — mais dit JUSTE.
+
+   LE PIÈGE, ET IL EST GROS. Sommer le courant de tous les vias pour en tirer
+   une part ne vaut QUE si les vias sont en PARALLÈLE. Or ils ne le sont pas
+   tous : le tube d'une pastille traversante est une CHAÎNE de liaisons entre
+   couches voisines, qui portent toutes le même courant l'une après l'autre.
+   La première version les sommait quand même et annonçait « le plus chargé
+   porte 25 % » là où un seul chemin portait la totalité — un chiffre
+   rassurant, et faux.
+
+   Ce qu'on compare, ce sont donc les vias qui relient LE MÊME COUPLE DE
+   COUCHES : ceux-là sont bien en parallèle, et c'est exactement la question
+   qu'on se pose — « mes quatre vias de retour travaillent-ils autant ? ». */
+function simDesequilibreVias(relies){
+  const groupes=new Map();
+  for(const v of relies){
+    const a=Math.min(v.couche_a,v.couche_b), b=Math.max(v.couche_a,v.couche_b);
+    const cle=a+"-"+b;
+    if(!groupes.has(cle))groupes.set(cle,[]);
+    groupes.get(cle).push(Math.abs(v.courant));
+  }
+  let pire=null;
+  for(const [cle,cs] of groupes){
+    if(cs.length<2)continue;
+    const tot=cs.reduce((x,y)=>x+y,0);
+    if(!(tot>0))continue;
+    const part=100*Math.max.apply(null,cs)/tot;
+    if(!pire||part>pire.part)
+      pire={cle:cle, part:part, n:cs.length};
+  }
+  if(!pire)return '';
+  const c=pire.cle.split("-");
+  return '<p class="pnl-note">Entre les couches '+(+c[0]+1)+' et '+(+c[1]+1)+
+         ', '+pire.n+' vias se partagent le passage : le plus chargé en prend '+
+         simNb(pire.part,1)+' %, contre '+simNb(100/pire.n,1)+
+         ' % s\'ils travaillaient à parts égales.</p>';
+}
+
+async function simDCLancer(){
+  if(SIM.occupeDC)return;
+  const btn=simEl("simDCGo");
+  SIM.occupeDC=true;
+  SIM.erreurDC="";
+  if(btn)btn.disabled=true;
+  try{
+    /* CHAQUE BORNE PORTE SA VALEUR : le panneau la lui a posée, l'adaptateur
+       la garde avec la pastille. Il ne reste ici qu'à vérifier qu'une charge
+       tire bien quelque chose — sans courant, tout le cuivre est à la tension
+       de la source et la chute est nulle par construction, ce qui se lirait
+       comme une bonne nouvelle.
+
+       CE BLOC ETAIT RESTE SUR LES DEUX CHAMPS D'ORIGINE, `simDCI` et
+       `simDCU`, disparus du panneau quand les bornes sont devenues une liste.
+       `parseFloat(undefined)` rend NaN, donc le bouton « Calculer » refusait
+       TOUJOURS — et aucun essai ne l'a vu, parce qu'aucun n'exerçait cette
+       fonction. C'est pour cela que le contrôle de câblage la lit désormais
+       elle aussi. */
+    const bornes=(SIM_ED.dcBornes?SIM_ED.dcBornes():[])||[];
+    const total=bornes.filter(b=>b.role==="charge")
+                      .reduce((x,b)=>x+Math.abs(+b.valeur||0),0);
+    if(!(total>0)){
+      SIM.erreurDC="Aucune charge ne tire de courant.\nPosez l'ampérage que "+
+                   "consomme chaque charge : sans courant, tout le cuivre est "+
+                   "à la tension de la source, et la chute est nulle par "+
+                   "construction. C'est juste, et ça ne dit rien.";
+      SIM.resDC=null; SIM.dcImages=null; SIM.dcFinesse=null; SIM.dcIndex=null; SIM.dcSonde=null;
+      return;
+    }
+    const probleme=SIM_ED.cuivreDC();
+    if(!probleme||probleme.erreur){
+      SIM.erreurDC=((probleme&&probleme.erreur)||"Rien à analyser.")+
+                   (probleme&&probleme.conseil?"\n"+probleme.conseil:"");
+      SIM.resDC=null; SIM.dcImages=null; SIM.dcFinesse=null; SIM.dcIndex=null; SIM.dcSonde=null;
+      return;
+    }
+    /* LA FINESSE : celle qu'on a écrite, sinon celle que le cuivre impose. */
+    const fin=simDCFinesse(probleme.polygones);
+    const saisi=parseFloat(String((simEl("simDCPas")||{}).value||"")
+                             .replace(",","."));
+    const pas=(saisi>0)?saisi:(fin?fin.pas:0);
+    SIM.dcFinesse=fin?Object.assign({},fin,{choisi:pas,
+                                            impose:(saisi>0)}):null;
+    SIM.resDC=await simDCCalculer({
+      format:SIM_DC_FORMAT,
+      polygones:probleme.polygones||[],
+      vias:probleme.vias||[],
+      sources:probleme.sources||[],
+      references:probleme.references||[],
+      couches_externes:probleme.couches_externes,
+      pas:(pas>0?pas:(probleme.pas||undefined))
+    });
+    /* LES IMAGES SE CONSTRUISENT ICI, une fois — pas à chaque redessin. Le
+       canevas hors écran vient de l'outil : c'est lui qui sait comment en
+       fabriquer un (un navigateur, un banc d'essai, ce n'est pas le même). */
+    SIM.dcImages=(SIM_ED.canevasHorsEcran)
+      ? simDCConstruireImages(SIM.resDC,SIM_ED.canevasHorsEcran,SIM.dcQuoi)
+      : null;
+    SIM.dcIndex=simDCIndexer(SIM.resDC);
+    SIM.dcSonde=null;
+    if(SIM_ED.peindreDC)SIM_ED.peindreDC(SIM.resDC);
+    if(SIM_ED.redessiner)SIM_ED.redessiner();
+  }catch(e){
+    SIM.resDC=null; SIM.dcImages=null; SIM.dcFinesse=null; SIM.dcIndex=null; SIM.dcSonde=null;
+    SIM.erreurDC=(e&&e.message)||String(e);
+  }finally{
+    SIM.occupeDC=false;
+    if(btn)btn.disabled=false;
+    simRendre();
+  }
+}
+
+/* Le transport. Même forme que `simLancerCalcul` : le refus du serveur arrive
+   en JSON sous « detail », et c'est CE texte qu'il faut montrer — il dit le
+   motif et ce qu'il faut changer. Rendre le corps brut afficherait une page
+   d'erreur HTTP à la place de la phrase utile. */
+async function simDCCalculer(doc){
+  const rep=await fetch((SIM_BASE||"")+SIM_DC_ROUTE,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(doc)
+  });
+  let corps=null;
+  try{corps=await rep.json();}catch(e){corps=null;}
+  if(!rep.ok)
+    throw new Error((corps&&corps.detail)||("Le serveur a refusé le calcul ("+
+                    rep.status+")."));
+  return corps;
+}
+
 const SIM_FORMAT="cao-sim-em-1";
 
 let SIM_ED=null;                       // l'adaptateur de l'outil courant
@@ -96,6 +1116,21 @@ let SIM_ETAT=null;                     // réponse de la sonde : {dispo, limites
 const SIM={
   ouvert:false, occupe:false, suivre:false,
   res:null, objets:[], doc:null, err:"", portee:"", notes:[],
+  /* L'analyse DC a son propre etat : elle ne partage ni sa selection, ni son
+     document, ni son verrou avec l'impedance. Les melanger ferait qu'un calcul
+     de section en cours bloquerait un calcul de chute, et l'inverse. */
+  resDC:null, occupeDC:false, erreurDC:"",
+  /* Ce que le cuivre a imposé comme finesse de trame, et ce qu'il porte. */
+  dcFinesse:null,
+  /* Les images de la carte, une par couche, construites a l'arrivee du
+     resultat et non a chaque rafraichissement. `dcQuoi` dit LAQUELLE des trois
+     grandeurs elles portent. */
+  dcImages:null, dcQuoi:"echauffement",
+  /* LA SONDE : le carreau sous le curseur, et sa valeur. `dcIndex` est la
+     table qui va du carreau au rang du noeud -- bâtie une fois à l'arrivée du
+     résultat, parce qu'un survol ne peut pas se permettre de parcourir dix
+     mille nœuds à chaque pixel. */
+  dcIndex:null, dcSonde:null,
   /* La masse de référence : l'ensemble des nets qui comptent comme plan de
      retour. `refAuto` dit qu'on suit encore la proposition de l'outil — dès
      qu'on décoche une case, non, et le choix tient. `refCle` est la liste des
@@ -1346,7 +2381,7 @@ const SIM_FAMILLES=[
   {cle:"pi", court:"PI", nom:"Intégrité de l'alimentation",
    quoi:"Ce que le réseau de distribution laisse passer : chute continue, "+
         "impédance vue par le composant, résonances de plan.",
-   analyses:[]}
+   analyses:["dc"]}
 ];
 
 /* Le catalogue des analyses. `impedance` est la seule à exister, et tout ce
@@ -1361,6 +2396,18 @@ const SIM_ANALYSES={
     corps:simCorpsImpedance,
     brancher:simBrancherImpedance,
     rendre:simRendreImpedance
+  },
+  dc:{
+    nom:"Chute DC",
+    titre:"Chute de tension continue dans le cuivre (IR drop).",
+    /* `peint` COMMANDE simZActif(), donc la carte de chaleur des IMPÉDANCES.
+       La chute DC ne peint pas la même chose, et pas sur le même cuivre :
+       elle passe par `peindreDC()` de l'adaptateur, quand celui-ci existe.
+       Le mettre à vrai ferait repeindre les Z₀ sous l'onglet DC. */
+    peint:false,
+    corps:simCorpsDC,
+    brancher:simBrancherDC,
+    rendre:simRendreDC
   }
 };
 
