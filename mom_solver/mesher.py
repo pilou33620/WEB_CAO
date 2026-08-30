@@ -15,9 +15,10 @@ logger = logging.getLogger(__name__)
 # s'importe en relatif. Sans ce couple, l'un des deux chemins casse -- et
 # c'etait `import mom_solver` qui cassait.
 try:
-    from .green_layered import indices_plans_masse
+    from .green_layered import indices_plans_masse, profil_spectral
 except ImportError:                                    # noqa: BLE001
-    from green_layered import indices_plans_masse      # noqa: E402
+    from green_layered import (indices_plans_masse,    # noqa: E402
+                               profil_spectral)
 
 
 @dataclass
@@ -575,3 +576,249 @@ def get_rwg_center(rwg: RWGBasis, vertices: np.ndarray, edges: List[Edge]) -> np
     """
     edge = edges[rwg.edge_index]
     return edge.center
+
+
+# ==========================================================================
+# LE VIA DE PORT : UN PUITS PERCE DANS LA PISTE
+# --------------------------------------------------------------------------
+# CE QU'UN PORT DE MICRORUBAN DOIT FAIRE, ET QUE LA FENTE NE FAISAIT PAS. Le
+# generateur est branche entre la PISTE et le PLAN DE MASSE : il injecte un
+# courant VERTICAL, qui monte le via, part le long de la ligne, et revient par
+# le plan. La fente serie, elle, coupait la piste en deux et mettait le
+# generateur ENTRE les deux moities -- deux troncons ouverts en serie, donc
+# deux impedances enormes, donc pas de courant. Le banc le mesurait sans
+# ambiguite : |S21| = 0,0065 sur une ligne de L/lambda_g = 0,07, et |S11| = 1.
+#
+# LA CONSTRUCTION, ET POURQUOI ELLE NE DEMANDE AUCUNE FONCTION DE BASE NOUVELLE
+# AU SOMMET. On PERCE le maillage -- on retire un triangle -- et on descend un
+# fut sur le contour du trou. Chaque arete du trou porte alors exactement deux
+# triangles : celui de la piste qui reste, et celui de la paroi. C'est une
+# arete interne ordinaire, et `build_rwg_basis` y pose une RWG ordinaire, qui
+# fait passer le courant de la piste a la paroi sans qu'on ait rien a lui dire.
+#
+# ON EVITE AINSI LA JONCTION EN T, qui aurait ete l'autre facon de faire :
+# souder le fut SOUS la piste sans la percer donne une arete a TROIS triangles,
+# que la formulation RWG ne sait pas traiter sans fonctions de jonction. Percer
+# coute un triangle de piste et rend le probleme ordinaire.
+#
+# LE BAS EST UNE DEMI-RWG, ET C'EST LA QU'EST LA PHYSIQUE. Les aretes du bas du
+# fut ne bordent qu'un seul triangle : le maillage s'y arrete, parce que le
+# plan de masse n'est pas maille -- la fonction de Green le compte
+# analytiquement. Une demi-RWG y est EXACTE, et non un pis-aller : l'image d'un
+# courant vertical dans un conducteur parfait est un courant vertical de MEME
+# signe, donc la demi-fonction et son image forment une RWG complete a cheval
+# sur le plan, et la charge de la moitie manquante est exactement celle que la
+# fonction de Green stratifiee produit toute seule. C'est `NoyauxVerticaux` qui
+# le verifie, a 3.10^-16 contre la forme fermee.
+#
+# ET LE PORT EST UNE VRAIE COUPE. La tension se pose sur ces demi-aretes,
+# c'est-a-dire sur la fente infinitesimale entre le bas du fut et le plan. Tout
+# chemin de courant entre la piste et le plan la traverse, puisque le via est
+# le SEUL conducteur qui les relie : rien ne la contourne, ce qui etait tout le
+# probleme de la fente serie.
+#
+# LA HAUTEUR DU FUT EST LA HAUTEUR ELECTRIQUE, pas la hauteur geometrique. Le
+# modele 2,5D suppose le cuivre infiniment mince ; la pile electrique va donc
+# du plan des pistes a l'epaisseur de dielectrique en dessous, et non au sommet
+# du cuivre du plan de masse. Sur du FR-4 de 0,37 mm avec 35 um de cuivre les
+# deux different de 9 %, et un fut bati sur la mauvaise s'en trouve faux
+# d'autant. `hauteur_electrique` la lit dans l'empilage, et c'est elle qu'il
+# faut passer.
+# ==========================================================================
+
+def hauteur_electrique(stackup, z_piste=None):
+    """L'epaisseur de dielectrique entre le plan des pistes et le plan de masse.
+
+    C'est la hauteur que le fut d'un via de port doit avoir dans le maillage,
+    pour que la geometrie que le moteur integre et la pile que la fonction de
+    Green cascade soient la meme chose.
+    """
+    profil = profil_spectral(stackup, z_piste)
+    bas, masse_bas = profil[0], profil[2]
+    if not masse_bas:
+        raise ValueError(
+            "hauteur_electrique : la pile sous la piste ne bute sur aucun plan "
+            "de masse. Un via de port relie la piste au plan ; sans plan il "
+            "n'y a pas de port.")
+    return float(sum(e for e, _ in bas if e > 0))
+
+
+def _triangle_le_plus_proche(mesh, position_xy, z_cible=None):
+    """L'indice du triangle dont le centre de gravite est le plus proche."""
+    vertices = mesh['vertices']
+    elements = np.asarray(mesh['elements'])
+    centres = vertices[elements].mean(axis=1)
+
+    d2 = ((centres[:, 0] - position_xy[0]) ** 2
+          + (centres[:, 1] - position_xy[1]) ** 2)
+    if z_cible is not None:
+        # On ne perce que la couche visee : sur un maillage a plusieurs
+        # couches, le triangle le plus proche en x, y peut etre sur l'autre.
+        loin = np.abs(centres[:, 2] - z_cible) > 1e-9
+        d2 = np.where(loin, np.inf, d2)
+    if not np.any(np.isfinite(d2)):
+        raise ValueError("percer_via_port : aucun triangle sur la couche visee")
+    return int(np.argmin(d2))
+
+
+def percer_via_port(mesh, position_xy, hauteur, z_cible=None):
+    """Perce le maillage a l'endroit dit, et y descend un fut de via.
+
+    Args:
+        mesh: le maillage, tel que `generate_2d_mesh` le rend
+        position_xy: (x, y) du via, en metres
+        hauteur: la hauteur ELECTRIQUE du fut -- voir `hauteur_electrique`
+        z_cible: l'altitude de la couche a percer ; deduite du triangle le plus
+                 proche quand elle manque
+
+    Returns:
+        (mesh, aretes_du_bas) ou `aretes_du_bas` est la liste des couples
+        (sommet_a, sommet_b, indice_du_triangle) sur lesquels il faudra poser
+        les demi-RWG du port.
+
+    LE VIA A LA TAILLE D'UN TRIANGLE DU MAILLAGE, et c'est assume. Un vrai via
+    de 0,3 mm dans une piste maillee au dixieme de millimetre demanderait un
+    maillage local, donc un mailleur qui sache raffiner ; ici la taille du
+    port suit celle de la maille. C'est sans consequence sur le resultat
+    DE-EMBARQUE -- le de-embarquement retire le port, quelle que soit sa
+    taille --, et c'en a une sur le resultat brut, qu'on ne publie donc pas.
+    """
+    vertices = np.asarray(mesh['vertices'], dtype=float)
+    elements = np.asarray(mesh['elements'], dtype=int)
+    layer_ids = np.asarray(mesh.get('layer_ids',
+                                    np.zeros(len(elements), dtype=int)))
+
+    i_perce = _triangle_le_plus_proche(mesh, position_xy, z_cible)
+    trou = elements[i_perce].copy()
+    couche = int(layer_ids[i_perce])
+    z_haut = float(vertices[trou].mean(axis=0)[2])
+
+    # Les trois sommets du bas, a la verticale de ceux du trou.
+    n_v = len(vertices)
+    bas = np.arange(n_v, n_v + 3)
+    nouveaux = vertices[trou].copy()
+    nouveaux[:, 2] = z_haut - hauteur
+    vertices = np.vstack([vertices, nouveaux])
+
+    # Le triangle perce sort ; les indices d'apres reculent d'un cran, et les
+    # aretes du bas devront pointer sur les indices d'APRES la renumerotation.
+    garde = np.array([i for i in range(len(elements)) if i != i_perce],
+                     dtype=int)
+    elements = elements[garde]
+    layer_ids = layer_ids[garde]
+
+    # Les trois parois, deux triangles chacune.
+    parois = []
+    aretes_bas = []
+    for k in range(3):
+        p_a, p_b = int(trou[k]), int(trou[(k + 1) % 3])
+        q_a, q_b = int(bas[k]), int(bas[(k + 1) % 3])
+        parois.append((p_a, p_b, q_b))
+        parois.append((p_a, q_b, q_a))
+        # L'arete du bas appartient au SECOND triangle de la paroi.
+        aretes_bas.append((q_a, q_b, len(elements) + len(parois) - 1))
+
+    elements = np.vstack([elements, np.asarray(parois, dtype=int)])
+    layer_ids = np.concatenate([layer_ids,
+                                np.full(len(parois), couche, dtype=int)])
+
+    maille = dict(mesh)
+    maille['vertices'] = vertices
+    maille['elements'] = elements
+    maille['layer_ids'] = layer_ids
+    maille['num_vertices'] = len(vertices)
+    maille['num_elements'] = len(elements)
+    return maille, aretes_bas
+
+
+def demi_rwg_du_bas(mesh, aretes_bas, decalage=0):
+    """Les demi-RWG du bas du fut : la fonction de base du port.
+
+    UNE DEMI-RWG EST UNE RWGBasis DONT L'AIRE MOINS EST NULLE. Ce n'est pas un
+    bricolage : `_triangles_de` saute les triangles d'aire nulle, si bien que
+    la fonction ne vit que sur son T+, avec div f = l/A+ et une charge non
+    compensee -- exactement ce qu'il faut, puisque c'est l'IMAGE dans le plan
+    de masse qui porte la charge opposee, et que la fonction de Green
+    stratifiee la produit toute seule.
+
+    `decalage` est le nombre de RWG deja construites : les demi-RWG viennent
+    apres, et leurs indices servent a designer le port.
+
+    Rend (demi_rwg, coupe) ou `coupe` est la liste de couples (indice, signe)
+    que `vecteur_de_coupe` et `courant_de_coupe` attendent. Le signe est +1
+    partout : la fonction RWG pointe de son sommet libre VERS l'arete, donc un
+    coefficient positif est un courant qui SORT du fut vers le plan de masse.
+    """
+    vertices = np.asarray(mesh['vertices'], dtype=float)
+    elements = np.asarray(mesh['elements'], dtype=int)
+
+    demi = []
+    coupe = []
+    for k, (v_a, v_b, i_tri) in enumerate(aretes_bas):
+        triangle = elements[i_tri]
+        libres = [int(v) for v in triangle if v not in (v_a, v_b)]
+        if len(libres) != 1:
+            raise ValueError(
+                "demi_rwg_du_bas : l'arete (%d, %d) n'appartient pas au "
+                "triangle %d" % (v_a, v_b, i_tri))
+
+        longueur = float(np.linalg.norm(vertices[v_b] - vertices[v_a]))
+        aire = compute_triangle_area(vertices[triangle])
+
+        demi.append(RWGBasis(
+            edge_index=-1 - k,
+            tri_plus=int(i_tri),
+            tri_minus=int(i_tri),        # jamais lu : son aire est nulle
+            vertex_plus=libres[0],
+            vertex_minus=libres[0],
+            edge_length=longueur,
+            area_plus=aire,
+            area_minus=0.0,              # C'EST CE QUI EN FAIT UNE DEMI-RWG
+            edge_vertices=(int(v_a), int(v_b)),
+        ))
+        coupe.append((decalage + k, +1.0))
+
+    return demi, coupe
+
+
+def maillage_avec_ports_verticaux(mesh, positions, hauteur, z_cible=None):
+    """Le maillage perce de tous ses ports, ses RWG, et la coupe de chaque port.
+
+    L'ORDRE COMPTE : on perce TOUS les trous d'abord, on construit les RWG
+    ordinaires ENSUITE, et on ajoute les demi-RWG a la fin. Percer entre deux
+    constructions renumeroterait les triangles sous les RWG deja faites.
+
+    Returns:
+        (mesh, rwg_basis, coupes) -- `coupes` est une liste par port, prete
+        pour `build_v_vector`, `compute_s_parameters` et `courant_de_coupe`.
+    """
+    aretes_par_port = []
+    for xy in positions:
+        mesh, aretes = percer_via_port(mesh, xy, hauteur, z_cible)
+        aretes_par_port.append(aretes)
+
+    # LES TROUS DEJA PERCES DECALENT LES TRIANGLES DES PRECEDENTS. Chaque
+    # percage retire un triangle, donc tous les indices au-dessus reculent
+    # d'un. On corrige apres coup plutot que de percer un par un et de
+    # reconstruire : c'est le meme calcul, en une passe.
+    #
+    # En pratique `percer_via_port` ajoute ses parois EN FIN de tableau et ne
+    # retire qu'un triangle situe AVANT elles, donc les indices rendus par un
+    # percage anterieur reculent d'exactement un par percage ulterieur.
+    for k, aretes in enumerate(aretes_par_port):
+        recul = len(aretes_par_port) - 1 - k
+        if recul:
+            aretes_par_port[k] = [(a, b, i - recul) for a, b, i in aretes]
+
+    rwg_basis = build_rwg_basis(mesh, extract_edges(mesh))
+
+    coupes = []
+    for aretes in aretes_par_port:
+        demi, coupe = demi_rwg_du_bas(mesh, aretes, decalage=len(rwg_basis))
+        rwg_basis.extend(demi)
+        coupes.append(coupe)
+
+    logger.info("  %d port(s) vertical(aux) : %d RWG dont %d demi-RWG de port",
+                len(positions), len(rwg_basis),
+                sum(len(c) for c in coupes))
+    return mesh, rwg_basis, coupes

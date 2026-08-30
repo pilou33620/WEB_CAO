@@ -455,6 +455,78 @@ function simPlagesIpc(piste,coucheIdx,refs,cum,total){
    ========================================================================== */
 const SIM_COULOIR=2.0;          // mm ; largeur du couloir, depuis le bord du cuivre
 
+/* ==========================================================================
+   LES COTES DU VIA, CÔTÉ VISIONNEUSE
+   --------------------------------------------------------------------------
+   MÊME BESOIN QUE DANS L'ÉDITEUR, MAIS UNE SOURCE PLUS PAUVRE. L'éditeur tient
+   un objet via avec son perçage et sa pastille ; l'IPC-2581, lui, porte des
+   TROUS d'un côté et des PASTILLES de l'autre, et c'est à nous de les
+   rapprocher par leur position. C'est déjà ce que fait le chemin DC, dont on
+   reprend les deux règles :
+
+     · un trou marqué NON métallisé ne joint rien — on ne l'accroche pas ;
+     · à défaut de trou déclaré, une pastille présente sur les deux couches
+       vaut un tube, et le perçage se déduit de la pastille moins un anneau de
+       0,25 mm de part et d'autre. C'est un repli, et il repart marqué comme
+       tel : le serveur ne dira « cotes supposées » que si on ne lui donne
+       rien, donc c'est ICI qu'il faut être honnête.
+
+   ON N'ENVOIE PAS LA HAUTEUR. Le serveur la calcule depuis l'empilage qu'on
+   lui envoie ; une seconde définition ici finirait par en dire autre chose.
+   ========================================================================== */
+const SIM_TOL_VIA_IPC = 0.02;           /* mm — la tolérance de raccord du serveur */
+
+function simViaAuRaccordIpc(N, x, y, cuA, cuB){
+  if(!N) return null;
+  const k = simKUnite();
+  const pres = (a, b) => Math.abs(a - b) <= SIM_TOL_VIA_IPC;
+
+  /* 1. Un trou déclaré, et métallisé. C'est la meilleure source : le perçage
+        y est écrit, il ne se déduit pas. */
+  for(const t of (N.trous || [])){
+    if(/NON/i.test(t.p || "")) return null;      /* nu : il ne joint rien */
+    if(!pres(t.x * k, x) || !pres(t.y * k, y)) continue;
+    const d = Math.max((t.d || 0) * k, 0.05);
+    let pastille = 0;
+    for(const q of (N.pads || []))
+      if(pres(q.x * k, x) && pres(q.y * k, y))
+        pastille = Math.max(pastille, (q.d || 0) * k);
+    return {drill_diameter: d,
+            pad_diameter: pastille > 0 ? pastille : d * 2.5};
+  }
+
+  /* 2. Pas de trou déclaré : deux pastilles au même endroit valent un tube.
+        Le perçage se déduit, et c'est un repli — la pastille, elle, est lue. */
+  let pastille = 0, combien = 0;
+  for(const q of (N.pads || []))
+    if(pres(q.x * k, x) && pres(q.y * k, y)){
+      combien++;
+      pastille = Math.max(pastille, (q.d || 0) * k);
+    }
+  if(combien < 2 || !(pastille > 0)) return null;
+  return {drill_diameter: Math.max(pastille - 0.5, 0.05),
+          pad_diameter: pastille};
+}
+
+function simAccrocherViasIpc(envoi){
+  const N = V.parNet[V.net];
+  if(!N) return 0;
+  let poses = 0;
+  for(let i = 1; i < envoi.length; i++){
+    const a = envoi[i - 1], b = envoi[i];
+    if(a.layer === b.layer) continue;
+    const p = a.end, q = b.start;
+    if(!p || !q) continue;
+    if(Math.abs(p[0] - q[0]) > SIM_TOL_VIA_IPC ||
+       Math.abs(p[1] - q[1]) > SIM_TOL_VIA_IPC) continue;
+    /* `layer` est un indice d'EMPILAGE ; les couches de cuivre se comptent en
+       le divisant par deux, comme `simRangCu` l'a produit. */
+    const via = simViaAuRaccordIpc(N, q[0], q[1], a.layer / 2, b.layer / 2);
+    if(via){ b.via = via; poses++; }
+  }
+  return poses;
+}
+
 function simCoutureIpc(entrees,refs){
   if(!refs.size||!entrees.length)return null;
   const k=simKUnite();
@@ -565,6 +637,8 @@ function simSegments(){
                    couche:(c?c.nom:"?"), coucheIdx:e.couche});
     }
   }
+  simAccrocherViasIpc(envoi);
+
   return {envoi:envoi, objets:objets, ignorees:ignorees,
           couture:simCoutureIpc(entrees,refs),
           voisins:[...hors.values()].sort((a,b)=>b.longueur-a.longueur)};

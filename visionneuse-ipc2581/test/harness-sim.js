@@ -65,6 +65,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simRefIdx","simPlagesDe","simMemeEcart","simKUnite","simCumul","simSurPoly",
   "simProjPoly","simSousPoly","simDistSeg","simGrilleCuivre","simEcartsEn",
   "simPlagesIpc","simCoutureIpc","simSegments","simCuDe","simRangCu",
+  "simAccrocherViasIpc","simViaAuRaccordIpc","simKUnite",
   "simTopo","simTopoNom","simCoplanaire","simCouture","simVoisins",
   "simNb","simSection","simProvenanceIpc",
   "SIM_GAP_MAX","SIM_COULOIR","SIM_GND_RE","SIM_REF_TAUX",
@@ -734,29 +735,37 @@ T("changer d'unité ne change pas la fréquence, seulement son écriture",()=>{
      `simSaisie()` lit le DOM et le DOM l'emporte sur `SIM.saisie`. Poser la
      valeur en mémoire seule éprouverait un chemin que personne n'emprunte. */
   const ch=id=>document.getElementById(id);
-  SIM.saisie.unite="MHz";
+  /* DEUX UNITÉS DEPUIS LE 2026-08-30 : f₀ a la sienne, la bande S la sienne.
+     Les régler toutes les deux ici n'est pas une commodité d'essai — c'est ce
+     que fait le panneau, qui pose les deux listes. Ne régler que la première
+     laisserait la bande se lire en gigahertz, et « 100 » vaudrait 100 GHz. */
+  SIM.saisie.unite="MHz"; SIM.saisie.uniteBande="MHz";
   ch("simFc").value="868"; ch("simF1").value="100"; ch("simF2").value="3000";
   simSaisie();
   if(SIM.saisie.fc!==868e6)
     throw new Error("868 en MHz vaut 868 MHz, pas "+SIM.saisie.fc+" Hz");
-  simUniteChanger("GHz");
+  simUniteChanger("GHz","fc");
   if(SIM.saisie.unite!=="GHz")throw new Error("l'unité doit avoir changé");
   if(SIM.saisie.fc!==868e6)
     throw new Error("changer d'unité ne déplace pas f₀ : "+SIM.saisie.fc+" Hz");
   if(SIM.saisie.f1!==1e8||SIM.saisie.f2!==3e9)
     throw new Error("la bande ne doit pas bouger non plus");
+  /* ET SON UNITÉ NON PLUS : changer celle de f₀ ne doit pas emporter celle de
+     la bande, sans quoi les deux listes n'en feraient qu'une. */
+  if(SIM.saisie.uniteBande!=="MHz")
+    throw new Error("l'unité de la bande a suivi celle de f₀");
   /* ET LE CHAMP A ÉTÉ RÉÉCRIT dans la nouvelle unité : c'est la moitié
      visible du contrat. Sans cela on lirait 868 sous une étiquette GHz. */
   if(ch("simFc").value!=="0,868")
     throw new Error("le champ doit montrer 0,868 : « "+ch("simFc").value+" »");
   /* Et l'aller-retour retombe exactement où il était : sans cela, choisir son
      unité deux fois de suite ferait dériver la valeur. */
-  simUniteChanger("MHz");
-  simUniteChanger("GHz");
+  simUniteChanger("MHz","fc");
+  simUniteChanger("GHz","fc");
   if(SIM.saisie.fc!==868e6)throw new Error("aller-retour : "+SIM.saisie.fc);
   /* Une unité inconnue ne fait rien plutôt que de poser un facteur absent :
      `simUnite()` retomberait sur GHz et multiplierait par un milliard. */
-  simUniteChanger("parsecs");
+  simUniteChanger("parsecs","fc");
   if(SIM.saisie.unite!=="GHz")throw new Error("une unité inconnue est refusée");
 });
 
@@ -1092,6 +1101,97 @@ T("chute DC : la couche peinte est celle de la charge",()=>{
   if(simDCCoucheVue()!==0)
     throw new Error("couche peinte : "+simDCCoucheVue()+" au lieu de 0");
   SIM_DCB.bornes=[];
+});
+
+
+function xm0(){return (X1+X2)/2;}
+
+/* ==========================================================================
+   LES COTES DU VIA PARTENT AVEC LA SÉLECTION
+   --------------------------------------------------------------------------
+   MÊME BESOIN QUE DANS L'ÉDITEUR, SOURCE PLUS PAUVRE. Le serveur chiffrait le
+   via sur des replis — 0,3 mm de perçage, 2,5 fois cela en pastille — parce que
+   les deux pages ne les envoyaient pas. L'IPC-2581, lui, porte des TROUS d'un
+   côté et des PASTILLES de l'autre : c'est à nous de les rapprocher par leur
+   position, exactement comme le fait déjà le chemin DC.
+
+   TROIS CAS, ET LE TROISIÈME EST LE PLUS IMPORTANT : un trou déclaré NON
+   métallisé ne joint rien, et l'accrocher donnerait une liaison là où le
+   fichier dit qu'il n'y en a pas.
+   ========================================================================== */
+
+/* Une liaison qui change de couche au milieu, et de quoi la réaliser. */
+function carteVia(opts){
+  opts=opts||{};
+  const xm=(X1+X2)/2;
+  const c=carte({
+    percages:opts.percages||[],
+    pads:opts.pads||[],
+    padstacks:opts.padstacks||{}
+  });
+  /* Deux pistes : couche 0 jusqu'au milieu, couche 1 ensuite. */
+  c.modele.pistes=[{c:0, n:0, w:W, p:[X1,Y, xm,Y]},
+                   {c:1, n:0, w:W, p:[xm,Y, X2,Y]}];
+  mdlCharger(c.modele);
+  V.net=0;
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  return xm;
+}
+
+/* Une pastille traversante : le padstack la pose sur les deux cuivres, et
+   c'est `mdlPadPlace` qui en fait des pastilles POSÉES avec leur diamètre. */
+function padTraversante(d){
+  return {padstacks:{V1:{pad:d, pads:[{c:"Top", d:d}, {c:"Bottom", d:d}]}},
+          pads:[{x:xm0(), y:Y, ps:"V1", n:0}]};
+}
+
+T("le via du raccord part avec ses cotes, sur le bon tronçon",()=>{
+  const o=padTraversante(0.55);
+  o.percages=[{x:xm0(), y:Y, d:0.25, n:0, p:"PTH"}];
+  carteVia(o);
+  const g=simSegments();
+  if(g.envoi.length!==2)
+    throw new Error("deux tronçons attendus, "+g.envoi.length);
+  /* LE SERVEUR RANGE LA TRANSITION AU RANG DU SECOND TRONÇON : c'est
+     `objets[trans["troncon"]]` qu'il relit. */
+  if(g.envoi[0].via)
+    throw new Error("le via ne doit pas être accroché au tronçon de départ");
+  const v=g.envoi[1].via;
+  if(!v)throw new Error("le via n'a pas été accroché");
+  if(Math.abs(v.drill_diameter-0.25)>1e-9)
+    throw new Error("perçage "+v.drill_diameter+" au lieu de 0,25");
+  if(Math.abs(v.pad_diameter-0.55)>1e-9)
+    throw new Error("pastille "+v.pad_diameter+" au lieu de 0,55");
+  if("height" in v)
+    throw new Error("la hauteur ne doit pas être envoyée : le serveur la lit "+
+                    "dans l'empilage");
+});
+
+T("sans perçage déclaré, deux pastilles au même lieu valent un tube",()=>{
+  carteVia(padTraversante(0.60));
+  const v=simSegments().envoi[1].via;
+  if(!v)throw new Error("deux pastilles au même lieu devraient valoir un tube");
+  /* La pastille est LUE ; le perçage se déduit, moins un anneau de 0,25 mm de
+     part et d'autre — c'est la règle du chemin DC, et on n'en invente pas une
+     seconde. */
+  if(Math.abs(v.pad_diameter-0.60)>1e-9)
+    throw new Error("pastille "+v.pad_diameter+" au lieu de 0,60");
+  if(Math.abs(v.drill_diameter-0.10)>1e-9)
+    throw new Error("perçage déduit "+v.drill_diameter+" au lieu de 0,10");
+});
+
+T("un trou NON métallisé ne joint rien, et n'est pas accroché",()=>{
+  const o=padTraversante(0.55);
+  o.percages=[{x:xm0(), y:Y, d:0.25, n:0, p:"NON_PLATED"}];
+  carteVia(o);
+  const v=simSegments().envoi[1].via;
+  if(v)throw new Error("un trou nu a été pris pour un via : "+JSON.stringify(v));
+});
+
+T("rien au raccord : rien n'est accroché",()=>{
+  carteVia({});
+  const v=simSegments().envoi[1].via;
+  if(v)throw new Error("un via a été inventé là où il n'y a rien");
 });
 
 

@@ -380,6 +380,69 @@ function simEspacement(t,refs,signe){
   return {n:pos.length, ecartMax:pire};
 }
 
+/* ==========================================================================
+   LES COTES DU VIA, ENVOYÉES PLUTÔT QUE SUPPOSÉES
+   --------------------------------------------------------------------------
+   CE QUE LE SERVEUR FAISAIT SANS ELLES. `_cotes_via` le disait en toutes
+   lettres : « LES PAGES N'ENVOIENT PAS ENCORE LES VIAS ». Le modèle π L-C
+   tournait donc sur des replis — 0,3 mm de perçage, 2,5 fois cela en pastille
+   — alors que l'éditeur connaît les deux exactement, et connaît même la
+   longueur percée, que `stackSpan` calcule déjà pour l'Excellon.
+
+   OÙ LE VIA S'ACCROCHE, ET POURQUOI CE TRONÇON-LÀ. Le serveur déduit une
+   transition de deux tronçons consécutifs sur des couches différentes, et la
+   range au rang du SECOND — c'est `objets[trans["troncon"]]` qu'il relit. On
+   accroche donc le via au second tronçon, pas au premier.
+
+   QUAND PLUSIEURS VIAS RÉPONDENT, ON PREND LE PLUS COURT. Un via traversant et
+   un via enterré peuvent être au même endroit et couvrir tous deux le saut
+   demandé ; c'est le plus spécifique qui décrit la liaison.
+   ========================================================================== */
+const SIM_TOL_VIA = 0.02;               /* mm — la tolérance de raccord du serveur */
+
+function simViaAuRaccord(x, y, cuA, cuB){
+  let choisi = null, portee = Infinity;
+  for(const v of S.vias){
+    if(Math.abs(v.x - x) > SIM_TOL_VIA || Math.abs(v.y - y) > SIM_TOL_VIA)
+      continue;
+    const lo = Math.min(v.a, v.b), hi = Math.max(v.a, v.b);
+    if(cuA < lo || cuA > hi || cuB < lo || cuB > hi) continue;
+    const s = stackSpan(v.a, v.b);
+    if(s < portee){ choisi = v; portee = s; }
+  }
+  if(!choisi) return null;
+  /* ON N'ENVOIE PAS LA HAUTEUR, ET C'EST VOULU. `stackSpan` la connaît — c'est
+     elle qui commande le foret de l'Excellon —, mais le serveur la recalcule
+     depuis l'empilage qu'on lui envoie, et par la même somme. Deux définitions
+     de la même longueur, c'est deux chiffres le jour où l'une des deux dérive.
+     On n'envoie donc que ce que le serveur ne peut PAS savoir : le perçage et
+     la pastille. */
+  return {drill_diameter: choisi.drill, pad_diameter: choisi.d};
+}
+
+/* Accroche à chaque changement de couche le via qui le réalise. On le fait sur
+   l'envoi CONSTITUÉ plutôt que dans la boucle qui le bâtit : la transition se
+   lit sur DEUX tronçons, et on ne connaît le second qu'après. */
+function simAccrocherVias(envoi){
+  let poses = 0;
+  for(let i = 1; i < envoi.length; i++){
+    const a = envoi[i - 1], b = envoi[i];
+    if(a.layer === b.layer) continue;
+    /* Le point de raccord : la fin du précédent doit toucher le début du
+       suivant. Sinon ce n'est pas un via, c'est une rupture — et le serveur
+       le dira. */
+    const p = a.end, q = b.start;
+    if(!p || !q) continue;
+    if(Math.abs(p[0] - q[0]) > SIM_TOL_VIA || Math.abs(p[1] - q[1]) > SIM_TOL_VIA)
+      continue;
+    /* `layer` est un indice d'EMPILAGE (cuivre et diélectrique alternés) ;
+       les vias, eux, se comptent en couches de CUIVRE. */
+    const via = simViaAuRaccord(q[0], q[1], a.layer / 2, b.layer / 2);
+    if(via){ b.via = via; poses++; }
+  }
+  return poses;
+}
+
 function simCouturePcb(pistes,refs){
   if(!refs.size)return null;
   let n=0, pire=0, vu=false;
@@ -439,6 +502,8 @@ function simSegments(){
                    couche:cuLabel(t.l,S.cu), l:t.l});
     }
   }
+  simAccrocherVias(envoi);
+
   return {envoi:envoi, objets:objets,
           couture:simCouturePcb(pistes,refs),
           voisins:[...hors.values()].sort((a,b)=>b.longueur-a.longueur)};

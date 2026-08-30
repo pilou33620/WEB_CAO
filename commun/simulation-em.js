@@ -1152,7 +1152,13 @@ const SIM={
      ramenée de force, des pertes fausses d'un facteur trois, et rien à
      l'écran pour le voir avant le calcul. */
   saisie:{f1:1e8, f2:5e9, points:21, fc:1e9, z0:50, cible:50, tolPct:10,
-          unite:"GHz"}
+          /* DEUX UNITÉS, ET PAS UNE. `unite` écrit f₀ ; `uniteBande` écrit les
+             deux bouts de la bande S. Elles étaient confondues, ce qui obligeait
+             à écrire « 0,1 → 1 » en gigahertz pour une bande de 100 MHz à 1 GHz
+             centrée à 250 MHz — trois champs, trois ordres de grandeur, une
+             seule case pour les dire. Séparer les deux ne change rien au
+             calcul : tout circule en hertz de bout en bout. */
+          unite:"GHz", uniteBande:"GHz"}
 };
 
 /* Les unités offertes, du hertz au gigahertz. Elles ne changent RIEN au
@@ -1165,6 +1171,15 @@ const SIM_UNITES=[
 ];
 function simUnite(){
   return SIM_UNITES.find(u=>u.cle===SIM.saisie.unite)||SIM_UNITES[3];
+}
+/* L'unité de la bande S. LE REPLI EST L'UNITÉ DE f₀, ET NON UNE CONSTANTE :
+   un état d'avant la séparation ne porte pas `uniteBande`, et lui donner du
+   gigahertz par défaut ferait sauter la bande d'un facteur mille sous les yeux
+   de qui rouvre le panneau. Retomber sur `unite` rend exactement le
+   comportement d'avant. */
+function simUniteBande(){
+  const cle=SIM.saisie.uniteBande||SIM.saisie.unite;
+  return SIM_UNITES.find(u=>u.cle===cle)||simUnite();
 }
 
 function simEsc(s){
@@ -1729,6 +1744,11 @@ function simFiche(){
     h+='<tr><td colspan="6">… et '+(gr.length-60)+" autres</td></tr>";
   h+="</table>";
 
+  /* CE QUI EST ENTRE LES TRONCONS, et que la courbe S porte deja. Le serveur
+     cascade les coudes et les vias depuis le lot 3b ; la fiche ne les montrait
+     pas, si bien qu'un |S21| qui plonge ne pouvait pas etre attribue. */
+  h+=simDiscontinuites(res);
+
   h+=simCourbe(res);
   return h;
 }
@@ -2070,7 +2090,11 @@ function simPlagesDe(total,mesure){
    résonne, cesse d'être une masse, et l'impédance calculée ne décrit plus rien.
 
    ON NE LE MODÉLISE PAS — il faudrait l'onde complète, c'est-à-dire
-   `mom_solver/`, hors du chemin de calcul. On le CONTRÔLE : l'outil mesure
+   `mom_solver/`, que CE PANNEAU n'appelle pas. Le moteur, lui, n'est plus
+   bloqué : son port vertical est fait et mesuré depuis le 2026-08-30, et il
+   rend des paramètres S dé-embarqués à 0,93 % de `ligne_mom`. Ce qui manque
+   ici est la couture entre la page et lui, pas la physique. On le CONTRÔLE :
+   l'outil mesure
    l'espacement le plus grand entre deux coutures consécutives le long de la
    piste, et on le compare à la longueur d'onde dans le stratifié en haut de la
    bande analysée. C'est là que le risque est le plus fort, pas à f₀.
@@ -2221,6 +2245,124 @@ function simTopo(s){
    Deux outils, deux provenances, et il faut pouvoir les distinguer : l'éditeur
    PCB CONNAÎT son isolation — c'est elle qui creuse le plan —, la visionneuse
    la MESURE sur le cuivre livré. */
+/* ==========================================================================
+   CE QUI A ÉTÉ CASCADÉ ENTRE LES TRONÇONS
+   --------------------------------------------------------------------------
+   POURQUOI CETTE SECTION EXISTE. Le serveur calcule les coudes et les vias,
+   il les insère dans la cascade ABCD, et donc la courbe S les porte — mais
+   RIEN ne le disait. `res.discontinuites` arrivait dans le résultat et n'était
+   lu nulle part. Devant un |S₂₁| qui plonge, personne ne pouvait savoir si un
+   via y était compté ni ce qu'il pesait ; et devant une liaison qui change de
+   couche, personne ne pouvait vérifier que le via avait seulement été VU.
+
+   CE QUE LA COLONNE « PHASE » VEUT DIRE, ET POURQUOI ELLE EST LÀ. Une
+   inductance en nanohenrys ne dit pas si elle compte : 1 nH est négligeable à
+   100 MHz et dominant à 10 GHz. La phase que l'élément vaut À LA FRÉQUENCE
+   CENTRALE, elle, se lit directement — sous un degré, on peut passer.
+
+   LA PROVENANCE DE CHAQUE COTE VOYAGE AVEC. Les pages n'envoient pas encore le
+   perçage ni la pastille : le modèle tourne alors sur des replis, et un
+   chiffre supposé affiché comme un chiffre mesuré est pire que pas de chiffre.
+   La hauteur, elle, se lit dans l'empilage et n'est plus supposée — c'est
+   pourquoi on distingue cote par cote plutôt que de mettre un seul drapeau.
+   ========================================================================== */
+function simCoteSource(c,cle){
+  return (c&&c[cle+"_source"])||"repli";
+}
+
+function simDiscontinuites(res){
+  const d=res.discontinuites||{};
+  const coudes=d.coudes||[], vias=d.transitions||[];
+  const n=coudes.length+vias.length;
+
+  /* LE SILENCE EST UNE RÉPONSE, MAIS SEULEMENT SI ON LE DIT. Une liaison d'un
+     seul tronçon n'a rien entre ses tronçons : inutile d'ouvrir une section.
+     Une liaison de plusieurs tronçons sans discontinuité, en revanche, mérite
+     la ligne — c'est une information, pas une absence. */
+  if(!n){
+    if(((res.ligne&&res.ligne.troncons)||0)<2)return "";
+    return '<p class="simNote">· Aucune discontinuité entre les tronçons : '+
+      "la liaison est une suite de sections droites sur une seule couche, et "+
+      "la courbe S ne porte que les lignes.</p>";
+  }
+
+  const quoi=[];
+  if(coudes.length)quoi.push(coudes.length+" coude"+(coudes.length>1?"s":""));
+  if(vias.length)quoi.push(vias.length+" via"+(vias.length>1?"s":""));
+
+  let h='<p class="simVerdict dedans">Discontinuités cascadées'+
+        " <span>"+quoi.join(", ")+"</span></p>";
+
+  h+='<table class="simTab simTabD"><tr><th>Après</th><th>Type</th>'+
+     "<th>Détail</th><th>L</th><th>C</th><th>Phase</th></tr>";
+
+  const lignes=[];
+  for(const c of coudes)
+    lignes.push({rang:c.troncon, type:"Coude",
+                 detail:simNb(c.angle_deg,0)+"°",
+                 m:c.modelise||{}, l:"inductance_pH", ul:" pH", dl:0});
+  for(const t of vias){
+    const c=t.cotes||{};
+    const cotes=[simNb(c.hauteur_mm,3)+" mm",
+                 "⌀"+simNb(c.percage_mm,2),
+                 "past. "+simNb(c.pastille_mm,2)].join(" · ");
+    lignes.push({rang:t.troncon, type:"Via",
+                 detail:simEsc((t.nom_depart||"?")+" → "+(t.nom_arrivee||"?"))+
+                        '<br><small>'+simEsc(cotes)+"</small>",
+                 m:t.modelise||{}, l:"inductance_nH", ul:" nH", dl:3,
+                 cotes:c});
+  }
+  lignes.sort((a,b)=>a.rang-b.rang);
+
+  for(const L of lignes){
+    /* SOUS UN DIXIÈME DE DEGRÉ, L'ÉLÉMENT NE PÈSE RIEN, et le dire évite qu'on
+       aille chercher une cause là où il n'y en a pas. */
+    const ph=L.m.phase_deg;
+    const faible=isFinite(ph)&&Math.abs(ph)<0.1;
+    h+="<tr><td>tronçon "+L.rang+"</td>"+
+       "<td>"+L.type+"</td>"+
+       "<td>"+L.detail+"</td>"+
+       "<td>"+simNb(L.m[L.l],L.dl)+L.ul+"</td>"+
+       "<td>"+simNb(L.m.capacite_fF,2)+" fF</td>"+
+       '<td class="'+(faible?"z0ok":"")+'">'+simNb(ph,2)+"°</td></tr>";
+  }
+  h+="</table>";
+
+  /* LES REPLIS, NOMMÉS UN PAR UN. « Cotes supposées » tout court ne dit pas
+     LAQUELLE l'est : depuis que la hauteur se lit dans l'empilage, il n'y a
+     plus qu'un drapeau à lever pour le perçage et la pastille, et il faut
+     qu'on sache que la hauteur, elle, est exacte. */
+  const supposees=vias.filter(t=>t.cotes_supposees);
+  if(supposees.length){
+    const c=supposees[0].cotes||{};
+    const manque=[];
+    if(simCoteSource(c,"percage")!=="page")
+      manque.push("perçage "+simNb(c.percage_mm,2)+" mm");
+    if(simCoteSource(c,"pastille")!=="page")
+      manque.push("pastille "+simNb(c.pastille_mm,2)+" mm");
+    h+='<p class="simNote">· '+
+       (supposees.length>1?supposees.length+" vias sont chiffrés":
+                           "Le via est chiffré")+
+       " avec des valeurs par défaut : "+simEsc(manque.join(", "))+
+       ". La page n'envoie pas encore ces cotes. La hauteur, elle, est lue "+
+       "dans l'empilage ("+simNb((supposees[0].cotes||{}).hauteur_mm,3)+
+       " mm) et n'est pas supposée.</p>";
+  }
+
+  /* CE QUE LE MODÈLE DE VIA EST, ET CE QU'IL N'EST PAS. Un π L-C localisé
+     décrit un via court devant la longueur d'onde. Il ne décrit ni le moignon
+     qui dépasse, ni le trou dans le plan que le via traverse, ni la cavité
+     entre deux plans d'alimentation. À 200 MHz sur une carte de 1,3 mm ces
+     trois-là ne pèsent rien ; en haut de bande, il faut le savoir. */
+  if(vias.length)
+    h+='<p class="simNote">· Le via est un π L-C localisé : le moignon qui '+
+       "dépasse, l'antipad dans le plan traversé et la cavité entre plans n'y "+
+       "sont pas. C'est bon tant que le via est court devant la longueur "+
+       "d'onde.</p>";
+
+  return h;
+}
+
 function simCoplanaire(res){
   const cop=res.segments.filter(s=>s.coplanaire&&s.ecart>0);
   if(!cop.length)return "";
@@ -2343,10 +2485,14 @@ function simChamp(id,titre,large){
    listes séparées permettraient d'écrire une bande en mégahertz et sa
    fréquence centrale en gigahertz, ce qui est précisément l'erreur qu'on
    cherche à rendre impossible. */
-function simChampUnite(){
-  let h='<select class="simU simUSel" id="simFUnite" title="Unité des '+
-        "trois champs de fréquence : f₀, début et fin de bande. En changer "+
-        'CONVERTIT ce qui est écrit, cela ne le réinterprète pas.">';
+/* LE MÊME SÉLECTEUR SERT LES DEUX, et il en faut deux : f₀ et la bande ne se
+   lisent pas dans la même unité dès qu'une carte travaille à 250 MHz sur une
+   bande qui monte au gigahertz. `quoi` ne change que l'infobulle — le reste est
+   identique, et c'est bien pour cela qu'une seule fonction les pose. */
+function simChampUnite(id,quoi){
+  let h='<select class="simU simUSel" id="'+id+'" title="Unité de '+quoi+
+        ". En changer CONVERTIT ce qui est écrit, cela ne le réinterprète "+
+        'pas.">';
   for(const u of SIM_UNITES)
     h+='<option value="'+u.cle+'">'+u.cle+"</option>";
   return h+"</select>";
@@ -2509,23 +2655,24 @@ function simCorpsImpedance(){
     '<span class="simU">%</span>'+
     '<span class="simU" id="simZTolAbs">—</span>'+
   '</div>'+
-  '<div class="pnl-bar">'+
+  '<div class="pnl-bar simBarF">'+
     '<span class="pnl-lbl">Fréquence</span>'+
     simChamp("simFc","Fréquence centrale : c'est à celle-ci que l'impédance "+
                      "est donnée et que la carte est peinte")+
-    simChampUnite()+
+    simChampUnite("simFUnite","la fréquence centrale")+
     '<span class="pnl-lbl">Réf.</span>'+
     simChamp("simZ0","Impédance de référence des ports, pour les paramètres S")+
     '<span class="simU">Ω</span>'+
   '</div>'+
-  '<div class="pnl-bar">'+
+  '<div class="pnl-bar simBarF">'+
     '<span class="pnl-lbl">Bande S</span>'+
-    simChamp("simF1","Début de bande, dans l'unité choisie ci-dessus")+
+    simChamp("simF1","Début de bande, dans l'unité choisie à droite")+
     '<span class="simSep">→</span>'+
-    simChamp("simF2","Fin de bande, dans l'unité choisie ci-dessus")+
-    '<span class="simU" id="simUBande">GHz</span>'+
-    '<span class="pnl-lbl">Points</span>'+
-    simChamp("simN","Nombre de points de la courbe S")+
+    simChamp("simF2","Fin de bande, dans l'unité choisie à droite")+
+    simChampUnite("simFUniteBande","la bande S — elle est indépendante de "+
+                                   "celle de f₀")+
+    '<span class="simGr"><span class="pnl-lbl">Points</span>'+
+    simChamp("simN","Nombre de points de la courbe S")+"</span>"+
   '</div>'+
   /* CE QUE LE SERVEUR AURAIT CORRIGÉ EN SILENCE, dit AVANT le calcul. Il
      ramène bien une f₀ hors bande au bord et le signale — mais il le signale
@@ -2554,17 +2701,17 @@ function simNbLibre(v){
 
 function simSaisieEcrire(){
   const s=SIM.saisie, pose=(id,v)=>{const e=simEl(id);if(e)e.value=v;};
-  const k=simUnite().f;
-  pose("simF1",simNbLibre(s.f1/k));
-  pose("simF2",simNbLibre(s.f2/k));
+  const k=simUnite().f, kb=simUniteBande().f;
+  pose("simF1",simNbLibre(s.f1/kb));
+  pose("simF2",simNbLibre(s.f2/kb));
   pose("simFc",simNbLibre(s.fc/k));
   pose("simN",s.points); pose("simZ0",s.z0);
   pose("simZCible",String(s.cible).replace(".",","));
   pose("simZTol",String(s.tolPct).replace(".",","));
   const sel=simEl("simFUnite");
   if(sel)sel.value=simUnite().cle;
-  const ub=simEl("simUBande");
-  if(ub)ub.textContent=simUnite().cle;
+  const selb=simEl("simFUniteBande");
+  if(selb)selb.value=simUniteBande().cle;
   simZTolEcrire();
   simFAvertEcrire();
 }
@@ -2582,10 +2729,12 @@ function simSaisie(){
     const v=el?parseFloat(String(el.value).replace(",",".")):NaN;
     return (isFinite(v)&&v>=(mini==null?0:mini))?v:defaut;
   };
-  const s=SIM.saisie, k=simUnite().f, plancher=1/k;
-  s.f1=lu("simF1",s.f1/k,plancher)*k;
-  s.f2=lu("simF2",s.f2/k,plancher)*k;
-  s.fc=lu("simFc",s.fc/k,plancher)*k;
+  const s=SIM.saisie, k=simUnite().f, kb=simUniteBande().f;
+  /* LE PLANCHER SUIT SON PROPRE CHAMP : un hertz reste un hertz, mais il ne
+     s'écrit pas pareil selon la case, et les deux cases n'ont plus la même. */
+  s.f1=lu("simF1",s.f1/kb,1/kb)*kb;
+  s.f2=lu("simF2",s.f2/kb,1/kb)*kb;
+  s.fc=lu("simFc",s.fc/k,1/k)*k;
   s.points=Math.round(lu("simN",s.points,1));
   s.z0=lu("simZ0",s.z0,1);
   s.cible=lu("simZCible",s.cible,0.1);
@@ -2597,10 +2746,11 @@ function simSaisie(){
    en GHz, jamais 868 GHz : la valeur physique ne bouge pas, seule son écriture
    change. C'est ce qui fait qu'on peut choisir son unité APRÈS avoir tapé, et
    qu'aucun résultat déjà calculé n'est invalidé au passage. */
-function simUniteChanger(cle){
+function simUniteChanger(cle,laquelle){
   if(!SIM_UNITES.some(u=>u.cle===cle))return;
   simSaisie();                       // fige ce qui est écrit, ancienne unité
-  SIM.saisie.unite=cle;
+  if(laquelle==="bande")SIM.saisie.uniteBande=cle;
+  else                  SIM.saisie.unite=cle;
   simSaisieEcrire();                 // le réécrit dans la nouvelle
 }
 
@@ -2920,7 +3070,9 @@ function simBrancherImpedance(){
   /* L'UNITÉ NE CHANGE AUCUNE VALEUR, donc elle n'efface aucun résultat : elle
      réécrit les mêmes hertz dans une autre case. C'est la différence avec les
      champs ci-dessus, et c'est ce qui permet de la choisir après coup. */
-  pose("simFUnite","onchange",function(){simUniteChanger(this.value);});
+  pose("simFUnite","onchange",function(){simUniteChanger(this.value,"fc");});
+  pose("simFUniteBande","onchange",
+       function(){simUniteChanger(this.value,"bande");});
 }
 
 /* La sélection a bougé — ou la carte. L'outil appelle, le panneau suit.

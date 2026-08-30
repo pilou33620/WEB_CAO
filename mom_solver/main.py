@@ -5,20 +5,24 @@ Point d'entrée principal pour l'analyse électromagnétique
 
 import argparse
 import sys
+
+import numpy as np
 import logging
 import json
 from pathlib import Path
 
 from pcb_parser import load_json, extract_stackup, extract_polygons, build_geometry_model
 try:
-    from .mesher import generate_2d_mesh, extract_edges, build_rwg_basis
-    from .green_layered import noyaux_green
+    from .mesher import (generate_2d_mesh, extract_edges, build_rwg_basis,
+                         hauteur_electrique, maillage_avec_ports_verticaux)
+    from .green_layered import noyaux_green, noyaux_multicouches
     from .mom_engine import fill_z_matrix, build_v_vector, localiser_ports
     from .solver_extract import (solve_currents, compute_s_parameters,
                                  export_touchstone)
 except ImportError:                                    # noqa: BLE001
-    from mesher import generate_2d_mesh, extract_edges, build_rwg_basis
-    from green_layered import noyaux_green
+    from mesher import (generate_2d_mesh, extract_edges, build_rwg_basis,
+                        hauteur_electrique, maillage_avec_ports_verticaux)
+    from green_layered import noyaux_green, noyaux_multicouches
     from mom_engine import fill_z_matrix, build_v_vector, localiser_ports
     from solver_extract import (solve_currents, compute_s_parameters,
                                 export_touchstone)
@@ -100,6 +104,22 @@ def parse_arguments():
         help='Chemin de sortie pour les fichiers de résultats'
     )
     
+    # LE PORT PAR DEFAUT EST LE VIA, ET C'EST UN CHANGEMENT DE FOND. La fente
+    # serie coupe la piste et met le generateur entre ses deux moities : c'est
+    # un port valide pour un dipole, et le mauvais modele pour une ligne. Sur
+    # une ligne courte elle rend |S21| = 0,0065 quand le via rend 0,96, sur
+    # exactement le meme maillage. On garde la fente parce que le banc s'en
+    # sert comme temoin, et parce qu'un port au MILIEU d'une structure -- une
+    # coupure de piste, un composant serie -- est bien une fente.
+    parser.add_argument(
+        '--port',
+        choices=('via', 'fente'),
+        default='via',
+        help="Modele de port : « via » (defaut) relie la piste au plan de "
+             "masse et injecte un courant vertical ; « fente » coupe la piste "
+             "et excite en serie."
+    )
+
     parser.add_argument(
         '--export_currents',
         action='store_true',
@@ -160,39 +180,61 @@ def main():
             logger.info(f"  Taille de maille : {args.mesh_size} mm")
 
         mesh = generate_2d_mesh(geometry, mesh_size_m)
-        edges = extract_edges(mesh)
-        rwg_basis = build_rwg_basis(mesh, edges)
-        
         logger.info(f"  ✓ Éléments : {mesh['num_elements']} triangles")
-        logger.info(f"  ✓ Arêtes : {len(edges)} arêtes internes")
-        logger.info(f"  ✓ Fonctions RWG : {len(rwg_basis)}")
-        
-        # Étape 4 : localisation des ports sur le maillage
+
+        # Étape 4 : les ports, et le maillage qu'ils demandent
         #
         # UN PORT EST UNE COUPE DU CONDUCTEUR, et non une arête : une tension
         # posée sur une seule arête interne est contournée par le métal d'à
         # côté, et le solveur rendait |S21| = 0. Voir le commentaire de
         # `mom_engine.localiser_ports`.
-        logger.info("Étape 4/6 : Localisation des ports sur le maillage")
+        #
+        # ET UNE COUPE DANS LE PLAN DU CUIVRE NE SUFFIT PAS POUR UNE LIGNE.
+        # Elle met le générateur entre les deux moitiés de la piste, donc en
+        # série avec deux tronçons ouverts : |S21| = 0,0065 mesuré sur une
+        # ligne courte. Le port « via » perce le maillage, descend un fût
+        # jusqu'au plan de masse, et pose le générateur sur la fente du bas --
+        # un shunt piste/plan, qui est ce qu'un port de microruban est. Le
+        # même cas rend alors |S21| = 0,96.
+        logger.info("Étape 4/6 : Ports et fonctions de base")
         ports = geometry['ports']
-        coupes = localiser_ports(ports, rwg_basis, mesh['vertices'],
-                                 mesh['elements'], mesh.get('mesh_size'))
+        port_vertical = (args.port == 'via')
 
-        muets = [ports[i].get('id', i) for i, c in enumerate(coupes) if not c]
-        if muets:
-            raise RuntimeError(
-                f"Ports non localisés sur le maillage : {muets}. "
-                "Affinez le maillage (--mesh_size), vérifiez les positions de "
-                "ports, ou donnez-leur une direction explicite."
-            )
-        logger.info("  ✓ %d ports, coupes de %s arêtes"
-                    % (len(coupes), [len(c) for c in coupes]))
+        if port_vertical:
+            hauteur = hauteur_electrique(stackup)
+            positions = [tuple(np.asarray(p['position'], dtype=float).ravel()[:2])
+                         for p in ports]
+            z_piste = None
+            for couche in stackup.get('layers', []):
+                if couche.get('type') == 'copper'                         and str(couche.get('role', '')) != 'plane':
+                    z_piste = couche.get('z_top')
+            mesh, rwg_basis, coupes = maillage_avec_ports_verticaux(
+                mesh, positions, hauteur, z_cible=z_piste)
+            logger.info("  ✓ %d port(s) via, fût de %.4f mm, coupes de %s "
+                        "demi-arêtes"
+                        % (len(coupes), hauteur * 1e3, [len(c) for c in coupes]))
+        else:
+            edges = extract_edges(mesh)
+            rwg_basis = build_rwg_basis(mesh, edges)
+            coupes = localiser_ports(ports, rwg_basis, mesh['vertices'],
+                                     mesh['elements'], mesh.get('mesh_size'))
+            muets = [ports[i].get('id', i)
+                     for i, c in enumerate(coupes) if not c]
+            if muets:
+                raise RuntimeError(
+                    f"Ports non localisés sur le maillage : {muets}. "
+                    "Affinez le maillage (--mesh_size), vérifiez les positions "
+                    "de ports, ou donnez-leur une direction explicite."
+                )
+            logger.info("  ✓ %d ports en fente, coupes de %s arêtes"
+                        % (len(coupes), [len(c) for c in coupes]))
+
+        logger.info(f"  ✓ Fonctions RWG : {len(rwg_basis)}")
 
         # Étape 5 : Assemblage et résolution pour chaque fréquence
         logger.info("Étape 5/6 : Assemblage de la matrice d'impédance et résolution")
 
         # Génération de la grille de fréquences
-        import numpy as np
         freq_array = np.linspace(args.freq_start, args.freq_stop, args.freq_points)
 
         s_params = []
@@ -205,11 +247,17 @@ def main():
             # bande : les images en dépendent. Deux et non une -- le potentiel
             # vecteur suit la ligne TE, le potentiel scalaire la différence des
             # deux lignes ; voir l'en-tête de `mom_engine`.
-            noyaux = noyaux_green(stackup, freq)
+            # UN NOYAU PAR COUCHE DE SIGNAL, plus un noyau croise par paire.
+            # `noyaux_multicouches` rend un jeu a un seul element quand il n'y
+            # a qu'une couche -- le cas courant --, et le moteur ne distingue
+            # pas les deux : c'est `pour(couche_m, couche_n)` qui tranche.
+            noyaux = noyaux_multicouches(stackup, freq,
+                                         avec_vertical=port_vertical)
 
             z_matrix = fill_z_matrix(
                 rwg_basis, freq, noyaux,
-                vertices=mesh['vertices'], elements=mesh['elements']
+                vertices=mesh['vertices'], elements=mesh['elements'],
+                layer_ids=mesh.get('layer_ids')
             )
 
             # Extraction des paramètres S par excitation successive des ports

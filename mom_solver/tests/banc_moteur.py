@@ -57,7 +57,10 @@ for _p in (_PAQUET, os.path.join(_RACINE, 'python')):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from mesher import extract_edges, build_rwg_basis                # noqa: E402
+from mesher import (extract_edges, build_rwg_basis,               # noqa: E402
+                    hauteur_electrique, maillage_avec_ports_verticaux)
+from solver_extract import (compute_s_parameters,                 # noqa: E402
+                            deembarquement_deux_longueurs)
 from green_layered import (C_0, EPSILON_0, MU_0, NoyauxGreen,     # noqa: E402
                            noyaux_green)
 from mom_engine import fill_z_matrix, points_polaires             # noqa: E402
@@ -607,6 +610,248 @@ def _():
             "la variante a un seul noyau n'est pas nettement plus fausse "
             "(%.2f %% contre %.2f %%) : le decouplage a-t-il ete defait ?"
             % (e_faux, e_bon))
+
+
+
+# ==========================================================================
+# 4. LE PORT VERTICAL, ET LA MESURE QUI DECIDE
+# --------------------------------------------------------------------------
+# CE QUI ETAIT BLOQUE, ET DEPUIS QUAND. Le port du moteur etait une FENTE SERIE
+# : une coupe du cuivre, avec le generateur entre les deux moities de la piste.
+# C'est un port valide -- pour un dipole. Pour une ligne de transmission, c'est
+# deux troncons OUVERTS mis en serie, donc deux impedances enormes, donc pas de
+# courant. Le banc de chaine le mesurait sans equivoque : sur une ligne de
+# L/lambda_g = 0,07, |S21| = 0,0065 et |S11| = 1,0000. Toute comparaison de
+# parametres S avec `ligne_mom` attendait ce point-la, et lui seul.
+#
+# CE QUI LE DEBLOQUE. Un vrai port de microruban est un SHUNT entre la piste et
+# le plan de masse : on perce le maillage, on descend un fut de via, et on pose
+# le generateur sur la fente infinitesimale entre le bas du fut et le plan.
+# Trois choses ont du etre faites pour cela, et chacune est eprouvee ailleurs :
+#
+#   · G_A^zz, la composante verticale du potentiel vecteur -- `banc_dcim.py`,
+#     groupe 8 ;
+#   · les demi-RWG du bas du fut, dont l'image dans le plan de masse complete
+#     la fonction -- `mesher.demi_rwg_du_bas` ;
+#   · le de-embarquement par deux longueurs, qui retire le via, le trou et le
+#     coin, et ne laisse que la ligne.
+#
+# CE QUE LES DEUX ESSAIS CI-DESSOUS MESURENT, ET DANS QUEL ORDRE. Le premier
+# compare les deux ports SUR LA MEME LIGNE, parce qu'un |S21| proche de un ne
+# vaut que compare a ce qu'il remplace. Le second est la comparaison qui decide
+# : eps_eff de-embarque contre `ligne_mom`, qui est verifie a 0,42 % contre
+# Hammerstad-Jensen.
+# ==========================================================================
+
+def ligne_a_ports_verticaux(longueur, nx, ny, freq, noyaux, marge=0.5e-3):
+    """Une ligne maillee, percee de deux ports verticaux, et sa matrice S."""
+    mesh, _, _ = grille_ruban(longueur, W_PISTE, nx, ny, Z_PISTE)
+    hauteur = hauteur_electrique(EMPILAGE)
+    mesh, rwg, coupes = maillage_avec_ports_verticaux(
+        mesh, [(marge, 0.0), (longueur - marge, 0.0)], hauteur,
+        z_cible=Z_PISTE)
+
+    z = fill_z_matrix(rwg, freq, noyaux, mesh['vertices'], mesh['elements'])
+    ports = [{'id': 'P1', 'impedance': 50.0}, {'id': 'P2', 'impedance': 50.0}]
+    return compute_s_parameters(z, rwg, ports, freq, coupes), len(rwg)
+
+
+def ligne_a_fentes_series(longueur, nx, ny, freq, noyaux, i1=2, i2=None):
+    """La MEME ligne, avec l'ancien port : une fente serie dans le cuivre."""
+    mesh, rwg, coupes_grille = grille_ruban(longueur, W_PISTE, nx, ny, Z_PISTE)
+    if i2 is None:
+        i2 = nx - 2
+    z = fill_z_matrix(rwg, freq, noyaux, mesh['vertices'], mesh['elements'])
+    ports = [{'id': 'P1', 'impedance': 50.0}, {'id': 'P2', 'impedance': 50.0}]
+    return compute_s_parameters(z, rwg, ports, freq,
+                                [coupes_grille[i1], coupes_grille[i2]])
+
+
+@essai("le port vertical fait passer la ligne, la fente serie non")
+def _():
+    """LA MEME LIGNE, LE MEME MAILLAGE, LA MEME FREQUENCE -- et le port change.
+
+    CE QU'ON ATTEND DE LA FENTE, ET POURQUOI. Elle coupe la piste et met le
+    generateur entre les deux moities : deux troncons ouverts en serie. A
+    L/lambda_g petit, chacun est une capacite minuscule, donc une impedance
+    enorme, donc |S11| = 1 et |S21| = 0. Ce n'est pas une imprecision, c'est le
+    mauvais modele de port.
+
+    CE QU'ON ATTEND DU VIA. Le generateur est entre la piste et le PLAN : le
+    courant monte le fut, part le long de la ligne, revient par le plan. |S21|
+    doit etre proche de un, et la structure PASSIVE -- |S11|^2 + |S21|^2 au
+    plus un, aux pertes et au rayonnement pres.
+
+    LE |S11| QUI RESTE N'EST PAS UN DEFAUT : c'est le via, le trou perce et le
+    coin, tout ce que le de-embarquement retire a l'essai suivant.
+    """
+    freq = 5e9
+    longueur = 6e-3
+    noyaux_h = noyaux_green(EMPILAGE, freq, num_images=8)
+    noyaux_v = noyaux_green(EMPILAGE, freq, num_images=8, avec_vertical=True)
+
+    s_fente = ligne_a_fentes_series(longueur, 16, 3, freq, noyaux_h)
+    s_via, n_rwg = ligne_a_ports_verticaux(longueur, 16, 3, freq, noyaux_v)
+
+    lam_g = C_0 / (freq * np.sqrt(3.49))
+    print("        (L/lambda_g = %.2f, %d RWG)" % (longueur / lam_g, n_rwg))
+    print("        (fente serie  : |S11| = %.4f, |S21| = %.4f)"
+          % (abs(s_fente[0, 0]), abs(s_fente[1, 0])))
+    print("        (port vertical: |S11| = %.4f, |S21| = %.4f, "
+          "|S11|^2+|S21|^2 = %.4f)"
+          % (abs(s_via[0, 0]), abs(s_via[1, 0]),
+             abs(s_via[0, 0]) ** 2 + abs(s_via[1, 0]) ** 2))
+
+    if abs(s_fente[1, 0]) > 0.1:
+        raise AssertionError(
+            "la fente serie transmet %.4f : ce n'est plus le cas de reference "
+            "qui justifie le port vertical" % abs(s_fente[1, 0]))
+    if abs(s_via[1, 0]) < 0.9:
+        raise AssertionError("le port vertical ne transmet que %.4f"
+                             % abs(s_via[1, 0]))
+    somme = abs(s_via[0, 0]) ** 2 + abs(s_via[1, 0]) ** 2
+    if somme > 1.02:
+        raise AssertionError("structure ACTIVE : |S11|^2 + |S21|^2 = %.4f"
+                             % somme)
+
+
+@essai("le de-embarquement par deux longueurs retrouve eps_eff de ligne_mom")
+def _():
+    """LA COMPARAISON QUI DECIDE, ET QUI N'AVAIT JAMAIS PU ETRE FAITE.
+
+    DEUX LONGUEURS, MEME PAS DE MAILLE, MEMES PORTS. Le produit T2 T1^-1
+    elimine les acces et ne laisse que la ligne ; ses valeurs propres sont
+    exp(-+ gamma dL), donc eps_eff = (beta c/omega)^2. Aucun etalon n'y entre.
+
+    L'ETALON EXTERIEUR EST `ligne_mom`, verifie a 0,42 % contre
+    Hammerstad-Jensen et a 0,30 % contre la solution exacte, avec sa correction
+    de dispersion de Getsinger -- le moteur, lui, est plein onde et disperse
+    tout seul.
+
+    CE QUI RESTE DANS L'ECART, ET IL FAUT LE LIRE AVEC : la ligne est maillee
+    sur TROIS cellules de largeur, et la densite de courant d'un microruban est
+    concentree sur les bords -- une grille reguliere la rend mal. C'est la meme
+    erreur de maillage que sur la mesure d'eps_eff par onde stationnaire, qui
+    donne 0,49 % sur un maillage plus fin.
+
+    LE RESIDU DE RECIPROCITE EST LE GARDE-FOU. Les deux valeurs propres doivent
+    etre inverses l'une de l'autre ; leur produit vaut un a 10^-16 pres si, et
+    seulement si, les deux simulations ne different vraiment que par une
+    longueur de ligne uniforme. S'il derive, c'est que le maillage ou le port a
+    bouge entre les deux, et le gamma extrait ne veut plus rien dire.
+    """
+    freq = 5e9
+    pas = 0.375e-3
+    noyaux = noyaux_green(EMPILAGE, freq, num_images=8, avec_vertical=True)
+
+    s_courte, _ = ligne_a_ports_verticaux(6e-3, int(round(6e-3 / pas)), 3,
+                                          freq, noyaux)
+    s_longue, _ = ligne_a_ports_verticaux(12e-3, int(round(12e-3 / pas)), 3,
+                                          freq, noyaux)
+
+    _, disp, z0 = etalon_ligne_mom(freq)
+    d = deembarquement_deux_longueurs(s_courte, s_longue, 6e-3, freq,
+                                      eps_eff_attendu=disp)
+
+    print("        (ligne_mom : eps_eff = %.4f a %.0f GHz, Z0 = %.2f ohms)"
+          % (disp, freq / 1e9, z0))
+    print("        (de-embarque : eps_eff = %.4f, alpha = %.2f dB/m, "
+          "residu de reciprocite %.1e)"
+          % (d['eps_eff'], d['alpha_db_par_m'], d['residu_reciproque']))
+
+    if d['residu_reciproque'] > 1e-6:
+        raise AssertionError(
+            "les deux valeurs propres ne sont pas inverses (%.2e) : les deux "
+            "simulations ne different pas que par la longueur"
+            % d['residu_reciproque'])
+    if d['tours'] != 0:
+        raise AssertionError(
+            "la phase a demande %d tours de 2 pi : dL est trop grand devant "
+            "la longueur d'onde guidee, l'extraction n'est plus sure"
+            % d['tours'])
+
+    e = ecart(d['eps_eff'], disp)
+    print("        (ecart : %.2f %%)" % e)
+    if e > 4.0:
+        raise AssertionError("eps_eff = %.4f contre %.4f attendu : %.2f %%"
+                             % (d['eps_eff'], disp, e))
+
+
+@essai("la voie verticale reste eteinte sur un maillage plat")
+def _():
+    """LA GARANTIE DE NON-REGRESSION, ET ELLE SE VERIFIE AU BIT.
+
+    Le dyade du potentiel vecteur vaut diag(G_A^xx, G_A^xx, G_A^zz), et le
+    moteur coupe donc le produit f_m.f_n en deux voies. Sur un maillage
+    entierement horizontal, la composante z de (p - v) est IDENTIQUEMENT nulle
+    : la voie verticale ne peut rien apporter, et `moments_triangles` ne
+    l'allume meme pas.
+
+    ON LE MESURE PLUTOT QUE DE LE RAISONNER : la meme ligne plate, assemblee
+    avec un noyau qui porte G_A^zz et avec un noyau qui ne le porte pas, doit
+    rendre EXACTEMENT la meme matrice. Pas « a peu pres » -- exactement, parce
+    que c'est le meme chemin de code.
+    """
+    freq = 5e9
+    mesh, rwg, _ = grille_ruban(3e-3, W_PISTE, 8, 3, Z_PISTE)
+    sans = noyaux_green(EMPILAGE, freq, num_images=8)
+    avec = noyaux_green(EMPILAGE, freq, num_images=8, avec_vertical=True)
+    if avec.vertical is None:
+        raise AssertionError("le noyau vertical n'a pas ete construit")
+
+    z_sans = fill_z_matrix(rwg, freq, sans, mesh['vertices'], mesh['elements'])
+    z_avec = fill_z_matrix(rwg, freq, avec, mesh['vertices'], mesh['elements'])
+    ecart_max = float(np.max(np.abs(z_sans - z_avec)))
+    print("        (%d RWG, ecart maximal %.1e)" % (len(rwg), ecart_max))
+    if ecart_max != 0.0:
+        raise AssertionError("la voie verticale a change la matrice d'un "
+                             "maillage plat : %.3e" % ecart_max)
+
+
+@essai("le fut de via ne casse ni la symetrie de Z ni sa diagonale")
+def _():
+    """CE QUI POURRAIT CASSER EN SILENCE quand des triangles se dressent.
+
+    TROIS CHOSES, ET LES TROIS ONT ETE CORRIGEES POUR CET ESSAI :
+
+      · la COPLANARITE se testait par une denivelee en z. Deux triangles d'une
+        meme facette de fut sont coplanaires et leurs centres n'ont pas le meme
+        z : ils auraient ete envoyes a Gauss seul, qui n'integre pas un 1/R ;
+      · `_impedance_vue` rendait l'impedance du VIDE quand la pile devenait
+        vide, meme sur un court-circuit. Ca arrive exactement sur l'anneau du
+        bas du fut, qui est POSE sur le plan de masse ;
+      · la demi-RWG du bas a une aire moins NULLE, et `_triangles_de` doit la
+        sauter sans lever.
+
+    Une diagonale qui contient un zero fait une matrice singuliere, et la
+    resolution rend alors des courants absurdes sans lever d'erreur.
+    """
+    freq = 5e9
+    mesh, _, _ = grille_ruban(4e-3, W_PISTE, 10, 3, Z_PISTE)
+    hauteur = hauteur_electrique(EMPILAGE)
+    mesh, rwg, coupes = maillage_avec_ports_verticaux(
+        mesh, [(0.5e-3, 0.0), (3.5e-3, 0.0)], hauteur, z_cible=Z_PISTE)
+
+    verticaux = [i for i, t in enumerate(mesh['elements'])
+                 if np.ptp(mesh["vertices"][t][:, 2]) > 1e-9]
+    demi = [r for r in rwg if r.area_minus == 0.0]
+
+    noyaux = noyaux_green(EMPILAGE, freq, num_images=8, avec_vertical=True)
+    z = fill_z_matrix(rwg, freq, noyaux, mesh['vertices'], mesh['elements'])
+
+    if not np.all(np.isfinite(z)):
+        raise AssertionError("la matrice Z contient des valeurs non finies")
+    asym = float(np.max(np.abs(z - z.T)))
+    if asym != 0.0:
+        raise AssertionError("Z n'est pas exactement symetrique : %.3e" % asym)
+    diag = np.abs(np.diag(z))
+    if np.min(diag) <= 0.0:
+        raise AssertionError("un element diagonal est nul")
+
+    print("        (%d triangles dont %d verticaux ; %d RWG dont %d demi ; "
+          "coupes de %s ; cond %.1e)"
+          % (len(mesh['elements']), len(verticaux), len(rwg), len(demi),
+             [len(c) for c in coupes], np.linalg.cond(z)))
 
 
 if __name__ == "__main__":

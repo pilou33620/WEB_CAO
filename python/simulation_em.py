@@ -706,6 +706,13 @@ AVERTISSEMENTS_MODELE = [
 # C'est le lot 3a : signaler ce qui n'est pas modélisé est déjà de la valeur.
 # ==========================================================================
 
+# En dessous de cet angle, deux troncons sont colineaires et il n'y a pas de
+# coude. C'est la RESOLUTION des coordonnees qui le fixe -- la page arrondit au
+# millieme de millimetre --, et non un jugement sur ce qui merite d'etre
+# modelise : un coude de 5 degres est bien un coude, et il est emis.
+ANGLE_COUDE_MINIMAL = 0.1               # degres
+
+
 def _coudes(objets):
     """Les coudes de la sélection : leur rang de tronçon et leur ANGLE SEUL.
 
@@ -716,12 +723,35 @@ def _coudes(objets):
     plus bas par `tl.elements_coude`, qui est AUSSI ce que la cascade
     applique — une seule formule pour une seule grandeur.
 
+    DEUX RACCORDS NE SONT PAS DES COUDES, et la version precedente en faisait
+    quand meme (mesure sur une liaison TOP -> BOT : un coude de 0,0 degre,
+    0 pH, 0 fF, affiche dans la fiche a cote du via) :
+
+      · UN CHANGEMENT DE COUCHE. Deux troncons sur des couches differentes ne
+        se raccordent pas dans un plan : ce qui les joint est un VIA, et c'est
+        le modele de via qui s'applique. Un modele de coude planaire n'a rien
+        a y faire, meme si les deux troncons font un angle vu de dessus ;
+      · UN ANGLE NUL. Deux troncons colineaires n'ont pas de coude. Le seuil
+        est celui de la RESOLUTION des coordonnees, pas un choix de
+        modelisation : la page arrondit au millieme de millimetre, ce qui sur
+        un troncon de 15 mm fait une incertitude angulaire de 0,004 degre. A
+        0,1 degre on est dix fois au-dessus du bruit et tres en dessous de
+        tout coude reel -- un coude de 5 degres reste emis, avec son
+        cinquante-quatrieme de la valeur a angle droit.
+
     Rend une liste de dicts : {troncon, angle_deg}.
     """
     resultats = []
     for i in range(1, len(objets)):
         obj_prev = objets[i - 1]
         obj_curr = objets[i]
+
+        # UN CHANGEMENT DE COUCHE N'EST PAS UN COUDE : c'est un via, et il a
+        # son propre modele. `_transitions` s'en charge.
+        couche_prev = int(_nombre(obj_prev.get("layer"), -1))
+        couche_curr = int(_nombre(obj_curr.get("layer"), -1))
+        if couche_prev >= 0 and couche_curr >= 0 and couche_prev != couche_curr:
+            continue
 
         # Extraire les vecteurs directionnels
         def vecteur(obj):
@@ -768,6 +798,9 @@ def _coudes(objets):
         # Gupta -- et la fiche affichait 21 fF la ou le modele en appliquait
         # 0,4 : deux chiffres pour la meme grandeur, cinquante fois l'un de
         # l'autre.
+        if angle_deg < ANGLE_COUDE_MINIMAL:
+            continue                      # colineaires : pas de coude
+
         resultats.append({
             "troncon": i,
             "angle_deg": round(angle_deg, 1),
@@ -776,25 +809,79 @@ def _coudes(objets):
     return resultats
 
 
+def _hauteur_via(couches, couche_depart, couche_arrivee):
+    """La longueur PERCEE d'un via, en millimetres, lue dans l'empilage.
+
+    ELLE N'A JAMAIS EU BESOIN D'ETRE SUPPOSEE, et c'est ce qui rendait
+    l'ancien repli genant : l'empilage porte toutes les epaisseurs, et un via
+    va d'une couche de cuivre a l'autre. On somme donc ce qu'il traverse,
+    bornes COMPRISES -- le percage entre par le dessus du cuivre de depart et
+    sort par le dessous du cuivre d'arrivee, c'est ce qu'un foret fait.
+
+    CE QUE LE REPLI DONNAIT, ET DE COMBIEN IL SE TROMPAIT. « 0,2 mm par couche
+    traversee » comptait en indices d'EMPILAGE, qui alternent cuivre et
+    dielectrique : cela faisait 0,4 mm par couche de cuivre franchie, ce qui
+    n'a de rapport avec rien. Sur l'empilage quatre couches ordinaire du banc,
+    une liaison TOP -> BOT donnait 1,200 mm quand l'empilage en dit 1,340 :
+    12 % d'erreur, que l'inductance de via emporte au premier ordre.
+    """
+    a = int(_nombre(couche_depart, -1))
+    b = int(_nombre(couche_arrivee, -1))
+    if a < 0 or b < 0:
+        return 0.0
+    if a > b:
+        a, b = b, a
+    total = 0.0
+    for i in range(a, b + 1):
+        if 0 <= i < len(couches):
+            total += _nombre(couches[i].get("thickness"), 0.0)
+    return round(total, 6)
+
+
 def _cotes_via(obj, trans):
     """Les cotes du via d'une transition, EN MILLIMETRES, et d'ou elles viennent.
 
-    LES PAGES N'ENVOIENT PAS ENCORE LES VIAS. Ni l'editeur ni la visionneuse
-    ne joignent le percage, la pastille et la portee du via a l'objet du
-    document ; le modele tourne donc sur des replis -- 0,3 mm de percage,
-    2,5 fois cela en pastille, 0,2 mm par couche traversee. Ces replis sont
-    reunis ICI, en un seul endroit, et la transition emporte
-    `cotes_supposees` pour que la fiche puisse le dire : un chiffre suppose
-    affiche comme un chiffre mesure est pire que pas de chiffre.
+    LA HAUTEUR VIENT DE L'EMPILAGE, ET ELLE EST EXACTE -- voir `_hauteur_via`.
+    `_transitions` l'y a deja mise ; on ne la suppose plus. La page peut la
+    surcharger si elle en sait davantage, mais elle n'a pas a le faire.
+
+    LE PERCAGE ET LA PASTILLE, EUX, DOIVENT VENIR DE LA PAGE, et les deux
+    pages ne les envoient pas encore. Le modele tourne alors sur des replis --
+    0,3 mm de percage, 2,5 fois cela en pastille --, reunis ICI, en un seul
+    endroit, et la transition emporte `cotes_supposees` pour que la fiche
+    puisse le dire : un chiffre suppose affiche comme un chiffre mesure est
+    pire que pas de chiffre.
     """
     via = (obj or {}).get("via") or {}
-    supposees = not via
+
+    a_percage = via.get("drill_diameter") is not None
+    a_pastille = via.get("pad_diameter") is not None
     d_percage = _nombre(via.get("drill_diameter"), 0.3)
-    d_pastille = _nombre(via.get("pad_diameter"), d_percage * 2.5)
-    sauts = abs(int(_nombre(trans.get("couche_arrivee"), 0))
-                - int(_nombre(trans.get("couche_depart"), 0))) or 1
-    h_via = _nombre(via.get("height"), 0.2 * sauts)
-    trans["cotes_supposees"] = supposees
+    d_pastille = _nombre(via.get("pad_diameter"),
+                         d_percage * 2.5 if not a_pastille else 0.0)
+
+    # La hauteur : l'empilage d'abord, la page si elle la donne.
+    h_empilage = _nombre(trans.get("hauteur_empilage"), 0.0)
+    a_hauteur = via.get("height") is not None
+    h_via = _nombre(via.get("height"), h_empilage)
+    if not (h_via > 0):
+        # Ni empilage exploitable ni page : dernier recours, et il se voit.
+        sauts = abs(int(_nombre(trans.get("couche_arrivee"), 0))
+                    - int(_nombre(trans.get("couche_depart"), 0))) or 1
+        h_via = 0.2 * sauts
+        a_hauteur = False
+        h_empilage = 0.0
+
+    trans["cotes_supposees"] = not (a_percage and a_pastille)
+    trans["cotes"] = {
+        "hauteur_mm": round(h_via, 4),
+        "hauteur_source": ("page" if a_hauteur
+                           else ("empilage" if h_empilage > 0 else "repli")),
+        "percage_mm": round(d_percage, 4),
+        "percage_source": "page" if a_percage else "repli",
+        "pastille_mm": round(d_pastille, 4),
+        "pastille_source": "page" if a_pastille else "repli",
+    }
     return h_via, d_percage, d_pastille
 
 
@@ -835,6 +922,10 @@ def _transitions(objets, couches):
             "nom_depart": nom_prev,
             "nom_arrivee": nom_curr,
             "est_via": False,  # déterminé plus tard avec les vias réels
+            # LA HAUTEUR SE LIT ICI, parce que c'est ici qu'on a l'empilage.
+            # `_cotes_via` ne l'a pas, et c'est pour cela qu'elle la supposait.
+            "hauteur_empilage": _hauteur_via(couches, couche_prev,
+                                             couche_curr),
         })
 
     return resultats
@@ -851,6 +942,13 @@ def _ruptures(objets):
     XY sur des couches différentes ne sont pas un raccord — c'est un via.
     De même, deux tronçons sur la même couche mais sans contact XY sont une
     rupture, comme avant.
+
+    BUG CORRIGÉ (2026-08-30) : le cas du via exigeait DEUX points de contact.
+    Un via en fournit UN — la fin d'un tronçon et le début du suivant. Toute
+    liaison changeant de couche était donc comptée comme rompue, et le panneau
+    prévenait à tort d'une rupture devant un parcours continu. Un avertissement
+    qui crie à tort finit par ne plus être lu : c'est ce qui rend ce défaut
+    plus grave que son ampleur.
     """
     n = 0
     ruptures_detail = []
@@ -875,15 +973,20 @@ def _ruptures(objets):
                     n += 1
                     ruptures_detail.append({"type": "rupture_xy", "troncon": i})
             else:
-                # Couche différente : vérifier si c'est un via (même XY)
-                # Les deux bouts du via sont au même XY
-                points_contact = []
-                for p in e_prev:
-                    for q in e_curr:
-                        if math.hypot(p[0] - q[0], p[1] - q[1]) <= TOLERANCE_RACCORD:
-                            points_contact.append((p, q))
-                if len(points_contact) < 2:
-                    # Via incomplet ou rupture
+                # COUCHE DIFFERENTE : UN SEUL POINT DE CONTACT SUFFIT, et c'est
+                # la correction. La version precedente en exigeait DEUX, en
+                # commentant « les deux bouts du via sont au meme XY ». Non :
+                # un via joint la FIN d'un troncon au DEBUT du suivant, ce qui
+                # fait UN point commun -- deux troncons qui en partageraient
+                # deux seraient superposes, ce qui n'arrive pas. Toute liaison
+                # passant par un via etait donc declaree ROMPUE, et le panneau
+                # affichait « la selection n'est pas un parcours continu »
+                # devant un parcours parfaitement continu. Mesure : liaison
+                # TOP -> BOT de deux troncons colineaires, 1 raccord annonce
+                # manquant, alors que le raccord EST le via.
+                if not any(math.hypot(p[0] - q[0], p[1] - q[1])
+                           <= TOLERANCE_RACCORD
+                           for p in e_prev for q in e_curr):
                     n += 1
                     ruptures_detail.append({
                         "type": "rupture_via",

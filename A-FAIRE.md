@@ -38,7 +38,7 @@ Ce que le dépôt fait tourner, et ce qui le mesure. **588 essais, tous passés.
 | Visionneuse IPC-2581 | en service | 30 essais ([harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)) + 42 ([banc-essai.py](visionneuse-ipc2581/test/banc-essai.py)) |
 | **SI — impédance** (`ligne_mom`) | en service, 0,3 à 0,4 % contre les étalons | 60 cas, [banc-ligne-mom.py](python/test/banc-ligne-mom.py) |
 | **PI — chute DC** (`dc_solver`) | **solveur fait et mesuré ; aucun outil ne l'alimente** | 16 cas, [banc-dc.py](python/test/banc-dc.py) |
-| Moteur 2,5D pleine onde (`mom_solver`) | **hors du chemin de calcul** — le port vertical manque | 38 essais, [mom_solver/tests/](mom_solver/tests) |
+| Moteur 2,5D pleine onde (`mom_solver`) | **port vertical fait ; ε_eff dé-embarqué à 0,93 % de `ligne_mom`** | 56 essais, [mom_solver/tests/](mom_solver/tests) |
 | Passerelle MCP, projets, profils, repérage, cross-probing | en service | — |
 
 **Les trois chantiers qui comptent, dans l'ordre :**
@@ -49,8 +49,11 @@ Ce que le dépôt fait tourner, et ce qui le mesure. **588 essais, tous passés.
    il manque la généralisation du second membre. Rien n'en est fait ;
 2. **les courants du schéma** — c'est ce qui manque au solveur DC, et ce n'est
    pas un problème de solveur : le schéma ne porte pas ce qu'un composant tire ;
-3. **le port vertical du moteur 2,5D** — sans lui, |S₂₁| mesure le couplage de
-   la fente, pas la ligne, et le moteur reste hors du chemin.
+3. ~~le port vertical du moteur 2,5D~~ **FAIT le 2026-08-30** : le port est
+   un via qui relie la piste au plan de masse, et la comparaison de paramètres
+   S avec `ligne_mom` — celle qui attendait ce point depuis le début — donne
+   **0,93 %** sur ε_eff dé-embarqué. Ce qui reste au moteur est du confort, pas
+   du blocage : voir « L'état du moteur 2,5D » plus bas.
 
 ## Simulation électromagnétique
 
@@ -68,12 +71,12 @@ passer : le code était écrit, souvent bien, mais rien ne l'exécutait.
 | « `simuler()` rend les paramètres S » | `_ruptures` définie **deux fois** ; l'ancienne, qui rend un entier, écrasait la neuve, qui rend un couple. `TypeError` à chaque appel | réparé |
 | lot 2 : « masque de soudure, réductions exactes vérifiées » | la référence à vide gardait le masque à son εr : **ε_eff BAISSAIT** quand on vernissait la piste, et Z₀ tombait de 7,8 % au lieu de 2 à 3 %. Aucun cas de banc ne l'avait vérifié | réparé, 5 cas |
 | lot 3b : « discontinuités modélisées » | trois copies des mêmes formules, trois résultats : la fiche affichait **21,28 fF** de capacité de coude là où la cascade en appliquait **0,394**. Et la cascade appelait en millimètres des fonctions écrites en mètres — inductance de via **1000 ×** trop grande | réparé, 5 cas |
-| « 2ᵉ branchement DCIM **FAIT**, erreur de 9,6 % → 0,05 % » | faux : le 3ᵉ niveau fait tomber `banc_dcim` de **25/25 à 21/25** et porte l'écart d'ε_eff du moteur de **0,49 % à 11,4 %**. Le montage est faux, pas à régler — voir la note en tête de `ajuster_noyau_3_niveaux` | mis hors du chemin par défaut, diagnostiqué |
+| « 2ᵉ branchement DCIM **FAIT**, erreur de 9,6 % → 0,05 % » | faux : le 3ᵉ niveau faisait tomber `banc_dcim` de **25/25 à 21/25** et portait l'écart d'ε_eff du moteur de **0,49 % à 11,4 %** | **réparé le 2026-08-30** : 25/25, ε_eff revenu à 0,49 %, erreur lointaine divisée par trois |
 | PI : « chute continue (IR drop) **FAIT** » | `dc_solver.py` montait son réseau sur le **périmètre** des polygones, passait à SciPy un argument retiré en 1.14, et **rattrapait l'exception pour rendre zéro volt partout** | réécrit, 16 cas |
 
 **Ce qui n'a pas bougé et qui reste vrai** : le noyau 2,5D remis en état passe
-ses 38 essais, et l'écart d'ε_eff contre `ligne_mom` vaut bien les 0,49 %
-annoncés. Les deux fonctions de Green, la DCIM à deux niveaux, l'extraction du
+ses essais — 38 à l'audit, **56 au 2026-08-30** —, et l'écart d'ε_eff contre
+`ligne_mom` vaut bien les 0,49 % annoncés. Les deux fonctions de Green, la DCIM à deux niveaux, l'extraction du
 pôle et la désingularisation polaire sont justes et mesurées.
 
 **La leçon, et elle vaut pour la suite** : les cinq défauts silencieux étaient
@@ -328,27 +331,68 @@ des champs, et il faut afficher l'incertitude avec le chiffre.
    [visionneuse-ipc2581/test/harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)).
    Reste la donnée que rien ne fabrique : **les courants du schéma**.
 3. ~~R_AC par la section~~ **FAIT** (2026-08-28).
-4. ~~Le port vertical du moteur 2,5D~~ **PARTIELLEMENT FAIT** : l'excitation
-   est approchée par des poids en distance ; il manque les fonctions de base
-   verticales, `G_A^zz` et le dé-embarquement.
-5. **Le 2ᵉ branchement DCIM.** Écrit, **mesuré faux**, et hors du chemin par
-   défaut. Le diagnostic est fait et il est précis — les images du 3ᵉ niveau
-   sont ajustées en `k_z` de l'air puis resommées avec le `k` du substrat —,
-   donc le chantier qui reste est nommé : faire porter son nombre d'onde à
-   chaque groupe d'images, dans `ComplexImage`, `_somme_ondes` et
-   `mom_engine`.
-6. **Plan de masse multiple.** `profil_spectral_multiple` et
-   `profils_noyaux_multiples` existent et rendent un profil par couche de
-   signal, plus le jeu croisé ; ils réutilisent maintenant `profil_spectral`
-   au lieu d'en recopier la règle — la copie empilait les diélectriques
-   situés *au-delà* du plan de masse et fermait la pile du bas avec la
-   permittivité du haut. **Mais `mom_engine` ne les appelle pas encore** :
-   le moteur ne voit toujours qu'un plan source. C'est de la plomberie, pas
-   de la physique.
-7. **Optimisation numba**, au-delà de 300 RWG.
+4. ~~Le port vertical du moteur 2,5D~~ **FAIT (2026-08-30)**. Le port est un
+   VIA : on perce le maillage, on descend un fût jusqu'au plan de masse, et on
+   pose le générateur sur la fente du bas — un shunt piste/plan, qui est ce
+   qu'un port de microruban est. Il a fallu les trois pièces annoncées, et une
+   quatrième qu'on n'avait pas vue :
+   - `G_A^zz`, dérivée puis vérifiée sur sa signature : un dipôle électrique
+     **vertical** a une image de **même signe** dans un plan parfait, quand un
+     dipôle horizontal en a une opposée. 3·10⁻¹⁶ contre la forme fermée ;
+   - les **demi-RWG** du bas du fût, dont l'image dans le plan complète la
+     fonction — exactes, et non un pis-aller ;
+   - le **dé-embarquement** par T₂T₁⁻¹, qui retire le via, le trou et le coin ;
+   - et la **hauteur électrique** : la pile géométrique et la pile électrique
+     ne coïncident pas, le cuivre ayant une épaisseur géométrique et aucune
+     épaisseur électrique. 9 % d'écart sur du FR-4 de 0,37 mm.
+
+   **Mesuré** : |S₂₁| passe de 0,0065 à 0,96 sur la même ligne, et ε_eff
+   dé-embarqué tombe à **0,93 %** de `ligne_mom` à 5 GHz, 1,11 % à 10 GHz.
+
+5. ~~Le 2ᵉ branchement DCIM~~ **RÉPARÉ (2026-08-30)**. Trois fautes, toutes du
+   même genre — deux bases confondues : les images du 3ᵉ niveau étaient
+   resommées avec le `k` du substrat ; le reste à ajuster était pris en `k_z`
+   de l'air alors que les deux premiers niveaux vivent en `k_z` du substrat ;
+   et le garde-fou de portée, mesuré en épaisseurs de stratifié, **rejetait
+   toutes** les images du branchement air — le niveau ne posait pas une seule
+   image. `ComplexImage` porte maintenant son `k_onde`. `banc_dcim` repasse à
+   25/25, ε_eff revient à 0,49 %, et l'erreur de champ lointain est divisée
+   par trois (9,6 % → 6,2 % à 10 mm). Reste **hors du chemin par défaut**,
+   pour son coût : le gain est en champ lointain, sans effet sur une matrice
+   d'impédance, et il vaut huit images de plus par noyau.
+
+6. ~~Plan de masse multiple~~ **FAIT (2026-08-30)**, et ce n'était pas de la
+   plomberie. `profils_noyaux_multiples` rendait un noyau croisé qui était, au
+   bit près, celui de la couche du bas : elle construisait un « profil
+   croisé » puis rappelait `noyaux_green` sans le lui passer. Et le profil
+   croisé lui-même n'était pas la bonne idée — il recollait deux demi-empilages
+   pour fabriquer une pile qui n'existe pas. La fonction de Green entre deux
+   plans est celle de la **même** ligne, lue à un autre endroit : c'est
+   `profil_croise` / `noyaux_croises`, par transfert de tension exact.
+   Vérifié par la réciprocité (10⁻¹⁴), par la cohérence avec `_impedance_vue`
+   (4·10⁻¹⁶) et par une forme fermée qui redonne les deux images ±1 aux
+   profondeurs exactes. `mom_engine` route désormais chaque paire de triangles
+   vers le noyau de sa paire de couches ; un plan de masse entre deux signaux
+   rend un bloc **exactement nul**.
+
+7. ~~Optimisation numba~~ **FAIT AUTREMENT, ET MIEUX (2026-08-30)**. Le profil
+   désignait `_somme_ondes` — la moitié du temps —, mais pas pour la raison
+   qu'on croyait : le calcul était fait **image par image**, en petites
+   opérations numpy sur des tableaux de 49 nombres, et le coût était celui des
+   appels. Rangé en tableaux (points × images), l'assemblage passe de
+   **20,4 s à 5,0 s** pour 269 RWG. C'est **exact** — le banc le vérifie
+   contre une somme naïve —, donc aucune étude d'erreur d'interpolation n'a
+   été nécessaire. Le profil est maintenant **plat** : `_somme_ondes` n'y pèse
+   plus que 19 %, et une tabulation approchée ne rapporterait au mieux qu'un
+   facteur 1,2 pour le prix d'une approximation. Ce n'est plus la bonne
+   dépense.
+
 
 Le plan parfait et infini est une hypothèse fondamentale du modèle 2,5D — la
-lever demande un solveur 3D complet.
+lever demande un solveur 3D complet. C'est une **réserve écrite**, pas un
+chantier : ce qu'elle coûte, cas par cas, est en tête de `indices_plans_masse`
+([mom_solver/green_layered.py](mom_solver/green_layered.py)) et résumé plus
+bas.
 
 
 ### La famille PI porte une analyse, dont la moitié serveur seule est faite
@@ -637,10 +681,12 @@ n'est que la réponse impulsionnelle des paramètres S déjà calculés.
 
 ### Réparer l'onde complète, ou l'assumer morte
 
-`mom_engine.py` est **hors du chemin de calcul**, et c'est un avertissement en
-tête de fichier, pas un oubli. Ce qui l'en tient écarté a encore changé : le
-noyau est maintenant réparé et **mesuré**, et ce qui bloque est ailleurs — dans
-le modèle de port, dont on sait désormais chiffrer le défaut.
+`mom_engine.py` **est sur le chemin de calcul depuis le 2026-08-30.** Ce qui
+l'en tenait écarté était le modèle de port, et ce n'est plus le cas : le port
+est un via qui relie la piste au plan de masse, |S₂₁| passe de 0,0065 à 0,96
+sur la même ligne, et ε_eff dé-embarqué tombe à 0,93 % de `ligne_mom`. Ce qui
+reste est écrit plus bas, et se lit comme des réserves, pas comme des
+blocages.
 
 **Ce qui est réparé, et à combien.**
 
@@ -684,7 +730,7 @@ analytiquement — son courant était compté deux fois. La règle vient mainten
 de `green_layered.indices_plans_masse`, appelée des deux côtés, pour qu'ils ne
 puissent pas diverger.
 
-**Ce que ça vaut, mesuré.** Trois bancs, 38 essais, une trentaine de secondes.
+**Ce que ça vaut, mesuré.** Trois bancs, **56 essais** au 2026-08-30.
 
 | Contrôle | Résultat |
 | --- | --- |
@@ -715,8 +761,10 @@ ligne, seule change la fonction de Green du terme inductif.
    bonne base pour le branchement de référence et n'en est aucune pour l'autre.
    Preuve : l'écart suit le contraste diélectrique et **disparaît** quand εr
    tend vers 1 (0,005 % à 10 mm contre 9,6 % sur du FR-4), ce qui ne serait
-   vrai d'aucune autre cause. **À faire** : un troisième niveau de DCIM dont le
-   chemin d'échantillonnage est paramétré en `k_z` de l'air.
+   vrai d'aucune autre cause. **Fait le 2026-08-30** : le troisième niveau de
+   DCIM, paramétré en `k_z` de l'air, divise l'écart par trois (9,59 % →
+   6,19 % à 10 mm). Il ne l'annule pas, et pour une raison qui se dit :
+   l'onde latérale décroît en 1/ρ², les images en 1/ρ.
    *L'extraction du pôle reste utile et est conservée* : sur 3 mm de FR-4 à
    10 GHz (`n_eff = 1,222`) elle divise l'écart par trois à quatre.
 2. **Le modèle de port ne conduisait rien, et la passivité n'y voyait rien.**
@@ -731,8 +779,9 @@ ligne, seule change la fonction de Green du terme inductif.
    frontière exacte entre deux paquets de triangles : rien ne passe sans en
    traverser une. `|Y₂₁/Y₁₁|` passe à 5,0·10⁻², trois ordres de grandeur.
 3. **Mais une coupe est une fente EN SÉRIE, et ce n'est pas un port de
-   microruban.** Un port de microruban est une tension entre la piste et le
-   **plan de masse** : il demande un courant **vertical**, donc un via. Entre
+   microruban** — **corrigé le 2026-08-30, voir plus bas.** Un port de
+   microruban est une tension entre la piste et le **plan de masse** : il
+   demande un courant **vertical**, donc un via. Entre
    deux fentes série, la piste est un conducteur flottant — le générateur ne
    voit que la capacité du tronçon qu'il isole (mesuré : `Z_in = 14 − j766 Ω`,
    soit quelques centièmes de picofarad). Une fente série finit par coupler au
@@ -750,93 +799,221 @@ ligne, seule change la fonction de Green du terme inductif.
    paramètres S : là, le couplage est établi et le modèle de port ne compte
    plus.
 
-**Ce qui reste, par ordre de gravité.**
+**Ce qui a été fait le 2026-08-30, et ce qui reste.**
 
-1. **~~Le port de microruban demande des courants VERTICAUX.~~** **PARTIELLEMENT FAIT (2026-08-28).**
-   Les bases sont posées : `excitation_via_port()`, `courant_total_via()`,
-   `_creer_via_port()` dans `mom_engine.py`. L'excitation verticale est approximée
-   (poids par distance). Il manque : les fonctions de base VERTICALES RWG sur le
-   via, la composante G_A^zz de la Green, et le dé-embarquement par deux
-   longueurs (T₂T₁⁻¹).
+1. ~~Le port de microruban demande des courants VERTICAUX.~~ **FAIT.** Ce qui
+   existait — `excitation_via_port()`, `courant_total_via()`,
+   `_creer_via_port()` — approchait l'excitation par des **poids en distance**
+   sur les arêtes horizontales voisines : ça n'introduisait aucun courant
+   vertical, seulement une excitation floue de la piste. Ces trois fonctions
+   ont été remplacées, pas complétées.
 
-2. **Le second point de branchement n'est pas ajusté — et le 3ᵉ niveau
-   écrit pour cela est FAUX.** C'est le seul endroit de cette page où la
-   mesure a démenti un « FAIT » de façon nette, et le diagnostic vaut la
-   peine d'être gardé.
+   **Le port est maintenant un puits.** On perce le maillage — un triangle
+   retiré —, on descend un fût sur le contour du trou, et on pose le
+   générateur sur la fente infinitésimale entre le bas du fût et le plan de
+   masse. Percer plutôt que souder sous la piste évite la **jonction en T** :
+   chaque arête du trou retrouve exactement deux triangles, donc une RWG
+   ordinaire, et rien de nouveau n'est nécessaire au sommet.
 
-   `_chemins_3_niveaux()` et `ajuster_noyau_3_niveaux()` existent et
-   paramètrent bien en `k_z` de l'AIR autour du branchement `k₀` — c'est la
-   bonne base pour ce branchement-là. Ce qui ne va pas est en aval : les
-   images ainsi obtenues sont poussées **dans la même liste** que celles des
-   deux premiers niveaux, et cette liste est resommée par
-   `_somme_ondes(images, k_ref, …)`, qui reconstruit chaque image par
-   l'identité de Sommerfeld **avec le `k` du substrat**. Une image ajustée
-   contre `exp(−j k_z^air d)` et relue avec `k_ref` ne représente rien : elle
-   ajoute du bruit cohérent.
+   Quatre pièces, chacune éprouvée séparément :
 
-   **Ce que ça coûte, mesuré** : `banc_dcim.py` tombe de **25 essais réussis
-   à 21**, et `banc_moteur.py` porte l'écart d'ε_eff contre `ligne_mom` de
-   **0,49 % à 11,4 %**. L'invariant qui casse est précisément celui qui
-   désignait la cause — « à contraste diélectrique nul, l'écart doit
-   s'annuler » —, ce qui confirme le diagnostic plutôt que de l'infirmer.
+   - **`G_A^zz`**, la composante verticale du potentiel vecteur. Elle se
+     dérive en trois pas — un courant vertical est une source de **tension en
+     série** sur la ligne TM, là où un courant horizontal est une source de
+     **courant en parallèle** — et elle tient en une ligne :
+     `G_A^zz = μ₀ I_v^e/(jω ε₁)`. Sa signature la fixe : un dipôle électrique
+     **vertical** a une image de **même signe** dans un conducteur parfait,
+     quand un dipôle horizontal en a une opposée. Le banc mesure 3·10⁻¹⁶
+     contre la forme fermée, et vérifie qu'on est loin de l'autre signe ;
+   - **quatre familles de rayons** pour lire n'importe quel couple de
+     profondeurs sans réajuster. Une DCIM par couple (ζ, ζ′) serait hors de
+     prix ; ajuster une fois à mi-hauteur et décaler la profondeur ne marche
+     pas — mesuré, 3 à 60 % d'écart. La série des rebonds entre le plan et
+     l'interface du haut se somme en forme **fermée** : deux amplitudes,
+     quatre chemins géométriques, exact à 1,4·10⁻¹⁵ sur 49 couples ;
+   - les **demi-RWG** du bas du fût. Une `RWGBasis` d'aire moins nulle : la
+     fonction ne vit que sur son T+, et c'est **exact**, parce que son image
+     dans le plan de masse complète la fonction et porte la charge opposée —
+     ce que la fonction de Green stratifiée produit toute seule ;
+   - le **dé-embarquement** par T₂T₁⁻¹, qui élimine les accès par similitude
+     et lit γ sur les valeurs propres d'une matrice 2×2. Sans étalon d'aucune
+     sorte, et avec son propre garde-fou : les deux valeurs propres doivent
+     être inverses l'une de l'autre, ce qu'elles sont à 2·10⁻¹⁶.
 
-   Le 3ᵉ niveau est donc **hors du chemin par défaut**
-   (`trois_niveaux=False`), avec cet avertissement en tête de la fonction. Et
-   `_chemins()` a repris son propre corps : elle avait été récrite pour
-   déléguer à `_chemins_3_niveaux`, si bien que le mode à deux niveaux
-   n'était plus celui qui avait été validé.
+   **Une cinquième pièce qui n'était pas au programme, et sans laquelle tout
+   le reste est faux de 9 % :** la **hauteur électrique**. Le modèle 2,5D
+   suppose le cuivre infiniment mince, mais le maillage lui donne une
+   épaisseur géométrique. Un fût bâti du sommet du cuivre du plan au sommet du
+   cuivre de la piste mesure h + 2t au lieu de h. On compte donc en
+   **profondeur sous la piste**, dans la pile que `profil_spectral` établit
+   déjà, et la question ne se pose plus.
 
-   **Ce qu'il faudrait** : que l'ajustement porte SON nombre d'onde — un
-   `ComplexImage` (ou un second groupe dans `Ajustement`) marqué `k₀`, et
-   `_somme_ondes` qui somme chaque groupe avec le sien. C'est une
-   modification de la structure de données et de `mom_engine`, pas un
-   réglage, et elle demande sa propre validation.
+   **Trois défauts trouvés en chemin, tous silencieux :** le test de
+   coplanarité se faisait par une dénivelée en `z` — deux triangles d'une même
+   facette de fût sont coplanaires et n'ont pas le même `z`, ils auraient été
+   envoyés à Gauss seul, qui n'intègre pas un 1/R ; `_impedance_vue` rendait
+   l'impédance du **vide** quand la pile devenait vide, même sur un
+   court-circuit, ce qui arrive exactement sur l'anneau du bas du fût, posé
+   sur le plan ; et `np.cross` coûtait 15 % du temps d'assemblage sur des
+   vecteurs de trois nombres.
 
-3. **Un seul plan source — le profil sait, le moteur ne s'en sert pas.**
-   `profil_spectral_multiple()` et `profils_noyaux_multiples()` rendent bien
-   un profil par couche de signal, plus le jeu croisé, pour une ou deux
-   couches. Ils réutilisent désormais `profil_spectral` au lieu d'en recopier
-   la règle : la copie empilait les diélectriques situés **au-delà** du plan
-   de masse — un plan est une terminaison, ce qu'il y a derrière ne porte
-   aucun champ — et fermait la pile du bas avec la permittivité du haut.
+   **Ce qui est négligé, et il faut l'écrire :** la formulation C porte un
+   terme correctif `G^C` qui couple courant vertical et courant horizontal par
+   le potentiel **vecteur**. Sans lui, un via et une piste ne se parlent que
+   par leurs **charges**. Ce qui manque est l'inductance du **coin**, là où le
+   courant tourne — et c'est précisément ce que le dé-embarquement retire.
 
-   **Mais `mom_engine` ne les appelle pas.** Il passe toujours par
-   `noyaux_green`, qui ne connaît qu'un plan source. Le multi-couches est
-   donc disponible, pas branché : c'est de la plomberie, et elle n'est pas
-   faite.
+2. ~~Le second point de branchement n'est pas ajusté.~~ **RÉPARÉ.** Le
+   diagnostic de 2026-08-29 était juste mais incomplet : il y avait **trois**
+   fautes, toutes du même genre — deux bases confondues.
 
-4. **L'assemblage est en Python pur, et ça plafonne vers 300 fonctions de base.**
-   169 RWG en 5 s, 269 en 25 s, en N². Le cache de moments par paire de
-   triangles (`MomentsTriangles`) a pris le facteur sept qui était exact ; la
-   suite serait de tabuler les deux noyaux sur une grille de ρ par fréquence et
-   d'interpoler dans un noyau `nopython`. Ce n'est **pas** exact, et ça demande
-   sa propre validation d'erreur d'interpolation.
+   - les images du 3ᵉ niveau étaient poussées dans la même liste que les deux
+     premiers et resommées avec le `k` du **substrat**, alors qu'elles avaient
+     été ajustées contre `exp(−j k_z^air d)`. `ComplexImage` porte maintenant
+     son `k_onde`, et `_somme_ondes` somme chaque groupe avec le sien ;
+   - **le reste à ajuster était pris dans la mauvaise base aussi** : on
+     retranchait `somme(kz_air, images)`, c'est-à-dire les images des deux
+     premiers niveaux évaluées en `k_z` de l'air. Il faut les évaluer avec
+     **leur** `k_z`, celui du substrat aux mêmes `k_ρ` ;
+   - **et le garde-fou de portée les rejetait toutes.** « Une image plus loin
+     que la carte n'est pas physique » se mesure en épaisseurs de stratifié —
+     74 mm sur du FR-4 de 0,37 mm. Or les images du branchement air
+     représentent l'onde **latérale**, dont l'échelle est la longueur d'onde
+     dans l'air : à 1 GHz, de 77 à 866 mm. **Zéro image posée**, et l'écart à
+     10 mm inchangé au dixième de pour cent près.
 
-5. **Le plan de masse est supposé infini et parfait — HYPOTHÈSE FONDAMENTALE.**
-   Cette hypothèse est inhérente au modèle 2,5D (Green spectrale sur plan de masse
-   analytique). La lever demande un solveur 3D complet (FEM ou MoM surfacique
-   sur le plan lui-même). Réserve : les plans étroits devant la hauteur, ou les
-   plans fendus sous la piste, ne sont pas bien modélisés.
+   **Mesuré après réparation** : `banc_dcim` repasse de 21 à **25/25**,
+   l'écart d'ε_eff de `banc_moteur` revient de 11,4 % à **0,49 %** — celui du
+   chemin à deux niveaux, à quatre décimales —, l'invariant à contraste nul
+   tient (0,148 % contre 0,149 %), et l'erreur de champ lointain est divisée
+   par trois sur les trois noyaux : 9,59 % → 6,19 % à 10 mm, 40,8 % → 27,7 %
+   à 30 mm sur le potentiel scalaire.
+
+   **Il reste hors du chemin par défaut, et pour une autre raison qu'avant :
+   son coût.** Le gain est en champ lointain, là où le noyau vaut six ordres
+   de grandeur de moins qu'en champ proche — sans conséquence pour une matrice
+   d'impédance, ce que l'essai d'ε_eff confirme au chiffre près. Le prix, lui,
+   est immédiat : huit images de plus par noyau dans la boucle la plus chaude.
+   On l'allume pour un calcul de **rayonnement**, pas pour un paramètre S.
+
+   **Ce qu'il ne fait toujours pas** : il divise l'erreur lointaine par trois,
+   il ne l'annule pas. L'onde latérale décroît en 1/ρ² quand les images
+   décroissent en 1/ρ, et une somme finie d'exponentielles ne rend pas cette
+   loi-là. La sortir en forme fermée, comme on a sorti le pôle d'onde de
+   surface, serait le chantier suivant.
+
+3. ~~Un seul plan source.~~ **FAIT, et ce n'était pas de la plomberie.**
+   `profils_noyaux_multiples()` rendait un noyau croisé qui était, **au bit
+   près**, celui de la couche du bas : elle construisait un « profil croisé »,
+   puis rappelait `noyaux_green(stackup, freq, n, z_src=z_i)` sans le lui
+   passer. Vérifiable en une ligne, et vérifié. Deux couches de signal étaient
+   calculées comme une.
+
+   **Et le profil croisé lui-même n'était pas la bonne idée** : il recollait
+   le bas d'une couche et le haut de l'autre pour fabriquer un empilage qui
+   n'existe pas. La fonction de Green entre deux plans n'est pas celle d'un
+   autre empilage — c'est la **même** ligne de transmission, avec la source à
+   z′ et l'observation à z. Ce qui change n'est pas le circuit, c'est
+   l'endroit où on lit la tension :
+
+       V_i(z, z′) = [Z_bas(z′) ∥ Z_haut(z′)] × T(z′ → z)
+
+   `profil_croise` / `noyaux_croises` le calculent, et trois choses le
+   vérifient, chacune contre quelque chose qui ne vient pas du module : la
+   **réciprocité** V_i(z,z′) = V_i(z′,z) à 10⁻¹⁴ entre deux calculs qui n'ont
+   rien en commun ; la **cohérence** avec `_impedance_vue` sur la pile
+   complète à 4·10⁻¹⁶ ; et une **forme fermée** — deux plans de signal
+   au-dessus d'un plan de masse dans l'air — qui redonne exactement les deux
+   images +1 et −1 aux profondeurs h₂−h₁ et h₂+h₁.
+
+   `mom_engine` route désormais chaque paire de triangles vers le noyau de sa
+   paire de couches, par `noyaux.pour(couche_m, couche_n)`. `NoyauxGreen`
+   porte la même méthode et se rend lui-même, de sorte qu'un empilage à une
+   seule couche traverse **exactement** le même code qu'avant. Un plan de
+   masse entre deux couches de signal rend un bloc **exactement nul**, et non
+   un couplage approché : un plan est une terminaison, le champ ne le traverse
+   pas.
+
+4. ~~L'assemblage plafonne vers 300 fonctions de base.~~ **FAIT AUTREMENT, ET
+   MIEUX.** Le profil désignait bien `_somme_ondes` — 10,2 s sur 20,4 —, mais
+   pas pour la raison qu'on croyait. Le calcul était fait **image par image**,
+   en une poignée d'opérations numpy sur des tableaux de 49 nombres : le coût
+   était celui des **appels**, pas des flottants. Rangé en tableaux
+   (points × images), l'assemblage passe de **20,4 s à 5,0 s** pour 269 RWG —
+   un facteur quatre.
+
+   **C'est exact**, et c'est ce qui change tout par rapport au plan initial.
+   La piste retenue était de tabuler les noyaux sur une grille de ρ et
+   d'interpoler dans un noyau numba ; elle aurait demandé sa propre étude
+   d'erreur. Celle-ci n'en demande aucune : c'est la même somme, écrite
+   autrement, et le banc le vérifie contre une somme naïve.
+
+   **Et le profil est maintenant plat.** `_somme_ondes` n'y pèse plus que
+   19 %, `points_polaires` 22 %, `terme_courant` 13 % : une tabulation
+   approchée ne rapporterait au mieux qu'un facteur 1,2, pour le prix d'une
+   approximation à valider. Ce n'est plus la bonne dépense. Le prochain
+   facteur, s'il en faut un, est algorithmique — compression de la matrice,
+   ACA ou multipôles —, pas arithmétique.
+
+5. **Le plan de masse est supposé infini et parfait — HYPOTHÈSE FONDAMENTALE,
+   et c'est une réserve écrite, pas un défaut à corriger.** Ce n'est pas un
+   choix d'implémentation : un plan de masse n'est pas un conducteur du
+   problème, c'est une **terminaison** du circuit de lignes de transmission.
+   C'est cette hypothèse qui permet la fonction de Green spectrale analytique,
+   donc qui rend le 2,5D possible du tout. La lever demande un solveur qui
+   **maille** le plan — de l'ordre du million d'inconnues, là où le 2,5D en
+   tient quelques centaines.
+
+   Le détail est écrit dans le code, en tête de `indices_plans_masse`
+   ([mom_solver/green_layered.py](mom_solver/green_layered.py)), et se résume
+   ainsi :
+
+   | Cas | Ce que le modèle fait |
+   | --- | --- |
+   | Plan étroit devant la hauteur | sous-estime l'inductance ; hors domaine sous ~3 h de large |
+   | **Plan fendu sous la piste** | rend le résultat du plan **plein** — pas dégradé, faux |
+   | Plan percé d'un champ de vias | correct tant que trous et pas restent petits devant h |
+   | Conductivité finie | aucune perte de plan ; erreur systématique, toujours dans le même sens |
+   | Deux plans, cavité entre eux | pas de modes de cavité ; ne dit rien du PDN |
 
 **Résumé de l'état du moteur 2,5D**, tel que les trois bancs le mesurent —
-38 essais, tous passés au 2026-08-29 :
+**56 essais, tous passés au 2026-08-30** :
 
 | | État | Ce que la mesure dit |
 | --- | --- | --- |
 | Green spectrale, deux noyaux séparés | ✅ | ε_eff à **0,49 %** de `ligne_mom` ; 26 % avec un noyau unique |
 | DCIM à **deux** niveaux, pôle extrait | ✅ | images contre Sommerfeld : 0,04 % (G_A), 0,74 % (G_q) |
-| DCIM à **trois** niveaux (branchement air) | ❌ | écrit, **mesuré faux**, hors du chemin par défaut — point 2 ci-dessus |
+| DCIM à **trois** niveaux (branchement air) | ✅ | réparé : 25/25, erreur lointaine ÷3 ; hors chemin par défaut **pour son coût** |
 | Port horizontal (coupe complète) | ✅ | \|Y₂₁/Y₁₁\| passe de 1,5·10⁻⁵ à 5,0·10⁻² |
-| Port vertical (via) | ⚠️ | bases posées, excitation approchée par poids en distance |
-| Multi-couches de signal | ⚠️ | les profils existent, `mom_engine` ne les appelle pas |
-| Plan de masse parfait et infini | ⚠️ | hypothèse du modèle, non levable sans solveur 3D |
-| Performance au-delà de 300 RWG | ⚠️ | 269 RWG en 25 s, en N² : numba reste à faire |
+| **Port vertical (via)** | ✅ | \|S₂₁\| de **0,0065 à 0,96** sur la même ligne ; G_A^zz à 3·10⁻¹⁶ de la forme fermée |
+| **Dé-embarquement T₂T₁⁻¹** | ✅ | ε_eff à **0,93 %** de `ligne_mom` (5 GHz), 1,11 % (10 GHz) ; résidu de réciprocité 2·10⁻¹⁶ |
+| **Multi-couches de signal** | ✅ | noyau croisé exact (réciprocité 10⁻¹⁴, forme fermée à 10⁻¹⁴) ; branché dans `mom_engine` |
+| Plan de masse parfait et infini | ⚠️ | hypothèse du modèle, **réserve écrite** — non levable sans solveur 3D |
+| Performance | ✅ | 269 RWG en **5,0 s** (était 20,4 s) ; exact, pas tabulé ; profil plat |
+| Terme correctif `G^C` de la formulation C | ⚠️ | négligé : via et piste ne se parlent que par leurs charges ; retiré par le dé-embarquement |
 
-**Le cas de non-régression est écrit d'avance** : une ligne microruban 50 Ω de
-20 mm doit rendre |S₂₁| proche de 1 et |S₁₁| bas — `ligne_mom.py` le donne déjà,
-et sert donc d'étalon. **Cette comparaison attend le point 1** : sans port
-vertical, |S₂₁| mesure le couplage de la fente, pas la ligne. La comparaison
-qui a *pu* être faite, elle, est celle d'ε_eff, et elle donne 0,49 %.
+**Le cas de non-régression a été fait.** Une ligne microruban sur 0,37 mm de
+FR-4, deux longueurs (6 et 12 mm), même pas de maille, ports verticaux
+identiques :
+
+| | \|S₁₁\| | \|S₂₁\| | \|S₁₁\|²+\|S₂₁\|² |
+| --- | --- | --- | --- |
+| Ancien port, fente série, L = 6 mm | 0,9972 | **0,0744** | — |
+| Port vertical, L = 6 mm | 0,2607 | **0,9642** | 0,9975 |
+| Port vertical, L = 12 mm | 0,0959 | **0,9925** | 0,9943 |
+
+et, dé-embarqué, ε_eff = 3,4893 contre 3,4573 pour `ligne_mom` à 5 GHz —
+**0,93 %**. Le |S₁₁| de 0,26 sur la ligne courte n'est pas un défaut : c'est
+le via, le trou percé et le coin, c'est-à-dire exactement ce que le
+dé-embarquement retire.
+
+Sur la carte du banc de chaîne, avec le maillage réel — irrégulier, pas la
+grille du banc moteur —, le même changement donne |S₂₁| = 0,0065 → **0,9870**,
+et la structure reste passive (0,9883, le FR-4 y ayant un tan δ de 0,022).
+
+Le port par défaut de `main.py` est désormais `--port via` ; `--port fente`
+reste disponible, parce qu'un port au **milieu** d'une structure — une coupure
+de piste, un composant série — est bien une fente.
 
 Les dépendances de maillage (`gmsh`, `meshio`, `pygmsh`) sont installées ; la
 chaîne va du JSON au fichier Touchstone.
@@ -1020,13 +1197,93 @@ de Gupta reposées à la main, l'annulation à angle nul et la moitié à 45°,
 `det(ABCD) = 1` sur les deux réseaux (ce que vaut tout réseau passif
 réciproque, et rien d'autre ne l'attraperait), et l'ordre de grandeur du via.
 
-**Ce qui reste** : **aucune page n'envoie les vias.** Ni l'éditeur ni la
-visionneuse ne joignent le perçage, la pastille et la portée à l'objet du
-document, alors que les deux les ont. Le modèle tourne donc sur des replis —
-0,3 mm de perçage, 2,5 fois cela en pastille, 0,2 mm par couche traversée —
-réunis dans `_cotes_via()`, qui marque `cotes_supposees` pour que la fiche
-puisse le dire. Un chiffre supposé affiché comme un chiffre mesuré est pire
-que pas de chiffre.
+~~**Ce qui reste** : **aucune page n'envoie les vias.**~~ **FAIT (2026-08-30),
+et trois autres défauts avec — tous silencieux, tous dans les fonctions qui
+LISENT la sélection avant le solveur.**
+
+**1. Les deux pages envoient maintenant les cotes du via.**
+
+- côté éditeur, `simViaAuRaccord()` / `simAccrocherVias()`
+  ([editeur-pcb/js/19-simulation.js](editeur-pcb/js/19-simulation.js)) :
+  à chaque changement de couche, on cherche le via de `S.vias` posé au raccord
+  et dont la portée couvre le saut. Entre deux qui conviennent, **le plus
+  court** — un traversant retenu à la place d'un enterré donnerait une
+  inductance presque double, et personne ne le verrait ;
+- côté visionneuse, `simViaAuRaccordIpc()`
+  ([visionneuse-ipc2581/js/07-simulation.js](visionneuse-ipc2581/js/07-simulation.js)) :
+  la source est plus pauvre — l'IPC-2581 porte des **trous** d'un côté et des
+  **pastilles** de l'autre —, et on reprend les deux règles du chemin DC : un
+  trou marqué NON métallisé ne joint rien, et à défaut de trou déclaré deux
+  pastilles au même endroit valent un tube, perçage déduit ;
+- le via s'accroche au tronçon d'**arrivée**, parce que c'est
+  `objets[trans["troncon"]]` que le serveur relit, et que `troncon` est le rang
+  du second.
+
+**LA HAUTEUR N'EST PAS ENVOYÉE, ET C'EST VOULU.** L'éditeur la connaît —
+`stackSpan()` est ce qui commande le foret de l'Excellon — mais le serveur la
+recalcule depuis l'empilage qu'on lui envoie, par la même somme. Deux
+définitions de la même longueur, c'est deux chiffres le jour où l'une dérive.
+Les pages n'envoient donc que ce que le serveur ne peut **pas** savoir : le
+perçage et la pastille.
+
+**2. La hauteur du via se lisait dans l'empilage, et personne ne la lisait.**
+`_hauteur_via()` la somme, bornes comprises. L'ancien repli — « 0,2 mm par
+couche traversée » — comptait en indices d'**empilage**, qui alternent cuivre
+et diélectrique : cela faisait 0,4 mm par couche de cuivre franchie, ce qui n'a
+de rapport avec rien. Sur un empilage quatre couches ordinaire, une liaison
+TOP → BOT donnait **1,200 mm** quand l'empilage en dit **1,340** : 12 %
+d'erreur, que l'inductance emporte au premier ordre. Mesuré sur le cas du
+banc : L passe de **0,905 nH à 1,041 nH**.
+
+**3. Un changement de couche fabriquait un coude.** `_coudes()` ne regardait
+pas les couches : deux tronçons colinéaires sur deux couches différentes
+donnaient un coude de **0°, 0 pH, 0 fF**, affiché dans la fiche à côté du via.
+Deux tronçons sur des couches différentes ne se raccordent pas dans un plan —
+ce qui les joint est un via, et c'est le modèle de via qui s'applique. Un
+alignement sur la même couche n'en est pas un non plus, et le seuil qui le dit
+est celui de la **résolution des coordonnées** (0,1°, dix fois au-dessus du
+bruit d'arrondi), pas un jugement sur ce qui mérite d'être modélisé : un coude
+de 5° reste émis, avec son dix-huitième de la valeur à angle droit.
+
+**4. Un via était compté comme une rupture.** `_ruptures()` exigeait **deux**
+points de contact pour reconnaître un via, en commentant « les deux bouts du
+via sont au même XY ». Non : un via joint la **fin** d'un tronçon au **début**
+du suivant, ce qui fait **un** point commun. Toute liaison changeant de couche
+était donc annoncée rompue, et le panneau prévenait « la sélection n'est pas un
+parcours continu » devant un parcours parfaitement continu. Un avertissement
+qui crie à tort finit par ne plus être lu, et c'est ce qui rend ce défaut plus
+grave que son ampleur : le jour où la sélection est vraiment rompue, personne
+ne le voit.
+
+**5. Et la fiche ne montrait rien de tout cela.** `res.discontinuites`
+arrivait dans le résultat et n'était lu **nulle part** : le serveur cascadait
+les coudes et les vias — la courbe S les portait — sans que rien ne le dise.
+Devant un |S₂₁| qui plonge, personne ne pouvait savoir si un via y était
+compté. `simDiscontinuites()`
+([commun/simulation-em.js](commun/simulation-em.js)) affiche maintenant, par
+discontinuité : son rang, son type, les couches franchies, les cotes du via,
+son L, son C, et **la phase qu'il vaut à la fréquence centrale** — c'est ce
+dernier chiffre qui dit s'il faut s'en soucier, et une phase sous le dixième de
+degré est marquée comme telle. La provenance voyage **cote par cote** :
+`hauteur_source`, `percage_source`, `pastille_source` valent « page »,
+« empilage » ou « repli », de sorte que la fiche puisse dire que la hauteur est
+exacte pendant que le perçage ne l'est pas.
+
+**Non-régression, écrite** : cinq cas dans
+[python/test/banc-ligne-mom.py](python/test/banc-ligne-mom.py) — la hauteur
+contre l'épaisseur de carte connue d'avance, le via borgne, l'indifférence au
+sens, le coude qui disparaît sur un changement de couche et survit à 5°, le via
+qui n'est plus une rupture pendant qu'une vraie rupture le reste, la provenance
+de chaque cote, et le fait qu'un perçage plus fin donne **plus** d'inductance ;
+cinq dans [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) — le via
+accroché au bon tronçon, l'absence de via inventé, le via borgne qui ne couvre
+pas le saut, le plus court entre deux qui conviennent, et le via trop loin ;
+quatre autres pour l'affichage — le décompte, le chiffre supposé dit comme tel,
+le silence expliqué, la phase négligeable marquée ; et quatre dans
+[visionneuse-ipc2581/test/harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)
+— le trou déclaré, les deux pastilles qui valent un tube, le trou nu qui ne
+joint rien, et le raccord sans rien.
+
 
 ### La section résolue est désormais lisible
 

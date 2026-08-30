@@ -789,6 +789,262 @@ T("chaque fonction de ligne_mom n'est definie qu'une fois",
   une_seule_definition_par_fonction)
 
 
+
+# -----------------------------------------------------------------------------
+# LE VIA D'UNE TRANSITION -- simulation_em._hauteur_via, _cotes_via, _coudes,
+# _ruptures
+# -----------------------------------------------------------------------------
+# CE QUE CES CAS VERROUILLENT. Une liaison qui change de couche est le cas le
+# plus banal d'une vraie carte, et c'est celui que la chaine traitait le plus
+# mal -- non pas dans le solveur, qui est juste, mais dans les trois fonctions
+# qui LISENT la selection avant lui :
+#
+#   · `_coudes` fabriquait un coude de 0 degre, 0 pH, 0 fF a chaque changement
+#     de couche : deux troncons colineaires sur deux couches n'ont pas de
+#     coude, et deux troncons sur des couches differentes ne se raccordent pas
+#     dans un plan de toute facon ;
+#   · `_ruptures` exigeait DEUX points de contact pour reconnaitre un via.
+#     Un via en fournit UN. Toute liaison changeant de couche etait donc
+#     annoncee ROMPUE, devant un parcours parfaitement continu ;
+#   · `_cotes_via` SUPPOSAIT la hauteur du via -- « 0,2 mm par couche
+#     traversee », compte en indices d'empilage, donc 0,4 mm par couche de
+#     cuivre --, alors que l'empilage la porte exactement.
+#
+# Les trois etaient silencieux : aucun ne leve, tous rendent un chiffre.
+# -----------------------------------------------------------------------------
+
+# Un empilage quatre couches ordinaire, et sa hauteur totale connue d'avance.
+_QUATRE = [
+    _cu("TOP", "signal"),
+    _di("PP", 0.200, 4.20),
+    _cu("GND", "plane"),
+    _di("CORE", 0.800, 4.50),
+    _cu("PWR", "plane"),
+    _di("PP2", 0.200, 4.20),
+    _cu("BOT", "signal"),
+]
+# 4 x 0,035 de cuivre + 0,200 + 0,800 + 0,200 de dielectrique
+_EPAISSEUR_CARTE = 4 * 0.035 + 0.200 + 0.800 + 0.200
+
+
+def _piste(x1, y1, x2, y2, couche, largeur=0.35, via=None):
+    o = {"type": "track", "start": [x1, y1], "end": [x2, y2],
+         "width": largeur, "layer": couche, "net": "SIG",
+         "copper_thickness": 0.035}
+    if via is not None:
+        o["via"] = via
+    return o
+
+
+def _doc_via(objets, couches=None, fc=200e6):
+    return {"format": "cao-sim-em-1",
+            "stackup": {"layers": couches if couches is not None else _QUATRE},
+            "geometry": {"objects": objets},
+            "analyse": {"f_debut": fc / 10, "f_fin": fc * 2,
+                        "f_centre": fc, "points": 11}}
+
+
+def la_hauteur_du_via_se_lit_dans_l_empilage():
+    """LA HAUTEUR N'A JAMAIS EU BESOIN D'ETRE SUPPOSEE.
+
+    Un via traversant perce toute la carte : sa longueur est la somme des
+    epaisseurs, bornes comprises. L'ancien repli comptait « 0,2 mm par couche
+    traversee » en indices d'EMPILAGE -- qui alternent cuivre et dielectrique,
+    donc 0,4 mm par couche de cuivre -- et rendait 1,200 mm la ou la carte en
+    fait 1,340 : 12 % d'erreur, que l'inductance emporte au premier ordre.
+    """
+    h = _se._hauteur_via(_QUATRE, 0, 6)
+    proche(h, _EPAISSEUR_CARTE, 1e-9,
+           "la hauteur d'un via traversant TOP -> BOT")
+    assert abs(h - 0.2 * 6) > 0.1, (
+        "la hauteur vaut encore le repli 0,2 x sauts (%.4f)" % h)
+
+    # UN VIA BORGNE ne perce que jusqu'a sa couche d'arrivee.
+    h_borgne = _se._hauteur_via(_QUATRE, 0, 2)
+    proche(h_borgne, 0.035 + 0.200 + 0.035, 1e-9,
+           "la hauteur d'un via borgne TOP -> GND")
+
+    # LE SENS NE CHANGE RIEN : un via se perce dans les deux sens.
+    proche(_se._hauteur_via(_QUATRE, 6, 0), h, 1e-12,
+           "la hauteur ne depend pas du sens")
+
+
+T("la hauteur d'un via se lit dans l'empilage, elle ne se suppose plus",
+  la_hauteur_du_via_se_lit_dans_l_empilage)
+
+
+def un_changement_de_couche_n_est_pas_un_coude():
+    """DEUX TRONCONS SUR DEUX COUCHES NE SE RACCORDENT PAS DANS UN PLAN.
+
+    Ce qui les joint est un via, et le via a son propre modele. Un modele de
+    coude planaire n'a rien a faire la, meme si les deux troncons font un
+    angle vu de dessus -- et la version precedente en posait un, a 0 degre,
+    0 pH, 0 fF, affiche dans la fiche a cote du via.
+
+    ON VERIFIE AUSSI LE CAS COLINEAIRE SUR LA MEME COUCHE : deux troncons
+    alignes n'ont pas de coude non plus, et le seuil qui le dit est celui de la
+    RESOLUTION des coordonnees, pas un jugement de modelisation. Un coude de
+    5 degres, lui, reste emis.
+    """
+    # Colineaires, deux couches : ni coude, ni rupture -- un via.
+    d = _doc_via([_piste(0, 0, 15, 0, 0), _piste(15, 0, 30, 0, 6)])
+    r = _se.simuler(d)
+    assert not r["discontinuites"]["coudes"], (
+        "un changement de couche a produit un coude : %s"
+        % r["discontinuites"]["coudes"])
+    assert len(r["discontinuites"]["transitions"]) == 1, \
+        "la transition de couche n'a pas ete vue"
+
+    # A angle droit, deux couches : toujours pas de coude -- c'est un via.
+    d = _doc_via([_piste(0, 0, 15, 0, 0), _piste(15, 0, 15, 15, 6)])
+    r = _se.simuler(d)
+    assert not r["discontinuites"]["coudes"], (
+        "un via coude a produit un coude planaire : %s"
+        % r["discontinuites"]["coudes"])
+
+    # Colineaires, MEME couche : pas de coude non plus.
+    d = _doc_via([_piste(0, 0, 15, 0, 0), _piste(15, 0, 30, 0, 0)])
+    r = _se.simuler(d)
+    assert not r["discontinuites"]["coudes"], (
+        "deux troncons colineaires ont produit un coude : %s"
+        % r["discontinuites"]["coudes"])
+
+    # A angle droit, MEME couche : LA il y a un coude, et il doit peser.
+    d = _doc_via([_piste(0, 0, 15, 0, 0), _piste(15, 0, 15, 15, 0)])
+    r = _se.simuler(d)
+    coudes = r["discontinuites"]["coudes"]
+    assert len(coudes) == 1, "le coude a angle droit n'a pas ete vu"
+    proche(coudes[0]["angle_deg"], 90.0, 1e-6, "l'angle du coude")
+    assert coudes[0]["modelise"]["capacite_fF"] > 0, \
+        "le coude a angle droit ne pese rien"
+
+    # UN PETIT COUDE RESTE UN COUDE : 5 degres, un dix-huitieme de l'angle
+    # droit, doit etre emis avec sa part.
+    import math as _m
+    dx, dy = 15 * _m.cos(_m.radians(5)), 15 * _m.sin(_m.radians(5))
+    d = _doc_via([_piste(0, 0, 15, 0, 0),
+                  _piste(15, 0, 15 + dx, dy, 0)])
+    r = _se.simuler(d)
+    coudes = r["discontinuites"]["coudes"]
+    assert len(coudes) == 1, "un coude de 5 degres a ete jete"
+    proche(coudes[0]["angle_deg"], 5.0, 0.05, "l'angle du petit coude")
+
+
+T("un changement de couche n'est pas un coude, un alignement non plus",
+  un_changement_de_couche_n_est_pas_un_coude)
+
+
+def un_via_n_est_pas_une_rupture():
+    """L'AVERTISSEMENT QUI CRIAIT A TORT.
+
+    `_ruptures` exigeait DEUX points de contact pour reconnaitre un via, en
+    commentant « les deux bouts du via sont au meme XY ». Non : un via joint la
+    FIN d'un troncon au DEBUT du suivant, ce qui fait UN point commun. Toute
+    liaison changeant de couche etait donc declaree rompue.
+
+    UN AVERTISSEMENT QUI CRIE A TORT FINIT PAR NE PLUS ETRE LU, et c'est ce qui
+    rend ce defaut plus grave que son ampleur : le jour ou la selection est
+    VRAIMENT rompue, personne ne le voit. On verifie donc les deux sens --
+    qu'il se taise sur un via, et qu'il parle sur une vraie rupture.
+    """
+    def rupture_annoncee(objets):
+        r = _se.simuler(_doc_via(objets))
+        return any("parcours continu" in a for a in r["avertissements"])
+
+    # Un via : parcours continu, aucun avertissement.
+    assert not rupture_annoncee([_piste(0, 0, 15, 0, 0),
+                                 _piste(15, 0, 30, 0, 6)]), \
+        "un via est annonce comme une rupture"
+
+    # Deux troncons qui ne se touchent pas, MEME couche : vraie rupture.
+    assert rupture_annoncee([_piste(0, 0, 15, 0, 0),
+                             _piste(20, 0, 30, 0, 0)]), \
+        "une vraie rupture sur une couche n'est plus signalee"
+
+    # Deux troncons qui ne se touchent pas, couches DIFFERENTES : vraie
+    # rupture aussi -- il n'y a pas de via la ou rien ne se touche.
+    assert rupture_annoncee([_piste(0, 0, 15, 0, 0),
+                             _piste(20, 0, 30, 0, 6)]), \
+        "une rupture entre deux couches n'est plus signalee"
+
+
+T("un via n'est pas une rupture, et une vraie rupture le reste",
+  un_via_n_est_pas_une_rupture)
+
+
+def la_provenance_de_chaque_cote_est_dite():
+    """UN CHIFFRE SUPPOSE AFFICHE COMME UN CHIFFRE MESURE EST PIRE QUE RIEN.
+
+    Les pages n'envoient pas encore le percage et la pastille : le modele
+    tourne sur des replis. Il le DIT, cote par cote -- et il doit cesser de le
+    dire des que la page les envoie, sans quoi la mention perd son sens.
+    """
+    # Sans via envoye : hauteur exacte, percage et pastille supposes.
+    r = _se.simuler(_doc_via([_piste(0, 0, 15, 0, 0),
+                              _piste(15, 0, 30, 0, 6)]))
+    t = r["discontinuites"]["transitions"][0]
+    assert t["cotes_supposees"] is True, "les replis ne sont pas signales"
+    assert t["cotes"]["hauteur_source"] == "empilage", t["cotes"]
+    assert t["cotes"]["percage_source"] == "repli", t["cotes"]
+    assert t["cotes"]["pastille_source"] == "repli", t["cotes"]
+    proche(t["cotes"]["hauteur_mm"], _EPAISSEUR_CARTE, 1e-6,
+           "la hauteur annoncee dans les cotes")
+
+    # Avec le via envoye : plus rien de suppose, et les valeurs sont celles-la.
+    via = {"drill_diameter": 0.25, "pad_diameter": 0.55}
+    r = _se.simuler(_doc_via([_piste(0, 0, 15, 0, 0),
+                              _piste(15, 0, 30, 0, 6, via=via)]))
+    t = r["discontinuites"]["transitions"][0]
+    assert t["cotes_supposees"] is False, \
+        "la page a envoye les cotes et la fiche les dit encore supposees"
+    assert t["cotes"]["percage_source"] == "page", t["cotes"]
+    assert t["cotes"]["pastille_source"] == "page", t["cotes"]
+    proche(t["cotes"]["percage_mm"], 0.25, 1e-9, "le percage envoye")
+    proche(t["cotes"]["pastille_mm"], 0.55, 1e-9, "la pastille envoyee")
+
+
+T("chaque cote de via dit d'ou elle vient", la_provenance_de_chaque_cote_est_dite)
+
+
+def le_via_pese_ce_que_la_fiche_annonce():
+    """CE QUI EST AFFICHE EST CE QUI EST APPLIQUE, et on le mesure.
+
+    La fiche annonce une inductance et une capacite ; la cascade en applique.
+    Si les deux divergent, la fiche ment -- c'est exactement le defaut qui
+    avait ete trouve sur les coudes, ou 21,28 fF etaient affiches pour 0,394
+    appliques. On refait donc le calcul a la main, avec les memes fonctions de
+    `ligne_mom`, et on exige l'egalite.
+
+    ET ON VERIFIE QUE LE VIA PESE : un percage plus fin donne PLUS
+    d'inductance, ce qui est le sens physique -- moins de section, plus de
+    self. Si le chiffre ne bougeait pas, c'est que les cotes n'arrivent pas
+    jusqu'au modele.
+    """
+    via = {"drill_diameter": 0.25, "pad_diameter": 0.55}
+    r = _se.simuler(_doc_via([_piste(0, 0, 15, 0, 0),
+                              _piste(15, 0, 30, 0, 6, via=via)]))
+    t = r["discontinuites"]["transitions"][0]
+    m = t["modelise"]
+
+    l_attendu = _tl.inductance_via(_EPAISSEUR_CARTE * 1e-3, 0.25e-3)
+    proche(m["inductance_nH"], round(l_attendu * 1e9, 3), 1e-9,
+           "l'inductance affichee contre celle de ligne_mom")
+
+    # Un percage plus FIN : plus d'inductance.
+    via_fin = {"drill_diameter": 0.15, "pad_diameter": 0.40}
+    r2 = _se.simuler(_doc_via([_piste(0, 0, 15, 0, 0),
+                               _piste(15, 0, 30, 0, 6, via=via_fin)]))
+    m2 = r2["discontinuites"]["transitions"][0]["modelise"]
+    assert m2["inductance_nH"] > m["inductance_nH"], (
+        "un percage plus fin ne donne pas plus d'inductance (%.3f contre %.3f)"
+        % (m2["inductance_nH"], m["inductance_nH"]))
+
+
+T("le via pese ce que la fiche annonce, et les cotes le commandent",
+  le_via_pese_ce_que_la_fiche_annonce)
+
+
+
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko else "%d en echec" % ko))
 sys.exit(1 if ko else 0)

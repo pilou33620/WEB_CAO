@@ -52,7 +52,9 @@ if _PAQUET not in sys.path:
 
 from pcb_parser import (extract_stackup, extract_polygons,      # noqa: E402
                         build_geometry_model)
-from mesher import generate_2d_mesh, extract_edges, build_rwg_basis  # noqa: E402
+from mesher import (generate_2d_mesh, extract_edges,              # noqa: E402
+                    build_rwg_basis, compute_triangle_area,
+                    hauteur_electrique, maillage_avec_ports_verticaux)
 from green_layered import indices_plans_masse, noyaux_green      # noqa: E402
 from mom_engine import fill_z_matrix, localiser_ports            # noqa: E402
 from solver_extract import compute_s_parameters, export_touchstone  # noqa: E402
@@ -295,6 +297,130 @@ def _():
                                   for m in mesures) + ")")
     print("        (le port est une fente SERIE : il faudrait un courant "
           "VERTICAL vers le plan de masse)")
+
+
+
+# ==========================================================================
+# LE PORT VERTICAL SUR LE MAILLAGE REEL
+# --------------------------------------------------------------------------
+# POURQUOI CET ESSAI EST ICI ET PAS DANS `banc_moteur`. Celui-la fabrique ses
+# maillages en grille reguliere -- c'est voulu, il mesure le moteur, pas le
+# mailleur. Le percage d'un via, lui, touche a la topologie : il retire un
+# triangle, en ajoute six, et compte sur le fait que chaque arete du trou
+# retrouve exactement deux triangles. Sur une grille, c'est evident. Sur la
+# triangulation que `generate_2d_mesh` produit vraiment, ca ne l'est pas, et
+# c'est ici qu'on le verifie.
+# ==========================================================================
+
+def chaine_via():
+    """Le meme pipeline, avec des ports VERTICAUX au lieu des fentes."""
+    stackup = extract_stackup(CARTE)
+    geometrie = build_geometry_model(extract_polygons(CARTE), stackup)
+    mesh = generate_2d_mesh(geometrie, MAILLE)
+    ports = geometrie['ports']
+
+    z_piste = None
+    for couche in stackup['layers']:
+        if couche.get('type') == 'copper' \
+                and str(couche.get('role', '')) != 'plane':
+            z_piste = couche.get('z_top')
+
+    hauteur = hauteur_electrique(stackup)
+    positions = [tuple(np.asarray(p['position'], dtype=float).ravel()[:2])
+                 for p in ports]
+    mesh, rwg, coupes = maillage_avec_ports_verticaux(
+        mesh, positions, hauteur, z_cible=z_piste)
+
+    noyaux = noyaux_green(stackup, FREQ, num_images=8, avec_vertical=True)
+    z = fill_z_matrix(rwg, FREQ, noyaux, mesh['vertices'], mesh['elements'],
+                      layer_ids=mesh.get('layer_ids'))
+    s = compute_s_parameters(z, rwg, ports, FREQ, coupes)
+    return {'mesh': mesh, 'rwg': rwg, 'coupes': coupes, 'z': z, 's': s,
+            'hauteur': hauteur}
+
+
+print("  (assemblage du port vertical...)")
+ETAT_VIA = chaine_via()
+
+
+@essai("le percage d'un via tient sur le maillage REEL, pas seulement sur une grille")
+def _():
+    """LA TOPOLOGIE, VERIFIEE POUR ELLE-MEME.
+
+    Percer, c'est retirer un triangle et souder six parois sur le contour du
+    trou. Trois choses doivent en sortir, et si l'une manque le maillage est
+    silencieusement faux :
+
+      · CHAQUE ARETE DU TROU retrouve exactement deux triangles -- celui de la
+        piste qui reste, et celui de la paroi --, donc une RWG ordinaire. Une
+        arete a trois triangles serait une jonction en T, que la formulation
+        RWG ne sait pas traiter ;
+      · LES ARETES DU BAS n'en ont qu'un, et ce sont elles qui portent les
+        demi-RWG du port. Il doit y en avoir exactement trois par via ;
+      · AUCUN TRIANGLE DEGENERE. Un fut d'aire nulle donnerait une division par
+        zero dans les moments.
+    """
+    mesh = ETAT_VIA['mesh']
+    elements = np.asarray(mesh['elements'])
+    vertices = np.asarray(mesh['vertices'])
+
+    compte = {}
+    for tri in elements:
+        for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+            cle = (min(a, b), max(a, b))
+            compte[cle] = compte.get(cle, 0) + 1
+
+    triples = [c for c, n in compte.items() if n > 2]
+    if triples:
+        raise AssertionError("%d arete(s) a plus de deux triangles : jonction "
+                             "en T non traitee" % len(triples))
+
+    demi = [r for r in ETAT_VIA['rwg'] if r.area_minus == 0.0]
+    attendu = 3 * len(ETAT_VIA['coupes'])
+    if len(demi) != attendu:
+        raise AssertionError("%d demi-RWG au lieu de %d (3 par via)"
+                             % (len(demi), attendu))
+
+    aires = np.array([compute_triangle_area(vertices[t]) for t in elements])
+    if np.min(aires) <= 0:
+        raise AssertionError("un triangle d'aire nulle est apparu au percage")
+
+    verticaux = [t for t in elements if np.ptp(vertices[t][:, 2]) > 1e-9]
+    print("        (%d triangles dont %d de fut ; %d RWG dont %d demi ; "
+          "fut de %.4f mm)"
+          % (len(elements), len(verticaux), len(ETAT_VIA['rwg']), len(demi),
+             ETAT_VIA['hauteur'] * 1e3))
+
+
+@essai("sur la MEME carte, le via transmet et la fente ne transmet pas")
+def _():
+    """LA COMPARAISON DE BOUT EN BOUT, sur la carte du banc et son vrai
+    maillage. Le meme JSON, le meme empilage, la meme frequence : seul le
+    modele de port change.
+
+    ET LA PASSIVITE AVEC, parce qu'un port mal pose peut rendre |S21| > 1 aussi
+    facilement que |S21| = 0. Le FR-4 de cette carte a un tan delta de 0,022 :
+    la somme des carres doit rester sous un, et nettement.
+    """
+    s_fente = ETAT['s']
+    s_via = ETAT_VIA['s']
+
+    somme = abs(s_via[0, 0]) ** 2 + abs(s_via[1, 0]) ** 2
+    print("        (fente  : |S11| = %.4f, |S21| = %.4f)"
+          % (abs(s_fente[0, 0]), abs(s_fente[1, 0])))
+    print("        (via    : |S11| = %.4f, |S21| = %.4f, somme = %.4f)"
+          % (abs(s_via[0, 0]), abs(s_via[1, 0]), somme))
+
+    if abs(s_via[1, 0]) <= 5.0 * abs(s_fente[1, 0]):
+        raise AssertionError(
+            "le via ne transmet pas nettement mieux que la fente "
+            "(%.4f contre %.4f)" % (abs(s_via[1, 0]), abs(s_fente[1, 0])))
+    if abs(s_via[1, 0]) < 0.5:
+        raise AssertionError("|S21| = %.4f avec le port via"
+                             % abs(s_via[1, 0]))
+    if somme > 1.02:
+        raise AssertionError("structure ACTIVE : |S11|^2 + |S21|^2 = %.4f"
+                             % somme)
 
 
 @essai("le fichier Touchstone se relit et porte le bon nombre de colonnes")

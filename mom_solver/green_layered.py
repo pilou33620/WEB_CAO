@@ -20,10 +20,27 @@ C_0 = 2.99792458e8  # Vitesse de la lumière (m/s)
 
 @dataclass
 class ComplexImage:
-    """Représente une source image complexe pour DCIM"""
-    amplitude: complex  # Amplitude de l'image
-    position: complex  # Position complexe z_i
-    layer_index: int  # Couche source
+    """Une source image complexe de la DCIM, AVEC LE NOMBRE D'ONDE QUI LA LIT.
+
+    `k_onde` EST LE CHAMP QUI MANQUAIT, et son absence a coute le 3e niveau
+    entier. L'identite de Sommerfeld dit qu'une exponentielle exp(-j k_z d) du
+    spectre EST une onde spherique exp(-j k r)/(4 pi r) -- mais avec LE k DONT
+    ON A PRIS LE k_z. Un niveau ajuste le long d'un chemin parametre en k_z du
+    SUBSTRAT rend des images qui se relisent avec k_substrat ; un niveau
+    parametre en k_z de l'AIR rend des images qui se relisent avec k_0. Les
+    melanger dans une liste resommee avec un seul k, c'est lire un ajustement
+    dans une unite qui n'est pas la sienne : le 3e niveau ajoutait alors du
+    bruit COHERENT, ce que `banc_dcim` mesurait (25 essais -> 21) sans que rien
+    ne designe la cause.
+
+    `None` veut dire « le k de reference de l'ajustement », ce qui est le cas
+    de tous les niveaux ecrits en k_z du substrat -- donc de la totalite du
+    chemin par defaut, dont aucun comportement ne change.
+    """
+    amplitude: complex          # Amplitude de l'image
+    position: complex           # Profondeur complexe z_i, depuis le plan source
+    layer_index: int            # Couche source
+    k_onde: Optional[complex] = None   # le k qui la resomme ; None -> k_ref
 
 
 
@@ -149,6 +166,15 @@ def _impedance_vue(k_rho, omega, couches, court_circuit, mode='tm'):
         return _impedance_caracteristique(k_rho, omega, eps_c, mode)
 
     if not couches:
+        # PILE VIDE : LE COURT-CIRCUIT COMPTE ENCORE. Le cas se presente quand
+        # le point d'observation est POSE sur le plan de masse -- ce qui arrive
+        # a l'anneau du bas d'un via de port --, et la reponse est alors zero,
+        # pas l'impedance du vide. La version precedente rendait le vide dans
+        # les deux cas ; ca ne se voyait pas tant qu'aucun point n'etait sur le
+        # plan, et ca faussait le noyau vertical d'un facteur quatre des qu'un
+        # via en touchait un.
+        if court_circuit:
+            return np.zeros_like(np.asarray(k_rho, dtype=complex))
         return z_car(1.0 + 0j)[0]
 
     if court_circuit:
@@ -167,6 +193,75 @@ def _impedance_vue(k_rho, omega, couches, court_circuit, mode='tm'):
 
     return z_l
 
+
+# ==========================================================================
+# LE PLAN DE MASSE EST INFINI ET PARFAIT : RESERVE, ET NON DEFAUT
+# --------------------------------------------------------------------------
+# CE QUE CE MODULE SUPPOSE, EN UNE PHRASE. Un plan de masse n'est pas un
+# conducteur du probleme : c'est une TERMINAISON du circuit de lignes de
+# transmission -- un court-circuit, a l'infini dans les deux directions
+# horizontales, sans resistance et sans trou. C'est cette hypothese qui permet
+# d'ecrire la fonction de Green sous forme spectrale ANALYTIQUE, donc qui rend
+# le calcul 2,5D possible du tout.
+#
+# CE N'EST PAS UN CHOIX D'IMPLEMENTATION, C'EST LA DEFINITION DU MODELE. On
+# peut raffiner le maillage, ajouter des images, extraire des poles : rien de
+# tout cela ne fait apparaitre le bord d'un plan. Le plan n'a pas de bord dans
+# les equations. Lever l'hypothese demande un solveur qui MAILLE le plan --
+# 3D complet, ou MoM surfacique sur le plan lui-meme --, c'est-a-dire un autre
+# programme, avec un autre cout : le plan d'une carte de dix centimetres
+# maille au dixieme de millimetre, c'est de l'ordre du million d'inconnues, la
+# ou le 2,5D en tient quelques centaines.
+#
+# DEUX ENDROITS APPLIQUENT LA MEME REGLE, ET UN SEUL LA DECIDE.
+# `indices_plans_masse` dit quelles couches sont des plans ; `mesher` lui
+# demande, et n'en maille aucune. Si les deux en decidaient separement, le
+# courant d'un plan serait compte DEUX fois -- une fois analytiquement, une
+# fois par le maillage -- et la matrice d'impedance qui en sortirait serait
+# plausible et fausse.
+#
+# QUAND L'HYPOTHESE CESSE D'ETRE BONNE, ET DE COMBIEN :
+#
+#   · PLAN ETROIT DEVANT LA HAUTEUR. Le retour du courant s'etale sous la
+#     piste sur une largeur de l'ordre de trois fois la hauteur du
+#     dielectrique. Un plan plus etroit que cela ne le porte pas tout : le
+#     modele sous-estime alors l'inductance, donc surestime la vitesse. Sur du
+#     FR-4 de 0,37 mm, un plan de moins d'un millimetre de large sous la piste
+#     est deja hors du domaine.
+#
+#   · PLAN FENDU SOUS LA PISTE. C'est le cas le plus dangereux, parce que le
+#     modele ne rend PAS un resultat degrade : il rend le resultat du plan
+#     PLEIN, comme si la fente n'existait pas. Or une fente force le retour a
+#     la contourner, ce qui ajoute de l'inductance et fait rayonner. Un
+#     franchissement de fente est precisement le genre de defaut qu'on
+#     voudrait simuler, et c'est celui que ce moteur ne verra jamais.
+#
+#   · PLAN PERCE D'UN CHAMP DE VIAS. Meme raisonnement, en plus doux : tant
+#     que les trous sont petits et espaces devant la hauteur, le plan reste
+#     equivalent a un plan plein.
+#
+#   · CONDUCTIVITE FINIE. Le court-circuit est parfait, donc le plan
+#     n'apporte aucune perte. Sur du cuivre a quelques gigahertz c'est une
+#     erreur de second ordre devant les pertes dielectriques -- la resistance
+#     de surface du cuivre vaut quelques dizaines de milliohms par carre --,
+#     mais elle est SYSTEMATIQUE et va toujours dans le meme sens :
+#     l'attenuation calculee est trop faible. `python/ligne_mom.py` sait la
+#     compter, lui, par sa resistance de surface ; le lecteur qui veut une
+#     attenuation de conducteur doit la lire la-bas.
+#
+#   · DEUX PLANS, ET LA CAVITE ENTRE EUX. La cascade traite le premier plan
+#     rencontre comme une terminaison et ignore ce qu'il y a derriere -- ce
+#     qui est juste pour le champ de la piste, et faux pour une resonance de
+#     plan. Les modes de cavite d'une paire de plans d'alimentation ne sont
+#     pas dans ce modele, et `poles_du_noyau` rend d'ailleurs une liste vide
+#     sur un empilage ferme des deux cotes : c'est correct pour la fonction de
+#     Green, et ca ne dit rien du PDN.
+#
+# CE QU'IL FAUT EN FAIRE. Rien, sinon le savoir. Un resultat de ce moteur vaut
+# pour une piste au-dessus d'un plan continu qui deborde largement de chaque
+# cote. Hors de ce cadre, ce n'est pas que la precision se degrade : c'est que
+# la question posee n'est plus celle a laquelle le modele repond.
+# ==========================================================================
 
 def indices_plans_masse(stackup):
     """Les couches de cuivre que la fonction de Green traite en PLAN DE MASSE.
@@ -306,87 +401,30 @@ def profil_spectral_multiple(stackup):
         z_src = couches[i_src].get('z_top', 0.0)
         profiles[i_src] = profil_spectral(stackup, z_src)
 
-    # Profiles croises (couche i -> couche j)
-    cross_profiles = []
-    if len(signaux) == 2:
-        i_sig, j_sig = signaux[0], signaux[1]
-        zi = couches[i_sig].get('z_top', 0.0)
-        zj = couches[j_sig].get('z_top', 0.0)
-
-        # Profil pour l'interaction entre les deux couches
-        if i_sig < j_sig:
-            # i_sig est en dessous de j_sig
-            entre = []
-            for k in range(i_sig + 1, j_sig):
-                c = couches[k]
-                if c.get('type') != 'copper':
-                    e = c.get('thickness', 0.0)
-                    if e > 0:
-                        entre.append((e, eps_c(c)))
-
-            cross_profiles.append((i_sig, j_sig, (
-                profiles[i_sig][0],  # bas de i
-                entre + profiles[j_sig][1],  # haut de j
-                profiles[i_sig][2],  # masse_bas de i
-                profiles[j_sig][3],  # masse_haut de j
-                entre[0][1] if entre else (1.0 + 0j),  # eps_ref
-                zi  # z_src
-            )))
-        else:
-            # i_sig est au-dessus de j_sig
-            entre = []
-            for k in range(j_sig + 1, i_sig):
-                c = couches[k]
-                if c.get('type') != 'copper':
-                    e = c.get('thickness', 0.0)
-                    if e > 0:
-                        entre.append((e, eps_c(c)))
-
-            cross_profiles.append((j_sig, i_sig, (
-                profiles[j_sig][0],
-                entre + profiles[i_sig][1],
-                profiles[j_sig][2],
-                profiles[i_sig][3],
-                entre[0][1] if entre else (1.0 + 0j),
-                zj
-            )))
-
-    return {'profiles': profiles, 'cross_profiles': cross_profiles}
+    # LES « PROFILS CROISES » ONT ETE RETIRES D'ICI. Ils recollaient le bas
+    # d'une couche et le haut de l'autre, ce qui fabrique un empilage qui
+    # n'existe pas : la fonction de Green entre deux plans est celle de la
+    # MEME ligne, lue a un autre endroit. Voir `profil_croise`.
+    return {'profiles': profiles, 'cross_profiles': []}
 
 
-def profils_noyaux_multiples(stackup, freq, num_images=10):
-    """Les noyaux de Green pour TOUTES les couches de signal.
-
-    CAS SUPPORTE : 1 ou 2 couches de signal entre deux plans de masse.
-    Pour 2 couches : ajuste aussi l'interaction croisee.
-
-    Args:
-        stackup: empilage complet
-        freq: frequence
-        num_images: nombre d'images par niveau DCIM
-
-    Returns:
-        {
-          couche_index: NoyauxGreen,
-          'cross': { (i,j): NoyauxGreen }
-        }
-    """
-    info = profil_spectral_multiple(stackup)
-    result = {}
-
-    # Un jeu de noyaux par couche de signal
-    for i_src in info['profiles']:
-        z_src = info['profiles'][i_src][5]
-        result[i_src] = noyaux_green(stackup, freq, num_images, z_src)
-
-    # Les noyaux croises
-    result['cross'] = {}
-    for i, j, profil in info['cross_profiles']:
-        z_src = profil[5]
-        result['cross'][(i, j)] = noyaux_green(stackup, freq, num_images, z_src)
-
-    return result
-
+# `profils_noyaux_multiples` A ETE RETIRE, ET NON CORRIGE (2026-08-30).
+#
+# Elle rendait un dictionnaire {couche: NoyauxGreen, 'cross': {...}} dont les
+# noyaux croises etaient, au bit pres, ceux de la couche du bas : elle
+# construisait un « profil croise », puis rappelait `noyaux_green(stackup,
+# freq, n, z_src=z_i)` sans le lui passer. Deux couches de signal etaient donc
+# calculees comme une, et rien ne le disait.
+#
+# ET LE PROFIL CROISE LUI-MEME N'ETAIT PAS LA BONNE IDEE : il recollait le bas
+# d'une couche et le haut de l'autre pour fabriquer un empilage qui n'existe
+# pas. La fonction de Green entre deux plans n'est pas celle d'un autre
+# empilage -- c'est la MEME ligne de transmission, lue a un autre endroit.
+#
+# Ce qui la remplace est `noyaux_multicouches`, plus bas, avec
+# `profil_croise` / `noyaux_croises` : la TLGF entre z et z' par transfert de
+# tension exact. Le banc l'eprouve sur un cas a reponse fermee et sur la
+# reciprocite.
 
 # ==========================================================================
 # DEUX POTENTIELS, DONC DEUX NOYAUX
@@ -638,7 +676,14 @@ def _chemins_3_niveaux(stackup, freq, profil):
     # Paramétrisation : k_z = k_0 * (1 - t/T1 - j t)  pour t dans [0, T1]
     # Quand t = 0, k_z = k_0 (point de branchement)
     # Quand t = T1, k_z = k_0 * (1 - T1/T1 - j T1) = -j k_0 * T1 (imaginaire pur)
-    T1 = 5.0  # portée du chemin en k_0 (adimensionnel)
+    # T1 = 5 : le chemin va de k_z = k_0 (donc k_rho = 0) a k_z = -5j k_0, soit
+    # k_rho jusqu'a 5,1 k_0 -- au-dela du k du substrat, qui vaut 2,09 k_0 sur
+    # du FR-4. Le resultat est PLAT de T1 = 5 a T1 = 50 (mesure). En dessous il
+    # ne l'est pas : a T1 = 2, GPOF rend une image d'amplitude 2,6.10^7 a une
+    # profondeur de partie imaginaire -2,7 m -- une paire compensatrice, exacte
+    # sur les echantillons et absurde ailleurs, qui fait diverger le champ. On
+    # prend donc le plateau, pas son bord.
+    T1 = 5.0  # portee du chemin en k_0 (adimensionnel)
     t_air = np.linspace(0.0, T1, n)
     kz_air = k_0 * (1.0 - t_air / T1 - 1j * t_air)
 
@@ -650,6 +695,8 @@ def _chemins_3_niveaux(stackup, freq, profil):
         """k_rho en fonction de k_z, pour k de l'air."""
         return np.sqrt(k_0 ** 2 - kz ** 2 + 0j)
 
+    k_rho_air = krho_air(kz_air)
+
     return {
         'k_ref': k_ref,
         'k_0': k_0,
@@ -657,8 +704,15 @@ def _chemins_3_niveaux(stackup, freq, profil):
                  kz_loin[1] - kz_loin[0]),
         'proche': (kz_proche, krho_substrat(kz_proche),
                    kz_proche[0], kz_proche[1] - kz_proche[0]),
-        'air': (kz_air, krho_air(kz_air), kz_air[0],
+        'air': (kz_air, k_rho_air, kz_air[0],
                 kz_air[1] - kz_air[0]),
+        # LE k_z DU SUBSTRAT AUX MEMES k_rho QUE LE CHEMIN AIR. Il faut les
+        # deux : le chemin air ajuste ce que les deux premiers niveaux
+        # LAISSENT, et les images des deux premiers niveaux se relisent en
+        # k_z du SUBSTRAT, pas en k_z de l'air. Retrancher leur somme evaluee
+        # en kz_air etait la seconde faute du 3e niveau -- moins visible que
+        # la premiere, et du meme genre : deux bases confondues.
+        'air_kz_substrat': _kz(k_ref, k_rho_air),
     }
 
 
@@ -1080,6 +1134,21 @@ class Ajustement:
         return [im for im in self.images
                 if abs(im.position) >= self.SEUIL_COINCIDENT]
 
+    def _tab(self, ecartees):
+        """Les tableaux d'images, construits une fois et gardes.
+
+        L'ajustement ne change plus une fois fait : ses tableaux non plus.
+        `object.__setattr__` parce que le dataclass n'est pas figé mais que
+        l'on tient a ce que ce cache reste un detail interne.
+        """
+        cle = '_tab_ecartees' if ecartees else '_tab_tout'
+        tab = getattr(self, cle, None)
+        if tab is None:
+            source = self.images_ecartees if ecartees else self.images
+            tab = _tableaux_images(source, self.k_ref)
+            object.__setattr__(self, cle, tab)
+        return tab
+
     def valeur_reste(self, rho, dz=0.0):
         """Tout sauf l'image confondue : borne, donc integrable par Gauss.
 
@@ -1090,7 +1159,7 @@ class Ajustement:
         faire son propre traitement. Sur un substrat epais a haute frequence,
         c'est une chose a revoir.
         """
-        total = _somme_ondes(self.images_ecartees, self.k_ref, rho, dz)
+        total = _somme_ondes_tableaux(*self._tab(True), rho, dz)
         if self.poles:
             total = total + _somme_ondes_surface(self.poles, rho)
         return total
@@ -1102,7 +1171,7 @@ class Ajustement:
         du profil vertical du mode. Sans consequence tant qu'il n'y a qu'un
         plan de signal, ce qui est l'autre limite connue de ce module.
         """
-        total = _somme_ondes(self.images, self.k_ref, rho, dz)
+        total = _somme_ondes_tableaux(*self._tab(False), rho, dz)
         if self.poles:
             total = total + _somme_ondes_surface(self.poles, rho)
         return total
@@ -1113,46 +1182,67 @@ def ajuster_noyau_3_niveaux(stackup, freq, noyau='q', num_images=10, z_src=None,
     """UN noyau spectral avec DCIM A TROIS NIVEAUX, pole compris.
 
     ================================================================
-    HORS DU CHEMIN PAR DEFAUT -- ET MESURE COMME TEL (2026-08-29).
+    REPARE ET MESURE (2026-08-30). Hors du chemin par defaut POUR SON
+    COUT, et non plus parce qu'il serait faux.
     ================================================================
-    Ce troisieme niveau A ETE ECRIT pour l'ecart de champ lointain (9,6 % a
-    10 mm sur du FR-4), dont la cause est bien le SECOND point de branchement,
-    celui du demi-espace d'air en k0. Ce qu'il fait ne suffit pas, et le banc
-    le dit : `banc_dcim.py` tombe de 25 essais reussis a 21 des qu'on
-    l'allume, et `banc_moteur.py` porte l'ecart d'eps_eff contre `ligne_mom`
-    de 0,49 % a 11,4 %. Il ne s'agit donc pas d'un reglage a affiner : le
-    montage est faux.
 
-    POURQUOI. Le niveau ajuste des exponentielles en k_z de l'AIR -- c'est
-    bien la bonne base pour ce branchement-la -- puis pousse les images
-    obtenues DANS LA MEME LISTE que les deux premiers niveaux. Or la liste est
-    resommee par `_somme_ondes(images, k_ref, ...)`, qui reconstruit chaque
-    image par l'identite de Sommerfeld AVEC LE k DU SUBSTRAT. Une image
-    ajustee contre exp(-j k_z^air d) et relue avec k_ref ne represente plus
-    rien : elle ajoute du bruit coherent, ce qui explique que l'invariant
-    « a contraste dielectrique nul, l'ecart doit s'annuler » -- le seul qui
-    designait la cause -- soit celui qui casse.
+    CE QU'IL VISE. L'ecart de champ lointain -- 9,6 % a 10 mm, 41 % a 30 mm
+    sur du FR-4 -- dont la cause est le SECOND point de branchement, celui du
+    demi-espace d'air en k_0. Les deux premiers niveaux ajustent des
+    exponentielles en k_z du SUBSTRAT : c'est la bonne base pour le
+    branchement de reference, et ce n'en est aucune pour l'autre.
 
-    CE QU'IL FAUDRAIT. Que l'ajustement porte SON nombre d'onde : un
-    `ComplexImage` (ou un second groupe dans `Ajustement`) marque k0, et
-    `_somme_ondes` somme chaque groupe avec le sien. C'est une modification de
-    la structure de donnees et de `mom_engine`, pas un reglage, et elle
-    demande sa propre validation.
+    LES DEUX FAUTES QUI LE RENDAIENT NUISIBLE, ET CE QUI LES A REMPLACEES.
 
-    TROISIEME NIVEAU (2026-08-28) : le branchement AIR/SUBSTRAT.
+      1. LES IMAGES DU 3e NIVEAU ETAIENT RESOMMEES AVEC LE MAUVAIS k. Elles
+         etaient poussees dans la meme liste que les deux premiers niveaux, et
+         `_somme_ondes` reconstruisait toute la liste avec k_ref. Une image
+         ajustee contre exp(-j k_z^air d) et relue avec k_substrat ne
+         represente rien : elle ajoutait du bruit COHERENT. C'est ce qui
+         cassait l'invariant « a contraste dielectrique nul, l'ecart doit
+         s'annuler » -- le seul qui designait la cause. `ComplexImage` porte
+         desormais son `k_onde`, et `_somme_ondes` somme chaque groupe avec le
+         sien.
 
-    Les deux premiers niveaux ajustent le spectre en k_z du substrat. Mais le
-    demi-espace d'air au-dessus de la carte a son propre point de branchement
-    en k_z = k_0. Le terme de rayonnement -- celui qui fait voyager l'onde dans
-    l'air -- ne peut pas etre ajuste correctement par des exponentielles en k_z
-    du substrat.
+      2. ET LE RESTE ETAIT PRIS DANS LA MAUVAISE BASE AUSSI. `reste_air` etait
+         calcule en retranchant `somme(kz_air, images)` : les images des deux
+         premiers niveaux, evaluees en k_z de l'AIR. Il faut les evaluer avec
+         LEUR k_z, celui du substrat aux memes k_rho -- c'est
+         `chemins['air_kz_substrat']`.
 
-    Le 3e niveau parametre en k_z de l'AIR et ajuste ce que les deux premiers
-    ont laisse dans la region du branchement.
+      3. ET LE GARDE-FOU DE PORTEE LES REJETAIT TOUTES. « Une image plus loin
+         que la carte n'est pas physique » se mesure en epaisseurs de
+         stratifie ; les images du branchement air representent l'onde
+         LATERALE, dont l'echelle est la longueur d'onde dans l'air. Zero
+         image posee, ecart inchange au dixieme de pour cent pres.
 
-    POURQUOI CA COMPTE : le terme de rayonnement decroit en 1/rho (pas en
-    exp(-alpha rho)), et il domine en champ LOINTAIN. L'erreur sans le 3e
-    niveau etait de 9.6% a 10 mm sur FR-4. Elle disparait avec le 3e niveau.
+    CE QUE LA REPARATION MESURE, sur MICRO (0,37 mm de FR-4 a 1 GHz),
+    images contre integrale de Sommerfeld :
+
+        noyau      2 niveaux                 3 niveaux
+        a       0,32 % / 7,74 %  a 10/30 mm  0,20 % / 4,95 %
+        q       9,59 % / 40,8 %              6,19 % / 27,7 %
+        tm      1,15 % / 15,2 %              0,65 % /  9,2 %
+
+    et, ce qui compte autant, PLUS AUCUNE DEGRADATION : `banc_dcim` repasse de
+    21 essais a 25 sur 25, l'ecart d'eps_eff de `banc_moteur` contre
+    `ligne_mom` revient de 11,4 % a 0,49 % -- exactement celui du chemin a
+    deux niveaux --, et l'invariant a contraste nul tient (0,148 % a 30 mm
+    contre 0,149 %).
+
+    POURQUOI IL RESTE HORS DU CHEMIN PAR DEFAUT. Le gain est un tiers d'erreur
+    en champ LOINTAIN, la ou le noyau vaut six ordres de grandeur de moins
+    qu'en champ proche : sans consequence pour une matrice d'impedance, et
+    l'essai d'eps_eff le confirme -- meme chiffre a quatre decimales. Le cout,
+    lui, est immediat : huit images de plus par noyau, donc pres du double
+    d'ondes spheriques a sommer dans la boucle la plus chaude de l'assemblage.
+    On l'allume le jour ou on demande un RAYONNEMENT, pas pour un parametre S.
+
+    CE QU'IL NE FAIT TOUJOURS PAS. Il divise l'erreur lointaine par trois, il
+    ne l'annule pas : l'onde laterale decroit en 1/rho^2 quand les images
+    decroissent en 1/rho, et une somme finie d'exponentielles ne rend pas
+    cette loi-la exactement. La sortir en forme fermee, comme on a sorti le
+    pole d'onde de surface, serait le chantier suivant.
 
     Args:
         stackup: l'empilage, tel que `extract_stackup` le rend
@@ -1163,7 +1253,7 @@ def ajuster_noyau_3_niveaux(stackup, freq, noyau='q', num_images=10, z_src=None,
         extraire_poles: poles du mode guide (TM0)
 
     Returns:
-        Un `Ajustement`.
+        Un `Ajustement` dont les images du 3e niveau portent `k_onde = k_0`.
     """
     profil = profil_spectral(stackup, z_src)
     chemins = _chemins_3_niveaux(stackup, freq, profil)
@@ -1183,16 +1273,22 @@ def ajuster_noyau_3_niveaux(stackup, freq, noyau='q', num_images=10, z_src=None,
              if extraire_poles else [])
 
     def spectre_substrat(k_rho):
-        """Le spectre en k_rho du substrat (ce que le noyau donne)."""
+        """Le spectre en k_rho, debarrasse de ses poles."""
         brut = fonction(k_rho, stackup, freq, profil)
         return brut - _spectre_des_poles(k_rho, poles, k_ref)
 
-    # 1. La constante evanescente
+    # 1. La constante evanescente. Elle appartient au groupe SUBSTRAT : sa
+    #    transformee est une image d'amplitude c_inf a la profondeur zero, et
+    #    c'est le k du milieu porteur qui la resomme.
     c_inf = complex(spectre_substrat(np.array([1e4 / h_min]))[0])
     if not np.isfinite(c_inf):
         c_inf = 0.0 + 0j
 
-    images = [(complex(c_inf), 0.0 + 0j)]
+    # DEUX GROUPES, ET C'EST TOUT LE CHANTIER. `sub` est ajuste en k_z du
+    # substrat, `air` en k_z de l'air. Chacun ne se somme QUE le long de sa
+    # propre parametrisation, a l'ajustement comme a la relecture.
+    sub = [(complex(c_inf), 0.0 + 0j)]
+    air = []
 
     def somme(kz, paires):
         out = np.zeros_like(kz)
@@ -1200,15 +1296,21 @@ def ajuster_noyau_3_niveaux(stackup, freq, noyau='q', num_images=10, z_src=None,
             out = out + amp * np.exp(-1j * kz * d)
         return out
 
+    def reste(f, kz_sub, kz_air):
+        """Ce que les deux groupes laissent, chacun lu dans SA base."""
+        r = f - somme(kz_sub, sub)
+        if air:
+            r = r - somme(kz_air, air)
+        return r
+
     # 2. Niveau LOINTAIN (k_z du substrat, purement imaginaire)
     kz_loin, k_rho_loin, kz0_loin, dkz_loin = chemins['loin']
     f_loin = spectre_substrat(k_rho_loin)
     if not np.all(np.isfinite(f_loin)):
         logger.warning("Spectre non fini sur le chemin lointain")
     else:
-        reste_loin = f_loin - somme(kz_loin, images)
-        images.extend(_images_dun_chemin(reste_loin, kz0_loin, dkz_loin,
-                                         num_images, portee))
+        sub.extend(_images_dun_chemin(f_loin - somme(kz_loin, sub),
+                                      kz0_loin, dkz_loin, num_images, portee))
 
     # 3. Niveau PROCHE (k_z du substrat, propagatif)
     kz_proche, k_rho_proche, kz0_proche, dkz_proche = chemins['proche']
@@ -1216,38 +1318,47 @@ def ajuster_noyau_3_niveaux(stackup, freq, noyau='q', num_images=10, z_src=None,
     if not np.all(np.isfinite(f_proche)):
         logger.warning("Spectre non fini sur le chemin proche")
     else:
-        reste_proche = f_proche - somme(kz_proche, images)
-        images.extend(_images_dun_chemin(reste_proche, kz0_proche, dkz_proche,
-                                         num_images, portee))
+        sub.extend(_images_dun_chemin(f_proche - somme(kz_proche, sub),
+                                      kz0_proche, dkz_proche, num_images,
+                                      portee))
 
-    # 4. Niveau AIR (k_z de l'air, branchement k_0)
-    # Le 3e niveau ajuste ce que les deux premiers ont laisse dans la region
-    # ou le branchement air/substrat se fait sentir. On evalue le spectre
-    # en k_rho de l'air, mais le noyau spectral est calcule avec k du substrat.
-    kz_air, k_rho_air, kz0_air, dkz_air = chemins['air']
-
-    # Pour k_rho > k_0, on est dans la region radiative. Le spectre en k_rho
-    # de l'air est le MEME que celui en k_rho du substrat (k_rho est juste
-    # la composante horizontale du nombre d'onde). Mais k_z dans l'air est
-    # different : k_z_air = sqrt(k_0^2 - k_rho^2) vs k_z_sub = sqrt(k_ref^2 - k_rho^2).
+    # 4. Niveau AIR (k_z de l'air, autour du branchement k_0)
     #
-    # L'ajustement en k_z de l'air donne des images avec des profondeurs
-    # complexes differentes, qui representent le terme de rayonnement.
+    #    LE RESTE SE CALCULE EN k_z DU SUBSTRAT, L'AJUSTEMENT EN k_z DE L'AIR.
+    #    Les deux niveaux precedents ont pose des exponentielles en k_z du
+    #    substrat : pour savoir ce qu'ils laissent aux k_rho du chemin air, il
+    #    faut les evaluer avec LEUR k_z, celui du substrat aux memes k_rho.
+    #    C'est `chemins['air_kz_substrat']`. Ce qui reste, lui, est ajuste
+    #    contre exp(-j k_z^air d) et sera resomme avec k_0.
+    #
+    #    LA PORTEE DU GROUPE AIR N'EST PAS CELLE DU GROUPE SUBSTRAT, et c'est
+    #    la seconde raison pour laquelle le 3e niveau ne servait a rien. Le
+    #    garde-fou « une image plus loin que la carte n'est pas physique »
+    #    se mesure en epaisseurs de stratifie -- 200 h_max, soit 74 mm sur du
+    #    FR-4 de 0,37 mm. Or les images du branchement air representent l'onde
+    #    LATERALE, dont l'echelle naturelle est la longueur d'onde DANS L'AIR :
+    #    a 1 GHz les profondeurs ajustees valent de 0,1 a 0,5 m. Elles etaient
+    #    donc TOUTES rejetees, et le 3e niveau ne posait pas une seule image.
+    #    Mesure : zero image air, et l'ecart a 10 mm inchange a 9,586 %.
+    kz_air, k_rho_air, kz0_air, dkz_air = chemins['air']
+    kz_sub_sur_air = chemins['air_kz_substrat']
+    portee_air = 10.0 * 2.0 * np.pi / abs(k_0)      # dix longueurs d'onde d'air
     f_air = spectre_substrat(k_rho_air)
     if not np.all(np.isfinite(f_air)):
         logger.warning("Spectre non fini sur le chemin air")
     else:
-        # On n'ajuste que le RESTE : ce que les deux premiers niveaux n'ont pas
-        # capture. C'est la region ou le branchement air se manifeste.
-        reste_air = f_air - somme(kz_air, images)
-        images.extend(_images_dun_chemin(reste_air, kz0_air, dkz_air,
-                                         num_images, portee))
+        air.extend(_images_dun_chemin(reste(f_air, kz_sub_sur_air, kz_air),
+                                      kz0_air, dkz_air, num_images,
+                                      portee_air))
 
-    logger.debug("  noyau %s (3 niveaux) : %d images et %d pole(s)",
-                 noyau, len(images), len(poles))
+    logger.debug("  noyau %s (3 niveaux) : %d images substrat, %d images air, "
+                 "%d pole(s)", noyau, len(sub), len(air), len(poles))
+    images = [ComplexImage(amplitude=a, position=d, layer_index=0,
+                           k_onde=None) for a, d in sub]
+    images += [ComplexImage(amplitude=a, position=d, layer_index=0,
+                            k_onde=complex(k_0)) for a, d in air]
     return Ajustement(
-        images=[ComplexImage(amplitude=a, position=d, layer_index=0)
-                for a, d in images],
+        images=images,
         poles=poles,
         k_ref=complex(k_ref),
         noyau=noyau,
@@ -1288,13 +1399,16 @@ def ajuster_noyau(stackup, freq, noyau='q', num_images=10, z_src=None,
         z_src: le plan des pistes. Deduit de l'empilage quand il manque
         extraire_poles: mettre a False n'a qu'un usage, MESURER ce que
               l'extraction apporte. Le banc s'en sert ; un calcul, jamais.
-        trois_niveaux: FAUX PAR DEFAUT, et il faut qu'il le reste. Le 3e
-              niveau vise le branchement air, mais son montage est faux :
-              il ajuste en k_z de l'AIR puis pousse ses images dans la
-              liste que `_somme_ondes` resomme avec le k du SUBSTRAT.
-              L'allumer fait tomber `banc_dcim` de 25 essais a 21 et porte
-              l'ecart d'eps_eff de `banc_moteur` de 0,49 % a 11,4 %. Voir
-              l'avertissement en tete de `ajuster_noyau_3_niveaux`.
+        trois_niveaux: FAUX PAR DEFAUT -- POUR SON COUT, plus parce qu'il
+              serait faux. Repare le 2026-08-30 : chaque groupe d'images
+              porte son nombre d'onde, le reste est pris dans la bonne base,
+              et la portee du groupe air se mesure en longueurs d'onde
+              d'air. Il divise par trois l'erreur de champ LOINTAIN et ne
+              change rien au champ proche ni a eps_eff (0,49 % dans les deux
+              cas, a quatre decimales). Il coute huit images de plus par
+              noyau dans la boucle la plus chaude de l'assemblage : on
+              l'allume pour un calcul de rayonnement, pas pour un parametre
+              S. Voir `ajuster_noyau_3_niveaux`.
 
     Returns:
         Un `Ajustement`. La `position` d'une image est une PROFONDEUR COMPLEXE
@@ -1374,6 +1488,51 @@ def apply_dcim(stackup, num_images=10, freq=1e9, z_src=None, noyau='tm'):
     return ajuster_noyau(stackup, freq, noyau, num_images, z_src).images
 
 
+def _tableaux_images(images, k_ref):
+    """Les images en TROIS TABLEAUX : amplitudes, profondeurs, nombres d'onde.
+
+    POURQUOI CETTE FORME. `_somme_ondes` etait la moitie du temps
+    d'assemblage -- 10 s sur 20 pour 269 fonctions de base --, et pas parce que
+    le calcul est lourd : parce qu'il etait fait image par image, en une
+    poignee d'operations numpy sur des tableaux de quarante-neuf nombres. Le
+    cout est celui des APPELS, pas des flottants. Range ainsi, la somme entiere
+    devient trois operations sur un tableau de (points x images), quelle que
+    soit la longueur de la liste.
+
+    RIEN N'EST APPROCHE ICI : c'est la meme somme, ecrite autrement.
+    """
+    n = len(images)
+    amp = np.empty(n, dtype=complex)
+    pos = np.empty(n, dtype=complex)
+    k = np.empty(n, dtype=complex)
+    for i, im in enumerate(images):
+        amp[i] = im.amplitude
+        pos[i] = im.position
+        k[i] = k_ref if im.k_onde is None else im.k_onde
+    return amp, pos, k
+
+
+def _somme_ondes_tableaux(amp, pos, k, rho, dz=0.0):
+    """La somme des ondes spheriques, vectorisee sur les points ET les images."""
+    rho = np.asarray(rho, dtype=float)
+    if amp.size == 0:
+        return np.zeros(rho.shape, dtype=complex)
+
+    forme = rho.shape
+    r_plat = rho.reshape(-1)[:, None]
+    d = np.asarray(pos)[None, :] + np.asarray(dz).reshape(-1)[:, None]
+
+    r = np.sqrt(r_plat ** 2 + d ** 2 + 0j)
+    # La racine principale peut sortir du bon demi-plan sur un d complexe ;
+    # une distance de partie reelle negative ferait CROITRE l'onde.
+    r = np.where(np.real(r) < 0, -r, r)
+    r = np.where(np.abs(r) < 1e-15, 1e-15, r)
+
+    total = np.sum(amp[None, :] * np.exp(-1j * k[None, :] * r)
+                   / (4 * np.pi * r), axis=1)
+    return total.reshape(forme)
+
+
 def _somme_ondes(images, k_ref, rho, dz=0.0):
     """La somme des ondes spheriques des images, VECTORISEE sur rho.
 
@@ -1382,20 +1541,17 @@ def _somme_ondes(images, k_ref, rho, dz=0.0):
     quadrature 7x7 en un appel au lieu de quarante-neuf : l'assemblage de la
     matrice Z passe son temps ici, et une boucle Python par point de Gauss
     coutait deux ordres de grandeur.
+
+    CHAQUE GROUPE SOMME AVEC SON PROPRE NOMBRE D'ONDE. Une image ajustee le
+    long d'un chemin parametre en k_z du substrat se relit avec k_substrat ;
+    une image du niveau AIR se relit avec k_0. Voir `ComplexImage`.
+
+    CETTE ENVELOPPE REFAIT LES TABLEAUX A CHAQUE APPEL : elle est la pour ce
+    qui appelle rarement -- les bancs, `green_spatial`. Le chemin chaud passe
+    par `Ajustement.valeur`, qui les garde.
     """
-    rho = np.asarray(rho, dtype=float)
-    total = np.zeros(rho.shape, dtype=complex)
-
-    for im in images:
-        d = im.position + dz
-        r = np.sqrt(rho ** 2 + d ** 2 + 0j)
-        # La racine principale peut sortir du bon demi-plan sur un d complexe ;
-        # une distance de partie reelle negative ferait CROITRE l'onde.
-        r = np.where(np.real(r) < 0, -r, r)
-        r = np.where(np.abs(r) < 1e-15, 1e-15, r)
-        total = total + im.amplitude * np.exp(-1j * k_ref * r) / (4 * np.pi * r)
-
-    return total
+    amp, pos, k = _tableaux_images(images, k_ref)
+    return _somme_ondes_tableaux(amp, pos, k, rho, dz)
 
 
 @dataclass
@@ -1420,6 +1576,22 @@ class NoyauxGreen:
     eps_ref: complex                  # sa permittivite relative
     z_src: float                      # le plan des pistes, en metres
     freq: float
+
+    # LE COURANT VERTICAL VOYAGE AVEC LES DEUX AUTRES, ou pas du tout. `None`
+    # veut dire « pas de conducteur vertical dans ce maillage », ce qui est le
+    # cas de toute carte sans via de port : le moteur ne demande alors jamais
+    # G_A^zz, et le chemin valide par les essais ne change pas d'un bit.
+    vertical: Optional['NoyauxVerticaux'] = None
+
+    def pour(self, couche_m=None, couche_n=None):
+        """Le noyau qui vaut entre ces deux couches : lui-meme.
+
+        LA MEME METHODE QUE `NoyauxParCouche.pour`, pour que `mom_engine` ne
+        distingue jamais les deux cas. Un empilage a une seule couche de
+        signal traverse alors exactement le meme code qu'un empilage a
+        plusieurs, et le chemin valide par les 38 essais ne se dedouble pas.
+        """
+        return self
 
     def g_a(self, rho, dz=0.0):
         """G_A^xx, en henry par metre : A_x = G_A * J_x. Porte son mu_0."""
@@ -1459,7 +1631,7 @@ class NoyauxGreen:
 
 
 def noyaux_green(stackup, freq, num_images=10, z_src=None,
-                 trois_niveaux=False):
+                 trois_niveaux=False, avec_vertical=False):
     """Les deux ajustements, faits ensemble, et ce qu'il faut pour les lire.
 
     DEUX AJUSTEMENTS ET NON UN, parce que ce sont deux fonctions differentes --
@@ -1470,10 +1642,10 @@ def noyaux_green(stackup, freq, num_images=10, z_src=None,
     A refaire a chaque point de frequence : les images en dependent.
 
     Args:
-        trois_niveaux: FAUX PAR DEFAUT. Le 3e niveau DCIM vise le
-              branchement air, mais il DEGRADE le resultat en l'etat --
-              voir l'avertissement en tete de `ajuster_noyau_3_niveaux`.
-              Ne l'allumer que pour mesurer ce qu'il fait.
+        trois_niveaux: FAUX PAR DEFAUT, pour son cout. Le 3e niveau DCIM
+              couvre le branchement air ; repare le 2026-08-30, il divise
+              par trois l'erreur de champ lointain sans rien changer au
+              champ proche. A allumer pour un calcul de rayonnement.
     """
     profil = profil_spectral(stackup, z_src)
     eps_ref = profil[4]
@@ -1481,6 +1653,12 @@ def noyaux_green(stackup, freq, num_images=10, z_src=None,
 
     omega = 2 * np.pi * freq
     k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
+
+    # LE NOYAU VERTICAL N'EST CALCULE QUE SI ON LE DEMANDE, et c'est un choix
+    # de cout : il vaut deux ajustements GPOF de plus par frequence, pour un
+    # maillage qui, neuf fois sur dix, n'a pas un seul triangle vertical.
+    vertical = (noyaux_verticaux(stackup, freq, num_images)
+                if avec_vertical else None)
 
     return NoyauxGreen(
         ajust_a=ajuster_noyau(stackup, freq, 'a', num_images, z_plan,
@@ -1491,11 +1669,829 @@ def noyaux_green(stackup, freq, num_images=10, z_src=None,
         eps_ref=complex(eps_ref),
         z_src=float(z_plan),
         freq=float(freq),
+        vertical=vertical,
     )
 
 
 
 
+
+
+# ==========================================================================
+# DEUX PLANS DE SIGNAL : LA TLGF ENTRE z ET z', ET NON UN EMPILAGE INVENTE
+# --------------------------------------------------------------------------
+# CE QU'IL Y AVAIT, ET POURQUOI CA NE POUVAIT PAS MARCHER. `profil_spectral_
+# multiple` fabriquait un « profil croise » en recollant le bas de la couche i
+# et le haut de la couche j, puis `profils_noyaux_multiples` l'IGNORAIT et
+# rappelait `noyaux_green(stackup, freq, n, z_src=z_i)`. Le noyau croise etait
+# donc, au bit pres, celui de la couche i seule -- verifiable en une ligne, et
+# verifie. Deux couches de signal etaient calculees comme une.
+#
+# ET LE RECOLLAGE LUI-MEME N'ETAIT PAS LA BONNE IDEE. La fonction de Green
+# entre deux plans n'est pas celle d'un empilage different : c'est la MEME
+# ligne de transmission, avec la source a z' et l'observation a z. Ce qui
+# change n'est pas le circuit, c'est l'endroit ou on lit la tension.
+#
+# CE QUE CA DONNE, ET C'EST EXACT :
+#
+#     V_i(z, z') = [Z_bas(z') // Z_haut(z')] x T(z' -> z)
+#
+# ou T est le rapport des tensions le long du reseau qui va de z' a z. Le
+# premier facteur est deja ce que `_v_plan_source` calcule ; le second se
+# cascade couche par couche comme le reste du module.
+#
+# LA RECIPROCITE EN EST LA PREUVE, et le banc la mesure : V_i(z,z') doit valoir
+# V_i(z',z) alors que les deux chemins de calcul n'ont RIEN en commun -- l'un
+# part du bas, l'autre du haut. Une egalite a la precision machine entre deux
+# calculs aussi differents ne s'obtient pas par accident.
+#
+# CE QUE LE SPECTRE CROISE A DE PLUS FACILE, ET C'EST HEUREUX : a k_rho grand
+# il DECROIT comme exp(-k_rho |z - z'|) au lieu de tendre vers une constante.
+# Il n'y a donc ni terme non decroissant a sortir a la main, ni image
+# confondue -- la plus proche est a la profondeur |z - z'|, qui vaut au moins
+# une epaisseur de dielectrique. Le moteur n'a aucune singularite a traiter sur
+# ces paires-la, et `moments_triangles` le sait deja : il les voit non
+# coplanaires et passe par Gauss.
+# ==========================================================================
+
+def _transferts_ligne(k_rho, omega, couches, z_charge, mode='tm'):
+    """(T_V, T_I, Z_vue) a travers `couches`, chargees par `z_charge`.
+
+    `couches` est la liste des milieux traverses du plan PRES vers le plan
+    LOIN. T_V et T_I sont les rapports V(loin)/V(pres) et I(loin)/I(pres) ;
+    `Z_vue` est l'impedance vue depuis le plan PRES en regardant vers le loin.
+
+    LES DEUX RAPPORTS NE SONT PAS LE MEME, et c'est ce qui separe un courant
+    vertical d'un courant horizontal. Sur une section chargee par Gamma :
+
+        T_V = e (1 + Gamma)/(1 + Gamma e^2)     T_I = e (1 - Gamma)/(1 - Gamma e^2)
+
+    avec e = exp(-j k_z d). Un court-circuit (Gamma = -1) annule T_V et double
+    T_I : la tension s'y annule, le courant y est maximal. C'est exactement ce
+    qui fait qu'un dipole VERTICAL a une image de MEME signe dans un plan de
+    masse, quand un dipole horizontal en a une opposee.
+
+    ECRIT EN COEFFICIENTS DE REFLEXION plutot qu'en tangentes, pour la meme
+    raison que `_impedance_vue` : |e| <= 1 par construction de `_kz`, donc rien
+    ne deborde sur les echantillons evanescents profonds -- ceux-la memes ou
+    l'ajustement a besoin de precision.
+    """
+    def z_car(eps_c):
+        return _impedance_caracteristique(k_rho, omega, eps_c, mode)
+
+    un = np.ones_like(np.asarray(k_rho, dtype=complex))
+    t_v = un.copy()
+    t_i = un.copy()
+    z_l = np.asarray(z_charge, dtype=complex) * un
+
+    for epaisseur, eps_c in reversed(couches):
+        z_i, kz = z_car(eps_c)
+        somme = z_l + z_i
+        somme = np.where(np.abs(somme) < 1e-30, 1e-30, somme)
+        gamma = (z_l - z_i) / somme
+
+        e = np.exp(-1j * kz * epaisseur)
+        u = e * e                                  # |u| <= 1
+
+        den_v = 1.0 + gamma * u
+        den_v = np.where(np.abs(den_v) < 1e-30, 1e-30, den_v)
+        den_i = 1.0 - gamma * u
+        den_i = np.where(np.abs(den_i) < 1e-30, 1e-30, den_i)
+
+        t_v = t_v * e * (1.0 + gamma) / den_v
+        t_i = t_i * e * (1.0 - gamma) / den_i
+        z_l = z_i * den_v / den_i
+
+    return t_v, t_i, z_l
+
+
+def _transfert_tension(k_rho, omega, couches, z_charge, mode='tm'):
+    """Le rapport V(loin)/V(pres) a travers `couches`, chargees par `z_charge`.
+
+    `couches` est la liste des milieux traverses du plan SOURCE vers le plan
+    d'OBSERVATION, du plus proche de la source au plus proche de
+    l'observation ; `z_charge` est l'impedance vue depuis le plan
+    d'observation en continuant de s'eloigner de la source.
+
+    Rend (T, z_vue) : le rapport de tension, et l'impedance vue depuis le plan
+    SOURCE en regardant vers l'observation -- qui est exactement ce que
+    `_impedance_vue` rendrait sur la pile complete, et c'est ce que le banc
+    verifie.
+
+    ECRIT EN COEFFICIENTS DE REFLEXION plutot qu'en tangentes, pour la meme
+    raison que `_impedance_vue` : u = exp(-2j k_z d) a un module au plus egal
+    a un par construction de `_kz`, donc rien ne deborde sur les echantillons
+    evanescents profonds -- ceux-la memes ou l'ajustement a besoin de
+    precision.
+    """
+    t_v, _, z_l = _transferts_ligne(k_rho, omega, couches, z_charge, mode)
+    return t_v, z_l
+
+
+def _couches_entre(stackup, i_bas, i_haut):
+    """Les dielectriques strictement entre deux couches de cuivre, de bas en haut.
+
+    LE CUIVRE DE SIGNAL EST TRANSPARENT ICI, comme partout dans ce module : il
+    n'a pas d'epaisseur electrique, c'est le maillage qui le represente. Un
+    PLAN de masse entre les deux, en revanche, coupe tout : deux plans de
+    signal separes par un plan de masse ne se voient pas, et la fonction rend
+    None pour le dire.
+    """
+    couches = stackup['layers']
+    plans = set(indices_plans_masse(stackup))
+
+    def eps_c(c):
+        return c.get('epsilon_r', 1.0) * (1 - 1j * c.get('tan_delta', 0.0))
+
+    entre = []
+    for k in range(i_bas + 1, i_haut):
+        c = couches[k]
+        if c.get('type') == 'copper':
+            if k in plans:
+                return None                # un plan de masse ferme le passage
+            continue
+        e = c.get('thickness', 0.0)
+        if e > 0:
+            entre.append((e, eps_c(c)))
+    return entre
+
+
+def _v_entre_plans(k_rho, omega, profil_bas, profil_haut, entre, mode):
+    """La tension au plan HAUT pour un courant unite au plan BAS.
+
+    Le circuit est celui du plan bas -- son Z_bas propre, et vers le haut la
+    pile `entre` fermee par le Z_haut du plan haut. On lit la tension au plan
+    bas, puis on la transporte.
+    """
+    z_bas = _impedance_vue(k_rho, omega, profil_bas[0], profil_bas[2], mode)
+    z_charge = _impedance_vue(k_rho, omega, profil_haut[1], profil_haut[3], mode)
+
+    t, z_vers_haut = _transfert_tension(k_rho, omega, entre, z_charge, mode)
+
+    somme = z_bas + z_vers_haut
+    somme = np.where(np.abs(somme) < 1e-30, 1e-30, somme)
+    v_source = z_bas * z_vers_haut / somme
+    return v_source * t
+
+
+def profil_croise(stackup, i_bas, i_haut):
+    """Ce qu'il faut pour le spectre croise entre deux couches de signal.
+
+    Rend (profil_bas, profil_haut, entre, eps_ref, z_bas, z_haut), ou None si
+    un plan de masse separe les deux couches -- auquel cas elles ne se voient
+    pas, et le noyau croise est nul.
+
+    LE MILIEU DE REFERENCE est celui qui porte le champ ENTRE les deux plans :
+    c'est lui qui fixe le nombre d'onde des images croisees, donc la vitesse a
+    laquelle le couplage voyage d'une couche a l'autre.
+    """
+    couches = stackup['layers']
+    if i_bas > i_haut:
+        i_bas, i_haut = i_haut, i_bas
+
+    entre = _couches_entre(stackup, i_bas, i_haut)
+    if entre is None:
+        return None
+
+    z_bas = couches[i_bas].get('z_top', 0.0)
+    z_haut = couches[i_haut].get('z_top', 0.0)
+
+    p_bas = profil_spectral(stackup, z_bas)
+    p_haut = profil_spectral(stackup, z_haut)
+
+    eps_ref = entre[0][1] if entre else p_bas[4]
+    return p_bas, p_haut, entre, eps_ref, z_bas, z_haut
+
+
+def green_croise_te(k_rho, croise, freq):
+    """Le noyau croise du POTENTIEL VECTEUR, normalise comme les autres.
+
+        F_te = 2 k_z_ref V_i^h(z, z') / (omega mu_0)
+
+    MEME NORMALISATION QUE `green_spectral_te`, et il le faut : c'est ce qui
+    permet a `ajuster_noyau` de servir les deux sans savoir lequel il ajuste,
+    et a `_somme_ondes` de rendre des ondes spheriques dans la meme unite.
+    """
+    p_bas, p_haut, entre, eps_ref, _, _ = croise
+    omega = 2 * np.pi * freq
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
+    kz_ref = _kz(k_ref, k_rho)
+
+    v_h = _v_entre_plans(k_rho, omega, p_bas, p_haut, entre, 'te')
+    return 2.0 * kz_ref * v_h / (omega * MU_0)
+
+
+def green_croise_q(k_rho, croise, freq):
+    """Le noyau croise du POTENTIEL SCALAIRE : la difference des deux lignes.
+
+        F_q = 2 k_z_ref eps_0 eps_ref omega (V_i^h - V_i^e) / k_rho^2
+
+    Le zero en k_rho = 0 est le meme vrai zero qu'au plan source -- a
+    incidence normale les deux lignes sont la meme ligne, terminaisons et
+    transferts compris --, et il se traite de la meme facon : un plancher a un
+    millieme de k_ref.
+    """
+    p_bas, p_haut, entre, eps_ref, _, _ = croise
+    omega = 2 * np.pi * freq
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
+
+    k_rho = np.asarray(k_rho, dtype=complex)
+    plancher = 1e-3 * abs(k_ref)
+    k_rho = np.where(np.abs(k_rho) < plancher, plancher, k_rho)
+    kz_ref = _kz(k_ref, k_rho)
+
+    v_h = _v_entre_plans(k_rho, omega, p_bas, p_haut, entre, 'te')
+    v_e = _v_entre_plans(k_rho, omega, p_bas, p_haut, entre, 'tm')
+    return (2.0 * kz_ref * EPSILON_0 * eps_ref * omega
+            * (v_h - v_e) / (k_rho ** 2))
+
+
+def _ajuster_croise(croise, freq, noyau, num_images):
+    """L'ajustement DCIM d'un noyau croise.
+
+    UN SEUL NIVEAU SUFFIT, ET C'EST LA DIFFERENCE AVEC LE PLAN SOURCE. Le
+    spectre croise decroit comme exp(-k_rho |z - z'|) : il n'a ni terme non
+    decroissant a sortir a la main -- pas de c_inf --, ni image confondue a
+    desingulariser. Ce qui rendait la DCIM du plan source delicate, c'est
+    justement ce qui n'existe pas ici. On garde les deux chemins de Chow parce
+    qu'ils ne coutent rien et couvrent les deux regimes ; on ne garde pas
+    l'echafaudage qui allait avec.
+
+    LE POLE D'ONDE DE SURFACE N'EST PAS EXTRAIT ICI, et c'est une reserve a
+    ecrire : le residu porte le profil VERTICAL du mode, que ce module n'a
+    pas. Sur un empilage a deux couches de signal entre deux plans de masse --
+    le cas vise -- il n'y a pas d'onde de surface au sens ou on l'entend :
+    l'empilage est ferme des deux cotes. Sur un microruban a deux couches de
+    signal, il y en a une, et le couplage croise la manquera.
+    """
+    p_bas, p_haut, entre, eps_ref, z_bas, z_haut = croise
+    omega = 2 * np.pi * freq
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
+
+    ecart_z = abs(z_haut - z_bas)
+    portee = 200.0 * max(ecart_z, 1e-9)
+
+    # Les chemins de Chow, batis sur l'ecart vertical -- la seule echelle
+    # geometrique du probleme croise.
+    t0_proche = DCIM_T0_MIN
+    t0_loin = max(2.0 * t0_proche, DCIM_KRHO_H / (abs(k_ref) * max(ecart_z, 1e-9)))
+    n = DCIM_ECHANTILLONS
+
+    t_loin = np.linspace(t0_proche, t0_loin, n)
+    kz_loin = -1j * k_ref * t_loin
+    t_proche = np.linspace(0.0, t0_proche, n)
+    kz_proche = k_ref * (1.0 - t_proche / t0_proche - 1j * t_proche)
+
+    fonction = green_croise_te if noyau == 'a' else green_croise_q
+
+    images = []
+
+    def somme(kz):
+        out = np.zeros_like(kz)
+        for amp, d in images:
+            out = out + amp * np.exp(-1j * kz * d)
+        return out
+
+    for kz, kz0, dkz in ((kz_loin, kz_loin[0], kz_loin[1] - kz_loin[0]),
+                         (kz_proche, kz_proche[0],
+                          kz_proche[1] - kz_proche[0])):
+        k_rho = np.sqrt(k_ref ** 2 - kz ** 2 + 0j)
+        f = fonction(k_rho, croise, freq)
+        if not np.all(np.isfinite(f)):
+            logger.warning("Spectre croise non fini sur un chemin")
+            continue
+        images.extend(_images_dun_chemin(f - somme(kz), kz0, dkz,
+                                         num_images, portee))
+
+    return Ajustement(
+        images=[ComplexImage(amplitude=a, position=d, layer_index=0)
+                for a, d in images],
+        poles=[],
+        k_ref=complex(k_ref),
+        noyau=noyau,
+    )
+
+
+def noyaux_croises(stackup, freq, i_bas, i_haut, num_images=10):
+    """Les deux noyaux de Green ENTRE deux couches de signal.
+
+    Rend un `NoyauxGreen` ordinaire -- meme interface, memes unites --, de
+    sorte que `mom_engine` n'a pas a savoir s'il tient un noyau propre ou un
+    noyau croise. Rend None quand un plan de masse separe les deux couches :
+    elles ne se voient pas, et le bloc croise de la matrice est nul.
+    """
+    croise = profil_croise(stackup, i_bas, i_haut)
+    if croise is None:
+        return None
+
+    _, _, _, eps_ref, z_bas, _ = croise
+    omega = 2 * np.pi * freq
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
+
+    return NoyauxGreen(
+        ajust_a=_ajuster_croise(croise, freq, 'a', num_images),
+        ajust_q=_ajuster_croise(croise, freq, 'q', num_images),
+        k_ref=complex(k_ref),
+        eps_ref=complex(eps_ref),
+        z_src=float(z_bas),
+        freq=float(freq),
+    )
+
+
+class NoyauxParCouche:
+    """LE JEU DE NOYAUX D'UN EMPILAGE A PLUSIEURS COUCHES DE SIGNAL.
+
+    UN NOYAU PROPRE PAR COUCHE, UN NOYAU CROISE PAR PAIRE. `mom_engine` demande
+    `pour(couche_m, couche_n)` et ne sait pas laquelle des deux sortes il
+    recoit -- c'est voulu : le jour ou le croise change de methode, le moteur
+    n'a pas a le savoir.
+
+    `NoyauxGreen` porte la MEME methode `pour`, qui se rend elle-meme. Un
+    empilage a une seule couche de signal n'a donc rien de special a faire, et
+    le chemin a une couche -- celui que les 38 essais mesurent -- traverse
+    exactement le meme code qu'avant.
+    """
+
+    def __init__(self, propres, croises, freq):
+        self.propres = dict(propres)
+        self.croises = dict(croises)
+        self.freq = float(freq)
+        self._unique = (list(self.propres.values())[0]
+                        if len(self.propres) == 1 else None)
+
+    def pour(self, couche_m, couche_n):
+        """Le noyau qui vaut entre ces deux couches. None si elles ne se voient pas."""
+        if self._unique is not None:
+            return self._unique
+        if couche_m == couche_n:
+            return self.propres.get(couche_m)
+        cle = (min(couche_m, couche_n), max(couche_m, couche_n))
+        return self.croises.get(cle)
+
+    @property
+    def k_ref(self):
+        """Le k du premier noyau propre : ce que la trace veut voir."""
+        premier = next(iter(self.propres.values()))
+        return premier.k_ref
+
+    def __len__(self):
+        return len(self.propres)
+
+
+def noyaux_multicouches(stackup, freq, num_images=10, trois_niveaux=False,
+                        avec_vertical=False):
+    """Tous les noyaux d'un empilage, ranges par couche de signal.
+
+    C'EST CE QUE `mom_engine` DOIT APPELER quand l'empilage porte plus d'une
+    couche de signal, et c'est la plomberie qui manquait : les profils
+    existaient, personne ne les demandait.
+
+    UNE SEULE COUCHE DE SIGNAL REND UN JEU A UN ELEMENT, dont `pour()` rend
+    toujours le meme noyau. C'est le cas courant, et il ne coute rien de plus
+    qu'avant.
+    """
+    couches = stackup.get('layers', [])
+    plans = set(indices_plans_masse(stackup))
+    signaux = [i for i, c in enumerate(couches)
+               if c.get('type') == 'copper' and i not in plans]
+
+    if not signaux:
+        # Tout est plan : on garde le repli de `profil_spectral`, qui prend le
+        # cuivre le plus haut comme plan source.
+        return NoyauxParCouche(
+            {0: noyaux_green(stackup, freq, num_images,
+                             trois_niveaux=trois_niveaux,
+                             avec_vertical=avec_vertical)}, {}, freq)
+
+    propres = {}
+    for i in signaux:
+        z_src = couches[i].get('z_top', 0.0)
+        propres[i] = noyaux_green(stackup, freq, num_images, z_src,
+                                  trois_niveaux=trois_niveaux,
+                                  avec_vertical=avec_vertical)
+
+    croises = {}
+    for a in range(len(signaux)):
+        for b in range(a + 1, len(signaux)):
+            i, j = signaux[a], signaux[b]
+            nc = noyaux_croises(stackup, freq, i, j, num_images)
+            if nc is not None:
+                croises[(i, j)] = nc
+            else:
+                logger.debug("  couches %d et %d separees par un plan de masse "
+                             ": couplage nul", i, j)
+
+    logger.info("  %d couche(s) de signal, %d noyau(x) croise(s)",
+                len(propres), len(croises))
+    return NoyauxParCouche(propres, croises, freq)
+
+
+# ==========================================================================
+# LE COURANT VERTICAL : G_A^zz, ET D'OU ELLE SORT
+# --------------------------------------------------------------------------
+# CE QUI MANQUAIT. Tout ce qui precede ne connait que des courants HORIZONTAUX :
+# G_A^xx suit la ligne TE, G_q la difference des deux lignes. Un port de
+# microruban, lui, injecte un courant VERTICAL -- entre la piste et le plan de
+# masse --, et pour ce courant-la il faut la composante zz du dyade.
+#
+# LA DERIVATION, EN TROIS PAS, ET ELLE TIENT EN UNE LIGNE.
+#
+#   1. UN COURANT VERTICAL EST UNE SOURCE DE TENSION EN SERIE sur la ligne TM,
+#      la ou un courant horizontal est une source de COURANT en parallele.
+#      C'est toute la difference, et elle change le circuit de la mise en
+#      PARALLELE -- Z_bas // Z_haut, ce que rend `_v_plan_source` -- a la mise
+#      en SERIE : I = 1/(Z_bas + Z_haut). Les deux circuits sont duaux, et
+#      confondre les deux est l'erreur qui ne se voit pas.
+#
+#   2. LES DEUX EQUATIONS DE LA LIGNE donnent alors, au plan source,
+#
+#          E_t = V_v^e v_s u^     avec  v_s = -(k_rho/(omega eps')) J_z
+#          E_z = -(k_rho/(omega eps)) I_v^e v_s - J_z delta/(j omega eps)
+#
+#   3. ON IDENTIFIE AVEC E = -j omega A - grad Phi en gardant LE MEME potentiel
+#      scalaire que pour les courants horizontaux -- c'est la definition de la
+#      formulation C de Michalski. Le terme transverse donne
+#      d(Phi)/dz' = -V_v^e/eps', le terme vertical se reduit alors, et il ne
+#      reste que
+#
+#          G_A^zz(z, z') = mu_0 I_v^e(z, z') / (j omega eps_1)
+#
+#      ou eps_1 est la permittivite ABSOLUE du milieu qui porte les deux
+#      points. Le k_rho a disparu.
+#
+# LES DEUX VERIFICATIONS QUI LA FIXENT, et le banc les porte :
+#
+#   · EN MILIEU HOMOGENE, I_v^e = omega eps/(2 k_z) et la formule rend
+#     mu_0/(2 j k_z) -- exactement G_A^xx, ce qui doit etre : dans un milieu
+#     homogene le dyade est isotrope ;
+#   · AU-DESSUS D'UN PLAN DE MASSE, elle doit rendre l'image PLUS. Un dipole
+#     electrique VERTICAL se reflechit dans un conducteur parfait avec le MEME
+#     signe, quand un dipole horizontal change de signe. C'est le seul essai
+#     qui distingue un signe faux d'un signe juste, et il tombe a 3.10^-16.
+#
+# LA COORDONNEE EST UNE PROFONDEUR SOUS LA PISTE, ET PAS UNE ALTITUDE. C'est
+# une precaution, pas une preference. La pile GEOMETRIQUE et la pile
+# ELECTRIQUE ne coincident pas : le cuivre a une epaisseur geometrique et
+# AUCUNE epaisseur electrique -- le 2,5D le suppose infiniment mince, et tout
+# ce module le suppose avec lui. Sur du FR-4 de 0,37 mm avec 35 um de cuivre,
+# les deux hauteurs different de 9 %, et un via calcule dans la mauvaise s'en
+# trouve faux d'autant. On compte donc en profondeur zeta SOUS le plan des
+# pistes, dans la pile que `profil_spectral` a deja etablie, et la question ne
+# se pose plus.
+#
+# CE QUE CE MODULE NE FAIT PAS. La formulation C porte, en toute rigueur, un
+# TERME CORRECTIF G^C qui couple le courant vertical au courant horizontal par
+# le potentiel VECTEUR. Il est neglige ici, si bien qu'un via et une piste ne
+# se parlent que par le potentiel SCALAIRE -- leurs charges. Ce qui manque est
+# l'inductance du COIN, la ou le courant tourne. C'est exactement ce que le
+# de-embarquement par deux longueurs retire, et c'est pourquoi on peut vivre
+# avec ; ce n'est pas une raison pour ne pas l'ecrire.
+# ==========================================================================
+
+def _scinder_pile(pile, zeta):
+    """Coupe une pile de milieux a la profondeur `zeta`.
+
+    Rend (traverse, reste) : ce qu'on a franchi pour descendre jusqu'a zeta,
+    dans l'ordre du parcours, et ce qui subsiste au-dela. Le milieu coupe en
+    deux figure dans les deux, avec sa part.
+    """
+    traverse = []
+    reste = []
+    parcouru = 0.0
+    for i, (e, eps) in enumerate(pile):
+        if e <= 0:                                  # le demi-espace terminal
+            reste.append((e, eps))
+            continue
+        if parcouru + e <= zeta + 1e-18:
+            traverse.append((e, eps))
+            parcouru += e
+            continue
+        if parcouru < zeta:
+            haut = zeta - parcouru
+            traverse.append((haut, eps))
+            reste.append((e - haut, eps))
+            parcouru = zeta
+        else:
+            reste.append((e, eps))
+    return traverse, reste
+
+
+def _piles_a_profondeur(profil, zeta):
+    """Les deux piles vues depuis la profondeur zeta SOUS le plan des pistes.
+
+    Rend (vers_le_bas, masse_bas, vers_le_haut, masse_haut, eps_local).
+    """
+    bas, haut, masse_bas, masse_haut = profil[0], profil[1], profil[2], profil[3]
+    traverse, reste = _scinder_pile(bas, zeta)
+
+    eps_local = (traverse[-1][1] if traverse
+                 else (bas[0][1] if bas else 1.0 + 0j))
+
+    # Vers le haut : on remonte ce qu'on a traverse, puis la pile du dessus.
+    montant = [(e, eps) for e, eps in reversed(traverse) if e > 0]
+    return reste, masse_bas, montant + list(haut), masse_haut, eps_local
+
+
+def _courant_source_serie(k_rho, omega, profil, zeta_src, zeta_obs, mode='tm'):
+    """I_v : le courant a zeta_obs pour une source de TENSION en serie a zeta_src.
+
+    LA MISE EN SERIE, et non la mise en parallele. Une source de tension
+    inseree dans la ligne voit les deux impedances EN SERIE : I = 1/(Z_a + Z_b).
+    `_v_plan_source` fait l'autre, parce qu'un courant horizontal est une
+    source de COURANT en parallele.
+
+    I_v EST SYMETRIQUE en ses deux arguments -- c'est la reciprocite --, et on
+    s'en sert : on range toujours la source au-dessous.
+    """
+    if zeta_obs > zeta_src:
+        zeta_src, zeta_obs = zeta_obs, zeta_src     # source la plus profonde
+
+    bas_s, masse_bas, _, _, _ = _piles_a_profondeur(profil, zeta_src)
+    _, _, haut_o, masse_haut, _ = _piles_a_profondeur(profil, zeta_obs)
+
+    z_dessous = _impedance_vue(k_rho, omega, bas_s, masse_bas, mode)
+    z_charge = _impedance_vue(k_rho, omega, haut_o, masse_haut, mode)
+
+    # Ce qui separe les deux profondeurs, dans l'ordre du parcours vers le haut.
+    entre_bas, _ = _scinder_pile(profil[0], zeta_src)
+    entre_haut, _ = _scinder_pile(profil[0], zeta_obs)
+    epaisseur = zeta_src - zeta_obs
+    entre = []
+    if epaisseur > 0:
+        reste_a_prendre = epaisseur
+        for e, eps in reversed(entre_bas):
+            if reste_a_prendre <= 1e-18:
+                break
+            part = min(e, reste_a_prendre)
+            if part > 0:
+                entre.append((part, eps))
+            reste_a_prendre -= part
+
+    _, t_i, z_dessus = _transferts_ligne(k_rho, omega, entre, z_charge, mode)
+
+    somme = z_dessous + z_dessus
+    somme = np.where(np.abs(somme) < 1e-30, 1e-30, somme)
+    return t_i / somme
+
+
+def green_spectral_zz(k_rho, stackup, freq, zeta_src, zeta_obs, profil=None):
+    """Le noyau du POTENTIEL VECTEUR VERTICAL, normalise comme les autres.
+
+        G_A^zz = mu_0 I_v^e / (j omega eps_1)     F_zz = 2 k_z_ref I_v^e/(omega eps_1)
+
+    `zeta_src` et `zeta_obs` sont des PROFONDEURS sous le plan des pistes.
+
+    LA FORMULE VAUT POUR DEUX POINTS DANS LE MEME MILIEU : la derivation fait
+    apparaitre eps(z) eps(z') et k_z(z)^2, qui ne se recombinent en un seul
+    eps_1 que si les deux points partagent leur permittivite. C'est le cas du
+    fut d'un via, qui vit entier dans le dielectrique entre le plan et la
+    piste, et c'est le seul cas que ce module pretend traiter.
+    """
+    if profil is None:
+        profil = profil_spectral(stackup)
+
+    _, _, _, _, eps_ref = _piles_a_profondeur(profil, zeta_src)
+
+    omega = 2 * np.pi * freq
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
+    kz_ref = _kz(k_ref, k_rho)
+
+    i_v = _courant_source_serie(k_rho, omega, profil, zeta_src, zeta_obs, 'tm')
+    return 2.0 * kz_ref * i_v / (omega * EPSILON_0 * eps_ref)
+
+
+# ==========================================================================
+# LE FUT DU VIA : QUATRE FAMILLES DE RAYONS, DEUX AMPLITUDES A AJUSTER
+# --------------------------------------------------------------------------
+# LE PROBLEME QUE CA RESOUT. Les noyaux horizontaux vivent sur UN plan source :
+# leurs images sont ajustees une fois et relues partout. Un via porte du
+# courant a TOUTES les profondeurs entre la piste et le plan de masse, et
+# G_A^zz depend des DEUX profondeurs, pas de leur seul ecart. Une DCIM par
+# couple (zeta, zeta') serait hors de prix.
+#
+# LA FAUSSE BONNE IDEE, ET CE QU'ELLE A COUTE DE MESURER. On peut ajuster le
+# noyau une fois a mi-hauteur et le relire ailleurs par un DECALAGE de
+# profondeur. Ca marcherait si la correction etait un seul rebond. Elle ne
+# l'est pas : mesure, le « reste » vaut 1,4 quand le noyau entier vaut 0,52 --
+# il n'est pas une correction, il est l'essentiel --, et le decalage rend des
+# ecarts de 3 a 60 % contre l'integrale de Sommerfeld.
+#
+# LA STRUCTURE EXACTE, ET ELLE EST FINIE. Dans une lame homogene entre un plan
+# de masse et une interface, la reponse est une serie de rebonds qui se somme
+# en forme fermee. Avec Gamma_g = +1 (le plan, pour un courant vertical) et
+# Gamma_t la reflexion en COURANT du haut :
+#
+#     F_zz = [ e^(-j kz D) + e^(-j kz Sg) + Gt e^(-j kz St) + Gt e^(-j kz (2h-D)) ]
+#            / (1 - Gt e^(-2j kz h))
+#
+#     D  = |zeta - zeta'|        l'ecart des deux points
+#     Sg = 2h - zeta - zeta'     par le plan de masse
+#     St = zeta + zeta'          par le haut
+#
+# QUATRE CHEMINS, ET DEUX AMPLITUDES SEULEMENT : M = 1/(1 - Gt P) porte les
+# deux premiers, O = Gt/(1 - Gt P) les deux derniers. Ni M ni O ne depend des
+# profondeurs -- toute la geometrie est dans les quatre exponentielles.
+#
+# D'OU LE PROCEDE : on ajuste M et O par DCIM UNE fois par frequence, et on
+# lit n'importe quel couple (zeta, zeta') en posant les memes images a quatre
+# profondeurs decalees. Ce n'est plus une approximation de rebond : c'est la
+# forme exacte, et le seul ecart qui subsiste est celui de l'ajustement de
+# deux fonctions LISSES de k_rho.
+# ==========================================================================
+
+@dataclass
+class NoyauxVerticaux:
+    """G_A^zz le long d'un fut de via, pret a l'emploi par le moteur.
+
+    Les images de `amplitude_m` servent les deux chemins directs -- celui qui
+    va droit d'un point a l'autre, et celui qui passe par le plan de masse --,
+    celles de `amplitude_o` les deux qui rebondissent sur le haut.
+    """
+    amplitude_m: List[ComplexImage]     # ajustement de 1/(1 - Gt P)
+    amplitude_o: List[ComplexImage]     # ajustement de Gt/(1 - Gt P)
+    k_ref: complex                      # le k du milieu qui porte le via
+    hauteur: float                      # l'epaisseur ELECTRIQUE piste <-> plan
+    freq: float
+
+    def _chemins_geometriques(self, zeta, zeta_prime):
+        """Les quatre profondeurs de rayon, et quel groupe d'images les porte."""
+        h = self.hauteur
+        d = np.abs(np.asarray(zeta) - np.asarray(zeta_prime))
+        sg = 2.0 * h - np.asarray(zeta) - np.asarray(zeta_prime)
+        st = np.asarray(zeta) + np.asarray(zeta_prime)
+        return d, sg, st, 2.0 * h - d
+
+    def _somme_famille(self, images, rho, decalage):
+        if not images:
+            return np.zeros(np.shape(np.asarray(rho) * 1.0 + decalage * 0.0),
+                            dtype=complex)
+        return _somme_ondes(images, self.k_ref, rho, dz=decalage)
+
+    def g_a_zz(self, rho, zeta, zeta_prime):
+        """G_A^zz entier, en henry par metre. Porte son mu_0."""
+        d, sg, st, dt = self._chemins_geometriques(zeta, zeta_prime)
+        total = (self._somme_famille(self.amplitude_m, rho, d)
+                 + self._somme_famille(self.amplitude_m, rho, sg)
+                 + self._somme_famille(self.amplitude_o, rho, st)
+                 + self._somme_famille(self.amplitude_o, rho, dt))
+        return MU_0 * total
+
+    def g_a_zz_reste(self, rho, zeta, zeta_prime):
+        """Tout sauf l'image confondue du chemin direct.
+
+        SEULE CELLE-LA PIQUE. Le chemin direct porte une image a la profondeur
+        D = |zeta - zeta'|, qui s'annule quand les deux points sont a la meme
+        hauteur ; c'est la seule qui devienne singuliere a l'interieur du fut.
+        Les trois autres chemins passent par une reflexion, donc par une
+        profondeur au moins egale a... zero aussi, quand les deux points sont
+        SUR le plan de masse ou SUR la piste. Le banc le dit : sur l'anneau du
+        bas, la source et son image sont adjacentes, et Gauss les integre a
+        quelques pour cent. C'est dans le port, donc dans ce que le
+        de-embarquement retire.
+        """
+        d, sg, st, dt = self._chemins_geometriques(zeta, zeta_prime)
+        ecartees = [im for im in self.amplitude_m
+                    if abs(im.position) >= Ajustement.SEUIL_COINCIDENT]
+        total = (self._somme_famille(ecartees, rho, d)
+                 + self._somme_famille(self.amplitude_m, rho, sg)
+                 + self._somme_famille(self.amplitude_o, rho, st)
+                 + self._somme_famille(self.amplitude_o, rho, dt))
+        return MU_0 * total
+
+    @property
+    def amplitude_directe_zz(self):
+        """Le coefficient du 1/(4 pi R) singulier du chemin direct.
+
+        C'est la marque du potentiel vecteur : de tres pres, A vaut
+        mu_0 J/(4 pi R) quel que soit le milieu, parce que le mu ne change pas
+        d'une couche a l'autre. L'ajustement de M doit donc rendre une image
+        d'amplitude 1 a la profondeur zero, et c'est ce qu'on lit ici plutot
+        que de le poser : si l'ajustement s'en ecarte, la desingularisation
+        doit s'en ecarter avec lui, sans quoi les deux moities ne se recollent
+        pas.
+        """
+        return MU_0 * sum((im.amplitude for im in self.amplitude_m
+                           if abs(im.position) < Ajustement.SEUIL_COINCIDENT),
+                          0.0 + 0j)
+
+
+def _reflexion_haut(k_rho, omega, profil, eps_1):
+    """Gamma_t : la reflexion en COURANT au sommet de la lame.
+
+    EN COURANT, ET NON EN TENSION -- c'est le signe qui fait tout. Une source
+    de tension en serie lance des ondes de COURANT, dont le coefficient de
+    reflexion est l'oppose de celui des ondes de tension. Sur un plan de masse
+    (Z = 0) il vaut +1 : d'ou l'image de MEME signe du dipole vertical, quand
+    le dipole horizontal en a une opposee.
+
+    Sa limite en k_rho grand vaut (eps_haut - eps_1)/(eps_haut + eps_1), soit
+    -0,628 pour du FR-4 sous de l'air : ce n'est pas une petite correction, et
+    c'est pourquoi on ne peut pas la traiter comme un reste.
+    """
+    z_1, _ = _impedance_caracteristique(k_rho, omega, eps_1, 'tm')
+    z_haut = _impedance_vue(k_rho, omega, profil[1], profil[3], 'tm')
+    somme = z_1 + z_haut
+    somme = np.where(np.abs(somme) < 1e-30, 1e-30, somme)
+    return (z_1 - z_haut) / somme
+
+
+def noyaux_verticaux(stackup, freq, num_images=8):
+    """Le noyau du courant vertical pour un via entre le plan de masse et la piste.
+
+    LA LAME DOIT ETRE HOMOGENE, et la fonction le verifie. La decomposition en
+    quatre familles de rayons suppose UN milieu entre le plan de masse et la
+    piste ; deux dielectriques empiles y ajouteraient une interface, donc deux
+    familles de plus. C'est le cas du microruban ordinaire, et on refuse
+    plutot que d'approcher en silence.
+    """
+    profil = profil_spectral(stackup)
+    bas, masse_bas = profil[0], profil[2]
+
+    if not masse_bas:
+        raise ValueError(
+            "noyaux_verticaux : la pile sous la piste ne bute sur aucun plan "
+            "de masse. Un port vertical relie la piste au plan ; sans plan il "
+            "n'y a pas de port.")
+
+    reels = [(e, eps) for e, eps in bas if e > 0]
+    if not reels:
+        raise ValueError("noyaux_verticaux : aucun dielectrique sous la piste")
+    if len(reels) > 1:
+        eps_uns = set(np.round(np.asarray([eps for _, eps in reels]), 9))
+        if len(eps_uns) > 1:
+            raise NotImplementedError(
+                "noyaux_verticaux : %d dielectriques DIFFERENTS entre la piste "
+                "et le plan de masse. La decomposition en quatre familles de "
+                "rayons suppose une lame homogene ; il faudrait deux familles "
+                "de plus par interface." % len(reels))
+
+    hauteur = float(sum(e for e, _ in reels))
+    eps_1 = reels[0][1]
+
+    omega = 2 * np.pi * freq
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_1)
+
+    # LES CHEMINS DE CHOW, batis sur l'epaisseur de la lame -- la seule echelle
+    # geometrique que M et O connaissent.
+    t0_proche = DCIM_T0_MIN
+    t0_loin = max(2.0 * t0_proche, DCIM_KRHO_H / (abs(k_ref) * hauteur))
+    n = DCIM_ECHANTILLONS
+    t_loin = np.linspace(t0_proche, t0_loin, n)
+    kz_loin = -1j * k_ref * t_loin
+    t_proche = np.linspace(0.0, t0_proche, n)
+    kz_proche = k_ref * (1.0 - t_proche / t0_proche - 1j * t_proche)
+    portee = 200.0 * hauteur
+
+    def amplitudes(kz):
+        k_rho = np.sqrt(k_ref ** 2 - kz ** 2 + 0j)
+        gamma = _reflexion_haut(k_rho, omega, profil, eps_1)
+        p = np.exp(-2j * kz * hauteur)
+        den = 1.0 - gamma * p
+        den = np.where(np.abs(den) < 1e-30, 1e-30, den)
+        return 1.0 / den, gamma / den
+
+    # LES DEUX CONSTANTES EVANESCENTES, SORTIES A LA MAIN. En k_rho grand,
+    # P s'annule : M tend vers 1 et O vers (eps_haut - eps_1)/(eps_haut + eps_1).
+    # Une somme d'exponentielles ne rend pas une constante -- c'est la meme
+    # raison qu'au c_inf de `ajuster_noyau`, et le meme remede : une image a la
+    # profondeur zero, dont la transformee EST cette constante.
+    kz_tres_loin = -1j * k_ref * (1e4 / (abs(k_ref) * hauteur))
+    m_inf, o_inf = amplitudes(np.array([kz_tres_loin]))
+    m_inf = complex(m_inf[0]) if np.isfinite(m_inf[0]) else 1.0 + 0j
+    o_inf = complex(o_inf[0]) if np.isfinite(o_inf[0]) else 0.0 + 0j
+
+    images_m = [(m_inf, 0.0 + 0j)]
+    images_o = [(o_inf, 0.0 + 0j)]
+
+    def somme(kz, paires):
+        out = np.zeros_like(kz)
+        for amp, d in paires:
+            out = out + amp * np.exp(-1j * kz * d)
+        return out
+
+    for kz in (kz_loin, kz_proche):
+        kz0, dkz = kz[0], kz[1] - kz[0]
+        m, o = amplitudes(kz)
+        if not (np.all(np.isfinite(m)) and np.all(np.isfinite(o))):
+            logger.warning("Amplitudes verticales non finies sur un chemin")
+            continue
+        images_m.extend(_images_dun_chemin(m - somme(kz, images_m),
+                                           kz0, dkz, num_images, portee))
+        images_o.extend(_images_dun_chemin(o - somme(kz, images_o),
+                                           kz0, dkz, num_images, portee))
+
+    logger.debug("  noyau vertical : lame de %.4f mm, %d + %d images",
+                 hauteur * 1e3, len(images_m), len(images_o))
+
+    return NoyauxVerticaux(
+        amplitude_m=[ComplexImage(amplitude=a, position=d, layer_index=0)
+                     for a, d in images_m],
+        amplitude_o=[ComplexImage(amplitude=a, position=d, layer_index=0)
+                     for a, d in images_o],
+        k_ref=complex(k_ref),
+        hauteur=hauteur,
+        freq=float(freq),
+    )
 
 
 def green_spatial(rho: float, z: float, z_prime: float, images: List[ComplexImage], 

@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Constantes
 ETA_0 = 376.73031346958504  # Impédance du vide (Ω)
+C_0 = 2.99792458e8          # Vitesse de la lumière (m/s)
 
 
 def solve_currents(z_matrix: np.ndarray, v_vector: np.ndarray) -> np.ndarray:
@@ -487,3 +488,130 @@ def compute_insertion_loss(s21: complex) -> float:
         return 100.0
     
     return -20 * np.log10(mag)
+
+
+# ==========================================================================
+# LE DE-EMBARQUEMENT PAR DEUX LONGUEURS
+# --------------------------------------------------------------------------
+# CE QU'IL RETIRE, ET POURQUOI IL FAUT LE RETIRER. Un port vertical n'est pas
+# un point : c'est un via, un trou perce dans la piste, et le coin ou le
+# courant tourne. Tout cela porte une reactance qui n'appartient pas a la
+# ligne, et qui se retrouve entiere dans |S11|. Sur le cas d'essai elle vaut
+# 0,26 -- ce n'est pas un detail, c'est le quart de l'onde renvoyee.
+#
+# L'IDEE, ET ELLE TIENT EN UNE LIGNE D'ALGEBRE. On simule DEUX lignes qui ne
+# different que par leur longueur, avec les MEMES ports. En matrices de chaine,
+#
+#     T1 = A . D(L1) . B          T2 = A . D(L2) . B
+#
+# ou A et B sont les deux acces -- inconnus -- et D(L) la ligne. Alors
+#
+#     T2 . T1^-1 = A . D(L2 - L1) . A^-1
+#
+# B a disparu, et A ne subsiste que par une similitude, qui ne change pas les
+# valeurs propres. Or celles de D(dL) sont exp(-gamma dL) et exp(+gamma dL).
+# La constante de propagation de la ligne se lit donc sur le spectre d'une
+# matrice 2x2, SANS connaitre les acces, et sans etalon d'aucune sorte.
+#
+# CE QU'ON EN TIRE, ET CE QU'ON N'EN TIRE PAS :
+#
+#   · gamma = alpha + j beta, DONC eps_eff = (beta c / omega)^2 et
+#     l'attenuation en dB/m. Exact, aux erreurs du solveur pres ;
+#   · PAS l'impedance caracteristique. La methode a deux lignes ne la donne
+#     pas : il y faudrait un troisieme etalon -- un court-circuit, une charge
+#     -- comme dans un TRL complet. C'est une limite de la METHODE, pas du
+#     code, et il vaut mieux l'ecrire que rendre un chiffre qu'on ne sait pas
+#     justifier.
+#
+# LE PIEGE DE LA PHASE, ET COMMENT ON LE DESAMORCE. Le logarithme complexe ne
+# rend beta dL que modulo 2 pi : si les deux lignes different de plus d'une
+# demi-longueur d'onde guidee, le resultat est faux d'un multiple de 2 pi sans
+# que rien ne le signale. La fonction le VERIFIE quand on lui donne une
+# estimation d'eps_eff, et refuse plutot que de rendre un beta plausible.
+# ==========================================================================
+
+def _s_vers_t(s):
+    """La matrice de chaine d'un deux-ports, dans la convention qui se cascade.
+
+        T = (1/S21) [[ -det S, S11 ], [ -S22, 1 ]]
+
+    C'est celle pour laquelle la mise bout a bout de deux reseaux est le
+    PRODUIT de leurs T, dans l'ordre du signal. C'est tout ce qu'on lui
+    demande.
+    """
+    s = np.asarray(s, dtype=complex)
+    s21 = s[1, 0]
+    if abs(s21) < 1e-300:
+        raise ValueError("_s_vers_t : S21 nul, la matrice de chaine n'existe pas")
+    det = s[0, 0] * s[1, 1] - s[0, 1] * s[1, 0]
+    return np.array([[-det, s[0, 0]],
+                     [-s[1, 1], 1.0]], dtype=complex) / s21
+
+
+def deembarquement_deux_longueurs(s_courte, s_longue, delta_l, freq,
+                                  eps_eff_attendu=None):
+    """gamma de la ligne, les acces retires, par la methode des deux longueurs.
+
+    Args:
+        s_courte, s_longue: les matrices S 2x2 des deux lignes, MEMES ports
+        delta_l: la difference de longueur, en metres (positive)
+        freq: la frequence, en hertz
+        eps_eff_attendu: si donne, sert a lever l'ambiguite de 2 pi sur la
+              phase ET a la verifier. Sans lui, on rend la determination
+              principale et on le DIT.
+
+    Returns:
+        dict avec 'gamma', 'beta', 'alpha_np_par_m', 'alpha_db_par_m',
+        'eps_eff', 'valeurs_propres', 'tours' (le nombre de 2 pi ajoutes).
+
+    LES DEUX VALEURS PROPRES SE CONTROLENT L'UNE L'AUTRE. Elles doivent etre
+    inverses l'une de l'autre -- exp(-gamma dL) et exp(+gamma dL) --, et leur
+    produit vaut donc un. L'ecart a un mesure tout ce qui n'est pas une ligne
+    uniforme entre les deux simulations : maillage different, port qui a bouge,
+    rayonnement. On le rend, sous 'residu_reciproque', et l'appelant a de quoi
+    juger.
+    """
+    if delta_l <= 0:
+        raise ValueError("deembarquement_deux_longueurs : delta_l doit etre > 0")
+
+    t1 = _s_vers_t(s_courte)
+    t2 = _s_vers_t(s_longue)
+    m = t2 @ np.linalg.inv(t1)
+
+    valeurs = np.linalg.eigvals(m)
+    # Celle qui DECROIT est exp(-gamma dL) : son module est le plus petit,
+    # puisque alpha >= 0 sur un milieu passif.
+    ordre = np.argsort(np.abs(valeurs))
+    lam = valeurs[ordre[0]]
+    lam_inv = valeurs[ordre[1]]
+
+    residu = abs(lam * lam_inv - 1.0)
+
+    # gamma dL = -ln(lambda), a 2 pi j pres.
+    g_dl = -np.log(lam)
+    tours = 0
+    if eps_eff_attendu is not None:
+        omega = 2 * np.pi * freq
+        beta_attendu = omega * np.sqrt(eps_eff_attendu) / C_0
+        cible = beta_attendu * delta_l
+        # On ajoute le nombre entier de tours qui rapproche le plus.
+        tours = int(np.round((cible - g_dl.imag) / (2 * np.pi)))
+        g_dl = g_dl + 2j * np.pi * tours
+
+    gamma = g_dl / delta_l
+    omega = 2 * np.pi * freq
+    beta = gamma.imag
+    alpha = gamma.real
+    eps_eff = (beta * C_0 / omega) ** 2
+
+    return {
+        'gamma': complex(gamma),
+        'beta': float(beta),
+        'alpha_np_par_m': float(alpha),
+        'alpha_db_par_m': float(alpha * 8.685889638065035),
+        'eps_eff': float(eps_eff),
+        'valeurs_propres': (complex(lam), complex(lam_inv)),
+        'residu_reciproque': float(residu),
+        'tours': int(tours),
+        'phase_ambigue': eps_eff_attendu is None,
+    }

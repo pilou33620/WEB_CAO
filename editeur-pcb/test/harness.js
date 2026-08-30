@@ -203,6 +203,10 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "SIM_DC_NOEUDS_CIBLE",
   "simRefCandidatsPcb","simPlagesDe","simMemeEcart","simZoneEn","simCoteEn",
   "simEcartsA","simPlages","simSegments","simCouturePcb","simEspacement",
+  "simAccrocherVias","simViaAuRaccord","stackSpan",
+  "simDiscontinuites","simCoteSource",
+  "simSaisie","simSaisieEcrire","simUnite","simUniteBande",
+  "simUniteChanger","simCorpsImpedance","simEl","SIM_UNITES",
   "simProjU","simTangente","simStackup","simCuIndex",
   "SIM_ECART_MAX","SIM_COULOIR","SIM_PLAGE_MIN","SIM_PAS"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
@@ -8097,6 +8101,311 @@ T("masse de référence : GND est proposée, un net de signal ne l'est pas",()=>
      « plan de référence » veut dire dans cet outil. */
   if(!simRefSet().has("GND"))throw new Error("l'ensemble retenu doit porter GND");
   if(simRefSet().has("N$2"))throw new Error("N$2 ne doit pas y être");
+});
+
+/* --------------------------------------------------------------------------
+   LES COTES DU VIA PARTENT AVEC LA SÉLECTION
+   --------------------------------------------------------------------------
+   CE QUE LE SERVEUR FAISAIT SANS ELLES. `_cotes_via` l'écrivait en toutes
+   lettres : « LES PAGES N'ENVOIENT PAS ENCORE LES VIAS ». Le modèle π L-C
+   tournait donc sur 0,3 mm de perçage et 2,5 fois cela en pastille, alors que
+   l'éditeur connaît les deux exactement — c'est lui qui perce l'Excellon.
+
+   CE QUE CES CAS VERROUILLENT, et il en faut trois : que le via soit trouvé au
+   raccord ; qu'il soit accroché au BON tronçon, celui que le serveur relit ;
+   et qu'il ne soit PAS accroché quand rien ne le justifie, faute de quoi une
+   rupture passerait pour une transition.
+   -------------------------------------------------------------------------- */
+
+/* Une liaison qui change de couche au milieu, et le via qui la réalise. */
+function simCarteVia(drill,pad,a,b){
+  carte4c();
+  S.cuts=[]; S.vias=[];
+  const xm=(SIM_X1+SIM_X2)/2;
+  S.tracks.push({l:0, net:"N$1", w:SIM_W, x1:SIM_X1, y1:SIM_Y, x2:xm, y2:SIM_Y});
+  S.tracks.push({l:3, net:"N$1", w:SIM_W, x1:xm, y1:SIM_Y, x2:SIM_X2, y2:SIM_Y});
+  S.vias.push({x:xm, y:SIM_Y, d:pad, drill:drill,
+               a:(a==null?0:a), b:(b==null?3:b), net:"N$1"});
+  clearSel();
+  S.sel.tracks.add(S.tracks[S.tracks.length-2]);
+  S.sel.tracks.add(S.tracks[S.tracks.length-1]);
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  touch();
+  return xm;
+}
+
+T("le via du raccord part avec ses cotes, sur le bon tronçon",()=>{
+  simCarteVia(0.25,0.55);
+  const g=simSegments();
+  if(g.envoi.length!==2)
+    throw new Error("deux tronçons attendus, "+g.envoi.length);
+  /* LE SERVEUR RANGE LA TRANSITION AU RANG DU SECOND TRONÇON : c'est
+     `objets[trans["troncon"]]` qu'il relit, et `troncon` vaut l'indice du
+     tronçon d'ARRIVÉE. Accrocher le via au premier serait invisible ici et
+     silencieux là-bas. */
+  if(g.envoi[0].via)
+    throw new Error("le via ne doit pas être accroché au tronçon de départ");
+  const v=g.envoi[1].via;
+  if(!v)throw new Error("le via n'a pas été accroché au tronçon d'arrivée");
+  if(Math.abs(v.drill_diameter-0.25)>1e-9)
+    throw new Error("perçage "+v.drill_diameter+" au lieu de 0,25");
+  if(Math.abs(v.pad_diameter-0.55)>1e-9)
+    throw new Error("pastille "+v.pad_diameter+" au lieu de 0,55");
+  /* LA HAUTEUR N'EST PAS ENVOYÉE, ET C'EST VOULU : le serveur la recalcule
+     depuis l'empilage, par la même somme que `stackSpan`. Deux définitions de
+     la même longueur, c'est deux chiffres le jour où l'une dérive. */
+  if("height" in v)
+    throw new Error("la hauteur ne doit pas être envoyée : le serveur la lit "+
+                    "dans l'empilage");
+});
+
+T("pas de via au raccord : rien n'est accroché, et le serveur le dira",()=>{
+  simCarteVia(0.25,0.55);
+  S.vias=[];                         /* la liaison change de couche sans via */
+  touch();
+  const g=simSegments();
+  if(g.envoi.length!==2)throw new Error("deux tronçons attendus");
+  if(g.envoi[1].via)
+    throw new Error("un via a été inventé là où il n'y en a pas");
+});
+
+T("un via qui ne couvre pas le saut n'est pas retenu",()=>{
+  /* Un via borgne 0→1 ne réalise pas une liaison 0→3. L'accrocher donnerait un
+     perçage juste pour un via faux, ce qui est pire qu'un repli avoué. */
+  simCarteVia(0.25,0.55,0,1);
+  const g=simSegments();
+  if(g.envoi[1].via)
+    throw new Error("un via borgne 0→1 a été pris pour la liaison 0→3");
+});
+
+T("entre deux vias au même endroit, le plus court décrit la liaison",()=>{
+  /* Deux vias au même endroit couvrent tous deux le saut : un traversant 0→3
+     et un enterré 0→2. C'est le plus SPÉCIFIQUE qui décrit la liaison — un
+     traversant retenu à la place d'un enterré donnerait une inductance presque
+     double, et personne ne le verrait. */
+  carte4c();
+  S.cuts=[]; S.vias=[];
+  const xm=(SIM_X1+SIM_X2)/2;
+  S.tracks.push({l:0, net:"N$1", w:SIM_W, x1:SIM_X1, y1:SIM_Y, x2:xm, y2:SIM_Y});
+  S.tracks.push({l:2, net:"N$1", w:SIM_W, x1:xm, y1:SIM_Y, x2:SIM_X2, y2:SIM_Y});
+  S.vias.push({x:xm, y:SIM_Y, d:0.75, drill:0.30, a:0, b:3, net:"N$1"});
+  S.vias.push({x:xm, y:SIM_Y, d:0.45, drill:0.15, a:0, b:2, net:"N$1"});
+  clearSel();
+  S.sel.tracks.add(S.tracks[S.tracks.length-2]);
+  S.sel.tracks.add(S.tracks[S.tracks.length-1]);
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  touch();
+  const v=simSegments().envoi[1].via;
+  if(!v)throw new Error("aucun via accroché alors que deux conviennent");
+  if(Math.abs(v.drill_diameter-0.15)>1e-9)
+    throw new Error("perçage "+v.drill_diameter+" : c'est le traversant qui a "+
+                    "été retenu au lieu de l'enterré");
+});
+
+T("un via loin du raccord ne compte pas",()=>{
+  const xm=simCarteVia(0.25,0.55);
+  S.vias=[{x:xm+1.0, y:SIM_Y, d:0.55, drill:0.25, a:0, b:3, net:"N$1"}];
+  touch();
+  const g=simSegments();
+  if(g.envoi[1].via)
+    throw new Error("un via à 1 mm du raccord a été accroché");
+});
+
+/* --------------------------------------------------------------------------
+   LA FICHE DIT CE QUI A ÉTÉ CASCADÉ
+   --------------------------------------------------------------------------
+   CE QUI MANQUAIT, ET QUI NE SE VOYAIT PAS. Le serveur cascade les coudes et
+   les vias depuis le lot 3b — la courbe S les porte —, mais `discontinuites`
+   arrivait dans le résultat et n'était lu NULLE PART. Devant un |S₂₁| qui
+   plonge, personne ne pouvait savoir si un via y était compté ; devant une
+   liaison qui change de couche, personne ne pouvait vérifier qu'il avait
+   seulement été vu.
+
+   ON ÉPROUVE LES TROIS ÉTATS, parce qu'ils disent trois choses différentes :
+   rien à signaler, quelque chose de chiffré, et quelque chose de SUPPOSÉ.
+   -------------------------------------------------------------------------- */
+
+function simResDisc(disc,troncons){
+  return {ligne:{troncons:troncons==null?2:troncons}, discontinuites:disc};
+}
+
+T("la fiche nomme ce qui a été cascadé, et ce qu'il pèse",()=>{
+  const h=simDiscontinuites(simResDisc({
+    coudes:[{troncon:1, angle_deg:90,
+             modelise:{inductance_pH:120, capacite_fF:21.3, phase_deg:0.42}}],
+    transitions:[{troncon:3, nom_depart:"TOP", nom_arrivee:"BOT",
+                  cotes_supposees:false,
+                  cotes:{hauteur_mm:1.34, hauteur_source:"empilage",
+                         percage_mm:0.25, percage_source:"page",
+                         pastille_mm:0.55, pastille_source:"page"},
+                  modelise:{inductance_nH:1.041, capacite_fF:9.81,
+                            phase_deg:1.55}}]
+  },4));
+  if(!/1 coude, 1 via/.test(h))
+    throw new Error("le décompte n'est pas annoncé : "+h.slice(0,200));
+  if(!/TOP → BOT/.test(h))throw new Error("les couches du via ne sont pas dites");
+  if(!/1,041 nH/.test(h))throw new Error("l'inductance du via n'est pas affichée");
+  if(!/1,55°/.test(h))throw new Error("la phase du via n'est pas affichée");
+  if(!/1,340 mm/.test(h))throw new Error("la hauteur du via n'est pas affichée");
+  /* Les cotes viennent de la page : rien ne doit être annoncé comme supposé. */
+  if(/valeurs par défaut/.test(h))
+    throw new Error("les cotes viennent de la page et sont dites supposées");
+});
+
+T("un chiffre supposé est affiché comme supposé",()=>{
+  const h=simDiscontinuites(simResDisc({
+    coudes:[],
+    transitions:[{troncon:1, nom_depart:"TOP", nom_arrivee:"BOT",
+                  cotes_supposees:true,
+                  cotes:{hauteur_mm:1.34, hauteur_source:"empilage",
+                         percage_mm:0.30, percage_source:"repli",
+                         pastille_mm:0.75, pastille_source:"repli"},
+                  modelise:{inductance_nH:1.041, capacite_fF:9.81,
+                            phase_deg:1.55}}]
+  }));
+  if(!/valeurs par défaut/.test(h))
+    throw new Error("le repli n'est pas signalé");
+  if(!/perçage 0,30 mm/.test(h))throw new Error("le perçage supposé n'est pas nommé");
+  if(!/pastille 0,75 mm/.test(h))throw new Error("la pastille supposée n'est pas nommée");
+  /* LA HAUTEUR, ELLE, N'EST PAS SUPPOSÉE, et il faut que ça se lise : la dire
+     supposée avec le reste ferait douter d'un chiffre exact. */
+  if(!/n'est pas supposée/.test(h))
+    throw new Error("la fiche ne dit pas que la hauteur, elle, est exacte");
+});
+
+T("sans discontinuité, la fiche le dit — mais seulement s'il y a de quoi",()=>{
+  /* Plusieurs tronçons et rien entre eux : c'est une information. */
+  const h=simDiscontinuites(simResDisc({coudes:[],transitions:[]},3));
+  if(!/Aucune discontinuité/.test(h))
+    throw new Error("le silence n'est pas expliqué");
+  /* Un seul tronçon : il n'y a pas d'« entre », donc rien à dire. */
+  const h1=simDiscontinuites(simResDisc({coudes:[],transitions:[]},1));
+  if(h1!=="")throw new Error("une liaison d'un seul tronçon n'a pas d'entre-deux");
+});
+
+T("une discontinuité qui ne pèse rien est marquée comme telle",()=>{
+  const h=simDiscontinuites(simResDisc({
+    coudes:[{troncon:1, angle_deg:5,
+             modelise:{inductance_pH:7, capacite_fF:1.2, phase_deg:0.02}}],
+    transitions:[]
+  }));
+  if(!/z0ok/.test(h))
+    throw new Error("une phase sous le dixième de degré devrait être marquée");
+});
+
+/* --------------------------------------------------------------------------
+   LA BANDE S A SON UNITÉ, INDÉPENDANTE DE CELLE DE f₀
+   --------------------------------------------------------------------------
+   POURQUOI DEUX ET NON UNE. Une seule liste servait les trois champs. Une carte
+   qui travaille à 250 MHz sur une bande de 100 MHz à 1 GHz devait donc écrire
+   « 0,25 » et « 0,1 → 1 » en gigahertz — trois ordres de grandeur dans une
+   seule unité, et des zéros à compter à chaque saisie.
+
+   CE QUE CES CAS VERROUILLENT : que les deux unités soient vraiment
+   indépendantes, que changer l'une CONVERTISSE sans toucher aux hertz, et que
+   le repli rende exactement l'ancien comportement pour un état qui ne porte pas
+   encore la seconde.
+   -------------------------------------------------------------------------- */
+
+function simAvecSaisie(f,etat){
+  const garde=JSON.parse(JSON.stringify(SIM.saisie));
+  Object.assign(SIM.saisie,etat||{});
+  try{ f(); } finally { SIM.saisie=garde; }
+}
+
+T("la bande S et f₀ s'écrivent chacune dans SON unité",()=>{
+  simAvecSaisie(()=>{
+    simSaisieEcrire();
+    /* f₀ en gigahertz, la bande en mégahertz : ce sont les mêmes hertz. */
+    if(simEl("simFc").value!=="0,25")
+      throw new Error("f₀ écrite « "+simEl("simFc").value+" » au lieu de 0,25");
+    if(simEl("simF1").value!=="100")
+      throw new Error("f₁ écrite « "+simEl("simF1").value+" » au lieu de 100");
+    if(simEl("simF2").value!=="1000")
+      throw new Error("f₂ écrite « "+simEl("simF2").value+" » au lieu de 1000");
+    /* Et les deux listes montrent chacune la sienne. */
+    if(simEl("simFUnite").value!=="GHz")
+      throw new Error("la liste de f₀ montre "+simEl("simFUnite").value);
+    if(simEl("simFUniteBande").value!=="MHz")
+      throw new Error("la liste de bande montre "+simEl("simFUniteBande").value);
+  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande:"MHz"});
+});
+
+T("relire rend les mêmes hertz, chaque champ dans son unité",()=>{
+  simAvecSaisie(()=>{
+    simSaisieEcrire();
+    const s=simSaisie();
+    if(Math.abs(s.fc-250e6)>1)throw new Error("f₀ relue "+s.fc);
+    if(Math.abs(s.f1-100e6)>1)throw new Error("f₁ relue "+s.f1);
+    if(Math.abs(s.f2-1000e6)>1)throw new Error("f₂ relue "+s.f2);
+  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande:"MHz"});
+});
+
+T("changer l'unité de la bande ne déplace ni les hertz ni f₀",()=>{
+  simAvecSaisie(()=>{
+    simSaisieEcrire();
+    simUniteChanger("kHz","bande");
+    /* LES HERTZ NE BOUGENT PAS : c'est toute la règle de la conversion. */
+    if(Math.abs(SIM.saisie.f1-100e6)>1)
+      throw new Error("f₁ a bougé : "+SIM.saisie.f1);
+    if(simEl("simF1").value!=="100000")
+      throw new Error("f₁ devrait s'écrire 100000 en kHz, pas « "+
+                      simEl("simF1").value+" »");
+    /* ET f₀ N'A PAS SUIVI : c'est l'autre moitié de l'indépendance. */
+    if(SIM.saisie.unite!=="GHz")
+      throw new Error("l'unité de f₀ a changé avec celle de la bande");
+    if(simEl("simFc").value!=="0,25")
+      throw new Error("f₀ s'est réécrite : « "+simEl("simFc").value+" »");
+  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande:"MHz"});
+});
+
+T("changer l'unité de f₀ ne touche pas la bande",()=>{
+  simAvecSaisie(()=>{
+    simSaisieEcrire();
+    simUniteChanger("MHz","fc");
+    if(SIM.saisie.uniteBande!=="MHz")
+      throw new Error("l'unité de bande a suivi celle de f₀");
+    if(Math.abs(SIM.saisie.f2-1000e6)>1)
+      throw new Error("f₂ a bougé : "+SIM.saisie.f2);
+    if(simEl("simFc").value!=="250")
+      throw new Error("f₀ devrait s'écrire 250 en MHz, pas « "+
+                      simEl("simFc").value+" »");
+  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande:"MHz"});
+});
+
+T("un état sans unité de bande retombe sur celle de f₀",()=>{
+  /* LE REPLI N'EST PAS UNE CONSTANTE, ET C'EST LE POINT. Un état enregistré
+     avant la séparation ne porte pas `uniteBande` ; lui donner du gigahertz
+     par défaut ferait sauter la bande d'un facteur mille sous les yeux de qui
+     rouvre le panneau. Retomber sur `unite` rend exactement l'ancien
+     comportement. */
+  simAvecSaisie(()=>{
+    delete SIM.saisie.uniteBande;
+    if(simUniteBande().cle!=="MHz")
+      throw new Error("le repli donne "+simUniteBande().cle+" au lieu de MHz");
+    simSaisieEcrire();
+    if(simEl("simF1").value!=="100")
+      throw new Error("f₁ écrite « "+simEl("simF1").value+" » : le repli n'a "+
+                      "pas pris l'unité de f₀");
+  },{fc:250e6, f1:100e6, f2:1000e6, unite:"MHz", uniteBande:"MHz"});
+});
+
+T("une unité inconnue ne change rien",()=>{
+  simAvecSaisie(()=>{
+    simUniteChanger("THz","bande");
+    if(SIM.saisie.uniteBande!=="MHz")
+      throw new Error("une unité hors liste a été acceptée");
+  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande:"MHz"});
+});
+
+T("les commandes portent deux listes d'unité distinctes",()=>{
+  const h=simCorpsImpedance();
+  if(!/id="simFUnite"/.test(h))throw new Error("la liste de f₀ manque");
+  if(!/id="simFUniteBande"/.test(h))throw new Error("la liste de bande manque");
+  /* L'ANCIENNE ÉTIQUETTE FIGÉE DOIT AVOIR DISPARU : la laisser afficherait une
+     unité qui ne serait plus celle de la bande. */
+  if(/id="simUBande"/.test(h))
+    throw new Error("l'étiquette figée de la bande est encore là");
 });
 
 T("écart symétrique : c'est la règle d'isolation, des deux côtés",()=>{

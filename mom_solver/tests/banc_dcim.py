@@ -54,6 +54,10 @@ from green_layered import (                     # noqa: E402
     green_spatial, green_spectral_q, green_spectral_te, green_spectral_tm,
     noyaux_green, poles_du_noyau, profil_spectral,
     _chemins, _kz, _poles_modaux, _residu_v, _v_plan_source,
+    green_croise_q, green_croise_te, noyaux_croises, noyaux_multicouches,
+    profil_croise, _impedance_vue, _transfert_tension, _v_entre_plans,
+    green_spectral_zz, noyaux_verticaux, _reflexion_haut,
+    _somme_ondes_surface,
 )
 
 OK = 0
@@ -1014,6 +1018,739 @@ def _():
     print("        ((1+er)/2 = %.4f ; " % moyen
           + ", ".join("rho/h=%.3f : %.4f" % (r / 0.370e-3, e)
                       for r, e in mesures) + ")")
+
+
+# ==========================================================================
+# 6. LE TROISIEME NIVEAU : LE BRANCHEMENT DE L'AIR
+# --------------------------------------------------------------------------
+# CE QU'IL Y AVAIT A REPARER, ET CE QUE CES ESSAIS VERROUILLENT. Le 3e niveau
+# ajuste des exponentielles en k_z de l'AIR, parce que c'est la bonne base pour
+# le second point de branchement. Trois choses le rendaient nuisible, et les
+# trois etaient du meme genre -- deux bases confondues :
+#
+#   1. ses images etaient resommees avec le k du SUBSTRAT (`_somme_ondes` ne
+#      connaissait qu'un seul nombre d'onde) ;
+#   2. le reste a ajuster etait obtenu en evaluant les images des deux premiers
+#      niveaux en k_z de l'AIR, alors qu'elles vivent en k_z du substrat ;
+#   3. le garde-fou de portee, mesure en epaisseurs de stratifie, rejetait
+#      TOUTES les images du branchement air -- dont l'echelle est la longueur
+#      d'onde.
+#
+# LES TROIS ESSAIS CI-DESSOUS SONT COMPLEMENTAIRES. Le premier verifie que le
+# niveau APPORTE quelque chose la ou il vise ; le deuxieme, qu'il n'ABIME rien
+# ailleurs -- c'est celui-la qui tombait avant ; le troisieme regarde la
+# structure de donnees elle-meme, parce qu'un groupe air VIDE se comporte
+# exactement comme un niveau absent, sans que rien ne le dise.
+# ==========================================================================
+@essai("le 3e niveau DCIM divise l'erreur de champ lointain")
+def _():
+    """LA OU IL VISE, ET DE COMBIEN. Le branchement de l'air produit l'onde
+    laterale, qui decroit en 1/rho^2 : elle ne pese rien en champ proche et
+    domine le decrochage lointain. Les trois noyaux doivent y gagner, parce que
+    la cause est geometrique et ne depend pas du potentiel qu'on regarde.
+
+    ON N'EXIGE PAS L'ANNULATION, et ce serait faux de le faire : une somme
+    finie d'exponentielles ne rend pas exactement une loi en 1/rho^2. On exige
+    un sixieme de moins, ce que la reparation donne avec de la marge (mesure :
+    9,59 % -> 6,19 % et 40,8 % -> 27,7 % sur le potentiel scalaire).
+    """
+    lignes = []
+    for noyau in ('a', 'q', 'tm'):
+        a2 = ajuster_noyau(MICRO, F0, noyau, 8, trois_niveaux=False)
+        a3 = ajuster_noyau(MICRO, F0, noyau, 8, trois_niveaux=True)
+        mesures = []
+        for rho in (10e-3, 30e-3):
+            etalon = sommerfeld_numerique(rho, MICRO, F0, noyau)
+            e2 = ecart(complex(a2.valeur(rho)), etalon)
+            e3 = ecart(complex(a3.valeur(rho)), etalon)
+            mesures.append((rho, e2, e3))
+            if e3 > 0.85 * e2:
+                raise AssertionError(
+                    "noyau %s a %g mm : le 3e niveau ne gagne rien "
+                    "(%.3f %% -> %.3f %%)" % (noyau, rho * 1e3, e2, e3))
+        lignes.append("%-3s (" % noyau
+                      + ", ".join("%.0f mm : %.2f %% -> %.2f %%"
+                                  % (r * 1e3, e2, e3) for r, e2, e3 in mesures)
+                      + ")")
+    for ligne in lignes:
+        print("        " + ligne)
+
+
+@essai("le 3e niveau n'abime ni le champ proche, ni le cas sans contraste")
+def _():
+    """L'ESSAI QUI TOMBAIT, ET QUI DESIGNAIT LA CAUSE. A contraste
+    dielectrique nul les deux points de branchement se confondent : le 3e
+    niveau n'a alors RIEN a corriger, et il doit rendre exactement ce que
+    rendent les deux premiers. Quand ses images etaient resommees avec le
+    mauvais nombre d'onde, elles ajoutaient un bruit COHERENT que rien ne
+    compensait -- et c'est ici que ca se voyait, parce que c'est ici seulement
+    que la bonne reponse est connue d'avance.
+
+    ET LE CHAMP PROCHE AVEC, parce que c'est lui qui remplit la matrice
+    d'impedance : un 3e niveau qui gagnerait au loin en perdant a 1 mm ne
+    serait pas allumable du tout.
+    """
+    plat = microruban(0.370, er=1.0001)
+    for noyau in ('a', 'q', 'tm'):
+        a2 = ajuster_noyau(plat, F0, noyau, 8, trois_niveaux=False)
+        a3 = ajuster_noyau(plat, F0, noyau, 8, trois_niveaux=True)
+        for rho in (10e-3, 30e-3):
+            etalon = sommerfeld_numerique(rho, plat, F0, noyau)
+            e2 = ecart(complex(a2.valeur(rho)), etalon)
+            e3 = ecart(complex(a3.valeur(rho)), etalon)
+            if e3 > max(0.5, 1.5 * e2):
+                raise AssertionError(
+                    "sans contraste, noyau %s a %g mm : le 3e niveau degrade "
+                    "(%.4f %% -> %.4f %%)" % (noyau, rho * 1e3, e2, e3))
+
+    proches = []
+    for noyau in ('a', 'q', 'tm'):
+        a2 = ajuster_noyau(MICRO, F0, noyau, 8, trois_niveaux=False)
+        a3 = ajuster_noyau(MICRO, F0, noyau, 8, trois_niveaux=True)
+        for rho in (0.2e-3, 1e-3, 3e-3):
+            etalon = sommerfeld_numerique(rho, MICRO, F0, noyau)
+            e2 = ecart(complex(a2.valeur(rho)), etalon)
+            e3 = ecart(complex(a3.valeur(rho)), etalon)
+            proches.append((noyau, rho, e2, e3))
+            if e3 > max(0.05, 1.5 * e2):
+                raise AssertionError(
+                    "champ proche, noyau %s a %g mm : %.4f %% -> %.4f %%"
+                    % (noyau, rho * 1e3, e2, e3))
+    print("        (champ proche, pire des 9 points : %.4f %% a 2 niveaux, "
+          "%.4f %% a 3)" % (max(p[2] for p in proches),
+                            max(p[3] for p in proches)))
+
+
+@essai("chaque groupe d'images porte SON nombre d'onde")
+def _():
+    """LA STRUCTURE DE DONNEES, VERIFIEE POUR ELLE-MEME. C'est le champ
+    `ComplexImage.k_onde` qui manquait, et son absence ne se voyait que par
+    ses consequences. On regarde donc directement : a deux niveaux, aucune
+    image ne porte de nombre d'onde propre -- toutes vivent en k_ref ; a trois,
+    le groupe air en porte un, et c'est k_0.
+
+    ET LE GROUPE AIR N'EST PAS VIDE, ce qui est l'autre moitie de la
+    verification : le garde-fou de portee, laisse en epaisseurs de stratifie,
+    les rejetait toutes, et le niveau ne posait alors pas une seule image --
+    exactement le meme resultat qu'un niveau absent, sans que rien ne le dise.
+    """
+    omega = 2 * np.pi * F0
+    k_0 = omega * np.sqrt(MU_0 * EPSILON_0)
+
+    a2 = ajuster_noyau(MICRO, F0, 'q', 8, trois_niveaux=False)
+    if any(im.k_onde is not None for im in a2.images):
+        raise AssertionError("a deux niveaux, aucune image ne doit porter de "
+                             "nombre d'onde propre")
+
+    a3 = ajuster_noyau(MICRO, F0, 'q', 8, trois_niveaux=True)
+    air = [im for im in a3.images if im.k_onde is not None]
+    if not air:
+        raise AssertionError("le groupe air est VIDE : le 3e niveau ne pose "
+                             "aucune image, il ne fait donc rien")
+    for im in air:
+        if abs(im.k_onde - k_0) > 1e-9 * abs(k_0):
+            raise AssertionError("une image du groupe air porte %s au lieu de "
+                                 "k_0 = %s" % (im.k_onde, k_0))
+    print("        (%d images substrat en k_ref, %d images air en k_0 ; "
+          "profondeurs air de %.0f a %.0f mm)"
+          % (len(a3.images) - len(air), len(air),
+             min(abs(im.position) for im in air) * 1e3,
+             max(abs(im.position) for im in air) * 1e3))
+
+
+# ==========================================================================
+# 7. DEUX COUCHES DE SIGNAL : LE NOYAU CROISE
+# --------------------------------------------------------------------------
+# CE QU'IL Y AVAIT A LA PLACE. `profils_noyaux_multiples` rendait un noyau
+# croise qui etait, au bit pres, celui de la couche du bas : elle construisait
+# un profil croise puis rappelait `noyaux_green(stackup, freq, n, z_src=z_i)`
+# sans le lui passer. Rien ne le mesurait, donc rien ne le disait.
+#
+# CE QUI LE REMPLACE, ET POURQUOI C'EST VERIFIABLE. La fonction de Green entre
+# deux plans n'est pas celle d'un empilage recolle : c'est la MEME ligne de
+# transmission, avec la source a z' et l'observation a z. Trois choses s'en
+# deduisent, et les trois se mesurent contre quelque chose qui ne vient pas du
+# module :
+#
+#   · la RECIPROCITE. V_i(z,z') = V_i(z',z), alors que les deux calculs n'ont
+#     rien en commun -- l'un part du bas, l'autre du haut ;
+#   · la COHERENCE avec `_impedance_vue`. L'impedance que le transfert laisse
+#     au plan source est celle que la cascade ordinaire donne sur la pile
+#     entiere ;
+#   · une FORME FERMEE. Deux plans de signal au-dessus d'un plan de masse dans
+#     l'air : le spectre croise vaut exp(-j k_z (h2-h1)) - exp(-j k_z (h2+h1)),
+#     soit deux images d'amplitude +1 et -1 aux profondeurs exactes. C'est
+#     l'analogue croise du cas exactement soluble deja employe au 1.
+# ==========================================================================
+
+def _empilage_deux_signaux(er=4.3, h1=0.2e-3, h2=0.3e-3, ferme=False,
+                           t_cu=35e-6):
+    """Plan de masse, signal, dielectrique, signal -- et un second plan si `ferme`."""
+    z = 0.0
+    couches = []
+
+    def cuivre(role):
+        nonlocal z
+        couches.append({'index': len(couches), 'type': 'copper',
+                        'thickness': t_cu, 'epsilon_r': 1.0, 'tan_delta': 0.0,
+                        'role': role, 'z_bottom': z, 'z_top': z + t_cu})
+        z += t_cu
+
+    def diel(e):
+        nonlocal z
+        couches.append({'index': len(couches), 'type': 'dielectric',
+                        'thickness': e, 'epsilon_r': er, 'tan_delta': 0.0,
+                        'role': '', 'z_bottom': z, 'z_top': z + e})
+        z += e
+
+    cuivre('plane')
+    diel(h1)
+    cuivre('signal')
+    diel(h2)
+    cuivre('signal')
+    if ferme:
+        diel(h1)
+        cuivre('plane')
+    return {'layers': couches}
+
+
+@essai("la tension entre deux plans est reciproque, et recolle a la cascade")
+def _():
+    """LES DEUX INVARIANTS DU TRANSFERT, ET ILS SE SUFFISENT.
+
+    La RECIPROCITE d'abord : V_i(z,z') = V_i(z',z). Les deux membres sont
+    calcules par des chemins qui n'ont rien en commun -- l'un descend, l'autre
+    monte, les terminaisons ne sont pas les memes -- et pourtant ils doivent
+    coincider a la precision machine. C'est ce que le theoreme de reciprocite
+    dit d'un milieu reciproque, et aucune erreur de cascade n'y survit.
+
+    LA COHERENCE ensuite : l'impedance que `_transfert_tension` laisse au plan
+    source, apres avoir traverse les couches intermediaires et charge la pile
+    du haut, doit etre exactement celle que `_impedance_vue` calcule d'un coup
+    sur la pile complete. Deux ecritures du meme circuit.
+    """
+    omega = 2 * np.pi * F0
+    for nom, ferme in (("ouvert (microruban)", False),
+                       ("ferme (triplaque)", True)):
+        st = _empilage_deux_signaux(ferme=ferme)
+        croise = profil_croise(st, 2, 4)
+        if croise is None:
+            raise AssertionError("%s : les deux couches devraient se voir" % nom)
+        p_bas, p_haut, entre, eps_ref, _, _ = croise
+        k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_ref)
+        # ON EVITE k_rho = k_ref, ET IL FAUT LE DIRE. C'est le point de
+        # branchement du milieu de reference : k_z y est nul, l'impedance TE
+        # omega mu / k_z y diverge, et `_impedance_caracteristique` la plafonne
+        # a un plancher numerique -- une valeur inventee, qui casse l'algebre
+        # exacte des deux cotes de facon differente. La reciprocite y tombe a
+        # 5.10^-2, et ce n'est pas une erreur de cascade : aucun chemin
+        # d'echantillonnage de la DCIM n'y tombe non plus, par construction.
+        # On l'encadre a un pour mille pres pour montrer que c'est le POINT et
+        # rien de son voisinage.
+        k_rho = np.concatenate([
+            np.logspace(-1.0, 2.0, 13) * abs(k_ref) * 1.013,
+            np.array([0.999, 1.001]) * abs(k_ref),
+        ])
+
+        for mode in ('tm', 'te'):
+            aller = _v_entre_plans(k_rho, omega, p_bas, p_haut, entre, mode)
+            # Le meme probleme retourne : les deux piles echangees, la liste
+            # des milieux intermediaires lue a l'envers.
+            retourne_bas = (p_haut[1], p_haut[0], p_haut[3], p_haut[2],
+                            p_haut[4], p_haut[5])
+            retourne_haut = (p_bas[1], p_bas[0], p_bas[3], p_bas[2],
+                             p_bas[4], p_bas[5])
+            retour = _v_entre_plans(k_rho, omega, retourne_bas, retourne_haut,
+                                    list(reversed(entre)), mode)
+            e = float(np.max(np.abs(aller - retour)
+                             / np.maximum(np.abs(aller), 1e-300)))
+            if e > 1e-10:
+                raise AssertionError("%s, mode %s : reciprocite violee de %.3e"
+                                     % (nom, mode, e))
+
+        z_charge = _impedance_vue(k_rho, omega, p_haut[1], p_haut[3], 'tm')
+        _, z_vue = _transfert_tension(k_rho, omega, entre, z_charge, 'tm')
+        z_direct = _impedance_vue(k_rho, omega, p_bas[1], p_bas[3], 'tm')
+        e = float(np.max(np.abs(z_vue - z_direct) / np.abs(z_direct)))
+        if e > 1e-10:
+            raise AssertionError("%s : le transfert ne redonne pas "
+                                 "_impedance_vue (%.3e)" % (nom, e))
+        print("        (%-20s reciprocite et cascade a mieux que 1e-10)" % nom)
+
+
+@essai("le noyau croise, contre sa forme fermee dans l'air")
+def _():
+    """LE CAS EXACTEMENT SOLUBLE, VERSION CROISEE. Deux plans de signal a h1 et
+    h2 au-dessus d'un plan de masse, tout en air : le spectre croise vaut
+
+        exp(-j k_z (h2 - h1))  -  exp(-j k_z (h2 + h1))
+
+    -- la source vue directement, et son image dans le plan. Deux
+    exponentielles, donc DEUX images complexes et pas une de plus, aux
+    profondeurs h2-h1 et h2+h1, d'amplitudes +1 et -1.
+
+    ON VERIFIE LES DEUX BOUTS : le spectre contre la formule, et l'ajustement
+    contre les images qu'on sait d'avance. Le second est le plus severe : GPOF
+    n'a aucune raison de tomber sur exactement deux poles si le spectre qu'on
+    lui donne n'est pas celui-la.
+    """
+    h1, h2 = 0.4e-3, 1.1e-3
+    freq = 3e9
+    st = _empilage_deux_signaux(er=1.0, h1=h1, h2=h2 - h1, t_cu=0.0)
+
+    croise = profil_croise(st, 2, 4)
+    omega = 2 * np.pi * freq
+    k_0 = omega * np.sqrt(MU_0 * EPSILON_0)
+    k_rho = np.concatenate([np.linspace(0.05, 0.95, 9) * k_0,
+                            np.logspace(0.05, 2.0, 9) * k_0])
+    kz = _kz(k_0, k_rho)
+    exact = np.exp(-1j * kz * (h2 - h1)) - np.exp(-1j * kz * (h2 + h1))
+
+    for nom, fonction in (('a', green_croise_te), ('q', green_croise_q)):
+        v = fonction(k_rho, croise, freq)
+        e = float(np.max(np.abs(v - exact)
+                         / np.maximum(np.abs(exact), 1e-300)))
+        if e > 1e-9:
+            raise AssertionError("noyau croise %s : %.3e contre la forme "
+                                 "fermee" % (nom, e))
+
+    noyaux = noyaux_croises(st, freq, 2, 4, num_images=6)
+    fortes = sorted((im for im in noyaux.ajust_a.images
+                     if abs(im.amplitude) > 1e-6),
+                    key=lambda im: abs(im.position))
+    if len(fortes) != 2:
+        raise AssertionError("%d image(s) d'amplitude notable au lieu de 2 : %s"
+                             % (len(fortes),
+                                [(im.amplitude, im.position) for im in fortes]))
+    attendu = ((1.0, h2 - h1), (-1.0, h2 + h1))
+    for im, (amp, prof) in zip(fortes, attendu):
+        if abs(im.amplitude - amp) > 1e-4:
+            raise AssertionError("amplitude %s au lieu de %+.0f"
+                                 % (im.amplitude, amp))
+        if abs(im.position - prof) > 1e-4 * prof:
+            raise AssertionError("profondeur %s au lieu de %.6f mm"
+                                 % (im.position, prof * 1e3))
+    print("        (2 images : %+.6f a %.4f mm, %+.6f a %.4f mm ; "
+          "attendu %+.0f a %.4f mm, %+.0f a %.4f mm)"
+          % (fortes[0].amplitude.real, fortes[0].position.real * 1e3,
+             fortes[1].amplitude.real, fortes[1].position.real * 1e3,
+             1, (h2 - h1) * 1e3, -1, (h2 + h1) * 1e3))
+
+
+@essai("un plan de masse entre deux signaux coupe le couplage, exactement")
+def _():
+    """CE QUE LE MODULE DOIT REFUSER DE CALCULER. Un plan de masse est une
+    TERMINAISON : le champ ne le traverse pas, et deux couches de signal qu'il
+    separe ne se voient pas du tout. Le noyau croise n'est alors pas petit, il
+    est NUL -- et `noyaux_croises` doit rendre None pour que le moteur pose un
+    bloc de zeros plutot qu'un couplage approche.
+
+    L'ERREUR QUE CA EVITE. Un empilage a quatre couches, signal en 2 et en 6
+    avec un plan en 4, calcule avec un noyau croise « quelconque » donnerait de
+    la diaphonie entre deux pistes qui, physiquement, s'ignorent. C'est le
+    genre de resultat plausible qu'on ne pense jamais a mettre en doute.
+    """
+    t = 35e-6
+    h = 0.2e-3
+    z = 0.0
+    couches = []
+    for typ, role, e in (('copper', 'plane', t), ('dielectric', '', h),
+                         ('copper', 'signal', t), ('dielectric', '', h),
+                         ('copper', 'plane', t), ('dielectric', '', h),
+                         ('copper', 'signal', t)):
+        couches.append({'index': len(couches), 'type': typ, 'thickness': e,
+                        'epsilon_r': 4.3 if typ == 'dielectric' else 1.0,
+                        'tan_delta': 0.0, 'role': role,
+                        'z_bottom': z, 'z_top': z + e})
+        z += e
+    st = {'layers': couches}
+
+    if profil_croise(st, 2, 6) is not None:
+        raise AssertionError("le plan de masse en 4 devrait couper le couplage")
+    if noyaux_croises(st, F0, 2, 6, num_images=4) is not None:
+        raise AssertionError("noyaux_croises devrait rendre None")
+
+    jeu = noyaux_multicouches(st, F0, num_images=4)
+    if len(jeu) != 2:
+        raise AssertionError("%d couche(s) de signal au lieu de 2" % len(jeu))
+    if jeu.pour(2, 6) is not None:
+        raise AssertionError("pour(2, 6) devrait rendre None")
+    if jeu.pour(2, 2) is None or jeu.pour(6, 6) is None:
+        raise AssertionError("les noyaux propres manquent")
+    if jeu.pour(2, 2) is jeu.pour(6, 6):
+        raise AssertionError("les deux couches partagent le meme noyau : le "
+                             "multi-couches n'est pas branche")
+    print("        (2 couches de signal, noyaux propres distincts, "
+          "couplage croise nul)")
+
+
+@essai("chaque couche de signal recoit SON noyau, et ce ne sont pas les memes")
+def _():
+    """CE QUE « BRANCHER LE MULTI-COUCHES » VEUT DIRE, MESURE. Deux couches de
+    signal a des hauteurs differentes au-dessus du meme plan de masse n'ont pas
+    la meme fonction de Green : celle du bas voit le plan de pres, celle du
+    haut de loin. Si les deux noyaux propres se valaient, c'est que le moteur
+    n'en aurait qu'un -- ce qui etait exactement le cas avant.
+
+    ET LE CROISE N'EST NI L'UN NI L'AUTRE, ce qui est l'autre moitie : le
+    leurre qu'on a retire rendait le noyau de la couche du bas.
+    """
+    st = _empilage_deux_signaux(h1=0.2e-3, h2=0.5e-3)
+    jeu = noyaux_multicouches(st, F0, num_images=6)
+    bas, haut = jeu.pour(2, 2), jeu.pour(4, 4)
+    croise = jeu.pour(2, 4)
+
+    rho = 1e-3
+    v_bas = complex(bas.g_q(rho))
+    v_haut = complex(haut.g_q(rho))
+    v_croise = complex(croise.g_q(rho, dz=0.0))
+
+    if ecart(v_haut, v_bas) < 1.0:
+        raise AssertionError("les deux noyaux propres sont a %.3f %% l'un de "
+                             "l'autre : une seule couche est vue"
+                             % ecart(v_haut, v_bas))
+    if ecart(v_croise, v_bas) < 1.0:
+        raise AssertionError("le noyau croise vaut celui de la couche basse "
+                             "(%.3f %%) : c'est l'ancien leurre"
+                             % ecart(v_croise, v_bas))
+    print("        (a 1 mm : G_q bas %.4e, haut %.4e, croise %.4e)"
+          % (abs(v_bas), abs(v_haut), abs(v_croise)))
+
+
+# ==========================================================================
+# 8. LE COURANT VERTICAL : G_A^zz
+# --------------------------------------------------------------------------
+# CE QUE CE GROUPE VERROUILLE. Le noyau vertical est la brique du port de
+# microruban, et c'est la seule fonction de Green du module dont le SIGNE peut
+# etre faux sans que rien d'autre ne bouge : un dipole electrique vertical a
+# une image de MEME signe dans un conducteur parfait, la ou un dipole
+# horizontal en a une opposee. Un signe inverse rendrait un noyau parfaitement
+# lisse, parfaitement plausible, et faux d'un facteur qui depend de la
+# hauteur. L'essai « l'image du plan est POSITIVE » est donc le premier de la
+# liste, et le plus important.
+#
+# LES QUATRE FAMILLES DE RAYONS sont l'autre chose a verrouiller. La forme
+# fermee qu'on emploie -- deux amplitudes, quatre chemins geometriques -- n'est
+# pas une approximation : c'est la somme exacte de la serie de rebonds entre le
+# plan de masse et l'interface du haut. On la confronte a la cascade TLGF, qui
+# ne partage avec elle aucune ligne de code, sur toute la grille des couples de
+# profondeurs.
+# ==========================================================================
+
+def _microruban_zz(er=4.37, h_mm=0.370, t_cu=35e-6):
+    """Le microruban du groupe vertical : plan, dielectrique, signal."""
+    h = h_mm * 1e-3
+    return {'layers': [
+        {'index': 0, 'type': 'copper', 'thickness': t_cu, 'epsilon_r': 1.0,
+         'tan_delta': 0.0, 'role': 'plane', 'z_bottom': 0.0, 'z_top': t_cu},
+        {'index': 1, 'type': 'dielectric', 'thickness': h, 'epsilon_r': er,
+         'tan_delta': 0.0, 'role': '', 'z_bottom': t_cu, 'z_top': t_cu + h},
+        {'index': 2, 'type': 'copper', 'thickness': t_cu, 'epsilon_r': 1.0,
+         'tan_delta': 0.0, 'role': 'signal', 'z_bottom': t_cu + h,
+         'z_top': 2 * t_cu + h},
+    ]}
+
+
+@essai("l'image d'un courant VERTICAL dans le plan de masse est POSITIVE")
+def _():
+    """L'ESSAI QUI DISTINGUE UN SIGNE JUSTE D'UN SIGNE FAUX, et il n'y en a pas
+    d'autre. Au-dessus d'un conducteur parfait dans l'air, le noyau du courant
+    vertical vaut exactement
+
+        exp(-j k_z |zeta - zeta'|)  +  exp(-j k_z (zeta + zeta'))
+
+    -- la source vue directement, PLUS son image. Le noyau du courant
+    horizontal, lui, porte un MOINS au meme endroit : `green_spectral_te` le
+    verifie ailleurs dans ce banc, sur la meme geometrie.
+
+    D'OU VIENT LA DIFFERENCE DE SIGNE, pour qui voudra la refaire : un courant
+    vertical est une source de TENSION en serie sur la ligne TM, et un
+    court-circuit reflechit les ondes de COURANT avec +1 quand il reflechit
+    celles de TENSION avec -1.
+
+    ON MESURE L'ECART AUX DEUX FORMULES, et pas seulement a la bonne : si un
+    jour le signe se retourne, l'essai doit dire lequel des deux il a trouve.
+    """
+    h = 5e-3
+    st = {'layers': [
+        {'index': 0, 'type': 'copper', 'thickness': 0.0, 'epsilon_r': 1.0,
+         'tan_delta': 0.0, 'role': 'plane', 'z_bottom': 0.0, 'z_top': 0.0},
+        {'index': 1, 'type': 'dielectric', 'thickness': h, 'epsilon_r': 1.0,
+         'tan_delta': 0.0, 'role': '', 'z_bottom': 0.0, 'z_top': h},
+        {'index': 2, 'type': 'copper', 'thickness': 0.0, 'epsilon_r': 1.0,
+         'tan_delta': 0.0, 'role': 'signal', 'z_bottom': h, 'z_top': h},
+    ]}
+    freq = 3e9
+    omega = 2 * np.pi * freq
+    k_0 = omega * np.sqrt(MU_0 * EPSILON_0)
+    k_rho = np.concatenate([np.linspace(0.05, 0.95, 7) * k_0,
+                            np.logspace(0.05, 2.0, 8) * k_0])
+    kz = _kz(k_0, k_rho)
+
+    mesures = []
+    for zeta_s, zeta_o in ((0.2 * h, 0.2 * h), (0.2 * h, 0.7 * h),
+                           (0.9 * h, 0.9 * h)):
+        f = green_spectral_zz(k_rho, st, freq, zeta_s, zeta_o)
+        d = abs(zeta_o - zeta_s)
+        s = 2 * h - zeta_s - zeta_o          # profondeur -> altitude : l'image
+        plus = np.exp(-1j * kz * d) + np.exp(-1j * kz * s)
+        moins = np.exp(-1j * kz * d) - np.exp(-1j * kz * s)
+        e_plus = float(np.max(np.abs(f - plus)
+                              / np.maximum(np.abs(plus), 1e-300)))
+        e_moins = float(np.max(np.abs(f - moins)
+                               / np.maximum(np.abs(moins), 1e-300)))
+        mesures.append((zeta_s / h, e_plus, e_moins))
+        if e_plus > 1e-10:
+            raise AssertionError(
+                "zeta = %.2f h : le noyau vertical s'ecarte de %.2e de "
+                "l'image POSITIVE (et de %.2e de la negative). Si le second "
+                "chiffre est le petit, le signe s'est retourne."
+                % (zeta_s / h, e_plus, e_moins))
+    print("        (" + ", ".join("zeta=%.1fh : +%.0e / -%.0e" % m
+                                  for m in mesures) + ")")
+
+
+@essai("les quatre familles de rayons redonnent la cascade, partout")
+def _():
+    """LA FORME FERMEE CONTRE LA CASCADE, SUR TOUTE LA GRILLE. Le noyau
+    vertical d'une lame entre un plan de masse et une interface se somme
+    exactement :
+
+        F = [e(-D) + e(-Sg) + Gt e(-St) + Gt e(-(2h-D))] / (1 - Gt e(-2h))
+
+    quatre chemins, deux amplitudes, et rien d'approche -- c'est la serie
+    geometrique des rebonds, fermee. `noyaux_verticaux` s'en sert pour
+    n'ajuster QUE les deux amplitudes, une fois par frequence, et lire ensuite
+    n'importe quel couple de profondeurs sans rien recalculer.
+
+    L'ETALON EST LA CASCADE TLGF, qui descend les impedances couche par couche
+    et ne connait aucune serie de rebonds. Les deux ne partagent que le
+    coefficient de reflexion.
+
+    ON BALAIE 49 COUPLES, bords compris -- zeta = 0 (sur la piste) et
+    zeta = h (sur le plan de masse). Le bord bas est celui qui compte : c'est
+    la que vivent les demi-RWG du port, et c'est la que `_impedance_vue`
+    rendait l'impedance du VIDE au lieu de zero quand la pile devenait vide,
+    ce qui faussait le noyau d'un facteur quatre.
+    """
+    st = _microruban_zz()
+    freq = 1e9
+    omega = 2 * np.pi * freq
+    profil = profil_spectral(st)
+    hauteur = sum(e for e, _ in profil[0] if e > 0)
+    eps_1 = profil[0][0][1]
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_1)
+    k_rho = np.concatenate([np.linspace(0.05, 0.95, 6) * abs(k_ref),
+                            np.logspace(0.05, 3.0, 10) * abs(k_ref)])
+    kz = _kz(k_ref, k_rho)
+    gamma = _reflexion_haut(k_rho, omega, profil, eps_1)
+    p = np.exp(-2j * kz * hauteur)
+
+    pire = 0.0
+    for zeta_s in np.linspace(0.0, hauteur, 7):
+        for zeta_o in np.linspace(0.0, hauteur, 7):
+            d = abs(zeta_s - zeta_o)
+            sg = 2 * hauteur - zeta_s - zeta_o
+            st_ = zeta_s + zeta_o
+            rayons = ((np.exp(-1j * kz * d) + np.exp(-1j * kz * sg)
+                       + gamma * np.exp(-1j * kz * st_)
+                       + gamma * np.exp(-1j * kz * (2 * hauteur - d)))
+                      / (1.0 - gamma * p))
+            cascade = green_spectral_zz(k_rho, st, freq, zeta_s, zeta_o, profil)
+            pire = max(pire, float(np.max(
+                np.abs(rayons - cascade)
+                / np.maximum(np.abs(cascade), 1e-300))))
+    if pire > 1e-10:
+        raise AssertionError("rayons contre cascade : %.3e" % pire)
+
+    # La limite du coefficient de reflexion, qui n'est pas un detail : c'est
+    # elle qui dit que la reflexion du haut vaut -0,63 et non quelque chose de
+    # petit, donc qu'on ne pouvait pas la traiter comme un reste.
+    attendu = (1.0 - eps_1.real) / (1.0 + eps_1.real)
+    if abs(gamma[-1].real - attendu) > 1e-3:
+        raise AssertionError("Gamma_t(infini) = %.4f au lieu de %.4f"
+                             % (gamma[-1].real, attendu))
+    print("        (49 couples de profondeurs : %.1e ; "
+          "Gamma_t(infini) = %.4f)" % (pire, gamma[-1].real))
+
+
+@essai("le noyau vertical ajuste suit l'integrale de Sommerfeld")
+def _():
+    """LE DOMAINE SPATIAL, la ou le moteur lit vraiment. L'etalon est la meme
+    quadrature directe sur k_rho que pour les noyaux horizontaux, appliquee au
+    spectre vertical : aucune image, aucun ajustement.
+
+    LE SEUIL EST PLUS LARGE QUE POUR LES NOYAUX HORIZONTAUX, et c'est mesure,
+    pas choisi. Les deux amplitudes M et O portent le branchement de l'AIR --
+    le meme second point de branchement qui fait decrocher le champ lointain
+    des noyaux horizontaux --, et l'ajustement plafonne autour du pour cent
+    quel que soit le nombre d'images : 8, 12, 16 et 20 donnent 1,05 %, 0,99 %,
+    1,06 % et 1,06 %. Ce n'est pas une resolution qui manque, c'est une base
+    qui ne convient pas, exactement comme au 6.
+
+    CE QUE CE POUR CENT COUTE : il porte sur le PORT, et le de-embarquement
+    par deux longueurs retire le port. Ce qui reste dans le resultat
+    de-embarque est la ligne, calculee par les noyaux horizontaux.
+    """
+    st = _microruban_zz()
+    freq = 1e9
+    profil = profil_spectral(st)
+    hauteur = sum(e for e, _ in profil[0] if e > 0)
+    eps_1 = profil[0][0][1]
+    omega = 2 * np.pi * freq
+    k_ref = omega * np.sqrt(MU_0 * EPSILON_0 * eps_1)
+    k_air = omega * np.sqrt(MU_0 * EPSILON_0)
+
+    def sommerfeld_zz(rho, zeta_s, zeta_o):
+        def integrande(k_rho):
+            kz = _kz(k_ref, k_rho)
+            g = green_spectral_zz(k_rho, st, freq, zeta_s, zeta_o,
+                                  profil) / (2j * kz)
+            return g * k_rho * j0(k_rho * rho)
+        a, b = sorted((abs(k_air), abs(k_ref)))
+        borne = max(2e5, 400.0 / rho, 200 * abs(k_ref))
+        n = 60000
+        total = _morceau(integrande, 0.0, a, "q", n)
+        if b > a * (1 + 1e-12):
+            m = 0.5 * (a + b)
+            total += _morceau(integrande, a, m, "p", n)
+            total += _morceau(integrande, m, b, "q", n)
+        total += _morceau(integrande, b, 2 * b, "p", n)
+        n_loin = int(min(4_000_000, max(600_000, borne * rho / 0.004)))
+        total += _morceau(integrande, 2 * b, borne, None, n_loin)
+        return total / (2 * np.pi)
+
+    noyau = noyaux_verticaux(st, freq, num_images=8)
+
+    # L'AMPLITUDE DU TERME SINGULIER EST UN, ET C'EST VERIFIABLE. De tres pres,
+    # le potentiel vecteur vaut mu_0 J/(4 pi R) quel que soit le milieu : le mu
+    # ne change pas d'une couche a l'autre. C'est ce que la desingularisation
+    # polaire du moteur suppose, et si l'ajustement s'en ecartait, les deux
+    # moities de l'integrale ne se recolleraient plus.
+    amp = complex(noyau.amplitude_directe_zz / MU_0)
+    if abs(amp - 1.0) > 1e-3:
+        raise AssertionError("l'amplitude du terme singulier vaut %s, pas 1"
+                             % amp)
+
+    pires = []
+    for zeta_s, zeta_o in ((0.25 * hauteur, 0.25 * hauteur),
+                           (0.25 * hauteur, 0.75 * hauteur),
+                           (hauteur, hauteur), (0.0, hauteur)):
+        for rho in (0.05e-3, 0.2e-3, 1e-3):
+            par_images = complex(noyau.g_a_zz(rho, zeta_s, zeta_o)) / MU_0
+            par_integrale = sommerfeld_zz(rho, zeta_s, zeta_o)
+            e = ecart(par_images, par_integrale)
+            pires.append(e)
+            if e > 3.0:
+                raise AssertionError(
+                    "zeta = (%.2f, %.2f) h, rho = %g mm : %.3f %%"
+                    % (zeta_s / hauteur, zeta_o / hauteur, rho * 1e3, e))
+    print("        (12 points : pire %.3f %%, median %.3f %% ; "
+          "amplitude singuliere %.6f)"
+          % (max(pires), float(np.median(pires)), amp.real))
+
+
+@essai("deux dielectriques differents sous la piste : on refuse plutot")
+def _():
+    """CE QUE LE MODULE DOIT REFUSER DE CALCULER. La decomposition en quatre
+    familles suppose UNE lame homogene entre le plan de masse et la piste.
+    Deux dielectriques empiles y ajoutent une interface, donc deux familles de
+    plus, et la forme fermee ne vaut plus.
+
+    ON LEVE PLUTOT QUE D'APPROCHER, parce qu'une approximation silencieuse a
+    cet endroit rendrait un port plausible et faux -- et un port faux
+    contamine tout ce qui en sort, y compris le resultat de-embarque quand
+    l'approximation n'est pas la meme sur les deux longueurs.
+    """
+    t = 35e-6
+    z = 0.0
+    couches = []
+    for typ, role, e, er in (('copper', 'plane', t, 1.0),
+                             ('dielectric', '', 0.2e-3, 4.3),
+                             ('dielectric', '', 0.2e-3, 3.0),
+                             ('copper', 'signal', t, 1.0)):
+        couches.append({'index': len(couches), 'type': typ, 'thickness': e,
+                        'epsilon_r': er, 'tan_delta': 0.0, 'role': role,
+                        'z_bottom': z, 'z_top': z + e})
+        z += e
+    try:
+        noyaux_verticaux({'layers': couches}, 1e9, num_images=6)
+    except NotImplementedError as exc:
+        print("        (refus explicite : %s...)" % str(exc)[:58])
+        return
+    raise AssertionError("deux dielectriques differents ont ete acceptes en "
+                         "silence")
+
+
+@essai("la somme d'ondes vectorisee est la meme somme, image par image")
+def _():
+    """UNE OPTIMISATION QUI CHANGE UN CHIFFRE N'EN EST PAS UNE.
+
+    `_somme_ondes` etait la moitie du temps d'assemblage -- dix secondes sur
+    vingt pour 269 fonctions de base --, et pas parce que le calcul est lourd :
+    parce qu'il etait fait IMAGE PAR IMAGE, en une poignee d'operations numpy
+    sur des tableaux de quarante-neuf nombres. Le cout etait celui des appels.
+    Range en tableaux (points x images), la somme entiere devient trois
+    operations, et l'assemblage passe de 20,4 s a 5,0 s -- un facteur quatre.
+
+    CE N'EST PAS UNE TABULATION, et c'est le point de cet essai. La piste
+    envisagee etait d'echantillonner les noyaux sur une grille de rho et
+    d'interpoler ; elle aurait demande sa propre etude d'erreur. Celle-ci n'en
+    demande aucune : c'est la meme somme, ecrite autrement. On le VERIFIE
+    quand meme, contre une boucle naive ecrite ici et nulle part ailleurs,
+    parce que « c'est la meme formule » est exactement ce qu'on dit avant de
+    decouvrir que non.
+
+    LE SEUIL EST CELUI DE L'ARITHMETIQUE FLOTTANTE, pas de la physique :
+    l'ordre des additions change, donc les derniers bits aussi.
+    """
+    def somme_naive(images, k_ref, rho, dz=0.0):
+        rho = np.asarray(rho, dtype=float)
+        total = np.zeros(rho.shape, dtype=complex)
+        for im in images:
+            k = k_ref if im.k_onde is None else im.k_onde
+            d = im.position + dz
+            r = np.sqrt(rho ** 2 + d ** 2 + 0j)
+            r = np.where(np.real(r) < 0, -r, r)
+            r = np.where(np.abs(r) < 1e-15, 1e-15, r)
+            total = total + im.amplitude * np.exp(-1j * k * r) / (4 * np.pi * r)
+        return total
+
+    rho = np.logspace(-5, -2, 11).reshape(11, 1) * np.ones((1, 5))
+    dz = np.linspace(-0.5e-3, 0.5e-3, 5)[None, :] * np.ones((11, 1))
+
+    pires = []
+    for noyau in ('a', 'q', 'tm'):
+        for trois in (False, True):
+            aj = ajuster_noyau(MICRO, F0, noyau, 8, trois_niveaux=trois)
+            for decalage in (0.0, dz):
+                vite = aj.valeur(rho, decalage)
+                lent = somme_naive(aj.images, aj.k_ref, rho, decalage)
+                if aj.poles:
+                    lent = lent + _somme_ondes_surface(aj.poles, rho)
+                e = float(np.max(np.abs(vite - lent)
+                                 / np.maximum(np.abs(lent), 1e-300)))
+                pires.append(e)
+                if e > 1e-12:
+                    raise AssertionError(
+                        "noyau %s (%d niveaux) : la somme vectorisee s'ecarte "
+                        "de %.3e de la somme image par image"
+                        % (noyau, 3 if trois else 2, e))
+
+    # ET LE RESTE AUSSI, parce que c'est lui que le moteur emploie sur les
+    # panneaux voisins -- ceux qui portent l'essentiel de la matrice.
+    aj = ajuster_noyau(MICRO, F0, 'q', 8)
+    vite = aj.valeur_reste(rho, dz)
+    lent = somme_naive(aj.images_ecartees, aj.k_ref, rho, dz)
+    if aj.poles:
+        lent = lent + _somme_ondes_surface(aj.poles, rho)
+    e = float(np.max(np.abs(vite - lent) / np.maximum(np.abs(lent), 1e-300)))
+    pires.append(e)
+    if e > 1e-12:
+        raise AssertionError("le reste s'ecarte de %.3e" % e)
+
+    print("        (%d comparaisons, ecart relatif maximal %.1e)"
+          % (len(pires), max(pires)))
 
 
 if __name__ == "__main__":

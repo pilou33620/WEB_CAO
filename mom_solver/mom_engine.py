@@ -10,10 +10,12 @@ from numba import njit, prange
 
 try:
     from .mesher import RWGBasis
-    from .green_layered import NoyauxGreen, noyaux_green
+    from .green_layered import (NoyauxGreen, NoyauxParCouche, noyaux_green,
+                                noyaux_multicouches)
 except ImportError:                                    # noqa: BLE001
     from mesher import RWGBasis
-    from green_layered import NoyauxGreen, noyaux_green
+    from green_layered import (NoyauxGreen, NoyauxParCouche, noyaux_green,
+                               noyaux_multicouches)
 
 logger = logging.getLogger(__name__)
 
@@ -121,13 +123,42 @@ SEUIL_PROCHE = 3.0
 # Sous quelle dénivelée deux triangles sont considérés coplanaires, donc la
 # désingularisation polaire (qui se fait DANS le plan) applicable. Un
 # micromètre est très en dessous de toute épaisseur de cuivre.
+#
+# LE CRITERE N'EST PLUS UNE DENIVELEE EN z, ET IL FALLAIT QUE CA CHANGE. Tant
+# que tout le cuivre est horizontal, « meme z » et « meme plan » sont la meme
+# chose ; des qu'un via porte des triangles VERTICAUX, ce n'est plus vrai du
+# tout -- deux triangles d'une meme facette de fut sont coplanaires et
+# singuliers, et leurs centres de gravite n'ont pas le meme z. Le test en z les
+# aurait declares non coplanaires, donc envoyes a Gauss seul, qui n'integre pas
+# un 1/R : la diagonale du bloc du via aurait ete fausse en silence.
+#
+# Ce qui le remplace est geometrique : les deux triangles sont coplanaires si
+# leurs normales sont paralleles ET si l'ecart entre leurs plans est
+# negligeable devant leur taille. Sur un maillage entierement horizontal, le
+# nouveau critere rend exactement le meme verdict que l'ancien.
 SEUIL_COPLANAIRE = 1e-6
+SEUIL_PARALLELE = 1e-6        # sinus de l'angle entre les deux normales
+
+
+def _produit_vectoriel(a, b):
+    """Le produit vectoriel de deux vecteurs de dimension trois.
+
+    ECRIT A LA MAIN, ET C'EST MESURE. `np.cross` est generique -- il accepte
+    des tableaux de n'importe quelle forme, passe par `moveaxis`, et coute
+    trente microsecondes sur deux vecteurs de trois nombres. L'assemblage
+    l'appelait quatre-vingt-dix mille fois, pour trois secondes sur vingt :
+    quinze pour cent du temps total, sur une operation qui tient en six
+    multiplications.
+    """
+    return np.array([a[1] * b[2] - a[2] * b[1],
+                     a[2] * b[0] - a[0] * b[2],
+                     a[0] * b[1] - a[1] * b[0]])
 
 
 def _normale(verts: np.ndarray) -> np.ndarray:
     """La normale unitaire d'un triangle donné par ses trois sommets."""
-    n = np.cross(verts[1] - verts[0], verts[2] - verts[0])
-    norme = np.linalg.norm(n)
+    n = _produit_vectoriel(verts[1] - verts[0], verts[2] - verts[0])
+    norme = float(np.sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]))
     if norme < 1e-30:
         return np.array([0.0, 0.0, 1.0])
     return n / norme
@@ -238,31 +269,76 @@ class MomentsTriangles:
 
     Le gain mesuré sur un maillage de ligne est proche d'un facteur sept, et il
     est gratuit : c'est de l'algèbre, pas une approximation.
+
+    LE POTENTIEL VECTEUR N'EST PAS UN SCALAIRE DES QU'UN CONDUCTEUR EST
+    VERTICAL. En milieu stratifié le dyade vaut diag(G_A^xx, G_A^xx, G_A^zz),
+    et G_A^zz n'est pas G_A^xx -- un courant vertical voit la ligne TM en
+    source de TENSION la ou un courant horizontal voit la ligne TE en source de
+    COURANT. Le produit scalaire f_m·f_n se coupe donc en deux voies :
+
+        transverse (x, y) avec G_A^xx        verticale (z) avec G_A^zz
+
+    et il faut les moments des deux. `z00`, `z10`, `z01`, `z11` portent la voie
+    verticale ; ils valent None quand aucun des deux triangles n'est incline,
+    et la voie z reprend alors les moments transverses -- ce qui ne change
+    RIEN, parce que (p - v) a une composante z identiquement nulle sur un
+    triangle horizontal. C'est ce qui garantit qu'un maillage plat traverse
+    exactement le meme calcul qu'avant.
     """
 
-    __slots__ = ('q00', 'a00', 'a10', 'a01', 'a11')
+    __slots__ = ('q00', 'a00', 'a10', 'a01', 'a11',
+                 'z00', 'z10', 'z01', 'z11')
 
-    def __init__(self, q00, a00, a10, a01, a11):
+    def __init__(self, q00, a00, a10, a01, a11,
+                 z00=None, z10=None, z01=None, z11=None):
         self.q00 = q00
         self.a00 = a00
         self.a10 = a10
         self.a01 = a01
         self.a11 = a11
+        self.z00 = z00
+        self.z10 = z10
+        self.z01 = z01
+        self.z11 = z11
 
     def terme_charge(self):
         """∫∫ G_q : le terme de charge ne dépend d'aucun sommet libre."""
         return self.q00
 
     def terme_courant(self, v_m: np.ndarray, v_n: np.ndarray):
-        """∫∫ (p_m - v_m)·(p_n - v_n) G_A, reconstruit depuis les moments."""
-        return (np.trace(self.a11)
-                - np.dot(v_n, self.a10)
-                - np.dot(v_m, self.a01)
-                + float(np.dot(v_m, v_n)) * self.a00)
+        """∫∫ (p_m - v_m)·D·(p_n - v_n), D = diag(G_A^xx, G_A^xx, G_A^zz)."""
+        if self.z00 is None:
+            # Voie unique : c'est le cas d'un maillage entierement horizontal,
+            # ou la composante z de (p - v) est nulle et ne pese rien.
+            return (np.trace(self.a11)
+                    - np.dot(v_n, self.a10)
+                    - np.dot(v_m, self.a01)
+                    + float(np.dot(v_m, v_n)) * self.a00)
+
+        transverse = (self.a11[0, 0] + self.a11[1, 1]
+                      - (v_n[0] * self.a10[0] + v_n[1] * self.a10[1])
+                      - (v_m[0] * self.a01[0] + v_m[1] * self.a01[1])
+                      + (v_m[0] * v_n[0] + v_m[1] * v_n[1]) * self.a00)
+        verticale = (self.z11
+                     - v_n[2] * self.z10
+                     - v_m[2] * self.z01
+                     + v_m[2] * v_n[2] * self.z00)
+        return transverse + verticale
+
+
+def _incline(verts, taille):
+    """Le triangle porte-t-il du courant vertical ?
+
+    Un triangle dont les trois sommets sont a la meme altitude ne peut porter
+    qu'un courant horizontal : la composante z de (p - v) y est identiquement
+    nulle. Le critere est relatif a la taille, comme celui de coplanarite.
+    """
+    dz = float(verts[:, 2].max() - verts[:, 2].min())
+    return dz > max(SEUIL_COPLANAIRE, 1e-6 * taille)
 
 
 def _moments_gauss(verts_m, verts_n, aire_m, aire_n, noyaux, bary, poids,
-                   reste_seulement=False):
+                   reste_seulement=False, vertical=None, z_piste=None):
     """Les moments par la seule règle de Gauss, sur les deux triangles."""
     pts_m = bary @ verts_m
     pts_n = bary @ verts_n
@@ -283,27 +359,55 @@ def _moments_gauss(verts_m, verts_n, aire_m, aire_n, noyaux, bary, poids,
     a10 = np.einsum('mn,mi->i', wa, pts_m)
     a01 = np.einsum('mn,ni->i', wa, pts_n)
     a11 = np.einsum('mn,mi,nj->ij', wa, pts_m, pts_n)
-    return q00, a00, a10, a01, a11
+
+    if vertical is None:
+        return q00, a00, a10, a01, a11, None, None, None, None
+
+    # LA PROFONDEUR SOUS LA PISTE, et non l'altitude : c'est la coordonnee du
+    # noyau vertical, parce que la pile electrique et la pile geometrique ne
+    # coincident pas (le cuivre a une epaisseur, le modele 2,5D non).
+    zeta_m = z_piste - pts_m[:, 2]
+    zeta_n = z_piste - pts_n[:, 2]
+    if reste_seulement:
+        g_zz = vertical.g_a_zz_reste(rho, zeta_m[:, None], zeta_n[None, :])
+    else:
+        g_zz = vertical.g_a_zz(rho, zeta_m[:, None], zeta_n[None, :])
+
+    wz = w * g_zz
+    z00 = np.sum(wz)
+    z10 = np.sum(wz * pts_m[:, 2][:, None])
+    z01 = np.sum(wz * pts_n[:, 2][None, :])
+    z11 = np.sum(wz * pts_m[:, 2][:, None] * pts_n[:, 2][None, :])
+    return q00, a00, a10, a01, a11, z00, z10, z01, z11
 
 
-def _moments_singuliers(verts_m, verts_n, aire_m, noyaux, bary, poids):
+def _moments_singuliers(verts_m, verts_n, aire_m, noyaux, bary, poids,
+                        vertical=None):
     """Les moments de la SEULE image confondue, par désingularisation polaire.
 
     L'intégrale extérieure reste une règle de Gauss sur le triangle test ; pour
     chacun de ses points, l'intégrale intérieure passe par les secteurs
     polaires. Le noyau y est amplitude · exp(-j k R)/(4 pi R) : c'est le 1/R
     que les polaires annulent, et le exp(-j k R) est régulier.
+
+    LA VOIE VERTICALE A SA PROPRE AMPLITUDE, et c'est mu_0 tout rond : de tres
+    pres, le potentiel vecteur vaut mu_0 J/(4 pi R) quelle que soit la
+    permittivite, parce que le mu ne change pas d'une couche a l'autre. Le
+    chemin de rayon DIRECT du noyau vertical porte donc une image d'amplitude
+    un a la profondeur zero, et c'est elle qu'on desingularise.
     """
     pts_m = bary @ verts_m
     k_ref = noyaux.k_ref
     amp_a = noyaux.amplitude_directe_a
     amp_q = noyaux.amplitude_directe_q
+    amp_z = None if vertical is None else vertical.amplitude_directe_zz
 
     q00 = 0.0 + 0j
     a00 = 0.0 + 0j
     a10 = np.zeros(3, dtype=complex)
     a01 = np.zeros(3, dtype=complex)
     a11 = np.zeros((3, 3), dtype=complex)
+    z00 = z10 = z01 = z11 = 0.0 + 0j
 
     for p_m, w_m in zip(pts_m, poids):
         pts_n, w_n = points_polaires(p_m, verts_n)
@@ -322,11 +426,55 @@ def _moments_singuliers(verts_m, verts_n, aire_m, noyaux, bary, poids):
         a01 += contrib_a @ pts_n
         a11 += np.outer(p_m, contrib_a @ pts_n)
 
-    return q00, a00, a10, a01, a11
+        if amp_z is not None:
+            contrib_z = poids_ext * amp_z * commun
+            z00 += np.sum(contrib_z)
+            z10 += np.sum(contrib_z) * p_m[2]
+            z01 += complex(contrib_z @ pts_n[:, 2])
+            z11 += p_m[2] * complex(contrib_z @ pts_n[:, 2])
+
+    if amp_z is None:
+        return q00, a00, a10, a01, a11, None, None, None, None
+    return q00, a00, a10, a01, a11, z00, z10, z01, z11
+
+
+def _coplanaires(verts_m, verts_n, taille):
+    """Les deux triangles sont-ils dans le meme plan ?
+
+    DEUX CONDITIONS, ET LES DEUX SONT NECESSAIRES : les normales paralleles, et
+    les plans confondus. Deux facettes opposees d'un fut de via ont des
+    normales anti-paralleles -- donc paralleles au signe pres, ce que le test
+    accepte -- mais des plans distants du diametre du via, ce que le second
+    test rejette. Deux triangles d'une MEME facette passent les deux.
+
+    L'ECART DE PLAN SE MESURE EN TAILLES DE TRIANGLE et non en metres absolus :
+    c'est la seule facon d'avoir un critere qui vaut aussi bien pour un via de
+    0,1 mm que pour une piste de 10 mm. Le plancher en microns reste pour les
+    maillages degeneres, ou la taille tend vers zero.
+    """
+    # LE CAS PLAT SE TRANCHE SANS NORMALE, et c'est le cas de neuf paires sur
+    # dix : deux triangles horizontaux sont coplanaires si, et seulement si,
+    # ils sont a la meme altitude. On ne calcule les normales que lorsque le
+    # maillage porte vraiment du relief.
+    seuil = max(SEUIL_COPLANAIRE, 1e-6 * taille)
+    plat_m = float(np.ptp(verts_m[:, 2])) <= seuil
+    plat_n = float(np.ptp(verts_n[:, 2])) <= seuil
+    if plat_m and plat_n:
+        return abs(float(verts_m[0, 2] - verts_n[0, 2])) < seuil
+    if plat_m != plat_n:
+        return False
+
+    n_m = _normale(verts_m)
+    n_n = _normale(verts_n)
+    croix = _produit_vectoriel(n_m, n_n)
+    if float(np.sqrt(croix @ croix)) > SEUIL_PARALLELE:
+        return False
+    ecart = abs(float(np.dot(n_m, verts_n.mean(axis=0) - verts_m.mean(axis=0))))
+    return ecart < seuil
 
 
 def moments_triangles(verts_m, verts_n, aire_m, aire_n,
-                      noyaux: NoyauxGreen) -> MomentsTriangles:
+                      noyaux) -> MomentsTriangles:
     """Les moments de la paire, en choisissant le traitement qui convient.
 
     ÉLOIGNÉE : le noyau est lisse sur les deux domaines, une règle de Gauss à
@@ -340,24 +488,86 @@ def moments_triangles(verts_m, verts_n, aire_m, aire_n,
     NON COPLANAIRE : la désingularisation polaire se fait dans le plan du
     triangle source, elle n'a donc pas de sens hors plan -- mais hors plan le
     noyau n'est plus singulier non plus, et Gauss reprend ses droits.
+
+    LA VOIE VERTICALE NE S'ALLUME QUE SI ELLE SERT : il faut qu'un noyau
+    vertical soit disponible ET qu'au moins un des deux triangles soit incline.
+    Sur un maillage plat, la voie reste eteinte et le calcul est celui d'avant.
     """
     c_m = verts_m.mean(axis=0)
     c_n = verts_n.mean(axis=0)
     distance = float(np.linalg.norm(c_m - c_n))
     taille = max(np.sqrt(aire_m), np.sqrt(aire_n))
-    coplanaire = abs(c_m[2] - c_n[2]) < SEUIL_COPLANAIRE
+    coplanaire = _coplanaires(verts_m, verts_n, taille)
+
+    vertical = getattr(noyaux, 'vertical', None)
+    if vertical is not None and not (_incline(verts_m, taille)
+                                     or _incline(verts_n, taille)):
+        vertical = None
+    z_piste = getattr(noyaux, 'z_src', 0.0)
 
     if distance > SEUIL_PROCHE * taille or not coplanaire:
         bary, poids = (GAUSS_TRI_3 if distance > SEUIL_PROCHE * taille
                        else GAUSS_TRI_7)
         return MomentsTriangles(*_moments_gauss(
-            verts_m, verts_n, aire_m, aire_n, noyaux, bary, poids))
+            verts_m, verts_n, aire_m, aire_n, noyaux, bary, poids,
+            vertical=vertical, z_piste=z_piste))
 
     bary, poids = GAUSS_TRI_7
     reg = _moments_gauss(verts_m, verts_n, aire_m, aire_n, noyaux,
-                         bary, poids, reste_seulement=True)
-    sing = _moments_singuliers(verts_m, verts_n, aire_m, noyaux, bary, poids)
-    return MomentsTriangles(*[r + s for r, s in zip(reg, sing)])
+                         bary, poids, reste_seulement=True,
+                         vertical=vertical, z_piste=z_piste)
+    sing = _moments_singuliers(verts_m, verts_n, aire_m, noyaux, bary, poids,
+                               vertical=vertical)
+    return MomentsTriangles(*[None if r is None else r + s
+                              for r, s in zip(reg, sing)])
+
+
+# ==========================================================================
+# PLUSIEURS COUCHES DE SIGNAL : LE NOYAU SUIT LA PAIRE DE COUCHES
+# --------------------------------------------------------------------------
+# CE QUI MANQUAIT, ET C'ETAIT DE LA PLOMBERIE. `green_layered` savait faire un
+# profil par couche de signal ; `mom_engine` appelait `noyaux_green`, qui n'en
+# connait qu'un. Un empilage a deux couches de signal etait donc calcule avec
+# le noyau de la SEULE couche haute, l'ecart vertical etant rattrape apres coup
+# par le `dz` de la quadrature -- ce qui n'est exact qu'en milieu homogene.
+#
+# CE QUI LE REMPLACE : `noyaux.pour(couche_m, couche_n)`. `NoyauxGreen` porte
+# cette methode et se rend lui-meme ; `NoyauxParCouche` choisit entre les
+# noyaux propres et les noyaux croises. Le moteur ne sait pas lequel il tient,
+# et le chemin a une seule couche -- celui que les essais mesurent -- traverse
+# exactement le meme code qu'avant.
+# ==========================================================================
+
+class _MomentsNuls:
+    """Deux couches qui ne se voient pas : le bloc est nul, pas approche.
+
+    Un plan de masse entre deux couches de signal les separe completement --
+    c'est une terminaison, et le champ ne le traverse pas. Rendre zero est
+    donc EXACT, et non un repli.
+    """
+
+    __slots__ = ()
+
+    def terme_charge(self):
+        return 0.0 + 0j
+
+    def terme_courant(self, v_m, v_n):
+        return 0.0 + 0j
+
+
+_MOMENTS_NULS = _MomentsNuls()
+
+
+def _noyau_de_la_paire(noyaux, layer_ids, i_m, i_n):
+    """Le noyau de Green qui vaut entre les couches de deux triangles.
+
+    `layer_ids` absent veut dire « une seule couche », ce qui est le cas de
+    tous les maillages de banc et de la quasi-totalite des cartes : on rend
+    alors le noyau tel quel, sans meme demander les couches.
+    """
+    if layer_ids is None:
+        return noyaux.pour()
+    return noyaux.pour(int(layer_ids[i_m]), int(layer_ids[i_n]))
 
 
 def _triangles_de(rwg: RWGBasis, vertices, elements):
@@ -371,8 +581,9 @@ def _triangles_de(rwg: RWGBasis, vertices, elements):
 
 
 def compute_interactions(rwg_m: RWGBasis, rwg_n: RWGBasis, freq: float,
-                         noyaux: NoyauxGreen, vertices: np.ndarray,
-                         elements: np.ndarray, cache: Optional[Dict] = None
+                         noyaux, vertices: np.ndarray,
+                         elements: np.ndarray, cache: Optional[Dict] = None,
+                         layer_ids: Optional[np.ndarray] = None
                          ) -> complex:
     """L'impédance mutuelle Z_mn de la formulation MPIE.
 
@@ -418,14 +629,27 @@ def compute_interactions(rwg_m: RWGBasis, rwg_n: RWGBasis, freq: float,
             moments = None if cache is None else cache.get(cle)
 
             if moments is None:
-                if cle[0] == i_m:
+                # LE NOYAU DEPEND DE LA PAIRE DE COUCHES, ET DE RIEN D'AUTRE.
+                # Deux triangles de la meme couche de signal voient le noyau
+                # PROPRE de cette couche ; deux triangles de couches
+                # differentes voient le noyau CROISE. Un `None` veut dire que
+                # les deux couches sont separees par un plan de masse : elles
+                # ne se voient pas, et le bloc est nul.
+                #
+                # LE CACHE RESTE VALIDE, parce qu'un triangle a UNE couche :
+                # le noyau est donc, comme les moments, une fonction de la
+                # seule paire de triangles.
+                noyau_paire = _noyau_de_la_paire(noyaux, layer_ids, i_m, i_n)
+                if noyau_paire is None:
+                    moments = _MOMENTS_NULS
+                elif cle[0] == i_m:
                     moments = moments_triangles(verts_m, verts_n,
-                                                aire_m, aire_n, noyaux)
+                                                aire_m, aire_n, noyau_paire)
                 else:
                     # Le cache est indexé par paire NON ordonnée ; on calcule
                     # dans l'ordre de la clé et on lira transposé.
                     moments = moments_triangles(verts_n, verts_m,
-                                                aire_n, aire_m, noyaux)
+                                                aire_n, aire_m, noyau_paire)
                 if cache is not None:
                     cache[cle] = moments
 
@@ -445,9 +669,10 @@ def compute_interactions(rwg_m: RWGBasis, rwg_n: RWGBasis, freq: float,
 
 
 def fill_z_matrix(rwg_basis: List[RWGBasis], freq: float,
-                  noyaux: NoyauxGreen,
+                  noyaux,
                   vertices: np.ndarray = None,
-                  elements: np.ndarray = None) -> np.ndarray:
+                  elements: np.ndarray = None,
+                  layer_ids: np.ndarray = None) -> np.ndarray:
     """Assemble la matrice d'impédance complète Z.
 
     Deux économies, toutes deux exactes :
@@ -462,7 +687,20 @@ def fill_z_matrix(rwg_basis: List[RWGBasis], freq: float,
     `vertices` et `elements` sont obligatoires : l'ancienne version se rabattait
     silencieusement sur `np.zeros((100, 3))`, ce qui produisait une matrice Z
     calculée sur une géométrie nulle sans lever la moindre erreur.
+
+    `layer_ids` -- la couche de chaque TRIANGLE, telle que le mailleur la rend
+    -- sert a choisir le noyau de chaque paire quand l'empilage porte plus
+    d'une couche de signal. Facultatif : sans lui, `noyaux` est employé tel
+    quel, ce qui est juste pour une seule couche et c'est le cas courant. Un
+    `NoyauxParCouche` sans `layer_ids` rendrait donc son noyau unique, et
+    leverait s'il en a plusieurs -- voir le contrôle ci-dessous.
     """
+    if isinstance(noyaux, NoyauxParCouche) and len(noyaux) > 1             and layer_ids is None:
+        raise ValueError(
+            "fill_z_matrix : l'empilage porte %d couches de signal mais "
+            "'layer_ids' n'est pas fourni. Sans lui, toutes les paires "
+            "recevraient le meme noyau -- une matrice Z plausible et fausse."
+            % len(noyaux))
     n_basis = len(rwg_basis)
     logger.info(f"Assemblage de la matrice Z ({n_basis}x{n_basis})")
 
@@ -484,7 +722,7 @@ def fill_z_matrix(rwg_basis: List[RWGBasis], freq: float,
         for n in range(m, n_basis):
             z_val = compute_interactions(
                 rwg_basis[m], rwg_basis[n], freq, noyaux,
-                vertices, elements, cache
+                vertices, elements, cache, layer_ids
             )
 
             z_matrix[m, n] = z_val
@@ -568,176 +806,35 @@ def fill_z_matrix_freespace_numba(centers: np.ndarray, edge_lengths: np.ndarray,
 
 
 # ==========================================================================
-# PORT VERTICAL : injection de courant entre piste et plan de masse
+# LE PORT VERTICAL A DEMENAGE, ET CE QUI ETAIT ICI A ETE SUPPRIME (2026-08-30)
 # --------------------------------------------------------------------------
-# LE PORT ACTUEL EST UNE FENTE HORIZONTALE. La coupe RWG coupe le plan du cuivre,
-# perpendiculairement a la piste. Le courant injecté est donc HORIZONTAL.
+# CE QU'IL Y AVAIT : `_creer_via_port()`, `excitation_via_port()` et
+# `courant_total_via()`. Elles annoncaient un port vertical et n'en faisaient
+# pas un. `excitation_via_port` cherchait les aretes HORIZONTALES situees a
+# moins d'un demi-millimetre du via et leur posait une tension ponderee par
+# « 1 - distance/seuil » -- un poids qui ne vient d'aucun calcul, sur des
+# fonctions de base qui ne portent aucun courant vertical. `_creer_via_port`
+# empilait des sommets et UN triangle sans jamais rendre de fonction de base,
+# et sa propre suite de commentaires le disait (« Pour simplifier », « on
+# approxime »). `courant_total_via` sommait des courants d'aretes voisines
+# sans signe, donc sans savoir dans quel sens ils traversaient quoi que ce
+# soit.
 #
-# UN VRAI PORT MICRORUBAN injecte le courant VERTICALEMENT : entre la piste et
-# le plan de masse. Le générateur est connecte a la pastille, qui voit le plan
-# de masse a travers le dielectrique.
+# POURQUOI LES SUPPRIMER PLUTOT QUE LES LAISSER. Elles etaient exportees par
+# `mom_solver/__init__.py`, donc appelables, et leur nom promettait ce que le
+# corps ne faisait pas. Du code faux qu'on peut appeler finit par etre appele.
 #
-# CE QU'IL FAUT :
-#   1. Des fonctions de base VERTICALES sur le via de port : RWG vertical,
-#      ou element filaire attache au conducteur.
-#   2. La fonction de Green G_A^zz : composante verticale du potentiel vecteur.
-#      `green_layered` sait deja cascader les modes TE et TM ; il manque la
-#      composante z du dyade.
-#   3. Le de-embarquement par la methode des deux longueurs (T2T1^-1).
-#
-# CE QUI EST FAIT ICI : un port vertical simplifie. On ajoute un "via de port"
-# au maillage -- un filament vertical entre la piste et le plan de masse --
-# et on excite ce filament. C'est une approximation mais ca introduit le
-# courant VERTICAL dans le systeme.
+# CE QUI LES REMPLACE, ET OU :
+#   · le MAILLAGE du fut et les demi-RWG du bas -- `mesher.percer_via_port`,
+#     `mesher.demi_rwg_du_bas`, `mesher.maillage_avec_ports_verticaux` ;
+#   · la PHYSIQUE du courant vertical -- `green_layered.green_spectral_zz` et
+#     `green_layered.noyaux_verticaux` ;
+#   · l'EXCITATION -- rien de nouveau : la coupe rendue par
+#     `maillage_avec_ports_verticaux` passe dans `vecteur_de_coupe` et
+#     `courant_de_coupe` comme n'importe quelle autre, parce que la fente du
+#     bas du fut EST une coupe au sens de ce module ;
+#   · le DE-EMBARQUEMENT -- `solver_extract.deembarquement_deux_longueurs`.
 # ==========================================================================
-
-def _creer_via_port(vertices, elements, position_xy, z_piste, z_plan, layer):
-    """Cree un via de port : filament vertical entre piste et plan.
-
-    Ajoute deux vertex (un en z_piste, un en z_plan) et deux triangles
-    formant un filament vertical. Retourne les indices de base RWG du port.
-
-    Args:
-        vertices: array des sommets (N, 3)
-        elements: array des elements (M, 3)
-        position_xy: (x, y) du via en metres
-        z_piste: z de la couche de piste
-        z_plan: z du plan de masse
-        layer: couche du port (indice de stackup)
-
-    Returns:
-        (vertex_haut, vertex_bas, rwg_indices) ou None si echec
-    """
-    n_verts = len(vertices)
-    n_basis = len(elements)
-
-    # Ajouter deux vertex : un en haut (piste), un en bas (plan)
-    vertex_haut = n_verts
-    vertex_bas = n_verts + 1
-
-    # Ajouter les nouveaux vertex
-    vertices = np.vstack([vertices,
-                          [position_xy[0], position_xy[1], z_piste],
-                          [position_xy[0], position_xy[1], z_plan]])
-
-    # Creer deux triangles formant le filament
-    # Triangle 1: le long du filament, partie superieure
-    # Triangle 2: le long du filament, partie inferieure
-    # On cree un mini-element en forme de "V" vertical
-
-    # Les vertex du filament
-    # v0 = vertex_haut, v1 = vertex_bas, v2 = point milieu du cote
-
-    # Pour simplifier : deux triangles rectangles qui partagent l'arete verticale
-    # Triangle A: (vertex_haut, vertex_bas, vertex_haut+2)
-    # Triangle B: (vertex_haut, vertex_bas, vertex_bas+2)
-
-    v_creux = n_verts + 2  # point lateral pour former le triangle
-
-    # Creer les deux triangles du filament
-    decalage = 0.1e-3  # 0.1 mm de rayon
-    vertices = np.vstack([vertices,
-                          [position_xy[0] + decalage, position_xy[1], z_piste]])
-
-    nouveau_triangle_1 = np.array([vertex_haut, vertex_bas, vertex_haut + 2])
-    elements = np.vstack([elements, nouveau_triangle_1])
-
-    return {
-        'vertex_haut': vertex_haut,
-        'vertex_bas': vertex_bas,
-        'vertices': vertices,
-        'elements': elements,
-        'position_xy': position_xy,
-    }
-
-
-def excitation_via_port(via_info, rwg_basis, vertices, z_piste, z_plan,
-                       v_gap=1.0):
-    """Le second membre pour un port vertical (via).
-
-    Le port vertical injecte le courant ENTRE la piste et le plan de masse.
-    On excite la connexion verticale entre les deux.
-
-    Args:
-        via_info: dict avec 'position' = (x, y) du via
-        rwg_basis: liste des fonctions de base RWG
-        vertices: array des sommets
-        z_piste: z de la couche de piste
-        z_plan: z du plan de masse
-        v_gap: tension du gap (1V)
-
-    Returns:
-        vecteur v pour le systeme lineaire
-    """
-    n_basis = len(rwg_basis)
-    v = np.zeros(n_basis, dtype=complex)
-
-    position = np.asarray(via_info.get('position', [0, 0]), dtype=float)
-
-    # Trouver les RWG qui sont PRES du via (verticalement)
-    # Une vraie implementation aurait des fonctions de base verticales.
-    # Ici on approxime : on excite les aretes HORIZONTALES qui sont
-    # sur la couche de la piste et proches du via.
-
-    # Recherche par distance dans le plan xy
-    seuil_distance = 0.5e-3  # 0.5 mm
-
-    for i, rwg in enumerate(rwg_basis):
-        # Coordonnees du centre de l'arete
-        tri_plus_vertices = vertices[rwg.tri_plus]
-        tri_minus_vertices = vertices[rwg.tri_minus]
-
-        # Centre de l'arete (milieu de l'arete commune)
-        edge_center = (vertices[rwg.edge_vertices[0]] + vertices[rwg.edge_vertices[1]]) / 2
-
-        # Distance horizontale au via
-        dx = edge_center[0] - position[0]
-        dy = edge_center[1] - position[1]
-        dist_xy = np.sqrt(dx*dx + dy*dy)
-
-        if dist_xy < seuil_distance:
-            # Verifier que l'arete est sur la bonne couche (z ~= z_piste)
-            z_arete = edge_center[2]
-            if abs(z_arete - z_piste) < 1e-6:  # sur la couche de piste
-                # Excitation avec ponderation par distance
-                ponderation = 1.0 - dist_xy / seuil_distance
-                v[i] = v_gap * ponderation * rwg.edge_length
-
-    return v
-
-
-def courant_total_via(courants, rwg_basis, vertices, z_piste, z_plan,
-                     position_xy):
-    """Le courant total traversant le plan de la piste pour un port vertical.
-
-    Integre le courant sur toutes les RWG qui traversent le plan z = z_piste
-    au voisinage du via.
-
-    Args:
-        courants: vecteur des courants (solution du systeme MoM)
-        rwg_basis: liste des fonctions de base RWG
-        vertices: array des sommets
-        z_piste: z de la couche de piste
-        z_plan: z du plan de masse
-        position_xy: position du via
-
-    Returns:
-        courant total en amperes
-    """
-    I_total = 0.0 + 0j
-    seuil = 0.5e-3  # 0.5 mm
-
-    for i, rwg in enumerate(rwg_basis):
-        edge_center = (vertices[rwg.edge_vertices[0]] + vertices[rwg.edge_vertices[1]]) / 2
-        dx = edge_center[0] - position_xy[0]
-        dy = edge_center[1] - position_xy[1]
-        dist = np.sqrt(dx*dx + dy*dy)
-
-        if dist < seuil:
-            # Courant a travers l'arete
-            I_total += courants[i] * rwg.edge_length
-
-    return I_total
 #
 #     |Y21 / Y11| = 1,5 . 10^-5      |S11| = 1,0000     |S21| = 0,0000
 #
