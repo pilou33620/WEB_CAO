@@ -57,11 +57,39 @@ function simCuDe(coucheIdx){
 /* L'empilage de calcul, mis au format du serveur. `LT.cu` porte les
    conducteurs dans l'ordre physique et `LT.gap[i]` ce qui sépare le conducteur
    i du suivant : c'est exactement la forme attendue. */
+/* Le net qui possede le cuivre PLEIN d'une couche : celui qui en couvre le
+   plus. C'est la meme lecture que `simRefCandidatsIpc`, faite couche par
+   couche au lieu de net par net.
+
+   POURQUOI « LE PLUS GRAND » ET NON « LE SEUL ». Une couche de plan porte
+   presque toujours plusieurs ilots : la masse sur toute la surface, et deux ou
+   trois flaques d'alimentation posees dessus. Celui qui la DEFINIT est celui
+   qui la couvre, et c'est aussi celui qui fera face a une piste de la couche
+   voisine. Prendre « le seul » ne rendrait jamais rien. */
+function simNetDuPlanIpc(coucheIdx){
+  if(!V.parNet)return "";
+  let best="", aire=0;
+  for(const n of V.parNet){
+    if(!n.nom)continue;
+    let a=0;
+    for(const pl of (n.plans||[])){
+      if(pl.c!==coucheIdx)continue;
+      for(const ct of pl.g){
+        a+=ltAire(ct.o);
+        for(const t of (ct.t||[]))a-=ltAire(t);
+      }
+    }
+    if(a>aire){aire=a; best=n.nom;}
+  }
+  return aire>0?best:"";
+}
+
 function simStackupIpc(){
   const couches=[];
   LT.cu.forEach(function(cu,k){
     couches.push({type:"copper", name:cu.nom, thickness:cu.ep,
-                  role:cu.plan?"plane":"signal"});
+                  role:cu.plan?"plane":"signal",
+                  net:simNetDuPlanIpc(cu.couche)});
     const g=LT.gap[k];
     if(g)couches.push({
       type:"dielectric", name:g.cle, thickness:g.t, epsilon_r:g.er,
@@ -156,6 +184,70 @@ function simGrilleCuivre(coucheIdx){
   const g={pas:pas, cases:cases, vide:cases.size===0};
   SIM_GRILLES.set(coucheIdx,g);
   return g;
+}
+
+/* Un arc, ramené à une polyligne.
+
+   UN ARC EST UNE PISTE, et l'IPC-2581 le range ailleurs. Le format décrit les
+   segments droits et les arcs dans deux collections distinctes ; `mdlCharger`
+   les garde séparés, et c'est fidèle au fichier. Mais pour tout ce qui suit —
+   la longueur, l'écart au cuivre de masse, le raccord d'un via — un arc est du
+   cuivre qui court comme un autre.
+
+   CE QUE COÛTAIT L'OUBLI, mesuré sur une carte livrée : la liaison partait au
+   serveur en morceaux droits SÉPARÉS par les arcs qui les joignent. Les
+   tronçons ne se touchaient donc pas, le panneau annonçait « la sélection
+   n'est pas un parcours continu », les angles se prenaient entre des tronçons
+   qui ne se suivent pas — un coude de 168°, c'est-à-dire un demi-tour, sur une
+   piste presque droite — et surtout AUCUN via ne s'accrochait : un via se pose
+   là où la fin d'un tronçon rejoint le début du suivant, et cela n'arrivait
+   jamais. Ni son perçage, ni sa portée, ni les vias de masse voisins ne
+   partaient, et le chevelu du retour n'avait rien à dessiner.
+
+   Le chemin de la chute continue, lui, les pliait déjà (`simDCPolysArcIpc`).
+   Le pliage est donc écrit ICI, une fois, et les deux le lisent.
+
+   ON PASSE PAR `mdlArc`, ET C'EST TOUT L'INTÉRÊT. Un arc du modèle porte
+   `s` (début), `e` (fin), `m` (centre) et `h` (sens horaire) — PAS un tableau
+   `p` de sommets, qui est la forme d'une piste. La version précédente de ce
+   pliage lisait justement `a.p` : elle ne trouvait rien, retombait sur son
+   repli « ce n'est pas un arc » et rendait une piste SANS SOMMETS. Le chemin de
+   la chute continue passait déjà par là et croyait donc traiter les arcs alors
+   qu'il les perdait en silence. Une seule définition de la géométrie d'un arc
+   existe dans cet outil, c'est `mdlArc` — c'est celle du dessin, donc celle qui
+   ne peut pas se désynchroniser de ce qu'on voit à l'écran.
+
+   LES DEUX BOUTS SONT CEUX DU FICHIER, et non ceux du cercle reconstruit. Le
+   rayon se déduit du point de départ ; le dernier point calculé peut retomber
+   à un micron du bout déclaré, et un micron suffit à casser un chaînage. On
+   les replace donc. */
+function simArcEnPolyligne(a){
+  if(!(a&&a.s&&a.e&&a.m&&typeof mdlArc==="function"))return null;
+  const g=mdlArc(a);
+  if(!(g.r>0))return [a.s[0],a.s[1], a.e[0],a.e[1]];
+  /* `mdlArc` rend les deux angles bruts ; le SENS vient de `h`, comme pour le
+     dessin. Un arc dont les deux bouts sont confondus est un cercle entier, et
+     `mdlArc` l'a déjà ouvert d'un tour complet. */
+  let d=g.f-g.d;
+  if(g.h){ while(d>0)d-=2*Math.PI; }
+  else   { while(d<0)d+=2*Math.PI; }
+  /* LA FINESSE SE PREND SUR L'ANGLE, ET NON SUR LA LARGEUR DE LA PISTE. Le
+     critère « une facette par largeur de piste » vient du tracé de CONTOUR,
+     où il suffit : la facette y est plus fine que le trait qu'elle dessine.
+     Pour une LONGUEUR il est trop grossier — un quart de cercle y tombait à
+     quatre facettes, et une corde est plus courte qu'un arc : 0,64 % de moins,
+     que le retard de propagation emporte tel quel. Un pas de deux degrés
+     ramène l'écart à cinq millionièmes, pour quarante-cinq facettes par quart
+     de tour, ce qui ne se sent nulle part. */
+  const n=Math.max(2,Math.min(256,Math.ceil(Math.abs(d)/(Math.PI/90))));
+  const pts=[];
+  for(let i=0;i<=n;i++){
+    const t=g.d+d*i/n;
+    pts.push(g.cx+g.r*Math.cos(t), g.cy+g.r*Math.sin(t));
+  }
+  pts[0]=a.s[0]; pts[1]=a.s[1];
+  pts[pts.length-2]=a.e[0]; pts[pts.length-1]=a.e[1];
+  return pts;
 }
 
 /* Distance d'un point à un segment, ET le point le plus proche : c'est lui qui
@@ -484,8 +576,14 @@ function simViaAuRaccordIpc(N, x, y, cuA, cuB){
   /* 1. Un trou déclaré, et métallisé. C'est la meilleure source : le perçage
         y est écrit, il ne se déduit pas. */
   for(const t of (N.trous || [])){
-    if(/NON/i.test(t.p || "")) return null;      /* nu : il ne joint rien */
+    /* LA POSITION D'ABORD, LE PLACAGE ENSUITE, et l'ordre inverse etait un
+       defaut : « ce trou-ci n'est pas metallise » rendait null pour TOUTE la
+       fonction, donc un seul trou nu quelque part sur le net -- un trou de
+       fixation, un point de test -- empechait de reconnaitre le via a l'autre
+       bout de la piste. Le placage ne dit rien du trou qu'on cherche tant
+       qu'on n'a pas verifie que c'est bien celui-la. */
     if(!pres(t.x * k, x) || !pres(t.y * k, y)) continue;
+    if(/NON/i.test(t.p || "")) return null;      /* nu : il ne joint rien */
     const d = Math.max((t.d || 0) * k, 0.05);
     let pastille = 0;
     for(const q of (N.pads || []))
@@ -508,21 +606,223 @@ function simViaAuRaccordIpc(N, x, y, cuA, cuB){
           pad_diameter: pastille};
 }
 
+/* ==========================================================================
+   LES JONCTIONS DU NET, ET POURQUOI LE RACCORD NE SE MESURE PAS ENTRE PISTES
+   --------------------------------------------------------------------------
+   CE QUE MONTRE UN VRAI FICHIER. Sur une carte exportée par un flot courant,
+   les bouts de piste qui arrivent à un via s'arrêtent tous à UN DIAMÈTRE DE
+   PASTILLE du centre — mesuré : 0,5500 mm des quatre côtés d'un via de
+   pastille 0,55, perçage 0,25, anneau 0,15, à la quatrième décimale. Ce n'est
+   pas du bruit d'arrondi, c'est une convention d'exportateur. Il reste donc,
+   dans le document, un quart de millimètre sans cuivre déclaré entre le bout
+   de la piste et le bord de l'anneau.
+
+   AUCUNE TOLÉRANCE DE RACCORD NE FRANCHIT CELA HONNÊTEMENT. Il faudrait la
+   monter au demi-millimètre, et à ce compte-là elle joindrait des pistes qui
+   n'ont rien à voir ensemble. Le raccord ne se mesure pas entre deux bouts de
+   piste : il se fait PAR UNE JONCTION — un via, une pastille —, et c'est la
+   jonction qu'il faut chercher.
+
+   ET C'EST LE NET QUI REND LA RÈGLE SÛRE. On ne regarde que les jonctions du
+   net de la piste : deux bouts qui désignent la même pastille de leur propre
+   net sont reliés, et rien de ce qui traîne à côté ne peut les tromper. Sur le
+   cas mesuré la règle tombe juste six fois sur six, sans seuil : chaque bout
+   côté via a son perçage à 0,55 mm quand le bout de piste voisin est à 0,67,
+   et les deux vrais bouts de la liaison sont à 0,0000 d'une pastille de
+   composant.
+
+   `SIM_RAYON_JONCTION_IPC` n'est donc PAS le critère : le critère est « la
+   jonction la plus proche ». C'est un garde-fou, qui empêche un bout perdu au
+   milieu de nulle part de s'accrocher à l'autre bout de la carte.
+   ========================================================================== */
+const SIM_RAYON_JONCTION_IPC = 1.5;     /* mm — garde-fou, pas critère */
+
+function simJonctionsIpc(N){
+  const k = simKUnite(), out = [], vus = new Map();
+  /* Groupées par lieu au centième de millimètre : un perçage tombe presque
+     toujours SOUS une pastille, et les compter deux fois ferait deux nœuds
+     là où il n'y a qu'un tube. C'est la clé du chemin DC, et pour la même
+     raison. */
+  const cle = (x, y) => Math.round(x * 100) + "/" + Math.round(y * 100);
+  for(const t of ((N && N.trous) || [])){
+    /* Un trou NON métallisé ne joint rien — même règle que partout ailleurs
+       dans cette page. */
+    if(/NON/i.test(t.p || "")) continue;
+    const x = t.x * k, y = t.y * k, c = cle(x, y);
+    if(vus.has(c)) continue;
+    const j = {x: x, y: y, percage: Math.max((t.d || 0) * k, 0.05),
+               pastille: 0, perce: true};
+    vus.set(c, j); out.push(j);
+  }
+  for(const q of ((N && N.pads) || [])){
+    const x = q.x * k, y = q.y * k, c = cle(x, y);
+    let j = vus.get(c);
+    if(!j){ j = {x: x, y: y, percage: 0, pastille: 0, perce: false};
+            vus.set(c, j); out.push(j); }
+    j.pastille = Math.max(j.pastille, (q.d || 0) * k);
+  }
+  return out;
+}
+
+/* LA JONCTION COMMUNE À DEUX BOUTS. On prend celle qui minimise la distance au
+   PLUS ÉLOIGNÉ des deux — un via au milieu de deux bouts symétriques gagne
+   contre une pastille collée à l'un et loin de l'autre, ce qui est bien ce
+   qu'on veut : la jonction cherchée est celle qui les joint TOUS LES DEUX. */
+function simJoncCommuneIpc(jonctions, p, q){
+  let mieux = null, md = Infinity;
+  for(const j of jonctions){
+    const d = Math.max(Math.hypot(j.x - p[0], j.y - p[1]),
+                       Math.hypot(j.x - q[0], j.y - q[1]));
+    if(d < md){ md = d; mieux = j; }
+  }
+  return (mieux && md <= SIM_RAYON_JONCTION_IPC) ? mieux : null;
+}
+
+/* Deux bouts vraiment confondus font une jonction à eux seuls, sans cote. Ce
+   n'est pas le cas d'un fichier exporté — voir plus haut —, mais c'est celui
+   d'un document écrit à la main, et le raccord doit partir quand même. */
+function simJoncDeBoutsIpc(p, q){
+  if(Math.abs(p[0] - q[0]) > SIM_TOL_VIA_IPC ||
+     Math.abs(p[1] - q[1]) > SIM_TOL_VIA_IPC) return null;
+  return {x: (p[0] + q[0]) / 2, y: (p[1] + q[1]) / 2,
+          percage: 0, pastille: 0, perce: false};
+}
+
+/* Le rayon de recherche d'un via de masse, en millimètres — le même que côté
+   éditeur : au-delà, un retour ne referme plus grand-chose. */
+const SIM_RAYON_RETOUR_IPC = 3.0;
+
+/* Les vias de masse autour d'un via de signal.
+
+   CE QUE L'IPC-2581 NE DIT PAS, ET IL FAUT LE DIRE. Un perçage y porte sa
+   position, son diamètre et son net — mais PAS SA PORTÉE : rien n'y distingue
+   un via traversant d'un via enterré. On les envoie donc en les supposant
+   traversants, avec `portee_supposee`, et le panneau le répète. Supposer sans
+   le dire ferait passer un via enterré — qui ne referme pas la boucle et qui
+   donnerait une inductance trop petite de près de vingt pour cent — pour un
+   retour valable.
+
+   Un trou NON métallisé ne joint rien : c'est la même règle que pour le via de
+   signal, et que pour le chemin du courant continu. */
+function simRetoursIpc(x, y, cuMax){
+  const refs = simRefIdx();
+  if(!refs || !refs.size) return [];
+  const k = simKUnite();
+  const out = [];
+  for(const n of V.parNet){
+    if(!n.nom || !refs.has(n.i)) continue;
+    for(const t of (n.trous || [])){
+      if(/NON/i.test(t.p || "")) continue;
+      const tx = t.x * k, ty = t.y * k;
+      const d = Math.hypot(tx - x, ty - y);
+      if(!(d > SIM_TOL_VIA_IPC) || d > SIM_RAYON_RETOUR_IPC) continue;
+      out.push({x: Math.round(tx * 1000) / 1000, y: Math.round(ty * 1000) / 1000,
+                layer_from: 0, layer_to: simRangCu(cuMax),
+                drill_diameter: Math.max((t.d || 0) * k, 0.05),
+                pad_diameter: Math.max((t.d || 0) * k, 0.05) * 2.5,
+                net: n.nom, portee_supposee: true});
+    }
+  }
+  out.sort((a, b) => Math.hypot(a.x - x, a.y - y) -
+                     Math.hypot(b.x - x, b.y - y));
+  return out;
+}
+
+/* LES VIAS DE LA SÉLECTION, AU FORMAT DU SERVEUR — format « cao-sim-em-3 ».
+
+   POURQUOI UNE LISTE À PART. Un via n'existait pour le calcul que s'il tombait
+   entre deux tronçons CONSÉCUTIFS d'un parcours unique. Sur un net qui se
+   ramifie il n'y a pas de parcours, donc pas de via, donc aucun chemin de
+   retour — alors que le via est là, avec ses coordonnées et son perçage. Or
+   son retour ne doit rien à l'ordre des tronçons.
+
+   ON ENVOIE DONC LES DEUX. Les tronçons dans leur ordre, pour la cascade ; les
+   vias sans ordre, pour le retour. Le serveur écarte ceux que la chaîne a déjà
+   pris — un même via chiffré deux fois donnerait deux valeurs.
+
+   LA PORTÉE EST SUPPOSÉE TRAVERSANTE, comme partout ailleurs sur cette page :
+   l'IPC-2581 ne déclare pas les couches d'un perçage. */
+function simViasIpc(){
+  const N = V.parNet ? V.parNet[V.net] : null;
+  if(!N) return [];
+  const cuMax = Math.max(0, (LT.pret ? LT.cu.length : 1) - 1);
+  const out = [];
+  for(const v of (SIM_CHAINE_IPC.vias || [])){
+    /* Les couches relevées sont celles du MODÈLE ; le serveur compte en rangs
+       d'empilage. Une couche absente de l'empilage n'a pas d'altitude, donc
+       pas de via : on préfère n'en pas parler. */
+    const cu = v.couches.map(simCuDe).filter(k => k >= 0);
+    if(cu.length < 2) continue;
+    const lo = Math.min(...cu), hi = Math.max(...cu);
+    if(lo === hi) continue;
+    const fiche = {x: Math.round(v.x * 1000) / 1000,
+                   y: Math.round(v.y * 1000) / 1000,
+                   layer_from: simRangCu(lo), layer_to: simRangCu(hi),
+                   retours: simRetoursIpc(v.x, v.y, cuMax),
+                   portee_supposee: true};
+    /* LES COTES NE S'INVENTENT PAS. Un perçage déclaré les porte ; une
+       pastille seule vaut un tube, et le perçage s'en déduit — c'est la règle
+       de `simViaAuRaccordIpc`, et elle doit rester la même des deux côtés. */
+    if(v.perce && v.percage > 0){
+      fiche.drill_diameter = v.percage;
+      fiche.pad_diameter = v.pastille > 0 ? v.pastille : v.percage * 2.5;
+    }else if(v.pastille > 0){
+      fiche.drill_diameter = Math.max(v.pastille - 0.5, 0.05);
+      fiche.pad_diameter = v.pastille;
+    }
+    out.push(fiche);
+  }
+  return out;
+}
+
 function simAccrocherViasIpc(envoi){
   const N = V.parNet[V.net];
   if(!N) return 0;
+  const jonctions = simJonctionsIpc(N);
+  const cuMax = Math.max(0, (LT.pret ? LT.cu.length : 1) - 1);
   let poses = 0;
   for(let i = 1; i < envoi.length; i++){
     const a = envoi[i - 1], b = envoi[i];
     if(a.layer === b.layer) continue;
     const p = a.end, q = b.start;
     if(!p || !q) continue;
-    if(Math.abs(p[0] - q[0]) > SIM_TOL_VIA_IPC ||
-       Math.abs(p[1] - q[1]) > SIM_TOL_VIA_IPC) continue;
+    /* LE VIA SE CHERCHE À LA JONCTION, PAS LÀ OÙ DEUX BOUTS COÏNCIDENT — et
+       c'était le défaut. Exiger que la fin d'un tronçon rejoigne le début du
+       suivant à 20 µm suppose que l'exportateur fasse toucher les deux, ce
+       qu'il ne fait pas : il arrête chaque piste à un diamètre de pastille du
+       centre du via. Le test échouait donc TOUJOURS sur un vrai fichier, et
+       avec lui partaient les cotes du via, sa position, et les vias de masse
+       voisins — donc le chevelu du retour. */
+    /* À DÉFAUT DE JONCTION, DEUX BOUTS QUI COÏNCIDENT EN FONT UNE. Le
+       changement de couche existe indépendamment de ce qu'on sait du via : ses
+       deux tronçons se raccordent quelque part, et ce quelque part suffit à
+       mesurer les écarts et à chercher les vias de masse. Ce repli ne porte
+       aucune cote — `simViaAuRaccordIpc` n'y trouvera rien, et c'est juste :
+       inventer un perçage serait pire que de n'en pas donner. */
+    const j = simJoncCommuneIpc(jonctions, p, q) || simJoncDeBoutsIpc(p, q);
+    if(!j) continue;
     /* `layer` est un indice d'EMPILAGE ; les couches de cuivre se comptent en
        le divisant par deux, comme `simRangCu` l'a produit. */
-    const via = simViaAuRaccordIpc(N, q[0], q[1], a.layer / 2, b.layer / 2);
-    if(via){ b.via = via; poses++; }
+    /* LE VIA PART MEME QUAND SES COTES SONT INCONNUES, et c'était le défaut :
+       on n'envoyait rien du tout tant que le perçage n'était pas identifié —
+       donc ni la position, ni les vias de masse voisins. Le serveur en
+       concluait « aucun via de masse ne referme la boucle », ce qui est une
+       affirmation SUR LA CARTE là où on n'avait simplement pas cherché. Or le
+       changement de couche existe indépendamment : ses deux tronçons se
+       raccordent quelque part, et ce quelque part suffit à mesurer les écarts.
+       Les cotes manquantes ne touchent que le perçage et la pastille, qui ont
+       leurs replis annoncés. */
+    const trouve = simViaAuRaccordIpc(N, j.x, j.y, a.layer / 2, b.layer / 2);
+    const via = trouve || {};
+    /* LE POINT DU VIA EST CELUI DE LA JONCTION, et non le bout de la piste :
+       c'est de là que partent le chevelu et la recherche des vias de masse.
+       Prendre le bout de piste décalerait les deux d'un demi-millimètre, et le
+       chevelu désignerait un point où il n'y a pas de via. */
+    via.x = Math.round(j.x * 1000) / 1000;
+    via.y = Math.round(j.y * 1000) / 1000;
+    via.retours = simRetoursIpc(j.x, j.y, cuMax);
+    b.via = via;
+    if(trouve) poses++;
   }
   return poses;
 }
@@ -585,7 +885,274 @@ function simZPistes(){
   if(!n)return out;
   for(const p of n.pistes)
     if(V.mev.couche<0||p.c===V.mev.couche)out.push({piste:p, couche:p.c});
+  /* LES ARCS SONT DU CUIVRE COMME LE RESTE. Les laisser dehors coupait la
+     liaison en morceaux qui ne se touchent pas — voir `simArcEnPolyligne`.
+     On les plie en polylignes et on les traite comme des pistes ; le chaînage
+     (`simChainePistes`) les remet ensuite à leur place dans le parcours, ce
+     qu'aucune des deux collections ne dit à elle seule. */
+  for(const a of (n.arcs||[])){
+    if(!(V.mev.couche<0||a.c===V.mev.couche))continue;
+    const pts=simArcEnPolyligne(a);
+    if(!pts)continue;
+    out.push({piste:{c:a.c, n:a.n, w:a.w, p:pts, arc:a}, couche:a.c});
+  }
   return out;
+}
+
+/* Le parcours, remis dans l'ordre où le courant le suit.
+
+   L'ORDRE DU FICHIER N'EST PAS L'ORDRE DU PARCOURS, et c'était le défaut de
+   fond de cet outil. `simZPistes` rend les pistes du net dans l'ordre où
+   l'IPC-2581 les a écrites, et le sens de chaque polyligne y est arbitraire :
+   rien dans le format ne dit par quel bout on entre. Tout ce qui suit
+   supposait pourtant une chaîne parcourue dans l'ordre envoyé. Trois choses en
+   tombaient à la fois, et elles avaient l'air de trois défauts distincts :
+
+     · LES RACCORDS. Deux tronçons voisins dans la liste ne se touchaient pas,
+       et le panneau annonçait « la sélection n'est pas un parcours continu »
+       devant une liaison parfaitement continue ;
+     · LES COUDES. L'angle se prend entre les vecteurs départ->arrivée. Une
+       piste écrite à l'envers donnait un coude de 168°, c'est-à-dire un
+       demi-tour, là où le cuivre est presque droit ;
+     · LES VIAS, et c'est le plus coûteux. `simAccrocherViasIpc` ne pose un via
+       que là où la fin d'un tronçon rejoint le début du suivant. Ce test
+       échouait, donc AUCUN via n'était posé — donc ni son perçage, ni sa
+       pastille, ni sa portée, ni les vias de masse voisins ne partaient. Le
+       serveur les remplaçait par des replis et disait « non envoyé », ce qui
+       était vrai mais ne disait pas pourquoi.
+
+   ON CHAÎNE DONC PAR LES EXTRÉMITÉS, en retournant les pistes qu'il faut. Deux
+   bouts au même point sont un raccord ; deux bouts au même point sur des
+   couches différentes sont un via, et c'est le même test — c'est justement ce
+   qui fait qu'un via se pose tout seul une fois la chaîne dans l'ordre.
+
+   ON NE FORCE RIEN. Un nœud où trois pistes se rejoignent est une DÉRIVATION :
+   il n'y a plus de parcours unique, et en choisir un au hasard rendrait des
+   paramètres S qui ont l'air justes. La marche s'arrête là ; ce qui reste part
+   dans l'ordre du fichier, et le serveur continue d'annoncer les raccords
+   manquants. Une sélection éparse doit rester visiblement éparse. */
+const SIM_TOL_CHAINE_IPC = 0.02;        /* mm — la tolérance du serveur */
+
+/* CE QUE LA MARCHE A RENCONTRÉ, gardé pour que le panneau puisse le DIRE.
+
+   UNE ABSENCE NE S'EXPLIQUE PAS TOUTE SEULE. Sur un net qui se ramifie — un
+   bus I²C qui dessert trois boîtiers, le cas ordinaire — le parcours n'est pas
+   unique, la marche s'arrête, et il n'y a ni via accroché ni chevelu du
+   retour. C'est le bon comportement : choisir une branche rendrait des
+   paramètres S qui ont l'air justes en ignorant des moignons qui chargent
+   réellement la ligne. Mais rien à l'écran ne distinguait ce silence-là d'un
+   défaut, et c'est ce qui le rendait illisible : on voit un chevelu manquant,
+   pas une décision.
+
+   On retient donc OÙ la marche s'est arrêtée et COMBIEN de branches s'y
+   rejoignent. Le point est celui du nœud, donc du via ou de la pastille — de
+   quoi le montrer sur la carte plutôt que de le décrire. */
+let SIM_CHAINE_IPC = {arrets: [], orphelines: 0, vias: []};
+
+function simBoutsPiste(piste, k){
+  const t = piste && piste.p;
+  if(!t || t.length < 4) return null;
+  return [{x: t[0] * k, y: t[1] * k},
+          {x: t[t.length - 2] * k, y: t[t.length - 1] * k}];
+}
+
+function simChainePistes(liste){
+  const n = liste.length;
+  SIM_CHAINE_IPC = {arrets: [], orphelines: 0, vias: []};
+  if(n < 2) return liste.map(e => ({piste: e.piste, couche: e.couche,
+                                    retourne: false}));
+  const k = simKUnite();
+  const bouts = liste.map(e => simBoutsPiste(e.piste, k));
+
+  /* Les nœuds : un point du plan, et les bouts de piste qui s'y rejoignent.
+
+     GROUPÉS PAR TOLÉRANCE, ET NON PAR ÉGALITÉ — et c'était LE défaut de cet
+     outil. La version précédente rangeait chaque bout dans un casier dont la
+     clé était la coordonnée arrondie au micron, en la disant « vingt fois plus
+     fine que la tolérance de raccord ». Un casier n'est pas une tolérance :
+     deux bouts distants de trois microns qui tombent de part et d'autre d'une
+     graduation vont dans DEUX casiers, et ne se rejoignent jamais. La
+     tolérance effective était donc ZÉRO, et `SIM_TOL_CHAINE_IPC` — déclaré
+     juste au-dessus, commenté « la tolérance du serveur » — n'était employé
+     nulle part.
+
+     L'ÉDITEUR PCB NE VOIT PAS CE DÉFAUT, et c'est ce qui l'a caché : il ne
+     chaîne pas, il envoie la sélection dans son ordre, et ses pistes sont
+     accrochées à la grille, donc leurs bouts coïncident au bit près. Un
+     IPC-2581 porte des coordonnées lues dans un fichier texte, souvent en
+     pouces multipliés par 25,4 : les deux bouts d'un même via y diffèrent
+     presque toujours de quelques microns.
+
+     ET QUAND LA MARCHE S'ARRÊTE, TOUT TOMBE ENSEMBLE. Les pistes non vues
+     repartent dans l'ordre du fichier, avec leur sens d'origine : le serveur
+     annonce des raccords manquants, une piste écrite à l'envers donne un coude
+     de 168° — un demi-tour sur du cuivre presque droit —, aucun via ne
+     s'accroche, donc ni ses cotes ni les vias de masse voisins ne partent, et
+     le chevelu du retour n'a plus rien à dessiner. Quatre symptômes qui ont
+     l'air de quatre défauts.
+
+     ON COMPARE DONC AXE PAR AXE, comme le fait `simAccrocherViasIpc` et comme
+     le fait le serveur : les trois doivent s'accorder, sans quoi la chaîne
+     poserait un raccord là où l'accrochage ne pose pas de via. Le groupement
+     est glouton — un bout rejoint le premier nœud qui le contient, sinon il en
+     ouvre un — et quadratique dans le nombre de pistes du net, ce qui ne coûte
+     rien à cette échelle et se lit. */
+  /* LES JONCTIONS DU NET SONT DES NŒUDS À PART ENTIÈRE, et c'est ce qui fait
+     marcher le chaînage sur un fichier réel. Un bout de piste qui arrive à un
+     via ne touche pas le bout d'en face : il s'arrête à un diamètre de
+     pastille du centre. Ce qui les joint est le via, et c'est donc au via
+     qu'il faut rattacher les deux. On ne regarde que les jonctions DU NET —
+     voir `simJonctionsIpc` — ce qui est ce qui rend la règle sûre. */
+  const jonctions = simJonctionsIpc(V.parNet ? V.parNet[V.net] : null);
+  const centres = jonctions.map(j => ({x: j.x, y: j.y}));
+  const noeuds = jonctions.map(() => []);
+  const fixes = centres.length;         /* au-delà : les nœuds de tolérance */
+
+  /* `rangs[i][b]` : le nœud du bout `b` de la piste `i`, ou −1 si la piste
+     n'a pas de bouts exploitables. */
+  const rangs = [];
+  for(let i = 0; i < n; i++) rangs.push([-1, -1]);
+
+  /* 1. CHAQUE BOUT REJOINT SA JONCTION LA PLUS PROCHE. Le critère est « la
+        plus proche », pas un seuil : `SIM_RAYON_JONCTION_IPC` n'est là que
+        pour empêcher un bout perdu de s'accrocher à l'autre bout de la carte.
+
+        DEUX BOUTS D'UNE MÊME PISTE NE PARTAGENT PAS UNE JONCTION. Sans cette
+        règle, une piste courte dont les deux bouts voient la même pastille s'y
+        replierait sur elle-même — mesuré sur un vrai fichier : un tronçon de
+        0,3 mm dont le bout libre est SUR sa pastille et l'autre bout à 0,55 mm
+        du via voisin, mais à 0,31 mm de cette même pastille. Le plus proche
+        des deux garde la jonction, l'autre prend son second choix. */
+  /* ET LA JONCTION NE PREND PAS LE PAS SUR DU CUIVRE QUI SE TOUCHE VRAIMENT.
+     Un bout confondu avec un autre bout est raccordé, point : l'envoyer vers
+     une pastille plus loin ferait converger sur un nœud des bouts que rien ne
+     joint. Le critère est la TOLÉRANCE DE RACCORD, et rien d'autre.
+
+     PREMIÈRE VERSION, ET POURQUOI ELLE ÉTAIT FAUSSE : elle comparait la
+     distance à la jonction à celle du bout de piste le plus proche, quel qu'il
+     soit. Or deux bouts voisins n'ont pas forcément affaire ensemble — mesuré
+     sur un bus qui dessert trois boîtiers, deux branches passent à 0,4210 mm
+     l'une de l'autre en montant vers LE MÊME via, à 0,55 mm. Le voisin gagnait,
+     les deux branches perdaient leur via, et le changement de couche
+     disparaissait. « Plus proche qu'un voisin quelconque » n'est pas un
+     critère ; « posé sur le même cuivre » en est un. */
+  const touche = (i, b) => {
+    const q = bouts[i][b];
+    for(let u = 0; u < n; u++){
+      if(u === i || !bouts[u]) continue;
+      for(let v = 0; v < 2; v++)
+        if(Math.abs(bouts[u][v].x - q.x) <= SIM_TOL_CHAINE_IPC &&
+           Math.abs(bouts[u][v].y - q.y) <= SIM_TOL_CHAINE_IPC) return true;
+    }
+    return false;
+  };
+  const classe = (i, b) => {
+    if(!bouts[i] || touche(i, b)) return [];
+    const q = bouts[i][b];
+    return jonctions
+      .map((j, x) => ({x: x, d: Math.hypot(j.x - q.x, j.y - q.y)}))
+      .filter(e => e.d <= SIM_RAYON_JONCTION_IPC)
+      .sort((u, v) => u.d - v.d);
+  };
+  for(let i = 0; i < n; i++){
+    if(!bouts[i]) continue;
+    const c0 = classe(i, 0), c1 = classe(i, 1);
+    let j0 = c0.length ? c0[0] : null, j1 = c1.length ? c1[0] : null;
+    if(j0 && j1 && j0.x === j1.x){
+      if(j0.d <= j1.d) j1 = c1.length > 1 ? c1[1] : null;
+      else             j0 = c0.length > 1 ? c0[1] : null;
+    }
+    if(j0){ rangs[i][0] = j0.x; noeuds[j0.x].push({i: i, b: 0}); }
+    if(j1){ rangs[i][1] = j1.x; noeuds[j1.x].push({i: i, b: 1}); }
+  }
+
+  /* 2. CE QUI N'A PAS DE JONCTION SE GROUPE PAR TOLÉRANCE — le cuivre qui se
+        touche vraiment, et le document écrit à la main qui ne porte ni via ni
+        pastille. */
+  const noeudDe = q => {
+    for(let c = fixes; c < centres.length; c++)
+      if(Math.abs(centres[c].x - q.x) <= SIM_TOL_CHAINE_IPC &&
+         Math.abs(centres[c].y - q.y) <= SIM_TOL_CHAINE_IPC) return c;
+    return -1;
+  };
+  for(let i = 0; i < n; i++){
+    if(!bouts[i]) continue;
+    for(let b = 0; b < 2; b++){
+      if(rangs[i][b] >= 0) continue;
+      let c = noeudDe(bouts[i][b]);
+      if(c < 0){ c = centres.length; centres.push(bouts[i][b]); noeuds.push([]); }
+      noeuds[c].push({i: i, b: b});
+      rangs[i][b] = c;
+    }
+  }
+
+  /* Le départ : un bout LIBRE, c'est-à-dire un vrai bout de liaison. À défaut
+     — une boucle fermée, ou une sélection dont on ne voit pas les extrémités —
+     on part du premier de la liste, ce qui vaut l'ordre du fichier. */
+  let depart = null;
+  for(let i = 0; i < n && !depart; i++){
+    if(!bouts[i]) continue;
+    for(let b = 0; b < 2; b++)
+      if((noeuds[rangs[i][b]] || []).length === 1){
+        depart = {i: i, b: b};            /* on entre par ce bout-là */
+        break;
+      }
+  }
+  if(!depart){
+    if(!bouts[0]) return liste.map(e => ({piste: e.piste, couche: e.couche,
+                                          retourne: false}));
+    depart = {i: 0, b: 0};
+  }
+
+  const vus = new Array(n).fill(false);
+  const suite = [];
+  let cour = depart;
+  while(cour && !vus[cour.i]){
+    vus[cour.i] = true;
+    /* On entre par le bout `b` : la piste part donc à l'endroit si `b` vaut 0,
+       et à l'envers sinon. */
+    suite.push({piste: liste[cour.i].piste, couche: liste[cour.i].couche,
+                retourne: cour.b === 1});
+    const sortie = rangs[cour.i][1 - cour.b];
+    const voisins = (noeuds[sortie] || []).filter(v => !vus[v.i]);
+    /* UN SEUL VOISIN, OU RIEN. Deux voisins au même point sont une dérivation :
+       le parcours n'est plus unique et on s'arrête plutôt que de trancher. */
+    if(voisins.length > 1 && centres[sortie])
+      SIM_CHAINE_IPC.arrets.push({
+        x: centres[sortie].x, y: centres[sortie].y,
+        branches: (noeuds[sortie] || []).length,
+        /* Un nœud PERCÉ est un via : c'est le repère qu'on peut nommer sur la
+           carte. Une pastille de composant en est un aussi, et il faut les
+           distinguer — « au via » et « à la pastille » ne se cherchent pas du
+           même œil. */
+        perce: sortie < fixes && !!jonctions[sortie].perce
+      });
+    cour = (voisins.length === 1) ? voisins[0] : null;
+  }
+  for(let i = 0; i < n; i++)
+    if(!vus[i]){
+      SIM_CHAINE_IPC.orphelines++;
+      suite.push({piste: liste[i].piste, couche: liste[i].couche,
+                  retourne: false});
+    }
+
+  /* LES VIAS DE LA SÉLECTION, RELEVÉS ICI ET NON DANS LA CHAÎNE. Une jonction
+     où se rejoignent des bouts de piste de DEUX couches différentes est un
+     via, que le parcours passe par elle ou non. C'est tout ce qu'il faut pour
+     en chiffrer le chemin de retour : sa position, les couches qu'il joint,
+     ses cotes. L'ordre des tronçons n'y entre pas — et c'est justement ce qui
+     le rend calculable sur un net qui se ramifie, où il n'y a pas d'ordre. */
+  for(let j = 0; j < fixes; j++){
+    const cs = new Set();
+    for(const e of noeuds[j]) cs.add(liste[e.i].couche);
+    if(cs.size < 2) continue;
+    SIM_CHAINE_IPC.vias.push({x: jonctions[j].x, y: jonctions[j].y,
+                              perce: !!jonctions[j].perce,
+                              percage: jonctions[j].percage,
+                              pastille: jonctions[j].pastille,
+                              couches: [...cs].sort((u, v) => u - v)});
+  }
+  return suite;
 }
 
 /* Les tronçons à envoyer, et les objets alignés dessus.
@@ -605,7 +1172,7 @@ function simSegments(){
   const k=simKUnite(), envoi=[], objets=[], entrees=[];
   const refs=simRefIdx(), hors=new Map();
   let ignorees=0;
-  for(const e of simZPistes()){
+  for(const e of simChainePistes(simZPistes())){
     const cu=simCuDe(e.couche);
     if(cu<0){ignorees++;continue;}
     const p=e.piste;
@@ -624,14 +1191,26 @@ function simSegments(){
     }
 
     const c=V.couches[e.couche];
-    for(const pl of r.plages){
-      const a=simSurPoly(p.p,cum,pl.u1), b=simSurPoly(p.p,cum,pl.u2);
+    /* LA PISTE RETOURNÉE SE PARCOURT DANS L'AUTRE SENS, ET TOUT SUIT. Ses
+       plages sortent en ordre inverse, chacune bout pour bout — et GAUCHE ET
+       DROITE S'ÉCHANGENT, parce que `simEcartsEn` les mesure par rapport à la
+       TANGENTE du parcours : le côté gauche d'une piste lue à l'envers est son
+       côté droit. Les oublier écrirait « 0,187 / 2,325 » à l'envers sur un
+       tronçon sur deux, dans un panneau qui dit justement mesurer chaque côté
+       séparément.
+       `u1`/`u2` ne bougent PAS : ils repèrent la plage sur la POLYLIGNE, dont
+       le sens n'a pas changé — c'est le parcours qu'on retourne, pas le
+       cuivre, et la carte de chaleur se peint sur le cuivre. */
+    const suite=e.retourne?r.plages.slice().reverse():r.plages;
+    for(const pl of suite){
+      const q1=simSurPoly(p.p,cum,pl.u1), q2=simSurPoly(p.p,cum,pl.u2);
+      const a=e.retourne?q2:q1, b=e.retourne?q1:q2;
       envoi.push({
         type:"track",
         start:[a.x*k, a.y*k], end:[b.x*k, b.y*k],
         length:pl.longueur, width:(p.w||0)*k, layer:simRangCu(cu),
         net:(p.n>=0)?mdlNetNom(p.n):"", copper_thickness:LT.cu[cu].ep,
-        gap_left:pl.g, gap_right:pl.d
+        gap_left:e.retourne?pl.d:pl.g, gap_right:e.retourne?pl.g:pl.d
       });
       objets.push({piste:p, cum:cum, u1:pl.u1, u2:pl.u2,
                    couche:(c?c.nom:"?"), coucheIdx:e.couche});
@@ -641,6 +1220,7 @@ function simSegments(){
 
   return {envoi:envoi, objets:objets, ignorees:ignorees,
           couture:simCoutureIpc(entrees,refs),
+          chaine:SIM_CHAINE_IPC, vias:simViasIpc(),
           voisins:[...hors.values()].sort((a,b)=>b.longueur-a.longueur)};
 }
 
@@ -775,6 +1355,155 @@ function simZTrace(c,dpr){
     c.lineWidth=px*2; c.stroke(t.chemin);
   }
   simZValeurs(c,dpr,traits);
+}
+
+/* ==========================================================================
+   LE CHEVELU DU COURANT DE RETOUR
+   --------------------------------------------------------------------------
+   CE QU'IL MONTRE, ET POURQUOI IL EST ICI. Un via de signal qui change de
+   couche oblige son courant de retour à changer de plan avec lui. Ce qui l'y
+   aide, ce sont les vias de MASSE d'à côté — et rien sur le dessin d'une carte
+   livrée ne dit lesquels y arrivent, ni ce que chacun porte. Le chevelu relie
+   le via de signal à chacun d'eux, épaissit le trait de ceux qui travaillent,
+   pointille ceux qui ne peuvent rien et écrit pourquoi.
+
+   IL EST LU DANS LE RÉSULTAT, et c'est ce qui le distingue de celui de
+   l'éditeur PCB. Là-bas on route, donc il faut répondre pendant qu'on déplace
+   le via, donc il se recalcule à chaque image. Ici la carte est faite : le
+   seul chevelu qui vaille est celui que le modèle a réellement employé, et
+   c'est `simCheveluRes` qui le lit. Le trait et le chiffre viennent de la même
+   source — il ne peut pas y avoir de désaccord entre le dessin et la fiche.
+
+   LES COORDONNÉES ARRIVENT EN MILLIMÈTRES, parce que c'est l'unité du document
+   envoyé au serveur. Le monde de la visionneuse, lui, est dans l'unité du
+   fichier IPC — `simKUnite` est le facteur, et on le remonte à l'envers.
+   ========================================================================== */
+
+function simRetourActifIpc(){
+  return !!(typeof SIM!=="undefined"&&SIM.ouvert&&SIM.analyse==="impedance"
+            &&SIM.res&&typeof simCheveluRes==="function");
+}
+
+function simRetourTraceIpc(c,dpr){
+  if(!simRetourActifIpc())return;
+  const liens=simCheveluRes();
+  if(!liens.length)return;
+  const k=simKUnite();
+  if(!(k>0))return;
+  const u=v=>v/k;                          /* millimètres -> unités du fichier */
+
+  poserMonde(c,dpr);
+  c.save();
+  c.lineCap="round";
+  const px=1/V.vue.scale;                  /* un pixel écran, en unités monde */
+
+  for(const g of liens){
+    const gx=u(g.x), gy=u(g.y);
+    for(const f of (g.vias||[])){
+      c.strokeStyle=simRetourCouleurRes(f);
+      /* L'ÉPAISSEUR DIT LA PART DU COURANT. Un trait fin est un via qui ne
+         travaille pas : il occupe une place et ne rend presque rien, et c'est
+         une information de conception à part entière. */
+      c.lineWidth=f.retenu?px*(1.2+4.0*Math.max(f.part||0,0)):px*1.2;
+      c.setLineDash(f.retenu?[]:[px*3,px*3]);
+      c.beginPath();
+      c.moveTo(gx,gy);
+      c.lineTo(u(f.x),u(f.y));
+      c.stroke();
+    }
+    /* Le via de signal, cerclé : c'est lui dont on parle. */
+    c.setLineDash([]);
+    c.strokeStyle=g.retenus?"#49c07a":"#e8564a";
+    c.lineWidth=px*1.6;
+    c.beginPath();
+    c.arc(gx,gy,u(g.pastille)/2+px*3,0,Math.PI*2);
+    c.stroke();
+  }
+  c.restore();
+  simRetourValeursIpc(c,liens,dpr,u);
+}
+
+/* Les chiffres, tracés en PIXELS ÉCRAN et non en unités monde : une étiquette
+   qui grossit avec le zoom finit par couvrir la carte, et celle-ci doit rester
+   lisible quand on dézoome pour voir la liaison entière. C'est la règle de
+   `simZValeurs`, et c'est la même ici. */
+function simRetourValeursIpc(c,liens,dpr,u){
+  c.save();
+  c.setTransform(1,0,0,1,0,0);
+  c.scale(dpr,dpr);
+  c.textAlign="center"; c.textBaseline="middle";
+
+  const cartouche=(e,txt,bord,dy,petit)=>{
+    c.font=(petit?"600 9.5px ":"600 11px ")+
+      "\"JetBrains Mono\",\"SF Mono\",Consolas,\"Roboto Mono\",monospace";
+    const w=c.measureText(txt).width+10, hh=petit?15:18;
+    c.fillStyle="rgba(15,16,18,0.86)";
+    c.beginPath();
+    if(c.roundRect)c.roundRect(e.x-w/2,e.y+dy-hh/2,w,hh,4);
+    else c.rect(e.x-w/2,e.y+dy-hh/2,w,hh);
+    c.fill();
+    c.strokeStyle=bord; c.lineWidth=1.2; c.stroke();
+    c.fillStyle="#e6e8ec";
+    c.fillText(txt,e.x,e.y+dy+0.5);
+  };
+
+  for(const g of liens){
+    const o=w2s(u(g.x),u(g.y));
+    for(const f of (g.vias||[])){
+      const e=w2s(u(f.x),u(f.y));
+      const lg=Math.hypot(e.x-o.x,e.y-o.y);
+      /* UN LIEN TROP COURT À L'ÉCRAN NE PORTE PAS D'ÉTIQUETTE : en dessous de
+         quarante-cinq pixels le cartouche recouvre le via qu'il désigne et
+         celui d'à côté, et on perd les deux pour en afficher une. L'épaisseur
+         du trait, elle, dit toujours la part. Un lien ÉCARTÉ garde sa raison
+         quoi qu'il arrive : c'est la seule chose qui explique pourquoi il ne
+         compte pas, et un via écarté est justement celui qu'on a posé tout
+         contre. */
+      if(lg<45&&f.retenu)continue;
+      /* AUX DEUX TIERS DU LIEN, ET NON AU MILIEU : le milieu de trois liens
+         qui partent du même point retombe dans la même zone encombrée. */
+      const m={x:o.x+0.66*(e.x-o.x), y:o.y+0.66*(e.y-o.y)};
+      if(!f.retenu)cartouche(m,f.raison||"écarté","#e8564a",-14,true);
+      else if((f.part||0)>=0.05)
+        cartouche(m,Math.round(100*f.part)+" %",
+                  simRetourCouleurRes(f),0,true);
+    }
+    /* L'INDUCTANCE DE BOUCLE, au pied du via. Quand rien ne referme la boucle,
+       le chiffre n'EST PAS une inductance de boucle : c'est la self d'un
+       conducteur seul, elle ne dépend pas du routage, et l'afficher comme les
+       autres laisserait croire qu'on a mesuré quelque chose. Le « ≥ » n'est
+       pas une précaution de style — le courant revient quand même, par le
+       cuivre des plans et plus loin, donc la boucle réelle vaut DAVANTAGE. */
+    /* « HORS PARCOURS » SE DIT SUR LE DESSIN, et pas seulement au tableau :
+       c'est ici qu'on regarde quand on cherche ce qu'un via coûte, et
+       l'inductance de boucle affichée est vraie pendant que la courbe S, elle,
+       ne porte rien de ce via. */
+    const txt=(g.seul
+      ? "L ≥ "+simNb(g.L_nH,2)+" nH · sans retour"
+      : "L = "+simNb(g.L_nH,2)+" nH")+(g.cascade?"":" · hors parcours");
+    /* AU-DESSUS DU VIA ET AU-DESSUS DE SON CERCLE. Un décalage fixe suffit tant
+       qu'on est dézoomé ; à fort grossissement la pastille dépasse le cartouche
+       et le chiffre se poserait SUR le via qu'il décrit. */
+    const rayon=(u(g.pastille)/2)*V.vue.scale+14;
+    cartouche(o,txt,g.seul?"#e8564a":"#49c07a",-Math.max(18,rayon),false);
+    /* LE DÉFAUT ET LE DOUTE NE SE DISENT PAS DE LA MÊME FAÇON, et surtout pas
+       de la même couleur : un chevelu qui crie au rouge sur le cas ordinaire
+       cesse d'être regardé. */
+    if(g.change)
+      cartouche(o,"référence "+g.plans+" : aucun via ne peut joindre les deux",
+                "#e8564a",Math.max(20,rayon),true);
+    else if(g.doute)
+      cartouche(o,"référence "+g.plans+" : nets des plans non déclarés",
+                "#e0a63c",Math.max(20,rayon),true);
+    /* LA PORTÉE SUPPOSÉE EST LA LIMITE PROPRE À CETTE PAGE, et elle se dit sur
+       le dessin, pas seulement dans une note en bas du panneau : l'IPC-2581 ne
+       distingue pas un via traversant d'un via enterré, et un enterré pris
+       pour traversant rend une boucle trop petite de près de vingt pour cent. */
+    else if(g.supposee&&!g.seul)
+      cartouche(o,"portée des vias de masse supposée traversante",
+                "#7d8590",Math.max(20,rayon),true);
+  }
+  c.restore();
 }
 
 /* Les valeurs écrites sur la piste.
@@ -928,21 +1657,8 @@ function simDCPolysPisteIpc(pi,k){
 
 /* Un arc : la même chose, échantillonné le long de sa course. */
 function simDCPolysArcIpc(a,k){
-  const c=a.m, pl=a.p||[];
-  if(!(c&&pl.length>=4))return simDCPolysPisteIpc(a,k);
-  const cx=c[0], cy=c[1];
-  const r=Math.hypot(pl[0]-cx,pl[1]-cy);
-  let a1=Math.atan2(pl[1]-cy,pl[0]-cx);
-  let a2=Math.atan2(pl[3]-cy,pl[2]-cx);
-  let d=a2-a1;
-  if(a.h){ while(d>0)d-=2*Math.PI; }        // horaire
-  else   { while(d<0)d+=2*Math.PI; }
-  const n=Math.max(2,Math.min(64,Math.ceil(Math.abs(d)*r/Math.max(a.w||0.1,0.02))));
-  const pts=[];
-  for(let i=0;i<=n;i++){
-    const t=a1+d*i/n;
-    pts.push(cx+r*Math.cos(t), cy+r*Math.sin(t));
-  }
+  const pts=simArcEnPolyligne(a);
+  if(!pts)return simDCPolysPisteIpc(a,k);
   return simDCPolysPisteIpc({p:pts, w:a.w}, k);
 }
 
@@ -1361,10 +2077,40 @@ const SIM_IPC={
     if(g.ignorees)
       notes.push(g.ignorees+" piste(s) écartée(s) : leur couche n'est pas dans "+
                  "l'empilage.");
+    /* LA RAMIFICATION SE DIT, ET C'EST LA NOTE LA PLUS IMPORTANTE DE LA LISTE
+       QUAND ELLE PARAÎT. Un net multipoint — un bus qui dessert trois boîtiers
+       — n'a pas de parcours unique : la mise en cascade s'arrête au nœud, donc
+       aucun via ne s'accroche, donc le chemin de retour n'est pas chiffré et
+       le chevelu ne dessine rien. Tout cela est VOULU. Ce qui ne l'était pas,
+       c'est que l'écran n'en dise rien : on voyait une absence, et une absence
+       ressemble à une panne. La note donne le POINT, pour qu'on puisse aller
+       le regarder, et le nombre de branches, qui dit à quoi on a affaire. */
+    const ar=((g.chaine||{}).arrets)||[];
+    if(ar.length){
+      const a0=ar[0];
+      notes.push("Le net se ramifie : "+a0.branches+" branches se rejoignent "+
+                 (a0.perce?"au via ":"à la pastille ")+
+                 "("+simNb(a0.x,3)+" ; "+simNb(a0.y,3)+")"+
+                 (ar.length>1?", et en "+(ar.length-1)+" autre(s) point(s)":"")+
+                 ". Il n'y a donc pas de parcours unique : les impédances par "+
+                 "tronçon et la carte de chaleur restent justes, chacune ne "+
+                 "dépendant que de sa propre section, mais la mise en cascade "+
+                 "s'arrête là — aucun via n'est rattaché au parcours, donc ni "+
+                 "son inductance de boucle ni le chevelu du courant de retour "+
+                 "ne sont calculés. Cliquez UNE piste (sans Maj) pour "+
+                 "n'analyser qu'une branche.");
+    }
     const n=(V.net>=0)?V.parNet[V.net]:null;
-    if(n&&n.trous.length)
-      notes.push(n.trous.length+" perçage(s) du net ne sont pas modélisés : "+
-                 "la transition verticale manque au modèle.");
+    /* CETTE NOTE ANNONCAIT COMME ABSENT CE QUI EST CASCADÉ. Les transitions de
+       couche portent un modèle π L-C depuis le lot 3b ; ce qui reste vrai est
+       qu'un perçage du net qui ne réalise AUCUN changement de couche de la
+       sélection — un via de report, un point de test — n'entre nulle part.
+       C'est cela qu'on compte, et pas les autres. */
+    const trans=(g.envoi||[]).filter(function(e){return e&&e.via;}).length;
+    const nonVus=n?Math.max(0,n.trous.length-trans):0;
+    if(nonVus)
+      notes.push(nonVus+" perçage(s) du net ne réalisent aucun changement de "+
+                 "couche de la sélection : ils ne sont pas dans le modèle.");
     /* Les manques de l'empilage sont ceux que la fiche de ligne signale déjà
        (`ltManques()`) : une seule liste, un seul verdict. */
     const m=(typeof ltManques==="function")?ltManques():null;
@@ -1409,6 +2155,10 @@ const SIM_IPC={
         carte:this.carte(), net:net,
         stackup:simStackupIpc(),
         geometry:{objects:g.envoi},
+        /* LES VIAS DE LA SÉLECTION, SANS ORDRE — voir `simViasIpc`. Leur
+           chemin de retour ne dépend pas du parcours, et c'est ce qui le rend
+           calculable sur un net qui se ramifie. */
+        vias:g.vias||[],
         ports:[{id:1,impedance:opts.z0},{id:2,impedance:opts.z0}],
         analyse:{f_debut:opts.f1, f_fin:opts.f2, points:opts.points,
                  f_centre:opts.fc}

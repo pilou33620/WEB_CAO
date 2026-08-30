@@ -1097,7 +1097,11 @@ async function simDCCalculer(doc){
   return corps;
 }
 
-const SIM_FORMAT="cao-sim-em-1";
+/* LES PAGES ANNONCAIENT ENCORE « -1 » PENDANT QUE LE SERVEUR EN ETAIT A
+   « -2 » : le serveur acceptait les deux, donc rien ne se voyait, et la
+   version envoyee ne disait plus ce que le document contenait. Remis
+   d'aplomb avec le passage a « -3 », qui ajoute la liste `vias`. */
+const SIM_FORMAT="cao-sim-em-3";
 
 let SIM_ED=null;                       // l'adaptateur de l'outil courant
 let SIM_BASE=null;                     // racine retenue, "" = même origine
@@ -1152,13 +1156,11 @@ const SIM={
      ramenée de force, des pertes fausses d'un facteur trois, et rien à
      l'écran pour le voir avant le calcul. */
   saisie:{f1:1e8, f2:5e9, points:21, fc:1e9, z0:50, cible:50, tolPct:10,
-          /* DEUX UNITÉS, ET PAS UNE. `unite` écrit f₀ ; `uniteBande` écrit les
-             deux bouts de la bande S. Elles étaient confondues, ce qui obligeait
-             à écrire « 0,1 → 1 » en gigahertz pour une bande de 100 MHz à 1 GHz
-             centrée à 250 MHz — trois champs, trois ordres de grandeur, une
-             seule case pour les dire. Séparer les deux ne change rien au
-             calcul : tout circule en hertz de bout en bout. */
-          unite:"GHz", uniteBande:"GHz"}
+          /* TROIS UNITÉS. `unite` écrit f₀ ; `uniteBande1` et `uniteBande2` écrivent
+             les deux bouts de la bande S. Elles étaient autrefois confondues,
+             puis il y en a eu deux, et maintenant trois pour permettre "10 kHz -> 1 GHz".
+             Tout circule en hertz de bout en bout. */
+          unite:"GHz", uniteBande1:"GHz", uniteBande2:"GHz"}
 };
 
 /* Les unités offertes, du hertz au gigahertz. Elles ne changent RIEN au
@@ -1172,13 +1174,15 @@ const SIM_UNITES=[
 function simUnite(){
   return SIM_UNITES.find(u=>u.cle===SIM.saisie.unite)||SIM_UNITES[3];
 }
-/* L'unité de la bande S. LE REPLI EST L'UNITÉ DE f₀, ET NON UNE CONSTANTE :
-   un état d'avant la séparation ne porte pas `uniteBande`, et lui donner du
-   gigahertz par défaut ferait sauter la bande d'un facteur mille sous les yeux
-   de qui rouvre le panneau. Retomber sur `unite` rend exactement le
-   comportement d'avant. */
-function simUniteBande(){
-  const cle=SIM.saisie.uniteBande||SIM.saisie.unite;
+/* Les unités de la bande S. LE REPLI SE FAIT EN CASCADE :
+   un état d'avant la séparation en trois porte `uniteBande`, on retombe
+   dessus, puis sur `unite`. */
+function simUniteBande1(){
+  const cle=SIM.saisie.uniteBande1||SIM.saisie.uniteBande||SIM.saisie.unite;
+  return SIM_UNITES.find(u=>u.cle===cle)||simUnite();
+}
+function simUniteBande2(){
+  const cle=SIM.saisie.uniteBande2||SIM.saisie.uniteBande||SIM.saisie.unite;
   return SIM_UNITES.find(u=>u.cle===cle)||simUnite();
 }
 
@@ -2272,7 +2276,13 @@ function simCoteSource(c,cle){
 
 function simDiscontinuites(res){
   const d=res.discontinuites||{};
-  const coudes=d.coudes||[], vias=d.transitions||[];
+  /* LES VIAS HORS PARCOURS ENTRENT DANS LA MÊME TABLE, et il le faut : c'est
+     là qu'on vient chercher « qu'est-ce que ce via me coûte ». Ils n'entrent
+     PAS dans la cascade — ils portent `cascade:false` —, et le tableau le dit
+     à la ligne près plutôt que dans une note générale : un chiffre qui n'est
+     pas dans la courbe et un chiffre qui y est ne se lisent pas pareil. */
+  const seuls=d.vias_hors_chaine||[];
+  const coudes=d.coudes||[], vias=(d.transitions||[]).concat(seuls);
   const n=coudes.length+vias.length;
 
   /* LE SILENCE EST UNE RÉPONSE, MAIS SEULEMENT SI ON LE DIT. Une liaison d'un
@@ -2290,11 +2300,17 @@ function simDiscontinuites(res){
   if(coudes.length)quoi.push(coudes.length+" coude"+(coudes.length>1?"s":""));
   if(vias.length)quoi.push(vias.length+" via"+(vias.length>1?"s":""));
 
-  let h='<p class="simVerdict dedans">Discontinuités cascadées'+
+  /* LE TITRE NE PEUT PLUS DIRE « CASCADÉES » TOUT COURT dès qu'une partie ne
+     l'est pas. Un en-tête qui affirme plus que le contenu est exactement le
+     genre de texte qu'on relit six mois plus tard en le croyant. */
+  let h='<p class="simVerdict dedans">'+
+        (seuls.length&&seuls.length===vias.length&&!coudes.length
+          ? "Discontinuités hors parcours"
+          : (seuls.length?"Discontinuités":"Discontinuités cascadées"))+
         " <span>"+quoi.join(", ")+"</span></p>";
 
   h+='<table class="simTab simTabD"><tr><th>Après</th><th>Type</th>'+
-     "<th>Détail</th><th>L</th><th>C</th><th>Phase</th></tr>";
+     "<th>Détail</th><th>Retour</th><th>L</th><th>C</th><th>Phase</th></tr>";
 
   const lignes=[];
   for(const c of coudes)
@@ -2303,14 +2319,32 @@ function simDiscontinuites(res){
                  m:c.modelise||{}, l:"inductance_pH", ul:" pH", dl:0});
   for(const t of vias){
     const c=t.cotes||{};
+    const horsChaine=t.cascade===false;
     const cotes=[simNb(c.hauteur_mm,3)+" mm",
                  "⌀"+simNb(c.percage_mm,2),
-                 "past. "+simNb(c.pastille_mm,2)].join(" · ");
-    lignes.push({rang:t.troncon, type:"Via",
+                 "past. "+simNb(c.pastille_mm,2)];
+    if(c.antipad_mm)cotes.push("anti. "+simNb(c.antipad_mm,2));
+    /* LE MOIGNON SE LIT SOUS LES COTES DU VIA, parce que c'est une cote du via
+       — celle qu'on ne voit pas sur le dessin. Sa RÉSONANCE part avec, et
+       c'est elle qui décide : une capacité en femtofarads ne dit pas si le
+       moignon est un problème, la fréquence à laquelle il court-circuite la
+       liaison, si. */
+    const moi=simMoignonTexte(t);
+    lignes.push({/* UN VIA HORS PARCOURS N'A PAS DE RANG DE TRONÇON : il ne
+                    tombe APRÈS rien. Le tri les met en queue, ce qui est leur
+                    place — on lit d'abord la chaîne, puis ce qui n'en est pas. */
+                 rang:horsChaine?Infinity:t.troncon,
+                 apres:horsChaine?"—":null,
+                 type:horsChaine?"Via <small>hors parcours</small>":"Via",
                  detail:simEsc((t.nom_depart||"?")+" → "+(t.nom_arrivee||"?"))+
-                        '<br><small>'+simEsc(cotes)+"</small>",
+                        '<br><small>'+simEsc(cotes.join(" · "))+"</small>"+moi,
                  m:t.modelise||{}, l:"inductance_nH", ul:" nH", dl:3,
-                 cotes:c});
+                 cotes:c, retour:simRetourCellule(t),
+                 /* LA CAPACITÉ AFFICHÉE EST CELLE QUI EST CASCADÉE : celle du
+                    via PLUS celle de ses moignons. Montrer la seule capacité
+                    du via à côté d'une phase qui compte les deux ferait deux
+                    chiffres pour une grandeur. */
+                 c:(t.modelise||{}).capacite_totale_fF});
   }
   lignes.sort((a,b)=>a.rang-b.rang);
 
@@ -2319,12 +2353,19 @@ function simDiscontinuites(res){
        aille chercher une cause là où il n'y en a pas. */
     const ph=L.m.phase_deg;
     const faible=isFinite(ph)&&Math.abs(ph)<0.1;
-    h+="<tr><td>tronçon "+L.rang+"</td>"+
+    /* UN VIA HORS PARCOURS N'A NI CAPACITÉ NI PHASE À MONTRER : rien de lui
+       n'entre dans une matrice ABCD, et afficher un zéro le ferait passer
+       pour mesuré. Un tiret dit « pas calculé » ; un zéro dit « négligeable »,
+       et ce n'est pas la même chose. */
+    const hors=L.apres==="—";
+    h+="<tr><td>"+(hors?"—":"tronçon "+L.rang)+"</td>"+
        "<td>"+L.type+"</td>"+
        "<td>"+L.detail+"</td>"+
+       "<td>"+(L.retour||"—")+"</td>"+
        "<td>"+simNb(L.m[L.l],L.dl)+L.ul+"</td>"+
-       "<td>"+simNb(L.m.capacite_fF,2)+" fF</td>"+
-       '<td class="'+(faible?"z0ok":"")+'">'+simNb(ph,2)+"°</td></tr>";
+       "<td>"+(hors?"—":simNb(L.c==null?L.m.capacite_fF:L.c,2)+" fF")+"</td>"+
+       '<td class="'+(faible&&!hors?"z0ok":"")+'">'+
+       (hors?"—":simNb(ph,2)+"°")+"</td></tr>";
   }
   h+="</table>";
 
@@ -2349,17 +2390,354 @@ function simDiscontinuites(res){
        " mm) et n'est pas supposée.</p>";
   }
 
-  /* CE QUE LE MODÈLE DE VIA EST, ET CE QU'IL N'EST PAS. Un π L-C localisé
-     décrit un via court devant la longueur d'onde. Il ne décrit ni le moignon
-     qui dépasse, ni le trou dans le plan que le via traverse, ni la cavité
-     entre deux plans d'alimentation. À 200 MHz sur une carte de 1,3 mm ces
-     trois-là ne pèsent rien ; en haut de bande, il faut le savoir. */
-  if(vias.length)
-    h+='<p class="simNote">· Le via est un π L-C localisé : le moignon qui '+
-       "dépasse, l'antipad dans le plan traversé et la cavité entre plans n'y "+
-       "sont pas. C'est bon tant que le via est court devant la longueur "+
-       "d'onde.</p>";
+  if(seuls.length)
+    h+='<p class="simNote">· '+
+       (seuls.length>1?seuls.length+" vias ne sont PAS dans la cascade":
+                       "Ce via n'est PAS dans la cascade")+
+       " : la sélection n'est pas un parcours unique — un net qui se ramifie "+
+       "n'en a pas —, et il n'y a donc pas d'ordre dans lequel les enchaîner. "+
+       "Ce qui est rendu ici ne dépend d'aucun ordre : la hauteur percée, les "+
+       "cotes, l'inductance de BOUCLE et le chemin de retour. Ce qui manque, "+
+       "et qui en dépendrait : la capacité cascadée, la phase, et la part "+
+       "que ce via prend dans la courbe S.</p>";
 
+  h+=simRetourNotes(vias);
+
+  /* CE QUE LE MODÈLE DE VIA EST, ET CE QU'IL N'EST PAS. Un π L-C localisé
+     décrit un via court devant la longueur d'onde. Il compte désormais
+     l'antipad de chaque plan traversé et l'inductance de BOUCLE avec les vias
+     de masse ; il ne décrit toujours ni le moignon qui dépasse, ni la cavité
+     entre deux plans. À 200 MHz sur une carte de 1,3 mm ces deux-là ne pèsent
+     rien ; en haut de bande, il faut le savoir. */
+  if(vias.length)
+    h+='<p class="simNote">· Le via est un π L-C localisé, chargé par ses '+
+       "moignons et par la traversée de cavité quand il y en a une. Ce qui "+
+       "n'y est pas : les résonances propres de la paire de plans, et le "+
+       "couplage entre deux vias voisins. C'est bon tant que le via est court "+
+       "devant la longueur d'onde.</p>";
+
+  return h;
+}
+
+/* ==========================================================================
+   CE QUE LE CHEMIN DE RETOUR DIT, EN UNE CELLULE ET EN QUELQUES NOTES
+   --------------------------------------------------------------------------
+   POURQUOI UNE COLONNE ENTIÈRE POUR ÇA. L'inductance d'un via n'existe pas
+   toute seule : c'est la BOUCLE qu'il forme avec ses vias de masse qui en
+   porte une. Afficher « 1,29 nH » sans dire d'où ce chiffre sort laisse croire
+   qu'il décrit la carte, alors qu'il peut décrire un conducteur seul — un
+   chiffre qui ne dépend pas du routage, posé au milieu d'un tableau qui juge
+   le routage.
+
+   TROIS ÉTATS, ET ILS NE SE CONFONDENT PAS :
+     · « 2 vias · 0,6 mm » — la boucle est refermée, le chiffre dépend du
+       placement, et le rapprocher le fera baisser ;
+     · « aucun » — rien ne referme la boucle. Le chiffre est une self, il ne
+       bougera pas quoi qu'on route ;
+     · « ⚠ GND→PWR » — la référence change et aucun via de masse ne peut la
+       rejoindre. C'est le seul cas où la réponse n'est pas un chiffre mais un
+       conseil : ne pas changer de référence.
+   ========================================================================== */
+/* Le moignon, sous les cotes du via. Absent quand il n'y en a pas — et DIT
+   quand on ne peut pas savoir : une page qui n'envoie pas la portée percée
+   n'est pas une carte sans moignon, et choisir le silence reviendrait à
+   retenir le cas le plus flatteur par défaut. */
+function simMoignonTexte(t){
+  const mo=t.moignons||{};
+  if(mo.incoherent)
+    return '<br><small class="z0ko">portée percée incohérente</small>';
+  if(!mo.connu)
+    return '<br><small class="simFaible">moignon inconnu</small>';
+  const bouts=[mo.depart,mo.arrivee].filter(Boolean);
+  if(!bouts.length)return "";
+  return "<br><small>"+bouts.map(f=>
+    "moignon "+simNb(f.longueur_mm,3)+" mm · rés. "+
+    simNb((f.resonance_hz||0)/1e9,1)+" GHz").join(" · ")+"</small>";
+}
+
+function simRetourCellule(t){
+  const r=t.retour||{}, cav=t.cavite||{};
+  /* LE COÛT CHIFFRÉ PASSE AVANT TOUT : quand on sait ce que la traversée coûte,
+     c'est cela qu'il faut lire, pas un avertissement. En OHMS et non en
+     nanohenrys : la cavité n'est pas une inductance, elle résonne — la
+     capacité répartie des plans et l'inductance du découplage forment une
+     résonance parallèle où l'impédance culmine. */
+  if(cav.impedance_fc_ohm!=null)
+    return '<span class="z0ko">cavité</span><br><small>'+
+           simNb(cav.impedance_fc_ohm,2)+" Ω</small>";
+  if(r.reference_change)
+    return '<span class="z0ko">⚠ '+
+           simEsc((r.nets_depart||r.plans_depart||["?"]).join("/")+"→"+
+                  (r.nets_arrivee||r.plans_arrivee||["?"]).join("/"))+"</span>";
+  /* LE DOUTE A SA PROPRE CASE, et il ne se confond ni avec le défaut ni avec
+     le cas sain : deux plans de noms différents dont on ignore les nets
+     peuvent être deux masses (ordinaire) ou une masse et une alimentation
+     (grave), et rien ici ne permet de trancher. */
+  if(r.plan_change&&r.nets_differents==null)
+    return '<span class="simFaible">? '+
+           simEsc((r.plans_depart||["?"]).join("/")+"→"+
+                  (r.plans_arrivee||["?"]).join("/"))+"</span>";
+  if(r.source==="absent")
+    return '<span class="simFaible">non envoyé</span>';
+  if(!r.retenus)
+    return '<span class="z0ko">aucun</span>';
+  const proche=(r.vias||[]).filter(v=>v.retenu)
+                           .reduce((m,v)=>Math.min(m,v.distance_mm),Infinity);
+  return '<span class="z0ok">'+r.retenus+" via"+(r.retenus>1?"s":"")+
+         "</span><br><small>"+simNb(proche,2)+" mm</small>";
+}
+
+/* ==========================================================================
+   LE CHEVELU, LU DANS LE RÉSULTAT
+   --------------------------------------------------------------------------
+   DEUX PAGES, DEUX SOURCES, ET C'EST VOULU. L'éditeur PCB dessine son chevelu
+   pendant qu'on ROUTE : il le recalcule à chaque déplacement du via, sans rien
+   demander au serveur — un outil de routage qui attendrait un calcul ne
+   servirait à rien. La visionneuse, elle, lit une carte DÉJÀ FAITE : rien n'y
+   bouge, et le seul chevelu qui vaille est celui que le modèle a réellement
+   employé. Elle le lit donc dans le résultat.
+
+   ET C'EST LA MEILLEURE SOURCE POUR ELLE. Le serveur a déjà tranché : quels
+   vias de masse referment la boucle, lesquels ne le peuvent pas et pourquoi,
+   quelle part du courant chacun porte, ce que vaut la boucle. Le recalculer
+   côté page donnerait une seconde implémentation de la même physique — et deux
+   implémentations d'une même grandeur finissent toujours par en donner deux
+   valeurs. Ce qu'on dessine ici est, au trait près, ce que la fiche chiffre.
+
+   Rend une liste, une entrée par via de signal dont on connaît la position.
+   Les coordonnées sont en MILLIMÈTRES : c'est l'unité du document envoyé, et
+   chaque page la ramène à la sienne. */
+function simCheveluRes(){
+  if(typeof SIM==="undefined"||!SIM.ouvert||SIM.analyse!=="impedance")return [];
+  const r=SIM.res;
+  if(!r)return [];
+  /* LES DEUX LISTES, ET C'EST TOUT L'OBJET DU LOT. Les `transitions` sont les
+     vias que la CHAÎNE a vus — ceux qui tombent entre deux tronçons
+     consécutifs d'un parcours unique. `vias_hors_chaine` porte les autres :
+     sur un net qui se ramifie il n'y a pas de parcours, donc pas une seule
+     transition, et pourtant les vias sont là. Leur chemin de retour ne doit
+     rien à l'ordre des tronçons, et le chevelu se dessine pareil.
+
+     LE SEUL ÉCART EST `cascade` : un via hors parcours ne figure dans aucune
+     matrice ABCD, la courbe S ne le porte pas, et la fiche doit le dire
+     plutôt que de laisser croire qu'il y entre. */
+  const d=r.discontinuites||{};
+  const trs=(d.transitions||[]).concat(d.vias_hors_chaine||[]);
+  const out=[];
+  for(const t of trs){
+    const ret=t.retour||{}, mod=t.modelise||{}, cotes=t.cotes||{};
+    /* SANS POSITION, PAS DE TRAIT. Une page qui n'envoie pas le via ne peut
+       pas se voir dessiner son chevelu, et l'inventer au raccord serait poser
+       un point là où l'outil n'en connaît aucun. */
+    if(ret.x==null||ret.y==null)continue;
+    out.push({
+      x:ret.x, y:ret.y,
+      pastille:cotes.pastille_mm||0,
+      vias:ret.vias||[],
+      retenus:ret.retenus||0,
+      L_nH:mod.inductance_nH||0,
+      /* « boucle » dans la source veut dire qu'un retour la referme —
+         « self », « self+cavite » veulent dire que non, et le chiffre est
+         alors un PLANCHER, pas une mesure. */
+      seul:String(mod.inductance_source||"").indexOf("boucle")<0,
+      change:!!ret.reference_change,
+      doute:!!(ret.plan_change&&ret.nets_differents==null),
+      plans:(ret.plans_depart||[]).join("/")+" → "+
+            (ret.plans_arrivee||[]).join("/"),
+      /* `cascade` absent vaut VRAI : les transitions ne le portent pas, et
+         elles sont bien cascadées. Seuls les vias hors parcours le posent, et
+         à faux. */
+      cascade:t.cascade!==false,
+      /* L'IPC-2581 ne déclare pas la portée d'un perçage : les retours y sont
+         SUPPOSÉS traversants. Un via enterré pris pour traversant rend une
+         inductance trop petite de près de vingt pour cent, donc flatteuse — le
+         chevelu doit le dire, sinon il donne à voir une certitude qu'il n'a
+         pas. */
+      supposee:!!ret.portee_supposee
+    });
+  }
+  return out;
+}
+
+/* La couleur d'un lien, par sa part du courant de retour. Le vert du panneau
+   pour celui qui travaille, l'ambre pour celui qui traîne, le gris pour celui
+   qui ne rend presque rien, le rouge pour celui qui ne ferme pas. Ce sont les
+   couleurs de la carte de chaleur des impédances, et c'est voulu : une même
+   échelle pour un même jugement. */
+function simRetourCouleurRes(f){
+  if(!f.retenu)return "#e8564a";
+  const part=f.part||0;
+  if(part>=0.30)return "#49c07a";
+  if(part>=0.10)return "#e0a63c";
+  return "#7d8590";
+}
+
+function simRetourNotes(vias){
+  if(!vias.length)return "";
+  let h="";
+  const graves=vias.filter(t=>(t.retour||{}).reference_change
+                              &&!(t.retour||{}).raccorde
+                              &&(t.cavite||{}).impedance_fc_ohm==null
+                              &&!(t.cavite||{}).etalement_seul);
+  const cavites=vias.filter(t=>(t.cavite||{}).plan_haut);
+  const doutes=vias.filter(t=>(t.retour||{}).plan_change
+                              &&!(t.retour||{}).reference_change
+                              &&(t.retour||{}).nets_differents==null);
+  const moignons=vias.filter(t=>((t.moignons||{}).depart)
+                                ||((t.moignons||{}).arrivee));
+  const flousM=vias.filter(t=>(t.moignons||{}).connu===false);
+  const nus=vias.filter(t=>(t.retour||{}).source==="self"
+                           &&!(t.retour||{}).reference_change);
+  const muets=vias.filter(t=>(t.retour||{}).source==="absent");
+  const flous=vias.filter(t=>(t.retour||{}).plans_incertains);
+
+  /* LE DÉFAUT GRAVE EN PREMIER, ET SEUL DE SON ESPÈCE. Il ne se corrige pas
+     avec un via de plus : un via de masse joint de la masse à de la masse. */
+  if(graves.length){
+    const r=graves[0].retour;
+    h+='<p class="simNote simAlerte">· <b>Le plan de référence change</b> à '+
+       (graves.length>1?graves.length+" vias":"ce via")+" — "+
+       simEsc((r.plans_depart||["?"]).join("/"))+" d'un côté, "+
+       simEsc((r.plans_arrivee||["?"]).join("/"))+" de l'autre — et aucun via "+
+       "de masse ne joint les deux. Le courant de retour passe par la cavité "+
+       "entre plans et ses condensateurs de découplage, absents de ce modèle : "+
+       "l'inductance réelle est plus grande, donc |S₁₁| est meilleur ici qu'il "+
+       "ne le sera sur la carte. Un via de masse n'y peut rien — il joindrait "+
+       "de la masse à de la masse. La réponse est de garder la même référence "+
+       "des deux côtés du via.</p>";
+  }
+  /* « PLANCHER » N'EST PAS UNE PRÉCAUTION DE STYLE. Sans retour identifié, le
+     courant revient quand même — par le cuivre des plans, plus loin. La self
+     partielle est ce que vaudrait la boucle si le retour était collé au via :
+     la vraie valeur est plus grande, jamais plus petite. Annoncer un chiffre
+     tout court laisserait croire qu'on a mesuré la carte. */
+  /* LE DOUTE EST UNE RÉPONSE, ET IL DOIT ÊTRE LISIBLE COMME TELLE. Deux plans
+     de NOMS différents ne sont pas deux plans de NETS différents : « TOP se
+     réfère à In1, BOT se réfère à In2 » est le cas ordinaire d'une carte
+     quatre couches, qu'un via de masse referme si les deux sont de la masse.
+     Trancher au vu des seuls noms faisait crier au défaut grave sur toute
+     carte correcte dont l'empilage ne nomme pas ses nets. */
+  if(doutes.length){
+    const r=doutes[0].retour;
+    h+='<p class="simNote">· Le plan de référence change à '+
+       (doutes.length>1?doutes.length+" vias":"ce via")+" — "+
+       simEsc((r.plans_depart||["?"]).join("/"))+" d'un côté, "+
+       simEsc((r.plans_arrivee||["?"]).join("/"))+" de l'autre — et "+
+       "<b>on ne peut pas dire si c'est grave</b> : l'empilage ne déclare pas "+
+       "le net de ces plans. Deux plans de MASSE sont le cas ordinaire, qu'un "+
+       "via de masse referme ; une masse et une alimentation sont le défaut "+
+       "que rien ne referme. Renseigner le net des plans tranche.</p>";
+  }
+  if(cavites.length){
+    const cav=cavites[0].cavite;
+    /* CE QUE LE RETOUR TRAVERSE, ET PAR OÙ. Un via de masse ne peut PAS joindre
+       deux plans de nets différents ; le courant passe par la capacité
+       répartie des deux plans et par les découplages qui les joignent. C'est
+       la section 7.14 de Bogatin : le plan intermédiaire, même flottant, porte
+       des courants induits qui referment la boucle. Il n'y a jamais « pas de
+       chemin » — il y a un chemin dont on connaît plus ou moins bien le prix. */
+    h+='<p class="simNote">· Le retour change de plan — '+
+       simEsc(cav.plan_haut+" → "+cav.plan_bas)+", "+simNb(cav.hauteur_mm,3)+
+       " mm entre eux. <b>Aucun via de masse ne peut les joindre</b> : il "+
+       "joindrait de la masse à de la masse. Le courant passe par la capacité "+
+       "répartie des deux plans ("+simNb(cav.capacite_plans_pF,0)+" pF"+
+       (cav.aire_source==="page"?"":", aire supposée")+") et par les "+
+       "découplages.</p>";
+    if(cav.etalement_seul){
+      h+='<p class="simNote">· Cette page ne cherche pas les découplages : on '+
+         "ne compte que l'étalement dans les plans ("+
+         simNb(cav.etalement_cavite_nH,2)+" nH), et la traversée est donc "+
+         "<b>sous-estimée</b>.</p>";
+    }else{
+      h+='<p class="simNote">· La traversée pèse <b>'+
+         simNb(cav.impedance_fc_ohm,2)+" Ω</b> à f₀, cascadés dans le "+
+         "résultat"+
+         (cav.borne
+           ? " — mais aucun découplage n'a été trouvé dans "+
+             simNb(cav.rayon_mm,1)+" mm : on a supposé le plus proche <b>à ce "+
+             "rayon</b>, ce qui est un <b>minorant</b>."
+           : ", par "+simEsc(cav.pont.repere||"le découplage le plus proche")+
+             " à "+simNb(cav.pont.distance_mm,2)+" mm.")+
+         " Elle se décompose en "+simNb(cav.etalement_nH,2)+
+         " nH d'étalement dans les plans (Bogatin éq. 13-35) et "+
+         simNb(cav.esl_nH,2)+" nH de montage du condensateur"+
+         (cav.esl_source==="page"?"":", supposés")+".</p>";
+      /* LE CONSEIL N'EST PAS CELUI QU'ON ATTEND, et c'est pour cela qu'il est
+         écrit. L'étalement croît LINÉAIREMENT avec l'écart entre plans et
+         seulement en LOGARITHME avec la distance au condensateur. */
+      h+='<p class="simNote">· Rapprocher le découplage ne gagne qu\'en '+
+         "logarithme ; amincir le diélectrique entre les deux plans gagne "+
+         "proportionnellement. L'impédance de la paire de plans vaut ici "+
+         simNb(cav.impedance_plans_ohm,2)+" Ω — c'est elle qu'il faut comparer "+
+         "à celle de la ligne pour savoir si la traversée compte.</p>";
+    }
+  }
+  if(moignons.length){
+    const f=(moignons[0].moignons.arrivee||moignons[0].moignons.depart);
+    h+='<p class="simNote">· '+
+       (moignons.length>1?moignons.length+" vias laissent":"Le via laisse")+
+       " un <b>moignon</b> — la part du perçage que le signal n'emprunte pas. "+
+       "Il pend en circuit ouvert et charge la liaison : "+
+       simNb(f.longueur_mm,3)+" mm valent "+simNb(f.capacite_fF,0)+
+       " fF ici. À sa résonance quart d'onde ("+
+       simNb((f.resonance_hz||0)/1e9,1)+" GHz) il la <b>court-circuite</b>. "+
+       "Un via enterré ou un contre-perçage l'enlèvent.</p>";
+  }
+  if(flousM.length)
+    h+='<p class="simNote">· La portée percée des vias n\'est pas envoyée par '+
+       "cette page : on ne peut pas savoir s'ils laissent un moignon. Un via "+
+       "traversant utilisé jusqu'à une couche interne et un via enterré bien "+
+       "ajusté ont ici exactement la même apparence.</p>";
+  if(nus.length)
+    h+='<p class="simNote">· Aucun via de masse ne referme la boucle à '+
+       (nus.length>1?nus.length+" vias":"ce via")+" : le chiffre affiché est "+
+       "la self d'un conducteur seul, c'est-à-dire un <b>plancher</b> — la "+
+       "boucle réelle vaut davantage — et il <b>ne dépend pas du routage</b>.</p>";
+  if(muets.length)
+    h+='<p class="simNote">· Les vias de masse voisins ne sont pas envoyés par '+
+       "cette page : le chiffre affiché est la self d'un conducteur seul, un "+
+       "<b>plancher</b> qui ne dépend pas de leur placement.</p>";
+  if(flous.length)
+    h+='<p class="simNote">· L\'empilage ne déclare pas le net de ses plans : '+
+       "on ne peut pas distinguer un plan de masse d'un plan d'alimentation, "+
+       "et les vias de retour sont acceptés sans cette vérification. Renseigner "+
+       "le net des plans lèverait le doute.</p>";
+
+  /* LA PORTÉE SUPPOSÉE. L'IPC-2581 ne déclare pas les couches d'un perçage :
+     un via enterré pris pour traversant rend une inductance trop PETITE de
+     près de vingt pour cent, donc flatteuse. Le dire est tout ce qu'on peut
+     faire, et c'est mieux que de rendre la visionneuse aveugle. */
+  if(vias.some(t=>(t.retour||{}).portee_supposee))
+    h+='<p class="simNote">· La portée des vias de masse est <b>supposée '+
+       "traversante</b> : le format ne déclare pas les couches d'un perçage. "+
+       "Un via enterré compté comme traversant donnerait une inductance trop "+
+       "faible.</p>";
+
+  /* LA RÉPARTITION DU COURANT, quand il y a de quoi la montrer. Elle dit
+     LEQUEL des vias travaille — et donc lequel ne sert à rien là où il est. */
+  const partages=vias.filter(t=>((t.retour||{}).retenus||0)>1);
+  if(partages.length){
+    const r=partages[0].retour;
+    const parts=(r.vias||[]).filter(v=>v.retenu)
+      .map(v=>simNb(v.distance_mm,2)+" mm : "+Math.round(100*v.part)+" %");
+    h+='<p class="simNote">· Les vias de retour ne se partagent pas le courant '+
+       "à parts égales — leur mutuelle les en empêche, et c'est pourquoi trois "+
+       "vias ne divisent pas l'inductance par trois. Au tronçon "+
+       partages[0].troncon+" : "+simEsc(parts.join(" · "))+".</p>";
+  }
+
+  /* LA FOURCHETTE D'ANTIPAD, quand les plans traversés n'ont pas la même
+     règle. Le calcul prend le plus serré ; le taire donnerait un chiffre exact
+     à l'air d'être le seul possible. */
+  const fourchette=vias.filter(t=>(t.cotes||{}).antipad_max
+                                  &&(t.cotes||{}).antipad_max>(t.cotes||{}).antipad_mm);
+  if(fourchette.length){
+    const c=fourchette[0].cotes;
+    h+='<p class="simNote">· Les plans traversés n\'ont pas la même règle '+
+       "d'isolation : l'antipad va de "+simNb(c.antipad_mm,2)+" à "+
+       simNb(c.antipad_max,2)+" mm. La capacité est calculée au plus serré, "+
+       "c'est-à-dire au plus capacitif.</p>";
+  }
   return h;
 }
 
@@ -2667,10 +3045,10 @@ function simCorpsImpedance(){
   '<div class="pnl-bar simBarF">'+
     '<span class="pnl-lbl">Bande S</span>'+
     simChamp("simF1","Début de bande, dans l'unité choisie à droite")+
+    simChampUnite("simFUniteBande1","le début de la bande S")+
     '<span class="simSep">→</span>'+
     simChamp("simF2","Fin de bande, dans l'unité choisie à droite")+
-    simChampUnite("simFUniteBande","la bande S — elle est indépendante de "+
-                                   "celle de f₀")+
+    simChampUnite("simFUniteBande2","la fin de la bande S")+
     '<span class="simGr"><span class="pnl-lbl">Points</span>'+
     simChamp("simN","Nombre de points de la courbe S")+"</span>"+
   '</div>'+
@@ -2701,17 +3079,19 @@ function simNbLibre(v){
 
 function simSaisieEcrire(){
   const s=SIM.saisie, pose=(id,v)=>{const e=simEl(id);if(e)e.value=v;};
-  const k=simUnite().f, kb=simUniteBande().f;
-  pose("simF1",simNbLibre(s.f1/kb));
-  pose("simF2",simNbLibre(s.f2/kb));
+  const k=simUnite().f, kb1=simUniteBande1().f, kb2=simUniteBande2().f;
+  pose("simF1",simNbLibre(s.f1/kb1));
+  pose("simF2",simNbLibre(s.f2/kb2));
   pose("simFc",simNbLibre(s.fc/k));
   pose("simN",s.points); pose("simZ0",s.z0);
   pose("simZCible",String(s.cible).replace(".",","));
   pose("simZTol",String(s.tolPct).replace(".",","));
   const sel=simEl("simFUnite");
   if(sel)sel.value=simUnite().cle;
-  const selb=simEl("simFUniteBande");
-  if(selb)selb.value=simUniteBande().cle;
+  const selb1=simEl("simFUniteBande1");
+  if(selb1)selb1.value=simUniteBande1().cle;
+  const selb2=simEl("simFUniteBande2");
+  if(selb2)selb2.value=simUniteBande2().cle;
   simZTolEcrire();
   simFAvertEcrire();
 }
@@ -2729,11 +3109,11 @@ function simSaisie(){
     const v=el?parseFloat(String(el.value).replace(",",".")):NaN;
     return (isFinite(v)&&v>=(mini==null?0:mini))?v:defaut;
   };
-  const s=SIM.saisie, k=simUnite().f, kb=simUniteBande().f;
+  const s=SIM.saisie, k=simUnite().f, kb1=simUniteBande1().f, kb2=simUniteBande2().f;
   /* LE PLANCHER SUIT SON PROPRE CHAMP : un hertz reste un hertz, mais il ne
      s'écrit pas pareil selon la case, et les deux cases n'ont plus la même. */
-  s.f1=lu("simF1",s.f1/kb,1/kb)*kb;
-  s.f2=lu("simF2",s.f2/kb,1/kb)*kb;
+  s.f1=lu("simF1",s.f1/kb1,1/kb1)*kb1;
+  s.f2=lu("simF2",s.f2/kb2,1/kb2)*kb2;
   s.fc=lu("simFc",s.fc/k,1/k)*k;
   s.points=Math.round(lu("simN",s.points,1));
   s.z0=lu("simZ0",s.z0,1);
@@ -2749,7 +3129,9 @@ function simSaisie(){
 function simUniteChanger(cle,laquelle){
   if(!SIM_UNITES.some(u=>u.cle===cle))return;
   simSaisie();                       // fige ce qui est écrit, ancienne unité
-  if(laquelle==="bande")SIM.saisie.uniteBande=cle;
+  if(laquelle==="bande1")SIM.saisie.uniteBande1=cle;
+  else if(laquelle==="bande2")SIM.saisie.uniteBande2=cle;
+  else if(laquelle==="bande")SIM.saisie.uniteBande=cle;
   else                  SIM.saisie.unite=cle;
   simSaisieEcrire();                 // le réécrit dans la nouvelle
 }
@@ -3071,8 +3453,10 @@ function simBrancherImpedance(){
      réécrit les mêmes hertz dans une autre case. C'est la différence avec les
      champs ci-dessus, et c'est ce qui permet de la choisir après coup. */
   pose("simFUnite","onchange",function(){simUniteChanger(this.value,"fc");});
-  pose("simFUniteBande","onchange",
-       function(){simUniteChanger(this.value,"bande");});
+  pose("simFUniteBande1","onchange",
+       function(){simUniteChanger(this.value,"bande1");});
+  pose("simFUniteBande2","onchange",
+       function(){simUniteChanger(this.value,"bande2");});
 }
 
 /* La sélection a bougé — ou la carte. L'outil appelle, le panneau suit.

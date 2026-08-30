@@ -727,6 +727,13 @@ function paint(c,dpr,w,h,noGrid){
      jugent le tracé —, et jamais en même temps qu'elle : `simDCActif()` exige
      l'onglet DC, `simZActif()` l'onglet impédance. */
   if(!noGrid&&typeof simDCTrace==="function")simDCTrace(c,S.active);
+  /* Le CHEVELU DU CHEMIN DE RETOUR : les vias de masse qui referment la boucle
+     d'un via de signal sélectionné, et l'inductance qu'ils lui donnent
+     (19-simulation.js). Il passe APRÈS les deux cartes de chaleur — il désigne
+     des objets, il ne décrit pas le cuivre — et avant la cote et le phare, qui
+     désignent un point. Absent du .png exporté, comme eux : il montre une
+     décision de routage, pas la carte. */
+  if(!noGrid&&typeof simRetourTrace==="function")simRetourTrace(c,dpr);
   /* L'étiquette de la sonde, tout au-dessus de la carte de chaleur : elle
      désigne un point, elle ne décrit pas le cuivre. Comme la cote, elle est
      absente du .png exporté. */

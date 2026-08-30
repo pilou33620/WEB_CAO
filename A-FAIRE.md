@@ -27,17 +27,17 @@ et la nature d'un via — traversant, borgne dessus/dessous, enterré — choisi
 panneau Propriétés, sur un via comme sur toute une sélection (`viaSetKind`,
 [editeur-pcb/js/01-core.js:340](editeur-pcb/js/01-core.js:340)).
 
-## État des lieux au 2026-08-29
+## État des lieux au 2026-08-30
 
-Ce que le dépôt fait tourner, et ce qui le mesure. **588 essais, tous passés.**
+Ce que le dépôt fait tourner, et ce qui le mesure. **793 essais, tous passés.**
 
 | Partie | État | Ce qui la mesure |
 | --- | --- | --- |
-| Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire | en service | 402 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
+| Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire | en service | 498 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
 | Éditeur schématique | en service ; **ni bus ni feuilles hiérarchiques** | — |
-| Visionneuse IPC-2581 | en service | 30 essais ([harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)) + 42 ([banc-essai.py](visionneuse-ipc2581/test/banc-essai.py)) |
-| **SI — impédance** (`ligne_mom`) | en service, 0,3 à 0,4 % contre les étalons | 60 cas, [banc-ligne-mom.py](python/test/banc-ligne-mom.py) |
-| **PI — chute DC** (`dc_solver`) | **solveur fait et mesuré ; aucun outil ne l'alimente** | 16 cas, [banc-dc.py](python/test/banc-dc.py) |
+| Visionneuse IPC-2581 | en service ; **arcs comptés, parcours chaîné, chevelu du retour** | 69 essais ([harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)) + 42 ([banc-essai.py](visionneuse-ipc2581/test/banc-essai.py)) |
+| **SI — impédance** (`ligne_mom`) | en service, 0,3 à 0,4 % contre les étalons ; **vias : boucle de retour, antipads, moignons, traversée de plans** | 94 cas, [banc-ligne-mom.py](python/test/banc-ligne-mom.py) |
+| **PI — chute DC** (`dc_solver`) | **solveur fait et mesuré ; aucun outil ne l'alimente** | 34 cas, [banc-dc.py](python/test/banc-dc.py) |
 | Moteur 2,5D pleine onde (`mom_solver`) | **port vertical fait ; ε_eff dé-embarqué à 0,93 % de `ligne_mom`** | 56 essais, [mom_solver/tests/](mom_solver/tests) |
 | Passerelle MCP, projets, profils, repérage, cross-probing | en service | — |
 
@@ -1283,6 +1283,467 @@ le silence expliqué, la phase négligeable marquée ; et quatre dans
 [visionneuse-ipc2581/test/harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)
 — le trou déclaré, les deux pastilles qui valent un tube, le trou nu qui ne
 joint rien, et le raccord sans rien.
+
+
+
+### Le chemin de retour du courant — FAIT le 2026-08-30
+
+**CE QUI ÉTAIT FAUX, ET DANS QUEL SENS.** Un via était chiffré par une
+inductance **partielle propre** : celle d'un conducteur seul, sans dire par où
+le courant revient. Or un courant revient toujours, et c'est la **surface de
+boucle** qu'il enferme qui porte l'inductance. Deux cartes identiques à ceci
+près que l'une a son via de masse à 0,4 mm et l'autre à 3 mm rendaient donc le
+**même** |S₁₁| — alors qu'elles diffèrent d'un facteur deux, et que le
+placement de ce via est justement la décision que l'outil devrait éclairer.
+
+**1. L'inductance est celle de la boucle, calculée exactement.**
+`inductance_boucle_vias` ([python/ligne_mom.py](python/ligne_mom.py)) résout la
+matrice d'inductance partielle du via de signal et de ses retours.
+
+- **Grover exact, pas l'approximation des manuels.** `L = (µ₀h/π)·ln(2s/d)`
+  suppose h ≫ s ; sur une carte h vaut 1,5 mm et s 0,6, le rapport vaut 2,6, et
+  l'approximation **surestime de 21 %** — de 56 % à 3 mm. La forme exacte de
+  Grover vaut à tout rapport ; mesurée contre l'approximation à h/s = 257, elle
+  la rejoint à **0,2 %**.
+- **Le RGM est le rayon, non 0,7788 r** : un via au-dessus de quelques
+  mégahertz est en régime de peau, tout son courant est en surface.
+- **La répartition du courant se RÉSOUT, elle ne se postule pas.** Le signal
+  porte +1 A, les retours se partagent −1 A en proportions inconnues ; à haute
+  fréquence le courant minimise l'énergie magnétique, donc l'inductance
+  elle-même. C'est un système linéaire sous contrainte Σaₖ = 1, résolu par
+  multiplicateur de Lagrange. Conséquences mesurées : ne garder que le via le
+  plus proche **surestime de 31 %** sur le cas à trois vias ; et trois vias
+  serrés ne divisent **pas** l'inductance par trois — leur mutuelle les en
+  empêche, on plafonne vers un facteur deux quel que soit leur nombre.
+- **Le courant doit se refermer, et c'est une condition.** Un via de masse
+  borgne qui ne couvre que la moitié de la hauteur ne referme rien. Nourrir la
+  formule avec lui rend un nombre **plus petit de 18 %** que la vérité — le
+  pire défaut possible, puisqu'il flatte. La fonction lève plutôt que de le
+  rendre, et l'appelant écarte le via en disant pourquoi.
+
+**2. Le plan de référence qui change est le défaut grave, et il est nommé.**
+Sur un empilage TOP/GND/PWR/BOT, une piste sur TOP se réfère à GND et la même
+piste sur BOT se réfère à PWR. Le courant de retour doit changer de plan — et
+**aucun via de masse ne sait faire cela** : il joindrait de la masse à de la
+masse. Le retour passe par la cavité entre plans et ses condensateurs de
+découplage, absents de ce modèle. Coût mesuré : jusqu'à **7 dB de |S₁₁| à
+3 GHz**, toujours en flattant.
+
+`_analyse_retour` ([python/simulation_em.py](python/simulation_em.py)) sépare
+**deux questions qui n'en font pas une** : « la référence change-t-elle ? » est
+une propriété de l'empilage ; « un via la rejoint-il ? » est une propriété du
+routage. Une référence qui change et qu'un via rejoint est le cas ordinaire —
+l'alerte ne sort pas. Les confondre sous un seul drapeau ferait crier sur le
+cas ordinaire, et on cesserait de lire l'avertissement qui compte.
+
+**3. La capacité comptait les deux pastilles, à la mauvaise distance.** Elles
+étaient prises à la **hauteur du via** — 1,34 mm — alors qu'une pastille voit
+le plan qui lui fait face à 0,2 mm : facteur sept, dans le sens qui rassure. Et
+les **antipads**, un par plan traversé, ne l'étaient pas du tout. Mesuré sur le
+via traversant du banc : de **4,70 fF à 86,8 fF** pastilles internes retirées,
+**117,1 fF** conservées. L'impédance caractéristique du via tombe de 525 à
+96 Ω — invisible à 200 MHz, dominante au-delà de deux gigahertz.
+
+La forme logarithmique est gardée : la formule industrielle
+`C = 1,41·εr·T·D1/(D2−D1)` est le coaxial où `ln(D2/D1)` a été remplacé par
+`(D2−D1)/D1`, et elle **sous-estime d'un facteur 1,9** sur un antipad de 0,8 mm
+autour d'un barreau de 0,25.
+
+**4. Un défaut de cascade trouvé au passage, et il datait du lot 3b.** Les
+discontinuités étaient posées **après** la ligne du tronçon d'arrivée, alors
+qu'elles portent son rang parce qu'elles le **précèdent**. Chacune était donc
+décalée d'un tronçon vers la sortie, et la dernière sortait du parcours : sur
+une liaison à trois tronçons et deux vias — le cas des captures — le second via
+tombait **au-delà du port 2**. Personne ne l'avait vu parce qu'il faut trois
+tronçons pour que cela se voie : sur deux tronçons de même impédance les deux
+ordres donnent exactement le même |S₁₁| (une ligne uniforme et un réseau en π
+sont tous deux symétriques). Mesuré à trois tronçons : 0,34 dB et 2,7° à 3 GHz.
+
+**5. Le chevelu — la question « faut-il le rapprocher ? » a une réponse.**
+Cliquer un via de signal, panneau ouvert sur l'impédance, trace un lien vers
+chaque via de masse à portée (`simRetourTrace`,
+[editeur-pcb/js/19-simulation.js](editeur-pcb/js/19-simulation.js)) :
+l'inductance de boucle au pied du via, **l'épaisseur du trait dit la part du
+courant** que ce retour porte, et un trait pointillé rouge porte la raison pour
+laquelle un voisin ne compte pas. Un via de **masse** sélectionné n'ouvre rien :
+il n'a pas de boucle à lui, il *est* le retour de quelqu'un d'autre.
+
+**LA PHYSIQUE EST DUPLIQUÉE EN JS, ET C'EST TENU.** Un chevelu qui demande un
+aller-retour au serveur à chaque mouvement de souris n'est pas un chevelu. Le
+banc de l'éditeur exige que `simBoucleVias` rende, au dixième de picohenry,
+**exactement** ce que rend `ligne_mom.inductance_boucle_vias` sur la même
+géométrie — les valeurs attendues viennent du banc Python. Le jour où l'une des
+deux dérive, l'essai tombe.
+
+**6. Sans retour identifié, le chiffre est annoncé comme un PLANCHER.** Il n'y
+a alors pas d'inductance de boucle à rendre : le courant revient quand même,
+mais par un chemin inconnu — le cuivre des plans, plus loin. On rend la self
+partielle, qui est la valeur qu'aurait la boucle si le retour était collé au
+via : une **borne inférieure**, écrite « L ≥ » et non « L = ». `inductance_via`
+— la règle de pouce des manuels, `(µ₀h/2π)(ln(4h/d)+1)` — **sort du chemin de
+calcul** : ce n'est ni une self partielle ni une boucle, c'est la self de
+Grover où le −1 a été changé en +1, et l'écart est un retour implicite jamais
+dit qui vaut près du double.
+
+**Ce que les deux pages envoient désormais** : la **position** du via — sans
+elle aucun écart n'est mesurable —, le diamètre d'**antipad** (côté éditeur,
+`v.d + 2·clrK(...)`, exactement ce qui creuse le Gerber), et la liste des vias
+de masse à 3 mm. Côté visionneuse, la **portée est supposée traversante** et le
+dit : l'IPC-2581 déclare la position, le diamètre et le net d'un perçage, mais
+pas ses couches.
+
+~~**Ce qui reste hors modèle**~~ **FAIT le 2026-08-30** : le moignon et la
+cavité sont désormais cascadés — voir « Le moignon et la cavité » plus bas. Ce
+qui reste vraiment hors modèle : les résonances propres de la paire de plans,
+et le couplage entre deux vias voisins.
+
+**Non-régression, écrite** : onze cas dans
+[python/test/banc-ligne-mom.py](python/test/banc-ligne-mom.py) — la référence
+qui change nommée, la même carte à deux plans de masse qui se referme, la
+monotonie et l'ampleur contre l'écartement, trois vias qui comptent pour trois,
+le retour borgne écarté, le via d'un autre net écarté, la page muette et
+l'empilage sans net de plan distingués, l'antipad qui entre dans la capacité,
+la fiche qui porte le même via que la courbe, et la discontinuité posée entre
+les deux tronçons ; treize dans
+[editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) — dont la physique
+JS épinglée sur celle de Python ; cinq dans
+[visionneuse-ipc2581/test/harness-sim.js](visionneuse-ipc2581/test/harness-sim.js).
+
+**Un défaut trouvé hors sujet et corrigé** : la liste `EXPOSE` du banc de
+l'éditeur nommait encore `simUniteBande`, que le panneau appelle désormais
+`simUniteBande1`/`simUniteBande2`. Ce n'était pas un cas en échec — c'était le
+**chargement du banc entier** qui levait.
+
+
+
+### Le moignon et la cavité — FAIT le 2026-08-30
+
+Les deux dernières choses que la fiche nommait comme absentes. Elles ne se
+ressemblent pas : l'une est un bout de conducteur **en trop**, l'autre un
+chemin de retour qui **manque**.
+
+**1. Le moignon.** Un via percé de part en part mais utilisé jusqu'à une couche
+interne laisse pendre le reste du perçage. Ce bout n'est raccordé à rien par le
+bas : c'est un **tronçon de ligne en circuit ouvert, en dérivation** sur le
+signal. `admittance_moignon` ([python/ligne_mom.py](python/ligne_mom.py)) le
+traite comme le coax barreau/antipad qu'il est — `Z₀ = (60/√εr)·ln(D/d)`, soit
+33,7 Ω sur un perçage de 0,25 dans un antipad de 0,80.
+
+- **Sous sa résonance, c'est une capacité, et pas une petite.** 1 mm de moignon
+  vaut **206 fF** — deux fois et demie la capacité du via entier. Elle est
+  constante de 200 MHz à 3 GHz, comme doit l'être un stub court.
+- **À sa résonance quart d'onde, il court-circuite la liaison.** 1 mm résonne à
+  **36,1 GHz**, 1,5 mm à 24,1. Un canal à 25 Gbit/s travaille jusqu'au
+  troisième harmonique de 12,5 GHz : le moignon est le défaut qui tue un lien
+  multi-gigabit, et rien sur le dessin ne le montre — le via a l'air normal,
+  c'est ce qu'on n'utilise **pas** de son perçage qui nuit.
+- **La constante de propagation est complexe, et ce n'est pas un détail.** Avec
+  un β purement imaginaire, `Y = jY₀tan(βL)` **diverge** au quart d'onde et la
+  cascade rend n'importe quoi. Ce n'est pas une difficulté numérique à plafonner
+  arbitrairement : c'est la **perte** qui manque. Un moignon réel a un facteur
+  de qualité fini, de l'ordre de 1/tan δ. En mettant la perte dans γ, `tanh` ne
+  diverge jamais et le creux a la bonne profondeur — mesuré : Y culmine à
+  64 fois Y₀, soit 0,53 Ω, ce qui efface bien la liaison.
+- **La longueur se soustrait, elle ne se devine pas** : percé moins emprunté,
+  aux bornes du **perçage** et non aux dessus de couche. Sans la portée percée
+  — que la page doit envoyer —, un via traversant et un via enterré bien ajusté
+  ont exactement la même apparence : on rend « inconnu » plutôt que le cas le
+  plus flatteur.
+
+**2. La cavité — ce qui était un conseil devient un chiffre.** Quand la
+référence change, le retour doit passer d'un plan à l'autre, et il ne peut le
+faire que par un **condensateur de découplage**. La boucle qu'il décrit —
+descendre par le via, courir dans le plan du haut jusqu'au condensateur, le
+traverser, revenir par le plan du bas — est une boucle de paire de plans, et
+`inductance_cavite` la calcule : `L = (µ₀h/2π)·ln(s/r)`.
+
+Mesuré sur 1 mm entre plans : **0,42 nH** pour un découplage à 1 mm, **0,55** à
+2 mm, **0,74** à 5 mm — plus son inductance de montage. Changer de référence
+**double** l'inductance du via, même quand on découple bien. La fiche le dit
+maintenant en nanohenrys au lieu de dire « ne faites pas cela », ce qui est une
+tout autre conversation : on peut décider.
+
+**Aucun pont trouvé, aucun chiffre inventé.** On pourrait prendre le bord de la
+carte comme distance ; ce nombre serait faux et aurait l'air d'une mesure.
+
+### Quatre défauts trouvés en branchant, et le premier est le pire
+
+**a. La fiche affirmait une absence qu'elle n'avait pas constatée.** Sur une
+carte réelle portant un via de masse au bon endroit, le panneau annonçait
+« *aucun via de masse ne joint les deux* » — un énoncé **sur la carte**, sans la
+moindre preuve, parce que la page n'avait rien envoyé. Deux causes distinctes,
+corrigées séparément :
+
+- **Deux plans de NOMS différents ne sont pas deux plans de NETS différents.**
+  Sur une carte quatre couches, une piste sur TOP se réfère au plan interne du
+  haut et la même piste sur BOT à celui du bas : les noms diffèrent
+  **toujours**. Si les deux sont de la masse, un via de masse referme la boucle
+  et c'est le cas ordinaire ; s'ils sont GND et PWR, rien ne peut la refermer.
+  La première version ne regardait que les noms, et criait donc au défaut grave
+  sur **toute carte quatre couches dont l'empilage ne nomme pas ses nets**.
+  Il y a désormais **trois états** — `plan_change`, `nets_differents`
+  vrai/faux/**inconnu** — et le défaut grave exige la certitude. Le doute a sa
+  propre phrase et sa propre couleur.
+- **Une déduction et une observation ne se disent pas pareil.** « Aucun via de
+  masse ne peut joindre GND à PWR » **découle des nets** et reste vraie qu'on
+  ait cherché ou non. « Aucun découplage n'est à côté » demande d'avoir
+  regardé. La première version les disait d'un seul souffle.
+
+**b. Les pages n'envoyaient rien tant que le via n'était pas reconnu** — ni sa
+position, ni les vias de masse voisins. Or le changement de couche existe
+indépendamment du perçage qu'on sait nommer : ses deux tronçons se raccordent
+quelque part, et ce quelque part suffit à mesurer les écarts. Les cotes
+manquantes ne touchent que le perçage et la pastille, qui ont leurs replis
+annoncés. C'est ce qui privait le serveur de toute donnée sur la carte réelle.
+
+**c. Un seul trou non métallisé rendait tout le net aveugle.**
+`simViaAuRaccordIpc` testait le placage **avant** la position : « ce trou-ci
+n'est pas métallisé » sortait de la fonction pour de bon, donc un trou de
+fixation ou un point de test quelque part sur le net empêchait de reconnaître
+le via à l'autre bout de la piste, et toute la fiche tombait sur des replis.
+
+**d. La visionneuse connaissait le net de ses plans et ne l'envoyait pas.**
+`simNetDuPlanIpc` le lit désormais — le net qui couvre le plus de cuivre plein
+sur la couche — et l'empilage le porte. C'est ce qui lève le doute du point (a)
+sur une carte IPC-2581.
+
+**Deux avertissements permanents devenus faux, corrigés.** Celui du modèle de
+ligne annonçait comme absents « les coudes, les moignons, les transitions de
+via », alors que les trois sont cascadés ; celui de la visionneuse comptait
+tous les perçages du net comme non modélisés. Un avertissement qui se trompe en
+se **noircissant** est presque aussi nuisible qu'un qui flatte : on cesse de le
+lire, et il emporte avec lui ceux qui comptent.
+
+**Non-régression, écrite** : neuf cas dans
+[python/test/banc-ligne-mom.py](python/test/banc-ligne-mom.py) — le moignon qui
+se soustrait exactement, sa résonance refaite à la main, le court-circuit borné
+et fini, la portée inconnue qui ne vaut pas moignon nul, la cavité chiffrée et
+son coût qui croît avec la distance, la cavité qui **ne** se traverse **pas**
+entre deux masses, les trois états du verdict, le doute rendu, et la déduction
+séparée de l'observation ; huit dans
+[editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) — dont le chevelu à
+trois états, les ponts filtrés par le nombre de bornes, et l'affichage des
+trois nouveautés ; quatre dans
+[visionneuse-ipc2581/test/harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)
+— dont le trou nu ailleurs sur le net qui n'aveugle plus rien, et l'empilage
+qui porte le net de ses plans.
+
+
+
+### La traversée entre plans, refaite d'après Bogatin — 2026-08-30
+
+**Source** : Eric Bogatin, *Signal and Power Integrity — Simplified*, 2ᵉ éd.,
+Prentice Hall 2010. Section **7.14** « When Return Paths Switch Reference
+Planes » (p. 244-247) et section **13.14** « Approximating Loop Inductance »
+(p. 653-659, équations 13-31 et 13-35). Le PDF est à la racine du dépôt.
+
+Deux erreurs, qui vont dans des sens opposés.
+
+**1. « Il faut un pont » — non, et c'était l'erreur de fond.** Le modèle
+refusait de chiffrer la traversée quand aucun condensateur de découplage ne
+joignait les deux plans. Or le courant de retour ne l'attend pas : il passe par
+**la paire de plans elle-même**, en courant de déplacement à travers sa
+capacité. Bogatin le montre en 7.14 — le conducteur du milieu, **même
+flottant**, porte des courants de Foucault induits qui referment la boucle, et
+le pilote voit simplement deux lignes en série, `Z(1-2) + Z(2-3)`. L'impédance
+d'une paire de plans (éq. 7-18, `Z₀ = (377/√εr)·h/w`) vaut **3,6 Ω** pour 1 mm
+d'écart sur 50 mm de large, **0,36 Ω** pour 0,1 mm.
+
+Refuser de chiffrer faute de condensateur, c'était déclarer impossible ce qui se
+produit sur toute carte multicouche.
+
+**2. L'étalement était trois à quatre fois trop petit.** On employait
+l'équation **13-31**, qui décrit un via central rejoignant un **anneau**
+extérieur lointain — `L = 5,1·h[mil]·ln(b/a)` pH, soit exactement `µ₀/2π` en SI.
+Le cas d'un via de signal et d'un condensateur est celui de **deux contacts
+ponctuels** : le courant s'étale au départ **et** se resserre à l'arrivée, dans
+les **deux** plans. C'est l'équation **13-35**, `L = 21·h[mil]·ln(B/D)` pH — un
+coefficient **4,1 fois** plus grand. Mesuré sur le cas du banc : **1,72 nH au
+lieu de 0,55**.
+
+Le livre dit lui-même qu'il n'y a pas de forme fermée pour cette géométrie
+(« There are no exact analytical equations that describe this loop spreading
+inductance ») : le coefficient est ajusté, et il est nommé comme tel plutôt que
+maquillé en dérivation.
+
+**Ce que le modèle fait maintenant.** La traversée est une **impédance**, pas
+une inductance, et elle se recalcule à chaque fréquence :
+
+```
+Z(ω) = [ jωL_étalement_cavité + 1/(jωC_plans) ]  ∥  [ jωL_pont + ESR + 1/(jωC_pont) ]
+```
+
+Les deux branches en parallèle **résonnent** — c'est la *parallel resonant
+frequency* du chapitre 13, où la capacité des plans et l'inductance du
+découplage s'annulent et où l'impédance de la traversée **culmine**. Une
+inductance équivalente figée au point central manquerait exactement ce qu'on
+veut voir. Ce qui reste hors de portée, et le livre le dit aussi : les
+résonances propres de la cavité, pour lesquelles il faut un solveur 3D.
+
+**Trois cas, et ils ne se confondent pas :**
+
+| | |
+|---|---|
+| **un pont mesuré** | étalement (13-35) + montage + capacité du condensateur, en parallèle avec la capacité des plans |
+| **cherché, rien vu** | pont supposé **au rayon de recherche** — un **minorant**, marqué |
+| **la page ne cherche pas** | seul l'étalement est compté, et la traversée est dite **sous-estimée** |
+
+**Pourquoi pas la cavité seule dans le deuxième cas.** Elle donne **1,7 kΩ à
+1 MHz** sur une paire de plans de 95 pF. C'est exact pour une carte qui n'aurait
+aucun découplage nulle part, et absurde pour une carte réelle dont le découplage
+est simplement plus loin que le rayon cherché.
+
+**Le conseil que la fiche porte n'est pas celui qu'on attend.** L'étalement
+croît **linéairement** avec l'écart entre plans et seulement en **logarithme**
+avec la distance au condensateur. Rapprocher le découplage de moitié ne gagne
+que `ln 2` ; amincir le diélectrique entre plans de moitié gagne la moitié.
+
+**Ce que les pages envoient en plus** : l'aire des deux plans en regard (côté
+éditeur, l'aire de la carte — une **majoration**, donc une capacité surestimée,
+donc une traversée qui paraît meilleure qu'elle n'est en basse fréquence, et
+c'est dit), leur εr, et la **valeur** du condensateur lue dans le champ
+« valeur » de l'empreinte. Sans valeur lisible, le serveur suppose 100 nF et
+l'annonce : en dessous de sa résonance propre, c'est la capacité qui fixe
+l'impédance de la branche, et l'omettre ferait passer le pont pour un
+court-circuit parfait.
+
+**Non-régression** : deux cas dans
+[python/test/banc-ligne-mom.py](python/test/banc-ligne-mom.py) refont les
+**exemples chiffrés du livre** — l'équation 13-31 rend bien les 270 pH annoncés
+p. 658, le coefficient de 13-35 vaut bien 4,1 fois celui de 13-31, et
+l'équation 7-18 est linéaire en l'écartement — et un troisième vérifie que
+l'impédance de traversée ne diverge ni en bas ni en haut de bande et qu'un
+découplage l'améliore partout.
+
+### Les arcs : une piste courbe est une piste — 2026-08-30
+
+**La cause réelle du parcours en morceaux**, trouvée après le chaînage et plus
+grave que lui. L'IPC-2581 range les segments droits et les arcs dans **deux
+collections distinctes**. `simZPistes` ne lisait que la première.
+
+Sur une carte RF — où l'on courbe justement pour ne pas réfléchir — la liaison
+partait donc au serveur en morceaux droits **séparés par les arcs qui les
+joignent**. Tout ce qui suppose un parcours en tombait : les raccords annoncés
+manquants, les angles pris entre des tronçons qui ne se suivent pas (un coude
+de **168°**, c'est-à-dire un demi-tour, sur une piste presque droite), et
+surtout **aucun via accroché** — un via se pose là où la fin d'un tronçon
+rejoint le début du suivant, et cela n'arrivait jamais. Ni perçage, ni portée,
+ni vias de masse voisins ne partaient, et le chevelu n'avait rien à dessiner.
+
+**Et le chemin DC croyait les traiter.** `simDCPolysArcIpc` lisait `a.p`, un
+tableau de sommets — la forme d'une **piste**. Un arc porte `s`, `e`, `m`, `h`.
+Le test `pl.length>=4` échouait donc toujours, la fonction retombait sur son
+repli « ce n'est pas un arc » et rendait une piste **sans sommets**. Les deux
+moitiés de l'outil ne voyaient pas la même carte, et aucune ne le disait.
+
+Le pliage est maintenant écrit **une fois**, dans `simArcEnPolyligne`, et il
+passe par **`mdlArc`** — la seule définition de la géométrie d'un arc dans cet
+outil, celle du dessin, donc celle qui ne peut pas se désynchroniser de ce
+qu'on voit à l'écran. Les deux bouts de la polyligne sont **replacés sur ceux
+du fichier** : le rayon se déduit du point de départ, le dernier point calculé
+peut retomber à un micron du bout déclaré, et un micron suffit à casser un
+chaînage.
+
+**La finesse se prend sur l'ANGLE, pas sur la largeur de piste.** Le critère
+« une facette par largeur » vient du tracé de contour, où la facette est plus
+fine que le trait qu'elle dessine. Pour une **longueur** il est trop grossier :
+un quart de cercle y tombait à quatre facettes, et une corde est plus courte
+qu'un arc — **0,64 % de moins**, que le retard de propagation emporte tel quel.
+Un pas de deux degrés ramène l'écart à cinq millionièmes.
+
+**Reste à faire, et c'est la même famille** : `ltNet` — la fiche de ligne du
+panneau « Sélection » — ne compte toujours pas les arcs dans ses totaux. Elle
+l'**avoue** (« leur longueur n'entre nulle part ici »), ce qui la rend
+honnête mais fausse, et désormais incohérente avec la simulation qui, elle, les
+compte.
+
+**Non-régression** : deux cas — le pliage et ses bouts replacés, et la
+topologie de la carte livrée (droite, arc, changement de couche, droite) où
+l'on vérifie l'ordre du parcours, la longueur de l'arc contre π/2, et
+l'accrochage du via avec ses vias de masse.
+
+### La visionneuse : le parcours, et le chevelu du retour — 2026-08-30
+
+**Un défaut de fond, trois symptômes qui n'en avaient pas l'air.**
+`simZPistes` rend les pistes du net dans l'ordre où l'IPC-2581 les a écrites,
+et le sens de chaque polyligne y est arbitraire — rien dans le format ne dit
+par quel bout on entre. Tout l'aval supposait pourtant une chaîne parcourue
+dans l'ordre envoyé.
+
+| le panneau disait | c'était |
+|---|---|
+| « 2 raccord(s) manquent » | deux tronçons voisins dans la **liste**, pas sur le cuivre |
+| « coude 168° » | l'angle se prend entre vecteurs : **un demi-tour** sur une piste droite |
+| « non envoyé », cotes par défaut, moignon inconnu | le via n'avait **jamais** été accroché |
+
+Le dernier coûtait le plus. `simAccrocherViasIpc` ne pose un via que là où la
+fin d'un tronçon rejoint le début du suivant, à 20 µm près. Le test échouait,
+donc rien ne partait — ni perçage, ni pastille, ni portée, ni **vias de masse
+voisins**. Le serveur remplaçait tout par des replis, et disait « non envoyé » :
+vrai, mais sans dire pourquoi.
+
+**`simChainePistes`** chaîne par les extrémités et **retourne** les pistes qu'il
+faut. Deux bouts au même point sont un raccord ; deux bouts au même point sur
+des couches différentes sont un via — c'est le même test, et c'est ce qui fait
+que le via se pose tout seul une fois l'ordre rétabli. Une piste retournée
+entraîne tout : ses plages sortent en ordre inverse, bout pour bout, et
+**gauche et droite s'échangent** — `simEcartsEn` les mesure par rapport à la
+tangente du parcours. Sans cet échange, le panneau écrivait « 0,187 / 2,325 »
+en miroir un tronçon sur deux.
+
+**Rien n'est forcé.** À un nœud où trois pistes se rejoignent il n'y a plus de
+parcours unique : la marche s'arrête, le reste part dans l'ordre du fichier, et
+le serveur continue d'annoncer les raccords manquants. Une sélection ramifiée
+doit rester visiblement ramifiée.
+
+**Le chevelu, et pourquoi il est LU et non recalculé.** L'éditeur PCB recalcule
+le sien à chaque image : on y route, il faut répondre pendant qu'on déplace le
+via. La visionneuse lit une carte faite, où rien ne bouge — le seul chevelu qui
+vaille y est celui que le modèle a **réellement employé**. `simCheveluRes`
+(commun) le lit dans le résultat : position du via, chaque via de masse avec sa
+part et, s'il est écarté, le motif. Le trait et le chiffre viennent de la même
+source ; il ne peut pas y avoir de désaccord entre le dessin et la fiche.
+
+Il fallait pour cela que la fiche dise **où** est le via : `retour` porte
+désormais `x` et `y`, et la clé est **absente** quand la page ne l'envoie pas —
+un zéro, lui, se dessinerait.
+
+Une mention propre à cette page : l'IPC-2581 ne déclare pas la portée d'un
+perçage. Les retours y sont **supposés traversants**, un enterré pris pour
+traversant rend une boucle trop petite de près de vingt pour cent, et le
+chevelu le dit sur le dessin — pas seulement en note de bas de panneau.
+
+**Non-régression** : trois cas tiennent le chaînage — et j'ai vérifié qu'ils
+**échouent** sans lui —, cinq le contrat de lecture du chevelu, un la
+conversion millimètres → unités du fichier (sur une carte en pouces, une
+conversion oubliée poserait le chevelu vingt-cinq fois trop loin, donc hors
+carte, où personne ne le trouverait pour s'en plaindre), et deux, côté serveur,
+la position rendue et le refus de l'inventer.
+
+### À faire : un rapport de santé de la liaison
+
+**Le constat, et il est juste.** Le panneau d'impédance affiche aujourd'hui une
+quinzaine de notes dont la plupart ne parlent pas d'impédance : le chemin de
+retour, les moignons, la couture de vias, le cuivre voisin, les ports déduits,
+les plans non déclarés. Ce sont de bonnes informations posées au mauvais
+endroit — on vient y chercher un nombre en ohms et on lit un diagnostic.
+
+**Ce que ce serait.** Une analyse à part, à côté d'« Impédance » et de
+« Chute DC », qui prend une liaison **ou un bus** et rend un verdict structuré
+plutôt qu'une liste : ce qui est sain, ce qui est douteux, ce qui est faux, et
+pour chaque point le chiffre qui le dit et le geste qui le corrige. La matière
+existe déjà — c'est exactement ce que les notes actuelles contiennent — et il
+s'agit de la **déplacer et de la hiérarchiser**, pas de la recalculer.
+
+**Ce qu'il faudrait décider avant d'écrire une ligne** : ce qui compte comme un
+défaut (une phase de via de 0,03° n'en est pas un), comment on classe (par
+gravité ? par tronçon ?), et ce qu'un bus ajoute à une liaison seule —
+l'appariement des longueurs, la diaphonie, le fait que N liaisons partagent
+leurs vias de retour. Ce dernier point rejoint le chantier `ligne_mom` à N
+conducteurs, qui est déjà en tête de liste.
+
+**Et le panneau d'impédance redeviendrait ce qu'il annonce** : Z₀ par tronçon,
+la courbe S, et les seules notes qui portent sur la section calculée.
 
 
 ### La section résolue est désormais lisible

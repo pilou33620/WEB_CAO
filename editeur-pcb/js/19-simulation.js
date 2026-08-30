@@ -33,10 +33,14 @@
       soudure n'y est pas — l'ajouter en tête décalerait tous les indices pour
       un effet marginal sur un microruban.
 
-   2. **Les vias ne sont pas modélisés.** Une piste qui change de couche part
-      quand même, ses tronçons des deux couches compris, mais la transition
-      verticale manque. Le panneau le dit sous la fiche plutôt que de laisser
-      croire à un modèle complet.
+   2. **Les vias sont modélisés, et leur CHEMIN DE RETOUR avec.** Une piste qui
+      change de couche emporte le via qui la réalise — perçage, pastille,
+      antipad, position — et les vias de masse voisins qui referment la boucle
+      du courant. C'est cette boucle qui porte l'inductance, pas le via seul :
+      le même via avec son retour à 0,4 mm ou à 3 mm, c'est un facteur deux.
+      Ce que le modèle ne couvre toujours pas — le moignon, la cavité entre
+      plans, le retour qui change de plan de référence — est NOMMÉ plutôt que
+      tu, ici par le chevelu et dans la fiche par le panneau.
 
    3. **La masse coplanaire est lue CÔTÉ PAR CÔTÉ, le long du parcours, et
       seulement sur les nets de référence.** Les trois hypothèses tacites de la
@@ -410,14 +414,181 @@ function simViaAuRaccord(x, y, cuA, cuB){
     const s = stackSpan(v.a, v.b);
     if(s < portee){ choisi = v; portee = s; }
   }
-  if(!choisi) return null;
-  /* ON N'ENVOIE PAS LA HAUTEUR, ET C'EST VOULU. `stackSpan` la connaît — c'est
-     elle qui commande le foret de l'Excellon —, mais le serveur la recalcule
-     depuis l'empilage qu'on lui envoie, et par la même somme. Deux définitions
-     de la même longueur, c'est deux chiffres le jour où l'une des deux dérive.
-     On n'envoie donc que ce que le serveur ne peut PAS savoir : le perçage et
-     la pastille. */
-  return {drill_diameter: choisi.drill, pad_diameter: choisi.d};
+  return choisi;
+}
+
+/* Le diamètre d'antipad d'un via, en millimètres : la pastille plus deux fois
+   l'isolation que la règle impose au plan qu'il traverse. C'EST EXACTEMENT CE
+   QUI CREUSE LE GERBER — `04-fabrication.js` écrit `v.d + 2*clrK(...)` —, donc
+   ce n'est pas une estimation : c'est la cote du cuivre fabriqué.
+
+   PLUSIEURS PLANS, PLUSIEURS ANTIPADS. Un via traversant peut croiser un plan
+   de masse et un plan d'alimentation, de classes différentes donc d'isolations
+   différentes. Le serveur ne prend qu'un diamètre ; on lui donne le PLUS
+   SERRÉ — celui qui pèse le plus — et on lui dit la fourchette, pour que la
+   fiche puisse la nommer au lieu de la taire. */
+function simAntipadVia(v){
+  const lo = Math.min(v.a, v.b), hi = Math.max(v.a, v.b);
+  let min = null, max = null;
+  for(let i = lo + 1; i < hi; i++){
+    if(!rolePlane(layerRole(i))) continue;
+    const net = (S.cuL[i] && S.cuL[i].net) || "";
+    if(net && v.net && net === v.net) continue;   /* il y est raccordé */
+    const d = r3(v.d + 2 * clrK(net, v.net, "cu", "via"));
+    if(min === null || d < min) min = d;
+    if(max === null || d > max) max = d;
+  }
+  return min === null ? null : {min: min, max: max};
+}
+
+/* Ce qu'on envoie du via, et pourquoi pas davantage.
+
+   ON N'ENVOIE PAS LA HAUTEUR, ET C'EST VOULU. `stackSpan` la connaît — c'est
+   elle qui commande le foret de l'Excellon —, mais le serveur la recalcule
+   depuis l'empilage qu'on lui envoie, et par la même somme. Deux définitions
+   de la même longueur, c'est deux chiffres le jour où l'une des deux dérive.
+
+   ON ENVOIE EN REVANCHE LA POSITION, ce qu'on ne faisait pas : sans elle le
+   serveur ne peut pas mesurer l'écart aux vias de masse, et sans cet écart
+   l'inductance rendue est celle d'un conducteur seul — elle ne dépend pas du
+   routage, ce qui est exactement ce qu'on cherche à corriger. */
+/* La valeur d'un condensateur, en farads, lue dans le champ « valeur » de
+   l'empreinte. Rend 0 quand ce n'est pas une capacité reconnaissable — un
+   champ vide, une référence de ferrite, un texte libre.
+
+   ON NE DEVINE PAS, ON LIT OU L'ON S'ABSTIENT. Un composant à deux bornes
+   entre GND et PWR peut être une ferrite ou une résistance de terminaison ;
+   leur donner d'office 100 nF les ferait passer pour du découplage. Sans
+   valeur lisible, on laisse le serveur poser son repli, qui est annoncé. */
+function simValeurFarads(txt){
+  const m = String(txt || "").trim()
+    .match(/^([\d]+(?:[.,][\d]+)?)\s*(p|n|u|µ|m)?F?$/i);
+  if(!m) return 0;
+  const v = parseFloat(m[1].replace(",", "."));
+  if(!isFinite(v) || v <= 0) return 0;
+  const mult = {p:1e-12, n:1e-9, u:1e-6, "µ":1e-6, m:1e-3};
+  const k = (m[2] || "").toLowerCase();
+  /* Sans préfixe, un « 100 » seul n'est pas 100 farads : c'est une valeur
+     qu'on ne sait pas lire, et l'inventer serait pire que l'ignorer. */
+  if(!k) return 0;
+  return v * (mult[k] || 0);
+}
+
+/* Le rayon de recherche d'un pont entre deux plans, en millimètres. Bien plus
+   large que celui des vias de masse : un découplage est posé au pied d'un
+   composant, pas au pied d'un via de signal, et dix millimètres est déjà loin
+   — l'inductance d'étalement y vaut le double de ce qu'elle vaut à un
+   millimètre. */
+const SIM_RAYON_PONT = 10.0;
+
+/* Ce qui JOINT deux plans de nets différents près d'un via : un condensateur
+   de découplage, et rien d'autre.
+
+   POURQUOI DEUX PASTILLES, ET PAS PLUS. Un composant à deux bornes dont l'une
+   est sur GND et l'autre sur PWR est un découplage — ou une ferrite, ou une
+   résistance, qui font toutes un chemin alternatif entre les deux. Un
+   composant à vingt pattes qui touche les deux nets est un régulateur : il ne
+   joint rien en alternatif, et le compter donnerait un chemin de retour là où
+   il n'y en a pas. Le filtre est donc le NOMBRE DE BORNES, et il est étroit
+   exprès.
+
+   ON N'ENVOIE RIEN QUAND LES DEUX PLANS SONT DU MÊME NET : le retour passe
+   alors par le premier via de masse venu, ce dont la boucle du palier 1 rend
+   déjà compte. */
+function simPontsPlans(cuA, cuB, x, y){
+  const netDe = i => String((S.cuL[i] && S.cuL[i].net) || "").trim();
+  const nA = new Set(simPlansRef(cuA).map(netDe).filter(Boolean));
+  const nB = new Set(simPlansRef(cuB).map(netDe).filter(Boolean));
+  if(!nA.size || !nB.size) return null;              /* nets non déclarés */
+  let commun = false;
+  nA.forEach(n => {if(nB.has(n)) commun = true;});
+  if(commun) return null;                            /* rien à traverser */
+
+  const out = [];
+  for(const fp of S.fps){
+    const d = Math.hypot(fp.x - x, fp.y - y);
+    if(d > SIM_RAYON_PONT) continue;
+    const pads = padsOf(fp);
+    if(pads.length !== 2) continue;
+    const nets = new Set(pads.map(q => String(q.net || "").trim())
+                             .filter(Boolean));
+    let a = false, b = false;
+    nets.forEach(n => {if(nA.has(n)) a = true; if(nB.has(n)) b = true;});
+    if(!a || !b) continue;
+    /* LA VALEUR DU CONDENSATEUR COMPTE, ET PLUS QU'ON NE CROIT. En dessous de
+       sa résonance propre, c'est SA capacité qui fixe l'impédance de la
+       branche, pas son inductance : un 100 nF vaut 1,6 Ω à 1 MHz, là où son
+       ESL n'en vaut que 0,02. L'omettre ferait passer le pont pour un
+       court-circuit parfait en basse fréquence. On la lit dans la valeur du
+       composant quand elle s'y trouve, et le serveur suppose 100 nF sinon. */
+    const pont = {x: r3(fp.x), y: r3(fp.y), repere: fp.ref || ""};
+    const cap = simValeurFarads(fp.value);
+    if(cap) pont.capacite_F = cap;
+    out.push(pont);
+  }
+  out.sort((p, q) => Math.hypot(p.x - x, p.y - y) -
+                     Math.hypot(q.x - x, q.y - y));
+  return out;
+}
+
+/* Ce qu'on envoie d'un raccord de couche. `v` peut être NULL : le raccord
+   existe indépendamment du perçage qu'on sait nommer.
+
+   CE QUE LE `null` A COÛTÉ. L'ancienne version n'envoyait RIEN tant que le via
+   n'était pas reconnu — donc ni la position, ni les vias de masse voisins. Le
+   serveur en concluait « aucun via de masse ne referme la boucle », ce qui est
+   une affirmation SUR LA CARTE là où on n'avait pas cherché, et fausse dès
+   qu'il y a un via de masse à côté. Les cotes manquantes ne touchent que le
+   perçage et la pastille, et celles-là ont leurs replis annoncés. */
+function simCotesVia(v, x, y, cuA, cuB){
+  const out = {x: r3(x), y: r3(y)};
+  if(v){
+    out.drill_diameter = v.drill;
+    out.pad_diameter = v.d;
+    out.net = v.net || "";
+    out.layer_from = simCuIndex(Math.min(v.a, v.b));
+    out.layer_to = simCuIndex(Math.max(v.a, v.b));
+    const anti = simAntipadVia(v);
+    if(anti){
+      out.antipad_diameter = anti.min;
+      if(anti.max > anti.min) out.antipad_max = anti.max;
+    }
+  }
+  /* Le via de référence pour chercher les voisins : le vrai s'il est connu,
+     sinon un via de substitution posé au raccord, sur la portée que le signal
+     emprunte. Les écarts ne dépendent que de la position, et elle est sûre. */
+  const ref = v || {x: x, y: y, a: Math.min(cuA, cuB), b: Math.max(cuA, cuB),
+                    d: 0.55, drill: 0.3, net: ""};
+  const g = simVoisinageVia(ref);
+  out.retours = g.voisins.map(f => ({
+    x: r3(f.via.x), y: r3(f.via.y),
+    layer_from: simCuIndex(Math.min(f.via.a, f.via.b)),
+    layer_to: simCuIndex(Math.max(f.via.a, f.via.b)),
+    drill_diameter: f.via.drill, pad_diameter: f.via.d,
+    net: f.via.net || ""
+  }));
+  const ponts = simPontsPlans(cuA, cuB, x, y);
+  if(ponts){
+    out.ponts = ponts;
+    out.ponts_rayon_mm = SIM_RAYON_PONT;
+    /* L'AIRE DES DEUX PLANS EN REGARD fixe leur capacité répartie, et c'est
+       par elle que le retour passe quand aucun découplage n'est proche.
+       ON ENVOIE L'AIRE DE LA CARTE, ET C'EST UNE MAJORATION : un plan ne
+       couvre jamais toute la carte. Une capacité surestimée fait paraître la
+       traversée MEILLEURE qu'elle n'est en basse fréquence — c'est le sens
+       qui flatte, et c'est pour cela que la fiche le dit. Mesurer l'aire réelle
+       des deux versements demanderait l'intersection de deux jeux de polygones
+       à trous ; ce sera le jour où ce chiffre commandera une décision. */
+    const b = S.board || {};
+    const aire = Math.max(0, (b.w || 0) * (b.h || 0));
+    if(aire > 0){
+      out.aire_plans_mm2 = r3(aire);
+      out.aire_plans_majoree = true;
+    }
+    const di = diAt(Math.min(cuA, cuB));
+    if(di && di.er > 0) out.er_plans = di.er;
+  }
+  return out;
 }
 
 /* Accroche à chaque changement de couche le via qui le réalise. On le fait sur
@@ -437,8 +608,10 @@ function simAccrocherVias(envoi){
       continue;
     /* `layer` est un indice d'EMPILAGE (cuivre et diélectrique alternés) ;
        les vias, eux, se comptent en couches de CUIVRE. */
-    const via = simViaAuRaccord(q[0], q[1], a.layer / 2, b.layer / 2);
-    if(via){ b.via = via; poses++; }
+    const cuA = a.layer / 2, cuB = b.layer / 2;
+    const via = simViaAuRaccord(q[0], q[1], cuA, cuB);
+    b.via = simCotesVia(via, q[0], q[1], cuA, cuB);
+    if(via) poses++;
   }
   return poses;
 }
@@ -473,6 +646,51 @@ function simCouturePcb(pistes,refs){
    propre commentaire annonçait celle du cuivre, ce qui raccourcissait un
    demi-tour d'un tiers — et le retard avec.
    ========================================================================== */
+/* LES VIAS DE LA SÉLECTION, SANS ORDRE — format « cao-sim-em-3 ».
+
+   MÊME BESOIN QUE CÔTÉ VISIONNEUSE, ET IL FAUT QUE CE SOIT LA MÊME CHOSE. Un
+   via n'existait pour le calcul que s'il tombait entre deux tronçons
+   CONSÉCUTIFS de la sélection : c'est le serveur qui les détecte, en lisant
+   les changements de couche le long de la liste envoyée. Sélectionnez un net
+   qui se ramifie — un bus qui dessert trois boîtiers — et il n'y a plus de
+   parcours : aucun via détecté, donc aucun chemin de retour, alors que les
+   vias sont là, dans `S.vias`, avec leur perçage et leur portée.
+
+   ICI ON NE REGARDE PAS L'ORDRE. Un via sur lequel aboutissent des tronçons
+   SÉLECTIONNÉS de deux couches différentes est un via de la liaison, point.
+   Le serveur écarte ensuite ceux que la chaîne a déjà pris, pour qu'un même
+   via ne soit pas chiffré deux fois.
+
+   LA PORTÉE, ELLE, EST CONNUE ICI — contrairement à la visionneuse, où
+   l'IPC-2581 ne la déclare pas. `simCotesVia` l'emporte avec le reste. */
+function simViasPcb(){
+  const out=[];
+  const sel=[...S.sel.tracks];
+  if(sel.length<2)return out;
+  for(const v of S.vias){
+    const couches=new Set();
+    for(const t of sel){
+      if(!simViaCouvre(v,t.l))continue;
+      for(const u of [0,1]){
+        const q=trkAt(t,u);
+        if(Math.abs(q.x-v.x)<=SIM_TOL_VIA&&Math.abs(q.y-v.y)<=SIM_TOL_VIA){
+          couches.add(t.l); break;
+        }
+      }
+    }
+    if(couches.size<2)continue;
+    const cs=[...couches].sort((a,b)=>a-b);
+    out.push(simCotesVia(v,v.x,v.y,cs[0],cs[cs.length-1]));
+  }
+  return out;
+}
+
+/* La portée d'un via couvre-t-elle cette couche ? Un via borgne qui s'arrête
+   avant n'aboutit pas sur le tronçon, même s'il est juste dessous. */
+function simViaCouvre(v,l){
+  return l>=Math.min(v.a,v.b)&&l<=Math.max(v.a,v.b);
+}
+
 function simSegments(){
   const objets=[], envoi=[], pistes=[], hors=new Map();
   const refs=simRefSet();
@@ -504,7 +722,7 @@ function simSegments(){
   }
   simAccrocherVias(envoi);
 
-  return {envoi:envoi, objets:objets,
+  return {envoi:envoi, objets:objets, vias:simViasPcb(),
           couture:simCouturePcb(pistes,refs),
           voisins:[...hors.values()].sort((a,b)=>b.longueur-a.longueur)};
 }
@@ -624,6 +842,427 @@ function simZValeurs(c){
     c.stroke();
     c.fillStyle="#e6e8ec";
     c.fillText(txt,e.x,e.y+0.5);
+  }
+  c.restore();
+}
+
+
+/* ==========================================================================
+   LE CHEMIN DE RETOUR DU COURANT — LE CHEVELU
+   --------------------------------------------------------------------------
+   CE QU'ON RÉPOND, ET À QUELLE QUESTION. Un via de signal n'a pas
+   d'inductance à lui seul : c'est la BOUCLE qu'il forme avec ses vias de masse
+   qui en porte une. Le même via avec son retour à 0,4 mm ou à 3 mm, c'est un
+   facteur deux — et c'est justement la décision qu'on prend en routant. La
+   question « faut-il le rapprocher ? » n'a donc de réponse que si le chiffre
+   bouge quand on le rapproche, sous les yeux, sans repasser par le serveur.
+
+   POURQUOI LA PHYSIQUE EST ICI AUSSI, ALORS QU'ELLE EST DÉJÀ EN PYTHON. Parce
+   qu'un chevelu qui demande un aller-retour au serveur à chaque déplacement de
+   souris n'est pas un chevelu. C'est une duplication, elle est assumée, et
+   elle est TENUE : le banc de l'éditeur vérifie que cette fonction rend, sur
+   une géométrie donnée, exactement ce que `ligne_mom.inductance_boucle_vias`
+   rend sur la même — la valeur attendue vient du banc Python, pas d'ici. Le
+   jour où l'une des deux dérive, l'essai tombe.
+
+   CE QUE LE CHEVELU MONTRE, ET C'EST PLUS QUE DES TRAITS :
+     · l'inductance de BOUCLE, en nanohenrys, au pied du via ;
+     · un trait par via de masse retenu, dont l'épaisseur dit sa PART du
+       courant de retour — parce que trois vias ne se partagent pas le courant
+       à parts égales, et que celui qui ne travaille pas ne sert à rien ;
+     · un trait barré, en rouge, pour un via voisin qui NE ferme PAS la boucle,
+       avec la raison. C'est le cas qui compte : un via de masse posé à côté
+       d'un via qui change de plan de référence a l'air de faire son travail et
+       ne le fait pas.
+
+   TROIS VIAS À PROXIMITÉ : LES TROIS, ET PAS LE PLUS PROCHE. Voir
+   `simBoucleVias` — la répartition du courant se RÉSOUT.
+   ========================================================================== */
+
+const SIM_MU0 = 4e-7 * Math.PI;
+/* Le rayon de recherche d'un via de masse, en millimètres. Au-delà de trois
+   millimètres un retour ne referme plus grand-chose — l'inductance de boucle
+   plafonne, elle croît en logarithme — mais on cherche large exprès : dire
+   « le plus proche est à 4 mm » vaut mieux que dire « aucun ». */
+const SIM_RAYON_RETOUR = 3.0;
+
+/* La primitive de Grover, et la mutuelle de deux filaments parallèles de même
+   longueur `h` écartés de `d`. TOUT EN MÈTRES.
+
+   C'EST LA FORME EXACTE, et non L = (µ₀h/π)ln(2s/d). Cette dernière suppose
+   h ≫ s ; sur une carte h vaut 1,5 mm et s vaut 0,6, le rapport vaut 2,6, et
+   l'approximation surestime de 21 % — de 56 % à 3 mm d'écart. */
+function simGroverF(u, d){
+  return u * Math.asinh(u / d) - Math.sqrt(u * u + d * d);
+}
+function simMutuelleVia(h, d){
+  return (SIM_MU0 / (4 * Math.PI)) * (2 * simGroverF(h, d) - 2 * simGroverF(0, d));
+}
+
+/* Un système linéaire n×n par élimination de Gauss avec pivot partiel. n vaut
+   au plus une poignée — le nombre de vias de masse autour d'un via —, donc la
+   simplicité prime. Rend null si la matrice est singulière. */
+function simResoudre(M, b){
+  const n = b.length;
+  const A = M.map((r, i) => r.slice().concat([b[i]]));
+  for(let k = 0; k < n; k++){
+    let p = k;
+    for(let i = k + 1; i < n; i++)
+      if(Math.abs(A[i][k]) > Math.abs(A[p][k])) p = i;
+    if(!(Math.abs(A[p][k]) > 1e-30)) return null;
+    if(p !== k){const t = A[p]; A[p] = A[k]; A[k] = t;}
+    for(let i = k + 1; i < n; i++){
+      const f = A[i][k] / A[k][k];
+      if(!f) continue;
+      for(let j = k; j <= n; j++) A[i][j] -= f * A[k][j];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for(let i = n - 1; i >= 0; i--){
+    let s = A[i][n];
+    for(let j = i + 1; j < n; j++) s -= A[i][j] * x[j];
+    x[i] = s / A[i][i];
+  }
+  return x;
+}
+
+/* L'inductance de boucle d'un via et de ses retours, en HENRYS.
+   `hauteur` en mm, les vias en {x, y, drill} millimètres.
+
+   LA RÉPARTITION DU COURANT SE RÉSOUT, ELLE NE SE POSTULE PAS. Le via de
+   signal porte +1 A ; les retours se partagent −1 A en proportions aₖ
+   inconnues. À haute fréquence le courant se distribue de façon à minimiser
+   l'énergie magnétique — c'est-à-dire l'inductance elle-même. On minimise donc
+   L(a) = L_ss − 2b·a + a·M·a sous Σaₖ = 1, par multiplicateur de Lagrange.
+
+   CE QUE ÇA CHANGE CONTRE « LE PLUS PROCHE ». Sur trois vias à 0,5 / 1,2 /
+   2,5 mm, ne garder que le plus proche surestime de 31 %. Et trois vias serrés
+   ne divisent PAS l'inductance par trois : leur mutuelle les empêche de
+   travailler indépendamment — on plafonne vers un facteur deux, quel que soit
+   leur nombre. C'est ce que la matrice M porte, et rien qui somme des
+   contributions séparées ne peut le rendre. */
+function simBoucleVias(hauteur, signal, retours){
+  const h = hauteur * 1e-3;
+  const rs = Math.max(signal.drill, 1e-3) * 1e-3 / 2;
+  const Lss = simMutuelleVia(h, rs);
+  const n = retours.length;
+  if(!n) return {L:Lss, parts:[], seul:true};
+
+  const ec = (a, b) =>
+    Math.max(Math.hypot(a.x - b.x, a.y - b.y) * 1e-3, 1e-9);
+  const b = [], M = [];
+  for(let k = 0; k < n; k++){
+    b.push(simMutuelleVia(h, ec(signal, retours[k])));
+    M.push(new Array(n).fill(0));
+  }
+  for(let k = 0; k < n; k++){
+    M[k][k] = simMutuelleVia(h, Math.max(retours[k].drill, 1e-3) * 1e-3 / 2);
+    for(let j = k + 1; j < n; j++){
+      const v = simMutuelleVia(h, ec(retours[k], retours[j]));
+      M[k][j] = v; M[j][k] = v;
+    }
+  }
+  const un = new Array(n).fill(1);
+  const mib = simResoudre(M, b), mi1 = simResoudre(M, un);
+  let a;
+  if(!mib || !mi1){
+    /* Matrice singulière : deux retours indiscernables. On retombe sur le plus
+       proche, et la part rendue le dit. */
+    let k = 0;
+    for(let i = 1; i < n; i++)
+      if(ec(signal, retours[i]) < ec(signal, retours[k])) k = i;
+    a = new Array(n).fill(0); a[k] = 1;
+  }else{
+    const den = mi1.reduce((s, v) => s + v, 0);
+    const num = mib.reduce((s, v) => s + v, 0);
+    const dl = Math.abs(den) < 1e-30 ? 0 : (1 - num) / den;
+    a = mib.map((v, i) => v + dl * mi1[i]);
+  }
+  let L = Lss;
+  for(let k = 0; k < n; k++){
+    L -= 2 * a[k] * b[k];
+    for(let j = 0; j < n; j++) L += a[k] * a[j] * M[k][j];
+  }
+  if(!isFinite(L) || L <= 0) return {L:Lss, parts:new Array(n).fill(0), seul:true};
+  return {L:L, parts:a, seul:false};
+}
+
+/* Le plan de référence qui fait face à une couche de cuivre : le premier
+   conducteur de rôle « plan » au-dessus et en dessous. C'est la MÊME règle que
+   `section_de_couche` côté serveur — celle qui décide de l'impédance. */
+function simPlansRef(l){
+  const out = [];
+  for(let i = l - 1; i >= 0; i--)
+    if(rolePlane(layerRole(i))){out.push(i); break;}
+  for(let i = l + 1; i < S.cu; i++)
+    if(rolePlane(layerRole(i))){out.push(i); break;}
+  return out;
+}
+
+/* L'empilage déclare-t-il le net de ses plans ?
+
+   C'EST LA CONDITION DU TEST QUI COMPTE. Savoir si un via de masse rejoint le
+   plan d'arrivée demande de connaître le net de ce plan. Sans lui, on ne peut
+   pas distinguer un plan de masse d'un plan d'alimentation — et c'est
+   justement cette distinction qui sépare une carte correcte du défaut grave.
+   On accepte alors les vias de retour sans cette vérification, et la fiche le
+   dit : refuser rendrait la mesure impossible, accepter en silence ferait
+   passer le cas GND/PWR pour sain. MÊME RÈGLE QUE `_plans_ont_un_net` côté
+   serveur, et c'est voulu — deux règles pour un même jugement, ce sont deux
+   verdicts le jour où l'une bouge. */
+function simPlansOntUnNet(){
+  for(let i = 0; i < S.cu; i++)
+    if(rolePlane(layerRole(i)) &&
+       String((S.cuL[i] && S.cuL[i].net) || "").trim()) return true;
+  return false;
+}
+
+/* Les plans qu'un via RACCORDE : ceux de sa portée dont le net est le sien.
+   C'est ce qui distingue un via de masse utile d'un via de masse décoratif. */
+function simPlansJoints(v, verifierNet){
+  const lo = Math.min(v.a, v.b), hi = Math.max(v.a, v.b), out = [];
+  for(let i = lo; i <= hi; i++){
+    if(!rolePlane(layerRole(i))) continue;
+    const net = (S.cuL[i] && S.cuL[i].net) || "";
+    if(verifierNet && v.net && net !== v.net) continue;
+    out.push(i);
+  }
+  return out;
+}
+
+/* Le voisinage d'un via de signal : les vias de masse à portée, chacun avec la
+   raison pour laquelle il compte — ou ne compte pas.
+
+   LES TROIS RAISONS D'ÉCARTER, dans l'ordre où elles se posent :
+     1. ce n'est pas un net de référence — un via d'un autre signal, aussi
+        proche soit-il, ne porte pas ce retour-là ;
+     2. il ne couvre pas la portée du via de signal — un via borgne ne referme
+        pas le courant, et la formule de boucle n'a alors PAS de sens : elle
+        rendrait un chiffre trop PETIT de 18 %, donc flatteur ;
+     3. il ne rejoint pas les deux plans de référence. C'est le cas grave :
+        sur TOP/GND/PWR/BOT le retour doit passer de GND à PWR, et aucun via de
+        masse ne sait faire cela. Il a l'air de travailler et ne travaille pas. */
+function simVoisinageVia(v){
+  const refs = simRefSet();
+  const lo = Math.min(v.a, v.b), hi = Math.max(v.a, v.b);
+  const pDep = simPlansRef(lo), pArr = simPlansRef(hi);
+  const dedans = (s, e) => s.some(i => e.indexOf(i) >= 0);
+
+  const verifNet = simPlansOntUnNet();
+  const out = [];
+  for(const w of S.vias){
+    /* ON S'ÉCARTE SOI-MÊME PAR LA POSITION, ET NON PAR L'IDENTITÉ : le via de
+       référence peut être un via de SUBSTITUTION posé au raccord quand le vrai
+       n'a pas été reconnu, et il n'est alors identique à aucun objet de
+       `S.vias`. Comparer les identités laisserait le vrai via de signal
+       apparaître dans son propre chevelu, écarté au motif que son net n'est
+       pas une référence — exact, mais absurde à lire. */
+    if(w === v) continue;
+    if(Math.abs(w.x - v.x) <= SIM_TOL_VIA &&
+       Math.abs(w.y - v.y) <= SIM_TOL_VIA) continue;
+    const d = Math.hypot(w.x - v.x, w.y - v.y);
+    if(d > SIM_RAYON_RETOUR) continue;
+    const f = {via:w, distance:r3(d), part:0, retenu:false, raison:""};
+    const wlo = Math.min(w.a, w.b), whi = Math.max(w.a, w.b);
+    /* UN VIA QUI N'EST PAS SUR UNE MASSE N'EST PAS UN CANDIDAT, il est HORS
+       SUJET. Le lister avec une raison encombrerait le chevelu d'un trait
+       rouge par via de signal voisin — sur une carte dense, des dizaines — et
+       noierait les seuls traits rouges qui comptent : ceux d'un via de MASSE
+       qui, lui, aurait pu refermer la boucle et ne le fait pas. */
+    if(!refs.has(w.net)) continue;
+    const joints = simPlansJoints(w, verifNet);
+    if(wlo > lo || whi < hi)
+      f.raison = "ne couvre pas " + cuLabel(lo, S.cu) + "→" + cuLabel(hi, S.cu);
+    else if(pDep.length && !dedans(pDep, joints))
+      f.raison = "ne rejoint pas " + pDep.map(i => cuLabel(i, S.cu)).join("/");
+    else if(pArr.length && !dedans(pArr, joints))
+      f.raison = "ne rejoint pas " + pArr.map(i => cuLabel(i, S.cu)).join("/");
+    else f.retenu = true;
+    out.push(f);
+  }
+  out.sort((a, b) => a.distance - b.distance);
+
+  const retenus = out.filter(f => f.retenu);
+  const hauteur = stackSpan(v.a, v.b);
+  const r = simBoucleVias(hauteur, v, retenus.map(f => f.via));
+  retenus.forEach((f, i) => {f.part = r.parts[i] || 0;});
+
+  /* DEUX PLANS DE NOMS DIFFÉRENTS NE SONT PAS DEUX PLANS DE NETS DIFFÉRENTS,
+     et c'est de cette distinction que dépend tout le verdict. Sur une carte
+     quatre couches, une piste sur TOP se réfère au plan interne du haut et la
+     même piste sur BOT à celui du bas : les NOMS diffèrent TOUJOURS. Si les
+     deux sont de la masse, un via de masse referme la boucle et c'est le cas
+     ordinaire. S'ils sont GND et PWR, RIEN ne peut la refermer.
+
+     TROIS ÉTATS, DONC, ET PAS DEUX — c'est la même règle que `_analyse_retour`
+     côté serveur, et il faut qu'elle soit la même : le chevelu et la fiche
+     jugent la même chose. */
+  const netDe = i => String((S.cuL[i] && S.cuL[i].net) || "").trim();
+  const nDep = new Set(pDep.map(netDe).filter(Boolean));
+  const nArr = new Set(pArr.map(netDe).filter(Boolean));
+  const planChange = pDep.length > 0 && pArr.length > 0 && !dedans(pDep, pArr);
+  let netsDiff = false;
+  if(planChange){
+    if(nDep.size && nArr.size){
+      netsDiff = true;
+      nDep.forEach(n => {if(nArr.has(n)) netsDiff = false;});
+    }else netsDiff = null;                 /* l'empilage ne les déclare pas */
+  }
+  return {via:v, hauteur:hauteur, voisins:out, retenus:retenus,
+          L:r.L, seul:r.seul, netsIncertains:!verifNet,
+          planChange:planChange, netsDiff:netsDiff,
+          /* `change` reste le nom du DÉFAUT : un changement que rien ne peut
+             rejoindre, et il exige désormais la certitude. */
+          change:planChange && netsDiff === true,
+          doute:planChange && netsDiff === null,
+          plansDep:pDep, plansArr:pArr};
+}
+
+/* Le chevelu est-il à l'écran ? Il lui faut le panneau ouvert sur l'impédance
+   — la famille qui parle de vias — et au moins un via sélectionné. Il ne lui
+   faut PAS de résultat : c'est un outil de routage, il doit répondre pendant
+   qu'on déplace le via, pas après un calcul. */
+function simRetourActif(){
+  return !!(typeof SIM !== "undefined" && SIM.ouvert
+            && SIM.analyse === "impedance" && S.sel.vias.size > 0);
+}
+
+/* Les vias de signal sélectionnés, chacun avec son voisinage. Un via de MASSE
+   sélectionné n'ouvre pas de chevelu : il n'a pas de boucle à lui, il EST le
+   retour de quelqu'un d'autre. */
+function simChevelu(){
+  if(!simRetourActif()) return [];
+  const refs = simRefSet();
+  const out = [];
+  for(const v of S.sel.vias){
+    if(refs.has(v.net)) continue;
+    out.push(simVoisinageVia(v));
+  }
+  return out;
+}
+
+/* La couleur d'un lien, par sa part du courant de retour. Le vert du panneau
+   pour celui qui travaille, l'ambre pour celui qui traîne, le rouge pour celui
+   qui ne ferme rien. Ce sont les trois couleurs de la carte de chaleur des
+   impédances, et c'est voulu : une même échelle pour un même jugement. */
+function simRetourCouleur(f){
+  if(!f.retenu) return "#e8564a";
+  if(f.part >= 0.30) return "#49c07a";
+  if(f.part >= 0.10) return "#e0a63c";
+  return "#7d8590";
+}
+
+function simRetourTrace(c, dpr){
+  const liens = simChevelu();
+  if(!liens.length) return;
+  c.save();
+  c.lineCap = "round";
+
+  for(const g of liens){
+    for(const f of g.voisins){
+      c.strokeStyle = simRetourCouleur(f);
+      /* L'ÉPAISSEUR DIT LA PART DU COURANT. Un trait fin est un via qui ne
+         travaille pas, et c'est une information de routage : il occupe une
+         place et ne rend rien. */
+      c.lineWidth = f.retenu ? px(1.2 + 4.0 * Math.max(f.part, 0)) : px(1.2);
+      c.setLineDash(f.retenu ? [] : [px(3), px(3)]);
+      c.beginPath();
+      c.moveTo(g.via.x, g.via.y);
+      c.lineTo(f.via.x, f.via.y);
+      c.stroke();
+    }
+    /* Le via de signal, cerclé : c'est lui dont on parle. */
+    c.setLineDash([]);
+    c.strokeStyle = g.retenus.length ? "#49c07a" : "#e8564a";
+    c.lineWidth = px(1.6);
+    c.beginPath();
+    c.arc(g.via.x, g.via.y, g.via.d / 2 + px(3), 0, Math.PI * 2);
+    c.stroke();
+  }
+  c.restore();
+  simRetourValeurs(c, liens, dpr);
+}
+
+/* Les chiffres, tracés en pixels écran : une étiquette qui grossit avec le
+   zoom finit par couvrir la carte, et celle-ci doit rester lisible quand on
+   dézoome pour voir la liaison entière. C'est la règle de `simZValeurs`. */
+function simRetourValeurs(c, liens, dpr){
+  c.save();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.scale(dpr, dpr);
+  c.textAlign = "center"; c.textBaseline = "middle";
+
+  const cartouche = (e, txt, bord, dy, petit) => {
+    c.font = (petit ? "600 9.5px " : "600 11px ") +
+      "\"JetBrains Mono\",\"SF Mono\",Consolas,\"Roboto Mono\",monospace";
+    const w = c.measureText(txt).width + 10, hh = petit ? 15 : 18;
+    c.fillStyle = "rgba(15,16,18,0.86)";
+    c.beginPath();
+    if(c.roundRect) c.roundRect(e.x - w / 2, e.y + dy - hh / 2, w, hh, 4);
+    else c.rect(e.x - w / 2, e.y + dy - hh / 2, w, hh);
+    c.fill();
+    c.strokeStyle = bord; c.lineWidth = 1.2; c.stroke();
+    c.fillStyle = "#e6e8ec";
+    c.fillText(txt, e.x, e.y + dy + 0.5);
+  };
+
+  for(const g of liens){
+    /* LA PART SUR CHAQUE LIEN, et seulement si elle se voit : sous cinq pour
+       cent, l'étiquette encombre plus qu'elle n'informe — le trait fin dit
+       déjà que ce via ne travaille pas. Un lien ÉCARTÉ, lui, porte toujours sa
+       raison : c'est la seule chose qui explique pourquoi il ne compte pas. */
+    const o = w2s(g.via.x, g.via.y);
+    for(const f of g.voisins){
+      const e = w2s(f.via.x, f.via.y);
+      const lg = Math.hypot(e.x - o.x, e.y - o.y);
+      /* UN LIEN TROP COURT À L'ÉCRAN NE PORTE PAS D'ÉTIQUETTE. En dessous de
+         quarante-cinq pixels, le cartouche recouvre le via qu'il désigne et
+         celui d'à côté : on perd les deux informations pour en afficher une.
+         L'ÉPAISSEUR DU TRAIT, elle, dit toujours la part — et elle ne se
+         chevauche avec rien. Un lien ÉCARTÉ garde sa raison quoi qu'il arrive :
+         c'est la seule chose qui explique pourquoi il ne compte pas, et un via
+         écarté est justement celui qu'on a posé tout contre. */
+      if(lg < 45 && f.retenu) continue;
+      /* AUX DEUX TIERS DU LIEN, ET NON AU MILIEU : le milieu de trois liens qui
+         partent du même point retombe dans la même zone encombrée. */
+      const m = {x:o.x + 0.66 * (e.x - o.x), y:o.y + 0.66 * (e.y - o.y)};
+      /* LA RAISON D'UN ÉCART EST UNE PHRASE, PAS UN POURCENTAGE : elle est
+         large, et posée sur le lien elle recouvre le via qu'elle désigne. On
+         la remonte au-dessus du trait — le trait pointillé rouge dit déjà
+         lequel des deux vias est en cause. */
+      if(!f.retenu) cartouche(m, f.raison, "#e8564a", -14, true);
+      else if(f.part >= 0.05)
+        cartouche(m, Math.round(100 * f.part) + " %",
+                  simRetourCouleur(f), 0, true);
+    }
+    /* L'INDUCTANCE DE BOUCLE, au pied du via, et ce qu'elle vaut. Quand rien ne
+       referme la boucle, le chiffre n'est PAS une inductance de boucle : c'est
+       la self d'un conducteur seul, elle ne dépend pas du routage, et
+       l'afficher comme les autres laisserait croire qu'on a mesuré quelque
+       chose. Le « ≥ » n'est pas une précaution de style : le courant revient
+       quand même, par le cuivre des plans et plus loin, donc la boucle réelle
+       vaut DAVANTAGE. La self partielle en est le plancher. */
+    const txt = g.seul
+      ? "L ≥ " + simNb(g.L * 1e9, 2) + " nH · sans retour"
+      : "L = " + simNb(g.L * 1e9, 2) + " nH";
+    /* AU-DESSUS DU VIA, ET AU-DESSUS DE SON CERCLE. Un décalage fixe suffit
+       tant qu'on est dézoomé ; à fort grossissement la pastille dépasse le
+       cartouche et le chiffre se pose SUR le via qu'il décrit. On le remonte
+       donc du rayon écran de la pastille. */
+    const rayon = (g.via.d / 2) * S.scale + 14;
+    cartouche(o, txt, g.seul ? "#e8564a" : "#49c07a",
+              -Math.max(18, rayon), false);
+    /* LE DÉFAUT ET LE DOUTE NE SE DISENT PAS DE LA MÊME FAÇON, et surtout pas
+       de la même couleur : un chevelu qui crie au rouge sur le cas ordinaire
+       cesse d'être regardé. */
+    const noms = g.plansDep.map(i => cuLabel(i, S.cu)).join("/") + " → " +
+                 g.plansArr.map(i => cuLabel(i, S.cu)).join("/");
+    if(g.change)
+      cartouche(o, "référence " + noms + " : aucun via ne peut joindre les deux",
+                "#e8564a", Math.max(20, rayon), true);
+    else if(g.doute)
+      cartouche(o, "référence " + noms + " : nets des plans non déclarés",
+                "#e0a63c", Math.max(20, rayon), true);
   }
   c.restore();
 }
@@ -942,6 +1581,9 @@ const SIM_PCB={
         carte:this.carte(), net:net,
         stackup:simStackup(),
         geometry:{objects:g.envoi},
+        /* LES VIAS DE LA SÉLECTION, SANS ORDRE — voir `simViasPcb`. Leur
+           chemin de retour ne dépend pas du parcours. */
+        vias:g.vias||[],
         ports:[{id:1,impedance:opts.z0},{id:2,impedance:opts.z0}],
         analyse:{f_debut:opts.f1, f_fin:opts.f2, points:opts.points,
                  f_centre:opts.fc}

@@ -195,6 +195,12 @@ function peindre(c,dpr,W,H){
   /* L'étiquette de la sonde, au-dessus de la carte : elle désigne un point,
      elle ne décrit pas le cuivre. */
   if(typeof simDCTraceSonde==="function")simDCTraceSonde(c,dpr,w2s);
+  /* LE CHEVELU DU COURANT DE RETOUR : quels vias de masse referment la boucle
+     d'un via de signal, ce que chacun porte, et lesquels ne le peuvent pas. Il
+     se pose APRES les cartes de chaleur -- c'est un jugement sur des vias, pas
+     sur du cuivre peint -- et AVANT les composants et les textes, qui doivent
+     rester lisibles par-dessus. */
+  if(typeof simRetourTraceIpc==="function")simRetourTraceIpc(c,dpr);
   if(V.aff.composants)peindreComposants(c,dpr);
   peindreTextes(c,dpr);
   if(V.comp)peindreCompChoisi(c,dpr);

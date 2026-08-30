@@ -57,7 +57,7 @@ const FICHIERS=[
   path.join(RACINE,"js","07-simulation.js")
 ];
 const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
-  "simSaisie","simPorts",
+  "simSaisie","simPorts","SIM_FORMAT",
   "V","LT","ltAire","ltPreparer","LT_SEUIL_PLAN","mdlLongueur",
   "mdlNetNom","mdlNb","mdlCharger","mdlCouches",
   "SIM","SIM_IPC","simRefSet","simRefListe","simRefCandidats",
@@ -66,6 +66,13 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simProjPoly","simSousPoly","simDistSeg","simGrilleCuivre","simEcartsEn",
   "simPlagesIpc","simCoutureIpc","simSegments","simCuDe","simRangCu",
   "simAccrocherViasIpc","simViaAuRaccordIpc","simKUnite",
+  "simChainePistes","simBoutsPiste","simZPistes","simArcEnPolyligne",
+  "simJonctionsIpc","simJoncCommuneIpc","SIM_RAYON_JONCTION_IPC","simViasIpc",
+  "mdlArc",
+  "simCheveluRes","simRetourCouleurRes","simRetourActifIpc",
+  "simRetourTraceIpc",
+  "simRetoursIpc","SIM_RAYON_RETOUR_IPC",
+  "simStackupIpc","simNetDuPlanIpc",
   "simTopo","simTopoNom","simCoplanaire","simCouture","simVoisins",
   "simNb","simSection","simProvenanceIpc",
   "SIM_GAP_MAX","SIM_COULOIR","SIM_GND_RE","SIM_REF_TAUX",
@@ -735,11 +742,11 @@ T("changer d'unité ne change pas la fréquence, seulement son écriture",()=>{
      `simSaisie()` lit le DOM et le DOM l'emporte sur `SIM.saisie`. Poser la
      valeur en mémoire seule éprouverait un chemin que personne n'emprunte. */
   const ch=id=>document.getElementById(id);
-  /* DEUX UNITÉS DEPUIS LE 2026-08-30 : f₀ a la sienne, la bande S la sienne.
-     Les régler toutes les deux ici n'est pas une commodité d'essai — c'est ce
-     que fait le panneau, qui pose les deux listes. Ne régler que la première
+  /* TROIS UNITÉS DEPUIS LE 2026-08-30 : f₀ a la sienne, la bande S a f1 et f2.
+     Les régler toutes les trois ici n'est pas une commodité d'essai — c'est ce
+     que fait le panneau, qui pose les trois listes. Ne régler que la première
      laisserait la bande se lire en gigahertz, et « 100 » vaudrait 100 GHz. */
-  SIM.saisie.unite="MHz"; SIM.saisie.uniteBande="MHz";
+  SIM.saisie.unite="MHz"; SIM.saisie.uniteBande1="MHz"; SIM.saisie.uniteBande2="MHz";
   ch("simFc").value="868"; ch("simF1").value="100"; ch("simF2").value="3000";
   simSaisie();
   if(SIM.saisie.fc!==868e6)
@@ -751,8 +758,8 @@ T("changer d'unité ne change pas la fréquence, seulement son écriture",()=>{
   if(SIM.saisie.f1!==1e8||SIM.saisie.f2!==3e9)
     throw new Error("la bande ne doit pas bouger non plus");
   /* ET SON UNITÉ NON PLUS : changer celle de f₀ ne doit pas emporter celle de
-     la bande, sans quoi les deux listes n'en feraient qu'une. */
-  if(SIM.saisie.uniteBande!=="MHz")
+     la bande, sans quoi les listes n'en feraient qu'une. */
+  if(SIM.saisie.uniteBande1!=="MHz" || SIM.saisie.uniteBande2!=="MHz")
     throw new Error("l'unité de la bande a suivi celle de f₀");
   /* ET LE CHAMP A ÉTÉ RÉÉCRIT dans la nouvelle unité : c'est la moitié
      visible du contrat. Sans cela on lirait 868 sous une étiquette GHz. */
@@ -1180,20 +1187,929 @@ T("sans perçage déclaré, deux pastilles au même lieu valent un tube",()=>{
     throw new Error("perçage déduit "+v.drill_diameter+" au lieu de 0,10");
 });
 
-T("un trou NON métallisé ne joint rien, et n'est pas accroché",()=>{
+/* CE QUE « PAS DE VIA IDENTIFIÉ » VEUT DIRE, ET CE QUE ÇA NE VEUT PAS DIRE.
+   Le changement de couche existe indépendamment du perçage qu'on sait nommer :
+   ses deux tronçons se raccordent quelque part, et ce quelque part suffit à
+   mesurer l'écart aux vias de masse. On envoie donc toujours la POSITION et
+   les VIAS VOISINS ; ce qui manque, ce sont les COTES, et elles ont leurs
+   replis annoncés.
+
+   POURQUOI CE CONTRAT A CHANGÉ. L'ancien n'envoyait rien du tout tant que le
+   perçage n'était pas reconnu. Le serveur en concluait « aucun via de masse ne
+   referme la boucle » — une affirmation SUR LA CARTE là où on n'avait
+   simplement pas cherché, et fausse dès qu'il y a un via de masse à côté, ce
+   qui est le cas courant. */
+T("un trou NON métallisé ne donne pas de cotes, mais la position part",()=>{
   const o=padTraversante(0.55);
   o.percages=[{x:xm0(), y:Y, d:0.25, n:0, p:"NON_PLATED"}];
   carteVia(o);
   const v=simSegments().envoi[1].via;
-  if(v)throw new Error("un trou nu a été pris pour un via : "+JSON.stringify(v));
+  if(!v)throw new Error("le raccord doit partir même sans via identifié");
+  if(v.drill_diameter!==undefined)
+    throw new Error("un trou nu a été pris pour un via : perçage "+
+                    v.drill_diameter);
+  if(Math.abs(v.x-xm0())>1e-9)throw new Error("la position ne part pas");
+  if(!Array.isArray(v.retours))
+    throw new Error("les vias de masse voisins doivent être cherchés quand "+
+                    "même : c'est le seul moyen de ne pas conclure à tort");
 });
 
-T("rien au raccord : rien n'est accroché",()=>{
+T("un trou nu AILLEURS sur le net n'empêche pas de voir le via",()=>{
+  /* L'ORDRE DES DEUX TESTS COMPTAIT, ET IL ÉTAIT INVERSE. « ce trou n'est pas
+     métallisé » sortait de la fonction AVANT qu'on ait vérifié qu'il s'agit du
+     trou cherché : un seul trou nu quelque part sur le net — une fixation, un
+     point de test — rendait le via du raccord invisible, et toute la fiche
+     tombait sur des replis. */
+  const o=padTraversante(0.55);
+  o.percages=[{x:xm0()-8, y:Y+5, d:2.0, n:0, p:"NON_PLATED"},
+              {x:xm0(),   y:Y,   d:0.25, n:0, p:"PTH"}];
+  carteVia(o);
+  const v=simSegments().envoi[1].via;
+  if(!v||Math.abs(v.drill_diameter-0.25)>1e-9)
+    throw new Error("le via du raccord n'a pas été vu : "+JSON.stringify(v));
+});
+
+T("rien au raccord : pas de cotes, mais le raccord part quand même",()=>{
   carteVia({});
   const v=simSegments().envoi[1].via;
-  if(v)throw new Error("un via a été inventé là où il n'y a rien");
+  if(!v)throw new Error("le raccord doit partir même sans via identifié");
+  if(v.drill_diameter!==undefined||v.pad_diameter!==undefined)
+    throw new Error("des cotes ont été inventées là où il n'y a rien");
 });
 
+T("l'empilage envoie le net de ses plans",()=>{
+  /* SANS LUI, LE VERDICT EST INDÉCIDABLE. Deux plans de NOMS différents ne
+     sont pas deux plans de NETS différents : « TOP se réfère à GND, BOT se
+     réfère à GND2 » est le cas ordinaire d'une carte quatre couches, qu'un via
+     de masse referme. Sans le net, le serveur voyait deux noms différents et
+     criait au défaut grave sur toute carte correcte. */
+  carte({nets:["N$1","GND"], plans:[plan(1, rect(2,2,58,38), [])]});
+  const st=simStackupIpc();
+  const cu=st.layers.filter(l=>l.type==="copper");
+  const avecNet=cu.filter(l=>l.net==="GND");
+  if(!avecNet.length)
+    throw new Error("aucune couche de cuivre ne porte le net de son plan : "+
+                    JSON.stringify(cu));
+});
+
+
+/* ==========================================================================
+   LES VIAS DE MASSE VOISINS, ET CE QUE L'IPC-2581 N'EN DIT PAS
+   --------------------------------------------------------------------------
+   POURQUOI LES ENVOYER. Un via n'a pas d'inductance à lui seul : c'est la
+   BOUCLE qu'il forme avec ses vias de masse qui en porte une. Sans eux, le
+   serveur rend la self d'un conducteur seul — un plancher, qui ne dépend pas
+   du routage.
+
+   CE QUE LE FORMAT NE PORTE PAS, ET QU'IL FAUT DIRE. Un perçage IPC-2581
+   déclare sa position, son diamètre et son net, mais PAS SES COUCHES : rien
+   n'y distingue un via traversant d'un via enterré. On les envoie donc en les
+   supposant traversants, avec `portee_supposee` — et un via enterré compté
+   comme traversant rendrait une inductance trop PETITE, donc flatteuse. C'est
+   la raison pour laquelle le drapeau existe, et ces cas le verrouillent.
+   ========================================================================== */
+
+/* Une carte avec une masse : un net nommé GND et ses perçages. `refs` la
+   retient parce que son nom la désigne — c'est la même règle que le chemin DC. */
+function carteViaMasse(trousGnd, opts){
+  opts = opts || {};
+  const xm = (X1 + X2) / 2;
+  const o = padTraversante(0.55);
+  o.percages = [{x:xm, y:Y, d:0.25, n:0, p:"PTH"}].concat(
+    (trousGnd || []).map(t => ({x:t.x, y:t.y, d:t.d == null ? 0.30 : t.d,
+                                n:1, p:t.p || "PTH"})));
+  /* IL FAUT DU CUIVRE PLEIN POUR ÊTRE UNE RÉFÉRENCE, même nommé « GND » :
+     `simRefCandidatsIpc` refuse un net qui n'a que des pistes. Un plan arrosé,
+     donc — et c'est la bonne règle : un net nommé masse qui ne porte aucun
+     cuivre n'est pas un chemin de retour. */
+  const c = carte({percages:o.percages, pads:o.pads, padstacks:o.padstacks,
+                   nets:["N$1", "GND"],
+                   plans:[plan(1, rect(2, 2, 58, 38), [])]});
+  c.modele.pistes = [{c:0, n:0, w:W, p:[X1,Y, xm,Y]},
+                     {c:1, n:0, w:W, p:[xm,Y, X2,Y]}];
+  mdlCharger(c.modele);
+  V.net = 0;
+  SIM.refCle = null; SIM.refAuto = true; SIM.ref = null;
+  return xm;
+}
+
+T("les vias de masse voisins partent avec le via, portée supposée",()=>{
+  const xm = carteViaMasse([{x:(X1+X2)/2 + 0.6, y:Y}]);
+  const v = simSegments().envoi[1].via;
+  if(!v)throw new Error("aucun via accroché");
+  /* LA POSITION DU VIA DE SIGNAL DÉBLOQUE TOUT LE RESTE : sans elle le serveur
+     ne peut mesurer aucun écart. */
+  if(Math.abs(v.x - xm) > 1e-6 || Math.abs(v.y - Y) > 1e-6)
+    throw new Error("la position du via de signal n'est pas envoyée");
+  if(!v.retours || v.retours.length !== 1)
+    throw new Error("le via de masse voisin n'est pas envoyé ("+
+                    ((v.retours||[]).length)+" trouvé(s))");
+  const r = v.retours[0];
+  if(r.net !== "GND")throw new Error("le net du retour manque : "+r.net);
+  if(!r.portee_supposee)
+    throw new Error("la portée est supposée traversante et ne le dit pas — un "+
+                    "via enterré passerait alors pour un retour valable");
+  if(Math.abs(r.x - (xm + 0.6)) > 1e-6)
+    throw new Error("la position du retour est fausse : "+r.x);
+});
+
+T("un trou de masse NON métallisé ne referme rien",()=>{
+  /* MÊME RÈGLE QUE POUR LE VIA DE SIGNAL, et que pour le chemin du courant
+     continu : un trou nu ne conduit pas. L'oublier ici ferait compter un trou
+     de fixation comme un via de retour. */
+  carteViaMasse([{x:(X1+X2)/2 + 0.6, y:Y, p:"NON_PLATED"}]);
+  const v = simSegments().envoi[1].via;
+  if(v.retours.length)
+    throw new Error("un trou nu a été pris pour un via de retour");
+});
+
+T("un via de masse hors de portée n'est pas envoyé",()=>{
+  const xm = (X1 + X2) / 2;
+  carteViaMasse([{x:xm + SIM_RAYON_RETOUR_IPC + 1.0, y:Y}]);
+  const v = simSegments().envoi[1].via;
+  if(v.retours.length)
+    throw new Error("un via au-delà du rayon a été ramassé");
+});
+
+T("les retours sont rendus du plus proche au plus lointain",()=>{
+  const xm = (X1 + X2) / 2;
+  carteViaMasse([{x:xm + 2.0, y:Y}, {x:xm + 0.5, y:Y}, {x:xm, y:Y + 1.2}]);
+  const v = simSegments().envoi[1].via;
+  if(v.retours.length !== 3)
+    throw new Error("trois retours attendus, "+v.retours.length);
+  const d = v.retours.map(r => Math.hypot(r.x - xm, r.y - Y));
+  for(let i = 1; i < d.length; i++)
+    if(d[i] < d[i-1] - 1e-9)
+      throw new Error("les retours ne sont pas triés : "+d.map(x=>x.toFixed(2)));
+});
+
+T("sans net de référence, aucun retour n'est envoyé",()=>{
+  /* Un via de masse n'est un retour que si son net est tenu pour une masse.
+     Sans référence déclarée, on n'en invente pas une. */
+  carteViaMasse([{x:(X1+X2)/2 + 0.6, y:Y}]);
+  /* `simRefSet` remet la sélection à l'automatique dès que la CARTE change :
+     il faut donc l'appeler une fois — c'est elle qui estampille la carte —
+     avant de forcer une liste vide, sinon l'appel suivant la rétablit. */
+  simRefSet();
+  SIM.refAuto = false; SIM.ref = new Set();
+  const v = simSegments().envoi[1].via;
+  SIM.refAuto = true; SIM.ref = null;
+  if(v.retours.length)
+    throw new Error("un via a servi de retour sans référence déclarée");
+});
+
+/* ==========================================================================
+   L'ORDRE DU PARCOURS
+   --------------------------------------------------------------------------
+   LE DÉFAUT LE PLUS COÛTEUX DE CET OUTIL, et le plus discret. `simZPistes`
+   rend les pistes du net dans l'ordre où l'IPC-2581 les a écrites, et le sens
+   de chaque polyligne y est arbitraire. Tout ce qui suit — raccords, coudes,
+   vias — suppose une chaîne parcourue dans l'ordre envoyé.
+
+   MESURÉ SUR UNE CARTE LIVRÉE : un coude annoncé à 168° — l'angle se prend
+   ENTRE VECTEURS, donc 168° est un demi-tour — sur une piste presque droite,
+   deux raccords annoncés manquants sur un parcours continu, et AUCUN via
+   accroché. Le serveur remplaçait alors le perçage, la pastille, la portée et
+   les vias de masse voisins par des replis, et disait « non envoyé ».
+
+   Les trois essais ci-dessous tiennent les trois conséquences : le via se
+   raccroche, les côtés ne s'inversent pas, et une dérivation ne se force pas.
+   ========================================================================== */
+
+/* La même liaison que `carteVia`, mais dont le second tronçon est ÉCRIT À
+   L'ENVERS : il part du bout de la carte et revient vers le via. Rien sur le
+   cuivre ne distingue les deux cartes. */
+function carteViaEnvers(opts){
+  opts=opts||{};
+  const xm=(X1+X2)/2;
+  const c=carte({percages:opts.percages||[], pads:opts.pads||[],
+                 padstacks:opts.padstacks||{}});
+  c.modele.pistes=[{c:0, n:0, w:W, p:[X1,Y, xm,Y]},
+                   {c:1, n:0, w:W, p:[X2,Y, xm,Y]}];   /* <- à l'envers */
+  mdlCharger(c.modele);
+  V.net=0;
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  return xm;
+}
+
+T("une piste écrite à l'envers ne casse plus le raccord du via",()=>{
+  const o=padTraversante(0.55);
+  o.percages=[{x:xm0(), y:Y, d:0.25, n:0, p:"PTH"}];
+  const xm=carteViaEnvers(o);
+  const g=simSegments();
+  if(g.envoi.length!==2)
+    throw new Error("deux tronçons attendus, "+g.envoi.length);
+  /* LE TRONÇON RETOURNÉ PART DU VIA, pas du bord de la carte. C'est cela que
+     `simAccrocherViasIpc` teste, et c'est cela qui échouait. */
+  if(Math.abs(g.envoi[1].start[0]-xm)>1e-9)
+    throw new Error("le second tronçon part de x="+g.envoi[1].start[0]+
+                    " au lieu du via en "+xm);
+  if(Math.abs(g.envoi[1].end[0]-X2)>1e-9)
+    throw new Error("le second tronçon finit en x="+g.envoi[1].end[0]+
+                    " au lieu de "+X2);
+  const v=g.envoi[1].via;
+  if(!v)
+    throw new Error("le via n'a pas été accroché : le chaînage n'a pas remis "+
+                    "la piste dans le sens du parcours");
+  if(Math.abs(v.drill_diameter-0.25)>1e-9)
+    throw new Error("perçage "+v.drill_diameter+" au lieu de 0,25");
+  /* ET C'EST TOUTE LA CHAÎNE QUI SUIT : sans via accroché, les vias de masse
+     voisins ne partaient pas non plus, et le serveur disait « non envoyé ». */
+  if(!("retours" in v))
+    throw new Error("le via part sans ses vias de masse voisins");
+});
+
+T("gauche et droite ne s'inversent pas avec le sens d'écriture",()=>{
+  /* DEUX TRONÇONS QUI VONT DANS LE MÊME SENS SUR LE CUIVRE, dont un écrit à
+     l'envers dans le fichier. Le plan est creusé très large d'un côté et serré
+     de l'autre : les deux tronçons voient donc la MÊME dissymétrie, et doivent
+     la rapporter à l'identique. Sans l'échange gauche/droite, le retourné la
+     rapporterait en miroir — « 0,2 / 0 » d'un côté, « 0 / 0,2 » de l'autre —
+     dans un panneau qui annonce mesurer chaque côté séparément. */
+  const xm=(X1+X2)/2;
+  const c=avecPlan(null,1,Y-8,Y+0.4);
+  c.modele.pistes=[{c:0, n:0, w:W, p:[X1,Y, xm,Y]},
+                   {c:0, n:0, w:W, p:[X2,Y, xm,Y]}];   /* <- à l'envers */
+  mdlCharger(c.modele);
+  V.net=0;
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  const g=simSegments();
+  if(g.envoi.length!==2)
+    throw new Error("deux tronçons attendus, "+g.envoi.length);
+  const a=g.envoi[0], b=g.envoi[1];
+  /* La dissymétrie doit être RÉELLE, sinon l'essai ne prouverait rien. */
+  if(Math.abs(Math.max(a.gap_left,a.gap_right)-0.2)>0.005||
+     Math.min(a.gap_left,a.gap_right)!==0)
+    throw new Error("le montage n'est pas dissymétrique : "+
+                    a.gap_left+" / "+a.gap_right);
+  if(a.gap_left!==b.gap_left||a.gap_right!==b.gap_right)
+    throw new Error("les côtés sont inversés sur le tronçon retourné : "+
+                    a.gap_left+"/"+a.gap_right+" contre "+
+                    b.gap_left+"/"+b.gap_right);
+});
+
+/* ==========================================================================
+   LE RACCORD SE MESURE, IL NE SE RANGE PAS DANS UN CASIER
+   --------------------------------------------------------------------------
+   TOUS LES ESSAIS DE CHAÎNAGE CI-DESSUS POSENT DES BOUTS EXACTEMENT CONFONDUS,
+   et c'est ce qui a laissé passer le défaut. La version précédente rangeait
+   chaque bout dans un casier dont la clé était la coordonnée arrondie au
+   micron. Un casier n'est pas une tolérance : deux bouts distants de quelques
+   microns qui tombent de part et d'autre d'une graduation vont dans DEUX
+   casiers et ne se rejoignent jamais. La tolérance effective était zéro, et
+   `SIM_TOL_CHAINE_IPC` — déclaré, commenté « la tolérance du serveur » —
+   n'était employé nulle part.
+
+   L'ÉDITEUR PCB NE POUVAIT PAS LE MONTRER : ses pistes sont accrochées à la
+   grille, donc leurs bouts coïncident au bit près. Un IPC-2581 porte des
+   coordonnées lues dans un fichier texte, souvent en pouces multipliés par
+   25,4 : les deux bouts d'un même via y diffèrent presque toujours d'un peu.
+   ========================================================================== */
+
+T("deux bouts à quelques microns se raccordent quand même",()=>{
+  /* L'ÉCART EST CHOISI POUR TOMBER DE PART ET D'AUTRE D'UNE GRADUATION AU
+     MICRON : 0,6 µm de décalage suffisait à séparer les deux casiers, alors
+     que le cuivre est continu à toute échelle qui compte. */
+  const xm=xm0();
+  const o=padTraversante(0.55);
+  const c=carte({percages:[{x:xm, y:Y, d:0.25, n:0, p:"PTH"}],
+                 pads:o.pads, padstacks:o.padstacks});
+  /* LA SECONDE EST ÉCRITE À L'ENVERS, comme le fait un vrai fichier : rien
+     dans l'IPC-2581 ne dit par quel bout on entre dans une piste. C'est ce qui
+     OBLIGE le chaînage à travailler — deux pistes déjà dans le bon ordre
+     sortent bonnes même sans lui, et un essai qui les pose ne mesure rien. */
+  c.modele.pistes=[{c:0, n:0, w:W, p:[X1,Y, xm-0.0006,Y]},
+                   {c:1, n:0, w:W, p:[X2,Y, xm+0.0006,Y]}];
+  mdlCharger(c.modele);
+  V.net=0;
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  const g=simSegments();
+  if(g.envoi.length!==2)
+    throw new Error("deux tronçons attendus, "+g.envoi.length);
+  /* LE CHAÎNAGE D'ABORD : sans lui rien de ce qui suit n'arrive. */
+  if(g.envoi[0].layer===g.envoi[1].layer)
+    throw new Error("les deux tronçons sortent sur la même couche : "+
+                    "le parcours n'a pas été reconstruit");
+  /* PUIS LE VIA, QUI EN DÉPEND — c'est la cascade réelle du défaut : pas de
+     chaîne, pas de via accroché, donc pas de cotes ; et pas de vias de masse
+     voisins, donc pas de chevelu du retour. */
+  const v=g.envoi[1].via;
+  if(!v)
+    throw new Error("le via n'est pas accroché : le raccord à 1,2 µm a été "+
+                    "pris pour une rupture");
+  if(Math.abs(v.drill_diameter-0.25)>1e-9)
+    throw new Error("perçage "+v.drill_diameter+" au lieu de 0,25");
+  if(!("retours" in v))
+    throw new Error("le via part sans ses vias de masse voisins : "+
+                    "le chevelu du retour n'aura rien à dessiner");
+});
+
+T("une tolérance reste une tolérance : au-delà, pas de raccord",()=>{
+  /* LE REVERS DOIT ÊTRE TENU. Élargir le raccord jusqu'à joindre n'importe
+     quoi rendrait un parcours là où le cuivre est vraiment coupé, et des
+     paramètres S qui ont l'air justes. 50 µm, c'est deux fois et demie la
+     tolérance du serveur : ces deux bouts ne se touchent pas, et la sélection
+     doit rester visiblement rompue. */
+  const xm=xm0();
+  const c=carte({});
+  c.modele.pistes=[{c:0, n:0, w:W, p:[X1,Y, xm-0.025,Y]},
+                   {c:1, n:0, w:W, p:[X2,Y, xm+0.025,Y]}];   /* <- à l'envers */
+  mdlCharger(c.modele);
+  V.net=0;
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  const g=simSegments();
+  if(g.envoi.length!==2)
+    throw new Error("deux tronçons attendus, "+g.envoi.length);
+  /* LE CHAÎNAGE DOIT REFUSER : la piste écrite à l'envers reste à l'envers,
+     donc elle part de X2 et non du milieu. C'est ce refus qu'on mesure, et non
+     seulement l'absence de via — l'accrochage a sa propre tolérance, et un
+     essai qui ne regarderait que lui passerait quoi qu'il arrive ici. */
+  if(Math.abs(g.envoi[1].start[0]-X2)>1e-9)
+    throw new Error("le second tronçon a été retourné : un raccord de 50 µm "+
+                    "a été pris pour une continuité");
+  if(g.envoi[1].via)
+    throw new Error("un via a été accroché sur un raccord de 50 µm : "+
+                    "la tolérance joint désormais du cuivre séparé");
+});
+
+T("une dérivation ne s'invente pas un parcours, et ne perd rien",()=>{
+  /* TROIS PISTES À UN MÊME NŒUD : il n'y a plus de parcours unique. En choisir
+     un rendrait des paramètres S qui ont l'air justes. La marche s'arrête, le
+     reste part dans l'ordre du fichier, et le serveur continue d'annoncer les
+     raccords manquants — une sélection ramifiée doit rester visiblement
+     ramifiée. CE QUI NE DOIT PAS ARRIVER, c'est qu'une piste disparaisse ou
+     sorte deux fois. */
+  const xm=(X1+X2)/2;
+  const c=carte({});
+  c.modele.pistes=[{c:0, n:0, w:W, p:[X1,Y, xm,Y]},
+                   {c:0, n:0, w:W, p:[xm,Y, X2,Y]},
+                   {c:0, n:0, w:W, p:[xm,Y, xm,Y+8]}];
+  mdlCharger(c.modele);
+  V.net=0;
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  const suite=simChainePistes(simZPistes());
+  if(suite.length!==3)
+    throw new Error("trois pistes entrées, "+suite.length+" sorties");
+  const vues=new Set(suite.map(e=>e.piste));
+  if(vues.size!==3)
+    throw new Error("une piste sort deux fois, ou une autre a disparu");
+});
+
+/* ==========================================================================
+   LE RACCORD SE FAIT PAR UNE JONCTION, PAS EN SE TOUCHANT
+   --------------------------------------------------------------------------
+   CE CAS EST RELEVÉ SUR UNE VRAIE CARTE, coordonnées comprises. Le net
+   SPI_SIGN00467 y court sur trois pistes et deux vias, et AUCUN de ses bouts de
+   piste n'en touche un autre : les quatre bouts qui arrivent à un via sont à
+   exactement 0,5500 mm de son centre — un diamètre de pastille —, parce que
+   l'exportateur arrête là le tracé. Les deux vrais bouts de la liaison, eux,
+   sont à 0,0000 d'une pastille de composant.
+
+   AUCUNE TOLÉRANCE DE RACCORD NE PEUT SAUVER CELA. Il en faudrait une d'un
+   demi-millimètre, qui joindrait alors des pistes étrangères. C'est la
+   JONCTION du net — le via, la pastille — qui raccorde, et c'est elle qu'il
+   faut suivre.
+
+   TOUT EN DÉPENDAIT, et c'est pour cela que ce cas est ici : sans le bon
+   parcours, le premier coude sortait à 168° — un demi-tour sur du cuivre
+   presque droit —, le serveur annonçait des raccords manquants, aucun via ne
+   s'accrochait, donc ni ses cotes ni les vias de masse voisins ne partaient, et
+   le chevelu du retour n'avait rien à dessiner.
+   ========================================================================== */
+
+/* Les trois pistes, les deux vias et les deux pastilles de bout, aux
+   coordonnées relevées. Les pistes sont posées dans l'ordre du FICHIER, qui
+   n'est pas celui du parcours, et la deuxième est celle du milieu. */
+function carteJonctions(trousGnd){
+  const c=carte({
+    /* UN PLAN DE MASSE ARROSÉ : `simRefCandidatsIpc` refuse un net qui n'a que
+       des perçages, et il a raison — un net nommé masse sans cuivre n'est pas
+       un chemin de retour. Sans référence, aucun via de masse ne part. */
+    nets:["N$1","GND"],
+    plans:[plan(1, rect(2,2,58,38), [])],
+    percages:[{x:13.5, y:32.2, d:0.25, n:0, p:"PLATED", a:0.15},
+              {x:16.3, y:29.9, d:0.25, n:0, p:"PLATED", a:0.15}].concat(
+              (trousGnd||[]).map(t=>({x:t.x, y:t.y, d:t.d==null?0.30:t.d,
+                                      n:1, p:t.p||"PLATED"}))),
+    padstacks:{V55:{pad:0.55, pads:[{c:"Top", d:0.55},{c:"Bottom", d:0.55}]},
+               P80:{pad:0.80, pads:[{c:"Top", d:0.80}]},
+               P58:{pad:0.58, pads:[{c:"Top", d:0.58}]}},
+    pads:[{x:13.5,  y:32.2,    ps:"V55", n:0},
+          {x:16.3,  y:29.9,    ps:"V55", n:0},
+          {x:11.444,y:30.6521, ps:"P80", n:0},
+          {x:17.14, y:30.0,    ps:"P58", n:0}]
+  });
+  c.modele.pistes=[
+    {c:0, n:0, w:0.21, p:[13.2242,31.7242, 11.4440,30.6521]},
+    {c:0, n:0, w:0.21, p:[16.8500,29.9000, 17.1400,30.0000]},
+    {c:1, n:0, w:0.21, p:[15.9111,30.2889, 13.8889,31.8111]}];
+  mdlCharger(c.modele);
+  V.net=0;
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+}
+
+/* Le cas d'un net MULTIPOINT, relevé lui aussi sur une vraie carte : NFC_SDA,
+   où trois pistes de couche extérieure montent de trois pastilles de composant
+   vers un même via, d'où une quatrième repart vers une couche interne. Quatre
+   bouts sur un nœud. */
+function carteRamifiee(){
+  const c=carte({
+    nets:["N$1","GND"],
+    plans:[plan(1, rect(2,2,58,38), [])],
+    percages:[{x:29.2, y:10.5, d:0.25, n:0, p:"PLATED", a:0.15}],
+    padstacks:{V55:{pad:0.55, pads:[{c:"Top", d:0.55},{c:"Bottom", d:0.55}]},
+               P58:{pad:0.58, pads:[{c:"Top", d:0.58}]},
+               P10:{pad:1.00, pads:[{c:"Top", d:1.00}]}},
+    pads:[{x:29.2,  y:10.5, ps:"V55", n:0},
+          {x:28.8,  y:9.5,  ps:"P10", n:0},
+          {x:28.46, y:11.1, ps:"P58", n:0},
+          {x:30.04, y:10.7, ps:"P58", n:0}]});
+  /* Les trois branches extérieures s'arrêtent à 0,55 mm du via, comme partout
+     ailleurs dans ce fichier ; la quatrième, en couche interne, aussi. */
+  c.modele.pistes=[
+    {c:0, n:0, w:0.21, p:[28.8000,9.5000,  29.2000,9.9500]},
+    {c:0, n:0, w:0.21, p:[28.4600,11.1000, 28.8111,10.8889]},
+    {c:0, n:0, w:0.21, p:[30.0400,10.7000, 29.7124,10.7000]},
+    {c:1, n:0, w:0.21, p:[29.2000,11.0500, 29.2000,20.0000]}];
+  mdlCharger(c.modele);
+  V.net=0;
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+}
+
+T("un net qui se ramifie le DIT, au lieu de se taire",()=>{
+  carteRamifiee();
+  const g=simSegments();
+  const ar=((g.chaine||{}).arrets)||[];
+  if(!ar.length)
+    throw new Error("la ramification n'est pas relevée : le panneau ne peut "+
+                    "pas expliquer pourquoi il n'y a ni via ni chevelu");
+  /* LE POINT EST CELUI DU VIA, pas un bout de piste : c'est ce qui permet de "+
+     l'aller regarder sur la carte. */
+  if(Math.abs(ar[0].x-29.2)>1e-6||Math.abs(ar[0].y-10.5)>1e-6)
+    throw new Error("le nœud est annoncé en "+ar[0].x+";"+ar[0].y+
+                    " au lieu du via (29,2 ; 10,5)");
+  if(ar[0].branches!==4)
+    throw new Error(ar[0].branches+" branches annoncées au lieu de 4");
+  if(!ar[0].perce)
+    throw new Error("le nœud est un via percé et n'est pas annoncé comme tel");
+  /* ET LA NOTE ARRIVE JUSQU'AU PANNEAU. Un état relevé que personne ne lit ne
+     vaut pas mieux que pas d'état du tout — c'est exactement ce qui est arrivé
+     à `res.discontinuites`, resté sans lecteur pendant tout un lot. */
+  const p=SIM_IPC.probleme(simSaisie());
+  if(!(p.notes||[]).some(t=>/se ramifie/.test(t)))
+    throw new Error("la note de ramification n'atteint pas le panneau : "+
+                    JSON.stringify(p.notes));
+});
+
+T("un net ramifié envoie quand même ses vias, hors de tout parcours",()=>{
+  /* LE CŒUR DU LOT. Le parcours n'existe pas — la marche s'arrête au nœud de
+     quatre branches —, donc aucun tronçon consécutif ne change de couche,
+     donc le serveur ne détectera AUCUNE transition. Le via, lui, est là : il
+     part dans la liste `vias`, sans ordre, et son chemin de retour se
+     calculera. */
+  carteRamifiee();
+  const g=simSegments();
+  /* ON N'EXIGE PAS QU'AUCUN VIA NE S'ACCROCHE, et c'est délibéré. Une fois la
+     marche arrêtée, les pistes restantes partent dans l'ordre du fichier ;
+     deux d'entre elles peuvent s'y trouver voisines ET aboutir vraiment au
+     même via, auquel cas l'accrochage est fortuit mais pas faux. Ce qui doit
+     être VRAI DANS TOUS LES CAS, c'est que le via parte dans la liste : c'est
+     la seule voie qui ne dépende pas de l'ordre, et le serveur écarte ensuite
+     les doublons. */
+  const v=g.vias||[];
+  if(v.length!==1)
+    throw new Error(v.length+" via(s) envoyé(s) hors chaîne au lieu de 1");
+  if(Math.abs(v[0].x-29.2)>1e-6||Math.abs(v[0].y-10.5)>1e-6)
+    throw new Error("le via est envoyé en "+v[0].x+";"+v[0].y);
+  /* SES DEUX COUCHES, ET ELLES DOIVENT DIFFÉRER : c'est ce qui en fait un via
+     plutôt qu'une pastille. */
+  if(v[0].layer_from===v[0].layer_to)
+    throw new Error("le via ne joint qu'une couche : "+v[0].layer_from);
+  if(Math.abs(v[0].drill_diameter-0.25)>1e-9)
+    throw new Error("perçage "+v[0].drill_diameter+" au lieu de 0,25");
+  if(!("retours" in v[0]))
+    throw new Error("le via part sans ses vias de masse voisins");
+  /* ET IL PART DANS LE DOCUMENT, pas seulement dans la structure interne. */
+  const p=SIM_IPC.probleme(simSaisie());
+  if(!p.doc.vias||p.doc.vias.length!==1)
+    throw new Error("le document n'emporte pas les vias : "+
+                    JSON.stringify(p.doc.vias));
+  /* LA VERSION ANNONCÉE DOIT SUIVRE LE CONTENU. `simProbleme` la pose, pas
+     l'adaptateur — on vérifie donc la constante, qui est ce que le serveur
+     lira. Les pages sont restées à « -1 » pendant tout le passage du serveur
+     à « -2 » : personne ne l'a vu, parce que le serveur acceptait les deux. */
+  if(SIM_FORMAT!=="cao-sim-em-3")
+    throw new Error("les pages s'annoncent « "+SIM_FORMAT+
+                    " » alors qu'elles portent la liste des vias");
+});
+
+T("un via déjà dans le parcours n'est pas envoyé deux fois",()=>{
+  /* LA PAGE PEUT L'ENVOYER SANS SAVOIR — le serveur écarte les doublons —,
+     mais ne pas l'envoyer du tout serait perdre le cas où la chaîne échoue.
+     Ce qu'on vérifie ici est que la page ne se contredit pas : le via du
+     parcours est accroché ET listé, avec les MÊMES cotes. Deux valeurs pour
+     une grandeur, c'est le défaut à ne pas refaire. */
+  carteJonctions();
+  const g=simSegments();
+  const accroches=g.envoi.filter(o=>o.via).map(o=>o.via);
+  if(accroches.length!==2)
+    throw new Error(accroches.length+" via(s) accroché(s) au lieu de 2");
+  for(const a of accroches){
+    const jumeau=(g.vias||[]).find(v=>Math.abs(v.x-a.x)<1e-6&&
+                                       Math.abs(v.y-a.y)<1e-6);
+    if(!jumeau)
+      throw new Error("le via ("+a.x+";"+a.y+") est accroché mais pas listé");
+    if(Math.abs(jumeau.drill_diameter-a.drill_diameter)>1e-9)
+      throw new Error("deux perçages pour un même via : "+
+                      a.drill_diameter+" contre "+jumeau.drill_diameter);
+  }
+});
+
+T("le chevelu lit les deux listes, et marque ce qui n'est pas cascadé",()=>{
+  /* `simCheveluRes` ne lisait que les transitions. Un via hors parcours porte
+     exactement les mêmes champs, dans une autre liste — et il doit se
+     dessiner, en disant que la courbe S ne le porte pas. */
+  SIM.ouvert=true; SIM.analyse="impedance";
+  SIM.res={discontinuites:{coudes:[], transitions:[], vias_hors_chaine:[{
+    rang:0, cascade:false,
+    cotes:{pastille_mm:0.55},
+    retour:{x:29.2, y:10.5, retenus:1, vias:[
+      {x:29.8, y:10.5, part:1.0, retenu:true, raison:""}]},
+    modelise:{inductance_nH:0.62, inductance_source:"boucle"}}]}};
+  const l=simCheveluRes();
+  if(l.length!==1)
+    throw new Error("le chevelu ignore les vias hors parcours : "+l.length);
+  if(Math.abs(l[0].x-29.2)>1e-9||Math.abs(l[0].y-10.5)>1e-9)
+    throw new Error("le chevelu est posé en "+l[0].x+";"+l[0].y);
+  if(l[0].cascade!==false)
+    throw new Error("le via hors parcours se donne pour cascadé : la courbe "+
+                    "S ne le porte pas, et le dessin doit le dire");
+  if(l[0].seul)
+    throw new Error("un retour referme la boucle et le chiffre est donné "+
+                    "pour un plancher");
+  /* ET UNE TRANSITION ORDINAIRE RESTE CASCADÉE : l'absence du champ vaut
+     vrai, sinon tous les vias du parcours passeraient pour hors parcours. */
+  SIM.res={discontinuites:{coudes:[], transitions:[{
+    troncon:1, cotes:{pastille_mm:0.55},
+    retour:{x:1, y:2, retenus:0, vias:[]},
+    modelise:{inductance_nH:0.9, inductance_source:"self"}}]}};
+  if(simCheveluRes()[0].cascade!==true)
+    throw new Error("une transition du parcours est marquée hors parcours");
+  SIM.res=null; SIM.ouvert=false;
+});
+
+T("un net qui ne se ramifie pas ne le dit pas",()=>{
+  /* LE REVERS, et il compte autant : une note qui paraît sur le cas ordinaire
+     cesse d'être lue le jour où elle est vraie. */
+  carteJonctions();
+  const g=simSegments();
+  if((((g.chaine||{}).arrets)||[]).length)
+    throw new Error("une ramification est annoncée sur un parcours simple");
+  const p=SIM_IPC.probleme(simSaisie());
+  if((p.notes||[]).some(t=>/se ramifie/.test(t)))
+    throw new Error("la note de ramification paraît sur un parcours simple");
+});
+
+T("trois pistes qui ne se touchent pas se chaînent par leurs vias",()=>{
+  carteJonctions();
+  const suite=simChainePistes(simZPistes());
+  if(suite.length!==3)
+    throw new Error("trois pistes entrées, "+suite.length+" sorties");
+  /* LE PARCOURS EST piste0 -> piste2 -> piste1, et les couches le disent :
+     extérieure, intérieure, extérieure. Dans l'ordre du fichier ce serait
+     0,0,1 — deux tronçons de même couche à la suite, séparés par un via qui
+     n'existe pas. */
+  const couches=suite.map(e=>e.couche).join(",");
+  if(couches!=="0,1,0")
+    throw new Error("ordre des couches : "+couches+" au lieu de 0,1,0 "+
+                    "(le chaînage n'a pas suivi les vias)");
+});
+
+T("le parcours entre par un vrai bout, et les vias s'accrochent",()=>{
+  carteJonctions();
+  const g=simSegments();
+  /* ON ENTRE PAR UNE PASTILLE DE COMPOSANT, pas au milieu de la liaison. Le
+     défaut posait les deux ports à 0,67 mm l'un de l'autre, de part et d'autre
+     du premier via : la liaison entière était repliée sur elle-même. */
+  const d=g.envoi[0].start, f=g.envoi[g.envoi.length-1].end;
+  const bouts=[[11.444,30.6521],[17.14,30.0]];
+  const sur=(p,q)=>Math.hypot(p[0]-q[0],p[1]-q[1])<1e-6;
+  if(!bouts.some(q=>sur(d,q))||!bouts.some(q=>sur(f,q)))
+    throw new Error("les ports ne sont pas aux bouts de la liaison : "+
+                    d+" -> "+f);
+  if(Math.hypot(d[0]-f[0],d[1]-f[1])<1)
+    throw new Error("les deux ports sont au même endroit : la liaison est "+
+                    "repliée sur elle-même");
+  /* DEUX CHANGEMENTS DE COUCHE, DONC DEUX VIAS, et ce sont les deux perçages
+     du net que le serveur signalait comme inutilisés. */
+  const vias=g.envoi.filter(o=>o.via);
+  if(vias.length!==2)
+    throw new Error(vias.length+" via(s) accroché(s) au lieu de 2");
+  for(const o of vias){
+    if(Math.abs(o.via.drill_diameter-0.25)>1e-9)
+      throw new Error("perçage "+o.via.drill_diameter+" au lieu de 0,25");
+    /* LE POINT DU VIA EST CELUI DU PERÇAGE, pas le bout de la piste : c'est de
+       là que part le chevelu, et un demi-millimètre d'écart le ferait
+       désigner du cuivre nu. */
+    const centres=[[13.5,32.2],[16.3,29.9]];
+    if(!centres.some(q=>Math.hypot(o.via.x-q[0],o.via.y-q[1])<1e-6))
+      throw new Error("le via est posé en "+o.via.x+";"+o.via.y+
+                      " au lieu du centre d'un perçage");
+    if(!("retours" in o.via))
+      throw new Error("le via part sans ses vias de masse voisins : "+
+                      "le chevelu du retour n'aura rien à dessiner");
+  }
+});
+
+T("les vias de masse voisins partent du centre du via, pas du bout de piste",()=>{
+  /* LE RAYON DE RECHERCHE EST DE 3 mm, et un demi-millimètre d'erreur sur son
+     origine change ce qu'il ramasse. On pose un via de masse à 2,80 mm du
+     perçage : il doit être vu. Mesuré depuis le bout de piste, à 0,55 mm de
+     là dans la mauvaise direction, il tomberait hors de portée. */
+  carteJonctions([{x:13.5, y:35.0}]);
+  const g=simSegments();
+  const o=g.envoi.find(e=>e.via&&Math.abs(e.via.x-13.5)<1e-6);
+  if(!o)throw new Error("le via de (13,5 ; 32,2) n'est pas accroché");
+  const r=(o.via.retours||[]).filter(f=>Math.abs(f.y-35.0)<1e-6);
+  if(r.length!==1)
+    throw new Error("le via de masse à 2,80 mm n'est pas vu : "+
+                    JSON.stringify(o.via.retours));
+});
+
+/* ==========================================================================
+   LE CHEVELU DU COURANT DE RETOUR
+   --------------------------------------------------------------------------
+   IL EST LU DANS LE RÉSULTAT, et non recalculé. L'éditeur PCB recalcule le
+   sien parce qu'il faut répondre pendant qu'on DÉPLACE le via ; la visionneuse
+   lit une carte faite, où rien ne bouge, et le seul chevelu qui vaille est
+   celui que le modèle a réellement employé. Ces essais tiennent le contrat de
+   lecture : ce qui se dessine vient du résultat, et rien d'autre.
+   ========================================================================== */
+
+/* Un résultat de serveur réduit à ce que le chevelu y lit. */
+function resChevelu(retour,modelise,cotes){
+  return {discontinuites:{transitions:[
+    {troncon:1, retour:retour, modelise:modelise||{}, cotes:cotes||{}}]}};
+}
+
+function avecPanneau(res,fn){
+  const o=SIM.ouvert, a=SIM.analyse, r=SIM.res;
+  SIM.ouvert=true; SIM.analyse="impedance"; SIM.res=res;
+  try{ return fn(); }
+  finally{ SIM.ouvert=o; SIM.analyse=a; SIM.res=r; }
+}
+
+T("le chevelu vient du résultat : parts, motifs et position",()=>{
+  const g=avecPanneau(resChevelu(
+    {x:10.5, y:20.25, retenus:2,
+     vias:[{x:11.1, y:20.25, distance_mm:0.6, net:"GND", retenu:true,
+            part:0.62, raison:""},
+           {x:10.5, y:21.05, distance_mm:0.8, net:"GND", retenu:true,
+            part:0.38, raison:""},
+           {x:9.0, y:20.25, distance_mm:1.5, net:"PWR", retenu:false,
+            part:0, raison:"ne rejoint pas GND, le plan d'arrivée"}]},
+    {inductance_nH:0.4526, inductance_source:"boucle"},
+    {pastille_mm:0.75}),
+    ()=>simCheveluRes());
+  if(g.length!==1)throw new Error("un via attendu, "+g.length);
+  const v=g[0];
+  if(v.x!==10.5||v.y!==20.25)
+    throw new Error("position "+v.x+" ; "+v.y);
+  if(v.vias.length!==3)
+    throw new Error("trois liens attendus, "+v.vias.length);
+  if(v.seul)
+    throw new Error("la source dit « boucle » : le chiffre EST une boucle");
+  if(Math.abs(v.L_nH-0.4526)>1e-9)
+    throw new Error("L "+v.L_nH);
+  /* LE MOTIF DU REJET EST CE QUI FAIT LE PRIX DU CHEVELU : sans lui, un trait
+     pointillé ne dit pas POURQUOI ce via-là ne compte pas. */
+  if(!/ne rejoint pas/.test(v.vias[2].raison))
+    throw new Error("le motif du rejet ne remonte pas");
+});
+
+T("« self+cavite » n'est pas une boucle : le chiffre est un plancher",()=>{
+  /* LE PIÈGE, et il est facile à écrire de travers : la source vaut
+     « self+cavite » quand la référence change et que rien ne referme la
+     boucle. Chercher « self » marcherait ; chercher l'ABSENCE de « boucle »
+     est la seule règle qui tienne aussi pour « boucle+cavite ». */
+  const seul=avecPanneau(resChevelu(
+    {x:1, y:1, retenus:0, vias:[]},
+    {inductance_nH:0.5779, inductance_source:"self+cavite"}),
+    ()=>simCheveluRes())[0];
+  if(!seul.seul)
+    throw new Error("« self+cavite » a été pris pour une boucle refermée");
+  const boucle=avecPanneau(resChevelu(
+    {x:1, y:1, retenus:1, vias:[{x:2, y:1, retenu:true, part:1}]},
+    {inductance_nH:0.6758, inductance_source:"boucle+cavite"}),
+    ()=>simCheveluRes())[0];
+  if(boucle.seul)
+    throw new Error("« boucle+cavite » a été pris pour une self");
+});
+
+T("sans position, pas de chevelu : on n'invente pas le point",()=>{
+  /* Une page qui n'envoie pas le via ne peut pas se voir dessiner son chevelu.
+     Poser le trait au raccord serait dessiner une origine que l'outil ne
+     connaît pas. */
+  const g=avecPanneau(resChevelu(
+    {retenus:0, vias:[], source:"absent"},
+    {inductance_nH:0.68, inductance_source:"self"}),
+    ()=>simCheveluRes());
+  if(g.length)
+    throw new Error("un chevelu a été rendu sans position de via");
+});
+
+T("le chevelu ne sort pas hors de l'onglet Impédance",()=>{
+  const res=resChevelu({x:1, y:1, retenus:1,
+                        vias:[{x:2, y:1, retenu:true, part:1}]},
+                       {inductance_nH:0.5, inductance_source:"boucle"});
+  const o=SIM.ouvert, a=SIM.analyse, r=SIM.res;
+  SIM.ouvert=true; SIM.res=res;
+  SIM.analyse="dc";
+  const horsOnglet=simCheveluRes().length;
+  SIM.analyse="impedance"; SIM.ouvert=false;
+  const panneauFerme=simCheveluRes().length;
+  SIM.ouvert=o; SIM.analyse=a; SIM.res=r;
+  if(horsOnglet)
+    throw new Error("le chevelu se dessine sur l'onglet DC");
+  if(panneauFerme)
+    throw new Error("le chevelu se dessine panneau fermé");
+});
+
+T("la couleur d'un lien suit sa part du courant",()=>{
+  const co=f=>simRetourCouleurRes(f);
+  if(co({retenu:false, part:0})!==co({retenu:false, part:0.9}))
+    throw new Error("un lien écarté a une couleur, et une seule");
+  if(co({retenu:true, part:0.62})===co({retenu:true, part:0.12}))
+    throw new Error("celui qui travaille et celui qui traîne se confondent");
+  if(co({retenu:true, part:0.62})===co({retenu:false, part:0}))
+    throw new Error("le retenu et l'écarté se confondent");
+});
+
+/* Une toile qui ENREGISTRE ses traits. Le reste du banc n'en avait pas besoin
+   — il éprouve des chiffres —, mais la seule chose que le chevelu puisse
+   vraiment rater est de poser ses traits AILLEURS que sur le cuivre, et cela
+   ne se voit que sur les points tracés. */
+function toileMouchard(){
+  const t={traits:[], cercles:[], txt:[], _p:null};
+  const rien=()=>{};
+  const o={
+    save:rien, restore:rien, setTransform:rien, scale:rien, stroke:function(){
+      if(t._p)t.traits.push(t._p); t._p=null;
+    },
+    beginPath:function(){t._p=null;},
+    moveTo:function(x,y){t._p=[x,y,x,y];},
+    lineTo:function(x,y){if(t._p){t._p[2]=x; t._p[3]=y;}},
+    arc:function(x,y,r){t.cercles.push([x,y,r]); t._p=null;},
+    rect:rien, roundRect:rien, fill:rien,
+    fillText:function(s,x,y){t.txt.push({s:s, x:x, y:y});},
+    measureText:function(s){return {width:6*String(s).length};},
+    setLineDash:rien,
+    lineCap:"", lineJoin:"", lineWidth:0, strokeStyle:"", fillStyle:"", font:""
+  };
+  t.ctx=o;
+  return t;
+}
+
+T("le chevelu tombe sur le cuivre, en unités du fichier",()=>{
+  /* LA SEULE CHOSE QUE CE DESSIN PUISSE VRAIMENT RATER. Le serveur travaille
+     en MILLIMÈTRES — c'est l'unité du document envoyé — et le monde de la
+     visionneuse est dans l'unité du FICHIER. Sur une carte en pouces le
+     facteur vaut 25,4 : une conversion oubliée poserait le chevelu vingt-cinq
+     fois trop loin, c'est-à-dire hors de la carte, où personne ne le
+     trouverait pour s'en plaindre. */
+  const t=toileMouchard();
+  const monde=[], ecran=[];
+  const vraiPoser=global.poserMonde, vraiW2s=global.w2s;
+  global.poserMonde=function(){};
+  global.w2s=function(x,y){ecran.push([x,y]); return {x:x, y:y};};
+  const uni=V.unite;
+  V.unite="in";                            /* 1 unité fichier = 25,4 mm */
+  const res={discontinuites:{transitions:[{troncon:1,
+    retour:{x:25.4, y:50.8, retenus:1,
+            vias:[{x:50.8, y:50.8, retenu:true, part:1, raison:""}]},
+    modelise:{inductance_nH:0.5, inductance_source:"boucle"},
+    cotes:{pastille_mm:0.762}}]}};
+  const o=SIM.ouvert, a=SIM.analyse, r=SIM.res;
+  SIM.ouvert=true; SIM.analyse="impedance"; SIM.res=res;
+  try{
+    simRetourTraceIpc(t.ctx,1);
+  }finally{
+    SIM.ouvert=o; SIM.analyse=a; SIM.res=r; V.unite=uni;
+    global.poserMonde=vraiPoser; global.w2s=vraiW2s;
+  }
+  if(t.traits.length!==1)
+    throw new Error("un trait attendu, "+t.traits.length);
+  const [x1,y1,x2,y2]=t.traits[0];
+  /* 25,4 mm = 1 pouce, 50,8 mm = 2 pouces. */
+  if(Math.abs(x1-1)>1e-9||Math.abs(y1-2)>1e-9)
+    throw new Error("le trait part de "+x1+" ; "+y1+" au lieu de 1 ; 2");
+  if(Math.abs(x2-2)>1e-9||Math.abs(y2-2)>1e-9)
+    throw new Error("le trait arrive en "+x2+" ; "+y2+" au lieu de 2 ; 2");
+  /* Le cercle du via de signal : son rayon suit la PASTILLE, elle aussi en
+     millimètres. */
+  if(t.cercles.length!==1)
+    throw new Error("un cercle attendu, "+t.cercles.length);
+  if(!(t.cercles[0][2]>0.762/25.4/2))
+    throw new Error("le cercle est plus petit que la pastille");
+  /* ET LE CHIFFRE EST ÉCRIT. Un chevelu muet ne dit pas ce que vaut la
+     boucle, qui est la raison de le regarder. */
+  if(!t.txt.some(e=>/^L = /.test(e.s)))
+    throw new Error("l'inductance de boucle n'est pas écrite : "+
+                    t.txt.map(e=>e.s).join(" | "));
+});
+
+/* ==========================================================================
+   UNE PISTE COURBE EST UNE PISTE
+   --------------------------------------------------------------------------
+   L'IPC-2581 range les segments droits et les arcs dans deux collections
+   distinctes. `simZPistes` ne lisait que la première. Sur une carte RF — où
+   l'on courbe pour ne pas réfléchir — la liaison partait donc au serveur en
+   morceaux droits SÉPARÉS par les arcs qui les joignent, et TOUT ce qui suppose
+   un parcours en tombait : les raccords, les angles de coude, et surtout
+   l'accrochage des vias, qui exige que la fin d'un tronçon rejoigne le début du
+   suivant. Aucun via ne partait, donc aucun via de masse voisin non plus, donc
+   pas de chevelu.
+
+   Le chemin de la chute continue, lui, pliait déjà les arcs. Deux moitiés du
+   même outil ne voyaient pas la même carte.
+   ========================================================================== */
+
+/* La topologie de la carte livrée : une droite, un ARC, un changement de
+   couche, une droite. Le perçage est au bout de l'arc. */
+function carteArc(){
+  const c=carte({
+    percages:[{x:15, y:21, d:0.25, n:0, p:"PTH"}],
+    padstacks:{V1:{pad:0.55, pads:[{c:"Top", d:0.55},{c:"Bottom", d:0.55}]}},
+    pads:[{x:15, y:21, ps:"V1", n:0}]
+  });
+  /* Les pistes d'abord, les arcs ensuite : c'est l'ordre du fichier, et c'est
+     précisément ce qui ne dit pas le parcours. */
+  c.modele.pistes=[{c:0, n:0, w:W, p:[10,20, 14,20]},
+                   {c:1, n:0, w:W, p:[15,21, 19,21]}];
+  /* L'arc va de (14,20) à (15,21) autour de (14,21) : un quart de tour, sur la
+     couche 0, et c'est lui qui joint la droite au via. */
+  c.modele.arcs=[{c:0, n:0, w:W, s:[14,20], e:[15,21], m:[14,21], h:0}];
+  mdlCharger(c.modele);
+  V.net=0;
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+}
+
+T("un arc est plié en polyligne, et ses bouts sont ceux du fichier",()=>{
+  const pts=simArcEnPolyligne({c:0, n:0, w:0.4,
+                               s:[14,20], e:[15,21], m:[14,21], h:0});
+  if(!pts||pts.length<6)
+    throw new Error("l'arc n'est pas plié : "+JSON.stringify(pts));
+  /* LES BOUTS SONT REPLACÉS, et ce n'est pas de la coquetterie : le rayon se
+     déduit du premier point, le dernier point calculé peut retomber à un
+     micron du bout déclaré, et un micron suffit à casser un chaînage. */
+  if(pts[0]!==14||pts[1]!==20)
+    throw new Error("le premier point a bougé : "+pts[0]+" ; "+pts[1]);
+  if(pts[pts.length-2]!==15||pts[pts.length-1]!==21)
+    throw new Error("le dernier point a bougé : "+
+                    pts[pts.length-2]+" ; "+pts[pts.length-1]);
+  /* Et le milieu est bien SUR le cercle, pas sur la corde : un arc plié en
+     ligne droite ferait une longueur trop courte et un écart au cuivre mesuré
+     au mauvais endroit. */
+  const im=2*Math.floor(pts.length/4)*1;
+  let hors=0;
+  for(let i=0;i+1<pts.length;i+=2){
+    const r=Math.hypot(pts[i]-14,pts[i+1]-21);
+    if(Math.abs(r-1)>1e-9)hors++;
+  }
+  if(hors)throw new Error(hors+" point(s) hors du cercle");
+});
+
+T("un arc entre deux droites ne casse plus le parcours",()=>{
+  carteArc();
+  const g=simSegments();
+  /* Trois tronçons : la droite, l'arc, la droite. L'arc en fait partie — sans
+     lui il n'y en avait que deux, et ils ne se touchaient pas. */
+  if(g.envoi.length!==3)
+    throw new Error("trois tronçons attendus, "+g.envoi.length);
+  /* L'ORDRE EST CELUI DU PARCOURS, pas celui du fichier : l'arc était écrit
+     APRÈS les deux droites, il doit sortir ENTRE elles. */
+  const suite=g.envoi.map(o=>o.layer).join(",");
+  if(suite!=="0,0,2")
+    throw new Error("ordre des couches : "+suite+" au lieu de 0,0,2");
+  if(Math.abs(g.envoi[1].start[0]-14)>1e-9||Math.abs(g.envoi[1].end[0]-15)>1e-9)
+    throw new Error("le tronçon du milieu n'est pas l'arc : "+
+                    g.envoi[1].start+" -> "+g.envoi[1].end);
+  /* LA LONGUEUR DE L'ARC EST CELLE DE L'ARC, pas celle de sa corde : un quart
+     de cercle de rayon 1 fait pi/2, sa corde racine de 2. Les confondre
+     raccourcirait la liaison de onze pour cent, et le retard avec. */
+  if(Math.abs(g.envoi[1].length-Math.PI/2)>1e-4)
+    throw new Error("longueur de l'arc "+g.envoi[1].length+
+                    " au lieu de "+(Math.PI/2));
+  /* ET LE VIA S'ACCROCHE, ce qui était tout l'enjeu. */
+  const v=g.envoi[2].via;
+  if(!v)
+    throw new Error("le via n'est pas accroché : l'arc ne rejoint pas la "+
+                    "droite du parcours");
+  if(Math.abs(v.drill_diameter-0.25)>1e-9)
+    throw new Error("perçage "+v.drill_diameter+" au lieu de 0,25");
+  if(!("retours" in v))
+    throw new Error("le via part sans ses vias de masse voisins");
+});
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
 process.exit(ko?1:0);

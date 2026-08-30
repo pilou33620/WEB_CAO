@@ -73,19 +73,14 @@ select.simUSel{
    elle est seule sur sa moitie de barre. La regle par identifiant plus bas fixe
    54 px pour tous : celle-ci la reprend pour les trois qui partagent leur ligne
    avec une liste d'unites. */
-#simF1,#simF2,#simN{width:44px}
+/* SEPT ÉLÉMENTS SUR LA LIGNE « BANDE S » : on réduit l'écart et la largeur
+   des champs pour tout faire tenir sur une ligne sans déborder. */
+#simF1,#simF2,#simN{width:40px}
 /* « Points » et son champ ne se separent JAMAIS. Si la barre doit passer a la
    ligne -- panneau etroit, police plus large --, les deux y vont ensemble :
    un libelle seul en fin de ligne se lit comme un defaut de mise en page. */
 .simGr{display:inline-flex;align-items:center;gap:6px}
-/* SIX ELEMENTS SUR LA LIGNE « BANDE S » AU LIEU DE CINQ : deux pixels de moins
-   entre chacun rendent les dix qui manquaient. Le tassement ne se voit pas ; la
-   ligne coupee en deux, si.
-
-   UNE CLASSE, ET NON UN `:has(#simF1)`. Ce fichier ecrit deja, vingt lignes
-   plus haut, que « `:has` n'est pas partout » -- et s'en passe pour la barre
-   d'avertissement. Il n'y a pas de raison de l'introduire ici. */
-.pnl-bar.simBarF{gap:6px}
+.pnl-bar.simBarF{gap:4px}
 select.simUSel:hover{color:var(--txt);border-color:var(--border)}
 select.simUSel:focus{outline:none;border-color:var(--blue);color:var(--txt)}
 /* L'avertissement de saisie, quand f0 tombe hors de la bande. La barre est
@@ -104,7 +99,7 @@ select.simUSel:focus{outline:none;border-color:var(--blue);color:var(--txt)}
   border-radius:4px;padding:3px 5px;font-family:var(--mono);font-size:11.5px;
 }
 #simZCible,#simZTol,#simFc,#simZ0{width:54px}
-#simF1,#simF2,#simN{width:44px}
+#simF1,#simF2,#simN{width:40px}
 #simZCible:focus,#simZTol:focus,#simFc:focus,#simZ0:focus,
 #simF1:focus,#simF2:focus,#simN:focus{outline:none;border-color:var(--blue)}
 /* « suivre » : recalculer a chaque changement de selection. */
@@ -199,6 +194,20 @@ select.simUSel:focus{outline:none;border-color:var(--blue);color:var(--txt)}
 .simTabD td:nth-child(3){text-align:left;color:var(--txt-dim)}
 .simTabD td:nth-child(3) small{opacity:.75}
 .simTabD .z0ok{color:var(--blue)}
+/* La colonne « Retour » : elle porte un JUGEMENT, pas une mesure — la boucle
+   est refermee ou elle ne l'est pas — donc elle prend les deux couleurs du
+   verdict et jamais l'echelle continue de l'ecart. Elle est centree : ce n'est
+   pas un nombre qu'on aligne sur la virgule, c'est un compte suivi d'une
+   distance. */
+.simTabD td:nth-child(4){text-align:center}
+.simTabD td:nth-child(4) small{opacity:.75;font-size:10px}
+.simTabD .z0ko{color:var(--red)}
+.simTabD .simFaible{color:var(--txt-dim);opacity:.75}
+/* La note du plan de reference qui change sans etre rejoint. Elle est en rouge
+   parce que c'est le seul defaut de cette fiche dont la reponse ne soit pas un
+   chiffre mais un conseil de routage — et parce qu'elle FLATTE le resultat,
+   ce qu'aucune autre ne fait. */
+.simNote.simAlerte{color:var(--red)}
 .simTabZ .z0haut{color:#e8443a}
 .simTabZ .z0bas{color:#4cc38a}
 

@@ -205,8 +205,18 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simEcartsA","simPlages","simSegments","simCouturePcb","simEspacement",
   "simAccrocherVias","simViaAuRaccord","stackSpan",
   "simDiscontinuites","simCoteSource",
-  "simSaisie","simSaisieEcrire","simUnite","simUniteBande",
+  "simSaisie","simSaisieEcrire","simUnite",
+  /* DEUX UNITES DE BANDE, une par borne : le panneau les a separees, et cette
+     liste nommait encore l'unique `simUniteBande` d'avant -- elle faisait
+     donc echouer le CHARGEMENT du banc entier, pas un cas. */
+  "simUniteBande1","simUniteBande2",
   "simUniteChanger","simCorpsImpedance","simEl","SIM_UNITES",
+  /* Le chemin de retour et son chevelu. */
+  "simBoucleVias","simMutuelleVia","simGroverF","simResoudre",
+  "simVoisinageVia","simChevelu","simRetourActif","simCotesVia",
+  "simAntipadVia","simPlansRef","simPlansJoints","simPlansOntUnNet",
+  "simRetourCouleur","SIM_RAYON_RETOUR",
+  "simPontsPlans","SIM_RAYON_PONT",
   "simProjU","simTangente","simStackup","simCuIndex",
   "SIM_ECART_MAX","SIM_COULOIR","SIM_PLAGE_MIN","SIM_PAS"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
@@ -8134,6 +8144,70 @@ function simCarteVia(drill,pad,a,b){
   return xm;
 }
 
+/* Un net qui se RAMIFIE : trois pistes de couche extérieure aboutissent au
+   même via, d'où une quatrième repart vers une couche interne. La sélection
+   n'est plus un parcours, et c'est le cas ordinaire d'un bus. */
+function simCarteRamifiee(){
+  carte4c();
+  S.cuts=[]; S.vias=[];
+  const xm=(SIM_X1+SIM_X2)/2;
+  const poser=(l,x1,y1)=>{
+    S.tracks.push({l:l, net:"N$1", w:SIM_W, x1:x1, y1:y1, x2:xm, y2:SIM_Y});
+    S.sel.tracks.add(S.tracks[S.tracks.length-1]);
+  };
+  clearSel();
+  poser(0, SIM_X1, SIM_Y);
+  poser(0, xm, SIM_Y-6);
+  poser(0, xm, SIM_Y+6);
+  poser(3, SIM_X2, SIM_Y);
+  S.vias.push({x:xm, y:SIM_Y, d:0.55, drill:0.25, a:0, b:3, net:"N$1"});
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  touch();
+  return xm;
+}
+
+T("un net ramifié envoie son via hors de tout parcours",()=>{
+  /* MÊME BESOIN QUE CÔTÉ VISIONNEUSE, ET IL FAUT QUE CE SOIT LA MÊME CHOSE.
+     Quatre tronçons aboutissent au via, dont un seul sur une autre couche : il
+     n'y a pas d'ordre dans lequel les enchaîner, donc la détection par
+     tronçons CONSÉCUTIFS ne peut rien garantir. Le via part quand même, dans
+     la liste que le serveur analyse sans ordre. */
+  const xm=simCarteRamifiee();
+  const g=simSegments();
+  const v=g.vias||[];
+  if(v.length!==1)
+    throw new Error(v.length+" via(s) envoyé(s) hors chaîne au lieu de 1");
+  if(Math.abs(v[0].x-xm)>1e-9||Math.abs(v[0].y-SIM_Y)>1e-9)
+    throw new Error("le via est envoyé en "+v[0].x+";"+v[0].y);
+  if(Math.abs(v[0].drill_diameter-0.25)>1e-9)
+    throw new Error("perçage "+v[0].drill_diameter+" au lieu de 0,25");
+  /* LA PORTÉE EST CONNUE ICI, contrairement à la visionneuse : l'éditeur perce
+     l'Excellon, il sait entre quelles couches court le via. */
+  if(v[0].layer_from!==0||v[0].layer_to!==6)
+    throw new Error("portée "+v[0].layer_from+"→"+v[0].layer_to+
+                    " au lieu de 0→6");
+  if(!("retours" in v[0]))
+    throw new Error("le via part sans ses vias de masse voisins");
+  /* ET IL ATTEINT LE DOCUMENT. */
+  const p=SIM_PCB.probleme(simSaisie());
+  if(!p.doc.vias||p.doc.vias.length!==1)
+    throw new Error("le document n'emporte pas les vias : "+
+                    JSON.stringify(p.doc.vias));
+});
+
+T("un via borgne qui n'atteint pas le tronçon n'est pas un via de la liaison",()=>{
+  /* LE REVERS. Un via posé au même endroit mais dont la portée ne couvre pas
+     la couche du tronçon ne l'y raccorde pas — il passe dessous. Le compter
+     rendrait une inductance de boucle pour une liaison qui n'existe pas. */
+  simCarteRamifiee();
+  S.vias[0].a=1; S.vias[0].b=2;      /* enterré : ne touche ni la 0 ni la 3 */
+  touch();
+  const g=simSegments();
+  if((g.vias||[]).length)
+    throw new Error("un via enterré hors portée a été envoyé comme via de la "+
+                    "liaison");
+});
+
 T("le via du raccord part avec ses cotes, sur le bon tronçon",()=>{
   simCarteVia(0.25,0.55);
   const g=simSegments();
@@ -8159,22 +8233,34 @@ T("le via du raccord part avec ses cotes, sur le bon tronçon",()=>{
                     "dans l'empilage");
 });
 
-T("pas de via au raccord : rien n'est accroché, et le serveur le dira",()=>{
+T("pas de via au raccord : pas de cotes, mais le raccord part",()=>{
+  /* CE QUE « PAS DE VIA RECONNU » VEUT DIRE, ET CE QUE ÇA NE VEUT PAS DIRE. Le
+     changement de couche existe indépendamment du perçage qu'on sait nommer :
+     ses deux tronçons se raccordent quelque part, et ce quelque part suffit à
+     mesurer l'écart aux vias de masse. L'ancien contrat n'envoyait rien du
+     tout, et le serveur en concluait « aucun via de masse ne referme la
+     boucle » — une affirmation sur la carte là où on n'avait pas cherché. */
   simCarteVia(0.25,0.55);
   S.vias=[];                         /* la liaison change de couche sans via */
   touch();
   const g=simSegments();
   if(g.envoi.length!==2)throw new Error("deux tronçons attendus");
-  if(g.envoi[1].via)
-    throw new Error("un via a été inventé là où il n'y en a pas");
+  const v=g.envoi[1].via;
+  if(!v)throw new Error("le raccord doit partir même sans via reconnu");
+  if(v.drill_diameter!==undefined||v.pad_diameter!==undefined)
+    throw new Error("des cotes ont été inventées là où il n'y a pas de via");
+  if(!Array.isArray(v.retours))
+    throw new Error("les vias de masse voisins doivent être cherchés quand même");
 });
 
-T("un via qui ne couvre pas le saut n'est pas retenu",()=>{
-  /* Un via borgne 0→1 ne réalise pas une liaison 0→3. L'accrocher donnerait un
-     perçage juste pour un via faux, ce qui est pire qu'un repli avoué. */
+T("un via qui ne couvre pas le saut ne donne pas ses cotes",()=>{
+  /* Un via borgne 0→1 ne réalise pas une liaison 0→3. Reprendre son perçage
+     donnerait un chiffre juste pour un via faux, ce qui est pire qu'un repli
+     avoué. Le raccord, lui, part quand même. */
   simCarteVia(0.25,0.55,0,1);
-  const g=simSegments();
-  if(g.envoi[1].via)
+  const v=simSegments().envoi[1].via;
+  if(!v)throw new Error("le raccord doit partir");
+  if(v.drill_diameter!==undefined)
     throw new Error("un via borgne 0→1 a été pris pour la liaison 0→3");
 });
 
@@ -8202,13 +8288,348 @@ T("entre deux vias au même endroit, le plus court décrit la liaison",()=>{
                     "été retenu au lieu de l'enterré");
 });
 
-T("un via loin du raccord ne compte pas",()=>{
+T("un via loin du raccord ne donne pas ses cotes",()=>{
   const xm=simCarteVia(0.25,0.55);
   S.vias=[{x:xm+1.0, y:SIM_Y, d:0.55, drill:0.25, a:0, b:3, net:"N$1"}];
   touch();
+  const v=simSegments().envoi[1].via;
+  if(v.drill_diameter!==undefined)
+    throw new Error("un via à 1 mm du raccord a été pris pour le via du raccord");
+  /* ET IL N'EST PAS NON PLUS UN VIA DE RETOUR : il est sur le net du signal. */
+  if(v.retours.length)
+    throw new Error("un via de signal a été envoyé comme retour");
+});
+
+
+/* --------------------------------------------------------------------------
+   LE CHEMIN DE RETOUR DU COURANT, ET LE CHEVELU QUI LE MONTRE
+   --------------------------------------------------------------------------
+   CE QUI ÉTAIT FAUX. Un via était chiffré par une inductance PARTIELLE PROPRE :
+   celle d'un conducteur seul, sans dire par où le courant revient. Deux cartes
+   identiques à ceci près que l'une a son via de masse à 0,4 mm et l'autre à
+   3 mm rendaient donc le même résultat — alors qu'elles diffèrent d'un facteur
+   deux, et que le placement de ce via est justement la décision qu'on prend
+   en routant.
+
+   CE QUE CES CAS VERROUILLENT :
+     · que la physique JS rende EXACTEMENT ce que rend `ligne_mom` en Python.
+       C'est le seul essai qui tienne la duplication assumée : le chevelu doit
+       répondre pendant qu'on déplace le via, donc sans serveur ;
+     · que la référence qui change SANS être rejointe soit vue et nommée ;
+     · que trois vias comptent pour trois, et pas pour le plus proche ;
+     · que ce qui est envoyé au serveur porte tout cela.
+   -------------------------------------------------------------------------- */
+
+/* Une liaison TOP → BOT au milieu, l'empilage nommé, et de quoi poser des vias
+   de masse autour. `netInterne` décide de tout : « GND » et le retour se
+   referme, « PWR » et rien ne peut le refermer. */
+function simCarteRetour(netInterne){
+  carte4c();
+  S.cuts=[]; S.vias=[];
+  S.cuL[1].net="GND";
+  S.cuL[2].net=netInterne||"PWR";
+  const xm=(SIM_X1+SIM_X2)/2;
+  S.tracks.push({l:0, net:"N$1", w:SIM_W, x1:SIM_X1, y1:SIM_Y, x2:xm, y2:SIM_Y});
+  S.tracks.push({l:3, net:"N$1", w:SIM_W, x1:xm, y1:SIM_Y, x2:SIM_X2, y2:SIM_Y});
+  S.vias.push({x:xm, y:SIM_Y, d:0.55, drill:0.25, a:0, b:3, net:"N$1"});
+  clearSel();
+  S.sel.tracks.add(S.tracks[S.tracks.length-2]);
+  S.sel.tracks.add(S.tracks[S.tracks.length-1]);
+  /* La masse de référence est fixée à la main : `simRefSet` proposerait AUSSI
+     le plan d'alimentation — au radiofréquence c'en est un, via le découplage
+     — et l'essai perdrait ce qu'il veut mesurer. */
+  SIM.refCle=null; SIM.refAuto=false; SIM.ref=new Set(["GND"]);
+  touch();
+  return {x:xm, via:S.vias[0]};
+}
+function simPoserMasse(x,y,a,b,net){
+  const v={x:x, y:y, d:0.55, drill:0.25,
+           a:(a==null?0:a), b:(b==null?3:b), net:net||"GND"};
+  S.vias.push(v); touch();
+  return v;
+}
+
+T("la physique du chevelu rend ce que rend ligne_mom",()=>{
+  /* LE SEUL ESSAI QUI TIENNE LA DUPLICATION. `simBoucleVias` refait en JS ce
+     que `ligne_mom.inductance_boucle_vias` fait en Python — il le faut, un
+     chevelu qui demande un aller-retour au serveur à chaque mouvement de
+     souris n'est pas un chevelu. Les valeurs attendues viennent du banc
+     Python, pas d'ici : `python/test/banc-ligne-mom.py`, mêmes géométries.
+     Le jour où l'une des deux dérive, celui-ci tombe. */
+  const h=1.54, sig={x:0, y:0, drill:0.25};
+  const un=simBoucleVias(h, sig, [{x:0.6, y:0, drill:0.25}]);
+  if(Math.abs(un.L*1e9-0.798207662)>1e-7)
+    throw new Error("un retour à 0,6 mm : "+(un.L*1e9).toFixed(9)+
+                    " nH au lieu de 0,798207662 (ligne_mom)");
+  const trois=simBoucleVias(h, sig, [{x:0.5,y:0,drill:0.25},
+                                     {x:-1.2,y:0,drill:0.25},
+                                     {x:0,y:2.5,drill:0.25}]);
+  if(Math.abs(trois.L*1e9-0.547383415)>1e-7)
+    throw new Error("trois retours : "+(trois.L*1e9).toFixed(9)+
+                    " nH au lieu de 0,547383415 (ligne_mom)");
+  const att=[0.558882663,0.271646005,0.169471332];
+  trois.parts.forEach((p,i)=>{
+    if(Math.abs(p-att[i])>1e-7)
+      throw new Error("part "+i+" : "+p.toFixed(9)+" au lieu de "+att[i]);
+  });
+  /* Et sans aucun retour, c'est la self partielle — le chiffre qui ne dépend
+     pas du routage. */
+  const seul=simBoucleVias(h, sig, []);
+  if(!seul.seul||Math.abs(seul.L*1e9-0.703439422)>1e-7)
+    throw new Error("sans retour : "+(seul.L*1e9).toFixed(9)+
+                    " nH au lieu de 0,703439422");
+});
+
+T("rapprocher le via de masse fait baisser l'inductance, et ça se voit",()=>{
+  const vus=[];
+  for(const e of [0.4,0.6,1.0,2.0,3.0]){
+    const c=simCarteRetour("GND");
+    simPoserMasse(c.x+e, SIM_Y);
+    vus.push(simVoisinageVia(c.via).L*1e9);
+  }
+  for(let i=1;i<vus.length;i++)
+    if(!(vus[i]>vus[i-1]))
+      throw new Error("l'inductance ne croît pas avec l'écartement : "+vus);
+  /* L'AMPLEUR COMPTE AUTANT QUE LE SENS : si le chiffre bougeait de un pour
+     cent, la question « faut-il le rapprocher ? » n'aurait pas de réponse. */
+  if(!(vus[4]>1.9*vus[0]))
+    throw new Error("0,4 mm contre 3 mm ne double pas l'inductance : "+
+                    vus[0].toFixed(3)+" puis "+vus[4].toFixed(3));
+});
+
+T("une référence qui change écarte le via de masse, en disant pourquoi",()=>{
+  /* LE DÉFAUT GRAVE, ET IL EST INVISIBLE SUR LE DESSIN. Sur TOP/GND/PWR/BOT,
+     le retour doit passer de GND à PWR — et aucun via de masse ne sait faire
+     cela : il joindrait de la masse à de la masse. Le via est là, bien placé,
+     et il ne sert à rien. */
+  const c=simCarteRetour("PWR");
+  simPoserMasse(c.x+0.6, SIM_Y);
+  const g=simVoisinageVia(c.via);
+  if(!g.change)throw new Error("le changement de référence n'est pas vu");
+  if(g.retenus.length)
+    throw new Error("un via de masse a été cru capable de joindre GND à PWR");
+  if(!g.seul)throw new Error("l'inductance devrait être celle d'un conducteur seul");
+  if(!/ne rejoint pas/.test(g.voisins[0].raison))
+    throw new Error("la raison ne nomme pas le plan non rejoint : « "+
+                    g.voisins[0].raison+" »");
+
+  /* LA MÊME CARTE, UN SEUL NET CHANGÉ : la boucle se referme. Le chiffre ne
+     BAISSE pas pour autant — sans retour on affichait la self partielle, qui
+     est un PLANCHER, et une boucle réelle vaut forcément davantage. Ce qui
+     change, c'est que le chiffre dépend désormais du routage. */
+  const c2=simCarteRetour("GND");
+  simPoserMasse(c2.x+0.6, SIM_Y);
+  const g2=simVoisinageVia(c2.via);
+  if(g2.retenus.length!==1)throw new Error("le via n'a pas été retenu");
+  if(g2.seul)throw new Error("la boucle n'est pas comptée comme refermée");
+  if(!(g2.L>g.L))
+    throw new Error("la boucle refermée passe SOUS le plancher : "+
+                    (g2.L*1e9).toFixed(3)+" contre "+(g.L*1e9).toFixed(3));
+});
+
+T("trois vias de masse comptent pour trois, et disent lequel travaille",()=>{
+  const c=simCarteRetour("GND");
+  simPoserMasse(c.x+0.5, SIM_Y);
+  simPoserMasse(c.x-1.2, SIM_Y);
+  simPoserMasse(c.x, SIM_Y+2.5);
+  const g=simVoisinageVia(c.via);
+  if(g.retenus.length!==3)throw new Error("les trois n'ont pas été retenus");
+  const somme=g.retenus.reduce((s,f)=>s+f.part,0);
+  if(Math.abs(somme-1)>1e-9)
+    throw new Error("les parts ne somment pas à un : "+somme);
+  /* LE PLUS PROCHE PORTE LE PLUS, mais pas tout — et c'est le point : trois
+     vias serrés ne divisent PAS l'inductance par trois, leur mutuelle les en
+     empêche. */
+  const tri=g.retenus.slice().sort((a,b)=>a.distance-b.distance);
+  if(!(tri[0].part>tri[2].part))
+    throw new Error("le plus proche ne porte pas la plus grosse part");
+  const c1=simCarteRetour("GND");
+  simPoserMasse(c1.x+0.5, SIM_Y);
+  const seul=simVoisinageVia(c1.via).L;
+  if(!(g.L<seul))throw new Error("trois retours ne valent pas mieux qu'un");
+  if(!(g.L>seul/3))
+    throw new Error("trois retours ont divisé l'inductance par trois ou plus :"+
+                    " la mutuelle entre eux n'est pas comptée");
+});
+
+T("un via borgne est écarté en le disant, un via d'un autre net est ignoré",()=>{
+  /* LES DEUX N'ONT PAS LE MÊME STATUT, et c'est tout le sujet. Un via de MASSE
+     qui ne couvre pas la portée AURAIT PU refermer la boucle : il est listé,
+     en rouge, avec sa raison — c'est une information de routage. Un via de
+     SIGNAL n'est pas un candidat, il est hors sujet : le lister mettrait un
+     trait rouge par via voisin sur une carte dense, et noierait les seuls qui
+     comptent. */
+  const c=simCarteRetour("GND");
+  simPoserMasse(c.x+0.5, SIM_Y, 0, 1);         /* borgne : ne couvre pas 0→3 */
+  simPoserMasse(c.x+0.7, SIM_Y, 0, 3, "D+");   /* pas une référence          */
+  const g=simVoisinageVia(c.via);
+  if(g.retenus.length)throw new Error("un via inutilisable a été retenu");
+  if(g.voisins.length!==1)
+    throw new Error("seul le via de masse borgne doit être listé, "+
+                    g.voisins.length+" le sont");
+  if(!/ne couvre pas/.test(g.voisins[0].raison))
+    throw new Error("le borgne n'est pas écarté pour sa portée : « "+
+                    g.voisins[0].raison+" »");
+});
+
+T("le chevelu ne s'ouvre que sur un via de signal sélectionné",()=>{
+  const c=simCarteRetour("GND");
+  const m=simPoserMasse(c.x+0.6, SIM_Y);
+  SIM.ouvert=true; SIM.analyse="impedance";
+  clearSel();
+  if(simChevelu().length)throw new Error("chevelu sans via sélectionné");
+  S.sel.vias.add(m);
+  if(simChevelu().length)
+    throw new Error("un via de MASSE a ouvert un chevelu : il n'a pas de "+
+                    "boucle à lui, il EST le retour de quelqu'un d'autre");
+  clearSel(); S.sel.vias.add(c.via);
+  if(simChevelu().length!==1)throw new Error("le via de signal n'ouvre rien");
+  SIM.analyse="dc";
+  if(simChevelu().length)throw new Error("le chevelu survit à l'onglet DC");
+  SIM.analyse="impedance"; SIM.ouvert=false;
+  if(simChevelu().length)throw new Error("le chevelu survit au panneau fermé");
+  SIM.ouvert=false; SIM.analyse="";
+});
+
+T("le via envoyé porte sa position, son antipad et ses retours",()=>{
+  const c=simCarteRetour("GND");
+  simPoserMasse(c.x+0.6, SIM_Y);
   const g=simSegments();
-  if(g.envoi[1].via)
-    throw new Error("un via à 1 mm du raccord a été accroché");
+  const v=g.envoi[1].via;
+  if(!v)throw new Error("aucun via accroché");
+  /* LA POSITION DÉBLOQUE TOUT LE RESTE : sans elle le serveur ne peut pas
+     mesurer l'écart aux vias de masse. */
+  if(Math.abs(v.x-c.x)>1e-6||Math.abs(v.y-SIM_Y)>1e-6)
+    throw new Error("la position du via n'est pas envoyée");
+  if(!v.retours||v.retours.length!==1)
+    throw new Error("les vias de masse voisins ne sont pas envoyés");
+  const r=v.retours[0];
+  if(r.layer_from!==0||r.layer_to!==6)
+    throw new Error("la portée du retour est envoyée en couches de CUIVRE au "+
+                    "lieu d'indices d'EMPILAGE : "+r.layer_from+"→"+r.layer_to);
+  if(r.net!=="GND")throw new Error("le net du retour manque");
+  /* L'ANTIPAD EST CELUI DU GERBER, pas une estimation : `04-fabrication.js`
+     écrit `v.d + 2*clrK(...)`, et c'est la même formule. */
+  const att=r3(0.55+2*clrK(S.cuL[1].net,"N$1","cu","via"));
+  if(Math.abs(v.antipad_diameter-att)>1e-6)
+    throw new Error("antipad "+v.antipad_diameter+" au lieu de "+att);
+  /* ET TOUJOURS PAS LA HAUTEUR : le serveur la lit dans l'empilage. */
+  if("height" in v)throw new Error("la hauteur ne doit pas être envoyée");
+});
+
+T("un via de masse hors de portée n'est ni retenu ni envoyé",()=>{
+  const c=simCarteRetour("GND");
+  simPoserMasse(c.x+4.0, SIM_Y);      /* au-delà des 3 mm du rayon */
+  const g=simVoisinageVia(c.via);
+  if(g.voisins.length)
+    throw new Error("un via à 4 mm a été ramassé");
+  if(!g.seul)throw new Error("sans retour à portée, ce n'est pas une boucle");
+  const env=simSegments().envoi[1].via;
+  if(env.retours.length)throw new Error("un via hors de portée a été envoyé");
+});
+
+
+/* --------------------------------------------------------------------------
+   LE DÉFAUT, LE DOUTE, ET CE QUI LES SÉPARE
+   --------------------------------------------------------------------------
+   CE QUI A ÉTÉ FAUX, ET QUI CRIAIT SUR LES CARTES SAINES. Deux plans de NOMS
+   différents ne sont pas deux plans de NETS différents. Sur une carte quatre
+   couches, une piste sur TOP se réfère au plan interne du haut et la même
+   piste sur BOT à celui du bas : les noms diffèrent TOUJOURS. La première
+   version en concluait « aucun via de masse ne joint les deux » — y compris
+   quand les deux plans sont de la masse et qu'un via de masse les joint
+   parfaitement, ce qui est le cas ordinaire.
+
+   TROIS ÉTATS, DONC, ET LE TROISIÈME EST LE DOUTE : sans le net des plans, on
+   ne peut PAS trancher, et le dire vaut mieux que de choisir.
+   -------------------------------------------------------------------------- */
+
+T("le chevelu distingue le défaut, le doute et le cas ordinaire",()=>{
+  /* 1. Deux plans de MASSE : le plan change, ce n'est pas grave, et le via de
+        masse referme la boucle. */
+  const a=simCarteRetour("GND");
+  simPoserMasse(a.x+0.6, SIM_Y);
+  const ga=simVoisinageVia(a.via);
+  if(!ga.planChange)throw new Error("le plan change bel et bien");
+  if(ga.netsDiff!==false)
+    throw new Error("deux plans de net GND ne sont pas de nets différents");
+  if(ga.change||ga.doute)
+    throw new Error("le défaut a été levé sur deux plans de masse");
+  if(ga.retenus.length!==1)throw new Error("le via de masse devrait servir");
+
+  /* 2. Un plan de MASSE et un d'ALIMENTATION : rien ne peut refermer. */
+  const b=simCarteRetour("PWR");
+  simPoserMasse(b.x+0.6, SIM_Y);
+  const gb=simVoisinageVia(b.via);
+  if(gb.netsDiff!==true)throw new Error("GND et PWR sont bien deux nets");
+  if(!gb.change)throw new Error("le défaut grave n'est pas vu");
+  if(gb.retenus.length)throw new Error("un via de masse a joint GND à PWR");
+
+  /* 3. Les mêmes plans, sans net déclaré : on ne peut pas trancher. */
+  const c=simCarteRetour("GND");
+  S.cuL[1].net=""; S.cuL[2].net="";
+  touch();
+  simPoserMasse(c.x+0.6, SIM_Y);
+  const gc=simVoisinageVia(c.via);
+  if(gc.netsDiff!==null)
+    throw new Error("sans net déclaré, on ne peut conclure ni oui ni non");
+  if(gc.change)throw new Error("le défaut grave exige la certitude");
+  if(!gc.doute)throw new Error("le doute n'est pas signalé");
+});
+
+T("les découplages qui joignent les deux plans partent avec le via",()=>{
+  /* SANS EUX, LE COÛT DU RETOUR EST INCHIFFRABLE. Deux plans de nets
+     différents ne sont joints que par ce qui les joint volontairement : un
+     condensateur de découplage. C'est lui qui porte le retour, et sa distance
+     qui en fixe le prix. */
+  const v=simCarteRetour("PWR");
+  const C=mkFp("C1","","",2);
+  C.style="row"; C.pitch=0.8; C.x=v.x+2.0; C.y=SIM_Y;
+  C.nets={1:"GND", 2:"PWR"};
+  /* Un composant à VINGT pattes qui touche les deux nets est un régulateur :
+     il ne joint rien en alternatif, et le compter inventerait un chemin de
+     retour. Le filtre est le nombre de bornes. */
+  const U=mkFp("U1","","",20);
+  U.style="row"; U.pitch=0.5; U.x=v.x+1.0; U.y=SIM_Y+1.0;
+  U.nets={1:"GND", 2:"PWR"};
+  S.fps.push(C,U); touch();
+
+  const env=simSegments().envoi[1].via;
+  if(!env.ponts)throw new Error("les ponts ne sont pas envoyés");
+  if(env.ponts.length!==1)
+    throw new Error("un seul pont attendu — le régulateur n'en est pas un — "+
+                    env.ponts.length+" envoyé(s)");
+  if(env.ponts[0].repere!=="C1")
+    throw new Error("le mauvais composant a été pris : "+env.ponts[0].repere);
+  if(!(env.ponts_rayon_mm>0))
+    throw new Error("le rayon de recherche doit partir : sans lui, « aucun "+
+                    "pont » ne veut rien dire");
+});
+
+T("entre deux plans de masse, aucun pont n'est envoyé",()=>{
+  /* IL N'Y A RIEN À TRAVERSER : le retour passe par le premier via de masse
+     venu, ce dont la boucle rend déjà compte. Envoyer des ponts ferait
+     compter deux fois le même chemin. */
+  const v=simCarteRetour("GND");
+  const C=mkFp("C1","","",2);
+  C.style="row"; C.pitch=0.8; C.x=v.x+2.0; C.y=SIM_Y;
+  C.nets={1:"GND", 2:"GND"};
+  S.fps.push(C); touch();
+  const env=simSegments().envoi[1].via;
+  if(env.ponts)
+    throw new Error("des ponts ont été envoyés entre deux plans de masse");
+});
+
+T("la portée percée du via part, c'est elle qui donne le moignon",()=>{
+  /* LE MOIGNON SE SOUSTRAIT : ce qui est percé moins ce qui est emprunté.
+     Sans la portée, un via traversant et un via enterré bien ajusté ont
+     exactement la même apparence, et conclure « pas de moignon » serait
+     retenir le cas le plus flatteur par défaut. */
+  const v=simCarteRetour("GND");
+  const env=simSegments().envoi[1].via;
+  if(env.layer_from!==0||env.layer_to!==6)
+    throw new Error("la portée percée n'est pas envoyée en indices "+
+                    "d'EMPILAGE : "+env.layer_from+"→"+env.layer_to);
 });
 
 /* --------------------------------------------------------------------------
@@ -8294,6 +8715,247 @@ T("une discontinuité qui ne pèse rien est marquée comme telle",()=>{
 });
 
 /* --------------------------------------------------------------------------
+   LA FICHE DIT AUSSI PAR OÙ LE COURANT REVIENT
+   --------------------------------------------------------------------------
+   POURQUOI UNE COLONNE ENTIÈRE. « 1,29 nH » ne dit pas d'où le chiffre sort.
+   Il peut décrire une boucle mesurée sur le routage — et alors le rapprocher
+   fera baisser — ou la self d'un conducteur seul, qui ne bougera jamais quoi
+   qu'on route. Le même nombre, deux significations opposées, dans un tableau
+   dont tout l'objet est de juger le routage.
+
+   ET UN AVERTISSEMENT QUI NE CRIE PAS SUR LE CAS ORDINAIRE. Une référence qui
+   change ET qu'un via rejoint est banal ; une référence qui change sans que
+   rien ne la rejoigne est le défaut grave. Les confondre sous un seul drapeau
+   ferait cesser de le lire — et emporterait avec lui celui qui comptait.
+   -------------------------------------------------------------------------- */
+
+function simTransRetour(retour,cotes){
+  return {troncon:1, nom_depart:"TOP", nom_arrivee:"BOT",
+          cotes_supposees:false,
+          cotes:Object.assign({hauteur_mm:1.34, hauteur_source:"empilage",
+                               percage_mm:0.25, percage_source:"page",
+                               pastille_mm:0.55, pastille_source:"page",
+                               antipad_mm:0.80, antipad_source:"page"},
+                              cotes||{}),
+          modelise:{inductance_nH:0.7982, capacite_fF:86.8, phase_deg:1.20,
+                    inductance_source:retour&&retour.raccorde?"boucle":"self"},
+          capacite:{totale_fF:86.8, antipad_fF:14.4,
+                    pastille_depart_fF:36.2, pastille_arrivee_fF:36.2,
+                    plans_traverses:["GND","PWR"]},
+          retour:retour};
+}
+
+T("la fiche dit combien de vias referment la boucle, et à quelle distance",()=>{
+  const h=simDiscontinuites(simResDisc({coudes:[], transitions:[
+    simTransRetour({plans_depart:["GND"], plans_arrivee:["IN2"],
+                    nets_depart:["GND"], nets_arrivee:["GND"],
+                    plan_change:true, nets_differents:false,
+                    reference_change:false, raccorde:true, retenus:2,
+                    trouves:2, source:"boucle",
+                    vias:[{distance_mm:0.60, part:0.62, retenu:true, net:"GND"},
+                          {distance_mm:1.40, part:0.38, retenu:true, net:"GND"}]})
+  ]}));
+  if(!/Retour/.test(h))throw new Error("la colonne « Retour » manque");
+  if(!/2 vias/.test(h))throw new Error("le nombre de retours n'est pas dit");
+  if(!/0,60 mm/.test(h))
+    throw new Error("la distance du plus proche n'est pas dite : "+h);
+  /* LA RÉFÉRENCE CHANGE ET ELLE EST REJOINTE : pas d'alerte. */
+  if(/simAlerte/.test(h))
+    throw new Error("l'alerte grave crie sur une liaison saine");
+  /* LA RÉPARTITION EST DITE : c'est elle qui désigne le via qui ne sert à rien. */
+  if(!/62 %/.test(h)||!/38 %/.test(h))
+    throw new Error("le partage du courant n'est pas montré");
+  /* ET L'ANTIPAD EST ENTRÉ DANS LES COTES. */
+  if(!/anti. 0,80/.test(h))throw new Error("l'antipad n'est pas affiché");
+});
+
+T("une référence qui change sans être rejointe lève l'alerte",()=>{
+  const h=simDiscontinuites(simResDisc({coudes:[], transitions:[
+    simTransRetour({plans_depart:["GND"], plans_arrivee:["PWR"],
+                    nets_depart:["GND"], nets_arrivee:["PWR"],
+                    plan_change:true, nets_differents:true,
+                    reference_change:true, raccorde:false, retenus:0,
+                    trouves:1, source:"self",
+                    vias:[{distance_mm:0.60, part:0, retenu:false, net:"GND",
+                           raison:"ne rejoint pas PWR, le plan d'arrivée"}]})
+  ]}));
+  if(!/simAlerte/.test(h))
+    throw new Error("le défaut grave ne lève pas d'alerte");
+  if(!/GND/.test(h)||!/PWR/.test(h))
+    throw new Error("l'alerte ne nomme pas les deux plans");
+  /* CE QU'ELLE DOIT DIRE, ET QU'AUCUNE AUTRE NOTE NE DIT : que la réponse
+     n'est pas un via de plus. */
+  if(!/masse à de la masse/.test(h))
+    throw new Error("l'alerte ne dit pas qu'un via de masse n'y peut rien");
+  /* Et la cellule porte le verdict, pas un compte. */
+  if(!/⚠/.test(h))throw new Error("la cellule ne porte pas le verdict");
+});
+
+T("sans retour, la fiche annonce un plancher et non une mesure",()=>{
+  const h=simDiscontinuites(simResDisc({coudes:[], transitions:[
+    simTransRetour({plans_depart:["GND"], plans_arrivee:["GND"],
+                    plan_change:false, nets_differents:false,
+                    reference_change:false, raccorde:false, retenus:0,
+                    trouves:0, source:"self", vias:[]})
+  ]}));
+  if(!/plancher/.test(h))
+    throw new Error("le chiffre sans retour n'est pas annoncé comme un plancher");
+  if(!/ne dépend pas du routage/.test(h))
+    throw new Error("la fiche ne dit pas que le chiffre ignore le routage");
+  if(/simAlerte/.test(h))
+    throw new Error("l'alerte grave sort alors que la référence ne change pas");
+});
+
+T("une page muette et une carte sans via ne se confondent pas",()=>{
+  /* L'ABSENCE D'INFORMATION N'EST PAS UN DÉFAUT DE LA CARTE. Les deux donnent
+     la même inductance ; dans un cas c'est le routage qu'on juge, dans l'autre
+     l'outil. */
+  const muet=simDiscontinuites(simResDisc({coudes:[], transitions:[
+    simTransRetour({plans_depart:["GND"], plans_arrivee:["GND"],
+                    plan_change:false, nets_differents:false,
+                    reference_change:false, raccorde:false, retenus:0,
+                    trouves:0, source:"absent", vias:[]})
+  ]}));
+  if(!/ne sont pas envoyés par/.test(muet))
+    throw new Error("le silence de la page n'est pas distingué");
+  if(!/non envoyé/.test(muet))
+    throw new Error("la cellule ne distingue pas « non envoyé » de « aucun »");
+});
+
+T("la fiche montre le moignon, sa résonance et ce qu'il pèse",()=>{
+  /* LE MOIGNON EST UNE COTE DU VIA — celle qu'on ne voit pas sur le dessin.
+     Un via traversant utilisé jusqu'à une couche interne laisse pendre le
+     reste du perçage : il charge la liaison sous sa résonance, et la
+     COURT-CIRCUITE à sa résonance quart d'onde. C'est le seul défaut de cette
+     fiche qui efface un lien au lieu de le dégrader. */
+  const t=simTransRetour({plans_depart:["GND"], plans_arrivee:["GND"],
+                          plan_change:false, nets_differents:false,
+                          reference_change:false, raccorde:true, retenus:1,
+                          trouves:1, source:"boucle",
+                          vias:[{distance_mm:0.6, part:1, retenu:true,
+                                 net:"GND"}]});
+  t.moignons={connu:true, depart:null,
+              arrivee:{longueur_mm:0.620, er:4.3, resonance_hz:58.3e9,
+                       capacite_fF:127.7, impedance_ohm:415,
+                       couches:[4,8]}};
+  t.modelise.capacite_totale_fF=200.5;
+  const h=simDiscontinuites(simResDisc({coudes:[], transitions:[t]}));
+  if(!/moignon 0,620 mm/.test(h))
+    throw new Error("la longueur du moignon n'est pas affichée");
+  if(!/58,3 GHz/.test(h))
+    throw new Error("la résonance n'est pas affichée : c'est LE chiffre qui "+
+                    "dit s'il faut s'en soucier");
+  if(!/court-circuite/.test(h))
+    throw new Error("la fiche ne dit pas ce qui se passe à la résonance");
+  /* LA CAPACITÉ AFFICHÉE EST CELLE QUI EST CASCADÉE — via PLUS moignons —,
+     sans quoi la colonne C et la colonne Phase ne parleraient pas de la même
+     chose. */
+  if(!/200,50 fF/.test(h))
+    throw new Error("la colonne C montre le via seul, pas ce qui est cascadé");
+});
+
+T("une portée percée inconnue ne s'affiche pas comme un moignon nul",()=>{
+  const t=simTransRetour({plans_depart:["GND"], plans_arrivee:["GND"],
+                          plan_change:false, nets_differents:false,
+                          reference_change:false, raccorde:false, retenus:0,
+                          trouves:0, source:"self", vias:[]});
+  t.moignons={connu:false, depart:null, arrivee:null};
+  const h=simDiscontinuites(simResDisc({coudes:[], transitions:[t]}));
+  if(!/moignon inconnu/.test(h))
+    throw new Error("l'inconnu doit se lire dans la ligne du via");
+  if(!/portée percée/.test(h))
+    throw new Error("la fiche n'explique pas pourquoi on ne sait pas");
+});
+
+T("la traversée de cavité est chiffrée, et son détail avec",()=>{
+  /* CE QUI ÉTAIT UN CONSEIL DEVIENT UN CHIFFRE. La fiche disait « ne changez
+     pas de référence » et rendait un plancher ; elle peut dire combien cela
+     coûte, donc si l'on peut se le permettre. */
+  const t=simTransRetour({plans_depart:["GND"], plans_arrivee:["PWR"],
+                          nets_depart:["GND"], nets_arrivee:["PWR"],
+                          plan_change:true, nets_differents:true,
+                          reference_change:true, raccorde:false, retenus:0,
+                          trouves:0, source:"self", vias:[]});
+  t.cavite={plan_haut:"GND", plan_bas:"PWR", hauteur_mm:1.0, cherche:true,
+            ponts:1, pont:{x:12, y:0, distance_mm:2.0, repere:"C12"},
+            capacite_plans_pF:95.0, aire_source:"page",
+            impedance_plans_ohm:3.64, impedance_fc_ohm:6.65,
+            etalement_nH:1.7192, esl_nH:1.0, esl_source:"repli",
+            borne:false};
+  const h=simDiscontinuites(simResDisc({coudes:[], transitions:[t]}));
+  if(!/C12/.test(h))throw new Error("le découplage retenu n'est pas nommé");
+  /* LE COÛT EST EN OHMS, ET NON EN NANOHENRYS : la cavité n'est pas une
+     inductance, elle résonne. La capacité répartie des plans et l'inductance
+     du découplage forment une résonance parallèle où l'impédance culmine ;
+     une inductance équivalente figée manquerait exactement cela. */
+  if(!/6,65 Ω/.test(h))throw new Error("le coût en ohms n'est pas affiché");
+  if(!/95 pF/.test(h))
+    throw new Error("la capacité des plans n'est pas dite : c'est par elle que "+
+                    "le retour passe");
+  /* LA DÉDUCTION RESTE : aucun via de masse ne peut joindre deux nets. */
+  if(!/masse à de la masse/.test(h))
+    throw new Error("la fiche ne dit plus qu'un via de masse n'y peut rien");
+  /* LE DÉTAIL COMPTE : étalement et montage ne se corrigent pas de la même
+     façon — l'un en rapprochant le condensateur, l'autre en le changeant. */
+  if(!/1,72/.test(h)||!/1,00/.test(h))
+    throw new Error("le détail étalement/montage n'est pas donné");
+  if(!/supposés/.test(h))
+    throw new Error("l'ESL est un repli et doit être annoncée comme telle");
+  /* ET LE CONSEIL QUI N'EST PAS CELUI QU'ON ATTEND. */
+  if(!/amincir le diélectrique/.test(h))
+    throw new Error("la fiche ne dit pas que l'écart entre plans commande "+
+                    "davantage que la distance au condensateur");
+  /* ET L'ALERTE GRAVE NE SORT PLUS : le coût est connu, ce n'est plus une
+     alarme mais une information de conception. */
+  if(/simAlerte/.test(h))
+    throw new Error("l'alerte crie alors que le coût est chiffré");
+});
+
+T("sans le net des plans, la fiche affiche le doute et non le défaut",()=>{
+  /* LE DÉFAUT EXACT QUI CRIAIT SUR LES CARTES SAINES. Deux plans de noms
+     différents dont on ignore les nets peuvent être deux masses — cas
+     ordinaire — ou une masse et une alimentation — défaut grave. Trancher
+     faisait sortir l'alerte sur toute carte quatre couches dont l'empilage ne
+     nomme pas ses nets, c'est-à-dire presque toutes. */
+  const t=simTransRetour({plans_depart:["Conductor-2"],
+                          plans_arrivee:["Conductor-3"],
+                          plan_change:true, nets_differents:null,
+                          reference_change:false, raccorde:false, retenus:0,
+                          trouves:0, source:"absent", vias:[]});
+  const h=simDiscontinuites(simResDisc({coudes:[], transitions:[t]}));
+  if(/simAlerte/.test(h))
+    throw new Error("l'alerte grave est sortie sans preuve");
+  if(!/on ne peut pas dire si c'est grave/.test(h))
+    throw new Error("le doute n'est pas dit");
+  if(!/Renseigner le net des plans/.test(h))
+    throw new Error("la fiche ne dit pas comment lever le doute");
+  /* La cellule porte le doute, pas un verdict. */
+  if(!/\? Conductor-2→Conductor-3/.test(h))
+    throw new Error("la cellule ne montre pas le doute");
+});
+
+T("la portée supposée et l'antipad incertain sont nommés",()=>{
+  const h=simDiscontinuites(simResDisc({coudes:[], transitions:[
+    simTransRetour({plans_depart:["GND"], plans_arrivee:["GND"],
+                    plan_change:false, nets_differents:false,
+                    reference_change:false, raccorde:true, retenus:1,
+                    trouves:1, source:"boucle", portee_supposee:true,
+                    plans_incertains:true,
+                    vias:[{distance_mm:0.60, part:1, retenu:true, net:"GND",
+                           portee_supposee:true}]},
+                   {antipad_max:1.05})
+  ]}));
+  if(!/supposée traversante/.test(h))
+    throw new Error("la portée supposée n'est pas dite");
+  if(!/ne déclare pas le net de ses plans/.test(h))
+    throw new Error("l'empilage sans net de plan n'est pas signalé");
+  if(!/0,80 à 1,05 mm/.test(h))
+    throw new Error("la fourchette d'antipad n'est pas nommée : "+h);
+  if(!/au plus capacitif/.test(h))
+    throw new Error("la fiche ne dit pas de quel côté la fourchette est prise");
+});
+
+/* --------------------------------------------------------------------------
    LA BANDE S A SON UNITÉ, INDÉPENDANTE DE CELLE DE f₀
    --------------------------------------------------------------------------
    POURQUOI DEUX ET NON UNE. Une seule liste servait les trois champs. Une carte
@@ -8321,14 +8983,20 @@ T("la bande S et f₀ s'écrivent chacune dans SON unité",()=>{
       throw new Error("f₀ écrite « "+simEl("simFc").value+" » au lieu de 0,25");
     if(simEl("simF1").value!=="100")
       throw new Error("f₁ écrite « "+simEl("simF1").value+" » au lieu de 100");
-    if(simEl("simF2").value!=="1000")
-      throw new Error("f₂ écrite « "+simEl("simF2").value+" » au lieu de 1000");
+    /* f₂ VAUT 1 EN GIGAHERTZ, et c'est tout l'objet de la séparation : les
+       mêmes 1000 MHz s'écrivent « 1 » dès que la borne haute porte son unité à
+       elle. Attendre « 1000 » ici revenait à demander que le champ ignore la
+       liste posée juste à côté. */
+    if(simEl("simF2").value!=="1")
+      throw new Error("f₂ écrite « "+simEl("simF2").value+" » au lieu de 1");
     /* Et les deux listes montrent chacune la sienne. */
     if(simEl("simFUnite").value!=="GHz")
       throw new Error("la liste de f₀ montre "+simEl("simFUnite").value);
-    if(simEl("simFUniteBande").value!=="MHz")
-      throw new Error("la liste de bande montre "+simEl("simFUniteBande").value);
-  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande:"MHz"});
+    if(simEl("simFUniteBande1").value!=="MHz")
+      throw new Error("la liste de bande 1 montre "+simEl("simFUniteBande1").value);
+    if(simEl("simFUniteBande2").value!=="GHz")
+      throw new Error("la liste de bande 2 montre "+simEl("simFUniteBande2").value);
+  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande1:"MHz", uniteBande2:"GHz"});
 });
 
 T("relire rend les mêmes hertz, chaque champ dans son unité",()=>{
@@ -8338,13 +9006,13 @@ T("relire rend les mêmes hertz, chaque champ dans son unité",()=>{
     if(Math.abs(s.fc-250e6)>1)throw new Error("f₀ relue "+s.fc);
     if(Math.abs(s.f1-100e6)>1)throw new Error("f₁ relue "+s.f1);
     if(Math.abs(s.f2-1000e6)>1)throw new Error("f₂ relue "+s.f2);
-  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande:"MHz"});
+  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande1:"MHz", uniteBande2:"GHz"});
 });
 
 T("changer l'unité de la bande ne déplace ni les hertz ni f₀",()=>{
   simAvecSaisie(()=>{
     simSaisieEcrire();
-    simUniteChanger("kHz","bande");
+    simUniteChanger("kHz","bande1");
     /* LES HERTZ NE BOUGENT PAS : c'est toute la règle de la conversion. */
     if(Math.abs(SIM.saisie.f1-100e6)>1)
       throw new Error("f₁ a bougé : "+SIM.saisie.f1);
@@ -8356,52 +9024,55 @@ T("changer l'unité de la bande ne déplace ni les hertz ni f₀",()=>{
       throw new Error("l'unité de f₀ a changé avec celle de la bande");
     if(simEl("simFc").value!=="0,25")
       throw new Error("f₀ s'est réécrite : « "+simEl("simFc").value+" »");
-  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande:"MHz"});
+  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande1:"MHz", uniteBande2:"GHz"});
 });
 
 T("changer l'unité de f₀ ne touche pas la bande",()=>{
   simAvecSaisie(()=>{
     simSaisieEcrire();
     simUniteChanger("MHz","fc");
-    if(SIM.saisie.uniteBande!=="MHz")
+    if(SIM.saisie.uniteBande1!=="MHz")
       throw new Error("l'unité de bande a suivi celle de f₀");
     if(Math.abs(SIM.saisie.f2-1000e6)>1)
       throw new Error("f₂ a bougé : "+SIM.saisie.f2);
     if(simEl("simFc").value!=="250")
       throw new Error("f₀ devrait s'écrire 250 en MHz, pas « "+
                       simEl("simFc").value+" »");
-  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande:"MHz"});
+  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande1:"MHz", uniteBande2:"GHz"});
 });
 
 T("un état sans unité de bande retombe sur celle de f₀",()=>{
   /* LE REPLI N'EST PAS UNE CONSTANTE, ET C'EST LE POINT. Un état enregistré
-     avant la séparation ne porte pas `uniteBande` ; lui donner du gigahertz
+     avant la séparation ne porte pas `uniteBande1` ; lui donner du gigahertz
      par défaut ferait sauter la bande d'un facteur mille sous les yeux de qui
      rouvre le panneau. Retomber sur `unite` rend exactement l'ancien
      comportement. */
   simAvecSaisie(()=>{
+    delete SIM.saisie.uniteBande1;
+    delete SIM.saisie.uniteBande2;
     delete SIM.saisie.uniteBande;
-    if(simUniteBande().cle!=="MHz")
-      throw new Error("le repli donne "+simUniteBande().cle+" au lieu de MHz");
+    if(simUniteBande1().cle!=="MHz")
+      throw new Error("le repli 1 donne "+simUniteBande1().cle+" au lieu de MHz");
     simSaisieEcrire();
     if(simEl("simF1").value!=="100")
       throw new Error("f₁ écrite « "+simEl("simF1").value+" » : le repli n'a "+
                       "pas pris l'unité de f₀");
-  },{fc:250e6, f1:100e6, f2:1000e6, unite:"MHz", uniteBande:"MHz"});
+  },{fc:250e6, f1:100e6, f2:1000e6, unite:"MHz", uniteBande1:"MHz", uniteBande2:"GHz"});
 });
 
 T("une unité inconnue ne change rien",()=>{
   simAvecSaisie(()=>{
-    simUniteChanger("THz","bande");
-    if(SIM.saisie.uniteBande!=="MHz")
+    simUniteChanger("THz","bande1");
+    if(SIM.saisie.uniteBande1!=="MHz")
       throw new Error("une unité hors liste a été acceptée");
-  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande:"MHz"});
+  },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande1:"MHz", uniteBande2:"GHz"});
 });
 
-T("les commandes portent deux listes d'unité distinctes",()=>{
+T("les commandes portent trois listes d'unité distinctes",()=>{
   const h=simCorpsImpedance();
   if(!/id="simFUnite"/.test(h))throw new Error("la liste de f₀ manque");
-  if(!/id="simFUniteBande"/.test(h))throw new Error("la liste de bande manque");
+  if(!/id="simFUniteBande1"/.test(h))throw new Error("la liste de bande 1 manque");
+  if(!/id="simFUniteBande2"/.test(h))throw new Error("la liste de bande 2 manque");
   /* L'ANCIENNE ÉTIQUETTE FIGÉE DOIT AVOIR DISPARU : la laisser afficherait une
      unité qui ne serait plus celle de la bande. */
   if(/id="simUBande"/.test(h))
