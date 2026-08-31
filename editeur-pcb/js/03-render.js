@@ -721,6 +721,11 @@ function paint(c,dpr,w,h,noGrid){
      jugent le tracé, et celui qui répond à la question posée à l'instant doit
      rester au-dessus — mais avant la cote et le phare, qui désignent au lieu
      de décrire. Absente du .png exporté, pour la même raison qu'eux. */
+  /* LE VOILE : le cuivre qui n'est pas dans la simulation s'estompe, pour ne
+     pas se confondre avec celui qui porte une couleur de chaleur. Il se pose
+     JUSTE AVANT les cartes — celle des impedances comme celle du potentiel —
+     et n'existe que tant que l'une d'elles peint. */
+  if(!noGrid&&typeof simVoile==="function")simVoile(c,w,h);
   if(!noGrid&&typeof simZTrace==="function")simZTrace(c);
   /* La carte de POTENTIEL (chute DC), sur la couche affichée. Elle passe au
      même rang que la carte d'impédance et pour la même raison — les deux

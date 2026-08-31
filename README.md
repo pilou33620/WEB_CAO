@@ -283,8 +283,168 @@ d'œil, et la légende du panneau le redit en toutes lettres. La clarté porte
 l'écart — pâle en bord de bande, pleine une tolérance plus loin.
 
 La valeur est écrite sur la piste, dans un cartouche : une étiquette par
-impédance distincte, posée sur le plus long tronçon qui la porte — cinquante
-fois « 48,0 Ω » empilés ne se liraient pas.
+valeur distincte, posée sur le plus long tronçon qui la porte — cinquante fois
+« 48,0 Ω » empilés ne se liraient pas. Au-delà de huit valeurs distinctes, les
+huit plus éloignées de la cible sont gardées.
+
+### Trois cartes, une par question
+
+Chaque onglet peint **la grandeur dont il parle**, sur le même cuivre :
+
+| Onglet | Ce qui est peint | Échelle |
+| --- | --- | --- |
+| *Impédance* | Z₀ tronçon par tronçon | la cible ± sa tolérance |
+| *Z différentielle* | **Z_diff tronçon par tronçon** | la cible différentielle ± sa tolérance |
+| *Diaphonie* | **le bruit reçu par chaque piste VOISINE** (la sélection est l'agresseur) | le budget de bruit |
+
+Les deux dernières sont nouvelles, et elles répondent à ce qu'un chiffre unique
+ne pouvait pas dire. Le tableau chiffre **un longement** — « SW_2 prend 4,1 %
+sur 3,0 mm à 0,21 mm » — sur une section dont l'écart est la **moyenne** de ce
+qui longe ; or trois millimètres à 0,8 mm et un demi-millimètre à 0,12 mm
+donnent la même moyenne, et ce n'est pas la même carte. La question qu'on se
+pose devant le routage n'est pas « combien », c'est **où faut-il écarter**.
+
+Le serveur résout donc, pour chaque tronçon, une section à **deux
+conducteurs** à son écart **réel** — même empilage, même masse coplanaire, même
+solveur —, plafonnée à vingt-quatre résolutions par calcul et mise en cache au
+pas de cinq microns. De là sortent les deux cartes :
+
+- **la Z_diff par tronçon**, qui répond à « ma paire est-elle à 100 Ω sur
+  *toute* sa longueur ? ». Le **gris** n'y est pas une valeur nulle : c'est
+  l'absence de voisine, et c'est ainsi qu'on voit où la paire se sépare ;
+- **le bruit par tronçon**, du bleu au rouge en passant par le violet. Le
+  repère n'est pas une cible mais le **budget** : violet à la moitié, rouge
+  quand ce seul tronçon le crève. Le bruit arrière saturant, la couleur dit *où
+  le couplage se fabrique*, non une tension mesurable tronçon par tronçon. Les
+  deux légendes le redisent sous le tableau.
+
+  *(Le milieu de la rampe est violet et non ambre pour une raison de fond : la
+  teinte intermédiaire est **interpolée**, et du bleu vers l'ambre elle traverse
+  le gris — à deux points près de celui qui veut dire « rien ne longe ici ». Le
+  chemin par le violet reste saturé d'un bout à l'autre.)*
+
+#### Qui est-ce que je dérange, et où ?
+
+**Seules les voisines sont graduées.** Chacune porte, sur toute sa longueur,
+ce que la sélection lui inflige — son net et son pire pourcentage sur une
+étiquette posée *à côté* du cuivre, reliée par un filet (deux pistes qui
+couplent sont proches par construction : posés au milieu du cuivre, les
+cartouches se recouvrent exactement là où l'on regarde).
+
+**La sélection, elle, est l'agresseur**, et se peint d'une seule couleur froide
+qui n'appartient à aucune échelle. Elle a porté un temps ce qu'elle *reçoit*,
+sur le même dégradé que les voisines : deux grandeurs différentes, même rampe,
+même endroit — l'œil ne pouvait pas les séparer. Ce qu'elle reçoit reste chiffré
+dans le tableau et jugé par le verdict.
+
+Un **chevelu pointillé** part de la sélection, marque d'un point plein l'endroit
+exact de la victime que l'étiquette chiffre, et rejoint le cartouche : le sens
+se lit sans légende — même idée que le chevelu du courant de retour. Il part du
+cuivre de la sélection **sur la couche de la victime**, et non du tronçon le
+plus proche en plan : une liaison qui change de couche a des tronçons partout
+dans l'empilage, et le trait semblait alors sortir d'un plan de masse.
+
+**La victime est peinte entière, et le reste de la carte s'estompe.** Deux
+lectures se contredisaient à l'écran : l'agresseur était coloré d'un bout à
+l'autre, la victime seulement là où elle longe — trois millimètres de couleur
+perdus entre deux centimètres de cuivre nu, sans qu'on sache si le reste ne
+couple pas ou n'a pas été regardé. Une piste agressée quelque part est donc
+peinte sur **toute** sa longueur : ses tronçons couplés portent leur couleur de
+bruit, les autres le **gris** qui veut déjà dire « rien ne longe ici ». Une
+piste que la sélection n'agresse nulle part reste, elle, hors sujet et n'est pas
+peinte du tout. Et pendant qu'une carte de chaleur peint — celle des impédances,
+de la Z_diff, du bruit ou du potentiel DC —, un **voile** de la couleur du fond
+est posé sur tout ce qui a été dessiné avant : le cuivre qui n'entre dans aucun
+calcul passe en retrait, et une couleur de couche cesse de se lire comme une
+couleur de chaleur.
+
+C'est cette carte qu'on regarde en routant : la question qu'on se pose en tirant
+un signal rapide n'est pas « que va-t-il prendre » mais *qui est-ce que je
+dérange, et à quel endroit de sa piste*. La fiche répondait déjà « combien » —
+la colonne **émis** — mais sur quelle piste et où restait à deviner. Les deux
+sens ne sont pas égaux dès que les largeurs diffèrent : le bruit se compte en
+fraction de l'amplitude de l'agresseur.
+
+La géométrie des voisines vient du **document** — les tronçons envoyés au
+serveur, en millimètres, arcs déjà en cordes — et non d'un objet de l'éditeur :
+c'est le seul dessin du panneau qui ne passe par aucun objet de l'outil.
+
+#### La masse qui s'interpose
+
+Les deux pages mesurent l'écart de chaque piste au cuivre de masse, côté par
+côté. **Quand une voisine se trouve plus loin que là où ce cuivre commence, il y
+a du plan entre les deux** — c'est le geste de routage le plus banal : on glisse
+une garde, ou du plan arrosé cousu de vias, entre un signal rapide et son
+voisin.
+
+Ce cuivre-là est maintenant **posé dans la section comme une garde**, à zéro
+volt, large de ce que laissent les deux dégagements mesurés ; la coupe le
+marque « garde déduite » — il sort de deux mesures, il n'est pas lu dans le
+fichier comme l'est une piste de garde routée.
+
+Auparavant il était **purement jeté** : la masse était repoussée au bord du
+groupe, son écart devenait négatif, on le ramenait à zéro, et deux pistes
+séparées par un plan arrosé se résolvaient comme deux pistes face à face
+au-dessus du diélectrique nu. Le couplage annoncé était celui d'un routage qu'on
+n'avait pas fait, et rien ne le disait. Sur un cas contrôlé — deux voisines à
+1,19 mm de la même piste, l'une derrière un plan, l'autre à nu — le blindage
+vaut un facteur **3 à 5** selon la largeur de la bande.
+
+Le modèle suppose ce cuivre **tenu à zéro volt sur toute la longueur** : c'est ce
+qu'un plan cousu de vias fait, et ce qu'une garde sans vias ne fait pas — sans
+couture elle peut résonner, et le couplage revient. La fiche le dit sous la
+coupe.
+
+#### NEXT et FEXT se regardent séparément
+
+Trois boutons — **NEXT**, **FEXT**, **les deux** — choisissent la grandeur
+peinte. Aucun ne relance quoi que ce soit : les deux bruits sortent de la même
+matrice et sont déjà dans le résultat.
+
+Ce n'est pas un confort d'affichage. **Les deux bruits ne se fabriquent pas au
+même endroit de la piste :**
+
+| | formule | comportement quand l'écart se resserre |
+| --- | --- | --- |
+| arrière (NEXT) | k = (k_L + k_C)/4 — une **somme** | monte franchement, sans exception |
+| avant (FEXT) | k = (k_C − k_L)/2 — une **différence** | **cesse de croître**, et peut redescendre : k_C rattrape k_L |
+
+Sur un 1,6 mm deux couches — piste à 1,48 mm de son plan — le coefficient avant
+s'effondre carrément quand les pistes se serrent, si bien que les deux cartes
+désignent des **bouts opposés** de la même liaison. Une carte unique, montrant
+le pire des deux, moyennerait deux reliefs différents et enverrait corriger le
+mauvais millimètre.
+
+L'**invariant** suit ce choix : en NEXT ou en FEXT, la somme le long de la piste
+vaut **exactement** la colonne du tableau. En mode « les deux », le maximum
+tronçon par tronçon ne totalise rien — et la légende le dit plutôt que de
+laisser croire le contraire.
+
+Changer la cible, la tolérance ou le budget **repeint sans recalculer** :
+essayer 3 % puis 8 % ne repasse pas par le serveur.
+
+### Choisir sa paire
+
+La détection lit les suffixes — `_P`/`_N`, `+`/`−`, `_DP`/`_DM` — et les paires
+déclarées dans l'éditeur. Une paire nommée `CLK`/`CLKB`, ou deux nets baptisés
+par un fabricant de connecteur, n'y entrent pas : la fiche les rangeait sous
+« ce ne sont pas des paires », avec des impédances pourtant justes.
+
+La liste **« Paire »** de l'onglet *Z différentielle* laisse la désigner. Le net
+choisi part dans `doc.paires`, au même endroit et au même format que ceux de
+l'éditeur : le serveur ne les distingue pas, et c'est ce qui en fait *la* paire,
+carte de chaleur comprise. Les candidats proposés sont **ce qui longe**, avant
+même le premier calcul — sans quoi il faudrait calculer pour pouvoir demander le
+bon calcul. Une sélection à cheval sur deux nets ne peut rien déclarer : on ne
+saurait pas laquelle de ses moitiés est le « P ».
+
+**Ni *Z différentielle* ni *Diaphonie* ne demandent de fréquence.** La section
+est quasi-statique : ni [C], ni [L], ni les modes pair et impair ne dépendent de
+f₀ — le bruit dépend du **temps de montée**, qui a son propre champ. Les deux
+onglets posaient le champ f₀ et, avec lui, l'avertissement de bande S, lequel
+parle des pertes et des paramètres S de l'onglet *Impédance* : un avertissement
+portant sur un calcul qui n'a pas lieu là, sous des chiffres qu'il ne concerne
+pas.
 
 **Les gestes de sélection commandent l'étendue du calcul.** Dans l'éditeur
 PCB : clic pour le tronçon seul, `Maj`+clic pour la piste entière, `Maj`+clic à
@@ -305,7 +465,7 @@ ne savent pas traiter — à commencer par la **triplaque décentrée**, que la
 formule IPC suppose centrée alors qu'un empilage 4 couches ne l'est jamais.
 
 Il est vérifié contre des étalons extérieurs, et le banc d'essai le refait à
-chaque exécution (`python/test/banc-ligne-mom.py`, 133 cas) :
+chaque exécution (`python/test/banc-ligne-mom.py`, 151 cas) :
 
 | Géométrie | Étalon | Écart maximal |
 | --- | --- | --- |
@@ -344,7 +504,10 @@ Ce qu'il ne voit pas, et le panneau le dit sous chaque résultat :
   une impédance mais deux, une par mode. Toutes les voisines d'une même piste
   entrent dans **une seule section** — une piste et ses deux voisines font un
   problème à trois conducteurs —, avec le plan coplanaire qui borde le groupe
-  et les pistes de masse posées en **gardes**, à zéro volt ;
+  et les pistes de masse posées en **gardes**, à zéro volt. Une voisine que
+  l'épaisseur du cuivre ferait toucher sa propre voisine est **écartée en le
+  disant** : elle emportait auparavant la section entière, donc tous les
+  longements, pour deux conducteurs qui n'étaient même pas la sélection ;
 - la diaphonie est rendue **dans les deux sens** : ce que la sélection reçoit,
   qui est ce qui la juge, et ce qu'elle émet vers la voisine. Les deux ne sont
   égaux que si les deux pistes ont la même largeur ;

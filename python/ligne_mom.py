@@ -811,6 +811,18 @@ def _largeur_effective(largeur, epaisseur, distance_plan):
         1.0 + np.log(2.0 * distance_plan / epaisseur))
 
 
+def largeur_effective(largeur, epaisseur, distance_plan):
+    """L'elargissement de Wheeler, offert a qui pose une section.
+
+    C'EST LA MEME FONCTION QUE `_largeur_effective`, et elle est publique parce
+    qu'un appelant qui POSE des conducteurs doit pouvoir savoir, AVANT de les
+    poser, de combien le cuivre epais va les elargir. Sans cela il les pose a
+    un ecart nu qui parait suffisant, et c'est `_conducteurs_places` qui refuse
+    la section entiere -- un refus qu'il ne pouvait pas prevoir.
+    """
+    return float(_largeur_effective(largeur, epaisseur, distance_plan))
+
+
 def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
     """Résout la section et rend l'impédance quasi-statique de la ligne.
 

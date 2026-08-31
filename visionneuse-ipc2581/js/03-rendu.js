@@ -184,6 +184,11 @@ function peindre(c,dpr,W,H){
      selon leur écart à l'impédance visée. Après la mise en évidence du net —
      c'est un jugement sur ce que celle-ci vient de montrer — et avant les
      composants et les textes, qui doivent rester lisibles par-dessus. */
+  /* LE VOILE : le cuivre qui n'est pas dans la simulation s'estompe, pour ne
+     pas se confondre avec celui qui porte une couleur de chaleur. Il se pose
+     JUSTE AVANT les cartes — celle des impédances comme celle du potentiel —
+     et n'existe que tant que l'une d'elles peint. */
+  if(typeof simVoile==="function")simVoile(c,W,H);
   if(typeof simZTrace==="function")simZTrace(c,dpr);
   /* La carte de POTENTIEL (chute DC). Elle ne s'affiche jamais en même
      temps que celle des impédances : `simDCActif()` exige l'onglet DC,

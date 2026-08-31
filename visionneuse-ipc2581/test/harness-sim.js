@@ -88,6 +88,26 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   /* Les deux onglets de couplage (commun/simulation-em.js). */
   "simCouplage","simCouplagePaires","simFicheDiff","simFicheDiaphonie",
   "simCorpsDiff","simCorpsDiaphonie","simRendreDiff","simRendreDiaphonie",
+  /* Les TROIS cartes de chaleur, et ce qui les colore. `simCarteSegment` est
+     le seul point par lequel un canevas apprend ce qu'il peint. */
+  "simCarteQuoi","simCarteActive","simCarteSegment","simCarteRetenir",
+  "simChaleurRes","simChaleurLots","simCouleurBande","simZCouleur",
+  "simZSegment","simZActif","simZVerdict","simZTolAbs",
+  "simZDiffCouleur","simZDiffTolAbs","simZDiffVerdict",
+  "simBruitCouleur","simBruitBudget",
+  "simCarteDiffPartenaire","simCarteDiffLegende","simCarteBruitLegende",
+  /* Le cuivre VOISIN, et le sens peint : NEXT et FEXT ne se fabriquent pas au
+     meme endroit de la piste, et se regardent donc separement. */
+  "simCarteVoisins","simChaleurVoisinsRes","simChaleurVoisinsLots",
+  "simCarteVoisinsEtiquettes","simCarteCentreSel","simCarteDepuis",
+  "simCarteObjetsSel","simCarteCleVoisin",
+  "simAgresseurCouleur",
+  /* Le voile : ce qui n'est pas dans la simulation s'estompe. */
+  "simVoileActif","SIM_VOILE_ALPHA",
+  "simSensPeint","simSensNom","simSensBouton","simSensBrancher",
+  "simChaleurValeur",
+  /* Choisir sa paire a la main plutot que de la laisser deviner. */
+  "simPaireCandidats","simPaireSoi","simPaireEcrire","simDocFinir",
   "simBruitPire","simBruitEmis","simCoupleSection","simCoupleSections",
   "SIM_UNITES_TR","SIM_UNITES_V","simUniteTr","simUniteV",
   "simLotsPeints","simLotsMultiples","simPourChaqueLot","simLotMirroir",

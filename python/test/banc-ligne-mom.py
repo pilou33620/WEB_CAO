@@ -3058,6 +3058,429 @@ T("ce qui ne tient pas dans la section est nomme",
   ce_qui_ne_tient_pas_dans_la_section_est_nomme)
 
 
+print("\nLa carte de chaleur du couplage")
+
+
+def _essai_chaleur(objets, voisinage, paires=None, tr=25e-12, gap=2.0):
+    """Une victime en PLUSIEURS troncons, et ce qui longe chacun d'eux."""
+    doc = _doc_couplage(objets, voisinage, paires=paires)
+    for o in doc["geometry"]["objects"]:
+        o["gap_left"] = gap
+        o["gap_right"] = gap
+    doc["analyse"]["temps_montee"] = tr
+    return _se.simuler(doc)["couplage"]
+
+
+def _victime_a_ecart_variable():
+    """Trois troncons de dix millimetres, l'agresseur se rapproche a chacun."""
+    victime = [_pis(0, 0, 10, 0, "SIG"), _pis(10, 0, 20, 0, "SIG"),
+               _pis(20, 0, 30, 0, "SIG")]
+    voisinage = [_pis(0, 1.05, 10, 1.05, "AGR"),      # ecart 0,80
+                 _pis(10, 0.65, 20, 0.65, "AGR"),     # ecart 0,40
+                 _pis(20, 0.37, 30, 0.37, "AGR")]     # ecart 0,12
+    return _essai_chaleur(victime, voisinage)
+
+
+def la_chaleur_est_alignee_sur_les_troncons_envoyes():
+    """LA CARTE SE LIT PAR LE RANG, comme les segments.
+
+    C'est par cet alignement que la page retrouve le cuivre a peindre : un
+    enregistrement de plus ou de moins, et elle peint la couleur d'un troncon
+    sur son voisin.
+    """
+    c = _victime_a_ecart_variable()
+    assert len(c["chaleur"]) == 3, "%d entrees" % len(c["chaleur"])
+    assert all(x is not None for x in c["chaleur"]), c["chaleur"]
+
+    # UN TRONCON QUI NE LONGE RIEN VAUT None, ET PAS ZERO : « rien ne couple
+    # ici » et « je n'en sais rien » ne se peignent pas pareil.
+    victime = [_pis(0, 0, 10, 0, "SIG"), _pis(10, 0, 20, 0, "SIG")]
+    seul = _essai_chaleur(victime, [_pis(0, 0.65, 10, 0.65, "AGR")])
+    assert seul["chaleur"][0] is not None, "le troncon qui longe n'est pas peint"
+    assert seul["chaleur"][1] is None, \
+        "un troncon qui ne longe rien porte une valeur : %s" % (
+            seul["chaleur"][1],)
+
+
+T("la chaleur est alignee sur les troncons envoyes",
+  la_chaleur_est_alignee_sur_les_troncons_envoyes)
+
+
+def la_somme_etalee_vaut_le_bruit_de_la_fiche():
+    """LE TOTAL VIENT DE LA SECTION COMPLETE, ET LA CARTE NE LE CHANGE PAS.
+
+    C'est ce qui rend les deux lisibles ensemble : une carte qui ne totalise
+    pas ce que la fiche annonce ferait douter des deux. Seule la REPARTITION
+    est calculee localement -- et l'invariant vaut SENS PAR SENS, parce que
+    les deux sens ne se repartissent pas avec le meme poids.
+    """
+    c = _victime_a_ecart_variable()
+    f = c["paires"][0]
+    # LA TOLERANCE EST CELLE DES ARRONDIS DE SORTIE, et rien d'autre : la carte
+    # est rendue au cent-millieme, et trois troncons cumulent trois arrondis.
+    # Toute erreur de repartition, elle, se compterait en pour cent.
+    for quoi in ("next", "fext"):
+        somme = sum(x[quoi] for x in c["chaleur"] if x)
+        proche(somme, f["recu"][quoi], 2e-3,
+               "la somme etalee du %s ne vaut pas celui de la fiche" % quoi)
+
+    # ET SUR LE CUIVRE VOISIN, C'EST LE SENS EMIS QUI TOTALISE : la voisine
+    # subit ce que la selection lui envoie, pas ce que la selection recoit.
+    for quoi in ("next", "fext"):
+        somme = sum(x[quoi] for x in c["chaleur_voisins"] if x)
+        proche(somme, f["emis"][quoi], 2e-3,
+               "la somme etalee sur les voisines ne vaut pas le %s emis"
+               % quoi)
+
+
+T("la somme etalee vaut le bruit de la fiche, sens par sens",
+  la_somme_etalee_vaut_le_bruit_de_la_fiche)
+
+
+def le_troncon_serre_prend_la_plus_grosse_part():
+    """CE QUE LA MOYENNE CACHAIT, ET QUI EST TOUTE LA QUESTION.
+
+    La fiche donne un chiffre pour trente millimetres, obtenu sur l'ecart
+    MOYEN. Sur ces trente millimetres, dix longent a 0,80 mm et dix a 0,12 mm :
+    le couplage n'y est pas du tout le meme, et c'est le second qu'il faut
+    ecarter. La carte doit le designer.
+    """
+    c = _victime_a_ecart_variable()
+    n = [abs(x["next"]) for x in c["chaleur"]]
+    ecarts = [x["ecart"] for x in c["chaleur"]]
+    assert ecarts[0] > ecarts[1] > ecarts[2], ecarts
+    # LE NEXT EST MONOTONE AVEC L'ECART : k_arriere = (k_L + k_C)/4, et les
+    # deux couplages montent quand les pistes se rapprochent.
+    assert n[2] > n[1] > n[0], \
+        "le troncon le plus serre n'est pas le plus bruyant : %s" % n
+    # ET L'ECART EST FRANC : a longueur egale, six fois moins d'ecart ne fait
+    # pas dix pour cent de bruit en plus. Une carte plate ne designerait rien.
+    assert n[2] > 3 * n[0], "la carte est plate : %s" % n
+    # LE PIRE AGRESSEUR EST NOMME, troncon par troncon : sans lui, la couleur
+    # dit « ca chauffe » sans dire de quoi.
+    assert all(x["agresseur"] == "AGR" for x in c["chaleur"]), c["chaleur"]
+
+
+T("le troncon serre prend la plus grosse part du NEXT",
+  le_troncon_serre_prend_la_plus_grosse_part)
+
+
+def les_deux_sens_ne_culminent_pas_au_meme_endroit():
+    """POURQUOI LE PANNEAU OFFRE DE VOIR NEXT ET FEXT SEPAREMENT.
+
+    Ce n'est pas un confort d'affichage, c'est que les deux bruits ne se
+    fabriquent PAS au meme endroit de la piste :
+
+        k_arriere = (k_L + k_C) / 4      k_avant = (k_C - k_L) / 2
+
+    Le premier est une SOMME : il monte, franchement, des que les pistes se
+    rapprochent. Le second est une DIFFERENCE, et c'est tout autre chose --
+    quand l'ecart devient tres serre, k_C rattrape k_L et leur ecart CESSE de
+    croitre. Sur cette geometrie, |k_avant| culmine vers 0,4 mm et redescend a
+    0,12 mm, la ou |k_arriere| a triple.
+
+    Une carte unique, montrant le pire des deux, moyennerait donc deux reliefs
+    differents et designerait le mauvais millimetre a qui vient corriger un
+    bruit avant. C'est ce que les deux boutons du panneau evitent.
+    """
+    c = _victime_a_ecart_variable()
+    n = [abs(x["next"]) for x in c["chaleur"]]
+    f = [abs(x["fext"]) for x in c["chaleur"]]
+    assert n.index(max(n)) == 2, "le NEXT ne culmine pas au plus serre : %s" % n
+    assert f.index(max(f)) != 2, \
+        "le FEXT culmine au plus serre lui aussi : les deux cartes seraient" \
+        " redondantes, et ce cas d'essai ne prouverait plus rien (%s)" % f
+
+
+T("les deux sens ne culminent pas au meme endroit",
+  les_deux_sens_ne_culminent_pas_au_meme_endroit)
+
+
+def la_carte_des_voisines_peint_ce_qu_elles_subissent():
+    """LA CARTE QU'ON REGARDE EN ROUTANT : « qui est-ce que je derange ? »
+
+    Elle est alignee sur `voisinage` comme l'autre l'est sur
+    `geometry.objects`, elle porte le sens EMIS -- ce que la selection inflige
+    --, et elle nomme la selection comme agresseur. Un troncon voisin qui ne
+    longe rien y vaut None, comme ailleurs.
+    """
+    victime = [_pis(0, 0, 10, 0, "SIG"), _pis(10, 0, 20, 0, "SIG")]
+    # Deux voisines qui longent, une troisieme bien trop loin.
+    voisinage = [_pis(0, 0.65, 10, 0.65, "A"),
+                 _pis(10, 0.65, 20, 0.65, "A"),
+                 _pis(0, 30.0, 20, 30.0, "LOIN")]
+    c = _essai_chaleur(victime, voisinage)
+    cv = c["chaleur_voisins"]
+    assert len(cv) == 3, "%d entrees pour 3 troncons voisins" % len(cv)
+    assert cv[0] is not None and cv[1] is not None, cv
+    assert cv[2] is None, "une voisine hors de portee est peinte : %s" % (cv[2],)
+    # LE NET PEINT EST CELUI DE LA VOISINE, l'agresseur est la selection : la
+    # couleur dit ce que CE cuivre-la subit.
+    assert cv[0]["net"] == "A", cv[0]
+    assert cv[0]["agresseur"] == "SIG", cv[0]
+
+
+T("la carte des voisines peint ce qu'elles subissent",
+  la_carte_des_voisines_peint_ce_qu_elles_subissent)
+
+
+def la_z_diff_est_reprise_a_l_ecart_de_chaque_troncon():
+    """« MA PAIRE EST-ELLE A 100 OHMS SUR TOUTE SA LONGUEUR ? »
+
+    Le tableau repond par un chiffre, obtenu sur l'ecart moyen. La carte
+    reprend chaque troncon a SON ecart -- et c'est la que se voit un
+    ecartement qui derive.
+    """
+    paire = [_pis(0, 0, 10, 0, "USB_P"), _pis(10, 0, 20, 0, "USB_P")]
+    vois = [_pis(0, 0.40, 10, 0.40, "USB_N"),         # ecart 0,15
+            _pis(10, 0.65, 20, 0.65, "USB_N")]        # ecart 0,40
+    c = _essai_chaleur(paire, vois, paires=[["USB_P", "USB_N"]])
+    z = [x["z_diff"] for x in c["chaleur"]]
+    assert all(v is not None for v in z), z
+    assert z[1] > z[0], \
+        "l'ecart double et Z_diff ne monte pas : %s" % z
+    assert all(x["z_diff_net"] == "USB_N" for x in c["chaleur"]), c["chaleur"]
+    assert all(x["z_diff_declare"] for x in c["chaleur"]), \
+        "une paire declaree n'est pas signalee comme telle"
+
+    # SANS PAIRE DECLAREE NI SUFFIXE, on peint quand meme -- la voisine la plus
+    # proche -- et l'on DIT que ce n'en est pas une. Peindre du gris priverait
+    # d'un renseignement juste ; le peindre en silence ferait croire a une
+    # paire qui n'existe pas.
+    quelconque = [_pis(0, 0, 10, 0, "CLK"), _pis(10, 0, 20, 0, "CLK")]
+    v2 = [_pis(0, 0.40, 10, 0.40, "CLKB"), _pis(10, 0.65, 20, 0.65, "CLKB")]
+    c2 = _essai_chaleur(quelconque, v2)
+    assert c2["chaleur"][0]["z_diff"] is not None, "rien n'est peint"
+    assert not c2["chaleur"][0]["z_diff_declare"], \
+        "une voisine quelconque est donnee pour une paire declaree"
+
+    # ET LA PAGE PEUT LA DECLARER : c'est le meme champ que celui de l'editeur,
+    # et le serveur ne fait pas de difference.
+    c3 = _essai_chaleur(quelconque, v2, paires=[["CLK", "CLKB"]])
+    assert c3["chaleur"][0]["z_diff_declare"], \
+        "une paire declaree a la main n'est pas reconnue"
+
+
+T("la Z differentielle est reprise a l'ecart de chaque troncon",
+  la_z_diff_est_reprise_a_l_ecart_de_chaque_troncon)
+
+
+def deux_voisines_jointives_n_emportent_plus_la_section():
+    """LE DEFAUT QUI FAISAIT PERDRE SIX LONGEMENTS POUR DEUX CONDUCTEURS.
+
+    `ligne_mom` elargit chaque ruban de la correction de Wheeler avant de
+    resoudre. Deux voisines separees de trente-sept microns de cuivre nu s'y
+    rejoignent, et `_conducteurs_places` levait -- ce qui perdait TOUS les
+    longements de la section, y compris ceux de voisines qui n'avaient rien a
+    voir avec la collision. On mesure donc avant de poser, avec la meme
+    correction, et l'on ecarte la voisine de trop EN LE DISANT.
+    """
+    # Six voisines ; N4 (a 1,187) et N2 (a 0,94) laissent 0,037 mm de cuivre
+    # nu entre elles, moins que ce que l'epaisseur ajoute.
+    voisinage = [_pis(0, y, 20, y, "N%d" % k) for k, y in
+                 enumerate([0.42, -0.42, 0.94, -0.94, 1.227, -1.45])]
+    c = _essai_chaleur([_pis(0, 0, 20, 0, "SIG")], voisinage)
+    sec = c["sections"][0]
+    assert not sec["raison"], \
+        "la section entiere est perdue : %s" % sec["raison"]
+    chiffres = [f for f in c["paires"] if not f["raison"]]
+    assert len(chiffres) == 5, \
+        "%d longements chiffres au lieu de 5" % len(chiffres)
+    ecartes = sec["ecartes"]
+    assert len(ecartes) == 1, ecartes
+    assert ecartes[0]["net"] == "N4", ecartes
+    assert "cuivre epaissi" in ecartes[0]["raison"], ecartes
+    # ET LA RAISON PORTE LE CHIFFRE : « trop proches » sans dire de combien ne
+    # se corrige pas sur un routage.
+    assert "0.037" in ecartes[0]["raison"], ecartes[0]["raison"]
+
+
+T("deux voisines jointives n'emportent plus la section",
+  deux_voisines_jointives_n_emportent_plus_la_section)
+
+
+def le_plafond_de_sections_locales_tient():
+    """UNE CARTE PLATE PLUTOT QU'UN CALCUL SANS FIN.
+
+    Une piste de cinquante troncons a cinquante ecarts differents demanderait
+    cinquante resolutions de section. On plafonne, et au-dela l'on retombe sur
+    le couplage moyen : la carte devient plate sur la fin, elle ne devient
+    jamais fausse -- la somme vaut toujours le bruit de la fiche.
+    """
+    n = _se.MAX_SECTIONS_LOCALES + 8
+    victime = [_pis(i, 0, i + 1, 0, "SIG") for i in range(n)]
+    voisinage = [_pis(i, 0.35 + 0.03 * i, i + 1, 0.35 + 0.03 * i, "AGR")
+                 for i in range(n)]
+    c = _essai_chaleur(victime, voisinage)
+    assert c["sections_locales"] <= _se.MAX_SECTIONS_LOCALES, \
+        "%d resolutions locales" % c["sections_locales"]
+    assert len([x for x in c["chaleur"] if x]) == n, \
+        "tous les troncons ne sont pas peints"
+    f = c["paires"][0]
+    somme = sum(x["bruit"] for x in c["chaleur"] if x)
+    proche(somme, max(abs(f["next"]), abs(f["fext"])), 1e-4,
+           "le plafond fausse le total")
+
+
+T("le plafond de sections locales tient",
+  le_plafond_de_sections_locales_tient)
+
+
+
+def la_masse_interposee_entre_dans_la_section():
+    """LE DEFAUT LE PLUS COUTEUX DE CETTE PAGE, ET IL ETAIT INVISIBLE.
+
+    Les deux pages mesurent l'ecart de la SELECTION au cuivre de masse, cote
+    par cote. Quand une voisine se trouve PLUS LOIN que la ou ce cuivre
+    commence, il y a du plan entre les deux -- c'est le geste de routage le
+    plus banal : on glisse une garde, ou du plan arrose cousu de vias, entre un
+    signal rapide et son voisin.
+
+    Or `_ecarts_masse_du_groupe` place la masse au BORD du groupe. Elle passait
+    donc de l'autre cote de la voisine, l'ecart calcule devenait negatif, on le
+    ramenait a zero -- et la section se resolvait comme DEUX PISTES FACE A FACE
+    au-dessus du dielectrique nu, sans la masse qui, sur la carte, faisait tout
+    le travail. Le couplage annonce etait celui d'un routage qu'on n'avait pas
+    fait, et rien dans la fiche ne le disait.
+    """
+    # La selection porte de la masse a 0,2 mm de chaque bord ; la voisine est
+    # a 2,0 mm : il y a donc 1,4 mm de cuivre de masse entre les deux.
+    victime = _pis(0, 0, 20, 0, "SIG")
+    victime["gap_left"] = victime["gap_right"] = 0.2
+    voisine = _pis(0, 2.0, 20, 2.0, "AGR")
+    voisine["gap_left"] = voisine["gap_right"] = 0.2
+    doc = _doc_couplage([victime], [voisine])
+    doc["analyse"]["temps_montee"] = 100e-12
+    c = _se.simuler(doc)["couplage"]
+
+    sec = c["sections"][0]
+    gardes = [d for d in sec["conducteurs"] if d["garde"]]
+    assert len(gardes) == 1, \
+        "la masse interposee n'est pas posee : %s" % sec["conducteurs"]
+    g = gardes[0]
+    assert g["interposee"], \
+        "elle est posee mais pas signalee comme deduite : %s" % g
+    assert g["net"] == "GND", g
+    # ELLE EST ENTRE LES DEUX, et elle occupe la place qui reste entre les deux
+    # degagements : 2,0 - 0,105 - 0,2 - (0,105 + 0,2) = 1,39 mm, moins ce que
+    # l'epaisseur du cuivre ajoutera.
+    assert -2.0 < g["x"] < 0.0, "la garde n'est pas entre les deux : %s" % g
+    assert 1.2 < g["largeur"] < 1.4, "largeur de garde : %s" % g["largeur"]
+
+    # ET LE COUPLAGE BAISSE. C'est tout l'objet : le meme routage, chiffre
+    # comme il est.
+    doc_nu = _doc_couplage([_pis(0, 0, 20, 0, "SIG")],
+                           [_pis(0, 2.0, 20, 2.0, "AGR")])
+    doc_nu["analyse"]["temps_montee"] = 100e-12
+    nu = _se.simuler(doc_nu)["couplage"]
+    avec = abs(c["paires"][0]["next"])
+    sans = abs(nu["paires"][0]["next"])
+    assert avec < sans / 1.5, \
+        "la masse interposee ne reduit pas le couplage : %.5f contre %.5f" \
+        % (avec, sans)
+
+
+T("la masse interposee entre dans la section",
+  la_masse_interposee_entre_dans_la_section)
+
+
+def rien_ne_s_interpose_quand_la_voisine_est_devant_la_masse():
+    """LA VOISINE PLUS PROCHE QUE LA MASSE N'EST PAS PROTEGEE, et il ne faut
+    surtout pas lui inventer un bouclier.
+
+    C'est le cas ordinaire du bus serre : deux signaux cote a cote, le plan
+    commence au-dela. Le modele d'avant etait juste dans ce cas-la, et il doit
+    le rester -- une correction qui repare un cas en cassant l'autre n'est pas
+    une correction.
+    """
+    victime = _pis(0, 0, 20, 0, "SIG")
+    victime["gap_left"] = victime["gap_right"] = 0.6
+    voisine = _pis(0, 0.5, 20, 0.5, "AGR")
+    voisine["gap_left"] = voisine["gap_right"] = 0.6
+    doc = _doc_couplage([victime], [voisine])
+    c = _se.simuler(doc)["couplage"]
+    sec = c["sections"][0]
+    assert not [d for d in sec["conducteurs"] if d["garde"]], \
+        "une garde est inventee entre deux pistes qui se touchent presque : %s" \
+        % sec["conducteurs"]
+
+    # ET SANS MASSE DU TOUT DE CE COTE, on n'en invente pas davantage : un
+    # ecart nul veut dire « pas de plan a portee », pas « plan colle ».
+    v2 = _pis(0, 0, 20, 0, "SIG")
+    v2["gap_left"] = v2["gap_right"] = 0.0
+    c2 = _se.simuler(_doc_couplage([v2], [_pis(0, 2.0, 20, 2.0, "AGR")]))
+    assert not [d for d in c2["couplage"]["sections"][0]["conducteurs"]
+                if d["garde"]], "une garde sort d'un ecart nul"
+
+
+T("rien ne s'interpose quand la voisine est devant la masse",
+  rien_ne_s_interpose_quand_la_voisine_est_devant_la_masse)
+
+
+def la_garde_ne_coute_jamais_la_voisine_qu_elle_protege():
+    """PERDRE LE LONGEMENT POUR AVOIR POSE SON BOUCLIER remplacerait une
+    reponse fausse par une absence de reponse, ce qui n'est pas un progres.
+
+    La garde est retrecie de ce que l'epaisseur du cuivre lui ajoutera, et si
+    la voisine ne tient toujours pas apres, on retire la garde plutot que la
+    voisine.
+    """
+    victime = _pis(0, 0, 20, 0, "SIG")
+    victime["gap_left"] = victime["gap_right"] = 0.06
+    voisine = _pis(0, 0.42, 20, 0.42, "AGR")
+    voisine["gap_left"] = voisine["gap_right"] = 0.06
+    doc = _doc_couplage([victime], [voisine])
+    c = _se.simuler(doc)["couplage"]
+    sec = c["sections"][0]
+    assert not sec["raison"], "la section est perdue : %s" % sec["raison"]
+    ports = [d for d in sec["conducteurs"] if not d["garde"]]
+    assert len(ports) == 2, \
+        "la voisine a ete perdue au profit de sa garde : %s" \
+        % sec["conducteurs"]
+    assert len(c["paires"]) == 1 and not c["paires"][0]["raison"], c["paires"]
+
+
+T("la garde ne coute jamais la voisine qu'elle protege",
+  la_garde_ne_coute_jamais_la_voisine_qu_elle_protege)
+
+
+def l_ecart_de_la_voisine_se_lit_dans_SON_sens():
+    """UNE VOISINE DESSINEE A REBOURS A SES DEUX ETIQUETTES ECHANGEES.
+
+    Chaque troncon porte ses deux ecarts nommes dans SON sens de parcours. Pour
+    savoir ou finit la masse interposee, il faut celui de la voisine qui REGARDE
+    la selection -- et lire le mauvais bord poserait une garde de travers une
+    piste sur deux, selon le sens ou le routeur l'a tracee.
+    """
+    victime = _pis(0, 0, 20, 0, "SIG")
+    victime["gap_left"] = victime["gap_right"] = 0.2
+
+    def largeur_garde(voisine):
+        doc = _doc_couplage([victime], [voisine])
+        sec = _se.simuler(doc)["couplage"]["sections"][0]
+        g = [d for d in sec["conducteurs"] if d["garde"]]
+        return g[0]["largeur"] if g else None
+
+    # Meme piste, meme place, dessinee dans un sens puis dans l'autre. Ses
+    # deux ecarts sont FRANCHEMENT differents : 0,2 mm d'un bord, 1,0 de
+    # l'autre. Le modele doit lire le meme des deux dans les deux cas.
+    droit = _pis(0, 2.0, 20, 2.0, "AGR")
+    droit["gap_left"], droit["gap_right"] = 1.0, 0.2
+    envers = _pis(20, 2.0, 0, 2.0, "AGR")
+    envers["gap_left"], envers["gap_right"] = 0.2, 1.0
+
+    a, b = largeur_garde(droit), largeur_garde(envers)
+    assert a is not None and b is not None, (a, b)
+    assert abs(a - b) < 1e-6, \
+        "la meme piste dessinee a rebours donne une autre garde : %.4f puis" \
+        " %.4f" % (a, b)
+
+
+T("l'ecart de la voisine se lit dans SON sens",
+  l_ecart_de_la_voisine_se_lit_dans_SON_sens)
+
+
+
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko else "%d en echec" % ko))
 sys.exit(1 if ko else 0)

@@ -2626,10 +2626,18 @@ def _boite(axe, marge):
 def _longement(a, b, axe_a=None, boite_a=None):
     """Deux troncons se longent-ils, et de combien ? En millimetres.
 
-    Rend (recouvrement, ecart_axe, cote) ou None. `ecart_axe` est la distance
-    ENTRE LES AXES -- la largeur des deux pistes s'en retranche plus loin, la
-    ou on la connait --, et `cote` vaut +1 ou -1 selon que b passe a gauche ou
-    a droite de a, dans le sens de parcours de a.
+    Rend (recouvrement, ecart_axe, cote, sens) ou None. `ecart_axe` est la
+    distance ENTRE LES AXES -- la largeur des deux pistes s'en retranche plus
+    loin, la ou on la connait --, `cote` vaut +1 ou -1 selon que b passe a
+    gauche ou a droite de a dans le sens de parcours de a, et `sens` vaut +1
+    quand les deux troncons sont parcourus dans le meme sens, -1 sinon.
+
+    POURQUOI LE SENS COMPTE. Chaque troncon porte SES deux ecarts au cuivre de
+    masse, nommes « gauche » et « droite » dans SON sens de parcours. Pour
+    savoir si de la masse s'interpose entre les deux pistes, il faut celui de
+    la voisine qui REGARDE la selection -- et une voisine dessinee a rebours a
+    ses deux etiquettes echangees. Sans ce signe, une piste sur deux verrait
+    l'ecart de son mauvais bord.
 
     ON PROJETTE B SUR L'AXE DE A, et le recouvrement est l'intersection des
     deux intervalles. C'est exact pour deux segments paralleles, et c'est la
@@ -2653,11 +2661,14 @@ def _longement(a, b, axe_a=None, boite_a=None):
     (ax, ay), (ux, uy), la = axe_a
     (bx, by), (vx, vy), lb = axe_b
 
-    # Paralleles ? Le signe du produit scalaire ne compte pas : une piste
-    # dessinee en sens inverse longe tout autant.
-    cos = abs(ux * vx + uy * vy)
+    # Paralleles ? Le signe du produit scalaire ne compte pas POUR APPARIER --
+    # une piste dessinee en sens inverse longe tout autant -- mais il compte
+    # pour LIRE ses deux ecarts, et c'est pour cela qu'on le garde.
+    produit = ux * vx + uy * vy
+    cos = abs(produit)
     if cos < math.cos(math.radians(ANGLE_PARALLELE)):
         return None
+    sens = 1 if produit >= 0 else -1
 
     # Les deux bouts de b, en coordonnees (le long de a, perpendiculaire a a).
     def projete(x, y):
@@ -2682,7 +2693,22 @@ def _longement(a, b, axe_a=None, boite_a=None):
         n = 0.5 * (n1 + n2)
     if abs(n) < 1e-9:
         return None
-    return recouvrement, abs(n), (1 if n > 0 else -1)
+    return recouvrement, abs(n), (1 if n > 0 else -1), sens
+
+
+def _ecart_face(agresseur, cote, sens):
+    """L'ecart au cuivre de masse du bord de la voisine QUI REGARDE la
+    selection, en millimetres ; 0 quand la page ne l'a pas mesure.
+
+    `gap_left` est pris sur la normale gauche du sens de parcours DU TRONCON
+    qui le porte. La voisine est a gauche de la selection quand `cote` vaut +1
+    -- donc la selection est a DROITE de la voisine, si les deux sont
+    parcourues dans le meme sens ; a gauche si elles le sont a rebours.
+    """
+    gauche, droite = _ecarts(agresseur)
+    if sens >= 0:
+        return droite if cote > 0 else gauche
+    return gauche if cote > 0 else droite
 
 
 def _scenes_paralleles(objets, voisinage, refs=()):
@@ -2719,7 +2745,7 @@ def _scenes_paralleles(objets, voisinage, refs=()):
     """
     refs = set(str(x) for x in (refs or ()))
     scenes = {}
-    for victime in objets:
+    for i_obj, victime in enumerate(objets):
         couche = int(_nombre(victime.get("layer"), 0))
         net_v = str(victime.get("net") or "")
         w_v = _nombre(victime.get("width"))
@@ -2731,7 +2757,7 @@ def _scenes_paralleles(objets, voisinage, refs=()):
         boite_v = _boite(axe_v, ECART_COUPLAGE_MAX + w_v / 2.0)
         gap_g, gap_d = _ecarts(victime)
         trouves = []
-        for agresseur in voisinage:
+        for j_obj, agresseur in enumerate(voisinage):
             if int(_nombre(agresseur.get("layer"), -1)) != couche:
                 continue
             net_a = str(agresseur.get("net") or "")
@@ -2746,14 +2772,15 @@ def _scenes_paralleles(objets, voisinage, refs=()):
             longe = _longement(victime, agresseur, axe_v, boite_v)
             if longe is None:
                 continue
-            recouvrement, entre_axes, cote = longe
+            recouvrement, entre_axes, cote, sens = longe
             ecart = entre_axes - (w_v + w_a) / 2.0
             # Du cuivre qui se touche n'est pas deux lignes ; du cuivre trop
             # loin n'est plus un couplage lisible.
             if not (0 < ecart <= ECART_COUPLAGE_MAX):
                 continue
-            trouves.append((net_a, w_a, recouvrement, ecart, entre_axes,
-                            cote, net_a in refs))
+            trouves.append((j_obj, net_a, w_a, recouvrement, ecart,
+                            entre_axes, cote, net_a in refs,
+                            _ecart_face(agresseur, cote, sens)))
 
         if not trouves:
             continue
@@ -2763,6 +2790,18 @@ def _scenes_paralleles(objets, voisinage, refs=()):
         if sc is None:
             sc = {"couche": couche, "net": net_v, "voisins": {},
                   "longueur_victime": 0.0, "_w": 0.0, "_g": 0.0, "_d": 0.0,
+                  # CE QUI LONGE, TRONCON PAR TRONCON. La scene MOYENNE les
+                  # ecarts sur toute la longueur -- c'est ce qu'il faut pour
+                  # resoudre UNE section --, et cette moyenne est exactement ce
+                  # qui empeche de dire OU ca couple. `parts` garde le detail
+                  # avant la moyenne : un enregistrement par (troncon de la
+                  # selection, voisine), avec l'ecart LOCAL. C'est de la que
+                  # sort la carte de chaleur.
+                  "parts": [], "parts_v": [],
+                  # Le nom a donner a une garde que le modele interpose : le
+                  # net de masse retenu, quand il y en a un seul.
+                  "net_masse": (sorted(refs)[0] if len(refs) == 1
+                                else "masse"),
                   "epaisseur": _nombre(victime.get("copper_thickness"), 0.035)}
             scenes[cle] = sc
         # LES COTES DE LA SELECTION SONT PONDEREES PAR LA LONGUEUR DES TRONCONS
@@ -2775,8 +2814,8 @@ def _scenes_paralleles(objets, voisinage, refs=()):
         sc["_g"] += gap_g * long_seg
         sc["_d"] += gap_d * long_seg
 
-        for net_a, w_a, recouvrement, ecart, entre_axes, cote, garde \
-                in trouves:
+        for j_obj, net_a, w_a, recouvrement, ecart, entre_axes, cote, \
+                garde, gap_face in trouves:
             # UNE GARDE SE RANGE PAR COTE, PAS PAR NET. Le net de masse est le
             # meme des deux cotes -- c'est un seul net sur toute la carte --, et
             # les moyenner poserait une garde imaginaire au milieu de la piste.
@@ -2785,12 +2824,16 @@ def _scenes_paralleles(objets, voisinage, refs=()):
             if v is None:
                 v = {"net": net_a, "longueur": 0.0, "ecart_min": ecart,
                      "troncons": 0, "_w": 0.0, "_axe": 0.0, "cotes": set(),
-                     "garde": garde}
+                     "_face": 0.0, "garde": garde}
                 sc["voisins"][cle_v] = v
             v["longueur"] += recouvrement
             v["troncons"] += 1
             v["ecart_min"] = min(v["ecart_min"], ecart)
             v["_w"] += w_a * recouvrement
+            # L'ECART DE LA VOISINE A LA MASSE, DU BORD QUI NOUS REGARDE, moyen
+            # sur ce qui longe : c'est lui qui dit ou finit le cuivre de masse
+            # interpose, donc quelle largeur de garde poser.
+            v["_face"] += gap_face * recouvrement
             # LE COTE EST DANS LA POSITION, ET C'EST TOUT L'INTERET. `cote`
             # vaut +1 a gauche du sens de parcours ; on pose donc la voisine en
             # x negatif a gauche et positif a droite, comme la page nomme ses
@@ -2799,6 +2842,19 @@ def _scenes_paralleles(objets, voisinage, refs=()):
             # `cotes` le retient pour qu'on le dise.
             v["_axe"] += (-cote) * entre_axes * recouvrement
             v["cotes"].add(cote)
+            # UNE GARDE N'A PAS DE BRUIT A ELLE : elle n'entre pas dans la
+            # carte de chaleur, pas plus qu'elle n'entre dans la fiche.
+            if not garde:
+                sc["parts"].append({"i": i_obj, "net": net_a,
+                                    "l": recouvrement, "ecart": ecart,
+                                    "w_v": w_v, "w_a": w_a, "cote": cote})
+                # LE MEME LONGEMENT, RANGE PAR LA VOISINE. La question posee a
+                # la carte n'est pas « que prend ma piste » mais « QUI est-ce
+                # que je derange, et OU » : c'est le cuivre voisin qu'il faut
+                # peindre, donc c'est par son rang qu'il faut le retrouver.
+                sc["parts_v"].append({"j": j_obj, "net": net_a,
+                                      "l": recouvrement, "ecart": ecart,
+                                      "w_v": w_v, "w_a": w_a, "cote": cote})
 
     sortie = []
     for sc in scenes.values():
@@ -2815,10 +2871,11 @@ def _scenes_paralleles(objets, voisinage, refs=()):
                 continue
             v["largeur"] = v["_w"] / lv
             v["x"] = v["_axe"] / lv
+            v["gap_face"] = v["_face"] / lv
             v["ecart"] = abs(v["x"]) - (sc["largeur"] + v["largeur"]) / 2.0
             v["deux_cotes"] = len(v["cotes"]) > 1
             v["cote"] = "gauche" if v["x"] < 0 else "droite"
-            for k in ("_w", "_axe", "cotes"):
+            for k in ("_w", "_axe", "cotes", "_face"):
                 v.pop(k)
             voisins.append(v)
         # LE PLUS PROCHE D'ABORD : c'est lui qui compte, et c'est lui qu'on
@@ -2832,7 +2889,58 @@ def _scenes_paralleles(objets, voisinage, refs=()):
     return sortie
 
 
-def _poser_section(scene):
+# La bande de masse la plus mince qu'on pose encore. En deca, ce n'est plus un
+# bouclier : c'est un filet de cuivre entre deux pistes, et l'elargissement de
+# Wheeler le ferait de toute facon toucher ses deux voisins.
+LARGEUR_GARDE_MIN = 0.05        # mm
+
+
+def _masse_interposee(scene, v):
+    """La bande de cuivre de MASSE qui separe la selection de cette voisine.
+
+    LE DEFAUT QU'ELLE CORRIGE, ET IL ETAIT GROS. Les deux pages mesurent
+    l'ecart de la selection au cuivre de masse, cote par cote. Quand une
+    voisine se trouve PLUS LOIN que la ou ce cuivre commence, il y a du plan
+    entre les deux -- exactement le cas qu'on cree en routant : une piste de
+    garde, ou un plan arrose cousu de vias, glisse entre un signal rapide et
+    son voisin. Or `_ecarts_masse_du_groupe` place la masse au BORD du groupe :
+    elle passait donc de l'autre cote de la voisine, l'ecart calcule devenait
+    negatif, on le ramenait a zero -- et la section se resolvait comme deux
+    pistes face a face au-dessus du dielectrique nu, SANS la masse qui, sur la
+    carte, faisait tout le travail. Le couplage annonce etait celui d'un
+    routage qu'on n'avait pas fait.
+
+    ON POSE DONC LA BANDE, entre les deux, comme un conducteur a zero volt --
+    le meme mecanisme que la piste de garde, qui existait deja. Elle va du bord
+    ou la masse commence, du cote de la selection, jusqu'au bord ou elle
+    s'arrete, du cote de la voisine :
+
+        de   largeur_selection/2 + ecart_selection
+        a    |x_voisine| - largeur_voisine/2 - ecart_voisine
+
+    LES DEUX ECARTS SONT MESURES quand la page les donne. `gap_face` est celui
+    de la voisine, du bord qui regarde la selection ; a defaut -- une page plus
+    ancienne, ou un cuivre que la sonde n'a pas atteint -- on suppose qu'elle a
+    le meme degagement que la selection, ce qui est la regle d'isolation de la
+    carte et se dit dans les hypotheses.
+
+    Rend {"x", "w"} en millimetres, ou None quand rien ne s'interpose.
+    """
+    a_gauche = v["x"] < 0
+    ecart_sel = scene["gap_g"] if a_gauche else scene["gap_d"]
+    if not (ecart_sel > 0):
+        return None                     # pas de masse de ce cote-la du tout
+    ecart_voisine = _nombre(v.get("gap_face"), 0.0) or ecart_sel
+    bord_sel = scene["largeur"] / 2.0 + ecart_sel
+    bord_voisine = abs(v["x"]) - v["largeur"] / 2.0 - ecart_voisine
+    largeur = bord_voisine - bord_sel
+    if largeur < LARGEUR_GARDE_MIN:
+        return None
+    milieu = (bord_sel + bord_voisine) / 2.0
+    return {"x": -milieu if a_gauche else milieu, "w": largeur}
+
+
+def _poser_section(scene, distance_plan=0.0):
     """La scene, ramenee a une liste de conducteurs qui ne se chevauchent pas.
 
     Rend (conducteurs, ecartes) en MILLIMETRES : le premier element est la
@@ -2841,36 +2949,96 @@ def _poser_section(scene):
     parce qu'une voisine qui disparait sans un mot se lit comme un couplage
     nul.
 
-    DEUX RAISONS DE NE PAS POSER UNE VOISINE. La section est pleine -- le
+    TROIS RAISONS DE NE PAS POSER UNE VOISINE. La section est pleine -- le
     solveur s'arrete a `ligne_mom.MAX_CONDUCTEURS`, et au-dela ce n'est plus
     une section
     qu'on lit --, ou bien deux voisines se CHEVAUCHENT une fois moyennees :
     deux nets qui passent tour a tour au meme endroit, chacun sur la moitie de
     la longueur, se retrouvent a la meme abscisse moyenne, ou il n'y a de place
     que pour un.
+
+    ET LA TROISIEME EST L'EPAISSEUR DU CUIVRE, qui a longtemps emporte la
+    SECTION ENTIERE. `ligne_mom` elargit chaque ruban de la correction de
+    Wheeler avant de resoudre ; deux voisines separees de trente microns de
+    cuivre nu se rejoignent alors, et `_conducteurs_places` leve -- ce qui
+    faisait perdre les SIX longements de la section pour deux conducteurs qui
+    n'etaient meme pas la selection. On mesure donc ici, AVANT de poser, avec
+    la meme correction que le solveur : la voisine de trop est ecartee, elle
+    le dit, et les autres se calculent.
+
+    `distance_plan` est la hauteur au plan de reference, en MILLIMETRES ; a
+    zero, l'elargissement n'est pas calculable et l'on retombe sur le cuivre
+    nu, comme avant.
     """
     poses = [{"net": scene["net"], "x": 0.0, "w": scene["largeur"],
               "selection": True, "garde": False}]
     ecartes = []
+    ep = _nombre(scene.get("epaisseur"), 0.0)
+    h = _nombre(distance_plan, 0.0)
+
+    def marge(w):
+        """De combien ce ruban depasse son cuivre, de chaque cote."""
+        if not (ep > 0) or not (h > 0):
+            return 0.0
+        return (tl.largeur_effective(w, ep, h) - w) / 2.0
     # LE PLAFOND EST CELUI DU SOLVEUR, et il est lu chez lui : deux constantes
     # pour une meme limite finiraient par diverger, et c'est `solve_multiline`
     # qui refuse.
     plafond = tl.MAX_CONDUCTEURS
+    def gene_par(x, w):
+        """Ce conducteur-la a-t-il la place, cuivre epaissi compris ?
+
+        Rend (conducteur qui gene, cuivre nu qui les separe), ou (None, 0)
+        quand la place est libre. UNE SEULE REGLE, ecrite ici : la garde
+        interposee et la voisine se mesurent a la meme aune.
+        """
+        for p in poses:
+            nu = abs(x - p["x"]) - (w + p["w"]) / 2.0
+            if nu - marge(w) - marge(p["w"]) <= 0.0:
+                return p, nu
+        return None, 0.0
+
     for v in scene["voisins"]:
         if len(poses) >= plafond:
             ecartes.append({"net": v["net"],
                             "raison": "section pleine (%d conducteurs)"
                                       % plafond})
             continue
-        gene = None
-        for p in poses:
-            if abs(v["x"] - p["x"]) < (v["largeur"] + p["w"]) / 2.0:
-                gene = p["net"]
-                break
-        if gene is not None:
+        # LA MASSE QUI S'INTERPOSE SE POSE AVANT LA VOISINE QU'ELLE PROTEGE --
+        # voir `_masse_interposee`. Elle n'est posee qu'une fois : les voisines
+        # sont rangees de la plus proche a la plus lointaine, si bien que la
+        # seconde d'un meme cote trouve la place deja prise, et c'est juste --
+        # c'est la MEME bande de cuivre qui les protege toutes les deux.
+        if not v.get("garde") and len(poses) + 1 < plafond:
+            g = _masse_interposee(scene, v)
+            if g is not None:
+                # LE CUIVRE EPAIS ELARGIT LA GARDE COMME LE RESTE. On la
+                # retrecit donc de ce qu'il ajoutera de chaque cote, plutot que
+                # de la poser a sa largeur nue et de decouvrir ensuite qu'elle
+                # touche la voisine.
+                g["w"] = max(LARGEUR_GARDE_MIN,
+                             g["w"] - 2.0 * (marge(g["w"])
+                                             + marge(v["largeur"])))
+                if gene_par(g["x"], g["w"])[0] is None:
+                    poses.append({"net": scene.get("net_masse") or "masse",
+                                  "x": g["x"], "w": g["w"],
+                                  "selection": False, "garde": True,
+                                  "interposee": True})
+                    # ET LA VOISINE DOIT TENIR APRES : perdre le longement pour
+                    # avoir pose son bouclier remplacerait une reponse fausse
+                    # par une absence de reponse, ce qui n'est pas un progres.
+                    if gene_par(v["x"], v["largeur"])[0] is not None:
+                        poses.pop()
+        p_gene, nu = gene_par(v["x"], v["largeur"])
+        if p_gene is not None:
+            gene = p_gene["net"]
             ecartes.append({"net": v["net"],
-                            "raison": "chevauche « %s » une fois les positions"
-                                      " moyennees" % gene})
+                            "raison": ("chevauche « %s » une fois les"
+                                       " positions moyennees" % gene)
+                            if nu <= 0.0 else
+                            ("touche « %s » une fois le cuivre epaissi :"
+                             " %.3f mm de cuivre nu, moins que ce que"
+                             " l'epaisseur ajoute" % (gene, nu))})
             continue
         poses.append({"net": v["net"], "x": v["x"], "w": v["largeur"],
                       "selection": False, "longueur": v["longueur"],
@@ -3010,6 +3178,295 @@ def _fiche_longement(scene, poses, pose, rangs, r, t_r, declarees):
     }
 
 
+# ==========================================================================
+# LA CARTE DE CHALEUR DU COUPLAGE
+# --------------------------------------------------------------------------
+# CE QU'ELLE REPOND, ET POURQUOI LA FICHE NE SUFFISAIT PAS. La fiche chiffre
+# UN longement : « SW_2 prend 4,1 % sur 3,0 mm a 0,21 mm ». C'est un nombre
+# pour toute la longueur, obtenu sur UNE section dont l'ecart est la MOYENNE de
+# ce qui longe. Or ce n'est jamais uniforme : trois millimetres a 0,8 mm et un
+# demi-millimetre a 0,12 mm donnent la meme moyenne qu'un longement regulier,
+# et ce n'est pas du tout la meme carte. La question qu'on se pose devant le
+# routage n'est pas « combien », c'est « OU faut-il ecarter ».
+#
+# COMMENT ON LA CONSTRUIT, ET CE QU'ELLE VAUT :
+#
+#   · LE TOTAL VIENT DE LA SECTION COMPLETE, celle a N conducteurs deja
+#     resolue pour la fiche. C'est le chiffre juste, et la carte ne le change
+#     pas : la somme de ce qu'elle etale sur les troncons vaut EXACTEMENT le
+#     bruit de la fiche. Une carte qui ne totalise pas ce que la fiche annonce
+#     ferait douter des deux ;
+#   · LA REPARTITION vient d'une section a DEUX conducteurs resolue a l'ecart
+#     LOCAL de chaque troncon -- meme empilage, meme masse coplanaire, meme
+#     solveur. Le poids d'un troncon est |k_arriere| local fois sa longueur de
+#     longement : c'est le couplage par unite de longueur, et c'est ce qui
+#     distingue le demi-millimetre serre des trois millimetres laches.
+#
+# CE QU'ELLE NE DIT PAS. Le NEXT SATURE : passe la longueur de saturation, en
+# rajouter ne l'augmente plus. La carte etale donc un total sature sur les
+# troncons qui l'ont construit -- elle montre OU LE COUPLAGE SE FAIT, et non
+# une tension mesurable troncon par troncon. C'est ce qu'on veut savoir pour
+# ecarter une piste, et c'est dit dans les hypotheses.
+#
+# ET LA Z DIFFERENTIELLE, sur la meme mecanique et sans rien de plus : la
+# section locale a deux conducteurs rend ses modes pair et impair, donc une
+# Z_diff PAR TRONCON. C'est la reponse a « ma paire est-elle a 100 ohms sur
+# TOUTE sa longueur ? », a laquelle un chiffre unique ne repondait pas.
+# ==========================================================================
+
+MAX_SECTIONS_LOCALES = 24       # resolutions de section locales par calcul
+PAS_ECART_LOCAL = 0.005         # mm ; le pas auquel les ecarts se regroupent
+
+
+def _hauteur_de_couche(couches, indice, largeur, epaisseur):
+    """La hauteur au plan de reference d'une couche, en mm ; 0 si elle n'en a
+    pas.
+
+    Les deux ecarts coplanaires ne la changent pas -- elle ne depend que de
+    l'empilage --, on les passe donc a zero. C'est `_poser_section` qui en a
+    besoin, AVANT de savoir quels conducteurs il posera : sans elle, il ne peut
+    pas prevoir de combien le cuivre epais va les elargir.
+    """
+    geo, info = section_de_couche(couches, indice, largeur, epaisseur, 0.0, 0.0)
+    # `section_de_couche` decrit une section en METRES, et son `h` aussi :
+    # c'est le seul chiffre de cette page qui ne soit pas en millimetres, et le
+    # melanger a des largeurs en millimetres donne un logarithme negatif, donc
+    # un elargissement de Wheeler NEGATIF -- une correction qui retrecit.
+    return 1e3 * _nombre(info.get("h"), 0.0) if geo is not None else 0.0
+
+
+def _section_locale(couches, scene, w_v, w_a, ecart, cote, t_r, cache):
+    """La section a DEUX conducteurs d'un longement, a son ecart LOCAL.
+
+    Meme empilage et meme masse coplanaire que la section complete ; seuls la
+    voisine et son ecart changent. Rend un dictionnaire de coefficients, ou
+    None quand le plafond de resolutions est atteint -- l'appelant retombe
+    alors sur la section moyenne, ce qui rend la carte plate mais jamais
+    fausse.
+
+    LE CACHE EST LA POUR CA : une piste de cinquante troncons qui longe sa
+    voisine a ecart constant ne coute qu'une resolution, et le pas de cinq
+    microns fait que deux ecarts que le cuivre ne distingue pas n'en coutent
+    pas deux.
+    """
+    q = round(ecart / PAS_ECART_LOCAL) * PAS_ECART_LOCAL
+    cle = (scene["couche"], round(scene["epaisseur"], 6), round(w_v, 4),
+           round(w_a, 4), round(q, 4), 1 if cote >= 0 else -1)
+    if cle in cache:
+        return cache[cle]
+    if len(cache) >= MAX_SECTIONS_LOCALES:
+        return None
+
+    # `cote` vaut +1 a gauche du sens de parcours, et `_scenes_paralleles` pose
+    # alors la voisine en x NEGATIF : on garde la meme convention, sans quoi la
+    # carte lirait l'ecart au plan du mauvais cote.
+    x_a = (-1.0 if cote >= 0 else 1.0) * ((w_v + w_a) / 2.0 + q)
+    poses = [{"x": 0.0, "w": w_v}, {"x": x_a, "w": w_a}]
+    e_g, e_d = _ecarts_masse_du_groupe(
+        poses, {"largeur": w_v, "gap_g": scene["gap_g"],
+                "gap_d": scene["gap_d"]})
+    geo, info = section_de_couche(couches, scene["couche"], w_v,
+                                  scene["epaisseur"], e_g, e_d)
+    if geo is None:
+        cache[cle] = {"raison": info}
+        return cache[cle]
+    geo = dict(geo)
+    geo["conducteurs"] = [{"w": p["w"] * 1e-3, "x": p["x"] * 1e-3,
+                           "masse": False} for p in poses]
+    try:
+        r = tl.solve_multiline(geo)
+    except Exception as exc:                            # noqa: BLE001
+        cache[cle] = {"raison": str(exc)}
+        return cache[cle]
+    rangs = {entree: matrice for matrice, entree in enumerate(r["ordre"])}
+    # LES DEUX SENS, SUR LA MEME MATRICE. `recu` prend la voisine pour
+    # agresseur -- c'est ce que la selection subit ; `emis` prend la selection
+    # pour agresseur -- c'est ce qu'elle inflige a la voisine, et c'est CE
+    # QU'ON PEINT SUR LE CUIVRE VOISIN. Les deux ne sont egaux que si les deux
+    # pistes ont la meme largeur. La longueur passee est nulle : on ne veut ici
+    # que les COEFFICIENTS, qui n'en dependent pas.
+    recu = tl.diaphonie(r["c"], r["l"], 0.0, t_r, rangs[1], rangs[0])
+    emis = tl.diaphonie(r["c"], r["l"], 0.0, t_r, rangs[0], rangs[1])
+    paire = r.get("paire") or {}
+    cache[cle] = {
+        "raison": "",
+        # LE SENS RECU garde ses noms courts : c'est celui que la carte de la
+        # selection emploie, et il etait la le premier.
+        "k_arriere": abs(float(recu["k_arriere"])),
+        "k_avant": abs(float(recu["k_avant"])),
+        "k_c": float(recu["k_c"]), "k_l": float(recu["k_l"]),
+        "emis_arriere": abs(float(emis["k_arriere"])),
+        "emis_avant": abs(float(emis["k_avant"])),
+        "z_diff": float(paire["z_diff"]) if paire.get("z_diff") else None,
+        "z_commune": (float(paire["z_commune"])
+                      if paire.get("z_commune") else None),
+        "z0": float(r["lignes"][rangs[0]]["z0"]),
+        "ecart": q,
+    }
+    return cache[cle]
+
+
+def _etaler(parts, cle, fiches, sens, couches, scene, t_r, cache):
+    """Le bruit d'un longement, reparti sur les troncons qui le composent.
+
+    Rend {rang : {"next":…, "fext":…, "ecart":…, "longueur":…, "net":…}}.
+
+    LE TOTAL VIENT DE LA SECTION COMPLETE ET NE BOUGE PAS -- la somme des
+    parts vaut exactement ce que la fiche annonce, dans chacun des deux sens
+    separement. Seule la REPARTITION est calculee ici, et elle l'est avec le
+    coefficient qui gouverne le sens qu'on repartit : |k_arriere| pour le NEXT,
+    |k_avant| pour le FEXT. Les repartir tous les deux avec le meme poids
+    serait poser que les deux bruits se fabriquent au meme endroit, ce qui est
+    faux des que l'ecart varie -- c'est justement ce que la carte est la pour
+    montrer.
+
+    `sens` vaut "recu" (ce que la selection subit) ou "emis" (ce qu'elle
+    inflige a la voisine). Le second est celui qu'on peint sur le cuivre
+    VOISIN : le bruit se compte en fraction de l'amplitude de l'agresseur, et
+    la voisine n'a pas les memes termes propres que la selection.
+    """
+    poids = {}
+    for e in parts.values():
+        loc = _section_locale(couches, scene, e["w_v"], e["w_a"], e["ecart"],
+                              e["cote"], t_r, cache) or {}
+        # LES NOMS DU SENS RECU SONT LES NOMS COURTS : la carte de la
+        # selection etait la la premiere, et renommer ses champs aurait casse
+        # ce qui les lit sans rien apporter.
+        n_arr, n_av = (("k_arriere", "k_avant") if sens == "recu"
+                       else ("emis_arriere", "emis_avant"))
+        # LE REPLI, QUAND LE PLAFOND DE SECTIONS LOCALES EST ATTEINT : on
+        # reprend le coefficient de la section COMPLETE, celui de la fiche. La
+        # carte devient plate sur la fin, elle ne devient jamais fausse.
+        repli = (fiches.get(e["net"]) or {}).get(sens) or {}
+        e["k_next"] = (loc.get(n_arr)
+                       or abs(_nombre(repli.get("k_arriere"), 0.0)))
+        e["k_fext"] = (loc.get(n_av)
+                       or abs(_nombre(repli.get("k_avant"), 0.0)))
+        e["loc"] = loc
+        p = poids.setdefault(e["net"], {"next": 0.0, "fext": 0.0})
+        p["next"] += e["k_next"] * e["l"]
+        p["fext"] += e["k_fext"] * e["l"]
+
+    sortie = {}
+    for rang, e in parts.items():
+        f = fiches.get(e["net"])
+        if f is None:
+            continue
+        total = f.get(sens) or f
+        p = poids[e["net"]]
+        val = {}
+        for quoi, k in (("next", e["k_next"]), ("fext", e["k_fext"])):
+            brut = _nombre(total.get(quoi), 0.0)
+            # LE SIGNE SE GARDE : un FEXT negatif n'est pas un FEXT plus petit,
+            # c'est un creux la ou le front monte.
+            val[quoi] = (brut * (k * e["l"]) / p[quoi]) if p[quoi] > 0 else 0.0
+        val.update({"net": e["net"], "ecart": e["ecart"], "longueur": e["l"],
+                    "loc": e.get("loc")})
+        sortie[rang] = val
+    return sortie
+
+
+def _grouper_parts(brutes, cle):
+    """Les longements d'une scene, rassembles par (rang de troncon, voisine).
+
+    Un meme troncon peut longer plusieurs bouts de la meme voisine : on cumule
+    les longueurs et l'on garde l'ecart le plus SERRE, qui est celui qui
+    compte.
+    """
+    parts = {}
+    for p in brutes or ():
+        k = (p[cle], p["net"])
+        e = parts.get(k)
+        if e is None:
+            e = parts[k] = {"l": 0.0, "ecart": p["ecart"], "w_v": p["w_v"],
+                            "w_a": p["w_a"], "cote": p["cote"],
+                            "net": p["net"], "rang": p[cle]}
+        e["l"] += p["l"]
+        if p["ecart"] < e["ecart"]:
+            e["ecart"], e["cote"] = p["ecart"], p["cote"]
+    return parts
+
+
+def _chaleur_scene(couches, scene, fiches, t_r, chaleur, voisins, cache):
+    """Etale le bruit et la Z differentielle d'une scene sur SES troncons.
+
+    DEUX CUIVRES SONT PEINTS, ET LA REGLE EST LA MEME POUR LES DEUX : toute
+    piste peinte montre CE QU'ELLE SUBIT.
+
+      · `chaleur`, aligne sur `geometry.objects` -- la selection, avec ce
+        qu'elle prend a ses voisines ;
+      · `voisins`, aligne sur `voisinage` -- les voisines, avec ce que la
+        selection leur inflige. C'est la carte qu'on regarde en routant : « qui
+        est-ce que je derange, et OU sur sa piste ».
+
+    Rien n'est rendu : on ecrit dans les deux listes.
+    """
+    parts = _grouper_parts(scene.get("parts"), "i")
+    parts_v = _grouper_parts(scene.get("parts_v"), "j")
+
+    # LA PAIRE DE LA SCENE : celle que la page a declaree ou que les suffixes
+    # nomment, a defaut la voisine LA PLUS PROCHE. La seconde n'est pas une
+    # paire et la carte le dit -- mais peindre la Z differentielle de la
+    # voisine d'a cote reste la seule facon de voir un ecartement qui derive.
+    partenaire = None
+    for f in fiches.values():
+        if f.get("differentielle"):
+            partenaire = f["net_voisin"]
+            break
+    declare = partenaire is not None
+    if partenaire is None and fiches:
+        partenaire = min(fiches.values(),
+                         key=lambda f: _nombre(f.get("ecart"), 1e9)
+                         )["net_voisin"]
+
+    recu = _etaler(parts, "i", fiches, "recu", couches, scene, t_r, cache)
+    emis = _etaler(parts_v, "j", fiches, "emis", couches, scene, t_r, cache)
+
+    def poser(liste, rang, val, victime, agresseur):
+        """Une entree de carte, cumulee sur toutes les voisines du troncon."""
+        if rang < 0 or rang >= len(liste):
+            return None
+        c = liste[rang]
+        if c is None:
+            c = liste[rang] = {"net": victime, "couche": scene["couche"],
+                               "next": 0.0, "fext": 0.0, "bruit": 0.0,
+                               "pire": 0.0, "agresseur": "",
+                               "ecart": val["ecart"], "longueur": 0.0,
+                               "agresseurs": [], "z_diff": None,
+                               "z_diff_net": "", "z_diff_declare": False}
+        # LE CUMUL ADDITIONNE LES SIGNES, et le VERDICT juge l'amplitude : deux
+        # agresseurs dont les FEXT sont de signes opposes s'annulent en partie,
+        # et c'est vrai -- mais `bruit`, qui colore, est le pire des deux sens
+        # en valeur absolue, comme la fiche.
+        c["next"] += val["next"]
+        c["fext"] += val["fext"]
+        bruit = max(abs(val["next"]), abs(val["fext"]))
+        c["bruit"] += bruit
+        c["longueur"] += val["longueur"]
+        c["ecart"] = min(c["ecart"], val["ecart"])
+        if bruit > c["pire"]:
+            c["pire"], c["agresseur"] = bruit, agresseur
+        c["agresseurs"].append({"net": agresseur,
+                                "next": round(val["next"], 5),
+                                "fext": round(val["fext"], 5),
+                                "bruit": round(bruit, 5),
+                                "ecart": round(val["ecart"], 4),
+                                "longueur": round(val["longueur"], 3)})
+        return c
+
+    for (i, net), val in recu.items():
+        c = poser(chaleur, i, val, scene["net"], net)
+        if c is not None and net == partenaire:
+            loc = val.get("loc") or {}
+            c["z_diff"] = (round(loc["z_diff"], 2)
+                           if loc.get("z_diff") else None)
+            c["z_diff_net"] = net
+            c["z_diff_declare"] = declare
+
+    for (j, net), val in emis.items():
+        poser(voisins, j, val, net, scene["net"])
+
+
 def _couplage(couches, objets, doc, analyse, avertissements):
     """Z differentielle et diaphonie de tout ce qui longe la selection.
 
@@ -3036,8 +3493,22 @@ def _couplage(couches, objets, doc, analyse, avertissements):
     declarees = doc.get("paires") or []
 
     paires, sections, cache = [], [], {}
+    # LA CARTE DE CHALEUR EST ALIGNEE SUR `geometry.objects`, comme les
+    # segments : c'est par ce rang que la page retrouve le cuivre a peindre.
+    # `None` veut dire « ce troncon ne longe rien », et se peint en gris.
+    chaleur = [None] * len(objets)
+    # ET LA CARTE DES VOISINES, alignee sur `voisinage` -- le cuivre que la
+    # selection DERANGE. C'est celle qu'on regarde en routant : la fiche dit
+    # combien, la carte dit qui et ou.
+    chaleur_voisins = [None] * len(voisinage)
+    cache_local = {}
     for scene in scenes[:MAX_SECTIONS]:
-        poses, ecartes = _poser_section(scene)
+        # LA HAUTEUR AU PLAN, AVANT DE POSER : `_poser_section` en a besoin
+        # pour savoir de combien le cuivre epais elargit chaque ruban, et donc
+        # pour ecarter la voisine de trop AU LIEU de perdre la section entiere.
+        h_couche = _hauteur_de_couche(couches, scene["couche"],
+                                      scene["largeur"], scene["epaisseur"])
+        poses, ecartes = _poser_section(scene, h_couche)
         e_g, e_d = _ecarts_masse_du_groupe(poses, scene)
         cle = (scene["couche"], round(scene["epaisseur"], 6),
                round(e_g, 6), round(e_d, 6),
@@ -3068,7 +3539,13 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             "conducteurs": [{"net": p["net"], "x": round(p["x"], 4),
                              "largeur": round(p["w"], 4),
                              "selection": p["selection"],
-                             "garde": p["garde"]} for p in poses],
+                             "garde": p["garde"],
+                             # UNE GARDE POSEE PAR LE MODELE N'EST PAS UNE
+                             # PISTE QUE QUELQU'UN A ROUTEE : la premiere est
+                             # deduite de deux ecarts mesures, la seconde est
+                             # dans le fichier. La fiche doit pouvoir le dire.
+                             "interposee": bool(p.get("interposee"))}
+                            for p in poses],
             "gardes": sum(1 for p in poses if p["garde"]),
             "ecart_g": round(e_g, 4), "ecart_d": round(e_d, 4),
             "gap_g": round(scene["gap_g"], 4),
@@ -3095,11 +3572,20 @@ def _couplage(couches, objets, doc, analyse, avertissements):
                 "er": round(r["_info"]["er"], 3),
                 "z0_selection": round(r["lignes"][rangs[0]]["z0"], 3),
             })
+            fiches = {}
             for pose in poses[1:]:
                 if pose["garde"]:
                     continue
-                paires.append(_fiche_longement(scene, poses, pose, rangs, r,
-                                               t_r, declarees))
+                f = _fiche_longement(scene, poses, pose, rangs, r, t_r,
+                                     declarees)
+                paires.append(f)
+                fiches[f["net_voisin"]] = f
+            # CE QUE LA SCENE VIENT DE CHIFFRER, ETALE SUR SES TRONCONS. Voir
+            # « LA CARTE DE CHALEUR DU COUPLAGE » : le total reste celui de la
+            # fiche, seule sa repartition le long de la piste est calculee ici.
+            if fiches:
+                _chaleur_scene(couches, scene, fiches, t_r, chaleur,
+                               chaleur_voisins, cache_local)
         else:
             for pose in poses[1:]:
                 if pose["garde"]:
@@ -3129,6 +3615,19 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             if f.get("recu") else 0.0
     paires.sort(key=lambda f: -pire(f))
 
+    # LES ARRONDIS A LA FIN, ET UNE SEULE FOIS. Chaque troncon appartient a UNE
+    # scene -- la cle est (couche, net selectionne), et un troncon n'a qu'une
+    # couche et qu'un net --, mais arrondir dans `_chaleur_scene` faisait
+    # repasser chaque scene sur les entrees de toutes les autres.
+    for liste in (chaleur, chaleur_voisins):
+        for c in liste:
+            if c is None:
+                continue
+            for quoi in ("next", "fext", "bruit", "pire"):
+                c[quoi] = round(c[quoi], 5)
+            c["ecart"] = round(c["ecart"], 4)
+            c["longueur"] = round(c["longueur"], 3)
+
     ecartees = max(0, len(scenes) - MAX_SECTIONS)
     if ecartees:
         avertissements.append(
@@ -3137,6 +3636,9 @@ def _couplage(couches, objets, doc, analyse, avertissements):
     return {
         "paires": paires,
         "sections": sections,
+        "chaleur": chaleur,
+        "chaleur_voisins": chaleur_voisins,
+        "sections_locales": len(cache_local),
         "temps_montee": t_r,
         "temps_montee_source": source_tr,
         "voisinage": len(voisinage),
@@ -3154,9 +3656,40 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             " coplanaire borde le groupe, à l'écart que la page a mesuré, et"
             " une piste du net de masse qui longe est posée comme une PISTE DE"
             " GARDE — dans la section, à zéro volt, sans port.",
+            "Quand une voisine se trouve PLUS LOIN que là où commence le"
+            " cuivre de masse, ce cuivre s'interpose : il est posé dans la"
+            " section comme une garde, à zéro volt, large de ce que laissent"
+            " les deux dégagements mesurés. Sans cela la masse était repoussée"
+            " au bord du groupe, son écart devenait négatif, on le ramenait à"
+            " zéro — et deux pistes séparées par un plan arrosé se résolvaient"
+            " comme deux pistes face à face au-dessus du diélectrique nu."
+            " Cette garde-là est déduite de deux mesures, pas lue dans le"
+            " fichier : la section la marque « déduite ». Elle suppose le"
+            " cuivre TENU à zéro volt sur toute la longueur, ce qu'un plan"
+            " cousu de vias fait et qu'une garde sans vias ne fait pas.",
             "Le temps de montée retenu est %s. Il ne change ni [C] ni [L] :"
             " il décide de la SATURATION du NEXT et de l'amplitude du FEXT."
             % source_tr,
+            "La carte de chaleur peint DEUX cuivres, et la règle est la"
+            " même pour les deux : une piste peinte montre ce QU'ELLE SUBIT."
+            " La sélection porte ce qu'elle prend à ses voisines ; chaque"
+            " voisine porte ce que la sélection lui inflige. Les deux ne sont"
+            " pas égaux dès que les largeurs diffèrent — le bruit se compte en"
+            " fraction de l'amplitude de l'agresseur.",
+            "Le bruit de chaque longement est étalé sur les tronçons qui le"
+            " composent, au prorata du couplage LOCAL : une section à deux"
+            " conducteurs est résolue à l'écart réel de chaque tronçon, et son"
+            " |k_arrière| (pour le NEXT) ou son |k_avant| (pour le FEXT) fois"
+            " la longueur qui longe fait le poids. La somme le long de la"
+            " piste vaut exactement le bruit de la fiche, sens par sens — mais"
+            " le NEXT sature, donc la couleur dit OÙ le couplage se fait, et"
+            " non une tension mesurable tronçon par tronçon.",
+            "La Z différentielle peinte sur la carte est celle d'une section à"
+            " DEUX conducteurs — la sélection et sa paire — reprise à l'écart"
+            " de chaque tronçon. Elle n'est donc pas celle du tableau, qui"
+            " tient les autres voisines à la masse : les deux se rejoignent"
+            " quand la paire est seule, et diffèrent quand elle est prise dans"
+            " un bus.",
         ],
     }
 

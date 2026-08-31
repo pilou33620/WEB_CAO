@@ -89,6 +89,25 @@ select.simUSel:focus{outline:none;border-color:var(--blue);color:var(--txt)}
    c'est simFAvertEcrire() qui l'affiche, pas un selecteur : `:empty` ne voit
    pas un <span> vide, et `:has` n'est pas partout. */
 .simFAvertBar{display:none}
+/* LE CHOIX DE LA PAIRE PORTE UN NOM DE NET, pas trois lettres d'unite : la
+   liste des unites tient en « GHz », celle-ci en « USB2_HOST_DP ». Elle prend
+   donc la place qui reste sur sa barre, avec un plafond -- un net a rallonge ne
+   doit pas pousser le bouton « Calculer » hors du panneau. Desactivee, elle se
+   grise : une selection a cheval sur deux nets ne peut declarer aucune paire,
+   et c'est le seul cas ou elle refuse. */
+select.simPaireSel{
+  flex:1 1 auto;min-width:96px;max-width:220px;
+}
+select.simPaireSel:disabled{opacity:.45;cursor:not-allowed}
+/* LES TROIS BOUTONS DE SENS — NEXT, FEXT, les deux. Ils ne relancent rien :
+   les deux bruits sortent de la meme matrice et sont deja dans le resultat.
+   Serres l'un contre l'autre pour se lire comme UN choix a trois branches, et
+   non comme trois commandes independantes. */
+.pnl-bar .simSensB{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.03em;
+  padding:2px 7px;
+}
+.pnl-bar .simSensB+.simSensB{margin-left:-1px}
 .simFAvertBar #simFAvert{
   font-size:10.5px;line-height:1.45;color:var(--yellow);
 }

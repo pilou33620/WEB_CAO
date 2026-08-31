@@ -217,6 +217,26 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* Les deux onglets de couplage (commun/simulation-em.js). */
   "simCouplage","simCouplagePaires","simFicheDiff","simFicheDiaphonie",
   "simCorpsDiff","simCorpsDiaphonie","simRendreDiff","simRendreDiaphonie",
+  /* Les TROIS cartes de chaleur, et ce qui les colore. `simCarteSegment` est
+     le seul point par lequel un canevas apprend ce qu'il peint. */
+  "simCarteQuoi","simCarteActive","simCarteSegment","simCarteRetenir",
+  "simChaleurRes","simChaleurLots","simCouleurBande","simZCouleur",
+  "simZSegment","simZActif","simZVerdict","simZTolAbs",
+  "simZDiffCouleur","simZDiffTolAbs","simZDiffVerdict",
+  "simBruitCouleur","simBruitBudget",
+  "simCarteDiffPartenaire","simCarteDiffLegende","simCarteBruitLegende",
+  /* Le cuivre VOISIN, et le sens peint : NEXT et FEXT ne se fabriquent pas au
+     meme endroit de la piste, et se regardent donc separement. */
+  "simCarteVoisins","simChaleurVoisinsRes","simChaleurVoisinsLots",
+  "simCarteVoisinsEtiquettes","simCarteCentreSel","simCarteDepuis",
+  "simCarteObjetsSel","simCarteCleVoisin",
+  "simAgresseurCouleur",
+  /* Le voile : ce qui n'est pas dans la simulation s'estompe. */
+  "simVoileActif","SIM_VOILE_ALPHA",
+  "simSensPeint","simSensNom","simSensBouton","simSensBrancher",
+  "simChaleurValeur",
+  /* Choisir sa paire a la main plutot que de la laisser deviner. */
+  "simPaireCandidats","simPaireSoi","simPaireEcrire","simDocFinir",
   "simBruitPire","simBruitEmis","simCoupleSection","simCoupleSections",
   "SIM_UNITES_TR","SIM_UNITES_V","simUniteTr","simUniteV","simBruitAbsEcrire",
   "simLotsPeints","simLotsMultiples","simPourChaqueLot","simLotMirroir",
@@ -11054,6 +11074,499 @@ T("les trois silences du couplage ne se confondent pas",()=>{
   if(!/Rien ne longe la sélection/.test(h))
     throw new Error("« rien ne longe » doit être un verdict : "+h.slice(0,200));
   SIM.res=null;
+});
+
+/* ==========================================================================
+   LES DEUX CARTES DE CHALEUR DU COUPLAGE, ET LA PAIRE CHOISIE A LA MAIN
+   ========================================================================== */
+
+/* Un resultat qui porte SA carte de chaleur, alignee sur les objets. */
+function simResChaleur(chaleur,paires){
+  const r=simResCouplage(paires||[simPaireEssai()]);
+  r.segments=chaleur.map(()=>({z0:50, longueur:10, couche:0,
+                               nom_couche:"Top"}));
+  r.couplage.chaleur=chaleur;
+  return r;
+}
+function simObjetsBidon(n){
+  const out=[];
+  for(let i=0;i<n;i++)out.push({trk:{w:0.25}, u1:0, u2:1, couche:"Top"});
+  return out;
+}
+function simCh(sur){
+  return Object.assign({net:"USB_DP", couche:0, bruit:0.01, pire:0.01,
+                        agresseur:"USB_DM", ecart:0.25, longueur:10,
+                        agresseurs:[], z_diff:100, z_diff_net:"USB_DM",
+                        z_diff_declare:true},sur||{});
+}
+
+T("ni la diaphonie ni la Z différentielle ne demandent de fréquence",()=>{
+  /* CE QUI ÉTAIT FAUX, ET CE QUE ÇA FAISAIT CROIRE. Les deux onglets posaient
+     le champ f₀, et avec lui l'avertissement de bande — « f₀ 10 MHz est hors
+     de la bande 100 MHz – 5 GHz : les pertes affichées ne seront pas celles de
+     f₀ ». Ni les pertes ni les paramètres S ne paraissent sous ces deux
+     onglets : l'avertissement portait sur un calcul qui n'a pas lieu là, et
+     jetait un doute sur des chiffres justes. La fréquence n'entre pas dans une
+     section quasi-statique — ni [C], ni [L], ni les modes pair et impair. */
+  for(const corps of [simCorpsDiff(),simCorpsDiaphonie()]){
+    if(corps.indexOf('id="simFc"')>=0)
+      throw new Error("l'onglet pose encore le champ de fréquence");
+    if(corps.indexOf("simFAvert")>=0)
+      throw new Error("l'onglet pose encore l'avertissement de bande S");
+  }
+  /* ET L'IMPÉDANCE LES GARDE : c'est elle qui rend les paramètres S, donc la
+     seule pour qui f₀ et la bande veulent dire quelque chose. */
+  const z=simCorpsImpedance();
+  if(z.indexOf('id="simFc"')<0||z.indexOf("simFAvert")<0)
+    throw new Error("l'onglet Impédance a perdu sa fréquence ou son "+
+                    "avertissement, qui eux servent");
+});
+
+T("chaque analyse déclare CE qu'elle peint, et pas une autre grandeur",()=>{
+  const attendu={impedance:"z", diff:"zdiff", diaphonie:"bruit",
+                 retour:"", dc:""};
+  for(const cle of Object.keys(attendu)){
+    const a=SIM_ANALYSES[cle];
+    if(!a)throw new Error("analyse absente : "+cle);
+    if((a.carte||"")!==attendu[cle])
+      throw new Error(cle+" peint « "+(a.carte||"")+" » au lieu de « "+
+                      attendu[cle]+" »");
+  }
+  /* `peint` RESTE LA CARTE DES Z₀, ET ELLE SEULE : la mettre à vrai ailleurs
+     ferait apparaître des ohms sous une fiche qui parle de pourcentages. */
+  for(const cle of ["diff","diaphonie","retour","dc"])
+    if(SIM_ANALYSES[cle].peint)
+      throw new Error(cle+" repeint la carte des Z₀");
+});
+
+T("la carte de diaphonie colore le bruit, celle de Z_diff colore les ohms",()=>{
+  const garde={res:SIM.res, objets:SIM.objets, ouvert:SIM.ouvert,
+               analyse:SIM.analyse, lots:SIM.lots};
+  SIM.ouvert=true; SIM.lots=[];
+  /* TROIS TRONÇONS : un serré, un lâche, un qui ne longe rien. */
+  SIM.objets=simObjetsBidon(3);
+  SIM.res=simResChaleur([simCh({bruit:0.08, ecart:0.10, z_diff:88}),
+                         simCh({bruit:0.01, ecart:0.60, z_diff:104}),
+                         null]);
+  SIM.saisie.bruitPct=5; SIM.saisie.cibleDiff=100; SIM.saisie.tolDiffPct=10;
+
+  SIM.analyse="diaphonie";
+  if(!simCarteActive())throw new Error("la carte de diaphonie ne s'allume pas");
+  /* SOUS CET ONGLET, LA SÉLECTION EST L'AGRESSEUR, ET ELLE NE GRADUE RIEN.
+     Elle portait naguère ce qu'elle REÇOIT, sur la même échelle que les
+     voisines : deux grandeurs différentes, même dégradé, même endroit — et
+     l'œil ne pouvait pas les séparer. Ce qu'elle reçoit reste dans le tableau
+     et dans le verdict ; sur la carte, elle est ce qui PARLE. */
+  const a=simCarteSegment(0), b=simCarteSegment(1), c=simCarteSegment(2);
+  for(const x of [a,b,c]){
+    if(!x.agresseur)throw new Error("la sélection n'est pas marquée agresseur");
+    if(x.texte)
+      throw new Error("l'agresseur porte encore une étiquette : "+x.texte);
+    if(x.valeur!=null)
+      throw new Error("l'agresseur porte encore une valeur : "+x.valeur);
+  }
+  /* UNE SEULE COULEUR, LA MÊME PARTOUT, ET QUI N'EST DANS AUCUNE ÉCHELLE. */
+  if(a.couleur(1)!==b.couleur(1)||b.couleur(1)!==c.couleur(1))
+    throw new Error("l'agresseur est gradué alors qu'il ne mesure rien");
+  if(a.couleur(1)===simBruitCouleur(SIM.saisie.bruitPct/100,1)||
+     a.couleur(1)===simBruitCouleur(0.0001,1))
+    throw new Error("la couleur de l'agresseur tombe sur la rampe du bruit");
+
+  /* MÊME CUIVRE, AUTRE ONGLET, AUTRE GRANDEUR. */
+  SIM.analyse="diff";
+  const d=simCarteSegment(0), e=simCarteSegment(1);
+  if(d.texte.indexOf("Ω")<0)
+    throw new Error("l'étiquette de Z_diff n'est pas en ohms : "+d.texte);
+  if(Math.round(d.valeur)!==88)throw new Error("Z_diff lue : "+d.valeur);
+  /* 88 Ω sort de 100 ± 10, 104 Ω y reste : les deux couleurs diffèrent. */
+  if(d.couleur(1)===e.couleur(1))
+    throw new Error("88 Ω et 104 Ω se peignent pareil sur une cible 100 ± 10");
+  /* ET LA FICHE DIT CE QUE LA CARTE MONTRE : une carte de chaleur sans
+     légende est un dessin. */
+  const leg=simCarteDiffLegende();
+  if(leg.indexOf("USB_DM")<0||leg.indexOf("88")<0||leg.indexOf("104")<0)
+    throw new Error("la légende ne dit ni la paire ni les extrêmes peints");
+
+  /* UN SERVEUR SANS CHALEUR N'ALLUME PAS LES DEUX CARTES : peindre du gris
+     partout se lirait comme « rien ne couple ». */
+  SIM.res=simResCouplage([simPaireEssai()]);
+  SIM.res.segments=[{z0:50},{z0:50},{z0:50}];
+  if(simCarteActive())
+    throw new Error("la carte s'allume sans chaleur venue du serveur");
+  /* MAIS CELLE DES Z₀, SI : elle ne lit que `segments`, et elle est là depuis
+     toujours. */
+  SIM.analyse="impedance";
+  if(!simCarteActive())
+    throw new Error("la carte des Z₀ ne doit rien devoir à la chaleur");
+
+  SIM.res=garde.res; SIM.objets=garde.objets; SIM.lots=garde.lots;
+  SIM.ouvert=garde.ouvert; SIM.analyse=garde.analyse;
+});
+
+T("la carte peint les VOISINES avec ce que la sélection leur inflige",()=>{
+  /* LA QUESTION DU ROUTAGE. « Que va prendre ma piste » est ce que le verdict
+     juge ; « QUI est-ce que je dérange, et OÙ sur sa piste » est ce qu'on se
+     demande en tirant un signal rapide. La fiche répondait « combien » — la
+     colonne « émis » — mais sur quelle piste et à quel endroit restait à
+     deviner en regardant le routage. */
+  const garde={res:SIM.res, objets:SIM.objets, doc:SIM.doc,
+               ouvert:SIM.ouvert, analyse:SIM.analyse, lots:SIM.lots,
+               sens:SIM.saisie.sens};
+  SIM.ouvert=true; SIM.lots=[]; SIM.analyse="diaphonie";
+  SIM.saisie.sens="pire"; SIM.saisie.bruitPct=5;
+  SIM.objets=simObjetsBidon(2);
+  SIM.res=simResChaleur([simCh({bruit:0.01,next:0.01,fext:-0.004}),
+                         simCh({bruit:0.02,next:0.02,fext:-0.008})]);
+  /* Trois tronçons voisins : deux que la sélection agresse, un qui ne longe
+     rien — et ce dernier ne doit pas être peint. */
+  SIM.res.couplage.chaleur_voisins=[
+    {net:"UART_RX", couche:0, next:0.03, fext:-0.012, bruit:0.03, pire:0.03,
+     agresseur:"RF_IN", ecart:0.20, longueur:6, agresseurs:[]},
+    {net:"UART_RX", couche:0, next:0.09, fext:-0.020, bruit:0.09, pire:0.09,
+     agresseur:"RF_IN", ecart:0.11, longueur:4, agresseurs:[]},
+    null];
+  SIM.doc={voisinage:[
+    {type:"track", start:[0,0], end:[6,0], width:0.2, layer:0, net:"UART_RX"},
+    {type:"track", start:[6,0], end:[10,0], width:0.2, layer:0, net:"UART_RX"},
+    {type:"track", start:[0,9], end:[10,9], width:0.2, layer:0, net:"LOIN"}]};
+
+  const v=simCarteVoisins();
+  if(v.length!==2)
+    throw new Error(v.length+" tronçon(s) voisin(s) peint(s) au lieu de 2");
+  if(v[0].net!=="UART_RX"||v[0].agresseur!=="RF_IN")
+    throw new Error("la voisine n'est pas nommée, ni son agresseur : "+
+                    JSON.stringify([v[0].net,v[0].agresseur]));
+  /* LA GÉOMÉTRIE VIENT DU DOCUMENT, pas d'un objet de l'outil : c'est ce qui
+     permet de peindre du cuivre qui n'est pas dans la sélection. */
+  if(!v[0].seg||!v[0].seg.start)throw new Error("le tronçon n'a pas sa géométrie");
+  /* LE PLUS SERRÉ EST LE PLUS CHAUD, et les deux couleurs diffèrent. */
+  if(!(Math.abs(v[1].valeur)>Math.abs(v[0].valeur)))
+    throw new Error("le tronçon serré n'est pas le plus chaud");
+  if(v[0].couleur(1)===v[1].couleur(1))
+    throw new Error("3 % et 9 % se peignent pareil sous un budget de 5 %");
+
+  /* UN TRONÇON VOISIN QUI NE LONGE RIEN N'EST PAS PEINT DU TOUT : il n'a pas à
+     porter du gris, il n'est pas dans le sujet. */
+  if(v.some(x=>x.net==="LOIN"))
+    throw new Error("un tronçon hors de portée est peint");
+
+  /* UNE ÉTIQUETTE PAR NET, ET POSÉE À CÔTÉ DE SA PISTE. Deux pistes qui
+     couplent sont par construction PROCHES — c'est la définition du problème
+     —, si bien que trois cartouches posés au milieu du cuivre se recouvrent
+     exactement là où l'on regarde. On les pousse du côté OPPOSÉ à
+     l'agresseur. */
+  SIM.doc.geometry={objects:[{start:[0,3], end:[10,3]}]};   // la sélection
+  const e=simCarteVoisinsEtiquettes();
+  if(e.length!==1)
+    throw new Error(e.length+" étiquette(s) pour 1 net agressé");
+  if(e[0].net!=="UART_RX")throw new Error("étiquette de « "+e[0].net+" »");
+  /* CELLE DU TRONÇON LE PLUS CHAUD : c'est le millimètre qu'on veut voir. */
+  if(Math.abs(Math.abs(e[0].valeur)-0.09)>1e-9)
+    throw new Error("l'étiquette n'est pas sur le tronçon le plus chaud : "+
+                    e[0].valeur);
+  /* LA NORMALE EST UNITAIRE ET S'ÉLOIGNE DE LA SÉLECTION. La voisine est en
+     y = 0, la sélection en y = 3 : la normale doit descendre. */
+  const n=e[0].normale;
+  if(Math.abs(Math.hypot(n[0],n[1])-1)>1e-9)
+    throw new Error("la normale n'est pas unitaire : "+n);
+  if(!(n[1]<0))
+    throw new Error("l'étiquette est poussée VERS la sélection : "+n);
+
+  /* LE CHEVELU PART DE L'AGRESSEUR, et il part du point de la sélection LE
+     PLUS PROCHE : un trait qui viendrait de l'autre bout de la piste
+     traverserait la carte pour ne rien apprendre. La sélection va de (0,3) à
+     (10,3) et l'étiquette est ancrée vers x = 8 : le départ doit être sur ce
+     segment-là, à la même abscisse. */
+  if(!e[0].depuis)throw new Error("le chevelu n'a pas d'origine");
+  if(Math.abs(e[0].depuis[1]-3)>1e-9)
+    throw new Error("le chevelu ne part pas de la sélection : "+e[0].depuis);
+  if(Math.abs(e[0].depuis[0]-e[0].ancre[0])>1e-6)
+    throw new Error("le chevelu ne part pas du point le plus proche : "+
+                    e[0].depuis+" pour une ancre en "+e[0].ancre);
+
+  /* SANS SÉLECTION CONNUE — un banc qui pose un résultat à la main —, on pose
+     quand même : n'importe quel côté vaut mieux que le milieu du cuivre. */
+  SIM.doc.geometry=null;
+  if(simCarteVoisinsEtiquettes().length!==1)
+    throw new Error("sans sélection connue, plus rien n'est étiqueté");
+
+  /* ET LA CARTE DES VOISINES NE SORT QUE SOUS LA DIAPHONIE : sous
+     « Z différentielle » on peint des ohms, pas des pourcentages. */
+  SIM.analyse="diff";
+  if(simCarteVoisins().length)
+    throw new Error("les voisines sont peintes sous l'onglet Z différentielle");
+  SIM.analyse="diaphonie";
+
+  SIM.res=garde.res; SIM.objets=garde.objets; SIM.doc=garde.doc;
+  SIM.lots=garde.lots; SIM.ouvert=garde.ouvert; SIM.analyse=garde.analyse;
+  SIM.saisie.sens=garde.sens;
+});
+
+T("la carte peint la piste victime ENTIÈRE, et pas seulement ce qui longe",()=>{
+  /* CE QUI SE LISAIT DE TRAVERS. Seuls les tronçons COUPLÉS étaient peints :
+     une victime sortait de la carte en morceaux, pendant que l'agresseur, lui,
+     était peint d'un bout à l'autre. Les deux cuivres ne portaient donc pas la
+     même règle à l'écran, et rien ne disait laquelle des deux lectures était la
+     bonne : « le reste de la victime ne couple pas », ou « le reste de la
+     victime n'a pas été regardé ». */
+  const garde={res:SIM.res, objets:SIM.objets, doc:SIM.doc,
+               ouvert:SIM.ouvert, analyse:SIM.analyse, lots:SIM.lots,
+               sens:SIM.saisie.sens};
+  SIM.ouvert=true; SIM.lots=[]; SIM.analyse="diaphonie";
+  SIM.saisie.sens="pire"; SIM.saisie.bruitPct=5;
+  SIM.objets=simObjetsBidon(2);
+  SIM.res=simResChaleur([simCh(),simCh()]);
+  /* UART_RX fait TROIS tronçons, et un seul longe la sélection. LOIN, lui,
+     n'est agressé nulle part. */
+  SIM.res.couplage.chaleur_voisins=[
+    null,
+    {net:"UART_RX", couche:0, next:0.03, fext:-0.01, bruit:0.03, pire:0.03,
+     agresseur:"RF_IN", ecart:0.20, longueur:4, agresseurs:[]},
+    null,
+    null];
+  SIM.doc={voisinage:[
+    {type:"track", start:[0,0], end:[3,0], width:0.2, layer:0, net:"UART_RX"},
+    {type:"track", start:[3,0], end:[7,0], width:0.2, layer:0, net:"UART_RX"},
+    {type:"track", start:[7,0], end:[10,0], width:0.2, layer:0, net:"UART_RX"},
+    {type:"track", start:[0,9], end:[10,9], width:0.2, layer:0, net:"LOIN"}]};
+
+  const v=simCarteVoisins();
+  if(v.length!==3)
+    throw new Error(v.length+" tronçon(s) peint(s) : la victime n'est pas "+
+                    "peinte entière");
+  const chauds=v.filter(x=>x.couple), froids=v.filter(x=>!x.couple);
+  if(chauds.length!==1||froids.length!==2)
+    throw new Error("le couplage n'est pas là où il est : "+
+                    chauds.length+" chaud(s), "+froids.length+" froid(s)");
+  /* CE QUI NE COUPLE PAS NE PORTE PAS DE VALEUR, et se peint du GRIS qui veut
+     déjà dire « rien ne longe ici » : la continuité de la piste ne doit pas se
+     lire comme un petit bruit. */
+  if(froids[0].valeur!==null||froids[0].texte!=="")
+    throw new Error("un tronçon qui ne couple pas porte un chiffre");
+  if(froids[0].couleur(1)!==simBruitCouleur(null,1))
+    throw new Error("un tronçon qui ne couple pas n'est pas gris : "+
+                    froids[0].couleur(1));
+  if(chauds[0].couleur(1)===froids[0].couleur(1))
+    throw new Error("ce qui couple et ce qui ne couple pas se peignent pareil");
+
+  /* UNE PISTE QUE LA SÉLECTION N'AGRESSE NULLE PART RESTE HORS SUJET : le
+     voisinage porte tout le cuivre à portée, et en griser la totalité peindrait
+     la carte au lieu de la lire. */
+  if(v.some(x=>x.net==="LOIN"))
+    throw new Error("une piste jamais agressée est peinte");
+
+  /* ET UNE SEULE ÉTIQUETTE, sur le tronçon qui couple : les tronçons froids
+     sont là pour se suivre du regard, pas pour porter un nombre. */
+  SIM.doc.geometry={objects:[{start:[0,3], end:[10,3], layer:0}]};
+  const e=simCarteVoisinsEtiquettes();
+  if(e.length!==1)
+    throw new Error(e.length+" étiquette(s) pour 1 net agressé");
+  if(Math.abs(Math.abs(e[0].valeur)-0.03)>1e-9)
+    throw new Error("l'étiquette n'est pas sur le tronçon qui couple : "+
+                    e[0].valeur);
+
+  /* LE CHEVELU PART DU CUIVRE DE LA SÉLECTION SUR LA COUCHE DE LA VICTIME.
+     Une liaison qui change de couche a des tronçons partout dans l'empilage ;
+     le couplage, lui, ne se calcule qu'entre pistes de la MÊME couche. Sans ce
+     tri, le trait partait du tronçon le plus proche EN PLAN — souvent celui
+     d'une autre couche, passant sous un plan de masse —, et semblait sortir du
+     cuivre de masse. */
+  SIM.doc.geometry={objects:[
+    {start:[0,3], end:[10,3], layer:0},        // la couche de la victime
+    {start:[4,0.2], end:[6,0.2], layer:2}]};   // plus près, mais ailleurs
+  const f=simCarteVoisinsEtiquettes();
+  if(!f[0].depuis)throw new Error("le chevelu n'a pas d'origine");
+  if(Math.abs(f[0].depuis[1]-3)>1e-9)
+    throw new Error("le chevelu part d'une AUTRE couche : "+f[0].depuis);
+
+  /* SANS COUCHE CONNUE SUR LA SÉLECTION — un banc qui pose un document à la
+     main —, on reprend tout : mieux vaut un chevelu que pas de chevelu. */
+  SIM.doc.geometry={objects:[{start:[0,3], end:[10,3]}]};
+  if(!simCarteVoisinsEtiquettes()[0].depuis)
+    throw new Error("sans couche déclarée, le chevelu disparaît");
+
+  SIM.res=garde.res; SIM.objets=garde.objets; SIM.doc=garde.doc;
+  SIM.lots=garde.lots; SIM.ouvert=garde.ouvert; SIM.analyse=garde.analyse;
+  SIM.saisie.sens=garde.sens;
+});
+
+T("le voile ne se pose que sous une carte de chaleur",()=>{
+  /* CE QU'IL CORRIGE. Sur une carte dense, la couleur d'une COUCHE ressemble à
+     une couleur de chaleur, et une piste qui n'est pas dans la simulation reste
+     aussi vive que celles qui le sont. Le voile estompe tout ce qui a été
+     dessiné avant les cartes ; ce qui se peint après reste plein. Hors
+     simulation il n'existe pas, et rien n'est caché. */
+  const garde={res:SIM.res, objets:SIM.objets, doc:SIM.doc,
+               ouvert:SIM.ouvert, analyse:SIM.analyse, lots:SIM.lots};
+  SIM.ouvert=true; SIM.lots=[]; SIM.analyse="diaphonie";
+  SIM.objets=simObjetsBidon(1);
+  SIM.res=simResChaleur([simCh()]);
+  if(!simVoileActif())
+    throw new Error("la carte de diaphonie peint sans voile");
+  SIM.ouvert=false;
+  if(simVoileActif())
+    throw new Error("le voile survit à la fermeture du panneau");
+  SIM.ouvert=true; SIM.analyse="pertes";
+  if(simVoileActif())
+    throw new Error("le voile se pose sous un onglet qui ne peint rien");
+  if(!(SIM_VOILE_ALPHA>0&&SIM_VOILE_ALPHA<1))
+    throw new Error("un voile opaque cacherait la carte : "+SIM_VOILE_ALPHA);
+
+  SIM.res=garde.res; SIM.objets=garde.objets; SIM.doc=garde.doc;
+  SIM.lots=garde.lots; SIM.ouvert=garde.ouvert; SIM.analyse=garde.analyse;
+});
+
+T("NEXT et FEXT se regardent séparément, et rien ne se relance",()=>{
+  /* POURQUOI DEUX BOUTONS ET NON UNE CARTE. k_arrière = (k_L+k_C)/4 est une
+     SOMME : le bruit arrière monte franchement dès que les pistes se
+     rapprochent. k_avant = (k_C−k_L)/2 est une DIFFÉRENCE, et elle cesse de
+     croître quand l'écart devient très serré. Les deux bruits ne se
+     fabriquent donc pas au même endroit de la piste — une carte unique
+     désignerait le mauvais millimètre à qui vient corriger un bruit avant. */
+  const garde={res:SIM.res, objets:SIM.objets, ouvert:SIM.ouvert, doc:SIM.doc,
+               analyse:SIM.analyse, lots:SIM.lots, sens:SIM.saisie.sens};
+  SIM.ouvert=true; SIM.lots=[]; SIM.analyse="diaphonie";
+  SIM.objets=simObjetsBidon(2);
+  SIM.res=simResChaleur([simCh(),simCh()]);
+  /* LE SENS GOUVERNE LA CARTE DES VOISINES — c'est elle qui porte le bruit
+     depuis que la sélection est peinte en agresseur. Le tronçon 0 porte le
+     pire FEXT, le tronçon 1 le pire NEXT : les deux cartes ne désignent pas
+     le même cuivre, et c'est tout l'intérêt. */
+  SIM.res.couplage.chaleur_voisins=[
+    {net:"V", couche:0, next:0.010, fext:-0.050, bruit:0.050, pire:0.050,
+     agresseur:"SIG", ecart:0.3, longueur:5, agresseurs:[]},
+    {net:"V", couche:0, next:0.080, fext:-0.012, bruit:0.080, pire:0.080,
+     agresseur:"SIG", ecart:0.15, longueur:5, agresseurs:[]}];
+  SIM.doc={voisinage:[
+    {type:"track", start:[0,0], end:[5,0], width:0.2, layer:0, net:"V"},
+    {type:"track", start:[5,0], end:[10,0], width:0.2, layer:0, net:"V"}]};
+
+  SIM.saisie.sens="next";
+  if(simSensPeint()!=="next")throw new Error("le sens n'est pas retenu");
+  let v=simCarteVoisins(), a=v[0], b=v[1];
+  if(Math.abs(a.valeur-0.010)>1e-9||Math.abs(b.valeur-0.080)>1e-9)
+    throw new Error("le NEXT n'est pas la valeur peinte : "+
+                    [a.valeur,b.valeur].join(" "));
+  if(!(Math.abs(b.valeur)>Math.abs(a.valeur)))
+    throw new Error("le NEXT ne désigne pas le tronçon 1");
+
+  SIM.saisie.sens="fext";
+  v=simCarteVoisins(); a=v[0]; b=v[1];
+  /* LE SIGNE SE GARDE : un FEXT négatif est un creux là où le front monte, pas
+     un FEXT plus petit. L'étiquette le montre, la couleur juge l'amplitude. */
+  if(!(a.valeur<0))throw new Error("le FEXT a perdu son signe : "+a.valeur);
+  if(a.texte.indexOf("-")<0&&a.texte.indexOf("−")<0&&a.texte.indexOf("\u2212")<0)
+    throw new Error("l'étiquette ne porte pas le signe : "+a.texte);
+  if(!(Math.abs(a.valeur)>Math.abs(b.valeur)))
+    throw new Error("le FEXT ne désigne pas le tronçon 0 : les deux cartes "+
+                    "seraient redondantes");
+  if(a.couleur(1)===simBruitCouleur(a.valeur,1))
+    throw new Error("la couleur d'un FEXT négatif doit venir de son AMPLITUDE");
+
+  SIM.saisie.sens="pire";
+  if(Math.abs(simCarteVoisins()[0].valeur-0.050)>1e-9)
+    throw new Error("« les deux » ne rend pas le pire des deux sens");
+
+  /* UN SENS INCONNU RETOMBE SUR LE PIRE plutôt que de peindre du vide : le
+     réglage est écrit dans un profil, et un profil se relit d'une version à
+     l'autre. */
+  SIM.saisie.sens="n'importe quoi";
+  if(simSensPeint()!=="pire")throw new Error("un sens inconnu n'est pas rattrapé");
+
+  /* LES TROIS BOUTONS SONT DANS L'ONGLET, et celui qui peint est armé. */
+  SIM.saisie.sens="fext";
+  const corps=simCorpsDiaphonie();
+  for(const cle of ["next","fext","pire"])
+    if(corps.indexOf('data-simsens="'+cle+'"')<0)
+      throw new Error("le bouton « "+cle+" » n'est pas posé");
+  if(!/class="tb mini simSensB on" data-simsens="fext"/.test(corps))
+    throw new Error("le bouton du sens peint n'est pas armé : "+
+                    corps.slice(corps.indexOf("simSensB")-40,
+                                corps.indexOf("simSensB")+260));
+
+  SIM.res=garde.res; SIM.objets=garde.objets; SIM.lots=garde.lots;
+  SIM.doc=garde.doc; SIM.ouvert=garde.ouvert; SIM.analyse=garde.analyse;
+  SIM.saisie.sens=garde.sens;
+});
+
+T("le budget est l'échelle de la carte, et rien d'autre",()=>{
+  const b0=SIM.saisie.bruitPct;
+  SIM.saisie.bruitPct=5;
+  const gris=simBruitCouleur(0,1), bas=simBruitCouleur(0.0025,1);
+  const moitie=simBruitCouleur(0.025,1), plein=simBruitCouleur(0.05,1);
+  if(gris.indexOf("139,145,156")<0)
+    throw new Error("un bruit nul devrait être gris, pas peint");
+  if(bas===moitie||moitie===plein)
+    throw new Error("la rampe ne gradue pas : "+[bas,moitie,plein].join(" "));
+  if(plein.indexOf("232,68,58")<0)
+    throw new Error("le budget entier devrait être rouge plein : "+plein);
+  /* AU-DELÀ DU BUDGET, LA COULEUR NE CHANGE PLUS : le rouge est le bout de
+     l'échelle, et un rouge plus rouge n'existe pas. */
+  if(simBruitCouleur(0.5,1)!==plein)
+    throw new Error("dix fois le budget devrait rester le même rouge");
+  /* AUCUN POINT DE LA RAMPE NE RESSEMBLE AU GRIS « PAS DE VALEUR », et c'est
+     un vrai piège : la teinte intermédiaire n'est pas choisie, elle est
+     INTERPOLÉE. Du bleu vers l'ambre, le milieu tombait à (146,169,147) — à
+     deux points du gris (139,145,156) —, si bien qu'un tronçon FAIBLEMENT
+     couplé se peignait de la couleur qui veut dire « rien ne longe ici ». */
+  for(let k=0;k<=20;k++){
+    const c=simBruitCouleur(0.05*k/20*1.0,1).match(/\d+/g).slice(0,3).map(Number);
+    if(!(c[0]===0&&c[1]===0&&c[2]===0)&&k>0){
+      const ecart=Math.max(...c)-Math.min(...c);
+      if(ecart<60)
+        throw new Error("la rampe passe par une teinte désaturée en "+
+                        (5*k/20).toFixed(2)+" % : rgb("+c.join(",")+")");
+    }
+  }
+  /* CHANGER LE BUDGET CHANGE LA COULEUR SANS RIEN RECALCULER : c'est ce qui
+     fait qu'on peut essayer 3 % puis 8 % sans repasser par le serveur. */
+  SIM.saisie.bruitPct=20;
+  if(simBruitCouleur(0.05,1)===plein)
+    throw new Error("le même bruit se peint pareil sous un budget quadruple");
+  SIM.saisie.bruitPct=b0;
+});
+
+T("la paire choisie à la main part avec le document, comme une déclarée",()=>{
+  /* LE CAS QUE LA DÉTECTION RATE, et il est courant : deux nets qui forment
+     une paire sans en porter les suffixes. « N$1 » et « AGR » ne sont ni
+     _P/_N, ni +/−, ni déclarés dans l'éditeur — la fiche les rangeait donc
+     sous « ce ne sont pas des paires », avec des impédances pourtant justes. */
+  simCarteVoisine(0.65);
+  const soi=SIM_PCB.probleme(simSaisie()).doc.net;
+
+  SIM.saisie.paireN="";
+  let d=simDocFinir(SIM_PCB.probleme(simSaisie()).doc);
+  if((d.paires||[]).some(c=>c.indexOf("AGR")>=0))
+    throw new Error("une paire est déclarée alors que rien ne l'a demandée");
+
+  /* AVEC LE CHOIX : le net désigné voyage dans `doc.paires`, au même endroit
+     et au même format que ceux de l'éditeur — le serveur ne les distingue
+     pas, et c'est ce qui fait de celle-ci LA paire, carte de chaleur
+     comprise. */
+  SIM.saisie.paireN="AGR";
+  d=simDocFinir(SIM_PCB.probleme(simSaisie()).doc);
+  if(!(d.paires||[]).some(c=>c[0]===soi&&c[1]==="AGR"))
+    throw new Error("la paire choisie n'est pas dans le document : "+
+                    JSON.stringify(d.paires));
+  /* ELLE PASSE EN TÊTE : un choix explicite prime sur une convention. */
+  if(d.paires[0][1]!=="AGR")
+    throw new Error("le choix explicite ne passe pas devant");
+
+  /* ET LE CANDIDAT SE PROPOSE AVANT LE PREMIER CALCUL : sans cela il faudrait
+     calculer pour pouvoir demander le bon calcul. */
+  const res0=SIM.res, lots0=SIM.lots;
+  SIM.res=null; SIM.lots=[];
+  const cands=simPaireCandidats();
+  if(cands.indexOf("AGR")<0)
+    throw new Error("« AGR » longe la sélection et n'est pas proposé : "+
+                    JSON.stringify(cands));
+  /* LA MASSE N'EST PAS UNE MOITIÉ DE PAIRE : elle borde le groupe, elle ne
+     l'appaire pas — proposer « GND » comme second conducteur d'une paire
+     différentielle serait proposer un non-sens. */
+  if(cands.some(n=>simRefSet().has(n)))
+    throw new Error("un net de masse est proposé comme moitié de paire : "+
+                    JSON.stringify(cands));
+  SIM.res=res0; SIM.lots=lots0; SIM.saisie.paireN="";
 });
 
 T("le temps de montée vit en secondes, et son unité ne fait que l'écrire",()=>{

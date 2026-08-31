@@ -1491,14 +1491,40 @@ function simSousPoly(p,cum,u1,u2){
   return t;
 }
 
+/* ==========================================================================
+   LE VOILE — CE QUI N'EST PAS DANS LA SIMULATION S'ESTOMPE
+   --------------------------------------------------------------------------
+   Posé par `peindre()` JUSTE AVANT les cartes de chaleur. Voir `simVoileActif`
+   (commun/simulation-em.js) : tout ce qui a été dessiné avant s'efface d'un
+   cran, tout ce qui se peint après reste plein — le cuivre qui n'entre dans
+   aucun calcul cesse de se confondre avec celui qui porte une couleur de
+   chaleur, et une couleur de COUCHE cesse de se lire comme une couleur de
+   BRUIT.
+
+   IL SE POSE EN PIXELS ÉCRAN, à la transformation d'identité : c'est la toile
+   entière qu'il couvre, pas une région du monde.
+   ========================================================================== */
+function simVoile(c,W,H){
+  if(typeof simVoileActif!=="function"||!simVoileActif())return;
+  c.save();
+  c.setTransform(1,0,0,1,0,0);
+  c.globalAlpha=SIM_VOILE_ALPHA;
+  c.fillStyle=FOND;
+  c.fillRect(0,0,W,H);
+  c.restore();
+}
+
 /* TOUS LES LOTS SE PEIGNENT, ET C'EST LE POINT. La fiche ne peut déplier qu'un
    morceau à la fois — six jeux de paramètres S ne se lisent pas ensemble —, mais
    la question « est-ce 50 Ω sur toute la longueur ? » se répond d'un coup d'œil
    sur la carte. Le tableau des lots compare des chiffres ; la carte, elle,
    montre OÙ ça sort de la bande. Sans lot, la boucle tourne une fois et le
    dessin est celui d'avant. */
+/* TROIS ANALYSES PEIGNENT CE CUIVRE, ET PAS LA MÊME GRANDEUR — voir
+   `simCarteSegment` dans commun/simulation-em.js : ce fichier ne sait plus ce
+   qu'il peint, il sait seulement où. */
 function simZTrace(c,dpr){
-  if(typeof simZActif!=="function"||!simZActif())return;
+  if(typeof simCarteActive!=="function"||!simCarteActive())return;
   if(typeof simPourChaqueLot!=="function"){simZTraceLot(c,dpr,null);return;}
   simPourChaqueLot(function(lot){simZTraceLot(c,dpr,lot);});
 }
@@ -1510,26 +1536,121 @@ function simZTraceLot(c,dpr,lot){
 
   const traits=[];
   for(let i=0;i<SIM.objets.length;i++){
-    const s=simZSegment(i);
+    const s=simCarteSegment(i);
     if(!s||!s.obj||!s.obj.piste||!s.obj.piste.p)continue;
     const o=s.obj;
     traits.push({chemin:simSousPoly(o.piste.p,o.cum,o.u1,o.u2),
-                 w:o.piste.w||0, z0:s.z0, obj:o, seg:s.seg});
+                 w:o.piste.w||0, valeur:s.valeur, texte:s.texte,
+                 couleur:s.couleur, obj:o, seg:s.seg});
   }
   for(const t of traits){
-    c.strokeStyle=simZCouleur(t.z0,0.30);
+    c.strokeStyle=t.couleur(0.30);
     c.lineWidth=t.w+px*7; c.stroke(t.chemin);
   }
   for(const t of traits){
-    c.strokeStyle=simZCouleur(t.z0,0.95);
+    c.strokeStyle=t.couleur(0.95);
     c.lineWidth=Math.max(t.w,px*2.5); c.stroke(t.chemin);
   }
   for(const t of traits){
-    c.strokeStyle=simZCouleur(t.z0,1);
+    c.strokeStyle=t.couleur(1);
     c.lineWidth=px*2; c.stroke(t.chemin);
   }
+  simVoisinsTrace(c,dpr,px);
   simZValeurs(c,dpr,traits);
   simZNumeroLot(c,dpr,lot,traits);
+}
+
+/* ==========================================================================
+   LE CUIVRE VOISIN — CE QUE LA SÉLECTION LEUR INFLIGE
+   --------------------------------------------------------------------------
+   La sélection est peinte avec ce qu'elle PREND ; les voisines, avec ce que la
+   sélection leur ENVOIE. Même règle pour les deux : une piste peinte montre ce
+   qu'elle subit.
+
+   ON NE PASSE PAR AUCUN OBJET DE L'OUTIL, et c'est voulu : `voisinage` est une
+   liste de tronçons du DOCUMENT — deux points et une largeur, en millimètres,
+   les arcs déjà en cordes —, la même qui est partie au serveur. Retrouver la
+   piste de l'outil derrière chaque tronçon coûterait une recherche et pourrait
+   échouer ; tracer un segment ne peut pas.
+
+   TROIS PASSES COMME AILLEURS, mais plus discrètes que sur la sélection : le
+   halo est moins large et l'âme moins opaque. La sélection reste ce qu'on a
+   désigné, et le cuivre voisin ne doit pas la couvrir.
+   ========================================================================== */
+function simVoisinsTrace(c,dpr,px){
+  if(typeof simCarteVoisins!=="function")return;
+  const liste=simCarteVoisins();
+  if(!liste.length)return;
+  const k=simKUnite();
+  if(!(k>0))return;
+  const u=v=>v/k;                          /* millimètres -> unités du fichier */
+  c.lineCap="round"; c.lineJoin="round";
+  const chemin=v=>{
+    const t=new Path2D();
+    t.moveTo(u(v.seg.start[0]),u(v.seg.start[1]));
+    t.lineTo(u(v.seg.end[0]),u(v.seg.end[1]));
+    return t;
+  };
+  const traces=liste.map(v=>({v:v, t:chemin(v), w:u(v.seg.width||0)}));
+  /* LA PISTE VICTIME EST PEINTE ENTIÈRE — voir `simCarteVoisins`
+     (commun/simulation-em.js). Ce qui ne couple pas passe D'ABORD, gris, fin et
+     translucide : il donne à la piste sa continuité, et ne doit pas couvrir le
+     millimètre qui, lui, porte le bruit. */
+  for(const t of traces){
+    if(t.v.couple)continue;
+    c.strokeStyle=t.v.couleur(0.55);
+    c.lineWidth=Math.max(t.w*0.6,px*1.2); c.stroke(t.t);
+  }
+  for(const t of traces){
+    if(!t.v.couple)continue;
+    c.strokeStyle=t.v.couleur(0.22);
+    c.lineWidth=t.w+px*5; c.stroke(t.t);
+  }
+  for(const t of traces){
+    if(!t.v.couple)continue;
+    c.strokeStyle=t.v.couleur(0.85);
+    c.lineWidth=Math.max(t.w,px*2); c.stroke(t.t);
+  }
+  simVoisinsValeurs(c,dpr,u);
+}
+
+/* Une étiquette par NET agressé, posée À CÔTÉ de sa piste — voir
+   `simCarteVoisinsEtiquettes` (commun/simulation-em.js). */
+/* LE DÉCALAGE SE CALCULE DANS L'ÉCRAN, et non dans le monde : c'est la seule
+   façon d'obtenir la même marge quel que soit le zoom, et de récupérer au
+   passage un éventuel retournement de la vue. On projette la normale — rendue
+   en millimètres par `simCarteVoisinsEtiquettes` — en prenant la différence de
+   deux points transformés, puis on la ramène à la longueur voulue. */
+const SIM_VOISIN_MARGE=13;             // pixels écran, du cuivre au cartouche
+function simVoisinsValeurs(c,dpr,u){
+  if(typeof simCarteVoisinsEtiquettes!=="function")return;
+  const etiq=simCarteVoisinsEtiquettes();
+  if(!etiq.length)return;
+  c.save();
+  c.setTransform(1,0,0,1,0,0);
+  c.scale(dpr,dpr);
+  c.font="600 10px \"JetBrains Mono\",\"SF Mono\",Consolas,monospace";
+  c.textAlign="center"; c.textBaseline="middle";
+  for(const v of etiq){
+    const a=w2s(u(v.ancre[0]),u(v.ancre[1]));
+    const b=w2s(u(v.ancre[0]+v.normale[0]),u(v.ancre[1]+v.normale[1]));
+    let dx=b.x-a.x, dy=b.y-a.y;
+    const l=Math.hypot(dx,dy);
+    if(l>1e-9){dx/=l;dy/=l;}else{dx=0;dy=-1;}
+    const e={x:a.x+dx*SIM_VOISIN_MARGE, y:a.y+dy*SIM_VOISIN_MARGE};
+    const txt=v.net+" "+v.texte;
+    const w=c.measureText(txt).width+10;
+    simCheveluBruit(c,v,a,e,u);
+    c.fillStyle="rgba(15,16,18,0.86)";
+    c.beginPath();
+    if(c.roundRect)c.roundRect(e.x-w/2,e.y-8,w,16,4);
+    else c.rect(e.x-w/2,e.y-8,w,16);
+    c.fill();
+    c.strokeStyle=v.couleur(1); c.lineWidth=1.1; c.stroke();
+    c.fillStyle="#e6e8ec";
+    c.fillText(txt,e.x,e.y+0.5);
+  }
+  c.restore();
 }
 
 /* LE NUMÉRO DU LOT, POSÉ SUR SON CUIVRE. Le tableau parle de « lot 3 » ; sans
@@ -1555,9 +1676,39 @@ function simZNumeroLot(c,dpr,lot,traits){
   c.beginPath();
   c.arc(e.x,e.y,9,0,2*Math.PI);
   c.fillStyle="rgba(15,16,18,0.9)"; c.fill();
-  c.strokeStyle=simZCouleur(traits[0].z0,1); c.lineWidth=1.4; c.stroke();
+  c.strokeStyle=traits[0].couleur(1); c.lineWidth=1.4; c.stroke();
   c.fillStyle="#e6e8ec";
   c.fillText(String(lot.rang),e.x,e.y+0.5);
+  c.restore();
+}
+
+/* LE CHEVELU DE LA DIAPHONIE — d'où à où, sans avoir à le deviner.
+   --------------------------------------------------------------------------
+   MÊME IDÉE QUE CELUI DU COURANT DE RETOUR, et pour la même raison : deux
+   cuivres colorés côte à côte ne disent pas lequel agresse lequel. Le trait
+   part du point de la SÉLECTION le plus proche, passe par le cuivre de la
+   victime et finit sur son étiquette — trois points, un sens de lecture, et
+   plus rien à deviner.
+
+   POINTILLÉ ET FIN, parce qu'il DÉSIGNE au lieu de décrire : il ne doit pas
+   se lire comme du cuivre. La flèche est portée par le point plein posé sur la
+   victime, qui est là où le bruit arrive. */
+function simCheveluBruit(c,v,surCuivre,surEtiquette,u){
+  const d=v.depuis?w2s(u(v.depuis[0]),u(v.depuis[1])):null;
+  c.save();
+  if(d){
+    c.setLineDash([3,3]);
+    c.strokeStyle=simAgresseurCouleur(0.85); c.lineWidth=1;
+    c.beginPath(); c.moveTo(d.x,d.y); c.lineTo(surCuivre.x,surCuivre.y);
+    c.stroke();
+    c.setLineDash([]);
+    c.beginPath(); c.arc(d.x,d.y,2.6,0,2*Math.PI); c.stroke();
+  }
+  c.fillStyle=v.couleur(1);
+  c.beginPath(); c.arc(surCuivre.x,surCuivre.y,2.6,0,2*Math.PI); c.fill();
+  c.strokeStyle=v.couleur(0.75); c.lineWidth=1;
+  c.beginPath(); c.moveTo(surCuivre.x,surCuivre.y);
+  c.lineTo(surEtiquette.x,surEtiquette.y); c.stroke();
   c.restore();
 }
 
@@ -1723,20 +1874,24 @@ function simRetourValeursIpc(c,liens,dpr,u){
 function simZValeurs(c,dpr,traits){
   const parValeur=new Map();
   for(const t of traits){
-    if(!(t.z0>0))continue;
-    const cle=Math.round(t.z0*10);
+    if(!t.texte)continue;
+    /* UNE ÉTIQUETTE PAR VALEUR AFFICHÉE — c'est le TEXTE qui groupe, si bien
+       que la règle vaut pour les ohms comme pour les pourcentages. */
     const lg=(t.seg&&t.seg.longueur)||0;
-    const p=parValeur.get(cle);
-    if(!p||lg>p.lg)parValeur.set(cle,{lg:lg, z0:t.z0, obj:t.obj});
+    const p=parValeur.get(t.texte);
+    if(!p||lg>p.lg)
+      parValeur.set(t.texte,{lg:lg, valeur:t.valeur, texte:t.texte,
+                             couleur:t.couleur, obj:t.obj});
   }
   if(!parValeur.size)return;
+  const retenues=simCarteRetenir(parValeur);
 
   c.save();
   c.setTransform(1,0,0,1,0,0);
   c.scale(dpr,dpr);
   c.font="600 11px \"JetBrains Mono\",\"SF Mono\",Consolas,monospace";
   c.textAlign="center"; c.textBaseline="middle";
-  for(const v of parValeur.values()){
+  for(const v of retenues){
     /* Le milieu de la PLAGE, et non de la piste : une piste découpée en trois
        plages porte trois étiquettes, et chacune doit tomber sur le morceau
        qu'elle chiffre. Posée au sommet médian de la polyligne, comme avant,
@@ -1744,14 +1899,14 @@ function simZValeurs(c,dpr,traits){
     const o=v.obj;
     const m=simSurPoly(o.piste.p,o.cum,(o.u1+o.u2)/2);
     const e=w2s(m.x,m.y);
-    const txt=mdlNb(v.z0,1)+" Ω";
+    const txt=v.texte;
     const w=c.measureText(txt).width+10;
     c.fillStyle="rgba(15,16,18,0.82)";
     c.beginPath();
     if(c.roundRect)c.roundRect(e.x-w/2,e.y-9,w,18,4);
     else c.rect(e.x-w/2,e.y-9,w,18);
     c.fill();
-    c.strokeStyle=simZCouleur(v.z0,1); c.lineWidth=1.2; c.stroke();
+    c.strokeStyle=v.couleur(1); c.lineWidth=1.2; c.stroke();
     c.fillStyle="#e6e8ec";
     c.fillText(txt,e.x,e.y+0.5);
   }
@@ -2015,20 +2170,47 @@ function simVoisinageIpc(envoi,objets){
   const marge=SIM_ECART_COUPLAGE_IPC+large;
   x1-=marge;y1-=marge;x2+=marge;y2+=marge;
 
+  const refs=simRefSet();
   const out=[];
+  /* CHAQUE VOISINE PART AVEC SES DEUX ÉCARTS À LA MASSE, comme les tronçons de
+     la sélection : c'est ce qui permet au serveur de savoir si du cuivre de
+     masse S'INTERPOSE entre les deux pistes — voir `_masse_interposee` dans
+     `python/simulation_em.py`. Sans eux, deux pistes séparées par un plan
+     arrosé se résolvaient comme deux pistes face à face au-dessus du
+     diélectrique nu.
+
+     MESURÉ UNE FOIS PAR PISTE, en son milieu, et non par tronçon : la sonde
+     parcourt des anneaux de cases et coûte, là où la sélection est découpée en
+     plages parce que c'est SON impédance qu'on rend. */
+  const ecartsDe=function(pts,couche,w){
+    const g=simGrilleCuivre(couche);
+    if(!g||g.vide)return {g:0, d:0};
+    /* Le milieu de la polyligne, au sommet, et la direction qui y passe. */
+    const n=Math.floor((pts.length/2-1)/2)*2;
+    const ax=pts[n], ay=pts[n+1], bx=pts[n+2], by=pts[n+3];
+    const dx=bx-ax, dy=by-ay, l=Math.hypot(dx,dy);
+    if(!(l>0))return {g:0, d:0};
+    const e=simEcartsEn(g,k,(ax+bx)/2,(ay+by)/2,dx/l,dy/l,w/2/k,-1,refs);
+    return {g:e.g, d:e.d};
+  };
   const pousser=function(pts,couche,w,net){
     const cu=simCuDe(couche);
     if(cu<0)return true;
     const layer=simRangCu(cu);
     if(!couches.has(layer)||!(w>0))return true;
     const demi=w/2;
+    let ec=null;
     for(let i=0;i+3<pts.length;i+=2){
       const ax=pts[i]*k, ay=pts[i+1]*k, bx=pts[i+2]*k, by=pts[i+3]*k;
       if(Math.max(ax,bx)+demi<x1||Math.min(ax,bx)-demi>x2)continue;
       if(Math.max(ay,by)+demi<y1||Math.min(ay,by)-demi>y2)continue;
       if(Math.abs(ax-bx)<1e-9&&Math.abs(ay-by)<1e-9)continue;
+      /* La sonde ne part QUE si un tronçon de cette piste est retenu : une
+         piste écartée par la boîte ne coûte alors rien du tout. */
+      if(ec===null)ec=ecartsDe(pts,couche,w);
       out.push({type:"track", start:[ax,ay], end:[bx,by], width:w,
-                layer:layer, net:net, copper_thickness:LT.cu[cu].ep});
+                layer:layer, net:net, copper_thickness:LT.cu[cu].ep,
+                gap_left:ec.g, gap_right:ec.d});
       if(out.length>=SIM_VOISINAGE_MAX_IPC)return false;
     }
     return true;
