@@ -2,14 +2,20 @@
    commun/simulation-em.js
    Simulation électromagnétique : le panneau, le transport, la carte de chaleur.
 
-   DEUX FAMILLES, ET UNE SEULE ANALYSE POUR L'INSTANT. Le panneau se range en
-   **SI** — intégrité du signal, ce qu'un front devient en parcourant le
-   cuivre — et **PI** — intégrité de l'alimentation, ce que le réseau de
-   distribution laisse passer. SI porte « Impédance » ; PI porte « Chute DC »,
-   dont le SOLVEUR est fait et mesuré (`python/dc_solver.py`, 16 cas dans
-   `python/test/banc-dc.py`) mais dont AUCUN des deux outils ne sait encore
-   extraire le cuivre ni les courants — l'onglet le dit lui-même, en toutes
-   lettres, plutôt que de laisser croire à une erreur de sélection.
+   DEUX FAMILLES, CINQ ANALYSES. Le panneau se range en **SI** — intégrité du
+   signal, ce qu'un front devient en parcourant le cuivre — et **PI** —
+   intégrité de l'alimentation, ce que le réseau de distribution laisse passer.
+   SI porte « Impédance », « Z différentielle », « Diaphonie » et « Current
+   Return Path » ; PI porte « Chute DC ».
+
+   LES QUATRE DE SI LISENT LA MÊME RÉPONSE DU SERVEUR, et c'est voulu : changer
+   d'onglet ne relance rien, et les quatre fiches parlent nécessairement du
+   même cuivre. Elles ne posent pas la même question — l'impédance est une
+   propriété de la SECTION DROITE, le chemin de retour une propriété de la
+   LIAISON VERTICALE, et les deux autres une propriété de DEUX sections côte à
+   côte. Une piste parfaitement à 50 Ω peut avoir un retour catastrophique et
+   prendre trois cents millivolts à sa voisine : trois défauts distincts, que
+   les empiler dans une fiche unique rendait invisibles.
 
    Le registre est `SIM_FAMILLES` / `SIM_ANALYSES`, plus bas : une analyse y
    déclare son nom, ses commandes, son branchement, sa sortie, et si elle peint
@@ -20,6 +26,16 @@
    caractéristique à la fréquence centrale, et les paramètres S de la liaison
    entière par mise en cascade. La page peint le résultat SUR la piste et
    l'écrit à côté.
+
+   CE QUE FONT « Z DIFFÉRENTIELLE » ET « DIAPHONIE » : la MÊME section, à N
+   conducteurs (`ligne_mom.solve_multiline`) — toutes les voisines d'une même
+   piste y entrent, parce qu'une piste et ses deux voisines font UN problème à
+   trois et non deux problèmes à deux. La matrice de capacité de Maxwell
+   [C], puis [L] = μ₀ε₀[C₀]⁻¹ ; les modes pair et impair en sortent — donc Z
+   différentielle et Z commune —, et les coefficients de couplage aussi — donc
+   NEXT et FEXT. UN seul calcul, deux lectures. L'agresseur n'étant jamais dans
+   la sélection, chaque outil joint au problème le `voisinage` : le cuivre qui
+   passe à portée. C'est le serveur qui apparie, une fois pour les deux.
 
    Le solveur est en Python et en numpy : un navigateur ne peut pas l'exécuter,
    et c'est la seule raison pour laquelle ce fichier parle à un serveur — le
@@ -60,6 +76,19 @@
                                          ports. Facultatif
      redessiner()                        redessine le canevas de l'outil
      astuce(txt)                         la ligne de pied de page
+
+   Et le document que rend `probleme()` porte, pour les deux analyses de
+   couplage, deux champs de plus — un outil qui ne les met pas voit les deux
+   onglets le dire plutôt que d'afficher une page vide :
+
+     voisinage  [{type,start,end,width,layer,net,copper_thickness}]
+                le cuivre qui passe à portée de la sélection, au même format
+                que la géométrie. L'AGRESSEUR N'EST JAMAIS DANS LA SÉLECTION,
+                et l'autre moitié d'une paire différentielle non plus. Un
+                tronçon dont le net est une MASSE DE RÉFÉRENCE y devient une
+                piste de garde — dans la section, à zéro volt, sans port
+     paires     [[netP, netN], ...]   les paires déclarées par l'outil, quand
+                il en tient. À défaut, le serveur lit les suffixes
 
    Et pour l'analyse « Chute DC », deux méthodes FACULTATIVES — un outil qui
    ne les déclare pas voit l'onglet dire pourquoi il ne calcule pas :
@@ -820,6 +849,8 @@ function simDCCuivrePris(res){
   return h;
 }
 
+
+
 /* ===========================================================================
    CE QUI ARRIVE À CHAQUE BORNE
 
@@ -1120,6 +1151,13 @@ let SIM_ETAT=null;                     // réponse de la sonde : {dispo, limites
 const SIM={
   ouvert:false, occupe:false, suivre:false,
   res:null, objets:[], doc:null, err:"", portee:"", notes:[],
+  /* LES LOTS : une sélection éparse, un résultat par morceau. `res`, `objets`,
+     `portee`, `notes`, `couture` et `voisins` ci-dessus ne cessent pas
+     d'exister pour autant — ils REFLÈTENT le lot actif (`lotActif`), et c'est
+     ce qui permet à toute la fiche, aux exports et aux deux canevas de ne rien
+     savoir des lots. Une sélection d'un seul morceau donne un lot, et le
+     panneau se comporte exactement comme avant. Voir « LES LOTS », plus bas. */
+  lots:[], lotActif:0, lotsAttendus:0,
   /* L'analyse DC a son propre etat : elle ne partage ni sa selection, ni son
      document, ni son verrou avec l'impedance. Les melanger ferait qu'un calcul
      de section en cours bloquerait un calcul de chute, et l'inverse. */
@@ -1156,6 +1194,22 @@ const SIM={
      ramenée de force, des pertes fausses d'un facteur trois, et rien à
      l'écran pour le voir avant le calcul. */
   saisie:{f1:1e8, f2:5e9, points:21, fc:1e9, z0:50, cible:50, tolPct:10,
+          /* LE COUPLAGE A SES PROPRES REGLAGES, et aucun ne change le calcul
+             de la ligne seule. `cibleDiff`/`tolDiffPct` colorent le verdict de
+             Z differentielle -- 100 ohms est la cible de l'USB et de
+             l'Ethernet. `tr` est le TEMPS DE MONTEE en picosecondes, et c'est
+             le seul des quatre qui parte au serveur : il decide de la
+             saturation du bruit arriere. Zero veut dire « deduis-le de la
+             bande », ce que le serveur fait par la regle du genou.
+             `swing` convertit un rapport en millivolts, `bruitPct` est le
+             budget qu'on s'accorde. */
+          /* `tr` est en SECONDES et `swing` en VOLTS — comme les fréquences
+             vivent en hertz. `uniteTr` et `uniteV` ne disent que dans quoi on
+             les écrit. Un `tr` à zéro n'est pas un front instantané : c'est
+             « déduis-le de la bande », ce que le serveur fait par la règle du
+             genou. */
+          cibleDiff:100, tolDiffPct:10, tr:0, uniteTr:"ps",
+          swing:3.3, uniteV:"V", bruitPct:5,
           /* TROIS UNITÉS. `unite` écrit f₀ ; `uniteBande1` et `uniteBande2` écrivent
              les deux bouts de la bande S. Elles étaient autrefois confondues,
              puis il y en a eu deux, et maintenant trois pour permettre "10 kHz -> 1 GHz".
@@ -1173,6 +1227,34 @@ const SIM_UNITES=[
 ];
 function simUnite(){
   return SIM_UNITES.find(u=>u.cle===SIM.saisie.unite)||SIM_UNITES[3];
+}
+/* LES DEUX AUTRES GRANDEURS QUI SE SAISISSENT, ET LEURS UNITÉS.
+
+   MÊME RÈGLE QUE POUR LES FRÉQUENCES, ET POUR LA MÊME RAISON : la valeur vit
+   en SECONDES et en VOLTS d'un bout à l'autre — dans l'état, dans le document,
+   jusqu'au solveur —, et l'unité ne dit que dans quoi on l'écrit à l'écran.
+   Écrire 2 dans un champ qui attend des picosecondes en croyant écrire des
+   nanosecondes est une faute qu'on ne voit pas : elle ne produit ni refus ni
+   champ vide, seulement un bruit avant mille fois trop grand. Une liste ne se
+   trompe pas de la même façon.
+
+   Un front se saisit en picosecondes ou en nanosecondes selon la technologie —
+   30 ps pour du SerDes, 5 ns pour du CMOS lent —, et une amplitude en volts ou
+   en millivolts selon qu'on parle de LVCMOS ou de LVDS. */
+const SIM_UNITES_TR=[
+  {cle:"ps", f:1e-12},
+  {cle:"ns", f:1e-9},
+  {cle:"µs", f:1e-6}
+];
+const SIM_UNITES_V=[
+  {cle:"mV", f:1e-3},
+  {cle:"V",  f:1}
+];
+function simUniteTr(){
+  return SIM_UNITES_TR.find(u=>u.cle===SIM.saisie.uniteTr)||SIM_UNITES_TR[0];
+}
+function simUniteV(){
+  return SIM_UNITES_V.find(u=>u.cle===SIM.saisie.uniteV)||SIM_UNITES_V[1];
 }
 /* Les unités de la bande S. LE REPLI SE FAIT EN CASCADE :
    un état d'avant la séparation en trois porte `uniteBande`, on retombe
@@ -1272,7 +1354,12 @@ function simZCouleur(z0,alpha){
    résultat n'est pas effacé pour autant — revenir sur l'onglet le retrouve. */
 function simZActif(){
   const a=simAnalyse();
-  return SIM.ouvert&&!!(a&&a.peint)&&!!SIM.res&&SIM.objets.length>0
+  if(!SIM.ouvert||!(a&&a.peint))return false;
+  /* AVEC DES LOTS, IL SUFFIT QU'UN SEUL SOIT PEIGNABLE. Déplier la fiche d'un
+     lot que le solveur a refusé ne doit pas éteindre les couleurs des trois
+     autres : le reflet est nul, la carte ne l'est pas. */
+  if(SIM.lots.length)return simLotsPeints().length>0;
+  return !!SIM.res&&SIM.objets.length>0
          &&SIM.res.segments.length===SIM.objets.length;
 }
 /* Le tronçon i : son objet, son impédance, sa couleur. Un seul endroit fait
@@ -1363,10 +1450,14 @@ function simTelecharger(texte,nom,type){
    « D+ » et « VCC/3V3 » n'ont rien à faire dans un nom de fichier. */
 function simNomFichier(ext){
   const net=(SIM.res&&SIM.res.net)||(SIM.doc&&SIM.doc.net)||"";
+  /* LE LOT ENTRE DANS LE NOM quand il y en a plusieurs : deux morceaux d'une
+     même ligne portent souvent le même net dans le fichier, et deux
+     enregistrements se seraient écrasés l'un l'autre sans qu'on le voie. */
+  const lot=(SIM.lots.length>1)?"-lot"+(SIM.lotActif+1):"";
   const carte=(SIM.res&&SIM.res.carte)||
               (SIM_ED&&SIM_ED.carte?SIM_ED.carte():"")||"carte";
   const propre=s=>String(s).replace(/[^\w.-]+/g,"_").replace(/^_+|_+$/g,"");
-  return (propre(carte)||"carte")+(net?"-"+propre(net):"")+ext;
+  return (propre(carte)||"carte")+(net?"-"+propre(net):"")+lot+ext;
 }
 
 /* ==========================================================================
@@ -1413,7 +1504,52 @@ function simLargeurTrace(){
   return Math.round(Math.max(420,Math.min(1400,(w||540)-22)));
 }
 
+/* LE REFUS DE CASCADER, ÉCRIT À LA PLACE DE LA COURBE.
+
+   POURQUOI IL PREND LA PLACE ET NE S'AJOUTE PAS À CÔTÉ. La version précédente
+   rendait les paramètres S dans TOUS les cas, assortis d'une note disant
+   qu'ils ne voulaient rien dire sur un net ramifié. C'est le pire des deux :
+   la courbe s'affiche, elle a l'air d'un résultat, on l'exporte en .s2p — et
+   le .s2p, lui, ne porte aucune note. Un chiffre faux qui voyage est pire
+   qu'un chiffre absent.
+
+   ON DIT AUSSI OÙ, quand le serveur le sait. « La liaison se ramifie » est un
+   verdict ; « elle se ramifie en trois points, dont un en 12,40 ; 8,15 » est
+   quelque chose qu'on peut aller regarder. */
+function simCascadeRefusee(res){
+  const d=(res.topologie&&res.topologie.derivations)||[];
+  let h='<div class="simRefus"><p class="simRefusTitre">'+
+        "Paramètres S non calculés</p>"+
+        '<p class="simRefusQuoi">'+simEsc(res.cascade_refusee)+"</p>";
+  if(d.length){
+    const n=Math.min(d.length,4);
+    h+='<p class="simRefusOu">'+(d.length>1?"Points de dérivation":
+       "Point de dérivation")+" : ";
+    const l=[];
+    for(let i=0;i<n;i++)
+      l.push(simNb(d[i].x,3)+" ; "+simNb(d[i].y,3)+
+             " ("+d[i].branches+" branches)");
+    h+=simEsc(l.join(" · "))+(d.length>n?" … et "+(d.length-n)+" autre"+
+       (d.length-n>1?"s":""):"")+"</p>";
+  }
+  /* CE QUI RESTE VALABLE, dit tout de suite. Sans cette phrase le refus se
+     lit comme « le calcul a échoué », alors que l'essentiel de la fiche —
+     l'impédance de chaque tronçon, la carte de chaleur, les sections — est
+     intact et ne dépend d'aucun ordre. */
+  h+='<p class="simRefusReste">Les impédances par tronçon, la carte de '+
+     "chaleur et les sections résolues ci-dessus ne dépendent pas de l'ordre "+
+     "des tronçons : elles restent valables.</p></div>";
+  return h;
+}
+
 function simCourbe(res){
+  /* LE REFUS PASSE AVANT TOUT, y compris avant le test sur `freqs` : le
+     serveur rend l'axe qu'il aurait balayé même quand il ne cascade pas, et
+     sans ce garde-fou la fiche tracerait une courbe plate à 0 dB — la valeur
+     que `simTerme` rend faute de matrice. Une courbe plate à 0 dB se lit
+     comme « aucune perte, aucune réflexion » : exactement le contraire de
+     « je n'ai pas calculé ». */
+  if(res&&res.cascade_refusee)return simCascadeRefusee(res);
   if(!res||!res.freqs||res.freqs.length<2){SIM_REPERE=null;return "";}
   const W=simLargeurTrace(), H=170, mg={g:44,d:10,h:12,b:26};
   let hi=-1e9, lo=1e9;
@@ -1667,7 +1803,9 @@ function simFiche(){
      (dehors
        ? dehors+" section"+(dehors>1?"s":"")+" hors tolérance, "+
          simNb(mmDehors,2)+" mm"
-       : "Toute la sélection est dans la tolérance")+
+       : (SIM.lots.length>1
+            ? "Ce lot est entièrement dans la tolérance"
+            : "Toute la sélection est dans la tolérance"))+
      " <span>"+simNb(L.z0_min,1)+" – "+simNb(L.z0_max,1)+
      " Ω, moyenne pondérée "+simNb(L.z0_moyen,1)+" Ω à "+
      simFreq(res.f_centre)+"</span></p>";
@@ -1675,11 +1813,26 @@ function simFiche(){
   /* L'impédance de RÉFÉRENCE des ports est ici, et pas seulement dans le champ
      de saisie : c'est sur elle que la courbe S est normalisée, et une courbe
      de réflexion ne se lit pas sans savoir contre quoi elle réfléchit. */
+  /* `cumuls_valides` est absent des résultats d'avant le format
+     « cao-sim-em-resultat-5 » : `!==false` les tient pour valables, ce qu'ils
+     étaient — la question ne se posait pas encore. */
+  const cumuls=L.cumuls_valides!==false;
   h+='<div class="simMeta"><span>'+simEsc(SIM.portee||res.net||"—")+"</span>"+
      "<span>"+L.troncons+" tronçon"+(L.troncons>1?"s":"")+"</span>"+
      "<span>"+simNb(L.longueur,2)+" mm</span>"+
-     "<span>"+simRetard(L.retard)+"</span>"+
-     "<span>"+simNb(L.pertes_db,2)+" dB</span>"+
+     /* LE RETARD ET LES PERTES SONT DES CUMULS LE LONG D'UN PARCOURS. Sur
+        une sélection ramifiée ils additionnent des branches parallèles : la
+        somme des longueurs d'un T n'est le trajet de personne. Le chiffre
+        reste affiché — il répond à « combien de cuivre » — mais barré, et
+        avec la raison au survol. Le taire ferait croire à un calcul
+        incomplet ; le laisser nu le ferait lire comme un retard de liaison. */
+     "<span"+(cumuls?"":' class="simDouteux" title="'+
+       simEsc("Somme sur toute la sélection : sur une liaison qui n'est pas "+
+              "une chaîne, ce n'est le trajet d'aucun front.")+'"')+">"+
+     simRetard(L.retard)+"</span>"+
+     "<span"+(cumuls?"":' class="simDouteux" title="'+
+       simEsc("Somme sur toute la sélection, et non le long d'un parcours.")+
+       '"')+">"+simNb(L.pertes_db,2)+" dB</span>"+
      "<span>réf. "+simNb(res.impedance_reference||SIM.saisie.z0,0)+" Ω</span>"+
      "<span>"+simNb(res.duree,2)+" s</span></div>";
 
@@ -2310,7 +2463,11 @@ function simDiscontinuites(res){
         " <span>"+quoi.join(", ")+"</span></p>";
 
   h+='<table class="simTab simTabD"><tr><th>Après</th><th>Type</th>'+
-     "<th>Détail</th><th>Retour</th><th>L</th><th>C</th><th>Phase</th></tr>";
+     /* PLUS DE COLONNE « RETOUR » ICI. Elle répondait à une autre question que
+        celle de ce tableau — qui chiffre ce que la discontinuité COÛTE À LA
+        LIAISON —, et une colonne en marge ne remplace pas une fiche. Voir
+        l'onglet « Current Return Path ». */
+     "<th>Détail</th><th>L</th><th>C</th><th>Phase</th></tr>";
 
   const lignes=[];
   for(const c of coudes)
@@ -2339,7 +2496,7 @@ function simDiscontinuites(res){
                  detail:simEsc((t.nom_depart||"?")+" → "+(t.nom_arrivee||"?"))+
                         '<br><small>'+simEsc(cotes.join(" · "))+"</small>"+moi,
                  m:t.modelise||{}, l:"inductance_nH", ul:" nH", dl:3,
-                 cotes:c, retour:simRetourCellule(t),
+                 cotes:c,
                  /* LA CAPACITÉ AFFICHÉE EST CELLE QUI EST CASCADÉE : celle du
                     via PLUS celle de ses moignons. Montrer la seule capacité
                     du via à côté d'une phase qui compte les deux ferait deux
@@ -2361,7 +2518,6 @@ function simDiscontinuites(res){
     h+="<tr><td>"+(hors?"—":"tronçon "+L.rang)+"</td>"+
        "<td>"+L.type+"</td>"+
        "<td>"+L.detail+"</td>"+
-       "<td>"+(L.retour||"—")+"</td>"+
        "<td>"+simNb(L.m[L.l],L.dl)+L.ul+"</td>"+
        "<td>"+(hors?"—":simNb(L.c==null?L.m.capacite_fF:L.c,2)+" fF")+"</td>"+
        '<td class="'+(faible&&!hors?"z0ok":"")+'">'+
@@ -2373,20 +2529,38 @@ function simDiscontinuites(res){
      LAQUELLE l'est : depuis que la hauteur se lit dans l'empilage, il n'y a
      plus qu'un drapeau à lever pour le perçage et la pastille, et il faut
      qu'on sache que la hauteur, elle, est exacte. */
+  /* TROIS PROVENANCES, ET LA PHRASE SUIT. « La page n'envoie pas encore ces
+     cotes » était vrai tant qu'il n'y avait que « page » et « repli ». Il ne
+     l'est plus : la visionneuse envoie désormais la pastille que le lecteur
+     IPC-2581 a fabriquée faute de padstack — « perçage + 0,3 mm » — en la
+     déclarant devinée. Le doute est le même, sa cause ne l'est pas, et ce
+     qu'il y a à faire non plus : un repli se corrige en enrichissant la page,
+     une pastille devinée se corrige en regardant pourquoi le fichier ne
+     déclare pas son padstack. */
   const supposees=vias.filter(t=>t.cotes_supposees);
   if(supposees.length){
     const c=supposees[0].cotes||{};
-    const manque=[];
-    if(simCoteSource(c,"percage")!=="page")
-      manque.push("perçage "+simNb(c.percage_mm,2)+" mm");
-    if(simCoteSource(c,"pastille")!=="page")
-      manque.push("pastille "+simNb(c.pastille_mm,2)+" mm");
+    const repli=[], devine=[];
+    for(const [cle,nom,val] of [["percage","perçage",c.percage_mm],
+                                ["pastille","pastille",c.pastille_mm]]){
+      const s=simCoteSource(c,cle);
+      if(s==="page")continue;
+      (s==="supposee"?devine:repli).push(nom+" "+simNb(val,2)+" mm");
+    }
     h+='<p class="simNote">· '+
        (supposees.length>1?supposees.length+" vias sont chiffrés":
-                           "Le via est chiffré")+
-       " avec des valeurs par défaut : "+simEsc(manque.join(", "))+
-       ". La page n'envoie pas encore ces cotes. La hauteur, elle, est lue "+
-       "dans l'empilage ("+simNb((supposees[0].cotes||{}).hauteur_mm,3)+
+                           "Le via est chiffré")+" avec ";
+    const bouts=[];
+    if(repli.length)
+      bouts.push("des valeurs par défaut du solveur ("+
+                 simEsc(repli.join(", "))+"), que la page n'envoie pas encore");
+    if(devine.length)
+      bouts.push("des cotes que le lecteur du fichier a devinées ("+
+                 simEsc(devine.join(", "))+") faute de padstack déclaré — "+
+                 "ce ne sont pas des cotes du fichier");
+    h+=bouts.join(" et ")+
+       ". La hauteur, elle, est lue dans l'empilage ("+
+       simNb((supposees[0].cotes||{}).hauteur_mm,3)+
        " mm) et n'est pas supposée.</p>";
   }
 
@@ -2401,7 +2575,17 @@ function simDiscontinuites(res){
        "et qui en dépendrait : la capacité cascadée, la phase, et la part "+
        "que ce via prend dans la courbe S.</p>";
 
-  h+=simRetourNotes(vias);
+  /* LES NOTES DU CHEMIN DE RETOUR ONT DÉMÉNAGÉ. Elles répondaient ici à une
+     question que cette fiche ne pose pas — « par où revient le courant » — au
+     bas d'un tableau qui chiffre ce que la discontinuité coûte à la liaison.
+     Elles sont désormais le SUJET de l'onglet « Current Return Path », où
+     elles se lisent avec les vias de masse qu'elles commentent. */
+  /* CE QUI RESTE ICI : les notes qui parlent du VIA — le moignon et
+     l'antipad. Ce sont deux cotes, elles chargent la liaison, elles entrent
+     dans la cascade, et ce sont elles qui expliquent la capacité et la phase
+     du tableau ci-dessus. Les emporter aurait laissé un chiffre sans sa
+     cause. Voir `simViaNotes`. */
+  h+=simViaNotes(vias);
 
   /* CE QUE LE MODÈLE DE VIA EST, ET CE QU'IL N'EST PAS. Un π L-C localisé
      décrit un via court devant la longueur d'onde. Il compte désormais
@@ -2508,7 +2692,10 @@ function simRetourCellule(t){
    Les coordonnées sont en MILLIMÈTRES : c'est l'unité du document envoyé, et
    chaque page la ramène à la sienne. */
 function simCheveluRes(){
-  if(typeof SIM==="undefined"||!SIM.ouvert||SIM.analyse!=="impedance")return [];
+  /* LE CHEVELU APPARTIENT DÉSORMAIS À « CURRENT RETURN PATH ». Il vivait sous
+     l'onglet « Impédance », où il donnait à voir un défaut dont la fiche ne
+     parlait pas. */
+  if(typeof SIM==="undefined"||!SIM.ouvert||SIM.analyse!=="retour")return [];
   const r=SIM.res;
   if(!r)return [];
   /* LES DEUX LISTES, ET C'EST TOUT L'OBJET DU LOT. Les `transitions` sont les
@@ -2583,9 +2770,6 @@ function simRetourNotes(vias){
   const doutes=vias.filter(t=>(t.retour||{}).plan_change
                               &&!(t.retour||{}).reference_change
                               &&(t.retour||{}).nets_differents==null);
-  const moignons=vias.filter(t=>((t.moignons||{}).depart)
-                                ||((t.moignons||{}).arrivee));
-  const flousM=vias.filter(t=>(t.moignons||{}).connu===false);
   const nus=vias.filter(t=>(t.retour||{}).source==="self"
                            &&!(t.retour||{}).reference_change);
   const muets=vias.filter(t=>(t.retour||{}).source==="absent");
@@ -2672,22 +2856,6 @@ function simRetourNotes(vias){
          "à celle de la ligne pour savoir si la traversée compte.</p>";
     }
   }
-  if(moignons.length){
-    const f=(moignons[0].moignons.arrivee||moignons[0].moignons.depart);
-    h+='<p class="simNote">· '+
-       (moignons.length>1?moignons.length+" vias laissent":"Le via laisse")+
-       " un <b>moignon</b> — la part du perçage que le signal n'emprunte pas. "+
-       "Il pend en circuit ouvert et charge la liaison : "+
-       simNb(f.longueur_mm,3)+" mm valent "+simNb(f.capacite_fF,0)+
-       " fF ici. À sa résonance quart d'onde ("+
-       simNb((f.resonance_hz||0)/1e9,1)+" GHz) il la <b>court-circuite</b>. "+
-       "Un via enterré ou un contre-perçage l'enlèvent.</p>";
-  }
-  if(flousM.length)
-    h+='<p class="simNote">· La portée percée des vias n\'est pas envoyée par '+
-       "cette page : on ne peut pas savoir s'ils laissent un moignon. Un via "+
-       "traversant utilisé jusqu'à une couche interne et un via enterré bien "+
-       "ajusté ont ici exactement la même apparence.</p>";
   if(nus.length)
     h+='<p class="simNote">· Aucun via de masse ne referme la boucle à '+
        (nus.length>1?nus.length+" vias":"ce via")+" : le chiffre affiché est "+
@@ -2725,6 +2893,45 @@ function simRetourNotes(vias){
        "vias ne divisent pas l'inductance par trois. Au tronçon "+
        partages[0].troncon+" : "+simEsc(parts.join(" · "))+".</p>";
   }
+
+  return h;
+}
+/* ==========================================================================
+   LES NOTES QUI PARLENT DU VIA LUI-MÊME, ET NON DE SON RETOUR
+   --------------------------------------------------------------------------
+   POURQUOI DEUX LISTES. `simRetourNotes` les portait toutes, et elles
+   seraient parties ensemble quand le chemin de retour a pris son propre
+   onglet. Or elles ne parlent pas de la même chose : le MOIGNON est la part
+   du perçage que le signal n'emprunte pas, et l'ANTIPAD la fenêtre découpée
+   dans les plans. Ce sont deux cotes du via ; elles chargent la liaison,
+   elles entrent dans la cascade, et ce sont elles qui expliquent la capacité
+   et la phase du tableau des discontinuités.
+
+   Les emporter sous « Current Return Path » aurait laissé la fiche
+   d'impédance montrer une capacité sans dire d'où elle vient.
+   ========================================================================== */
+function simViaNotes(vias){
+  if(!vias.length)return "";
+  let h="";
+  const moignons=vias.filter(t=>((t.moignons||{}).depart)
+                                ||((t.moignons||{}).arrivee));
+  const flousM=vias.filter(t=>(t.moignons||{}).connu===false);
+  if(moignons.length){
+    const f=(moignons[0].moignons.arrivee||moignons[0].moignons.depart);
+    h+='<p class="simNote">· '+
+       (moignons.length>1?moignons.length+" vias laissent":"Le via laisse")+
+       " un <b>moignon</b> — la part du perçage que le signal n'emprunte pas. "+
+       "Il pend en circuit ouvert et charge la liaison : "+
+       simNb(f.longueur_mm,3)+" mm valent "+simNb(f.capacite_fF,0)+
+       " fF ici. À sa résonance quart d'onde ("+
+       simNb((f.resonance_hz||0)/1e9,1)+" GHz) il la <b>court-circuite</b>. "+
+       "Un via enterré ou un contre-perçage l'enlèvent.</p>";
+  }
+  if(flousM.length)
+    h+='<p class="simNote">· La portée percée des vias n\'est pas envoyée par '+
+       "cette page : on ne peut pas savoir s'ils laissent un moignon. Un via "+
+       "traversant utilisé jusqu'à une couche interne et un via enterré bien "+
+       "ajusté ont ici exactement la même apparence.</p>";
 
   /* LA FOURCHETTE D'ANTIPAD, quand les plans traversés n'ont pas la même
      règle. Le calcul prend le plus serré ; le taire donnerait un chiffre exact
@@ -2867,11 +3074,15 @@ function simChamp(id,titre,large){
    lisent pas dans la même unité dès qu'une carte travaille à 250 MHz sur une
    bande qui monte au gigahertz. `quoi` ne change que l'infobulle — le reste est
    identique, et c'est bien pour cela qu'une seule fonction les pose. */
-function simChampUnite(id,quoi){
+/* `liste` par défaut est celle des fréquences : les trois champs qui
+   l'utilisaient n'ont pas changé d'une ligne. Le temps de montée et
+   l'amplitude passent la leur, et la mécanique — convertir, jamais
+   réinterpréter — est la MÊME pour les trois, écrite une fois. */
+function simChampUnite(id,quoi,liste){
   let h='<select class="simU simUSel" id="'+id+'" title="Unité de '+quoi+
         ". En changer CONVERTIT ce qui est écrit, cela ne le réinterprète "+
         'pas.">';
-  for(const u of SIM_UNITES)
+  for(const u of (liste||SIM_UNITES))
     h+='<option value="'+u.cle+'">'+u.cle+"</option>";
   return h+"</select>";
 }
@@ -2897,11 +3108,782 @@ function simChampUnite(id,quoi){
    promettent ce qui n'existe pas. Un onglet qui ne fait rien coûte plus cher
    qu'une phrase honnête.
    ========================================================================== */
+/* ==========================================================================
+   CURRENT RETURN PATH — LE CHEMIN DE RETOUR DU COURANT, POUR LUI-MÊME
+   --------------------------------------------------------------------------
+   POURQUOI IL SORT DE L'IMPÉDANCE. Le chemin de retour vivait en pièces
+   détachées sous l'onglet « Impédance » : une colonne du tableau des
+   discontinuités, quelques notes en bas de fiche, et un chevelu sur la carte.
+   Trois endroits, aucun qui réponde à la question qu'on se pose vraiment —
+   « par où revient le courant de ce via, et est-ce que ça se ferme ». On lisait
+   une impédance et on trouvait, en marge, de quoi s'inquiéter d'autre chose.
+
+   ET CE N'EST PAS LA MÊME QUESTION. L'impédance caractéristique est une
+   propriété de la SECTION DROITE : la largeur, la hauteur au plan, le
+   stratifié. Le chemin de retour est une propriété de la LIAISON VERTICALE :
+   quels vias de masse entourent le via de signal, à quelle distance, et si le
+   plan de référence est le même des deux côtés. Une piste parfaitement à 50 Ω
+   peut avoir un retour catastrophique, et c'est précisément le cas qu'on ne
+   voyait pas.
+
+   LE CALCUL EST LE MÊME, et c'est voulu. Le serveur rend les deux dans une
+   seule réponse ; changer d'onglet ne relance rien. Ce qui change est ce qu'on
+   montre — et le fait que la carte peigne le chevelu ici, et la carte de
+   chaleur des Z0 là-bas.
+   ========================================================================== */
+function simCorpsRetour(){
+  return ''+
+  /* LA MASSE DE RÉFÉRENCE EN TÊTE, et plus qu'ailleurs : ici elle ne déplace
+     pas un résultat de quelques ohms, elle décide QUELS VIAS SONT DES VIAS DE
+     RETOUR. Un net oublié dans cette liste, et le chevelu est vide. */
+  '<div class="pnl-bar simRefBar" id="simRefBar"></div>'+
+  '<div class="pnl-bar simBarF">'+
+    '<span class="pnl-lbl">Fréquence</span>'+
+    simChamp("simFc","Fréquence de travail : elle ne change pas l’inductance "+
+                     "de boucle, mais elle décide de ce qui compte comme "+
+                     "long — et de l’impédance de cavité")+
+    simChampUnite("simFUnite","la fréquence de travail")+
+  '</div>'+
+  /* NI CIBLE NI TOLÉRANCE NI BANDE S : elles ne jugent que l'impédance. Les
+     poser ici donnerait à croire qu'elles pèsent sur le retour. `simSaisie`
+     retombe sur la valeur précédente pour tout champ absent, si bien que
+     passer d'un onglet à l'autre ne perd rien. */
+  '<div class="pnl-bar simFAvertBar"><span id="simFAvert"></span></div>'+
+  '<div class="pnl-bar">'+
+    '<button class="tb mini on" id="simGo" title="Calculer la sélection">▶ Calculer</button>'+
+    '<button class="tb mini" id="simJson" title="Le problème lui-même : il se donne au solveur en ligne de commande">.json</button>'+
+    '<label class="simSuivre" title="Recalculer à chaque changement de sélection"><input type="checkbox" id="simAuto"> suivre</label>'+
+  '</div>';
+}
+
+function simBrancherRetour(){
+  simSaisieEcrire();
+  simRefEcrire();
+  const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
+  pose("simGo","onclick",simGo);
+  pose("simJson","onclick",simExportJson);
+  const auto=simEl("simAuto");
+  if(auto){auto.checked=SIM.suivre;
+           auto.onchange=function(){SIM.suivre=this.checked;};}
+  /* La fréquence change le calcul : le résultat affiché ne lui correspond
+     plus, et le dire vaut mieux que de laisser croire. */
+  pose("simFc","oninput",function(){
+    simSaisie();
+    simFAvertEcrire();
+    if(SIM.res&&!SIM.occupe){
+      SIM.res=null; SIM.objets=[];
+      SIM.err="La fréquence a changé : relancez le calcul.";
+      simRendre(); simRepeindre();
+    }
+  });
+  pose("simFUnite","onchange",function(){simUniteChanger(this.value,"fc");});
+}
+
+function simRendreRetour(){
+  if(SIM.occupe)
+    return '<p class="simEtat">Le solveur travaille…<br>'+
+      "<small>Les vias de la sélection, et les vias de masse qui referment "+
+      "leur boucle.</small></p>";
+  if(SIM.err)return '<p class="simErr">'+simEsc(SIM.err)+"</p>";
+  if(SIM.res)return simFicheRetour();
+  return '<p class="simEtat">Sélectionnez une piste, puis calculez.<br>'+
+    "<small>Cette analyse ne montre QUE le chemin de retour : les vias de la "+
+    "sélection, les vias de masse qui referment leur boucle, et l’inductance "+
+    "qui en résulte. Pour l’impédance de la piste elle-même, voir l’onglet "+
+    "<b>Impédance</b>.</small></p>";
+}
+
+/* La fiche : un via par ligne, et ce que son retour vaut. */
+function simFicheRetour(){
+  const res=SIM.res, d=res.discontinuites||{};
+  const seuls=d.vias_hors_chaine||[];
+  const vias=(d.transitions||[]).concat(seuls);
+
+  /* AUCUN VIA EST UNE RÉPONSE, pas une page vide. Une liaison qui reste sur
+     une seule couche n’a pas de courant de retour vertical à chiffrer — et le
+     dire vaut mieux que de laisser croire à un calcul qui n’a pas abouti. */
+  if(!vias.length){
+    let h='<p class="simVerdict dedans">Aucun via dans la sélection'+
+          ' <span>'+simEsc(SIM.portee||res.net||"—")+"</span></p>";
+    h+='<p class="simNote">· La sélection ne change pas de couche : le '+
+       "courant revient par le plan de référence, sous la piste, et il n’y a "+
+       "pas de liaison verticale à chiffrer. Le chemin de retour ne devient "+
+       "une question qu’au moment où le signal traverse.</p>";
+    return h;
+  }
+
+  /* LE VERDICT COMPTE CE QUI SE FERME, et rien d’autre. « 4 vias » ne dit pas
+     si le courant revient ; « 3 sur 4 se referment » le dit. « boucle » dans
+     la source veut dire qu’un retour la referme — « self », « self+cavite »
+     veulent dire que non, et le chiffre est alors un PLANCHER. */
+  const ferme=t=>String(((t.modelise||{}).inductance_source)||"")
+                 .indexOf("boucle")>=0;
+  const ouverts=vias.filter(t=>!ferme(t));
+  const graves=vias.filter(t=>(t.retour||{}).reference_change
+                              &&!(t.retour||{}).raccorde);
+  let h='<p class="simVerdict '+
+    (ouverts.length||graves.length?"dehors":"dedans")+'">'+
+    (ouverts.length
+      ? ouverts.length+" via"+(ouverts.length>1?"s":"")+" sur "+vias.length+
+        " sans retour identifié"
+      : (vias.length>1
+          ? "Les "+vias.length+" vias ont un retour identifié"
+          : "Le via a un retour identifié"))+
+    ' <span>'+simEsc(SIM.portee||res.net||"—")+" · "+
+    simFreq(res.f_centre)+"</span></p>";
+
+  /* LA MASSE RETENUE, écrite ici et pas seulement dans la barre de commande :
+     c’est elle qui décide quels perçages comptent comme retour, et une fiche
+     détachée de son panneau ne se lit pas sans elle. */
+  h+='<div class="simMeta"><span>'+vias.length+" via"+
+     (vias.length>1?"s":"")+"</span>"+
+     "<span>masse : "+simEsc((res.reference_nets||[]).join(", ")||
+                             "non déclarée")+"</span>"+
+     (seuls.length?"<span>"+seuls.length+" hors parcours</span>":"")+
+     "<span>"+simNb(res.duree,2)+" s</span></div>";
+
+  h+='<table class="simTab simTabD"><tr><th>Via</th><th>Position</th>'+
+     "<th>Couches</th><th>Retour</th><th>L boucle</th>"+
+     "<th>Vias de masse</th></tr>";
+
+  let rang=0;
+  for(const t of vias){
+    const r=t.retour||{}, m=t.modelise||{};
+    const hors=t.cascade===false;
+    rang++;
+    /* LES VIAS DE MASSE, UN PAR UN : distance, part du courant, et lesquels
+       sont écartés. C’est la seule colonne qui réponde à « que faire » —
+       rapprocher, ou en ajouter un. */
+    const gnd=(r.vias||[]).slice(0,4).map(function(v){
+      const cls=v.retenu?(v.part>=0.30?"z0ok":"simFaible"):"z0ko";
+      return '<span class="'+cls+'">'+simNb(v.distance_mm,2)+" mm"+
+             (v.retenu?" · "+Math.round((v.part||0)*100)+" %":" · écarté")+
+             "</span>";
+    }).join("<br>");
+    h+="<tr><td>"+rang+(hors?" <small>hors parcours</small>":"")+"</td>"+
+       "<td>"+(r.x==null?"—":simNb(r.x,3)+" ; "+simNb(r.y,3))+"</td>"+
+       "<td>"+simEsc((t.nom_depart||"?")+" → "+(t.nom_arrivee||"?"))+"</td>"+
+       "<td>"+simRetourCellule(t)+"</td>"+
+       "<td>"+(m.inductance_nH!=null
+                ? simNb(m.inductance_nH,3)+"<br><small>"+
+                  simEsc(m.inductance_source||"")+"</small>"
+                : "—")+"</td>"+
+       "<td>"+(gnd||'<span class="simFaible">aucun</span>')+
+       ((r.vias||[]).length>4
+         ? "<br><small>… et "+((r.vias||[]).length-4)+" autres</small>"
+         : "")+"</td></tr>";
+  }
+  h+="</table>";
+
+  /* LES MÊMES NOTES QU’AVANT, mais à leur place : ici elles sont le sujet, là
+     elles étaient en marge d’une fiche qui parlait d’autre chose. */
+  h+=simRetourNotes(vias);
+  return h;
+}
+
+/* ==========================================================================
+   IMPÉDANCE DIFFÉRENTIELLE ET DIAPHONIE — DEUX ONGLETS, UNE SEULE SECTION
+   --------------------------------------------------------------------------
+   POURQUOI ILS ARRIVENT ENSEMBLE. Ce sont la MÊME section à deux conducteurs,
+   résolue une seule fois par `ligne_mom.solve_multiline` : la matrice de
+   capacité de Maxwell [C], puis [L] = μ₀ε₀[C₀]⁻¹. Les modes pair et impair en
+   sortent — donc Z différentielle et Z commune —, et les coefficients de
+   couplage aussi — donc NEXT et FEXT. Un seul chantier côté solveur, deux
+   questions côté panneau, et il fallait qu'elles soient deux : « ma paire
+   fait-elle 100 Ω ? » et « qu'est-ce que ce bus prend à sa voisine ? » ne se
+   posent pas au même moment et ne se lisent pas dans les mêmes colonnes.
+
+   QUI EST L'AGRESSEUR. Il n'est jamais dans la sélection — c'est la définition
+   même. Les deux outils envoient donc, à côté de la géométrie sélectionnée, le
+   `voisinage` : les tronçons de piste qui passent à portée. Le serveur les
+   apparie (`simulation_em._scenes_paralleles`) : même couche, parallèles à
+   quinze degrés près, un recouvrement réel, et un écart de cuivre à cuivre qui
+   reste un écart. Un outil qui n'envoie pas de voisinage voit les deux onglets
+   le dire, plutôt que d'afficher une page vide qui ressemble à « aucun
+   problème ».
+
+   CE QUE CES DEUX ONGLETS NE RELANCENT PAS : le calcul. C'est la même réponse
+   du serveur que celle de l'onglet « Impédance » — changer d'onglet ne coûte
+   rien, et les trois fiches parlent nécessairement du même cuivre.
+
+   LE TEMPS DE MONTÉE N'EST PAS UNE FRÉQUENCE. Il ne change ni [C] ni [L] :
+   il décide de la SATURATION du bruit arrière et de l'amplitude du bruit
+   avant. C'est pour cela qu'il a son champ à lui, sous l'onglet qui s'en sert,
+   et qu'il n'apparaît pas sous « Impédance » où il ne voudrait rien dire.
+   ========================================================================== */
+
+function simCouplage(){
+  return (SIM.res&&SIM.res.couplage)||null;
+}
+/* Les longements chiffrés, les plus bruyants d'abord — c'est le serveur qui
+   les a triés, et il ne faut pas deux ordres pour une même liste. */
+function simCouplagePaires(){
+  const c=simCouplage();
+  return (c&&c.paires)||[];
+}
+/* Ce qui manque, et pourquoi. Trois silences différents, trois phrases : le
+   serveur est d'une version qui ne sait pas coupler, l'outil n'envoie pas de
+   voisinage, ou il n'y a réellement rien qui longe. Les confondre ferait
+   chercher un défaut de dessin là où il y a un défaut de branchement. */
+function simCouplageVide(quoi){
+  const c=simCouplage();
+  if(!c)
+    return '<p class="simEtat">Ce serveur ne rend pas de couplage.<br>'+
+      "<small>La réponse ne porte pas de section « couplage » : le solveur "+
+      "est d'une version antérieure à celle qui résout N conducteurs. "+
+      "Relancez <code>python serveur.py</code> depuis ce dépôt.</small></p>";
+  if(!c.voisinage)
+    return '<p class="simEtat">Aucun cuivre voisin n’a été envoyé.<br>'+
+      "<small>Le couplage se calcule entre la sélection et ce qui la longe ; "+
+      "l’agresseur n’est jamais dans la sélection. Cet outil n’a rien joint "+
+      "au problème — ou il n’y a aucune autre piste à portée sur la "+
+      "couche.</small></p>";
+  return '<p class="simVerdict dedans">Rien ne longe la sélection'+
+    ' <span>'+simEsc(SIM.portee||"—")+"</span></p>"+
+    '<p class="simNote">· '+c.voisinage+" tronçon(s) voisin(s) ont été "+
+    "examinés, et aucun ne longe la sélection assez pour "+quoi+" : ni sur la "+
+    "même couche, ni parallèle, ni assez près. C’est une réponse, pas une "+
+    "absence de calcul.</p>";
+}
+
+/* Les deux nets d'un longement, dans l'ordre victime → agresseur. */
+function simCoupleNoms(f){
+  return simEsc(f.net||"?")+" ↔ "+simEsc(f.net_voisin||"?");
+}
+/* La colonne « géométrie » : ce sur quoi le chiffre a été obtenu. Sans elle,
+   deux lignes du tableau qui diffèrent de vingt ohms n'ont pas d'explication
+   visible — et l'explication est toujours là. */
+function simCoupleGeom(f){
+  return simNb(f.longueur,2)+" mm<br><small>"+
+    simNb(f.largeur,3)+" / "+simNb(f.largeur_voisine,3)+" mm à "+
+    simNb(f.ecart,3)+" mm"+
+    (Math.abs(f.ecart-f.ecart_min)>0.005
+      ? " <i>(mini "+simNb(f.ecart_min,3)+")</i>":"")+
+    "</small>";
+}
+/* LA SECTION RÉSOLUE, ÉCRITE EN CLAIR — et c'est la moitié de la réponse.
+
+   « 6,6 % de NEXT » ne se comprend pas sans savoir SUR QUOI il a été obtenu :
+   combien de conducteurs étaient dans la matrice, à quelles positions, si une
+   piste de garde y était, et à quelle distance le plan coplanaire bordait le
+   groupe. C'est exactement la même raison qui a fait écrire `simSection()`
+   sous l'onglet Impédance — un chiffre sans ses entrées n'est pas vérifiable.
+
+   ON MONTRE LA COUPE, à l'échelle des positions : la sélection au centre, les
+   voisines de part et d'autre, les gardes marquées, et les deux écarts au
+   plan. Une piste et ses deux voisines forment UNE section à trois
+   conducteurs, et il faut le voir pour comprendre pourquoi le couplage n'est
+   pas celui de deux paires calculées séparément. */
+function simCoupleSection(sec){
+  if(!sec)return "";
+  let h='<p class="simSection"><b>SECTION RÉSOLUE</b> ';
+  if(sec.raison)
+    return h+'<i class="simFaible">'+simEsc(sec.raison)+"</i></p>";
+  const bouts=[];
+  if(sec.ecart_g>0)bouts.push("plan à "+simNb(sec.ecart_g,3)+" mm");
+  else bouts.push('<i class="simFaible">pas de plan à portée</i>');
+  /* RANGES COMME ON LES VOIT, de gauche a droite. Le serveur les rend dans
+     l'ordre ou la page les a poses -- la selection d'abord, puis les voisines
+     par distance croissante -- et cet ordre-la ne se lit pas comme une coupe.
+     C'est le signe de x qui fait la gauche et la droite. */
+  const ordre=(sec.conducteurs||[]).slice().sort((a,b)=>a.x-b.x);
+  const dedans=ordre.map(function(d){
+    return (d.selection?"<b>":"")+simEsc(d.net)+(d.selection?"</b>":"")+
+           (d.garde?' <i class="z0ok">garde</i>':"")+
+           " <i>"+simNb(d.largeur,3)+" mm @ "+
+           (d.x>0?"+":"")+simNb(d.x,3)+"</i>";
+  });
+  if(sec.ecart_d>0)bouts.push("plan à "+simNb(sec.ecart_d,3)+" mm");
+  else bouts.push('<i class="simFaible">pas de plan à portée</i>');
+  h+=[bouts[0]].concat(dedans,[bouts[1]]).join(" │ ");
+  h+=" · "+simTopoNom({topo:sec.topo})+", h = "+simNb(sec.h,3)+" mm, ε<sub>r</sub> "+
+     simNb(sec.er,2);
+  h+="</p>";
+  /* CE QUI N'A PAS PU ENTRER, et pourquoi. Une voisine qui disparaît sans un
+     mot se lit comme un couplage nul. */
+  for(const e of (sec.ecartes||[]))
+    h+='<p class="simNote">· <b>'+simEsc(e.net)+"</b> n’entre pas dans la "+
+       "section : "+simEsc(e.raison)+". Son couplage n’est pas chiffré.</p>";
+  /* LE PLAN ABSENT EST UNE HYPOTHÈSE, pas un fait : la page sonde jusqu'à
+     trois millimètres, et au-delà elle ne rend rien. Sans plan, le couplage
+     rendu est un MAJORANT. */
+  if(!(sec.ecart_g>0)&&!(sec.ecart_d>0))
+    h+='<p class="simNote">· Aucun plan de masse coplanaire n’a été trouvé à '+
+       "portée du groupe : le couplage est calculé sans lui, donc "+
+       "<b>majoré</b>. Du cuivre de masse à côté le réduit — et une piste de "+
+       "garde <i>entre</i> les deux le divise.</p>";
+  return h;
+}
+/* Toutes les sections d'un résultat, celles qui portent une ligne du tableau
+   d'abord. Une seule sélection ne donne qu'une section dans le cas ordinaire —
+   il y en a plusieurs quand la sélection court sur plusieurs couches. */
+function simCoupleSections(){
+  const c=simCouplage();
+  return ((c&&c.sections)||[]).map(simCoupleSection).join("");
+}
+
+/* Le pied de fiche, commun aux deux onglets : ce que le calcul suppose. Il
+   vient du serveur et non de la page — c'est lui qui sait ce qu'il a résolu. */
+function simCoupleHypotheses(){
+  const c=simCouplage();
+  let h="";
+  for(const t of ((c&&c.hypotheses)||[]))
+    h+='<p class="simNote">· '+simEsc(t)+"</p>";
+  return h;
+}
+
+/* ==========================================================================
+   L'ONGLET « Z DIFFÉRENTIELLE »
+   ========================================================================== */
+function simCorpsDiff(){
+  return ''+
+  '<div class="pnl-bar simRefBar" id="simRefBar"></div>'+
+  '<div class="pnl-bar">'+
+    '<span class="pnl-lbl">Cible Z<sub>diff</sub></span>'+
+    simChamp("simZDiffCible","Impédance différentielle visée. 100 Ω pour USB "+
+                             "et Ethernet, 90 Ω pour USB 2.0, 100 ou 85 Ω "+
+                             "selon les normes PCIe.")+
+    '<span class="simU">Ω</span>'+
+    '<span class="pnl-lbl">Tolérance</span>'+
+    simChamp("simZDiffTol","En pourcentage de la cible. 10 % est l'usage.")+
+    '<span class="simU">%</span>'+
+  '</div>'+
+  '<div class="pnl-bar simBarF">'+
+    '<span class="pnl-lbl">Fréquence</span>'+
+    simChamp("simFc","Fréquence de travail. La section est quasi-statique : "+
+                     "elle sert à situer le résultat, pas à le calculer.")+
+    simChampUnite("simFUnite","la fréquence de travail")+
+  '</div>'+
+  '<div class="pnl-bar simFAvertBar"><span id="simFAvert"></span></div>'+
+  '<div class="pnl-bar">'+
+    '<button class="tb mini on" id="simGo" title="Calculer la sélection">▶ Calculer</button>'+
+    '<button class="tb mini" id="simJson" title="Le problème lui-même : il se donne au solveur en ligne de commande">.json</button>'+
+    '<label class="simSuivre" title="Recalculer à chaque changement de sélection"><input type="checkbox" id="simAuto"> suivre</label>'+
+  '</div>';
+}
+
+function simBrancherDiff(){
+  simSaisieEcrire();
+  simRefEcrire();
+  const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
+  pose("simGo","onclick",simGo);
+  pose("simJson","onclick",simExportJson);
+  const auto=simEl("simAuto");
+  if(auto){auto.checked=SIM.suivre;
+           auto.onchange=function(){SIM.suivre=this.checked;};}
+  /* LA CIBLE NE CHANGE PAS LE CALCUL : elle ne fait que colorer le verdict.
+     On réécrit donc la fiche sans rien relancer — c'est ce que fait déjà la
+     cible d'impédance sous l'autre onglet. */
+  for(const id of ["simZDiffCible","simZDiffTol"])
+    pose(id,"oninput",function(){simSaisie();simRendre();});
+  pose("simFc","oninput",function(){
+    simSaisie();
+    simFAvertEcrire();
+    if(SIM.res&&!SIM.occupe){
+      SIM.res=null; SIM.objets=[];
+      SIM.err="La fréquence a changé : relancez le calcul.";
+      simRendre(); simRepeindre();
+    }
+  });
+  pose("simFUnite","onchange",function(){simUniteChanger(this.value,"fc");});
+}
+
+function simRendreDiff(){
+  if(SIM.occupe)
+    return '<p class="simEtat">Le solveur travaille…<br>'+
+      "<small>Une section à deux conducteurs par couple de pistes qui se "+
+      "longent : la matrice de Maxwell, puis les modes pair et impair.</small></p>";
+  if(SIM.err)return '<p class="simErr">'+simEsc(SIM.err)+"</p>";
+  if(!SIM.res)
+    return '<p class="simEtat">Sélectionnez UNE des deux pistes de la paire, '+
+      "puis calculez.<br><small>L’autre n’a pas à être sélectionnée : elle "+
+      "est trouvée dans le voisinage, comme le serait n’importe quel cuivre "+
+      "qui longe. Z différentielle et Z commune sortent de la même section à "+
+      "deux conducteurs — la sélectionner en entier ne changerait "+
+      "rien.</small></p>";
+  return simFicheDiff();
+}
+
+function simFicheDiff(){
+  const paires=simCouplagePaires();
+  if(!paires.length)return simCouplageVide("qu’une section couplée ait un sens");
+
+  /* LES PAIRES NOMMÉES D'ABORD. Deux pistes quelconques qui se longent ONT une
+     impédance différentielle — c'est une propriété de la géométrie, pas une
+     intention —, mais personne ne s'en sert. Celles qui portent les suffixes
+     d'une paire, ou que l'éditeur a déclarées, sont la question ; les autres
+     sont un renseignement, et elles se rangent après. */
+  const declarees=paires.filter(f=>f.differentielle);
+  const autres=paires.filter(f=>!f.differentielle);
+  const cible=SIM.saisie.cibleDiff, tol=cible*SIM.saisie.tolDiffPct/100;
+  const juge=f=>(f.z_diff==null)?"":
+    (Math.abs(f.z_diff-cible)<=tol?"z0ok":"z0ko");
+
+  const dehors=declarees.filter(f=>juge(f)==="z0ko").length;
+  let h='<p class="simVerdict '+(declarees.length&&!dehors?"dedans":"dehors")+'">'+
+    (!declarees.length
+      ? "Aucune paire différentielle reconnue"
+      : (dehors
+          ? dehors+" paire"+(dehors>1?"s":"")+" sur "+declarees.length+
+            " hors tolérance"
+          : (declarees.length>1
+              ? "Les "+declarees.length+" paires sont dans la tolérance"
+              : "La paire est dans la tolérance")))+
+    ' <span>'+simEsc(SIM.portee||"—")+" · cible "+simNb(cible,0)+" ± "+
+    simNb(tol,1)+" Ω</span></p>";
+
+  h+='<div class="simMeta"><span>'+paires.length+" longement"+
+     (paires.length>1?"s":"")+"</span>"+
+     "<span>masse : "+simEsc(((SIM.res.reference_nets)||[]).join(", ")||
+                             "non déclarée")+"</span>"+
+     "<span>"+simFreq(SIM.res.f_centre)+"</span></div>";
+
+  const tableau=function(liste,titre){
+    if(!liste.length)return "";
+    let t=titre?'<p class="simSection"><b>'+simEsc(titre)+"</b></p>":"";
+    t+='<table class="simTab simTabC"><tr><th>Nets</th>'+
+       "<th>Longement</th><th>Z<sub>diff</sub></th><th>Z<sub>comm</sub></th>"+
+       "<th>impair / pair</th><th>ε<sub>eff</sub></th></tr>";
+    for(const f of liste){
+      if(f.raison){
+        t+="<tr><td>"+simCoupleNoms(f)+"</td><td>"+simCoupleGeom(f)+"</td>"+
+           '<td colspan="4" class="simFaible">'+simEsc(f.raison)+"</td></tr>";
+        continue;
+      }
+      t+="<tr><td>"+simCoupleNoms(f)+
+         '<br><small class="simFaible">'+simEsc(f.nom_couche||("couche "+f.couche))+
+         (f.deux_cotes?" · des deux côtés":"")+"</small></td>"+
+         "<td>"+simCoupleGeom(f)+"</td>"+
+         '<td class="'+juge(f)+'">'+simNb(f.z_diff,2)+" Ω</td>"+
+         "<td>"+simNb(f.z_commune,2)+" Ω</td>"+
+         "<td>"+simNb(f.z_impair,1)+" / "+simNb(f.z_pair,1)+" Ω</td>"+
+         "<td>"+simNb(f.eps_eff_impair,3)+" / "+simNb(f.eps_eff_pair,3)+
+         "</td></tr>";
+    }
+    return t+"</table>";
+  };
+
+  h+=simCoupleSections();
+  h+=tableau(declarees,declarees.length&&autres.length?"Paires reconnues":"");
+  if(autres.length)
+    h+=tableau(autres,"Autres longements — ce ne sont pas des paires");
+
+  if(!declarees.length)
+    h+='<p class="simNote">· Aucun des nets qui se longent ne porte les '+
+       "suffixes d’une paire (<b>_P/_N</b>, <b>+/−</b>, <b>_DP/_DM</b>) et "+
+       "aucune paire n’est déclarée dans l’éditeur. Les impédances ci-dessus "+
+       "restent justes — deux pistes qui se longent ONT un mode impair —, "+
+       "mais rien ne dit qu’elles portent un signal différentiel.</p>";
+
+  /* LE MODE IMPAIR N'EST PAS LA MOITIÉ DE Z_DIFF PAR CONVENTION : la tension
+     différentielle est celle qui existe ENTRE les deux conducteurs. Le dire
+     évite de croire à un facteur deux d'affichage. */
+  h+='<p class="simNote">· <b>Z<sub>diff</sub> = 2 Z<sub>impair</sub></b> et '+
+     "<b>Z<sub>comm</sub> = Z<sub>pair</sub> / 2</b> : le facteur deux n’est "+
+     "pas une convention d’affichage, c’est que la tension différentielle est "+
+     "celle qui existe ENTRE les deux pistes, soit deux fois celle de chacune "+
+     "au plan de symétrie.</p>";
+  h+='<p class="simNote">· ε<sub>eff</sub> du mode impair est plus petit que '+
+     "celui du mode pair : son champ passe entre les deux pistes, donc par "+
+     "l’air. C’est ce déséquilibre qui fait exister la diaphonie avant — voir "+
+     "l’onglet <b>Diaphonie</b> — et il n’existe pas en triplaque.</p>";
+  /* TROIS CONDUCTEURS OU PLUS : Z_diff d'une paire n'a plus de sens tout seul,
+     il faut dire ce qu'on a fait des autres. */
+  if(((simCouplage().sections||[])[0]||{}).conducteurs &&
+     simCouplage().sections.some(x=>(x.conducteurs||[]).length>2))
+    h+='<p class="simNote">· La section porte plus de deux conducteurs : '+
+       "chaque Z<sub>diff</sub> ci-dessus est celle de SA paire, <b>les autres "+
+       "conducteurs tenus à la masse</b>. C’est une réduction exacte de la "+
+       "matrice de Maxwell, mais une piste réellement terminée sur son "+
+       "impédance n’est pas une piste à la masse.</p>";
+  h+=simCoupleHypotheses();
+  return h;
+}
+
+/* ==========================================================================
+   L'ONGLET « DIAPHONIE »
+   ========================================================================== */
+function simCorpsDiaphonie(){
+  return ''+
+  '<div class="pnl-bar simRefBar" id="simRefBar"></div>'+
+  '<div class="pnl-bar">'+
+    '<span class="pnl-lbl">Temps de montée</span>'+
+    simChamp("simTr","Le front de l'agresseur. Il ne change ni [C] ni [L] : "+
+                     "il décide si le bruit arrière sature, et ce que vaut le "+
+                     "bruit avant. Vide, il est déduit du haut de la bande "+
+                     "(0,35 / f_max).")+
+    simChampUnite("simTrUnite","le temps de montée",SIM_UNITES_TR)+
+    '<span class="pnl-lbl">Amplitude</span>'+
+    simChamp("simSwing","L'amplitude du front agresseur. Elle ne change pas "+
+                        "le calcul : elle convertit un rapport en volts.")+
+    simChampUnite("simSwingUnite","l'amplitude",SIM_UNITES_V)+
+  '</div>'+
+  '<div class="pnl-bar">'+
+    '<span class="pnl-lbl">Budget de bruit</span>'+
+    simChamp("simBruit","Ce qu'on s'autorise, en pourcentage de l'amplitude. "+
+                        "C'est VOTRE budget : le solveur ne le connaît pas, "+
+                        "il ne fait que colorer.")+
+    '<span class="simU">%</span>'+
+    '<span class="simU" id="simBruitAbs">—</span>'+
+  '</div>'+
+  '<div class="pnl-bar simBarF">'+
+    '<span class="pnl-lbl">Fréquence</span>'+
+    simChamp("simFc","Fréquence de travail")+
+    simChampUnite("simFUnite","la fréquence de travail")+
+  '</div>'+
+  '<div class="pnl-bar simFAvertBar"><span id="simFAvert"></span></div>'+
+  '<div class="pnl-bar">'+
+    '<button class="tb mini on" id="simGo" title="Calculer la sélection">▶ Calculer</button>'+
+    '<button class="tb mini" id="simJson" title="Le problème lui-même : il se donne au solveur en ligne de commande">.json</button>'+
+    '<label class="simSuivre" title="Recalculer à chaque changement de sélection"><input type="checkbox" id="simAuto"> suivre</label>'+
+  '</div>';
+}
+
+/* Le budget en clair, dans l'unité de l'amplitude : un budget de 5 % sur un
+   signal LVDS de 350 mV vaut 17 mV, et l'écrire en volts n'apprendrait rien. */
+function simBruitAbsEcrire(){
+  const el=simEl("simBruitAbs");
+  if(!el)return;
+  const u=simUniteV();
+  el.textContent="≤ "+simNb(SIM.saisie.swing*SIM.saisie.bruitPct/100/u.f,
+                            u.f<1?0:3)+" "+u.cle;
+}
+
+function simBrancherDiaphonie(){
+  simSaisieEcrire();
+  simRefEcrire();
+  simBruitAbsEcrire();
+  const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
+  pose("simGo","onclick",simGo);
+  pose("simJson","onclick",simExportJson);
+  const auto=simEl("simAuto");
+  if(auto){auto.checked=SIM.suivre;
+           auto.onchange=function(){SIM.suivre=this.checked;};}
+  /* L'AMPLITUDE ET LE BUDGET NE CHANGENT PAS LE CALCUL : l'une convertit un
+     rapport en millivolts, l'autre colore. On réécrit la fiche, et voilà. */
+  for(const id of ["simSwing","simBruit"])
+    pose(id,"oninput",function(){simSaisie();simBruitAbsEcrire();simRendre();});
+  pose("simTrUnite","onchange",function(){
+    simUniteChanger(this.value,"tr");
+    /* CHANGER L'UNITÉ NE CHANGE PAS LA VALEUR — 150 ps restent 150 ps écrits
+       0,15 ns — donc le résultat affiché reste valable et rien ne se jette. */
+  });
+  pose("simSwingUnite","onchange",function(){
+    simUniteChanger(this.value,"swing");
+  });
+  /* LE TEMPS DE MONTÉE, LUI, PART AU SERVEUR : il décide de la saturation du
+     bruit arrière. Le résultat affiché ne lui correspond plus dès qu'il
+     change, et le dire vaut mieux que de laisser croire. */
+  pose("simTr","oninput",function(){
+    simSaisie();
+    if(SIM.res&&!SIM.occupe){
+      SIM.res=null; SIM.objets=[];
+      SIM.err="Le temps de montée a changé : relancez le calcul.";
+      simRendre(); simRepeindre();
+    }
+  });
+  pose("simFc","oninput",function(){
+    simSaisie();
+    simFAvertEcrire();
+    if(SIM.res&&!SIM.occupe){
+      SIM.res=null; SIM.objets=[];
+      SIM.err="La fréquence a changé : relancez le calcul.";
+      simRendre(); simRepeindre();
+    }
+  });
+  pose("simFUnite","onchange",function(){simUniteChanger(this.value,"fc");});
+}
+
+function simRendreDiaphonie(){
+  if(SIM.occupe)
+    return '<p class="simEtat">Le solveur travaille…<br>'+
+      "<small>Une section à deux conducteurs par piste qui longe la "+
+      "sélection, puis NEXT et FEXT par la théorie des lignes "+
+      "multiconducteurs.</small></p>";
+  if(SIM.err)return '<p class="simErr">'+simEsc(SIM.err)+"</p>";
+  if(!SIM.res)
+    return '<p class="simEtat">Sélectionnez la piste VICTIME, puis calculez.'+
+      "<br><small>Les agresseurs sont trouvés tout seuls : ce sont les pistes "+
+      "qui la longent sur sa couche. Le bruit <b>arrière</b> (NEXT) remonte "+
+      "vers la source et sature avec la longueur ; le bruit <b>avant</b> "+
+      "(FEXT) part avec le signal et croît sans saturer — il est nul en "+
+      "triplaque.</small></p>";
+  return simFicheDiaphonie();
+}
+
+/* Le bruit d'un longement, en fraction de l'amplitude : le pire des deux
+   sens. C'est lui qui juge et qui trie — on ne se demande pas « lequel des
+   deux », on se demande « combien ». */
+/* Le bruit d'un longement, en fraction de l'amplitude : le pire des deux
+   sens. C'est lui qui juge et qui trie — on ne se demande pas « lequel des
+   deux », on se demande « combien ». C'est le bruit REÇU qui juge : c'est ce
+   que la piste sélectionnée subit, et c'est la question qu'on pose en la
+   sélectionnant. Ce qu'elle émet est affiché à côté, et compté à part. */
+function simBruitPire(f){
+  return Math.max(Math.abs(f.next||0),Math.abs(f.fext||0));
+}
+function simBruitEmis(f){
+  const e=f.emis||{};
+  return Math.max(Math.abs(e.next||0),Math.abs(e.fext||0));
+}
+/* LE SIGNE SE GARDE, EN POURCENTAGE COMME EN MILLIVOLTS. Un bruit avant
+   négatif n'est pas un bruit avant plus petit : c'est un creux là où le front
+   monte, et c'est ce qui décide s'il s'ajoute au bruit arrière ou l'annule. Le
+   VERDICT, lui, ne juge que l'amplitude — un budget n'a pas de signe. */
+/* Le bruit en tension, dans l'unité choisie pour l'amplitude. */
+function simBruitTension(valeur){
+  const u=simUniteV();
+  return simNb(SIM.saisie.swing*valeur/u.f,u.f<1?0:3)+" "+u.cle;
+}
+/* UNE CELLULE, DEUX SENS. « Ce que ma piste prend » et « ce que ma piste
+   envoie » ne sont pas la même chose dès que les deux pistes n'ont pas la même
+   largeur : le bruit se compte en fraction de l'amplitude de L'AGRESSEUR et se
+   rapporte à ses termes propres. Le premier chiffre est celui qui juge — c'est
+   la question qu'on pose en sélectionnant une piste — et le second est là pour
+   qu'on n'ait pas à resélectionner la voisine pour l'obtenir. */
+function simBruitCellule(recu,emis,budget){
+  return '<span class="'+(Math.abs(recu)>budget?"z0ko":"z0ok")+'">'+
+    simNb(100*recu,2)+" %</span>"+
+    "<small>reçu "+simBruitTension(recu)+"</small>"+
+    '<small class="simEmis">émis '+simNb(100*emis,2)+" %</small>";
+}
+
+function simFicheDiaphonie(){
+  const paires=simCouplagePaires();
+  if(!paires.length)return simCouplageVide("qu’un couplage se chiffre");
+
+  const c=simCouplage();
+  const budget=SIM.saisie.bruitPct/100;
+  const fautifs=paires.filter(f=>simBruitPire(f)>budget);
+  /* LE CUMUL, ET IL N'EST PAS DÉCORATIF. Trois agresseurs à 3 % chacun font
+     un budget de bruit crevé alors qu'aucune ligne du tableau n'est en rouge.
+     La somme est le PIRE CAS -- les trois fronts simultanés et dans le même
+     sens --, et c'est ce qu'on dimensionne. */
+  const cumul=paires.reduce((t,f)=>t+simBruitPire(f),0);
+
+  let h='<p class="simVerdict '+(cumul>budget?"dehors":"dedans")+'">'+
+    (fautifs.length
+      ? fautifs.length+" agresseur"+(fautifs.length>1?"s":"")+" au-dessus du budget"
+      : (cumul>budget
+          ? "Aucun agresseur seul ne crève le budget, mais leur somme si"
+          : (paires.length>1
+              ? "Les "+paires.length+" longements tiennent dans le budget"
+              : "Le longement tient dans le budget")))+
+    ' <span>'+simNb(100*cumul,2)+" % cumulé · budget "+
+    simNb(SIM.saisie.bruitPct,1)+" %</span></p>";
+
+  const ut=simUniteTr();
+  h+='<div class="simMeta"><span>'+simEsc(SIM.portee||"—")+"</span>"+
+     "<span>front "+simNb((c.temps_montee||0)/ut.f,ut.f<1e-9?0:3)+" "+ut.cle+
+     " <small>("+simEsc(c.temps_montee_source||"")+")</small></span>"+
+     "<span>amplitude "+simNb(SIM.saisie.swing/simUniteV().f,
+                              simUniteV().f<1?0:2)+" "+simUniteV().cle+
+     "</span></div>";
+
+  h+=simCoupleSections();
+
+  h+='<table class="simTab simTabC"><tr><th>Agresseur</th>'+
+     "<th>Longement</th><th>Arrière (NEXT)</th><th>Avant (FEXT)</th>"+
+     "<th>k<sub>C</sub> / k<sub>L</sub></th><th>Saturation</th></tr>";
+  for(const f of paires){
+    if(f.raison){
+      h+="<tr><td>"+simEsc(f.net_voisin||"?")+"</td><td>"+simCoupleGeom(f)+
+         '</td><td colspan="4" class="simFaible">'+simEsc(f.raison)+"</td></tr>";
+      continue;
+    }
+    const e=f.emis||{};
+    h+="<tr><td>"+simEsc(f.net_voisin||"?")+
+       (f.differentielle?' <small class="z0ok">paire</small>':"")+
+       '<br><small class="simFaible">'+
+       simEsc(f.nom_couche||("couche "+f.couche))+" · "+simEsc(f.cote||"")+
+       "</small></td>"+
+       "<td>"+simCoupleGeom(f)+"</td>"+
+       "<td>"+simBruitCellule(f.next,e.next||0,budget)+"</td>"+
+       "<td>"+simBruitCellule(f.fext,e.fext||0,budget)+"</td>"+
+       "<td>"+simNb(f.k_c,4)+" / "+simNb(f.k_l,4)+"</td>"+
+       "<td>"+(f.sature
+                ? '<span class="z0ko">atteinte</span><br><small>dès '+
+                  simNb(f.longueur_saturation,1)+" mm</small>"
+                : '<span class="z0ok">non</span><br><small>plafond à '+
+                  simNb(f.longueur_saturation,1)+" mm</small>")+
+       "</td></tr>";
+  }
+  h+="</table>";
+
+  /* LES DEUX SENS, DITS UNE FOIS SOUS LE TABLEAU. Sans cette phrase, « reçu »
+     et « émis » se lisent comme deux mesures du même bruit, et l'on chercherait
+     pourquoi elles diffèrent. */
+  h+='<p class="simNote">· <b>Reçu</b> est ce que la sélection SUBIT, et c’est '+
+     "lui qui juge : c’est la question qu’on pose en sélectionnant une piste. "+
+     "<b>Émis</b> est ce qu’elle INJECTE dans la voisine — même matrice, "+
+     "agresseur et victime échangés. Les deux ne sont égaux que si les deux "+
+     "pistes ont la même largeur : le bruit se compte en fraction de "+
+     "l’amplitude de l’agresseur, et se rapporte à ses termes propres. Une "+
+     "piste large qui agresse une piste fine ne reçoit pas d’elle ce qu’elle "+
+     "lui envoie.</p>";
+  /* CE QUE LA SÉLECTION FAIT SUBIR AUX AUTRES, quand elle-même n’en souffre
+     pas. C’est le cas qu’aucun verdict ne voit : la fiche juge ce que la piste
+     REÇOIT, et une piste large qui arrose une voisine fine peut crever le
+     budget de la voisine sans rien sentir. Le dire ici, ou personne ne le
+     dira. */
+  const pireEmis=paires.reduce((t,f)=>Math.max(t,simBruitEmis(f)),0);
+  const pireRecu=paires.reduce((t,f)=>Math.max(t,simBruitPire(f)),0);
+  if(pireEmis>budget&&pireEmis>pireRecu+1e-9)
+    h+='<p class="simNote simAlerte">· La sélection ÉMET jusqu’à '+
+       simNb(100*pireEmis,2)+" % — au-dessus du budget, alors qu’elle n’en "+
+       "reçoit que "+simNb(100*pireRecu,2)+" %. Le défaut est réel, mais il "+
+       "est chez la voisine : c’est elle qu’il faut sélectionner pour le voir "+
+       "jugé.</p>";
+
+  /* CE QU'ON PEUT FAIRE, ET DANS QUEL ORDRE. Une fiche qui chiffre un problème
+     sans dire sur quoi agir se lit une fois. Les trois leviers sont ceux que
+     les chiffres du tableau désignent eux-mêmes. */
+  if(fautifs.length||cumul>budget){
+    const pire=paires[0];
+    h+='<p class="simNote simAlerte">· Le pire est <b>'+
+       simEsc(pire.net_voisin||"?")+"</b> : "+simNb(100*simBruitPire(pire),2)+
+       " % sur "+simNb(pire.longueur,1)+" mm à "+simNb(pire.ecart,3)+" mm. "+
+       (pire.sature
+         ? "Le bruit arrière est SATURÉ — le raccourcir n’aidera qu’en deçà de "+
+           simNb(pire.longueur_saturation,1)+" mm. Écarter les deux pistes, "+
+           "ou poser une piste de garde à la masse entre elles, est ce qui "+
+           "reste."
+         : "Le bruit arrière n’est pas encore saturé : le raccourcir paie "+
+           "encore, proportionnellement.")+"</p>";
+  }
+  h+='<p class="simNote">· <b>Arrière</b> (NEXT) : il remonte vers la source, '+
+     "vaut (k<sub>L</sub>+k<sub>C</sub>)/4 de l’amplitude, et <b>sature</b> "+
+     "dès que l’aller-retour dure plus qu’un temps de montée. <b>Avant</b> "+
+     "(FEXT) : il part avec le signal, vaut (k<sub>C</sub>−k<sub>L</sub>)/2 "+
+     "× T<sub>D</sub>/t<sub>r</sub>, et ne sature pas. En microruban "+
+     "k<sub>L</sub> &gt; k<sub>C</sub> : le bruit avant est de signe opposé "+
+     "au front, et il est <b>nul en triplaque</b>, où le milieu est "+
+     "homogène.</p>";
+  h+='<p class="simNote">· Le pourcentage cumulé additionne le pire des deux '+
+     "sens de chaque agresseur : c’est le cas où tous commutent en même temps "+
+     "et dans le même sens. C’est ce qu’on dimensionne, et non la moyenne.</p>";
+  h+=simCoupleHypotheses();
+  return h;
+}
+
 const SIM_FAMILLES=[
   {cle:"si", court:"SI", nom:"Intégrité du signal",
    quoi:"Ce qu'un front devient en parcourant le cuivre : impédance, retard, "+
         "pertes, réflexions.",
-   analyses:["impedance"]},
+   /* DEUX ANALYSES, ET ELLES NE REPONDENT PAS A LA MEME QUESTION. L'impedance
+      est une propriete de la SECTION DROITE ; le chemin de retour, une
+      propriete de la LIAISON VERTICALE. Une piste parfaitement a 50 ohms peut
+      avoir un retour catastrophique -- et c'est justement le cas qu'on ne
+      voyait pas quand le retour n'etait qu'une colonne dans la fiche de
+      l'autre. */
+   /* QUATRE ANALYSES, ET LA MEME REPONSE DU SERVEUR LES SERT TOUTES. Elles ne
+      posent pas la meme question : l'impedance est une propriete de la SECTION
+      DROITE, le chemin de retour une propriete de la LIAISON VERTICALE, et les
+      deux dernieres une propriete de DEUX sections cote a cote. Une piste
+      parfaitement a 50 ohms peut avoir un retour catastrophique et prendre
+      trois cents millivolts a sa voisine -- ce sont trois defauts distincts,
+      et les empiler dans une fiche unique est ce qui les rendait invisibles. */
+   analyses:["impedance","diff","diaphonie","retour"]},
   {cle:"pi", court:"PI", nom:"Intégrité de l'alimentation",
    quoi:"Ce que le réseau de distribution laisse passer : chute continue, "+
         "impédance vue par le composant, résonances de plan.",
@@ -2920,6 +3902,42 @@ const SIM_ANALYSES={
     corps:simCorpsImpedance,
     brancher:simBrancherImpedance,
     rendre:simRendreImpedance
+  },
+  diff:{
+    nom:"Z différentielle",
+    titre:"Impédance différentielle et impédance de mode commun des paires "+
+          "qui longent la sélection : modes pair et impair de la section à "+
+          "deux conducteurs.",
+    /* `peint` COMMANDE simZActif(), donc la carte de chaleur des IMPÉDANCES
+       SIMPLES. Le mettre à vrai peindrait des Z₀ sous une fiche qui parle de
+       Z différentielle — deux chiffres qui ne se comparent pas. */
+    peint:false,
+    corps:simCorpsDiff,
+    brancher:simBrancherDiff,
+    rendre:simRendreDiff
+  },
+  diaphonie:{
+    nom:"Diaphonie",
+    titre:"Ce que les pistes voisines prennent à la sélection : bruit arrière "+
+          "(NEXT) et bruit avant (FEXT), longement par longement.",
+    peint:false,
+    corps:simCorpsDiaphonie,
+    brancher:simBrancherDiaphonie,
+    rendre:simRendreDiaphonie
+  },
+  retour:{
+    nom:"Current Return Path",
+    titre:"Par où revient le courant de chaque via : les vias de masse qui "+
+          "referment la boucle, leur distance, leur part, et l'inductance "+
+          "qui en résulte.",
+    /* `peint` COMMANDE simZActif(), donc la carte de chaleur des IMPÉDANCES.
+       Cet onglet peint autre chose — le chevelu du retour, par `simCheveluRes`
+       — et le mettre à vrai ferait apparaître les Z₀ sous une fiche qui n'en
+       parle pas. */
+    peint:false,
+    corps:simCorpsRetour,
+    brancher:simBrancherRetour,
+    rendre:simRendreRetour
   },
   dc:{
     nom:"Chute DC",
@@ -3086,6 +4104,18 @@ function simSaisieEcrire(){
   pose("simN",s.points); pose("simZ0",s.z0);
   pose("simZCible",String(s.cible).replace(".",","));
   pose("simZTol",String(s.tolPct).replace(".",","));
+  pose("simZDiffCible",String(s.cibleDiff).replace(".",","));
+  pose("simZDiffTol",String(s.tolDiffPct).replace(".",","));
+  /* UN TEMPS DE MONTEE A ZERO N'EST PAS UN TEMPS DE MONTEE : le champ reste
+     VIDE, et c'est ce qui dit « deduis-le de la bande ». Y ecrire 0 laisserait
+     croire a un front infiniment raide. */
+  pose("simTr",s.tr>0?simNbLibre(s.tr/simUniteTr().f):"");
+  pose("simSwing",simNbLibre(s.swing/simUniteV().f));
+  const selTr=simEl("simTrUnite");
+  if(selTr)selTr.value=simUniteTr().cle;
+  const selV=simEl("simSwingUnite");
+  if(selV)selV.value=simUniteV().cle;
+  pose("simBruit",String(s.bruitPct).replace(".",","));
   const sel=simEl("simFUnite");
   if(sel)sel.value=simUnite().cle;
   const selb1=simEl("simFUniteBande1");
@@ -3119,6 +4149,17 @@ function simSaisie(){
   s.z0=lu("simZ0",s.z0,1);
   s.cible=lu("simZCible",s.cible,0.1);
   s.tolPct=lu("simZTol",s.tolPct,0);
+  s.cibleDiff=lu("simZDiffCible",s.cibleDiff,0.1);
+  s.tolDiffPct=lu("simZDiffTol",s.tolDiffPct,0);
+  /* LE CHAMP VIDE VAUT ZERO ICI, et c'est voulu : zero veut dire « pas de
+     front donne », donc « deduis-le de la bande ». `lu` retombe sur la valeur
+     precedente pour une saisie illisible ; un champ vide n'est pas illisible,
+     c'est une intention. */
+  const ktr=simUniteTr().f, kv=simUniteV().f;
+  const tr=simEl("simTr");
+  if(tr)s.tr=String(tr.value).trim()?lu("simTr",s.tr/ktr,0)*ktr:0;
+  s.swing=lu("simSwing",s.swing/kv,0)*kv;
+  s.bruitPct=lu("simBruit",s.bruitPct,0);
   return s;
 }
 
@@ -3127,13 +4168,21 @@ function simSaisie(){
    change. C'est ce qui fait qu'on peut choisir son unité APRÈS avoir tapé, et
    qu'aucun résultat déjà calculé n'est invalidé au passage. */
 function simUniteChanger(cle,laquelle){
-  if(!SIM_UNITES.some(u=>u.cle===cle))return;
+  /* CHAQUE CHAMP A SA LISTE, et l'on vérifie contre LA SIENNE : poser « ns »
+     sur la fréquence centrale doit être refusé comme le serait « GHz » sur le
+     temps de montée. Une seule liste pour tout laisserait passer les deux. */
+  const listes={tr:SIM_UNITES_TR, swing:SIM_UNITES_V};
+  const liste=listes[laquelle]||SIM_UNITES;
+  if(!liste.some(u=>u.cle===cle))return;
   simSaisie();                       // fige ce qui est écrit, ancienne unité
   if(laquelle==="bande1")SIM.saisie.uniteBande1=cle;
   else if(laquelle==="bande2")SIM.saisie.uniteBande2=cle;
   else if(laquelle==="bande")SIM.saisie.uniteBande=cle;
+  else if(laquelle==="tr")SIM.saisie.uniteTr=cle;
+  else if(laquelle==="swing")SIM.saisie.uniteV=cle;
   else                  SIM.saisie.unite=cle;
   simSaisieEcrire();                 // le réécrit dans la nouvelle
+  if(laquelle==="swing"){simBruitAbsEcrire();simRendre();}
 }
 
 /* CE QUE LE SERVEUR AURAIT CORRIGÉ EN SILENCE. Il ramène bien une f₀ hors
@@ -3170,6 +4219,7 @@ function simRendre(){
   /* La courbe vient d'être réécrite : ses gestionnaires sont partis avec
      l'ancien DOM, on les remet. Un seul endroit le fait, comme pour le reste. */
   SIM_LARGEUR=box.clientWidth;
+  simBrancherLots();
   simBrancherCourbe();
   simSurveillerLargeur(box);
 }
@@ -3225,22 +4275,232 @@ function simRendreVide(){
 }
 
 function simRendreImpedance(){
-  if(SIM.occupe)
-    return '<p class="simEtat">Le solveur travaille…<br>'+
+  if(SIM.occupe){
+    const t=SIM.lotsAttendus>1
+      ? "Le solveur travaille — lot "+
+        Math.min(SIM.lots.length,SIM.lotsAttendus)+" sur "+SIM.lotsAttendus+"…"
+      : "Le solveur travaille…";
+    const h='<p class="simEtat">'+t+"<br>"+
       "<small>Une résolution de section par largeur et par couche, puis les "+
       "paramètres S sur la bande.</small></p>";
-  if(SIM.err)return '<p class="simErr">'+simEsc(SIM.err)+"</p>";
-  if(SIM.res)return simFiche();
+    /* Les lots déjà rendus restent affichés pendant que les suivants
+       calculent : sur une ligne coupée en six, attendre six allers-retours
+       devant un panneau vide n'apprend rien qu'une attente. */
+    return h+simTableauLots()+(SIM.res?simFiche():"");
+  }
+  /* UNE ERREUR N'EMPORTE PAS LE TABLEAU DES LOTS : elle peut n'être que celle
+     du lot qu'on vient de déplier, les autres restant justes. */
+  if(SIM.err&&!SIM.res)
+    return simTableauLots()+'<p class="simErr">'+simEsc(SIM.err)+"</p>";
+  if(SIM.res)return simTableauLots()+simLotEntete()+simFiche();
   return '<p class="simEtat">Sélectionnez une piste, puis calculez.<br>'+
     "<small><b>Clic</b> : le tronçon cliqué seul. <b>Maj+clic</b> : la piste "+
     "entière. <b>Maj+clic à nouveau</b> : la piste sur toutes les couches.<br>"+
+    "<b>Ctrl+clic</b> : ajouter un morceau à la sélection — chaque parcours "+
+    "continu est alors calculé SÉPARÉMENT, ce qu'il faut pour vérifier une "+
+    "ligne RF coupée par des composants.<br>"+
     "Le calcul a lieu sur le serveur (<code>python serveur.py</code>) : le "+
     "solveur est en Python.</small></p>";
 }
 
 /* ==========================================================================
+   LES LOTS — PLUSIEURS MORCEAUX SÉLECTIONNÉS, UN RÉSULTAT CHACUN
+   --------------------------------------------------------------------------
+   LE CAS QUI L'A DEMANDÉ, ET IL EST ORDINAIRE EN RF. Une ligne 50 Ω coupée par
+   trois condensateurs de liaison n'est pas UN net : c'est quatre nets bout à
+   bout, séparés par des boîtiers. La question posée, elle, est unique — « fait-
+   elle 50 Ω sur toute sa longueur ? » — et jusqu'ici il fallait la poser quatre
+   fois, cliquer quatre fois, relire quatre fiches, et se souvenir des chiffres
+   entre-temps. Le même besoin revient partout où le cuivre est coupé sans que
+   la LIAISON le soit : un té de polarisation, un filtre, une résistance série,
+   un pont de mesure.
+
+   CE QU'UN LOT EST, ET CE QU'IL N'EST PAS. Un lot est un PARCOURS CONTINU : du
+   cuivre qui se touche, sur un seul net. Deux morceaux qui ne se touchent pas
+   font deux lots, et c'est le point : on ne peut pas les mettre en cascade —
+   le produit de matrices ABCD suppose que la sortie de l'un soit l'entrée du
+   suivant, et il y a un composant entre les deux, dont ce panneau ne sait rien.
+   Les additionner rendrait un S₂₁ qui aurait l'air d'être celui de la ligne
+   entière alors qu'il ignorerait les composants ; les séparer rend quatre
+   résultats justes et laisse le jugement à qui sait ce que sont les boîtiers.
+
+   POURQUOI `SIM.res` SURVIT. Tout ce qui affiche, peint et exporte lit
+   `SIM.res` et `SIM.objets` depuis toujours. Plutôt que de les faire disparaître
+   au profit d'une liste, le lot ACTIF s'y reflète (`simLotMirroir`) : la fiche
+   complète, la courbe S, la section résolue, le .csv, le .s2p et les deux
+   canevas continuent de fonctionner sans une ligne de changement, et la
+   sélection d'un seul morceau — le geste de tous les jours — se comporte
+   exactement comme avant. Ce qui s'ajoute est AU-DESSUS : un tableau de
+   synthèse, une ligne par lot, et un clic pour déplier celui qu'on veut lire.
+
+   LA CARTE, ELLE, MONTRE TOUT. Les couleurs de chaleur se peignent pour TOUS
+   les lots (`simPourChaqueLot`), parce que la réponse à « est-ce 50 Ω partout »
+   est un coup d'œil sur la carte, pas une lecture de tableau.
+   ========================================================================== */
+
+/* Un résultat porte sur UNE sélection : dès qu'elle bouge, tout part — les lots
+   comme le reflet. Un seul endroit le fait, sinon un lot survit à la sélection
+   qui l'a produit et la carte peint des couleurs qui ne sont plus à personne. */
+function simOublierRes(){
+  SIM.res=null; SIM.objets=[]; SIM.lots=[]; SIM.lotActif=0; SIM.lotsAttendus=0;
+}
+
+/* Les lots à peindre. Un résultat sans lot — il n'y en a plus, mais un banc
+   d'essai peut poser `SIM.res` à la main — vaut un lot unique : le canevas n'a
+   pas à connaître les deux cas. */
+function simLotsPeints(){
+  /* LA COHÉRENCE SE VÉRIFIE ICI, une fois pour tous ceux qui peignent : un lot
+     dont le serveur n'a pas rendu autant de tronçons qu'on lui en a envoyé
+     appareillerait des couleurs avec le cuivre du voisin. */
+  const bon=l=>l&&l.res&&l.objets&&l.objets.length&&
+               l.res.segments.length===l.objets.length;
+  if(SIM.lots.length)return SIM.lots.filter(bon);
+  const seul={res:SIM.res, objets:SIM.objets, rang:1};
+  return bon(seul)?[seul]:[];
+}
+function simLotsMultiples(){return simLotsPeints().length>1;}
+
+/* Peindre chaque lot à son tour. Le reflet est posé le temps de l'appel, puis
+   remis en place : `simZSegment`, `simZActif` et tout ce que les canevas
+   appellent lisent `SIM.res` — leur passer un lot en argument aurait demandé de
+   les réécrire tous les deux, et de les tenir d'accord ensuite. */
+function simPourChaqueLot(fn){
+  const lots=simLotsPeints();
+  const res0=SIM.res, obj0=SIM.objets;
+  try{
+    for(const l of lots){SIM.res=l.res; SIM.objets=l.objets; fn(l);}
+  }finally{SIM.res=res0; SIM.objets=obj0;}
+}
+
+/* Le lot actif, reflété dans l'état que tout le reste lit. */
+function simLotMirroir(i){
+  const l=SIM.lots[i];
+  if(!l)return false;
+  SIM.lotActif=i;
+  SIM.res=l.res; SIM.objets=l.objets; SIM.doc=l.doc;
+  SIM.portee=l.portee||""; SIM.notes=l.notes||[];
+  SIM.couture=l.couture||null; SIM.voisins=l.voisins||[];
+  SIM.err=l.err||"";
+  return true;
+}
+function simLotActiver(i){
+  if(!simLotMirroir(i))return;
+  simRendre(); simRepeindre();
+}
+
+/* CE QU'UN LOT VAUT, EN CHIFFRES COMPARABLES. On compte comme la fiche compte :
+   en sections regroupées (`simGrouper`) et non en tronçons envoyés, sans quoi un
+   arc — une vingtaine de cordes — pèserait vingt fois plus qu'une droite dans
+   le décompte des sections hors tolérance. */
+function simLotBilan(lot){
+  if(!lot||!lot.res)return null;
+  const L=lot.res.ligne||{};
+  const gr=simGrouper(lot.res.segments||[]);
+  const sortis=gr.filter(g=>g.seg.z0>0&&simZVerdict(g.seg.z0)!==0);
+  return {longueur:L.longueur||0, z0min:L.z0_min||0, z0max:L.z0_max||0,
+          z0moy:L.z0_moyen||0, sections:gr.length,
+          dehors:sortis.length,
+          mmDehors:sortis.reduce((a,g)=>a+g.longueur,0),
+          couches:[...new Set(gr.map(g=>g.couche))]};
+}
+
+/* LE TABLEAU DE SYNTHÈSE, et c'est lui la réponse à la question posée. Une
+   ligne par lot, le pire écart en évidence, et un clic pour déplier la fiche
+   complète de celui qu'on veut regarder de près.
+
+   LE VERDICT D'ENSEMBLE EST EN TÊTE parce que c'est ce qu'on est venu chercher :
+   « les quatre morceaux sont dans la tolérance » se lit sans parcourir le
+   tableau. Il ne dit rien de la continuité électrique entre les lots — elle
+   passe par des composants, dont ce panneau ne sait rien — et le note. */
+function simTableauLots(){
+  const lots=SIM.lots;
+  if(lots.length<2)return "";
+  const bons=lots.filter(l=>{const b=simLotBilan(l);return b&&!b.dehors;}).length;
+  const rates=lots.filter(l=>!l.res).length;
+  let h='<div class="simLots">';
+  h+='<p class="simVerdict '+((bons===lots.length&&!rates)?"dedans":"dehors")+
+     '">'+lots.length+" morceaux sélectionnés"+
+     (rates?", "+rates+" non calculé"+(rates>1?"s":""):"")+
+     " — "+((bons===lots.length&&!rates)
+        ? "tous dans la tolérance"
+        : bons+" sur "+lots.length+" dans la tolérance")+
+     " <span>cible "+simNb(SIM.saisie.cible,1)+" Ω ± "+
+     simNb(simZTolAbs(),1)+" Ω</span></p>";
+  h+='<table class="simTab simTabLots"><tr><th>Lot</th><th>Portée</th>'+
+     "<th>l (mm)</th><th>Z₀ min–max</th><th>Moyenne</th><th>Hors tol.</th></tr>";
+  lots.forEach(function(l,i){
+    const b=simLotBilan(l);
+    const actif=(i===SIM.lotActif);
+    h+='<tr class="simLotL'+(actif?" on":"")+'" data-simlot="'+i+'" '+
+       'title="'+simEsc("Voir la fiche complète de ce lot")+'">';
+    h+='<td><i class="simPuce" style="background:'+
+       (b?simZCouleur(b.z0max&&simZVerdict(b.z0max)!==0?b.z0max:b.z0moy)
+          :"rgba(139,145,156,1)")+'"></i>'+(i+1)+"</td>";
+    h+="<td>"+simEsc(l.titre||l.portee||l.net||"—")+"</td>";
+    if(!b){
+      h+='<td colspan="4" class="simLotErr">'+
+         simEsc(l.err||"non calculé")+"</td></tr>";
+      return;
+    }
+    h+="<td>"+simNb(b.longueur,2)+"</td>"+
+       "<td>"+simNb(b.z0min,1)+" – "+simNb(b.z0max,1)+"</td>"+
+       "<td>"+simNb(b.z0moy,1)+"</td>"+
+       '<td class="'+(b.dehors?"z0haut":"z0ok")+'">'+
+       (b.dehors?b.dehors+" sect., "+simNb(b.mmDehors,2)+" mm":"—")+
+       "</td></tr>";
+  });
+  h+="</table>";
+  /* CE QUE LE PANNEAU NE PEUT PAS DIRE, et il vaut mieux qu'il le dise. Entre
+     deux lots il y a du cuivre qui n'est pas là — un condensateur, une
+     résistance, un connecteur. Leur effet sur la ligne n'est pas dans ces
+     chiffres, et aucune addition des lots ne le ferait apparaître. */
+  h+='<p class="simNote">· Chaque lot est un parcours continu, calculé seul : '+
+     "les paramètres S ci-dessous sont ceux du lot déplié. Ce qui relie deux "+
+     "lots — un condensateur de liaison, une résistance série, un connecteur — "+
+     "n'est pas dans le modèle : la mise en cascade s'arrête au bord du cuivre."+
+     "</p>";
+  h+="</div>";
+  return h;
+}
+
+/* De quel lot la fiche qui suit parle. Sans cette ligne, un tableau de six
+   lots suivi d'une fiche ne dit pas laquelle des six on lit. */
+function simLotEntete(){
+  if(SIM.lots.length<2)return "";
+  const l=SIM.lots[SIM.lotActif];
+  return '<p class="simLotTitre">Lot '+(SIM.lotActif+1)+" sur "+
+    SIM.lots.length+" — "+simEsc(l.titre||l.portee||l.net||"")+
+    " <small>cliquez une ligne du tableau pour en déplier un autre</small></p>";
+}
+
+function simBrancherLots(){
+  const box=simEl("simSortie");
+  if(!box||SIM.lots.length<2)return;
+  box.querySelectorAll("[data-simlot]").forEach(function(tr){
+    tr.onclick=function(){
+      const i=+tr.getAttribute("data-simlot");
+      if(i>=0&&i<SIM.lots.length)simLotActiver(i);
+    };
+  });
+}
+
+/* ==========================================================================
    Lancer
    ========================================================================== */
+/* Ce que tout document envoyé porte, quel que soit l'outil et quel que soit le
+   lot. Un seul endroit le pose : le .json exporté et ce qui part au serveur
+   doivent être le même document. */
+function simDocFinir(doc){
+  doc.format=SIM_FORMAT;
+  doc.source=SIM_ED?SIM_ED.outil:"";
+  /* L'HYPOTHÈSE PART AVEC LE PROBLÈME. Le serveur ne s'en sert pas — les écarts
+     sont déjà mesurés — mais le résultat, le .csv et l'entête Touchstone doivent
+     dire ce qui a été tenu pour de la masse. Un chiffre sans son hypothèse
+     n'est pas vérifiable. */
+  doc.reference_nets=simRefListe();
+  return doc;
+}
+
 function simProbleme(){
   if(!SIM_ED||typeof SIM_ED.probleme!=="function"){
     SIM.err="Cet outil ne sait pas décrire de problème.";
@@ -3252,13 +4512,7 @@ function simProbleme(){
             ((p&&p.conseil)?"\n"+p.conseil:"");
     return null;
   }
-  p.doc.format=SIM_FORMAT;
-  p.doc.source=SIM_ED.outil;
-  /* L'HYPOTHÈSE PART AVEC LE PROBLÈME. Le serveur ne s'en sert pas — les écarts
-     sont déjà mesurés — mais le résultat, le .csv et l'entête Touchstone doivent
-     dire ce qui a été tenu pour de la masse. Un chiffre sans son hypothèse
-     n'est pas vérifiable. */
-  p.doc.reference_nets=simRefListe();
+  simDocFinir(p.doc);
   SIM.doc=p.doc;
   SIM.portee=p.portee||"";
   SIM.notes=p.notes||[];
@@ -3268,35 +4522,112 @@ function simProbleme(){
   return p;
 }
 
+/* LES PROBLÈMES À ENVOYER, un par lot.
+
+   L'OUTIL DÉCIDE DU DÉCOUPAGE, PAS LE PANNEAU : lui seul sait ce qui se touche
+   sur sa carte. S'il ne sait pas découper — `problemes` absent —, on retombe
+   sur `probleme` et il y a un lot, ce qui est le comportement d'avant. */
+function simProblemes(){
+  if(SIM_ED&&typeof SIM_ED.problemes==="function"){
+    const r=SIM_ED.problemes(simSaisie());
+    if(!r||r.erreur){
+      SIM.err=((r&&r.erreur)||"Rien à calculer.")+
+              ((r&&r.conseil)?"\n"+r.conseil:"");
+      return null;
+    }
+    const lots=(r.lots||[]).filter(p=>p&&p.doc&&p.objets&&p.objets.length);
+    if(!lots.length){
+      SIM.err="La sélection ne porte aucun tronçon exploitable.";
+      return null;
+    }
+    lots.forEach(p=>simDocFinir(p.doc));
+    SIM.err="";
+    return lots;
+  }
+  const p=simProbleme();
+  return p?[p]:null;
+}
+
 async function simGo(){
   if(SIM.occupe||!simCalculable())return;
   /* Le résultat précédent s'efface AVANT le calcul : garder à l'écran, et sur
      la carte, la couleur d'une autre sélection est le meilleur moyen de lire
      un chiffre pour un autre. */
-  SIM.res=null; SIM.objets=[]; SIM.err="";
-  const p=simProbleme();
-  if(!p){simRendre();simRepeindre();return;}
-  SIM.occupe=true; simRendre(); simRepeindre();
+  simOublierRes(); SIM.err="";
+  const P=simProblemes();
+  if(!P){simRendre();simRepeindre();return;}
+  SIM.occupe=true; SIM.lotsAttendus=P.length; simRendre(); simRepeindre();
   try{
-    const res=await simLancer(p.doc);
-    if(res.segments.length!==p.objets.length)
-      throw new Error("Le serveur a rendu "+res.segments.length+
-                      " tronçon(s) pour "+p.objets.length+" envoyé(s).");
-    /* Le nom de couche est connu de l'outil, pas du serveur : on le recopie
-       ici pour que le tableau le nomme au lieu d'un indice. */
-    res.segments.forEach((s,i)=>{s.nom_couche=p.objets[i].couche||"";});
-    SIM.res=res; SIM.objets=p.objets;
+    /* UN LOT À LA FOIS, ET LE PANNEAU SUIT. Quatre morceaux sont quatre
+       résolutions de section : les envoyer en parallèle mettrait quatre fois le
+       solveur sur la même machine et ne rendrait rien plus tôt. On affiche donc
+       chaque lot dès qu'il arrive — le premier se lit pendant que le dernier
+       calcule. */
+    for(let i=0;i<P.length;i++){
+      const p=P[i];
+      const lot={rang:i+1, cle:p.cle||("lot"+(i+1)), titre:p.titre||"",
+                 net:(p.doc&&p.doc.net)||"", doc:p.doc, objets:p.objets,
+                 portee:p.portee||"", notes:p.notes||[],
+                 couture:p.couture||null, voisins:p.voisins||[],
+                 res:null, err:""};
+      SIM.lots.push(lot);
+      try{
+        const res=await simLancer(p.doc);
+        if(res.segments.length!==p.objets.length)
+          throw new Error("Le serveur a rendu "+res.segments.length+
+                          " tronçon(s) pour "+p.objets.length+" envoyé(s).");
+        /* Le nom de couche est connu de l'outil, pas du serveur : on le recopie
+           ici pour que le tableau le nomme au lieu d'un indice. */
+        res.segments.forEach((s,j)=>{s.nom_couche=p.objets[j].couche||"";});
+        /* ET LES LONGEMENTS EN PROFITENT. Ils portent un indice de couche, pas
+           un nom — le serveur n'en connaît pas —, et les deux fiches de
+           couplage écriraient « couche 4 » là où le tableau des tronçons écrit
+           « In2 ». Le dictionnaire vient des tronçons qu'on vient de nommer :
+           un longement est toujours sur la couche d'un tronçon sélectionné. */
+        const nomsCouche={};
+        res.segments.forEach(s=>{if(s.nom_couche)nomsCouche[s.couche]=s.nom_couche;});
+        for(const f of ((res.couplage&&res.couplage.paires)||[]))
+          f.nom_couche=nomsCouche[f.couche]||"";
+        lot.res=res;
+      }catch(e){
+        /* UN LOT QUI ÉCHOUE N'EMPORTE PAS LES AUTRES, et c'est tout l'intérêt
+           de les séparer : un morceau posé sur une couche sans plan de référence
+           n'a pas d'impédance, les trois autres en ont une. L'erreur reste
+           attachée à SA ligne du tableau. */
+        lot.err=e.message||String(e);
+      }
+      /* Le premier lot calculable devient le lot actif : la fiche s'ouvre sur
+         quelque chose plutôt que sur une erreur, même si le lot 1 a échoué. */
+      const bon=SIM.lots.findIndex(l=>l.res);
+      simLotMirroir(bon>=0?bon:0);
+      simRendre(); simRepeindre();
+    }
+    const calcules=SIM.lots.filter(l=>l.res);
+    if(!calcules.length)
+      throw new Error(SIM.lots.map(l=>l.err).filter(Boolean)[0]||
+                      "Aucun lot n'a été calculé.");
     SIM.suivre=true;
     const el=simEl("simAuto");
     if(el&&!el.checked)el.checked=true;
-    if(SIM_ED.astuce)
-      SIM_ED.astuce("Simulation : "+res.ligne.troncons+" tronçon(s), Z₀ "+
-                    simNb(res.ligne.z0_min,1)+"–"+simNb(res.ligne.z0_max,1)+
-                    " Ω à "+simFreq(res.f_centre)+".");
+    if(SIM_ED.astuce){
+      if(calcules.length>1){
+        const z=calcules.map(simLotBilan);
+        SIM_ED.astuce("Simulation : "+calcules.length+" lots, Z₀ "+
+          simNb(Math.min(...z.map(b=>b.z0min)),1)+"–"+
+          simNb(Math.max(...z.map(b=>b.z0max)),1)+" Ω, "+
+          z.filter(b=>!b.dehors).length+" dans la tolérance.");
+      }else{
+        const res=calcules[0].res;
+        SIM_ED.astuce("Simulation : "+res.ligne.troncons+" tronçon(s), Z₀ "+
+                      simNb(res.ligne.z0_min,1)+"–"+simNb(res.ligne.z0_max,1)+
+                      " Ω à "+simFreq(res.f_centre)+".");
+      }
+    }
   }catch(e){
     SIM.err=e.message||String(e);
+    SIM.res=null; SIM.objets=[]; SIM.lots=[];
   }finally{
-    SIM.occupe=false; simRendre(); simRepeindre();
+    SIM.occupe=false; SIM.lotsAttendus=0; simRendre(); simRepeindre();
   }
 }
 
@@ -3314,6 +4645,19 @@ function simExportCsv(){
   const verdict=z=>z>0?(simZVerdict(z)>0?"trop eleve"
                        :(simZVerdict(z)<0?"trop faible":"dans la tolerance"))
                      :"non calculable";
+  /* TOUS LES LOTS DANS LE MÊME FICHIER, et une colonne pour dire lequel. C'est
+     la raison d'être du tableau : une ligne RF coupée par trois condensateurs
+     se contrôle d'un coup d'œil sur une seule feuille, pas en rapprochant
+     quatre fichiers dont rien ne dit qu'ils viennent du même calcul. Chaque lot
+     garde son propre bloc de synthèse en dessous de ses tronçons — sa portée,
+     sa couture, ses notes —, parce que ce sont ses chiffres et pas ceux du
+     voisin. */
+  const lots=SIM.lots.length
+    ? SIM.lots.filter(l=>l.res)
+    : [{rang:1, res:SIM.res, portee:SIM.portee, notes:SIM.notes,
+        couture:SIM.couture, voisins:SIM.voisins}];
+  const multi=lots.length>1;
+  const pre=multi?"lot;":"";
   /* `z0_statique` accompagne `z0` : la différence entre les deux est ce que la
      dispersion a ajouté, et c'est la part la moins sûre du chiffre. Un dossier
      de fabrication qui reprend l'un doit pouvoir retrouver l'autre. */
@@ -3326,74 +4670,109 @@ function simExportCsv(){
      plan de référence, il ne reste qu'une impédance dont on ne peut plus
      vérifier sur quoi elle a été obtenue — et c'est là que se trouve la cause
      neuf fois sur dix quand elle ne tombe pas sur la carte réelle. */
-  const l=["troncon;couche;longueur_mm;largeur_mm;topologie;"+
+  const l=[pre+"troncon;couche;longueur_mm;largeur_mm;topologie;"+
            "ecart_masse_gauche_mm;ecart_masse_droite_mm;cotes_avec_masse;"+
            "plan_reference;h_mm;er;tan_delta;cuivre_mm;couverture_mm;"+
            "z0_ohm;z0_statique_ohm;ecart_ohm;eps_eff;retard_ps;pertes_db;verdict"];
-  SIM.res.segments.forEach((s,i)=>{
-    l.push([i+1, s.nom_couche||s.couche, n(s.longueur), n(s.largeur),
-            simTopo(s).replace(/[éè]/g,"e"),
-            s.coplanaire?n(s.ecart_g||0):"",
-            s.coplanaire?n(s.ecart_d||0):"",
-            s.coplanaire?(s.cotes==null?"":s.cotes):"",
-            String(s.plan_haut||s.plan_bas||"").replace(/[;\r\n]+/g," "),
-            s.h!=null?n(s.h):"",
-            s.er!=null?n(s.er):"",
-            s.tan_delta!=null?n(s.tan_delta):"",
-            s.cuivre!=null?n(s.cuivre):"",
-            s.couverture!=null?n(s.couverture):"",
-            s.z0>0?n(Math.round(s.z0*10)/10):"",
-            s.z0_statique>0?n(Math.round(s.z0_statique*10)/10):"",
-            s.z0>0?n(Math.round((s.z0-c)*10)/10):"",
-            s.eps_eff?n(s.eps_eff):"",
-            s.retard?n(Math.round(s.retard*1e13)/10):"",
-            s.pertes_db!=null?n(s.pertes_db):"",
-            verdict(s.z0)].join(";"));
-  });
-  const L=SIM.res.ligne;
+  const rang=lot=>multi?(lot.rang+";"):"";
+  for(const lot of lots){
+    lot.res.segments.forEach((s,i)=>{
+      l.push(rang(lot)+[i+1, s.nom_couche||s.couche, n(s.longueur),
+              n(s.largeur),
+              simTopo(s).replace(/[éè]/g,"e"),
+              s.coplanaire?n(s.ecart_g||0):"",
+              s.coplanaire?n(s.ecart_d||0):"",
+              s.coplanaire?(s.cotes==null?"":s.cotes):"",
+              String(s.plan_haut||s.plan_bas||"").replace(/[;\r\n]+/g," "),
+              s.h!=null?n(s.h):"",
+              s.er!=null?n(s.er):"",
+              s.tan_delta!=null?n(s.tan_delta):"",
+              s.cuivre!=null?n(s.cuivre):"",
+              s.couverture!=null?n(s.couverture):"",
+              s.z0>0?n(Math.round(s.z0*10)/10):"",
+              s.z0_statique>0?n(Math.round(s.z0_statique*10)/10):"",
+              s.z0>0?n(Math.round((s.z0-c)*10)/10):"",
+              s.eps_eff?n(s.eps_eff):"",
+              s.retard?n(Math.round(s.retard*1e13)/10):"",
+              s.pertes_db!=null?n(s.pertes_db):"",
+              verdict(s.z0)].join(";"));
+    });
+  }
   l.push("");
   l.push("cible_ohm;"+n(c)+";tolerance_pct;"+n(SIM.saisie.tolPct)+
          ";tolerance_ohm;"+n(Math.round(simZTolAbs()*10)/10));
-  l.push("frequence_hz;"+n(SIM.res.f_centre)+";z0_moyen_ohm;"+n(L.z0_moyen)+
-         ";longueur_mm;"+n(L.longueur)+";pertes_db;"+n(L.pertes_db)+
-         ";impedance_reference_ohm;"+
-         n(SIM.res.impedance_reference||SIM.saisie.z0));
-  l.push("portee;"+(SIM.portee||""));
-  /* SOUS QUELLE HYPOTHÈSE. Le calcul coplanaire dépend entièrement de ce qui a
-     été tenu pour de la masse : deux jeux de nets donnent deux impédances sur
-     le même cuivre. Sans cette ligne, le tableau n'est pas reproductible. */
-  const refs=(SIM.res.reference_nets||simRefListe());
-  l.push("masse_de_reference;"+(refs.length?refs.join(" "):"non declaree"));
-  if(SIM.couture)
-    l.push("couture_vias;"+SIM.couture.n+";espacement_max_mm;"+
-           n(Math.round(SIM.couture.ecartMax*100)/100)+";couloir_mm;"+
-           n(SIM.couture.couloir));
-  for(const v of (SIM.voisins||[]))
-    l.push("cuivre_voisin_hors_masse;"+String(v.net).replace(/[;\r\n]+/g," ")+
-           ";ecart_mm;"+n(v.ecart)+";longueur_mm;"+n(v.longueur));
-  /* Les réserves partent AVEC les chiffres. Un .csv se détache de la page où
-     il a été produit : sans elles, il ne reste qu'un tableau qui a l'air sûr.
-     LES NOTES DE L'OUTIL AUSSI, et elles manquaient : « les vias ne sont pas
-     modélisés », « l'épaisseur de diélectrique est supposée » ne partaient
-     qu'avec le panneau, et le .csv avait donc l'air plus sûr que la page. */
-  for(const a of (SIM.notes||[]))
-    l.push("note;"+String(a).replace(/[;\r\n]+/g," "));
-  for(const a of (SIM.res.avertissements||[]))
-    l.push("avertissement;"+String(a).replace(/[;\r\n]+/g," "));
+  for(const lot of lots){
+    const L=lot.res.ligne;
+    if(multi)l.push("");
+    if(multi)l.push("lot;"+lot.rang+";sections_hors_tolerance;"+
+                    (simLotBilan(lot)||{}).dehors);
+    l.push((multi?"lot;"+lot.rang+";":"")+
+           "frequence_hz;"+n(lot.res.f_centre)+";z0_moyen_ohm;"+n(L.z0_moyen)+
+           ";longueur_mm;"+n(L.longueur)+";pertes_db;"+n(L.pertes_db)+
+           ";impedance_reference_ohm;"+
+           n(lot.res.impedance_reference||SIM.saisie.z0));
+    l.push((multi?"lot;"+lot.rang+";":"")+"portee;"+(lot.portee||""));
+    /* SOUS QUELLE HYPOTHÈSE. Le calcul coplanaire dépend entièrement de ce qui a
+       été tenu pour de la masse : deux jeux de nets donnent deux impédances sur
+       le même cuivre. Sans cette ligne, le tableau n'est pas reproductible. */
+    const refs=(lot.res.reference_nets||simRefListe());
+    l.push((multi?"lot;"+lot.rang+";":"")+
+           "masse_de_reference;"+(refs.length?refs.join(" "):"non declaree"));
+    if(lot.couture)
+      l.push((multi?"lot;"+lot.rang+";":"")+
+             "couture_vias;"+lot.couture.n+";espacement_max_mm;"+
+             n(Math.round(lot.couture.ecartMax*100)/100)+";couloir_mm;"+
+             n(lot.couture.couloir));
+    for(const v of (lot.voisins||[]))
+      l.push((multi?"lot;"+lot.rang+";":"")+
+             "cuivre_voisin_hors_masse;"+String(v.net).replace(/[;\r\n]+/g," ")+
+             ";ecart_mm;"+n(v.ecart)+";longueur_mm;"+n(v.longueur));
+    /* Les réserves partent AVEC les chiffres. Un .csv se détache de la page où
+       il a été produit : sans elles, il ne reste qu'un tableau qui a l'air sûr.
+       LES NOTES DE L'OUTIL AUSSI, et elles manquaient : « les vias ne sont pas
+       modélisés », « l'épaisseur de diélectrique est supposée » ne partaient
+       qu'avec le panneau, et le .csv avait donc l'air plus sûr que la page. */
+    for(const a of (lot.notes||[]))
+      l.push((multi?"lot;"+lot.rang+";":"")+
+             "note;"+String(a).replace(/[;\r\n]+/g," "));
+    for(const a of (lot.res.avertissements||[]))
+      l.push((multi?"lot;"+lot.rang+";":"")+
+             "avertissement;"+String(a).replace(/[;\r\n]+/g," "));
+  }
   /* Le BOM UTF-8 : sans lui, Excel lit les accents de travers. */
+  /* LE NOM DU FICHIER NE PORTE PAS DE NUMÉRO DE LOT ICI : il les contient
+     tous. `simNomFichier` en ajoute un pour le .s2p et le .json, qui sont
+     par nature ceux d'un seul lot. */
+  const nom=multi
+    ? simNomFichier("-impedance.csv").replace("-lot"+(SIM.lotActif+1),
+                                              "-"+lots.length+"lots")
+    : simNomFichier("-impedance.csv");
   simTelecharger("﻿"+l.join("\r\n")+"\r\n",
-                 simNomFichier("-impedance.csv"), "text/csv;charset=utf-8");
+                 nom, "text/csv;charset=utf-8");
 }
 function simExportS2p(){
   if(!SIM.res||!SIM.res.touchstone){
-    SIM.err="Rien à enregistrer : calculez d'abord.";simRendre();return;
+    /* DEUX SILENCES QUI NE SE RESSEMBLENT PAS. « Calculez d'abord » devant un
+       calcul déjà fait envoie chercher un bouton qu'on vient d'appuyer : le
+       .s2p manque parce que la cascade a été refusée, et c'est cette
+       phrase-là qu'il faut rendre. */
+    SIM.err=(SIM.res&&SIM.res.cascade_refusee)
+      ? "Pas de .s2p : "+SIM.res.cascade_refusee
+      : "Rien à enregistrer : calculez d'abord.";
+    simRendre();return;
   }
   simTelecharger(SIM.res.touchstone,simNomFichier(".s2p"),"text/plain");
 }
 function simExportJson(){
-  const p=simProbleme();
-  if(!p){simRendre();return;}
-  simTelecharger(JSON.stringify(p.doc,null,1),simNomFichier("-sim.json"),
+  /* CE QUI EST PARTI, ET NON CE QUI PARTIRAIT. Avec des lots, le document est
+     celui du lot déplié : c'est exactement ce que le serveur a reçu pour rendre
+     la fiche qu'on regarde, et le nom du fichier porte son numéro. Redécrire le
+     problème ici aurait rendu un document unique couvrant TOUTE la sélection,
+     que le serveur aurait vu rompu et refusé de cascader — un fichier qui ne
+     correspond à aucun résultat affiché. */
+  const doc=(SIM.lots.length&&SIM.doc)?SIM.doc:(simProbleme()||{}).doc;
+  if(!doc){simRendre();return;}
+  simTelecharger(JSON.stringify(doc,null,1),simNomFichier("-sim.json"),
                  "application/json");
 }
 
@@ -3444,7 +4823,7 @@ function simBrancherImpedance(){
       simSaisie();
       simFAvertEcrire();
       if(SIM.res&&!SIM.occupe){
-        SIM.res=null; SIM.objets=[];
+        simOublierRes();
         SIM.err="La fréquence a changé : relancez le calcul.";
         simRendre(); simRepeindre();
       }
@@ -3473,8 +4852,8 @@ function simRafraichir(garderCarte){
   /* Un résultat porte sur UNE sélection. Dès qu'elle change, il ne vaut plus
      rien : on l'efface, plutôt que de peindre l'impédance d'une piste sur une
      autre. */
-  const avait=!!SIM.res;
-  SIM.res=null; SIM.objets=[];
+  const avait=!!SIM.res||SIM.lots.length>0;
+  simOublierRes();
   if(avait){SIM.err=""; simRendre();}
   /* La carte a peut-être changé : les candidats à la masse de référence avec
      elle. `simRefEcrire` relit la liste et remet la proposition en vigueur si

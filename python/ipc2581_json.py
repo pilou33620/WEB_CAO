@@ -44,7 +44,8 @@ Cle par cle, le dictionnaire produit :
     arcs        {c, n, w, s (debut), e (fin), m (centre), h (horaire)}
     plans       {c, n, f, g: [{o, t}]} -- zones de cuivre remplies
     textes      {c, x, y, r (rotation), m (miroir), t}
-    percages    {x, y, d (diametre), p (metallise), ps (padstack), n, a (anneau)}
+    percages    {x, y, d (diametre), p (metallise), ps (padstack), n, a (anneau),
+                 a_sup (l'anneau vient d'une pastille devinee, pas du fichier)}
     pads        pastilles libres : {x, y, r, m, ps, pin, n}
     composants  {ref, pkg, c, x, y, r, m, mnt, val, tol, pads, pins}
     padstacks   definitions : {trou, pad, pads: [{c, d, f (forme), a (antipad)}]}
@@ -249,6 +250,13 @@ def design_en_dict(design: IPCDesign, fichier: str = "") -> dict:
         anneau = trou.annular_ring
         if anneau:
             item["a"] = _r(anneau)
+            # UN ANNEAU DEDUIT D'UNE PASTILLE DEVINEE N'EST PAS UNE MESURE.
+            # Sans ce drapeau, la fiche affiche « Anneau 0,15 mm » avec le meme
+            # aplomb qu'une cote lue dans le fichier -- alors que 0,15 est la
+            # moitie du « + 0,3 » que le lecteur pose lui-meme faute de
+            # padstack.
+            if trou.annular_ring_supposee:
+                item["a_sup"] = True
         percages.append(item)
 
     pads = [_pad_en_dict(p, nets) for p in design.standalone_pads]
@@ -289,6 +297,9 @@ def design_en_dict(design: IPCDesign, fichier: str = "") -> dict:
         padstacks[nom] = {
             "trou": _r(pdef.hole_diameter),
             "pad": _r(pdef.pad_diameter),
+            # « la pastille est supposee » -- absent quand elle est lue, pour
+            # ne pas alourdir un document ou c'est le cas ordinaire.
+            **({"pad_sup": True} if pdef.pad_supposee else {}),
             "pads": [{"c": p.layer_ref, "d": _r(p.pad_diameter),
                       "f": p.shape_ref, "a": _r(p.antipad_diameter)}
                      for p in pdef.pads],

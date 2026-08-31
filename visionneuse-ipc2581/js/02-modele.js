@@ -46,6 +46,18 @@ const V={
   mev:{couche:-1,quoi:"",seul:null},
   comp:"",              // repère du composant sélectionné
   survol:null,          // ce que le curseur désigne
+  /* LA SÉLECTION, QUAND ELLE PORTE SUR PLUSIEURS MORCEAUX. Ctrl+clic ajoute au
+     lieu de remplacer : chaque entrée est un `{s, mev}` — ce que le clic a
+     désigné, et jusqu'où sa mise en évidence va.
+
+     `net`, `comp`, `mev` et `survol` ci-dessus ne disparaissent pas pour
+     autant : ils REFLÈTENT la dernière entrée, celle qu'on vient de cliquer.
+     Toutes les fiches, la liste des nets, le panneau d'empilage et la ligne de
+     transmission continuent donc de lire ce qu'ils ont toujours lu, et un clic
+     simple — le geste de tous les jours — se comporte exactement comme avant.
+     Ce qui s'ajoute est la LISTE, que seuls la mise en évidence, la fiche de
+     sélection et la simulation parcourent. Voir `selPoser`, 04-interaction.js. */
+  sel:[],
   /* Ce que l'utilisateur a complété faute de le trouver dans le fichier :
      épaisseur d'un conducteur, épaisseur et permittivité d'un intervalle.
      Rangé par nom de couche, comme les couches masquées, et gardé dans le
@@ -397,6 +409,78 @@ function mdlPremierCuivre(){
 }
 
 /* ==========================================================================
+   LA SÉLECTION
+   --------------------------------------------------------------------------
+   ELLE EST ICI PARCE QU'ELLE N'EST QUE DE L'ÉTAT. Le geste qui la construit est
+   dans 04-interaction.js — c'est lui qui lit Ctrl et Maj — mais ce qui suit ne
+   touche ni au canevas ni aux panneaux : ça range `V.sel` et ça met le reflet
+   à jour. Les avoir ici les rend éprouvables sans monter un écran.
+   ========================================================================== */
+
+/* Deux désignations portent-elles sur LE MÊME objet ? C'est ce qui décide si
+   Ctrl+clic ajoute ou retire. On compare les objets du modèle quand il y en a —
+   une piste, un plan, un perçage sont des objets uniques —, et à défaut ce qui
+   les identifie : le repère d'un composant, la position et la couche d'une
+   pastille. Comparer les coordonnées d'un clic ne marcherait pas : deux clics
+   sur la même piste ne tombent jamais au même endroit. */
+function selMeme(a,b){
+  if(!a||!b||a.type!==b.type)return false;
+  if(a.type==="piste")return a.piste===b.piste;
+  if(a.type==="plan")return a.plan===b.plan;
+  if(a.type==="percage")return a.trou===b.trou;
+  if(a.type==="composant")return a.ref===b.ref;
+  if(a.type==="net")return a.net===b.net;
+  if(a.type==="pad")
+    return a.couche===b.couche&&Math.abs(a.x-b.x)<1e-9&&Math.abs(a.y-b.y)<1e-9;
+  return false;
+}
+
+/* Le reflet : la dernière entrée de la liste, recopiée là où tout le monde la
+   lit déjà. Une liste vide remet l'état d'avant tout clic. */
+function selRefleter(){
+  const e=V.sel.length?V.sel[V.sel.length-1]:null;
+  if(!e){V.net=-1; V.comp=""; V.mev=mdlMevTout(); return;}
+  const s=e.s;
+  V.mev=e.mev||mdlMevTout();
+  if(s.type==="composant"){V.comp=s.ref; V.net=-1; return;}
+  V.net=(s.net!=null&&s.net>=0)?s.net:-1;
+  /* Une pastille appartient a deux choses a la fois : un net, et le boitier
+     qui la porte. On retient les deux -- la fiche les montre ensemble. */
+  V.comp=s.comp||"";
+}
+
+/* Poser une désignation. `ajouter` vrai la fait basculer dans la liste — elle
+   y entre si elle n'y est pas, elle en sort si elle y est ; faux la remplace,
+   ce qui est le clic ordinaire. */
+function selPoser(s,mev,ajouter){
+  if(!s){if(!ajouter)V.sel=[];selRefleter();return;}
+  if(!ajouter){V.sel=[{s:s,mev:mev||mdlMevTout()}];selRefleter();return;}
+  const k=V.sel.findIndex(e=>selMeme(e.s,s));
+  if(k>=0)V.sel.splice(k,1);
+  else V.sel.push({s:s,mev:mev||mdlMevTout()});
+  selRefleter();
+}
+/* Les nets et les boîtiers que la sélection touche, pour que les listes
+   marquent TOUTES leurs lignes retenues et pas seulement la dernière. */
+function selNets(){
+  const out=new Set();
+  for(const e of V.sel)
+    if(e.s&&e.s.net!=null&&e.s.net>=0)out.add(e.s.net);
+  if(!out.size&&V.net>=0)out.add(V.net);
+  return out;
+}
+function selRefs(){
+  const out=new Set();
+  for(const e of V.sel){
+    if(!e.s)continue;
+    if(e.s.type==="composant")out.add(e.s.ref);
+    else if(e.s.comp)out.add(e.s.comp);
+  }
+  if(!out.size&&V.comp)out.add(V.comp);
+  return out;
+}
+
+/* ==========================================================================
    Chargement
    ========================================================================== */
 function mdlCharger(modele,nomFichier){
@@ -404,7 +488,7 @@ function mdlCharger(modele,nomFichier){
   V.fichier=nomFichier||modele.fichier||"carte";
   V.unite=/INCH/i.test(modele.unites||"")?"in":"mm";
   V.couches=mdlCouches(modele);
-  V.net=-1; V.comp=""; V.survol=null; V.mev=mdlMevTout();
+  V.net=-1; V.comp=""; V.survol=null; V.mev=mdlMevTout(); V.sel=[];
   MDL_FORMES.clear();
 
   /* Un net par entrée du tableau des noms, plus une case pour « hors net » :

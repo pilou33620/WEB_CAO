@@ -48,7 +48,8 @@ from ligne_mom import (EPSILON_0, solve_line, dispersion_getsinger,   # noqa: E4
                        line_losses, abcd_line, cascade_to_s,
                        green_spectral_micro, green_spectral_micro_couvert,
                        green_spectral_micro_masque, elements_coude,
-                       inductance_via, abcd_via, abcd_coude)
+                       inductance_via, abcd_via, abcd_coude,
+                       solve_multiline, diaphonie)
 import ligne_mom as _tl                                              # noqa: E402
 import simulation_em as _se                                          # noqa: E402
 
@@ -947,25 +948,34 @@ def un_via_n_est_pas_une_rupture():
     VRAIMENT rompue, personne ne le voit. On verifie donc les deux sens --
     qu'il se taise sur un via, et qu'il parle sur une vraie rupture.
     """
-    def rupture_annoncee(objets):
-        r = _se.simuler(_doc_via(objets))
-        return any("parcours continu" in a for a in r["avertissements"])
+    # ON MESURE LE DIAGNOSTIC, PAS LA TOURNURE DE LA PHRASE. La version
+    # precedente cherchait « parcours continu » dans les avertissements : elle
+    # passait au vert tant que le texte contenait ces deux mots, et serait
+    # passee au rouge sur une reformulation qui ne change rien au calcul. Un
+    # essai qui mesure une phrase mesure la phrase.
+    def genre(objets):
+        return _se.simuler(_doc_via(objets))["topologie"]["genre"]
 
-    # Un via : parcours continu, aucun avertissement.
-    assert not rupture_annoncee([_piste(0, 0, 15, 0, 0),
-                                 _piste(15, 0, 30, 0, 6)]), \
-        "un via est annonce comme une rupture"
+    def cascade(objets):
+        return _se.simuler(_doc_via(objets))["topologie"]["cascadable"]
 
-    # Deux troncons qui ne se touchent pas, MEME couche : vraie rupture.
-    assert rupture_annoncee([_piste(0, 0, 15, 0, 0),
-                             _piste(20, 0, 30, 0, 0)]), \
-        "une vraie rupture sur une couche n'est plus signalee"
+    via = [_piste(0, 0, 15, 0, 0), _piste(15, 0, 30, 0, 6)]
+    meme_couche = [_piste(0, 0, 15, 0, 0), _piste(20, 0, 30, 0, 0)]
+    deux_couches = [_piste(0, 0, 15, 0, 0), _piste(20, 0, 30, 0, 6)]
 
-    # Deux troncons qui ne se touchent pas, couches DIFFERENTES : vraie
-    # rupture aussi -- il n'y a pas de via la ou rien ne se touche.
-    assert rupture_annoncee([_piste(0, 0, 15, 0, 0),
-                             _piste(20, 0, 30, 0, 6)]), \
-        "une rupture entre deux couches n'est plus signalee"
+    # Un via : parcours continu, cascade legitime.
+    assert genre(via) == "chaine", "un via est annonce comme une rupture"
+    assert cascade(via), "un via interdit la cascade"
+
+    # Deux troncons qui ne se touchent pas, MEME couche : deux MORCEAUX -- et
+    # pas un parcours mal range. La distinction porte : « rangez la selection »
+    # n'a aucun sens devant du cuivre qui ne se touche nulle part.
+    assert genre(meme_couche) == "eparse",         "une vraie rupture sur une couche n'est plus signalee"
+    assert not cascade(meme_couche),         "une selection eparse rend quand meme des parametres S"
+
+    # Deux troncons qui ne se touchent pas, couches DIFFERENTES : eparse
+    # aussi -- il n'y a pas de via la ou rien ne se touche.
+    assert genre(deux_couches) == "eparse",         "une rupture entre deux couches n'est plus signalee"
 
 
 T("un via n'est pas une rupture, et une vraie rupture le reste",
@@ -2046,6 +2056,1006 @@ T("un via sans changement de couche n'en est pas un",
 T("la fiche du retour dit où est le via", la_fiche_du_retour_dit_ou_est_le_via)
 T("sans position, la fiche ne l'invente pas",
   sans_position_la_fiche_ne_l_invente_pas)
+
+
+
+
+# ==========================================================================
+# LA TOPOLOGIE : CE QUI EST UNE CHAINE, ET CE QUI NE L'EST PAS
+# --------------------------------------------------------------------------
+# La version precedente comptait des RUPTURES et rendait les parametres S dans
+# tous les cas, assortis d'une phrase disant qu'ils ne voulaient rien dire.
+# Deux defauts en un :
+#
+#   - un compteur unique confondait « le parcours existe mais la selection est
+#     mal rangee » -- que la page peut corriger -- avec « ce net se ramifie »,
+#     ou aucun ordre n'existe ;
+#   - la courbe s'affichait quand meme, et le .s2p exporte, lui, ne portait
+#     aucun avertissement. Un chiffre faux qui voyage est pire qu'absent.
+# ==========================================================================
+
+
+def le_via_hors_chaine_emporte_le_doute_sur_ses_cotes():
+    """LE DRAPEAU SUIT LES COTES, SANS QUOI IL NE SUIT RIEN.
+
+    La fiche d'un via hors parcours recopiait `cotes` -- ou chaque champ porte
+    sa provenance -- mais pas le booleen `cotes_supposees`. Or c'est sur CE
+    booleen que le panneau filtre pour ecrire « ce via est chiffre avec des
+    valeurs supposees ». Les provenances partaient donc completes, et personne
+    ne les lisait : un via chiffre sur une pastille devinee par le lecteur
+    IPC-2581 se presentait comme un via mesure.
+    """
+    v = {"x": 10.0, "y": 0.0, "layer_from": 0, "layer_to": 6,
+         "drill_diameter": 0.25,
+         "pad_diameter": 0.55, "pad_diameter_supposee": True, "retours": []}
+    r = _se.simuler(_doc_vias_seuls(_QUATRE, [v]))
+    fiche = r["discontinuites"]["vias_hors_chaine"][0]
+    assert fiche["cotes"]["pastille_source"] == "supposee",         "la provenance de la pastille est « %s »" % fiche["cotes"]["pastille_source"]
+    assert fiche.get("cotes_supposees") is True,         "le via hors parcours ne porte pas le doute jusqu'au panneau : %r"         % sorted(fiche)
+
+    # LE REVERS : des cotes LUES ne doivent pas lever le drapeau, sans quoi la
+    # mention s'afficherait partout et ne se lirait plus nulle part.
+    lu = dict(v)
+    lu.pop("pad_diameter_supposee")
+    r2 = _se.simuler(_doc_vias_seuls(_QUATRE, [lu]))
+    f2 = r2["discontinuites"]["vias_hors_chaine"][0]
+    assert f2["cotes"]["pastille_source"] == "page",         "une pastille envoyee sans reserve passe pour supposee"
+    assert f2.get("cotes_supposees") is False,         "des cotes lues levent quand meme le doute"
+
+
+T("un via hors chaine emporte le doute sur ses cotes",
+  le_via_hors_chaine_emporte_le_doute_sur_ses_cotes)
+
+
+print("\nLa topologie de la selection")
+
+
+def _en_T():
+    """Trois branches sur un meme point : un bus qui dessert deux boitiers."""
+    return [_piste(0, 0, 10, 0, 0),
+            _piste(10, 0, 20, 0, 0),
+            _piste(10, 0, 10, 10, 0)]
+
+
+def un_net_ramifie_n_est_pas_une_chaine():
+    """AUCUN ORDRE NE SAUVE UN T, et c'est ce qu'il faut dire.
+
+    Trois bouts sur un point : la liaison n'a pas deux acces mais trois. La
+    mise en cascade ABCD suppose une entree et une sortie ; ici il faudrait
+    choisir laquelle des deux branches est « la suite », et ce choix
+    changerait le resultat tout en ayant l'air d'un calcul.
+    """
+    r = _se.simuler(_doc_via(_en_T()))
+    topo = r["topologie"]
+    assert topo["genre"] == "ramifiee", \
+        "un T est classe « %s »" % topo["genre"]
+    assert not topo["cascadable"], "un T laisse passer la cascade"
+    assert len(topo["derivations"]) == 1, \
+        "%d derivation(s) vues au lieu d'une" % len(topo["derivations"])
+    d = topo["derivations"][0]
+    proche(d["x"], 10.0, 1e-6, "l'abscisse de la derivation")
+    assert d["branches"] == 3, "%d branches comptees" % d["branches"]
+
+    # ET LES PARAMETRES S NE SORTENT PAS. C'est la moitie qui manquait : le
+    # diagnostic ne vaut que s'il empeche quelque chose.
+    assert r["s"] == [], "%d matrices S rendues sur un net ramifie" % len(r["s"])
+    assert r["touchstone"] == "", "un .s2p est exporte sur un net ramifie"
+    assert "ramifie" in r["cascade_refusee"], \
+        "la raison ne nomme pas la ramification : %r" % r["cascade_refusee"]
+
+
+T("un net ramifie n'est pas une chaine, et ne rend pas de parametres S",
+  un_net_ramifie_n_est_pas_une_chaine)
+
+
+def le_desordre_se_distingue_de_la_ramification():
+    """« RANGEZ LA SELECTION » N'A DE SENS QUE SI C'EN EST UNE.
+
+    Les memes trois troncons colineaires, envoyes dans le desordre, forment un
+    parcours : la page peut les ranger. Un T, non. Les confondre revient a
+    demander a l'un l'impossible et a taire a l'autre ce qu'il suffirait de
+    faire -- c'est pour cette phrase-la que le diagnostic existe.
+    """
+    ordre = [_piste(0, 0, 10, 0, 0), _piste(10, 0, 20, 0, 0),
+             _piste(20, 0, 30, 0, 0)]
+    desordre = [ordre[0], ordre[2], ordre[1]]
+
+    assert _se.simuler(_doc_via(ordre))["topologie"]["genre"] == "chaine", \
+        "un parcours range n'est pas reconnu"
+    t = _se.simuler(_doc_via(desordre))["topologie"]
+    assert t["genre"] == "desordre", "le desordre est classe « %s »" % t["genre"]
+    assert t["morceaux"] == 1, \
+        "un parcours mal range est vu en %d morceaux" % t["morceaux"]
+    assert t["bouts_libres"] == 2, "un parcours n'a pas deux extremites"
+
+    # LE MEME CUIVRE, LE MEME NOMBRE DE TRONCONS, UN DIAGNOSTIC DIFFERENT.
+    assert _se.simuler(_doc_via(_en_T()))["topologie"]["genre"] == "ramifiee", \
+        "le T et le desordre recoivent le meme verdict"
+
+
+T("un parcours mal range n'est pas un net ramifie",
+  le_desordre_se_distingue_de_la_ramification)
+
+
+def une_boucle_n_a_pas_deux_acces():
+    """UNE BOUCLE FERMEE N'A NI ENTREE NI SORTIE.
+
+    Un anneau de cuivre est connexe, sans derivation, et chaque troncon touche
+    le suivant : les trois criteres precedents le declarent chaine. Il n'en est
+    pas une pour autant -- le cascader reviendrait a le couper en un point
+    arbitraire, et le S11 rendu dependrait de ce choix.
+    """
+    anneau = [_piste(0, 0, 10, 0, 0), _piste(10, 0, 10, 10, 0),
+              _piste(10, 10, 0, 10, 0), _piste(0, 10, 0, 0, 0)]
+    t = _se.simuler(_doc_via(anneau))["topologie"]
+    assert t["genre"] == "boucle", "un anneau est classe « %s »" % t["genre"]
+    assert t["bouts_libres"] == 0, \
+        "%d extremites libres sur un anneau" % t["bouts_libres"]
+    assert not t["cascadable"], "un anneau laisse passer la cascade"
+
+
+T("une boucle fermee n'est pas une chaine", une_boucle_n_a_pas_deux_acces)
+
+
+def les_cumuls_disent_s_ils_valent_quelque_chose():
+    """LE RETARD D'UN T N'EST LE TRAJET DE PERSONNE.
+
+    Additionner les longueurs des trois branches d'une derivation donne une
+    quantite de cuivre, pas un retard de propagation : aucun front ne parcourt
+    les deux branches. Le chiffre reste rendu -- il repond a « combien de
+    cuivre ai-je selectionne » -- mais il doit se presenter pour ce qu'il est.
+    """
+    droit = _se.simuler(_doc_via([_piste(0, 0, 10, 0, 0),
+                                  _piste(10, 0, 20, 0, 0)]))
+    assert droit["ligne"]["cumuls_valides"] is True, \
+        "les cumuls d'une chaine sont annonces douteux"
+
+    t = _se.simuler(_doc_via(_en_T()))
+    assert t["ligne"]["cumuls_valides"] is False, \
+        "les cumuls d'un net ramifie passent pour un retard de liaison"
+    # Les impedances par troncon, elles, restent rendues : chacune ne depend
+    # que de sa propre section, et c'est tout l'interet de la distinction.
+    assert t["ligne"]["troncons"] == 3, \
+        "%d troncons chiffres sur le T" % t["ligne"]["troncons"]
+    assert t["ligne"]["z0_moyen"] > 0, "le T ne rend plus d'impedance"
+
+
+T("les cumuls disent s'ils valent quelque chose",
+  les_cumuls_disent_s_ils_valent_quelque_chose)
+
+
+def un_document_sans_coordonnees_reste_calculable():
+    """ON NE REFUSE PAS CE QU'ON NE PEUT PAS JUGER.
+
+    Un document ecrit a la main qui ne porte que des longueurs est une chaine
+    parfaitement legitime, envoyee dans l'ordre. Faute de coordonnees on ne
+    peut ni le confirmer ni l'infirmer -- et refuser par defaut ferait taire un
+    calcul juste. Le doute profite au document.
+    """
+    objets = [{"type": "track", "length": 10.0, "width": 0.35, "layer": 0,
+               "net": "SIG", "copper_thickness": 0.035},
+              {"type": "track", "length": 5.0, "width": 0.35, "layer": 0,
+               "net": "SIG", "copper_thickness": 0.035}]
+    r = _se.simuler(_doc_via(objets))
+    assert r["topologie"]["genre"] == "sans_coordonnees", \
+        "un document sans XY est classe « %s »" % r["topologie"]["genre"]
+    assert r["topologie"]["cascadable"], \
+        "un document sans XY se voit refuser la cascade"
+    assert len(r["s"]) > 0, "un document sans XY ne rend plus de parametres S"
+    assert r["touchstone"], "un document sans XY ne rend plus de .s2p"
+    assert r["cascade_refusee"] == "", "un refus est annonce sans raison"
+
+
+T("un document sans coordonnees reste calculable",
+  un_document_sans_coordonnees_reste_calculable)
+
+# ==========================================================================
+# LES LIGNES COUPLEES : Z DIFFERENTIELLE ET DIAPHONIE
+# --------------------------------------------------------------------------
+# UN SEUL CHANTIER, DEUX REPONSES. `solve_multiline` resout la meme section que
+# `solve_line` avec N seconds membres au lieu d'un, et rend la matrice de
+# capacite de Maxwell [C] puis [L] = mu0 eps0 [C0]^-1. Tout ce qui suit en
+# sort : modes pair et impair, Z differentielle, Z commune, NEXT et FEXT.
+#
+# QUATRE INVARIANTS GRATUITS, et ils attrapent une erreur de signe ou d'indice
+# avant tout etalon : la matrice est SYMETRIQUE, sa diagonale POSITIVE, ses
+# termes croises NEGATIFS, et la somme d'une ligne vaut la capacite du
+# conducteur VERS LA REFERENCE -- donc positive et plus petite que sa
+# diagonale.
+#
+# DEUX REDUCTIONS EXACTES : un conducteur seul par la matrice doit redonner
+# `solve_line` AU BIT PRES -- c'est la meme quadrature, les memes panneaux, le
+# meme milieu --, et deux rubans qu'on eloigne doivent se decoupler, chacun
+# retrouvant la capacite du ruban seul.
+#
+# UN ETALON EXTERIEUR : la forme fermee de Garg-Bahl pour le microruban couple
+# par les aretes, qui vaut a quelques pour cent. Il en fallait un : les
+# invariants et les reductions verifient la COHERENCE du calcul, pas sa
+# justesse. C'est la meme exigence que Hammerstad-Jensen pour la ligne seule.
+#
+# ET UNE PROPRIETE PHYSIQUE QUI NE SE DISCUTE PAS : en milieu HOMOGENE, la
+# diaphonie AVANT est nulle. Une triplaque n'a pas de FEXT -- k_C et k_L y sont
+# egaux terme a terme --, un microruban si, et de signe negatif. Rien de plus
+# severe pour verifier que [C] et [L] decrivent bien la MEME geometrie.
+# ==========================================================================
+
+def garg_bahl(u, g, er):
+    """Z pair, Z impair et leurs eps_eff d'un microruban couple. u=w/h, g=s/h.
+
+    Garg et Bahl (1979), tel que repris par Gupta, « Microstrip Lines and
+    Slotlines » : les capacites de chaque mode se composent d'un terme plan,
+    d'une frange exterieure, et -- pour le mode impair seul -- des deux termes
+    de couplage, celui de l'air (integrale elliptique) et celui du dielectrique
+    (coth). La forme est donnee a quelques pour cent, ce qui est exactement ce
+    qu'on attend d'un etalon exterieur ici : il ne sert pas a affiner le
+    solveur, il sert a exclure qu'il se trompe de physique.
+    """
+    from scipy.special import ellipk
+
+    def capacites(epsr):
+        z0, ere = hammerstad_jensen(u, epsr)
+        c_p = EPSILON_0 * epsr * u
+        c_f = 0.5 * (np.sqrt(ere) / (_tl.C_0 * z0) - c_p)
+        a = np.exp(-0.1 * np.exp(2.33 - 1.5 * u))
+        c_fp = c_f / (1.0 + a / g * np.tanh(8.0 * g)) * np.sqrt(epsr / ere)
+        k = g / (g + 2.0 * u)
+        c_ga = EPSILON_0 * ellipk(1.0 - k * k) / ellipk(k * k)
+        c_gd = (EPSILON_0 * epsr / np.pi) * np.log(1.0 / np.tanh(np.pi * g / 4.0)) \
+            + 0.65 * c_f * (0.02 / g * np.sqrt(epsr) + 1.0 - epsr ** -2)
+        return c_p + c_f + c_fp, c_p + c_f + c_ga + c_gd
+
+    c_pair, c_impair = capacites(er)
+    c_pair_air, c_impair_air = capacites(1.0)
+    return (1.0 / (_tl.C_0 * np.sqrt(c_pair * c_pair_air)),
+            1.0 / (_tl.C_0 * np.sqrt(c_impair * c_impair_air)),
+            c_pair / c_pair_air, c_impair / c_impair_air)
+
+
+def _paire(w, s, h=H, er=4.3, t=0.0, **reste):
+    """Une paire symetrique de microruban, resolue."""
+    return solve_multiline(dict({"kind": "micro", "t": t, "h": h,
+                                 "epsilon_r": er,
+                                 "conducteurs": [{"w": w}, {"w": w, "s": s}]},
+                                **reste))
+
+
+print("\nLes lignes couplees : les invariants de la matrice de Maxwell")
+
+
+def un_conducteur_par_la_matrice_redonne_la_ligne_seule():
+    """N = 1 DOIT REDONNER LE CHIFFRE ACTUEL AU BIT PRES.
+
+    C'est la reduction la plus severe de tout ce lot : meme milieu, memes
+    panneaux, meme quadrature -- le seul changement est la forme du second
+    membre, qui devient une matrice a une colonne. Un ecart ici ne serait pas
+    une imprecision, ce serait un chemin de calcul different.
+    """
+    geo = {"kind": "micro", "w": 0.35e-3, "t": 35e-6, "h": H, "epsilon_r": 4.3}
+    seul = solve_line(geo)
+    m = _tl._milieu(geo)
+    places = _tl._conducteurs_places([{"w": 0.35e-3}], 35e-6, m["distance"])
+    c = _tl.capacitance_matrice(places, 0.0, 0.0, m["g_diel"], m["distance"],
+                                m["eps_moyen"])
+    c0 = _tl.capacitance_matrice(places, 0.0, 0.0, m["g_vide"], m["distance"],
+                                 m["eps_vide"])
+    proche(c[0, 0], seul["c"], 1e-12, "C par la matrice")
+    proche(c0[0, 0], seul["c0"], 1e-12, "C0 par la matrice")
+
+
+T("N = 1 par la matrice redonne solve_line au bit pres",
+  un_conducteur_par_la_matrice_redonne_la_ligne_seule)
+
+
+def la_matrice_porte_ses_quatre_invariants():
+    """SYMETRIQUE, DIAGONALE POSITIVE, CROISES NEGATIFS, SOMME DE LIGNE JUSTE.
+
+    Les trois premiers attrapent une erreur de signe ou d'indice ; le quatrieme
+    dit ce que la matrice de Maxwell EST : la somme d'une ligne est la charge
+    portee par le conducteur quand TOUS sont au meme potentiel, c'est-a-dire sa
+    capacite vers la reference seule -- necessairement positive, et plus petite
+    que sa diagonale puisque le voisin lui en a pris une part.
+
+    LA SYMETRIE SE MESURE SUR LA MATRICE BRUTE. `capacitance_matrice` symetrise
+    en sortie, comme tout extracteur ; la verifier apres coup ne verifierait
+    rien du tout, et cacherait justement le jour ou la discretisation ne
+    suffirait plus. Sur trois pistes de largeurs differentes -- le cas le plus
+    defavorable, puisque A[m,k] ne depend que de la largeur de k --, l'ecart
+    mesure vaut 3,1e-06 ; le seuil est pose a 1e-05, et le franchir voudrait
+    dire qu'il faut plus de panneaux.
+    """
+    geo = {"kind": "micro", "t": 35e-6, "h": H, "epsilon_r": 4.3,
+           "conducteurs": [{"w": 0.25e-3}, {"w": 0.4e-3, "s": 0.18e-3},
+                           {"w": 0.25e-3, "s": 0.3e-3}]}
+    m = _tl._milieu(geo)
+    places = _tl._conducteurs_places(geo["conducteurs"], 35e-6, m["distance"])
+    brute = _tl.capacitance_matrice(places, 0.0, 0.0, m["g_diel"],
+                                    m["distance"], m["eps_moyen"],
+                                    symetriser=False)
+    ecart = np.max(np.abs(brute - brute.T)) / np.max(np.abs(brute))
+    assert ecart < 1e-5, "matrice brute asymetrique de %.2e" % ecart
+
+    c = np.array(solve_multiline(geo)["c"])
+    assert np.all(np.diag(c) > 0), "diagonale non positive : %s" % np.diag(c)
+    for i in range(3):
+        for j in range(3):
+            if i != j:
+                assert c[i, j] < 0, \
+                    "C[%d,%d] = %.3e, une mutuelle de Maxwell est negative" \
+                    % (i, j, c[i, j])
+        vers_masse = c[i].sum()
+        assert 0 < vers_masse < c[i, i], \
+            "somme de la ligne %d : %.3e hors de ]0 ; %.3e[" \
+            % (i, vers_masse, c[i, i])
+
+
+T("la matrice porte ses quatre invariants", la_matrice_porte_ses_quatre_invariants)
+
+
+def deux_rubans_eloignes_se_decouplent():
+    """LOIN L'UN DE L'AUTRE, CHACUN REDEVIENT UN RUBAN SEUL.
+
+    Le terme croise doit tomber a rien, et surtout chaque DIAGONALE doit
+    retrouver la capacite du ruban seul : un couplage residuel se verrait
+    d'abord la, parce que la diagonale de Maxwell compte la mutuelle.
+    """
+    w = 0.35e-3
+    seul = solve_line({"kind": "micro", "w": w, "t": 35e-6, "h": H,
+                       "epsilon_r": 4.3})
+    r = _paire(w, 20.0 * H, t=35e-6)
+    c = np.array(r["c"])
+    couplage = abs(c[0, 1] / c[0, 0])
+    assert couplage < 2e-3, "a vingt hauteurs, il reste %.3e de couplage" % couplage
+    proche(c[0, 0], seul["c"], 2e-3, "C11 du ruban eloigne")
+    proche(r["lignes"][0]["z0"], seul["z0"], 2e-3, "Z0 du ruban eloigne")
+
+
+T("deux rubans eloignes se decouplent", deux_rubans_eloignes_se_decouplent)
+
+
+def z_diff_tend_vers_deux_fois_z0():
+    """Z_DIFF -> 2 Z0 QUAND L'ECART DEVIENT GRAND DEVANT LA HAUTEUR.
+
+    Deux lignes qui ne se voient plus, prises en differentiel, ne sont que deux
+    lignes en serie : la tension entre elles est deux fois celle de chacune au
+    plan de symetrie, et le courant est le meme. C'est la seule facon de
+    verifier le facteur deux de Z_diff sans le poser par convention.
+    """
+    w = 0.35e-3
+    z0 = solve_line({"kind": "micro", "w": w, "t": 0.0, "h": H,
+                     "epsilon_r": 4.3})["z0"]
+    proche(_paire(w, 30.0 * H)["paire"]["z_diff"], 2.0 * z0, 5e-3, "Z_diff loin")
+    # Et Z commune tend vers Z0/2, par le meme raisonnement en parallele.
+    proche(_paire(w, 30.0 * H)["paire"]["z_commune"], z0 / 2.0, 5e-3,
+           "Z_commune loin")
+
+
+T("Z_diff tend vers 2 Z0 quand l'ecart s'ouvre", z_diff_tend_vers_deux_fois_z0)
+
+
+def serrer_la_paire_baisse_z_diff():
+    """SERRER FAIT BAISSER Z_DIFF ET MONTER Z_COMMUNE, toujours.
+
+    Les deux vont en sens INVERSE, et c'est ce qui distingue un vrai couplage
+    d'une erreur d'echelle qui deplacerait les deux ensemble.
+    """
+    diff, comm, k = [], [], []
+    for s in (0.15e-3, 0.25e-3, 0.5e-3, 1.0e-3):
+        p = _paire(0.25e-3, s)["paire"]
+        diff.append(p["z_diff"]); comm.append(p["z_commune"]); k.append(p["k_c"])
+    assert all(a < b for a, b in zip(diff, diff[1:])), diff
+    assert all(a > b for a, b in zip(comm, comm[1:])), comm
+    assert all(a > b for a, b in zip(k, k[1:])), k
+
+
+T("serrer la paire baisse Z_diff et monte Z_commune",
+  serrer_la_paire_baisse_z_diff)
+
+
+print("\nLa paire de microruban contre Garg-Bahl (+-3 %)")
+
+for _u in (0.5, 1.0, 2.0):
+    for _g in (0.5, 1.0, 2.0):
+        def essai(u=_u, g=_g):
+            z_pair, z_impair, e_pair, e_impair = garg_bahl(u, g, 4.3)
+            p = _paire(u * H, g * H)["paire"]
+            proche(p["z_diff"], 2.0 * z_impair, 0.03, "Z_diff")
+            proche(p["z_commune"], z_pair / 2.0, 0.03, "Z_commune")
+            proche(p["eps_eff_impair"], e_impair, 0.02, "eps_eff impair")
+            proche(p["eps_eff_pair"], e_pair, 0.02, "eps_eff pair")
+            # L'IMPAIR VOIT PLUS D'AIR QUE LE PAIR : son champ passe entre les
+            # deux rubans, au-dessus du stratifie. eps_eff impair < pair, et
+            # c'est CE fait qui fait exister la diaphonie avant.
+            assert p["eps_eff_impair"] < p["eps_eff_pair"], \
+                "eps_eff impair %.3f >= pair %.3f" % (p["eps_eff_impair"],
+                                                      p["eps_eff_pair"])
+        T("w/h=%3.1f  s/h=%3.1f" % (_u, _g), essai)
+
+
+print("\nLa diaphonie")
+
+
+def le_milieu_homogene_na_pas_de_diaphonie_avant():
+    """UNE TRIPLAQUE N'A PAS DE FEXT, et c'est une egalite, pas une tendance.
+
+    En milieu homogene, [L][C] vaut mu eps fois l'identite : k_C et k_L sont
+    egaux TERME A TERME, et la diaphonie avant s'annule exactement. Rien ne
+    verifie plus severement que [C] et [L] decrivent la meme geometrie -- une
+    erreur d'un panneau sur l'un des deux se verrait ici et nulle part ailleurs.
+    """
+    b = 0.6e-3
+    r = solve_multiline({"kind": "strip", "t": 0.0, "b": b, "y0": b / 2,
+                         "epsilon_r": 4.3,
+                         "conducteurs": [{"w": 0.2e-3},
+                                         {"w": 0.2e-3, "s": 0.2e-3}]})
+    d = diaphonie(r["c"], r["l"], 25e-3, 100e-12)
+    assert abs(d["k_c"] - d["k_l"]) < 1e-6, \
+        "k_C = %.6f et k_L = %.6f devraient etre egaux" % (d["k_c"], d["k_l"])
+    assert abs(d["fext"]) < 1e-6, "FEXT = %.3e sur une triplaque" % d["fext"]
+    # Les deux modes s'y propagent a la meme vitesse, donc au meme eps_eff.
+    for mode in r["modes"]:
+        proche(mode["eps_eff"], 4.3, 1e-6, "eps_eff modal en triplaque")
+    # Le NEXT, lui, est bien la : le milieu homogene n'annule que l'avant.
+    assert d["next"] > 0.01, "pas de NEXT en triplaque : %.4f" % d["next"]
+
+
+T("le milieu homogene n'a pas de diaphonie avant",
+  le_milieu_homogene_na_pas_de_diaphonie_avant)
+
+
+def le_microruban_a_un_fext_negatif():
+    """LE MICRORUBAN EN A UN, ET IL EST DE SIGNE OPPOSE AU FRONT.
+
+    Le champ du mode impair passe par l'air : l'inductif l'emporte sur le
+    capacitif (k_L > k_C), donc k_avant est negatif. Un FEXT positif sur un
+    microruban serait une erreur de signe dans [L] ou dans [C].
+    """
+    r = _paire(0.25e-3, 0.25e-3)
+    d = diaphonie(r["c"], r["l"], 25e-3, 100e-12)
+    assert d["k_l"] > d["k_c"] > 0, \
+        "k_L = %.4f, k_C = %.4f" % (d["k_l"], d["k_c"])
+    assert d["fext"] < 0, "FEXT = %.4f sur un microruban" % d["fext"]
+    assert d["next"] > 0, "NEXT = %.4f" % d["next"]
+
+
+T("le microruban a un FEXT negatif", le_microruban_a_un_fext_negatif)
+
+
+def le_next_sature_et_le_fext_non():
+    """L'ARRIERE PLAFONNE, L'AVANT CROIT AVEC LA LONGUEUR.
+
+    C'est toute la difference pratique entre les deux, et c'est ce qui decide
+    quoi faire : contre le NEXT, raccourcir ne sert plus rien passe la longueur
+    de saturation ; contre le FEXT, si.
+    """
+    r = _paire(0.25e-3, 0.25e-3)
+    t_r = 100e-12
+    court = diaphonie(r["c"], r["l"], 1e-3, t_r)
+    long_ = diaphonie(r["c"], r["l"], 50e-3, t_r)
+    tres_long = diaphonie(r["c"], r["l"], 200e-3, t_r)
+    assert not court["sature"], "1 mm de couplage sature deja"
+    assert long_["sature"] and tres_long["sature"], "50 mm ne sature pas"
+    proche(long_["next"], tres_long["next"], 1e-9, "NEXT sature")
+    proche(long_["next"], long_["k_arriere"], 1e-9, "NEXT au plafond")
+    assert abs(tres_long["fext"]) > 3.9 * abs(long_["fext"]), \
+        "le FEXT ne croit pas avec la longueur : %.4f puis %.4f" \
+        % (long_["fext"], tres_long["fext"])
+    # La longueur de saturation est celle ou l'aller-retour dure un temps de
+    # montee : elle doit tomber entre les deux cas ci-dessus.
+    assert 1e-3 < court["longueur_saturation"] < 50e-3, \
+        "longueur de saturation %.4f mm" % (1e3 * court["longueur_saturation"])
+
+
+T("le NEXT sature, le FEXT non", le_next_sature_et_le_fext_non)
+
+
+def une_piste_de_garde_ecrase_la_diaphonie():
+    """DU CUIVRE DE MASSE ENTRE LES DEUX, ET LE COUPLAGE TOMBE.
+
+    C'est la reponse de dessin la plus courante a un probleme de diaphonie, et
+    le solveur doit la rendre : la garde est un TROISIEME conducteur, tenu a
+    zero volt comme les plans coplanaires -- elle a ses panneaux, elle prend du
+    champ aux deux signaux, et elle n'a pas de port.
+
+    ELLE NE COUPE PAS LE COUPLAGE, elle le divise : le reste passe par le
+    dessous, dans le stratifie, et aucune piste de garde ne va le chercher la.
+    Ce que le chiffre doit montrer, c'est cet ordre de grandeur-la et non un
+    zero.
+    """
+    w, s = 0.25e-3, 0.25e-3
+    nue = _paire(w, s)
+    gardee = solve_multiline({"kind": "micro", "t": 0.0, "h": H,
+                              "epsilon_r": 4.3,
+                              "conducteurs": [{"w": w},
+                                              {"w": w, "s": s, "masse": True},
+                                              {"w": w, "s": s}]})
+    assert gardee["n"] == 2 and gardee["gardes"] == 1,         "%d ports et %d garde(s)" % (gardee["n"], gardee["gardes"])
+    a = diaphonie(nue["c"], nue["l"], 25e-3, 100e-12)
+    b = diaphonie(gardee["c"], gardee["l"], 25e-3, 100e-12)
+    assert b["next"] < 0.4 * a["next"],         "NEXT %.4f garde contre %.4f nu" % (b["next"], a["next"])
+    # Et la garde n'est pas gratuite : elle prend du champ, donc Z0 de chaque
+    # signal baisse. Le dire evite de la poser sans revoir la largeur.
+    assert gardee["lignes"][0]["z0"] < nue["lignes"][0]["z0"],         "une garde a zero volt ne fait pas baisser Z0 : %.2f puis %.2f"         % (nue["lignes"][0]["z0"], gardee["lignes"][0]["z0"])
+
+
+T("une piste de garde ecrase la diaphonie",
+  une_piste_de_garde_ecrase_la_diaphonie)
+
+
+def le_bus_a_trois_pistes_decroit_avec_la_distance():
+    """SUR UN BUS, LA VOISINE LOINTAINE AGRESSE MOINS QUE LA PROCHE.
+
+    Trois pistes, un seul calcul : c'est ce que la generalisation a N apporte
+    au-dela de la paire. La piste 1 agresse la 2 plus que la 3, et il faut que
+    les deux sortent de la MEME matrice pour que la comparaison veuille dire
+    quelque chose.
+    """
+    r = solve_multiline({"kind": "micro", "t": 35e-6, "h": H, "epsilon_r": 4.3,
+                         "conducteurs": [{"w": 0.2e-3},
+                                         {"w": 0.2e-3, "s": 0.2e-3},
+                                         {"w": 0.2e-3, "s": 0.2e-3}]})
+    assert r["n"] == 3 and "paire" not in r, \
+        "un bus de trois n'a pas de mode pair/impair a deux"
+    proche_voisine = diaphonie(r["c"], r["l"], 25e-3, 100e-12, 0, 1)
+    lointaine = diaphonie(r["c"], r["l"], 25e-3, 100e-12, 0, 2)
+    assert lointaine["next"] < 0.4 * proche_voisine["next"], \
+        "NEXT lointain %.4f contre proche %.4f" % (lointaine["next"],
+                                                   proche_voisine["next"])
+    assert len(r["modes"]) == 3, "%d modes pour trois pistes" % len(r["modes"])
+
+
+T("sur un bus, la voisine lointaine agresse moins",
+  le_bus_a_trois_pistes_decroit_avec_la_distance)
+
+
+def ce_qui_nest_pas_une_ligne_couplee_est_refuse():
+    """ON REFUSE PLUTOT QUE DE RENDRE UN CHIFFRE.
+
+    Un seul conducteur n'est pas une ligne couplee ; deux conducteurs que
+    l'epaisseur de cuivre fait se toucher ne sont pas deux lignes, et resoudre
+    leur matrice rendrait un chiffre a l'air normal.
+    """
+    for geo, quoi in (
+            ({"conducteurs": [{"w": 0.2e-3}]}, "un seul conducteur"),
+            ({"conducteurs": [{"w": 0.2e-3}] * 9}, "neuf conducteurs"),
+            ({"conducteurs": [{"w": 0.2e-3}, {"w": 0.2e-3, "s": 5e-6}]},
+             "deux conducteurs qui se touchent")):
+        try:
+            solve_multiline(dict({"kind": "micro", "t": 35e-6, "h": H,
+                                  "epsilon_r": 4.3}, **geo))
+        except ValueError:
+            pass
+        else:
+            assert False, "%s : accepte sans broncher" % quoi
+
+
+T("ce qui n'est pas une ligne couplee est refuse",
+  ce_qui_nest_pas_une_ligne_couplee_est_refuse)
+
+
+# ==========================================================================
+# L'APPARIEMENT : QUELLES PISTES SE LONGENT, ET SUR QUELLE LONGUEUR
+# --------------------------------------------------------------------------
+# LE SOLVEUR NE PEUT PAS LE SAVOIR, et la page ne le dit pas : c'est
+# `simulation_em._scenes_paralleles` qui apparie, a partir de la selection et
+# du voisinage que la page envoie. Une erreur ici ne se verrait pas dans les
+# chiffres -- ils resteraient justes pour la geometrie appariee --, elle se
+# verrait dans la carte : un couplage annonce la ou il n'y en a pas, ou tu.
+#
+# On verifie donc la REGLE, pas le chiffre : ce qui est retenu, ce qui est
+# ecarte, et ce que vaut la longueur de recouvrement quand elle est partielle.
+# ==========================================================================
+
+def _doc_couplage(objets, voisinage, couches=None, paires=None):
+    """Un document de simulation avec son voisinage."""
+    couches = couches or [_cu("TOP", "signal"), _di("core", 0.2, 4.3),
+                          _cu("GND", "plane"), _di("ame", 0.8, 4.3),
+                          _cu("IN2", "signal"), _di("bas", 0.2, 4.3),
+                          _cu("BOT", "plane")]
+    doc = {"format": "cao-sim-em-3", "carte": "banc", "net": "SIG",
+           "stackup": {"layers": couches},
+           "geometry": {"objects": objets},
+           "voisinage": voisinage,
+           "reference_nets": ["GND"],
+           "ports": [{"id": 1, "impedance": 50}, {"id": 2, "impedance": 50}],
+           "analyse": {"f_debut": 1e8, "f_fin": 5e9, "points": 11,
+                       "f_centre": 1e9}}
+    if paires:
+        doc["paires"] = paires
+    return doc
+
+
+def _pis(x1, y1, x2, y2, net, couche=0, largeur=0.25):
+    return {"type": "track", "start": [x1, y1], "end": [x2, y2],
+            "width": largeur, "layer": couche, "net": net,
+            "copper_thickness": 0.035}
+
+
+print("\nL'appariement des troncons paralleles")
+
+
+def deux_pistes_qui_se_longent_sont_appariees():
+    """CE QUI EST RETENU, ET AVEC QUELLES COTES.
+
+    Deux pistes de 0,25 mm dont les AXES sont a 0,5 mm laissent 0,25 mm de
+    cuivre a cuivre : l'ecart rendu est celui-la, et pas la distance entre
+    axes. C'est la meme convention que partout ailleurs dans cette chaine, et
+    s'en ecarter ferait sortir Z_diff de plusieurs ohms.
+    """
+    r = _se.simuler(_doc_couplage([_pis(0, 0, 25, 0, "SIG")],
+                                  [_pis(0, 0.5, 25, 0.5, "AGR")]))
+    paires = r["couplage"]["paires"]
+    assert len(paires) == 1, "%d longement(s) au lieu d'un" % len(paires)
+    f = paires[0]
+    proche(f["ecart"], 0.25, 1e-6, "ecart de cuivre a cuivre")
+    proche(f["longueur"], 25.0, 1e-6, "longueur de recouvrement")
+    assert f["net_voisin"] == "AGR", f["net_voisin"]
+    assert f["z_diff"] > 0 and f["next"] > 0, f
+
+
+T("deux pistes qui se longent sont appariees",
+  deux_pistes_qui_se_longent_sont_appariees)
+
+
+def ce_qui_ne_longe_pas_est_ecarte():
+    """QUATRE FACONS DE NE PAS LONGER, et elles doivent toutes se taire.
+
+    Une perpendiculaire, une piste trop loin, une piste sur une autre couche,
+    et une piste du MEME net -- qui est la meme liaison, pas un agresseur.
+    """
+    r = _se.simuler(_doc_couplage(
+        [_pis(0, 0, 25, 0, "SIG")],
+        [_pis(12, -5, 12, 5, "CROISE"),          # perpendiculaire
+         _pis(0, 4.0, 25, 4.0, "LOIN"),          # au-dela de 3 mm
+         _pis(0, 0.5, 25, 0.5, "DESSOUS", 4),    # une autre couche
+         _pis(0, 0.5, 25, 0.5, "SIG")]))         # le meme net
+    assert not r["couplage"]["paires"], \
+        "apparie a tort : %s" % [f["net_voisin"] for f in r["couplage"]["paires"]]
+
+
+T("ce qui ne longe pas est ecarte", ce_qui_ne_longe_pas_est_ecarte)
+
+
+def le_recouvrement_partiel_compte_pour_ce_quil_est():
+    """UNE VOISINE QUI NE LONGE QUE LA MOITIE NE COUPLE QUE SUR LA MOITIE.
+
+    C'est tout l'objet de la projection sur l'axe : prendre la longueur de la
+    voisine, ou celle de la victime, donnerait un couplage deux fois trop long
+    -- et le NEXT sature justement sur la longueur.
+    """
+    r = _se.simuler(_doc_couplage([_pis(0, 0, 20, 0, "SIG")],
+                                  [_pis(12, 0.5, 40, 0.5, "AGR")]))
+    f = r["couplage"]["paires"][0]
+    proche(f["longueur"], 8.0, 1e-6, "recouvrement partiel")
+
+
+T("le recouvrement partiel compte pour ce qu'il est",
+  le_recouvrement_partiel_compte_pour_ce_quil_est)
+
+
+def les_longements_dun_meme_net_se_cumulent():
+    """TROIS TRONCONS QUI LONGENT LA MEME VOISINE FONT UNE SEULE LIGNE.
+
+    La fiche repond a « combien ce net me prend-il », pas a « combien de
+    segments ai-je dessines » : les longueurs s'additionnent, et l'ecart rendu
+    est la moyenne PONDEREE, l'ecart le plus serre restant a part.
+    """
+    r = _se.simuler(_doc_couplage(
+        [_pis(0, 0, 10, 0, "SIG"), _pis(10, 0, 20, 0, "SIG")],
+        [_pis(0, 0.5, 10, 0.5, "AGR"), _pis(10, 0.8, 20, 0.8, "AGR")]))
+    paires = r["couplage"]["paires"]
+    assert len(paires) == 1, "%d lignes pour un seul net voisin" % len(paires)
+    f = paires[0]
+    proche(f["longueur"], 20.0, 1e-6, "longueur cumulee")
+    assert f["troncons"] == 2, "%d troncons" % f["troncons"]
+    proche(f["ecart_min"], 0.25, 1e-6, "ecart le plus serre")
+    proche(f["ecart"], 0.4, 1e-6, "ecart moyen pondere")
+
+
+T("les longements d'un meme net se cumulent",
+  les_longements_dun_meme_net_se_cumulent)
+
+
+def la_paire_differentielle_se_nomme():
+    """QUI EST UNE PAIRE, ET QUI N'EST QU'UN VOISIN.
+
+    Le calcul est le meme -- deux pistes qui se longent sont couplees, quels
+    que soient leurs noms. Ce qui change est la QUESTION : sur une paire, Z_diff
+    est la reponse ; sur un voisin quelconque, c'est le NEXT. Les suffixes
+    tranchent a defaut de declaration, et la declaration de la page l'emporte.
+    """
+    r = _se.simuler(_doc_couplage([_pis(0, 0, 25, 0, "USB_DP")],
+                                  [_pis(0, 0.5, 25, 0.5, "USB_DM"),
+                                   _pis(0, -0.8, 25, -0.8, "CLK")]))
+    par_net = {f["net_voisin"]: f for f in r["couplage"]["paires"]}
+    assert par_net["USB_DM"]["differentielle"], \
+        "USB_DP / USB_DM n'est pas reconnu comme une paire"
+    assert not par_net["CLK"]["differentielle"], \
+        "CLK passe pour la moitie d'une paire differentielle"
+
+    # LA DECLARATION DE LA PAGE L'EMPORTE : deux nets qui ne se ressemblent pas
+    # forment une paire des lors qu'on l'a dit dans l'editeur.
+    r2 = _se.simuler(_doc_couplage([_pis(0, 0, 25, 0, "ALPHA")],
+                                   [_pis(0, 0.5, 25, 0.5, "BETA")],
+                                   paires=[["ALPHA", "BETA"]]))
+    assert r2["couplage"]["paires"][0]["differentielle"], \
+        "une paire declaree par la page n'est pas reconnue"
+
+
+T("la paire differentielle se nomme", la_paire_differentielle_se_nomme)
+
+
+def le_pire_longement_vient_en_tete():
+    """LA FICHE SE LIT DE HAUT EN BAS, donc le pire doit y etre.
+
+    Un longement long et lache fait moins de bruit qu'un court et serre : c'est
+    le BRUIT qui ordonne la liste, pas la longueur.
+    """
+    r = _se.simuler(_doc_couplage(
+        [_pis(0, 0, 40, 0, "SIG")],
+        [_pis(0, 2.0, 40, 2.0, "LACHE"),        # long, mais a 1,75 mm
+         _pis(0, -0.4, 8, -0.4, "SERRE")]))     # court, mais a 0,15 mm
+    noms = [f["net_voisin"] for f in r["couplage"]["paires"]]
+    assert noms[0] == "SERRE", "la fiche met « %s » en tete" % noms[0]
+
+
+T("le pire longement vient en tete", le_pire_longement_vient_en_tete)
+
+
+def le_temps_de_montee_se_deduit_de_la_bande():
+    """SANS FRONT DONNE, ON LE DEDUIT -- ET ON DIT QU'ON L'A DEDUIT.
+
+    Le temps de montee ne change ni [C] ni [L] : il decide de la saturation du
+    NEXT et de l'amplitude du FEXT. Le poser en dur ferait mentir les deux ;
+    le deduire de la bande analysee par la regle du genou est une hypothese
+    defendable, a condition de l'ecrire.
+    """
+    doc = _doc_couplage([_pis(0, 0, 25, 0, "SIG")],
+                        [_pis(0, 0.5, 25, 0.5, "AGR")])
+    c = _se.simuler(doc)["couplage"]
+    proche(c["temps_montee"], 0.35 / 5e9, 1e-9, "temps de montee deduit")
+    assert "deduit" in c["temps_montee_source"], c["temps_montee_source"]
+
+    doc["analyse"]["temps_montee"] = 500e-12
+    c2 = _se.simuler(doc)["couplage"]
+    proche(c2["temps_montee"], 500e-12, 1e-9, "temps de montee saisi")
+    assert c2["temps_montee_source"] == "saisi", c2["temps_montee_source"]
+    # ET CE QUE LE FRONT CHANGE SE VOIT, dans les deux sens. A 70 ps sur
+    # 25 mm de longement, l aller-retour dure plus qu un front : le NEXT est
+    # au plafond. A 500 ps il ne l est plus, et il retombe exactement dans le
+    # rapport 2 T_D / t_r. Le FEXT, lui, suit le front terme a terme.
+    f1, f2 = c["paires"][0], c2["paires"][0]
+    assert f1["sature"] and not f2["sature"], (
+        "saturation : %s puis %s" % (f1["sature"], f2["sature"]))
+    proche(f1["next"], f1["k_arriere"], 1e-4, "NEXT au plafond")
+    proche(f2["next"], f1["k_arriere"] * 2 * f2["retard"] / 500e-12, 1e-3,
+           "NEXT sous le plafond")
+    proche(f2["fext"] / f1["fext"], (0.35 / 5e9) / 500e-12, 1e-3,
+           "le FEXT suit le front")
+
+
+T("le temps de montee se deduit de la bande",
+  le_temps_de_montee_se_deduit_de_la_bande)
+
+
+def sans_voisinage_il_ny_a_pas_de_couplage_et_ce_nest_pas_une_erreur():
+    """UN DOCUMENT SANS VOISINAGE RESTE UN DOCUMENT VALIDE.
+
+    Une page qui n'envoie pas de voisinage -- une version anterieure, un banc,
+    un fichier ecrit a la main -- doit obtenir tout le reste : les impedances,
+    la cascade, les discontinuites. Le couplage y est simplement vide, et la
+    fiche le dira.
+    """
+    doc = _doc_couplage([_pis(0, 0, 25, 0, "SIG")], [])
+    doc.pop("voisinage")
+    r = _se.simuler(doc)
+    assert r["couplage"]["paires"] == [], r["couplage"]["paires"]
+    assert r["couplage"]["voisinage"] == 0
+    assert r["ligne"]["z0_moyen"] > 0, "le reste du calcul a souffert"
+
+
+T("sans voisinage, le reste du calcul tient",
+  sans_voisinage_il_ny_a_pas_de_couplage_et_ce_nest_pas_une_erreur)
+
+
+# ==========================================================================
+# LA SCENE : TOUTES LES VOISINES DANS LA MEME SECTION
+# --------------------------------------------------------------------------
+# UNE PISTE ET SES DEUX VOISINES NE SONT PAS DEUX PAIRES. Resolues separement,
+# chaque paire compterait le champ que la troisieme prend deja, et les deux
+# couplages sortiraient trop grands. Elles entrent donc dans UNE matrice.
+#
+# ET LA MASSE COPLANAIRE Y EST, sous ses deux formes : le PLAN qui borde le
+# groupe -- les deux pages mesurent son ecart sans voir les pistes, si bien
+# qu'il borde le groupe et non la seule victime -- et la PISTE DE GARDE, un
+# conducteur du net de reference qui longe, pose a zero volt.
+# ==========================================================================
+
+def _essai_scene(voisinage, gap=0.0, refs=("GND",), tr=150e-12):
+    """La piste d'essai, son voisinage, et le couplage qui en sort."""
+    doc = _doc_couplage([_pis(0, 0, 25, 0, "SIG")], voisinage)
+    doc["geometry"]["objects"][0]["gap_left"] = gap
+    doc["geometry"]["objects"][0]["gap_right"] = gap
+    doc["reference_nets"] = list(refs)
+    doc["analyse"]["temps_montee"] = tr
+    return _se.simuler(doc)["couplage"]
+
+
+print("\nLa scene couplee : plusieurs voisines, le plan et la garde")
+
+
+def les_voisines_entrent_dans_une_seule_section():
+    """DEUX VOISINES FONT UN PROBLEME A TROIS CONDUCTEURS, PAS DEUX A DEUX.
+
+    Une seule section est resolue, elle porte les trois rubans, et la piste du
+    milieu voit son impedance BAISSER -- deux voisines lui prennent du champ.
+    Deux paires resolues separement ne le verraient pas.
+    """
+    c = _essai_scene([_pis(0, 0.5, 25, 0.5, "GAUCHE"),
+                      _pis(0, -0.5, 25, -0.5, "DROITE")], gap=2.0)
+    assert len(c["sections"]) == 1, "%d sections" % len(c["sections"])
+    sec = c["sections"][0]
+    assert len(sec["conducteurs"]) == 3, \
+        "%d conducteurs dans la section" % len(sec["conducteurs"])
+    assert len(c["paires"]) == 2, "%d longements" % len(c["paires"])
+
+    # LES DEUX COTES SONT DISTINGUES, et par la position : « gauche » et
+    # « droite » ne sont pas une etiquette, c'est le signe de x.
+    cotes = sorted(f["cote"] for f in c["paires"])
+    assert cotes == ["droite", "gauche"], cotes
+    xs = sorted(round(d["x"], 4) for d in sec["conducteurs"])
+    assert xs[0] < 0 < xs[2] and xs[1] == 0.0, xs
+
+    # La piste du milieu, prise seule, serait a 57,6 ohms ; encadree, moins.
+    seule = _essai_scene([_pis(0, 0.5, 25, 0.5, "GAUCHE")], gap=2.0)
+    assert sec["z0_selection"] < seule["sections"][0]["z0_selection"], \
+        "deux voisines ne font pas baisser Z0 : %.2f puis %.2f" \
+        % (seule["sections"][0]["z0_selection"], sec["z0_selection"])
+
+
+T("les voisines entrent dans une seule section",
+  les_voisines_entrent_dans_une_seule_section)
+
+
+def le_plan_coplanaire_borde_le_groupe():
+    """L'ECART MESURE EST CELUI DE LA SELECTION ; LE PLAN BORDE LE GROUPE.
+
+    Les deux pages sondent les PLANS sans voir les pistes : `gap_left` est donc
+    la distance de la selection au plan de gauche MEME quand une voisine se
+    trouve entre les deux. L'ecart du groupe est celui-la moins le cuivre
+    ajoute de ce cote, et c'est ce qui rend la masse coplanaire recuperable
+    sans rien mesurer de plus.
+    """
+    # Une voisine a gauche (axe a 0,5 mm), un plan mesure a 1,5 mm de part et
+    # d'autre. A gauche le groupe s'est etendu de 0,5 mm : il reste 1,0 mm.
+    c = _essai_scene([_pis(0, 0.5, 25, 0.5, "AGR")], gap=1.5)
+    sec = c["sections"][0]
+    proche(sec["ecart_g"], 1.0, 1e-6, "ecart du groupe cote voisine")
+    proche(sec["ecart_d"], 1.5, 1e-6, "ecart du groupe cote libre")
+
+    # ET IL COMPTE : le meme longement, plan serre contre plan lointain, ne
+    # rend pas le meme bruit. Le plan prend du champ au couple.
+    loin = _essai_scene([_pis(0, 0.5, 25, 0.5, "AGR")], gap=0.0)
+    pres = _essai_scene([_pis(0, 0.5, 25, 0.5, "AGR")], gap=0.8)
+    assert pres["paires"][0]["recu"]["next"] < loin["paires"][0]["recu"]["next"], \
+        "le plan ne reduit pas le NEXT : %.4f contre %.4f" \
+        % (pres["paires"][0]["recu"]["next"], loin["paires"][0]["recu"]["next"])
+    # Sans plan a portee, l'ecart du groupe est nul et le calcul est majorant :
+    # c'est la seule reserve qui reste, et elle se dit.
+    assert loin["sections"][0]["ecart_g"] == 0.0, loin["sections"][0]
+
+
+T("le plan coplanaire borde le groupe, pas la seule piste",
+  le_plan_coplanaire_borde_le_groupe)
+
+
+def une_piste_du_net_de_masse_est_une_garde():
+    """UNE VOISINE DE MASSE N'EST PAS UNE VOISINE, C'EST UN BOUCLIER.
+
+    Elle entre dans la section a ZERO VOLT -- elle occupe la place, elle prend
+    du champ -- et elle n'a ni port, ni Z differentielle, ni bruit a elle. La
+    prendre pour un agresseur afficherait une impedance differentielle entre un
+    signal et la masse, et un NEXT que personne ne subit.
+
+    CE QU'ELLE COUTE, et il faut le dire : elle fait BAISSER Z0 des deux
+    signaux. On ne pose pas une garde sans revoir la largeur.
+    """
+    avec = _essai_scene([_pis(0, 0.70, 25, 0.70, "AGR"),
+                         _pis(0, 0.35, 25, 0.35, "GND")], gap=2.0)
+    sans = _essai_scene([_pis(0, 0.70, 25, 0.70, "AGR")], gap=2.0)
+
+    sec = avec["sections"][0]
+    assert sec["gardes"] == 1, "%d garde(s) posee(s)" % sec["gardes"]
+    assert len(sec["conducteurs"]) == 3, sec["conducteurs"]
+    gardes = [d for d in sec["conducteurs"] if d["garde"]]
+    assert len(gardes) == 1 and gardes[0]["net"] == "GND", sec["conducteurs"]
+
+    # LA GARDE N'A PAS DE LIGNE DE FICHE : un seul longement, celui du signal.
+    assert len(avec["paires"]) == 1, \
+        [f["net_voisin"] for f in avec["paires"]]
+    assert avec["paires"][0]["net_voisin"] == "AGR"
+
+    a, b = avec["paires"][0]["recu"]["next"], sans["paires"][0]["recu"]["next"]
+    assert a < 0.5 * b, "NEXT %.4f avec garde contre %.4f sans" % (a, b)
+    assert sec["z0_selection"] < sans["sections"][0]["z0_selection"], \
+        "une garde a zero volt ne fait pas baisser Z0"
+
+
+T("une piste du net de masse est une garde, pas un agresseur",
+  une_piste_du_net_de_masse_est_une_garde)
+
+
+def les_deux_sens_du_bruit_sont_rendus():
+    """CE QUE MA PISTE PREND, ET CE QU'ELLE ENVOIE.
+
+    Le bruit se compte en fraction de l'amplitude de L'AGRESSEUR et se rapporte
+    a SES termes propres : deux pistes de meme largeur echangent le meme bruit,
+    deux pistes de largeurs differentes non. Une piste large qui agresse une
+    piste fine ne recoit pas d'elle ce qu'elle lui envoie -- et le signe du
+    bruit avant peut meme changer, parce que le rapport k_C / k_L s'inverse.
+
+    Les deux sortent de la MEME matrice, sans rien resoudre de plus.
+    """
+    egales = _essai_scene([_pis(0, 0.5, 25, 0.5, "AGR")])
+    f = egales["paires"][0]
+    proche(f["emis"]["next"], f["recu"]["next"], 1e-6,
+           "deux pistes egales echangent le meme bruit")
+
+    large = _essai_scene([{"type": "track", "start": [0, 0.9],
+                           "end": [25, 0.9], "width": 1.0, "layer": 0,
+                           "net": "AGR", "copper_thickness": 0.035}])
+    g = large["paires"][0]
+    assert abs(g["emis"]["next"] - g["recu"]["next"]) > 0.005, \
+        "une voisine quatre fois plus large echange le meme bruit : %.4f / %.4f" \
+        % (g["recu"]["next"], g["emis"]["next"])
+    # LE SENS QUI JUGE EST CELUI QU'ON SUBIT : `next` en tete de fiche est le
+    # bruit RECU, et le panneau colore celui-la.
+    proche(g["next"], g["recu"]["next"], 1e-9, "le bruit qui juge est le recu")
+
+
+T("les deux sens du bruit sont rendus", les_deux_sens_du_bruit_sont_rendus)
+
+
+def z_diff_dans_un_bus_tient_les_autres_a_la_masse():
+    """UNE PAIRE PRISE DANS UN BUS N'A PAS LA Z_DIFF DE LA PAIRE SEULE.
+
+    La troisieme piste prend du champ au couple : sa Z differentielle baisse.
+    La reduction est exacte -- les autres conducteurs tenus a zero volt, ce qui
+    est la sous-matrice de Maxwell --, mais c'est une hypothese, et le panneau
+    la dit.
+    """
+    seule = _essai_scene([_pis(0, 0.5, 25, 0.5, "AGR")], gap=0.0)
+    bus = _essai_scene([_pis(0, 0.5, 25, 0.5, "AGR"),
+                        _pis(0, -0.5, 25, -0.5, "TIERS")], gap=0.0)
+    z_seule = seule["paires"][0]["z_diff"]
+    z_bus = [f for f in bus["paires"] if f["net_voisin"] == "AGR"][0]["z_diff"]
+    assert z_bus < z_seule, \
+        "Z_diff ne baisse pas dans un bus : %.2f puis %.2f" % (z_seule, z_bus)
+    assert abs(z_bus - z_seule) < 0.05 * z_seule, \
+        "Z_diff s'effondre : %.2f contre %.2f" % (z_bus, z_seule)
+
+
+T("Z_diff d'une paire dans un bus tient les autres a la masse",
+  z_diff_dans_un_bus_tient_les_autres_a_la_masse)
+
+
+def ce_qui_ne_tient_pas_dans_la_section_est_nomme():
+    """UNE VOISINE QUI DISPARAIT SANS UN MOT SE LIT COMME UN COUPLAGE NUL.
+
+    Deux nets qui passent tour a tour au meme endroit, chacun sur une moitie de
+    la longueur, se retrouvent a la MEME abscisse moyenne : il n'y a de place
+    que pour un. On pose le plus proche et l'on NOMME l'autre, avec la raison.
+    """
+    c = _essai_scene([_pis(0, 0.5, 12, 0.5, "A"),
+                      _pis(13, 0.5, 25, 0.5, "B")], gap=2.0)
+    sec = c["sections"][0]
+    assert len(sec["conducteurs"]) == 2, sec["conducteurs"]
+    assert len(sec["ecartes"]) == 1, sec["ecartes"]
+    assert "chevauche" in sec["ecartes"][0]["raison"], sec["ecartes"]
+    assert len(c["paires"]) == 1, [f["net_voisin"] for f in c["paires"]]
+
+
+T("ce qui ne tient pas dans la section est nomme",
+  ce_qui_ne_tient_pas_dans_la_section_est_nomme)
 
 
 print("\n" + "-" * 62)

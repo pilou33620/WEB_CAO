@@ -135,6 +135,10 @@ main{flex:1;display:flex;min-height:0}
 
 /* fiche de détail et fiche d'informations */
 .fiche{padding:8px 10px;font-size:12px;line-height:1.7}
+/* Une cote que le lecteur a devinee faute de padstack declare. En italique et
+   attenuee : elle accompagne le chiffre sans le disputer, et elle doit se
+   distinguer au coup d'oeil d'une valeur lue dans le fichier. */
+.fiche .suppose{font-style:italic;opacity:.68;font-size:.85em;cursor:help}
 .fiche h3{margin:0 0 6px;font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;
   text-transform:uppercase;color:var(--yellow);font-weight:400}
 .fiche h3+h3,.fiche table+h3{margin-top:12px}
@@ -195,3 +199,16 @@ footer{
 footer b{color:var(--txt);font-weight:600}
 footer .push{margin-left:auto}
 footer .hint{color:var(--yellow);opacity:.9}
+
+/* La liste de la sélection à plusieurs morceaux (Ctrl+clic). Trois colonnes :
+   le rang — celui dont parle le tableau des lots du panneau de simulation —,
+   ce que le morceau est, et de quoi le retirer. La colonne du milieu porte une
+   phrase et non un nombre : elle s'aligne à gauche, contre la règle générale
+   des fiches, où la deuxième colonne est une valeur. */
+.fiche table.selListe td:nth-child(2){
+  text-align:left;font-family:inherit;color:var(--txt);
+  padding-right:4px;word-break:break-word;
+}
+.fiche table.selListe td:last-child{width:1%;text-align:right;padding-right:0}
+.fiche table.selListe td:last-child button{padding:0 5px;line-height:1.5}
+.fiche table.selListe tr:hover td{background:var(--panel2)}

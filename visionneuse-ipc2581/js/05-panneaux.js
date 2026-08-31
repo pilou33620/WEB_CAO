@@ -239,7 +239,7 @@ function pnlNets(){
   }
   const vus=liste.slice(0,PNL_MAX);
   box.innerHTML=vus.map(function(n){
-    return '<button class="ligne'+(V.net===n.i?" on":"")+'" data-net="'+n.i+'">'
+    return '<button class="ligne'+(selNets().has(n.i)?" on":"")+'" data-net="'+n.i+'">'
       +"<b>"+mdlEsc(n.nom)+"</b>"
       +'<span class="cpt">'+n.pistes.length+" p · "+mdlNb(n.longueur,1)+" "+V.unite
       +(n.trous.length?" · "+n.trous.length+" ⌀":"")+"</span></button>";
@@ -248,7 +248,9 @@ function pnlNets(){
      ? '<div class="rien">… et '+mdlEntier(liste.length-vus.length)
        +" autres : affinez le filtre.</div>" : "");
   box.querySelectorAll("[data-net]").forEach(function(b){
-    b.onclick=function(){ choisirNet(+b.dataset.net); };
+    /* Ctrl+clic ajoute, ici comme sur la carte : on compare souvent trois nets
+       qu'on trouve par leur nom plutôt qu'en les cherchant du curseur. */
+    b.onclick=function(ev){ choisirNet(+b.dataset.net, ev.ctrlKey||ev.metaKey); };
   });
 }
 
@@ -271,7 +273,7 @@ function pnlComps(){
   const vus=liste.slice(0,PNL_MAX);
   box.innerHTML=vus.map(function(c){
     const cu=V.couches[c.c];
-    return '<button class="ligne'+(V.comp===c.ref?" on":"")+'" data-ref="'
+    return '<button class="ligne'+(selRefs().has(c.ref)?" on":"")+'" data-ref="'
       +mdlEsc(c.ref)+'">'
       +"<b>"+mdlEsc(c.ref)+"</b>"
       +(c.val?"<em>"+mdlEsc(c.val)+"</em>":"")
@@ -282,13 +284,78 @@ function pnlComps(){
      ? '<div class="rien">… et '+mdlEntier(liste.length-vus.length)
        +" autres : affinez le filtre.</div>" : "");
   box.querySelectorAll("[data-ref]").forEach(function(b){
-    b.onclick=function(){ choisirComp(b.dataset.ref,true); };
+    b.onclick=function(ev){
+      const ajout=ev.ctrlKey||ev.metaKey;
+      /* On ne recadre pas la vue sur un ajout : le geste sert à composer une
+         sélection, et sauter d'un boîtier à l'autre ferait perdre de vue ceux
+         qu'on vient de prendre. */
+      choisirComp(b.dataset.ref,!ajout,ajout);
+    };
   });
 }
 
 /* ==========================================================================
    Sélection
    ========================================================================== */
+/* « SUPPOSÉ », ÉCRIT UNE FOIS ET AU MÊME ENDROIT.
+
+   POURQUOI CETTE MENTION EXISTE. Un IPC-2581 ne déclare pas toujours le
+   padstack de ses vias. Quand il ne le fait pas, `ipc2581_parser.py` en
+   fabrique un à « perçage + 0,3 mm » — c'est-à-dire un anneau de 0,15 mm posé
+   par convention — pour avoir quelque chose à dessiner. Le repli est
+   raisonnable ; le taire ne l'est pas. Affiché nu, ce 0,15 se lit comme une
+   cote déclarée par le fabricant, et c'est contre cette pastille-là que le
+   contrôle d'isolation mesure ses distances et que la simulation chiffre la
+   capacité du via.
+
+   L'EXPLICATION EST EN INFOBULLE et non dans la table : la fiche doit rester
+   lisible d'un coup d'œil, et « d'où sort ce chiffre » est une question qu'on
+   ne se pose qu'après l'avoir lu. */
+function pnlSuppose(){
+  return ' <span class="suppose" title="'+
+    mdlEsc("Le fichier ne déclare pas de padstack pour ce perçage : cette "+
+           "cote est un repli du lecteur (perçage + 0,3 mm), pas une valeur "+
+           "lue.")+'">supposé</span>';
+}
+/* CE QUI EST RETENU, QUAND IL Y EN A PLUS D'UN.
+
+   POURQUOI CETTE FICHE EXISTE. Ctrl+clic construit une sélection à plusieurs
+   morceaux, et les fiches d'en dessous ne décrivent que le DERNIER — c'est
+   volontaire, elles répondent à « qu'est-ce que je viens de cliquer ». Restait
+   qu'on ne pouvait plus savoir ce qu'on avait pris : cinq pistes allumées en
+   blanc sur une carte dense ne se comptent pas à l'œil, et un morceau ajouté
+   par mégarde à l'autre bout ne se voit pas du tout. La liste le dit, dans
+   l'ordre où on a cliqué, et chaque ligne se retire seule.
+
+   ELLE EST NUMÉROTÉE COMME LES LOTS DE LA SIMULATION, et c'est le point : le
+   tableau du panneau de simulation parle de « lot 3 », il faut pouvoir dire
+   lequel c'est. La correspondance n'est pas garantie ligne pour ligne — un net
+   entier peut se découper en plusieurs parcours continus, et deux morceaux qui
+   se touchent n'en font qu'un —, ce que la note dit plutôt que de le taire. */
+function pnlSelection(){
+  if(V.sel.length<2)return "";
+  const nets=new Set(), lignes=[];
+  V.sel.forEach(function(e,i){
+    const s=e.s;
+    let t;
+    if(s.type==="net")t="net "+mdlNetNom(s.net)+" — toutes les couches";
+    else t=(typeof resume==="function")?resume(s):s.type;
+    if(s.net!=null&&s.net>=0)nets.add(s.net);
+    lignes.push('<tr><td class="g">'+(i+1)+"</td><td>"+mdlEsc(t)+"</td>"+
+      '<td><button class="tb mini" data-vsel="'+i+'" '+
+      'title="Retirer ce morceau de la sélection">×</button></td></tr>');
+  });
+  return '<div class="fiche"><h3>Sélection</h3>'+
+    '<table class="selListe">'+lignes.join("")+"</table>"+
+    '<p class="note">'+V.sel.length+" morceaux, "+nets.size+" net"+
+    (nets.size>1?"s":"")+". Ctrl+clic pour en ajouter ou en retirer un, "+
+    "Échap pour tout lâcher. Le panneau de simulation calcule chaque parcours "+
+    "continu séparément — deux morceaux qui se touchent ne font qu'un lot."+
+    "</p>"+
+    '<button class="tb mini" data-vsel="rien">Tout désélectionner</button>'+
+    "</div>";
+}
+
 function pnlDetail(){
   /* Le panneau de simulation suit la MÊME horloge que cette fiche-ci, et pas
      celle de `pnlTout()` : c'est la sélection qu'il mesure, et la sélection
@@ -304,7 +371,7 @@ function pnlDetail(){
     return;
   }
   const l=function(a,v){return "<tr><td>"+a+"</td><td>"+v+"</td></tr>";};
-  let h="";
+  let h=pnlSelection();
 
   const comp=V.comp?V.parRef.get(V.comp):null;
   if(comp){
@@ -373,8 +440,15 @@ function pnlDetail(){
     h+='<div class="fiche"><h3>Perçage</h3><table>'
       +l("Diamètre",'<span class="val">'+mdlMes(t.d)+"</span>")
       +l("Métallisation",/NON/i.test(t.p||"")?"non métallisé":"métallisé")
-      +(t.a?l("Anneau",mdlMes(t.a)):"")
-      +(ps&&ps.pad?l("Pastille",mdlMes(ps.pad)):"")
+      /* L'ANNEAU ET LA PASTILLE NE SONT PAS TOUJOURS DES COTES DU FICHIER.
+         Quand aucun <PadstackDef> ne porte le nom du perçage, le lecteur
+         fabrique la pastille à « perçage + 0,3 mm » — donc un anneau de
+         0,15 mm posé par convention. Affiché nu, ce 0,15 se lit comme une
+         valeur déclarée par le fabricant, et c'est contre lui que le contrôle
+         d'isolation mesure ses distances. */
+      +(t.a?l("Anneau",mdlMes(t.a)+(t.a_sup?pnlSuppose():"")):"")
+      +(ps&&ps.pad?l("Pastille",mdlMes(ps.pad)+
+                     (ps.pad_sup?pnlSuppose():"")):"")
       +l("Définition",mdlEsc(t.ps||"—"))
       +l("Position",mdlNb(t.x)+" ; "+mdlNb(t.y)+" "+V.unite)
       +"</table></div>";
@@ -385,7 +459,8 @@ function pnlDetail(){
       +l("Broche",mdlEsc(s.pin||"—"))
       +l("Couche",mdlEsc(mdlCoucheNom(s.couche)))
       +(ps&&ps.trou?l("Trou",mdlMes(ps.trou)):"")
-      +(ps&&ps.pad?l("Diamètre",mdlMes(ps.pad)):"")
+      +(ps&&ps.pad?l("Diamètre",mdlMes(ps.pad)+
+                     (ps.pad_sup?pnlSuppose():"")):"")
       +l("Définition",mdlEsc(s.ps||"—"))
       +l("Position",mdlNb(s.x)+" ; "+mdlNb(s.y)+" "+V.unite)
       +"</table></div>";
@@ -421,13 +496,20 @@ function pnlDetail(){
   }
 
   if(!h)h='<div class="rien">Cliquez une piste, un plan, une pastille ou un '
-    +"boîtier ; Maj+clic suit le net au-delà de la couche cliquée. Les listes "
-    +"mènent au même endroit.</div>";
+    +"boîtier ; Maj+clic suit le net au-delà de la couche cliquée ; Ctrl+clic "
+    +"ajoute un morceau à la sélection, et la simulation les calcule alors un "
+    +"par un. Les listes mènent au même endroit.</div>";
   box.innerHTML=h;
   box.querySelectorAll("[data-vnet]").forEach(function(b){
-    b.onclick=function(){
+    b.onclick=function(ev){
       const i=+b.dataset.vnet;
-      if(i>=0)choisirNet(i);
+      if(i>=0)choisirNet(i,ev.ctrlKey||ev.metaKey);
+    };
+  });
+  box.querySelectorAll("[data-vsel]").forEach(function(b){
+    b.onclick=function(){
+      const v=b.dataset.vsel;
+      if(v==="rien")choisirRien(); else selOter(+v);
     };
   });
 }

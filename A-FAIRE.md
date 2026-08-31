@@ -27,28 +27,33 @@ et la nature d'un via — traversant, borgne dessus/dessous, enterré — choisi
 panneau Propriétés, sur un via comme sur toute une sélection (`viaSetKind`,
 [editeur-pcb/js/01-core.js:340](editeur-pcb/js/01-core.js:340)).
 
-## État des lieux au 2026-08-30
+## État des lieux au 2026-08-31
 
-Ce que le dépôt fait tourner, et ce qui le mesure. **793 essais, tous passés.**
+Ce que le dépôt fait tourner, et ce qui le mesure. **892 essais, tous passés.**
 
 | Partie | État | Ce qui la mesure |
 | --- | --- | --- |
-| Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire | en service | 498 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
+| Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire | en service | 522 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
 | Éditeur schématique | en service ; **ni bus ni feuilles hiérarchiques** | — |
-| Visionneuse IPC-2581 | en service ; **arcs comptés, parcours chaîné, chevelu du retour** | 69 essais ([harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)) + 42 ([banc-essai.py](visionneuse-ipc2581/test/banc-essai.py)) |
-| **SI — impédance** (`ligne_mom`) | en service, 0,3 à 0,4 % contre les étalons ; **vias : boucle de retour, antipads, moignons, traversée de plans** | 94 cas, [banc-ligne-mom.py](python/test/banc-ligne-mom.py) |
+| Visionneuse IPC-2581 | en service ; **arcs comptés, parcours chaîné, chevelu du retour, pastilles devinées avouées, sélection à plusieurs morceaux** | 95 essais ([harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)) + 46 ([banc-essai.py](visionneuse-ipc2581/test/banc-essai.py)) |
+| **SI — impédance** (`ligne_mom`) | en service, 0,3 à 0,4 % contre les étalons ; **vias : boucle de retour, antipads, moignons, traversée de plans** | 139 cas, [banc-ligne-mom.py](python/test/banc-ligne-mom.py) |
+| **SI — Z différentielle et diaphonie** (`solve_multiline`) | **en service**, moins de 3 % contre Garg-Bahl ; N conducteurs dans UNE section, masse coplanaire et pistes de garde comprises, bruit rendu dans les deux sens | 139 cas, dont 6 sur la scène, + 12 côté pages |
 | **PI — chute DC** (`dc_solver`) | **solveur fait et mesuré ; aucun outil ne l'alimente** | 34 cas, [banc-dc.py](python/test/banc-dc.py) |
 | Moteur 2,5D pleine onde (`mom_solver`) | **port vertical fait ; ε_eff dé-embarqué à 0,93 % de `ligne_mom`** | 56 essais, [mom_solver/tests/](mom_solver/tests) |
 | Passerelle MCP, projets, profils, repérage, cross-probing | en service | — |
 
-**Les trois chantiers qui comptent, dans l'ordre :**
+**Les chantiers qui comptent, dans l'ordre :**
 
-1. **`ligne_mom` à N conducteurs** — un seul chantier débloque Z
-   différentielle *et* diaphonie, à la précision déjà acquise. La machinerie
-   est là (`capacitance_coplanaire` assemble déjà la matrice multiconducteurs) ;
-   il manque la généralisation du second membre. Rien n'en est fait ;
+1. ~~**`ligne_mom` à N conducteurs**~~ **FAIT le 2026-08-31**, et il a bien
+   débloqué les deux d'un coup. `capacitance_coplanaire` assemblait déjà la
+   matrice multiconducteurs ; il ne manquait que la généralisation du second
+   membre — N résolutions au lieu d'une, la matrice de Maxwell [C], puis
+   [L] = μ₀ε₀[C₀]⁻¹. **Z différentielle et diaphonie sont deux onglets de la
+   famille SI**, qui lisent la même section résolue une seule fois. Détail
+   plus bas : « `ligne_mom` à N conducteurs » ;
 2. **les courants du schéma** — c'est ce qui manque au solveur DC, et ce n'est
-   pas un problème de solveur : le schéma ne porte pas ce qu'un composant tire ;
+   pas un problème de solveur : le schéma ne porte pas ce qu'un composant tire.
+   **C'est désormais le premier de la liste** ;
 3. ~~le port vertical du moteur 2,5D~~ **FAIT le 2026-08-30** : le port est
    un via qui relie la piste au plan de masse, et la comparaison de paramètres
    S avec `ligne_mom` — celle qui attendait ce point depuis le début — donne
@@ -178,8 +183,8 @@ géométries, **au-delà de 2 à 3 GHz** — ce que dit déjà le lot 3 plus bas
 | Besoin | Bon outil | Effort | Précision attendue |
 | --- | --- | --- | --- |
 | Z₀, ε_eff, retard, pertes d'une ligne | `ligne_mom` — **fait** | — | 0,3 % |
-| **Z différentielle, Z commune** | `ligne_mom` → N conducteurs | **petit** | 0,3 % |
-| **Diaphonie entre pistes parallèles** | idem + lignes multiconducteurs | **petit** | 0,3 % |
+| **Z différentielle, Z commune** | `ligne_mom` → N conducteurs — **fait** | — | < 3 % / Garg-Bahl |
+| **Diaphonie entre pistes parallèles** | idem, même section — **fait** | — | < 3 % / Garg-Bahl |
 | Diaphonie croisée, via, changement de couche | moteur 2,5D | gros | quelques % |
 | **Chute continue, densité de courant DC** | nouveau solveur résistif surfacique | moyen, simple | bonne |
 | **R_AC, effet de peau, resserrement** | section, à l'intérieur du cuivre | moyen | bonne |
@@ -187,65 +192,154 @@ géométries, **au-delà de 2 à 3 GHz** — ce que dit déjà le lot 3 plus bas
 | Ampacité, échauffement | modèle IPC-2152, pas un solveur | petit | ±20 % par nature |
 
 Trois physiques différentes, et le moteur 2,5D n'est le bon outil pour aucune
-des trois lignes en gras.
+des lignes en gras. Les deux premières sont faites ; la chute continue et R_AC
+aussi. Ce qui reste en gras est ce que la PAGE ne fabrique pas encore.
 
-#### 1. `ligne_mom` à N conducteurs — Z différentielle ET diaphonie, même chantier
+#### 1. ~~`ligne_mom` à N conducteurs~~ **FAIT (2026-08-31)** — Z différentielle ET diaphonie
 
-**Le meilleur rapport valeur/effort de tout ce fichier**, et la machinerie est
-déjà là. `capacitance_coplanaire`
-([python/ligne_mom.py](python/ligne_mom.py)) **assemble déjà une matrice
-multi-conducteurs** : plusieurs blocs de panneaux à la même hauteur, une seule
-matrice, et un vecteur de conditions aux limites —
+**Le meilleur rapport valeur/effort de tout ce fichier**, et c'était vrai : la
+machinerie était déjà là. `capacitance_coplanaire`
+([python/ligne_mom.py](python/ligne_mom.py)) **assemblait déjà une matrice
+multi-conducteurs** — plusieurs blocs de panneaux à la même hauteur, une seule
+matrice, un seul noyau — mais ne résolvait qu'un vecteur :
 
     [A] [q] = [V]     avec V = 1 sur le ruban, 0 sur les plans coplanaires
 
-Ce qui manque est la généralisation du **second membre**. Au lieu d'un vecteur,
-en résoudre N — potentiel unité sur le conducteur *i*, zéro sur les autres — et
-relever la charge portée par chacun. On obtient la **matrice de capacité de
-Maxwell** (dite aussi de court-circuit) [C], celle-là même que la théorie des
-lignes multiconducteurs demande : Q = [C] V, diagonale positive, hors-diagonale
-négative, somme de ligne égale à la capacité vers la référence.
-
-On refait avec εr = 1 → [C₀], et comme le milieu est non magnétique,
+**Ce qui manquait était le second membre, et rien d'autre.** On en résout
+désormais N — potentiel unité sur le conducteur *i*, zéro sur les autres — et
+l'on relève la charge portée par chacun. C'est la **matrice de capacité de
+Maxwell** [C], celle que la théorie des lignes multiconducteurs demande :
+Q = [C] V, diagonale positive, hors-diagonale négative, somme de ligne égale à
+la capacité vers la référence. Avec εr = 1 on obtient [C₀], et comme le milieu
+n'est pas magnétique,
 
     [L] = μ₀ ε₀ [C₀]⁻¹
 
 De ces deux matrices sortent, **sans aucun solveur de plus** :
 
-- Z différentielle et Z commune — modes pair/impair pour une paire,
-  décomposition modale de [L][C] pour N > 2 ;
-- la diaphonie : NEXT, FEXT, longueur de couplage, par la théorie MTL ;
-- les coefficients de couplage par paire, donc ce qu'on affiche.
+- **Z différentielle et Z commune** — modes pair/impair pour une paire
+  (`modes_paire`), décomposition modale de [L][C] au-delà (`_modes`) ;
+- **la diaphonie** — NEXT, FEXT, longueur de saturation (`diaphonie`) ;
+- les coefficients de couplage k_C et k_L, qui sont ce que la fiche affiche.
 
-**Ce que ça coûte.** `_matrice` — la partie chère, avec sa quadrature
-spectrale — est construite **une seule fois** ; une factorisation LU réutilisée
-pour les N résolutions. Le surcoût sur le calcul actuel est négligeable, et la
-précision est la même, parce que c'est la même discrétisation avec les mêmes
-panneaux resserrés.
+**Ce que ça a coûté.** `_matrice` — la partie chère, avec sa quadrature
+spectrale — est construite **une seule fois**, et `np.linalg.solve` reçoit les
+N seconds membres d'un coup : une factorisation, N substitutions arrière. Le
+surcoût est négligeable, et la précision est la même — même discrétisation,
+mêmes panneaux resserrés. **N = 1 par la matrice redonne `solve_line` au bit
+près**, et le banc le vérifie.
 
-**Non-régression, à écrire dans
-[python/test/banc-ligne-mom.py](python/test/banc-ligne-mom.py) :**
+**Une pièce en plus, qui n'était pas prévue : la piste de garde.** Un
+conducteur peut porter `masse` — il entre dans la matrice avec ses panneaux et
+sa condition à zéro volt, exactement comme un plan coplanaire, mais n'a pas de
+port. C'est la réponse de dessin la plus courante à un problème de diaphonie,
+et le banc la mesure : elle divise le NEXT par plus de deux, et fait baisser Z₀
+des deux signaux — ce qui se dit, parce qu'on ne la pose pas sans revoir la
+largeur.
 
-- N = 1 doit redonner le chiffre actuel **au bit près** ;
-- deux rubans très éloignés doivent se découpler : hors-diagonale → 0, et chaque
-  diagonale → la capacité du ruban seul ;
-- la matrice doit être **symétrique**, à diagonale positive et hors-diagonale
-  négative — trois invariants gratuits qui attrapent une erreur de signe ;
-- une paire symétrique : Z_diff contre la forme fermée de Garg-Bahl pour le
-  microruban couplé par les arêtes, qui vaut à quelques pour cent — c'est un
-  étalon **extérieur**, et il en faut un ;
-- Z_diff → 2 Z₀ quand l'écart devient grand devant la hauteur.
+**Le milieu est désormais choisi en un seul endroit** (`_milieu`) : `solve_line`
+et `solve_multiline` résolvent la même section, et la 2.2.0 a assez montré ce
+que coûtent deux copies d'une même formule.
 
-**La réserve à écrire dans le code.** Ceci couvre le couplage entre pistes
-**parallèles** — l'immense majorité de la diaphonie qui compte sur une carte.
-Deux pistes qui se croisent sur des couches différentes, ou qui couplent par un
-champ de vias, ne sont plus une section : là, et là seulement, il faut le 2,5D.
+**Non-régression, dans
+[python/test/banc-ligne-mom.py](python/test/banc-ligne-mom.py)** — les cinq cas
+annoncés y sont, et sept de plus :
 
-**Côté pages**, il faut aussi savoir *quelles* pistes sont parallèles et sur
-quelle longueur. La géométrie qui mesure la section par tronçons existe déjà
-(`section_de_couche`, [python/simulation_em.py](python/simulation_em.py), et les
-bancs de `editeur-pcb/test/harness.js`) ; ce qui manque est l'appariement de
-tronçons voisins et la longueur de recouvrement.
+- N = 1 redonne le chiffre actuel **au bit près** (1e-12 relatif) ;
+- deux rubans très éloignés se découplent : hors-diagonale à 5·10⁻⁴ de la
+  diagonale, et chaque diagonale retrouve la capacité du ruban seul ;
+- la matrice est **symétrique** (3,1·10⁻⁶ sur la matrice BRUTE, mesurée avant
+  symétrisation, sur trois pistes de largeurs différentes — le cas le plus
+  défavorable), à diagonale positive, hors-diagonale négative, et somme de
+  ligne entre zéro et la diagonale ;
+- **l'étalon extérieur** : Garg-Bahl pour le microruban couplé par les arêtes,
+  sur neuf couples (w/h et s/h de 0,5 à 2) — **moins de 3 %** sur Z_diff et
+  Z_commune, moins de 2 % sur les ε_eff modaux ;
+- Z_diff → 2 Z₀ et Z_commune → Z₀/2 quand l'écart devient grand devant la
+  hauteur, à 0,5 % près — c'est ce qui vérifie le facteur deux autrement que
+  par convention.
+
+Et une propriété qui ne se discute pas, plus sévère que tous les étalons :
+**en milieu homogène, la diaphonie avant est nulle**. Une triplaque y donne
+k_C = k_L terme à terme et un FEXT de 4·10⁻¹⁷ ; un microruban donne k_L > k_C
+et un FEXT **négatif**. Rien ne vérifie mieux que [C] et [L] décrivent la même
+géométrie — une erreur d'un panneau sur l'un des deux se verrait là et nulle
+part ailleurs.
+
+**La masse coplanaire y est, sous ses deux formes.** La première version
+jetait les deux écarts au plan et annonçait un majorant ; c'était une
+précaution inutile. Les deux pages sondent les **plans** sans voir les pistes :
+`gap_left` est donc déjà la distance de la sélection au plan de gauche *même
+quand une voisine se trouve entre les deux*. Le plan borde le **groupe**, et
+l'écart du groupe est celui de la sélection moins le cuivre ajouté de ce
+côté-là — rien de plus à mesurer. Et une piste du **net de référence** qui
+longe n'est pas une voisine : c'est une **piste de garde**, posée à zéro volt
+dans la section, sans port. Mesuré sur une garde entre deux signaux à 0,45 mm :
+le NEXT tombe de **3,15 % à 0,96 %**, et Z₀ des signaux de 57,6 à 50,7 Ω — ce
+qui se dit, parce qu'on ne pose pas une garde sans revoir la largeur.
+
+**Une section, pas une suite de paires.** Une piste avec deux voisines n'est
+pas deux problèmes à deux conducteurs : c'est **un** problème à trois, et les
+résoudre séparément compterait deux fois le même champ. Toutes les voisines
+d'une même piste entrent donc dans la même matrice. Z différentielle d'une
+paire prise dans un bus se lit alors par réduction exacte — les autres
+conducteurs tenus à la masse (`sous_systeme`) —, ce qui est une hypothèse, et
+qui se dit aussi.
+
+**Les deux sens du bruit.** « Ce que ma piste prend » et « ce qu'elle envoie »
+ne sont pas la même chose dès que les deux pistes n'ont pas la même largeur :
+le bruit se compte en fraction de l'amplitude de **l'agresseur** et se rapporte
+à ses termes propres. Les deux sortent de la même matrice, sans rien résoudre
+de plus. Mesuré sur une voisine quatre fois plus large : **5,50 % reçu contre
+4,51 % émis**, et le bruit avant **change de signe** d'un sens à l'autre. La
+fiche juge ce que la sélection *subit* — c'est la question qu'on pose en la
+sélectionnant — et affiche à côté ce qu'elle *injecte*.
+
+**Ce qui reste hors modèle**, et qui est écrit dans le code comme dans la
+fiche : ceci couvre le couplage entre pistes **parallèles, sur la même
+couche**. Deux pistes qui se croisent, qui se superposent sur deux couches, ou
+qui couplent par un champ de vias, ne sont plus une section : là, et là
+seulement, il faut le 2,5D. Et quand la page ne trouve **aucun plan à portée**
+— elle sonde jusqu'à trois millimètres —, le couplage est calculé sans lui,
+donc majoré ; la fiche le dit alors, et seulement alors.
+
+#### 1 bis. L'appariement, côté pages — **FAIT le 2026-08-31**
+
+Le solveur ne peut pas savoir *quelles* pistes se longent. Il fallait deux
+choses, et elles ont été mises chacune du bon côté :
+
+- **la page apporte le cuivre**, elle seule le connaît. L'agresseur n'est
+  **jamais** dans la sélection — c'est la définition — et l'autre moitié d'une
+  paire différentielle non plus. Les deux outils joignent donc au document un
+  `voisinage` : les tronçons de piste qui passent à portée, au même format que
+  la géométrie (`simVoisinagePcb`,
+  [editeur-pcb/js/19-simulation.js](editeur-pcb/js/19-simulation.js) ;
+  `simVoisinageIpc`,
+  [visionneuse-ipc2581/js/07-simulation.js](visionneuse-ipc2581/js/07-simulation.js)).
+  L'éditeur y ajoute ses **paires déclarées** (`S.dpPairs`), que le nommage ne
+  dit pas toujours ;
+- **le serveur apparie**, une fois pour les deux outils
+  (`_paires_paralleles`, [python/simulation_em.py](python/simulation_em.py)) :
+  même couche, parallèle à 15° près, un recouvrement mesuré **par projection
+  sur l'axe de la victime**, et un écart de cuivre à cuivre qui reste un écart.
+  Les longements d'un même net se cumulent en longueur, l'écart est la moyenne
+  pondérée, et le plus serré est gardé à part. **Toutes les voisines d'une même
+  piste vont dans la même section** (`_poser_section`), avec la masse
+  coplanaire du groupe (`_ecarts_masse_du_groupe`) et les pistes du net de
+  référence posées en gardes. Deux implémentations de la même règle géométrique
+  auraient dérivé : l'éditeur et la visionneuse doivent rendre le même chiffre
+  sur la même carte.
+
+**Le temps de montée** vient de la page, ou de la règle du genou
+(t_r = 0,35 / f_max) à défaut. Il ne change ni [C] ni [L] : il décide de la
+**saturation** du bruit arrière et de l'amplitude du bruit avant.
+
+**Côté panneau**, deux onglets de plus dans la famille SI — « Z différentielle »
+et « Diaphonie » —, qui lisent **la même réponse du serveur** que « Impédance » :
+changer d'onglet ne relance rien, et les quatre fiches parlent nécessairement du
+même cuivre. La fiche de diaphonie **cumule** les agresseurs, parce que trois
+voisins à 4 % crèvent un budget de 10 % sans qu'aucune ligne du tableau soit en
+rouge.
 
 #### 2. Le solveur DC — **fait**, mais rien ne l'alimente
 
@@ -317,9 +411,13 @@ des champs, et il faut afficher l'incertitude avec le chiffre.
 
 #### L'ordre
 
-1. **`ligne_mom` à N conducteurs.** Un seul chantier débloque Z différentielle
-   *et* diaphonie, à la précision déjà acquise. **Rien n'en est fait**, et
-   c'est toujours le meilleur rapport valeur/effort de la page.
+1. ~~**`ligne_mom` à N conducteurs**~~ **FAIT (2026-08-31)**, et il a bien
+   débloqué les deux : Z différentielle et diaphonie sortent de la même section
+   à N conducteurs, résolue une seule fois. Moins de 3 % contre Garg-Bahl,
+   FEXT nul en milieu homogène, et l'appariement des tronçons parallèles avec.
+   Ce qui reste de ce côté-là n'est plus un chantier mais des réserves écrites :
+   pas de couplage entre couches, pas de croisement, et un couplage majoré
+   quand aucun plan n'est à portée du groupe.
 2. ~~Le côté PAGE du solveur DC~~ **FAIT dans les DEUX outils (2026-08-29)** :
    bornes désignées au clic — autant de sources et de références qu'on veut —,
    ampérages saisis, tout le cuivre du net envoyé sur toutes ses couches,
@@ -398,10 +496,13 @@ bas.
 ### La famille PI porte une analyse, dont la moitié serveur seule est faite
 
 Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI**
-(intégrité de l'alimentation). SI porte « Impédance » ; PI porte « Chute DC »,
-**branchée de bout en bout dans les DEUX outils depuis le 2026-08-29** :
-bornes désignées au clic, cuivre du net envoyé sur toutes ses couches, détail
-via par via en retour, et la carte de potentiel peinte sur la carte.
+(intégrité de l'alimentation). SI porte quatre analyses — « Impédance »,
+« Z différentielle », « Diaphonie » et « Current Return Path », qui lisent
+**la même réponse du serveur** : changer d'onglet ne relance rien. PI porte
+« Chute DC », **branchée de bout en bout dans les DEUX outils depuis le
+2026-08-29** : bornes désignées au clic, cuivre du net envoyé sur toutes ses
+couches, détail via par via en retour, et la carte de potentiel peinte sur la
+carte.
 
 Le registre est `SIM_FAMILLES` / `SIM_ANALYSES`
 ([commun/simulation-em.js](commun/simulation-em.js)). Une analyse y déclare
@@ -672,11 +773,10 @@ faire :
 3. **les résonances de plan**, qui demandent l'onde complète — donc la section
    ci-dessus.
 
-Et dans SI, à côté d'« Impédance » : la **diaphonie** et l'**impédance
-différentielle**, qui sont le même chantier et le meilleur rapport
-valeur/effort du fichier — `capacitance_coplanaire` assemble déjà une matrice
-multi-conducteurs, il manque la généralisation du second membre. Tout est au
-§ « Quel solveur pour quel besoin », point 1. Et le **diagramme de l'œil**, qui
+Dans SI, à côté d'« Impédance » : la **diaphonie** et l'**impédance
+différentielle** sont **faites depuis le 2026-08-31** — c'était bien le même
+chantier, et le second membre généralisé a suffi. Voir « Quel solveur pour quel
+besoin », point 1. Ce qui reste de ce côté-là est le **diagramme de l'œil**, qui
 n'est que la réponse impulsionnelle des paramètres S déjà calculés.
 
 ### Réparer l'onde complète, ou l'assumer morte
@@ -1662,6 +1762,110 @@ topologie de la carte livrée (droite, arc, changement de couche, droite) où
 l'on vérifie l'ordre du parcours, la longueur de l'arc contre π/2, et
 l'accrochage du via avec ses vias de masse.
 
+### La topologie, le pad inventé, et « Current Return Path » — 2026-08-30 (lot 2)
+
+Trois chantiers, dont deux qui étaient au « ce qui reste à faire » de ce
+fichier depuis le lot précédent.
+
+**1. La topologie de la sélection, et le refus franc.** Le serveur comptait des
+RUPTURES — un décrochage entre deux tronçons consécutifs — et rendait les
+paramètres S dans tous les cas, assortis d'une phrase disant qu'ils ne
+voulaient rien dire. Deux défauts en un.
+
+Le premier : un compteur unique confondait trois choses. « La sélection est un
+parcours mais mal rangée » se corrige en la rangeant ; « ce net se ramifie en
+T » ne se corrige pas du tout — il n'a pas deux accès mais trois, et aucun
+ordre n'existe ; « la sélection est en morceaux » est encore autre chose.
+Répondre la même phrase aux trois, c'est demander à l'un l'impossible et taire
+à l'autre ce qu'il suffirait de faire. `_topologie()` rend maintenant un genre
+— `chaine`, `desordre`, `ramifiee`, `eparse`, `boucle`, `sans_coordonnees` — et
+la phrase suit le genre.
+
+Le second, et c'est le pire : la courbe s'affichait quand même. Elle a l'air
+d'un résultat, on l'exporte en `.s2p`, **et le `.s2p` ne porte pas
+l'avertissement**. Un chiffre faux qui voyage est pire qu'un chiffre absent.
+Les paramètres S et le Touchstone ne sortent plus quand la sélection n'est pas
+une chaîne ; le panneau écrit à la place de la courbe ce qui a été refusé, où
+sont les points de dérivation, et ce qui reste valable — les impédances par
+tronçon et la carte de chaleur, qui ne dépendent d'aucun ordre. Le retard et
+les pertes cumulés restent affichés mais **barrés** : sur un T, la somme des
+longueurs n'est le trajet de personne.
+
+**Et l'éditeur PCB range enfin sa sélection.** Il parcourait `S.tracks` dans
+l'ordre du DOCUMENT, c'est-à-dire de création : juste par accident tant qu'on
+route une liaison d'un bout à l'autre en une fois, faux dès qu'on retouche. La
+visionneuse chaînait déjà (`simChainePistes`), et c'est ce qui a caché le
+défaut ici — là-bas le désordre est visible, ici il ne l'est pas. Au passage :
+**inverser une piste échange sa gauche et sa droite**, donc `gap_left` et
+`gap_right` doivent suivre. Ça ne change pas Z₀, la géométrie étant symétrique,
+mais ça faisait mentir la fiche sur quel bord longe quoi.
+
+**2. La pastille que personne n'avait lue.** `ipc2581_parser.py` fabrique la
+pastille d'un via à « perçage + 0,3 mm » quand aucun `<PadstackDef>` ne porte
+son nom — soit un anneau de 0,15 mm posé par convention. Sur la carte
+mesurée : perçage ⌀0,25, « anneau 0,15 », pastille ⌀0,55. Ces trois chiffres
+n'en font qu'un, et **aucun ne vient du fichier**. La fiche du perçage
+l'affichait avec l'aplomb d'une cote déclarée par le fabricant ; le contrôle
+d'isolation mesure ses distances contre elle ; la simulation la fait entrer
+dans la capacité du via.
+
+La pastille devinée est désormais marquée (`pad_supposee`), l'aveu voyage
+jusqu'à la page (`pad_sup`, `a_sup`), et la fiche écrit « supposé » à côté du
+chiffre.
+
+**Et la page fabriquait la sienne.** Faute de pastille connue, `simViasIpc`
+envoyait `perçage × 2,5` — très exactement le repli que le serveur applique
+lui-même. Le chiffre était donc le même ; ce qui changeait, c'est qu'il
+arrivait DÉCLARÉ PAR LA PAGE. Or `_cotes_via` écrit la provenance selon que
+`pad_diameter` est présent ou absent : `pastille_source` passait de « repli » à
+« page » et `cotes_supposees` à faux. Le résultat ne bougeait pas d'un micron,
+**la fiche cessait de prévenir**. Le serveur connaît maintenant trois
+provenances — `page`, `supposee`, `repli` — et la page ne fabrique plus rien.
+
+Reste ouvert, et non tranché : les **0,275 mm de cuivre absent** entre le bout
+de piste et le bord de l'anneau. Les bouts de piste convergent à 0,5500 mm du
+centre du perçage, soit exactement le diamètre de la pastille inventée. Si la
+vraie pastille faisait ⌀1,10, les pistes s'arrêteraient pile à son bord et il
+n'y aurait pas de trou. C'est un indice sérieux que la pastille réelle est plus
+grande que la devinette — mais tant que le fichier ne déclare pas son padstack,
+on ne peut pas le savoir. **La simulation marche dans les deux cas** ; l'affichage
+et le contrôle d'isolation, eux, sont concernés.
+
+**3. « Current Return Path » a sa propre section.** Le chemin de retour vivait
+en pièces détachées sous l'onglet « Impédance » : une colonne du tableau des
+discontinuités, quelques notes en bas de fiche, un chevelu sur la carte. Trois
+endroits, aucun qui réponde à la question qu'on se pose — « par où revient le
+courant de ce via, et est-ce que ça se ferme ». On lisait une impédance et on
+trouvait, en marge, de quoi s'inquiéter d'autre chose.
+
+Ce ne sont pas les mêmes questions. L'impédance caractéristique est une
+propriété de la SECTION DROITE ; le chemin de retour, une propriété de la
+LIAISON VERTICALE. **Une piste parfaitement à 50 Ω peut avoir un retour
+catastrophique**, et c'est précisément le cas qu'on ne voyait pas.
+
+La sélection se fait comme pour l'impédance, le calcul est le même — le serveur
+rend les deux dans une seule réponse, changer d'onglet ne relance rien. Ce qui
+change est ce qu'on montre : un via par ligne, sa position, ses couches, ses
+vias de masse un par un avec distance et part du courant, l'inductance de
+boucle et sa source. Le chevelu se dessine sous cet onglet et **plus sous
+l'impédance**.
+
+La coupure a demandé de séparer les notes en deux : le MOIGNON et l'ANTIPAD
+sont des cotes du via — elles chargent la liaison, elles entrent dans la
+cascade, elles expliquent la capacité et la phase du tableau des
+discontinuités — et restent donc sous l'impédance (`simViaNotes`). Le reste
+part avec le retour.
+
+**Un trou trouvé en le vérifiant** : la fiche d'un via hors parcours recopiait
+`cotes` — où chaque champ porte sa provenance — mais pas le booléen
+`cotes_supposees`, sur lequel le panneau filtre. Les provenances partaient
+complètes, et personne ne les lisait.
+
+**Ce qui reste, et qui n'a pas bougé :** le chaînage s'arrête toujours à la
+dérivation, et les tronçons non vus partent dans l'ordre du fichier. Les
+impédances par tronçon restent justes ; leur ordre, non — mais les paramètres S
+ne sortent plus, donc plus rien ne dépend de cet ordre-là.
+
 ### La visionneuse : le parcours, et le chevelu du retour — 2026-08-30
 
 **Un défaut de fond, trois symptômes qui n'en avaient pas l'air.**
@@ -1720,6 +1924,69 @@ conversion oubliée poserait le chevelu vingt-cinq fois trop loin, donc hors
 carte, où personne ne le trouverait pour s'en plaindre), et deux, côté serveur,
 la position rendue et le refus de l'inventer.
 
+### La sélection à plusieurs morceaux, et les lots — FAIT le 2026-08-31
+
+**Le cas qui l'a demandée, et il est ordinaire en RF.** Une ligne 50 Ω coupée
+par trois condensateurs de liaison n'est pas un net : c'est quatre nets bout à
+bout, séparés par des boîtiers. La question, elle, ne se pose qu'une fois —
+« fait-elle 50 Ω sur toute sa longueur ? » — et il fallait la poser quatre fois,
+cliquer quatre fois, relire quatre fiches et se souvenir des chiffres
+entre-temps. Le même besoin revient partout où le cuivre est coupé sans que la
+LIAISON le soit : té de polarisation, filtre, résistance série, pont de mesure.
+
+**Ce qui a été fait.**
+
+| Où | Quoi |
+|---|---|
+| `visionneuse-ipc2581/js/02-modele.js` | `V.sel` : la liste des morceaux retenus, `{s, mev}` chacun, et les fonctions d'état qui la rangent (`selPoser`, `selRefleter`, `selMeme`, `selNets`, `selRefs`) |
+| `js/04-interaction.js` | Ctrl+clic ajoute ou retire ; Ctrl+Maj+clic ajoute un net entier ; le vide ne vide plus une sélection qu'on construit |
+| `js/03-rendu.js` | tous les morceaux s'allument ensemble, boîtiers compris |
+| `js/05-panneaux.js` | la fiche « Sélection » : liste numérotée, chaque ligne se retire seule ; Ctrl+clic dans les listes de nets et de composants |
+| `commun/simulation-em.js` | **les lots** : `SIM.lots`, le lot actif reflété dans `SIM.res`, le tableau de synthèse, le calcul lot par lot, le `.csv` de tous les lots |
+| `js/07-simulation.js`, `editeur-pcb/js/19-simulation.js` | `problemes()` : un document par parcours continu, et la carte de chaleur qui peint TOUS les lots |
+
+**Un lot est un parcours continu** : le même net, et du cuivre qui se touche —
+deux bouts au même point sur deux couches comptent comme un via, exactement
+comme pour le chaînage. Un net qui se ramifie reste donc un lot, avec l'arrêt
+de marche que le panneau annonçait déjà ; on ne découpe pas les branches, on
+découpe ce qui ne se touche pas.
+
+**Pourquoi séparément et non bout à bout.** La cascade ABCD suppose que la
+sortie d'un tronçon soit l'entrée du suivant. Entre deux lots il y a un
+composant, dont ce panneau ne sait rien : les additionner rendrait un S₂₁ qui
+aurait l'air d'être celui de la ligne entière en l'ignorant. Envoyés séparément,
+ils rendent quatre résultats justes, et la fiche dit sous le tableau ce qu'elle
+ne modélise pas.
+
+**`SIM.res` survit, et c'est ce qui a rendu la chose petite.** Tout ce qui
+affiche, peint et exporte le lit depuis toujours. Le lot actif s'y REFLÈTE :
+la fiche complète, la courbe S, la section résolue, le `.csv`, le `.s2p` et les
+deux canevas fonctionnent sans une ligne de changement, et un seul morceau
+désigné se comporte exactement comme avant. Ce qui s'ajoute est au-dessus.
+
+**Deux replis, tous les deux dits.** Un morceau posé sur une couche absente de
+l'empilage n'a pas d'impédance : son lot est écarté, et la note le nomme. Et
+au-delà de **seize lots** — un Ctrl+A, un lasso sur la carte entière, un net de
+masse en cinquante îlots — tout repart dans un seul document plutôt qu'en seize
+requêtes : les impédances par tronçon restent justes, la cascade sera refusée
+par le serveur, et la note dit que la comparaison n'a pas eu lieu. Aucun
+plafond silencieux.
+
+**Non-régression** : neuf cas côté visionneuse (`test/harness-sim.js`, 92 au
+total) et cinq côté éditeur (`test/harness.js`, 513 au total). Les deux qui
+comptent le plus sont ceux qui protègent l'ancien comportement : « un seul
+morceau désigné rend un seul lot, par le chemin d'avant » et « une liaison
+continue reste un seul lot, et le document est celui d'avant ». Vient ensuite
+« la même piste prise deux fois ne part qu'une fois » — cliquer une piste puis
+Ctrl+Maj+clic pour prendre son net la mettait dans deux entrées, et sans
+dédoublonnage elle se chaînait avec elle-même.
+
+**Ce qui reste à faire.** Le chevelu du retour et la carte de chute continue ne
+peignent que le lot déplié : c'est défendable — six chevelus superposés ne se
+lisent pas — mais ce n'est pas dit à l'écran. Et le `.s2p` reste par lot, ce qui
+est la seule chose juste : un Touchstone de la ligne entière demanderait le
+modèle des composants qui la coupent.
+
 ### À faire : un rapport de santé de la liaison
 
 **Le constat, et il est juste.** Le panneau d'impédance affiche aujourd'hui une
@@ -1739,8 +2006,9 @@ s'agit de la **déplacer et de la hiérarchiser**, pas de la recalculer.
 défaut (une phase de via de 0,03° n'en est pas un), comment on classe (par
 gravité ? par tronçon ?), et ce qu'un bus ajoute à une liaison seule —
 l'appariement des longueurs, la diaphonie, le fait que N liaisons partagent
-leurs vias de retour. Ce dernier point rejoint le chantier `ligne_mom` à N
-conducteurs, qui est déjà en tête de liste.
+leurs vias de retour. La diaphonie, elle, a désormais sa réponse : l'onglet du
+même nom la chiffre agresseur par agresseur et **cumule** — il reste à la faire
+entrer dans un verdict d'ensemble plutôt que dans sa propre fiche.
 
 **Et le panneau d'impédance redeviendrait ce qu'il annonce** : Z₀ par tronçon,
 la courbe S, et les seules notes qui portent sur la section calculée.
@@ -1837,19 +2105,18 @@ haut de la bande analysée (`simCouture()`).
   transition vers une pastille, un col — porte une seule largeur dans le
   modèle, donc une seule impédance. C'est fidèle au document ; ce n'est pas
   fidèle au cuivre gravé ;
-- **la piste VOISINE.** Le plan de masse coplanaire, lui, est désormais traité
-  — c'était le gros morceau, et le plus fréquent. Reste le couplage à une autre
-  PISTE : deux signaux serrés se voient, et le modèle de ligne ne le dit pas.
-  Il est en revanche DÉTECTÉ depuis que les nets de masse sont déclarés : le
-  cuivre d'un net non-référence qui longe la piste ne compte plus comme un plan
-  de retour, il ressort en note de couplage avec son écart et sa longueur
-  (`simVoisins()`, [commun/simulation-em.js](commun/simulation-em.js)). C'est le
-  signalement, pas le calcul. Le calcul est le domaine de `dpZdiff()`, qui
-  existe pour les paires différentielles et n'est pas branché sur la simulation.
-  Le chemin est ouvert : `capacitance_coplanaire()` met déjà plusieurs
-  conducteurs dans la même matrice ; il suffit de tenir le second à un potentiel
-  au lieu de zéro pour sortir la matrice de capacité complète, donc le mode pair
-  et le mode impair ;
+- **la piste VOISINE — dans la CASCADE.** Elle est calculée depuis le
+  2026-08-31, mais **à côté** : `solve_multiline` rend Z différentielle et
+  diaphonie dans leurs deux onglets, et le Z₀ de la colonne « Impédance » reste
+  celui de la piste prise seule. C'est défendable — une piste couplée n'a pas
+  UNE impédance, elle en a deux, une par mode — et c'est écrit dans la fiche ;
+  ce qui manque est le **choix du mode** dans la cascade, pour que S₂₁ soit celui
+  du signal différentiel quand c'en est un ;
+- **le couplage entre COUCHES.** Deux pistes superposées sur deux couches
+  voisines couplent, parfois plus que deux pistes côte à côte, et la section
+  droite de ce solveur n'a qu'un plan de conducteurs : elle ne sait pas le dire.
+  C'est le domaine du 2,5D, et c'est écrit dans les hypothèses que la fiche de
+  diaphonie affiche ;
 - **les découpes du plan de référence, EN FACE de la piste.** Une piste qui
   franchit une fente du plan d'en face n'a plus de référence sous elle sur cette
   longueur : le calcul continue de rendre la valeur du plan plein. Les découpes
@@ -1868,13 +2135,14 @@ haut de la bande analysée (`simCouture()`).
   les mêmes tronçons dans un autre ordre donnent un autre S₁₁ (mesuré : −1,65
   contre −2,31 dB sur trois sections 75/25/48 Ω permutées). Un net qui se
   ramifie en T n'est pas une chaîne du tout. Le serveur vérifie désormais la
-  continuité de la sélection (`_ruptures()`,
-  [python/simulation_em.py](python/simulation_em.py)) et le dit quand elle
-  manque — les impédances par tronçon et la carte de chaleur restent justes,
-  seuls les paramètres S et les cumuls perdent leur sens. **Ce qui reste à
-  faire** : ordonner la sélection en parcours quand c'en est un, et refuser
-  franchement les paramètres S quand ce n'en est pas un, plutôt que de les
-  rendre assortis d'une réserve.
+  topologie de la sélection (`_topologie()`,
+  [python/simulation_em.py](python/simulation_em.py)) et distingue le parcours
+  MAL RANGÉ — que la page corrige en le rangeant — du net RAMIFIÉ, qu'aucun
+  ordre ne sauve. **Fait le 2026-08-30** : les deux pages ordonnent leur
+  sélection en parcours, et les paramètres S ne sortent plus du tout quand ce
+  n'en est pas un — la courbe cède la place à la raison du refus, et le `.s2p`
+  n'est pas écrit. Les impédances par tronçon et la carte de chaleur restent
+  rendues : elles ne dépendent d'aucun ordre.
 
 ### Les deux modes, et pourquoi ils doivent se recouper
 

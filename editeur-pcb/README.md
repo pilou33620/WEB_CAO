@@ -48,7 +48,9 @@ js/19-simulation.js      simulation EM : la carte de chaleur d'impédance sur la
                          sélection, et l'empilage / le cuivre d'un net mis au
                          format du solveur MoM, ports compris. C'est aussi lui
                          qui lit la masse coplanaire — nets de référence, un
-                         écart par côté, plages d'écart, couture de vias
+                         écart par côté, plages d'écart, couture de vias — et
+                         qui joint au problème le CUIVRE VOISIN, sans lequel il
+                         n'y a ni Z différentielle ni diaphonie
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -1477,7 +1479,7 @@ exactement comme la lecture d'un IPC-2581. Le panneau, lui, est commun aux deux
 outils (`../commun/simulation-em.js`) ; seul l'adaptateur `js/19-simulation.js`
 est d'ici.
 
-### Les trois gestes commandent l'étendue du calcul
+### Les gestes commandent l'étendue du calcul
 
 Ils sont ceux qu'on connaît déjà — ce fichier ne lit que `S.sel.tracks`, il les
 suit sans les connaître :
@@ -1487,6 +1489,133 @@ suit sans les connaître :
 | Clic | le tronçon cliqué, seul |
 | `Maj`+clic | la piste entière, sur sa couche |
 | `Maj`+clic à nouveau | la piste sur toutes les couches, vias de passage compris |
+| `Ctrl`+clic | **ajoute** un morceau : chaque parcours continu est calculé séparément |
+
+### Quatre onglets dans SI, et une seule réponse du serveur
+
+Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI**
+(intégrité de l'alimentation). SI en porte quatre :
+
+| Onglet | Ce qu'il répond | Ce qu'il lit |
+| --- | --- | --- |
+| **Impédance** | Z₀ tronçon par tronçon, paramètres S de la liaison | la section droite d'UNE piste |
+| **Z différentielle** | Z_diff et Z_commune des paires qui longent la sélection | la même section, à DEUX conducteurs |
+| **Diaphonie** | ce que les voisines prennent à la sélection — NEXT, FEXT | la même, lue autrement |
+| **Current Return Path** | par où revient le courant de chaque via | la liaison verticale |
+
+**Les quatre lisent la MÊME réponse du serveur** : changer d'onglet ne relance
+rien, et les quatre fiches parlent nécessairement du même cuivre. Elles ne
+posent pas la même question — une piste parfaitement à 50 Ω peut avoir un
+retour catastrophique et prendre trois cents millivolts à sa voisine.
+
+### Z différentielle et diaphonie : une seule section, deux lectures
+
+Le solveur résout la section à **N conducteurs** (`solve_multiline`,
+`../python/ligne_mom.py`) : la matrice de capacité de Maxwell **[C]**, puis
+**[L] = μ₀ε₀[C₀]⁻¹** puisque le milieu n'est pas magnétique. De ces deux
+matrices sortent, sans aucun solveur de plus, les modes **pair** et **impair**
+— donc Z_diff = 2·Z_impair et Z_comm = Z_pair/2 — et les coefficients de
+couplage k_C et k_L — donc le bruit **arrière** (NEXT) et le bruit **avant**
+(FEXT).
+
+**L'agresseur n'est jamais dans la sélection**, par définition, et l'autre
+moitié d'une paire non plus : on désigne la piste dont on se soucie. La page
+joint donc au problème le **voisinage** — le cuivre qui passe à portée sur la
+même couche — et c'est le serveur qui apparie : même couche, parallèle à 15°
+près, un recouvrement mesuré par projection, un écart de cuivre à cuivre.
+Sélectionner UNE des deux pistes suffit.
+
+### Une piste, deux voisines : une seule section
+
+**Une piste avec deux voisines n'est pas deux problèmes à deux conducteurs :
+c'est un problème à trois.** Les résoudre séparément compterait deux fois le
+même champ. Toutes les voisines d'une même piste entrent donc dans la même
+matrice, chacune à sa distance réelle et **du bon côté** — la fiche affiche la
+coupe résolue, de gauche à droite, avec les deux écarts au plan.
+
+Z différentielle d'une paire prise dans un bus se lit alors par réduction
+exacte : **les autres conducteurs tenus à la masse**. C'est une hypothèse — une
+piste réellement terminée sur son impédance n'est pas une piste à la masse — et
+la fiche l'écrit dès que la section porte plus de deux conducteurs.
+
+### La masse coplanaire est dans le calcul
+
+Sous ses deux formes, et sans rien mesurer de plus :
+
+- **le plan qui borde le groupe.** Les deux outils sondent les *plans* sans
+  voir les pistes : l'écart mesuré est déjà la distance de la sélection au plan,
+  *même quand une voisine se trouve entre les deux*. Le plan borde donc le
+  groupe, et l'écart du groupe est celui de la sélection moins le cuivre ajouté
+  de ce côté-là ;
+- **la piste de garde.** Une piste du **net de référence** qui longe n'est pas
+  une voisine : c'est un conducteur **tenu à zéro volt** dans la section — elle
+  occupe la place, elle prend du champ, elle n'a ni port ni impédance
+  différentielle. Mesuré sur une garde entre deux signaux à 0,45 mm : le NEXT
+  tombe de **3,15 % à 0,96 %**, et Z₀ des signaux de 57,6 à 50,7 Ω — ce qui est
+  affiché, parce qu'on ne pose pas une garde sans revoir la largeur.
+
+### Reçu et émis : les deux sens du bruit
+
+La piste sélectionnée est **victime et agresseur à la fois**, et la fiche donne
+les deux — même matrice, agresseur et victime échangés :
+
+- **reçu** : ce que la sélection subit. C'est lui qui juge, parce que c'est la
+  question qu'on pose en sélectionnant une piste ;
+- **émis** : ce qu'elle injecte dans la voisine.
+
+Les deux ne sont égaux que si les deux pistes ont la même largeur : le bruit se
+compte en fraction de l'amplitude de **l'agresseur** et se rapporte à ses termes
+propres. Mesuré sur une voisine quatre fois plus large : **5,50 % reçu contre
+4,51 % émis**, et le bruit avant **change de signe** d'un sens à l'autre. Quand
+la sélection émet au-dessus du budget sans rien recevoir, la fiche le dit — le
+défaut est réel, mais il est chez la voisine.
+
+**Le temps de montée** et **l'amplitude** ont chacun leur unité — ps / ns / µs
+et mV / V —, choisie dans une liste comme celle des fréquences : la valeur vit
+en secondes et en volts jusqu'au solveur, et en changer *convertit* ce qui est
+écrit sans le réinterpréter. Le front ne change ni [C] ni [L] : il décide si le
+bruit arrière **sature** — passé une certaine longueur de longement, il ne monte
+plus — et ce que vaut le bruit avant, qui lui ne sature pas. Laissé vide, il est
+déduit du haut de la bande par la règle du genou (0,35 / f_max), et la fiche le
+dit.
+
+**Ce que ça ne couvre pas, et qui est écrit sous chaque fiche** : le couplage
+entre pistes de **couches différentes**, les **croisements**, et le couplage par
+champ de vias — ce n'est plus une section droite. Et quand aucun plan n'est
+trouvé à portée du groupe — la sonde va jusqu'à trois millimètres —, le couplage
+est calculé sans lui, donc **majoré** ; la fiche le dit alors, et seulement
+alors.
+
+### Plusieurs morceaux à la fois : les lots
+
+**Une ligne RF coupée par des composants n'est pas un net, mais quatre.** Trois
+condensateurs de liaison, et le cuivre qui doit faire 50 Ω d'un bout à l'autre
+arrive en quatre morceaux portant quatre noms de net. `Ctrl`+clic les prenait
+déjà — la sélection de l'éditeur est additive depuis toujours — mais ils
+partaient dans un seul document, où le serveur voyait une liaison rompue et
+refusait la cascade.
+
+Le panneau découpe donc la sélection en **lots** — un lot = un parcours continu,
+du cuivre qui se touche sur un seul net — et calcule chacun séparément :
+
+* un **tableau de synthèse** en tête de la fiche, une ligne par lot : longueur,
+  Z₀ minimale et maximale, moyenne, nombre de sections hors tolérance, et le
+  verdict d'ensemble au-dessus — « 4 morceaux, tous dans la tolérance » ;
+* un **clic sur une ligne** déplie la fiche complète de ce lot ;
+* la **carte peint tous les lots**, chacun marqué de son numéro ;
+* le **`.csv`** les exporte tous, avec une colonne `lot` ; le `.s2p` et le
+  `.json` sont ceux du lot déplié, et leur nom porte son numéro.
+
+**Pourquoi séparément et non bout à bout.** La mise en cascade suppose que la
+sortie d'un tronçon soit l'entrée du suivant. Entre deux lots il y a un
+condensateur, une résistance, un connecteur — dont ce panneau ne sait rien.
+Les additionner rendrait un S₂₁ qui aurait l'air d'être celui de la ligne
+entière en ignorant les composants.
+
+**Un parcours continu reste un seul lot**, par le chemin exact d'avant : les
+trois gestes du tableau ci-dessus ne changent pas de comportement. Au-delà de
+seize lots — un `Ctrl+A`, un lasso sur la carte entière — tout repart dans un
+seul document, et la note dit que la comparaison n'a pas eu lieu.
 
 La case **« suivre »** s'arme au premier calcul réussi : à partir de là,
 changer de sélection relance tout seul, après un court repos — déplacer la
@@ -2011,7 +2140,7 @@ python3 outils/build-monofichier.py && node test/harness.js
 ```
 
 Le banc s'appuie sur le DOM minimal partagé (`../commun/test/dom-stub.js`),
-exécute `dist/pcb.js` et couvre 461 cas : import de netlist, boîtiers nommés
+exécute `dist/pcb.js` et couvre 513 cas : import de netlist, boîtiers nommés
 et empreintes qu'ils posent, chevelu
 multicouche, vias, îlots de cuivre, classes de net, édition des pistes,
 géométrie du L chanfreiné, posture du coude et règle d'angle (45° / 90° /
@@ -2023,7 +2152,9 @@ sources en volts et charges en ampères, la tension qui arrive à chaque
 charge, le tableau via par via, la carte de chaleur, ses trois grandeurs et la
 valeur lue au survol), empilage physique et ce qu'il impose au perçage, Gerber, Excellon, archive ZIP, espace de travail (docks,
 flottants, persistance), sélection multiple au Ctrl+clic, prise de la piste
-entière au Maj+clic et de toutes ses couches au doublé, presse-papier
+entière au Maj+clic et de toutes ses couches au doublé, découpage de la
+sélection en lots — un par parcours continu, calculé séparément, avec le repli
+et sa note au-delà du plafond —, presse-papier
 (copier/coller, contenu invalide, repères refaits), pas de grille, paires
 différentielles (détection des couples, tracé couplé et son écart tenu,
 éventail de départ, vias écartés, retour arrière, longueur découplée,

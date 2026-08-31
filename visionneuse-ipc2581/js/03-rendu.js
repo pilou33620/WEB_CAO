@@ -178,7 +178,7 @@ function peindre(c,dpr,W,H){
     c.stroke(V.contour);
   }
 
-  if(V.net>=0||V.mev.seul)peindreNet(c,dpr);
+  peindreSelection(c,dpr);
   /* La carte de chaleur de la simulation d'impédance (07-simulation.js), quand
      le panneau est ouvert sur ce mode : elle repeint les pistes désignées
      selon leur écart à l'impédance visée. Après la mise en évidence du net —
@@ -203,7 +203,12 @@ function peindre(c,dpr,W,H){
   if(typeof simRetourTraceIpc==="function")simRetourTraceIpc(c,dpr);
   if(V.aff.composants)peindreComposants(c,dpr);
   peindreTextes(c,dpr);
-  if(V.comp)peindreCompChoisi(c,dpr);
+  /* Les boîtiers retenus — plusieurs quand on les a pris à Ctrl+clic. Le reflet
+     `V.comp` sert de repli : un banc d'essai peut le poser sans passer par la
+     liste de sélection. */
+  const boitiers=V.sel.filter(e=>e.s&&e.s.type==="composant").map(e=>e.s.ref);
+  if(!boitiers.length&&V.comp)boitiers.push(V.comp);
+  for(const ref of boitiers)peindreCompChoisi(c,dpr,ref);
   if(V.survol)peindreSurvol(c,dpr);
 
   c.setTransform(1,0,0,1,0,0);
@@ -246,11 +251,34 @@ function peindreTrous(c,dpr){
   c.stroke(V.trous.npth);                    // non métallisé : cerclé, pour le
 }                                            // distinguer d'un via au premier
                                              // regard
+/* TOUT CE QUI EST RETENU, un morceau après l'autre. Un clic simple n'en met
+   qu'un dans la liste et le dessin est celui d'avant ; Ctrl+clic en met
+   plusieurs, et ils s'allument ensemble — c'est à cela qu'on voit qu'une ligne
+   RF coupée par trois condensateurs est bien prise d'un bout à l'autre.
+
+   LE REFLET SERT DE REPLI. `V.net` et `V.mev` portent la dernière entrée ; un
+   banc d'essai, ou du code qui ne connaîtrait pas la liste, peut les poser
+   seuls et obtenir le dessin attendu. */
+function peindreSelection(c,dpr){
+  if(V.sel.length){
+    for(const e of V.sel){
+      const s=e.s;
+      if(!s||s.type==="composant")continue;    // le cadre du boîtier suit, plus bas
+      const net=(s.net!=null&&s.net>=0)?s.net:-1;
+      const mev=e.mev||mdlMevTout();
+      if(net<0&&!mev.seul)continue;
+      peindreNet(c,dpr,net,mev);
+    }
+    return;
+  }
+  if(V.net>=0||V.mev.seul)peindreNet(c,dpr,V.net,V.mev);
+}
+
 /* La mise en évidence, dans la portée choisie : tout le net, la seule couche
    cliquée, ses seuls perçages, ou le seul via désigné. Ce que la portée écarte
    n'est pas construit — les chemins absents sont nuls, pas vides. */
-function peindreNet(c,dpr){
-  const g=mdlCheminsNet(V.net,V.mev);
+function peindreNet(c,dpr,net,mev){
+  const g=mdlCheminsNet((net==null)?V.net:net,mev||V.mev);
   if(!g)return;
   poserMonde(c,dpr);
   const min=1/V.vue.scale;
@@ -338,8 +366,8 @@ function peindreTextes(c,dpr){
   }
 }
 
-function peindreCompChoisi(c,dpr){
-  const comp=V.parRef.get(V.comp);
+function peindreCompChoisi(c,dpr,ref){
+  const comp=V.parRef.get(ref==null?V.comp:ref);
   if(!comp)return;
   poserMonde(c,dpr);
   const b=comp.boite;

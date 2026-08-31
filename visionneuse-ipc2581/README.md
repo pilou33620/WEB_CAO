@@ -66,9 +66,9 @@ et ceux du dossier partagé, identiques aux autres outils :
 | `js/04-interaction.js` | 302 | Déplacement, zoom, pincement à deux doigts, désignation (piste, pastille, perçage, boîtier), clavier |
 | `js/05-panneaux.js` | 505 | Les cinq panneaux : couches, la carte, nets, composants, sélection — et la fiche de ligne de transmission |
 | `js/06-demarrage.js` | 333 | Ouverture d'un fichier (bouton, dépôt, reprise de session), exports `.json` et `.png`, réglages de l'utilisateur |
-| `js/07-simulation.js` | 804 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes |
-| `../python/simulation_em.py` | 889 | Pont vers `python/ligne_mom.py` : empilage à plat -> section droite, résolution par tronçon, cascade ABCD -> JSON |
-| `test/harness-sim.js` | 1099 | Banc d'essai de la masse coplanaire et de la chute continue, sous Node : `node test/harness-sim.js` |
+| `js/07-simulation.js` | 2598 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias, **cuivre voisin joint au problème** —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes |
+| `../python/simulation_em.py` | 3312 | Pont vers `python/ligne_mom.py` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
+| `test/harness-sim.js` | 2552 | Banc d'essai de la masse coplanaire, de la chute continue et du voisinage, sous Node : `node test/harness-sim.js` |
 
 ## Démarrage
 
@@ -107,6 +107,17 @@ ouvre sa fiche, avec la liste de ses broches et le net de chacune. Les listes
 désigne est cherché dans le cuivre d'abord, de la couche du dessus vers celle
 du dessous : masque et pâte se superposent au cuivre partout, et c'est la
 piste qu'on vise, pas le vernis qui la couvre.
+
+**`Ctrl`+clic en désigne plusieurs.** Une visionneuse ne déplace rien : si elle
+sait sélectionner plusieurs morceaux, c'est pour les COMPARER. Chaque `Ctrl`+clic
+ajoute une piste, un plan, un via ou un boîtier à ce qui est déjà pris — et le
+retire s'il y était ; `Ctrl`+`Maj`+clic ajoute un net entier ; les listes
+« Nets » et « Composants » suivent la même règle. Tout ce qui est retenu
+s'allume ensemble, et le panneau « Sélection » en donne la liste numérotée, où
+chaque ligne se retire seule. Les fiches, elles, continuent de décrire le
+DERNIER morceau cliqué : elles répondent à « qu'est-ce que je viens de cliquer ».
+`Échap` lâche tout. C'est en simulation que ce geste prend tout son sens — voir
+« Plusieurs morceaux à la fois : les lots », plus bas.
 
 **Un plan de masse ou d'alimentation se désigne comme le reste**, en cliquant
 dessus. Sa fiche donne son net, sa couche, son aire de cuivre et le nombre de
@@ -186,6 +197,7 @@ oublie les valeurs saisies pour revenir à ce que dit le fichier.
 | Molette, pincement | Zoomer sur le point visé |
 | Clic | Désigner ce qu'il y a dessous, sur sa couche |
 | `Maj`+clic | Suivre le net au-delà de la couche cliquée, et le chiffrer en entier |
+| `Ctrl`+clic | Ajouter à la sélection, ou en retirer ce qui y était déjà |
 | Double-clic, `F` | Voir toute la carte |
 | `B` | Dessus / dessous |
 | `R`, `D`, `P` | Repères, perçages, plans |
@@ -215,12 +227,108 @@ rien ne dirait laquelle croire. Ce que le fichier ne dit pas et que vous avez
 saisi dans « La carte » sert donc ici aussi, et ce qui manque encore est écrit
 sous le résultat plutôt que supposé en silence.
 
+### Quatre onglets dans SI, et une seule réponse du serveur
+
+Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI**
+(intégrité de l'alimentation). SI en porte quatre :
+
+| Onglet | Ce qu'il répond | Ce qu'il lit |
+| --- | --- | --- |
+| **Impédance** | Z₀ tronçon par tronçon, paramètres S de la liaison | la section droite d'UNE piste |
+| **Z différentielle** | Z_diff et Z_commune des paires qui longent la sélection | la même section, à DEUX conducteurs |
+| **Diaphonie** | ce que les voisines prennent à la sélection — NEXT, FEXT | la même, lue autrement |
+| **Current Return Path** | par où revient le courant de chaque via | la liaison verticale |
+
+**Les quatre lisent la MÊME réponse du serveur** : changer d'onglet ne relance
+rien, et les quatre fiches parlent nécessairement du même cuivre. Elles ne
+posent pas la même question — une piste parfaitement à 50 Ω peut avoir un
+retour catastrophique et prendre trois cents millivolts à sa voisine.
+
+### Z différentielle et diaphonie : une seule section, deux lectures
+
+Le solveur résout la section à **N conducteurs** (`solve_multiline`,
+`../python/ligne_mom.py`) : la matrice de capacité de Maxwell **[C]**, puis
+**[L] = μ₀ε₀[C₀]⁻¹** puisque le milieu n'est pas magnétique. De ces deux
+matrices sortent, sans aucun solveur de plus, les modes **pair** et **impair**
+— donc Z_diff = 2·Z_impair et Z_comm = Z_pair/2 — et les coefficients de
+couplage k_C et k_L — donc le bruit **arrière** (NEXT) et le bruit **avant**
+(FEXT).
+
+**L'agresseur n'est jamais dans la sélection**, par définition, et l'autre
+moitié d'une paire non plus : on désigne la piste dont on se soucie. La page
+joint donc au problème le **voisinage** — le cuivre qui passe à portée sur la
+même couche — et c'est le serveur qui apparie : même couche, parallèle à 15°
+près, un recouvrement mesuré par projection, un écart de cuivre à cuivre.
+Sélectionner UNE des deux pistes suffit.
+
+### Une piste, deux voisines : une seule section
+
+**Une piste avec deux voisines n'est pas deux problèmes à deux conducteurs :
+c'est un problème à trois.** Les résoudre séparément compterait deux fois le
+même champ. Toutes les voisines d'une même piste entrent donc dans la même
+matrice, chacune à sa distance réelle et **du bon côté** — la fiche affiche la
+coupe résolue, de gauche à droite, avec les deux écarts au plan.
+
+Z différentielle d'une paire prise dans un bus se lit alors par réduction
+exacte : **les autres conducteurs tenus à la masse**. C'est une hypothèse — une
+piste réellement terminée sur son impédance n'est pas une piste à la masse — et
+la fiche l'écrit dès que la section porte plus de deux conducteurs.
+
+### La masse coplanaire est dans le calcul
+
+Sous ses deux formes, et sans rien mesurer de plus :
+
+- **le plan qui borde le groupe.** Les deux outils sondent les *plans* sans
+  voir les pistes : l'écart mesuré est déjà la distance de la sélection au plan,
+  *même quand une voisine se trouve entre les deux*. Le plan borde donc le
+  groupe, et l'écart du groupe est celui de la sélection moins le cuivre ajouté
+  de ce côté-là ;
+- **la piste de garde.** Une piste du **net de référence** qui longe n'est pas
+  une voisine : c'est un conducteur **tenu à zéro volt** dans la section — elle
+  occupe la place, elle prend du champ, elle n'a ni port ni impédance
+  différentielle. Mesuré sur une garde entre deux signaux à 0,45 mm : le NEXT
+  tombe de **3,15 % à 0,96 %**, et Z₀ des signaux de 57,6 à 50,7 Ω — ce qui est
+  affiché, parce qu'on ne pose pas une garde sans revoir la largeur.
+
+### Reçu et émis : les deux sens du bruit
+
+La piste sélectionnée est **victime et agresseur à la fois**, et la fiche donne
+les deux — même matrice, agresseur et victime échangés :
+
+- **reçu** : ce que la sélection subit. C'est lui qui juge, parce que c'est la
+  question qu'on pose en sélectionnant une piste ;
+- **émis** : ce qu'elle injecte dans la voisine.
+
+Les deux ne sont égaux que si les deux pistes ont la même largeur : le bruit se
+compte en fraction de l'amplitude de **l'agresseur** et se rapporte à ses termes
+propres. Mesuré sur une voisine quatre fois plus large : **5,50 % reçu contre
+4,51 % émis**, et le bruit avant **change de signe** d'un sens à l'autre. Quand
+la sélection émet au-dessus du budget sans rien recevoir, la fiche le dit — le
+défaut est réel, mais il est chez la voisine.
+
+**Le temps de montée** et **l'amplitude** ont chacun leur unité — ps / ns / µs
+et mV / V —, choisie dans une liste comme celle des fréquences : la valeur vit
+en secondes et en volts jusqu'au solveur, et en changer *convertit* ce qui est
+écrit sans le réinterpréter. Le front ne change ni [C] ni [L] : il décide si le
+bruit arrière **sature** — passé une certaine longueur de longement, il ne monte
+plus — et ce que vaut le bruit avant, qui lui ne sature pas. Laissé vide, il est
+déduit du haut de la bande par la règle du genou (0,35 / f_max), et la fiche le
+dit.
+
+**Ce que ça ne couvre pas, et qui est écrit sous chaque fiche** : le couplage
+entre pistes de **couches différentes**, les **croisements**, et le couplage par
+champ de vias — ce n'est plus une section droite. Et quand aucun plan n'est
+trouvé à portée du groupe — la sonde va jusqu'à trois millimètres —, le couplage
+est calculé sans lui, donc **majoré** ; la fiche le dit alors, et seulement
+alors.
+
 ### Les gestes commandent l'étendue du calcul
 
 | Geste | Ce qui est calculé et peint |
 | --- | --- |
 | Clic sur une piste | cette piste, sur sa couche |
 | `Maj`+clic | tout le net, sur toutes les couches où il court |
+| `Ctrl`+clic | **ajoute** un morceau à la sélection : chaque parcours continu est calculé séparément |
 
 Il n'y a pas de troisième portée ici, contrairement à l'éditeur PCB : le
 double-clic est pris — il cadre la carte — et une visionneuse n'a pas de
@@ -233,6 +341,42 @@ reprise mot pour mot.
 
 La case **« suivre »**, armée dès le premier calcul, relance à chaque
 changement de désignation.
+
+### Plusieurs morceaux à la fois : les lots
+
+**Une ligne RF coupée par des composants n'est pas un net, mais quatre.** Trois
+condensateurs de liaison, et le cuivre qui doit faire 50 Ω d'un bout à l'autre
+arrive en quatre morceaux portant quatre noms de net. La question, elle, ne se
+pose qu'une fois — « fait-elle 50 Ω partout ? » — et il fallait jusqu'ici la
+poser quatre fois, cliquer quatre fois, relire quatre fiches et se souvenir des
+chiffres entre-temps.
+
+`Ctrl`+clic empile les morceaux ; `Ctrl`+`Maj`+clic ajoute un net entier. Le
+panneau les découpe alors en **lots** — un lot = un parcours continu, du cuivre
+qui se touche sur un seul net — et calcule chacun séparément :
+
+* un **tableau de synthèse** en tête de la fiche, une ligne par lot : longueur,
+  Z₀ minimale et maximale, moyenne, et le nombre de sections hors tolérance.
+  Le verdict d'ensemble est au-dessus — « 4 morceaux, tous dans la tolérance » ;
+* un **clic sur une ligne** déplie la fiche complète de ce lot : sections
+  résolues, discontinuités, paramètres S, courbe ;
+* la **carte peint tous les lots** à la fois, chacun marqué de son numéro : c'est
+  là qu'on voit d'un coup d'œil où la ligne sort de la bande ;
+* le **`.csv`** les exporte tous, avec une colonne `lot` ; le `.s2p` et le
+  `.json` sont ceux du lot déplié, et leur nom porte son numéro.
+
+**Pourquoi séparément et non bout à bout.** La mise en cascade suppose que la
+sortie d'un tronçon soit l'entrée du suivant. Entre deux lots il y a un
+condensateur, une résistance, un connecteur — dont ce panneau ne sait rien.
+Les additionner rendrait un S₂₁ qui aurait l'air d'être celui de la ligne
+entière en ignorant les composants ; les séparer rend quatre résultats justes
+et laisse le jugement à qui sait ce que sont les boîtiers. La fiche le dit
+sous le tableau plutôt que de le taire.
+
+**Un seul morceau désigné rend un seul lot**, par le chemin exact d'avant : un
+net de masse dont le cuivre est en cinquante îlots ne part pas en cinquante
+requêtes parce qu'on l'a effleuré. Au-delà de seize lots, tout repart dans un
+seul document — et la note dit que la comparaison n'a pas eu lieu.
 
 ### La carte de chaleur
 
@@ -262,10 +406,14 @@ comme un défaut de la formule IPC-2141A. Vérifié contre étalons extérieurs
 au pire contre Hammerstad-Jensen sur le microruban, **0,30 %** contre la
 solution exacte en intégrales elliptiques sur la triplaque. La géométrie qui
 mesure la masse coplanaire sur le cuivre lu a son propre banc,
-`test/harness-sim.js` (47 cas), qui tourne sous Node sans navigateur — il
+`test/harness-sim.js` (92 cas), qui tourne sous Node sans navigateur — il
 couvre aussi l'extraction du cuivre pour la CHUTE CONTINUE : les polygones
 envoyés au solveur, les tubes métallisés qui font changer de couche, et
-l'invariant qui compte, « aucune couche de cuivre sans chemin vertical ».
+l'invariant qui compte, « aucune couche de cuivre sans chemin vertical » —
+ainsi que la SÉLECTION À PLUSIEURS MORCEAUX et son découpage en lots : ce qui se
+touche reste ensemble, ce qui ne se touche pas part séparément, la même piste
+prise deux fois ne part qu'une fois, et un seul morceau désigné rend le
+document exact d'avant.
 
 Ce qu'il ne voit pas : une suite de sections uniformes, rien d'autre — ni les
 coudes, ni les transitions de perçage, ni le rayonnement. Le calcul est

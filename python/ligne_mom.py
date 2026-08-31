@@ -2,6 +2,53 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.3.0
+# Date: 2026-08-31
+# Explication: N CONDUCTEURS. Z DIFFERENTIELLE ET DIAPHONIE, MEME CHANTIER.
+#   capacitance_coplanaire assemblait DEJA une matrice multi-conducteurs --
+#   plusieurs blocs de panneaux a la meme hauteur, une seule Green -- mais ne
+#   resolvait qu'un second membre. On en resout N (potentiel unite sur le
+#   conducteur i, zero sur les autres), on releve les charges, et l'on obtient
+#   la matrice de capacite de MAXWELL [C] ; avec er = 1 on obtient [C0], et
+#   [L] = mu0 eps0 [C0]^-1 puisque le milieu n'est pas magnetique.
+#
+#   IL N'Y A PAS UN SOLVEUR DE PLUS. La matrice -- la partie chere, avec sa
+#   quadrature spectrale -- est construite une fois, et numpy factorise une
+#   fois pour les N seconds membres. Le surcout est celui des substitutions
+#   arriere, et la precision est la meme parce que c'est la meme
+#   discretisation.
+#
+#   CE QUI EN SORT : Z differentielle et Z commune par les modes pair/impair,
+#   la decomposition modale de [L][C] au-dela de deux conducteurs, les
+#   coefficients de couplage, et la diaphonie NEXT/FEXT par la theorie des
+#   lignes multiconducteurs.
+#
+#   LA PISTE DE GARDE EST UN CONDUCTEUR TENU A ZERO VOLT -- meme condition aux
+#   limites que les plans coplanaires, mais a la place qu'on lui donne. Elle
+#   entre dans la matrice, prend du champ aux deux signaux, et n'a pas de port.
+#
+#   LE MILIEU EST DESORMAIS CHOISI EN UN SEUL ENDROIT (`_milieu`) : solve_line
+#   et solve_multiline resolvent la meme section, et la 2.2.0 a assez montre ce
+#   que coutent deux copies d'une meme formule. solve_line rend le meme chiffre
+#   au bit pres -- les 105 cas du banc le verifient.
+#
+#   MESURE : la paire de microruban tombe a moins de 3 % de la forme fermee de
+#   Garg-Bahl (etalon exterieur, lui-meme donne a quelques pour cent), et la
+#   triplaque rend un FEXT nul a 1e-16 pres -- ce qu'impose le milieu homogene,
+#   et ce qu'aucune erreur de signe entre [L] et [C] ne laisserait passer.
+#   `sous_systeme` lit une PAIRE prise dans un bus : les autres conducteurs
+#   tenus a zero volt, ce qui est la sous-matrice de Maxwell, et l'inductance
+#   qui suit. C'est exact, et c'est la seule facon de parler de Z
+#   differentielle quand la section porte plus de deux rubans.
+#
+#   `solve_multiline` rend `ordre` : les rubans sont ranges de gauche a droite
+#   pour la matrice, et l'appelant doit pouvoir retrouver lequel est le sien.
+#   Sans lui, poser ses conducteurs dans un autre ordre faisait lire la
+#   diaphonie de la mauvaise paire -- en silence.
+# Fonctions ajoutees : _milieu, _conducteurs_places, capacitance_matrice,
+#   _modes, solve_multiline, modes_paire, sous_systeme, diaphonie
+# Fonctions modifiees : solve_line (elle appelle _milieu ; meme resultat)
+#
 # Version: 2.2.0
 # Date: 2026-08-29
 # Explication: LE MODULE NE S'IMPORTAIT PLUS, et le masque etait faux.
@@ -219,6 +266,12 @@ SIGMA_CU = 5.8e7                    # conductivité du cuivre, S/m
 N_PANNEAUX = 120
 N_QUADRATURE = 300
 BETA_MAX = 40.0                     # en unités de 1/h ; au-delà, e^-80 ≈ 0
+
+# Combien de conducteurs couples au plus dans une meme section. Le cout est en
+# N sur les panneaux et en N^2 sur les seconds membres : huit pistes d'un bus
+# tiennent largement, et au-dela ce n'est plus une section qu'on lit, c'est un
+# tableau que personne ne lira.
+MAX_CONDUCTEURS = 8
 
 
 # ==========================================================================
@@ -633,6 +686,116 @@ def capacitance_coplanaire(largeur, ecart_g, ecart_d, green, distance_plan,
 # La ligne
 # ==========================================================================
 
+# ==========================================================================
+# LE MILIEU, CHOISI UNE FOIS POUR TOUTES
+# --------------------------------------------------------------------------
+# `solve_line` et `solve_multiline` resolvent la MEME section : meme empilage,
+# meme fonction de Green, meme milieu moyen, memes echelles de quadrature. Seul
+# le nombre de conducteurs change. Ce choix-la est donc ecrit ICI et nulle part
+# ailleurs -- la 2.2.0 a corrige trois copies divergentes des formules de
+# discontinuite, et il n'y a aucune raison de recommencer avec le milieu.
+# ==========================================================================
+
+def _milieu(geometry):
+    """Ce que la section impose au solveur, avant tout conducteur.
+
+    Rend {kind, distance, eps_moyen, eps_vide, g_diel, g_vide, echelles,
+    couvert, masque} -- `distance` est la hauteur au plan qui sert de longueur
+    de reference (la plus courte des deux pour une triplaque), `masque` porte
+    le vernis retenu ou None.
+    """
+    kind = geometry.get("kind", "micro")
+    epsilon_r = float(geometry.get("epsilon_r", 4.3))
+
+    if kind == "strip":
+        b = float(geometry.get("b", 0.0))
+        y0 = float(geometry.get("y0", b / 2.0))
+        if not (b > 0) or not (0 < y0 < b):
+            raise ValueError("triplaque : ecart entre plans invalide")
+        return {
+            "kind": "strip",
+            "distance": min(y0, b - y0),
+            "eps_moyen": EPSILON_0 * epsilon_r,
+            "eps_vide": EPSILON_0,
+            "g_diel": lambda be: green_spectral_strip(be, y0, b, epsilon_r),
+            "g_vide": lambda be: green_spectral_strip(be, y0, b, 1.0),
+            "echelles": (y0, b - y0),
+            "couvert": False,
+            "masque": None,
+        }
+
+    h = float(geometry.get("h", 0.0))
+    if not (h > 0):
+        raise ValueError("microruban : hauteur au plan nulle")
+    t = float(geometry.get("t", 0.0))
+    # Une couverture qui ne pese rien devant l'epaisseur du cuivre n'est pas
+    # une couverture : on la laisse tomber plutot que de faire porter la
+    # quadrature sur une longueur qui n'existe pas.
+    c_diel = float(geometry.get("couverture", 0.0) or 0.0)
+    if c_diel < max(t, 1e-9):
+        c_diel = 0.0
+    couvert = c_diel > 0
+
+    # LOT 2 : masque de soudure sur piste exterieure. Le masque a son propre
+    # epsilon_r (vernis ~3,8) et son epaisseur (20-30 um) : une Green a trois
+    # regions.
+    masque_info = geometry.get("masque")
+    masque_epaisseur = 0.0
+    masque_epsilon = 3.8
+    if masque_info is not None:
+        masque_epaisseur = float(masque_info.get("epaisseur", 0.0) or 0.0)
+        masque_epsilon = float(masque_info.get("epsilon_r", 3.8))
+        # Un masque plus mince que le nanometre n'est pas un masque : on le
+        # laisse tomber et la piste retombe sur le cas nu ou couvert.
+        if masque_epaisseur < 1e-9:
+            masque_epaisseur = 0.0
+
+    commun = {"kind": "micro", "distance": h, "eps_vide": EPSILON_0,
+              "couvert": couvert, "masque": None}
+    if masque_epaisseur > 0:
+        # LE MILIEU MOYEN EST L'ASYMPTOTE DE LA GREEN, pas le substrat.
+        # Quand beta -> l'infini : coth(beta h) -> 1, K -> (1+1/er2)e^{beta c}/2
+        # et M -> (er2+1)e^{beta c}/2, donc G -> 1/(eps0 beta (er1+er2)). Le
+        # milieu moyen est donc eps0 (er1+er2)/2 -- la moyenne des deux
+        # dielectriques qui bordent le ruban, exactement comme le microruban nu
+        # donne eps0 (1+er)/2 avec l'air pour second milieu. Poser le substrat
+        # seul decalait l'extraction de la partie singuliere.
+        commun.update({
+            "eps_moyen": EPSILON_0 * (epsilon_r + masque_epsilon) / 2.0,
+            "g_diel": lambda be: green_spectral_micro_masque(
+                be, h, masque_epaisseur, epsilon_r, masque_epsilon),
+            # LE VIDE, C'EST TOUT LE DIELECTRIQUE RETIRE -- le masque compris.
+            # Le laisser a son er dans la reference gonflait C0, et eps_eff
+            # BAISSAIT quand on vernissait la piste : l'inverse de la physique.
+            "g_vide": lambda be: green_spectral_micro_masque(
+                be, h, masque_epaisseur, 1.0, 1.0),
+            "echelles": (h, masque_epaisseur),
+            "masque": {"epaisseur": masque_info.get("epaisseur", 0.0),
+                       "epsilon_r": masque_info.get("epsilon_r", 3.8)},
+        })
+    elif couvert:
+        # Ruban couvert : du dielectrique des deux cotes, donc le milieu moyen
+        # est le stratifie tout entier -- c'est l'asymptote de la fonction de
+        # Green qui le dit, et c'est ce qui change tout par rapport au cas nu.
+        commun.update({
+            "eps_moyen": EPSILON_0 * epsilon_r,
+            "g_diel": lambda be: green_spectral_micro_couvert(
+                be, h, c_diel, epsilon_r),
+            "g_vide": lambda be: green_spectral_micro_couvert(be, h, c_diel, 1.0),
+            "echelles": (h, c_diel),
+        })
+    else:
+        # Le milieu moyen d'un microruban nu : moitie air, moitie stratifie.
+        # C'est ce que dit l'asymptote, pas une convention.
+        commun.update({
+            "eps_moyen": EPSILON_0 * (1.0 + epsilon_r) / 2.0,
+            "g_diel": lambda be: green_spectral_micro(be, h, epsilon_r),
+            "g_vide": lambda be: green_spectral_micro(be, h, 1.0),
+            "echelles": (h,),
+        })
+    return commun
+
+
 def _largeur_effective(largeur, epaisseur, distance_plan):
     """L'épaisseur du cuivre, ramenée à une largeur.
 
@@ -670,88 +833,14 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
     Rend {z0, eps_eff, c, c0, couvert, masque, ecart_g, ecart_d, cotes} —
     Z₀ en ohms, C et C₀ en F/m.
     """
-    kind = geometry.get("kind", "micro")
-    epsilon_r = float(geometry.get("epsilon_r", 4.3))
+    m = _milieu(geometry)
     t = float(geometry.get("t", 0.0))
-    couvert = False
-    masque_info = geometry.get("masque")
-    a_masqe = False
-
-    if kind == "strip":
-        b = float(geometry.get("b", 0.0))
-        y0 = float(geometry.get("y0", b / 2.0))
-        if not (b > 0) or not (0 < y0 < b):
-            raise ValueError("triplaque : écart entre plans invalide")
-        distance = min(y0, b - y0)
-        w = _largeur_effective(float(geometry["w"]), t, distance)
-        eps_moyen = EPSILON_0 * epsilon_r
-        g_diel = lambda be: green_spectral_strip(be, y0, b, epsilon_r)
-        g_vide = lambda be: green_spectral_strip(be, y0, b, 1.0)
-        eps_vide = EPSILON_0
-        echelles = (y0, b - y0)
-    else:
-        h = float(geometry.get("h", 0.0))
-        if not (h > 0):
-            raise ValueError("microruban : hauteur au plan nulle")
-        # Une couverture qui ne pèse rien devant l'épaisseur du cuivre n'est
-        # pas une couverture : on la laisse tomber plutôt que de faire porter
-        # la quadrature sur une longueur qui n'existe pas.
-        c_diel = float(geometry.get("couverture", 0.0) or 0.0)
-        if c_diel < max(t, 1e-9):
-            c_diel = 0.0
-        couvert = c_diel > 0
-        distance = h
-        w = _largeur_effective(float(geometry["w"]), t, h)
-
-        # LOT 2 : masque de soudure sur piste extérieure
-        # Le masque a son propre epsilon_r (vernis ~3.8) et son épaisseur
-        # (20-30 µm). Il faut une Green à 3 régions.
-        masque_epaisseur = 0.0
-        masque_epsilon = 3.8
-        if masque_info is not None:
-            masque_epaisseur = float(masque_info.get("epaisseur", 0.0) or 0.0)
-            masque_epsilon = float(masque_info.get("epsilon_r", 3.8))
-            # Un masque plus mince que le nanomètre n'est pas un masque : on le
-            # laisse tomber et la piste retombe sur le cas nu ou couvert.
-            if masque_epaisseur < 1e-9:
-                masque_epaisseur = 0.0
-        if masque_epaisseur > 0:
-            # Masque présent : Green à 3 régions
-            a_masqe = True
-            # LE MILIEU MOYEN EST L'ASYMPTOTE DE LA GREEN, pas le substrat.
-            # Quand β → ∞ : coth(βh) → 1, K → (1+1/εr₂)e^{βc}/2 et
-            # M → (εr₂+1)e^{βc}/2, donc G → 1/(ε₀ β (εr₁+εr₂)). Le milieu
-            # moyen est donc ε₀(εr₁+εr₂)/2 — la moyenne des deux diélectriques
-            # qui bordent le ruban, exactement comme le microruban nu donne
-            # ε₀(1+εr)/2 avec l'air pour second milieu. Poser le substrat seul
-            # décalait l'extraction de la partie singulière.
-            eps_moyen = EPSILON_0 * (epsilon_r + masque_epsilon) / 2.0
-            g_diel = lambda be: green_spectral_micro_masque(
-                be, h, masque_epaisseur, epsilon_r, masque_epsilon)
-            # LE VIDE, C'EST TOUT LE DIÉLECTRIQUE RETIRÉ — le masque compris.
-            # Le laisser à son εr dans la référence gonflait C₀, et ε_eff
-            # BAISSAIT quand on vernissait la piste : l'inverse de la physique.
-            g_vide = lambda be: green_spectral_micro_masque(
-                be, h, masque_epaisseur, 1.0, 1.0)
-            echelles = (h, masque_epaisseur)
-        elif couvert:
-            # Ruban couvert : du diélectrique des deux côtés, donc le milieu
-            # moyen est le stratifié tout entier — c'est l'asymptote de la
-            # fonction de Green qui le dit, et c'est ce qui change tout par
-            # rapport au cas nu.
-            eps_moyen = EPSILON_0 * epsilon_r
-            g_diel = lambda be: green_spectral_micro_couvert(
-                be, h, c_diel, epsilon_r)
-            g_vide = lambda be: green_spectral_micro_couvert(be, h, c_diel, 1.0)
-            echelles = (h, c_diel)
-        else:
-            # Le milieu moyen d'un microruban nu : moitié air, moitié
-            # stratifié. C'est ce que dit l'asymptote, pas une convention.
-            eps_moyen = EPSILON_0 * (1.0 + epsilon_r) / 2.0
-            g_diel = lambda be: green_spectral_micro(be, h, epsilon_r)
-            g_vide = lambda be: green_spectral_micro(be, h, 1.0)
-            echelles = (h,)
-        eps_vide = EPSILON_0
+    couvert = m["couvert"]
+    distance = m["distance"]
+    eps_moyen, eps_vide = m["eps_moyen"], m["eps_vide"]
+    g_diel, g_vide = m["g_diel"], m["g_vide"]
+    echelles = m["echelles"]
+    w = _largeur_effective(float(geometry["w"]), t, distance)
 
     if not (w > 0):
         raise ValueError("largeur de ruban nulle")
@@ -806,12 +895,464 @@ def solve_line(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
         "cotes": len(positifs),
     }
     # LOT 2 : signaler le masque
-    if a_masqe and masque_info:
-        result["masque"] = {
-            "epaisseur": masque_info.get("epaisseur", 0.0),
-            "epsilon_r": masque_info.get("epsilon_r", 3.8),
-        }
+    if m["masque"]:
+        result["masque"] = m["masque"]
     return result
+
+
+# ==========================================================================
+# N CONDUCTEURS : Z DIFFERENTIELLE ET DIAPHONIE, MEME CHANTIER
+# --------------------------------------------------------------------------
+# CE QUI CHANGE, ET C'EST TOUT CE QUI CHANGE : LE SECOND MEMBRE.
+# `capacitance_coplanaire` assemblait deja une matrice MULTI-CONDUCTEURS --
+# plusieurs blocs de panneaux a la meme hauteur, une seule matrice, une seule
+# fonction de Green -- mais elle ne resolvait qu'un vecteur :
+#
+#     [A] [q] = [V]     avec V = 1 sur le ruban, 0 sur les plans coplanaires
+#
+# On en resout N : potentiel unite sur le conducteur i, zero sur les autres et
+# sur les plans, et l'on releve la charge portee par CHACUN. Cela donne la
+# MATRICE DE CAPACITE DE MAXWELL (dite de court-circuit) [C], celle-la meme que
+# la theorie des lignes multiconducteurs demande :
+#
+#     Q = [C] V     diagonale positive, hors-diagonale negative,
+#                   somme de ligne = capacite vers la reference
+#
+# On refait avec er = 1 -> [C0], et comme le milieu n'est pas magnetique,
+#
+#     [L] = mu0 eps0 [C0]^-1
+#
+# De ces deux matrices sortent, SANS AUCUN SOLVEUR DE PLUS : Z differentielle
+# et Z commune (modes pair/impair pour une paire, decomposition modale de
+# [L][C] au-dela), les coefficients de couplage, et la diaphonie NEXT/FEXT.
+#
+# CE QUE CA COUTE. `_matrice` -- la partie chere, avec sa quadrature spectrale
+# -- est construite UNE SEULE FOIS ; `np.linalg.solve` recoit les N seconds
+# membres D'UN COUP et n'en factorise qu'une fois. Le surcout sur le calcul
+# d'un conducteur seul est celui des N-1 substitutions arriere : negligeable.
+# La precision est la meme -- meme discretisation, memes panneaux resserres.
+#
+# CE QUE CELA NE COUVRE PAS, et qui doit etre dit la ou on l'emploie : le
+# couplage entre pistes PARALLELES, c'est-a-dire l'immense majorite de la
+# diaphonie qui compte sur une carte. Deux pistes qui se croisent sur des
+# couches differentes, ou qui couplent par un champ de vias, ne sont plus une
+# section : la, et la seulement, il faut le 2,5D.
+# ==========================================================================
+
+def _conducteurs_places(conducteurs, epaisseur, distance_plan):
+    """Les rubans, ramenes a (centre, largeur effective) en metres.
+
+    Chaque conducteur porte sa largeur `w` et, au choix, son centre `x` ou son
+    ecart `s` au precedent -- de cuivre a cuivre, comme partout ailleurs ici.
+    `masse` a vrai en fait une PISTE DE GARDE : elle occupe la place, prend du
+    champ, et reste a zero volt.
+
+    L'EPAISSEUR ELARGIT CHAQUE RUBAN AUTOUR DE SON CENTRE, et l'ecart se reduit
+    donc tout seul de ce que les deux bords se sont avances : c'est la meme
+    correction de Wheeler que pour un ruban seul, et poser les centres AVANT de
+    l'appliquer est ce qui la rend juste sans avoir a corriger l'ecart a la
+    main.
+    """
+    places, x = [], None
+    for k, cond in enumerate(conducteurs):
+        w = float(cond.get("w", 0.0))
+        if not (w > 0):
+            raise ValueError("conducteur %d : largeur nulle" % (k + 1))
+        if cond.get("x") is not None:
+            centre = float(cond["x"])
+        elif x is None:
+            centre = 0.0
+        else:
+            ecart = float(cond.get("s", 0.0) or 0.0)
+            if not (ecart > 0):
+                raise ValueError("conducteur %d : ecart nul au precedent"
+                                 % (k + 1))
+            centre = x + places[-1]["w_nue"] / 2.0 + ecart + w / 2.0
+        t = float(cond.get("t", epaisseur) or 0.0)
+        places.append({"x": centre, "w_nue": w, "rang": k,
+                       "w": _largeur_effective(w, t, distance_plan),
+                       # UNE PISTE DE GARDE EST UN CONDUCTEUR TENU A ZERO
+                       # VOLT, et rien d'autre : elle entre dans la matrice
+                       # comme les plans coplanaires, avec ses panneaux et sa
+                       # condition aux limites, mais elle ne porte pas de port
+                       # et ne sort donc pas dans [C].
+                       "masse": bool(cond.get("masse"))})
+        x = centre
+    # RANGES DE GAUCHE A DROITE, ce que la matrice exige -- les bandes de
+    # panneaux se posent dans l'ordre, et l'ecart entre deux conducteurs est
+    # celui de deux voisins dans cette liste. `rang` garde le numero d'ENTREE,
+    # sans quoi l'appelant ne saurait plus quelle ligne de [C] est sa piste.
+    places.sort(key=lambda c: c["x"])
+    # DEUX CONDUCTEURS QUI SE TOUCHENT NE FONT PAS DEUX LIGNES. L'elargissement
+    # de Wheeler peut les faire se rejoindre alors que le cuivre ne se touche
+    # pas : on le dit plutot que de resoudre une matrice singuliere.
+    for a, b in zip(places, places[1:]):
+        libre = (b["x"] - b["w"] / 2.0) - (a["x"] + a["w"] / 2.0)
+        if libre <= 0:
+            raise ValueError(
+                "conducteurs trop proches : l'epaisseur de cuivre les fait se"
+                " toucher (%.4f mm de cuivre a cuivre)"
+                % (1e3 * ((b["x"] - b["w_nue"] / 2.0)
+                          - (a["x"] + a["w_nue"] / 2.0))))
+    return places
+
+
+def capacitance_matrice(conducteurs, ecart_g, ecart_d, green, distance_plan,
+                        epsilon_moyen, n=N_PANNEAUX,
+                        n_quadrature=N_QUADRATURE, echelles=None,
+                        etendue=None, n_plan=None, symetriser=True):
+    """La matrice de Maxwell [C] de N rubans coplanaires, en F/m.
+
+    `conducteurs` sort de `_conducteurs_places` : (centre, largeur effective).
+    `ecart_g` et `ecart_d` sont les ecarts au cuivre de masse qui borde le
+    GROUPE, a gauche du premier ruban et a droite du dernier ; zero d'un cote
+    veut dire pas de masse coplanaire de ce cote-la, exactement comme pour un
+    conducteur seul.
+
+    Rend un tableau N x N tel que Q = [C] V, ou N est le nombre de
+    conducteurs QUI NE SONT PAS DES MASSES : une piste de garde occupe la
+    place et prend du champ, mais n'a pas de ligne dans la matrice.
+    """
+    g = float(ecart_g or 0.0)
+    d = float(ecart_d or 0.0)
+    if not conducteurs:
+        raise ValueError("aucun conducteur")
+    gauche = conducteurs[0]["x"] - conducteurs[0]["w"] / 2.0
+    droite = conducteurs[-1]["x"] + conducteurs[-1]["w"] / 2.0
+    if etendue is None:
+        etendue = max(20.0 * distance_plan,
+                      10.0 * ((droite - gauche) / 2.0 + max(g, d)))
+    if n_plan is None:
+        n_plan = max(40, n // 2)
+
+    blocs_c, blocs_w, tranches = [], [], []
+    rang = 0
+    if g > 0:
+        a0 = gauche - g
+        cg, wg = _panneaux_bande(a0 - etendue, a0, n_plan, "droite")
+        blocs_c.append(cg); blocs_w.append(wg); rang += n_plan
+    for cond in conducteurs:
+        cs, ws = _panneaux_bande(cond["x"] - cond["w"] / 2.0,
+                                 cond["x"] + cond["w"] / 2.0, n, "deux")
+        blocs_c.append(cs); blocs_w.append(ws)
+        # UNE PISTE DE GARDE N'A PAS DE COLONNE : ses panneaux sont dans la
+        # matrice et sa tension y vaut zero dans TOUS les seconds membres, ce
+        # qui est exactement la condition d'un plan coplanaire. Elle prend du
+        # champ aux deux signaux -- c'est tout l'objet d'une garde --, mais on
+        # ne lui demande pas son impedance.
+        if not cond.get("masse"):
+            tranches.append((rang, n))
+        rang += n
+    if d > 0:
+        a0 = droite + d
+        cd, wd = _panneaux_bande(a0, a0 + etendue, n_plan, "gauche")
+        blocs_c.append(cd); blocs_w.append(wd)
+
+    centres = np.concatenate(blocs_c)
+    largeurs = np.concatenate(blocs_w)
+
+    # LES ECARTS SONT DES LONGUEURS DU PROBLEME, tous : c'est sur eux que le
+    # champ varie le plus vite quand ils sont petits devant la hauteur au plan.
+    # Celui qui separe deux rubans compte autant que celui qui les separe de la
+    # masse -- c'est meme lui qui porte tout le couplage.
+    ecarts = [e for e in (g, d) if e > 0]
+    for a, b in zip(conducteurs, conducteurs[1:]):
+        ecarts.append((b["x"] - b["w"] / 2.0) - (a["x"] + a["w"] / 2.0))
+    ech = tuple(echelles or ()) + tuple(e for e in ecarts if e > 0)
+
+    mat = _matrice(centres, largeurs, green, distance_plan, epsilon_moyen,
+                   n_quadrature, echelles=ech)
+
+    # LES N SECONDS MEMBRES D'UN COUP. `np.linalg.solve` factorise la matrice
+    # une fois et substitue N fois : c'est exactement la LU reutilisee, sans
+    # avoir a sortir de numpy.
+    n_c = len(tranches)
+    if not n_c:
+        raise ValueError("tous les conducteurs sont a la masse")
+    tension = np.zeros((centres.size, n_c))
+    for j, (debut, taille) in enumerate(tranches):
+        tension[debut:debut + taille, j] = 1.0
+    charges = np.linalg.solve(mat, tension)
+
+    c = np.empty((n_c, n_c))
+    for i, (debut, taille) in enumerate(tranches):
+        w_i = largeurs[debut:debut + taille]
+        c[i, :] = w_i @ charges[debut:debut + taille, :]
+    # LA MATRICE EST SYMETRIQUE PAR CONSTRUCTION PHYSIQUE, et la collocation ne
+    # l'est qu'a la discretisation pres : les panneaux ne portent pas tous la
+    # meme largeur, et A[m,k] depend de celle de k seule. On symetrise donc,
+    # comme le fait tout extracteur. `symetriser=False` rend la matrice BRUTE,
+    # et c'est ce que le banc mesure : une asymetrie qui grandirait dirait que
+    # la discretisation ne suffit plus, et la symetrisation la cacherait.
+    return 0.5 * (c + c.T) if symetriser else c
+
+
+def _modes(l_mat, c_mat):
+    """Les modes propres de la ligne multiconducteurs.
+
+    [L][C] a pour valeurs propres les 1/v^2 des modes, et pour vecteurs propres
+    leurs distributions de tension. En milieu homogene toutes les vitesses sont
+    egales et il n'y a qu'une valeur propre, N fois : c'est le cas de la
+    triplaque, et c'est ce qui fait qu'elle n'a pas de diaphonie avant.
+    """
+    valeurs, vecteurs = np.linalg.eig(l_mat @ c_mat)
+    valeurs = np.real(valeurs)
+    modes = []
+    for k in np.argsort(valeurs):
+        v = np.real(vecteurs[:, k])
+        pic = int(np.argmax(np.abs(v)))
+        if v[pic] < 0:
+            v = -v
+        vitesse = 1.0 / math.sqrt(valeurs[k]) if valeurs[k] > 0 else 0.0
+        modes.append({
+            "eps_eff": float(valeurs[k] * C_0 * C_0),
+            "vitesse": float(vitesse),
+            "tensions": [float(x) for x in v / np.max(np.abs(v))],
+        })
+    return modes
+
+
+def solve_multiline(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
+    """Resout une section a N conducteurs. Meme `geometry` que `solve_line`.
+
+    `geometry["conducteurs"]` remplace `w` : une liste de {w, x} ou {w, s}, en
+    METRES, chacun pouvant porter `masse` a vrai pour etre une PISTE DE GARDE
+    -- dans la matrice, a zero volt, mais sans port. `ecart_g` / `ecart_d` bordent le GROUPE, comme pour une ligne
+    seule ; tout le reste de la section -- kind, h, b, y0, couverture, masque,
+    epsilon_r -- se lit exactement comme dans `solve_line`, et par le meme
+    `_milieu`.
+
+    Rend {n, c, c0, l, lignes, modes, paire, ecart_g, ecart_d} : [C] et [C0] en
+    F/m, [L] en H/m, `lignes` le detail conducteur par conducteur, `paire` les
+    grandeurs differentielles quand il y en a exactement deux.
+    """
+    conducteurs = geometry.get("conducteurs") or []
+    if len(conducteurs) < 2:
+        raise ValueError("une ligne couplee demande au moins deux conducteurs")
+
+    if len(conducteurs) > MAX_CONDUCTEURS:
+        raise ValueError("%d conducteurs, maximum %d"
+                         % (len(conducteurs), MAX_CONDUCTEURS))
+
+    m = _milieu(geometry)
+    t = float(geometry.get("t", 0.0))
+    places = _conducteurs_places(conducteurs, t, m["distance"])
+    ports = [c for c in places if not c["masse"]]
+    if len(ports) < 2:
+        raise ValueError("une ligne couplee demande au moins deux conducteurs"
+                         " qui ne soient pas des masses")
+
+    # Les ecarts au cuivre de masse, ramenes comme dans `solve_line` : ils sont
+    # mesures de cuivre a cuivre, et c'est la largeur EFFECTIVE qui borde le
+    # calcul. Sous une epaisseur de cuivre, il n'y a plus d'ecart du tout de ce
+    # cote-la.
+    ecart_g = geometry.get("ecart_g")
+    ecart_d = geometry.get("ecart_d")
+    if ecart_g is None and ecart_d is None:
+        ecart_g = ecart_d = geometry.get("ecart", 0.0)
+    seuil = max(t, 1e-9)
+    marge_g = (places[0]["w"] - places[0]["w_nue"]) / 2.0
+    marge_d = (places[-1]["w"] - places[-1]["w_nue"]) / 2.0
+    e_g = float(ecart_g or 0.0) - marge_g
+    e_d = float(ecart_d or 0.0) - marge_d
+    e_g = 0.0 if e_g < seuil else e_g
+    e_d = 0.0 if e_d < seuil else e_d
+
+    c = capacitance_matrice(places, e_g, e_d, m["g_diel"], m["distance"],
+                            m["eps_moyen"], n, n_quadrature, m["echelles"])
+    c0 = capacitance_matrice(places, e_g, e_d, m["g_vide"], m["distance"],
+                             m["eps_vide"], n, n_quadrature, m["echelles"])
+    if np.any(np.diag(c) <= 0) or np.any(np.diag(c0) <= 0):
+        raise ValueError("capacite non physique : geometrie incoherente")
+
+    # [L] = mu0 eps0 [C0]^-1, et rien de plus : le milieu n'est pas magnetique,
+    # donc l'inductance est celle de la MEME geometrie sans dielectrique. C'est
+    # la seule facon d'obtenir [L] sans un second solveur, et elle est exacte.
+    l_mat = MU_0 * EPSILON_0 * np.linalg.inv(c0)
+
+    lignes = []
+    for i, place in enumerate(ports):
+        # Z0 DU CONDUCTEUR i, LES AUTRES A LA MASSE : c'est ce que la diagonale
+        # de Maxwell decrit, et ce n'est PAS l'impedance de la piste seule --
+        # une voisine tenue a la masse lui prend du champ. Les deux chiffres
+        # sont utiles, celui-ci pour lire la matrice, `solve_line` pour la
+        # piste isolee.
+        lignes.append({
+            "w": place["w_nue"], "x": place["x"],
+            "z0": float(math.sqrt(l_mat[i, i] / c[i, i])),
+            "eps_eff": float(C_0 * C_0 * l_mat[i, i] * c[i, i]),
+            "c": float(c[i, i]), "l": float(l_mat[i, i]),
+        })
+
+    resultat = {
+        "n": len(ports),
+        "gardes": len(places) - len(ports),
+        # QUELLE LIGNE DE [C] EST QUEL CONDUCTEUR. Les rubans sont ranges de
+        # gauche a droite pour la matrice ; `ordre[i]` rend le numero d'ENTREE
+        # du port i. Sans lui, un appelant qui pose ses conducteurs dans un
+        # autre ordre lirait la diaphonie de la mauvaise paire -- en silence.
+        "ordre": [c["rang"] for c in ports],
+        "c": [[float(v) for v in ligne] for ligne in c],
+        "c0": [[float(v) for v in ligne] for ligne in c0],
+        "l": [[float(v) for v in ligne] for ligne in l_mat],
+        "lignes": lignes,
+        "modes": _modes(l_mat, c),
+        "ecart_g": e_g,
+        "ecart_d": e_d,
+        "couvert": m["couvert"],
+        "ecart_conducteurs": [float((b["x"] - b["w_nue"] / 2.0)
+                                    - (a["x"] + a["w_nue"] / 2.0))
+                              for a, b in zip(places, places[1:])],
+    }
+    if m["masque"]:
+        resultat["masque"] = m["masque"]
+    if len(ports) == 2:
+        resultat["paire"] = modes_paire(c, l_mat)
+    return resultat
+
+
+def modes_paire(c_mat, l_mat):
+    """Les modes pair et impair d'une paire, et ce qu'on en lit.
+
+    LES DEUX MODES, ET RIEN D'AUTRE. Le mode IMPAIR est celui du signal
+    differentiel -- les deux rubans a +V et -V, un plan de symetrie a zero volt
+    entre eux : le couplage capacitif s'AJOUTE (les deux armatures se font
+    face) et le couplage inductif se RETRANCHE. Le mode PAIR est celui du
+    signal commun, et c'est l'inverse.
+
+        L_impair = (L11 + L22)/2 - L12      C_impair = (C11 + C22)/2 - C12
+        L_pair   = (L11 + L22)/2 + L12      C_pair   = (C11 + C22)/2 + C12
+
+    C12 est NEGATIF dans la convention de Maxwell : « - C12 » ajoute donc bien
+    la mutuelle au mode impair. La moyenne des deux diagonales est ce qui rend
+    la formule utilisable sur une paire LEGEREMENT dissymetrique -- deux pistes
+    de largeurs voisines ; sur une paire franchement asymetrique, ce sont les
+    modes propres de `_modes` qu'il faut lire, et rien d'autre.
+
+        Z_diff = 2 Z_impair       Z_commune = Z_pair / 2
+
+    Le facteur deux n'est pas une convention d'affichage : la tension
+    differentielle est celle qui existe ENTRE les deux conducteurs, soit deux
+    fois celle de chacun au plan de symetrie.
+    """
+    c_mat = np.asarray(c_mat, dtype=float)
+    l_mat = np.asarray(l_mat, dtype=float)
+    c11 = 0.5 * (c_mat[0, 0] + c_mat[1, 1])
+    l11 = 0.5 * (l_mat[0, 0] + l_mat[1, 1])
+    c12, l12 = c_mat[0, 1], l_mat[0, 1]
+    c_impair, c_pair = c11 - c12, c11 + c12
+    l_impair, l_pair = l11 - l12, l11 + l12
+    if not (c_impair > 0 and c_pair > 0 and l_impair > 0 and l_pair > 0):
+        raise ValueError("modes non physiques : matrices incoherentes")
+    z_impair = math.sqrt(l_impair / c_impair)
+    z_pair = math.sqrt(l_pair / c_pair)
+    return {
+        "z_impair": float(z_impair),
+        "z_pair": float(z_pair),
+        "z_diff": float(2.0 * z_impair),
+        "z_commune": float(z_pair / 2.0),
+        "eps_eff_impair": float(C_0 * C_0 * l_impair * c_impair),
+        "eps_eff_pair": float(C_0 * C_0 * l_pair * c_pair),
+        # LA MUTUELLE, EN CLAIR. C_m = -C12 est la capacite entre les deux
+        # rubans ; L_m = L12 leur inductance mutuelle. Ce sont elles qui font
+        # toute la diaphonie, et les afficher evite d'avoir a inverser les
+        # modes pour les retrouver.
+        "c_mutuelle": float(-c12),
+        "l_mutuelle": float(l12),
+        "k_c": float(-c12 / c11),
+        "k_l": float(l12 / l11),
+    }
+
+
+def sous_systeme(c_mat, c0_mat, indices):
+    """Deux conducteurs d'une section a N, LES AUTRES TENUS A LA MASSE.
+
+    Rend (C, L) du systeme reduit -- de quoi appeler `modes_paire` ou
+    `diaphonie` sur une paire prise dans un bus.
+
+    POURQUOI C'EST EXACT, ET PAS UNE APPROXIMATION. Tenir un conducteur a zero
+    volt, c'est exactement ce que fait un plan de reference : la matrice de
+    Maxwell des conducteurs restants est alors la SOUS-MATRICE de [C] -- il
+    suffit d'ecrire Q_i = somme_j C_ij V_j avec V_k = 0 pour les autres. Et
+    l'inductance suit : [L] = mu0 eps0 [C0_sous]^-1, ou C0_sous est la meme
+    sous-matrice prise a vide. Le conducteur mis a la masse porte alors du
+    courant de retour, ce qui est precisement ce qu'on suppose de lui.
+
+    CE QUE CETTE HYPOTHESE VAUT, et il faut la dire la ou on l'emploie : une
+    troisieme piste TERMINEE sur son impedance n'est pas une piste a la masse.
+    L'ecart est du second ordre pour un couplage faible -- c'est la convention
+    de tous les extracteurs --, mais c'en est un.
+    """
+    c_mat = np.asarray(c_mat, dtype=float)
+    c0_mat = np.asarray(c0_mat, dtype=float)
+    idx = np.ix_(list(indices), list(indices))
+    c_sous = c_mat[idx]
+    c0_sous = c0_mat[idx]
+    return c_sous, MU_0 * EPSILON_0 * np.linalg.inv(c0_sous)
+
+
+def diaphonie(c_mat, l_mat, longueur, temps_montee, agresseur=0, victime=1):
+    """NEXT et FEXT entre deux conducteurs, en fraction de l'amplitude emise.
+
+    LES DEUX BRUITS N'ONT NI LA MEME CAUSE NI LA MEME LOI.
+
+    L'ARRIERE (NEXT, near end) remonte vers la source. Son coefficient est la
+    demi-somme des deux couplages, parce que l'onde capacitive et l'onde
+    inductive y repartent dans le meme sens et s'ajoutent :
+
+        k_b = (k_L + k_C) / 4      avec k_L = Lm/L, k_C = Cm/C
+
+    Il SATURE : passe une longueur de couplage telle que l'aller-retour dure
+    plus qu'un temps de montee, il ne monte plus, et vaut k_b fois l'amplitude.
+    En deca il vaut k_b * 2 T_D / t_r. C'est pourquoi allonger un bus parallele
+    ne fait empirer la diaphonie arriere que jusqu'a un certain point -- et
+    aussi pourquoi la raccourcir en deca de cette longueur-la, elle, paie.
+
+    L'AVANT (FEXT, far end) part avec le signal. Son coefficient est la
+    DIFFERENCE des deux couplages :
+
+        k_f = (k_C - k_L) / 2      et  V_fext / V = k_f * T_D / t_r
+
+    EN MILIEU HOMOGENE IL EST NUL : k_C et k_L y sont egaux, terme a terme.
+    C'est la propriete la plus utile de toute cette page -- une TRIPLAQUE n'a
+    pas de diaphonie avant, un MICRORUBAN si, et le signe est negatif parce que
+    l'inductif l'emporte. Le banc le verifie sur les deux geometries.
+
+    Il ne sature pas : il croit avec la longueur, tant que le modele de
+    couplage faible tient.
+
+    `longueur` et `temps_montee` en metres et en secondes ; les deux indices
+    designent les conducteurs dans [C] et [L].
+    """
+    c_mat = np.asarray(c_mat, dtype=float)
+    l_mat = np.asarray(l_mat, dtype=float)
+    a, v = int(agresseur), int(victime)
+    c_s, l_s = c_mat[a, a], l_mat[a, a]
+    c_m, l_m = -c_mat[a, v], l_mat[a, v]
+    if not (c_s > 0 and l_s > 0):
+        raise ValueError("conducteur agresseur non physique")
+    k_c, k_l = c_m / c_s, l_m / l_s
+    k_b = 0.25 * (k_l + k_c)
+    k_f = 0.5 * (k_c - k_l)
+
+    vitesse = 1.0 / math.sqrt(l_s * c_s)
+    t_d = float(longueur) / vitesse if longueur > 0 else 0.0
+    t_r = float(temps_montee)
+    sature = t_r <= 0 or 2.0 * t_d >= t_r
+    bruit_arriere = k_b if sature else k_b * 2.0 * t_d / t_r
+    bruit_avant = 0.0 if t_r <= 0 else k_f * t_d / t_r
+    return {
+        "k_c": float(k_c), "k_l": float(k_l),
+        "k_arriere": float(k_b), "k_avant": float(k_f),
+        "next": float(bruit_arriere), "fext": float(bruit_avant),
+        "retard": float(t_d), "vitesse": float(vitesse),
+        "sature": bool(sature),
+        # LA LONGUEUR DE SATURATION : au-dela, la diaphonie arriere ne monte
+        # plus. C'est le seul chiffre de cette fiche sur lequel on agit en
+        # dessinant, et il repond a « jusqu'ou puis-je longer ».
+        "longueur_saturation": float(vitesse * t_r / 2.0) if t_r > 0 else 0.0,
+        "eps_eff": float(C_0 * C_0 * l_s * c_s),
+    }
 
 
 def dispersion_getsinger(z0_statique, eps_eff_statique, epsilon_r, h, freq):

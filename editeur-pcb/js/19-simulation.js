@@ -185,6 +185,10 @@ function simRefCandidatsPcb(){
    fallait les deux corrections pour qu'il sorte juste.
    ========================================================================== */
 const SIM_ECART_MAX=3.0;        // mm ; au-delà, l'effet coplanaire est nul
+/* LA PORTÉE DU COUPLAGE, et elle n'est pas celle de la masse coplanaire. Elle
+   doit valoir ECART_COUPLAGE_MAX de `python/simulation_em.py` — c'est le
+   serveur qui écarte, la page ne fait que ne pas l'inonder. */
+const SIM_ECART_COUPLAGE=3.0;   // mm ; ECART_COUPLAGE_MAX de simulation_em.py
 /* Les distances de sonde, depuis le BORD du cuivre de la piste. La première
    porte presque tout : la piste est d'ordinaire DEDANS le plan, creusé autour
    d'elle à la règle d'isolation, et deux centièmes au-delà de son bord tombent
@@ -663,9 +667,9 @@ function simCouturePcb(pistes,refs){
 
    LA PORTÉE, ELLE, EST CONNUE ICI — contrairement à la visionneuse, où
    l'IPC-2581 ne la déclare pas. `simCotesVia` l'emporte avec le reste. */
-function simViasPcb(){
+function simViasPcb(liste){
   const out=[];
-  const sel=[...S.sel.tracks];
+  const sel=liste||[...S.sel.tracks];
   if(sel.length<2)return out;
   for(const v of S.vias){
     const couches=new Set();
@@ -691,11 +695,123 @@ function simViaCouvre(v,l){
   return l>=Math.min(v.a,v.b)&&l<=Math.max(v.a,v.b);
 }
 
-function simSegments(){
+/* ==========================================================================
+   RANGER LA SÉLECTION EN PARCOURS
+   --------------------------------------------------------------------------
+   CE QUE L'ÉDITEUR FAISAIT, ET POURQUOI C'ÉTAIT FAUX. `simSegments` parcourait
+   `S.tracks` dans l'ordre du DOCUMENT — c'est-à-dire l'ordre de création — en
+   ne gardant que les pistes sélectionnées. Tant qu'on route une liaison d'un
+   bout à l'autre en une fois, cet ordre est le bon par accident. Il cesse de
+   l'être dès qu'on retouche : une piste redessinée passe en fin de liste, un
+   segment inséré au milieu arrive en dernier, un net importé n'a pas d'ordre
+   du tout.
+
+   ET LE PRODUIT DE MATRICES ABCD N'EST PAS COMMUTATIF. Les mêmes tronçons dans
+   un autre ordre donnent un autre S₁₁ — mesuré : −1,65 contre −2,31 dB sur
+   trois sections 75/25/48 Ω permutées. Le serveur voyait la sélection rompue
+   et le disait, mais dire « rangez-la » sans la ranger laisse le travail à
+   faire à la seule personne qui ne peut pas le faire.
+
+   LA VISIONNEUSE LE FAISAIT DÉJÀ (`simChainePistes`), et c'est ce qui a caché
+   le défaut ici : le fichier IPC-2581 arrive dans le désordre, donc le
+   chaînage y était indispensable et visible. Ici il est indispensable et
+   invisible.
+
+   ON COMPARE EN XY SEULEMENT, sans regarder la couche — exactement comme
+   `_ruptures` et `_topologie` côté serveur. Deux tronçons au même point sur
+   deux couches différentes sont joints par un via, et les séparer ferait
+   paraître coupée en deux morceaux toute liaison qui change de couche. C'est
+   une règle, et elle est écrite au même endroit des deux côtés.
+   ========================================================================== */
+/* Où la marche s'est arrêtée, et ce qu'elle n'a pas vu. Même contenu que
+   `SIM_CHAINE_IPC` côté visionneuse : les deux panneaux doivent dire la même
+   chose du même défaut. */
+/* ON VIDE CET OBJET, ON NE LE REMPLACE PAS. Le banc d'essai expose les
+   globales par une copie prise au chargement (`globalThis.X = X`) : réaffecter
+   `SIM_CHAINE_PCB` laisserait le banc regarder l'objet initial, vide à jamais,
+   et tout cas qui l'interroge passerait au vert sans rien mesurer. Le même
+   piège vaut pour quiconque garderait la référence. */
+const SIM_CHAINE_PCB = {arrets:[], orphelines:0};
+function simChaineRaz(){
+  SIM_CHAINE_PCB.arrets.length=0;
+  SIM_CHAINE_PCB.orphelines=0;
+}
+
+/* LA LISTE EST CELLE D'UN LOT quand on en découpe (voir `simLotsDeTracks`), et
+   celle de la sélection sinon : un seul chemin de calcul, et non deux qui
+   auraient dérivé l'un de l'autre. */
+function simChainerPcb(liste){
+  const sel=(liste||[...S.sel.tracks]).filter(t=>trkLen(t)>0);
+  const n=sel.length;
+  simChaineRaz();
+  if(n<2)return sel.map(t=>({trk:t, retourne:false}));
+
+  /* Les nœuds : un point du plan, et les bouts qui s'y rejoignent. Groupés par
+     TOLÉRANCE et non par égalité — les pistes de l'éditeur sont accrochées à
+     la grille, mais un arc calcule ses bouts et un net importé porte des
+     coordonnées converties depuis le pouce. */
+  const centres=[], noeuds=[], rangs=[];
+  const noeudDe=function(q){
+    for(let c=0;c<centres.length;c++)
+      if(Math.abs(centres[c].x-q.x)<=SIM_TOL_VIA&&
+         Math.abs(centres[c].y-q.y)<=SIM_TOL_VIA)return c;
+    centres.push({x:q.x, y:q.y}); noeuds.push([]);
+    return centres.length-1;
+  };
+  for(let i=0;i<n;i++){
+    const r=[];
+    for(let b=0;b<2;b++){
+      const c=noeudDe(trkAt(sel[i],b));
+      noeuds[c].push({i:i, b:b});
+      r.push(c);
+    }
+    rangs.push(r);
+  }
+
+  /* Le départ : un bout LIBRE, c'est-à-dire une vraie extrémité de liaison. À
+     défaut — une boucle fermée — on part du premier, ce qui vaut l'ordre du
+     document et ne prétend à rien de plus. */
+  let depart=null;
+  for(let i=0;i<n&&!depart;i++)
+    for(let b=0;b<2;b++)
+      if(noeuds[rangs[i][b]].length===1){depart={i:i, b:b}; break;}
+  if(!depart)depart={i:0, b:0};
+
+  const vus=new Array(n).fill(false), suite=[];
+  let cour=depart;
+  while(cour&&!vus[cour.i]){
+    vus[cour.i]=true;
+    /* On entre par le bout `b` : la piste part donc à l'endroit si `b` vaut 0,
+       et à l'envers sinon. */
+    suite.push({trk:sel[cour.i], retourne:cour.b===1});
+    const sortie=rangs[cour.i][1-cour.b];
+    const voisins=noeuds[sortie].filter(v=>!vus[v.i]);
+    /* UN SEUL VOISIN, OU RIEN. Deux voisins au même point sont une dérivation :
+       le parcours n'est plus unique et on s'arrête plutôt que de trancher.
+       Choisir une branche rendrait des paramètres S qui ont l'air justes en
+       ignorant des moignons qui chargent réellement la ligne. */
+    if(voisins.length>1)
+      SIM_CHAINE_PCB.arrets.push({x:centres[sortie].x, y:centres[sortie].y,
+                                  branches:noeuds[sortie].length});
+    cour=(voisins.length===1)?voisins[0]:null;
+  }
+  /* Ce que la marche n'a pas atteint part quand même, dans l'ordre du
+     document : la carte de chaleur et les impédances par tronçon n'ont pas
+     besoin d'un parcours, et les taire priverait d'un résultat juste. Le
+     serveur, lui, verra que ce n'est pas une chaîne et refusera la cascade. */
+  for(let i=0;i<n;i++)
+    if(!vus[i]){SIM_CHAINE_PCB.orphelines++;
+                suite.push({trk:sel[i], retourne:false});}
+  return suite;
+}
+function simSegments(liste){
   const objets=[], envoi=[], pistes=[], hors=new Map();
   const refs=simRefSet();
-  for(const t of S.tracks){
-    if(!S.sel.tracks.has(t))continue;
+  /* DANS L'ORDRE DU PARCOURS, et non dans celui du document. Voir
+     `simChainerPcb` : c'est le seul ordre sur lequel la mise en cascade ABCD
+     veuille dire quelque chose. */
+  for(const e of simChainerPcb(liste)){
+    const t=e.trk;
     const total=trkLen(t);
     if(!(total>0))continue;
     const r=simPlages(t,refs);
@@ -706,35 +822,46 @@ function simSegments(){
       else{v.longueur=r3(v.longueur+o.longueur);
            v.ecart=Math.min(v.ecart,o.ecart);}
     }
-    for(const p of (r.plages.length?r.plages
-                                   :[{u1:0,u2:1,longueur:total,g:0,d:0}])){
-      const a=trkAt(t,p.u1), b=trkAt(t,p.u2);
+    const plages=r.plages.length?r.plages
+                                :[{u1:0,u2:1,longueur:total,g:0,d:0}];
+    /* UNE PISTE PARCOURUE À L'ENVERS L'EST AUSSI DANS SES PLAGES. Les rendre
+       dans l'ordre croissant de `u` alors que le parcours descend poserait un
+       raccord manquant AU MILIEU d'une même piste — et le serveur le
+       compterait, à juste titre. */
+    for(const p of (e.retourne?plages.slice().reverse():plages)){
+      const u1=e.retourne?p.u2:p.u1, u2=e.retourne?p.u1:p.u2;
+      const a=trkAt(t,u1), b=trkAt(t,u2);
       envoi.push({
         type:"track",
         start:[r3(a.x),r3(a.y)], end:[r3(b.x),r3(b.y)],
-        length:r3(total*(p.u2-p.u1)), width:t.w, layer:simCuIndex(t.l),
+        length:r3(total*Math.abs(p.u2-p.u1)), width:t.w, layer:simCuIndex(t.l),
         net:t.net||"", copper_thickness:cuT(t.l),
-        gap_left:p.g, gap_right:p.d
+        /* GAUCHE ET DROITE SE DÉFINISSENT PAR RAPPORT AU SENS DE MARCHE :
+           faire demi-tour les échange. Les laisser tels quels décrirait la
+           section en miroir — ce qui ne change pas Z₀, la géométrie étant
+           symétrique, mais fait mentir la fiche sur quel bord longe quoi. */
+        gap_left:e.retourne?p.d:p.g, gap_right:e.retourne?p.g:p.d
       });
-      objets.push({trk:t, u1:p.u1, u2:p.u2,
+      objets.push({trk:t, u1:Math.min(p.u1,p.u2), u2:Math.max(p.u1,p.u2),
                    couche:cuLabel(t.l,S.cu), l:t.l});
     }
   }
   simAccrocherVias(envoi);
 
-  return {envoi:envoi, objets:objets, vias:simViasPcb(),
+  return {envoi:envoi, objets:objets, vias:simViasPcb(liste),
           couture:simCouturePcb(pistes,refs),
           voisins:[...hors.values()].sort((a,b)=>b.longueur-a.longueur)};
 }
 
 /* Ce que la sélection couvre, en une ligne — c'est elle qui dit lequel des
    trois gestes est en vigueur, sans avoir à s'en souvenir. */
-function simPortee(objets){
+function simPortee(objets,liste){
   if(!objets.length)return "";
+  const sel=liste||[...S.sel.tracks];
   const couches=new Set(objets.map(o=>o.l));
-  const nets=new Set([...S.sel.tracks].map(t=>t.net).filter(Boolean));
+  const nets=new Set(sel.map(t=>t.net).filter(Boolean));
   const net=nets.size===1?[...nets][0]:null;
-  const n=S.sel.tracks.size;
+  const n=sel.length;
   const quoi=n===1
     ? "un tronçon"
     : (couches.size>1
@@ -742,6 +869,61 @@ function simPortee(objets){
         : "la piste, sur "+cuLabel(objets[0].l,S.cu));
   return (net?net+" — ":"")+quoi;
 }
+
+/* ==========================================================================
+   DÉCOUPER LA SÉLECTION EN PARCOURS CONTINUS — LES LOTS
+   --------------------------------------------------------------------------
+   LE CAS QUI L'A DEMANDÉ. Une ligne RF de 50 Ω coupée par trois condensateurs
+   de liaison n'est pas un net mais quatre, bout à bout. La question, elle, est
+   unique : « fait-elle 50 Ω sur toute sa longueur ? » Ctrl+clic prenait déjà
+   les quatre morceaux — la sélection de l'éditeur est additive depuis toujours
+   — mais ils partaient dans un SEUL document, où le serveur voyait une liaison
+   rompue et refusait la cascade, à juste titre : entre deux morceaux il y a un
+   boîtier, dont ce panneau ne sait rien. On les envoie donc séparément, et la
+   fiche en compare les résultats (voir « LES LOTS », commun/simulation-em.js).
+
+   CE QUI FAIT UN LOT : le même net, et du cuivre qui se touche. On compare en
+   XY sans regarder la couche, exactement comme `simChainerPcb` — deux tronçons
+   au même point sur deux couches sont joints par un via, et les séparer
+   couperait en deux toute liaison qui change de couche.
+
+   UNE PISTE SANS NET NE SE JOINT QU'À CE QUI N'EN A PAS NON PLUS. Un tronçon
+   fraîchement tracé n'a pas encore de net ; le faire fusionner avec le net qu'il
+   effleure inventerait une liaison que la carte ne porte pas.
+   ========================================================================== */
+function simLotsDeTracks(sel){
+  const n=sel.length;
+  const parent=new Array(n);
+  for(let i=0;i<n;i++)parent[i]=i;
+  const chef=function(i){
+    while(parent[i]!==i){parent[i]=parent[parent[i]];i=parent[i];}
+    return i;
+  };
+  const bouts=sel.map(t=>[trkAt(t,0),trkAt(t,1)]);
+  for(let i=0;i<n;i++)
+    for(let j=i+1;j<n;j++){
+      if((sel[i].net||"")!==(sel[j].net||""))continue;
+      let touche=false;
+      for(const a of bouts[i])
+        for(const b of bouts[j])
+          if(Math.abs(a.x-b.x)<=SIM_TOL_VIA&&Math.abs(a.y-b.y)<=SIM_TOL_VIA)
+            touche=true;
+      if(touche){
+        const ci=chef(i), cj=chef(j);
+        if(ci!==cj)parent[cj]=ci;
+      }
+    }
+  /* DANS L'ORDRE DE LA SÉLECTION : le lot 1 du tableau doit être le premier
+     morceau pris, sinon les numéros ne désignent rien de reconnaissable. */
+  const rangs=new Map(), lots=[];
+  for(let i=0;i<n;i++){
+    const c=chef(i);
+    if(!rangs.has(c)){rangs.set(c,lots.length);lots.push([]);}
+    lots[rangs.get(c)].push(sel[i]);
+  }
+  return lots;
+}
+const SIM_LOTS_MAX=16;          // au-delà, on ne compare plus, on inonde
 
 /* ==========================================================================
    La carte de chaleur sur le cuivre
@@ -772,8 +954,18 @@ function simSousChemin(c,t,u1,u2){
   else c.lineTo(b.x,b.y);
 }
 
+/* TOUS LES LOTS SE PEIGNENT, ET C'EST LE POINT. La fiche ne peut déplier qu'un
+   morceau à la fois — quatre jeux de paramètres S ne se lisent pas ensemble —,
+   mais la question « est-ce 50 Ω sur toute la longueur ? » se répond d'un coup
+   d'œil sur la carte. Sans lot, la boucle tourne une fois et le dessin est celui
+   d'avant. */
 function simZTrace(c){
   if(typeof simZActif!=="function"||!simZActif())return;
+  if(typeof simPourChaqueLot!=="function"){simZTraceLot(c,null);return;}
+  simPourChaqueLot(function(lot){simZTraceLot(c,lot);});
+}
+
+function simZTraceLot(c,lot){
   const n=SIM.objets.length;
   c.save();
   c.lineCap="round"; c.lineJoin="round";
@@ -795,6 +987,35 @@ function simZTrace(c){
 
   c.restore();
   simZValeurs(c);
+  simZNumeroLot(c,lot);
+}
+
+/* LE NUMÉRO DU LOT, POSÉ SUR SON CUIVRE. Le tableau du panneau parle de
+   « lot 3 » ; sans ce jeton, rien sur la carte ne dit lequel c'est, et il
+   faudrait déplier les quatre fiches pour retrouver le morceau qui sort de la
+   bande. Il ne paraît que s'il y a plus d'un lot, et au DÉBUT du parcours : le
+   milieu porte déjà l'étiquette d'impédance, et deux cartouches au même endroit
+   se recouvrent. */
+function simZNumeroLot(c,lot){
+  if(!lot||!lot.rang)return;
+  if(typeof simLotsMultiples!=="function"||!simLotsMultiples())return;
+  const s=simZSegment(0);
+  if(!s||!s.obj||!s.obj.trk)return;
+  const p=trkAt(s.obj.trk,s.obj.u1), e=w2s(p.x,p.y);
+  c.save();
+  c.setTransform(1,0,0,1,0,0);
+  const dpr=window.devicePixelRatio||1;
+  c.scale(dpr,dpr);
+  c.font="700 10px "+
+    "\"JetBrains Mono\",\"SF Mono\",Consolas,\"Roboto Mono\",monospace";
+  c.textAlign="center"; c.textBaseline="middle";
+  c.beginPath();
+  c.arc(e.x,e.y,9,0,2*Math.PI);
+  c.fillStyle="rgba(15,16,18,0.9)"; c.fill();
+  c.strokeStyle=simZCouleur(s.z0,1); c.lineWidth=1.4; c.stroke();
+  c.fillStyle="#e6e8ec";
+  c.fillText(String(lot.rang),e.x,e.y+0.5);
+  c.restore();
 }
 
 /* Les valeurs écrites sur la piste.
@@ -1124,7 +1345,10 @@ function simVoisinageVia(v){
    qu'on déplace le via, pas après un calcul. */
 function simRetourActif(){
   return !!(typeof SIM !== "undefined" && SIM.ouvert
-            && SIM.analyse === "impedance" && S.sel.vias.size > 0);
+            /* LE CHEVELU SUIT SON ONGLET. Il vivait sous « Impédance », où
+               il montrait un défaut dont la fiche ne parlait pas ; il est
+               maintenant le sujet de « Current Return Path ». */
+            && SIM.analyse === "retour" && S.sel.vias.size > 0);
 }
 
 /* Les vias de signal sélectionnés, chacun avec son voisinage. Un via de MASSE
@@ -1496,8 +1720,155 @@ function simDCClic(x,y){
 }
 
 /* ==========================================================================
+   LE VOISINAGE — LE CUIVRE QUI LONGE LA SÉLECTION
+   --------------------------------------------------------------------------
+   L'AGRESSEUR N'EST JAMAIS DANS LA SÉLECTION, par définition : on sélectionne
+   la piste dont on se soucie, pas celle qui la perturbe. Et l'autre moitié
+   d'une paire différentielle n'y est pas non plus — on clique une piste, pas
+   deux. Sans ce qui suit, ni la diaphonie ni l'impédance différentielle ne
+   peuvent exister, quel que soit le solveur qu'il y a derrière.
+
+   CE QUE LA PAGE ENVOIE, ET CE QU'ELLE NE DÉCIDE PAS. Elle envoie du cuivre —
+   des tronçons droits, au même format que la géométrie sélectionnée. Elle ne
+   décide pas de ce qui longe : c'est le serveur qui apparie, une fois pour les
+   deux outils (`simulation_em._scenes_paralleles`). Deux implémentations de la
+   même règle géométrique auraient dérivé, et l'éditeur et la visionneuse
+   doivent rendre le même chiffre sur la même carte.
+
+   ON RESTREINT SUR LA BOÎTE, et c'est tout ce qu'on filtre ici : même couche
+   de cuivre, hors sélection, et une boîte englobante qui touche celle de la
+   sélection élargie de la portée du couplage. Une carte de dix mille pistes ne
+   doit pas en envoyer dix mille ; celles qui restent sont peu nombreuses, et
+   c'est le serveur qui tranchera lesquelles longent vraiment.
+
+   LES ARCS PARTENT EN CORDES (`trkSegs`), comme partout ailleurs dans cet
+   outil : le serveur ne sait apparier que des segments droits, et une piste
+   courbe qui longe une droite est de toute façon un longement dont l'écart
+   varie — le critère de parallélisme l'écartera de lui-même là où il n'a plus
+   de sens.
+   ========================================================================== */
+const SIM_VOISINAGE_MAX=600;    /* tronçons envoyés ; au-delà, on écrête */
+
+function simVoisinagePcb(liste){
+  const sel=new Set(liste||[...S.sel.tracks]);
+  if(!sel.size)return [];
+  /* La portée : l'écart maximal que le serveur regarde, plus la demi-largeur
+     de la piste la plus large. En deçà, on écarterait du cuivre que le serveur
+     aurait retenu ; bien au-delà, on l'inonderait. */
+  const large=Math.max(...[...sel].map(t=>t.w||0),0);
+  const couches=new Set([...sel].map(t=>t.l));
+  let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
+  for(const t of sel){
+    const b=trkBBox(t);
+    x1=Math.min(x1,b.x1);y1=Math.min(y1,b.y1);
+    x2=Math.max(x2,b.x2);y2=Math.max(y2,b.y2);
+  }
+  const marge=SIM_ECART_COUPLAGE+large;
+  x1-=marge;y1-=marge;x2+=marge;y2+=marge;
+
+  const out=[];
+  for(const t of S.tracks){
+    if(sel.has(t)||!couches.has(t.l))continue;
+    if(!(t.w>0)||!trkLen(t))continue;
+    const b=trkBBox(t), demi=(t.w||0)/2;
+    if(b.x2+demi<x1||b.x1-demi>x2||b.y2+demi<y1||b.y1-demi>y2)continue;
+    for(const g of trkSegs(t)){
+      out.push({type:"track",
+                start:[r3(g.x1),r3(g.y1)], end:[r3(g.x2),r3(g.y2)],
+                width:t.w, layer:simCuIndex(t.l), net:t.net||"",
+                copper_thickness:cuT(t.l)});
+      if(out.length>=SIM_VOISINAGE_MAX)return out;
+    }
+  }
+  return out;
+}
+
+/* LES PAIRES DÉCLARÉES DE L'ÉDITEUR. Le serveur sait reconnaître _P/_N et ses
+   variantes, mais une paire déclarée à la main dans le panneau « Paires
+   différentielles » ne suit pas forcément une convention de nommage — et c'est
+   la page qui détient cette vérité-là. */
+function simPairesPcb(){
+  return (S.dpPairs||[]).map(d=>[d.p,d.n]);
+}
+
+/* ==========================================================================
    L'adaptateur
    ========================================================================== */
+/* ==========================================================================
+   UN DOCUMENT POUR UNE LISTE DE TRONÇONS
+   --------------------------------------------------------------------------
+   MÊME CORPS POUR UN LOT ET POUR LA SÉLECTION ENTIÈRE, et c'est la raison d'être
+   de cette fonction : les notes — vias non modélisés, absence de plan de
+   référence, masse non déclarée — doivent être les mêmes qu'on calcule un
+   morceau ou quatre. Deux copies auraient dérivé, et c'est la fiche du lot 3
+   qui aurait cessé de prévenir.
+   ========================================================================== */
+function simDocPcb(liste,opts){
+  const sel=liste||[...S.sel.tracks];
+  if(!sel.length)
+    return {erreur:"Aucune piste sélectionnée.",
+            conseil:S.tracks.length
+              ? "Cliquez une piste sur la carte. Maj+clic la prend entière, "+
+                "Ctrl+clic ajoute un morceau à la sélection."
+              : "Cette carte n'a pas encore de piste routée."};
+
+  const g=simSegments(liste);
+  if(!g.envoi.length)
+    return {erreur:"La sélection ne porte aucun tronçon exploitable."};
+
+  const notes=[];
+  const nets=new Set(sel.map(t=>t.net).filter(Boolean));
+  const net=nets.size===1?[...nets][0]:"";
+  const vias=net?S.vias.filter(v=>v.net===net).length:0;
+  if(vias)
+    notes.push(vias+" via(s) du net ne sont pas modélisés : la transition "+
+               "verticale manque au modèle.");
+  if(!S.cuL.some((L,i)=>rolePlane(layerRole(i))))
+    notes.push("Aucun plan de référence dans l'empilage : sans plan en face "+
+               "de la piste, il n'y a pas de ligne de transmission.");
+  /* AUCUNE MASSE DÉCLARÉE, et il faut le dire fort : le calcul coplanaire
+     est alors désarmé, et toute piste noyée dans un plan arrosé ressortira
+     en microruban, donc vingt pour cent trop haut. C'est un silence, pas une
+     erreur du solveur — il n'y a que le panneau pour le rompre. */
+  if(!simRefSet().size)
+    notes.push("Aucun net de masse retenu : le cuivre qui borde la piste sur "+
+               "sa propre couche n'est pas compté. Une piste noyée dans un "+
+               "plan arrosé ressortira en microruban, soit vingt pour cent "+
+               "trop haut. Choisissez la masse dans la barre du panneau.");
+
+  return {
+    doc:{
+      carte:SIM_PCB.carte(), net:net,
+      stackup:simStackup(),
+      geometry:{objects:g.envoi},
+      /* LES VIAS DE LA SÉLECTION, SANS ORDRE — voir `simViasPcb`. Leur
+         chemin de retour ne dépend pas du parcours. */
+      vias:g.vias||[],
+      ports:[{id:1,impedance:opts.z0},{id:2,impedance:opts.z0}],
+      /* LE CUIVRE QUI LONGE, et les paires déclarées : voir « LE VOISINAGE ».
+         Ils ne changent RIEN au calcul d'impédance — le serveur les lit à
+         part — mais sans eux il n'y a ni Z différentielle ni diaphonie. */
+      voisinage:simVoisinagePcb(liste),
+      paires:simPairesPcb(),
+      /* LE TEMPS DE MONTÉE est déjà en SECONDES dans la saisie, comme les
+         fréquences y sont en hertz : l'unité du champ ne dit que dans quoi on
+         l'écrit. Zéro veut dire « déduis-le de la bande ». */
+      analyse:{f_debut:opts.f1, f_fin:opts.f2, points:opts.points,
+               f_centre:opts.fc, temps_montee:opts.tr||0}
+    },
+    objets:g.objets,
+    portee:simPortee(g.objets,liste),
+    /* LE TITRE tient dans une cellule du tableau des lots : le net, la ou les
+       couches, et de combien de tronçons c'est fait. */
+    titre:(net||"sans net")+" · "+
+          [...new Set(g.objets.map(o=>o.couche))].join(", ")+
+          " · "+g.objets.length+" tronçon"+(g.objets.length>1?"s":""),
+    notes:notes,
+    couture:g.couture,
+    voisins:g.voisins
+  };
+}
+
 const SIM_PCB={
   outil:"editeur-pcb",
 
@@ -1546,55 +1917,67 @@ const SIM_PCB={
   /* Le problème complet, tiré de la sélection. Les refus sont explicites et
      disent quoi faire : un panneau qui répond « erreur » laisse chercher. */
   probleme:function(opts){
+    /* LA SÉLECTION ENTIÈRE, EN UN SEUL DOCUMENT. C'est ce que lit l'export
+       .json quand aucun lot n'a été calculé, et ce sur quoi retombe un panneau
+       qui ne connaîtrait pas les lots. */
+    return simDocPcb(null,opts);
+  },
+
+  /* LES LOTS : un document par parcours continu de la sélection.
+
+     UN SEUL PARCOURS REND UN SEUL LOT, par le chemin exact d'avant — c'est le
+     cas de tous les gestes ordinaires : un clic, un Maj+clic sur la piste
+     entière, un second Maj+clic qui l'étend aux autres couches. Ce sont les
+     morceaux QUI NE SE TOUCHENT PAS qu'on sépare, et jusqu'ici ils partaient
+     ensemble pour se faire refuser la cascade. */
+  problemes:function(opts){
     if(!S.sel.tracks.size)
       return {erreur:"Aucune piste sélectionnée.",
               conseil:S.tracks.length
-                ? "Cliquez une piste sur la carte. Maj+clic la prend entière."
+                ? "Cliquez une piste sur la carte. Maj+clic la prend entière, "+
+                  "Ctrl+clic ajoute un morceau à la sélection."
                 : "Cette carte n'a pas encore de piste routée."};
-
-    const g=simSegments();
-    if(!g.envoi.length)
+    const sel=[...S.sel.tracks].filter(t=>trkLen(t)>0);
+    if(!sel.length)
       return {erreur:"La sélection ne porte aucun tronçon exploitable."};
-
-    const notes=[];
-    const nets=new Set([...S.sel.tracks].map(t=>t.net).filter(Boolean));
-    const net=nets.size===1?[...nets][0]:"";
-    const vias=net?S.vias.filter(v=>v.net===net).length:0;
-    if(vias)
-      notes.push(vias+" via(s) du net ne sont pas modélisés : la transition "+
-                 "verticale manque au modèle.");
-    if(!S.cuL.some((L,i)=>rolePlane(layerRole(i))))
-      notes.push("Aucun plan de référence dans l'empilage : sans plan en face "+
-                 "de la piste, il n'y a pas de ligne de transmission.");
-    /* AUCUNE MASSE DÉCLARÉE, et il faut le dire fort : le calcul coplanaire
-       est alors désarmé, et toute piste noyée dans un plan arrosé ressortira
-       en microruban, donc vingt pour cent trop haut. C'est un silence, pas une
-       erreur du solveur — il n'y a que le panneau pour le rompre. */
-    if(!simRefSet().size)
-      notes.push("Aucun net de masse retenu : le cuivre qui borde la piste sur "+
-                 "sa propre couche n'est pas compté. Une piste noyée dans un "+
-                 "plan arrosé ressortira en microruban, soit vingt pour cent "+
-                 "trop haut. Choisissez la masse dans la barre du panneau.");
-
-    return {
-      doc:{
-        carte:this.carte(), net:net,
-        stackup:simStackup(),
-        geometry:{objects:g.envoi},
-        /* LES VIAS DE LA SÉLECTION, SANS ORDRE — voir `simViasPcb`. Leur
-           chemin de retour ne dépend pas du parcours. */
-        vias:g.vias||[],
-        ports:[{id:1,impedance:opts.z0},{id:2,impedance:opts.z0}],
-        analyse:{f_debut:opts.f1, f_fin:opts.f2, points:opts.points,
-                 f_centre:opts.fc}
-      },
-      objets:g.objets,
-      portee:simPortee(g.objets),
-      notes:notes,
-      couture:g.couture,
-      voisins:g.voisins
-    };
+    const lots=simLotsDeTracks(sel);
+    if(lots.length<2){
+      const p=simDocPcb(null,opts);
+      return p.erreur?p:{lots:[p]};
+    }
+    /* TROP DE MORCEAUX : ON N'INONDE PAS LE SERVEUR, ET ON LE DIT. Seize lots
+       sont déjà seize allers-retours ; au-delà — un Ctrl+A, une sélection au
+       lasso sur une carte entière — on n'a plus une comparaison mais une
+       attente. Le repli est le comportement d'avant : un seul document, juste
+       pour les impédances par tronçon, refusé à la cascade par le serveur. */
+    if(lots.length>SIM_LOTS_MAX){
+      const p=simDocPcb(null,opts);
+      if(p.erreur)return p;
+      p.notes.unshift("La sélection compte "+lots.length+" morceaux qui ne se "+
+        "touchent pas, soit plus que les "+SIM_LOTS_MAX+" lots calculés "+
+        "séparément : tout part dans un seul document. Les impédances par "+
+        "tronçon et la carte de chaleur restent justes ; la mise en cascade, "+
+        "elle, verra une liaison rompue. Réduisez la sélection pour obtenir "+
+        "un résultat par morceau.");
+      return {lots:[p]};
+    }
+    const out=[], refuses=[];
+    for(const l of lots){
+      const p=simDocPcb(l,opts);
+      if(p.erreur){refuses.push(p.erreur);continue;}
+      out.push(p);
+    }
+    if(!out.length)
+      return {erreur:refuses[0]||
+                     "Aucun morceau de la sélection n'est calculable."};
+    /* AUCUN REFUS SILENCIEUX : un morceau écarté se lirait comme un oubli si
+       personne ne le nommait. */
+    for(const r of refuses)
+      out[0].notes.push("Un morceau de la sélection a été écarté : "+r);
+    return {lots:out};
   },
+
+
 
 
   /* ---------------------------------------------------------------------

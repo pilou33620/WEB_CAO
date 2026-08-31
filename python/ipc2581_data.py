@@ -105,6 +105,14 @@ class PadStackDefinition:
     hole_diameter: float = 0.0 # Diamètre défini dans le stack (par défaut)
     shape_ref: str = ""        # Conservé pour rétro-compatibilité
     pads: List[PadDef] = field(default_factory=list) # Définitions par couche
+    # LA PASTILLE A-T-ELLE ÉTÉ LUE, OU DEVINÉE ? Quand un perçage de via ne
+    # renvoie à aucune définition de padstack, le lecteur en fabrique une avec
+    # « perçage + 0,3 mm » — soit un anneau de 0,15 mm posé par convention.
+    # C'est un repli raisonnable pour dessiner quelque chose ; ce n'est PAS une
+    # cote du fichier, et tout ce qui s'en sert doit pouvoir le savoir : la
+    # simulation la fait entrer dans la capacité du via, le contrôle
+    # d'isolation mesure des distances contre elle.
+    pad_supposee: bool = False
 
 
 @dataclass
@@ -136,6 +144,17 @@ class Drill:
         if self.padstack_obj and self.padstack_obj.pad_diameter > self.diameter:
             return (self.padstack_obj.pad_diameter - self.diameter) / 2.0
         return 0.0
+
+    @property
+    def annular_ring_supposee(self) -> bool:
+        """L'anneau vient-il du fichier, ou de la pastille devinée ?
+
+        UN ANNEAU DE 0,15 mm QUI SORT TOUJOURS A 0,15 mm N'EST PAS UNE MESURE.
+        C'est « perçage + 0,3 » divise par deux, c'est-a-dire la convention du
+        lecteur relue a l'envers. Affiche comme une cote, il donne a croire que
+        le fabricant a declare cet anneau-la.
+        """
+        return bool(self.padstack_obj and self.padstack_obj.pad_supposee)
 
 
 @dataclass

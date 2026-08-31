@@ -1040,9 +1040,19 @@ class IPC2581Parser:
                         self.detected_via_counts[via_key] = self.detected_via_counts.get(via_key, 0) + 1
 
                     if via_key not in self.design.padstacks:
+                        # AUCUNE DEFINITION DE PADSTACK POUR CE PERCAGE : on en
+                        # fabrique une pour avoir quelque chose a dessiner.
+                        # « perçage + 0,3 » est un anneau de 0,15 mm pose par
+                        # convention -- un ordre de grandeur courant, et rien
+                        # de plus. Il est MARQUE comme suppose : la simulation
+                        # le fait entrer dans la capacite du via, le controle
+                        # d'isolation mesure des distances contre lui, et ni
+                        # l'un ni l'autre ne doit le prendre pour une cote du
+                        # fichier.
                         pdef = PadStackDefinition(name=via_key)
                         pdef.hole_diameter = diameter
                         pdef.pad_diameter = diameter + 0.3
+                        pdef.pad_supposee = True
                         self.design.padstacks[via_key] = pdef
                         self.via_def_names.add(via_key)
 

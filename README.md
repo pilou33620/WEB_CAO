@@ -23,7 +23,9 @@ python/                        les autres modules Python, aucun à lancer seul
 ├── ipc2581_json.py            IPCDesign -> JSON, pour la visionneuse
 ├── ligne_mom.py               CE QUI CALCULE la simulation : MoM sur la
 │                              section droite — impédance, dispersion, pertes,
-│                              cascade ABCD (numpy, scipy)
+│                              cascade ABCD, et la section à N conducteurs
+│                              (matrice de Maxwell, Z différentielle,
+│                              diaphonie) (numpy)
 ├── simulation_em.py           pont : cuivre -> sections droites, résultat ->
 │                              JSON, et les garde-fous
 ├── dc_solver.py               CE QUI CALCULE la chute continue (IR drop) :
@@ -61,7 +63,8 @@ visionneuse-ipc2581/           import et affichage d'une carte IPC-2581
 commun/                        code partagé par les quatre outils
 ├── simulation-em.js           panneau de simulation, commun au PCB et à la
 │                              visionneuse : carte de chaleur d'impédance sur
-│                              la sélection, paramètres S, courbe et exports
+│                              la sélection, paramètres S, courbe et exports,
+│                              Z différentielle et diaphonie
 ├── simulation-em.css          habillage de ce panneau
 ├── workspace.js               panneaux détachables et dockables
 ├── workspace.css              habillage de l'espace de travail
@@ -249,8 +252,10 @@ Détails dans [visionneuse-ipc2581/README.md](visionneuse-ipc2581/README.md).
 ## Simulation
 
 Le bouton **« Simulation EM… »** de l'éditeur PCB et de la visionneuse IPC-2581
-ouvre le même panneau, et il répond à une seule question : *que vaut, en
-impédance, le cuivre que je viens de sélectionner ?*
+ouvre le même panneau, rangé en deux familles — **SI** (intégrité du signal) et
+**PI** (intégrité de l'alimentation). SI porte quatre onglets qui lisent **la
+même réponse du serveur** : *Impédance*, *Z différentielle*, *Diaphonie* et
+*Current Return Path*. Changer d'onglet ne relance rien.
 
 Le serveur résout la **section droite** de chaque tronçon par méthode des
 moments (`python/ligne_mom.py`), rend son impédance caractéristique
@@ -300,7 +305,7 @@ ne savent pas traiter — à commencer par la **triplaque décentrée**, que la
 formule IPC suppose centrée alors qu'un empilage 4 couches ne l'est jamais.
 
 Il est vérifié contre des étalons extérieurs, et le banc d'essai le refait à
-chaque exécution (`python/test/banc-ligne-mom.py`, 51 cas) :
+chaque exécution (`python/test/banc-ligne-mom.py`, 133 cas) :
 
 | Géométrie | Étalon | Écart maximal |
 | --- | --- | --- |
@@ -309,6 +314,8 @@ chaque exécution (`python/test/banc-ligne-mom.py`, 51 cas) :
 | Piste interne couverte, enterrée | ε_eff = εr et Z₀ = Z₀(air)/√εr, exacts en milieu homogène | **0,06 %** |
 | Ligne coplanaire sur plan, écarts serrés | transformation conforme (Wen) | **0,4 %** |
 | Masse coplanaire d'un seul côté | encadrée par le microruban nu et le coplanaire symétrique, et miroir gauche/droite | **exact** |
+| Paire de microruban couplée, w/h et s/h de 0,5 à 2 | Garg-Bahl (forme fermée, quelques %) | **2,2 %** |
+| Diaphonie avant en milieu homogène (triplaque) | elle est **nulle**, k_C = k_L terme à terme | **4·10⁻¹⁷** |
 
 Les topologies traitées : microruban nu (couche extérieure), **microruban
 couvert** (couche interne qui n'a de plan que d'un côté — elle a du stratifié
@@ -331,7 +338,19 @@ Ce qu'il ne voit pas, et le panneau le dit sous chaque résultat :
 - le calcul de section est **quasi-statique** ; la dispersion est ajoutée par
   le modèle de Getsinger, qui est un modèle et non un calcul. Au-delà de
   quelques gigahertz sur stratifié courant, l'écart se creuse ;
-- le **masque de soudure** n'est pas dans l'empilage envoyé ;
+- le **couplage aux pistes voisines** est calculé, mais **à part** : Z
+  différentielle et diaphonie ont leurs onglets, et le Z₀ de la colonne
+  « Impédance » reste celui de la piste prise seule. Une piste couplée n'a pas
+  une impédance mais deux, une par mode. Toutes les voisines d'une même piste
+  entrent dans **une seule section** — une piste et ses deux voisines font un
+  problème à trois conducteurs —, avec le plan coplanaire qui borde le groupe
+  et les pistes de masse posées en **gardes**, à zéro volt ;
+- la diaphonie est rendue **dans les deux sens** : ce que la sélection reçoit,
+  qui est ce qui la juge, et ce qu'elle émet vers la voisine. Les deux ne sont
+  égaux que si les deux pistes ont la même largeur ;
+- ce couplage ne vaut qu'entre pistes **parallèles et de la même couche** :
+  deux pistes superposées sur deux couches, ou qui se croisent, couplent aussi
+  et ne sont pas ici ;
 - **la mise en cascade suppose une chaîne**, parcourue dans l'ordre envoyé. Un
   net qui se ramifie n'en est pas une : les impédances par tronçon et la carte
   de chaleur restent justes — chacune ne dépend que de sa section —, mais les

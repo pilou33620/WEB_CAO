@@ -203,6 +203,29 @@ select.simUSel:focus{outline:none;border-color:var(--blue);color:var(--txt)}
 .simTabD td:nth-child(4) small{opacity:.75;font-size:10px}
 .simTabD .z0ko{color:var(--red)}
 .simTabD .simFaible{color:var(--txt-dim);opacity:.75}
+/* Le tableau des LONGEMENTS -- celui de Z differentielle et celui de la
+   diaphonie, qui lisent la meme liste et n'en montrent pas les memes colonnes.
+   La deuxieme porte la GEOMETRIE sur laquelle le chiffre a ete obtenu :
+   longueur, largeurs, ecart. C'est la seule colonne qui ne s'aligne pas a
+   droite -- ce sont des cotes, pas un nombre -- et c'est elle qui explique
+   toujours pourquoi deux lignes different de vingt ohms.
+
+   La derniere est centree : elle porte un JUGEMENT -- la saturation est
+   atteinte ou elle ne l'est pas --, pas une mesure qu'on aligne sur la
+   virgule. */
+.simTabC td:nth-child(2){text-align:left;color:var(--txt-dim)}
+.simTabC td:last-child{text-align:center}
+.simTabC td i{font-style:normal;opacity:.7}
+.simTabC .z0ok{color:var(--blue)}
+.simTabC .z0ko{color:var(--red)}
+.simTabC .simFaible{color:var(--txt-dim);opacity:.75}
+/* LES DEUX SENS DU BRUIT, dans la meme cellule. Le premier chiffre est celui
+   qui juge -- ce que la piste subit -- et il porte la couleur du verdict ; les
+   deux lignes sous lui disent la tension et ce que la piste EMET. « Emis » est
+   plus pale : c'est un renseignement, pas le verdict de cette fiche-la. */
+.simTabC td small{display:block;font-size:10px;opacity:.75;line-height:1.35}
+.simTabC td small.simEmis{opacity:.55;font-style:italic}
+
 /* La note du plan de reference qui change sans etre rejoint. Elle est en rouge
    parce que c'est le seul defaut de cette fiche dont la reponse ne soit pas un
    chiffre mais un conseil de routage — et parce qu'elle FLATTE le resultat,
@@ -241,6 +264,47 @@ select.simUSel:focus{outline:none;border-color:var(--blue);color:var(--txt)}
   color:var(--txt-dim);font-size:10.5px;line-height:1.5;
 }
 .simNote:last-of-type{margin-bottom:8px}
+
+/* ---------- le refus de cascader ---------- */
+/* IL PREND LA PLACE DE LA COURBE, et il doit donc en occuper le volume : un
+   bloc de la hauteur d'un graphique, pas une note grise de plus. Sans cela le
+   panneau se termine par un blanc, et un blanc en bas de fiche se lit comme un
+   chargement qui n'a pas abouti.
+
+   EN BLEU ET NON EN ROUGE. Ce n'est ni une erreur ni un échec : le serveur a
+   calculé tout ce qui avait un sens et refusé ce qui n'en avait pas. Le rouge
+   est réservé à ce qui est cassé ; le jaune, à ce dont il faut se méfier. Une
+   décision assumée n'est ni l'un ni l'autre. */
+.simRefus{
+  margin:10px 0 4px;padding:10px 12px;border-radius:4px;
+  background:var(--bg-2, #16181d);border-left:2px solid var(--blue);
+}
+.simRefusTitre{
+  margin:0 0 5px;color:var(--blue);font-size:11.5px;font-weight:600;
+}
+.simRefusQuoi{
+  margin:0;color:var(--txt);font-size:11px;line-height:1.55;
+}
+/* Les coordonnées de la dérivation : en monospace, parce qu'on les recopie
+   dans un champ de recherche ou qu'on les compare à ce qu'on voit sur la
+   carte. */
+.simRefusOu{
+  margin:6px 0 0;font-family:var(--mono);font-size:10.5px;line-height:1.5;
+  color:var(--txt-dim);
+}
+.simRefusReste{
+  margin:7px 0 0;padding-top:6px;border-top:1px solid var(--bord, #2a2e37);
+  color:var(--txt-dim);font-size:10.5px;line-height:1.5;
+}
+
+/* Un cumul qui n'est le trajet de personne. Barré plutôt qu'absent : le
+   chiffre répond encore à « combien de cuivre ai-je sélectionné », et le
+   retirer ferait croire à un calcul incomplet. */
+.simDouteux{
+  text-decoration:line-through;
+  text-decoration-color:var(--red);
+  opacity:.65;cursor:help;
+}
 
 /* ---------- la section resolue ---------- */
 /* CE N'EST PAS UNE RESERVE, c'est le probleme lui-meme : la hauteur au plan, la
@@ -322,3 +386,33 @@ select.simUSel:focus{outline:none;border-color:var(--blue);color:var(--txt)}
   font-family:var(--mono);color:var(--txt);
 }
 .simTab td:first-child{color:var(--txt-dim)}
+
+/* ---------- les lots ----------
+   Une sélection éparse — Ctrl+clic sur plusieurs morceaux — rend un résultat
+   par parcours continu. Le tableau qui les compare passe AVANT la fiche du lot
+   déplié, et il se détache du reste : c'est une table de matières, pas une
+   mesure. La ligne active est marquée, sans quoi rien ne dirait de quel lot
+   parle la fiche qui suit. */
+.simLots{
+  margin:0 0 10px;padding:0 0 8px;border-bottom:1px solid var(--border);
+}
+.simTabLots td:nth-child(2){text-align:left;color:var(--txt-dim)}
+.simTabLots tr.simLotL{cursor:pointer}
+.simTabLots tr.simLotL:hover td{background:var(--panel2)}
+.simTabLots tr.simLotL.on td{
+  background:var(--panel2);box-shadow:inset 2px 0 0 var(--blue);
+}
+.simTabLots tr.simLotL.on td:first-child{color:var(--txt)}
+.simTabLots .z0ok{color:var(--blue)}
+.simTabLots .z0haut{color:var(--yellow)}
+.simTabLots .simLotErr{text-align:left;color:var(--red);font-size:10.5px}
+/* De quel lot la fiche parle. Discret : c'est un repère, pas un titre de
+   section — le verdict d'ensemble est au-dessus, dans le tableau. */
+.simLotTitre{
+  margin:0 0 8px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.04em;color:var(--txt);
+}
+.simLotTitre small{
+  margin-left:6px;font-family:var(--sans,inherit);color:var(--txt-dim);
+  letter-spacing:0;
+}

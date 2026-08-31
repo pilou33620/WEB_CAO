@@ -589,8 +589,25 @@ function simViaAuRaccordIpc(N, x, y, cuA, cuB){
     for(const q of (N.pads || []))
       if(pres(q.x * k, x) && pres(q.y * k, y))
         pastille = Math.max(pastille, (q.d || 0) * k);
-    return {drill_diameter: d,
-            pad_diameter: pastille > 0 ? pastille : d * 2.5};
+    /* LA PASTILLE DU PADSTACK, faute de pastille de composant au même
+       endroit — et l'aveu qui va avec : sans définition dans le fichier,
+       `ipc2581_parser.py` la fabrique à « perçage + 0,3 mm ». */
+    let sup = false;
+    if(!(pastille > 0)){
+      const ps = (V.modele && V.modele.padstacks) ? V.modele.padstacks[t.ps]
+                                                  : null;
+      if(ps && ps.pad > 0){ pastille = ps.pad * k; sup = !!ps.pad_sup; }
+    }
+    /* ON N'ENVOIE PAS UNE PASTILLE QU'ON N'A PAS. `d * 2,5` était le repli du
+       serveur recopié ici : le chiffre ne changeait pas, mais il arrivait
+       déclaré par la page, ce qui faisait taire la mention « supposée ». Voir
+       `simViasIpc`, où le même défaut vivait. */
+    const fiche = {drill_diameter: d};
+    if(pastille > 0){
+      fiche.pad_diameter = pastille;
+      if(sup) fiche.pad_diameter_supposee = true;
+    }
+    return fiche;
   }
 
   /* 2. Pas de trou déclaré : deux pastilles au même endroit valent un tube.
@@ -603,6 +620,10 @@ function simViaAuRaccordIpc(N, x, y, cuA, cuB){
     }
   if(combien < 2 || !(pastille > 0)) return null;
   return {drill_diameter: Math.max(pastille - 0.5, 0.05),
+          /* DÉDUIT, DONC DÉCLARÉ DÉDUIT. La pastille est lue dans le fichier,
+             le perçage ne l'est pas : il se devine à un demi-millimètre de
+             moins, ce qui est un usage, pas une cote. */
+          drill_diameter_supposee: true,
           pad_diameter: pastille};
 }
 
@@ -651,15 +672,42 @@ function simJonctionsIpc(N){
     const x = t.x * k, y = t.y * k, c = cle(x, y);
     if(vus.has(c)) continue;
     const j = {x: x, y: y, percage: Math.max((t.d || 0) * k, 0.05),
-               pastille: 0, perce: true};
+               pastille: 0, pastilleSup: false, perce: true};
+    /* LA PASTILLE DU PERÇAGE SE LIT DANS SON PADSTACK — et il faut savoir si
+       le fichier la déclare ou si le lecteur l'a devinée. Faute de définition,
+       `ipc2581_parser.py` en fabrique une à « perçage + 0,3 mm », soit un
+       anneau de 0,15 posé par convention. C'est un repli honnête pour
+       dessiner ; ce n'est pas une cote, et la faire entrer dans la capacité
+       d'un via sans le dire reviendrait à inventer un chiffre. */
+    const ps = (V.modele && V.modele.padstacks) ? V.modele.padstacks[t.ps]
+                                                : null;
+    if(ps && ps.pad > 0){
+      j.pastille = ps.pad * k;
+      j.pastilleSup = !!ps.pad_sup;
+    }
     vus.set(c, j); out.push(j);
   }
   for(const q of ((N && N.pads) || [])){
     const x = q.x * k, y = q.y * k, c = cle(x, y);
     let j = vus.get(c);
-    if(!j){ j = {x: x, y: y, percage: 0, pastille: 0, perce: false};
+    if(!j){ j = {x: x, y: y, percage: 0, pastille: 0, pastilleSup: false,
+                 perce: false};
             vus.set(c, j); out.push(j); }
-    j.pastille = Math.max(j.pastille, (q.d || 0) * k);
+    /* UNE PASTILLE DE COMPOSANT EST LUE DANS LE FICHIER : elle l'emporte sur
+       une pastille de via devinée, et pas seulement parce qu'elle est plus
+       grande. */
+    const d = (q.d || 0) * k;
+    if(j.pastilleSup && d > 0){
+      /* UNE COTE LUE REMPLACE UNE COTE DEVINÉE, elle ne se compare pas à elle.
+         Prendre « la plus grande des deux » gardait le 0,90 mm que le lecteur
+         avait fabriqué contre le 0,60 mm écrit dans le fichier — et effaçait
+         au passage la mention « supposé », ce qui est le pire des deux : le
+         chiffre inventé restait, et il ne se présentait plus comme tel. */
+      j.pastille = d;
+      j.pastilleSup = false;
+    }else if(d > j.pastille){
+      j.pastille = d;
+    }
   }
   return out;
 }
@@ -719,6 +767,10 @@ function simRetoursIpc(x, y, cuMax){
       out.push({x: Math.round(tx * 1000) / 1000, y: Math.round(ty * 1000) / 1000,
                 layer_from: 0, layer_to: simRangCu(cuMax),
                 drill_diameter: Math.max((t.d || 0) * k, 0.05),
+                /* PAS DE PASTILLE FABRIQUÉE ICI NON PLUS. Le perçage du via de
+                   masse est lu ; sa pastille ne l'est pas, et `× 2,5` n'était
+                   qu'un ordre de grandeur déguisé en cote. */
+                pad_diameter_supposee: true,
                 pad_diameter: Math.max((t.d || 0) * k, 0.05) * 2.5,
                 net: n.nom, portee_supposee: true});
     }
@@ -742,8 +794,8 @@ function simRetoursIpc(x, y, cuMax){
 
    LA PORTÉE EST SUPPOSÉE TRAVERSANTE, comme partout ailleurs sur cette page :
    l'IPC-2581 ne déclare pas les couches d'un perçage. */
-function simViasIpc(){
-  const N = V.parNet ? V.parNet[V.net] : null;
+function simViasIpc(N){
+  if(!N) N = V.parNet ? V.parNet[V.net] : null;
   if(!N) return [];
   const cuMax = Math.max(0, (LT.pret ? LT.cu.length : 1) - 1);
   const out = [];
@@ -760,23 +812,44 @@ function simViasIpc(){
                    layer_from: simRangCu(lo), layer_to: simRangCu(hi),
                    retours: simRetoursIpc(v.x, v.y, cuMax),
                    portee_supposee: true};
-    /* LES COTES NE S'INVENTENT PAS. Un perçage déclaré les porte ; une
-       pastille seule vaut un tube, et le perçage s'en déduit — c'est la règle
-       de `simViaAuRaccordIpc`, et elle doit rester la même des deux côtés. */
+    /* LES COTES NE S'INVENTENT PAS — ET C'EST ICI QU'ELLES S'INVENTAIENT.
+
+       CE QUE FAISAIT LA VERSION PRÉCÉDENTE. Faute de pastille connue, elle
+       envoyait `perçage × 2,5` : très exactement le repli que le serveur
+       applique lui-même quand la page ne dit rien. Le chiffre était donc le
+       même — mais il arrivait DÉCLARÉ PAR LA PAGE. Or c'est là-dessus que
+       `_cotes_via` se fonde pour écrire la provenance : `pad_diameter`
+       présent vaut « page », absent vaut « repli ». En fabriquant la valeur,
+       la page passait `pastille_source` de « repli » à « page » et
+       `cotes_supposees` à faux. Le résultat ne changeait pas d'un micron ;
+       ce qui changeait, c'est que la fiche cessait de prévenir. Une supposition
+       qui se présente comme une mesure est pire qu'une supposition.
+
+       ON N'ENVOIE DONC QUE CE QU'ON A. Rien pour la pastille inconnue — le
+       serveur reprend son repli et le DIT ; la pastille du fichier quand elle
+       existe ; et celle que le lecteur a devinée, marquée comme telle. */
     if(v.perce && v.percage > 0){
       fiche.drill_diameter = v.percage;
-      fiche.pad_diameter = v.pastille > 0 ? v.pastille : v.percage * 2.5;
+      if(v.pastille > 0){
+        fiche.pad_diameter = v.pastille;
+        if(v.pastilleSup) fiche.pad_diameter_supposee = true;
+      }
     }else if(v.pastille > 0){
+      /* UNE PASTILLE SANS PERÇAGE VAUT UN TUBE, et le perçage s'en déduit —
+         c'est la règle de `simViaAuRaccordIpc`, et elle doit rester la même
+         des deux côtés. Déduite, elle se déclare déduite. */
       fiche.drill_diameter = Math.max(v.pastille - 0.5, 0.05);
+      fiche.drill_diameter_supposee = true;
       fiche.pad_diameter = v.pastille;
+      if(v.pastilleSup) fiche.pad_diameter_supposee = true;
     }
     out.push(fiche);
   }
   return out;
 }
 
-function simAccrocherViasIpc(envoi){
-  const N = V.parNet[V.net];
+function simAccrocherViasIpc(envoi,N){
+  if(!N) N = V.parNet ? V.parNet[V.net] : null;
   if(!N) return 0;
   const jonctions = simJonctionsIpc(N);
   const cuMax = Math.max(0, (LT.pret ? LT.cu.length : 1) - 1);
@@ -868,35 +941,121 @@ function simCoutureIpc(entrees,refs){
   return {n:n, ecartMax:Math.round(pire*1000)/1000, couloir:SIM_COULOIR};
 }
 
-/* Les pistes que la portée courante désigne, avec leur couche. */
-function simZPistes(){
-  const out=[];
-  if(!V.modele||!LT.pret)return out;
-  const s=V.survol;
+/* Les pistes qu'UNE désignation couvre, avec leur couche.
+
+   `vus` porte les objets du modèle déjà pris : deux entrées de la sélection se
+   recouvrent souvent — on clique une piste, puis Ctrl+Maj+clic prend son net
+   entier — et la même piste envoyée deux fois se serait chaînée avec elle-même. */
+function simZPistesDe(s,mev,out,vus){
+  out=out||[]; vus=vus||new Set();
+  if(!V.modele||!LT.pret||!s)return out;
+  mev=mev||mdlMevTout();
+  const pousser=function(src,e){
+    if(vus.has(src))return;
+    vus.add(src); out.push(e);
+  };
   /* Une piste désignée, sans Maj : elle seule. C'est la réponse à « qu'est-ce
      qui court ici », et c'est le geste le plus fréquent. */
-  if(s&&s.type==="piste"&&V.mev.couche>=0){
-    out.push({piste:s.piste, couche:s.couche});
+  if(s.type==="piste"&&mev.couche>=0){
+    pousser(s.piste,{piste:s.piste, couche:s.couche});
     return out;
   }
   /* Sinon le net entier. Les perçages n'ont pas d'impédance de ligne. */
-  if(V.net<0||V.mev.quoi==="trous"||V.mev.seul)return out;
-  const n=V.parNet[V.net];
+  const net=(s.net!=null&&s.net>=0)?s.net:-1;
+  if(net<0||mev.quoi==="trous"||mev.seul)return out;
+  const n=V.parNet[net];
   if(!n)return out;
   for(const p of n.pistes)
-    if(V.mev.couche<0||p.c===V.mev.couche)out.push({piste:p, couche:p.c});
+    if(mev.couche<0||p.c===mev.couche)pousser(p,{piste:p, couche:p.c});
   /* LES ARCS SONT DU CUIVRE COMME LE RESTE. Les laisser dehors coupait la
      liaison en morceaux qui ne se touchent pas — voir `simArcEnPolyligne`.
      On les plie en polylignes et on les traite comme des pistes ; le chaînage
      (`simChainePistes`) les remet ensuite à leur place dans le parcours, ce
      qu'aucune des deux collections ne dit à elle seule. */
   for(const a of (n.arcs||[])){
-    if(!(V.mev.couche<0||a.c===V.mev.couche))continue;
+    if(!(mev.couche<0||a.c===mev.couche))continue;
     const pts=simArcEnPolyligne(a);
     if(!pts)continue;
-    out.push({piste:{c:a.c, n:a.n, w:a.w, p:pts, arc:a}, couche:a.c});
+    pousser(a,{piste:{c:a.c, n:a.n, w:a.w, p:pts, arc:a}, couche:a.c});
   }
   return out;
+}
+
+/* Les pistes que la portée courante désigne, avec leur couche.
+
+   LA LISTE DE SÉLECTION COMMANDE quand elle porte quelque chose : c'est elle
+   qui sait ce que Ctrl+clic a empilé. Le repli sur `V.survol` et `V.net` reste
+   pour ce qui les pose sans passer par elle — un banc d'essai, et tout code
+   d'avant la sélection multiple. */
+function simZPistes(){
+  if(V.sel&&V.sel.length){
+    const out=[], vus=new Set();
+    for(const e of V.sel)simZPistesDe(e.s,e.mev,out,vus);
+    return out;
+  }
+  const s=(V.survol&&V.survol.type==="piste")
+    ? V.survol : {type:"net", net:V.net};
+  return simZPistesDe(s,V.mev);
+}
+
+/* ==========================================================================
+   DÉCOUPER LA SÉLECTION EN PARCOURS CONTINUS — LES LOTS
+   --------------------------------------------------------------------------
+   POURQUOI ON DÉCOUPE. Une ligne RF de 50 Ω coupée par trois condensateurs de
+   liaison, c'est quatre morceaux de cuivre sur quatre nets. Envoyés dans un
+   seul document, ils forment une liste que le serveur voit rompue : il refuse
+   la cascade, et à juste titre — la sortie de l'un n'est pas l'entrée du
+   suivant, il y a un boîtier entre les deux. Envoyés en quatre documents, ils
+   rendent quatre résultats justes, comparables ligne à ligne, et c'est la
+   réponse à la question qu'on posait : « fait-elle 50 Ω partout ? »
+
+   CE QUI FAIT UN LOT : le même net, et du cuivre qui se touche. Deux bouts au
+   même point sur deux couches différentes se touchent aussi — c'est un via, et
+   c'est la même règle que `simChainePistes` applique pour chaîner. Un net qui
+   se ramifie reste donc UN lot, avec l'arrêt de marche que le panneau annonce
+   déjà : on ne découpe pas les branches, on découpe ce qui ne se touche pas.
+
+   ON NE DÉCOUPE QUE CE QUI A ÉTÉ DÉSIGNÉ SÉPARÉMENT. Un seul clic — même
+   Maj+clic sur un net entier — rend un seul lot, exactement comme avant : un
+   net de masse dont le cuivre est en cinquante îlots ne doit pas partir en
+   cinquante requêtes parce qu'on l'a effleuré. Voir `problemes`.
+   ========================================================================== */
+const SIM_LOTS_MAX=16;          // au-delà, on ne compare plus, on inonde
+
+function simLotsDePistes(liste){
+  const k=simKUnite();
+  const n=liste.length;
+  const parent=new Array(n);
+  for(let i=0;i<n;i++)parent[i]=i;
+  const chef=function(i){while(parent[i]!==i){parent[i]=parent[parent[i]];i=parent[i];}return i;};
+  const joindre=function(a,b){a=chef(a);b=chef(b);if(a!==b)parent[b]=a;};
+  const bouts=liste.map(e=>simBoutsPiste(e.piste,k));
+  const tol=SIM_TOL_CHAINE_IPC;
+  for(let i=0;i<n;i++){
+    if(!bouts[i])continue;
+    for(let j=i+1;j<n;j++){
+      if(!bouts[j])continue;
+      /* LE NET D'ABORD : deux pistes de nets différents qui se croisent sur
+         deux couches ne sont pas la même liaison, même si leurs bouts
+         coïncident au micron. C'est le cas d'un via qui passe au ras d'une
+         pastille voisine, et il est fréquent sur une carte dense. */
+      if(liste[i].piste.n!==liste[j].piste.n)continue;
+      let touche=false;
+      for(const a of bouts[i])
+        for(const b of bouts[j])
+          if(Math.abs(a.x-b.x)<=tol&&Math.abs(a.y-b.y)<=tol)touche=true;
+      if(touche)joindre(i,j);
+    }
+  }
+  /* DANS L'ORDRE OÙ ON A CLIQUÉ : le lot 1 du tableau doit être le premier
+     morceau pris, sinon les numéros ne désignent rien de reconnaissable. */
+  const rangs=new Map(), lots=[];
+  for(let i=0;i<n;i++){
+    const c=chef(i);
+    if(!rangs.has(c)){rangs.set(c,lots.length);lots.push([]);}
+    lots[rangs.get(c)].push(liste[i]);
+  }
+  return lots;
 }
 
 /* Le parcours, remis dans l'ordre où le courant le suit.
@@ -1150,6 +1309,7 @@ function simChainePistes(liste){
                               perce: !!jonctions[j].perce,
                               percage: jonctions[j].percage,
                               pastille: jonctions[j].pastille,
+                              pastilleSup: !!jonctions[j].pastilleSup,
                               couches: [...cs].sort((u, v) => u - v)});
   }
   return suite;
@@ -1168,11 +1328,14 @@ function simChainePistes(liste){
 
    `objets` porte donc `u1` et `u2`, la fraction du parcours que la plage
    couvre, et `cum` la table des longueurs cumulées qui sert à la retrouver. */
-function simSegments(){
+/* LA LISTE ET LE NET SONT CEUX D'UN LOT quand on en découpe (voir
+   `simLotsDePistes`), et ceux de la portée courante sinon : un seul chemin de
+   calcul, et non deux qui auraient dérivé l'un de l'autre. */
+function simSegments(liste,N){
   const k=simKUnite(), envoi=[], objets=[], entrees=[];
   const refs=simRefIdx(), hors=new Map();
   let ignorees=0;
-  for(const e of simChainePistes(simZPistes())){
+  for(const e of simChainePistes(liste||simZPistes())){
     const cu=simCuDe(e.couche);
     if(cu<0){ignorees++;continue;}
     const p=e.piste;
@@ -1216,11 +1379,11 @@ function simSegments(){
                    couche:(c?c.nom:"?"), coucheIdx:e.couche});
     }
   }
-  simAccrocherViasIpc(envoi);
+  simAccrocherViasIpc(envoi,N);
 
   return {envoi:envoi, objets:objets, ignorees:ignorees,
           couture:simCoutureIpc(entrees,refs),
-          chaine:SIM_CHAINE_IPC, vias:simViasIpc(),
+          chaine:SIM_CHAINE_IPC, vias:simViasIpc(N),
           voisins:[...hors.values()].sort((a,b)=>b.longueur-a.longueur)};
 }
 
@@ -1328,8 +1491,19 @@ function simSousPoly(p,cum,u1,u2){
   return t;
 }
 
+/* TOUS LES LOTS SE PEIGNENT, ET C'EST LE POINT. La fiche ne peut déplier qu'un
+   morceau à la fois — six jeux de paramètres S ne se lisent pas ensemble —, mais
+   la question « est-ce 50 Ω sur toute la longueur ? » se répond d'un coup d'œil
+   sur la carte. Le tableau des lots compare des chiffres ; la carte, elle,
+   montre OÙ ça sort de la bande. Sans lot, la boucle tourne une fois et le
+   dessin est celui d'avant. */
 function simZTrace(c,dpr){
   if(typeof simZActif!=="function"||!simZActif())return;
+  if(typeof simPourChaqueLot!=="function"){simZTraceLot(c,dpr,null);return;}
+  simPourChaqueLot(function(lot){simZTraceLot(c,dpr,lot);});
+}
+
+function simZTraceLot(c,dpr,lot){
   poserMonde(c,dpr);
   const px=1/V.vue.scale;                    // un pixel écran, en unités monde
   c.lineCap="round"; c.lineJoin="round";
@@ -1355,6 +1529,36 @@ function simZTrace(c,dpr){
     c.lineWidth=px*2; c.stroke(t.chemin);
   }
   simZValeurs(c,dpr,traits);
+  simZNumeroLot(c,dpr,lot,traits);
+}
+
+/* LE NUMÉRO DU LOT, POSÉ SUR SON CUIVRE. Le tableau parle de « lot 3 » ; sans
+   ce jeton, rien sur la carte ne dit lequel c'est, et il faudrait déplier les
+   six fiches pour retrouver le morceau qui sort de la bande. Il ne paraît que
+   s'il y a plus d'un lot : sur une sélection ordinaire il n'y aurait rien à
+   distinguer, et un chiffre de plus au milieu du cuivre gênerait la lecture.
+
+   AU DÉBUT DU PARCOURS, et non au milieu : le milieu porte déjà l'étiquette
+   d'impédance, et deux cartouches au même endroit se recouvrent. */
+function simZNumeroLot(c,dpr,lot,traits){
+  if(!lot||!lot.rang||!traits.length)return;
+  if(typeof simLotsMultiples!=="function"||!simLotsMultiples())return;
+  const o=traits[0].obj;
+  if(!o||!o.piste||!o.piste.p)return;
+  const m=simSurPoly(o.piste.p,o.cum,o.u1);
+  const e=w2s(m.x,m.y);
+  c.save();
+  c.setTransform(1,0,0,1,0,0);
+  c.scale(dpr,dpr);
+  c.font="700 10px \"JetBrains Mono\",\"SF Mono\",Consolas,monospace";
+  c.textAlign="center"; c.textBaseline="middle";
+  c.beginPath();
+  c.arc(e.x,e.y,9,0,2*Math.PI);
+  c.fillStyle="rgba(15,16,18,0.9)"; c.fill();
+  c.strokeStyle=simZCouleur(traits[0].z0,1); c.lineWidth=1.4; c.stroke();
+  c.fillStyle="#e6e8ec";
+  c.fillText(String(lot.rang),e.x,e.y+0.5);
+  c.restore();
 }
 
 /* ==========================================================================
@@ -1380,7 +1584,8 @@ function simZTrace(c,dpr){
    ========================================================================== */
 
 function simRetourActifIpc(){
-  return !!(typeof SIM!=="undefined"&&SIM.ouvert&&SIM.analyse==="impedance"
+  /* LE CHEVELU SUIT SON ONGLET — voir `simCheveluRes` dans commun/. */
+  return !!(typeof SIM!=="undefined"&&SIM.ouvert&&SIM.analyse==="retour"
             &&SIM.res&&typeof simCheveluRes==="function");
 }
 
@@ -1753,6 +1958,250 @@ function simDCClic(x,y){
 /* ==========================================================================
    L'adaptateur
    ========================================================================== */
+/* ==========================================================================
+   UN DOCUMENT POUR UNE LISTE DE PISTES
+   --------------------------------------------------------------------------
+   MÊME CORPS POUR UN LOT ET POUR LA PORTÉE ENTIÈRE, et c'est la raison d'être
+   de cette fonction : les notes, les manques de l'empilage, les réserves sur la
+   tangente de pertes et le verdict sur la masse de référence doivent être les
+   mêmes qu'on calcule un morceau ou quatre. Deux copies auraient dérivé, et
+   c'est la fiche du lot 3 qui aurait cessé de prévenir.
+
+   `seul` dit qu'il n'y a pas de lot — un seul clic, ou Maj+clic sur un net
+   entier. C'est ce qui permet aux messages de parler du GESTE (« Maj+clic prend
+   le net entier ») là où ils ont un sens, et de la PORTÉE du morceau sinon.
+   ========================================================================== */
+/* ==========================================================================
+   LE VOISINAGE — LE CUIVRE QUI LONGE LA SÉLECTION
+   --------------------------------------------------------------------------
+   L'AGRESSEUR N'EST JAMAIS DANS LA SÉLECTION, par définition ; et l'autre
+   moitié d'une paire différentielle n'y est pas non plus, puisqu'on désigne un
+   net et pas deux. Sans ce qui suit, ni la diaphonie ni l'impédance
+   différentielle n'ont de quoi exister, quel que soit le solveur derrière.
+
+   LA PAGE ENVOIE DU CUIVRE, ELLE N'APPARIE PAS. C'est le serveur qui décide ce
+   qui longe (`simulation_em._scenes_paralleles`) : même couche, parallèle à
+   quinze degrés près, un recouvrement réel, un écart qui reste un écart. La
+   règle est écrite une fois pour les deux outils — l'éditeur PCB et cette
+   visionneuse doivent rendre le même chiffre sur la même carte, et deux
+   implémentations d'une même géométrie auraient dérivé.
+
+   ON RESTREINT SUR LA BOÎTE, et rien d'autre : la couche de la sélection, une
+   boîte englobante élargie de la portée du couplage, et le net qui n'est pas
+   celui qu'on analyse. Un fichier de dix mille pistes ne doit pas en envoyer
+   dix mille.
+
+   LES ARCS PARTENT EN CORDES, par `simArcEnPolyligne` — la même conversion que
+   pour le reste de ce panneau. Une polyligne part segment par segment : c'est
+   ce que le serveur sait apparier, et un coude cesse de longer de lui-même dès
+   qu'il sort des quinze degrés.
+   ========================================================================== */
+const SIM_VOISINAGE_MAX_IPC=600;   /* tronçons envoyés ; au-delà, on écrête */
+const SIM_ECART_COUPLAGE_IPC=3.0;  /* mm ; ECART_COUPLAGE_MAX de simulation_em.py */
+
+function simVoisinageIpc(envoi,objets){
+  if(!V.modele||!LT.pret||!envoi||!envoi.length)return [];
+  const k=simKUnite();
+  const couches=new Set(envoi.map(e=>e.layer));
+  const prises=new Set((objets||[]).map(o=>o.piste));
+  /* La boîte de la sélection, élargie de la portée et de la demi-largeur la
+     plus grande : en deçà on écarterait du cuivre que le serveur aurait retenu. */
+  let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity,large=0;
+  for(const e of envoi){
+    x1=Math.min(x1,e.start[0],e.end[0]); y1=Math.min(y1,e.start[1],e.end[1]);
+    x2=Math.max(x2,e.start[0],e.end[0]); y2=Math.max(y2,e.start[1],e.end[1]);
+    large=Math.max(large,e.width||0);
+  }
+  const marge=SIM_ECART_COUPLAGE_IPC+large;
+  x1-=marge;y1-=marge;x2+=marge;y2+=marge;
+
+  const out=[];
+  const pousser=function(pts,couche,w,net){
+    const cu=simCuDe(couche);
+    if(cu<0)return true;
+    const layer=simRangCu(cu);
+    if(!couches.has(layer)||!(w>0))return true;
+    const demi=w/2;
+    for(let i=0;i+3<pts.length;i+=2){
+      const ax=pts[i]*k, ay=pts[i+1]*k, bx=pts[i+2]*k, by=pts[i+3]*k;
+      if(Math.max(ax,bx)+demi<x1||Math.min(ax,bx)-demi>x2)continue;
+      if(Math.max(ay,by)+demi<y1||Math.min(ay,by)-demi>y2)continue;
+      if(Math.abs(ax-bx)<1e-9&&Math.abs(ay-by)<1e-9)continue;
+      out.push({type:"track", start:[ax,ay], end:[bx,by], width:w,
+                layer:layer, net:net, copper_thickness:LT.cu[cu].ep});
+      if(out.length>=SIM_VOISINAGE_MAX_IPC)return false;
+    }
+    return true;
+  };
+
+  for(const n of (V.parNet||[])){
+    if(!n)continue;
+    const nom=mdlNetNom(n.i);
+    for(const pi of (n.pistes||[])){
+      if(prises.has(pi)||!pi.p||pi.p.length<4)continue;
+      if(!pousser(pi.p,pi.c,(pi.w||0)*k,nom))return out;
+    }
+    for(const a of (n.arcs||[])){
+      const pts=simArcEnPolyligne(a);
+      if(!pts||pts.length<4)continue;
+      if(!pousser(pts,a.c,(a.w||0)*k,nom))return out;
+    }
+  }
+  return out;
+}
+
+/* LES PAIRES DIFFÉRENTIELLES D'UN FICHIER LIVRÉ : il n'y en a pas de
+   déclarées. L'IPC-2581 sait porter des `LogicalNet` groupés, mais rien
+   n'oblige un exporteur à le faire, et aucun de ceux qu'on lit ne le fait. Le
+   serveur retombe donc sur les suffixes — _P/_N, +/−, _DP/_DM —, qui sont ce
+   qu'une carte livrée porte réellement. La fonction existe pour que le contrat
+   de l'adaptateur soit le même des deux côtés, et pour qu'il y ait un endroit
+   où brancher la déclaration le jour où le format la donne. */
+function simPairesIpc(){return [];}
+
+function simDocIpc(liste,netIdx,opts,seul){
+  if(!V.modele)
+    return {erreur:"Aucune carte ouverte.",
+            conseil:"Ouvrez un fichier IPC-2581."};
+  if(!LT.pret)
+    return {erreur:"L'empilage de calcul n'est pas prêt.",
+            conseil:"Complétez-le dans le panneau « La carte », "+
+                    "sous « Empilage du calcul »."};
+
+  /* Le net du lot : c'est lui qui porte les perçages, les jonctions et les
+     vias de masse voisins. Sans lot, celui de la portée courante. */
+  const N=(netIdx!=null&&netIdx>=0)?V.parNet[netIdx]:null;
+  const g=simSegments(liste,N);
+  if(!g.envoi.length)
+    return {erreur:(seul&&(V.mev.quoi==="trous"||V.mev.seul))
+              ? "Un perçage n'a pas d'impédance de ligne."
+              : "Aucune piste désignée.",
+            conseil:g.ignorees
+              ? "Ses "+g.ignorees+" piste(s) sont sur des couches absentes "+
+                "de l'empilage : complétez-le d'abord."
+              : "Cliquez une piste sur la carte. Maj+clic prend le net "+
+                "entier, Ctrl+clic ajoute un morceau à la sélection."};
+
+  const notes=[];
+  if(g.ignorees)
+    notes.push(g.ignorees+" piste(s) écartée(s) : leur couche n'est pas dans "+
+               "l'empilage.");
+  /* LA RAMIFICATION SE DIT, ET C'EST LA NOTE LA PLUS IMPORTANTE DE LA LISTE
+     QUAND ELLE PARAÎT. Un net multipoint — un bus qui dessert trois boîtiers
+     — n'a pas de parcours unique : la mise en cascade s'arrête au nœud, donc
+     aucun via ne s'accroche, donc le chemin de retour n'est pas chiffré et
+     le chevelu ne dessine rien. Tout cela est VOULU. Ce qui ne l'était pas,
+     c'est que l'écran n'en dise rien : on voyait une absence, et une absence
+     ressemble à une panne. La note donne le POINT, pour qu'on puisse aller
+     le regarder, et le nombre de branches, qui dit à quoi on a affaire. */
+  const ar=((g.chaine||{}).arrets)||[];
+  if(ar.length){
+    const a0=ar[0];
+    notes.push("Le net se ramifie : "+a0.branches+" branches se rejoignent "+
+               (a0.perce?"au via ":"à la pastille ")+
+               "("+simNb(a0.x,3)+" ; "+simNb(a0.y,3)+")"+
+               (ar.length>1?", et en "+(ar.length-1)+" autre(s) point(s)":"")+
+               ". Il n'y a donc pas de parcours unique : les impédances par "+
+               "tronçon et la carte de chaleur restent justes, chacune ne "+
+               "dépendant que de sa propre section, mais la mise en cascade "+
+               "s'arrête là — aucun via n'est rattaché au parcours, donc ni "+
+               "son inductance de boucle ni le chevelu du courant de retour "+
+               "ne sont calculés. Cliquez UNE piste (sans Maj) pour "+
+               "n'analyser qu'une branche.");
+  }
+  const n=N;
+  /* CETTE NOTE ANNONCAIT COMME ABSENT CE QUI EST CASCADÉ. Les transitions de
+     couche portent un modèle π L-C depuis le lot 3b ; ce qui reste vrai est
+     qu'un perçage du net qui ne réalise AUCUN changement de couche de la
+     sélection — un via de report, un point de test — n'entre nulle part.
+     C'est cela qu'on compte, et pas les autres. */
+  const trans=(g.envoi||[]).filter(function(e){return e&&e.via;}).length;
+  const nonVus=n?Math.max(0,n.trous.length-trans):0;
+  if(nonVus)
+    notes.push(nonVus+" perçage(s) du net ne réalisent aucun changement de "+
+               "couche de la sélection : ils ne sont pas dans le modèle.");
+  /* Les manques de l'empilage sont ceux que la fiche de ligne signale déjà
+     (`ltManques()`) : une seule liste, un seul verdict. */
+  const m=(typeof ltManques==="function")?ltManques():null;
+  if(m){
+    if(m.aucunPlan)
+      notes.push("Aucun plan de référence dans l'empilage : sans plan en "+
+                 "face de la piste, il n'y a pas de ligne de transmission.");
+    if(m.epaisseur.length)
+      notes.push("Épaisseur de diélectrique absente du fichier ("+
+                 m.epaisseur.join(", ")+") : saisissez-la dans « La carte », "+
+                 "sinon le solveur travaille sur un empilage qui n'existe pas.");
+    if(m.er.length)
+      notes.push("Permittivité absente du fichier ("+m.er.join(", ")+
+                 ") : le repli FR-4 est en vigueur.");
+    if(m.ep.length)
+      notes.push("Épaisseur de cuivre supposée ("+m.ep.join(", ")+").");
+  }
+  /* La tangente de pertes commande les pertes diélectriques, et elle est
+     absente de la plupart des fichiers. Le dire évite de lire « 0,42 dB »
+     comme une mesure alors que c'est un FR-4 générique qui parle. */
+  const sansDf=LT.gap.filter(g=>g.t>0&&!g.dfSrc).map(g=>g.cle);
+  if(sansDf.length)
+    notes.push("Tangente de pertes absente du fichier ("+sansDf.join(", ")+
+               ") : le repli "+String(LT_DF).replace(".",",")+" est en "+
+               "vigueur. Les pertes diélectriques sont indicatives ; "+
+               "l'impédance, elle, n'en dépend pas.");
+
+  /* AUCUNE MASSE RETENUE : le calcul coplanaire est désarmé, et toute piste
+     noyée dans un plan arrosé ressortira en microruban, soit vingt pour cent
+     trop haut. Sur une carte livrée c'est le cas qui arrive vraiment — un
+     plan nommé autrement que « GND » n'est pas deviné —, et c'est le seul
+     endroit où on puisse le dire. */
+  if(!simRefSet().size)
+    notes.push("Aucun net de masse retenu : le cuivre qui borde la piste sur "+
+               "sa propre couche n'est pas compté. Une piste noyée dans un "+
+               "plan arrosé ressortira en microruban, soit vingt pour cent "+
+               "trop haut. Choisissez la masse dans la barre du panneau.");
+
+  const net=(netIdx!=null&&netIdx>=0)?mdlNetNom(netIdx):"";
+  const couches=[...new Set(g.objets.map(o=>o.couche))];
+  return {
+    doc:{
+      carte:SIM_IPC.carte(), net:net,
+      stackup:simStackupIpc(),
+      geometry:{objects:g.envoi},
+      /* LES VIAS DE LA SÉLECTION, SANS ORDRE — voir `simViasIpc`. Leur
+         chemin de retour ne dépend pas du parcours, et c'est ce qui le rend
+         calculable sur un net qui se ramifie. */
+      vias:g.vias||[],
+      ports:[{id:1,impedance:opts.z0},{id:2,impedance:opts.z0}],
+      /* LE CUIVRE QUI LONGE — voir « LE VOISINAGE ». Il ne change RIEN au
+         calcul d'impédance ; sans lui il n'y a ni Z différentielle ni
+         diaphonie, parce que l'agresseur n'est jamais dans la sélection. */
+      voisinage:simVoisinageIpc(g.envoi,g.objets),
+      paires:simPairesIpc(),
+      /* LE TEMPS DE MONTÉE est déjà en SECONDES dans la saisie, comme les
+         fréquences y sont en hertz : l'unité du champ ne dit que dans quoi on
+         l'écrit. Zéro veut dire « déduis-le de la bande ». */
+      analyse:{f_debut:opts.f1, f_fin:opts.f2, points:opts.points,
+               f_centre:opts.fc, temps_montee:opts.tr||0}
+    },
+    objets:g.objets,
+    /* LA PORTÉE se lit dans la fiche : sans lot, elle dit le geste en vigueur
+       (`pnlPortee`, 05-panneaux.js) ; avec des lots, elle dit ce que CE morceau
+       couvre — le geste, lui, est le même pour tous, et le répéter quatre fois
+       n'apprendrait rien. */
+    portee:(net?net+" — ":"")+
+           (seul&&typeof pnlPortee==="function"
+              ? pnlPortee()
+              : g.objets.length+" tronçon"+(g.objets.length>1?"s":"")+
+                " sur "+couches.join(", ")),
+    /* LE TITRE tient dans une cellule du tableau des lots : le net, la ou les
+       couches, et de combien de tronçons c'est fait. */
+    titre:(net||"sans net")+" · "+couches.slice(0,2).join(", ")+
+          (couches.length>2?" +"+(couches.length-2):"")+
+          " · "+g.objets.length+" tronçon"+(g.objets.length>1?"s":""),
+    notes:notes,
+    couture:g.couture,
+    voisins:g.voisins
+  };
+}
+
 const SIM_IPC={
   outil:"visionneuse-ipc2581",
 
@@ -2055,6 +2504,23 @@ const SIM_IPC={
   },
 
   probleme:function(opts){
+    /* LA PORTÉE COURANTE, EN UN SEUL DOCUMENT. C'est ce que lit l'export
+       .json quand aucun lot n'a été calculé, et ce sur quoi retombe un panneau
+       qui ne connaîtrait pas les lots. */
+    return simDocIpc(null,V.net,opts,true);
+  },
+
+  /* LES LOTS : un document par parcours continu de la sélection.
+
+     UN SEUL MORCEAU DÉSIGNÉ REND UN SEUL LOT, par le chemin exact d'avant : un
+     clic, un Maj+clic, un net choisi dans la liste ne doivent pas se mettre à
+     partir en plusieurs requêtes parce que leur cuivre est en îlots. Ce sont
+     les morceaux pris à Ctrl+clic — et eux seuls — qu'on découpe. */
+  problemes:function(opts){
+    if(!V.sel||V.sel.length<2){
+      const p=simDocIpc(null,V.net,opts,true);
+      return p.erreur?p:{lots:[p]};
+    }
     if(!V.modele)
       return {erreur:"Aucune carte ouverte.",
               conseil:"Ouvrez un fichier IPC-2581."};
@@ -2062,115 +2528,48 @@ const SIM_IPC={
       return {erreur:"L'empilage de calcul n'est pas prêt.",
               conseil:"Complétez-le dans le panneau « La carte », "+
                       "sous « Empilage du calcul »."};
-
-    const g=simSegments();
-    if(!g.envoi.length)
-      return {erreur:(V.mev.quoi==="trous"||V.mev.seul)
-                ? "Un perçage n'a pas d'impédance de ligne."
-                : "Aucune piste désignée.",
-              conseil:g.ignorees
-                ? "Ses "+g.ignorees+" piste(s) sont sur des couches absentes "+
-                  "de l'empilage : complétez-le d'abord."
-                : "Cliquez une piste sur la carte. Maj+clic prend le net entier."};
-
-    const notes=[];
-    if(g.ignorees)
-      notes.push(g.ignorees+" piste(s) écartée(s) : leur couche n'est pas dans "+
-                 "l'empilage.");
-    /* LA RAMIFICATION SE DIT, ET C'EST LA NOTE LA PLUS IMPORTANTE DE LA LISTE
-       QUAND ELLE PARAÎT. Un net multipoint — un bus qui dessert trois boîtiers
-       — n'a pas de parcours unique : la mise en cascade s'arrête au nœud, donc
-       aucun via ne s'accroche, donc le chemin de retour n'est pas chiffré et
-       le chevelu ne dessine rien. Tout cela est VOULU. Ce qui ne l'était pas,
-       c'est que l'écran n'en dise rien : on voyait une absence, et une absence
-       ressemble à une panne. La note donne le POINT, pour qu'on puisse aller
-       le regarder, et le nombre de branches, qui dit à quoi on a affaire. */
-    const ar=((g.chaine||{}).arrets)||[];
-    if(ar.length){
-      const a0=ar[0];
-      notes.push("Le net se ramifie : "+a0.branches+" branches se rejoignent "+
-                 (a0.perce?"au via ":"à la pastille ")+
-                 "("+simNb(a0.x,3)+" ; "+simNb(a0.y,3)+")"+
-                 (ar.length>1?", et en "+(ar.length-1)+" autre(s) point(s)":"")+
-                 ". Il n'y a donc pas de parcours unique : les impédances par "+
-                 "tronçon et la carte de chaleur restent justes, chacune ne "+
-                 "dépendant que de sa propre section, mais la mise en cascade "+
-                 "s'arrête là — aucun via n'est rattaché au parcours, donc ni "+
-                 "son inductance de boucle ni le chevelu du courant de retour "+
-                 "ne sont calculés. Cliquez UNE piste (sans Maj) pour "+
-                 "n'analyser qu'une branche.");
+    const liste=simZPistes();
+    if(!liste.length)
+      return {erreur:"La sélection ne porte aucune piste.",
+              conseil:"Un boîtier et un perçage n'ont pas d'impédance de "+
+                      "ligne : ajoutez au moins une piste à la sélection."};
+    const lots=simLotsDePistes(liste);
+    /* TROP DE MORCEAUX : ON N'INONDE PAS LE SERVEUR, ET ON LE DIT. Seize lots
+       sont déjà seize allers-retours ; au-delà on n'a plus une comparaison mais
+       une attente. Le repli est le comportement d'avant — un seul document —,
+       ce qui reste juste pour les impédances par tronçon et faux pour la mise
+       en cascade, que le serveur refusera en le disant. Ce qui compte est que
+       le panneau ne fasse pas semblant d'avoir comparé. */
+    if(lots.length>SIM_LOTS_MAX){
+      const p=simDocIpc(null,V.net,opts,true);
+      if(p.erreur)return p;
+      p.notes.unshift("La sélection compte "+lots.length+" morceaux qui ne se "+
+        "touchent pas, soit plus que les "+SIM_LOTS_MAX+" lots calculés "+
+        "séparément : tout part dans un seul document. Les impédances par "+
+        "tronçon et la carte de chaleur restent justes ; la mise en cascade, "+
+        "elle, verra une liaison rompue. Réduisez la sélection pour obtenir "+
+        "un résultat par morceau.");
+      return {lots:[p]};
     }
-    const n=(V.net>=0)?V.parNet[V.net]:null;
-    /* CETTE NOTE ANNONCAIT COMME ABSENT CE QUI EST CASCADÉ. Les transitions de
-       couche portent un modèle π L-C depuis le lot 3b ; ce qui reste vrai est
-       qu'un perçage du net qui ne réalise AUCUN changement de couche de la
-       sélection — un via de report, un point de test — n'entre nulle part.
-       C'est cela qu'on compte, et pas les autres. */
-    const trans=(g.envoi||[]).filter(function(e){return e&&e.via;}).length;
-    const nonVus=n?Math.max(0,n.trous.length-trans):0;
-    if(nonVus)
-      notes.push(nonVus+" perçage(s) du net ne réalisent aucun changement de "+
-                 "couche de la sélection : ils ne sont pas dans le modèle.");
-    /* Les manques de l'empilage sont ceux que la fiche de ligne signale déjà
-       (`ltManques()`) : une seule liste, un seul verdict. */
-    const m=(typeof ltManques==="function")?ltManques():null;
-    if(m){
-      if(m.aucunPlan)
-        notes.push("Aucun plan de référence dans l'empilage : sans plan en "+
-                   "face de la piste, il n'y a pas de ligne de transmission.");
-      if(m.epaisseur.length)
-        notes.push("Épaisseur de diélectrique absente du fichier ("+
-                   m.epaisseur.join(", ")+") : saisissez-la dans « La carte », "+
-                   "sinon le solveur travaille sur un empilage qui n'existe pas.");
-      if(m.er.length)
-        notes.push("Permittivité absente du fichier ("+m.er.join(", ")+
-                   ") : le repli FR-4 est en vigueur.");
-      if(m.ep.length)
-        notes.push("Épaisseur de cuivre supposée ("+m.ep.join(", ")+").");
+    const out=[], refuses=[];
+    for(const l of lots){
+      const netIdx=(l[0]&&l[0].piste&&l[0].piste.n!=null)?l[0].piste.n:-1;
+      const p=simDocIpc(l,netIdx,opts,false);
+      if(p.erreur){refuses.push(p.erreur);continue;}
+      out.push(p);
     }
-    /* La tangente de pertes commande les pertes diélectriques, et elle est
-       absente de la plupart des fichiers. Le dire évite de lire « 0,42 dB »
-       comme une mesure alors que c'est un FR-4 générique qui parle. */
-    const sansDf=LT.gap.filter(g=>g.t>0&&!g.dfSrc).map(g=>g.cle);
-    if(sansDf.length)
-      notes.push("Tangente de pertes absente du fichier ("+sansDf.join(", ")+
-                 ") : le repli "+String(LT_DF).replace(".",",")+" est en "+
-                 "vigueur. Les pertes diélectriques sont indicatives ; "+
-                 "l'impédance, elle, n'en dépend pas.");
-
-    /* AUCUNE MASSE RETENUE : le calcul coplanaire est désarmé, et toute piste
-       noyée dans un plan arrosé ressortira en microruban, soit vingt pour cent
-       trop haut. Sur une carte livrée c'est le cas qui arrive vraiment — un
-       plan nommé autrement que « GND » n'est pas deviné —, et c'est le seul
-       endroit où on puisse le dire. */
-    if(!simRefSet().size)
-      notes.push("Aucun net de masse retenu : le cuivre qui borde la piste sur "+
-                 "sa propre couche n'est pas compté. Une piste noyée dans un "+
-                 "plan arrosé ressortira en microruban, soit vingt pour cent "+
-                 "trop haut. Choisissez la masse dans la barre du panneau.");
-
-    const net=(V.net>=0)?mdlNetNom(V.net):"";
-    return {
-      doc:{
-        carte:this.carte(), net:net,
-        stackup:simStackupIpc(),
-        geometry:{objects:g.envoi},
-        /* LES VIAS DE LA SÉLECTION, SANS ORDRE — voir `simViasIpc`. Leur
-           chemin de retour ne dépend pas du parcours, et c'est ce qui le rend
-           calculable sur un net qui se ramifie. */
-        vias:g.vias||[],
-        ports:[{id:1,impedance:opts.z0},{id:2,impedance:opts.z0}],
-        analyse:{f_debut:opts.f1, f_fin:opts.f2, points:opts.points,
-                 f_centre:opts.fc}
-      },
-      objets:g.objets,
-      portee:(net?net+" — ":"")+
-             (typeof pnlPortee==="function"?pnlPortee():""),
-      notes:notes,
-      couture:g.couture,
-      voisins:g.voisins
-    };
+    if(!out.length)
+      return {erreur:refuses[0]||"Aucun morceau de la sélection n'est calculable.",
+              conseil:"Complétez l'empilage de calcul, ou choisissez des pistes "+
+                      "posées sur des couches qu'il décrit."};
+    /* AUCUN REFUS SILENCIEUX : un morceau posé sur une couche absente de
+       l'empilage n'a pas d'impédance, et son absence du tableau se lirait comme
+       un oubli si personne ne la nommait. */
+    for(const r of refuses)
+      out[0].notes.push("Un morceau de la sélection a été écarté : "+r);
+    return {lots:out};
   },
+
 
   redessiner:function(){
     if(typeof dessiner==="function")dessiner();

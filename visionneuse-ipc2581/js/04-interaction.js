@@ -177,21 +177,55 @@ function resume(s){
 
 /* ==========================================================================
    Sélection
+   --------------------------------------------------------------------------
+   UN CLIC REMPLACE, CTRL+CLIC AJOUTE. C'est la convention de tous les outils de
+   dessin, et celle de l'éditeur PCB de ce dépôt (`S.sel`, 05-tools.js) : la
+   visionneuse n'avait pas de raison d'en avoir une autre.
+
+   POURQUOI UNE VISIONNEUSE A BESOIN DE SÉLECTIONNER PLUSIEURS CHOSES. Pas pour
+   les déplacer — elle ne modifie rien — mais pour les COMPARER. Le cas qui l'a
+   demandée est une ligne RF à 50 Ω coupée par trois condensateurs de liaison :
+   ce n'est pas un net mais quatre, et la question « fait-elle 50 Ω sur toute sa
+   longueur ? » ne se pose qu'une fois. Ctrl+clic sur les quatre morceaux, et le
+   panneau de simulation rend quatre résultats côte à côte (voir « LES LOTS »,
+   commun/simulation-em.js).
+
+   LA DERNIÈRE ENTRÉE COMMANDE LES FICHES. `V.net`, `V.comp` et `V.mev`
+   reflètent le dernier morceau cliqué : la fiche montre ce qu'on vient de
+   désigner, comme avant, et la liste ne sert qu'à ceux qui la parcourent. Sans
+   ce reflet il aurait fallu reprendre tous les panneaux pour un geste que la
+   plupart des lectures n'emploient pas.
+
+   OÙ VIT QUOI. Les fonctions qui ne font que TOUCHER À L'ÉTAT — `selPoser`,
+   `selRefleter`, `selMeme`, `selNets`, `selRefs` — sont dans 02-modele.js,
+   auprès du `V` qu'elles modifient, et le banc d'essai les y trouve sans avoir
+   à charger le canevas. Ce qui reste ici touche à l'ÉCRAN : rafraîchir les
+   panneaux, redessiner, recadrer la vue.
    ========================================================================== */
-function choisirNet(i){
-  V.net=(V.net===i)?-1:i;
-  V.comp="";
+
+function selOter(i){
+  if(i<0||i>=V.sel.length)return;
+  V.sel.splice(i,1);
+  selRefleter();
+  pnlComps(); pnlNets(); pnlDetail(); dessiner();
+}
+
+function choisirNet(i,ajouter){
   /* Depuis une liste, on n'a désigné aucune couche : c'est le net entier
      qu'on demande, comme avec Maj sur la carte. */
-  V.mev=mdlMevTout();
+  const s={type:"net",net:i,couche:null};
+  if(!ajouter&&V.net===i&&V.sel.length<=1){selPoser(null,null,false);}
+  else selPoser(s,mdlMevTout(),!!ajouter);
   pnlNets(); pnlDetail(); dessiner();
 }
-function choisirComp(ref,centrer){
-  V.comp=(V.comp===ref&&!centrer)?"":ref;
-  if(V.comp){
-    V.net=-1; V.mev=mdlMevTout();
-    const c=V.parRef.get(V.comp);
-    if(c&&centrer){
+function choisirComp(ref,centrer,ajouter){
+  const c=V.parRef.get(ref);
+  const s=c?{type:"composant",ref:ref,boite:c.boite,couche:c.c,comp:c}:null;
+  if(!ajouter&&V.comp===ref&&!centrer&&V.sel.length<=1){
+    selPoser(null,null,false);
+  }else if(s){
+    selPoser(s,mdlMevTout(),!!ajouter);
+    if(centrer){
       const b=c.boite, W=cv.clientWidth||1, H=cv.clientHeight||1;
       const k=Math.min(W/((b.x2-b.x1)*6+1),H/((b.y2-b.y1)*6+1));
       centrerSur((b.x1+b.x2)/2,(b.y1+b.y2)/2,
@@ -201,7 +235,7 @@ function choisirComp(ref,centrer){
   pnlComps(); pnlNets(); pnlDetail(); dessiner();
 }
 function choisirRien(){
-  V.net=-1; V.comp=""; V.mev=mdlMevTout();
+  V.sel=[]; selRefleter();
   pnlComps(); pnlNets(); pnlDetail(); dessiner();
 }
 
@@ -283,18 +317,25 @@ function fin(e){
   if(typeof SIM_DCB!=="undefined"&&SIM_DCB&&SIM_DCB.attente){
     simDCClic(w.x,w.y);dessiner();return;
   }
+  /* CTRL AJOUTE À LA SÉLECTION, sans changer ce que le clic désigne : les deux
+     touches ne se marchent pas sur les pieds. Ctrl+Maj+clic ajoute donc un net
+     entier, ce qui est le geste qu'on fait pour comparer trois liaisons.
+     Cmd sur un Mac, comme partout ailleurs dans ce dépôt. */
+  const ajouter=e.ctrlKey||e.metaKey;
   const s=designer(w.x,w.y);
-  if(!s){choisirRien();return;}
-  if(s.type==="composant"){
-    choisirComp(s.ref,false);
-  }else{
-    /* Une pastille appartient a deux choses a la fois : un net, et le boitier
-       qui la porte. On retient les deux -- la fiche les montre ensemble. */
-    V.net=(s.net>=0)?s.net:-1;
-    V.comp=s.comp||"";
-    V.mev=porteeDe(s,e.shiftKey);
-    pnlComps(); pnlNets();
-  }
+  /* LE VIDE NE VIDE PAS UNE SÉLECTION QU'ON EST EN TRAIN DE CONSTRUIRE. Un
+     Ctrl+clic à côté d'une piste — cela arrive, les pistes sont fines — ferait
+     autrement perdre les cinq morceaux déjà pris. Sans Ctrl, il désélectionne,
+     ce qui est ce qu'on attend d'un clic dans le vide. */
+  if(!s){if(!ajouter)choisirRien();return;}
+  /* UN BOÎTIER RECLIQUÉ SE DÉSÉLECTIONNE, et c'était déjà le cas — un cadre
+     jaune posé sur un connecteur qu'on voulait seulement regarder se retire du
+     même geste qu'il a été mis. Les autres objets, non : recliquer une piste
+     avec Maj sert à élargir la portée, pas à la lâcher. */
+  if(!ajouter&&s.type==="composant"){choisirComp(s.ref,false);V.survol=s;
+                                     pnlDetail();dessiner();return;}
+  selPoser(s,porteeDe(s,e.shiftKey),ajouter);
+  pnlComps(); pnlNets();
   V.survol=s; pnlDetail(); dessiner();
 }
 

@@ -296,6 +296,94 @@ T(u"le via est a l'endroit ou la piste s'arrete",
                 for t in DESIGN.drills],
                [(25.0, 15.0)], u"position du percage"))
 
+
+# -- La pastille d'un via : lue, ou devinee ? ---------------------------------
+# LE DEFAUT. Quand un percage de via ne renvoie a aucune definition de padstack,
+# le lecteur en fabrique une avec « percage + 0,3 mm », soit un anneau de
+# 0,15 mm pose par convention. C'est un repli raisonnable pour dessiner quelque
+# chose. Ce n'en est pas une cote du fichier -- et rien ne le disait.
+#
+# CE QUE CA COUTAIT. La fiche du percage affichait « Anneau 0,15 mm » avec le
+# meme aplomb qu'une valeur lue ; le controle d'isolation mesurait des distances
+# contre cette pastille ; la simulation la faisait entrer dans la capacite du
+# via. Trois consommateurs, aucun moyen de savoir que le chiffre venait du
+# lecteur et non du fabricant. Un chiffre suppose affiche comme un chiffre
+# mesure est pire que pas de chiffre.
+#
+# La carte d'essai reproduit exactement le cas du terrain : un <Set padUsage=
+# "VIA" geometry="v25"> dont aucun <PadstackDef> ne porte le nom.
+V25 = DESIGN.padstacks.get("v25")
+
+T(u"la pastille d'un via sans padstack declare est marquee comme supposee",
+  lambda: vrai(V25 is not None and V25.pad_supposee,
+               u"la pastille inventee passe pour une cote du fichier"))
+
+T(u"et elle vaut exactement percage + 0,3 : c'est la convention, pas une mesure",
+  lambda: proche(V25.pad_diameter, 0.25 + 0.3,
+                 u"le diametre de la pastille inventee"))
+
+
+def _anneau_avoue():
+    """L'ANNEAU EST LA MOITIE DE L'INVENTION, et il doit l'avouer aussi.
+
+    0,15 mm est « + 0,3 » divise par deux, c'est-a-dire la convention du
+    lecteur relue a l'envers. C'est le chiffre que la fiche du percage montre,
+    et c'est donc lui qu'il ne faut pas laisser passer pour une declaration du
+    fabricant.
+    """
+    trou = DESIGN.drills[0]
+    proche(trou.annular_ring, 0.15, u"l'anneau deduit de la pastille inventee")
+    vrai(trou.annular_ring_supposee, u"l'anneau ne s'avoue pas suppose")
+    # ET LE MODELE L'EMPORTE JUSQU'A LA PAGE : sans cela l'aveu s'arrete au
+    # serveur, et c'est la page qui affiche.
+    perce = MODELE["percages"][0]
+    vrai(perce.get("a_sup") is True,
+         u"le modele n'emporte pas l'aveu : %r" % perce)
+    vrai(MODELE["padstacks"]["v25"].get("pad_sup") is True,
+         u"le padstack du modele n'emporte pas l'aveu")
+
+
+T(u"l'anneau deduit d'une pastille inventee s'avoue jusqu'a la page",
+  _anneau_avoue)
+
+
+def _padstack_declare_n_est_pas_suppose():
+    """LE REVERS, ET C'EST LUI QUI DONNE SON SENS A L'AVEU.
+
+    Une mention qui s'affiche toujours ne se lit plus. Le meme fichier, avec
+    cette fois un <PadstackDef> qui declare la pastille, doit rendre une cote
+    NON supposee -- et la valeur declaree, pas « percage + 0,3 ».
+    """
+    declare = CARTE.replace(
+        u"  <CadData>",
+        u"""  <CadData>
+   <PadstackDef name="v25" padUsage="VIA">
+    <PadstackHoleDef name="R0.125" diameter="0.25"/>
+    <PadstackPadDef layerRef="TOP" padUse="REGULAR">
+     <Circle diameter="0.70"/>
+    </PadstackPadDef>
+   </PadstackDef>""", 1)
+    vrai(declare != CARTE, u"la carte variante n'a pas ete construite")
+    d2 = ipc2581_json.charger_octets(declare.encode("utf-8"), "carte-declaree.xml")
+    ps = d2.padstacks.get("v25")
+    vrai(ps is not None, u"le padstack declare n'a pas ete lu")
+    vrai(not ps.pad_supposee,
+         u"une pastille DECLAREE est quand meme annoncee supposee")
+    proche(ps.pad_diameter, 0.70, u"le diametre declare")
+    # Et l'anneau qui en decoule est une vraie cote : (0,70 - 0,25) / 2.
+    proche(d2.drills[0].annular_ring, 0.225, u"l'anneau declare")
+    vrai(not d2.drills[0].annular_ring_supposee,
+         u"un anneau lu dans le fichier s'annonce suppose")
+    m2 = ipc2581_json.design_en_dict(d2, "carte-declaree.xml")
+    vrai("pad_sup" not in m2["padstacks"]["v25"],
+         u"le modele marque suppose un padstack declare")
+    vrai("a_sup" not in m2["percages"][0],
+         u"le modele marque suppose un anneau lu")
+
+
+T(u"une pastille declaree dans le fichier n'est PAS annoncee supposee",
+  _padstack_declare_n_est_pas_suppose)
+
 # -- Composants et boitiers ---------------------------------------------------
 T(u"le composant est lu avec son repere et son boitier",
   lambda: egal([(c.ref_des, c.package_ref) for c in DESIGN.components],
