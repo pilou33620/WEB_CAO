@@ -206,6 +206,11 @@ function peindre(c,dpr,W,H){
      sur du cuivre peint -- et AVANT les composants et les textes, qui doivent
      rester lisibles par-dessus. */
   if(typeof simRetourTraceIpc==="function")simRetourTraceIpc(c,dpr);
+  /* LES ZONES À RISQUE DU CROSSTALK, peintes sur le cuivre des victimes :
+     les portions où LEUR couplage se fabrique. Même place que le chevelu,
+     et pour la même raison — elles désignent des portions de cuivre, elles
+     ne décrivent pas le cuivre. */
+  if(typeof simXtRisqueTraceIpc==="function")simXtRisqueTraceIpc(c,dpr);
   if(V.aff.composants)peindreComposants(c,dpr);
   peindreTextes(c,dpr);
   /* Les boîtiers retenus — plusieurs quand on les a pris à Ctrl+clic. Le reflet

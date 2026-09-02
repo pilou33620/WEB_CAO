@@ -85,30 +85,35 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
      selection. */
   "simVoisinageIpc","simPairesIpc","SIM_ECART_COUPLAGE_IPC",
   "SIM_VOISINAGE_MAX_IPC",
-  /* Les deux onglets de couplage (commun/simulation-em.js). */
-  "simCouplage","simCouplagePaires","simFicheDiff","simFicheDiaphonie",
-  "simCorpsDiff","simCorpsDiaphonie","simRendreDiff","simRendreDiaphonie",
-  /* Les TROIS cartes de chaleur, et ce qui les colore. `simCarteSegment` est
+  /* CROSSTALK : les trois mesures que seule la page peut faire — l'abscisse
+     du parcours, les vias de couture qui s'y projettent, les fentes du plan
+     sondées dessous, et les perçages de masse. */
+  "simXtParcoursIpc","simXtAbscisseIpc","simXtCoutureIpc","simXtFentesIpc",
+  "simXtViasMasseIpc","simXtPlanDeIpc","simXtZoneMasseIpc",
+  "simXtContoursIpc","simXtDansContourIpc","SIM_XT_PAS_IPC",
+  /* Les zones a risque, posees sur le cuivre : l'algorithme est commun,
+     l'outil ne fournit que les deux formes neutres, en MILLIMETRES. */
+  "simXtGeometrieIpc","simXtRisqueGeom","simXtRisqueTraits","simXtRisques",
+  "simXtProjParcours","simXtRisqueCouleur","SIM_XT_PAS_TRAIT","SIM_XT",
+
+  /* L'onglet de Z differentielle (commun/simulation-em.js). */
+  "simCouplage","simCouplagePaires","simFicheDiff",
+  "simCorpsDiff","simRendreDiff",
+  /* Le seuil qui juge le crosstalk, et la tension qui convertit un rapport
+     en volts. */
+  "simSeuilFraction","simSeuilNom","simTension","simXtTension",
+  /* Les DEUX cartes de chaleur, et ce qui les colore. `simCarteSegment` est
      le seul point par lequel un canevas apprend ce qu'il peint. */
   "simCarteQuoi","simCarteActive","simCarteSegment","simCarteRetenir",
   "simChaleurRes","simChaleurLots","simCouleurBande","simZCouleur",
   "simZSegment","simZActif","simZVerdict","simZTolAbs",
   "simZDiffCouleur","simZDiffTolAbs","simZDiffVerdict",
-  "simBruitCouleur","simBruitBudget",
-  "simCarteDiffPartenaire","simCarteDiffLegende","simCarteBruitLegende",
-  /* Le cuivre VOISIN, et le sens peint : NEXT et FEXT ne se fabriquent pas au
-     meme endroit de la piste, et se regardent donc separement. */
-  "simCarteVoisins","simChaleurVoisinsRes","simChaleurVoisinsLots",
-  "simCarteVoisinsEtiquettes","simCarteCentreSel","simCarteDepuis",
-  "simCarteObjetsSel","simCarteCleVoisin",
-  "simAgresseurCouleur",
+  "simCarteDiffPartenaire","simCarteDiffLegende",
   /* Le voile : ce qui n'est pas dans la simulation s'estompe. */
   "simVoileActif","SIM_VOILE_ALPHA",
-  "simSensPeint","simSensNom","simSensBouton","simSensBrancher",
-  "simChaleurValeur",
   /* Choisir sa paire a la main plutot que de la laisser deviner. */
   "simPaireCandidats","simPaireSoi","simPaireEcrire","simDocFinir",
-  "simBruitPire","simBruitEmis","simCoupleSection","simCoupleSections",
+  "simCoupleSection","simCoupleSections",
   "SIM_UNITES_TR","SIM_UNITES_V","simUniteTr","simUniteV",
   "simLotsPeints","simLotsMultiples","simPourChaqueLot","simLotMirroir",
   "simLotBilan","simTableauLots","simOublierRes","simZVerdict","simGrouper",
@@ -158,7 +163,11 @@ function carte(opts){
     unites:"MM",
     nets:nets,
     contour:{o:CONTOUR, t:[]},
-    empilage:[
+    /* L'EMPILAGE SE REMPLACE, et c'est le seul moyen d'éprouver ce qui dépend
+       d'une TROISIÈME couche : le voisinage vertical du crosstalk, qui n'a
+       aucun sens sur une carte dont les deux cuivres sont un signal et son
+       plan. Le défaut reste la carte deux couches de tous les autres essais. */
+    empilage:opts.empilage||[
       {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR"},
       {nom:"Coeur",  seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
       {nom:"Bottom", seq:3, ep:0.035, type:"PLANE"}
@@ -166,7 +175,7 @@ function carte(opts){
     /* `couches` est la liste des NOMS, dans l'ordre du fichier : c'est
        `mdlCouches` qui en fait des objets, et les rattache a l'empilage par ce
        nom-la. */
-    couches:["Top","Bottom"],
+    couches:opts.couches||["Top","Bottom"],
     pistes:(opts.pistes||[piste]),
     arcs:[], plans:(opts.plans||[]), textes:[],
     /* Pastilles et composants : vides par defaut -- la plupart des essais
@@ -2567,6 +2576,314 @@ T("le voisinage part en millimètres, même quand le fichier est en pouces",()=>
   if(Math.abs(v[0].width-W*k)>1e-9)
     throw new Error("la largeur sort en "+v[0].width);
   V.unite="MM";
+});
+
+/* ==========================================================================
+   CROSSTALK — LES TROIS MESURES QUE SEULE CETTE PAGE PEUT FAIRE
+   --------------------------------------------------------------------------
+   L'onglet Crosstalk demande à la page trois choses que la simulation
+   d'impédance ne demandait pas, et sans lesquelles les contrôles de plan de
+   référence ne diraient RIEN : les positions des vias de couture sur
+   l'ABSCISSE du parcours, les discontinuités du plan sous la piste, et les
+   perçages de masse. Une liste vide de zones à risque se lit « rien à
+   signaler » — ce qui est exactement le contraire de « on n'a pas regardé »,
+   et c'est cette différence-là que les cas ci-dessous défendent.
+   ========================================================================== */
+
+/* La même carte, mais dont le plan est sur la couche du DESSOUS : c'est celui
+   que le crosstalk sonde, là où `plan()` en pose un sur la couche de la piste
+   pour mesurer l'écart coplanaire. */
+function planDessous(o,trous){return {c:1, n:1, g:[{o:o, t:trous||[]}]};}
+
+T("une voisine part avec ses écarts à la masse, comme la sélection",()=>{
+  /* LES DEUX MOITIÉS DU DOCUMENT SE MESURENT AVEC LA MÊME RÈGLE, et c'est ce
+     que ce cas défend. `simEcartsEn` compare des INDICES de net — c'est ce que
+     porte la grille des arêtes ; lui passer des noms rendait `refs.has(...)`
+     toujours faux, et chaque voisine partait avec un écart nul. Rien ne
+     levait : le serveur en concluait simplement qu'aucun cuivre de masse ne
+     s'interpose jamais, donc un couplage PESSIMISTE sur toute carte arrosée.
+     C'est exactement le genre de faux silencieux qui ne se voit sur aucun
+     écran. */
+  carte({plans:[plan(1,rect(2,2,58,38),[rect(2,Y-0.4,58,Y+0.4)])],
+         pistes:[{c:0, n:0, w:W, p:[X1,Y, X2,Y]},
+                 {c:0, n:2, w:W, p:[X1,Y+1.2, X2,Y+1.2]}]});
+  const g=simSegments();
+  if(!(g.envoi[0].gap_left>0))
+    throw new Error("la sélection doit voir la masse : "+g.envoi[0].gap_left);
+  const v=simVoisinageIpc(g.envoi,g.objets);
+  if(!v.length)throw new Error("la voisine doit partir");
+  if(!(v[0].gap_left>0)&&!(v[0].gap_right>0))
+    throw new Error("la voisine part sans écart à la masse : "+
+                    v[0].gap_left+" / "+v[0].gap_right);
+});
+
+T("l'abscisse curviligne d'un point suit le parcours, pas la carte",()=>{
+  carte();
+  const par=simXtParcoursIpc(simSegments());
+  if(Math.abs(par.total-(X2-X1))>0.01)
+    throw new Error("le parcours doit faire 40 mm : "+par.total);
+  /* C'EST CETTE PROJECTION QUI MET UN VIA DE COUTURE ET UN PIC DE COUPLAGE AU
+     MÊME ENDROIT sur la carte, et c'est toute sa raison d'être. */
+  const s=simXtAbscisseIpc(par,X1+5,Y+1);
+  if(Math.abs(s-5)>0.05)
+    throw new Error("un point à 5 mm du départ doit sortir à 5 : "+s);
+  /* LA PROJECTION EST TOUJOURS DÉFINIE, et c'est aux appelants de dire à
+     quelle distance ils cessent d'y croire : la couture a son couloir, les
+     vias de masse leur rayon. Un point situé au-delà du bout de la piste
+     tombe donc sur le bout — et c'est bien ce qu'on veut, parce que sa
+     DISTANCE, elle, porte l'écart et le fera écarter. */
+  if(simXtAbscisseIpc(par,X1-9,Y)>0.01)
+    throw new Error("un point avant le départ se rabat sur l'origine");
+  if(simXtAbscisseIpc({liste:[],total:0},X1,Y)!==-1)
+    throw new Error("un parcours vide n'a pas d'abscisse du tout");
+});
+
+T("les vias de couture sortent à leur abscisse, du bon côté",()=>{
+  carte({plans:[plan(1,rect(2,2,58,38),[rect(X1-1,Y-0.4,X2+1,Y+0.4)])],
+         percages:[{x:X1+5, y:Y+1, d:0.4, n:1, p:"PTH"},
+                   {x:X1+20, y:Y+1, d:0.4, n:1, p:"PTH"},
+                   {x:X1+12, y:Y-1, d:0.4, n:1, p:"PTH"},
+                   /* Hors couloir : il ne coud rien. */
+                   {x:X1+30, y:Y+9, d:0.4, n:1, p:"PTH"}]});
+  const pos=simXtCoutureIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(pos.length!==3)
+    throw new Error("trois vias dans le couloir, "+pos.length+" comptés");
+  if(Math.abs(pos[0].s-5)>0.05||Math.abs(pos[2].s-20)>0.05)
+    throw new Error("abscisses 5, 12 et 20 attendues : "+
+                    JSON.stringify(pos.map(p=>p.s)));
+  /* LES DEUX BORDS SE DISTINGUENT : le serveur mesure le pas de couture côté
+     par côté, et confondre les deux fabriquerait des trous qui n'existent pas
+     sur un cuivre cousu en quinconce. */
+  if(pos[0].cote!==pos[2].cote)
+    throw new Error("deux vias du même bord doivent avoir le même côté");
+  if(pos[1].cote===pos[0].cote)
+    throw new Error("le via de l'autre bord doit changer de signe");
+});
+
+T("un plan qu'on ne sait pas sonder rend null, jamais une liste vide",()=>{
+  /* AUCUN CONTOUR DE PLAN SOUS LE PARCOURS : on ne SAIT pas où le cuivre est,
+     ce qui n'est pas la même chose que savoir qu'il est partout. Rendre une
+     liste vide ferait écrire « aucune zone de vigilance » sous un contrôle qui
+     n'a jamais eu lieu. */
+  carte();
+  const f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(f!==null)
+    throw new Error("sans contour de plan, il faut null : "+JSON.stringify(f));
+});
+
+T("une fente du plan sous le parcours est trouvée et localisée",()=>{
+  /* LE PLAN, EN DEUX MORCEAUX : il s'arrête à 10 mm du départ de la piste et
+     reprend 10 mm plus loin. C'est exactement ce que fait une découpe de plan,
+     et c'est ce qui produit un pic de couplage là où le plan paraît continu
+     partout ailleurs. */
+  carte({plans:[planDessous(rect(2,2,X1+10,38)),
+                planDessous(rect(X1+20,2,58,38))]});
+  const par=simXtParcoursIpc(simSegments());
+  const f=simXtFentesIpc(par,simRefIdx());
+  if(!f||!f.length)
+    throw new Error("la fente doit être trouvée : "+JSON.stringify(f));
+  if(Math.abs(f[0].s-10)>1.0)
+    throw new Error("la fente commence vers 10 mm : "+JSON.stringify(f[0]));
+  if(Math.abs(f[0].longueur-10)>1.5)
+    throw new Error("elle dure une dizaine de millimètres : "+
+                    JSON.stringify(f[0]));
+  if(!f[0].quoi)throw new Error("une zone doit dire ce qui a été vu");
+  /* ET UN PLAN CONTINU N'EN A PAS. */
+  carte({plans:[planDessous(rect(2,2,58,38))]});
+  const rien=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(rien===null||rien.length)
+    throw new Error("un plan continu n'a pas de fente : "+
+                    JSON.stringify(rien));
+});
+
+T("le cuivre d'un autre net sur la couche de plan est un trou du retour",()=>{
+  /* LE COURANT NE PASSE PAS DANS LE CUIVRE D'UN AUTRE NET : une flaque
+     d'alimentation posée sur la couche de plan est une fente du retour tout
+     autant qu'une absence de cuivre. La compter comme du plan ferait annoncer
+     continu un retour qui ne l'est pas. */
+  carte({plans:[planDessous(rect(2,2,58,38),[rect(X1+10,2,X1+20,38)]),
+                {c:1, n:2, g:[{o:rect(X1+10,2,X1+20,38), t:[]}]}]});
+  const f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!f||!f.length)
+    throw new Error("le cuivre étranger doit ressortir comme une fente : "+
+                    JSON.stringify(f));
+  if(Math.abs(f[0].s-10)>1.0)
+    throw new Error("elle commence vers 10 mm : "+JSON.stringify(f[0]));
+});
+
+T("les perçages de masse partent en supposant la portée, et on le dit",()=>{
+  carte({plans:[plan(1,rect(2,2,58,38),[rect(X1-1,Y-0.4,X2+1,Y+0.4)])],
+         percages:[{x:X1+5, y:Y+1, d:0.4, n:1, p:"PTH"},
+                   /* Hors du rayon de retour : il ne referme rien ici. */
+                   {x:X1+5, y:Y+12, d:0.4, n:1, p:"PTH"}]});
+  const v=simXtViasMasseIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(v.length!==1)
+    throw new Error("un seul perçage à portée, "+v.length+" envoyé(s)");
+  /* LA PORTÉE EST SUPPOSÉE TRAVERSANTE : l'IPC-2581 ne déclare pas les couches
+     d'un perçage. C'est une hypothèse OPTIMISTE, et le document doit la dire. */
+  if(v[0].a!==simRangCu(0)||v[0].b!==simRangCu(LT.cu.length-1))
+    throw new Error("la portée supposée doit couvrir l'empilage : "+
+                    JSON.stringify(v[0]));
+});
+
+T("le voisinage du crosstalk voit les couches adjacentes, pas celui de la simulation",()=>{
+  /* TROIS CUIVRES : deux signaux face à face et un plan. C'est le cas que la
+     section droite ne sait PAS décrire — deux pistes superposées —, et
+     précisément pour cela qu'il doit arriver au serveur : c'est lui qui dit
+     qu'il ne sait pas le modéliser, et le taire ferait lire un couplage nul là
+     où il est maximal. */
+  carte({empilage:[{nom:"Top",  seq:1, ep:0.035, type:"CONDUCTOR"},
+                   {nom:"D1",   seq:2, ep:0.1, type:"DIELECTRIC", dk:"4.3"},
+                   {nom:"In1",  seq:3, ep:0.035, type:"CONDUCTOR"},
+                   {nom:"D2",   seq:4, ep:0.2, type:"DIELECTRIC", dk:"4.3"},
+                   {nom:"Bot",  seq:5, ep:0.035, type:"PLANE"}],
+         couches:["Top","In1","Bot"],
+         pistes:[{c:0, n:0, w:W, p:[X1,Y, X2,Y]},
+                 {c:1, n:2, w:W, p:[X1,Y, X2,Y]}]});
+  const g=simSegments();
+  const sans=simVoisinageIpc(g.envoi,g.objets);
+  const avec=simVoisinageIpc(g.envoi,g.objets,true);
+  if(sans.length)
+    throw new Error("la simulation ne regarde que la couche de la sélection, "+
+                    sans.length+" tronçon(s) retenus");
+  if(!avec.length)
+    throw new Error("le crosstalk doit voir la piste superposée");
+  if(avec[0].layer===g.envoi[0].layer)
+    throw new Error("la voisine doit être sur une AUTRE couche : "+
+                    avec[0].layer);
+});
+
+T("le document de crosstalk porte les trois mesures, et pas les ports",()=>{
+  carte({plans:[planDessous(rect(2,2,58,38))],
+         percages:[{x:X1+5, y:Y+1, d:0.4, n:1, p:"PTH"},
+                   {x:X1+20, y:Y+1, d:0.4, n:1, p:"PTH"}]});
+  const p=SIM_IPC.problemeCrosstalk(simSaisie());
+  if(p.erreur)throw new Error("le document est refusé : "+p.erreur);
+  const d=p.doc;
+  if(!d.agresseurs||d.agresseurs.length!==1)
+    throw new Error("l'agresseur est la sélection : "+
+                    JSON.stringify(d.agresseurs));
+  if(!d.couture||!d.couture.positions.length)
+    throw new Error("les positions de couture doivent partir");
+  if(!d.fentes)
+    throw new Error("un plan sondable doit rendre une liste, même vide");
+  if(!d.vias_masse||!d.vias_masse.length)
+    throw new Error("les vias de masse doivent partir");
+  /* `ports` EST CELUI DU DOCUMENT DE SIMULATION — deux impédances de
+     référence —, et il ne décrit rien dans un réseau multi-ports dont le
+     serveur pose lui-même les ports. Un champ qui ne veut rien dire dans un
+     document rejouable finit par être lu comme s'il voulait dire quelque
+     chose. */
+  if("ports" in d)
+    throw new Error("le document de crosstalk ne porte pas de ports");
+  /* ET LA LIMITE PROPRE À CETTE PAGE EST DITE : la portée supposée. */
+  if(!p.notes.some(n=>/TRAVERSANTS/.test(n)))
+    throw new Error("la portée supposée doit être annoncée : "+
+                    JSON.stringify(p.notes));
+});
+
+T("un plan qu'on n'a pas su sonder ne met pas de fentes dans le document",()=>{
+  /* LE CHAMP EST ABSENT, et c'est ce qui fait écrire au serveur « rien n'a pu
+     être examiné » au lieu de « aucune zone de vigilance ».
+
+     LA MASSE EST BIEN RETENUE ICI — elle a du cuivre sur la couche de la
+     piste —, et c'est ce qui rend le cas intéressant : ce n'est pas « pas de
+     masse », c'est « une masse dont le PLAN ne se voit pas sous le parcours ».
+     Les deux silences ne se corrigent pas du même geste. */
+  carte({plans:[plan(1,rect(2,2,58,38),[rect(X1-1,Y-0.4,X2+1,Y+0.4)])],
+         percages:[{x:X1+5, y:Y+1, d:0.4, n:1, p:"PTH"}]});
+  const p=SIM_IPC.problemeCrosstalk(simSaisie());
+  if(p.erreur)throw new Error("le document est refusé : "+p.erreur);
+  if("fentes" in p.doc)
+    throw new Error("sans plan sondable, le champ doit être ABSENT");
+  if(!p.notes.some(n=>/pas pu être sondé/.test(n)))
+    throw new Error("le silence doit être nommé : "+JSON.stringify(p.notes));
+});
+
+/* ==========================================================================
+   LES ZONES À RISQUE, POSÉES SUR LE CUIVRE DE LA VICTIME
+   --------------------------------------------------------------------------
+   L'algorithme est commun aux deux outils ; ce qui est propre à cette page est
+   la CONVERSION. Le canevas vit en unités FICHIER, le serveur en millimètres,
+   et une seule des deux moitiés oubliée pose la surimpression à vingt-cinq
+   fois sa place sur un fichier en pouces — ou pas du tout, ce qui ne se voit
+   pas. C'est cela qu'on défend ici.
+   ========================================================================== */
+
+function bancRisque(unite){
+  /* L'ÉCART EST POSÉ EN MILLIMÈTRES, PAS EN UNITÉS FICHIER : c'est un demi-
+     millimètre de cuivre à cuivre dans les deux cas, sans quoi le banc en
+     pouces décrirait une victime à douze millimètres — que le couloir écarte
+     à juste titre, et l'essai ne mesurerait plus rien de ce qu'il croit. */
+  const k=(unite==="in")?25.4:1;
+  carte({plans:[plan(1,rect(2,2,58,38),[rect(2,Y-0.4,58,Y+0.4)])],
+         pistes:[{c:0, n:0, w:W, p:[X1,Y, X2,Y]},
+                 {c:0, n:2, w:W, p:[X1,Y+0.5/k, X2,Y+0.5/k]}]});
+  V.unite=unite||"MM";
+  SIM.ouvert=true; SIM.analyse="crosstalk"; SIM_XT.risques=true;
+  SIM_XT.res={etape0:{candidats:[], seuils:{distance_max:0.75},
+                      retenus:["N$2"], espacements:{}},
+              couples:[], carte_chaleur:null, masse:{zones:[], mesure:[]},
+              agresseurs:["N$1"], principal:"N$1", longueur:X2-X1,
+              reglages:{}, avertissements:[], hypotheses:[],
+              risques:[{victime:"N$2", agresseur:"N$1", s0:10, s1:20,
+                        niveau:1, niveau_db:-30, justifie:true, zone:""}]};
+  return simXtRisqueGeom();
+}
+
+T("une zone à risque se pose sur le cuivre de SA victime, en millimètres",()=>{
+  const zones=bancRisque("MM");
+  if(zones.length!==1)throw new Error("une zone attendue, "+zones.length);
+  const xs=[], ys=[];
+  for(const m of zones[0].traits)
+    for(let i=0;i+1<m.length;i+=2){xs.push(m[i]);ys.push(m[i+1]);}
+  if(!xs.length)throw new Error("la zone ne porte aucun trait");
+  /* ELLE TOMBE SUR LA VICTIME, pas sur l'agresseur : l'ordonnée le dit. */
+  if(Math.min(...ys)<Y+0.4||Math.max(...ys)>Y+0.6)
+    throw new Error("le trait n'est pas sur la victime : y de "+
+                    Math.min(...ys)+" à "+Math.max(...ys));
+  /* ET DANS LA PLAGE : l'agresseur part de X1, donc l'abscisse 10 est en
+     X1+10. */
+  const tol=SIM_XT_PAS_TRAIT+0.01;
+  if(Math.min(...xs)<X1+10-tol||Math.max(...xs)>X1+20+tol)
+    throw new Error("le trait déborde la plage : x de "+Math.min(...xs)+
+                    " à "+Math.max(...xs));
+  if(Math.min(...xs)>X1+11||Math.max(...xs)<X1+19)
+    throw new Error("le trait ne couvre pas la plage : x de "+
+                    Math.min(...xs)+" à "+Math.max(...xs));
+  V.unite="MM"; SIM.ouvert=false; SIM_XT.res=null;
+});
+
+T("un fichier en pouces rend les mêmes millimètres",()=>{
+  /* MÊME RÈGLE QUE LE VOISINAGE, et même conséquence si elle tombe : le
+     serveur raisonne en millimètres, la page dessine en unités fichier, et une
+     seule conversion oubliée met la surimpression hors de la carte. */
+  const zones=bancRisque("in");
+  if(zones.length!==1)throw new Error("une zone attendue, "+zones.length);
+  const xs=[];
+  for(const m of zones[0].traits)
+    for(let i=0;i+1<m.length;i+=2)xs.push(m[i]);
+  const k=25.4;
+  /* Les polylignes sortent en MILLIMÈTRES : la piste va de X1 à X2 en unités
+     fichier, donc de X1·25,4 à X2·25,4 en millimètres. La plage 10–20 mm du
+     serveur tombe donc tout au début du cuivre. */
+  if(Math.min(...xs)<X1*k-1)
+    throw new Error("le trait sort en unités fichier au lieu de millimètres :"+
+                    " x min "+Math.min(...xs)+", attendu ≥ "+(X1*k-1));
+  V.unite="MM"; SIM.ouvert=false; SIM_XT.res=null;
+});
+
+T("la surimpression suit son onglet, et s'éteint sans rien jeter",()=>{
+  bancRisque("MM");
+  SIM_XT.risques=false;
+  if(simXtRisques().length)
+    throw new Error("éteinte, la surimpression ne rend plus rien");
+  if(!SIM_XT.res)throw new Error("l'éteindre ne doit rien jeter");
+  SIM_XT.risques=true; SIM.analyse="impedance";
+  if(simXtRisques().length)
+    throw new Error("elle ne survit pas au changement d'onglet : elle "+
+                    "désignerait du cuivre sous une fiche qui n'en parle pas");
+  SIM.analyse="crosstalk"; SIM.ouvert=false; SIM_XT.res=null;
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

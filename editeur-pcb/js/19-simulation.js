@@ -620,6 +620,27 @@ function simAccrocherVias(envoi){
   return poses;
 }
 
+/* LA COUTURE, PAR CÔTÉ, POUR LE CALCUL — et non plus seulement pour l'afficher.
+
+   CE QUE CELA CORRIGE, ET C'EST GROS. La section pose le cuivre de masse
+   coplanaire — plan arrosé, piste de garde — comme un conducteur TENU À ZÉRO
+   VOLT. C'est vrai d'un cuivre cousu de vias ; c'est faux d'un cuivre qui ne
+   l'est pas, et l'écart n'est pas une question de précision mais de NATURE :
+   un cuivre cousu BLINDE, un cuivre flottant TRANSFÈRE. Mesuré sur une garde
+   entre deux signaux : 0,53 % de NEXT cousue, 1,04 % non cousue — soit PIRE
+   que pas de garde du tout, qui donne 0,88 %.
+
+   `simEspacement` sait déjà mesurer le plus grand trou entre deux coutures le
+   long d'une piste, d'un côté donné : il ne servait qu'à écrire une ligne dans
+   la fiche. On l'envoie maintenant avec chaque tronçon, et c'est le serveur qui
+   décide — il est le seul à connaître le temps de montée, donc la longueur
+   d'onde au genou, donc le trou au-delà duquel le cuivre cesse d'être tenu. */
+function simCoutureCotes(t,refs){
+  if(!refs||!refs.size)return {g:0,d:0};
+  const g=simEspacement(t,refs,1), d=simEspacement(t,refs,-1);
+  return {g:g?r3(g.ecartMax):0, d:d?r3(d.ecartMax):0};
+}
+
 function simCouturePcb(pistes,refs){
   if(!refs.size)return null;
   let n=0, pire=0, vu=false;
@@ -828,6 +849,7 @@ function simSegments(liste){
        dans l'ordre croissant de `u` alors que le parcours descend poserait un
        raccord manquant AU MILIEU d'une même piste — et le serveur le
        compterait, à juste titre. */
+    const cout=simCoutureCotes(t,refs);
     for(const p of (e.retourne?plages.slice().reverse():plages)){
       const u1=e.retourne?p.u2:p.u1, u2=e.retourne?p.u1:p.u2;
       const a=trkAt(t,u1), b=trkAt(t,u2);
@@ -840,9 +862,23 @@ function simSegments(liste){
            faire demi-tour les échange. Les laisser tels quels décrirait la
            section en miroir — ce qui ne change pas Z₀, la géométrie étant
            symétrique, mais fait mentir la fiche sur quel bord longe quoi. */
-        gap_left:e.retourne?p.d:p.g, gap_right:e.retourne?p.g:p.d
+        gap_left:e.retourne?p.d:p.g, gap_right:e.retourne?p.g:p.d,
+        /* LA COUTURE SUIT LE MÊME MIROIR QUE LES ÉCARTS : gauche et droite se
+           définissent par rapport au sens de marche, et faire demi-tour les
+           échange. Les laisser tels quels ferait juger la couture du mauvais
+           bord — et c'est exactement le genre d'erreur qui ne se voit pas. */
+        couture_left:e.retourne?cout.d:cout.g,
+        couture_right:e.retourne?cout.g:cout.d
       });
       objets.push({trk:t, u1:Math.min(p.u1,p.u2), u2:Math.max(p.u1,p.u2),
+                   /* `ua` et `ub` SONT LES MÊMES FRACTIONS, DANS LE SENS DU
+                      PARCOURS — là où `u1`/`u2` sont rangées croissantes pour
+                      peindre. La section Crosstalk en a besoin : elle projette
+                      des vias et des sondes sur l'ABSCISSE CURVILIGNE de la
+                      liaison, et un tronçon parcouru à rebours y rangerait
+                      tout à l'envers. Peindre n'a pas ce problème, d'où les
+                      deux couples. */
+                   ua:u1, ub:u2, longueur:total*Math.abs(p.u2-p.u1),
                    couche:cuLabel(t.l,S.cu), l:t.l});
     }
   }
@@ -982,11 +1018,13 @@ function simVoile(c,w,h){
    mais la question « est-ce 50 Ω sur toute la longueur ? » se répond d'un coup
    d'œil sur la carte. Sans lot, la boucle tourne une fois et le dessin est celui
    d'avant. */
-/* TROIS ANALYSES PEIGNENT CE CUIVRE, ET PAS LA MÊME GRANDEUR : l'impédance
-   ses Z₀, la Z différentielle sa Z_diff tronçon par tronçon, la diaphonie le
-   bruit attribué à chaque tronçon. Le parcours du canevas est le même dans les
-   trois cas — c'est `simCarteSegment` (commun/simulation-em.js) qui sait ce
-   qu'il faut peindre, et ce fichier ne le sait plus. */
+/* DEUX ANALYSES PEIGNENT CE CUIVRE, ET PAS LA MÊME GRANDEUR : l'impédance ses
+   Z₀, la Z différentielle sa Z_diff tronçon par tronçon. Le parcours du canevas
+   est le même dans les deux cas — c'est `simCarteSegment`
+   (commun/simulation-em.js) qui sait ce qu'il faut peindre, et ce fichier ne le
+   sait plus. Le crosstalk, lui, peint autre chose et autrement : ses plages à
+   risque et sa chaleur suivent le cuivre des VICTIMES, pas celui de la
+   sélection — voir `simXtRisqueTrace`, plus bas. */
 function simZTrace(c){
   if(typeof simCarteActive!=="function"||!simCarteActive())return;
   if(typeof simPourChaqueLot!=="function"){simZTraceLot(c,null);return;}
@@ -1014,99 +1052,10 @@ function simZTraceLot(c,lot){
   passe(1.00, ()=>px(2));
 
   c.restore();
-  simVoisinsTrace(c);
   simZValeurs(c);
   simZNumeroLot(c,lot);
 }
 
-/* ==========================================================================
-   LE CUIVRE VOISIN — CE QUE LA SÉLECTION LEUR INFLIGE
-   --------------------------------------------------------------------------
-   La sélection est peinte avec ce qu'elle PREND ; les voisines, avec ce que la
-   sélection leur ENVOIE. Même règle pour les deux : une piste peinte montre ce
-   qu'elle subit.
-
-   ON NE PASSE PAR AUCUN OBJET DE L'OUTIL, et c'est voulu : `voisinage` est une
-   liste de tronçons du DOCUMENT — deux points et une largeur, en millimètres,
-   les arcs déjà en cordes —, la même qui est partie au serveur. Retrouver la
-   piste de l'outil derrière chaque tronçon coûterait une recherche et pourrait
-   échouer ; tracer un segment ne peut pas.
-
-   TROIS PASSES COMME AILLEURS, mais plus discrètes que sur la sélection : le
-   halo est moins large et l'âme moins opaque. La sélection reste ce qu'on a
-   désigné, et le cuivre voisin ne doit pas la couvrir.
-   ========================================================================== */
-function simVoisinsTrace(c){
-  if(typeof simCarteVoisins!=="function")return;
-  const liste=simCarteVoisins();
-  if(!liste.length)return;
-  c.save();
-  c.lineCap="round"; c.lineJoin="round";
-  const chemin=v=>{
-    c.beginPath();
-    c.moveTo(v.seg.start[0],v.seg.start[1]);
-    c.lineTo(v.seg.end[0],v.seg.end[1]);
-  };
-  const passe=(alpha,largeur,quels)=>{
-    for(const v of liste){
-      if(quels&&!quels(v))continue;
-      c.strokeStyle=v.couleur(alpha);
-      c.lineWidth=largeur(v.seg.width||0);
-      chemin(v); c.stroke();
-    }
-  };
-  /* LA PISTE VICTIME EST PEINTE ENTIÈRE — voir `simCarteVoisins`
-     (commun/simulation-em.js). Ce qui ne couple pas passe D'ABORD, gris, fin et
-     translucide : il donne à la piste sa continuité, et ne doit pas couvrir le
-     millimètre qui, lui, porte le bruit. */
-  passe(0.55, w=>Math.max(w*0.6,px(1.2)), v=>!v.couple);
-  passe(0.22, w=>w+px(5), v=>v.couple);
-  passe(0.85, w=>Math.max(w,px(2)), v=>v.couple);
-  c.restore();
-  simVoisinsValeurs(c);
-}
-
-/* Les valeurs sur le cuivre voisin — une par NET agressé, posée À CÔTÉ de sa
-   piste. Voir `simCarteVoisinsEtiquettes` (commun/simulation-em.js) : c'est là
-   que se décide laquelle et de quel côté. */
-/* LE DÉCALAGE SE CALCULE DANS L'ÉCRAN, et non dans le monde : c'est la seule
-   façon d'obtenir la même marge quel que soit le zoom, et de récupérer au
-   passage un éventuel retournement de la vue. On projette la normale — rendue
-   en millimètres par `simCarteVoisinsEtiquettes` — en prenant la différence de
-   deux points transformés, puis on la ramène à la longueur voulue. */
-const SIM_VOISIN_MARGE=13;             // pixels écran, du cuivre au cartouche
-function simVoisinsValeurs(c){
-  if(typeof simCarteVoisinsEtiquettes!=="function")return;
-  const etiq=simCarteVoisinsEtiquettes();
-  if(!etiq.length)return;
-  c.save();
-  c.setTransform(1,0,0,1,0,0);
-  const dpr=window.devicePixelRatio||1;
-  c.scale(dpr,dpr);
-  c.font="600 10px "+
-    "\"JetBrains Mono\",\"SF Mono\",Consolas,\"Roboto Mono\",monospace";
-  c.textAlign="center"; c.textBaseline="middle";
-  for(const v of etiq){
-    const a=w2s(v.ancre[0],v.ancre[1]);
-    const b=w2s(v.ancre[0]+v.normale[0],v.ancre[1]+v.normale[1]);
-    let dx=b.x-a.x, dy=b.y-a.y;
-    const l=Math.hypot(dx,dy);
-    if(l>1e-9){dx/=l;dy/=l;}else{dx=0;dy=-1;}
-    const e={x:a.x+dx*SIM_VOISIN_MARGE, y:a.y+dy*SIM_VOISIN_MARGE};
-    const txt=v.net+" "+v.texte;
-    const w=c.measureText(txt).width+10;
-    simCheveluBruit(c,v,a,e);
-    c.fillStyle="rgba(15,16,18,0.86)";
-    c.beginPath();
-    if(c.roundRect)c.roundRect(e.x-w/2,e.y-8,w,16,4);
-    else c.rect(e.x-w/2,e.y-8,w,16);
-    c.fill();
-    c.strokeStyle=v.couleur(1); c.lineWidth=1.1; c.stroke();
-    c.fillStyle="#e6e8ec";
-    c.fillText(txt,e.x,e.y+0.5);
-  }
-  c.restore();
-}
 
 /* LE NUMÉRO DU LOT, POSÉ SUR SON CUIVRE. Le tableau du panneau parle de
    « lot 3 » ; sans ce jeton, rien sur la carte ne dit lequel c'est, et il
@@ -1190,41 +1139,6 @@ function simZValeurs(c){
   c.restore();
 }
 
-
-/* LE CHEVELU DE LA DIAPHONIE — d'où à où, sans avoir à le deviner.
-   --------------------------------------------------------------------------
-   MÊME IDÉE QUE CELUI DU COURANT DE RETOUR, et pour la même raison : deux
-   cuivres colorés côte à côte ne disent pas lequel agresse lequel. Le trait
-   part du point de la SÉLECTION le plus proche, passe par le cuivre de la
-   victime et finit sur son étiquette — trois points, un sens de lecture, et
-   plus rien à deviner.
-
-   POINTILLÉ ET FIN, parce qu'il DÉSIGNE au lieu de décrire : il ne doit pas
-   se lire comme du cuivre. La flèche est portée par le point plein posé sur la
-   victime, qui est là où le bruit arrive. */
-function simCheveluBruit(c,v,surCuivre,surEtiquette){
-  const d=v.depuis?w2s(v.depuis[0],v.depuis[1]):null;
-  c.save();
-  if(d){
-    c.setLineDash([3,3]);
-    c.strokeStyle=simAgresseurCouleur(0.85); c.lineWidth=1;
-    c.beginPath(); c.moveTo(d.x,d.y); c.lineTo(surCuivre.x,surCuivre.y);
-    c.stroke();
-    c.setLineDash([]);
-    /* LE DÉPART, SUR L'AGRESSEUR : un petit anneau creux — c'est de là que ça
-       part, et ce n'est pas là que ça arrive. */
-    c.beginPath(); c.arc(d.x,d.y,2.6,0,2*Math.PI); c.stroke();
-  }
-  /* L'ARRIVÉE, SUR LA VICTIME : un point PLEIN, de la couleur du bruit. C'est
-     l'endroit précis que l'étiquette chiffre. */
-  c.fillStyle=v.couleur(1);
-  c.beginPath(); c.arc(surCuivre.x,surCuivre.y,2.6,0,2*Math.PI); c.fill();
-  /* Puis le filet jusqu'au cartouche, qui a dû être écarté du cuivre. */
-  c.strokeStyle=v.couleur(0.75); c.lineWidth=1;
-  c.beginPath(); c.moveTo(surCuivre.x,surCuivre.y);
-  c.lineTo(surEtiquette.x,surEtiquette.y); c.stroke();
-  c.restore();
-}
 
 /* ==========================================================================
    LE CHEMIN DE RETOUR DU COURANT — LE CHEVELU
@@ -1883,7 +1797,7 @@ function simDCClic(x,y){
    L'AGRESSEUR N'EST JAMAIS DANS LA SÉLECTION, par définition : on sélectionne
    la piste dont on se soucie, pas celle qui la perturbe. Et l'autre moitié
    d'une paire différentielle n'y est pas non plus — on clique une piste, pas
-   deux. Sans ce qui suit, ni la diaphonie ni l'impédance différentielle ne
+   deux. Sans ce qui suit, ni le crosstalk ni l'impédance différentielle ne
    peuvent exister, quel que soit le solveur qu'il y a derrière.
 
    CE QUE LA PAGE ENVOIE, ET CE QU'ELLE NE DÉCIDE PAS. Elle envoie du cuivre —
@@ -1907,7 +1821,15 @@ function simDCClic(x,y){
    ========================================================================== */
 const SIM_VOISINAGE_MAX=600;    /* tronçons envoyés ; au-delà, on écrête */
 
-function simVoisinagePcb(liste){
+/* `adjacentes` ÉTEND LA PORTÉE AUX COUCHES VOISINES, et c'est la section
+   Crosstalk qui le demande. La Z différentielle ne l'utilise pas : sa section
+   droite n'a qu'un plan de conducteurs et ne sait pas décrire deux pistes
+   superposées — les envoyer lui ferait écarter du cuivre pour rien. Le
+   crosstalk, lui, les PRÉSÉLECTIONNE : deux pistes superposées couplent
+   souvent plus que les mêmes côte à côte, et ne pas les regarder du tout se
+   lirait comme un couplage nul. Ce que le calcul sait ou ne sait pas en faire
+   se dit côté serveur, à l'étape 0b — pas ici, en les cachant. */
+function simVoisinagePcb(liste,adjacentes){
   const sel=new Set(liste||[...S.sel.tracks]);
   if(!sel.size)return [];
   /* La portée : l'écart maximal que le serveur regarde, plus la demi-largeur
@@ -1915,6 +1837,11 @@ function simVoisinagePcb(liste){
      aurait retenu ; bien au-delà, on l'inonderait. */
   const large=Math.max(...[...sel].map(t=>t.w||0),0);
   const couches=new Set([...sel].map(t=>t.l));
+  if(adjacentes)
+    for(const l of [...couches]){
+      if(l-1>=0)couches.add(l-1);
+      if(l+1<S.cu)couches.add(l+1);
+    }
   let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
   for(const t of sel){
     const b=trkBBox(t);
@@ -1949,12 +1876,17 @@ function simVoisinagePcb(liste){
     const b=trkBBox(t), demi=(t.w||0)/2;
     if(b.x2+demi<x1||b.x1-demi>x2||b.y2+demi<y1||b.y1-demi>y2)continue;
     const e=simEcartsA(t,0.5,refs);
+    const cv=simCoutureCotes(t,refs);
     for(const g of trkSegs(t)){
       out.push({type:"track",
                 start:[r3(g.x1),r3(g.y1)], end:[r3(g.x2),r3(g.y2)],
                 width:t.w, layer:simCuIndex(t.l), net:t.net||"",
                 copper_thickness:cuT(t.l),
-                gap_left:e.g, gap_right:e.d});
+                gap_left:e.g, gap_right:e.d,
+                /* UNE VOISINE DE MASSE EST UNE GARDE, et une garde non cousue
+                   ne blinde pas : elle transfère. Sa couture part donc avec
+                   elle, comme ses deux écarts. */
+                couture_left:cv.g, couture_right:cv.d});
       if(out.length>=SIM_VOISINAGE_MAX)return out;
     }
   }
@@ -2025,7 +1957,7 @@ function simDocPcb(liste,opts){
       ports:[{id:1,impedance:opts.z0},{id:2,impedance:opts.z0}],
       /* LE CUIVRE QUI LONGE, et les paires déclarées : voir « LE VOISINAGE ».
          Ils ne changent RIEN au calcul d'impédance — le serveur les lit à
-         part — mais sans eux il n'y a ni Z différentielle ni diaphonie. */
+         part — mais sans eux il n'y a pas de Z différentielle. */
       voisinage:simVoisinagePcb(liste),
       paires:simPairesPcb(),
       /* LE TEMPS DE MONTÉE est déjà en SECONDES dans la saisie, comme les
@@ -2045,6 +1977,289 @@ function simDocPcb(liste,opts){
     couture:g.couture,
     voisins:g.voisins
   };
+}
+
+/* ==========================================================================
+   CROSSTALK — CE QUE SEULE LA PAGE PEUT MESURER
+   --------------------------------------------------------------------------
+   LE SERVEUR NE VOIT QUE CE QU'ON LUI ENVOIE, et la section Crosstalk demande
+   trois choses que la simulation d'impédance ne demandait pas. Aucune n'est un
+   raffinement : sans elles, les contrôles de plan de référence ne diraient
+   RIEN, et une liste vide de zones à risque se lit « rien à signaler » — ce
+   qui est exactement le contraire de la vérité.
+
+     · LES POSITIONS DES VIAS DE COUTURE, projetées sur l'ABSCISSE CURVILIGNE
+       du parcours. `simEspacement` mesurait déjà le plus grand trou par
+       tronçon ; c'est assez pour dire QU'IL y a un trou, pas pour dire OÙ. Or
+       toute la section existe pour dire où ;
+     · LES DISCONTINUITÉS DU PLAN DE RÉFÉRENCE sous le parcours. On sonde le
+       plan le plus proche, sous puis sur la piste, et l'on relève les endroits
+       où il n'y a pas de cuivre de masse. C'est la cause la plus fréquente
+       d'un pic de couplage localisé là où le plan paraît continu partout
+       ailleurs ;
+     · LES VIAS DE MASSE, pour juger les changements de couche : le retour doit
+       changer de plan là où le signal change de couche, et s'il n'a pas de via
+       pour le faire, il fait le tour.
+
+   ET QUAND ON N'A PAS PU REGARDER, ON N'ENVOIE PAS LE CHAMP. Un plan de
+   référence qui ne porte aucune zone de cuivre n'est pas un plan sans fente :
+   c'est un plan qu'on ne sait pas sonder, et le dire est la seule réponse
+   honnête. Le serveur écrit alors « rien n'a pu être examiné » au lieu de
+   « aucune zone de vigilance ».
+   ========================================================================== */
+const SIM_XT_PAS=0.5;           /* mm — le pas de sonde du plan de référence */
+const SIM_XT_SONDES_MAX=2000;   /* au-delà, on grossit le pas plutôt que d'inonder */
+
+/* Le parcours, tronçon par tronçon, avec son abscisse curviligne cumulée.
+   C'est le même axe que celui du serveur (`_parcours`), et il faut que ce soit
+   le même : c'est lui qui met un via de couture et un pic de couplage à la
+   même abscisse sur la carte. */
+function simXtParcours(g){
+  const out=[];
+  let s=0;
+  for(const o of g.objets){
+    const l=o.longueur||0;
+    out.push({o:o, s0:s, longueur:l});
+    s+=l;
+  }
+  return {liste:out, total:s};
+}
+
+/* L'abscisse curviligne d'un point du plan, ou -1 s'il ne tombe sur aucun
+   tronçon du parcours. On projette sur CHAQUE tronçon et l'on garde le plus
+   proche : deux tronçons d'un même repli peuvent tous deux accepter la
+   projection, et prendre le premier venu placerait le via à l'autre bout. */
+function simXtAbscisse(par,x,y){
+  let meilleur=-1, dmin=Infinity;
+  for(const e of par.liste){
+    const t=e.o.trk;
+    const u=simProjU(t,x,y);
+    if(u<0)continue;
+    const a=Math.min(e.o.ua,e.o.ub), b=Math.max(e.o.ua,e.o.ub);
+    if(u<a-1e-6||u>b+1e-6)continue;
+    const p=trkAt(t,u), d=Math.hypot(p.x-x,p.y-y);
+    if(d>=dmin)continue;
+    const etendue=(e.o.ub-e.o.ua);
+    const frac=Math.abs(etendue)<1e-9?0:(u-e.o.ua)/etendue;
+    dmin=d;
+    meilleur=e.s0+Math.max(0,Math.min(1,frac))*e.longueur;
+  }
+  return meilleur;
+}
+
+/* Les vias de couture, chacun à son abscisse et de son côté. Le couloir et le
+   critère de portée sont ceux de `simEspacement` — la même règle mesurée deux
+   fois finirait par donner deux réponses. */
+function simXtCouture(par,refs){
+  const out=[];
+  if(!refs||!refs.size)return out;
+  for(const v of S.vias){
+    if(!refs.has(v.net))continue;
+    const s=simXtAbscisse(par,v.x,v.y);
+    if(s<0)continue;
+    /* LA COUCHE COMPTE : un via borgne qui n'atteint pas la couche de la piste
+       ne la coud pas. C'est le même critère que `simEspacement`. */
+    const sur=par.liste.some(e=>v.a<=e.o.l&&e.o.l<=v.b);
+    if(!sur)continue;
+    let cote=0, dist=Infinity;
+    for(const e of par.liste){
+      const t=e.o.trk;
+      const u=simProjU(t,v.x,v.y);
+      if(u<0)continue;
+      const d=trkDist(v.x,v.y,t)-(t.w||0)/2-(v.d||0)/2;
+      if(d>=dist)continue;
+      const tg=simTangente(t,u), p=trkAt(t,u);
+      dist=d;
+      cote=((-tg.y)*(v.x-p.x)+tg.x*(v.y-p.y))>=0?1:-1;
+    }
+    if(!(dist<=SIM_COULOIR))continue;
+    out.push({s:r3(s), cote:cote});
+  }
+  return out.sort((a,b)=>a.s-b.s);
+}
+
+/* Le plan de référence le plus proche d'une couche de signal : d'abord
+   dessous, puis dessus. C'est le même ordre que `section_de_couche` côté
+   serveur — le plan qui porte le retour est celui qui fait face à la piste, et
+   sur un empilage courant il est en dessous. */
+function simXtPlanDe(l){
+  for(let i=l+1;i<S.cu;i++)if(rolePlane(layerRole(i)))return i;
+  for(let i=l-1;i>=0;i--)if(rolePlane(layerRole(i)))return i;
+  return -1;
+}
+
+/* Les discontinuités du plan sous le parcours, en intervalles d'abscisse.
+
+   REND `null` QUAND ON N'A PAS SU SONDER, et c'est la moitié de l'intérêt : un
+   plan de référence qui ne porte aucune zone de cuivre n'est pas un plan sans
+   fente, c'est un plan qu'on ne voit pas. Rendre une liste vide ferait écrire
+   « aucune zone de vigilance » sous un contrôle qui n'a jamais eu lieu. */
+function simXtFentes(par,refs){
+  if(!par.total)return null;
+  const pas=Math.max(SIM_XT_PAS,par.total/SIM_XT_SONDES_MAX);
+  let sondable=false;
+  const trous=[];
+  let courant=null;
+  for(const e of par.liste){
+    const plan=simXtPlanDe(e.o.l);
+    /* UNE COUCHE SANS PLAN N'A PAS DE FENTE À AVOIR : c'est un défaut d'un
+       autre ordre, que l'onglet Impédance signale déjà. On passe, sans
+       compter ce tronçon comme sondé. */
+    if(plan<0)continue;
+    if(!S.zones.some(z=>z.l===plan))continue;
+    sondable=true;
+    const n=Math.max(1,Math.round(e.longueur/pas));
+    for(let k=0;k<=n;k++){
+      const f=k/n;
+      const u=e.o.ua+(e.o.ub-e.o.ua)*f;
+      const p=trkAt(e.o.trk,u);
+      const z=simXtZoneMasse(plan,p.x,p.y,refs);
+      const s=e.s0+f*e.longueur;
+      if(z){
+        if(courant){trous.push(courant);courant=null;}
+      }else if(courant&&s-courant.fin<=pas*1.5){
+        courant.fin=s;
+      }else{
+        if(courant)trous.push(courant);
+        courant={debut:s, fin:s};
+      }
+    }
+  }
+  if(courant)trous.push(courant);
+  if(!sondable)return null;
+  /* UN SEUL POINT SANS CUIVRE N'EST PAS UNE FENTE : c'est le pas de sonde qui
+     tombe dans un dégagement d'antipad. On garde ce qui dure au moins deux
+     pas — en deçà, on inonderait la carte de marques que rien ne justifie. */
+  return trous.filter(t=>t.fin-t.debut>=pas*1.5)
+    .map(t=>({s:r3(t.debut), longueur:r3(t.fin-t.debut),
+              quoi:"le plan de référence n'a pas de cuivre de masse sous le "+
+                   "parcours sur "+r3(t.fin-t.debut)+" mm"}));
+}
+
+/* Y a-t-il du cuivre DE MASSE sur cette couche, en ce point ? Le cuivre d'un
+   AUTRE net y est un trou du plan de retour tout autant qu'une absence de
+   cuivre : le courant ne peut pas y passer. */
+function simXtZoneMasse(couche,x,y,refs){
+  const z=simZoneEn(couche,x,y);
+  return (z&&(!refs||!refs.size||refs.has(z.net)))?z:null;
+}
+
+/* Les vias de masse à portée du parcours, pour juger les changements de
+   couche. On les envoie tous ceux qui sont dans la boîte élargie : c'est le
+   serveur qui mesure la distance, et il le fait au droit de la transition. */
+function simXtViasMasse(par,refs){
+  const out=[];
+  if(!refs||!refs.size)return out;
+  const R=SIM_RAYON_RETOUR;
+  for(const v of S.vias){
+    if(!refs.has(v.net))continue;
+    let proche=false;
+    for(const e of par.liste){
+      if(trkDist(v.x,v.y,e.o.trk)<=R+(e.o.trk.w||0)/2){proche=true;break;}
+    }
+    if(!proche)continue;
+    out.push({x:r3(v.x), y:r3(v.y),
+              a:simCuIndex(Math.min(v.a,v.b)),
+              b:simCuIndex(Math.max(v.a,v.b))});
+  }
+  return out;
+}
+
+/* ==========================================================================
+   LES ZONES À RISQUE SUR LE CUIVRE — CE QUE CET OUTIL SAIT EN DIRE
+   --------------------------------------------------------------------------
+   TOUT L'ALGORITHME EST DANS `commun/simulation-em.js`, et c'est voulu : il
+   projette le cuivre d'une victime sur le parcours de l'agresseur, garde ce
+   qui tombe dans la plage, et découpe en morceaux contigus. Deux copies de
+   cette règle-là — une par outil — auraient fini par ne plus désigner le même
+   cuivre sur la même carte, ce qui est exactement le défaut que la mise en
+   commun de `_longement_intervalle` avait déjà corrigé côté serveur.
+
+   CE QUE L'OUTIL FOURNIT SE RÉSUME À DEUX FORMES, en MILLIMÈTRES, qui sont
+   celles de l'axe du serveur : le parcours de l'agresseur tronçon par tronçon,
+   et les polylignes de chaque victime. Un arc est plié ici, une fois, par
+   `trkAt` — la définition du dessin, donc celle qui ne peut pas se
+   désynchroniser de ce qu'on voit à l'écran.
+   ========================================================================== */
+const SIM_XT_PLI=0.3;           /* mm — le pas de pliage d'un arc */
+
+function simXtPolyDe(t){
+  /* Une droite tient en ses deux bouts ; un arc se plie assez fin pour que la
+     projection ne coupe pas les virages. */
+  const L=trkLen(t)||0;
+  const n=arcOf(t)?Math.max(2,Math.ceil(L/SIM_XT_PLI)):1;
+  const pts=[];
+  for(let k=0;k<=n;k++){
+    const p=trkAt(t,k/n);
+    pts.push(p.x,p.y);
+  }
+  return pts;
+}
+
+function simXtGeometriePcb(){
+  const g=simSegments(null);
+  const par=simXtParcours(g);
+  const parcours=par.liste.map(function(e){
+    const t=e.o.trk, a=e.o.ua, b=e.o.ub;
+    const L=trkLen(t)||0;
+    const n=arcOf(t)?Math.max(2,Math.ceil(L*Math.abs(b-a)/SIM_XT_PLI)):1;
+    const pts=[];
+    for(let k=0;k<=n;k++){
+      const p=trkAt(t,a+(b-a)*k/n);
+      pts.push(p.x,p.y);
+    }
+    return {s0:e.s0, longueur:e.longueur, pts:pts};
+  });
+  /* LES VICTIMES SONT PRISES PAR LEUR NET, sur TOUTES leurs couches. Une
+     victime qui change de couche en cours de longement reste la même piste, et
+     la portion à risque peut fort bien tomber après le via. */
+  const victimes={};
+  for(const net of (typeof simXtVictimesVoulues==="function"
+                    ? simXtVictimesVoulues() : [])){
+    if(victimes[net])continue;
+    victimes[net]=S.tracks.filter(t=>t.net===net).map(simXtPolyDe);
+  }
+  return {parcours:parcours, victimes:victimes};
+}
+
+/* La surimpression elle-même. Elle passe APRÈS les cartes de chaleur et avant
+   les étiquettes, comme le chevelu du retour : elle désigne des portions de
+   cuivre, elle ne décrit pas le cuivre. */
+function simXtRisqueTrace(c,dpr){
+  if(typeof simXtRisqueGeom!=="function")return;
+  /* LA CHALEUR PASSE D'ABORD, LES PLAGES PAR-DESSUS. La chaleur décrit TOUT le
+     longement, du bleu au rouge ; les plages ne désignent que les portions à
+     reprendre et portent un verdict. Peindre la chaleur au-dessus effacerait
+     le verdict sous une couleur qui n'en porte pas. */
+  simXtPeindreChaleur(c,(x,y)=>[x,y],px(2.5)+0.10);
+  const zones=simXtRisqueGeom();
+  if(!zones.length){
+    /* LE POINT DE LA RÉGLETTE NE DÉPEND D'AUCUNE PLAGE : il se pose dès qu'il
+       y a un résultat et une piste à désigner. SON RAYON EST EN PIXELS
+       D'ÉCRAN, sans part fixe en millimètres : c'est un viseur, et un viseur
+       qui grossit avec le zoom finit par cacher le millimètre de piste qu'il
+       désigne. */
+    simXtPeindreCurseur(c,(x,y)=>[x,y],px(4.5));
+    return;
+  }
+  c.save();
+  c.lineCap="round";
+  c.lineJoin="round";
+  for(const z of zones){
+    c.strokeStyle=simXtRisqueCouleur(z);
+    /* L'ÉPAISSEUR EST CELLE DU CUIVRE, débordée d'un peu : la surimpression
+       doit se voir SUR la piste, pas à côté, et surtout pas la remplacer — on
+       veut continuer de reconnaître le tracé dessous. */
+    c.lineWidth=px(2.5)+0.18;
+    for(const m of z.traits){
+      c.beginPath();
+      c.moveTo(m[0],m[1]);
+      for(let i=2;i+1<m.length;i+=2)c.lineTo(m[i],m[i+1]);
+      c.stroke();
+    }
+  }
+  c.restore();
+  simXtPeindreCurseur(c,(x,y)=>[x,y],px(4.5));
 }
 
 const SIM_PCB={
@@ -2155,7 +2370,79 @@ const SIM_PCB={
     return {lots:out};
   },
 
+  /* ==========================================================================
+     LE PROBLÈME DE CROSSTALK
+     --------------------------------------------------------------------------
+     UN SEUL DOCUMENT, JAMAIS DE LOTS, et ce n'est pas une simplification : la
+     carte a UN axe de position, celui du parcours de l'agresseur. Découper la
+     sélection en morceaux qui ne se touchent pas donnerait plusieurs axes sans
+     origine commune, et deux victimes ne se compareraient plus. Une sélection
+     éparse est donc envoyée telle quelle, dans l'ordre du chaînage — le même
+     que la simulation —, et le serveur en fait un parcours continu.
 
+     L'AGRESSEUR EST LA SÉLECTION, et il peut porter PLUSIEURS nets : le serveur
+     prend celui qui porte le plus de cuivre comme référence de l'axe et range
+     les autres en agresseurs supplémentaires, avec leurs deux ports. Rien
+     n'est codé en dur sur leur nombre — c'est ce que demandait le cahier des
+     charges, et c'est aussi ce qui rend l'option « sommer les agresseurs »
+     utilisable.
+     ========================================================================== */
+  problemeCrosstalk:function(opts){
+    const base=simDocPcb(null,opts);
+    if(base.erreur)return base;
+    const sel=[...S.sel.tracks];
+    const refs=simRefSet();
+    const g=simSegments(null);
+    const par=simXtParcours(g);
+    if(!(par.total>0))
+      return {erreur:"La sélection ne porte aucune longueur exploitable."};
+
+    const nets=[...new Set(sel.map(t=>t.net).filter(Boolean))];
+    if(!nets.length)
+      return {erreur:"La piste sélectionnée n'a pas de net.",
+              conseil:"Le crosstalk se lit d'un net vers un autre : "+
+                      "l'agresseur doit porter un nom de net."};
+
+    const doc=base.doc;
+    doc.agresseurs=nets;
+    /* LE VOISINAGE EST REPRIS AVEC LES COUCHES ADJACENTES : c'est la seule
+       différence de géométrie avec le document de simulation, et elle compte —
+       deux pistes superposées sont le cas que la section droite ne sait pas
+       décrire, donc celui qu'on écartait sans un mot. */
+    doc.voisinage=simVoisinagePcb(null,true);
+    doc.couture={positions:simXtCouture(par,refs), couloir:SIM_COULOIR};
+    /* `fentes` À `null` VEUT DIRE « ON N'A PAS PU REGARDER », et le champ est
+       alors ABSENT du document. Une liste vide dirait « rien à signaler », ce
+       qui est le contraire — et c'est exactement le genre de silence qui rend
+       un outil de mesure nuisible. */
+    const fentes=simXtFentes(par,refs);
+    if(fentes)doc.fentes=fentes;
+    doc.vias_masse=simXtViasMasse(par,refs);
+
+    const notes=(base.notes||[]).slice();
+    if(!refs.size)
+      notes.push("Aucun net de masse retenu : ni la couture, ni les "+
+                 "discontinuités du plan, ni les vias de retour ne peuvent "+
+                 "être examinés. Choisissez la masse dans la barre du "+
+                 "panneau — sans elle, l'absence de zone de vigilance sur la "+
+                 "carte ne veut rien dire.");
+    else if(!fentes)
+      notes.push("Le plan de référence n'a pas pu être sondé : la ou les "+
+                 "couches de plan ne portent aucune zone de cuivre dans cet "+
+                 "éditeur. Les fentes ne sont donc pas cherchées, et le "+
+                 "résultat le dira plutôt que d'annoncer qu'il n'y en a pas.");
+    if(nets.length>1)
+      notes.push("La sélection porte "+nets.length+" nets : le plus long "+
+                 "donne l'axe de la carte, les autres deviennent des "+
+                 "agresseurs supplémentaires. L'option « sommer les "+
+                 "agresseurs » les additionne en phase vers chaque victime.");
+    return {doc:doc, objets:g.objets, portee:simPortee(g.objets,null),
+            notes:notes};
+  },
+
+  /* Les deux formes dont la surimpression des zones à risque a besoin. Voir
+     « LES ZONES À RISQUE SUR LE CUIVRE », plus haut. */
+  xtGeometrie:simXtGeometriePcb,
 
 
   /* ---------------------------------------------------------------------

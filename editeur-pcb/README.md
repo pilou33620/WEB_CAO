@@ -50,7 +50,12 @@ js/19-simulation.js      simulation EM : la carte de chaleur d'impédance sur la
                          qui lit la masse coplanaire — nets de référence, un
                          écart par côté, plages d'écart, couture de vias — et
                          qui joint au problème le CUIVRE VOISIN, sans lequel il
-                         n'y a ni Z différentielle ni diaphonie
+                         n'y a ni Z différentielle ni crosstalk. Pour l'onglet
+                         Crosstalk il mesure en plus les trois choses que le
+                         serveur ne peut pas deviner : les POSITIONS des vias
+                         de couture le long du parcours, les FENTES du plan de
+                         référence sondées sous la piste, et les VIAS DE MASSE
+                         qui referment le retour aux changements de couche
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -1491,7 +1496,7 @@ suit sans les connaître :
 | `Maj`+clic à nouveau | la piste sur toutes les couches, vias de passage compris |
 | `Ctrl`+clic | **ajoute** un morceau : chaque parcours continu est calculé séparément |
 
-### Quatre onglets dans SI, et une seule réponse du serveur
+### Quatre onglets dans SI, et trois lisent la même réponse du serveur
 
 Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI**
 (intégrité de l'alimentation). SI en porte quatre :
@@ -1500,30 +1505,69 @@ Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI*
 | --- | --- | --- |
 | **Impédance** | Z₀ tronçon par tronçon, paramètres S de la liaison | la section droite d'UNE piste |
 | **Z différentielle** | Z_diff et Z_commune des paires qui longent la sélection | la même section, à DEUX conducteurs |
-| **Diaphonie** | ce que les voisines prennent à la sélection — NEXT, FEXT | la même, lue autrement |
+| **Crosstalk** | **COMBIEN** une voisine prend — en %, en dB et **en volts** — et **OÙ** le long du parcours cela se fabrique | une matrice S MULTI-PORTS mise en cascade, synthétisée depuis le DESIGN |
 | **Current Return Path** | par où revient le courant de chaque via | la liaison verticale |
 
-**Les quatre lisent la MÊME réponse du serveur** : changer d'onglet ne relance
-rien, et les quatre fiches parlent nécessairement du même cuivre. Elles ne
-posent pas la même question — une piste parfaitement à 50 Ω peut avoir un
-retour catastrophique et prendre trois cents millivolts à sa voisine.
+**Trois des quatre lisent la MÊME réponse du serveur** : changer d'onglet ne
+relance rien, et les trois fiches parlent nécessairement du même cuivre. Elles
+ne posent pas la même question — une piste parfaitement à 50 Ω peut avoir un
+retour catastrophique.
 
-### Z différentielle et diaphonie : une seule section, deux lectures
+> **Un onglet *Diaphonie* a existé, et il a été retiré.** Il rendait NEXT et
+> FEXT sur une section droite unique : il disait *combien*, jamais *où*, et sa
+> carte de chaleur **attribuait** le bruit aux tronçons au prorata du couplage
+> local au lieu de le mesurer le long de la piste. *Crosstalk* rend le même
+> « combien » — le pour-cent, les décibels et la tension sur la broche de la
+> victime — avec une abscisse en millimètres en plus. Deux onglets pour une
+> seule question, répondue par deux physiques, finissaient par rendre deux
+> verdicts qu'on ne sait pas arbitrer.
+
+Le bouton **« réglages »**, au bout de la rangée des onglets, **replie les
+commandes** de l'analyse courante pour laisser toute la hauteur du panneau au
+résultat : une fois le calcul lancé, on n'y touche plus, c'est la fiche qu'on
+lit. La rangée qui porte le bouton d'action ne se replie jamais — on relance
+sans déplier —, non plus que celle qui avertit sur la bande.
+
+**Crosstalk est à part**, avec sa route (`/api/crosstalk`), son calcul et son
+résultat. Il répond seul à la question du couplage : combien une voisine prend,
+et lequel des quarante millimètres qui longent en est responsable. Les portions où le couplage de
+chaque victime se fabrique sont peintes **sur son cuivre**, ambre quand le
+dessin des pistes l'explique et rouge quand rien ne l'explique. Le seul geste
+demandé est de **sélectionner l'agresseur** : les victimes, les ports et leur correspondance se
+déduisent de la géométrie, et **aucun fichier de paramètres S ne s'importe** —
+la matrice se génère à partir du design. Le profil d'espacement, mesuré sur le
+tracé, se superpose à la carte pour que chaque pic se recoupe avec le
+resserrement qui devrait l'expliquer. Voir
+[le README du dépôt](../README.md#crosstalk--où-le-couplage-se-fabrique).
+
+Trois cases collées à la figure — **NEXT**, **FEXT**, **mV** — disent ce
+qu'elle trace et dans quelle unité, sans rien relancer : les deux courbes et
+les deux unités sont déjà dans le résultat. Éteindre un sens **resserre** la
+figure sur celui qui reste, plutôt que de garder un cadre vide qui se lirait
+comme un couplage nul.
+
+Les volts se lisent **sur la courbe** : le pour-cent gradue l'axe de gauche, la
+tension celui de droite — trois crans chacun —, et chaque courbe porte **sa
+tension écrite à son pic**, dans la couleur de sa victime. La réglette reste ce
+qui répond position par position.
+
+### Z différentielle : la section à N conducteurs, lue en ohms
 
 Le solveur résout la section à **N conducteurs** (`solve_multiline`,
 `../python/ligne_mom.py`) : la matrice de capacité de Maxwell **[C]**, puis
 **[L] = μ₀ε₀[C₀]⁻¹** puisque le milieu n'est pas magnétique. De ces deux
 matrices sortent, sans aucun solveur de plus, les modes **pair** et **impair**
-— donc Z_diff = 2·Z_impair et Z_comm = Z_pair/2 — et les coefficients de
-couplage k_C et k_L — donc le bruit **arrière** (NEXT) et le bruit **avant**
-(FEXT).
+— donc Z_diff = 2·Z_impair et Z_comm = Z_pair/2.
 
-**L'agresseur n'est jamais dans la sélection**, par définition, et l'autre
-moitié d'une paire non plus : on désigne la piste dont on se soucie. La page
-joint donc au problème le **voisinage** — le cuivre qui passe à portée sur la
-même couche — et c'est le serveur qui apparie : même couche, parallèle à 15°
-près, un recouvrement mesuré par projection, un écart de cuivre à cuivre.
-Sélectionner UNE des deux pistes suffit.
+**L'autre moitié d'une paire n'est pas toujours dans la sélection** : on
+désigne un net, pas deux. La page joint donc au problème le **voisinage** — le
+cuivre qui passe à portée sur la même couche — et c'est le serveur qui apparie :
+même couche, parallèle à 15° près, un recouvrement mesuré par projection, un
+écart de cuivre à cuivre. Sélectionner UNE des deux pistes suffit.
+
+Ici, **un couplage n'est pas un défaut** : c'est le mode impair d'une paire,
+celui que le récepteur différentiel rejette. Ce qu'une voisine *prend* se lit
+sous *Crosstalk*, en pour-cent, en décibels et en volts.
 
 ### Une piste, deux voisines : une seule section
 
@@ -1550,41 +1594,147 @@ Sous ses deux formes, et sans rien mesurer de plus :
 - **la piste de garde.** Une piste du **net de référence** qui longe n'est pas
   une voisine : c'est un conducteur **tenu à zéro volt** dans la section — elle
   occupe la place, elle prend du champ, elle n'a ni port ni impédance
-  différentielle. Mesuré sur une garde entre deux signaux à 0,45 mm : le NEXT
-  tombe de **3,15 % à 0,96 %**, et Z₀ des signaux de 57,6 à 50,7 Ω — ce qui est
-  affiché, parce qu'on ne pose pas une garde sans revoir la largeur.
+  différentielle. Mesuré sur la section, une garde entre deux signaux à
+  0,45 mm fait tomber le couplage arrière de **3,15 % à 0,96 %**, et Z₀ des
+  signaux de 57,6 à 50,7 Ω — ce dernier est **affiché**, parce qu'on ne pose
+  pas une garde sans revoir la largeur. Le gain de couplage, lui, se lit sous
+  *Crosstalk*.
 
-### Reçu et émis : les deux sens du bruit
+### La sélection est l'agresseur, sous *Crosstalk*
 
-La piste sélectionnée est **victime et agresseur à la fois**, et la fiche donne
-les deux — même matrice, agresseur et victime échangés :
+**On clique le net qu'on soupçonne, et la fiche liste ses victimes.** C'est le
+geste du routage : on tient un fil bruyant — une horloge, le nœud de découpage
+d'un régulateur, un bus qui commute — et on veut savoir *qui il dérange, de
+combien, et où*. Une ligne par piste qui longe la sélection.
 
-- **reçu** : ce que la sélection subit. C'est lui qui juge, parce que c'est la
-  question qu'on pose en sélectionnant une piste ;
-- **émis** : ce qu'elle injecte dans la voisine.
+**Rien ne se totalise, et c'est voulu.** Une *victime* additionne ses agresseurs
+— trois à 3 % lui font 9 %, et c'est ce qu'on dimensionne. Un *agresseur* non :
+ses victimes sont des nets différents, chacun avec son propre budget. Faire la
+somme de ce que la sélection envoie à trois pistes ne décrirait aucune tension
+existant nulle part. Chaque ligne se juge donc seule, et sur **le pire de ses
+deux bouts** : le NEXT s'observe au bout proche de la victime, le FEXT à son
+bout lointain, jamais au même point — donc jamais additionnés, ni en pour-cent
+ni en volts.
 
-Les deux ne sont égaux que si les deux pistes ont la même largeur : le bruit se
-compte en fraction de l'amplitude de **l'agresseur** et se rapporte à ses termes
-propres. Mesuré sur une voisine quatre fois plus large : **5,50 % reçu contre
-4,51 % émis**, et le bruit avant **change de signe** d'un sens à l'autre. Quand
-la sélection émet au-dessus du budget sans rien recevoir, la fiche le dit — le
-défaut est réel, mais il est chez la voisine.
+**Un partenaire différentiel déclaré n'est pas une victime.** Une paire est
+serrée *par construction* — c'est tout ce qu'on lui demande —, et son couplage
+**est** son mode impair, celui que le récepteur différentiel rejette. Compté
+comme du bruit, il repeignait toute paire en rouge quel que soit le budget :
+mesuré sur une paire USB à 0,15 mm, **10,8 %** annoncés comme du bruit contre
+**3,7 %** pour le *vrai* agresseur d'à côté, lequel disparaissait sous l'alarme.
+C'est l'onglet **Z différentielle** qui la juge, contre une cible en ohms. Une
+voisine simplement *proche*, elle, compte : le repli « la plus proche » ne fait
+pas une paire.
+
+**Ce que ce bout-là de la lunette ne montre pas** : les *autres* agresseurs de
+chaque victime. Le chiffre annoncé est ce qu'elle prend à la sélection, pas son
+bruit total — c'est un **minorant**, et la fiche le dit. Pour le budget complet
+d'une victime, sélectionnez-la : elle devient l'agresseur à son tour.
 
 **Le temps de montée** et **l'amplitude** ont chacun leur unité — ps / ns / µs
 et mV / V —, choisie dans une liste comme celle des fréquences : la valeur vit
-en secondes et en volts jusqu'au solveur, et en changer *convertit* ce qui est
-écrit sans le réinterpréter. Le front ne change ni [C] ni [L] : il décide si le
-bruit arrière **sature** — passé une certaine longueur de longement, il ne monte
-plus — et ce que vaut le bruit avant, qui lui ne sature pas. Laissé vide, il est
+en secondes et en volts jusqu'au bout, et en changer *convertit* ce qui est
+écrit sans le réinterpréter. Le front ne change ni [C] ni [L] : sous *Crosstalk*
+il fixe le **genou** — donc le seuil de pas de couture, et la lecture des
+décibels sous la bande que le signal atteint vraiment. Laissé vide, il est
 déduit du haut de la bande par la règle du genou (0,35 / f_max), et la fiche le
-dit.
+dit. L'amplitude, elle, ne change **aucun** calcul : elle convertit les rapports
+en volts, et c'est le seul champ du panneau qui ne jette pas le résultat
+affiché.
 
 **Ce que ça ne couvre pas, et qui est écrit sous chaque fiche** : le couplage
-entre pistes de **couches différentes**, les **croisements**, et le couplage par
-champ de vias — ce n'est plus une section droite. Et quand aucun plan n'est
-trouvé à portée du groupe — la sonde va jusqu'à trois millimètres —, le couplage
-est calculé sans lui, donc **majoré** ; la fiche le dit alors, et seulement
-alors.
+entre pistes de **couches différentes** dans la section droite — *Crosstalk*,
+lui, les présélectionne et les signale —, les **croisements**, et le couplage
+par champ de vias. Et quand aucun plan n'est trouvé à portée du groupe — la
+sonde va jusqu'à trois millimètres —, le calcul se fait sans lui, donc
+**majoré** ; la fiche le dit alors, et seulement alors.
+
+### Un cuivre de masse non cousu ne blinde pas — il transfère
+
+La section posait tout cuivre de masse coplanaire **à zéro volt**. C'est vrai
+d'un plan cousu de vias ; c'est faux d'une garde qui ne l'est pas, et ce n'est
+pas une question de précision, c'est un changement de **nature** : un cuivre
+flottant est chargé par l'agresseur, porte cette charge sur toute sa longueur et
+la rend à la victime.
+
+Le solveur sait désormais poser un conducteur **flottant** — charge totale nulle,
+potentiel libre — par système augmenté d'une inconnue et d'une équation. C'est
+exact, pas une correction. Mesuré sur la section, une garde entre deux
+signaux :
+
+| | couplage arrière |
+| --- | --- |
+| sans garde | 0,88 % |
+| garde **cousue** | 0,53 % |
+| garde **non cousue** | **1,04 %** |
+
+Une garde non cousue fait donc **pire que pas de garde du tout**. C'était le seul
+endroit où le dessin pouvait rassurer à tort.
+
+**Le critère est une longueur d'onde, pas un nombre de vias** : le plus grand
+trou entre deux coutures doit rester sous λ/10 à la fréquence du genou, soit
+moins d'un tiers de la longueur physique du front — 6,4 mm pour un front de
+150 ps. La page mesurait déjà cet espacement, côté par côté ; il **entre
+maintenant dans le calcul**, et la coupe marque en rouge *garde NON COUSUE* avec
+le trou mesuré. Sur la carte d'exemple, la même garde à 1,4 mm de couture tient
+à 150 ps et **flotte à 15 ps** — le couplage y passe de 0,69 % à 5,74 %. La
+nature du conducteur entre donc dans **toutes** les sections : la Z
+différentielle comme la matrice S multi-ports du crosstalk.
+
+*Ce qui n'y est pas* : la **résonance** d'un tel cuivre. Le quasi-statique rend
+le transfert, pas le pic aux multiples de λ/2.
+
+### Ce que ce calcul ne couvre pas — rassemblé, et dans quel sens
+
+Chacun de ces manques est déjà dit plus haut, à l'endroit où il se produit. Les
+réunir a un intérêt propre : **savoir de quel côté penche ce qui reste.**
+
+| Ce qui manque | Sens de l'écart |
+| --- | --- |
+| la **résonance** d'un cuivre de masse flottant, qui sonne aux multiples de λ/2 — le quasi-statique rend le transfert, pas le pic | **optimiste** à ces fréquences |
+| le **couplage entre couches** — deux pistes superposées couplent, et la section pose tous ses conducteurs à la même hauteur | **vu mais non chiffré** : la géométrie est cherchée et signalée, le couplage ne l'est pas — **optimiste** quand il y en a |
+
+**Les deux vont dans le sens rassurant.** Ce que la fiche affiche est donc un
+**plancher** sur une carte mal cousue, ou routée en parallèle sur deux couches
+adossées, jamais un plafond. C'est la seule chose qu'on ne peut pas
+déduire des hypothèses prises une par une, et c'est celle qu'il faut savoir
+avant de signer.
+
+Le second a changé de nature le 2026-09-01, et la nuance n'est pas
+cosmétique : il était **absent — simplement pas vu**, et ces voisines-là
+disparaissaient sans un mot, ce qui se lit comme un couplage nul. Un bus routé
+en parallèle sur deux couches adossées affichait « aucune voisine ne longe ».
+Elles sont maintenant **cherchées**, et la fiche porte, sous le tableau, un bloc
+**« au-dessus et au-dessous »** : le net, les deux couches, la longueur en
+regard, le décalage de **cuivre à cuivre** vu de dessus — zéro quand les deux
+pistes se chevauchent en projection, ce qui est le pire cas — et l'épaisseur de
+diélectrique entre les **deux faces en regard**, qui est ce qui décide. Les
+longements qu'un **plan de référence** sépare sont **comptés et tus** : le plan
+est un écran, et c'est la raison d'être de l'empilage. Un manque qu'on ne voit
+pas ne penche d'aucun côté ; un manque qu'on voit penche du côté rassurant, et
+il faut le dire.
+
+Aller plus loin demande, pour le couplage entre couches, un solveur de section
+à **conducteurs empilés**, ou le moteur 2,5D, qui discrétise une surface et non
+une section droite.
+
+Ce bloc est rendu par le serveur et apparaît en dernier sous chaque fiche : il
+clôt la liste des hypothèses.
+
+### Juger en millivolts plutôt qu'en pourcentage
+
+Un budget en pourcentage est une convention ; ce qui décide qu'une carte marche,
+c'est la **marge de bruit** du récepteur — l'écart entre ce que le driver
+garantit (V_OL / V_OH) et ce que le récepteur exige (V_IL / V_IH). Dans la
+rangée **Signal** de l'onglet *Crosstalk*, le champ **marge** (mV), rempli,
+**remplace** le pourcentage : deux seuils concurrents seraient pires que pas de
+seuil, puisqu'on ne saurait plus lequel a rougi. La fiche dit toujours lequel
+des deux elle applique, et le trace en travers des courbes.
+
+C'est le même champ **amplitude** qui rend les deux comparables : le couplage
+est un rapport, l'amplitude le convertit en volts, et c'est en volts qu'une
+marge de récepteur se lit sur une fiche technique. L'unité suit l'ordre de
+grandeur — V, mV, µV —, et aucun des trois champs ne relance le calcul.
 
 ### Plusieurs morceaux à la fois : les lots
 

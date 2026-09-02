@@ -2,6 +2,243 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 4.0.0
+# Date: 2026-09-02
+# Explication: LA DIAPHONIE SORT D'ICI, ENTIEREMENT. Cette page ne rend plus
+#   qu'une reponse en OHMS -- l'impedance de la ligne seule, celle de la
+#   liaison, et la Z differentielle de tout ce qui longe. Ce qu'une voisine
+#   PREND est desormais l'affaire de `crosstalk.py`, et de lui seul.
+#
+#   POURQUOI LE RETRAIT, ET POURQUOI TOTAL. Les deux repondaient a la meme
+#   question par deux physiques : ici une section droite unique et des
+#   coefficients de couplage faible, la-bas une matrice S multi-ports mise en
+#   cascade le long du parcours, passee en temporel. La seconde rend le meme
+#   « combien » -- en pour-cent de l'agresseur, en decibels et en volts sur
+#   la victime -- ET le « ou », avec une abscisse en millimetres. Garder les
+#   deux laissait deux verdicts concurrents sur le meme cuivre, et rien pour
+#   les arbitrer : c'est le seul defaut de cette chaine qu'on ne sache pas
+#   corriger devant un client.
+#
+#   CE QUI DISPARAIT : `emis`, `recu`, `scan`, `chaleur_voisins`,
+#   `terminaisons`, et avec eux les seuils du balayage, l'etalement du bruit
+#   sur les troncons et les avertissements de couplage faible. La CARTE reste,
+#   reduite a ce qu'elle porte encore : la Z differentielle troncon par
+#   troncon, reprise a l'ecart local. Le temps de montee reste lui aussi --
+#   il ne sert plus qu'au seuil de couture, qui est une longueur d'onde au
+#   genou du front, et `crosstalk.py` le lit par `_temps_montee`.
+# Fonctions retirees : _terminaisons, _seuils_scan, _classe_scan,
+#   _scan_longement, _etaler, _grouper_parts (garde), avec les constantes
+#   SEUIL_NEXT_*, SEUIL_FEXT_*, ORDRE_CLASSES, SEUIL_COUPLAGE_FAIBLE,
+#   SEUIL_FEXT_CREDIBLE.
+# Fonctions ajoutees/modifiees : _sections_locales (nouvelle, remplace
+#   _etaler) ; _section_locale, _fiche_longement, _chaleur_scene, _couplage,
+#   simuler (modifiees).
+#
+# Version: 3.8.0
+# Date: 2026-09-01
+# Explication: la projection d'un longement rend desormais ses BORNES, et non
+#   seulement sa longueur.
+#
+#   POURQUOI. La section « Crosstalk » (python/crosstalk.py) decoupe le
+#   parcours de l'agresseur en blocs ou l'ensemble des voisines et leurs ecarts
+#   ne changent pas -- c'est ce decoupage qui donne a sa carte son axe de
+#   position. Il lui faut donc savoir OU commence et OU finit chaque longement,
+#   la ou l'appariement de l'onglet Diaphonie n'avait besoin que de sa
+#   longueur.
+#
+#   ET C'EST LA MEME PROJECTION, ecrite une seule fois. `_longement_intervalle`
+#   porte la trigonometrie ; `_longement` n'est plus qu'une soustraction sur
+#   son resultat. Deux copies d'une meme regle auraient derive, et c'est
+#   l'onglet Diaphonie et l'onglet Crosstalk qui auraient fini par ne plus
+#   designer le meme cuivre sur la meme carte -- un desaccord invisible, chacun
+#   des deux restant credible pris seul.
+#
+#   Aucun chiffre existant ne bouge : `_longement` rend exactement ce qu'il
+#   rendait, et le banc de ligne_mom le verifie comme avant.
+# Fonctions ajoutees/modifiees :
+# - _longement_intervalle (nouvelle : la projection, avec ses bornes)
+# - _longement (delegue, meme signature et meme resultat qu'avant)
+#
+# Version: 3.7.0
+# Date: 2026-09-01
+# Explication: LE BALAYAGE. L'onglet Diaphonie repond desormais a DEUX
+#   questions, et la premiere ne demande RIEN.
+#
+#   CE QUI CLOCHAIT. Pour savoir s'il y a un risque de diaphonie sur une piste
+#   qu'on vient de tirer, il fallait d'abord fournir un temps de montee, une
+#   amplitude, deux terminaisons et un budget. Quatre chiffres qu'on n'a pas
+#   toujours -- et dont AUCUN n'entre dans le couplage lui-meme : [C] et [L] ne
+#   dependent que de la geometrie de la section. On demandait donc tout ce
+#   qu'il faut pour fabriquer une AMPLITUDE a qui ne voulait qu'un VERDICT.
+#
+#   LE BALAYAGE, ET C'EST LA METHODE D'ANSYS SIWAVE. K_NEXT (sans dimension) et
+#   K_FEXT (ns/m) sortent de la seule section. Chaque voisine est classee « ok,
+#   alerte, violation » contre quatre seuils, et le mode ne demande que ces
+#   seuils -- SIwave les fait saisir aussi. C'est le mode par DEFAUT.
+#
+#   ET IL N'A COUTE AUCUN SOLVEUR DE PLUS. `tl.diaphonie` rend les deux
+#   coefficients depuis `coefficients_couplage`, et le balayage reprend la
+#   section locale que la carte de chaleur resolvait deja : sur une piste a
+#   ecart constant, il est GRATUIT.
+#
+#   LE PLUS SERRE, ET NON LA MOYENNE -- « the maximum FEXT and NEXT
+#   coefficients are reported ». Le mode budget rend l'ecart moyen pondere,
+#   parce qu'il fabrique une amplitude sur toute la longueur ; le balayage rend
+#   `ecart_min`. Un longement de 30 mm a 0,5 mm avec 10 mm a 0,15 mm est bon en
+#   moyenne et mauvais la ou il compte.
+#
+#   LES SEUILS SONT UNE CONVENTION, ET ELLE EST CALCULEE. Inventer un nombre
+#   n'est pas dans les usages d'ici : les defauts sont ceux que CE solveur rend
+#   sur la regle 3W -- alerte au niveau de trois largeurs d'ecart, violation a
+#   deux --, sur quatre microrubans courants. Le tableau se recalcule.
+#
+#   CE QUE LE BALAYAGE NE DIT PAS, et le mode budget reste la pour ca : les K
+#   supposent les deux lignes ADAPTEES. Mesure sur un microruban de 0,25 mm a
+#   0,20 mm d'ecart, 50 mm, front de 1 ns -- 1,16 % au recepteur en ligne
+#   adaptee contre 6,82 % sur une entree CMOS en l'air, un FACTEUR 5,9. Le
+#   balayage dit OU regarder, le budget dit COMBIEN cela coute.
+# Fonctions ajoutees : _seuils_scan, _classe_scan, _scan_longement
+# Fonctions modifiees : _section_locale (rend les K du balayage), _couplage
+#   (un avertissement, trois hypotheses, une cle de resultat), _fiche_longement
+#   (les K de la section moyenne, en repli)
+#   (ligne_mom : coefficients_couplage, et diaphonie qui lui delegue)
+# Constantes ajoutees : SEUIL_NEXT_ALERTE, SEUIL_NEXT_VIOLATION,
+#   SEUIL_FEXT_ALERTE, SEUIL_FEXT_VIOLATION, ORDRE_CLASSES
+#
+# Version: 3.6.0
+# Date: 2026-09-01
+# Explication: LE COUPLAGE ENTRE COUCHES CESSE D'ETRE INVISIBLE. Ce n'est pas
+#   un chiffre de plus : c'est un SILENCE de moins, et c'etait le dernier de
+#   cette page a rendre ZERO au lieu d'un majorant.
+#
+#   CE QUI SE PASSAIT. `_scenes_paralleles` ecarte les autres couches des sa
+#   premiere ligne -- `layer` different, `continue` -- parce que la section
+#   droite n'a qu'UN plan de conducteurs et ne sait pas decrire deux pistes
+#   superposees. La voisine disparaissait alors sans laisser de trace : ni
+#   dans le tableau, ni dans `ecartes`, ni dans un avertissement. Un bus route
+#   en parallele sur deux couches de signal ADOSSEES affichait « aucune
+#   voisine ne longe la selection ». Le pire cas du metier rendu comme le
+#   meilleur -- et le contraire exact de la regle de cette chaine, ecrite
+#   depuis le debut : une voisine qui disparait sans un mot se lit comme un
+#   couplage nul.
+#
+#   CE QUI SE PASSE MAINTENANT. `voisinage` portait deja tous les troncons de
+#   toutes les couches ; c'est le serveur qui les filtrait. On les REGARDE :
+#   meme test de parallelisme et meme recouvrement projete que pour le
+#   coplanaire, puis les trois nombres qui decident -- la longueur en regard,
+#   le decalage de CUIVRE A CUIVRE vu de dessus, et l'epaisseur de
+#   dielectrique entre les deux faces. Le couplage n'est pas chiffre ; il est
+#   VU et NOMME, avec le sens de l'ecart : PLANCHER.
+#
+#   ET LE DISCRIMINANT EST LE PLAN, PAS LA DISTANCE. Deux couches de signal
+#   separees par un plan de reference ne se voient pas -- le plan est un
+#   ecran, et c'est la raison d'etre d'un empilage. Celles-la sont COMPTEES et
+#   tues ; seules les couches adossees sont signalees. Sans ce tri, la moitie
+#   des cartes quatre couches recevrait une alarme pour un empilage qui fait
+#   exactement son travail.
+#
+#   CE QUI N'A PAS BOUGE ET QUI EST VOULU : les CROISEMENTS ne sont ni
+#   chiffres ni cherches. Le recouvrement d'une traversee orthogonale est une
+#   aire minuscule, et c'est precisement pourquoi la regle du metier est de
+#   router deux couches adossees a angle droit. Signaler un croisement serait
+#   signaler la solution.
+# Fonctions ajoutees : _superposition, _superposes, _plan_entre,
+#   _dielectrique_entre, _nom_de_couche
+# Fonctions modifiees : _couplage (un avertissement, deux hypotheses remises
+#   sur le code, deux cles de resultat)
+#
+# Version: 3.5.0
+# Date: 2026-08-31
+# Explication: LA DIAPHONIE DEVIENT REALISTE. Trois changements, et les deux
+#   premiers portent sur de la PHYSIQUE qui manquait, pas sur de la precision.
+#
+#   1. LES TERMINAISONS SONT DANS LE CALCUL. Les formules de couplage rendent
+#      les amplitudes ENGENDREES sous l'hypothese de la ligne adaptee aux deux
+#      bouts. Une carte numerique ne l'est presque jamais -- driver CMOS a
+#      10-40 ohms, recepteur CMOS ouvert -- et l'ecart est un facteur deux a
+#      trois AU RECEPTEUR. `ligne_mom.diaphonie_terminee` applique les
+#      coefficients de reflexion au premier ordre et rend ce que CHAQUE BOUT
+#      voit. Trois consequences, dont une que personne n'attend :
+#        · le FEXT double sur un recepteur ouvert ;
+#        · le NEXT double aussi s'il arrive sur un bout ouvert ;
+#        · LE NEXT FINIT SUR LE RECEPTEUR. Il remonte vers le driver -- une
+#          basse impedance, Gamma ~ -1 --, repart en avant inverse, et l'ouvert
+#          le double a l'arrivee. Le bruit qu'on croyait reparti vers la source
+#          est souvent le plus gros terme du bout lointain. Mesure sur 50 mm a
+#          0,25 mm : 5,95 % de FEXT engendre, 18,29 % vus au recepteur.
+#      Les rebonds SUIVANTS ne sont pas chiffres : quand les deux bouts
+#      renvoient fort la ligne sonne, le premier ordre SOUS-ESTIME, et la fiche
+#      le dit ligne par ligne.
+#
+#   2. UN CUIVRE DE MASSE NON COUSU NE BLINDE PAS, IL TRANSFERE. La section
+#      posait tout cuivre de masse coplanaire a ZERO VOLT. C'est vrai d'un plan
+#      cousu de vias, faux d'une garde qui ne l'est pas -- et ce n'est pas une
+#      question de precision, c'est un changement de NATURE. `ligne_mom` sait
+#      desormais poser un conducteur FLOTTANT : charge totale nulle, potentiel
+#      libre, par systeme augmente d'une inconnue et d'une equation. C'est
+#      exact, pas une correction. Mesure sur une garde entre deux signaux :
+#        sans garde 0,88 %  ·  garde cousue 0,53 %  ·  garde NON cousue 1,04 %
+#      Un cuivre non cousu fait donc PIRE QUE PAS DE CUIVRE DU TOUT, et c'est le
+#      seul endroit de cette chaine ou le dessin rassurait a tort. Le critere
+#      est une LONGUEUR D'ONDE et non un nombre de vias : le plus grand trou
+#      entre deux coutures doit rester sous lambda/10 au genou du front, soit
+#      moins d'un tiers de la longueur physique du front. La page mesurait deja
+#      cet espacement (`simEspacement`) pour l'AFFICHER ; il entre maintenant
+#      dans le calcul, cote par cote et troncon par troncon.
+#      CE QUI N'Y EST TOUJOURS PAS : la RESONANCE d'un tel cuivre. Le
+#      quasi-statique rend le transfert, pas le pic.
+#
+#   3. CE QUI JUGE A CHANGE. Le verdict ne compare plus une amplitude engendree
+#      a un budget : il compare ce que chaque BOUT de la victime voit. Et le
+#      seuil peut s'exprimer en MILLIVOLTS -- la marge de bruit du recepteur --
+#      plutot qu'en pourcentage, parce que c'est elle qui decide reellement.
+# Fonctions ajoutees : _terminaisons, _couture, _couture_max
+#   (ligne_mom : reflexion, diaphonie_terminee, bruits_depuis_coefficients)
+# Fonctions modifiees : _fiche_longement (les deux bouts), _scenes_paralleles
+#   (agrege la couture), _poser_section (garde tenue ou flottante), _couplage
+#   (avertissement de couture, hypotheses)
+#   (ligne_mom : _conducteurs_places, capacitance_matrice et solve_multiline
+#   acceptent un conducteur `flottant`)
+# Constantes ajoutees : VITESSE_TYPIQUE, COUTURE_FRACTION
+#
+# Version: 3.4.0
+# Date: 2026-08-31
+# Explication: PASSE COMPLETE SUR LA DIAPHONIE. Le solveur etait juste ; ce
+#   qu'on faisait de ses chiffres ne l'etait pas toujours.
+#
+#   1. LE PARTENAIRE DIFFERENTIEL N'EST PAS UN AGRESSEUR. Une paire est SERREE
+#      PAR CONSTRUCTION -- c'est tout ce qu'on lui demande --, et son couplage
+#      est le mode impair de la paire, que le recepteur differentiel rejette.
+#      Il entrait pourtant dans le budget de bruit et dans la couleur de la
+#      carte : mesure sur une paire USB a 0,15 mm, 10,8 % de NEXT annonces
+#      comme du bruit, contre 3,7 % pour le VRAI agresseur d'a cote -- lequel
+#      disparaissait sous l'alarme. Le partenaire DECLARE (ou nomme par ses
+#      suffixes) garde sa ligne, marquee « paire », et sort du cumul comme de
+#      la carte. Le repli « la voisine la plus proche », lui, reste compte :
+#      il ne fait pas une paire.
+#
+#   2. LE CUMUL SE FAIT BOUT PAR BOUT. Le NEXT remonte vers la SOURCE, le FEXT
+#      part vers le RECEPTEUR : les deux ne s'observent jamais au meme point de
+#      la victime. La fiche additionnait, agresseur par agresseur, le pire des
+#      deux -- elle melangeait donc deux bouts de piste et annoncait un total
+#      auquel rien de mesurable ne correspondait. Deux cumuls desormais, un par
+#      bout, et c'est le plus gros qui juge.
+#
+#   3. LE DOMAINE DU MODELE SE DIT. La theorie employee est celle du COUPLAGE
+#      FAIBLE. Passe k ~ 0,35 les deux pistes forment une paire et ce sont ses
+#      modes qu'il faut lire ; passe un FEXT de la moitie de l'amplitude, la
+#      formule -- qui ne sature pas -- rend plus que ce qu'un couplage faible
+#      transporte. Les deux se disent maintenant en avertissement, et le
+#      chiffre s'annonce comme un MAJORANT.
+#
+#   4. DEUX HYPOTHESES MANQUAIENT, et ce sont celles qui changent la lecture :
+#      NEXT et FEXT supposent la victime TERMINEE sur son Z0 aux DEUX bouts --
+#      un recepteur CMOS en l'air reflechit, et le bruit observe peut valoir le
+#      double --, et les deux bruits ne s'additionnent pas.
+# Fonctions modifiees : _chaleur_scene (le partenaire declare ne compte plus),
+#   _couplage (deux avertissements de domaine, trois hypotheses de plus)
+# Constantes ajoutees : SEUIL_COUPLAGE_FAIBLE, SEUIL_FEXT_CREDIBLE
+#
 # Version: 3.3.0
 # Date: 2026-08-31
 # Explication: LA SCENE. Trois corrections d'un coup, et la premiere est celle
@@ -784,8 +1021,8 @@ AVERTISSEMENTS_MODELE = [
     " uniformes, avec ses coudes, ses vias et leurs moignons cascadés en"
     " éléments localisés. N'y sont pas : le rayonnement, et la cavité entre"
     " plans hors du chemin de retour chiffré au raccord.",
-    "Le couplage aux pistes voisines est calculé À PART — Z différentielle et"
-    " diaphonie, section à deux conducteurs — et n'entre PAS dans la cascade :"
+    "Le couplage aux pistes voisines est calculé À PART — Z différentielle,"
+    " section à deux conducteurs — et n'entre PAS dans la cascade :"
     " le Z₀ et les paramètres S ci-dessus sont ceux de la piste prise seule."
     " Une piste couplée n'a pas une impédance mais deux, une par mode.",
     "Le calcul de section est quasi-statique ; la dispersion est ajoutée par"
@@ -2378,6 +2615,61 @@ def _extremites(obj):
     return ((_nombre(a[0]), _nombre(a[1])), (_nombre(b[0]), _nombre(b[1])))
 
 
+# ==========================================================================
+# LA COUTURE, ET CE QU'ELLE CHANGE — UN CUIVRE NON COUSU NE BLINDE PAS
+# --------------------------------------------------------------------------
+# LA SECTION POSE LE CUIVRE DE MASSE COPLANAIRE comme un conducteur TENU A ZERO
+# VOLT. C'est vrai d'un plan cousu de vias ; c'est faux d'une garde qui ne l'est
+# pas, et l'ecart n'est pas une question de precision, c'est un changement de
+# NATURE :
+#
+#   · COUSU, le cuivre termine les lignes de champ entre agresseur et victime :
+#     il BLINDE. Mesure sur une garde entre deux signaux : le NEXT tombe de
+#     0,88 % (sans garde) a 0,53 % ;
+#   · NON COUSU, c'est un conducteur FLOTTANT. L'agresseur le charge, il porte
+#     cette charge sur toute sa longueur et la rend a la victime : il TRANSFERE.
+#     Meme geometrie, le NEXT monte a 1,04 % -- soit PIRE que pas de garde du
+#     tout. C'est le piege exact du dessin, et le modele le voit desormais.
+#
+# LE CRITERE EST UNE LONGUEUR D'ONDE, pas un nombre de vias. Un cuivre est
+# « tenu » tant que le plus grand trou entre deux coutures reste petit devant la
+# longueur d'onde a la frequence du GENOU du front -- la regle du metier est
+# lambda/10. Comme f_genou = 0,35 / t_r et lambda = v / f, cela s'ecrit :
+#
+#     trou_max  <  v . t_r / 3,5
+#
+# soit, joliment, moins d'un TIERS de la longueur physique du front. La vitesse
+# exacte demanderait d'avoir deja resolu la section ; on prend celle d'un
+# stratifie courant, et l'erreur qu'elle laisse est sans commune mesure avec
+# celle qu'on corrige.
+#
+# CE QUE LE MODELE NE CAPTURE TOUJOURS PAS : la RESONANCE. Un cuivre flottant
+# est aussi une ligne non terminee, qui sonne aux multiples de lambda/2. Le
+# quasi-statique n'en sait rien -- il rend le transfert, pas le pic. Le chiffre
+# est donc juste dans son principe et optimiste a ces frequences-la.
+# ==========================================================================
+
+VITESSE_TYPIQUE = 1.5e8         # m/s ; stratifie courant, eps_eff ~ 4
+COUTURE_FRACTION = 1.0 / 3.5    # lambda/10 a la frequence du genou
+
+
+def _couture_max(t_r):
+    """Le plus grand trou de couture encore acceptable, en MILLIMETRES."""
+    return 1e3 * VITESSE_TYPIQUE * float(t_r) * COUTURE_FRACTION if t_r > 0         else 0.0
+
+
+def _couture(obj):
+    """Les deux plus grands trous de couture d'un troncon, en millimetres.
+
+    Zero veut dire « la page ne l'a pas mesure » -- un outil qui n'envoie pas
+    la couture ne doit pas voir tout son cuivre declare flottant. C'est le
+    repli sur l'ancien comportement, et il est du bon cote : on suppose tenu ce
+    qu'on ne sait pas.
+    """
+    return (_nombre(obj.get("couture_left"), 0.0),
+            _nombre(obj.get("couture_right"), 0.0))
+
+
 def _noeuds(objets):
     """Les noeuds de la selection : un point du plan, et les bouts qui s'y rejoignent.
 
@@ -2623,10 +2915,24 @@ def _boite(axe, marge):
             max(x, x2) + marge, max(y, y2) + marge)
 
 
-def _longement(a, b, axe_a=None, boite_a=None):
-    """Deux troncons se longent-ils, et de combien ? En millimetres.
+def _longement_intervalle(a, b, axe_a=None, boite_a=None):
+    """Deux troncons se longent-ils, et SUR QUEL INTERVALLE ? En millimetres.
 
-    Rend (recouvrement, ecart_axe, cote, sens) ou None. `ecart_axe` est la
+    Rend (debut, fin, ecart_axe, cote, sens) ou None. `debut` et `fin` sont
+    mesures LE LONG DE L'AXE DE A, depuis son origine : c'est la portion de a
+    que b longe, et non sa seule longueur.
+
+    POURQUOI CETTE FORME PLUTOT QUE LA LONGUEUR SEULE. `_longement` n'a besoin
+    que de la longueur -- il apparie et il moyenne. La section « Crosstalk »,
+    elle, DECOUPE le parcours de l'agresseur en blocs ou l'ensemble des
+    voisines et leurs ecarts ne changent pas : il lui faut les BORNES, sans
+    quoi il n'y a pas de bloc a former et pas d'axe de position a construire.
+    Les deux lisent donc la meme projection, ecrite une fois ici -- deux copies
+    d'une meme trigonometrie auraient derive, et c'est l'onglet Z
+    differentielle et l'onglet Crosstalk qui auraient cesse de designer le
+    meme cuivre.
+
+    `ecart_axe` est la
     distance ENTRE LES AXES -- la largeur des deux pistes s'en retranche plus
     loin, la ou on la connait --, `cote` vaut +1 ou -1 selon que b passe a
     gauche ou a droite de a dans le sens de parcours de a, et `sens` vaut +1
@@ -2693,7 +2999,21 @@ def _longement(a, b, axe_a=None, boite_a=None):
         n = 0.5 * (n1 + n2)
     if abs(n) < 1e-9:
         return None
-    return recouvrement, abs(n), (1 if n > 0 else -1), sens
+    return (max(debut, 0.0), min(fin, la), abs(n),
+            (1 if n > 0 else -1), sens)
+
+
+def _longement(a, b, axe_a=None, boite_a=None):
+    """Le meme longement, ramene a sa LONGUEUR.
+
+    Rend (recouvrement, ecart_axe, cote, sens) ou None -- la forme qu'attendent
+    l'appariement et la carte de chaleur, qui n'ont que faire des bornes.
+    """
+    r = _longement_intervalle(a, b, axe_a, boite_a)
+    if r is None:
+        return None
+    debut, fin, ecart_axe, cote, sens = r
+    return fin - debut, ecart_axe, cote, sens
 
 
 def _ecart_face(agresseur, cote, sens):
@@ -2709,6 +3029,221 @@ def _ecart_face(agresseur, cote, sens):
     if sens >= 0:
         return droite if cote > 0 else gauche
     return gauche if cote > 0 else droite
+
+
+# ==========================================================================
+# CE QUI PASSE AU-DESSUS -- LE COUPLAGE ENTRE COUCHES
+# --------------------------------------------------------------------------
+# LE SEUL COUPLAGE DE CETTE PAGE QUI RENDAIT ZERO SANS UN MOT. Le solveur de
+# section n'a qu'UN plan de conducteurs : il pose tous ses rubans a la meme
+# hauteur, et il n'a donc aucune facon de decrire deux pistes SUPERPOSEES.
+# Ces voisines-la etaient ecartees a la premiere ligne de la boucle de
+# `_scenes_paralleles` -- `layer` different, `continue` -- et disparaissaient
+# sans laisser de trace : ni dans le tableau, ni dans `ecartes`, ni dans un
+# avertissement. Un bus route en parallele sur deux couches de signal
+# adossees affichait donc « aucune voisine ne longe la selection ». C'est le
+# pire cas du metier rendu comme le meilleur, et c'est la faute qu'on repare.
+#
+# CE QU'ON PEUT FAIRE SANS SOLVEUR EMPILE : le VOIR et le NOMMER. La
+# geometrie suffit -- `voisinage` porte deja tous les troncons de toutes les
+# couches, c'est le serveur qui les filtrait -- et elle rend les trois
+# nombres qui decident : la longueur qui se recouvre, le decalage lateral
+# entre les deux cuivres, et l'epaisseur de dielectrique qui les separe. Le
+# couplage n'est pas chiffre ; il cesse d'etre invisible. C'est la meme regle
+# que pour une voisine coplanaire qu'on n'a pas pu poser (`ecartes`) : une
+# voisine qui disparait sans un mot se lit comme un couplage nul.
+#
+# ET LE DISCRIMINANT EST LE PLAN, PAS LA DISTANCE. Deux couches de signal
+# separees par un plan de reference ne se voient pas : le plan est un ecran,
+# et c'est toute la raison d'etre d'un empilage. Deux couches de signal
+# ADOSSEES -- rien entre elles que du prepreg -- couplent, et d'autant plus
+# que le prepreg est mince : sur 0,1 mm de prepreg, deux pistes exactement
+# superposees sont bien plus couplees que les memes cote a cote a 0,2 mm.
+# Signaler les premieres serait du bruit ; taire les secondes est la faute.
+# On les compte donc separement, et seules les secondes sont rendues.
+#
+# POURQUOI `_longement` NE PEUT PAS SERVIR ICI. Il REFUSE le decalage nul
+# (`abs(n) < 1e-9`), et il a raison : sur une meme couche, deux axes confondus
+# sont deux troncons du meme cuivre. Entre deux couches, c'est le pire cas.
+# Il rend aussi un cote et un sens, qui servent a lire l'ecart au cuivre de
+# masse du bon bord -- notion qui n'a pas d'objet entre deux couches.
+# ==========================================================================
+
+
+def _superposition(a, b, axe_a=None, boite_a=None):
+    """Deux troncons de COUCHES DIFFERENTES se recouvrent-ils, et de combien ?
+
+    Rend (recouvrement, decalage) en millimetres, ou None. `decalage` est la
+    distance entre les deux AXES vue de dessus -- zero quand une piste passe
+    exactement sous l'autre --, et la largeur des deux pistes s'en retranche
+    plus loin, la ou on la connait.
+
+    MEME PROJECTION QUE `_longement`, aux deux differences dites juste
+    au-dessus : le decalage nul est accepte, et il n'y a ni cote ni sens a
+    rendre. `axe_a` et `boite_a` sont les memes valeurs pour tous les voisins
+    d'une meme victime : l'appelant les calcule une fois.
+    """
+    axe_a = axe_a or _axe(a)
+    axe_b = _axe(b)
+    if axe_a is None or axe_b is None:
+        return None
+    if boite_a is None:
+        boite_a = _boite(axe_a, ECART_COUPLAGE_MAX)
+    bx1, by1, bx2, by2 = _boite(axe_b, 0.0)
+    if (bx2 < boite_a[0] or bx1 > boite_a[2]
+            or by2 < boite_a[1] or by1 > boite_a[3]):
+        return None
+    (ax, ay), (ux, uy), la = axe_a
+    (bx, by), (vx, vy), lb = axe_b
+    if abs(ux * vx + uy * vy) < math.cos(math.radians(ANGLE_PARALLELE)):
+        return None
+
+    def projete(x, y):
+        dx, dy = x - ax, y - ay
+        return dx * ux + dy * uy, -dx * uy + dy * ux
+
+    t1, n1 = projete(bx, by)
+    t2, n2 = projete(bx + vx * lb, by + vy * lb)
+    debut, fin = min(t1, t2), max(t1, t2)
+    recouvrement = min(fin, la) - max(debut, 0.0)
+    if recouvrement < RECOUVREMENT_MIN:
+        return None
+
+    # LE DECALAGE EST PRIS AU MILIEU DU RECOUVREMENT, meme raison que dans
+    # `_longement` : sur deux pistes qui divergent de quelques degres, prendre
+    # un bout donnerait le meilleur ou le pire des cas selon le sens de dessin.
+    milieu = (max(debut, 0.0) + min(fin, la)) / 2.0
+    if abs(t2 - t1) > 1e-9:
+        n = n1 + (milieu - t1) / (t2 - t1) * (n2 - n1)
+    else:
+        n = 0.5 * (n1 + n2)
+    return recouvrement, abs(n)
+
+
+def _nom_de_couche(couches, indice):
+    """Le nom d'une couche de l'empilage, ou « couche N » faute de mieux."""
+    indice = int(indice)
+    if 0 <= indice < len(couches):
+        nom = str(couches[indice].get("name") or "").strip()
+        if nom:
+            return nom
+    return "couche %d" % indice
+
+
+def _plan_entre(couches, ia, ib):
+    """Le nom du plan de reference qui SEPARE deux couches de cuivre, ou "".
+
+    Un plan entre deux couches de signal est un ECRAN. Le net du plan ne
+    change rien : un plan d'alimentation blinde autant qu'un plan de masse,
+    parce qu'il est un court-circuit pour le front -- c'est le decouplage qui
+    le tient, et son defaut se juge ailleurs, pas ici.
+    """
+    lo, hi = sorted((int(ia), int(ib)))
+    for i in range(lo + 1, hi):
+        if not (0 <= i < len(couches)):
+            continue
+        c = couches[i]
+        if c.get("type") == "copper" and c.get("role") == "plane":
+            return _nom_de_couche(couches, i)
+    return ""
+
+
+def _dielectrique_entre(couches, ia, ib):
+    """L'epaisseur de dielectrique entre deux couches de cuivre, en mm.
+
+    Des FACES EN REGARD et non des cotes de reference : `_z_empilage` rend le
+    dessus de chaque couche, le dessous de la couche haute est donc `z[lo+1]`
+    et le dessus de la basse `z[hi]`. C'est cette epaisseur-la qui decide du
+    couplage, pas la distance entre les milieux des deux cuivres.
+    """
+    lo, hi = sorted((int(ia), int(ib)))
+    if not (0 <= lo < hi < len(couches)):
+        return 0.0
+    z = _z_empilage(couches)
+    return max(0.0, z[hi] - z[lo + 1])
+
+
+def _superposes(objets, voisinage, couches):
+    """Ce qui longe la selection SUR UNE AUTRE COUCHE.
+
+    Rend (trouves, blindes) : la liste des longements entre couches qu'AUCUN
+    plan ne separe -- agregee par (net voisin, couche voisine, couche de
+    depart), la plus longue d'abord --, et le NOMBRE de ceux qu'un plan
+    separe. Les seconds ne sont pas un probleme ; les compter permet de dire
+    « on a regarde » au lieu de se taire, ce qui est exactement la difference
+    entre un empilage qui fait son travail et un solveur qui n'a rien vu.
+
+    Chaque entree porte `longueur` (la somme des recouvrements, en mm),
+    `decalage` (le plus petit ecart de CUIVRE A CUIVRE vu de dessus : zero
+    quand les deux pistes se chevauchent en projection) et `hauteur`
+    (l'epaisseur de dielectrique entre les deux faces en regard).
+
+    RIEN N'EST CHIFFRE ICI, et ce n'est pas un oubli : la section droite pose
+    tous ses conducteurs a la meme hauteur, et il faudrait un solveur a
+    conducteurs empiles -- ou le moteur 2,5D -- pour rendre un couplage. La
+    geometrie, elle, suffit a dire OU regarder.
+    """
+    par_cle = {}
+    blindes = 0
+    for victime in objets:
+        couche = int(_nombre(victime.get("layer"), -1))
+        net_v = str(victime.get("net") or "")
+        w_v = _nombre(victime.get("width"))
+        if couche < 0 or not net_v or not (w_v > 0):
+            continue
+        axe_v = _axe(victime)
+        if axe_v is None:
+            continue
+        boite_v = _boite(axe_v, ECART_COUPLAGE_MAX + w_v / 2.0)
+        for agresseur in voisinage:
+            couche_a = int(_nombre(agresseur.get("layer"), -1))
+            if couche_a < 0 or couche_a == couche:
+                continue
+            net_a = str(agresseur.get("net") or "")
+            # MEME REGLE QUE POUR LE COPLANAIRE : sans net on ne groupe rien,
+            # et un net face a lui-meme n'est pas un couplage -- c'est la
+            # meme liaison qui change de couche par un via.
+            if not net_a or net_a == net_v:
+                continue
+            w_a = _nombre(agresseur.get("width"))
+            if not (w_a > 0):
+                continue
+            sup = _superposition(victime, agresseur, axe_v, boite_v)
+            if sup is None:
+                continue
+            recouvrement, decalage = sup
+            # LE DECALAGE SE COMPTE DE CUIVRE A CUIVRE, comme l'ecart
+            # coplanaire : deux pistes larges dont les axes sont distants de
+            # 0,2 mm se CHEVAUCHENT en projection, et leur decalage de bords
+            # est nul. C'est le pire cas, et le compter a 0,2 mm le
+            # deguiserait en cas moyen.
+            bord = max(0.0, decalage - (w_v + w_a) / 2.0)
+            if bord > ECART_COUPLAGE_MAX:
+                continue
+            if _plan_entre(couches, couche, couche_a):
+                blindes += 1
+                continue
+            cle = (net_a, couche_a, couche)
+            f = par_cle.get(cle)
+            if f is None:
+                f = par_cle[cle] = {
+                    "net": net_a,
+                    "couche": couche_a,
+                    "nom_couche": _nom_de_couche(couches, couche_a),
+                    "depuis": couche,
+                    "nom_depuis": _nom_de_couche(couches, couche),
+                    "longueur": 0.0,
+                    "decalage": bord,
+                    "hauteur": _dielectrique_entre(couches, couche, couche_a),
+                }
+            f["longueur"] += recouvrement
+            f["decalage"] = min(f["decalage"], bord)
+    trouves = sorted(par_cle.values(), key=lambda f: -f["longueur"])
+    for f in trouves:
+        f["longueur"] = round(f["longueur"], 3)
+        f["decalage"] = round(f["decalage"], 3)
+        f["hauteur"] = round(f["hauteur"], 4)
+    return trouves, blindes
 
 
 def _scenes_paralleles(objets, voisinage, refs=()):
@@ -2735,11 +3270,10 @@ def _scenes_paralleles(objets, voisinage, refs=()):
 
     UNE VOISINE DE MASSE N'EST PAS UNE VOISINE, C'EST UNE GARDE. Une piste du
     net de reference qui longe la selection est le bouclier qu'on pose
-    justement contre la diaphonie : elle entre dans la section comme un
+    justement contre le couplage : elle entre dans la section comme un
     conducteur TENU A ZERO VOLT -- elle occupe la place, elle prend du champ,
-    et elle n'a ni impedance differentielle ni bruit a elle. La prendre pour un
-    agresseur ferait afficher une Z differentielle entre un signal et la masse,
-    et un NEXT que personne ne subit.
+    et elle n'a pas d'impedance differentielle a elle. La prendre pour une
+    voisine ferait afficher une Z differentielle entre un signal et la masse.
 
     Rend une liste de scenes, la plus longue d'abord.
     """
@@ -2756,6 +3290,7 @@ def _scenes_paralleles(objets, voisinage, refs=()):
             continue
         boite_v = _boite(axe_v, ECART_COUPLAGE_MAX + w_v / 2.0)
         gap_g, gap_d = _ecarts(victime)
+        cout_g, cout_d = _couture(victime)
         trouves = []
         for j_obj, agresseur in enumerate(voisinage):
             if int(_nombre(agresseur.get("layer"), -1)) != couche:
@@ -2778,9 +3313,15 @@ def _scenes_paralleles(objets, voisinage, refs=()):
             # loin n'est plus un couplage lisible.
             if not (0 < ecart <= ECART_COUPLAGE_MAX):
                 continue
+            # LA COUTURE D'UNE GARDE EST LA SIENNE, et cousue d'UN SEUL cote
+            # suffit a la tenir a zero volt : on garde donc le MEILLEUR des
+            # deux, la ou pour la selection on garde le pire de chaque cote.
+            cg, cd = _couture(agresseur)
             trouves.append((j_obj, net_a, w_a, recouvrement, ecart,
                             entre_axes, cote, net_a in refs,
-                            _ecart_face(agresseur, cote, sens)))
+                            _ecart_face(agresseur, cote, sens),
+                            min(cg, cd) if (cg > 0 and cd > 0)
+                            else max(cg, cd)))
 
         if not trouves:
             continue
@@ -2802,6 +3343,7 @@ def _scenes_paralleles(objets, voisinage, refs=()):
                   # net de masse retenu, quand il y en a un seul.
                   "net_masse": (sorted(refs)[0] if len(refs) == 1
                                 else "masse"),
+                  "couture_g": 0.0, "couture_d": 0.0,
                   "epaisseur": _nombre(victime.get("copper_thickness"), 0.035)}
             scenes[cle] = sc
         # LES COTES DE LA SELECTION SONT PONDEREES PAR LA LONGUEUR DES TRONCONS
@@ -2813,9 +3355,15 @@ def _scenes_paralleles(objets, voisinage, refs=()):
         sc["_w"] += w_v * long_seg
         sc["_g"] += gap_g * long_seg
         sc["_d"] += gap_d * long_seg
+        # LA COUTURE NE SE MOYENNE PAS : ce qui compte est le PIRE trou. Un
+        # cuivre cousu serre sur quatre-vingt-dix pour cent d'un longement et
+        # nu sur le reste flotte sur ce reste-la, et c'est lui qui transfere.
+        # Une moyenne le dirait tenu.
+        sc["couture_g"] = max(sc["couture_g"], cout_g)
+        sc["couture_d"] = max(sc["couture_d"], cout_d)
 
         for j_obj, net_a, w_a, recouvrement, ecart, entre_axes, cote, \
-                garde, gap_face in trouves:
+                garde, gap_face, couture_a in trouves:
             # UNE GARDE SE RANGE PAR COTE, PAS PAR NET. Le net de masse est le
             # meme des deux cotes -- c'est un seul net sur toute la carte --, et
             # les moyenner poserait une garde imaginaire au milieu de la piste.
@@ -2824,7 +3372,7 @@ def _scenes_paralleles(objets, voisinage, refs=()):
             if v is None:
                 v = {"net": net_a, "longueur": 0.0, "ecart_min": ecart,
                      "troncons": 0, "_w": 0.0, "_axe": 0.0, "cotes": set(),
-                     "_face": 0.0, "garde": garde}
+                     "_face": 0.0, "garde": garde, "couture": 0.0}
                 sc["voisins"][cle_v] = v
             v["longueur"] += recouvrement
             v["troncons"] += 1
@@ -2834,6 +3382,7 @@ def _scenes_paralleles(objets, voisinage, refs=()):
             # sur ce qui longe : c'est lui qui dit ou finit le cuivre de masse
             # interpose, donc quelle largeur de garde poser.
             v["_face"] += gap_face * recouvrement
+            v["couture"] = max(v["couture"], couture_a)
             # LE COTE EST DANS LA POSITION, ET C'EST TOUT L'INTERET. `cote`
             # vaut +1 a gauche du sens de parcours ; on pose donc la voisine en
             # x negatif a gauche et positif a droite, comme la page nomme ses
@@ -2940,7 +3489,7 @@ def _masse_interposee(scene, v):
     return {"x": -milieu if a_gauche else milieu, "w": largeur}
 
 
-def _poser_section(scene, distance_plan=0.0):
+def _poser_section(scene, distance_plan=0.0, couture_max=0.0):
     """La scene, ramenee a une liste de conducteurs qui ne se chevauchent pas.
 
     Rend (conducteurs, ecartes) en MILLIMETRES : le premier element est la
@@ -3020,10 +3569,18 @@ def _poser_section(scene, distance_plan=0.0):
                              g["w"] - 2.0 * (marge(g["w"])
                                              + marge(v["largeur"])))
                 if gene_par(g["x"], g["w"])[0] is None:
+                    # TENUE OU FLOTTANTE : c'est la couture mesuree de CE
+                    # cote-la de la selection qui decide. Un cuivre trop peu
+                    # cousu ne blinde pas, il transfere -- voir « LA COUTURE »
+                    # plus haut. On garde le trou pour que la fiche le dise.
+                    trou = (scene.get("couture_g", 0.0) if g["x"] < 0
+                            else scene.get("couture_d", 0.0))
+                    flotte = bool(couture_max > 0 and trou > couture_max)
                     poses.append({"net": scene.get("net_masse") or "masse",
                                   "x": g["x"], "w": g["w"],
                                   "selection": False, "garde": True,
-                                  "interposee": True})
+                                  "interposee": True,
+                                  "flottant": flotte, "couture": trou})
                     # ET LA VOISINE DOIT TENIR APRES : perdre le longement pour
                     # avoir pose son bouclier remplacerait une reponse fausse
                     # par une absence de reponse, ce qui n'est pas un progres.
@@ -3045,7 +3602,13 @@ def _poser_section(scene, distance_plan=0.0):
                       "ecart": v["ecart"], "ecart_min": v["ecart_min"],
                       "troncons": v["troncons"], "cote": v["cote"],
                       "deux_cotes": v["deux_cotes"],
-                      "garde": bool(v.get("garde"))})
+                      "garde": bool(v.get("garde")),
+                      # UNE GARDE ROUTEE PORTE SA PROPRE COUTURE, celle qu'on a
+                      # mesuree le long d'elle. Une voisine de signal n'est pas
+                      # une garde et ne flotte donc jamais : elle a un port.
+                      "flottant": bool(v.get("garde") and couture_max > 0
+                                       and v.get("couture", 0.0) > couture_max),
+                      "couture": _nombre(v.get("couture"), 0.0)})
     return poses, ecartes
 
 
@@ -3080,6 +3643,23 @@ def _ecarts_masse_du_groupe(poses, scene):
     return (e_g if e_g > 0 else 0.0), (e_d if e_d > 0 else 0.0)
 
 
+# UN LONGEMENT TROP COURT N'EST PAS UNE LIGNE, C'EST UN COIN. C'est le seuil
+# de longement par defaut de la preselection du crosstalk (`crosstalk.py`), et
+# il vit ici parce que c'est ici qu'on decrit une section droite.
+#
+# LE CRITERE EST GEOMETRIQUE, ET IL LE FAUT : une section droite decrit une
+# ligne UNIFORME ; le champ entre deux pistes d'ecart g a la hauteur h se ferme
+# sur une echelle transverse de l'ordre de (g + h), et la transition « pas
+# couple -> couple » occupe une longueur du meme ordre A CHAQUE BOUT. En deca
+# d'environ trois fois cette echelle, il n'y a plus de milieu uniforme a
+# decrire : les deux bouts occupent tout.
+#
+# C'EST UNE CONVENTION DE DOMAINE, comme les 15 degres du parallelisme et les
+# 0,2 mm de recouvrement : elle ne se mesure pas avec un solveur qui, par
+# construction, ne voit pas la longueur.
+LONGEMENT_TRANSVERSE_MIN = 3.0  # x (ecart + hauteur au plan)
+
+
 def _temps_montee(analyse):
     """Le temps de montee retenu, en secondes.
 
@@ -3098,46 +3678,22 @@ def _temps_montee(analyse):
     return 100e-12, "repli"
 
 
-def _fiche_longement(scene, poses, pose, rangs, r, t_r, declarees):
-    """Une ligne de fiche : ce qui passe entre la selection et UNE voisine.
+def _fiche_longement(scene, poses, pose, rangs, r, declarees):
+    """Une ligne de fiche : la paire que forment la selection et UNE voisine.
 
-    LES DEUX SENS, ET ILS NE SONT PAS EGAUX. « Ce que ma piste prend » et « ce
-    que ma piste envoie » sont deux questions differentes des que les deux
-    pistes n'ont pas la meme largeur : le bruit se compte en fraction de
-    l'amplitude de L'AGRESSEUR, et se rapporte aux termes propres de
-    l'agresseur. Une piste large qui agresse une piste fine ne recoit pas
-    d'elle ce qu'elle lui envoie.
-
-    On rend donc les deux, calcules sur la MEME matrice, sans rien resoudre de
-    plus : `emis` prend la selection pour agresseur, `recu` prend la voisine.
+    Z DIFFERENTIELLE DE LA PAIRE, LES AUTRES A LA MASSE. Voir
+    `ligne_mom.sous_systeme` : c'est une reduction exacte, et la seule facon de
+    parler d'une paire prise dans un bus.
     """
     i_v = rangs[0]
     i_a = rangs[poses.index(pose)]
-    longueur = pose["longueur"]
-    emis = tl.diaphonie(r["c"], r["l"], longueur * 1e-3, t_r, i_v, i_a)
-    recu = tl.diaphonie(r["c"], r["l"], longueur * 1e-3, t_r, i_a, i_v)
-
-    # Z DIFFERENTIELLE DE LA PAIRE, LES AUTRES A LA MASSE. Voir
-    # `ligne_mom.sous_systeme` : c'est une reduction exacte, et la seule facon
-    # de parler d'une paire prise dans un bus.
     c_p, l_p = tl.sous_systeme(r["c"], r["c0"], [i_v, i_a])
     paire = tl.modes_paire(c_p, l_p)
-
-    def bruit(d):
-        return {
-            "next": round(d["next"], 5), "fext": round(d["fext"], 5),
-            "k_c": round(d["k_c"], 5), "k_l": round(d["k_l"], 5),
-            "k_arriere": round(d["k_arriere"], 5),
-            "k_avant": round(d["k_avant"], 5),
-            "sature": d["sature"],
-            "longueur_saturation": round(1e3 * d["longueur_saturation"], 3),
-            "retard": d["retard"],
-        }
 
     return {
         "couche": scene["couche"], "net": scene["net"],
         "net_voisin": pose["net"],
-        "longueur": round(longueur, 3),
+        "longueur": round(pose["longueur"], 3),
         "ecart": round(pose["ecart"], 4),
         "ecart_min": round(pose["ecart_min"], 4),
         "largeur": round(scene["largeur"], 4),
@@ -3163,18 +3719,6 @@ def _fiche_longement(scene, poses, pose, rangs, r, t_r, declarees):
         # du champ -- et le panneau doit pouvoir le nommer ainsi.
         "z0": round(r["lignes"][i_v]["z0"], 3),
         "z0_voisine": round(r["lignes"][i_a]["z0"], 3),
-        "emis": bruit(emis),
-        "recu": bruit(recu),
-        # CE QUI JUGE EST CE QUE LA SELECTION SUBIT : c'est la question qu'on
-        # pose en selectionnant une piste. L'autre sens est a cote, en clair.
-        "next": round(recu["next"], 5),
-        "fext": round(recu["fext"], 5),
-        "sature": recu["sature"],
-        "longueur_saturation": round(1e3 * recu["longueur_saturation"], 3),
-        "k_c": round(recu["k_c"], 5), "k_l": round(recu["k_l"], 5),
-        "k_arriere": round(recu["k_arriere"], 5),
-        "k_avant": round(recu["k_avant"], 5),
-        "retard": recu["retard"],
     }
 
 
@@ -3216,7 +3760,6 @@ def _fiche_longement(scene, poses, pose, rangs, r, t_r, declarees):
 
 MAX_SECTIONS_LOCALES = 24       # resolutions de section locales par calcul
 PAS_ECART_LOCAL = 0.005         # mm ; le pas auquel les ecarts se regroupent
-
 
 def _hauteur_de_couche(couches, indice, largeur, epaisseur):
     """La hauteur au plan de reference d'une couche, en mm ; 0 si elle n'en a
@@ -3279,24 +3822,9 @@ def _section_locale(couches, scene, w_v, w_a, ecart, cote, t_r, cache):
         cache[cle] = {"raison": str(exc)}
         return cache[cle]
     rangs = {entree: matrice for matrice, entree in enumerate(r["ordre"])}
-    # LES DEUX SENS, SUR LA MEME MATRICE. `recu` prend la voisine pour
-    # agresseur -- c'est ce que la selection subit ; `emis` prend la selection
-    # pour agresseur -- c'est ce qu'elle inflige a la voisine, et c'est CE
-    # QU'ON PEINT SUR LE CUIVRE VOISIN. Les deux ne sont egaux que si les deux
-    # pistes ont la meme largeur. La longueur passee est nulle : on ne veut ici
-    # que les COEFFICIENTS, qui n'en dependent pas.
-    recu = tl.diaphonie(r["c"], r["l"], 0.0, t_r, rangs[1], rangs[0])
-    emis = tl.diaphonie(r["c"], r["l"], 0.0, t_r, rangs[0], rangs[1])
     paire = r.get("paire") or {}
     cache[cle] = {
         "raison": "",
-        # LE SENS RECU garde ses noms courts : c'est celui que la carte de la
-        # selection emploie, et il etait la le premier.
-        "k_arriere": abs(float(recu["k_arriere"])),
-        "k_avant": abs(float(recu["k_avant"])),
-        "k_c": float(recu["k_c"]), "k_l": float(recu["k_l"]),
-        "emis_arriere": abs(float(emis["k_arriere"])),
-        "emis_avant": abs(float(emis["k_avant"])),
         "z_diff": float(paire["z_diff"]) if paire.get("z_diff") else None,
         "z_commune": (float(paire["z_commune"])
                       if paire.get("z_commune") else None),
@@ -3306,63 +3834,27 @@ def _section_locale(couches, scene, w_v, w_a, ecart, cote, t_r, cache):
     return cache[cle]
 
 
-def _etaler(parts, cle, fiches, sens, couches, scene, t_r, cache):
-    """Le bruit d'un longement, reparti sur les troncons qui le composent.
+def _sections_locales(parts, couches, scene, t_r, cache):
+    """La section a deux conducteurs de chaque (troncon, voisine), a son ecart
+    LOCAL.
 
-    Rend {rang : {"next":…, "fext":…, "ecart":…, "longueur":…, "net":…}}.
+    POURQUOI TRONCON PAR TRONCON, ET NON UNE FOIS POUR TOUT LE LONGEMENT. Un
+    chiffre unique est obtenu sur l'ecart MOYEN, et trois millimetres a 0,8 mm
+    suivis d'un demi-millimetre a 0,12 mm ont la meme moyenne qu'un longement
+    regulier -- alors que ce n'est pas du tout la meme paire. La Z
+    differentielle par troncon repond a « ma paire est-elle a 100 ohms sur
+    TOUTE sa longueur ? », a laquelle le chiffre du tableau ne repond pas.
 
-    LE TOTAL VIENT DE LA SECTION COMPLETE ET NE BOUGE PAS -- la somme des
-    parts vaut exactement ce que la fiche annonce, dans chacun des deux sens
-    separement. Seule la REPARTITION est calculee ici, et elle l'est avec le
-    coefficient qui gouverne le sens qu'on repartit : |k_arriere| pour le NEXT,
-    |k_avant| pour le FEXT. Les repartir tous les deux avec le meme poids
-    serait poser que les deux bruits se fabriquent au meme endroit, ce qui est
-    faux des que l'ecart varie -- c'est justement ce que la carte est la pour
-    montrer.
-
-    `sens` vaut "recu" (ce que la selection subit) ou "emis" (ce qu'elle
-    inflige a la voisine). Le second est celui qu'on peint sur le cuivre
-    VOISIN : le bruit se compte en fraction de l'amplitude de l'agresseur, et
-    la voisine n'a pas les memes termes propres que la selection.
+    Rend {(rang, net) : {"net", "ecart", "longueur", "loc"}} ; `loc` vaut None
+    quand le plafond de resolutions locales est atteint -- la carte devient
+    alors muette sur la fin, elle ne devient jamais fausse.
     """
-    poids = {}
-    for e in parts.values():
-        loc = _section_locale(couches, scene, e["w_v"], e["w_a"], e["ecart"],
-                              e["cote"], t_r, cache) or {}
-        # LES NOMS DU SENS RECU SONT LES NOMS COURTS : la carte de la
-        # selection etait la la premiere, et renommer ses champs aurait casse
-        # ce qui les lit sans rien apporter.
-        n_arr, n_av = (("k_arriere", "k_avant") if sens == "recu"
-                       else ("emis_arriere", "emis_avant"))
-        # LE REPLI, QUAND LE PLAFOND DE SECTIONS LOCALES EST ATTEINT : on
-        # reprend le coefficient de la section COMPLETE, celui de la fiche. La
-        # carte devient plate sur la fin, elle ne devient jamais fausse.
-        repli = (fiches.get(e["net"]) or {}).get(sens) or {}
-        e["k_next"] = (loc.get(n_arr)
-                       or abs(_nombre(repli.get("k_arriere"), 0.0)))
-        e["k_fext"] = (loc.get(n_av)
-                       or abs(_nombre(repli.get("k_avant"), 0.0)))
-        e["loc"] = loc
-        p = poids.setdefault(e["net"], {"next": 0.0, "fext": 0.0})
-        p["next"] += e["k_next"] * e["l"]
-        p["fext"] += e["k_fext"] * e["l"]
-
     sortie = {}
     for rang, e in parts.items():
-        f = fiches.get(e["net"])
-        if f is None:
-            continue
-        total = f.get(sens) or f
-        p = poids[e["net"]]
-        val = {}
-        for quoi, k in (("next", e["k_next"]), ("fext", e["k_fext"])):
-            brut = _nombre(total.get(quoi), 0.0)
-            # LE SIGNE SE GARDE : un FEXT negatif n'est pas un FEXT plus petit,
-            # c'est un creux la ou le front monte.
-            val[quoi] = (brut * (k * e["l"]) / p[quoi]) if p[quoi] > 0 else 0.0
-        val.update({"net": e["net"], "ecart": e["ecart"], "longueur": e["l"],
-                    "loc": e.get("loc")})
-        sortie[rang] = val
+        loc = _section_locale(couches, scene, e["w_v"], e["w_a"], e["ecart"],
+                              e["cote"], t_r, cache)
+        sortie[rang] = {"net": e["net"], "ecart": e["ecart"],
+                        "longueur": e["l"], "loc": loc or {}}
     return sortie
 
 
@@ -3387,27 +3879,19 @@ def _grouper_parts(brutes, cle):
     return parts
 
 
-def _chaleur_scene(couches, scene, fiches, t_r, chaleur, voisins, cache):
-    """Etale le bruit et la Z differentielle d'une scene sur SES troncons.
+def _chaleur_scene(couches, scene, fiches, t_r, chaleur, cache):
+    """Etale la Z differentielle d'une scene sur SES troncons.
 
-    DEUX CUIVRES SONT PEINTS, ET LA REGLE EST LA MEME POUR LES DEUX : toute
-    piste peinte montre CE QU'ELLE SUBIT.
+    `chaleur` est aligne sur `geometry.objects` -- la selection. Rien n'est
+    rendu : on ecrit dans la liste.
 
-      · `chaleur`, aligne sur `geometry.objects` -- la selection, avec ce
-        qu'elle prend a ses voisines ;
-      · `voisins`, aligne sur `voisinage` -- les voisines, avec ce que la
-        selection leur inflige. C'est la carte qu'on regarde en routant : « qui
-        est-ce que je derange, et OU sur sa piste ».
-
-    Rien n'est rendu : on ecrit dans les deux listes.
+    LA PAIRE DE LA SCENE : celle que la page a declaree ou que les suffixes
+    nomment, a defaut la voisine LA PLUS PROCHE. La seconde n'est pas une paire
+    et la carte le dit -- mais peindre la Z differentielle de la voisine d'a
+    cote reste la seule facon de voir un ecartement qui derive.
     """
     parts = _grouper_parts(scene.get("parts"), "i")
-    parts_v = _grouper_parts(scene.get("parts_v"), "j")
 
-    # LA PAIRE DE LA SCENE : celle que la page a declaree ou que les suffixes
-    # nomment, a defaut la voisine LA PLUS PROCHE. La seconde n'est pas une
-    # paire et la carte le dit -- mais peindre la Z differentielle de la
-    # voisine d'a cote reste la seule facon de voir un ecartement qui derive.
     partenaire = None
     for f in fiches.values():
         if f.get("differentielle"):
@@ -3419,62 +3903,38 @@ def _chaleur_scene(couches, scene, fiches, t_r, chaleur, voisins, cache):
                          key=lambda f: _nombre(f.get("ecart"), 1e9)
                          )["net_voisin"]
 
-    recu = _etaler(parts, "i", fiches, "recu", couches, scene, t_r, cache)
-    emis = _etaler(parts_v, "j", fiches, "emis", couches, scene, t_r, cache)
-
-    def poser(liste, rang, val, victime, agresseur):
-        """Une entree de carte, cumulee sur toutes les voisines du troncon."""
-        if rang < 0 or rang >= len(liste):
-            return None
-        c = liste[rang]
+    for (i, net), val in _sections_locales(parts, couches, scene, t_r,
+                                           cache).items():
+        if i < 0 or i >= len(chaleur):
+            continue
+        c = chaleur[i]
         if c is None:
-            c = liste[rang] = {"net": victime, "couche": scene["couche"],
-                               "next": 0.0, "fext": 0.0, "bruit": 0.0,
-                               "pire": 0.0, "agresseur": "",
-                               "ecart": val["ecart"], "longueur": 0.0,
-                               "agresseurs": [], "z_diff": None,
-                               "z_diff_net": "", "z_diff_declare": False}
-        # LE CUMUL ADDITIONNE LES SIGNES, et le VERDICT juge l'amplitude : deux
-        # agresseurs dont les FEXT sont de signes opposes s'annulent en partie,
-        # et c'est vrai -- mais `bruit`, qui colore, est le pire des deux sens
-        # en valeur absolue, comme la fiche.
-        c["next"] += val["next"]
-        c["fext"] += val["fext"]
-        bruit = max(abs(val["next"]), abs(val["fext"]))
-        c["bruit"] += bruit
+            c = chaleur[i] = {"net": scene["net"], "couche": scene["couche"],
+                              "ecart": val["ecart"], "longueur": 0.0,
+                              "z_diff": None, "z_diff_net": "",
+                              "z_diff_declare": False}
         c["longueur"] += val["longueur"]
         c["ecart"] = min(c["ecart"], val["ecart"])
-        if bruit > c["pire"]:
-            c["pire"], c["agresseur"] = bruit, agresseur
-        c["agresseurs"].append({"net": agresseur,
-                                "next": round(val["next"], 5),
-                                "fext": round(val["fext"], 5),
-                                "bruit": round(bruit, 5),
-                                "ecart": round(val["ecart"], 4),
-                                "longueur": round(val["longueur"], 3)})
-        return c
-
-    for (i, net), val in recu.items():
-        c = poser(chaleur, i, val, scene["net"], net)
-        if c is not None and net == partenaire:
-            loc = val.get("loc") or {}
+        if net == partenaire:
+            loc = val["loc"]
             c["z_diff"] = (round(loc["z_diff"], 2)
                            if loc.get("z_diff") else None)
             c["z_diff_net"] = net
             c["z_diff_declare"] = declare
 
-    for (j, net), val in emis.items():
-        poser(voisins, j, val, net, scene["net"])
-
 
 def _couplage(couches, objets, doc, analyse, avertissements):
-    """Z differentielle et diaphonie de tout ce qui longe la selection.
+    """Z differentielle de tout ce qui longe la selection.
 
     UNE SECTION PAR SCENE, ET UNE SCENE PAR (COUCHE, NET SELECTIONNE). Toutes
     les voisines d'une meme piste entrent dans la MEME matrice : une piste avec
     deux voisines est un probleme a trois conducteurs, pas deux problemes a
-    deux. De cette matrice sortent, pour chaque voisine, les deux sens du bruit
-    et la Z differentielle de la paire -- sans rien resoudre de plus.
+    deux. De cette matrice sort, pour chaque voisine, la Z differentielle de la
+    paire -- sans rien resoudre de plus.
+
+    LE COUPLAGE, LUI, EST AILLEURS : c'est `crosstalk.py` qui le chiffre, sur
+    une matrice S multi-ports mise en cascade le long du parcours, et qui dit
+    OU il se fabrique. Cette page-ci ne repond qu'en ohms.
 
     LA MASSE COPLANAIRE Y EST. Voir `_ecarts_masse_du_groupe` : les ecarts
     mesures par la page bordent le groupe, parce que les deux outils sondent
@@ -3489,6 +3949,11 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             " sur les plus proches." % MAX_VOISINAGE)
     refs = [str(x) for x in (doc.get("reference_nets") or []) if str(x).strip()]
     scenes = _scenes_paralleles(objets, voisinage, refs)
+    # CE QUI PASSE AU-DESSUS, VU MAIS NON CHIFFRE. `_scenes_paralleles` ecarte
+    # les autres couches des sa premiere ligne, parce que la section droite ne
+    # sait pas les decrire ; ici on les REGARDE quand meme, pour que le silence
+    # ne se lise pas comme un couplage nul.
+    superposes, superposes_blindes = _superposes(objets, voisinage, couches)
     t_r, source_tr = _temps_montee(analyse)
     declarees = doc.get("paires") or []
 
@@ -3497,10 +3962,6 @@ def _couplage(couches, objets, doc, analyse, avertissements):
     # segments : c'est par ce rang que la page retrouve le cuivre a peindre.
     # `None` veut dire « ce troncon ne longe rien », et se peint en gris.
     chaleur = [None] * len(objets)
-    # ET LA CARTE DES VOISINES, alignee sur `voisinage` -- le cuivre que la
-    # selection DERANGE. C'est celle qu'on regarde en routant : la fiche dit
-    # combien, la carte dit qui et ou.
-    chaleur_voisins = [None] * len(voisinage)
     cache_local = {}
     for scene in scenes[:MAX_SECTIONS]:
         # LA HAUTEUR AU PLAN, AVANT DE POSER : `_poser_section` en a besoin
@@ -3508,7 +3969,7 @@ def _couplage(couches, objets, doc, analyse, avertissements):
         # pour ecarter la voisine de trop AU LIEU de perdre la section entiere.
         h_couche = _hauteur_de_couche(couches, scene["couche"],
                                       scene["largeur"], scene["epaisseur"])
-        poses, ecartes = _poser_section(scene, h_couche)
+        poses, ecartes = _poser_section(scene, h_couche, _couture_max(t_r))
         e_g, e_d = _ecarts_masse_du_groupe(poses, scene)
         cle = (scene["couche"], round(scene["epaisseur"], 6),
                round(e_g, 6), round(e_d, 6),
@@ -3522,10 +3983,14 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             else:
                 try:
                     geo = dict(geo)
-                    geo["conducteurs"] = [{"w": p["w"] * 1e-3,
-                                           "x": p["x"] * 1e-3,
-                                           "masse": p["garde"]}
-                                          for p in poses]
+                    # UNE GARDE NON COUSUE N'EST PAS A ZERO VOLT : elle est
+                    # FLOTTANTE, et c'est l'inverse comme condition aux
+                    # limites. `ligne_mom` sait poser les deux.
+                    geo["conducteurs"] = [
+                        {"w": p["w"] * 1e-3, "x": p["x"] * 1e-3,
+                         "masse": p["garde"] and not p.get("flottant"),
+                         "flottant": bool(p.get("flottant"))}
+                        for p in poses]
                     r = dict(tl.solve_multiline(geo))
                 except Exception as exc:               # noqa: BLE001
                     cache[cle] = {"raison": str(exc)}
@@ -3544,7 +4009,12 @@ def _couplage(couches, objets, doc, analyse, avertissements):
                              # PISTE QUE QUELQU'UN A ROUTEE : la premiere est
                              # deduite de deux ecarts mesures, la seconde est
                              # dans le fichier. La fiche doit pouvoir le dire.
-                             "interposee": bool(p.get("interposee"))}
+                             "interposee": bool(p.get("interposee")),
+                             # TENUE OU FLOTTANTE : c'est ce qui distingue un
+                             # bouclier d'un pont, et cela doit se lire dans la
+                             # coupe -- les deux se dessinent pareil.
+                             "flottant": bool(p.get("flottant")),
+                             "couture": round(_nombre(p.get("couture"), 0.0), 2)}
                             for p in poses],
             "gardes": sum(1 for p in poses if p["garde"]),
             "ecart_g": round(e_g, 4), "ecart_d": round(e_d, 4),
@@ -3558,7 +4028,8 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             # LE RANG DE CHAQUE CONDUCTEUR DANS [C]. `solve_multiline` range
             # les rubans de gauche a droite ; `ordre` rend le numero d'entree
             # de chaque port, et l'on inverse. Lire [C] dans l'ordre d'entree
-            # donnerait la diaphonie de la mauvaise paire, en silence.
+            # donnerait la Z differentielle de la mauvaise paire, en
+            # silence.
             # LES GARDES N'ONT PAS DE LIGNE DANS [C] : `ordre` ne porte que
             # les PORTS. Le dictionnaire ne contient donc que les conducteurs
             # qu'on peut interroger, et une garde interrogee par megarde leve
@@ -3576,16 +4047,19 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             for pose in poses[1:]:
                 if pose["garde"]:
                     continue
-                f = _fiche_longement(scene, poses, pose, rangs, r, t_r,
+                f = _fiche_longement(scene, poses, pose, rangs, r,
                                      declarees)
+                # LE NOM DE LA COUCHE, et pas seulement son rang : un numero
+                # ne se retrouve pas sur un plan de fabrication.
+                f["nom_couche"] = _nom_de_couche(couches, scene["couche"])
                 paires.append(f)
                 fiches[f["net_voisin"]] = f
-            # CE QUE LA SCENE VIENT DE CHIFFRER, ETALE SUR SES TRONCONS. Voir
-            # « LA CARTE DE CHALEUR DU COUPLAGE » : le total reste celui de la
-            # fiche, seule sa repartition le long de la piste est calculee ici.
+            # LA Z DIFFERENTIELLE TRONCON PAR TRONCON. Voir « LA CARTE DE
+            # CHALEUR » : le chiffre du tableau est obtenu sur l'ecart MOYEN,
+            # la carte reprend chaque troncon a SON ecart.
             if fiches:
                 _chaleur_scene(couches, scene, fiches, t_r, chaleur,
-                               chaleur_voisins, cache_local)
+                               cache_local)
         else:
             for pose in poses[1:]:
                 if pose["garde"]:
@@ -3606,27 +4080,56 @@ def _couplage(couches, objets, doc, analyse, avertissements):
                 })
         sections.append(fiche_section)
 
-    # LE PIRE D'ABORD, ET DANS LES DEUX SENS. Trie par longueur, la fiche
-    # mettrait en tete un longement long et lache devant un court et serre ;
-    # c'est le BRUIT qui ordonne, et c'est la question qu'on se pose.
-    def pire(f):
-        return max(abs(f.get(sens, {}).get(quoi, 0.0))
-                   for sens in ("recu", "emis") for quoi in ("next", "fext")) \
-            if f.get("recu") else 0.0
-    paires.sort(key=lambda f: -pire(f))
+    # LE PLUS SERRE D'ABORD. Trie par longueur, la fiche mettrait en tete un
+    # longement long et lache devant un court et serre ; c'est l'ECART qui
+    # ordonne, parce que c'est lui qui fait la Z differentielle.
+    paires.sort(key=lambda f: _nombre(f.get("ecart"), 1e9))
+
+    # LE CUIVRE QUI NE BLINDE PAS, DIT AVEC LE RESULTAT. C'est le seul endroit
+    # de cette chaine ou le dessin peut RASSURER a tort : on voit du cuivre de
+    # masse entre deux pistes, on le croit protecteur, et il transfere.
+    flottantes = [p for sec in sections
+                  for p in sec.get("conducteurs", []) if p.get("flottant")]
+    if flottantes:
+        avertissements.append(
+            "%d cuivre(s) de masse ne sont pas assez COUSUS : le plus grand"
+            " trou entre deux vias y atteint %.1f mm, au-delà des %.1f mm que"
+            " le front autorise (λ/10 au genou). Ce cuivre-là n'est pas tenu à"
+            " zéro volt : il est posé FLOTTANT dans la section, et il ne blinde"
+            " pas — il transfère. Cousez-le, ou ne comptez pas dessus."
+            % (len(flottantes), max(_nombre(p.get("couture"), 0.0)
+                                    for p in flottantes),
+               _couture_max(t_r)))
+
+    # CE QUI LONGE PAR-DESSUS, ET QU'AUCUN PLAN NE SEPARE. Le seul manque de
+    # cette page qui rendait ZERO plutot qu'un majorant : il ne suffit pas de
+    # l'ecrire dans les hypotheses, parce qu'une hypothese ne dit pas si le cas
+    # se produit ICI. Le chiffre affiche est un PLANCHER quand il se produit.
+    if superposes:
+        pire_sup = superposes[0]
+        avertissements.append(
+            "%d longement(s) ENTRE COUCHES ne sont pas chiffrés. Le plus long :"
+            " « %s » court sur %.1f mm en regard de la sélection, sur %s contre"
+            " %s, décalé de %.2f mm et séparé par %.3f mm de diélectrique —"
+            " SANS PLAN entre les deux couches. Deux pistes superposées"
+            " couplent souvent PLUS que les mêmes côte à côte, et la section"
+            " droite de ce solveur ne peut pas le voir : elle pose tous ses"
+            " conducteurs à la même hauteur. Ce qui est affiché est donc un"
+            " PLANCHER. Routez ces deux couches en orthogonal, décalez les"
+            " pistes, ou glissez un plan entre elles."
+            % (len(superposes), pire_sup["net"], pire_sup["longueur"],
+               pire_sup["nom_couche"], pire_sup["nom_depuis"],
+               pire_sup["decalage"], pire_sup["hauteur"]))
 
     # LES ARRONDIS A LA FIN, ET UNE SEULE FOIS. Chaque troncon appartient a UNE
     # scene -- la cle est (couche, net selectionne), et un troncon n'a qu'une
     # couche et qu'un net --, mais arrondir dans `_chaleur_scene` faisait
     # repasser chaque scene sur les entrees de toutes les autres.
-    for liste in (chaleur, chaleur_voisins):
-        for c in liste:
-            if c is None:
-                continue
-            for quoi in ("next", "fext", "bruit", "pire"):
-                c[quoi] = round(c[quoi], 5)
-            c["ecart"] = round(c["ecart"], 4)
-            c["longueur"] = round(c["longueur"], 3)
+    for c in chaleur:
+        if c is None:
+            continue
+        c["ecart"] = round(c["ecart"], 4)
+        c["longueur"] = round(c["longueur"], 3)
 
     ecartees = max(0, len(scenes) - MAX_SECTIONS)
     if ecartees:
@@ -3637,19 +4140,35 @@ def _couplage(couches, objets, doc, analyse, avertissements):
         "paires": paires,
         "sections": sections,
         "chaleur": chaleur,
-        "chaleur_voisins": chaleur_voisins,
         "sections_locales": len(cache_local),
         "temps_montee": t_r,
         "temps_montee_source": source_tr,
         "voisinage": len(voisinage),
         "longements": sum(len(sc["voisins"]) for sc in scenes),
+        # VU, NOMME, NON CHIFFRE. Les deux nombres se lisent ensemble : les
+        # `blindes` disent que l'empilage fait son travail, les `superposes`
+        # disent ou il ne le fait pas.
+        "superposes": superposes,
+        "superposes_blindes": superposes_blindes,
         # CE QUE LA SECTION COUPLEE SUPPOSE, avec le resultat et non a cote.
         "hypotheses": [
-            "Le couplage n'est calculé qu'entre pistes de la MÊME couche et"
+            "Le couplage n'est CHIFFRÉ qu'entre pistes de la MÊME couche et"
             " parallèles à %g° près : c'est ce qu'une section droite sait"
-            " décrire. Deux pistes superposées sur deux couches, ou qui se"
-            " croisent, couplent aussi et ne sont pas ici."
-            % ANGLE_PARALLELE,
+            " décrire — elle pose tous ses conducteurs à la même hauteur. Les"
+            " pistes SUPERPOSÉES sur deux couches sont désormais CHERCHÉES"
+            " quand même, et signalées avec leur longueur en regard, leur"
+            " décalage et le diélectrique qui les sépare : %s. Celles qu'un"
+            " plan de référence sépare ne sont pas signalées — le plan est un"
+            " écran, et c'est la raison d'être de l'empilage%s. Les pistes qui"
+            " se CROISENT, elles, ne sont ni chiffrées ni cherchées : le"
+            " recouvrement d'un croisement orthogonal est une aire minuscule,"
+            " et c'est précisément pourquoi la règle du métier est de router"
+            " deux couches adossées à angle droit."
+            % (ANGLE_PARALLELE,
+               ("%d trouvé(s)" % len(superposes)) if superposes
+               else "aucune trouvée",
+               (" (%d longement(s) ainsi blindé(s) ici)" % superposes_blindes)
+               if superposes_blindes else ""),
             "Toutes les voisines d'une même piste entrent dans la MÊME"
             " section : une piste et ses deux voisines font un problème à"
             " trois conducteurs, pas deux problèmes à deux. La masse"
@@ -3667,29 +4186,56 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             " fichier : la section la marque « déduite ». Elle suppose le"
             " cuivre TENU à zéro volt sur toute la longueur, ce qu'un plan"
             " cousu de vias fait et qu'une garde sans vias ne fait pas.",
-            "Le temps de montée retenu est %s. Il ne change ni [C] ni [L] :"
-            " il décide de la SATURATION du NEXT et de l'amplitude du FEXT."
+            "Un cuivre de masse n'est tenu à zéro volt que s'il est COUSU au"
+            " plan par des vias. Le critère est une longueur d'onde et non un"
+            " nombre de vias : le plus grand trou entre deux coutures doit"
+            " rester sous λ/10 à la fréquence du genou, soit %.1f mm pour ce"
+            " front — moins d'un tiers de la longueur physique du front."
+            " Au-delà, le cuivre est posé FLOTTANT : charge totale nulle,"
+            " potentiel libre. Il ne blinde plus, il TRANSFÈRE, et le couplage"
+            " peut devenir PIRE qu'en l'absence de tout cuivre. La résonance"
+            " d'un tel cuivre, elle, n'est pas chiffrée : le quasi-statique"
+            " rend le transfert, pas le pic." % _couture_max(t_r),
+            "Le temps de montée retenu est %s. Il ne change ni [C] ni [L],"
+            " et il n'entre pas dans la Z différentielle : il ne sert ici"
+            " qu'au seuil de couture, qui est une longueur d'onde au genou du"
+            " front."
             % source_tr,
-            "La carte de chaleur peint DEUX cuivres, et la règle est la"
-            " même pour les deux : une piste peinte montre ce QU'ELLE SUBIT."
-            " La sélection porte ce qu'elle prend à ses voisines ; chaque"
-            " voisine porte ce que la sélection lui inflige. Les deux ne sont"
-            " pas égaux dès que les largeurs diffèrent — le bruit se compte en"
-            " fraction de l'amplitude de l'agresseur.",
-            "Le bruit de chaque longement est étalé sur les tronçons qui le"
-            " composent, au prorata du couplage LOCAL : une section à deux"
-            " conducteurs est résolue à l'écart réel de chaque tronçon, et son"
-            " |k_arrière| (pour le NEXT) ou son |k_avant| (pour le FEXT) fois"
-            " la longueur qui longe fait le poids. La somme le long de la"
-            " piste vaut exactement le bruit de la fiche, sens par sens — mais"
-            " le NEXT sature, donc la couleur dit OÙ le couplage se fait, et"
-            " non une tension mesurable tronçon par tronçon.",
+            "Un partenaire différentiel DÉCLARÉ — ou nommé par ses suffixes —"
+            " est ce que cette page juge ; une voisine simplement proche ne"
+            " fait PAS une paire, et le repli « la plus proche » est un repli"
+            " d'affichage, dit comme tel sur la carte. Ce qu'une voisine"
+            " PREND, en pour-cent comme en volts, se lit sous l'onglet"
+            " Crosstalk : cette page-ci ne répond qu'en ohms.",
             "La Z différentielle peinte sur la carte est celle d'une section à"
             " DEUX conducteurs — la sélection et sa paire — reprise à l'écart"
             " de chaque tronçon. Elle n'est donc pas celle du tableau, qui"
             " tient les autres voisines à la masse : les deux se rejoignent"
             " quand la paire est seule, et diffèrent quand elle est prise dans"
             " un bus.",
+            # LE BLOC DE CLOTURE, ET IL NE REPETE PAS LES AUTRES : il les
+            # RASSEMBLE. Les manques sont dits plus haut, chacun a l'endroit ou
+            # il se produit -- entre couches sous la regle d'appariement, la
+            # resonance sous la couture. Il faut les lire tous pour se faire
+            # une idee de ce qui reste dehors, et personne ne le fait.
+            #
+            # ON DIT SURTOUT LE SENS DE CHAQUE ECART, ce qu'aucune des autres
+            # lignes ne fait : les deux rendent le chiffre OPTIMISTE. Un
+            # utilisateur a le droit de savoir de quel cote penche ce qui
+            # reste.
+            "CE QUE CE CALCUL NE COUVRE PAS, rassemblé — et dans quel sens :"
+            " (1) la RÉSONANCE d'un cuivre de masse flottant, qui sonne aux"
+            " multiples de λ/2 : le quasi-statique rend le transfert, pas le"
+            " pic → OPTIMISTE à ces fréquences ; (2) le COUPLAGE ENTRE"
+            " COUCHES — deux pistes superposées couplent, et la section pose"
+            " tous ses conducteurs à la même hauteur → VU mais NON CHIFFRÉ :"
+            " la géométrie est cherchée et signalée, le couplage ne l'est"
+            " pas → OPTIMISTE quand il y en a. Les deux vont donc dans le sens"
+            " rassurant : ce qui est affiché est un PLANCHER sur une carte mal"
+            " cousue, ou routée en parallèle sur deux couches adossées. Aller"
+            " plus loin demande un solveur de section à conducteurs empilés —"
+            " ou le moteur 2,5D, qui discrétise une surface et non une section"
+            " droite.",
         ],
     }
 
@@ -4125,9 +4671,9 @@ def simuler(doc, journal=None):
         # diagnostic pour retrouver quoi dire.
         "topologie": topo,
         "cascade_refusee": refus,
-        # LE COUPLAGE : Z differentielle ET diaphonie, meme liste. Voir
-        # `_couplage` -- les deux onglets de la famille SI la lisent, chacun
-        # avec ses colonnes.
+        # LE COUPLAGE, EN OHMS : la Z differentielle de tout ce qui longe.
+        # Voir `_couplage`. Ce qu'une voisine PREND est ailleurs, dans
+        # `crosstalk.py` : autre route, autre calcul, autre resultat.
         "couplage": couplage,
         "duree": round(duree, 3),
         "avertissements": avertissements,

@@ -2,6 +2,31 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.12.0
+# Date: 2026-09-01
+# Explication: la section « Crosstalk » rejoint la chaine, d'ou une sixieme
+#   route : /api/crosstalk. Meme forme que les deux precedentes -- GET pour
+#   savoir si le serveur en est capable, POST pour lui donner le cuivre et
+#   recevoir la carte de couplage.
+#
+#   POURQUOI UNE ROUTE A ELLE ET NON UN CHAMP DE PLUS SUR /api/simulation. Son
+#   document porte le PARCOURS ENTIER de l'agresseur et tout le cuivre qui
+#   passe a portee -- des centaines de troncons --, la ou un document de
+#   simulation ne porte qu'un net et son empilage et tient en quelques dizaines
+#   de kilo-octets. Les melanger obligerait a faire bouger le plafond de taille
+#   de la route commune chaque fois que celui du crosstalk bouge, y compris
+#   pour des requetes qui n'en ont aucun besoin. MAX_CROSSTALK est donc
+#   distinct de MAX_SIM, et il bouge seul.
+#
+#   Import tolerant comme les trois autres : numpy n'est pas une dependance du
+#   depot, et son absence doit couter cette route-la, pas le serveur. Le pont
+#   est dans python/crosstalk.py.
+# Fonctions ajoutees/modifiees :
+# - MAX_CROSSTALK, import tolerant de crosstalk (nouveaux)
+# - CustomHandler._crosstalk_etat, _crosstalk_lancer (nouvelles)
+# - CustomHandler.do_POST / do_GET / do_HEAD / do_OPTIONS (routage)
+# - start_server (ligne de journal au demarrage)
+#
 # Version: 2.11.0
 # Date: 2026-08-27
 # Explication: le solveur electromagnetique (methode des moments sur la
@@ -338,8 +363,26 @@ except Exception as _exc:                              # noqa: BLE001
     dc_solver = None
     ERREUR_DC = _exc
 
+# Analyse de crosstalk (section « Crosstalk » du panneau SI). Meme motif que
+# les deux precedents. ELLE A SA PROPRE ROUTE ET NON UN CHAMP DE PLUS SUR
+# /api/simulation, et c'est deliberé : son document porte le PARCOURS ENTIER de
+# l'agresseur et tout le cuivre qui passe a portee -- des centaines de troncons
+# la ou une simulation d'impedance n'en porte qu'un --, et sa reponse porte la
+# carte, les profils d'espacement et le reseau au format Touchstone. Les
+# melanger obligerait a relever le plafond de taille de la route commune pour
+# tout le monde.
+try:
+    import crosstalk
+    ERREUR_CROSSTALK = None
+except Exception as _exc:                              # noqa: BLE001
+    crosstalk = None
+    ERREUR_CROSSTALK = _exc
+
 # Un document de simulation ne porte qu'un net et son empilage : il est petit.
 MAX_SIM = getattr(simulation_em, "MAX_CORPS", 4 * 1024 * 1024)
+# Celui du crosstalk porte un parcours et son voisinage : meme ordre de
+# grandeur, et le plafond reste le sien pour pouvoir bouger seul.
+MAX_CROSSTALK = getattr(crosstalk, "MAX_CORPS", 4 * 1024 * 1024)
 
 
 # Un IPC-2581 est un XML bavard : une carte de taille moyenne pese quelques
@@ -1280,6 +1323,58 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                                " « pip install numpy scipy »."}
         return dc_solver.etat()
 
+    def _crosstalk_etat(self):
+        """GET /api/crosstalk : ce que l'analyse de crosstalk sait faire."""
+        if crosstalk is None:
+            return {"dispo": False,
+                    "detail": "Analyse de crosstalk indisponible : %s"
+                              % ERREUR_CROSSTALK,
+                    "conseil": "Elle a besoin de numpy :"
+                               " « pip install numpy »."}
+        return crosstalk.etat()
+
+    def _crosstalk_lancer(self):
+        """POST /api/crosstalk : carte de couplage le long du parcours.
+
+        LE PLAFOND DE TAILLE EST LE SIEN, et c'est toute la raison d'etre
+        d'une route separee : le document porte le parcours entier de
+        l'agresseur et tout le cuivre qui passe a portee.
+
+        LA SOURCE EST LE DESIGN ET RIEN D'AUTRE. Aucun fichier de parametres S
+        n'est accepte ici : la matrice se genere dans `crosstalk.analyser`, a
+        partir de la geometrie. Un document qui en porterait encore un est
+        REFUSE par le module, jamais ignore -- l'ignorer ferait lire une carte
+        obtenue sur autre chose que ce que la page croit avoir envoye.
+        """
+        if crosstalk is None:
+            raise ErreurIPC(503, "Analyse de crosstalk indisponible : %s"
+                                 % ERREUR_CROSSTALK)
+        try:
+            taille = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise ErreurIPC(400, "Content-Length invalide")
+        if taille <= 0:
+            raise ErreurIPC(400, "Document vide")
+        if taille > MAX_CROSSTALK:
+            raise ErreurIPC(413, "Document trop grand : %.1f Mo, maximum %d Mo"
+                                 % (taille / 1048576.0,
+                                    MAX_CROSSTALK // 1048576))
+        corps = self.rfile.read(taille)
+        try:
+            doc = json.loads(corps.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
+        try:
+            return crosstalk.analyser(doc, journal=sys.stderr.write)
+        except crosstalk.ErreurCrosstalk as exc:
+            detail = exc.message
+            if exc.conseil:
+                detail += "\n" + exc.conseil
+            raise ErreurIPC(422, detail)
+        except MemoryError:
+            raise ErreurIPC(413, "Reseau trop lourd pour la memoire"
+                                 " disponible")
+
     def _simulation_lancer(self):
         """Corps de la requete (document JSON) -> parametres S de la ligne."""
         if simulation_em is None:
@@ -1381,7 +1476,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             return
         if route not in ("/api/tools", "/api/tool", "/api/ipc2581",
-                         "/api/simulation", "/api/simulation-dc"):
+                         "/api/simulation", "/api/simulation-dc",
+                         "/api/crosstalk"):
             self.send_error(405, "Unsupported method (OPTIONS)")
             return
         self.send_response(204)
@@ -1419,6 +1515,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/simulation-dc":
             self._ipc_api(self._dc_lancer)
+            return
+        if route == "/api/crosstalk":
+            self._ipc_api(self._crosstalk_lancer)
             return
         if route != "/api/tool":
             self.send_error(404, "File not found")
@@ -1464,6 +1563,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/simulation-dc":
             self._ipc_api(self._dc_etat)
             return
+        if route == "/api/crosstalk":
+            self._ipc_api(self._crosstalk_etat)
+            return
         super().do_GET()
 
     def do_HEAD(self):
@@ -1494,6 +1596,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/simulation-dc":
             self._ipc_api(self._dc_etat)
+            return
+        if route == "/api/crosstalk":
+            self._ipc_api(self._crosstalk_etat)
             return
         super().do_HEAD()
 
@@ -1612,6 +1717,13 @@ def start_server(host, port, navigateur=True):
     else:
         print("  simulation EM : /api/simulation ->"
               " MoM sur la section droite (python/ligne_mom.py)")
+    if crosstalk is None:
+        print("  crosstalk     : /api/crosstalk -> indisponible (%s)"
+              % ERREUR_CROSSTALK)
+    else:
+        print("  crosstalk     : /api/crosstalk ->"
+              " matrice S synthetisee depuis le design + IFFT"
+              " (python/crosstalk.py)")
     if PROJETS_OUVERT:
         print("  projets       : /api/projets, /api/projet, /api/projet/doc")
         for i, racine in enumerate(racines_projets()):

@@ -66,9 +66,9 @@ et ceux du dossier partagé, identiques aux autres outils :
 | `js/04-interaction.js` | 302 | Déplacement, zoom, pincement à deux doigts, désignation (piste, pastille, perçage, boîtier), clavier |
 | `js/05-panneaux.js` | 505 | Les cinq panneaux : couches, la carte, nets, composants, sélection — et la fiche de ligne de transmission |
 | `js/06-demarrage.js` | 333 | Ouverture d'un fichier (bouton, dépôt, reprise de session), exports `.json` et `.png`, réglages de l'utilisateur |
-| `js/07-simulation.js` | 2598 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias, **cuivre voisin joint au problème** —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes |
+| `js/07-simulation.js` | 3280 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias, **cuivre voisin joint au problème** —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes ; et pour l'onglet **Crosstalk**, les trois mesures que le serveur ne peut pas deviner : positions de couture sur l'abscisse du parcours, fentes du plan sondées dessous, perçages de masse |
 | `../python/simulation_em.py` | 3312 | Pont vers `python/ligne_mom.py` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
-| `test/harness-sim.js` | 2552 | Banc d'essai de la masse coplanaire, de la chute continue et du voisinage, sous Node : `node test/harness-sim.js` |
+| `test/harness-sim.js` | 2896 | Banc d'essai de la masse coplanaire, de la chute continue, du voisinage et des trois mesures du crosstalk, sous Node : `node test/harness-sim.js` |
 
 ## Démarrage
 
@@ -227,7 +227,7 @@ rien ne dirait laquelle croire. Ce que le fichier ne dit pas et que vous avez
 saisi dans « La carte » sert donc ici aussi, et ce qui manque encore est écrit
 sous le résultat plutôt que supposé en silence.
 
-### Quatre onglets dans SI, et une seule réponse du serveur
+### Quatre onglets dans SI, dont trois sur une seule réponse du serveur
 
 Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI**
 (intégrité de l'alimentation). SI en porte quatre :
@@ -236,30 +236,95 @@ Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI*
 | --- | --- | --- |
 | **Impédance** | Z₀ tronçon par tronçon, paramètres S de la liaison | la section droite d'UNE piste |
 | **Z différentielle** | Z_diff et Z_commune des paires qui longent la sélection | la même section, à DEUX conducteurs |
-| **Diaphonie** | ce que les voisines prennent à la sélection — NEXT, FEXT | la même, lue autrement |
+| **Crosstalk** | **COMBIEN** une voisine prend — en %, en dB et **en volts** — et **OÙ** cela se fabrique | une matrice S MULTI-PORTS mise en cascade, synthétisée depuis le DESIGN |
 | **Current Return Path** | par où revient le courant de chaque via | la liaison verticale |
 
-**Les quatre lisent la MÊME réponse du serveur** : changer d'onglet ne relance
-rien, et les quatre fiches parlent nécessairement du même cuivre. Elles ne
-posent pas la même question — une piste parfaitement à 50 Ω peut avoir un
-retour catastrophique et prendre trois cents millivolts à sa voisine.
+**Trois des quatre lisent la MÊME réponse du serveur** : changer d'onglet ne
+relance rien, et les trois fiches parlent nécessairement du même cuivre. Elles
+ne posent pas la même question — une piste parfaitement à 50 Ω peut avoir un
+retour catastrophique.
 
-### Z différentielle et diaphonie : une seule section, deux lectures
+> **Un onglet *Diaphonie* a existé, et il a été retiré.** Il rendait NEXT et
+> FEXT sur une section droite unique : il disait *combien*, jamais *où*.
+> *Crosstalk* rend le même « combien » — le pour-cent, les décibels et la
+> tension sur la broche de la victime — avec une abscisse en millimètres en
+> plus. Deux onglets pour une seule question, répondue par deux physiques,
+> finissaient par rendre deux verdicts qu'on ne sait pas arbitrer.
+
+Le bouton **« réglages »**, au bout de la rangée des onglets, **replie les
+commandes** de l'analyse courante pour laisser toute la hauteur du panneau au
+résultat. La rangée qui porte le bouton d'action ne se replie jamais — on
+relance sans déplier.
+
+**Crosstalk est à part**, avec sa route (`/api/crosstalk`), son calcul et son
+résultat. Il répond seul à la question du couplage : combien une voisine prend
+— en pour-cent de l'agresseur, en décibels et **en volts**, l'amplitude du
+signal se saisissant dans la rangée **Signal** —, et lequel des quarante
+millimètres qui longent en est responsable. Le seul geste demandé est de
+**désigner l'agresseur** : les victimes, les ports et leur correspondance se
+déduisent de la géométrie, et **aucun fichier de paramètres S ne s'importe** —
+la matrice se génère à partir du design. Les portions où le couplage de chaque
+victime se fabrique sont peintes **sur son cuivre**, ambre quand le dessin des
+pistes l'explique et rouge quand rien ne l'explique. Voir
+[le README du dépôt](../README.md#crosstalk--où-le-couplage-se-fabrique).
+
+Trois cases collées à la figure — **NEXT**, **FEXT**, **mV** — disent ce
+qu'elle trace et dans quelle unité, sans rien relancer : les deux courbes et
+les deux unités sont déjà dans le résultat. Éteindre un sens **resserre** la
+figure sur celui qui reste, plutôt que de garder un cadre vide qui se lirait
+comme un couplage nul.
+
+Les volts se lisent **sur la courbe** : le pour-cent gradue l'axe de gauche, la
+tension celui de droite — trois crans chacun —, et chaque courbe porte **sa
+tension écrite à son pic**, dans la couleur de sa victime. La réglette reste ce
+qui répond position par position.
+
+#### Trois mesures que seule cette page peut faire, et une hypothèse à connaître
+
+Le serveur ne voit que ce qu'on lui envoie, et les contrôles de plan de
+référence ne diraient **rien** sans trois relevés que la simulation d'impédance
+ne demandait pas : les **positions des vias de couture** projetées sur
+l'abscisse curviligne du parcours, les **discontinuités du plan** sondées sous
+la piste, et les **perçages de masse** aux changements de couche.
+
+Deux différences avec l'éditeur PCB, qui tiennent au format et non à l'outil :
+
+- **un perçage IPC-2581 ne déclare pas sa portée.** Le format porte sa position,
+  son diamètre et son net, jamais les couches qu'il traverse. On le suppose
+  **traversant** — comme partout ailleurs sur cette page — et la note du
+  document le dit. Un via enterré compté comme traversant fait passer pour
+  refermé un retour qui ne l'est pas : le contrôle des changements de couche est
+  donc **optimiste**, et c'est le sens qu'il faut connaître avant de lire la
+  carte ;
+- **le plan est un contour, pas une grille de cases.** La mesure d'écart
+  coplanaire range les *arêtes* du plan ; ici la question est « y a-t-il du
+  cuivre de masse **sous** ce point », qui est une question d'appartenance. Le
+  point est donc testé dans le contour, trous compris. Le cuivre d'un **autre
+  net** posé sur la couche de plan compte comme une fente : le courant de retour
+  n'y passe pas davantage que dans le vide.
+
+Et quand le plan n'a pas pu être sondé — aucun contour de masse ne couvre le
+parcours —, le champ **n'est pas envoyé**. Le serveur écrit alors « rien n'a pu
+être examiné » au lieu de « aucune zone de vigilance » : une liste vide se lit
+exactement à l'inverse de ce qu'elle veut dire.
+
+### Z différentielle : la section à N conducteurs, lue en ohms
 
 Le solveur résout la section à **N conducteurs** (`solve_multiline`,
 `../python/ligne_mom.py`) : la matrice de capacité de Maxwell **[C]**, puis
 **[L] = μ₀ε₀[C₀]⁻¹** puisque le milieu n'est pas magnétique. De ces deux
 matrices sortent, sans aucun solveur de plus, les modes **pair** et **impair**
-— donc Z_diff = 2·Z_impair et Z_comm = Z_pair/2 — et les coefficients de
-couplage k_C et k_L — donc le bruit **arrière** (NEXT) et le bruit **avant**
-(FEXT).
+— donc Z_diff = 2·Z_impair et Z_comm = Z_pair/2.
 
-**L'agresseur n'est jamais dans la sélection**, par définition, et l'autre
-moitié d'une paire non plus : on désigne la piste dont on se soucie. La page
-joint donc au problème le **voisinage** — le cuivre qui passe à portée sur la
-même couche — et c'est le serveur qui apparie : même couche, parallèle à 15°
-près, un recouvrement mesuré par projection, un écart de cuivre à cuivre.
-Sélectionner UNE des deux pistes suffit.
+**L'autre moitié d'une paire n'est pas toujours dans la sélection** : on
+désigne un net, pas deux. La page joint donc au problème le **voisinage** — le
+cuivre qui passe à portée sur la même couche — et c'est le serveur qui apparie :
+même couche, parallèle à 15° près, un recouvrement mesuré par projection, un
+écart de cuivre à cuivre. Sélectionner UNE des deux pistes suffit.
+
+Ici, **un couplage n'est pas un défaut** : c'est le mode impair d'une paire,
+celui que le récepteur différentiel rejette. Ce qu'une voisine *prend* se lit
+sous *Crosstalk*.
 
 ### Une piste, deux voisines : une seule section
 
@@ -406,7 +471,7 @@ comme un défaut de la formule IPC-2141A. Vérifié contre étalons extérieurs
 au pire contre Hammerstad-Jensen sur le microruban, **0,30 %** contre la
 solution exacte en intégrales elliptiques sur la triplaque. La géométrie qui
 mesure la masse coplanaire sur le cuivre lu a son propre banc,
-`test/harness-sim.js` (92 cas), qui tourne sous Node sans navigateur — il
+`test/harness-sim.js` (108 cas), qui tourne sous Node sans navigateur — il
 couvre aussi l'extraction du cuivre pour la CHUTE CONTINUE : les polygones
 envoyés au solveur, les tubes métallisés qui font changer de couche, et
 l'invariant qui compte, « aucune couche de cuivre sans chemin vertical » —

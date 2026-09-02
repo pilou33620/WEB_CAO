@@ -2,6 +2,56 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.5.0
+# Date: 2026-09-02
+# Explication: LES COEFFICIENTS DE DIAPHONIE SORTENT DU SOLVEUR. Plus rien ne
+#   les appelait : l'onglet qui les lisait a ete retire, et le crosstalk
+#   travaille sur une matrice S multi-ports qu'il forme lui-meme depuis [C] et
+#   [L]. Un solveur garde ce qui le sert ; le reste est du code qui vieillit
+#   sans que rien ne l'execute -- et c'est exactement ce que l'audit du
+#   2026-08-29 avait trouve ici.
+#
+#   CE QUE LE SOLVEUR GARDE, ET C'EST L'ESSENTIEL : `solve_multiline`, la
+#   matrice de capacite de Maxwell [C], [L] = mu0.eps0.[C0]^-1, `modes_paire`
+#   et `sous_systeme`. Z differentielle et Z commune en sortent, et le
+#   crosstalk y prend ses matrices par bloc.
+# Fonctions retirees : coefficients_couplage, bruits_depuis_coefficients,
+#   diaphonie, diaphonie_terminee, reflexion, avec la constante T_REF_FEXT.
+#
+# Version: 2.4.0
+# Date: 2026-09-01
+# Explication: LES COEFFICIENTS DE COUPLAGE N'ONT PLUS QU'UN SEUL ENDROIT, et
+#   ils y gagnent une seconde lecture -- celle du crosstalk scanner.
+#
+#   `coefficients_couplage` forme desormais k_C, k_L, k_arriere, k_avant, les
+#   deux impedances, les deux retards lineiques, ET les coefficients de
+#   BALAYAGE K_NEXT / K_FEXT de la note d'application Ansys SIwave R17 :
+#
+#       K_NEXT = 1/2 . (L21/Z1 + Z2.C21) / (V(L11 C11) + V(L22 C22))
+#       K_FEXT = -1/2 . (L21/Z1 - Z2.C21) / t_r0        avec t_r0 = 1 ns
+#
+#   `diaphonie` l'APPELLE au lieu de refaire le calcul : la regle de la maison
+#   est une formule, un endroit.
+#
+#   CE QUI RATTACHE LE BALAYAGE AU RESTE. A lignes identiques, K_NEXT vaut
+#   EXACTEMENT k_arriere -- mesure a 1e-12 pres sur quatre geometries. Le
+#   balayage n'est donc pas un second modele a valider : c'est la meme
+#   physique, normalisee sur les DEUX lignes au lieu de l'agresseur seul, et
+#   les 3 % mesures contre Garg-Bahl valent pour lui. Les deux ne divergent
+#   que lorsque Z1 != Z2, et la forme SIwave est alors la mieux tenue :
+#   k_avant, rapporte au seul agresseur, peut CHANGER DE SIGNE quand on
+#   echange les deux pistes d'une meme geometrie.
+#
+#   LA COQUILLE DE LA NOTE D'ANSYS, et pourquoi on ne la recopie pas : elle
+#   imprime un MOINS dans les deux formules. Au bout PROCHE les couplages
+#   capacitif et inductif s'AJOUTENT -- resultat classique --, un moins ferait
+#   s'annuler le NEXT en milieu homogene alors que c'est le FEXT qui s'y
+#   annule (le banc le verifie sur triplaque), et la reduction ci-dessus ne
+#   tomberait pas sur k_arriere. On garde le plus au NEXT, le moins au FEXT.
+# Fonctions ajoutees : coefficients_couplage
+# Fonctions modifiees : diaphonie (delegue et ne calcule plus)
+# Constantes ajoutees : T_REF_FEXT
+#
 # Version: 2.3.0
 # Date: 2026-08-31
 # Explication: N CONDUCTEURS. Z DIFFERENTIELLE ET DIAPHONIE, MEME CHANTIER.
@@ -247,7 +297,6 @@
 Toutes les longueurs sont en METRES ici -- c'est python/simulation_em.py qui
 convertit depuis les millimetres du document d'echange.
 """
-
 
 
 import math
@@ -957,7 +1006,9 @@ def _conducteurs_places(conducteurs, epaisseur, distance_plan):
     Chaque conducteur porte sa largeur `w` et, au choix, son centre `x` ou son
     ecart `s` au precedent -- de cuivre a cuivre, comme partout ailleurs ici.
     `masse` a vrai en fait une PISTE DE GARDE : elle occupe la place, prend du
-    champ, et reste a zero volt.
+    champ, et reste a zero volt. `flottant` a vrai en fait un cuivre ISOLE :
+    meme place, meme champ, mais charge totale nulle et potentiel libre -- ce
+    qu'est un plan ou une garde que rien ne coud a la masse.
 
     L'EPAISSEUR ELARGIT CHAQUE RUBAN AUTOUR DE SON CENTRE, et l'ecart se reduit
     donc tout seul de ce que les deux bords se sont avances : c'est la meme
@@ -988,7 +1039,17 @@ def _conducteurs_places(conducteurs, epaisseur, distance_plan):
                        # comme les plans coplanaires, avec ses panneaux et sa
                        # condition aux limites, mais elle ne porte pas de port
                        # et ne sort donc pas dans [C].
-                       "masse": bool(cond.get("masse"))})
+                       "masse": bool(cond.get("masse")),
+                       # UN CONDUCTEUR FLOTTANT N'EST PAS UNE GARDE. Il occupe
+                       # la meme place et prend le meme champ, mais sa
+                       # condition aux limites est l'inverse : la garde a un
+                       # POTENTIEL impose (zero) et une charge quelconque ; le
+                       # flottant a une CHARGE imposee (zero) et un potentiel
+                       # quelconque. C'est ce qui distingue un cuivre de masse
+                       # cousu de vias d'un cuivre qui ne l'est pas -- et le
+                       # second ne blinde pas, il transfere.
+                       "flottant": bool(cond.get("flottant"))
+                       and not bool(cond.get("masse"))})
         x = centre
     # RANGES DE GAUCHE A DROITE, ce que la matrice exige -- les bandes de
     # panneaux se posent dans l'ordre, et l'ecart entre deux conducteurs est
@@ -1022,8 +1083,11 @@ def capacitance_matrice(conducteurs, ecart_g, ecart_d, green, distance_plan,
     conducteur seul.
 
     Rend un tableau N x N tel que Q = [C] V, ou N est le nombre de
-    conducteurs QUI NE SONT PAS DES MASSES : une piste de garde occupe la
-    place et prend du champ, mais n'a pas de ligne dans la matrice.
+    conducteurs QUI SONT DES PORTS : ni une piste de garde, ni un cuivre
+    flottant n'ont de ligne dans la matrice -- tous deux occupent la place et
+    prennent du champ, mais on ne leur demande pas leur impedance. Ce qui les
+    separe est leur condition aux limites : la garde a un POTENTIEL impose a
+    zero, le flottant une CHARGE totale imposee a zero.
     """
     g = float(ecart_g or 0.0)
     d = float(ecart_d or 0.0)
@@ -1037,7 +1101,7 @@ def capacitance_matrice(conducteurs, ecart_g, ecart_d, green, distance_plan,
     if n_plan is None:
         n_plan = max(40, n // 2)
 
-    blocs_c, blocs_w, tranches = [], [], []
+    blocs_c, blocs_w, tranches, flottants = [], [], [], []
     rang = 0
     if g > 0:
         a0 = gauche - g
@@ -1052,7 +1116,9 @@ def capacitance_matrice(conducteurs, ecart_g, ecart_d, green, distance_plan,
         # qui est exactement la condition d'un plan coplanaire. Elle prend du
         # champ aux deux signaux -- c'est tout l'objet d'une garde --, mais on
         # ne lui demande pas son impedance.
-        if not cond.get("masse"):
+        if cond.get("flottant"):
+            flottants.append((rang, n))
+        elif not cond.get("masse"):
             tranches.append((rang, n))
         rang += n
     if d > 0:
@@ -1081,10 +1147,34 @@ def capacitance_matrice(conducteurs, ecart_g, ecart_d, green, distance_plan,
     n_c = len(tranches)
     if not n_c:
         raise ValueError("tous les conducteurs sont a la masse")
-    tension = np.zeros((centres.size, n_c))
-    for j, (debut, taille) in enumerate(tranches):
-        tension[debut:debut + taille, j] = 1.0
-    charges = np.linalg.solve(mat, tension)
+    n_p = centres.size
+
+    if flottants:
+        # LE SYSTEME AUGMENTE D'UN CONDUCTEUR FLOTTANT, et c'est exact -- pas
+        # une correction. Un cuivre isole n'a ni potentiel impose ni charge
+        # libre : c'est l'INVERSE d'une garde. On ajoute donc une inconnue par
+        # flottant, son potentiel phi, et une equation, sa charge totale nulle :
+        #
+        #     sum_k A[m,k] q_k - phi_f = 0   pour chaque panneau m du flottant
+        #     sum_{k dans f} w_k q_k   = 0   sa charge totale
+        #
+        # Le reste du systeme ne bouge pas. C'est la meme discretisation, la
+        # meme fonction de Green, et le meme cout a un rang pres.
+        n_f = len(flottants)
+        a = np.zeros((n_p + n_f, n_p + n_f))
+        a[:n_p, :n_p] = mat
+        for j, (debut, taille) in enumerate(flottants):
+            a[debut:debut + taille, n_p + j] = -1.0
+            a[n_p + j, debut:debut + taille] = largeurs[debut:debut + taille]
+        tension = np.zeros((n_p + n_f, n_c))
+        for j, (debut, taille) in enumerate(tranches):
+            tension[debut:debut + taille, j] = 1.0
+        charges = np.linalg.solve(a, tension)[:n_p, :]
+    else:
+        tension = np.zeros((n_p, n_c))
+        for j, (debut, taille) in enumerate(tranches):
+            tension[debut:debut + taille, j] = 1.0
+        charges = np.linalg.solve(mat, tension)
 
     c = np.empty((n_c, n_c))
     for i, (debut, taille) in enumerate(tranches):
@@ -1149,10 +1239,13 @@ def solve_multiline(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
     m = _milieu(geometry)
     t = float(geometry.get("t", 0.0))
     places = _conducteurs_places(conducteurs, t, m["distance"])
-    ports = [c for c in places if not c["masse"]]
+    # NI UNE GARDE NI UN FLOTTANT N'EST UN PORT : on ne demande son impedance
+    # ni a l'un ni a l'autre. Les deux occupent la place et prennent du champ,
+    # et c'est justement pour cela qu'on les pose.
+    ports = [c for c in places if not c["masse"] and not c.get("flottant")]
     if len(ports) < 2:
         raise ValueError("une ligne couplee demande au moins deux conducteurs"
-                         " qui ne soient pas des masses")
+                         " qui ne soient ni masses ni flottants")
 
     # Les ecarts au cuivre de masse, ramenes comme dans `solve_line` : ils sont
     # mesures de cuivre a cuivre, et c'est la largeur EFFECTIVE qui borde le
@@ -1301,70 +1394,6 @@ def sous_systeme(c_mat, c0_mat, indices):
     c_sous = c_mat[idx]
     c0_sous = c0_mat[idx]
     return c_sous, MU_0 * EPSILON_0 * np.linalg.inv(c0_sous)
-
-
-def diaphonie(c_mat, l_mat, longueur, temps_montee, agresseur=0, victime=1):
-    """NEXT et FEXT entre deux conducteurs, en fraction de l'amplitude emise.
-
-    LES DEUX BRUITS N'ONT NI LA MEME CAUSE NI LA MEME LOI.
-
-    L'ARRIERE (NEXT, near end) remonte vers la source. Son coefficient est la
-    demi-somme des deux couplages, parce que l'onde capacitive et l'onde
-    inductive y repartent dans le meme sens et s'ajoutent :
-
-        k_b = (k_L + k_C) / 4      avec k_L = Lm/L, k_C = Cm/C
-
-    Il SATURE : passe une longueur de couplage telle que l'aller-retour dure
-    plus qu'un temps de montee, il ne monte plus, et vaut k_b fois l'amplitude.
-    En deca il vaut k_b * 2 T_D / t_r. C'est pourquoi allonger un bus parallele
-    ne fait empirer la diaphonie arriere que jusqu'a un certain point -- et
-    aussi pourquoi la raccourcir en deca de cette longueur-la, elle, paie.
-
-    L'AVANT (FEXT, far end) part avec le signal. Son coefficient est la
-    DIFFERENCE des deux couplages :
-
-        k_f = (k_C - k_L) / 2      et  V_fext / V = k_f * T_D / t_r
-
-    EN MILIEU HOMOGENE IL EST NUL : k_C et k_L y sont egaux, terme a terme.
-    C'est la propriete la plus utile de toute cette page -- une TRIPLAQUE n'a
-    pas de diaphonie avant, un MICRORUBAN si, et le signe est negatif parce que
-    l'inductif l'emporte. Le banc le verifie sur les deux geometries.
-
-    Il ne sature pas : il croit avec la longueur, tant que le modele de
-    couplage faible tient.
-
-    `longueur` et `temps_montee` en metres et en secondes ; les deux indices
-    designent les conducteurs dans [C] et [L].
-    """
-    c_mat = np.asarray(c_mat, dtype=float)
-    l_mat = np.asarray(l_mat, dtype=float)
-    a, v = int(agresseur), int(victime)
-    c_s, l_s = c_mat[a, a], l_mat[a, a]
-    c_m, l_m = -c_mat[a, v], l_mat[a, v]
-    if not (c_s > 0 and l_s > 0):
-        raise ValueError("conducteur agresseur non physique")
-    k_c, k_l = c_m / c_s, l_m / l_s
-    k_b = 0.25 * (k_l + k_c)
-    k_f = 0.5 * (k_c - k_l)
-
-    vitesse = 1.0 / math.sqrt(l_s * c_s)
-    t_d = float(longueur) / vitesse if longueur > 0 else 0.0
-    t_r = float(temps_montee)
-    sature = t_r <= 0 or 2.0 * t_d >= t_r
-    bruit_arriere = k_b if sature else k_b * 2.0 * t_d / t_r
-    bruit_avant = 0.0 if t_r <= 0 else k_f * t_d / t_r
-    return {
-        "k_c": float(k_c), "k_l": float(k_l),
-        "k_arriere": float(k_b), "k_avant": float(k_f),
-        "next": float(bruit_arriere), "fext": float(bruit_avant),
-        "retard": float(t_d), "vitesse": float(vitesse),
-        "sature": bool(sature),
-        # LA LONGUEUR DE SATURATION : au-dela, la diaphonie arriere ne monte
-        # plus. C'est le seul chiffre de cette fiche sur lequel on agit en
-        # dessinant, et il repond a « jusqu'ou puis-je longer ».
-        "longueur_saturation": float(vitesse * t_r / 2.0) if t_r > 0 else 0.0,
-        "eps_eff": float(C_0 * C_0 * l_s * c_s),
-    }
 
 
 def dispersion_getsinger(z0_statique, eps_eff_statique, epsilon_r, h, freq):

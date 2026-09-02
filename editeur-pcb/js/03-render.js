@@ -739,6 +739,11 @@ function paint(c,dpr,w,h,noGrid){
      désignent un point. Absent du .png exporté, comme eux : il montre une
      décision de routage, pas la carte. */
   if(!noGrid&&typeof simRetourTrace==="function")simRetourTrace(c,dpr);
+  /* LES ZONES À RISQUE DU CROSSTALK, peintes sur le cuivre des victimes : les
+     portions où LEUR couplage se fabrique. Même place que le chevelu, et pour
+     la même raison — elles désignent des portions de cuivre, elles ne décrivent
+     pas le cuivre —, donc absentes du .png exporté comme lui. */
+  if(!noGrid&&typeof simXtRisqueTrace==="function")simXtRisqueTrace(c,dpr);
   /* L'étiquette de la sonde, tout au-dessus de la carte de chaleur : elle
      désigne un point, elle ne décrit pas le cuivre. Comme la cote, elle est
      absente du .png exporté. */

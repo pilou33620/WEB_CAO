@@ -1375,7 +1375,15 @@ function simSegments(liste,N){
         net:(p.n>=0)?mdlNetNom(p.n):"", copper_thickness:LT.cu[cu].ep,
         gap_left:e.retourne?pl.d:pl.g, gap_right:e.retourne?pl.g:pl.d
       });
+      /* `retourne` VOYAGE AVEC L'OBJET, et il faut qu'il voyage : la
+         polyligne ne change pas de sens, c'est le PARCOURS qui la remonte.
+         Sans ce drapeau, une abscisse curviligne calculée plus tard sur cette
+         plage — celle d'un via de couture, par exemple — tomberait à l'envers
+         dans le tronçon, et la carte de crosstalk poserait la zone de
+         vigilance à l'autre bout. Le côté gauche/droite s'inverse avec lui,
+         pour la même raison. */
       objets.push({piste:p, cum:cum, u1:pl.u1, u2:pl.u2,
+                   retourne:!!e.retourne,
                    couche:(c?c.nom:"?"), coucheIdx:e.couche});
     }
   }
@@ -1555,103 +1563,10 @@ function simZTraceLot(c,dpr,lot){
     c.strokeStyle=t.couleur(1);
     c.lineWidth=px*2; c.stroke(t.chemin);
   }
-  simVoisinsTrace(c,dpr,px);
   simZValeurs(c,dpr,traits);
   simZNumeroLot(c,dpr,lot,traits);
 }
 
-/* ==========================================================================
-   LE CUIVRE VOISIN — CE QUE LA SÉLECTION LEUR INFLIGE
-   --------------------------------------------------------------------------
-   La sélection est peinte avec ce qu'elle PREND ; les voisines, avec ce que la
-   sélection leur ENVOIE. Même règle pour les deux : une piste peinte montre ce
-   qu'elle subit.
-
-   ON NE PASSE PAR AUCUN OBJET DE L'OUTIL, et c'est voulu : `voisinage` est une
-   liste de tronçons du DOCUMENT — deux points et une largeur, en millimètres,
-   les arcs déjà en cordes —, la même qui est partie au serveur. Retrouver la
-   piste de l'outil derrière chaque tronçon coûterait une recherche et pourrait
-   échouer ; tracer un segment ne peut pas.
-
-   TROIS PASSES COMME AILLEURS, mais plus discrètes que sur la sélection : le
-   halo est moins large et l'âme moins opaque. La sélection reste ce qu'on a
-   désigné, et le cuivre voisin ne doit pas la couvrir.
-   ========================================================================== */
-function simVoisinsTrace(c,dpr,px){
-  if(typeof simCarteVoisins!=="function")return;
-  const liste=simCarteVoisins();
-  if(!liste.length)return;
-  const k=simKUnite();
-  if(!(k>0))return;
-  const u=v=>v/k;                          /* millimètres -> unités du fichier */
-  c.lineCap="round"; c.lineJoin="round";
-  const chemin=v=>{
-    const t=new Path2D();
-    t.moveTo(u(v.seg.start[0]),u(v.seg.start[1]));
-    t.lineTo(u(v.seg.end[0]),u(v.seg.end[1]));
-    return t;
-  };
-  const traces=liste.map(v=>({v:v, t:chemin(v), w:u(v.seg.width||0)}));
-  /* LA PISTE VICTIME EST PEINTE ENTIÈRE — voir `simCarteVoisins`
-     (commun/simulation-em.js). Ce qui ne couple pas passe D'ABORD, gris, fin et
-     translucide : il donne à la piste sa continuité, et ne doit pas couvrir le
-     millimètre qui, lui, porte le bruit. */
-  for(const t of traces){
-    if(t.v.couple)continue;
-    c.strokeStyle=t.v.couleur(0.55);
-    c.lineWidth=Math.max(t.w*0.6,px*1.2); c.stroke(t.t);
-  }
-  for(const t of traces){
-    if(!t.v.couple)continue;
-    c.strokeStyle=t.v.couleur(0.22);
-    c.lineWidth=t.w+px*5; c.stroke(t.t);
-  }
-  for(const t of traces){
-    if(!t.v.couple)continue;
-    c.strokeStyle=t.v.couleur(0.85);
-    c.lineWidth=Math.max(t.w,px*2); c.stroke(t.t);
-  }
-  simVoisinsValeurs(c,dpr,u);
-}
-
-/* Une étiquette par NET agressé, posée À CÔTÉ de sa piste — voir
-   `simCarteVoisinsEtiquettes` (commun/simulation-em.js). */
-/* LE DÉCALAGE SE CALCULE DANS L'ÉCRAN, et non dans le monde : c'est la seule
-   façon d'obtenir la même marge quel que soit le zoom, et de récupérer au
-   passage un éventuel retournement de la vue. On projette la normale — rendue
-   en millimètres par `simCarteVoisinsEtiquettes` — en prenant la différence de
-   deux points transformés, puis on la ramène à la longueur voulue. */
-const SIM_VOISIN_MARGE=13;             // pixels écran, du cuivre au cartouche
-function simVoisinsValeurs(c,dpr,u){
-  if(typeof simCarteVoisinsEtiquettes!=="function")return;
-  const etiq=simCarteVoisinsEtiquettes();
-  if(!etiq.length)return;
-  c.save();
-  c.setTransform(1,0,0,1,0,0);
-  c.scale(dpr,dpr);
-  c.font="600 10px \"JetBrains Mono\",\"SF Mono\",Consolas,monospace";
-  c.textAlign="center"; c.textBaseline="middle";
-  for(const v of etiq){
-    const a=w2s(u(v.ancre[0]),u(v.ancre[1]));
-    const b=w2s(u(v.ancre[0]+v.normale[0]),u(v.ancre[1]+v.normale[1]));
-    let dx=b.x-a.x, dy=b.y-a.y;
-    const l=Math.hypot(dx,dy);
-    if(l>1e-9){dx/=l;dy/=l;}else{dx=0;dy=-1;}
-    const e={x:a.x+dx*SIM_VOISIN_MARGE, y:a.y+dy*SIM_VOISIN_MARGE};
-    const txt=v.net+" "+v.texte;
-    const w=c.measureText(txt).width+10;
-    simCheveluBruit(c,v,a,e,u);
-    c.fillStyle="rgba(15,16,18,0.86)";
-    c.beginPath();
-    if(c.roundRect)c.roundRect(e.x-w/2,e.y-8,w,16,4);
-    else c.rect(e.x-w/2,e.y-8,w,16);
-    c.fill();
-    c.strokeStyle=v.couleur(1); c.lineWidth=1.1; c.stroke();
-    c.fillStyle="#e6e8ec";
-    c.fillText(txt,e.x,e.y+0.5);
-  }
-  c.restore();
-}
 
 /* LE NUMÉRO DU LOT, POSÉ SUR SON CUIVRE. Le tableau parle de « lot 3 » ; sans
    ce jeton, rien sur la carte ne dit lequel c'est, et il faudrait déplier les
@@ -1682,35 +1597,6 @@ function simZNumeroLot(c,dpr,lot,traits){
   c.restore();
 }
 
-/* LE CHEVELU DE LA DIAPHONIE — d'où à où, sans avoir à le deviner.
-   --------------------------------------------------------------------------
-   MÊME IDÉE QUE CELUI DU COURANT DE RETOUR, et pour la même raison : deux
-   cuivres colorés côte à côte ne disent pas lequel agresse lequel. Le trait
-   part du point de la SÉLECTION le plus proche, passe par le cuivre de la
-   victime et finit sur son étiquette — trois points, un sens de lecture, et
-   plus rien à deviner.
-
-   POINTILLÉ ET FIN, parce qu'il DÉSIGNE au lieu de décrire : il ne doit pas
-   se lire comme du cuivre. La flèche est portée par le point plein posé sur la
-   victime, qui est là où le bruit arrive. */
-function simCheveluBruit(c,v,surCuivre,surEtiquette,u){
-  const d=v.depuis?w2s(u(v.depuis[0]),u(v.depuis[1])):null;
-  c.save();
-  if(d){
-    c.setLineDash([3,3]);
-    c.strokeStyle=simAgresseurCouleur(0.85); c.lineWidth=1;
-    c.beginPath(); c.moveTo(d.x,d.y); c.lineTo(surCuivre.x,surCuivre.y);
-    c.stroke();
-    c.setLineDash([]);
-    c.beginPath(); c.arc(d.x,d.y,2.6,0,2*Math.PI); c.stroke();
-  }
-  c.fillStyle=v.couleur(1);
-  c.beginPath(); c.arc(surCuivre.x,surCuivre.y,2.6,0,2*Math.PI); c.fill();
-  c.strokeStyle=v.couleur(0.75); c.lineWidth=1;
-  c.beginPath(); c.moveTo(surCuivre.x,surCuivre.y);
-  c.lineTo(surEtiquette.x,surEtiquette.y); c.stroke();
-  c.restore();
-}
 
 /* ==========================================================================
    LE CHEVELU DU COURANT DE RETOUR
@@ -2131,7 +2017,7 @@ function simDCClic(x,y){
    --------------------------------------------------------------------------
    L'AGRESSEUR N'EST JAMAIS DANS LA SÉLECTION, par définition ; et l'autre
    moitié d'une paire différentielle n'y est pas non plus, puisqu'on désigne un
-   net et pas deux. Sans ce qui suit, ni la diaphonie ni l'impédance
+   net et pas deux. Sans ce qui suit, ni le crosstalk ni l'impédance
    différentielle n'ont de quoi exister, quel que soit le solveur derrière.
 
    LA PAGE ENVOIE DU CUIVRE, ELLE N'APPARIE PAS. C'est le serveur qui décide ce
@@ -2154,10 +2040,18 @@ function simDCClic(x,y){
 const SIM_VOISINAGE_MAX_IPC=600;   /* tronçons envoyés ; au-delà, on écrête */
 const SIM_ECART_COUPLAGE_IPC=3.0;  /* mm ; ECART_COUPLAGE_MAX de simulation_em.py */
 
-function simVoisinageIpc(envoi,objets){
+/* `adjacentes` OUVRE LE VOISINAGE AUX COUCHES VOISINES, et c'est la seule
+   différence entre le document d'impédance et celui de crosstalk. Deux pistes
+   SUPERPOSÉES couplent souvent PLUS que les mêmes côte à côte : les écarter
+   d'office ferait lire un couplage nul là où il est maximal. Un conducteur
+   occupe le rang 2k dans l'empilage envoyé, donc le conducteur voisin est à
+   ±2 — c'est la convention de `simRangCu`, et elle n'a pas d'autre lecture. */
+function simVoisinageIpc(envoi,objets,adjacentes){
   if(!V.modele||!LT.pret||!envoi||!envoi.length)return [];
   const k=simKUnite();
   const couches=new Set(envoi.map(e=>e.layer));
+  if(adjacentes)
+    for(const l of [...couches]){couches.add(l-2);couches.add(l+2);}
   const prises=new Set((objets||[]).map(o=>o.piste));
   /* La boîte de la sélection, élargie de la portée et de la demi-largeur la
      plus grande : en deçà on écarterait du cuivre que le serveur aurait retenu. */
@@ -2170,7 +2064,18 @@ function simVoisinageIpc(envoi,objets){
   const marge=SIM_ECART_COUPLAGE_IPC+large;
   x1-=marge;y1-=marge;x2+=marge;y2+=marge;
 
-  const refs=simRefSet();
+  /* DES INDICES DE NET, ET NON DES NOMS. `simEcartsEn` compare ce que porte la
+     grille des arêtes, et la grille porte `pl.n`, qui est l'INDICE du net —
+     c'est ainsi que `mdlCharger` range les plans. La version précédente lui
+     passait `simRefSet()`, c'est-à-dire des noms : `refs.has(indice)` était
+     TOUJOURS faux, et chaque voisine partait au serveur avec un écart à la
+     masse nul. Rien ne levait, rien ne paraissait anormal — et le serveur en
+     concluait qu'aucun cuivre de masse ne s'interpose jamais entre la
+     sélection et ses voisines, donc un couplage PESSIMISTE sur toute carte
+     arrosée. Les tronçons de la sélection, eux, recevaient bien des indices
+     (`simSegments` passe `simRefIdx()`) : les deux moitiés du même document ne
+     se mesuraient pas avec la même règle. */
+  const refs=simRefIdx();
   const out=[];
   /* CHAQUE VOISINE PART AVEC SES DEUX ÉCARTS À LA MASSE, comme les tronçons de
      la sélection : c'est ce qui permet au serveur de savoir si du cuivre de
@@ -2353,8 +2258,8 @@ function simDocIpc(liste,netIdx,opts,seul){
       vias:g.vias||[],
       ports:[{id:1,impedance:opts.z0},{id:2,impedance:opts.z0}],
       /* LE CUIVRE QUI LONGE — voir « LE VOISINAGE ». Il ne change RIEN au
-         calcul d'impédance ; sans lui il n'y a ni Z différentielle ni
-         diaphonie, parce que l'agresseur n'est jamais dans la sélection. */
+         calcul d'impédance ; sans lui il n'y a pas de Z différentielle, parce
+         que l'autre moitié d'une paire n'est pas toujours sélectionnée. */
       voisinage:simVoisinageIpc(g.envoi,g.objets),
       paires:simPairesIpc(),
       /* LE TEMPS DE MONTÉE est déjà en SECONDES dans la saisie, comme les
@@ -2382,6 +2287,398 @@ function simDocIpc(liste,netIdx,opts,seul){
     couture:g.couture,
     voisins:g.voisins
   };
+}
+
+/* ==========================================================================
+   CROSSTALK — CE QUE SEULE LA PAGE PEUT MESURER
+   --------------------------------------------------------------------------
+   LE SERVEUR NE VOIT QUE CE QU'ON LUI ENVOIE, et la section Crosstalk demande
+   trois choses que la simulation d'impédance ne demandait pas. Aucune n'est un
+   raffinement : sans elles, les contrôles de plan de référence ne diraient
+   RIEN, et une liste vide de zones à risque se lit « rien à signaler » — ce
+   qui est exactement le contraire de la vérité.
+
+   CE QUI CHANGE PAR RAPPORT À L'ÉDITEUR PCB, et pourquoi ce code n'est pas le
+   sien. L'éditeur connaît ses vias — position, PORTÉE, net — et ses zones de
+   cuivre une par une. Une carte livrée en IPC-2581 ne donne ni l'une ni
+   l'autre sous cette forme :
+
+     · UN PERÇAGE NE DÉCLARE PAS SA PORTÉE. Le format porte sa position, son
+       diamètre et son net, jamais les couches qu'il traverse. On le suppose
+       TRAVERSANT — comme partout ailleurs sur cette page (`simRetoursIpc`) —
+       et la note le dit. Un via enterré compté comme traversant fait passer
+       pour cousu un plan qui ne l'est pas : c'est un contrôle OPTIMISTE, et
+       c'est le sens qu'il faut connaître avant de lire la carte ;
+     · LE PLAN EST UN CONTOUR, PAS UNE GRILLE DE CASES. `simGrilleCuivre` range
+       les ARÊTES du plan pour mesurer un écart ; ici il faut répondre à « y
+       a-t-il du cuivre de masse SOUS ce point », ce qui est une question
+       d'appartenance et non de distance. On teste donc le point dans le
+       contour, trous compris, avec une boîte englobante en garde — un plan de
+       carte livrée porte des milliers de sommets, et le pas de sonde en
+       demande deux mille.
+
+   ET QUAND ON N'A PAS PU REGARDER, ON N'ENVOIE PAS LE CHAMP. Un plan de
+   référence dont aucun contour ne couvre le parcours n'est pas un plan sans
+   fente : c'est un plan qu'on ne sait pas sonder, et le dire est la seule
+   réponse honnête. Le serveur écrit alors « rien n'a pu être examiné » au lieu
+   de « aucune zone de vigilance ».
+   ========================================================================== */
+const SIM_XT_PAS_IPC=0.5;         /* mm — le pas de sonde du plan de référence */
+const SIM_XT_SONDES_MAX_IPC=2000; /* au-delà, on grossit le pas plutôt que d'inonder */
+
+/* Le parcours, plage par plage, avec son abscisse curviligne cumulée.
+
+   `g.envoi` ET `g.objets` MARCHENT EN PAS, un pour un : `simSegments` les
+   empile ensemble, et c'est ce qui permet de tenir la longueur (envoyée au
+   serveur, en millimètres) d'un côté et la géométrie (la polyligne du modèle,
+   en unités fichier) de l'autre. C'est le même axe que celui du serveur
+   (`_parcours`), et il faut que ce soit le même : c'est lui qui met un via de
+   couture et un pic de couplage à la même abscisse sur la carte. */
+function simXtParcoursIpc(g){
+  const out=[];
+  let s=0;
+  for(let i=0;i<g.objets.length;i++){
+    const l=((g.envoi[i]||{}).length)||0;
+    out.push({o:g.objets[i], s0:s, longueur:l});
+    s+=l;
+  }
+  return {liste:out, total:s};
+}
+
+/* L'abscisse curviligne d'un point du plan, en MILLIMÈTRES, ou -1 s'il ne
+   tombe sur aucune plage du parcours. Le point est en unités FICHIER, comme
+   tout ce qui vient du modèle.
+
+   ON PROJETTE SUR CHAQUE PLAGE ET L'ON GARDE LA PLUS PROCHE : deux plages d'un
+   même repli peuvent toutes deux accepter la projection, et prendre la
+   première venue placerait le via à l'autre bout. */
+function simXtAbscisseIpc(par,x,y){
+  let meilleur=-1, dmin=Infinity;
+  for(const e of par.liste){
+    const o=e.o;
+    const total=o.cum[o.cum.length-1]||0;
+    if(!(total>0))continue;
+    const pr=simProjPoly(o.piste.p,o.cum,x,y);
+    if(!pr||pr.d>=dmin)continue;
+    const u=pr.s/total;
+    const a=Math.min(o.u1,o.u2), b=Math.max(o.u1,o.u2);
+    if(u<a-1e-6||u>b+1e-6)continue;
+    const etendue=b-a;
+    let frac=(etendue<1e-9)?0:(u-a)/etendue;
+    /* LE PARCOURS REMONTE LA POLYLIGNE quand la plage est retournée : son
+       abscisse zéro est alors le bout u2, pas le bout u1. */
+    if(o.retourne)frac=1-frac;
+    dmin=pr.d;
+    meilleur=e.s0+Math.max(0,Math.min(1,frac))*e.longueur;
+  }
+  return meilleur;
+}
+
+/* Les perçages de masse, chacun à son abscisse et de son côté. Le couloir est
+   celui de `simCoutureIpc` — la même règle mesurée deux fois finirait par
+   donner deux réponses.
+
+   LE CÔTÉ SUIT LE SENS DU PARCOURS, et non celui de la polyligne : sur une
+   plage retournée il s'inverse. Le serveur groupe les coutures par côté pour
+   mesurer le pas de chacun ; un signe qui bascule au milieu du parcours
+   couperait un côté en deux et fabriquerait deux trous là où il n'y en a
+   aucun. */
+function simXtCoutureIpc(par,idx){
+  const out=[];
+  if(!idx||!idx.size||!V.parNet)return out;
+  const k=simKUnite();
+  for(const n of V.parNet){
+    if(!n||!n.nom||!idx.has(n.i))continue;
+    for(const t of (n.trous||[])){
+      /* Un trou NON métallisé ne coud rien : même règle que le via de
+         signal, et que le chemin du courant continu. */
+      if(/NON/i.test(t.p||""))continue;
+      const s=simXtAbscisseIpc(par,t.x,t.y);
+      if(s<0)continue;
+      let cote=0, dist=Infinity;
+      for(const e of par.liste){
+        const o=e.o;
+        const pr=simProjPoly(o.piste.p,o.cum,t.x,t.y);
+        if(!pr)continue;
+        const d=(pr.d-(o.piste.w||0)/2-(t.d||0)/2)*k;
+        if(d>=dist)continue;
+        dist=d;
+        cote=((pr.cote>=0)?1:-1)*(o.retourne?-1:1);
+      }
+      if(!(dist<=SIM_COULOIR))continue;
+      out.push({s:Math.round(s*1000)/1000, cote:cote});
+    }
+  }
+  return out.sort((a,b)=>a.s-b.s);
+}
+
+/* Le plan de référence le plus proche d'un conducteur : d'abord dessous, puis
+   dessus. C'est le même ordre que `section_de_couche` côté serveur — le plan
+   qui porte le retour est celui qui fait face à la piste, et sur un empilage
+   courant il est en dessous. Rend l'index de COUCHE DU MODÈLE, celui qui porte
+   les contours de plan, ou -1. */
+function simXtPlanDeIpc(cu){
+  if(!LT.pret)return -1;
+  for(let i=cu+1;i<LT.cu.length;i++)if(LT.cu[i].plan)return LT.cu[i].couche;
+  for(let i=cu-1;i>=0;i--)if(LT.cu[i].plan)return LT.cu[i].couche;
+  return -1;
+}
+
+/* Un point dans un contour, par lancer de rayon. Les coordonnées sont celles
+   du fichier, comme le contour. */
+function simXtDansContourIpc(pts,x,y){
+  if(!pts||pts.length<6)return false;
+  let dedans=false;
+  const n=pts.length/2;
+  for(let i=0,j=n-1;i<n;j=i++){
+    const xi=pts[2*i], yi=pts[2*i+1], xj=pts[2*j], yj=pts[2*j+1];
+    if((yi>y)!==(yj>y)&&x<(xj-xi)*(y-yi)/((yj-yi)||1e-12)+xi)dedans=!dedans;
+  }
+  return dedans;
+}
+
+/* Les contours de masse d'une couche, avec leur boîte englobante, mis en
+   cache. LA BOÎTE EST LA MOITIÉ DU COÛT : un plan de carte livrée porte des
+   milliers de sommets, et le pas de sonde en demande deux mille — sans elle on
+   testerait chaque sommet deux mille fois pour un contour qui ne couvre même
+   pas le parcours. */
+let SIM_XT_PLANS_IPC=new Map();
+let SIM_XT_PLANS_SRC_IPC=null;
+
+function simXtContoursIpc(coucheIdx,idx){
+  if(SIM_XT_PLANS_SRC_IPC!==V.modele){
+    SIM_XT_PLANS_IPC=new Map();
+    SIM_XT_PLANS_SRC_IPC=V.modele;
+  }
+  const cle=coucheIdx+"|"+[...(idx||[])].sort().join(",");
+  if(SIM_XT_PLANS_IPC.has(cle))return SIM_XT_PLANS_IPC.get(cle);
+  const out=[];
+  const boite=function(p){
+    let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
+    for(let i=0;i+1<p.length;i+=2){
+      x1=Math.min(x1,p[i]); x2=Math.max(x2,p[i]);
+      y1=Math.min(y1,p[i+1]); y2=Math.max(y2,p[i+1]);
+    }
+    return [x1,y1,x2,y2];
+  };
+  const c=V.couches[coucheIdx];
+  for(const pl of ((c&&c.plans)||[])){
+    /* SEUL LE CUIVRE DE MASSE EST UN PLAN DE RETOUR. Le cuivre d'un AUTRE net
+       posé sur la couche de plan est un TROU du retour tout autant qu'une
+       absence de cuivre : le courant ne peut pas y passer.
+
+       `pl.n` EST UN INDICE DE NET, pas un nom — c'est ainsi que `mdlCharger`
+       range les plans, et c'est ce que lit déjà `simGrilleCuivre`. On attend
+       donc `simRefIdx()` et jamais `simRefSet()` : la seconde comparerait des
+       noms à des indices, ne trouverait jamais rien, et rendrait un plan de
+       masse entièrement percé de fentes qui n'existent pas. */
+    if(idx&&idx.size&&!idx.has(pl.n))continue;
+    for(const ct of (pl.g||[])){
+      if(!ct.o||ct.o.length<6)continue;
+      out.push({o:ct.o, b:boite(ct.o),
+                t:(ct.t||[]).filter(t=>t&&t.length>=6)});
+    }
+  }
+  SIM_XT_PLANS_IPC.set(cle,out);
+  return out;
+}
+
+/* Y a-t-il du cuivre DE MASSE sur cette couche, en ce point ? */
+function simXtZoneMasseIpc(coucheIdx,x,y,idx){
+  for(const ct of simXtContoursIpc(coucheIdx,idx)){
+    if(x<ct.b[0]||x>ct.b[2]||y<ct.b[1]||y>ct.b[3])continue;
+    if(!simXtDansContourIpc(ct.o,x,y))continue;
+    let trou=false;
+    for(const t of ct.t)if(simXtDansContourIpc(t,x,y)){trou=true;break;}
+    if(!trou)return ct;
+  }
+  return null;
+}
+
+/* Les discontinuités du plan sous le parcours, en intervalles d'abscisse.
+
+   REND `null` QUAND ON N'A PAS SU SONDER, et c'est la moitié de l'intérêt : un
+   plan de référence dont aucun contour ne couvre le parcours n'est pas un plan
+   sans fente, c'est un plan qu'on ne voit pas. Rendre une liste vide ferait
+   écrire « aucune zone de vigilance » sous un contrôle qui n'a jamais eu
+   lieu. */
+function simXtFentesIpc(par,idx){
+  if(!par.total||!LT.pret)return null;
+  const pas=Math.max(SIM_XT_PAS_IPC,par.total/SIM_XT_SONDES_MAX_IPC);
+  let sondable=false;
+  const trous=[];
+  let courant=null;
+  for(const e of par.liste){
+    const o=e.o;
+    const cu=simCuDe(o.coucheIdx);
+    if(cu<0)continue;
+    const plan=simXtPlanDeIpc(cu);
+    /* UNE COUCHE SANS PLAN N'A PAS DE FENTE À AVOIR : c'est un défaut d'un
+       autre ordre, que l'onglet Impédance signale déjà. On passe, sans
+       compter cette plage comme sondée. */
+    if(plan<0)continue;
+    if(!simXtContoursIpc(plan,idx).length)continue;
+    sondable=true;
+    const n=Math.max(1,Math.round(e.longueur/pas));
+    const a=Math.min(o.u1,o.u2), b=Math.max(o.u1,o.u2);
+    for(let j=0;j<=n;j++){
+      const f=j/n;
+      const u=o.retourne?(b-(b-a)*f):(a+(b-a)*f);
+      const p=simSurPoly(o.piste.p,o.cum,u);
+      const s=e.s0+f*e.longueur;
+      if(simXtZoneMasseIpc(plan,p.x,p.y,idx)){
+        if(courant){trous.push(courant);courant=null;}
+      }else if(courant&&s-courant.fin<=pas*1.5){
+        courant.fin=s;
+      }else{
+        if(courant)trous.push(courant);
+        courant={debut:s, fin:s};
+      }
+    }
+  }
+  if(courant)trous.push(courant);
+  if(!sondable)return null;
+  /* UN SEUL POINT SANS CUIVRE N'EST PAS UNE FENTE : c'est le pas de sonde qui
+     tombe dans un dégagement d'antipad. On garde ce qui dure au moins deux
+     pas — en deçà, on inonderait la carte de marques que rien ne justifie. */
+  const r3=x=>Math.round(x*1000)/1000;
+  return trous.filter(t=>t.fin-t.debut>=pas*1.5)
+    .map(t=>({s:r3(t.debut), longueur:r3(t.fin-t.debut),
+              quoi:"le plan de référence n'a pas de cuivre de masse sous le "+
+                   "parcours sur "+r3(t.fin-t.debut)+" mm"}));
+}
+
+/* Les perçages de masse à portée du parcours, pour juger les changements de
+   couche. On envoie tous ceux de la boîte élargie : c'est le serveur qui
+   mesure la distance, et il le fait au droit de la transition.
+
+   LA PORTÉE EST SUPPOSÉE TRAVERSANTE, et c'est le point à retenir : l'IPC-2581
+   ne déclare pas les couches d'un perçage. Un via enterré compté comme
+   traversant fait passer pour refermé un retour qui ne l'est pas — le contrôle
+   est donc OPTIMISTE, et la note du document le dit. */
+function simXtViasMasseIpc(par,idx){
+  const out=[];
+  if(!idx||!idx.size||!V.parNet||!LT.pret)return out;
+  const k=simKUnite();
+  const cuMax=Math.max(0,LT.cu.length-1);
+  const R=SIM_RAYON_RETOUR_IPC;
+  const r3=x=>Math.round(x*1000)/1000;
+  for(const n of V.parNet){
+    if(!n||!n.nom||!idx.has(n.i))continue;
+    for(const t of (n.trous||[])){
+      if(/NON/i.test(t.p||""))continue;
+      let proche=false;
+      for(const e of par.liste){
+        const o=e.o;
+        const pr=simProjPoly(o.piste.p,o.cum,t.x,t.y);
+        if(pr&&(pr.d-(o.piste.w||0)/2)*k<=R){proche=true;break;}
+      }
+      if(!proche)continue;
+      out.push({x:r3(t.x*k), y:r3(t.y*k),
+                a:simRangCu(0), b:simRangCu(cuMax)});
+    }
+  }
+  return out;
+}
+
+/* ==========================================================================
+   LES ZONES À RISQUE SUR LE CUIVRE — CE QUE CET OUTIL SAIT EN DIRE
+   --------------------------------------------------------------------------
+   L'ALGORITHME EST DANS `../commun/simulation-em.js`, comme pour l'éditeur
+   PCB : il projette le cuivre d'une victime sur le parcours de l'agresseur,
+   garde ce qui tombe dans la plage et découpe en morceaux contigus. Ce qu'on
+   fournit ici tient en deux formes neutres, en MILLIMÈTRES — l'unité de l'axe
+   du serveur, et non celle du fichier.
+
+   LA CONVERSION EST LE SEUL PIÈGE DE CE BLOC. Le canevas de cette page vit en
+   unités FICHIER (millimètres ou pouces selon ce que le fichier déclare) ; le
+   serveur, lui, ne connaît que les millimètres. On sort donc en millimètres —
+   `× simKUnite()` — et l'on redivise au moment de tracer. Une seule des deux
+   moitiés oubliée, et la surimpression se poserait à vingt-cinq fois sa place
+   sur un fichier en pouces, ce qui se voit ; ou pas du tout, ce qui ne se voit
+   pas.
+   ========================================================================== */
+
+function simXtGeometrieIpc(){
+  const k=simKUnite();
+  const g=simSegments(null,(V.net!=null&&V.net>=0)?V.parNet[V.net]:null);
+  const par=simXtParcoursIpc(g);
+  const parcours=par.liste.map(function(e){
+    const o=e.o;
+    const a=Math.min(o.u1,o.u2), b=Math.max(o.u1,o.u2);
+    /* On échantillonne la portion de polyligne que cette plage couvre, dans le
+       SENS DU PARCOURS : sur une plage retournée, l'abscisse zéro est le bout
+       u2. Le trait suivrait sinon la piste à l'envers, et toutes les plages de
+       ce tronçon tomberaient en miroir. */
+    const n=Math.max(2,Math.ceil(e.longueur/SIM_XT_PAS_IPC));
+    const pts=[];
+    for(let j=0;j<=n;j++){
+      const f=j/n;
+      const u=o.retourne?(b-(b-a)*f):(a+(b-a)*f);
+      const p=simSurPoly(o.piste.p,o.cum,u);
+      pts.push(p.x*k,p.y*k);
+    }
+    return {s0:e.s0, longueur:e.longueur, pts:pts};
+  });
+
+  const victimes={};
+  for(const net of (typeof simXtVictimesVoulues==="function"
+                    ? simXtVictimesVoulues() : [])){
+    if(victimes[net])continue;
+    const traits=[];
+    for(const n of (V.parNet||[])){
+      if(!n||!n.nom||n.nom!==net)continue;
+      for(const pi of (n.pistes||[])){
+        if(!pi.p||pi.p.length<4)continue;
+        traits.push(pi.p.map((v,i)=>v*k));
+      }
+      /* UN ARC EST DU CUIVRE QUI COURT COMME UN AUTRE, et le format le range
+         ailleurs. L'oublier laisserait sans surimpression exactement les
+         portions courbes — celles où une victime se rapproche. */
+      for(const a of (n.arcs||[])){
+        const pts=simArcEnPolyligne(a);
+        if(pts&&pts.length>=4)traits.push(pts.map(v=>v*k));
+      }
+    }
+    victimes[net]=traits;
+  }
+  return {parcours:parcours, victimes:victimes};
+}
+
+/* La surimpression. Même place que le chevelu du retour dans la pile de
+   dessin : elle désigne des portions de cuivre, elle ne décrit pas le cuivre. */
+function simXtRisqueTraceIpc(c,dpr){
+  if(typeof simXtRisqueGeom!=="function")return;
+  const k=simKUnite();
+  /* LA CHALEUR PASSE D'ABORD, LES PLAGES PAR-DESSUS, le point de la réglette
+     en dernier : la chaleur décrit tout le longement, les plages ne désignent
+     que ce qui est à reprendre et portent un verdict, et le point désigne un
+     millimètre. Les unités sont celles du monde, comme le cuivre recouvert. */
+  const conv=(x,y)=>[x/k,y/k];
+  simXtPeindreChaleur(c,conv,0.38/k);
+  const zones=simXtRisqueGeom();
+  /* LE RAYON DU VISEUR EST EN PIXELS D'ÉCRAN, et non en unités du monde comme
+     la chaleur : un repère qui grossit avec le zoom finit par cacher le
+     millimètre de piste qu'il désigne. `V.vue.scale` est le nombre de pixels
+     par unité du fichier, donc son inverse convertit dans l'autre sens. */
+  const vis=4.5/Math.max(1e-9,V.vue.scale);
+  if(!zones.length){simXtPeindreCurseur(c,conv,vis);return;}
+  c.save();
+  c.lineCap="round"; c.lineJoin="round";
+  for(const z of zones){
+    c.strokeStyle=simXtRisqueCouleur(z);
+    /* L'épaisseur est en unités monde, comme le cuivre qu'elle recouvre : on
+       veut continuer de reconnaître le tracé dessous. */
+    c.lineWidth=0.45/k;
+    for(const m of z.traits){
+      c.beginPath();
+      c.moveTo(m[0]/k,m[1]/k);
+      for(let i=2;i+1<m.length;i+=2)c.lineTo(m[i]/k,m[i+1]/k);
+      c.stroke();
+    }
+  }
+  c.restore();
+  simXtPeindreCurseur(c,conv,vis);
 }
 
 const SIM_IPC={
@@ -2752,6 +3049,98 @@ const SIM_IPC={
     return {lots:out};
   },
 
+  /* ==========================================================================
+     LE DOCUMENT DE CROSSTALK
+     --------------------------------------------------------------------------
+     UN SEUL DOCUMENT, JAMAIS DE LOTS, et ce n'est pas une simplification : la
+     carte a UN axe de position, celui du parcours de l'agresseur. Découper la
+     sélection en morceaux qui ne se touchent pas donnerait plusieurs axes sans
+     origine commune, et deux victimes ne se compareraient plus. Une sélection
+     éparse est donc envoyée telle quelle, dans l'ordre du chaînage — le même
+     que la simulation —, et le serveur en fait un parcours continu.
+
+     L'AGRESSEUR EST LA SÉLECTION, et il peut porter PLUSIEURS nets : le serveur
+     prend celui qui porte le plus de cuivre comme référence de l'axe et range
+     les autres en agresseurs supplémentaires, avec leurs deux ports. Rien n'est
+     codé en dur sur leur nombre.
+
+     `ports` NE PART PAS. Le document de simulation porte les impédances de
+     référence de ses deux bouts sous ce nom ; ici les ports sont ceux d'un
+     réseau MULTI-PORTS que le serveur pose lui-même à partir de la géométrie,
+     et une liste de deux impédances n'y décrit rien. La laisser passer ne
+     casserait rien — le serveur ne la lit pas —, mais un champ qui ne veut
+     rien dire dans un document rejouable finit par être lu comme s'il voulait
+     dire quelque chose.
+     ========================================================================== */
+  problemeCrosstalk:function(opts){
+    const base=simDocIpc(null,V.net,opts,true);
+    if(base.erreur)return base;
+    const g=simSegments(null,(V.net!=null&&V.net>=0)?V.parNet[V.net]:null);
+    const par=simXtParcoursIpc(g);
+    if(!(par.total>0))
+      return {erreur:"La sélection ne porte aucune longueur exploitable."};
+
+    const nets=[...new Set((g.envoi||[]).map(e=>e.net).filter(Boolean))];
+    if(!nets.length)
+      return {erreur:"La piste sélectionnée n'a pas de net.",
+              conseil:"Le crosstalk se lit d'un net vers un autre : "+
+                      "l'agresseur doit porter un nom de net."};
+
+    const doc=base.doc;
+    delete doc.ports;
+    doc.agresseurs=nets;
+    /* LE VOISINAGE EST REPRIS AVEC LES COUCHES ADJACENTES : c'est la seule
+       différence de géométrie avec le document de simulation, et elle compte —
+       deux pistes superposées sont le cas que la section droite ne sait pas
+       décrire, donc celui qu'on écartait sans un mot. */
+    doc.voisinage=simVoisinageIpc(g.envoi,g.objets,true);
+
+    /* DES INDICES PARTOUT ICI, et un seul nom pour tout le bloc : les trois
+       mesures interrogent la géométrie, qui range ses nets par indice. Garder
+       les deux formes sous la main est le plus sûr moyen de passer un jour
+       l'une pour l'autre — c'est exactement ce qui était arrivé au voisinage. */
+    const idx=simRefIdx();
+    doc.couture={positions:simXtCoutureIpc(par,idx), couloir:SIM_COULOIR};
+    /* `fentes` À `null` VEUT DIRE « ON N'A PAS PU REGARDER », et le champ est
+       alors ABSENT du document. Une liste vide dirait « rien à signaler », ce
+       qui est le contraire — et c'est exactement le genre de silence qui rend
+       un outil de mesure nuisible. */
+    const fentes=simXtFentesIpc(par,idx);
+    if(fentes)doc.fentes=fentes;
+    doc.vias_masse=simXtViasMasseIpc(par,idx);
+
+    const notes=(base.notes||[]).slice();
+    if(!idx.size)
+      notes.push("Aucun net de masse retenu : ni la couture, ni les "+
+                 "discontinuités du plan, ni les vias de retour ne peuvent "+
+                 "être examinés. Choisissez la masse dans la barre du "+
+                 "panneau — sans elle, l'absence de zone de vigilance sur la "+
+                 "carte ne veut rien dire.");
+    else if(!fentes)
+      notes.push("Le plan de référence n'a pas pu être sondé : aucun contour "+
+                 "de plan de masse ne couvre le parcours dans le fichier. Les "+
+                 "fentes ne sont donc pas cherchées, et le résultat le dira "+
+                 "plutôt que d'annoncer qu'il n'y en a pas.");
+    /* LA PORTÉE SUPPOSÉE EST LA LIMITE PROPRE À CETTE PAGE, et elle penche
+       dans un sens qu'il faut connaître : optimiste. */
+    if(idx.size&&doc.vias_masse.length)
+      notes.push(doc.vias_masse.length+" perçage(s) de masse envoyés en les "+
+                 "supposant TRAVERSANTS : l'IPC-2581 ne déclare pas les "+
+                 "couches d'un perçage. Un via enterré compté comme "+
+                 "traversant fait passer pour refermé un retour qui ne l'est "+
+                 "pas — le contrôle des changements de couche est donc "+
+                 "OPTIMISTE.");
+    if(nets.length>1)
+      notes.push("La sélection porte "+nets.length+" nets : le plus long "+
+                 "donne l'axe de la carte, les autres deviennent des "+
+                 "agresseurs supplémentaires. L'option « sommer les "+
+                 "agresseurs » les additionne en phase vers chaque victime.");
+    return {doc:doc, objets:g.objets, portee:base.portee, notes:notes};
+  },
+
+  /* Les deux formes dont la surimpression des zones à risque a besoin. Voir
+     « LES ZONES À RISQUE SUR LE CUIVRE », plus haut. */
+  xtGeometrie:simXtGeometrieIpc,
 
   redessiner:function(){
     if(typeof dessiner==="function")dessiner();

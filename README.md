@@ -24,10 +24,20 @@ python/                        les autres modules Python, aucun à lancer seul
 ├── ligne_mom.py               CE QUI CALCULE la simulation : MoM sur la
 │                              section droite — impédance, dispersion, pertes,
 │                              cascade ABCD, et la section à N conducteurs
-│                              (matrice de Maxwell, Z différentielle,
-│                              diaphonie) (numpy)
+│                              (matrice de Maxwell, Z différentielle)
+│                              (numpy)
 ├── simulation_em.py           pont : cuivre -> sections droites, résultat ->
 │                              JSON, et les garde-fous
+├── crosstalk.py               OÙ le couplage se fabrique le long d'une piste :
+│                              matrice S multi-ports SYNTHÉTISÉE À PARTIR DU
+│                              DESIGN — aucun fichier de paramètres S en
+│                              entrée —, IFFT vers le temporel, puis axe de
+│                              POSITION. Deux étapes zéro distinctes —
+│                              présélection géométrique, confirmation par
+│                              simulation —, le PROFIL D'ESPACEMENT mesuré sur
+│                              la géométrie et recoupé avec chaque pic, et les
+│                              contrôles de plan de référence à côté du
+│                              couplage (numpy)
 ├── dc_solver.py               CE QUI CALCULE la chute continue (IR drop) :
 │                              réseau résistif surfacique, gradient conjugué
 │                              (numpy, scipy). Rend la CHUTE, la DENSITÉ DE
@@ -35,7 +45,12 @@ python/                        les autres modules Python, aucun à lancer seul
 │                              détail via par via. Branché dans les DEUX
 │                              outils : bornes désignées au clic, autant
 │                              qu'on veut, carte de chaleur au choix des trois
-├── test/banc-ligne-mom.py     65 cas, contre étalons extérieurs
+├── test/banc-ligne-mom.py     175 cas, contre étalons extérieurs
+├── test/banc-crosstalk.py     33 cas : la ligne adaptée, la cascade, l'axe de
+│                              position, le refus de toute matrice venue de
+│                              l'extérieur, le recoupement du couplage avec
+│                              le profil d'espacement, et ce que la fiche
+│                              REFUSE de conclure quand elle ne peut pas
 └── test/banc-dc.py            34 cas, contre rho L/(W t) et la charte IPC
 mom_solver/                    moteur 2,5D pleine onde. Son NOYAU est valide et
                                mesuré (38 essais) ; ce qui le tient hors du
@@ -60,11 +75,12 @@ recherche-composants/          recherche de références via pcbparts.dev
 visionneuse-ipc2581/           import et affichage d'une carte IPC-2581
 ├── test/banc-essai.py         banc d'essai du parseur, avec sa carte d'essai
 └── test/harness-sim.js        banc d'essai de la mesure de masse coplanaire
+                               et des trois mesures du crosstalk (105 cas)
 commun/                        code partagé par les quatre outils
 ├── simulation-em.js           panneau de simulation, commun au PCB et à la
 │                              visionneuse : carte de chaleur d'impédance sur
 │                              la sélection, paramètres S, courbe et exports,
-│                              Z différentielle et diaphonie
+│                              Z différentielle et crosstalk
 ├── simulation-em.css          habillage de ce panneau
 ├── workspace.js               panneaux détachables et dockables
 ├── workspace.css              habillage de l'espace de travail
@@ -96,10 +112,14 @@ Deux exceptions, et les deux sont facultatives :
   **scipy** (`pip install scipy`), pour ses matrices creuses et son gradient
   conjugué.
 
+L'analyse de crosstalk (`python/crosstalk.py`) n'ajoute rien à cette liste :
+elle n'a besoin que de **numpy**, comme le solveur d'impédance dont elle reprend
+la section droite.
+
 Rien d'autre n'en dépend — sans eux, les deux éditeurs s'ouvrent, le serveur
-démarre et sert tout le reste, et seules les routes `/api/simulation` et
-`/api/simulation-dc` répondent « solveur indisponible » **en nommant ce qui
-manque et la commande qui l'installe**. Scipy est aussi demandé par le banc de
+démarre et sert tout le reste, et seules les routes `/api/simulation`,
+`/api/simulation-dc` et `/api/crosstalk` répondent « solveur indisponible »
+**en nommant ce qui manque et la commande qui l'installe**. Scipy est aussi demandé par le banc de
 `ligne_mom`, pour les intégrales elliptiques de son étalon de triplaque, et par
 tout `mom_solver/`. [requirements.txt](requirements.txt) explique pourquoi
 aucun de ces paquets n'y est écrit.
@@ -253,9 +273,24 @@ Détails dans [visionneuse-ipc2581/README.md](visionneuse-ipc2581/README.md).
 
 Le bouton **« Simulation EM… »** de l'éditeur PCB et de la visionneuse IPC-2581
 ouvre le même panneau, rangé en deux familles — **SI** (intégrité du signal) et
-**PI** (intégrité de l'alimentation). SI porte quatre onglets qui lisent **la
-même réponse du serveur** : *Impédance*, *Z différentielle*, *Diaphonie* et
+**PI** (intégrité de l'alimentation). SI porte quatre onglets, dont **trois
+lisent la même réponse du serveur** : *Impédance*, *Z différentielle* et
 *Current Return Path*. Changer d'onglet ne relance rien.
+
+Le quatrième, ***Crosstalk***, est à part et c'est assumé : il a sa propre
+route, son propre calcul et son propre résultat. Il répond seul à la question
+du couplage — **combien** une voisine prend, en pour cent de l'agresseur, en
+décibels et **en volts sur sa broche**, et **où**, le long des quarante
+millimètres qui longent, ce couplage se fabrique. Voir
+[Crosstalk](#crosstalk--où-le-couplage-se-fabrique), plus bas.
+
+> **Un onglet *Diaphonie* a existé, et il a été retiré.** Il résolvait une
+> section droite unique et rendait *un* coefficient par longement : il disait
+> combien, jamais où, et sa carte de chaleur **attribuait** le bruit aux
+> tronçons au prorata du couplage local au lieu de le mesurer le long de la
+> piste. *Crosstalk* rend le même « combien » avec une abscisse en plus.
+> Garder les deux laissait **deux verdicts concurrents sur le même cuivre**,
+> obtenus par deux physiques différentes, et rien pour les arbitrer.
 
 Le serveur résout la **section droite** de chaque tronçon par méthode des
 moments (`python/ligne_mom.py`), rend son impédance caractéristique
@@ -287,7 +322,7 @@ valeur distincte, posée sur le plus long tronçon qui la porte — cinquante fo
 « 48,0 Ω » empilés ne se liraient pas. Au-delà de huit valeurs distinctes, les
 huit plus éloignées de la cible sont gardées.
 
-### Trois cartes, une par question
+### Deux cartes, une par question
 
 Chaque onglet peint **la grandeur dont il parle**, sur le même cuivre :
 
@@ -295,79 +330,27 @@ Chaque onglet peint **la grandeur dont il parle**, sur le même cuivre :
 | --- | --- | --- |
 | *Impédance* | Z₀ tronçon par tronçon | la cible ± sa tolérance |
 | *Z différentielle* | **Z_diff tronçon par tronçon** | la cible différentielle ± sa tolérance |
-| *Diaphonie* | **le bruit reçu par chaque piste VOISINE** (la sélection est l'agresseur) | le budget de bruit |
 
-Les deux dernières sont nouvelles, et elles répondent à ce qu'un chiffre unique
-ne pouvait pas dire. Le tableau chiffre **un longement** — « SW_2 prend 4,1 %
-sur 3,0 mm à 0,21 mm » — sur une section dont l'écart est la **moyenne** de ce
-qui longe ; or trois millimètres à 0,8 mm et un demi-millimètre à 0,12 mm
-donnent la même moyenne, et ce n'est pas la même carte. La question qu'on se
-pose devant le routage n'est pas « combien », c'est **où faut-il écarter**.
+*Crosstalk* ne peint pas ce cuivre-là : sa figure est **dans le panneau** — une
+courbe par victime et par sens, sur un axe commun —, et ce qu'il pose sur la
+carte, ce sont les **plages à risque** et la **chaleur** le long du cuivre des
+*victimes*, pas de la sélection. Deux victimes sur deux tracés différents ne se
+comparent qu'alignées sur un même axe, et c'est ce que la figure fait.
 
-Le serveur résout donc, pour chaque tronçon, une section à **deux
+La carte de Z_diff répond à ce qu'un chiffre unique ne pouvait pas dire. Le
+tableau chiffre **un longement** sur une section dont l'écart est la
+**moyenne** de ce qui longe ; or trois millimètres à 0,8 mm et un
+demi-millimètre à 0,12 mm donnent la même moyenne, et ce n'est pas la même
+paire. Le serveur résout donc, pour chaque tronçon, une section à **deux
 conducteurs** à son écart **réel** — même empilage, même masse coplanaire, même
 solveur —, plafonnée à vingt-quatre résolutions par calcul et mise en cache au
-pas de cinq microns. De là sortent les deux cartes :
+pas de cinq microns. Le **gris** n'y est pas une valeur nulle : c'est l'absence
+de voisine, et c'est ainsi qu'on voit où la paire se sépare.
 
-- **la Z_diff par tronçon**, qui répond à « ma paire est-elle à 100 Ω sur
-  *toute* sa longueur ? ». Le **gris** n'y est pas une valeur nulle : c'est
-  l'absence de voisine, et c'est ainsi qu'on voit où la paire se sépare ;
-- **le bruit par tronçon**, du bleu au rouge en passant par le violet. Le
-  repère n'est pas une cible mais le **budget** : violet à la moitié, rouge
-  quand ce seul tronçon le crève. Le bruit arrière saturant, la couleur dit *où
-  le couplage se fabrique*, non une tension mesurable tronçon par tronçon. Les
-  deux légendes le redisent sous le tableau.
-
-  *(Le milieu de la rampe est violet et non ambre pour une raison de fond : la
-  teinte intermédiaire est **interpolée**, et du bleu vers l'ambre elle traverse
-  le gris — à deux points près de celui qui veut dire « rien ne longe ici ». Le
-  chemin par le violet reste saturé d'un bout à l'autre.)*
-
-#### Qui est-ce que je dérange, et où ?
-
-**Seules les voisines sont graduées.** Chacune porte, sur toute sa longueur,
-ce que la sélection lui inflige — son net et son pire pourcentage sur une
-étiquette posée *à côté* du cuivre, reliée par un filet (deux pistes qui
-couplent sont proches par construction : posés au milieu du cuivre, les
-cartouches se recouvrent exactement là où l'on regarde).
-
-**La sélection, elle, est l'agresseur**, et se peint d'une seule couleur froide
-qui n'appartient à aucune échelle. Elle a porté un temps ce qu'elle *reçoit*,
-sur le même dégradé que les voisines : deux grandeurs différentes, même rampe,
-même endroit — l'œil ne pouvait pas les séparer. Ce qu'elle reçoit reste chiffré
-dans le tableau et jugé par le verdict.
-
-Un **chevelu pointillé** part de la sélection, marque d'un point plein l'endroit
-exact de la victime que l'étiquette chiffre, et rejoint le cartouche : le sens
-se lit sans légende — même idée que le chevelu du courant de retour. Il part du
-cuivre de la sélection **sur la couche de la victime**, et non du tronçon le
-plus proche en plan : une liaison qui change de couche a des tronçons partout
-dans l'empilage, et le trait semblait alors sortir d'un plan de masse.
-
-**La victime est peinte entière, et le reste de la carte s'estompe.** Deux
-lectures se contredisaient à l'écran : l'agresseur était coloré d'un bout à
-l'autre, la victime seulement là où elle longe — trois millimètres de couleur
-perdus entre deux centimètres de cuivre nu, sans qu'on sache si le reste ne
-couple pas ou n'a pas été regardé. Une piste agressée quelque part est donc
-peinte sur **toute** sa longueur : ses tronçons couplés portent leur couleur de
-bruit, les autres le **gris** qui veut déjà dire « rien ne longe ici ». Une
-piste que la sélection n'agresse nulle part reste, elle, hors sujet et n'est pas
-peinte du tout. Et pendant qu'une carte de chaleur peint — celle des impédances,
-de la Z_diff, du bruit ou du potentiel DC —, un **voile** de la couleur du fond
-est posé sur tout ce qui a été dessiné avant : le cuivre qui n'entre dans aucun
-calcul passe en retrait, et une couleur de couche cesse de se lire comme une
-couleur de chaleur.
-
-C'est cette carte qu'on regarde en routant : la question qu'on se pose en tirant
-un signal rapide n'est pas « que va-t-il prendre » mais *qui est-ce que je
-dérange, et à quel endroit de sa piste*. La fiche répondait déjà « combien » —
-la colonne **émis** — mais sur quelle piste et où restait à deviner. Les deux
-sens ne sont pas égaux dès que les largeurs diffèrent : le bruit se compte en
-fraction de l'amplitude de l'agresseur.
-
-La géométrie des voisines vient du **document** — les tronçons envoyés au
-serveur, en millimètres, arcs déjà en cordes — et non d'un objet de l'éditeur :
-c'est le seul dessin du panneau qui ne passe par aucun objet de l'outil.
+La paire peinte est celle qui est **déclarée** — suffixes `_P`/`_N`, ou paire
+nommée dans l'éditeur ; à défaut, la voisine **la plus proche**, et la carte le
+dit. Un repli qui se donnerait pour une déclaration ferait lire « ma paire fait
+92 Ω » sur deux pistes qui n'en forment pas une.
 
 #### La masse qui s'interpose
 
@@ -377,7 +360,7 @@ a du plan entre les deux** — c'est le geste de routage le plus banal : on glis
 une garde, ou du plan arrosé cousu de vias, entre un signal rapide et son
 voisin.
 
-Ce cuivre-là est maintenant **posé dans la section comme une garde**, à zéro
+Ce cuivre-là est **posé dans la section comme une garde**, à zéro
 volt, large de ce que laissent les deux dégagements mesurés ; la coupe le
 marque « garde déduite » — il sort de deux mesures, il n'est pas lu dans le
 fichier comme l'est une piste de garde routée.
@@ -395,34 +378,6 @@ qu'un plan cousu de vias fait, et ce qu'une garde sans vias ne fait pas — sans
 couture elle peut résonner, et le couplage revient. La fiche le dit sous la
 coupe.
 
-#### NEXT et FEXT se regardent séparément
-
-Trois boutons — **NEXT**, **FEXT**, **les deux** — choisissent la grandeur
-peinte. Aucun ne relance quoi que ce soit : les deux bruits sortent de la même
-matrice et sont déjà dans le résultat.
-
-Ce n'est pas un confort d'affichage. **Les deux bruits ne se fabriquent pas au
-même endroit de la piste :**
-
-| | formule | comportement quand l'écart se resserre |
-| --- | --- | --- |
-| arrière (NEXT) | k = (k_L + k_C)/4 — une **somme** | monte franchement, sans exception |
-| avant (FEXT) | k = (k_C − k_L)/2 — une **différence** | **cesse de croître**, et peut redescendre : k_C rattrape k_L |
-
-Sur un 1,6 mm deux couches — piste à 1,48 mm de son plan — le coefficient avant
-s'effondre carrément quand les pistes se serrent, si bien que les deux cartes
-désignent des **bouts opposés** de la même liaison. Une carte unique, montrant
-le pire des deux, moyennerait deux reliefs différents et enverrait corriger le
-mauvais millimètre.
-
-L'**invariant** suit ce choix : en NEXT ou en FEXT, la somme le long de la piste
-vaut **exactement** la colonne du tableau. En mode « les deux », le maximum
-tronçon par tronçon ne totalise rien — et la légende le dit plutôt que de
-laisser croire le contraire.
-
-Changer la cible, la tolérance ou le budget **repeint sans recalculer** :
-essayer 3 % puis 8 % ne repasse pas par le serveur.
-
 ### Choisir sa paire
 
 La détection lit les suffixes — `_P`/`_N`, `+`/`−`, `_DP`/`_DM` — et les paires
@@ -438,10 +393,9 @@ même le premier calcul — sans quoi il faudrait calculer pour pouvoir demander
 bon calcul. Une sélection à cheval sur deux nets ne peut rien déclarer : on ne
 saurait pas laquelle de ses moitiés est le « P ».
 
-**Ni *Z différentielle* ni *Diaphonie* ne demandent de fréquence.** La section
-est quasi-statique : ni [C], ni [L], ni les modes pair et impair ne dépendent de
-f₀ — le bruit dépend du **temps de montée**, qui a son propre champ. Les deux
-onglets posaient le champ f₀ et, avec lui, l'avertissement de bande S, lequel
+***Z différentielle* ne demande pas de fréquence.** La section est
+quasi-statique : ni [C], ni [L], ni les modes pair et impair ne dépendent de f₀.
+L'onglet posait le champ f₀ et, avec lui, l'avertissement de bande S, lequel
 parle des pertes et des paramètres S de l'onglet *Impédance* : un avertissement
 portant sur un calcul qui n'a pas lieu là, sous des chiffres qu'il ne concerne
 pas.
@@ -465,7 +419,7 @@ ne savent pas traiter — à commencer par la **triplaque décentrée**, que la
 formule IPC suppose centrée alors qu'un empilage 4 couches ne l'est jamais.
 
 Il est vérifié contre des étalons extérieurs, et le banc d'essai le refait à
-chaque exécution (`python/test/banc-ligne-mom.py`, 151 cas) :
+chaque exécution (`python/test/banc-ligne-mom.py`, 149 cas) :
 
 | Géométrie | Étalon | Écart maximal |
 | --- | --- | --- |
@@ -475,7 +429,7 @@ chaque exécution (`python/test/banc-ligne-mom.py`, 151 cas) :
 | Ligne coplanaire sur plan, écarts serrés | transformation conforme (Wen) | **0,4 %** |
 | Masse coplanaire d'un seul côté | encadrée par le microruban nu et le coplanaire symétrique, et miroir gauche/droite | **exact** |
 | Paire de microruban couplée, w/h et s/h de 0,5 à 2 | Garg-Bahl (forme fermée, quelques %) | **2,2 %** |
-| Diaphonie avant en milieu homogène (triplaque) | elle est **nulle**, k_C = k_L terme à terme | **4·10⁻¹⁷** |
+| Couplage avant en milieu homogène (triplaque) | il est **nul**, k_C = k_L terme à terme | **4·10⁻¹⁷** |
 
 Les topologies traitées : microruban nu (couche extérieure), **microruban
 couvert** (couche interne qui n'a de plan que d'un côté — elle a du stratifié
@@ -498,28 +452,557 @@ Ce qu'il ne voit pas, et le panneau le dit sous chaque résultat :
 - le calcul de section est **quasi-statique** ; la dispersion est ajoutée par
   le modèle de Getsinger, qui est un modèle et non un calcul. Au-delà de
   quelques gigahertz sur stratifié courant, l'écart se creuse ;
-- le **couplage aux pistes voisines** est calculé, mais **à part** : Z
-  différentielle et diaphonie ont leurs onglets, et le Z₀ de la colonne
-  « Impédance » reste celui de la piste prise seule. Une piste couplée n'a pas
-  une impédance mais deux, une par mode. Toutes les voisines d'une même piste
-  entrent dans **une seule section** — une piste et ses deux voisines font un
-  problème à trois conducteurs —, avec le plan coplanaire qui borde le groupe
-  et les pistes de masse posées en **gardes**, à zéro volt. Une voisine que
-  l'épaisseur du cuivre ferait toucher sa propre voisine est **écartée en le
-  disant** : elle emportait auparavant la section entière, donc tous les
-  longements, pour deux conducteurs qui n'étaient même pas la sélection ;
-- la diaphonie est rendue **dans les deux sens** : ce que la sélection reçoit,
-  qui est ce qui la juge, et ce qu'elle émet vers la voisine. Les deux ne sont
-  égaux que si les deux pistes ont la même largeur ;
-- ce couplage ne vaut qu'entre pistes **parallèles et de la même couche** :
-  deux pistes superposées sur deux couches, ou qui se croisent, couplent aussi
-  et ne sont pas ici ;
+- le **couplage aux pistes voisines** est calculé, mais **à part** : la Z
+  différentielle a son onglet, ce qu'une voisine *prend* a le sien
+  (*Crosstalk*), et le Z₀ de la colonne « Impédance » reste celui de la piste
+  prise seule. Une piste couplée n'a pas une impédance mais deux, une par mode.
+  Toutes les voisines d'une même piste entrent dans **une seule section** — une
+  piste et ses deux voisines font un problème à trois conducteurs —, avec le
+  plan coplanaire qui borde le groupe et les pistes de masse posées en
+  **gardes**, à zéro volt. Une voisine que l'épaisseur du cuivre ferait toucher
+  sa propre voisine est **écartée en le disant** : elle emportait auparavant la
+  section entière, donc tous les longements, pour deux conducteurs qui
+  n'étaient même pas la sélection ;
+- ce couplage n'est **chiffré** qu'entre pistes **parallèles et de la même
+  couche** — c'est ce qu'une section droite sait décrire, elle pose tous ses
+  conducteurs à la même hauteur. Les pistes **superposées** sur deux couches
+  couplent aussi, souvent plus que les mêmes côte à côte : elles sont
+  désormais **cherchées et signalées** avec leur longueur en regard, leur
+  décalage et le diélectrique qui les sépare, et la fiche annonce alors ses
+  chiffres comme un **plancher**. Celles qu'un **plan de référence** sépare ne
+  le sont pas — le plan est un écran, et c'est la raison d'être de l'empilage.
+  Les pistes qui se **croisent** ne sont ni chiffrées ni cherchées : l'aire de
+  recouvrement d'une traversée orthogonale est minuscule, et c'est justement
+  pourquoi la règle est de router deux couches adossées à angle droit ;
 - **la mise en cascade suppose une chaîne**, parcourue dans l'ordre envoyé. Un
   net qui se ramifie n'en est pas une : les impédances par tronçon et la carte
   de chaleur restent justes — chacune ne dépend que de sa section —, mais les
   paramètres S, le retard total et les pertes totales ne veulent alors rien
   dire. Le serveur vérifie la continuité de la sélection et le dit quand elle
   n'y est pas.
+
+### Crosstalk : où le couplage se fabrique
+
+Un onglet *Diaphonie* résolvait la section droite et rendait **un chiffre par
+longement**. Quand ce chiffre est mauvais, il ne dit pas lequel des quarante
+millimètres qui longent en est responsable — et c'est pourtant la seule chose
+dont on ait besoin pour corriger le dessin. Il a été **retiré**, et l'onglet
+***Crosstalk*** répond seul aux deux questions.
+
+Les termes croisés d'une
+matrice S multi-ports portent, en fréquence, tout ce que le couplage fait le
+long du parcours ; leur transformée de Fourier inverse est une **réponse
+impulsionnelle**, et le retard s'y convertit en **position** dès qu'on connaît
+la vitesse de propagation. C'est la réflectométrie temporelle, appliquée aux
+termes *croisés* plutôt qu'à la réflexion :
+
+| | terme lu | trajet | position |
+| --- | --- | --- | --- |
+| **NEXT** | S(victime proche, agresseur proche) | aller-retour | `x = v·t/2` |
+| **FEXT** | S(victime lointaine, agresseur proche) | simple | `x = v·t` |
+
+**La matrice vient du design, et de nulle part ailleurs.** Il n'y a rien à
+importer : le **réseau de lignes couplées** est synthétisé à partir de la même
+section droite que *Z différentielle*, mise en cascade le long du parcours.
+Chaque bloc
+de la cascade est une portion où l'ensemble des voisines et leurs écarts ne
+changent pas — c'est ce découpage qui donne à la carte sa structure spatiale.
+
+**Aucun fichier de paramètres S n'est accepté en entrée, et ce retrait est
+délibéré.** Un `.sNp` importé apportait une physique qu'on ne sait pas calculer
+— pertes conductrices, coudes, transitions de via —, mais il apportait surtout
+l'**ordre de ses ports**, que rien dans le fichier ne donne : il fallait une
+table à composer, une case à cocher et un refus total tant qu'elle n'était pas
+confirmée, faute de quoi on lisait le couplage d'un couple pour celui d'un
+autre sans qu'aucun chiffre ne paraisse anormal. Les ports sont maintenant
+posés **ici**, à partir de la géométrie : ils sont *connus*, et la table qui
+reste est un compte rendu. Le `.sNp`, lui, demeure en **sortie** — pour aller
+comparer ailleurs le réseau à ce qu'un solveur pleine onde rendrait de la même
+géométrie. Un document qui porterait encore une matrice extérieure est **refusé
+en le disant**, jamais ignoré : l'ignorer ferait croire à la page que son
+fichier a été calculé, alors que la carte viendrait d'ailleurs.
+
+#### Le bruit en volts, et pas seulement en pour cent
+
+« VIC_G prend 3,00 % de CLK » est exact et **ne décide rien** : un récepteur ne
+connaît pas les pour-cent, il connaît la distance entre la tension qui lui
+arrive et son seuil de basculement. Le même 3 % vaut **99 mV** sur un LVCMOS
+3,3 V — invisible devant 700 mV de marge — et **10,5 mV** sur un LVDS 350 mV, où
+la marge est de 50.
+
+La rangée **Signal** du panneau porte donc trois champs :
+
+| Champ | Ce qu'il fait | Unité |
+| --- | --- | --- |
+| **amplitude** | l'excursion du front de l'**agresseur** : elle convertit les rapports en volts | V / mV |
+| **budget** | ce qu'on s'autorise, en pour cent de l'amplitude | % |
+| **ou marge** | la marge de bruit du récepteur de la **victime** ; remplie, elle **remplace** le budget | mV |
+
+La tension apparaît alors **partout où le pour-cent apparaît**, à côté de lui
+et jamais à sa place : sur les cases des victimes (NEXT, FEXT, pire bout), dans
+la colonne « bruit » du tableau de l'étape 0b, dans le verdict, dans le `.csv`
+(une colonne `*_V` par courbe) et dans le rapport texte.
+
+**Et sur la courbe elle-même, de deux façons.** Le pour-cent se lit sur l'axe
+de **gauche**, la tension sur celui de **droite** — trois crans chacun, le
+haut, la moitié et zéro, la moitié étant celle que le trait de grille porte
+déjà. C'est le même trait lu deux fois, et n'importe quelle hauteur se
+convertit d'un coup d'œil. Empilées à gauche comme elles l'étaient d'abord,
+les deux unités ne donnaient qu'**une** valeur — le haut du graphe — et il
+fallait la réglette pour tout le reste.
+
+Chaque courbe porte en plus **sa tension écrite à son pic**, dans la couleur de
+sa victime : c'est la valeur qu'on cherche en premier, et l'aller chercher à la
+réglette était un geste de trop. La couleur y prime sur la convention ambre des
+autres volts — sur un graphe à cinq courbes, savoir *à qui* appartient un
+chiffre passe avant savoir de quelle famille il est. L'étiquette se pose
+au-dessus du pic, ou **dessous** quand celui-ci touche le haut du graphe et
+qu'elle irait se loger dans le titre ; deux pics trop proches s'écartent l'un
+de l'autre plutôt que de se recouvrir exactement là où l'on regarde.
+
+La **réglette**, elle, reste ce qui répond à « et à *cet* endroit-là, combien ?»
+— position par position le long du parcours. L'unité **suit l'ordre de grandeur** : volts, millivolts,
+microvolts. Sous le microvolt on écrit l'inégalité plutôt qu'un zéro — un bruit
+de quelques dizaines de nanovolts n'est pas nul, il est négligeable, et ces
+deux faits ne se corrigent pas de la même façon.
+
+Le **seuil qui juge** se trace en travers de chaque graphe, en ambre tireté :
+une courbe qui monte n'est pas une mauvaise nouvelle en soi, ce qui compte est
+de savoir si elle **passe au-dessus de la marge**, et cela ne se lit pas en
+comparant deux nombres écrits à deux endroits. Hors échelle, on ne trace rien
+plutôt qu'un trait collé au plafond, qui se lirait comme un seuil atteint.
+
+**Ces trois champs sont les seuls du panneau qui ne relancent rien.** Le
+serveur ne connaît que des **rapports** — le couplage ne bouge pas d'un pour
+cent quand on passe de 3,3 V à 1,8 V —, et l'amplitude ne fait que les
+convertir : recalculer trente secondes de matrice S pour une multiplication
+serait absurde. Tout le reste du panneau, lui, jette le résultat affiché en le
+disant.
+
+#### Trois cases : ce que la figure trace, et dans quelle unité
+
+Trois cases à cocher, collées à la figure — **NEXT**, **FEXT**, **mV** — et
+aucune ne relance quoi que ce soit : les deux courbes et les deux unités sont
+déjà dans le résultat.
+
+| Case | Décochée |
+| --- | --- |
+| **NEXT** | le graphe du bruit du bout proche disparaît, **avec le profil d'espacement et les pics recoupés** — ils n'ont de sens que là |
+| **FEXT** | le graphe du bout lointain disparaît |
+| **mV** | il ne reste que le pour-cent, qui ne dépend que du cuivre |
+
+**Pourquoi éteindre un sens.** Les deux graphes ont chacun **leur échelle** —
+le FEXT vaut souvent une fraction du NEXT —, et deux échelles l'une sous
+l'autre se comparent mal : on croit lire deux reliefs quand on lit deux zooms.
+Quand on suit l'un des deux, l'autre prend la moitié de la hauteur pour rien.
+La figure **se resserre** sur ce qui reste plutôt que de garder un cadre vide,
+qui se lirait comme un couplage nul.
+
+**Pourquoi éteindre les volts.** Le pour-cent ne dépend que du cuivre ; la
+tension le multiplie par une amplitude *saisie*. Qui compare deux dessins ne
+veut que le premier — deux chiffres par case et deux graduations par graphe
+font alors du bruit sur ce qu'il regarde. Qui prépare une revue de conception
+veut le second.
+
+Ce sont des **cases** et non des boutons, à la différence de « peindre » juste
+à côté : celui-là est un choix *exclusif* — la couleur du cuivre montre un sens
+ou l'autre —, ceux-ci sont indépendants et cumulables.
+
+**Les deux sens peuvent s'éteindre ensemble, et la figure le dit** plutôt que
+de disparaître : les cases restent au-dessus du message, les chiffres restent
+dans les cases des victimes — c'est eux qui disent si un sens vaut la peine
+d'être rallumé —, et la **réglette reste** aussi : elle promène le point blanc
+sur le cuivre, où la chaleur est toujours peinte. Une commande qui partirait en
+laissant son effet serait pire que la figure vide.
+
+#### Deux étapes zéro, et elles restent deux
+
+On ne désigne que **l'agresseur**. Le reste se cherche, en deux temps qui
+restent **deux tableaux** :
+
+- **(a) la présélection géométrique** trouve ce qui longe, avec sa **distance**
+  et sa **longueur de parallélisme** mesurées le long du cuivre, arcs
+  développés compris — couche de la sélection *et* couches adjacentes, parce
+  que deux pistes superposées couplent souvent plus que les mêmes côte à côte.
+  Elle est obligatoire : elle borne le nombre de ports du réseau simulé. Elle
+  rend aussi, pour chaque candidate, son **profil d'espacement** : la distance
+  à l'agresseur *en fonction de l'abscisse*, et non une distance moyenne — une
+  piste qui contourne un composant s'écarte puis revient ;
+- **(b) la confirmation par simulation** lit NEXT et FEXT de chaque candidate
+  et n'en retient que ce qui dépasse un seuil (**−40 dB** par défaut,
+  réglable).
+
+**Une piste écartée garde son chiffre — et ses courbes.** Écartée en (a), elle
+garde sa distance et sa longueur ; écartée en (b), elle garde son niveau de
+couplage **et sa carte** : les deux courbes sont tracées pour toute candidate
+qui a une géométrie, confirmée ou non. Une figure vide sous « aucun couple
+confirmé » se lit *« aucun couplage »*, alors que le fait est *« du couplage,
+sous le seuil que vous avez posé »* — et le seuil, lui, ne se voit pas. Ce qui
+reste réservé aux confirmées est ce qui **porte un verdict** : la liste des
+victimes, le recoupement pic par pic, les plages peintes sur le cuivre. Une
+candidate sous le seuil a donc sa case, marquée *sous le seuil* et éteinte tant
+qu'il y a une confirmée à regarder ; quand il n'y en a **aucune**, tout
+s'allume, parce que c'est justement là qu'il faut voir ce qu'il y a. C'est ce
+qui permet de distinguer une piste **loin** d'une piste **proche et blindée** —
+deux situations qui appellent des gestes de routage opposés, et qu'une décision
+unique rendrait indiscernables.
+
+#### Les zones à risque, posées sur le cuivre
+
+La carte du panneau range les victimes en lignes sur un axe commun : c'est ce
+qu'il faut pour les **comparer**. Devant le dessin, la question n'est plus
+« laquelle prend le plus » mais **« quel millimètre de celle-ci dois-je
+reprendre »** — et une abscisse en millimètres le long d'un parcours ne répond
+pas à ça sans une règle.
+
+Le simulateur rend donc, pour chaque victime confirmée, les **portions du
+parcours où son couplage se fabrique** — celles qui dépassent une fraction de
+son propre pire point (50 % par défaut, soit −6 dB sous sa crête, réglable) —
+et la page les peint **sur le cuivre de cette victime-là**, en surimpression.
+Deux couleurs, parce qu'elles ne demandent pas le même geste : **ambre** quand
+le dessin des pistes l'explique — ça se corrige en écartant — et **rouge** quand
+rien ne l'explique, auquel cas écarter ne servirait à rien.
+
+**La position de la victime n'est jamais reconstruite par décalage latéral**, et
+c'est ce qui rend la surimpression fiable. On aurait pu prendre le point du
+parcours à l'abscisse *s* et le décaler de l'entre-axes mesuré : il aurait fallu
+retrouver exactement la convention de signe du serveur, dans les deux outils, et
+un signe inversé aurait posé le trait sur la piste d'en face — visiblement
+juste, et faux. On fait l'inverse, qui ne suppose rien : on parcourt le cuivre de
+la victime, on le **projette** sur le parcours de l'agresseur, et l'on garde ce
+qui tombe dans la plage. Un trou reste un trou — une victime qui contourne un
+composant au milieu d'une plage donne deux morceaux, pas un trait qui traverse
+le vide.
+
+L'algorithme vit dans `commun/simulation-em.js`, une seule fois ; chaque outil ne
+fournit que deux formes neutres en millimètres — le parcours de l'agresseur et
+les polylignes d'un net. Deux copies auraient fini par ne plus désigner le même
+cuivre sur la même carte.
+
+#### Le profil d'espacement : le témoin indépendant de la carte
+
+Une courbe de couplage seule **ne se vérifie pas** : elle a des pics, ils sont
+quelque part, et rien à l'écran ne dit s'ils sont à leur place. C'est le défaut
+de toute réflectométrie — la lecture est plausible quoi qu'il arrive.
+
+Le profil d'espacement vient de la **géométrie** et non du calcul
+électromagnétique : les deux ne peuvent pas se tromper de la même façon. Il se
+superpose à la carte, en trait clair sur la ligne de sa victime, **axe
+inversé** — il monte quand les deux pistes se rapprochent, pour qu'un
+resserrement se lise au même endroit et dans le même sens qu'un pic. Là où il
+s'interrompt, la victime ne longe pas.
+
+Un pic doit tomber là où quelque chose *change* entre les deux pistes : un
+longement qui commence, un resserrement, un écartement. Un pic là où
+l'espacement est **large et constant** n'est pas expliqué par le dessin des
+pistes, et il est signalé — sauf si une zone de vigilance du plan de référence
+tombe à la même abscisse, auquel cas ce n'est plus un désaccord mais son
+**explication**, et les deux verdicts sont distingués parce qu'ils n'appellent
+pas le même geste : reprendre le blindage, ou aller regarder. La règle est
+volontairement prudente et ses deux seuils sont réglables : une alerte qui se
+déclenche à tort ferait ignorer toutes les autres.
+
+**Ce qui cesse d'être une anomalie : l'écart entre deux victimes symétriques.**
+Un agresseur équidistant de ses deux voisines *à tout instant* est l'exception,
+pas la règle — il suffit qu'il contourne un composant d'un côté. L'écart reste
+affiché ; il n'est **alerté** que lorsque les profils d'espacement sont
+comparables et que les couplages, eux, ne le sont pas — auquel cas il désigne
+une dissymétrie du plan.
+
+#### Ce qui ne se devine jamais en silence
+
+- **la vitesse de chaque piste**, calculée séparément depuis l'empilage ou
+  saisie à la main, **jamais supposée égale** à celle de l'agresseur ;
+- **la bande**, dont les deux bouts ne disent pas la même chose : le bas fixe la
+  fenêtre temporelle — ce qui met plus longtemps à revenir se replie au début de
+  la carte —, le haut fixe la résolution spatiale. Elle part du continu **par
+  construction**, puisque c'est le simulateur qui choisit où échantillonner ;
+- **une bande qui s'arrête bien avant le front annoncé**, et c'est le silence le
+  plus trompeur de l'outil. Le couplage **croît avec la fréquence** tant que la
+  liaison est courte devant la longueur d'onde, à raison d'environ **6 dB par
+  octave** : analysée jusqu'à 100 MHz, une liaison de 30 mm rend des décibels
+  vingt à trente dB sous ce que la **même** géométrie donne au genou d'un front
+  de 25 ps, et le verdict devient « aucun couple confirmé » *par construction*.
+  Quand le haut de bande est plus de deux fois sous le genou du front saisi, la
+  fiche le dit comme une **réserve** — avec les deux fréquences, l'écart en
+  octaves, et le geste : cocher « déduite de la carte », ou monter la bande ;
+- **la résolution spatiale**, affichée à côté du résultat. Deux pics plus
+  proches que cette valeur sont un seul pic, quelle que soit la finesse de la
+  courbe à l'écran ; le zero-padding interpole, il ne distingue pas. Une
+  résolution **voulue** se saisit : la fiche dit alors jusqu'à quelle fréquence
+  il faudrait monter pour l'atteindre — ce sur quoi on peut agir, là où « la
+  carte est floue » ne se corrige pas ;
+- **le couplage vertical**, entre deux pistes superposées de couches voisines,
+  **n'est pas modélisé** : le solveur de section range ses conducteurs côte à
+  côte et ne sait pas les empiler. Ces pistes ressortiraient au plancher, ce qui
+  est le contraire de la réalité sous un empilage mince — la fiche le dit plutôt
+  que de les rendre « électriquement découplées », et leur distance mesurée
+  reste au tableau de l'étape (a) ;
+- **dans la visionneuse, la portée des perçages est supposée traversante.**
+  L'IPC-2581 porte la position, le diamètre et le net d'un perçage, jamais les
+  couches qu'il traverse. Un via enterré compté comme traversant fait passer
+  pour refermé un retour qui ne l'est pas : le contrôle des changements de
+  couche y est **optimiste**, et la note du document le dit. L'éditeur PCB, qui
+  connaît la portée de ses vias, n'a pas cette limite.
+
+#### Les deux outils, et ce qui les sépare
+
+L'onglet existe **dans l'éditeur PCB et dans la visionneuse IPC-2581** : c'est
+le même panneau, le même serveur et le même calcul. Seule change la façon dont
+la page mesure les trois choses que le serveur ne peut pas deviner — positions
+des vias de couture sur l'abscisse du parcours, discontinuités du plan sondées
+sous la piste, perçages de masse aux changements de couche. L'éditeur les lit
+dans ses propres objets ; la visionneuse les mesure sur une carte livrée, où le
+plan est un contour et où un perçage ne déclare pas sa portée.
+
+La **fenêtre** est réglable — Kaiser (défaut, β réglable), Hann, rectangulaire —
+et le compromis est dit à chaque fois : la rectangulaire donne la meilleure
+résolution et un ringing de Gibbs qui fabrique des lobes se lisant comme des
+zones de couplage inexistantes ; Kaiser 8,6 les écrase au prix d'un pic environ
+2,9 fois plus large. La résolution annoncée tient compte de cet élargissement.
+
+#### Le plan de masse est à côté, jamais dedans
+
+Le blindage d'un plan continu et de ses vias est **déjà dans les paramètres S** :
+la section droite de chaque bloc est résolue *avec* son plan de référence et ses
+écarts au cuivre de masse. Le modéliser une seconde fois le compterait deux
+fois. Ce que le panneau ajoute sont des **causes** possibles, superposées à la
+carte en bandes hachurées :
+
+- le **pas de couture** le long du parcours, comparé au plus sévère de deux
+  seuils — λ/10 au haut de la bande analysée, et le trou au-delà duquel le
+  cuivre latéral cesse d'être tenu au temps de montée ;
+- les **discontinuités du plan de référence** sous le parcours, sondées couche
+  par couche ;
+- les **changements de couche sans via de masse** à portée.
+
+Un pic de couplage à la même abscisse qu'un trou de couture n'est plus un
+mystère, c'en est l'explication. Et **quand la page n'a pas pu regarder, elle le
+dit** : une liste vide de zones se lirait « rien à signaler », ce qui est
+exactement le contraire.
+
+#### Ce que la carte ne peut pas faire
+
+La ligne **FEXT ne localise rien quand les deux vitesses sont égales**. Le bruit
+avant co-propage avec l'agresseur : ce qui se couple en *x* arrive au bout
+lointain à `τ_a(x) + (τ_v(L) − τ_v(x))`, une somme qui ne dépend plus de *x* dès
+que les deux pistes vont à la même vitesse. Tout arrive au même instant, et
+aucune transformée ne sépare ce qui s'est superposé. La ligne montre alors la
+longueur électrique de la liaison, et **la fiche le dit à chaque fois** — une
+ligne qui ne localise rien ressemble exactement à une ligne qui localise. Elle
+se met à localiser en milieu inhomogène, c'est-à-dire sur un microruban et
+jamais sur une triplaque ; la ligne **NEXT**, elle, localise dans les deux cas.
+
+#### Sorties
+
+Les **zones à risque peintes sur le cuivre des victimes**, portion par portion ;
+la figure elle-même — les **deux courbes** (NEXT puis FEXT, une par victime,
+sur le même axe), et une **réglette** qui les traverse ; la **chaleur du
+couplage peinte le long du cuivre** de chaque victime, du bleu au rouge, et le
+**point blanc** de la réglette qui s'y promène, sur la vraie piste du design,
+au même millimètre que sur les courbes. C'est lui qui recoud « ce pic-ci » et
+« ce millimètre-là de cette piste » — un schéma de piste dans le panneau était
+un doublon du dessin et laissait la correspondance à faire de tête. L'axe
+commun est la moitié de l'intérêt : un pic à la même abscisse sur deux victimes
+désigne un accident du plan, un pic sur une seule désigne le tracé de cette
+victime-là. Une **case par victime** l'allume ou l'éteint partout à la fois,
+courbes, chaleur, point et plages — y compris celles qui sont **sous le seuil**,
+marquées comme telles et éteintes par défaut tant qu'une confirmée reste à
+regarder. Le profil d'espacement et les zones de vigilance restent superposés
+aux courbes ; le bouton **« réglages »**, au bout de la rangée des onglets,
+replie les commandes pour laisser toute la hauteur aux résultats — la rangée qui
+porte le bouton d'action, elle, ne se replie jamais ;
+le **`.csv`** des données brutes — position, amplitude **et tension**,
+**espacement mesuré**, la zone de vigilance de chaque position et les pics
+recoupés — pour recouper avec le layout ; le **`.sNp`** du réseau synthétisé, ports nommés en en-tête ; et le
+**`.json`** du problème, rejouable. Chaque **pic non justifié** est nommé avec
+son abscisse, et chaque écart entre deux victimes du même agresseur est rendu
+avec ce que la géométrie en dit.
+
+### La bande se déduit du dessin
+
+**Deux grandeurs indépendantes, et on les confond tout le temps.** Le **haut de
+bande** fixe la **résolution** : deux couplages séparés de moins de
+`W·v / (4·f_max)` — pour le NEXT, `W` étant l'élargissement dû à la fenêtre —
+sont une seule tache. Le **pas fréquentiel** fixe la **fenêtre temporelle**
+`T = 1/Δf`, donc la longueur au-delà de laquelle ce qui se couple *revient se
+poser* au début de la carte par repliement. Ajouter des points à bande
+constante allonge la fenêtre et **ne change pas la résolution d'un cheveu** —
+l'erreur coûte cher dans les deux sens : on ajoute des points en espérant un pic
+plus fin, et l'on garde une bande trop étroite pour le voir.
+
+**La case « déduite de la carte »** calcule les deux depuis la géométrie, les
+écrit dans les champs — ils restent corrigeables — et dit ce qu'elle a fait.
+Trois mesures les fixent :
+
+- le **plus court longement** donne ce qu'il y a de plus fin à montrer : une
+  portion plus courte que la résolution ne se lira pas comme un motif. Trois
+  échantillons en travers, et c'en est un ;
+- la **longueur du parcours** donne l'aller-retour, donc la fenêtre minimale,
+  donc Δf, donc le nombre de points ;
+- l'**épaisseur du diélectrique** pose le plafond, et c'est la borne la plus
+  importante des trois : au-delà de λ/10 dedans, la section droite quasi-TEM ne
+  décrit plus la ligne. Monter la bande au-delà affine la carte **en apparence**
+  et la fabrique en réalité.
+
+La fiche nomme **laquelle des trois a mordu**, parce que c'est elle qui dit quoi
+changer. *Plafonnée par le modèle* veut dire qu'aucun réglage n'affinera
+davantage sans mentir ; *plafonnée par les points* veut dire qu'on a préféré une
+carte floue à une carte repliée — une carte floue est honnête, une carte repliée
+fabrique des pics qui n'existent pas et rien à l'écran ne les distingue des
+vrais.
+
+Sur une liaison de 40 mm dont la victime ne longe que 8 mm, cela donne
+**44,7 GHz × 34 points** : 2,67 mm de résolution, fenêtre à 1,5 fois
+l'aller-retour, pas de repliement. Sur 120 mm avec un longement de 12 mm,
+**29,7 GHz × 67 points** — même finesse relative, plus de points parce que le
+parcours est plus long.
+
+### Le verdict, et le rapport
+
+**Quatre choses à l'écran : le verdict, ce qu'il y a à faire, ce qui rend le
+résultat douteux, la carte.** Le reste — les deux tableaux de l'étape zéro, le
+recoupement, la validation de la matrice, le plan de référence, les ports, les
+hypothèses — est là, replié. Une fiche qui déroule tout met la matrice non
+passive et un écart de vitesse de 0,3 % sur la même ligne, et se lit alors en
+diagonale, c'est-à-dire pas du tout.
+
+**La carte porte au-dessus d'elle de quoi la lire** — deux courbes par
+victime, l'axe est le parcours de l'agresseur, et la couleur peinte sur le
+cuivre est la quantité de couplage qui se fabrique là. Une figure qu'on doit
+déplier pour comprendre est une figure qu'on ne lit pas. **Une carte
+de chaleur montre OÙ, jamais COMBIEN** : c'est la réglette qui répond « et ici,
+ça fait combien », victime par victime et pour les deux sens à la fois — le
+NEXT au bout proche, le FEXT au bout lointain, jamais additionnés puisqu'ils
+n'arrivent pas au même point. Et **la méthode tient en une ligne**, sous le verdict, avec
+les chiffres de *ce* calcul-ci : le dessin des pistes → un réseau de lignes
+couplées mis en cascade le long du parcours → sa matrice S multi-ports (du
+continu à f_max, N points) → transformée de Fourier inverse (fenêtre) de ses
+termes croisés → le retard converti en position par la vitesse de chaque tronçon
+(NEXT : v·t/2 ; FEXT : v·t). C'est elle qu'on relit quand un chiffre surprend,
+et c'est dans cet ordre que se cherche l'erreur.
+
+**Des hachures qui recouvrent tout ne se peignent pas.** Quand les zones de
+vigilance couvrent plus de la moitié du parcours, les superposer à la carte
+revient à hachurer la figure entière : le motif ne désigne plus rien et détruit
+ce qu'il recouvre. La légende dit alors pourquoi elles ont disparu — c'est la
+même règle que le verdict « expliqué par le plan », qui cesse de rien dire dans
+exactement le même cas.
+
+**Chaque chose tient sur une ligne, sa version longue attend dessous.** Une
+réserve en soixante mots n'est pas lue, et une réserve non lue vaut une réserve
+absente — le défaut même que toute cette section cherche à ne jamais produire.
+Le serveur rend donc chaque réserve en DEUX longueurs : un titre qui dit le
+fait (« la carte ne localise rien : 11,8 mm de résolution pour 40 mm de
+liaison »), et le texte qui dit pourquoi cela compte et quoi en faire. Le
+premier s'affiche, le second se déplie, et le fichier exporté garde les deux.
+La légende de la carte suit la même règle : la résolution reste à découvert —
+sans elle on lit la figure au dixième de millimètre —, le mode d'emploi se
+replie.
+
+**« À faire » est la seule partie qui se lit comme une consigne**, et elle
+n'ajoute aucun calcul : chaque ligne est une relecture de ce qui a déjà été
+mesuré, tournée du côté de la main. *Écarter VIC de 12,4 à 18,0 mm* ; *coudre
+le plan de 5,4 à 17,1 mm* ; *aller voir SW_2 de 30,0 à 33,0 mm*. L'ordre est
+celui de l'**effet**, pas celui de la gravité : écarter une piste sous un pic
+que le dessin n'explique pas ne changerait rien, et ces plages-là passent donc
+après le plan de référence, qui en est la cause probable. Elle vit côté serveur,
+pas dans la page : le fichier exporté et la fiche doivent dire la même chose, et
+deux listes écrites à deux endroits auraient fini par diverger. Une liste vide
+est une réponse — le couplage est réparti sur tout le longement sans point
+chaud, il se corrige en écartant partout.
+
+**Le niveau se lit contre VOTRE budget, pas contre un barème maison.** Un
+couplage en décibels *est* un rapport : −26 dB valent 5 % de l'agresseur, et
+cela ne demande de connaître ni l'amplitude ni la technologie. La seule
+convention est celle de la rangée **Signal** du panneau — un budget en pour
+cent, ou une **marge de récepteur en millivolts** qui le remplace —, et la fiche
+dit lequel des deux elle applique. Trois niveaux — **sous le budget**, **à surveiller** (au-delà de la
+moitié), **au-dessus du budget** — plus un quatrième qui n'en est pas un :
+*aucun couple confirmé* est un constat, pas un bon résultat, et il ne se peint
+pas en vert.
+
+**Le verdict porte ses réserves.** Les avertissements qui changent la lecture —
+matrice non passive, fenêtre qui replie, carte qui ne localise rien, zones de
+vigilance partout, pire point hors bande du signal — sont marqués **par le
+serveur**, au moment où il sait pourquoi ils comptent ; la page ne les reconnaît
+pas à leur texte, ce qui aurait fini par en manquer un. Ils s'affichent sous le
+verdict, et le niveau s'écrit alors « sous réserve ».
+
+**Le bouton `rapport`** écrit tout dans un fichier texte, et il se lit en deux
+temps. Les quatre premières sections — verdict, à faire, réserves, réglages —
+tiennent sur un écran et répondent seules aux trois questions qu'on se pose :
+*y a-t-il un risque*, *qu'est-ce que je reprends*, *de quoi dois-je me méfier*.
+Ce qui suit, ce sont les **pièces** : les deux tableaux de l'étape zéro, le
+recoupement pic par pic, les plages peintes, la validation de la matrice, le
+plan de référence, les ports, les hypothèses. On n'y descend que pour contester
+un chiffre du haut, ou pour relire le dossier six mois plus tard — et c'est
+exactement pour ces deux moments-là que le fichier existe.
+
+Texte brut, délibérément : il se colle dans un courriel ou un ticket, et se
+compare d'une version à l'autre avec n'importe quel outil de diff — ce qu'aucun
+PDF ne permet. Les réglages y sont écrits : sorti de la page, un rapport qui ne
+dit pas sous quelles règles il a été produit n'est plus vérifiable.
+
+### Ce que la fiche refuse de conclure
+
+Trois choses peuvent rendre un résultat **exact et trompeur**, et c'est le pire
+cas pour cet outil. Elles sont dites plutôt que subies.
+
+**Une coïncidence certaine d'avance n'explique rien.** Un pic que le dessin des
+pistes ne justifie pas est dit « expliqué par le plan » quand une zone de
+vigilance tombe à la même abscisse. Encore faut-il que cette rencontre ait pu
+ne pas avoir lieu : le seuil de pas de couture se déduit du **haut de bande**,
+on monte le haut de bande pour affiner la carte, le seuil tombe au dixième de
+millimètre, et le parcours entier devient une zone de vigilance. Chaque pic y
+tombe alors — forcément —, et le verdict s'est rendu tout seul. La fiche mesure
+donc l'**union** des zones (les deux côtés du parcours sont regardés séparément,
+et les additionner annoncerait couramment plus de cent pour cent) : au-delà de
+la moitié du parcours couverte, le verdict devient **indécidable**. Ce qui reste
+vrai est écrit — le dessin des pistes n'explique pas ce pic —, ce qui n'est pas
+établi l'est aussi.
+
+**Les décibels disent de quelle bande ils parlent.** Le niveau de l'étape 0b est
+un maximum sur *toute* la bande analysée, et la bande analysée se règle pour la
+**résolution spatiale** : elle n'a aucune raison de s'arrêter où le signal
+s'arrête. Quand un temps de montée est saisi, la fiche donne donc la fréquence
+du **pire point** et le couplage **sous le genou** du front (0,35 / t<sub>r</sub>).
+Un couplage annoncé à −13 dB qui n'existe qu'à 80 GHz sur un front de 9 ns est
+exact, et trompeur. Quand la grille n'a aucun point utile sous le genou — le cas
+ordinaire dès qu'on monte la bande —, la fiche le dit au lieu de lire le zéro du
+continu et de l'annoncer comme une mesure.
+
+**Le seuil de couture dit de quelle règle il sort.** Deux règles s'appliquent —
+le front et λ/10 dans la bande analysée —, la plus sévère gagne, et la fiche
+écrit ce que l'autre aurait donné *quand les deux diffèrent*. Quatorze alarmes
+de couture qui apparaissent sans que le cuivre ait bougé viennent d'un champ du
+panneau, pas du dessin ; sans cette ligne, on les cherche dans le cuivre.
+
+**Une plage qui ne localise rien ne se peint pas.** Quand la résolution
+spatiale dépasse le quart du parcours, la plage couvrirait le tracé entier *en
+ayant l'air de désigner un endroit* : on irait chercher sur le cuivre un
+millimètre que le calcul n'a jamais su nommer. Un trait ambre sur toute la piste
+est plus trompeur que pas de trait du tout, alors il n'y en a pas — mais le
+bouton **ne disparaît pas en silence** : sa place porte « sur le cuivre : rien à
+peindre » et, en infobulle, la raison chiffrée. Une commande absente est un bug
+aux yeux de qui s'en servait la veille.
+
+**Rien ne s'agrège.** Deux victimes d'un même agresseur sont deux nets, chacun
+avec son budget : une victime *additionne* ses agresseurs, un agresseur
+n'additionne pas ses victimes. La seule somme offerte est celle de plusieurs
+agresseurs **en phase** vers une victime — le cas d'un bus qui commute d'un
+bloc — et elle ne se fait que sur demande explicite.
+
+33 cas au banc Python ([python/test/banc-crosstalk.py](python/test/banc-crosstalk.py)),
+48 au banc de l'éditeur : la ligne adaptée contre `S₁₁ = 0` et
+`S₂₁ = exp(−jβL)` à la précision machine, la cascade contre la ligne entière,
+**le pic de NEXT qui tombe là où le longement commence** — c'est le seul cas qui
+vérifie l'axe lui-même, et un facteur deux oublié y mettrait le pic à la
+moitié —, le `.sNp` exporté relu par un lecteur écrit dans le banc, qui ne
+partage aucune ligne de code avec l'écrivain et vérifie d'un coup l'ordre des
+rangées et la table des ports, et le recoupement carte ↔ géométrie **dans les
+deux sens** : il doit signaler un pic que rien ne resserre, et surtout ne
+**rien** signaler sur un longement franc.
 
 ### Lire la courbe
 
@@ -545,10 +1028,11 @@ l'annoncent à −33 dB au lieu de −39,5.
 
 Deux familles d'analyse : **SI**, intégrité du signal — ce qu'un front devient
 en parcourant le cuivre — et **PI**, intégrité de l'alimentation — ce que le
-réseau de distribution laisse passer. SI porte aujourd'hui **Impédance**, et
-c'est tout ce qui est écrit ; PI est vide et le dit. Le découpage est posé
-maintenant parce qu'il coûte moins cher à poser qu'à retailler ensuite autour
-de six analyses. Ce qu'il resterait à y mettre est listé dans
+réseau de distribution laisse passer. SI porte **Impédance**, **Z
+différentielle**, **Crosstalk** et **Current Return Path** ; PI
+porte **Chute DC**. Le découpage avait été posé quand il n'y avait qu'une
+analyse, parce qu'il coûtait moins cher à poser qu'à retailler ensuite autour
+de six. Ce qu'il resterait à y mettre est listé dans
 [A-FAIRE.md](A-FAIRE.md).
 
 Changer de famille n'efface pas le résultat : la carte de chaleur s'éteint —
@@ -594,7 +1078,7 @@ que sur une ligne longue devant la longueur d'onde, et c'est mesuré
 Le détail, les mesures et le cas de non-régression à viser sont dans
 [A-FAIRE.md](A-FAIRE.md). Le jour où ce port sera là, le moteur apportera ce
 que le modèle de ligne ne peut pas donner — les coudes réels, les résonances,
-le rayonnement, la diaphonie entre pistes non parallèles — et les deux se
+le rayonnement, le couplage entre pistes non parallèles — et les deux se
 compléteront.
 
 ## Version un seul fichier
@@ -632,6 +1116,17 @@ python visionneuse-ipc2581/test/banc-essai.py
 
 ```bash
 node visionneuse-ipc2581/test/harness-sim.js
+```
+
+Les deux bancs du solveur demandent numpy, et celui de `ligne_mom` scipy en
+plus, pour les intégrales elliptiques de son étalon de triplaque :
+
+```bash
+python python/test/banc-ligne-mom.py
+```
+
+```bash
+python python/test/banc-crosstalk.py
 ```
 
 Chaque banc reconstruit un DOM minimal (`commun/test/dom-stub.js`) et exécute
@@ -673,9 +1168,22 @@ sur une carte réelle.
 Installer `canvas` (`npm i canvas`) est facultatif : sans lui, les quelques
 essais qui rasterisent réellement le cuivre sont ignorés, les autres tournent.
 
+Les deux bancs du solveur sont d'une autre nature : ils ne rejouent pas une
+interface, ils mesurent un calcul **contre des étalons extérieurs**. Celui de
+`ligne_mom` compare le microruban à Hammerstad-Jensen et la triplaque à la
+solution exacte en intégrales elliptiques ; celui de `crosstalk` vérifie ce
+qu'aucune interface ne peut montrer — qu'une ligne adaptée rend `S₁₁ = 0` et
+`S₂₁ = exp(−jβL)` à la précision machine, qu'une ligne coupée en deux redonne la
+ligne entière, et que **le pic de NEXT tombe là où le longement commence**. Ce
+dernier est le seul qui vérifie l'axe de position lui-même : toute la chaîne —
+matrice S, fenêtre, IFFT — rend une carte lisse et colorée quelle que soit
+l'erreur qu'on y glisse, et un facteur deux oublié sur l'axe mettrait le pic à
+la moitié sans que rien ne paraisse anormal.
+
 L'intégration continue (`.github/workflows/ci.yml`) rejoue les trois bancs à
 chaque poussée et à chaque demande de fusion, et passe au compilateur tous les
-scripts Python du dépôt.
+scripts Python du dépôt. Les deux bancs du solveur n'y sont pas : ils demandent
+numpy et scipy, que le dépôt ne réclame à personne.
 
 ## Passer d'un outil à l'autre sans rien perdre
 

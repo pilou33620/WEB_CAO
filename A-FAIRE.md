@@ -27,17 +27,19 @@ et la nature d'un via — traversant, borgne dessus/dessous, enterré — choisi
 panneau Propriétés, sur un via comme sur toute une sélection (`viaSetKind`,
 [editeur-pcb/js/01-core.js:340](editeur-pcb/js/01-core.js:340)).
 
-## État des lieux au 2026-08-31
+## État des lieux au 2026-09-02
 
-Ce que le dépôt fait tourner, et ce qui le mesure. **892 essais, tous passés.**
+Ce que le dépôt fait tourner, et ce qui le mesure. **1 007 essais, tous
+passés.**
 
 | Partie | État | Ce qui la mesure |
 | --- | --- | --- |
-| Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire | en service | 522 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
+| Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire | en service | 581 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
 | Éditeur schématique | en service ; **ni bus ni feuilles hiérarchiques** | — |
-| Visionneuse IPC-2581 | en service ; **arcs comptés, parcours chaîné, chevelu du retour, pastilles devinées avouées, sélection à plusieurs morceaux** | 95 essais ([harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)) + 46 ([banc-essai.py](visionneuse-ipc2581/test/banc-essai.py)) |
-| **SI — impédance** (`ligne_mom`) | en service, 0,3 à 0,4 % contre les étalons ; **vias : boucle de retour, antipads, moignons, traversée de plans** | 139 cas, [banc-ligne-mom.py](python/test/banc-ligne-mom.py) |
-| **SI — Z différentielle et diaphonie** (`solve_multiline`) | **en service**, moins de 3 % contre Garg-Bahl ; N conducteurs dans UNE section, masse coplanaire et pistes de garde comprises, bruit rendu dans les deux sens | 139 cas, dont 6 sur la scène, + 12 côté pages |
+| Visionneuse IPC-2581 | en service ; **arcs comptés, parcours chaîné, chevelu du retour, pastilles devinées avouées, sélection à plusieurs morceaux** | 108 essais ([harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)) + 46 ([banc-essai.py](visionneuse-ipc2581/test/banc-essai.py)) |
+| **SI — impédance** (`ligne_mom`) | en service, 0,3 à 0,4 % contre les étalons ; **vias : boucle de retour, antipads, moignons, traversée de plans** | 149 cas, [banc-ligne-mom.py](python/test/banc-ligne-mom.py) |
+| **SI — Z différentielle** (`solve_multiline`) | **en service**, moins de 3 % contre Garg-Bahl ; N conducteurs dans UNE section, masse coplanaire et pistes de garde comprises | 149 cas |
+| **SI — couplage** (`crosstalk`) | **en service** ; l'onglet Diaphonie a été RETIRÉ le 2026-09-02, le crosstalk répond seul — combien (%, dB, **volts**) et où | 33 cas, [banc-crosstalk.py](python/test/banc-crosstalk.py) |
 | **PI — chute DC** (`dc_solver`) | **solveur fait et mesuré ; aucun outil ne l'alimente** | 34 cas, [banc-dc.py](python/test/banc-dc.py) |
 | Moteur 2,5D pleine onde (`mom_solver`) | **port vertical fait ; ε_eff dé-embarqué à 0,93 % de `ligne_mom`** | 56 essais, [mom_solver/tests/](mom_solver/tests) |
 | Passerelle MCP, projets, profils, repérage, cross-probing | en service | — |
@@ -51,10 +53,45 @@ Ce que le dépôt fait tourner, et ce qui le mesure. **892 essais, tous passés.
    [L] = μ₀ε₀[C₀]⁻¹. **Z différentielle et diaphonie sont deux onglets de la
    famille SI**, qui lisent la même section résolue une seule fois. Détail
    plus bas : « `ligne_mom` à N conducteurs » ;
-2. **les courants du schéma** — c'est ce qui manque au solveur DC, et ce n'est
+2. ~~**le crosstalk localisé**~~ **FAIT le 2026-09-01** : l'onglet Diaphonie
+   disait COMBIEN une voisine prend, il ne disait pas OÙ ce couplage se
+   fabrique. Une matrice S multi-ports — **synthétisée depuis le design**, en
+   mettant la même section droite en cascade — passée en temporel par IFFT,
+   puis convertie en positions, et **recoupée avec le profil d'espacement**
+   mesuré sur le tracé. Deux étapes zéro qui restent deux, et le plan de
+   masse contrôlé à côté du couplage et jamais dedans. Détail plus bas :
+   « Le crosstalk localisé » ;
+3. ~~**deux réponses pour une seule question**~~ **RÉGLÉ le 2026-09-02** :
+   l'onglet **Diaphonie a été retiré**, code, carte, tests et docs compris, et
+   « Crosstalk » répond seul au couplage. Les deux répondaient à « combien ma
+   voisine prend-elle » par deux physiques — ici une section droite unique et
+   des coefficients de couplage faible, là une matrice S multi-ports mise en
+   cascade puis passée en temporel — et rien ne permettait d'arbitrer un
+   désaccord entre elles. La seconde rend le même « combien » ET le « où ».
+
+   **Ce que le retrait a emporté** : côté serveur `emis`, `recu`, `scan`,
+   `chaleur_voisins`, `terminaisons`, les seuils du balayage, l'étalement du
+   bruit sur les tronçons et les avertissements de couplage faible
+   (`simulation_em` 4.0.0) ; côté solveur `coefficients_couplage`,
+   `bruits_depuis_coefficients`, `diaphonie`, `diaphonie_terminee` et
+   `reflexion` (`ligne_mom` 2.5.0) ; côté page l'onglet, sa fiche, ses deux
+   modes et la carte de chaleur du bruit peinte sur les voisines. La carte de
+   Z différentielle par tronçon **reste**, réduite à ce qu'elle porte encore.
+
+   **Ce que le crosstalk a gagné en échange** : le bruit **en volts**. Une
+   rangée « Signal » porte l'amplitude de l'agresseur, le budget en pour cent
+   et la marge du récepteur en millivolts ; la tension apparaît alors partout
+   où le pour-cent apparaît — cases des victimes, graduation des deux graphes,
+   lecture sous la réglette donc position par position, colonne « bruit » de
+   l'étape 0b, verdict, `.csv` et rapport texte —, l'unité suivant l'ordre de
+   grandeur (V, mV, µV). Le seuil qui juge se trace en travers des courbes.
+   Ces trois champs sont les **seuls du panneau qui ne relancent rien** : le
+   serveur ne rend que des rapports, et l'amplitude ne fait que les
+   convertir ;
+4. **les courants du schéma** — c'est ce qui manque au solveur DC, et ce n'est
    pas un problème de solveur : le schéma ne porte pas ce qu'un composant tire.
    **C'est désormais le premier de la liste** ;
-3. ~~le port vertical du moteur 2,5D~~ **FAIT le 2026-08-30** : le port est
+5. ~~le port vertical du moteur 2,5D~~ **FAIT le 2026-08-30** : le port est
    un via qui relie la piste au plan de masse, et la comparaison de paramètres
    S avec `ligne_mom` — celle qui attendait ce point depuis le début — donne
    **0,93 %** sur ε_eff dé-embarqué. Ce qui reste au moteur est du confort, pas
@@ -175,7 +212,7 @@ de validité, pas un concours de précision.
 
 Le 2,5D gagne là où les **hypothèses** du modèle de ligne tombent, pas là où sa
 précision faiblit : coudes, moignons, changements de couche, rayonnement,
-résonances de plan, diaphonie entre pistes non parallèles. Soit, sur ces
+résonances de plan, couplage entre pistes non parallèles. Soit, sur ces
 géométries, **au-delà de 2 à 3 GHz** — ce que dit déjà le lot 3 plus bas.
 
 #### La carte
@@ -184,8 +221,9 @@ géométries, **au-delà de 2 à 3 GHz** — ce que dit déjà le lot 3 plus bas
 | --- | --- | --- | --- |
 | Z₀, ε_eff, retard, pertes d'une ligne | `ligne_mom` — **fait** | — | 0,3 % |
 | **Z différentielle, Z commune** | `ligne_mom` → N conducteurs — **fait** | — | < 3 % / Garg-Bahl |
-| **Diaphonie entre pistes parallèles** | idem, même section — **fait** | — | < 3 % / Garg-Bahl |
-| Diaphonie croisée, via, changement de couche | moteur 2,5D | gros | quelques % |
+| **Couplage entre pistes parallèles** | matrice S multi-ports depuis la même section — **fait** | — | < 3 % / Garg-Bahl |
+| **OÙ le couplage se fabrique le long d'une piste** | matrice S multi-ports → IFFT — **fait** | — | la bande décide |
+| Couplage croisé, via, changement de couche | moteur 2,5D | gros | quelques % |
 | **Chute continue, densité de courant DC** | nouveau solveur résistif surfacique | moyen, simple | bonne |
 | **R_AC, effet de peau, resserrement** | section, à l'intérieur du cuivre | moyen | bonne |
 | Résonances de plan, Z du PDN en fréquence | 2,5D, ou modèle de cavité | gros | quelques % |
@@ -195,7 +233,231 @@ Trois physiques différentes, et le moteur 2,5D n'est le bon outil pour aucune
 des lignes en gras. Les deux premières sont faites ; la chute continue et R_AC
 aussi. Ce qui reste en gras est ce que la PAGE ne fabrique pas encore.
 
-#### 1. ~~`ligne_mom` à N conducteurs~~ **FAIT (2026-08-31)** — Z différentielle ET diaphonie
+#### 0. ~~Le crosstalk localisé~~ **FAIT (2026-09-01)** — OÙ, et non plus seulement COMBIEN
+
+L'onglet Diaphonie résolvait la section droite et rendait **un chiffre par
+longement**. Quand ce chiffre est mauvais, il ne dit pas lequel des quarante
+millimètres qui longent en est responsable — et c'est pourtant la seule chose
+dont on ait besoin pour corriger le dessin. Sa carte de chaleur ATTRIBUAIT le
+bruit aux tronçons au prorata du couplage local ; elle ne le MESURAIT pas le
+long de la piste. Il a été **retiré le 2026-09-02** — voir plus bas.
+
+La section **Crosstalk** ([python/crosstalk.py](python/crosstalk.py)) le
+mesure. Les termes croisés d'une matrice S multi-ports portent, en fréquence,
+tout ce que le couplage fait le long du parcours ; leur transformée de Fourier
+inverse est une **réponse impulsionnelle**, et le retard s'y convertit en
+**position**. C'est la réflectométrie temporelle appliquée aux termes
+*croisés* — NEXT en aller-retour (`x = v·t/2`), FEXT en trajet simple.
+
+**Dix choses en font autre chose qu'un affichage de plus :**
+
+- **la matrice vient du DESIGN, et de nulle part ailleurs.** Le **réseau de
+  lignes couplées** est synthétisé à partir de la même section droite que
+  l'onglet Z différentielle, mise en cascade le long du parcours : l'outil répond sans
+  rien importer, et le seul geste demandé est de désigner l'agresseur.
+  **Aucun fichier de paramètres S n'est accepté en entrée** — la première
+  version l'offrait, et le retrait est délibéré : un `.sNp` apportait une
+  physique qu'on ne sait pas calculer, mais aussi l'**ordre de ses ports**, que
+  rien dans le fichier ne donne. Il fallait une table à composer, une
+  confirmation et un refus total tant qu'elle manquait ; les ports sont
+  maintenant posés ici, donc connus. Le `.sNp` demeure en **sortie**, pour aller
+  comparer le réseau ailleurs — et un document qui porterait encore une matrice
+  extérieure est **refusé en le disant**, jamais ignoré ;
+- **la mise en cascade est une matrice de CHAÎNE en tension-courant, pas une
+  matrice S.** Deux blocs du parcours n'ont pas les mêmes conducteurs couplés —
+  une voisine commence, une autre s'arrête — donc pas les mêmes bases modales ;
+  leurs matrices de chaîne, elles, sont écrites dans la même base physique et se
+  multiplient sans autre précaution. C'est la seule façon d'assembler un
+  parcours dont la section change. Et l'écriture retenue,
+  `W = L⁻¹ T √λ`, **ne dépend pas de la fréquence** : le `1/jω` de `Z⁻¹`
+  s'annule exactement contre le `jω` de `Γ`, ce qui rend le **continu**
+  calculable — précisément le point que la grille harmonique de l'IFFT exige, et
+  où une écriture naïve rendrait des infinis ;
+- **les deux étapes zéro restent DEUX.** La présélection **géométrique** trouve
+  ce qui longe avec sa distance et sa longueur mesurées — couches adjacentes
+  comprises, parce que deux pistes superposées couplent souvent plus que les
+  mêmes côte à côte ; la confirmation par **simulation** n'en retient que ce qui
+  dépasse −40 dB. Une piste écartée **garde son chiffre**, et c'est ce qui
+  permet de distinguer une piste *loin* d'une piste *proche et blindée* — deux
+  gestes de routage opposés qu'une décision unique rendrait indiscernables ;
+- **LES ZONES À RISQUE SE POSENT SUR LE CUIVRE.** La carte du panneau range
+  les victimes sur un axe commun, ce qu'il faut pour les COMPARER ; devant le
+  dessin, la question n'est plus « laquelle prend le plus » mais « quel
+  millimètre de CELLE-CI reprendre ». Les portions où le couplage d'une
+  victime se fabrique sont donc peintes sur SON cuivre, ambre quand le dessin
+  des pistes l'explique et rouge quand rien ne l'explique — deux gestes
+  différents, et écarter une piste pour un pic rouge ne servirait à rien. La
+  position de la victime n'est JAMAIS reconstruite par décalage latéral : on
+  projette son cuivre sur le parcours de l'agresseur, ce qui ne suppose
+  aucune convention de signe — un signe inversé aurait posé le trait sur la
+  piste d'en face, visiblement juste et faux ;
+- **LA BANDE SE DÉDUIT DU DESSIN**, et elle sépare deux grandeurs qu'on
+  confond systématiquement. Le HAUT DE BANDE fixe la RÉSOLUTION ; le PAS
+  fréquentiel fixe la FENÊTRE temporelle, donc le repliement. Ajouter des
+  points à bande constante allonge la fenêtre et n'affine RIEN — c'est
+  l'erreur la plus courante sur ce genre de figure, et elle coûte dans les deux
+  sens. La déduction part de trois mesures du dessin : le plus court longement
+  (trois échantillons en travers de ce qu'il y a de plus fin à montrer), la
+  longueur du parcours (l'aller-retour, donc les points), et l'épaisseur du
+  diélectrique — au-delà de λ/10 dedans, la section droite quasi-TEM ne décrit
+  plus la ligne, et monter encore affine la carte en apparence tout en la
+  fabriquant. La fiche nomme laquelle des trois bornes a mordu : c'est elle
+  qui dit quoi changer ;
+- **LA FICHE REFUSE DE CONCLURE QUAND ELLE NE PEUT PAS**, et c'est la
+  contrainte la plus difficile à tenir des neuf, parce que rien ne la
+  réclame : un verdict rendu tout seul ressemble en tout point à un verdict
+  gagné. Trois cas s'en sortaient mal. (1) « Expliqué par le plan » ne vaut
+  que si la coïncidence pouvait ne pas avoir lieu : le seuil de couture se
+  déduit du **haut de bande**, on monte le haut de bande pour affiner la
+  carte, le seuil tombe au dixième de millimètre, le parcours entier devient
+  zone de vigilance, et chaque pic y tombe forcément. L'**union** des zones se
+  mesure donc, et au-delà de la moitié du parcours le verdict devient
+  **indécidable** — ni « le plan l'explique », ni « rien ne l'explique ».
+  (2) Les décibels de l'étape 0b sont un maximum sur *toute* la bande
+  analysée, et la bande se règle pour la RÉSOLUTION SPATIALE, pas pour le
+  signal : la fiche donne donc la fréquence du pire point et le couplage sous
+  le **genou** du front saisi, et dit qu'elle ne sait pas quand la grille n'a
+  aucun point utile en dessous — plutôt que de lire le zéro du continu et de
+  l'annoncer comme une mesure. (3) Le seuil de couture écrit **de quelle règle
+  il sort**, et ce que l'autre aurait donné quand les deux diffèrent :
+  quatorze alarmes qui apparaissent sans que le cuivre ait bougé viennent d'un
+  champ du panneau, et sans cette ligne on les cherche dans le dessin ;
+- **le PROFIL D'ESPACEMENT est le témoin indépendant de la carte.** Une courbe
+  de couplage seule ne se vérifie pas : elle a des pics, ils sont quelque part,
+  et rien à l'écran ne dit s'ils sont à leur place — c'est le défaut de toute
+  réflectométrie. Le profil vient de la **géométrie** et non du calcul
+  électromagnétique : les deux ne peuvent pas se tromper de la même façon. Il
+  se superpose à la carte, **axe inversé** pour qu'un resserrement se lise dans
+  le même sens qu'un pic, et c'est leur **désaccord** qui devient le signal —
+  un pic là où l'espacement est large et constant n'est pas expliqué par le
+  dessin des pistes. Corollaire, et il corrige la première version : l'**écart
+  entre deux victimes symétriques cesse d'être une anomalie**. Un agresseur
+  équidistant de ses deux voisines *à tout instant* est l'exception ; l'écart
+  n'est alerté que lorsque les profils sont comparables et les couplages non ;
+- **le couplage VERTICAL est annoncé non modélisé.** Le solveur de section
+  range ses conducteurs côte à côte et ne sait pas les EMPILER : une voisine de
+  couche adjacente traverse le réseau comme une ligne isolée et ressortirait au
+  plancher. Or deux pistes superposées couplent souvent PLUS que les mêmes côte
+  à côte — lire « découplée » là où le couplage est maximal serait exactement le
+  résultat faux et silencieux que cette section existe pour empêcher ;
+- **le plan de masse est à côté du couplage, jamais dedans.** Son blindage est
+  déjà dans les paramètres S ; le compter deux fois serait le compter faux. Ce
+  qu'on ajoute sont des **causes** superposées à la carte en bandes hachurées :
+  pas de couture insuffisant, fentes du plan sondées sous la piste, changements
+  de couche sans via de masse. Un pic à la même abscisse qu'un trou de couture
+  n'est plus un mystère ;
+- **ce que la carte ne peut pas faire est dit à chaque fois.** La ligne FEXT ne
+  localise **rien** quand les deux vitesses sont égales : le bruit avant
+  co-propage, tout arrive au même instant, et aucune transformée ne sépare ce
+  qui s'est superposé. Elle ne localise qu'en milieu inhomogène — donc sur un
+  microruban et jamais sur une triplaque. Une ligne qui ne localise rien
+  ressemble exactement à une ligne qui localise, et c'est pour cela que la fiche
+  le répète.
+
+**Ce que ça a coûté au reste du dépôt : une fonction.**
+`_longement_intervalle` ([python/simulation_em.py](python/simulation_em.py))
+porte désormais la projection, et `_longement` n'est plus qu'une soustraction
+sur son résultat. Aucun chiffre existant ne bouge — deux copies de la même
+trigonométrie auraient dérivé, et c'est l'onglet Diaphonie et l'onglet Crosstalk
+qui auraient fini par ne plus désigner le même cuivre sur la même carte.
+
+**Non-régression, dans
+[python/test/banc-crosstalk.py](python/test/banc-crosstalk.py)** — 32 cas, dont
+cinq étalons indépendants du code testé :
+
+- une **ligne adaptée** rend `S₁₁ = 0` et `S₂₁ = exp(−jβL)` à **10⁻¹²** ;
+- au **continu**, le réseau est un jeu de fils, à 10⁻⁹ sur deux conducteurs
+  couplés — c'est le point où une écriture naïve divise par zéro ;
+- une ligne **coupée en deux** redonne la ligne entière à **4·10⁻¹⁶** : sans
+  cela, la carte porterait des marches aux frontières de blocs, qui se liraient
+  comme des zones de couplage ;
+- **le pic de NEXT tombe là où le longement commence**, à la résolution
+  annoncée près, et on le déplace pour le vérifier. C'est le seul cas qui
+  vérifie l'axe lui-même : un facteur deux oublié — l'erreur la plus facile à
+  commettre et la plus difficile à voir — mettrait le pic à la moitié, ce qui
+  reste une carte parfaitement lisible ;
+- le **`.sNp` exporté, relu par un lecteur écrit dans le banc**. Il ne partage
+  aucune ligne de code avec l'écrivain, donc aucune erreur commune : il relit le
+  terme croisé et le recoupe avec le NEXT affiché, ce qui vérifie d'un coup
+  l'ordre des rangées et la table des ports — deux endroits où une transposition
+  passerait inaperçue en échangeant NEXT et FEXT ;
+- le **recoupement carte ↔ géométrie dans les deux sens** : il doit signaler un
+  pic que rien ne resserre, et surtout ne **rien** signaler sur un longement
+  franc. C'est le côté qui compte le plus — une alerte qui se déclenche à tort
+  fait ignorer toutes les autres.
+
+28 cas de plus au banc de l'éditeur.
+
+**Ce qui reste dehors, et dans quel sens.** Le réseau synthétisé porte les
+pertes **diélectriques** (tan δ dans une permittivité complexe, exacte dans
+cette écriture) mais pas les pertes **conductrices** — elles rendraient la base
+modale dépendante de la fréquence —, ni le rayonnement, ni les coudes, ni les
+transitions de via ; et il ne sait pas EMPILER deux conducteurs, donc pas
+modéliser le couplage vertical. Le couplage y est donc celui d'une liaison
+idéalisée, un **plancher** — et un plancher d'autant plus bas que l'empilage est
+dense. Tout cela est dit dans la fiche, à l'endroit où le manque se produit et
+une seconde fois dans le bloc de clôture qui en donne le SENS.
+
+**Ce qui manquerait pour aller plus loin** : un solveur de section à
+conducteurs EMPILÉS. C'est la seule chose qui séparerait aujourd'hui cette
+carte d'une carte complète, et elle est chiffrable — la présélection compte
+déjà les voisines superposées et mesure leur distance ; il ne manque que la
+section qui les résoudrait.
+
+#### 0 bis. ~~Le balayage de diaphonie~~ **RETIRÉ le 2026-09-02 avec l'onglet**
+
+> Ce qui suit est un **compte rendu historique**. Le balayage vivait dans
+> l'onglet Diaphonie, et il est parti avec lui le 2026-09-02 : le seuil de
+> longement qu'il avait introduit (`LONGEMENT_TRANSVERSE_MIN`) survit seul,
+> comme défaut de la présélection du crosstalk.
+
+L'onglet Diaphonie répond désormais à **deux questions**, et la première ne
+demande **rien**. Pour savoir s'il y avait un risque sur une piste qu'on venait
+de tirer, il fallait fournir un temps de montée, une amplitude, deux
+terminaisons et un budget — quatre chiffres dont **aucun n'entre dans le
+couplage** : [C] et [L] ne dépendent que de la géométrie de la section. On
+demandait tout ce qu'il faut pour fabriquer une *amplitude* à qui ne voulait
+qu'un *verdict*.
+
+Le mode **balayage** (défaut) est celui d'Ansys SIwave : K_NEXT (sans dimension)
+et K_FEXT (ns/m) sortent de la seule section, et chaque voisine est **classée**
+*ok / alerte / violation*. Le mode **budget** est celui d'avant, inchangé, et
+changer de mode **ne relance rien** — les deux lectures sont dans le même
+résultat, comme NEXT et FEXT.
+
+Trois choses en font autre chose qu'un affichage de plus :
+
+- **il n'a coûté aucun solveur.** `coefficients_couplage`
+  ([python/ligne_mom.py](python/ligne_mom.py)) est désormais le seul endroit où
+  les coefficients se forment — `diaphonie` lui délègue —, et le balayage
+  reprend la section locale que la carte de chaleur résolvait déjà : sur une
+  piste à écart constant, il est **gratuit** ;
+- **il est rattaché au reste, et c'est mesuré.** À lignes identiques, K_NEXT
+  vaut **exactement** `k_arrière` — 10⁻¹² sur quatre géométries. Ce n'est donc
+  pas un second modèle à valider : les 3 % contre Garg-Bahl valent pour lui.
+  C'est aussi ce qui a tranché la **coquille de la note d'Ansys**, qui imprime
+  un `−` dans les deux formules : avec un moins, la réduction ne tomberait pas
+  sur `k_arrière` et le NEXT s'annulerait en milieu homogène — alors que c'est
+  le FEXT qui s'y annule, ce que le banc vérifie sur triplaque ;
+- **les seuils sont une convention calculée, pas inventée.** SIwave les fait
+  saisir, et ils le sont ici aussi ; les défauts sont ceux que ce solveur rend
+  sur la **règle 3W** — alerte au niveau de trois largeurs d'écart, violation à
+  deux. Le tableau se recalcule.
+
+Ce que le balayage ne dit pas, et pourquoi le mode budget reste : les K
+supposent les deux lignes **adaptées**. Mesuré sur un microruban de 0,25 mm à
+0,20 mm d'écart, 50 mm, front de 1 ns — **1,16 %** au récepteur en ligne
+adaptée contre **6,82 %** sur une entrée CMOS en l'air, un facteur **5,9**. Le
+balayage dit **où** regarder, le budget dit **combien** cela coûte.
+
+Quatre cas au banc Python, trois au banc de l'éditeur.
+
+#### 1. ~~`ligne_mom` à N conducteurs~~ **FAIT (2026-08-31)** — Z différentielle ET couplage
+
+> **Compte rendu historique.** Les coefficients de couplage rendus par ce
+> chantier ont été **retirés le 2026-09-02** avec l'onglet Diaphonie ; ce que
+> `solve_multiline` rend encore — [C], [L], les modes pair et impair — sert
+> la Z différentielle et les matrices par bloc du crosstalk.
 
 **Le meilleur rapport valeur/effort de tout ce fichier**, et c'était vrai : la
 machinerie était déjà là. `capacitance_coplanaire`
@@ -334,12 +596,11 @@ choses, et elles ont été mises chacune du bon côté :
 (t_r = 0,35 / f_max) à défaut. Il ne change ni [C] ni [L] : il décide de la
 **saturation** du bruit arrière et de l'amplitude du bruit avant.
 
-**Côté panneau**, deux onglets de plus dans la famille SI — « Z différentielle »
-et « Diaphonie » —, qui lisent **la même réponse du serveur** que « Impédance » :
-changer d'onglet ne relance rien, et les quatre fiches parlent nécessairement du
-même cuivre. La fiche de diaphonie **cumule** les agresseurs, parce que trois
-voisins à 4 % crèvent un budget de 10 % sans qu'aucune ligne du tableau soit en
-rouge.
+**Côté panneau**, un onglet de plus dans la famille SI — « Z différentielle » —,
+qui lit **la même réponse du serveur** que « Impédance » : changer d'onglet ne
+relance rien, et les fiches parlent nécessairement du même cuivre. *(Un onglet
+« Diaphonie » lisait la même réponse ; il a été retiré le 2026-09-02, et le
+couplage se lit désormais sous « Crosstalk ».)*
 
 #### 2. Le solveur DC — **fait**, mais rien ne l'alimente
 
@@ -416,8 +677,9 @@ des champs, et il faut afficher l'incertitude avec le chiffre.
    à N conducteurs, résolue une seule fois. Moins de 3 % contre Garg-Bahl,
    FEXT nul en milieu homogène, et l'appariement des tronçons parallèles avec.
    Ce qui reste de ce côté-là n'est plus un chantier mais des réserves écrites :
-   pas de couplage entre couches, pas de croisement, et un couplage majoré
-   quand aucun plan n'est à portée du groupe.
+   pas de couplage entre couches **chiffré** — mais il est **VU et signalé
+   depuis le 2026-09-01**, voir plus bas —, pas de croisement, et un couplage
+   majoré quand aucun plan n'est à portée du groupe.
 2. ~~Le côté PAGE du solveur DC~~ **FAIT dans les DEUX outils (2026-08-29)** :
    bornes désignées au clic — autant de sources et de références qu'on veut —,
    ampérages saisis, tout le cuivre du net envoyé sur toutes ses couches,
@@ -496,9 +758,10 @@ bas.
 ### La famille PI porte une analyse, dont la moitié serveur seule est faite
 
 Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI**
-(intégrité de l'alimentation). SI porte quatre analyses — « Impédance »,
-« Z différentielle », « Diaphonie » et « Current Return Path », qui lisent
-**la même réponse du serveur** : changer d'onglet ne relance rien. PI porte
+(intégrité de l'alimentation). SI porte quatre analyses, dont trois — « Impédance »,
+« Z différentielle » et « Current Return Path » — lisent **la même réponse du
+serveur** : changer d'onglet ne relance rien. La quatrième, « Crosstalk », a sa
+propre route. PI porte
 « Chute DC », **branchée de bout en bout dans les DEUX outils depuis le
 2026-08-29** : bornes désignées au clic, cuivre du net envoyé sur toutes ses
 couches, détail via par via en retour, et la carte de potentiel peinte sur la
@@ -773,8 +1036,8 @@ faire :
 3. **les résonances de plan**, qui demandent l'onde complète — donc la section
    ci-dessus.
 
-Dans SI, à côté d'« Impédance » : la **diaphonie** et l'**impédance
-différentielle** sont **faites depuis le 2026-08-31** — c'était bien le même
+Dans SI, à côté d'« Impédance » : le **couplage** et l'**impédance
+différentielle** sont **faits depuis le 2026-08-31** — c'était bien le même
 chantier, et le second membre généralisé a suffi. Voir « Quel solveur pour quel
 besoin », point 1. Ce qui reste de ce côté-là est le **diagramme de l'œil**, qui
 n'est que la réponse impulsionnelle des paramètres S déjà calculés.
@@ -2005,10 +2268,11 @@ s'agit de la **déplacer et de la hiérarchiser**, pas de la recalculer.
 **Ce qu'il faudrait décider avant d'écrire une ligne** : ce qui compte comme un
 défaut (une phase de via de 0,03° n'en est pas un), comment on classe (par
 gravité ? par tronçon ?), et ce qu'un bus ajoute à une liaison seule —
-l'appariement des longueurs, la diaphonie, le fait que N liaisons partagent
-leurs vias de retour. La diaphonie, elle, a désormais sa réponse : l'onglet du
-même nom la chiffre agresseur par agresseur et **cumule** — il reste à la faire
-entrer dans un verdict d'ensemble plutôt que dans sa propre fiche.
+l'appariement des longueurs, le couplage, le fait que N liaisons partagent
+leurs vias de retour. Le couplage, lui, a désormais sa réponse : l'onglet
+« Crosstalk » le chiffre agresseur par agresseur, en pour-cent comme en volts
+— il reste à le faire entrer dans un verdict d'ensemble plutôt que dans sa
+propre fiche.
 
 **Et le panneau d'impédance redeviendrait ce qu'il annonce** : Z₀ par tronçon,
 la courbe S, et les seules notes qui portent sur la section calculée.
@@ -2106,17 +2370,38 @@ haut de la bande analysée (`simCouture()`).
   modèle, donc une seule impédance. C'est fidèle au document ; ce n'est pas
   fidèle au cuivre gravé ;
 - **la piste VOISINE — dans la CASCADE.** Elle est calculée depuis le
-  2026-08-31, mais **à côté** : `solve_multiline` rend Z différentielle et
-  diaphonie dans leurs deux onglets, et le Z₀ de la colonne « Impédance » reste
+  2026-08-31, mais **à côté** : `solve_multiline` rend la Z différentielle dans
+  son onglet, et le Z₀ de la colonne « Impédance » reste
   celui de la piste prise seule. C'est défendable — une piste couplée n'a pas
   UNE impédance, elle en a deux, une par mode — et c'est écrit dans la fiche ;
   ce qui manque est le **choix du mode** dans la cascade, pour que S₂₁ soit celui
   du signal différentiel quand c'en est un ;
-- **le couplage entre COUCHES.** Deux pistes superposées sur deux couches
-  voisines couplent, parfois plus que deux pistes côte à côte, et la section
-  droite de ce solveur n'a qu'un plan de conducteurs : elle ne sait pas le dire.
-  C'est le domaine du 2,5D, et c'est écrit dans les hypothèses que la fiche de
-  diaphonie affiche ;
+- **le couplage entre COUCHES — CHIFFRÉ non, VU oui depuis le 2026-09-01.**
+  Deux pistes superposées sur deux couches voisines couplent, parfois plus que
+  deux pistes côte à côte, et la section droite de ce solveur n'a qu'un plan de
+  conducteurs : elle ne sait pas le **chiffrer**. Le chiffrer reste le domaine
+  du 2,5D. Ce qui a changé est qu'elle ne se **taisait** pas non plus à
+  moitié : `_scenes_paralleles` écartait ces voisines dès sa première ligne
+  — `layer` différent, `continue` —, et elles disparaissaient **sans un mot**,
+  ni ligne au tableau, ni entrée dans `ecartes`, ni avertissement. Un bus routé
+  en parallèle sur deux couches adossées affichait « aucune voisine ne longe » :
+  le pire cas du métier rendu comme le meilleur, et l'exact contraire de la
+  règle de cette chaîne — une voisine qui disparaît sans un mot se lit comme un
+  couplage nul. `_superposes()`
+  ([python/simulation_em.py](python/simulation_em.py)) les cherche désormais :
+  `voisinage` portait déjà toutes les couches, c'est le serveur qui les
+  filtrait. Rendus, la longueur en regard, le décalage de **cuivre à cuivre**
+  vu de dessus et l'épaisseur de diélectrique entre les **deux faces** ; la
+  fiche les affiche (`simCoupleSuperposes`) et annonce alors ses chiffres comme
+  un **PLANCHER**. Le discriminant est le **plan**, pas la distance : deux
+  couches de signal séparées par un plan de référence ne se voient pas, ces
+  longements-là sont **comptés et tus** — sans ce tri, la moitié des cartes
+  quatre couches recevrait une alarme pour un empilage qui fait exactement son
+  travail. Les **croisements** restent hors du champ, et volontairement :
+  l'aire de recouvrement d'une traversée orthogonale est minuscule, et c'est
+  précisément pourquoi la règle du métier est de router deux couches adossées à
+  angle droit — signaler un croisement serait signaler la solution. Quatre cas
+  au banc ([python/test/banc-ligne-mom.py](python/test/banc-ligne-mom.py)) ;
 - **les découpes du plan de référence, EN FACE de la piste.** Une piste qui
   franchit une fente du plan d'en face n'a plus de référence sous elle sur cette
   longueur : le calcul continue de rendre la valeur du plan plein. Les découpes

@@ -35,6 +35,17 @@
   box-shadow:inset 2px 0 0 var(--blue);
 }
 .simOnglet.mini{padding:2px 7px;font-size:10.5px}
+/* LE REPLI DES RÉGLAGES, POUSSÉ AU BOUT DE LA RANGÉE. Ce n'est pas un onglet :
+   il ne choisit rien, il fait de la place. Le `margin-left:auto` le sépare des
+   trois qui, eux, changent ce qu'on regarde. */
+.simPlier{margin-left:auto;font-family:var(--mono);font-size:10px}
+/* REPLIÉ, LES RANGÉES DE RÉGLAGES DISPARAISSENT — toutes sauf celles qui se
+   sont marquées `simBarFixe` : la rangée des boutons, sans quoi on ne pourrait
+   plus relancer, et celle des avertissements de bande, qui dit que le calcul
+   ne portera pas sur ce qu'on croit. Aucun affichage n'est perdu : rien ici ne
+   vit que dans une rangée repliée. */
+#simCtl.simPlie>.pnl-bar:not(.simBarFixe){display:none}
+#simCtl.simPlie>#simDCListe{display:none}
 .simAnaVide{
   font-family:var(--mono);font-size:10px;color:var(--txt-dim);opacity:.8;
 }
@@ -99,15 +110,6 @@ select.simPaireSel{
   flex:1 1 auto;min-width:96px;max-width:220px;
 }
 select.simPaireSel:disabled{opacity:.45;cursor:not-allowed}
-/* LES TROIS BOUTONS DE SENS — NEXT, FEXT, les deux. Ils ne relancent rien :
-   les deux bruits sortent de la meme matrice et sont deja dans le resultat.
-   Serres l'un contre l'autre pour se lire comme UN choix a trois branches, et
-   non comme trois commandes independantes. */
-.pnl-bar .simSensB{
-  font-family:var(--mono);font-size:9.5px;letter-spacing:.03em;
-  padding:2px 7px;
-}
-.pnl-bar .simSensB+.simSensB{margin-left:-1px}
 .simFAvertBar #simFAvert{
   font-size:10.5px;line-height:1.45;color:var(--yellow);
 }
@@ -177,6 +179,10 @@ select.simPaireSel:disabled{opacity:.45;cursor:not-allowed}
 }
 .simVerdict.dedans{border-left-color:var(--blue);color:var(--txt)}
 .simVerdict.dehors{border-left-color:var(--yellow);color:var(--yellow)}
+/* L'ALERTE DU BALAYAGE : hors de la regle 3W sans etre en violation.
+   Elle ne peut pas reprendre le rouge de `dehors` -- ce rouge est celui
+   du DRC, et deux rouges diraient une seule gravite. */
+.simVerdict.limite{border-left-color:#e0a53a;color:#e0a53a}
 .simVerdict span{
   display:block;margin-top:2px;font-family:var(--mono);font-size:10px;
   color:var(--txt-dim);
@@ -222,28 +228,18 @@ select.simPaireSel:disabled{opacity:.45;cursor:not-allowed}
 .simTabD td:nth-child(4) small{opacity:.75;font-size:10px}
 .simTabD .z0ko{color:var(--red)}
 .simTabD .simFaible{color:var(--txt-dim);opacity:.75}
-/* Le tableau des LONGEMENTS -- celui de Z differentielle et celui de la
-   diaphonie, qui lisent la meme liste et n'en montrent pas les memes colonnes.
-   La deuxieme porte la GEOMETRIE sur laquelle le chiffre a ete obtenu :
-   longueur, largeurs, ecart. C'est la seule colonne qui ne s'aligne pas a
-   droite -- ce sont des cotes, pas un nombre -- et c'est elle qui explique
-   toujours pourquoi deux lignes different de vingt ohms.
-
-   La derniere est centree : elle porte un JUGEMENT -- la saturation est
-   atteinte ou elle ne l'est pas --, pas une mesure qu'on aligne sur la
-   virgule. */
+/* Le tableau des LONGEMENTS de l'onglet Z differentielle. Sa deuxieme colonne
+   porte la GEOMETRIE sur laquelle le chiffre a ete obtenu : longueur,
+   largeurs, ecart. C'est la seule qui ne s'aligne pas a droite -- ce sont des
+   cotes, pas un nombre -- et c'est elle qui explique toujours pourquoi deux
+   lignes different de vingt ohms. */
 .simTabC td:nth-child(2){text-align:left;color:var(--txt-dim)}
 .simTabC td:last-child{text-align:center}
 .simTabC td i{font-style:normal;opacity:.7}
 .simTabC .z0ok{color:var(--blue)}
 .simTabC .z0ko{color:var(--red)}
 .simTabC .simFaible{color:var(--txt-dim);opacity:.75}
-/* LES DEUX SENS DU BRUIT, dans la meme cellule. Le premier chiffre est celui
-   qui juge -- ce que la piste subit -- et il porte la couleur du verdict ; les
-   deux lignes sous lui disent la tension et ce que la piste EMET. « Emis » est
-   plus pale : c'est un renseignement, pas le verdict de cette fiche-la. */
 .simTabC td small{display:block;font-size:10px;opacity:.75;line-height:1.35}
-.simTabC td small.simEmis{opacity:.55;font-style:italic}
 
 /* La note du plan de reference qui change sans etre rejoint. Elle est en rouge
    parce que c'est le seul defaut de cette fiche dont la reponse ne soit pas un
@@ -253,8 +249,27 @@ select.simPaireSel:disabled{opacity:.45;cursor:not-allowed}
 .simTabZ .z0haut{color:#e8443a}
 .simTabZ .z0bas{color:#4cc38a}
 
+/* ---------- les commandes, et pourquoi elles défilent ----------
+   LE BOUTON « ANALYSER » EST EN BAS DES COMMANDES, et c'est le contrôle dont
+   on se sert le plus. Tant que les analyses tenaient en quatre rangées, le
+   bloc entier tenait dans le panneau ; l'onglet Crosstalk en porte huit, et
+   dans un panneau ancré — ou sur un écran court — le bouton passait sous le
+   bord SANS QUE RIEN NE DÉFILE : la seule barre de défilement du panneau était
+   celle de la sortie, qui est en dessous.
+
+   `flex:0 1 auto` + `overflow-y:auto` rend le bloc rétractable et défilable ;
+   le plafond l'empêche de manger tout le panneau quand un résultat est affiché,
+   et le plancher de la sortie l'empêche d'être écrasée à zéro par des commandes
+   trop hautes. Les deux ensemble garantissent qu'on peut TOUJOURS atteindre le
+   bouton, et TOUJOURS voir un morceau du résultat. */
+#simCtl{
+  flex:0 1 auto;min-height:0;max-height:62%;overflow-y:auto;
+}
+#simCtl::-webkit-scrollbar{width:8px}
+#simCtl::-webkit-scrollbar-thumb{background:#31343a;border-radius:4px}
+
 /* ---------- la zone de sortie ---------- */
-#simSortie{padding:8px 10px;font-size:12px;line-height:1.6}
+#simSortie{padding:8px 10px;font-size:12px;line-height:1.6;min-height:96px}
 .simEtat{margin:0;color:var(--txt-dim);font-size:11.5px;line-height:1.55}
 .simEtat small{display:block;margin-top:6px;font-size:10.5px;opacity:.9}
 .simEtat code{font-family:var(--mono);color:var(--blue)}
@@ -435,3 +450,379 @@ select.simPaireSel:disabled{opacity:.45;cursor:not-allowed}
   margin-left:6px;font-family:var(--sans,inherit);color:var(--txt-dim);
   letter-spacing:0;
 }
+
+/* ==========================================================================
+   CROSSTALK
+   --------------------------------------------------------------------------
+   LA FICHE EST FAITE DE BLOCS, et l'ordre est celui de la CONFIANCE et non
+   celui du calcul : ce qui pourrait rendre tout le reste faux vient d'abord.
+   Chaque bloc est séparé par un filet plutôt que par un titre, parce qu'il y
+   en a six et que six titres feraient une table des matières là où il faut
+   une lecture continue.
+   ========================================================================== */
+.simXtTete{
+  margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border);
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.03em;
+  color:var(--txt-dim);line-height:1.6;
+}
+.simXtTete b{color:var(--txt)}
+
+/* ==========================================================================
+   LE RÉSUMÉ
+   --------------------------------------------------------------------------
+   IL PORTE UNE COULEUR, ET C'EST LA SEULE DE LA FICHE qui juge. Les trois
+   niveaux ne sont pas trois nuances d'alarme : « sous le budget » est une
+   réponse rassurante et doit le paraître, « au-dessus » doit arrêter l'œil, et
+   « aucun couple confirmé » n'est ni l'un ni l'autre — c'est un constat, et le
+   peindre en vert ferait passer une absence de mesure pour un bon résultat.
+   ========================================================================== */
+.simXtResume{
+  margin:0 0 10px;padding:8px 10px;border-radius:4px;
+  border-left:3px solid var(--border);background:#1b1d21;
+  font-size:11.5px;line-height:1.55;
+}
+.simXtResume p{margin:4px 0 0}
+.simXtVerdict{
+  font-family:var(--mono);font-size:12.5px;font-weight:600;
+  letter-spacing:.06em;color:var(--txt);
+}
+.simXtSousRes{
+  font-weight:400;font-size:10.5px;letter-spacing:.03em;
+  color:var(--txt-dim);text-transform:none;
+}
+.simXtCompte{color:var(--txt-dim);font-family:var(--mono);font-size:10.5px}
+.simXtN-haut{border-left-color:var(--red);background:#241a1a}
+.simXtN-haut .simXtVerdict{color:var(--red)}
+.simXtN-surveiller{border-left-color:var(--yellow);background:#241f13}
+.simXtN-surveiller .simXtVerdict{color:var(--yellow)}
+/* LE VERT AVEC SON REPLI : la visionneuse le declare, l'editeur non, et une
+   variable absente laisserait la couleur heritee — soit un verdict rassurant
+   peint comme le texte ordinaire. */
+.simXtN-sous{border-left-color:var(--green,#4cc38a);background:#16211a}
+.simXtN-sous .simXtVerdict{color:var(--green,#4cc38a)}
+.simXtN-aucun{border-left-color:var(--border)}
+.simXtN-aucun .simXtVerdict{color:var(--txt-dim)}
+
+/* ==========================================================================
+   CE QU'IL Y A À FAIRE, ET LES RÉSERVES
+   --------------------------------------------------------------------------
+   LES DEUX SE LISENT EN TROIS SECONDES OU PAS DU TOUT. Une consigne en
+   soixante mots n'est pas suivie, une réserve en soixante mots n'est pas lue —
+   et une réserve non lue vaut une réserve absente, ce qui est précisément le
+   défaut que cette section entière cherche à ne jamais produire. La version
+   longue ne disparaît pas pour autant : elle attend dans le dépliant, et se
+   retrouve entière dans le rapport exporté.
+   ========================================================================== */
+.simXtFaire{
+  margin:0 0 10px;padding:7px 10px;border-radius:4px;
+  background:#1b1d21;border-left:2px solid var(--blue);
+  font-size:11.5px;line-height:1.5;
+}
+.simXtFaire>b{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+  color:var(--blue);
+}
+.simXtFaire ol{margin:4px 0 0;padding-left:20px}
+.simXtFaire li{margin:2px 0}
+
+/* Le dépliant du POURQUOI. Il porte le même corps partout — sous les gestes,
+   sous les réserves, sous la carte — parce que c'est toujours la même
+   promesse : ce qui est court est à l'écran, ce qui est long est là-dessous. */
+.simXtPourquoi{margin:6px 0 0;font-size:10.5px}
+.simXtPourquoi>summary{
+  cursor:pointer;color:var(--txt-dim);font-family:var(--mono);
+  letter-spacing:.03em;list-style:none;
+}
+.simXtPourquoi>summary::before{content:"▸ ";color:var(--txt-dim)}
+.simXtPourquoi[open]>summary::before{content:"▾ "}
+.simXtPourquoi>summary::-webkit-details-marker{display:none}
+.simXtPourquoi ul{margin:6px 0 0;padding-left:16px;color:var(--txt-dim)}
+.simXtPourquoi li{margin:0 0 6px}
+.simXtPourquoi li b{color:var(--txt)}
+.simXtPourquoi p{margin:6px 0 0;color:var(--txt-dim)}
+
+/* LA LIGNE QUI APPREND À LIRE LA CARTE, posée AU-DESSUS d'elle. Une figure
+   qu'on doit déplier pour comprendre est une figure qu'on ne lit pas. */
+.simXtLire{
+  margin:6px 0 4px;font-size:10.5px;line-height:1.5;color:var(--txt-dim);
+}
+.simXtLire b{color:var(--txt)}
+
+/* LA MÉTHODE, EN UNE LIGNE ET AVEC LES CHIFFRES DE CE CALCUL-CI. Discrète, et
+   toujours là : c'est elle qu'on relit quand un résultat surprend. */
+.simXtMethode{
+  margin:6px 0 0;padding-top:5px;border-top:1px dotted var(--border);
+  font-size:10px;line-height:1.5;color:var(--txt-dim);
+}
+
+/* La place d'un bouton qui ne peut pas exister. Elle porte le POURQUOI en
+   infobulle : une commande absente est un bug aux yeux de qui s'en servait la
+   veille. */
+.simXtEteint{
+  display:inline-block;margin-left:6px;padding:2px 6px;border-radius:3px;
+  border:1px dashed var(--border2);color:var(--txt-dim);
+  font-family:var(--mono);font-size:10px;cursor:help;
+}
+
+/* Les avertissements EN TÊTE et jamais repliés. Une matrice non passive rend
+   une carte parfaitement lisse : c'est le seul endroit où cela se dit, et une
+   liste dépliable serait une liste que personne n'ouvre. */
+.simXtAvert{
+  margin:0 0 10px;padding:6px 8px;border-radius:4px;
+  background:#241f13;border-left:2px solid var(--yellow);
+  color:var(--yellow);font-size:10.5px;line-height:1.5;
+}
+.simXtAvert ul{margin:4px 0 0;padding-left:16px}
+.simXtAvert li{margin:2px 0}
+
+.simXtBloc{
+  margin:0 0 12px;padding-bottom:10px;
+  border-bottom:1px solid var(--border);
+}
+.simXtBloc:last-of-type{border-bottom:none;padding-bottom:0}
+.simXtBloc>b{
+  display:inline-block;margin-bottom:5px;
+  font-family:var(--mono);font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--txt-dim);font-weight:500;
+}
+.simXtBloc .simNote{margin-top:4px}
+.simXtBloc table{margin-top:4px}
+.simXtBloc>div{
+  margin-top:4px;font-family:var(--mono);font-size:10.5px;
+  color:var(--txt-dim);line-height:1.6;
+}
+
+/* ---------- la carte ----------
+   Une ligne par victime, toutes sur le MÊME axe : c'est ce qui permet de
+   comparer deux victimes d'un coup d'œil, et c'est la moitié de l'intérêt.
+   Le SVG s'étire en largeur (`preserveAspectRatio="none"`) parce que l'axe des
+   positions est la seule dimension qui porte du sens — la hauteur d'une ligne
+   n'est qu'un rang. */
+.simXtCarte{margin:4px 0 6px}
+.simXtCarte svg{display:block;width:100%;height:auto}
+.simXtCarte rect{shape-rendering:crispEdges}
+.simXtGrad{font-family:var(--mono);font-size:10px;fill:var(--txt-dim)}
+/* LA MÊME GRADUATION EN VOLTS, sous celle en pour-cent et plus petite : le
+   pour-cent est la mesure, la tension est sa conversion par un champ du
+   panneau. Les mettre au même corps ferait croire à deux mesures
+   indépendantes. L'AMBRE, en revanche, est le même que partout ailleurs :
+   toutes les tensions de cette fiche appartiennent à la même famille, et
+   c'est ce qui les fait retrouver d'un coup d'œil. */
+.simXtGradV{
+  font-family:var(--mono);font-size:9px;fill:#e8c37a;opacity:.8;
+}
+/* ---------- la tension ecrite au pic de chaque courbe ----------
+   ELLE PREND LA COULEUR DE SA VICTIME (posee en `fill` par le trace) et non
+   l'ambre des autres volts : sur un graphe a cinq courbes, savoir A QUI
+   appartient un chiffre passe avant savoir de quelle famille il est. Le
+   `paint-order` lui donne un liseré du fond, sans quoi elle deviendrait
+   illisible en croisant une autre courbe. */
+.simXtSommet{
+  font-family:var(--mono);font-size:9.5px;font-weight:600;
+  paint-order:stroke;stroke:#15171a;stroke-width:2.5px;
+  stroke-linejoin:round;pointer-events:all;
+}
+.simXtAxe{stroke:var(--border);stroke-width:1}
+/* ---------- le seuil du verdict, tracé au travers de chaque graphe ----------
+   IL EST TIRETÉ ET AMBRE, ET C'EST DÉLIBÉRÉ. Tireté parce qu'il ne sort pas
+   du calcul — c'est une convention saisie, comme le profil d'espacement est
+   une mesure de géométrie —, ambre parce que ni le bleu ni le rouge de la
+   rampe ne sont libres : ils veulent dire « combien ». Un seuil de la couleur
+   de la rampe se lirait comme une amplitude. */
+.simXtSeuilT{
+  stroke:#e0a53a;stroke-width:1.2;stroke-dasharray:5 3;opacity:.85;
+  vector-effect:non-scaling-stroke;pointer-events:all;
+}
+.simXtSeuilE{
+  font-family:var(--mono);font-size:9px;fill:#e0a53a;opacity:.9;
+  pointer-events:none;
+}
+/* Les zones sont HACHURÉES et non colorées : elles ne sortent pas de la
+   matrice S, et un aplat par-dessus une cellule donnerait une troisième
+   couleur qu'on lirait comme une amplitude. */
+.simXtZone{pointer-events:all}
+
+/* ---------- le profil d'espacement, superposé ----------
+   IL EST EN TRAIT ET NON EN COULEUR, et c'est la même règle que les hachures :
+   il ne sort pas de la matrice S. La couleur d'une cellule est une amplitude ;
+   un trait par-dessus est visiblement une AUTRE grandeur, mesurée sur la
+   géométrie, et les deux ne se confondent pas.
+
+   BLANC, LÉGÈREMENT ADOUCI, ET SANS REMPLISSAGE : il doit se lire sur toute la
+   rampe — du bleu au rouge — sans jamais masquer la case qu'il traverse.
+   `vector-effect` garde son épaisseur constante malgré l'étirement en largeur
+   du SVG, sans quoi il s'épaissirait sur un panneau large et disparaîtrait sur
+   un panneau étroit. */
+.simXtEsp{
+  fill:none;stroke:#fff;stroke-width:1.3;opacity:.6;
+  stroke-linejoin:round;stroke-linecap:round;
+  vector-effect:non-scaling-stroke;pointer-events:none;
+}
+.simXtEspPt{fill:#fff;opacity:.85;pointer-events:none}
+
+/* ---------- les pics recoupés ----------
+   DEUX COULEURS POUR DEUX GESTES. Un pic qu'une zone de vigilance explique
+   demande de reprendre le BLINDAGE ; un pic que rien n'explique demande
+   d'aller REGARDER. Les confondre ferait corriger le cuivre de masse là où le
+   problème est ailleurs. */
+.simXtPic{pointer-events:all}
+.simXtPic-plan{fill:var(--blue);opacity:.9}
+.simXtPic-inexplique{fill:var(--red)}
+/* L'INDÉCIDABLE A SA COULEUR, et ce n'est ni celle du pic expliqué ni celle du
+   pic non justifié : il ne dit pas « c'est le plan », il dit « on ne peut pas
+   le savoir ici ». Lui donner le bleu du premier ferait passer pour une
+   conclusion ce qui est un aveu. */
+.simXtPic-indecidable{fill:var(--txt-dim)}
+
+.simXtSens{margin-left:8px;display:inline-flex;gap:4px}
+/* ---------- les trois cases de la figure ----------
+   DES CASES ET NON DES BOUTONS, et le dessin doit le dire : les boutons
+   « peindre » d'a cote sont un choix EXCLUSIF -- un seul est arme -- alors que
+   ces trois-ci sont INDEPENDANTS et cumulables. Une case a cocher porte cette
+   difference sans legende ; trois boutons armes se liraient comme un choix a
+   trois branches, et l'on chercherait lequel eteint les deux autres.
+
+   ELLES SE SERRENT CONTRE LES BOUTONS, pas contre les reglages du panneau :
+   elles appartiennent a la FIGURE, on les touche en la lisant, et les reglages
+   sont justement replies a ce moment-la. */
+.simXtVoir{
+  margin-left:8px;display:inline-flex;gap:4px;align-items:center;
+}
+.simXtVoir>small{color:var(--txt-dim);opacity:.8;font-size:9.5px}
+.simXtVoirC{
+  display:inline-flex;align-items:center;gap:4px;cursor:pointer;
+  padding:2px 6px;border:1px solid var(--border2);border-radius:3px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.03em;
+  color:var(--txt-dim);white-space:nowrap;
+}
+.simXtVoirC:hover{color:var(--txt);border-color:var(--border)}
+/* COCHEE, ELLE SE MARQUE COMME UN BOUTON ARME — meme bleu que `.tb.on` de la
+   barre d'outils : deux facons de dire « ceci est actif » sur la meme rangee
+   se liraient comme deux etats differents. */
+.simXtVoirC.on{color:var(--txt);border-color:var(--blue)}
+.simXtVoirC input{margin:0;cursor:pointer;accent-color:#7a8a9e}
+.simXtLeg{
+  display:flex;align-items:center;gap:6px;margin:2px 0 6px;
+  font-family:var(--mono);font-size:10px;color:var(--txt-dim);
+}
+.simXtRampe{
+  display:inline-block;width:90px;height:8px;border-radius:2px;
+  background:linear-gradient(90deg,#3fa0ea 0%,#a860d6 50%,#e8443a 100%);
+}
+
+/* ---------- les deux courbes, le curseur, la réglette ----------
+   DEUX GRAPHES SUR UN SEUL AXE — le NEXT puis le FEXT —, et un curseur qui les
+   traverse. La PISTE de la victime, elle, n'est pas ici : elle est sur la
+   carte, la vraie, où la chaleur se peint le long de son cuivre et où le point
+   blanc de la réglette se promène. Un schéma de piste dans le panneau était un
+   doublon du dessin, et obligeait à faire la correspondance de tête.
+
+   Ce qui identifie une victime est sa teinte hors rampe et son tireté, jamais
+   une couleur de la rampe : le bleu et le rouge veulent dire « combien », et
+   rien d'autre. */
+.simXtCourbe{
+  fill:none;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round;
+  vector-effect:non-scaling-stroke;
+}
+.simXtTitreG{
+  font-family:var(--mono);font-size:9.5px;fill:var(--txt-dim);
+  letter-spacing:.06em;text-transform:uppercase;
+}
+.simXtGrille{stroke:var(--border);stroke-width:1;opacity:.45}
+/* LE CURSEUR EST BLANC ET FIN : il traverse trois blocs et ne doit masquer
+   aucun d'eux. Les points, eux, sont cerclés du fond — sur une piste rouge vif
+   comme sur un fond sombre, un disque blanc nu se perd à moitié. */
+.simXtCur{stroke:#fff;stroke-width:1;opacity:.75;pointer-events:none}
+.simXtPt{fill:#fff;stroke:#15171a;stroke-width:1;pointer-events:none}
+
+/* Les cases : une par victime, avec ce qu'elle prend. Une case nue ferait
+   cocher au hasard. */
+.simXtVicts{display:flex;flex-wrap:wrap;gap:4px 10px;margin:2px 0 6px}
+.simXtCoche{
+  display:inline-flex;align-items:center;gap:5px;cursor:pointer;
+  padding:2px 6px;border:1px solid var(--border);border-radius:3px;
+  font-family:var(--mono);font-size:10px;color:var(--txt-dim);
+}
+.simXtCoche input{margin:0;cursor:pointer;accent-color:#7a8a9e}
+.simXtCoche i{
+  display:inline-block;width:10px;height:3px;border-radius:1px;
+}
+.simXtCoche b{color:var(--txt);font-weight:600}
+.simXtCoche small{opacity:.7}
+.simXtCoche .simXtPireBout{color:var(--txt-dim);opacity:.8}
+/* LA TENSION, À CÔTÉ DU POUR-CENT ET DANS SA PROPRE TEINTE. C'est le chiffre
+   qu'on compare à une fiche technique, et il doit se repérer sans être relu :
+   l'ambre du seuil, en plus pâle, dit qu'il appartient à la même famille — la
+   convention saisie — et non à la mesure.
+
+   LE SÉLECTEUR PORTE LA BALISE, et il le faut : `.simXtCoche b` et
+   `.simXtLect b` sont plus spécifiques qu'une classe seule, et l'ambre
+   partait alors sous le blanc du texte ordinaire. */
+b.simXtV,.simXtCoche b.simXtV,.simXtLect b.simXtV{
+  color:#e8c37a;font-weight:600;
+}
+.simXtOff b.simXtV{color:var(--txt-dim)}
+/* UNE VICTIME ÉTEINTE RESTE LISIBLE, en gris : elle doit pouvoir se rallumer,
+   et une case invisible se cherche. C'est la même règle que les lignes
+   écartées des deux tableaux. */
+.simXtOff{opacity:.5}
+.simXtOff b{color:var(--txt-dim)}
+/* UNE CANDIDATE SOUS LE SEUIL EST UNE CASE COMME LES AUTRES, marquée d'un mot
+   et non effacée : sa courbe existe, on peut l'allumer, mais elle n'est comptée
+   nulle part. Le trait tireté du bord dit exactement cela — présente, pas
+   retenue —, et c'est la même convention que les lignes écartées des deux
+   tableaux. */
+.simXtSousSeuil{border-style:dashed}
+.simXtSeuilBout{
+  color:var(--txt-dim);opacity:.75;font-size:9px;letter-spacing:.02em;
+  border:1px solid var(--border);border-radius:2px;padding:0 3px;
+}
+
+.simXtRegle{
+  display:flex;align-items:center;gap:8px;margin:2px 0 4px;
+  font-family:var(--mono);font-size:10px;color:var(--txt-dim);
+}
+.simXtRegle input[type=range]{
+  flex:1;min-width:120px;height:14px;accent-color:#7a8a9e;cursor:pointer;
+}
+.simXtRegle span{min-width:72px;text-align:right;color:var(--txt)}
+.simXtLect{
+  margin:0 0 6px;font-family:var(--mono);font-size:10.5px;
+  color:var(--txt-dim);line-height:1.6;
+}
+.simXtLect b{color:var(--txt)}
+.simXtLect i{
+  display:inline-block;width:10px;height:3px;margin-right:6px;
+  vertical-align:middle;border-radius:1px;
+}
+.simXtLect .simFaible{color:var(--txt-dim);opacity:.7;font-style:normal}
+
+/* ---------- les deux tableaux ----------
+   UNE LIGNE ÉCARTÉE RESTE LISIBLE, en gris et non masquée : c'est tout l'objet
+   des deux étapes. Une piste absente du résultat serait indiscernable d'une
+   piste qu'on n'a jamais regardée. */
+.simXtHors td{color:var(--txt-dim);opacity:.75}
+.simXtHors td:last-child{text-align:left;font-size:10px}
+.simXtAlerte{color:var(--yellow)}
+.simTag{
+  font-family:var(--mono);font-size:9px;padding:0 3px;border-radius:2px;
+  background:var(--panel2);color:var(--txt-dim);letter-spacing:.04em;
+}
+.simOk{color:var(--blue)}
+.simKo{color:var(--red);font-weight:600}
+
+/* Les hypothèses et la table des ports sont repliées, et elles sont les SEULES
+   à l'être : on les ouvre pour vérifier sous quoi le chiffre a été obtenu, pas
+   pour lire la fiche. La table des ports a rejoint ce repli le jour où elle a
+   cessé d'être une saisie — le serveur pose les ports lui-même, elle n'est
+   plus qu'un compte rendu. Tout ce qui doit être lu à chaque fois est déplié
+   plus haut. */
+.simXtHyp{margin:8px 0 0;font-size:10.5px;color:var(--txt-dim)}
+.simXtHyp summary{
+  cursor:pointer;font-family:var(--mono);font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--txt-dim);
+}
+.simXtHyp ul{margin:6px 0 0;padding-left:16px;line-height:1.55}
+.simXtHyp li{margin:4px 0}
+.simXtHyp p{margin:6px 0 0;line-height:1.55;font-family:var(--mono)}
+.simXtHyp p.simNote{font-family:inherit}

@@ -5,17 +5,35 @@
    DEUX FAMILLES, CINQ ANALYSES. Le panneau se range en **SI** — intégrité du
    signal, ce qu'un front devient en parcourant le cuivre — et **PI** —
    intégrité de l'alimentation, ce que le réseau de distribution laisse passer.
-   SI porte « Impédance », « Z différentielle », « Diaphonie » et « Current
-   Return Path » ; PI porte « Chute DC ».
+   SI porte « Impédance », « Z différentielle », « Crosstalk » et
+   « Current Return Path » ; PI porte « Chute DC ».
 
-   LES QUATRE DE SI LISENT LA MÊME RÉPONSE DU SERVEUR, et c'est voulu : changer
-   d'onglet ne relance rien, et les quatre fiches parlent nécessairement du
-   même cuivre. Elles ne posent pas la même question — l'impédance est une
-   propriété de la SECTION DROITE, le chemin de retour une propriété de la
-   LIAISON VERTICALE, et les deux autres une propriété de DEUX sections côte à
-   côte. Une piste parfaitement à 50 Ω peut avoir un retour catastrophique et
-   prendre trois cents millivolts à sa voisine : trois défauts distincts, que
-   les empiler dans une fiche unique rendait invisibles.
+   TROIS DES QUATRE DE SI LISENT LA MÊME RÉPONSE DU SERVEUR, et c'est voulu :
+   changer d'onglet ne relance rien, et les trois fiches parlent
+   nécessairement du même cuivre. Elles ne posent pas la même question —
+   l'impédance est une propriété de la SECTION DROITE, le chemin de retour une
+   propriété de la LIAISON VERTICALE, la Z différentielle une propriété de DEUX
+   sections côte à côte. Une piste parfaitement à 50 Ω peut avoir un retour
+   catastrophique : des défauts distincts, que les empiler dans une fiche
+   unique rendait invisibles.
+
+   LA QUATRIÈME EST À PART, ET C'EST ASSUMÉ. « Crosstalk » a sa propre route
+   (`/api/crosstalk`), son propre calcul et son propre résultat, parce qu'elle
+   ne répond pas à la même question avec les mêmes données : les trois autres
+   lisent une SECTION DROITE, elle lit une MATRICE S MULTI-PORTS le long du
+   parcours. Elle dit COMBIEN une voisine prend — en pour-cent de l'agresseur
+   et en VOLTS — et OÙ, sur les quarante millimètres qui longent, ce couplage
+   se fabrique. Voir « CROSSTALK », plus bas.
+
+   ELLE A REMPLACÉ UN ONGLET « DIAPHONIE », ET LE REMPLACEMENT EST TOTAL. Celui-
+   ci résolvait UNE section droite et rendait UN coefficient par longement : il
+   disait combien, jamais où, et sa carte de chaleur ATTRIBUAIT le bruit aux
+   tronçons au prorata du couplage local au lieu de le mesurer le long de la
+   piste. Tout ce qu'il chiffrait — NEXT, FEXT, le budget, la tension de bruit
+   sur la victime — se lit désormais sous « Crosstalk », avec une abscisse en
+   plus. Garder les deux aurait laissé deux verdicts concurrents sur le même
+   cuivre, obtenus par deux physiques différentes : c'est exactement le genre
+   de désaccord qu'on ne sait pas arbitrer devant un client.
 
    Le registre est `SIM_FAMILLES` / `SIM_ANALYSES`, plus bas : une analyse y
    déclare son nom, ses commandes, son branchement, sa sortie, et si elle peint
@@ -27,15 +45,50 @@
    entière par mise en cascade. La page peint le résultat SUR la piste et
    l'écrit à côté.
 
-   CE QUE FONT « Z DIFFÉRENTIELLE » ET « DIAPHONIE » : la MÊME section, à N
-   conducteurs (`ligne_mom.solve_multiline`) — toutes les voisines d'une même
-   piste y entrent, parce qu'une piste et ses deux voisines font UN problème à
-   trois et non deux problèmes à deux. La matrice de capacité de Maxwell
-   [C], puis [L] = μ₀ε₀[C₀]⁻¹ ; les modes pair et impair en sortent — donc Z
-   différentielle et Z commune —, et les coefficients de couplage aussi — donc
-   NEXT et FEXT. UN seul calcul, deux lectures. L'agresseur n'étant jamais dans
-   la sélection, chaque outil joint au problème le `voisinage` : le cuivre qui
-   passe à portée. C'est le serveur qui apparie, une fois pour les deux.
+   CE QUE FAIT « Z DIFFÉRENTIELLE » : la même section, à N conducteurs
+   (`ligne_mom.solve_multiline`) — toutes les voisines d'une même piste y
+   entrent, parce qu'une piste et ses deux voisines font UN problème à trois et
+   non deux problèmes à deux. La matrice de capacité de Maxwell [C], puis
+   [L] = μ₀ε₀[C₀]⁻¹ ; les modes pair et impair en sortent, donc Z différentielle
+   et Z commune. L'autre moitié d'une paire n'étant pas toujours dans la
+   sélection, chaque outil joint au problème le `voisinage` : le cuivre qui
+   passe à portée. C'est le serveur qui apparie.
+
+   LA SÉLECTION EST L'AGRESSEUR SOUS « CROSSTALK », et c'est le sens de lecture
+   de tout l'onglet. On clique le net qu'on sait bruyant — l'horloge, le nœud
+   de découpage, le bus qui commute — et la fiche dit CE QU'IL INFLIGE à chaque
+   piste qui le longe.
+
+   TROIS RÈGLES EN DÉCOULENT, qu'aucune ne se devine en lisant le tableau :
+
+     · UN PARTENAIRE DIFFÉRENTIEL DÉCLARÉ N'EST PAS UNE VICTIME. Une paire est
+       serrée par construction, et son couplage EST son mode impair — celui que
+       le récepteur différentiel rejette. C'est l'onglet Z différentielle qui la
+       juge, en ohms. Une voisine simplement proche, elle, compte ;
+     · RIEN NE SE TOTALISE. Une VICTIME additionne ses agresseurs — trois à 3 %
+       lui font 9 % —, un AGRESSEUR non : ses victimes sont des nets différents,
+       chacun avec son budget. Chaque ligne se juge donc seule ;
+     · CHAQUE VICTIME SE JUGE SUR LE PIRE DE SES DEUX BOUTS. Le NEXT s'observe
+       à son bout proche, le FEXT à son bout lointain : jamais au même point,
+       donc jamais additionnés, ni en pour-cent ni en volts.
+
+   CE QUE CE BOUT-LÀ DE LA LUNETTE NE MONTRE PAS : les AUTRES agresseurs de
+   chaque victime. Le chiffre annoncé est ce qu'elle prend à la sélection, pas
+   son bruit total — c'est un minorant, et la fiche le dit.
+
+   ET CE QUE LA SECTION DROITE NE SAIT PAS DÉCRIRE DU TOUT : les pistes
+   SUPERPOSÉES. Elle n'a qu'un plan de conducteurs et les pose tous à la même
+   hauteur ; les voisines d'une AUTRE couche étaient donc écartées côté serveur
+   avant tout calcul, et disparaissaient sans un mot — ce qui se lit comme un
+   couplage nul, alors que deux pistes superposées couplent souvent PLUS que
+   les mêmes côte à côte. Elles sont désormais CHERCHÉES et rendues
+   (`superposes`, affiché par `simCoupleSuperposes`) : la longueur en regard,
+   le décalage de cuivre à cuivre et le diélectrique qui sépare les deux
+   faces. Le couplage n'est toujours pas chiffré — il faudrait une section à
+   conducteurs empilés —, mais il n'est plus invisible, et la fiche annonce
+   alors ses chiffres comme un PLANCHER. Les longements qu'un plan de référence
+   sépare sont comptés et tus : le plan est un écran, et c'est la raison d'être
+   de l'empilage.
 
    Le solveur est en Python et en numpy : un navigateur ne peut pas l'exécuter,
    et c'est la seule raison pour laquelle ce fichier parle à un serveur — le
@@ -96,6 +149,31 @@
      cuivreDC()   -> {polygones, vias, sources, references, pas}
                      ou {erreur, conseil}    le problème résistif, en mm
      peindreDC(r)                        peint la carte de potentiel
+
+   Et pour l'analyse « Crosstalk », UNE méthode FACULTATIVE — un outil qui ne
+   la déclare pas voit l'onglet dire ce qui lui manque, plutôt qu'une page
+   vide :
+
+     problemeCrosstalk(opts) -> {doc, objets, portee, notes}
+                     ou {erreur, conseil}
+                     Le document « cao-crosstalk-1 ». Il porte la géométrie et
+                     le voisinage comme celui de la simulation, mais AVEC LES
+                     COUCHES ADJACENTES — deux pistes superposées couplent, et
+                     les écarter d'office ferait lire un couplage nul là où il
+                     est maximal — et trois champs que rien d'autre ne demande :
+
+                       couture    {positions:[{s, cote}]}   les vias de couture
+                                  projetés sur l'ABSCISSE du parcours, en mm.
+                                  Sans eux on ne connaît que le pire trou par
+                                  tronçon, et la zone à risque est alors le
+                                  tronçon entier
+                       fentes     [{s, longueur, quoi}]     les discontinuités
+                                  du plan de référence sous le parcours. Ne pas
+                                  envoyer le champ DU TOUT quand on n'a pas su
+                                  sonder : une liste vide se lit « rien à
+                                  signaler », ce qui est le contraire
+                       vias_masse [{x, y, a, b}]            de quoi juger les
+                                  changements de couche
 
    `doc` est le document d'échange, `objets` la liste des objets de l'outil
    ALIGNÉE sur `doc.geometry.objects` : c'est par cet alignement que le
@@ -197,7 +275,10 @@ function simCorpsDC(){
             'title="Oublier toutes les bornes">Effacer</button>'+
   '</div>'+
   '<div id="simDCListe"></div>'+
-  '<div class="pnl-bar">'+
+  /* LA RANGÉE QUI PORTE « Calculer » RESTE quand les réglages se replient :
+     c'est ici que le bouton vit, au milieu de la trame, et le replier
+     laisserait un panneau qu'on ne peut plus lancer. */
+  '<div class="pnl-bar simBarFixe">'+
     '<span class="pnl-lbl">Trame</span>'+
     simChamp("simDCPas","Le côté du carreau de maillage, en millimètres — la "+
                         "finesse du calcul. LAISSEZ VIDE : elle est choisie "+
@@ -327,7 +408,6 @@ function simRendreBornes(){
     };
   });
 }
-
 
 
 /* ===========================================================================
@@ -811,8 +891,6 @@ function simRendreDC(){
 }
 
 
-
-
 /* ===========================================================================
    CE QUI A ÉTÉ ANALYSÉ, ET AVEC QUELLE FINESSE
 
@@ -848,7 +926,6 @@ function simDCCuivrePris(res){
   if(f&&f.note)h+='<p class="pnl-note">'+simEsc(f.note)+'</p>';
   return h;
 }
-
 
 
 /* ===========================================================================
@@ -1187,6 +1264,16 @@ const SIM={
      démarre sur ce qui existe — SI, impédance —, parce qu'ouvrir un panneau
      sur une famille vide n'apprendrait rien à qui vient de cliquer. */
   famille:"si", analyse:"impedance",
+  /* LES RÉGLAGES SE REPLIENT. Sur le crosstalk ils occupent une pleine hauteur
+     d'écran, et l'on passe son temps à faire défiler entre la réglette et les
+     courbes qu'elle commande. Une fois l'analyse lancée on n'y touche plus :
+     c'est le RÉSULTAT qu'on lit. Deux rangées ne se replient jamais — celle
+     des boutons, sans quoi on ne pourrait plus relancer, et celle des
+     avertissements de bande, qui dit que le calcul ne portera pas sur ce qu'on
+     croit. Elles se marquent `simBarFixe` là où elles s'écrivent. L'état est
+     GLOBAL au panneau et non par analyse : c'est un geste de mise en page, et
+     le retrouver déplié en changeant d'onglet se lirait comme un défaut. */
+  plie:false,
   /* Les fréquences vivent EN HERTZ ici et jusqu'au serveur ; `unite` ne dit
      que dans quoi on les écrit et les relit à l'écran. Séparer les deux est
      tout l'objet de la liste déroulante : saisir 868 en croyant écrire des
@@ -1197,12 +1284,15 @@ const SIM={
           /* LE COUPLAGE A SES PROPRES REGLAGES, et aucun ne change le calcul
              de la ligne seule. `cibleDiff`/`tolDiffPct` colorent le verdict de
              Z differentielle -- 100 ohms est la cible de l'USB et de
-             l'Ethernet. `tr` est le TEMPS DE MONTEE en picosecondes, et c'est
-             le seul des quatre qui parte au serveur : il decide de la
-             saturation du bruit arriere. Zero veut dire « deduis-le de la
-             bande », ce que le serveur fait par la regle du genou.
-             `swing` convertit un rapport en millivolts, `bruitPct` est le
-             budget qu'on s'accorde. */
+             l'Ethernet. `tr` est le TEMPS DE MONTEE, et c'est le seul des
+             quatre qui parte au serveur : sous « Crosstalk » il fixe le genou
+             du front, donc le seuil de pas de couture et la lecture des
+             decibels sous la bande du signal. Zero veut dire « deduis-le de
+             la bande », ce que le serveur fait par la regle du genou.
+             `swing`, `bruitPct` et `marge` vivent dans la rangee « Signal »
+             de l'onglet Crosstalk : le premier convertit un rapport en volts,
+             les deux autres prononcent le verdict. Aucun des trois ne part au
+             serveur, et aucun ne relance quoi que ce soit. */
           /* `tr` est en SECONDES et `swing` en VOLTS — comme les fréquences
              vivent en hertz. `uniteTr` et `uniteV` ne disent que dans quoi on
              les écrit. Un `tr` à zéro n'est pas un front instantané : c'est
@@ -1215,17 +1305,13 @@ const SIM={
              entre cette paire-la et une paire declaree — c'est ce qui permet
              de nommer une paire que rien dans les noms ne trahit. */
           paireN:"",
-          /* QUEL BRUIT LA CARTE PEINT : "next", "fext", ou "pire" — le pire
-             des deux, qui est ce que le verdict juge. Les deux bruits ne se
-             fabriquent PAS au même endroit de la piste (k_arrière est une
-             SOMME de couplages, k_avant leur DIFFÉRENCE : le second cesse de
-             croître quand l'écart devient très serré), si bien qu'une carte
-             unique désignerait le mauvais millimètre à qui vient corriger un
-             bruit avant. Ce réglage ne relance rien — les deux sens sont dans
-             le même résultat. */
-          sens:"pire",
           cibleDiff:100, tolDiffPct:10, tr:0, uniteTr:"ps",
           swing:3.3, uniteV:"V", bruitPct:5,
+          /* LA MARGE DE BRUIT DU RÉCEPTEUR, en VOLTS comme `swing`. Zéro veut
+             dire « pas de marge donnée », et l'on retombe alors sur le budget
+             en pourcentage. Remplie, elle le REMPLACE : deux seuils
+             concurrents seraient pires que pas de seuil du tout. */
+          marge:0,
           /* TROIS UNITÉS. `unite` écrit f₀ ; `uniteBande1` et `uniteBande2` écrivent
              les deux bouts de la bande S. Elles étaient autrefois confondues,
              puis il y en a eu deux, et maintenant trois pour permettre "10 kHz -> 1 GHz".
@@ -1294,6 +1380,21 @@ function simNb(v,dec){
   if(!isFinite(v))return "—";
   return Number(v).toFixed(dec==null?2:dec).replace(".",",");
 }
+
+/* UNE COORDONNÉE N'EST PAS UN NOMBRE À LIRE, et la confondre avec un nombre à
+   lire coûte le dessin entier. `simNb` écrit la virgule décimale française —
+   c'est ce qu'il faut dans une fiche, et c'est exactement ce qu'un SVG ne sait
+   pas lire : `x="123,45"` est un attribut invalide, que le navigateur ramène à
+   zéro sans rien signaler, et `points="12,3 45,6"` se relit comme QUATRE
+   nombres au lieu de deux paires — d'où un éventail de traits partant tous du
+   même point, qui ressemble à un défaut de calcul et n'en est pas un.
+
+   Toute géométrie SVG passe donc par ici, et par nulle part ailleurs. La
+   courbe des paramètres S s'en tire depuis toujours parce qu'elle emploie
+   `toFixed` directement ; c'est la même règle, écrite une fois. */
+function simXY(v){
+  return isFinite(v)?Number(v).toFixed(2):"0";
+}
 /* Une fréquence se lit en GHz au-dessus du gigahertz, en MHz en dessous : une
    bande 100 MHz – 5 GHz écrite tout en hertz est illisible. */
 function simFreq(hz){
@@ -1312,6 +1413,31 @@ function simDb(c){
   return m>1e-15?20*Math.log10(m):SIM_PLANCHER;
 }
 const SIM_PLANCHER=-300;
+
+/* ==========================================================================
+   UNE TENSION DANS SON ORDRE DE GRANDEUR — V, mV, µV
+   --------------------------------------------------------------------------
+   POURQUOI PAS L'UNITÉ CHOISIE POUR L'AMPLITUDE. Parce que ce n'est pas la
+   même grandeur : l'amplitude vaut des volts, le bruit qui en sort vaut des
+   millivolts ou des microvolts. Écrire un couplage de 0,4 % sur un signal de
+   3,3 V dans l'unité du signal donnerait « 0,013 V », qu'on relit en comptant
+   les zéros — et « 0,000 V » dès qu'on descend d'une décade. Un même tableau
+   peut donc porter des volts en haut et des microvolts en bas ; c'est le
+   contraire d'un défaut, puisque c'est précisément l'échelle qui est
+   l'information.
+
+   SOUS LE MICROVOLT ON ÉCRIT L'INÉGALITÉ, jamais un zéro : un bruit de
+   quelques dizaines de nanovolts N'EST PAS nul, il est négligeable — et ces
+   deux faits ne se corrigent pas de la même façon.
+   ========================================================================== */
+function simTension(v){
+  const a=Math.abs(v||0);
+  if(!(a>0))return "0 V";
+  if(a>=1)return simNb(v,a>=10?1:2)+" V";
+  if(a>=1e-3)return simNb(v*1e3,a>=1e-2?1:2)+" mV";
+  if(a>=1e-6)return simNb(v*1e6,a>=1e-5?1:2)+" µV";
+  return "< 1 µV";
+}
 
 /* ==========================================================================
    La carte de chaleur : trois couleurs, et ce qu'elles veulent dire
@@ -1381,61 +1507,6 @@ function simZDiffCouleur(z,alpha){
   return simCouleurBande(z,SIM.saisie.cibleDiff,simZDiffTolAbs(),alpha);
 }
 
-/* ==========================================================================
-   LA CARTE DE CHALEUR DU BRUIT — trois couleurs, et UN SEUL SENS
-   --------------------------------------------------------------------------
-   Celle des impedances a deux sens — trop haut, trop bas —, et c'est pour cela
-   qu'elle porte du rouge ET du vert. Le bruit n'en a qu'un : il n'existe pas
-   de « pas assez de diaphonie ». La rampe va donc du bleu au rouge, et le
-   repere n'est pas une cible mais le BUDGET :
-
-     · BLEU    — negligeable devant le budget. C'est le meme bleu que « dans
-                 la tolerance » sur la carte des impedances : sur les deux, il
-                 veut dire « rien a corriger ici » ;
-     · VIOLET  — la moitie du budget, sur ce seul troncon ;
-     · ROUGE   — ce troncon a lui seul creve le budget. C'est LA ou il faut
-                 ecarter, et c'est toute la question qu'on pose a la carte.
-
-   POURQUOI PAS L'AMBRE AU MILIEU, qui aurait ete le choix evident. Parce que
-   la teinte intermediaire n'est pas choisie, elle est CALCULEE : la couleur
-   d'un troncon est interpolee entre deux bornes. Or interpoler du bleu vers
-   l'ambre en RVB traverse le gris — (63,160,234) et (228,178,60) sont presque
-   complementaires, et leur milieu vaut (146,169,147), a deux points du gris
-   « pas de valeur » (139,145,156). Un troncon FAIBLEMENT couple se peignait
-   donc de la couleur qui veut dire « rien ne longe ici », ce qui est
-   exactement le contresens qu'une carte de chaleur ne doit pas faire. Le bleu
-   va au rouge par le violet parce que ce chemin-la reste sature d'un bout a
-   l'autre : aucun de ses points ne ressemble a du gris.
-
-   LE BUDGET EST CELUI DE LA PISTE ENTIERE, et la couleur est celle d'un
-   troncon : une piste dont le cumul tient dans le budget n'a aucun troncon
-   rouge, et c'est juste — il n'y a rien a corriger. Une piste qui le creve a
-   ses millimetres coupables en rouge, et ce sont eux qu'on va ecarter.
-   ========================================================================== */
-/* LA COULEUR DE L'AGRESSEUR. Elle ne gradue rien et ne doit ressembler à
-   aucun point de la rampe du bruit : un gris-bleu froid, qui dit « c'est celle
-   qu'on a désignée, c'est elle qui émet » et rien de plus. */
-const SIM_AGRESSEUR=[122,138,158];
-function simAgresseurCouleur(alpha){
-  return "rgba("+SIM_AGRESSEUR.join(",")+","+((alpha==null)?1:alpha)+")";
-}
-
-const SIM_BR_BAS =[ 63,160,234];   // bleu   : negligeable
-const SIM_BR_MOY =[168, 96,214];   // violet : la moitie du budget
-const SIM_BR_HAUT=[232, 68, 58];   // rouge  : le budget creve
-
-function simBruitBudget(){
-  return Math.max(1e-6,SIM.saisie.bruitPct/100);
-}
-function simBruitCouleur(v,alpha){
-  const a=(alpha==null)?1:alpha;
-  if(v==null||!(v>0))return "rgba(139,145,156,"+a+")";
-  const r=Math.min(1,v/simBruitBudget());
-  const bas=r<=0.5, p=bas?SIM_BR_BAS:SIM_BR_MOY, q=bas?SIM_BR_MOY:SIM_BR_HAUT;
-  const k=bas?r/0.5:(r-0.5)/0.5;
-  const c=p.map((x,i)=>Math.round(x+(q[i]-x)*k));
-  return "rgba("+c.join(",")+","+a+")";
-}
 /* Le canevas des deux outils demande d'abord s'il y a quelque chose à peindre.
    Il faut un résultat ET les objets qui vont avec : peindre un résultat sur
    une sélection qui a changé montrerait la couleur d'une piste sur une autre.
@@ -1489,34 +1560,7 @@ function simChaleurRes(res){
   const c=res&&res.couplage&&res.couplage.chaleur;
   return Array.isArray(c)?c:null;
 }
-/* ET CELLE DES VOISINES, alignée sur `voisinage` du document. C'est la carte
-   qu'on regarde en routant : la sélection est l'AGRESSEUR, et chaque voisine
-   porte ce que la sélection lui inflige. */
-function simChaleurVoisinsRes(res){
-  const c=res&&res.couplage&&res.couplage.chaleur_voisins;
-  return Array.isArray(c)?c:null;
-}
-/* LE BRUIT D'UNE ENTRÉE DE CARTE, DANS LE SENS DEMANDÉ. Le signe se garde —
-   un FEXT négatif est un creux là où le front monte, pas un FEXT plus petit —
-   et c'est l'amplitude qui colore. */
-function simSensPeint(){
-  const v=SIM.saisie.sens;
-  return (v==="next"||v==="fext")?v:"pire";
-}
-function simChaleurValeur(c){
-  if(!c)return null;
-  const sens=simSensPeint();
-  if(sens==="pire")return c.bruit;
-  const v=c[sens];
-  return (v==null)?null:v;
-}
-/* Le nom du sens, tel qu'il s'écrit dans une phrase. */
-function simSensNom(sens){
-  const v=sens||simSensPeint();
-  return v==="next" ? "bruit arrière (NEXT)"
-       : v==="fext" ? "bruit avant (FEXT)"
-       : "pire des deux sens";
-}
+/* Y a-t-il une carte de chaleur à peindre, et de quoi la peindre ? */
 function simCarteActive(){
   const quoi=simCarteQuoi();
   if(!SIM.ouvert||!quoi)return false;
@@ -1526,7 +1570,7 @@ function simCarteActive(){
   const lots=simLotsPeints();
   if(!lots.length)return false;
   if(quoi==="z")return true;
-  /* LES DEUX CARTES DE COUPLAGE EXIGENT LA CHALEUR. Un serveur plus ancien
+  /* LA CARTE DE Z DIFFÉRENTIELLE EXIGE LA CHALEUR. Un serveur plus ancien
      rend un résultat complet SANS elle, et peindre du gris partout se lirait
      comme « rien ne couple » là où il faut lire « je n'en sais rien ». */
   return lots.some(l=>(simChaleurRes(l.res)||[]).length>0);
@@ -1578,176 +1622,8 @@ function simVoileActif(){
    n'ont donc qu'à tracer des segments, chacun dans son monde à lui : c'est le
    seul dessin du panneau qui ne passe par aucun objet de l'outil.
    ========================================================================== */
-/* L'IDENTITÉ D'UNE PISTE VOISINE : son net SUR SA COUCHE. `voisinage` est une
-   liste de tronçons, et c'est la piste entière qu'on veut retrouver derrière
-   eux. Un tronçon sans net ne se regroupe avec rien — il ne peut pas prétendre
-   appartenir à la même piste qu'un autre cuivre anonyme. */
-function simCarteCleVoisin(g,j){
-  const net=(g&&g.net)||"";
-  return net ? ((g.layer==null?"":g.layer)+"|"+net) : ("#"+j);
-}
-/* ==========================================================================
-   TOUTE LA PISTE VICTIME, ET PAS SEULEMENT CE QUI LONGE
-   --------------------------------------------------------------------------
-   CE QUI SE LISAIT DE TRAVERS. Seuls les tronçons COUPLÉS étaient peints : une
-   victime sortait de la carte en morceaux — deux centimètres de cuivre nu,
-   trois millimètres de couleur, deux centimètres de cuivre nu —, pendant que
-   l'agresseur, lui, était peint d'un bout à l'autre. Les deux pistes ne
-   portaient donc pas la même règle à l'écran, et rien ne disait laquelle des
-   deux lectures était la bonne : « le reste de la victime ne couple pas », ou
-   « le reste de la victime n'a pas été regardé ».
 
-   ON PEINT DONC LA PISTE ENTIÈRE dès qu'un seul de ses tronçons est agressé :
-   les tronçons couplés portent leur couleur de bruit, les autres le GRIS de
-   `simBruitCouleur(null)` — la couleur qui veut déjà dire « rien ne longe
-   ici ». La piste redevient continue, et la couleur dit OÙ, sur toute sa
-   longueur, le couplage se fabrique.
 
-   `couple` porte la différence, et les deux outils s'en servent pour peindre
-   plus discrètement ce qui ne couple pas : la victime doit se suivre du regard
-   sans couvrir l'endroit qui compte.
-
-   UNE PISTE QUE LA SÉLECTION N'AGRESSE NULLE PART RESTE HORS SUJET, et n'est
-   pas peinte du tout : `voisinage` porte tout le cuivre à portée, et en griser
-   la totalité peindrait la carte au lieu de la lire.
-   ========================================================================== */
-function simCarteVoisins(){
-  if(!simCarteActive()||simCarteQuoi()!=="bruit")return [];
-  const chaleur=simChaleurVoisinsRes(SIM.res)||[];
-  const geo=(SIM.doc&&SIM.doc.voisinage)||[];
-  /* ON S'ARRÊTE À CE QUE LE SERVEUR A REGARDÉ : un voisinage tronqué rend
-     moins d'entrées de chaleur qu'il n'est parti de tronçons, et griser le
-     reste dirait « ça ne couple pas » là où il faut lire « je n'ai pas
-     regardé ». */
-  const n=Math.min(chaleur.length,geo.length);
-  const agressees=new Set();
-  for(let j=0;j<n;j++){
-    const c=chaleur[j], g=geo[j];
-    if(!c||!g||!g.start||!g.end)continue;
-    if(simChaleurValeur(c)==null)continue;
-    agressees.add(simCarteCleVoisin(g,j));
-  }
-  if(!agressees.size)return [];
-  const out=[];
-  for(let j=0;j<n;j++){
-    const c=chaleur[j], g=geo[j];
-    if(!g||!g.start||!g.end)continue;
-    if(!agressees.has(simCarteCleVoisin(g,j)))continue;
-    const v=c?simChaleurValeur(c):null;
-    if(v==null){
-      out.push({seg:g, net:(g.net||""), agresseur:"", couche:g.layer,
-                valeur:null, chaleur:null, couple:false,
-                couleur:a=>simBruitCouleur(null,a), texte:""});
-      continue;
-    }
-    out.push({seg:g, net:c.net||g.net||"", agresseur:c.agresseur||"",
-              couche:g.layer, valeur:v, chaleur:c, couple:true,
-              couleur:a=>simBruitCouleur(Math.abs(v),a),
-              texte:simNb(100*v,2)+" %"});
-  }
-  return out;
-}
-
-/* Le centre de la sélection, en MILLIMÈTRES : la moyenne des tronçons qu'on a
-   envoyés. Il sert à savoir de quel côté d'une voisine se trouve l'agresseur —
-   et donc de quel côté NE PAS poser son étiquette. */
-/* LE CUIVRE DE LA SÉLECTION QUI COMPTE POUR UNE VOISINE : celui de SA COUCHE.
-   Une liaison qui change de couche a des tronçons partout dans l'empilage, et
-   le couplage, lui, ne se calcule qu'entre pistes de la MÊME couche — c'est ce
-   qu'une section droite sait décrire. Sans ce tri, le point de départ du
-   chevelu pouvait tomber sur un tronçon d'une AUTRE couche, passant sous un
-   plan de masse : le trait semblait sortir du cuivre de masse, et le sens de
-   la diaphonie devenait illisible.
-
-   Une couche inconnue — un banc d'essai qui pose un résultat à la main —, ou
-   une couche où la sélection n'a rien : on reprend tout, ce qui vaut mieux que
-   ne rien poser. */
-function simCarteObjetsSel(couche){
-  const objs=((SIM.doc&&SIM.doc.geometry)||{}).objects||[];
-  const bons=objs.filter(o=>o&&o.start&&o.end);
-  if(couche==null)return bons;
-  const meme=bons.filter(o=>o.layer===couche);
-  return meme.length?meme:bons;
-}
-function simCarteCentreSel(couche){
-  const objs=simCarteObjetsSel(couche);
-  let x=0, y=0, n=0;
-  for(const o of objs){
-    x+=(o.start[0]+o.end[0])/2; y+=(o.start[1]+o.end[1])/2; n++;
-  }
-  return n?[x/n,y/n]:null;
-}
-
-/* ==========================================================================
-   UNE ÉTIQUETTE PAR NET AGRESSÉ, POSÉE À CÔTÉ DE SA PISTE
-   --------------------------------------------------------------------------
-   UNE PAR TRONÇON EN POSERAIT VINGT sur un bus, et ce n'est pas le tronçon
-   qu'on veut lire : c'est le NET — c'est lui qu'on va chercher dans le schéma
-   pour savoir si ce bruit-là compte. On garde donc, par net, son tronçon le
-   plus chaud.
-
-   ET ON LA DÉCALE, ce qui n'est pas une coquetterie. Deux pistes qui couplent
-   sont par construction PROCHES — c'est la définition du problème —, si bien
-   que l'étiquette d'une voisine tombe sur la sélection, et celle de la voisine
-   d'en face sur la première. Posées au milieu du cuivre, les trois se
-   recouvrent exactement là où l'on regarde. On les pousse donc du côté OPPOSÉ
-   à l'agresseur : `normale` est la perpendiculaire au tronçon, unitaire, qui
-   s'éloigne du centre de la sélection. L'outil la convertit dans son écran à
-   lui — et récupère au passage le retournement de la vue, qu'il est seul à
-   connaître.
-   ========================================================================== */
-function simCarteVoisinsEtiquettes(){
-  const liste=simCarteVoisins();
-  if(!liste.length)return [];
-  const parNet=new Map();
-  for(const v of liste){
-    /* UN TRONÇON QUI NE COUPLE PAS N'A RIEN À CHIFFRER : il est là pour que la
-       piste victime se suive d'un bout à l'autre, pas pour porter un nombre. */
-    if(!v.couple)continue;
-    const p=parNet.get(v.net);
-    if(!p||Math.abs(v.valeur)>Math.abs(p.valeur))parNet.set(v.net,v);
-  }
-  const out=[];
-  for(const v of parNet.values()){
-    const centre=simCarteCentreSel(v.couche);
-    const a=v.seg.start, b=v.seg.end;
-    const m=[(a[0]+b[0])/2,(a[1]+b[1])/2];
-    let nx=-(b[1]-a[1]), ny=b[0]-a[0];
-    const l=Math.hypot(nx,ny);
-    if(l>1e-9){nx/=l;ny/=l;}else{nx=0;ny=1;}
-    /* DU CÔTÉ OPPOSÉ À L'AGRESSEUR : si la normale pointe vers le centre de la
-       sélection, on la retourne. Sans sélection connue — un banc d'essai qui
-       pose un résultat à la main —, n'importe quel côté vaut mieux que le
-       milieu du cuivre. */
-    if(centre&&((centre[0]-m[0])*nx+(centre[1]-m[1])*ny)>0){nx=-nx;ny=-ny;}
-    out.push({net:v.net, valeur:v.valeur, texte:v.texte, couleur:v.couleur,
-              seg:v.seg, ancre:m, normale:[nx,ny],
-              /* D'OÙ ÇA VIENT — voir `simCarteDepuis`. Sans ce point, une
-                 étiquette posée entre deux pistes n'appartient visiblement à
-                 aucune des deux. SUR LA COUCHE DE LA VICTIME : c'est là, et
-                 nulle part ailleurs, que le couplage a été calculé. */
-              depuis:simCarteDepuis(m,v.couche)});
-  }
-  return out;
-}
-
-/* Le point de la SÉLECTION le plus proche d'un point donné, en millimètres.
-   C'est l'origine du chevelu : le trait part du cuivre qui agresse et arrive à
-   l'étiquette de celui qui subit, si bien que le sens se lit sans légende. */
-function simCarteDepuis(pt,couche){
-  const objs=simCarteObjetsSel(couche);
-  let best=null, dmin=Infinity;
-  for(const o of objs){
-    const ax=o.start[0], ay=o.start[1], bx=o.end[0], by=o.end[1];
-    const dx=bx-ax, dy=by-ay, l2=dx*dx+dy*dy;
-    let u=l2>1e-12?((pt[0]-ax)*dx+(pt[1]-ay)*dy)/l2:0;
-    u=Math.max(0,Math.min(1,u));
-    const px=ax+dx*u, py=ay+dy*u;
-    const d=(px-pt[0])*(px-pt[0])+(py-pt[1])*(py-pt[1]);
-    if(d<dmin){dmin=d;best=[px,py];}
-  }
-  return best;
-}
 /* Ce qu'il faut pour peindre le tronçon i : l'objet de l'outil, la valeur, sa
    couleur à l'opacité demandée, et le texte de l'étiquette. `null` quand il n'y
    a rien à peindre là. */
@@ -1770,30 +1646,23 @@ function simCarteSegment(i){
             couleur:a=>simZDiffCouleur(z,a),
             texte:(z>0)?simNb(z,1)+" Ω":""};
   }
-  /* SOUS CET ONGLET, LA SÉLECTION EST L'AGRESSEUR, ET ELLE SE PEINT COMME
-     TEL. Elle portait naguère ce qu'elle REÇOIT, gradué sur la même échelle
-     que les voisines : deux grandeurs différentes, sur le même dégradé, au
-     même endroit — et l'œil ne pouvait pas les séparer. Ce qu'elle reçoit
-     reste chiffré dans le tableau et jugé par le verdict ; sur la carte, elle
-     est ce qui PARLE, d'une seule couleur froide qui n'appartient à aucune
-     échelle. */
-  return {obj:obj, seg:seg, valeur:null, chaleur:ch, agresseur:true,
-          couleur:a=>simAgresseurCouleur(a),
-          texte:""};
+  /* UNE CARTE QU'ON NE SAIT PAS PEINDRE NE SE PEINT PAS. Le registre est la
+     seule source de `carte`, et une valeur qu'on n'aurait pas traitée ici
+     donnerait du cuivre colorié au hasard plutôt qu'une absence visible. */
+  return null;
 }
 /* CE QUI VAUT UNE ÉTIQUETTE, ET COMBIEN AU PLUS. Les impédances se répètent —
-   une piste de cinquante tronçons de même largeur n'a qu'une valeur —, mais le
-   bruit et la Z différentielle changent à chaque tronçon : cinquante cartouches
-   posés sur cinquante millimètres de cuivre ne se lisent pas. On garde donc les
-   plus PARLANTS, c'est-à-dire les plus éloignés de ce qu'on visait. */
+   une piste de cinquante tronçons de même largeur n'a qu'une valeur —, mais la
+   Z différentielle change à chaque tronçon : cinquante cartouches posés sur
+   cinquante millimètres de cuivre ne se lisent pas. On garde donc les plus
+   PARLANTS, c'est-à-dire les plus éloignés de ce qu'on visait. */
 const SIM_CARTE_MAX_ETIQ=8;
 function simCarteRetenir(parValeur){
   const v=[...parValeur.values()];
   if(v.length<=SIM_CARTE_MAX_ETIQ)return v;
   const quoi=simCarteQuoi();
   const fort=quoi==="z" ? x=>Math.abs((x.valeur||0)-SIM.saisie.cible)
-           : quoi==="zdiff" ? x=>Math.abs((x.valeur||0)-SIM.saisie.cibleDiff)
-           : x=>Math.abs(x.valeur||0);
+                        : x=>Math.abs((x.valeur||0)-SIM.saisie.cibleDiff);
   return v.sort((a,b)=>fort(b)-fort(a)).slice(0,SIM_CARTE_MAX_ETIQ);
 }
 
@@ -3575,8 +3444,8 @@ function simCorpsRetour(){
      poser ici donnerait à croire qu'elles pèsent sur le retour. `simSaisie`
      retombe sur la valeur précédente pour tout champ absent, si bien que
      passer d'un onglet à l'autre ne perd rien. */
-  '<div class="pnl-bar simFAvertBar"><span id="simFAvert"></span></div>'+
-  '<div class="pnl-bar">'+
+  '<div class="pnl-bar simFAvertBar simBarFixe"><span id="simFAvert"></span></div>'+
+  '<div class="pnl-bar simBarFixe">'+
     '<button class="tb mini on" id="simGo" title="Calculer la sélection">▶ Calculer</button>'+
     '<button class="tb mini" id="simJson" title="Le problème lui-même : il se donne au solveur en ligne de commande">.json</button>'+
     '<label class="simSuivre" title="Recalculer à chaque changement de sélection"><input type="checkbox" id="simAuto"> suivre</label>'+
@@ -3709,25 +3578,28 @@ function simFicheRetour(){
 }
 
 /* ==========================================================================
-   IMPÉDANCE DIFFÉRENTIELLE ET DIAPHONIE — DEUX ONGLETS, UNE SEULE SECTION
+   IMPÉDANCE DIFFÉRENTIELLE — UNE SECTION À N CONDUCTEURS, LUE EN OHMS
    --------------------------------------------------------------------------
-   POURQUOI ILS ARRIVENT ENSEMBLE. Ce sont la MÊME section à deux conducteurs,
-   résolue une seule fois par `ligne_mom.solve_multiline` : la matrice de
-   capacité de Maxwell [C], puis [L] = μ₀ε₀[C₀]⁻¹. Les modes pair et impair en
-   sortent — donc Z différentielle et Z commune —, et les coefficients de
-   couplage aussi — donc NEXT et FEXT. Un seul chantier côté solveur, deux
-   questions côté panneau, et il fallait qu'elles soient deux : « ma paire
-   fait-elle 100 Ω ? » et « qu'est-ce que ce bus prend à sa voisine ? » ne se
-   posent pas au même moment et ne se lisent pas dans les mêmes colonnes.
+   CE QUE C'EST. La section à deux conducteurs résolue par
+   `ligne_mom.solve_multiline` : la matrice de capacité de Maxwell [C], puis
+   [L] = μ₀ε₀[C₀]⁻¹. Les modes pair et impair en sortent, donc Z différentielle
+   et Z commune. La question est « ma paire fait-elle 100 Ω, sur toute sa
+   longueur ? », et elle se lit en ohms.
 
-   QUI EST L'AGRESSEUR. Il n'est jamais dans la sélection — c'est la définition
-   même. Les deux outils envoient donc, à côté de la géométrie sélectionnée, le
-   `voisinage` : les tronçons de piste qui passent à portée. Le serveur les
-   apparie (`simulation_em._scenes_paralleles`) : même couche, parallèles à
-   quinze degrés près, un recouvrement réel, et un écart de cuivre à cuivre qui
-   reste un écart. Un outil qui n'envoie pas de voisinage voit les deux onglets
-   le dire, plutôt que d'afficher une page vide qui ressemble à « aucun
-   problème ».
+   CE N'EST PAS LA QUESTION DU COUPLAGE, et les deux ne se lisent pas dans les
+   mêmes colonnes. « Qu'est-ce que ce bus inflige à sa voisine » se lit sous
+   « Crosstalk », en pour-cent, en volts et avec une abscisse le long du
+   parcours. Ici, un couplage n'est pas un défaut : c'est le mode impair d'une
+   paire, celui que le récepteur différentiel rejette.
+
+   OÙ EST L'AUTRE MOITIÉ DE LA PAIRE. Elle n'est pas toujours dans la
+   sélection. Les deux outils envoient donc, à côté de la géométrie
+   sélectionnée, le `voisinage` : les tronçons de piste qui passent à portée.
+   Le serveur les apparie (`simulation_em._scenes_paralleles`) : même couche,
+   parallèles à quinze degrés près, un recouvrement réel, et un écart de
+   cuivre à cuivre qui reste un écart. Un outil qui n'envoie pas de voisinage
+   voit l'onglet le dire, plutôt que d'afficher une page vide qui ressemble à
+   « aucun problème ».
 
    CE QUE CES DEUX ONGLETS NE RELANCENT PAS : le calcul. C'est la même réponse
    du serveur que celle de l'onglet « Impédance » — changer d'onglet ne coûte
@@ -3819,13 +3691,25 @@ function simCoupleSection(sec){
   const ordre=(sec.conducteurs||[]).slice().sort((a,b)=>a.x-b.x);
   const dedans=ordre.map(function(d){
     return (d.selection?"<b>":"")+simEsc(d.net)+(d.selection?"</b>":"")+
+           /* TENUE OU FLOTTANTE : les deux se dessinent pareil dans une coupe,
+              et elles ne font PAS la même chose. Une garde cousue blinde ; une
+              garde qui ne l’est pas transfère, et peut faire pire que pas de
+              garde du tout. La marque est en rouge parce que c’est le seul
+              cuivre de cette fiche qui RASSURE à tort quand on le regarde. */
            (d.garde
-              ? (d.interposee
-                   ? ' <i class="z0ok" title="Du cuivre de masse s’interpose'+
-                     ' entre la sélection et sa voisine : la page a mesuré'+
-                     ' les deux dégagements, et le modèle pose la bande qui'+
-                     ' reste entre les deux à zéro volt.">garde déduite</i>'
-                   : ' <i class="z0ok">garde</i>')
+              ? (d.flottant
+                   ? ' <i class="z0ko" title="Ce cuivre de masse n’est pas assez'+
+                     ' cousu au plan : le plus grand trou entre deux vias y'+
+                     ' atteint '+simNb(d.couture||0,1)+' mm. Il n’est donc pas'+
+                     ' tenu à zéro volt — il est posé FLOTTANT, et il ne blinde'+
+                     ' pas : il transfère.">garde NON COUSUE'+
+                     (d.couture?' ('+simNb(d.couture,1)+' mm)':"")+'</i>'
+                   : (d.interposee
+                      ? ' <i class="z0ok" title="Du cuivre de masse s’interpose'+
+                        ' entre la sélection et sa voisine : la page a mesuré'+
+                        ' les deux dégagements, et le modèle pose la bande qui'+
+                        ' reste entre les deux à zéro volt.">garde déduite</i>'
+                      : ' <i class="z0ok">garde</i>'))
               : "")+
            " <i>"+simNb(d.largeur,3)+" mm @ "+
            (d.x>0?"+":"")+simNb(d.x,3)+"</i>";
@@ -3881,6 +3765,78 @@ function simCoupleHypotheses(){
   let h="";
   for(const t of ((c&&c.hypotheses)||[]))
     h+='<p class="simNote">· '+simEsc(t)+"</p>";
+  return h;
+}
+
+/* ==========================================================================
+   CE QUI LONGE PAR-DESSUS — LE COUPLAGE ENTRE COUCHES
+   --------------------------------------------------------------------------
+   LE SILENCE QU'ON REMPLACE. La section droite du solveur n'a qu'UN plan de
+   conducteurs : elle pose tous ses rubans à la même hauteur et ne sait pas
+   décrire deux pistes superposées. Ces voisines-là étaient donc écartées côté
+   serveur AVANT tout calcul, et disparaissaient sans un mot — ni ligne dans le
+   tableau, ni entrée dans « n'entre pas dans la section », ni avertissement.
+   Un bus routé en parallèle sur deux couches adossées affichait « aucune
+   voisine ne longe » : le pire cas rendu comme le meilleur.
+
+   ON NE LES CHIFFRE TOUJOURS PAS, et ce tableau ne prétend pas le faire : il
+   n'a pas de colonne de bruit, parce qu'il n'y a pas de bruit à mettre dedans.
+   Il porte la GÉOMÉTRIE, qui suffit à dire où regarder — la longueur en
+   regard, le décalage de cuivre à cuivre vu de dessus, et l'épaisseur de
+   diélectrique entre les deux faces. Trois nombres, et le lecteur sait s'il a
+   un problème.
+
+   LES LONGEMENTS QU'UN PLAN SÉPARE NE SONT PAS LISTÉS, ils sont COMPTÉS. Un
+   plan de référence entre deux couches de signal est un écran, et c'est la
+   raison d'être d'un empilage : les lister ferait une alarme sur la moitié des
+   cartes quatre couches, pour un empilage qui fait exactement son travail. Les
+   compter dit « on a regardé », ce qui n'est pas la même chose que se taire.
+   ========================================================================== */
+function simCoupleSuperposes(){
+  const c=simCouplage(); if(!c)return "";
+  const sup=c.superposes||[], blindes=+(c.superposes_blindes||0);
+  /* RIEN AU-DESSUS : on ne dit quelque chose que si l'on a VU quelque chose.
+     Un empilage qui blinde mérite sa phrase — c'est un résultat, pas une
+     absence —, mais une sélection qui n'a personne au-dessus n'a rien à
+     apprendre à personne. */
+  if(!sup.length)
+    return blindes
+      ? '<p class="simNote">· '+blindes+" longement(s) ont été trouvés sur "+
+        "d’AUTRES couches, tous séparés de la sélection par un <b>plan de "+
+        "référence</b> : le plan est un écran, ils ne couplent pas. Rien à "+
+        "chiffrer, et c’est l’empilage qui le vaut.</p>"
+      : "";
+  let h='<p class="simSection"><b>AU-DESSUS ET AU-DESSOUS</b> '+sup.length+
+        " longement"+(sup.length>1?"s":"")+" entre couches, "+
+        "<i>non chiffré"+(sup.length>1?"s":"")+"</i></p>";
+  h+='<table class="simTab simTabC"><tr><th>Net</th><th>Couches</th>'+
+     "<th>en regard</th><th>décalage</th><th>diélectrique</th></tr>";
+  for(const s of sup)
+    h+="<tr><td>"+simEsc(s.net||"?")+"</td>"+
+       "<td>"+simEsc(s.nom_couche||"?")+" <i>sous</i> "+
+       simEsc(s.nom_depuis||"?")+"</td>"+
+       "<td>"+simNb(s.longueur,1)+" mm</td>"+
+       "<td>"+(s.decalage>0?simNb(s.decalage,3)+" mm"
+                          :"<b>0</b> <i>(superposées)</i>")+"</td>"+
+       "<td>"+simNb(s.hauteur,3)+" mm</td></tr>";
+  h+="</table>";
+  h+='<p class="simNote simAlerte">· Ces pistes-là longent la sélection '+
+     "<b>par-dessus ou par-dessous</b>, sans plan entre les deux couches, et "+
+     "leur couplage <b>n’est pas dans les chiffres ci-dessus</b>. Deux pistes "+
+     "superposées couplent souvent PLUS que les mêmes côte à côte, d’autant "+
+     "plus que le diélectrique est mince : tout ce que cette fiche annonce "+
+     "est donc un <b>plancher</b> tant que ces longements existent. Routez "+
+     "ces deux couches en orthogonal, décalez les pistes, ou glissez un plan "+
+     "entre elles.</p>";
+  h+='<p class="simNote">· Le <b>décalage</b> se compte de cuivre à cuivre vu '+
+     "de dessus : zéro veut dire que les deux pistes se chevauchent en "+
+     "projection, ce qui est le pire cas. Le <b>diélectrique</b> est "+
+     "l’épaisseur entre les deux faces en regard, lue dans l’empilage — c’est "+
+     "elle qui décide, pas la distance entre les milieux des deux cuivres.</p>";
+  if(blindes)
+    h+='<p class="simNote">· '+blindes+" autre(s) longement(s) entre couches "+
+       "ont été trouvés mais <b>séparés par un plan de référence</b> : ils ne "+
+       "sont pas listés, parce que le plan les blinde.</p>";
   return h;
 }
 
@@ -3948,109 +3904,6 @@ function simCarteDiffLegende(){
     "voisine — et c’est ainsi qu’on voit où la paire se sépare.</p>";
 }
 
-/* Les entrées peintes sur les VOISINES, tous lots confondus. */
-function simChaleurVoisinsLots(){
-  const out=[];
-  for(const l of simLotsPeints())
-    for(const c of (simChaleurVoisinsRes(l.res)||[]))if(c)out.push(c);
-  return out;
-}
-
-function simCarteBruitLegende(cumul){
-  const b=simBruitBudget(), sens=simSensPeint();
-  const val=c=>Math.abs(simChaleurValeur(c)||0);
-  const sur=simChaleurLots().filter(c=>val(c)>0);
-  const chez=simChaleurVoisinsLots().filter(c=>val(c)>0);
-  if(!sur.length&&!chez.length)
-    return '<p class="simNote">· La carte de chaleur n’a rien à peindre : '+
-      "aucun tronçon de la sélection ne longe de voisine sur assez de "+
-      "longueur pour qu’une section couplée s’y résolve.</p>";
-
-  /* CE QUE LA SÉLECTION INFLIGE, ET À QUI. C'est la question du routage, et
-     c'est le chiffre qu'on cherche en tête : la pire voisine, nommée. */
-  const nets=[...new Set(chez.map(c=>c.net))];
-  let pireNet="", pireChez=0;
-  for(const c of chez)if(val(c)>pireChez){pireChez=val(c);pireNet=c.net;}
-  const pireSur=sur.reduce((t,c)=>Math.max(t,val(c)),0);
-
-  let h='<p class="simSection"><b>SUR LA CARTE</b> '+
-    simEsc(simSensNom(sens))+", tronçon par tronçon. ";
-  h+=chez.length
-    ? "La sélection <b>agresse "+nets.length+" piste"+
-      (nets.length>1?"s":"")+"</b> — au pire <b>"+simNb(100*pireChez,2)+
-      " %</b> sur <b>"+simEsc(pireNet)+"</b>"+
-      (pireChez>b?" <span class=\"z0ko\">au-delà du budget</span>":"")+"."
-    : "Aucune voisine ne reçoit de bruit chiffrable de la sélection.";
-  h+=sur.length
-    ? " La sélection, elle, en <b>prend</b> jusqu’à "+simNb(100*pireSur,2)+
-      " %."
-    : "";
-  h+="</p>";
-
-  h+='<div class="simLegZ">'+
-      '<span><i style="background:'+simBruitCouleur(b*0.05)+'"></i>'+
-        "négligeable</span>"+
-      '<span><i style="background:'+simBruitCouleur(b*0.5)+'"></i>'+
-        "la moitié du budget ("+simNb(SIM.saisie.bruitPct/2,2)+" %) sur ce "+
-        "seul tronçon</span>"+
-      '<span><i style="background:'+simBruitCouleur(b)+'"></i>'+
-        "le budget entier ("+simNb(SIM.saisie.bruitPct,1)+" %)</span>"+
-      '<span><i style="background:rgba(139,145,156,1)"></i>'+
-        "rien ne longe ici</span>"+
-    "</div>";
-
-  /* LA RÈGLE, DITE UNE FOIS. Sans elle, deux cuivres colorés côte à côte se
-     lisent comme une seule grandeur, et l'on chercherait pourquoi l'agresseur
-     est peint lui aussi. */
-  h+='<p class="simNote">· <b>Seules les VOISINES sont graduées</b> : elles '+
-     "portent ce que la sélection leur inflige, et c’est la carte qu’on "+
-     "regarde en routant — « qui est-ce que je dérange, et où sur sa piste ». "+
-     'La sélection, elle, est peinte <span style="color:'+
-     simAgresseurCouleur(1)+'">d’une seule couleur froide</span> : c’est '+
-     "l’<b>agresseur</b>, elle n’est sur aucune échelle. Un chevelu pointillé "+
-     "part d’elle et rejoint chaque étiquette, pour que le sens ne se devine "+
-     "pas.</p>"+
-     /* CE QUE LE GRIS VEUT DIRE MAINTENANT QU’IL PARAÎT SUR LE CUIVRE. La
-        victime est peinte ENTIÈRE : sans cette phrase, ses millimètres gris
-        se liraient comme un bruit faible plutôt que comme « pas de
-        longement ici ». */
-     '<p class="simNote">· <b>Chaque victime est peinte entière</b>, et non '+
-     "par morceaux : ses tronçons grisés ne longent pas la sélection, ils "+
-     "sont là pour qu’on suive la piste d’un bout à l’autre et qu’on voie "+
-     "<b>où</b>, sur elle, le couplage se fabrique. Tout le reste du cuivre "+
-     "— celui qui n’entre dans aucun calcul — est <b>estompé</b> tant que "+
-     "la carte peint : une couleur de couche ne doit pas se lire comme une "+
-     "couleur de chaleur.</p>"+
-     '<p class="simNote">· Ce que la sélection REÇOIT, elle, reste dans le '+
-     "tableau ci-dessous et dans le verdict ci-dessus : c’est lui qui juge. "+
-     "Les deux sens ne sont pas égaux dès que les largeurs diffèrent — le "+
-     "bruit se compte en fraction de l’amplitude de l’agresseur.</p>";
-  h+='<p class="simNote">· La couleur dit <b>OÙ le couplage se fabrique</b>, '+
-     "et non une tension mesurable tronçon par tronçon : le bruit arrière "+
-     "SATURE, et ce qui est étalé est un total saturé. Le poids d’un tronçon "+
-     "vient d’une section à deux conducteurs résolue à SON écart — c’est ce "+
-     "qui fait qu’un demi-millimètre serré ressort devant trois millimètres "+
-     "lâches, ce que la moyenne du tableau ne pouvait pas montrer."+
-     (sens==="pire"
-       ? " Le pire des deux sens ne totalise rien : les deux bruits ne "+
-         "culminent pas au même endroit, et leur maximum tronçon par tronçon "+
-         "peut dépasser le "+simNb(100*cumul,2)+" % cumulé. Choisissez "+
-         "<b>NEXT</b> ou <b>FEXT</b> pour une carte qui totalise exactement "+
-         "sa colonne du tableau."
-       : " Dans ce sens-là, la somme le long de la piste vaut <b>exactement</b>"+
-         " la colonne du tableau.")+"</p>";
-  /* POURQUOI DEUX BOUTONS ET NON UNE CARTE. C'est la seule chose qui explique
-     qu'on ait à choisir, et elle ne se devine pas. */
-  h+='<p class="simNote">· k<sub>arrière</sub> = (k<sub>L</sub>+k<sub>C</sub>)'+
-     "/4 est une <b>somme</b> : le bruit arrière monte franchement dès que "+
-     "les pistes se rapprochent. k<sub>avant</sub> = (k<sub>C</sub>−"+
-     "k<sub>L</sub>)/2 est une <b>différence</b>, et elle cesse de croître "+
-     "quand l’écart devient très serré — k<sub>C</sub> y rattrape "+
-     "k<sub>L</sub>. Les deux bruits ne se fabriquent donc pas au même "+
-     "endroit de la piste, et c’est pour cela que les deux cartes se "+
-     "regardent séparément.</p>";
-  return h;
-}
 
 /* ==========================================================================
    L'ONGLET « Z DIFFÉRENTIELLE »
@@ -4083,7 +3936,7 @@ function simCorpsDiff(){
       'DÉCLARE la paire, et le serveur ne fait plus de différence entre les '+
       'deux."></select>'+
   '</div>'+
-  '<div class="pnl-bar">'+
+  '<div class="pnl-bar simBarFixe">'+
     '<button class="tb mini on" id="simGo" title="Calculer la sélection">▶ Calculer</button>'+
     '<button class="tb mini" id="simJson" title="Le problème lui-même : il se donne au solveur en ligne de commande">.json</button>'+
     '<label class="simSuivre" title="Recalculer à chaque changement de sélection"><input type="checkbox" id="simAuto"> suivre</label>'+
@@ -4290,8 +4143,8 @@ function simFicheDiff(){
      "au plan de symétrie.</p>";
   h+='<p class="simNote">· ε<sub>eff</sub> du mode impair est plus petit que '+
      "celui du mode pair : son champ passe entre les deux pistes, donc par "+
-     "l’air. C’est ce déséquilibre qui fait exister la diaphonie avant — voir "+
-     "l’onglet <b>Diaphonie</b> — et il n’existe pas en triplaque.</p>";
+     "l’air. C’est ce déséquilibre qui fait exister le bruit AVANT (FEXT) — "+
+     "voir l’onglet <b>Crosstalk</b> — et il n’existe pas en triplaque.</p>";
   /* TROIS CONDUCTEURS OU PLUS : Z_diff d'une paire n'a plus de sens tout seul,
      il faut dire ce qu'on a fait des autres. */
   if(((simCouplage().sections||[])[0]||{}).conducteurs &&
@@ -4301,327 +4154,3463 @@ function simFicheDiff(){
        "conducteurs tenus à la masse</b>. C’est une réduction exacte de la "+
        "matrice de Maxwell, mais une piste réellement terminée sur son "+
        "impédance n’est pas une piste à la masse.</p>";
+  /* AVANT LES HYPOTHÈSES, PAS DEDANS : une hypothèse dit ce que le calcul
+     suppose, ce bloc-ci dit ce qu'il a TROUVÉ et laissé de côté. */
+  h+=simCoupleSuperposes();
   h+=simCoupleHypotheses();
   return h;
 }
 
-/* ==========================================================================
-   L'ONGLET « DIAPHONIE »
-   ========================================================================== */
-function simCorpsDiaphonie(){
-  return ''+
-  '<div class="pnl-bar simRefBar" id="simRefBar"></div>'+
-  '<div class="pnl-bar">'+
-    '<span class="pnl-lbl">Temps de montée</span>'+
-    simChamp("simTr","Le front de l'agresseur. Il ne change ni [C] ni [L] : "+
-                     "il décide si le bruit arrière sature, et ce que vaut le "+
-                     "bruit avant. Vide, il est déduit du haut de la bande "+
-                     "(0,35 / f_max).")+
-    simChampUnite("simTrUnite","le temps de montée",SIM_UNITES_TR)+
-    '<span class="pnl-lbl">Amplitude</span>'+
-    simChamp("simSwing","L'amplitude du front agresseur. Elle ne change pas "+
-                        "le calcul : elle convertit un rapport en volts.")+
-    simChampUnite("simSwingUnite","l'amplitude",SIM_UNITES_V)+
-  '</div>'+
-  '<div class="pnl-bar">'+
-    '<span class="pnl-lbl">Budget de bruit</span>'+
-    simChamp("simBruit","Ce qu'on s'autorise, en pourcentage de l'amplitude. "+
-                        "C'est VOTRE budget : le solveur ne le connaît pas, "+
-                        "il ne fait que colorer.")+
-    '<span class="simU">%</span>'+
-    '<span class="simU" id="simBruitAbs">—</span>'+
-  '</div>'+
-  /* QUEL BRUIT LA CARTE PEINT. Les deux ne se fabriquent pas au même endroit
-     — voir `SIM.saisie.sens` —, et aucun des deux ne relance quoi que ce
-     soit : ils sont tous les deux dans le résultat déjà là. */
-  '<div class="pnl-bar">'+
-    '<span class="pnl-lbl">Sur la carte</span>'+
-    simSensBouton("next","NEXT","Le bruit ARRIÈRE, qui remonte vers la "+
-      "source. Il vaut (k_L+k_C)/4 de l'amplitude et SATURE dès que "+
-      "l'aller-retour dure plus qu'un temps de montée. Il monte franchement "+
-      "quand les pistes se rapprochent.")+
-    simSensBouton("fext","FEXT","Le bruit AVANT, qui part avec le signal. Il "+
-      "vaut (k_C−k_L)/2 × T_D/t_r et ne sature pas. Il est NUL en triplaque, "+
-      "et il cesse de croître quand l'écart devient très serré : il ne "+
-      "culmine donc pas au même endroit que le bruit arrière.")+
-    simSensBouton("pire","les deux","Le pire des deux sens, tronçon par "+
-      "tronçon — c'est ce que le verdict juge.")+
-  '</div>'+
-  /* PAS DE FRÉQUENCE ICI NON PLUS — même raison que sous « Z différentielle ».
-     La diaphonie se calcule sur [C] et [L], qui ne dépendent pas de f₀, et sur
-     le TEMPS DE MONTÉE, qui a son champ juste au-dessus. Le champ f₀ affichait
-     ici l'avertissement de bande S — « f₀ 10 MHz est hors de la bande
-     100 MHz – 5 GHz » — qui parle des pertes et des paramètres S de l'onglet
-     Impédance : un avertissement portant sur un calcul qui n'a pas lieu dans
-     cette page, sous des chiffres qu'il ne concerne pas. */
-  '<div class="pnl-bar">'+
+
+/* Les trois boutons du bas, communs aux onglets qui résolvent une section.
+   */
+function simCorpsLancer(){
+  return '<div class="pnl-bar simBarFixe">'+
     '<button class="tb mini on" id="simGo" title="Calculer la sélection">▶ Calculer</button>'+
     '<button class="tb mini" id="simJson" title="Le problème lui-même : il se donne au solveur en ligne de commande">.json</button>'+
     '<label class="simSuivre" title="Recalculer à chaque changement de sélection"><input type="checkbox" id="simAuto"> suivre</label>'+
   '</div>';
 }
 
-/* Un bouton de sens, armé s'il est celui qu'on peint. Il ne relance rien :
-   NEXT et FEXT sont dans le même résultat, seule la couleur change. */
-function simSensBouton(cle,texte,titre){
-  return '<button class="tb mini simSensB'+
-    (simSensPeint()===cle?" on":"")+'" data-simsens="'+cle+'" title="'+
-    simEsc(titre)+'">'+simEsc(texte)+"</button>";
-}
-function simSensBrancher(){
-  for(const b of document.querySelectorAll("[data-simsens]"))
-    b.onclick=function(){
-      SIM.saisie.sens=this.getAttribute("data-simsens");
-      for(const o of document.querySelectorAll("[data-simsens]"))
-        o.classList.toggle("on",
-          o.getAttribute("data-simsens")===simSensPeint());
-      /* RIEN NE SE RELANCE : les deux sens sortent de la même matrice et sont
-         déjà dans le résultat. On réécrit la fiche et l'on repeint. */
-      simRendre(); simRepeindre();
-    };
-}
 
 /* Le budget en clair, dans l'unité de l'amplitude : un budget de 5 % sur un
    signal LVDS de 350 mV vaut 17 mV, et l'écrire en volts n'apprendrait rien. */
 function simBruitAbsEcrire(){
   const el=simEl("simBruitAbs");
   if(!el)return;
-  const u=simUniteV();
-  el.textContent="≤ "+simNb(SIM.saisie.swing*SIM.saisie.bruitPct/100/u.f,
-                            u.f<1?0:3)+" "+u.cle;
+  const s=SIM.saisie;
+  /* L'UNITÉ SUIT L'ORDRE DE GRANDEUR, comme partout ailleurs : 5 % d'un LVDS
+     de 350 mV valent 17,5 mV, et les écrire « 0,018 V » demanderait de
+     compter les zéros pour retrouver le chiffre qu'on compare. */
+  let txt="≤ "+simTension(s.swing*s.bruitPct/100);
+  /* ET IL DIT QUAND IL NE DÉCIDE PLUS RIEN. Une marge remplie REMPLACE le
+     pourcentage ; laisser sa valeur en clair, muette, à côté d'un champ qui ne
+     juge plus ferait chercher lequel des deux a rougi. */
+  if(s.marge>0&&s.swing>0)txt+=" — remplacé par la marge";
+  el.textContent=txt;
 }
 
-function simBrancherDiaphonie(){
+
+/* ==========================================================================
+   LE SEUIL QUI JUGE — POURCENTAGE OU MILLIVOLTS
+   --------------------------------------------------------------------------
+   UN BUDGET EN POURCENTAGE EST UNE CONVENTION ; ce qui fait qu'une carte marche
+   ou non, c'est la MARGE DE BRUIT du récepteur : l'écart entre ce que le driver
+   garantit (V_OL / V_OH) et ce que le récepteur exige (V_IL / V_IH). Un 3,3 V
+   LVCMOS a typiquement 300 à 700 mV de marge basse ; un LVDS à 350 mV
+   d'amplitude n'a pas du tout le même budget qu'un 3,3 V, alors que « 5 % »
+   s'écrit pareil pour les deux.
+
+   ON N'EN GARDE QU'UN SEUL À LA FOIS. Deux seuils concurrents affichés côte à
+   côte seraient pires que pas de seuil : on ne saurait plus lequel a rougi. La
+   marge, remplie, REMPLACE le pourcentage — et la fiche dit lequel des deux
+   elle applique. */
+function simSeuilFraction(){
+  const s=SIM.saisie;
+  /* La marge est en volts, comme l'amplitude. Sans amplitude, on ne peut pas
+     la ramener à une fraction : on retombe alors sur le pourcentage. */
+  if(s.marge>0&&s.swing>0)return s.marge/s.swing;
+  return s.bruitPct/100;
+}
+function simSeuilNom(){
+  const s=SIM.saisie;
+  return (s.marge>0&&s.swing>0)
+    ? "marge "+simNb(s.marge*1e3,0)+" mV"
+    : "budget "+simNb(s.bruitPct,1)+" %";
+}
+
+
+/* ==========================================================================
+   CROSSTALK — OÙ le couplage se fabrique, et non combien il vaut
+   --------------------------------------------------------------------------
+   POURQUOI CETTE SECTION A REMPLACÉ L'ONGLET « DIAPHONIE ». Celui-ci répondait
+   à « combien ma voisine prend-elle » : il résolvait la section droite et
+   rendait un coefficient — UN chiffre par longement. Quand ce chiffre est
+   mauvais, il ne dit pas lequel des quarante millimètres qui longent en est
+   responsable, et c'est pourtant la seule chose dont on ait besoin pour
+   corriger le dessin. Sa carte de chaleur ATTRIBUAIT le bruit aux tronçons au
+   prorata du couplage local ; elle ne le MESURAIT pas le long de la piste.
+   Cette section-ci rend le même « combien » — en pour-cent de l'agresseur, en
+   décibels et en VOLTS sur la victime — et le « où » avec. Deux onglets pour
+   une seule question, répondue par deux physiques, auraient fini par donner
+   deux verdicts qu'on ne saurait pas arbitrer.
+
+   CE QUE CELLE-CI FAIT, ET C'EST UNE AUTRE PHYSIQUE. Les termes croisés de la
+   matrice S d'un réseau multi-ports portent, en fréquence, tout ce que le
+   couplage fait le long du parcours. Leur transformée de Fourier inverse est
+   une réponse impulsionnelle, et le retard s'y convertit en POSITION dès qu'on
+   connaît la vitesse de propagation :
+
+     NEXT = S(victime_proche, agresseur_proche)      trajet aller-retour
+     FEXT = S(victime_lointaine, agresseur_proche)   trajet simple
+
+   C'est la réflectométrie temporelle, appliquée aux termes CROISÉS plutôt qu'à
+   la réflexion.
+
+   LA MATRICE VIENT DU DESIGN, ET DE NULLE PART AILLEURS. Il n'y a rien à
+   importer et rien à choisir : le serveur SYNTHÉTISE le réseau multi-ports à
+   partir de la même section droite que l'onglet Z différentielle, mise en
+   cascade le long du parcours. Le seul geste demandé est de SÉLECTIONNER L'AGRESSEUR ; le
+   reste — victimes, ports, correspondance — se déduit de la géométrie.
+
+   POURQUOI L'IMPORT D'UN .sNp A DISPARU. Il apportait une physique que la
+   section droite ne sait pas décrire, mais il apportait surtout l'ORDRE DE SES
+   PORTS, que rien dans le fichier ne donne : il fallait une table à composer,
+   une case à cocher, et un panneau entier pour l'obtenir — faute de quoi on
+   lisait le couplage d'un couple pour celui d'un autre, sans qu'aucun chiffre
+   ne paraisse anormal. Les ports sont maintenant posés par le serveur : la
+   table qui reste est un COMPTE RENDU, plus une saisie. Le .sNp, lui, reste en
+   SORTIE — pour comparer ailleurs le réseau à ce qu'un solveur pleine onde
+   rendrait de la même géométrie.
+
+   TROIS CHOSES QUE CE PANNEAU NE FAIT JAMAIS EN SILENCE, et elles commandent
+   sa disposition :
+
+     · LES DEUX ÉTAPES ZÉRO restent DEUX TABLEAUX. La présélection géométrique
+       dit ce qui longe, avec sa distance et sa longueur mesurées ; la
+       confirmation par simulation dit ce qui couple, avec son niveau. Une
+       piste absente du résultat est soit LOIN, soit PROCHE ET BLINDÉE, et ce
+       sont deux gestes de routage opposés ;
+     · LA RÉSOLUTION SPATIALE s'affiche À CÔTÉ de la carte. Deux pics plus
+       proches que cette valeur sont un seul pic, quelle que soit la finesse de
+       la courbe à l'écran — et le zero-padding, qui rend visiblement la courbe
+       plus fine, n'y change rien. Une résolution VOULUE se saisit : le serveur
+       dit alors jusqu'à quelle fréquence il faudrait monter pour l'atteindre ;
+     · LE PROFIL D'ESPACEMENT SE SUPERPOSE À LA CARTE, en trait blanc par
+       victime. Il vient de la GÉOMÉTRIE et non du calcul électromagnétique :
+       c'est le seul témoin indépendant que la carte ait. Un pic doit tomber là
+       où les deux pistes se rapprochent ; un pic là où rien ne se resserre est
+       signalé — et si une zone de vigilance tombe au même endroit, ce n'est
+       plus un désaccord mais son EXPLICATION.
+
+   LE PLAN DE MASSE EST À CÔTÉ, ET JAMAIS DEDANS. Son blindage est déjà dans
+   les paramètres S ; ce que le panneau superpose à la carte, ce sont des
+   CAUSES possibles — un pas de couture insuffisant, une fente du plan, un
+   changement de couche sans via de masse. Un pic de couplage à la même
+   abscisse qu'un trou de couture n'est plus un mystère.
+   ========================================================================== */
+
+const SIM_XT_ROUTE="/api/crosstalk";
+const SIM_XT_FORMAT="cao-crosstalk-1";
+
+/* L'état de la section, séparé de celui des quatre autres analyses — comme
+   celui de la chute DC, et pour la même raison : elle a son document, son
+   verrou et son résultat, et un calcul de section en cours ne doit pas bloquer
+   une carte de couplage. */
+const SIM_XT={
+  res:null, occupe:false, err:"", doc:null,
+  /* Quel sens la carte peint. Les deux sont dans le MÊME résultat : en
+     changer ne relance rien. */
+  sens:"next",
+  /* LE PROFIL D'ESPACEMENT SE MONTRE OU SE CACHE, et rien d'autre : il est
+     dans le résultat, le masquer ne relance donc rien non plus. Il est VISIBLE
+     par défaut — c'est le seul témoin indépendant de la carte, et le cacher
+     d'office reviendrait à rendre la courbe de couplage invérifiable pour qui
+     ne saurait pas qu'il existe. */
+  espacement:true,
+  /* LES ZONES À RISQUE SUR LE CUIVRE, allumées par défaut : c'est la réponse
+     qu'on est venu chercher — quel millimètre de CETTE piste reprendre —, et
+     la carte du panneau, elle, répond à « laquelle prend le plus ». Les deux
+     sortent du même calcul ; les cacher d'office ferait chercher à la règle
+     une abscisse qu'on peut montrer. */
+  risques:true,
+  /* LA CHALEUR PEINTE LE LONG DES VICTIMES, allumée par défaut : c'est elle
+     qui a remplacé le ruban schématique du panneau — voir « LA FIGURE » —, et
+     la cacher d'office ferait chercher une carte de chaleur qui ne serait plus
+     nulle part. Elle est dans le résultat, la montrer ou la cacher ne relance
+     donc rien. */
+  chaleur:true,
+  /* CE QUE LA FIGURE MONTRE : les deux sens, et l'unité.
+     --------------------------------------------------------------------
+     TROIS CASES, ET AUCUNE NE RELANCE RIEN. Les deux courbes et les deux
+     unités sont dans le MÊME résultat ; ce qui se règle ici est ce qu'on
+     REGARDE, jamais ce qu'on calcule.
+
+     POURQUOI ÉTEINDRE UN SENS. Les deux graphes ont chacun leur échelle — le
+     FEXT vaut souvent une fraction du NEXT —, et deux échelles l'une sous
+     l'autre se comparent mal : on croit lire deux reliefs quand on lit deux
+     zooms. Quand on suit UN des deux, l'autre prend la moitié de la hauteur
+     pour rien, et la figure entière se resserre dès qu'il s'en va.
+
+     POURQUOI ÉTEINDRE LES VOLTS. Le pour-cent ne dépend que du cuivre ; la
+     tension le multiplie par une amplitude SAISIE. Qui compare deux dessins
+     ne veut que le premier — deux chiffres par case et deux graduations par
+     graphe font alors du bruit sur ce qu'il regarde. Qui prépare une revue
+     de conception veut le second. La case tranche, et le calcul ne bouge
+     pas d'un pour-cent.
+
+     LES DEUX SENS PEUVENT S'ÉTEINDRE ENSEMBLE, et la figure le DIT plutôt
+     que de disparaître : les cases restent au-dessus du message, et il faut
+     un clic pour revenir. Refuser de décocher la dernière se lirait comme
+     une case cassée. */
+  courbes:{next:true, fext:true, volts:true},
+  /* LES VICTIMES ÉTEINTES, PAR NET. Cinq victimes sur une même figure, c'est
+     cinq pistes, dix courbes et cinq lignes de lecture : lisible tant qu'on
+     les regarde toutes, illisible dès qu'on en suit UNE. Décocher n'est donc
+     pas un filtre de confort, c'est ce qui permet de comparer deux victimes
+     sans les confondre. C'est un geste d'AFFICHAGE — le calcul ne bouge pas,
+     les tableaux plus bas gardent tout le monde — et il vaut aussi pour les
+     plages peintes sur le cuivre, sans quoi la carte montrerait une victime
+     que la figure vient d'éteindre. */
+  caches:{},
+  /* Le point que la réglette lit, en fraction du parcours. Il survit aux
+     rendus — sinon il sauterait au milieu à chaque frappe dans un champ. */
+  pos:0.5,
+  saisie:{distance:0, longueur:0, adjacentes:true, bandeAuto:false,
+          seuil:-40, z0:50,
+          fenetre:"kaiser", beta:8.6, pad:4, resolution:0,
+          ecartV:5, asym:6, desaccord:1.25, risque:50,
+          agreger:false, vitesses:""}
+};
+
+/* Les deux sens, et ce que chacun localise vraiment. */
+const SIM_XT_SENS=[
+  {cle:"next", nom:"NEXT",
+   titre:"Le bruit du bout PROCHE de la victime. Il remonte vers la source : "+
+         "ce qui se couple à l'abscisse x y arrive au bout d'un ALLER-RETOUR, "+
+         "d'où x = v·t/2. C'est le seul des deux qui localise en milieu "+
+         "homogène."},
+  {cle:"fext", nom:"FEXT",
+   titre:"Le bruit du bout LOINTAIN. Il CO-PROPAGE avec l'agresseur : à "+
+         "vitesses égales, tout ce qui se couple arrive au même instant, et "+
+         "cette ligne ne localise alors RIEN — elle montre la longueur "+
+         "électrique de la liaison. Elle ne se met à localiser que lorsque "+
+         "les deux vitesses diffèrent, donc en milieu inhomogène."}
+];
+
+const SIM_XT_FENETRES=[
+  {cle:"kaiser", nom:"Kaiser"},
+  {cle:"hann",   nom:"Hann"},
+  {cle:"rect",   nom:"rectangulaire"}
+];
+
+/* Le transport. On réutilise la découverte de serveur de `simConnecter` — c'est
+   le même serveur, et sonder deux fois la même machine pour deux routes qui
+   vivent dans le même processus n'apprendrait rien. Une route absente répond
+   503 en le disant, et c'est ce message-là qu'il faut montrer. */
+async function simXtLancer(doc){
+  await simConnecter();
+  const rep=await fetch(SIM_BASE+SIM_XT_ROUTE,{
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(doc)
+  });
+  if(!rep.ok)throw new Error(await simErreur(rep));
+  const res=await rep.json();
+  if(!res||!res.etape0)throw new Error("Réponse inattendue du serveur.");
+  return res;
+}
+
+/* Les réglages, tels qu'ils partent au serveur. UN SEUL ENDROIT LES TRADUIT :
+   le panneau les tient dans ses unités d'affichage — le pourcentage pour
+   l'écart de vitesse —, le serveur les veut dans les siennes. Deux traductions
+   auraient fini par diverger, et c'est le genre d'écart qui fait qu'un seuil
+   affiché à 5 % en vaut 500 côté calcul. */
+function simXtReglages(){
+  const s=SIM_XT.saisie;
+  /* TOUT PART EN NOMBRE, ET C'EST LE POINT. Un réglage qui filerait en chaîne
+     de caractères — « 0,75 » plutôt que 0.75 — serait lu comme absent côté
+     Python, sans erreur ni message : le calcul tournerait sur le DÉFAUT, et le
+     panneau afficherait le seuil qu'on croit avoir posé. C'est exactement le
+     genre de résultat faux et propre que cette section entière existe pour
+     empêcher. */
+  const n=(v,defaut)=>{
+    const x=parseFloat(v);
+    return isFinite(x)?x:(defaut||0);
+  };
+  const r={
+    distance_max:Math.max(0,n(s.distance)),
+    longueur_min:Math.max(0,n(s.longueur)),
+    couches_adjacentes:!!s.adjacentes,
+    bande_auto:!!s.bandeAuto,
+    seuil_db:n(s.seuil,-40),
+    z0:Math.max(1,n(s.z0,50)||50),
+    fenetre:s.fenetre, kaiser_beta:Math.max(0,n(s.beta,8.6)),
+    zero_pad:Math.max(1,Math.round(n(s.pad,1))||1),
+    /* ZÉRO N'EST PAS UNE RÉSOLUTION : c'est « je n'en demande aucune », et le
+       serveur se contente alors de dire celle qu'il atteint. */
+    resolution_cible:Math.max(0,n(s.resolution)),
+    /* LE POURCENTAGE DEVIENT UNE FRACTION ICI, ET NULLE PART AILLEURS. Le
+       panneau l'affiche en pour-cent parce que c'est ainsi qu'on le pense ; le
+       serveur le veut en fraction. Deux traductions auraient fini par diverger,
+       et un seuil affiché à 5 % en aurait valu 500. */
+    ecart_vitesse_max:Math.max(0,n(s.ecartV,5))/100,
+    asymetrie_db:Math.max(0,n(s.asym,6)),
+    /* SOUS 1, LE SERVEUR REFUSE — c'est un rapport d'espacements, et il
+       signalerait la moitié des pics d'office. On n'écrête pas ici : la saisie
+       part telle quelle, et le refus dit pourquoi. Écrêter en silence ferait
+       calculer sous une règle qu'on ne croit pas avoir posée. */
+    desaccord:n(s.desaccord,1.25),
+    /* LE POUR-CENT DEVIENT UNE FRACTION ICI, comme l'écart de vitesse : le
+       panneau l'affiche en pour-cent du pire point, parce que c'est ainsi
+       qu'on le pense ; le serveur le veut entre zéro et un. */
+    risque:Math.max(0,n(s.risque,50))/100,
+    agreger_agresseurs:!!s.agreger
+  };
+  const v=simXtVitesses();
+  if(Object.keys(v).length)r.vitesses=v;
+  return r;
+}
+
+/* LES VITESSES SAISIES À LA MAIN, écrites « NET=1.5e8 » et séparées par des
+   virgules. C'est le repli quand l'empilage ne suffit pas — une piste dont on
+   connaît la vitesse par la mesure, ou une couche dont le diélectrique n'est
+   pas dans l'empilage. Ce qui n'est pas relisible est IGNORÉ et la fiche le
+   dit : accepter à moitié une ligne mal écrite serait pire que de la refuser. */
+function simXtVitesses(){
+  const out={};
+  for(const bout of String(SIM_XT.saisie.vitesses||"").split(/[,;\n]+/)){
+    const m=bout.match(/^\s*([^=]+?)\s*=\s*([-\d.eE+]+)\s*$/);
+    if(!m)continue;
+    const v=parseFloat(m[2]);
+    if(isFinite(v)&&v>0)out[m[1]]=v;
+  }
+  return out;
+}
+function simXtVitessesRefusees(){
+  return String(SIM_XT.saisie.vitesses||"").split(/[,;\n]+/)
+    .map(s=>s.trim()).filter(s=>s&&!/^[^=]+=\s*[-\d.eE+]+$/.test(s));
+}
+
+function simXtCase(id,texte,titre){
+  return '<label class="simSuivre" title="'+simEsc(titre)+'">'+
+         '<input type="checkbox" id="'+id+'"> '+simEsc(texte)+"</label>";
+}
+
+/* ==========================================================================
+   LES COMMANDES
+   --------------------------------------------------------------------------
+   ELLES SUIVENT L'ORDRE DU CALCUL, et ce n'est pas cosmétique : les deux
+   étapes zéro se règlent avant la transformée, parce qu'elles décident de CE
+   QU'ON SIMULE, et la transformée ne décide que de la façon dont on le lit.
+   Les mélanger ferait chercher le seuil de distance à côté du zero-padding.
+
+   AUCUN CHAMP N'EST OBLIGATOIRE, et un champ vide n'est pas une valeur
+   manquante : c'est « déduis-le ». Les deux seuils de l'étape 0a se déduisent
+   de la largeur de piste et de la hauteur au plan, et la fiche écrit ensuite
+   ce qui a été retenu — c'est la seule façon de régler un seuil sans avoir à
+   deviner d'abord ce qu'il vaut.
+   ========================================================================== */
+function simCorpsCrosstalk(){
+  return ''+
+  '<div class="pnl-bar simRefBar" id="simRefBar"></div>'+
+  /* LA BANDE EN TÊTE, ET CE SONT LES MÊMES CHAMPS QUE L'ONGLET IMPÉDANCE —
+     mêmes identifiants, donc même état, et changer d'onglet ne les perd pas.
+     Elle est ici parce qu'elle DÉCIDE DE LA RÉSOLUTION SPATIALE : c'est le
+     seul réglage de ce panneau dont dépend ce que la carte peut distinguer, et
+     le laisser sous un autre onglet reviendrait à cacher la commande dont on
+     se sert le plus. Le temps de montée l'accompagne : c'est lui, avec le haut
+     de bande, qui fixe le seuil de couture. */
+  '<div class="pnl-bar simBarF">'+
+    '<span class="pnl-lbl">Bande</span>'+
+    '<span class="simSep">→</span>'+
+    simChamp("simF2","Le haut de la bande analysée. La résolution spatiale "+
+      "en découle directement : elle vaut à peu près la vitesse divisée par "+
+      "deux fois cette fréquence, élargie par la fenêtre.")+
+    simChampUnite("simFUniteBande2","la fin de la bande")+
+    '<span class="simGr"><span class="pnl-lbl">Points</span>'+
+    simChamp("simN","Le nombre de points de fréquence. Il fixe la FENÊTRE "+
+      "TEMPORELLE — donc la longueur de piste que la carte peut couvrir — et "+
+      "non la résolution, qui ne dépend que de la bande.")+"</span>"+
+    '<span class="simGr"><span class="pnl-lbl">t<sub>r</sub></span>'+
+    simChamp("simTr","Le front de l'agresseur. Il n'entre PAS dans le "+
+      "couplage : il ne sert qu'au seuil de pas de couture, avec le haut de "+
+      "bande. Vide, il est déduit de la bande.")+
+    simChampUnite("simTrUnite","le temps de montée",SIM_UNITES_TR)+"</span>"+
+    simXtCase("simXtBandeAuto","déduite de la carte",
+      "La bande et le nombre de points se calculent depuis le DESSIN, et "+
+      "s'écrivent ensuite dans les deux champs — ils restent corrigeables. "+
+      "Trois mesures les fixent : le PLUS COURT LONGEMENT donne ce qu'il y a "+
+      "de plus fin à montrer (trois échantillons en travers), la LONGUEUR du "+
+      "parcours donne la fenêtre temporelle donc le nombre de points, et "+
+      "l'ÉPAISSEUR du diélectrique pose le plafond — au-delà de λ/10 dedans, "+
+      "la section droite quasi-TEM ne décrit plus la ligne, et monter encore "+
+      "affine la carte en apparence et la fabrique en réalité. "+
+      "ATTENTION : plus de POINTS n'affine RIEN. Les points allongent la "+
+      "fenêtre (le repliement) ; c'est la BANDE, et elle seule, qui fixe la "+
+      "résolution.")+
+  '</div>'+
+  /* LE SIGNAL, ET C'EST LA SEULE RANGÉE DE CE PANNEAU QUI NE RELANCE RIEN.
+     Partout ailleurs ici, toucher un champ jette le résultat — voir
+     « BRANCHEMENT ». Ces trois-là font exception, et l'exception est motivée :
+     le serveur rend des RAPPORTS — « cette victime prend 0,42 % de son
+     agresseur » —, et une amplitude ne fait que les convertir en volts. Aucun
+     chiffre du calcul ne bouge ; seule l'unité dans laquelle on le lit change.
+     Recalculer trente secondes de matrice S pour écrire 3,3 au lieu de 1,8
+     serait absurde.
+
+     ET C'EST POURTANT LA COLONNE QU'ON LIT. « 0,42 % » ne se compare à rien :
+     ce qui décide qu'une carte marche ou non, c'est l'écart entre le bruit qui
+     arrive sur la victime et la marge de son récepteur, et les deux sont des
+     TENSIONS. Sans amplitude, la fiche entière parle en pourcentages d'une
+     grandeur qu'elle ne nomme jamais. */
+  '<div class="pnl-bar simBarF">'+
+    '<span class="pnl-lbl">Signal</span>'+
+    '<span class="simGr"><span class="pnl-lbl">amplitude</span>'+
+    simChamp("simSwing","L'amplitude du front de l'AGRESSEUR — l'excursion "+
+      "de sa communication, crête à crête : 3,3 V en LVCMOS, 1,8 V en "+
+      "LVCMOS18, 0,35 V en LVDS. Elle ne change RIEN au calcul : le couplage "+
+      "est un rapport, et c'est elle qui le convertit en volts sur les "+
+      "courbes, les cases et la réglette. C'est le seul champ de ce panneau "+
+      "qui ne jette pas le résultat.")+
+    simChampUnite("simSwingUnite","l'amplitude",SIM_UNITES_V)+"</span>"+
+    '<span class="simGr"><span class="pnl-lbl">budget</span>'+
+    simChamp("simBruit","Ce qu'on s'autorise, en pourcentage de l'amplitude. "+
+      "C'est VOTRE convention : le solveur ne la connaît pas, elle ne fait "+
+      "que rendre le verdict. Le crosstalk se compare à elle, et à rien "+
+      "d'autre — un barème maison posé au-dessus d'un calcul honnête serait "+
+      "un chiffre inventé.")+
+    '<span class="simU">%</span>'+
+    '<span class="simU" id="simBruitAbs">—</span></span>'+
+    /* LA MARGE EN MILLIVOLTS, ET C'EST ELLE QUI DÉCIDE VRAIMENT. Un budget en
+       pourcentage est une convention ; ce qui fait qu'une carte marche ou non,
+       c'est la marge entre ce que le driver garantit (V_OL / V_OH) et ce que
+       le récepteur exige (V_IL / V_IH). Remplie, elle REMPLACE le
+       pourcentage — deux seuils concurrents seraient pires que pas de seuil
+       du tout, puisqu'on ne saurait plus lequel a rougi. */
+    '<span class="simGr"><span class="pnl-lbl">ou marge</span>'+
+    simChamp("simMarge","La marge de bruit du récepteur de la VICTIME, en "+
+      "millivolts : l'écart entre ce que son driver garantit (V_OL / V_OH) et "+
+      "ce qu'il exige (V_IL / V_IH). C'est le seuil qui décide réellement. "+
+      "Remplie, elle REMPLACE le budget en pourcentage.")+
+    '<span class="simU">mV</span></span>'+
+  '</div>'+
+  '<div class="pnl-bar simBarF">'+
+    '<span class="pnl-lbl">Présélection</span>'+
+    '<span class="simGr"><span class="pnl-lbl">distance</span>'+
+    simChamp("simXtDist","La distance latérale au-delà de laquelle une piste "+
+      "n'est plus candidate. VIDE = déduite : trois fois le plus grand de la "+
+      "largeur de piste et de la hauteur au plan — la règle 3W vue des deux "+
+      "côtés. Elle MAJORE volontairement ; c'est l'étape 0b qui tranche.")+
+    '<span class="simU">mm</span></span>'+
+    '<span class="simGr"><span class="pnl-lbl">longement mini</span>'+
+    simChamp("simXtLong","En deçà, c'est un croisement et non un longement. "+
+      "VIDE = déduit : trois fois la somme de l'écart et de la hauteur au "+
+      "plan — en deçà, les deux bouts occupent tout le longement et il n'y a "+
+      "plus de ligne uniforme à décrire.")+
+    '<span class="simU">mm</span></span>'+
+    simXtCase("simXtAdj","couches adjacentes",
+      "Deux pistes SUPERPOSÉES couplent souvent PLUS que les mêmes côte à "+
+      "côte. Décoché, on ne regarde que la couche de la sélection — et une "+
+      "voisine d'une autre couche disparaît alors sans un mot, ce qui se lit "+
+      "comme un couplage nul. Celles qu'un plan de référence sépare sont "+
+      "comptées et écartées : le plan est un écran.")+
+  '</div>'+
+  '<div class="pnl-bar simBarF">'+
+    '<span class="pnl-lbl">Confirmation</span>'+
+    '<span class="simGr"><span class="pnl-lbl">seuil</span>'+
+    simChamp("simXtSeuil","En deçà, la piste reste au tableau AVEC son niveau "+
+      "mais n'est ni peinte ni comptée. C'est un couplage, donc une "+
+      "atténuation : le seuil est négatif.")+
+    '<span class="simU">dB</span></span>'+
+    '<span class="simGr"><span class="pnl-lbl">Réf. ports</span>'+
+    simChamp("simXtZ0","L'impédance de référence des ports du réseau "+
+      "synthétisé. Elle ne change pas la physique : elle change la valeur des "+
+      "paramètres S, donc le niveau lu, et c'est pourquoi elle s'affiche.")+
+    '<span class="simU">Ω</span></span>'+
+  '</div>'+
+  '<div class="pnl-bar simBarF">'+
+    '<span class="pnl-lbl">Fenêtre</span>'+
+    '<select class="simU simUSel" id="simXtFen" title="'+simEsc(
+      "Elle écrase le ringing de Gibbs — des lobes de part et d'autre de "+
+      "chaque pic, qui se lisent comme des zones de couplage inexistantes — "+
+      "au prix d'un pic plus large. Kaiser 8,6 élargit d'environ 2,9 ; "+
+      "rectangulaire donne la meilleure résolution et le pire ringing.")+'">'+
+    SIM_XT_FENETRES.map(f=>'<option value="'+f.cle+'">'+f.nom+"</option>")
+      .join("")+"</select>"+
+    '<span class="simGr"><span class="pnl-lbl">β</span>'+
+    simChamp("simXtBeta","Le paramètre de la fenêtre de Kaiser. Plus il est "+
+      "grand, moins il y a de lobes et plus le pic est large.")+
+    '<span class="simU">·</span></span>'+
+    '<span class="simGr"><span class="pnl-lbl">padding</span>'+
+    simChamp("simXtPad","Le zero-padding N'AJOUTE AUCUNE RÉSOLUTION : il "+
+      "interpole entre des points que la bande a déjà fixés. Il sert à poser "+
+      "un pic proprement sur l'axe, pas à en distinguer deux.")+
+    '<span class="simU">×</span></span>'+
+    '<span class="simGr"><span class="pnl-lbl">résolution visée</span>'+
+    simChamp("simXtRes","Facultatif. La finesse que vous VOULEZ sur l'axe "+
+      "des positions. Si la bande ne la permet pas, la fiche dit jusqu'à "+
+      "quelle fréquence il faudrait monter — ce sur quoi on peut agir, alors "+
+      "que « la carte est floue » ne se corrige pas. VIDE = on ne demande "+
+      "rien, et la résolution atteinte s'affiche quand même.")+
+    '<span class="simU">mm</span></span>'+
+  '</div>'+
+  '<div class="pnl-bar simBarF">'+
+    '<span class="pnl-lbl">Lecture</span>'+
+    '<span class="simGr"><span class="pnl-lbl">écart vitesse</span>'+
+    simChamp("simXtEcartV","Au-delà, l'axe de position du FEXT — qui emploie "+
+      "la moyenne des deux vitesses — est signalé comme approché.")+
+    '<span class="simU">%</span></span>'+
+    '<span class="simGr"><span class="pnl-lbl">asymétrie</span>'+
+    simChamp("simXtAsym","Deux victimes du même agresseur qui diffèrent de "+
+      "plus que cela sont relevées. Six décibels est un facteur deux. Ce "+
+      "n'est ALERTÉ que si les profils d'espacement ne l'expliquent pas : un "+
+      "agresseur équidistant de ses deux voisines à tout instant est "+
+      "l'exception, pas la règle.")+
+    '<span class="simU">dB</span></span>'+
+    '<span class="simGr"><span class="pnl-lbl">désaccord</span>'+
+    simChamp("simXtDesac","Le rapport entre l'espacement mesuré AU PIC et "+
+      "l'espacement médian du longement. Au-delà, le pic n'est pas justifié "+
+      "par un resserrement et il est signalé. Plus bas = plus bavard ; sous "+
+      "1, le serveur refuse — la moitié des pics serait signalée d'office.")+
+    '<span class="simU">×</span></span>'+
+    '<span class="simGr"><span class="pnl-lbl">zone à risque</span>'+
+    simChamp("simXtRisque","La fraction du PIRE POINT de chaque victime "+
+      "au-delà de laquelle la portion se peint sur le cuivre. 50 % vaut "+
+      "−6 dB sous son pire point, ce qui sépare une crête de son pied. Plus "+
+      "bas = des zones plus longues ; à 100 %, plus rien ne se peint.")+
+    '<span class="simU">%</span></span>'+
+    simXtCase("simXtAgreger","sommer les agresseurs",
+      "PAR DÉFAUT RIEN NE S'AGRÈGE : deux victimes d'un même agresseur sont "+
+      "deux nets, chacun avec son budget. Coché, PLUSIEURS AGRESSEURS "+
+      "sélectionnés sont sommés EN PHASE vers chaque victime — le cas d'un "+
+      "bus qui commute d'un bloc, et l'hypothèse la plus défavorable.")+
+  '</div>'+
+  '<div class="pnl-bar simBarF">'+
+    '<span class="pnl-lbl">Vitesses</span>'+
+    simChamp("simXtVit","Facultatif, pour forcer la vitesse d'une piste : "+
+      "« CLK=1.5e8, DATA=1.6e8 » en m/s. Ce qui n'est pas écrit est calculé "+
+      "depuis l'empilage, piste par piste — jamais supposé égal à celui de "+
+      "l'agresseur.",true)+
+    '<span class="simU">m/s</span>'+
+  '</div>'+
+  '<div class="pnl-bar simBarFixe">'+
+    '<button class="tb mini on" id="simXtGo" title="Analyser la sélection">▶ Analyser</button>'+
+    '<button class="tb mini" id="simXtCsv" title="La carte, position par position, avec l\'espacement mesuré — pour recouper avec le layout">.csv</button>'+
+    '<button class="tb mini" id="simXtSnp" title="Le réseau multi-ports généré ici, au format Touchstone : une SORTIE, pour le comparer ailleurs">.sNp</button>'+
+    '<button class="tb mini" id="simXtJson" title="Le problème lui-même, rejouable">.json</button>'+
+    '<button class="tb mini" id="simXtRapport" title="Le rapport COMPLET en texte : le verdict, les réserves, les deux tableaux de l\'étape zéro, le recoupement, la validation de la matrice, le plan de référence, les ports et les hypothèses. C\'est ce que la fiche replie — elle montre le verdict et la carte, le fichier garde tout.">rapport</button>'+
+  '</div>';
+}
+
+/* ==========================================================================
+   BRANCHEMENT
+   --------------------------------------------------------------------------
+   TOUS LES RÉGLAGES DU CALCUL PARTENT AU SERVEUR : en toucher un rend le
+   résultat affiché caduc, et le jeter en le disant vaut mieux que de laisser
+   lire des chiffres obtenus sous d'autres règles.
+
+   LA RANGÉE « SIGNAL » EST L'EXCEPTION, ET ELLE EST MOTIVÉE. L'amplitude, le
+   budget et la marge ne décrivent pas le cuivre : ils LISENT ce que le serveur
+   a rendu. Le couplage est un rapport — « 0,42 % de l'agresseur » —, et une
+   amplitude ne fait que le convertir en volts ; un budget ne fait que
+   prononcer. Rien du calcul n'en dépend, et jeter une matrice S pour un
+   chiffre qui ne l'a pas servie serait un recalcul gratuit de trente
+   secondes.
+   Les autres réglages locaux sont le sens peint, le profil d'espacement, la
+   chaleur et les zones — tous DÉJÀ dans le résultat, exactement comme NEXT et
+   FEXT ailleurs.
+   ========================================================================== */
+function simBrancherCrosstalk(){
+  /* LA BANDE ET LE FRONT SONT ÉCRITS PAR LE MÊME CODE QUE PARTOUT AILLEURS
+     (`simSaisieEcrire`) : ce sont les mêmes champs et le même état, et deux
+     écritures pour un seul état auraient fini par afficher deux valeurs
+     différentes de la même fréquence selon l'onglet. */
   simSaisieEcrire();
+  simXtSaisieEcrire();
   simRefEcrire();
   simBruitAbsEcrire();
   const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
-  pose("simGo","onclick",simGo);
-  pose("simJson","onclick",simExportJson);
-  const auto=simEl("simAuto");
-  if(auto){auto.checked=SIM.suivre;
-           auto.onchange=function(){SIM.suivre=this.checked;};}
-  /* L'AMPLITUDE ET LE BUDGET NE CHANGENT PAS LE CALCUL : l'une convertit un
-     rapport en millivolts, l'autre colore. On réécrit la fiche, et voilà. */
-  /* LE BUDGET EST L'ÉCHELLE DE LA CARTE DE CHALEUR : le changer sans
-     repeindre laisserait des couleurs graduées sur l'ancien. */
-  for(const id of ["simSwing","simBruit"])
-    pose(id,"oninput",function(){
-      simSaisie(); simBruitAbsEcrire(); simRendre(); simRepeindre();
-    });
-  simSensBrancher();
-  pose("simTrUnite","onchange",function(){
-    simUniteChanger(this.value,"tr");
-    /* CHANGER L'UNITÉ NE CHANGE PAS LA VALEUR — 150 ps restent 150 ps écrits
-       0,15 ns — donc le résultat affiché reste valable et rien ne se jette. */
+  pose("simXtGo","onclick",simXtGo);
+  pose("simXtCsv","onclick",simXtExportCsv);
+  pose("simXtSnp","onclick",simXtExportSnp);
+  pose("simXtJson","onclick",simXtExportJson);
+  pose("simXtRapport","onclick",simXtExportRapport);
+
+  const jeter=function(quoi){
+    simXtSaisie();
+    if(SIM_XT.res&&!SIM_XT.occupe){
+      SIM_XT.res=null;
+      SIM_XT.err=quoi+" : relancez l'analyse.";
+      simRendre();
+    }
+  };
+  const champs={simF2:"Le haut de bande a changé",
+                simN:"Le nombre de points a changé",
+                simTr:"Le temps de montée a changé",
+                simXtDist:"Le seuil de distance a changé",
+                simXtLong:"Le longement minimal a changé",
+                simXtSeuil:"Le seuil de confirmation a changé",
+                simXtZ0:"L'impédance de référence a changé",
+                simXtBeta:"Le β de la fenêtre a changé",
+                simXtPad:"Le zero-padding a changé",
+                simXtRes:"La résolution visée a changé",
+                simXtEcartV:"Le seuil d'écart de vitesse a changé",
+                simXtAsym:"Le seuil d'asymétrie a changé",
+                simXtDesac:"Le rapport de désaccord a changé",
+                simXtRisque:"Le seuil de zone à risque a changé",
+                simXtVit:"Une vitesse saisie a changé"};
+  for(const id of Object.keys(champs))
+    pose(id,"oninput",function(){jeter(champs[id]);});
+  pose("simXtFen","onchange",function(){jeter("La fenêtre a changé");});
+  /* CHANGER D'UNITÉ CONVERTIT, ÇA NE RÉINTERPRÈTE PAS : la valeur physique ne
+     bouge pas, donc le résultat affiché reste valable et rien ne se jette. */
+  pose("simFUniteBande2","onchange",function(){
+    simUniteChanger(this.value,"bande2");
   });
+  pose("simTrUnite","onchange",function(){simUniteChanger(this.value,"tr");});
+  /* LES TROIS CHAMPS DE SIGNAL NE JETTENT RIEN, et ce sont les seuls du
+     panneau. Ils ne partent pas au serveur : l'amplitude convertit en volts
+     des rapports déjà calculés, le budget et la marge prononcent le verdict.
+     On réécrit la fiche, et voilà. Le budget en clair suit l'amplitude — le
+     laisser en arrière afficherait « ≤ 165 mV » sous une amplitude qui n'est
+     plus celle-là. */
+  for(const id of ["simSwing","simBruit","simMarge"])
+    pose(id,"oninput",function(){
+      simSaisie(); simBruitAbsEcrire(); simRendre();
+    });
   pose("simSwingUnite","onchange",function(){
     simUniteChanger(this.value,"swing");
   });
-  /* LE TEMPS DE MONTÉE, LUI, PART AU SERVEUR : il décide de la saturation du
-     bruit arrière. Le résultat affiché ne lui correspond plus dès qu'il
-     change, et le dire vaut mieux que de laisser croire. */
-  pose("simTr","oninput",function(){
-    simSaisie();
-    if(SIM.res&&!SIM.occupe){
-      SIM.res=null; SIM.objets=[];
-      SIM.err="Le temps de montée a changé : relancez le calcul.";
-      simRendre(); simRepeindre();
-    }
-  });
+  const cases={simXtAdj:["adjacentes","La portée en couches a changé"],
+               simXtBandeAuto:["bandeAuto","La déduction de la bande a changé"],
+               simXtAgreger:["agreger","L'agrégation des agresseurs a changé"]};
+  for(const id of Object.keys(cases))
+    pose(id,"onchange",function(){
+      SIM_XT.saisie[cases[id][0]]=this.checked;
+      jeter(cases[id][1]);
+    });
+  /* PAS DE `simXtSensBrancher()` ICI : au moment où le panneau s'écrit, la
+     fiche ne porte pas encore de carte, donc aucun de ces boutons n'existe.
+     C'est `simRendre` qui les branche, par le crochet `apres`. */
 }
 
-function simRendreDiaphonie(){
-  if(SIM.occupe)
-    return '<p class="simEtat">Le solveur travaille…<br>'+
-      "<small>Une section à deux conducteurs par piste qui longe la "+
-      "sélection, puis NEXT et FEXT par la théorie des lignes "+
-      "multiconducteurs.</small></p>";
-  if(SIM.err)return '<p class="simErr">'+simEsc(SIM.err)+"</p>";
-  if(!SIM.res)
-    return '<p class="simEtat">Sélectionnez la piste VICTIME, puis calculez.'+
-      "<br><small>Les agresseurs sont trouvés tout seuls : ce sont les pistes "+
-      "qui la longent sur sa couche. Le bruit <b>arrière</b> (NEXT) remonte "+
-      "vers la source et sature avec la longueur ; le bruit <b>avant</b> "+
-      "(FEXT) part avec le signal et croît sans saturer — il est nul en "+
-      "triplaque.</small></p>";
-  return simFicheDiaphonie();
+/* LES DEUX SEULS RÉGLAGES QUI NE RELANCENT RIEN : le sens peint et le profil
+   d'espacement. Les deux sont DÉJÀ dans le résultat — le serveur rend NEXT et
+   FEXT ensemble, et le profil avec eux —, donc les montrer ou les cacher est
+   un geste d'affichage et non un calcul. Tout le reste jette le résultat. */
+function simXtSensBrancher(){
+  for(const b of document.querySelectorAll("[data-xtsens]"))
+    b.onclick=function(){
+      SIM_XT.sens=this.getAttribute("data-xtsens");
+      simRendre();
+    };
+  /* LES TROIS CASES DE LA FIGURE. Elles refont la fiche et rien d'autre : le
+     canevas ne les regarde pas — ce qu'il peint dépend des boutons
+     « peindre » et des cases de victimes, pas de ce qui est TRACÉ dans le
+     panneau. Le redessiner pour rien se verrait sur une carte dense. */
+  for(const b of document.querySelectorAll("[data-xtvoir]"))
+    b.onchange=function(){
+      if(!SIM_XT.courbes)SIM_XT.courbes={next:true, fext:true, volts:true};
+      SIM_XT.courbes[this.getAttribute("data-xtvoir")]=this.checked;
+      simRendre();
+    };
+  const e=simEl("simXtVoirEsp");
+  if(e)e.onclick=function(){
+    SIM_XT.espacement=!SIM_XT.espacement;
+    simRendre();
+  };
+  const z=simEl("simXtVoirRisques");
+  if(z)z.onclick=function(){
+    SIM_XT.risques=!SIM_XT.risques;
+    /* ELLE VIT SUR LA CARTE, PAS DANS LE PANNEAU : il faut repeindre le
+       canevas, pas seulement refaire la fiche. */
+    simRendre();
+    if(SIM_ED&&typeof SIM_ED.redessiner==="function")SIM_ED.redessiner();
+  };
+  /* LA RÉGLETTE NE REFAIT PAS LA FICHE, et c'est tout son intérêt : elle
+     déplace un trait, quelques cercles et deux lignes de texte. Un rendu
+     complet par cran serait un panneau entier réécrit à chaque pixel
+     parcouru — la courbe des paramètres S évite déjà exactement cela. */
+  const ch=simEl("simXtVoirChaleur");
+  if(ch)ch.onclick=function(){
+    SIM_XT.chaleur=!SIM_XT.chaleur;
+    /* ELLE VIT SUR LA CARTE, PAS DANS LE PANNEAU : il faut repeindre le
+       canevas, et refaire la fiche pour que le bouton change d'état. */
+    simRendre();
+    if(SIM_ED&&typeof SIM_ED.redessiner==="function")SIM_ED.redessiner();
+  };
+  const g=simEl("simXtPos");
+  if(g)g.oninput=function(){simXtCurseurPoser(+this.value);};
+  /* COCHER, EN REVANCHE, REFAIT LA FICHE. Éteindre une victime change les
+     voies du schéma, l'échelle des deux graphes et la lecture chiffrée : tout
+     est à redessiner, et le résultat, lui, ne bouge pas. Le canevas suit —
+     les plages peintes sur le cuivre sont les mêmes victimes. */
+  for(const b of document.querySelectorAll("[data-xtvic]"))
+    b.onchange=function(){
+      const net=this.getAttribute("data-xtvic");
+      if(!SIM_XT.caches)SIM_XT.caches={};
+      /* ON ÉCRIT LES DEUX ÉTATS, jamais un oubli : « montrée à la main » et
+         « jamais touchée » ne veulent pas dire la même chose depuis qu'une
+         candidate sous le seuil s'allume ou non selon le reste de la fiche. */
+      SIM_XT.caches[net]=!this.checked;
+      simRendre();
+      if(SIM_ED&&typeof SIM_ED.redessiner==="function")SIM_ED.redessiner();
+    };
 }
 
-/* Le bruit d'un longement, en fraction de l'amplitude : le pire des deux
-   sens. C'est lui qui juge et qui trie — on ne se demande pas « lequel des
-   deux », on se demande « combien ». */
-/* Le bruit d'un longement, en fraction de l'amplitude : le pire des deux
-   sens. C'est lui qui juge et qui trie — on ne se demande pas « lequel des
-   deux », on se demande « combien ». C'est le bruit REÇU qui juge : c'est ce
-   que la piste sélectionnée subit, et c'est la question qu'on pose en la
-   sélectionnant. Ce qu'elle émet est affiché à côté, et compté à part. */
-function simBruitPire(f){
-  return Math.max(Math.abs(f.next||0),Math.abs(f.fext||0));
+/* LES CHAMPS SONT LUS EN NOMBRES, PAS EN TEXTE, et l'état ne contient QUE des
+   nombres. C'est la même règle que `simSaisie` : la virgule décimale est une
+   affaire d'affichage, et laisser une chaîne « 0,75 » filer jusqu'au JSON
+   envoyé au serveur donnerait un réglage que Python lit comme absent — sans
+   erreur, sans message, avec le seuil par défaut à la place de celui qu'on
+   croit avoir posé.
+
+   UN CHAMP VIDE N'EST PAS UNE SAISIE ILLISIBLE : c'est une INTENTION, et elle
+   vaut zéro pour les deux seuils de l'étape 0a — « déduis-le ». Une saisie
+   illisible, elle, retombe sur la valeur précédente. */
+function simXtSaisie(){
+  const lu=(id,defaut,videZero)=>{
+    const e=simEl(id);
+    if(!e)return defaut;
+    const txt=String(e.value).trim();
+    if(!txt)return videZero?0:defaut;
+    const v=parseFloat(txt.replace(",","."));
+    return isFinite(v)?v:defaut;
+  };
+  const s=SIM_XT.saisie;
+  s.distance=lu("simXtDist",s.distance,true);
+  s.longueur=lu("simXtLong",s.longueur,true);
+  s.seuil=lu("simXtSeuil",s.seuil);
+  s.z0=lu("simXtZ0",s.z0);
+  s.beta=lu("simXtBeta",s.beta);
+  s.pad=lu("simXtPad",s.pad);
+  s.resolution=lu("simXtRes",s.resolution,true);
+  s.ecartV=lu("simXtEcartV",s.ecartV);
+  s.asym=lu("simXtAsym",s.asym);
+  s.desaccord=lu("simXtDesac",s.desaccord);
+  s.risque=lu("simXtRisque",s.risque);
+  const v=simEl("simXtVit");
+  if(v)s.vitesses=v.value;
+  const f=simEl("simXtFen");
+  if(f)s.fenetre=f.value;
+  return s;
 }
-function simBruitEmis(f){
-  const e=f.emis||{};
-  return Math.max(Math.abs(e.next||0),Math.abs(e.fext||0));
-}
-/* LE SIGNE SE GARDE, EN POURCENTAGE COMME EN MILLIVOLTS. Un bruit avant
-   négatif n'est pas un bruit avant plus petit : c'est un creux là où le front
-   monte, et c'est ce qui décide s'il s'ajoute au bruit arrière ou l'annule. Le
-   VERDICT, lui, ne juge que l'amplitude — un budget n'a pas de signe. */
-/* Le bruit en tension, dans l'unité choisie pour l'amplitude. */
-function simBruitTension(valeur){
-  const u=simUniteV();
-  return simNb(SIM.saisie.swing*valeur/u.f,u.f<1?0:3)+" "+u.cle;
-}
-/* UNE CELLULE, DEUX SENS. « Ce que ma piste prend » et « ce que ma piste
-   envoie » ne sont pas la même chose dès que les deux pistes n'ont pas la même
-   largeur : le bruit se compte en fraction de l'amplitude de L'AGRESSEUR et se
-   rapporte à ses termes propres. Le premier chiffre est celui qui juge — c'est
-   la question qu'on pose en sélectionnant une piste — et le second est là pour
-   qu'on n'ait pas à resélectionner la voisine pour l'obtenir. */
-function simBruitCellule(recu,emis,budget){
-  return '<span class="'+(Math.abs(recu)>budget?"z0ko":"z0ok")+'">'+
-    simNb(100*recu,2)+" %</span>"+
-    "<small>reçu "+simBruitTension(recu)+"</small>"+
-    '<small class="simEmis">émis '+simNb(100*emis,2)+" %</small>";
-}
 
-function simFicheDiaphonie(){
-  const paires=simCouplagePaires();
-  if(!paires.length)return simCouplageVide("qu’un couplage se chiffre");
-
-  const c=simCouplage();
-  const budget=SIM.saisie.bruitPct/100;
-  const fautifs=paires.filter(f=>simBruitPire(f)>budget);
-  /* LE CUMUL, ET IL N'EST PAS DÉCORATIF. Trois agresseurs à 3 % chacun font
-     un budget de bruit crevé alors qu'aucune ligne du tableau n'est en rouge.
-     La somme est le PIRE CAS -- les trois fronts simultanés et dans le même
-     sens --, et c'est ce qu'on dimensionne. */
-  const cumul=paires.reduce((t,f)=>t+simBruitPire(f),0);
-
-  let h='<p class="simVerdict '+(cumul>budget?"dehors":"dedans")+'">'+
-    (fautifs.length
-      ? fautifs.length+" agresseur"+(fautifs.length>1?"s":"")+" au-dessus du budget"
-      : (cumul>budget
-          ? "Aucun agresseur seul ne crève le budget, mais leur somme si"
-          : (paires.length>1
-              ? "Les "+paires.length+" longements tiennent dans le budget"
-              : "Le longement tient dans le budget")))+
-    ' <span>'+simNb(100*cumul,2)+" % cumulé · budget "+
-    simNb(SIM.saisie.bruitPct,1)+" %</span></p>";
-
-  const ut=simUniteTr();
-  h+='<div class="simMeta"><span>'+simEsc(SIM.portee||"—")+"</span>"+
-     "<span>front "+simNb((c.temps_montee||0)/ut.f,ut.f<1e-9?0:3)+" "+ut.cle+
-     " <small>("+simEsc(c.temps_montee_source||"")+")</small></span>"+
-     "<span>amplitude "+simNb(SIM.saisie.swing/simUniteV().f,
-                              simUniteV().f<1?0:2)+" "+simUniteV().cle+
-     "</span></div>";
-
-  h+=simCoupleSections();
-  h+=simCarteBruitLegende(cumul);
-
-  h+='<table class="simTab simTabC"><tr><th>Agresseur</th>'+
-     "<th>Longement</th><th>Arrière (NEXT)</th><th>Avant (FEXT)</th>"+
-     "<th>k<sub>C</sub> / k<sub>L</sub></th><th>Saturation</th></tr>";
-  for(const f of paires){
-    if(f.raison){
-      h+="<tr><td>"+simEsc(f.net_voisin||"?")+"</td><td>"+simCoupleGeom(f)+
-         '</td><td colspan="4" class="simFaible">'+simEsc(f.raison)+"</td></tr>";
-      continue;
-    }
-    const e=f.emis||{};
-    h+="<tr><td>"+simEsc(f.net_voisin||"?")+
-       (f.differentielle?' <small class="z0ok">paire</small>':"")+
-       '<br><small class="simFaible">'+
-       simEsc(f.nom_couche||("couche "+f.couche))+" · "+simEsc(f.cote||"")+
-       "</small></td>"+
-       "<td>"+simCoupleGeom(f)+"</td>"+
-       "<td>"+simBruitCellule(f.next,e.next||0,budget)+"</td>"+
-       "<td>"+simBruitCellule(f.fext,e.fext||0,budget)+"</td>"+
-       "<td>"+simNb(f.k_c,4)+" / "+simNb(f.k_l,4)+"</td>"+
-       "<td>"+(f.sature
-                ? '<span class="z0ko">atteinte</span><br><small>dès '+
-                  simNb(f.longueur_saturation,1)+" mm</small>"
-                : '<span class="z0ok">non</span><br><small>plafond à '+
-                  simNb(f.longueur_saturation,1)+" mm</small>")+
-       "</td></tr>";
+function simXtSaisieEcrire(){
+  const s=SIM_XT.saisie;
+  const met=(id,v)=>{const e=simEl(id);if(e)e.value=v;};
+  /* LES DEUX SEUILS DE L'ÉTAPE 0a RESTENT VIDES QUAND ILS VALENT ZÉRO : zéro
+     n'est pas une distance, c'est « déduis-la ». Y écrire 0 ferait croire à un
+     seuil nul, donc à une présélection qui ne retiendrait rien. */
+  met("simXtDist",s.distance?simNbLibre(s.distance):"");
+  met("simXtLong",s.longueur?simNbLibre(s.longueur):"");
+  met("simXtSeuil",simNbLibre(s.seuil));
+  met("simXtZ0",simNbLibre(s.z0));
+  met("simXtBeta",simNbLibre(s.beta));
+  met("simXtPad",String(Math.round(s.pad)));
+  /* MÊME RÈGLE QUE LES SEUILS DE L'ÉTAPE 0a : zéro n'est pas une résolution,
+     c'est « je n'en demande aucune ». L'écrire ferait croire à une exigence
+     de zéro millimètre, que rien ne peut tenir. */
+  met("simXtRes",s.resolution?simNbLibre(s.resolution):"");
+  met("simXtEcartV",simNbLibre(s.ecartV));
+  met("simXtAsym",simNbLibre(s.asym));
+  met("simXtDesac",simNbLibre(s.desaccord));
+  met("simXtRisque",simNbLibre(s.risque));
+  met("simXtVit",s.vitesses||"");
+  const f=simEl("simXtFen");
+  if(f)f.value=s.fenetre;
+  for(const [id,cle] of [["simXtAdj","adjacentes"],
+                         ["simXtBandeAuto","bandeAuto"],
+                         ["simXtAgreger","agreger"]]){
+    const e=simEl(id);
+    if(e)e.checked=!!s[cle];
   }
-  h+="</table>";
+}
 
-  /* LES DEUX SENS, DITS UNE FOIS SOUS LE TABLEAU. Sans cette phrase, « reçu »
-     et « émis » se lisent comme deux mesures du même bruit, et l'on chercherait
-     pourquoi elles diffèrent. */
-  h+='<p class="simNote">· <b>Reçu</b> est ce que la sélection SUBIT, et c’est '+
-     "lui qui juge : c’est la question qu’on pose en sélectionnant une piste. "+
-     "<b>Émis</b> est ce qu’elle INJECTE dans la voisine — même matrice, "+
-     "agresseur et victime échangés. Les deux ne sont égaux que si les deux "+
-     "pistes ont la même largeur : le bruit se compte en fraction de "+
-     "l’amplitude de l’agresseur, et se rapporte à ses termes propres. Une "+
-     "piste large qui agresse une piste fine ne reçoit pas d’elle ce qu’elle "+
-     "lui envoie.</p>";
-  /* CE QUE LA SÉLECTION FAIT SUBIR AUX AUTRES, quand elle-même n’en souffre
-     pas. C’est le cas qu’aucun verdict ne voit : la fiche juge ce que la piste
-     REÇOIT, et une piste large qui arrose une voisine fine peut crever le
-     budget de la voisine sans rien sentir. Le dire ici, ou personne ne le
-     dira. */
-  const pireEmis=paires.reduce((t,f)=>Math.max(t,simBruitEmis(f)),0);
-  const pireRecu=paires.reduce((t,f)=>Math.max(t,simBruitPire(f)),0);
-  if(pireEmis>budget&&pireEmis>pireRecu+1e-9)
-    h+='<p class="simNote simAlerte">· La sélection ÉMET jusqu’à '+
-       simNb(100*pireEmis,2)+" % — au-dessus du budget, alors qu’elle n’en "+
-       "reçoit que "+simNb(100*pireRecu,2)+" %. Le défaut est réel, mais il "+
-       "est chez la voisine : c’est elle qu’il faut sélectionner pour le voir "+
-       "jugé.</p>";
-
-  /* CE QU'ON PEUT FAIRE, ET DANS QUEL ORDRE. Une fiche qui chiffre un problème
-     sans dire sur quoi agir se lit une fois. Les trois leviers sont ceux que
-     les chiffres du tableau désignent eux-mêmes. */
-  if(fautifs.length||cumul>budget){
-    const pire=paires[0];
-    h+='<p class="simNote simAlerte">· Le pire est <b>'+
-       simEsc(pire.net_voisin||"?")+"</b> : "+simNb(100*simBruitPire(pire),2)+
-       " % sur "+simNb(pire.longueur,1)+" mm à "+simNb(pire.ecart,3)+" mm. "+
-       (pire.sature
-         ? "Le bruit arrière est SATURÉ — le raccourcir n’aidera qu’en deçà de "+
-           simNb(pire.longueur_saturation,1)+" mm. Écarter les deux pistes, "+
-           "ou poser une piste de garde à la masse entre elles, est ce qui "+
-           "reste."
-         : "Le bruit arrière n’est pas encore saturé : le raccourcir paie "+
-           "encore, proportionnellement.")+"</p>";
+/* ==========================================================================
+   LE PROBLÈME, ET SON ENVOI
+   ========================================================================== */
+/* L'outil décrit le cuivre ; ce fichier n'y touche pas. `problemeCrosstalk`
+   est FACULTATIF dans l'adaptateur : un outil qui ne le déclare pas voit
+   l'onglet dire pourquoi il ne calcule pas, plutôt qu'une page vide. C'est la
+   même règle que `cuivreDC` pour l'analyse de chute. */
+function simXtProbleme(){
+  if(!SIM_ED||typeof SIM_ED.problemeCrosstalk!=="function"){
+    SIM_XT.err="Cet outil ne sait pas décrire de problème de crosstalk.\n"+
+      "Il lui faut, en plus de la géométrie : les positions des vias de "+
+      "couture le long du parcours, les discontinuités du plan de référence, "+
+      "et les vias de masse. Sans eux, les contrôles de plan de masse ne "+
+      "diraient rien — et une liste vide se lit « rien à signaler ».";
+    return null;
   }
-  h+='<p class="simNote">· <b>Arrière</b> (NEXT) : il remonte vers la source, '+
-     "vaut (k<sub>L</sub>+k<sub>C</sub>)/4 de l’amplitude, et <b>sature</b> "+
-     "dès que l’aller-retour dure plus qu’un temps de montée. <b>Avant</b> "+
-     "(FEXT) : il part avec le signal, vaut (k<sub>C</sub>−k<sub>L</sub>)/2 "+
-     "× T<sub>D</sub>/t<sub>r</sub>, et ne sature pas. En microruban "+
-     "k<sub>L</sub> &gt; k<sub>C</sub> : le bruit avant est de signe opposé "+
-     "au front, et il est <b>nul en triplaque</b>, où le milieu est "+
-     "homogène.</p>";
-  h+='<p class="simNote">· Le pourcentage cumulé additionne le pire des deux '+
-     "sens de chaque agresseur : c’est le cas où tous commutent en même temps "+
-     "et dans le même sens. C’est ce qu’on dimensionne, et non la moyenne.</p>";
-  h+=simCoupleHypotheses();
+  const p=SIM_ED.problemeCrosstalk(simSaisie());
+  if(!p||p.erreur){
+    SIM_XT.err=((p&&p.erreur)||"Rien à analyser.")+
+               ((p&&p.conseil)?"\n"+p.conseil:"");
+    return null;
+  }
+  const doc=p.doc;
+  doc.format=SIM_XT_FORMAT;
+  doc.source=SIM_ED.outil||"";
+  doc.reference_nets=simRefListe();
+  doc.reglages=simXtReglages();
+  /* RIEN D'AUTRE N'ENTRE ICI, et surtout aucune matrice : le serveur refuse
+     un document qui porterait un `touchstone`, des `ports` ou un
+     `mapping_confirme`. Le refus est délibéré — ignorer ces champs ferait
+     croire à la page que son fichier a été calculé, alors que la carte
+     viendrait d'ailleurs. */
+  SIM_XT.err="";
+  return p;
+}
+
+/* Oublier le résultat de crosstalk, et dire s'il y en avait un.
+
+   LES RÉGLAGES SURVIVENT, la CARTE non : elle décrit un parcours, et changer
+   de sélection change le parcours. */
+function simXtOublier(){
+  const avait=!!SIM_XT.res;
+  SIM_XT.res=null; SIM_XT.doc=null;
+  return avait;
+}
+
+async function simXtGo(){
+  if(SIM_XT.occupe)return;
+  SIM_XT.res=null; SIM_XT.err=""; simRendre();
+  const p=simXtProbleme();
+  if(!p){simRendre();return;}
+  SIM_XT.occupe=true; simRendre();
+  try{
+    const res=await simXtLancer(p.doc);
+    SIM_XT.res=res; SIM_XT.doc=p.doc; SIM_XT.portee=p.portee||"";
+    /* LA BANDE DÉDUITE REVIENT DANS LES CHAMPS. Un réglage calculé ailleurs et
+       jamais montré est un réglage qu'on ne peut pas contredire : on lirait
+       « 59 GHz » sous la carte et « 5 GHz » dans le panneau, et l'on croirait
+       à un bug. Écrite ici, elle se corrige à la main comme n'importe quelle
+       autre — décocher la case fige simplement la dernière déduction.
+       ÉCRITURE DIRECTE, SANS `oninput` : jeter le résultat qu'on vient de
+       recevoir parce qu'on affiche ses propres réglages serait absurde. */
+    if(res&&res.bande_deduite){
+      SIM.saisie.f2=res.bande_deduite.f_max;
+      SIM.saisie.points=res.bande_deduite.points;
+      simSaisieEcrire();
+    }
+  }catch(e){
+    SIM_XT.err=e.message||String(e);
+  }finally{
+    SIM_XT.occupe=false;
+    simRendre();
+  }
+}
+
+/* ==========================================================================
+   LA FICHE
+   --------------------------------------------------------------------------
+   L'ORDRE DE LECTURE EST CELUI DE LA CONFIANCE, et il est l'inverse de l'ordre
+   du calcul. Ce qui pourrait rendre tout le reste faux vient EN PREMIER — une
+   matrice non passive, une bande trop étroite, un couplage vertical que le
+   réseau ne sait pas modéliser —, ensuite la carte et son recoupement avec la
+   géométrie, ensuite les deux tableaux qui disent ce qui a été regardé, et les
+   hypothèses en dernier. Mettre la carte en tête ferait lire de belles
+   couleurs avant d'apprendre qu'elles ne veulent rien dire.
+   ========================================================================== */
+function simRendreCrosstalk(){
+  if(SIM_XT.occupe)
+    return '<p class="simEtat">Le serveur travaille…<br>'+
+      "<small>Présélection géométrique, profils d'espacement, puis matrice S "+
+      "multi-ports synthétisée, puis transformée vers l'axe de "+
+      "position.</small></p>";
+  if(SIM_XT.err&&!SIM_XT.res)
+    return '<p class="simErr">'+simEsc(SIM_XT.err)+"</p>";
+  if(!SIM_XT.res)
+    return '<p class="simEtat">Sélectionnez la piste AGRESSEUR, puis '+
+      "analysez.<br><small>C'est le seul geste demandé : ses victimes sont "+
+      "trouvées toutes seules, les ports posés tout seuls, et la carte dit "+
+      "<b>où</b>, le long du parcours, le couplage se fabrique — là où "+
+      "les tableaux disent <b>combien</b> il vaut, en pour-cent comme en "+
+      "volts. Le réseau multi-ports est synthétisé à partir du DESIGN : il n'y "+
+      "a aucun fichier à importer.</small></p>";
+  const r=SIM_XT.res;
+  let h="";
+  if(SIM_XT.err)h+='<p class="simErr">'+simEsc(SIM_XT.err)+"</p>";
+  /* TROIS CHOSES À L'ÉCRAN, ET LE RESTE SE DÉPLIE. Le verdict, ce qui le rend
+     douteux, la carte. Une fiche qui déroule tout met la matrice non passive
+     et un écart de vitesse de 0,3 % sur la même ligne, et se lit alors en
+     diagonale — c'est-à-dire pas du tout. Ce qui a été regardé ne DISPARAÎT
+     pas pour autant : chaque bloc est là, replié, et le bouton « rapport »
+     l'écrit en entier dans un fichier. */
+  h+=simXtResume(r);
+  h+=simXtActions(r);
+  h+=simXtReserves(r);
+  h+=simXtCarte(r);
+  h+=simXtRepli("Le recoupement, pic par pic",simXtDesaccords(r))+
+     simXtRepli("Étape 0a — ce qui longe, et ce qui a été écarté",
+                simXtTableauCandidats(r))+
+     simXtRepli("Étape 0b — ce qui couple, victime par victime",
+                simXtTableauCouples(r))+
+     simXtRepli("Tous les avertissements",simXtAvertissements(r))+
+     simXtRepli("Ce que la matrice vérifie",simXtValidation(r))+
+     simXtRepli("Le plan de référence",simXtMasse(r))+
+     /* CES DEUX-LÀ SE REPLIENT DÉJÀ TOUT SEULS : les envelopper une seconde
+        fois demanderait deux clics pour un seul contenu. */
+     simXtMapping(r)+simXtHypotheses(r);
   return h;
+}
+
+/* UN BLOC REPLIÉ. Vide, il ne pose même pas son titre : un dépliant qui ne
+   contient rien se déplie une fois, et l'on cesse d'ouvrir les autres. */
+function simXtRepli(titre,corps){
+  if(!corps)return "";
+  return '<details class="simXtHyp"><summary>'+simEsc(titre)+
+         "</summary>"+corps+"</details>";
+}
+
+/* ==========================================================================
+   LE RÉSUMÉ, ET CE QU'IL A LE DROIT DE DIRE
+   --------------------------------------------------------------------------
+   LA SEULE CONVENTION EST CELLE DE L'UTILISATEUR. Un niveau de risque tiré
+   d'un barème maison — « au-delà de −20 dB c'est grave » — serait un chiffre
+   inventé posé au-dessus d'un calcul honnête, et c'est exactement le genre de
+   verdict qu'on refuse ailleurs dans cette section. On compare donc le
+   couplage au BUDGET DE BRUIT que l'utilisateur s'est donné dans la rangée
+   « Signal », et la fiche dit d'où il vient. Le reste est arithmétique : un
+   couplage en décibels EST un rapport, −26 dB valent 5 % de l'agresseur, et
+   cela ne demande de connaître ni l'amplitude ni la technologie.
+
+   ET IL SE DIT EN VOLTS, PARCE QUE C'EST CE QUI SE VÉRIFIE. Le pour-cent est
+   la mesure ; ce qu'une revue de conception compare à une fiche technique,
+   c'est une tension. L'amplitude saisie dans la rangée « Signal » convertit
+   l'un en l'autre, et la MARGE en millivolts — quand elle est remplie —
+   remplace le budget en pourcentage : deux seuils concurrents seraient pires
+   que pas de seuil du tout, puisqu'on ne saurait plus lequel a rougi.
+
+   LE VERDICT PORTE SES RÉSERVES. Quand un avertissement grave est levé — la
+   matrice n'est pas passive, la fenêtre replie, la carte ne localise rien —,
+   le niveau s'affiche « sous réserve » et les réserves sont juste dessous. Un
+   niveau seul, sur un calcul dont on sait qu'il est faussé, serait le pire
+   affichage de tout l'outil.
+   ========================================================================== */
+function simXtRatio(db){
+  return Math.pow(10,db/20);
+}
+function simXtNiveau(r){
+  const conf=(r.couples||[]).filter(c=>c.confirmee);
+  if(!conf.length)
+    return {cle:"aucun", nom:"AUCUN COUPLE CONFIRMÉ", pire:null, ratio:0,
+            volts:0, budget:simSeuilFraction(), seuil:simSeuilNom()};
+  let pire=conf[0];
+  for(const c of conf)if(c.pire_db>pire.pire_db)pire=c;
+  const ratio=simXtRatio(pire.pire_db);
+  /* LE SEUIL VIENT D'ICI ET DE NULLE PART AILLEURS — `simSeuilFraction` : la
+     marge du récepteur en millivolts quand elle est saisie, le budget en
+     pourcentage sinon. Un barème maison — « au-delà de −20 dB c'est grave » —
+     serait un chiffre inventé posé au-dessus d'un calcul honnête. */
+  const budget=Math.max(1e-6,simSeuilFraction());
+  const cle=ratio>budget?"haut":(ratio>budget/2?"surveiller":"sous");
+  return {cle:cle, pire:pire, ratio:ratio, budget:budget,
+          /* LE MÊME PIRE, EN VOLTS. C'est le chiffre qu'on porte en revue de
+             conception : « 14 mV sur VIC_G » se compare à une fiche technique,
+             « 0,42 % » ne se compare à rien. */
+          volts:ratio*(SIM.saisie.swing||0), seuil:simSeuilNom(),
+          nom:cle==="haut"?"AU-DESSUS DU BUDGET"
+             :cle==="surveiller"?"À SURVEILLER"
+             :"SOUS LE BUDGET"};
+}
+
+/* LA MÉTHODE EN UNE LIGNE, AVEC LES CHIFFRES DE CE CALCUL-CI. Pas une phrase
+   de brochure : la bande, le nombre de points et la fenêtre sont ceux qui ont
+   servi, et c'est ce qui permet de la relire six mois plus tard sans rouvrir
+   le panneau. Quatre étapes, dans l'ordre où elles s'enchaînent — le design,
+   la matrice, la transformée, la conversion en position —, parce que c'est
+   dans cet ordre que se cherche l'erreur quand un chiffre surprend. */
+function simXtMethode(r){
+  const b=(r.validation&&r.validation.bande)||{};
+  const g=r.reglages||{};
+  const fen=g.fenetre==="kaiser"
+    ? "Kaiser β "+simNb(g.kaiser_beta,1)
+    : (g.fenetre||"rectangulaire");
+  return "Méthode : le dessin des pistes → un réseau de lignes couplées mis "+
+    "en cascade le long du parcours → sa matrice S multi-ports"+
+    (b.f_max?" (du continu à "+simNb(b.f_max/1e9,1)+" GHz, "+b.points+
+             " points)":"")+
+    " → transformée de Fourier inverse ("+fen+
+    ") de ses termes croisés → le retard converti en position par la vitesse "+
+    "de chaque tronçon (NEXT : v·t/2 ; FEXT : v·t).";
+}
+
+/* CE QUE LA DÉDUCTION A FAIT, EN UNE PHRASE, ET SURTOUT LAQUELLE DES TROIS
+   BORNES A MORDU : c'est elle qui dit quoi changer. « Plafonnée par le
+   modèle » veut dire qu'aucun réglage n'affinera davantage sans mentir ;
+   « plafonnée par les points » veut dire qu'on a préféré une carte floue à une
+   carte repliée. */
+function simXtBandeDite(b){
+  const borne={
+    "résolution":"c'est la finesse voulue qui la fixe",
+    "modèle":"PLAFONNÉE par la validité du modèle quasi-TEM",
+    "points":"PLAFONNÉE par le nombre de points — la fenêtre passe avant la "+
+             "finesse"}[b.borne]||b.borne;
+  return simNb(b.f_max/1e9,2)+" GHz × "+b.points+" points ("+borne+
+    ") pour distinguer "+simNb(b.cible,2)+" mm, "+b.source_cible+
+    " ; résolution attendue "+simNb(b.atteinte,2)+" mm.";
+}
+
+function simXtResume(r){
+  const n=simXtNiveau(r);
+  const graves=r.graves||[];
+  const inex=(r.desaccords||[]).filter(d=>d.verdict==="inexplique").length;
+  const rouges=(r.risques||[]).filter(z=>!z.justifie).length;
+  let h='<div class="simXtResume simXtN-'+n.cle+'">';
+  h+='<div class="simXtVerdict">'+simEsc(n.nom)+
+     (graves.length?' <span class="simXtSousRes">sous réserve</span>':"")+
+     "</div>";
+  if(n.pire)
+    /* LE VERDICT SE DIT EN TROIS UNITÉS, ET AUCUNE N'EST DE TROP : le
+       pour-cent est la mesure, les VOLTS sont ce que la broche voit, les
+       décibels sont ce qui se compare au seuil de confirmation. Le seuil
+       nommé à la fin dit contre quoi on a jugé — budget ou marge —, sans quoi
+       « AU-DESSUS DU BUDGET » ne serait pas vérifiable. */
+    h+="<p>Le pire est <b>"+simEsc(n.pire.victime)+"</b>, qui prend <b>"+
+       simNb(100*n.ratio,1)+" %</b> de « "+simEsc(n.pire.agresseur)+" », soit "+
+       "<b>"+simEsc(simTension(n.volts))+"</b> sur une amplitude de "+
+       simEsc(simTension(SIM.saisie.swing))+" ("+
+       simNb(n.pire.pire_db,1)+" dB) — contre "+simEsc(n.seuil)+", soit "+
+       simEsc(simTension(n.budget*(SIM.saisie.swing||0)))+".</p>";
+  else{
+    /* « AUCUN COUPLE CONFIRMÉ » N'EST PAS « AUCUN COUPLAGE », et la nuance est
+       tout ce qui sépare une bonne nouvelle d'un réglage mal posé. On NOMME
+       donc la plus couplée avec son niveau, et l'on rappelle le seuil qui l'a
+       écartée : les deux côte à côte disent d'un coup d'œil si l'on est à
+       trois décibels du seuil ou à trente. */
+    const cand=((r.couples||[]).slice()
+                .sort((a,b)=>(b.pire_db||-999)-(a.pire_db||-999)))[0];
+    const seuil=(r.reglages||{}).seuil_db;
+    h+="<p>Aucune voisine ne dépasse le seuil de confirmation"+
+       (seuil!=null&&seuil!==undefined?" de <b>"+simNb(seuil,1)+" dB</b>":"")+
+       (cand?", et la plus couplée est <b>"+simEsc(cand.victime)+
+        "</b> à <b>"+simNb(cand.pire_db,1)+" dB</b> ("+
+        simNb(100*simXtRatio(cand.pire_db),2)+" % de l'agresseur, soit "+
+        simEsc(simXtTension(simXtRatio(cand.pire_db)))+")":"")+
+       ". Leurs courbes sont tracées <b>quand même</b>, ci-dessous : une "+
+       "figure vide se lirait « aucun couplage », alors que le fait est "+
+       "« du couplage, sous le seuil que vous avez posé ».</p>";
+  }
+  h+='<p class="simXtCompte">'+
+     ((r.couples||[]).filter(c=>c.confirmee).length)+" victime(s) confirmée(s) "+
+     "sur "+(((r.etape0||{}).candidats)||[]).length+" candidate(s) · "+
+     simNb(r.longueur,2)+" mm"+
+     (inex?" · <b>"+inex+" pic(s) que rien n'explique</b>":"")+
+     (rouges?" · "+rouges+" plage(s) rouge(s) sur le cuivre":"")+
+     (graves.length?" · <b>"+graves.length+" réserve(s)</b>":"")+
+     "</p>";
+  h+='<p class="simXtMethode">'+simEsc(simXtMethode(r))+"</p>";
+  if(r.bande_deduite)
+    h+='<p class="simXtMethode"><b>Bande déduite du dessin</b> — '+
+       simEsc(simXtBandeDite(r.bande_deduite))+"</p>";
+  return h+"</div>";
+}
+
+/* CE QUI CHANGE LA LECTURE, EN UNE LIGNE. Le serveur marque ces
+   avertissements-là à la source, au moment où il sait pourquoi ils comptent —
+   la page ne les reconnaît pas à leur texte, ce qui finirait par en laisser
+   passer un —, et il en donne DEUX longueurs. Le titre s'affiche : on le lit
+   en trois secondes, et c'est la seule façon qu'une réserve soit lue. Le texte
+   attend, replié, et se retrouve entier dans le rapport exporté.
+
+   UNE RÉSERVE EN SOIXANTE MOTS N'EST PAS LUE, et une réserve non lue vaut une
+   réserve absente — le défaut même que toute cette section cherche à ne jamais
+   produire. C'est pourquoi la version longue ne DISPARAÎT pas : elle se
+   déplie. */
+function simXtReserves(r){
+  const g=r.graves||[];
+  if(!g.length)return "";
+  const titre=x=>typeof x==="string"?x:(x.titre||x.texte||"");
+  const texte=x=>typeof x==="string"?x:(x.texte||x.titre||"");
+  let h='<div class="simXtAvert"><b>'+g.length+" réserve"+
+        (g.length>1?"s":"")+"</b> · "+
+        simEsc(g.map(titre).join(" · "));
+  h+='<details class="simXtPourquoi"><summary>pourquoi, et quoi en faire'+
+     "</summary><ul>";
+  for(const a of g)
+    h+="<li><b>"+simEsc(titre(a))+"</b><br>"+simEsc(texte(a))+"</li>";
+  return h+"</ul></details></div>";
+}
+
+/* ==========================================================================
+   CE QU'IL Y A À FAIRE
+   --------------------------------------------------------------------------
+   C'EST LA SEULE PARTIE DE LA FICHE QUI SE LIT COMME UNE CONSIGNE, et elle
+   n'ajoute rien au calcul : le serveur la construit en relisant ce qu'il a
+   déjà mesuré, tourné du côté de la main plutôt que de l'œil. « −13,8 dB à
+   12,4 mm » est exact et ne dit pas s'il faut écarter la piste, coudre le
+   plan, ou ne rien faire — et c'est pourtant la seule question qu'on se pose
+   devant le layout.
+
+   ELLE VIT CÔTÉ SERVEUR ET NON ICI : le fichier exporté et cette fiche
+   doivent dire la MÊME chose, et deux listes écrites à deux endroits auraient
+   fini par diverger. La page ne fait que la mettre en forme.
+   ========================================================================== */
+function simXtActions(r){
+  const a=r.actions||[];
+  if(!a.length)return "";
+  let h='<div class="simXtFaire"><b>À faire</b><ol>';
+  for(const x of a)
+    h+="<li><b>"+simEsc(x.quoi)+"</b> "+simEsc(x.cible)+" — "+
+       simEsc(x.ou)+"</li>";
+  h+="</ol>";
+  h+='<details class="simXtPourquoi"><summary>pourquoi ces gestes-là, et '+
+     "dans cet ordre</summary><ul>";
+  for(const x of a)
+    h+="<li><b>"+simEsc(x.quoi+" "+x.cible+" "+x.ou)+"</b><br>"+
+       simEsc(x.pourquoi)+"</li>";
+  h+="</ul><p>L'ordre est celui de l'EFFET, pas celui de la gravité : "+
+     "écarter une piste sous un pic que le dessin n'explique pas ne changerait "+
+     "rien, et ces plages-là passent donc après le plan de référence, qui en "+
+     "est la cause probable.</p></details></div>";
+  return h;
+}
+
+/* Ce qu'on a analysé, et d'où vient la matrice. La SOURCE reste le premier
+   renseignement de la fiche, même s'il n'y en a plus qu'une : un résultat sans
+   sa provenance ne se vérifie pas, et le jour où l'on se demandera d'où sortait
+   ce chiffre, la ligne sera là. */
+function simXtBandeau(r){
+  const conf=(r.couples||[]).filter(c=>c.confirmee);
+  const res=conf.length?conf[0]:null;
+  let h='<div class="simXtTete">';
+  h+="<b>"+simEsc(r.principal||"—")+"</b> · "+simNb(r.longueur,2)+" mm"+
+     /* PAS DE TIRET À LA PLACE DE LA SOURCE. Quand rien n'a été simulé il n'y
+        a pas de matrice, donc pas de provenance : écrire « — » entre deux
+        séparateurs donne une case vide dont on cherche ce qu'elle aurait dû
+        contenir. */
+     (r.source?" · "+simEsc(r.source):"");
+  h+=" · <b>"+conf.length+"</b> victime"+(conf.length>1?"s":"")+
+     " confirmée"+(conf.length>1?"s":"")+" sur "+
+     ((r.etape0&&r.etape0.candidats)||[]).length+" candidate(s)";
+  if(res&&res.resolution_next)
+    h+=" · résolution <b>"+simNb(res.resolution_next,2)+" mm</b> (NEXT), "+
+       simNb(res.resolution_fext,2)+" mm (FEXT)";
+  h+="</div>";
+  /* LA RÉSOLUTION EST RÉPÉTÉE SOUS LA CARTE, plus bas. Elle est ici parce
+     qu'elle qualifie tout le reste, et là-bas parce que c'est là qu'on la
+     compare à ce qu'on croit voir. */
+  return h;
+}
+
+function simXtAvertissements(r){
+  const liste=r.avertissements||[];
+  const refus=simXtVitessesRefusees();
+  if(!liste.length&&!refus.length)return "";
+  let h='<div class="simXtAvert"><b>À lire avant la carte</b><ul>';
+  for(const a of liste)h+="<li>"+simEsc(a)+"</li>";
+  if(refus.length)
+    h+="<li>Vitesse(s) saisie(s) non relisible(s), donc IGNORÉE(S) : "+
+       simEsc(refus.join(" ; "))+". Le format attendu est « NET=1.5e8 ».</li>";
+  return h+"</ul></div>";
+}
+
+/* LE MAPPING EST UN COMPTE RENDU, ET IL PASSE EN FIN DE FICHE. Il n'y a plus
+   rien à confirmer : c'est le serveur qui pose les ports à partir de la
+   géométrie. Mais il reste AFFICHÉ, replié, et ce n'est pas de la décoration —
+   c'est ce qui permet de vérifier que la piste qu'on appelle « la victime de
+   gauche » est bien celle que le calcul appelle ainsi, et c'est aussi ce dont
+   on a besoin pour relire le .sNp exporté dans un autre outil. */
+function simXtMapping(r){
+  const m=r.mapping;
+  if(!m||!(m.ports||[]).length)return "";
+  let h='<details class="simXtHyp"><summary>Les ports du réseau — '+
+        (m.fichier_ports||0)+", "+simEsc(m.source||"")+"</summary><p>";
+  h+=(m.ports||[]).map(p=>simEsc(p.net||"?")+" "+simEsc(p.bout||"")+
+      " = port "+p.index).join(" · ");
+  return h+"</p><p class=\"simNote\">Cet ordre est celui du fichier .sNp "+
+     "exporté : les N bouts proches d'abord, les N bouts lointains ensuite. "+
+     "C'est la seule chose qu'un Touchstone ne dit pas de lui-même, et c'est "+
+     "pour cela qu'elle est écrite ici comme en tête du fichier.</p></details>";
+}
+
+/* ==========================================================================
+   LA CARTE
+   --------------------------------------------------------------------------
+   DEUX COURBES PAR VICTIME, TOUTES SUR LE MÊME AXE. C'est ce qui permet de
+   comparer deux victimes d'un coup d'œil : un pic à la même abscisse sur deux
+   d'entre elles désigne un accident du plan, un pic sur une seule désigne le
+   tracé de cette victime-là. Les aligner est donc la moitié de l'intérêt, et
+   c'est pourquoi le serveur les rend sur un axe commun plutôt que chacune sur
+   le sien. La PISTE, elle, n'est pas dans le panneau : la chaleur se peint le
+   long du vrai cuivre et le point de la réglette s'y promène — voir « LA
+   FIGURE », plus bas, au-dessus de `simXtCarte`.
+
+   LES ZONES DE VIGILANCE SE SUPERPOSENT, en bandes translucides par-dessus les
+   cellules. Elles ne sont PAS du couplage — elles ne sortent pas de la matrice
+   S — et c'est pour cela qu'elles sont hachurées et non colorées : un pic de
+   couplage à la même abscisse qu'un trou de couture n'est plus un mystère,
+   mais les deux restent deux mesures différentes.
+
+   ÉCRIT EN SVG, comme la courbe des paramètres S : il se redimensionne avec le
+   panneau sans qu'on ait à écouter quoi que ce soit, et un point de courbe
+   reste un point qu'on peut survoler. Les colonnes sont ramenées à
+   SIM_XT_COLONNES par le MAXIMUM de chaque case — jamais par la moyenne, qui
+   effacerait justement les pics qu'on est venu voir. */
+const SIM_XT_COLONNES=200;      // cellules affichées ; au-delà, c'est du DOM
+
+/* CINQ ARRÊTS, ET NON TROIS. La rampe du budget de bruit n'en a que trois —
+   bleu, violet, rouge — parce qu'elle gradue TROIS états nommés : négligeable,
+   la moitié du budget, le budget crevé. Celle-ci ne nomme rien : elle rend une
+   quantité continue le long d'un cuivre, et trois arrêts y font des plages
+   franches là où la grandeur, elle, varie doucement — on lit des marches qui
+   n'existent pas. Le bas est un bleu SOMBRE et non vif : la piste où il ne se
+   passe rien doit rester du cuivre qu'on reconnaît, pas un trait de couleur.
+
+   CE N'EST PAS LA MÊME ÉCHELLE QUE LE BUDGET, et c'est voulu : ici le rouge
+   est le maximum de LA CARTE, un fait de ce calcul-ci, et non un seuil que
+   l'utilisateur s'est donné. Les deux ne doivent donc pas se ressembler au
+   point qu'on lise l'une pour l'autre. */
+const SIM_XT_RAMPE=[[ 38, 66,116],   // presque rien : bleu de nuit
+                    [ 42,134,214],   // bleu
+                    [ 46,196,170],   // turquoise
+                    [222,198, 70],   // jaune
+                    [232, 68, 58]];  // le maximum de la carte : rouge
+function simXtCouleur(t){
+  const r=Math.max(0,Math.min(1,t));
+  const n=SIM_XT_RAMPE.length-1;
+  const i=Math.min(n-1,Math.floor(r*n));
+  const k=r*n-i, p=SIM_XT_RAMPE[i], q=SIM_XT_RAMPE[i+1];
+  return "rgb("+p.map((x,j)=>Math.round(x+(q[j]-x)*k)).join(",")+")";
+}
+
+/* Le maximum par case : on garde le pic, jamais sa moyenne. */
+function simXtReduire(valeurs,n){
+  if(valeurs.length<=n)return valeurs.slice();
+  const out=new Array(n).fill(0);
+  for(let i=0;i<valeurs.length;i++){
+    const k=Math.min(n-1,Math.floor(i*n/valeurs.length));
+    if(valeurs[i]>out[k])out[k]=valeurs[i];
+  }
+  return out;
+}
+
+/* L'ESPACEMENT SE RÉDUIT PAR LE MINIMUM, à l'inverse du couplage qui se réduit
+   par le maximum — et c'est la même règle vue des deux côtés : dans une case
+   qui couvre plusieurs dixièmes de millimètre, ce qui compte est le PIRE, et
+   le pire d'un espacement est le plus PETIT. Réduire par la moyenne effacerait
+   le resserrement qu'on est justement venu recouper avec le pic.
+
+   UNE CASE OÙ RIEN NE LONGE RESTE VIDE (null), et surtout pas à zéro : le
+   trait doit s'INTERROMPRE là, parce qu'un pic de couplage dans un trou du
+   profil est le plus fort des désaccords. */
+function simXtReduireEsp(valeurs,n){
+  const out=new Array(n).fill(null);
+  for(let i=0;i<valeurs.length;i++){
+    const v=valeurs[i];
+    if(v===null||v===undefined)continue;
+    const k=Math.min(n-1,Math.floor(i*n/valeurs.length));
+    if(out[k]===null||v<out[k])out[k]=v;
+  }
+  return out;
+}
+
+/* LE TRAIT D'ESPACEMENT D'UNE VICTIME, posé sur SA courbe de NEXT.
+
+   L'AXE EST INVERSÉ, ET C'EST DÉLIBÉRÉ : le trait MONTE quand les deux pistes
+   se RAPPROCHENT. Un resserrement se lit alors au même endroit et dans le même
+   sens qu'un pic de couplage, et le recoupement se fait à l'œil sans avoir à
+   retourner mentalement une des deux courbes. La légende le dit, parce qu'un
+   axe inversé qui ne s'annonce pas est un piège.
+
+   L'ÉCHELLE EST CELLE DE CETTE VICTIME-LÀ, pas une échelle commune : ce qu'on
+   cherche est la FORME du profil sous le pic, pas la comparaison des
+   espacements de deux victimes — le tableau de l'étape 0a la donne en
+   millimètres, et bien mieux qu'un trait.
+
+   IL RESTE, MÊME DEPUIS QUE LA PISTE S'ÉCARTE AVEC L'ÉCART. Le schéma du haut
+   dit l'espacement par la GÉOMÉTRIE — la victime s'éloigne quand elle
+   s'éloigne —, ce qui se lit d'un coup d'œil mais ne se recoupe pas au
+   millimètre avec un pic situé plus bas, dans un autre bloc. Superposé à la
+   courbe elle-même, le trait répond à la question exacte : « ce pic-là
+   tombe-t-il sur un resserrement ? » */
+function simXtTraitEspacement(fiche,n,y,H,W,MG){
+  if(!fiche||!fiche.valeurs)return "";
+  const v=simXtReduireEsp(fiche.valeurs,n);
+  const bas=fiche.min, haut=fiche.max;
+  const HA=Math.max(6,H-6);
+  const yDe=e=>{
+    if(!(haut>bas))return y+3+HA/2;
+    return y+3+HA*(e-bas)/(haut-bas);   // petit écart -> HAUT de la bande
+  };
+  let h="", morceau=[];
+  const vider=()=>{
+    if(morceau.length>1)
+      h+='<polyline class="simXtEsp" points="'+morceau.join(" ")+'"/>';
+    else if(morceau.length===1)
+      h+='<circle class="simXtEspPt" cx="'+morceau[0].split(",")[0]+
+         '" cy="'+morceau[0].split(",")[1]+'" r="1.6"/>';
+    morceau=[];
+  };
+  for(let i=0;i<n;i++){
+    if(v[i]===null||v[i]===undefined){vider();continue;}
+    morceau.push(simXY(MG+(i+0.5)*W/n)+","+simXY(yDe(v[i])));
+  }
+  vider();
+  return h;
+}
+
+/* ==========================================================================
+   LA FIGURE : LES DEUX COURBES, ET LA RÉGLETTE QUI SORT SUR LE CUIVRE
+   --------------------------------------------------------------------------
+   CE QUE LA FIGURE PRÉCÉDENTE NE DISAIT PAS. Une rangée par victime, peinte du
+   bleu au rouge, répond très bien à « laquelle prend le plus, et vers quel
+   millimètre » — et à rien d'autre. Deux questions restaient sans réponse à
+   l'écran :
+
+     · COMBIEN, ICI ? Une carte de chaleur montre OÙ, jamais COMBIEN : on lit
+       « c'est rouge », on ne lit pas « 3,0 % ». C'est la même correction que
+       la sonde de la chute DC a reçue, et pour la même raison.
+     · ET L'AUTRE SENS ? Le NEXT et le FEXT sont dans le MÊME résultat, et l'on
+       ne pouvait en voir qu'un à la fois. Or ils ne se lisent pas au même bout
+       de la victime : les mettre l'un sous l'autre, sur le même axe, est la
+       seule façon de voir que le pic de l'un ne tombe pas où le pic de
+       l'autre tombe.
+
+   ET SURTOUT : LA PISTE DE LA VICTIME EST SUR LA CARTE, PAS DANS LE PANNEAU.
+   Une première version dessinait un schéma — l'agresseur au milieu, ses
+   victimes de part et d'autre, écartées comme l'écart mesuré. C'était joli et
+   c'était un DOUBLON : la vraie piste est là, à l'écran, avec ses coudes, ses
+   vias et ses voisines, et un dessin approché à côté oblige à faire la
+   correspondance de tête — exactement le travail qu'on veut éviter. Le schéma
+   est donc parti, et ce qu'il portait est allé sur le cuivre :
+
+     · la CHALEUR se peint le long du cuivre de chaque victime affichée, du
+       bleu au rouge, à la place du ruban schématique ;
+     · le POINT BLANC de la réglette se promène sur cette piste-là, la vraie,
+       en même temps qu'il se pose sur les deux courbes. C'est lui qui fait la
+       correspondance « ce pic-ci, c'est CE millimètre-là de CETTE piste »,
+       sans qu'on ait à la chercher à la règle.
+
+   ON NE RECONSTRUIT RIEN PAR DÉCALAGE LATÉRAL pour cela : le point vient du
+   cuivre réel, PROJETÉ sur le parcours de l'agresseur — la même mécanique que
+   les zones à risque, et pour la même raison (voir « LES ZONES À RISQUE,
+   POSÉES SUR LE CUIVRE »). Une victime qui longe deux fois porte deux points,
+   et c'est juste : elle passe deux fois à cette abscisse-là.
+
+   CE QUI N'A PAS CHANGÉ : les couleurs (la rampe du bruit, la même que
+   partout), les hachures des zones de vigilance, les triangles du recoupement,
+   la résolution annoncée sous la figure. La lecture s'est déplacée, la mesure
+   est la même.
+   ========================================================================== */
+const SIM_XT_GRAPHE=84;    // hauteur d'un des deux graphes
+const SIM_XT_ENTRE=20;     // l'air entre deux blocs, titre compris
+const SIM_XT_PIED=30;      // l'axe des positions, sous le second graphe
+
+/* L'IDENTITÉ D'UNE VICTIME NE SE PREND PAS DANS LA RAMPE DE CHALEUR. Le bleu,
+   le violet et le rouge veulent dire « combien » : s'en servir pour dire
+   « laquelle » ferait lire une amplitude là où il n'y a qu'un nom. Ces six
+   teintes-là sont donc hors rampe — un vert, un ambre, un rose, un cyan, une
+   lavande, une orange —, et le TIRETÉ double l'information pour qui ne
+   distingue pas deux d'entre elles.
+
+   PAS DE BLANC NON PLUS, et c'est un vrai défaut corrigé : le trait
+   d'espacement EST blanc, comme le point de la réglette, et une victime
+   blanche sur le graphe du NEXT se confondait avec le témoin géométrique posé
+   au même endroit — la seule courbe de la figure qui ne soit pas du
+   couplage. */
+const SIM_XT_IDENT=["#5ad1a0","#f0b429","#ff8bd0","#8ee6f0","#b3a1ff","#ff9d6b"];
+const SIM_XT_TIRETS=["","7 4","2 3","10 3 2 3","1 4","6 3 1 3"];
+
+/* Le repère de la figure, gardé pour la réglette : sans lui, bouger le curseur
+   demanderait de refaire tout le dessin — donc de réécrire le DOM à chaque
+   pixel parcouru. C'est la même raison qui garde `SIM_REPERE` pour la courbe
+   des paramètres S. */
+let SIM_XT_REPERE=null;
+
+/* UNE FICHE PAR VICTIME, SES DEUX SENS ENSEMBLE. Le serveur rend une ligne par
+   (victime, sens) parce que ce sont deux transformées ; la figure, elle, se lit
+   victime par victime — décocher « VIC_G » doit éteindre ses deux courbes ET
+   sa piste sur le cuivre d'un seul geste. */
+function simXtFiches(r){
+  const c=(r&&r.carte_chaleur)||{};
+  const parNet={}, ordre=[];
+  for(const l of (c.lignes||[])){
+    let f=parNet[l.victime];
+    if(!f){
+      f=parNet[l.victime]={net:l.victime, agresseur:l.agresseur||"",
+                           next:null, fext:null, couple:null, esp:null};
+      ordre.push(f);
+    }
+    f[l.sens==="fext"?"fext":"next"]=l;
+  }
+  const esp=c.espacements||{};
+  const caches=SIM_XT.caches||{};
+  ordre.forEach(function(f,k){
+    f.esp=esp[f.net]||null;
+    f.couple=((r&&r.couples)||[]).filter(x=>x.victime===f.net)[0]||null;
+    f.cote=(f.couple&&f.couple.cote)||"";
+    f.couleur=SIM_XT_IDENT[k%SIM_XT_IDENT.length];
+    f.tiret=SIM_XT_TIRETS[k%SIM_XT_TIRETS.length];
+    /* CONFIRMÉE OU NON, LA COURBE EXISTE. Le serveur trace désormais toutes
+       les candidates : « aucun couple confirmé » avec une figure vide se lit
+       « aucun couplage », alors que le fait est « du couplage, sous le seuil
+       que vous avez posé ». L'étiquette est portée par la ligne elle-même —
+       c'est elle qui a été tracée —, et le couple ne sert que de repli pour un
+       résultat d'avant ce changement. */
+    f.confirmee=(f.next&&f.next.confirmee!==undefined)?!!f.next.confirmee
+               :((f.fext&&f.fext.confirmee!==undefined)?!!f.fext.confirmee
+                 :!!(f.couple&&f.couple.confirmee));
+  });
+  /* CE QUI S'ALLUME TOUT SEUL. Une figure qui montre d'emblée neuf candidates
+     dont une seule compte est illisible ; une figure VIDE parce que rien
+     n'atteint le seuil est pire, puisqu'elle se lit comme une bonne nouvelle.
+     La règle tranche les deux cas : les confirmées s'allument, les autres
+     attendent leur case — SAUF quand aucune n'est confirmée, et alors tout
+     s'allume, parce que c'est justement là qu'il faut voir ce qu'il y a.
+     UNE CASE TOUCHÉE PREND LE DESSUS, dans les deux sens : `false` veut dire
+     « montrée à la main », et ce n'est pas la même chose que « jamais
+     décidée ». */
+  const uneConf=ordre.some(f=>f.confirmee);
+  for(const f of ordre){
+    const dit=caches[f.net];
+    f.visible=(dit===true)?false:((dit===false)?true:(f.confirmee||!uneConf));
+  }
+  return ordre;
+}
+
+/* UN POURCENTAGE QUI NE S'ARRONDIT PAS À ZÉRO. Deux décimales suffisaient tant
+   que la figure ne montrait que des victimes confirmées ; une candidate sous le
+   seuil, elle, prend couramment quelques millièmes de pour-cent, et « 0,00 % »
+   se lit alors comme « rien » — ce qui est exactement le contresens que ces
+   courbes-là sont venues corriger. Le nombre de décimales suit donc l'ordre de
+   grandeur, et sous le dernier cran on écrit l'inégalité plutôt qu'un zéro.
+   LES DÉCIBELS À CÔTÉ NE SUFFISENT PAS : ils disent le même fait dans une autre
+   échelle, et c'est le pour-cent qu'on compare au budget. */
+function simXtPct(v){
+  const p=100*Math.max(0,v||0);
+  if(!(p>0))return "0";
+  if(p<0.0001)return "< 0,0001";
+  return simNb(p,p>=1?2:(p>=0.1?3:4));
+}
+
+/* ==========================================================================
+   LE MÊME CHIFFRE EN VOLTS, ET C'EST CELUI QU'ON COMPARE À QUELQUE CHOSE
+   --------------------------------------------------------------------------
+   CE QUE LE POUR-CENT NE DIT PAS. « VIC_G prend 0,42 % de CLK » est exact et
+   ne décide rien : un récepteur ne connaît pas les pour-cent, il connaît la
+   distance entre la tension qui lui arrive et son seuil de basculement. Le
+   même 0,42 % vaut 14 mV sur un LVCMOS 3,3 V — invisible devant 700 mV de
+   marge — et 1,5 mV sur un LVDS 350 mV, où la marge est de 50 : sans volts, la
+   fiche ne permet pas de trancher entre ces deux situations.
+
+   LA TENSION EST UN PRODUIT, ET LE FACTEUR VIENT DU PANNEAU. Le serveur ne
+   sait rien de l'amplitude et n'a pas à le savoir : il rend des rapports, et
+   c'est bien l'amplitude qui les convertit. Le couplage, lui, ne bouge pas
+   d'un pour-cent quand on passe de 3,3 V à 1,8 V — ce qui bouge, c'est le
+   bruit en volts, et donc le verdict.
+
+   ELLE VARIE LE LONG DE LA COURBE, comme le pour-cent : c'est la MÊME courbe
+   dans une autre unité, et non une seconde mesure. Ce qui la fait bouger d'un
+   millimètre à l'autre, ce sont les pistes elles-mêmes — leur écart, leur
+   longement, le plan sous elles.
+   ========================================================================== */
+function simXtTension(fraction){
+  return simTension(SIM.saisie.swing*Math.max(0,fraction||0));
+}
+
+/* LA COULEUR D'UNE VICTIME, DEPUIS N'IMPORTE OÙ. Le cuivre se peint hors de la
+   fiche — au moment du redessin, pas au moment du rendu —, et il doit désigner
+   la même victime de la même couleur que la case cochée. Un second tableau de
+   couleurs quelque part aurait fini par diverger du premier. */
+function simXtCouleurVictime(net){
+  const f=simXtFiches(SIM_XT.res||{}).filter(x=>x.net===net)[0];
+  return f?f.couleur:SIM_XT_IDENT[0];
+}
+
+/* EXACTEMENT n VALEURS, NI PLUS NI MOINS. Les deux courbes et le curseur
+   partagent un seul index : une courbe plus courte d'un point que sa voisine
+   décalerait le point lu d'un millimètre, en silence. */
+function simXtEchant(valeurs,n){
+  const v=simXtReduire(valeurs||[],n);
+  while(v.length<n)v.push(v.length?v[v.length-1]:0);
+  return v.slice(0,n);
+}
+function simXtEchantEsp(valeurs,n){
+  const v=simXtReduireEsp(valeurs||[],n);
+  while(v.length<n)v.push(null);
+  return v.slice(0,n);
+}
+
+/* LES CASES À COCHER, AVEC CE QUE CHAQUE VICTIME PREND. Une case nue ferait
+   cocher au hasard : le chiffre est là pour qu'on sache laquelle on éteint.
+   Les deux sens sont donnés côte à côte, et le PIRE DES DEUX à côté d'eux —
+   jamais leur somme. Le NEXT s'observe au bout PROCHE de la victime, le FEXT à
+   son bout LOINTAIN : ils n'arrivent pas au même endroit et ne s'additionnent
+   nulle part. Une case « total » les additionnerait à l'œil, et ce total
+   n'existe sur aucune broche. */
+function simXtCoches(fiches){
+  if(!fiches.length)return "";
+  const volts=v=>simXtVu("volts")
+    ? ' <b class="simXtV">'+simEsc(simXtTension(v))+"</b>" : "";
+  let h='<div class="simXtVicts">';
+  for(const f of fiches){
+    const mN=(f.next&&f.next.max)||0, mF=(f.fext&&f.fext.max)||0;
+    const dbN=f.next?f.next.max_db:null, dbF=f.fext?f.fext.max_db:null;
+    h+='<label class="simXtCoche'+(f.visible?"":" simXtOff")+
+       (f.confirmee?"":" simXtSousSeuil")+'" title="'+
+       simEsc("Allumer ou éteindre « "+f.net+" » : ses deux courbes, sa "+
+              "chaleur peinte sur le cuivre, son point de réglette et ses "+
+              "plages à risque. Le calcul, lui, ne bouge pas — c'est un geste "+
+              "d'affichage."+
+              "\nLES DEUX SENS Y RESTENT CHIFFRÉS même quand l'un des deux "+
+              "n'est plus tracé : c'est ce chiffre-là qui dit s'il vaut la "+
+              "peine d'être rallumé."+
+              (f.confirmee?"":"\nCELLE-CI EST SOUS LE SEUIL DE CONFIRMATION : "+
+               "ses courbes sont tracées, mais elle n'est comptée nulle part "+
+               "et ne porte ni plage à risque ni pic recoupé — un verdict "+
+               "rendu sur du bruit se peindrait à côté des vrais."))+'">'+
+       '<input type="checkbox" data-xtvic="'+simEsc(f.net)+'"'+
+       (f.visible?" checked":"")+">"+
+       '<i style="background:'+f.couleur+'"></i>'+
+       "<b>"+simEsc(f.net)+"</b>"+
+       (f.confirmee?"":'<span class="simXtSeuilBout">sous le seuil</span>')+
+       /* LES VOLTS À CÔTÉ DU POUR-CENT, ET NON À SA PLACE. Le pour-cent dit
+          ce que le couplage vaut — il ne dépend que du cuivre —, les volts
+          disent ce que le récepteur voit — ils dépendent aussi de l'amplitude
+          saisie. Les deux ensemble permettent de repérer d'un coup d'œil une
+          amplitude mal saisie : un couplage à 0,4 % qui annoncerait 300 mV
+          voudrait dire qu'on a écrit des volts dans un champ de millivolts. */
+       /* LES VOLTS SUIVENT LA CASE « mV » DE LA FIGURE : c'est le même geste
+          d'affichage, et les laisser ici quand la graduation d'à côté les a
+          perdus ferait douter de laquelle des deux cases commande quoi. */
+       "<span>NEXT <b>"+simXtPct(mN)+" %</b>"+volts(mN)+
+       (dbN!=null?" <small>"+simNb(dbN,1)+" dB</small>":"")+"</span>"+
+       "<span>FEXT <b>"+simXtPct(mF)+" %</b>"+volts(mF)+
+       (dbF!=null?" <small>"+simNb(dbF,1)+" dB</small>":"")+"</span>"+
+       '<span class="simXtPireBout">pire bout <b>'+
+       simXtPct(Math.max(mN,mF))+" %</b>"+volts(Math.max(mN,mF))+
+       /* LE SEUIL, POSÉ SUR LE PIRE BOUT ET NULLE PART AILLEURS. Le NEXT
+          s'observe au bout proche, le FEXT au lointain : marquer les deux
+          ferait lire deux dépassements là où il n'y en a qu'un, sur deux
+          broches différentes. */
+       (Math.max(mN,mF)>simSeuilFraction()
+         ? ' <span class="z0ko">&gt; '+simEsc(simSeuilNom())+"</span>":"")+
+       "</span>"+
+       "</label>";
+  }
+  return h+"</div>";
+}
+
+/* CE QUE LE CURSEUR LIT, EN TOUTES LETTRES. Une carte de chaleur montre OÙ,
+   jamais COMBIEN ; c'est cette ligne-ci qui répond « et ICI, ça fait combien ».
+   Le pourcentage est celui de l'AGRESSEUR — c'est ce que la rampe de couleurs
+   mesure —, et l'écart mesuré est rappelé à côté parce que c'est lui qui
+   explique le chiffre, ou ne l'explique pas. */
+function simXtLectureLignes(i){
+  const R=SIM_XT_REPERE;
+  if(!R||!R.fiches.length)
+    return '<span class="simFaible">Aucune victime affichée : cochez-en une.'+
+           "</span>";
+  /* LE POUR-CENT ET LES VOLTS, DANS CET ORDRE. Le premier est la mesure, le
+     second est ce qu'elle coûte : c'est le second qu'on compare à la marge du
+     récepteur, et c'est pour cela qu'il est en gras à côté. */
+  const val=(a)=>(a&&a[i]!=null)
+    ? simXtPct(a[i])+" %"+(simXtVu("volts")
+        ? ' <b class="simXtV">'+simEsc(simXtTension(a[i]))+"</b>" : "")
+    : "—";
+  /* ON NE LIT QUE CE QUI EST TRACÉ. Un sens éteint n'a plus de courbe, plus
+     de point de réglette et plus d'échelle à l'écran : le chiffrer quand
+     même ferait lire une valeur qu'aucun trait ne montre. */
+  let h="";
+  if(!simXtVu("next")&&!simXtVu("fext"))
+    h+='<div><span class="simFaible">Les deux sens sont éteints : il n’y a '+
+       "rien à lire ici. La position, elle, vaut toujours pour le point posé "+
+       "sur le cuivre.</span></div>";
+  for(const f of R.fiches){
+    const bouts=[];
+    if(simXtVu("next"))bouts.push("NEXT "+val(f.vNext));
+    if(simXtVu("fext"))bouts.push("FEXT "+val(f.vFext));
+    if(!bouts.length)continue;
+    h+='<div><i style="background:'+f.couleur+'"></i><b>'+simEsc(f.net)+
+       "</b> — "+bouts.join(" · ")+
+       (f.espV?(f.espV[i]==null
+                 ? ' · <span class="simFaible">ne longe pas ici</span>'
+                 : " · écart "+simNb(f.espV[i],3)+" mm")
+              :"")+"</div>";
+  }
+  return h;
+}
+
+/* L'ABSCISSE QUE LA RÉGLETTE DÉSIGNE, en millimètres le long du parcours.
+   C'est le SEUL état partagé entre la fiche et le cuivre : le panneau la lit
+   pour poser ses points, le canevas la lit pour poser le sien, et il n'y a
+   qu'un chiffre à tenir juste. */
+function simXtPos(){
+  const c=SIM_XT.res&&SIM_XT.res.carte_chaleur;
+  const axe=(c&&c.axe)||[];
+  const total=axe.length?axe[axe.length-1]:0;
+  return total*Math.max(0,Math.min(1,SIM_XT.pos||0));
+}
+
+/* LE CURSEUR SE DÉPLACE SANS QUE LA FICHE NE SE REDESSINE. Les deux courbes et
+   la lecture chiffrée partagent le même index : poser le curseur, c'est
+   déplacer un trait, quelques cercles, et réécrire deux lignes de texte.
+   Refaire la fiche à chaque cran coûterait un rendu complet par pixel
+   parcouru — c'est exactement ce que la courbe des paramètres S évite déjà.
+
+   LE CANEVAS, LUI, SE REDESSINE : le point blanc vit sur le cuivre, et il n'y
+   a pas d'autre façon de le déplacer. On ne le fait que si le cran a
+   VRAIMENT changé — un « input » arrive à chaque pixel de la poignée, et
+   repeindre la carte pour un cran identique se verrait sur une carte dense. */
+function simXtCurseurPoser(i){
+  const R=SIM_XT_REPERE;
+  if(!R)return;
+  const n=R.n;
+  let k=Math.round(i);
+  if(!isFinite(k))k=0;
+  k=Math.max(0,Math.min(n-1,k));
+  const avant=SIM_XT.pos;
+  SIM_XT.pos=(n>1)?k/(n-1):0;
+  const x=R.xs[k];
+  const trait=simEl("simXtCur");
+  if(trait){
+    trait.setAttribute("x1",simXY(x));
+    trait.setAttribute("x2",simXY(x));
+  }
+  R.fiches.forEach(function(f,j){
+    const pose=(prefixe,ys)=>{
+      const e=simEl(prefixe+j);
+      if(!e||!ys||ys[k]==null)return;
+      e.setAttribute("cx",simXY(x));
+      e.setAttribute("cy",simXY(ys[k]));
+    };
+    pose("simXtPtN-",f.yNext);
+    pose("simXtPtF-",f.yFext);
+  });
+  const v=simEl("simXtPosVal");
+  if(v)v.textContent=simNb(R.total*k/Math.max(1,n-1),2)+" mm";
+  const l=simEl("simXtLect");
+  if(l)l.innerHTML=simXtLectureLignes(k);
+  if(avant!==SIM_XT.pos&&SIM_ED&&typeof SIM_ED.redessiner==="function")
+    SIM_ED.redessiner();
+}
+
+function simXtCarte(r){
+  SIM_XT_REPERE=null;
+  const c=r.carte_chaleur;
+  if(!c||!c.lignes||!c.lignes.length)
+    /* ON N'EN ARRIVE LÀ QUE SI RIEN N'A DE GÉOMÉTRIE EXPLOITABLE — plus
+       depuis qu'une candidate sous le seuil garde sa courbe. C'est donc un vrai
+       « il n'y a rien à tracer », et non le silence d'un seuil trop haut. */
+    return '<div class="simXtBloc"><b>Carte</b><p class="simNote">Aucune '+
+      "candidate n'a de profil exploitable : il n'y a pas de courbe à "+
+      "tracer. Les deux tableaux ci-dessous disent pourquoi, candidat par "+
+      "candidat.</p></div>";
+  /* LES LIGNES DU SENS PEINT restent la référence de la légende : c'est de
+     leur résolution qu'elle parle, et elle diffère d'un sens à l'autre. */
+  const lignes=c.lignes.filter(l=>l.sens===SIM_XT.sens);
+  if(!lignes.length)
+    return '<div class="simXtBloc"><b>Carte</b>'+simXtSensBoutons()+
+      '<p class="simNote">Rien dans ce sens-là.</p></div>';
+  const axe=c.axe||[];
+  const total=axe.length?axe[axe.length-1]:0;
+  const n=Math.max(2,Math.min(SIM_XT_COLONNES,axe.length));
+  /* LA FIGURE SE DESSINE À LA LARGEUR DU PANNEAU, comme la courbe des
+     paramètres S, et pour la même raison : un viewBox fixe étiré en plein
+     écran emporte le texte avec lui — les cotes de 10 px deviennent des 30 px
+     et les noms de nets barrent la figure. */
+  /* LA MARGE DE DROITE S'OUVRE QUAND L'AXE DES VOLTS Y ENTRE. Le pour-cent
+     reste à gauche, la tension passe à droite : un même trait se lit alors
+     dans les deux unités sans qu'aucune des deux ne soit une note en bas de
+     page. Empilées à gauche comme elles l'étaient, elles ne donnaient qu'UNE
+     hauteur — le haut du graphe — et il fallait la réglette pour tout le
+     reste. */
+  const WT=simLargeurTrace(), MG=112, MD=simXtVu("volts")?62:12;
+  const W=Math.max(240,WT-MG-MD);
+  const pire=Math.max(1e-12,c.max||0);
+  const esp=c.espacements||{};
+  const desac=r.desaccords||[];
+
+  const fiches=simXtFiches(r);
+  const vus=fiches.filter(f=>f.visible);
+  const xs=[];
+  for(let i=0;i<n;i++)xs.push(MG+(i+0.5)*W/n);
+  for(const f of vus){
+    f.vNext=simXtEchant(f.next?f.next.valeurs:[],n);
+    f.vFext=simXtEchant(f.fext?f.fext.valeurs:[],n);
+    f.espV=f.esp?simXtEchantEsp(f.esp.valeurs,n):null;
+  }
+
+  /* LA FIGURE SE REDIMENSIONNE SUR CE QU'ELLE TRACE. Un graphe éteint ne
+     laisse pas un blanc à sa place : la hauteur du SVG se recalcule, et la
+     courbe qui reste occupe toute la place gagnée. Un cadre qui garderait sa
+     taille se lirait comme un graphe vide, c'est-à-dire comme un couplage
+     nul — le contresens exact que cette figure existe pour éviter. */
+  const traces=[];
+  if(simXtVu("next"))
+    traces.push({cle:"next", titre:"NEXT — le bout proche de chaque victime"});
+  if(simXtVu("fext"))
+    traces.push({cle:"fext",
+                 titre:"FEXT — le bout lointain de chaque victime"});
+  const yGN=14, PAS=SIM_XT_GRAPHE+SIM_XT_ENTRE+8;
+  const HG=yGN+traces.length*SIM_XT_GRAPHE
+           +Math.max(0,traces.length-1)*(SIM_XT_ENTRE+8);
+  const HT=HG+SIM_XT_PIED;
+
+  let h='<div class="simXtBloc"><b>Carte du couplage</b>'+simXtSensBoutons()+
+        simXtVoirCases()+
+        simXtBoutonEspacement(esp)+simXtBoutonChaleur()+simXtBoutonRisques(r);
+  /* COMMENT LA LIRE, AU-DESSUS D'ELLE ET EN UNE LIGNE. Une figure qu'on doit
+     déplier pour comprendre est une figure qu'on ne lit pas : les faits qui
+     suffisent — deux courbes par victime, l'axe est le parcours, la couleur
+     sur le cuivre est la quantité, le point blanc fait la correspondance —
+     tiennent ici, et le reste attend dans le dépliant. */
+  const sousSeuil=fiches.filter(f=>!f.confirmee).length;
+  /* LA PHRASE DE LECTURE SUIT CE QUI EST TRACÉ. Annoncer « deux courbes par
+     victime » au-dessus d'un seul graphe ferait chercher la seconde. */
+  const dit=traces.length===2
+    ? "Deux courbes par victime — le <b>NEXT</b> à son bout proche, le "+
+      "<b>FEXT</b> à son bout lointain"
+    : traces.length===1
+      ? "Une courbe par victime — le <b>"+traces[0].cle.toUpperCase()+
+        "</b>, à son bout "+(traces[0].cle==="next"?"proche":"lointain")+
+        " ; l'autre sens est éteint et se rallume d'un clic"
+      : "";
+  h+='<p class="simXtLire">'+dit+(dit?" · d":"D")+
+     "e gauche à droite, "+
+     "les "+simNb(total,1)+" mm du <b>parcours de l’agresseur</b> · sur la "+
+     "carte, la <b>couleur</b> peinte le long de chaque victime dit combien "+
+     "de couplage se fabrique à cet endroit-là (bleu&nbsp;: rien, "+
+     "rouge&nbsp;: le maximum de la carte) · la <b>réglette</b> pose un point "+
+     "blanc sur les courbes ET sur le cuivre de la vraie piste, au même "+
+     "millimètre."+
+     /* CE QUE LES CASES GRISES CONTIENNENT, dit là où on les voit. Sans cette
+        phrase, une case éteinte se lit comme un oubli. */
+     (sousSeuil?" · "+sousSeuil+" candidate(s) <b>sous le seuil</b> ont leur "+
+      "case elles aussi : elles ne sont comptées nulle part, mais leurs "+
+      "courbes existent et se rallument d'un clic.":"")+"</p>";
+  h+=simXtCoches(fiches);
+  /* LES DEUX SENS ÉTEINTS : ON LE DIT, ON NE DISPARAÎT PAS. Les cases sont
+     juste au-dessus, le repère reste vide — la réglette et la lecture
+     chiffrée n'auraient rien à interroger —, et un clic ramène la figure. */
+  if(!traces.length){
+    /* LA RÉGLETTE RESTE, elle : c'est elle qui promène le point blanc sur le
+       cuivre, et la chaleur y est toujours peinte. La retirer avec les courbes
+       laisserait sur la carte un repère qu'on ne pourrait plus déplacer. */
+    const i00=Math.max(0,Math.min(n-1,Math.round((SIM_XT.pos||0)*(n-1))));
+    return h+'<p class="simNote">Les deux sens sont <b>éteints</b> : il n’y a '+
+      "rien à tracer. Rallumez <b>NEXT</b> ou <b>FEXT</b> ci-dessus — le "+
+      "calcul, lui, n’a pas bougé, les chiffres restent dans les cases "+
+      "ci-dessus, et la réglette continue de promener son point sur le "+
+      "cuivre.</p>"+
+      simXtRegle(n,total,i00,[],vus)+simXtLegende(r,lignes,pire)+"</div>";
+  }
+  h+='<div class="simXtCarte"><svg viewBox="0 0 '+WT+" "+simXY(HT)+
+     '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="'+
+     simEsc(traces.map(t=>t.cle.toUpperCase()).join(" et ")+
+            " de chaque victime le long du parcours")+
+     '">'+simXtHachures();
+
+  /* LES ZONES D'ABORD, ET DERRIÈRE TOUT LE RESTE. Elles ne sortent pas de la
+     matrice S : hachurées et posées au fond, elles ne peuvent pas se lire
+     comme du couplage, et elles ne masquent pas les courbes qui, elles, le
+     mesurent. */
+  /* DES HACHURES PARTOUT NE SONT PLUS DES HACHURES : quand les zones de
+     vigilance couvrent la moitié du parcours, les peindre revient à hachurer
+     la figure entière — la carte disparaît dessous et le motif ne désigne plus
+     rien, exactement comme le verdict « expliqué par le plan » cesse alors de
+     rien dire. On s'abstient, et la légende dit pourquoi. */
+  const vainZ=!!(r.masse&&r.masse.vain);
+  for(const z of (vainZ?[]:simXtZonesFondues(c.zones,total))){
+    if(!(total>0))break;
+    const x1=MG+Math.max(0,Math.min(1,z.s0/total))*W;
+    const x2=MG+Math.max(0,Math.min(1,Math.max(z.s1,z.s0+total/400)/total))*W;
+    h+='<rect class="simXtZone" x="'+simXY(x1)+'" y="0" width="'+
+       simXY(Math.max(2,x2-x1))+'" height="'+simXY(HG)+'" fill="url(#simXtH-'+
+       (SIM_XT_HACHURES.some(m=>m.cle===z.type)?z.type:"couture")+
+       ')"><title>'+simEsc(z.type+" : "+(z.detail||""))+"</title></rect>";
+  }
+
+  /* ---- LES DEUX COURBES ---- */
+  const graphe=(cle,titre,y0)=>{
+    let g='<g class="simXtGraphe" data-sens="'+cle+'">';
+    const champ=(cle==="fext")?"vFext":"vNext";
+    let mx=0;
+    for(const f of vus)for(const v of f[champ])if(v>mx)mx=v;
+    if(!(mx>0))mx=pire;
+    g+='<line class="simXtAxe" x1="'+simXY(MG)+'" y1="'+
+       simXY(y0+SIM_XT_GRAPHE)+'" x2="'+simXY(MG+W)+'" y2="'+
+       simXY(y0+SIM_XT_GRAPHE)+'"/>';
+    g+='<line class="simXtGrille" x1="'+simXY(MG)+'" y1="'+
+       simXY(y0+SIM_XT_GRAPHE/2)+'" x2="'+simXY(MG+W)+'" y2="'+
+       simXY(y0+SIM_XT_GRAPHE/2)+'"/>';
+    g+='<text class="simXtTitreG" x="'+simXY(MG+4)+'" y="'+simXY(y0-3)+'">'+
+       simEsc(titre)+"</text>";
+    /* UN AXE PAR UNITÉ, ET DE CHAQUE CÔTÉ DE LA COURBE. Le pour-cent de
+       l'agresseur à gauche, la tension à droite : c'est le MÊME trait lu deux
+       fois, et n'importe quelle hauteur se convertit d'un coup d'œil. Empilées
+       à gauche, les deux ne donnaient qu'UNE valeur — le haut du graphe — et
+       il fallait la réglette pour tout le reste.
+
+       TROIS CRANS ET PAS DAVANTAGE : le haut, la moitié, zéro. Le trait de
+       moitié existe déjà (`simXtGrille`), et c'est lui qu'on chiffre — poser
+       une graduation là où aucun trait ne la porte obligerait à viser à l'œil.
+       Chaque graphe garde SON échelle : le FEXT vaut souvent une fraction du
+       NEXT, et les deux hauts n'annoncent donc pas la même tension. */
+    const crans=[[0,y0+SIM_XT_GRAPHE], [0.5,y0+SIM_XT_GRAPHE/2], [1,y0+8]];
+    for(const [t,yy] of crans)
+      g+='<text class="simXtGrad" x="'+simXY(MG-6)+'" y="'+simXY(yy)+
+         '" text-anchor="end">'+(t?simXtPct(mx*t)+" %":"0")+"</text>";
+    if(simXtVu("volts"))
+      for(const [t,yy] of crans)
+        g+='<text class="simXtGradV" x="'+simXY(MG+W+6)+'" y="'+simXY(yy)+
+           '" text-anchor="start">'+
+           (t?simEsc(simXtTension(mx*t)):"0")+"</text>";
+    /* LE SEUIL EN TRAIT, À SA HAUTEUR RÉELLE. Une courbe qui monte n'est pas
+       une mauvaise nouvelle en soi : ce qui compte est de savoir si elle passe
+       au-dessus de la marge du récepteur, et cela ne se lit pas en comparant
+       deux nombres écrits à deux endroits. Hors échelle — le cas d'une carte
+       tranquille —, on ne trace rien plutôt qu'un trait collé au titre : un
+       seuil dessiné au plafond se lit comme un seuil atteint. */
+    const seuilF=simSeuilFraction();
+    if(seuilF>0&&seuilF<=mx){
+      const ys=y0+SIM_XT_GRAPHE*(1-seuilF/mx);
+      g+='<line class="simXtSeuilT" x1="'+simXY(MG)+'" y1="'+simXY(ys)+
+         '" x2="'+simXY(MG+W)+'" y2="'+simXY(ys)+'"><title>'+
+         simEsc(simSeuilNom()+" — "+simXtTension(seuilF)+
+                " ; au-dessus, le récepteur de la victime n'a plus de marge")+
+         "</title></line>";
+      g+='<text class="simXtSeuilE" x="'+simXY(MG+W-2)+'" y="'+
+         simXY(ys-3)+'" text-anchor="end">'+simEsc(simSeuilNom())+"</text>";
+    }
+    for(const f of vus){
+      const pts=[], ys=[];
+      for(let i=0;i<n;i++){
+        const yy=y0+SIM_XT_GRAPHE*
+                 (1-Math.max(0,Math.min(1,(f[champ][i]||0)/mx)));
+        ys.push(yy);
+        pts.push(simXY(xs[i])+","+simXY(yy));
+      }
+      f[(cle==="fext")?"yFext":"yNext"]=ys;
+      g+='<polyline class="simXtCourbe" points="'+pts.join(" ")+'" stroke="'+
+         f.couleur+'"'+(f.tiret?' stroke-dasharray="'+f.tiret+'"':"")+
+         "><title>"+simEsc(f.net+" · "+cle.toUpperCase())+"</title></polyline>";
+    }
+    /* LA TENSION ÉCRITE AU PIC DE CHAQUE COURBE, sur la courbe elle-même.
+       --------------------------------------------------------------------
+       C'EST LA VALEUR QU'ON CHERCHE EN PREMIER, et jusqu'ici il fallait
+       amener la réglette dessus pour la lire. L'axe de droite dit ce que vaut
+       n'importe quelle hauteur ; celle-ci dit ce que vaut LE point qui
+       compte, sans viser.
+
+       ELLE PREND LA COULEUR DE SA VICTIME, et non l'ambre des autres volts.
+       Sur un graphe à cinq courbes, savoir À QUI appartient un chiffre passe
+       avant savoir de quelle famille il est : la couleur est ici la seule
+       chose qui rattache l'étiquette à son trait, et une amende commune les
+       rendrait toutes interchangeables.
+
+       ET ELLES NE SE MARCHENT PAS DESSUS : deux pics proches en x ET en y
+       verraient leurs étiquettes se recouvrir exactement là où l'on regarde.
+       On empile alors vers le haut, cran par cran. */
+    if(simXtVu("volts")){
+      const poses=[];
+      for(const f of vus){
+        const v=f[champ];
+        let im=0;
+        for(let i=1;i<n;i++)if((v[i]||0)>(v[im]||0))im=i;
+        if(!(v[im]>0))continue;
+        const ysF=f[(cle==="fext")?"yFext":"yNext"];
+        const yp=ysF?ysF[im]:y0;
+        /* AU-DESSUS DU PIC, SAUF QUAND IL TOUCHE LE HAUT. La courbe la plus
+           forte culmine au ras du plafond, et son étiquette irait alors se
+           poser dans le titre du graphe : on la passe DESSOUS, où la place
+           est libre par construction — sous un pic il n'y a que la
+           descente. */
+        const haut=yp-7 < y0+10;
+        let yy=haut ? yp+13 : yp-7;
+        /* ON ÉCARTE tant qu'une étiquette déjà posée est assez proche pour la
+           recouvrir, dans le sens qui l'éloigne de la courbe. */
+        for(let t=0;t<vus.length;t++){
+          const gene=poses.some(p=>Math.abs(p.x-xs[im])<46
+                                   &&Math.abs(p.y-yy)<10);
+          if(!gene)break;
+          yy+=haut?10:-10;
+        }
+        yy=Math.max(y0+8,Math.min(y0+SIM_XT_GRAPHE-2,yy));
+        poses.push({x:xs[im], y:yy});
+        /* L'ANCRAGE SUIT LE BORD : au ras de l'axe de droite, une étiquette
+           centrée déborderait sur la graduation des volts. */
+        const bord=xs[im]>MG+W-34 ? "end" : (xs[im]<MG+34 ? "start" : "middle");
+        g+='<text class="simXtSommet" x="'+simXY(xs[im])+'" y="'+simXY(yy)+
+           '" text-anchor="'+bord+'" fill="'+f.couleur+'">'+
+           simEsc(simXtTension(v[im]))+"<title>"+
+           simEsc(f.net+" · "+cle.toUpperCase()+" — le pire point de cette "+
+                  "courbe : "+simXtPct(v[im])+" % de l’agresseur, soit "+
+                  simXtTension(v[im])+", à "+
+                  simNb(total*im/Math.max(1,n-1),2)+" mm")+
+           "</title></text>";
+      }
+    }
+    /* LE TRAIT D'ESPACEMENT SUR LA COURBE DE NEXT, et sur elle seule : c'est
+       le NEXT que le serveur recoupe avec la géométrie, parce que c'est le
+       seul des deux qui localise en milieu homogène. */
+    if(cle==="next"&&SIM_XT.espacement)
+      for(const f of vus)
+        if(f.esp)g+=simXtTraitEspacement(f.esp,n,y0,SIM_XT_GRAPHE,W,MG);
+    /* LES PICS QUE LA GÉOMÉTRIE N'EXPLIQUE PAS, posés sur la courbe de NEXT,
+       pointe en bas, juste au-dessus du point qu'ils désignent. Ils ne sont
+       relevés que là — le FEXT ne localise rien à vitesses égales, et l'y
+       marquer ferait pointer un millimètre qui ne veut rien dire. */
+    if(cle==="next")
+      for(const f of vus)
+        for(const d of desac){
+          if(d.victime!==f.net||!(total>0))continue;
+          const t=Math.max(0,Math.min(1,d.s/total));
+          const i=Math.max(0,Math.min(n-1,Math.round(t*(n-1))));
+          const x=MG+t*W, yy=(f.yNext&&f.yNext[i]!=null)?f.yNext[i]:y0;
+          g+='<path class="simXtPic simXtPic-'+simEsc(d.verdict)+'" d="M'+
+             simXY(x-4)+","+simXY(yy-12)+"L"+simXY(x+4)+","+simXY(yy-12)+"L"+
+             simXY(x)+","+simXY(yy-4)+'Z"><title>'+
+             simEsc((d.verdict==="plan"?"pic expliqué par le plan"
+                     :d.verdict==="indecidable"
+                       ?"INDÉCIDABLE : une zone tombe ici, mais les zones sont"
+                        +" partout"
+                       :"PIC NON JUSTIFIÉ")+
+                    " à "+simNb(d.s,2)+" mm — "+(d.detail||""))+
+             "</title></path>";
+        }
+    return g+"</g>";
+  };
+  traces.forEach(function(t,k){ h+=graphe(t.cle,t.titre,yGN+k*PAS); });
+
+  /* ---- L'AXE : cinq graduations, et la longueur totale est écrite ---- */
+  for(let k=0;k<=4;k++){
+    const x=MG+k*W/4;
+    h+='<line class="simXtAxe" x1="'+simXY(x)+'" y1="'+simXY(HG)+'" x2="'+
+       simXY(x)+'" y2="'+simXY(HG+5)+'"/>';
+    h+='<text class="simXtGrad" x="'+simXY(x)+'" y="'+simXY(HG+17)+
+       '" text-anchor="'+(k===0?"start":(k===4?"end":"middle"))+'">'+
+       simNb(total*k/4,1)+"</text>";
+  }
+  h+='<text class="simXtGrad" x="'+simXY(MG+W/2)+'" y="'+simXY(HG+29)+
+     '" text-anchor="middle">position le long du parcours de l’agresseur (mm)'+
+     "</text>";
+
+  /* ---- LE CURSEUR, PAR-DESSUS TOUT ---- */
+  const i0=Math.max(0,Math.min(n-1,Math.round((SIM_XT.pos||0)*(n-1))));
+  h+='<line id="simXtCur" class="simXtCur" x1="'+simXY(xs[i0])+'" y1="0" x2="'+
+     simXY(xs[i0])+'" y2="'+simXY(HG)+'"/>';
+  vus.forEach(function(f,j){
+    const pt=(id,ys)=>{
+      if(!ys||ys[i0]==null)return "";
+      return '<circle id="'+id+j+'" class="simXtPt" cx="'+simXY(xs[i0])+
+             '" cy="'+simXY(ys[i0])+'" r="3.4"/>';
+    };
+    h+=pt("simXtPtN-",f.yNext)+pt("simXtPtF-",f.yFext);
+  });
+  h+="</svg></div>";
+
+  h+=simXtRegle(n,total,i0,xs,vus);
+  h+=simXtLegende(r,lignes,pire);
+  return h+"</div>";
+}
+
+/* ==========================================================================
+   LA RÉGLETTE, ET POURQUOI ELLE SURVIT À UNE FIGURE VIDE
+   --------------------------------------------------------------------------
+   ELLE NE COMMANDE PAS QUE LES COURBES. Elle pose aussi le POINT BLANC sur le
+   cuivre de la vraie piste, et celui-là ne disparaît pas quand on éteint les
+   deux sens : la chaleur et les plages restent peintes, et le point reste
+   dessus. La retirer avec les courbes laisserait donc sur la carte un repère
+   qu'on ne pourrait plus déplacer — une commande partie, son effet resté.
+
+   LE REPÈRE SE POSE ICI, avant la première ligne de lecture : c'est lui que
+   la lecture chiffrée interroge. `xs` est vide quand rien n'est tracé, et cela
+   suffit : `simXtCurseurPoser` ne s'en sert que pour déplacer un trait et des
+   cercles qui, eux, n'existent pas non plus. */
+function simXtRegle(n,total,i0,xs,vus){
+  SIM_XT_REPERE={n:n, total:total, xs:xs, fiches:vus};
+  return '<div class="simXtRegle"><label for="simXtPos">Position</label>'+
+     '<input type="range" id="simXtPos" min="0" max="'+(n-1)+
+     '" step="1" value="'+i0+'" title="'+simEsc(
+       "Le point lu partout à la fois : sur les courbes tracées, et sur le "+
+       "cuivre de chaque victime affichée — un point blanc s'y promène, à "+
+       "l'abscisse exacte du parcours. La finesse est celle de la carte, pas "+
+       "celle du millimètre : la résolution spatiale annoncée plus bas dit en "+
+       "deçà de quoi deux points n'en font qu'un.")+'">'+
+     '<span id="simXtPosVal">'+simNb(total*i0/Math.max(1,n-1),2)+
+     " mm</span></div>"+
+     '<div class="simXtLect" id="simXtLect">'+simXtLectureLignes(i0)+"</div>";
+}
+
+/* LE BOUTON DE LA CHALEUR SUR LE CUIVRE. Elle est allumée par défaut : c'est
+   elle qui a remplacé le ruban schématique du panneau, et la cacher d'office
+   ferait chercher une carte de chaleur qui n'est nulle part. Elle s'éteint
+   d'un clic, parce que sur une carte dense on veut parfois voir le cuivre nu
+   sous elle. */
+function simXtBoutonChaleur(){
+  return '<button class="tb mini'+(SIM_XT.chaleur?" on":"")+
+    '" id="simXtVoirChaleur" title="'+simEsc(
+    "La carte de chaleur du couplage, peinte le long du cuivre de chaque "+
+    "victime affichée, du bleu au rouge. C'est la MÊME mesure que les deux "+
+    "courbes, posée là où l'on corrige : le sens peint est celui des deux "+
+    "boutons de gauche.")+
+    '">chaleur</button>';
+}
+
+/* LES HACHURES DES ZONES DE VIGILANCE, en motifs SVG plutôt qu'en aplats.
+   C'est ce qui les empêche de se lire comme du couplage : elles ne sortent pas
+   de la matrice S, et un aplat translucide par-dessus une cellule colorée
+   donnerait une troisième couleur qu'on interpréterait comme une amplitude.
+   Une couleur par type — la couture, la fente et la transition n'ont pas la
+   même cause ni le même geste de correction. */
+const SIM_XT_HACHURES=[
+  {cle:"couture",     couleur:"var(--yellow)"},
+  {cle:"fente",       couleur:"var(--red)"},
+  {cle:"transition",  couleur:"var(--blue)"}
+];
+/* LES ZONES FONDUES PAR TYPE, POUR LA CARTE SEULEMENT. Le serveur les rend
+   telles qu'il les a mesurées — un intervalle par trou et PAR CÔTÉ du
+   parcours —, et c'est ce qu'il faut dans le tableau : deux côtés cousus
+   inégalement sont deux faits distincts. Superposées à l'écran, elles ne le
+   sont plus : quatorze rectangles hachurés qui se recouvrent donnent un aplat
+   dont la densité ne veut plus rien dire, et la carte disparaît dessous. On
+   fond donc les intervalles qui se touchent, type par type, et l'infobulle
+   annonce combien de mesures chaque bande recouvre.
+
+   TYPE PAR TYPE ET JAMAIS ENTRE TYPES : une couture et une fente ne demandent
+   pas le même geste, et les fondre ferait lire « une zone » là où il y a deux
+   causes. */
+function simXtZonesFondues(zones,total){
+  const parType={};
+  for(const z of (zones||[])){
+    const t=z.type||"couture";
+    (parType[t]=parType[t]||[]).push(z);
+  }
+  const sortie=[];
+  for(const t of Object.keys(parType)){
+    const l=parType[t].slice().sort((a,b)=>a.s0-b.s0);
+    let cour=null;
+    for(const z of l){
+      const s0=+z.s0, s1=Math.max(+z.s1,+z.s0);
+      if(cour&&s0<=cour.s1){
+        cour.s1=Math.max(cour.s1,s1); cour.n++;
+        if(cour.detail!==z.detail)cour.divers=true;
+      }else{
+        if(cour)sortie.push(cour);
+        cour={type:t,s0:s0,s1:s1,n:1,detail:z.detail||"",divers:false};
+      }
+    }
+    if(cour)sortie.push(cour);
+  }
+  for(const z of sortie)
+    if(z.n>1)
+      z.detail=z.n+" mesures fondues ("+simNb(z.s0,2)+" → "+simNb(z.s1,2)+
+        " mm) ; le tableau plus bas les donne une par une"+
+        (z.divers?"":" — "+z.detail);
+  return sortie.sort((a,b)=>a.s0-b.s0);
+}
+
+function simXtHachures(){
+  let h="<defs>";
+  for(const z of SIM_XT_HACHURES)
+    h+='<pattern id="simXtH-'+z.cle+'" width="8" height="8" '+
+       'patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'+
+       '<line x1="0" y1="0" x2="0" y2="8" stroke="'+z.couleur+
+       '" stroke-width="2.5" opacity="0.55"/></pattern>';
+  return h+"</defs>";
+}
+
+function simXtSensBoutons(){
+  /* CE QUE LES DEUX BOUTONS COMMANDENT A CHANGÉ, ET IL FAUT LE DIRE. Ils
+     choisissaient LA courbe affichée ; maintenant que les deux sont là,
+     l'une sous l'autre, ils choisissent ce que la COULEUR des pistes montre —
+     et, avec elle, ce que les plages peintes sur le cuivre désignent. Sans ce
+     mot, on cliquerait « FEXT » en attendant que quelque chose apparaisse. */
+  let h='<span class="simXtSens" title="'+simEsc(
+    "Ce que la couleur des pistes peint — et ce que les plages posées sur le "+
+    "cuivre désignent. C'est un choix de PEINTURE, pas d'affichage : les "+
+    "cases « voir » d'à côté, elles, décident quelles courbes sont tracées. "+
+    "Ni l'un ni l'autre ne relance quoi que ce soit.")+
+    '"><small>peindre</small>';
+  for(const s of SIM_XT_SENS)
+    h+='<button class="tb mini'+(SIM_XT.sens===s.cle?" on":"")+
+       '" data-xtsens="'+s.cle+'" title="'+simEsc(s.titre)+'">'+s.nom+
+       "</button>";
+  return h+"</span>";
+}
+
+/* ==========================================================================
+   LES TROIS CASES DE LA FIGURE — CE QU'ELLE TRACE, ET DANS QUELLE UNITÉ
+   --------------------------------------------------------------------------
+   DES CASES ET NON DES BOUTONS, et la différence n'est pas cosmétique : les
+   boutons « peindre » d'à côté sont un choix EXCLUSIF — la couleur du cuivre
+   montre un sens ou l'autre, jamais les deux. Ici les trois réglages sont
+   INDÉPENDANTS et cumulables, et une case dit cela d'un coup d'œil là où
+   trois boutons armés se liraient comme un choix à trois branches.
+
+   ELLES SONT COLLÉES À LA FIGURE, pas rangées dans les réglages du panneau.
+   Les réglages se replient une fois l'analyse lancée ; ces trois-là se
+   touchent JUSTEMENT en lisant la figure, et les mettre dans un tiroir qu'on
+   vient de fermer serait la meilleure façon qu'on ne les trouve pas.
+   ========================================================================== */
+const SIM_XT_VOIR=[
+  {cle:"next", nom:"NEXT",
+   titre:"Tracer le graphe du NEXT — le bruit du bout PROCHE de chaque "+
+         "victime. C'est sur lui que se posent le profil d'espacement et les "+
+         "pics recoupés : l'éteindre les emporte, puisqu'ils n'ont de sens "+
+         "que là."},
+  {cle:"fext", nom:"FEXT",
+   titre:"Tracer le graphe du FEXT — le bruit du bout LOINTAIN de chaque "+
+         "victime. Il a SA propre échelle : le FEXT vaut souvent une "+
+         "fraction du NEXT, et deux échelles l'une sous l'autre se comparent "+
+         "mal. L'éteindre rend toute la hauteur à celui qu'on suit."},
+  {cle:"volts", nom:"mV",
+   titre:"Écrire aussi le bruit en VOLTS — sur les cases des victimes, sur "+
+         "la graduation de chaque graphe et sous la réglette. C'est le "+
+         "pour-cent multiplié par l'amplitude saisie dans la rangée "+
+         "« Signal » ; le décocher ne laisse que la mesure, qui, elle, ne "+
+         "dépend que du cuivre. Aucun calcul ne bouge dans un sens ni dans "+
+         "l'autre."}
+];
+
+function simXtVoirCases(){
+  let h='<span class="simXtVoir" title="'+simEsc(
+    "Ce que la FIGURE trace, et dans quelle unité. Trois réglages "+
+    "indépendants, tous d'affichage : les deux courbes et les deux unités "+
+    "sont déjà dans le résultat, et rien ici ne relance le calcul.")+
+    '"><small>voir</small>';
+  for(const v of SIM_XT_VOIR)
+    h+='<label class="simXtVoirC'+(simXtVu(v.cle)?" on":"")+'" title="'+
+       simEsc(v.titre)+'"><input type="checkbox" data-xtvoir="'+v.cle+'"'+
+       (simXtVu(v.cle)?" checked":"")+">"+simEsc(v.nom)+"</label>";
+  return h+"</span>";
+}
+
+/* UN SEUL ENDROIT LIT L'ÉTAT, et il tolère un état d'avant ces cases : un
+   résultat gardé en mémoire par une version précédente n'a pas de `courbes`,
+   et tout doit alors s'afficher — c'est ce que la figure faisait. */
+function simXtVu(cle){
+  const c=SIM_XT.courbes;
+  return !c||c[cle]!==false;
+}
+
+/* LE BOUTON N'APPARAÎT QUE S'IL Y A UN PROFIL À MONTRER. Un interrupteur qui
+   ne change rien à l'écran est pire qu'absent : on le bascule deux fois avant
+   de comprendre qu'il n'y avait rien dessous. Quand aucune victime n'a de
+   profil — elles sont toutes sur des couches adjacentes —, on le dit plutôt
+   que d'offrir un bouton muet. */
+function simXtBoutonEspacement(esp){
+  if(!esp||!Object.keys(esp).length)return "";
+  return '<button class="tb mini'+(SIM_XT.espacement?" on":"")+
+    '" id="simXtVoirEsp" title="'+simEsc(
+    "Le profil d'espacement, superposé en trait clair sur la ligne de chaque "+
+    "victime. Il vient de la GÉOMÉTRIE et non du calcul : c'est le seul "+
+    "témoin indépendant de la carte. L'axe est INVERSÉ — le trait monte quand "+
+    "les deux pistes se rapprochent —, pour qu'un resserrement se lise au "+
+    "même endroit et dans le même sens qu'un pic de couplage.")+
+    '">écart</button>';
+}
+
+/* LE BOUTON DES ZONES SUR LE CUIVRE. Il n'apparaît que si le serveur en a
+   rendu : un interrupteur qui n'allume rien se bascule deux fois avant qu'on
+   comprenne qu'il n'y avait rien dessous. */
+function simXtBoutonRisques(r){
+  /* UN BOUTON QUI DISPARAÎT SANS RIEN DIRE EST PIRE QU'UN BOUTON ÉTEINT : on
+     le cherche, on croit avoir cassé quelque chose, et l'on ne saura jamais
+     que c'est le RÉSULTAT qui ne permet pas de le peindre. Quand le serveur a
+     refusé de rendre des plages, il dit pourquoi, et la place du bouton porte
+     ce pourquoi. */
+  if(!(r.risques||[]).length){
+    const ref=r.risques_refus||[];
+    if(!ref.length)return "";
+    return '<span class="simXtEteint" title="'+simEsc(
+      "Rien à peindre sur le cuivre : "+
+      ref.map(x=>"« "+x.victime+" » — "+x.raison).join("  ")+
+      " Une plage peinte dirait « ce millimètre-là » sans pouvoir le "+
+      "désigner ; élargissez la bande analysée et elle reviendra.")+
+      '">sur le cuivre : rien à peindre</span>';
+  }
+  return '<button class="tb mini'+(SIM_XT.risques?" on":"")+
+    '" id="simXtVoirRisques" title="'+simEsc(
+    "Les portions de chaque victime où SON couplage se fabrique, peintes sur "+
+    "le cuivre de la carte. Ambre : le dessin des pistes l'explique, ça se "+
+    "corrige en écartant. Rouge : rien ne l'explique — l'écarter ne servirait "+
+    "à rien, c'est ailleurs qu'il faut chercher.")+
+    '">sur le cuivre</button>';
+}
+
+/* SOUS LA CARTE, LES TROIS CHOSES QUI DISENT CE QU'ELLE VAUT : l'échelle des
+   couleurs, la RÉSOLUTION — deux pics plus proches sont un seul pic —, et la
+   liste des zones superposées. Sans la deuxième, on lit la carte au dixième de
+   millimètre alors qu'elle ne distingue rien sous plusieurs. */
+function simXtLegende(r,lignes,pire){
+  let h='<div class="simXtLeg"><span class="simXtRampe"></span>'+
+        /* LE HAUT DE L'ÉCHELLE EN POUR-CENT, comme les cases et la lecture :
+           « 0,00006 » demandait de compter les zéros pour retrouver le chiffre
+           qui est écrit partout ailleurs. */
+        "<span>0</span><span>→</span><span>"+simXtPct(pire)+" %"+
+        (simXtVu("volts")?" = "+simEsc(simXtTension(pire)):"")+
+        " (amplitude de la réponse impulsionnelle, rapportée à l'agresseur"+
+        (simXtVu("volts")?" puis convertie par l'amplitude saisie":"")+
+        ")</span></div>";
+  const res=lignes.map(l=>l.resolution).filter(v=>v>0);
+  /* LA RÉSOLUTION RESTE À DÉCOUVERT, et elle seule : sans elle on lit la carte
+     au dixième de millimètre alors qu'elle ne distingue rien sous plusieurs.
+     Tout le reste de la légende est un MODE D'EMPLOI — il s'apprend une fois,
+     et le relire à chaque analyse est ce qui rend la fiche illisible. */
+  if(res.length)
+    h+='<p class="simNote">· <b>Résolution spatiale : '+
+       simNb(Math.max(...res),2)+" mm</b> — deux zones plus proches sont une "+
+       "seule tache.</p>";
+  h+='<details class="simXtPourquoi"><summary>comment lire cette carte'+
+     "</summary>";
+  if(res.length)
+    h+='<p class="simNote">· La <b>résolution</b> ne dépend que de la bande '+
+       "analysée et de la fenêtre : le zero-padding interpole, il ne distingue "+
+       "pas. Deux zones plus proches que "+simNb(Math.max(...res),2)+
+       " mm resteront une seule tache, quelle que soit la finesse de la courbe "+
+       "à l'écran.</p>";
+  const cible=(r.reglages&&r.reglages.resolution_cible)||0;
+  if(cible>0&&res.length)
+    h+='<p class="simNote">· Résolution <b>visée</b> : '+simNb(cible,2)+
+       " mm — "+(Math.max(...res)<=cible
+         ? "atteinte."
+         : "<b>NON atteinte</b> ; l'avertissement en tête dit jusqu'à quelle "+
+           "fréquence il faudrait monter.")+"</p>";
+  const esp=(r.carte_chaleur&&r.carte_chaleur.espacements)||{};
+  if(Object.keys(esp).length)
+    h+='<p class="simNote">· Le <b>trait clair</b>, sur la courbe de NEXT, '+
+       "est le profil d'espacement, mesuré sur la GÉOMÉTRIE et non calculé : "+
+       "c'est le seul témoin indépendant de cette carte. <b>Son axe est "+
+       "inversé</b> — il monte quand les deux pistes se rapprochent —, de "+
+       "sorte qu'un resserrement se lise au même endroit et dans le même sens "+
+       "qu'un pic. Là où il s'interrompt, la victime ne longe pas : un pic "+
+       "dans un trou du trait n'est pas expliqué par le dessin des "+
+       "pistes.</p>";
+  h+='<p class="simNote">· La <b>réglette</b> pose un trait au travers des '+
+     "deux courbes et un <b>point blanc sur le cuivre</b> de chaque victime "+
+     "affichée, à la même abscisse : c'est lui qui recoud « ce pic-ci » et "+
+     "« ce millimètre-là de cette piste ». Une carte de chaleur dit OÙ, "+
+     "jamais COMBIEN ; la lecture sous la réglette répond. Les <b>cases</b> "+
+     "allument ou éteignent une victime — ses courbes, sa chaleur sur le "+
+     "cuivre, son point et ses plages —, sans rien relancer : les deux sens "+
+     "sont dans le même résultat, et les tableaux plus bas gardent tout le "+
+     "monde.</p>";
+  if(SIM_XT.chaleur)
+    h+='<p class="simNote">· La <b>chaleur</b> est peinte le long du cuivre '+
+       "de chaque victime, dans le sens choisi par les deux boutons du haut, "+
+       "et son maximum est celui de la carte ENTIÈRE : une victime tranquille "+
+       "reste bleue à côté d'une victime chargée, ce qui est tout l'objet "+
+       "d'une échelle commune. Le bouton « chaleur » l'éteint quand on veut "+
+       "voir le cuivre nu.</p>";
+  h+='<p class="simNote">· Chaque courbe a <b>son échelle</b>, écrite à sa '+
+     "gauche : le FEXT vaut souvent une fraction du NEXT, et une échelle "+
+     "commune l'écraserait au ras de l'axe. Les deux ne s'additionnent pas — "+
+     "le NEXT s'observe au bout <b>proche</b> de la victime, le FEXT à son "+
+     "bout <b>lointain</b>, jamais au même point. Les cases <b>« voir »</b> "+
+     "en tête éteignent l'un ou l'autre : la figure se resserre alors sur ce "+
+     "qui reste, et rien ne se relance — le profil d'espacement et les pics "+
+     "recoupés, eux, vivent sur la courbe de NEXT et s'en vont avec elle.</p>";
+  /* LES VOLTS, EXPLIQUÉS UNE FOIS. Ils sont partout dans la fiche, et ce
+     qu'ils supposent tient en deux phrases : une amplitude saisie à la main,
+     et un rapport que le serveur a calculé. Sans cette note, on lit « 14 mV »
+     comme une mesure alors que c'est un produit — et l'on ne songe pas à
+     vérifier le champ qui en fournit la moitié. */
+  h+='<p class="simNote">· '+(simXtVu("volts")
+     ? "Les <b>volts</b> écrits à côté de chaque pour-cent sont ce couplage-là "+
+       "multiplié par l'<b>amplitude de l'agresseur</b> saisie dans la rangée "+
+       "« Signal » ("+simEsc(simTension(SIM.saisie.swing))+"), et la case "+
+       "<b>mV</b> en tête les éteint quand on ne compare que des dessins."
+     : "Les <b>volts</b> sont <b>éteints</b> (case <b>mV</b> en tête) : il ne "+
+       "reste que le pour-cent, qui ne dépend que du cuivre. Les rallumer les "+
+       "écrit à côté de chaque mesure, converti par l'amplitude de "+
+       "l'agresseur ("+simEsc(simTension(SIM.saisie.swing))+").")+
+     " Le calcul, lui, ne connaît que "+
+     "des rapports : changer l'amplitude déplace toutes les tensions et ne "+
+     "relance rien. Le <b>trait horizontal</b> sur chaque graphe est le seuil "+
+     "qui juge — "+simEsc(simSeuilNom())+", soit "+
+     simEsc(simXtTension(simSeuilFraction()))+" — et il n'est tracé que "+
+     "lorsqu'il tombe dans l'échelle du graphe : au-dessus, on ne dessine "+
+     "rien plutôt qu'un trait collé au plafond, qui se lirait comme un seuil "+
+     "atteint.</p>";
+  const zones=(r.carte_chaleur&&r.carte_chaleur.zones)||[];
+  if(zones.length&&(r.masse&&r.masse.vain))
+    h+='<p class="simNote">· Les '+zones.length+" zones de vigilance du plan "+
+       "<b>ne sont PAS hachurées ici</b> : elles couvrent "+
+       simNb(100*r.masse.couvert,0)+" % du parcours, et les peindre "+
+       "reviendrait à hachurer la figure entière — un motif qui recouvre tout "+
+       "ne désigne plus rien. Elles restent listées plus bas.</p>";
+  else if(zones.length)
+    h+='<p class="simNote">· Les <b>bandes hachurées</b> sont des zones de '+
+       "vigilance du plan de référence, PAS du couplage : elles ne sortent "+
+       "pas de la matrice S. Un pic à la même abscisse que l'une d'elles en a "+
+       "probablement la cause. Le détail est plus bas.</p>";
+  if((r.desaccords||[]).length)
+    h+='<p class="simNote">· Les <b>triangles</b> marquent les pics que le '+
+       "recoupement a relevés, sur la courbe de NEXT : rouge quand rien ne "+
+       "les "+
+       "explique, bleu quand une zone de vigilance tombe au même endroit, "+
+       "gris quand une zone y tombe mais que les zones couvrent trop du "+
+       "parcours pour que ce soit un renseignement.</p>";
+  const zr=r.risques||[];
+  if(zr.length){
+    const rouges=zr.filter(z=>!z.justifie).length;
+    h+='<p class="simNote">· <b>'+zr.length+" zone(s) à risque</b> sont "+
+       "peintes <b>sur le cuivre de la carte</b>, portion par portion — c'est "+
+       "la même mesure que cette figure, posée là où l'on corrige. Elles "+
+       "sortent des plages où le couplage d'une victime dépasse "+
+       simNb(100*((r.reglages||{}).risque||0.5),0)+" % de son propre pire "+
+       "point. <b>Ambre</b> : le dessin des pistes l'explique, ça se corrige "+
+       "en écartant. <b>Rouge</b> : un pic que le dessin des pistes n'explique "+
+       "PAS y tombe — écarter ne servirait à rien, et le recoupement plus bas "+
+       "dit si le plan de référence est en cause ou si la question reste "+
+       "ouverte"+(rouges?" ; il y en a "+rouges:"")+".</p>";
+  }
+  return h+"</details>";
+}
+
+/* ==========================================================================
+   LES ZONES À RISQUE, POSÉES SUR LE CUIVRE
+   --------------------------------------------------------------------------
+   LA CARTE DU PANNEAU RANGE LES VICTIMES EN LIGNES SUR UN AXE COMMUN, ce qui
+   est exactement ce qu'il faut pour les COMPARER : un pic à la même abscisse
+   sur deux lignes désigne un accident du plan, un pic sur une seule désigne le
+   tracé de cette victime-là. Mais devant le dessin, la question n'est plus
+   « laquelle prend le plus » — c'est « quel millimètre de CELLE-CI dois-je
+   reprendre ». Une abscisse en millimètres le long d'un parcours ne répond pas
+   à ça : il faut aller la chercher sur la carte, à la règle.
+   Ces plages-là répondent, et c'est le même chiffre : le serveur rend, pour
+   chaque victime confirmée, les portions du parcours où SON couplage se
+   fabrique, et la page les reporte sur SON cuivre.
+
+   ON NE RECONSTRUIT PAS LA POSITION DE LA VICTIME PAR DÉCALAGE LATÉRAL, et
+   c'est la décision qui rend ce code fiable. On aurait pu prendre le point du
+   parcours à l'abscisse s et le décaler de l'entre-axes mesuré : cela suppose
+   de retrouver EXACTEMENT la convention de signe du serveur, dans deux outils,
+   et un signe inversé poserait le trait sur la piste d'en face — visiblement
+   juste, et faux. On fait l'inverse, qui ne suppose rien : on parcourt le
+   cuivre de la victime, on PROJETTE chaque point sur le parcours de
+   l'agresseur, et l'on garde ce qui tombe dans la plage. La géométrie est
+   alors celle du dessin, pas celle d'une reconstruction.
+
+   LES FORMES SONT NEUTRES, et l'algorithme vit ici une seule fois. Chaque
+   outil sait fabriquer deux choses et rien de plus : le PARCOURS de
+   l'agresseur — une suite de {s0, longueur, pts} en millimètres, dans l'ordre —
+   et les POLYLIGNES d'un net, en millimètres aussi. Le reste — projeter,
+   découper, recoller — est le même des deux côtés, et deux copies auraient
+   fini par ne plus désigner le même cuivre.
+   ========================================================================== */
+
+/* Le pas d'échantillonnage du cuivre de la victime. Un quart de millimètre :
+   assez fin pour qu'un bout de plage ne saute pas un coude, assez gros pour
+   qu'une liaison de cent millimètres tienne en quatre cents points. */
+const SIM_XT_PAS_TRAIT=0.25;
+
+/* La projection d'un point sur le parcours : son abscisse curviligne et sa
+   distance. On garde la plus PROCHE des projections — deux tronçons d'un même
+   repli peuvent tous deux l'accepter, et prendre le premier venu placerait le
+   point à l'autre bout du parcours. */
+function simXtProjParcours(parcours,x,y){
+  let best=null;
+  for(const e of parcours){
+    const p=e.pts;
+    if(!(e.total>0)){
+      /* LA LONGUEUR DE LA POLYLIGNE, calculée une fois et gardée sur l'objet :
+         l'outil peut la donner s'il l'a sous la main, sinon elle se déduit. */
+      let L=0;
+      for(let i=0;i+3<p.length;i+=2)
+        L+=Math.hypot(p[i+2]-p[i],p[i+3]-p[i+1]);
+      e.total=L||e.longueur||1;
+    }
+    /* L'ABSCISSE DANS LE TRONÇON est comptée sur la polyligne, et ramenée à la
+       longueur ENVOYÉE AU SERVEUR : les deux peuvent différer d'un cheveu
+       quand un arc a été plié, et c'est la seconde qui fait foi puisque c'est
+       elle qui a construit l'axe. Le cumul se porte en marchant — le
+       recalculer depuis le début à chaque segment serait quadratique, et cette
+       fonction tourne quelques centaines de fois par plage. */
+    let avant=0;
+    for(let i=0;i+3<p.length;i+=2){
+      const ax=p[i], ay=p[i+1], bx=p[i+2], by=p[i+3];
+      const dx=bx-ax, dy=by-ay, l2=dx*dx+dy*dy;
+      const t=l2>0?Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/l2)):0;
+      const px=ax+dx*t, py=ay+dy*t;
+      const d=Math.hypot(x-px,y-py);
+      if(!best||d<best.d){
+        const surTroncon=avant+Math.hypot(px-ax,py-ay);
+        const total=e.total||1;
+        best={d:d, s:e.s0+Math.max(0,Math.min(1,surTroncon/total))*e.longueur};
+      }
+      avant+=Math.sqrt(l2);
+    }
+  }
+  return best;
+}
+
+/* Le cuivre d'une victime qui tombe dans une plage : une ou plusieurs
+   polylignes, en millimètres.
+
+   ON DÉCOUPE EN MORCEAUX CONTIGUS, et un trou reste un trou : une victime qui
+   s'écarte au milieu de la plage — elle contourne un composant — donne deux
+   morceaux, pas un trait qui traverse le vide. C'est la même règle que le trou
+   du profil d'espacement, et pour la même raison. */
+function simXtRisqueTraits(parcours,traits,s0,s1,corridor){
+  const out=[];
+  if(!parcours.length)return out;
+  for(const p of traits){
+    if(!p||p.length<4)continue;
+    let morceau=null;
+    for(let i=0;i+3<p.length;i+=2){
+      const ax=p[i], ay=p[i+1], bx=p[i+2], by=p[i+3];
+      const l=Math.hypot(bx-ax,by-ay);
+      const n=Math.max(1,Math.ceil(l/SIM_XT_PAS_TRAIT));
+      for(let k=0;k<=n;k++){
+        /* Le dernier point d'un segment est le premier du suivant : on le
+           saute, sauf sur le tout dernier, sans quoi chaque sommet compterait
+           deux fois. */
+        if(k===n&&i+5<p.length)break;
+        const x=ax+(bx-ax)*k/n, y=ay+(by-ay)*k/n;
+        const pr=simXtProjParcours(parcours,x,y);
+        const dedans=pr&&pr.s>=s0&&pr.s<=s1&&pr.d<=corridor;
+        if(dedans){
+          if(!morceau){morceau=[];out.push(morceau);}
+          morceau.push(x,y);
+        }else morceau=null;
+      }
+    }
+  }
+  return out.filter(m=>m.length>=4);
+}
+
+/* Ce que le serveur a rendu, quand l'onglet est ouvert et qu'il y a de quoi.
+   Même garde que `simCheveluRes` : une surimpression qui survivrait au
+   changement d'onglet désignerait du cuivre sous une fiche qui n'en parle
+   pas. */
+function simXtRisques(){
+  if(typeof SIM==="undefined"||!SIM.ouvert||SIM.analyse!=="crosstalk")return [];
+  if(!SIM_XT.risques||!SIM_XT.res)return [];
+  return SIM_XT.res.risques||[];
+}
+
+/* La géométrie, calculée UNE FOIS par résultat et gardée. Elle coûte quelques
+   centaines de projections ; la refaire à chaque redessin — donc à chaque
+   déplacement de la souris — se verrait. */
+let SIM_XT_GEOM=null, SIM_XT_GEOM_SRC=null;
+
+function simXtRisqueGeom(){
+  /* LES VICTIMES ÉTEINTES DANS LA FIGURE LE SONT AUSSI SUR LE CUIVRE. Le
+     filtre est posé À LA SORTIE, et sur TOUS les chemins de sortie : la
+     géométrie est gardée par résultat, et la recalculer à chaque case cochée
+     coûterait quelques centaines de projections pour un geste d'affichage.
+     Filtrer au seul chemin de calcul laissait le cas gardé rendre la victime
+     éteinte — c'est-à-dire le cas ordinaire, celui d'un deuxième clic. */
+  const sortie=()=>{
+    const caches=SIM_XT.caches||{};
+    return SIM_XT_GEOM.filter(z=>!caches[z.victime]);
+  };
+  const zones=simXtRisques();
+  if(!zones.length)return [];
+  if(SIM_XT_GEOM_SRC===SIM_XT.res&&SIM_XT_GEOM)return sortie();
+  SIM_XT_GEOM_SRC=SIM_XT.res; SIM_XT_GEOM=[];
+  /* LA GÉOMÉTRIE EST DEMANDÉE UNE FOIS ET PARTAGÉE : la chaleur peinte le long
+     des victimes et le point de la réglette lisent le même cuivre, et deux
+     appels auraient fait construire deux fois la même chose à l'outil. */
+  const g=simXtGeomBrute();
+  if(!g||!g.parcours||!g.parcours.length)return sortie();
+  const corridor=simXtCorridor();
+  for(const z of zones){
+    const traits=(g.victimes||{})[z.victime];
+    if(!traits||!traits.length)continue;
+    const morceaux=simXtRisqueTraits(g.parcours,traits,z.s0,z.s1,corridor);
+    if(morceaux.length)SIM_XT_GEOM.push(Object.assign({},z,{traits:morceaux}));
+  }
+  return sortie();
+}
+
+/* LA COULEUR DIT LE VERDICT AVANT DE DIRE LE NIVEAU, et c'est l'inverse d'une
+   carte de chaleur ordinaire. Une plage que le dessin des pistes explique est
+   ambre : on la corrige en écartant, et c'est un geste connu. Une plage que
+   RIEN n'explique est rouge : elle ne se corrige pas en écartant, et c'est
+   justement ce qu'il faut savoir avant de déplacer la piste pour rien. Le
+   niveau module l'opacité, pas la teinte. */
+function simXtRisqueCouleur(z){
+  const a=0.35+0.55*Math.max(0,Math.min(1,z.niveau||0));
+  return z.justifie?"rgba(232,164,58,"+a.toFixed(2)+")"
+                   :"rgba(232,68,58,"+a.toFixed(2)+")";
+}
+
+/* ==========================================================================
+   LE COUPLAGE PEINT SUR LE CUIVRE, ET LE POINT DE LA RÉGLETTE
+   --------------------------------------------------------------------------
+   LA FIGURE DU PANNEAU DIT « COMBIEN, À QUELLE ABSCISSE » ; le cuivre dit
+   « SUR QUEL MILLIMÈTRE DE QUELLE PISTE ». Les deux sont la même mesure, et
+   c'est le point blanc qui les recoud : il se pose au même instant sur les
+   deux courbes et sur la vraie piste, à l'abscisse que la réglette désigne.
+   Un schéma de piste dans le panneau faisait ce travail de tête ; la carte le
+   fait pour de bon.
+
+   TOUT PART DE LA MÊME PROJECTION, celle des zones à risque : on parcourt le
+   cuivre de la victime, on projette chaque point sur le parcours de
+   l'agresseur, et l'on garde son abscisse curviligne. On ne reconstruit RIEN
+   par décalage latéral — voir « LES ZONES À RISQUE, POSÉES SUR LE CUIVRE » :
+   un signe inversé poserait le trait sur la piste d'en face, visiblement juste
+   et faux.
+
+   ELLE SE CALCULE UNE FOIS PAR RÉSULTAT. Le canevas se redessine à chaque
+   déplacement de souris ; refaire quelques milliers de projections à ce
+   rythme-là se verrait. On garde donc, par victime, la suite des points de son
+   cuivre AVEC leur abscisse — dans l'ordre du cuivre, un morceau par passage
+   dans le couloir —, et le reste n'est que de la lecture.
+   ========================================================================== */
+
+/* Les nets dont on demande le cuivre à l'outil. Les DEUX usages y sont : les
+   plages à risque, et la chaleur peinte le long des victimes affichées. Les
+   demander séparément aurait fini par donner à l'un ce que l'autre n'a pas. */
+function simXtVictimesVoulues(){
+  const res=(typeof SIM_XT!=="undefined")?SIM_XT.res:null;
+  const vu={}, out=[];
+  const ajoute=n=>{if(n&&!vu[n]){vu[n]=true;out.push(n);}};
+  /* TOUTE COURBE TRACÉE PEUT ÊTRE ALLUMÉE, donc son cuivre peut être demandé :
+     une candidate sous le seuil qu'on coche doit se peindre comme les autres,
+     sans quoi la case l'allumerait dans la figure et pas sur la carte. */
+  for(const l of ((res&&res.carte_chaleur&&res.carte_chaleur.lignes)||[]))
+    ajoute(l.victime);
+  for(const c of ((res&&res.couples)||[]))if(c.confirmee)ajoute(c.victime);
+  for(const v of ((res&&res.victimes)||[]))ajoute(v);
+  for(const z of ((res&&res.risques)||[]))ajoute(z.victime);
+  return out;
+}
+
+/* Le couloir de recherche : celui de la présélection, élargi d'une demi-largeur
+   de part et d'autre. C'est la distance en deçà de laquelle le serveur a
+   accepté de regarder cette victime, et il n'y a pas de raison d'en prendre
+   une autre ici. */
+function simXtCorridor(){
+  const s=(SIM_XT.res&&SIM_XT.res.etape0&&SIM_XT.res.etape0.seuils)||{};
+  return Math.max(0.2,(s.distance_max||0.5))+1.0;
+}
+
+/* La géométrie brute rendue par l'outil, gardée par résultat. Deux appelants
+   la partagent — les plages et la chaleur —, et l'outil ne la construit donc
+   qu'une fois. */
+let SIM_XT_BRUTE=null, SIM_XT_BRUTE_SRC=null;
+function simXtGeomBrute(){
+  if(SIM_XT_BRUTE_SRC===SIM_XT.res&&SIM_XT_BRUTE!==null)return SIM_XT_BRUTE;
+  SIM_XT_BRUTE_SRC=SIM_XT.res;
+  SIM_XT_BRUTE=(SIM_ED&&typeof SIM_ED.xtGeometrie==="function")
+    ? (SIM_ED.xtGeometrie()||false) : false;
+  return SIM_XT_BRUTE;
+}
+
+/* LE CUIVRE DE CHAQUE VICTIME, ÉCHANTILLONNÉ ET ABSCISSÉ. Un morceau par
+   passage dans le couloir, dans l'ordre du cuivre : c'est ce qui permet à la
+   fois de peindre un trait continu et de retrouver un point à une abscisse
+   donnée. Une victime qui contourne un composant a deux morceaux, et le trou
+   entre les deux reste un trou — elle n'y longe pas, elle n'y couple pas. */
+let SIM_XT_PROJ=null, SIM_XT_PROJ_SRC=null;
+function simXtProjVictimes(){
+  if(SIM_XT_PROJ_SRC===SIM_XT.res&&SIM_XT_PROJ)return SIM_XT_PROJ;
+  SIM_XT_PROJ_SRC=SIM_XT.res; SIM_XT_PROJ={};
+  const g=simXtGeomBrute();
+  if(!g||!g.parcours||!g.parcours.length)return SIM_XT_PROJ;
+  const corridor=simXtCorridor();
+  for(const net of Object.keys(g.victimes||{})){
+    const morceaux=[];
+    for(const p of (g.victimes[net]||[])){
+      if(!p||p.length<4)continue;
+      let morceau=null;
+      for(let i=0;i+3<p.length;i+=2){
+        const ax=p[i], ay=p[i+1], bx=p[i+2], by=p[i+3];
+        const l=Math.hypot(bx-ax,by-ay);
+        const nb=Math.max(1,Math.ceil(l/SIM_XT_PAS_TRAIT));
+        for(let k=0;k<=nb;k++){
+          /* Le dernier point d'un segment est le premier du suivant : on le
+             saute, sauf sur le tout dernier — sans quoi chaque sommet
+             compterait deux fois. */
+          if(k===nb&&i+5<p.length)break;
+          const x=ax+(bx-ax)*k/nb, y=ay+(by-ay)*k/nb;
+          const pr=simXtProjParcours(g.parcours,x,y);
+          if(pr&&pr.d<=corridor){
+            if(!morceau){morceau=[];morceaux.push(morceau);}
+            morceau.push({s:pr.s, x:x, y:y});
+          }else morceau=null;
+        }
+      }
+    }
+    SIM_XT_PROJ[net]=morceaux.filter(m=>m.length>=2);
+  }
+  return SIM_XT_PROJ;
+}
+
+/* Les victimes qu'on peint : celles que la fiche affiche, et rien d'autre.
+   LA DÉCISION EST PRISE UNE SEULE FOIS, dans `simXtFiches` : allumer par
+   défaut est une règle à trois cas — cochée, décochée, jamais touchée —, et la
+   réécrire ici aurait fini par peindre sur le cuivre une victime que la figure
+   n'affiche pas. */
+function simXtVictimesVues(){
+  const vues={};
+  for(const f of simXtFiches(SIM_XT.res||{}))if(f.visible)vues[f.net]=true;
+  return simXtVictimesVoulues().filter(n=>vues[n]);
+}
+
+/* Peint-on quelque chose sur le cuivre ? Même garde que `simXtRisques` : une
+   surimpression qui survivrait au changement d'onglet désignerait du cuivre
+   sous une fiche qui n'en parle pas. */
+function simXtSurCuivre(){
+  return !(typeof SIM==="undefined"||!SIM.ouvert||SIM.analyse!=="crosstalk"
+           ||!SIM_XT.res||!SIM_XT.res.carte_chaleur);
+}
+
+/* La courbe d'une victime dans le sens PEINT, et sa valeur à une abscisse.
+   On se cale sur le point CALCULÉ le plus proche, jamais sur une
+   interpolation : la carte a une résolution, et inventer une valeur entre deux
+   points la ferait lire plus fine qu'elle n'est. */
+function simXtCourbeDe(net,sens){
+  const c=SIM_XT.res&&SIM_XT.res.carte_chaleur;
+  if(!c)return null;
+  return (c.lignes||[]).filter(l=>l.victime===net&&l.sens===sens)[0]||null;
+}
+function simXtValeurA(ligne,total,s){
+  const v=ligne&&ligne.valeurs;
+  if(!v||!v.length)return 0;
+  const i=Math.max(0,Math.min(v.length-1,
+            Math.round((total>0?Math.max(0,Math.min(total,s))/total:0)
+                       *(v.length-1))));
+  return v[i]||0;
+}
+
+/* LA CHALEUR LE LONG DU CUIVRE. Un segment par pas d'échantillonnage, de la
+   couleur de la valeur à cette abscisse-là : c'est la carte de chaleur du
+   panneau, posée là où l'on corrige. Le maximum est celui de la CARTE ENTIÈRE
+   et non celui de la victime — sans quoi la plus tranquille des victimes
+   s'afficherait aussi rouge que la pire, ce qui est le contresens qu'une carte
+   de chaleur ne doit pas faire.
+
+   `conv` fait passer des millimètres à l'unité de dessin de l'outil, et `ep`
+   donne l'épaisseur : le calcul est commun aux deux éditeurs, la conversion
+   leur appartient. */
+function simXtPeindreChaleur(c,conv,ep){
+  if(!SIM_XT.chaleur||!simXtSurCuivre())return;
+  const proj=simXtProjVictimes();
+  const ch=SIM_XT.res.carte_chaleur;
+  const axe=ch.axe||[];
+  const total=axe.length?axe[axe.length-1]:0;
+  const pire=Math.max(1e-12,ch.max||0);
+  c.save();
+  /* LES BOUTS SONT RONDS, ET C'EST CE QUI RETIRE LES MARCHES. Un segment tous
+     les quarts de millimètre, coupé net, laisse une encoche à chaque coude et
+     un bord d'escalier le long des obliques — le dessin paraît alors plus
+     grossier que la mesure qu'il porte. Les bouts ronds se recouvrent d'une
+     demi-épaisseur, soit sept centièmes de millimètre : le trait devient
+     continu sans qu'aucune valeur ne déborde d'un pas d'échantillonnage. */
+  c.lineCap="round";
+  c.lineJoin="round";
+  c.lineWidth=ep;
+  for(const net of simXtVictimesVues()){
+    const ligne=simXtCourbeDe(net,SIM_XT.sens);
+    if(!ligne)continue;
+    for(const m of (proj[net]||[])){
+      for(let i=0;i+1<m.length;i++){
+        const a=m[i], b=m[i+1];
+        /* LE PIC ENTRE DEUX POINTS, JAMAIS LEUR MOYENNE : c'est la règle de
+           toute cette section, et un pic moyenné est un pic qui disparaît. */
+        c.strokeStyle=simXtCouleur(
+          Math.max(simXtValeurA(ligne,total,a.s),
+                   simXtValeurA(ligne,total,b.s))/pire);
+        const p0=conv(a.x,a.y), p1=conv(b.x,b.y);
+        c.beginPath();
+        c.moveTo(p0[0],p0[1]);
+        c.lineTo(p1[0],p1[1]);
+        c.stroke();
+      }
+    }
+  }
+  c.restore();
+}
+
+/* LE POINT DE LA RÉGLETTE, SUR LE CUIVRE. Un par victime affichée — et DEUX si
+   elle repasse deux fois à cette abscisse-là, ce qui est un fait du dessin et
+   non un défaut : les deux morceaux couplent tous les deux.
+
+   LA TOLÉRANCE EST CELLE DU PAS DE L'AXE, pas celle du pixel : la réglette
+   avance par crans, et un point qui n'apparaîtrait qu'au millimètre exact
+   clignoterait entre deux crans. */
+function simXtCurseurPoints(){
+  if(!simXtSurCuivre())return [];
+  const proj=simXtProjVictimes();
+  const ch=SIM_XT.res.carte_chaleur;
+  const axe=ch.axe||[];
+  const total=axe.length?axe[axe.length-1]:0;
+  const s=simXtPos();
+  const tol=Math.max(SIM_XT_PAS_TRAIT,
+                     (axe.length>1?total/(axe.length-1):total)*0.75);
+  const out=[];
+  for(const net of simXtVictimesVues()){
+    for(const m of (proj[net]||[])){
+      let best=null;
+      for(const p of m){
+        const d=Math.abs(p.s-s);
+        if(best===null||d<best.d)best={d:d, p:p};
+      }
+      if(best&&best.d<=tol)
+        out.push({net:net, x:best.p.x, y:best.p.y,
+                  couleur:simXtCouleurVictime(net)});
+    }
+  }
+  return out;
+}
+
+/* Le point de l'AGRESSEUR à la même abscisse : c'est de SON parcours que
+   l'abscisse est comptée, et sans lui on lit deux points sur des victimes sans
+   savoir d'où ils se mesurent. */
+function simXtCurseurAgresseur(){
+  if(!simXtSurCuivre())return null;
+  const g=simXtGeomBrute();
+  if(!g||!g.parcours||!g.parcours.length)return null;
+  const s=simXtPos();
+  for(const e of g.parcours){
+    const fin=e.s0+(e.longueur||0);
+    if(s<e.s0-1e-9||s>fin+1e-9)continue;
+    let reste=s-e.s0;
+    const p=e.pts;
+    for(let i=0;i+3<p.length;i+=2){
+      const l=Math.hypot(p[i+2]-p[i],p[i+3]-p[i+1]);
+      if(reste<=l||i+5>=p.length){
+        const t=l>0?Math.max(0,Math.min(1,reste/l)):0;
+        return {x:p[i]+(p[i+2]-p[i])*t, y:p[i+1]+(p[i+3]-p[i+1])*t};
+      }
+      reste-=l;
+    }
+  }
+  return null;
+}
+
+/* Le dessin des points. TROIS TRAITS FINS PLUTÔT QU'UN GROS DISQUE : un cerne
+   sombre qui le détache du fond, l'anneau de la victime, un cœur blanc. C'est
+   un VISEUR, pas une pastille — il désigne un millimètre de piste, et une
+   pastille de la taille d'un pad recouvre justement ce qu'on est venu voir.
+   Son rayon est donné par l'outil EN UNITÉS DU MONDE mais calculé À TAILLE
+   D'ÉCRAN : un repère qui grossit avec le zoom finit par cacher la piste sur
+   laquelle il se pose, ce qui est exactement l'inverse de ce qu'on lui demande.
+
+   CELUI DE L'AGRESSEUR EST CREUX — il dit « c'est d'ici que l'abscisse se
+   compte », il ne dit pas « voilà du couplage ». */
+function simXtPeindreCurseur(c,conv,r){
+  if(!simXtSurCuivre())return;
+  const pts=simXtCurseurPoints();
+  const agr=simXtCurseurAgresseur();
+  if(!pts.length&&!agr)return;
+  c.save();
+  c.lineJoin="round";
+  c.lineCap="round";
+  if(agr){
+    const p=conv(agr.x,agr.y);
+    /* DEUX CERCLES CONCENTRIQUES ET RIEN AU MILIEU : sur le cuivre de
+       l'agresseur, qui est peint comme la piste sélectionnée, un anneau seul
+       se confond avec un bord de piste. */
+    c.strokeStyle="rgba(0,0,0,0.55)";
+    c.lineWidth=r*0.42;
+    c.beginPath(); c.arc(p[0],p[1],r*0.92,0,6.2832); c.stroke();
+    c.strokeStyle="rgba(255,255,255,0.92)";
+    c.lineWidth=r*0.24;
+    c.beginPath(); c.arc(p[0],p[1],r*0.92,0,6.2832); c.stroke();
+  }
+  for(const q of pts){
+    const p=conv(q.x,q.y);
+    /* LE CERNE SOMBRE PASSE EN PREMIER, et il déborde : c'est lui qui rend le
+       viseur lisible aussi bien sur une piste rouge vif que sur un fond noir,
+       sans qu'aucune des deux couleurs utiles n'ait à être épaissie. */
+    c.strokeStyle="rgba(0,0,0,0.6)";
+    c.lineWidth=r*0.46;
+    c.beginPath(); c.arc(p[0],p[1],r*0.80,0,6.2832); c.stroke();
+    /* L'ANNEAU PORTE LA COULEUR DE LA VICTIME : trois points blancs identiques
+       sur trois pistes ne disent pas lequel est lequel, et c'est justement la
+       question qu'on pose en cochant les cases. */
+    c.strokeStyle=q.couleur;
+    c.lineWidth=r*0.30;
+    c.beginPath(); c.arc(p[0],p[1],r*0.80,0,6.2832); c.stroke();
+    c.beginPath();
+    c.arc(p[0],p[1],r*0.42,0,6.2832);
+    c.fillStyle="#fff";
+    c.fill();
+  }
+  c.restore();
+}
+
+/* ==========================================================================
+   LE RECOUPEMENT — CE QUE LES DEUX COURBES SE DISENT L'UNE À L'AUTRE
+   --------------------------------------------------------------------------
+   UNE COURBE DE COUPLAGE SEULE NE SE VÉRIFIE PAS : elle a des pics, ils sont
+   quelque part, et rien à l'écran ne dit s'ils sont à leur place. Le profil
+   d'espacement lui donne un témoin qui ne peut pas se tromper de la même
+   façon — il vient de la géométrie, pas du calcul électromagnétique.
+
+   DEUX VERDICTS, ET ILS NE DEMANDENT PAS LE MÊME GESTE. « Expliqué par le
+   plan » désigne le BLINDAGE : c'est le cuivre de masse qu'il faut reprendre,
+   pas l'écart entre les pistes. « Non justifié » ne désigne rien du tout — et
+   c'est justement pour cela qu'il faut aller voir : ce qui reste après le
+   dessin des pistes et le plan de référence, c'est un retour de courant qui
+   fait le tour, une résonance, ou un artefact de la transformée.
+
+   LE BLOC N'APPARAÎT QUE S'IL Y A QUELQUE CHOSE À DIRE. Un bloc « aucun
+   désaccord » à chaque analyse finirait par ne plus se lire, et c'est
+   exactement l'attention qu'on veut garder pour le jour où il y en a un. */
+function simXtDesaccords(r){
+  const liste=r.desaccords||[];
+  if(!liste.length)return "";
+  const hors=liste.filter(d=>d.verdict==="inexplique");
+  const flou=liste.filter(d=>d.verdict==="indecidable");
+  let h='<div class="simXtBloc"><b>Recoupement carte ↔ géométrie</b> '+
+    '<span class="simNote">'+liste.length+" pic(s) relevé(s), dont "+
+    hors.length+" que ni le dessin des pistes ni le plan de référence "+
+    "n'expliquent"+
+    (flou.length?", et "+flou.length+" dont on ne peut RIEN conclure — les "+
+      "zones de vigilance couvrent trop du parcours pour qu'y tomber veuille "+
+      "dire quelque chose":"")+
+    ". Seule la ligne NEXT est recoupée : le FEXT ne localise "+
+    "rien à vitesses égales.</span>";
+  h+='<table class="simTab"><thead><tr><th>victime</th><th>position</th>'+
+     "<th>écart mesuré</th><th>écart médian</th><th>verdict</th>"+
+     "</tr></thead><tbody>";
+  for(const d of liste)
+    h+='<tr class="'+(d.verdict==="plan"?"":"simXtAlerte")+'"><td>'+
+       simEsc(d.victime)+"</td><td>"+simNb(d.s,2)+" mm</td><td>"+
+       (d.espacement===null||d.espacement===undefined
+         ? "— (rien ne longe)" : simNb(d.espacement,3)+" mm")+
+       "</td><td>"+simNb(d.median,3)+" mm</td><td>"+
+       (d.verdict==="plan"
+         ? "expliqué par « "+simEsc(d.zone)+" »"
+         : d.verdict==="indecidable"
+           ? "<b>indécidable</b> — « "+simEsc(d.zone)+" », mais partout"
+           : "<b>non justifié</b>")+"</td></tr>";
+  h+="</tbody></table>";
+  for(const d of liste)
+    h+='<p class="simNote">· '+simNb(d.s,2)+" mm sur <b>"+
+       simEsc(d.victime)+"</b> : "+simEsc(d.detail||"")+
+       " (recoupé à ±"+simNb(d.tolerance,2)+" mm, soit la résolution "+
+       "spatiale de cette ligne).</p>";
+  return h+"</div>";
+}
+
+/* ==========================================================================
+   LES DEUX TABLEAUX, ET ILS RESTENT DEUX
+   --------------------------------------------------------------------------
+   C'est la contrainte la plus importante de cette section, et elle se voit
+   ici : la présélection GÉOMÉTRIQUE et la confirmation par SIMULATION sont
+   deux tableaux distincts. Fusionnés, on ne saurait plus si une piste absente
+   du résultat est LOIN ou PROCHE ET BLINDÉE — et ce sont deux gestes de
+   routage opposés : écarter davantage dans le premier cas, ajouter du cuivre
+   de masse dans le second.
+   ========================================================================== */
+function simXtTableauCandidats(r){
+  const liste=(r.etape0&&r.etape0.candidats)||[];
+  const s=(r.etape0&&r.etape0.seuils)||{};
+  let h='<div class="simXtBloc"><b>Étape 0a — ce qui longe</b> '+
+    '<span class="simNote">seuil de distance '+simNb(s.distance_max,3)+
+    " mm, "+simEsc(s.source||"")+" ; longement minimal "+
+    simEsc(s.longueur_min_source||"")+" ; couches adjacentes "+
+    (s.couches_adjacentes?"comprises":"EXCLUES")+" ; "+
+    ((r.etape0&&r.etape0.regardes)||0)+" tronçons regardés.</span>";
+  if(!liste.length)
+    return h+'<p class="simNote">Aucun cuivre ne passe à portée de la '+
+      "sélection.</p></div>";
+  const esp=(r.etape0&&r.etape0.espacements)||{};
+  h+='<table class="simTab"><thead><tr><th>piste</th><th>couche</th>'+
+     "<th>type</th><th>côté</th><th>distance</th><th>écart médian</th>"+
+     "<th>longement</th><th>retenue</th></tr></thead><tbody>";
+  for(const c of liste){
+    const e=esp[c.net];
+    h+='<tr class="'+(c.retenu?"":"simXtHors")+'"><td>'+simEsc(c.net)+
+       (c.paire?' <span class="simTag">paire</span>':"")+
+       (c.role==="agresseur"?' <span class="simTag">agresseur</span>':"")+
+       "</td><td>"+simEsc(c.nom_couche||("couche "+c.couche))+"</td><td>"+
+       simEsc(c.type)+"</td><td>"+simEsc(c.cote||"—")+"</td><td>"+
+       simNb(c.distance,3)+" mm</td><td>"+
+       /* LA DISTANCE EST LE MINIMUM, L'ÉCART MÉDIAN EST CE QUE LA PISTE FAIT
+          LA PLUPART DU TEMPS. Les deux ensemble disent si le longement est
+          régulier ou s'il tient à un seul resserrement — et c'est ce dernier
+          cas qui se corrige d'un coup de souris. */
+       (e?simNb(e.median,3)+" mm <span class=\"simNote\">("+
+          simNb(e.min,3)+"…"+simNb(e.max,3)+")</span>"
+         :'<span class="simNote">—</span>')+
+       "</td><td>"+simNb(c.longueur,2)+" mm</td><td>"+
+       (c.retenu?"oui":simEsc(c.raison||"non"))+"</td></tr>";
+  }
+  h+="</tbody></table>";
+  const sans=liste.filter(c=>c.retenu&&!esp[c.net]);
+  if(sans.length)
+    h+='<p class="simNote">· Pas de profil d\'espacement pour '+
+       sans.map(c=>"<b>"+simEsc(c.net)+"</b>").join(", ")+" : le "+
+       "recouvrement d'une couche adjacente se mesure en LONGUEUR et non en "+
+       "abscisse — on ne saurait pas où le poser sur l'axe, et une position "+
+       "inventée serait pire que pas de profil du tout. La distance mesurée, "+
+       "elle, est dans la colonne ci-dessus.</p>";
+  return h+"</div>";
+}
+
+function simXtTableauCouples(r){
+  const liste=r.couples||[];
+  let h='<div class="simXtBloc"><b>Étape 0b — ce qui couple</b> '+
+    '<span class="simNote">seuil de confirmation '+
+    simNb((r.reglages&&r.reglages.seuil_db)||-40,1)+" dB. Une piste sous le "+
+    "seuil garde sa ligne AVEC son niveau : elle est écartée du verdict et de "+
+    "la carte, pas du résultat.</span>";
+  if(!liste.length)
+    return h+'<p class="simNote">Rien n\'a été simulé — voir ci-dessus.</p>'+
+      "</div>";
+  /* LA COLONNE « AU GENOU » N'APPARAÎT QUE S'IL Y A UN GENOU À MONTRER : elle
+     demande un temps de montée SAISI, faute de quoi le genou se déduirait de
+     la bande et vaudrait la bande elle-même — une colonne qui recopie sa
+     voisine. Ce qu'elle dit vaut le détour : les décibels de gauche sont le
+     maximum sur TOUTE la bande analysée, et la bande analysée se règle pour la
+     résolution spatiale, pas pour le signal. Un couplage annoncé à −13 dB qui
+     n'existe qu'à 80 GHz sur un front de 9 ns est juste, et trompeur. */
+  const genou=r.f_genou>0&&liste.some(c=>c.pire_db_genou!==undefined);
+  h+='<table class="simTab"><thead><tr><th>agresseur</th><th>victime</th>'+
+     "<th>NEXT</th><th>FEXT</th><th>bruit</th>"+
+     (genou?"<th>pire à</th><th>≤ genou</th>":"")+
+     "<th>v agresseur</th><th>v victime</th>"+
+     "<th>écart</th><th>confirmée</th></tr></thead><tbody>";
+  for(const c of liste){
+    const seuil=(r.reglages&&r.reglages.ecart_vitesse_max)||0.05;
+    const ecart=c.ecart_vitesse||0;
+    /* LA COLONNE « BRUIT » EST LE PIRE DES DEUX SENS, EN VOLTS, et jamais leur
+       somme : le NEXT s'observe au bout proche de la victime, le FEXT à son
+       bout lointain. Additionner deux tensions qui n'arrivent pas sur la même
+       broche donnerait un chiffre qui n'existe nulle part. */
+    const pireV=simXtRatio(c.pire_db);
+    h+='<tr class="'+(c.confirmee?"":"simXtHors")+'"><td>'+
+       simEsc(c.agresseur)+"</td><td>"+simEsc(c.victime)+
+       (c.paire?' <span class="simTag">paire</span>':"")+"</td><td>"+
+       simNb(c.next_db,1)+" dB</td><td>"+simNb(c.fext_db,1)+" dB</td>"+
+       '<td class="'+(c.confirmee&&pireV>simSeuilFraction()?"z0ko":"")+'">'+
+       simEsc(simXtTension(pireV))+"</td>"+
+       (genou
+         ? '<td class="'+(c.f_pire>1.5*r.f_genou?"simXtAlerte":"")+'">'+
+           (c.f_pire?simNb(c.f_pire/1e9,3)+" GHz":"—")+"</td><td>"+
+           (c.pire_db_genou===undefined?"—":simNb(c.pire_db_genou,1)+" dB")+
+           "</td>"
+         : "")+
+       "<td>"+
+       (c.vitesse_agresseur?simNb(c.vitesse_agresseur/1e6,1)+"·10⁶":"—")+
+       "</td><td>"+
+       (c.vitesse_victime?simNb(c.vitesse_victime/1e6,1)+"·10⁶":"—")+
+       '</td><td class="'+(ecart>seuil?"simXtAlerte":"")+'">'+
+       simNb(100*ecart,1)+" %</td><td>"+
+       (c.confirmee?"oui":simEsc(c.raison||"non"))+"</td></tr>";
+  }
+  h+="</tbody></table>";
+  h+='<p class="simNote">· <b>« bruit »</b> est le pire des deux sens converti '+
+     "en volts par l'amplitude saisie ("+simEsc(simTension(SIM.saisie.swing))+
+     ") — pas leur somme : ils n'arrivent pas sur la même broche. C'est le "+
+     "seul chiffre de ce tableau qui se compare à une fiche technique, et le "+
+     "seul qui bouge quand on change l'amplitude sans toucher au cuivre.</p>";
+  if(genou)
+    h+='<p class="simNote">· <b>« pire à »</b> est la fréquence où le couplage '+
+       "est le plus fort, et <b>« ≤ genou »</b> ce qu'il vaut en dessous de "+
+       simNb(r.f_genou/1e9,3)+" GHz — le genou du front saisi (0,35 / t"+
+       "<sub>r</sub>). Au-delà, votre signal ne porte rien : la carte y gagne "+
+       "en résolution spatiale, les décibels n'y gagnent pas en vérité.</p>";
+  /* L'ÉCART ENTRE DEUX VICTIMES SE LIT TOUJOURS, ET NE S'ALERTE QUE PARFOIS.
+     Un agresseur équidistant de ses deux voisines à tout instant est
+     l'exception : quand les profils d'espacement annoncent l'écart, le
+     signaler ferait chercher une dissymétrie de plan qui n'existe pas. */
+  for(const a of r.asymetries||[])
+    h+='<p class="'+(a.explique?"simNote":"simErr")+'">· <b>'+
+       (a.explique?"Écart annoncé par la géométrie":"ASYMÉTRIE non expliquée")+
+       "</b> : "+simEsc(a.detail)+".</p>";
+  return h+"</div>";
+}
+
+/* CE QUE LA MATRICE VÉRIFIE, ET IL FAUT LE LIRE AVANT LA CARTE. Une matrice
+   non passive rend une réponse temporelle qui diverge, et cela ne se voit PAS
+   sur la carte : elle reste lisse et colorée. */
+function simXtValidation(r){
+  const v=r.validation;
+  if(!v)return "";
+  const b=v.bande||{};
+  const oui=x=>x?'<span class="simOk">oui</span>'
+                :'<span class="simKo">NON</span>';
+  let h='<div class="simXtBloc"><b>La matrice</b><table class="simTab">'+
+    "<tbody>";
+  h+="<tr><td>passive (σ ≤ 1)</td><td>"+oui(v.passivite&&v.passivite.ok)+
+     "</td><td>σ<sub>max</sub> = "+simNb((v.passivite||{}).sigma_max,6)+
+     " à "+simFreq((v.passivite||{}).f||0)+"</td></tr>";
+  h+="<tr><td>réciproque (S = Sᵀ)</td><td>"+oui(v.reciprocite&&v.reciprocite.ok)+
+     "</td><td>écart "+simNb((v.reciprocite||{}).ecart,6)+" à "+
+     simFreq((v.reciprocite||{}).f||0)+"</td></tr>";
+  h+="<tr><td>pas fréquentiel constant</td><td>"+oui(b.constant)+
+     "</td><td>"+simFreq(b.pas||0)+" × "+(b.points||0)+" points, jusqu'à "+
+     simFreq(b.f_max||0)+"</td></tr>";
+  /* LE CONTINU N'EST PLUS UNE EXTRAPOLATION mais une CONSTRUCTION : c'est le
+     serveur qui choisit où échantillonner, et il part de zéro. La ligne reste
+     — un invariant qu'on ne vérifie plus est un invariant qui finit par
+     tomber. */
+  h+="<tr><td>continu présent</td><td>"+oui(b.f_min===0)+"</td><td>"+
+     (b.f_min===0
+       ? "la grille part du continu, par construction"
+       : "elle démarre à "+simFreq(b.f_min||0)+" — la ligne de base de la "+
+         "réponse temporelle est décalée")+"</td></tr>";
+  return h+"</tbody></table></div>";
+}
+
+function simXtMasse(r){
+  const m=r.masse;
+  if(!m)return "";
+  let h='<div class="simXtBloc"><b>Plan de référence</b> '+
+    '<span class="simNote">seuil de pas de couture '+simNb(m.seuil,2)+
+    " mm, tiré de "+simEsc(m.source||"")+
+    /* D'OÙ SORT LE SEUIL, ET CE QUE L'AUTRE RÈGLE AURAIT DIT. C'est le haut
+       de bande qui le fixe le plus souvent, et le haut de bande se règle deux
+       centimètres plus haut dans le même panneau : sans cette ligne, on part
+       chercher dans le cuivre la cause d'une alarme qui vient d'un champ. */
+    (m.ecarte?" ("+simEsc(m.ecarte)+")":"")+
+    ". Ces contrôles sont "+
+    "INDÉPENDANTS du couplage : le blindage est déjà dans la matrice S, et le "+
+    "compter deux fois serait le compter faux.</span>";
+  if(!(m.mesure||[]).length)
+    return h+'<p class="simErr">Rien n\'a pu être examiné : la page n\'envoie '+
+      "ni positions de couture, ni discontinuités, ni vias de masse. "+
+      "L'absence de zone sur la carte ne veut donc pas dire qu'il n'y en a "+
+      "pas.</p></div>";
+  h+='<p class="simNote">Examiné : '+simEsc(m.mesure.join(" ; "))+".</p>";
+  if(!(m.zones||[]).length)
+    return h+'<p class="simNote">Aucune zone de vigilance.</p></div>';
+  /* LA PART COUVERTE, AVANT LE TABLEAU. Deux lignes identiques à l'œil sont
+     les DEUX CÔTÉS du parcours, et sans la colonne « côté » elles se lisent
+     comme un doublon — donc comme un bug. Et quand l'union couvre presque
+     tout, la fiche doit le dire ici aussi : c'est le tableau qu'on relit pour
+     savoir ce que vaut un « expliqué par le plan » écrit plus haut. */
+  if(m.couvert>0)
+    h+='<p class="simNote'+(m.vain?" simXtAlerte":"")+'">Union des zones : '+
+       simNb(100*m.couvert,0)+" % du parcours"+
+       (m.vain?" — <b>trop pour qu'une coïncidence explique quoi que ce "+
+         "soit</b> : les pics qui y tombent sont dits INDÉCIDABLES, pas "+
+         "« expliqués par le plan »."
+              :".")+"</p>";
+  h+='<table class="simTab"><thead><tr><th>type</th><th>côté</th><th>de</th>'+
+     "<th>à</th><th>ce qui a été vu</th></tr></thead><tbody>";
+  for(const z of m.zones)
+    h+="<tr><td>"+simEsc(z.type)+"</td><td>"+simEsc(z.cote||"—")+"</td><td>"+
+       simNb(z.s0,2)+" mm</td><td>"+
+       simNb(z.s1,2)+" mm</td><td>"+simEsc(z.detail||"")+"</td></tr>";
+  return h+"</tbody></table></div>";
+}
+
+function simXtHypotheses(r){
+  if(!(r.hypotheses||[]).length)return "";
+  let h='<details class="simXtHyp"><summary>Sous quelles hypothèses '+
+        "</summary><ul>";
+  for(const x of r.hypotheses)h+="<li>"+simEsc(x)+"</li>";
+  return h+"</ul></details>";
+}
+
+/* ==========================================================================
+   LES QUATRE SORTIES
+   --------------------------------------------------------------------------
+   LE .CSV EST LA DONNÉE BRUTE, et c'est le seul qui compte pour recouper avec
+   le dessin : une colonne de positions, une colonne par (victime, sens), une
+   colonne d'ESPACEMENT par victime, et une dernière qui dit à quelle zone de
+   vigilance chaque position appartient. C'est ce qu'on ouvre à côté du layout
+   pour aller voir le millimètre que la carte a désigné.
+
+   L'ESPACEMENT EST DANS LE MÊME FICHIER, ET C'EST TOUT L'INTÉRÊT. Séparé, il
+   faudrait le réaligner à la main sur l'axe des positions — et un désalignement
+   d'une colonne ferait conclure à un désaccord qui n'existe pas. Une case vide
+   n'est PAS un zéro : c'est « la victime ne longe pas ici ».
+
+   L'EN-TÊTE PORTE LES HYPOTHÈSES. Un fichier se détache de la page qui l'a
+   produit ; sans la bande, la fenêtre, la résolution et la source de la
+   matrice, il ne reste que des nombres dont on ne peut plus vérifier sur quoi
+   ils ont été obtenus.
+   ========================================================================== */
+function simXtNomFichier(ext){
+  const net=(SIM_XT.res&&SIM_XT.res.principal)||"";
+  const carte=(SIM_XT.res&&SIM_XT.res.carte)||
+              (SIM_ED&&SIM_ED.carte?SIM_ED.carte():"")||"carte";
+  const propre=s=>String(s).replace(/[^\w.-]+/g,"_").replace(/^_+|_+$/g,"");
+  return (propre(carte)||"carte")+(net?"-"+propre(net):"")+ext;
+}
+
+function simXtExportCsv(){
+  const r=SIM_XT.res, c=r&&r.carte_chaleur;
+  if(!c||!c.lignes||!c.lignes.length){
+    SIM_XT.err=r?"Rien à enregistrer : aucune candidate n'a de profil."
+                :"Rien à enregistrer : analysez d'abord.";
+    simRendre();return;
+  }
+  const n=v=>String(v).replace(".",",");
+  const zoneEn=x=>(c.zones||[]).filter(z=>x>=z.s0&&x<=z.s1)
+                    .map(z=>z.type).join("+");
+  const l=[];
+  l.push("# carte de crosstalk — "+(r.carte||"")+" — agresseur "+
+         (r.principal||""));
+  l.push("# source : "+(r.source||""));
+  l.push("# bande : jusqu'a "+simFreq((r.validation&&r.validation.bande
+          &&r.validation.bande.f_max)||0)+", "+
+         ((r.validation&&r.validation.bande&&r.validation.bande.points)||0)+
+         " points ; fenetre "+((r.reglages||{}).fenetre||"")+
+         " ; padding x"+((r.reglages||{}).zero_pad||1));
+  for(const ligne of c.lignes)
+    l.push("# resolution "+ligne.victime+" "+ligne.sens+" : "+
+           n(ligne.resolution)+" mm");
+  l.push("# les amplitudes sont rapportees a l'amplitude de l'agresseur");
+  /* LES VOLTS DANS LE FICHIER, ET L'AMPLITUDE QUI LES A FAITS EN TETE. Une
+     colonne de tensions sans le facteur qui les produit n'est pas
+     verifiable : six mois plus tard, on ne sait plus si « 14 mV » sortait
+     d'un 3,3 V ou d'un 1,8 V, et les deux se relisent aussi bien. */
+  l.push("# amplitude de l'agresseur : "+n(SIM.saisie.swing)+" V"+
+         " — les colonnes *_V en sont le produit par le rapport de gauche");
+  l.push("# seuil applique : "+simSeuilNom()+" = "+
+         n(Number((simSeuilFraction()*SIM.saisie.swing).toPrecision(6)))+" V");
+  /* LES COLONNES SOUS LE SEUIL SE DISENT ICI. Le fichier porte toutes les
+     candidates, confirmees ou non — c'est ce qui permet de recouper une
+     voisine ecartee de justesse —, et une colonne qui ne dit pas qu'elle est
+     sous le seuil se lit comme les autres. */
+  const hors=[];
+  for(const ligne of c.lignes)
+    if(ligne.confirmee===false&&hors.indexOf(ligne.victime)<0)
+      hors.push(ligne.victime);
+  if(hors.length)
+    l.push("# SOUS LE SEUIL de "+n((r.reglages||{}).seuil_db)+" dB, donc"+
+           " comptees nulle part : "+hors.join(", ")+
+           " — leurs colonnes sont la, leur niveau aussi");
+  l.push("# ecart_* = espacement mesure sur la GEOMETRIE, en mm, bord a bord ;"+
+         " vide = la victime ne longe pas a cette abscisse (ce n'est pas un"+
+         " zero)");
+  /* LES VICTIMES QUI ONT UN PROFIL, DANS L'ORDRE DES LIGNES : le fichier doit
+     se lire de gauche à droite comme la carte se lit de haut en bas. */
+  const esp=c.espacements||{};
+  const nets=[];
+  for(const ligne of c.lignes)
+    if(esp[ligne.victime]&&nets.indexOf(ligne.victime)<0)
+      nets.push(ligne.victime);
+  const pic=x=>(r.desaccords||[])
+    .filter(d=>Math.abs(d.s-x)<=(d.tolerance||0))
+    .map(d=>d.victime+":"+d.verdict).join("+");
+  /* DEUX COLONNES PAR COURBE : le RAPPORT, qui ne dépend que du cuivre, et la
+     TENSION, qui est ce rapport multiplié par l'amplitude saisie. On garde les
+     deux — le rapport est ce qui se recoupe avec un autre solveur, la tension
+     est ce qui se compare à une fiche technique —, et l'en-tête dit lequel est
+     lequel. Une seule des deux obligerait à refaire à la main la
+     multiplication ou la division. */
+  const V=SIM.saisie.swing||0;
+  l.push(["position_mm"].concat(
+    c.lignes.map(x=>x.victime+"_"+x.sens),
+    c.lignes.map(x=>x.victime+"_"+x.sens+"_V"),
+    nets.map(net=>"ecart_"+net),
+    ["zone_vigilance","pic_recoupe"]).join(";"));
+  (c.axe||[]).forEach(function(x,i){
+    l.push([n(x)].concat(
+      c.lignes.map(ligne=>n(ligne.valeurs[i])),
+      c.lignes.map(ligne=>
+        n(Number((V*(ligne.valeurs[i]||0)).toPrecision(6)))),
+      nets.map(function(net){
+        const v=esp[net].valeurs[i];
+        return (v===null||v===undefined)?"":n(v);
+      }),
+      [zoneEn(x),pic(x)]).join(";"));
+  });
+  simTelecharger("﻿"+l.join("\r\n")+"\r\n",
+                 simXtNomFichier("-crosstalk.csv"),
+                 "text/csv;charset=utf-8");
+}
+
+/* ==========================================================================
+   LE RAPPORT COMPLET, EN TEXTE
+   --------------------------------------------------------------------------
+   IL EXISTE PARCE QUE LA FICHE S'EST RACCOURCIE, et il n'aurait pas de sens
+   sans elle. À l'écran, on veut le verdict, ce qui le rend douteux, et la
+   carte ; tout le reste est là mais replié. Ce fichier-là est l'inverse : il
+   déroule tout, dans l'ordre où on le relit — et il se joint à une revue de
+   conception, où l'on ne peut ni déplier ni survoler une infobulle.
+
+   TEXTE BRUT, ET C'EST DÉLIBÉRÉ. Il se colle dans un courriel, un ticket, un
+   commentaire de netlist ; il se compare d'une version à l'autre avec
+   n'importe quel outil de diff, ce qu'aucun PDF ne permet. Les réglages y
+   sont : un rapport qui ne dit pas sous quelles règles il a été produit n'est
+   plus vérifiable dès qu'on l'a sorti de la page.
+
+   IL SE LIT EN DEUX TEMPS, ET C'EST TOUT SON PLAN. Les quatre premières
+   sections tiennent sur un écran et répondent seules aux trois questions
+   qu'on se pose — y a-t-il un risque, qu'est-ce que je reprends, à quoi dois-je
+   me méfier. Ce qui suit, ce sont les PIÈCES : les tableaux, la validation de
+   la matrice, le plan, les ports. On n'y descend que lorsqu'on conteste un
+   chiffre du haut, ou qu'on relit le dossier six mois plus tard — et c'est
+   exactement pour ces deux moments-là que le fichier existe.
+   ========================================================================== */
+function simXtRapportTexte(r){
+  const L=[];
+  const t=(x)=>L.push(x);
+  const trait=(c)=>t(new Array(74).join(c||"-"));
+  const nb=(v,d)=>simNb(v,d);
+  const n=simXtNiveau(r);
+
+  trait("=");
+  t("RAPPORT DE CROSSTALK — " + (r.carte||"carte sans nom"));
+  trait("=");
+  t("Agresseur analysé    : "+(r.principal||"—"));
+  t("Longueur du parcours : "+nb(r.longueur,2)+" mm");
+  t("Source de la matrice : "+(r.source||"—"));
+  t("Produit le           : "+new Date().toLocaleString("fr-FR"));
+  t("");
+  t(simXtMethode(r));
+  t("");
+  t("Les quatre premières sections se lisent seules : le verdict, ce qu'il y a");
+  t("à faire, ce qui rend le résultat douteux, et sous quels réglages il a été");
+  t("produit. Le reste, ce sont les pièces — on y descend pour contester un");
+  t("chiffre, ou pour relire le dossier plus tard.");
+  t("");
+
+  trait("=");
+  t("LE VERDICT");
+  trait("=");
+  t(n.nom+((r.graves||[]).length?"  (SOUS RÉSERVE — voir ci-dessous)":""));
+  if(n.pire){
+    t("Le pire est « "+n.pire.victime+" », qui prend "+nb(100*n.ratio,1)+
+      " % de « "+n.pire.agresseur+" » ("+nb(n.pire.pire_db,1)+" dB).");
+    /* LE VERDICT EN VOLTS, ET LES DEUX CHIFFRES QUI LE FONT. Un rapport de
+       conception se relit sans la page qui l'a produit : l'amplitude et le
+       seuil doivent donc y être écrits, faute de quoi « 14 mV » ne se vérifie
+       plus. */
+    t("Soit "+simTension(n.volts)+" sur une amplitude d'agresseur de "+
+      simTension(SIM.saisie.swing)+", contre "+n.seuil+" = "+
+      simTension(n.budget*(SIM.saisie.swing||0))+".");
+  }else
+    t("Aucune voisine ne dépasse le seuil de confirmation.");
+  t("");
+
+  const faire=r.actions||[];
+  trait("=");
+  t("CE QU'IL Y A À FAIRE ("+faire.length+")");
+  trait("=");
+  if(!faire.length)
+    t("Rien à reprendre en un point précis. Sur un résultat confirmé, cela"+
+      " veut dire\r\nque le couplage est réparti sur tout le longement sans"+
+      " point chaud : il se\r\ncorrige en écartant PARTOUT, ou en reculant la"+
+      " victime.");
+  faire.forEach(function(x,i){
+    t((i+1)+". "+x.quoi.toUpperCase()+"  "+x.cible+"  —  "+x.ou);
+    t("   "+x.pourquoi);
+  });
+  if(faire.length)
+    t("L'ordre est celui de l'EFFET : écarter une piste sous un pic que le"+
+      " dessin\r\nn'explique pas ne changerait rien.");
+  t("");
+
+  const g=r.graves||[];
+  const gTitre=x=>typeof x==="string"?x:(x.titre||x.texte||"");
+  const gTexte=x=>typeof x==="string"?x:(x.texte||x.titre||"");
+  trait("=");
+  t("CE QUI CHANGE LA LECTURE DE CE RÉSULTAT ("+g.length+")");
+  trait("=");
+  if(!g.length)t("Rien : aucune réserve n'a été levée.");
+  for(const a of g){
+    t("· "+gTitre(a));
+    t("  "+gTexte(a));
+  }
+  t("");
+
+  const textes=g.map(gTexte);
+  const autres=(r.avertissements||[]).filter(a=>textes.indexOf(a)<0);
+  if(autres.length){
+    trait("=");
+    t("LES AUTRES AVERTISSEMENTS ET AVIS ("+autres.length+")");
+    trait("=");
+    for(const a of autres)t("· "+a);
+    t("");
+  }
+
+  const rg=(r.reglages||{});
+  trait("=");
+  t("SOUS QUELS RÉGLAGES");
+  trait("=");
+  t("Seuil de confirmation      : "+nb(rg.seuil_db,1)+" dB");
+  /* LES DEUX RÉGLAGES QUI NE SONT PAS PARTIS AU SERVEUR, écrits avec les
+     autres et non ailleurs : ils ne changent pas le calcul, mais ils changent
+     le VERDICT — et un rapport qui tait le seuil sous lequel il conclut n'est
+     plus vérifiable une fois sorti de la page. */
+  t("Amplitude de l'agresseur   : "+simTension(SIM.saisie.swing)+
+    "   (convertit les rapports en volts ; n'entre pas dans le calcul)");
+  t("Seuil du verdict           : "+simSeuilNom()+" = "+
+    simTension(simSeuilFraction()*(SIM.saisie.swing||0)));
+  t("Impédance de référence     : "+nb(rg.z0,1)+" Ω");
+  t("Fenêtre                    : "+(rg.fenetre||"—")+
+    (rg.fenetre==="kaiser"?"  (β = "+nb(rg.kaiser_beta,2)+")":"")+
+    "   zero-padding ×"+nb(rg.zero_padding,0));
+  t("Résolution visée           : "+
+    (rg.resolution_cible>0?nb(rg.resolution_cible,2)+" mm":"aucune"));
+  t("Écart de vitesse toléré    : "+nb(100*(rg.ecart_vitesse_max||0),1)+" %");
+  t("Seuil d'asymétrie          : "+nb(rg.asymetrie_db,1)+" dB");
+  t("Rapport de désaccord       : "+nb(rg.desaccord,2)+" ×");
+  t("Seuil de zone à risque     : "+nb(100*(rg.risque||0),0)+" % du pire point");
+  const seuils=((r.etape0||{}).seuils)||{};
+  t("Présélection, distance     : "+nb(seuils.distance_max,3)+" mm"+
+    (seuils.distance_deduite?"  (déduite)":"  (saisie)"));
+  t("Présélection, longement    : "+
+    (seuils.longement_min>0?nb(seuils.longement_min,3)+" mm":"déduit, candidat par candidat"));
+  t("");
+
+  const v=r.validation||{};
+  if(v.bande){
+    trait("=");
+    t("CE QUE LA MATRICE VÉRIFIE");
+    trait("=");
+    t("Bande        : "+nb(v.bande.pas/1e9,3)+" GHz × "+v.bande.points+
+      " points, jusqu'à "+nb(v.bande.f_max/1e9,3)+" GHz");
+    t("Continu      : "+(v.bande.dc?"présent, par construction":"ABSENT"));
+    if(v.passivite)
+      t("Passivité    : "+(v.passivite.ok?"oui":"NON")+
+        "   σmax = "+nb(v.passivite.sigma_max,6)+" à "+
+        nb(v.passivite.f/1e9,3)+" GHz");
+    if(v.reciprocite)
+      t("Réciprocité  : "+(v.reciprocite.ok?"oui":"NON")+
+        "   écart "+nb(v.reciprocite.ecart,6));
+    t("");
+  }
+
+  const cand=((r.etape0||{}).candidats)||[];
+  if(cand.length){
+    trait("=");
+    t("ÉTAPE 0a — CE QUI LONGE ("+cand.length+" candidate(s))");
+    trait("=");
+    for(const c of cand)
+      t((c.retenue?"[retenue] ":"[écartée] ")+c.net+
+        "   couche "+(c.nom_couche||"—")+
+        "   "+(c.type||"")+" "+(c.cote||"")+
+        "   distance "+nb(c.distance,3)+" mm"+
+        "   longement "+nb(c.longueur,2)+" mm"+
+        (c.raison?"\n            "+c.raison:""));
+    t("");
+  }
+
+  const cpl=r.couples||[];
+  if(cpl.length){
+    trait("=");
+    t("ÉTAPE 0b — CE QUI COUPLE ("+cpl.length+" couple(s))");
+    trait("=");
+    for(const c of cpl){
+      t((c.confirmee?"[confirmée] ":"[écartée]   ")+
+        c.agresseur+" → "+c.victime+
+        "   NEXT "+nb(c.next_db,1)+" dB   FEXT "+nb(c.fext_db,1)+" dB"+
+        (c.pire_db!==undefined?"   pire "+nb(c.pire_db,1)+" dB ("+
+         nb(100*simXtRatio(c.pire_db),2)+" % = "+
+         simXtTension(simXtRatio(c.pire_db))+")":""));
+      if(c.f_pire)
+        t("            pire point à "+nb(c.f_pire/1e9,3)+" GHz"+
+          (c.pire_db_genou!==undefined
+            ? "   sous le genou : "+nb(c.pire_db_genou,1)+" dB"
+            : "   (aucun point de la grille sous le genou)"));
+      if(c.vitesse_agresseur)
+        t("            v agresseur "+nb(c.vitesse_agresseur/1e6,1)+
+          "·10⁶ m/s   v victime "+nb(c.vitesse_victime/1e6,1)+
+          "·10⁶ m/s   écart "+nb(100*(c.ecart_vitesse||0),1)+" %");
+      if(c.resolution_next)
+        t("            résolution "+nb(c.resolution_next,2)+" mm (NEXT), "+
+          nb(c.resolution_fext,2)+" mm (FEXT)");
+      if(!c.confirmee&&c.raison)t("            "+c.raison);
+    }
+    t("");
+  }
+
+  const d=r.desaccords||[];
+  trait("=");
+  t("RECOUPEMENT CARTE ↔ GÉOMÉTRIE ("+d.length+" pic(s))");
+  trait("=");
+  if(!d.length)
+    t("Aucun pic relevé : la carte et le profil d'espacement ne se "+
+      "contredisent nulle part.");
+  for(const x of d)
+    t("· "+x.victime+" à "+nb(x.s,2)+" mm — "+
+      (x.verdict==="plan"?"expliqué par « "+x.zone+" »"
+       :x.verdict==="indecidable"?"INDÉCIDABLE (« "+x.zone+" », mais les "+
+                                  "zones sont partout)"
+       :"NON JUSTIFIÉ")+
+      "\n  "+(x.detail||"")+"  (recoupé à ±"+nb(x.tolerance,2)+" mm)");
+  t("");
+
+  const zr=r.risques||[];
+  if(zr.length){
+    trait("=");
+    t("LES PLAGES À RISQUE, SUR LE CUIVRE ("+zr.length+")");
+    trait("=");
+    for(const z of zr)
+      t("· "+z.victime+"   de "+nb(z.s0,2)+" à "+nb(z.s1,2)+" mm   "+
+        nb(z.niveau_db,1)+" dB ("+
+        simXtTension(simXtRatio(z.niveau_db))+")   "+
+        (z.justifie?"le dessin des pistes l'explique (écarter)"
+                   :"NON expliqué par le dessin des pistes")+
+        (z.zone?"   zone « "+z.zone+" » au même endroit":""));
+    t("");
+  }
+
+  const m=r.masse;
+  if(m){
+    trait("=");
+    t("LE PLAN DE RÉFÉRENCE");
+    trait("=");
+    t("Seuil de pas de couture : "+nb(m.seuil,2)+" mm, tiré de "+(m.source||"—"));
+    if(m.ecarte)t("                          "+m.ecarte);
+    t("Examiné : "+((m.mesure||[]).join(" ; ")||
+                    "RIEN — la page n'envoie aucune mesure"));
+    if(m.couvert>0)
+      t("Union des zones : "+nb(100*m.couvert,0)+" % du parcours"+
+        (m.vain?"  — trop pour qu'une coïncidence explique quoi que ce soit":""));
+    for(const z of (m.zones||[]))
+      t("· "+z.type+"  "+(z.cote||"—")+"  de "+nb(z.s0,2)+" à "+nb(z.s1,2)+
+        " mm : "+(z.detail||""));
+    t("");
+  }
+
+  const mp=r.mapping||{};
+  if((mp.ports||[]).length){
+    trait("=");
+    t("LES PORTS, TELS QU'ILS ONT ÉTÉ POSÉS");
+    trait("=");
+    for(const pt of mp.ports)
+      t("· port "+pt.indice+"  "+pt.net+"  ("+pt.bout+")");
+    t("");
+  }
+
+  if((r.hypotheses||[]).length){
+    trait("=");
+    t("SOUS QUELLES HYPOTHÈSES");
+    trait("=");
+    for(const x of r.hypotheses)t("· "+x);
+    t("");
+  }
+  return L.join("\r\n")+"\r\n";
+}
+
+function simXtExportRapport(){
+  const r=SIM_XT.res;
+  if(!r){
+    SIM_XT.err="Rien à rapporter : lancez l'analyse d'abord.";
+    simRendre();
+    return;
+  }
+  simTelecharger("\ufeff"+simXtRapportTexte(r),
+                 simXtNomFichier("-crosstalk.txt"),
+                 "text/plain;charset=utf-8");
+}
+
+/* LE .sNp EST UNE SORTIE, ET LA SEULE FAÇON DONT UN TOUCHSTONE TOUCHE ENCORE
+   CETTE SECTION. Il porte le réseau généré ici, avec ses ports nommés en
+   en-tête — ce qu'aucun Touchstone ne dit de lui-même —, pour aller le
+   comparer ailleurs à ce qu'un solveur pleine onde rendrait de la même
+   géométrie. L'inverse, faire dépendre la carte d'un fichier qu'on n'a pas
+   produit, est justement ce qui n'existe plus. */
+function simXtExportSnp(){
+  const r=SIM_XT.res;
+  if(!r||!r.touchstone){
+    SIM_XT.err=r
+      ? "Rien à enregistrer : aucun réseau n'a été synthétisé — la "+
+        "présélection n'a retenu aucune victime."
+      : "Rien à enregistrer : analysez d'abord.";
+    simRendre();return;
+  }
+  const n=(r.mapping&&r.mapping.fichier_ports)||2;
+  simTelecharger(r.touchstone,simXtNomFichier(".s"+n+"p"),"text/plain");
+}
+
+function simXtExportJson(){
+  const doc=SIM_XT.doc||(simXtProbleme()||{}).doc;
+  if(!doc){simRendre();return;}
+  simTelecharger(JSON.stringify(doc,null,1),
+                 simXtNomFichier("-crosstalk.json"),"application/json");
 }
 
 const SIM_FAMILLES=[
   {cle:"si", court:"SI", nom:"Intégrité du signal",
    quoi:"Ce qu'un front devient en parcourant le cuivre : impédance, retard, "+
         "pertes, réflexions.",
-   /* DEUX ANALYSES, ET ELLES NE REPONDENT PAS A LA MEME QUESTION. L'impedance
-      est une propriete de la SECTION DROITE ; le chemin de retour, une
-      propriete de la LIAISON VERTICALE. Une piste parfaitement a 50 ohms peut
-      avoir un retour catastrophique -- et c'est justement le cas qu'on ne
-      voyait pas quand le retour n'etait qu'une colonne dans la fiche de
-      l'autre. */
-   /* QUATRE ANALYSES, ET LA MEME REPONSE DU SERVEUR LES SERT TOUTES. Elles ne
-      posent pas la meme question : l'impedance est une propriete de la SECTION
-      DROITE, le chemin de retour une propriete de la LIAISON VERTICALE, et les
-      deux dernieres une propriete de DEUX sections cote a cote. Une piste
-      parfaitement a 50 ohms peut avoir un retour catastrophique et prendre
-      trois cents millivolts a sa voisine -- ce sont trois defauts distincts,
-      et les empiler dans une fiche unique est ce qui les rendait invisibles. */
-   analyses:["impedance","diff","diaphonie","retour"]},
+   /* TROIS ANALYSES LISENT LA MEME REPONSE DU SERVEUR, et c'est voulu : elles
+      ne posent pas la meme question. L'impedance est une propriete de la
+      SECTION DROITE, le chemin de retour une propriete de la LIAISON
+      VERTICALE, la Z differentielle une propriete de DEUX sections cote a
+      cote. Une piste parfaitement a 50 ohms peut avoir un retour
+      catastrophique : ce sont des defauts distincts, et les empiler dans une
+      fiche unique est ce qui les rendait invisibles. */
+   /* « CROSSTALK » EST À PART, ET C'EST ASSUMÉ. Elle ne partage pas leur
+      réponse du serveur — c'est une autre route, un autre calcul, un autre
+      résultat —, et elle répond seule à la question du couplage : combien une
+      voisine prend, ET où le long du parcours cela se fabrique. Elle a
+      remplacé l'onglet « Diaphonie », qui ne disait que le premier des deux
+      et le disait sur une section droite unique. */
+   analyses:["impedance","diff","crosstalk","retour"]},
   {cle:"pi", court:"PI", nom:"Intégrité de l'alimentation",
    quoi:"Ce que le réseau de distribution laisse passer : chute continue, "+
         "impédance vue par le composant, résonances de plan.",
@@ -4665,18 +7654,33 @@ const SIM_ANALYSES={
     brancher:simBrancherDiff,
     rendre:simRendreDiff
   },
-  diaphonie:{
-    nom:"Diaphonie",
-    titre:"Ce que les pistes voisines prennent à la sélection : bruit arrière "+
-          "(NEXT) et bruit avant (FEXT), longement par longement.",
+  crosstalk:{
+    nom:"Crosstalk",
+    titre:"OÙ, le long du parcours, le couplage se fabrique. Les termes "+
+          "croisés d'une matrice S multi-ports — synthétisée ici À PARTIR DU "+
+          "DESIGN, sans rien importer — passés en temporel par IFFT, puis "+
+          "convertis en positions, et recoupés avec le profil d'espacement "+
+          "mesuré sur la géométrie. Il dit COMBIEN — en pour-cent de "+
+          "l'agresseur et en volts sur la victime — et OÙ sur le parcours.",
+    /* `peint` COMMANDE simZActif(), donc la carte de chaleur des IMPÉDANCES.
+       Cet onglet ne peint pas la CARTE de l'outil : sa carte de chaleur est
+       une figure du PANNEAU — une ligne par victime, l'axe des positions en
+       abscisse —, parce que la question posée est « où sur la piste » et non
+       « quelle piste ». Peindre le cuivre ne dirait pas la même chose : deux
+       victimes sur deux tracés différents ne se comparent qu'alignées sur un
+       axe commun, et c'est justement ce que la figure fait. */
     peint:false,
-    /* ELLE PEINT LE BRUIT ATTRIBUÉ À CHAQUE TRONÇON — voir « LA CARTE DE
-       CHALEUR DU COUPLAGE » dans `python/simulation_em.py`. Le total reste
-       celui de la fiche ; la carte dit OÙ il se fabrique. */
-    carte:"bruit",
-    corps:simCorpsDiaphonie,
-    brancher:simBrancherDiaphonie,
-    rendre:simRendreDiaphonie
+    corps:simCorpsCrosstalk,
+    brancher:simBrancherCrosstalk,
+    rendre:simRendreCrosstalk,
+    /* SON ÉTAT EST LE SIEN, donc son oubli et sa relance aussi. Voir
+       `simRafraichir` : sans ces deux crochets, changer de sélection laisserait
+       la carte d'une piste sous le nom d'une autre. */
+    oublier:simXtOublier,
+    relancer:simXtGo,
+    /* SES BOUTONS SONT DANS LA FICHE (le sens peint, l'écart, le cuivre), pas
+       dans le panneau : ils se rebranchent donc à chaque rendu. */
+    apres:simXtSensBrancher
   },
   retour:{
     nom:"Current Return Path",
@@ -4745,8 +7749,30 @@ function simOnglets(){
        '" data-ana="'+cle+'" title="'+simEsc(a.titre)+'">'+
        simEsc(a.nom)+"</button>";
   }
+  /* LE REPLI DES RÉGLAGES, au bout de la rangée des analyses et non dans le
+     corps de l'une d'elles : il vaut pour toutes, et un bouton posé dans un
+     corps naîtrait et mourrait avec lui à chaque changement d'onglet. */
+  if(simCalculable())
+    h+='<button class="simOnglet mini simPlier'+(SIM.plie?" on":"")+
+       '" id="simPlier" title="'+simEsc(
+         "Replier les réglages pour laisser la place aux résultats. Le calcul "+
+         "ne bouge pas, et la rangée des boutons reste : on relance sans "+
+         "déplier.")+'">'+simXtTexteRepli()+"</button>";
   h+="</div>";
   return h;
+}
+function simXtTexteRepli(){
+  return SIM.plie?"▸ réglages":"▾ réglages";
+}
+
+/* Replier ou déplier. UNE SEULE CLASSE, POSÉE À UN SEUL ENDROIT : c'est la
+   feuille de style qui décide ensuite quelles rangées disparaissent, et les
+   rangées qui restent le disent elles-mêmes (`simBarFixe`) là où elles
+   s'écrivent. Choisir ici « la dernière rangée », par exemple, aurait caché le
+   bouton « Calculer » de la chute DC, qui vit au milieu de ses réglages. */
+function simPlierAppliquer(){
+  const ctl=simEl("simCtl");
+  if(ctl&&ctl.classList)ctl.classList.toggle("simPlie",!!SIM.plie);
 }
 
 /* Le corps de l'analyse courante, replacé et rebranché. Appelé au démarrage et
@@ -4760,6 +7786,16 @@ function simPoser(){
     b.onclick=function(){simAllerFamille(this.getAttribute("data-fam"));};
   if(onglets)for(const b of onglets.querySelectorAll("[data-ana]"))
     b.onclick=function(){simAllerAnalyse(this.getAttribute("data-ana"));};
+  const pl=simEl("simPlier");
+  if(pl)pl.onclick=function(){
+    SIM.plie=!SIM.plie;
+    this.classList.toggle("on",SIM.plie);
+    this.textContent=simXtTexteRepli();
+    simPlierAppliquer();
+    /* LA FIGURE SE REDESSINE À LA LARGEUR DU PANNEAU, jamais à sa hauteur :
+       replier ne change pas la largeur, donc il n'y a rien à refaire. */
+  };
+  simPlierAppliquer();
   if(simCalculable()&&simAnalyse().brancher)simAnalyse().brancher();
   simRendre();
 }
@@ -4827,8 +7863,8 @@ function simCorpsImpedance(){
      ramène bien une f₀ hors bande au bord et le signale — mais il le signale
      APRÈS, sous un résultat déjà lu, dont les pertes portent alors sur une
      autre fréquence que celle qu'on croyait avoir demandée. */
-  '<div class="pnl-bar simFAvertBar"><span id="simFAvert"></span></div>'+
-  '<div class="pnl-bar">'+
+  '<div class="pnl-bar simFAvertBar simBarFixe"><span id="simFAvert"></span></div>'+
+  '<div class="pnl-bar simBarFixe">'+
     '<button class="tb mini on" id="simGo" title="Calculer la sélection">▶ Calculer</button>'+
     '<button class="tb mini" id="simCsv" title="Le tableau des tronçons, à joindre à un dossier de fabrication">.csv</button>'+
     '<button class="tb mini" id="simS2p" title="Les paramètres S au format Touchstone">.s2p</button>'+
@@ -4869,6 +7905,10 @@ function simSaisieEcrire(){
   const selV=simEl("simSwingUnite");
   if(selV)selV.value=simUniteV().cle;
   pose("simBruit",String(s.bruitPct).replace(".",","));
+  /* LA MARGE RESTE VIDE QUAND ELLE VAUT ZÉRO : zéro n'est pas une marge, c'est
+     « je n'en donne pas », et l'on juge alors au pourcentage. Y écrire 0
+     ferait croire à un récepteur sans aucune marge de bruit. */
+  pose("simMarge",s.marge>0?String(Math.round(s.marge*1e3)):"");
   const sel=simEl("simFUnite");
   if(sel)sel.value=simUnite().cle;
   const selb1=simEl("simFUniteBande1");
@@ -4913,6 +7953,11 @@ function simSaisie(){
   if(tr)s.tr=String(tr.value).trim()?lu("simTr",s.tr/ktr,0)*ktr:0;
   s.swing=lu("simSwing",s.swing/kv,0)*kv;
   s.bruitPct=lu("simBruit",s.bruitPct,0);
+  /* MÊME RÈGLE QUE LE FRONT POUR LA MARGE : un champ vide n'est pas une
+     saisie illisible, c'est une INTENTION — pas de marge donnée, on retombe
+     sur le budget en pourcentage. */
+  const mg=simEl("simMarge");
+  if(mg)s.marge=String(mg.value).trim()?lu("simMarge",s.marge*1e3,0)/1e3:0;
   return s;
 }
 
@@ -4980,6 +8025,12 @@ function simRendre(){
   SIM_LARGEUR=box.clientWidth;
   simBrancherLots();
   simBrancherCourbe();
+  /* LES BOUTONS QUI VIVENT DANS LA FICHE, et non dans le panneau. Ceux du
+     panneau sont branchés par `brancher` au moment où le panneau s'écrit ;
+     ceux-ci naissent et meurent avec CHAQUE rendu, et sans ce crochet ils sont
+     muets — visiblement là, armés du bon état, et sans effet au clic. C'est le
+     genre de panne qui ne se voit pas en relisant : il faut cliquer. */
+  if(a.apres)a.apres();
   simSurveillerLargeur(box);
 }
 
@@ -5270,7 +8321,7 @@ function simDocFinir(doc){
 
      ELLE PART SOUS TOUS LES ONGLETS, et pas seulement sous « Z différentielle » :
      le document envoyé doit être le même que celui qu'exporte le bouton .json,
-     et la diaphonie marque « paire » les longements différentiels. */
+     et le crosstalk écarte de ses victimes l'autre moitié d'une paire. */
   const nDiff=String(SIM.saisie.paireN||"");
   if(nDiff&&doc.net&&nDiff!==doc.net)
     doc.paires=[[doc.net,nDiff]].concat(doc.paires||[]);
@@ -5628,8 +8679,19 @@ function simRafraichir(garderCarte){
   /* Un résultat porte sur UNE sélection. Dès qu'elle change, il ne vaut plus
      rien : on l'efface, plutôt que de peindre l'impédance d'une piste sur une
      autre. */
-  const avait=!!SIM.res||SIM.lots.length>0;
-  simOublierRes();
+  /* CHAQUE ANALYSE OUBLIE LE SIEN, ET RELANCE LE SIEN. Les quatre analyses de
+     section partagent `SIM.res` ; « Crosstalk » a son propre état, sa propre
+     route et son propre bouton. Sans ces deux crochets, changer de sélection
+     sous l'onglet Crosstalk laissait sa carte à l'écran — donc le couplage
+     d'une piste peint sous le nom d'une autre, exactement ce que l'oubli
+     ci-dessus existe pour empêcher — et relançait par-dessus un calcul
+     d'impédance dont personne n'avait besoin. */
+  const a=simAnalyse();
+  const avait=a.oublier?a.oublier():(function(){
+    const eu=!!SIM.res||SIM.lots.length>0;
+    simOublierRes();
+    return eu;
+  })();
   if(avait){SIM.err=""; simRendre();}
   /* La carte a peut-être changé : les candidats à la masse de référence avec
      elle. `simRefEcrire` relit la liste et remet la proposition en vigueur si
@@ -5642,6 +8704,7 @@ function simRafraichir(garderCarte){
      sélection à la souris déclenche des dizaines de rafraîchissements, et on
      n'envoie pas dix requêtes pour un geste. */
   if(!SIM.suivre||SIM.occupe)return;
+  const relancer=a.relancer||simGo;
   if(SIM_MINUTEUR)clearTimeout(SIM_MINUTEUR);
-  SIM_MINUTEUR=setTimeout(function(){SIM_MINUTEUR=null;simGo();},180);
+  SIM_MINUTEUR=setTimeout(function(){SIM_MINUTEUR=null;relancer();},180);
 }
