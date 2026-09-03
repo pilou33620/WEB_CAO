@@ -1418,18 +1418,37 @@ function listComps(box){
     };
   });
 }
+/* LA LISTE DES ERREURS EST COUPÉE, et c'est une affaire de réactivité, pas de
+   place à l'écran. Ce panneau se reconstruit à CHAQUE `refreshPanels()` —
+   donc à chaque clic, à chaque segment posé, à chaque changement de
+   sélection. Une carte à demi routée sort couramment des milliers d'écarts :
+   à seize mille, la reconstruction du tableau coûtait près d'une seconde par
+   geste, et l'éditeur devenait inutilisable tant que l'onglet restait ouvert.
+   Le nombre exact, lui, ne se perd pas : il est dans le pied de la liste, et
+   surtout au bandeau du bouton « Contrôle DRC ». Au-delà de quelques
+   centaines on ne lit plus une liste, on corrige la première ligne et on
+   relance — c'est la même règle que les listes de la visionneuse. */
+const DRC_MAX=400;
 function listDrc(box){
   if(!S.drcRun){
     box.innerHTML='<div class="empty">Contrôle non lancé. Le bouton « Contrôle DRC » vérifie isolations, largeurs, débordements et liaisons manquantes.</div>';
     return;
   }
   if(!S.drc.length){box.innerHTML='<div class="empty ok">Aucune erreur détectée.</div>';return;}
+  const vus=S.drc.slice(0,DRC_MAX);
   let h='<table class="bom"><tbody>';
-  S.drc.forEach((e,i)=>{
+  vus.forEach((e,i)=>{
     h+='<tr data-i="'+i+'"><td class="'+(e.info?"":"warn")+'">'+esc(e.msg)+
        '<span class="pkgcell">'+fmt(ux(e.x),1)+" ; "+fmt(uy(e.y),1)+" mm · "+cuId(e.l||0,S.cu)+'</span></td></tr>';
   });
-  box.innerHTML=h+'</tbody></table>';
+  h+='</tbody></table>';
+  if(S.drc.length>vus.length)
+    h+='<div class="empty">… et '+(S.drc.length-vus.length)+' autre'+
+       (S.drc.length-vus.length>1?"s":"")+' écart'+
+       (S.drc.length-vus.length>1?"s":"")+' non listé'+
+       (S.drc.length-vus.length>1?"s":"")+' : corrigez ceux-ci et relancez le '+
+       'contrôle. Ils sont tous peints sur la carte.</div>';
+  box.innerHTML=h;
   box.querySelectorAll("tr[data-i]").forEach(tr=>{
     tr.onclick=()=>{
       const e=S.drc[+tr.dataset.i];

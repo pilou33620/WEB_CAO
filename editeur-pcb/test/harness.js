@@ -11585,7 +11585,7 @@ T("éteindre un sens retire son graphe et resserre la figure",()=>{
     throw new Error("la figure doit se resserrer : "+haut(un)+" contre "+h2);
   /* ET LA PHRASE DE LECTURE SUIT : annoncer « deux courbes » au-dessus d'un
      seul graphe ferait chercher la seconde. */
-  if(un.indexOf("Une courbe par victime")<0)
+  if(un.indexOf("l'autre sens est éteint")<0)
     throw new Error("la phrase de lecture doit dire qu'il n'en reste qu'une");
   /* LA LECTURE CHIFFRÉE NE LIT PLUS LE SENS ÉTEINT : aucun trait ne le
      montre plus, et le lire ferait chercher la courbe. On interroge la
@@ -11602,16 +11602,95 @@ T("éteindre un sens retire son graphe et resserre la figure",()=>{
   SIM_XT.res=garde.r; SIM_XT.err=garde.e; SIM_XT.courbes=garde.c;
 });
 
-T("les deux sens éteints le disent, et la réglette reste",()=>{
+T("un sens sans axe le DIT, et la figure ne trace pas un trait à plat",()=>{
+  /* LE SERVEUR REFUSE DÉSORMAIS DE POSER UN AXE DE POSITION quand la loi
+     d'arrivée est plate — le cas du FEXT à vitesses égales, c'est-à-dire le
+     cas ordinaire d'une triplaque. Il ne rend alors AUCUNE ligne dans ce
+     sens, avec sa raison dans `axes`. Deux choses à tenir côté page : le
+     message ne doit pas se lire comme un défaut de l'outil, et le graphe des
+     tensions ne doit pas dessiner un trait sur l'axe à la place de la courbe
+     manquante — un trait à zéro se lit « aucun couplage », alors que le fait
+     est « aucune POSITION » et que le niveau, lui, est mesuré. */
+  const garde={r:SIM_XT.res, e:SIM_XT.err, c:SIM_XT.courbes, s:SIM_XT.sens};
+  const r=simXtResEssai();
+  r.carte_chaleur.lignes=r.carte_chaleur.lignes.filter(l=>l.sens!=="fext");
+  r.axes={next:{lignes:2, raison:""},
+          fext:{lignes:0, raison:"les deux vitesses sont trop proches"}};
+  for(const c of r.couples){
+    c.fext_localise=false;
+    c.resolution_next=5.9;
+    /* LA CLEF EST ABSENTE, PAS NULLE : le serveur ne pose pas de résolution
+       pour un sens dont il n'a pas posé d'axe. */
+    delete c.resolution_fext;
+  }
+  SIM_XT.res=r; SIM_XT.err=""; SIM_XT.caches={};
+
+  SIM_XT.sens="fext";
+  const h=simRendreCrosstalk();
+  if(h.indexOf("Aucune courbe dans ce sens-là")<0)
+    throw new Error("un sens sans courbe doit le dire : "+h.slice(0,400));
+  if(h.indexOf("les deux vitesses sont trop proches")<0)
+    throw new Error("et donner la raison que le serveur a mesurée");
+
+  SIM_XT.sens="next";
+  SIM_XT.courbes={next:true, fext:true, volts:true};
+  const h2=simRendreCrosstalk();
+  /* LA SEULE VICTIME AFFICHÉE D'OFFICE — la confirmée — donne DEUX traits :
+     son NEXT en pour-cent et son NEXT en volts. Le graphe du FEXT n'est pas
+     posé du tout, et celui des tensions saute la courbe que le serveur n'a
+     pas rendue plutôt que de la poser à zéro. */
+  const n=(h2.match(/class="simXtCourbe"/g)||[]).length;
+  if(n!==2)
+    throw new Error("aucun trait à plat pour un FEXT sans axe : "+n);
+  if(h2.indexOf('data-sens="fext"')>=0)
+    throw new Error("un graphe sans aucune courbe ne se pose pas");
+  /* ET LA PHRASE DE LECTURE LE DIT AVEC SA RAISON : une case cochée au-dessus
+     d'un graphe absent se contredirait sous les yeux de qui vient de
+     cliquer. */
+  if(h2.indexOf("aucune courbe de FEXT")<0)
+    throw new Error("la phrase de lecture doit dire pourquoi il manque");
+  /* ET LÀ OÙ LA RÉSOLUTION S'ÉCRIT, elle ne devient pas « — mm » : ce tiret
+     se lirait comme un chiffre manquant, alors que c'est la grandeur qui
+     n'existe pas. */
+  const bandeau=simXtBandeau(r);
+  if(bandeau.indexOf("pas d’axe pour le FEXT")<0)
+    throw new Error("la résolution du FEXT n'est pas « — mm », elle n'existe "+
+                    "pas : "+bandeau);
+  SIM_XT.res=garde.r; SIM_XT.err=garde.e; SIM_XT.courbes=garde.c;
+  SIM_XT.sens=garde.s;
+});
+
+T("le graphe des tensions se lit SEUL, les trois éteints le disent",()=>{
   const garde={r:SIM_XT.res, e:SIM_XT.err, c:SIM_XT.courbes};
   SIM_XT.res=simXtResEssai(); SIM_XT.err=""; SIM_XT.caches={};
+  /* LES DEUX SENS ÉTEINTS, « mV » COCHÉ : IL RESTE UNE COURBE. C'est ce que
+     la case promettait sans le tenir — elle n'écrivait qu'un axe de plus à
+     droite des deux autres, si bien que décocher NEXT et FEXT laissait une
+     figure vide sous une case cochée. Le graphe des tensions est un TRACÉ, et
+     il apporte ce que les deux autres refusent : les deux sens sur la MÊME
+     échelle, dans l'unité du budget de bruit. */
   SIM_XT.courbes={next:false, fext:false, volts:true};
+  const seulV=simRendreCrosstalk();
+  if(seulV.indexOf("<svg")<0)
+    throw new Error("le graphe des tensions doit se tracer seul");
+  if(seulV.indexOf('data-sens="volts"')<0)
+    throw new Error("et porter sa marque");
+  if(seulV.indexOf('data-sens="next"')>=0||
+     seulV.indexOf('data-sens="fext"')>=0)
+    throw new Error("les deux graphes en pour-cent, eux, sont éteints");
+  /* ET LA RÉGLETTE LE LIT : sans cela, on promènerait un point sur une courbe
+     sans jamais savoir ce qu'il vaut. */
+  const lectV=simXtLectureLignes(0);
+  if(lectV.indexOf("mV")<0||lectV.indexOf("NEXT")<0)
+    throw new Error("la réglette doit chiffrer la tension : "+lectV);
+
+  SIM_XT.courbes={next:false, fext:false, volts:false};
   const h=simRendreCrosstalk();
   /* PAS DE FIGURE VIDE : un SVG sans courbe se lirait comme « aucun
      couplage », qui est l'inverse du fait. */
   if(h.indexOf("<svg")>=0)
     throw new Error("aucune figure ne doit être tracée");
-  if(h.indexOf("Les deux sens sont <b>éteints</b>")<0)
+  if(h.indexOf("Les trois graphes sont <b>éteints</b>")<0)
     throw new Error("la figure doit dire pourquoi elle est vide");
   /* LES CASES RESTENT AU-DESSUS DU MESSAGE : il faut un clic pour revenir. */
   if(h.indexOf('data-xtvoir="next"')<0)
@@ -11637,10 +11716,12 @@ T("les volts se lisent SUR la courbe : un axe à droite, la valeur au pic",()=>{
   SIM_XT.courbes={next:true, fext:true, volts:true};
   const h=simRendreCrosstalk();
 
-  /* TROIS CRANS PAR GRAPHE ET PAR UNITÉ : le haut, la moitié, zéro. Deux
-     graphes font donc six graduations en volts. */
+  /* TROIS CRANS PAR GRAPHE ET PAR UNITÉ : le haut, la moitié, zéro. Trois
+     graphes — NEXT, FEXT, tensions — font donc neuf graduations en volts : à
+     DROITE sur les deux premiers, à GAUCHE sur le troisième, où les volts
+     sont l'unité principale et non la conversion. */
   const grads=(h.match(/class="simXtGradV"/g)||[]).length;
-  if(grads!==6)
+  if(grads!==9)
     throw new Error("il faut trois crans de volts par graphe : "+grads);
   /* ET LA MOITIÉ EST CHIFFRÉE, sans quoi l'axe ne convertirait que ses deux
      bouts — ce que la version d'avant faisait déjà. 3,00 % valent 99,0 mV,
@@ -11654,7 +11735,7 @@ T("les volts se lisent SUR la courbe : un axe à droite, la valeur au pic",()=>{
      graphe à cinq courbes, savoir à qui appartient un chiffre passe avant
      savoir de quelle famille il est. */
   const pics=(h.match(/class="simXtSommet"/g)||[]).length;
-  if(pics!==2)
+  if(pics!==4)
     throw new Error("une valeur par courbe tracée, pas "+pics);
   const f=simXtFiches(SIM_XT.res).filter(x=>x.visible)[0];
   if(h.indexOf('class="simXtSommet" x=')<0||h.indexOf('fill="'+f.couleur+'"')<0)
@@ -11986,7 +12067,10 @@ T("la figure porte les DEUX courbes, et AUCUN schéma de piste",()=>{
   for(const cle of ["next","fext"])
     if(h.indexOf('data-sens="'+cle+'"')<0)
       throw new Error("la courbe de "+cle+" doit être tracée");
-  if((h.match(/class="simXtCourbe"/g)||[]).length!==2)
+  /* UNE COURBE PAR VICTIME ET PAR SENS SUR LES DEUX GRAPHES EN POUR-CENT, et
+     les deux sens repris sur le graphe des tensions : quatre traits pour une
+     victime. */
+  if((h.match(/class="simXtCourbe"/g)||[]).length!==4)
     throw new Error("une courbe par victime et par sens, ni plus ni moins");
   /* LA PISTE DE LA VICTIME N'EST PAS DANS LE PANNEAU, et c'est délibéré : la
      vraie est sur la carte, avec ses coudes et ses vias. Un ruban approché à
@@ -12118,8 +12202,10 @@ T("une candidate sous le seuil garde ses courbes, et ne compte nulle part",()=>{
     throw new Error("aucune confirmée : tout s'allume, sans quoi la figure "+
                     "serait vide et se lirait « aucun couplage »");
   const h3=simRendreCrosstalk();
-  if((h3.match(/class="simXtCourbe"/g)||[]).length!==4)
-    throw new Error("les deux sens des deux candidates doivent être tracés");
+  if((h3.match(/class="simXtCourbe"/g)||[]).length!==8)
+    throw new Error("les deux sens des deux candidates doivent être tracés, "+
+                    "sur les deux graphes en pour-cent et sur celui des "+
+                    "tensions");
   if(h3.indexOf("AUCUN COUPLE CONFIRMÉ")<0)
     throw new Error("le verdict reste ce qu'il est : aucune n'est confirmée");
   /* ET LE RÉSUMÉ NOMME LA PLUS COUPLÉE AVEC SON NIVEAU, à côté du seuil qui
@@ -13111,7 +13197,7 @@ T("la carte porte, au-dessus d'elle, de quoi la lire",()=>{
   const r=simXtResEssai();
   SIM_XT.res=r;
   const h=simRendreCrosstalk();
-  const iLire=h.indexOf("courbes par victime");
+  const iLire=h.indexOf("Par victime —");
   const iSvg=h.indexOf("<svg");
   if(iLire<0)throw new Error("la ligne de lecture doit exister");
   if(!(iLire<iSvg))

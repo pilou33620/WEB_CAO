@@ -46,14 +46,14 @@ python/                        les autres modules Python, aucun à lancer seul
 │                              outils : bornes désignées au clic, autant
 │                              qu'on veut, carte de chaleur au choix des trois
 ├── test/banc-ligne-mom.py     175 cas, contre étalons extérieurs
-├── test/banc-crosstalk.py     33 cas : la ligne adaptée, la cascade, l'axe de
+├── test/banc-crosstalk.py     43 cas : la ligne adaptée, la cascade, l'axe de
 │                              position, le refus de toute matrice venue de
 │                              l'extérieur, le recoupement du couplage avec
 │                              le profil d'espacement, et ce que la fiche
 │                              REFUSE de conclure quand elle ne peut pas
 └── test/banc-dc.py            34 cas, contre rho L/(W t) et la charte IPC
 mom_solver/                    moteur 2,5D pleine onde. Son NOYAU est valide et
-                               mesuré (38 essais) ; ce qui le tient hors du
+                               mesuré (56 essais) ; ce qui le tient hors du
                                chemin de calcul est le MODÈLE DE PORT — un port
                                de microruban demande un courant vertical, donc
                                un via. Voir A-FAIRE.md
@@ -63,9 +63,9 @@ mom_solver/                    moteur 2,5D pleine onde. Son NOYAU est valide et
 ├── mom_engine.py              matrice d'impédance, vecteur d'excitation
 ├── solver_extract.py          résolution, paramètres S, Touchstone
 ├── main.py                    ligne de commande
-├── tests/banc_dcim.py         25 essais : Green stratifiée et DCIM par GPOF
-├── tests/banc_moteur.py       7 essais : assemblage, quadrature, deux noyaux
-└── tests/banc_chaine.py       6 essais : la chaîne du JSON au Touchstone
+├── tests/banc_dcim.py         37 essais : Green stratifiée et DCIM par GPOF
+├── tests/banc_moteur.py       11 essais : assemblage, quadrature, deux noyaux
+└── tests/banc_chaine.py       8 essais : la chaîne du JSON au Touchstone
 requirements.txt               aucune dépendance : le fichier le dit et l'explique
 LIB_composants.csv             bibliothèque de références (optionnelle)
 
@@ -471,9 +471,33 @@ Ce qu'il ne voit pas, et le panneau le dit sous chaque résultat :
   décalage et le diélectrique qui les sépare, et la fiche annonce alors ses
   chiffres comme un **plancher**. Celles qu'un **plan de référence** sépare ne
   le sont pas — le plan est un écran, et c'est la raison d'être de l'empilage.
+  **Une voisine rencontrée des deux façons est une voisine LATÉRALE** : quand
+  l'agresseur change de couche en cours de route, la même piste est vue
+  superposée sur une portion et à plat sur une autre, et les deux mesures sont
+  comptées à part. Deux pistes de la même couche ne peuvent pas être séparées
+  par un plan — les fondre écartait un longement bien réel avec le motif « un
+  plan de référence sépare les deux couches ».
   Les pistes qui se **croisent** ne sont ni chiffrées ni cherchées : l'aire de
   recouvrement d'une traversée orthogonale est minuscule, et c'est justement
   pourquoi la règle est de router deux couches adossées à angle droit ;
+- **le plan de retour est supposé CONTINU sous les deux pistes**, et c'est
+  l'hypothèse la plus lourde de toute la section : `[C]` et `[L]` sortent d'une
+  section droite quasi-TEM, qui n'existe que si le courant de retour passe
+  juste en dessous. Là où le plan est **percé, fendu ou absent**, le retour fait
+  un détour dont l'aire de boucle n'apparaît nulle part dans la section, et les
+  deux pistes se **partagent** ce retour : le couplage par **impédance
+  commune** qui en résulte n'est pas un terme que ce modèle chiffre mal, c'est
+  un terme qu'il ne **contient pas** — l'écart n'est donc pas borné par ce
+  calcul, et l'outil ne le chiffre pas. Trois garde-fous, parce que ce cas rendait
+  auparavant un couplage **exactement nul** sans un mot — le pire résultat que
+  cet outil puisse produire, puisqu'il ressemble en tout point à une bonne
+  nouvelle : une **fente sondée qui tombe sur un longement** lève une réserve
+  (une fente ailleurs n'en lève pas, sans quoi l'alerte serait permanente et
+  cesserait d'être lue) ; un **bloc dont la section n'est pas résoluble** n'est
+  plus compté comme découplé — sa longueur est mesurée et dite ; et le **seuil
+  de présélection ne se rétrécit plus** faute de hauteur au plan, il s'ouvre à
+  toute la portée du voisinage, parce que sans plan le champ porte plus loin,
+  pas moins ;
 - **la mise en cascade suppose une chaîne**, parcourue dans l'ordre envoyé. Un
   net qui se ramifie n'en est pas une : les impédances par tronçon et la carte
   de chaleur restent justes — chacune ne dépend que de sa section —, mais les
@@ -496,10 +520,19 @@ impulsionnelle**, et le retard s'y convertit en **position** dès qu'on connaît
 la vitesse de propagation. C'est la réflectométrie temporelle, appliquée aux
 termes *croisés* plutôt qu'à la réflexion :
 
-| | terme lu | trajet | position |
+| | terme lu | trajet | loi d'arrivée |
 | --- | --- | --- | --- |
-| **NEXT** | S(victime proche, agresseur proche) | aller-retour | `x = v·t/2` |
-| **FEXT** | S(victime lointaine, agresseur proche) | simple | `x = v·t` |
+| **NEXT** | S(victime proche, agresseur proche) | contre-propage | `t = τa(x) + τv(x)`, soit `x = v·t/2` à vitesses égales |
+| **FEXT** | S(victime lointaine, agresseur proche) | co-propage | `t = τa(x) + τv(L) − τv(x)` — **plate** à vitesses égales |
+
+**Le FEXT n'a pas toujours d'axe, et la carte ne lui en fabrique pas.** Le
+bruit avant *co-propage* avec l'agresseur : ce qui se couple en `x` arrive au
+bout lointain à `τa(x) + τv(L) − τv(x)`, et quand les deux pistes ont la même
+vitesse cette somme ne dépend plus de `x` — tout arrive au **même instant**, et
+aucune transformée ne peut séparer ce qui s'est superposé. La carte ne porte
+alors **pas** de courbe FEXT, et la fiche dit laquelle des deux raisons l'en
+empêche, avec ses chiffres. Le *niveau* du FEXT, lui, ne dépend d'aucun axe :
+il reste au tableau des couples, qui est ce qu'un budget de bruit consomme.
 
 **La matrice vient du design, et de nulle part ailleurs.** Il n'y a rien à
 importer : le **réseau de lignes couplées** est synthétisé à partir de la même
@@ -879,7 +912,8 @@ les chiffres de *ce* calcul-ci : le dessin des pistes → un réseau de lignes
 couplées mis en cascade le long du parcours → sa matrice S multi-ports (du
 continu à f_max, N points) → transformée de Fourier inverse (fenêtre) de ses
 termes croisés → le retard converti en position par la vitesse de chaque tronçon
-(NEXT : v·t/2 ; FEXT : v·t). C'est elle qu'on relit quand un chiffre surprend,
+(NEXT : `t = τa+τv` ; FEXT : `t = τa(x) + τv(L) − τv(x)`, plate à vitesses
+égales). C'est elle qu'on relit quand un chiffre surprend,
 et c'est dans cet ordre que se cherche l'erreur.
 
 **Des hachures qui recouvrent tout ne se peignent pas.** Quand les zones de
@@ -993,8 +1027,8 @@ n'additionne pas ses victimes. La seule somme offerte est celle de plusieurs
 agresseurs **en phase** vers une victime — le cas d'un bus qui commute d'un
 bloc — et elle ne se fait que sur demande explicite.
 
-33 cas au banc Python ([python/test/banc-crosstalk.py](python/test/banc-crosstalk.py)),
-48 au banc de l'éditeur : la ligne adaptée contre `S₁₁ = 0` et
+43 cas au banc Python ([python/test/banc-crosstalk.py](python/test/banc-crosstalk.py)),
+49 au banc de l'éditeur : la ligne adaptée contre `S₁₁ = 0` et
 `S₂₁ = exp(−jβL)` à la précision machine, la cascade contre la ligne entière,
 **le pic de NEXT qui tombe là où le longement commence** — c'est le seul cas qui
 vérifie l'axe lui-même, et un facteur deux oublié y mettrait le pic à la
@@ -1062,7 +1096,7 @@ complète, terme de potentiel scalaire compris ; les deux potentiels ont chacun
 leur fonction de Green — c'était le défaut principal, et il pesait 26 % sur
 ε_eff ; les images complexes sont ajustées par un vrai GPOF à deux niveaux sur
 la Green spectrale exacte du milieu stratifié, et non posées sur des
-constantes. 38 essais le mesurent, dont la comparaison d'ε_eff contre
+constantes. 56 essais le mesurent, dont la comparaison d'ε_eff contre
 `ligne_mom` : **0,49 %** — deux méthodes qui ne partagent aucun code tombent
 sur le même chiffre, ce qui est un certificat de validité et non un concours
 de précision.

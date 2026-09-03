@@ -1,0 +1,253 @@
+{
+  "titre": "Recapitulatif des simulations SI (Signal Integrity) et PI (Power Integrity)",
+  "date": "2026-09-03",
+  "modules": [
+    {
+      "fichier": "python/ligne_mom.py",
+      "role": "Solveur coeur : methode des moments sur la section droite",
+      "domaine": ["SI", "PI"],
+      "methode_generale": "Methode des moments (Harrington) en electrostatique, domaine spectral (fonctions de Green analytiques par transformee de Fourier), quasi-statique + dispersion de Getsinger, corrections de largeur effective (Wheeler) pour le cuivre epais",
+      "fonctions": [
+        {
+          "nom": "green_spectral_micro / _couvert / _masque / green_spectral_strip",
+          "methode": "Fonctions de Green fermees (Laplace, domaine spectral)",
+          "description": "Fonction de Green pour microruban nu / couvert (stratifie 2 cotes) / sous masque de soudure (3 regions) / triplaque"
+        },
+        {
+          "nom": "capacitance / capacitance_coplanaire / capacitance_matrice",
+          "methode": "MoM, panneaux resserres aux bords, quadrature Gauss-Legendre 300 pts",
+          "description": "Capacite lineique C (et C0 sans dielectrique) d'un ruban seul / avec masse coplanaire / matrice de capacite de Maxwell [C] multi-conducteurs (jusqu'a 8)"
+        },
+        {
+          "nom": "_largeur_effective / largeur_effective",
+          "methode": "Correction de Wheeler",
+          "description": "Largeur effective d'un ruban en tenant compte de l'epaisseur de cuivre"
+        },
+        {
+          "nom": "solve_line",
+          "methode": "MoM + Wheeler + Getsinger",
+          "domaine": "SI",
+          "description": "Z0 et eps_eff d'une ligne micro-ruban ou triplaque (entree en metres) : nu, couvert, masque, coplanaire",
+          "entrees": "geometrie de section (mm converti en m)",
+          "sorties": "Z0, eps_eff"
+        },
+        {
+          "nom": "solve_multiline",
+          "methode": "MoM N-conducteurs",
+          "domaine": "SI",
+          "description": "Matrices [C], [C0], [L] pour N conducteurs couples, y compris pistes de garde flottantes ou tenues a 0V"
+        },
+        {
+          "nom": "_modes / modes_paire",
+          "methode": "Decomposition modale de [L][C]",
+          "domaine": "SI",
+          "description": "Z differentielle et Z commune (modes pair/impair) pour une paire au sein d'un bus"
+        },
+        {
+          "nom": "sous_systeme",
+          "methode": "Reduction exacte de Maxwell",
+          "domaine": "SI",
+          "description": "Z differentielle d'une paire prise dans un bus (autres conducteurs a la masse)"
+        },
+        {
+          "nom": "dispersion_getsinger",
+          "methode": "Modele de Getsinger",
+          "domaine": "SI",
+          "description": "eps_eff(f), variation en frequence de la permittivite effective"
+        },
+        {
+          "nom": "line_losses / line_losses_detaillees",
+          "methode": "Modele industriel (effet de peau + pertes dielectriques)",
+          "domaine": "SI",
+          "description": "Pertes conductrices alpha_c = Rs/(2*Z0*w), pertes dielectriques, Rs, delta de peau"
+        },
+        {
+          "nom": "elements_coude / capacite_coude / abcd_coude",
+          "methode": "Modele de Gupta (T complet L/2-C-L/2)",
+          "domaine": "SI",
+          "description": "Discontinuite de coude : elements localises L,C inseres en cascade ABCD"
+        },
+        {
+          "nom": "inductance_via / capacite_pastille / abcd_via",
+          "methode": "Modele pi L-C classique",
+          "domaine": "SI",
+          "description": "Via simple : inductance de boucle, capacite de pastille, cascade ABCD"
+        },
+        {
+          "nom": "mutuelle_partielle / inductance_partielle_propre / inductance_boucle_vias / _grover_f",
+          "methode": "Formule de Grover (inductance partielle)",
+          "domaine": "PI",
+          "description": "Inductance de boucle d'un via signal + ses vias de retour (chemin de retour de courant)"
+        },
+        {
+          "nom": "capacite_antipad / capacite_pastille_au_plan / capacite_via_complete",
+          "methode": "Formule log (coax barreau/antipad)",
+          "domaine": "PI",
+          "description": "Capacite totale d'un via (antipad traverse + pastilles d'extremite)"
+        },
+        {
+          "nom": "impedance_moignon / admittance_moignon / frequence_resonance_moignon",
+          "methode": "Modele coax (stub quart d'onde avec pertes complexes)",
+          "domaine": ["SI", "PI"],
+          "description": "Resonance du moignon de via (stub non traversant) : Z0 du stub, admittance d'entree, frequence de resonance quart d'onde (court-circuit du signal en HF)"
+        },
+        {
+          "nom": "inductance_cavite / capacite_paire_plans / impedance_paire_plans",
+          "methode": "Bogatin sec.7.14/13.14",
+          "domaine": "PI",
+          "description": "PDN : inductance de boucle du retour dans une cavite entre plans, capacite de la paire de plans, impedance caracteristique de la paire de plans"
+        },
+        {
+          "nom": "inductance_etalement_via_anneau / inductance_etalement_via_via",
+          "methode": "Bogatin eq.13-31 (via-anneau) et eq.13-35 (via-via, coefficient empirique)",
+          "domaine": "PI",
+          "description": "Inductance d'etalement du courant de retour via vers anneau lointain, ou via vers via (via de decouplage)"
+        },
+        {
+          "nom": "impedance_traversee_plans",
+          "methode": "Bogatin, resonance parallele L-C",
+          "domaine": "PI",
+          "description": "Impedance serie d'une traversee de plan de reference (cavite en parallele avec pont de decouplage) : calcule la resonance parallele PDN (frequence ou l'impedance culmine)"
+        },
+        {
+          "nom": "abcd_via_complet / abcd_via_boucle",
+          "methode": "Cascade ABCD",
+          "domaine": ["SI", "PI"],
+          "description": "Via complet : pi L-C + moignons en derivation + impedance de traversee de plans"
+        },
+        {
+          "nom": "abcd_line / cascade_to_s",
+          "methode": "Theorie des lignes",
+          "domaine": "SI",
+          "description": "Cascade ABCD d'une ligne uniforme, conversion ABCD vers parametres S"
+        }
+      ],
+      "verification": "python/test/banc-ligne-mom.py (~40 assertions) contre Hammerstad-Jensen (microruban, 0.42%), solution exacte en integrales elliptiques (triplaque, 0.30%), reductions exactes"
+    },
+    {
+      "fichier": "python/simulation_em.py",
+      "role": "Pont geometrie <-> solveur (SI : Impedance, Z diff, Current Return Path)",
+      "domaine": ["SI", "PI"],
+      "entree": "document cao-sim-em-3 (mm)",
+      "sortie": "resultat cao-sim-em-resultat-5",
+      "fonctions": [
+        {
+          "nom": "section_de_couche",
+          "description": "Lit l'empilage et derive la geometrie de section (micro nu/couvert/masque ou triplaque), avec ecart_g/ecart_d (masse coplanaire asymetrique)"
+        },
+        {
+          "nom": "_coudes / _transitions / _ruptures",
+          "description": "Detection geometrique des discontinuites (coudes, changements de couche, ruptures de parcours)"
+        },
+        {
+          "nom": "_analyse_retour / _inductance_transition / _capacite_transition / _modele_transition",
+          "domaine": "PI",
+          "description": "Current Return Path : modelise la transition de via (traversee de plans de reference), avec inductance de boucle du retour et impedance de traversee"
+        },
+        {
+          "nom": "_moignons / _admittance_moignon / _fiche_moignon",
+          "domaine": ["SI", "PI"],
+          "description": "Resonance de moignon de via appliquee au design reel (via par via, sur le parcours)"
+        },
+        {
+          "nom": "_cavite_de_retour / _plans_de_la_paire",
+          "domaine": "PI",
+          "description": "PDN - cavite de paire de plans pour un via qui change de reference (assemble inductance_cavite / inductance_etalement_via_via / capacite_paire_plans avec le decouplage present sur le net)"
+        },
+        {
+          "nom": "_scenes_paralleles / _superposition / _superposes / _poser_section",
+          "description": "Appariement geometrique des pistes qui se longent (meme couche ou couches adjacentes/superposees), pose la section couplee MoM"
+        },
+        {
+          "nom": "_couplage",
+          "domaine": "SI",
+          "description": "Diaphonie NEXT/FEXT par troncon (via coefficients_couplage / K_NEXT / K_FEXT), source de la Z differentielle troncon par troncon affichee dans l'onglet Impedance/Z diff"
+        },
+        {
+          "nom": "simuler",
+          "description": "Fonction principale : Z0/eps_eff par troncon, cascade ABCD -> parametres S de la liaison, export Touchstone"
+        }
+      ],
+      "verification": "python/test/banc-ligne-mom.py (partage) plus cas dedies (0.25% coplanaire, 0.42% Hammerstad-Jensen)"
+    },
+    {
+      "fichier": "python/crosstalk.py",
+      "role": "Diaphonie NEXT/FEXT localisee spatialement (onglet Crosstalk)",
+      "domaine": "SI",
+      "methode_generale": "Reseau de lignes couplees multi-ports synthetise depuis la geometrie du design (via ligne_mom/simulation_em), cascade troncon par troncon -> matrice S multi-ports -> IFFT (reflectometrie temporelle sur les termes croises S victime-agresseur) -> axe de position le long du parcours",
+      "entree": "document cao-crosstalk-1 (mm)",
+      "sortie": "resultat cao-crosstalk-resultat-1",
+      "fonctions": [
+        { "nom": "etat", "description": "Disponibilite, methode declaree" },
+        { "nom": "candidats_geometriques", "description": "Etape 0a : preselection geometrique des voisines qui longent l'agresseur (meme couche + couches adjacentes), avec profil d'espacement" },
+        { "nom": "confirmation_par_simulation", "description": "Etape 0b : NEXT/FEXT reels par candidat, seuil de confirmation (-40 dB par defaut)" },
+        { "nom": "reseau_synthetise / _matrices_bloc / chaine_mtl", "description": "Construction de la matrice S multi-ports par cascade de sections couplees" },
+        { "nom": "verifier_bande / bande_deduite / bande_pour_resolution", "description": "Deduction du haut de bande et de la resolution spatiale (contrainte quasi-TEM lambda/10, fenetre temporelle vs repliement)" },
+        { "nom": "fenetre / vers_temporel", "description": "Fenetrage (Kaiser/Hann/rect) puis IFFT -> reponse impulsionnelle reelle" },
+        { "nom": "profil_du_sens / positions", "description": "Conversion temps vers position (NEXT contre-propage, FEXT co-propage), profil de couplage le long de l'abscisse" },
+        { "nom": "valider_matrice", "description": "Controle passivite (sigma_max <= 1) et reciprocite (S = S transpose) de la matrice synthetisee" },
+        { "nom": "touchstone_np", "description": "Export Touchstone du reseau multi-ports (comparaison a un solveur pleine onde)" },
+        { "nom": "analyser", "description": "Fonction principale : carte de couplage NEXT/FEXT en fonction de la position, zones a risque, desaccords avec le plan de masse (fentes, pas de couture), actions correctives ordonnees" }
+      ],
+      "verification": "python/test/banc-crosstalk.py (43 cas)"
+    },
+    {
+      "fichier": "python/dc_solver.py",
+      "role": "Chute de tension continue / IR drop (onglet Chute DC)",
+      "domaine": "PI",
+      "methode_generale": "Probleme resistif reel (pas d'EM), maillage surfacique (trame carree par couche, une cellule par carreau de cuivre), reseau de conductances, matrice creuse symetrique definie positive, resolution par gradient conjugue (scipy) avec preconditionneur de Jacobi, conditions Dirichlet (references de tension) et Neumann (sources de courant)",
+      "fonctions": [
+        { "nom": "mailler", "description": "Maille le cuivre par couche, gere les trous/decoupes (retirent du cuivre), relie les cellules voisines de meme net" },
+        { "nom": "resoudre_dc", "description": "Potentiel DC, chute de tension par net, courant par net, detail via par via (resistance d'anneau plaque), densite de courant et echauffement (IPC-2221) par coupes de conducteur" },
+        { "nom": "_resistance_via", "description": "R = rho * h / A (anneau de cuivre plaque)" },
+        { "nom": "_densite_et_echauffement / _echauffement_ipc2221", "description": "Densite de courant A/mm2, echauffement delta T via IPC-2221 (I = k * deltaT^0.44 * A^0.725), par coupes contigues du conducteur (evite le piege de l'angle rentrant singulier)" },
+        { "nom": "carte_chaleur", "description": "Carte de potentiel interpolee (au plus proche) pour affichage" },
+        { "nom": "resoudre_document", "description": "Conversion mm vers m, point d'entree du format cao-sim-dc-1" }
+      ],
+      "verification": "python/test/banc-dc.py (16 cas)"
+    },
+    {
+      "fichier": "commun/simulation-em.js",
+      "role": "Panneau UI unifie SI/PI (client, aucun calcul physique)",
+      "domaine": ["SI", "PI"],
+      "description": "Rassemble les onglets SI (Impedance, Z differentielle, Crosstalk, Current Return Path) et PI (Chute DC / IR drop). Envoie le document au serveur et affiche les resultats.",
+      "groupes_fonctions": [
+        { "theme": "IR drop (PI)", "fonctions": ["simDCFinesse", "simDCCalculer", "simDCTrace", "simTableauBornes", "simTableauPire", "simTableauVias", "simDesequilibreVias", "simDCCouleur"], "description": "Carte de chaleur, tableau via par via, pires cas par net" },
+        { "theme": "Impedance / Z diff (SI)", "fonctions": ["simCourbe", "simFiche", "simSection", "simDiscontinuites", "simPorts", "simTopo"], "description": "Lecture ROS, impedance Z = Z_ref*(1+S11)/(1-S11), impedance et pertes par troncon" },
+        { "theme": "Current Return Path / PDN (SI+PI)", "fonctions": ["simMoignonTexte", "simRetourCellule", "simRetourNotes", "simCheveluRes", "simRetourCouleurRes", "simRetourTrace"], "description": "Frequence de resonance du moignon, impedance de traversee de plans, resonance parallele cavite/decouplage, carte du chemin de retour peinte" },
+        { "theme": "Crosstalk (SI)", "fonctions": ["simCascadeRefusee", "simCarteQuoi", "simCouture"], "description": "Lecture des resultats de crosstalk.py" }
+      ],
+      "fichier_associe": "commun/simulation-em.css (styles uniquement, pas de calcul)"
+    },
+    {
+      "fichier": "editeur-pcb/js/19-simulation.js",
+      "role": "Adaptateur geometrie cote editeur PCB",
+      "domaine": ["SI", "PI"],
+      "description": "Traduit le cuivre de l'editeur PCB (pistes, zones, vias, empilage) vers les formats attendus par les 4 modules Python",
+      "fonctions": [
+        { "nom": "simStackup", "description": "Empilage vers format attendu par le solveur" },
+        { "nom": "simVoisinagePcb / simEspacement / simPlages / simLongement*", "domaine": "SI", "description": "Preselection geometrique des voisines (pour Z diff et Crosstalk)" },
+        { "nom": "simBoucleVias / simMutuelleVia / simGroverF / simResoudre", "domaine": "PI", "description": "Inductance de boucle des vias de retour, implementation JS parallele a ligne_mom.inductance_boucle_vias / _grover_f" },
+        { "nom": "simPontsPlans / simPlansJoints / simVoisinageVia", "domaine": "PI", "description": "Detection des ponts de decouplage / plans relies pour le calcul de traversee de plan (impedance_traversee_plans)" },
+        { "nom": "simAntipadVia / simCotesVia / simDCTube / simDCHauteurVia", "domaine": "PI", "description": "Geometrie des vias pour le solveur DC (IR drop) et pour la capacite de via" },
+        { "nom": "simXtParcours / simXtCouture / simXtFentes / simXtViasMasse / simXtGeometriePcb", "domaine": "SI", "description": "Construction du document cao-crosstalk-1 (preparation de l'entree pour crosstalk.py)" },
+        { "nom": "simDocPcb / problemeCrosstalk", "description": "Construction des documents JSON envoyes au serveur" }
+      ]
+    }
+  ],
+  "documentation": [
+    { "fichier": "README.md", "description": "Section Simulation (lignes ~272-1220) : description utilisateur des 4 analyses SI + PI, carte de chaleur, choix de paire differentielle, ce que le calcul couvre/ne couvre pas, section Crosstalk complete, lecture de courbe (ROS, Z depuis S11), bancs d'essai" },
+    { "fichier": "A-FAIRE.md", "description": "Journal des chantiers SI/PI : audits du solveur EM, passage a N conducteurs (Z diff + couplage), resistance AC avec effet de peau, etat de l'IR drop, chemin de retour du courant, moignon et cavite, traversee entre plans d'apres Bogatin" },
+    { "fichier": "editeur-pcb/README.md", "description": "Documentation de l'editeur, renvoie vers les memes analyses" }
+  ],
+  "modules_peripheriques_non_si_pi": [
+    { "fichier": "python/ipc2581_data.py, ipc2581_json.py, ipc2581_parser.py", "description": "Parsing/generation du format IPC-2581 (donnees de fabrication, pas de simulation physique)" },
+    { "fichier": "python/passerelle_mcp.py", "description": "Passerelle MCP (protocole d'agent), sans calcul physique" }
+  ],
+  "note_transversale": "Beaucoup de calculs de via (ligne_mom.py) sont hybrides SI/PI : un via est a la fois une discontinuite de signal (reflexion/resonance de moignon, SI) et un point de retour de courant (inductance de boucle vers le plan de masse/alimentation, PI). simulation_em.py assemble ces briques via _analyse_retour, _cavite_de_retour et _moignons pour produire l'onglet Current Return Path.",
+  "bancs_de_test": [
+    "python/test/banc-ligne-mom.py (~40 cas)",
+    "python/test/banc-crosstalk.py (43 cas)",
+    "python/test/banc-dc.py (16 cas)"
+  ]
+}

@@ -29,17 +29,17 @@ panneau Propriétés, sur un via comme sur toute une sélection (`viaSetKind`,
 
 ## État des lieux au 2026-09-02
 
-Ce que le dépôt fait tourner, et ce qui le mesure. **1 007 essais, tous
+Ce que le dépôt fait tourner, et ce qui le mesure. **1 104 essais, tous
 passés.**
 
 | Partie | État | Ce qui la mesure |
 | --- | --- | --- |
-| Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire | en service | 581 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
-| Éditeur schématique | en service ; **ni bus ni feuilles hiérarchiques** | — |
+| Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire | en service | 582 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
+| Éditeur schématique | en service ; **ni bus ni feuilles hiérarchiques** | 86 essais, [editeur-schematique/test/harness.js](editeur-schematique/test/harness.js) |
 | Visionneuse IPC-2581 | en service ; **arcs comptés, parcours chaîné, chevelu du retour, pastilles devinées avouées, sélection à plusieurs morceaux** | 108 essais ([harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)) + 46 ([banc-essai.py](visionneuse-ipc2581/test/banc-essai.py)) |
 | **SI — impédance** (`ligne_mom`) | en service, 0,3 à 0,4 % contre les étalons ; **vias : boucle de retour, antipads, moignons, traversée de plans** | 149 cas, [banc-ligne-mom.py](python/test/banc-ligne-mom.py) |
 | **SI — Z différentielle** (`solve_multiline`) | **en service**, moins de 3 % contre Garg-Bahl ; N conducteurs dans UNE section, masse coplanaire et pistes de garde comprises | 149 cas |
-| **SI — couplage** (`crosstalk`) | **en service** ; l'onglet Diaphonie a été RETIRÉ le 2026-09-02, le crosstalk répond seul — combien (%, dB, **volts**) et où | 33 cas, [banc-crosstalk.py](python/test/banc-crosstalk.py) |
+| **SI — couplage** (`crosstalk`) | **en service** ; l'onglet Diaphonie a été RETIRÉ le 2026-09-02, le crosstalk répond seul — combien (%, dB, **volts**) et où | 43 cas, [banc-crosstalk.py](python/test/banc-crosstalk.py) |
 | **PI — chute DC** (`dc_solver`) | **solveur fait et mesuré ; aucun outil ne l'alimente** | 34 cas, [banc-dc.py](python/test/banc-dc.py) |
 | Moteur 2,5D pleine onde (`mom_solver`) | **port vertical fait ; ε_eff dé-embarqué à 0,93 % de `ligne_mom`** | 56 essais, [mom_solver/tests/](mom_solver/tests) |
 | Passerelle MCP, projets, profils, repérage, cross-probing | en service | — |

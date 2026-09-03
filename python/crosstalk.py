@@ -186,6 +186,97 @@
 #   explique est dans la fiche comme dans le rapport exporte.
 # Fonctions ajoutees/modifiees : bande_deduite, _detail_bande (nouvelles) ;
 #   _reglages, analyser (modifiees) ; DEFAUTS (+ bande_auto).
+#
+# Version: 3.0.0
+# Date: 2026-09-02
+# Explication: UN ZERO QU'ON N'A PAS MESURE RESSEMBLE A UN ZERO. Une relecture
+#   exterieure et une carte d'essai reelle ont trouve la meme chose par deux
+#   chemins : cette section pouvait annoncer « aucune voisine ne depasse le
+#   seuil » sur un dessin ou le couplage est maximal. C'est le defaut que tout
+#   le fichier existe pour empecher, et il y en avait QUATRE mecanismes
+#   distincts -- tous silencieux, tous plausibles a l'ecran.
+#
+#   (1) LE LONGEMENT LATERAL LU COMME UNE SUPERPOSITION BLINDEE. Les candidats
+#   etaient indexes par (net, couche) et leur `type`, leur `distance` et leur
+#   `blinde` etaient figes a la PREMIERE rencontre. Il suffisait que
+#   l'AGRESSEUR commence sur une autre couche pour qu'une voisine qui longe
+#   franchement a plat sur la seconde moitie du parcours soit vue « verticale,
+#   separee par un plan de reference », donc ecartee -- avec un motif FAUX.
+#   Les deux natures de rencontre sont desormais comptees a part (`lat` et
+#   `vert`), et le LATERAL L'EMPORTE des qu'il existe : deux pistes de la meme
+#   couche ne peuvent pas etre separees par un plan. La portion superposee est
+#   mesuree a cote, jamais fondue dans la premiere, et son couplage non
+#   modelise est dit -- note quand un plan la blinde, reserve quand rien ne la
+#   blinde.
+#
+#   (2) LA SECTION QU'ON NE SAIT PAS RESOUDRE RENDAIT UN COUPLAGE NUL. Quand
+#   `section_de_couche` ne rend rien -- pas de plan de reference sous la piste
+#   --, chaque conducteur retombe sur sa ligne isolee, [C] et [L] restent
+#   DIAGONALES, et le terme croise vaut EXACTEMENT zero. Le calcul aboutissait,
+#   la carte se dessinait, et cette branche etait la seule du module a renoncer
+#   sans un mot. `_matrices_bloc` rend maintenant quels conducteurs ont
+#   VRAIMENT ete couples, la longueur non couplee est comptee, et elle leve une
+#   reserve : un plancher n'est pas une mesure.
+#
+#   (3) LE SEUIL DE DISTANCE SE RETRECISSAIT LA OU LE CHAMP S'ETEND. Sans plan,
+#   `_hauteur_de_couche` rend zero, et « 3 x max(largeur, hauteur) » tombait a
+#   trois largeurs de piste -- le seuil le PLUS severe de tous, applique
+#   exactement la ou le couplage porte le plus loin faute de plan pour le
+#   borner. Il s'ouvre desormais a toute la portee du voisinage, et le dit.
+#
+#   (4) LA FENTE DU PLAN SOUS LE LONGEMENT NE CHANGEAIT RIEN AU CHIFFRE. La
+#   section droite quasi-TEM SUPPOSE un plan de retour continu sous les deux
+#   pistes ; la ou il est perce, le retour fait un detour et le couplage reel
+#   depasse ce calcul. Une fente sondee qui tombe SUR un longement retenu leve
+#   donc une reserve -- et une fente ailleurs n'en leve pas, sans quoi l'alerte
+#   serait permanente et cesserait d'etre lue.
+#
+#   L'AXE DU FEXT NE FAISAIT PAS CE QUE LA FICHE ANNONCAIT. La loi d'arrivee du
+#   bruit avant est t(x) = tau_a(x) + tau_v(L) - tau_v(x), parce qu'il
+#   CO-PROPAGE ; le code inversait la MOYENNE des deux retards. Deux
+#   consequences : t = 0 se trouvait envoye sur x = 0 alors qu'aucune energie ne
+#   peut arriver avant tau_v(L) -- toute la premiere moitie de l'axe etait
+#   inatteignable --, et le pic tombait TOUJOURS a la meme abscisse. La fiche
+#   disait vrai en avertissant « elle ne localise pas », et faux en ajoutant
+#   « elle se met a localiser quand les vitesses different » : avec cet axe,
+#   jamais. La loi est desormais ecrite une fois (`profil_du_sens`), et quand
+#   elle est PLATE -- le cas ordinaire -- la carte ne porte PAS de ligne FEXT
+#   plutot qu'une courbe qui designerait un millimetre au hasard. Le NIVEAU du
+#   FEXT, lui, ne depend d'aucun axe et reste rendu.
+#
+#   LE CHAMP « VITESSES » CASSAIT EXACTEMENT DANS LE CAS OU IL SERT. Une
+#   vitesse saisie donne un profil a deux points, la cascade en donne un par
+#   bloc ; `profil_commun` les additionnait terme a terme et levait
+#   « operands could not be broadcast together » -- 500 cote serveur -- pour
+#   tout longement partiel. Les deux retards sont maintenant projetes sur
+#   l'union des abscisses, ou l'interpolation d'un tau affine par morceaux est
+#   exacte.
+#
+#   ET TROIS CHIFFRES QUI MENTAIENT SANS CONSEQUENCE VISIBLE : tan delta
+#   n'entrait pas dans l'impedance caracteristique (`w_mat` ne portait pas le
+#   facteur, si bien qu'une ligne adaptee rendait S11 = 0 a la precision
+#   machine, et le Touchstone exporte -- ce qu'on compare a un solveur pleine
+#   onde -- annoncait une ligne sans aucun retour) ; il etait lu sur la couche
+#   du PREMIER troncon pour tout le parcours ; et la mise en page du Touchstone
+#   comptait des paires pour des nombres, ce qui ecrivait deux rangees de
+#   matrice par ligne au-dela de deux ports. `points` s'ecretait en silence
+#   alors qu'il divise la FENETRE temporelle. `_zone_a` tolerait un demi-
+#   millimetre en dur la ou tout le reste tolere la resolution.
+#
+#   ENFIN, « RIEN N'A ETE SIMULE » N'EST PLUS « RIEN NE COUPLE ». Une
+#   presélection vide et un calcul complet dont tout tombe sous le seuil
+#   rendaient le MEME verdict, suivi de « leurs courbes sont tracees quand
+#   meme » au-dessus d'une figure vide. Le resultat porte desormais
+#   `preselection_vide`, et la page en fait un verdict distinct.
+# Fonctions ajoutees/modifiees : profil_du_sens, _tan_delta,
+#   _fentes_sur_longement, _duree (nouvelles) ; profil_commun (signature :
+#   deux profils), positions (signature : plus de `sens`), resolution
+#   (signature : plus de `sens`, conversion par la pente), carte_du_couple
+#   (signature, + pire brut), chaine_mtl, _seuil_distance,
+#   candidats_geometriques, _matrices_bloc (+ `couples` rendu),
+#   reseau_synthetise, _zone_a (signature : + tolerance), zones_risque,
+#   desaccords, analyser, _lire_couples, _avertir, _hypotheses, touchstone_np
+#   (modifiees) ; TS_PAR_LIGNE (nouvelle constante).
 # ==========================================
 """Crosstalk : ou le couplage se fabrique LE LONG des pistes, et non en moyenne.
 
@@ -208,8 +299,8 @@ port se lit a un retard t, et t se convertit en x des qu'on connait la vitesse
 de propagation. C'est le principe de la reflectometrie temporelle, applique aux
 termes CROISES plutot qu'a la reflexion.
 
-    NEXT = S(victime_proche, agresseur_proche)     trajet ALLER-RETOUR
-    FEXT = S(victime_lointaine, agresseur_proche)  trajet SIMPLE
+    NEXT = S(victime_proche, agresseur_proche)     CONTRE-PROPAGE
+    FEXT = S(victime_lointaine, agresseur_proche)  CO-PROPAGE
 
 D'OU VIENT LA MATRICE S. D'UN SEUL ENDROIT, ET IL N'Y A RIEN A IMPORTER : du
 DESIGN. Le fichier IPC-2581, ou l'editeur PCB integre, portent deja tout ce
@@ -383,6 +474,11 @@ DISTANCE_AUTO = 3.0
 # position : la resolution spatiale vaut la longueur entiere.
 POINTS_MIN = 8
 
+# Le nombre de paires (reel, imaginaire) par ligne d'un fichier Touchstone.
+# QUATRE EST LA NORME : au-dela, un lecteur strict compte une rangee de
+# matrice par ligne et lit la matrice par morceaux decales.
+TS_PAR_LIGNE = 4
+
 DEFAUTS = {
     # -- etape 0a : la preselection geometrique
     "distance_max": 0.0,        # mm ; 0 = deduit de la largeur et de la hauteur
@@ -398,7 +494,8 @@ DEFAUTS = {
     "resolution_cible": 0.0,    # mm ; 0 = on ne demande rien, on constate
     # -- la lecture
     "z0": 50.0,
-    "ecart_vitesse_max": 0.05,  # 5 % ; au-dela, la vitesse moyenne du FEXT ment
+    "ecart_vitesse_max": 0.05,  # 5 % ; au-dela, la mise en cascade suppose
+                                # des fronts alignes qu'ils ne sont plus
     "asymetrie_db": 6.0,        # un facteur deux entre deux victimes se dit
     "desaccord": 1.25,          # espacement au pic / espacement median :
                                 # au-dela, le pic n'est pas justifie
@@ -914,8 +1011,23 @@ def chaine_mtl(l_mat, c_mat, longueur, omegas, tan_delta=0.0):
     n = l_mat.shape[0]
     t_mat, w_mat, racines = _modes_mtl(l_mat, c_mat)
     if tan_delta > 0:
-        racines = racines * np.sqrt(complex(1.0, -float(tan_delta)))
-    q = np.block([[t_mat, t_mat], [w_mat, -w_mat]]).astype(complex)
+        # LES DEUX PORTENT LE FACTEUR, ET C'EST LA SEULE ECRITURE JUSTE.
+        # [C] devient [C](1 - j tan d) : lambda est multiplie par ce facteur,
+        # donc `racines` = sqrt(lambda) ET `w_mat` = L^-1 T sqrt(lambda) le
+        # sont par sa RACINE -- w_mat en porte une, exactement comme racines.
+        # Ne l'appliquer qu'aux racines laissait l'IMPEDANCE CARACTERISTIQUE a
+        # sa valeur sans perte : une ligne « adaptee » rendait alors S11 = 0 a
+        # la precision machine au lieu des -42 dB de retour qu'une ligne a
+        # pertes dielectriques presente sur une reference reelle. Les decibels
+        # de couplage n'en bougeaient guere -- le facteur est une similitude
+        # commune a tous les blocs, il ne survit qu'a la conversion aux ports
+        # --, mais le Touchstone exporte est justement ce qu'on compare a un
+        # solveur pleine onde, et c'est la que le retour manquant se voit.
+        facteur = np.sqrt(complex(1.0, -float(tan_delta)))
+        racines = racines * facteur
+        w_mat = w_mat.astype(complex) * facteur
+    q = np.block([[t_mat.astype(complex), t_mat.astype(complex)],
+                  [w_mat, -w_mat]]).astype(complex)
     q_inv = np.linalg.inv(q)
     t_c, w_c = t_mat.astype(complex), w_mat.astype(complex)
 
@@ -1017,10 +1129,32 @@ def _parcours(objets):
 
 
 def _seuil_distance(reglages, largeur, hauteur):
-    """Le seuil de distance laterale, saisi ou deduit. En millimetres."""
+    """Le seuil de distance laterale, saisi ou deduit. En millimetres.
+
+    SANS HAUTEUR AU PLAN, LE SEUIL NE SE RETRECIT PAS -- IL S'OUVRE. C'est le
+    piege exact de cette deduction : `_hauteur_de_couche` rend ZERO quand la
+    couche n'a pas de plan de reference, et `3 x max(largeur, 0)` tombait
+    alors a trois largeurs de piste -- 0,75 mm pour une piste de 0,25 --,
+    c'est-a-dire au plus SEVERE des seuils possibles, la ou le couplage porte
+    le plus LOIN. Un cuivre sans plan sous lui n'a pas de hauteur de reference
+    qui borne l'etendue de son champ : les voisines a un millimetre, qui sont
+    justement celles qui posent probleme, se faisaient ecarter « au-dela du
+    seuil » sur une carte ou elles couplent des dizaines de decibels de plus
+    qu'ailleurs. On prend donc toute la portee que la page a fournie, et on le
+    DIT -- c'est un seuil qu'on ouvre faute de savoir le poser, pas un seuil
+    qu'on a mesure.
+    """
     saisi = _nb(reglages.get("distance_max"), 0.0)
     if saisi > 0:
         return saisi, "saisi"
+    if not (hauteur > 0):
+        return se.ECART_COUPLAGE_MAX, (
+            "porté au maximum du voisinage (%g mm) : cette couche n'a PAS de"
+            " plan de référence, la hauteur au plan vaut donc zéro et le"
+            " %g × max(largeur, hauteur) habituel serait tombé à %.3f mm — le"
+            " seuil le plus sévère là où le couplage porte le plus loin"
+            % (se.ECART_COUPLAGE_MAX, DISTANCE_AUTO,
+               DISTANCE_AUTO * largeur))
     auto = DISTANCE_AUTO * max(largeur, hauteur)
     # LE VOISINAGE ENVOYE PAR LA PAGE EST DEJA BORNE (ECART_COUPLAGE_MAX) :
     # annoncer un seuil plus large que ce qu'on a recu ferait croire qu'on a
@@ -1102,20 +1236,38 @@ def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
                 c = trouves[cle] = {
                     "net": net_a, "couche": couche_a,
                     "nom_couche": se._nom_de_couche(couches, couche_a),
-                    "type": "vertical" if vertical else "latéral",
-                    "distance": ecart, "longueur": 0.0, "largeur": w_a,
-                    "troncons": 0, "cotes": set(), "intervalles": [],
-                    "blinde": blinde, "epaisseur":
-                        _nb(autre.get("copper_thickness"), 0.035),
+                    "largeur": w_a, "cotes": set(), "intervalles": [],
+                    "epaisseur": _nb(autre.get("copper_thickness"), 0.035),
                     "gap_face": 0.0, "couture": 0.0,
+                    # DEUX NATURES DE RENCONTRE, COMPTEES A PART -- et c'est
+                    # tout l'objet de cette structure. Un seul jeu de champs,
+                    # fige a la PREMIERE rencontre, faisait lire une voisine
+                    # qui longe FRANCHEMENT a cote comme une voisine
+                    # superposee : il suffisait que l'agresseur ait commence
+                    # sur une autre couche. Elle sortait alors « vertical,
+                    # 0,000 mm », et surtout « blindée : un plan de référence
+                    # sépare les deux couches » -- un longement lateral reel
+                    # ECARTE AVEC UN MOTIF FAUX, ce qui est exactement la
+                    # classe d'erreur que cette etape existe pour empecher.
+                    "lat": {"longueur": 0.0, "distance": None, "troncons": 0},
+                    "vert": {"longueur": 0.0, "distance": None,
+                             "troncons": 0, "blinde": True},
                     "role": ("agresseur" if net_a in nets_agresseurs
                              else "victime"),
                     "paire": any(se._paire_nommee(net_a, str(p["obj"].get("net")
                                                             or ""), paires)
                                  for p in parcours)}
-            c["longueur"] += recouvrement
-            c["troncons"] += 1
-            c["distance"] = min(c["distance"], ecart)
+            genre = c["vert"] if vertical else c["lat"]
+            genre["longueur"] += recouvrement
+            genre["troncons"] += 1
+            genre["distance"] = (ecart if genre["distance"] is None
+                                 else min(genre["distance"], ecart))
+            if vertical:
+                # UN SEUL PASSAGE NON BLINDE SUFFIT A NE PLUS L'ETRE : le
+                # blindage est une propriete de CHAQUE superposition, pas une
+                # etiquette du couple.
+                if not blinde:
+                    c["vert"]["blinde"] = False
             if not vertical:
                 c["cotes"].add(cote)
                 # L'ENTRE-AXES EST SIGNE : negatif a gauche du sens de marche,
@@ -1131,6 +1283,34 @@ def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
 
     candidats = []
     for c in trouves.values():
+        lat, vert = c.pop("lat"), c.pop("vert")
+        # LE LATERAL L'EMPORTE DES QU'IL EXISTE, et la raison est physique :
+        # deux pistes sur la MEME couche ne peuvent pas etre separees par un
+        # plan de reference, et c'est la seule rencontre que la section droite
+        # sache resoudre. Une voisine vue d'abord par-dessous, puis a cote,
+        # est une voisine A COTE.
+        if lat["troncons"]:
+            c["type"] = "latéral"
+            c["distance"] = lat["distance"]
+            c["longueur"] = lat["longueur"]
+            c["blinde"] = False
+        else:
+            c["type"] = "vertical"
+            c["distance"] = vert["distance"] or 0.0
+            c["longueur"] = vert["longueur"]
+            c["blinde"] = bool(vert["blinde"])
+        c["troncons"] = lat["troncons"] + vert["troncons"]
+        # CE QUE L'AUTRE NATURE A MESURE N'EST PAS PERDU -- il est rendu a
+        # cote. Une voisine qui longe 20 mm a plat PUIS 20 mm superposee est
+        # deux situations de dessin, et la fiche doit porter les deux : le
+        # reseau, lui, ne couplera que la premiere.
+        c["longueur_laterale"] = round(lat["longueur"], 3)
+        c["longueur_verticale"] = round(vert["longueur"], 3)
+        c["distance_laterale"] = (round(lat["distance"], 4)
+                                  if lat["distance"] is not None else None)
+        c["distance_verticale"] = (round(vert["distance"], 4)
+                                   if vert["distance"] is not None else None)
+        c["blinde_verticalement"] = bool(vert["troncons"] and vert["blinde"])
         c["cotes"] = sorted(c.pop("cotes"))
         c["deux_cotes"] = len(c["cotes"]) > 1
         c["cote"] = ("les deux" if c["deux_cotes"]
@@ -1341,6 +1521,24 @@ def _ligne_seule(couches, couche, largeur, epaisseur, cache):
     return cache[cle]
 
 
+def _tan_delta(couches, couche, largeur, epaisseur, cache):
+    """La tangente de pertes du dielectrique de CETTE couche-la.
+
+    ELLE SE LIT PAR BLOC, ET NON UNE FOIS POUR TOUTES. Un parcours qui change
+    de couche change de stratifie : la prendre sur le premier troncon --
+    ce que faisait la version precedente -- appliquait les pertes d'un
+    microruban en surface a une triplaque en coeur de carte, ou l'inverse.
+    L'erreur est petite en decibels et parfaitement muette.
+    """
+    cle = ("tand", couche, round(largeur, 6), round(epaisseur, 6))
+    if cle in cache:
+        return cache[cle]
+    _geo, info = se.section_de_couche(couches, couche, largeur, epaisseur)
+    cache[cle] = (_nb(info.get("tan_delta"), 0.0)
+                  if isinstance(info, dict) else 0.0)
+    return cache[cle]
+
+
 def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
                    cache, ecartes):
     """[C] et [L] globales d'un bloc (F/m, H/m), plus eps_eff par conducteur.
@@ -1349,6 +1547,15 @@ def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
     l'agresseur de reference d'abord, puis les candidats retenus. `presents`
     dit lesquels longent l'agresseur sur ce bloc, avec leur position laterale
     LOCALE -- c'est elle, et non la moyenne du longement, qui est resolue ici.
+
+    REND AUSSI QUELS CONDUCTEURS ONT VRAIMENT ETE COUPLES. C'est le
+    renseignement qui manquait le plus : quand la section n'est pas resoluble
+    -- pas de plan de reference sur cette couche, solveur en echec --, chaque
+    conducteur retombe sur sa ligne isolee, [C] et [L] restent DIAGONALES, et
+    le couplage du bloc vaut exactement ZERO. Le calcul aboutit, la carte se
+    dessine, et elle annonce « aucun couplage » la ou l'on ne sait pas
+    calculer. C'est le faux negatif le plus grave que ce module puisse
+    produire, et il etait muet.
     """
     n = len(conducteurs)
     c_g = np.zeros((n, n))
@@ -1391,7 +1598,19 @@ def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
                                               seg["largeur"], seg["epaisseur"],
                                               e_g, e_d)
             if geo is None:
+                # ET ON LE DIT. Cette branche etait la seule du module a
+                # renoncer SANS UN MOT : le bloc repartait en lignes isolees,
+                # son couplage valait zero, et rien dans le resultat ne
+                # distinguait « elles ne couplent pas » de « on n'a pas su
+                # calculer ».
                 r = cache[cle] = None
+                ecartes.setdefault(
+                    "_section",
+                    "aucune section droite calculable sur « %s » (%s)"
+                    % (se._nom_de_couche(couches, seg["couche"]) or
+                       ("couche %d" % seg["couche"]),
+                       _info if isinstance(_info, str) and _info
+                       else "pas de plan de référence exploitable"))
             else:
                 geo = dict(geo)
                 geo["conducteurs"] = [
@@ -1444,7 +1663,7 @@ def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
         c_g[g, g] = c_ii
         l_g[g, g] = l_ii
         eps[g] = eps_ii
-    return c_g, l_g, eps
+    return c_g, l_g, eps, couples
 
 
 def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
@@ -1473,8 +1692,27 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
         raise ErreurCrosstalk(
             "Réseau à %d ports : le maximum est %d." % (2 * n, MAX_PORTS))
 
-    points = max(POINTS_MIN, min(int(_nb(analyse.get("points"), 201)),
-                                 MAX_POINTS))
+    # LE NOMBRE DE POINTS SE DIT QUAND IL EST RAMENE, comme `MAX_BLOCS` et
+    # `MAX_VICTIMES` le font. Il ne touche pas la resolution spatiale -- elle
+    # ne depend que du haut de bande --, mais il fixe la FENETRE TEMPORELLE
+    # T = 1/df : passer de 1000 points a 401 la divise par deux et demi, et ce
+    # qui deborde ne disparait pas, il revient se poser au debut de la carte
+    # par repliement. Un ecretage muet fabriquait donc des pics.
+    demandes = int(_nb(analyse.get("points"), 201))
+    points = max(POINTS_MIN, min(demandes, MAX_POINTS))
+    if points != demandes and demandes > 0:
+        notes.append(
+            "Bande échantillonnée sur %d points au lieu des %d demandés : le"
+            " maximum est %d et le minimum %d. La RÉSOLUTION SPATIALE n'en"
+            " dépend pas — elle ne suit que le haut de bande —, mais la"
+            " FENÊTRE TEMPORELLE vaut 1/pas, donc %s au lieu de %s : ce qui se"
+            " couple au-delà revient se poser au début de la carte par"
+            " repliement, et l'avertissement de fenêtre le dira si le cas se"
+            " présente."
+            % (points, demandes, MAX_POINTS, POINTS_MIN,
+               _duree((points - 1) / max(_nb(analyse.get("f_fin"), 0.0), 1.0)),
+               _duree((demandes - 1) / max(_nb(analyse.get("f_fin"), 0.0),
+                                           1.0))))
     f_fin = _nb(analyse.get("f_fin"), 0.0)
     if not (f_fin > 0):
         raise ErreurCrosstalk("Haut de bande absent ou nul.")
@@ -1487,12 +1725,6 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
     freqs = pas * np.arange(points)
     omegas = 2.0 * math.pi * freqs
 
-    _geo0, info0 = se.section_de_couche(couches, parcours[0]["couche"],
-                                        parcours[0]["largeur"],
-                                        parcours[0]["epaisseur"])
-    tan_delta = _nb((info0 or {}).get("tan_delta"), 0.0) if isinstance(
-        info0, dict) else 0.0
-
     bornes = decouper(parcours, retenus, notes)
     couture_max = se._couture_max(_nb(analyse.get("temps_montee"), 0.0))
     cache, ecartes = {}, {}
@@ -1503,7 +1735,7 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
     # permittivite effective de chaque conducteur bloc par bloc.
     abscisses = [0.0]
     retards = [[0.0] for _ in range(n)]
-    blocs = []
+    blocs, muets, tan_deltas = [], [], set()
     for a, b in zip(bornes, bornes[1:]):
         milieu = 0.5 * (a + b)
         seg = None
@@ -1523,10 +1755,22 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
                                      "gap_face": it["gap_face"],
                                      "couture": it["couture"]})
                     break
-        c_g, l_g, eps = _matrices_bloc(couches, seg, presents, conducteurs,
-                                       refs, couture_max, cache, ecartes)
+        c_g, l_g, eps, couples_bloc = _matrices_bloc(
+            couches, seg, presents, conducteurs, refs, couture_max, cache,
+            ecartes)
         longueur = (b - a) * 1e-3
-        phi = np.matmul(chaine_mtl(l_g, c_g, longueur, omegas, tan_delta), phi)
+        # LES PERTES SONT CELLES DU BLOC, pas celles du premier troncon : un
+        # parcours qui change de couche change de stratifie.
+        td = _tan_delta(couches, seg["couche"], seg["largeur"],
+                        seg["epaisseur"], cache)
+        tan_deltas.add(round(td, 6))
+        phi = np.matmul(chaine_mtl(l_g, c_g, longueur, omegas, td), phi)
+        # UN BLOC QUI PORTE DES VOISINES ET N'EN COUPLE AUCUNE : la section n'a
+        # pas ete resolue, [C] et [L] y sont diagonales, et le couplage de ce
+        # bloc vaut zero par defaut de calcul -- pas par mesure. On garde la
+        # longueur et les nets ; c'est `analyser` qui en fait une reserve.
+        if presents and len(couples_bloc) < 2:
+            muets.append((a, b, sorted(set(p["net"] for p in presents))))
         abscisses.append(b)
         for g in range(n):
             retards[g].append(retards[g][-1]
@@ -1537,10 +1781,22 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
     z0 = _nb(reglages.get("z0"), DEFAUTS["z0"]) or DEFAUTS["z0"]
     s_mat = s_depuis_chaine(phi, z0)
     for net, raison in ecartes.items():
+        if net == "_section":
+            notes.append("Section droite non résoluble sur au moins un bloc :"
+                         " %s." % raison)
+            continue
         notes.append("« %s » : %s." % (net, raison))
     infos = {"conducteurs": conducteurs, "blocs": blocs,
              "abscisses": abscisses, "retards": retards,
-             "tan_delta": tan_delta, "z0": z0, "pas": pas,
+             "tan_delta": min(tan_deltas) if tan_deltas else 0.0,
+             "tan_deltas": sorted(tan_deltas), "z0": z0, "pas": pas,
+             "points": points, "points_demandes": demandes,
+             # CE QUI N'A PAS ETE COUPLE, ET SUR QUELLE LONGUEUR.
+             "non_couples": [{"s0": round(a0, 3), "s1": round(b0, 3),
+                              "nets": nets} for a0, b0, nets in muets],
+             "longueur_non_couplee": round(
+                 sum(b0 - a0 for a0, b0, _n in muets), 3),
+             "raison_section": ecartes.get("_section", ""),
              "longueur": parcours[-1]["s1"]}
     return freqs, s_mat, z0, infos
 
@@ -1779,24 +2035,34 @@ def controle_masse(doc, parcours, analyse):
 # couche, la permittivite effective change avec elle, et une vitesse unique
 # decalerait tout ce qui suit le changement.
 #
-#     NEXT   t(x) = tau_agresseur(x) + tau_victime(x)      ALLER-RETOUR
-#     FEXT   t(x) = (tau_agresseur(x) + tau_victime(x))/2  TRAJET SIMPLE
+#     NEXT   t(x) = tau_a(x) + tau_v(x)               CONTRE-PROPAGE
+#     FEXT   t(x) = tau_a(x) + tau_v(L) - tau_v(x)    CO-PROPAGE
 #
-# A vitesses egales, la premiere redonne x = v.t/2 et la seconde x = v.t : ce
-# sont exactement les deux conventions attendues, et la moyenne employee est
-# la moyenne HARMONIQUE, qui est celle qui a un sens sur des retards.
+# A vitesses egales, la premiere redonne x = v.t/2 -- la convention attendue.
+# LA SECONDE N'EST PAS UNE MOYENNE, et l'ecrire comme telle -- t = (tau_a +
+# tau_v)/2, ce que faisait la version precedente -- posait un axe qui n'a
+# aucun rapport avec la physique du bout lointain. Deux consequences, et la
+# seconde est un contresens : t = 0 s'y trouvait envoye sur x = 0 alors
+# qu'aucune energie de FEXT ne peut arriver avant min(tau_a(L), tau_v(L)) --
+# toute la premiere moitie de l'axe etait physiquement inatteignable --, et le
+# pic tombait TOUJOURS a la meme abscisse quel que soit l'endroit du
+# longement. L'avertissement « la ligne FEXT ne localise pas » etait donc
+# exact, mais la phrase qui le suivait -- « elle se met a localiser lorsque
+# les deux vitesses different » -- etait fausse : avec cet axe-la, elle ne
+# localisait jamais.
 #
 # CE QUE L'AXE DU FEXT NE PEUT PAS FAIRE, ET IL FAUT LE DIRE. Le bruit avant
-# CO-PROPAGE avec l'agresseur : ce qui se couple en x arrive au bout lointain a
-# tau_a(x) + (tau_v(L) - tau_v(x)). Quand les deux pistes ont la MEME vitesse,
-# cette somme ne depend plus de x -- tout arrive au meme instant, et aucune
-# transformee ne peut separer ce qui s'est superpose. La ligne FEXT de la carte
-# est alors un pic unique a la longueur electrique de la liaison, et elle ne
-# localise rien. Elle ne se met a localiser que lorsque les deux vitesses
-# different, c'est-a-dire en milieu inhomogene -- ce qui est le cas d'un
-# microruban et jamais celui d'une triplaque. La fiche le dit a chaque fois,
-# parce qu'une ligne de carte qui ne localise rien ressemble a une ligne de
-# carte qui localise.
+# CO-PROPAGE avec l'agresseur : ce qui se couple en x descend l'agresseur
+# jusqu'a x, puis suit la victime jusqu'au bout LOINTAIN. Quand les deux
+# pistes ont la MEME vitesse, tau_a(x) - tau_v(x) est constant : la somme ne
+# depend plus de x, tout arrive au meme instant, et aucune transformee ne peut
+# separer ce qui s'est superpose. La ligne FEXT n'a alors PAS D'AXE DE
+# POSITION -- et depuis cette version elle n'en fabrique plus un : la carte ne
+# porte pas de ligne FEXT dans ce cas, et la fiche dit laquelle des deux
+# raisons l'en empeche. Elle ne se met a localiser que lorsque les deux
+# vitesses different ASSEZ pour que l'ecart de retard de bout en bout depasse
+# la resolution temporelle de la fenetre -- c'est-a-dire en milieu
+# franchement inhomogene, et jamais sur une triplaque.
 # ==========================================================================
 
 # Le nombre de colonnes de la carte. Assez pour lire un pic au dixieme de
@@ -1805,17 +2071,81 @@ def controle_masse(doc, parcours, analyse):
 COLONNES = 400
 
 
-def profil_commun(abscisses, tau_a, tau_v):
-    """(abscisse, retard moyen) : l'axe dont les deux sens se deduisent."""
-    s = np.asarray(abscisses, dtype=float)
-    t = 0.5 * (np.asarray(tau_a, dtype=float) + np.asarray(tau_v, dtype=float))
-    # STRICTEMENT CROISSANT, sans quoi `np.interp` rendrait n'importe quoi :
-    # deux bornes de bloc a la meme abscisse donneraient deux retards egaux.
-    garde = np.concatenate([[True], np.diff(t) > 0])
-    return s[garde], t[garde]
+def profil_commun(profil_a, profil_v):
+    """Les DEUX profils de retard, ramenes sur un MEME axe d'abscisses.
+
+    Rend (s, tau_a, tau_v), ou None quand il n'y a pas d'axe commun.
+
+    LES DEUX SOURCES N'ONT PAS LE MEME AXE, et c'est le cas courant, pas le
+    cas tordu : une vitesse SAISIE donne deux points (0 et L), la cascade en
+    donne un par borne de bloc. Les additionner terme a terme -- ce que
+    faisait la version precedente -- levait
+
+        ValueError: operands could not be broadcast together
+
+    des que l'une des deux vitesses etait saisie et que le parcours comptait
+    plus d'un bloc, c'est-a-dire dans TOUT longement partiel : le champ
+    « vitesses » du panneau cassait exactement dans le cas ou il sert, et le
+    serveur rendait 500. On projette donc les deux retards sur l'UNION des
+    abscisses : tau est croissant et affine par morceaux, l'interpolation y
+    est exacte sur les points de l'autre.
+    """
+    s_a = np.asarray(profil_a[0], dtype=float).ravel()
+    s_v = np.asarray(profil_v[0], dtype=float).ravel()
+    t_a = np.asarray(profil_a[1], dtype=float).ravel()
+    t_v = np.asarray(profil_v[1], dtype=float).ravel()
+    if s_a.size != t_a.size or s_v.size != t_v.size:
+        return None
+    if s_a.size < 2 or s_v.size < 2:
+        return None
+    # LES BORNES COMMUNES SEULEMENT : au-dela, il faudrait extrapoler un
+    # retard, et un retard extrapole poserait un pic hors du cuivre.
+    s = np.unique(np.concatenate([s_a, s_v]))
+    s = s[(s >= max(s_a[0], s_v[0]) - TOL_BORNE)
+          & (s <= min(s_a[-1], s_v[-1]) + TOL_BORNE)]
+    if s.size < 2:
+        return None
+    # DEUX BORNES A LA MEME ABSCISSE N'EN FONT QU'UNE : un bloc de longueur
+    # nulle donnerait deux retards egaux, et `np.interp` rendrait alors
+    # n'importe quoi sur l'axe inverse.
+    garde = np.concatenate([[True], np.diff(s) > TOL_BORNE])
+    s = s[garde]
+    if s.size < 2:
+        return None
+    return s, np.interp(s, s_a, t_a), np.interp(s, s_v, t_v)
 
 
-def positions(temps, s_profil, t_profil, sens):
+def profil_du_sens(commun, sens):
+    """(abscisses, instants d'arrivee) pour un sens -- STRICTEMENT CROISSANT.
+
+    C'est l'axe que `positions` inverse, et il n'y en a pas d'autre : la loi
+    d'arrivee est ecrite ici une fois, pour les deux sens.
+
+        NEXT   t(x) = tau_a(x) + tau_v(x)                CONTRE-PROPAGE
+        FEXT   t(x) = tau_a(x) + tau_v(L) - tau_v(x)     CO-PROPAGE
+
+    REND None QUAND LA LOI N'EST PAS INVERSIBLE, et c'est le cas normal du
+    FEXT : a vitesses egales t ne depend plus de x, et il n'existe aucune
+    abscisse a rendre. Fabriquer un axe la aurait produit une courbe qui
+    designe un millimetre sans rien mesurer -- le plus credible des
+    mensonges. Le NEXT, lui, est toujours inversible : les deux retards
+    croissent, leur somme aussi.
+    """
+    s, t_a, t_v = commun
+    if sens == "next":
+        t = t_a + t_v
+    else:
+        t = t_a + (t_v[-1] - t_v)
+        if t[-1] < t[0]:
+            # LA VICTIME EST LA PLUS LENTE : t DECROIT avec x. L'axe existe,
+            # il est simplement retourne -- ce qui se couple loin arrive tot.
+            s, t = s[::-1], t[::-1]
+    if not np.all(np.diff(t) > 0):
+        return None
+    return s, t
+
+
+def positions(temps, s_profil, t_profil):
     """L'axe des temps, converti en abscisses le long du PARCOURS ANALYSE.
 
     C'est le parcours de l'AGRESSEUR, et l'etiquette de la carte le dit ainsi :
@@ -1824,11 +2154,16 @@ def positions(temps, s_profil, t_profil, sens):
     millimetre sur un cuivre qui, a cette abscisse, peut tres bien ne pas etre
     la -- et la fiche ecrit justement « aucun longement ici » dans ce cas.
 
-    `sens` vaut « next » (aller-retour) ou « fext » (trajet simple).
+    `t_profil` porte deja la loi du sens (`profil_du_sens`) : il n'y a plus de
+    facteur deux ici, et c'est voulu -- un facteur pose au moment de
+    l'inversion ne peut pas etre juste pour les deux sens a la fois.
+
+    HORS DU PROFIL, ON REND NaN, JAMAIS UNE BORNE. Un instant anterieur a la
+    premiere arrivee n'a pas d'abscisse : pour le FEXT, la premiere arrivee
+    vaut tau_v(L) et non zero, et l'envoyer sur x = 0 peuplait d'energie une
+    moitie d'axe ou rien ne peut arriver.
     """
-    facteur = 0.5 if sens == "next" else 1.0
-    return np.interp(temps * facteur, t_profil, s_profil,
-                     left=s_profil[0], right=np.nan)
+    return np.interp(temps, t_profil, s_profil, left=np.nan, right=np.nan)
 
 
 def _largeur_fenetre(nom, beta):
@@ -1848,7 +2183,7 @@ def _largeur_fenetre(nom, beta):
     return math.sqrt(1.0 + (max(0.0, float(beta)) / math.pi) ** 2)
 
 
-def resolution(f_max, s_profil, t_profil, sens, nom_fenetre, beta):
+def resolution(f_max, s_profil, t_profil, nom_fenetre, beta):
     """La resolution spatiale reellement atteinte, en millimetres.
 
     Elle ne depend QUE de la bande et de la fenetre -- pas du zero-padding,
@@ -1856,23 +2191,32 @@ def resolution(f_max, s_profil, t_profil, sens, nom_fenetre, beta):
     s'affiche a cote du resultat : deux pics separes de moins que cela sont un
     seul pic, quelle que soit la finesse de la courbe a l'ecran.
 
+    C'EST UNE LARGEUR QU'ON CONVERTIT, PAS UN INSTANT. La largeur temporelle
+    du lobe se change en millimetres par la PENTE de la loi d'arrivee,
+    dt / (dt/dx), et non en lisant l'abscisse de l'instant dt -- ce que faisait
+    la version precedente. Les deux coincident pour le NEXT, dont la loi passe
+    par l'origine ; pour le FEXT, dont la loi part de tau_v(L), la seconde
+    lecture rendait un chiffre sans rapport. C'est la MEME pente qui dit que
+    la ligne FEXT ne localise rien a vitesses egales : elle y est nulle, et la
+    resolution vaut alors le parcours entier.
+
     QUAND LA BANDE NE PERMET MEME PAS LA LONGUEUR ENTIERE, ON REND LA LONGUEUR
     ENTIERE -- jamais zero. Le cas arrive vite : sur une liaison de 40 mm lue
     jusqu'a 5 GHz, la largeur d'une Kaiser depasse deja le retard de bout en
-    bout, et le temps cherche tombe HORS du profil. `positions` rend alors NaN,
-    ce qui est juste -- il n'y a pas d'abscisse pour ce retard-la. Le traduire
-    en 0,00 mm, comme le faisait la version precedente, etait le pire des
-    contresens : ZERO SE LIT « infiniment fine » alors que la verite est « plus
-    grossiere que toute la liaison ». Et comme zero est faux au sens booleen,
-    ces lignes-la sortaient EN PLUS des avertissements de resolution, qui
-    n'avaient donc jamais l'occasion de les signaler. La ligne FEXT y tombait
-    systematiquement.
+    bout. Traduire cela en 0,00 mm, comme le faisait une version anterieure,
+    etait le pire des contresens : ZERO SE LIT « infiniment fine » alors que la
+    verite est « plus grossiere que toute la liaison ». Et comme zero est faux
+    au sens booleen, ces lignes-la sortaient EN PLUS des avertissements de
+    resolution, qui n'avaient donc jamais l'occasion de les signaler.
     """
     if not (f_max > 0) or s_profil is None or len(s_profil) < 2:
         return 0.0
     dt = _largeur_fenetre(nom_fenetre, beta) / (2.0 * f_max)
-    x = positions(np.array([dt]), s_profil, t_profil, sens)[0]
-    return float(s_profil[-1]) if not math.isfinite(x) else float(x)
+    portee = abs(float(s_profil[-1]) - float(s_profil[0]))
+    duree = abs(float(t_profil[-1]) - float(t_profil[0]))
+    if not (duree > 0) or not (portee > 0):
+        return portee
+    return min(portee, dt * portee / duree)
 
 
 def _reechantillonner(x, valeurs, axe):
@@ -1901,21 +2245,23 @@ def _reechantillonner(x, valeurs, axe):
     return sortie
 
 
-def carte_du_couple(spectre, pas_f, s_profil, t_profil, sens, axe, reglages):
+def carte_du_couple(spectre, pas_f, s_profil, t_profil, axe, reglages):
     """Un terme croise -> (positions, amplitudes) sur l'axe commun.
 
     Rend aussi les echantillons BRUTS -- position et amplitude, avant
-    reechantillonnage --, parce que c'est eux qu'il faut exporter pour
-    recouper avec le dessin : la carte est une lecture, le brut est la mesure.
+    reechantillonnage --, plus le PIRE NIVEAU de la reponse impulsionnelle
+    entiere, celui-la mesure AVANT tout tri par abscisse : c'est le niveau du
+    sens, et il ne doit pas dependre de ce que l'axe de position a su placer.
     """
     temps, h = vers_temporel(spectre, pas_f,
                              reglages.get("fenetre", "kaiser"),
                              _nb(reglages.get("kaiser_beta"), 8.6),
                              int(_nb(reglages.get("zero_pad"), 1)))
-    x = positions(temps, s_profil, t_profil, sens)
+    brut = float(np.abs(h).max()) if h.size else 0.0
+    x = positions(temps, s_profil, t_profil)
     bon = np.isfinite(x) & (x >= axe[0] - 1e-9) & (x <= axe[-1] + 1e-9)
     x, h = x[bon], h[bon]
-    return _reechantillonner(x, np.abs(h), axe), x, h
+    return _reechantillonner(x, np.abs(h), axe), x, h, brut
 
 
 # ==========================================================================
@@ -2131,10 +2477,19 @@ def _verdict(zone, vain):
     return "indecidable" if vain else "plan"
 
 
-def _zone_a(zones, s):
-    """La premiere zone de vigilance qui couvre l'abscisse `s`, ou None."""
+def _zone_a(zones, s, tol):
+    """La premiere zone de vigilance qui couvre l'abscisse `s`, ou None.
+
+    LA TOLERANCE VIENT DE L'APPELANT, ET C'EST LA MEME QUE PARTOUT AILLEURS :
+    la RESOLUTION de la ligne lue, ou la demi-largeur de la plage examinee.
+    Un demi-millimetre en dur -- ce qu'employait la version precedente -- etait
+    tantot dix fois trop fin (une carte qui ne distingue rien en deca de 5 mm y
+    manquait la zone qui explique son pic) tantot trop large, et il ne suivait
+    aucun reglage. Le reste du module tolere a la resolution ; celui-ci ne
+    faisait pas exception, il l'ignorait.
+    """
     for z in zones or ():
-        if z["s0"] - 0.5 <= s <= z["s1"] + 0.5:
+        if z["s0"] - tol <= s <= z["s1"] + tol:
             return z
     return None
 
@@ -2219,7 +2574,11 @@ def zones_risque(lignes, axe, desac, zones, fraction, refus=None):
                 dans = [d for d in desac
                         if d["victime"] == ligne["victime"]
                         and s0 - demi <= d["s"] <= s1 + demi]
-                zone = _zone_a(zones, 0.5 * (s0 + s1)) or {}
+                # LA PLAGE A UNE ETENDUE : une zone qui la CHEVAUCHE l'explique,
+                # et la demi-largeur de la plage est donc la tolerance
+                # juste -- pas un demi-millimetre pose la.
+                zone = _zone_a(zones, 0.5 * (s0 + s1),
+                               max(demi, 0.5 * abs(s1 - s0))) or {}
                 sorties.append({
                     "victime": ligne["victime"],
                     "agresseur": ligne["agresseur"],
@@ -2279,7 +2638,7 @@ def desaccords(lignes, espacements, axe, zones, rapport, vain=False):
             fenetre_i = [j for j in range(axe.size)
                          if abs(float(axe[j]) - s) <= tol]
             vus = [valeurs[j] for j in fenetre_i if valeurs[j] is not None]
-            zone = _zone_a(zones, s)
+            zone = _zone_a(zones, s, tol)
             entree = {"victime": ligne["victime"],
                       "agresseur": ligne["agresseur"], "sens": "next",
                       "s": round(s, 3),
@@ -2616,6 +2975,33 @@ def _asymetries(couples, seuil_db, espacements):
     return sorties
 
 
+def _fentes_sur_longement(masse, retenus):
+    """Les fentes du plan de reference qui tombent SUR un longement retenu.
+
+    UNE FENTE AILLEURS N'INVALIDE PAS LE COUPLAGE, et c'est pour cela qu'on ne
+    prend pas la liste entiere : le modele quasi-TEM ne suppose un plan continu
+    que la ou il resout une section, c'est-a-dire sur les intervalles ou une
+    voisine longe. Une fente sur une portion ou rien ne longe est un probleme
+    de retour de courant -- l'onglet Impedance et le controle de masse le
+    disent deja --, pas un mensonge de la carte de couplage.
+    """
+    fentes = [z for z in (masse.get("zones") or ())
+              if z.get("type") == "fente"]
+    if not fentes:
+        return []
+    sorties = []
+    for c in retenus:
+        for it in (c.get("intervalles") or ()):
+            for z in fentes:
+                s0 = max(float(it["s0"]), float(z["s0"]))
+                s1 = min(float(it["s1"]), float(z["s1"]))
+                if s1 - s0 > TOL_BORNE:
+                    sorties.append({"victime": c["net"], "s0": round(s0, 3),
+                                    "s1": round(s1, 3),
+                                    "longueur": round(s1 - s0, 3)})
+    return sorties
+
+
 def analyser(doc, journal=None):
     """Document « cao-crosstalk-1 » -> carte de couplage. Leve ErreurCrosstalk.
 
@@ -2666,6 +3052,29 @@ def analyser(doc, journal=None):
     candidats, seuils = candidats_geometriques(
         parcours, voisinage, couches, reglages, refs, set(nets_agresseurs),
         paires)
+    # AUCUN PLAN DE REFERENCE SOUS L'AGRESSEUR : c'est un fait de l'EMPILAGE,
+    # et il se dit avant tout le reste. Tout ce qui suit -- le seuil de
+    # distance, la section droite, [C] et [L] -- suppose un plan sous la
+    # piste ; sans lui, la deduction du seuil n'a pas de hauteur et le
+    # solveur de section n'a pas de reference. Ce cas se lisait jusqu'ici
+    # comme une carte ordinaire, avec un seuil trois fois plus severe que
+    # nécessaire et un couplage qui ressortait au plancher.
+    if not (_nb(seuils.get("hauteur"), 0.0) > 0):
+        _grave(
+            avert, graves,
+            "aucun plan de référence sous « %s » dans l'empilage" % principal,
+            "AUCUN PLAN DE RÉFÉRENCE SOUS « %s » : la couche « %s » n'a pas de"
+            " plan dans l'empilage déclaré. Tout ce qui suit le suppose — le"
+            " seuil de distance se déduit de la hauteur au plan, et [C] et [L]"
+            " sortent d'une section droite qui n'existe pas sans référence."
+            " Le seuil de présélection a donc été porté au maximum du"
+            " voisinage plutôt que réduit à trois largeurs de piste, et le"
+            " couplage, lui, ne pourra pas être calculé sur les blocs"
+            " concernés : il ressortira au plancher, ce qui n'est PAS une"
+            " mesure de découplage. Vérifiez l'empilage, ou le rôle des"
+            " couches de plan."
+            % (principal, se._nom_de_couche(couches, parcours[0]["couche"])
+               or ("couche %d" % parcours[0]["couche"])))
     retenus = [c for c in candidats if c["retenu"]]
     if len(retenus) > MAX_VICTIMES:
         for c in retenus[MAX_VICTIMES:]:
@@ -2704,6 +3113,13 @@ def analyser(doc, journal=None):
             "bande_deduite": deduite,
             "agresseurs": nets_agresseurs, "principal": principal,
             "longueur": round(longueur, 3), "etape0": etape0, "masse": masse,
+            # RIEN N'A ETE SIMULE N'EST PAS « RIEN NE COUPLE ». Sans cette
+            # clef, la page rendait le meme verdict -- « AUCUN COUPLE
+            # CONFIRME », avec la phrase « leurs courbes sont tracees quand
+            # meme » -- pour une presélection vide et pour un calcul complet
+            # dont tout tombe sous le seuil. Le premier cas est une absence de
+            # mesure, le second en est une.
+            "preselection_vide": not retenus,
             "reglages": dict((k, v) for k, v in reglages.items()
                              if k != "vitesses"),
             "avertissements": avert, "graves": graves}
@@ -2757,6 +3173,68 @@ def analyser(doc, journal=None):
                        "source": "connu : les ports sont posés ici, à partir"
                                  " de la géométrie",
                        "fichier_ports": 2 * n}
+    # LE COUPLAGE NON CALCULE NE SE LIT PLUS COMME UN COUPLAGE NUL. C'est le
+    # faux negatif le plus grave que cette section puisse produire : la section
+    # droite n'est pas resoluble sur un bloc -- pas de plan de reference sous
+    # la piste, solveur en echec --, [C] et [L] y restent DIAGONALES, le terme
+    # croise vaut exactement zero, et la fiche annonce « aucune voisine ne
+    # depasse le seuil » sur des blocs ou l'on n'a rien mesure. Le cas n'est
+    # pas rare : c'est precisement celui d'un parcours qui passe au-dessus d'un
+    # trou du plan, ou le couplage reel EXPLOSE faute de chemin de retour.
+    muet = _nb(infos.get("longueur_non_couplee"), 0.0)
+    if muet > 0:
+        nets_muets = sorted(set(net for z in infos["non_couples"]
+                                for net in z["nets"]))
+        _grave(
+            avert, graves,
+            "couplage NON CALCULÉ sur %.2f mm (%.0f %% du longement) : ce"
+            " n'est pas un couplage nul" % (muet, 100.0 * muet / longueur),
+            "COUPLAGE NON CALCULÉ sur %.2f mm de parcours, soit %.0f %% de la"
+            " liaison, pour %s. La section droite n'y est pas résoluble (%s) :"
+            " chaque piste y traverse le réseau comme une ligne ISOLÉE, ses"
+            " termes croisés valent exactement zéro, et ce zéro-là n'est pas"
+            " une mesure — c'est une absence de mesure. Les niveaux rendus"
+            " sont donc un PLANCHER, et un verdict « sous le seuil » ne vaut"
+            " rien sur cette portion. La cause la plus fréquente est un plan"
+            " de référence absent ou percé sous le parcours : c'est justement"
+            " là que le couplage réel est le plus fort, faute de chemin de"
+            " retour court. Les plages sont dans « ce qui longe » ; regardez"
+            " aussi les zones de vigilance du plan de masse."
+            % (muet, 100.0 * muet / longueur,
+               ", ".join("« %s »" % net for net in nets_muets) or
+               "les voisines de ces blocs",
+               infos.get("raison_section") or "cause non rapportée"))
+    # LE PLAN QUI MANQUE SOUS LE LONGEMENT : la section droite quasi-TEM
+    # SUPPOSE un plan de retour continu sous les deux pistes. Une fente
+    # sondee par la page dit qu'il n'y en a pas -- le modele decrit alors une
+    # carte qui n'est pas celle-la, et il la decrit toujours en mieux.
+    fentes_sur = _fentes_sur_longement(masse, retenus)
+    if fentes_sur:
+        _grave(
+            avert, graves,
+            "plan de référence absent sous %.2f mm de longement : le couplage"
+            " rendu est un plancher"
+            % sum(f["longueur"] for f in fentes_sur),
+            "PLAN DE RÉFÉRENCE ABSENT SOUS LE LONGEMENT, sur %s. La section"
+            " droite mise en cascade SUPPOSE un plan de retour continu sous"
+            " les deux pistes : c'est de lui que sortent [C] et [L], et sans"
+            " conducteur de référence une inductance par unité de longueur"
+            " n'est même pas définie. Là où le plan est percé ou absent, le"
+            " courant de retour fait un détour dont l'aire de boucle"
+            " n'apparaît nulle part dans la section, et les deux pistes se"
+            " partagent ce retour : le couplage par IMPÉDANCE COMMUNE qui en"
+            " résulte n'est pas un terme que ce modèle chiffre mal, c'est un"
+            " terme qu'il ne contient PAS. L'écart n'est donc pas borné par ce"
+            " calcul, et il n'est pas chiffré ici — le rapport de dix"
+            " décibels souvent cité pour une traversée de fente est un ordre"
+            " de grandeur du domaine, pas une mesure de cet outil. CE QUE LA"
+            " CARTE REND EST UN PLANCHER SUR CES PLAGES, et « sous le seuil »"
+            " n'y est pas un verdict. C'est le premier endroit à corriger : un"
+            " plan continu sous un longement coûte moins qu'un écartement de"
+            " pistes."
+            % "; ".join("%.2f mm à partir de %.2f mm (« %s »)"
+                        % (f["longueur"], f["s0"], f["victime"])
+                        for f in fentes_sur))
     # CE QUE LE RESEAU SYNTHETISE NE SAIT PAS COUPLER, ET IL FAUT LE DIRE ICI.
     # Une voisine de couche adjacente n'a pas de longement dans le plan de la
     # section : le solveur de section range ses conducteurs COTE A COTE, jamais
@@ -2778,6 +3256,40 @@ def analyser(doc, journal=None):
             " les mêmes côte à côte : leur distance mesurée est au tableau de"
             " l'étape 0a, et c'est elle qu'il faut regarder."
             % ", ".join("« %s »" % net for net in empiles))
+    # UNE VOISINE QUI LONGE DES DEUX FACONS -- a plat sur une portion,
+    # superposee sur une autre, parce que l'AGRESSEUR change de couche en
+    # cours de route. Le reseau ne couple que la portion LATERALE : c'est la
+    # seule que la section droite sache resoudre. Sans cette phrase, la
+    # portion superposee compterait zero EN SILENCE, et l'on aurait remplace
+    # un faux negatif par un autre, plus discret.
+    for c in retenus:
+        if not (c.get("intervalles") or ()) or not c.get("longueur_verticale"):
+            continue
+        if c.get("blinde_verticalement"):
+            notes.append(
+                "« %s » longe « %s » de deux façons : %.2f mm À PLAT (c'est"
+                " cette portion que le réseau couple) et %.2f mm SUPERPOSÉE,"
+                " l'agresseur ayant changé de couche. La portion superposée"
+                " est séparée par un plan de référence : n'y compter aucun"
+                " couplage est juste, et c'est ce que fait le calcul."
+                % (c["net"], principal, c.get("longueur_laterale", 0.0),
+                   c.get("longueur_verticale", 0.0)))
+        else:
+            _grave(
+                avert, graves,
+                "« %s » longe aussi %.2f mm en superposition, non modélisée"
+                % (c["net"], c.get("longueur_verticale", 0.0)),
+                "« %s » longe « %s » de deux façons : %.2f mm À PLAT et"
+                " %.2f mm SUPERPOSÉE sans plan entre les deux couches. Le"
+                " réseau ne couple que la première — le solveur de section"
+                " range ses conducteurs côte à côte et ne sait pas les"
+                " EMPILER. Le niveau rendu pour cette victime est donc un"
+                " PLANCHER : il manque tout ce que la superposition ajoute, et"
+                " deux pistes superposées à %.3f mm couplent souvent plus que"
+                " les mêmes côte à côte."
+                % (c["net"], principal, c.get("longueur_laterale", 0.0),
+                   c.get("longueur_verticale", 0.0),
+                   c.get("distance_verticale") or 0.0))
     # LE RESEAU SORT EN TOUCHSTONE, et c'est une SORTIE : ce qui rend le
     # resultat verifiable ailleurs. Le meme fichier, ouvert dans un autre
     # outil, se compare a ce qu'un solveur pleine onde rendrait de la meme
@@ -2881,9 +3393,17 @@ def _lire_couples(base, doc, freqs, s_mat, conducteurs, infos, parcours,
             if au_genou is not None:
                 couple["pire_db_genou"] = round(au_genou, 2)
             # LA VITESSE DE CHACUNE, ET L'ECART ENTRE LES DEUX. C'est lui qui
-            # decide si l'axe du FEXT veut dire quelque chose.
+            # decide si l'axe du FEXT veut dire quelque chose -- et depuis
+            # cette version c'est MESURE sur la loi d'arrivee, pas devine sur
+            # un seuil de pourcentage.
+            #
+            # L'AGRESSEUR DE L'AXE EST LE PRINCIPAL, y compris en mode agrege :
+            # `groupe[0]` est `conducteurs[0]`, c'est-a-dire le net qui porte
+            # l'abscisse curviligne. Ce n'est pas un choix arbitraire dans une
+            # liste -- c'est le seul parcours dont la carte ait un axe.
             p_a = profils.get(groupe[0]["net"])
             p_v = profils.get(v["net"])
+            commun = profil_commun(p_a, p_v) if (p_a and p_v) else None
             if p_a and p_v:
                 va, vv = _vitesse(p_a), _vitesse(p_v)
                 moyenne = 0.5 * (va + vv)
@@ -2892,16 +3412,15 @@ def _lire_couples(base, doc, freqs, s_mat, conducteurs, infos, parcours,
                 couple["vitesse_victime"] = round(vv, 1)
                 couple["ecart_vitesse"] = round(ecart, 4)
                 couple["source_vitesse"] = "%s / %s" % (p_a[2], p_v[2])
-                s_p, t_p = profil_commun(p_a[0], p_a[1], p_v[1])
                 # LA FENETRE TEMPORELLE CONTIENT-ELLE L'ALLER-RETOUR ? T = 1/df,
-                # et le NEXT du bout lointain arrive a 2.T_profil(L). Si la
-                # fenetre est plus courte, ce qui deborde ne disparait pas : il
-                # REVIENT SE POSER au debut de la carte par repliement, et un
+                # et le NEXT du bout lointain arrive a tau_a(L) + tau_v(L). Si
+                # la fenetre est plus courte, ce qui deborde ne disparait pas :
+                # il REVIENT SE POSER au debut de la carte par repliement, et un
                 # artefact de repliement ne se distingue pas d'un vrai pic.
                 couple["fenetre_s"] = 1.0 / pas_f if pas_f > 0 else 0.0
-                couple["aller_retour_s"] = 2.0 * float(t_p[-1])
-            else:
-                s_p = t_p = None
+                if commun is not None:
+                    couple["aller_retour_s"] = float(commun[1][-1]
+                                                     + commun[2][-1])
             # LA CARTE SE CALCULE POUR TOUTE CANDIDATE QUI A UNE GEOMETRIE,
             # confirmee ou non. Un ecran qui ne montre RIEN parce que tout est
             # sous le seuil ne dit pas pourquoi il est vide : il se lit comme
@@ -2911,24 +3430,78 @@ def _lire_couples(base, doc, freqs, s_mat, conducteurs, infos, parcours,
             # plus. Ce qui reste reserve aux confirmees est ce qui PORTE UN
             # VERDICT : le recoupement, les plages peintes sur le cuivre, la
             # liste des victimes.
-            if s_p is not None and s_p.size >= 2:
-                for sens in ("next", "fext"):
-                    valeurs, x_brut, h_brut = carte_du_couple(
-                        spec[sens], pas_f, s_p, t_p, sens, axe, reglages)
-                    lignes.append({
-                        "agresseur": nom_a, "victime": v["net"], "sens": sens,
-                        "confirmee": couple["confirmee"],
-                        "valeurs": [round(float(x), 6) for x in valeurs],
-                        "max": round(float(valeurs.max()) if valeurs.size
-                                     else 0.0, 6),
-                        "max_db": round(_db(valeurs.max() if valeurs.size
-                                            else 0.0), 2),
-                        "echantillons": int(x_brut.size),
-                        "resolution": round(resolution(
-                            f_max, s_p, t_p, sens, reglages["fenetre"],
-                            _nb(reglages.get("kaiser_beta"), 8.6)), 4)})
-                couple["resolution_next"] = lignes[-2]["resolution"]
-                couple["resolution_fext"] = lignes[-1]["resolution"]
+            #
+            # UN SENS SANS AXE NE DONNE PAS DE LIGNE, et c'est le point de
+            # cette version. Le NEXT en a toujours un : la somme de deux
+            # retards croissants croit, sa pente ne s'annule jamais. Le FEXT,
+            # lui, n'en a que si les deux vitesses diffèrent assez pour que
+            # l'ecart de retard de bout en bout depasse la largeur temporelle
+            # de la fenetre -- sinon la loi est plate, l'inversion singuliere,
+            # et la « courbe » qu'on tracerait serait faite d'un ou deux
+            # echantillons etales sur tout le parcours. Son NIVEAU, lui, reste
+            # rendu : `fext_db` ne depend d'aucun axe.
+            dt_fen = (_largeur_fenetre(reglages["fenetre"],
+                                       _nb(reglages.get("kaiser_beta"), 8.6))
+                      / (2.0 * f_max)) if f_max > 0 else 0.0
+            for sens in ("next", "fext"):
+                prof = (profil_du_sens(commun, sens)
+                        if commun is not None else None)
+                # L'ETALEMENT DES ARRIVEES, mesure sur les retards de bout en
+                # bout et non sur le profil inverse -- il vaut donc quelque
+                # chose meme quand la loi n'est PAS inversible, qui est
+                # justement le cas a expliquer.
+                if commun is None:
+                    etalement = 0.0
+                else:
+                    d_a = float(commun[1][-1]) - float(commun[1][0])
+                    d_v = float(commun[2][-1]) - float(commun[2][0])
+                    etalement = (d_a + d_v) if sens == "next" else abs(d_a
+                                                                      - d_v)
+                if prof is None or (sens == "fext" and etalement <= dt_fen):
+                    couple[sens + "_localise"] = False
+                    if commun is None:
+                        couple[sens + "_raison"] = (
+                            "aucun profil de retard commun : l'axe de"
+                            " position ne peut pas être posé")
+                    elif sens == "fext":
+                        couple["fext_raison"] = (
+                            "les deux vitesses sont trop proches (%.3g et"
+                            " %.3g m/s, %.2f %% d'écart) : le bruit avant"
+                            " co-propage avec l'agresseur, tout ce qui se"
+                            " couple arrive au bout lointain dans le même"
+                            " intervalle que la fenêtre ne sépare pas (%.3g ns"
+                            " d'étalement pour %.3g ns de résolution). Le"
+                            " NIVEAU du FEXT est mesuré ; sa POSITION n'existe"
+                            " pas, et aucune courbe n'est tracée plutôt qu'une"
+                            " courbe qui désignerait un millimètre au hasard."
+                            % (couple.get("vitesse_agresseur", 0.0),
+                               couple.get("vitesse_victime", 0.0),
+                               100 * _nb(couple.get("ecart_vitesse"), 0.0),
+                               1e9 * etalement, 1e9 * dt_fen))
+                    continue
+                s_p, t_p = prof
+                couple[sens + "_localise"] = True
+                valeurs, x_brut, h_brut, brut = carte_du_couple(
+                    spec[sens], pas_f, s_p, t_p, axe, reglages)
+                res = resolution(f_max, s_p, t_p, reglages["fenetre"],
+                                 _nb(reglages.get("kaiser_beta"), 8.6))
+                lignes.append({
+                    "agresseur": nom_a, "victime": v["net"], "sens": sens,
+                    "confirmee": couple["confirmee"],
+                    "valeurs": [round(float(x), 6) for x in valeurs],
+                    "max": round(float(valeurs.max()) if valeurs.size
+                                 else 0.0, 6),
+                    "max_db": round(_db(valeurs.max() if valeurs.size
+                                        else 0.0), 2),
+                    # LE PIRE DE LA REPONSE ENTIERE, avant tout tri par
+                    # abscisse : quand l'axe n'a pu placer qu'une partie des
+                    # echantillons, `max` le dit et celui-ci dit combien il en
+                    # manque. Deux chiffres egaux veulent dire « tout est sur
+                    # la carte », et c'est le cas courant.
+                    "max_brut": round(brut, 6),
+                    "echantillons": int(x_brut.size),
+                    "resolution": round(res, 4)})
+                couple["resolution_" + sens] = lignes[-1]["resolution"]
             couples.append(couple)
 
     # LE RECOUPEMENT SE FAIT ICI, une fois les lignes construites : c'est la
@@ -2962,6 +3535,16 @@ def _lire_couples(base, doc, freqs, s_mat, conducteurs, infos, parcours,
     pire_global = max([l["max"] for l in lignes] or [0.0])
     base["couples"] = couples
     base["victimes"] = [c["victime"] for c in couples if c["confirmee"]]
+    # CE QUE LA CARTE PORTE DANS CHAQUE SENS, ET POURQUOI ELLE NE PORTE RIEN
+    # DANS L'AUTRE. Sans cette clef, la page ecrivait « Rien dans ce sens-là »
+    # sur une figure vide -- ce qui se lit comme un defaut de l'outil, alors
+    # que c'est un refus motive.
+    base["axes"] = dict(
+        (sens, {"lignes": sum(1 for l in lignes if l["sens"] == sens),
+                "raison": next((c.get(sens + "_raison", "") for c in couples
+                                if c.get(sens + "_localise") is False
+                                and c.get(sens + "_raison")), "")})
+        for sens in ("next", "fext"))
     # LA CARTE PORTE LES DEUX COURBES, sur le MEME axe. Le profil d'espacement
     # n'est pas un ornement a cote du couplage : c'est le seul temoin
     # independant que la page ait pour verifier qu'un pic est a sa place.
@@ -2985,6 +3568,15 @@ def _freq(f):
     if f >= 1e6:
         return "%.4g MHz" % (f / 1e6)
     return "%.4g kHz" % (f / 1e3)
+
+
+def _duree(t):
+    """Un temps dans son ordre de grandeur -- meme raison que `_freq`."""
+    if t >= 1e-9:
+        return "%.4g ns" % (t * 1e9)
+    if t >= 1e-12:
+        return "%.4g ps" % (t * 1e12)
+    return "%.4g fs" % (t * 1e15)
 
 
 def _avertir(base, couples, lignes, reglages, masse, avert, notes, graves,
@@ -3022,6 +3614,12 @@ def _avertir(base, couples, lignes, reglages, masse, avert, notes, graves,
                      " l'aller et au retour."
                      % (recip.get("ecart", 0.0), recip.get("f", 0.0) / 1e9))
 
+    # L'ECART DE VITESSE N'EST PLUS UNE RESERVE SUR L'AXE DU FEXT -- il en est
+    # la CONDITION, et l'axe est desormais ecrit avec les deux retards separes
+    # plutot qu'avec leur moyenne. Ce qu'il reste a dire est autre chose : deux
+    # pistes de vitesses franchement differentes ne longent plus la meme
+    # portion de front d'un bout a l'autre, et la section droite quasi-TEM,
+    # elle, les traite bloc par bloc comme si elles etaient synchrones.
     seuil = _nb(reglages.get("ecart_vitesse_max"), 0.05)
     for c in couples:
         if not c.get("confirmee"):
@@ -3030,12 +3628,18 @@ def _avertir(base, couples, lignes, reglages, masse, avert, notes, graves,
         if ecart > seuil:
             avert.append("« %s » : les vitesses de l'agresseur et de la"
                          " victime diffèrent de %.1f %% (%.3g et %.3g m/s),"
-                         " au-delà du seuil de %.1f %%. L'axe de position du"
-                         " FEXT emploie leur moyenne : sur cette victime, il"
-                         " est approché."
+                         " au-delà du seuil de %.1f %%. C'est cet écart qui"
+                         " donne à l'axe du FEXT sa pente — il localise%s —,"
+                         " et c'est lui aussi qui fait que les deux pistes ne"
+                         " voient pas le même instant du front : la section"
+                         " droite les met en cascade bloc par bloc, ce qui"
+                         " suppose leurs fronts alignés."
                          % (c["victime"], 100 * ecart,
                             c.get("vitesse_agresseur", 0.0),
-                            c.get("vitesse_victime", 0.0), 100 * seuil))
+                            c.get("vitesse_victime", 0.0), 100 * seuil,
+                            (" à %.2f mm près"
+                             % _nb(c.get("resolution_fext"), 0.0))
+                            if c.get("fext_localise") else " donc"))
 
     for c in couples:
         if not c.get("confirmee"):
@@ -3119,19 +3723,27 @@ def _avertir(base, couples, lignes, reglages, masse, avert, notes, graves,
 
     # LA MISE EN GARDE DU FEXT SE DIT A CHAQUE FOIS, et non seulement quand un
     # seuil est franchi : elle ne porte pas sur une valeur mais sur ce que
-    # l'axe PEUT dire. Une ligne de carte qui ne localise rien ressemble
-    # exactement a une ligne de carte qui localise.
-    plats = [c["victime"] for c in couples
-             if c.get("confirmee") and _nb(c.get("ecart_vitesse"), 0.0) < 0.01]
-    if plats and any(l["sens"] == "fext" for l in lignes):
-        avert.append("La ligne FEXT de %s ne localise PAS le couplage : le"
-                     " bruit avant co-propage avec l'agresseur, et à vitesses"
-                     " égales tout ce qui se couple arrive au bout lointain au"
-                     " MÊME instant. Ce que la ligne montre est la longueur"
-                     " électrique de la liaison, pas l'endroit où ça couple."
-                     " Seule la ligne NEXT localise en milieu homogène."
+    # l'axe PEUT dire. Elle se lit maintenant sur ce qui a ete MESURE --
+    # `fext_localise`, pose par la loi d'arrivee elle-meme -- et non sur un
+    # ecart de vitesse compare a 1 %, qui etait une devinette sur le resultat
+    # d'un calcul qu'on venait de faire.
+    plats = [c["victime"] for c in couples if c.get("fext_localise") is False]
+    if plats:
+        avert.append("PAS DE LIGNE FEXT sur la carte pour %s, et c'est un"
+                     " refus, pas un oubli : le bruit avant co-propage avec"
+                     " l'agresseur, et à vitesses égales tout ce qui se couple"
+                     " arrive au bout lointain au MÊME instant. Il n'existe"
+                     " alors aucune abscisse à rendre, et une courbe tracée"
+                     " quand même aurait désigné un millimètre sans rien"
+                     " mesurer. Le NIVEAU du FEXT, lui, est au tableau des"
+                     " couples — c'est le chiffre qui compte pour un budget de"
+                     " bruit. Seule la ligne NEXT localise en milieu"
+                     " homogène. %s"
                      % (("« %s »" % plats[0]) if len(plats) == 1
-                        else "%d victimes" % len(plats)))
+                        else "%d victimes" % len(plats),
+                        next((c.get("fext_raison", "") for c in couples
+                              if c.get("fext_localise") is False
+                              and c.get("fext_raison")), "")))
 
     zones = masse.get("zones") or []
     couture = [z for z in zones if z["type"] == "couture"]
@@ -3301,7 +3913,21 @@ def _hypotheses(reglages, masse, seuils, base, profils):
         " superposées couplent souvent PLUS que les mêmes côte à côte ; celles"
         " qu'un plan de référence sépare sont comptées et écartées, parce que"
         " le plan est un écran et que c'est la raison d'être de l'empilage."
+        " UNE VOISINE QUI LONGE DES DEUX FAÇONS — l'agresseur change de couche"
+        " en cours de route — est traitée comme LATÉRALE : deux pistes de la"
+        " même couche ne peuvent pas être séparées par un plan, et c'est la"
+        " seule rencontre que la section droite sache résoudre. La portion"
+        " superposée est mesurée à côté, jamais fondue dans la première."
         % ("entrent" if seuils.get("couches_adjacentes") else "N'ENTRENT PAS"),
+        "LE MODÈLE SUPPOSE UN PLAN DE RETOUR CONTINU sous les deux pistes, et"
+        " c'est son hypothèse la plus lourde : [C] et [L] sortent d'une section"
+        " droite quasi-TEM, qui n'existe que si le courant de retour a un"
+        " chemin juste en dessous. Là où le plan est percé, fendu ou absent, ce"
+        " calcul rend TROP PEU — le retour fait un détour, l'inductance"
+        " mutuelle monte —, et le chiffre est alors un PLANCHER, jamais une"
+        " mesure. Les fentes sondées sous le parcours sont dans le contrôle du"
+        " plan de masse, et une fente qui tombe sur un longement lève une"
+        " réserve à part.",
         "La fenêtre appliquée au spectre est « %s »%s. Elle écrase le ringing"
         " de Gibbs — des lobes de part et d'autre de chaque pic, qui se lisent"
         " comme des zones de couplage inexistantes — au prix d'un pic environ"
@@ -3319,9 +3945,13 @@ def _hypotheses(reglages, masse, seuils, base, profils):
         " unique : le retard cumulé est repris bloc par bloc, si bien qu'un"
         " changement de largeur, d'écart ou de couche ne décale pas tout ce"
         " qui le suit. NEXT : t = τ_agresseur(x) + τ_victime(x), soit x = v·t/2"
-        " à vitesses égales. FEXT : la moitié de cette somme, soit x = v·t. La"
-        " vitesse de chaque piste est calculée séparément — jamais supposée"
-        " égale à celle de l'agresseur.",
+        " à vitesses égales — il localise toujours. FEXT : le bruit avant"
+        " CO-PROPAGE, t = τ_agresseur(x) + τ_victime(L) − τ_victime(x), et"
+        " cette loi est PLATE à vitesses égales : tout arrive au même instant,"
+        " il n'existe aucune abscisse à rendre, et la carte ne porte alors PAS"
+        " de ligne FEXT plutôt qu'une ligne qui désignerait un millimètre au"
+        " hasard. La vitesse de chaque piste est calculée séparément — jamais"
+        " supposée égale à celle de l'agresseur.",
         "LE PROFIL D'ESPACEMENT vient de la GÉOMÉTRIE et non du calcul"
         " électromagnétique : c'est ce qui en fait un témoin indépendant, et"
         " c'est pourquoi il se superpose à la carte plutôt que de s'afficher à"
@@ -3373,10 +4003,11 @@ def _hypotheses(reglages, masse, seuils, base, profils):
                               for net, p in sorted(profils.items())) + ".")
     h.append(
         "CE QUE CETTE CARTE NE COUVRE PAS, rassemblé — et dans quel sens :"
-        " (1) la ligne FEXT ne localise rien quand les deux vitesses sont"
-        " égales, le bruit avant co-propageant avec l'agresseur → l'axe est"
-        " alors MUET, ni optimiste ni pessimiste, et il faut le savoir avant"
-        " de pointer un millimètre ; (2) la résolution spatiale est celle de la"
+        " (1) la ligne FEXT n'est PAS TRACÉE quand les deux vitesses"
+        " sont égales, le bruit avant co-propageant avec l'agresseur : sa loi"
+        " d'arrivée est alors plate et aucune abscisse n'existe → le NIVEAU"
+        " du FEXT est mesuré, sa POSITION n'est ni optimiste ni"
+        " pessimiste, elle est absente ; (2) la résolution spatiale est celle de la"
         " BANDE : deux zones plus proches que la résolution annoncée sont une"
         " seule tache → OPTIMISTE sur la finesse, jamais sur le niveau ;"
         " (3) le réseau synthétisé ignore les pertes conductrices, les coudes"
@@ -3388,7 +4019,19 @@ def _hypotheses(reglages, masse, seuils, base, profils):
         " solveur de section range ses conducteurs côte à côte. Ces pistes"
         " ressortent au plancher, ce qui est le contraire de la réalité sous"
         " un empilage mince → OPTIMISTE, et c'est le manque le plus lourd de"
-        " cette liste ; leur distance mesurée reste à l'étape 0a. Ce qui est"
+        " cette liste ; leur distance mesurée reste à l'étape 0a ;"
+        " (6) LE PLAN DE RETOUR EST SUPPOSÉ CONTINU sous les deux pistes —"
+        " [C] et [L] sortent d'une section droite quasi-TEM, qui n'existe que"
+        " si le courant de retour passe juste en dessous. Là où le plan est"
+        " percé, fendu ou absent, le retour fait un détour dont l'aire de"
+        " boucle n'est nulle part dans la section, et les deux pistes se"
+        " partagent ce retour : le couplage par IMPÉDANCE COMMUNE n'est pas"
+        " un terme mal chiffré, c'est un terme ABSENT du modèle, et l'écart"
+        " n'est donc pas borné par ce calcul → OPTIMISTE, et à égalité avec"
+        " (5) pour le poids. Les"
+        " fentes sondées lèvent une réserve quand elles tombent sur un"
+        " longement, et un bloc dont la section n'est pas résoluble n'est"
+        " plus compté comme découplé. Ce qui est"
         " affiché est donc un plancher sur une carte mal cousue, mal référencée"
         " ou densément empilée, et une lecture floue plutôt que fausse sur une"
         " bande étroite.")
@@ -3425,16 +4068,26 @@ def touchstone_np(freqs, matrices, impedance=50.0, entete=None):
         vals = []
         for i, j in ordre:
             vals.append("%.9g %.9g" % (s[i, j].real, s[i, j].imag))
-        # UNE LIGNE PAR RANGEE au-dela de deux ports : c'est la mise en page de
-        # la norme, et un fichier d'une seule ligne de mille nombres est
-        # illisible pour qui l'ouvre.
+        # UNE LIGNE PAR RANGEE au-dela de deux ports, et QUATRE PAIRES AU PLUS
+        # PAR LIGNE : c'est la mise en page de la norme, et un fichier d'une
+        # seule ligne de mille nombres est illisible pour qui l'ouvre.
+        #
+        # LE COMPTE EST CELUI DES PAIRES, PAS DES NOMBRES. `2 * n` comptait des
+        # nombres la ou `vals` porte deja des paires : pour quatre ports, le
+        # fichier ecrivait DEUX rangees de matrice par ligne alors que la
+        # docstring annonce une. Les lecteurs tolerants -- dont celui du banc,
+        # qui aplatit tout -- ne le voyaient pas ; un lecteur strict, qui
+        # compte une rangee par ligne, lisait la matrice transposee par
+        # morceaux.
         if n <= 2:
             lignes.append("%.9g %s" % (f, " ".join(vals)))
         else:
-            par_rangee = 2 * n
-            lignes.append("%.9g %s" % (f, " ".join(vals[:par_rangee])))
-            for d in range(par_rangee, len(vals), par_rangee):
-                lignes.append("  " + " ".join(vals[d:d + par_rangee]))
+            for r in range(n):
+                rangee = vals[r * n:(r + 1) * n]
+                tete = ("%.9g " % f) if r == 0 else "  "
+                lignes.append(tete + " ".join(rangee[:TS_PAR_LIGNE]))
+                for d in range(TS_PAR_LIGNE, len(rangee), TS_PAR_LIGNE):
+                    lignes.append("  " + " ".join(rangee[d:d + TS_PAR_LIGNE]))
     return "\n".join(lignes) + "\n"
 
 

@@ -299,6 +299,7 @@ convertit depuis les millimetres du document d'echange.
 """
 
 
+import functools
 import math
 import numpy as np
 
@@ -529,6 +530,28 @@ def _integrale_extraite(d, largeur, distance_plan, epsilon):
         / (2.0 * np.pi * epsilon)
 
 
+# LES NOEUDS DE GAUSS-LEGENDRE NE DEPENDENT QUE DE LEUR NOMBRE, et les
+# recalculer a chaque section coutait plus cher que la section elle-meme :
+# `leggauss(300)` passe par les valeurs propres d'une matrice compagnon, soit
+# une douzaine de millisecondes, quand resoudre une ligne seule en demande une
+# cinquantaine en tout. Une section les redemande deux fois, un crosstalk une
+# fois par troncon -- c'etait la moitie du temps de calcul depensee a refaire
+# la meme table.
+#
+# LES TABLEAUX SONT RENDUS EN LECTURE SEULE. Ils sont partages par tous les
+# appelants : une ecriture en place les corromprait pour toute la suite du
+# processus, et sans cela le jour ou quelqu'un ecrirait `noeuds *= 2` la faute
+# se lirait des sections plus loin, sur un resultat faux mais plausible. En
+# lecture seule, elle leve tout de suite et a l'endroit ou elle est commise.
+@functools.lru_cache(maxsize=16)
+def _leggauss(n):
+    """Noeuds et poids de Gauss-Legendre a n points, calcules une seule fois."""
+    noeuds, poids = np.polynomial.legendre.leggauss(n)
+    noeuds.flags.writeable = False
+    poids.flags.writeable = False
+    return noeuds, poids
+
+
 def _quadrature(distance_plan, echelles, n_quadrature, beta_max):
     """Les nœuds en β, sur autant d'intervalles qu'il y a d'échelles.
 
@@ -547,7 +570,7 @@ def _quadrature(distance_plan, echelles, n_quadrature, beta_max):
     ech = sorted({float(e) for e in (echelles or ()) if e and e > 0}
                  | {float(distance_plan)}, reverse=True)
     bornes = [beta_max / e for e in ech]
-    noeuds, poids_ref = np.polynomial.legendre.leggauss(n_quadrature)
+    noeuds, poids_ref = _leggauss(n_quadrature)
     betas, poids = [], []
     b0 = 1e-12
     for b1 in bornes:
@@ -788,10 +811,16 @@ def _milieu(geometry):
     # LOT 2 : masque de soudure sur piste exterieure. Le masque a son propre
     # epsilon_r (vernis ~3,8) et son epaisseur (20-30 um) : une Green a trois
     # regions.
+    # UN MASQUE ABSENT S'ECRIT DE DEUX FACONS, et la docstring de solve_line
+    # annonce les deux : la clef manquante, ou « 0 » pour une couche interne
+    # qui n'a pas de vernis. La seconde tombait sur un AttributeError brut --
+    # le zero passait la garde `is not None` puis se voyait demander .get.
+    # C'est le meme accueil que `couverture` juste au-dessus, qui accepte le
+    # zero et l'absence sans distinguer.
     masque_info = geometry.get("masque")
     masque_epaisseur = 0.0
     masque_epsilon = 3.8
-    if masque_info is not None:
+    if isinstance(masque_info, dict):
         masque_epaisseur = float(masque_info.get("epaisseur", 0.0) or 0.0)
         masque_epsilon = float(masque_info.get("epsilon_r", 3.8))
         # Un masque plus mince que le nanometre n'est pas un masque : on le

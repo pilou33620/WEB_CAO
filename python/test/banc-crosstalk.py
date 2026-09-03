@@ -332,12 +332,16 @@ def une_resolution_hors_d_atteinte_vaut_la_longueur_et_jamais_zero():
     """Quand la bande ne permet meme pas la liaison entiere, on le DIT.
 
     ZERO SE LIRAIT « INFINIMENT FINE » alors que la verite est « plus grossiere
-    que toute la liaison » -- c'est le contresens exact, et il tombait sur la
-    ligne FEXT a chaque fois qu'on lisait une liaison courte sur une bande
-    etroite. Pire : zero etant faux au sens booleen, ces lignes-la sortaient
-    des avertissements de resolution, qui n'avaient donc jamais l'occasion de
-    les signaler. Une valeur fausse ET muette est le cumul des deux defauts que
-    ce module existe pour empecher.
+    que toute la liaison » -- c'est le contresens exact. Pire : zero etant faux
+    au sens booleen, ces lignes-la sortaient des avertissements de resolution,
+    qui n'avaient donc jamais l'occasion de les signaler. Une valeur fausse ET
+    muette est le cumul des deux defauts que ce module existe pour empecher.
+
+    LA LIGNE FEXT, ELLE, N'EST PLUS TRACEE DU TOUT ici, et c'est le correctif
+    de l'axe co-propage : a vitesses egales sa loi d'arrivee est PLATE, il
+    n'existe aucune abscisse a rendre, et une resolution « egale a la liaison
+    entiere » etait la facon polie de dessiner quand meme une courbe qui ne
+    designait rien. Le refus se DIT, avec sa raison.
     """
     doc = doc_essai([pis(0, 0.45, 40, 0.45, "VIC")])
     doc["analyse"]["f_fin"] = 5e9          # large fenetre, liaison courte
@@ -351,10 +355,16 @@ def une_resolution_hors_d_atteinte_vaut_la_longueur_et_jamais_zero():
             "une resolution ne depasse pas la liaison : %.3f > %.3f" \
             % (ligne["resolution"], longueur)
     fext = [l for l in res["carte_chaleur"]["lignes"] if l["sens"] == "fext"]
-    assert fext and abs(fext[0]["resolution"] - longueur) < 1e-6, \
-        "hors d'atteinte, la resolution vaut la liaison entiere : %s" \
+    assert not fext, \
+        "a vitesses egales, aucune ligne FEXT ne doit etre tracee : %s" \
         % [l["resolution"] for l in fext]
-    # ET ELLE ATTEINT ENFIN L'AVERTISSEMENT : c'est tout l'objet du correctif.
+    assert res["axes"]["fext"]["lignes"] == 0
+    assert res["axes"]["fext"]["raison"], \
+        "un sens sans axe doit dire pourquoi : %s" % res["axes"]
+    assert [a for a in res["avertissements"] if "PAS DE LIGNE FEXT" in a], \
+        "le refus doit etre dit : %s" % res["avertissements"]
+    # ET CELLE DU NEXT ATTEINT ENFIN L'AVERTISSEMENT : c'est l'objet du
+    # correctif precedent, et il tient.
     dit = [a for a in res["avertissements"] if "RÉSOLUTION SPATIALE" in a]
     assert dit, "une carte qui ne distingue rien doit le dire : %s" \
         % res["avertissements"]
@@ -1545,6 +1555,400 @@ def les_hypotheses_sont_toujours_rendues_et_se_referment():
 
 T("les hypotheses sont rendues, et le bloc de cloture ferme la liste",
   les_hypotheses_sont_toujours_rendues_et_se_referment)
+
+
+# ==========================================================================
+print("\nCe qui a ete trouve faux, et qui ne doit plus le redevenir")
+# ==========================================================================
+
+def une_vitesse_saisie_ne_fait_plus_tomber_le_serveur():
+    """Une seule vitesse saisie + un longement partiel : le cas qui rendait 500.
+
+    LE CHAMP CASSAIT EXACTEMENT DANS LE CAS OU IL SERT. Une vitesse saisie
+    donne un profil a DEUX points (0 et L) ; la cascade en donne un par borne
+    de bloc, donc N. `profil_commun` additionnait les deux termes a terme, ce
+    qui levait « operands could not be broadcast together » des que le
+    parcours comptait plus d'un bloc -- c'est-a-dire pour tout longement
+    partiel, le cas normal. Les deux sens de saisie sont verifies : c'est
+    l'agresseur ou la victime qui peut porter la saisie.
+    """
+    for vitesses in ({"CLK": 1.5e8}, {"VIC": 1.5e8},
+                     {"CLK": 1.5e8, "VIC": 1.4e8}, {}):
+        for longement in ((0, 40), (10, 30), (25, 40)):
+            doc = doc_essai([pis(longement[0], 0.45, longement[1], 0.45,
+                                 "VIC")], vitesses=vitesses)
+            res = ct.analyser(doc)
+            assert res["carte_chaleur"] is not None, \
+                "vitesses=%s longement=%s : aucune carte" % (vitesses,
+                                                             longement)
+            couple = res["couples"][0]
+            assert couple["next_localise"], \
+                "le NEXT localise toujours : %s / %s" % (vitesses, longement)
+    # ET LA VITESSE SAISIE EST BIEN CELLE QUI SERT.
+    res = ct.analyser(doc_essai([pis(0, 0.45, 40, 0.45, "VIC")],
+                                vitesses={"VIC": 1.0e8}))
+    assert abs(res["couples"][0]["vitesse_victime"] - 1.0e8) < 1.0, \
+        res["couples"][0]["vitesse_victime"]
+    assert "saisie" in res["couples"][0]["source_vitesse"]
+
+
+T("une vitesse saisie sur un seul net ne fait plus tomber le serveur",
+  une_vitesse_saisie_ne_fait_plus_tomber_le_serveur)
+
+
+def un_longement_lateral_reel_n_est_plus_ecarte_comme_blinde():
+    """L'agresseur change de couche, la victime longe A PLAT : elle est RETENUE.
+
+    C'EST LE FAUX NEGATIF LE PLUS COUTEUX DE TOUTE LA SECTION, et il se rendait
+    en silence. Les candidats etaient indexes par (net, couche) et leur `type`,
+    leur `distance` et leur `blinde` etaient figes a la PREMIERE rencontre : il
+    suffisait que l'agresseur ait commence sur une AUTRE couche pour que la
+    voisine soit vue « verticale, separee par un plan », donc ecartee -- alors
+    qu'elle longe franchement a plat sur la seconde moitie du parcours. Une
+    piste a 0,2 mm sur 20 mm ressortait « aucune candidate ne passe la
+    preselection », et la fiche annoncait « aucun couple confirme ».
+    """
+    doc = {
+        "format": "cao-crosstalk-1", "carte": "banc", "agresseurs": ["CLK"],
+        "stackup": STACK,
+        # 20 mm sur Top, puis 20 mm sur Bottom.
+        "geometry": {"objects": [pis(0, 0, 20, 0, "CLK", 0),
+                                 pis(20, 0, 40, 0, "CLK", 4)]},
+        # La victime est sur Bottom du bout en bout : vue par-dessous (avec un
+        # plan entre les deux) sur la premiere moitie, A COTE sur la seconde.
+        "voisinage": [pis(0, 0.45, 40, 0.45, "VIC", 4)],
+        "reference_nets": ["GND"],
+        "analyse": {"f_debut": 0.0, "f_fin": 20e9, "points": 201,
+                    "temps_montee": 100e-12},
+        "reglages": {},
+    }
+    res = ct.analyser(doc)
+    assert res["etape0"]["retenus"] == ["VIC"], \
+        "un longement lateral reel doit etre retenu : %s" \
+        % [(c["net"], c["type"], c["raison"])
+           for c in res["etape0"]["candidats"]]
+    c = [x for x in res["etape0"]["candidats"] if x["net"] == "VIC"][0]
+    assert c["type"] == "latéral", c["type"]
+    assert not c["blinde"], "deux pistes de la meme couche ne sont pas separees"
+    # LES DEUX NATURES SONT MESUREES A PART, et la longueur laterale est celle
+    # du longement a plat -- 20 mm, pas la somme des deux.
+    assert abs(c["longueur_laterale"] - 20.0) < 1.0, c["longueur_laterale"]
+    assert abs(c["longueur_verticale"] - 20.0) < 1.0, c["longueur_verticale"]
+    assert c["blinde_verticalement"], "un plan separe bien Top de Bottom"
+    # ET LE COUPLAGE EST MASSIF : c'est ce que l'ancien code rendait « nul ».
+    couple = res["couples"][0]
+    assert couple["confirmee"] and couple["next_db"] > -20.0, couple["next_db"]
+    # LA PORTION SUPERPOSEE NON COUPLEE EST DITE, jamais comptee zero en
+    # silence -- ici elle est blindee, donc une note et non une reserve.
+    assert [n for n in res["avertissements"] if "de deux façons" in n], \
+        res["avertissements"]
+
+
+T("un longement lateral reel n'est plus ecarte comme blinde",
+  un_longement_lateral_reel_n_est_plus_ecarte_comme_blinde)
+
+
+def le_couplage_non_calcule_ne_se_lit_plus_comme_un_couplage_nul():
+    """Pas de plan de reference : le zero rendu est une ABSENCE de mesure.
+
+    C'EST LE FAUX NEGATIF LE PLUS GRAVE que ce module puisse produire. Quand la
+    section droite n'est pas resoluble -- pas de plan sous la piste --, chaque
+    conducteur retombe sur sa ligne isolee, [C] et [L] restent DIAGONALES, et
+    le terme croise vaut exactement zero. Le calcul aboutit, la carte se
+    dessine, la fiche annonce « aucune voisine ne depasse le seuil », et rien
+    ne distingue « elles ne couplent pas » de « on n'a pas su calculer ». Or
+    c'est justement le cas ou le couplage reel EXPLOSE, faute de chemin de
+    retour court.
+    """
+    sans_plan = {"layers": [
+        {"type": "copper", "name": "Top", "thickness": 0.035,
+         "role": "signal"},
+        {"type": "dielectric", "name": "FR-4", "thickness": 0.2,
+         "epsilon_r": 4.3, "tan_delta": 0.02},
+        {"type": "copper", "name": "L2", "thickness": 0.035,
+         "role": "signal"},
+    ]}
+    doc = doc_essai([pis(0, 0.45, 40, 0.45, "VIC")])
+    doc["stackup"] = sans_plan
+    res = ct.analyser(doc)
+    assert res["etape0"]["retenus"] == ["VIC"], res["etape0"]["retenus"]
+    assert not res["couples"][0]["confirmee"], \
+        "sans plan, le terme croise tombe au plancher -- c'est le fait"
+    titres = " | ".join(g["titre"] for g in res["graves"])
+    assert "NON CALCULÉ" in titres, \
+        "un couplage non calcule doit lever une reserve GRAVE : %s" % titres
+    dit = [a for a in res["avertissements"] if "NON CALCULÉ" in a]
+    assert dit and "plancher" in dit[0].lower(), dit
+    assert [a for a in res["avertissements"]
+            if "Section droite non résoluble" in a], res["avertissements"]
+
+
+T("le couplage non calcule ne se lit plus comme un couplage nul",
+  le_couplage_non_calcule_ne_se_lit_plus_comme_un_couplage_nul)
+
+
+def sans_plan_le_seuil_de_distance_s_ouvre_au_lieu_de_se_fermer():
+    """Pas de plan : le seuil auto ne tombe pas a trois largeurs de piste.
+
+    LE PIEGE EST DANS LA DEDUCTION ELLE-MEME. `_hauteur_de_couche` rend ZERO
+    quand la couche n'a pas de plan de reference, et « 3 x max(largeur,
+    hauteur) » tombait alors a 3 x 0,25 = 0,75 mm : le seuil le PLUS SEVERE de
+    tous, applique exactement la ou le champ porte le plus loin faute de plan
+    pour le borner. Une voisine a 1 mm -- celle qui pose probleme sur une
+    carte sans plan -- ressortait « au-dela du seuil de 0,750 mm : vue mais
+    non simulee ».
+    """
+    sans_plan = {"layers": [
+        {"type": "copper", "name": "Top", "thickness": 0.035,
+         "role": "signal"},
+        {"type": "dielectric", "name": "FR-4", "thickness": 0.2,
+         "epsilon_r": 4.3, "tan_delta": 0.02},
+        {"type": "copper", "name": "L2", "thickness": 0.035,
+         "role": "signal"},
+    ]}
+    # Une voisine a 1 mm de l'axe, soit 0,75 mm de bord a bord.
+    doc = doc_essai([pis(0, 1.0, 40, 1.0, "VIC")])
+    doc["stackup"] = sans_plan
+    res = ct.analyser(doc)
+    seuils = res["etape0"]["seuils"]
+    assert seuils["hauteur"] == 0.0, seuils
+    assert seuils["distance_max"] >= 3.0 - 1e-9, \
+        "sans plan, le seuil doit s'OUVRIR : %s" % seuils
+    assert "maximum du voisinage" in seuils["source"], seuils["source"]
+    assert res["etape0"]["retenus"] == ["VIC"], \
+        [(c["net"], c["raison"]) for c in res["etape0"]["candidats"]]
+    # ET LE FAIT SE DIT UNE FOIS, EN RESERVE : tout le calcul en depend.
+    titres = " | ".join(g["titre"] for g in res["graves"])
+    assert "aucun plan de référence" in titres, titres
+
+    # AVEC UN PLAN, LA DEDUCTION NE BOUGE PAS D'UN POUCE.
+    avec = ct.analyser(doc_essai([pis(0, 1.0, 40, 1.0, "VIC")]))
+    assert avec["etape0"]["seuils"]["hauteur"] > 0
+    assert "déduit (3 ×" in avec["etape0"]["seuils"]["source"], \
+        avec["etape0"]["seuils"]["source"]
+
+
+T("sans plan, le seuil de distance s'ouvre au lieu de se fermer",
+  sans_plan_le_seuil_de_distance_s_ouvre_au_lieu_de_se_fermer)
+
+
+def une_fente_sous_le_longement_leve_une_reserve():
+    """Le modele suppose un plan continu ; la fente dit qu'il n'y en a pas.
+
+    LA SECTION DROITE QUASI-TEM N'EXISTE QUE SI LE RETOUR PASSE JUSTE DESSOUS.
+    Une fente sondee par la page sous un longement retenu rend le chiffre
+    OPTIMISTE -- l'inductance mutuelle monte, le couplage reel avec elle --, et
+    « sous le seuil » n'y est plus un verdict. Une fente AILLEURS, en revanche,
+    ne dit rien de la carte de couplage : elle n'invalide que ce qu'elle
+    touche, et confondre les deux ferait une alerte permanente.
+    """
+    dedans = doc_essai([pis(10, 0.45, 30, 0.45, "VIC")])
+    dedans["fentes"] = [{"s": 12.0, "longueur": 6.0,
+                         "quoi": "pas de cuivre de masse sous le parcours"}]
+    res = ct.analyser(dedans)
+    titres = " | ".join(g["titre"] for g in res["graves"])
+    assert "plan de référence absent sous" in titres, titres
+
+    ailleurs = doc_essai([pis(10, 0.45, 30, 0.45, "VIC")])
+    ailleurs["fentes"] = [{"s": 33.0, "longueur": 4.0,
+                           "quoi": "pas de cuivre de masse sous le parcours"}]
+    res2 = ct.analyser(ailleurs)
+    titres2 = " | ".join(g["titre"] for g in res2["graves"])
+    assert "plan de référence absent sous" not in titres2, titres2
+
+
+T("une fente sous le longement leve une reserve, ailleurs non",
+  une_fente_sous_le_longement_leve_une_reserve)
+
+
+def l_axe_du_fext_suit_le_longement_quand_il_localise():
+    """FEXT : pas d'axe a vitesses egales, un axe JUSTE quand elles diffèrent.
+
+    LA LOI D'ARRIVEE DU FEXT EST t(x) = tau_a(x) + tau_v(L) - tau_v(x), parce
+    que le bruit avant CO-PROPAGE avec l'agresseur. La version precedente
+    inversait la MOYENNE des deux retards : t = 0 s'y trouvait envoye sur
+    x = 0 alors qu'aucune energie ne peut arriver avant min(tau_a(L),
+    tau_v(L)), et le pic tombait TOUJOURS a la meme abscisse -- on deplacait le
+    longement de 0 a 25 mm et le pic ne bougeait pas d'un dixieme. C'est le
+    seul cas du banc qui verifie l'axe du second sens, et il est construit pour
+    cela : deux vitesses franchement differentes, un longement qu'on deplace.
+    """
+    # A vitesses egales (le cas du dessin ordinaire), il n'y a PAS d'axe.
+    egal = ct.analyser(doc_essai([pis(0, 0.45, 40, 0.45, "VIC")]))
+    assert egal["couples"][0]["fext_localise"] is False
+    assert not ligne_de(egal, "VIC", "fext")
+    # LE NIVEAU, LUI, EST TOUJOURS RENDU : c'est un budget de bruit, il ne
+    # depend d'aucun axe.
+    assert egal["couples"][0]["fext_db"] > -300.0
+
+    # Vitesses franchement differentes : l'axe existe, et il est rendu.
+    doc = doc_essai([pis(0, 0.45, 40, 0.45, "VIC")],
+                    vitesses={"CLK": 1.9e8, "VIC": 1.0e8})
+    res = ct.analyser(doc)
+    assert res["couples"][0]["fext_localise"], \
+        "un ecart de vitesse de cette taille doit donner un axe : %s" \
+        % res["couples"][0].get("fext_raison")
+    assert ligne_de(res, "VIC", "fext"), "l'axe existe, la ligne doit suivre"
+
+    # ---- L'AXE LUI-MEME, CONTRE LA LOI ECRITE A LA MAIN ----------------
+    # L'ETALON EST ARITHMETIQUE ET NE PASSE PAR AUCUN SOLVEUR : c'est la seule
+    # facon de verifier la loi d'arrivee elle-meme. Une comparaison de bout en
+    # bout ne le permet pas -- une vitesse SAISIE remplace l'axe sans changer
+    # la matrice S, donc sans deplacer l'energie.
+    s = np.array([0.0, 10.0, 20.0, 30.0, 40.0])       # mm
+    v_a, v_v = 1.8e8, 1.2e8                            # m/s
+    t_a, t_v = s * 1e-3 / v_a, s * 1e-3 / v_v
+    for sens, loi in (("next", lambda x: x * 1e-3 / v_a + x * 1e-3 / v_v),
+                      ("fext", lambda x: x * 1e-3 / v_a
+                       + (40.0 - x) * 1e-3 / v_v)):
+        prof = ct.profil_du_sens((s, t_a, t_v), sens)
+        assert prof is not None, "%s doit avoir un axe" % sens
+        for x in (0.0, 7.5, 20.0, 33.0, 40.0):
+            rendu = float(ct.positions(np.array([loi(x)]),
+                                       prof[0], prof[1])[0])
+            assert abs(rendu - x) < 1e-6, \
+                "%s : l'instant de x = %.1f mm redonne %.4f mm" \
+                % (sens, x, rendu)
+    # RIEN N'ARRIVE AVANT LA PREMIERE ARRIVEE, et la premiere arrivee du FEXT
+    # n'est PAS zero : c'est tau_v(L). L'ancien axe y envoyait x = 0, ce qui
+    # peuplait d'energie une moitie d'axe ou rien ne peut arriver.
+    prof = ct.profil_du_sens((s, t_a, t_v), "fext")
+    tot = 40.0e-3
+    assert abs(min(prof[1]) - tot / v_a) < 1e-15, min(prof[1])
+    assert math.isnan(float(ct.positions(np.array([0.0]),
+                                         prof[0], prof[1])[0])), \
+        "t = 0 n'a pas d'abscisse sur l'axe du FEXT"
+    # A VITESSES EGALES, LA LOI EST PLATE : il n'y a pas d'axe, et le NEXT en
+    # a toujours un.
+    assert ct.profil_du_sens((s, t_v, t_v), "fext") is None
+    assert ct.profil_du_sens((s, t_v, t_v), "next") is not None
+    # ET LE NEXT REDONNE x = v.t/2 a vitesses egales -- la convention attendue.
+    p = ct.profil_du_sens((s, t_v, t_v), "next")
+    assert abs(float(ct.positions(np.array([2 * 20.0e-3 / v_v]),
+                                  p[0], p[1])[0]) - 20.0) < 1e-9
+
+
+T("l'axe du FEXT suit le longement, ou n'existe pas",
+  l_axe_du_fext_suit_le_longement_quand_il_localise)
+
+
+def tan_delta_porte_aussi_sur_l_impedance_caracteristique():
+    """[C](1 - j tan d) : lambda ET W portent la racine du facteur.
+
+    L'ETALON EST ANALYTIQUE ET IL NE PARTAGE AUCUNE LIGNE DE CODE avec le
+    module : Zc = sqrt(L / (C(1 - j tan d))), gamma = j w sqrt(LC(1 - j tan d)),
+    puis S11 d'une ligne chargee par sa reference. La version precedente ne
+    multipliait que `racines` : l'impedance caracteristique restait celle du
+    sans-perte, une ligne « adaptee » rendait S11 = 0 a la precision machine,
+    et le Touchstone exporte -- ce qu'on compare justement a un solveur pleine
+    onde -- annoncait une ligne sans aucun retour.
+    """
+    import cmath
+    eps, z0, td, f, d = 4.3, 50.0, 0.02, 5e9, 0.040
+    racine = math.sqrt(eps)
+    c = racine / (ct.C_0 * z0)
+    l = z0 * racine / ct.C_0
+    w = 2 * math.pi * f
+    s = ct.s_depuis_chaine(
+        ct.chaine_mtl(np.array([[l]]), np.array([[c]]), d, [w], td), z0)[0]
+
+    zc = cmath.sqrt(l / (c * complex(1.0, -td)))
+    gamma = 1j * w * cmath.sqrt(l * c * complex(1.0, -td))
+    th = cmath.tanh(gamma * d)
+    zin = zc * (z0 + zc * th) / (zc + z0 * th)
+    s11 = (zin - z0) / (zin + z0)
+    assert abs(s[0, 0] - s11) < 1e-9, \
+        "S11 avec pertes : %s contre %s (analytique)" % (s[0, 0], s11)
+    # ET IL N'EST PLUS NUL : c'est le retour qui manquait au fichier exporte.
+    assert ct._db(s[0, 0]) > -60.0, ct._db(s[0, 0])
+    # SANS PERTES, RIEN NE CHANGE : la ligne adaptee ne reflechit rien.
+    sans = ct.s_depuis_chaine(
+        ct.chaine_mtl(np.array([[l]]), np.array([[c]]), d, [w], 0.0), z0)[0]
+    assert abs(sans[0, 0]) < 1e-12, sans[0, 0]
+
+
+T("tan delta porte aussi sur l'impedance caracteristique",
+  tan_delta_porte_aussi_sur_l_impedance_caracteristique)
+
+
+def le_touchstone_ecrit_une_rangee_par_ligne():
+    """Une ligne de fichier = une rangee de matrice, quatre paires au plus.
+
+    `par_rangee = 2 * n` comptait des NOMBRES la ou la liste porte des PAIRES :
+    pour quatre ports, le fichier ecrivait deux rangees de matrice par ligne
+    alors que la docstring en annonce une. Les lecteurs tolerants -- dont celui
+    de ce banc, qui aplatit tout -- ne le voyaient pas ; un lecteur strict, qui
+    compte une rangee par ligne, lisait la matrice par morceaux decales.
+    """
+    freqs = [1e9, 2e9]
+    for n in (2, 4, 6):
+        mats = [np.arange(n * n).reshape(n, n) + 1j * k for k in (0, 1)]
+        texte = ct.touchstone_np(freqs, mats)
+        corps = [l for l in texte.splitlines()
+                 if l and not l.startswith(("!", "#"))]
+        if n == 2:
+            assert len(corps) == 2, corps
+            continue
+        # Une ligne par rangee, sauf quand la rangee depasse quatre paires.
+        par_freq = n * max(1, -(-n // ct.TS_PAR_LIGNE))
+        assert len(corps) == par_freq * len(freqs), \
+            "%d ports : %d lignes pour %d attendues" \
+            % (n, len(corps), par_freq * len(freqs))
+        for ligne in corps:
+            paires = len(ligne.split()) - (1 if ligne[0] not in " \t" else 0)
+            assert paires % 2 == 0 and paires // 2 <= ct.TS_PAR_LIGNE, \
+                "%d ports : « %s » porte %d nombres" % (n, ligne, paires)
+
+
+T("le Touchstone ecrit une rangee par ligne, quatre paires au plus",
+  le_touchstone_ecrit_une_rangee_par_ligne)
+
+
+def le_nombre_de_points_ecrete_se_dit():
+    """1000 points demandes, 401 rendus : la fenetre est divisee, on le DIT.
+
+    `MAX_BLOCS` et `MAX_VICTIMES` disent tous deux ce qu'ils ont coupe ;
+    celui-ci ne disait rien, alors qu'il divise la FENETRE TEMPORELLE par deux
+    et demi -- et ce qui deborde de la fenetre ne disparait pas, il revient se
+    poser au debut de la carte par repliement.
+    """
+    doc = doc_essai([pis(0, 0.45, 40, 0.45, "VIC")])
+    doc["analyse"]["points"] = 1000
+    res = ct.analyser(doc)
+    assert res["validation"]["bande"]["points"] == ct.MAX_POINTS
+    dit = [a for a in res["avertissements"]
+           if "points au lieu des" in a and "FENÊTRE" in a]
+    assert dit, "un ecretage muet fabrique des pics : %s" \
+        % res["avertissements"]
+    # ET IL SE TAIT QUAND IL N'A RIEN COUPE.
+    doc["analyse"]["points"] = 201
+    res2 = ct.analyser(doc)
+    assert not [a for a in res2["avertissements"] if "points au lieu des" in a]
+
+
+T("le nombre de points ecrete se dit, comme les autres bornes",
+  le_nombre_de_points_ecrete_se_dit)
+
+
+def une_preselection_vide_ne_se_lit_pas_comme_un_verdict():
+    """Rien n'a ete simule n'est pas « rien ne couple ».
+
+    LA PAGE RENDAIT LE MEME VERDICT dans les deux cas -- « AUCUN COUPLE
+    CONFIRME », suivi de « leurs courbes sont tracees quand meme » -- pour une
+    presélection vide et pour un calcul complet dont tout tombe sous le seuil.
+    Le premier est une absence de mesure, le second en est une ; la clef le
+    dit, et le titre de la fiche en depend.
+    """
+    vide = ct.analyser(doc_essai([]))
+    assert vide["preselection_vide"] is True
+    loin = ct.analyser(doc_essai([pis(0, 0.45, 40, 0.45, "VIC")],
+                                 seuil_db=0.0))
+    assert loin["preselection_vide"] is False
+    assert loin["couples"] and not loin["couples"][0]["confirmee"]
+
+
+T("une preselection vide ne se lit pas comme un verdict",
+  une_preselection_vide_ne_se_lit_pas_comme_un_verdict)
 
 
 print("\n" + "-" * 62)

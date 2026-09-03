@@ -506,17 +506,36 @@ function drawRats(c){
   }
   c.setLineDash([]);c.globalAlpha=1;
 }
+/* TOUS LES MARQUEURS EN UN SEUL CHEMIN, et c'est ce qui rend l'éditeur
+   utilisable sur une carte à demi routée. Ils portent tous le même trait :
+   les poser un par un demandait deux `stroke()` chacun — trente-deux mille
+   rasterisations par image sur les seize mille écarts que sort couramment une
+   carte en cours de travail, soit une demi-seconde par redessin, donc par
+   clic. Le rayon et les branches de la croix ne dépendent que du zoom, qui ne
+   bouge pas pendant un dessin : ils se calculent une fois. Le `moveTo` avant
+   chaque arc est ce qui empêche le chemin unique de relier un marqueur au
+   suivant par un trait.
+
+   CE QUI CHANGE À L'ÉCRAN, ET C'EST TOUT : là où la croix touche son cercle,
+   les deux traits sont désormais peints d'une seule passe au lieu de deux, si
+   bien que les pixels de bord n'y cumulent plus deux fois leur couverture. Le
+   marqueur a le même rayon, la même croix et le même trait ; seul son
+   anticrénelage y perd une sursaturation qui n'était qu'un artefact de la
+   double passe. Vérifié à l'agrandissement : les deux versions se
+   superposent. Le nombre de marqueurs, lui, ne bouge pas — ils sont TOUS
+   peints, et c'est ce que promet le pied de la liste des écarts. */
 function drawDrc(c){
   if(!S.show.drc||!S.drc.length)return;
+  const r=px(9), b=px(6);
+  c.strokeStyle=C_ERR;c.lineWidth=px(1.6);
+  c.beginPath();
   for(const e of S.drc){
     if(e.info)continue;
-    c.strokeStyle=C_ERR;c.lineWidth=px(1.6);
-    c.beginPath();c.arc(e.x,e.y,px(9),0,Math.PI*2);c.stroke();
-    c.beginPath();
-    c.moveTo(e.x-px(6),e.y-px(6));c.lineTo(e.x+px(6),e.y+px(6));
-    c.moveTo(e.x+px(6),e.y-px(6));c.lineTo(e.x-px(6),e.y+px(6));
-    c.stroke();
+    c.moveTo(e.x+r,e.y);c.arc(e.x,e.y,r,0,Math.PI*2);
+    c.moveTo(e.x-b,e.y-b);c.lineTo(e.x+b,e.y+b);
+    c.moveTo(e.x+b,e.y-b);c.lineTo(e.x-b,e.y+b);
   }
+  c.stroke();
 }
 function drawZones(c,i,a){
   for(const z of S.zones){

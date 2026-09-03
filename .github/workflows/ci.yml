@@ -30,6 +30,15 @@ jobs:
           # propre carte d'essai : rien à télécharger, rien de lourd versionné.
           python visionneuse-ipc2581/test/banc-essai.py
 
+      - name: Visionneuse IPC-2581 — banc de la mesure de masse
+        run: |
+          # Pur JavaScript sur Node : ce banc lit les sources telles quelles,
+          # sans assemblage ni dépendance. Il éprouve la GÉOMÉTRIE lue sur le
+          # modèle -- où est le cuivre de masse, de quel côté, sur quelle
+          # longueur --, là où banc-essai.py juste au-dessus éprouve le
+          # parseur. Rien ne l'empêchait de tourner ici ; il n'y était pas.
+          node visionneuse-ipc2581/test/harness-sim.js
+
       - name: Éditeur PCB — assemblage puis banc d'essai
         run: |
           python editeur-pcb/outils/build-monofichier.py

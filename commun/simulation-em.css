@@ -502,6 +502,12 @@ select.simPaireSel:disabled{opacity:.45;cursor:not-allowed}
 .simXtN-sous .simXtVerdict{color:var(--green,#4cc38a)}
 .simXtN-aucun{border-left-color:var(--border)}
 .simXtN-aucun .simXtVerdict{color:var(--txt-dim)}
+/* RIEN N'A ETE SIMULE N'EST PAS UN VERDICT, et cela ne se peint donc ni en
+   vert ni en gris discret : c'est un trou dans la mesure, et il doit se voir
+   autant qu'une alerte. L'ambre du « a surveiller » dirait « c'est limite » ;
+   le violet ne dit rien d'autre que « ce n'est pas une reponse ». */
+.simXtN-indecis{border-left-color:var(--violet,#b3a1ff);background:#1e1b2b}
+.simXtN-indecis .simXtVerdict{color:var(--violet,#b3a1ff)}
 
 /* ==========================================================================
    CE QU'IL Y A À FAIRE, ET LES RÉSERVES

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "serveur CAO Web",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["serveur.py", "--port", "8000", "--sans-navigateur", "--sans-pause"],
+      "port": 8000
+    }
+  ]
+}

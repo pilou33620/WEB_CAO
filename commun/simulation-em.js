@@ -3974,7 +3974,12 @@ function simPaireCandidats(){
     const soi=(d&&d.net)||"";
     for(const o of ((d&&d.voisinage)||[]))if(o.net!==soi)ajoute(o.net);
   }
-  vus.sort();
+  /* MEME ORDRE QUE PARTOUT AILLEURS. Un tri de chaines brut met « NET10 »
+     avant « NET2 » : la liste des paires candidates se lisait donc dans un
+     ordre que ni la table des nets, ni le panneau de la visionneuse, ni la
+     nomenclature n'emploient — on cherchait un net à la place où les autres
+     listes l'auraient mis. */
+  vus.sort((a,b)=>String(a).localeCompare(String(b),"fr",{numeric:true}));
   return vus;
 }
 /* Le net de la sélection, quand elle n'en porte qu'un. Une sélection à cheval
@@ -4242,7 +4247,7 @@ function simSeuilNom(){
    connaît la vitesse de propagation :
 
      NEXT = S(victime_proche, agresseur_proche)      trajet aller-retour
-     FEXT = S(victime_lointaine, agresseur_proche)   trajet simple
+     FEXT = S(victime_lointaine, agresseur_proche)   co-propage
 
    C'est la réflectométrie temporelle, appliquée aux termes CROISÉS plutôt qu'à
    la réflexion.
@@ -4371,11 +4376,15 @@ const SIM_XT_SENS=[
          "d'où x = v·t/2. C'est le seul des deux qui localise en milieu "+
          "homogène."},
   {cle:"fext", nom:"FEXT",
-   titre:"Le bruit du bout LOINTAIN. Il CO-PROPAGE avec l'agresseur : à "+
-         "vitesses égales, tout ce qui se couple arrive au même instant, et "+
-         "cette ligne ne localise alors RIEN — elle montre la longueur "+
-         "électrique de la liaison. Elle ne se met à localiser que lorsque "+
-         "les deux vitesses diffèrent, donc en milieu inhomogène."}
+   titre:"Le bruit du bout LOINTAIN. Il CO-PROPAGE avec l'agresseur : ce "+
+         "qui se couple en x arrive au bout lointain à τa(x) + τv(L) − "+
+         "τv(x), et à vitesses égales cette somme ne dépend plus de x — "+
+         "tout arrive au MÊME instant, et il n'existe alors aucune abscisse "+
+         "à rendre. La carte ne porte PAS de courbe dans ce sens-là dans ce "+
+         "cas, plutôt qu'une courbe qui désignerait un millimètre au "+
+         "hasard ; le niveau du FEXT, lui, reste au tableau des couples. "+
+         "Elle ne se met à localiser que lorsque les deux vitesses diffèrent "+
+         "assez, donc en milieu franchement inhomogène."}
 ];
 
 const SIM_XT_FENETRES=[
@@ -5075,7 +5084,15 @@ function simXtRatio(db){
 function simXtNiveau(r){
   const conf=(r.couples||[]).filter(c=>c.confirmee);
   if(!conf.length)
-    return {cle:"aucun", nom:"AUCUN COUPLE CONFIRMÉ", pire:null, ratio:0,
+    /* DEUX SILENCES QUI NE SE RESSEMBLENT PAS. « Aucun couple confirmé » est
+       un RÉSULTAT : on a simulé, tout tombe sous le seuil. Une présélection
+       vide est une ABSENCE de résultat : rien n'a été simulé, et l'afficher
+       comme le premier était une bonne nouvelle fabriquée par un seuil
+       géométrique. */
+    return {cle:r.preselection_vide?"indecis":"aucun",
+            nom:r.preselection_vide?"RIEN N’A ÉTÉ SIMULÉ"
+                                   :"AUCUN COUPLE CONFIRMÉ",
+            pire:null, ratio:0,
             volts:0, budget:simSeuilFraction(), seuil:simSeuilNom()};
   let pire=conf[0];
   for(const c of conf)if(c.pire_db>pire.pire_db)pire=c;
@@ -5114,7 +5131,9 @@ function simXtMethode(r){
              " points)":"")+
     " → transformée de Fourier inverse ("+fen+
     ") de ses termes croisés → le retard converti en position par la vitesse "+
-    "de chaque tronçon (NEXT : v·t/2 ; FEXT : v·t).";
+    "de chaque tronçon — NEXT : t = τa(x) + τv(x), soit x = v·t/2 à "+
+    "vitesses égales ; FEXT : t = τa(x) + τv(L) − τv(x), une loi PLATE à "+
+    "vitesses égales, qui ne donne alors aucune position.";
 }
 
 /* CE QUE LA DÉDUCTION A FAIT, EN UNE PHRASE, ET SURTOUT LAQUELLE DES TROIS
@@ -5154,6 +5173,26 @@ function simXtResume(r){
        simEsc(simTension(SIM.saisie.swing))+" ("+
        simNb(n.pire.pire_db,1)+" dB) — contre "+simEsc(n.seuil)+", soit "+
        simEsc(simTension(n.budget*(SIM.saisie.swing||0)))+".</p>";
+  /* RIEN N'A ÉTÉ SIMULÉ N'EST PAS « RIEN NE COUPLE », et c'est le pire des
+     deux malentendus que cette fiche pouvait produire : la présélection
+     géométrique n'a retenu AUCUNE candidate, il n'y a donc pas eu de matrice
+     S, pas de carte, pas de niveau — et la page annonçait pourtant « aucun
+     couple confirmé » suivi de « leurs courbes sont tracées quand même »,
+     au-dessus d'une figure vide. Le tableau « ce qui longe » dit pourquoi
+     chaque candidate a été écartée, et c'est là qu'il faut aller. */
+  else if(r.preselection_vide){
+    const cands=(((r.etape0||{}).candidats)||[]);
+    h+="<p><b>Aucune candidate n’a passé la présélection géométrique</b> : il "+
+       "n’y a eu ni matrice S, ni carte, ni niveau de couplage — ce résultat "+
+       "ne dit RIEN sur le couplage de cette piste, ni en bien ni en mal. "+
+       (cands.length
+         ? cands.length+" candidate(s) ont été vues et écartées ; le tableau "+
+           "<b>« ce qui longe »</b> ci-dessous donne la raison de chacune, et "+
+           "c’est là qu’il faut desserrer un seuil."
+         : "Aucune voisine n’a même été vue à portée : élargissez la "+
+           "<b>présélection distance</b>, ou vérifiez que la masse est bien "+
+           "désignée.")+"</p>";
+  }
   else{
     /* « AUCUN COUPLE CONFIRMÉ » N'EST PAS « AUCUN COUPLAGE », et la nuance est
        tout ce qui sépare une bonne nouvelle d'un réglage mal posé. On NOMME
@@ -5265,9 +5304,14 @@ function simXtBandeau(r){
   h+=" · <b>"+conf.length+"</b> victime"+(conf.length>1?"s":"")+
      " confirmée"+(conf.length>1?"s":"")+" sur "+
      ((r.etape0&&r.etape0.candidats)||[]).length+" candidate(s)";
+  /* LA RÉSOLUTION DU FEXT N'EXISTE QUE S'IL A UN AXE. Quand le serveur
+     refuse de lui en poser un — sa loi d'arrivée est plate à vitesses
+     égales —, « — mm (FEXT) » se lirait comme un chiffre manquant, alors
+     que c'est la grandeur elle-même qui n'a pas de sens. */
   if(res&&res.resolution_next)
     h+=" · résolution <b>"+simNb(res.resolution_next,2)+" mm</b> (NEXT), "+
-       simNb(res.resolution_fext,2)+" mm (FEXT)";
+       (res.resolution_fext?simNb(res.resolution_fext,2)+" mm (FEXT)"
+                           :"pas d’axe pour le FEXT");
   h+="</div>";
   /* LA RÉSOLUTION EST RÉPÉTÉE SOUS LA CARTE, plus bas. Elle est ici parce
      qu'elle qualifie tout le reste, et là-bas parce que c'est là qu'on la
@@ -5693,16 +5737,33 @@ function simXtLectureLignes(i){
     : "—";
   /* ON NE LIT QUE CE QUI EST TRACÉ. Un sens éteint n'a plus de courbe, plus
      de point de réglette et plus d'échelle à l'écran : le chiffrer quand
-     même ferait lire une valeur qu'aucun trait ne montre. */
+     même ferait lire une valeur qu'aucun trait ne montre.
+
+     LE GRAPHE DES TENSIONS COMPTE COMME UN TRACÉ, et c'est ce qui rend la
+     réglette utile quand on n'a coché que « mV » : les deux sens y sont, sur
+     la même échelle, et la lecture les donne tous les deux. Sans cela,
+     décocher NEXT et FEXT rendait la réglette muette alors que la figure,
+     elle, montrait toujours une courbe. */
+  const enVolts=simXtVu("volts");
   let h="";
-  if(!simXtVu("next")&&!simXtVu("fext"))
-    h+='<div><span class="simFaible">Les deux sens sont éteints : il n’y a '+
-       "rien à lire ici. La position, elle, vaut toujours pour le point posé "+
-       "sur le cuivre.</span></div>";
+  if(!simXtVu("next")&&!simXtVu("fext")&&!enVolts)
+    h+='<div><span class="simFaible">Les trois graphes sont éteints : il n’y '+
+       "a rien à lire ici. La position, elle, vaut toujours pour le point "+
+       "posé sur le cuivre.</span></div>";
   for(const f of R.fiches){
     const bouts=[];
     if(simXtVu("next"))bouts.push("NEXT "+val(f.vNext));
     if(simXtVu("fext"))bouts.push("FEXT "+val(f.vFext));
+    /* QUAND SEUL LE GRAPHE DES TENSIONS EST ALLUMÉ, c'est lui qui donne la
+       lecture : les deux sens, dans l'unité du graphe. Une victime dont le
+       serveur n'a pas rendu la ligne FEXT — son axe n'existe pas — n'affiche
+       pas un « 0 mV » qui se lirait comme une mesure. */
+    if(enVolts&&!simXtVu("next")&&!simXtVu("fext")){
+      bouts.push("NEXT "+val(f.vNext));
+      if(f.fext)bouts.push("FEXT "+val(f.vFext));
+      else bouts.push('FEXT <span class="simFaible">niveau seul, sans '+
+                      "position</span>");
+    }
     if(!bouts.length)continue;
     h+='<div><i style="background:'+f.couleur+'"></i><b>'+simEsc(f.net)+
        "</b> — "+bouts.join(" · ")+
@@ -5759,6 +5820,8 @@ function simXtCurseurPoser(i){
     };
     pose("simXtPtN-",f.yNext);
     pose("simXtPtF-",f.yFext);
+    pose("simXtPtVN-",f.yVN);
+    pose("simXtPtVF-",f.yVF);
   });
   const v=simEl("simXtPosVal");
   if(v)v.textContent=simNb(R.total*k/Math.max(1,n-1),2)+" mm";
@@ -5782,9 +5845,18 @@ function simXtCarte(r){
   /* LES LIGNES DU SENS PEINT restent la référence de la légende : c'est de
      leur résolution qu'elle parle, et elle diffère d'un sens à l'autre. */
   const lignes=c.lignes.filter(l=>l.sens===SIM_XT.sens);
-  if(!lignes.length)
+  if(!lignes.length){
+    /* UN SENS SANS COURBE DIT POURQUOI, ET C'EST UN REFUS MOTIVÉ. Depuis que
+       le serveur renonce à poser un axe de position quand la loi d'arrivée est
+       plate — le cas du FEXT à vitesses égales —, « Rien dans ce sens-là » se
+       lisait comme un défaut de l'outil. La raison vient du serveur, avec les
+       chiffres du calcul, et le niveau du sens reste dans les cases. */
+    const pourquoi=((r.axes||{})[SIM_XT.sens]||{}).raison||"";
     return '<div class="simXtBloc"><b>Carte</b>'+simXtSensBoutons()+
-      '<p class="simNote">Rien dans ce sens-là.</p></div>';
+      '<p class="simNote">Aucune courbe dans ce sens-là'+
+      (pourquoi?" : "+simEsc(pourquoi)
+              :". Le niveau, lui, reste au tableau des couples.")+"</p></div>";
+  }
   const axe=c.axe||[];
   const total=axe.length?axe[axe.length-1]:0;
   const n=Math.max(2,Math.min(SIM_XT_COLONNES,axe.length));
@@ -5819,12 +5891,33 @@ function simXtCarte(r){
      courbe qui reste occupe toute la place gagnée. Un cadre qui garderait sa
      taille se lirait comme un graphe vide, c'est-à-dire comme un couplage
      nul — le contresens exact que cette figure existe pour éviter. */
+  /* UN GRAPHE SANS AUCUNE COURBE NE SE POSE PAS. Depuis que le serveur refuse
+     de poser un axe de position quand la loi d'arrivée est plate — le FEXT à
+     vitesses égales, c'est-à-dire le cas ordinaire —, le cadre du sens absent
+     se dessinait quand même et ses courbes s'y posaient À PLAT sur l'axe. Un
+     trait à zéro se lit « aucun couplage », alors que le fait est « aucune
+     POSITION » : le niveau, lui, est mesuré et il est dans les cases. */
+  const aLigne=(cle)=>vus.some(f=>f[cle==="fext"?"fext":"next"]);
   const traces=[];
-  if(simXtVu("next"))
+  if(simXtVu("next")&&aLigne("next"))
     traces.push({cle:"next", titre:"NEXT — le bout proche de chaque victime"});
-  if(simXtVu("fext"))
+  if(simXtVu("fext")&&aLigne("fext"))
     traces.push({cle:"fext",
                  titre:"FEXT — le bout lointain de chaque victime"});
+  /* LE GRAPHE DES TENSIONS EST UN TRACÉ, PAS UNE GRADUATION. « mV » n'écrivait
+     jusqu'ici qu'un axe de plus à droite des deux autres : décocher NEXT et
+     FEXT laissait donc une figure vide alors que la case des volts était
+     cochée — on cherchait la courbe qu'elle promettait. Elle en dessine une
+     désormais, et elle apporte ce que les deux autres refusent par
+     construction : LE NEXT ET LE FEXT SUR LA MÊME ÉCHELLE. Les deux graphes
+     du haut ont chacun la leur — le FEXT vaut souvent une fraction du NEXT et
+     deux échelles l'une sous l'autre se comparent mal —, ce qui est juste pour
+     suivre un sens et faux pour comparer les deux. Ici l'unité est celle du
+     budget de bruit, la hauteur est commune, et le seuil du récepteur est un
+     trait unique pour les deux. */
+  if(simXtVu("volts"))
+    traces.push({cle:"volts",
+                 titre:"TENSION — les deux sens sur la même échelle"});
   const yGN=14, PAS=SIM_XT_GRAPHE+SIM_XT_ENTRE+8;
   const HG=yGN+traces.length*SIM_XT_GRAPHE
            +Math.max(0,traces.length-1)*(SIM_XT_ENTRE+8);
@@ -5841,14 +5934,31 @@ function simXtCarte(r){
   const sousSeuil=fiches.filter(f=>!f.confirmee).length;
   /* LA PHRASE DE LECTURE SUIT CE QUI EST TRACÉ. Annoncer « deux courbes par
      victime » au-dessus d'un seul graphe ferait chercher la seconde. */
-  const dit=traces.length===2
-    ? "Deux courbes par victime — le <b>NEXT</b> à son bout proche, le "+
-      "<b>FEXT</b> à son bout lointain"
-    : traces.length===1
-      ? "Une courbe par victime — le <b>"+traces[0].cle.toUpperCase()+
-        "</b>, à son bout "+(traces[0].cle==="next"?"proche":"lointain")+
-        " ; l'autre sens est éteint et se rallume d'un clic"
-      : "";
+  /* LA PHRASE SUIT LES GRAPHES QUI SONT LÀ, un par un : elle comptait les
+     tracés, ce qui annonçait « deux courbes par victime — le NEXT et le
+     FEXT » au-dessus d'un NEXT et d'un graphe de tensions. */
+  const sensVus=traces.filter(t=>t.cle!=="volts").map(t=>t.cle);
+  const dits=[];
+  if(sensVus.length===2)
+    dits.push("le <b>NEXT</b> à son bout proche, le <b>FEXT</b> à son bout "+
+              "lointain");
+  else if(sensVus.length===1)
+    dits.push("le <b>"+sensVus[0].toUpperCase()+"</b>, à son bout "+
+              (sensVus[0]==="next"?"proche":"lointain")+
+              " ; l'autre sens est éteint et se rallume d'un clic");
+  if(simXtVu("volts"))
+    dits.push("les <b>tensions</b> des deux sens sur une même échelle, en "+
+              "millivolts — le seul graphe où ils se comparent");
+  /* UN SENS COCHÉ QUE LE SERVEUR N'A PAS RENDU : la phrase le dit avec SA
+     raison, sans quoi la case cochée et le graphe absent se contrediraient
+     sous les yeux de qui vient de cliquer. */
+  for(const cle of ["next","fext"])
+    if(simXtVu(cle)&&!aLigne(cle)){
+      const pq=((r.axes||{})[cle]||{}).raison||"";
+      dits.push("<b>aucune courbe de "+cle.toUpperCase()+"</b>"+
+                (pq?" : "+simEsc(pq):" — le serveur n'en a pas rendu"));
+    }
+  const dit=dits.length ? "Par victime — "+dits.join(" · ") : "";
   h+='<p class="simXtLire">'+dit+(dit?" · d":"D")+
      "e gauche à droite, "+
      "les "+simNb(total,1)+" mm du <b>parcours de l’agresseur</b> · sur la "+
@@ -5871,11 +5981,11 @@ function simXtCarte(r){
        cuivre, et la chaleur y est toujours peinte. La retirer avec les courbes
        laisserait sur la carte un repère qu'on ne pourrait plus déplacer. */
     const i00=Math.max(0,Math.min(n-1,Math.round((SIM_XT.pos||0)*(n-1))));
-    return h+'<p class="simNote">Les deux sens sont <b>éteints</b> : il n’y a '+
-      "rien à tracer. Rallumez <b>NEXT</b> ou <b>FEXT</b> ci-dessus — le "+
-      "calcul, lui, n’a pas bougé, les chiffres restent dans les cases "+
-      "ci-dessus, et la réglette continue de promener son point sur le "+
-      "cuivre.</p>"+
+    return h+'<p class="simNote">Les trois graphes sont <b>éteints</b> : il '+
+      "n’y a rien à tracer. Rallumez <b>NEXT</b>, <b>FEXT</b> ou <b>mV</b> "+
+      "ci-dessus — le calcul, lui, n’a pas bougé, les chiffres restent dans "+
+      "les cases ci-dessus, et la réglette continue de promener son point sur "+
+      "le cuivre.</p>"+
       simXtRegle(n,total,i00,[],vus)+simXtLegende(r,lignes,pire)+"</div>";
   }
   h+='<div class="simXtCarte"><svg viewBox="0 0 '+WT+" "+simXY(HT)+
@@ -5907,9 +6017,20 @@ function simXtCarte(r){
   /* ---- LES DEUX COURBES ---- */
   const graphe=(cle,titre,y0)=>{
     let g='<g class="simXtGraphe" data-sens="'+cle+'">';
-    const champ=(cle==="fext")?"vFext":"vNext";
+    /* CE QUE CE GRAPHE-LÀ TRACE. Un seul sens pour les deux premiers ; LES
+       DEUX pour celui des tensions, puisque c'est sa raison d'être. Chaque
+       entrée dit où lire la valeur, où ranger les ordonnées pour la réglette,
+       et comment le trait se distingue de l'autre sens. */
+    const courbes=(cle==="volts")
+      ? [{champ:"vNext", ys:"yVN", id:"NEXT", opacite:1, tiret:null},
+         {champ:"vFext", ys:"yVF", id:"FEXT", opacite:0.6, tiret:"1 3"}]
+      : [{champ:(cle==="fext")?"vFext":"vNext",
+          ys:(cle==="fext")?"yFext":"yNext",
+          id:cle.toUpperCase(), opacite:1, tiret:null}];
     let mx=0;
-    for(const f of vus)for(const v of f[champ])if(v>mx)mx=v;
+    for(const f of vus)
+      for(const cb of courbes)
+        for(const v of (f[cb.champ]||[]))if(v>mx)mx=v;
     if(!(mx>0))mx=pire;
     g+='<line class="simXtAxe" x1="'+simXY(MG)+'" y1="'+
        simXY(y0+SIM_XT_GRAPHE)+'" x2="'+simXY(MG+W)+'" y2="'+
@@ -5931,14 +6052,22 @@ function simXtCarte(r){
        Chaque graphe garde SON échelle : le FEXT vaut souvent une fraction du
        NEXT, et les deux hauts n'annoncent donc pas la même tension. */
     const crans=[[0,y0+SIM_XT_GRAPHE], [0.5,y0+SIM_XT_GRAPHE/2], [1,y0+8]];
+    /* SUR LE GRAPHE DES TENSIONS, LES VOLTS PASSENT A GAUCHE : c'est l'unité
+       du graphe, et une unité principale ne se lit pas dans la marge. Le
+       pour-cent reste à droite, où la tension se trouve sur les deux autres —
+       le même trait, lu dans les deux unités, sans changer de place. */
+    const voltsAG=(cle==="volts");
     for(const [t,yy] of crans)
-      g+='<text class="simXtGrad" x="'+simXY(MG-6)+'" y="'+simXY(yy)+
-         '" text-anchor="end">'+(t?simXtPct(mx*t)+" %":"0")+"</text>";
+      g+='<text class="'+(voltsAG?"simXtGradV":"simXtGrad")+'" x="'+
+         simXY(MG-6)+'" y="'+simXY(yy)+'" text-anchor="end">'+
+         (t?(voltsAG?simEsc(simXtTension(mx*t)):simXtPct(mx*t)+" %"):"0")+
+         "</text>";
     if(simXtVu("volts"))
       for(const [t,yy] of crans)
-        g+='<text class="simXtGradV" x="'+simXY(MG+W+6)+'" y="'+simXY(yy)+
-           '" text-anchor="start">'+
-           (t?simEsc(simXtTension(mx*t)):"0")+"</text>";
+        g+='<text class="'+(voltsAG?"simXtGrad":"simXtGradV")+'" x="'+
+           simXY(MG+W+6)+'" y="'+simXY(yy)+'" text-anchor="start">'+
+           (t?(voltsAG?simXtPct(mx*t)+" %":simEsc(simXtTension(mx*t)))
+             :"0")+"</text>";
     /* LE SEUIL EN TRAIT, À SA HAUTEUR RÉELLE. Une courbe qui monte n'est pas
        une mauvaise nouvelle en soi : ce qui compte est de savoir si elle passe
        au-dessus de la marge du récepteur, et cela ne se lit pas en comparant
@@ -5956,19 +6085,32 @@ function simXtCarte(r){
       g+='<text class="simXtSeuilE" x="'+simXY(MG+W-2)+'" y="'+
          simXY(ys-3)+'" text-anchor="end">'+simEsc(simSeuilNom())+"</text>";
     }
-    for(const f of vus){
-      const pts=[], ys=[];
-      for(let i=0;i<n;i++){
-        const yy=y0+SIM_XT_GRAPHE*
-                 (1-Math.max(0,Math.min(1,(f[champ][i]||0)/mx)));
-        ys.push(yy);
-        pts.push(simXY(xs[i])+","+simXY(yy));
+    for(const f of vus)
+      for(const cb of courbes){
+        const source=f[cb.champ];
+        /* UNE COURBE QUE LE SERVEUR N'A PAS RENDUE NE SE TRACE PAS À PLAT.
+           Depuis que la ligne FEXT est refusée quand son axe n'existe pas,
+           `vFext` est un tableau de zéros : le dessiner poserait un trait sur
+           l'axe, ce qui se lit « aucun couplage » alors que le fait est
+           « aucune POSITION » — le niveau, lui, est dans les cases. */
+        if(!f[cb.champ==="vFext"?"fext":"next"])continue;
+        const pts=[], ys=[];
+        for(let i=0;i<n;i++){
+          const yy=y0+SIM_XT_GRAPHE*
+                   (1-Math.max(0,Math.min(1,((source&&source[i])||0)/mx)));
+          ys.push(yy);
+          pts.push(simXY(xs[i])+","+simXY(yy));
+        }
+        f[cb.ys]=ys;
+        const tiret=(cb.tiret!==null)?cb.tiret:f.tiret;
+        g+='<polyline class="simXtCourbe" points="'+pts.join(" ")+
+           '" stroke="'+f.couleur+'"'+
+           (tiret?' stroke-dasharray="'+tiret+'"':"")+
+           (cb.opacite<1?' opacity="'+cb.opacite+'"':"")+
+           "><title>"+simEsc(f.net+" · "+cb.id+
+                             (cle==="volts"?" — en millivolts":""))+
+           "</title></polyline>";
       }
-      f[(cle==="fext")?"yFext":"yNext"]=ys;
-      g+='<polyline class="simXtCourbe" points="'+pts.join(" ")+'" stroke="'+
-         f.couleur+'"'+(f.tiret?' stroke-dasharray="'+f.tiret+'"':"")+
-         "><title>"+simEsc(f.net+" · "+cle.toUpperCase())+"</title></polyline>";
-    }
     /* LA TENSION ÉCRITE AU PIC DE CHAQUE COURBE, sur la courbe elle-même.
        --------------------------------------------------------------------
        C'EST LA VALEUR QU'ON CHERCHE EN PREMIER, et jusqu'ici il fallait
@@ -5987,13 +6129,15 @@ function simXtCarte(r){
        On empile alors vers le haut, cran par cran. */
     if(simXtVu("volts")){
       const poses=[];
-      for(const f of vus){
-        const v=f[champ];
+      for(const f of vus)
+      for(const cb of courbes){
+        const v=f[cb.champ]||[];
         let im=0;
         for(let i=1;i<n;i++)if((v[i]||0)>(v[im]||0))im=i;
         if(!(v[im]>0))continue;
-        const ysF=f[(cle==="fext")?"yFext":"yNext"];
-        const yp=ysF?ysF[im]:y0;
+        const ysF=f[cb.ys];
+        if(!ysF)continue;
+        const yp=ysF[im];
         /* AU-DESSUS DU PIC, SAUF QUAND IL TOUCHE LE HAUT. La courbe la plus
            forte culmine au ras du plafond, et son étiquette irait alors se
            poser dans le titre du graphe : on la passe DESSOUS, où la place
@@ -6017,7 +6161,7 @@ function simXtCarte(r){
         g+='<text class="simXtSommet" x="'+simXY(xs[im])+'" y="'+simXY(yy)+
            '" text-anchor="'+bord+'" fill="'+f.couleur+'">'+
            simEsc(simXtTension(v[im]))+"<title>"+
-           simEsc(f.net+" · "+cle.toUpperCase()+" — le pire point de cette "+
+           simEsc(f.net+" · "+cb.id+" — le pire point de cette "+
                   "courbe : "+simXtPct(v[im])+" % de l’agresseur, soit "+
                   simXtTension(v[im])+", à "+
                   simNb(total*im/Math.max(1,n-1),2)+" mm")+
@@ -6079,7 +6223,8 @@ function simXtCarte(r){
       return '<circle id="'+id+j+'" class="simXtPt" cx="'+simXY(xs[i0])+
              '" cy="'+simXY(ys[i0])+'" r="3.4"/>';
     };
-    h+=pt("simXtPtN-",f.yNext)+pt("simXtPtF-",f.yFext);
+    h+=pt("simXtPtN-",f.yNext)+pt("simXtPtF-",f.yFext)+
+       pt("simXtPtVN-",f.yVN)+pt("simXtPtVF-",f.yVF);
   });
   h+="</svg></div>";
 
@@ -6239,12 +6384,15 @@ const SIM_XT_VOIR=[
          "fraction du NEXT, et deux échelles l'une sous l'autre se comparent "+
          "mal. L'éteindre rend toute la hauteur à celui qu'on suit."},
   {cle:"volts", nom:"mV",
-   titre:"Écrire aussi le bruit en VOLTS — sur les cases des victimes, sur "+
-         "la graduation de chaque graphe et sous la réglette. C'est le "+
-         "pour-cent multiplié par l'amplitude saisie dans la rangée "+
-         "« Signal » ; le décocher ne laisse que la mesure, qui, elle, ne "+
-         "dépend que du cuivre. Aucun calcul ne bouge dans un sens ni dans "+
-         "l'autre."}
+   titre:"Tracer le graphe des TENSIONS — les deux sens de chaque victime sur"+
+         " UNE MÊME échelle, en millivolts, et le seuil du récepteur à sa "+
+         "hauteur. C'est le seul des trois graphes où le NEXT et le FEXT se "+
+         "comparent : les deux autres ont chacun la leur. Écrit aussi les "+
+         "volts sur les cases des victimes, sur la graduation de chaque "+
+         "graphe et sous la réglette. C'est le pour-cent multiplié par "+
+         "l'amplitude saisie dans la rangée « Signal » ; aucun calcul ne "+
+         "bouge dans un sens ni dans l'autre. Il se lit SEUL : décocher NEXT "+
+         "et FEXT ne laisse plus une figure vide."}
 ];
 
 function simXtVoirCases(){
@@ -7480,7 +7628,10 @@ function simXtRapportTexte(r){
           "·10⁶ m/s   écart "+nb(100*(c.ecart_vitesse||0),1)+" %");
       if(c.resolution_next)
         t("            résolution "+nb(c.resolution_next,2)+" mm (NEXT), "+
-          nb(c.resolution_fext,2)+" mm (FEXT)");
+          (c.resolution_fext?nb(c.resolution_fext,2)+" mm (FEXT)"
+                            :"pas d'axe pour le FEXT"));
+      if(c.fext_localise===false&&c.fext_raison)
+        t("            FEXT sans axe : "+c.fext_raison);
       if(!c.confirmee&&c.raison)t("            "+c.raison);
     }
     t("");
