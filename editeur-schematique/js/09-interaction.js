@@ -57,6 +57,30 @@ function hitWire(wx,wy){
   }
   return -1;
 }
+function ptSegDistSq(px, py, x1, y1, x2, y2){
+  const dx=x2-x1, dy=y2-y1, len2=dx*dx+dy*dy||1;
+  let t=((px-x1)*dx+(py-y1)*dy)/len2; t=Math.max(0,Math.min(1,t));
+  const qx=x1+t*dx, qy=y1+t*dy;
+  return (qx-px)**2+(qy-py)**2;
+}
+function hitDrawing(wx,wy){
+  const tol=8/S.scale;
+  const tol2=tol*tol;
+  const list=S.drawings||[];
+  for(let i=list.length-1;i>=0;i--){
+    const d=list[i];
+    if(d.shape==="rect"){
+      const x1=d.x1, y1=d.y1, x2=d.x2, y2=d.y2;
+      if(ptSegDistSq(wx,wy,x1,y1,x2,y1)<tol2||
+         ptSegDistSq(wx,wy,x2,y1,x2,y2)<tol2||
+         ptSegDistSq(wx,wy,x2,y2,x1,y2)<tol2||
+         ptSegDistSq(wx,wy,x1,y2,x1,y1)<tol2) return d;
+    }else{
+      if(ptSegDistSq(wx,wy,d.x1,d.y1,d.x2,d.y2)<tol2) return d;
+    }
+  }
+  return null;
+}
 
 /* Pointer Events : une seule implémentation pour souris, stylet et tactile.
    La capture garantit que le glissement continue même hors du canvas. */
@@ -222,13 +246,14 @@ function applyEnds(ends,dx,dy){
   if(ends.length)touchWires();
 }
 function moveSelBy(dx,dy){
-  const els=selEls(), wires=selWires();
-  if(!els.length&&!wires.length)return;
+  const els=selEls(), wires=selWires(), drawings=selDrawings();
+  if(!els.length&&!wires.length&&!drawings.length)return;
   const anchors=anchorKeys(els,wires);
   const ends=endsAt(anchors);
   const probes=probeFollowers(anchors,new Set(els));
   const contacts=pinContacts(els);
   for(const el of els){el.x+=dx;el.y+=dy;}
+  for(const d of drawings){d.x1+=dx;d.y1+=dy;d.x2+=dx;d.y2+=dy;}
   applyProbes(probes,dx,dy);
   applyEnds(ends,dx,dy);
   reconnectContacts(contacts);   // une flèche suffit à décoller deux broches
@@ -240,6 +265,7 @@ function moveSelBy(dx,dy){
 function beginDrag(p,handle,detach){
   const els=handle?[]:selEls();
   const wires=handle?[]:selWires();
+  const drawings=handle?[]:selDrawings();
   let ends, anchors=null;
   if(handle){
     const k=handle.e===1?key(handle.w.x1,handle.w.y1):key(handle.w.x2,handle.w.y2);
@@ -260,6 +286,7 @@ function beginDrag(p,handle,detach){
   }
   S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:!!handle,
           items:els.map(c=>({el:c,x0:c.x,y0:c.y})),
+          drawings:drawings.map(d=>({d,x1:d.x1,y1:d.y1,x2:d.x2,y2:d.y2})),
           probes:probeFollowers(anchors,new Set(els)),   // vide si Ctrl+glisser
           probe:null,
           contacts:pinContacts(els),   // broches collées à un symbole qui reste
@@ -294,16 +321,27 @@ function finishMarquee(){
       if(Math.min(w.x1,w.x2)>=x1&&Math.max(w.x1,w.x2)<=x2&&
          Math.min(w.y1,w.y2)>=y1&&Math.max(w.y1,w.y2)<=y2)S.selW.add(w);
     }
+    for(const d of (S.drawings||[])){        // traits entièrement contenus
+      if(Math.min(d.x1,d.x2)>=x1&&Math.max(d.x1,d.x2)<=x2&&
+         Math.min(d.y1,d.y2)>=y1&&Math.max(d.y1,d.y2)<=y2)S.selD.add(d.id);
+    }
   }
   S.marquee=null;refreshPanels();draw();
 }
 
+let schLongpressTimer=null, schLongpressStart=null;
+function cancelSchLongpress(){
+  if(schLongpressTimer){clearTimeout(schLongpressTimer);schLongpressTimer=null;}
+  schLongpressStart=null;
+}
+
 cv.addEventListener("pointerdown",e=>{
   PTR.set(e.pointerId,{x:e.clientX,y:e.clientY});
-  if(e.pointerType!=="mouse")e.preventDefault();
+  if(e.pointerType!=="mouse"&&e.cancelable)e.preventDefault();
 
   // deux doigts : pincement pour zoomer et déplacer la vue
   if(PTR.size===2){
+    cancelSchLongpress();
     finishDrag();finishMarquee();S.pan=null;
     const [a,b]=[...PTR.values()];
     pinch={d:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),
@@ -311,6 +349,26 @@ cv.addEventListener("pointerdown",e=>{
     return;
   }
   if(PTR.size>2)return;
+
+  // appui long (tactile) : déclenche menu contextuel / annulation
+  if(e.pointerType==="touch"&&e.button===0){
+    cancelSchLongpress();
+    schLongpressStart={x:e.clientX,y:e.clientY,id:e.pointerId};
+    schLongpressTimer=setTimeout(()=>{
+      schLongpressTimer=null;
+      if(typeof document!=="undefined"&&document.body){
+        const rip=document.createElement("div");
+        rip.className="longpress-ripple";
+        rip.style.left=e.clientX+"px";
+        rip.style.top=e.clientY+"px";
+        document.body.appendChild(rip);
+        setTimeout(()=>{if(rip.parentNode)rip.parentNode.removeChild(rip);},500);
+      }
+      try{
+        cv.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,cancelable:true,clientX:e.clientX,clientY:e.clientY,button:2}));
+      }catch(_){}
+    },550);
+  }
   try{cv.setPointerCapture(e.pointerId);}catch(_){}
 
   const p=mpos(e);
@@ -319,7 +377,7 @@ cv.addEventListener("pointerdown",e=>{
      câblage pendant le glissement. Ctrl est désormais pris par la sélection
      multiple, il fallait bien loger le détachement quelque part. */
   const onSomething = e.altKey && S.mode==="select" && !!(
-    hitText(p.x,p.y)||hitNetLabel(p.x,p.y)||hitComp(p.x,p.y)||hitWire(p.x,p.y)>=0);
+    hitText(p.x,p.y)||hitNetLabel(p.x,p.y)||hitComp(p.x,p.y)||hitWire(p.x,p.y)>=0||hitDrawing(p.x,p.y));
   if(e.button===1||(e.button===0&&e.altKey&&!onSomething)){
     S.pan={x:e.clientX,y:e.clientY,ox:S.ox,oy:S.oy};e.preventDefault();return;
   }
@@ -337,13 +395,37 @@ cv.addEventListener("pointerdown",e=>{
   // Ctrl et Maj font la même chose : ajouter à la sélection (ou en retirer)
   const addSel=e.shiftKey||e.ctrlKey||e.metaKey;
   if(S.mode==="mesure"){rpMesClic(p.x,p.y);draw();return;}
-  if(S.mode==="wire"){
+  if(S.mode==="draw"){
+    const pt={x:snap(p.x),y:snap(p.y)};
+    if(!S.drawStart){
+      S.drawStart=pt;
+    }else{
+      if(pt.x!==S.drawStart.x||pt.y!==S.drawStart.y){
+        push();
+        const sh=S.drawShape||"line";
+        const nd={id:S.uid++,shape:sh,type:sh,x1:S.drawStart.x,y1:S.drawStart.y,x2:pt.x,y2:pt.y,
+                  style:"dashed",width:2,color:"#6b7280",label:""};
+        if(!S.drawings)S.drawings=[];
+        S.drawings.push(nd);
+        clearSel();
+        S.selD.add(nd.id);
+      }
+      S.drawStart=null;
+    }
+    refreshPanels();draw();return;
+  }
+  if(S.mode==="wire"||S.mode==="bus"){
+    const isBus=(S.mode==="bus");
     const pin=nearestPin(p.x,p.y,(e.pointerType==="mouse"?12:20)/S.scale);
     const pt=pin?{x:pin.x,y:pin.y}:{x:snap(p.x),y:snap(p.y)};
     if(!S.wireStart){S.wireStart=pt;}
     else{
       const segs=routeL(S.wireStart,pt);
-      if(segs.length){push();S.wires.push(...segs);touchWires();resolveSplits();}
+      if(segs.length){
+        push();
+        for(const s of segs){if(isBus)s.bus=true;S.wires.push(s);}
+        touchWires();resolveSplits();
+      }
       S.wireStart=pin?null:pt;   // arrivée sur une broche = fin de fil
     }
     refreshPanels();draw();return;
@@ -352,8 +434,48 @@ cv.addEventListener("pointerdown",e=>{
     const el=hitComp(p.x,p.y);
     if(el){push();deleteComps([el.id]);refreshPanels();draw();return;}
     const wi=hitWire(p.x,p.y);
-    if(wi>=0){push();S.selW.delete(S.wires[wi]);S.wires.splice(wi,1);touchWires();refreshPanels();draw();}
+    if(wi>=0){push();S.selW.delete(S.wires[wi]);S.wires.splice(wi,1);touchWires();refreshPanels();draw();return;}
+    const hd=hitDrawing(p.x,p.y);
+    if(hd){
+      push();
+      const idx=(S.drawings||[]).indexOf(hd);
+      if(idx>=0)S.drawings.splice(idx,1);
+      S.selD.delete(hd.id);
+      refreshPanels();draw();return;
+    }
     return;
+  }
+  // poignées d'extrémités des traits sélectionnés (étirement)
+  if(!addSel){
+    for(const d of selDrawings()){
+      const tol=(e.pointerType==="mouse"?9:18)/S.scale;
+      if(Math.hypot(p.x-d.x1,p.y-d.y1)<=tol){
+        S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:false,items:[],
+                probes:[],probe:null,ends:[],contacts:[],
+                drawingHandle:{d,e:1,x0:d.x1,y0:d.y1}};
+        return;
+      }
+      if(Math.hypot(p.x-d.x2,p.y-d.y2)<=tol){
+        S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:false,items:[],
+                probes:[],probe:null,ends:[],contacts:[],
+                drawingHandle:{d,e:2,x0:d.x2,y0:d.y2}};
+        return;
+      }
+      if(d.shape==="rect"){
+        if(Math.hypot(p.x-d.x2,p.y-d.y1)<=tol){
+          S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:false,items:[],
+                  probes:[],probe:null,ends:[],contacts:[],
+                  drawingHandle:{d,e:3,x0:d.x2,y0:d.y1}};
+          return;
+        }
+        if(Math.hypot(p.x-d.x1,p.y-d.y2)<=tol){
+          S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:false,items:[],
+                  probes:[],probe:null,ends:[],contacts:[],
+                  drawingHandle:{d,e:4,x0:d.x1,y0:d.y2}};
+          return;
+        }
+      }
+    }
   }
   // libellé de composant : il se saisit avant le symbole
   const ht=hitText(p.x,p.y);
@@ -381,7 +503,21 @@ cv.addEventListener("pointerdown",e=>{
       "le panneau des propriétés permet de la masquer.";
     draw();return;
   }
-  // sélection : composant d'abord, puis fil
+  // bloc hiérarchique sur la feuille racine (page 0)
+  if(S.page===0 && typeof hitSheetBlock==="function"){
+    const sb=hitSheetBlock(p.x,p.y);
+    if(sb){
+      if(!addSel)clearSel();
+      S.selBlock=sb.sheetIndex;
+      S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:false,items:[],
+              probes:[],probe:null,ends:[],contacts:[],
+              sheetBlock:{sheetIndex:sb.sheetIndex,x0:sb.x,y0:sb.y}};
+      document.getElementById("fHint").textContent=
+        "Bloc « "+sb.name+" » sélectionné · glisser pour déplacer · double-clic pour ouvrir la feuille.";
+      refreshPanels();draw();return;
+    }
+  }
+  // sélection : composant d'abord, puis fil, puis trait
   const el=hitComp(p.x,p.y);
   if(el){
     if(addSel){
@@ -412,6 +548,16 @@ cv.addEventListener("pointerdown",e=>{
     beginDrag(p,handle,e.altKey);
     refreshPanels();draw();return;
   }
+  const hd=hitDrawing(p.x,p.y);
+  if(hd){
+    if(addSel){
+      if(S.selD.has(hd.id)){S.selD.delete(hd.id);refreshPanels();draw();return;}
+      S.selD.add(hd.id);
+    }
+    else if(!S.selD.has(hd.id)){clearSel();S.selD.add(hd.id);}
+    beginDrag(p,null,e.altKey);
+    refreshPanels();draw();return;
+  }
   if(e.pointerType!=="mouse"){
     // au doigt, glisser sur le vide déplace la vue : plus naturel qu'un lasso
     S.pan={x:e.clientX,y:e.clientY,ox:S.ox,oy:S.oy};
@@ -425,6 +571,12 @@ cv.addEventListener("pointerdown",e=>{
 
 cv.addEventListener("pointermove",e=>{
   if(PTR.has(e.pointerId))PTR.set(e.pointerId,{x:e.clientX,y:e.clientY});
+
+  if(schLongpressTimer&&schLongpressStart){
+    if(Math.hypot(e.clientX-schLongpressStart.x,e.clientY-schLongpressStart.y)>10){
+      cancelSchLongpress();
+    }
+  }
 
   if(pinch&&PTR.size>=2){
     const [a,b]=[...PTR.values()];
@@ -453,6 +605,21 @@ cv.addEventListener("pointermove",e=>{
       S.drag.moved=true;
       S.drag.before=serialize();   // l'état est encore intact à cet instant
     }
+    if(S.drag.drawingHandle){
+      const dh=S.drag.drawingHandle;
+      if(dh.e===1){dh.d.x1=snap(dh.x0+dx);dh.d.y1=snap(dh.y0+dy);}
+      else if(dh.e===2){dh.d.x2=snap(dh.x0+dx);dh.d.y2=snap(dh.y0+dy);}
+      else if(dh.e===3){dh.d.x2=snap(dh.x0+dx);dh.d.y1=snap(dh.y0+dy);}
+      else if(dh.e===4){dh.d.x1=snap(dh.x0+dx);dh.d.y2=snap(dh.y0+dy);}
+      draw();return;
+    }
+    if(S.drag.sheetBlock){
+      const targetPage=S.pages[S.drag.sheetBlock.sheetIndex];
+      if(targetPage){
+        targetPage.blockPos={x:snap(S.drag.sheetBlock.x0+dx),y:snap(S.drag.sheetBlock.y0+dy)};
+      }
+      draw();return;
+    }
     if(S.drag.text){
       const t=S.drag.text;
       setTextOff(t.el,t.kind,t.x0+dx,t.y0+dy);
@@ -468,6 +635,10 @@ cv.addEventListener("pointermove",e=>{
     }
     if(S.drag.probe){probeDragMove(p);draw();return;}
     for(const it of S.drag.items){it.el.x=it.x0+dx;it.el.y=it.y0+dy;}
+    for(const it of (S.drag.drawings||[])){
+      it.d.x1=snap(it.x1+dx);it.d.y1=snap(it.y1+dy);
+      it.d.x2=snap(it.x2+dx);it.d.y2=snap(it.y2+dy);
+    }
     applyProbes(S.drag.probes,dx,dy);
     applyEnds(S.drag.ends,dx,dy);  // aucune copie profonde : les extrémités
     draw();return;                 // concernées sont repérées une fois au départ
@@ -492,14 +663,15 @@ cv.addEventListener("pointermove",e=>{
   if(S.mode==="select"){
     // indice de survol : le curseur annonce ce qui est saisissable — libellés
     // compris, sans quoi personne ne devinerait qu'ils se déplacent
-    cv.style.cursor=(hitText(p.x,p.y)||hitNetLabel(p.x,p.y)||hitComp(p.x,p.y)||wi>=0)
+    cv.style.cursor=(hitText(p.x,p.y)||hitNetLabel(p.x,p.y)||hitComp(p.x,p.y)||wi>=0||hitDrawing(p.x,p.y))
       ? "move" : "crosshair";
   }
   S.hoverPin = (S.mode==="wire")?nearestPin(p.x,p.y,12/S.scale):null;
-  if(S.mode==="wire"||S.place||hoverChanged)draw();
+  if(S.mode==="wire"||S.place||(S.mode==="draw"&&S.drawStart)||hoverChanged)draw();
 });
 
 function endPointer(e){
+  cancelSchLongpress();
   PTR.delete(e.pointerId);
   if(pinch&&PTR.size<2)pinch=null;
   if(PTR.size>0)return;
@@ -513,11 +685,36 @@ window.addEventListener("pointercancel",endPointer);
 cv.addEventListener("contextmenu",e=>{
   e.preventDefault();
   if(S.wireStart){S.wireStart=null;draw();}
+  else if(S.drawStart){S.drawStart=null;draw();}
   else if(S.place){S.place=null;setPalette(null);draw();}
+  else{
+    const p=mpos(e);
+    if(selCount() === 0 && typeof hitComp === "function"){
+      const el = hitComp(p.x, p.y);
+      if(el){ S.sel.add(el.id); refreshPanels(); draw(); }
+      else if(typeof hitWire === "function"){
+        const wi = hitWire(p.x, p.y);
+        if(wi >= 0){ S.selW.add(S.wires[wi]); refreshPanels(); draw(); }
+      }
+    }
+    if(selCount() > 0 && typeof iaAfficherMenuContextuel === "function"){
+      iaAfficherMenuContextuel(e);
+      return;
+    }
+    clearSel(); refreshPanels(); draw();
+  }
 });
 cv.addEventListener("dblclick",e=>{
   if(S.wireStart){S.wireStart=null;draw();return;}
+  if(S.drawStart){S.drawStart=null;draw();return;}
   const p=mpos(e);
+  if(S.page===0 && typeof hitSheetBlock==="function"){
+    const sb=hitSheetBlock(p.x,p.y);
+    if(sb){
+      gotoPage(sb.sheetIndex);
+      return;
+    }
+  }
   const ht=hitText(p.x,p.y);
   if(ht&&textOff(ht.el,ht.kind)){
     push();setTextOff(ht.el,ht.kind,0,0);draw();return;
@@ -527,6 +724,12 @@ cv.addEventListener("dblclick",e=>{
     push();
     for(const w of hn.net.wires)delete w.lblOff;
     draw();
+    return;
+  }
+  const comp=hitComp(p.x,p.y);
+  if(comp&&typeof ceOpen==="function"){
+    ceOpen(comp);
+    return;
   }
 });
 cv.addEventListener("auxclick",e=>{if(e.button===1)e.preventDefault();});

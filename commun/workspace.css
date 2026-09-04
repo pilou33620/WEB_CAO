@@ -34,8 +34,8 @@
 #dockB > .pnl{flex:1 1 0;border-right:1px solid var(--border)}
 .dock > .pnl ~ .pnl{border-top:1px solid var(--border)}
 #dockB > .pnl ~ .pnl{border-top:none;border-left:1px solid var(--border)}
-.pnl.collapsed{flex:0 0 auto !important}
-.pnl.collapsed > .pnl-body{display:none}
+.pnl.collapsed{flex:0 0 auto !important;height:auto !important}
+.pnl.collapsed > .pnl-body{display:none !important}
 .pnl.drop-src{opacity:.4}
 
 .pnl-head{
@@ -59,6 +59,8 @@
 }
 .pnl-btn:hover{border-color:var(--border2);color:#fff;background:#22252b}
 .pnl.collapsed .pnl-btn[data-act=collapse]{transform:rotate(-90deg)}
+.pnl-btn[data-act=maximize]{display:none}
+.pnl.floating .pnl-btn[data-act=maximize]{display:inline-flex}
 
 .pnl-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .pnl-bar{
@@ -94,7 +96,9 @@
   position:absolute;pointer-events:auto;border:1px solid var(--border2);
   border-radius:7px;box-shadow:0 18px 44px rgba(0,0,0,.55);
 }
+#floatLayer .pnl.maximized{border-radius:0;box-shadow:none;border-left:none;border-right:none}
 #floatLayer .pnl > .pnl-head{border-radius:6px 6px 0 0}
+#floatLayer .pnl.maximized > .pnl-head{border-radius:0}
 #floatLayer .pnl.collapsed{height:auto !important}
 #floatLayer .pnl.collapsed > .pnl-head{border-radius:6px;border-bottom:none}
 .fres{position:absolute;z-index:2;display:none;touch-action:none}

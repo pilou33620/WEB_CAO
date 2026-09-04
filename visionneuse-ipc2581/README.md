@@ -96,6 +96,17 @@ couche mais par **nature d'objet** : plans, pistes, pastilles, perçages, textes
 boîtiers, repères, contour. Un plan de masse couvre tout — c'est en le coupant
 qu'on voit ce qu'il y a dessous.
 
+**Chaque contour de plan est rempli séparément**, et ce n'est pas un détail
+d'implémentation : `evenodd` — la règle qui fait d'un dégagement un trou — est
+un **OU exclusif**, pas une union. Tous les contours d'une couche versés dans un
+seul chemin, deux dégagements qui se recouvraient se rendaient mutuellement leur
+cuivre (un croissant de cuivre entre deux broches serrées, là où le fondeur n'en
+a pas laissé) et deux îlots de plan qui se recouvraient s'annulaient en un trou
+noir ayant la forme de leur intersection. La bonne granularité est le contour :
+dedans, `evenodd` fait le trou qu'il faut ; dehors, deux remplissages
+successifs sont une union. Corrigé le 2026-09-03, deux cas de non-régression
+dans [test/harness-sim.js](test/harness-sim.js).
+
 **Se retourner** (`B`) regarde la carte par en dessous : la pile de couches
 s'inverse et l'image est en miroir, comme quand on retourne la carte dans la
 main.

@@ -181,6 +181,27 @@ input.ltv.manque{border-color:#6b5a1e;background:#191710}
 input.ltv.manque::placeholder{color:var(--yellow);opacity:.55}
 /* Saisie ici, et non lue dans le fichier : la distinction doit rester visible. */
 input.ltv.saisi{border-color:var(--blue);color:#dff0ff}
+select.ltRoleSelect{
+  background:#101216;border:1px solid var(--border2);color:var(--txt-dim);
+  border-radius:3px;padding:1px 3px;font-family:var(--mono);font-size:9.5px;
+  cursor:pointer;margin-left:6px;vertical-align:middle;
+}
+select.ltRoleSelect:focus{outline:none;border-color:var(--blue)}
+select.ltRoleSelect.saisi{border-color:var(--blue);color:#dff0ff;background:#0e1724}
+select.ltRoleSelect option{background:#15181e;color:var(--txt)}
+
+/* Badges de fonction des couches dans la liste d'empilage */
+.badgeFonction{
+  display:inline-block;font-size:9px;padding:1px 4px;border-radius:3px;
+  font-family:var(--mono);letter-spacing:.05em;text-transform:uppercase;
+  line-height:1.2;vertical-align:middle;margin-left:4px;
+}
+.badgeFonction.fn-plan{background:#2a2312;color:var(--yellow);border:1px solid #5a4718}
+.badgeFonction.fn-sig{background:#12241b;color:var(--green);border:1px solid #1f4a33}
+.badgeFonction.fn-diel{background:#1c1d1a;color:#9b9e93;border:1px solid #363a32}
+.badgeFonction.fn-masque{background:#22172f;color:#c084fc;border:1px solid #4a2d6b}
+.badgeFonction.fn-seri{background:#1a1c22;color:#d0d4dc;border:1px solid #383c48}
+.badgeFonction.fn-autre{background:#112220;color:var(--accent);border:1px solid #1b453f}
 
 
 /* empilage : une bande par couche, hauteur proportionnelle à l'épaisseur */

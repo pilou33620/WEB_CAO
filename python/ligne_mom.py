@@ -2472,3 +2472,245 @@ def cascade_to_s(abcd, z_ref=50.0):
     s21 = 2.0 * z / den
     s22 = (-a * z + b - c * z * z + d * z) / den
     return np.array([[s11, s12], [s21, s22]], dtype=complex)
+
+
+# ==========================================================================
+# BILAN DE SANTE DU SIGNAL ET REPARTITION SPECTRALE DU RETOUR (CAVITE / PONT)
+# ==========================================================================
+
+def repartition_retour_plans(freq, l_cavite, c_plans, l_pont=None,
+                             esr_pont=0.0, c_pont=None):
+    """Partage du courant de retour entre cavite et pont de decouplage.
+
+    A la frequence `freq`, le retour qui traverse entre deux plans de references
+    differentes se partage entre le courant de deplacement de la cavite
+    inter-plans et le courant traversant le condensateur de decouplage (pont).
+
+    Rend (part_pont, part_cavite) : deux fractions entre 0.0 et 1.0 (somme = 1.0).
+    """
+    omega = 2.0 * np.pi * float(freq)
+    if omega <= 0.0:
+        return (0.0, 1.0) if l_pont is None else (1.0, 0.0)
+
+    def _branche(l_serie, c_serie, r_serie):
+        z = complex(r_serie, omega * float(l_serie))
+        if c_serie and c_serie > 0:
+            z += 1.0 / (1j * omega * float(c_serie))
+        return z
+
+    z_cav = _branche(l_cavite, c_plans, 0.0)
+    if l_pont is None:
+        return 0.0, 1.0
+
+    z_pont = _branche(l_pont, c_pont, esr_pont)
+
+    # Les courants se partagent en raison inverse des impedances (admittances)
+    y_cav = 1.0 / max(abs(z_cav), 1e-15)
+    y_pont = 1.0 / max(abs(z_pont), 1e-15)
+    tot = y_cav + y_pont
+    if tot <= 0.0:
+        return 0.0, 1.0
+    return y_pont / tot, y_cav / tot
+
+
+def spectre_signal_trapeze(f0, tr, v0=3.3, nb_harmoniques=10):
+    """Amplitudes des harmoniques impaires d'un signal carre a fronts finis.
+
+    Rend une liste de dicts pour les premieres harmoniques impaires :
+    [{"harmonique": n, "freq": f_n, "amplitude": A_n, "puissance_relative": P_n}]
+    """
+    f0 = float(f0)
+    tr = max(float(tr), 1e-15)
+    v0 = float(v0)
+    harmoniques = []
+    p_totale = 0.0
+    for k in range(nb_harmoniques):
+        n = 2 * k + 1  # 1, 3, 5, 7, ...
+        fn = n * f0
+        arg = np.pi * n * f0 * tr
+        sinc = np.sin(arg) / arg if abs(arg) > 1e-12 else 1.0
+        an = abs(4.0 * v0 / (n * np.pi) * sinc)
+        pn = an ** 2
+        p_totale += pn
+        harmoniques.append({"harmonique": n, "freq": fn, "amplitude": an, "p": pn})
+
+    for h in harmoniques:
+        h["puissance_relative"] = h["p"] / p_totale if p_totale > 0 else 0.0
+        del h["p"]
+    return harmoniques
+
+
+def bilan_sante_transition(l_boucle, c_totale, param_cavite, z0=50.0,
+                           y_depart=0.0, y_arrivee=0.0,
+                           f0=10e3, tr=1e-9, v0=3.3, nb_harmoniques=10):
+    """Bilan de sante du signal a travers la transition et sa traversee de plan.
+
+    Calcule pour chaque harmonique impaire (de la fondamentale f0 jusqu'a la
+    nb_harmoniques-ieme) et pour des points de sonde haute frequence jusqu'au
+    genou du front (f_knee = 0.35 / tr) :
+      - L'attenuation en transmission (S21 en dB)
+      - Le dephasage (degres)
+      - La repartition du courant de retour (% decouplage vs % cavite)
+
+    Evalue un score global de reconstruction du signal (0 a 100 %).
+    """
+    f0 = float(f0) if f0 and f0 > 0 else 10e3
+    tr = float(tr) if tr and tr > 0 else 1e-9
+    z0 = float(z0) if z0 and z0 > 0 else 50.0
+    f_knee = 0.35 / tr
+
+    spectre = spectre_signal_trapeze(f0, tr, v0=v0, nb_harmoniques=nb_harmoniques)
+
+    a_cavite = bool(param_cavite and param_cavite.get("c_plans") is not None
+                    and param_cavite.get("l_cavite") is not None)
+
+    def _evaluer_freq(f_hz):
+        if a_cavite:
+            z_trav = impedance_traversee_plans(
+                f_hz, param_cavite["l_cavite"], param_cavite["c_plans"],
+                l_pont=param_cavite.get("l_pont"),
+                esr_pont=param_cavite.get("esr_pont", 0.0),
+                c_pont=param_cavite.get("c_pont"))
+
+            part_pont, part_cav = repartition_retour_plans(
+                f_hz, param_cavite["l_cavite"], param_cavite["c_plans"],
+                l_pont=param_cavite.get("l_pont"),
+                esr_pont=param_cavite.get("esr_pont", 0.0),
+                c_pont=param_cavite.get("c_pont"))
+            part_pont_pct = round(part_pont * 100.0, 1)
+            part_cavite_pct = round(part_cav * 100.0, 1)
+        else:
+            z_trav = 0.0
+            part_pont_pct = 0.0
+            part_cavite_pct = 0.0
+
+        mat = abcd_via_complet(l_boucle, c_totale, f_hz,
+                               y_depart=y_depart, y_arrivee=y_arrivee,
+                               z_traversee=z_trav)
+        s = cascade_to_s(mat, z_ref=z0)
+        s21 = s[1, 0]
+        att_db = 20.0 * np.log10(max(abs(s21), 1e-12))
+        phase_deg = math.degrees(np.angle(s21))
+
+        res = {
+            "s21": s21,
+            "attenuation_db": round(att_db, 3),
+            "phase_deg": round(phase_deg, 3),
+            "part_pont_pct": part_pont_pct,
+            "part_cavite_pct": part_cavite_pct,
+            "z_traversee_ohm": round(abs(z_trav), 3),
+        }
+        if not a_cavite:
+            res["part_vias_gnd_pct"] = 100.0
+        return res
+
+    # 1. Analyse des harmoniques demandees
+    harmoniques_eval = []
+    tau_0 = None
+    for item in spectre:
+        fn = item["freq"]
+        ev = _evaluer_freq(fn)
+        if tau_0 is None:
+            phi_rad = math.radians(ev["phase_deg"])
+            omega_1 = 2.0 * np.pi * fn
+            tau_0 = -phi_rad / omega_1 if omega_1 > 0 else 0.0
+
+        phi_rad = math.radians(ev["phase_deg"])
+        disp_rad = phi_rad + 2.0 * np.pi * fn * tau_0
+        ev["dispersion_deg"] = round(math.degrees(disp_rad), 3)
+
+        h_dict = {
+            "harmonique": item["harmonique"],
+            "freq_hz": fn,
+            "amplitude_v": round(item["amplitude"], 4),
+            "puissance_relative": round(item["puissance_relative"], 4),
+            "attenuation_db": ev["attenuation_db"],
+            "phase_deg": ev["phase_deg"],
+            "dispersion_deg": ev["dispersion_deg"],
+            "part_pont_pct": ev["part_pont_pct"],
+            "part_cavite_pct": ev["part_cavite_pct"],
+            "z_traversee_ohm": ev["z_traversee_ohm"],
+            "module_s21": abs(ev["s21"]),
+        }
+        if "part_vias_gnd_pct" in ev:
+            h_dict["part_vias_gnd_pct"] = ev["part_vias_gnd_pct"]
+        harmoniques_eval.append(h_dict)
+
+    # 2. Points de sondes haute frequence jusqu'au genou (HF / front)
+    ratios_hf = [0.05, 0.15, 0.35, 0.70, 1.0]
+    sondes_hf = []
+    for r in ratios_hf:
+        fhf = r * f_knee
+        ev = _evaluer_freq(fhf)
+        hf_dict = {
+            "nom": "%.0f%% f_knee" % (r * 100),
+            "freq_hz": round(fhf, 1),
+            "attenuation_db": ev["attenuation_db"],
+            "phase_deg": ev["phase_deg"],
+            "part_pont_pct": ev["part_pont_pct"],
+            "part_cavite_pct": ev["part_cavite_pct"],
+            "z_traversee_ohm": ev["z_traversee_ohm"],
+        }
+        if "part_vias_gnd_pct" in ev:
+            hf_dict["part_vias_gnd_pct"] = ev["part_vias_gnd_pct"]
+        sondes_hf.append(hf_dict)
+
+    # 3. Calcul du score de fidelite / reconstruction du signal
+    # Evalue la preservation du front montant (bande 1 MHz a f_knee)
+    # combinant la transmission spectrale sans reflexion et la preservation du temps de montee.
+    freq_sweep = np.logspace(np.log10(1e6), np.log10(max(f_knee, 2e6)), 40)
+    scores_sweep = []
+    for f in freq_sweep:
+        if a_cavite:
+            zt = impedance_traversee_plans(
+                f, param_cavite["l_cavite"], param_cavite["c_plans"],
+                l_pont=param_cavite.get("l_pont"),
+                esr_pont=param_cavite.get("esr_pont", 0.0),
+                c_pont=param_cavite.get("c_pont"))
+        else:
+            zt = 0.0
+        mat = abcd_via_complet(l_boucle, c_totale, f,
+                               y_depart=y_depart, y_arrivee=y_arrivee,
+                               z_traversee=zt)
+        s = cascade_to_s(mat, z_ref=z0)
+        s21 = abs(s[1, 0])
+        s11 = abs(s[0, 0])
+        scores_sweep.append(s21 * max(0.0, 1.0 - s11))
+
+    t_moyen = float(np.mean(scores_sweep)) if scores_sweep else 1.0
+    if a_cavite:
+        l_ret = (param_cavite.get("l_pont")
+                 if param_cavite.get("l_pont") is not None
+                 else param_cavite.get("l_cavite", 5e-9) + 5e-9)
+    else:
+        l_ret = float(l_boucle)
+    delta_tr = 2.2 * float(l_ret) / (2.0 * z0)
+    eta_tr = tr / (tr + delta_tr)
+    score_pct = round(t_moyen * eta_tr * 100.0, 2)
+    score_pct = max(0.0, min(100.0, score_pct))
+
+    if score_pct >= 95.0:
+        verdict = "Excellent : signal quasiment intact, boucle de retour refermee de facon optimale"
+    elif score_pct >= 90.0:
+        verdict = "Bon : front preserve, amortissement ou oscillations minimes"
+    elif score_pct >= 75.0:
+        verdict = "Degrade : depassements (ringing) et ralentissement notable du front"
+    else:
+        verdict = "Critique : forte dispersion et attenuation des harmoniques, integrite compromise"
+
+    for h in harmoniques_eval:
+        del h["module_s21"]
+
+    return {
+        "f0_hz": f0,
+        "f_fondamentale": f0,
+        "temps_montee_s": tr,
+        "temps_montee": tr,
+        "f_knee_hz": round(f_knee, 1),
+        "f_knee": round(f_knee, 1),
+        "score_reconstruction_pct": score_pct,
+        "verdict": verdict,
+        "harmoniques": harmoniques_eval,
+        "sondes_hf": sondes_hf,
+    }
+

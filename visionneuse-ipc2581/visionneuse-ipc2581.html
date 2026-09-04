@@ -9,6 +9,8 @@
 <link rel="stylesheet" href="../commun/session.css">
 <link rel="stylesheet" href="../commun/profils.css">
 <link rel="stylesheet" href="../commun/simulation-em.css">
+<link rel="stylesheet" href="../commun/ia-assistant.css">
+<link rel="stylesheet" href="../commun/tactile.css">
 </head>
 <body>
 
@@ -20,6 +22,8 @@
     <button class="tb" data-cao-nav="pcb" title="Revenir au routage — la carte est restée dans l'onglet">Éditeur PCB</button>
     <button class="tb" data-cao-nav="composants" title="Recherche de composants">Composants</button>
     <button class="tb" id="bProfil" data-cao-profil title="Utilisateur : panneaux, réglages et derniers documents lui appartiennent">👤 …</button>
+    <button class="tb tb-ia" id="bIaAssistant" title="Assistant IA technique — Gemma 4 31B (Google AI Studio)"><span class="ia-sparkle">✨</span> IA</button>
+    <button class="tb tb-tactile-indicator" id="bTactileToggle" title="Mode tactile (iPad / tablette)"><span class="tactile-dot"></span> 📱 Tactile</button>
     <div class="sep"></div>
     <button class="tb on" id="bOuvrir" title="Choisir un fichier IPC-2581 (.xml, .cvg) ou son archive .zip">📂 Ouvrir un fichier…</button>
     <button class="tb" id="bJson" title="Enregistrer le modèle traduit : il se rouvre ici sans serveur">Exporter .json</button>
@@ -86,6 +90,7 @@
       <span class="pnl-grip">⠿</span><span class="pnl-title">Couches</span>
       <span class="pnl-acts">
         <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
         <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
         <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
       </span>
@@ -108,6 +113,7 @@
       <span class="pnl-grip">⠿</span><span class="pnl-title">La carte</span>
       <span class="pnl-acts">
         <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
         <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
         <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
       </span>
@@ -120,6 +126,7 @@
       <span class="pnl-grip">⠿</span><span class="pnl-title">Nets</span>
       <span class="pnl-acts">
         <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
         <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
         <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
       </span>
@@ -138,6 +145,7 @@
       <span class="pnl-grip">⠿</span><span class="pnl-title">Composants</span>
       <span class="pnl-acts">
         <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
         <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
         <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
       </span>
@@ -159,6 +167,7 @@
       <span class="pnl-grip">⠿</span><span class="pnl-title">Simulation EM</span>
       <span class="pnl-acts">
         <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
         <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
         <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
       </span>
@@ -171,11 +180,25 @@
       <span class="pnl-grip">⠿</span><span class="pnl-title">Sélection</span>
       <span class="pnl-acts">
         <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
         <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
         <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
       </span>
     </header>
     <div class="pnl-body"><div class="scroll" id="detail"></div></div>
+  </section>
+
+  <section class="pnl" data-pnl="ia" data-title="Assistant IA">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">Assistant IA</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body" id="iaPanneau"></div>
   </section>
 </div>
 
@@ -208,5 +231,8 @@
 <script src="js/06-demarrage.js"></script>
 <script src="js/07-simulation.js"></script>
 <script src="../commun/workspace.js"></script>
+<script src="../commun/ia-assistant.js"></script>
+<script src="../commun/tactile.js"></script>
+<script>if(typeof tactileInitialiser==="function")tactileInitialiser({outil:"ipc",hud:true});</script>
 </body>
 </html>

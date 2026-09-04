@@ -1951,6 +1951,98 @@ T("une preselection vide ne se lit pas comme un verdict",
   une_preselection_vide_ne_se_lit_pas_comme_un_verdict)
 
 
+def une_garde_routee_entre_dans_la_section():
+    """La piste de masse tracee entre l'agresseur et sa victime COMPTE.
+
+    ELLE ETAIT JETEE A L'ETAPE 0a, avec le motif « c'est une garde, pas une
+    victime » -- ce qui est vrai de son PORT et faux de son CUIVRE. La coupe
+    resolue ne la contenait pas : le NEXT annonce etait celui d'un routage
+    qu'on n'avait pas fait, et poser une garde ne changeait pas un decibel.
+
+    LES DEUX SENS SONT VERIFIES, et c'est le point. Cousue, elle est tenue a
+    zero volt et le couplage TOMBE ; sans vias, elle est posee FLOTTANTE et le
+    couplage ne tombe plus -- il remonte au-dessus de ce qu'il vaut sans
+    aucune garde, parce qu'un tel cuivre ne blinde pas, il transfere. Un banc
+    qui ne verifierait que le premier sens laisserait passer une garde posee a
+    zero volt quoi qu'il arrive, qui rassurerait toujours.
+    """
+    loin = [pis(0, 0.9, 40, 0.9, "VIC")]
+    garde = [pis(0, 0.45, 40, 0.45, "GND"), pis(0, 0.9, 40, 0.9, "VIC")]
+    nue = [pis(0, 0.45, 40, 0.45, "GND", couture=30.0),
+           pis(0, 0.9, 40, 0.9, "VIC")]
+    sans = ct.analyser(doc_essai(loin))["couples"][0]["next_db"]
+    avec = ct.analyser(doc_essai(garde))
+    sans_vias = ct.analyser(doc_essai(nue))["couples"][0]["next_db"]
+    assert avec["couples"][0]["next_db"] < sans - 3.0, \
+        "une garde cousue doit faire tomber le NEXT : %.2f -> %.2f dB" \
+        % (sans, avec["couples"][0]["next_db"])
+    assert sans_vias > avec["couples"][0]["next_db"] + 3.0, \
+        "une garde non cousue ne doit pas blinder : %.2f dB contre %.2f" \
+        % (sans_vias, avec["couples"][0]["next_db"])
+    assert sans_vias >= sans - 0.1, \
+        "un cuivre flottant TRANSFERE : %.2f dB contre %.2f sans garde" \
+        % (sans_vias, sans)
+
+    # ET ELLE N'EST PAS UNE VICTIME POUR AUTANT : pas de port, pas de courbe.
+    assert avec["etape0"]["gardes"] == ["GND"], avec["etape0"]["gardes"]
+    assert "GND" not in avec["etape0"]["retenus"], avec["etape0"]["retenus"]
+    assert "GND" not in [c["victime"] for c in avec["couples"]], \
+        "une garde n'a pas de bruit a elle"
+    assert "GND" not in [p["net"] for p in avec["mapping"]["ports"]], \
+        "une garde n'a pas de port"
+    pose = avec["blindage"]["gardes"][0]
+    assert abs(pose["longueur"] - 40.0) < 0.1, pose
+    assert pose["longueur_flottante"] == 0.0, pose
+    flotte = ct.analyser(doc_essai(nue))["blindage"]["gardes"][0]
+    assert abs(flotte["longueur_flottante"] - 40.0) < 0.1, flotte
+
+
+T("une garde routee entre dans la section, cousue ou non",
+  une_garde_routee_entre_dans_la_section)
+
+
+def un_plan_de_bord_non_cousu_cesse_de_blinder():
+    """Le plan arrose qui borde le groupe n'est a zero volt que s'il est cousu.
+
+    IL Y ETAIT TOUJOURS, ET PARFAITEMENT. Le solveur posait l'ecart au plan
+    lateral quel que soit le nombre de vias de ce plan : un plan sans une seule
+    couture sur trente millimetres blindait dans le calcul exactement comme un
+    plan cousu au pas du millimetre. Le defaut sortait en TEXTE, et les
+    decibels ne bougeaient pas -- ce qui est la pire des deux facons de le
+    dire, puisque c'est le chiffre qu'on lit.
+
+    L'ecart de ce cote-la est donc mis a ZERO -- « pas de masse coplanaire
+    ici » pour `ligne_mom` --, et le couplage rendu remonte.
+    """
+    def borde(couture):
+        """L'agresseur, avec un plan arrose SERRE et cousu comme on veut."""
+        doc = doc_essai([pis(0, 0.9, 40, 0.9, "VIC")])
+        for o in doc["geometry"]["objects"]:
+            o["gap_left"] = o["gap_right"] = 0.15
+            o["couture_left"] = o["couture_right"] = couture
+        return doc
+
+    cousu = ct.analyser(borde(0.4))
+    nu = ct.analyser(borde(30.0))
+    assert nu["couples"][0]["next_db"] > cousu["couples"][0]["next_db"] + 1.0, \
+        "un plan non cousu doit faire REMONTER le couplage : %.2f contre %.2f" \
+        % (nu["couples"][0]["next_db"], cousu["couples"][0]["next_db"])
+    assert not cousu["blindage"]["bords_non_cousus"], \
+        cousu["blindage"]["bords_non_cousus"]
+    bords = nu["blindage"]["bords_non_cousus"]
+    assert bords and bords[0]["couture"] == 30.0, bords
+    assert any("PLAN ARROSÉ NON COUSU" in a for a in nu["avertissements"]), \
+        nu["avertissements"]
+    # UN BORD DONT L'ECART ETAIT DEJA NUL NE PERD RIEN, et ne se compte donc
+    # pas : le groupe s'etend au-dela du cuivre que la sonde a trouve de ce
+    # cote-la, et l'annoncer ferait compter un defaut sans effet.
+    assert len(bords) == 1, bords
+
+
+T("un plan de bord non cousu cesse de blinder, et le dit",
+  un_plan_de_bord_non_cousu_cesse_de_blinder)
+
+
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko
                         else "%d en echec" % ko))

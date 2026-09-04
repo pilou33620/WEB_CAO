@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard CAO Web</title>
+<link rel="stylesheet" href="commun/tactile.css">
 <style>
   :root {
     --bg: #0f1012;
@@ -217,6 +218,20 @@
       <div class="urec" id="uRec"></div>
     </div>
 
+    <!-- Option d'ergonomie : Mode tactile pour iPad et tablettes -->
+    <div class="users" id="blocTactile">
+      <h2>Ergonomie & Écran tactile</h2>
+      <label style="display:flex; align-items:flex-start; gap:12px; cursor:pointer; user-select:none;">
+        <input type="checkbox" id="chkModeTactile" style="margin-top:3px; width:18px; height:18px; cursor:pointer; accent-color:var(--blue);">
+        <div>
+          <b style="color:var(--txt); font-size:13px;">Mode tactile (iPad Pro / tablette / écran tactile)</b>
+          <div style="font-size:12px; color:var(--txt-dim); margin-top:3px; line-height:1.45;">
+            Active la navigation multi-touch (pincement pour zoomer, déplacement à 2 doigts), la détection stylet (Apple Pencil) et la barre d'actions rapides sous le pouce (pivoter, annuler, via, échap).
+          </div>
+        </div>
+      </label>
+    </div>
+
     <div class="actions">
       <a href="editeur-schematique/editeur-schematique.html" class="btn">
         <em>Saisie</em>
@@ -255,6 +270,7 @@
 <script src="commun/profils.js"></script>
 <script src="commun/projet.js"></script>
 <script src="commun/projet-disque.js"></script>
+<script src="commun/tactile.js"></script>
 <script>
 "use strict";
 /* ==========================================================================
@@ -564,18 +580,20 @@ document.getElementById("pChem").addEventListener("keydown", function(e){
   if(e.key === "Enter") pChemOuvrir();
 });
 document.getElementById("pCree").onclick = function(){
-  /* Le nom vient du champ du haut (ou du projet en cours), la destination des
-     deux champs d'à côté : une racine déclarée, et un sous-dossier libre. */
-  const champ = document.getElementById("pChem");
-  const nom = (champ.value.trim() || projNom());
-  if(!nom){ champ.focus(); return; }
+  /* Le nom vient du champ du haut (ou du champ de chemin ou du projet en cours),
+     la destination des deux champs d'à côté : une racine déclarée, et un sous-dossier libre. */
+  const champNom = document.getElementById("pNom");
+  const champChem = document.getElementById("pChem");
+  const nom = (champNom && champNom.value.trim()) || (champChem && champChem.value.trim()) || projNom();
+  if(!nom){ (champNom || champChem).focus(); return; }
   const racine = document.getElementById("pRac").value;
   const sous = document.getElementById("pSous").value.trim()
                  .replace(/^[\\\/]+/, "").replace(/[\\\/]+$/, "");
   const ou = (sous ? sous + "/" : "") + nom;
   pDosMsg("Création de " + uEsc(ou) + "…");
   projdCreerServeur(nom, {racine:racine, sous:sous}).then(function(etat){
-    champ.value = "";
+    if(champNom) champNom.value = "";
+    if(champChem) champChem.value = "";
     pDosFait(etat);
   }).catch(function(e){ pDosMsg(e.message, true); });
 };
@@ -631,6 +649,18 @@ document.getElementById("uDel").onclick = function(){
 profSurChangement(uRendre);
 profSurListe(uRendre);
 uRendre();
+
+/* ==========================================================================
+   Mode tactile
+   ========================================================================== */
+const chkTactile = document.getElementById("chkModeTactile");
+if(chkTactile){
+  chkTactile.checked = tactileEstActif();
+  chkTactile.onchange = function(){
+    tactileDefinir(chkTactile.checked);
+  };
+}
+tactileInitialiser({outil: "accueil", hud: false});
 </script>
 </body>
 </html>

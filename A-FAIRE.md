@@ -5,7 +5,8 @@ tâche ; le corps dit ce qui existe déjà et où, pour ne pas repartir de zéro
 
 Ce qui est *assumé* comme absent — auto-routeur, serpentin d'appariement,
 sauvegarde disque automatique — n'est pas ici : c'est dans les « Limites
-connues » de [editeur-pcb/README.md](editeur-pcb/README.md#limites-connues).
+connues » de [editeur-pcb/README.md](editeur-pcb/README.md#limites-connues) et
+[editeur-schematique/README.md](editeur-schematique/README.md#limites-connues).
 
 Ce qui en sort est retiré d'ici et documenté là où il vit. **Fait :** l'outil de
 mesure et la recherche par repère, dans les deux éditeurs
@@ -29,13 +30,13 @@ panneau Propriétés, sur un via comme sur toute une sélection (`viaSetKind`,
 
 ## État des lieux au 2026-09-02
 
-Ce que le dépôt fait tourner, et ce qui le mesure. **1 104 essais, tous
+Ce que le dépôt fait tourner, et ce qui le mesure. **1 110 essais, tous
 passés.**
 
 | Partie | État | Ce qui la mesure |
 | --- | --- | --- |
 | Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire | en service | 582 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
-| Éditeur schématique | en service ; **ni bus ni feuilles hiérarchiques** | 86 essais, [editeur-schematique/test/harness.js](editeur-schematique/test/harness.js) |
+| Éditeur schématique | en service ; **bus de signaux & feuilles hiérarchiques implémentés** | 95 essais, [editeur-schematique/test/harness.js](editeur-schematique/test/harness.js) |
 | Visionneuse IPC-2581 | en service ; **arcs comptés, parcours chaîné, chevelu du retour, pastilles devinées avouées, sélection à plusieurs morceaux** | 108 essais ([harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)) + 46 ([banc-essai.py](visionneuse-ipc2581/test/banc-essai.py)) |
 | **SI — impédance** (`ligne_mom`) | en service, 0,3 à 0,4 % contre les étalons ; **vias : boucle de retour, antipads, moignons, traversée de plans** | 149 cas, [banc-ligne-mom.py](python/test/banc-ligne-mom.py) |
 | **SI — Z différentielle** (`solve_multiline`) | **en service**, moins de 3 % contre Garg-Bahl ; N conducteurs dans UNE section, masse coplanaire et pistes de garde comprises | 149 cas |
@@ -227,7 +228,7 @@ géométries, **au-delà de 2 à 3 GHz** — ce que dit déjà le lot 3 plus bas
 | **Chute continue, densité de courant DC** | nouveau solveur résistif surfacique | moyen, simple | bonne |
 | **R_AC, effet de peau, resserrement** | section, à l'intérieur du cuivre | moyen | bonne |
 | Résonances de plan, Z du PDN en fréquence | 2,5D, ou modèle de cavité | gros | quelques % |
-| Ampacité, échauffement | modèle IPC-2152, pas un solveur | petit | ±20 % par nature |
+| **Ampacité, échauffement** | modèle d'étalement dans le stratifié — **fait** | — | ±20 % par nature |
 
 Trois physiques différentes, et le moteur 2,5D n'est le bon outil pour aucune
 des lignes en gras. Les deux premières sont faites ; la chute continue et R_AC
@@ -765,7 +766,20 @@ propre route. PI porte
 « Chute DC », **branchée de bout en bout dans les DEUX outils depuis le
 2026-08-29** : bornes désignées au clic, cuivre du net envoyé sur toutes ses
 couches, détail via par via en retour, et la carte de potentiel peinte sur la
-carte.
+carte. **Sa fiche parle le même langage visuel que celles de SI depuis le
+2026-09-03** — verdict contre budget, ligne de contexte, légende à pastilles,
+`simTab` / `simNote` — là où elle portait les classes génériques du panneau de
+l'outil : le résultat n'était pas laid, il était *étranger*, et il fallait
+réapprendre où regarder en changeant d'onglet. **Ses COMMANDES aussi** : les champs de
+saisie sortent tous de `simChamp`, qui porte désormais leur classe — la
+feuille de style nommait les sept champs de l'onglet Impédance un par un, donc
+tous ceux ajoutés depuis (Crosstalk, Chute DC) tombaient sur le style du
+navigateur, police sans empattement et largeur élastique. Et `pnl-u` /
+`pnl-note`, deux classes qui n'ont de règle dans **aucune** feuille de style du
+dépôt, ont laissé place à `simU` / `simNote` : les unités de PI — « mm »,
+« °C », « W/(m·K) » — s'écrivaient à la taille du navigateur au milieu d'un
+panneau en monospace de dix pixels. Un cas de non-régression les garde
+dehors.
 
 Le registre est `SIM_FAMILLES` / `SIM_ANALYSES`
 ([commun/simulation-em.js](commun/simulation-em.js)). Une analyse y déclare
@@ -942,7 +956,10 @@ faire :
      du cuivre, le potentiel du nœud le plus proche ; la peindre étalerait de
      la couleur sur du vide. Une image par couche est pré-calculée à l'arrivée
      du résultat, un pixel par carreau, et la teinte va du **cyan** à
-     l'**ambre** — délibérément pas du rouge, qui est celui du DRC.
+     l'**ambre** — délibérément pas du rouge, qui est celui du DRC. **La couche
+     peinte se choisit dans la fiche depuis le 2026-09-03** : l'outil propose
+     (sa couche active, ou celle de la charge), l'utilisateur dispose, et le
+     changement ne coûte qu'un redessin.
    - **`cuivreDC()` dans la visionneuse.** Pistes, arcs, plans à contours et
      pastilles tirées de padstacks ressortent en polygones, en millimètres
      quelle que soit l'unité du fichier ; les découpes de plan partent en
@@ -997,38 +1014,329 @@ faire :
    Les deux chiffres se lisent donc différemment, et le panneau le dit : la
    **densité de pointe** dit *où* regarder, l'**échauffement** dit *combien*.
 
-   **CE QUE L'ÉCHAUFFEMENT N'EST PAS.** IPC-2221 est une charte empirique,
-   relevée sur un conducteur **isolé**, à l'air calme, sans cuivre voisin ni
-   composant chaud — elle ne connaît ni le stratifié, ni les plans qui évacuent.
-   **IPC-2152** lui a succédé et donne des températures notablement plus basses
-   dans la plupart des cas, justement parce qu'elle tient compte de la
-   conduction du substrat. Elle n'est pas implémentée : ce qui est rendu est
-   **conservateur**, et c'est le bon sens de l'erreur. Le résultat porte cette
-   phrase lui-même, et le panneau l'affiche.
+   **L'ÉCHAUFFEMENT NE VIENT PLUS D'UNE CHARTE — FAIT LE 2026-09-03.** IPC-2221
+   est une charte empirique, relevée sur un conducteur **isolé**, à l'air calme :
+   elle ne connaît ni le stratifié, ni les plans qui évacuent, c'est-à-dire ni
+   l'un ni l'autre des deux chemins par lesquels la chaleur part vraiment. Deux
+   de ses conséquences se posent à la main :
 
-   **LA CARTE DE CHALEUR** se choisit entre les trois grandeurs — échauffement
+   - une couche **interne** y sort **4,83 fois** plus chaude qu'une externe
+     (2^(1/0,44)). C'est le résultat que la campagne **IPC-2152** a renversé :
+     une piste noyée dans le stratifié est mieux refroidie, pas moins ;
+   - un **plan de cuivre** à côté de la piste ne change rien à son chiffre. Or
+     35 µm de cuivre pleine carte étalent **dix fois** mieux que 1,6 mm de
+     FR-4 — le facteur le plus lourd de tout le problème, absent de la charte.
+
+   Ce qui la remplace est un **modèle d'étalement** : la carte est une ailette
+   plane de conductance de nappe `Ks = λ·h_lamine + λ_cu·t_étaleur`, qui perd
+   par `h` sur ses deux faces, donc `g = 2·√(Ks·2h)` par mètre de conducteur,
+   plus `h·W` pour une couche extérieure. `ΔT = p'/g`, avec la boucle en
+   résistivité du cuivre résolue (`ΔT = u/(1−α·u)`) et **l'emballement
+   thermique refusé au lieu d'être rendu**. Mesuré sur le barreau du banc, 3 A
+   dans 2 mm de 35 µm : **6,06 °C** sur carte nue, **1,83 °C** dès qu'un plan
+   est là, contre **5,34 °C** que la charte annonce dans les deux cas. Les deux
+   couches, elles, ne s'écartent plus que de 7 % au lieu de 4,83×.
+
+   **TOUT CE QUI EST THERMIQUE S'ÉCRIT EN DEGRÉS CELSIUS — FAIT LE 2026-09-03.**
+   Un écart de température vaut autant en kelvins qu'en degrés Celsius : les
+   deux échelles ont le même pas, seule leur origine diffère. Or c'est en °C
+   qu'IPC-2221 et IPC-2152 écrivent toutes deux leurs chartes (« temperature
+   rise in °C »), et en °C que se lisent les cotes contre lesquelles on
+   compare — Tg d'un stratifié, température maximale d'un boîtier, déclassement
+   d'un condensateur. Écrire des kelvins obligeait à convertir de tête un
+   nombre qui ne change pas. L'**ambiante** se saisit à côté du budget (20 °C
+   d'office) : elle n'entre dans aucun calcul — l'échauffement est un écart —
+   et donne la température **absolue** du point chaud, la seule qu'on puisse
+   mettre en face d'un Tg.
+
+   **LES DEUX CHIFFRES SONT RENDUS**, côte à côte dans le tableau et au choix
+   sur la carte : là où ils se ressemblent, la carte n'évacue rien ; là où ils
+   s'écartent, c'est un plan qui travaille — et cela ne se devine pas de la
+   géométrie. Les trois cotes que le modèle consomme viennent de l'empilage
+   (`cuivreDC().thermique`), la conductivité du laminé se saisit dans le
+   panneau, et **tout repli est nommé** dans le résultat : « 6 K sur un λ
+   déclaré » et « 6 K sur un λ supposé » ne se défendent pas pareil.
+
+   Ce n'est toujours **pas une simulation thermique** : ailette plane uniforme,
+   `h` constant, pas de composant chaud ni de piste voisine qui dissipe. ±20 %
+   est la nature de la chose.
+
+   **LA CARTE DE CHALEUR** se choisit entre les quatre grandeurs — échauffement
    d'office, puisque c'est celle sur laquelle on élargit une piste. Elle est
    découpée exactement sur le cuivre analysé : un carreau de trame par pixel,
    rien hors du cuivre.
 
+   **LA TRAME NE SE HEURTE PLUS AU REFUS DU SOLVEUR — FAIT LE 2026-09-03.**
+   `mailler()` refuse sur **deux** critères et la page n'en connaissait qu'un :
+   le nombre de **nœuds** (carreaux *de cuivre*, 400 000) et la taille de la
+   **grille** (`nx × ny × couches`, 1 600 000, sur la **boîte englobante** de
+   tout le cuivre envoyé, cuivre ou pas). Les deux quantités n'ont rien à voir
+   sur une carte réelle : un rail couvre une grande boîte avec peu de cuivre,
+   donc la forme la plus étroite (0,32 mm) faisait tomber le pas à 0,04 mm, le
+   budget des nœuds passait haut la main — 28 000 sur 250 000 — et le serveur
+   répondait « Trame trop fine : 875 × 1177 carreaux sur 4 couche(s) ». Un
+   refus que personne ne pouvait corriger en connaissance de cause, puisque le
+   pas venait de l'outil. Les deux budgets s'appliquent maintenant, on retient
+   le pas le plus grand des deux, et **la note dit lequel a borné** — sur une
+   grande carte peu remplie la réponse est de restreindre la portée, sur un
+   plan dense de découper le calcul : deux causes, deux gestes. Le refus du
+   solveur, s'il arrive encore (pas imposé à la main), **nomme le pas qui
+   tient**.
+
+   **UNE CHARGE QUI « NE DONNE PLUS RIEN » EST UNE CHARGE D'UNE AUTRE
+   COUCHE — CORRIGÉ LE 2026-09-03.** La carte ne peint qu'une couche, et
+   « auto » suivait la **première borne posée**. Deux défauts, et le second
+   coûte cher : ce n'est pas la couche qu'on veut voir — sur un rail à
+   plusieurs charges, c'est celle de la plus mal servie, celle que le verdict
+   nomme —, et surtout cette couche **changeait toute seule** dès qu'on
+   réordonnait la liste des bornes. La charge restée sur l'autre couche cessait
+   alors d'être peinte, et rien ne le disait : du cuivre non coloré autour
+   d'une charge se lit « cette charge ne donne rien » au lieu de « tu regardes
+   une autre couche ». Trois corrections : « auto » suit désormais la charge la
+   plus mal servie, le tableau des bornes porte une colonne **Couche** (les
+   bornes hors de la couche peinte y sont en gris), et une note les nomme en
+   rappelant que **leurs chiffres, eux, sont ceux de tout le calcul**.
+
+   **DEUX NOTES QUE J'AVAIS MAL ÉCRITES, reprises le 2026-09-03 :**
+
+   - la note des portées supposées annonçait « portent 5,643 A » sur un rail de
+     2 A. Ce n'était pas un courant : `suppose` est une somme de **valeurs
+     absolues** sur des liaisons — le même ampère y est compté une fois en
+     descendant et une fois en remontant, et une chaîne de trois liaisons le
+     compte trois fois. Écrire cet ampère rouvrait exactement la confusion que
+     le reste de la fiche sert à fermer. Seul le **rapport** est juste (les deux
+     sommes se comptent de la même façon, le double comptage s'annule), et le
+     seul ampère écrit est maintenant celui du via le plus chargé — celui-là
+     est un vrai courant ;
+   - **une marque qui serait partout n'est plus mise.** Quand le fichier ne
+     déclare aucune portée — le cas le plus courant —, le « ? » se posait sur
+     les quinze lignes du tableau et ne distinguait plus rien : du bruit qu'on
+     apprend à ne plus voir, et qui emporte avec lui les cas où la marque
+     compte. On ne marque donc que si le tableau est **mêlé** ; sinon une note
+     le dit une fois. Même règle pour le perçage supposé.
+
+   **LE CUL-DE-SAC EST VÉRIFIÉ, PLUS SUPPOSÉ — FAIT LE 2026-09-03.** La
+   question posée était juste, et elle méritait mieux qu'une explication : « ce
+   via remonte à une pastille où je n'ai réglé aucune charge, pourquoi porte-t-il
+   du courant ? ». Un morceau de cuivre relié au reste par **un seul** chemin,
+   et qui ne porte ni source ni charge, ne peut porter **aucun** courant : ce
+   qui entre doit sortir, et il n'y a pas d'autre porte. Il n'y a donc que deux
+   réponses possibles, et il fallait pouvoir dire laquelle — le cuivre continue
+   au-delà de la pastille, ou bien c'est un bug.
+
+   `_culs_de_sac` tranche maintenant tout seul. Les composantes connexes du
+   cuivre sont calculées sur les seules arêtes **dans le plan**, sans les
+   liaisons verticales : une composante est donc un morceau de cuivre d'une
+   couche. Zéro borne et **un seul** via qui la touche : c'est un cul-de-sac, et
+   le via qui l'alimente doit porter zéro. Le solveur le vérifie sur sa propre
+   solution — ce n'est pas la loi qu'il a résolue, il a résolu un système
+   linéaire, donc la vérifier apprend quelque chose — et **lève une
+   incohérence** au-delà du microampère. Mesuré sur l'étalon : **2,1 × 10⁻¹⁰ A**
+   sur un rail de 3 A, soit zéro à la précision du gradient conjugué ; la même
+   géométrie avec 0,5 A au bout du via rend **0,5000 A**. Le second contrôle
+   compte autant que le premier : sans lui, un solveur qui ignorerait ce via
+   passerait le test.
+
+   La fiche le rend visible, et c'est ce qui permet de conclure sur SA carte :
+   les culs-de-sac portent zéro, donc **un via qui porte du courant n'en est
+   pas un** — le cuivre continue au-delà de sa pastille, et le courant ne fait
+   que passer. Une pastille n'est un terminus que si le cuivre s'arrête là ;
+   posée sur un plan, elle en est une bosse.
+
+   **CE QU'UN VIA PORTE N'EST PAS UNE CHARGE, et la fiche le disait mal.**
+   La densité se peint sur tout le cuivre analysé, pas seulement là où l'on a
+   cliqué. Trois notes entretenaient la confusion, et les trois sont reprises
+   le 2026-09-03 :
+
+   - **le déséquilibre des vias** annonçait « 21 vias se partagent le passage :
+     le plus chargé en prend 100,0 %, contre 4,8 % à parts égales ». C'est
+     faux comme lecture : sur un plan cousu, vingt de ces vias ne sont sur
+     AUCUN chemin — ils joignent du cuivre qui ne demande pas de courant. Les
+     compter comme des parallèles inactifs faisait passer un **chemin unique**
+     pour un défaut de routage. La note distingue maintenant les deux
+     situations, et les parts se comptent sur les vias ACTIFS ;
+   - **la trame se contredisait à deux lignes d'écart** : « choisie pour que la
+     forme la plus étroite (0,210 mm) reçoive 2,3 carreaux », puis « élargie
+     pour tenir le calcul ». Les deux ne peuvent pas être vraies. Trois cas,
+     trois phrases — imposée, élargie par un budget, ou déduite de la forme la
+     plus étroite. **Et sous quatre carreaux, une forme n'est plus maillée :
+     elle est ÉCHANTILLONNÉE**, sa résistance sortant de la position de deux ou
+     trois points et non de sa géométrie. La note d'élargissement disait « les
+     rétrécissements plus fins qu'elle ne sont pas décrits », ce qui laissait
+     croire qu'ELLE l'était : une alerte le dit désormais ;
+   - **la part du courant qui repose sur une PORTÉE SUPPOSÉE est désormais
+     chiffrée**, et c'est la seule façon dont ce calcul peut inventer du
+     courant. Un perçage dont le fichier ne déclare pas les couches est pris
+     traversant — l'hypothèse qui ne perd aucun chemin, donc la bonne par
+     défaut ; mais si le trou est en réalité borgne, la liaison verticale
+     n'existe pas et le courant que le solveur y fait passer n'est dans aucun
+     cuivre réel. « 21 trous pris pour traversants » ne disait pas si ça
+     **compte** : un via supposé qui porte 0,01 mA ne change rien, le même qui
+     porte le tiers du rail change tout. La fiche rend donc une **part du
+     passage**, nomme le plus chargé, et se taît sous un pour cent — une alerte
+     qui s'allume toujours n'est plus une alerte. Les lignes concernées portent
+     leur marque **sur les couches**, là où on la lit ;
+   - **« 90 forme(s) écartée(s) »** ne se corrigeait pas. La note nomme
+     maintenant les couches et compte par couche : c'est ce qui distingue un
+     oubli d'empilage — une couche de cuivre entière absente, donc un chemin
+     manquant — du cas normal, du cuivre sur une couche technique qui ne
+     conduit pas.
+
+   **LES BORNES SE RENOMMENT — FAIT LE 2026-09-03.** « pastille 32.1 ;
+   72.34 » est ce que le fichier sait dire, pas ce que la carte veut dire : sur
+   cinq bornes, deux couples de coordonnées ne se distinguent plus à l'œil, et
+   le tableau du résultat les reprenait telles quelles — « la charge la plus mal
+   servie est *pastille 32.1 ; 72.34* » au lieu de « *U7 VDD* ». Le nom est
+   maintenant un champ, il voyage jusqu'au document (`repere`) donc jusqu'au
+   résultat et aux exports, et vidé il retombe sur celui que la carte propose.
+   **L'identité d'une borne est devenue sa POSITION** : elle se comparait par
+   son nom, ce qui suffisait tant que le nom venait de la pastille — depuis
+   qu'il se renomme, recliquer une pastille renommée posait une *seconde* borne
+   au même endroit, donc deux fois le courant, sans un mot.
+
+   **LA PROGRESSION, DANS LES CINQ ANALYSES — FAIT LE 2026-09-03.** « Le solveur
+   travaille… », une fois, et plus rien : sur un calcul de dix secondes la page
+   est identique à la seconde 1 et à la seconde 30, et rien ne distingue un
+   solveur qui avance d'un solveur bloqué. **Pas de faux pourcentage** — le
+   solveur ne rend rien avant d'avoir fini, et une barre qui monterait en
+   devinant serait un mensonge qu'on croit. Ce qui est vrai et qui suffit : le
+   **temps écoulé**, qui avance à chaque seconde et prouve que ça tourne ; la
+   **taille** du problème, qui dit pourquoi c'est long ; les **étapes** en
+   clair ; et, quand il y en a, la **progression réelle** — les lots d'une
+   sélection éparse se comptent un par un, et là la barre est déterminée.
+
+   **ET LE TERMINAL EN DIT PLUS.** `dc_solver` écrit désormais une ligne par
+   étape avec sa durée — maillage, montage du système, gradient conjugué,
+   thermique —, comme `simulation_em` le faisait déjà pour sa synthèse finale.
+   C'est le seul endroit qui dise *laquelle* coince, et le panneau y renvoie.
+   Le journal est **sans accent ni typographie**, et ce n'est pas de la
+   négligence : `sys.stderr` d'une console Windows peut être en cp437, où
+   l'em-dash et le degré n'existent pas — l'écriture y lèverait un
+   `UnicodeEncodeError` et ferait échouer la requête *à cause d'une ligne de
+   journal*.
+
+   **UN PERÇAGE SUPPOSÉ EST MARQUÉ — FAIT LE 2026-09-03.** La résistance d'un
+   via va comme 1/section : un diamètre deviné à cinquante pour cent près se
+   paie **double** sur l'ohm. Or le tableau affichait « 0,076 mΩ » déduit d'une
+   pastille et « 0,295 mΩ » lu dans le fichier avec le même aplomb, et seule une
+   note de bas de panneau disait qu'il y en avait — sans dire *lesquels*. Les
+   lignes concernées portent maintenant leur marque, dans le tableau et sous la
+   sonde. **Et le dédoublonnage des perçages se fait par DISTANCE**, non plus
+   par case d'arrondi : la clé était `Math.round(x*100)`, donc deux
+   emplacements distants de deux microns mais posés de part et d'autre d'un
+   demi-centième tombaient dans deux cases différentes et échappaient au
+   dédoublonnage — deux résistances en parallèle là où il n'y a qu'un tube, et
+   chaque ligne du tableau annonçant la moitié du passage réel.
+
+   **LE RÉSULTAT S'EXPORTE — FAIT LE 2026-09-03.** Deux boutons sur la rangée
+   qui reste quand les réglages se replient. Le **.csv** est une pièce — quatre
+   tableaux à plat (bornes, nets, pire point, détail via par via) précédés des
+   réglages qui les ont produits : un tableau de chiffres sans son λ, son
+   ambiante et sa trame ne se vérifie pas six mois plus tard. Le **.json** se
+   rejoue et se compare : il porte le problème entier et le résultat à côté,
+   sans le potentiel par nœud — soixante mille nombres pèsent plus que tout le
+   reste du fichier et ne se lisent pas. Les deux textes sortent de fonctions
+   **pures** (`simDCCsvTexte`, `simDCJsonTexte`), ce qui les rend éprouvables
+   sans navigateur : un export qu'on ne peut contrôler qu'en cliquant n'est pas
+   contrôlé.
+
+   **LE VOILE SE COUPE — FAIT LE 2026-09-03.** « Ce qui n'est pas dans la
+   simulation s'estompe » s'allumait dès qu'une carte de chaleur existait,
+   **sans interrupteur** : sous l'onglet Chute DC toute la carte passait au
+   sombre, et le seul moyen de retrouver des couleurs normales était de
+   *changer d'onglet*. Un affichage dont on ne peut pas sortir n'est pas un
+   affichage. La case existe maintenant des deux côtés, avec deux valeurs
+   d'usine différentes et une seule raison : la carte des impédances peint
+   **tout** le cuivre sélectionné — ce qui reste dessous est du cuivre
+   étranger, et l'estomper est exactement ce qu'on veut —, tandis que la carte
+   de chute ne peint qu'**un net sur une couche**, un fil dans une carte
+   entière, et le voile y efface le contexte qui sert justement à lire le
+   résultat : les autres couches du même net, le connecteur d'arrivée, le
+   composant alimenté. Allumé sous SI, éteint sous PI.
+
+   **LA COUCHE PEINTE SE CHOISIT — FAIT LE 2026-09-03.** Il en faut une et une
+   seule — superposer deux potentiels les mélangerait sans le dire —, mais le
+   choix appartenait à l'outil : l'éditeur peignait sa couche active, la
+   visionneuse celle de la **première charge posée**, et rien d'autre. Sur un
+   rail qui traverse la carte — le cas ordinaire d'un calcul de chute — la
+   couche où ça chauffe n'est presque jamais celle-là, et il fallait effacer les
+   bornes et les reposer dans un autre ordre pour la voir, ce qui relance le
+   calcul pour rien. L'outil **propose** désormais, la fiche **dispose** : une
+   liste des couches que le résultat porte, « auto » suivant la proposition, et
+   changer de couche ne coûte qu'un redessin — les images sont déjà là, une par
+   couche.
+
+   **LA PORTÉE DES PERÇAGES EST LUE — FAIT LE 2026-09-03.** IPC-2581 la déclare,
+   mais pas sur le trou : sur le **calque** de perçage,
+   `<Layer layerFunction="DRILL"><Span fromLayer toLayer/>`, que le padstack
+   désigne par le `layerRef` de son `<LayerHole>`. Rien ne le lisait, donc tous
+   les trous ressortaient traversants — et l'erreur allait dans les **deux**
+   sens : sur une carte à six couches, un borgne 1-2 était monté en **chaîne**
+   1→2→3→4→5→6, soit cinq résistances en série là où il en faut une
+   (résistance surestimée, le côté prudent) mais aussi **quatre liaisons
+   verticales inventées** entre des couches que rien ne joint (chute trop
+   faible, le côté qui rassure). Non déclarée, la portée reste supposée
+   traversante — l'hypothèse qui ne perd aucun chemin —, et les deux comptes
+   sont **séparés** dans les notes. Rien n'est deviné d'après un nom de calque :
+   une portée devinée à tort coupe un chemin réel et fait refuser tout le
+   calcul, ce qui est bien pire. Le contrôle du **chemin de retour** s'en sert
+   aussi, et c'est là que ça compte le plus : lui, l'erreur ne le rend pas
+   prudent, elle le rend optimiste.
+
+   **LE CHEMIN QUI CHANGE DE COUCHE EST BIEN CE QUI EST CALCULÉ**, et c'est
+   désormais posé sur un étalon. La topologie d'un vrai rail — connecteur sur
+   une plage en couche 1, trois vias qui plongent, plan d'alimentation en
+   couche 3, cinq vias répartis qui remontent, pastille du composant en
+   couche 1 — se résout à la **loi des nœuds près** : 3,0000 A qui descendent,
+   3,0000 A qui remontent, et le solveur dit comment chaque étage se partage
+   (le retour le plus chargé en prend 25,1 % au lieu de 20). Les vias d'un
+   même couple de couches sont en **parallèle**, les deux étages en **série**,
+   et `simDesequilibreVias` groupe par couple justement pour ne pas les
+   sommer ensemble. Doubler un via de retour se lit aussi : de un à cinq, la
+   chute tombe de 7,80 à 4,82 mV — dont 1,30 mV pour le tube retiré, et le
+   reste pour la **constriction** du cuivre qui devait converger sur un seul
+   trou, celle qu'on ne calcule pas de tête et qui est dans la carte de
+   densité. Quatre cas dans
+   [python/test/banc-dc.py](python/test/banc-dc.py), deux côté page.
+
+   **UN VIA SURVOLÉ DIT CE QU'IL A PORTÉ — FAIT LE 2026-09-03.** La sonde
+   lisait le carreau de trame ; or au droit d'un via, la question n'est pas la
+   densité du cuivre, c'est « celui-là, il en a pris combien ? ». La réponse
+   était dans le tableau, à retrouver parmi quinze lignes nommées « T7 » sans
+   savoir laquelle est le via sous le curseur — et c'est précisément le chiffre
+   qui décide d'en doubler un. L'étiquette porte maintenant, sous la valeur du
+   carreau, **une ligne par liaison** à cet endroit : repère, couches, courant,
+   chute, résistance. Un tube traversant est monté en chaîne, donc il en donne
+   plusieurs — même courant, chutes différentes. Le disque de détection est
+   celui du perçage, que le résultat transporte désormais (`percage`).
+
    **Ce qui manque encore de ce côté :**
 
-   - **IPC-2152** à la place d'IPC-2221 : elle demande la conductivité du
-     stratifié et l'épaisseur de la carte, que l'empilage porte déjà des deux
-     côtés. C'est le chantier qui rendrait la température juste plutôt que
-     prudente ;
    - les **courants venus du schéma**, toujours. Ce qui est là remplace la
      donnée manquante par une saisie, il ne la fabrique pas : dix consommateurs
      demandent dix clics, et personne ne vérifie que la somme correspond à
-     quelque chose de réel ;
-   - la **portée des perçages** dans la visionneuse : le modèle ne la porte
-     pas, tous les trous sont pris traversants. Un via borgne ou enterré est
-     donc modélisé plus long qu'il n'est, et sa résistance surestimée. C'est le
-     parseur qu'il faudrait compléter, pas le solveur ;
-   - dans la visionneuse, la carte de potentiel ne peint que **la couche de la
-     première source** : l'outil affiche toutes les couches à la fois et n'a
-     pas de couche active, alors que superposer deux potentiels les mélangerait
-     sans le dire.
+     quelque chose de réel. La saisie, elle, se règle désormais **dans l'unité
+     qu'on veut** — V ou mV pour une source, A, mA ou µA pour une charge : un
+     consommateur en veille tire 250 µA, et « 0,00025 » se tape mais ne se
+     relit pas ;
+   - le **cuivre étaleur** est mesuré sur les seules **zones** de chaque couche,
+     pondérées par la part de carte qu'elles couvrent. Les pistes et les
+     pastilles ne comptent pas : quelques pour cent d'une couche de routage,
+     fragmentés, donc mauvaises ailettes. Le chiffre penche vers le chaud, ce
+     qui est le bon sens de l'erreur, mais une couche de routage dense étale
+     tout de même un peu ;
+   - un **via sans net** n'est pas monté, et ne peut pas l'être : il
+     relierait le premier cuivre venu, celui d'un autre net compris, et un
+     court-circuit inventé est pire qu'un chemin manquant. C'est le cas
+     ordinaire d'une couture de plan posée sans net actif — le calcul échouait
+     alors sur « des nœuds n'atteignent aucune référence », un message juste
+     dont la cause était ailleurs. Ils sont désormais **comptés et nommés**
+     dans les deux outils ; il reste à leur deviner un net, ce que seule la
+     connectivité pourrait faire ;
+   - `h` en surface est un **ordre de grandeur** (12 W/(m²·K), soit environ 7 de
+     convection naturelle et 5 de rayonnement) et il est **constant** : ni
+     convection forcée, ni montée du rayonnement quand la carte chauffe. Ce
+     dernier point penche du côté prudent.
 
 2. **l'impédance vue par le composant** (Z du PDN en fréquence), qui demande le
    condensateur de découplage, son inductance parasite d'accès, et la capacité
@@ -2175,10 +2483,13 @@ Il fallait pour cela que la fiche dise **où** est le via : `retour` porte
 désormais `x` et `y`, et la clé est **absente** quand la page ne l'envoie pas —
 un zéro, lui, se dessinerait.
 
-Une mention propre à cette page : l'IPC-2581 ne déclare pas la portée d'un
-perçage. Les retours y sont **supposés traversants**, un enterré pris pour
-traversant rend une boucle trop petite de près de vingt pour cent, et le
-chevelu le dit sur le dessin — pas seulement en note de bas de panneau.
+Une mention propre à cette page, **allégée le 2026-09-03** : la portée d'un
+perçage est désormais **lue** quand l'IPC-2581 la déclare — `<Span fromLayer
+toLayer>` sur le calque de perçage, voir « la portée des perçages » plus haut.
+Ce qui reste supposé traversant est ce que le fichier ne déclare pas ; un
+enterré pris pour traversant rend une boucle trop petite de près de vingt pour
+cent, et la note ne parle plus que de ceux-là. Le chevelu le dit sur le dessin
+— pas seulement en note de bas de panneau.
 
 **Non-régression** : trois cas tiennent le chaînage — et j'ai vérifié qu'ils
 **échouent** sans lui —, cinq le contrat de lecture du chevelu, un la
@@ -2343,8 +2654,9 @@ haut de la bande analysée (`simCouture()`).
 
 - le contrôle de couture ne vérifie pas que le via ATTEINT le plan de
   référence. Côté éditeur il exige seulement que la plage de couches du via
-  contienne celle de la piste ; côté visionneuse, un perçage ne dit même pas sa
-  plage. Un via borgne qui s'arrête avant compte donc comme une couture ;
+  contienne celle de la piste ; côté visionneuse, la plage est lue quand le
+  fichier la déclare (depuis le 2026-09-03) et supposée traversante sinon. Un
+  via borgne qui s'arrête avant compte donc encore comme une couture ;
 - le couloir de couture est fixé à 2 mm depuis le bord du cuivre, et non déduit
   de la hauteur au plan. Sur un stratifié très épais, des coutures utiles
   tombent hors du couloir et le verdict est pessimiste ;
@@ -2470,7 +2782,59 @@ chose sans le dire, ce qui demande au moins une mention au pied de page.
 
 ## Éditeur schématique
 
-### Bus et feuilles hiérarchiques
+### Limites actuelles : bus et hiérarchie
 
-Pas de bus ni de feuilles hiérarchiques — un `D0..D7` se tire à huit fils. Les
-nets globaux couvrent le multi-feuille, c'est un demi-lot.
+**Bus et hiérarchie :** Pas de bus de signaux (un bus D0..D7 doit être tiré à huit fils individuels) ni de feuilles hiérarchiques (seuls les nets globaux multi-feuilles sont gérés).
+
+Les nets globaux couvrent le multi-feuille actuel (masses, alimentations, étiquettes globales), mais c'est un demi-lot : tout net étiqueté identiquement fusionne à l'échelle du document entier, sans modularité, sans encapsulation locale et sans synoptique d'ensemble du système.
+
+---
+
+### Bus de signaux
+
+Tirer huit ou seize fils individuels pour un bus de données ou d'adresses alourdit inutilement la feuille et complique la relecture du schéma. Ce qui est attendu :
+
+1. **Icône et mode d'outil dédié dans la barre d'outils et la palette :**
+   - Une **icône expressément dédiée au bus** dans la barre d'outils et dans la palette d'outils (en complément de l'outil Fil simple `W`, avec son propre raccourci clavier, par exemple `B`).
+   - Tracé distinctif : trait de bus épaissi (3 à 4 px de large contre 1,5 px pour un fil ordinaire) pour identifier immédiatement un bus au premier coup d'œil.
+   - Accrochage aux pas de grille et gestion des coudes orthogonaux comme pour les fils standards.
+
+2. **Syntaxe et nommage vectoriel :**
+   - Prise en charge des notations vectorielles standards : `D0..D7`, `D[0..7]`, `A[0..15]`, etc.
+   - Support des bus composites ou nommés (ex. `SPI{MOSI,MISO,SCK,CS}`).
+   - Affichage clair de l'étiquette de bus le long du segment principal.
+
+3. **Dérivation et raccordement individuel (Tap / Breakout) :**
+   - Raccordement d'un fil simple vers le bus par une jonction ou un piquage biseauté à 45°.
+   - Boîte de sélection rapide de la ligne extraite : au clic sur la dérivation ou lors du piquage, proposer le choix du signal parmi les lignes disponibles du bus (`D0`, `D1`...) sans avoir à retaper le nom complet.
+   - Contrôle d'appartenance : interdire ou signaler un indice hors plage par rapport à la définition du bus.
+
+4. **Connectivité et netlist :**
+   - Évolution de l'extracteur de connectivité (`js/07-connectivite.js`) : un bus n'est pas un net unique, mais un faisceau ordonné de nets unitaires.
+   - Propagation des signaux éclatés vers les broches de composants et inscription exacte dans la netlist (`js/13-fichiers.js`) pour l'import dans l'éditeur PCB sans régression sur les formats actuels.
+
+---
+
+### Feuilles hiérarchiques et feuille racine
+
+Au fur et à mesure qu'un circuit grossit, empiler des feuilles à plat dans une simple barre d'onglets rend la compréhension du système difficile. L'architecture hiérarchique visée :
+
+1. **Feuille racine (page 1 = feuille hiérarchique) :**
+   - La première page du schéma fait office de **feuille hiérarchique racine** (vue synoptique / bloc-diagramme de haut niveau).
+   - **À l'ouverture d'un projet, l'éditeur s'ouvre systématiquement sur cette feuille hiérarchique**, donnant d'emblée la vision d'ensemble de l'architecture électronique.
+
+2. **Apparition et synchronisation dynamique des sous-feuilles :**
+   - Quand le projet comporte ou ajoute des feuilles de schématique (ex. alimentation, microcontrôleur, puissance, communication...), **celles-ci apparaissent automatiquement sur la feuille hiérarchique** sous la forme de **blocs de feuille hiérarchique** (« sheet blocks » / cartouches de sous-circuits).
+   - Chaque bloc porte le nom de la sous-feuille, son rôle / titre, et un aperçu ou résumé de son contenu.
+   - Navigation naturelle : un double-clic (ou clic) sur un bloc hiérarchique ouvre et affiche directement la feuille de schématique correspondante.
+
+3. **Interconnexions et broches de feuille (Sheet Pins) :**
+   - Définition de ports hiérarchiques (entrées, sorties, bidirectionnels, bus) dans chaque sous-feuille.
+   - Les ports d'une feuille sont automatiquement exposés comme broches de connexion sur le pourtour de son bloc hiérarchique en page 1.
+   - Le câblage entre blocs s'effectue directement sur la feuille hiérarchique au moyen de fils et de bus de signaux.
+   - Dépassement des nets globaux : les nets internes restent désormais strictement locaux à leur feuille (évitant les collisions accidentelles de repères ou de noms de nets entre sous-systèmes), et seules les broches hiérarchiques explicitement reliées sur la feuille racine traversent les frontières de blocs.
+
+4. **Modèle de données et rétrocompatibilité :**
+   - Persistance dans le document JSON du schéma (`doc.sheets`, coordonnées des blocs hiérarchiques, liaisons inter-feuilles).
+   - Maintien d'une rétrocompatibilité totale avec les schémas existants non hiérarchiques (mode séquentiel plat classique préservé si aucune hiérarchie n'est déclarée).
+

@@ -277,6 +277,41 @@
 #   reseau_synthetise, _zone_a (signature : + tolerance), zones_risque,
 #   desaccords, analyser, _lire_couples, _avertir, _hypotheses, touchstone_np
 #   (modifiees) ; TS_PAR_LIGNE (nouvelle constante).
+#
+# Version: 3.1.0
+# Date: 2026-09-03
+# Explication: LE CUIVRE DE MASSE ENTRE DANS LA COUPE -- ET SEULEMENT S'IL EST
+#   COUSU. Deux defauts de la meme famille : la section resolue ne contenait
+#   pas le cuivre de masse que quelqu'un avait ROUTE, et elle contenait un plan
+#   arrose PARFAIT que personne n'avait cousu.
+#
+#   (1) LA PISTE DE GARDE ETAIT JETEE A L'ETAPE 0a. Un candidat portant un net
+#   de reference sortait avec le motif « c'est une garde, pas une victime » --
+#   ce qui est vrai de son PORT et faux de son CUIVRE. La coupe envoyee au
+#   solveur ne la voyait donc pas : tracer une garde entre l'agresseur et sa
+#   victime, avec ou sans vias, ne changeait pas un decibel, et le NEXT annonce
+#   etait celui d'un routage qu'on n'avait pas fait. Ces pistes sont
+#   maintenant POSEES dans la section de chaque bloc qu'elles longent, sans
+#   port et sans ligne dans la fiche des couples -- et c'est
+#   `simulation_em._poser_section` qui tranche, avec le meme critere que
+#   partout : cousue, la garde est tenue a 0 V et le couplage TOMBE ; sans
+#   vias, elle est posee FLOTTANTE et le couplage REMONTE au-dessus de ce qu'il
+#   vaut sans aucune garde, parce qu'un tel cuivre transfere. Mesure sur 40 mm,
+#   victime a 0,65 mm de l'agresseur : sans garde -25,8 dB · garde cousue
+#   -32,7 dB · garde sans vias -25,3 dB.
+#
+#   (2) LE PLAN ARROSE EXTERIEUR ETAIT TOUJOURS PARFAIT. Voir la 4.1.0 de
+#   `simulation_em` : l'ecart au plan lateral se posait sans jamais regarder
+#   ses vias. Le bord mal cousu perd desormais son effet coplanaire au lieu de
+#   blinder gratuitement, et la carte le dit AVEC le chiffre plutot qu'a cote.
+#
+#   RIEN DE TOUT CELA N'EST MUET : `blindage` porte les gardes posees, la
+#   longueur sur laquelle chacune FLOTTE, et les bords qui ont perdu leur
+#   masse ; deux avertissements les nomment, et les hypotheses disent la regle.
+# Fonctions modifiees : candidats_geometriques (+ `garde` / `garde_active`,
+#   couture des gardes), _matrices_bloc (+ `gardes`, + bords rendus),
+#   reseau_synthetise (+ `gardes`, + infos gardes / bords), analyser
+#   (presélection des gardes, `blindage`, deux avertissements), _hypotheses.
 # ==========================================
 """Crosstalk : ou le couplage se fabrique LE LONG des pistes, et non en moyenne.
 
@@ -1254,6 +1289,12 @@ def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
                              "troncons": 0, "blinde": True},
                     "role": ("agresseur" if net_a in nets_agresseurs
                              else "victime"),
+                    # UN NET DE REFERENCE N'EST PAS UNE VICTIME, MAIS IL EST
+                    # DANS LA SECTION. C'est une piste de GARDE : elle n'a pas
+                    # de port et n'entre pas dans le tableau des victimes, et
+                    # elle prend pourtant du champ aux deux -- c'est meme
+                    # exactement ce qu'on lui demande en la routant.
+                    "garde": net_a in refs,
                     "paire": any(se._paire_nommee(net_a, str(p["obj"].get("net")
                                                             or ""), paires)
                                  for p in parcours)}
@@ -1270,6 +1311,15 @@ def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
                     c["vert"]["blinde"] = False
             if not vertical:
                 c["cotes"].add(cote)
+                # LA COUTURE D'UNE GARDE EST LA SIENNE, et cousue d'UN SEUL
+                # cote suffit a la tenir a zero volt : on garde donc le MEILLEUR
+                # des deux, comme `_scenes_paralleles` le fait deja de son cote.
+                # Pour une voisine de signal, la couture ne decrit que le cuivre
+                # qui la borde, et c'est le PIRE trou qui compte.
+                cg_a, cd_a = se._couture(autre)
+                couture_a = (min(cg_a, cd_a)
+                             if (net_a in refs and cg_a > 0 and cd_a > 0)
+                             else max(cg_a, cd_a))
                 # L'ENTRE-AXES EST SIGNE : negatif a gauche du sens de marche,
                 # positif a droite, comme dans `_scenes_paralleles`. C'est lui
                 # qui pose la voisine du BON COTE dans la section.
@@ -1279,7 +1329,7 @@ def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
                     "x": (-cote) * entre_axes, "ecart": ecart,
                     "i": seg["i"], "couche": couche_a, "largeur": w_a,
                     "gap_face": se._ecart_face(autre, cote, _sens),
-                    "couture": max(se._couture(autre))})
+                    "couture": couture_a})
 
     candidats = []
     for c in trouves.values():
@@ -1326,9 +1376,33 @@ def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
         c["longueur_min"] = round(mini, 3)
         c["retenu"] = True
         c["raison"] = ""
+        # UNE GARDE ROUTEE ENTRE DANS LA SECTION, ET ELLE N'Y ENTRAIT PAS.
+        # Jusqu'ici un net de reference etait ECARTE ici meme, et il l'etait
+        # deux fois : pas de port -- ce qui est juste, une garde n'a pas de
+        # bruit a elle --, mais pas de CUIVRE non plus, ce qui est faux. La
+        # coupe resolue par le solveur ne voyait donc pas la piste de garde que
+        # quelqu'un avait tracee entre l'agresseur et sa victime : le NEXT
+        # annonce etait celui d'un routage qu'on n'avait pas fait. Elle est
+        # maintenant POSEE -- tenue a zero volt si ses vias sont assez serres,
+        # FLOTTANTE sinon, et c'est `simulation_em._poser_section` qui tranche
+        # avec le meme critere que partout ailleurs (lambda/10 au genou).
+        c["garde_active"] = False
         if c["net"] in refs:
             c["retenu"] = False
-            c["raison"] = "net de référence : c'est une garde, pas une victime"
+            c["garde_active"] = bool(c["type"] == "latéral"
+                                     and c["intervalles"]
+                                     and c["distance"] <= distance_max)
+            c["raison"] = (
+                "net de référence : garde POSÉE dans la section (elle prend"
+                " du champ), sans port — ce n'est pas une victime"
+                if c["garde_active"] else
+                "net de référence : c'est une garde, pas une victime"
+                + ("" if c["type"] == "latéral" else
+                   " — et sur une autre couche, la section droite ne sait pas"
+                   " la poser")
+                + ("" if c["distance"] <= distance_max else
+                   " — et à %.3f mm, au-delà du seuil de %.3f mm"
+                   % (c["distance"], distance_max)))
         elif c["distance"] > distance_max:
             c["retenu"] = False
             c["raison"] = ("à %.3f mm, au-delà du seuil de %.3f mm : vue mais"
@@ -1540,13 +1614,22 @@ def _tan_delta(couches, couche, largeur, epaisseur, cache):
 
 
 def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
-                   cache, ecartes):
+                   cache, ecartes, gardes=()):
     """[C] et [L] globales d'un bloc (F/m, H/m), plus eps_eff par conducteur.
 
     `conducteurs` est la liste GLOBALE, dans l'ordre des ports du reseau :
     l'agresseur de reference d'abord, puis les candidats retenus. `presents`
     dit lesquels longent l'agresseur sur ce bloc, avec leur position laterale
     LOCALE -- c'est elle, et non la moyenne du longement, qui est resolue ici.
+
+    `gardes` PORTE LES PISTES DE MASSE ROUTEES qui longent sur ce bloc-la.
+    Elles entrent dans la MEME section, au meme titre que les victimes, mais
+    sans port : elles n'ont pas de bruit a elles, et le tableau des victimes
+    n'en parle pas. Ce qu'elles changent est le champ, et c'est tout ce qu'on
+    leur demande -- tenue a zero volt, une garde cousue fait tomber le NEXT et
+    le FEXT ; mal cousue, elle est posee FLOTTANTE et le NEXT REMONTE, parce
+    qu'un tel cuivre ne blinde pas, il transfere. Voir `_poser_section`, qui
+    tranche entre les deux avec le meme seuil que partout ailleurs.
 
     REND AUSSI QUELS CONDUCTEURS ONT VRAIMENT ETE COUPLES. C'est le
     renseignement qui manquait le plus : quand la section n'est pas resoluble
@@ -1562,6 +1645,10 @@ def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
     l_g = np.zeros((n, n))
     eps = [0.0] * n
     couples = set()
+    # LES BORDS QUI ONT PERDU LEUR MASSE COPLANAIRE faute de vias : c'est le
+    # cinquieme rendu, et il existe pour la meme raison que `couples` -- un
+    # calcul qui durcit ses hypotheses en silence n'est pas verifiable.
+    bords = []
 
     if presents:
         scene = {"net": conducteurs[0]["net"], "largeur": seg["largeur"],
@@ -1573,27 +1660,47 @@ def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
                  "net_masse": (sorted(refs)[0] if len(refs) == 1 else "masse"),
                  "couture_g": _nb(seg["obj"].get("couture_left"), 0.0),
                  "couture_d": _nb(seg["obj"].get("couture_right"), 0.0),
-                 "voisins": [{"net": p["net"], "x": p["x"],
-                              "largeur": p["largeur"], "ecart": p["ecart"],
-                              "ecart_min": p["ecart"], "longueur": 1.0,
-                              "troncons": 1, "cote": "gauche" if p["x"] < 0
-                              else "droite", "deux_cotes": False,
-                              "garde": False,
-                              "gap_face": p.get("gap_face", 0.0),
-                              "couture": p.get("couture", 0.0)}
-                             for p in presents]}
+                 # LE PLUS PROCHE D'ABORD, GARDES COMPRISES. `_poser_section`
+                 # pose dans l'ordre qu'on lui donne et compte sur cet ordre :
+                 # c'est lui qui decide quelle voisine perd sa place quand la
+                 # section est pleine, et c'est lui qui fait qu'une garde deja
+                 # posee entre deux pistes n'y est pas doublee d'une masse
+                 # interposee imaginaire.
+                 "voisins": sorted(
+                     [{"net": p["net"], "x": p["x"],
+                       "largeur": p["largeur"], "ecart": p["ecart"],
+                       "ecart_min": p["ecart"], "longueur": 1.0,
+                       "troncons": 1, "cote": "gauche" if p["x"] < 0
+                       else "droite", "deux_cotes": False,
+                       "garde": bool(p.get("garde")),
+                       "gap_face": p.get("gap_face", 0.0),
+                       "couture": p.get("couture", 0.0)}
+                      for p in list(presents) + list(gardes)],
+                     key=lambda v: abs(v["x"]))}
         hauteur = se._hauteur_de_couche(couches, seg["couche"], seg["largeur"],
                                         seg["epaisseur"])
         poses, hors = se._poser_section(scene, hauteur, couture_max)
         for e in hors:
             ecartes.setdefault(e["net"], e["raison"])
+        # LA COUTURE DU BORD EST DANS LA CLEF depuis qu'elle decide de l'effet
+        # coplanaire exterieur : deux blocs de meme dessin, l'un bordé d'un plan
+        # cousu et l'autre non, ne se resolvent plus pareil.
         cle = (seg["couche"], round(seg["epaisseur"], 6),
                tuple((round(p["x"], 5), round(p["w"], 5), bool(p.get("garde")),
                       bool(p.get("flottant"))) for p in poses),
-               round(scene["gap_g"], 5), round(scene["gap_d"], 5))
+               round(scene["gap_g"], 5), round(scene["gap_d"], 5),
+               round(scene["couture_g"], 3), round(scene["couture_d"], 3))
+        # LES BORDS PERDUS SE RELEVENT MEME QUAND LE CACHE REPOND. Le calcul
+        # est un min et un max sur les rubans poses : il ne coute rien, et le
+        # taire sur les blocs deja en cache ferait dependre l'avertissement de
+        # l'ordre des blocs.
+        e_g, e_d = se._ecarts_masse_du_groupe(poses, scene, couture_max)
+        for nom in se._cotes_non_cousus(poses, scene, couture_max):
+            bords.append({"cote": nom,
+                          "couture": scene["couture_g"] if nom == "gauche"
+                          else scene["couture_d"]})
         r = cache.get(cle)
         if r is None:
-            e_g, e_d = se._ecarts_masse_du_groupe(poses, scene)
             geo, _info = se.section_de_couche(couches, seg["couche"],
                                               seg["largeur"], seg["epaisseur"],
                                               e_g, e_d)
@@ -1663,11 +1770,11 @@ def _matrices_bloc(couches, seg, presents, conducteurs, refs, couture_max,
         c_g[g, g] = c_ii
         l_g[g, g] = l_ii
         eps[g] = eps_ii
-    return c_g, l_g, eps, couples
+    return c_g, l_g, eps, couples, bords
 
 
 def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
-                      notes):
+                      notes, gardes=()):
     """Le reseau multi-ports, mis en cascade le long du parcours.
 
     Rend (freqs, S, z0, infos) -- avec, dans `infos`, le PROFIL DE RETARD de
@@ -1675,6 +1782,13 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
     qui remplace la « vitesse de propagation » d'un modele uniforme, et c'est
     ce qui permet a l'axe de position de rester juste quand la piste change de
     largeur, d'ecart ou de couche en cours de route.
+
+    `gardes` EST DU CUIVRE, PAS UN PORT. Ce sont les pistes de masse routees
+    que l'etape 0a a repérées le long du parcours : elles n'ajoutent aucun
+    conducteur au reseau -- pas de port, pas de ligne dans la fiche -- et
+    entrent pourtant dans la section de chaque bloc qu'elles longent. Le
+    decoupage en blocs les prend donc en compte, sans quoi une garde qui
+    commence au milieu d'un bloc y serait etalee sur toute sa longueur.
     """
     conducteurs = [{"net": str(parcours[0]["obj"].get("net") or ""),
                     "couche": parcours[0]["couche"],
@@ -1725,7 +1839,10 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
     freqs = pas * np.arange(points)
     omegas = 2.0 * math.pi * freqs
 
-    bornes = decouper(parcours, retenus, notes)
+    # LES BORNES DE BLOC SUIVENT AUSSI LES GARDES : une piste de masse qui
+    # commence a mi-bloc y serait sinon posee sur toute sa longueur, et le
+    # blindage qu'elle apporte s'etalerait la ou elle n'est pas.
+    bornes = decouper(parcours, list(retenus) + list(gardes), notes)
     couture_max = se._couture_max(_nb(analyse.get("temps_montee"), 0.0))
     cache, ecartes = {}, {}
     phi = np.broadcast_to(np.eye(2 * n, dtype=complex),
@@ -1736,6 +1853,7 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
     abscisses = [0.0]
     retards = [[0.0] for _ in range(n)]
     blocs, muets, tan_deltas = [], [], set()
+    etats_gardes, etats_bords = {}, {}
     for a, b in zip(bornes, bornes[1:]):
         milieu = 0.5 * (a + b)
         seg = None
@@ -1755,9 +1873,37 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
                                      "gap_face": it["gap_face"],
                                      "couture": it["couture"]})
                     break
-        c_g, l_g, eps, couples_bloc = _matrices_bloc(
+        # LES GARDES NE S'ARRETENT PAS A LA PREMIERE TROUVEE, et c'est la
+        # difference avec une victime. Le net de masse est le MEME des deux
+        # cotes de la piste -- c'est un seul net sur toute la carte --, si bien
+        # qu'une garde a gauche et une garde a droite sont un seul candidat
+        # avec deux jeux d'intervalles. S'arreter au premier n'en poserait
+        # qu'une, et la coupe serait dissymetrique sans que rien ne le dise.
+        # On garde donc, PAR COTE, la plus proche.
+        gardes_bloc = {}
+        for c in gardes:
+            for it in (c.get("intervalles") or ()):
+                if not (it["s0"] - TOL_BORNE <= milieu <= it["s1"] + TOL_BORNE):
+                    continue
+                cle_g = (c["net"], 1 if it["x"] > 0 else -1)
+                deja = gardes_bloc.get(cle_g)
+                if deja is None or abs(it["x"]) < abs(deja["x"]):
+                    gardes_bloc[cle_g] = {"net": c["net"], "x": it["x"],
+                                          "largeur": it["largeur"],
+                                          "ecart": it["ecart"],
+                                          "gap_face": it["gap_face"],
+                                          "couture": it["couture"],
+                                          "garde": True}
+        gardes_bloc = sorted(gardes_bloc.values(), key=lambda g: abs(g["x"]))
+        c_g, l_g, eps, couples_bloc, bords_bloc = _matrices_bloc(
             couches, seg, presents, conducteurs, refs, couture_max, cache,
-            ecartes)
+            ecartes, gardes_bloc)
+        for bd in bords_bloc:
+            etat = etats_bords.setdefault(
+                bd["cote"], {"cote": bd["cote"], "longueur": 0.0,
+                             "couture": 0.0})
+            etat["longueur"] += b - a
+            etat["couture"] = max(etat["couture"], _nb(bd.get("couture"), 0.0))
         longueur = (b - a) * 1e-3
         # LES PERTES SONT CELLES DU BLOC, pas celles du premier troncon : un
         # parcours qui change de couche change de stratifie.
@@ -1771,12 +1917,30 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
         # longueur et les nets ; c'est `analyser` qui en fait une reserve.
         if presents and len(couples_bloc) < 2:
             muets.append((a, b, sorted(set(p["net"] for p in presents))))
+        # LES GARDES, ET SUR QUELLE LONGUEUR CHACUNE TIENT. Une garde n'a pas
+        # de ligne dans la fiche des couples -- elle n'a pas de port --, mais
+        # taire son existence rendrait le resultat inexplicable : c'est elle
+        # qui fait tomber le couplage la ou elle est cousue, et qui le fait
+        # MONTER la ou elle ne l'est pas. Le meme critere que `_poser_section`,
+        # lu ici pour pouvoir le dire.
+        if presents:
+            for g in gardes_bloc:
+                etat = etats_gardes.setdefault(
+                    g["net"], {"net": g["net"], "longueur": 0.0,
+                               "longueur_flottante": 0.0, "couture": 0.0})
+                etat["longueur"] += b - a
+                etat["couture"] = max(etat["couture"],
+                                      _nb(g.get("couture"), 0.0))
+                if couture_max > 0 and _nb(g.get("couture"), 0.0) > couture_max:
+                    etat["longueur_flottante"] += b - a
         abscisses.append(b)
         for g in range(n):
             retards[g].append(retards[g][-1]
                               + longueur * math.sqrt(max(eps[g], 1.0)) / C_0)
         blocs.append({"s0": round(a, 4), "s1": round(b, 4),
-                      "voisines": [p["net"] for p in presents]})
+                      "voisines": [p["net"] for p in presents],
+                      "gardes": [g["net"] for g in gardes_bloc] if presents
+                      else []})
 
     z0 = _nb(reglages.get("z0"), DEFAUTS["z0"]) or DEFAUTS["z0"]
     s_mat = s_depuis_chaine(phi, z0)
@@ -1791,6 +1955,23 @@ def reseau_synthetise(couches, parcours, retenus, refs, analyse, reglages,
              "tan_delta": min(tan_deltas) if tan_deltas else 0.0,
              "tan_deltas": sorted(tan_deltas), "z0": z0, "pas": pas,
              "points": points, "points_demandes": demandes,
+             # LES PISTES DE GARDE POSEES DANS LES SECTIONS, avec la longueur
+             # sur laquelle chacune longe et celle ou elle FLOTTE faute de
+             # vias. Ce ne sont pas des victimes : elles n'ont pas de port.
+             "gardes": [{"net": g["net"],
+                         "longueur": round(g["longueur"], 3),
+                         "longueur_flottante": round(g["longueur_flottante"],
+                                                     3),
+                         "couture": round(g["couture"], 2)}
+                        for g in sorted(etats_gardes.values(),
+                                        key=lambda g: -g["longueur"])],
+             # LES BORDS OU LE PLAN ARROSE NE COMPTE PLUS, faute de vias.
+             "bords_non_cousus": [{"cote": b0["cote"],
+                                   "longueur": round(b0["longueur"], 3),
+                                   "couture": round(b0["couture"], 2)}
+                                  for b0 in sorted(etats_bords.values(),
+                                                   key=lambda b0: b0["cote"])],
+             "couture_max": round(couture_max, 3),
              # CE QUI N'A PAS ETE COUPLE, ET SUR QUELLE LONGUEUR.
              "non_couples": [{"s0": round(a0, 3), "s1": round(b0, 3),
                               "nets": nets} for a0, b0, nets in muets],
@@ -3075,6 +3256,12 @@ def analyser(doc, journal=None):
             " couches de plan."
             % (principal, se._nom_de_couche(couches, parcours[0]["couche"])
                or ("couche %d" % parcours[0]["couche"])))
+    # LES GARDES ROUTEES, A COTE DES VICTIMES ET JAMAIS A LEUR PLACE. Elles ne
+    # sont pas « retenues » -- elles n'ont pas de port, pas de courbe, pas de
+    # ligne dans le tableau --, et elles entrent pourtant dans chaque section
+    # qu'elles longent. Sans elles, une piste de masse tracee a la main entre
+    # l'agresseur et sa victime ne servait a rien dans le calcul.
+    gardes = [c for c in candidats if c.get("garde_active")]
     retenus = [c for c in candidats if c["retenu"]]
     if len(retenus) > MAX_VICTIMES:
         for c in retenus[MAX_VICTIMES:]:
@@ -3092,6 +3279,9 @@ def analyser(doc, journal=None):
     espacements = profils_espacement(retenus, axe, notes)
     etape0 = {"candidats": candidats, "seuils": seuils,
               "retenus": [c["net"] for c in retenus],
+              # POSEES, PAS RETENUES : le tableau des victimes n'en parle pas,
+              # et la coupe, elle, les porte.
+              "gardes": [c["net"] for c in gardes],
               "regardes": len(voisinage),
               "espacements": espacements}
 
@@ -3137,6 +3327,9 @@ def analyser(doc, journal=None):
         base["risques"] = []
         base["asymetries"] = []
         base["carte_chaleur"] = None
+        base["blindage"] = {"gardes": [], "bords_non_cousus": [],
+                            "couture_max": se._couture_max(
+                                _nb(analyse.get("temps_montee"), 0.0))}
         base["mapping"] = {"ports": [], "confirme": False, "source": "",
                            "message": ""}
         # LE MESSAGE NOMME L'AGRESSEUR, et c'est tout sauf un detail de
@@ -3162,7 +3355,7 @@ def analyser(doc, journal=None):
     cache = {}
     base["source"] = "réseau de lignes couplées synthétisé depuis le design"
     freqs, s_mat, z_ref, infos = reseau_synthetise(
-        couches, parcours, retenus, refs, analyse, reglages, notes)
+        couches, parcours, retenus, refs, analyse, reglages, notes, gardes)
     base["z_reference"] = z_ref
     n = len(infos["conducteurs"])
     conducteurs = [{"net": c["net"], "proche": i, "lointain": n + i,
@@ -3204,6 +3397,56 @@ def analyser(doc, journal=None):
                ", ".join("« %s »" % net for net in nets_muets) or
                "les voisines de ces blocs",
                infos.get("raison_section") or "cause non rapportée"))
+    # LES GARDES ROUTEES, DITES AVEC LE RESULTAT. Elles n'ont pas de courbe :
+    # sans cette phrase, la chute -- ou la MONTEE -- de couplage qu'elles
+    # provoquent serait un chiffre sans cause. Et le cas ou l'on rassure a tort
+    # est celui d'une garde qu'on voit sur le dessin et qui n'a pas de vias.
+    posees = infos.get("gardes") or []
+    # CE QUE LE CUIVRE DE MASSE A FAIT, EN CLAIR ET EN CHIFFRES. La phrase qui
+    # suit s'adresse a l'oeil ; cette clef-ci s'adresse a la page, qui doit
+    # pouvoir dessiner la garde dans la coupe et la marquer tenue ou flottante.
+    base["blindage"] = {
+        "gardes": posees,
+        "bords_non_cousus": infos.get("bords_non_cousus") or [],
+        "couture_max": _nb(infos.get("couture_max"), 0.0)}
+    if posees:
+        flottantes = [g for g in posees if g["longueur_flottante"] > 0]
+        avert.append(
+            "%d piste(s) de garde routée(s) sont POSÉES dans les sections"
+            " résolues : %s. Elles n'ont pas de port et n'apparaissent donc"
+            " dans aucune courbe, mais elles prennent du champ aux deux — c'est"
+            " ce qu'on leur demande. Une garde cousue est tenue à 0 V et fait"
+            " tomber le NEXT comme le FEXT ; une garde dont le plus grand trou"
+            " de couture dépasse %.1f mm est posée FLOTTANTE, et celle-là ne"
+            " blinde pas : elle TRANSFÈRE, et le couplage peut en devenir PIRE"
+            " qu'en l'absence de tout cuivre.%s"
+            % (len(posees),
+               ", ".join("« %s » sur %.1f mm" % (g["net"], g["longueur"])
+                         for g in posees),
+               _nb(infos.get("couture_max"), 0.0),
+               (" ICI, %s : cousez-la, ou ne comptez pas dessus."
+                % ", ".join("« %s » flotte sur %.1f mm (trou de %.1f mm)"
+                            % (g["net"], g["longueur_flottante"], g["couture"])
+                            for g in flottantes)) if flottantes else ""))
+    # LE PLAN ARROSE QUI BORDE ET QUI NE TIENT PAS. Le solveur le posait a 0 V
+    # parfait quel que soit son nombre de vias : le defaut ne sortait qu'en
+    # texte, et les decibels, eux, ne bougeaient pas. Ils bougent maintenant --
+    # et il faut le dire, sans quoi le chiffre monte sans cause visible.
+    bords_nus = infos.get("bords_non_cousus") or []
+    if bords_nus:
+        avert.append(
+            "PLAN ARROSÉ NON COUSU sur le bord %s du parcours : le plus grand"
+            " trou entre deux vias y atteint %.1f mm, au-delà des %.1f mm que"
+            " le front autorise. L'effet coplanaire de ce côté-là a donc été"
+            " ANNULÉ dans les sections concernées (%s) plutôt que de faire"
+            " cadeau d'une masse idéale à 0 V : le couplage rendu est celui"
+            " d'un bord SANS masse à portée, et il est plus fort d'autant."
+            " Cousez ce plan, ou ne comptez pas dessus."
+            % (" et ".join(b0["cote"] for b0 in bords_nus),
+               max(b0["couture"] for b0 in bords_nus),
+               _nb(infos.get("couture_max"), 0.0),
+               ", ".join("%.1f mm à %s" % (b0["longueur"], b0["cote"])
+                         for b0 in bords_nus)))
     # LE PLAN QUI MANQUE SOUS LE LONGEMENT : la section droite quasi-TEM
     # SUPPOSE un plan de retour continu sous les deux pistes. Une fente
     # sondee par la page dit qu'il n'y en a pas -- le modele decrit alors une
@@ -3972,6 +4215,17 @@ def _hypotheses(reglages, masse, seuils, base, profils):
         % (masse.get("seuil", 0.0), masse.get("source", ""),
            (" ; ce qui a pu être examiné : %s" % ", ".join(masse["mesure"]))
            if masse.get("mesure") else " ; RIEN n'a pu être examiné"),
+        "LE CUIVRE DE MASSE N'EST DANS LA MATRICE QUE S'IL EST COUSU, et cela"
+        " vaut des deux façons dont il entre. Une PISTE DE GARDE routée entre"
+        " l'agresseur et sa victime est posée dans la section comme un"
+        " conducteur sans port : tenue à 0 V quand ses vias sont assez serrés,"
+        " FLOTTANTE au-delà — et un cuivre flottant ne blinde pas, il"
+        " TRANSFÈRE. Le PLAN ARROSÉ qui borde le groupe suit la même règle :"
+        " sa couture dépasse-t-elle le seuil, l'écart au plan de ce côté est"
+        " mis à zéro et l'effet coplanaire annulé, plutôt que de faire cadeau"
+        " d'une masse idéale à 0 V que la carte n'a pas. Une couture NON"
+        " MESURÉE vaut zéro et se lit « tenu » : on suppose bon ce qu'on ne"
+        " sait pas, et le calcul reste alors optimiste de ce côté-là.",
         "RIEN NE S'AGRÈGE%s. Deux victimes d'un même agresseur sont deux nets"
         " différents, chacun avec son budget : une victime ADDITIONNE ses"
         " agresseurs, un agresseur n'additionne pas ses victimes. La seule"

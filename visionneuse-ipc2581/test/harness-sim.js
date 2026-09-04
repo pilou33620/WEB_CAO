@@ -59,7 +59,8 @@ const FICHIERS=[
 const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simSaisie","simPorts","SIM_FORMAT",
   "V","LT","ltAire","ltPreparer","LT_SEUIL_PLAN","mdlLongueur",
-  "mdlNetNom","mdlNb","mdlCharger","mdlCouches",
+  "mdlNetNom","mdlNb","mdlCharger","mdlCouches","mdlPlansDans",
+  "mdlCheminsNet","mdlMevTout",
   "SIM","SIM_IPC","simRefSet","simRefListe","simRefCandidats",
   "simRefCandidatsIpc",
   "simRefIdx","simPlagesDe","simMemeEcart","simKUnite","simCumul","simSurPoly",
@@ -119,7 +120,15 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simLotBilan","simTableauLots","simOublierRes","simZVerdict","simGrouper",
   "SIM_DCB","simDCClic","simDCBornePastilleIpc","simDCPolysPisteIpc",
   "simDCPolysArcIpc","simDCPadPolysIpc","simDCFormeIpc","simDCRangIpc",
-  "simDCHauteurIpc","simDCCoucheVue","simDCCercleIpc"];
+  "simDCHauteurIpc","simDCCoucheVue","simDCCercleIpc",
+  /* Les cotes que le solveur thermique attend, tirees de l'empilage. */
+  "simDCThermiqueIpc",
+  /* La portee d'un percage, et le compte de celles qui restent supposees. */
+  "simXtPortee","simXtPorteesSupposees",
+  /* Le choix de la couche peinte : ce que cet outil propose, et ce que la
+     fiche en fait. */
+  "simDCCouchePeinte","simDCCouchesPeintes","simDCCoucheVoulue",
+  "simDCNomCouche","simDCOublier"];
 
 /* Un seul `eval`, sur les trois fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -967,6 +976,309 @@ T("chute DC : le percage part comme un tube, entre couches voisines",()=>{
   if(!(r.notes||[]).some(t=>/TRAVERSANT/.test(t)))
     throw new Error("l'hypothese de percage traversant n'est pas dite : "+
                     (r.notes||[]).join(" | "));
+});
+
+/* ==========================================================================
+   LA PORTEE DU PERCAGE — QUATRE COUCHES, PARCE QU'A DEUX ON NE VOIT RIEN
+   --------------------------------------------------------------------------
+   Sur une carte deux couches, un via ne peut etre que traversant : le defaut
+   et la verite se confondent, et l'essai ne prouverait rien. A quatre, un
+   borgne 1-2 doit poser UNE liaison la ou l'hypothese traversante en posait
+   TROIS -- deux resistances en serie de trop, et deux chemins verticaux qui
+   n'existent pas.
+
+   Le cuivre du net est present sur les quatre couches au droit du trou : c'est
+   le cas qui piege, parce que le code d'avant en concluait que le trou les
+   relie toutes.
+   ========================================================================== */
+function dcCarte4Ipc(percages){
+  const pistes=[0,1,2,3].map(c=>({c:c, n:0, w:0.5, p:[10,20, 40,20]}));
+  carte({
+    nets:["VDD","GND"],
+    piste:pistes[0],
+    pistes:pistes,
+    couches:["Top","In1","In2","Bottom"],
+    empilage:[
+      {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR"},
+      {nom:"D1",     seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+      {nom:"In1",    seq:3, ep:0.035, type:"CONDUCTOR"},
+      {nom:"D2",     seq:4, ep:0.4,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+      {nom:"In2",    seq:5, ep:0.035, type:"CONDUCTOR"},
+      {nom:"D3",     seq:6, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+      {nom:"Bottom", seq:7, ep:0.035, type:"CONDUCTOR"}
+    ],
+    percages:percages
+  });
+  ltPreparer();
+  SIM_IPC.dcOublier();
+  /* Pas de pastille sur cette carte : les bornes se posent a la main, comme
+     dans l'essai des decoupes de plan. */
+  SIM_DCB.bornes=[
+    {role:"source", nom:"A", x:10, y:20, couche:0, net:"VDD", d:1, valeur:3.3},
+    {role:"charge", nom:"B", x:40, y:20, couche:3, net:"VDD", d:1, valeur:1}
+  ];
+  return SIM_IPC.cuivreDC.call({dcBornes:()=>SIM_DCB.bornes});
+}
+
+T("chute DC : sans portee declaree, le trou relie tout et le dit",()=>{
+  const r=dcCarte4Ipc([{x:30, y:20, d:0.4, p:"PLATED", n:0}]);
+  if(r.erreur)throw new Error("refus inattendu : "+r.erreur);
+  const en30=r.vias.filter(v=>Math.abs(v.x-30)<1e-6);
+  if(en30.length!==3)
+    throw new Error(en30.length+" liaison(s) au lieu de 3 sur quatre couches");
+  if(!(r.notes||[]).some(t=>/TRAVERSANT/.test(t)))
+    throw new Error("l'hypothese n'est pas dite : "+(r.notes||[]).join(" | "));
+  if((r.notes||[]).some(t=>/PORT[ÉE]E d/i.test(t)))
+    throw new Error("une portee declaree est annoncee alors qu'il n'y en a pas");
+});
+
+T("chute DC : une portee declaree borne le tube, et le cuivre au-dela n'est pas relie",()=>{
+  /* LE CAS QUI COMPTE : un borgne Top -> In1 sur une carte qui porte du cuivre
+     du meme net sur les quatre couches. `sa` / `sb` sont des index de COUCHE
+     du modele -- ici 0 et 1 dans ["Top","In1","In2","Bottom"]. */
+  const r=dcCarte4Ipc([{x:30, y:20, d:0.4, p:"PLATED", n:0,
+                        sa:0, sb:1, ss:"calque"}]);
+  if(r.erreur)throw new Error("refus inattendu : "+r.erreur);
+  const en30=r.vias.filter(v=>Math.abs(v.x-30)<1e-6);
+  if(en30.length!==1)
+    throw new Error(en30.length+" liaison(s) au lieu d'une pour un borgne 1-2");
+  const v=en30[0];
+  if(v.couche_a!==0||v.couche_b!==1)
+    throw new Error("le borgne relie "+v.couche_a+"→"+v.couche_b);
+  /* LA HAUTEUR SUIT LA PORTEE : le premier intervalle seul, pas la carte. */
+  if(Math.abs(v.hauteur-simDCHauteurIpc(0,1))>1e-9)
+    throw new Error("hauteur "+v.hauteur+" au lieu de "+simDCHauteurIpc(0,1));
+  const notes=(r.notes||[]).join(" | ");
+  if(!/PORT[ÉE]E d[ée]clar/i.test(notes))
+    throw new Error("la portee lue n'est pas dite : "+notes);
+  if(/TRAVERSANT/.test(notes))
+    throw new Error("le trou est encore annonce traversant : "+notes);
+  /* LES ANNEAUX HORS PORTEE SONT COMPTES : du cuivre du net existe sur In2 et
+     Bottom au droit du trou, et il n'est PAS raccorde par lui. Le taire
+     laisserait croire que le trou ne rencontre rien la-bas. */
+  if(!/hors de la port[ée]e/i.test(notes))
+    throw new Error("le cuivre hors portee n'est pas signale : "+notes);
+});
+
+T("chute DC : une portee vers une couche hors empilage est ignoree, pas devinee",()=>{
+  /* Une portee a moitie resolue vaudrait moins que rien : elle bornerait le
+     tube n'importe ou. On retombe sur l'hypothese traversante, QUI NE PERD
+     AUCUN CHEMIN, et on le dit. */
+  const r=dcCarte4Ipc([{x:30, y:20, d:0.4, p:"PLATED", n:0,
+                        sa:0, sb:99, ss:"calque"}]);
+  const en30=r.vias.filter(v=>Math.abs(v.x-30)<1e-6);
+  if(en30.length!==3)
+    throw new Error(en30.length+" liaison(s) : la portee douteuse a ete suivie");
+  if(!(r.notes||[]).some(t=>/TRAVERSANT/.test(t)))
+    throw new Error("le repli n'est pas dit : "+(r.notes||[]).join(" | "));
+});
+
+/* ==========================================================================
+   LES PLANS : UN CHEMIN PAR CONTOUR
+   --------------------------------------------------------------------------
+   evenodd N'EST PAS UNE UNION, c'est un OU EXCLUSIF -- et tous les contours de
+   plans d'une couche etaient verses dans UN SEUL Path2D rempli en evenodd.
+   Trois defauts visibles a l'oeil, tous du meme mecanisme :
+
+     · deux DEGAGEMENTS qui se recouvrent -- le cas ordinaire d'un connecteur a
+       broches serrees -- se rendent mutuellement leur cuivre : la lentille
+       commune se remplit, et un anneau de cuivre apparait entre deux pastilles
+       la ou le fondeur n'en a pas laisse ;
+     · deux ILOTS de plan qui se recouvrent s'annulent : leur intersection
+       devient un TROU, avec le contour de l'intersection pour forme ;
+     · le degagement d'un contour, s'il traverse un autre contour, cesse d'etre
+       un trou.
+
+   LA BONNE GRANULARITE EST LE CONTOUR : dedans, evenodd fait le trou qu'il
+   faut (un degagement est INCLUS dans son exterieur) ; dehors, deux `fill()`
+   successifs sont une union.
+   ========================================================================== */
+T("plans : un chemin par contour, et non un seul pour toute la couche",()=>{
+  const carre=(x0,y0,x1,y1)=>[x0,y0, x1,y0, x1,y1, x0,y1];
+  /* Deux ilots qui SE RECOUVRENT, chacun avec son degagement. C'est la
+     geometrie qui produisait un trou noir a l'intersection. */
+  const plans=[{c:0, n:0, g:[
+    {o:carre(0,0,20,20), t:[carre(4,4,6,6)]},
+    {o:carre(10,0,30,20), t:[carre(24,4,26,6)]}
+  ]}];
+  const out=mdlPlansDans(plans);
+  if(!Array.isArray(out))
+    throw new Error("les plans sortent encore en un seul chemin : evenodd y "+
+                    "ferait un OU exclusif entre contours");
+  if(out.length!==2)
+    throw new Error(out.length+" chemin(s) au lieu d'un par contour");
+  /* CHAQUE CHEMIN NE PORTE QUE SON CONTOUR : quatre sommets d'exterieur et
+     quatre de degagement, et pas ceux du voisin. Le stub de Path2D enregistre
+     ses points, ce qui rend la verification exacte. */
+  for(const p of out)
+    if(p.pts.length!==8)
+      throw new Error("un chemin porte "+p.pts.length+" sommets au lieu de 8 :"+
+                      " il a ramasse ceux d'un autre contour");
+  /* ET LE CHEMIN DU PREMIER CONTOUR EST BIEN LE PREMIER : l'ordre est celui du
+     fichier, et c'est celui dans lequel le cuivre se pose. */
+  if(out[0].pts[0][0]!==0||out[1].pts[0][0]!==10)
+    throw new Error("les contours sont melanges");
+  /* RIEN A DESSINER REND NULL, pas un tableau vide : le rendu teste `if
+     (chemins.plans)` et un tableau vide est VRAI -- il entrerait dans la
+     boucle pour rien a chaque image. */
+  if(mdlPlansDans([])!==null)throw new Error("un tableau pour rien");
+  if(mdlPlansDans(null)!==null)throw new Error("un tableau sans plans");
+  /* UN CONTOUR SANS EXTERIEUR EXPLOITABLE EST ECARTE : trois nombres ne font
+     pas un polygone, et `moveTo` sur un tableau court poserait un NaN. */
+  if(mdlPlansDans([{c:0,n:0,g:[{o:[0,0,1,1]}]}])!==null)
+    throw new Error("un contour a deux sommets a ete garde");
+});
+
+T("plans : le cuivre d'un net mis en evidence suit la meme regle",()=>{
+  /* La mise en evidence construisait son propre chemin unique, avec le meme
+     defaut : surligner un plan de masse trouait sa propre surface la ou deux
+     ilots se recouvrent. */
+  const carre=(x0,y0,x1,y1)=>[x0,y0, x1,y0, x1,y1, x0,y1];
+  carte({
+    nets:["GND"],
+    piste:{c:0, n:0, w:0.4, p:[10,20, 20,20]},
+    plans:[{c:0, n:0, g:[{o:carre(0,0,20,20), t:[]},
+                         {o:carre(10,0,30,20), t:[]}]}]
+  });
+  V.net=0;
+  const g=mdlCheminsNet(0,mdlMevTout());
+  if(!g.plans)throw new Error("aucune surface mise en evidence");
+  if(!Array.isArray(g.plans))
+    throw new Error("la mise en evidence garde un chemin unique");
+  if(g.plans.length!==2)
+    throw new Error(g.plans.length+" chemin(s) au lieu de deux");
+});
+
+T("chute DC : les formes ecartees NOMMENT leur couche",()=>{
+  /* « 90 forme(s) ecartee(s) » ne se corrige pas : il faut savoir LAQUELLE des
+     couches manque a l'empilage de calcul pour aller la completer -- et le
+     compte par couche dit s'il s'agit d'un oubli (une couche de cuivre
+     entiere absente) ou du cas normal : du cuivre sur une couche technique,
+     qui n'a rien a faire dans un reseau resistif. */
+  const pistes=[{c:0,n:0,w:0.5,p:[10,20, 40,20]},
+                {c:1,n:0,w:0.5,p:[10,22, 40,22]},
+                {c:1,n:0,w:0.5,p:[10,24, 40,24]}];
+  carte({
+    nets:["VDD","GND"],
+    piste:pistes[0], pistes:pistes,
+    /* La couche 1 est dans `couches` mais PAS dans l'empilage : c'est
+       exactement le cas qui ecarte des formes. */
+    couches:["Top","Masque","Bottom"],
+    empilage:[
+      {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR"},
+      {nom:"D1",     seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3"},
+      {nom:"Bottom", seq:3, ep:0.035, type:"CONDUCTOR"}
+    ]
+  });
+  ltPreparer();
+  SIM_IPC.dcOublier();
+  SIM_DCB.bornes=[
+    {role:"source", nom:"A", x:10, y:20, couche:0, net:"VDD", d:1, valeur:3.3},
+    {role:"charge", nom:"B", x:40, y:20, couche:0, net:"VDD", d:1, valeur:1}
+  ];
+  const r=SIM_IPC.cuivreDC.call({dcBornes:()=>SIM_DCB.bornes});
+  if(r.erreur)throw new Error("refus inattendu : "+r.erreur);
+  const n=(r.notes||[]).find(t=>/ecart|écart/.test(t))||"";
+  if(!n)throw new Error("aucune note sur les formes ecartees");
+  if(!/Masque/.test(n))
+    throw new Error("la note ne nomme pas la couche : "+n);
+  if(!/\(2\)/.test(n))
+    throw new Error("la note ne dit pas combien par couche : "+n);
+  if(!/empilage/.test(n))
+    throw new Error("la note ne dit pas quoi faire : "+n);
+});
+
+T("chute DC : la portee sert aussi au chemin de retour, dans le bon sens",()=>{
+  /* LE SENS DE L'ERREUR S'INVERSE ICI, et c'est pour cela que la portee y
+     compte encore plus. Cote solveur DC, un borgne pris pour traversant rend
+     une resistance SURESTIMEE -- le cote prudent. Cote chemin de retour, il
+     fait passer pour REFERMEE une boucle qui reste ouverte : ca rassure. */
+  dcCarte4Ipc([]);
+  const p=simXtPortee({sa:0, sb:1, ss:"calque"});
+  if(!p.declaree)throw new Error("la portee lue n'est pas reconnue");
+  if(p.a!==simRangCu(0)||p.b!==simRangCu(1))
+    throw new Error("portee envoyee "+p.a+"→"+p.b);
+  const q=simXtPortee({});
+  if(q.declaree)throw new Error("une portee absente se declare lue");
+  if(q.a!==simRangCu(0)||q.b!==simRangCu(3))
+    throw new Error("le repli ne couvre pas la carte : "+q.a+"→"+q.b);
+  /* ET LE COMPTE : la note d'optimisme ne doit parler QUE des supposes. Zero
+     suppose, pas de note -- l'ecrire quand meme apprendrait a ne plus la
+     lire. */
+  if(simXtPorteesSupposees([{portee_declaree:true},
+                            {portee_declaree:true}])!==0)
+    throw new Error("des supposes comptes la ou il n'y en a pas");
+  if(simXtPorteesSupposees([{portee_declaree:true},{}])!==1)
+    throw new Error("un suppose n'est pas compte");
+});
+
+T("chute DC : les cotes thermiques viennent de l'empilage, pas d'un repli",()=>{
+  /* LE SOLVEUR NE LIT PLUS L'ECHAUFFEMENT SUR UNE CHARTE : il resout
+     l'etalement dans le stratifie, et il lui faut deux cotes que seul
+     l'empilage porte. Sur la carte a quatre couches ci-dessus : trois
+     intervalles de 0,2 + 0,4 + 0,2 = 0,8 mm de dielectrique. */
+  const r=dcCarte4Ipc([]);
+  const th=r.thermique;
+  if(!th)throw new Error("aucune cote thermique envoyee");
+  if(Math.abs(th.epaisseur_stratifie-0.8)>1e-9)
+    throw new Error("stratifie : "+th.epaisseur_stratifie+" mm au lieu de 0,8");
+  /* AUCUN PLAN SUR CETTE CARTE : quatre pistes, rien qui couvre. Le cuivre
+     etaleur doit donc etre NUL -- un repli optimiste inventerait un plan de
+     masse et rendrait une temperature plus basse que la verite, ce qui est
+     l'erreur du cote qui rassure. */
+  if(th.cuivre_etaleur>1e-12)
+    throw new Error("un cuivre etaleur invente : "+th.cuivre_etaleur);
+  /* λ N'EST PAS FOURNI : « FR-4 » ne donne pas une conductivite thermique, il
+     la suggere. Le poser ici la ferait passer pour une cote lue ; on laisse le
+     solveur mettre son repli et l'ANNONCER comme suppose. */
+  if(th.k_stratifie!=null)
+    throw new Error("un lambda est fourni alors qu'aucun fichier ne le porte");
+
+  /* AVEC UN PLAN, il doit remonter. Une zone qui couvre la carte sur la couche
+     du bas : `ltPreparer` en fait un plan, et le meme taux qui decide d'une
+     masse de reference decide de l'ailette. */
+  carte({
+    nets:["VDD","GND"],
+    piste:{c:0, n:0, w:0.5, p:[10,20, 40,20]},
+    couches:["Top","Bottom"],
+    plans:[{c:1, n:1, g:[{o:CONTOUR, t:[]}]}]
+  });
+  ltPreparer();
+  const th2=simDCThermiqueIpc();
+  if(!(th2.cuivre_etaleur>0.03))
+    throw new Error("le plan n'etale pas : "+th2.cuivre_etaleur);
+});
+
+T("carte DC : cet outil PROPOSE la couche de la charge, il ne l'impose plus",()=>{
+  /* CE QUI NE MARCHAIT PAS. La visionneuse affiche toutes les couches et n'a
+     pas de couche active : elle prenait celle de la premiere CHARGE, et rien
+     d'autre. Sur un rail qui traverse la carte -- le cas ordinaire d'un calcul
+     de chute --, la couche ou ca chauffe n'est presque jamais celle-la, et il
+     fallait effacer les bornes et les reposer dans un autre ordre pour la
+     voir, ce qui relance le calcul pour rien. */
+  dcCarte4Ipc([]);
+  SIM_DCB.bornes=[
+    {role:"source", nom:"A", x:10, y:20, couche:0, net:"VDD", d:1, valeur:3.3},
+    {role:"charge", nom:"B", x:40, y:20, couche:3, net:"VDD", d:1, valeur:1}
+  ];
+  if(SIM_IPC.dcCoucheProposee()!==3)
+    throw new Error("la charge n'est pas proposee : "+
+                    SIM_IPC.dcCoucheProposee());
+  if(SIM_IPC.dcNomCouche(3)!=="Bottom")
+    throw new Error("la couche n'est pas nommee : "+SIM_IPC.dcNomCouche(3));
+  const garde=SIM.dcImages, gardeC=SIM.dcCouche;
+  try{
+    SIM.dcImages={images:new Map([[0,{}],[3,{}]]), vmin:0, vmax:1,
+                  quoi:"echauffement"};
+    SIM.dcCouche=null;
+    if(simDCCoucheVue()!==3)
+      throw new Error("sans choix, la proposition n'est pas suivie : "+
+                      simDCCoucheVue());
+    SIM.dcCouche=0;
+    if(simDCCoucheVue()!==0)
+      throw new Error("le choix de la fiche n'est pas suivi : "+
+                      simDCCoucheVue());
+  }finally{SIM.dcImages=garde;SIM.dcCouche=gardeC;}
 });
 
 T("chute DC : un percage NON metallise ne conduit rien, et c'est dit",()=>{
@@ -2161,6 +2473,32 @@ T("le chevelu tombe sur le cuivre, en unités du fichier",()=>{
                     t.txt.map(e=>e.s).join(" | "));
 });
 
+T("la sélection d'un via dans le rapport met son chevelu en surbrillance",()=>{
+  const t=toileMouchard();
+  const vraiPoser=global.poserMonde, vraiW2s=global.w2s;
+  global.poserMonde=function(){};
+  global.w2s=function(x,y){return {x:x, y:y};};
+  const res={discontinuites:{transitions:[
+    {troncon:1, retour:{x:25.4, y:50.8, retenus:1, vias:[{x:50.8, y:50.8, retenu:true, part:1}]},
+     modelise:{inductance_nH:0.5, inductance_source:"boucle"}, cotes:{pastille_mm:0.762}},
+    {troncon:2, retour:{x:60, y:60, retenus:1, vias:[{x:70, y:60, retenu:true, part:1}]},
+     modelise:{inductance_nH:0.8, inductance_source:"boucle"}, cotes:{pastille_mm:0.762}}
+  ]}};
+  const o=SIM.ouvert, a=SIM.analyse, r=SIM.res, va=SIM.viaActif;
+  SIM.ouvert=true; SIM.analyse="retour"; SIM.res=res;
+  SIM.viaActif=0;
+  try{
+    simRetourTraceIpc(t.ctx,1);
+  }finally{
+    SIM.ouvert=o; SIM.analyse=a; SIM.res=r; SIM.viaActif=va;
+    global.poserMonde=vraiPoser; global.w2s=vraiW2s;
+  }
+  if(t.cercles.length!==3)
+    throw new Error("3 cercles attendus dont le halo du via actif, "+t.cercles.length);
+  if(t.txt.filter(e=>/^L = /.test(e.s)).length!==1)
+    throw new Error("seul le via sélectionné doit afficher son étiquette d'inductance");
+});
+
 /* ==========================================================================
    UNE PISTE COURBE EST UNE PISTE
    --------------------------------------------------------------------------
@@ -2884,6 +3222,44 @@ T("la surimpression suit son onglet, et s'éteint sans rien jeter",()=>{
     throw new Error("elle ne survit pas au changement d'onglet : elle "+
                     "désignerait du cuivre sous une fiche qui n'en parle pas");
   SIM.analyse="crosstalk"; SIM.ouvert=false; SIM_XT.res=null;
+});
+
+T("le rôle d'une couche de cuivre peut être forcé en signal ou en plan",()=>{
+  /* UNE COUCHE ARROSÉE PEUT ÊTRE DU SIGNAL, ET UNE COUCHE SIGNAL PEUT ÊTRE UN PLAN.
+     Quand toutes les couches de cuivre portent un plan de masse arrosé, l'auto-détection
+     les classe toutes en plan, ce qui fausse les références. L'utilisateur doit
+     pouvoir forcer une couche en signal ou en plan via V.sur.role. */
+  carte({nets:["N$1","GND"], plans:[plan(1, rect(2,2,58,38), [])]});
+  ltPreparer();
+  const c0 = LT.cu[0];
+  const c1 = LT.cu[1];
+  if(!c1.plan) throw new Error("c1 devrait être auto-détecté en plan");
+
+  // Forcer c1 en signal
+  V.sur.role[c1.nom] = "signal";
+  ltPreparer();
+  if(LT.cu[1].plan !== false) throw new Error("c1 devrait être devenu signal après surcharge");
+  if(LT.cu[1].roleSaisi !== true) throw new Error("c1 devrait être marqué roleSaisi");
+
+  // Vérifier que simStackupIpc envoie bien role: "signal"
+  let st = simStackupIpc();
+  let cu1 = st.layers.find(l => l.name === c1.nom);
+  if(cu1.role !== "signal") throw new Error("simStackupIpc devrait émettre role: signal pour c1");
+
+  // Forcer c0 (TOP signal) en plan
+  V.sur.role[c0.nom] = "plan";
+  ltPreparer();
+  if(LT.cu[0].plan !== true) throw new Error("c0 devrait être devenu plan après surcharge");
+  st = simStackupIpc();
+  let cu0 = st.layers.find(l => l.name === c0.nom);
+  if(cu0.role !== "plane") throw new Error("simStackupIpc devrait émettre role: plane pour c0");
+
+  // Nettoyage de la surcharge
+  delete V.sur.role[c0.nom];
+  delete V.sur.role[c1.nom];
+  ltPreparer();
+  if(LT.cu[1].plan !== true) throw new Error("c1 devrait être redevenu plan après retrait de la surcharge");
+  if(LT.cu[1].roleSaisi !== false) throw new Error("c1 ne devrait plus être marqué roleSaisi");
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

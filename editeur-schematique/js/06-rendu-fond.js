@@ -75,10 +75,23 @@ function drawGrid(c,w,h){
   c.stroke();
 }
 function drawWires(c){
-  c.strokeStyle=C_WIRE;c.lineWidth=3.4;c.lineCap="round";
-  c.beginPath();
-  for(const w of S.wires){c.moveTo(w.x1,w.y1);c.lineTo(w.x2,w.y2);}
-  c.stroke();
+  const std=[], bus=[];
+  for(const w of S.wires){
+    if(w.bus) bus.push(w);
+    else std.push(w);
+  }
+  if(std.length){
+    c.strokeStyle=C_WIRE;c.lineWidth=3.4;c.lineCap="round";
+    c.beginPath();
+    for(const w of std){c.moveTo(w.x1,w.y1);c.lineTo(w.x2,w.y2);}
+    c.stroke();
+  }
+  if(bus.length){
+    c.strokeStyle=C_BUS;c.lineWidth=BUS_WIDTH;c.lineCap="round";
+    c.beginPath();
+    for(const w of bus){c.moveTo(w.x1,w.y1);c.lineTo(w.x2,w.y2);}
+    c.stroke();
+  }
 }
 let _junCache=null, _junVer=-1;
 function junctions(){

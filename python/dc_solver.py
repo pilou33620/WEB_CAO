@@ -2,6 +2,23 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.1.0
+# Date: 2026-09-03
+# Explication: L'ECHAUFFEMENT NE VIENT PLUS D'UNE SEULE CHARTE. IPC-2221
+#   ignore le stratifie et les plans -- les deux seuls chemins par lesquels la
+#   chaleur part vraiment --, et elle rend une couche interne 4,83 fois plus
+#   chaude qu'une externe, ce que la campagne IPC-2152 a mesure faux. Un
+#   MODELE D'ETALEMENT prend sa place : la carte est une ailette plane de
+#   conductance de nappe k*h + k_cu*t_etaleur, qui perd par h sur ses deux
+#   faces, et la montee vaut p'/g avec la boucle en resistivite du cuivre
+#   resolue. Il consomme la conductivite du lamine, l'epaisseur de stratifie et
+#   le cuivre etaleur -- que l'empilage porte des deux cotes. IPC-2221 reste
+#   calculee et rendue A COTE : quand les deux s'ecartent, c'est que la carte
+#   evacue, et c'est ce qu'on veut savoir.
+#   Ajoute : `_thermique`, `_echauffement_etalement`, `_phrase_thermique`,
+#   le bloc `thermique` du document, les tableaux `echauffement_etalement` et
+#   `echauffement_ipc2221`, et le refus explicite de l'emballement thermique.
+#
 # Version: 2.0.0
 # Date: 2026-08-29
 # Explication: REECRITURE. La 1.0.0 n'etait pas un solveur : elle montait un
@@ -56,6 +73,7 @@ d'echange, et c'est le seul endroit ou la conversion a lieu.
 
 import logging
 import math
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +121,7 @@ def etat():
                            " « pip install scipy »."}
     return {"dispo": True, "format": FORMAT,
             "methode": "réseau résistif surfacique, gradient conjugué",
+            "modeles_thermiques": list(MODELES_THERMIQUES),
             "max_noeuds": MAX_NOEUDS}
 
 
@@ -183,10 +202,24 @@ def mailler(polygones, pas):
     ny = int(math.ceil((y1 - y0) / pas)) + 1
     couches = sorted({p["couche"] for p in polygones})
     if nx * ny * len(couches) > MAX_NOEUDS * 4:
+        # LE PAS QUI TIENDRAIT, DIT EN CHIFFRES. « Augmentez le pas » laisse
+        # tatonner : la grille va comme 1/pas^2, donc doubler le pas divise le
+        # compte par quatre, et il n'y a aucune raison de faire chercher a la
+        # main un nombre qu'on sait poser. On l'arrondit vers le HAUT au
+        # micron : arrondi vers le bas, le pas propose serait refuse a son
+        # tour, ce qui est le pire des conseils.
+        tient = math.sqrt((x1 - x0) * (y1 - y0) * len(couches)
+                          / float(MAX_NOEUDS * 4))
+        tient = math.ceil(tient * 1e6) / 1e6
         raise ErreurDC(
             "Trame trop fine : %d x %d carreaux sur %d couche(s)."
             % (nx, ny, len(couches)),
-            "Augmentez le pas de maillage.")
+            "Le cuivre envoyé occupe une boîte de %.1f x %.1f mm : à ce pas,"
+            " la grille compte plus de carreaux que le solveur n'en accepte,"
+            " même là où il n'y a pas de cuivre. Un pas d'au moins %.3f mm"
+            " tient — ou restreignez la portée du calcul, ce qui rétrécit la"
+            " boîte et rend la finesse au cuivre qui reste."
+            % ((x1 - x0) * 1e3, (y1 - y0) * 1e3, tient * 1e3))
 
     # `cases` : (couche, ix, iy) -> (net, epaisseur). Le DERNIER polygone
     # gagne, comme le cuivre pose par-dessus sur la carte.
@@ -235,10 +268,14 @@ def mailler(polygones, pas):
             " carreaux dans la largeur d'une piste pour que sa résistance"
             " veuille dire quelque chose.")
     if len(cases) > MAX_NOEUDS:
+        # Le nombre de noeuds va comme 1/pas^2 : le pas qui tient se pose.
+        tient = math.ceil(pas * math.sqrt(len(cases) / float(MAX_NOEUDS))
+                          * 1e6) / 1e6
         raise ErreurDC(
             "Maillage trop lourd : %d noeuds, maximum %d."
             % (len(cases), MAX_NOEUDS),
-            "Augmentez le pas de maillage ou restreignez la sélection.")
+            "Un pas d'au moins %.3f mm tient — ou restreignez la sélection."
+            % (tient * 1e3))
 
     index = {}
     coords = []
@@ -372,7 +409,10 @@ def _noeuds_du_point(maillage, point, defaut_rayon=None, portee=None):
 #   direction -- c'est la reconstruction centree ordinaire, et au bout d'une
 #   piste elle rend bien la moitie : rien ne sort par la face qui n'existe pas.
 #
-#   L'ECHAUFFEMENT. C'est IPC-2221, la charte historique :
+#   L'ECHAUFFEMENT. DEUX MODELES, RENDUS TOUS LES DEUX, et il faut savoir
+#   lequel on lit.
+#
+#   (a) LA CHARTE IPC-2221, historique :
 #
 #       I = k * dT^0.44 * A^0.725        A en mils carres, I en amperes
 #       k = 0,048 en couche EXTERIEURE, 0,024 en couche INTERNE
@@ -381,23 +421,211 @@ def _noeuds_du_point(maillage, point, defaut_rayon=None, portee=None):
 #   du conducteur, pas seulement la densite : on mesure donc la largeur locale
 #   du cuivre sur la trame, perpendiculairement au courant.
 #
-# CE QUE CE CHIFFRE N'EST PAS, ET IL FAUT LE LIRE AINSI.
+#   (b) L'ETALEMENT DANS LE STRATIFIE, qui est ce qu'IPC-2152 a mesure et que
+#   la charte ignore. C'est ce modele-ci qui decide, et c'est celui que
+#   `modele_thermique` nomme dans le resultat.
 #
-#   · IPC-2221 est une CHARTE EMPIRIQUE, relevee sur un conducteur ISOLE, a
-#     l'air calme, sans cuivre voisin ni composant chaud. Elle ne connait ni le
-#     stratifie, ni les plans qui evacuent, ni les pistes d'a cote.
-#   · IPC-2152 lui a succede et donne des temperatures NOTABLEMENT plus basses
-#     dans la plupart des cas, justement parce qu'elle tient compte de la
-#     conduction du substrat. Elle n'est pas implementee ici : ce qu'on rend
-#     est donc CONSERVATEUR, et c'est le bon sens de l'erreur.
-#   · Ce n'est pas une simulation thermique. C'est une lecture de charte, faite
-#     point par point sur une section mesuree.
+# POURQUOI LA CHARTE NE SUFFIT PAS, ET CE QUE 2152 A CHANGE.
+#
+#   IPC-2221 est une CHARTE EMPIRIQUE, relevee sur un conducteur ISOLE, a
+#   l'air calme, sans cuivre voisin ni composant chaud. Elle ne connait NI le
+#   stratifie, NI les plans qui evacuent -- c'est-a-dire ni l'un ni l'autre des
+#   deux chemins par lesquels la chaleur part vraiment sur une carte moderne.
+#   Ses deux consequences se posent a la main :
+#
+#     · une couche INTERNE y sort 4,83 fois plus chaude qu'une externe
+#       (2^(1/0,44)). C'est le resultat que la campagne IPC-2152 a RENVERSE :
+#       une piste noyee dans le stratifie est mieux refroidie, pas moins, parce
+#       que le lamine conduit mieux que l'air calme ;
+#     · un PLAN DE CUIVRE a cote de la piste ne change rien a son chiffre.
+#       Or 35 um de cuivre pleine carte etalent dix fois mieux que 1,6 mm de
+#       FR-4 : c'est le facteur le plus lourd de tout le probleme, et il est
+#       absent de la charte.
+#
+# LE MODELE D'ETALEMENT, POSE EN ENTIER.
+#
+#   Un conducteur qui porte I dissipe, par metre de longueur,
+#
+#       p' = I^2 * rho / A              [W/m]
+#
+#   et cette chaleur ne peut sortir que par la SURFACE de la carte. Elle y
+#   arrive en s'etalant lateralement : la carte est une AILETTE plane, de
+#   conductance de nappe
+#
+#       Ks = k_stratifie * h_lamine + k_cuivre * t_etaleur     [W/K]
+#
+#   -- le lamine et, en parallele, l'epaisseur de cuivre qui etale reellement
+#   (un plan compte pour son epaisseur, une couche de signal pour sa part de
+#   remplissage : c'est l'appelant qui la mesure, il a l'empilage) --, qui perd
+#   vers l'ambiante par h sur chacune de ses DEUX faces. L'ailette semi-infinie
+#   alimentee sur son bord a pour conductance lineique sqrt(Ks * 2h) ; il y en a
+#   une de chaque cote du conducteur, donc
+#
+#       g_etalement = 2 * sqrt(Ks * 2h)                       [W/(K.m)]
+#
+#   auquel s'ajoute, pour une couche EXTERIEURE seulement, ce que le conducteur
+#   perd directement par sa propre face nue, h * W. D'ou
+#
+#       dT = p' / g            g = g_etalement (+ h*W si externe)
+#
+#   LA LONGUEUR D'ETALEMENT sqrt(Ks / 2h) dit sur combien de millimetres la
+#   carte emporte la chaleur : 7 mm sur du FR-4 nu, 24 mm des qu'un plan est la.
+#   Elle est rendue dans `thermique`, parce que c'est elle qui explique le
+#   chiffre -- et parce qu'un conducteur plus large qu'elle n'est plus une
+#   piste : il est sa propre ailette, et le modele le surestime alors.
+#
+#   LE CUIVRE SE DEGRADE EN CHAUFFANT : rho monte de 0,393 % par kelvin, donc
+#   p' aussi. dT = u (1 + alpha dT) se resout en dT = u / (1 - alpha u), et
+#   cette boucle est ce qui fait fondre une piste juste au-dela d'un seuil. Au
+#   dela de BOUCLE_MAX on ne rend plus un chiffre : on le borne et on le DIT.
+#
+# CE QUE CE CHIFFRE N'EST TOUJOURS PAS.
+#
+#   · Ce n'est pas une simulation thermique : la carte est prise pour une
+#     ailette plane uniforme, sans composant chaud, sans autre piste qui
+#     dissipe a cote, et h y est constant -- donc sans convection forcee et
+#     sans la montee du rayonnement quand la carte chauffe (ce dernier point
+#     penche du cote prudent).
+#   · h et la conductivite du lamine sont des ORDRES DE GRANDEUR. Vingt pour
+#     cent d'incertitude est la nature de la chose, pas un defaut de ce code.
+#   · LES DEUX CHIFFRES SONT RENDUS. Quand ils s'ecartent beaucoup, c'est que
+#     la carte evacue -- ou n'evacue pas -- et c'est justement ce qu'on veut
+#     savoir. Le panneau les affiche cote a cote.
 # ==========================================================================
 
 IPC2221_K_EXT = 0.048               # couche exterieure, a l'air libre
 IPC2221_K_INT = 0.024               # couche interne, noyee dans le stratifie
 MILS2_PAR_MM2 = 1.0 / (0.0254 ** 2)  # 1 mm2 = 1550,0031 mils2
 LARGEUR_MAX_CARREAUX = 400          # au-dela, c'est un plan, pas une piste
+
+# LE MODELE D'ETALEMENT. Ces quatre nombres sont ceux qu'on peut contester, et
+# c'est pour cela qu'ils sont nommes et rendus dans le resultat.
+CONDUCTIVITE_CUIVRE_TH = 390.0      # W/(m.K)
+K_STRATIFIE_DEFAUT = 0.8            # W/(m.K) : FR-4 DANS LE PLAN. Le travers
+                                    # vaut trois fois moins (0,25-0,3), mais
+                                    # c'est bien lateralement que la chaleur
+                                    # s'en va -- l'epaisseur ne fait que 1,6 mm.
+H_SURFACE_DEFAUT = 12.0             # W/(m2.K) par face : environ 7 de
+                                    # convection naturelle et 5 de rayonnement
+                                    # (4*eps*sigma*T^3 = 5,1 a 20 degres,
+                                    # eps = 0,9).
+EPAISSEUR_STRATIFIE_DEFAUT = 1.6e-3  # m, une carte ordinaire
+ALPHA_CUIVRE = 3.93e-3              # 1/K, coefficient de resistivite du cuivre
+BOUCLE_MAX = 0.8                    # au-dela, c'est un emballement : on borne
+MODELES_THERMIQUES = ("etalement", "ipc2221")
+MODELE_THERMIQUE_DEFAUT = "etalement"
+
+
+def _thermique(brut=None):
+    """Les entrees du modele d'etalement, completees de leurs replis.
+
+    RIEN N'EST DEVINE EN SILENCE : chaque repli est nomme dans `replis`, et le
+    resultat l'emporte. « 6 K » sur une conductivite supposee et « 6 K » sur
+    une conductivite declaree ne se lisent pas pareil, et seul le second se
+    defend devant un fabricant.
+
+    Longueurs en METRES ici, comme partout dans ce module.
+    """
+    brut = dict(brut or {})
+    replis = []
+
+    def lire(cle, defaut, nom):
+        v = brut.get(cle)
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            v = None
+        if v is None or not (v > 0):
+            replis.append(nom)
+            return defaut
+        return v
+
+    modele = str(brut.get("modele") or MODELE_THERMIQUE_DEFAUT)
+    if modele not in MODELES_THERMIQUES:
+        modele = MODELE_THERMIQUE_DEFAUT
+    th = {
+        "modele": modele,
+        "k_stratifie": lire("k_stratifie", K_STRATIFIE_DEFAUT,
+                            "conductivité du stratifié"),
+        "epaisseur_stratifie": lire("epaisseur_stratifie",
+                                    EPAISSEUR_STRATIFIE_DEFAUT,
+                                    "épaisseur de stratifié"),
+        "h_surface": lire("h_surface", H_SURFACE_DEFAUT,
+                          "échange en surface"),
+        # LE CUIVRE QUI ETALE : zero par defaut, et c'est voulu. Un repli
+        # optimiste inventerait un plan de masse la ou personne n'en a declare,
+        # et rendrait une temperature plus basse que la verite -- l'erreur du
+        # cote qui rassure. Zero rend la carte nue, donc plus chaude.
+        "cuivre_etaleur": max(float(brut.get("cuivre_etaleur") or 0.0), 0.0),
+    }
+    if not brut.get("cuivre_etaleur"):
+        replis.append("cuivre étaleur (pris nul : aucun plan déclaré)")
+    ks = (th["k_stratifie"] * th["epaisseur_stratifie"]
+          + CONDUCTIVITE_CUIVRE_TH * th["cuivre_etaleur"])
+    h2 = 2.0 * th["h_surface"]
+    th["nappe"] = ks                                  # W/K
+    th["g_etalement"] = 2.0 * math.sqrt(max(ks, 0.0) * h2)   # W/(K.m)
+    th["longueur_etalement"] = math.sqrt(ks / h2) if h2 > 0 else 0.0
+    th["replis"] = replis
+    return th
+
+
+def _echauffement_etalement(courant, section_m2, largeur_m, externe, th):
+    """La montee en temperature par etalement dans la carte, en kelvins.
+
+    Rend (dT, emballement). `emballement` dit que la boucle resistivite ->
+    puissance -> temperature a ete BORNEE : le chiffre rendu est alors un
+    plancher, et la piste est a refaire, pas a lire.
+    """
+    i = abs(float(courant))
+    a = float(section_m2)
+    if not (i > 0 and a > 0):
+        return 0.0, False
+    g = th["g_etalement"]
+    if externe:
+        g += th["h_surface"] * max(float(largeur_m), 0.0)
+    if not (g > 0):
+        return 0.0, False
+    u = i * i * RESISTIVITE_CUIVRE / (a * g)          # K, cuivre a 20 degres
+    boucle = ALPHA_CUIVRE * u
+    if boucle >= BOUCLE_MAX:
+        return float(u / (1.0 - BOUCLE_MAX)), True
+    return float(u / (1.0 - boucle)), False
+
+
+def _phrase_thermique(th):
+    """CE QUE LE CHIFFRE EST, EN UNE PHRASE QUE LE RESULTAT PORTE LUI-MEME.
+
+    Un utilisateur qui lit « 6 K » sans savoir d'ou ca vient ne peut pas juger
+    si le chiffre le concerne. Les deux modeles ne se lisent pas pareil, et
+    c'est ce que cette phrase dit -- avec les cotes sur lesquelles le modele
+    d'etalement a effectivement travaille, parce que ce sont elles qu'on
+    conteste.
+    """
+    if th["modele"] == "ipc2221":
+        return ("IPC-2221 (charte historique, conducteur isolé à l'air calme,"
+                " sans stratifié ni plan). IPC-2152 a mesuré le contraire de"
+                " ce qu'elle suppose sur les couches internes : le modèle"
+                " d'étalement, rendu à côté, en tient compte.")
+    # PAS DE CHIFFRE DANS CETTE PHRASE, ET C'EST DELIBERE. Les cotes sont dans
+    # `thermique`, et c'est la PAGE qui les ecrit : elle seule connait la
+    # virgule decimale francaise et les unites du panneau. Les poser ici les
+    # ferait paraitre deux fois -- une fois en « 0.80 », une fois en « 0,80 »
+    # -- dans la meme fiche, ce qui est exactement ce qui s'est produit.
+    phrase = ("Étalement dans la carte : la conduction du stratifié et des"
+              " plans, que la campagne IPC-2152 a mesurée et qu'IPC-2221"
+              " ignore. Ce n'est pas une simulation thermique — la carte est"
+              " prise pour une ailette plane uniforme, à échange constant,"
+              " sans composant chaud ni piste voisine qui dissipe ; ±20 % est"
+              " la nature de la chose.")
+    if th["replis"]:
+        phrase += (" Supposé faute de mieux : %s. IPC-2221 est rendue à côté,"
+                   " et reste plus prudente sauf sur carte nue."
+                   % ", ".join(th["replis"]))
+    else:
+        phrase += (" IPC-2221 est rendue à côté : elle ne connaît aucune de"
+                   " ces cotes.")
+    return phrase
 
 
 def _echauffement_ipc2221(courant, section_mm2, externe):
@@ -419,9 +647,13 @@ def _echauffement_ipc2221(courant, section_mm2, externe):
     return float((i / denom) ** (1.0 / 0.44))
 
 
-def _densite_et_echauffement(maillage, potentiel, rho, externes):
+def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
     """Par noeud : la densite de courant (A/mm2), la largeur locale du cuivre
-    (mm) et la montee en temperature (K).
+    (mm) et la montee en temperature (K) SELON LES DEUX MODELES.
+
+    Rend (densites, largeurs, etalement, ipc2221, emballements) -- quatre
+    listes alignees sur les noeuds du maillage, et le nombre de conducteurs ou
+    la boucle thermique a du etre bornee.
 
     DEUX PASSES, ET LA SECONDE EST CE QUI REND LE CHIFFRE UTILISABLE.
 
@@ -429,10 +661,10 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes):
     carte de chaleur -- on veut voir ou le courant se presse.
 
     La seconde calcule la temperature, et elle ne peut pas se contenter du
-    point : IPC-2221 demande le courant TOTAL d'un conducteur et sa SECTION.
-    On mesure donc, perpendiculairement au courant, l'etendue du cuivre, et on
-    INTEGRE la densite sur cette traversee. Le courant ainsi obtenu est celui
-    qui passe vraiment, et il converge.
+    point : les DEUX modeles demandent le courant TOTAL d'un conducteur et sa
+    SECTION. On mesure donc, perpendiculairement au courant, l'etendue du
+    cuivre, et on INTEGRE la densite sur cette traversee. Le courant ainsi
+    obtenu est celui qui passe vraiment, et il converge.
 
     POURQUOI CETTE DISTINCTION N'EST PAS UN RAFFINEMENT. A l'entree d'un
     retrecissement, l'angle rentrant rend la densite SINGULIERE : le pic croit
@@ -441,9 +673,6 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes):
     maximum ponctuel n'est donc PAS un chiffre d'ingenieur : il dit ou regarder,
     pas combien. La moyenne sur la section, elle, est un flux a travers une
     coupe, et elle ne bouge plus.
-
-    Rend (densites, largeurs, echauffements), trois listes alignees sur les
-    noeuds du maillage.
     """
     index = maillage["index"]
     cellules = maillage["cellules"]
@@ -453,9 +682,11 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes):
     n = len(cellules)
     densites = [0.0] * n
     largeurs = [0.0] * n
-    montees = [0.0] * n
+    etal = [0.0] * n                    # le modele d'etalement
+    charte = [0.0] * n                  # IPC-2221, a cote
+    emballes = 0
     if not n:
-        return densites, largeurs, montees
+        return densites, largeurs, etal, charte, emballes
 
     def conductance(i, j):
         """Celle que `mailler` a posee : moyenne harmonique des epaisseurs."""
@@ -494,7 +725,7 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes):
 
     # -- SECONDE PASSE : LES COUPES ------------------------------------------
     # ON NE MESURE PLUS UNE LARGEUR AUTOUR D'UN POINT, ON COMPTE UN FLUX A
-    # TRAVERS UNE COUPE. C'est la meme grandeur qu'IPC-2221 attend -- le
+    # TRAVERS UNE COUPE. C'est la grandeur que les deux modeles attendent -- le
     # courant TOTAL d'un conducteur et sa SECTION -- et elle se lit exactement
     # sur la trame : chaque colonne de carreaux est une coupe, et la somme des
     # aretes qui la franchissent est le courant qui passe.
@@ -517,6 +748,7 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes):
 
     def coupe(axe):
         """`axe` = 0 : coupes verticales (le courant passe selon x)."""
+        nonlocal emballes
         vus = set()
         for k, cle in enumerate(cellules):
             if k in vus:
@@ -552,17 +784,27 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes):
                 section += eps[v] * pas                       # m2
             if section <= 0:
                 continue
-            largeur_mm = len(suite) * pas * 1e3
-            dt = _echauffement_ipc2221(total, section * 1e6,
-                                       cellules[suite[0]][0] in externes)
+            largeur = len(suite) * pas                       # m
+            externe = cellules[suite[0]][0] in externes
+            ipc = _echauffement_ipc2221(total, section * 1e6, externe)
+            dt, emballe = _echauffement_etalement(total, section, largeur,
+                                                  externe, th)
+            if emballe:
+                emballes += 1
+            # LE MODELE DEMANDE EST CELUI QUI DECIDE : c'est lui qui designe le
+            # pire conducteur d'un carreau, et lui dont la largeur est retenue.
+            # Sans quoi, sous « ipc2221 », la carte peindrait la temperature
+            # d'un conducteur et le tableau la largeur d'un autre.
+            juge = ipc if th["modele"] == "ipc2221" else dt
             for v in suite:
-                if dt > montees[v]:
-                    montees[v] = dt
-                    largeurs[v] = largeur_mm
+                if juge > (charte[v] if th["modele"] == "ipc2221" else etal[v]):
+                    etal[v] = dt
+                    charte[v] = ipc
+                    largeurs[v] = largeur * 1e3
 
     coupe(0)
     coupe(1)
-    return densites, largeurs, montees
+    return densites, largeurs, etal, charte, emballes
 
 
 def _resistance_via(via):
@@ -619,8 +861,102 @@ def _gradient_conjugue(matrice, second, atol):
     return x
 
 
+def _culs_de_sac(maillage, vias_montes, fixes, injecte, potentiel):
+    """LES MORCEAUX DE CUIVRE SANS ISSUE, ET CE QU'ILS PORTENT.
+
+    LA LOI, ET ELLE NE SE DISCUTE PAS. Un morceau de cuivre relie au reste du
+    reseau par UN SEUL chemin, et qui ne porte NI source NI charge, ne peut
+    porter aucun courant : ce qui entre doit sortir, et il n'y a pas d'autre
+    porte. C'est la loi des noeuds, appliquee non pas a un noeud mais a une
+    region entiere.
+
+    POURQUOI ON LA VERIFIE AU LIEU DE LA SUPPOSER. C'est exactement la question
+    qu'on pose devant la fiche : « ce via remonte a une pastille ou je n'ai
+    regle aucune charge, pourquoi porte-t-il du courant ? ». Il n'y a que deux
+    reponses possibles, et il faut pouvoir dire LAQUELLE :
+
+      · le cuivre CONTINUE au-dela de cette pastille -- une piste en part, ou
+        elle est posee sur un plan -- et le courant ne fait que passer. La
+        pastille n'est pas un terminus, c'est un point de passage ;
+      · le cuivre s'arrete la, et alors un courant non nul serait un BUG :
+        le reseau porterait un chemin qui n'existe pas.
+
+    COMMENT. Les composantes connexes du cuivre se calculent sur les seules
+    aretes DANS LE PLAN (`maillage["aretes"]`), sans les liaisons verticales :
+    une composante est donc un morceau de cuivre d'une couche. On compte, pour
+    chacune, les bornes qu'elle porte et les VIAS DISTINCTS qui la touchent.
+    Zero borne et un seul via : c'est un cul-de-sac, et le via qui l'alimente
+    doit porter zero.
+
+    Le cout est un parcours en largeur, negligeable devant le gradient
+    conjugue -- et il achete une verification de la solution par une loi qui
+    n'est pas celle qu'on a resolue.
+    """
+    n = len(maillage["coords"])
+    voisins = [[] for _ in range(n)]
+    for a, b, _g in maillage["aretes"]:
+        voisins[a].append(b)
+        voisins[b].append(a)
+
+    comp = [-1] * n
+    nb = 0
+    for depart in range(n):
+        if comp[depart] >= 0:
+            continue
+        comp[depart] = nb
+        pile = [depart]
+        while pile:
+            i = pile.pop()
+            for j in voisins[i]:
+                if comp[j] < 0:
+                    comp[j] = nb
+                    pile.append(j)
+        nb += 1
+
+    # Ce que chaque composante porte : des bornes, et des vias distincts.
+    bornes = [False] * nb
+    for i in fixes:
+        bornes[comp[i]] = True
+    for i in range(n):
+        if injecte[i] != 0.0:
+            bornes[comp[i]] = True
+    vias_de = [set() for _ in range(nb)]
+    for k, m in enumerate(vias_montes):
+        for ia, ib in m["liens"]:
+            vias_de[comp[ia]].add(k)
+            vias_de[comp[ib]].add(k)
+
+    tailles = [0] * nb
+    for i in range(n):
+        tailles[comp[i]] += 1
+
+    # LE COURANT DE CHAQUE VIA, une fois : il sert deux fois plus bas.
+    courant = []
+    for m in vias_montes:
+        i_via = 0.0
+        for ia, ib in m["liens"]:
+            i_via += m["g"] * (potentiel[ia] - potentiel[ib])
+        courant.append(abs(i_via))
+
+    culs = 0
+    noeuds = 0
+    pire = 0.0
+    pire_repere = ""
+    for c in range(nb):
+        if bornes[c] or len(vias_de[c]) != 1:
+            continue
+        culs += 1
+        noeuds += tailles[c]
+        k = next(iter(vias_de[c]))
+        if courant[k] > pire:
+            pire = courant[k]
+            pire_repere = str(vias_montes[k]["via"].get("repere") or "?")
+    return {"morceaux": culs, "noeuds": noeuds,
+            "pire_courant": float(pire), "pire_via": pire_repere}
+
+
 def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=None,
-                pas=None, rho=RESISTIVITE_CUIVRE):
+                pas=None, rho=RESISTIVITE_CUIVRE, thermique=None, journal=None):
     """Le potentiel dans le cuivre, et la chute par net.
 
     `polygones`  [{vertices, couche, net, epaisseur}] -- en METRES
@@ -629,6 +965,16 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
     `vias`       [{x, y, couche_a, couche_b, percage, placage, hauteur}]
     `pas`        cote du carreau, en metres ; par defaut un centieme de la
                  plus grande dimension du cuivre analyse
+    `thermique`  {modele, k_stratifie, epaisseur_stratifie, cuivre_etaleur,
+                 h_surface} -- en METRES et en W/(m.K) ; voir `_thermique`
+    `journal`    fonction d'ecriture (sys.stderr.write) ou None
+
+    LE JOURNAL DIT OU ON EN EST, PAS SEULEMENT CE QU'ON A TROUVE. Un calcul de
+    soixante mille noeuds prend une dizaine de secondes, et pendant ce temps la
+    page n'a qu'un bouton grise : rien ne distingue « ca travaille » de « c'est
+    bloque ». Une ligne par ETAPE, avec sa taille et sa duree, rend la
+    difference visible dans le terminal -- et, quand ca coince, dit LAQUELLE
+    des etapes coince. Meme convention que `simulation_em.simuler`.
 
     Rend {potentiel, chute_par_net, courant_par_net, noeuds, aretes, pas,
     reference_nets, avertissements}.
@@ -659,12 +1005,30 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
             " moins un point de référence — la broche de masse du"
             " régulateur, en général.")
 
+    debut = time.time()
+    etape = [debut]
+
+    def dire(texte):
+        """Une etape, avec le temps qu'elle a pris. Le temps CUMULE ne dit pas
+        laquelle coince ; le temps de l'etape, oui."""
+        if not journal:
+            return
+        maintenant = time.time()
+        journal("  dc : %s (%.2f s)\n" % (texte, maintenant - etape[0]))
+        etape[0] = maintenant
+
     if pas is None:
         x0, y0, x1, y1 = _boite(polys)
         pas = max(x1 - x0, y1 - y0) / 100.0
+    if journal:
+        journal("  dc : %d forme(s), %d via(s), %d borne(s), pas %.4f mm\n"
+                % (len(polys), len(vias), len(sources) + len(references),
+                   float(pas) * 1e3))
     maillage = mailler(polys, float(pas))
     n = len(maillage["coords"])
     nets = maillage["nets"]
+    dire("maillage : %d noeuds sur %d couche(s), %d liaisons de trame"
+         % (n, len(maillage["couches"]), len(maillage["aretes"])))
 
     # -- la matrice de conductance -----------------------------------------
     lignes, colonnes, valeurs = [], [], []
@@ -853,6 +1217,8 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
             v_fixe[i] = v
         second = injecte[libres] - laplacien[libres, :].dot(v_fixe)
         reduit = laplacien[libres, :][:, libres]
+        dire("systeme monte : %d inconnues, %d imposees"
+             % (len(libres), len(fixes)))
         # Un ilot de cuivre sans reference et sans via reste flottant : sa
         # sous-matrice est singuliere. On le dit plutot que de laisser le CG
         # divaguer.
@@ -860,6 +1226,7 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
         x = _gradient_conjugue(reduit, second, max(echelle * 1e-14, 1e-18))
         potentiel = v_fixe.copy()
         potentiel[libres] = x
+        dire("gradient conjugue : converge")
 
     # -- LE DETAIL VIA PAR VIA ----------------------------------------------
     # Le courant qui traverse le via est la somme, sur les paires qu'il relie,
@@ -868,6 +1235,14 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
     # vaut donc I*r exactement, et la puissance r*I^2. Le signe suit le sens
     # couche_a -> couche_b ; on rend aussi sa valeur absolue, qui est celle
     # qu'on lit dans un tableau.
+    # LE PERCAGE VOYAGE AVEC LE RESULTAT, et ce n'est pas decoratif : la page
+    # s'en sert pour savoir OU un via commence et ou il finit a l'ecran -- c'est
+    # le rayon du disque sous lequel la sonde doit rendre les valeurs de CE
+    # via. Sans lui, la page devrait retrouver le via dans sa propre geometrie
+    # et esperer que les deux listes soient encore dans le meme ordre.
+    def percage_de(v):
+        return float(v.get("percage", v.get("drill", 0.3e-3)) or 0.3e-3)
+
     detail_vias = []
     for m in vias_montes:
         i_via = 0.0
@@ -879,6 +1254,21 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
             "couche_a": m["couche_a"], "couche_b": m["couche_b"],
             "net": str((m["via"].get("net") or "?")),
             "repere": str(m["via"].get("repere") or ""),
+            "percage": percage_de(m["via"]),
+            # UN PERCAGE SUPPOSE N'EST PAS UNE COTE, et la resistance qui en
+            # decoule non plus : R va comme 1/A, donc un diametre devine a
+            # cinquante pour cent pres se paie double sur l'ohm. Le drapeau
+            # voyage avec le via pour que le tableau MARQUE ces lignes --
+            # sinon 0,076 mOhm et 0,295 mOhm se lisent avec le meme aplomb,
+            # et rien ne dit que le premier repose sur un trou devine.
+            "percage_suppose": bool(m["via"].get("percage_suppose")),
+            # LA PORTEE SUPPOSEE EST LE SEUL CAS OU LE RESEAU PEUT PORTER UN
+            # CHEMIN QUI N'EXISTE PAS. Un percage dont le fichier ne declare
+            # pas les couches est pris traversant : si le trou est borgne,
+            # cette liaison est INVENTEE, et le courant qu'elle porte l'est
+            # aussi. Le drapeau part avec le via pour que la page puisse dire
+            # QUELLE part du resultat repose sur cette hypothese.
+            "portee_supposee": bool(m["via"].get("portee_supposee")),
             "resistance": r,
             "courant": float(i_via),
             "chute": float(abs(i_via) * r),
@@ -890,6 +1280,9 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
             "x": x, "y": y, "couche_a": ca, "couche_b": cb,
             "net": str((v.get("net") or "?")),
             "repere": str(v.get("repere") or ""),
+            "percage": percage_de(v),
+            "percage_suppose": bool(v.get("percage_suppose")),
+            "portee_supposee": bool(v.get("portee_supposee")),
             "resistance": 0.0, "courant": 0.0, "chute": 0.0, "puissance": 0.0,
             "relie": False, "motif": motif,
         })
@@ -903,10 +1296,14 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
             % len(vias_ignores))
 
     # -- LA DENSITE ET L'ECHAUFFEMENT ---------------------------------------
-    # QUELLES COUCHES SONT A L'AIR LIBRE. IPC-2221 double le coefficient d'une
-    # couche exterieure (0,048 contre 0,024), et un coefficient plus grand rend
-    # une temperature plus BASSE : prendre une couche interne pour une externe
-    # sous-estime son echauffement. C'est donc l'appelant qui tranche -- il a
+    # QUELLES COUCHES SONT A L'AIR LIBRE. Une couche exterieure perd de la
+    # chaleur par sa propre face nue, l'interne non : les deux modeles s'en
+    # servent, et pas dans la meme mesure. IPC-2221 double le coefficient d'une
+    # externe (0,048 contre 0,024), ce qui rend une interne 4,83 fois plus
+    # chaude -- la seule facon d'ecarter deux couches autant est de supposer que
+    # le stratifie n'evacue rien. Le modele d'etalement, lui, n'ajoute que
+    # h*W : les deux couches en ressortent voisines, ce qui est ce que la
+    # campagne IPC-2152 a mesure. C'est l'appelant qui tranche -- il a
     # l'empilage --, par `externes`.
     #
     # A DEFAUT, la premiere et la derniere couche PRESENTES. C'est vrai d'une
@@ -918,8 +1315,37 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
         ext = {couches_vues[0], couches_vues[-1]} if couches_vues else set()
     else:
         ext = set(int(c) for c in externes)
-    densites, largeurs, montees = _densite_et_echauffement(
-        maillage, potentiel, rho, ext)
+    th = _thermique(thermique)
+    (densites, largeurs, etalement, charte,
+     emballes) = _densite_et_echauffement(maillage, potentiel, rho, ext, th)
+    # -- LE CONTROLE DES CULS-DE-SAC ---------------------------------------
+    # Voir `_culs_de_sac` : un morceau de cuivre sans issue ne peut porter
+    # aucun courant. Ce n'est pas la loi qu'on a resolue -- on a resolu un
+    # systeme lineaire --, donc la verifier apprend quelque chose.
+    culs = _culs_de_sac(maillage, vias_montes, fixes, injecte, potentiel)
+    dire("culs-de-sac : %d morceau(x) sans issue, le pire via y porte %.3g A"
+         % (culs["morceaux"], culs["pire_courant"]))
+    # LE SEUIL EST CELUI DU SOLVEUR, PAS UN CONFORT. Le gradient conjugue
+    # s'arrete sur un residu relatif de 1e-12 ; un microampere sur un rail
+    # d'un ampere est mille fois au-dessus de ce bruit. Au-dela, ce n'est pas
+    # de l'arrondi : c'est un chemin qui n'existe pas.
+    if culs["pire_courant"] > 1e-6:
+        avertissements.append(
+            "INCOHERENCE : le via %s alimente un morceau de cuivre SANS ISSUE"
+            " — ni source, ni charge, ni autre liaison verticale — et y porte"
+            " pourtant %.4g A. Un cul-de-sac ne peut rien consommer : ce"
+            " courant n'existe pas, et ce resultat porte un chemin qui n'est"
+            " pas sur la carte. C'est un defaut du calcul, pas de la carte."
+            % (culs["pire_via"], culs["pire_courant"]))
+    dire("densite et echauffement : modele '%s', %d couche(s) exterieure(s)"
+         % (th["modele"], len(ext)))
+    montees = charte if th["modele"] == "ipc2221" else etalement
+    if emballes:
+        avertissements.append(
+            "%d conducteur(s) en EMBALLEMENT THERMIQUE : la résistivité du"
+            " cuivre monte plus vite que la carte n'évacue, et la température"
+            " rendue pour eux est un PLANCHER, pas une valeur. Élargissez ce"
+            " cuivre — le modèle n'a plus de solution stable." % emballes)
 
     # -- ce qu'on en dit ----------------------------------------------------
     chute_par_net = {}
@@ -968,21 +1394,61 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
                                 maillage["coords"][kt][1],
                                 maillage["coords"][kt][2]],
             "largeur_chaude": largeurs[kt],
+            # LES DEUX MODELES AU MEME POINT, et non chacun a son maximum : ce
+            # qu'on veut lire est de combien ils s'ecartent SUR LE MEME
+            # conducteur. Deux maximums pris a deux endroits ne se comparent
+            # pas, et l'ecart qu'ils afficheraient serait celui de la
+            # geometrie, pas celui des modeles.
+            "echauffement_etalement": etalement[kt],
+            "echauffement_ipc2221": charte[kt],
         }
 
+    if journal:
+        pire = max((p["echauffement"] for p in pires.values()), default=0.0)
+        # SANS ACCENT NI TYPOGRAPHIE DANS LE JOURNAL, et ce n'est pas de la
+        # negligence : `sys.stderr` d'une console Windows peut etre en cp437,
+        # ou l'em-dash et le degre n'existent pas -- l'ecriture leverait un
+        # UnicodeEncodeError, et la requete entiere echouerait A CAUSE D'UNE
+        # LIGNE DE JOURNAL. Un log ne doit jamais pouvoir casser le calcul
+        # qu'il decrit.
+        journal("  dc : termine : %d noeuds, %d via(s) relies, chute max"
+                " %.2f mV, %.2f degres, %.2f s au total\n"
+                % (n, vias_relies,
+                   1e3 * max(chute_par_net.values() or [0.0]), pire,
+                   time.time() - debut))
     return {
         "format": FORMAT_RESULTAT,
+        "duree": time.time() - debut,
         "potentiel": potentiel.tolist(),
         "densite": densites,
         "largeur_locale": largeurs,
         "echauffement": montees,
+        # LES DEUX TABLEAUX PARTENT, TOUJOURS. Changer de modele ne doit pas
+        # coûter un aller-retour au serveur : c'est la meme resolution
+        # electrique, et seule la lecture thermique differe.
+        "echauffement_etalement": etalement,
+        "echauffement_ipc2221": charte,
         "pire_par_net": pires,
         "bornes": bornes,
         "couches_externes": sorted(ext),
-        "modele_thermique": "IPC-2221 (charte historique, conducteur isolé à"
-                            " l'air calme). IPC-2152 lui a succédé et donne"
-                            " des températures plus basses : ce qui est rendu"
-                            " ici est conservateur.",
+        # LES CULS-DE-SAC, ET CE QU'ILS PORTENT. C'est la reponse a « pourquoi
+        # ce via remonte-t-il du courant a une pastille ou je n'ai regle aucune
+        # charge ? » : la page peut desormais montrer que les morceaux SANS
+        # ISSUE portent zero, donc que ceux qui portent du courant ne sont pas
+        # des culs-de-sac -- le cuivre continue au-dela.
+        "culs_de_sac": culs,
+        "thermique": {
+            "modele": th["modele"],
+            "k_stratifie": th["k_stratifie"],
+            "epaisseur_stratifie": th["epaisseur_stratifie"],
+            "cuivre_etaleur": th["cuivre_etaleur"],
+            "h_surface": th["h_surface"],
+            "nappe": th["nappe"],
+            "g_etalement": th["g_etalement"],
+            "longueur_etalement": th["longueur_etalement"],
+            "replis": th["replis"],
+        },
+        "modele_thermique": _phrase_thermique(th),
         "noeuds": [[c[0], c[1], c[2]] for c in maillage["coords"]],
         "nets": nets,
         "chute_par_net": chute_par_net,
@@ -998,7 +1464,7 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
     }
 
 
-def resoudre_document(doc):
+def resoudre_document(doc, journal=None):
     """Le document d'echange (en MILLIMETRES) -> le resultat (en volts).
 
     C'est le seul endroit ou la conversion mm -> m a lieu, comme
@@ -1075,18 +1541,39 @@ def resoudre_document(doc):
                              or 1.6) * mm,
             "net": (str(v.get("net")) if v.get("net") is not None else None),
             "repere": str(v.get("repere") or v.get("ref") or ""),
+            # Deux drapeaux, pas des longueurs : ils ne se convertissent pas.
+            "percage_suppose": bool(v.get("percage_suppose")),
+            "portee_supposee": bool(v.get("portee_supposee")),
         }
         # Une resistance mesuree est deja en OHMS : elle ne se convertit pas.
         if v.get("resistance") is not None:
             via["resistance"] = float(v["resistance"])
         vias.append(via)
 
+    # LE BLOC THERMIQUE ARRIVE EN MILLIMETRES comme le reste, et il n'y a que
+    # DEUX longueurs dedans : l'epaisseur de stratifie et le cuivre etaleur.
+    # La conductivite est en W/(m.K) et l'echange en W/(m2.K) -- ce sont des
+    # grandeurs du SI, elles ne se convertissent pas. Les melanger ici serait
+    # diviser une conductivite par mille en silence, ce qui rendrait une carte
+    # qui n'evacue rien.
+    th_doc = doc.get("thermique") or doc.get("thermal") or {}
+    thermique = None
+    if isinstance(th_doc, dict) and th_doc:
+        thermique = {"modele": th_doc.get("modele") or th_doc.get("model")}
+        for cle in ("k_stratifie", "h_surface"):
+            if th_doc.get(cle) is not None:
+                thermique[cle] = float(th_doc[cle])
+        for cle in ("epaisseur_stratifie", "cuivre_etaleur"):
+            if th_doc.get(cle) is not None:
+                thermique[cle] = float(th_doc[cle]) * mm
+
     pas = doc.get("pas", doc.get("pitch"))
     resultat = resoudre_dc(polys, sources=points("sources", "sources"),
                            references=points("references", "references"),
                            vias=vias,
                            externes=doc.get("couches_externes"),
-                           pas=(float(pas) * mm if pas else None))
+                           pas=(float(pas) * mm if pas else None),
+                           thermique=thermique, journal=journal)
     # Ce qui repart est en millimetres, comme ce qui est arrive. Les VOLTS,
     # les AMPERES et les OHMS ne se convertissent pas : seules les longueurs.
     resultat["noeuds"] = [[x / mm, y / mm, c] for x, y, c in resultat["noeuds"]]
@@ -1094,6 +1581,10 @@ def resoudre_document(doc):
     for d in resultat.get("vias") or []:
         d["x"] = d["x"] / mm
         d["y"] = d["y"] / mm
+        # Le PERCAGE est une longueur, il repart donc en millimetres comme la
+        # position. La RESISTANCE est en ohms et ne se convertit pas.
+        if d.get("percage") is not None:
+            d["percage"] = d["percage"] / mm
     # La DENSITE est deja en A/mm2 et l'ECHAUFFEMENT en kelvins : ni l'une ni
     # l'autre ne se convertit. Seules les POSITIONS du pire point le font.
     for d in (resultat.get("pire_par_net") or {}).values():
@@ -1101,6 +1592,15 @@ def resoudre_document(doc):
             p = d.get(cle)
             if p:
                 d[cle] = [p[0] / mm, p[1] / mm, p[2]]
+    # LES COTES THERMIQUES REPARTENT EN MILLIMETRES, comme elles sont arrivees.
+    # Le panneau les affiche pour qu'on les conteste : les lui rendre en metres
+    # ferait ecrire « 0,0016 mm de stratifié ».
+    th = resultat.get("thermique")
+    if th:
+        for cle in ("epaisseur_stratifie", "cuivre_etaleur",
+                    "longueur_etalement"):
+            if th.get(cle) is not None:
+                th[cle] = th[cle] / mm
     return resultat
 
 

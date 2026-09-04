@@ -1166,7 +1166,11 @@ def la_meme_carte_avec_deux_plans_de_masse_se_referme():
     ret = t["retour"]
     assert ret["raccorde"] and ret["retenus"] == 1, (
         "le via de masse joint deux plans de masse et n'a pas ete retenu")
+    assert ret["source"] == "boucle", "ret['source'] doit valoir 'boucle'"
     assert t["modelise"]["inductance_source"] == "boucle"
+    assert "bilan_sante" in t, "bilan_sante doit être calculé pour la boucle de masse"
+    assert t["bilan_sante"]["score_reconstruction_pct"] > 90.0
+    assert all(h.get("part_vias_gnd_pct") == 100.0 for h in t["bilan_sante"]["harmoniques"])
     assert not any("de la masse à de la masse" in a
                    for a in r["avertissements"]), (
         "l'avertissement grave est sorti sur une liaison saine")
@@ -1865,6 +1869,94 @@ T("deux noms de plan ne font pas deux nets",
 T("sans net de plan, on ne conclut pas", sans_net_de_plan_on_ne_conclut_pas)
 T("une déduction et une observation ne se disent pas pareil",
   une_deduction_et_une_observation_ne_se_disent_pas_pareil)
+
+
+def la_repartition_spectrale_somme_a_un_et_bascule_en_frequence():
+    """LA REPARTITION CAVITE / DECOUPLAGE SUIT LA PHYSIQUE A TOUTE FREQUENCE.
+
+    A 10 kHz, la cavite a une impedance de plusieurs kilo-ohms et le decouplage
+    porte plus de 95 % du retour. A tres haute frequence (500 MHz), l'ESL du
+    decouplage bloque et la cavite inter-plans prend le dessus.
+    """
+    l_cav = 0.05e-9
+    c_plans = 1e-9
+    l_pont = 1.5e-9
+    c_pont = 100e-9
+    esr_pont = 0.03
+
+    # A 10 kHz : decouplage ultra-dominant
+    pp_bf, pc_bf = _tl.repartition_retour_plans(10e3, l_cav, c_plans,
+                                                l_pont=l_pont, esr_pont=esr_pont,
+                                                c_pont=c_pont)
+    proche(pp_bf + pc_bf, 1.0, 1e-6, "somme a 10 kHz")
+    assert pp_bf > 0.95, "le decouplage ne porte pas le retour a 10 kHz (%.2f)" % pp_bf
+    assert pc_bf < 0.05, "la cavite porte trop de retour a 10 kHz (%.2f)" % pc_bf
+
+    # A 500 MHz : la cavite prend le dessus face a l'ESL du condensateur
+    pp_hf, pc_hf = _tl.repartition_retour_plans(500e6, l_cav, c_plans,
+                                                l_pont=l_pont, esr_pont=esr_pont,
+                                                c_pont=c_pont)
+    proche(pp_hf + pc_hf, 1.0, 1e-6, "somme a 500 MHz")
+    assert pc_hf > pp_hf, (
+        "la cavite ne prend pas le dessus en HF : cavite=%.2f, pont=%.2f"
+        % (pc_hf, pp_hf))
+
+
+def le_bilan_de_sante_evalue_la_reconstruction_et_chiffre_le_decouplage():
+    """LE BILAN DE SANTE CHIFFRE LA QUALITE DU SIGNAL ET LE RETOUR DES HARMONIQUES.
+
+    Il fournit les 10 premieres harmoniques, les sondes HF jusqu'au genou
+    (350 MHz pour tr=1 ns), et montre que rapprocher le decouplage ameliore
+    le score de reconstruction.
+    """
+    proche_pont = _via_moignon(0, 6, ponts=[{"x": 12.0, "y": 0.0,
+                                             "repere": "C1"}], rayon=10.0)
+    loin_pont = _via_moignon(0, 6, ponts=[{"x": 25.0, "y": 0.0,
+                                           "repere": "C2"}], rayon=10.0)
+
+    doc_a = _doc_moignon(_GND_PWR, 0, 6, proche_pont)
+    doc_a["temps_montee"] = 1e-9
+    doc_a["f_fondamentale"] = 10e3
+
+    doc_b = _doc_moignon(_GND_PWR, 0, 6, loin_pont)
+    doc_b["temps_montee"] = 1e-9
+    doc_b["f_fondamentale"] = 10e3
+
+    ra = _se.simuler(doc_a)
+    rb = _se.simuler(doc_b)
+
+    ta = ra["discontinuites"]["transitions"][0]
+    tb = rb["discontinuites"]["transitions"][0]
+
+    assert "bilan_sante" in ta, "bilan_sante absent de la transition a"
+    bilan = ta["bilan_sante"]
+
+    assert len(bilan["harmoniques"]) == 10, "doit comporter 10 harmoniques"
+    assert len(bilan["sondes_hf"]) == 5, "doit comporter 5 sondes HF"
+
+    # L'harmonique 1 (10 kHz) : plus de 95% par le decouplage
+    h1 = bilan["harmoniques"][0]
+    assert h1["freq_hz"] == 10e3
+    assert h1["part_pont_pct"] > 90.0, "H1 doit passer en majorite par le pont"
+
+    # Sonde HF a 100% f_knee (350 MHz) : la cavite est active
+    hf_knee = bilan["sondes_hf"][-1]
+    assert hf_knee["freq_hz"] == 350e6
+    assert hf_knee["part_cavite_pct"] > h1["part_cavite_pct"], (
+        "la cavite doit porter plus de retour au genou (350 MHz) qu'a 10 kHz")
+
+    # Rapprocher le decouplage preserve mieux le signal
+    score_a = ta["modelise"]["score_reconstruction_pct"]
+    score_b = tb["modelise"]["score_reconstruction_pct"]
+    assert score_a > score_b, (
+        "decouplage proche devrait avoir un meilleur score : %.2f contre %.2f"
+        % (score_a, score_b))
+
+
+T("la répartition spectrale somme à un et bascule en fréquence",
+  la_repartition_spectrale_somme_a_un_et_bascule_en_frequence)
+T("le bilan de santé évalue la reconstruction et chiffre le découplage",
+  le_bilan_de_sante_evalue_la_reconstruction_et_chiffre_le_decouplage)
 
 
 def la_fiche_du_retour_dit_ou_est_le_via():
@@ -3461,6 +3553,59 @@ def sans_mesure_de_couture_le_cuivre_reste_suppose_tenu():
 
 T("sans mesure de couture, le cuivre reste suppose tenu",
   sans_mesure_de_couture_le_cuivre_reste_suppose_tenu)
+
+
+def le_plan_qui_borde_ne_compte_que_s_il_est_cousu():
+    """LA MEME REGLE POUR LE PLAN ARROSE EXTERIEUR QUE POUR UNE GARDE.
+
+    `_ecarts_masse_du_groupe` rendait l'ecart au cuivre lateral sans jamais
+    regarder ses vias : le solveur posait donc ce plan a ZERO VOLT PARFAIT,
+    qu'il porte une couture au millimetre ou aucune sur trente. Le defaut ne
+    sortait qu'en texte -- les ohms et les decibels, eux, ne bougeaient pas,
+    et c'est le chiffre qu'on lit.
+
+    L'ecart du cote mal cousu est donc mis a ZERO, ce que `ligne_mom` lit
+    « pas de masse coplanaire ici » : le calcul cesse de faire cadeau d'un
+    blindage que la carte n'a pas. Un bord dont l'ecart etait DEJA nul -- le
+    groupe s'etend au-dela du cuivre trouve par la sonde -- ne perd rien, et
+    ne se compte pas.
+    """
+    def pis(y, net, couture=0.0, w=0.25):
+        o = {"type": "track", "start": [0, y], "end": [25, y], "width": w,
+             "layer": 0, "net": net, "copper_thickness": 0.035,
+             "gap_left": 0.2, "gap_right": 0.2}
+        if couture:
+            o["couture_left"] = o["couture_right"] = couture
+        return o
+
+    def essai(couture):
+        doc = _doc_couplage([pis(0, "SIG", couture)], [pis(0.5, "AGR")])
+        doc["analyse"]["temps_montee"] = 100e-12
+        return _se.simuler(doc)
+
+    cousu = essai(0.4)
+    nu = essai(30.0)
+    sec_c = cousu["couplage"]["sections"][0]
+    sec_n = nu["couplage"]["sections"][0]
+    assert not sec_c["masse_non_cousue"], sec_c["masse_non_cousue"]
+    # L'AGRESSEUR EST D'UN SEUL COTE : le groupe s'etend de ce cote-la, l'ecart
+    # y etait deja nul, et c'est donc UN SEUL bord qui perd sa masse.
+    assert sec_n["masse_non_cousue"] == ["droite"], sec_n["masse_non_cousue"]
+    assert sec_c["ecart_d"] > 0 and sec_n["ecart_d"] == 0.0, \
+        "l'ecart du bord mal cousu doit tomber a zero : %s -> %s" \
+        % (sec_c["ecart_d"], sec_n["ecart_d"])
+    z_c = cousu["couplage"]["paires"][0]["z_diff"]
+    z_n = nu["couplage"]["paires"][0]["z_diff"]
+    assert z_n > z_c, \
+        "sans masse coplanaire a portee, la Z differentielle MONTE :" \
+        " %.2f contre %.2f" % (z_n, z_c)
+    assert any("PLAN ARROSÉ NON COUSU" in a
+               for a in (nu.get("avertissements") or ())), \
+        nu.get("avertissements")
+
+
+T("le plan qui borde ne compte que s'il est cousu",
+  le_plan_qui_borde_ne_compte_que_s_il_est_cousu)
 
 
 print("\nCe que le calcul ne couvre pas")

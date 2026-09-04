@@ -116,9 +116,10 @@ function pnlInfos(){
       const haut=Math.max(4,Math.round(4+16*(e.ep||0)/maxi));
       const det=[e.ep?mdlMes(e.ep):"",e.mat,e.dk?"Dk "+e.dk:"",e.df?"Df "+e.df:""]
                   .filter(Boolean).join(" · ");
+      const badge=pnlBadgeFonction(e, c);
       h+='<div class="lit"><span class="bande" style="height:'+haut+'px;background:'
         +((c&&c.couleur)||"#4a4f57")+'"></span>'
-        +"<b>"+mdlEsc(e.nom)+"</b> <span>"+mdlEsc(det)+"</span></div>";
+        +"<b>"+mdlEsc(e.nom)+"</b>"+badge+" <span>"+mdlEsc(det)+"</span></div>";
     }
     h+="</div>";
   }
@@ -126,6 +127,33 @@ function pnlInfos(){
   h+="</div>";
   box.innerHTML=h;
   pnlEmpilageCabler(box);
+}
+
+/* Badge de fonction d'une couche dans la liste de l'empilage. */
+function pnlBadgeFonction(e, c){
+  if(c && c.cuivre){
+    const cu = LT.cu && LT.cu.find(x => x.nom === e.nom);
+    const estPlan = cu ? cu.plan : (e.type && /PLANE|POWER|GROUND/i.test(e.type));
+    const roleLbl = estPlan ? "Plan" : "Signal";
+    const cls = estPlan ? "fn-plan" : "fn-sig";
+    let srcDet = "";
+    if(cu){
+      if(cu.roleSaisi) srcDet = "Rôle forcé pour la simulation (" + roleLbl + ")";
+      else if(cu.planSrc === "declare") srcDet = "Plan déclaré dans le fichier IPC-2581";
+      else if(cu.taux > 0) srcDet = "Déduit géométriquement (" + Math.round(cu.taux*100) + " % de cuivre plein)";
+      else srcDet = "Couche de signal";
+    }
+    return ' <span class="badgeFonction ' + cls + '" title="' + mdlEsc(srcDet) + '">' + roleLbl + '</span>';
+  }
+  const genre = c ? c.genre : mdlGenre(e.nom, e);
+  let gNom = "Autre", gCls = "fn-autre";
+  if(genre === "dielectrique"){ gNom = "Diélectrique"; gCls = "fn-diel"; }
+  else if(genre === "masque"){ gNom = "Masque"; gCls = "fn-masque"; }
+  else if(genre === "serigraphie"){ gNom = "Sérigraphie"; gCls = "fn-seri"; }
+  else if(genre === "percage"){ gNom = "Perçage"; gCls = "fn-autre"; }
+  else if(genre === "pate"){ gNom = "Pâte"; gCls = "fn-autre"; }
+  else if(genre === "contour"){ gNom = "Contour"; gCls = "fn-autre"; }
+  return ' <span class="badgeFonction ' + gCls + '">' + gNom + '</span>';
 }
 
 /* ==========================================================================
@@ -163,9 +191,20 @@ function pnlEmpilageForm(){
     +'<table class="pileForm">';
   for(let i=0;i<LT.cu.length;i++){
     const e=LT.cu[i], c=V.couches[e.couche];
+    const autoDet = e.planSrcAuto === "declare"
+      ? "déclaré dans le fichier"
+      : (e.taux > 0 ? "déduit : " + Math.round(e.taux*100) + " % de cuivre" : "signal");
+    const tip = e.roleSaisi
+      ? "Rôle forcé pour la simulation (initialement " + autoDet + "). Cliquez pour changer."
+      : "Rôle auto-détecté (" + autoDet + "). Modifiable pour la simulation.";
+    const selRole = '<select class="ltRoleSelect' + (e.roleSaisi ? ' saisi' : '') + '"'
+      + ' data-lt-role="' + mdlEsc(e.nom) + '" title="' + mdlEsc(tip) + '">'
+      + '<option value="signal"' + (!e.plan ? ' selected' : '') + '>Signal</option>'
+      + '<option value="plan"' + (e.plan ? ' selected' : '') + '>Plan</option>'
+      + '</select>';
     h+='<tr class="cu"><td class="g">'
       +'<span class="pastille" style="background:'+((c&&c.couleur)||"#4a4f57")+'"></span>'
-      +mdlEsc(e.nom)+(e.plan?' <em>plan</em>':"")+"</td>"
+      +mdlEsc(e.nom) + selRole + "</td>"
       +'<td>'+pnlChamp("cu",e.nom,e.ep,e.epSrc,LT_EP_CU)+" mm</td></tr>";
     const g=LT.gap[i];
     if(g)
@@ -193,7 +232,7 @@ function pnlEmpilageForm(){
 }
 function pnlSurcharges(){
   let n=0;
-  for(const q of ["cu","gap_t","gap_er"])
+  for(const q of ["cu","gap_t","gap_er","role"])
     n+=Object.keys((V.sur&&V.sur[q])||{}).length;
   return n;
 }
@@ -207,9 +246,14 @@ function pnlEmpilageCabler(box){
                    (isFinite(v)&&v>0)?v:null);
     };
   });
+  box.querySelectorAll("select[data-lt-role]").forEach(function(sel){
+    sel.onchange=function(){
+      ltSurchargerRole(sel.dataset.ltRole, sel.value);
+    };
+  });
   const raz=$("ltRaz");
   if(raz)raz.onclick=function(){
-    V.sur={cu:{},gap_t:{},gap_er:{}};
+    V.sur={cu:{},gap_t:{},gap_er:{},role:{}};
     ltPreparer(); prefEcrire(); pnlInfos(); pnlDetail(); dessiner();
     hint("Empilage revenu à ce que dit le fichier.");
   };
@@ -220,6 +264,18 @@ function ltSurcharger(quoi,cle,valeur){
   else V.sur[quoi][cle]=valeur;
   /* L'empilage change, donc l'impédance de toutes les pistes : on refait la
      table et on rafraîchit la fiche ouverte. */
+  ltPreparer(); prefEcrire(); pnlInfos(); pnlDetail(); dessiner();
+}
+function ltSurchargerRole(cle, role){
+  if(!V.sur.role)V.sur.role={};
+  const e=LT.cu&&LT.cu.find(x=>x.nom===cle);
+  const autoPlan=e?!!e.planSrcAuto:false;
+  const nouveauPlan=(role==="plan");
+  if(e && nouveauPlan===autoPlan){
+    delete V.sur.role[cle];
+  }else{
+    V.sur.role[cle]=role;
+  }
   ltPreparer(); prefEcrire(); pnlInfos(); pnlDetail(); dessiner();
 }
 
@@ -734,6 +790,9 @@ function l3(a,v){ return "<tr><td>"+a+"</td><td>"+v+"</td></tr>"; }
 function pnlPlan(k){
   const e=LT.cu[k];
   if(!e)return "—";
+  if(e.roleSaisi){
+    return mdlEsc(e.nom)+' <span title="Rôle forcé pour la simulation.">(modifié)</span>';
+  }
   return mdlEsc(e.nom)+(e.planSrc==="cuivre"
     ? ' <span title="Couche déclarée SIGNAL par le fichier, mais couverte de '
       +'cuivre plein : c\'est ce qui en fait un plan de référence.">('

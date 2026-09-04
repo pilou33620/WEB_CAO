@@ -82,3 +82,6 @@ dist/
 # fichiers de config personnels : ni l'un ni l'autre ne fait partie du depot.
 /graphify-out/
 /opencode.json
+
+# Cles d'API & secrets
+api_key_free_ia_studio.txt

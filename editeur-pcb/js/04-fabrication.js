@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 /* ==========================================================================
    Éditeur PCB — fabrication
    Masque et pâte, Gerber RS-274X, perçage Excellon, archive ZIP.
@@ -340,6 +340,21 @@ function gerberSilk(side){
     for(const poly of textStrokes(fp.ref,fp.x,fp.y-((bb.y2-bb.y1)/2+h*0.9),h,!!side))
       for(let k=0;k+1<poly.length;k++)
         gSeg(body,A,poly[k].x,poly[k].y,poly[k+1].x,poly[k+1].y,lw);
+  }
+  if(S.drawings){
+    const targetLayer = side ? "silkB" : "silkT";
+    for(const d of S.drawings){
+      if(d.layer !== targetLayer) continue;
+      const w = d.width || lw;
+      if(d.shape === "rect"){
+        gSeg(body, A, d.x1, d.y1, d.x2, d.y1, w);
+        gSeg(body, A, d.x2, d.y1, d.x2, d.y2, w);
+        gSeg(body, A, d.x2, d.y2, d.x1, d.y2, w);
+        gSeg(body, A, d.x1, d.y2, d.x1, d.y1, w);
+      }else{
+        gSeg(body, A, d.x1, d.y1, d.x2, d.y2, w);
+      }
+    }
   }
   return gAssemble(gHeader("Legend,"+(side?"Bot":"Top")),A,body);
 }

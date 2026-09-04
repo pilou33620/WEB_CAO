@@ -2,6 +2,38 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 4.1.0
+# Date: 2026-09-03
+# Explication: LE PLAN ARROSE QUI BORDE N'EST A ZERO VOLT QUE S'IL EST COUSU.
+#   La regle existait deja pour les GARDES posees entre les pistes -- un cuivre
+#   mal cousu y est pose FLOTTANT, et il transfere au lieu de blinder (voir la
+#   3.4.0) --, mais elle s'arretait la. `_ecarts_masse_du_groupe` rendait
+#   l'ecart au cuivre lateral sans jamais regarder ses vias : le solveur posait
+#   donc ce plan-la a ZERO VOLT PARFAIT, qu'il porte une couture au millimetre
+#   ou aucune sur trente. Le defaut sortait en TEXTE, et les ohms comme les
+#   decibels ne bougeaient pas -- ce qui est la pire des deux facons de le
+#   dire, puisque c'est le chiffre qu'on lit.
+#
+#   L'ECART DU BORD MAL COUSU EST DONC MIS A ZERO, ce que `ligne_mom` lit « pas
+#   de masse coplanaire de ce cote-la » : le calcul cesse de faire cadeau d'un
+#   blindage que la carte n'a pas, et les impedances comme le couplage
+#   remontent. Un bord dont l'ecart etait DEJA nul -- le groupe s'etend au-dela
+#   du cuivre que la sonde a trouve -- ne perd rien et ne se compte pas. Une
+#   couture NON MESUREE vaut zero et se lit « tenu » : on suppose bon ce qu'on
+#   ne sait pas, comme partout ailleurs.
+#
+#   ET DEUX CLEFS DE CACHE QUI CONFONDAIENT DES SECTIONS DIFFERENTES, trouvees
+#   en tirant ce fil. Celle de `_section_locale` ne portait ni les ecarts au
+#   plan ni la couture, alors que le cache est commun a toutes les scenes ;
+#   celle de la section moyenne ne portait pas la condition aux limites de
+#   chaque ruban, si bien qu'une garde TENUE et la meme garde FLOTTANTE se
+#   partageaient un resultat -- c'est-a-dire exactement ce que la 3.4.0 existe
+#   pour distinguer.
+# Fonctions ajoutees : _cotes_non_cousus
+# Fonctions modifiees : _ecarts_masse_du_groupe (signature : + couture_max),
+#   _section_locale (clef de cache, couture), _couplage (clef de cache,
+#   avertissement de plan non cousu, fiche de section, hypotheses)
+#
 # Version: 4.0.0
 # Date: 2026-09-02
 # Explication: LA DIAPHONIE SORT D'ICI, ENTIEREMENT. Cette page ne rend plus
@@ -990,10 +1022,12 @@ def doc_valide(doc):
     if not (fc > 0):
         fc = math.sqrt(f1 * f2)
     if not (f1 <= fc <= f2):
-        ajuste.append("Fréquence centrale hors de la bande S : ramenée de"
-                      " %.4g à %.4g GHz." % (fc / 1e9,
-                                             min(max(fc, f1), f2) / 1e9))
-    fc = min(max(fc, f1), f2)
+        if fc < f1:
+            f1 = fc
+            ajuste.append("Début de bande S ajusté à %.4g GHz pour inclure la fréquence de travail." % (f1 / 1e9))
+        if fc > f2:
+            f2 = fc
+            ajuste.append("Fin de bande S ajustée à %.4g GHz pour inclure la fréquence de travail." % (f2 / 1e9))
 
     # LE TEMPS DE MONTEE, s'il est saisi. Il ne touche a rien de la ligne --
     # ni impedance, ni cascade -- et ne sert qu'au couplage : c'est lui qui
@@ -1648,6 +1682,7 @@ def _inductance_transition(trans, via, couches, segments, z_bornes, refs_nets,
 
     for f, part in zip(retenus, parts):
         f["part"] = round(part, 4)
+    retour["source"] = "boucle"
     return l_boucle, "boucle"
 
 
@@ -1709,7 +1744,7 @@ def _impedance_traversee(param, freq):
 
 
 def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
-                       omega_c, fc):
+                       omega_c, fc, t_r=None, doc=None):
     """Le modele electrique complet d'une transition, calcule UNE FOIS.
 
     POURQUOI UNE SEULE FOIS. Les valeurs affichees et les valeurs cascadees
@@ -1736,6 +1771,19 @@ def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
                                  d_percage, d_pastille, h_via)
     d_antipad = _nombre((trans.get("cotes") or {}).get("antipad_mm"),
                         d_pastille + 2.0 * ANTIPAD_ECART_REPLI)
+
+    f0_sig = _nombre((via or {}).get("f_fondamentale"),
+                     _nombre((doc or {}).get("f_fondamentale"),
+                             fc if fc > 0 else 10e3))
+    tr_sig = _nombre((via or {}).get("temps_montee"),
+                     _nombre((doc or {}).get("temps_montee"),
+                             t_r if (t_r and t_r > 0) else (0.35 / fc if fc > 0 else 1e-9)))
+
+    # En régime impulsionnel numérique (BF < 1 MHz), le front de montée tr
+    # excite les hautes fréquences (f_knee = 0,35 / tr) : c'est cette onde de
+    # front qui traverse la cavité et voit l'inductance de boucle.
+    f_eval_cav = max(fc, 0.35 / tr_sig) if (fc < 1e6 and tr_sig > 0) else fc
+    omega_eval = 2.0 * np.pi * f_eval_cav if f_eval_cav > 0 else omega_c
 
     # PALIER 4 : LE RETOUR QUI CHANGE DE PLAN A UN PRIX, ET ON LE CHIFFRE.
     # L'inductance de la cavite est EN SERIE avec celle du via : ce sont deux
@@ -1780,10 +1828,10 @@ def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
                 # fiche le dit.
                 param_cav = {"l_cavite": param_cav["l_cavite"], "c_plans": 0.0,
                              "l_pont": None, "esr_pont": 0.0, "c_pont": None}
-            z_c = _impedance_traversee(param_cav, fc)
+            z_c = _impedance_traversee(param_cav, f_eval_cav)
             cav["impedance_fc_ohm"] = round(abs(z_c), 4)
             cav["inductance_equivalente_nH"] = (
-                round(z_c.imag / omega_c * 1e9, 4) if omega_c else 0.0)
+                round(max(0.0, z_c.imag) / omega_eval * 1e9, 4) if omega_eval else 0.0)
             source = ("boucle+cavite" if source == "boucle"
                       else "self+cavite")
 
@@ -1807,8 +1855,10 @@ def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
     # la colonne « Phase » identique avec et sans changement de reference,
     # c'est-a-dire mensongere sur le seul point qui distinguait les deux cartes.
     c_effective = c_via + (y_dep.imag + y_arr.imag) / omega_c if omega_c else c_via
-    z_trav = _impedance_traversee(param_cav, fc)
-    l_trav = (z_trav.imag / omega_c) if omega_c else 0.0
+    z_trav = _impedance_traversee(param_cav, f_eval_cav if param_cav else fc)
+    l_trav = ((max(0.0, z_trav.imag) / omega_eval)
+              if (param_cav and omega_eval)
+              else ((max(0.0, z_trav.imag) / omega_c) if omega_c else 0.0))
     trans["modelise"] = {
         "type": "pi_L_C" if not (y_dep or y_arr) else "pi_L_C_moignons",
         "inductance_nH": round(l_via * 1e9, 4),
@@ -1826,6 +1876,20 @@ def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
             omega_c * ((l_via + l_trav) / z0 + c_effective * z0)), 4),
         "cotes_supposees": trans.get("cotes_supposees", True),
     }
+
+    # PALIER 5 : LE BILAN DE SANTE DU SIGNAL ET LA REPARTITION SPECTRALE
+    # Evalue comment le signal est transmis et par ou les harmoniques reviennent
+    # (pont de decouplage vs cavite inter-plans, ou boucle par vias de masse).
+    bilan = tl.bilan_sante_transition(
+        l_via, c_effective, param_cav, z0=z0,
+        y_depart=y_dep, y_arrivee=y_arr,
+        f0=f0_sig, tr=tr_sig)
+    trans["bilan_sante"] = bilan
+    if cav:
+        cav["bilan_sante"] = bilan
+    trans["modelise"]["score_reconstruction_pct"] = bilan["score_reconstruction_pct"]
+    trans["modelise"]["verdict_reconstruction"] = bilan["verdict"]
+
     return {"l": l_via, "c": c_via,
             "moignon_depart": moignons["depart"],
             "moignon_arrivee": moignons["arrivee"],
@@ -3612,7 +3676,7 @@ def _poser_section(scene, distance_plan=0.0, couture_max=0.0):
     return poses, ecartes
 
 
-def _ecarts_masse_du_groupe(poses, scene):
+def _ecarts_masse_du_groupe(poses, scene, couture_max=0.0):
     """Les deux ecarts au plan coplanaire, pour le GROUPE et non pour la piste.
 
     C'EST CE QUI MANQUAIT, ET C'EST RECUPERABLE SANS RIEN MESURER DE PLUS.
@@ -3632,6 +3696,20 @@ def _ecarts_masse_du_groupe(poses, scene):
     NIVEAU d'une voisine ou en deca : il n'y a pas de plan a portee de ce
     cote-la, et l'on n'en pose pas. C'est le seul cas ou le calcul reste
     majorant, et il se dit.
+
+    ET LA COUTURE DECIDE AUSSI DU PLAN EXTERIEUR, pas seulement des gardes
+    posees dans la section. Le solveur pose le cuivre bordant le groupe a ZERO
+    VOLT PARFAIT : c'est vrai d'un plan arrose cousu de vias, c'est faux d'un
+    plan arrose qui n'en porte aucun sur trente millimetres. Le defaut ne
+    sortait alors que sous forme d'avertissement -- les decibels, eux, ne
+    bougeaient pas, et le calcul faisait cadeau d'un blindage que la carte n'a
+    pas. Quand le plus grand trou de couture de ce cote-la depasse
+    `couture_max` (lambda/10 au genou du front, voir `_couture_max`), on
+    ANNULE donc l'effet coplanaire de ce cote : ecart nul veut dire « pas de
+    masse coplanaire ici » pour `ligne_mom`, et la diaphonie calculee remonte
+    d'autant. `couture_max` a zero -- appelant qui ne connait pas le front --
+    laisse le comportement d'avant, et un trou a zero veut dire « non mesure »,
+    donc tenu : voir `_couture`.
     """
     w_v = scene["largeur"]
     x_min = min(p["x"] - p["w"] / 2.0 for p in poses)
@@ -3640,7 +3718,33 @@ def _ecarts_masse_du_groupe(poses, scene):
     ajout_d = x_max - (w_v / 2.0)
     e_g = scene["gap_g"] - ajout_g
     e_d = scene["gap_d"] - ajout_d
+    if couture_max > 0:
+        if _nombre(scene.get("couture_g"), 0.0) > couture_max:
+            e_g = 0.0
+        if _nombre(scene.get("couture_d"), 0.0) > couture_max:
+            e_d = 0.0
     return (e_g if e_g > 0 else 0.0), (e_d if e_d > 0 else 0.0)
+
+
+def _cotes_non_cousus(poses, scene, couture_max):
+    """Les cotes ou l'effet coplanaire a VRAIMENT ete annule faute de vias.
+
+    C'est ce que `_ecarts_masse_du_groupe` vient de faire, dit en clair : un
+    ecart au plan qui tombe a zero se lit sinon comme « pas de plan a portee »,
+    alors qu'il y en a un -- il ne compte simplement pas.
+
+    ON COMPARE AVEC ET SANS LE CRITERE, plutot que de relire la couture toute
+    seule : un bord dont l'ecart etait DEJA nul -- le groupe s'etend au-dela du
+    cuivre que la sonde a trouve -- ne perd rien, et l'annoncer comme une perte
+    ferait compter deux fois un defaut qui ne change aucun chiffre.
+    """
+    if not (couture_max > 0):
+        return []
+    g1, d1 = _ecarts_masse_du_groupe(poses, scene, couture_max)
+    g0, d0 = _ecarts_masse_du_groupe(poses, scene)
+    return [nom for nom, avant, apres in (("gauche", g0, g1),
+                                          ("droite", d0, d1))
+            if avant > 0 and not (apres > 0)]
 
 
 # UN LONGEMENT TROP COURT N'EST PAS UNE LIGNE, C'EST UN COIN. C'est le seuil
@@ -3675,6 +3779,9 @@ def _temps_montee(analyse):
     f_fin = _nombre(analyse.get("f_fin"), 0.0)
     if f_fin > 0:
         return 0.35 / f_fin, "deduit de la bande (0,35 / f_max)"
+    fc = _nombre(analyse.get("f_centre"), 0.0)
+    if fc > 0:
+        return 0.35 / fc, "deduit de la frequence de travail (0,35 / fc)"
     return 100e-12, "repli"
 
 
@@ -3793,21 +3900,30 @@ def _section_locale(couches, scene, w_v, w_a, ecart, cote, t_r, cache):
     pas deux.
     """
     q = round(ecart / PAS_ECART_LOCAL) * PAS_ECART_LOCAL
-    cle = (scene["couche"], round(scene["epaisseur"], 6), round(w_v, 4),
-           round(w_a, 4), round(q, 4), 1 if cote >= 0 else -1)
-    if cle in cache:
-        return cache[cle]
-    if len(cache) >= MAX_SECTIONS_LOCALES:
-        return None
-
     # `cote` vaut +1 a gauche du sens de parcours, et `_scenes_paralleles` pose
     # alors la voisine en x NEGATIF : on garde la meme convention, sans quoi la
     # carte lirait l'ecart au plan du mauvais cote.
     x_a = (-1.0 if cote >= 0 else 1.0) * ((w_v + w_a) / 2.0 + q)
     poses = [{"x": 0.0, "w": w_v}, {"x": x_a, "w": w_a}]
+    # LES DEUX ECARTS AU PLAN SE CALCULENT AVANT LA CLEF, et ils y entrent :
+    # ils dependent des ecarts mesures de la scene ET de sa couture, dont ni
+    # l'un ni l'autre n'est dans la geometrie locale. Deux scenes de meme
+    # largeur et de meme ecart mais bordees differemment se seraient partage
+    # la meme entree de cache -- le cache est commun a toutes les scenes.
     e_g, e_d = _ecarts_masse_du_groupe(
         poses, {"largeur": w_v, "gap_g": scene["gap_g"],
-                "gap_d": scene["gap_d"]})
+                "gap_d": scene["gap_d"],
+                "couture_g": scene.get("couture_g", 0.0),
+                "couture_d": scene.get("couture_d", 0.0)},
+        _couture_max(t_r))
+    cle = (scene["couche"], round(scene["epaisseur"], 6), round(w_v, 4),
+           round(w_a, 4), round(q, 4), 1 if cote >= 0 else -1,
+           round(e_g, 4), round(e_d, 4))
+    if cle in cache:
+        return cache[cle]
+    if len(cache) >= MAX_SECTIONS_LOCALES:
+        return None
+
     geo, info = section_de_couche(couches, scene["couche"], w_v,
                                   scene["epaisseur"], e_g, e_d)
     if geo is None:
@@ -3970,10 +4086,19 @@ def _couplage(couches, objets, doc, analyse, avertissements):
         h_couche = _hauteur_de_couche(couches, scene["couche"],
                                       scene["largeur"], scene["epaisseur"])
         poses, ecartes = _poser_section(scene, h_couche, _couture_max(t_r))
-        e_g, e_d = _ecarts_masse_du_groupe(poses, scene)
+        e_g, e_d = _ecarts_masse_du_groupe(poses, scene, _couture_max(t_r))
+        # LES COTES OU LE PLAN BORDE SANS ETRE COUSU : l'ecart y a ete annule,
+        # et un zero ne se distingue pas tout seul d'un « pas de plan a
+        # portee ». Voir `_ecarts_masse_du_groupe`.
+        nus = _cotes_non_cousus(poses, scene, _couture_max(t_r))
+        # LA CONDITION AUX LIMITES DE CHAQUE RUBAN EST DANS LA CLEF. Deux
+        # scenes de meme dessin dont l'une porte une garde tenue et l'autre la
+        # meme garde FLOTTANTE se seraient partage le meme resultat -- et c'est
+        # justement ce que cette page cherche a distinguer.
         cle = (scene["couche"], round(scene["epaisseur"], 6),
                round(e_g, 6), round(e_d, 6),
-               tuple((round(p["x"], 6), round(p["w"], 6)) for p in poses))
+               tuple((round(p["x"], 6), round(p["w"], 6), bool(p["garde"]),
+                      bool(p.get("flottant"))) for p in poses))
         if cle not in cache:
             geo, info = section_de_couche(couches, scene["couche"],
                                           scene["largeur"], scene["epaisseur"],
@@ -4020,6 +4145,12 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             "ecart_g": round(e_g, 4), "ecart_d": round(e_d, 4),
             "gap_g": round(scene["gap_g"], 4),
             "gap_d": round(scene["gap_d"], 4),
+            # LE PLAN EST LA, MAIS IL N'EST PAS COUSU. L'ecart de ce cote-la a
+            # ete mis a zero : sans cette clef, la coupe montrerait « pas de
+            # masse coplanaire » la ou il y en a une qui ne tient pas.
+            "masse_non_cousue": nus,
+            "couture_g": round(_nombre(scene.get("couture_g"), 0.0), 2),
+            "couture_d": round(_nombre(scene.get("couture_d"), 0.0), 2),
             "ecartes": ecartes,
             "raison": c.get("raison", ""),
         }
@@ -4099,6 +4230,28 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             " pas — il transfère. Cousez-le, ou ne comptez pas dessus."
             % (len(flottantes), max(_nombre(p.get("couture"), 0.0)
                                     for p in flottantes),
+               _couture_max(t_r)))
+
+    # ET LE MEME DEFAUT SUR LE PLAN QUI BORDE, qui ne se voyait pas du tout :
+    # le solveur posait ce cuivre-la a zero volt parfait quel que soit son
+    # nombre de vias. L'ecart au plan est maintenant ANNULE de ce cote quand la
+    # couture ne tient pas, et les ohms comme les decibels le rendent.
+    nues = [(sec, cote) for sec in sections
+            for cote in (sec.get("masse_non_cousue") or [])]
+    if nues:
+        avertissements.append(
+            "PLAN ARROSÉ NON COUSU sur %d bord(s) de section : le cuivre de"
+            " masse qui borde le groupe y porte un trou de couture de %.1f mm,"
+            " au-delà des %.1f mm que le front autorise (λ/10 au genou)."
+            " L'effet coplanaire de ce côté a donc été ANNULÉ dans le calcul —"
+            " l'écart au plan y est posé nul — plutôt que de faire cadeau d'une"
+            " masse idéale à 0 V : les impédances et le couplage rendus sont"
+            " ceux d'un bord SANS masse à portée. Cousez ce plan, ou ne comptez"
+            " pas dessus."
+            % (len(nues),
+               max(_nombre(sec.get("couture_g" if cote == "gauche"
+                                   else "couture_d"), 0.0)
+                   for sec, cote in nues),
                _couture_max(t_r)))
 
     # CE QUI LONGE PAR-DESSUS, ET QU'AUCUN PLAN NE SEPARE. Le seul manque de
@@ -4196,6 +4349,16 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             " peut devenir PIRE qu'en l'absence de tout cuivre. La résonance"
             " d'un tel cuivre, elle, n'est pas chiffrée : le quasi-statique"
             " rend le transfert, pas le pic." % _couture_max(t_r),
+            "LA MÊME RÈGLE VAUT POUR LE PLAN ARROSÉ QUI BORDE le groupe, et"
+            " plus seulement pour les gardes posées entre les pistes. Le"
+            " solveur le pose à 0 V parfait ; quand sa couture dépasse le même"
+            " seuil, l'effet coplanaire de ce côté est ANNULÉ — l'écart au plan"
+            " y est mis à zéro, ce qui se lit « pas de masse coplanaire ici »."
+            " Les impédances remontent et le couplage aussi, ce qui est"
+            " fidèle : un plan sans vias sur la longueur du longement ne tient"
+            " rien. Une couture NON MESURÉE — la page ne l'envoie pas — vaut"
+            " zéro et se lit « tenu » : on suppose bon ce qu'on ne sait pas, et"
+            " le calcul reste alors optimiste de ce côté-là.",
             "Le temps de montée retenu est %s. Il ne change ni [C] ni [L],"
             " et il n'entre pas dans la Z différentielle : il ne sert ici"
             " qu'au seuil de couture, qui est une longueur d'onde au genou du"
@@ -4249,6 +4412,7 @@ def simuler(doc, journal=None):
 
     couches, objets, analyse = doc_valide(doc)
     fc = analyse["f_centre"]
+    t_r, source_tr = _temps_montee(analyse)
     z_ref = _nombre(((doc.get("ports") or [{}])[0]).get("impedance"), 50.0) or 50.0
     debut = time.time()
 
@@ -4474,7 +4638,8 @@ def simuler(doc, journal=None):
     modeles_via = {}
     for trans in transitions:
         modeles_via[trans["troncon"]] = _modele_transition(
-            trans, objets, segments, couches, z_bornes, refs_nets, omega_c, fc)
+            trans, objets, segments, couches, z_bornes, refs_nets, omega_c, fc,
+            t_r=t_r, doc=doc)
 
     avertissements.extend(_avertir_retour(transitions,
                                           analyse.get("f_fin", 0.0)))
@@ -4643,6 +4808,8 @@ def simuler(doc, journal=None):
         "net": doc.get("net") or "",
         "reference_nets": refs,
         "f_centre": fc,
+        "temps_montee": t_r,
+        "temps_montee_source": source_tr,
         "impedance_reference": z_ref,
         "segments": segments,
         "ligne": ligne,

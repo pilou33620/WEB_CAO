@@ -12,6 +12,7 @@
     --yellow:#f2c744;
     --blue:#3fa0ea;
     --blue-deep:#2b7fbf;
+    --blue-dim:rgba(63, 160, 234, 0.25);
     --red:#e8443a;
     --cyan:#8af0ff;
     --mono:"JetBrains Mono","SF Mono",Consolas,"Roboto Mono",monospace;
@@ -425,6 +426,7 @@
     box-shadow:0 12px 30px rgba(0,0,0,.45);
   }
   #coordBox.on{display:flex}
+  body.mode-tactile #coordBox{bottom:84px}
   #coordBox label{
     font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--txt-dim);
     text-transform:uppercase;
@@ -451,6 +453,21 @@
   #zoneMenu .row{margin-top:0}
   #zoneMenu .row+.row{margin-top:6px}
   #zoneMenu .note{padding:0 12px 10px;font-size:11.5px;color:var(--txt-dim);line-height:1.45}
+  /* ---------- menu du bouton « sérigraphie » ---------- */
+  #silkMenu{
+    position:fixed;display:none;z-index:80;width:240px;
+    background:var(--panel);border:1px solid var(--border2);border-radius:7px;
+    box-shadow:0 18px 40px rgba(0,0,0,.55);overflow:hidden;
+  }
+  #silkMenu.on{display:block}
+  #silkMenu .mtitle{font-family:var(--mono);font-size:9px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--txt-dim);padding:8px 12px 6px}
+  #silkMenu .prop{padding:8px 12px;border-bottom:1px solid var(--border)}
+  #silkMenu .prop:last-child{border-bottom:none}
+  #silkMenu .row{margin-top:0}
+  #silkMenu .row+.row{margin-top:6px}
+  #silkMenu button.tb{width:100%;justify-content:flex-start}
+  #silkMenu button.tb.sel{border-color:var(--blue);background:var(--blue-dim);color:#fff}
   @media (max-width:980px){
     aside{width:168px}aside.right{width:206px}
     #coordBox .cihint{display:none}

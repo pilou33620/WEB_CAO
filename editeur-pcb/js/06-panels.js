@@ -547,12 +547,14 @@ function buildProps(){
   /* Les découpes comptent dans le total : sans cela une découpe prise avec une
      empreinte laissait croire que l'empreinte était seule sélectionnée. */
   const ct=[...S.sel.cuts];
-  const only=n=>fps.length+tr.length+vi.length+zo.length+ct.length===n;
+  const dr=selDrawingsPcb();
+  const only=n=>fps.length+tr.length+vi.length+zo.length+ct.length+dr.length===n;
   if(fps.length===1&&only(1))return propsFp(box,fps[0]);
   if(tr.length===1&&only(1))return propsTrack(box,tr[0]);
   if(vi.length===1&&only(1))return propsVia(box,vi[0]);
   if(S.sel.edge&&only(0))return propsBoard(box);
   if(zo.length===1&&only(1))return propsZone(box,zo[0]);
+  if(dr.length===1&&only(1))return propsDrawing(box,dr[0]);
   /* Une piste prise entière — Maj+clic, ou Maj+double-clic qui la suit d'une
      couche à l'autre — arrive ici avec ses vias : c'est un seul objet, et le
      panneau la traite comme telle plutôt que de la compter comme un lasso. */
@@ -573,6 +575,94 @@ function buildProps(){
   if(a)a.onclick=()=>{autoPlace(150);refreshPanels();draw();hint("Placement dégrossi : ajustez à la main, rien n'est figé.");};
   const b=$("pArr");
   if(b)b.onclick=()=>{push();arrange(S.fps.slice());touch();draw();};
+}
+function propsDrawing(box, d){
+  const isRect = d.shape === "rect";
+  const dx = Math.abs(d.x2 - d.x1), dy = Math.abs(d.y2 - d.y1);
+  const len = Math.round(Math.hypot(d.x2 - d.x1, d.y2 - d.y1) * 1000) / 1000;
+  box.innerHTML =
+    '<div class="prop"><label>Forme</label>' +
+    '<select id="pDrwShape">' +
+    '<option value="line"' + (!isRect ? " selected" : "") + '>Trait (segment)</option>' +
+    '<option value="rect"' + (isRect ? " selected" : "") + '>Rectangle (cadre)</option>' +
+    '</select></div>' +
+    '<div class="prop"><label>Couche sérigraphie</label>' +
+    '<select id="pDrwLayer">' +
+    '<option value="silkT"' + (d.layer === "silkT" ? " selected" : "") + '>F.SilkS (Dessus / Composants)</option>' +
+    '<option value="silkB"' + (d.layer === "silkB" ? " selected" : "") + '>B.SilkS (Dessous / Cuivre)</option>' +
+    '</select></div>' +
+    '<div class="prop"><label>Épaisseur de trait</label>' +
+    '<select id="pDrwWidth">' +
+    '<option value="0.1"' + (Math.abs(d.width - 0.1) < 1e-4 ? " selected" : "") + '>0,10 mm (Fine)</option>' +
+    '<option value="0.15"' + (Math.abs(d.width - 0.15) < 1e-4 || !d.width ? " selected" : "") + '>0,15 mm (Standard KiCad)</option>' +
+    '<option value="0.2"' + (Math.abs(d.width - 0.2) < 1e-4 ? " selected" : "") + '>0,20 mm</option>' +
+    '<option value="0.25"' + (Math.abs(d.width - 0.25) < 1e-4 ? " selected" : "") + '>0,25 mm</option>' +
+    '<option value="0.3"' + (Math.abs(d.width - 0.3) < 1e-4 ? " selected" : "") + '>0,30 mm (Épaisse)</option>' +
+    '<option value="0.5"' + (Math.abs(d.width - 0.5) < 1e-4 ? " selected" : "") + '>0,50 mm</option>' +
+    '</select></div>' +
+    '<div class="prop two"><div><label>X1 (mm)</label><input id="pDrwX1" value="' + fmt(d.x1, 3) + '"></div>' +
+    '<div><label>Y1 (mm)</label><input id="pDrwY1" value="' + fmt(d.y1, 3) + '"></div></div>' +
+    '<div class="prop two"><div><label>X2 (mm)</label><input id="pDrwX2" value="' + fmt(d.x2, 3) + '"></div>' +
+    '<div><label>Y2 (mm)</label><input id="pDrwY2" value="' + fmt(d.y2, 3) + '"></div></div>' +
+    '<div class="prop"><label>Dimensions</label><input value="' + (isRect ? ("L: " + fmt(dx, 3) + " mm · H: " + fmt(dy, 3) + " mm") : (fmt(len, 3) + " mm")) + '" disabled></div>' +
+    '<div class="prop"><div class="row"><button class="tb" id="pDrwDel">Supprimer le ' + (isRect ? "rectangle" : "trait") + '</button></div></div>' +
+    '<div class="pinnote">Tracé sur les couches de sérigraphie F.SilkS / B.SilkS. ' +
+    'Exporté dans les fichiers Gerber .GTO et .GBO. Glissez les coins pour ajuster les cotes.</div>';
+
+  const sShape = $("pDrwShape");
+  if(sShape) sShape.onchange = e => { push(); d.shape = e.target.value; d.type = d.shape; touch(); buildProps(); draw(); };
+  const sLayer = $("pDrwLayer");
+  if(sLayer) sLayer.onchange = e => { push(); d.layer = e.target.value; touch(); draw(); };
+  const sWidth = $("pDrwWidth");
+  if(sWidth) sWidth.onchange = e => { push(); d.width = +e.target.value; touch(); draw(); };
+  const bindCoord = (id, key) => {
+    const inp = $(id);
+    if(inp) inp.onchange = e => {
+      const v = +e.target.value.replace(",", ".");
+      if(Number.isFinite(v)) { push(); d[key] = r3(v); touch(); buildProps(); draw(); }
+    };
+  };
+  bindCoord("pDrwX1", "x1"); bindCoord("pDrwY1", "y1");
+  bindCoord("pDrwX2", "x2"); bindCoord("pDrwY2", "y2");
+  const bDel = $("pDrwDel");
+  if(bDel) bDel.onclick = deleteSel;
+}
+/* ---------- menu déroulant du bouton Sérigraphie ---------- */
+function silkMenuBuild(){
+  let m=$("silkMenu");
+  if(!m){
+    m=document.createElement("div");
+    m.id="silkMenu";
+    document.body.appendChild(m);
+  }
+  const isRect=S.silkShape==="rect";
+  m.innerHTML=
+    '<div class="mtitle">Sérigraphie</div>'+
+    '<div class="prop"><div class="row">'+
+    '<button class="tb'+(!isRect?' sel':'')+'" id="smLine">─ Trait (segment) <kbd>S</kbd></button>'+
+    '</div><div class="row">'+
+    '<button class="tb'+(isRect?' sel':'')+'" id="smRect">▢ Rectangle (cadre) <kbd>Shift+S</kbd></button>'+
+    '</div></div>';
+  const bLine=$("smLine");
+  if(bLine)bLine.onclick=()=>{S.silkShape="line";setMode("silk");silkMenuClose();};
+  const bRect=$("smRect");
+  if(bRect)bRect.onclick=()=>{S.silkShape="rect";setMode("silk");silkMenuClose();};
+  return m;
+}
+function silkMenuOpen(){
+  const m=silkMenuBuild(), b=$("mSilk"), r=b&&b.getBoundingClientRect?b.getBoundingClientRect():null;
+  m.classList.add("on");
+  if(!r)return;
+  const w=m.offsetWidth||240, hg=m.offsetHeight||120;
+  m.style.left=Math.max(6,Math.min(innerWidth-w-6,r.left))+"px";
+  m.style.top=Math.max(6,Math.min(innerHeight-hg-6,r.bottom+5))+"px";
+}
+function silkMenuClose(){
+  const m=$("silkMenu");if(m)m.classList.remove("on");
+}
+function silkMenuToggle(){
+  const m=$("silkMenu");
+  if(m&&m.classList.contains("on"))silkMenuClose();else silkMenuOpen();
 }
 /* Ce que le nom du boîtier a décidé — ou pourquoi il n'a rien décidé. Le
    schématique laisse saisir n'importe quel nom : autant dire lequel est

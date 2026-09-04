@@ -11,8 +11,8 @@ import logging
 import json
 from pathlib import Path
 
-from pcb_parser import load_json, extract_stackup, extract_polygons, build_geometry_model
 try:
+    from .pcb_parser import load_json, extract_stackup, extract_polygons, build_geometry_model
     from .mesher import (generate_2d_mesh, extract_edges, build_rwg_basis,
                          hauteur_electrique, maillage_avec_ports_verticaux)
     from .green_layered import noyaux_green, noyaux_multicouches
@@ -20,6 +20,7 @@ try:
     from .solver_extract import (solve_currents, compute_s_parameters,
                                  export_touchstone)
 except ImportError:                                    # noqa: BLE001
+    from pcb_parser import load_json, extract_stackup, extract_polygons, build_geometry_model
     from mesher import (generate_2d_mesh, extract_edges, build_rwg_basis,
                         hauteur_electrique, maillage_avec_ports_verticaux)
     from green_layered import noyaux_green, noyaux_multicouches

@@ -114,15 +114,41 @@ select.simPaireSel:disabled{opacity:.45;cursor:not-allowed}
   font-size:10.5px;line-height:1.45;color:var(--yellow);
 }
 
-/* ---------- la simulation d'impédance ---------- */
-#simZCible,#simZTol,#simFc,#simZ0,#simF1,#simF2,#simN{
-  background:#101216;border:1px solid var(--border2);color:var(--txt);
-  border-radius:4px;padding:3px 5px;font-family:var(--mono);font-size:11.5px;
+/* ---------- LES CHAMPS DE SAISIE DU PANNEAU ----------
+   UNE CLASSE, PAS UNE LISTE D'IDENTIFIANTS. Cette regle etait ecrite
+   « #simZCible, #simZTol, #simFc, #simZ0, #simF1, #simF2, #simN » -- les sept
+   champs de l'onglet Impedance, nommes un par un. Tous les champs ajoutes
+   depuis, dans Crosstalk et dans Chute DC, sont pourtant fabriques par LA MEME
+   fonction (`simChamp`) : ils n'etaient dans aucune liste, donc ils tombaient
+   sur le style par defaut du navigateur -- police sans empattement au lieu de
+   la monospace du panneau, et largeur ELASTIQUE, donc un champ qui mange toute
+   la rangee. Le panneau PI avait ainsi l'air d'un autre outil que le panneau
+   SI, ce qui etait exact : ce n'etait pas le meme style.
+
+   La classe vient de `simChamp`, qui est le seul endroit ou ces champs
+   naissent : un champ ajoute demain la portera sans que personne y pense. Les
+   IDENTIFIANTS ne restent que pour les LARGEURS -- une largeur est propre a ce
+   qu'un champ porte, deux chiffres ou six, et ce n'est pas un style. */
+input.simChamp{
+  width:54px;background:#101216;border:1px solid var(--border2);
+  color:var(--txt);border-radius:4px;padding:3px 5px;
+  font-family:var(--mono);font-size:11.5px;
 }
-#simZCible,#simZTol,#simFc,#simZ0{width:54px}
+input.simChamp:focus{outline:none;border-color:var(--blue)}
+/* LE NOM D'UNE BORNE DE CHUTE DC : un CHAMP, pas une etiquette. « pastille
+   32.1 ; 72.34 » est ce que le fichier sait dire, pas ce que la carte veut
+   dire, et sur cinq bornes deux couples de coordonnees ne se distinguent plus a
+   l'oeil. Il prend la place qui reste sur sa rangee -- c'est le plus long des
+   trois champs, et le seul dont la longueur ne se devine pas. */
+input.simChamp.simTxt{
+  flex:1 1 96px;min-width:72px;width:auto;text-overflow:ellipsis;
+}
+/* `large` existait dans `simChamp` et n'avait AUCUNE regle : le drapeau ne
+   faisait rien, et le seul champ qui le demande -- la vitesse forcee d'une
+   piste, qui porte un nombre a virgule -- restait etroit. */
+input.simChamp.large{width:88px}
+/* Trois champs plus courts : ils ne portent que deux ou trois chiffres. */
 #simF1,#simF2,#simN{width:40px}
-#simZCible:focus,#simZTol:focus,#simFc:focus,#simZ0:focus,
-#simF1:focus,#simF2:focus,#simN:focus{outline:none;border-color:var(--blue)}
 /* « suivre » : recalculer a chaque changement de selection. */
 .simSuivre{
   display:inline-flex;align-items:center;gap:4px;margin-left:auto;
@@ -249,6 +275,94 @@ select.simPaireSel:disabled{opacity:.45;cursor:not-allowed}
 .simTabZ .z0haut{color:#e8443a}
 .simTabZ .z0bas{color:#4cc38a}
 
+/* ---------- LE TABLEAU DU CHEMIN DE RETOUR (CURRENT RETURN PATH) ---------- */
+.simTabRetour{width:100%;table-layout:auto;border-collapse:collapse}
+.simTabRetour th{
+  font-size:10px;text-transform:uppercase;letter-spacing:0.04em;
+  color:var(--txt-dim,#7d8590);padding:4px 4px;
+  border-bottom:1px solid rgba(255,255,255,0.08);text-align:left;
+}
+.simTabRetour td{
+  padding:5px 4px;vertical-align:top;
+  border-bottom:1px solid rgba(255,255,255,0.04);
+}
+.simTabRetour td:nth-child(1){width:16%;white-space:nowrap}
+.simTabRetour td:nth-child(2){width:24%;line-height:1.25}
+.simTabRetour td:nth-child(3){width:20%;text-align:left}
+.simTabRetour td:nth-child(4){width:15%;text-align:right;white-space:nowrap}
+.simTabRetour td:nth-child(5){width:25%}
+
+.simGndScroll{
+  max-height:86px;overflow-y:auto;overflow-x:hidden;
+  scrollbar-width:thin;scrollbar-color:#31343a transparent;
+  padding-right:2px;
+}
+.simGndScroll::-webkit-scrollbar{width:5px;height:0}
+.simGndScroll::-webkit-scrollbar-track{background:transparent}
+.simGndScroll::-webkit-scrollbar-thumb{background:#31343a;border-radius:4px}
+.simGndScroll::-webkit-scrollbar-thumb:hover{background:#5c6370}
+
+.simGndItem{
+  white-space:nowrap;padding:2px 4px;margin:1px 0;
+  border-radius:3px;cursor:pointer;
+  transition:background 0.12s, color 0.12s;
+}
+.simGndItem:hover{background:rgba(255,255,255,0.08)}
+.simGndItem.simGndActif{
+  background:rgba(255,224,102,0.22) !important;
+  color:#ffe066 !important;font-weight:bold;
+  box-shadow:inset 3px 0 0 #ffe066;
+}
+
+
+/* ---------- LES TABLEAUX DE LA CHUTE CONTINUE ----------
+   MEME GRILLE QUE CEUX DES IMPEDANCES, et ce n'est pas une coquetterie : les
+   deux onglets repondent a une question sur le meme cuivre, et l'onglet DC
+   portait jusqu'ici les classes GENERIQUES du panneau de l'outil (`pnl-tab`,
+   `pnl-note`). Le resultat n'etait pas laid, il etait ETRANGER : deux polices,
+   deux graisses d'en-tete, pas de verdict, pas de pastille de couleur — et il
+   fallait reapprendre ou regarder en changeant d'onglet.
+
+   QUATRE COLONNES SUR CINQ SONT DES NOMBRES, comme dans `simTabZ`. La
+   deuxieme du tableau des vias — « 1→2 » — et la premiere de chaque tableau
+   sont des NOMS : elles ne s'alignent pas a droite. Les trois verdicts
+   reprennent EXACTEMENT les teintes du reste du panneau : le bleu de `dedans`,
+   l'ambre de `limite` — celui du balayage du crosstalk, qui ne designe aucun
+   sens —, et le rouge de `dehors`. Aucune nouvelle couleur : une quatrieme
+   ferait croire a un quatrieme verdict. */
+.simTabDC td:first-child{color:var(--txt)}
+.simTabDC td:nth-child(2){text-align:right}
+.simTabDC .z0ok{color:var(--blue)}
+.simTabDC .z0limite{color:#e0a53a}
+.simTabDC .z0ko{color:var(--red)}
+.simTabDC .simFaible{color:var(--txt-dim);opacity:.75;font-style:normal}
+/* Le pour-cent sous les millivolts, le motif sous « hors calcul » : une
+   seconde ligne, plus discrete, dans la meme cellule. Meme parti pris que la
+   colonne « Retour » du tableau des discontinuites. */
+.simTabDC td small{display:block;font-size:10px;opacity:.75;line-height:1.35}
+
+/* La legende de la carte DC. Elle reprend `simLegZ` — trois pastilles et leurs
+   bornes — parce que c'est la meme chose : une echelle de couleur peinte sur
+   du cuivre. Seul le premier element est un intitule et non une borne, d'ou la
+   pastille absente. */
+.simLegDC{margin-top:-2px}
+.simLegDC span:first-child{color:var(--txt)}
+
+/* La rangee qui choisit la couche peinte. Elle est DANS la fiche et non dans
+   le panneau : sa liste depend du resultat. Elle en garde donc l'allure d'une
+   ligne de fiche — pas d'une barre de commandes — et se pose juste sous la
+   legende, dont elle complete la lecture : « quoi » d'un cote, « ou » de
+   l'autre. */
+.simDCBar{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  margin:0 0 8px;font-size:10.5px;color:var(--txt-dim);
+}
+.simDCBar>span:first-child{
+  font-family:var(--mono);font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.simDCBar .simFaible{color:var(--txt-dim);opacity:.75}
+
 /* ---------- les commandes, et pourquoi elles défilent ----------
    LE BOUTON « ANALYSER » EST EN BAS DES COMMANDES, et c'est le contrôle dont
    on se sert le plus. Tant que les analyses tenaient en quatre rangées, le
@@ -271,6 +385,48 @@ select.simPaireSel:disabled{opacity:.45;cursor:not-allowed}
 /* ---------- la zone de sortie ---------- */
 #simSortie{padding:8px 10px;font-size:12px;line-height:1.6;min-height:96px}
 .simEtat{margin:0;color:var(--txt-dim);font-size:11.5px;line-height:1.55}
+
+/* ---------- LA PROGRESSION ----------
+   CE QU'IL Y AVAIT : « Le solveur travaille… », une fois, et plus rien. Sur un
+   calcul de dix secondes la page est identique a la seconde 1 et a la
+   seconde 30 : rien ne distingue un solveur qui avance d'un solveur bloque.
+
+   PAS DE FAUX POURCENTAGE. La barre est INDETERMINEE par defaut -- une bande
+   qui glisse, qui ne pretend rien mesurer -- et DETERMINEE quand il y a une
+   progression reelle a montrer : les lots d'une selection eparse se comptent
+   un par un. Ce qui informe vraiment est a cote : le temps ecoule, qui avance
+   a chaque seconde, et la taille du probleme, qui dit pourquoi c'est long. */
+.simProg{margin:0 0 4px}
+.simProgBar{
+  height:3px;border-radius:2px;background:var(--panel2);overflow:hidden;
+  border:1px solid var(--border2);
+}
+.simProgBar i{
+  display:block;height:100%;background:var(--blue);
+  transition:width .3s linear;
+}
+/* La bande qui glisse : un dégradé plus large que la barre, translaté sans fin.
+   `prefers-reduced-motion` la fige — une animation perpetuelle n'est pas une
+   information, et pour qui la supporte mal elle est un obstacle. */
+.simProgInd i{
+  background:linear-gradient(90deg,var(--panel2) 0%,var(--blue) 40%,
+                             var(--blue) 60%,var(--panel2) 100%);
+  background-size:220% 100%;
+  animation:simProgGlisse 1.3s linear infinite;
+}
+@keyframes simProgGlisse{
+  from{background-position:120% 0}
+  to{background-position:-120% 0}
+}
+@media (prefers-reduced-motion:reduce){
+  .simProgInd i{animation:none;background:var(--blue);opacity:.5}
+}
+.simProgLigne{
+  display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 6px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--txt-dim);
+}
+.simProgLigne span:first-child{color:var(--txt)}
 .simEtat small{display:block;margin-top:6px;font-size:10.5px;opacity:.9}
 .simEtat code{font-family:var(--mono);color:var(--blue)}
 
@@ -832,3 +988,26 @@ b.simXtV,.simXtCoche b.simXtV,.simXtLect b.simXtV{
 .simXtHyp li{margin:4px 0}
 .simXtHyp p{margin:6px 0 0;line-height:1.55;font-family:var(--mono)}
 .simXtHyp p.simNote{font-family:inherit}
+
+/* ---------- Enrichissement Schéma ---------- */
+.simCardSchema{
+  margin:8px 0;padding:6px 10px;background:var(--panel2);
+  border:1px solid var(--border2);border-left:3px solid var(--blue);
+  border-radius:4px;font-size:11px;line-height:1.45;
+}
+.simBadgeSchema{
+  display:inline-block;padding:1px 6px;margin-right:6px;margin-bottom:3px;
+  background:#1e3a5f;color:#60a5fa;border:1px solid #2563eb;
+  border-radius:3px;font-family:var(--mono);font-size:10px;font-weight:600;
+}
+.simSchemaComps{display:block;margin:4px 0 2px;color:var(--txt-dim)}
+.simSchemaComps b{color:var(--txt)}
+.simSchemaRterm{margin-top:4px;color:var(--txt)}
+.simSchemaConseil{color:#fbbf24}
+#simDCImportSch,#simXtImportSch{
+  background:#1e3a5f;color:#93c5fd;border-color:#2563eb;font-weight:500;
+}
+#simDCImportSch:hover,#simXtImportSch:hover{
+  background:#2563eb;color:#fff;
+}
+

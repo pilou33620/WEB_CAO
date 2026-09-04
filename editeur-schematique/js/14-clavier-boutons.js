@@ -37,7 +37,13 @@ window.addEventListener("keydown",e=>{
   if(mod&&k==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
   if(mod&&k==="y"){e.preventDefault();redo();return;}
   if(mod&&k==="s"){e.preventDefault();saveJson();return;}
-  if(mod&&k==="a"){e.preventDefault();S.comps.forEach(c=>S.sel.add(c.id));S.wires.forEach(w=>S.selW.add(w));refreshPanels();draw();return;}
+  if(mod&&k==="a"){
+    e.preventDefault();
+    S.comps.forEach(c=>S.sel.add(c.id));
+    S.wires.forEach(w=>S.selW.add(w));
+    (S.drawings||[]).forEach(d=>S.selD.add(d.id));
+    refreshPanels();draw();return;
+  }
   // Ctrl+C sur du texte sélectionné appartient au navigateur : on ne lui prend
   // le raccourci que lorsqu'il n'y a rien à copier à l'écran
   if(mod&&k==="c"){
@@ -60,9 +66,11 @@ window.addEventListener("keydown",e=>{
      quitter le mode, et c'est seulement une fois la cote effacée qu'Échap rend
      la main à la sélection. */
   if(k==="escape"&&S.mode==="mesure"&&rpMesEnCours()){rpMesRaz();rpMesDire();draw();return;}
-  if(k==="escape"){setMode("select");S.wireStart=null;S.place=null;clearSel();setPalette(null);refreshPanels();draw();return;}
+  if(k==="escape"){if(typeof drawMenuClose==="function")drawMenuClose();setMode("select");S.wireStart=null;S.drawStart=null;S.place=null;clearSel();setPalette(null);refreshPanels();draw();return;}
   if(k==="v"){setMode("select");return;}
   if(k==="w"){setMode("wire");return;}
+  if(k==="b"){setMode("bus");return;}
+  if(k==="t"){if(e.shiftKey){S.drawShape=(S.drawShape==="rect"?"line":"rect");setMode("draw");draw();}else setMode("draw");return;}
   if(k==="x"){setMode("erase");return;}
   /* K comme « kote » : M fait déjà le miroir, C le copier. */
   if(k==="k"){setMode("mesure");return;}
@@ -101,7 +109,18 @@ window.addEventListener("keydown",e=>{
    ========================================================================== */
 document.getElementById("mSelect").onclick=()=>setMode("select");
 document.getElementById("mWire").onclick=()=>setMode("wire");
+const bBus=document.getElementById("mBus");
+if(bBus)bBus.onclick=()=>setMode("bus");
 document.getElementById("mErase").onclick=()=>setMode("erase");
+const bDraw=document.getElementById("mDraw");
+if(bDraw)bDraw.onclick=e=>{e.stopPropagation();setMode("draw");if(typeof drawMenuToggle==="function")drawMenuToggle();};
+window.addEventListener("click",e=>{
+  const m=document.getElementById("drawMenu");
+  const b=document.getElementById("mDraw");
+  if(m&&m.classList.contains("on")&&!m.contains(e.target)&&(!b||!b.contains(e.target)))
+    drawMenuClose();
+});
+window.addEventListener("resize",()=>{if(typeof drawMenuClose==="function")drawMenuClose();});
 document.getElementById("bRot").onclick=rotateSel;
 document.getElementById("bMir").onclick=mirrorSel;
 document.getElementById("bDup").onclick=dupSel;
@@ -134,7 +153,7 @@ document.getElementById("bCsv").onclick=exportBomCsv;
 document.getElementById("bNew").onclick=()=>{
   if(!confirm("Effacer le contenu de la feuille « "+S.pages[S.page].name+" » ?"))return;
   push();
-  S.comps=[];S.wires=[];clearSel();S.uid=1;
+  S.comps=[];S.wires=[];S.drawings=[];clearSel();S.uid=1;
   storeCurrent();touchWires();refreshPanels();draw();
 };
 document.getElementById("bOpen").onclick=()=>document.getElementById("fileIn").click();

@@ -317,6 +317,10 @@ function fin(e){
   if(typeof SIM_DCB!=="undefined"&&SIM_DCB&&SIM_DCB.attente){
     simDCClic(w.x,w.y);dessiner();return;
   }
+  /* Clic sur un via ou chevelu de retour sous l'onglet Current Return Path */
+  if(typeof simRetourClicIpc==="function"&&simRetourClicIpc(w.x,w.y)){
+    dessiner();return;
+  }
   /* CTRL AJOUTE À LA SÉLECTION, sans changer ce que le clic désigne : les deux
      touches ne se marchent pas sur les pieds. Ctrl+Maj+clic ajoute donc un net
      entier, ce qui est le geste qu'on fait pour comparer trois liaisons.
@@ -378,8 +382,23 @@ cv.addEventListener("wheel",function(e){
   const d=e.deltaY*(e.deltaMode===1?16:1);
   zoomer(Math.pow(0.9985,d),p.x,p.y);
 },{passive:false});
-cv.addEventListener("dblclick",function(e){e.preventDefault();fit();});
-cv.addEventListener("contextmenu",function(e){e.preventDefault();});
+cv.addEventListener("contextmenu",function(e){
+  e.preventDefault();
+  if(V.net < 0 && !V.comp && typeof designer === "function" && typeof s2w === "function"){
+    const p = pos(e), w = s2w(p.x, p.y);
+    const s = designer(w.x, w.y);
+    if(s && typeof selPoser === "function" && typeof porteeDe === "function"){
+      selPoser(s, porteeDe(s, false), false);
+      if(typeof pnlComps === "function") pnlComps();
+      if(typeof pnlNets === "function") pnlNets();
+      if(typeof pnlDetail === "function") pnlDetail();
+      if(typeof dessiner === "function") dessiner();
+    }
+  }
+  if(typeof iaAfficherMenuContextuel === "function"){
+    iaAfficherMenuContextuel(e);
+  }
+});
 
 /* ==========================================================================
    Clavier

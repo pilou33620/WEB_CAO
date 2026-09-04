@@ -1,3 +1,27 @@
+# [2026-09-03] Version 1.73: la portee des percages est enfin lue
+# Description:
+#              - IPC-2581 declare entre quelles couches court un percage, mais
+#                pas sur le trou : sur le CALQUE de percage,
+#                <Layer layerFunction="DRILL"><Span fromLayer toLayer/>. Rien
+#                ne le lisait, donc TOUS les trous ressortaient traversants --
+#                un via borgne ou enterre etait modelise plus long qu'il n'est
+#                (resistance DC surestimee) et, pire, relie des couches qu'il
+#                ne relie pas : le controle du chemin de retour faisait passer
+#                pour refermee une boucle qui ne l'est pas.
+#              - Le padstack sert de second chemin : son <LayerHole layerRef>
+#                designe le calque de percage, donc sa portee.
+#              - RIEN N'EST DEVINE D'APRES UN NOM DE CALQUE (« drill_1_4 ») :
+#                une portee devinee a tort RESTREINT un via traversant et coupe
+#                un chemin reel, ce qui est bien pire que de le supposer
+#                traversant. Non declaree, la portee reste vide -- et
+#                `span_source` permet a l'outil de le DIRE.
+#
+# Liste des fonctions ajoutees/modifiees :
+# - [+] _lire_span, _span_du_percage
+# - [~] _process_drill_layer (recoit son layerRef, pose la portee du trou)
+# - [~] _parse_ecad (releve le <Span> de chaque calque)
+# - [~] _parse_padstack_defs, _process_step_padstack (retiennent hole_layer_ref)
+#
 # [2026-08-26] Version 1.72: le net d'une broche vient enfin de <LogicalNet>
 # Description:
 #              - La fiche d'un boitier, dans la visionneuse, promet le net de
@@ -151,6 +175,11 @@ class IPC2581Parser:
         self.detected_via_counts: Dict[str, int] = {}
         self.via_def_names = set()
         self.via_locations = set()
+        # LA PORTÉE DES CALQUES DE PERÇAGE : nom du calque -> (depuis, vers).
+        # C'est le seul endroit où IPC-2581 la déclare, et c'est ce qui
+        # distingue un via traversant d'un borgne ou d'un enterré. Voir
+        # `_lire_span`.
+        self.drill_spans: Dict[str, tuple] = {}
 
     def parse(self) -> IPCDesign:
         logger.info(f"Début de l'import du fichier IPC-2581 : {self.xml_file}")
@@ -503,6 +532,12 @@ class IPC2581Parser:
                     child_tag = self._local_tag(child)
 
                     if child_tag in ["padstackholedef", "layerhole", "hole"]:
+                        # LE CALQUE DE PERCAGE QUE LE TROU DESIGNE : c'est lui
+                        # qui portera le <Span>, donc la portee du via. On le
+                        # retient ici parce que c'est le seul endroit ou le lien
+                        # existe -- le trou lui-meme ne dit rien de ses couches.
+                        if child.attrib.get("layerRef"):
+                            pdef.hole_layer_ref = child.attrib["layerRef"]
                         if "diameter" in child.attrib:
                             pdef.hole_diameter = self._safe_float(child.attrib.get("diameter"))
                         else:
@@ -564,6 +599,8 @@ class IPC2581Parser:
         pin_ref = ""
 
         for hole in ps_elem.findall(self._tag("LayerHole")):
+            if hole.attrib.get("layerRef"):
+                pdef.hole_layer_ref = hole.attrib["layerRef"]
             if "diameter" in hole.attrib:
                 pdef.hole_diameter = self._safe_float(hole.attrib["diameter"])
                 loc_node = hole.find(self._tag("Location"))
@@ -870,6 +907,9 @@ class IPC2581Parser:
             lfunc = layer.attrib.get("layerFunction", "").upper()
             if lname:
                 layer_functions_map[lname] = lfunc
+                span = self._lire_span(layer)
+                if span:
+                    self.drill_spans[lname] = span
 
                 props = {}
                 for prop in layer.findall(self._tag("Property")):
@@ -951,7 +991,7 @@ class IPC2581Parser:
                 is_drill_layer = True
 
             if is_drill_layer:
-                self._process_drill_layer(layer_feature)
+                self._process_drill_layer(layer_feature, layer_ref)
                 continue
 
             for item_set in layer_feature.findall(self._tag("Set")):
@@ -998,7 +1038,66 @@ class IPC2581Parser:
     # Perçages (calques DRILL)
     # ------------------------------------------------------------------
 
-    def _process_drill_layer(self, layer_elem: ET.Element):
+    def _lire_span(self, elem: ET.Element):
+        """La portée déclarée d'un calque de perçage, ou None.
+
+        OÙ ELLE EST ÉCRITE. IPC-2581 la met sur le CALQUE et non sur le trou :
+
+            <Layer name="drill_1_4" layerFunction="DRILL" side="ALL">
+              <Span fromLayer="TOP" toLayer="IN2"/>
+            </Layer>
+
+        TROIS FORMES ACCEPTÉES, et c'est de la tolérance d'exportateur, pas de
+        la générosité : `<Span>` est la balise du schéma, `<SpanDescriptor>`
+        traîne dans des exports plus anciens, et certains outils posent les deux
+        noms en attributs du calque lui-même. Les trois disent la même chose ;
+        n'en lire qu'une, c'est perdre la portée sur les fichiers des deux
+        autres et retomber sur « traversant » sans le savoir.
+
+        CE QU'ON NE FAIT PAS : deviner la portée d'après le NOM du calque
+        (« drill_1_4 »). Une portée devinée à tort RESTREINT un via traversant,
+        donc coupe un chemin de courant réel — le cuivre d'une couche se
+        retrouve flottant et le solveur refuse tout le calcul. Supposer
+        traversant se paie d'une résistance surestimée ; supposer borgne se paie
+        d'un résultat faux. On ne suppose donc que dans le sens qui ne perd
+        aucun chemin, et on le dit.
+        """
+        for balise in ("Span", "SpanDescriptor"):
+            node = elem.find(self._tag(balise))
+            if node is not None:
+                a = (node.attrib.get("fromLayer")
+                     or node.attrib.get("from") or "").strip()
+                b = (node.attrib.get("toLayer")
+                     or node.attrib.get("to") or "").strip()
+                if a and b:
+                    return (a, b)
+        a = (elem.attrib.get("spanFromLayer") or "").strip()
+        b = (elem.attrib.get("spanToLayer") or "").strip()
+        return (a, b) if a and b else None
+
+    def _span_du_percage(self, layer_ref: str, padstack_ref: str):
+        """La portée d'un perçage : son calque d'abord, son padstack ensuite.
+
+        Rend (depuis, vers, provenance). La provenance est vide quand rien n'est
+        déclaré — et c'est une information, pas un manque à taire.
+        """
+        span = self.drill_spans.get(layer_ref)
+        if span:
+            return span[0], span[1], "calque"
+        pdef = self.design.padstacks.get(padstack_ref)
+        if pdef is not None and pdef.hole_layer_ref:
+            span = self.drill_spans.get(pdef.hole_layer_ref)
+            if span:
+                return span[0], span[1], "padstack"
+        return "", "", ""
+
+    def _process_drill_layer(self, layer_elem: ET.Element, layer_ref: str = ""):
+        # LA PORTÉE DU CALQUE, LUE UNE FOIS. Un calque de perçage porte des
+        # centaines de trous et une seule portée : la relire par trou coûterait
+        # un `find` chacun pour le même résultat.
+        span_calque = self._lire_span(layer_elem)
+        if span_calque and layer_ref:
+            self.drill_spans.setdefault(layer_ref, span_calque)
         for item_set in layer_elem.findall(self._tag("Set")):
             padstack_ref = item_set.attrib.get("geometry", "")
             net_name = item_set.attrib.get("net", "")
@@ -1024,6 +1123,12 @@ class IPC2581Parser:
                 loc = Point(x, y)
                 drill = Drill(location=loc, diameter=diameter, plating=plating,
                               padstack_ref=padstack_ref, net_name=net_name)
+                # LA PORTÉE, TANT QU'ON A LE CALQUE SOUS LA MAIN. Plus loin,
+                # `design.drills` n'est qu'une liste de trous : rien n'y dit
+                # plus de quel calque ils viennent.
+                (drill.span_from, drill.span_to,
+                 drill.span_source) = self._span_du_percage(layer_ref,
+                                                            padstack_ref)
 
                 is_via_hole = False
                 via_key = None
@@ -1303,7 +1408,7 @@ class IPC2581Parser:
 
                     sweep_angle = abs(angle_end - angle_start)
                     arc_length = radius * sweep_angle
-                    steps = max(12, int(arc_length / 0.05))
+                    steps = min(360, max(12, int(arc_length / 0.05)))
 
                     for i in range(1, steps):
                         angle = angle_start + (angle_end - angle_start) * (i / steps)

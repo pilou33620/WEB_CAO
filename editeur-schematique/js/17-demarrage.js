@@ -7,10 +7,23 @@
    Démarrage
    ========================================================================== */
 buildPalette();
-S.pages=[newPage("Commande NPN"),newPage("Alimentation")];
-loadPage(1);demo2();touchWires();resolveSplits();storeCurrent();
-loadPage(0);demo();touchWires();resolveSplits();storeCurrent();
-S.pages[0].viewed=true;
+const PROJ_ACTIF=(typeof projNom==="function")?projNom():"";
+if(PROJ_ACTIF){
+  // NOUVEAU PROJET : pas de schématique exemple !
+  // La première feuille est la feuille hiérarchique racine, suivie d'une première feuille de schématique vierge.
+  S.pages=[newHierPage("Hiérarchie"),newPage("Feuille 1")];
+  loadPage(0);
+  S.pages[0].viewed=true;
+  S.dirty=false;
+}else{
+  // SANS PROJET : on charge la schématique exemple (démo)
+  S.pages=[newHierPage("Hiérarchie"),newPage("Commande NPN"),newPage("Alimentation")];
+  loadPage(2);demo2();touchWires();resolveSplits();storeCurrent();
+  loadPage(1);demo();touchWires();resolveSplits();storeCurrent();
+  loadPage(0); // ouvre sur la feuille hiérarchique racine
+  S.pages[0].viewed=true;
+  S.dirty=false;
+}
 buildTabs();
 setMode("select");
 setGrid(true);
@@ -21,7 +34,7 @@ window.addEventListener("resize",resize);
 resize();
 fit();
 refreshPanels();
-S.dirty=false;              // le schéma de démonstration n'est pas un travail à protéger
+S.dirty=false;
 /* Deux filets, dans cet ordre. La session d'onglet d'abord : elle vient du
    même travail, poursuivi il y a quelques secondes dans un autre outil, et
    se reprend sans rien demander. À défaut seulement, la sauvegarde

@@ -752,6 +752,7 @@ function applyNetlist(txt,dropMissing){
   push();
   const byRef=new Map(S.fps.map(f=>[f.ref,f]));
   const added=[], kept=[], repkg=[];
+  const conflicts=[];
   for(const ref of refs){
     const meta=comps.get(ref)||{value:"",pkg:""};
     const pins=Math.max(1,pinCount.get(ref)||2);
@@ -781,10 +782,28 @@ function applyNetlist(txt,dropMissing){
       kept.push(fp);
       if(pins>fp.pins)fpSetPins(fp,pins);
     }
+    const oldNets={...(fp.nets||{})};
     fp.nets={};
     for(let p=1;p<=fp.pins;p++){
       const nn=pinNet.get(ref+"."+p);
       if(nn)fp.nets[p]=nn;
+    }
+    // Détection des conflits sur les pastilles déjà routées
+    if(Array.isArray(S.tracks)&&S.tracks.length>0&&typeof padsWorld==="function"){
+      for(const [pStr,oldN] of Object.entries(oldNets)){
+        const p=+pStr;
+        const newN=fp.nets[p]||"";
+        if(oldN&&newN&&oldN!==newN){
+          const pads=padsWorld(fp);
+          const pad=pads.find(q=>q.n===p);
+          if(pad){
+            const touchTracks=S.tracks.filter(t=>t.net===oldN&&(typeof padDist==="function"?(padDist(t.x1,t.y1,pad)<=0.02||padDist(t.x2,t.y2,pad)<=0.02):false));
+            if(touchTracks.length>0){
+              conflicts.push({ref:fp.ref,pin:p,pad:pad,oldNet:oldN,newNet:newN,tracks:touchTracks});
+            }
+          }
+        }
+      }
     }
   }
   let removed=0;
@@ -798,7 +817,28 @@ function applyNetlist(txt,dropMissing){
      cela, une carte fraîchement importée laisse la classe Alimentation vide */
   autoClass();
   touch();
-  return {added:added.length,kept:kept.length,removed,repkg:repkg.length,nets:nets.size};
+  return {added:added.length,kept:kept.length,removed,repkg:repkg.length,nets:nets.size,conflicts};
+}
+
+/* Nettoie ou détache automatiquement les pistes de cuivre en conflit après un changement de brochage */
+function pcbNettoyerPistesConflits(conflicts){
+  if(!conflicts||!Array.isArray(conflicts)||!conflicts.length)return 0;
+  if(typeof push==="function")push();
+  const toDelete=new Set();
+  for(const c of conflicts){
+    if(c&&Array.isArray(c.tracks)){
+      for(const t of c.tracks)toDelete.add(t);
+    }
+  }
+  if(!toDelete.size)return 0;
+  S.tracks=S.tracks.filter(t=>!toDelete.has(t));
+  if(typeof zoneCache!=="undefined"&&zoneCache.clear)zoneCache.clear();
+  if(typeof touch==="function")touch();
+  if(typeof conn==="function")conn();
+  if(typeof runDrc==="function")runDrc();
+  if(typeof refreshPanels==="function")refreshPanels();
+  if(typeof draw==="function")draw();
+  return toDelete.size;
 }
 /* Rangement en lignes le long du bord droit de la carte : visible, ordonné,
    et sans recouvrement — le placement fin reste manuel. */

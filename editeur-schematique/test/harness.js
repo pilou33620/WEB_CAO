@@ -50,23 +50,25 @@ global.BroadcastChannel.prototype.close=function(){
 const code=fs.readFileSync(path.join(__dirname,"..","dist","schema.js"),"utf8");
 const EXPOSE=[
   /* état et feuilles */
-  "S","G","newPage","loadPage","storeCurrent","gotoPage","addPage","clearSel",
+  "S","G","newPage","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
   "push","undo","redo","touchWires","buildTabs","draw","fit","resize",
+  /* bus et hiérarchie */
+  "C_BUS","BUS_WIDTH","sheetBlocks","hitSheetBlock","newHierPage",
   /* bibliothèque et géométrie */
   "bbox",
   "defOf","allPins","pinCount","icGeom","key","LIB","pinsOf",
   /* brochage (04 + 19) */
   "icPins","icBodyOf","icSideOf","icPinLabel","icFree","icShapeOf","icStep","IC_STEP",
   "icSetCount","icSetShape","icSetBody","icFitNames","icMovePin","reshapeComp",
+  "peOpen","peClose","ceOpen","ceClose",
   /* libellés déplaçables et étiquettes de net (08 + 09) */
   "compTexts","textBox","textOff","setTextOff","netLabelAt","netLabelBoxes",
   "pinContacts","reconnectContacts","resetTexts","pinContactPoints","moveSelBy",
   "rotateSel","mirrorSel",
   "splitWireArray","textW",
   /* presse-papier et grille (10) */
-  "copySel","cutSel","pasteClip","clipContent","setClip","getClip","setGridStep","snap","delSel",
-  "delWiresSel",
-  "gridLabel","gridShownStep","normComp","normWire",
+  "copySel","cutSel","pasteClip","clipContent","setClip","getClip","setGridStep","snap","delSel","dupSel",
+  "delWiresSel","gridLabel","gridShownStep","normComp","normWire","normDrawing","selDrawings","hitDrawing","loadDoc",
   /* connectivité (07) */
   "computeNets","nets","docNets","splitWireArray","resolveSplits","endpointList",
   "insideSeg","netAt","netAtLive","isRealNet","setNetName","selectNet","netColor",
@@ -95,7 +97,7 @@ const EXPOSE=[
   "sessCanalDispo","sessMontrerAilleurs","sessEcouterProbe","SESS_CANAL",
   "schMontrerAilleurs","schCibleTrouver","schCibleAller","sessCibleAuChargement",
   /* espace de travail commun */
-  "wsDefault","wsApply","wsMove","wsPlaceOf","wsLabel","wsToggleFloat",
+  "wsDefault","wsApply","wsMove","wsPlaceOf","wsLabel","wsToggleFloat","wsToggleMaximize",
   "wsToggleCollapse","wsClose","wsShow","wsMenuBuild","wsLoad","wsSave","wsEl","WS_KEY",
   "WS_SECTION",
   /* profils utilisateur communs (commun/profils.js) */
@@ -103,7 +105,9 @@ const EXPOSE=[
   "profEcrire","profOublier","profRecents","profNoterDocument","profNomValide",
   /* réglages d'affichage propres à l'utilisateur (20-profil.js) */
   "profilEtat","profilNoter","profilAppliquer",
-  "setGrid","setGridStep","setNetLabels","setListTab"
+  "setGrid","setGridStep","setNetLabels","setListTab",
+  /* recherche de composants & conflits */
+  "crDetecterConflitsCablage","crRealignerFilsBroches"
 ];
 /* les noms absents du bundle sont ignorés : le banc d'essai reste utilisable
    même si un module est renommé, les essais concernés échoueront tout seuls */
@@ -447,6 +451,42 @@ T("nomenclature : les séparateurs sont protégés",()=>{
   if(csvCell("simple")!=="simple")throw new Error("valeur simple inutilement protégée");
   if(csvCell(null)!=="")throw new Error("valeur absente : chaîne vide attendue");
 });
+T("nomenclature : colonnes enrichies (MPN, Fabricant, Specs, Datasheet)",()=>{
+  const c1 = C("resistor",0,0,{
+    ref:"R1", value:"10k", pkg:"0603",
+    mpn:"0603WAF1002T5E", manufacturer:"UNI-ROYAL", lcsc:"C25804",
+    specs:{Tolerance:"±1%", Power:"100mW"},
+    datasheet_local:"datasheets/0603WAF1002T5E.pdf"
+  });
+  sheet([c1],[]);
+  const rows = bomRows();
+  if(!rows.length || rows[0].mpn !== "0603WAF1002T5E") throw new Error("mpn non relevé dans bomRows");
+  if(rows[0].manufacturer !== "UNI-ROYAL") throw new Error("fabricant non relevé");
+  if(rows[0].lcsc !== "C25804") throw new Error("lcsc non relevé");
+  const csv = bomCsvText();
+  if(csv.indexOf("0603WAF1002T5E") < 0) throw new Error("MPN absent du CSV : " + csv);
+  if(csv.indexOf("UNI-ROYAL") < 0) throw new Error("Fabricant absent du CSV : " + csv);
+  if(csv.indexOf("datasheets/0603WAF1002T5E.pdf") < 0) throw new Error("Datasheet absente du CSV : " + csv);
+});
+T("import : conservation des métadonnées d'enrichissement (MPN, specs, datasheet)",()=>{
+  const cRaw = {
+    id: 1, type: "resistor", x: 10, y: 10, ref: "R1", value: "10k", pkg: "0603",
+    mpn: "0603WAF1002T5E", manufacturer: "UNI-ROYAL",
+    specs: { Tolerance: "±1%", Power: "100mW" },
+    datasheet_local: "datasheets/0603WAF1002T5E.pdf",
+    datasheet_url: "/api/datasheet/ouvrir?fichier=0603WAF1002T5E.pdf",
+    lcsc: "C25804", mouser_part: "603-0603WAF1002T5E", digikey_part: "DK-0603WAF1002T5E"
+  };
+  const c = normComp(cRaw, 0);
+  if(!c) throw new Error("composant non normalisé");
+  if(c.mpn !== "0603WAF1002T5E") throw new Error("mpn perdu après import : " + c.mpn);
+  if(c.manufacturer !== "UNI-ROYAL") throw new Error("manufacturer perdu après import");
+  if(!c.specs || c.specs.Tolerance !== "±1%") throw new Error("specs perdues après import");
+  if(c.datasheet_local !== "datasheets/0603WAF1002T5E.pdf") throw new Error("datasheet_local perdue après import");
+  if(c.lcsc !== "C25804") throw new Error("lcsc perdu après import");
+  if(c.mouser_part !== "603-0603WAF1002T5E") throw new Error("mouser_part perdu après import");
+  if(c.digikey_part !== "DK-0603WAF1002T5E") throw new Error("digikey_part perdu après import");
+});
 
 /* ==========================================================================
    Bibliothèque CSV (18-csv.js)
@@ -571,6 +611,18 @@ T("déplacer, détacher, fermer un panneau",()=>{
   if(wsPlaceOf("palette")!=="hidden")throw new Error("fermeture ratée");
   wsShow("palette");
   if(wsPlaceOf("palette")==="hidden")throw new Error("réouverture ratée");
+  wsToggleFloat("palette");
+  wsToggleMaximize("palette");
+  if(!dom.panels.palette.classList.contains("maximized"))
+    throw new Error("classe « maximized » attendue");
+  if(dom.panels.palette.querySelectorAll(".fres").length)
+    throw new Error("poignées présentes en plein écran");
+  wsToggleMaximize("palette");
+  if(dom.panels.palette.classList.contains("maximized"))
+    throw new Error("classe « maximized » non retirée");
+  if(dom.panels.palette.querySelectorAll(".fres").length!==8)
+    throw new Error("8 poignées attendues après restauration");
+  wsToggleFloat("palette");
   WS=wsDefault();wsApply(false);
 });
 T("menu de l'espace de travail : titres échappés",()=>{
@@ -1332,5 +1384,301 @@ T("entête : le nom du projet s'affiche, et s'effface à sa fermeture",()=>{
   }finally{ projFermer(); }
 });
 
+/* ==========================================================================
+   Traits de délimitation graphique (traits)
+   ========================================================================== */
+T("trait graphique : normalisation, style et libellé",()=>{
+  const d=normDrawing({id:5,x1:10,y1:20,x2:100,y2:20,style:"dashed",width:2,color:"#2f86cc",label:"ALIMENTATION"},0);
+  if(!d||d.type!=="line")throw new Error("trait invalide");
+  if(d.x1!==10||d.x2!==100||d.y1!==20||d.y2!==20)throw new Error("coordonnées erronées");
+  if(d.style!=="dashed"||d.width!==2||d.color!=="#2f86cc"||d.label!=="ALIMENTATION")
+    throw new Error("propriétés du trait altérées");
+  // segment nul écarté
+  if(normDrawing({x1:10,y1:20,x2:10,y2:20}))throw new Error("segment nul non filtré");
+  // style inconnu ramené à dashed
+  const d2=normDrawing({x1:0,y1:0,x2:40,y2:40,style:"inconnu"},0);
+  if(d2.style!=="dashed")throw new Error("repli du style invalide");
+});
+
+T("trait graphique : cycle de sauvegarde, sélection et déplacement",()=>{
+  S.comps=[];S.wires=[];S.drawings=[];clearSel();
+  const d={id:S.uid++,type:"line",x1:20,y1:20,x2:200,y2:20,style:"dashed",width:2,color:"#6b7280",label:"BLOC 1"};
+  S.drawings.push(d);
+  S.selD.add(d.id);
+  if(selDrawings().length!==1)throw new Error("trait non sélectionné");
+  moveSelBy(40,20);
+  if(d.x1!==60||d.y1!==40||d.x2!==240||d.y2!==40)throw new Error("déplacement du trait incorrect");
+  dupSel();
+  if(S.drawings.length!==2)throw new Error("duplication du trait échouée");
+  delSel();
+  if(S.drawings.length!==1)throw new Error("suppression échouée");
+  // import de document contenant des traits
+  const doc={format:"schemedit-2",pages:[{name:"Feuille 1",comps:[],wires:[],drawings:[d]}]};
+  loadDoc(doc);
+  if(S.pages.length>1)gotoPage(1);
+  if(!S.drawings||S.drawings.length!==1)throw new Error("rechargement de trait échoué");
+});
+
+T("rectangle graphique : normalisation, hit-test périmétrique et panneau",()=>{
+  const r=normDrawing({id:10,shape:"rect",x1:50,y1:50,x2:250,y2:150,style:"solid",width:2,label:"ZONE"},0);
+  if(!r||r.shape!=="rect")throw new Error("rectangle non normalisé");
+  S.drawings=[r];clearSel();
+  // Clic sur l'arête du haut (x: 100, y: 50) -> doit toucher
+  const hTop=hitDrawing(100,50);
+  if(!hTop||hTop.id!==r.id)throw new Error("hit-test manqué sur arête haut du rectangle");
+  // Clic sur l'arête droite (x: 250, y: 100) -> doit toucher
+  const hRight=hitDrawing(250,100);
+  if(!hRight||hRight.id!==r.id)throw new Error("hit-test manqué sur arête droite");
+  // Clic au centre du rectangle (x: 150, y: 100) -> ne doit PAS toucher (laisse l'accès aux composants intérieurs)
+  const hCenter=hitDrawing(150,100);
+  if(hCenter)throw new Error("le centre du rectangle ne doit pas intercepter le hit-test");
+  // Sélection et panneau de propriétés
+  S.selD.add(r.id);
+  refreshPanels();
+  const html=document.getElementById("props").innerHTML;
+  if(html.indexOf("Rectangle (cadre)")<0||html.indexOf("selected>Rectangle")<0)
+    throw new Error("sélecteur de forme absent ou erroné");
+  if(html.indexOf("Largeur :")<0||html.indexOf("Hauteur :")<0)
+    throw new Error("cotes du rectangle absentes du panneau");
+});
+
+T("bus de signaux : mode bus, propriétés, tracé et scission",()=>{
+  setMode("bus");
+  if(S.mode!=="bus")throw new Error("le mode bus n'a pas été activé");
+  const bBus=document.getElementById("mBus");
+  if(bBus&&!bBus.classList.contains("on"))throw new Error("le bouton mBus n'est pas allumé en mode bus");
+  if(C_BUS!=="#00c4df"||BUS_WIDTH!==6.5)throw new Error("constantes de style du bus incorrectes");
+
+  const wBus1={x1:0,y1:100,x2:200,y2:100,bus:true,net:"D[0..7]"};
+  const wNorm={x1:100,y1:0,x2:100,y2:100};
+  const wires=[wBus1,wNorm];
+  const splitDone=splitWireArray(wires);
+  if(!splitDone)throw new Error("la scission au croisement avec le bus a échoué");
+  const buses=wires.filter(w=>w.bus);
+  if(buses.length!==2)throw new Error("les deux moitiés du bus scindé doivent conserver bus:true, trouvé "+buses.length);
+  if(buses[0].net!=="D[0..7]"||buses[1].net!=="D[0..7]")throw new Error("le nom de net du bus n'a pas survécu à la scission");
+});
+
+T("bus de signaux : import défensif et panneau de propriétés",()=>{
+  const nw=normWire({x1:0,y1:0,x2:80,y2:0,bus:true,net:"DATA[0..15]"});
+  if(!nw||!nw.bus||nw.net!=="DATA[0..15]")throw new Error("normWire n'a pas conservé le bus");
+  S.wires=[nw];S.comps=[];S.drawings=[];clearSel();
+  S.selW.add(nw);
+  refreshPanels();
+  const html=document.getElementById("props").innerHTML;
+  if(html.indexOf("Bus horizontal")<0)throw new Error("direction du bus absente du panneau");
+  if(html.indexOf("DATA[0..15]")<0)throw new Error("nom du bus absent du panneau");
+});
+
+T("feuilles hiérarchiques : feuille racine, blocs hiérarchiques dynamiques et protection",()=>{
+  S.pages=[newHierPage("Hiérarchie")];
+  loadPage(0);
+  if(sheetBlocks().length!==0)throw new Error("une seule feuille ne doit pas générer de bloc hiérarchique");
+
+  addPage(false);
+  S.pages[1].name="Alimentation";
+  addPage(false);
+  S.pages[2].name="Microcontrôleur";
+
+  gotoPage(0);
+  const blocks=sheetBlocks();
+  if(blocks.length!==2)throw new Error("deux blocs hiérarchiques attendus sur la feuille racine, trouvé "+blocks.length);
+  if(blocks[0].name!=="Alimentation"||blocks[0].sheetIndex!==1)throw new Error("premier bloc hiérarchique incorrect");
+  if(blocks[1].name!=="Microcontrôleur"||blocks[1].sheetIndex!==2)throw new Error("second bloc hiérarchique incorrect");
+
+  const b0=blocks[0];
+  const hit=hitSheetBlock(b0.x+10,b0.y+10);
+  if(!hit||hit.sheetIndex!==1)throw new Error("hitSheetBlock n'a pas trouvé le bloc");
+
+  let alertShown=false;
+  const oldAlert=global.alert;
+  global.alert=()=>{alertShown=true;};
+  try{
+    removePage(0);
+  }finally{
+    global.alert=oldAlert;
+  }
+  if(!alertShown)throw new Error("la suppression de la feuille racine (page 0) doit être refusée");
+  if(S.pages.length!==3)throw new Error("la feuille racine a été supprimée à tort");
+});
+
+T("feuilles hiérarchiques : ouverture du document sur la feuille racine et navigation",()=>{
+  const doc={
+    format:"schemedit-2",
+    page:2,
+    pages:[
+      {name:"Synoptique",comps:[],wires:[]},
+      {name:"Capteurs",comps:[],wires:[]},
+      {name:"Traitement",comps:[],wires:[]}
+    ]
+  };
+  loadDoc(doc);
+  if(S.page!==0)throw new Error("loadDoc doit ouvrir sur la feuille racine (page 0), ouvert sur "+S.page);
+  // Ancien document sans feuille hiérarchique : insérée en index 0, devant Synoptique
+  if(S.pages.length!==4)throw new Error("la feuille hiérarchique doit être insérée avant la première feuille");
+  if(S.pages[0].name!=="Hiérarchie"||!S.pages[0].isHierarchy)throw new Error("la première feuille doit être la feuille hiérarchique");
+  if(S.pages[1].name!=="Synoptique")throw new Error("la première sous-feuille doit être Synoptique");
+  gotoPage(1);
+  if(S.page!==1)throw new Error("navigation vers feuille 2 échouée");
+  if(hitSheetBlock(100,100)!==null)throw new Error("hitSheetBlock ne doit être actif que sur la feuille 0");
+});
+
+T("démarrage : avec projet vierge sans démo vs sans projet avec démo",()=>{
+  projFermer();
+  if(projNom()!=="")throw new Error("aucun projet ne doit être actif après projFermer");
+  projOuvrir("mon_projet_test");
+  if(projNom()!=="mon_projet_test")throw new Error("le projet actif doit être mon_projet_test");
+  projFermer();
+});
+
+T("feuilles hiérarchiques : ancien projet mono-feuille gagne sa feuille hiérarchique en page 0",()=>{
+  const oldDoc={
+    format:"schemedit-2",
+    pages:[
+      {name:"01 Commande NPN",comps:[C("resistor",2,2,{ref:"R1"})],wires:[]}
+    ]
+  };
+  loadDoc(oldDoc);
+  if(S.pages.length!==2)throw new Error("la feuille hiérarchique doit être ajoutée devant la feuille unique existante");
+  if(S.pages[0].name!=="Hiérarchie"||!S.pages[0].isHierarchy)throw new Error("la page 0 doit être la feuille hiérarchique");
+  if(S.pages[1].name!=="01 Commande NPN")throw new Error("la page 1 doit être l'ancienne feuille 01 Commande NPN");
+  if(S.page!==0)throw new Error("le schéma doit s'ouvrir sur la feuille hiérarchique (page 0)");
+  const blocks=sheetBlocks();
+  if(blocks.length!==1)throw new Error("un bloc attendu pour la feuille 01 Commande NPN");
+  if(blocks[0].name!=="01 Commande NPN"||blocks[0].sheetIndex!==1)throw new Error("bloc incorrect");
+
+  // Duplication de la feuille hiérarchique interdite
+  let alertTriggered=false;
+  const oldAlert=global.alert;
+  global.alert=()=>{alertTriggered=true;};
+  try{
+    addPage(true);
+  }finally{
+    global.alert=oldAlert;
+  }
+  if(!alertTriggered)throw new Error("dupliquer la feuille hiérarchique doit être interdit");
+  if(S.pages.length!==2)throw new Error("la feuille hiérarchique ne doit pas être dupliquée");
+});
+
+T("édition des broches sur un composant non-IC (connecteur)",()=>{
+  const j = C("header", 5, 5, {ref:"J1"});
+  sheet([j], []);
+  if(pinCount(j)!==2) throw new Error("un header natif a 2 broches, reçu: "+pinCount(j));
+  peOpen(j);
+  icSetCount(j, 4);
+  j.pinNames = ["VCC", "TX", "RX", "GND"];
+  if(pinCount(j)!==4) throw new Error("le header doit avoir 4 broches après icSetCount");
+  if(j.pinNames.length!==4||j.pinNames[1]!=="TX") throw new Error("noms des broches incorrects");
+  const ps = pinsOf(j);
+  if(ps.length!==4) throw new Error("pinsOf doit renvoyer 4 broches");
+  peClose();
+});
+
+T("édition du composant (modale CE) pour modifier ref, valeur, boîtier",()=>{
+  const op = C("opamp", 10, 10, {ref:"U1", value:"LM358"});
+  sheet([op], []);
+  ceOpen(op);
+  op.ref = "U5";
+  op.value = "TL072";
+  op.pkg = "SOIC-8";
+  ceClose();
+  if(op.ref!=="U5"||op.value!=="TL072"||op.pkg!=="SOIC-8") throw new Error("propriétés du composant non mises à jour");
+});
+
+T("normComp : conservation des broches personnalisées et des noms pour tout composant",()=>{
+  const src = {
+    id: 12, type: "header", x: 100, y: 100, ref: "J2", value: "UART",
+    npins: 4, pinNames: ["VCC", "TX", "RX", "GND"],
+    pinPos: [[-40,-30], [-40,-10], [-40,10], [-40,30]]
+  };
+  const norm = normComp(src, 0);
+  if(!norm) throw new Error("normComp a renvoyé null");
+  if(norm.npins!==4) throw new Error("npins attendu: 4, reçu: "+norm.npins);
+  if(!Array.isArray(norm.pinNames)||norm.pinNames[1]!=="TX") throw new Error("pinNames non conservé");
+  if(!Array.isArray(norm.pinPos)||norm.pinPos.length!==4) throw new Error("pinPos non conservé");
+});
+
+T("détection de conflits de câblage et réalignement assisté des broches (alim/masse critique)",()=>{
+  const u1 = C("header", 10, 10, {ref:"U1", value:"TEST_IC"});
+  sheet([u1], []);
+  peOpen(u1);
+  icSetCount(u1, 4);
+  peClose();
+
+  const pins = allPins(u1);
+  if(pins.length !== 4) throw new Error("4 broches attendues pour U1, reçu: " + pins.length);
+
+  const w1 = { x1: pins[0].x, y1: pins[0].y, x2: pins[0].x - 40, y2: pins[0].y, net: "+3.3V" };
+  const w2 = { x1: pins[1].x, y1: pins[1].y, x2: pins[1].x - 40, y2: pins[1].y, net: "GND" };
+  sheet([u1], [w1, w2]);
+
+  const pinoutInverse = [
+    { number: 1, name: "GND" },
+    { number: 2, name: "+3.3V" },
+    { number: 3, name: "NC" },
+    { number: 4, name: "NC" }
+  ];
+
+  const conflits = crDetecterConflitsCablage(u1, pinoutInverse);
+  if(!conflits || conflits.length !== 1) {
+    throw new Error("1 conflit attendu, obtenu : " + (conflits ? conflits.length : 0));
+  }
+  const c = conflits[0];
+  if(c.type !== "swap") throw new Error("type attendu: swap, reçu: " + c.type);
+  if(!c.critique) throw new Error("le conflit alim/masse doit être marqué critique");
+  if(c.numA !== 1 || c.numB !== 2) throw new Error("broches permutées incorrectes: " + c.numA + ", " + c.numB);
+
+  // Réaligner les fils selon l'action approuvée
+  const count = crRealignerFilsBroches(u1, conflits);
+  if(count !== 1) throw new Error("1 permutation attendue, reçu: " + count);
+
+  // w1 (+3.3V) connecté à la broche 2, w2 (GND) connecté à la broche 1
+  if(w1.x1 !== pins[1].x || w1.y1 !== pins[1].y) {
+    throw new Error("Le fil +3.3V aurait dû être réaligné sur la broche 2");
+  }
+  if(w2.x1 !== pins[0].x || w2.y1 !== pins[0].y) {
+    throw new Error("Le fil GND aurait dû être réaligné sur la broche 1");
+  }
+
+  // Plus aucun conflit après réalignement
+  const conflitsApres = crDetecterConflitsCablage(u1, pinoutInverse);
+  if(conflitsApres.length !== 0) {
+    throw new Error("Aucun conflit ne devrait subsister après réalignement, reçu: " + conflitsApres.length);
+  }
+});
+
+T("détection d'inversion de signaux de bus (SDA ⇄ SCL)",()=>{
+  const u2 = C("header", 20, 20, {ref:"U2"});
+  sheet([u2], []);
+  peOpen(u2);
+  icSetCount(u2, 4);
+  peClose();
+
+  const pins = allPins(u2);
+  const wA = { x1: pins[0].x, y1: pins[0].y, x2: pins[0].x + 40, y2: pins[0].y, net: "I2C_SDA" };
+  const wB = { x1: pins[1].x, y1: pins[1].y, x2: pins[1].x + 40, y2: pins[1].y, net: "I2C_SCL" };
+  sheet([u2], [wA, wB]);
+
+  const pinoutI2C = [
+    { number: 1, name: "SCL" },
+    { number: 2, name: "SDA" },
+    { number: 3, name: "NC" },
+    { number: 4, name: "NC" }
+  ];
+
+  const conflits = crDetecterConflitsCablage(u2, pinoutI2C);
+  if(!conflits || conflits.length !== 1) {
+    throw new Error("1 conflit attendu pour SDA/SCL, reçu: " + (conflits ? conflits.length : 0));
+  }
+  if(conflits[0].type !== "swap") throw new Error("type attendu: swap");
+  if(conflits[0].critique) throw new Error("un swap SDA/SCL n'est pas critique alim/masse");
+
+  crRealignerFilsBroches(u2, conflits);
+  if(wA.x1 !== pins[1].x || wA.y1 !== pins[1].y) throw new Error("SDA doit être sur pin 2");
+  if(wB.x1 !== pins[0].x || wB.y1 !== pins[0].y) throw new Error("SCL doit être sur pin 1");
+});
+
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
 process.exit(ko?1:0);
+
+

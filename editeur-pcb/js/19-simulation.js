@@ -1454,26 +1454,77 @@ function simRetourTrace(c, dpr){
   c.save();
   c.lineCap = "round";
 
-  for(const g of liens){
-    for(const f of g.voisins){
-      c.strokeStyle = simRetourCouleur(f);
-      /* L'ÉPAISSEUR DIT LA PART DU COURANT. Un trait fin est un via qui ne
-         travaille pas, et c'est une information de routage : il occupe une
-         place et ne rend rien. */
-      c.lineWidth = f.retenu ? px(1.2 + 4.0 * Math.max(f.part, 0)) : px(1.2);
+  const actif = (typeof SIM !== "undefined" && SIM.viaActif != null) ? SIM.viaActif : null;
+  const actifGnd = (actif != null && typeof SIM !== "undefined" && SIM.gndViaActif != null) ? SIM.gndViaActif : null;
+
+  for(let gIdx = 0; gIdx < liens.length; gIdx++){
+    const g = liens[gIdx];
+    const isSel = (actif != null && gIdx === actif);
+    const dimmed = (actif != null && !isSel);
+
+    c.save();
+    if(dimmed) c.globalAlpha = 0.22;
+
+    /* Le halo de mise en surbrillance si ce via est sélectionné au rapport */
+    if(isSel){
+      c.save();
+      c.beginPath();
+      c.arc(g.via.x, g.via.y, g.via.d / 2 + px(12), 0, Math.PI * 2);
+      c.fillStyle = "rgba(73, 192, 122, 0.22)";
+      c.fill();
+      c.strokeStyle = "#ffe066";
+      c.lineWidth = px(3.2);
+      c.stroke();
+      c.restore();
+    }
+
+    for(let fIdx = 0; fIdx < g.voisins.length; fIdx++){
+      const f = g.voisins[fIdx];
+      const isThisGnd = (isSel && actifGnd === fIdx);
+      const isOtherGndDimmed = (isSel && actifGnd != null && !isThisGnd);
+
+      c.save();
+      if(isOtherGndDimmed) c.globalAlpha = 0.20;
+
+      c.strokeStyle = isThisGnd ? "#ffe066" : simRetourCouleur(f);
+      /* L'ÉPAISSEUR DIT LA PART DU COURANT */
+      let baseW = f.retenu ? px(1.2 + 4.0 * Math.max(f.part, 0)) : px(1.2);
+      if(isSel){
+        baseW *= isThisGnd ? 2.6 : 1.4;
+        if(f.retenu && !isThisGnd && actifGnd == null)
+          c.strokeStyle = (f.part >= 0.20 ? "#5efc82" : "#ffd166");
+      }
+      c.lineWidth = baseW;
       c.setLineDash(f.retenu ? [] : [px(3), px(3)]);
       c.beginPath();
       c.moveTo(g.via.x, g.via.y);
       c.lineTo(f.via.x, f.via.y);
       c.stroke();
+
+      /* Halo brillant doré sur le via de masse ciblé */
+      if(isThisGnd){
+        c.save();
+        c.beginPath();
+        c.arc(f.via.x, f.via.y, px(10), 0, Math.PI * 2);
+        c.fillStyle = "rgba(255, 224, 102, 0.35)";
+        c.fill();
+        c.strokeStyle = "#ffe066";
+        c.lineWidth = px(2.5);
+        c.stroke();
+        c.restore();
+      }
+      c.restore();
     }
+
     /* Le via de signal, cerclé : c'est lui dont on parle. */
     c.setLineDash([]);
-    c.strokeStyle = g.retenus.length ? "#49c07a" : "#e8564a";
-    c.lineWidth = px(1.6);
+    c.strokeStyle = isSel ? "#ffffff" : (g.retenus.length ? "#49c07a" : "#e8564a");
+    c.lineWidth = isSel ? px(2.8) : px(1.6);
     c.beginPath();
     c.arc(g.via.x, g.via.y, g.via.d / 2 + px(3), 0, Math.PI * 2);
     c.stroke();
+
+    c.restore();
   }
   c.restore();
   simRetourValeurs(c, liens, dpr);
@@ -1488,79 +1539,106 @@ function simRetourValeurs(c, liens, dpr){
   c.scale(dpr, dpr);
   c.textAlign = "center"; c.textBaseline = "middle";
 
-  const cartouche = (e, txt, bord, dy, petit) => {
-    c.font = (petit ? "600 9.5px " : "600 11px ") +
+  const actif = (typeof SIM !== "undefined" && SIM.viaActif != null) ? SIM.viaActif : null;
+  const actifGnd = (actif != null && typeof SIM !== "undefined" && SIM.gndViaActif != null) ? SIM.gndViaActif : null;
+
+  const cartouche = (e, txt, bord, dy, petit, isSel) => {
+    c.font = (petit ? (isSel ? "700 10.5px " : "600 9.5px ") : (isSel ? "700 12px " : "600 11px ")) +
       "\"JetBrains Mono\",\"SF Mono\",Consolas,\"Roboto Mono\",monospace";
     const w = c.measureText(txt).width + 10, hh = petit ? 15 : 18;
-    c.fillStyle = "rgba(15,16,18,0.86)";
+    c.fillStyle = isSel ? "rgba(20,24,28,0.96)" : "rgba(15,16,18,0.86)";
     c.beginPath();
     if(c.roundRect) c.roundRect(e.x - w / 2, e.y + dy - hh / 2, w, hh, 4);
     else c.rect(e.x - w / 2, e.y + dy - hh / 2, w, hh);
     c.fill();
-    c.strokeStyle = bord; c.lineWidth = 1.2; c.stroke();
-    c.fillStyle = "#e6e8ec";
+    c.strokeStyle = isSel ? "#ffe066" : bord; c.lineWidth = isSel ? 2.0 : 1.2; c.stroke();
+    c.fillStyle = isSel ? "#ffffff" : "#e6e8ec";
     c.fillText(txt, e.x, e.y + dy + 0.5);
   };
 
-  for(const g of liens){
-    /* LA PART SUR CHAQUE LIEN, et seulement si elle se voit : sous cinq pour
-       cent, l'étiquette encombre plus qu'elle n'informe — le trait fin dit
-       déjà que ce via ne travaille pas. Un lien ÉCARTÉ, lui, porte toujours sa
-       raison : c'est la seule chose qui explique pourquoi il ne compte pas. */
+  for(let gIdx = 0; gIdx < liens.length; gIdx++){
+    const g = liens[gIdx];
+    const isSel = (actif != null && gIdx === actif);
+    const dimmed = (actif != null && !isSel);
+    if(dimmed) continue;
+
     const o = w2s(g.via.x, g.via.y);
-    for(const f of g.voisins){
+    for(let fIdx = 0; fIdx < g.voisins.length; fIdx++){
+      const f = g.voisins[fIdx];
+      const isThisGnd = (isSel && actifGnd === fIdx);
+      const isOtherGndDimmed = (isSel && actifGnd != null && !isThisGnd);
+      if(isOtherGndDimmed) continue;
+
       const e = w2s(f.via.x, f.via.y);
       const lg = Math.hypot(e.x - o.x, e.y - o.y);
-      /* UN LIEN TROP COURT À L'ÉCRAN NE PORTE PAS D'ÉTIQUETTE. En dessous de
-         quarante-cinq pixels, le cartouche recouvre le via qu'il désigne et
-         celui d'à côté : on perd les deux informations pour en afficher une.
-         L'ÉPAISSEUR DU TRAIT, elle, dit toujours la part — et elle ne se
-         chevauche avec rien. Un lien ÉCARTÉ garde sa raison quoi qu'il arrive :
-         c'est la seule chose qui explique pourquoi il ne compte pas, et un via
-         écarté est justement celui qu'on a posé tout contre. */
-      if(lg < 45 && f.retenu) continue;
-      /* AUX DEUX TIERS DU LIEN, ET NON AU MILIEU : le milieu de trois liens qui
-         partent du même point retombe dans la même zone encombrée. */
+      if(lg < 45 && f.retenu && !isSel && !isThisGnd) continue;
       const m = {x:o.x + 0.66 * (e.x - o.x), y:o.y + 0.66 * (e.y - o.y)};
-      /* LA RAISON D'UN ÉCART EST UNE PHRASE, PAS UN POURCENTAGE : elle est
-         large, et posée sur le lien elle recouvre le via qu'elle désigne. On
-         la remonte au-dessus du trait — le trait pointillé rouge dit déjà
-         lequel des deux vias est en cause. */
-      if(!f.retenu) cartouche(m, f.raison, "#e8564a", -14, true);
-      else if(f.part >= 0.05)
+      if(!f.retenu) cartouche(m, f.raison, "#e8564a", -14, true, isThisGnd || isSel);
+      else if(f.part >= 0.05 || isThisGnd)
         cartouche(m, Math.round(100 * f.part) + " %",
-                  simRetourCouleur(f), 0, true);
+                  isThisGnd ? "#ffe066" : simRetourCouleur(f), 0, true, isThisGnd || isSel);
     }
-    /* L'INDUCTANCE DE BOUCLE, au pied du via, et ce qu'elle vaut. Quand rien ne
-       referme la boucle, le chiffre n'est PAS une inductance de boucle : c'est
-       la self d'un conducteur seul, elle ne dépend pas du routage, et
-       l'afficher comme les autres laisserait croire qu'on a mesuré quelque
-       chose. Le « ≥ » n'est pas une précaution de style : le courant revient
-       quand même, par le cuivre des plans et plus loin, donc la boucle réelle
-       vaut DAVANTAGE. La self partielle en est le plancher. */
     const txt = g.seul
       ? "L ≥ " + simNb(g.L * 1e9, 2) + " nH · sans retour"
       : "L = " + simNb(g.L * 1e9, 2) + " nH";
-    /* AU-DESSUS DU VIA, ET AU-DESSUS DE SON CERCLE. Un décalage fixe suffit
-       tant qu'on est dézoomé ; à fort grossissement la pastille dépasse le
-       cartouche et le chiffre se pose SUR le via qu'il décrit. On le remonte
-       donc du rayon écran de la pastille. */
     const rayon = (g.via.d / 2) * S.scale + 14;
-    cartouche(o, txt, g.seul ? "#e8564a" : "#49c07a",
-              -Math.max(18, rayon), false);
-    /* LE DÉFAUT ET LE DOUTE NE SE DISENT PAS DE LA MÊME FAÇON, et surtout pas
-       de la même couleur : un chevelu qui crie au rouge sur le cas ordinaire
-       cesse d'être regardé. */
+    cartouche(o, txt, g.seul ? "#e8564a" : (isSel ? "#ffe066" : "#49c07a"),
+              -Math.max(18, rayon), false, isSel);
+
     const noms = g.plansDep.map(i => cuLabel(i, S.cu)).join("/") + " → " +
                  g.plansArr.map(i => cuLabel(i, S.cu)).join("/");
     if(g.change)
       cartouche(o, "référence " + noms + " : aucun via ne peut joindre les deux",
-                "#e8564a", Math.max(20, rayon), true);
+                "#e8564a", Math.max(20, rayon), true, isSel);
     else if(g.doute)
       cartouche(o, "référence " + noms + " : nets des plans non déclarés",
-                "#e0a63c", Math.max(20, rayon), true);
+                "#e0a63c", Math.max(20, rayon), true, isSel);
   }
   c.restore();
+}
+
+/* Clic sur le canvas PCB pour sélectionner un via de signal, un via de masse ou un trait du chevelu */
+function simRetourClicPcb(wx, wy){
+  if(typeof SIM === "undefined" || !SIM.ouvert || SIM.analyse !== "retour") return false;
+  const liens = simChevelu();
+  if(!liens.length) return false;
+  const tol = Math.max(0.4, 12 / S.scale);
+
+  // 1. Clic sur un via de signal
+  for(let gIdx = 0; gIdx < liens.length; gIdx++){
+    const g = liens[gIdx];
+    const r = Math.max((g.via.d || 0.6) / 2, tol);
+    if(Math.hypot(wx - g.via.x, wy - g.via.y) <= r){
+      if(typeof simSelectionnerVia === "function"){
+        simSelectionnerVia(gIdx);
+        const row = document.querySelector('[data-via-idx="' + gIdx + '"]');
+        if(row && typeof row.scrollIntoView === "function") row.scrollIntoView({block:"nearest", behavior:"smooth"});
+      }
+      return true;
+    }
+  }
+
+  // 2. Clic sur un via de masse ou un trait du chevelu
+  for(let gIdx = 0; gIdx < liens.length; gIdx++){
+    const g = liens[gIdx];
+    for(let fIdx = 0; fIdx < g.voisins.length; fIdx++){
+      const f = g.voisins[fIdx];
+      const dGnd = Math.hypot(wx - f.via.x, wy - f.via.y);
+      const dx = f.via.x - g.via.x, dy = f.via.y - g.via.y, l2 = dx*dx + dy*dy;
+      let t = l2 <= 0 ? 0 : ((wx - g.via.x)*dx + (wy - g.via.y)*dy) / l2;
+      t = Math.max(0, Math.min(1, t));
+      const dRay = Math.hypot(wx - (g.via.x + t*dx), wy - (g.via.y + t*dy));
+      if(dGnd <= tol * 1.5 || dRay <= tol * 0.9){
+        if(typeof simSelectionnerGndVia === "function"){
+          simSelectionnerGndVia(gIdx, fIdx);
+          const item = document.querySelector('[data-via-idx="' + gIdx + '"] [data-gnd-idx="' + fIdx + '"]');
+          if(item && typeof item.scrollIntoView === "function") item.scrollIntoView({block:"nearest", behavior:"smooth"});
+        }
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /* ==========================================================================
@@ -1710,6 +1788,53 @@ function simDCDedans(x,y,pts){
    On ne retient QUE les couches où le net porte effectivement du cuivre sous
    le trou. Relier une couche vide ne servirait à rien et ferait un via « hors
    calcul » de plus dans le tableau, pour rien. */
+/* ==========================================================================
+   CE QUE LA CARTE EMPORTE DE CHALEUR — LES COTES DE L'EMPILAGE
+   --------------------------------------------------------------------------
+   Le solveur ne lit plus l'échauffement sur la charte IPC-2221 : il résout
+   l'ÉTALEMENT dans le stratifié, ce que la campagne IPC-2152 a mesuré et que
+   la charte ignore. Il lui faut deux cotes que seul l'empilage porte.
+
+   L'ÉPAISSEUR DE STRATIFIÉ est le diélectrique seul, `stackDiT()` : le cuivre
+   ne fait pas partie de l'ailette isolante, il est compté à part, et le masque
+   n'étale rien (25 µm de résine à 0,2 W/(m·K)).
+
+   LE CUIVRE ÉTALEUR EST CE QUI ÉTALE VRAIMENT, et c'est là qu'est le seul
+   jugement de cette fonction. 35 µm de cuivre pleine carte portent 390 ×
+   35e-6 = 1,37e-2 W/K, contre 0,8 × 1,6e-3 = 1,28e-3 pour tout le FR-4 :
+   dix fois plus. Compter tout le cuivre de l'empilage rendrait donc une
+   température dix fois trop basse sur une carte dont les couches internes ne
+   sont que du routage. On pondère chaque couche par la PART DE LA CARTE que
+   ses ZONES couvrent — c'est ce que « plan de masse » veut dire physiquement,
+   et le rôle annoncé de la couche n'y change rien : c'est le cuivre posé qui
+   conduit, pas l'intention (même parti pris que `roleCheck`).
+
+   LES PISTES ET LES PASTILLES NE COMPTENT PAS, et c'est délibérément du côté
+   prudent : elles couvrent quelques pour cent d'une couche de routage, elles
+   sont fragmentées — donc mauvaises ailettes —, et les mesurer demanderait de
+   rastériser tout le cuivre de la carte à chaque calcul. Le chiffre penche
+   ainsi vers le chaud, ce qui est le bon sens de l'erreur.
+
+   λ N'EST PAS FOURNI, ET C'EST VOULU. Aucun fichier de CAO ne porte la
+   conductivité thermique d'un laminé : « FR-4 » ne la donne pas, il la
+   suggère. La poser ici la ferait passer pour une cote lue ; on laisse donc le
+   solveur mettre son repli — qu'il ANNONCE comme supposé — et le champ du
+   panneau l'emporte dès qu'on a la fiche du fabricant. */
+function simDCThermiquePcb(){
+  const aire=Math.abs(S.board.w*S.board.h);
+  let etaleur=0;
+  for(let i=0;i<S.cu;i++){
+    let a=0;
+    for(const z of S.zones)
+      if(z.l===i&&z.pts&&z.pts.length>=3)a+=Math.abs(signedArea(z.pts));
+    /* Des zones qui se recouvrent ne font pas plus de cuivre que la carte : on
+       borne à 1, sinon deux arrosages superposés doubleraient l'ailette. */
+    const taux=aire>0?Math.min(a/aire,1):0;
+    etaleur+=cuT(i)*taux;
+  }
+  return {epaisseur_stratifie:stackDiT(), cuivre_etaleur:etaleur};
+}
+
 function simDCCouchesTouchees(x,y,a,b,polygones){
   const lo=Math.min(a,b), hi=Math.max(a,b), out=[];
   for(let c=lo;c<=hi;c++)
@@ -1721,13 +1846,18 @@ function simDCCouchesTouchees(x,y,a,b,polygones){
 /* Le tube, en autant de liaisons qu'il y a d'intervalles entre les couches
    qu'il touche. Chacune porte SA hauteur : deux couches voisines sont bien
    plus proches que les deux faces de la carte. */
-function simDCTube(x,y,a,b,percage,net,repere,polygones,vias){
+function simDCTube(x,y,a,b,percage,net,repere,polygones,vias,suppose){
   const cs=simDCCouchesTouchees(x,y,a,b,polygones);
   if(cs.length<2)return 0;
   let n=0;
   for(let k=0;k<cs.length-1;k++){
     vias.push({x:x, y:y, couche_a:cs[k], couche_b:cs[k+1],
                percage:percage, placage:0.025,
+               /* UN PERÇAGE DÉDUIT N'EST PAS UNE COTE, et R va comme 1/A : un
+                  diamètre deviné à cinquante pour cent près se paie double sur
+                  l'ohm. Le drapeau voyage jusqu'au résultat pour que le
+                  tableau MARQUE ces lignes. */
+               percage_suppose:!!suppose,
                hauteur:simDCHauteurVia(cs[k],cs[k+1]),
                net:net,
                repere:repere+(cs.length>2?(" "+(cs[k]+1)+"→"+(cs[k+1]+1)):"")});
@@ -1749,10 +1879,30 @@ function simDCBornePastille(x,y){
       if(d<bd){
         bd=d;
         const cu=couches.indexOf(S.active)>=0?S.active:couches[0];
-        best={nom:(fp.ref||"?")+"."+(q.n==null?"?":q.n),
+        let nom=(fp.ref||"?")+"."+(q.n==null?"?":q.n);
+        let specVal=null, specU=null;
+        if(typeof pcbComposantsSchema==="function"&&typeof pcbSpecsComposant==="function"){
+          const sm=pcbComposantsSchema();
+          const c=sm&&sm.get(fp.ref);
+          if(c){
+            const sp=pcbSpecsComposant(c);
+            const pinKey=String(q.n!=null?q.n:"");
+            const pinNom=c.pinNames&&(c.pinNames[pinKey]||c.pinNames[q.n]);
+            if(pinNom)nom+=" ("+pinNom+")";
+            else if(sp.mpn||sp.value)nom+=" ("+(sp.mpn||sp.value)+")";
+            if(sp.estSource&&sp.tension!=null){
+              specVal=sp.tension; specU="V";
+            }else if(sp.estCharge&&sp.courant!=null){
+              specVal=sp.courant;
+              specU=sp.courant<0.001?"µA":(sp.courant<1?"mA":"A");
+            }
+          }
+        }
+        best={nom:nom,
               x:q.x, y:q.y, couche:cu, net:q.net||"",
               w:q.w, h:q.h, shape:q.shape, rot:q.rot,
-              couches:couches.slice()};
+              couches:couches.slice(),
+              specValeur:specVal, specUnite:specU};
       }
     }
   /* Une pastille à plus d'un millimètre du clic n'est pas celle qu'on visait :
@@ -1777,11 +1927,33 @@ function simDCClic(x,y){
   }else if(role){
     b.role=role;
     /* Une valeur d'usine UTILISABLE : 3,3 V pour une alimentation, un ampère
-       pour un consommateur. Un champ vide au premier calcul, c'est un refus
-       au premier clic. */
-    b.valeur=(role==="source")?3.3:1;
-    const k=SIM_DCB.bornes.findIndex(o=>o.nom===b.nom);
-    if(k>=0){b.valeur=SIM_DCB.bornes[k].valeur;SIM_DCB.bornes[k]=b;}
+       pour un consommateur. Si le schéma fournit une spécification réelle pour
+       ce composant, elle est prise d'office. */
+    if(b.specValeur!=null&&(role==="source"?b.specUnite==="V":b.specUnite!=="V")){
+      b.valeur=b.specValeur;
+      if(b.specUnite)b.unite=b.specUnite;
+    }else{
+      b.valeur=(role==="source")?3.3:1;
+    }
+    /* L'IDENTITÉ D'UNE BORNE EST SA POSITION, PAS SON NOM. Elle se comparait
+       par `nom`, ce qui marchait tant que le nom était fabriqué à partir de la
+       pastille ; depuis qu'il se RENOMME, recliquer une pastille renommée
+       posait une SECONDE borne au même endroit — deux injections au même point,
+       donc deux fois le courant, sans un mot. */
+    const k=SIM_DCB.bornes.findIndex(o=>Math.abs(o.x-b.x)<1e-6&&
+                                        Math.abs(o.y-b.y)<1e-6&&
+                                        o.couche===b.couche);
+    /* RECLIQUER LA MEME PASTILLE CORRIGE LE TIR : on remplace, et on garde ce
+       que l'utilisateur avait posé dessus -- sa valeur, son unité ET SON NOM.
+       L'unité oubliée ici, un « 500 mA » corrigé d'un clic redevenait
+       « 0,5 A » affiché en ampères ; le nom oublié, « VBAT connecteur »
+       redevenait « J1.1 ». */
+    if(k>=0){
+      const av=SIM_DCB.bornes[k];
+      b.valeur=av.valeur; b.unite=av.unite;
+      if(av.renomme){b.nom=av.nom;b.renomme=true;}
+      SIM_DCB.bornes[k]=b;
+    }
     else SIM_DCB.bornes.push(b);
     if(typeof hint==="function")
       hint((role==="source"?"Source (tension imposée)"
@@ -2262,6 +2434,275 @@ function simXtRisqueTrace(c,dpr){
   simXtPeindreCurseur(c,(x,y)=>[x,y],px(4.5));
 }
 
+/* ==========================================================================
+   LIAISON SCHÉMATIQUE & COMPOSANTS ENRICHIS
+   --------------------------------------------------------------------------
+   L'éditeur PCB s'appuie ici sur les données techniques saisies au schéma :
+   tensions de fonctionnement, courants maximaux, puissances, résistances,
+   fréquences et brochage.
+   Trois sources possibles :
+     · S.schDoc si déjà injecté ou chargé en mémoire ;
+     · sessLire("schema") depuis la session d'onglets (inter-outils temps réel) ;
+     · projdDocLire("schema") sur le disque du projet courant.
+   ========================================================================== */
+
+function pcbParseVolt(val){
+  if(val==null)return null;
+  const m=String(val).match(/(\d+(?:[.,]\d+)?)\s*V\b/i);
+  return m?parseFloat(m[1].replace(",",".")):null;
+}
+
+function pcbParseCourant(val){
+  if(val==null)return null;
+  const m=String(val).match(/(\d+(?:[.,]\d+)?)\s*(µA|uA|mA|A)\b/i);
+  if(!m)return null;
+  const n=parseFloat(m[1].replace(",","."));
+  const u=m[2].toLowerCase();
+  if(u.includes("u")||u.includes("µ"))return n*1e-6;
+  if(u.includes("m"))return n*1e-3;
+  return n;
+}
+
+function pcbParsePuissance(val){
+  if(val==null)return null;
+  const s=String(val).trim();
+  const frac=s.match(/(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)\s*(mW|W)\b/i);
+  if(frac){
+    const num=parseFloat(frac[1].replace(",","."));
+    const den=parseFloat(frac[2].replace(",","."));
+    const factor=frac[3].toLowerCase()==="mw"?1e-3:1.0;
+    return den!==0?(num/den)*factor:null;
+  }
+  const m=s.match(/(\d+(?:[.,]\d+)?)\s*(mW|W)\b/i);
+  if(!m)return null;
+  const n=parseFloat(m[1].replace(",","."));
+  return m[2].toLowerCase()==="mw"?n*1e-3:n;
+}
+
+function pcbParseResistance(val){
+  if(val==null)return null;
+  const s=String(val).trim();
+  const mCode=s.match(/^(\d+)[rR](\d+)$/);
+  if(mCode)return parseFloat(mCode[1]+"."+mCode[2]);
+  const mCodeK=s.match(/^(\d+)[kK](\d+)$/);
+  if(mCodeK)return parseFloat(mCodeK[1]+"."+mCodeK[2])*1000;
+  const m=s.match(/(\d+(?:[.,]\d+)?)\s*(k|m|r|ohm|Ω)?/i);
+  if(!m)return null;
+  const n=parseFloat(m[1].replace(",","."));
+  const u=(m[2]||"").toLowerCase();
+  if(u.includes("k"))return n*1000;
+  if(u.includes("m")&&!u.includes("ohm"))return n*1e6;
+  return n;
+}
+
+function pcbParseFrequence(val){
+  if(val==null)return null;
+  const m=String(val).match(/(\d+(?:[.,]\d+)?)\s*(kHz|MHz|GHz|Hz)\b/i);
+  if(!m)return null;
+  const n=parseFloat(m[1].replace(",","."));
+  const u=m[2].toLowerCase();
+  if(u==="ghz")return n*1e9;
+  if(u==="mhz")return n*1e6;
+  if(u==="khz")return n*1e3;
+  return n;
+}
+
+function pcbDefinirSchema(doc){
+  if(typeof S!=="undefined")S.schDoc=doc;
+}
+
+function pcbSchemaDoc(){
+  if(typeof S!=="undefined"&&S.schDoc)return S.schDoc;
+  if(typeof sessLire==="function"){
+    try{
+      const s=sessLire("schema");
+      if(s&&s.etat&&s.etat.doc){
+        if(typeof S!=="undefined")S.schDoc=s.etat.doc;
+        return s.etat.doc;
+      }
+    }catch(_){}
+  }
+  return null;
+}
+
+async function pcbSyncSchema(){
+  if(typeof S!=="undefined"&&S.schDoc)return S.schDoc;
+  if(typeof projdLie==="function"&&projdLie()&&typeof projdDocLire==="function"){
+    try{
+      const d=await projdDocLire("schema");
+      if(d){
+        if(typeof S!=="undefined")S.schDoc=d;
+        return d;
+      }
+    }catch(_){}
+  }
+  return pcbSchemaDoc();
+}
+
+function pcbComposantsSchema(doc){
+  const sch=doc||pcbSchemaDoc();
+  const m=new Map();
+  if(!sch)return m;
+  const pages=Array.isArray(sch.pages)?sch.pages:[sch];
+  pages.forEach((p,pIdx)=>{
+    const comps=Array.isArray(p.comps)?p.comps:(Array.isArray(p.components)?p.components:[]);
+    for(const c of comps){
+      if(!c||!c.ref)continue;
+      m.set(c.ref,{
+        ref:c.ref,
+        type:c.type||"",
+        value:c.value||c.val||"",
+        pkg:c.pkg||"",
+        mpn:c.mpn||c.csvMpn||c.csvPartName||"",
+        manufacturer:c.manufacturer||"",
+        specs:c.specs||{},
+        distributeurs:c.distributeurs||{},
+        datasheet_local:c.datasheet_local||"",
+        pinNames:c.pinNames||{},
+        pageIndex:pIdx,
+        pageName:p.name||("Feuille "+(pIdx+1))
+      });
+    }
+  });
+  return m;
+}
+
+function pcbSpecsComposant(c){
+  if(!c)return null;
+  const sp=c.specs||{};
+  let voltOut=null, voltIn=null, curr=null, power=null, res=null, freq=null;
+  
+  for(const [k,v] of Object.entries(sp)){
+    const kl=k.toLowerCase();
+    if(kl.includes("output")&&kl.includes("volt"))voltOut=voltOut||pcbParseVolt(v);
+    else if((kl.includes("supply")||kl.includes("operating")||kl.includes("input")||kl.includes("forward"))&&kl.includes("volt"))voltIn=voltIn||pcbParseVolt(v);
+    else if(kl.includes("resistance"))res=res||pcbParseResistance(v);
+    else if(kl.includes("current")&&(kl.includes("supply")||kl.includes("operating")||kl.includes("max")||kl.includes("output")||kl.includes("forward")))curr=curr||pcbParseCourant(v);
+    else if(kl.includes("power")||kl.includes("watt"))power=power||pcbParsePuissance(v);
+    else if(kl.includes("freq")||kl.includes("speed")||kl.includes("clock"))freq=freq||pcbParseFrequence(v);
+  }
+  
+  if(voltOut==null&&(c.type==="regulator"||/^(VR|REG|U_REG)/i.test(c.ref))){
+    voltOut=pcbParseVolt(c.value)||pcbParseVolt(c.mpn);
+  }
+  if(voltIn==null){
+    voltIn=pcbParseVolt(c.value);
+  }
+  if(res==null&&(c.type==="resistor"||/^R/i.test(c.ref))){
+    res=pcbParseResistance(c.value);
+  }
+  
+  const estSource=(c.type==="vcc"||c.type==="regulator"||
+                   /^(VR|REG|PWR|BAT|J|CON|U_REG)/i.test(c.ref)||
+                   (voltOut!=null&&voltOut>0));
+  const estCharge=!estSource&&(c.type==="ic"||c.type==="led"||c.type==="diode"||/^(U|IC|MCU|D|LED)/i.test(c.ref));
+  
+  let courantConsomme=curr;
+  if(courantConsomme==null&&power!=null&&(voltIn||voltOut||3.3)>0){
+    courantConsomme=power/(voltIn||voltOut||3.3);
+  }
+  if(courantConsomme==null&&estCharge){
+    if(c.type==="led"||/^D/i.test(c.ref))courantConsomme=0.015;
+    else courantConsomme=0.030;
+  }
+  
+  return {
+    ref:c.ref,
+    type:c.type,
+    value:c.value,
+    mpn:c.mpn||"",
+    manufacturer:c.manufacturer||"",
+    voltOut:voltOut,
+    voltIn:voltIn,
+    tension:voltOut||voltIn||3.3,
+    courant:courantConsomme,
+    courantSortie:estSource?(curr||1.0):null,
+    resistance:res,
+    puissance:power,
+    frequence:freq,
+    estSource:estSource,
+    estCharge:estCharge,
+    specs:sp,
+    pinNames:c.pinNames||{}
+  };
+}
+
+function pcbNetComposants(net){
+  const schMap=pcbComposantsSchema();
+  const sources=[], charges=[], resistances=[], ics=[], autres=[];
+  if(!net||typeof S==="undefined"||!Array.isArray(S.fps))
+    return {sources, charges, resistances, ics, autres};
+
+  for(const fp of S.fps){
+    const c=schMap.get(fp.ref)||{ref:fp.ref, value:fp.value, pkg:fp.pkg, type:"comp"};
+    const sp=pcbSpecsComposant(c);
+    const padsAll=padsWorld(fp);
+    const padsNet=padsAll.filter(q=>q.net===net||(fp.nets&&fp.nets[q.n]===net));
+    if(!padsNet.length)continue;
+
+    for(const q of padsNet){
+      const pinKey=String(q.n!=null?q.n:"");
+      const pinNom=(c.pinNames&&(c.pinNames[pinKey]||c.pinNames[q.n]))||"";
+      
+      let isSource=false;
+      let isCharge=false;
+      
+      if(sp.estSource){
+        if(/^(VOUT|OUT|\+V|3V3|5V|VBUS|VIN_EXT|VDD_EXT|1\b)/i.test(pinNom)||
+           c.type==="vcc"||/^(J|CON|BAT|PWR)/i.test(fp.ref)||padsNet.length===1){
+          isSource=true;
+        }
+      }
+      if(!isSource&&sp.estCharge){
+        if(/^(VDD|VCC|VBAT|VIN|V\+|AVDD|DVDD)/i.test(pinNom)||
+           c.type==="led"||/^(U|IC|MCU|D|LED)/i.test(fp.ref)){
+          isCharge=true;
+        }
+      }
+      
+      const cu=padLayers(fp,q)[0]||0;
+      const baseNom=fp.ref+"."+(q.n!=null?q.n:"?");
+      
+      if(isSource){
+        sources.push({
+          fp:fp, pad:q, comp:c, specs:sp, couche:cu,
+          role:"source",
+          valeur:sp.voltOut||sp.tension||3.3,
+          unite:"V",
+          nom:baseNom+(pinNom?" ("+pinNom+")":" (Source)")
+        });
+      }else if(isCharge){
+        const padI=(sp.courant||0.03)/Math.max(1,padsNet.length);
+        charges.push({
+          fp:fp, pad:q, comp:c, specs:sp, couche:cu,
+          role:"charge",
+          valeur:padI,
+          unite:padI<0.001?"µA":(padI<1?"mA":"A"),
+          nom:baseNom+(pinNom?" ("+pinNom+")":(sp.mpn?" ("+sp.mpn+")":""))
+        });
+      }else if(sp.resistance!=null){
+        resistances.push({
+          fp:fp, pad:q, comp:c, specs:sp, couche:cu,
+          ohms:sp.resistance,
+          nom:baseNom
+        });
+      }else if(sp.estCharge||c.type==="ic"||/^[U]/i.test(fp.ref)){
+        ics.push({
+          fp:fp, pad:q, comp:c, specs:sp, couche:cu,
+          pinNom:pinNom,
+          nom:baseNom
+        });
+      }else{
+        autres.push({
+          fp:fp, pad:q, comp:c, specs:sp, couche:cu,
+          nom:baseNom
+        });
+      }
+    }
+  }
+  return {sources, charges, resistances, ics, autres};
+}
+
 const SIM_PCB={
   outil:"editeur-pcb",
 
@@ -2270,6 +2711,9 @@ const SIM_PCB={
   },
 
   refCandidats:simRefCandidatsPcb,
+
+  schemaDoc:pcbSchemaDoc,
+  schemaComposants:pcbComposantsSchema,
 
   /* D'OÙ VIENNENT LES COTES DE LA SECTION. Ici, d'un seul endroit : le panneau
      « Empilage physique ». Rien n'est supposé, rien n'est lu dans un fichier
@@ -2298,13 +2742,107 @@ const SIM_PCB={
     const cu=Math.floor(((obj&&obj.layer)||0)/2);
     for(const fp of S.fps)
       for(const q of padsWorld(fp))
-        if(padLayers(fp,q).indexOf(cu)>=0&&padDist(pt[0],pt[1],q)<=0.02)
-          return "la pastille "+(fp.ref||"?")+"."+(q.n==null?"?":q.n);
+        if(padLayers(fp,q).indexOf(cu)>=0&&padDist(pt[0],pt[1],q)<=0.02){
+          const schMap=typeof pcbComposantsSchema==="function"?pcbComposantsSchema():null;
+          const c=schMap&&schMap.get(fp.ref);
+          const pinKey=String(q.n!=null?q.n:"");
+          const pinNom=c&&c.pinNames&&(c.pinNames[pinKey]||c.pinNames[q.n]);
+          const compDesc=c?(" ("+(pinNom||c.mpn||c.value||fp.ref)+")"):"";
+          return "la pastille "+(fp.ref||"?")+"."+(q.n==null?"?":q.n)+compDesc;
+        }
     for(const v of S.vias)
       if(cu>=Math.min(v.a,v.b)&&cu<=Math.max(v.a,v.b)&&
          Math.hypot(v.x-pt[0],v.y-pt[1])<=Math.max((v.d||0)/2,0.02))
         return "un via";
     return "";
+  },
+
+  /* Composants et adaptation pour un net simulé en Impédance */
+  schemaInfosNet:function(net){
+    if(!net)return null;
+    const schM=pcbComposantsSchema();
+    const {resistances,ics,sources,charges}=pcbNetComposants(net);
+    let rTerm=null, rTermComp=null, rTermRef=null;
+    
+    if(resistances.length){
+      const rSerie=resistances.find(r=>r.ohms>0&&r.ohms<=200);
+      if(rSerie){
+        rTerm=rSerie.ohms;
+        rTermComp=rSerie.comp;
+        rTermRef=rSerie.fp.ref;
+      }
+    }
+    const comps=[];
+    for(const it of [...sources,...ics,...charges]){
+      const label=it.nom||it.fp.ref;
+      if(!comps.includes(label))comps.push(label);
+    }
+    return {
+      net:net,
+      rTerm:rTerm,
+      rTermRef:rTermRef,
+      rTermComp:rTermComp,
+      composants:comps.slice(0,6)
+    };
+  },
+
+  /* Amplitude agresseur et marge récepteur pour Crosstalk */
+  schemaInfosCrosstalk:function(aggrNet){
+    let net=aggrNet;
+    if(!net&&S.sel&&S.sel.tracks&&S.sel.tracks.size){
+      const tr=[...S.sel.tracks][0];
+      if(tr&&tr.net)net=tr.net;
+    }
+    const schM=pcbComposantsSchema();
+    let swing=3.3, driverName="Défaut 3.3V", marge=400;
+    
+    if(net){
+      const {sources,charges,ics}=pcbNetComposants(net);
+      const candidates=[...ics,...charges,...sources];
+      for(const cand of candidates){
+        const sp=cand.specs;
+        if(sp&&(sp.tension>0||sp.voltIn>0||sp.voltOut>0)){
+          const v=sp.voltOut||sp.tension||sp.voltIn;
+          if(v>=0.8&&v<=15){
+            swing=v;
+            driverName=(cand.comp.ref||"?")+(sp.mpn?" ("+sp.mpn+")":(sp.value?" ("+sp.value+")":""));
+            if(swing<=1.9)marge=250;
+            else if(swing<=2.7)marge=300;
+            else if(swing<=3.6)marge=400;
+            else marge=400;
+            break;
+          }
+        }
+      }
+    }
+    return {swing:swing, driver:driverName, marge:marge};
+  },
+
+  /* Terminaison différentielle entre les deux nets d'une paire */
+  schemaInfosDiff:function(netA, netB){
+    let nA=netA, nB=netB;
+    if(!nA||!nB){
+      if(typeof dpOfNet==="function"&&typeof S!=="undefined"&&S.sel&&S.sel.tracks&&S.sel.tracks.size){
+        const tr=[...S.sel.tracks][0];
+        const dp=tr&&dpOfNet(tr.net);
+        if(dp){nA=dp.netA; nB=dp.netB;}
+      }
+    }
+    if(!nA||!nB)return null;
+    const schM=pcbComposantsSchema();
+    for(const fp of S.fps){
+      const pads=padsWorld(fp);
+      const hasA=pads.some(q=>q.net===nA||(fp.nets&&fp.nets[q.n]===nA));
+      const hasB=pads.some(q=>q.net===nB||(fp.nets&&fp.nets[q.n]===nB));
+      if(hasA&&hasB){
+        const c=schM.get(fp.ref)||{ref:fp.ref, value:fp.value, type:"resistor"};
+        const sp=pcbSpecsComposant(c);
+        if(sp.resistance!=null&&sp.resistance>0){
+          return {rTerm:sp.resistance, ref:fp.ref, mpn:sp.mpn, comp:c};
+        }
+      }
+    }
+    return null;
   },
 
   /* Le problème complet, tiré de la sélection. Les refus sont explicites et
@@ -2449,6 +2987,88 @@ const SIM_PCB={
      LA CHUTE CONTINUE
      --------------------------------------------------------------------- */
 
+  /* Importer automatiquement les sources et charges depuis les composants du schéma */
+  dcImporterSchema:function(netChoisi){
+    if(typeof pcbSchemaDoc==="function")pcbSchemaDoc();
+    let net=netChoisi;
+    if(!net&&S.sel&&S.sel.tracks&&S.sel.tracks.size){
+      const t=[...S.sel.tracks][0];
+      if(t&&t.net)net=t.net;
+    }
+    if(!net&&S.hlNet)net=S.hlNet;
+    if(!net&&SIM_DCB.bornes.length)net=SIM_DCB.bornes[0].net;
+    if(!net&&S.tracks&&S.tracks.length){
+      const powerNets=new Map();
+      for(const t of S.tracks){
+        if(t.net&&/(\+?3\.?3v|\+?5v|vcc|vdd|vbat|vbus|\+?12v|\+?1\.?8v)/i.test(t.net)){
+          powerNets.set(t.net,(powerNets.get(t.net)||0)+1);
+        }
+      }
+      if(powerNets.size){
+        net=[...powerNets.entries()].sort((a,b)=>b[1]-a[1])[0][0];
+      }
+    }
+    if(!net&&S.fps&&S.fps.length){
+      const schM=pcbComposantsSchema();
+      for(const fp of S.fps){
+        const c=schM.get(fp.ref);
+        if(c&&(c.type==="regulator"||c.type==="vcc"||/^(VR|REG)/i.test(c.ref))){
+          for(const q of padsWorld(fp)){
+            if(q.net&&!/gnd|0v|vss/i.test(q.net)){net=q.net;break;}
+          }
+        }
+        if(net)break;
+      }
+    }
+    if(!net){
+      return {erreur:"Aucun net d'alimentation sélectionné ou détecté. "+
+                     "Cliquez une piste ou pastille du rail d'alimentation à analyser."};
+    }
+    const {sources,charges}=pcbNetComposants(net);
+    if(!sources.length&&!charges.length){
+      return {erreur:"Aucun composant (source ou charge) trouvé sur le net "+net+" dans le schéma."};
+    }
+    
+    SIM_DCB.bornes=[];
+    for(const s of sources){
+      SIM_DCB.bornes.push({
+        nom:s.nom,
+        x:s.pad.x, y:s.pad.y,
+        couche:s.couche,
+        net:net,
+        w:s.pad.w, h:s.pad.h, shape:s.pad.shape, rot:s.pad.rot,
+        couches:padLayers(s.fp,s.pad).slice(),
+        role:"source",
+        valeur:s.valeur,
+        unite:s.unite||"V",
+        provenance:"schema"
+      });
+    }
+    for(const c of charges){
+      SIM_DCB.bornes.push({
+        nom:c.nom,
+        x:c.pad.x, y:c.pad.y,
+        couche:c.couche,
+        net:net,
+        w:c.pad.w, h:c.pad.h, shape:c.pad.shape, rot:c.pad.rot,
+        couches:padLayers(c.fp,c.pad).slice(),
+        role:"charge",
+        valeur:c.valeur,
+        unite:c.unite||"A",
+        provenance:"schema"
+      });
+    }
+    const totI=charges.reduce((acc,c)=>acc+c.valeur,0);
+    const totTxt=totI<0.001?simNb(totI*1e6,1)+" µA":(totI<1?simNb(totI*1e3,1)+" mA":simNb(totI,2)+" A");
+    return {
+      ok:true, net:net,
+      nSources:sources.length, nCharges:charges.length,
+      totalCourant:totI,
+      message:"⚡ Net "+net+" : "+sources.length+" source(s) et "+
+              charges.length+" charge(s) importées ("+totTxt+" total)."
+    };
+  },
+
   /* Les bornes telles que la carte les porte, dans l'ordre où on les a
      posées. Le panneau les affiche et n'en garde pas de copie : une pastille
      effacée entre deux calculs doit disparaître du panneau, pas y rester
@@ -2557,13 +3177,34 @@ const SIM_PCB={
        qui relie l'anneau de cuivre que la pastille pose sur chaque couche.
        L'oublier laissait ces anneaux flottants, et le solveur refusait tout
        le calcul plutôt que de rendre un chiffre sur un cuivre en morceaux. */
-    let n=0;
+    let n=0, orphelins=0;
     for(const v of S.vias){
-      if(v.net!==net)continue;
+      if(v.net!==net){
+        /* UN VIA DE COUTURE SANS NET NE RELIE RIEN, ET LE SILENCE COÛTAIT LE
+           CALCUL ENTIER. C'est le cas ordinaire d'un plan cousu à un autre
+           plan : on pose les vias en mode « via », sans net actif, et ils
+           ressortent avec un net vide. Ce filtre les écartait sans un mot, le
+           cuivre de la couche d'arrivée devenait flottant, et le solveur
+           refusait tout en parlant de « nœuds qui n'atteignent aucune
+           référence » — un message juste, dont la CAUSE était ailleurs.
+
+           On ne les monte pas pour autant : un via sans net relierait le
+           premier cuivre venu, celui d'un autre net compris, et un
+           court-circuit inventé est pire qu'un chemin manquant. On les
+           COMPTE, et seulement ceux qui auraient effectivement joint deux
+           couches de ce net-là. */
+        if(!v.net&&
+           simDCCouchesTouchees(v.x,v.y,v.a,v.b,polygones).length>=2)
+          orphelins++;
+        continue;
+      }
       n++;
+      /* LE PERÇAGE D'UN VIA EST UNE COTE DE L'ÉDITEUR quand il est là. À
+         défaut — un via importé sans perçage —, on le déduit de la pastille,
+         et c'est un repli : il est marqué comme tel. */
       simDCTube(v.x, v.y, v.a, v.b,
                 v.drill||Math.max((v.d||0.8)-0.1,0.1),
-                net, "V"+n, polygones, vias);
+                net, "V"+n, polygones, vias, !(v.drill>0));
     }
     for(const fp of S.fps)
       for(const q of padsWorld(fp)){
@@ -2604,8 +3245,32 @@ const SIM_PCB={
          empilage, il le dit. La première et la dernière couche de cuivre,
          par définition. */
       couches_externes:[0, S.cu-1],
+      /* CE QUE LA CARTE EMPORTE DE CHALEUR. Voir `simDCThermique` dans
+         `../commun/simulation-em.js` : le solveur résout l'étalement dans le
+         stratifié, et ces trois cotes sont les seules qu'il ne peut pas
+         deviner. L'éditeur les a toutes — c'est LUI qui dessine l'empilage. */
+      thermique:simDCThermiquePcb(),
+      /* CE QUE L'OUTIL SAIT ET QUE LE SERVEUR NE PEUT PAS DEVINER. La fiche
+         les affiche ; les taire laissait un refus du solveur sans sa cause. */
+      notes:(orphelins
+        ? [orphelins+" via(s) posé(s) sur ce cuivre n'ont PAS de net : ils "+
+           "joindraient deux couches du net "+net+", et ils sont écartés du "+
+           "calcul. Assignez-leur le net — un via sans net relierait le "+
+           "premier cuivre venu, et un court-circuit inventé serait pire "+
+           "qu'un chemin manquant."]
+        : []),
       bornes:B.map(b=>b.nom)
     };
+  },
+
+  /* LA COUCHE QUE CET OUTIL PROPOSE DE PEINDRE : la couche ACTIVE, celle
+     qu'on route. La fiche peut en choisir une autre — voir
+     `simDCCouchePeinte` dans `../commun/simulation-em.js` —, et c'est tout
+     l'intérêt : la couche active n'est pas toujours celle où ça chauffe. */
+  dcCoucheProposee:function(){return S.active;},
+  dcNomCouche:function(rang){
+    const L=S.cuL&&S.cuL[rang];
+    return (L&&L.name)?L.name:"";
   },
 
   /* Le canevas hors écran de la carte de potentiel. C'est l'outil qui le
@@ -2629,6 +3294,13 @@ const SIM_PCB={
 
   redessiner:function(){
     if(typeof draw==="function")draw();
+  },
+  centrerSurVia:function(x_mm,y_mm){
+    if(typeof S!=="undefined"&&typeof W!=="undefined"&&typeof H!=="undefined"){
+      S.ox=W/2-(typeof mirX==="function"?mirX(x_mm):x_mm)*S.scale;
+      S.oy=H/2-y_mm*S.scale;
+      if(typeof draw==="function")draw();
+    }
   },
   astuce:function(t){
     if(typeof hint==="function")hint(t);

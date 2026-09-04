@@ -53,6 +53,7 @@ function splitWireArray(wires,onSplit){
     if(!hit)continue;
     const a={x1:w.x1,y1:w.y1,x2:hit.x,y2:hit.y};
     const b={x1:hit.x,y1:hit.y,x2:w.x2,y2:w.y2};
+    if(w.bus){a.bus=true;b.bus=true;}
     if(w.net){a.net=w.net;b.net=w.net;}   // le label survit à la scission
     // les réglages d'affichage de l'étiquette aussi : masquage et déplacement
     // sont rangés sur les fils du net, ils doivent suivre les deux moitiés

@@ -93,12 +93,22 @@ function peBuild(){
 
 /* ---------- ouverture / fermeture ---------- */
 function peOpen(el){
-  if(!el||typeof defOf(el.type).pins!=="function")return;
+  if(!el)return;
+  const def=defOf(el.type);
+  if(Array.isArray(def.pins)&&def.pins.length===0&&typeof def.pins!=="function")return;
   peBuild();
   PE.open=true;PE.el=el;PE.sel=-1;PE.drag=null;PE.pushed=false;
   if(!Array.isArray(el.pinNames))el.pinNames=[];
+  if(!Array.isArray(el.pinPos)){
+    const ps=pinsOf(el);
+    if(el.type!=="ic" && ps && ps.length){
+      el.pinPos=ps.map(p=>[p[0],p[1]]);
+      el.npins=ps.length;
+      if(!el.icShape)el.icShape="libre";
+    }
+  }
   peEl("pinEd").hidden=false;
-  peEl("peTitle").textContent="Brochage — "+(el.ref||defOf(el.type).n)+
+  peEl("peTitle").textContent="Brochage — "+(el.ref||def.n)+
     (el.value?" · "+el.value:"");
   peSync();
 }
@@ -108,13 +118,22 @@ function peOpen(el){
    retour sur une autre feuille — la fenêtre se ferme plutôt que de continuer
    sur un objet qui n'appartient plus au document. */
 function peReattach(){
-  if(!PE.open)return;
-  const id=PE.el?PE.el.id:null;
-  const el=(id==null)?null:S.comps.find(c=>c.id===id);
-  if(!el){peClose();return;}
-  PE.el=el;
-  PE.pushed=false;            // la prochaine retouche reprendra un instantané
-  peSync();
+  if(PE.open){
+    const id=PE.el?PE.el.id:null;
+    const el=(id==null)?null:S.comps.find(c=>c.id===id);
+    if(!el){peClose();return;}
+    PE.el=el;
+    PE.pushed=false;            // la prochaine retouche reprendra un instantané
+    peSync();
+  }
+  if(typeof CE!=="undefined"&&CE.open){
+    const id=CE.el?CE.el.id:null;
+    const el=(id==null)?null:S.comps.find(c=>c.id===id);
+    if(!el){ceClose();return;}
+    CE.el=el;
+    CE.pushed=false;
+    ceSync();
+  }
 }
 function peClose(){
   if(!PE.open)return;
@@ -130,7 +149,7 @@ function peSync(){
   if(!el)return;
   const g=icGeom(el);
   peEl("peN").value=g.n;
-  peEl("peN").min=(g.shape==="quad")?IC_QUAD_MIN:2;
+  peEl("peN").min=(g.shape==="quad")?IC_QUAD_MIN:1;
   peEl("peShape").value=g.shape;
   const bw=Math.round((g.body.x2-g.body.x1)/IC_STEP),
         bh=Math.round((g.body.y2-g.body.y1)/IC_STEP);
@@ -165,7 +184,7 @@ function icSetNames(el,n){
    placées ne bougent pas : les nouvelles s'alignent à droite du nuage, hors de
    toute position occupée, prêtes à être posées. */
 function icSetCount(el,n){
-  n=Math.max(icShapeOf(el)==="quad"?IC_QUAD_MIN:2,Math.min(64,Math.round(n)||8));
+  n=Math.max(icShapeOf(el)==="quad"?IC_QUAD_MIN:1,Math.min(64,Math.round(n)||1));
   reshapeComp(el,()=>{
     const free=icFree(el);
     if(free){
@@ -174,9 +193,15 @@ function icSetCount(el,n){
       if(n>old.length){
         let mx=-1e9,my=1e9;
         for(const p of old){mx=Math.max(mx,p[0]);my=Math.min(my,p[1]);}
+        if(!old.length){mx=0;my=0;}
         for(let i=old.length;i<n;i++)
           pos.push([icStep(mx)+2*IC_STEP,icStep(my)+(i-old.length)*IC_STEP]);
       }
+      el.pinPos=pos;
+    }else{
+      const old=pinsOf(el);
+      const pos=old.slice(0,n);
+      while(pos.length<n)pos.push([40,(pos.length)*20]);
       el.pinPos=pos;
     }
     el.npins=n;
@@ -347,11 +372,12 @@ function peDraw(){
     c.strokeStyle=dup.has(i)?C_RED:(i===PE.sel)?C_SEL:"#8fd0ff";
     c.lineWidth=(i===PE.sel||dup.has(i))?2:1;
     c.stroke();
-    if(i===PE.sel){
-      c.fillStyle=C_SEL;c.font='bold 10px "Segoe UI",system-ui,sans-serif';
-      c.textAlign="center";c.textBaseline="middle";
-      c.fillText(String(i+1),sx,sy-15);
-    }
+    const nm = (el.pinNames && el.pinNames[i]) || "";
+    const label = String(i+1) + (nm ? " · " + nm : "");
+    c.fillStyle = (i===PE.sel) ? C_SEL : "#93c5fd";
+    c.font = (i===PE.sel ? "bold " : "") + '9.5px "Segoe UI",system-ui,sans-serif';
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillText(label, sx, sy - 14);
   });
   c.setTransform(1,0,0,1,0,0);
 }
@@ -388,3 +414,321 @@ function peMove(e){
   if(peMovePin(PE.drag.i,p.x,p.y))peSync();
 }
 function peUp(){if(PE.drag){PE.drag=null;}}
+
+/* =============================================================================
+   Éditeur de composant (ceOpen, ceBuild, ceSync, ceClose)
+   Permet d'éditer Référence, Valeur, Boîtier, Type/Symbole, Métadonnées et tableau
+   complet des broches avec noms, positions et nets connectés pour tout composant.
+   ============================================================================= */
+const CE = {open: false, el: null, pushed: false};
+function ceIsOpen(){ return CE.open; }
+function ceEl(id){ return document.getElementById(id); }
+function cePush(){ if(!CE.pushed){ push(); CE.pushed = true; } }
+
+function ceBuild(){
+  if(ceEl("compEd")) return;
+  const d = document.createElement("div");
+  d.id = "compEd"; d.className = "modal"; d.hidden = true;
+  d.innerHTML =
+    '<div class="modal-box ce-box">' +
+      '<header class="modal-head">' +
+        '<span class="modal-title" id="ceTitle">Édition du composant</span>' +
+        '<button class="pnl-btn" id="ceClose" title="Fermer">✕</button>' +
+      '</header>' +
+      '<div class="modal-body ce-body">' +
+        '<div class="ce-props-col">' +
+          '<div class="ce-section-title">Général</div>' +
+          '<div class="prop">' +
+            '<label>Référence</label>' +
+            '<input id="ceRef" placeholder="ex: R1, U1, C2...">' +
+          '</div>' +
+          '<div class="prop">' +
+            '<label>Valeur / Modèle</label>' +
+            '<input id="ceVal" placeholder="ex: 10k, NE555, LM358...">' +
+          '</div>' +
+          '<div class="prop">' +
+            '<label>Symbole / Type</label>' +
+            '<select id="ceType"></select>' +
+          '</div>' +
+          '<div class="prop">' +
+            '<label>Boîtier / Empreinte</label>' +
+            '<select id="cePkgSel" style="margin-bottom:4px; width:100%;"></select>' +
+            '<input id="cePkgTxt" placeholder="ex: 0603, SOIC-8, DIP-8...">' +
+          '</div>' +
+          '<div class="ce-section-title" style="margin-top:14px;">Fabricant &amp; MPN</div>' +
+          '<div class="prop">' +
+            '<label>Référence fabricant (MPN)</label>' +
+            '<input id="ceMpn" placeholder="ex: NE555P, RC0603FR-0710KL...">' +
+          '</div>' +
+          '<div class="prop">' +
+            '<label>Fabricant</label>' +
+            '<input id="ceMfr" placeholder="ex: Texas Instruments, Yageo...">' +
+          '</div>' +
+          '<div class="row" style="margin-top:16px;">' +
+            '<button class="tb" id="ceBtnPinEd" style="width:100%; border-color:var(--blue); color:var(--blue); font-weight:600;">' +
+              '⤢ Placement graphique des broches…' +
+            '</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ce-pins-col">' +
+          '<div class="ce-pins-head">' +
+            '<span class="ce-section-title" style="margin:0">Broches (<span id="cePinCount">0</span>)</span>' +
+            '<button class="tb mini" id="cePinAdd" title="Ajouter une broche">+ Ajouter broche</button>' +
+          '</div>' +
+          '<div class="ce-pins-table-wrap scroll">' +
+            '<table class="ce-pins-table">' +
+              '<thead>' +
+                '<tr>' +
+                  '<th style="width:34px; text-align:center;">N°</th>' +
+                  '<th>Nom de la broche</th>' +
+                  '<th style="width:75px; text-align:center;">Pos (X,Y)</th>' +
+                  '<th>Net connecté</th>' +
+                  '<th style="width:30px;"></th>' +
+                '</tr>' +
+              '</thead>' +
+              '<tbody id="cePinTbody"></tbody>' +
+            '</table>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<footer class="modal-foot" style="padding:8px 14px; background:var(--panel2); border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px;">' +
+        '<button class="tb" id="ceApply" style="border-color:var(--blue); color:var(--blue); font-weight:600;">Enregistrer &amp; Fermer</button>' +
+      '</footer>' +
+    '</div>';
+
+  document.body.appendChild(d);
+  d.addEventListener("pointerdown", e => { if(e.target === d) ceClose(); });
+  ceEl("ceClose").onclick = ceClose;
+  ceEl("ceApply").onclick = ceClose;
+
+  // Remplissage du select des types (groupés par catégorie)
+  const selType = ceEl("ceType");
+  selType.innerHTML = "";
+  if(typeof CATS !== "undefined" && typeof LIB !== "undefined"){
+    CATS.forEach(cat => {
+      const og = document.createElement("optgroup");
+      og.label = cat;
+      for(const k in LIB){
+        if(LIB[k].cat === cat){
+          const opt = document.createElement("option");
+          opt.value = k;
+          opt.textContent = LIB[k].n + " (" + k + ")";
+          og.appendChild(opt);
+        }
+      }
+      selType.appendChild(og);
+    });
+  }
+
+  selType.onchange = () => {
+    if(!CE.el) return;
+    cePush();
+    const newType = selType.value;
+    const oldDef = defOf(CE.el.type), newDef = defOf(newType);
+    CE.el.type = newType;
+    if(newDef.p && (!CE.el.ref || (oldDef.p && CE.el.ref.startsWith(oldDef.p)))){
+      CE.el.ref = nextRef(newDef.p);
+    }
+    if(!CE.el.value || (oldDef.v && CE.el.value === oldDef.v)){
+      CE.el.value = newDef.v || "";
+    }
+    // Mise à jour des broches si nécessaire
+    if(!Array.isArray(CE.el.pinPos)){
+      const ps = pinsOf(CE.el);
+      CE.el.pinPos = ps.map(p => [p[0], p[1]]);
+      CE.el.npins = ps.length;
+    }
+    ceSync();
+    draw();
+  };
+
+  ceEl("ceRef").oninput = () => {
+    if(!CE.el) return;
+    cePush();
+    CE.el.ref = ceEl("ceRef").value.trim().slice(0, 32);
+    ceEl("ceTitle").textContent = "Édition du composant — " + (CE.el.ref || defOf(CE.el.type).n);
+    draw(); buildList();
+  };
+
+  ceEl("ceVal").oninput = () => {
+    if(!CE.el) return;
+    cePush();
+    CE.el.value = ceEl("ceVal").value.slice(0, 240);
+    draw(); buildList();
+  };
+
+  ceEl("ceMpn").oninput = () => {
+    if(!CE.el) return;
+    cePush();
+    CE.el.mpn = ceEl("ceMpn").value.trim().slice(0, 100);
+  };
+
+  ceEl("ceMfr").oninput = () => {
+    if(!CE.el) return;
+    cePush();
+    CE.el.manufacturer = ceEl("ceMfr").value.trim().slice(0, 100);
+  };
+
+  ceEl("cePkgTxt").oninput = () => {
+    if(!CE.el) return;
+    cePush();
+    CE.el.pkg = ceEl("cePkgTxt").value.trim().slice(0, 40);
+  };
+
+  ceEl("cePkgSel").onchange = () => {
+    if(!CE.el) return;
+    const v = ceEl("cePkgSel").value;
+    if(v === "__custom"){
+      ceEl("cePkgTxt").focus();
+    } else {
+      cePush();
+      CE.el.pkg = v;
+      ceEl("cePkgTxt").value = v;
+    }
+  };
+
+  ceEl("ceBtnPinEd").onclick = () => {
+    const el = CE.el;
+    ceClose();
+    peOpen(el);
+  };
+
+  ceEl("cePinAdd").onclick = () => {
+    if(!CE.el) return;
+    cePush();
+    const cur = pinsOf(CE.el);
+    const newPos = cur.map(p => [p[0], p[1]]);
+    let mx = -1e9, my = 1e9;
+    for(const p of newPos){ mx = Math.max(mx, p[0]); my = Math.min(my, p[1]); }
+    if(!newPos.length){ mx = 0; my = 0; }
+    newPos.push([icStep(mx) + 2*IC_STEP, icStep(my)]);
+    CE.el.pinPos = newPos;
+    CE.el.npins = newPos.length;
+    if(!Array.isArray(CE.el.pinNames)) CE.el.pinNames = [];
+    while(CE.el.pinNames.length < newPos.length) CE.el.pinNames.push("");
+    ceSync();
+    draw();
+  };
+}
+
+function ceOpen(el){
+  if(!el) return;
+  ceBuild();
+  CE.open = true; CE.el = el; CE.pushed = false;
+  if(!Array.isArray(el.pinNames)) el.pinNames = [];
+  if(!Array.isArray(el.pinPos)){
+    const ps = pinsOf(el);
+    if(ps && ps.length){
+      el.pinPos = ps.map(p => [p[0], p[1]]);
+      el.npins = ps.length;
+    }
+  }
+  ceEl("compEd").hidden = false;
+  ceSync();
+}
+
+function ceClose(){
+  if(!CE.open) return;
+  CE.open = false;
+  const d = ceEl("compEd");
+  if(d) d.hidden = true;
+  refreshPanels(); draw();
+}
+
+function ceSync(){
+  const el = CE.el;
+  if(!el) return;
+  const def = defOf(el.type);
+  ceEl("ceTitle").textContent = "Édition du composant — " + (el.ref || def.n) + (el.value ? " · " + el.value : "");
+  ceEl("ceRef").value = el.ref || "";
+  ceEl("ceVal").value = el.value || "";
+  ceEl("ceType").value = el.type;
+  ceEl("ceMpn").value = el.mpn || "";
+  ceEl("ceMfr").value = el.manufacturer || "";
+  ceEl("cePkgTxt").value = el.pkg || "";
+
+  // Remplissage du select de boîtiers
+  const selPkg = ceEl("cePkgSel");
+  selPkg.innerHTML = '<option value="">— aucun —</option>';
+  if(typeof pkgBaseList === "function"){
+    const groups = pkgBaseList(el);
+    for(const g of groups){
+      const og = document.createElement("optgroup");
+      og.label = g.fam;
+      for(const x of g.bases){
+        const b = x.base;
+        if(b.flat){
+          const opt = document.createElement("option");
+          opt.value = b.b; opt.textContent = b.b + (x.fit ? " ✓" : "");
+          if(b.b === el.pkg) opt.selected = true;
+          og.appendChild(opt);
+        } else if(Array.isArray(b.pins)){
+          for(const p of b.pins){
+            const nm = b.b + "-" + p;
+            const opt = document.createElement("option");
+            opt.value = nm; opt.textContent = nm + (p === pinCount(el) ? " ✓" : "");
+            if(nm === el.pkg) opt.selected = true;
+            og.appendChild(opt);
+          }
+        }
+      }
+      selPkg.appendChild(og);
+    }
+  }
+  const optCust = document.createElement("option");
+  optCust.value = "__custom"; optCust.textContent = "Personnalisé…";
+  if(el.pkg && typeof pkgKnown === "function" && !pkgKnown(el.pkg)) optCust.selected = true;
+  selPkg.appendChild(optCust);
+
+  // Rendu de la table des broches
+  const ps = pinsOf(el);
+  ceEl("cePinCount").textContent = ps.length;
+  const tbody = ceEl("cePinTbody");
+  tbody.innerHTML = "";
+
+  ps.forEach((p, i) => {
+    const tr = document.createElement("tr");
+    const pName = (el.pinNames && el.pinNames[i]) || "";
+    const worldP = pinPos(el, i);
+    const n = netAt(worldP.x, worldP.y);
+    const live = isRealNet(n);
+
+    tr.innerHTML =
+      '<td style="text-align:center; font-family:var(--mono); color:var(--txt-dim); font-size:11px;">' + (i + 1) + '</td>' +
+      '<td><input class="ce-pin-name" data-idx="' + i + '" value="' + esc(pName) + '" placeholder="Nom (ex: VCC, GND, IN...)" style="width:100%; padding:3px 6px; font-size:11.5px; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--txt);"></td>' +
+      '<td style="text-align:center; font-family:var(--mono); font-size:10px; color:var(--txt-dim);">' + Math.round(p[0]/IC_STEP) + ' , ' + Math.round(p[1]/IC_STEP) + '</td>' +
+      '<td style="font-size:11px;">' +
+        (live ? '<span style="color:' + netColor(n) + '; font-weight:600;">' + esc(n.name) + '</span>' : '<span style="color:var(--txt-dim); font-style:italic;">non connecté</span>') +
+      '</td>' +
+      '<td style="text-align:center;">' +
+        '<button class="pnl-btn ce-pin-del" data-idx="' + i + '" title="Supprimer la broche" style="font-size:11px; color:#ff7875;">✕</button>' +
+      '</td>';
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll(".ce-pin-name").forEach(inp => {
+    inp.oninput = () => {
+      cePush();
+      const idx = +inp.dataset.idx;
+      while(el.pinNames.length <= idx) el.pinNames.push("");
+      el.pinNames[idx] = inp.value.trim().slice(0, 32);
+      draw();
+    };
+  });
+
+  tbody.querySelectorAll(".ce-pin-del").forEach(btn => {
+    btn.onclick = () => {
+      const idx = +btn.dataset.idx;
+      cePush();
+      reshapeComp(el, () => {
+        const curPins = pinsOf(el);
+        const newPins = curPins.filter((_, k) => k !== idx);
+        el.pinPos = newPins;
+        el.npins = newPins.length;
+        if(Array.isArray(el.pinNames)) el.pinNames.splice(idx, 1);
+      });
+      ceSync();
+      draw();
+    };
+  });
+}

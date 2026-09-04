@@ -29,6 +29,16 @@ function normComp(c,i){
     if(pk)el.pkg=pk;
     if(c.csvMpn) el.csvMpn = String(c.csvMpn).slice(0, 100);
     if(c.csvPartName) el.csvPartName = String(c.csvPartName).slice(0, 100);
+    if(c.mpn) el.mpn = String(c.mpn).slice(0, 100);
+    if(c.manufacturer) el.manufacturer = String(c.manufacturer).slice(0, 100);
+    if(c.specs && typeof c.specs === "object") el.specs = c.specs;
+    if(c.datasheet_local) el.datasheet_local = String(c.datasheet_local).slice(0, 260);
+    if(c.datasheet_url) el.datasheet_url = String(c.datasheet_url).slice(0, 500);
+    if(c.datasheet_web) el.datasheet_web = String(c.datasheet_web).slice(0, 500);
+    if(c.lcsc) el.lcsc = String(c.lcsc).slice(0, 50);
+    if(c.mouser_part) el.mouser_part = String(c.mouser_part).slice(0, 50);
+    if(c.digikey_part) el.digikey_part = String(c.digikey_part).slice(0, 50);
+    if(c.distributeurs && typeof c.distributeurs === "object") el.distributeurs = c.distributeurs;
   }
   /* Libellés déplacés à la main : deux nombres, bornés. Un décalage aberrant
      enverrait le repère à l'autre bout de la feuille, hors de toute prise. */
@@ -38,13 +48,22 @@ function normComp(c,i){
     const x=clampIc(num(d[0],NaN)), y=clampIc(num(d[1],NaN));
     if(Number.isFinite(x)&&Number.isFinite(y)&&(x||y))el[k]=[Math.round(x),Math.round(y)];
   }
-  if(typeof def.pins==="function"){
-    el.icShape=(c.icShape==="quad")?"quad":(c.icShape==="libre")?"libre":"dip";
-    el.npins=Math.max(el.icShape==="quad"?IC_QUAD_MIN:2,
-                      Math.min(64,Math.round(num(c.npins,8))));
-    el.pinNames=Array.isArray(c.pinNames)
-      ? c.pinNames.slice(0,el.npins).map(v=>String(v==null?"":v).slice(0,32))
-      : [];
+  const isIc = typeof def.pins === "function";
+  const hasCustomPins = isIc || c.pinPos != null || c.pinNames != null || c.npins != null || c.icShape != null;
+  if(hasCustomPins){
+    if(c.icShape){
+      el.icShape=(c.icShape==="quad")?"quad":(c.icShape==="libre")?"libre":"dip";
+    }else if(isIc){
+      el.icShape="dip";
+    }
+    const defaultN = isIc ? 8 : pinCount(el);
+    const minN = el.icShape==="quad" ? IC_QUAD_MIN : (isIc ? 2 : 1);
+    el.npins = Math.max(minN, Math.min(64, Math.round(num(c.npins, defaultN))));
+    if(Array.isArray(c.pinNames)){
+      el.pinNames = c.pinNames.slice(0, el.npins).map(v=>String(v==null?"":v).slice(0,32));
+    }else if(isIc){
+      el.pinNames = [];
+    }
     // taille imposée au corps : sur la grille du symbole, et bornée
     const w=icStep(clampIc(num(c.icW,0))), hs=icStep(clampIc(num(c.icHs,0)));
     if(w>0)el.icW=w;
@@ -53,14 +72,17 @@ function normComp(c,i){
        tous finis et sur la grille. À la moindre incohérence on retombe sur le
        rectangle — un symbole lisible vaut mieux qu'un symbole fidèle au
        fichier mais impossible à câbler. */
-    if(el.icShape==="libre"){
+    if(el.icShape==="libre" || (Array.isArray(c.pinPos) && !isIc)){
       const src=Array.isArray(c.pinPos)?c.pinPos:null;
       const pos=(src&&src.length===el.npins)
         ? src.map(q=>Array.isArray(q)?[icStep(clampIc(num(q[0],NaN))),
                                        icStep(clampIc(num(q[1],NaN)))]:null)
         : null;
-      if(pos&&pos.every(q=>q&&Number.isFinite(q[0])&&Number.isFinite(q[1])))el.pinPos=pos;
-      else el.icShape="dip";
+      if(pos&&pos.every(q=>q&&Number.isFinite(q[0])&&Number.isFinite(q[1]))){
+        el.pinPos=pos;
+      }else if(isIc){
+        el.icShape="dip";
+      }
     }
     const b=c.icBody;
     if(el.pinPos&&b&&typeof b==="object"){
@@ -77,6 +99,7 @@ function normWire(w){
   if(![x1,y1,x2,y2].every(Number.isFinite))return null;
   if(x1===x2&&y1===y2)return null;
   const o={x1,y1,x2,y2};
+  if(w.bus)o.bus=true;
   const nm=String(w.net==null?"":w.net).trim().slice(0,32);
   if(nm)o.net=nm;
   // réglages d'affichage de l'étiquette du net portée par ce fil
@@ -87,6 +110,20 @@ function normWire(w){
     if(Number.isFinite(x)&&Number.isFinite(y)&&(x||y))o.lblOff=[Math.round(x),Math.round(y)];
   }
   return o;
+}
+const DRAWING_STYLES={dashed:1,solid:1,dotted:1};
+function normDrawing(d,i){
+  if(!d||typeof d!=="object")return null;
+  const x1=snap(+d.x1),y1=snap(+d.y1),x2=snap(+d.x2),y2=snap(+d.y2);
+  if(![x1,y1,x2,y2].every(Number.isFinite))return null;
+  if(x1===x2&&y1===y2)return null;
+  const shape=(d.shape==="rect"||d.type==="rect")?"rect":"line";
+  const style=DRAWING_STYLES[d.style]?d.style:"dashed";
+  const width=Math.max(1,Math.min(10,+d.width||2));
+  const color=String(d.color||"#6b7280").slice(0,32);
+  const label=String(d.label==null?"":d.label).slice(0,120);
+  const id=Math.max(1,Math.round(num(d.id,i+1)));
+  return {id,shape,type:shape,x1,y1,x2,y2,style,width,color,label};
 }
 function normPage(p,i){
   const src=(p&&typeof p==="object")?p:{};
@@ -99,29 +136,54 @@ function normPage(p,i){
     seen.add(c.id);
     if(c.id>maxId)maxId=c.id;
   }
+  const rawD=Array.isArray(src.drawings)?src.drawings:[];
+  const drawings=rawD.map(normDrawing).filter(Boolean);
+  for(const d of drawings){
+    while(seen.has(d.id))d.id++;
+    seen.add(d.id);
+    if(d.id>maxId)maxId=d.id;
+  }
   const wires=(Array.isArray(src.wires)?src.wires:[]).map(normWire).filter(Boolean);
   splitWireArray(wires);          // un fichier importé arrive avec ses fils déjà scindés
-  return {
-    name:String(src.name==null?("Feuille "+(i+1)):src.name).slice(0,60)||("Feuille "+(i+1)),
+  const isHier = !!src.isHierarchy || (src.name==="Hiérarchie") || (src.name==="Feuille hiérarchique");
+  const pObj = {
+    name:String(src.name==null?(isHier?"Hiérarchie":("Feuille "+(i+1))):src.name).slice(0,60)||(isHier?"Hiérarchie":("Feuille "+(i+1))),
+    isHierarchy: isHier,
     comps,
     wires,
+    drawings,
     uid:Math.max(Math.round(num(src.uid,1))||1, maxId+1),
     scale:Math.max(.25,Math.min(4,num(src.scale,1))),
     ox:num(src.ox,0), oy:num(src.oy,0)
   };
+  if(src.blockPos && typeof src.blockPos==="object" && Number.isFinite(+src.blockPos.x) && Number.isFinite(+src.blockPos.y)){
+    pObj.blockPos = {x: snap(+src.blockPos.x), y: snap(+src.blockPos.y)};
+  }
+  return pObj;
 }
-function loadDoc(o){
+function loadDoc(o, keepPage){
   let raw;
   if(Array.isArray(o.pages))raw=o.pages;
-  else if(Array.isArray(o.comps)||Array.isArray(o.wires))raw=[{name:"Feuille 1",comps:o.comps,wires:o.wires,uid:o.uid}];
+  else if(Array.isArray(o.comps)||Array.isArray(o.wires)||Array.isArray(o.drawings))raw=[{name:"Feuille 1",comps:o.comps,wires:o.wires,drawings:o.drawings,uid:o.uid}];
   else throw new Error("le fichier ne contient aucun schéma");
   if(!raw.length)throw new Error("le document ne contient aucune feuille");
   const pages=raw.slice(0,200).map(normPage);
+  let addedHier = false;
+  if(!pages[0].isHierarchy && pages[0].name!=="Hiérarchie" && pages[0].name!=="Feuille hiérarchique"){
+    pages.unshift(newHierPage("Hiérarchie"));
+    addedHier = true;
+  }
   const dropped=raw.reduce((n,p,i)=>
-    n+((Array.isArray(p&&p.comps)?p.comps.length:0)-pages[i].comps.length),0);
+    n+((Array.isArray(p&&p.comps)?p.comps.length:0)-(pages[addedHier?i+1:i]?pages[addedHier?i+1:i].comps.length:0)),0);
   push();
   S.pages=pages;
-  loadPage(Math.round(num(o.page,0)));
+  if(keepPage && o.page!==undefined){
+    const reqP = Math.round(num(o.page, 0));
+    const targetP = addedHier ? (reqP + 1) : reqP;
+    loadPage(Math.max(0, Math.min(S.pages.length - 1, targetP)));
+  }else{
+    loadPage(0);   // à l'ouverture d'un projet, on s'ouvre sur la première page (feuille racine)
+  }
   buildTabs();refreshPanels();fit();
   return dropped;
 }
@@ -153,7 +215,11 @@ const BAK="schemedit.autosave";
 function autosave(){
   if(!S.dirty)return;
   try{
-    localStorage.setItem(BAK,JSON.stringify({t:Date.now(),doc:JSON.parse(serialize())}));
+    localStorage.setItem(BAK,JSON.stringify({
+      t:Date.now(),
+      doc:JSON.parse(serialize()),
+      projet:(typeof projNom==="function"?projNom():"")
+    }));
   }catch(_){/* mode privé, quota plein, contexte restreint : on continue sans */}
 }
 function clearBackup(){try{localStorage.removeItem(BAK);}catch(_){}}
@@ -163,11 +229,13 @@ function restoreBackup(){
     if(!raw)return false;
     const b=JSON.parse(raw);
     if(!b||!b.doc||!Array.isArray(b.doc.pages))return false;
+    const curProj=(typeof projNom==="function"?projNom():"");
+    if(b.projet!==undefined && b.projet!==curProj)return false;
     const when=new Date(b.t||Date.now()).toLocaleString("fr-FR");
     if(!confirm("Une sauvegarde automatique du "+when+" a été trouvée.\n\nLa reprendre ?")){
       clearBackup();return false;
     }
-    loadDoc(b.doc);
+    loadDoc(b.doc, true);
     S.hist.length=0;S.redo.length=0;
     return true;
   }catch(_){clearBackup();return false;}
@@ -210,13 +278,18 @@ function schSonde(cible){
   return null;
 }
 function sessionSchema(){
+  const curProj=(typeof projNom==="function"?projNom():"");
   const repris=sessBrancher("schema",()=>({
     doc:JSON.parse(serialize()),
-    sale:S.dirty
+    sale:S.dirty,
+    projet:curProj
   }),schSonde);
   if(!repris)return false;
+  if(repris.etat && repris.etat.projet!==undefined && repris.etat.projet!==curProj){
+    return false;
+  }
   try{
-    loadDoc(repris.etat.doc);        // normPage() vérifie tout au passage
+    loadDoc(repris.etat.doc, true);        // normPage() vérifie tout au passage
   }catch(_){
     sessEffacer("schema");
     return false;

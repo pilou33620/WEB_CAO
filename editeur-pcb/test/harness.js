@@ -82,7 +82,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "sessEcouterProbe","SESS_CANAL","pcbMontrerAilleurs","pcbCibleTrouver",
   "pcbCibleAller",
   /* espace de travail commun (commun/workspace.js) */
-  "wsDefault","wsApply","wsMove","wsPlaceOf","wsLabel","wsToggleFloat",
+  "wsDefault","wsApply","wsMove","wsPlaceOf","wsLabel","wsToggleFloat","wsToggleMaximize",
   "wsToggleCollapse","wsClose","wsShow","wsMenuBuild","wsLoad","wsSave","wsEl","WS_KEY",
   "WS_SECTION",
   /* profils utilisateur communs (commun/profils.js) */
@@ -107,7 +107,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "pasteClipPcb","pcbClipContent","pcbSetClip","pcbGetClip","freeFpRef","GRID_STEPS",
   "setGridStep","gridShownStep","gridLabel","fpById",
   /* import défensif (normDoc) et aller-retour de document */
-  "docObj","normDoc","setNetClass",
+  "docObj","normDoc","normDrawingPcb","selDrawingsPcb","setNetClass",
   /* paires différentielles : modèle, règles, tracé couplé, contrôle */
   "DP_SUF","DP_FALLBACK","DP_KEYS","DP_PROFILES","DP_MITER","DP_STEP",
   "dpSplit","dpMateName","dpMatch","dpDetect","dpById","dpByName","dpOfNet",
@@ -194,13 +194,39 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simTableauVias","simDesequilibreVias","SIM_DC_VIAS_MAX",
   "simCorpsDC","simBrancherDC","simRendreDC","simDCArmer",
   "simDCCouleur","simDCConstruireImages","simDCTrace","simDCActif",
-  "simDCEchelle","SIM_DC_RAMPE","SIM_DC_GRANDEURS","simDCGrandeur",
+  "simDCLegende","SIM_DC_RAMPE","SIM_DC_GRANDEURS","simDCGrandeur",
   "simDCRepeindre","simTableauPire","simCarteDCListe","simTableauBornes",
   "simDCLancer","simRendreBornes","SIM_ANALYSES","simRendre","simAnalyse",
   "simDCFinesse","simDCCuivrePris","SIM_DC_CARREAUX_MINI",
+  /* Le verdict, la ligne de contexte, le tableau par net et la thermique :
+     autant de morceaux de la fiche DC, eprouvables un a un. */
+  "simDCMesures","simVerdictDC","simMetaDC","simTableauNetsDC",
+  /* Les unites d'une borne, et le champ de saisie commun a tout le panneau. */
+  "SIM_DC_UNITES_V","SIM_DC_UNITES_A","simDCUnites","simDCUnite",
+  "simDCListeUnite","simChamp","simCorpsImpedance","simCorpsDiff",
+  "simCorpsCrosstalk","simCorpsRetour",
+  "simThermiqueDC","simDCThermique","simDCThermiquePcb",
+  /* Le choix de la couche peinte, et l'oubli qui va avec. */
+  "simDCOublier","simDCCouchePeinte","simDCCouchesPeintes",
+  "simDCCoucheProposee","simDCCoucheVoulue","simDCNomCouche",
+  "simDCCoucheBar","simDCBrancherFiche",
   "simDCIndexer","simDCNoeudEn","simDCLireEn","simDCSurvol",
+  /* La sonde sur un via, et le voile qu'on peut couper. */
+  "simDCViasEn","simDCTexteVia","SIM_DC_SONDE_VIAS","simBrancherVoile",
+  /* La progression, les exports, et le champ de texte des bornes. */
+  "simProgres","simDuree","simProgresDemarrer","simProgresFini",
+  "simDCExportCsv","simDCExportJson","simDCNomFichier","simCsvLigne",
+  "SIM_DC_VIA_ACTIF","SIM_DC_ACTIF_SEUIL","simPorteesSupposees",
+  "simCulsDeSac","simDCCoucheInteressante",
+  "simChampTexte","SIM_XT","simRendreCrosstalk","simRendreRetour",
+  "simRendreImpedance","simRendreDiff","simDCCsvTexte","simDCJsonTexte",
   "simDCTraceSonde",
-  "SIM_DC_NOEUDS_CIBLE",
+  /* liaison schéma & simulations enrichies */
+  "pcbParseVolt","pcbParseCourant","pcbParsePuissance","pcbParseResistance",
+  "pcbParseFrequence","pcbDefinirSchema","pcbSchemaDoc","pcbComposantsSchema",
+  "pcbSpecsComposant","pcbNetComposants","simFicheSchemaAdaptation","simDiffApres",
+  "applyNetlist","pcbNettoyerPistesConflits",
+  "SIM_DC_NOEUDS_CIBLE","SIM_DC_CARREAUX_MAX","SIM_DC_MARGE_GRILLE",
   "simRefCandidatsPcb","simPlagesDe","simMemeEcart","simZoneEn","simCoteEn",
   "simEcartsA","simPlages","simSegments","simCouturePcb","simEspacement",
   "simAccrocherVias","simViaAuRaccord","stackSpan",
@@ -3265,6 +3291,21 @@ T("détacher puis rattacher un panneau",()=>{
     throw new Error("les poignées devaient disparaître au rattachement");
   if(dom.panels.props.classList.contains("floating"))
     throw new Error("classe « floating » non retirée");
+});
+T("détacher, maximiser en plein écran puis restaurer un panneau",()=>{
+  wsToggleFloat("props");
+  if(wsPlaceOf("props")!=="float")throw new Error("le panneau devrait flotter");
+  wsToggleMaximize("props");
+  if(!dom.panels.props.classList.contains("maximized"))
+    throw new Error("classe « maximized » attendue");
+  if(dom.panels.props.querySelectorAll(".fres").length)
+    throw new Error("les poignées de redimensionnement doivent disparaître en plein écran");
+  wsToggleMaximize("props");
+  if(dom.panels.props.classList.contains("maximized"))
+    throw new Error("classe « maximized » non retirée");
+  if(dom.panels.props.querySelectorAll(".fres").length!==8)
+    throw new Error("8 poignées attendues après restauration");
+  wsToggleFloat("props");
 });
 T("fermer et rouvrir un panneau",()=>{
   wsClose("list");
@@ -10214,6 +10255,63 @@ T("trame : les couches multiplient le cout, et la finesse en tient compte",()=>{
   if(six.couches!==6)throw new Error("couches comptees : "+six.couches);
 });
 
+T("trame : la GRILLE borne aussi, et c'est elle qui refusait le calcul",()=>{
+  /* LE DEFAUT, ET IL RENDAIT LE CALCUL IMPOSSIBLE SANS RECOURS. `mailler()`
+     refuse sur DEUX criteres et cette fonction n'en connaissait qu'un :
+
+       · le nombre de NOEUDS, c'est-a-dire de carreaux DE CUIVRE (400 000) ;
+       · la taille de la GRILLE, nx*ny*couches (1 600 000), sur la BOITE
+         ENGLOBANTE de tout le cuivre envoye -- cuivre ou pas.
+
+     Les deux quantites n'ont rien a voir sur une carte reelle. Un rail
+     d'alimentation couvre une grande boite avec PEU de cuivre : une piste fine
+     d'un bout a l'autre, deux plages. La forme la plus etroite fait 0,32 mm,
+     donc le pas tombait a 0,04 ; l'aire de cuivre ne faisait que 45 mm2, donc
+     le budget des noeuds passait haut la main -- 28 000 sur 250 000 -- et la
+     page laissait partir le document. La grille, elle, faisait 875 x 1177 sur
+     4 couches, soit 4,1 MILLIONS de carreaux, et le serveur repondait :
+
+         « Trame trop fine : 875 x 1177 carreaux sur 4 couche(s). »
+
+     Un refus que personne ne pouvait corriger en connaissance de cause,
+     puisque le pas qui l'avait produit venait de l'outil. */
+  const polys=[];
+  for(const c of [0,1,2,3])
+    polys.push(dcQuad(0,0,35,0.32,c));            // la piste fine, 4 couches
+  polys.push(dcQuad(0,46,35,47));                 // une plage a l'autre bout
+  const f=simDCFinesse(polys);
+  /* CE QUE LA GRILLE COUTERAIT, compte comme `mailler` le compte. */
+  const nx=Math.ceil(35/f.pas)+1, ny=Math.ceil(47/f.pas)+1;
+  if(nx*ny*f.couches>SIM_DC_CARREAUX_MAX)
+    throw new Error("la grille compte "+(nx*ny*f.couches)+" carreaux : le "+
+                    "solveur refuserait, exactement comme avant");
+  /* ET LE BUDGET DES NOEUDS RESTE TENU : on n'a pas echange un refus contre
+     l'autre. */
+  const cellules=(35*0.32*4+35*1)/(f.pas*f.pas);   // l'aire de cuivre
+  if(cellules>SIM_DC_NOEUDS_CIBLE*1.05)
+    throw new Error("la trame laisse "+Math.round(cellules)+" noeuds");
+  /* LA NOTE DIT LAQUELLE DES DEUX A BORNE, et c'est ce qui la rend
+     actionnable : sur une grande carte peu remplie la reponse est de
+     restreindre la portee, sur un plan dense de decouper le calcul. Deux
+     causes, deux gestes. */
+  if(!f.note)throw new Error("l'elargissement est silencieux");
+  if(!/bo[iî]te englobante/.test(f.note))
+    throw new Error("la note n'accuse pas la grille : "+f.note);
+  if(!/35,0 × 47,0 mm/.test(f.note))
+    throw new Error("la note ne donne pas la boite : "+f.note);
+  /* ET LE CAS INVERSE : un plan dense, ou c'est le nombre de NOEUDS qui borne.
+     La note ne doit pas accuser la grille -- une cause fausse envoie corriger
+     ce qui n'est pas en cause. */
+  const dense=simDCFinesse([dcQuad(0,0,100,100), dcQuad(0,0,50,0.05)]);
+  if(!(dense.parNoeuds>dense.parGrille))
+    throw new Error("sur un plan plein, ce sont les noeuds qui doivent borner");
+  if(/bo[iî]te englobante/.test(dense.note))
+    throw new Error("un plan dense est mis sur le dos de la grille : "+
+                    dense.note);
+  if(!/plus de n/.test(dense.note))
+    throw new Error("la note n'accuse pas les noeuds : "+dense.note);
+});
+
 T("trame : rien a mailler rend null, pas une valeur inventee",()=>{
   if(simDCFinesse([])!==null)throw new Error("une finesse sans cuivre");
   if(simDCFinesse(null)!==null)throw new Error("une finesse sans polygones");
@@ -10336,6 +10434,881 @@ T("chute DC : une borne neuve arrive avec une valeur utilisable",()=>{
   if(B[1].valeur!==1)throw new Error("charge a "+B[1].valeur+" A");
   if(simBrancherDC.toString().indexOf("simDCPas")<0)
     throw new Error("la trame ne recoit pas de valeur d'usine");
+});
+
+/* --------------------------------------------------------------------------
+   LES UNITES DES BORNES
+   --------------------------------------------------------------------------
+   « 0,00025 A » NE S'ECRIT PAS ET NE SE RELIT PAS. Les deux champs etaient en
+   volts et en amperes, fermes : un consommateur en veille tire 250 µA, et il
+   fallait taper 0,00025 puis compter les zeros a l'ecran. C'est la faute qui
+   ne se voit pas -- ni refus, ni champ vide, seulement un facteur dix.
+
+   CE QUE CES CAS TIENNENT : la valeur STOCKEE reste en volts et en amperes
+   (c'est ce que `cuivreDC()` met dans le document, et le solveur ne connait
+   que le SI), et changer d'unite CONVERTIT ce qui est ecrit sans toucher a la
+   grandeur physique -- la meme regle que les unites de frequence du panneau.
+   Deux regles opposees dans le meme panneau feraient de chaque changement
+   d'unite un pari.
+   -------------------------------------------------------------------------- */
+T("bornes DC : une source se regle en V ou en mV, une charge en A, mA ou µA",()=>{
+  if(SIM_DC_UNITES_V.map(u=>u.cle).join()!=="V,mV")
+    throw new Error("unites d'une source : "+SIM_DC_UNITES_V.map(u=>u.cle));
+  if(SIM_DC_UNITES_A.map(u=>u.cle).join()!=="A,mA,µA")
+    throw new Error("unites d'une charge : "+SIM_DC_UNITES_A.map(u=>u.cle));
+  /* LA LISTE SUIT LE ROLE : proposer des ampheres a une alimentation serait
+     proposer de se tromper. */
+  if(simDCUnites({role:"source"})!==SIM_DC_UNITES_V)
+    throw new Error("une source recoit les unites d'une charge");
+  if(simDCUnites({role:"charge"})!==SIM_DC_UNITES_A)
+    throw new Error("une charge recoit les unites d'une source");
+  /* SANS UNITE POSEE, on retombe sur le SI -- jamais sur un prefixe : une
+     borne d'avant ce changement porte des volts, et la relire en millivolts
+     diviserait sa tension par mille en silence. */
+  if(simDCUnite({role:"source"}).f!==1)throw new Error("repli d'une source");
+  if(simDCUnite({role:"charge"}).f!==1)throw new Error("repli d'une charge");
+  if(simDCUnite({role:"charge",unite:"nA"}).f!==1)
+    throw new Error("une unite inconnue n'est pas ecartee");
+  if(simDCUnite({role:"charge",unite:"µA"}).f!==1e-6)
+    throw new Error("µA mal converti");
+});
+
+T("bornes DC : la valeur stockee reste en SI, seule son ecriture change",()=>{
+  const c=dcCarte();
+  const qa=padsWorld(c.a)[0], qb=padsWorld(c.b)[0];
+  dcBorne("source",qa.x,qa.y);
+  dcBorne("charge",qb.x,qb.y);
+  const B=SIM_PCB.dcBornes();
+  B[1].valeur=0.00025;                  // 250 µA, tapes en amperes
+  B[1].unite="µA";
+  simRendreBornes();
+  const ch=simEl("simDCV1");
+  if(!ch)throw new Error("le champ de la charge n'est pas pose");
+  /* CE QUI EST ECRIT est en µA ; ce qui est GARDE est en amperes. */
+  if(ch.value.replace(",",".")!=="250")
+    throw new Error("le champ affiche « "+ch.value+" » au lieu de 250");
+  if(B[1].valeur!==0.00025)
+    throw new Error("la valeur stockee a bouge : "+B[1].valeur);
+  /* Et une saisie repart en amperes : 500 µA -> 0,0005 A. */
+  ch.value="500";
+  ch.onchange();
+  if(Math.abs(SIM_PCB.dcBornes()[1].valeur-5e-4)>1e-12)
+    throw new Error("la saisie n'est pas convertie : "+
+                    SIM_PCB.dcBornes()[1].valeur);
+  /* LA LISTE PORTE L'UNITE COURANTE, sinon on ne sait pas ce qu'on lit. */
+  const su=simEl("simDCU1");
+  if(!su)throw new Error("la liste d'unites n'est pas posee");
+  if(su.value!=="µA")throw new Error("la liste affiche "+su.value);
+});
+
+T("bornes DC : l'unite survit a un re-clic sur la meme pastille",()=>{
+  /* RECLIQUER LA MEME PASTILLE CORRIGE LE TIR : on remplace la borne, et on
+     garde ce que l'utilisateur avait pose dessus. L'unite oubliee la, un
+     « 500 mA » corrige d'un clic redevenait « 0,5 A » affiche en amperes --
+     un champ qui change tout seul. */
+  const c=dcCarte();
+  const qb=padsWorld(c.b)[0];
+  dcBorne("charge",qb.x,qb.y);
+  const B=SIM_PCB.dcBornes();
+  B[0].valeur=0.5; B[0].unite="mA";
+  dcBorne("charge",qb.x,qb.y);          // le meme clic, une seconde fois
+  const C=SIM_PCB.dcBornes();
+  if(C.length!==1)throw new Error(C.length+" bornes apres un re-clic");
+  if(C[0].valeur!==0.5)throw new Error("la valeur est perdue : "+C[0].valeur);
+  if(C[0].unite!=="mA")throw new Error("l'unite est perdue : "+C[0].unite);
+});
+
+/* --------------------------------------------------------------------------
+   RENOMMER UNE BORNE
+   --------------------------------------------------------------------------
+   « pastille 32.1 ; 72.34 » est ce que le fichier sait dire, pas ce que la
+   carte veut dire. Sur cinq bornes, deux couples de coordonnees ne se
+   distinguent plus a l'oeil -- et le tableau du resultat les reprend telles
+   quelles, si bien que « la charge la plus mal servie » s'appelait
+   « pastille 32.1 ; 72.34 » au lieu de « U7 VDD ».
+   -------------------------------------------------------------------------- */
+T("bornes DC : le nom se renomme, et il voyage jusqu'au document",()=>{
+  const c=dcCarte();
+  const qa=padsWorld(c.a)[0], qb=padsWorld(c.b)[0];
+  dcBorne("source",qa.x,qa.y);
+  dcBorne("charge",qb.x,qb.y);
+  simRendreBornes();
+  const nm=simEl("simDCNom1");
+  if(!nm)throw new Error("le champ du nom n'est pas pose");
+  const auto=SIM_PCB.dcBornes()[1].nom;
+  if(nm.value!==auto)throw new Error("le champ n'affiche pas le nom courant");
+  nm.value="U7 VDD"; nm.onchange();
+  const B=SIM_PCB.dcBornes();
+  if(B[1].nom!=="U7 VDD")throw new Error("le nom n'est pas retenu : "+B[1].nom);
+  /* IL VOYAGE JUSQU'AU DOCUMENT, sous `repere` : c'est ce qui le fait
+     apparaitre dans le tableau du resultat et dans l'export. Un nom qui
+     s'arrete au panneau ne sert a rien. */
+  const r=SIM_PCB.cuivreDC();
+  if(r.erreur)throw new Error("refus inattendu : "+r.erreur);
+  if(!r.sources.some(s=>s.repere==="U7 VDD"))
+    throw new Error("le nom ne part pas dans le document : "+
+                    JSON.stringify(r.sources.map(s=>s.repere)));
+  /* VIDE, ON RETOMBE SUR LE NOM QUE LA CARTE PROPOSE : c'est la sortie de
+     secours d'un nom rate, et sans elle un champ efface laisserait une borne
+     sans identite. */
+  nm.value="   "; nm.onchange();
+  if(SIM_PCB.dcBornes()[1].renomme)
+    throw new Error("un champ vide compte encore comme un nom");
+});
+
+T("bornes DC : recliquer une borne RENOMMEE ne la double pas",()=>{
+  /* L'IDENTITE D'UNE BORNE EST SA POSITION, PAS SON NOM. Elle se comparait par
+     `nom`, ce qui marchait tant que le nom etait fabrique a partir de la
+     pastille ; depuis qu'il se renomme, recliquer une pastille renommee posait
+     une SECONDE borne au meme endroit -- donc deux injections au meme point,
+     donc deux fois le courant, sans un mot. */
+  const c=dcCarte();
+  const qb=padsWorld(c.b)[0];
+  dcBorne("charge",qb.x,qb.y);
+  const B=SIM_PCB.dcBornes();
+  B[0].nom="U7 VDD"; B[0].renomme=true; B[0].valeur=2.5; B[0].unite="mA";
+  dcBorne("charge",qb.x,qb.y);            // le meme clic, une seconde fois
+  const C=SIM_PCB.dcBornes();
+  if(C.length!==1)
+    throw new Error(C.length+" bornes apres un re-clic : le courant compterait "+
+                    "deux fois");
+  if(C[0].nom!=="U7 VDD")throw new Error("le nom est perdu : "+C[0].nom);
+  if(C[0].valeur!==2.5)throw new Error("la valeur est perdue");
+  if(C[0].unite!=="mA")throw new Error("l'unite est perdue");
+});
+
+/* --------------------------------------------------------------------------
+   LA PROGRESSION
+   --------------------------------------------------------------------------
+   CE QU'IL Y AVAIT : « Le solveur travaille... », une fois, et plus rien. Sur
+   un calcul de dix secondes la page est identique a la seconde 1 et a la
+   seconde 30 : rien ne distingue un solveur qui avance d'un solveur bloque.
+   -------------------------------------------------------------------------- */
+T("progression : indeterminee par defaut, DETERMINEE quand elle sait compter",()=>{
+  const garde=[SIM.depuis,SIM.taille];
+  try{
+    SIM.depuis=Date.now()-4200;
+    SIM.taille="";
+    /* SANS COMPTE CONNU : une bande qui glisse, et surtout AUCUN
+       pourcentage -- le solveur ne rend rien avant d'avoir fini, et une barre
+       qui monterait en devinant serait un mensonge qu'on croit. */
+    const ind=simProgres("des etapes");
+    if(!/simProgInd/.test(ind))
+      throw new Error("la barre pretend mesurer ce qu'elle ne sait pas : "+ind);
+    if(!/4 s/.test(ind))
+      throw new Error("le temps ecoule n'est pas affiche : "+ind);
+    if(!/terminal/.test(ind))
+      throw new Error("le panneau ne renvoie pas au terminal : "+ind);
+    /* AVEC DES LOTS, la progression est REELLE : chaque lot est un
+       aller-retour, et on sait combien il en reste. */
+    const det=simProgres("des etapes",2,6);
+    if(/simProgInd/.test(det))
+      throw new Error("une progression connue reste indeterminee");
+    if(!/lot 3 sur 6/.test(det))throw new Error("le compte manque : "+det);
+    if(!/width:33/.test(det))throw new Error("la barre ne suit pas : "+det);
+  }finally{[SIM.depuis,SIM.taille]=garde;}
+});
+
+T("progression : la duree s'ecrit en minutes passe la minute",()=>{
+  /* « 214 s » se compte, « 3 min 34 s » se lit -- et c'est justement quand
+     c'est long qu'on regarde ce chiffre. */
+  if(simDuree(4200)!=="4 s")throw new Error(simDuree(4200));
+  if(simDuree(59400)!=="59 s")throw new Error(simDuree(59400));
+  if(simDuree(214000)!=="3 min 34 s")throw new Error(simDuree(214000));
+  if(simDuree(0)!=="0 s")throw new Error(simDuree(0));
+});
+
+T("progression : les CINQ analyses la montrent, pas seulement une",()=>{
+  /* Le defaut n'etait pas propre a PI : les cinq etats « occupe » etaient cinq
+     phrases figees. Un compteur dans un seul onglet aurait laisse les quatre
+     autres identiques a la seconde 1 et a la seconde 30. */
+  const g=[SIM.occupe,SIM.occupeDC,SIM.res,SIM.resDC,SIM.err,SIM.depuis,
+           SIM_XT.occupe,SIM_XT.res];
+  try{
+    SIM.depuis=Date.now()-2000;
+    SIM.res=null; SIM.resDC=null; SIM.err="";
+    SIM.occupe=true; SIM.occupeDC=true; SIM_XT.occupe=true;
+    for(const [nom,fn] of [["impedance",simRendreImpedance],
+                           ["diff",simRendreDiff],
+                           ["retour",simRendreRetour],
+                           ["crosstalk",simRendreCrosstalk],
+                           ["dc",simRendreDC]]){
+      const h=fn();
+      if(!/simProgBar/.test(h))
+        throw new Error(nom+" n'a pas de barre de progression");
+      if(!/2 s/.test(h))
+        throw new Error(nom+" n'affiche pas le temps ecoule");
+    }
+  }finally{[SIM.occupe,SIM.occupeDC,SIM.res,SIM.resDC,SIM.err,SIM.depuis,
+            SIM_XT.occupe,SIM_XT.res]=g;}
+});
+
+/* --------------------------------------------------------------------------
+   UN PERCAGE SUPPOSE EST MARQUE
+   --------------------------------------------------------------------------
+   R va comme 1/A : un diametre devine a cinquante pour cent pres se paie
+   DOUBLE sur l'ohm. Sans marque, « 0,076 mOhm » deduit d'une pastille et
+   « 0,295 mOhm » lu dans le fichier se lisaient avec le meme aplomb.
+   -------------------------------------------------------------------------- */
+T("vias DC : un percage suppose est marque, dans le tableau et sous la sonde",()=>{
+  const res={vias:[
+    {x:1,y:1,couche_a:0,couche_b:1,net:"V",repere:"T1",percage:0.3,
+     resistance:2.95e-4,courant:0.5,chute:1.5e-4,relie:true},
+    {x:2,y:2,couche_a:0,couche_b:1,net:"V",repere:"T2",percage:1.1,
+     resistance:7.6e-5,courant:0.5,chute:3.8e-5,relie:true,
+     percage_suppose:true}
+  ]};
+  const h=simTableauVias(res);
+  const lignes=h.split("<tr>");
+  const l1=lignes.find(t=>/T1</.test(t)||/T1 /.test(t))||"";
+  const l2=lignes.find(t=>/T2/.test(t))||"";
+  if(/simFaible/.test(l1))
+    throw new Error("un percage LU est marque suppose : "+l1);
+  if(!/simFaible/.test(l2))
+    throw new Error("un percage SUPPOSE n'est pas marque : "+l2);
+  if(!/SUPPOS/.test(l2))
+    throw new Error("la ligne ne dit pas pourquoi elle est marquee : "+l2);
+  /* ET SOUS LA SONDE : c'est le seul endroit ou l'on regarde UN via, donc
+     celui ou il faut savoir si son ohm repose sur une cote. */
+  if(/suppos/.test(simDCTexteVia(res.vias[0])))
+    throw new Error("la sonde marque un percage lu");
+  if(!/suppos/.test(simDCTexteVia(res.vias[1])))
+    throw new Error("la sonde ne marque pas un percage suppose");
+});
+
+/* --------------------------------------------------------------------------
+   EXPORTER LE RESULTAT PI
+   -------------------------------------------------------------------------- */
+T("export DC : le .csv porte les REGLAGES avec les chiffres",()=>{
+  /* Un tableau de chiffres sans son lambda, son ambiante et sa trame ne se
+     verifie pas six mois plus tard : le .csv se detache de la page ou il a ete
+     produit. */
+  const garde=[SIM.resDC,SIM.dcNotes,SIM.dcAmbiante];
+  try{
+    SIM.resDC=dcResFiche();
+    SIM.resDC.vias=[{x:30,y:20,couche_a:0,couche_b:1,net:"VDD",repere:"T1",
+                     percage:0.3,resistance:2.95e-4,courant:0.52,
+                     chute:1.5e-4,relie:true}];
+    SIM.dcNotes=["3 trou(s) pris pour TRAVERSANTS"];
+    SIM.dcAmbiante=25;
+    /* ON LIT LA FONCTION PURE, pas le telechargement : `simDCCsvTexte` rend le
+       texte, `simDCExportCsv` ne fait que l'envoyer au navigateur. Un export
+       qu'on ne peut controler qu'en cliquant n'est pas controle. */
+    const t=simDCCsvTexte();
+    if(!t)throw new Error("aucun texte produit");
+    const nom=simDCNomFichier("-dc.csv");
+    if(!/\.csv$/.test(nom))throw new Error("nom : "+nom);
+    if(!/VDD/.test(nom))
+      throw new Error("le net n'est pas dans le nom : "+nom);
+    for(const attendu of [/lambda strat/, /ambiante \(°C\);25,0/,
+                          /budget de chute/, /trame \(mm\)/,
+                          /Bornes/, /Nets/, /Pire point/, /Vias/,
+                          /R[ée]serves/, /TRAVERSANTS/, /U5\.1/, /T1/])
+      if(!attendu.test(t))throw new Error(attendu+" manque du .csv");
+    /* LE SEPARATEUR EST LE POINT-VIRGULE, parce que les nombres portent la
+       VIRGULE decimale : la virgule comme separateur couperait chaque nombre
+       en deux colonnes dans un tableur francais. */
+    if(!/;/.test(t))throw new Error("pas de separateur");
+    if(!/6,06/.test(t))throw new Error("les nombres ne sont pas en virgule");
+    /* ET L'ABSOLU SUIT L'AMBIANTE POSEE : 25 + 6,06 = 31,1. */
+    if(!/31,06/.test(t))throw new Error("l'absolu ne suit pas l'ambiante");
+    /* RIEN A EXPORTER NE PRODUIT RIEN : un fichier vide se telechargerait
+       quand meme et s'ouvrirait sur une page blanche. */
+    SIM.resDC=null;
+    if(simDCCsvTexte()!=="")throw new Error("un .csv sans resultat");
+  }finally{[SIM.resDC,SIM.dcNotes,SIM.dcAmbiante]=garde;}
+});
+
+T("export DC : le .json porte le probleme ET le resultat",()=>{
+  /* C'est ce qu'on garde avant de changer une piste, pour savoir ensuite ce
+     que le changement a coute -- et ce qu'on joint a un rapport de bug, parce
+     qu'il suffit a rejouer le calcul sans la carte. */
+  const garde=[SIM.resDC,SIM.dcNotes];
+  try{
+    SIM.resDC=dcResFiche();
+    const txt=simDCJsonTexte();
+    if(!txt)throw new Error("aucun texte produit");
+    const d=JSON.parse(txt);
+    if(d.format!=="cao-sim-dc-export-1")throw new Error("format : "+d.format);
+    for(const cle of ["reglages","bornes","resultat"])
+      if(!(cle in d))throw new Error(cle+" manque du .json");
+    if(d.reglages.ambiante!==SIM.dcAmbiante)
+      throw new Error("l'ambiante n'est pas dans les reglages");
+    if(!d.resultat.pire_par_net||!d.resultat.vias)
+      throw new Error("le resultat est incomplet");
+    /* LE POTENTIEL PAR NOEUD N'Y EST PAS, et c'est delibere : soixante mille
+       nombres pesent plus que tout le reste du fichier et ne se lisent pas. */
+    if("potentiel" in d.resultat)
+      throw new Error("le potentiel par noeud alourdit le fichier pour rien");
+    if(!/\.json$/.test(simDCNomFichier("-dc.json")))
+      throw new Error("nom : "+simDCNomFichier("-dc.json"));
+    SIM.resDC=null;
+    if(simDCJsonTexte()!=="")throw new Error("un .json sans resultat");
+  }finally{[SIM.resDC,SIM.dcNotes]=garde;}
+});
+
+T("export DC : les deux boutons sont dans le panneau et branches",()=>{
+  const corps=simCorpsDC();
+  for(const id of ["simDCCsv","simDCJson"])
+    if(corps.indexOf('id="'+id+'"')<0)
+      throw new Error(id+" n'est pas dans le panneau");
+  /* ET ILS SONT SUR LA RANGEE QUI RESTE quand les reglages se replient : on
+     exporte le resultat qu'on regarde, sans avoir a deplier. */
+  const bloc=corps.split('class="pnl-bar simBarFixe"')[1]||"";
+  if(bloc.indexOf('id="simDCCsv"')<0)
+    throw new Error("l'export se replie avec les reglages");
+});
+
+T("panneau : tout champ de saisie porte le style du panneau, pas celui du navigateur",()=>{
+  /* CE QUE CE CAS FERME. La feuille de style nommait les SEPT champs de
+     l'onglet Impedance un par un. Tous ceux ajoutes depuis -- Crosstalk,
+     Chute DC -- sortent de la MEME fonction (`simChamp`) sans etre dans
+     aucune liste : ils tombaient sur le style par defaut du navigateur, donc
+     police sans empattement au lieu de la monospace du panneau, et largeur
+     elastique, donc un champ qui mange toute la rangee. Le panneau PI avait
+     l'air d'un autre outil que le panneau SI -- ce qui etait exact.
+
+     La classe vient de `simChamp`, seul endroit ou ces champs naissent. */
+  if(simChamp("x","t").indexOf('class="simChamp"')<0)
+    throw new Error("simChamp ne pose pas sa classe : "+simChamp("x","t"));
+  if(simChamp("x","t",true).indexOf('class="simChamp large"')<0)
+    throw new Error("le drapeau `large` est perdu : "+simChamp("x","t",true));
+  /* ET AUCUN CHAMP ECRIT A LA MAIN : un `<input>` pose ailleurs echapperait a
+     la classe, et c'est exactement ce qui etait arrive a la liste des bornes.
+     On lit le corps de chaque fonction qui ecrit du HTML de panneau. */
+  for(const f of [simCorpsDC,simCorpsImpedance,simCorpsDiff,simCorpsCrosstalk,
+                  simCorpsRetour,simRendreBornes]){
+    const src=f.toString();
+    /* AU MOINS UN ATTRIBUT : `<input>` nu n'est jamais ecrit par ce code, et
+       le chercher ferait mordre le regard sur les COMMENTAIRES qui parlent de
+       la balise. Les cases a cocher sont ecartees : elles n'ont ni police ni
+       largeur a partager avec un champ de nombre. */
+    const re=/<input\s+(?![^>]*type="checkbox")[^>]*>/g;
+    let m;
+    while((m=re.exec(src)))
+      throw new Error(f.name+" ecrit un <input> a la main au lieu de passer "+
+                      "par simChamp : "+m[0].slice(0,60));
+  }
+});
+
+T("voile : il se coupe, et il n'a pas la meme valeur d'usine des deux cotes",()=>{
+  /* CE QUE CE CAS FERME, ET C'ETAIT UNE IMPASSE. Le voile s'allumait des
+     qu'une carte de chaleur existait, SANS INTERRUPTEUR : sur l'onglet Chute
+     DC toute la carte passait au sombre, et le seul moyen de retrouver des
+     couleurs normales etait de CHANGER D'ONGLET. Un affichage dont on ne peut
+     pas sortir n'est pas un affichage.
+
+     ET LES DEUX CARTES NE COUVRENT PAS LA MEME SURFACE : celle des impedances
+     peint TOUT le cuivre selectionne -- ce qui reste dessous est etranger, et
+     l'estomper est ce qu'on veut. Celle de la chute ne peint qu'UN net sur UNE
+     couche, et le voile y efface le contexte qui sert a lire le resultat. */
+  const garde=[SIM.voile.z,SIM.voile.dc,SIM.resDC,SIM.dcImages,SIM.ouvert,
+               SIM.analyse];
+  try{
+    /* LES VALEURS D'USINE : allume en impedance, eteint en chute DC. */
+    if(SIM.voile.z!==true)throw new Error("le voile de SI n'est pas d'usine");
+    if(SIM.voile.dc!==false)
+      throw new Error("le voile de PI est allume d'office : c'est le defaut "+
+                      "qu'on corrige");
+    /* SOUS L'ONGLET DC AVEC UN RESULTAT : la carte est active, donc le voile
+       ne depend plus que de la case. */
+    dcSondeArmer("echauffement");
+    if(!simDCActif())throw new Error("la carte DC n'est pas active");
+    if(simVoileActif())throw new Error("le voile s'allume tout seul sous PI");
+    SIM.voile.dc=true;
+    if(!simVoileActif())throw new Error("la case ne rallume pas le voile");
+    SIM.voile.dc=false;
+    if(simVoileActif())throw new Error("la case ne l'eteint pas");
+    /* ET LA CASE EST DANS LE PANNEAU, branchee : un drapeau sans controle est
+       exactement le defaut d'avant, deplace d'un cran. */
+    if(simCorpsDC().indexOf('id="simDCVoile"')<0)
+      throw new Error("la case du voile n'est pas dans le panneau PI");
+    if(simCorpsImpedance().indexOf('id="simVoile"')<0)
+      throw new Error("la case du voile n'est pas dans le panneau SI");
+    for(const [id,cle] of [["simDCVoile","dc"],["simVoile","z"]]){
+      SIM.voile[cle]=false;
+      simBrancherVoile(id,cle);
+      const e=simEl(id);
+      if(!e)throw new Error(id+" absent du DOM");
+      if(e.checked)throw new Error(id+" coche alors que le drapeau est faux");
+      e.checked=true; e.onchange();
+      if(SIM.voile[cle]!==true)
+        throw new Error(id+" ne pose pas son drapeau");
+    }
+  }finally{[SIM.voile.z,SIM.voile.dc,SIM.resDC,SIM.dcImages,SIM.ouvert,
+            SIM.analyse]=garde;}
+});
+
+T("chute DC : un rail qui plonge et remonte envoie TOUS ses vias",()=>{
+  /* LA TOPOLOGIE REELLE D'UN RAIL, et la question qu'elle pose : « est-ce que
+     le changement de couche et les vias sont pris en compte ? ». Un plan en
+     couche 1, trois vias qui plongent, un plan en couche 3, trois vias qui
+     remontent, et le composant en couche 1. Le solveur a son propre etalon
+     pour le CALCUL (python/test/banc-dc.py, la loi des noeuds a chaque etage
+     a 0,00 %) ; ce qui se joue ici est ce que la PAGE lui envoie.
+
+     DEUX ILOTS EN COUCHE 1 ET NON UN PLAN CONTINU : c'est ce qui force le
+     courant a la verticale, et c'est la topologie decrite. */
+  carte4c();
+  S.fps=[]; S.cuts=[]; SIM_PCB.dcOublier();
+  S.board={x:0,y:0,w:60,h:30,pts:null}; boardChanged();
+  /* Deux plages en couche 0, un plan en couche 2, et six vias. */
+  S.zones.length=0; S.tracks.length=0; S.vias.length=0;
+  S.zones.push({id:S.nextId++, l:0, net:"VDD",
+                pts:[{x:0,y:0},{x:12,y:0},{x:12,y:30},{x:0,y:30}]});
+  S.zones.push({id:S.nextId++, l:0, net:"VDD",
+                pts:[{x:46,y:0},{x:60,y:0},{x:60,y:30},{x:46,y:30}]});
+  S.zones.push({id:S.nextId++, l:2, net:"VDD",
+                pts:[{x:0,y:0},{x:60,y:0},{x:60,y:30},{x:0,y:30}]});
+  for(let i=0;i<3;i++)
+    S.vias.push({id:S.nextId++, x:5, y:8+5*i, a:0, b:2, d:0.6, drill:0.3,
+                 net:"VDD"});
+  for(let i=0;i<3;i++)
+    S.vias.push({id:S.nextId++, x:52, y:8+5*i, a:0, b:2, d:0.6, drill:0.3,
+                 net:"VDD"});
+  SIM_DCB.bornes=[
+    {role:"source", nom:"J1.1", x:2, y:15, couche:0, net:"VDD", w:2, h:2,
+     valeur:3.3},
+    {role:"charge", nom:"U1.1", x:58, y:15, couche:0, net:"VDD", w:2, h:2,
+     valeur:3}
+  ];
+  const r=SIM_PCB.cuivreDC.call({dcBornes:()=>SIM_DCB.bornes});
+  if(r.erreur)throw new Error("refus inattendu : "+r.erreur);
+  /* LES SIX VIAS PARTENT, chacun sur les couches QU'IL TRAVERSE : la couche 1
+     ne porte aucun cuivre du net, donc la chaine se reduit d'elle-meme a
+     0→2 et n'invente pas d'accroche sur une couche vide. */
+  if(r.vias.length!==6)
+    throw new Error(r.vias.length+" via(s) envoyes au lieu de 6");
+  for(const v of r.vias){
+    if(v.couche_a!==0||v.couche_b!==2)
+      throw new Error("un via relie "+v.couche_a+"→"+v.couche_b+
+                      " : il s'accroche a une couche sans cuivre");
+    if(!(v.hauteur>0))throw new Error("hauteur nulle");
+  }
+  /* ET LE CUIVRE DES DEUX ETAGES : deux ilots en 0, un plan en 2. */
+  const couches=[...new Set(r.polygones.filter(g=>!g.trou)
+                                       .map(g=>g.couche))].sort();
+  if(couches.join()!=="0,2")throw new Error("couches envoyees : "+couches);
+  return;
+});
+
+T("chute DC : un via de couture SANS NET est compte et dit, pas avale",()=>{
+  /* LE DEFAUT, ET IL COUTAIT LE CALCUL ENTIER. On pose les vias de couture en
+     mode « via », sans net actif : ils ressortent avec un net vide. Le filtre
+     `v.net!==net` les ecartait SANS UN MOT, le cuivre de la couche d'arrivee
+     devenait flottant, et le solveur refusait tout en parlant de « noeuds qui
+     n'atteignent aucune reference » -- un message juste dont la CAUSE etait
+     ailleurs.
+
+     ON NE LES MONTE PAS POUR AUTANT : un via sans net relierait le premier
+     cuivre venu, celui d'un autre net compris, et un court-circuit invente est
+     pire qu'un chemin manquant. On les COMPTE. */
+  carte4c();
+  S.fps=[]; S.cuts=[]; SIM_PCB.dcOublier();
+  S.board={x:0,y:0,w:60,h:30,pts:null}; boardChanged();
+  S.zones.length=0; S.tracks.length=0; S.vias.length=0;
+  S.zones.push({id:S.nextId++, l:0, net:"VDD",
+                pts:[{x:0,y:0},{x:60,y:0},{x:60,y:30},{x:0,y:30}]});
+  S.zones.push({id:S.nextId++, l:2, net:"VDD",
+                pts:[{x:0,y:0},{x:60,y:0},{x:60,y:30},{x:0,y:30}]});
+  /* Un via du net, et deux coutures nues au MEME endroit utile. */
+  S.vias.push({id:S.nextId++, x:5, y:15, a:0, b:2, d:0.6, drill:0.3,
+               net:"VDD"});
+  S.vias.push({id:S.nextId++, x:30, y:15, a:0, b:2, d:0.6, drill:0.3, net:""});
+  S.vias.push({id:S.nextId++, x:40, y:15, a:0, b:2, d:0.6, drill:0.3, net:""});
+  SIM_DCB.bornes=[
+    {role:"source", nom:"J1.1", x:2, y:15, couche:0, net:"VDD", w:2, h:2,
+     valeur:3.3},
+    {role:"charge", nom:"U1.1", x:58, y:15, couche:0, net:"VDD", w:2, h:2,
+     valeur:3}
+  ];
+  const r=SIM_PCB.cuivreDC.call({dcBornes:()=>SIM_DCB.bornes});
+  if(r.erreur)throw new Error("refus inattendu : "+r.erreur);
+  if(r.vias.length!==1)
+    throw new Error(r.vias.length+" via(s) montes : un via sans net a ete "+
+                    "raccorde, ce qui inventerait un court-circuit");
+  const notes=(r.notes||[]).join(" | ");
+  if(!/n'ont PAS de net/.test(notes))
+    throw new Error("les coutures nues ne sont pas signalees : "+notes);
+  if(!/^2 via/.test(notes.split(" | ").find(t=>/PAS de net/.test(t))||""))
+    throw new Error("le compte est faux : "+notes);
+  /* ET RIEN N'EST DIT QUAND IL N'Y A RIEN A DIRE : une note qui s'affiche
+     toujours ne se lit plus. */
+  S.vias=S.vias.filter(v=>v.net==="VDD");
+  const r2=SIM_PCB.cuivreDC.call({dcBornes:()=>SIM_DCB.bornes});
+  if((r2.notes||[]).some(t=>/PAS de net/.test(t)))
+    throw new Error("la note s'affiche sans couture nue");
+});
+
+/* --------------------------------------------------------------------------
+   TROIS NOTES QUI DISAIENT FAUX
+   -------------------------------------------------------------------------- */
+T("vias DC : un via SEUL sur le chemin n'est pas un desequilibre",()=>{
+  /* CE QUE LA PHRASE D'AVANT FAISAIT CROIRE. Sur un plan cousu, vingt vias
+     d'un meme couple de couches ne sont sur AUCUN chemin -- ils joignent du
+     cuivre qui ne demande pas de courant. La phrase les comptait quand meme
+     comme des paralleles et annoncait « 21 vias se partagent le passage : le
+     plus charge en prend 100,0 %, contre 4,8 % a parts egales », ce qui se lit
+     comme une alarme et envoie corriger ce qui n'est pas en cause. */
+  const un=[{couche_a:2,couche_b:3,courant:0.0061,relie:true}];
+  for(let i=0;i<20;i++)un.push({couche_a:2,couche_b:3,courant:0,relie:true});
+  const h=simDesequilibreVias(un);
+  if(!/UN SEUL/.test(h))throw new Error("le chemin unique n'est pas nomme : "+h);
+  if(/desequilibre|déséquilibre/i.test(h.replace(/pas un d/i,"")))
+    throw new Error("la phrase parle encore de desequilibre : "+h);
+  if(!/6,1 mA/.test(h))throw new Error("le passage n'est pas chiffre : "+h);
+  if(!/21 via/.test(h))throw new Error("le compte total manque : "+h);
+  if(/100,0 %/.test(h))
+    throw new Error("la part de 100 % est encore annoncee comme un ecart : "+h);
+});
+
+T("vias DC : un VRAI desequilibre est toujours dit, et sur les seuls actifs",()=>{
+  /* LE REVERS, ET C'EST LUI QUI DONNE SON SENS A L'AUTRE PHRASE. Quatre vias
+     de retour cote a cote, dont un qui prend la moitie : ca, c'est la question
+     qu'on se pose, et la reponse doit tomber. Les parts se comptent sur les
+     vias ACTIFS -- diviser par le nombre de vias du couple de couches, coutures
+     comprises, rendait un « a parts egales » qui ne veut rien dire. */
+  const v=[{couche_a:0,couche_b:1,courant:0.5,relie:true},
+           {couche_a:0,couche_b:1,courant:0.2,relie:true},
+           {couche_a:0,couche_b:1,courant:0.2,relie:true},
+           {couche_a:0,couche_b:1,courant:0.1,relie:true},
+           /* deux coutures ailleurs, sur le meme couple, qui ne portent rien */
+           {couche_a:0,couche_b:1,courant:0,relie:true},
+           {couche_a:0,couche_b:1,courant:0,relie:true}];
+  const h=simDesequilibreVias(v);
+  if(!/4 via\(s\) sur 6/.test(h))
+    throw new Error("les actifs ne sont pas separes du total : "+h);
+  if(!/50,0 %/.test(h))throw new Error("la part du plus charge manque : "+h);
+  /* A PARTS EGALES SUR QUATRE, PAS SUR SIX : 25 %, et non 16,7. */
+  if(!/25,0 %/.test(h))
+    throw new Error("les parts egales se comptent sur le total : "+h);
+  if(!/2 autres/.test(h))throw new Error("les inactifs ne sont pas dits : "+h);
+});
+
+T("trame DC : la fiche ne se contredit plus a deux lignes d'ecart",()=>{
+  /* CE QU'ELLE DISAIT. « Trame : 0,0906 mm, choisie pour que la forme la plus
+     etroite (0,210 mm) recoive 2,3 carreaux » -- puis, deux lignes plus bas,
+     « Trame elargie a 0,091 mm pour tenir le calcul ». Les deux ne peuvent pas
+     etre vraies : ou la trame vient de la forme la plus etroite, ou elle vient
+     d'un budget. Trois cas, trois phrases. */
+  const res={pas:0.0906, n_noeuds:61256, n_aretes:117937, n_vias:75};
+  const garde=[SIM.dcFinesse,SIM.dcNotes];
+  try{
+    SIM.dcNotes=[];
+    /* (a) ELARGIE PAR UN BUDGET : elle ne doit PAS se dire choisie pour la
+       forme la plus etroite. */
+    SIM.dcFinesse={pas:0.0906, mini:0.21, couches:4, formes:257, trous:26,
+                   impose:false, note:"Trame élargie à 0,091 mm pour tenir le "+
+                   "calcul : la boîte englobante…"};
+    let h=simDCCuivrePris(res);
+    if(/choisie pour que la forme/.test(h))
+      throw new Error("elle se dit encore choisie pour la forme etroite : "+h);
+    if(!/élargie pour tenir le calcul/.test(h))
+      throw new Error("elle ne dit pas d'ou elle vient : "+h);
+    /* ET SOUS QUATRE CARREAUX, LA FORME N'EST PAS DECRITE : 2,3 carreaux
+       echantillonnent, ils ne maillent pas. La note d'elargissement disait
+       « les retrecissements plus fins qu'elle ne sont pas decrits », ce qui
+       laissait croire qu'ELLE l'etait. */
+    if(!/ÉCHANTILLONN/.test(h))
+      throw new Error("2,3 carreaux passent pour un maillage : "+h);
+    if(!/simAlerte/.test(h))
+      throw new Error("l'echantillonnage ne passe pas en alerte : "+h);
+    /* (b) IMPOSEE A LA MAIN. */
+    SIM.dcFinesse={pas:0.2, mini:2.0, couches:2, formes:3, trous:0,
+                   impose:true, note:""};
+    h=simDCCuivrePris({pas:0.2,n_noeuds:10,n_aretes:10,n_vias:0});
+    if(!/imposée/.test(h))throw new Error("une trame imposee ne le dit pas");
+    if(/ÉCHANTILLONN/.test(h))
+      throw new Error("dix carreaux dans la forme, et on crie a "+
+                      "l'echantillonnage");
+    /* (c) DEDUITE DE LA FORME LA PLUS ETROITE, sans budget : c'est le seul cas
+       ou la phrase d'origine etait vraie. */
+    SIM.dcFinesse={pas:0.25, mini:2.0, couches:2, formes:3, trous:0,
+                   impose:false, note:""};
+    h=simDCCuivrePris({pas:0.25,n_noeuds:10,n_aretes:10,n_vias:0});
+    if(!/choisie pour que la forme/.test(h))
+      throw new Error("le cas nominal a disparu : "+h);
+  }finally{[SIM.dcFinesse,SIM.dcNotes]=garde;}
+});
+
+T("vias DC : la part du courant qui repose sur une portee SUPPOSEE est chiffree",()=>{
+  /* C'EST LA SEULE FACON DONT CE CALCUL PEUT INVENTER DU COURANT. Un percage
+     dont le fichier ne declare pas les couches est pris TRAVERSANT -- la bonne
+     hypothese par defaut, celle qui ne perd aucun chemin. Mais si le trou est
+     en realite borgne, la liaison verticale n'existe pas : le solveur y fait
+     passer du courant, et ce courant-la n'est dans aucun cuivre reel.
+
+     « 21 trous pris pour traversants » ne disait pas si ca COMPTE. Un via
+     suppose qui porte 0,01 mA ne change rien ; le meme qui porte le tiers du
+     rail change tout, et il faut alors aller verifier CE trou dans le fichier
+     de percage. C'est donc une PART DU COURANT qu'on rend. */
+  const lourd=[{couche_a:0,couche_b:1,courant:0.6,relie:true},
+               {couche_a:0,couche_b:1,courant:0.3,relie:true,
+                portee_supposee:true,repere:"T7"},
+               {couche_a:0,couche_b:1,courant:0.1,relie:true}];
+  const h=simPorteesSupposees(lourd);
+  if(!/30,0 %/.test(h))throw new Error("la part n'est pas chiffree : "+h);
+  if(!/300,0 mA/.test(h))throw new Error("le courant manque : "+h);
+  if(!/T7/.test(h))throw new Error("le pire via n'est pas nomme : "+h);
+  if(!/simAlerte/.test(h))throw new Error("30 % ne passe pas en alerte : "+h);
+  if(!/N.EXISTENT PAS/.test(h))
+    throw new Error("la note ne dit pas ce que ca voudrait dire : "+h);
+
+  /* SOUS UN POUR CENT, L'HYPOTHESE NE PORTE RIEN : on le dit sans alarmer.
+     Une alerte qui s'allume toujours n'est plus une alerte. */
+  const leger=[{couche_a:0,couche_b:1,courant:1.0,relie:true},
+               {couche_a:0,couche_b:1,courant:0.002,relie:true,
+                portee_supposee:true}];
+  const l=simPorteesSupposees(leger);
+  if(/simAlerte/.test(l))throw new Error("0,2 % declenche une alerte : "+l);
+  if(!/ne p[eè]se rien/.test(l))throw new Error("le cas benin est muet : "+l);
+
+  /* ET RIEN A DIRE QUAND TOUT EST DECLARE : c'est le cas d'un fichier complet
+     et de l'editeur PCB, qui connait la portee de ses vias. */
+  if(simPorteesSupposees([{couche_a:0,couche_b:1,courant:1,relie:true}])!=="")
+    throw new Error("une note sans portee supposee");
+});
+
+T("vias DC : le tableau marque la PORTEE supposee sur les couches",()=>{
+  /* DEUX HYPOTHESES, DEUX MARQUES, ET ELLES NE COUTENT PAS LA MEME CHOSE. Un
+     PERCAGE suppose fausse la resistance -- le chemin existe, son ohm est
+     incertain. Une PORTEE supposee met en cause la LIAISON ELLE-MEME. La
+     seconde se marque donc sur les COUCHES, la ou on la lit. */
+  const res={vias:[
+    {x:1,y:1,couche_a:0,couche_b:3,net:"V",repere:"T1",percage:0.3,
+     resistance:9e-4,courant:0.5,chute:4.5e-4,relie:true,
+     portee_supposee:true},
+    {x:2,y:2,couche_a:0,couche_b:1,net:"V",repere:"T2",percage:0.3,
+     resistance:3e-4,courant:0.5,chute:1.5e-4,relie:true}
+  ]};
+  const h=simTableauVias(res);
+  const l1=h.split("<tr>").find(t=>/T1/.test(t))||"";
+  const l2=h.split("<tr>").find(t=>/T2/.test(t))||"";
+  if(!/z0limite/.test(l1))
+    throw new Error("une portee supposee n'est pas marquee : "+l1);
+  if(!/1→4 \?/.test(l1))
+    throw new Error("la marque n'est pas sur les couches : "+l1);
+  if(/z0limite/.test(l2))
+    throw new Error("une portee LUE est marquee supposee : "+l2);
+});
+
+T("vias DC : la fiche montre que les culs-de-sac portent ZERO",()=>{
+  /* C'EST LA REPONSE A « pourquoi ce via porte-t-il du courant vers une
+     pastille ou je n'ai regle aucune charge ? », et l'objection est juste : un
+     morceau de cuivre sans issue ne peut porter aucun courant.
+
+     Le solveur le verifie lui-meme (`_culs_de_sac` dans dc_solver.py, cas en
+     dur dans banc-dc.py : 2e-10 A sur un rail de 3 A). Cette note le rend
+     VISIBLE, et c'est ce qui permet de conclure sur sa propre carte : les
+     culs-de-sac portent zero, donc un via qui porte du courant n'en est pas
+     un -- le cuivre continue au-dela de sa pastille. */
+  const zero={culs_de_sac:{morceaux:3, noeuds:180, pire_courant:2.1e-10,
+                           pire_via:"V_cul"}};
+  const h=simCulsDeSac(zero);
+  if(!/3 morceau/.test(h))throw new Error("le compte manque : "+h);
+  if(!/180 nœuds/.test(h))throw new Error("la taille manque : "+h);
+  if(!/z[ée]ro [aà] la pr[ée]cision/.test(h))
+    throw new Error("2e-10 A n'est pas annonce nul : "+h);
+  if(/0,000 µA/.test(h))
+    throw new Error("une fausse precision est affichee : "+h);
+  if(!/continue au-del/.test(h))
+    throw new Error("la note ne repond pas a la question posee : "+h);
+
+  /* AU-DESSUS DU BRUIT DU SOLVEUR, on affiche le chiffre plutot que « zero » :
+     un microampere n'est pas zero, et l'ecrire zero serait un mensonge. */
+  const petit=simCulsDeSac({culs_de_sac:{morceaux:1, noeuds:40,
+                                         pire_courant:4e-8, pire_via:"V1"}});
+  if(!/0,040 µA/.test(petit))throw new Error("le chiffre manque : "+petit);
+  if(/pr[ée]cision du calcul/.test(petit))
+    throw new Error("4e-8 A annonce nul : "+petit);
+
+  /* ET AU-DELA DU SEUIL, CETTE NOTE SE TAIT : c'est un DEFAUT, et le solveur
+     l'a deja mis dans ses avertissements, qui passent en rouge. Le repeter en
+     gris a cote ferait lire deux fois la meme chose avec deux gravites. */
+  if(simCulsDeSac({culs_de_sac:{morceaux:1, noeuds:40, pire_courant:0.3,
+                                pire_via:"V1"}})!=="")
+    throw new Error("un defaut est rendu comme une information");
+  /* RIEN A DIRE QUAND IL N'Y A PAS DE CUL-DE-SAC. */
+  if(simCulsDeSac({culs_de_sac:{morceaux:0,noeuds:0,pire_courant:0}})!=="")
+    throw new Error("une note sans cul-de-sac");
+  if(simCulsDeSac({})!=="")throw new Error("une note sans donnee");
+});
+
+/* --------------------------------------------------------------------------
+   UNE CHARGE QUI « NE DONNE PLUS RIEN » EST UNE CHARGE D'UNE AUTRE COUCHE
+   --------------------------------------------------------------------------
+   La carte ne peint qu'UNE couche. « Auto » suivait la PREMIERE borne posee :
+   elle changeait donc toute seule des qu'on reordonnait la liste, et la charge
+   restee sur l'autre couche cessait d'etre peinte. Rien ne le disait -- du
+   cuivre non colore autour d'une charge se lit « cette charge ne donne rien »
+   au lieu de « tu regardes une autre couche ».
+   -------------------------------------------------------------------------- */
+function dcResDeuxCouches(){
+  return Object.assign(dcResFiche(),{
+    couches:[0,3],
+    bornes:[
+      {repere:"Vout", role:"tension", couche:0, consigne:3.3,
+       tension:3.3, chute:0},
+      /* la MOINS mal servie est en couche 3, la PIRE en couche 0 */
+      {repere:"Vin ldo", role:"courant", couche:3, consigne:-1,
+       tension:3.2861, chute:0.01394},
+      {repere:"Vin nbiot", role:"courant", couche:0, consigne:-1,
+       tension:3.2823, chute:0.01771}
+    ]
+  });
+}
+
+T("carte DC : « auto » suit la charge la plus MAL SERVIE, pas la premiere posee",()=>{
+  const g=[SIM.resDC,SIM.dcImages,SIM.dcCouche,SIM.ouvert,SIM.analyse];
+  try{
+    SIM.resDC=dcResDeuxCouches();
+    SIM.dcCouche=null;
+    SIM.dcImages={images:new Map([[0,{}],[3,{}]]), vmin:0, vmax:1,
+                  quoi:"echauffement"};
+    SIM.ouvert=true; SIM.analyse="dc";
+    /* La pire charge est « Vin nbiot », en couche 0 : c'est elle que le
+       verdict nomme, donc c'est SA couche qu'on veut regarder. La premiere
+       borne posee, elle, est la source en couche 0 aussi -- on prend donc une
+       geometrie ou les deux different pour que le cas morde. */
+    SIM.resDC.bornes[1].couche=0;      // la moins mal servie passe en 0
+    SIM.resDC.bornes[2].couche=3;      // la PIRE passe en 3
+    if(simDCCoucheInteressante()!==3)
+      throw new Error("« auto » ne suit pas la pire charge : "+
+                      simDCCoucheInteressante());
+    /* LE CHOIX EXPLICITE L'EMPORTE TOUJOURS : « auto » n'est qu'un defaut. */
+    SIM.dcCouche=0;
+    if(simDCCoucheVoulue()!==0)
+      throw new Error("le choix de la fiche est ignore");
+    /* SANS RESULTAT, on retombe sur ce que l'outil propose. */
+    SIM.dcCouche=null; SIM.resDC=null;
+    if(simDCCoucheInteressante()!==simDCCoucheProposee())
+      throw new Error("sans resultat, la proposition de l'outil n'est pas "+
+                      "reprise");
+  }finally{[SIM.resDC,SIM.dcImages,SIM.dcCouche,SIM.ouvert,SIM.analyse]=g;}
+});
+
+T("fiche DC : le tableau des bornes porte leur COUCHE, et dit lesquelles sont peintes",()=>{
+  /* C'EST LA REPONSE D'UN COUP D'OEIL A « pourquoi cette charge ne donne plus
+     rien » : elle est sur une autre couche, son cuivre n'est pas colore, et
+     ses chiffres sont pourtant justes. */
+  const g=[SIM.resDC,SIM.dcImages,SIM.dcCouche,SIM.ouvert,SIM.analyse];
+  try{
+    SIM.resDC=dcResDeuxCouches();
+    SIM.dcCouche=null;
+    SIM.dcImages={images:new Map([[0,{}],[3,{}]]), vmin:0, vmax:1,
+                  quoi:"echauffement"};
+    SIM.ouvert=true; SIM.analyse="dc";
+    const h=simTableauBornes(SIM.resDC);
+    if(!/<th>Couche<\/th>/.test(h))
+      throw new Error("le tableau n'a pas de colonne Couche : "+h);
+    /* La pire charge est « Vin nbiot » en couche 0 : c'est donc la couche
+       peinte, et « Vin ldo » (couche 3) est ailleurs. */
+    if(!/ne sont PAS sur la couche peinte/.test(h))
+      throw new Error("les bornes d'ailleurs ne sont pas signalees : "+h);
+    if(!/Vin ldo/.test(h.split("ne sont PAS")[1]||""))
+      throw new Error("la note ne nomme pas la borne concernee : "+h);
+    if(!/ne veut pas dire/.test(h))
+      throw new Error("la note laisse croire a un defaut : "+h);
+    /* ET LA LIGNE DE LA BORNE PEINTE N'EST PAS GRISEE, celle d'ailleurs si. */
+    const lignes=h.split("<tr>");
+    const nbiot=lignes.find(t=>/Vin nbiot/.test(t))||"";
+    const ldo=lignes.find(t=>/Vin ldo/.test(t))||"";
+    if(/<td class="simFaible" title="PAS sur/.test(nbiot))
+      throw new Error("la borne de la couche peinte est grisee : "+nbiot);
+    if(!/<td class="simFaible" title="PAS sur/.test(ldo))
+      throw new Error("la borne d'ailleurs n'est pas grisee : "+ldo);
+    /* TOUTES SUR LA MEME COUCHE : pas de note, sinon elle s'affiche toujours
+       et on apprend a la sauter. */
+    for(const b of SIM.resDC.bornes)b.couche=0;
+    if(/ne sont PAS sur la couche peinte/.test(simTableauBornes(SIM.resDC)))
+      throw new Error("une note alors que tout est sur la couche peinte");
+  }finally{[SIM.resDC,SIM.dcImages,SIM.dcCouche,SIM.ouvert,SIM.analyse]=g;}
+});
+
+T("vias DC : une marque qui serait PARTOUT ne se met pas",()=>{
+  /* UNE MARQUE NE VAUT QUE SI ELLE SEPARE. Quand le fichier ne declare AUCUNE
+     portee -- le cas le plus courant --, un « ? » sur chacune des quinze
+     lignes ne distingue plus rien : il devient du bruit qu'on apprend a ne
+     plus voir, et il emporte avec lui les cas ou la marque compte vraiment. */
+  const tout={vias:[
+    {x:1,y:1,couche_a:0,couche_b:1,repere:"T1",percage:0.3,resistance:3e-4,
+     courant:0.5,chute:1.5e-4,relie:true,portee_supposee:true,
+     percage_suppose:true},
+    {x:2,y:2,couche_a:0,couche_b:1,repere:"T2",percage:0.3,resistance:3e-4,
+     courant:0.2,chute:6e-5,relie:true,portee_supposee:true,
+     percage_suppose:true}
+  ]};
+  const h=simTableauVias(tout);
+  if(/1→2 \?/.test(h))
+    throw new Error("la marque est mise alors qu'elle serait partout : "+h);
+  /* MAIS ELLE EST DITE UNE FOIS, sous le tableau : se taire tout a fait
+     reviendrait a cacher l'hypothese. */
+  if(!/<b>Aucune<\/b> de ces portées/.test(h))
+    throw new Error("l'hypothese n'est plus dite du tout : "+h);
+  if(!/<b>Aucun<\/b> de ces perçages/.test(h))
+    throw new Error("le percage suppose n'est plus dit : "+h);
+  /* MELANGE : la marque reprend tout son sens, et elle est mise. */
+  const melange={vias:[tout.vias[0],
+    {x:3,y:3,couche_a:0,couche_b:1,repere:"T3",percage:0.3,resistance:3e-4,
+     courant:0.1,chute:3e-5,relie:true}]};
+  const m=simTableauVias(melange);
+  if(!/1→2 \?/.test(m))
+    throw new Error("un tableau mele ne marque rien : "+m);
+  if(/<b>Aucune<\/b>/.test(m))
+    throw new Error("« aucune » annonce alors que l'une est declaree");
+});
+
+T("vias DC : la note des portees supposees ne somme PAS des amperes",()=>{
+  /* `suppose` est une somme de VALEURS ABSOLUES sur des liaisons : le meme
+     ampere y est compte une fois en descendant et une fois en remontant, et
+     une chaine de trois liaisons le compte trois fois. Ecrire « 5,643 A » a
+     cote d'un rail de 2 A rouvre exactement la confusion que le reste de cette
+     fiche sert a fermer. Le RAPPORT, lui, est juste : les deux sommes se
+     comptent de la meme facon. */
+  const v=[{couche_a:0,couche_b:1,courant:1.0,relie:true,
+            portee_supposee:true,repere:"T1"},
+           {couche_a:0,couche_b:1,courant:1.0,relie:true,
+            portee_supposee:true,repere:"T2"},
+           {couche_a:0,couche_b:1,courant:1.0,relie:true,
+            portee_supposee:true,repere:"T3"}];
+  const h=simPorteesSupposees(v);
+  if(!/100,0 %/.test(h))throw new Error("la part manque : "+h);
+  if(!/passage vertical/.test(h))
+    throw new Error("la part ne dit pas de quoi elle est la part : "+h);
+  /* LE SEUL AMPERE ECRIT EST CELUI DU VIA LE PLUS CHARGE : celui-la est un
+     vrai courant. La SOMME, elle, ne doit pas paraitre. */
+  if(/3,000 A/.test(h))
+    throw new Error("la somme des |I| est ecrite comme un courant : "+h);
+  if(!/1,000 A/.test(h))
+    throw new Error("le via le plus charge n'est pas chiffre : "+h);
+});
+
+T("panneau : aucune classe MORTE dans le panneau, des deux cotes",()=>{
+  /* CE QUE CE CAS FERME, ET C'ETAIT LA MOITIE DU DEFAUT. `pnl-u` et
+     `pnl-note` n'existent dans AUCUNE feuille de style du depot -- ni dans
+     celles des deux outils, ni dans `commun/simulation-em.css`. Tout le
+     panneau SI ecrit `simU` et `simNote` ; seul l'onglet PI ecrivait les deux
+     autres, et ses unites -- « mm », « °C », « W/(m·K) » -- sortaient donc a
+     la police et a la taille du NAVIGATEUR, au milieu d'un panneau en
+     monospace de dix pixels. C'est ce qui donnait a PI l'air d'un autre
+     outil.
+
+     Le controle est statique et grossier -- il lit le texte des fonctions --
+     et c'est ce qui le rend possible sans navigateur ni feuille de style. */
+  const MORTES=["pnl-u","pnl-note","pnl-tab"];
+  const fns=[simCorpsDC,simBrancherDC,simRendreDC,simRendreBornes,
+             simTableauBornes,simTableauNetsDC,simTableauPire,simTableauVias,
+             simThermiqueDC,simDCCuivrePris,simDesequilibreVias,
+             simVerdictDC,simMetaDC,simDCLegende,simDCCoucheBar,
+             simCorpsImpedance,simCorpsDiff,simCorpsCrosstalk,simCorpsRetour];
+  for(const f of fns){
+    const src=f.toString();
+    for(const cls of MORTES)
+      if(src.indexOf('class="'+cls)>=0||src.indexOf(cls+'">')>=0)
+        throw new Error(f.name+" ecrit encore la classe morte « "+cls+
+                        " » : elle n'a de regle dans aucune feuille de style, "+
+                        "donc c'est le style du navigateur qui s'applique");
+  }
 });
 
 /* --------------------------------------------------------------------------
@@ -10507,19 +11480,25 @@ T("carte DC : sans canevas, on ne peint pas — on ne casse pas",()=>{
     throw new Error("un potentiel plus court que les noeuds a ete peint");
 });
 
-T("carte DC : les trois grandeurs se peignent, et la liste les propose",()=>{
+T("carte DC : les quatre grandeurs se peignent, et la liste les propose",()=>{
   /* LA CHUTE NE DIT PAS TOUT : une piste peut tenir sa chute et fondre quand
-     meme. Les trois grandeurs arrivent ensemble du serveur, et en changer ne
-     doit rien relancer -- seulement refaire une image. */
+     meme. Les grandeurs arrivent ensemble du serveur, et en changer ne doit
+     rien relancer -- seulement refaire une image.
+
+     LA QUATRIEME EST LA CHARTE IPC-2221, peinte a cote de l'echauffement par
+     etalement. Elle n'est pas la par nostalgie : la comparaison des deux
+     cartes dit OU un plan travaille, ce qui ne se devine pas de la geometrie.
+     La retirer, c'est retirer la comparaison. */
   const cles=SIM_DC_GRANDEURS.map(g=>g.cle).sort().join(",");
-  if(cles!=="densite,echauffement,potentiel")
+  if(cles!=="densite,echauffement,echauffement_ipc2221,potentiel")
     throw new Error("grandeurs : "+cles);
   const html=simCarteDCListe();
   for(const g of SIM_DC_GRANDEURS)
     if(html.indexOf('value="'+g.cle+'"')<0)
       throw new Error(g.cle+" n'est pas dans la liste");
   const res={pas:1, noeuds:[[0,0,0],[1,0,0]],
-             potentiel:[0,1], densite:[5,50], echauffement:[2,40]};
+             potentiel:[0,1], densite:[5,50], echauffement:[2,40],
+             echauffement_ipc2221:[3,120]};
   for(const g of SIM_DC_GRANDEURS){
     const im=simDCConstruireImages(res,dcToile(),g.cle);
     if(!im)throw new Error("aucune image pour "+g.cle);
@@ -10527,6 +11506,12 @@ T("carte DC : les trois grandeurs se peignent, et la liste les propose",()=>{
     if(im.vmin!==res[g.cle][0]||im.vmax!==res[g.cle][1])
       throw new Error(g.cle+" : echelle "+im.vmin+".."+im.vmax);
   }
+  /* CHACUNE A SA PROPRE ECHELLE, et il faut que ce soit vrai : peindre la
+     charte sur l'echelle de l'etalement ferait paraitre toute la carte au
+     maximum -- 120 K contre 40 --, ce qui ressemblerait a une alerte. */
+  const a=simDCConstruireImages(res,dcToile(),"echauffement");
+  const b=simDCConstruireImages(res,dcToile(),"echauffement_ipc2221");
+  if(a.vmax===b.vmax)throw new Error("les deux cartes partagent leur echelle");
 });
 
 T("carte DC : l'echauffement est la grandeur peinte d'office",()=>{
@@ -10552,21 +11537,283 @@ T("carte DC : chaque grandeur porte son unite et son avertissement",()=>{
     throw new Error("la densite ne previent pas de sa singularite : "+d.aide);
 });
 
-T("carte DC : le tableau du pire point nomme le modele thermique",()=>{
-  const res={pire_par_net:{VDD:{densite:42.9, largeur:2, echauffement:5.34,
-                                largeur_chaude:2,
-                                echauffement_en:[21,1,0],
-                                densite_en:[21,1,0]}},
-             modele_thermique:"IPC-2221 … IPC-2152 lui a succédé",
-             couches_externes:[0]};
+/* Un resultat de laboratoire pour la fiche : une piste de VDD qui tient sa
+   chute et chauffe un peu, avec les DEUX modeles thermiques et les cotes sur
+   lesquelles l'etalement a travaille. Les chiffres sont ceux du banc Python
+   (`python/test/banc-dc.py`, carte nue) pour qu'on les reconnaisse. */
+function dcResFiche(sur){
+  return Object.assign({
+    pas:0.1, n_noeuds:12000, n_aretes:23000, n_vias:2,
+    couches:[0,1],
+    chute_par_net:{VDD:0.0312}, courant_par_net:{VDD:3.0},
+    reference_nets:[],
+    bornes:[{repere:"U1.3", role:"tension", couche:0, consigne:3.3,
+             tension:3.3, chute:0},
+            {repere:"U5.1", role:"courant", couche:1, consigne:-3.0,
+             tension:3.2688, chute:0.0312}],
+    pire_par_net:{VDD:{densite:42.9, largeur:2, echauffement:6.06,
+                       echauffement_etalement:6.06,
+                       echauffement_ipc2221:5.34,
+                       largeur_chaude:2,
+                       echauffement_en:[21,1,0], densite_en:[21,1,0]}},
+    modele_thermique:"Étalement dans la carte — IPC-2152 … IPC-2221 à côté",
+    thermique:{modele:"etalement", k_stratifie:0.8, epaisseur_stratifie:1.6,
+               cuivre_etaleur:0, h_surface:12, longueur_etalement:7.3,
+               replis:["conductivité du stratifié"]},
+    couches_externes:[0], vias:[], avertissements:[]
+  },sur||{});
+}
+
+T("carte DC : le tableau du pire point rend les DEUX modeles thermiques",()=>{
+  /* LES DEUX COTE A COTE, ET C'EST LE SEUL MOYEN DE LES LIRE. Le chiffre qui
+     decide est l'etalement ; la charte est a cote, et l'ecart des deux dit si
+     la carte evacue. N'en montrer qu'un, c'est retirer la comparaison. */
+  const res=dcResFiche();
   const h=simTableauPire(res);
-  if(!/5,34 K/.test(h))throw new Error("l'echauffement manque : "+h);
+  /* EN DEGRES CELSIUS, comme les deux normes ecrivent leurs chartes
+     (« temperature rise in °C ») : un ECART de temperature vaut autant en
+     kelvins qu'en degres Celsius, et c'est en °C que se lisent les cotes
+     contre lesquelles on compare -- Tg du stratifie, cote d'un boitier. */
+  if(!/6,06 °C/.test(h))throw new Error("l'echauffement manque : "+h);
+  if(!/5,34 °C/.test(h))throw new Error("la charte IPC-2221 manque : "+h);
+  if(/ K</.test(h))throw new Error("il reste des kelvins : "+h);
+  /* ET LA TEMPERATURE ABSOLUE AVEC, sous l'ecart : 20 + 6,06 = 26,1 °C. Un
+     ecart seul ne se compare a rien, et c'est l'absolu qu'on met en face d'un
+     Tg. Il depend de l'ambiante et de rien d'autre. */
+  if(!/26,1 °C/.test(h))
+    throw new Error("la temperature absolue manque : "+h);
+  const garde=SIM.dcAmbiante;
+  try{
+    SIM.dcAmbiante=85;
+    const chaud=simTableauPire(res);
+    if(!/91,1 °C/.test(chaud))
+      throw new Error("l'ambiante ne deplace pas l'absolu : "+chaud);
+    if(!/6,06 °C/.test(chaud))
+      throw new Error("l'ambiante a bouge l'ECART, qui n'en depend pas");
+  }finally{SIM.dcAmbiante=garde;}
   if(!/42,9 A\/mm²/.test(h))throw new Error("la densite manque");
   if(!/IPC-2221/.test(h))throw new Error("le modele thermique n'est pas nomme");
   if(!/couche/i.test(h))throw new Error("les couches exterieures ne sont pas dites");
   /* Rien a dire quand il n'y a rien : un tableau vide vaut mieux qu'un
      tableau d'en-tetes. */
   if(simTableauPire({})!=="")throw new Error("un tableau sans donnee");
+});
+
+T("carte DC : la thermique dit ses cotes ET ce qu'elle a suppose",()=>{
+  /* « 6 K sur un lambda declare » et « 6 K sur un lambda suppose » ne se
+     defendent pas pareil devant un fabricant. Le solveur rend la liste de ce
+     qu'il a suppose ; la fiche doit la montrer, sinon l'aveu s'arrete au
+     serveur. */
+  const h=simThermiqueDC(dcResFiche());
+  if(!/7,3 mm/.test(h))throw new Error("la portee thermique manque : "+h);
+  if(!/0,80/.test(h))throw new Error("le lambda n'est pas dit : "+h);
+  if(!/aucun plan/.test(h))
+    throw new Error("un cuivre etaleur nul ne se dit pas : "+h);
+  /* AVEC UN PLAN, la phrase change : elle ne doit plus annoncer la carte la
+     plus chaude. */
+  const avec=simThermiqueDC(dcResFiche({
+    thermique:Object.assign({},dcResFiche().thermique,
+                            {cuivre_etaleur:0.035, longueur_etalement:24.9})}));
+  if(/aucun plan/.test(avec))
+    throw new Error("un plan declare est encore annonce absent : "+avec);
+  if(!/35 µm/.test(avec))
+    throw new Error("le cuivre etaleur n'est pas dit : "+avec);
+});
+
+T("carte DC : un lambda saisi qui n'est pas celui du resultat est signale",()=>{
+  /* LE PIEGE : on corrige le stratifie dans le panneau, on relit la fiche, et
+     on croit lire le nouveau chiffre. Le champ ne relance PAS le calcul --
+     relancer dans le dos de quelqu'un est pire --, donc la fiche doit dire que
+     ce qu'elle affiche n'est plus ce qui est saisi. */
+  const garde=SIM.dcLambda;
+  try{
+    SIM.dcLambda="";
+    if(/relancez/.test(simThermiqueDC(dcResFiche())))
+      throw new Error("un ecart annonce sans rien de saisi");
+    SIM.dcLambda="0,8";
+    if(/relancez/.test(simThermiqueDC(dcResFiche())))
+      throw new Error("un ecart annonce alors que la valeur est la meme");
+    SIM.dcLambda="20";
+    const h=simThermiqueDC(dcResFiche());
+    if(!/relancez/.test(h))throw new Error("l'ecart n'est pas signale : "+h);
+    if(!/simAlerte/.test(h))
+      throw new Error("l'ecart ne passe pas en alerte : "+h);
+  }finally{SIM.dcLambda=garde;}
+});
+
+/* --------------------------------------------------------------------------
+   LE VERDICT DE LA FICHE DC
+   --------------------------------------------------------------------------
+   POURQUOI IL COMPTE. La fiche ouvrait sur un tableau de chiffres justes et
+   ne disait jamais si la carte TIENT -- alors que c'est la seule question
+   qu'on pose a ce calcul. La fiche d'impedance, a cote, ouvre sur son verdict
+   depuis toujours, et c'est cet ecart de forme que ces cas ferment.
+   -------------------------------------------------------------------------- */
+T("fiche DC : le verdict compare aux DEUX budgets, et l'un suffit a sortir",()=>{
+  const garde=Object.assign({},SIM.dcBudget);
+  try{
+    SIM.dcBudget={chute:5, dt:10};
+    /* 0,95 % de chute et 6,06 K : les deux tiennent largement. */
+    let h=simVerdictDC(dcResFiche());
+    if(!/simVerdict dedans/.test(h))throw new Error("verdict : "+h);
+    if(!/U5\.1/.test(h))throw new Error("la charge n'est pas nommee : "+h);
+    if(!/IPC-2221 en annoncerait/.test(h))
+      throw new Error("la charte n'est pas rappelee : "+h);
+
+    /* LA TEMPERATURE SEULE SUFFIT A SORTIR : la chute, elle, ne bouge pas. */
+    SIM.dcBudget={chute:5, dt:5};
+    h=simVerdictDC(dcResFiche());
+    if(!/simVerdict dehors/.test(h))throw new Error("verdict : "+h);
+    if(!/l'échauffement/.test(h))
+      throw new Error("le verdict ne dit pas CE qui sort : "+h);
+    if(/la chute et/.test(h))
+      throw new Error("la chute est accusee alors qu'elle tient : "+h);
+
+    /* LA CHUTE SEULE AUSSI. */
+    SIM.dcBudget={chute:0.5, dt:10};
+    h=simVerdictDC(dcResFiche());
+    if(!/simVerdict dehors/.test(h))throw new Error("verdict : "+h);
+    if(!/la chute/.test(h))throw new Error("la chute n'est pas accusee : "+h);
+
+    /* LA ZONE LIMITE : dans le budget, sans marge. */
+    SIM.dcBudget={chute:5, dt:7};
+    h=simVerdictDC(dcResFiche());
+    if(!/simVerdict limite/.test(h))throw new Error("verdict : "+h);
+    if(!/sans marge/.test(h))throw new Error("la marge n'est pas dite : "+h);
+  }finally{SIM.dcBudget=garde;}
+});
+
+T("fiche DC : sans source declaree, la chute ne se juge pas, et c'est dit",()=>{
+  /* 100 mV sur du 1,2 V et sur du 24 V ne sont pas le meme defaut : sans
+     tension de source, le pour-cent n'existe pas. Le fabriquer -- en prenant
+     zero, ou la premiere valeur venue -- rendrait un verdict au hasard. */
+  const garde=Object.assign({},SIM.dcBudget);
+  try{
+    SIM.dcBudget={chute:0.1, dt:100};
+    const res=dcResFiche({bornes:[{repere:"U5.1", role:"courant", couche:0,
+                                   consigne:-3.0, tension:-0.0312,
+                                   chute:0.0312}]});
+    const m=simDCMesures(res);
+    if(m.pct!==null)throw new Error("un pour-cent a ete fabrique : "+m.pct);
+    const h=simVerdictDC(res);
+    if(/dehors/.test(h))
+      throw new Error("un verdict rendu sans reference : "+h);
+    if(!/aucune source/.test(h))
+      throw new Error("l'absence de reference n'est pas dite : "+h);
+  }finally{SIM.dcBudget=garde;}
+});
+
+T("fiche DC : la ligne de contexte porte l'assiette du calcul",()=>{
+  const h=simMetaDC(dcResFiche());
+  for(const attendu of [/VDD/, /2 couches/, /3,000 A/, /mm de trame/,
+                        /12000 nœuds/, /2 trous/])
+    if(!attendu.test(h))throw new Error(attendu+" manque : "+h);
+});
+
+T("fiche DC : les notes de l'outil arrivent jusqu'a la fiche",()=>{
+  /* `cuivreDC()` les rendait deja sous `notes` -- RIEN ne les affichait. Un
+     document ou tous les trous sont supposes traversants ne le disait donc
+     nulle part, et c'est exactement la reserve qu'il faut lire. */
+  const garde=SIM.dcNotes;
+  try{
+    SIM.dcNotes=["3 trou(s) pris pour TRAVERSANTS"];
+    const h=simDCCuivrePris(dcResFiche());
+    if(!/TRAVERSANTS/.test(h))throw new Error("la note est perdue : "+h);
+    if(!/simNote/.test(h))throw new Error("la note n'a pas la forme SI : "+h);
+  }finally{SIM.dcNotes=garde;}
+});
+
+T("fiche DC : la fiche est ecrite dans le langage visuel de SI",()=>{
+  /* CE QUE CE CAS TIENT. L'onglet DC portait les classes GENERIQUES du panneau
+     de l'outil (`pnl-tab`, `pnl-note`) la ou SI porte les siennes
+     (`simVerdict`, `simMeta`, `simTab`, `simNote`). Le resultat n'etait pas
+     laid, il etait ETRANGER : deux polices, pas de verdict, pas de pastille de
+     couleur, et il fallait reapprendre ou regarder en changeant d'onglet. */
+  const garde=SIM.resDC, gardeIm=SIM.dcImages;
+  try{
+    SIM.resDC=dcResFiche();
+    SIM.dcImages=null;                      // la legende ne s'ecrit pas sans
+    const h=simRendreDC();
+    for(const cls of ["simVerdict","simMeta","simTab","simNote"])
+      if(h.indexOf(cls)<0)throw new Error(cls+" absent de la fiche");
+    if(/pnl-tab|pnl-note/.test(h))
+      throw new Error("la fiche porte encore les classes du panneau : "+
+                      h.match(/pnl-[a-z]+/g).join(", "));
+  }finally{SIM.resDC=garde;SIM.dcImages=gardeIm;}
+});
+
+/* --------------------------------------------------------------------------
+   QUELLE COUCHE SE PEINT
+   --------------------------------------------------------------------------
+   IL EN FAUT UNE, ET UNE SEULE : superposer deux potentiels les melangerait
+   sans le dire. Mais la CHOISIR appartenait a l'outil, et la visionneuse
+   prenait celle de la premiere charge posee -- donc, sur un rail qui traverse
+   la carte, jamais celle ou ca chauffe.
+   -------------------------------------------------------------------------- */
+function dcImagesDeuxCouches(){
+  return {images:new Map([[0,{}],[2,{}]]), vmin:0, vmax:1,
+          quoi:"echauffement"};
+}
+
+T("carte DC : la couche peinte suit le choix, sinon la proposition de l'outil",()=>{
+  const garde=SIM.dcImages, gardeC=SIM.dcCouche;
+  try{
+    SIM.dcImages=dcImagesDeuxCouches();
+    SIM.dcCouche=null;
+    if(simDCCouchePeinte(2)!==2)
+      throw new Error("la proposition de l'outil n'est pas suivie");
+    SIM.dcCouche=0;
+    if(simDCCouchePeinte(2)!==0)
+      throw new Error("le choix de la fiche n'est pas suivi");
+    /* UNE COUCHE QUE LE RESULTAT NE PORTE PAS EST IGNOREE : sans cela, un
+       changement de selection laisserait le panneau designer une couche
+       absente, donc ne rien peindre du tout. */
+    SIM.dcCouche=7;
+    if(simDCCouchePeinte(2)!==2)
+      throw new Error("une couche absente du resultat a ete retenue");
+    if(simDCCouchesPeintes().join()!=="0,2")
+      throw new Error("les couches peintes : "+simDCCouchesPeintes().join());
+    /* SANS IMAGE, on rend ce que l'outil propose et rien d'autre : `simDCTrace`
+       ne trouvera aucune image et ne peindra rien, ce qui est juste. */
+    SIM.dcImages=null;
+    if(simDCCouchePeinte(5)!==5)throw new Error("sans image, la proposition");
+  }finally{SIM.dcImages=garde;SIM.dcCouche=gardeC;}
+});
+
+T("carte DC : la liste des couches n'apparait qu'a partir de deux",()=>{
+  const garde=SIM.dcImages, gardeC=SIM.dcCouche;
+  try{
+    SIM.dcCouche=null;
+    SIM.dcImages={images:new Map([[0,{}]]), vmin:0, vmax:1,
+                  quoi:"echauffement"};
+    if(simDCCoucheBar()!=="")
+      throw new Error("une liste a un seul element : elle mentirait sur ce "+
+                      "qu'elle permet");
+    SIM.dcImages=dcImagesDeuxCouches();
+    const h=simDCCoucheBar();
+    if(!/simDCCoucheSel/.test(h))throw new Error("pas de liste : "+h);
+    if(!/value="auto"/.test(h))throw new Error("pas de choix « auto » : "+h);
+    for(const c of [0,2])
+      if(h.indexOf('value="'+c+'"')<0)
+        throw new Error("la couche "+c+" n'est pas proposee");
+    /* LE NOM DE LA COUCHE, ET NON SON RANG : l'adaptateur le sait, et « Top »
+       se reconnait la ou « couche 1 » se compte. */
+    if(!/Top/.test(h))throw new Error("les couches ne sont pas nommees : "+h);
+  }finally{SIM.dcImages=garde;SIM.dcCouche=gardeC;}
+});
+
+T("carte DC : oublier un resultat oublie AUSSI la couche choisie",()=>{
+  /* L'ETAT ETAIT RECOPIE A QUATRE ENDROITS, et la copie du bouton « Effacer »
+     avait deja pris du retard. Une couche choisie qui survit a son resultat
+     designe une couche du suivant qui n'a rien a voir. */
+  SIM.resDC=dcResFiche();
+  SIM.dcCouche=3; SIM.dcNotes=["une note"]; SIM.dcSonde={rang:1};
+  SIM.dcImages=dcImagesDeuxCouches(); SIM.dcFinesse={pas:1}; SIM.dcIndex={};
+  simDCOublier();
+  for(const cle of ["resDC","dcImages","dcFinesse","dcIndex","dcSonde",
+                    "dcCouche"])
+    if(SIM[cle]!==null)throw new Error(cle+" survit : "+SIM[cle]);
+  if(SIM.dcNotes.length)throw new Error("les notes survivent");
 });
 
 /* --------------------------------------------------------------------------
@@ -10647,7 +11894,7 @@ T("sonde : elle suit la grandeur choisie sur la carte",()=>{
   const garde=[SIM.resDC,SIM.dcIndex,SIM.dcImages,SIM.dcQuoi,SIM.ouvert,
                SIM.analyse,SIM.dcSonde];
   try{
-    for(const [quoi,attendu,unite] of [["echauffement",3,"K"],
+    for(const [quoi,attendu,unite] of [["echauffement",3,"°C"],
                                        ["densite",30,"A/mm²"],
                                        ["potentiel",3.1,"mV"]]){
       dcSondeArmer(quoi);
@@ -10687,6 +11934,171 @@ T("sonde : elle ne redessine QUE si l'on change de carreau",()=>{
       throw new Error("rester hors du cuivre demande un redessin");
   }finally{[SIM.resDC,SIM.dcIndex,SIM.dcImages,SIM.ouvert,SIM.analyse,
             SIM.dcSonde]=garde;}
+});
+
+/* --------------------------------------------------------------------------
+   LA SONDE SUR UN VIA — CE QU'IL A PORTE
+   --------------------------------------------------------------------------
+   POURQUOI IL FALLAIT L'AJOUTER. La sonde lisait le CARREAU DE TRAME. Or au
+   droit d'un via, ce n'est pas la question qu'on se pose : la question est
+   « celui-la, il en a pris combien ? », et la reponse etait dans le tableau du
+   panneau, a retrouver parmi quinze lignes nommees « T7 » sans savoir laquelle
+   est le via sous le curseur. C'est precisement le chiffre qui decide d'en
+   doubler un, et le seul qui ne se devine pas de la geometrie.
+   -------------------------------------------------------------------------- */
+function dcSondeVias(){
+  /* Deux liaisons au MEME endroit -- la chaine d'un tube traversant 1->2->3 --
+     et une troisieme ailleurs. Les valeurs sont choisies pour se reconnaitre. */
+  return [
+    {x:11, y:10, couche_a:0, couche_b:1, net:"VDD", repere:"T1",
+     percage:0.4, resistance:5e-4, courant:0.412, chute:2.06e-4, relie:true},
+    {x:11, y:10, couche_a:1, couche_b:2, net:"VDD", repere:"T1 2→3",
+     percage:0.4, resistance:9e-4, courant:0.412, chute:3.71e-4, relie:true},
+    {x:30, y:30, couche_a:0, couche_b:1, net:"VDD", repere:"T9",
+     percage:0.4, resistance:5e-4, courant:0.011, chute:5.5e-6, relie:true}
+  ];
+}
+
+T("sonde : un via survole rend CE QU'IL A PORTE, courant, chute et R",()=>{
+  const garde=[SIM.resDC,SIM.dcIndex,SIM.dcImages,SIM.dcQuoi,SIM.ouvert,
+               SIM.analyse,SIM.dcSonde];
+  try{
+    dcSondeArmer("echauffement");
+    SIM.resDC.vias=dcSondeVias();
+    /* LE DISQUE EST CELUI DU PERCAGE, plus un carreau de tolerance : au zoom
+       arriere un via de 0,4 mm fait deux pixels, et viser au pixel n'est pas
+       une lecture. */
+    const sur=simDCLireEn(11,10,0);
+    if(!sur||!sur.vias.length)throw new Error("aucun via sous le curseur");
+    const t=sur.lignes.join(" | ");
+    if(!/412,0 mA/.test(t))throw new Error("le courant manque : "+t);
+    if(!/0,206 mV/.test(t))throw new Error("la chute manque : "+t);
+    if(!/0,500 mΩ/.test(t))throw new Error("la resistance manque : "+t);
+    if(!/T1 1→2/.test(t))throw new Error("le repere et les couches : "+t);
+    /* LA VALEUR DU CARREAU RESTE LA PREMIERE LIGNE : c'est le contrat que les
+       deux outils lisent depuis toujours, et c'est la grandeur peinte. */
+    if(!/2,00 °C/.test(sur.lignes[0]))
+      throw new Error("la premiere ligne n'est plus le carreau : "+
+                      sur.lignes[0]);
+    if(sur.texte!==sur.lignes[0])
+      throw new Error("`texte` n'est plus la premiere ligne");
+    /* L'ETIQUETTE SE POSE SUR LE VIA, pas au centre du carreau de trame :
+       sinon elle saute d'un demi-pas a cote de ce qu'elle designe. */
+    if(sur.x!==11||sur.y!==10)
+      throw new Error("l'etiquette n'est pas sur le via : "+sur.x+";"+sur.y);
+    /* UN VIA LOIN DU CURSEUR N'EST PAS SOUS LE CURSEUR. */
+    if(/T9/.test(t))throw new Error("un via a 20 mm est rendu : "+t);
+  }finally{[SIM.resDC,SIM.dcIndex,SIM.dcImages,SIM.dcQuoi,SIM.ouvert,
+            SIM.analyse,SIM.dcSonde]=garde;}
+});
+
+T("sonde : un tube en chaine rend TOUTES ses liaisons, pas une",()=>{
+  /* Un tube traversant est monte en CHAINE -- 1→2, 2→3 --, chaque intervalle
+     avec sa propre hauteur donc sa propre resistance. Le tableau en montre
+     deux lignes ; la sonde doit en montrer deux aussi. Elles portent le meme
+     courant l'une apres l'autre, mais PAS la meme chute. */
+  const garde=[SIM.resDC,SIM.dcIndex,SIM.dcImages,SIM.dcQuoi,SIM.ouvert,
+               SIM.analyse,SIM.dcSonde];
+  try{
+    dcSondeArmer("echauffement");
+    SIM.resDC.vias=dcSondeVias();
+    /* SUR LA COUCHE 1, les deux liaisons du tube sont dans sa portee. */
+    const deux=simDCViasEn(11,10,1);
+    if(deux.length!==2)
+      throw new Error(deux.length+" liaison(s) au lieu de deux sur la couche 1");
+    if(Math.abs(deux[0].chute-deux[1].chute)<1e-9)
+      throw new Error("les deux liaisons rendent la meme chute : elles n'ont "+
+                      "pas la meme hauteur");
+    /* SUR LA COUCHE 0, seule la premiere est a portee : la seconde relie 2 et
+       3, et la rendre la ferait croire qu'on peut la toucher d'en haut. */
+    const une=simDCViasEn(11,10,0);
+    if(une.length!==1)
+      throw new Error(une.length+" liaison(s) au lieu d'une sur la couche 0");
+    if(une[0].couche_b!==1)throw new Error("mauvaise liaison retenue");
+  }finally{[SIM.resDC,SIM.dcIndex,SIM.dcImages,SIM.dcQuoi,SIM.ouvert,
+            SIM.analyse,SIM.dcSonde]=garde;}
+});
+
+T("sonde : un via parle meme sans cuivre peint sous lui",()=>{
+  /* AU DROIT D'UN VIA, la couche peinte peut n'avoir aucun cuivre du net : un
+     anti-pad l'a evidee, ou le via ne debouche que plus bas. Se taire la
+     serait se taire pile a l'endroit ou l'on a le plus a dire. */
+  const garde=[SIM.resDC,SIM.dcIndex,SIM.dcImages,SIM.dcQuoi,SIM.ouvert,
+               SIM.analyse,SIM.dcSonde];
+  try{
+    dcSondeArmer("echauffement");
+    SIM.resDC.vias=[{x:30, y:30, couche_a:0, couche_b:1, net:"VDD",
+                     repere:"T9", percage:0.4, resistance:5e-4,
+                     courant:1.5, chute:7.5e-4, relie:true}];
+    /* En 30;30 il n'y a AUCUN noeud : le carreau est vide. */
+    if(simDCNoeudEn(30,30,0)>=0)throw new Error("le carreau n'est pas vide");
+    const lu=simDCLireEn(30,30,0);
+    if(!lu)throw new Error("la sonde se tait sur un via sans cuivre peint");
+    if(lu.valeur!==null)throw new Error("une valeur de carreau inventee");
+    if(!/T9/.test(lu.lignes.join(" ")))throw new Error("le via manque");
+    if(lu.rang!==-1)throw new Error("un rang de noeud invente : "+lu.rang);
+    /* ET LE SURVOL DOIT REDESSINER : sans cela l'etiquette n'apparaitrait
+       jamais la. */
+    SIM.dcSonde=null;
+    if(!simDCSurvol(30,30,0))throw new Error("le survol ne dit rien");
+  }finally{[SIM.resDC,SIM.dcIndex,SIM.dcImages,SIM.dcQuoi,SIM.ouvert,
+            SIM.analyse,SIM.dcSonde]=garde;}
+});
+
+T("sonde : deux vias dans le MEME carreau ne se confondent pas",()=>{
+  /* LE CARREAU NE SUFFIT PLUS A DIRE SI L'AFFICHAGE A CHANGE. Sur une
+     couture, deux vias voisins tombent dans le meme carreau de trame, et
+     comparer les seuls rangs de noeud laissait l'etiquette du premier
+     affichee au-dessus du second. On compare donc ce qui est ECRIT. */
+  const garde=[SIM.resDC,SIM.dcIndex,SIM.dcImages,SIM.dcQuoi,SIM.ouvert,
+               SIM.analyse,SIM.dcSonde];
+  try{
+    dcSondeArmer("echauffement");
+    /* Deux vias a 0,3 mm l'un de l'autre : meme carreau (le pas vaut 1 mm),
+       et des percages assez fins pour que les disques ne se recouvrent pas. */
+    SIM.resDC.vias=[
+      {x:10.85, y:10, couche_a:0, couche_b:1, net:"VDD", repere:"A",
+       percage:0.1, resistance:5e-4, courant:1.0, chute:5e-4, relie:true},
+      {x:11.15, y:10, couche_a:0, couche_b:1, net:"VDD", repere:"B",
+       percage:0.1, resistance:5e-4, courant:0.2, chute:1e-4, relie:true}
+    ];
+    const marge=SIM.resDC.pas;
+    if(!(marge>=0.3))throw new Error("le cas ne place pas les deux vias dans "+
+                                     "le meme carreau");
+    /* On regarde depuis un point plus proche de A, puis plus proche de B :
+       les deux disques se chevauchent, mais l'ORDRE change -- le plus charge
+       en tete -- donc ce qui est ECRIT change. */
+    SIM.dcSonde=null;
+    if(!simDCSurvol(10.85,10,0))throw new Error("le premier survol se tait");
+    const avant=SIM.dcSonde.lignes.join("|");
+    SIM.resDC.vias[1].courant=5.0;    // B devient le plus charge
+    SIM.resDC.vias[1].chute=2.5e-3;
+    if(!simDCSurvol(11.15,10,0))
+      throw new Error("passer d'un via a l'autre ne redessine pas");
+    if(SIM.dcSonde.lignes.join("|")===avant)
+      throw new Error("l'etiquette n'a pas change");
+  }finally{[SIM.resDC,SIM.dcIndex,SIM.dcImages,SIM.dcQuoi,SIM.ouvert,
+            SIM.analyse,SIM.dcSonde]=garde;}
+});
+
+T("sonde : un via hors calcul le DIT au survol",()=>{
+  /* Il est dans la carte, il n'est pas dans le calcul. Le passer sous silence
+     laisserait croire que le resultat porte sur la carte entiere -- et c'est
+     justement le via qu'on va chercher du curseur quand un chiffre surprend. */
+  const garde=[SIM.resDC,SIM.dcIndex,SIM.dcImages,SIM.dcQuoi,SIM.ouvert,
+               SIM.analyse,SIM.dcSonde];
+  try{
+    dcSondeArmer("echauffement");
+    SIM.resDC.vias=[{x:11, y:10, couche_a:0, couche_b:1, net:"VDD",
+                     repere:"T4", percage:0.4, resistance:0, courant:0,
+                     chute:0, relie:false,
+                     motif:"aucun cuivre du net sous le via"}];
+    const t=simDCLireEn(11,10,0).lignes.join(" | ");
+    if(!/hors calcul/.test(t))throw new Error("le via non relie se tait : "+t);
+    if(/mA|mΩ/.test(t.split("T4")[1]||""))
+      throw new Error("un via hors calcul annonce des chiffres : "+t);
+  }finally{[SIM.resDC,SIM.dcIndex,SIM.dcImages,SIM.dcQuoi,SIM.ouvert,
+            SIM.analyse,SIM.dcSonde]=garde;}
 });
 
 T("sonde : sans carte affichee, elle se tait",()=>{
@@ -13281,5 +14693,346 @@ T("la bande déduite se demande, s'écrit dans les champs, et se dit",()=>{
   }
 });
 
+/* ==========================================================================
+   Traits de sérigraphie utilisateur (F.SilkS / B.SilkS)
+   ========================================================================== */
+T("trait de sérigraphie : normalisation, couches et tolérances",()=>{
+  const d=normDrawingPcb({id:4,layer:"silkB",x1:10,y1:20,x2:50,y2:20,width:0.2},0);
+  if(!d)throw new Error("trait de sérigraphie non validé");
+  if(d.layer!=="silkB"||d.x1!==10||d.y1!==20||d.x2!==50||d.y2!==20||d.width!==0.2)
+    throw new Error("propriétés du trait altérées");
+  // segment de longueur nulle écarté
+  if(normDrawingPcb({x1:10,y1:10,x2:10,y2:10},0))
+    throw new Error("segment de longueur nulle accepté");
+  // couche inconnue ramenée à silkT
+  const d2=normDrawingPcb({layer:"inconnu",x1:0,y1:0,x2:20,y2:0},0);
+  if(d2.layer!=="silkT")throw new Error("repli de couche invalide");
+  // intégration dans normDoc et docObj
+  const doc=normDoc({cu:2,drawings:[d]});
+  if(!doc.drawings||doc.drawings.length!==1)throw new Error("normDoc n'a pas retenu le trait");
+  loadDoc(doc,true);
+  if(S.drawings.length!==1||S.drawings[0].layer!=="silkB")
+    throw new Error("loadDoc n'a pas chargé le trait");
+  const obj=docObj();
+  if(!obj.drawings||obj.drawings.length!==1)
+    throw new Error("docObj n'a pas exporté le trait");
+});
+
+T("trait de sérigraphie : cycle de création, déplacement, duplication, suppression et retournement",()=>{
+  loadDoc({cu:2,drawings:[]},true);
+  clearSel();
+  const d={id:S.nextId++,layer:"silkT",x1:10,y1:10,x2:30,y2:10,width:0.15};
+  S.drawings.push(d);
+  if(!S.sel.drawings)S.sel.drawings=new Set();
+  S.sel.drawings.add(d.id);
+  if(selDrawingsPcb().length!==1)throw new Error("trait non sélectionné");
+  // hitTest sur le trait
+  const h=hitTest(20,10);
+  if(!h||!h.drawing||h.drawing.id!==d.id)throw new Error("hitTest a manqué le trait");
+  // retournement F.SilkS <-> B.SilkS
+  flipSel();
+  if(d.layer!=="silkB")throw new Error("retournement vers B.SilkS échoué");
+  flipSel();
+  if(d.layer!=="silkT")throw new Error("retournement vers F.SilkS échoué");
+  // copier / coller
+  if(!copySelPcb())throw new Error("copie échouée");
+  S.mouse={x:40,y:40};
+  pasteClipPcb();
+  if(S.drawings.length!==2)throw new Error("duplication échouée, total = "+S.drawings.length);
+  // suppression de la copie sélectionnée
+  deleteSel();
+  if(S.drawings.length!==1)throw new Error("suppression échouée, total = "+S.drawings.length);
+  // annuler
+  undo();
+  if(S.drawings.length!==2)throw new Error("annulation de suppression échouée");
+  redo();
+  if(S.drawings.length!==1)throw new Error("rétablissement de suppression échoué");
+});
+
+T("trait de sérigraphie : export Gerber .GTO et .GBO",()=>{
+  loadDoc({cu:2,drawings:[]},true);
+  const dT={id:S.nextId++,layer:"silkT",x1:10,y1:10,x2:40,y2:10,width:0.15};
+  const dB={id:S.nextId++,layer:"silkB",x1:15,y1:25,x2:60,y2:25,width:0.2};
+  S.drawings.push(dT,dB);
+  const gto=gerberSilk(0);
+  const gbo=gerberSilk(1);
+  if(typeof gto!=="string"||typeof gbo!=="string")
+    throw new Error("export Gerber silk invalide");
+  // Le trait F.SilkS (0.15mm) doit être présent dans GTO et absent de GBO
+  if(gto.indexOf("C,0.1500")<0||gto.indexOf("X10000000")<0||gto.indexOf("X40000000")<0)
+    throw new Error("coordonnées F.SilkS absentes du .GTO");
+  if(gbo.indexOf("C,0.1500")>=0||gbo.indexOf("X10000000")>=0)
+    throw new Error("coordonnées F.SilkS trouvées dans le .GBO");
+  // Le trait B.SilkS (0.20mm) doit être présent dans GBO et absent de GTO
+  if(gbo.indexOf("C,0.2000")<0||gbo.indexOf("X15000000")<0||gbo.indexOf("X60000000")<0)
+    throw new Error("coordonnées B.SilkS absentes du .GBO");
+  if(gto.indexOf("C,0.2000")>=0||gto.indexOf("X15000000")>=0)
+    throw new Error("coordonnées B.SilkS trouvées dans le .GTO");
+});
+
+T("rectangle de sérigraphie : normalisation, hit-test périmétrique, panneau et export Gerber 4 segments",()=>{
+  loadDoc({cu:2,drawings:[]},true);
+  clearSel();
+
+  // 1. Normalisation
+  const nr=normDrawingPcb({shape:"rect",layer:"silkT",x1:10,y1:10,x2:50,y2:30,width:0.15},0);
+  if(!nr||nr.shape!=="rect"||nr.type!=="rect")
+    throw new Error("normDrawingPcb n'a pas normalisé la forme rect");
+  // rectangle dégénéré (aire nulle) rejeté
+  if(normDrawingPcb({shape:"rect",x1:10,y1:10,x2:10,y2:30},0))
+    throw new Error("rectangle sans largeur accepté");
+  if(normDrawingPcb({shape:"rect",x1:10,y1:10,x2:50,y2:10},0))
+    throw new Error("rectangle sans hauteur accepté");
+
+  // 2. Hit-test sur le périmètre
+  const d={id:S.nextId++,shape:"rect",type:"rect",layer:"silkT",x1:10,y1:10,x2:50,y2:30,width:0.15};
+  S.drawings.push(d);
+
+  // Bord haut (x=30, y=10)
+  let h=hitTest(30,10);
+  if(!h||!h.drawing||h.drawing.id!==d.id)throw new Error("hitTest a manqué le bord haut du rectangle");
+  // Bord bas (x=30, y=30)
+  h=hitTest(30,30);
+  if(!h||!h.drawing||h.drawing.id!==d.id)throw new Error("hitTest a manqué le bord bas du rectangle");
+  // Bord gauche (x=10, y=20)
+  h=hitTest(10,20);
+  if(!h||!h.drawing||h.drawing.id!==d.id)throw new Error("hitTest a manqué le bord gauche du rectangle");
+  // Bord droit (x=50, y=20)
+  h=hitTest(50,20);
+  if(!h||!h.drawing||h.drawing.id!==d.id)throw new Error("hitTest a manqué le bord droit du rectangle");
+  // Intérieur du rectangle (x=30, y=20) : ne doit PAS attraper le rectangle pour laisser l'accès aux composants/pistes
+  h=hitTest(30,20);
+  if(h&&h.drawing&&h.drawing.id===d.id)throw new Error("hitTest a attrapé l'intérieur du rectangle (doit être périmétrique)");
+
+  // 3. Panneau Propriétés
+  if(!S.sel.drawings)S.sel.drawings=new Set();
+  S.sel.drawings.add(d.id);
+  buildProps();
+  const pHtml=document.getElementById("props").innerHTML;
+  if(pHtml.indexOf("pDrwShape")<0||pHtml.indexOf("Rectangle (cadre)")<0)
+    throw new Error("panneau de propriétés incomplet pour le rectangle");
+
+  // 4. Export Gerber F.SilkS (.GTO) : 4 segments fermés
+  const gto=gerberSilk(0);
+  const gbo=gerberSilk(1);
+  if(typeof gto!=="string"||typeof gbo!=="string")
+    throw new Error("export Gerber silk invalide");
+  // Doit contenir les 4 sommets du cadre
+  const o=gOrigin();
+  const yTop=String(Math.round((o.y-10)*1e6));
+  const yBot=String(Math.round((o.y-30)*1e6));
+  if(gto.indexOf("X10000000Y"+yTop+"D02*")<0||gto.indexOf("X50000000Y"+yTop+"D01*")<0)
+    throw new Error("segment 1 (haut) absent du .GTO");
+  if(gto.indexOf("X50000000Y"+yBot+"D01*")<0)
+    throw new Error("segment 2 (droit) absent du .GTO");
+  if(gto.indexOf("X10000000Y"+yBot+"D01*")<0)
+    throw new Error("segment 3 (bas) absent du .GTO");
+  if(gto.indexOf("X10000000Y"+yTop+"D01*")<0)
+    throw new Error("segment 4 (gauche retour) absent du .GTO");
+  if(gbo.indexOf("X10000000")>=0)
+    throw new Error("coordonnées F.SilkS trouvées dans .GBO");
+
+  // 5. Rectangle sur B.SilkS (.GBO)
+  const dBot={id:S.nextId++,shape:"rect",type:"rect",layer:"silkB",x1:5,y1:5,x2:25,y2:15,width:0.2};
+  S.drawings.push(dBot);
+  const gbo2=gerberSilk(1);
+  if(gbo2.indexOf("X5000000")<0||gbo2.indexOf("X25000000")<0)
+    throw new Error("segments B.SilkS absents du .GBO");
+});
+
+/* =============================================================================
+   LIAISON SCHÉMATIQUE → SIMULATIONS (Chute DC & Simulation EM)
+   ============================================================================= */
+
+T("liaison schéma : convertisseurs d'unités électriques (V, A, W, Ω, Hz)",()=>{
+  if(pcbParseVolt("3.3V")!==3.3||pcbParseVolt("5 V")!==5||pcbParseVolt("1.8V ~ 3.6V")!==1.8)
+    throw new Error("échec pcbParseVolt");
+  if(Math.abs(pcbParseCourant("50mA")-0.05)>1e-6||
+     Math.abs(pcbParseCourant("250µA")-250e-6)>1e-9||
+     pcbParseCourant("1.5A")!==1.5)
+    throw new Error("échec pcbParseCourant");
+  if(Math.abs(pcbParsePuissance("150mW")-0.15)>1e-6||
+     Math.abs(pcbParsePuissance("1/4W")-0.25)>1e-6||
+     pcbParsePuissance("1W")!==1)
+    throw new Error("échec pcbParsePuissance");
+  if(pcbParseResistance("22")!==22||
+     pcbParseResistance("22 Ω")!==22||
+     pcbParseResistance("4R7")!==4.7||
+     pcbParseResistance("10k")!==10000)
+    throw new Error("échec pcbParseResistance");
+  if(pcbParseFrequence("72MHz")!==72e6||
+     pcbParseFrequence("1 GHz")!==1e9||
+     pcbParseFrequence("100 kHz")!==100e3)
+    throw new Error("échec pcbParseFrequence");
+});
+
+T("liaison schéma : extraction des composants et spécifications",()=>{
+  const mockSch={
+    format:"schemedit-2",
+    pages:[{
+      name:"Alimentation & MCU",
+      comps:[
+        {
+          id:1, type:"regulator", ref:"U2", value:"AMS1117-3.3", pkg:"SOT-223",
+          mpn:"AMS1117-3.3", manufacturer:"Advanced Monolithic Systems",
+          specs:{"Voltage - Output (Min/Fixed)":"3.3V", "Current - Output":"1A"},
+          pinNames:{"1":"GND","2":"VOUT","3":"VIN"}
+        },
+        {
+          id:2, type:"ic", ref:"U1", value:"STM32F103C8T6", pkg:"LQFP-48",
+          mpn:"STM32F103C8T6", manufacturer:"STMicroelectronics",
+          specs:{"Voltage-Supply":"3.3V", "Operating Current":"50mA", "Frequency":"72MHz"},
+          pinNames:{"1":"VBAT","8":"VSS","9":"VDD","10":"PA0"}
+        },
+        {
+          id:3, type:"resistor", ref:"R1", value:"22", pkg:"0805",
+          mpn:"RC0805FR-0722RL", manufacturer:"Yageo",
+          specs:{"Resistance":"22 Ω", "Tolerance":"±1%"}
+        },
+        {
+          id:4, type:"resistor", ref:"R2", value:"100", pkg:"0805",
+          mpn:"RC0805FR-07100RL", manufacturer:"Yageo",
+          specs:{"Resistance":"100 Ω", "Tolerance":"±1%"}
+        }
+      ]
+    }]
+  };
+  pcbDefinirSchema(mockSch);
+  const comps=pcbComposantsSchema();
+  if(comps.size!==4)throw new Error("composants incomplets : "+comps.size);
+  const u2=comps.get("U2");
+  if(!u2||u2.mpn!=="AMS1117-3.3")throw new Error("U2 non trouvé");
+  const spU2=pcbSpecsComposant(u2);
+  if(!spU2.estSource||spU2.voltOut!==3.3||spU2.courantSortie!==1.0)
+    throw new Error("spécifications U2 invalides : "+JSON.stringify(spU2));
+  const u1=comps.get("U1");
+  const spU1=pcbSpecsComposant(u1);
+  if(!spU1.estCharge||Math.abs(spU1.courant-0.05)>1e-6||spU1.frequence!==72e6)
+    throw new Error("spécifications U1 invalides : "+JSON.stringify(spU1));
+});
+
+T("simulation Chute DC : importation automatique des sources et charges du schéma",async ()=>{
+  // Mise en place de la carte PCB avec empreintes
+  S.fps=[];
+  S.tracks=[];
+  S.vias=[];
+  S.zones=[];
+  
+  // Empreinte U2 (Régulateur)
+  const fpU2=mkFp("U2","AMS1117-3.3","SOT-223",3);
+  fpU2.x=10; fpU2.y=10;
+  fpU2.nets={2:"+3.3V"}; // pin 2 = VOUT
+  S.fps.push(fpU2);
+  
+  // Empreinte U1 (MCU)
+  const fpU1=mkFp("U1","STM32F103C8T6","LQFP-48",10);
+  fpU1.x=40; fpU1.y=10;
+  fpU1.nets={9:"+3.3V"}; // pin 9 = VDD
+  S.fps.push(fpU1);
+
+  // Piste reliant U2 à U1 sur +3.3V
+  S.tracks.push({x1:10,y1:10,x2:40,y2:10,w:0.5,l:0,net:"+3.3V"});
+  
+  // Import automatique
+  const res=SIM_PCB.dcImporterSchema("+3.3V");
+  if(!res.ok)throw new Error("dcImporterSchema a échoué : "+res.erreur);
+  if(res.nSources!==1)throw new Error("nombre de sources attendu: 1, obtenu: "+res.nSources);
+  if(res.nCharges!==1)throw new Error("nombre de charges attendu: 1, obtenu: "+res.nCharges);
+
+  const bornes=SIM_DCB.bornes;
+  if(bornes.length!==2)throw new Error("bornes créées: "+bornes.length);
+  const src=bornes.find(b=>b.role==="source");
+  const chg=bornes.find(b=>b.role==="charge");
+  if(!src||src.valeur!==3.3||src.unite!=="V")
+    throw new Error("source invalide : "+JSON.stringify(src));
+  if(!chg||Math.abs(chg.valeur-0.05)>1e-6||chg.unite!=="mA")
+    throw new Error("charge invalide : "+JSON.stringify(chg));
+  if(chg.nom.indexOf("U1.9")<0)
+    throw new Error("nom de charge attendu U1.9 : "+chg.nom);
+});
+
+T("simulation EM - Crosstalk : amplitude (swing) et marge récepteur issues du schéma",()=>{
+  const info=SIM_PCB.schemaInfosCrosstalk("+3.3V");
+  if(info.swing!==3.3)throw new Error("swing attendu: 3.3, obtenu: "+info.swing);
+  if(info.marge!==400)throw new Error("marge attendue: 400, obtenu: "+info.marge);
+  if(info.driver.indexOf("U1")<0&&info.driver.indexOf("U2")<0)
+    throw new Error("driver non identifié: "+info.driver);
+});
+
+T("simulation EM - Impédance : détection résistance adaptation série et calcul réflexion",()=>{
+  // Empreinte R1 (22 ohms) sur la liaison
+  const fpR1=mkFp("R1","22","0805",2);
+  fpR1.nets={1:"SPI_SCK", 2:"SPI_SCK_IN"};
+  S.fps.push(fpR1);
+
+  const info=SIM_PCB.schemaInfosNet("SPI_SCK");
+  if(!info||info.rTerm!==22||info.rTermRef!=="R1")
+    throw new Error("R_term attendu: 22 Ω (R1), obtenu: "+JSON.stringify(info));
+
+  const mockRes={net:"SPI_SCK", ligne:{z0_moyen:50, retard:150e-12}};
+  const cardHtml=simFicheSchemaAdaptation(mockRes);
+  if(cardHtml.indexOf("22,0 Ω")<0&&cardHtml.indexOf("22 Ω")<0)
+    throw new Error("résistance absente de la carte adaptation : "+cardHtml);
+  if(cardHtml.indexOf("R<sub>s</sub> ≈ 42")<0&&cardHtml.indexOf("Rs ≈ 42")<0&&cardHtml.indexOf("42")<0)
+    throw new Error("Rs 42 ohm absent : "+cardHtml);
+});
+
+T("simulation EM - Z Différentielle : détection terminaison différentielle (R_term)",()=>{
+  // Empreinte R2 connectée entre USB_D+ et USB_D-
+  const fpR2=mkFp("R2","100","0805",2);
+  fpR2.nets={1:"USB_D+", 2:"USB_D-"};
+  S.fps.push(fpR2);
+
+  const diffInfo=SIM_PCB.schemaInfosDiff("USB_D+","USB_D-");
+  if(!diffInfo||diffInfo.rTerm!==100||diffInfo.ref!=="R2")
+    throw new Error("terminaison diff attendue: 100 Ω (R2), obtenu: "+JSON.stringify(diffInfo));
+});
+
+T("netlist & conflits : détection et nettoyage automatique des pistes de cuivre en conflit",()=>{
+  S.fps=[]; S.tracks=[]; S.vias=[]; S.zones=[];
+  // 1. Mise en place initiale avec une netlist
+  const nl1 = `=== Composants ===
+    U1      AMS1117       SOT-223
+=== Feuille 1 ===
+NET "+3.3V"
+    U1.2
+NET "GND"
+    U1.1
+`;
+  applyNetlist(nl1, false);
+  const u1 = S.fps.find(f => f.ref === "U1");
+  if (!u1 || u1.nets[2] !== "+3.3V" || u1.nets[1] !== "GND")
+    throw new Error("empreinte U1 mal initialisée");
+
+  // Router une piste connectée à la pastille 2 (alors sur +3.3V)
+  const p2 = padsWorld(u1).find(q => q.n === 2);
+  S.tracks.push({ x1: p2.x, y1: p2.y, x2: p2.x + 10, y2: p2.y, w: 0.5, l: 0, net: "+3.3V" });
+  if (S.tracks.length !== 1) throw new Error("piste non ajoutée");
+
+  // 2. Netlist modifiée (inversion pin 1 et pin 2 : U1.2 devient GND)
+  const nl2 = `=== Composants ===
+    U1      AMS1117       SOT-223
+=== Feuille 1 ===
+NET "+3.3V"
+    U1.1
+NET "GND"
+    U1.2
+`;
+  const res = applyNetlist(nl2, false);
+  if (!res.conflicts || res.conflicts.length !== 1)
+    throw new Error("conflit attendu: 1, obtenu: " + (res.conflicts ? res.conflicts.length : 0));
+  const conf = res.conflicts[0];
+  if (conf.ref !== "U1" || conf.pin !== 2 || conf.oldNet !== "+3.3V" || conf.newNet !== "GND")
+    throw new Error("détail du conflit invalide: " + JSON.stringify(conf));
+  if (conf.tracks.length !== 1)
+    throw new Error("piste en conflit non répertoriée");
+
+  // 3. Nettoyage assisté des pistes en conflit
+  const deleted = pcbNettoyerPistesConflits(res.conflicts);
+  if (deleted !== 1 || S.tracks.length !== 0)
+    throw new Error("la piste en conflit n'a pas été supprimée");
+});
+
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
 process.exit(ko?1:0);
+

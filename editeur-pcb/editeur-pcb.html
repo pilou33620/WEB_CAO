@@ -10,6 +10,8 @@
 <link rel="stylesheet" href="../commun/profils.css">
 <link rel="stylesheet" href="../commun/reperage.css">
 <link rel="stylesheet" href="../commun/simulation-em.css">
+<link rel="stylesheet" href="../commun/ia-assistant.css">
+<link rel="stylesheet" href="../commun/tactile.css">
 </head>
 <body>
 
@@ -20,12 +22,15 @@
     <button class="tb" data-cao-nav="composants" title="Chercher une référence — la carte reste dans l'onglet">⌕ Composants</button>
     <button class="tb" data-cao-nav="accueil" title="Page d'accueil">⌂ Accueil</button>
     <button class="tb" id="bProfil" data-cao-profil title="Utilisateur : panneaux, réglages et derniers documents lui appartiennent">👤 …</button>
+    <button class="tb tb-ia" id="bIaAssistant" title="Assistant IA technique — Gemma 4 31B (Google AI Studio)"><span class="ia-sparkle">✨</span> IA</button>
+    <button class="tb tb-tactile-indicator" id="bTactileToggle" title="Mode tactile (iPad / tablette)"><span class="tactile-dot"></span> 📱 Tactile</button>
     <div class="sep"></div>
     <button class="tb on" id="mSelect">Sélection <kbd>Échap</kbd></button>
     <button class="tb" id="mTrack">Piste <kbd>T</kbd></button>
     <button class="tb" id="mVia">Via <kbd>V</kbd></button>
     <button class="tb" id="mDiff" title="Router deux nets en paire différentielle : écart tenu, coudes couplés, vias en éventail">Paire diff. <kbd>P</kbd></button>
     <button class="tb" id="mZone">Zone cuivre <kbd>Z</kbd> <span class="car">▾</span></button>
+    <button class="tb" id="mSilk" title="Tracer un trait ou un rectangle de sérigraphie (F.SilkS / B.SilkS)">Sérigraphie <span class="car">▾</span> <kbd>S</kbd></button>
     <button class="tb" id="mEdge">Contour carte <kbd>E</kbd></button>
     <button class="tb" id="mErase">Découpe <kbd>X</kbd></button>
     <button class="tb" id="mMesure" title="Mesurer une distance : deux points, la cote et les deltas X/Y">Mesure <kbd>K</kbd></button>
@@ -116,6 +121,7 @@
       <span class="pnl-grip">⠿</span><span class="pnl-title">Empilage</span>
       <span class="pnl-acts">
         <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
         <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
         <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
       </span>
@@ -140,6 +146,7 @@
       <span class="pnl-grip">⠿</span><span class="pnl-title">Empilage physique</span>
       <span class="pnl-acts">
         <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
         <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
         <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
       </span>
@@ -158,6 +165,7 @@
       <span class="pnl-grip">⠿</span><span class="pnl-title">Propriétés</span>
       <span class="pnl-acts">
         <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
         <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
         <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
       </span>
@@ -170,6 +178,7 @@
       <span class="pnl-grip">⠿</span><span class="pnl-title">Nets &amp; composants</span>
       <span class="pnl-acts">
         <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
         <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
         <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
       </span>
@@ -196,11 +205,25 @@
       <span class="pnl-grip">⠿</span><span class="pnl-title">Simulation EM</span>
       <span class="pnl-acts">
         <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
         <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
         <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
       </span>
     </header>
     <div class="pnl-body" id="simPanneau"></div>
+  </section>
+
+  <section class="pnl" data-pnl="ia" data-title="Assistant IA">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">Assistant IA</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body" id="iaPanneau"></div>
   </section>
 
 </div>
@@ -249,5 +272,8 @@
 <script src="js/18-reperage.js"></script>
 <script src="js/19-simulation.js"></script>
 <script src="../commun/workspace.js"></script>
+<script src="../commun/ia-assistant.js"></script>
+<script src="../commun/tactile.js"></script>
+<script>if(typeof tactileInitialiser==="function")tactileInitialiser({outil:"pcb",hud:true});</script>
 </body>
 </html>

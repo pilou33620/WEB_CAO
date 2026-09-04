@@ -65,7 +65,7 @@ function wsDefault(){
      autres : deux comportements pour une même version. */
   out.floats=(L.floats||[]).slice();
   out.hidden=(L.hidden||[]).slice();
-  for(const id in L.panels)out.panels[id]=Object.assign({},L.panels[id]);
+  for(const id in L.panels)out.panels[id]=Object.assign({maximized:false},L.panels[id]);
   return out;
 }
 let WS=wsDefault();
@@ -120,6 +120,7 @@ function wsLoad(){
     const s=(d.panels&&d.panels[id])||{}, t=out.panels[id];
     if(isFinite(s.grow)&&s.grow>0)t.grow=+s.grow;
     t.collapsed=!!s.collapsed;
+    t.maximized=!!s.maximized;
     for(const pair of [["x",-100000],["y",0],["w",WS_MIN_FW],["h",WS_MIN_FH]])
       if(isFinite(s[pair[0]]))t[pair[0]]=Math.max(pair[1],+s[pair[0]]);
     if(WS_DOCKS.indexOf(s.last)>=0)t.last=s.last;
@@ -187,46 +188,68 @@ function wsApply(save){
     else dk.style.width=WS.docks[k]+"px";
     ids.forEach(function(id,i){
       const el=wsEl[id];
+      if(!el)return;
       if(i){
         const sp=document.createElement("div");
         sp.className="psplit";sp.dataset.dock=k;sp.dataset.i=String(i-1);
         sp.addEventListener("pointerdown",wsSplitDown);
         dk.appendChild(sp);
       }
-      el.classList.remove("floating");
+      el.classList.remove("floating","maximized");
       el.style.left=el.style.top=el.style.width=el.style.height="";
       el.style.zIndex="";
       el.style.flexGrow=String(WS.panels[id].grow);
       wsHandles(el,false);
+      const bMax=el.querySelector('.pnl-btn[data-act="maximize"]');
+      if(bMax){bMax.textContent="□";bMax.title="Plein écran";}
       dk.appendChild(el);
     });
   }
   /* --- panneaux flottants --- */
   WS.floats.forEach(function(id,i){
     const el=wsEl[id], p=WS.panels[id];
+    if(!el)return;
     el.classList.add("floating");
     el.style.flexGrow="";
-    p.x=Math.min(Math.max(0,p.x),Math.max(0,innerWidth-120));
-    p.y=Math.min(Math.max(0,p.y),Math.max(0,innerHeight-40));
-    el.style.left=Math.round(p.x)+"px";el.style.top=Math.round(p.y)+"px";
-    el.style.width=Math.round(p.w)+"px";
-    el.style.height=p.collapsed?"":Math.round(p.h)+"px";
-    el.style.zIndex=String(10+i);
-    wsHandles(el,true);
+    const bMax=el.querySelector('.pnl-btn[data-act="maximize"]');
+    if(p.maximized){
+      el.classList.add("maximized");
+      const ws=wsQ("ws").getBoundingClientRect();
+      el.style.left=Math.round(ws.left)+"px";
+      el.style.top=Math.round(ws.top)+"px";
+      el.style.width=Math.round(ws.width)+"px";
+      el.style.height=p.collapsed?"":Math.round(ws.height)+"px";
+      el.style.zIndex=String(25+i);
+      wsHandles(el,false);
+      if(bMax){bMax.textContent="⧉";bMax.title="Restaurer";}
+    }else{
+      el.classList.remove("maximized");
+      p.x=Math.min(Math.max(0,p.x),Math.max(0,innerWidth-120));
+      p.y=Math.min(Math.max(0,p.y),Math.max(0,innerHeight-40));
+      el.style.left=Math.round(p.x)+"px";el.style.top=Math.round(p.y)+"px";
+      el.style.width=Math.round(p.w)+"px";
+      el.style.height=p.collapsed?"":Math.round(p.h)+"px";
+      el.style.zIndex=String(10+i);
+      wsHandles(el,true);
+      if(bMax){bMax.textContent="□";bMax.title="Plein écran";}
+    }
     fl.appendChild(el);
   });
   /* --- panneaux masqués --- */
   for(const id of WS.hidden){
     const el=wsEl[id];
-    el.classList.remove("floating");
+    if(!el)continue;
+    el.classList.remove("floating","maximized");
     el.style.left=el.style.top=el.style.width=el.style.height="";
     el.style.zIndex="";
     wsHandles(el,false);
+    const bMax=el.querySelector('.pnl-btn[data-act="maximize"]');
+    if(bMax){bMax.textContent="□";bMax.title="Plein écran";}
     store.appendChild(el);
   }
   /* --- replié + poignées de dock --- */
   for(const id in WS.panels)
-    wsEl[id].classList.toggle("collapsed",!!WS.panels[id].collapsed);
+    if(wsEl[id])wsEl[id].classList.toggle("collapsed",!!WS.panels[id].collapsed);
   document.querySelectorAll(".gut[data-dock]").forEach(function(g){
     g.classList.toggle("off",!WS.order[g.dataset.dock].length);
   });
@@ -280,6 +303,19 @@ function wsHeadMove(e){
   }
   if(wsPlaceOf(id)==="float"){
     const p=WS.panels[id];
+    if(p.maximized){
+      p.maximized=false;
+      wsEl[id].classList.remove("maximized");
+      wsHandles(wsEl[id],true);
+      const bMax=wsEl[id].querySelector('.pnl-btn[data-act="maximize"]');
+      if(bMax){bMax.textContent="□";bMax.title="Plein écran";}
+      p.x=Math.max(0,Math.min(innerWidth-p.w,e.clientX-p.w/2));
+      p.y=Math.max(0,e.clientY-14);
+      wsDrag.dx=e.clientX-p.x;
+      wsDrag.dy=e.clientY-p.y;
+      wsEl[id].style.width=Math.round(p.w)+"px";
+      wsEl[id].style.height=p.collapsed?"":Math.round(p.h)+"px";
+    }
     p.x=e.clientX-wsDrag.dx;p.y=e.clientY-wsDrag.dy;
     wsEl[id].style.left=Math.round(p.x)+"px";
     wsEl[id].style.top=Math.round(p.y)+"px";
@@ -494,13 +530,23 @@ function wsToggleCollapse(id){
   WS.panels[id].collapsed=!WS.panels[id].collapsed;
   wsApply();
 }
+function wsToggleMaximize(id){
+  if(wsPlaceOf(id)!=="float")return;
+  const p=WS.panels[id];
+  p.maximized=!p.maximized;
+  wsApply();
+  if(p.maximized)wsHint("Panneau « "+wsEl[id].dataset.title+" » en plein écran.");
+  else wsHint("Panneau « "+wsEl[id].dataset.title+" » restauré.");
+}
 function wsToggleFloat(id){
   if(wsPlaceOf(id)==="float"){
+    WS.panels[id].maximized=false;
     const t=WS_DOCKS.indexOf(WS.panels[id].last)>=0?WS.panels[id].last:"dockR";
     wsMove(id,t);
     wsHint("Panneau « "+wsEl[id].dataset.title+" » rattaché à "+wsLabel(id)+".");
   }else{
     const r=wsEl[id].getBoundingClientRect(), p=WS.panels[id];
+    p.maximized=false;
     if(r.width>40){
       p.w=Math.max(WS_MIN_FW,Math.round(r.width));
       p.h=Math.max(WS_MIN_FH,Math.round(r.height));
@@ -511,6 +557,7 @@ function wsToggleFloat(id){
   }
 }
 function wsClose(id){
+  WS.panels[id].maximized=false;
   wsMove(id,"hidden");
   wsHint("Panneau « "+wsEl[id].dataset.title+" » fermé — le menu « Espace de travail » le rouvre.");
 }
@@ -527,7 +574,9 @@ function wsMenuBuild(){
   if(!m){m=document.createElement("div");m.id="wsMenu";document.body.appendChild(m);}
   let h='<div class="mtitle">Panneaux</div>';
   for(const id in WS.panels){
-    const el=wsEl[id], vis=wsPlaceOf(id)!=="hidden";
+    const el=wsEl[id];
+    if(!el)continue;
+    const vis=wsPlaceOf(id)!=="hidden";
     h+='<button class="mi'+(vis?"":" off")+'" data-tgl="'+id+'">'+
        '<span class="ck">'+(vis?"✓":"")+'</span>'+wsEsc(el.dataset.title)+
        '<span class="st">'+wsLabel(id)+'</span></button>';
@@ -590,16 +639,28 @@ function wsMenuOpen(){
     const id=el.dataset.pnl;
     wsEl[id]=el;
     const head=el.querySelector(".pnl-head");
-    head.addEventListener("pointerdown",wsHeadDown);
-    head.addEventListener("dblclick",function(ev){
-      if(ev.target.closest("button,select,input,label"))return;
-      wsToggleCollapse(id);
-    });
+    if(head){
+      head.addEventListener("pointerdown",wsHeadDown);
+      head.addEventListener("dblclick",function(ev){
+        if(ev.target.closest("button,select,input,label"))return;
+        wsToggleCollapse(id);
+      });
+      const acts=head.querySelector(".pnl-acts");
+      if(acts&&!acts.querySelector('[data-act="maximize"]')){
+        const btn=document.createElement("button");
+        btn.className="pnl-btn";btn.dataset.act="maximize";
+        btn.title="Plein écran";btn.textContent="□";
+        const bFloat=acts.querySelector('[data-act="float"]');
+        if(bFloat)acts.insertBefore(btn,bFloat);
+        else acts.appendChild(btn);
+      }
+    }
     el.querySelectorAll(".pnl-btn").forEach(function(b){
       b.onclick=function(ev){
         ev.stopPropagation();
         const a=b.dataset.act;
         if(a==="collapse")wsToggleCollapse(id);
+        else if(a==="maximize")wsToggleMaximize(id);
         else if(a==="float")wsToggleFloat(id);
         else if(a==="close")wsClose(id);
       };

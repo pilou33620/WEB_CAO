@@ -463,6 +463,92 @@ function drawSilk(c){
     if(S.scale>6&&fp.value)
       TXT(c,fp.value,tp.val.x,tp.val.y,tp.val.size,"#9aa3b0");
   }
+  /* traits de sérigraphie utilisateur */
+  if(S.drawings){
+    for(const d of S.drawings){
+      const top = d.layer !== "silkB";
+      if(top&&!S.show.silkT)continue;
+      if(!top&&!S.show.silkB)continue;
+      const sel = S.sel.drawings && S.sel.drawings.has(d.id);
+      c.save();
+      c.lineCap = "round";
+      c.lineJoin = "round";
+      const isRect = d.shape === "rect";
+      if(sel){
+        c.strokeStyle = C_SEL;
+        c.lineWidth = Math.max(d.width||0.15, px(2)) + px(3);
+        c.globalAlpha = 0.4;
+        if(isRect){
+          const rx=Math.min(d.x1,d.x2), ry=Math.min(d.y1,d.y2);
+          const rw=Math.abs(d.x2-d.x1), rh=Math.abs(d.y2-d.y1);
+          c.strokeRect(rx, ry, rw, rh);
+        }else{
+          c.beginPath();
+          c.moveTo(d.x1, d.y1);
+          c.lineTo(d.x2, d.y2);
+          c.stroke();
+        }
+      }
+      c.globalAlpha = S.hlNet ? 0.55 : 1;
+      c.strokeStyle = sel ? C_SEL : (top ? C_SILK_T : C_SILK_B);
+      c.lineWidth = Math.max(d.width || 0.15, px(1));
+      if(isRect){
+        const rx=Math.min(d.x1,d.x2), ry=Math.min(d.y1,d.y2);
+        const rw=Math.abs(d.x2-d.x1), rh=Math.abs(d.y2-d.y1);
+        c.strokeRect(rx, ry, rw, rh);
+      }else{
+        c.beginPath();
+        c.moveTo(d.x1, d.y1);
+        c.lineTo(d.x2, d.y2);
+        c.stroke();
+      }
+      if(sel){
+        c.fillStyle = C_SEL;
+        c.globalAlpha = 1;
+        const hr = px(3.5);
+        if(isRect){
+          c.fillRect(d.x1-hr, d.y1-hr, hr*2, hr*2);
+          c.fillRect(d.x2-hr, d.y1-hr, hr*2, hr*2);
+          c.fillRect(d.x2-hr, d.y2-hr, hr*2, hr*2);
+          c.fillRect(d.x1-hr, d.y2-hr, hr*2, hr*2);
+        }else{
+          c.beginPath(); c.arc(d.x1, d.y1, hr, 0, Math.PI*2); c.fill();
+          c.beginPath(); c.arc(d.x2, d.y2, hr, 0, Math.PI*2); c.fill();
+        }
+      }
+      c.restore();
+    }
+  }
+  /* prévisualisation du tracé de sérigraphie */
+  if(S.silkDraft){
+    c.save();
+    c.lineCap = "round";
+    c.lineJoin = "round";
+    const top = (S.flip || S.active === S.cu - 1) ? false : true;
+    c.strokeStyle = top ? C_SILK_T : C_SILK_B;
+    c.lineWidth = px(1.5);
+    c.setLineDash([px(4), px(3)]);
+    if(S.silkShape === "rect"){
+      const rx=Math.min(S.silkDraft.x1, S.silkDraft.x2), ry=Math.min(S.silkDraft.y1, S.silkDraft.y2);
+      const rw=Math.abs(S.silkDraft.x2 - S.silkDraft.x1), rh=Math.abs(S.silkDraft.y2 - S.silkDraft.y1);
+      c.strokeRect(rx, ry, rw, rh);
+      c.fillStyle = top ? C_SILK_T : C_SILK_B;
+      c.setLineDash([]);
+      const hr = px(3);
+      c.fillRect(S.silkDraft.x1-hr, S.silkDraft.y1-hr, hr*2, hr*2);
+      c.fillRect(S.silkDraft.x2-hr, S.silkDraft.y2-hr, hr*2, hr*2);
+    }else{
+      c.beginPath();
+      c.moveTo(S.silkDraft.x1, S.silkDraft.y1);
+      c.lineTo(S.silkDraft.x2, S.silkDraft.y2);
+      c.stroke();
+      c.fillStyle = top ? C_SILK_T : C_SILK_B;
+      c.setLineDash([]);
+      c.beginPath(); c.arc(S.silkDraft.x1, S.silkDraft.y1, px(3), 0, Math.PI*2); c.fill();
+      c.beginPath(); c.arc(S.silkDraft.x2, S.silkDraft.y2, px(3), 0, Math.PI*2); c.fill();
+    }
+    c.restore();
+  }
   c.globalAlpha=1;
 }
 function TXT(c,t,x,y,size,col){
@@ -750,7 +836,13 @@ function paint(c,dpr,w,h,noGrid){
      même rang que la carte d'impédance et pour la même raison — les deux
      jugent le tracé —, et jamais en même temps qu'elle : `simDCActif()` exige
      l'onglet DC, `simZActif()` l'onglet impédance. */
-  if(!noGrid&&typeof simDCTrace==="function")simDCTrace(c,S.active);
+  /* LA COUCHE PEINTE : celle que la fiche a choisie, sinon la couche ACTIVE
+     que cet outil propose. `simDCCouchePeinte` (module commun) tranche, et le
+     survol lit la MEME couche -- sans quoi la sonde rendrait la valeur d'une
+     couche que personne ne voit. */
+  if(!noGrid&&typeof simDCTrace==="function")
+    simDCTrace(c,(typeof simDCCoucheVoulue==="function")
+                   ?simDCCoucheVoulue():S.active);
   /* Le CHEVELU DU CHEMIN DE RETOUR : les vias de masse qui referment la boucle
      d'un via de signal sélectionné, et l'inductance qu'ils lui donnent
      (19-simulation.js). Il passe APRÈS les deux cartes de chaleur — il désigne

@@ -719,6 +719,326 @@ essai("deux references a des tensions differentes tiennent",
 
 
 # =============================================================================
+# LE CHEMIN QUI CHANGE DE COUCHE PLUSIEURS FOIS
+# -----------------------------------------------------------------------------
+# LA TOPOLOGIE REELLE D'UN RAIL D'ALIMENTATION, et c'est celle qu'on pose quand
+# on demande « est-ce que le changement de couche et les vias sont pris en
+# compte ? » :
+#
+#   connecteur sur un plan en COUCHE 1
+#     -> 3 vias qui plongent
+#   plan d'alimentation en COUCHE 3
+#     -> 5 vias repartis qui remontent
+#   pastille du composant en COUCHE 1
+#
+# CE QUE CES CAS PROUVENT, ET IL FAUT LES TROIS.
+#
+#   1. LE COURANT PASSE. Sans les vias montes, le plan de la couche 3 serait
+#      flottant et le solveur REFUSERAIT -- il ne rendrait pas un chiffre
+#      optimiste. Le calcul aboutit, donc les deux etages sont relies.
+#   2. LE COURANT SE PARTAGE, et le solveur dit comment. La somme des courants
+#      des vias d'un MEME etage vaut le courant total : c'est la loi des noeuds,
+#      et c'est ce qui permet de lire « le plus charge en prend 31 % » sans se
+#      raconter d'histoires. Les vias d'un etage sont en PARALLELE ; les deux
+#      etages, eux, sont en SERIE, et les sommer ensemble donnerait deux fois le
+#      courant -- c'est le piege que `simDesequilibreVias` evite en groupant par
+#      couple de couches.
+#   3. LA CHUTE COMPTE LES VIAS. Le meme rail avec 5 vias au retour et avec un
+#      seul ne rend pas la meme chose : la resistance de passage tombe comme le
+#      nombre de vias en parallele.
+# =============================================================================
+
+def _rail_deux_etages(retours=5, plonges=3, courant=3.0, pas=0.4,
+                      charges=1):
+    """Un rail a deux plans et deux etages de vias.
+
+    Quatre couches de cuivre : DEUX ILOTS en couche 0 -- la plage du
+    connecteur a gauche, celle du composant a droite -- et le plan
+    d'alimentation en couche 2. Les couches 1 et 3 ne portent rien, ce qui est
+    le cas ordinaire, et ce qui verifie au passage qu'un via ne s'accroche pas
+    a une couche vide.
+
+    DEUX ILOTS ET NON UN PLAN CONTINU, et c'est ce qui fait de ce cas un
+    ETALON. Avec du cuivre d'un bout a l'autre en couche 0, le courant a un
+    second chemin -- il reste en surface -- et la verticale ne porte plus qu'une
+    part qu'on ne sait pas poser a la main (mesure : 2,23 A sur 3). Coupes,
+    les deux ilots n'ont plus AUCUN chemin entre eux que les vias : la loi des
+    noeuds donne alors le total exactement, et c'est verifiable.
+
+    C'est aussi la topologie qu'on decrit quand on demande si le changement de
+    couche est pris en compte : le connecteur arrive en surface, plonge, court
+    dans le plan, et remonte au pad du composant.
+    """
+    L, W = 60.0, 30.0
+    polys = [
+        # la plage du connecteur, couche 0, a gauche
+        {"vertices": [[0, 0], [12.0, 0], [12.0, W], [0, W]],
+         "couche": 0, "net": "VDD", "epaisseur": 0.035},
+        # la plage du composant, couche 0, a droite
+        {"vertices": [[46.0, 0], [L, 0], [L, W], [46.0, W]],
+         "couche": 0, "net": "VDD", "epaisseur": 0.035},
+        # le plan d'alimentation, couche 2, d'un bout a l'autre
+        {"vertices": [[0, 0], [L, 0], [L, W], [0, W]],
+         "couche": 2, "net": "VDD", "epaisseur": 0.035},
+    ]
+    vias = []
+    # LES PLONGES, groupees a gauche sous le connecteur.
+    for i in range(plonges):
+        vias.append({"x": 5.0, "y": 8.0 + 5.0 * i, "couche_a": 0,
+                     "couche_b": 2, "percage": 0.3, "placage": 0.025,
+                     "hauteur": 0.8, "net": "VDD", "repere": "P%d" % (i + 1)})
+    # LES RETOURS, repartis a droite sous le composant.
+    for i in range(retours):
+        vias.append({"x": 52.0, "y": 6.0 + 4.0 * i, "couche_a": 2,
+                     "couche_b": 0, "percage": 0.3, "placage": 0.025,
+                     "hauteur": 0.8, "net": "VDD", "repere": "R%d" % (i + 1)})
+    part = courant / max(charges, 1)
+    return {
+        "format": "cao-sim-dc-1",
+        "polygones": polys,
+        "vias": vias,
+        # LE CONNECTEUR : la source, sur le plan de la couche 0, a gauche.
+        "references": [{"couche": 0, "net": "VDD", "tension": 3.3,
+                        "boite": [1.0, 5.0, 3.0, 25.0], "repere": "J1.1"}],
+        # LES CHARGES : sur le plan de la couche 0, a droite. Autant qu'on veut.
+        "sources": [{"couche": 0, "net": "VDD", "courant": -part,
+                     "boite": [57.0, 6.0 + 8.0 * j, 59.0, 12.0 + 8.0 * j],
+                     "repere": "U%d.1" % (j + 1)}
+                    for j in range(charges)],
+        "couches_externes": [0, 3],
+        "pas": pas,
+    }
+
+
+def _par_etage(res):
+    """Les courants des vias, groupes par COUPLE DE COUCHES.
+
+    C'est le seul groupement qui ait un sens : deux vias qui relient les memes
+    couches sont en PARALLELE et leurs courants s'additionnent ; deux etages
+    sont en SERIE et les sommer donnerait deux fois le courant.
+    """
+    out = {}
+    for v in res["vias"]:
+        if not v.get("relie"):
+            continue
+        cle = (min(v["couche_a"], v["couche_b"]),
+               max(v["couche_a"], v["couche_b"]))
+        out.setdefault(cle, []).append(abs(v["courant"]))
+    return out
+
+
+def cas_le_rail_traverse_deux_etages_de_vias():
+    """LE COURANT PASSE, ET IL SE PARTAGE. Loi des noeuds a chaque etage.
+
+    Huit vias, deux etages, un plan a chaque bout : le courant n'a AUCUN autre
+    chemin que la verticale. Si les vias n'etaient pas montes, le plan de la
+    couche 2 serait flottant et le solveur refuserait -- il ne rendrait pas un
+    chiffre trop beau.
+    """
+    r = resoudre_document(_rail_deux_etages())
+    etages = _par_etage(r)
+    assert len(etages) == 1, ("les vias ne relient pas tous le meme couple :"
+                              " %s" % sorted(etages))
+    courants = etages[(0, 2)]
+    assert len(courants) == 8, "%d via(s) montes au lieu de 8" % len(courants)
+    # LE COURANT TOTAL SE RETROUVE DEUX FOIS : une fois qui descend, une fois
+    # qui remonte, et chaque etage doit porter les trois amperes.
+    #
+    # PAS PAR LE SIGNE : il suit le sens couche_a -> couche_b, qui est une
+    # convention PAR VIA. Les plonges sont declarees 0->2 et les retours 2->0,
+    # donc les deux ressortent POSITIFS et les sommer par le signe rendait six
+    # amperes. On groupe par repere, qui dit a quel etage un via appartient.
+    descend = sum(abs(v["courant"]) for v in r["vias"]
+                  if v.get("relie") and v["repere"].startswith("P"))
+    remonte = sum(abs(v["courant"]) for v in r["vias"]
+                  if v.get("relie") and v["repere"].startswith("R"))
+    for nom, somme in (("descentes", descend), ("remontees", remonte)):
+        assert abs(somme - 3.0) / 3.0 < 0.01, ("%s : %.4f A au lieu de 3"
+                                               % (nom, somme))
+    # ET LE PARTAGE N'EST PAS EGAL : les vias du bord voient une resistance de
+    # plan differente de ceux du milieu, et c'est tout l'interet du chiffre.
+    retours = [abs(v["courant"]) for v in r["vias"]
+               if v.get("relie") and v["repere"].startswith("R")]
+    part = 100 * max(retours) / sum(retours)
+    assert 100.0 / len(retours) <= part < 60, (
+        "le plus charge en prend %.1f %%" % part)
+    return ("8 vias sur un couple de couches, %.4f A qui descendent et %.4f A"
+            " qui remontent, le plus charge en prend %.1f %% de son etage"
+            % (descend, remonte, part))
+
+
+def cas_doubler_les_vias_de_retour_fait_tomber_la_chute():
+    """LA RESISTANCE DE PASSAGE TOMBE COMME LE NOMBRE DE VIAS.
+
+    C'est la decision qu'on prend en lisant ce panneau : « faut-il en ajouter
+    un ? ». Avec UN seul via au retour, la chute doit etre nettement plus
+    grande qu'avec cinq -- et l'ecart doit valoir la resistance qu'on a
+    retiree, a la resistance des plans pres.
+    """
+    un = resoudre_document(_rail_deux_etages(retours=1))
+    cinq = resoudre_document(_rail_deux_etages(retours=5))
+    cu = un["bornes"][-1]["chute"]
+    cc = cinq["bornes"][-1]["chute"]
+    assert cu > cc, "un seul via ne coute rien : %.4f contre %.4f mV" % (
+        cu * 1e3, cc * 1e3)
+    # LA RESISTANCE D'UN VIA, posee a la main : rho*h/A avec A l'anneau plaque.
+    d, p, h = 0.3e-3, 0.025e-3, 0.8e-3
+    aire = math.pi * ((d / 2 + p) ** 2 - (d / 2) ** 2)
+    rv = RESISTIVITE_CUIVRE * h / aire
+    # De 5 en parallele a 1 : la resistance de PASSAGE monte de
+    # rv*(1 - 1/5) = 0,8*rv, soit 1,30 mV sous trois amperes.
+    plancher = 3.0 * rv * 0.8
+    ecart = cu - cc
+    # C'EST UN PLANCHER, PAS UNE EGALITE, et la difference est instructive :
+    # tout le courant du plan doit converger sur UN trou de 0,3 mm, et cette
+    # CONSTRICTION du cuivre coute plus que le tube lui-meme -- mesure, 2,98 mV
+    # la ou le tube seul en predit 1,30. C'est une seconde raison d'ajouter des
+    # vias, et celle qu'on ne calcule pas de tete : elle est dans la carte de
+    # densite, au droit du via.
+    assert ecart >= plancher, (
+        "l'ecart de chute vaut %.4f mV, moins que la resistance retiree"
+        " (%.4f mV) : le tube n'est pas compte"
+        % (ecart * 1e3, plancher * 1e3))
+    assert ecart < 6 * plancher, (
+        "l'ecart de chute vaut %.4f mV pour un plancher de %.4f : ce n'est"
+        " plus une constriction, c'est autre chose"
+        % (ecart * 1e3, plancher * 1e3))
+    return ("un via au retour : %.3f mV ; cinq : %.3f mV. L'ecart vaut"
+            " %.4f mV, dont %.4f pour le tube et le reste pour la"
+            " constriction du cuivre sur un seul trou"
+            % (cu * 1e3, cc * 1e3, ecart * 1e3, plancher * 1e3))
+
+
+def cas_plusieurs_charges_sur_un_rail_a_deux_etages():
+    """X SOURCES ET X CHARGES, sur un rail qui change deux fois de couche.
+
+    Le nombre de bornes n'est borne par rien : chacune est un point d'injection
+    ou de Dirichlet de plus. Ce que ce cas verifie, c'est que le TOTAL se
+    conserve quand on repartit le meme courant sur trois consommateurs -- et
+    que chacun voit sa propre chute, qui n'est pas celle du net.
+    """
+    r = resoudre_document(_rail_deux_etages(charges=3))
+    charges = [b for b in r["bornes"] if b["role"] == "courant"]
+    assert len(charges) == 3, "%d charge(s) rendues" % len(charges)
+    total = sum(abs(b["consigne"]) for b in charges)
+    assert abs(total - 3.0) < 1e-9, "consignes : %.6f A" % total
+    # LE COURANT DES VIAS VAUT TOUJOURS LE TOTAL : peu importe comment on le
+    # repartit entre les consommateurs, il passe par la meme verticale.
+    descend = sum(abs(v["courant"]) for v in r["vias"]
+                  if v.get("relie") and v["repere"].startswith("P"))
+    assert abs(descend - 3.0) / 3.0 < 0.01, "%.4f A descendus" % descend
+    # ET CHAQUE CHARGE A SA CHUTE : trois consommateurs a trois endroits ne
+    # voient pas la meme tension, et c'est la question posee au calcul.
+    chutes = sorted(b["chute"] for b in charges)
+    assert chutes[-1] > chutes[0], (
+        "les trois charges voient la meme chose : %s"
+        % [round(c * 1e3, 3) for c in chutes])
+    return ("3 charges, %.4f A descendus par les vias, chutes de %.3f a"
+            " %.3f mV" % (descend, chutes[0] * 1e3, chutes[-1] * 1e3))
+
+
+
+def _cul_de_sac(charge_au_bout=0.0):
+    """UN VIA QUI DESCEND VERS UNE PASTILLE ISOLEE.
+
+    Un rail va de la source a la charge en couche 0. Au milieu, un via descend
+    en couche 1 vers une pastille que RIEN d'autre ne touche. `charge_au_bout`
+    y pose ou non un consommateur.
+    """
+    doc = {
+        "format": "cao-sim-dc-1",
+        "polygones": [
+            {"vertices": [[0, 0], [40, 0], [40, 2], [0, 2]],
+             "couche": 0, "net": "VDD", "epaisseur": 0.035},
+            {"vertices": [[19, 0.4], [21, 0.4], [21, 1.6], [19, 1.6]],
+             "couche": 1, "net": "VDD", "epaisseur": 0.035},
+        ],
+        "vias": [{"x": 20, "y": 1, "couche_a": 0, "couche_b": 1,
+                  "percage": 0.3, "placage": 0.025, "hauteur": 0.2,
+                  "net": "VDD", "repere": "V_cul"}],
+        "sources": [{"couche": 0, "net": "VDD", "courant": -3.0,
+                     "boite": [39, 0, 40, 2], "repere": "U1"}],
+        "references": [{"couche": 0, "net": "VDD", "tension": 3.3,
+                        "boite": [0, 0, 1, 2], "repere": "J1"}],
+        "pas": 0.2,
+    }
+    if charge_au_bout:
+        doc["sources"].append({"couche": 1, "net": "VDD",
+                               "courant": -charge_au_bout,
+                               "boite": [19, 0.4, 21, 1.6], "repere": "U2"})
+    return doc
+
+
+def cas_un_cul_de_sac_ne_porte_aucun_courant():
+    """LA LOI, ET ELLE NE SE DISCUTE PAS.
+
+    Un morceau de cuivre relie au reste par UN SEUL chemin, et qui ne porte ni
+    source ni charge, ne peut porter aucun courant : ce qui entre doit sortir,
+    et il n'y a pas d'autre porte.
+
+    C'EST LA QUESTION QU'ON POSE DEVANT LA FICHE : « ce via remonte a une
+    pastille ou je n'ai regle aucune charge, pourquoi porte-t-il du courant ? ».
+    Il n'y a que deux reponses, et ce cas fixe laquelle est la bonne : sur un
+    VRAI cul-de-sac, le solveur rend ZERO. Un via qui porte du courant n'est
+    donc PAS un cul-de-sac -- le cuivre continue au-dela de la pastille.
+
+    Ce n'est pas la loi qu'on a resolue : on a resolu un systeme lineaire. La
+    verifier apprend donc quelque chose.
+    """
+    r = resoudre_document(_cul_de_sac())
+    v = r["vias"][0]
+    i = abs(v["courant"])
+    # LE SEUIL EST CELUI DU SOLVEUR. Le gradient conjugue s'arrete sur un
+    # residu relatif de 1e-12 ; on demande mieux qu'un microampere sur un rail
+    # de trois amperes, soit trois cents fois plus severe que « ca se voit ».
+    assert i < 1e-6, "le cul-de-sac porte %.4g A" % i
+    c = r["culs_de_sac"]
+    assert c["morceaux"] == 1, "%d cul(s)-de-sac vu(s)" % c["morceaux"]
+    assert c["noeuds"] > 10, "%d noeud(s) dans le cul-de-sac" % c["noeuds"]
+    assert not r["avertissements"], r["avertissements"]
+
+    # LE REVERS, ET C'EST LUI QUI PROUVE QUE LE ZERO N'EST PAS UN ZERO PAR
+    # OUBLI : la meme geometrie, une charge au bout, et le via porte TOUT son
+    # courant. Sans ce second controle, un solveur qui ignorerait ce via
+    # passerait le premier.
+    r2 = resoudre_document(_cul_de_sac(charge_au_bout=0.5))
+    i2 = abs(r2["vias"][0]["courant"])
+    assert abs(i2 - 0.5) / 0.5 < 0.01, (
+        "avec une charge de 0,5 A au bout, le via porte %.4f A" % i2)
+    assert r2["culs_de_sac"]["morceaux"] == 0, (
+        "une pastille qui porte une charge est comptee cul-de-sac")
+    return ("sans charge au bout : %.3g A (soit %.4g uA) ; avec 0,5 A au"
+            " bout : %.4f A" % (i, i * 1e6, i2))
+
+
+def cas_le_percage_repart_avec_le_via():
+    """LA SONDE A BESOIN DU DISQUE DU VIA, et le resultat doit le porter.
+
+    Sans le percage, la page devrait retrouver chaque via dans sa propre
+    geometrie et esperer que les deux listes soient encore dans le meme ordre.
+    Il repart en MILLIMETRES comme la position -- c'est une longueur.
+    """
+    r = resoudre_document(_rail_deux_etages())
+    for v in r["vias"]:
+        assert abs(v["percage"] - 0.3) < 1e-9, (
+            "percage rendu : %r mm" % v["percage"])
+    return "les 8 vias portent leur percage de 0,3 mm, en millimetres"
+
+
+print("\nLe chemin qui change de couche plusieurs fois")
+essai("un rail traverse deux etages de vias, et le courant se partage",
+      cas_le_rail_traverse_deux_etages_de_vias)
+essai("doubler les vias de retour fait tomber la chute, du bon montant",
+      cas_doubler_les_vias_de_retour_fait_tomber_la_chute)
+essai("X charges sur un rail a deux etages : le total se conserve",
+      cas_plusieurs_charges_sur_un_rail_a_deux_etages)
+essai("le percage repart avec chaque via, pour la sonde",
+      cas_le_percage_repart_avec_le_via)
+essai("un cul-de-sac ne porte aucun courant, et une charge au bout le remplit",
+      cas_un_cul_de_sac_ne_porte_aucun_courant)
+
+
+# =============================================================================
 # LA DENSITE DE COURANT, ET CE QU'ELLE ECHAUFFE
 # -----------------------------------------------------------------------------
 # LA CHUTE NE DIT PAS TOUT : une piste peut tenir sa chute et fondre quand meme,
@@ -728,7 +1048,7 @@ essai("deux references a des tensions differentes tiennent",
 # =============================================================================
 
 def _piste(L=40.0, W=2.0, ep=0.035, courant=3.0, externe=True, pas=0.1,
-           retrecissement=None):
+           retrecissement=None, thermique=None):
     """Une piste droite, alimentee d'un bout et tenue de l'autre, sur toute sa
     largeur : le probleme reste a une dimension."""
     polys = [{"vertices": [[0, 0], [L, 0], [L, W], [0, W]],
@@ -742,7 +1062,7 @@ def _piste(L=40.0, W=2.0, ep=0.035, courant=3.0, externe=True, pas=0.1,
         polys.append({"vertices": [[x0, W - marge], [x1, W - marge],
                                    [x1, W], [x0, W]],
                       "couche": 0, "net": "VDD", "epaisseur": ep, "trou": True})
-    return {
+    doc = {
         "format": "cao-sim-dc-1",
         "polygones": polys,
         "sources": [{"couche": 0, "net": "VDD", "courant": courant,
@@ -752,6 +1072,46 @@ def _piste(L=40.0, W=2.0, ep=0.035, courant=3.0, externe=True, pas=0.1,
         "couches_externes": [0] if externe else [],
         "pas": pas,
     }
+    if thermique is not None:
+        doc["thermique"] = thermique
+    return doc
+
+
+# LA CARTE NUE, POSEE UNE FOIS. C'est celle sur laquelle les etalons se
+# calculent a la main : 1,6 mm de FR-4 a 0,8 W/(m.K) dans le plan, h = 12
+# W/(m2.K) par face, et AUCUN cuivre etaleur. Les laisser au repli marcherait
+# aussi -- ce sont les memes valeurs -- mais un etalon qui depend d'un repli
+# cesse d'etre un etalon le jour ou le repli change.
+_NUE = {"k_stratifie": 0.8, "epaisseur_stratifie": 1.6, "h_surface": 12.0,
+        "cuivre_etaleur": 0.0}
+
+
+def _g_etalement(cuivre_etaleur=0.0, lamine=1.6, k=0.8, h=12.0):
+    """La conductance d'etalement de la carte, posee a la main, en W/(K.m).
+
+        Ks = k * h_lamine + 390 * t_cuivre        [W/K]
+        g  = 2 * sqrt(Ks * 2h)                    [W/(K.m)]
+
+    Deux ailettes semi-infinies, une de chaque cote du conducteur.
+    """
+    ks = k * (lamine * 1e-3) + 390.0 * (cuivre_etaleur * 1e-3)
+    return 2.0 * math.sqrt(ks * 2.0 * h)
+
+
+def _dt_etalement(courant, largeur_mm, ep_mm=0.035, externe=True,
+                  cuivre_etaleur=0.0, h=12.0):
+    """L'echauffement du modele d'etalement, pose a la main.
+
+        p' = I^2 rho / A          g = g_etalement (+ h*W si externe)
+        dT = u / (1 - alpha u)    u = p'/g
+    """
+    rho, alpha = 1.724e-8, 3.93e-3
+    a = (largeur_mm * 1e-3) * (ep_mm * 1e-3)
+    g = _g_etalement(cuivre_etaleur=cuivre_etaleur, h=h)
+    if externe:
+        g += h * (largeur_mm * 1e-3)
+    u = courant * courant * rho / (a * g)
+    return u / (1.0 - alpha * u)
 
 
 def cas_densite_est_le_calcul_a_la_main():
@@ -789,20 +1149,32 @@ def cas_un_retrecissement_concentre_le_courant():
     # densite est SINGULIERE, et le pic depend donc de la trame. C'est le cas
     # suivant qui s'en occupe.
     assert b < a * 4.0, "le col concentre trop : %.2f contre %.2f" % (b, a)
-    # LA TEMPERATURE, elle, doit tripler : la section est deux fois moindre, et
-    # IPC-2221 va en A^0,725 sous une racine 0,44 -- soit 2^(0,725/0,44) = 3,1.
+    # LA TEMPERATURE, elle, DOIT MONTER FRANCHEMENT -- et les deux modeles ne
+    # disent pas de combien, ce qui est tout leur interet.
+    #
+    #   · IPC-2221 va en A^0,725 sous une racine 0,44 : 2^(0,725/0,44) = 3,1.
+    #     Elle ne connait que la section, donc elle triple.
+    #   · l'ETALEMENT double, a peu de chose pres : la puissance par metre
+    #     double avec la section, et la carte evacue presque autant -- elle
+    #     perd juste le h*W de la face nue que le col n'a plus. C'est MOINS
+    #     alarmant, et c'est ce que la campagne IPC-2152 a mesure.
     ta = large["pire_par_net"]["VDD"]["echauffement"]
     tb = etroit["pire_par_net"]["VDD"]["echauffement"]
+    assert 1.9 < tb / ta < 2.3, (
+        "l'etalement fait x%.3f, hors de [1,9 ; 2,3]" % (tb / ta))
+    ca = large["pire_par_net"]["VDD"]["echauffement_ipc2221"]
+    cb = etroit["pire_par_net"]["VDD"]["echauffement_ipc2221"]
     attendu = 2.0 ** (0.725 / 0.44)
-    assert abs(tb / ta - attendu) / attendu < 0.02, (
-        "la temperature fait x%.3f au lieu de x%.3f" % (tb / ta, attendu))
+    assert abs(cb / ca - attendu) / attendu < 0.02, (
+        "la charte fait x%.3f au lieu de x%.3f" % (cb / ca, attendu))
     # La chute, elle, bouge a peine : c'est tout le propos.
-    ca = large["chute_par_net"]["VDD"]
-    cb = etroit["chute_par_net"]["VDD"]
-    assert cb < ca * 1.35, ("la chute suffirait a le voir : %.4f contre %.4f mV"
-                            % (cb * 1e3, ca * 1e3))
-    return ("densite x%.2f, temperature x%.2f (%.1f -> %.1f K), chute x%.2f"
-            " seulement" % (b / a, tb / ta, ta, tb, cb / ca))
+    da = large["chute_par_net"]["VDD"]
+    db = etroit["chute_par_net"]["VDD"]
+    assert db < da * 1.35, ("la chute suffirait a le voir : %.4f contre %.4f mV"
+                            % (db * 1e3, da * 1e3))
+    return ("densite x%.2f, etalement x%.2f (%.1f -> %.1f K), charte x%.2f,"
+            " chute x%.2f seulement"
+            % (b / a, tb / ta, ta, tb, cb / ca, db / da))
 
 
 def cas_echauffement_est_la_charte_ipc2221():
@@ -810,33 +1182,140 @@ def cas_echauffement_est_la_charte_ipc2221():
 
     On la repose ici a la main, avec les memes constantes, pour verifier que
     c'est bien CELLE-LA qui est appliquee -- et pas une formule voisine.
+
+    ELLE N'EST PLUS LE MODELE D'OFFICE, et le cas le verifie des deux cotes :
+    le tableau `echauffement_ipc2221` la porte toujours, et la demander
+    explicitement la met dans `echauffement`. Sans ce second controle, un
+    document qui demanderait la charte pourrait recevoir l'etalement sans que
+    rien ne le dise.
     """
-    r = resoudre_document(_piste())
-    p = r["pire_par_net"]["VDD"]
     section_mils2 = (2.0 * 0.035) / (0.0254 ** 2)
     attendu = (3.0 / (0.048 * section_mils2 ** 0.725)) ** (1.0 / 0.44)
+
+    p = resoudre_document(_piste())["pire_par_net"]["VDD"]
+    e = 100 * (p["echauffement_ipc2221"] - attendu) / attendu
+    assert abs(e) < 2.0, ("a cote : %.3f K contre %.3f attendu (%.2f %%)"
+                          % (p["echauffement_ipc2221"], attendu, e))
+
+    d = resoudre_document(_piste(thermique={"modele": "ipc2221"}))
+    q = d["pire_par_net"]["VDD"]
+    assert abs(q["echauffement"] - attendu) / attendu < 0.02, (
+        "demandee : %.3f K contre %.3f" % (q["echauffement"], attendu))
+    assert d["thermique"]["modele"] == "ipc2221", d["thermique"]["modele"]
+    assert "IPC-2221" in d["modele_thermique"], d["modele_thermique"]
+    return "%.2f K contre %.2f a la main (%.2f %%), des deux cotes" % (
+        p["echauffement_ipc2221"], attendu, e)
+
+
+def cas_echauffement_est_le_modele_d_etalement():
+    """dT = u / (1 - alpha u), avec u = p' / g. Pose a la main.
+
+    C'EST LE MODELE D'OFFICE, donc celui sur lequel on decide d'elargir une
+    piste : il doit tomber sur l'arithmetique, pas « a peu pres ». Les trois
+    termes se posent separement -- la conductance de nappe, les deux ailettes,
+    la face nue -- et la boucle en resistivite du cuivre par-dessus.
+    """
+    r = resoudre_document(_piste(thermique=_NUE))
+    p = r["pire_par_net"]["VDD"]
+    attendu = _dt_etalement(3.0, 2.0)
     e = 100 * (p["echauffement"] - attendu) / attendu
-    assert abs(e) < 2.0, ("%.3f K contre %.3f attendu (%.2f %%)"
+    assert abs(e) < 1.0, ("%.4f K contre %.4f attendu (%.2f %%)"
                           % (p["echauffement"], attendu, e))
-    return "%.2f K contre %.2f a la main (%.2f %%)" % (
-        p["echauffement"], attendu, e)
+    # LA LONGUEUR D'ETALEMENT est ce qui explique le chiffre, et elle repart en
+    # MILLIMETRES : sqrt(Ks / 2h) = sqrt(1,28e-3 / 24) = 7,3 mm.
+    th = r["thermique"]
+    assert abs(th["longueur_etalement"] - 7.30) < 0.05, (
+        "longueur d'etalement : %.3f mm" % th["longueur_etalement"])
+    assert th["modele"] == "etalement", th["modele"]
+    return ("%.4f K contre %.4f a la main (%.2f %%), etalement sur %.2f mm"
+            % (p["echauffement"], attendu, e, th["longueur_etalement"]))
+
+
+def cas_un_plan_de_cuivre_refroidit_et_la_charte_l_ignore():
+    """LE FACTEUR LE PLUS LOURD DE TOUT LE PROBLEME, ET IPC-2221 NE LE VOIT PAS.
+
+    Trente-cinq micrometres de cuivre pleine carte portent 390 * 35e-6 =
+    1,37e-2 W/K, contre 0,8 * 1,6e-3 = 1,28e-3 pour le stratifie : le plan
+    etale DIX FOIS mieux que la carte nue. La temperature doit tomber d'un
+    facteur trois, et la charte doit rendre EXACTEMENT le meme chiffre qu'avant
+    -- elle ne connait que la section.
+    """
+    nue = resoudre_document(_piste(thermique=_NUE))["pire_par_net"]["VDD"]
+    plan = dict(_NUE)
+    plan["cuivre_etaleur"] = 0.035
+    avec = resoudre_document(_piste(thermique=plan))["pire_par_net"]["VDD"]
+    attendu = _dt_etalement(3.0, 2.0, cuivre_etaleur=0.035)
+    e = 100 * (avec["echauffement"] - attendu) / attendu
+    assert abs(e) < 1.0, ("%.4f K contre %.4f a la main (%.2f %%)"
+                          % (avec["echauffement"], attendu, e))
+    rapport = nue["echauffement"] / avec["echauffement"]
+    assert rapport > 2.5, "le plan ne refroidit que d'un facteur %.2f" % rapport
+    assert abs(nue["echauffement_ipc2221"]
+               - avec["echauffement_ipc2221"]) < 1e-6, (
+        "la charte a bouge avec le plan : %.4f contre %.4f"
+        % (nue["echauffement_ipc2221"], avec["echauffement_ipc2221"]))
+    return ("carte nue %.2f K, avec un plan %.2f K (x%.2f) ; la charte reste a"
+            " %.2f K des deux cotes"
+            % (nue["echauffement"], avec["echauffement"], rapport,
+               nue["echauffement_ipc2221"]))
 
 
 def cas_une_couche_interne_chauffe_plus():
-    """IPC-2221 donne 0,024 a une couche interne contre 0,048 a l'exterieure.
+    """LES DEUX MODELES SE SEPARENT ICI, ET C'EST LE POINT DE 2152.
 
-    Le coefficient est au DENOMINATEUR : plus il est petit, plus la temperature
-    monte. Une interne doit donc ressortir plus chaude, et dans le rapport que
-    la charte impose -- 2^(1/0,44), soit environ 4,9.
+    IPC-2221 donne 0,024 a une couche interne contre 0,048 a l'exterieure. Le
+    coefficient est au DENOMINATEUR : une interne y ressort 2^(1/0,44) = 4,83
+    fois plus chaude. La seule facon d'ecarter deux couches autant est de
+    supposer que le stratifie n'evacue RIEN.
+
+    La campagne IPC-2152 a mesure le contraire : le lamine conduit mieux que
+    l'air calme, et une piste noyee est aussi bien refroidie -- a la face nue
+    pres, qu'elle n'a plus. Le modele d'etalement doit donc les rendre
+    VOISINES, quelques pour cent, et l'interne a peine plus chaude.
     """
-    ext = resoudre_document(_piste(externe=True))["pire_par_net"]["VDD"]
-    intr = resoudre_document(_piste(externe=False))["pire_par_net"]["VDD"]
-    rapport = intr["echauffement"] / ext["echauffement"]
+    ext = resoudre_document(_piste(externe=True,
+                                   thermique=_NUE))["pire_par_net"]["VDD"]
+    intr = resoudre_document(_piste(externe=False,
+                                    thermique=_NUE))["pire_par_net"]["VDD"]
+    charte = intr["echauffement_ipc2221"] / ext["echauffement_ipc2221"]
     attendu = 2.0 ** (1.0 / 0.44)
-    assert abs(rapport - attendu) / attendu < 0.02, (
-        "rapport %.3f au lieu de %.3f" % (rapport, attendu))
-    return ("interne %.2f K contre exterieure %.2f K, soit x%.2f"
-            % (intr["echauffement"], ext["echauffement"], rapport))
+    assert abs(charte - attendu) / attendu < 0.02, (
+        "charte : rapport %.3f au lieu de %.3f" % (charte, attendu))
+    etal = intr["echauffement"] / ext["echauffement"]
+    assert 1.0 < etal < 1.15, (
+        "etalement : rapport %.3f, hors de ]1 ; 1,15[" % etal)
+    # Et l'ecart doit valoir exactement la face nue qu'on a retiree.
+    attendu_int = _dt_etalement(3.0, 2.0, externe=False)
+    assert abs(intr["echauffement"] - attendu_int) / attendu_int < 0.01, (
+        "interne : %.4f K contre %.4f a la main"
+        % (intr["echauffement"], attendu_int))
+    return ("charte x%.2f (interne %.1f K contre %.1f K) ; etalement x%.3f"
+            " seulement (%.2f K contre %.2f K)"
+            % (charte, intr["echauffement_ipc2221"],
+               ext["echauffement_ipc2221"], etal,
+               intr["echauffement"], ext["echauffement"]))
+
+
+def cas_l_emballement_thermique_se_refuse_au_lieu_de_se_rendre():
+    """AU-DELA D'UN SEUIL, LE MODELE N'A PLUS DE SOLUTION, ET IL DOIT LE DIRE.
+
+    dT = u / (1 - alpha u) part a l'infini quand alpha u atteint 1 : la
+    resistivite du cuivre monte plus vite que la carte n'evacue. C'est un vrai
+    phenomene -- c'est ainsi qu'une piste fond --, mais un nombre rendu
+    au-dela de ce seuil n'est plus une temperature. On le BORNE, et le resultat
+    porte un avertissement : sans lui, le panneau afficherait « 4200 K » avec
+    le meme aplomb que « 6 K ».
+    """
+    # Une piste de 0,2 mm sous vingt amperes : rien ne tient.
+    r = resoudre_document(_piste(W=0.2, courant=20.0, pas=0.025,
+                                 thermique=_NUE))
+    p = r["pire_par_net"]["VDD"]
+    avert = " ".join(r["avertissements"])
+    assert "EMBALLEMENT" in avert, "aucun avertissement : %r" % avert
+    # Borne a u/(1-0,8), donc cinq fois la montee a froid, et pas plus.
+    assert p["echauffement"] < 1e5, "%.1f K rendu" % p["echauffement"]
+    return ("%.0f K borne, et l'avertissement le dit : %s"
+            % (p["echauffement"], avert[:56] + "..."))
 
 
 def cas_un_plan_large_ne_chauffe_pas():
@@ -869,13 +1348,38 @@ def cas_le_pire_point_est_localise():
 
 def cas_le_modele_thermique_se_nomme():
     """CE CHIFFRE N'EST PAS UNE SIMULATION THERMIQUE, et le resultat doit le
-    dire lui-meme : IPC-2221 est une charte relevee sur un conducteur ISOLE, et
-    IPC-2152 lui a succede. Un utilisateur qui lit « 40 K » sans savoir d'ou ca
-    vient ne peut pas juger si le chiffre le concerne."""
+    dire lui-meme : IPC-2221 est une charte relevee sur un conducteur ISOLE,
+    l'etalement est un modele a trois cotes, et ni l'un ni l'autre ne resout la
+    thermique de la carte. Un utilisateur qui lit « 40 K » sans savoir d'ou ca
+    vient ne peut pas juger si le chiffre le concerne.
+
+    LES COTES SONT DANS LA PHRASE, et c'est ce qui permet de la contester :
+    « 6 K parce que ton stratifie conduit 0,8 » se discute, « 6 K » ne se
+    discute pas. ET LES REPLIS AUSSI : une conductivite supposee et une
+    conductivite declaree ne rendent pas le meme chiffre lisible.
+    """
     r = resoudre_document(_piste())
     m = r.get("modele_thermique") or ""
-    assert "IPC-2221" in m, "le modele ne se nomme pas : %r" % m
-    assert "IPC-2152" in m, "le successeur n'est pas signale : %r" % m
+    assert "IPC-2152" in m, "la campagne n'est pas nommee : %r" % m
+    assert "IPC-2221" in m, "la charte n'est pas signalee : %r" % m
+    assert "Supposé" in m, "les replis ne sont pas dits : %r" % m
+    assert r["thermique"]["replis"], "aucun repli signale sur un document nu"
+    # LES COTES SONT DANS `thermique`, PAS DANS LA PHRASE, et c'est voulu : la
+    # page seule connait la virgule decimale francaise. Les poser des deux
+    # cotes les faisait paraitre deux fois dans la meme fiche, « 0.80 » puis
+    # « 0,80 ».
+    for cle in ("k_stratifie", "epaisseur_stratifie", "cuivre_etaleur",
+                "h_surface", "longueur_etalement"):
+        assert r["thermique"].get(cle) is not None, "%s manque" % cle
+    assert "0.80" not in m and "0,80" not in m, (
+        "la phrase porte encore les cotes : %r" % m)
+
+    # Tout donne : plus aucun repli a signaler.
+    plein = dict(_NUE)
+    plein["cuivre_etaleur"] = 0.035
+    d = resoudre_document(_piste(thermique=plein))
+    assert not d["thermique"]["replis"], d["thermique"]["replis"]
+    assert "Supposé" not in d["modele_thermique"], d["modele_thermique"]
     return m[:64] + "..."
 
 
@@ -916,24 +1420,35 @@ def cas_l_echauffement_lui_NE_BOUGE_PAS():
     ensemble -- meme geometrie, memes pas que le cas precedent, ou le pic
     variait de 38 pour cent.
     """
-    temperatures, largeurs = [], []
+    temperatures, chartes, largeurs = [], [], []
     for pas in (0.2, 0.1, 0.05):
-        r = resoudre_document(_piste(retrecissement=(19.0, 21.0, 1.0), pas=pas))
+        r = resoudre_document(_piste(retrecissement=(19.0, 21.0, 1.0), pas=pas,
+                                     thermique=_NUE))
         temperatures.append(r["pire_par_net"]["VDD"]["echauffement"])
+        chartes.append(r["pire_par_net"]["VDD"]["echauffement_ipc2221"])
         largeurs.append(r["pire_par_net"]["VDD"]["largeur_chaude"])
+    # LES DEUX MODELES SONT CONTROLES : ils lisent la MEME coupe, donc si le
+    # flux derivait avec la trame, les deux deriveraient ensemble.
+    for nom, serie in (("etalement", temperatures), ("charte", chartes)):
+        ecart = (max(serie) - min(serie)) / min(serie)
+        assert ecart < 0.01, ("%s : la temperature bouge de %.1f %% avec la"
+                              " trame : %s"
+                              % (nom, 100 * ecart, [round(t, 2) for t in serie]))
     ecart = (max(temperatures) - min(temperatures)) / min(temperatures)
-    assert ecart < 0.01, ("la temperature bouge de %.1f %% avec la trame : %s"
-                          % (100 * ecart, [round(t, 2) for t in temperatures]))
     # Et c'est bien la section du COL qui est vue, pas celle de la piste.
     for l in largeurs:
         assert abs(l - 1.0) < 0.11, "largeur chaude vue : %.3f mm" % l
     section_mils2 = (1.0 * 0.035) / (0.0254 ** 2)
-    attendu = (3.0 / (0.048 * section_mils2 ** 0.725)) ** (1.0 / 0.44)
+    charte = (3.0 / (0.048 * section_mils2 ** 0.725)) ** (1.0 / 0.44)
+    assert abs(chartes[0] - charte) / charte < 0.01, (
+        "charte : %.3f K contre %.3f a la main" % (chartes[0], charte))
+    attendu = _dt_etalement(3.0, 1.0)
     e = 100 * (temperatures[0] - attendu) / attendu
     assert abs(e) < 1.0, "%.3f K contre %.3f a la main" % (temperatures[0],
                                                            attendu)
-    return ("%.3f K aux trois pas (%.3f %% d'ecart), contre %.3f a la main"
-            % (temperatures[0], 100 * ecart, attendu))
+    return ("%.3f K aux trois pas (%.3f %% d'ecart), contre %.3f a la main ;"
+            " la charte, elle, en annonce %.1f"
+            % (temperatures[0], 100 * ecart, attendu, chartes[0]))
 
 
 print("\nLa densite de courant, et ce qu'elle echauffe")
@@ -941,14 +1456,20 @@ essai("la densite est le calcul a la main, I/(W t)",
       cas_densite_est_le_calcul_a_la_main)
 essai("un retrecissement concentre le courant la ou la chute ne le montre pas",
       cas_un_retrecissement_concentre_le_courant)
-essai("l'echauffement est bien la charte IPC-2221",
+essai("l'echauffement d'office est le modele d'etalement",
+      cas_echauffement_est_le_modele_d_etalement)
+essai("la charte IPC-2221 reste juste, a cote et sur demande",
       cas_echauffement_est_la_charte_ipc2221)
+essai("un plan de cuivre refroidit, et la charte ne le voit pas",
+      cas_un_plan_de_cuivre_refroidit_et_la_charte_l_ignore)
 essai("le pic de densite ne converge pas, et c'est la physique",
       cas_le_pic_de_densite_ne_converge_pas_et_c_est_normal)
 essai("l'echauffement, lui, ne bouge pas avec la trame",
       cas_l_echauffement_lui_NE_BOUGE_PAS)
-essai("une couche interne chauffe plus, et dans le rapport de la charte",
+essai("la charte ecarte les couches de 4,83, l'etalement les rapproche",
       cas_une_couche_interne_chauffe_plus)
+essai("l'emballement thermique se dit au lieu de se rendre",
+      cas_l_emballement_thermique_se_refuse_au_lieu_de_se_rendre)
 essai("un plan large ne chauffe pas", cas_un_plan_large_ne_chauffe_pas)
 essai("le pire point porte ses coordonnees", cas_le_pire_point_est_localise)
 essai("le modele thermique se nomme, et nomme son successeur",

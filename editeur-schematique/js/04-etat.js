@@ -8,14 +8,16 @@
    ========================================================================== */
 const S={
   pages:[], page:0,               // feuilles du document
-  comps:[], wires:[],             // contenu de la feuille active (références)
+  comps:[], wires:[], drawings:[], // contenu de la feuille active (références)
   sel:new Set(),                  // ids des composants sélectionnés
   selW:new Set(),                 // fils sélectionnés (références directes)
-  mode:"select",                  // select | wire | erase
+  selD:new Set(),                 // traits de dessin sélectionnés (ids ou références)
+  selBlock:null,                  // bloc hiérarchique sélectionné (index de la sous-feuille)
+  mode:"select",                  // select | wire | bus | erase | draw | mesure
   place:null,                     // type en cours de pose
   scale:1, ox:0, oy:0,
   showGrid:true,
-  wireStart:null, mouse:{x:0,y:0}, hoverPin:null,
+  wireStart:null, drawStart:null, drawShape:"line", mouse:{x:0,y:0}, hoverPin:null,
   drag:null, pan:null, marquee:null,
   uid:1, hist:[], redo:[],
   grid:G, gridShown:G,             // pas d'accrochage · pas réellement affiché
@@ -26,16 +28,22 @@ const HIST_MAX=60;
 // toute modification des fils invalide le cache des jonctions
 function touchWires(){S.wireVer++;}
 
-/* ---------- sélection mixte : composants (par id) + fils (par référence) ---------- */
-function clearSel(){S.sel.clear();S.selW.clear();}
+/* ---------- sélection mixte : composants (par id) + fils (par référence) + traits (par id) ---------- */
+function clearSel(){S.sel.clear();S.selW.clear();if(S.selD)S.selD.clear();S.selBlock=null;}
 function selEls(){return S.comps.filter(c=>S.sel.has(c.id));}
 function selWires(){return S.wires.filter(w=>S.selW.has(w));}
-function selCount(){return S.sel.size+selWires().length;}
-// un fil supprimé peut rester dans selW : on écarte les références mortes
+function selDrawings(){return (S.drawings||[]).filter(d=>S.selD.has(d.id||d));}
+function selCount(){return S.sel.size+selWires().length+(S.selD?S.selD.size:0);}
+// un fil ou trait supprimé peut rester dans selW/selD : on écarte les références mortes
 function pruneSel(){
-  if(!S.selW.size)return;
-  const live=new Set(S.wires);
-  for(const w of S.selW) if(!live.has(w)) S.selW.delete(w);
+  if(S.selW.size){
+    const live=new Set(S.wires);
+    for(const w of S.selW) if(!live.has(w)) S.selW.delete(w);
+  }
+  if(S.selD&&S.selD.size){
+    const liveD=new Set((S.drawings||[]).map(d=>d.id||d));
+    for(const d of S.selD) if(!liveD.has(d)) S.selD.delete(d);
+  }
 }
 const cv=document.getElementById("sheet"), ctx=cv.getContext("2d");
 
@@ -56,7 +64,36 @@ const cv=document.getElementById("sheet"), ctx=cv.getContext("2d");
    Pas de 20 px dans tous les cas, pour rester sur la grille. */
 const IC_STEP=20;                    // pas de la grille des symboles
 const IC_QUAD_MIN=4;                 // au moins une broche par côté
-function icCount(el){return Math.max(2,Math.min(64,Math.round((el&&el.npins)||8)));}
+function icCount(el){
+  if(!el)return 8;
+  if(Number.isFinite(el.npins))return Math.max(1,Math.min(64,Math.round(el.npins)));
+  if(Array.isArray(el.pinPos)&&el.pinPos.length)return Math.max(1,Math.min(64,el.pinPos.length));
+  const cnt=pinCount(el);
+  if(cnt>0)return Math.max(1,Math.min(64,cnt));
+  return 8;
+}
+function icAutoBody(pins){
+  let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
+  if(pins&&pins.length){
+    for(const p of pins){
+      x1=Math.min(x1,p[0]);y1=Math.min(y1,p[1]);
+      x2=Math.max(x2,p[0]);y2=Math.max(y2,p[1]);
+    }
+  }else{
+    x1=-40;y1=-40;x2=40;y2=40;
+  }
+  let bx1=icStep(x1+IC_STEP), bx2=icStep(x2-IC_STEP);
+  let by1=icStep(y1+IC_STEP), by2=icStep(y2-IC_STEP);
+  if(bx2-bx1<2*IC_STEP){
+    const cx=icStep((x1+x2)/2);
+    bx1=cx-IC_STEP;bx2=cx+IC_STEP;
+  }
+  if(by2-by1<2*IC_STEP){
+    const cy=icStep((y1+y2)/2);
+    by1=cy-IC_STEP;by2=cy+IC_STEP;
+  }
+  return {x1:bx1,y1:by1,x2:bx2,y2:by2};
+}
 /* Disposition libre exploitable, ou null : un fichier peut arriver avec un
    tableau de la mauvaise longueur, on retombe alors sur la forme rectangulaire. */
 function icFree(el){
@@ -226,8 +263,10 @@ function icAutoPkg(el){
   return "DIP-"+n;
 }
 function pinsOf(el){
+  if(!el)return [];
+  if(Array.isArray(el.pinPos)&&el.pinPos.length)return el.pinPos;
   const p=defOf(el.type).pins;
-  return typeof p==="function"?p(el):p;
+  return typeof p==="function"?p(el):(p||[]);
 }
 const CS={0:[1,0],90:[0,1],180:[-1,0],270:[0,-1]};
 function orient(el){                     // les annotations ignorent rotation et miroir

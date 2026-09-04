@@ -113,6 +113,12 @@ class PadStackDefinition:
     # simulation la fait entrer dans la capacité du via, le contrôle
     # d'isolation mesure des distances contre elle.
     pad_supposee: bool = False
+    # LE CALQUE DE PERCAGE QUE CE PADSTACK DESIGNE. C'est <LayerHole
+    # layerRef="..."> : le padstack ne dit pas lui-meme entre quelles couches
+    # son trou court, il RENVOIE au calque DRILL, et c'est ce calque qui porte
+    # le <Span>. Sans ce chainon, la portee d'un via se perd des que le trou est
+    # decouvert par le padstack plutot que par le calque.
+    hole_layer_ref: str = ""
 
 
 @dataclass
@@ -135,8 +141,37 @@ class Drill:
     padstack_ref: str     # Référence vers la définition
     net_name: str = ""
 
+    # ==================================================================
+    # LA PORTÉE DU PERÇAGE — ENTRE QUELLES COUCHES IL COURT
+    # ------------------------------------------------------------------
+    # POURQUOI ELLE COMPTE, ET DES DEUX CÔTÉS. Un trou pris pour traversant
+    # alors qu'il est borgne est modélisé PLUS LONG qu'il n'est : sa
+    # résistance ressort surestimée dans le solveur DC — l'erreur du côté
+    # prudent — mais surtout il RELIE des couches qu'il ne relie pas, ce qui
+    # invente un chemin de courant. Et pour le contrôle du chemin de retour,
+    # l'erreur penche du côté qui rassure : un via enterré compté comme
+    # traversant fait passer pour refermée une boucle qui ne l'est pas.
+    #
+    # OÙ ELLE SE LIT. IPC-2581 ne la met pas sur le trou : elle est sur le
+    # CALQUE de perçage, `<Layer layerFunction="DRILL"><Span fromLayer="..."
+    # toLayer="..."/></Layer>`. Le perçage y renvoie par son `layerRef`, le
+    # padstack par le `layerRef` de son `<LayerHole>`.
+    #
+    # VIDE VEUT DIRE « LE FICHIER NE LE DIT PAS », et non « traversant » :
+    # tout ce qui s'en sert doit alors le supposer ET LE DIRE. Les deux
+    # cas ne se confondent pas — `span_source` les distingue.
+    # ==================================================================
+    span_from: str = ""      # nom de la couche de départ, tel que déclaré
+    span_to: str = ""        # nom de la couche d'arrivée
+    span_source: str = ""    # "calque", "padstack", ou "" (non déclarée)
+
     # Référence vers l'objet définition pour calculs (anneaux)
     padstack_obj: Optional[PadStackDefinition] = None
+
+    @property
+    def span_declaree(self) -> bool:
+        """La portée vient-elle du fichier ?"""
+        return bool(self.span_from and self.span_to and self.span_source)
 
     @property
     def annular_ring(self) -> float:

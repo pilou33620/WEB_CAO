@@ -180,8 +180,11 @@ class ClientMCP:
                 # Session perimee : on repart de zero une fois.
                 if exc.code in (400, 404) and self.session_id:
                     self.session_id, self._pret = None, False
-                    self._initialiser()
-                    return self._envoyer(charge)
+                    try:
+                        self._initialiser()
+                        return self._envoyer(charge)
+                    except urllib.error.HTTPError as re_exc:
+                        exc = re_exc
                 raise ErreurPasserelle(
                     exc.code, "pcbparts.dev a repondu %d : %s"
                               % (exc.code, getattr(exc, "corps", "")))

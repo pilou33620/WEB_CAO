@@ -45,7 +45,10 @@ Cle par cle, le dictionnaire produit :
     plans       {c, n, f, g: [{o, t}]} -- zones de cuivre remplies
     textes      {c, x, y, r (rotation), m (miroir), t}
     percages    {x, y, d (diametre), p (metallise), ps (padstack), n, a (anneau),
-                 a_sup (l'anneau vient d'une pastille devinee, pas du fichier)}
+                 a_sup (l'anneau vient d'une pastille devinee, pas du fichier),
+                 sa / sb (portee : rangs des couches de depart et d'arrivee,
+                 ABSENTS quand le fichier ne la declare pas), ss (d'ou elle
+                 vient : "calque" ou "padstack")}
     pads        pastilles libres : {x, y, r, m, ps, pin, n}
     composants  {ref, pkg, c, x, y, r, m, mnt, val, tol, pads, pins}
     padstacks   definitions : {trou, pad, pads: [{c, d, f (forme), a (antipad)}]}
@@ -139,6 +142,20 @@ class _Index:
             self._rang[nom] = len(self.noms)
             self.noms.append(nom)
         return self._rang[nom]
+
+    def rang_connu(self, nom):
+        """Rang du nom, ou -1 -- SANS L'AJOUTER.
+
+        POURQUOI LES DEUX EXISTENT. `rang` sert a enregistrer ce qu'on a vu :
+        une couche de serigraphie rencontree dans les features doit entrer dans
+        le tableau. Mais une REFERENCE vers une couche -- la portee d'un
+        percage, par exemple -- ne cree pas de couche : si « TOP » n'est pas
+        dans l'empilage, c'est que le fichier nomme ses couches autrement, et
+        l'ajouter fabriquerait un calque fantome que la visionneuse afficherait
+        vide. Rendre -1 laisse l'appelant dire « portee non resolue », ce qui
+        est la verite.
+        """
+        return self._rang.get((nom or "").strip(), -1)
 
 
 def _forme_en_dict(forme):
@@ -247,6 +264,20 @@ def design_en_dict(design: IPCDesign, fichier: str = "") -> dict:
         rang = nets.rang(trou.net_name)
         if rang >= 0:
             item["n"] = rang
+        # LA PORTEE DU PERCAGE, EN RANGS DE COUCHE. Elle ne part QUE si les deux
+        # bouts se resolvent sur des couches connues ET DIFFERENTES : une
+        # portee a moitie resolue vaudrait moins que rien -- la visionneuse la
+        # prendrait pour une declaration et bornerait le via sur une seule
+        # couche, ce qui coupe un chemin de courant reel --, et une portee
+        # d'une seule couche ne decrit aucun via. Absente, elle veut dire « le
+        # fichier ne le dit pas », et l'outil suppose traversant EN LE DISANT.
+        if trou.span_declaree:
+            a = couches.rang_connu(trou.span_from)
+            b = couches.rang_connu(trou.span_to)
+            if a >= 0 and b >= 0 and a != b:
+                item["sa"] = a
+                item["sb"] = b
+                item["ss"] = trou.span_source
         anneau = trou.annular_ring
         if anneau:
             item["a"] = _r(anneau)
@@ -398,6 +429,11 @@ def charger_octets(data: bytes, nom: str = "") -> IPCDesign:
         # Le plus gros : une archive de fabrication contient parfois un petit
         # fichier d'index a cote du modele, et c'est le modele qu'on veut.
         choix = max(candidats, key=lambda i: i.file_size)
+        MAX_DECOMPRESSE = 200 * 1024 * 1024  # 200 Mo max
+        if choix.file_size > MAX_DECOMPRESSE:
+            raise IPC2581ParseError(
+                "Le fichier IPC-2581 dans l'archive depasse la taille maximale autorisee (%d Mo)."
+                % (MAX_DECOMPRESSE // (1024 * 1024)))
         interne = choix.filename
         data = archive.read(choix)
 

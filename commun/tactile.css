@@ -1,0 +1,184 @@
+/* ==========================================================================
+   WEB_CAO -- Styles du Mode Tactile (iPad Pro / tablettes / écrans tactiles)
+   Module commun aux éditeurs et à la visionneuse.
+   ========================================================================== */
+
+/* 1. Comportement des canevas en mode tactile : aucun geste navigateur parasite */
+body.mode-tactile canvas,
+body.mode-tactile #canvasWrap,
+body.mode-tactile #cvBox {
+  touch-action: none !important;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 2. Cibles tactiles confortables sur les barres d'outils et sélecteurs */
+body.mode-tactile header .tools {
+  gap: 4px;
+}
+
+body.mode-tactile header .tb,
+body.mode-tactile header .tbsel,
+body.mode-tactile .pnl-btn {
+  min-height: 38px;
+  padding: 6px 11px;
+  font-size: 13px;
+}
+
+body.mode-tactile .tbsel {
+  min-height: 38px;
+  line-height: 24px;
+}
+
+/* 3. Bouton indicateur de mode tactile dans les entêtes */
+.tb-tactile-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--panel2, #1c1e22);
+  border: 1px solid var(--border2, #3a3e46);
+  border-radius: 4px;
+  color: var(--txt-dim, #8b919c);
+  cursor: pointer;
+  padding: 4px 9px;
+  font-size: 11px;
+  transition: all 0.15s ease;
+}
+
+.tb-tactile-indicator.on {
+  border-color: var(--blue, #3fa0ea);
+  color: var(--txt, #e6e8ec);
+  background: rgba(63, 160, 234, 0.15);
+}
+
+.tb-tactile-indicator .tactile-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #555;
+}
+
+.tb-tactile-indicator.on .tactile-dot {
+  background: var(--blue, #3fa0ea);
+  box-shadow: 0 0 6px var(--blue, #3fa0ea);
+}
+
+/* 4. Barre d'actions rapides tactile flottante (HUD) */
+#tactileHud {
+  position: fixed;
+  bottom: 34px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(20, 22, 26, 0.94);
+  border: 1px solid rgba(63, 160, 234, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65), 0 2px 6px rgba(0, 0, 0, 0.4);
+  border-radius: 30px;
+  padding: 6px 10px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  user-select: none;
+  touch-action: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+#tactileHud.replie .hud-btn:not(.hud-toggle) {
+  display: none;
+}
+
+#tactileHud.replie {
+  border-radius: 20px;
+  padding: 4px 8px;
+}
+
+/* Boutons individuels du HUD */
+.hud-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 44px;
+  padding: 2px 8px;
+  border: 1px solid #333842;
+  border-radius: 22px;
+  background: #181a1f;
+  color: #e6e8ec;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: all 0.12s ease;
+  position: relative;
+}
+
+.hud-btn .hud-icon {
+  font-size: 16px;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.hud-btn .hud-lbl {
+  font-size: 9px;
+  line-height: 1;
+  color: #8b919c;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hud-btn:active,
+.hud-btn.active {
+  background: #2b7fbf;
+  border-color: #3fa0ea;
+  color: #fff;
+  transform: scale(0.96);
+}
+
+.hud-btn:active .hud-lbl,
+.hud-btn.active .hud-lbl {
+  color: #fff;
+}
+
+.hud-btn.hud-danger:active {
+  background: #c9342c;
+  border-color: #e8443a;
+}
+
+.hud-btn.hud-toggle {
+  min-width: 34px;
+  height: 34px;
+  border-radius: 17px;
+  background: #131417;
+  border-color: #2b2e34;
+}
+
+.hud-sep {
+  width: 1px;
+  height: 28px;
+  background: #2b2e34;
+  margin: 0 2px;
+}
+
+/* Rétroaction visuelle lors d'un appui long */
+.longpress-ripple {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--blue, #3fa0ea);
+  background: rgba(63, 160, 234, 0.25);
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.2);
+  animation: tactileRipple 0.5s ease-out forwards;
+  z-index: 9999;
+}
+
+@keyframes tactileRipple {
+  0% { transform: translate(-50%, -50%) scale(0.2); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; }
+}

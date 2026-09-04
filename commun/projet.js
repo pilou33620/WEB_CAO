@@ -141,6 +141,18 @@ function projOuvrir(brut){
   const v = projNomValide(brut);
   if(!v) return "";
   const p = projCharger();
+  const ancien = p.nom;
+  if(!projMemeNom(ancien, v)){
+    try{
+      if(typeof sessEffacer === "function"){
+        sessEffacer("schema");
+        sessEffacer("pcb");
+      }else if(typeof window !== "undefined" && window.sessionStorage){
+        window.sessionStorage.removeItem("cao.session.v1.schema");
+        window.sessionStorage.removeItem("cao.session.v1.pcb");
+      }
+    }catch(_){}
+  }
   p.nom = v;
   p.liste = p.liste.filter(e => !projMemeNom(e.nom, v));
   p.liste.unshift({nom:v, t:Date.now()});
@@ -153,6 +165,15 @@ function projOuvrir(brut){
    simplement plus celui sur lequel on travaille. */
 function projFermer(){
   const p = projCharger();
+  try{
+    if(typeof sessEffacer === "function"){
+      sessEffacer("schema");
+      sessEffacer("pcb");
+    }else if(typeof window !== "undefined" && window.sessionStorage){
+      window.sessionStorage.removeItem("cao.session.v1.schema");
+      window.sessionStorage.removeItem("cao.session.v1.pcb");
+    }
+  }catch(_){}
   p.nom = "";
   projEnregistrer();
   projSignaler();
@@ -165,7 +186,18 @@ function projOublier(brut){
   const p = projCharger();
   const avant = p.liste.length;
   p.liste = p.liste.filter(e => !projMemeNom(e.nom, v));
-  if(projMemeNom(p.nom, v)) p.nom = "";
+  if(projMemeNom(p.nom, v)){
+    p.nom = "";
+    try{
+      if(typeof sessEffacer === "function"){
+        sessEffacer("schema");
+        sessEffacer("pcb");
+      }else if(typeof window !== "undefined" && window.sessionStorage){
+        window.sessionStorage.removeItem("cao.session.v1.schema");
+        window.sessionStorage.removeItem("cao.session.v1.pcb");
+      }
+    }catch(_){}
+  }
   projEnregistrer();
   projSignaler();
   return p.liste.length !== avant;

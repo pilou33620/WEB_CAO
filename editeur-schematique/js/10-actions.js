@@ -124,12 +124,17 @@ function resetTexts(els){
 function rotateSel(){transformSel(el=>{el.rot=((((el.rot|0)+90)%360)+360)%360;});}
 function mirrorSel(){transformSel(el=>{el.mir=!el.mir;});}
 function dupSel(){
-  const els=selEls(), wires=selWires();
-  if(!els.length&&!wires.length)return;
+  const els=selEls(), wires=selWires(), drawings=selDrawings();
+  if(!els.length&&!wires.length&&!drawings.length)return;
   push();
   const copies=wires.map(w=>{
     const c={x1:w.x1+40,y1:w.y1+40,x2:w.x2+40,y2:w.y2+40};
     if(w.net)c.net=w.net;          // même nom = même net, la copie reste raccordée
+    return c;
+  });
+  const copyDrawings=drawings.map(d=>{
+    const c=JSON.parse(JSON.stringify(d));
+    c.id=S.uid++;c.x1+=40;c.y1+=40;c.x2+=40;c.y2+=40;
     return c;
   });
   clearSel();
@@ -140,18 +145,24 @@ function dupSel(){
     S.comps.push(n);S.sel.add(n.id);
   }
   for(const w of copies){S.wires.push(w);S.selW.add(w);}
+  for(const d of copyDrawings){S.drawings.push(d);S.selD.add(d.id);}
   if(copies.length)touchWires();
   refreshPanels();draw();
 }
 function delSel(){
-  const wires=selWires();
-  if(!S.sel.size&&!wires.length)return;
+  const wires=selWires(), drawings=selDrawings();
+  if(!S.sel.size&&!wires.length&&!drawings.length)return;
   push();
   if(S.sel.size)deleteComps([...S.sel]);
   if(wires.length){
     // suppression en place : la feuille garde la même référence de tableau
     for(let i=S.wires.length-1;i>=0;i--) if(S.selW.has(S.wires[i])) S.wires.splice(i,1);
     S.selW.clear();touchWires();
+  }
+  if(drawings.length){
+    for(let i=S.drawings.length-1;i>=0;i--)
+      if(S.selD.has(S.drawings[i].id)||S.selD.has(S.drawings[i])) S.drawings.splice(i,1);
+    S.selD.clear();
   }
   refreshPanels();draw();
 }
@@ -177,10 +188,15 @@ function delWiresSel(){
   refreshPanels();draw();
 }
 function fit(){
-  if(!S.comps.length&&!S.wires.length){S.scale=1;S.ox=cv.clientWidth/2;S.oy=cv.clientHeight/2;draw();return;}
+  const blocks=(S.page===0&&typeof sheetBlocks==="function")?sheetBlocks():[];
+  if(!S.comps.length&&!S.wires.length&&(!S.drawings||!S.drawings.length)&&!blocks.length){
+    S.scale=1;S.ox=cv.clientWidth/2;S.oy=cv.clientHeight/2;draw();return;
+  }
   let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
   for(const el of S.comps){const b=bbox(el);x1=Math.min(x1,b.x1);y1=Math.min(y1,b.y1);x2=Math.max(x2,b.x2);y2=Math.max(y2,b.y2);}
   for(const w of S.wires){x1=Math.min(x1,w.x1,w.x2);y1=Math.min(y1,w.y1,w.y2);x2=Math.max(x2,w.x1,w.x2);y2=Math.max(y2,w.y1,w.y2);}
+  for(const d of (S.drawings||[])){x1=Math.min(x1,d.x1,d.x2);y1=Math.min(y1,d.y1,d.y2);x2=Math.max(x2,d.x1,d.x2);y2=Math.max(y2,d.y1,d.y2);}
+  for(const sb of blocks){x1=Math.min(x1,sb.x);y1=Math.min(y1,sb.y);x2=Math.max(x2,sb.x+sb.w);y2=Math.max(y2,sb.y+sb.h);}
   const pad=60, W=cv.clientWidth, H=cv.clientHeight;
   S.scale=Math.max(.25,Math.min(2.5,Math.min(W/(x2-x1+pad*2),H/(y2-y1+pad*2))));
   S.ox=W/2-(x1+x2)/2*S.scale;S.oy=H/2-(y1+y2)/2*S.scale;
@@ -225,11 +241,12 @@ function setGridStep(v){
 const CLIP_KEY="schemedit.clipboard";
 let CLIP=null;
 function clipContent(){
-  const els=selEls(), wires=selWires();
-  if(!els.length&&!wires.length)return null;
+  const els=selEls(), wires=selWires(), drawings=selDrawings();
+  if(!els.length&&!wires.length&&!drawings.length)return null;
   let x=1e9,y=1e9;
   for(const el of els){x=Math.min(x,el.x);y=Math.min(y,el.y);}
   for(const w of wires){x=Math.min(x,w.x1,w.x2);y=Math.min(y,w.y1,w.y2);}
+  for(const d of drawings){x=Math.min(x,d.x1,d.x2);y=Math.min(y,d.y1,d.y2);}
   return {
     comps:els.map(el=>{
       const c=JSON.parse(JSON.stringify(el));
@@ -239,6 +256,11 @@ function clipContent(){
     wires:wires.map(w=>{
       const c={x1:w.x1-x,y1:w.y1-y,x2:w.x2-x,y2:w.y2-y};
       if(w.net)c.net=w.net;
+      return c;
+    }),
+    drawings:drawings.map(d=>{
+      const c=JSON.parse(JSON.stringify(d));
+      c.x1-=x;c.y1-=y;c.x2-=x;c.y2-=y;delete c.id;
       return c;
     })
   };
@@ -261,10 +283,13 @@ function clipHint(t){
 }
 function copySel(){
   const c=clipContent();
-  if(!c){clipHint("Rien à copier : sélectionnez d'abord des composants ou des fils.");return false;}
+  if(!c){clipHint("Rien à copier : sélectionnez d'abord des éléments.");return false;}
   setClip(c);
-  clipHint(c.comps.length+" composant(s) et "+c.wires.length+
-           " fil(s) copiés — Ctrl+V colle sous le pointeur.");
+  const parts=[];
+  if(c.comps.length)parts.push(c.comps.length+" composant(s)");
+  if(c.wires.length)parts.push(c.wires.length+" fil(s)");
+  if(c.drawings&&c.drawings.length)parts.push(c.drawings.length+" trait(s)");
+  clipHint(parts.join(", ")+" copiés — Ctrl+V colle sous le pointeur.");
   return true;
 }
 function cutSel(){if(copySel())delSel();}
@@ -274,14 +299,17 @@ function cutSel(){if(copySel())delSel();}
    connectivité logique. */
 function pasteClip(){
   const c=getClip();
-  if(!c||!Array.isArray(c.comps)||!Array.isArray(c.wires))
+  if(!c||(!Array.isArray(c.comps)&&!Array.isArray(c.wires)&&!Array.isArray(c.drawings)))
     {clipHint("Presse-papier vide : copiez d'abord une sélection (Ctrl+C).");return;}
-  if(!c.comps.length&&!c.wires.length){clipHint("Presse-papier vide.");return;}
+  const comps=Array.isArray(c.comps)?c.comps:[];
+  const wires=Array.isArray(c.wires)?c.wires:[];
+  const drawings=Array.isArray(c.drawings)?c.drawings:[];
+  if(!comps.length&&!wires.length&&!drawings.length){clipHint("Presse-papier vide.");return;}
   const bx=snap(S.mouse.x), by=snap(S.mouse.y);
   push();
   clearSel();
   let dropped=0;
-  c.comps.forEach((src,i)=>{
+  comps.forEach((src,i)=>{
     const el=normComp(src,i);
     if(!el){dropped++;return;}
     el.id=S.uid++;
@@ -290,36 +318,49 @@ function pasteClip(){
     if(!def.noRef)el.ref=nextRef(def.p);
     S.comps.push(el);S.sel.add(el.id);
   });
-  for(const src of c.wires){
+  for(const src of wires){
     const w=normWire(src);
     if(!w){dropped++;continue;}
     w.x1+=bx;w.y1+=by;w.x2+=bx;w.y2+=by;
     S.wires.push(w);S.selW.add(w);
   }
+  for(const src of drawings){
+    const d=normDrawing(src);
+    if(!d){dropped++;continue;}
+    d.id=S.uid++;
+    d.x1+=bx;d.y1+=by;d.x2+=bx;d.y2+=by;
+    if(!S.drawings)S.drawings=[];
+    S.drawings.push(d);S.selD.add(d.id);
+  }
   touchWires();resolveSplits();
   refreshPanels();draw();
-  clipHint(S.sel.size+" composant(s) et "+selWires().length+" fil(s) collés."+
-           (dropped?" "+dropped+" élément(s) ignoré(s).":""));
+  const res=[];
+  if(S.sel.size)res.push(S.sel.size+" composant(s)");
+  if(selWires().length)res.push(selWires().length+" fil(s)");
+  if(selDrawings().length)res.push(selDrawings().length+" trait(s)");
+  clipHint(res.join(", ")+" collés."+(dropped?" "+dropped+" élément(s) ignoré(s).":""));
 }
 function setMode(m){
-  S.mode=m;S.wireStart=null;S.hoverPin=null;
+  S.mode=m;S.wireStart=null;S.drawStart=null;S.hoverPin=null;
   if(m!=="select"){S.place=null;setPalette(null);}
   /* La cote appartient au mode : la garder affichée en revenant à la sélection
      laisserait une annotation qu'aucun geste ne reprend. */
   if(m!=="mesure"&&typeof rpMesRaz==="function")rpMesRaz();
-  for(const [id,md] of [["mSelect","select"],["mWire","wire"],["mErase","erase"],
-                        ["mMesure","mesure"]]){
+  for(const [id,md] of [["mSelect","select"],["mWire","wire"],["mBus","bus"],
+                        ["mErase","erase"],["mDraw","draw"],["mMesure","mesure"]]){
     const b=document.getElementById(id);
     if(b)b.classList.toggle("on",S.mode===md);
   }
   document.getElementById("fMode").textContent=
-    {select:"Sélection",wire:"Fil",erase:"Gomme",mesure:"Mesure"}[m];
+    {select:"Sélection",wire:"Fil",bus:"Bus",erase:"Gomme",draw:"Trait",mesure:"Mesure"}[m]||m;
   cv.style.cursor = m==="erase"?"not-allowed":"crosshair";
   document.getElementById("fHint").textContent = {
     select:"Ctrl+clic (ou Maj+clic) ajoute à la sélection · glisser pour déplacer · "+
            "Alt+glisser détache le câblage · Alt sur le vide déplace la vue.",
     wire:"Clic pour démarrer, clic pour poser un coude, clic sur une broche pour terminer · Clic droit ou Échap annule.",
-    erase:"Clic sur un composant ou un fil pour le supprimer.",
+    bus:"Tracé de bus de signaux (trait épais) : clic pour démarrer, clic pour poser un coude ou terminer sur un composant/bus · Échap annule.",
+    erase:"Clic sur un composant, un fil ou un trait pour le supprimer.",
+    draw:"Cliquez le premier point, puis le second pour tracer un trait de délimitation · Échap ou Clic droit annule.",
     mesure:"Cliquez le premier point, puis le second : la cote se fige · les broches "+
            "attirent le point · un nouveau clic repart d'ailleurs · Échap efface. "+
            "Une case vaut 1 mm par convention de dessin, pas par cote de fabrication."

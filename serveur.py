@@ -780,7 +780,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     # qui verifie le nom demande. Servir le dossier en plus n'ajouterait
     # rien et donnerait un second chemin a surveiller.
     HIDDEN = ('.git', '.github', '.gitignore', '.venv', '__pycache__', '.env',
-              'profils')
+              'profils', 'api_key_free_ia_studio.txt')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
@@ -801,7 +801,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if real != root and not real.startswith(root + os.sep):
             return True            # remontee hors du depot
         rel = os.path.relpath(real, root)
-        return any(part in self.HIDDEN or part.startswith('.')
+        return any(part in self.HIDDEN or part.startswith('.') or
+                   part.startswith('api_key') or part.endswith('.key')
                    for part in rel.split(os.sep) if part not in ('.', '..'))
 
     def translate_path(self, path):
@@ -1427,8 +1428,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
         # Le document est en MILLIMETRES : c'est resoudre_document qui
         # convertit, une fois, et lui seul.
+        #
+        # LE JOURNAL PART DANS LE TERMINAL, comme celui de la simulation EM.
+        # Un calcul de soixante mille noeuds prend une dizaine de secondes, et
+        # pendant ce temps la page n'a qu'un bouton grise : le terminal est le
+        # seul endroit ou l'on puisse voir la difference entre « ca travaille »
+        # et « c'est bloque », et LAQUELLE des etapes coince.
         try:
-            resultat = dc_solver.resoudre_document(doc)
+            resultat = dc_solver.resoudre_document(doc,
+                                                   journal=sys.stderr.write)
         except dc_solver.ErreurDC as exc:
             # Meme forme de refus que la simulation EM : le motif, une ligne
             # vide, puis ce qu'il faut changer. Les deux pages affichent
@@ -1464,6 +1472,156 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.close_connection = True
             self._envoyer_json({"detail": "Erreur interne : %s" % exc}, 500)
 
+    # -- datasheets composants --------------------------------------------
+    def _datasheet_api(self, action):
+        """Execute action() et gere les reponses de telechargement/consultation."""
+        try:
+            action()
+        except Exception as exc:                       # noqa: BLE001
+            self._envoyer_json({"detail": "Erreur datasheet : %s" % exc}, 500)
+
+    def _datasheet_telecharger(self):
+        if not self._projet_garde():
+            return
+        taille = int(self.headers.get("Content-Length") or 0)
+        if taille > MAX_CORPS:
+            self._envoyer_json({"detail": "Requete trop grande"}, 413)
+            return
+        try:
+            corps = json.loads(self.rfile.read(taille) or b"{}")
+        except Exception:
+            self._envoyer_json({"detail": "Corps JSON illisible"}, 400)
+            return
+
+        url = str(corps.get("url") or "").strip()
+        if not url or not (url.startswith("http://") or url.startswith("https://")):
+            self._envoyer_json({"detail": "URL invalide"}, 400)
+            return
+
+        mpn = str(corps.get("mpn") or "datasheet").strip()
+        projet = str(corps.get("projet") or "").strip()
+
+        # Dossier de destination : projet si specifie, sinon dossier datasheets commun
+        dossier_parent = None
+        if projet:
+            try:
+                dossier_parent = chemin_projet(projet)
+            except Exception:
+                nom = nom_projet(projet)
+                if nom:
+                    dossier_parent = os.path.join(racine_projets(), nom)
+        if not dossier_parent:
+            dossier_parent = os.path.join(racine_projets(), "_communs")
+
+        dossier_datasheets = os.path.join(dossier_parent, "datasheets")
+        try:
+            os.makedirs(dossier_datasheets, exist_ok=True)
+        except OSError as exc:
+            self._envoyer_json({"detail": "Impossible de creer le dossier datasheets : %s" % exc}, 500)
+            return
+
+        nom_base = re.sub(r'[^a-zA-Z0-9_\-.]', '_', mpn).strip('_') or "datasheet"
+        if not nom_base.lower().endswith(".pdf"):
+            nom_base += ".pdf"
+
+        chemin_cible = os.path.join(dossier_datasheets, nom_base)
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/pdf,*/*"
+        }
+        max_datasheet = 50 * 1024 * 1024  # 50 Mo max
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                contenu = resp.read(max_datasheet + 1)
+                if len(contenu) > max_datasheet:
+                    self._envoyer_json({"detail": "Le fichier distant depasse la taille limite de 50 Mo"}, 413)
+                    return
+                if contenu.startswith(b"<!doctype") or b"<html" in contenu[:300].lower():
+                    html_txt = contenu.decode("utf-8", errors="ignore")
+                    liens_pdf = re.findall(r'https?://[^\s"\'<>]+\.pdf(?:\?[^\s"\'<>]*)?', html_txt)
+                    pdf_trouve = None
+                    for l in liens_pdf:
+                        if "datasheet" in l.lower() or "pdf" in l.lower():
+                            pdf_trouve = l
+                            break
+                    if not pdf_trouve and liens_pdf:
+                        pdf_trouve = liens_pdf[0]
+                    if pdf_trouve:
+                        req2 = urllib.request.Request(pdf_trouve, headers=headers)
+                        with urllib.request.urlopen(req2, timeout=25) as resp2:
+                            contenu = resp2.read(max_datasheet + 1)
+                            if len(contenu) > max_datasheet:
+                                self._envoyer_json({"detail": "Le fichier PDF distant depasse la taille limite de 50 Mo"}, 413)
+                                return
+        except Exception as exc:
+            self._envoyer_json({"detail": "Echec du telechargement distant : %s" % exc}, 502)
+            return
+
+        if not contenu:
+            self._envoyer_json({"detail": "Fichier telecharge vide"}, 502)
+            return
+
+        try:
+            with open(chemin_cible, "wb") as f:
+                f.write(contenu)
+        except OSError as exc:
+            self._envoyer_json({"detail": "Ecriture disque impossible : %s" % exc}, 500)
+            return
+
+        rel_nom = os.path.basename(dossier_parent) if dossier_parent else ""
+        url_locale = "/api/datasheet/ouvrir?projet=%s&fichier=%s" % (
+            urllib.parse.quote(rel_nom), urllib.parse.quote(nom_base)
+        )
+        self._envoyer_json({
+            "ok": True,
+            "fichier": nom_base,
+            "chemin_rel": os.path.join("datasheets", nom_base).replace("\\", "/"),
+            "url_locale": url_locale,
+            "taille": len(contenu)
+        })
+
+    def _datasheet_ouvrir(self):
+        params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        projet = (params.get("projet") or [""])[0]
+        fichier = (params.get("fichier") or [""])[0]
+        if not fichier:
+            self.send_error(400, "Nom de fichier manquant")
+            return
+        nom_base = os.path.basename(fichier)
+        dossier_parent = None
+        if projet:
+            try:
+                dossier_parent = chemin_projet(projet)
+            except Exception:
+                nom = nom_projet(projet)
+                if nom:
+                    dossier_parent = os.path.join(racine_projets(), nom)
+        if not dossier_parent:
+            dossier_parent = os.path.join(racine_projets(), "_communs")
+
+        chemin = os.path.join(dossier_parent, "datasheets", nom_base)
+        if not os.path.exists(chemin):
+            self.send_error(404, "Datasheet introuvable")
+            return
+
+        try:
+            with open(chemin, "rb") as f:
+                data = f.read()
+        except OSError:
+            self.send_error(500, "Erreur de lecture de la datasheet")
+            return
+
+        self.send_response(200)
+        self._cors()
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", 'inline; filename="%s"' % nom_base)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(data)
+
     def do_OPTIONS(self):
         route = self._route()
         if route in ("/api/profils", "/api/profil",
@@ -1477,7 +1635,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route not in ("/api/tools", "/api/tool", "/api/ipc2581",
                          "/api/simulation", "/api/simulation-dc",
-                         "/api/crosstalk"):
+                         "/api/crosstalk", "/api/datasheet/telecharger",
+                         "/api/datasheet/ouvrir"):
             self.send_error(405, "Unsupported method (OPTIONS)")
             return
         self.send_response(204)
@@ -1519,6 +1678,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/crosstalk":
             self._ipc_api(self._crosstalk_lancer)
             return
+        if route == "/api/datasheet/telecharger":
+            self._datasheet_api(self._datasheet_telecharger)
+            return
         if route != "/api/tool":
             self.send_error(404, "File not found")
             return
@@ -1534,6 +1696,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         route = self._route()
+        if route == "/api/datasheet/ouvrir":
+            self._datasheet_api(self._datasheet_ouvrir)
+            return
         if route == "/api/tools":
             # lambda et non passerelle_mcp.liste_outils : le module peut etre
             # absent (import tolerant), _api repond alors 503.
@@ -1570,6 +1735,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_HEAD(self):
         route = self._route()
+        if route == "/api/datasheet/ouvrir":
+            self._datasheet_api(self._datasheet_ouvrir)
+            return
         if route == "/api/tools":
             self._api(lambda: passerelle_mcp.liste_outils())
             return

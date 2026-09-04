@@ -1634,32 +1634,87 @@ function simRetourTraceIpc(c,dpr){
   if(!(k>0))return;
   const u=v=>v/k;                          /* millimètres -> unités du fichier */
 
+  const actif=(typeof SIM!=="undefined"&&SIM.viaActif!=null)?SIM.viaActif:null;
+  const actifGnd=(actif!=null&&typeof SIM!=="undefined"&&SIM.gndViaActif!=null)?SIM.gndViaActif:null;
+
   poserMonde(c,dpr);
   c.save();
   c.lineCap="round";
   const px=1/V.vue.scale;                  /* un pixel écran, en unités monde */
 
   for(const g of liens){
+    const isSel=(actif!=null&&g.idx===actif);
+    const dimmed=(actif!=null&&!isSel);
     const gx=u(g.x), gy=u(g.y);
-    for(const f of (g.vias||[])){
-      c.strokeStyle=simRetourCouleurRes(f);
-      /* L'ÉPAISSEUR DIT LA PART DU COURANT. Un trait fin est un via qui ne
-         travaille pas : il occupe une place et ne rend presque rien, et c'est
-         une information de conception à part entière. */
-      c.lineWidth=f.retenu?px*(1.2+4.0*Math.max(f.part||0,0)):px*1.2;
+
+    c.save();
+    if(dimmed){
+      c.globalAlpha=0.22;
+    }
+
+    /* Le halo de mise en surbrillance si ce via est sélectionné au rapport */
+    if(isSel){
+      c.save();
+      c.beginPath();
+      c.arc(gx,gy,u(g.pastille)/2+px*12,0,Math.PI*2);
+      c.fillStyle="rgba(73, 192, 122, 0.22)";
+      c.fill();
+      c.strokeStyle="#ffe066";
+      c.lineWidth=px*3.2;
+      c.stroke();
+      c.restore();
+    }
+
+    const vias=g.vias||[];
+    for(let fIdx=0; fIdx<vias.length; fIdx++){
+      const f=vias[fIdx];
+      const isThisGnd=(isSel&&actifGnd===fIdx);
+      const isOtherGndDimmed=(isSel&&actifGnd!=null&&!isThisGnd);
+
+      c.save();
+      if(isOtherGndDimmed){
+        c.globalAlpha=0.20;
+      }
+
+      c.strokeStyle=isThisGnd?"#ffe066":simRetourCouleurRes(f);
+      /* L'ÉPAISSEUR DIT LA PART DU COURANT */
+      let baseW=f.retenu?px*(1.2+4.0*Math.max(f.part||0,0)):px*1.2;
+      if(isSel){
+        baseW*=isThisGnd?2.6:1.4;
+        if(f.retenu&&!isThisGnd&&actifGnd==null)
+          c.strokeStyle=(f.part>=0.20?"#5efc82":"#ffd166");
+      }
+      c.lineWidth=baseW;
       c.setLineDash(f.retenu?[]:[px*3,px*3]);
       c.beginPath();
       c.moveTo(gx,gy);
       c.lineTo(u(f.x),u(f.y));
       c.stroke();
+
+      /* Halo brillant doré sur le via de masse ciblé */
+      if(isThisGnd){
+        c.save();
+        c.beginPath();
+        c.arc(u(f.x),u(f.y),px*10,0,Math.PI*2);
+        c.fillStyle="rgba(255, 224, 102, 0.35)";
+        c.fill();
+        c.strokeStyle="#ffe066";
+        c.lineWidth=px*2.5;
+        c.stroke();
+        c.restore();
+      }
+      c.restore();
     }
-    /* Le via de signal, cerclé : c'est lui dont on parle. */
+
+    /* Le via de signal, cerclé */
     c.setLineDash([]);
-    c.strokeStyle=g.retenus?"#49c07a":"#e8564a";
-    c.lineWidth=px*1.6;
+    c.strokeStyle=isSel?"#ffffff":(g.retenus?"#49c07a":"#e8564a");
+    c.lineWidth=isSel?px*2.8:px*1.6;
     c.beginPath();
     c.arc(gx,gy,u(g.pastille)/2+px*3,0,Math.PI*2);
     c.stroke();
+
+    c.restore();
   }
   c.restore();
   simRetourValeursIpc(c,liens,dpr,u);
@@ -1675,77 +1730,108 @@ function simRetourValeursIpc(c,liens,dpr,u){
   c.scale(dpr,dpr);
   c.textAlign="center"; c.textBaseline="middle";
 
-  const cartouche=(e,txt,bord,dy,petit)=>{
-    c.font=(petit?"600 9.5px ":"600 11px ")+
+  const actif=(typeof SIM!=="undefined"&&SIM.viaActif!=null)?SIM.viaActif:null;
+  const actifGnd=(actif!=null&&typeof SIM!=="undefined"&&SIM.gndViaActif!=null)?SIM.gndViaActif:null;
+
+  const cartouche=(e,txt,bord,dy,petit,isSel)=>{
+    c.font=(petit?(isSel?"700 10.5px ":"600 9.5px "):(isSel?"700 12px ":"600 11px "))+
       "\"JetBrains Mono\",\"SF Mono\",Consolas,\"Roboto Mono\",monospace";
     const w=c.measureText(txt).width+10, hh=petit?15:18;
-    c.fillStyle="rgba(15,16,18,0.86)";
+    c.fillStyle=isSel?"rgba(20,24,28,0.96)":"rgba(15,16,18,0.86)";
     c.beginPath();
     if(c.roundRect)c.roundRect(e.x-w/2,e.y+dy-hh/2,w,hh,4);
     else c.rect(e.x-w/2,e.y+dy-hh/2,w,hh);
     c.fill();
-    c.strokeStyle=bord; c.lineWidth=1.2; c.stroke();
-    c.fillStyle="#e6e8ec";
+    c.strokeStyle=isSel?"#ffe066":bord; c.lineWidth=isSel?2.0:1.2; c.stroke();
+    c.fillStyle=isSel?"#ffffff":"#e6e8ec";
     c.fillText(txt,e.x,e.y+dy+0.5);
   };
 
   for(const g of liens){
+    const isSel=(actif!=null&&g.idx===actif);
+    const dimmed=(actif!=null&&!isSel);
+    if(dimmed)continue; // Si un via précis est sélectionné, on n'affiche que ses étiquettes
+
     const o=w2s(u(g.x),u(g.y));
-    for(const f of (g.vias||[])){
+    const vias=g.vias||[];
+    for(let fIdx=0; fIdx<vias.length; fIdx++){
+      const f=vias[fIdx];
+      const isThisGnd=(isSel&&actifGnd===fIdx);
+      const isOtherGndDimmed=(isSel&&actifGnd!=null&&!isThisGnd);
+      if(isOtherGndDimmed)continue;
       const e=w2s(u(f.x),u(f.y));
       const lg=Math.hypot(e.x-o.x,e.y-o.y);
-      /* UN LIEN TROP COURT À L'ÉCRAN NE PORTE PAS D'ÉTIQUETTE : en dessous de
-         quarante-cinq pixels le cartouche recouvre le via qu'il désigne et
-         celui d'à côté, et on perd les deux pour en afficher une. L'épaisseur
-         du trait, elle, dit toujours la part. Un lien ÉCARTÉ garde sa raison
-         quoi qu'il arrive : c'est la seule chose qui explique pourquoi il ne
-         compte pas, et un via écarté est justement celui qu'on a posé tout
-         contre. */
-      if(lg<45&&f.retenu)continue;
-      /* AUX DEUX TIERS DU LIEN, ET NON AU MILIEU : le milieu de trois liens
-         qui partent du même point retombe dans la même zone encombrée. */
+      if(lg<45&&f.retenu&&!isSel&&!isThisGnd)continue;
       const m={x:o.x+0.66*(e.x-o.x), y:o.y+0.66*(e.y-o.y)};
-      if(!f.retenu)cartouche(m,f.raison||"écarté","#e8564a",-14,true);
-      else if((f.part||0)>=0.05)
+      if(!f.retenu)cartouche(m,f.raison||"écarté","#e8564a",-14,true,isThisGnd||isSel);
+      else if((f.part||0)>=0.05||isThisGnd)
         cartouche(m,Math.round(100*f.part)+" %",
-                  simRetourCouleurRes(f),0,true);
+                  isThisGnd?"#ffe066":simRetourCouleurRes(f),0,true,isThisGnd||isSel);
     }
-    /* L'INDUCTANCE DE BOUCLE, au pied du via. Quand rien ne referme la boucle,
-       le chiffre n'EST PAS une inductance de boucle : c'est la self d'un
-       conducteur seul, elle ne dépend pas du routage, et l'afficher comme les
-       autres laisserait croire qu'on a mesuré quelque chose. Le « ≥ » n'est
-       pas une précaution de style — le courant revient quand même, par le
-       cuivre des plans et plus loin, donc la boucle réelle vaut DAVANTAGE. */
-    /* « HORS PARCOURS » SE DIT SUR LE DESSIN, et pas seulement au tableau :
-       c'est ici qu'on regarde quand on cherche ce qu'un via coûte, et
-       l'inductance de boucle affichée est vraie pendant que la courbe S, elle,
-       ne porte rien de ce via. */
     const txt=(g.seul
       ? "L ≥ "+simNb(g.L_nH,2)+" nH · sans retour"
       : "L = "+simNb(g.L_nH,2)+" nH")+(g.cascade?"":" · hors parcours");
-    /* AU-DESSUS DU VIA ET AU-DESSUS DE SON CERCLE. Un décalage fixe suffit tant
-       qu'on est dézoomé ; à fort grossissement la pastille dépasse le cartouche
-       et le chiffre se poserait SUR le via qu'il décrit. */
     const rayon=(u(g.pastille)/2)*V.vue.scale+14;
-    cartouche(o,txt,g.seul?"#e8564a":"#49c07a",-Math.max(18,rayon),false);
-    /* LE DÉFAUT ET LE DOUTE NE SE DISENT PAS DE LA MÊME FAÇON, et surtout pas
-       de la même couleur : un chevelu qui crie au rouge sur le cas ordinaire
-       cesse d'être regardé. */
+    cartouche(o,txt,g.seul?"#e8564a":(isSel?"#ffe066":"#49c07a"),-Math.max(18,rayon),false,isSel);
+
     if(g.change)
       cartouche(o,"référence "+g.plans+" : aucun via ne peut joindre les deux",
-                "#e8564a",Math.max(20,rayon),true);
+                "#e8564a",Math.max(20,rayon),true,isSel);
     else if(g.doute)
       cartouche(o,"référence "+g.plans+" : nets des plans non déclarés",
-                "#e0a63c",Math.max(20,rayon),true);
-    /* LA PORTÉE SUPPOSÉE EST LA LIMITE PROPRE À CETTE PAGE, et elle se dit sur
-       le dessin, pas seulement dans une note en bas du panneau : l'IPC-2581 ne
-       distingue pas un via traversant d'un via enterré, et un enterré pris
-       pour traversant rend une boucle trop petite de près de vingt pour cent. */
+                "#e0a63c",Math.max(20,rayon),true,isSel);
     else if(g.supposee&&!g.seul)
       cartouche(o,"portée des vias de masse supposée traversante",
-                "#7d8590",Math.max(20,rayon),true);
+                "#7d8590",Math.max(20,rayon),true,isSel);
   }
   c.restore();
+}
+
+/* Clic sur le canvas pour désigner un via de signal, un via de masse ou un trait du chevelu */
+function simRetourClicIpc(wx,wy){
+  if(!simRetourActifIpc())return false;
+  const liens=simCheveluRes();
+  if(!liens||!liens.length)return false;
+  const k=simKUnite();
+  if(!(k>0))return false;
+  const u=v=>v/k;
+
+  const tol=Math.max(0.4/k, 12/V.vue.scale);
+
+  // 1. Clic sur un via de signal
+  for(const g of liens){
+    const gx=u(g.x), gy=u(g.y);
+    const r=Math.max(u(g.pastille)/2, tol);
+    if(Math.hypot(wx-gx, wy-gy)<=r){
+      if(typeof simSelectionnerVia==="function"){
+        simSelectionnerVia(g.idx);
+        const row=document.querySelector('[data-via-idx="'+g.idx+'"]');
+        if(row&&typeof row.scrollIntoView==="function")row.scrollIntoView({block:"nearest",behavior:"smooth"});
+      }
+      return true;
+    }
+  }
+
+  // 2. Clic sur un via de masse ou un trait du chevelu
+  for(const g of liens){
+    const gx=u(g.x), gy=u(g.y);
+    const vias=g.vias||[];
+    for(let fIdx=0; fIdx<vias.length; fIdx++){
+      const f=vias[fIdx];
+      const fx=u(f.x), fy=u(f.y);
+      const dGnd=Math.hypot(wx-fx, wy-fy);
+      const dRay=distSegment(wx, wy, gx, gy, fx, fy);
+      if(dGnd<=tol*1.5 || dRay<=tol*0.9){
+        if(typeof simSelectionnerGndVia==="function"){
+          simSelectionnerGndVia(g.idx, fIdx);
+          const item=document.querySelector('[data-via-idx="'+g.idx+'"] [data-gnd-idx="'+fIdx+'"]');
+          if(item&&typeof item.scrollIntoView==="function")item.scrollIntoView({block:"nearest",behavior:"smooth"});
+        }
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /* Les valeurs écrites sur la piste.
@@ -1915,6 +2001,48 @@ function simDCRangIpc(coucheIdx){
   return LT.pret?LT.cu.findIndex(e=>e.couche===coucheIdx):-1;
 }
 
+/* ==========================================================================
+   CE QUE LA CARTE EMPORTE DE CHALEUR — LES COTES DE L'EMPILAGE
+   --------------------------------------------------------------------------
+   Le solveur ne lit plus l'échauffement sur la charte IPC-2221 : il résout
+   l'ÉTALEMENT dans le stratifié, ce que la campagne IPC-2152 a mesuré et que
+   la charte ignore (voir `simDCThermique` dans `../commun/simulation-em.js`).
+   Il lui faut deux cotes que seul l'empilage porte.
+
+   L'ÉPAISSEUR DE STRATIFIÉ est la somme des INTERVALLES de `LT.gap`, donc le
+   diélectrique seul : le cuivre est compté à part, et le masque n'étale rien.
+   Un empilage qui ne liste que ses conducteurs rend zéro — le solveur pose
+   alors son repli ET LE DIT, ce qui est mieux que d'inventer 1,6 mm ici.
+
+   LE CUIVRE ÉTALEUR EST CE QUI ÉTALE VRAIMENT. 35 µm de cuivre pleine carte
+   portent dix fois la conductance de nappe de tout le FR-4 : compter tout le
+   cuivre de l'empilage rendrait une température dix fois trop basse sur une
+   carte dont les couches internes ne sont que du routage. `LT` a déjà la
+   mesure qu'il faut — `taux`, la part de la carte que les PLANS de la couche
+   couvrent, calculée par `ltPreparer` sur le cuivre POSÉ et non sur le rôle
+   annoncé. C'est la même que celle qui décide si une couche est un plan de
+   référence, et c'est heureux : ce sont les mêmes 40 % de cuivre qui font une
+   masse et une ailette.
+
+   LES PISTES ET LES PASTILLES NE COMPTENT PAS : quelques pour cent d'une
+   couche de routage, fragmentés — donc mauvaises ailettes. Le chiffre penche
+   ainsi vers le chaud, ce qui est le bon sens de l'erreur.
+
+   λ N'EST PAS FOURNI : « FR-4 » ne donne pas une conductivité thermique, il la
+   suggère. Le solveur met son repli et l'annonce comme supposé ; le champ du
+   panneau l'emporte dès qu'on a la fiche du fabricant. */
+function simDCThermiqueIpc(){
+  if(!LT.pret)return {};
+  let diel=0;
+  for(const g of LT.gap)diel+=(g&&g.t)||0;
+  let etaleur=0;
+  for(const cu of LT.cu)
+    etaleur+=(cu.ep||0)*Math.max(0,Math.min(cu.taux||0,1));
+  const th={cuivre_etaleur:etaleur};
+  if(diel>0)th.epaisseur_stratifie=diel;
+  return th;
+}
+
 /* La hauteur traversée entre deux conducteurs voisins, en millimètres. */
 function simDCHauteurIpc(a,b){
   const lo=Math.min(a,b), hi=Math.max(a,b);
@@ -1962,17 +2090,25 @@ function simDCAstuce(t){
 
    L'éditeur PCB a une couche ACTIVE, celle qu'on route ; la visionneuse les
    affiche toutes à la fois et n'en a pas. Il faut pourtant en choisir une :
-   superposer deux potentiels les mélangerait sans le dire. On prend celle de
-   la première CHARGE — c'est le point dont on cherche la chute, donc la
-   couche qu'on regarde —, et le panneau écrit laquelle.
+   superposer deux potentiels les mélangerait sans le dire.
 
-   Rend -1 quand il n'y a pas de source : `simDCTrace` ne trouve alors aucune
+   CE QUI NE MARCHAIT PAS. On prenait celle de la première CHARGE, et rien
+   d'autre. Sur un rail qui traverse la carte — le cas ordinaire d'un calcul de
+   chute — la couche où ça chauffe n'est presque jamais celle-là, et il n'y
+   avait AUCUN moyen de la voir : il fallait effacer les bornes et les reposer
+   dans un autre ordre, ce qui relance le calcul pour rien.
+
+   CE QUI LA REMPLACE. Cette fonction ne fait plus que PROPOSER — la charge, ou
+   à défaut la première borne posée. C'est `simDCCouchePeinte` (module commun)
+   qui tranche, en préférant la couche choisie dans la liste de la fiche quand
+   le résultat en porte une image. Le choix reste unique, mais il appartient à
+   qui regarde.
+
+   Rend -1 quand il n'y a pas de borne : `simDCTrace` ne trouve alors aucune
    image et ne peint rien. */
 function simDCCoucheVue(){
-  /* La CHARGE plutôt que la source : c'est le point dont on cherche la chute,
-     donc la couche qu'on regarde. À défaut, la première borne posée. */
-  const b=SIM_DCB.bornes.find(o=>o.role==="charge")||SIM_DCB.bornes[0];
-  return b?b.couche:-1;
+  if(typeof simDCCoucheVoulue==="function")return simDCCoucheVoulue();
+  return SIM_IPC.dcCoucheProposee();
 }
 
 /* Le clic qui désigne une borne, appelé par l'interaction quand le mode est
@@ -1989,8 +2125,21 @@ function simDCClic(x,y){
     /* 3,3 V pour une alimentation, un ampère pour un consommateur : de quoi
        calculer dès le premier clic, quitte à corriger ensuite. */
     b.valeur=(role==="source")?3.3:1;
-    const k=SIM_DCB.bornes.findIndex(o=>o.nom===b.nom);
-    if(k>=0){b.valeur=SIM_DCB.bornes[k].valeur;SIM_DCB.bornes[k]=b;}
+    /* L'IDENTITÉ D'UNE BORNE EST SA POSITION, PAS SON NOM — voir la même
+       correction côté éditeur : un nom qui se renomme ne peut plus servir de
+       clé, sans quoi recliquer une pastille renommée poserait une SECONDE
+       borne au même endroit, donc deux fois le courant. */
+    const k=SIM_DCB.bornes.findIndex(o=>Math.abs(o.x-b.x)<1e-9&&
+                                        Math.abs(o.y-b.y)<1e-9&&
+                                        o.couche===b.couche);
+    /* On garde ce que l'utilisateur avait posé dessus : sa valeur, son unité
+       ET SON NOM. */
+    if(k>=0){
+      const av=SIM_DCB.bornes[k];
+      b.valeur=av.valeur; b.unite=av.unite;
+      if(av.renomme){b.nom=av.nom;b.renomme=true;}
+      SIM_DCB.bornes[k]=b;
+    }
     else SIM_DCB.bornes.push(b);
   }
   if(typeof simDCBorneChoisie==="function")simDCBorneChoisie();
@@ -2552,15 +2701,28 @@ function simXtFentesIpc(par,idx){
    couche. On envoie tous ceux de la boîte élargie : c'est le serveur qui
    mesure la distance, et il le fait au droit de la transition.
 
-   LA PORTÉE EST SUPPOSÉE TRAVERSANTE, et c'est le point à retenir : l'IPC-2581
-   ne déclare pas les couches d'un perçage. Un via enterré compté comme
-   traversant fait passer pour refermé un retour qui ne l'est pas — le contrôle
-   est donc OPTIMISTE, et la note du document le dit. */
+   LA PORTÉE VIENT DU FICHIER QUAND IL LA DÉCLARE, et c'est le sens de l'erreur
+   qui l'imposait. IPC-2581 la porte sur le calque de perçage (`<Span
+   fromLayer toLayer>`, voir `_lire_span` dans `python/ipc2581_parser.py`), et
+   le modèle la transporte sous `sa` / `sb`. Un via enterré compté comme
+   traversant fait passer pour REFERMÉ un retour qui ne l'est pas : ici,
+   contrairement au solveur DC, l'erreur ne penche pas du côté prudent — elle
+   rassure. Ce qui reste supposé traversant est ce que le fichier ne déclare
+   pas, et `simXtPorteesSupposees` compte ceux-là pour que la note du document
+   ne parle que d'eux. */
+function simXtPortee(t){
+  const cuMax=Math.max(0,LT.cu.length-1);
+  const ra=(t.sa!=null)?simDCRangIpc(t.sa):-1;
+  const rb=(t.sb!=null)?simDCRangIpc(t.sb):-1;
+  if(ra>=0&&rb>=0&&ra!==rb)
+    return {a:simRangCu(Math.min(ra,rb)), b:simRangCu(Math.max(ra,rb)),
+            declaree:true};
+  return {a:simRangCu(0), b:simRangCu(cuMax), declaree:false};
+}
 function simXtViasMasseIpc(par,idx){
   const out=[];
   if(!idx||!idx.size||!V.parNet||!LT.pret)return out;
   const k=simKUnite();
-  const cuMax=Math.max(0,LT.cu.length-1);
   const R=SIM_RAYON_RETOUR_IPC;
   const r3=x=>Math.round(x*1000)/1000;
   for(const n of V.parNet){
@@ -2574,11 +2736,22 @@ function simXtViasMasseIpc(par,idx){
         if(pr&&(pr.d-(o.piste.w||0)/2)*k<=R){proche=true;break;}
       }
       if(!proche)continue;
-      out.push({x:r3(t.x*k), y:r3(t.y*k),
-                a:simRangCu(0), b:simRangCu(cuMax)});
+      const p=simXtPortee(t);
+      out.push({x:r3(t.x*k), y:r3(t.y*k), a:p.a, b:p.b,
+                /* LE DOCUMENT PORTE L'AVEU AVEC LA COTE. Le serveur n'a pas à
+                   s'en servir ; c'est la fiche qui doit pouvoir dire lesquels
+                   de ces vias ont une portée lue et lesquels sont supposés. */
+                portee_declaree:p.declaree});
     }
   }
   return out;
+}
+/* Combien, parmi les vias de masse envoyés, sont encore SUPPOSÉS traversants.
+   Zéro veut dire que la note d'optimisme n'a plus lieu d'être : c'est le seul
+   cas où elle ne doit pas s'écrire, et l'écrire quand même apprendrait au
+   lecteur à ne plus la lire. */
+function simXtPorteesSupposees(vias){
+  return (vias||[]).filter(v=>!v.portee_declaree).length;
 }
 
 /* ==========================================================================
@@ -2765,6 +2938,20 @@ const SIM_IPC={
     SIM_DCB.attente=null;
   },
 
+  /* LA COUCHE QUE CET OUTIL PROPOSE DE PEINDRE. Cette page affiche toutes les
+     couches à la fois et n'a pas de couche active : elle propose donc celle de
+     la CHARGE — le point dont on cherche la chute. Ce n'est qu'une
+     proposition, et c'était tout le défaut : la fiche permet maintenant d'en
+     choisir une autre, voir `simDCCouchePeinte`. */
+  dcCoucheProposee:function(){
+    const b=SIM_DCB.bornes.find(o=>o.role==="charge")||SIM_DCB.bornes[0];
+    return b?b.couche:-1;
+  },
+  dcNomCouche:function(rang){
+    const cu=LT.pret?LT.cu[rang]:null;
+    return cu?cu.nom:"";
+  },
+
   canevasHorsEcran:function(w,h){
     try{
       const o=document.createElement("canvas");
@@ -2814,10 +3001,21 @@ const SIM_IPC={
       return {erreur:"Le net "+net+" n'est pas dans le fichier."};
 
     const polygones=[], creux=[], vias=[], notes=[];
+    /* CE QUI EST ÉCARTÉ, ET SUR QUELLE COUCHE. « 90 forme(s) écartée(s) » ne
+       se corrige pas : il faut savoir LAQUELLE des couches manque à l'empilage
+       de calcul pour aller la compléter. Et le compte par couche dit s'il
+       s'agit d'un oubli — une couche de cuivre entière absente — ou du cas
+       normal : du cuivre sur une couche technique, masque ou sérigraphie, qui
+       n'a rien à faire dans un réseau résistif. */
     let horsEmpilage=0;
+    const ecartees=new Map();
     const pose=(couche,pts)=>{
       const r=simDCRangIpc(couche);
-      if(r<0){horsEmpilage++;return;}
+      if(r<0){
+        horsEmpilage++;
+        ecartees.set(couche,(ecartees.get(couche)||0)+1);
+        return;
+      }
       polygones.push({vertices:pts, couche:r, net:net, epaisseur:LT.cu[r].ep});
     };
 
@@ -2849,9 +3047,24 @@ const SIM_IPC={
                             epaisseur:LT.cu[r].ep, trou:true});
       }
     }
-    if(horsEmpilage)
-      notes.push(horsEmpilage+" forme(s) écartée(s) : leur couche n'est pas "+
-                 "dans l'empilage de calcul.");
+    if(horsEmpilage){
+      /* LA PLUS FOURNIE D'ABORD : c'est celle qui pèse, et celle qu'on va
+         chercher à compléter. */
+      const detail=[...ecartees.entries()]
+        .sort((a,b)=>b[1]-a[1])
+        .map(([c,n])=>{
+          const nom=(V.couches&&V.couches[c])?V.couches[c].nom:("couche "+c);
+          return nom+" ("+n+")";
+        });
+      notes.push(horsEmpilage+" forme(s) écartée(s), leur couche n'étant pas "+
+                 "dans l'empilage de calcul : "+detail.slice(0,6).join(", ")+
+                 (detail.length>6?", et "+(detail.length-6)+" autre(s)":"")+
+                 ". Si l'une de ces couches porte du CUIVRE, le chemin "+
+                 "qu'elle offre n'est pas dans ce résultat — complétez "+
+                 "l'empilage dans « La carte ». Si ce sont des couches "+
+                 "techniques (masque, sérigraphie, pâte), c'est normal : "+
+                 "elles ne conduisent pas.");
+    }
     if(!polygones.length)
       return {erreur:"Le net "+net+" ne porte aucun cuivre sur les couches "+
                      "de l'empilage.",
@@ -2860,12 +3073,30 @@ const SIM_IPC={
 
     /* CE QUI FAIT CHANGER DE COUCHE, ET C'EST DEUX CHOSES.
 
-       1. LES PERÇAGES métallisés que le fichier liste. Le modèle ne porte pas
-          leur PORTÉE — rien n'y dit entre quelles couches ils courent —, donc
-          on les prend TRAVERSANTS. C'est le cas de la très grande majorité, et
-          c'est l'hypothèse qui ne perd aucun chemin ; le panneau le dit dans
-          ses notes plutôt que de le taire. Un perçage NON métallisé ne conduit
-          rien : il est écarté, et compté.
+       1. LES PERÇAGES métallisés que le fichier liste, CHACUN SUR SA PORTÉE.
+          IPC-2581 la déclare sur le CALQUE de perçage
+          (`<Layer layerFunction="DRILL"><Span fromLayer toLayer/>`), et le
+          parseur la fait voyager en rangs de couche sous `sa` / `sb` — voir
+          `_lire_span` dans `python/ipc2581_parser.py`. Un via borgne ou
+          enterré ne relie donc plus que les couches qu'il traverse.
+
+          CE QUE ÇA CORRIGEAIT, ET DANS LES DEUX SENS. Tous les trous étaient
+          pris TRAVERSANTS. Sur une carte à six couches, un borgne 1-2 était
+          monté en CHAÎNE 1→2→3→4→5→6 : cinq résistances en série là où il en
+          faut une, donc une résistance de passage largement surestimée — le
+          côté prudent —, mais aussi QUATRE liaisons verticales inventées entre
+          des couches que rien ne joint. Un courant pouvait alors descendre par
+          un chemin qui n'existe pas, et la chute ressortait trop FAIBLE : le
+          côté qui rassure.
+
+          SANS `sa` / `sb`, ON SUPPOSE ENCORE TRAVERSANT, et le panneau le dit.
+          C'est l'hypothèse qui ne perd aucun chemin : la supposer borgne
+          couperait une liaison réelle, laisserait du cuivre flottant et ferait
+          refuser tout le calcul. Les deux comptes sont séparés dans les notes
+          — déclarés d'un côté, supposés de l'autre —, parce que ce ne sont pas
+          les mêmes chiffres qui se défendent.
+
+          Un perçage NON métallisé ne conduit rien : il est écarté, et compté.
 
        2. LE TUBE D'UNE PASTILLE POSÉE SUR PLUSIEURS COUCHES. Un padstack qui
           place du cuivre sur deux conducteurs DÉCRIT un trou métallisé : c'est
@@ -2888,11 +3119,45 @@ const SIM_IPC={
       }
       return d;
     };
-    /* Les emplacements de tube, dédoublonnés au centième de millimètre : un
-       perçage tombe presque toujours SOUS une pastille, et le compter deux
-       fois mettrait deux résistances en parallèle là où il n'y a qu'un tube. */
+    /* LES EMPLACEMENTS DE TUBE, DÉDOUBLONNÉS PAR DISTANCE — et non par case
+       d'arrondi, ce qui était le défaut. Un perçage tombe presque toujours
+       SOUS une pastille, et le compter deux fois mettrait deux résistances en
+       parallèle là où il n'y a qu'un tube : le courant s'y partagerait, et
+       chacune des deux lignes du tableau annoncerait la moitié du passage
+       réel.
+
+       CE QUI NE MARCHAIT PAS. La clé était `Math.round(x*100)` : deux
+       emplacements distants de DEUX MICRONS mais posés de part et d'autre d'un
+       demi-centième — 32,1049 et 32,1051 — tombaient dans deux cases
+       différentes et échappaient au dédoublonnage. Sur une carte de mille
+       pastilles, quelques-unes tombent forcément sur cette frontière, et rien
+       ne le signalait.
+
+       ON REGARDE DONC LES NEUF CASES VOISINES et on compare les distances
+       vraies. La tolérance est large — un dixième de millimètre — parce que
+       deux perçages DISTINCTS ne sont jamais si proches : aucune règle de
+       fabrication ne laisse deux trous à moins de deux ou trois dixièmes. */
     const tubes=new Map();
-    const cle=(x,y)=>Math.round(x*100)+"/"+Math.round(y*100);
+    const TOL=0.1;                       // mm entre deux trous « le même »
+    const cle=(x,y)=>Math.round(x/TOL)+"/"+Math.round(y/TOL);
+    /* Le tube déjà posé à cet endroit, à la tolérance près, ou null. */
+    const dejaLa=(x,y)=>{
+      const ix=Math.round(x/TOL), iy=Math.round(y/TOL);
+      for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+        const t=tubes.get((ix+dx)+"/"+(iy+dy));
+        if(t&&Math.hypot(t.x-x,t.y-y)<=TOL)return t;
+      }
+      return null;
+    };
+    /* Et le même voisinage pour les trous NUS : une pastille posée sur un trou
+       déclaré non métallisé ne joint rien, et l'arrondi ne doit pas laisser
+       passer un tube là-dessus. */
+    const nuLa=(x,y)=>{
+      const ix=Math.round(x/TOL), iy=Math.round(y/TOL);
+      for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)
+        if(nus.has((ix+dx)+"/"+(iy+dy)))return true;
+      return false;
+    };
     let nonMetallises=0;
     /* UN TROU NON MÉTALLISÉ INTERDIT LE TUBE À SON EMPLACEMENT, et pas
        seulement pour lui-même : une pastille posée là-dessus sur deux couches
@@ -2906,8 +3171,19 @@ const SIM_IPC={
         nus.add(cle(t.x*k,t.y*k));
         continue;
       }
+      /* LA PORTÉE, TRADUITE EN RANGS DE CONDUCTEUR. `sa` / `sb` sont des
+         index de COUCHE du modèle ; le document DC parle en rangs de `LT.cu`.
+         Une portée qui désigne une couche absente de l'empilage de calcul —
+         un diélectrique, une couche masquée — ne se traduit pas : on la laisse
+         tomber plutôt que de borner le tube n'importe où. */
+      const ra=(t.sa!=null)?simDCRangIpc(t.sa):-1;
+      const rb=(t.sb!=null)?simDCRangIpc(t.sb):-1;
+      const borne=(ra>=0&&rb>=0)
+        ? {lo:Math.min(ra,rb), hi:Math.max(ra,rb), src:t.ss||"fichier"}
+        : null;
       tubes.set(cle(t.x*k,t.y*k),
-                {x:t.x*k, y:t.y*k, d:Math.max((t.d||0)*k,0.05), perce:true});
+                {x:t.x*k, y:t.y*k, d:Math.max((t.d||0)*k,0.05), perce:true,
+                 borne:borne});
     }
     /* Les pastilles du net, groupées par emplacement : plus d'une couche, donc
        un tube. Le diamètre de perçage n'est pas dans le modèle ici — on prend
@@ -2923,36 +3199,110 @@ const SIM_IPC={
     }
     let supposes=0;
     for(const [c,g] of parLieu){
-      if(g.n<2||tubes.has(c)||nus.has(c))continue;
+      if(g.n<2||dejaLa(g.x,g.y)||nuLa(g.x,g.y))continue;
       tubes.set(c,{x:g.x, y:g.y, d:Math.max(g.d-0.5,0.05), perce:false});
       supposes++;
     }
 
-    let nTube=0;
+    let nTube=0, nBorne=0, nSuppose=0, nHorsPortee=0;
     for(const t of tubes.values()){
       const touchees=[];
-      for(let r=0;r<LT.cu.length;r++)
+      for(let r=0;r<LT.cu.length;r++){
+        /* HORS DE LA PORTÉE DU TROU, IL N'Y A PAS DE TUBE. Un anneau de cuivre
+           du bon net sur une couche que le perçage ne traverse pas n'est PAS
+           relié par lui : c'est un anneau d'un autre trou, ou du cuivre qui
+           passe par là. Le compter serait inventer la liaison verticale que
+           tout ce bloc s'efforce de ne plus inventer. */
+        if(t.borne&&(r<t.borne.lo||r>t.borne.hi)){
+          if(polygones.some(g=>g.couche===r&&dedans(t.x,t.y,g.vertices)))
+            nHorsPortee++;
+          continue;
+        }
         if(polygones.some(g=>g.couche===r&&dedans(t.x,t.y,g.vertices)))
           touchees.push(r);
+      }
       if(touchees.length<2)continue;
       nTube++;
+      /* UN TUBE DÉDUIT D'UNE PASTILLE (`perce` faux) N'EST PAS « SUPPOSÉ
+         TRAVERSANT » : sa portée est celle des couches où le padstack pose du
+         cuivre, ce qui est une lecture du fichier et non une hypothèse. Il a
+         déjà sa note, sur son perçage supposé. Le compter ici mélangerait deux
+         réserves qui ne portent pas sur la même chose. */
+      if(t.borne)nBorne++; else if(t.perce)nSuppose++;
       for(let i=0;i<touchees.length-1;i++)
         vias.push({x:t.x, y:t.y, couche_a:touchees[i], couche_b:touchees[i+1],
                    percage:t.d, placage:0.025,
+                   /* UN PERÇAGE DÉDUIT D'UNE PASTILLE N'EST PAS UNE COTE. Le
+                      drapeau voyage jusqu'au résultat pour que le tableau
+                      MARQUE ces lignes : R va comme 1/A, donc un diamètre
+                      deviné à cinquante pour cent près se paie double sur
+                      l'ohm, et « 0,076 mΩ » se lisait avec le même aplomb que
+                      « 0,295 mΩ » mesuré. */
+                   percage_suppose:!t.perce,
+                   /* LA PORTEE EST-ELLE LUE OU SUPPOSEE ? C'est le SEUL
+                      endroit ou l'outil peut inventer du courant : si le trou
+                      est en realite borgne, cette liaison n'existe pas, et le
+                      courant qui la traverse n'existe pas non plus. Le drapeau
+                      voyage jusqu'au resultat pour que la fiche MARQUE ces
+                      lignes et chiffre ce qui depend de l'hypothese. */
+                   portee_supposee:!t.borne,
                    hauteur:simDCHauteurIpc(touchees[i],touchees[i+1]),
                    net:net,
                    repere:"T"+nTube+(touchees.length>2
                      ?(" "+(touchees[i]+1)+"→"+(touchees[i+1]+1)):"")});
     }
-    if(nTube)
-      notes.push(nTube+" trou(s) métallisé(s) pris pour TRAVERSANTS : le "+
-                 "fichier ne dit pas entre quelles couches ils courent.");
+    /* DEUX COMPTES, ET ILS NE SE DÉFENDENT PAS PAREIL : ce qui est déclaré se
+       vérifie contre le fichier, ce qui est supposé penche du côté prudent
+       pour la résistance et du côté qui rassure pour les chemins inventés. */
+    if(nBorne)
+      notes.push(nBorne+" trou(s) métallisé(s) montés sur leur PORTÉE "+
+                 "déclarée : le fichier dit entre quelles couches ils "+
+                 "courent, et les vias borgnes ou enterrés ne relient que "+
+                 "celles-là."+
+                 (nHorsPortee?" "+nHorsPortee+" anneau(x) du net rencontré(s) "+
+                   "hors de la portée d'un trou n'y sont donc PAS raccordés.":""));
+    if(nSuppose)
+      notes.push(nSuppose+" trou(s) métallisé(s) pris pour TRAVERSANTS : le "+
+                 "fichier ne déclare pas leur portée. Un borgne compté ainsi "+
+                 "est monté en chaîne sur toute la hauteur — résistance "+
+                 "surestimée — et ajoute des liaisons verticales qui "+
+                 "n'existent pas.");
     if(supposes)
       notes.push(supposes+" tube(s) déduit(s) d'une pastille posée sur "+
                  "plusieurs couches, avec un perçage SUPPOSÉ.");
     if(nonMetallises)
       notes.push(nonMetallises+" perçage(s) non métallisé(s) écarté(s) : ils "+
                  "ne conduisent pas.");
+    /* LES PERÇAGES QUE LE FICHIER NE RATTACHE À AUCUN NET, et qui joindraient
+       pourtant deux couches de celui-ci. C'est le cas ordinaire d'un plan
+       cousu à un autre plan : l'export ne met de net que sur ce qui vient du
+       routage, et les coutures ressortent nues. `N.trous` ne porte que les
+       perçages du net, donc ceux-là étaient écartés SANS UN MOT — le cuivre
+       de la couche d'arrivée devenait flottant, et le solveur refusait tout en
+       parlant de « nœuds qui n'atteignent aucune référence », un message juste
+       dont la CAUSE était ailleurs.
+
+       ON NE LES MONTE PAS POUR AUTANT : un perçage sans net relierait le
+       premier cuivre venu, celui d'un autre net compris, et un court-circuit
+       inventé est pire qu'un chemin manquant. On les COMPTE. */
+    let nus2=0;
+    for(const t of (V.modele.percages||[])){
+      if(t.n===rang)continue;                  // déjà dans N.trous
+      if(/NON/i.test(t.p||""))continue;
+      const tx=t.x*k, ty=t.y*k;
+      let touchees=0;
+      for(let r=0;r<LT.cu.length&&touchees<2;r++)
+        if(polygones.some(g=>g.couche===r&&dedans(tx,ty,g.vertices)))touchees++;
+      if(touchees>=2)nus2++;
+    }
+    if(nus2)
+      notes.push(nus2+" perçage(s) que le fichier ne rattache pas au net "+
+                 net+" joindraient pourtant deux de ses couches : ils sont "+
+                 "écartés du calcul. Un perçage sans net relierait le premier "+
+                 "cuivre venu, et un court-circuit inventé serait pire qu'un "+
+                 "chemin manquant — mais si ce sont des coutures de ce plan, "+
+                 "le chemin vertical qu'elles portent n'est PAS dans ce "+
+                 "résultat.");
 
     const boite=b=>{
       const r=Math.max((b.d||0)*k,0.1)/2;
@@ -2977,6 +3327,8 @@ const SIM_IPC={
          presque cinq fois plus basse, donc s'en remettre au repli du solveur
          serait risquer de prendre une interne pour une externe. */
       couches_externes:(LT.cu.length>1)?[0, LT.cu.length-1]:[0],
+      /* CE QUE LA CARTE EMPORTE DE CHALEUR : voir `simDCThermiqueIpc`. */
+      thermique:simDCThermiqueIpc(),
       notes:notes,
       bornes:B.map(b=>b.nom)
     };
@@ -3122,14 +3474,24 @@ const SIM_IPC={
                  "fentes ne sont donc pas cherchées, et le résultat le dira "+
                  "plutôt que d'annoncer qu'il n'y en a pas.");
     /* LA PORTÉE SUPPOSÉE EST LA LIMITE PROPRE À CETTE PAGE, et elle penche
-       dans un sens qu'il faut connaître : optimiste. */
-    if(idx.size&&doc.vias_masse.length)
-      notes.push(doc.vias_masse.length+" perçage(s) de masse envoyés en les "+
-                 "supposant TRAVERSANTS : l'IPC-2581 ne déclare pas les "+
-                 "couches d'un perçage. Un via enterré compté comme "+
-                 "traversant fait passer pour refermé un retour qui ne l'est "+
-                 "pas — le contrôle des changements de couche est donc "+
-                 "OPTIMISTE.");
+       dans un sens qu'il faut connaître : optimiste. Elle ne concerne plus que
+       les perçages dont le fichier ne DÉCLARE pas la portée — ceux qui la
+       déclarent sont montés dessus, voir `simXtPortee`. */
+    if(idx.size&&doc.vias_masse.length){
+      const supposes=simXtPorteesSupposees(doc.vias_masse);
+      const lus=doc.vias_masse.length-supposes;
+      if(lus)
+        notes.push(lus+" perçage(s) de masse sur "+doc.vias_masse.length+
+                   " portent leur PORTÉE déclarée par le fichier : le "+
+                   "contrôle des changements de couche les juge sur les "+
+                   "couches qu'ils traversent vraiment.");
+      if(supposes)
+        notes.push(supposes+" perçage(s) de masse envoyés en les supposant "+
+                   "TRAVERSANTS : le fichier ne déclare pas leur portée. Un "+
+                   "via enterré compté comme traversant fait passer pour "+
+                   "refermé un retour qui ne l'est pas — le contrôle des "+
+                   "changements de couche est donc OPTIMISTE pour ceux-là.");
+    }
     if(nets.length>1)
       notes.push("La sélection porte "+nets.length+" nets : le plus long "+
                  "donne l'axe de la carte, les autres deviennent des "+
@@ -3144,6 +3506,12 @@ const SIM_IPC={
 
   redessiner:function(){
     if(typeof dessiner==="function")dessiner();
+  },
+  centrerSurVia:function(x_mm,y_mm){
+    const k=simKUnite();
+    if(k>0&&typeof centrerSur==="function"){
+      centrerSur(x_mm/k, y_mm/k);
+    }
   },
   astuce:function(t){
     const el=document.getElementById("fHint");

@@ -647,7 +647,7 @@ const S = {
   show:{silkT:true,silkB:true,edge:true,rats:true,plane:true,drc:true,
         maskT:false,maskB:false,pasteT:false,pasteB:false},
   board:{x:0,y:0,w:100,h:80,pts:null},   // pts = contour libre, sinon rectangle
-  fps:[], tracks:[], vias:[], zones:[], cuts:[],
+  fps:[], tracks:[], vias:[], zones:[], cuts:[], drawings:[],
   /* `corner` : l'angle imposé aux pistes tracées — « 45 » par défaut, c'est la
      règle de l'art ; « 90 » pour un tracé orthogonal strict, « free » pour un
      angle quelconque. */
@@ -676,11 +676,12 @@ const S = {
   coord:{open:false,mode:"abs"},       // saisie de coordonnées au clavier
   avoid:true,                          // le tracé se tient à distance des obstacles
   mode:"select",
-  sel:{fps:new Set(),tracks:new Set(),vias:new Set(),zones:new Set(),cuts:new Set(),edge:false},
+  sel:{fps:new Set(),tracks:new Set(),vias:new Set(),zones:new Set(),cuts:new Set(),drawings:new Set(),edge:false},
   route:null,                 // tracé de piste en cours
   dp:null,                    // tracé de paire différentielle en cours
   zoneDraft:null,             // zone en cours de saisie
   cutDraft:null,              // découpe de zone en cours
+  silkDraft:null, silkShape:"line",   // tracé de sérigraphie en cours et forme active (line|rect)
   hlNet:null,                 // net mis en avant
   hlText:null,                // texte de composant en cours de déplacement
   drc:[], drcRun:false,

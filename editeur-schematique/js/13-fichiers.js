@@ -61,12 +61,20 @@ function exportPng(){
   let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
   for(const el of S.comps){const b=bbox(el);x1=Math.min(x1,b.x1);y1=Math.min(y1,b.y1);x2=Math.max(x2,b.x2);y2=Math.max(y2,b.y2);}
   for(const w of S.wires){x1=Math.min(x1,w.x1,w.x2);y1=Math.min(y1,w.y1,w.y2);x2=Math.max(x2,w.x1,w.x2);y2=Math.max(y2,w.y1,w.y2);}
+  for(const d of (S.drawings||[])){x1=Math.min(x1,d.x1,d.x2);y1=Math.min(y1,d.y1,d.y2);x2=Math.max(x2,d.x1,d.x2);y2=Math.max(y2,d.y1,d.y2);}
+  if(S.page===0 && typeof sheetBlocks==="function"){
+    for(const sb of sheetBlocks()){
+      x1=Math.min(x1,sb.x);y1=Math.min(y1,sb.y);x2=Math.max(x2,sb.x+sb.w);y2=Math.max(y2,sb.y+sb.h);
+    }
+  }
   if(x1>x2){alert("Feuille vide : rien à exporter.");return;}
   const pad=50, sc=2, W=(x2-x1+pad*2)*sc, H=(y2-y1+pad*2)*sc;
   const o=document.createElement("canvas");o.width=W;o.height=H;
   const c=o.getContext("2d");
   c.fillStyle=C_BG;c.fillRect(0,0,W,H);
   c.setTransform(sc,0,0,sc,-(x1-pad)*sc,-(y1-pad)*sc);
+  drawDrawings(c);
+  if(typeof drawSheetBlocks==="function")drawSheetBlocks(c);
   drawWires(c);
   drawJunctions(c);
   for(const el of S.comps) drawComp(c,el,false);
@@ -183,11 +191,20 @@ function bomRows(){
   storeCurrent();
   S.pages.forEach((p,i)=>{
     const src=(i===S.page)?S.comps:(p.comps||[]);
-    for(const c of src) if(!defOf(c.type).noRef)
+    for(const c of src) if(!defOf(c.type).noRef) {
+      const sp = c.specs ? Object.entries(c.specs).map(([k,v])=>k+": "+v).join(", ") : "";
       rows.push({
           ref:c.ref||"", type:defOf(c.type).n, value:c.value||"", pkg:c.pkg||"", 
-          page:i+1, csvMpn: c.csvMpn||"", csvPartName: c.csvPartName||""
+          page:i+1, csvMpn: c.csvMpn||"", csvPartName: c.csvPartName||"",
+          mpn: c.mpn || c.csvMpn || c.csvPartName || "",
+          manufacturer: c.manufacturer || "",
+          lcsc: c.lcsc || "",
+          mouser: c.mouser_part || "",
+          digikey: c.digikey_part || "",
+          specs: sp,
+          datasheet: c.datasheet_local || c.datasheet_url || c.datasheet_web || ""
       });
+    }
   });
   rows.sort((a,b)=>(a.page-b.page)||
     String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}));
@@ -197,19 +214,19 @@ function bomRows(){
 function bomCsvText(){
   const rows=bomRows();
   if(!rows.length)return "";
-  const out=["Repère;Composant;Valeur;Boîtier;Part Number;Feuille"];
+  const out=["Repère;Composant;Valeur;Boîtier;Part Number;Fabricant;Code LCSC;Réf Mouser;Réf DigiKey;Spécifications;Datasheet;Feuille"];
   for(const r of rows)
-    out.push([r.ref,r.type,r.value,r.pkg,r.csvMpn||r.csvPartName,r.page].map(csvCell).join(";"));
+    out.push([r.ref, r.type, r.value, r.pkg, r.mpn, r.manufacturer, r.lcsc, r.mouser, r.digikey, r.specs, r.datasheet, r.page].map(csvCell).join(";"));
   // récapitulatif : quantités par référence de commande
   const groups=new Map();
   for(const r of rows){
-    const k=r.type+"|"+r.value+"|"+r.pkg+"|"+(r.csvMpn||r.csvPartName);
+    const k=r.type+"|"+r.value+"|"+r.pkg+"|"+r.mpn+"|"+r.manufacturer;
     if(!groups.has(k))groups.set(k,{...r,refs:[]});
     groups.get(k).refs.push(r.ref);
   }
-  out.push("","Qté;Composant;Valeur;Boîtier;Part Number;Repères");
+  out.push("","Qté;Composant;Valeur;Boîtier;Part Number;Fabricant;Code LCSC;Repères");
   for(const g of [...groups.values()].sort((a,b)=>b.refs.length-a.refs.length))
-    out.push([g.refs.length,g.type,g.value,g.pkg,g.csvMpn||g.csvPartName,g.refs.join(" ")].map(csvCell).join(";"));
+    out.push([g.refs.length, g.type, g.value, g.pkg, g.mpn, g.manufacturer, g.lcsc, g.refs.join(" ")].map(csvCell).join(";"));
   return out.join("\r\n");
 }
 function exportBomCsv(){

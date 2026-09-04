@@ -232,7 +232,13 @@ function peindreCouche(c,dpr,couche){
   if(V.aff.plans&&couche.chemins.plans){
     c.fillStyle=couche.couleur;
     c.globalAlpha=0.55;                      // un plan reste un fond : on doit
-    c.fill(couche.chemins.plans,"evenodd");  // voir les pistes qui le croisent
+                                             // voir les pistes qui le croisent
+    /* UN REMPLISSAGE PAR CONTOUR, et c'est ce qui rend le dessin juste :
+       evenodd est un OU EXCLUSIF, pas une union. Tous les contours dans un
+       seul chemin, deux dégagements qui se recouvraient se rendaient leur
+       cuivre et deux îlots qui se recouvraient s'annulaient en un trou noir.
+       Voir `mdlPlansDans`. */
+    for(const p of couche.chemins.plans)c.fill(p,"evenodd");
     c.globalAlpha=1;
   }
   if(V.aff.pistes){
@@ -294,7 +300,7 @@ function peindreNet(c,dpr,net,mev){
   const min=1/V.vue.scale;
   c.strokeStyle="#ffffff"; c.fillStyle="#ffffff";
   c.globalAlpha=0.85; c.lineCap="round"; c.lineJoin="round";
-  if(g.plans)c.fill(g.plans,"evenodd");
+  if(g.plans)for(const p of g.plans)c.fill(p,"evenodd");
   if(g.pads)c.fill(g.pads,"nonzero");
   for(const [w,chemin] of g.traits){
     c.lineWidth=Math.max(w||0,min);

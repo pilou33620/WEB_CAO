@@ -76,7 +76,7 @@ function drawNetLabels(c,force){
   c.save();
   c.lineWidth=1.2;
   for(const b of netLabelBoxes()){
-    const n=b.net, col=n.conflict?C_RED:netColor(n);
+    const n=b.net, col=n.conflict?C_RED:((b.wire&&b.wire.bus)?C_BUS:netColor(n));
     // étiquette déplacée : un trait de rappel vers le fil, pour ne pas
     // l'attribuer au segment voisin
     if(b.moved){
@@ -108,7 +108,25 @@ function drawComp(c,el,ghost){
   c.save();
   if(ghost)c.globalAlpha=.45;
   c.fillStyle="#8fd0ff";
-  for(const p of allPins(el)){c.beginPath();c.arc(p.x,p.y,2.6,0,Math.PI*2);c.fill();}
+  const ps=allPins(el);
+  for(const p of ps){c.beginPath();c.arc(p.x,p.y,2.6,0,Math.PI*2);c.fill();}
+  if(el.type!=="ic" && Array.isArray(el.pinNames)){
+    ps.forEach((p,i)=>{
+      const nm=el.pinNames[i];
+      if(!nm)return;
+      const dx=p.x-el.x, dy=p.y-el.y;
+      let align="center", tx=p.x, ty=p.y;
+      if(Math.abs(dx)>=Math.abs(dy)){
+        align=dx>0?"right":"left";
+        tx+=dx>0?-6:6;
+        ty-=8;
+      }else{
+        align="center";
+        ty+=dy>0?-9:12;
+      }
+      TXT(c,nm,tx,ty,8.5,"#93c5fd",align);
+    });
+  }
   c.restore();
   // textes (jamais pivotés, pour rester lisibles)
   c.save();if(ghost)c.globalAlpha=.45;
@@ -191,17 +209,149 @@ function drawTextLinks(c){
   }
   c.restore();
 }
+function drawDrawings(c){
+  if(!S.drawings||!S.drawings.length)return;
+  for(const d of S.drawings){
+    c.save();
+    c.strokeStyle=d.color||"#6b7280";
+    c.lineWidth=d.width||2;
+    c.lineCap="round";
+    if(d.style==="dashed") c.setLineDash([8,6]);
+    else if(d.style==="dotted") c.setLineDash([2,4]);
+    else c.setLineDash([]);
+    if(d.shape==="rect"){
+      const rx=Math.min(d.x1,d.x2), ry=Math.min(d.y1,d.y2);
+      const rw=Math.abs(d.x2-d.x1), rh=Math.abs(d.y2-d.y1);
+      c.strokeRect(rx,ry,rw,rh);
+      c.setLineDash([]);
+      if(d.label){
+        TXT(c,d.label,rx+10,ry+14,11.5,d.color||"#6b7280","left");
+      }
+    }else{
+      c.beginPath();
+      c.moveTo(d.x1,d.y1);
+      c.lineTo(d.x2,d.y2);
+      c.stroke();
+      c.setLineDash([]);
+      if(d.label){
+        const mx=(d.x1+d.x2)/2, my=(d.y1+d.y2)/2;
+        let rot=Math.atan2(d.y2-d.y1,d.x2-d.x1);
+        if(rot>Math.PI/2||rot<-Math.PI/2) rot+=Math.PI;
+        c.save();
+        c.translate(mx,my);
+        c.rotate(rot);
+        TXT(c,d.label,0,-8,11.5,d.color||"#6b7280","center");
+        c.restore();
+      }
+    }
+    c.restore();
+  }
+}
+/* ---------- Rendu des blocs hiérarchiques sur la feuille racine (page 0) ---------- */
+function drawSheetBlocks(c){
+  if(S.page !== 0) return;
+  const blocks = typeof sheetBlocks==="function"?sheetBlocks():[];
+  if(!blocks.length){
+    c.save();
+    c.strokeStyle = "#00c4df"; c.globalAlpha = 0.55; c.lineWidth = 1.5; c.setLineDash([6, 4]);
+    c.strokeRect(60, 60, 380, 110);
+    c.setLineDash([]);
+    TXT(c, "⬡ Feuille hiérarchique racine", 250, 95, 13, "#ffffff", "center");
+    TXT(c, "Aucune sous-feuille. Cliquez sur « + Feuille » pour commencer.", 250, 125, 10, "#8b919c", "center");
+    c.restore();
+    return;
+  }
+  for(const b of blocks){
+    c.save();
+    const isSel = (S.selBlock === b.sheetIndex);
+    if(isSel){
+      c.save();
+      c.strokeStyle = C_SEL; c.globalAlpha = 0.35; c.lineWidth = 10;
+      c.strokeRect(b.x, b.y, b.w, b.h);
+      c.restore();
+    }
+    c.fillStyle = "#16191f";
+    c.fillRect(b.x, b.y, b.w, b.h);
+    c.strokeStyle = isSel ? C_SEL : "#00c4df";
+    c.lineWidth = isSel ? 2.5 : 1.8;
+    c.strokeRect(b.x, b.y, b.w, b.h);
+
+    c.fillStyle = "#132530";
+    c.fillRect(b.x, b.y, b.w, 28);
+    c.strokeStyle = isSel ? C_SEL : "#00c4df";
+    c.lineWidth = 1;
+    c.beginPath(); c.moveTo(b.x, b.y + 28); c.lineTo(b.x + b.w, b.y + 28); c.stroke();
+
+    const title = "⊞ " + (b.name.startsWith("Feuille ") ? b.name : ("Feuille " + b.sheetIndex + " : " + b.name));
+    TXT(c, title, b.x + 10, b.y + 15, 11.5, "#ffffff", "left");
+
+    TXT(c, b.nComps + " composant(s) · " + b.nWires + " fil(s)", b.x + 12, b.y + 48, 10, "#8b919c", "left");
+
+    if(b.ports && b.ports.length){
+      TXT(c, "Ports : " + b.ports.slice(0, 3).join(", ") + (b.ports.length > 3 ? "…" : ""), b.x + 12, b.y + 70, 9.5, "#00c4df", "left");
+      c.fillStyle = "#00c4df";
+      for(let pi = 0; pi < Math.min(b.ports.length, 3); pi++){
+        const py = b.y + 42 + pi * 18;
+        c.fillRect(b.x - 3, py - 3, 6, 6);
+        c.fillRect(b.x + b.w - 3, py - 3, 6, 6);
+      }
+    } else {
+      TXT(c, "Aucun port déclaré", b.x + 12, b.y + 70, 9.5, "#555b66", "left");
+    }
+
+    c.fillStyle = "rgba(0, 196, 223, 0.12)";
+    c.fillRect(b.x + 8, b.y + b.h - 26, b.w - 16, 20);
+    c.strokeStyle = "rgba(0, 196, 223, 0.35)";
+    c.strokeRect(b.x + 8, b.y + b.h - 26, b.w - 16, 20);
+    TXT(c, "Double-clic pour ouvrir ➔", b.x + b.w/2, b.y + b.h - 14, 9.5, "#8af0ff", "center");
+
+    c.restore();
+  }
+}
 function drawSel(c){
-  // fils : halo sous le tracé + poignées carrées aux extrémités
-  if(S.selW.size){
+  // traits graphiques : halo sous le tracé + poignées carrées aux extrémités
+  if(S.selD&&S.selD.size){
     c.save();
     c.strokeStyle=C_SEL;c.globalAlpha=.3;c.lineWidth=10;c.lineCap="round";
     c.beginPath();
-    for(const w of S.wires){
-      if(!S.selW.has(w))continue;
-      c.moveTo(w.x1,w.y1);c.lineTo(w.x2,w.y2);
+    for(const d of S.drawings||[]){
+      if(!S.selD.has(d.id)&&!S.selD.has(d))continue;
+      if(d.shape==="rect"){
+        const rx=Math.min(d.x1,d.x2), ry=Math.min(d.y1,d.y2);
+        const rw=Math.abs(d.x2-d.x1), rh=Math.abs(d.y2-d.y1);
+        c.strokeRect(rx,ry,rw,rh);
+      }else{
+        c.moveTo(d.x1,d.y1);c.lineTo(d.x2,d.y2);
+      }
     }
     c.stroke();
+    c.restore();
+    const h=HANDLE/S.scale;
+    c.fillStyle=C_SEL;
+    for(const d of S.drawings||[]){
+      if(!S.selD.has(d.id)&&!S.selD.has(d))continue;
+      if(d.shape==="rect"){
+        c.fillRect(d.x1-h,d.y1-h,h*2,h*2);
+        c.fillRect(d.x2-h,d.y1-h,h*2,h*2);
+        c.fillRect(d.x2-h,d.y2-h,h*2,h*2);
+        c.fillRect(d.x1-h,d.y2-h,h*2,h*2);
+      }else{
+        c.fillRect(d.x1-h,d.y1-h,h*2,h*2);
+        c.fillRect(d.x2-h,d.y2-h,h*2,h*2);
+      }
+    }
+  }
+  // fils : halo sous le tracé + poignées carrées aux extrémités
+  if(S.selW.size){
+    c.save();
+    c.strokeStyle=C_SEL;c.globalAlpha=.3;c.lineCap="round";
+    for(const w of S.wires){
+      if(!S.selW.has(w))continue;
+      c.lineWidth=w.bus?15:10;
+      c.beginPath();
+      c.moveTo(w.x1,w.y1);c.lineTo(w.x2,w.y2);
+      c.stroke();
+    }
     c.restore();
     const h=HANDLE/S.scale;                 // taille constante à l'écran
     c.fillStyle=C_SEL;
@@ -244,6 +394,8 @@ function draw(){
   ctx.restore();
 
   ctx.setTransform(dpr*S.scale,0,0,dpr*S.scale,dpr*S.ox,dpr*S.oy);
+  drawDrawings(ctx);
+  drawSheetBlocks(ctx);
   drawNetGlow(ctx);
   drawWires(ctx);
   drawJunctions(ctx);
@@ -257,14 +409,39 @@ function draw(){
     drawComp(ctx,{id:-1,type:S.place,x:snap(S.mouse.x),y:snap(S.mouse.y),rot:S.placeRot||0,
                   mir:false,ref:"",value:defOf(S.place).v},true);
   }
-  // aperçu de fil
+  // aperçu de fil ou bus
   if(S.wireStart){
     const b={x:snap(S.mouse.x),y:snap(S.mouse.y)};
-    ctx.strokeStyle=C_WIRE;ctx.globalAlpha=.75;ctx.lineWidth=3.4;ctx.setLineDash([7,5]);
+    const isBus=(S.mode==="bus");
+    ctx.strokeStyle=isBus?C_BUS:C_WIRE;ctx.globalAlpha=.75;
+    ctx.lineWidth=isBus?BUS_WIDTH:3.4;ctx.setLineDash([7,5]);
     ctx.beginPath();
     for(const s of routeL(S.wireStart,b)){ctx.moveTo(s.x1,s.y1);ctx.lineTo(s.x2,s.y2);}
     ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
-    ctx.fillStyle=C_RED;ctx.beginPath();ctx.arc(S.wireStart.x,S.wireStart.y,4.5,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=C_RED;ctx.beginPath();ctx.arc(S.wireStart.x,S.wireStart.y,isBus?6:4.5,0,Math.PI*2);ctx.fill();
+  }
+  // aperçu de trait / rectangle
+  if(S.drawStart){
+    const b={x:snap(S.mouse.x),y:snap(S.mouse.y)};
+    ctx.strokeStyle="#9aa3b0";ctx.globalAlpha=.85;ctx.lineWidth=2;ctx.setLineDash([8,6]);
+    if(S.drawShape==="rect"){
+      const rx=Math.min(S.drawStart.x,b.x), ry=Math.min(S.drawStart.y,b.y);
+      const rw=Math.abs(b.x-S.drawStart.x), rh=Math.abs(b.y-S.drawStart.y);
+      ctx.strokeRect(rx,ry,rw,rh);
+      ctx.setLineDash([]);ctx.globalAlpha=1;
+      ctx.fillStyle="#9aa3b0";
+      ctx.fillRect(S.drawStart.x-3,S.drawStart.y-3,6,6);
+      ctx.fillRect(b.x-3,b.y-3,6,6);
+    }else{
+      ctx.beginPath();
+      ctx.moveTo(S.drawStart.x,S.drawStart.y);
+      ctx.lineTo(b.x,b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);ctx.globalAlpha=1;
+      ctx.fillStyle="#9aa3b0";
+      ctx.beginPath();ctx.arc(S.drawStart.x,S.drawStart.y,4,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.arc(b.x,b.y,4,0,Math.PI*2);ctx.fill();
+    }
   }
   // broche survolée
   if(S.hoverPin){

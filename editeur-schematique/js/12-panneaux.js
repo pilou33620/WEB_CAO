@@ -46,6 +46,7 @@ function netBlock(net){
   return h;
 }
 function wireInfo(wires){
+  const isBus=wires.some(w=>w.bus);
   const total=wires.reduce((s,w)=>s+Math.abs(w.x2-w.x1)+Math.abs(w.y2-w.y1),0)/G;
   const len=(Math.round(total*10)/10)+" pas";
   const N=nets(), own=new Set();
@@ -55,16 +56,17 @@ function wireInfo(wires){
     : "";
   if(wires.length>1){
     return '<div class="prop"><label>Sélection</label>'+
-      '<input value="'+wires.length+' fils" disabled></div>'+
+      '<input value="'+wires.length+(isBus?' segments de bus':' fils')+'" disabled></div>'+
       netHtml+
       '<div class="prop"><label>Longueur cumulée</label><input value="'+len+'" disabled>'+
       '<div class="row"><button class="tb" id="pDel">Supprimer</button></div></div>'+
-      '<div class="pinnote">Glisser un fil le déplace ; les segments raccordés à ses '+
+      '<div class="pinnote">Glisser un '+(isBus?'bus':'fil')+' le déplace ; les segments raccordés à ses '+
       'extrémités s\'étirent pour rester connectés. Ctrl+clic ajoute ou retire un '+
       'élément de la sélection.</div>';
   }
   const w=wires[0];
-  const dir=(w.x1===w.x2)?"Fil vertical":(w.y1===w.y2)?"Fil horizontal":"Fil oblique";
+  const kind=w.bus?"Bus":"Fil";
+  const dir=(w.x1===w.x2)?kind+" vertical":(w.y1===w.y2)?kind+" horizontal":kind+" oblique";
   const pt=(x,y)=>Math.round(x/G)+" , "+Math.round(y/G);
   return '<div class="prop"><label>Sélection</label><input value="'+dir+'" disabled></div>'+
     netHtml+
@@ -72,9 +74,10 @@ function wireInfo(wires){
     '<div class="prop"><label>Arrivée</label><input value="'+esc(pt(w.x2,w.y2))+'" disabled></div>'+
     '<div class="prop"><label>Longueur</label><input value="'+len+'" disabled>'+
     '<div class="row"><button class="tb" id="pDel">Supprimer</button></div></div>'+
-    '<div class="pinnote">Étiquette de net : la glisser la déplace, un double-clic '+
+    '<div class="pinnote">Étiquette de '+(w.bus?'bus (ex: D[0..7])':'net')+
+    ' : la glisser la déplace, un double-clic '+
     'la remet en place.<br>Saisir une poignée d\'extrémité étire le segment ; '+
-    'saisir le milieu déplace le fil entier. Alt+glisser détache le fil de ses voisins.</div>';
+    'saisir le milieu déplace le '+(w.bus?'bus':'fil')+' entier. Alt+glisser détache le fil de ses voisins.</div>';
 }
 /* Sélecteur de boîtier en deux temps : la base (SOIC, SOT-23, 0603…) puis le
    brochage. Bases conseillées pour le type de symbole en tête de liste, et ✓
@@ -201,15 +204,98 @@ function refreshPanels(){
   const _focus=propsFocus();
   pruneSel();
   const box=document.getElementById("props");
-  const els=selEls(), wires=selWires();
-  if(wires.length&&!els.length){
+  const els=selEls(), wires=selWires(), drawings=selDrawings();
+  if(drawings.length===1&&!els.length&&!wires.length){
+    const d=drawings[0];
+    const isRect=d.shape==="rect";
+    const dx=Math.abs(d.x2-d.x1)/G, dy=Math.abs(d.y2-d.y1)/G;
+    const len=Math.round(Math.hypot((d.x2-d.x1)/G,(d.y2-d.y1)/G)*10)/10;
+    box.innerHTML=
+      '<div class="prop"><label>Forme</label>'+
+      '<select id="pDShape">'+
+      '<option value="line"'+(!isRect?" selected":"")+'>Trait (segment)</option>'+
+      '<option value="rect"'+(isRect?" selected":"")+'>Rectangle (cadre)</option>'+
+      '</select></div>'+
+      '<div class="prop"><label>Style de trait</label>'+
+      '<select id="pDStyle">'+
+      '<option value="dashed"'+(d.style==="dashed"?" selected":"")+'>Tirets (délimitation)</option>'+
+      '<option value="solid"'+(d.style==="solid"?" selected":"")+'>Continu (plein)</option>'+
+      '<option value="dotted"'+(d.style==="dotted"?" selected":"")+'>Pointillés</option>'+
+      '</select></div>'+
+      '<div class="prop"><label>Épaisseur</label>'+
+      '<select id="pDWidth">'+
+      '<option value="1.5"'+(d.width===1.5?" selected":"")+'>Fine (1,5 px)</option>'+
+      '<option value="2"'+(d.width===2||!d.width?" selected":"")+'>Standard (2 px)</option>'+
+      '<option value="3"'+(d.width===3?" selected":"")+'>Épaisse (3 px)</option>'+
+      '<option value="4"'+(d.width===4?" selected":"")+'>Très épaisse (4 px)</option>'+
+      '</select></div>'+
+      '<div class="prop"><label>Couleur</label>'+
+      '<select id="pDColor">'+
+      '<option value="#6b7280"'+(d.color==="#6b7280"||!d.color?" selected":"")+'>Gris délimitation (#6b7280)</option>'+
+      '<option value="#2f86cc"'+(d.color==="#2f86cc"?" selected":"")+'>Bleu schéma (#2f86cc)</option>'+
+      '<option value="#10b981"'+(d.color==="#10b981"?" selected":"")+'>Vert (#10b981)</option>'+
+      '<option value="#f59e0b"'+(d.color==="#f59e0b"?" selected":"")+'>Ambre (#f59e0b)</option>'+
+      '<option value="#ef4444"'+(d.color==="#ef4444"?" selected":"")+'>Rouge (#ef4444)</option>'+
+      '<option value="#a855f7"'+(d.color==="#a855f7"?" selected":"")+'>Violet (#a855f7)</option>'+
+      '</select></div>'+
+      '<div class="prop"><label>Libellé de zone (optionnel)</label>'+
+      '<input id="pDLabel" placeholder="Ex: ALIMENTATION, MCU..." value="'+esc(d.label||"")+'"></div>'+
+      '<div class="prop"><label>Dimensions</label>'+
+      '<div style="font-family:var(--mono);font-size:11px;color:var(--txt-dim);padding:4px 0">'+
+      'X1: '+(d.x1/G).toFixed(1)+' · Y1: '+(d.y1/G).toFixed(1)+' mm<br>'+
+      'X2: '+(d.x2/G).toFixed(1)+' · Y2: '+(d.y2/G).toFixed(1)+' mm<br>'+
+      (isRect ? ('Largeur : '+dx.toFixed(1)+' · Hauteur : '+dy.toFixed(1)+' mm') : ('Longueur : '+len+' mm'))+
+      '</div></div>'+
+      '<div class="row"><button class="tb" id="pDDel">Supprimer le '+(isRect?"rectangle":"trait")+'</button></div>';
+
+    const sShape=document.getElementById("pDShape");
+    if(sShape) sShape.onchange=e=>{push();d.shape=e.target.value;d.type=d.shape;refreshPanels();draw();};
+    const sStyle=document.getElementById("pDStyle");
+    if(sStyle) sStyle.onchange=e=>{push();d.style=e.target.value;draw();};
+    const sWidth=document.getElementById("pDWidth");
+    if(sWidth) sWidth.onchange=e=>{push();d.width=+e.target.value;draw();};
+    const sColor=document.getElementById("pDColor");
+    if(sColor) sColor.onchange=e=>{push();d.color=e.target.value;draw();};
+    const iLabel=document.getElementById("pDLabel");
+    if(iLabel) iLabel.oninput=e=>{d.label=e.target.value;draw();};
+    if(iLabel) iLabel.onchange=e=>{push();d.label=e.target.value;draw();};
+    const bDel=document.getElementById("pDDel");
+    if(bDel) bDel.onclick=delSel;
+    propsRefocus(_focus);
+    return;
+  }
+  if(S.selBlock!==null&&!els.length&&!wires.length&&!drawings.length){
+    const idx=S.selBlock;
+    const p=S.pages[idx];
+    if(p){
+      const comps=p.comps||[], wiresList=p.wires||[];
+      box.innerHTML=
+        '<div class="prop"><label>Bloc hiérarchique</label><input value="Feuille '+(idx+1)+' : '+esc(p.name)+'" disabled></div>'+
+        '<div class="prop"><label>Nom de la sous-feuille</label><input id="pBlockName" value="'+esc(p.name)+'"></div>'+
+        '<div class="prop"><label>Contenu</label><input value="'+comps.length+' composant(s) · '+wiresList.length+' fil(s)" disabled></div>'+
+        '<div class="prop"><div class="row"><button class="tb on" id="pBlockOpen">Ouvrir cette feuille ➔</button></div>'+
+        '<div class="row"><button class="tb" id="pBlockDel">Supprimer cette feuille</button></div></div>'+
+        '<div class="pinnote">Feuille hiérarchique : double-cliquez sur le bloc ou cliquez sur « Ouvrir » pour entrer dans le schéma correspondant.</div>';
+      const iName=document.getElementById("pBlockName");
+      if(iName){
+        iName.onchange=e=>{push();p.name=e.target.value.trim()||p.name;buildTabs();draw();};
+      }
+      const bOpen=document.getElementById("pBlockOpen");
+      if(bOpen)bOpen.onclick=()=>gotoPage(idx);
+      const bDel=document.getElementById("pBlockDel");
+      if(bDel)bDel.onclick=()=>removePage(idx);
+      return;
+    }
+  }
+  if(wires.length&&!els.length&&!drawings.length){
     box.innerHTML=wireInfo(wires);
     document.getElementById("pDel").onclick=delSel;
     bindNetBlock(wires);
-  }else if(els.length!==1||wires.length){
+  }else if(els.length!==1||wires.length||drawings.length){
     const parts=[];
     if(els.length)parts.push(els.length+(els.length>1?" composants":" composant"));
     if(wires.length)parts.push(wires.length+(wires.length>1?" fils":" fil"));
+    if(drawings.length)parts.push(drawings.length+(drawings.length>1?" traits":" trait"));
     box.innerHTML='<div class="empty">'+(parts.length?parts.join(" et ")+" sélectionnés.":"Aucune sélection.")+
       '<br><br>Raccourcis : <b>R</b> pivoter · <b>M</b> miroir · <b>D</b> dupliquer · '+
       '<b>Ctrl+C</b>/<b>Ctrl+V</b> copier-coller · <b>Suppr</b> supprimer · '+
@@ -233,7 +319,40 @@ function refreshPanels(){
       '<input id="pVal" value="'+esc(el.value||"")+'">';
       
     let csvHtml = "";
+    let enrichHtml = "";
     if (!def.noRef) {
+      const hasEnrich = !!(el.mpn || el.manufacturer || el.specs || el.datasheet_local || el.datasheet_url);
+      let specsRows = "";
+      if (el.specs && typeof el.specs === "object") {
+        for (const sk in el.specs) {
+          specsRows += '<tr><td style="color:var(--txt-dim); padding:2px 4px; border-bottom:1px solid rgba(255,255,255,0.05);">' + esc(sk) + '</td><td style="font-weight:600; padding:2px 4px; border-bottom:1px solid rgba(255,255,255,0.05);">' + esc(el.specs[sk]) + '</td></tr>';
+        }
+      }
+      enrichHtml =
+        '<div style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">' +
+          '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">' +
+            '<label style="color:#5cdbd3; font-weight:bold; font-size:10px; text-transform:uppercase; letter-spacing:0.1em;">Recherche en ligne</label>' +
+            (hasEnrich ? '<button class="pnl-btn" id="pEnrichClear" title="Effacer les données enrichies" style="font-size:10px;">✕</button>' : '') +
+          '</div>' +
+          '<button class="tb" id="pEnrichBtn" style="width:100%; margin-bottom:8px; border-color:#5cdbd3; color:#5cdbd3; font-weight:600;">' +
+            (hasEnrich ? '⌕ Modifier / Ré-enrichir' : '⌕ Rechercher & Enrichir') +
+          '</button>' +
+          (hasEnrich ? (
+            '<div style="background:var(--panel2); border:1px solid var(--border); border-radius:6px; padding:8px; font-size:11px; margin-bottom:8px;">' +
+              (el.mpn ? '<div style="margin-bottom:3px;"><span style="color:var(--txt-dim)">MPN :</span> <b style="color:var(--txt)">' + esc(el.mpn) + '</b></div>' : '') +
+              (el.manufacturer ? '<div style="margin-bottom:3px;"><span style="color:var(--txt-dim)">Fabricant :</span> <b>' + esc(el.manufacturer) + '</b></div>' : '') +
+              (specsRows ? '<table style="width:100%; font-size:10.5px; margin-top:5px; border-collapse:collapse;">' + specsRows + '</table>' : '') +
+              (el.datasheet_local || el.datasheet_url ? (
+                '<div style="margin-top:8px; padding-top:6px; border-top:1px dashed var(--border);">' +
+                  '<button class="tb mini" id="pOpenDs" style="width:100%; border-color:var(--blue); color:var(--blue); text-align:center;">' +
+                    '📄 Ouvrir la Datasheet' + (el.datasheet_local ? ' (locale)' : ' ↗') +
+                  '</button>' +
+                '</div>'
+              ) : '') +
+            '</div>'
+          ) : '') +
+        '</div>';
+
       const isLoaded = window.CSV_LIB && window.CSV_LIB.length > 0;
       csvHtml = '<div style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">' +
                 '<label style="color:var(--blue)">Bibliothèque CSV ' + (isLoaded ? "("+window.CSV_LIB.length+" réf)" : "(Non chargée)") + '</label>' +
@@ -243,9 +362,13 @@ function refreshPanels(){
                 '</div>';
     }
     
-    html += csvHtml +
+    html += enrichHtml + csvHtml +
       (def.noRef?"":pkgField(el))+
       '<div class="row"><button class="tb" id="pRot">Pivoter</button><button class="tb" id="pMir">Miroir</button></div>'+
+      '<div class="row"><button class="tb" id="pCompEd" style="width:100%; border-color:var(--blue); color:var(--blue); font-weight:600;">✎ Éditer le composant…</button></div>'+
+      ((pinCount(el)>0 && typeof def.pins!=="function")
+        ? '<div class="row"><button class="tb" id="pPins" style="width:100%;">⚡ Éditer les broches…</button></div>'
+        : "")+
       ((el.refOff||el.valOff)
         ? '<div class="row"><button class="tb" id="pTxt">Replacer les textes</button></div>'
         : "")+
@@ -321,6 +444,8 @@ function refreshPanels(){
     document.getElementById("pRot").onclick=rotateSel;
     document.getElementById("pMir").onclick=mirrorSel;
     document.getElementById("pDel").onclick=delSel;
+    const pce=document.getElementById("pCompEd");
+    if(pce)pce.onclick=()=>{if(typeof ceOpen==="function")ceOpen(el);};
     const pn=document.getElementById("pN");
     if(pn)pn.onchange=()=>{
       push();
@@ -414,6 +539,37 @@ function refreshPanels(){
         };
     }
     // ---------------------------------
+    const bEnrich = document.getElementById("pEnrichBtn");
+    if (bEnrich) bEnrich.onclick = () => { if (typeof crOuvrir === "function") crOuvrir(el); };
+
+    const bClearEnrich = document.getElementById("pEnrichClear");
+    if (bClearEnrich) bClearEnrich.onclick = () => {
+      push();
+      delete el.mpn;
+      delete el.manufacturer;
+      delete el.specs;
+      delete el.datasheet_local;
+      delete el.datasheet_url;
+      delete el.datasheet_web;
+      delete el.lcsc;
+      delete el.mouser_part;
+      delete el.digikey_part;
+      delete el.distributeurs;
+      refreshPanels();
+      draw();
+    };
+
+    const bOpenDs = document.getElementById("pOpenDs");
+    if (bOpenDs) bOpenDs.onclick = () => {
+      if (el.datasheet_url && (el.datasheet_url.startsWith("/api/datasheet/ouvrir") || el.datasheet_url.startsWith("http"))) {
+        window.open(el.datasheet_url, "_blank");
+      } else if (el.datasheet_local) {
+        const nomP = (typeof projNom === "function" ? projNom() : "") || "";
+        window.open("/api/datasheet/ouvrir?projet=" + encodeURIComponent(nomP) + "&fichier=" + encodeURIComponent(el.datasheet_local), "_blank");
+      } else if (el.datasheet_web) {
+        window.open(el.datasheet_web, "_blank");
+      }
+    };
   }
   propsRefocus(_focus);
   buildList();
@@ -422,11 +578,13 @@ function refreshPanels(){
 function connList(el){
   const ps=allPins(el);
   if(!ps.length)return "";
-  let h='<div class="panel-head">Connexions</div><div class="pins">';
+  let h='<div class="panel-head">Connexions &amp; Broches</div><div class="pins">';
   ps.forEach((p,i)=>{
     const n=netAt(p.x,p.y);
     const live=isRealNet(n);
+    const pName=(el.pinNames&&el.pinNames[i])||"";
     h+='<div class="pinrow"><span class="pn">'+(i+1)+'</span>'+
+       '<input class="pin-name-inp" data-pin-idx="'+i+'" value="'+esc(pName)+'" placeholder="nom broche" style="width:72px;margin:0 4px;padding:1px 4px;font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--txt);" title="Nom de la broche">'+
        (live
          ? '<span class="netcell" data-net="'+esc(n.id)+'" style="color:'+netColor(n)+'"'+
            ' title="Cliquer pour sélectionner le net">'+esc(n.name)+'</span>'
@@ -439,6 +597,18 @@ function netById(id){return nets().list.find(n=>n.id===id)||null;}
 function bindNetCells(box){
   box.querySelectorAll(".netcell[data-net]").forEach(cell=>{
     cell.onclick=()=>selectNet(netById(cell.dataset.net));
+  });
+  box.querySelectorAll(".pin-name-inp").forEach(inp=>{
+    inp.oninput=()=>{
+      const idx=+inp.dataset.pinIdx;
+      const el=S.comps.find(c=>S.sel.has(c.id));
+      if(!el)return;
+      push();
+      if(!Array.isArray(el.pinNames))el.pinNames=[];
+      while(el.pinNames.length<=idx)el.pinNames.push("");
+      el.pinNames[idx]=inp.value.trim().slice(0,32);
+      draw();
+    };
   });
 }
 function bindNetBlock(wires){
@@ -607,4 +777,44 @@ function buildBom(){
 function esc(s){
   return String(s).replace(/[&<>"'`]/g,ch=>
     ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;","`":"&#96;"}[ch]));
+}
+
+/* ---------- menu déroulant du bouton Trait ---------- */
+function drawMenuBuild(){
+  let m=document.getElementById("drawMenu");
+  if(!m){
+    m=document.createElement("div");
+    m.id="drawMenu";
+    document.body.appendChild(m);
+  }
+  const isRect=S.drawShape==="rect";
+  m.innerHTML=
+    '<div class="mtitle">Forme du tracé</div>'+
+    '<div class="prop"><div class="row">'+
+    '<button class="tb'+(!isRect?' sel':'')+'" id="dmLine">─ Trait (segment) <kbd>T</kbd></button>'+
+    '</div><div class="row">'+
+    '<button class="tb'+(isRect?' sel':'')+'" id="dmRect">▢ Rectangle (cadre) <kbd>Shift+T</kbd></button>'+
+    '</div></div>';
+  const bLine=document.getElementById("dmLine");
+  if(bLine)bLine.onclick=()=>{S.drawShape="line";setMode("draw");drawMenuClose();};
+  const bRect=document.getElementById("dmRect");
+  if(bRect)bRect.onclick=()=>{S.drawShape="rect";setMode("draw");drawMenuClose();};
+  return m;
+}
+function drawMenuOpen(){
+  const m=drawMenuBuild(), b=document.getElementById("mDraw");
+  const r=b&&b.getBoundingClientRect?b.getBoundingClientRect():null;
+  m.classList.add("on");
+  if(!r)return;
+  const w=m.offsetWidth||220, hg=m.offsetHeight||120;
+  m.style.left=Math.max(6,Math.min(innerWidth-w-6,r.left))+"px";
+  m.style.top=Math.max(6,Math.min(innerHeight-hg-6,r.bottom+5))+"px";
+}
+function drawMenuClose(){
+  const m=document.getElementById("drawMenu");
+  if(m)m.classList.remove("on");
+}
+function drawMenuToggle(){
+  const m=document.getElementById("drawMenu");
+  if(m&&m.classList.contains("on"))drawMenuClose();else drawMenuOpen();
 }

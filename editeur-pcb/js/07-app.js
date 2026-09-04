@@ -68,10 +68,55 @@ function importNetlist(txt,dropMissing){
   zoneCache.clear();
   buildLayers();refreshPanels();
   if(!S.tracks.length)fit();else draw();
+  const nbConf=(res.conflicts&&res.conflicts.length)||0;
   hint("Netlist importée : "+res.added+" empreinte(s) créée(s), "+res.kept+" mise(s) à jour, "+
        res.nets+" net(s)"+(res.removed?", "+res.removed+" supprimée(s)":"")+
        (res.repkg?", "+res.repkg+" empreinte(s) refaite(s) sur un nouveau boîtier":"")+
+       (nbConf?", ⚠️ "+nbConf+" pastille(s) routée(s) en conflit":"")+
        ". Les nouvelles empreintes attendent à droite de la carte — « Placement auto » les fait entrer.");
+  if(nbConf>0&&typeof openNetlistConflictDialog==="function"){
+    openNetlistConflictDialog(res.conflicts);
+  }
+}
+
+/* Boîte de dialogue interactive pour nettoyer les pistes de cuivre en conflit après mise à jour de la netlist */
+function openNetlistConflictDialog(conflicts){
+  if(!conflicts||!conflicts.length||typeof document==="undefined")return;
+  const m=document.createElement("div");
+  m.className="modal";
+  let itemsHtml="";
+  for(const c of conflicts){
+    const nTrk=(c.tracks&&c.tracks.length)||1;
+    itemsHtml+='<li style="margin-bottom:8px;line-height:1.4">'+
+      'Pastille <b>'+(c.ref||"?")+'.'+c.pin+'</b> : '+
+      'était sur <span style="color:#f87171;font-weight:bold">'+(c.oldNet||"?")+'</span>, '+
+      'devient <span style="color:#4ade80;font-weight:bold">'+(c.newNet||"?")+'</span> '+
+      '<span style="color:var(--txt-dim);font-size:11.5px">('+nTrk+' piste(s) connectée(s))</span>'+
+      '</li>';
+  }
+  m.innerHTML='<div class="box" style="max-width:540px">'+
+    '<h3 style="color:#fbbf24;display:flex;align-items:center;gap:8px">'+
+    '⚠️ Changement de brochage sur pistes routées</h3>'+
+    '<p style="color:var(--txt-dim);font-size:12.5px;line-height:1.45;margin-bottom:10px">'+
+    'La netlist met à jour des pastilles qui possèdent déjà des pistes de cuivre dessinées. '+
+    'Pour éviter des courts-circuits, vous pouvez détacher ou supprimer automatiquement ces segments obsolètes :</p>'+
+    '<ul style="margin:10px 0 14px 20px;font-size:12.5px;color:var(--txt)">'+itemsHtml+'</ul>'+
+    '<div class="row" style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">'+
+    '<button class="tb" id="nlConfKeep">Conserver les pistes (ignorer)</button>'+
+    '<button class="tb on" id="nlConfClean" style="background:#ef4444;border-color:#ef4444;color:#fff">'+
+    '✂ Supprimer les pistes en conflit</button>'+
+    '</div></div>';
+  document.body.appendChild(m);
+  const close=()=>m.remove();
+  m.onclick=e=>{if(e.target===m)close();};
+  const bKeep=document.getElementById("nlConfKeep");
+  if(bKeep)bKeep.onclick=close;
+  const bClean=document.getElementById("nlConfClean");
+  if(bClean)bClean.onclick=()=>{
+    close();
+    const nb=pcbNettoyerPistesConflits(conflicts);
+    hint("✂ "+nb+" piste(s) en conflit supprimée(s). Les pastilles sont prêtes pour le nouveau chevelu.");
+  };
 }
 function exportPng(){
   const save={scale:S.scale,ox:S.ox,oy:S.oy};
@@ -146,6 +191,7 @@ $("mDiff").onclick=()=>setMode("dpair");
 /* Le bouton passe en mode zone et déplie ses options :
    rôle de la couche active, net du plan, deux façons de poser du cuivre. */
 $("mZone").onclick=e=>{e.stopPropagation();setMode("zone");zoneMenuToggle();};
+if($("mSilk")) $("mSilk").onclick=e=>{e.stopPropagation();setMode("silk");silkMenuToggle();};
 $("mEdge").onclick=()=>setMode("edge");
 $("mOrigin").onclick=()=>setMode("origin");
 $("mErase").onclick=()=>setMode("cut");
@@ -234,13 +280,18 @@ document.addEventListener("pointerdown",e=>{
   const m=$("zoneMenu");
   if(m&&m.classList.contains("on")&&!m.contains(e.target)&&!$("mZone").contains(e.target))
     zoneMenuClose();
+  const sm=$("silkMenu");
+  if(sm&&sm.classList.contains("on")&&!sm.contains(e.target)&&!($("mSilk")&&$("mSilk").contains(e.target)))
+    silkMenuClose();
 });
 document.addEventListener("keydown",e=>{
   if(e.key!=="Escape")return;
   const m=$("zoneMenu");
   if(m&&m.classList.contains("on")){zoneMenuClose();e.stopPropagation();}
+  const sm=$("silkMenu");
+  if(sm&&sm.classList.contains("on")){silkMenuClose();e.stopPropagation();}
 },true);
-window.addEventListener("resize",()=>{zoneMenuClose();resize();});
+window.addEventListener("resize",()=>{zoneMenuClose();silkMenuClose();resize();});
 window.addEventListener("beforeunload",e=>{
   /* Changer d'outil met la carte en session : il n'y a rien à perdre, la
      question ne se pose plus. Elle reste posée pour une vraie fermeture. */

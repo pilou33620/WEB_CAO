@@ -379,11 +379,22 @@ def compute_current_density(currents: np.ndarray, rwg_basis: List,
         
         # Contribution au triangle T+
         # J = I_n * f_n où f_n = l_n/(2*A_n) * (r - r_n)
-        # Approximation : vecteur constant par triangle
-        j_density[tri_plus] += current_coef * rwg.edge_length / (2 * rwg.area_plus)
+        # Approximation barycentrique : évaluation au centre de gravité du triangle
+        c_plus = np.mean(vertices[elements[tri_plus]], axis=0)
+        v_plus = vertices[rwg.vertex_plus]
+        rho_plus = c_plus - v_plus
+        vec_plus = np.zeros(3, dtype=float)
+        vec_plus[:min(3, len(rho_plus))] = rho_plus[:min(3, len(rho_plus))]
+        j_density[tri_plus] += current_coef * (rwg.edge_length / (2 * rwg.area_plus)) * vec_plus
         
         # Contribution au triangle T-
-        j_density[tri_minus] -= current_coef * rwg.edge_length / (2 * rwg.area_minus)
+        # J = I_n * f_n où f_n = l_n/(2*A_n) * (r_n - r) = - l_n/(2*A_n) * (r - r_n)
+        c_minus = np.mean(vertices[elements[tri_minus]], axis=0)
+        v_minus = vertices[rwg.vertex_minus]
+        rho_minus = c_minus - v_minus
+        vec_minus = np.zeros(3, dtype=float)
+        vec_minus[:min(3, len(rho_minus))] = rho_minus[:min(3, len(rho_minus))]
+        j_density[tri_minus] -= current_coef * (rwg.edge_length / (2 * rwg.area_minus)) * vec_minus
     
     return j_density
 

@@ -290,6 +290,10 @@ et *ce navigateur ne partage rien entre onglets*. En `file://`, deux onglets
 n'ont pas la même origine et le canal n'existe pas : le bouton se désactive au
 lieu de disparaître.
 
+## Limites connues
+
+- **Bus et hiérarchie :** Pas de bus de signaux (un bus D0..D7 doit être tiré à huit fils individuels) ni de feuilles hiérarchiques (seuls les nets globaux multi-feuilles sont gérés).
+
 ## Deux règles à respecter
 
 **1. L'ordre des `<script>` compte.** Ce sont des scripts classiques, pas des

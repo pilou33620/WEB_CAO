@@ -59,10 +59,11 @@ const V={
      sélection et la simulation parcourent. Voir `selPoser`, 04-interaction.js. */
   sel:[],
   /* Ce que l'utilisateur a complété faute de le trouver dans le fichier :
-     épaisseur d'un conducteur, épaisseur et permittivité d'un intervalle.
+     épaisseur d'un conducteur, épaisseur et permittivité d'un intervalle,
+     et rôle forcé (signal vs plan).
      Rangé par nom de couche, comme les couches masquées, et gardé dans le
      profil — un empilage se saisit une fois, pas à chaque ouverture. */
-  sur:{cu:{},gap_t:{},gap_er:{}}
+  sur:{cu:{},gap_t:{},gap_er:{},role:{}}
 };
 
 /* ==========================================================================
@@ -185,6 +186,46 @@ function mdlPolyDans(p,pts,fermer){
   for(let i=2;i+1<pts.length;i+=2)p.lineTo(pts[i],pts[i+1]);
   if(fermer!==false)p.closePath();
 }
+/* ==========================================================================
+   LES PLANS : UN CHEMIN PAR CONTOUR, ET NON UN SEUL POUR TOUTE LA COUCHE
+   --------------------------------------------------------------------------
+   LE DÉFAUT, ET IL SE VOYAIT À L'ŒIL. Tous les contours de plans d'une couche
+   étaient versés dans UN SEUL Path2D, rempli en « evenodd ». Or evenodd n'est
+   pas une union : c'est un OU EXCLUSIF. Trois conséquences, toutes visibles :
+
+     · deux DÉGAGEMENTS qui se recouvrent — le cas ordinaire d'un connecteur à
+       broches serrées — se rendent mutuellement leur cuivre : la lentille
+       commune se remplit, et un anneau de cuivre apparaît entre deux pastilles
+       là où le fondeur n'en a pas laissé ;
+     · deux ÎLOTS de plan qui se recouvrent s'annulent : leur intersection
+       devient un TROU noir, avec le contour de l'intersection pour forme — ce
+       qui donne des blobs incompréhensibles autour d'un boîtier ;
+     · le dégagement d'un contour, s'il traverse un autre contour, cesse d'être
+       un trou.
+
+   LA BONNE GRANULARITÉ EST LE CONTOUR. À l'intérieur d'un contour, evenodd est
+   exactement ce qu'il faut : un dégagement est INCLUS dans son extérieur, donc
+   le OU exclusif y fait un trou. Entre deux contours, c'est une UNION qu'il
+   faut, et deux `fill()` successifs en sont une — le pinceau ne se souvient pas
+   du coup précédent.
+
+   CE QUE ÇA COÛTE : un appel de remplissage par contour au lieu d'un par
+   couche. Un plan arrosé en compte quelques dizaines, pas quelques milliers, et
+   le prix d'un dessin juste n'est pas discutable.
+   ========================================================================== */
+function mdlPlansDans(plans){
+  const out=[];
+  for(const g of (plans||[]))
+    for(const ct of (g.g||[])){
+      if(!ct||!ct.o||ct.o.length<6)continue;
+      const p=new Path2D();
+      mdlPolyDans(p,ct.o);
+      for(const t of (ct.t||[]))mdlPolyDans(p,t);
+      out.push(p);
+    }
+  return out.length?out:null;
+}
+
 /* Le perçage qui se trouve à ce point, s'il y en a un. IPC-2581 ne relie pas
    une pastille à son trou : ils sont décrits séparément, et c'est leur position
    commune qui les réunit — au micron, le pas auquel tout le reste est arrondi
@@ -639,14 +680,9 @@ function mdlCheminsDe(c){
     p.moveTo(g.cx+g.r*Math.cos(g.d),g.cy+g.r*Math.sin(g.d));
     p.arc(g.cx,g.cy,g.r,g.d,g.f,g.h);
   }
-  let plans=null;
-  if(c.plans.length){
-    plans=new Path2D();
-    for(const g of c.plans)for(const ct of g.g){
-      mdlPolyDans(plans,ct.o);
-      for(const t of (ct.t||[]))mdlPolyDans(plans,t);
-    }
-  }
+  /* UN CHEMIN PAR CONTOUR, ET SURTOUT PAS UN SEUL POUR TOUTE LA COUCHE.
+     Voir `mdlPlansDans`. */
+  const plans=mdlPlansDans(c.plans);
   let pads=null;
   if(c.pads.length){
     pads=new Path2D();
@@ -742,17 +778,10 @@ function mdlCheminsNet(i,mev){
     p2.moveTo(arc.cx+arc.r*Math.cos(arc.d),arc.cy+arc.r*Math.sin(arc.d));
     p2.arc(arc.cx,arc.cy,arc.r,arc.d,arc.f,arc.h);
   }
-  const surfaces=new Path2D();
-  let aSurface=false;
-  for(const pl of n.plans){
-    if(couche>=0&&pl.c!==couche)continue;
-    for(const ct of pl.g){
-      mdlPolyDans(surfaces,ct.o);
-      for(const t of (ct.t||[]))mdlPolyDans(surfaces,t);
-      aSurface=true;
-    }
-  }
-  if(aSurface)g.plans=surfaces;
+  /* MÊME RÈGLE QUE POUR LE DESSIN ORDINAIRE : un chemin par contour, sinon la
+     mise en évidence d'un plan de masse trouerait sa propre surface là où deux
+     îlots se recouvrent. Voir `mdlPlansDans`. */
+  g.plans=mdlPlansDans(n.plans.filter(pl=>couche<0||pl.c===couche));
   const pads=new Path2D();
   let aPad=false;
   for(const q of n.pads){
@@ -917,8 +946,18 @@ function ltPreparer(){
     c.tauxPlan=LT.aire>0?a/LT.aire:0;
   }
   for(const e of LT.cu){
-    e.planSrc=ltEstPlan(e);
-    e.plan=!!e.planSrc;
+    e.planSrcAuto=ltEstPlan(e);
+    const surRole=V.sur&&V.sur.role&&V.sur.role[e.nom];
+    if(surRole==="plan"||surRole==="signal"){
+      e.plan=(surRole==="plan");
+      e.planSrc="saisi";
+      e.roleSaisi=true;
+    }else{
+      e.planSrc=e.planSrcAuto;
+      e.plan=!!e.planSrc;
+      e.roleSaisi=false;
+    }
+    e.role=e.plan?"plan":"signal";
     const c=V.couches[e.couche];
     e.taux=c?c.tauxPlan:0;
   }

@@ -384,6 +384,141 @@ def _padstack_declare_n_est_pas_suppose():
 T(u"une pastille declaree dans le fichier n'est PAS annoncee supposee",
   _padstack_declare_n_est_pas_suppose)
 
+
+# -- LA PORTEE DU PERCAGE : entre quelles couches il court --------------------
+# POURQUOI ELLE COMPTE. Un trou pris pour traversant alors qu'il est borgne est
+# modelise PLUS LONG qu'il n'est -- resistance DC surestimee, ce qui est le
+# cote prudent -- mais surtout il RELIE des couches qu'il ne relie pas, et la
+# le sens de l'erreur s'inverse : le controle du chemin de retour fait passer
+# pour refermee une boucle qui reste ouverte.
+#
+# IPC-2581 ne la met pas sur le trou : elle est sur le CALQUE de percage. La
+# carte d'essai declare son <Layer name="Hole1-2" layerFunction="DRILL"> SANS
+# <Span> -- c'est le cas ordinaire d'un export du commerce --, donc le cas
+# nominal verifie que rien n'est INVENTE, et les variantes ci-dessous que la
+# portee est bien lue quand elle est ecrite.
+
+T(u"un percage sans <Span> ne se voit pas attribuer de portee",
+  lambda: vrai(not DESIGN.drills[0].span_declaree
+               and "sa" not in MODELE["percages"][0],
+               u"une portee a ete inventee : %r" % MODELE["percages"][0]))
+
+
+def _portee_du_calque():
+    """<Span fromLayer toLayer> sur le calque DRILL, lu et transporte.
+
+    LE VIA DE LA CARTE D'ESSAI VA DE Conductor-1 A Conductor-2, c'est-a-dire
+    des rangs 0 et 2 du tableau `couches` (le dielectrique occupe le rang 1) :
+    l'empilage entre dans ce tableau dans SON ordre, dielectriques compris, et
+    c'est ce rang-la qui part dans `sa` / `sb`.
+    """
+    variante = CARTE.replace(
+        u'<Layer name="Hole1-2" layerFunction="DRILL" side="ALL"/>',
+        u'<Layer name="Hole1-2" layerFunction="DRILL" side="ALL">'
+        u'<Span fromLayer="Conductor-1" toLayer="Conductor-2"/></Layer>', 1)
+    vrai(variante != CARTE, u"la carte variante n'a pas ete construite")
+    d = ipc2581_json.charger_octets(variante.encode("utf-8"), "portee.xml")
+    trou = d.drills[0]
+    vrai(trou.span_declaree, u"la portee n'a pas ete lue")
+    egal([trou.span_from, trou.span_to, trou.span_source],
+         ["Conductor-1", "Conductor-2", "calque"], u"la portee lue")
+    m = ipc2581_json.design_en_dict(d, "portee.xml")
+    p = m["percages"][0]
+    egal([p.get("sa"), p.get("sb"), p.get("ss")], [0, 2, "calque"],
+         u"la portee du modele")
+
+
+T(u"la portee declaree sur le calque DRILL est lue et part en rangs",
+  _portee_du_calque)
+
+
+def _portee_par_le_padstack():
+    """LE SECOND CHEMIN : le padstack designe le calque, le calque porte la
+    portee.
+
+    <PadstackHoleDef layerRef="..."> est le seul lien entre un padstack et son
+    calque de percage. Sans lui, un fichier qui declare ses portees sur des
+    calques que le trou ne nomme pas les perdrait toutes.
+    """
+    variante = CARTE.replace(
+        u'<Layer name="Hole1-2" layerFunction="DRILL" side="ALL"/>',
+        u'<Layer name="Hole1-2" layerFunction="DRILL" side="ALL"/>'
+        u'<Layer name="Hole-enterre" layerFunction="DRILL" side="ALL">'
+        u'<Span fromLayer="Conductor-2" toLayer="Conductor-1"/></Layer>', 1)
+    variante = variante.replace(
+        u"  <CadData>",
+        u"""  <CadData>
+   <PadstackDef name="v25" padUsage="VIA">
+    <PadstackHoleDef name="R0.125" diameter="0.25" layerRef="Hole-enterre"/>
+   </PadstackDef>""", 1)
+    d = ipc2581_json.charger_octets(variante.encode("utf-8"), "portee2.xml")
+    vrai(d.padstacks["v25"].hole_layer_ref == "Hole-enterre",
+         u"le padstack ne retient pas son calque de percage : %r"
+         % d.padstacks["v25"].hole_layer_ref)
+    trou = d.drills[0]
+    egal([trou.span_from, trou.span_to, trou.span_source],
+         ["Conductor-2", "Conductor-1", "padstack"],
+         u"la portee venue du padstack")
+
+
+T(u"la portee se retrouve aussi par le padstack du percage",
+  _portee_par_le_padstack)
+
+
+def _portee_a_moitie_resolue_ne_part_pas():
+    """UNE PORTEE A MOITIE RESOLUE VAUDRAIT MOINS QUE RIEN.
+
+    Un fichier qui ecrit <Span fromLayer="TOP" toLayer="BOTTOM"> alors que ses
+    couches s'appellent « Conductor-1 » et « Conductor-2 » ne nomme rien de
+    connu. Laisser passer un seul des deux bouts ferait borner le via sur une
+    couche unique dans la visionneuse, donc COUPER un chemin de courant reel --
+    et le solveur refuserait tout le calcul en parlant de cuivre flottant.
+    Rien ne part, et l'outil suppose traversant EN LE DISANT.
+
+    ET SURTOUT : le nom inconnu ne doit pas s'ajouter au tableau des couches.
+    `rang()` l'aurait fait -- il enregistre ce qu'il ne connait pas --, et la
+    visionneuse aurait affiche deux calques fantomes, vides.
+    """
+    variante = CARTE.replace(
+        u'<Layer name="Hole1-2" layerFunction="DRILL" side="ALL"/>',
+        u'<Layer name="Hole1-2" layerFunction="DRILL" side="ALL">'
+        u'<Span fromLayer="TOP" toLayer="BOTTOM"/></Layer>', 1)
+    d = ipc2581_json.charger_octets(variante.encode("utf-8"), "portee3.xml")
+    vrai(d.drills[0].span_declaree, u"la portee brute n'a pas ete lue")
+    m = ipc2581_json.design_en_dict(d, "portee3.xml")
+    vrai("sa" not in m["percages"][0] and "sb" not in m["percages"][0],
+         u"une portee non resolue est partie : %r" % m["percages"][0])
+    for fantome in ("TOP", "BOTTOM"):
+        vrai(fantome not in m["couches"],
+             u"« %s » a ete ajoute au tableau des couches" % fantome)
+
+
+T(u"une portee dont les couches sont inconnues ne part pas, et n'invente rien",
+  _portee_a_moitie_resolue_ne_part_pas)
+
+
+def _portee_d_une_seule_couche_ne_part_pas():
+    """UNE PORTEE QUI DESIGNE DEUX FOIS LA MEME COUCHE NE DECRIT AUCUN VIA.
+
+    C'est du fichier mal ecrit, mais le laisser passer coute cher : la
+    visionneuse bornerait le tube sur une couche unique, il ne relierait plus
+    rien, le cuivre de l'autre couche resterait flottant et le solveur
+    refuserait TOUT le calcul en parlant de noeuds sans reference. On retombe
+    donc sur l'hypothese traversante, qui ne perd aucun chemin.
+    """
+    variante = CARTE.replace(
+        u'<Layer name="Hole1-2" layerFunction="DRILL" side="ALL"/>',
+        u'<Layer name="Hole1-2" layerFunction="DRILL" side="ALL">'
+        u'<Span fromLayer="Conductor-1" toLayer="Conductor-1"/></Layer>', 1)
+    d = ipc2581_json.charger_octets(variante.encode("utf-8"), "portee4.xml")
+    m = ipc2581_json.design_en_dict(d, "portee4.xml")
+    vrai("sa" not in m["percages"][0],
+         u"une portee d'une seule couche est partie : %r" % m["percages"][0])
+
+
+T(u"une portee qui tient sur une seule couche ne part pas non plus",
+  _portee_d_une_seule_couche_ne_part_pas)
+
 # -- Composants et boitiers ---------------------------------------------------
 T(u"le composant est lu avec son repere et son boitier",
   lambda: egal([(c.ref_des, c.package_ref) for c in DESIGN.components],

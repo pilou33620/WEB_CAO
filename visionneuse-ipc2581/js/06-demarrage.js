@@ -44,7 +44,7 @@ function prefAppliquer(){
    se relisent AVANT que le modèle ne soit dressé — c'est ltPreparer() qui s'en
    sert —, d'où un chargement à part de celui des réglages d'affichage. */
 function prefSurcharges(){
-  V.sur={cu:{},gap_t:{},gap_er:{}};
+  V.sur={cu:{},gap_t:{},gap_er:{},role:{}};
   const p=prefLire();
   if(!p||!p.sur||typeof p.sur!=="object")return;
   for(const quoi of ["cu","gap_t","gap_er"]){
@@ -53,6 +53,12 @@ function prefSurcharges(){
     for(const cle in t){
       const v=+t[cle];
       if(isFinite(v)&&v>0)V.sur[quoi][cle]=v;
+    }
+  }
+  if(p.sur.role&&typeof p.sur.role==="object"){
+    for(const cle in p.sur.role){
+      const r=String(p.sur.role[cle]||"").toLowerCase();
+      if(r==="plan"||r==="signal")V.sur.role[cle]=r;
     }
   }
 }
