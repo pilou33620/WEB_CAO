@@ -2,6 +2,18 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.13.0
+# Date: 2026-09-05
+# Explication: ajout des routes de scoring de placement PCB (/api/pcb/score-placement)
+#   et de reconnaissance de motifs de schema (/api/schema/patterns) pour WEB_CAO.
+#   Imports tolerants des modules python/pcb_scoring.py et python/pattern_recognition.py
+#   en bibliotheque standard uniquement.
+# Fonctions ajoutees/modifiees :
+# - MAX_SCORING, MAX_PATTERNS, imports tolerants de pcb_scoring et pattern_recognition
+# - CustomHandler._scoring_etat, _scoring_lancer, _patterns_etat, _patterns_lancer
+# - CustomHandler.do_OPTIONS / do_POST / do_GET (routage)
+# - start_server (journal de demarrage)
+#
 # Version: 2.12.0
 # Date: 2026-09-01
 # Explication: la section « Crosstalk » rejoint la chaine, d'ou une sixieme
@@ -383,6 +395,24 @@ MAX_SIM = getattr(simulation_em, "MAX_CORPS", 4 * 1024 * 1024)
 # Celui du crosstalk porte un parcours et son voisinage : meme ordre de
 # grandeur, et le plafond reste le sien pour pouvoir bouger seul.
 MAX_CROSSTALK = getattr(crosstalk, "MAX_CORPS", 4 * 1024 * 1024)
+
+# -- scoring PCB et reconnaissance de motifs --------------------------------
+try:
+    import pcb_scoring
+    ERREUR_SCORING = None
+except Exception as _exc:                              # noqa: BLE001
+    pcb_scoring = None
+    ERREUR_SCORING = _exc
+
+try:
+    import pattern_recognition
+    ERREUR_PATTERNS = None
+except Exception as _exc:                              # noqa: BLE001
+    pattern_recognition = None
+    ERREUR_PATTERNS = _exc
+
+MAX_SCORING = 16 * 1024 * 1024
+MAX_PATTERNS = 16 * 1024 * 1024
 
 
 # Un IPC-2581 est un XML bavard : une carte de taille moyenne pese quelques
@@ -1457,6 +1487,69 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         }
         return resultat
 
+    # -- scoring de placement PCB -----------------------------------------
+    def _scoring_etat(self):
+        """GET /api/pcb/score-placement : verifie la disponibilite du scoring."""
+        if pcb_scoring is None:
+            return {"dispo": False,
+                    "detail": "Scoring PCB indisponible : %s" % ERREUR_SCORING}
+        return {"dispo": True, "nom": "Scoring de placement PCB"}
+
+    def _scoring_lancer(self):
+        """POST /api/pcb/score-placement : calcule les metriques de placement."""
+        if pcb_scoring is None:
+            raise ErreurIPC(503, "Scoring PCB indisponible : %s" % ERREUR_SCORING)
+        try:
+            taille = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise ErreurIPC(400, "Content-Length invalide")
+        if taille <= 0:
+            raise ErreurIPC(400, "Document vide")
+        if taille > MAX_SCORING:
+            raise ErreurIPC(413, "Document trop grand : %.1f Mo, maximum %d Mo"
+                                 % (taille / 1048576.0, MAX_SCORING // 1048576))
+        corps = self.rfile.read(taille)
+        try:
+            doc = json.loads(corps.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
+        if not isinstance(doc, dict):
+            raise ErreurIPC(400, "Document JSON (objet) attendu")
+        if doc.get("composant_cible"):
+            res = pcb_scoring.evaluer_rotation_composant(doc["composant_cible"], doc.get("footprints", []))
+            return {"succes": True, "composant": res}
+        return pcb_scoring.evaluer_placement_pcb(doc)
+
+    # -- reconnaissance de motifs de schema -------------------------------
+    def _patterns_etat(self):
+        """GET /api/schema/patterns : verifie la disponibilite des motifs."""
+        if pattern_recognition is None:
+            return {"dispo": False,
+                    "detail": "Reconnaissance de motifs indisponible : %s" % ERREUR_PATTERNS}
+        return {"dispo": True, "nom": "Reconnaissance de motifs de schéma"}
+
+    def _patterns_lancer(self):
+        """POST /api/schema/patterns : analyse les motifs et blocs fonctionnels."""
+        if pattern_recognition is None:
+            raise ErreurIPC(503, "Reconnaissance de motifs indisponible : %s" % ERREUR_PATTERNS)
+        try:
+            taille = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise ErreurIPC(400, "Content-Length invalide")
+        if taille <= 0:
+            raise ErreurIPC(400, "Document vide")
+        if taille > MAX_PATTERNS:
+            raise ErreurIPC(413, "Document trop grand : %.1f Mo, maximum %d Mo"
+                                 % (taille / 1048576.0, MAX_PATTERNS // 1048576))
+        corps = self.rfile.read(taille)
+        try:
+            doc = json.loads(corps.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
+        if not isinstance(doc, dict):
+            raise ErreurIPC(400, "Document JSON (objet) attendu")
+        return pattern_recognition.analyser_motifs_schema(doc)
+
     def _ipc_api(self, action):
         """Execute action() et traduit les refus en JSON {"detail": ...}.
 
@@ -1636,7 +1729,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route not in ("/api/tools", "/api/tool", "/api/ipc2581",
                          "/api/simulation", "/api/simulation-dc",
                          "/api/crosstalk", "/api/datasheet/telecharger",
-                         "/api/datasheet/ouvrir"):
+                         "/api/datasheet/ouvrir",
+                         "/api/pcb/score-placement", "/api/schema/patterns"):
             self.send_error(405, "Unsupported method (OPTIONS)")
             return
         self.send_response(204)
@@ -1677,6 +1771,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/crosstalk":
             self._ipc_api(self._crosstalk_lancer)
+            return
+        if route == "/api/pcb/score-placement":
+            self._ipc_api(self._scoring_lancer)
+            return
+        if route == "/api/schema/patterns":
+            self._ipc_api(self._patterns_lancer)
             return
         if route == "/api/datasheet/telecharger":
             self._datasheet_api(self._datasheet_telecharger)
@@ -1731,6 +1831,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/crosstalk":
             self._ipc_api(self._crosstalk_etat)
             return
+        if route == "/api/pcb/score-placement":
+            self._ipc_api(self._scoring_etat)
+            return
+        if route == "/api/schema/patterns":
+            self._ipc_api(self._patterns_etat)
+            return
         super().do_GET()
 
     def do_HEAD(self):
@@ -1740,6 +1846,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/tools":
             self._api(lambda: passerelle_mcp.liste_outils())
+            return
+        if route == "/api/pcb/score-placement":
+            self._ipc_api(self._scoring_etat)
+            return
+        if route == "/api/schema/patterns":
+            self._ipc_api(self._patterns_etat)
             return
         if route == "/api/profils":
             self._profil_api(self._profils_index)
@@ -1892,6 +2004,18 @@ def start_server(host, port, navigateur=True):
         print("  crosstalk     : /api/crosstalk ->"
               " matrice S synthetisee depuis le design + IFFT"
               " (python/crosstalk.py)")
+    if pcb_scoring is None:
+        print("  scoring PCB   : /api/pcb/score-placement -> indisponible (%s)"
+              % ERREUR_SCORING)
+    else:
+        print("  scoring PCB   : /api/pcb/score-placement ->"
+              " HPWL, congestion, decouplage (python/pcb_scoring.py)")
+    if pattern_recognition is None:
+        print("  motifs schema : /api/schema/patterns -> indisponible (%s)"
+              % ERREUR_PATTERNS)
+    else:
+        print("  motifs schema : /api/schema/patterns ->"
+              " alim, bus, osc, filtres (python/pattern_recognition.py)")
     if PROJETS_OUVERT:
         print("  projets       : /api/projets, /api/projet, /api/projet/doc")
         for i, racine in enumerate(racines_projets()):

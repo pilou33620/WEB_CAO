@@ -56,6 +56,11 @@ js/19-simulation.js      simulation EM : la carte de chaleur d'impédance sur la
                          de couture le long du parcours, les FENTES du plan de
                          référence sondées sous la piste, et les VIAS DE MASSE
                          qui referment le retour aux changements de couche
+js/20-placement-score.js panneau Qualité de placement & rotation assistée :
+                         score HPWL en temps réel, hotspots de congestion (grille 5 mm),
+                         conformité du découplage HF (≤ 3.5 mm), groupement par bloc
+                         fonctionnel schéma et optimisation d'orientation en 1 clic (✨ Auto)
+                         pour minimiser les croisements de chevelu (0°, 90°, 180°, 270°)
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```

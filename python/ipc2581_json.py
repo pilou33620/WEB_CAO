@@ -304,6 +304,9 @@ def design_en_dict(design: IPCDesign, fichier: str = "") -> dict:
             "mnt": comp.mount_type or "UNKNOWN",
             "val": comp.value or "",
             "tol": comp.tolerance or "",
+            "type": comp.comp_type or "",
+            "part": comp.part_number or "",
+            "props": comp.properties or {},
         }
         paquet = comp.package_obj
         if paquet:

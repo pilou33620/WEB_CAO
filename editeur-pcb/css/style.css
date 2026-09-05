@@ -472,3 +472,195 @@
     aside{width:168px}aside.right{width:206px}
     #coordBox .cihint{display:none}
   }
+
+  /* ==========================================================================
+     Inspection & Conformité du Pinout PCB (Pas, Taille boîtier, Brochage)
+     ========================================================================== */
+  button.pcb-btn-pinout-ok {
+    background: #064e3b !important;
+    border-color: #059669 !important;
+    color: #6ee7b7 !important;
+  }
+  button.pcb-btn-pinout-warn {
+    background: #78350f !important;
+    border-color: #d97706 !important;
+    color: #fde68a !important;
+  }
+
+  #pcbPinoutToast {
+    position: fixed;
+    bottom: 22px;
+    right: 22px;
+    z-index: 1000;
+    max-width: 420px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    box-shadow: 0 16px 36px rgba(0,0,0,0.6);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    animation: pcbToastSlideIn 0.25s ease-out;
+    border: 1px solid var(--border);
+  }
+  @keyframes pcbToastSlideIn {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  #pcbPinoutToast.ok {
+    background: #064e3b;
+    border-color: #10b981;
+    color: #ecfdf5;
+  }
+  #pcbPinoutToast.warn {
+    background: #451a03;
+    border-color: #f59e0b;
+    color: #fffbeb;
+  }
+
+  .pcb-fp-pinout-box {
+    margin: 6px 0 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #11141a;
+  }
+  .pcb-fp-pinout-box.ok {
+    border-color: #059669;
+    background: rgba(6, 78, 59, 0.25);
+  }
+  .pcb-fp-pinout-box.warn {
+    border-color: #d97706;
+    background: rgba(120, 53, 15, 0.25);
+  }
+
+  .pcb-comp-card {
+    background: #151821;
+    border: 1px solid #282e3e;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    padding: 12px 14px;
+  }
+  .pcb-comp-card.ok {
+    border-left: 4px solid #10b981;
+  }
+  .pcb-comp-card.warn {
+    border-left: 4px solid #f59e0b;
+  }
+  .pcb-comp-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .pcb-comp-ref {
+    font-size: 14px;
+    font-weight: bold;
+    color: #f1f5f9;
+  }
+  .pcb-comp-val {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-left: 4px;
+  }
+  .pcb-comp-pkg {
+    font-size: 11.5px;
+    color: #38bdf8;
+    margin-left: 6px;
+    font-family: var(--mono);
+  }
+  .pcb-comp-mpn {
+    font-size: 11px;
+    color: #a78bfa;
+    margin-left: 6px;
+    font-family: var(--mono);
+  }
+  .pcb-comp-badge {
+    font-size: 11px;
+    font-weight: bold;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .pcb-comp-badge.ok {
+    background: #064e3b;
+    color: #6ee7b7;
+    border: 1px solid #059669;
+  }
+  .pcb-comp-badge.warn {
+    background: #78350f;
+    color: #fde68a;
+    border: 1px solid #d97706;
+  }
+  .pcb-comp-badge.dim {
+    background: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #475569;
+  }
+
+  .pcb-geom-checks {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 8px 0;
+  }
+  .pcb-geom-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    background: #0b0d13;
+    border: 1px solid #1e2433;
+  }
+  .pcb-geom-chip.ok {
+    border-color: #065f46;
+    color: #a7f3d0;
+  }
+  .pcb-geom-chip.err {
+    border-color: #991b1b;
+    color: #fecaca;
+  }
+  .pcb-chip-icon {
+    font-size: 12px;
+    font-weight: bold;
+  }
+
+  .pcb-pin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+    margin-top: 6px;
+  }
+  .pcb-pin-table th {
+    text-align: left;
+    padding: 4px 8px;
+    background: #0c0e14;
+    color: #64748b;
+    border-bottom: 1px solid #1e293b;
+  }
+  .pcb-pin-table td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #1e2433;
+  }
+  .pcb-pin-pill {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .pcb-pin-pill.ok {
+    background: #064e3b;
+    color: #a7f3d0;
+  }
+  .pcb-pin-pill.crit {
+    background: #7f1d1d;
+    color: #fecaca;
+    font-weight: bold;
+  }
+  .pcb-pin-pill.dim {
+    background: #1e293b;
+    color: #94a3b8;
+  }
+

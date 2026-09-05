@@ -277,6 +277,125 @@ class IPC2581Parser:
         shape = self.design.shapes.get(shape_ref)
         return shape.max_dimension() if shape else 0.0
 
+    @staticmethod
+    def _extraire_val_tol(texte: str):
+        """Extrait la valeur physique et la tolérance d'une chaîne (ex: 100nF, 10k, 4R7, 10uH, RES-10K)."""
+        if not texte:
+            return ("", "")
+        t = str(texte).strip()
+        tol = ""
+        tol_match = re.search(r'(?P<tol>\+-[\d\.]+[a-zA-Z]*|\d+(?:\.\d+)?%)', t)
+        if tol_match:
+            tol = tol_match.group('tol')
+
+        # 1. Unité explicite F, H, R, O, Ohm, Hz ou notation 4R7
+        val = ""
+        m1 = re.search(
+            r'(?:^|[\s_\-–])(?P<val>\d+(?:\.\d+)?[pnumkKMG]?(?:[FROH]|Ohm|hz|Hz)+|\d+[R]\d+|\d+(?:\.\d+)?(?:MHz|KHz|Hz))(?:[\s_\-+%/\)]|$)',
+            t, re.IGNORECASE
+        )
+        if m1:
+            val = m1.group('val')
+        else:
+            # 2. Multiplicateur seul sans unité explicite (ex: 10k, 4.7k, 1M, 100R, 2K2)
+            m2 = re.search(
+                r'(?:^|[\s_\-–])(?P<val>\d+(?:\.\d+)?[KMR]|\d+[KM]\d+)(?:[\s_\-+%/\)]|$)',
+                t, re.IGNORECASE
+            )
+            if m2:
+                val = m2.group('val')
+
+        return (val, tol)
+
+    @staticmethod
+    def _qualifier_type_composant(ref_des: str, val: str = "", props: Optional[Dict[str, str]] = None) -> str:
+        """Détermine le type de composant : RESISTOR, CAPACITOR, INDUCTOR, DIODE, etc."""
+        rd = (ref_des or "").strip().upper()
+        # 1. Propriétés explicites
+        if props:
+            for k in ("TYPE", "COMPONENT_TYPE", "CATEGORY", "DEVICE"):
+                for prop_k, prop_v in props.items():
+                    if prop_k.upper() == k:
+                        pv = prop_v.upper()
+                        if "RES" in pv:
+                            return "RESISTOR"
+                        if "CAP" in pv:
+                            return "CAPACITOR"
+                        if "IND" in pv or "COIL" in pv or "CHOKE" in pv:
+                            return "INDUCTOR"
+                        if "DIODE" in pv or "LED" in pv:
+                            return "DIODE"
+                        if "TRANS" in pv or "MOSFET" in pv:
+                            return "TRANSISTOR"
+                        if "IC" in pv or "CIRCUIT" in pv:
+                            return "IC"
+                        if "CONN" in pv or "HEADER" in pv:
+                            return "CONNECTOR"
+
+        # 2. Préfixe du RefDes (norme IEEE 315 / ASME Y14.44 / usage CAO)
+        m = re.match(r"^([A-Z]+)", rd)
+        pfx = m.group(1) if m else ""
+
+        if pfx in ("R", "RN", "RT", "RV", "POT", "RP", "VR"):
+            return "RESISTOR"
+        if pfx in ("C", "CN", "CP", "TC"):
+            return "CAPACITOR"
+        if pfx in ("L", "FB", "IND", "BEAD", "CH"):
+            return "INDUCTOR"
+        if pfx in ("D", "CR", "LED", "TVS", "ZD"):
+            return "DIODE"
+        if pfx in ("Q", "TR", "MOS", "FET", "T"):
+            return "TRANSISTOR"
+        if pfx in ("U", "IC"):
+            return "IC"
+        if pfx in ("J", "P", "CON", "CONN", "HDR"):
+            return "CONNECTOR"
+        if pfx in ("Y", "X", "XTAL", "OSC"):
+            return "CRYSTAL"
+        if pfx in ("TP", "TEST"):
+            return "TESTPOINT"
+        if pfx in ("F", "FUSE"):
+            return "FUSE"
+        if pfx in ("SW", "PB"):
+            return "SWITCH"
+
+        # 3. Unité dans la valeur si le préfixe est inhabituel
+        v_upper = (val or "").upper()
+        if any(u in v_upper for u in ("PF", "NF", "UF", "MF", " F")) or v_upper.endswith("F"):
+            if not any(u in v_upper for u in ("HZ", "HENRY")):
+                return "CAPACITOR"
+        if any(u in v_upper for u in ("NH", "UH", "MH", " H")) or v_upper.endswith("H"):
+            return "INDUCTOR"
+        if any(u in v_upper for u in ("OHM", "KOHM", "MOHM", "Ω")) or re.search(r'\d+R\d+|\d+[KMR]$', v_upper):
+            return "RESISTOR"
+
+        return "UNKNOWN"
+
+    def _lire_proprietes(self, elem: ET.Element) -> Dict[str, str]:
+        """Lit les balises <Property>, <NonstandardAttribute> et <Characteristics> d'un élément XML."""
+        props: Dict[str, str] = {}
+        for p in elem.findall(self._tag("Property")):
+            nom = p.attrib.get("name") or p.attrib.get("property") or ""
+            val = p.attrib.get("value") or p.attrib.get("val") or ""
+            if nom and val:
+                props[nom] = val
+        for p in elem.findall(self._tag("NonstandardAttribute")):
+            nom = p.attrib.get("name") or ""
+            val = p.attrib.get("value") or ""
+            if nom and val:
+                props[nom] = val
+        chars = elem.find(self._tag("Characteristics"))
+        if chars is not None:
+            for child in chars:
+                tag = self._local_tag(child)
+                c_val = child.attrib.get("value", "")
+                c_tol = child.attrib.get("tolerance", "")
+                if c_val:
+                    props[tag.upper()] = c_val
+                if c_tol:
+                    props[f"{tag.upper()}_TOLERANCE"] = c_tol
+        return props
+
     # ------------------------------------------------------------------
     # Validation
     # ------------------------------------------------------------------
@@ -685,26 +804,34 @@ class IPC2581Parser:
 
         for bom in boms:
             part = bom.attrib.get('OEMDesignNumberRef', '')
-            if not part:
-                continue
+            bom_props = self._lire_proprietes(bom)
 
-            tol = ''
-            val = ''
+            tol = ""
+            for tk in ("TOLERANCE", "TOL", "RESISTANCE_TOLERANCE", "CAPACITANCE_TOLERANCE", "INDUCTANCE_TOLERANCE"):
+                for k, v in bom_props.items():
+                    if k.upper() == tk:
+                        tol = v
+                        break
+                if tol:
+                    break
 
-            tol_match = re.search(tol_pattern, part)
-            if tol_match:
-                tol = tol_match.group('tol')
+            val = ""
+            for vk in ("VALUE", "VAL", "RESISTANCE", "CAPACITANCE", "INDUCTANCE", "COMMENT", "DEVICE"):
+                for k, v in bom_props.items():
+                    if k.upper() == vk:
+                        val = v
+                        break
+                if val:
+                    break
 
-            val_match = re.search(val_pattern, part, re.IGNORECASE)
-            if val_match:
-                val = val_match.group('val')
-            else:
-                val_match2 = re.search(r'(?:_|-)(\d+(?:\.\d+)?[KMR])(?:_|-|$)', part, re.IGNORECASE)
-                if val_match2:
-                    val = val_match2.group(1)
-
-            if not val:
-                val = part
+            if part:
+                v_part, t_part = self._extraire_val_tol(part)
+                if not val and v_part:
+                    val = v_part
+                if not tol and t_part:
+                    tol = t_part
+                if not val:
+                    val = part
 
             for ref_des_elem in bom.findall(self._tag('RefDes')):
                 name = ref_des_elem.attrib.get('name', '')
@@ -713,13 +840,25 @@ class IPC2581Parser:
 
                 comp = comps_by_refdes.get(name)
                 if comp is not None:
-                    comp.value = val
-                    comp.tolerance = tol
+                    if not comp.value or comp.value == comp.part_number:
+                        if val:
+                            comp.value = val
+                    if not comp.tolerance and tol:
+                        comp.tolerance = tol
+                    if not comp.part_number and part:
+                        comp.part_number = part
+                    for k, v in bom_props.items():
+                        if k not in comp.properties:
+                            comp.properties[k] = v
+                    if not comp.comp_type or comp.comp_type == "UNKNOWN":
+                        comp.comp_type = self._qualifier_type_composant(name, comp.value, comp.properties)
                 else:
                     pkg_ref = ref_des_elem.attrib.get('packageRef', '')
                     layer = ref_des_elem.attrib.get('layerRef', 'UNKNOWN')
+                    ctype = self._qualifier_type_composant(name, val, bom_props)
                     new_comp = Component(ref_des=name, package_ref=pkg_ref, layer_ref=layer,
-                                         location=Point(0, 0), value=val, tolerance=tol)
+                                         location=Point(0, 0), value=val, tolerance=tol,
+                                         comp_type=ctype, part_number=part, properties=bom_props)
                     self.design.components.append(new_comp)
                     comps_by_refdes[name] = new_comp
 
@@ -1287,7 +1426,58 @@ class IPC2581Parser:
             logger.warning("Composant ignoré : attribut 'refDes' manquant.")
             return
 
+        props = self._lire_proprietes(comp_elem)
+        part_attr = comp_elem.attrib.get("part", "")
+
+        # 1. Tolérance depuis Property ou Characteristics
+        tolerance = ""
+        for tk in ("TOLERANCE", "TOL", "RESISTANCE_TOLERANCE", "CAPACITANCE_TOLERANCE", "INDUCTANCE_TOLERANCE"):
+            for k, v in props.items():
+                if k.upper() == tk:
+                    tolerance = v
+                    break
+            if tolerance:
+                break
+
+        # 2. Valeur depuis attribut, Property ou Characteristics
         value = comp_elem.attrib.get("value", "")
+        if not value:
+            for vk in ("VALUE", "VAL", "RESISTANCE", "CAPACITANCE", "INDUCTANCE", "COMMENT", "DEVICE"):
+                for k, v in props.items():
+                    if k.upper() == vk:
+                        value = v
+                        break
+                if value:
+                    break
+
+        # 3. Si toujours vide, analyse de part_attr (ex: RES-10K, 100nF, C0603_10uF)
+        if not value and part_attr:
+            v_part, t_part = self._extraire_val_tol(part_attr)
+            if v_part:
+                value = v_part
+            if not tolerance and t_part:
+                tolerance = t_part
+
+        # 4. Si la valeur trouvée contient aussi une tolérance et qu'elle n'était pas renseignée
+        if value and not tolerance:
+            _, t_val = self._extraire_val_tol(value)
+            if t_val:
+                tolerance = t_val
+
+        # Part number
+        part_number = ""
+        for pk in ("PART_NUMBER", "PARTNUMBER", "MPN", "PN", "PART"):
+            for k, v in props.items():
+                if k.upper() == pk:
+                    part_number = v
+                    break
+            if part_number:
+                break
+        if not part_number:
+            part_number = part_attr
+
+        # Qualification du type
+        comp_type = self._qualifier_type_composant(ref_des, value, props)
 
         inline_pkg = comp_elem.find(self._tag("Package"))
         actual_pkg_ref = "Inline"
@@ -1304,7 +1494,7 @@ class IPC2581Parser:
             # Lire « part » ici laissait donc les composants sans empreinte,
             # donc sans broches : la fiche d'un boitier annonçait « 0 broche ».
             actual_pkg_ref = (comp_elem.attrib.get("packageRef")
-                              or comp_elem.attrib.get("part", "Unknown"))
+                              or part_attr or "Unknown")
 
         layer = comp_elem.attrib.get("layerRef", "TOP")
         mount = comp_elem.attrib.get("mountType", "UNKNOWN")
@@ -1320,7 +1510,8 @@ class IPC2581Parser:
 
         comp = Component(ref_des=ref_des, package_ref=actual_pkg_ref, layer_ref=layer,
                          location=loc, rotation=rotation, mirror=mirror,
-                         mount_type=mount, value=value)
+                         mount_type=mount, value=value, tolerance=tolerance,
+                         comp_type=comp_type, part_number=part_number, properties=props)
 
         if actual_pkg_ref in self.design.packages:
             comp.package_obj = self.design.packages[actual_pkg_ref]

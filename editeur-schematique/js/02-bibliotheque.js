@@ -53,6 +53,11 @@ filter:{n:"Filtre SAW",cat:"Passifs",p:"FLT",v:"SAW",pins:[[-40,0],[40,0],[0,40]
   d(c){RR(c,-25,-20,50,40,3,C_FILL);L(c,-40,0,-25,0);L(c,40,0,25,0);L(c,0,40,0,20);
        c.beginPath();c.moveTo(-10,-5);c.quadraticCurveTo(-5,-15,0,-5);c.quadraticCurveTo(5,5,10,-5);c.stroke();
        c.beginPath();c.moveTo(-10,10);c.quadraticCurveTo(-5,0,0,10);c.quadraticCurveTo(5,20,10,10);c.stroke();}},
+ferrite_bead:{n:"Perle de ferrite",cat:"Passifs",p:"FB",v:"120R",pk:"passif",pkg:"0805",pins:[[-40,0],[40,0]],
+  d(c){L(c,-40,0,-18,0);L(c,18,0,40,0);RR(c,-18,-9,36,18,4,C_FILL);
+       c.lineWidth=5;L(c,-14,0,14,0);c.lineWidth=3;
+       c.beginPath();c.arc(-6,-9,4,0,Math.PI);c.stroke();
+       c.beginPath();c.arc(6,-9,4,0,Math.PI);c.stroke();}},
 /* ---------------- semi-conducteurs ---------------- */
 diode:{n:"Diode",cat:"Semi-conducteurs",p:"D",v:"1N4148",pk:"diode",pins:[[-40,0],[40,0]],
   d(c){L(c,-40,0,-10,0);P(c,[[-10,-15],[-10,15],[10,0]],C_FILL);
@@ -90,11 +95,25 @@ pmos:{n:"MOSFET P",cat:"Semi-conducteurs",p:"Q",v:"AO3401",pk:"transistor",pkg:"
        L(c,-5,-20,20,-20);L(c,20,-20,20,-40);
        L(c,-5,20,20,20);L(c,20,20,20,40);
        L(c,-5,0,20,0);ARR(c,15,0,0,10);}},
+tvs_diode:{n:"Diode TVS",cat:"Semi-conducteurs",p:"D",v:"TVS",pk:"diode",pkg:"SOD-323",pins:[[-40,0],[40,0]],
+  d(c){L(c,-40,0,-15,0);L(c,15,0,40,0);
+       P(c,[[-15,-10],[-15,10],[-2,0]],C_FILL);
+       P(c,[[15,-10],[15,10],[2,0]],C_FILL);
+       L(c,-2,0,2,0);c.lineWidth=4.5;
+       L(c,0,-12,0,12);L(c,-4,-12,0,-12);L(c,0,12,4,12);c.lineWidth=3;}},
+esd_array:{n:"Réseau ESD",cat:"Semi-conducteurs",p:"U",v:"USBLC6",pk:"ci",pkg:"SOT-23-6",
+  ext:[-40,-35,40,35],pins:[[-40,-20],[-40,0],[-40,20],[40,20],[40,0],[40,-20]],
+  d(c){RR(c,-25,-30,50,60,4,C_FILL);
+       L(c,-40,-20,-25,-20);L(c,-40,0,-25,0);L(c,-40,20,-25,20);
+       L(c,40,-20,25,-20);L(c,40,0,25,0);L(c,40,20,25,20);
+       TXT(c,"ESD",0,-8,11,C_TXT);TXT(c,"ARRAY",0,8,8,"#93c5fd");}},
 /* ---------------- intégrés ---------------- */
-opamp:{n:"AOP",cat:"Intégrés",p:"U",v:"LM358",pk:"ci",pkg:"SOIC-8",pins:[[-40,-20],[-40,20],[60,0]],
+opamp:{n:"AOP",cat:"Intégrés",p:"U",v:"LM358",pk:"ci",pkg:"SOIC-8",pins:[[-40,-20],[-40,20],[60,0],[0,-40],[0,40]],
   d(c){L(c,-40,-20,-20,-20);L(c,-40,20,-20,20);L(c,40,0,60,0);
+       L(c,0,-40,0,-27);L(c,0,40,0,27);
        P(c,[[-20,-40],[-20,40],[40,0]],"rgba(47,134,204,.35)");
-       TXT(c,"−",-10,-20,15,C_TXT);TXT(c,"+",-10,20,14,C_TXT);}},
+       TXT(c,"−",-10,-20,15,C_TXT);TXT(c,"+",-10,20,14,C_TXT);
+       TXT(c,"V+",10,-32,8.5,C_TXT);TXT(c,"V−",10,32,8.5,C_TXT);}},
 ic:{n:"Circuit intégré",cat:"Intégrés",p:"U",v:"NE555",icon:"CI",valSelf:true,pk:"ci",
   pkg(el){return icAutoPkg(el);},
   // le repère se pose au-dessus de tout, corps comme pattes du haut
@@ -200,11 +219,54 @@ lamp:{n:"Lampe",cat:"Divers",p:"LA",v:"12V",pins:[[-40,0],[40,0]],
        L(c,-15,-15,15,15);L(c,-15,15,15,-15);}},
 antenna:{n:"Antenne",cat:"Divers",p:"E",v:"ANT",ext:[-25,-30,25,40],pins:[[0,40]],
   d(c){L(c,0,40,0,-10);L(c,0,-10,-20,-30);L(c,0,-10,20,-30);}},
-header:{n:"Connecteur 2",cat:"Divers",p:"J",v:"CONN",ext:[-40,-35,20,35],pins:[[-40,-20],[-40,20]],
+header:{n:"Connecteur 2",cat:"Divers",p:"J",v:"CONN",pk:"header",pkg:"HEADER-2.54-1x2",ext:[-40,-35,20,35],pins:[[-40,-20],[-40,20]],
   d(c){L(c,-40,-20,-15,-20);L(c,-40,20,-15,20);RR(c,-15,-35,30,70,3,C_FILL);
        c.fillStyle="#0f1012";c.fillRect(-10,-25,10,10);c.fillRect(-10,15,10,10);}},
-testpoint:{n:"Point de test",cat:"Divers",p:"TP",v:"TP",noVal:true,pins:[[0,20]],
+header_1x3:{n:"Barrette 1x3",cat:"Divers",p:"J",v:"CONN3",pk:"header",pkg:"HEADER-2.54-1x3",ext:[-40,-35,20,35],pins:[[-40,-20],[-40,0],[-40,20]],
+  d(c){for(let y=-20;y<=20;y+=20)L(c,-40,y,-15,y);RR(c,-15,-35,30,70,3,C_FILL);
+       c.fillStyle="#0f1012";for(let y=-20;y<=20;y+=20)c.fillRect(-10,y-5,10,10);}},
+header_1x4:{n:"Barrette 1x4",cat:"Divers",p:"J",v:"CONN4",pk:"header",pkg:"HEADER-2.54-1x4",ext:[-40,-55,20,35],pins:[[-40,-40],[-40,-20],[-40,0],[-40,20]],
+  d(c){for(let y=-40;y<=20;y+=20)L(c,-40,y,-15,y);RR(c,-15,-50,30,80,3,C_FILL);
+       c.fillStyle="#0f1012";for(let y=-40;y<=20;y+=20)c.fillRect(-10,y-5,10,10);}},
+header_1x6:{n:"Barrette 1x6",cat:"Divers",p:"J",v:"CONN6",pk:"header",pkg:"HEADER-2.54-1x6",ext:[-40,-75,20,55],pins:[[-40,-60],[-40,-40],[-40,-20],[-40,0],[-40,20],[-40,40]],
+  d(c){for(let y=-60;y<=40;y+=20)L(c,-40,y,-15,y);RR(c,-15,-70,30,120,3,C_FILL);
+       c.fillStyle="#0f1012";for(let y=-60;y<=40;y+=20)c.fillRect(-10,y-5,10,10);}},
+header_1x8:{n:"Barrette 1x8",cat:"Divers",p:"J",v:"CONN8",pk:"header",pkg:"HEADER-2.54-1x8",ext:[-40,-95,20,75],pins:[[-40,-80],[-40,-60],[-40,-40],[-40,-20],[-40,0],[-40,20],[-40,40],[-40,60]],
+  d(c){for(let y=-80;y<=60;y+=20)L(c,-40,y,-15,y);RR(c,-15,-90,30,160,3,C_FILL);
+       c.fillStyle="#0f1012";for(let y=-80;y<=60;y+=20)c.fillRect(-10,y-5,10,10);}},
+header_2x5:{n:"Barrette 2x5",cat:"Divers",p:"J",v:"CONN2x5",pk:"header",pkg:"HEADER-2.54-2x5",ext:[-40,-55,40,55],
+  pins:[[-40,-40],[-40,-20],[-40,0],[-40,20],[-40,40],[40,-40],[40,-20],[40,0],[40,20],[40,40]],
+  d(c){for(let y=-40;y<=40;y+=20){L(c,-40,y,-20,y);L(c,20,y,40,y);}RR(c,-20,-50,40,100,3,C_FILL);
+       c.fillStyle="#0f1012";for(let y=-40;y<=40;y+=20){c.fillRect(-15,y-5,10,10);c.fillRect(5,y-5,10,10);}}},
+usb_c_pwr:{n:"USB Type-C (Alim)",cat:"Divers",p:"J",v:"USB-C",pk:"usb",pkg:"USB-C-6P",ext:[-40,-55,30,55],
+  pins:[[-40,-40],[-40,-20],[-40,0],[-40,20],[-40,40]],
+  d(c){RR(c,-20,-50,45,100,6,C_FILL);for(let y=-40;y<=40;y+=20)L(c,-40,y,-20,y);
+       TXT(c,"USB-C",5,-35,9,C_TXT);TXT(c,"PWR",5,-22,8,"#93c5fd");
+       TXT(c,"VBUS",-15,-40,7.5,"#93c5fd","left");TXT(c,"GND",-15,-20,7.5,"#93c5fd","left");
+       TXT(c,"CC1",-15,0,7.5,"#93c5fd","left");TXT(c,"CC2",-15,20,7.5,"#93c5fd","left");
+       TXT(c,"SHLD",-15,40,7.5,"#93c5fd","left");}},
+usb_c:{n:"USB Type-C",cat:"Divers",p:"J",v:"USB-C",pk:"usb",pkg:"USB-C-16P",ext:[-40,-75,35,95],
+  pins:[[-40,-60],[-40,-40],[-40,-20],[-40,0],[-40,20],[-40,40],[-40,60],[-40,80]],
+  d(c){RR(c,-20,-70,50,160,6,C_FILL);for(let y=-60;y<=80;y+=20)L(c,-40,y,-20,y);
+       TXT(c,"USB-C",8,-55,9,C_TXT);
+       TXT(c,"VBUS",-15,-60,7.5,"#93c5fd","left");TXT(c,"GND",-15,-40,7.5,"#93c5fd","left");
+       TXT(c,"D+",-15,-20,7.5,"#93c5fd","left");TXT(c,"D−",-15,0,7.5,"#93c5fd","left");
+       TXT(c,"CC1",-15,20,7.5,"#93c5fd","left");TXT(c,"CC2",-15,40,7.5,"#93c5fd","left");
+       TXT(c,"SBU",-15,60,7.5,"#93c5fd","left");TXT(c,"SHLD",-15,80,7.5,"#93c5fd","left");}},
+usb_micro:{n:"Micro-USB",cat:"Divers",p:"J",v:"MICRO-USB",pk:"usb",pkg:"MICRO-USB-B",ext:[-40,-55,30,75],
+  pins:[[-40,-40],[-40,-20],[-40,0],[-40,20],[-40,40],[-40,60]],
+  d(c){RR(c,-20,-50,45,120,6,C_FILL);for(let y=-40;y<=60;y+=20)L(c,-40,y,-20,y);
+       TXT(c,"µUSB",5,-35,9,C_TXT);
+       TXT(c,"VBUS",-15,-40,7.5,"#93c5fd","left");TXT(c,"D−",-15,-20,7.5,"#93c5fd","left");
+       TXT(c,"D+",-15,0,7.5,"#93c5fd","left");TXT(c,"ID",-15,20,7.5,"#93c5fd","left");
+       TXT(c,"GND",-15,40,7.5,"#93c5fd","left");TXT(c,"SHLD",-15,60,7.5,"#93c5fd","left");}},
+testpoint:{n:"Point de test",cat:"Divers",p:"TP",v:"TP",noVal:true,pk:"testpoint",pins:[[0,20]],
   d(c){L(c,0,20,0,5);CIR(c,0,0,5,C_FILL);}},
+testpoint_pth:{n:"Point de test percé",cat:"Divers",p:"TP",v:"TP",noVal:true,pk:"testpoint",
+  pkg:"Trou metalise diam. trou 1.2mm - dim. plated 2.54mmx1.6mm",pins:[[0,20]],
+  d(c){L(c,0,20,0,7);CIR(c,0,0,7,C_FILL);
+       c.beginPath();c.arc(0,0,3,0,Math.PI*2);c.fillStyle=C_BG;c.fill();
+       c.lineWidth=1.5;c.stroke();c.lineWidth=3;}},
 hole:{n:"Trou mécanique",cat:"Divers",p:"MECA",v:"M3",noVal:true,pins:[[0,20]],
   d(c){CIR(c,0,0,10,null);
        c.beginPath();c.moveTo(-15,0);c.lineTo(-10,0);c.moveTo(10,0);c.lineTo(15,0);

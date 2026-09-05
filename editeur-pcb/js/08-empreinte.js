@@ -32,7 +32,7 @@ const FPLIB_FORMAT="pcbfp-1";
    trois cotes suffisent, `pads` reste absent et l'empreinte se recalculera
    chez celui qui l'importe. Empreinte dessinée : la liste est recopiée. */
 function fpDefOf(fp,name){
-  const def={name:String(name||fp.pkg||fp.ref||"empreinte").slice(0,48).trim(),
+  const def={name:String(name||fp.pkg||fp.ref||"empreinte").slice(0,80).trim(),
              pkg:fp.pkg||"", pins:fp.pins, style:fp.style,
              pitch:r3(fp.pitch), span:r3(fp.span)};
   const free=fpFree(fp);
@@ -47,11 +47,11 @@ function fpDefOf(fp,name){
    d'une version antérieure ou d'ailleurs. Même exigence que normFp(). */
 function normFpDef(d){
   if(!d||typeof d!=="object")return null;
-  const name=dStr(d.name,48).trim();
+  const name=dStr(d.name,80).trim();
   if(!name)return null;
   const style=STYLES[d.style]?d.style:defaultStyle(dInt(d.pins,2,1,4096));
   const g=defaultGeom(style);
-  const out={name:name, pkg:dStr(d.pkg,40), pins:dInt(d.pins,2,1,4096),
+  const out={name:name, pkg:dStr(d.pkg,80), pins:dInt(d.pins,2,1,4096),
              style:style, pitch:dRange(d.pitch,g.pitch,0.05,100),
              span:dRange(d.span,g.span,0.05,1000)};
   const pads=dPads(d.pads);

@@ -1025,16 +1025,112 @@ function simVoile(c,w,h){
    sait plus. Le crosstalk, lui, peint autre chose et autrement : ses plages à
    risque et sa chaleur suivent le cuivre des VICTIMES, pas celui de la
    sélection — voir `simXtRisqueTrace`, plus bas. */
+/* Piste partenaire et projection géométrique pour l'affichage différentiel */
+function simTrackU(t, pt){
+  const A=arcOf(t);
+  if(A){
+    let a=Math.atan2(pt.y-A.cy, pt.x-A.cx);
+    let da=a-A.a1;
+    if(A.ca>0){
+      while(da<0)da+=2*Math.PI;
+      while(da>2*Math.PI)da-=2*Math.PI;
+      return clamp(da/A.ca,0,1);
+    }else{
+      while(da>0)da-=2*Math.PI;
+      while(da<-2*Math.PI)da+=2*Math.PI;
+      return clamp(da/A.ca,0,1);
+    }
+  }
+  const dx=t.x2-t.x1, dy=t.y2-t.y1, l2=dx*dx+dy*dy;
+  if(l2<1e-12)return 0;
+  return clamp(((pt.x-t.x1)*dx+(pt.y-t.y1)*dy)/l2, 0, 1);
+}
+
+function simPistePartenaire(trk, netVoisin){
+  if(!trk||!netVoisin||typeof S==="undefined"||!S.tracks)return null;
+  let meilleur=null, minD=Infinity;
+  const pMid=trkMid(trk);
+  for(const t of S.tracks){
+    if(t.l!==trk.l||t.net!==netVoisin||t===trk)continue;
+    const d=trkDist(pMid.x,pMid.y,t);
+    if(d<minD&&d<=4.0){ // écartement maximal d'une paire à portée (< 4 mm)
+      minD=d;
+      meilleur=t;
+    }
+  }
+  return meilleur;
+}
+
+function simProjSegmentSurPiste(tSource, u1, u2, tCible){
+  if(!tSource||!tCible)return null;
+  const p1=trkAt(tSource, u1);
+  const p2=trkAt(tSource, u2);
+  const q1=projOnSeg(p1.x, p1.y, tCible);
+  const q2=projOnSeg(p2.x, p2.y, tCible);
+  const d1=dist(p1.x, p1.y, q1.x, q1.y);
+  const d2=dist(p2.x, p2.y, q2.x, q2.y);
+  if(d1>4.0||d2>4.0)return null;
+  const v1=simTrackU(tCible, q1);
+  const v2=simTrackU(tCible, q2);
+  const minU=Math.max(0, Math.min(v1, v2));
+  const maxU=Math.min(1, Math.max(v1, v2));
+  if(maxU-minU<1e-4)return null;
+  return {u1:minU, u2:maxU, q1:q1, q2:q2, p1:p1, p2:p2};
+}
+
+function simLotsSontPaireDiff(){
+  const quoi=typeof simCarteQuoi==="function"?simCarteQuoi():"";
+  const isDiff=quoi==="zdiff"||(typeof SIM!=="undefined"&&(SIM.analyse==="diff"||SIM.analyse==="zdiff"));
+  if(!isDiff)return false;
+  if(typeof SIM==="undefined"||!SIM.lots||SIM.lots.length<2)return false;
+  const nets=new Set(SIM.lots.map(l=>l.net).filter(Boolean));
+  if(nets.size<2)return false;
+  for(const l of SIM.lots){
+    const ch=typeof simChaleurRes==="function"?simChaleurRes(l.res):(l.res&&l.res.couplage&&l.res.couplage.chaleur);
+    const vn=Array.isArray(ch)&&ch.find(it=>it&&it.z_diff_net);
+    if(!vn||!nets.has(vn.z_diff_net))return false;
+  }
+  return true;
+}
+
+var simZDrawnLabels = new Set();
 function simZTrace(c){
   if(typeof simCarteActive!=="function"||!simCarteActive())return;
+  if(typeof simZDrawnLabels!=="undefined"&&simZDrawnLabels.clear)simZDrawnLabels.clear();
   if(typeof simPourChaqueLot!=="function"){simZTraceLot(c,null);return;}
   simPourChaqueLot(function(lot){simZTraceLot(c,lot);});
 }
 
 function simZTraceLot(c,lot){
   const n=SIM.objets.length;
+  const quoi=typeof simCarteQuoi==="function"?simCarteQuoi():"";
   c.save();
   c.lineCap="round"; c.lineJoin="round";
+
+  // En mode Z différentielle, on repère aussi les tronçons de la piste partenaire
+  const passesDiff=[];
+  if(quoi==="zdiff"){
+    const netGlobal=typeof simCarteDiffPartenaire==="function"?(simCarteDiffPartenaire()||{}).net:"";
+    for(let i=0;i<n;i++){
+      const s=simCarteSegment(i);
+      if(!s||!s.obj||!s.obj.trk)continue;
+      let netVoisin=(s.chaleur&&s.chaleur.z_diff_net)||"";
+      if(!netVoisin&&typeof SIM!=="undefined"&&SIM.lots&&SIM.lots.length>=2){
+        const curNet=(lot&&lot.net)||(SIM.res&&SIM.res.net)||(s.obj.trk&&s.obj.trk.net)||"";
+        const alt=SIM.lots.find(l=>l&&l!==lot&&l.net&&l.net!==curNet);
+        if(alt)netVoisin=alt.net;
+      }
+      if(!netVoisin)netVoisin=netGlobal;
+      if(!netVoisin)continue;
+      const vt=simPistePartenaire(s.obj.trk, netVoisin);
+      if(vt){
+        const proj=simProjSegmentSurPiste(s.obj.trk, s.obj.u1, s.obj.u2, vt);
+        if(proj){
+          passesDiff.push({s, vt, u1:proj.u1, u2:proj.u2});
+        }
+      }
+    }
+  }
 
   const passe=(alpha,largeur)=>{
     for(let i=0;i<n;i++){
@@ -1046,13 +1142,21 @@ function simZTraceLot(c,lot){
       simSousChemin(c,s.obj.trk,s.obj.u1,s.obj.u2);
       c.stroke();
     }
+    // Surbrillance synchronisée de la piste partenaire couplée
+    for(const pd of passesDiff){
+      c.strokeStyle=pd.s.couleur(alpha);
+      c.lineWidth=largeur(pd.vt);
+      c.beginPath();
+      simSousChemin(c,pd.vt,pd.u1,pd.u2);
+      c.stroke();
+    }
   };
   passe(0.30, t=>t.w+px(7));
   passe(0.95, t=>Math.max(t.w,px(2.5)));
   passe(1.00, ()=>px(2));
 
   c.restore();
-  simZValeurs(c);
+  simZValeurs(c,lot);
   simZNumeroLot(c,lot);
 }
 
@@ -1066,6 +1170,7 @@ function simZTraceLot(c,lot){
 function simZNumeroLot(c,lot){
   if(!lot||!lot.rang)return;
   if(typeof simLotsMultiples!=="function"||!simLotsMultiples())return;
+  if(simLotsSontPaireDiff())return; // Deux moitiés d'une même paire : ne pas polluer avec (1) et (2)
   const s=simCarteSegment(0);
   if(!s||!s.obj||!s.obj.trk)return;
   const p=trkAt(s.obj.trk,s.obj.u1), e=w2s(p.x,p.y);
@@ -1094,8 +1199,9 @@ function simZNumeroLot(c,lot){
    Le texte est tracé en pixels écran, pas en unités monde : une étiquette qui
    grossit avec le zoom finit par couvrir la carte, et elle doit rester lisible
    quand on dézoome pour voir la liaison entière. */
-function simZValeurs(c){
+function simZValeurs(c,lot){
   const n=SIM.objets.length;
+  const quoi=typeof simCarteQuoi==="function"?simCarteQuoi():"";
   const parValeur=new Map();
   for(let i=0;i<n;i++){
     const s=simCarteSegment(i);
@@ -1107,7 +1213,7 @@ function simZValeurs(c){
     const p=parValeur.get(s.texte);
     if(!p||lg>p.lg)
       parValeur.set(s.texte,{lg:lg, valeur:s.valeur, texte:s.texte,
-                             couleur:s.couleur, obj:s.obj});
+                             couleur:s.couleur, obj:s.obj, chaleur:s.chaleur});
   }
   if(!parValeur.size)return;
   const retenues=simCarteRetenir(parValeur);
@@ -1119,19 +1225,121 @@ function simZValeurs(c){
   c.font="600 11px "+
     "\"JetBrains Mono\",\"SF Mono\",Consolas,\"Roboto Mono\",monospace";
   c.textAlign="center"; c.textBaseline="middle";
+
   for(const v of retenues){
     const u=(v.obj.u1+v.obj.u2)/2;
-    const p=trkAt(v.obj.trk,u), e=w2s(p.x,p.y);
+    const p1=trkAt(v.obj.trk,u);
+    let p2=null;
+    let e1=w2s(p1.x,p1.y);
+    let e2=null;
+    let e=e1;
+
+    if(quoi==="zdiff"){
+      let netVoisin=(v.chaleur&&v.chaleur.z_diff_net)||"";
+      let altLot=null;
+      if(typeof SIM!=="undefined"&&SIM.lots&&SIM.lots.length>=2){
+        const curNet=(lot&&lot.net)||(SIM.res&&SIM.res.net)||(v.obj&&v.obj.trk&&v.obj.trk.net)||"";
+        altLot=SIM.lots.find(l=>l&&l!==lot&&l.net&&l.net!==curNet);
+        if(!netVoisin&&altLot)netVoisin=altLot.net;
+      }
+      if(!netVoisin&&typeof simCarteDiffPartenaire==="function"){
+        netVoisin=(simCarteDiffPartenaire()||{}).net||"";
+      }
+
+      // Collecter toutes les pistes candidates du partenaire sur la même couche
+      const cands=[];
+      const couche=(v.obj&&v.obj.trk)?v.obj.trk.l:null;
+      if(altLot&&altLot.objets){
+        for(const ao of altLot.objets){
+          if(ao&&ao.trk&&ao.trk!==v.obj.trk){
+            if(!cands.includes(ao.trk))cands.push(ao.trk);
+          }
+        }
+      }
+      if(netVoisin&&typeof S!=="undefined"&&S.tracks){
+        for(const t of S.tracks){
+          if(t.net===netVoisin&&(couche===null||t.l===couche)&&t!==v.obj.trk){
+            if(!cands.includes(t))cands.push(t);
+          }
+        }
+      }
+
+      // Projeter p1 sur tous les candidats pour trouver le point perpendiculaire le plus proche
+      let bestP2=null, bestD=Infinity;
+      for(const cand of cands){
+        const q=projOnSeg(p1.x,p1.y,cand);
+        const d=dist(p1.x,p1.y,q.x,q.y);
+        if(d<=4.0&&d<bestD){
+          bestD=d;
+          bestP2=q;
+        }
+      }
+
+      if(bestP2){
+        p2=bestP2;
+        e2=w2s(p2.x,p2.y);
+        e={x:(e1.x+e2.x)/2, y:(e1.y+e2.y)/2};
+      }
+    }
+
+    // Déduplication : si deux lots calculent la même étiquette de paire, on ne la dessine qu'une fois
+    const isDiffPair=typeof simLotsSontPaireDiff==="function"&&simLotsSontPaireDiff();
+    const labelKey=isDiffPair
+      ? ("diff_"+v.texte)
+      : (v.texte+"_"+Math.round(e.x/8)+"_"+Math.round(e.y/8));
+    if(simZDrawnLabels.has(labelKey))continue;
+    simZDrawnLabels.add(labelKey);
+
     const txt=v.texte;
-    const w=c.measureText(txt).width+10;
-    /* Un cartouche sombre sous le texte : posé à même le cuivre, un chiffre
-       clair sur une piste claire ne se lit pas. */
-    c.fillStyle="rgba(15,16,18,0.82)";
+    const w=c.measureText(txt).width+14;
+    const h=19;
+
+    // Repère de couplage / accolade entre les deux pistes
+    if(e2){
+      const dx=e2.x-e1.x, dy=e2.y-e1.y;
+      const d=Math.hypot(dx,dy);
+      if(d>1){
+        const tx=-dy/d, ty=dx/d;
+        const tk=4.5;
+
+        c.save();
+        c.strokeStyle=v.couleur(0.7);
+        c.lineWidth=1.2;
+
+        // 1. Ligne de liaison entre les 2 pistes (en pointillés discrets)
+        c.beginPath();
+        c.setLineDash([2,2]);
+        c.moveTo(e1.x,e1.y);
+        c.lineTo(e2.x,e2.y);
+        c.stroke();
+        c.setLineDash([]);
+
+        // 2. Ticks perpendiculaires sur chaque piste
+        c.beginPath();
+        c.moveTo(e1.x-tx*tk, e1.y-ty*tk);
+        c.lineTo(e1.x+tx*tk, e1.y+ty*tk);
+        c.moveTo(e2.x-tx*tk, e2.y-ty*tk);
+        c.lineTo(e2.x+tx*tk, e2.y+ty*tk);
+        c.stroke();
+
+        // 3. Petits points de contact sur le cuivre
+        c.fillStyle=v.couleur(1);
+        c.beginPath();
+        c.arc(e1.x,e1.y,2.2,0,2*Math.PI);
+        c.arc(e2.x,e2.y,2.2,0,2*Math.PI);
+        c.fill();
+
+        c.restore();
+      }
+    }
+
+    /* Un cartouche sombre sous le texte */
+    c.fillStyle="rgba(15,16,18,0.88)";
     c.beginPath();
-    if(c.roundRect)c.roundRect(e.x-w/2,e.y-9,w,18,4);
-    else c.rect(e.x-w/2,e.y-9,w,18);
+    if(c.roundRect)c.roundRect(e.x-w/2,e.y-h/2,w,h,4);
+    else c.rect(e.x-w/2,e.y-h/2,w,h);
     c.fill();
-    c.strokeStyle=v.couleur(1); c.lineWidth=1.2;
+    c.strokeStyle=v.couleur(1); c.lineWidth=1.3;
     c.stroke();
     c.fillStyle="#e6e8ec";
     c.fillText(txt,e.x,e.y+0.5);
@@ -2558,7 +2766,11 @@ function pcbComposantsSchema(doc){
         specs:c.specs||{},
         distributeurs:c.distributeurs||{},
         datasheet_local:c.datasheet_local||"",
-        pinNames:c.pinNames||{},
+        pinNames:Array.isArray(c.pinNames)?c.pinNames:(c.pinNames||[]),
+        pinout:Array.isArray(c.pinout)?c.pinout:[],
+        pinoutVerified:!!c.pinoutVerified,
+        npins:c.npins||(Array.isArray(c.pinNames)?c.pinNames.length:0),
+        lcsc:c.lcsc||"",
         pageIndex:pIdx,
         pageName:p.name||("Feuille "+(pIdx+1))
       });
@@ -2601,6 +2813,29 @@ function pcbSpecsComposant(c){
   if(courantConsomme==null&&power!=null&&(voltIn||voltOut||3.3)>0){
     courantConsomme=power/(voltIn||voltOut||3.3);
   }
+
+  /* Surcharge issue de l'analyse des motifs de circuits du schéma */
+  try {
+    const rawDc = typeof sessionStorage !== "undefined" && sessionStorage.getItem("web_cao_courants_dc");
+    if (rawDc) {
+      const listDc = JSON.parse(rawDc);
+      if (Array.isArray(listDc)) {
+        const match = listDc.find(x => (x.composant === c.ref || x.source === c.ref));
+        if (match) {
+          if (courantConsomme == null && match.courant_ma != null) {
+            if (estCharge || match.role === "charge") {
+              courantConsomme = match.courant_ma / 1000.0;
+            }
+          }
+          if (match.tension_v != null) {
+            if (estSource) voltOut = match.tension_v;
+            else if (voltIn == null) voltIn = match.tension_v;
+          }
+        }
+      }
+    }
+  } catch (_) {}
+
   if(courantConsomme==null&&estCharge){
     if(c.type==="led"||/^D/i.test(c.ref))courantConsomme=0.015;
     else courantConsomme=0.030;
@@ -2624,6 +2859,237 @@ function pcbSpecsComposant(c){
     estCharge:estCharge,
     specs:sp,
     pinNames:c.pinNames||{}
+  };
+}
+
+/* ==========================================================================
+   VÉRIFICATION DU PINOUT, DE LA TAILLE DU BOÎTIER ET DES DISTANCES ENTRE PINS
+   --------------------------------------------------------------------------
+   Vérifie automatiquement que chaque composant du schéma est correctement
+   transposé sur l'empreinte PCB :
+     1. Distance entre les pins (pitch) conforme aux spécifications du boîtier ;
+     2. Taille et écartement du boîtier (span / dimensions) conformes ;
+     3. Nombre de pastilles cohérent avec le nombre de broches du schéma ;
+     4. Raccordement et absence de court-circuit alimentation / masse.
+   ========================================================================== */
+
+function pcbVerifierPinoutComposant(c, fp) {
+  if (!c) return null;
+  const ref = c.ref;
+  if (!fp) {
+    return {
+      ref: ref,
+      value: c.value,
+      pkg: c.pkg,
+      mpn: c.mpn,
+      statut: "NON_PLACE",
+      fpPresent: false,
+      conforme: false,
+      pitchCheck: { ok: false, msg: "Empreinte non encore posée sur le PCB" },
+      spanCheck: { ok: false, msg: "Empreinte non encore posée sur le PCB" },
+      pinCountCheck: { ok: false, msg: "Empreinte non encore posée sur le PCB" },
+      anomalies: ["Empreinte " + ref + " absente de la carte"],
+      resume: "Empreinte non encore posée sur le PCB",
+      pins: []
+    };
+  }
+
+  const pkgName = c.pkg || fp.pkg || "";
+  const nSch = c.npins || (c.pinout && c.pinout.length) || (Array.isArray(c.pinNames) && c.pinNames.filter(Boolean).length) || fp.pins || 2;
+  const nPcb = fp.pins || (Array.isArray(fp.pads) && fp.pads.length) || 2;
+
+  // Géométrie attendue d'après le boîtier du schéma
+  const expGeom = (typeof pkgGeom === "function" && pkgName) ? pkgGeom(pkgName, nSch) : null;
+  const expPitch = expGeom ? expGeom.pitch : null;
+  const expSpan = expGeom ? expGeom.span : null;
+
+  const actPitch = fp.pitch != null ? fp.pitch : (expPitch || 1.27);
+  const actSpan = fp.span != null ? fp.span : (expSpan || 5.4);
+
+  const anomalies = [];
+  const avertissements = [];
+
+  // 1. Distance entre les pins (Pitch)
+  let pitchOk = true;
+  let pitchMsg = "Pas des broches : " + Number(actPitch).toFixed(2) + " mm";
+  if (expPitch != null) {
+    const dPitch = Math.abs(actPitch - expPitch);
+    if (dPitch > 0.05) {
+      pitchOk = false;
+      const m = "Distance entre pins (pitch) incorrecte : " + expPitch.toFixed(2) + " mm attendu pour " + (pkgName || "boîtier") + ", mais empreinte PCB réglée à " + Number(actPitch).toFixed(2) + " mm";
+      pitchMsg = m;
+      anomalies.push(m);
+    } else {
+      pitchMsg = "Distance entre pins : " + Number(actPitch).toFixed(2) + " mm (Conforme ✓)";
+    }
+  }
+
+  // 2. Taille du boîtier / Écartement des rangées (Span)
+  let spanOk = true;
+  let spanMsg = "Taille / Écartement : " + Number(actSpan).toFixed(2) + " mm";
+  if (expSpan != null) {
+    const dSpan = Math.abs(actSpan - expSpan);
+    if (dSpan > 0.35) {
+      spanOk = false;
+      const m = "Taille / Écartement du boîtier incorrect : " + expSpan.toFixed(2) + " mm attendu pour " + (pkgName || "boîtier") + ", mais empreinte PCB à " + Number(actSpan).toFixed(2) + " mm";
+      spanMsg = m;
+      anomalies.push(m);
+    } else {
+      spanMsg = "Taille du boîtier / Écartement : " + Number(actSpan).toFixed(2) + " mm (Conforme ✓)";
+    }
+  }
+
+  // 3. Nombre de broches / pastilles
+  let pinCountOk = true;
+  let pinCountMsg = nPcb + " pastilles";
+  if (nSch && nPcb && nSch !== nPcb) {
+    pinCountOk = false;
+    const m = "Nombre de broches incohérent : " + nSch + " broches au schéma vs " + nPcb + " pastilles sur le PCB";
+    pinCountMsg = m;
+    anomalies.push(m);
+  } else {
+    pinCountMsg = nPcb + " broches / pastilles (Conforme ✓)";
+  }
+
+  // 4. Vérification détaillée pastille par pastille (Brochage & Nets)
+  const pinDetails = [];
+  const maxP = Math.max(nSch, nPcb);
+  let hasCriticalNetConflict = false;
+
+  const isPowerName = s => (typeof crIsPower === "function" ? crIsPower(s) : /(\+?3[V\.]?3V?|\+?5V?0?|\+?12V?|\+?1[V\.]?8V?|\+?2[V\.]?5V?|VCC|VDD|VIN|VOUT|VBUS|VBAT|\+V)/i.test(String(s || "")));
+  const isGroundName = s => (typeof crIsGround === "function" ? crIsGround(s) : /^(GND|VSS|0V|AGND|DGND|PGND|VSSA|VSSD|MASSE)/i.test(String(s || "").trim()));
+
+  for (let p = 1; p <= maxP; p++) {
+    const pStr = String(p);
+    const pinObj = Array.isArray(c.pinout) ? c.pinout.find(x => String(x.number) === pStr) : null;
+    const schName = (pinObj && pinObj.name) || (Array.isArray(c.pinNames) && c.pinNames[p - 1]) || "";
+    const pcbNet = (fp.nets && fp.nets[p]) || "";
+
+    const isPwr = isPowerName(schName);
+    const isGnd = isGroundName(schName);
+
+    const pcbNetIsPwr = isPowerName(pcbNet);
+    const pcbNetIsGnd = isGroundName(pcbNet);
+
+    let statut = "ok";
+    let detail = "Conforme";
+
+    if (isPwr && pcbNetIsGnd) {
+      statut = "critique";
+      detail = "Court-circuit évité : broche " + schName + " reliée à la masse (" + pcbNet + ")";
+      anomalies.push(ref + "." + p + " (" + schName + ") : reliée à la masse " + pcbNet + " !");
+      hasCriticalNetConflict = true;
+    } else if (isGnd && pcbNetIsPwr) {
+      statut = "critique";
+      detail = "Court-circuit évité : broche " + schName + " reliée à l'alimentation (" + pcbNet + ")";
+      anomalies.push(ref + "." + p + " (" + schName + ") : reliée à l'alim " + pcbNet + " !");
+      hasCriticalNetConflict = true;
+    } else if (isGnd && pcbNetIsGnd) {
+      statut = "ok";
+      detail = "Masse conforme";
+    } else if (isPwr && pcbNetIsPwr) {
+      statut = "ok";
+      detail = "Alimentation conforme";
+    } else if (!pcbNet && schName) {
+      statut = "info";
+      detail = "Non raccordée";
+    }
+
+    pinDetails.push({
+      pin: p,
+      schName: schName,
+      pcbNet: pcbNet,
+      statut: statut,
+      detail: detail
+    });
+  }
+
+  const conforme = pitchOk && spanOk && pinCountOk && !hasCriticalNetConflict;
+  const statutGlobal = conforme ? "CONFORME" : "ANOMALIE";
+
+  let resume = "";
+  if (conforme) {
+    resume = "Brochage, pas (" + Number(actPitch).toFixed(2) + " mm) et taille (" + Number(actSpan).toFixed(2) + " mm) 100% conformes ✓";
+  } else {
+    resume = anomalies.join(" · ");
+  }
+
+  return {
+    ref: ref,
+    value: c.value || fp.value,
+    pkg: pkgName,
+    mpn: c.mpn,
+    statut: statutGlobal,
+    fpPresent: true,
+    conforme: conforme,
+    pitchCheck: { ok: pitchOk, pitch: actPitch, attendu: expPitch, msg: pitchMsg },
+    spanCheck: { ok: spanOk, span: actSpan, attendu: expSpan, msg: spanMsg },
+    pinCountCheck: { ok: pinCountOk, sch: nSch, pcb: nPcb, msg: pinCountMsg },
+    anomalies: anomalies,
+    avertissements: avertissements,
+    resume: resume,
+    pins: pinDetails,
+    peutReposer: !!(expGeom && (!pitchOk || !spanOk || !pinCountOk))
+  };
+}
+
+function pcbVerifierPinout(doc) {
+  const schMap = pcbComposantsSchema(doc);
+  if (typeof S === "undefined" || !Array.isArray(S.fps)) {
+    return { conforme: true, nbComposants: 0, nbAnomalies: 0, composants: [], anomalies: [], resume: "Carte vide" };
+  }
+
+  const resultats = [];
+  const anomaliesGlobales = [];
+  const fpsMap = new Map(S.fps.map(f => [f.ref, f]));
+
+  // 1. Vérifier les composants déclarés au schéma
+  schMap.forEach(c => {
+    const fp = fpsMap.get(c.ref);
+    const diag = pcbVerifierPinoutComposant(c, fp);
+    if (diag) {
+      resultats.push(diag);
+      if (!diag.conforme && diag.statut !== "NON_PLACE") {
+        anomaliesGlobales.push(...diag.anomalies);
+      }
+    }
+  });
+
+  // 2. Vérifier les empreintes PCB absentes du schéma
+  S.fps.forEach(fp => {
+    if (!schMap.has(fp.ref)) {
+      const diag = pcbVerifierPinoutComposant({ ref: fp.ref, value: fp.value, pkg: fp.pkg }, fp);
+      if (diag) {
+        resultats.push(diag);
+        if (!diag.conforme) {
+          anomaliesGlobales.push(...diag.anomalies);
+        }
+      }
+    }
+  });
+
+  const allConforme = resultats.length > 0 && resultats.every(r => r.conforme || r.statut === "NON_PLACE");
+  const nbAnom = resultats.filter(r => !r.conforme && r.statut !== "NON_PLACE").length;
+
+  let resume = "";
+  if (resultats.length === 0) {
+    resume = "Aucun composant à vérifier";
+  } else if (nbAnom === 0) {
+    const c1 = resultats[0];
+    resume = resultats.length === 1
+      ? (c1.ref + " (" + (c1.pkg || c1.value) + ") : pas, taille du boîtier et pinout 100% conformes ✓")
+      : (resultats.length + " composants vérifiés : distances des broches, tailles de boîtiers et pinouts conformes ✓");
+  } else {
+    resume = nbAnom + " composant(s) avec incohérence de pas, taille ou brochage !";
+  }
+
+  return {
+    conforme: nbAnom === 0 && resultats.length > 0,
+    nbComposants: resultats.length,
+    nbAnomalies: nbAnom,
+    anomalies: anomaliesGlobales,
+    composants: resultats,
+    resume: resume
   };
 }
 

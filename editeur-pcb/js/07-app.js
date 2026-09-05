@@ -77,6 +77,7 @@ function importNetlist(txt,dropMissing){
   if(nbConf>0&&typeof openNetlistConflictDialog==="function"){
     openNetlistConflictDialog(res.conflicts);
   }
+  setTimeout(() => { if (typeof pcbVerifierEtNotifierPinout === "function") pcbVerifierEtNotifierPinout(false); }, 150);
 }
 
 /* Boîte de dialogue interactive pour nettoyer les pistes de cuivre en conflit après mise à jour de la netlist */
@@ -117,6 +118,239 @@ function openNetlistConflictDialog(conflicts){
     const nb=pcbNettoyerPistesConflits(conflicts);
     hint("✂ "+nb+" piste(s) en conflit supprimée(s). Les pastilles sont prêtes pour le nouveau chevelu.");
   };
+}
+
+/* ==========================================================================
+   VÉRIFICATION & INSPECTION DU PINOUT PCB (Distance pins, Boîtier, Brochage)
+   ========================================================================== */
+
+function pcbVerifierEtNotifierPinout(autoOuvrirSiErreur) {
+  if (typeof pcbVerifierPinout !== "function") return null;
+  const res = pcbVerifierPinout();
+  const btn = document.getElementById("bCheckPinout");
+
+  if (btn) {
+    if (res.nbComposants === 0) {
+      btn.innerHTML = "⚡ Pinout : Schéma en attente";
+      btn.className = "tb";
+      btn.title = "Aucun composant avec schéma ou netlist rattaché";
+    } else if (res.conforme) {
+      btn.innerHTML = "⚡ Pinout : Conforme ✓";
+      btn.className = "tb on pcb-btn-pinout-ok";
+      btn.title = res.resume + " — Cliquez pour inspecter le détail";
+    } else {
+      btn.innerHTML = "⚠️ Pinout : " + res.nbAnomalies + " anomalie(s)";
+      btn.className = "tb on pcb-btn-pinout-warn";
+      btn.title = res.resume + " — Cliquez pour inspecter et corriger";
+    }
+    btn.onclick = () => pcbOuvrirDialoguePinout(pcbVerifierPinout());
+  }
+
+  if (res.nbComposants > 0) {
+    if (res.conforme) {
+      hint("✓ Pinout vérifié : " + res.resume);
+      pcbAfficherToastPinout(res);
+    } else {
+      hint("⚠️ Alerte Pinout PCB : " + res.resume);
+      pcbAfficherToastPinout(res);
+      if (autoOuvrirSiErreur) {
+        pcbOuvrirDialoguePinout(res);
+      }
+    }
+  }
+  return res;
+}
+
+function pcbAfficherToastPinout(res) {
+  if (!res || !res.nbComposants || typeof document === "undefined") return;
+  let toast = document.getElementById("pcbPinoutToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "pcbPinoutToast";
+  }
+  if (!document.body.contains(toast)) {
+    document.body.appendChild(toast);
+  }
+  toast.className = "pcb-pinout-toast " + (res.conforme ? "ok" : "warn");
+
+  const icon = res.conforme ? "✓" : "⚠️";
+  const titre = res.conforme ? "Brochage, Pas & Dimensions validés" : "Incohérence Pinout / Boîtier détectée";
+  
+  toast.innerHTML = 
+    '<div class="pcb-toast-icon">' + icon + '</div>' +
+    '<div class="pcb-toast-content">' +
+      '<div class="pcb-toast-title">' + titre + '</div>' +
+      '<div class="pcb-toast-desc">' + esc(res.resume) + '</div>' +
+    '</div>' +
+    '<div class="pcb-toast-actions">' +
+      '<button class="tb mini ' + (res.conforme ? '' : 'on') + '" id="pcbToastInspect">' + (res.conforme ? 'Détails' : 'Corriger / Inspecter') + '</button>' +
+      '<button class="pnl-btn" id="pcbToastClose" title="Fermer">✕</button>' +
+    '</div>';
+
+  document.body.appendChild(toast);
+
+  const close = () => toast.remove();
+  const bClose = document.getElementById("pcbToastClose");
+  if (bClose) bClose.onclick = close;
+
+  const bInsp = document.getElementById("pcbToastInspect");
+  if (bInsp) bInsp.onclick = () => {
+    close();
+    pcbOuvrirDialoguePinout(pcbVerifierPinout());
+  };
+
+  // Fermeture automatique après 7 secondes si conforme
+  if (res.conforme) {
+    setTimeout(() => {
+      if (document.body.contains(toast)) toast.remove();
+    }, 7000);
+  }
+}
+
+function pcbOuvrirDialoguePinout(res) {
+  if (!res) res = (typeof pcbVerifierPinout === "function") ? pcbVerifierPinout() : null;
+  if (!res || typeof document === "undefined") return;
+
+  const oldModal = document.getElementById("pcbPinoutModal");
+  if (oldModal) oldModal.remove();
+
+  const m = document.createElement("div");
+  m.id = "pcbPinoutModal";
+  m.className = "modal";
+
+  let cardsHtml = "";
+  if (!res.composants || !res.composants.length) {
+    cardsHtml = '<div class="empty" style="padding:20px;text-align:center">Aucun composant à afficher. Importez une netlist ou chargez un schéma.</div>';
+  } else {
+    res.composants.forEach(c => {
+      const isOk = c.conforme;
+      const isMissing = c.statut === "NON_PLACE";
+      const badgeCls = isOk ? "ok" : (isMissing ? "dim" : "warn");
+      const badgeTxt = isOk ? "✓ Conforme" : (isMissing ? "⏳ Non placé" : "⚠️ Incohérence");
+
+      let pinsRows = "";
+      if (c.pins && c.pins.length) {
+        c.pins.forEach(p => {
+          let stBadge = '<span class="pcb-pin-pill ok">✓ OK</span>';
+          if (p.statut === "critique") {
+            stBadge = '<span class="pcb-pin-pill crit">⚠️ ' + esc(p.detail) + '</span>';
+          } else if (p.statut === "info") {
+            stBadge = '<span class="pcb-pin-pill dim">Non raccordée</span>';
+          }
+          pinsRows +=
+            '<tr>' +
+              '<td style="text-align:center;font-weight:bold;color:#f0abfc">#' + p.pin + '</td>' +
+              '<td style="font-family:var(--mono);font-weight:bold">' + esc(p.schName || "—") + '</td>' +
+              '<td style="color:#60a5fa;font-family:var(--mono)">' + esc(p.pcbNet || "—") + '</td>' +
+              '<td>' + stBadge + '</td>' +
+            '</tr>';
+        });
+      }
+
+      cardsHtml +=
+        '<div class="pcb-comp-card ' + (isOk ? 'ok' : 'warn') + '">' +
+          '<div class="pcb-comp-head">' +
+            '<div>' +
+              '<span class="pcb-comp-ref">' + esc(c.ref) + '</span> ' +
+              '<span class="pcb-comp-val">' + esc(c.value || "") + '</span> ' +
+              (c.pkg ? '<span class="pcb-comp-pkg">(' + esc(c.pkg) + ')</span>' : '') +
+              (c.mpn ? '<span class="pcb-comp-mpn">MPN: ' + esc(c.mpn) + '</span>' : '') +
+            '</div>' +
+            '<span class="pcb-comp-badge ' + badgeCls + '">' + badgeTxt + '</span>' +
+          '</div>' +
+          '<div class="pcb-comp-body">' +
+            '<div class="pcb-geom-checks">' +
+              // 1. Distance entre les pins (pitch)
+              '<div class="pcb-geom-chip ' + (c.pitchCheck && c.pitchCheck.ok ? 'ok' : 'err') + '">' +
+                '<span class="pcb-chip-icon">' + (c.pitchCheck && c.pitchCheck.ok ? '✓' : '❌') + '</span> ' +
+                '<b>Distance pins (pitch) :</b> ' + esc(c.pitchCheck ? c.pitchCheck.msg : "—") +
+              '</div>' +
+              // 2. Taille du boîtier / écartement (span)
+              '<div class="pcb-geom-chip ' + (c.spanCheck && c.spanCheck.ok ? 'ok' : 'err') + '">' +
+                '<span class="pcb-chip-icon">' + (c.spanCheck && c.spanCheck.ok ? '✓' : '❌') + '</span> ' +
+                '<b>Taille boîtier (span) :</b> ' + esc(c.spanCheck ? c.spanCheck.msg : "—") +
+              '</div>' +
+              // 3. Nombre de pastilles
+              '<div class="pcb-geom-chip ' + (c.pinCountCheck && c.pinCountCheck.ok ? 'ok' : 'err') + '">' +
+                '<span class="pcb-chip-icon">' + (c.pinCountCheck && c.pinCountCheck.ok ? '✓' : '❌') + '</span> ' +
+                '<b>Nombre de pastilles :</b> ' + esc(c.pinCountCheck ? c.pinCountCheck.msg : "—") +
+              '</div>' +
+            '</div>' +
+            (c.peutReposer ? (
+              '<div style="margin:10px 0 6px">' +
+                '<button class="tb on pcb-repose-btn" data-repose-ref="' + esc(c.ref) + '" style="background:#2563eb;border-color:#3b82f6;color:#fff;font-size:11px">' +
+                  '🔧 Reposer l\'empreinte sur les cotes du boîtier (' + esc(c.pkg) + ')' +
+                '</button>' +
+              '</div>'
+            ) : '') +
+            (pinsRows ? (
+              '<details style="margin-top:8px" ' + (isOk ? '' : 'open') + '>' +
+                '<summary style="cursor:pointer;font-size:11px;color:var(--txt-dim);margin-bottom:6px">Détail des broches et raccordements (' + (c.pins ? c.pins.length : 0) + ' pastilles)</summary>' +
+                '<table class="pcb-pin-table">' +
+                  '<thead><tr><th style="width:36px;text-align:center">Pastille</th><th>Nom schéma</th><th>Net PCB</th><th>Diagnostic</th></tr></thead>' +
+                  '<tbody>' + pinsRows + '</tbody>' +
+                '</table>' +
+              '</details>'
+            ) : '') +
+          '</div>' +
+        '</div>';
+    });
+  }
+
+  m.innerHTML =
+    '<div class="box" style="max-width:760px;max-height:85vh;display:flex;flex-direction:column">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:12px">' +
+        '<div>' +
+          '<h3 style="margin:0;display:flex;align-items:center;gap:8px;color:#67e8f9">' +
+            '⚡ Inspection & Conformité du Pinout (Schéma ➔ PCB)' +
+          '</h3>' +
+          '<div style="color:var(--txt-dim);font-size:11.5px;margin-top:3px">' +
+            'Contrôle automatique de la distance entre les pins (pitch), des dimensions du boîtier (span) et de l\'adéquation des pastilles.' +
+          '</div>' +
+        '</div>' +
+        '<button class="pnl-btn" id="pcbModalClose">✕</button>' +
+      '</div>' +
+      '<div class="scroll" style="flex:1;overflow-y:auto;padding-right:4px">' +
+        cardsHtml +
+      '</div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;border-top:1px solid var(--border);padding-top:10px">' +
+        '<div style="font-size:11px;color:var(--txt-dim)">' +
+          (res.conforme ? '<span style="color:#52c41a">✓ Tous les composants vérifiés sont conformes</span>' : '<span style="color:#fbbf24">⚠️ Corrigez les empreintes signalées pour garantir l\'assemblage</span>') +
+        '</div>' +
+        '<button class="tb" id="pcbModalCloseBtn">Fermer</button>' +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(m);
+
+  const close = () => m.remove();
+  m.onclick = e => { if (e.target === m) close(); };
+  const bX = document.getElementById("pcbModalClose");
+  if (bX) bX.onclick = close;
+  const bF = document.getElementById("pcbModalCloseBtn");
+  if (bF) bF.onclick = close;
+
+  // Câbler les boutons pour reposer l'empreinte automatique
+  m.querySelectorAll(".pcb-repose-btn").forEach(btn => {
+    btn.onclick = () => {
+      const ref = btn.getAttribute("data-repose-ref");
+      const fp = S.fps && S.fps.find(f => f.ref === ref);
+      if (fp && typeof applyPkgGeom === "function") {
+        push();
+        applyPkgGeom(fp);
+        touch();
+        refreshPanels();
+        draw();
+        hint("Empreinte " + ref + " reposée sur son boîtier " + fp.pkg + " (Pas et dimensions ajustés).");
+        // Re-vérifier et rafraîchir la boîte de dialogue
+        const newRes = pcbVerifierPinout();
+        pcbOuvrirDialoguePinout(newRes);
+        if (typeof pcbVerifierEtNotifierPinout === "function") {
+          pcbVerifierEtNotifierPinout(false);
+        }
+      }
+    };
+  });
 }
 function exportPng(){
   const save={scale:S.scale,ox:S.ox,oy:S.oy};
@@ -369,6 +603,17 @@ function init(){
   resize();fit();
   PCB_REPRISE=sessionPcb();   // en dernier : reprend la carte laissée dans l'onglet
   pcbChargerProjet();
+  setTimeout(() => {
+    if (typeof pcbSyncSchema === "function") {
+      pcbSyncSchema().then(() => {
+        if (typeof pcbVerifierEtNotifierPinout === "function") pcbVerifierEtNotifierPinout(false);
+      }).catch(() => {
+        if (typeof pcbVerifierEtNotifierPinout === "function") pcbVerifierEtNotifierPinout(false);
+      });
+    } else if (typeof pcbVerifierEtNotifierPinout === "function") {
+      pcbVerifierEtNotifierPinout(false);
+    }
+  }, 350);
 }
 
 /* Charge la carte depuis le dossier du projet, quand il y en a un.
@@ -404,10 +649,52 @@ function pcbChargerProjet(){
        une carte lue APRÈS coup, comme ici, doit retenter une fois chargée. */
     if(typeof sessCibleAuChargement==="function")
       sessCibleAuChargement(pcbSonderCible);
+    setTimeout(() => {
+      if (typeof pcbSyncSchema === "function") {
+        pcbSyncSchema().then(() => {
+          if (typeof pcbVerifierEtNotifierPinout === "function") pcbVerifierEtNotifierPinout(false);
+        }).catch(() => {
+          if (typeof pcbVerifierEtNotifierPinout === "function") pcbVerifierEtNotifierPinout(false);
+        });
+      } else if (typeof pcbVerifierEtNotifierPinout === "function") {
+        pcbVerifierEtNotifierPinout(false);
+      }
+    }, 350);
   }).catch(function(e){
     PCB_PROJET_LU=false;       // un échec ne doit pas condamner les essais suivants
     hint("Carte du projet illisible : "+e.message);
   });
 }
 try{ projSurChangement(pcbChargerProjet); }catch(_){}
+
+// Écoute des mises à jour de pinout issues de l'éditeur schématique
+try {
+  if (typeof BroadcastChannel === "function") {
+    const bcPinout = new BroadcastChannel("cao.probe.v1");
+    bcPinout.addEventListener("message", ev => {
+      const m = ev && ev.data;
+      if (m && m.type === "pinout_update") {
+        if (typeof S !== "undefined" && S.schDoc) {
+          const sch = S.schDoc;
+          const pages = Array.isArray(sch.pages) ? sch.pages : [sch];
+          pages.forEach(p => {
+            const comps = Array.isArray(p.comps) ? p.comps : (Array.isArray(p.components) ? p.components : []);
+            for (const c of comps) {
+              if (c && c.ref === m.ref) {
+                c.pinout = m.pinout;
+                c.pinoutVerified = true;
+                if (m.mpn) c.mpn = m.mpn;
+                if (m.pkg) c.pkg = m.pkg;
+              }
+            }
+          });
+        }
+        if (typeof pcbVerifierEtNotifierPinout === "function") {
+          pcbVerifierEtNotifierPinout(false);
+        }
+      }
+    });
+  }
+} catch (_) {}
+
 init();

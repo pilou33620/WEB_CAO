@@ -5178,6 +5178,657 @@ function simBrancherRetourFiche(){
 }
 
 /* ==========================================================================
+   RAPPORT DE SANTÉ DE LA LIAISON (SYNTHÈSE GLOBALE SI / VIAS / RETOURS)
+   --------------------------------------------------------------------------
+   Une analyse dédiée dans la famille SI qui prend la liaison (ou le bus)
+   et dresse un bilan hiérarchisé par sévérité :
+     · Conforme (OK / Vert)
+     · Vigilance (Avertissement / Jaune)
+     · Critique (Erreur / Rouge)
+   autour de 4 piliers physiques :
+     1. Impédance & Continuité (Z₀, dispersion, réflexion ROS/S₁₁, coplanaire)
+     2. Vias & Discontinuités (moignons quart d'onde, antipads, capacité)
+     3. Chemin de retour & Plans (vias de masse, cavité, traversée, fentes)
+     4. Couplage & Environnement (diaphonie, pistes proches, règle des 3W)
+   Chaque anomalie comporte le chiffre mesuré et le geste correctif recommandé.
+   ========================================================================== */
+function simCorpsSante(){
+  return ''+
+  '<div class="pnl-bar simRefBar" id="simRefBar"></div>'+
+  '<div class="pnl-bar simBarF">'+
+    '<span class="pnl-lbl">Fréquence</span>'+
+    simChamp("simFc","Fréquence de travail / fondamentale : positionne la bande utile et les harmoniques")+
+    simChampUnite("simFUnite","la fréquence de travail")+
+    '<span class="simGr"><span class="pnl-lbl">t<sub>r</sub></span>'+
+    simChamp("simTr","Temps de montée du signal (10-90%). Détermine le spectre HF (f_knee = 0,35 / tr)")+
+    simChampUnite("simTrUnite","le temps de montée",SIM_UNITES_TR)+'</span>'+
+  '</div>'+
+  '<div class="pnl-bar simBarF">'+
+    '<span class="pnl-lbl">Bande S</span>'+
+    simChamp("simF1","Début de bande")+
+    simChampUnite("simFUniteBande1","le début de la bande S")+
+    '<span class="simSep">→</span>'+
+    simChamp("simF2","Fin de bande")+
+    simChampUnite("simFUniteBande2","la fin de la bande S")+
+    '<span class="simGr"><span class="pnl-lbl">Points</span>'+
+    simChamp("simN","Nombre de points de la courbe S")+"</span>"+
+  '</div>'+
+  '<div class="pnl-bar simFAvertBar simBarFixe"><span id="simFAvert"></span></div>'+
+  '<div class="pnl-bar simBarFixe">'+
+    '<button class="tb mini on" id="simSanteGo" title="Calculer la sélection et dresser le bilan de santé">▶ Évaluer santé</button>'+
+    '<button class="tb mini" id="simSanteExport" title="Exporter le rapport de santé de la liaison">Rapport ↗</button>'+
+    '<label class="simSuivre" title="Recalculer à chaque changement de sélection"><input type="checkbox" id="simAuto"> suivre</label>'+
+  '</div>';
+}
+
+function simBrancherSante(){
+  simSaisieEcrire();
+  simRefEcrire();
+  const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
+  pose("simSanteGo","onclick",simGo);
+  pose("simSanteExport","onclick",simSanteExporter);
+  const auto=simEl("simAuto");
+  if(auto){auto.checked=SIM.suivre;
+           auto.onchange=function(){SIM.suivre=this.checked;};}
+  pose("simFc","oninput",function(){
+    simSaisie(); simAjusterBandePourFc(); simFAvertEcrire();
+    if(SIM.res&&!SIM.occupe){
+      SIM.res=null; SIM.objets=[];
+      SIM.err="La fréquence a changé : relancez le calcul.";
+      simRendre(); simRepeindre();
+    }
+  });
+  pose("simFUnite","onchange",function(){simUniteChanger(this.value,"fc");});
+  pose("simTr","oninput",function(){
+    simSaisie();
+    if(SIM.res&&!SIM.occupe){
+      SIM.res=null; SIM.objets=[];
+      SIM.err="Le temps de montée a changé : relancez le calcul.";
+      simRendre(); simRepeindre();
+    }
+  });
+  pose("simTrUnite","onchange",function(){simUniteChanger(this.value,"tr");});
+  for(const id of ["simF1","simF2","simN"])
+    pose(id,"oninput",function(){
+      simSaisie(); simFAvertEcrire();
+      if(SIM.res&&!SIM.occupe){
+        SIM.res=null; SIM.objets=[];
+        SIM.err="La bande S a changé : relancez le calcul.";
+        simRendre(); simRepeindre();
+      }
+    });
+  pose("simFUniteBande1","onchange",function(){simUniteChanger(this.value,"bande1");});
+  pose("simFUniteBande2","onchange",function(){simUniteChanger(this.value,"bande2");});
+}
+
+function simRendreSante(){
+  if(SIM.occupe)
+    return simProgres("Synthèse globale des diagnostics de la liaison : impédance, vias, retour et couplage.");
+  if(SIM.err)return '<p class="simErr">'+simEsc(SIM.err)+"</p>";
+  if(SIM.res)return simFicheSante();
+  return '<p class="simEtat">Sélectionnez une piste, puis calculez.<br>'+
+    "<small>Cette analyse synthétise l'ensemble des diagnostics de Signal Integrity (SI) : "+
+    "dispersion d'impédance Z₀, moignons et résonances de vias, continuité du chemin de retour vertical, "+
+    "et risques de couplage / diaphonie, avec pour chaque défaut son chiffrage et le geste correctif.</small></p>";
+}
+
+function simDiagnostiquerSante(res, doc, opt){
+  if(!res || !res.segments || !res.segments.length){
+    return {
+      score_global: 0,
+      verdict: "Aucun résultat",
+      statut: "neutre",
+      compte: { ok: 0, alerte: 0, critique: 0, total: 0 },
+      categories: []
+    };
+  }
+
+  const optAjustee = opt || {};
+  const zCible = Number(optAjustee.zCible || (SIM.saisie && SIM.saisie.cible) || 50);
+  const fMax = Number(optAjustee.fMax || (res.points_s && res.points_s.length ? res.points_s[res.points_s.length-1].freq_hz : 3e9));
+  const tr = Number(optAjustee.tr || (SIM.saisie && SIM.saisie.tr) || (0.35 / fMax));
+  const fKnee = 0.35 / tr;
+
+  const items = [];
+
+  // --- PILIER 1 : IMPÉDANCE & CONTINUITÉ ---
+  const segsValides = res.segments.filter(s => s.z0 > 0);
+  if(segsValides.length){
+    let zMin = Infinity, zMax = -Infinity, pireEcartPct = 0, pireZ = zCible;
+    for(const s of segsValides){
+      if(s.z0 < zMin) zMin = s.z0;
+      if(s.z0 > zMax) zMax = s.z0;
+      const ecartPct = Math.abs(s.z0 - zCible) / zCible * 100;
+      if(ecartPct > pireEcartPct){
+        pireEcartPct = ecartPct;
+        pireZ = s.z0;
+      }
+    }
+
+    if(pireEcartPct <= 10){
+      items.push({
+        id: "z0_cible",
+        categorie: "impedance",
+        nomCategorie: "Impédance & Continuité",
+        titre: "Impédance caractéristique conforme",
+        severite: "ok",
+        chiffre: "Z₀ entre " + simNb(zMin, 1) + " et " + simNb(zMax, 1) + " Ω (cible " + simNb(zCible, 0) + " Ω, pire écart " + simNb(pireEcartPct, 1) + " %)",
+        impact: "Pertes par réflexion négligeables (< 1 % de puissance réfléchie). Adaptation de ligne garantie.",
+        recommandation: "Conserver la largeur actuelle des pistes."
+      });
+    } else if(pireEcartPct <= 20){
+      const action = pireZ > zCible ? "Élargir la piste ou rapprocher le plan de masse." : "Affiner la piste ou augmenter la hauteur de diélectrique.";
+      items.push({
+        id: "z0_cible",
+        categorie: "impedance",
+        nomCategorie: "Impédance & Continuité",
+        titre: "Tolérance d'impédance sous vigilance",
+        severite: "alerte",
+        chiffre: "Pire Z₀ = " + simNb(pireZ, 1) + " Ω (" + (pireZ > zCible ? "+" : "") + simNb(pireZ - zCible, 1) + " Ω, " + simNb(pireEcartPct, 1) + " % de déviation)",
+        impact: "Désadaptation modérée causant 5 à 10 % de réflexion et de légers dépassements (overshoot).",
+        recommandation: action
+      });
+    } else {
+      const action = pireZ > zCible ? "Élargir significativement la largeur de la piste (W) ou réduire l'épaisseur du substrat (h)." : "Réduire la largeur de piste ou utiliser un diélectrique de permittivité plus basse.";
+      items.push({
+        id: "z0_cible",
+        categorie: "impedance",
+        nomCategorie: "Impédance & Continuité",
+        titre: "Rupture critique d'impédance caractéristique",
+        severite: "critique",
+        chiffre: "Pire Z₀ = " + simNb(pireZ, 1) + " Ω (écart majeur de " + simNb(pireEcartPct, 1) + " % par rapport à " + simNb(zCible, 0) + " Ω)",
+        impact: "Réflexions sévères (> 15 %), sonneries destructrices sur les fronts montants et dégradation de l'ouverture de l'œil.",
+        recommandation: action
+      });
+    }
+  }
+
+  // Réflexions S11 et ROS (TOS)
+  if(res.points_s && res.points_s.length){
+    let pireS11Db = -Infinity, freqPire = 0;
+    for(const pt of res.points_s){
+      if(pt.s11_db != null && pt.s11_db > pireS11Db){
+        pireS11Db = pt.s11_db;
+        freqPire = pt.freq_hz;
+      }
+    }
+    const gamma = Math.pow(10, pireS11Db / 20);
+    const ros = gamma < 0.999 ? (1 + gamma) / (1 - gamma) : 99.9;
+
+    if(ros <= 1.35){
+      items.push({
+        id: "s11_ros",
+        categorie: "impedance",
+        nomCategorie: "Impédance & Continuité",
+        titre: "Taux d'onde stationnaire (ROS / S₁₁) excellent",
+        severite: "ok",
+        chiffre: "ROS max = " + simNb(ros, 2) + " (S₁₁ = " + simNb(pireS11Db, 1) + " dB à " + simFreq(freqPire) + ")",
+        impact: "Excellente transmission d'énergie tout au long de la bande passante utile.",
+        recommandation: "Aucune action d'adaptation nécessaire."
+      });
+    } else if(ros <= 1.8){
+      items.push({
+        id: "s11_ros",
+        categorie: "impedance",
+        nomCategorie: "Impédance & Continuité",
+        titre: "Réflexion modérée (ROS " + simNb(ros, 2) + ")",
+        severite: "alerte",
+        chiffre: "ROS max = " + simNb(ros, 2) + " (S₁₁ = " + simNb(pireS11Db, 1) + " dB à " + simFreq(freqPire) + ")",
+        impact: "Environ 5 à 10 % de l'amplitude du signal est renvoyée vers la source sous forme d'écho.",
+        recommandation: "Ajouter une résistance d'amortissement série (22-33 Ω) côté émetteur ou ajuster les discontinuités."
+      });
+    } else {
+      items.push({
+        id: "s11_ros",
+        categorie: "impedance",
+        nomCategorie: "Impédance & Continuité",
+        titre: "Réflexion excessive / fort désaccord d'onde",
+        severite: "critique",
+        chiffre: "ROS = " + simNb(ros, 2) + " (S₁₁ = " + simNb(pireS11Db, 1) + " dB à " + simFreq(freqPire) + ")",
+        impact: "Pertes importantes en transmission, déformation prononcée des fronts et risque d'interférences inter-symboles.",
+        recommandation: "Revoir impérativement la chaîne de transmission, éliminer les ruptures géométriques et adapter les impédances terminales."
+      });
+    }
+  }
+
+  // Coplanaire & dissymétrie
+  const coplanaire = res.segments.filter(s => s.coplanaire && s.ecart > 0);
+  if(coplanaire.length){
+    const dissym = coplanaire.filter(s => s.ecart_g != null && s.ecart_d != null && Math.abs(s.ecart_g - s.ecart_d) > 0.05);
+    if(dissym.length){
+      const maxDiff = Math.max(...dissym.map(s => Math.abs(s.ecart_g - s.ecart_d)));
+      items.push({
+        id: "coplanaire_dissym",
+        categorie: "impedance",
+        nomCategorie: "Impédance & Continuité",
+        titre: "Masse coplanaire dissymétrique",
+        severite: "alerte",
+        chiffre: "Dissymétrie de " + simNb(maxDiff, 3) + " mm entre le côté gauche et le côté droit",
+        impact: "Décentre la nappe de courant haute fréquence et génère un léger mode commun parasite.",
+        recommandation: "Régulariser l'ouverture du plan de masse coplanaire de manière équidistante des deux côtés."
+      });
+    } else {
+      items.push({
+        id: "coplanaire_ok",
+        categorie: "impedance",
+        nomCategorie: "Impédance & Continuité",
+        titre: "Masse coplanaire équilibrée",
+        severite: "ok",
+        chiffre: "Écart de masse symétrique à " + simNb(coplanaire[0].ecart, 3) + " mm",
+        impact: "Le blindage latéral est homogène et abaisse efficacement l'impédance de mode impair.",
+        recommandation: "Maintenir la distance actuelle de dégagement du plan."
+      });
+    }
+  }
+
+  // --- PILIER 2 : VIAS & DISCONTINUITÉS ---
+  const disc = res.discontinuites || {};
+  const transitions = (disc.transitions || []).concat(disc.vias_hors_chaine || []);
+
+  if(transitions.length === 0){
+    items.push({
+      id: "vias_aucun",
+      categorie: "vias",
+      nomCategorie: "Vias & Discontinuités",
+      titre: "Liaison planaire pure (aucun via)",
+      severite: "ok",
+      chiffre: "0 transition de couche",
+      impact: "L'absence de via évite toute discontinuité capacitive parasite et conserve le plan de référence d'un bout à l'autre.",
+      recommandation: "Tracé idéal pour signaux haute vitesse ou RF."
+    });
+  } else {
+    // Moignons (stubs)
+    let moignonPire = null, moignonCritique = false;
+    for(const t of transitions){
+      const mo = t.moignons || {};
+      const bouts = [mo.depart, mo.arrivee].filter(Boolean);
+      for(const b of bouts){
+        if(b.longueur_mm > 0.05){
+          if(!moignonPire || b.longueur_mm > moignonPire.longueur_mm){
+            moignonPire = b;
+          }
+          if(b.resonance_hz && b.resonance_hz <= Math.max(fMax, fKnee)){
+            moignonCritique = true;
+          }
+        }
+      }
+    }
+
+    if(!moignonPire){
+      items.push({
+        id: "moignon_ok",
+        categorie: "vias",
+        nomCategorie: "Vias & Discontinuités",
+        titre: "Vias sans moignon parasite (stub)",
+        severite: "ok",
+        chiffre: transitions.length + " via(s) sans moignon débordant",
+        impact: "Aucune résonance quart d'onde en circuit ouvert.",
+        recommandation: "Parcours optimisé entre les couches de routage."
+      });
+    } else if(moignonCritique){
+      items.push({
+        id: "moignon_crit",
+        categorie: "vias",
+        nomCategorie: "Vias & Discontinuités",
+        titre: "Moignon de via résonant dans la bande utile",
+        severite: "critique",
+        chiffre: "Longueur " + simNb(moignonPire.longueur_mm, 3) + " mm (" + simNb(moignonPire.capacite_fF, 0) + " fF) · Résonance à " + simNb(moignonPire.resonance_hz / 1e9, 1) + " GHz ≤ f_bande",
+        impact: "À sa résonance quart d'onde, le moignon agit comme un court-circuit à la masse et anéantit la transmission du signal.",
+        recommandation: "Pratiquer un contre-perçage (back-drilling), ou utiliser des vias enterrés/borgnes, ou router sur la couche externe la plus profonde."
+      });
+    } else {
+      items.push({
+        id: "moignon_alerte",
+        categorie: "vias",
+        nomCategorie: "Vias & Discontinuités",
+        titre: "Présence d'un moignon de via non résonant",
+        severite: "alerte",
+        chiffre: "Longueur " + simNb(moignonPire.longueur_mm, 3) + " mm (" + simNb(moignonPire.capacite_fF, 0) + " fF) · Résonance à " + simNb(moignonPire.resonance_hz / 1e9, 1) + " GHz",
+        impact: "Charge capacitive supplémentaire qui arrondit les fronts montants sans bloquer le signal.",
+        recommandation: "Vérifier la marge de gigue (jitter). Envisager un contre-perçage si le débit augmente."
+      });
+    }
+
+    // Antipads
+    const fourchette = transitions.filter(t => (t.cotes||{}).antipad_max && (t.cotes||{}).antipad_max > (t.cotes||{}).antipad_mm);
+    if(fourchette.length){
+      const c = fourchette[0].cotes;
+      items.push({
+        id: "antipad_fourchette",
+        categorie: "vias",
+        nomCategorie: "Vias & Discontinuités",
+        titre: "Fenêtres d'isolement (antipad) disparates",
+        severite: "alerte",
+        chiffre: "Antipad de " + simNb(c.antipad_mm, 2) + " à " + simNb(c.antipad_max, 2) + " mm",
+        impact: "Variation de l'effet capacitif entre les différents plans traversés.",
+        recommandation: "Harmoniser le diamètre de dégagement antipad sur toutes les couches internes."
+      });
+    }
+  }
+
+  // --- PILIER 3 : CHEMIN DE RETOUR & PLANS ---
+  if(transitions.length > 0){
+    const sansRetour = transitions.filter(t => {
+      const r = t.retour || {};
+      return (!r.retenus || r.retenus === 0) && (r.vias || []).length === 0;
+    });
+
+    if(sansRetour.length > 0){
+      items.push({
+        id: "retour_aucun",
+        categorie: "retour",
+        nomCategorie: "Chemin de retour & Plans",
+        titre: "Boucle de retour ouverte (aucun via de masse)",
+        severite: "critique",
+        chiffre: sansRetour.length + " transition(s) de via sans aucun via de masse à portée",
+        impact: "Le courant de retour haute fréquence doit trouver un chemin lointain : inductance de boucle décuplée, fort rayonnement CEM et rebonds de masse massifs.",
+        recommandation: "Placer impérativement 1 ou 2 vias de masse à moins de 0,5 mm de chaque via de signal pour fermer la boucle."
+      });
+    } else {
+      const eloignes = transitions.filter(t => {
+        const r = t.retour || {};
+        const vProche = (r.vias || [])[0];
+        return vProche && vProche.distance_mm > 0.8;
+      });
+
+      if(eloignes.length > 0){
+        const dMax = Math.max(...eloignes.map(t => (t.retour.vias[0]||{}).distance_mm || 0));
+        items.push({
+          id: "retour_eloigne",
+          categorie: "retour",
+          nomCategorie: "Chemin de retour & Plans",
+          titre: "Vias de masse de retour trop distants",
+          severite: "alerte",
+          chiffre: "Via de retour le plus proche situé à " + simNb(dMax, 2) + " mm (> 0,8 mm)",
+          impact: "Augmentation mesurable de l'inductance de boucle (L_boucle > 1,2 nH).",
+          recommandation: "Rapprocher les vias de masse à moins de 0,5 mm du via de signal."
+        });
+      } else {
+        items.push({
+          id: "retour_ok",
+          categorie: "retour",
+          nomCategorie: "Chemin de retour & Plans",
+          titre: "Chemin de retour vertical bien refermé",
+          severite: "ok",
+          chiffre: "Vias de masse présents à proximité immédiate (< 0,8 mm)",
+          impact: "Inductance de boucle minimale, confinant le champ EM entre le via de signal et son blindage.",
+          recommandation: "Conserver cette disposition de couture."
+        });
+      }
+    }
+
+    // Traversée de plans (cavité GND -> PWR)
+    const avecCavite = transitions.filter(t => (t.cavite || {}).plan_haut);
+    if(avecCavite.length > 0){
+      const cav = avecCavite[0].cavite;
+      if(!cav.pont_decouplage && !cav.c_pont){
+        items.push({
+          id: "cavite_non_decouplee",
+          categorie: "retour",
+          nomCategorie: "Chemin de retour & Plans",
+          titre: "Changement de plan de référence sans condensateur de pontage",
+          severite: "critique",
+          chiffre: "Traversée entre plans (" + simEsc(cav.plan_haut) + " → " + simEsc(cav.plan_bas) + ") · Z traversée = " + simNb(cav.impedance_fc_ohm, 1) + " Ω",
+          impact: "Rupture de continuité de référence : le courant de retour traverse la cavité diélectrique, injecte du bruit dans les plans d'alimentation et rayonne fortement.",
+          recommandation: "Router le signal sans changer de plan de référence, ou placer un condensateur de découplage de liaison (10 nF - 100 nF) à moins de 1 mm de la transition."
+        });
+      } else {
+        items.push({
+          id: "cavite_decouplee",
+          categorie: "retour",
+          nomCategorie: "Chemin de retour & Plans",
+          titre: "Traversée de cavité avec pont de découplage",
+          severite: "ok",
+          chiffre: "Pont de découplage présent à proximité · Z traversée = " + simNb(cav.impedance_fc_ohm, 2) + " Ω",
+          impact: "Le condensateur assure la continuité du courant de retour alternatif entre les deux plans.",
+          recommandation: "Maintenir les pistes de raccordement du condensateur très courtes."
+        });
+      }
+    }
+  }
+
+  // Couture de masse coplanaire
+  if(coplanaire.length){
+    const nonCousu = coplanaire.filter(s => s.couture && s.couture.espacement_max && s.couture.seuil_lambda10 && s.couture.espacement_max > s.couture.seuil_lambda10);
+    if(nonCousu.length){
+      const pireEsp = Math.max(...nonCousu.map(s => s.couture.espacement_max));
+      const seuil = nonCousu[0].couture.seuil_lambda10;
+      items.push({
+        id: "couture_lache",
+        categorie: "retour",
+        nomCategorie: "Chemin de retour & Plans",
+        titre: "Pas de couture de masse coplanaire excessif",
+        severite: "alerte",
+        chiffre: "Espacement max entre vias de masse = " + simNb(pireEsp, 2) + " mm > λ/10 (" + simNb(seuil, 2) + " mm)",
+        impact: "Au-delà de λ/10, le cuivre latéral cesse de se comporter comme un plan de masse idéal et peut entrer en résonance.",
+        recommandation: "Ajouter des vias de couture le long de la piste avec un pas régulier inférieur à " + simNb(seuil, 1) + " mm."
+      });
+    }
+  }
+
+  // --- PILIER 4 : COUPLAGE & ENVIRONNEMENT ---
+  const voisinage = (doc && doc.voisinage) || (SIM.doc && SIM.doc.voisinage) || [];
+  if(voisinage.length > 0){
+    let dMin = Infinity, pireVoisin = "";
+    for(const v of voisinage){
+      if(v.distance != null && v.distance < dMin){
+        dMin = v.distance;
+        pireVoisin = v.net || "voisine";
+      }
+    }
+    const largMoy = segsValides.length ? (segsValides.reduce((a, b) => a + (b.w || 0.2), 0) / segsValides.length) : 0.2;
+    const regle3W = 2 * largMoy;
+
+    if(dMin < regle3W){
+      items.push({
+        id: "couplage_proche",
+        categorie: "couplage",
+        nomCategorie: "Couplage & Environnement",
+        titre: "Piste voisine sous la règle des 3W",
+        severite: "alerte",
+        chiffre: "Écart de " + simNb(dMin, 3) + " mm avec « " + simEsc(pireVoisin) + " » (< 2W = " + simNb(regle3W, 3) + " mm)",
+        impact: "Diaphonie capacitive et inductive non négligeable. Risque de faux déclenchement sur les signaux sensibles.",
+        recommandation: "Écarter la piste d'au moins 3 fois sa largeur ou insérer une piste de garde reliée à la masse par des vias cousus."
+      });
+    } else {
+      items.push({
+        id: "couplage_3w_ok",
+        categorie: "couplage",
+        nomCategorie: "Couplage & Environnement",
+        titre: "Isolement latéral conforme (Règle 3W respectée)",
+        severite: "ok",
+        chiffre: "Écart minimal de " + simNb(dMin, 3) + " mm ≥ 2W (" + simNb(regle3W, 3) + " mm)",
+        impact: "Couplage croisé inférieur à -30 dB, garantissant un fonctionnement silencieux.",
+        recommandation: "Disposition spatiale optimale."
+      });
+    }
+  } else {
+    items.push({
+      id: "couplage_isole",
+      categorie: "couplage",
+      nomCategorie: "Couplage & Environnement",
+      titre: "Aucun agresseur proche détecté",
+      severite: "ok",
+      chiffre: "Tracé isolé à plus de 3 mm de tout autre signal",
+      impact: "Immunité totale contre la diaphonie sur la couche analysée.",
+      recommandation: "Aucune précaution de blindage supplémentaire requise."
+    });
+  }
+
+  // Calcul du score global
+  let totalPoints = 0;
+  let nbOk = 0, nbAlerte = 0, nbCritique = 0;
+
+  for(const it of items){
+    if(it.severite === "ok"){ totalPoints += 100; nbOk++; }
+    else if(it.severite === "alerte"){ totalPoints += 55; nbAlerte++; }
+    else if(it.severite === "critique"){ totalPoints += 10; nbCritique++; }
+  }
+
+  const scoreGlobal = items.length ? Math.round(totalPoints / items.length) : 100;
+  let verdict = "Liaison saine", statut = "ok";
+  if(nbCritique > 0 || scoreGlobal < 60){
+    verdict = "Liaison non conforme — actions critiques requises";
+    statut = "critique";
+  } else if(nbAlerte > 0 || scoreGlobal < 85){
+    verdict = "Liaison sous vigilance — améliorations conseillées";
+    statut = "alerte";
+  }
+
+  const catKeys = ["impedance", "vias", "retour", "couplage"];
+  const catNames = {
+    impedance: "Impédance & Continuité",
+    vias: "Vias & Discontinuités",
+    retour: "Chemin de retour & Plans",
+    couplage: "Couplage & Environnement"
+  };
+
+  const categories = catKeys.map(k => {
+    const list = items.filter(it => it.categorie === k);
+    return {
+      cle: k,
+      nom: catNames[k],
+      items: list,
+      nbOk: list.filter(i => i.severite === "ok").length,
+      nbAlerte: list.filter(i => i.severite === "alerte").length,
+      nbCritique: list.filter(i => i.severite === "critique").length
+    };
+  }).filter(c => c.items.length > 0);
+
+  return {
+    score_global: scoreGlobal,
+    verdict: verdict,
+    statut: statut,
+    compte: { ok: nbOk, alerte: nbAlerte, critique: nbCritique, total: items.length },
+    items: items,
+    categories: categories
+  };
+}
+
+function simFicheSante(){
+  const res = SIM.res;
+  if(!res) return "";
+  const diag = simDiagnostiquerSante(res, SIM.doc);
+  const filtre = SIM.santeFiltre || "tous";
+
+  let h = '<div class="simSanteWrap">';
+
+  // 1. En-tête avec score de santé et verdict
+  const colScore = diag.statut === "ok" ? "#49c07a" : (diag.statut === "alerte" ? "#f59e0b" : "#ef4444");
+  const bgScore = diag.statut === "ok" ? "rgba(73,192,122,0.12)" : (diag.statut === "alerte" ? "rgba(245,158,11,0.12)" : "rgba(239,68,68,0.12)");
+
+  h += '<div class="simSanteHeader" style="background:'+bgScore+'; border-left:4px solid '+colScore+'; padding:10px 14px; border-radius:4px; margin-bottom:12px;">';
+  h +=   '<div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">';
+  h +=     '<div>';
+  h +=       '<div style="font-size:10.5px; text-transform:uppercase; letter-spacing:0.5px; color:'+colScore+'; font-weight:700;">Score global de santé</div>';
+  h +=       '<div style="font-size:22px; font-weight:800; color:'+colScore+'; line-height:1.2;">'+diag.score_global+' <span style="font-size:13px; font-weight:500;">/ 100</span></div>';
+  h +=       '<div style="font-size:11.5px; font-weight:600; color:var(--txt,#e6e8ec); margin-top:2px;">'+simEsc(diag.verdict)+'</div>';
+  h +=     '</div>';
+  h +=     '<div class="simSanteBadges" style="display:flex; gap:6px; flex-wrap:wrap;">';
+  h +=       '<span class="simBadge simBadgeOk">✓ '+diag.compte.ok+' Conforme(s)</span>';
+  if(diag.compte.alerte > 0)
+    h +=     '<span class="simBadge simBadgeAlerte">⚠ '+diag.compte.alerte+' Vigilance</span>';
+  if(diag.compte.critique > 0)
+    h +=     '<span class="simBadge simBadgeCritique">✕ '+diag.compte.critique+' Critique(s)</span>';
+  h +=     '</div>';
+  h +=   '</div>';
+  h += '</div>';
+
+  // 2. Barre de filtres
+  h += '<div class="simSanteFiltres pnl-bar">';
+  h +=   '<button class="tb mini '+(filtre==="tous"?"on":"")+'" data-sante-filtre="tous">Tous ('+diag.compte.total+')</button>';
+  h +=   '<button class="tb mini '+(filtre==="anomalies"?"on":"")+'" data-sante-filtre="anomalies">Anomalies ('+(diag.compte.alerte+diag.compte.critique)+')</button>';
+  for(const cat of diag.categories){
+    const act = filtre === cat.cle ? "on" : "";
+    h += '<button class="tb mini '+act+'" data-sante-filtre="'+cat.cle+'">'+simEsc(cat.nom)+' ('+cat.items.length+')</button>';
+  }
+  h += '</div>';
+
+  // 3. Cartes par catégorie
+  for(const cat of diag.categories){
+    if(filtre !== "tous" && filtre !== "anomalies" && filtre !== cat.cle) continue;
+    let list = cat.items;
+    if(filtre === "anomalies"){
+      list = list.filter(i => i.severite !== "ok");
+      if(!list.length) continue;
+    }
+
+    h += '<div class="simSanteCat">';
+    h +=   '<div class="simSanteCatTitre">📁 ' + simEsc(cat.nom) + '</div>';
+
+    for(const it of list){
+      const borderCol = it.severite === "ok" ? "#49c07a" : (it.severite === "alerte" ? "#f59e0b" : "#ef4444");
+      const icon = it.severite === "ok" ? "✓" : (it.severite === "alerte" ? "⚠" : "✕");
+      const badgeTxt = it.severite === "ok" ? "CONFORME" : (it.severite === "alerte" ? "VIGILANCE" : "CRITIQUE");
+
+      h += '<div class="simSanteCard ' + it.severite + '">';
+      h +=   '<div class="simSanteCardHead">';
+      h +=     '<b style="color:'+borderCol+';">'+icon+' '+simEsc(it.titre)+'</b>';
+      h +=     '<span class="simSanteTag ' + it.severite + '">'+badgeTxt+'</span>';
+      h +=   '</div>';
+
+      h +=   '<div class="simSanteLigne">· <b>Mesure :</b> '+simEsc(it.chiffre)+'</div>';
+      h +=   '<div class="simSanteLigne">· <b>Impact :</b> '+simEsc(it.impact)+'</div>';
+
+      if(it.severite !== "ok"){
+        h += '<div class="simSanteReco">';
+        h +=   '💡 <b>Geste correctif :</b> '+simEsc(it.recommandation);
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+
+  h += '</div>';
+  return h;
+}
+
+function simSanteApres(){
+  const box = simEl("simSortie");
+  if(!box) return;
+  box.querySelectorAll("[data-sante-filtre]").forEach(function(b){
+    b.onclick = function(){
+      SIM.santeFiltre = this.getAttribute("data-sante-filtre");
+      simRendre();
+    };
+  });
+}
+
+function simSanteExporter(){
+  if(!SIM.res){
+    SIM.err = "Rien à exporter : calculez d'abord.";
+    simRendre();
+    return;
+  }
+  const diag = simDiagnostiquerSante(SIM.res, SIM.doc);
+  const date = new Date().toISOString().replace("T"," ").slice(0,19);
+  let md = "# Rapport de santé de la liaison — Synthèse SI\n\n";
+  md += "**Date :** " + date + "\n";
+  md += "**Net / Portée :** " + (SIM.portee || (SIM.res && SIM.res.net) || "Sélection") + "\n";
+  md += "**Score global :** " + diag.score_global + " / 100 — " + diag.verdict + "\n";
+  md += "**Bilan :** " + diag.compte.ok + " conforme(s), " + diag.compte.alerte + " sous vigilance, " + diag.compte.critique + " critique(s)\n\n";
+
+  for(const cat of diag.categories){
+    md += "## " + cat.nom + "\n\n";
+    for(const it of cat.items){
+      const badge = it.severite === "ok" ? "[CONFORME]" : (it.severite === "alerte" ? "[VIGILANCE]" : "[CRITIQUE]");
+      md += "### " + badge + " " + it.titre + "\n";
+      md += "- **Mesure :** " + it.chiffre + "\n";
+      md += "- **Impact :** " + it.impact + "\n";
+      if(it.severite !== "ok"){
+        md += "- **Geste correctif :** " + it.recommandation + "\n";
+      }
+      md += "\n";
+    }
+  }
+
+  const nomFichier = simNomFichier("-rapport-sante.md");
+  simTelecharger(md, nomFichier, "text/markdown;charset=utf-8");
+}
+
+
+/* ==========================================================================
    IMPÉDANCE DIFFÉRENTIELLE — UNE SECTION À N CONDUCTEURS, LUE EN OHMS
    --------------------------------------------------------------------------
    CE QUE C'EST. La section à deux conducteurs résolue par
@@ -9415,7 +10066,7 @@ const SIM_FAMILLES=[
       voisine prend, ET où le long du parcours cela se fabrique. Elle a
       remplacé l'onglet « Diaphonie », qui ne disait que le premier des deux
       et le disait sur une section droite unique. */
-   analyses:["impedance","diff","crosstalk","retour"]},
+   analyses:["impedance","diff","crosstalk","retour","sante"]},
   {cle:"pi", court:"PI", nom:"Intégrité de l'alimentation",
    quoi:"Ce que le réseau de distribution laisse passer : chute continue, "+
         "impédance vue par le composant, résonances de plan.",
@@ -9502,6 +10153,17 @@ const SIM_ANALYSES={
     brancher:simBrancherRetour,
     rendre:simRendreRetour,
     apres:simBrancherRetourFiche
+  },
+  sante:{
+    nom:"Santé liaison",
+    titre:"Synthèse globale des diagnostics de la liaison : impédance, discontinuités de vias, "+
+          "chemin de retour, couplage, classés par sévérité avec recommandations précises.",
+    peint:false,
+    carte:"",
+    corps:simCorpsSante,
+    brancher:simBrancherSante,
+    rendre:simRendreSante,
+    apres:simSanteApres
   },
   dc:{
     nom:"Chute DC",
@@ -10088,6 +10750,20 @@ function simLotsPeints(){
   return bon(seul)?[seul]:[];
 }
 function simLotsMultiples(){return simLotsPeints().length>1;}
+function simLotsSontPaireDiff(){
+  const quoi=typeof simCarteQuoi==="function"?simCarteQuoi():"";
+  const isDiff=quoi==="zdiff"||(typeof SIM!=="undefined"&&(SIM.analyse==="diff"||SIM.analyse==="zdiff"));
+  if(!isDiff)return false;
+  if(typeof SIM==="undefined"||!SIM.lots||SIM.lots.length<2)return false;
+  const nets=new Set(SIM.lots.map(l=>l.net).filter(Boolean));
+  if(nets.size<2)return false;
+  for(const l of SIM.lots){
+    const ch=typeof simChaleurRes==="function"?simChaleurRes(l.res):(l.res&&l.res.couplage&&l.res.couplage.chaleur);
+    const vn=Array.isArray(ch)&&ch.find(it=>it&&it.z_diff_net);
+    if(!vn||!nets.has(vn.z_diff_net))return false;
+  }
+  return true;
+}
 
 /* Peindre chaque lot à son tour. Le reflet est posé le temps de l'appel, puis
    remis en place : `simZSegment`, `simZActif` et tout ce que les canevas

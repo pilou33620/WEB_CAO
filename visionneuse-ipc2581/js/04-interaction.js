@@ -338,7 +338,8 @@ function fin(e){
      avec Maj sert à élargir la portée, pas à la lâcher. */
   if(!ajouter&&s.type==="composant"){choisirComp(s.ref,false);V.survol=s;
                                      pnlDetail();dessiner();return;}
-  selPoser(s,porteeDe(s,e.shiftKey),ajouter);
+  const isDbl=!!(e&&e.detail>=2);
+  selPoser(s,porteeDe(s,e.shiftKey),ajouter,isDbl);
   pnlComps(); pnlNets();
   V.survol=s; pnlDetail(); dessiner();
 }
@@ -365,6 +366,16 @@ function porteeDe(s,maj){
   return {couche:(maj||s.couche==null)?-1:s.couche,quoi:"",seul:null};
 }
 cv.addEventListener("pointerup",fin);
+cv.addEventListener("dblclick",function(e){
+  if(!V.modele)return;
+  const p=pos(e), w=s2w(p.x,p.y);
+  const s=designer(w.x,w.y);
+  if(!s)return;
+  const ajouter=e.ctrlKey||e.metaKey;
+  selPoser(s,porteeDe(s,e.shiftKey),ajouter,true);
+  pnlComps(); pnlNets();
+  V.survol=s; pnlDetail(); dessiner();
+});
 cv.addEventListener("pointercancel",function(e){
   POINTEURS.delete(e.pointerId);
   if(POINTEURS.size<2)PINCE=null;

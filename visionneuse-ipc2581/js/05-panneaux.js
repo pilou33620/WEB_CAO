@@ -313,13 +313,38 @@ function pnlNets(){
 /* ==========================================================================
    Composants
    ========================================================================== */
+function pnlLibelleTypeComp(t, ref){
+  const T = (t||"").toUpperCase();
+  if(T === "RESISTOR") return "Résistance (passif)";
+  if(T === "CAPACITOR") return "Condensateur (passif)";
+  if(T === "INDUCTOR") return "Inductance (passif)";
+  if(T === "DIODE") return "Diode";
+  if(T === "TRANSISTOR") return "Transistor";
+  if(T === "IC") return "Circuit intégré";
+  if(T === "CONNECTOR") return "Connecteur";
+  if(T === "CRYSTAL") return "Quartz";
+  if(T === "TESTPOINT") return "Point de test";
+  if(T === "FUSE") return "Fusible";
+  if(T === "SWITCH") return "Interrupteur";
+  const r = (ref||"").toUpperCase();
+  if(/^(R|RN|RT|RV|POT|RP)[0-9]/.test(r)) return "Résistance (passif)";
+  if(/^(C|CN|CP)[0-9]/.test(r)) return "Condensateur (passif)";
+  if(/^(L|FB|IND|BEAD)[0-9]/.test(r)) return "Inductance (passif)";
+  if(/^(D|CR|LED|TVS)[0-9]/.test(r)) return "Diode";
+  if(/^(Q|TR|MOS|FET)[0-9]/.test(r)) return "Transistor";
+  if(/^(U|IC)[0-9]/.test(r)) return "Circuit intégré";
+  if(/^(J|P|CON|HDR)[0-9]/.test(r)) return "Connecteur";
+  return "";
+}
+
 function pnlComps(){
   const box=$("listeComps");
   if(!V.modele){box.innerHTML="";return;}
   const f=($("filtreComps").value||"").trim().toLowerCase();
   const liste=V.modele.composants.filter(function(c){
     if(!f)return true;
-    return (c.ref+" "+c.val+" "+c.pkg).toLowerCase().indexOf(f)>=0;
+    const t = pnlLibelleTypeComp(c.type, c.ref);
+    return (c.ref+" "+(c.val||"")+" "+(c.pkg||"")+" "+(c.part||"")+" "+t).toLowerCase().indexOf(f)>=0;
   }).sort(function(a,b){return a.ref.localeCompare(b.ref,"fr",{numeric:true});});
   if(!liste.length){
     box.innerHTML='<div class="rien">'
@@ -395,6 +420,11 @@ function pnlSelection(){
     const s=e.s;
     let t;
     if(s.type==="net")t="net "+mdlNetNom(s.net)+" — toutes les couches";
+    else if(s.type==="piste"){
+      const chaine=(typeof mdlChainePistesMemeCouche==="function")?mdlChainePistesMemeCouche(s.piste):[s.piste];
+      const lgTot=chaine.reduce((acc,p)=>acc+(p.p?mdlLongueur(p.p):(p.s&&p.e?Math.hypot(p.e[0]-p.s[0],p.e[1]-p.s[1]):0)),0);
+      t="piste "+mdlMes(s.piste.w)+" · net "+mdlNetNom(s.net)+" · "+mdlCoucheNom(s.couche)+" ("+mdlMes(lgTot,2)+")";
+    }
     else t=(typeof resume==="function")?resume(s):s.type;
     if(s.net!=null&&s.net>=0)nets.add(s.net);
     lignes.push('<tr><td class="g">'+(i+1)+"</td><td>"+mdlEsc(t)+"</td>"+
@@ -403,7 +433,7 @@ function pnlSelection(){
   });
   return '<div class="fiche"><h3>Sélection</h3>'+
     '<table class="selListe">'+lignes.join("")+"</table>"+
-    '<p class="note">'+V.sel.length+" morceaux, "+nets.size+" net"+
+    '<p class="note">'+V.sel.length+" pistes / morceaux, "+nets.size+" net"+
     (nets.size>1?"s":"")+". Ctrl+clic pour en ajouter ou en retirer un, "+
     "Échap pour tout lâcher. Le panneau de simulation calcule chaque parcours "+
     "continu séparément — deux morceaux qui se touchent ne font qu'un lot."+
@@ -432,10 +462,13 @@ function pnlDetail(){
   const comp=V.comp?V.parRef.get(V.comp):null;
   if(comp){
     const cu=V.couches[comp.c];
+    const typeLib=pnlLibelleTypeComp(comp.type,comp.ref);
     h+='<div class="fiche"><h3>Composant</h3><table>'
       +l("Repère",'<span class="val">'+mdlEsc(comp.ref)+"</span>")
-      +l("Valeur",mdlEsc(comp.val||"—"))
+      +(typeLib?l("Type",'<span style="color:#60a5fa;font-weight:600">'+mdlEsc(typeLib)+'</span>'):"")
+      +l("Valeur",comp.val?'<b style="color:var(--yellow)">'+mdlEsc(comp.val)+'</b>':"—")
       +(comp.tol?l("Tolérance",mdlEsc(comp.tol)):"")
+      +(comp.part&&comp.part!==comp.val?l("Référence",mdlEsc(comp.part)):"")
       +l("Boîtier",mdlEsc(comp.pkg||"—"))
       +l("Montage",mdlEsc(comp.mnt||"—"))
       +l("Face",cu?mdlEsc(cu.nom)+(cu.dessous?" (dessous)":""):"—")
@@ -444,6 +477,19 @@ function pnlDetail(){
       +l("Broches",(comp.pins?comp.pins.length:0)+" ("
         +(comp.pads?comp.pads.length:0)+" pastilles)")
       +"</table>";
+    if(comp.props&&typeof comp.props==="object"){
+      const cles=Object.keys(comp.props).filter(function(k){
+        const ku=k.toUpperCase();
+        return ["VALUE","VAL","TOLERANCE","TOL","PART","PART_NUMBER","PARTNUMBER","NAME","PACKAGE"].indexOf(ku)<0;
+      });
+      if(cles.length>0){
+        h+="<h3>Propriétés</h3><table>";
+        for(const k of cles.slice(0,10)){
+          h+=l(mdlEsc(k),mdlEsc(comp.props[k]));
+        }
+        h+="</table>";
+      }
+    }
     /* Les broches et leur net : c'est la question qu'on pose à un boîtier
        neuf fois sur dix — « la 3, elle va où ? ».
 
@@ -522,10 +568,13 @@ function pnlDetail(){
       +"</table></div>";
   }
   if(s&&s.type==="piste"){
+    const chaine=(typeof mdlChainePistesMemeCouche==="function")?mdlChainePistesMemeCouche(s.piste):[s.piste];
+    const lgTot=chaine.reduce((acc,p)=>acc+(p.p?mdlLongueur(p.p):(p.s&&p.e?Math.hypot(p.e[0]-p.s[0],p.e[1]-p.s[1]):0)),0);
+    const segsTot=chaine.reduce((acc,p)=>acc+(p.p?Math.max(0,p.p.length/2-1):1),0);
     h+='<div class="fiche"><h3>Piste</h3><table>'
       +l("Largeur",'<span class="val">'+mdlMes(s.piste.w)+"</span>")
-      +l("Longueur",mdlMes(mdlLongueur(s.piste.p),2))
-      +l("Segments",Math.max(0,s.piste.p.length/2-1))
+      +l("Longueur",mdlMes(lgTot,2)+(chaine.length>1?' <span class="simNote">('+chaine.length+' tronçons continus)</span>':''))
+      +l("Segments",segsTot)
       +l("Couche",mdlEsc(mdlCoucheNom(s.couche)))
       +"</table>"
       /* Le clic seul interroge ce bout de piste, et le calcul est ici. Avec

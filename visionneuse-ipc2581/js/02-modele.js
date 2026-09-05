@@ -464,9 +464,74 @@ function mdlPremierCuivre(){
    les identifie : le repère d'un composant, la position et la couche d'une
    pastille. Comparer les coordonnées d'un clic ne marcherait pas : deux clics
    sur la même piste ne tombent jamais au même endroit. */
+/* Retrouver toute la chaîne continue de pistes et arcs d'un même net sur la même couche. */
+function mdlChainePistesMemeCouche(piste0){
+  if(!V.modele||!piste0)return [piste0];
+  const netIdx=(piste0.n!=null&&piste0.n>=0)?piste0.n:-1;
+  if(netIdx<0||!V.parNet||!V.parNet[netIdx])return [piste0];
+  const n=V.parNet[netIdx];
+  const cands=n.pistes.filter(p=>p.c===piste0.c&&p.p&&p.p.length>=4);
+  const arcs=(n.arcs||[]).filter(a=>a.c===piste0.c);
+  if(cands.length<=1&&!arcs.length)return cands.length?cands:[piste0];
+
+  const tol=(/INCH/i.test(V.unite||"")?0.02/25.4:0.02);
+
+  const boutsMap=new Map();
+  for(const p of cands){
+    boutsMap.set(p, [
+      {x:p.p[0], y:p.p[1]},
+      {x:p.p[p.p.length-2], y:p.p[p.p.length-1]}
+    ]);
+  }
+  for(const a of arcs){
+    if(a.s&&a.e){
+      boutsMap.set(a, [
+        {x:a.s[0], y:a.s[1]},
+        {x:a.e[0], y:a.e[1]}
+      ]);
+    }
+  }
+
+  const tous=[...cands, ...arcs.filter(a=>boutsMap.has(a))];
+  const retenus=new Set([piste0]);
+  const stack=[piste0];
+
+  while(stack.length){
+    const cur=stack.pop();
+    const curBouts=boutsMap.get(cur);
+    if(!curBouts)continue;
+    for(const cand of tous){
+      if(retenus.has(cand))continue;
+      const candBouts=boutsMap.get(cand);
+      if(!candBouts)continue;
+      let touche=false;
+      for(const b1 of curBouts){
+        for(const b2 of candBouts){
+          if(Math.hypot(b1.x-b2.x, b1.y-b2.y)<=tol){
+            touche=true; break;
+          }
+        }
+        if(touche)break;
+      }
+      if(touche){
+        retenus.add(cand);
+        stack.push(cand);
+      }
+    }
+  }
+  return [...retenus];
+}
+
 function selMeme(a,b){
   if(!a||!b||a.type!==b.type)return false;
-  if(a.type==="piste")return a.piste===b.piste;
+  if(a.type==="piste"){
+    if(a.piste===b.piste)return true;
+    if(a.couche===b.couche&&a.net===b.net&&a.net>=0){
+      const chaine=mdlChainePistesMemeCouche(a.piste);
+      return chaine.indexOf(b.piste)>=0;
+    }
+    return false;
+  }
   if(a.type==="plan")return a.plan===b.plan;
   if(a.type==="percage")return a.trou===b.trou;
   if(a.type==="composant")return a.ref===b.ref;
@@ -492,13 +557,18 @@ function selRefleter(){
 
 /* Poser une désignation. `ajouter` vrai la fait basculer dans la liste — elle
    y entre si elle n'y est pas, elle en sort si elle y est ; faux la remplace,
-   ce qui est le clic ordinaire. */
-function selPoser(s,mev,ajouter){
+   ce qui est le clic ordinaire.
+   `isDbl` vrai préserve l'élément déjà sélectionné (évite le dédoublement de bascule). */
+function selPoser(s,mev,ajouter,isDbl){
   if(!s){if(!ajouter)V.sel=[];selRefleter();return;}
   if(!ajouter){V.sel=[{s:s,mev:mev||mdlMevTout()}];selRefleter();return;}
   const k=V.sel.findIndex(e=>selMeme(e.s,s));
-  if(k>=0)V.sel.splice(k,1);
-  else V.sel.push({s:s,mev:mev||mdlMevTout()});
+  if(k>=0){
+    if(!isDbl)V.sel.splice(k,1);
+    else V.sel[k]={s:s,mev:mev||V.sel[k].mev||mdlMevTout()};
+  } else {
+    V.sel.push({s:s,mev:mev||mdlMevTout()});
+  }
   selRefleter();
 }
 /* Les nets et les boîtiers que la sélection touche, pour que les listes

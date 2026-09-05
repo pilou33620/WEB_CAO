@@ -80,6 +80,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   /* chute continue : le cuivre livre, les bornes, les percages */
   /* selection multiple et lots */
   "mdlMevTout","selMeme","selPoser","selRefleter","selNets","selRefs",
+  "mdlChainePistesMemeCouche",
   "simZPistesDe","simLotsDePistes","SIM_LOTS_MAX","simDocIpc",
   /* Le voisinage : le cuivre qui longe la selection. Sans lui, ni Z
      differentielle ni diaphonie -- l'agresseur n'est jamais dans la
@@ -110,6 +111,8 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simZSegment","simZActif","simZVerdict","simZTolAbs",
   "simZDiffCouleur","simZDiffTolAbs","simZDiffVerdict",
   "simCarteDiffPartenaire","simCarteDiffLegende",
+  "simPistePartenaireIpc","simProjSegmentSurPisteIpc","simLotsSontPaireDiff",
+  "simZValeurs","simZDrawnLabelsIpc",
   /* Le voile : ce qui n'est pas dans la simulation s'estompe. */
   "simVoileActif","SIM_VOILE_ALPHA",
   /* Choisir sa paire a la main plutot que de la laisser deviner. */
@@ -3260,6 +3263,196 @@ T("le rôle d'une couche de cuivre peut être forcé en signal ou en plan",()=>{
   ltPreparer();
   if(LT.cu[1].plan !== true) throw new Error("c1 devrait être redevenu plan après retrait de la surcharge");
   if(LT.cu[1].roleSaisi !== false) throw new Error("c1 ne devrait plus être marqué roleSaisi");
+});
+
+T("simulation EM IPC-2581 - Z Différentielle : projection géométrique, piste partenaire et déduplication", function(){
+  // 1. Enrichissement de simProjPoly avec coordonnées projetées x, y et coordonnée curviligne u
+  const poly = [0, 0, 10, 0];
+  const cum = simCumul(poly);
+  const pr = simProjPoly(poly, cum, 5, 2);
+  if (!pr || Math.abs(pr.x - 5) > 1e-4 || Math.abs(pr.y - 0) > 1e-4 || Math.abs(pr.u - 0.5) > 1e-4) {
+    throw new Error("simProjPoly doit renvoyer x, y et u projetés corrects : " + JSON.stringify(pr));
+  }
+
+  // 2. Recherche de piste partenaire via simPistePartenaireIpc
+  const p1 = { p: [0, 0, 20, 0], c: 0, w: 0.2, n: 0 };
+  const p2 = { p: [0, 0.4, 20, 0.4], c: 0, w: 0.2, n: 1 };
+  const pAutre = { p: [0, 5, 20, 5], c: 1, w: 0.2, n: 1 }; // couche différente
+
+  V.parNet = [
+    { i: 0, nom: "DIFF_P", pistes: [p1] },
+    { i: 1, nom: "DIFF_N", pistes: [pAutre, p2] }
+  ];
+
+  const part = simPistePartenaireIpc(p1, "DIFF_N");
+  if (!part || part !== p2) {
+    throw new Error("simPistePartenaireIpc doit retrouver la piste du même layer la plus proche");
+  }
+
+  // 3. Projection d'un tronçon couplé via simProjSegmentSurPisteIpc
+  const cum1 = simCumul(p1.p);
+  const cum2 = simCumul(p2.p);
+  const proj = simProjSegmentSurPisteIpc(p1, cum1, 0.25, 0.75, p2, cum2);
+  if (!proj || Math.abs(proj.u1 - 0.25) > 1e-3 || Math.abs(proj.u2 - 0.75) > 1e-3) {
+    throw new Error("simProjSegmentSurPisteIpc doit projeter fidèlement le tronçon couplé : " + JSON.stringify(proj));
+  }
+
+  // 4. Détection de lots appariés pour suppression des badges (1) et (2)
+  SIM.lots = [
+    { net: "DIFF_P", res: { couplage: { chaleur: [{ z_diff_net: "DIFF_N" }] } } },
+    { net: "DIFF_N", res: { couplage: { chaleur: [{ z_diff_net: "DIFF_P" }] } } }
+  ];
+
+  SIM.analyse = "impedance";
+  if (simLotsSontPaireDiff()) throw new Error("simLotsSontPaireDiff ne doit pas être actif hors mode zdiff");
+
+  SIM.analyse = "diff";
+  if (!simLotsSontPaireDiff()) throw new Error("Deux lots formant une paire différentielle doivent être détectés");
+
+  // 5. Test du rendu de l'accolade visuelle et centrage du cartouche pour la paire différentielle
+  const p1Diff = { p: [0, 10, 20, 10], c: 0, w: 0.2, n: 0 };
+  const p2DiffA = { p: [0, 10.4, 6, 10.4], c: 0, w: 0.2, n: 1 };
+  const p2DiffB = { p: [6, 10.4, 20, 10.4], c: 0, w: 0.2, n: 1 };
+  V.parNet = [
+    { i: 0, nom: "DIFF_P", pistes: [p1Diff] },
+    { i: 1, nom: "DIFF_N", pistes: [p2DiffA, p2DiffB] }
+  ];
+  const lot1 = {
+    net: "DIFF_P",
+    objets: [{ piste: p1Diff, cum: simCumul(p1Diff.p), u1: 0, u2: 1, coucheIdx: 0 }],
+    res: { couplage: { chaleur: [{ z_diff: 97.5, z_diff_net: "DIFF_N" }] } }
+  };
+  const lot2 = {
+    net: "DIFF_N",
+    objets: [
+      { piste: p2DiffA, cum: simCumul(p2DiffA.p), u1: 0, u2: 1, coucheIdx: 0 },
+      { piste: p2DiffB, cum: simCumul(p2DiffB.p), u1: 0, u2: 1, coucheIdx: 0 }
+    ],
+    res: { couplage: { chaleur: [{ z_diff: 97.5, z_diff_net: "DIFF_P" }, { z_diff: 97.5, z_diff_net: "DIFF_P" }] } }
+  };
+  SIM.lots = [lot1, lot2];
+  SIM.analyse = "diff";
+  const oldCarteQuoi = global.simCarteQuoi;
+  const oldCarteRetenir = global.simCarteRetenir;
+  const oldW2s = global.w2s;
+  global.simCarteQuoi = () => "zdiff";
+  global.simCarteRetenir = m => [...m.values()];
+  global.w2s = (x, y) => ({ x: x, y: y });
+
+  const tDiff = toileMouchard();
+  simZDrawnLabelsIpc.clear();
+
+  // On simule une échelle écran normale (10 px / unité monde)
+  global.w2s = (x, y) => ({ x: x * 10, y: y * 10 });
+
+  const traitsLot1 = [{
+    texte: "97,5 Ω",
+    valeur: 97.5,
+    couleur: () => "#00ffff",
+    obj: lot1.objets[0],
+    seg: { longueur: 20 },
+    chaleur: { z_diff: 97.5, z_diff_net: "DIFF_N" }
+  }];
+
+  simZValeurs(tDiff.ctx, 1, traitsLot1, lot1);
+
+  // Vérification que le badge est centré entre les deux pistes à Y=102 (+0.5px de baseline)
+  if (tDiff.txt.length !== 1 || tDiff.txt[0].s !== "97,5 Ω") {
+    throw new Error("Une étiquette '97,5 Ω' attendue, obtenu: " + JSON.stringify(tDiff.txt));
+  }
+  if (Math.abs((tDiff.txt[0].y - 0.5) - 102) > 1e-3) {
+    throw new Error("Le cartouche doit être centré entre les deux pistes à y=102, obtenu: " + (tDiff.txt[0].y - 0.5));
+  }
+  // Points de contact tracés sur chaque piste (Y=100 et Y=104)
+  if (tDiff.cercles.length !== 2) {
+    throw new Error("2 points de contact attendus (un sur chaque piste), obtenu: " + tDiff.cercles.length);
+  }
+  // Ligne de liaison pointillée tracée
+  if (tDiff.traits.length < 1) {
+    throw new Error("La ligne de liaison entre les 2 pistes doit être tracée");
+  }
+
+  // Déduplication : l'appel pour le deuxième lot ne doit pas ajouter de badge doublon
+  const traitsLot2 = [{
+    texte: "97,5 Ω",
+    valeur: 97.5,
+    couleur: () => "#00ffff",
+    obj: lot2.objets[1],
+    seg: { longueur: 14 },
+    chaleur: { z_diff: 97.5, z_diff_net: "DIFF_P" }
+  }];
+  simZValeurs(tDiff.ctx, 1, traitsLot2, lot2);
+  if (tDiff.txt.length !== 1) {
+    throw new Error("L'étiquette de paire différentielle ne doit pas être dupliquée pour le second lot");
+  }
+
+  global.simCarteQuoi = oldCarteQuoi;
+  global.simCarteRetenir = oldCarteRetenir;
+  global.w2s = oldW2s;
+
+  SIM.analyse = "impedance";
+  SIM.lots = [];
+  V.parNet = null;
+});
+
+T("sélection et chaînage de piste sur la même couche : mdlChainePistesMemeCouche, selMeme et selPoser double-clic",()=>{
+  V.modele = { pistes: [], arcs: [] };
+  V.unite = "mm";
+  // Net 0 avec deux segments connectés sur la couche 0 (p1 et p2) et un segment sur couche 1 (p3)
+  const p1 = { c: 0, n: 0, w: 0.2, p: [0, 0, 10, 0] };
+  const p2 = { c: 0, n: 0, w: 0.2, p: [10, 0, 20, 0] };
+  const p3 = { c: 1, n: 0, w: 0.2, p: [20, 0, 30, 0] };
+  // Net 1 avec une piste parallèle sur la couche 0
+  const q1 = { c: 0, n: 1, w: 0.2, p: [0, 0.5, 10, 0.5] };
+  const q2 = { c: 0, n: 1, w: 0.2, p: [10, 0.5, 20, 0.5] };
+
+  V.parNet = [
+    { i: 0, nom: "NET_P", pistes: [p1, p2, p3], arcs: [] },
+    { i: 1, nom: "NET_N", pistes: [q1, q2], arcs: [] }
+  ];
+
+  // 1. mdlChainePistesMemeCouche : regroupe p1 et p2 (même couche 0), exclut p3 (couche 1)
+  const chaineP = mdlChainePistesMemeCouche(p1);
+  if(chaineP.length !== 2 || !chaineP.includes(p1) || !chaineP.includes(p2)){
+    throw new Error("mdlChainePistesMemeCouche devait renvoyer [p1, p2], obtenu: " + chaineP.length);
+  }
+
+  // 2. selMeme : p1 et p2 appartiennent à la même chaîne continue sur la couche 0
+  const s1 = { type: "piste", piste: p1, couche: 0, net: 0 };
+  const s2 = { type: "piste", piste: p2, couche: 0, net: 0 };
+  const sQ1 = { type: "piste", piste: q1, couche: 0, net: 1 };
+  if(!selMeme(s1, s2)){
+    throw new Error("selMeme doit reconnaître deux segments de la même chaîne sur la même couche");
+  }
+  if(selMeme(s1, sQ1)){
+    throw new Error("selMeme ne doit pas confondre deux pistes de nets distincts");
+  }
+
+  // 3. selPoser avec isDbl=true : un double-clic avec Ctrl ne doit pas désélectionner l'élément
+  V.sel = [];
+  selPoser(s1, { couche: 0 }, false, false); // Clic simple sur s1
+  if(V.sel.length !== 1) throw new Error("s1 devait être sélectionné");
+
+  // Premier clic de Ctrl+double-clic sur sQ1 -> ajout
+  selPoser(sQ1, { couche: 0 }, true, false);
+  if(V.sel.length !== 2) throw new Error("sQ1 devait être ajouté à la sélection");
+
+  // Deuxième clic de Ctrl+double-clic sur sQ1 -> avec isDbl=true, doit rester sélectionné !
+  selPoser(sQ1, { couche: 0 }, true, true);
+  if(V.sel.length !== 2){
+    throw new Error("Le double-clic avec Ctrl ne doit PAS désélectionner la seconde piste : " + V.sel.length);
+  }
+
+  // 4. simZPistesDe : vérifie que toute la chaîne de la même couche est envoyée
+  const out = [];
+  simZPistesDe(s1, { couche: 0 }, out, new Set());
+  if(out.length !== 2){
+    throw new Error("simZPistesDe devait inclure les 2 segments de la chaîne sur couche 0, obtenu: " + out.length);
+  }
+
+  V.parNet = null;
+  V.modele = null;
+  V.sel = [];
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

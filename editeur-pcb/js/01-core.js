@@ -874,7 +874,95 @@ const PKG_LIB={
   /* billes : le pas fait tout, la grille se remplit en lignes */
   "BGA":{style:"bga",pitch:0.8},
   "WLCSP":{style:"bga",pitch:0.4},
-  "CSP":{style:"bga",pitch:0.5}
+  "CSP":{style:"bga",pitch:0.5},
+  /* points de test et perçages métallisés */
+  "Trou metalise diam. trou 1.2mm - dim. plated 2.54mmx1.6mm":{
+    style:"row", pins:1, pitch:2.54, span:2.54,
+    pads:[{n:1, x:0, y:0, w:2.54, h:1.6, shape:"oval", drill:1.2}]
+  },
+  "Trou metalise":{
+    style:"row", pins:1, pitch:2.54, span:2.54,
+    pads:[{n:1, x:0, y:0, w:2.54, h:1.6, shape:"oval", drill:1.2}]
+  },
+  "TP-PTH":{
+    style:"row", pins:1, pitch:2.54, span:2.54,
+    pads:[{n:1, x:0, y:0, w:2.54, h:1.6, shape:"oval", drill:1.2}]
+  },
+  /* Barrettes 2,54 mm */
+  "HEADER-2.54":{style:"row",pitch:2.54,span:2.54},
+  "HEADER-2.54-1X2":{style:"row",pins:2,pitch:2.54,span:2.54},
+  "HEADER-2.54-1X3":{style:"row",pins:3,pitch:2.54,span:2.54},
+  "HEADER-2.54-1X4":{style:"row",pins:4,pitch:2.54,span:2.54},
+  "HEADER-2.54-1X6":{style:"row",pins:6,pitch:2.54,span:2.54},
+  "HEADER-2.54-1X8":{style:"row",pins:8,pitch:2.54,span:2.54},
+  "HEADER-2.54-2X":{style:"dip",pitch:2.54,span:2.54},
+  "HEADER-2.54-2X5":{style:"dip",pins:10,pitch:2.54,span:2.54},
+  /* Barrettes 1,27 mm */
+  "HEADER-1.27":{style:"row",pitch:1.27,span:1.27},
+  "HEADER-1.27-1X2":{style:"row",pins:2,pitch:1.27,span:1.27},
+  "HEADER-1.27-1X3":{style:"row",pins:3,pitch:1.27,span:1.27},
+  "HEADER-1.27-1X4":{style:"row",pins:4,pitch:1.27,span:1.27},
+  "HEADER-1.27-1X6":{style:"row",pins:6,pitch:1.27,span:1.27},
+  "HEADER-1.27-1X8":{style:"row",pins:8,pitch:1.27,span:1.27},
+  "HEADER-1.27-2X":{style:"dip",pitch:1.27,span:1.27},
+  "HEADER-1.27-2X5":{style:"dip",pins:10,pitch:1.27,span:1.27},
+  /* Diodes CMS */
+  "SOD-523":{style:"chip",pins:2,span:1.6},
+  "SOT-23-6":{style:"sop",pins:6,pitch:0.95,span:2.6},
+  /* Connecteurs USB */
+  "USB-C-6P":{
+    style:"row", pins:5, pitch:0.5, span:3.0,
+    pads:[
+      {n:1, x:-1.25, y:-1.5, w:0.6, h:1.2, shape:"rect", drill:0},
+      {n:1, x:1.25,  y:-1.5, w:0.6, h:1.2, shape:"rect", drill:0},
+      {n:2, x:-2.75, y:-1.5, w:0.8, h:1.2, shape:"rect", drill:0},
+      {n:2, x:2.75,  y:-1.5, w:0.8, h:1.2, shape:"rect", drill:0},
+      {n:3, x:-0.5,  y:-1.5, w:0.4, h:1.2, shape:"rect", drill:0},
+      {n:4, x:0.5,   y:-1.5, w:0.4, h:1.2, shape:"rect", drill:0},
+      {n:5, x:-4.3,  y:-1.0, w:1.6, h:2.0, shape:"oval", drill:0.9},
+      {n:5, x:4.3,   y:-1.0, w:1.6, h:2.0, shape:"oval", drill:0.9},
+      {n:5, x:-4.3,  y:3.2,  w:1.6, h:2.0, shape:"oval", drill:0.9},
+      {n:5, x:4.3,   y:3.2,  w:1.6, h:2.0, shape:"oval", drill:0.9}
+    ],
+    body:{x1:-4.5, y1:-2.5, x2:4.5, y2:4.5}
+  },
+  "USB-C-16P":{
+    style:"row", pins:8, pitch:0.5, span:3.0,
+    pads:[
+      {n:2, x:-2.75, y:-1.5, w:0.6,  h:1.2, shape:"rect", drill:0},
+      {n:7, x:-2.25, y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:1, x:-1.75, y:-1.5, w:0.5,  h:1.2, shape:"rect", drill:0},
+      {n:5, x:-1.25, y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:4, x:-0.75, y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:3, x:-0.25, y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:4, x:0.25,  y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:3, x:0.75,  y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:6, x:1.25,  y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:1, x:1.75,  y:-1.5, w:0.5,  h:1.2, shape:"rect", drill:0},
+      {n:7, x:2.25,  y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:2, x:2.75,  y:-1.5, w:0.6,  h:1.2, shape:"rect", drill:0},
+      {n:8, x:-4.3,  y:-1.0, w:1.6,  h:2.0, shape:"oval", drill:0.9},
+      {n:8, x:4.3,   y:-1.0, w:1.6,  h:2.0, shape:"oval", drill:0.9},
+      {n:8, x:-4.3,  y:3.2,  w:1.6,  h:2.0, shape:"oval", drill:0.9},
+      {n:8, x:4.3,   y:3.2,  w:1.6,  h:2.0, shape:"oval", drill:0.9}
+    ],
+    body:{x1:-4.5, y1:-2.5, x2:4.5, y2:4.5}
+  },
+  "MICRO-USB-B":{
+    style:"row", pins:6, pitch:0.65, span:2.6,
+    pads:[
+      {n:1, x:-1.3,  y:-1.5, w:0.4, h:1.35, shape:"rect", drill:0},
+      {n:2, x:-0.65, y:-1.5, w:0.4, h:1.35, shape:"rect", drill:0},
+      {n:3, x:0,     y:-1.5, w:0.4, h:1.35, shape:"rect", drill:0},
+      {n:4, x:0.65,  y:-1.5, w:0.4, h:1.35, shape:"rect", drill:0},
+      {n:5, x:1.3,   y:-1.5, w:0.4, h:1.35, shape:"rect", drill:0},
+      {n:6, x:-3.5,  y:-1.0, w:1.6, h:1.8,  shape:"oval", drill:0.9},
+      {n:6, x:3.5,   y:-1.0, w:1.6, h:1.8,  shape:"oval", drill:0.9},
+      {n:6, x:-3.5,  y:2.5,  w:1.6, h:1.8,  shape:"oval", drill:0.9},
+      {n:6, x:3.5,   y:2.5,  w:1.6, h:1.8,  shape:"oval", drill:0.9}
+    ],
+    body:{x1:-3.8, y1:-2.5, x2:3.8, y2:3.5}
+  }
 };
 /* Clé de comparaison : majuscules, surnom entre parenthèses écarté (le
    schématique propose « TO-252 (DPAK) »), séparateurs ignorés. « SOT-23-5 »,
@@ -897,19 +985,29 @@ function pkgGeom(pkg,pinsHint){
     const k=pkgKey(name);
     if(!key.startsWith(k))continue;
     const rest=key.slice(k.length);
-    if(rest&&!/^\d+$/.test(rest))continue;      // « 0805X7R » n'est pas un brochage
-    if(!hit||k.length>hit.k.length)hit={k:k,name:name,pins:rest?+rest:0};
+    let extraPins=0;
+    if(rest){
+      if(/^\d+$/.test(rest))extraPins=+rest;
+      else if(/^1X\d+$/.test(rest))extraPins=+rest.slice(2);
+      else if(/^2X\d+$/.test(rest))extraPins=(+rest.slice(2))*2;
+      else continue;
+    }
+    if(!hit||k.length>hit.k.length)hit={k:k,name:name,pins:extraPins};
   }
   if(!hit)return null;
   const d=PKG_LIB[hit.name];
-  const pins=clamp(Math.max(hit.pins||d.pins||0,pinsHint|0)||2,1,4096);
+  const basePins=(hit.name.endsWith("-2X")&&hit.pins)?hit.pins*2:(hit.pins||d.pins||0);
+  const pins=clamp(Math.max(basePins,pinsHint|0)||2,1,4096);
   const pitch=Math.max(0.05,r3(typeof d.pitch==="function"?d.pitch(pins):
     (d.pitch!=null?d.pitch:(d.span||2.4))));
   let span=typeof d.span==="function"?d.span(pins,pitch):d.span;
   if(span==null)
     span=d.style==="quad"?(quadSide(pins)-1)*pitch+(d.lead||2):
          d.style==="bga" ?pitch:defaultGeom(d.style).span;
-  return {style:d.style,pitch:pitch,span:Math.max(0.05,r3(span)),pins:pins,pkg:hit.name};
+  const out={style:d.style,pitch:pitch,span:Math.max(0.05,r3(span)),pins:pins,pkg:hit.name};
+  if(d.pads)out.pads=d.pads.map(padClone);
+  if(d.body)out.body={...d.body};
+  return out;
 }
 /* Style et cotes d'un composant : le boîtier nommé d'abord, le brochage
    ensuite. Point de passage unique entre « SOIC-8 » et des pastilles. */
@@ -930,17 +1028,30 @@ function fpWiredPins(fp){
 /* Repose une empreinte existante sur son boîtier. Boîtier hors table : rien ne
    bouge, le réglage fait à la main garde le dernier mot. */
 function applyPkgGeom(fp){
-  if(fpFree(fp))return false;
   const g=pkgGeom(fp.pkg,fpWiredPins(fp));
   if(!g)return false;
+  if(fpFree(fp)&&!g.pads)return false;
   fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
+  if(g.pads){
+    fp.pads=g.pads.map(padClone);
+    if(g.body)fp.body={...g.body};
+    fpSyncPins(fp);
+  }else if(!fpFree(fp)){
+    delete fp.pads;delete fp.body;
+  }
   return true;
 }
 function mkFp(ref,value,pkg,pins){
   const g=fpGeomFor(pkg,pins);
-  return {id:S.nextId++, ref:ref||("U"+S.nextId), value:value||"", pkg:pkg||"",
+  const fp={id:S.nextId++, ref:ref||("U"+S.nextId), value:value||"", pkg:pkg||"",
           pins:g.pins, style:g.style, pitch:g.pitch, span:g.span,
           x:0, y:0, rot:0, side:0, nets:{}};
+  if(g.pads){
+    fp.pads=g.pads.map(padClone);
+    if(g.body)fp.body={...g.body};
+    fpSyncPins(fp);
+  }
+  return fp;
 }
 /* pastilles en coordonnées locales, dans l'ordre des numéros de broche */
 /* --------------------------------------------------------------------------
@@ -1643,12 +1754,53 @@ function maxClr(){
   return Math.max(m||FALLBACK_CLASS.clr,matMax());
 }
 /* rattache d'office les nets d'alimentation à la classe du même nom, si elle
-   existe : c'est ce que faisait l'ancienne largeur « alimentation » */
+   existe, et applique les classes déduites du schéma si disponibles */
 function autoClass(){
   const pwr=S.classes.find(c=>/aliment/i.test(c.name));
-  if(!pwr)return;
-  for(const n of netTable())
-    if(isPower(n.name)&&!S.netClass[n.name])S.netClass[n.name]=pwr.name;
+  if(pwr){
+    for(const n of netTable())
+      if(isPower(n.name)&&!S.netClass[n.name])S.netClass[n.name]=pwr.name;
+  }
+
+  /* Intégration des classes déduites par l'analyse des motifs de circuit */
+  try {
+    const rawNc = typeof sessionStorage !== "undefined" && sessionStorage.getItem("web_cao_netclasses");
+    if (rawNc) {
+      const mapNc = JSON.parse(rawNc);
+      if (mapNc && typeof mapNc === "object") {
+        let fast = S.classes.find(c => /rapide|fast/i.test(c.name));
+        let analog = S.classes.find(c => /analog/i.test(c.name));
+
+        const nets = netTable();
+        const hasFastNet = nets.some(n => /rapide/i.test(mapNc[n.name] || ""));
+        const hasAnalogNet = nets.some(n => /analog/i.test(mapNc[n.name] || ""));
+
+        if (!fast && hasFastNet) {
+          fast = { name: "Rapide", w: 0.25, clr: 0.25, via: 0.8, drill: 0.4 };
+          S.classes.push(fast);
+        }
+        if (!analog && hasAnalogNet) {
+          analog = { name: "Analogique", w: 0.30, clr: 0.35, via: 0.8, drill: 0.4 };
+          S.classes.push(analog);
+        }
+
+        for (const n of nets) {
+          const sug = mapNc[n.name];
+          if (!sug || S.netClass[n.name]) continue;
+          if (/rapide/i.test(sug) && fast) S.netClass[n.name] = fast.name;
+          else if (/analog/i.test(sug) && analog) S.netClass[n.name] = analog.name;
+          else if (/alim/i.test(sug) && pwr) S.netClass[n.name] = pwr.name;
+        }
+      }
+    }
+  } catch (_) {}
+}
+
+function pcbAppliquerClassesSuggerees(){
+  autoClass();
+  if(typeof touch==="function")touch();
+  if(typeof refreshPanels==="function")refreshPanels();
+  if(typeof draw==="function")draw();
 }
 /* liste des nets présents, avec leurs nœuds */
 function netTable(){

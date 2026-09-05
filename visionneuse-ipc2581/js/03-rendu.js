@@ -346,9 +346,21 @@ function peindreComposants(c,dpr){
   c.fillStyle="#e6e8ec";
   for(const comp of vus){
     const b=comp.boite;
-    if((b.x2-b.x1)*V.vue.scale<14)continue;  // trop petit : ce serait une tache
+    const wPx=(b.x2-b.x1)*V.vue.scale;
+    if(wPx<14)continue;  // trop petit : ce serait une tache
     const p=w2s((b.x1+b.x2)/2,(b.y1+b.y2)/2);
-    c.fillText(comp.ref,p.x,p.y);
+    if(comp.val&&wPx>=28){
+      c.font="600 10px "+MONO;
+      c.fillStyle="#e6e8ec";
+      c.fillText(comp.ref,p.x,p.y-6);
+      c.font="500 8.5px "+MONO;
+      c.fillStyle="#f59e0b";
+      c.fillText(comp.val,p.x,p.y+6);
+    }else{
+      c.font="600 10px "+MONO;
+      c.fillStyle="#e6e8ec";
+      c.fillText(comp.ref,p.x,p.y);
+    }
   }
 }
 

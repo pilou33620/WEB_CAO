@@ -1011,3 +1011,82 @@ b.simXtV,.simXtCoche b.simXtV,.simXtLect b.simXtV{
   background:#2563eb;color:#fff;
 }
 
+/* ---------- Rapport de santé de la liaison ---------- */
+.simSanteWrap{padding:6px 0}
+.simSanteHeader{
+  background:rgba(255,255,255,0.02);
+  border:1px solid var(--border2);
+  border-radius:4px;
+  padding:10px 14px;
+  margin-bottom:12px;
+}
+.simSanteBadges{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.simBadge{
+  display:inline-block;padding:3px 8px;border-radius:12px;
+  font-family:var(--mono);font-size:10.5px;font-weight:600;
+  line-height:1.2;
+}
+.simBadgeOk{
+  background:rgba(73,192,122,0.15);color:#49c07a;
+  border:1px solid rgba(73,192,122,0.35);
+}
+.simBadgeAlerte{
+  background:rgba(245,158,11,0.15);color:#f59e0b;
+  border:1px solid rgba(245,158,11,0.35);
+}
+.simBadgeCritique{
+  background:rgba(239,68,68,0.15);color:#ef4444;
+  border:1px solid rgba(239,68,68,0.35);
+}
+.simSanteFiltres{
+  display:flex;gap:4px;flex-wrap:wrap;
+  padding-bottom:8px;margin-bottom:10px;
+  border-bottom:1px solid var(--border2);
+}
+.simSanteCat{margin-bottom:14px}
+.simSanteCatTitre{
+  font-size:12px;font-weight:700;color:var(--txt);
+  margin-bottom:6px;display:flex;align-items:center;gap:6px;
+}
+.simSanteCard{
+  background:var(--panel2);
+  border:1px solid var(--border2);
+  border-radius:4px;
+  padding:8px 12px;
+  margin-bottom:8px;
+  font-size:11px;
+  line-height:1.45;
+}
+.simSanteCard.critique{
+  border-left:3px solid var(--red);
+  background:rgba(239,68,68,0.04);
+}
+.simSanteCard.alerte{
+  border-left:3px solid var(--yellow);
+  background:rgba(245,158,11,0.04);
+}
+.simSanteCard.ok{
+  border-left:3px solid var(--blue);
+  background:rgba(73,192,122,0.03);
+}
+.simSanteCardHead{
+  display:flex;align-items:baseline;justify-content:space-between;
+  margin-bottom:4px;gap:8px;
+}
+.simSanteCardHead b{font-size:12px}
+.simSanteTag{
+  font-family:var(--mono);font-size:9px;font-weight:700;
+  padding:1px 5px;border-radius:2px;letter-spacing:0.04em;
+}
+.simSanteTag.critique{background:var(--red);color:#fff}
+.simSanteTag.alerte{background:var(--yellow);color:#000}
+.simSanteTag.ok{background:#22c55e;color:#000}
+.simSanteLigne{margin-bottom:3px;color:var(--txt-dim)}
+.simSanteLigne b{color:var(--txt)}
+.simSanteReco{
+  margin-top:5px;padding:4px 8px;border-radius:3px;
+  background:rgba(255,255,255,0.04);border:1px dashed var(--border2);
+  color:#67e8f9;font-size:11px;
+}
+.simSanteReco b{color:#a5f3fc}
+

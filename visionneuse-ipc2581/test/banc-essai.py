@@ -543,6 +543,87 @@ T(u"une broche sans <PinRef> n'a pas de net invente",
   lambda: vrai("2" not in DESIGN.components[0].pin_nets,
                u"la broche 2 de R1 ne devrait porter aucun net"))
 
+# -- Passifs et valeurs (R, C, L, tolérance, type) ----------------------------
+T(u"la valeur et le type de R1 viennent de part='RES-10K'",
+  lambda: egal([DESIGN.components[0].value, DESIGN.components[0].comp_type],
+               ["10K", "RESISTOR"], u"valeur et type de R1"))
+
+def _passifs_proprietes_et_bom():
+    """Vérifie la lecture des valeurs, tolérances et types pour R, C, L
+    depuis <Property> et depuis <BomItem>."""
+    carte_passifs = CARTE.replace(
+        u'</Component>',
+        u' <Property name="Value" value="10k"/>\n'
+        u' <Property name="Tolerance" value="1%"/>\n'
+        u'</Component>\n'
+        u'<Component refDes="C1" packageRef="R0603" layerRef="Component-1-A">\n'
+        u' <Property name="Value" value="100nF"/>\n'
+        u' <Property name="Voltage" value="50V"/>\n'
+        u'</Component>\n'
+        u'<Component refDes="L1" packageRef="R0603" layerRef="Component-1-A">\n'
+        u' <Property name="Value" value="10uH"/>\n'
+        u' <Property name="Tolerance" value="10%"/>\n'
+        u'</Component>', 1
+    )
+    carte_passifs = carte_passifs.replace(
+        u'</Ecad>',
+        u' <Bom>\n'
+        u'  <BomHeader>\n'
+        u'   <BomItem OEMDesignNumberRef="IND_10uH_0603">\n'
+        u'    <RefDes name="L1"/>\n'
+        u'   </BomItem>\n'
+        u'  </BomHeader>\n'
+        u' </Bom>\n'
+        u'</Ecad>', 1
+    )
+    d = ipc2581_json.charger_octets(carte_passifs.encode("utf-8"), "passifs.xml")
+    comps = {c.ref_des: c for c in d.components}
+    vrai("C1" in comps and "L1" in comps and "R1" in comps, u"les trois passifs existent")
+    r1 = comps["R1"]
+    c1 = comps["C1"]
+    l1 = comps["L1"]
+    egal([r1.value, r1.tolerance, r1.comp_type], ["10k", "1%", "RESISTOR"], u"R1")
+    egal([c1.value, c1.comp_type, c1.properties.get("Voltage")], ["100nF", "CAPACITOR", "50V"], u"C1")
+    egal([l1.value, l1.tolerance, l1.comp_type], ["10uH", "10%", "INDUCTOR"], u"L1")
+
+    # Vérification dans le modèle JSON
+    m = ipc2581_json.design_en_dict(d, "passifs.xml")
+    m_comps = {c["ref"]: c for c in m["composants"]}
+    egal([m_comps["C1"]["val"], m_comps["C1"]["type"]], ["100nF", "CAPACITOR"], u"C1 dans JSON")
+    egal([m_comps["L1"]["val"], m_comps["L1"]["tol"], m_comps["L1"]["type"]], ["10uH", "10%", "INDUCTOR"], u"L1 dans JSON")
+
+T(u"les passifs R, C, L sont lus avec leur type, valeur et tolérance",
+  _passifs_proprietes_et_bom)
+
+def _actifs_et_connecteurs():
+    """Vérifie la qualification automatique des diodes, transistors, CI et connecteurs."""
+    carte = CARTE.replace(
+        u'</Component>',
+        u'</Component>\n'
+        u'<Component refDes="D1" packageRef="SOD123" layerRef="Component-1-A">\n'
+        u' <Property name="Value" value="BATS54"/>\n'
+        u'</Component>\n'
+        u'<Component refDes="Q1" packageRef="SOT23" layerRef="Component-1-A">\n'
+        u' <Property name="Value" value="2N7002"/>\n'
+        u'</Component>\n'
+        u'<Component refDes="U1" packageRef="SOIC8" layerRef="Component-1-A">\n'
+        u' <Property name="Part" value="NE555"/>\n'
+        u'</Component>\n'
+        u'<Component refDes="J1" packageRef="HDR_1X4" layerRef="Component-1-A">\n'
+        u' <Property name="Value" value="CONN_4P"/>\n'
+        u'</Component>', 1
+    )
+    d = ipc2581_json.charger_octets(carte.encode("utf-8"), "actifs.xml")
+    comps = {c.ref_des: c for c in d.components}
+    egal(comps["D1"].comp_type, "DIODE", u"D1 est une diode")
+    egal(comps["Q1"].comp_type, "TRANSISTOR", u"Q1 est un transistor")
+    egal(comps["U1"].comp_type, "IC", u"U1 est un CI")
+    egal(comps["J1"].comp_type, "CONNECTOR", u"J1 est un connecteur")
+
+T(u"les composants actifs (D, Q, U) et connecteurs (J) sont qualifiés par leur type",
+  _actifs_et_connecteurs)
+
+
 # -- Le modele JSON de la visionneuse ----------------------------------------
 T(u"le modele annonce son format",
   lambda: egal(MODELE["format"], ipc2581_json.FORMAT, u"format du modele"))

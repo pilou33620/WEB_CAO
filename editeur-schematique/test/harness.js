@@ -51,12 +51,14 @@ const code=fs.readFileSync(path.join(__dirname,"..","dist","schema.js"),"utf8");
 const EXPOSE=[
   /* état et feuilles */
   "S","G","newPage","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
+  "addComp",
   "push","undo","redo","touchWires","buildTabs","draw","fit","resize",
   /* bus et hiérarchie */
   "C_BUS","BUS_WIDTH","sheetBlocks","hitSheetBlock","newHierPage",
   /* bibliothèque et géométrie */
   "bbox",
   "defOf","allPins","pinCount","icGeom","key","LIB","pinsOf",
+  "pkgBaseOf","pkgKnown","pkgBaseList","PKG_BASES",
   /* brochage (04 + 19) */
   "icPins","icBodyOf","icSideOf","icPinLabel","icFree","icShapeOf","icStep","IC_STEP",
   "icSetCount","icSetShape","icSetBody","icFitNames","icMovePin","reshapeComp",
@@ -107,7 +109,8 @@ const EXPOSE=[
   "profilEtat","profilNoter","profilAppliquer",
   "setGrid","setGridStep","setNetLabels","setListTab",
   /* recherche de composants & conflits */
-  "crDetecterConflitsCablage","crRealignerFilsBroches"
+  "crDetecterConflitsCablage","crRealignerFilsBroches",
+  "CR_ETAT","crBuildModal","crRechercherDistributeurs","crTrierEtAfficherCandidats","crAppliquerAuComposant"
 ];
 /* les noms absents du bundle sont ignorés : le banc d'essai reste utilisable
    même si un module est renommé, les essais concernés échoueront tout seuls */
@@ -1676,6 +1679,321 @@ T("détection d'inversion de signaux de bus (SDA ⇄ SCL)",()=>{
   crRealignerFilsBroches(u2, conflits);
   if(wA.x1 !== pins[1].x || wA.y1 !== pins[1].y) throw new Error("SDA doit être sur pin 2");
   if(wB.x1 !== pins[0].x || wB.y1 !== pins[0].y) throw new Error("SCL doit être sur pin 1");
+});
+
+T("recherche distributeurs : agrégation Mouser et DigiKey", async ()=>{
+  // Mock crApiAppel
+  const ancienFetch = global.fetch;
+  global.fetch = async (url, opts) => {
+    const body = JSON.parse(opts.body || "{}");
+    if (body.tool === "mouser_get_part") {
+      return {
+        ok: true,
+        json: async () => ({
+          result: {
+            results: [{
+              mfr_part_number: "IRA-S400ST01A01",
+              manufacturer: "Murata",
+              package: "TO-5",
+              stock: 450,
+              price: 3.25,
+              currency: "EUR",
+              description: "Pyroelectric Infrared Sensor",
+              datasheet_url: "//www.mouser.com/ds/2/281/ira-s400st01a01-1234.pdf",
+              part_number: "81-IRA-S400ST01A01",
+              parameters: { "Package / Case": "TO-5", "Supply Voltage": "2V-15V" }
+            }]
+          }
+        })
+      };
+    }
+    if (body.tool === "digikey_get_part") {
+      return {
+        ok: true,
+        json: async () => ({
+          result: {
+            results: [{
+              mfr_part_number: "IRA-S400ST01A01",
+              manufacturer: "Murata Electronics",
+              package: "TO-5-3",
+              stock: 120,
+              price: 3.50,
+              currency: "EUR",
+              part_number: "490-IRA-S400ST01A01-ND",
+              parameters: { "Sensitivity": "3.3mV" }
+            }]
+          }
+        })
+      };
+    }
+    return { ok: true, json: async () => ({ result: {} }) };
+  };
+
+  try {
+    const cands = await crRechercherDistributeurs("IRA-S400ST01A01");
+    if (!cands || cands.length !== 1) {
+      throw new Error("1 candidat agrégé attendu, reçu: " + (cands ? cands.length : 0));
+    }
+    const c = cands[0];
+    if (c.source !== "distrib") throw new Error("source attendue 'distrib', reçu: " + c.source);
+    if (c.model !== "IRA-S400ST01A01") throw new Error("modèle incorrect: " + c.model);
+    if (c.package !== "TO-5") throw new Error("package incorrect: " + c.package);
+    if (!c.mouserData || !c.digikeyData) throw new Error("mouserData et digikeyData doivent être présents");
+    if (!c.datasheet.startsWith("https://")) throw new Error("l'url de datasheet doit avoir le protocole https: " + c.datasheet);
+    if (c.parameters["Supply Voltage"] !== "2V-15V" || c.parameters["Sensitivity"] !== "3.3mV") {
+      throw new Error("les paramètres Mouser et DigiKey doivent être fusionnés");
+    }
+  } finally {
+    global.fetch = ancienFetch;
+  }
+});
+
+T("recherche composants : tri, affichage et badges distributeurs", ()=>{
+  crBuildModal();
+  const modal = document.getElementById("crModal");
+  if (!modal) throw new Error("crModal n'a pas été créé dans le DOM");
+
+  CR_ETAT.candidates = [
+    {
+      source: "distrib",
+      model: "IRA-S400ST01A01",
+      manufacturer: "Murata",
+      package: "TO-5",
+      stock: 450,
+      price: 3.25,
+      currency: "EUR",
+      mouserData: { part_number: "81-IRA" },
+      digikeyData: { part_number: "490-IRA-ND" }
+    },
+    {
+      source: "mouser",
+      model: "MAX3232",
+      manufacturer: "Texas Instruments",
+      package: "SOIC-16",
+      stock: 1200,
+      price: 1.10,
+      mouserData: { part_number: "595-MAX3232" }
+    }
+  ];
+
+  crTrierEtAfficherCandidats(false);
+  const listHtml = document.getElementById("crList").innerHTML;
+  if (!listHtml.includes("cr-badge-distrib")) {
+    throw new Error("Le badge Mouser + DigiKey (cr-badge-distrib) doit être présent");
+  }
+  if (!listHtml.includes("cr-badge-mouser")) {
+    throw new Error("Le badge Mouser (cr-badge-mouser) doit être présent");
+  }
+});
+
+T("recherche composants : application au composant schématique", async ()=>{
+  const comp = C("ic", 10, 10, { ref: "U1", val: "IRA-S400ST01A01", lcsc: "C99999" });
+  CR_ETAT.el = comp;
+  CR_ETAT.partDetails = {
+    model: "IRA-S400ST01A01",
+    manufacturer: "Murata",
+    package: "TO-5",
+    parameters: { "Supply Voltage": "2V-15V" }
+  };
+  CR_ETAT.mouserData = { part_number: "81-IRA-S400ST01A01", stock: 450, price: 3.25 };
+  CR_ETAT.digikeyData = { part_number: "490-IRA-ND", stock: 120, price: 3.50 };
+  CR_ETAT.selectedCand = { model: "IRA-S400ST01A01" };
+
+  // Construire des checkboxes simulées
+  document.body.innerHTML += 
+    '<input type="checkbox" id="cp_mpn" checked>' +
+    '<input type="checkbox" id="cp_mfr" checked>' +
+    '<input type="checkbox" id="cp_pkg" checked>' +
+    '<input type="checkbox" id="cp_mouser" checked>' +
+    '<input type="checkbox" id="cp_digikey" checked>' +
+    '<input type="checkbox" class="cp-spec" data-spec-key="Supply Voltage" data-spec-val="2V-15V" checked>';
+
+  await crAppliquerAuComposant();
+
+  if (comp.mpn !== "IRA-S400ST01A01") throw new Error("MPN non mis à jour: " + comp.mpn);
+  if (comp.manufacturer !== "Murata") throw new Error("Fabricant non mis à jour");
+  if (comp.pkg !== "TO-5") throw new Error("Boîtier non mis à jour");
+  if (comp.mouser_part !== "81-IRA-S400ST01A01") throw new Error("Référence Mouser manquante");
+  if (comp.digikey_part !== "490-IRA-ND") throw new Error("Référence DigiKey manquante");
+  if (comp.lcsc) throw new Error("L'ancien LCSC sans correspondance doit avoir été retiré");
+  if (!comp.specs || comp.specs["Supply Voltage"] !== "2V-15V") throw new Error("Spécifications manquantes");
+  if (!comp.distributeurs || !comp.distributeurs.mouser || !comp.distributeurs.digikey) {
+    throw new Error("Résumé distributeurs manquant");
+  }
+});
+
+T("recherche composants : retour systématique du pinout et conservation", async () => {
+  const saveFetch = global.fetch;
+  const oldComp = {
+    id: 10,
+    type: "opamp",
+    ref: "U1",
+    value: "LM358",
+    pkg: "SOIC-8",
+    x: 100,
+    y: 100
+  };
+  S.comps = [oldComp];
+
+  global.fetch = async (url, opts) => {
+    const body = opts && opts.body ? JSON.parse(opts.body) : {};
+    if (body.tool === "jlc_get_pinout") {
+      return {
+        ok: true,
+        json: async () => ({
+          result: {
+            lcsc: "C7950",
+            model: "LM358DR2G",
+            pins: [
+              { number: "1", name: "1OUT" },
+              { number: "2", name: "1IN-" },
+              { number: "3", name: "1IN+" },
+              { number: "4", name: "GND" },
+              { number: "5", name: "2IN+" },
+              { number: "6", name: "2IN-" },
+              { number: "7", name: "2OUT" },
+              { number: "8", name: "VCC" }
+            ]
+          }
+        })
+      };
+    }
+    if (body.tool === "jlc_get_part") {
+      return {
+        ok: true,
+        json: async () => ({
+          result: {
+            lcsc: "C7950",
+            model: "LM358DR2G",
+            package: "SOIC-8",
+            manufacturer: "onsemi",
+            stock: 5000,
+            price: 0.05
+          }
+        })
+      };
+    }
+    return { ok: true, json: async () => ({ result: {} }) };
+  };
+
+  try {
+    CR_ETAT.el = oldComp;
+    const cand = { lcsc: "C7950", model: "LM358DR2G" };
+    await crSelectionnerCandidat(cand);
+
+    if (!CR_ETAT.pinoutData || CR_ETAT.pinoutData.length !== 8) {
+      throw new Error("Pinout non récupéré systématiquement (attendu: 8 broches)");
+    }
+
+    const pnl = document.getElementById("crDetailsPanel");
+    if (!pnl.innerHTML.includes("BROCHAGE SCHÉMATIQUE OFFICIEL") || !pnl.innerHTML.includes("1OUT") || !pnl.innerHTML.includes("VCC")) {
+      throw new Error("Section de pinout schématique non rendue dans les détails");
+    }
+
+    // Appliquer au composant
+    document.body.innerHTML += '<input type="checkbox" id="cp_pinout" checked>';
+    await crAppliquerAuComposant();
+
+    if (!Array.isArray(oldComp.pinout) || oldComp.pinout.length !== 8) {
+      throw new Error("el.pinout manquant ou incomplet sur le composant");
+    }
+    if (!oldComp.pinoutVerified) {
+      throw new Error("el.pinoutVerified doit être vrai");
+    }
+    if (!oldComp.pinNames || oldComp.pinNames[3] !== "GND" || oldComp.pinNames[7] !== "VCC") {
+      throw new Error("pinNames incorrects sur le composant");
+    }
+
+    // Vérifier la conservation par normComp
+    const reloaded = normComp(oldComp, 0);
+    if (!reloaded.pinout || reloaded.pinout.length !== 8 || !reloaded.pinoutVerified) {
+      throw new Error("normComp n'a pas conservé le pinout");
+    }
+  } finally {
+    global.fetch = saveFetch;
+  }
+});
+
+T("symbole testpoint_pth : définition, boîtier par défaut et netlist", ()=>{
+  if(!LIB.testpoint_pth) throw new Error("testpoint_pth absent de LIB");
+  const def = LIB.testpoint_pth;
+  if(def.n !== "Point de test percé") throw new Error("Nom incorrect : " + def.n);
+  if(def.cat !== "Divers") throw new Error("Catégorie incorrecte : " + def.cat);
+  if(def.p !== "TP") throw new Error("Préfixe incorrect : " + def.p);
+  if(def.pins.length !== 1 || def.pins[0][0] !== 0 || def.pins[0][1] !== 20) {
+    throw new Error("Broche hors grille ou nombre incorrect : " + JSON.stringify(def.pins));
+  }
+  const expPkg = "Trou metalise diam. trou 1.2mm - dim. plated 2.54mmx1.6mm";
+  if(def.pkg !== expPkg) throw new Error("Boîtier par défaut inattendu : " + def.pkg);
+
+  // Vérifier la détection et reconnaissance du boîtier
+  const b = pkgBaseOf(expPkg);
+  if(!b || !b.base) throw new Error("pkgBaseOf n'a pas reconnu le boîtier");
+  if(b.pins !== 1) throw new Error("Nombre de broches attendu 1, obtenu " + b.pins);
+  if(!pkgKnown(expPkg)) throw new Error("pkgKnown doit être vrai pour ce boîtier");
+
+  // Instanciation du composant
+  sheet([], []);
+  const el = addComp("testpoint_pth", 100, 100);
+  if(!el.ref || !el.ref.startsWith("TP")) throw new Error("Repère inattendu : " + el.ref);
+  if(el.pkg !== expPkg) throw new Error("el.pkg non assigné par défaut : " + el.pkg);
+
+  // Compatibilité boîte de boîtiers (fit)
+  const list = pkgBaseList(el);
+  const tpFam = list.find(g => g.fam === "Points de test");
+  if(!tpFam) throw new Error("Famille 'Points de test' absente de pkgBaseList");
+  const tpBase = tpFam.bases.find(x => x.base.b === expPkg);
+  if(!tpBase || !tpBase.fit) throw new Error("L'empreinte 'Trou metalise' devrait être marquée 'fit'");
+
+  // Export netlist
+  const nl = netlistText();
+  if(!nl.includes(el.ref) || !nl.includes(expPkg)) {
+    throw new Error("La netlist ne contient pas le composant ou son empreinte : " + nl);
+  }
+});
+
+T("nouveaux symboles schématiques : AOP 5 broches, TVS, ESD, USB, Barrettes, Ferrite", () => {
+  const types = [
+    { type: "opamp", expPins: 5, expPkg: "SOIC-8", expP: "U" },
+    { type: "ferrite_bead", expPins: 2, expPkg: "0805", expP: "FB" },
+    { type: "tvs_diode", expPins: 2, expPkg: "SOD-323", expP: "D" },
+    { type: "esd_array", expPins: 6, expPkg: "SOT-23-6", expP: "U" },
+    { type: "usb_c_pwr", expPins: 5, expPkg: "USB-C-6P", expP: "J" },
+    { type: "usb_c", expPins: 8, expPkg: "USB-C-16P", expP: "J" },
+    { type: "usb_micro", expPins: 6, expPkg: "MICRO-USB-B", expP: "J" },
+    { type: "header_1x3", expPins: 3, expPkg: "HEADER-2.54-1x3", expP: "J" },
+    { type: "header_1x4", expPins: 4, expPkg: "HEADER-2.54-1x4", expP: "J" },
+    { type: "header_1x6", expPins: 6, expPkg: "HEADER-2.54-1x6", expP: "J" },
+    { type: "header_1x8", expPins: 8, expPkg: "HEADER-2.54-1x8", expP: "J" },
+    { type: "header_2x5", expPins: 10, expPkg: "HEADER-2.54-2x5", expP: "J" }
+  ];
+
+  for(const t of types) {
+    sheet([], []);
+    const el = addComp(t.type, 100, 100);
+    if(!el) throw new Error("Impossible d'instancier " + t.type);
+    if(el.pkg !== t.expPkg) throw new Error(t.type + " : boîtier attendu " + t.expPkg + ", obtenu " + el.pkg);
+    const ps = pinsOf(el);
+    if(ps.length !== t.expPins) throw new Error(t.type + " : " + t.expPins + " broches attendues, obtenu " + ps.length);
+    if(!el.ref.startsWith(t.expP)) throw new Error(t.type + " : préfixe de repère attendu " + t.expP + ", obtenu " + el.ref);
+    if(!pkgKnown(el.pkg)) throw new Error(t.type + " : boîtier inconnu dans PKG_BASES " + el.pkg);
+
+    // Vérification de la présence dans la netlist
+    const nl = netlistText();
+    if(!nl.includes(el.ref) || !nl.includes(el.pkg)) {
+      throw new Error("Netlist incomplète pour " + t.type + " : " + nl);
+    }
+  }
+
+  // Vérification de la compatibilité des barrettes 1,27 mm
+  const h4 = C("header_1x4", 10, 10, { ref: "J10", pkg: "HEADER-1.27-1x4" });
+  sheet([h4], []);
+  if(!pkgKnown(h4.pkg)) throw new Error("HEADER-1.27-1x4 non reconnu");
+  const bList = pkgBaseList(h4);
+  const fam127 = bList.find(f => f.fam === "Barrettes 1,27 mm");
+  if(!fam127) throw new Error("Famille Barrettes 1,27 mm absente");
+  const b4 = fam127.bases.find(b => b.base.b === "HEADER-1.27-1x4");
+  if(!b4 || !b4.fit) throw new Error("HEADER-1.27-1x4 devrait être 'fit' pour header_1x4");
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

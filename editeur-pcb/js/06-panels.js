@@ -672,11 +672,17 @@ function pkgNote(fp){
   /* Empreinte dessinée à la main : les cotes ne commandent plus, et le nom du
      boîtier n'est plus qu'une étiquette de nomenclature. Le dire ici évite de
      chercher pourquoi « pas 1,27 » ne déplace rien. */
-  if(fpFree(fp))
+  if(fpFree(fp)){
+    const g=fp.pkg?pkgGeom(fp.pkg,fpWiredPins(fp)):null;
+    if(g&&g.pads){
+      return '<div class="empty" style="padding:4px 12px 8px">'+esc(fp.pkg)+' : '+
+        'empreinte de la bibliothèque ('+padsOf(fp).length+' pastille).</div>';
+    }
     return '<div class="empty" style="padding:4px 12px 8px">Empreinte dessinée '+
       'à la main : '+padsOf(fp).length+' pastille(s) placées une à une. '+
       (fp.pkg?esc(fp.pkg)+' ne sert plus qu&rsquo;à la nomenclature. ':"")+
       'Les cotes ci-dessous ne commandent plus rien.</div>';
+  }
   if(!fp.pkg)
     return '<div class="empty" style="padding:4px 12px 8px">Sans boîtier, '+
       'l&rsquo;empreinte se déduit du nombre de broches.</div>';
@@ -701,10 +707,36 @@ function pkgNote(fp){
 function propsFp(box,fp){
   const ps=padsOf(fp);
   const free=!!fpFree(fp), dis=free?" disabled":"";
+
+  let schComp = null;
+  if (typeof pcbComposantsSchema === "function") {
+    const schMap = pcbComposantsSchema();
+    schComp = schMap.get(fp.ref) || null;
+  }
+  let diag = null;
+  if (typeof pcbVerifierPinoutComposant === "function") {
+    diag = pcbVerifierPinoutComposant(schComp || { ref: fp.ref, value: fp.value, pkg: fp.pkg }, fp);
+  }
+
   let h='<div class="prop"><label>Repère</label><input id="pRef" value="'+esc(fp.ref)+'"></div>'+
     '<div class="prop two"><div><label>Valeur</label><input id="pVal" value="'+esc(fp.value||"")+'"></div>'+
     '<div><label>Boîtier</label><input id="pPkg" value="'+esc(fp.pkg||"")+'"></div></div>'+
     pkgNote(fp)+
+    (diag ? (
+      '<div class="pcb-fp-pinout-box ' + (diag.conforme ? 'ok' : 'warn') + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+          '<b style="color:' + (diag.conforme ? '#4ade80' : '#fbbf24') + ';font-size:11px">' +
+            (diag.conforme ? '✓ Pinout & Boîtier conformes' : '⚠️ Anomalie Pinout / Géométrie') +
+          '</b>' +
+          '<button class="tb" id="pFpInspectPinout" style="padding:1px 6px;font-size:10px">Inspecter…</button>' +
+        '</div>' +
+        '<div style="font-size:10.5px;line-height:1.4;color:var(--txt-dim)">' +
+          '<div>• <b>Pas (pitch) :</b> ' + (diag.pitchCheck ? esc(diag.pitchCheck.msg) : "—") + '</div>' +
+          '<div>• <b>Taille boîtier :</b> ' + (diag.spanCheck ? esc(diag.spanCheck.msg) : "—") + '</div>' +
+          '<div>• <b>Pastilles :</b> ' + (diag.pinCountCheck ? esc(diag.pinCountCheck.msg) : "—") + '</div>' +
+        '</div>' +
+      '</div>'
+    ) : '') +
     '<div class="prop"><label>Empreinte générique</label><select id="pStyle"'+dis+'>'+
     Object.keys(STYLES).map(k=>'<option value="'+esc(k)+'"'+(fp.style===k?" selected":"")+'>'+
       esc(STYLES[k].n)+'</option>').join("")+'</select></div>'+
@@ -720,15 +752,23 @@ function propsFp(box,fp){
       '<option value="1"'+(fp.side?" selected":"")+'>Dessous</option></select></div></div>'+
     '<div class="prop two">'+numProp("pX","X (mm)",ux(fp.x),0.1,-1e4)+
       numProp("pY","Y (mm)",uy(fp.y),0.1,-1e4)+'</div>'+
-    '<div class="prop"><label>Rotation</label><select id="pRot">'+
+    '<div class="prop"><label>Rotation</label><div style="display:flex;align-items:center;gap:4px;"><select id="pRot" style="flex:1;">'+
       [0,45,90,135,180,225,270,315].map(a=>'<option value="'+a+'"'+
-        ((fp.rot||0)===a?" selected":"")+'>'+a+'°</option>').join("")+'</select></div>'+
+        ((fp.rot||0)===a?" selected":"")+'>'+a+'°</option>').join("")+'</select>'+
+      '<button id="bOptRot" class="tb" style="padding:2px 6px;font-size:11px;" title="Trouver et appliquer l\'orientation optimale pour minimiser les croisements de chevelu">✨ Auto</button></div></div>'+
     '<div class="cat">Broches et nets</div><table class="bom"><tbody>';
-  for(const q of ps)
+  for(const q of ps){
+    let pinSchName = "";
+    if (schComp) {
+      const pinObj = Array.isArray(schComp.pinout) ? schComp.pinout.find(x => String(x.number) === String(q.n)) : null;
+      pinSchName = (pinObj && pinObj.name) || (Array.isArray(schComp.pinNames) && schComp.pinNames[q.n - 1]) || "";
+    }
     h+='<tr data-net="'+esc(q.net||"")+'"'+(q.net&&S.hlNet===q.net?' class="on"':"")+
-       '><td class="r">'+esc(q.n)+'</td>'+
+       '><td class="r" style="width:28px">#'+esc(q.n)+'</td>'+
+       (pinSchName ? '<td style="font-family:var(--mono);font-size:11px;color:#f0abfc;font-weight:600;width:75px;overflow:hidden;text-overflow:ellipsis" title="Broche schéma : '+esc(pinSchName)+'">'+esc(pinSchName)+'</td>' : '<td style="width:30px;color:var(--txt-dim);font-size:10px">—</td>')+
        '<td class="net">'+(q.net?'<span class="dot" style="background:'+netColor(q.net)+
        '"></span>'+esc(q.net):'<span style="color:var(--txt-dim)">non connectée</span>')+'</td></tr>';
+  }
   h+='</tbody></table>';
   box.innerHTML=h;
   const upd=(id,fn,num)=>{
@@ -755,6 +795,19 @@ function propsFp(box,fp){
     push();applyPkgGeom(fp);touch();refreshPanels();draw();
     hint("Empreinte reposée sur le boîtier "+fp.pkg+".");
   };
+  const bOpt=$("bOptRot");
+  if(bOpt){
+    bOpt.onclick=e=>{
+      e.preventDefault();
+      if(typeof PLACEMENT_SCORE!=="undefined"&&PLACEMENT_SCORE.optimiserEtAppliquerRotation){
+        PLACEMENT_SCORE.optimiserEtAppliquerRotation(fp.ref);
+      }
+    };
+  }
+  const bPinout=$("pFpInspectPinout");
+  if(bPinout&&typeof pcbOuvrirDialoguePinout==="function"){
+    bPinout.onclick=()=>pcbOuvrirDialoguePinout();
+  }
   const fe=$("pFpEd");
   if(fe)fe.onclick=()=>feOpen(fp);
   const fg=$("pFpGen");

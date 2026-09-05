@@ -28,7 +28,9 @@ const PKG_BASES=[
   {b:"SMC",fam:"Diodes de puissance / cylindriques",kinds:["diode","passif"],flat:true},
   {b:"MELF",fam:"Diodes de puissance / cylindriques",kinds:["diode","passif"],flat:true},
   {b:"MiniMELF",fam:"Diodes de puissance / cylindriques",kinds:["diode","passif"],flat:true},
-  {b:"SOT-23",fam:"Petits boîtiers CMS",kinds:["transistor","regulateur","ci"],pins:[3,5,6,8]},
+  {b:"SOD-323",fam:"Diodes de puissance / cylindriques",kinds:["diode","passif"],flat:true,pinCount:2,note:"CMS compact 2 broches"},
+  {b:"SOD-523",fam:"Diodes de puissance / cylindriques",kinds:["diode","passif"],flat:true,pinCount:2,note:"CMS ultra-compact 2 broches"},
+  {b:"SOT-23",fam:"Petits boîtiers CMS",kinds:["transistor","regulateur","ci","diode"],pins:[3,5,6,8]},
   {b:"SOT-89",fam:"Petits boîtiers CMS",kinds:["transistor","regulateur"],pins:[3,4]},
   {b:"SOT-223",fam:"Petits boîtiers CMS",kinds:["transistor","regulateur"],pins:[4],
    note:"régulateurs de tension"},
@@ -56,7 +58,27 @@ const PKG_BASES=[
   {b:"BGA",fam:"Haute densité (billes)",kinds:["ci"],free:true,min:16,max:2500,
    note:"billes sous le boîtier"},
   {b:"WLCSP",fam:"Haute densité (billes)",kinds:["ci"],free:true,min:4,max:600},
-  {b:"CSP",fam:"Haute densité (billes)",kinds:["ci"],free:true,min:4,max:600}
+  {b:"CSP",fam:"Haute densité (billes)",kinds:["ci"],free:true,min:4,max:600},
+  {b:"Trou metalise diam. trou 1.2mm - dim. plated 2.54mmx1.6mm",fam:"Points de test",
+   kinds:["testpoint"],flat:true,pinCount:1,note:"trou 1,2 mm · pastille 2,54 × 1,6 mm"},
+  /* Connecteurs USB */
+  {b:"USB-C-6P",fam:"Connecteurs USB",kinds:["usb","divers"],flat:true,pinCount:5,note:"USB Type-C alim (VBUS, GND, CC1, CC2, SHIELD)"},
+  {b:"USB-C-16P",fam:"Connecteurs USB",kinds:["usb","divers"],flat:true,pinCount:8,note:"USB Type-C 16 broches (données 2.0 + alim)"},
+  {b:"MICRO-USB-B",fam:"Connecteurs USB",kinds:["usb","divers"],flat:true,pinCount:6,note:"Micro-USB Type-B 5 broches + blindage"},
+  /* Barrettes 2,54 mm */
+  {b:"HEADER-2.54-1x2",fam:"Barrettes 2,54 mm",kinds:["header","divers"],flat:true,pinCount:2,note:"pas 2,54 mm, 1 rangée"},
+  {b:"HEADER-2.54-1x3",fam:"Barrettes 2,54 mm",kinds:["header","divers"],flat:true,pinCount:3,note:"pas 2,54 mm, 1 rangée"},
+  {b:"HEADER-2.54-1x4",fam:"Barrettes 2,54 mm",kinds:["header","divers"],flat:true,pinCount:4,note:"pas 2,54 mm, 1 rangée"},
+  {b:"HEADER-2.54-1x6",fam:"Barrettes 2,54 mm",kinds:["header","divers"],flat:true,pinCount:6,note:"pas 2,54 mm, 1 rangée"},
+  {b:"HEADER-2.54-1x8",fam:"Barrettes 2,54 mm",kinds:["header","divers"],flat:true,pinCount:8,note:"pas 2,54 mm, 1 rangée"},
+  {b:"HEADER-2.54-2x5",fam:"Barrettes 2,54 mm",kinds:["header","divers"],flat:true,pinCount:10,note:"pas 2,54 mm, 2 rangées"},
+  /* Barrettes 1,27 mm */
+  {b:"HEADER-1.27-1x2",fam:"Barrettes 1,27 mm",kinds:["header","divers"],flat:true,pinCount:2,note:"pas 1,27 mm, 1 rangée"},
+  {b:"HEADER-1.27-1x3",fam:"Barrettes 1,27 mm",kinds:["header","divers"],flat:true,pinCount:3,note:"pas 1,27 mm, 1 rangée"},
+  {b:"HEADER-1.27-1x4",fam:"Barrettes 1,27 mm",kinds:["header","divers"],flat:true,pinCount:4,note:"pas 1,27 mm, 1 rangée"},
+  {b:"HEADER-1.27-1x6",fam:"Barrettes 1,27 mm",kinds:["header","divers"],flat:true,pinCount:6,note:"pas 1,27 mm, 1 rangée"},
+  {b:"HEADER-1.27-1x8",fam:"Barrettes 1,27 mm",kinds:["header","divers"],flat:true,pinCount:8,note:"pas 1,27 mm, 1 rangée"},
+  {b:"HEADER-1.27-2x5",fam:"Barrettes 1,27 mm",kinds:["header","divers"],flat:true,pinCount:10,note:"pas 1,27 mm, 2 rangées"}
 ];
 const PKG_FAMS=[...new Set(PKG_BASES.map(b=>b.fam))];
 function pinCount(el){const p=pinsOf(el);return p?p.length:0;}
@@ -66,7 +88,7 @@ function pkgBaseOf(name){
   let best=null;
   for(const b of PKG_BASES){
     const u=b.b.toUpperCase(), v=t.toUpperCase();
-    if(v===u){best={base:b,pins:b.flat?2:null};break;}
+    if(v===u){best={base:b,pins:b.flat?(b.pinCount||2):null};break;}
     if(v.startsWith(u+"-")){
       const rest=t.slice(b.b.length+1);
       if(/^\d+$/.test(rest)&&(!best||b.b.length>best.base.b.length))
@@ -99,7 +121,7 @@ function pkgBaseList(el){
       base:b,
       // les boîtiers à billes acceptent n'importe quel brochage : les marquer
       // « compatibles » partout ne serait qu'un bruit visuel
-      fit:b.flat?(n===2):b.free?false:b.pins.includes(n)
+      fit:b.flat?(n===(b.pinCount||2)):b.free?false:b.pins.includes(n)
     }));
     ((kind&&bases.some(x=>x.base.kinds.includes(kind)))?reco:other).push({fam,bases});
   }

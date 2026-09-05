@@ -27,11 +27,11 @@ const CR_ETAT = {
 
 /* ---------- Détection de conflits & réalignement assisté ---------- */
 function crIsPower(s) {
-  return /(\+?3\.?3V|\+?5V|VCC|VDD|VIN|VOUT|VBUS|VBAT|\+?12V|\+?1\.?8V|\+V)/i.test(String(s || ""));
+  return /(\+?3[V\.]?3V?|\+?5V?0?|\+?12V?|\+?1[V\.]?8V?|\+?2[V\.]?5V?|VCC|VDD|VIN|VOUT|VBUS|VBAT|\+V)/i.test(String(s || ""));
 }
 
 function crIsGround(s) {
-  return /^(GND|VSS|0V|AGND|DGND|MASSE)$/i.test(String(s || "").trim());
+  return /^(GND|VSS|0V|AGND|DGND|PGND|VSSA|VSSD|MASSE)/i.test(String(s || "").trim());
 }
 
 function crNormSig(s) {
@@ -315,7 +315,8 @@ function crBuildModal() {
           '</div>' +
           '<div class="cr-filter-bar">' +
             '<label><input type="checkbox" id="crFilterBasic"> Basic / Sans frais d’abord</label>' +
-            '<span id="crCount" class="cr-count"></span>' +
+            '<button type="button" id="crBtnDistribRech" class="cr-btn-link" style="margin-left:auto; font-size:11px; color:#5cdbd3;" title="Forcer la recherche directe chez Mouser & DigiKey">Mouser / DigiKey ↗</button>' +
+            '<span id="crCount" class="cr-count" style="margin-left:8px;"></span>' +
           '</div>' +
           '<div id="crList" class="cr-list"></div>' +
         '</div>' +
@@ -343,6 +344,8 @@ function crBuildModal() {
     if (e.key === "Enter") crLancerRecherche();
   };
   document.getElementById("crFilterBasic").onchange = () => crTrierEtAfficherCandidats();
+  const bDist = document.getElementById("crBtnDistribRech");
+  if (bDist) bDist.onclick = () => crLancerRecherche(undefined, true);
   document.getElementById("crBtnApply").onclick = crAppliquerAuComposant;
 
   // Fermeture sur clic arrière-plan ou Échap
@@ -400,8 +403,100 @@ function crFermer() {
   CR_ETAT.open = false;
 }
 
-/* ---------- Lancement de la recherche JLCPCB ---------- */
-async function crLancerRecherche(overrideQuery) {
+/* ---------- Recherche de secours multi-distributeurs (Mouser & DigiKey) ---------- */
+async function crRechercherDistributeurs(queryRef) {
+  const q = String(queryRef || "").trim();
+  if (!q) return [];
+
+  // Déterminer la référence à chercher (enlever les mots généraux s'il y en a)
+  let cleanRef = q;
+  const parts = q.split(/\s+/);
+  if (parts.length > 1) {
+    const codePart = parts.find(p => /[A-Za-z]/.test(p) && /\d/.test(p));
+    cleanRef = codePart || parts[0];
+  }
+
+  const [mouserRes, digikeyRes] = await Promise.all([
+    crApiAppel("mouser_get_part", { part_number: cleanRef }).catch(e => {
+      console.warn("Mouser recherche error:", e);
+      return null;
+    }),
+    crApiAppel("digikey_get_part", { product_number: cleanRef }).catch(e => {
+      console.warn("DigiKey recherche error:", e);
+      return null;
+    })
+  ]);
+
+  const mResults = (mouserRes && mouserRes.results && Array.isArray(mouserRes.results)) ? mouserRes.results : [];
+  const dkResults = (digikeyRes && digikeyRes.results && Array.isArray(digikeyRes.results)) ? digikeyRes.results : [];
+
+  if (!mResults.length && !dkResults.length) return [];
+
+  const candsMap = new Map();
+
+  mResults.forEach(m => {
+    const mpn = m.mfr_part_number || m.part_number || cleanRef;
+    const k = mpn.toUpperCase();
+    const pkg = m.package || (m.parameters && (m.parameters["Package / Case"] || m.parameters["Boîtier / Empreinte"])) || "";
+    let ds = m.datasheet_url || "";
+    if (ds && ds.startsWith("//")) ds = "https:" + ds;
+
+    candsMap.set(k, {
+      source: "mouser",
+      model: mpn,
+      manufacturer: m.manufacturer || "",
+      package: pkg,
+      stock: m.stock || 0,
+      price: m.price || 0,
+      currency: m.currency || "USD",
+      description: m.description || "",
+      datasheet: ds,
+      mouserData: m,
+      digikeyData: null,
+      parameters: { ...(m.parameters || {}) }
+    });
+  });
+
+  dkResults.forEach(dk => {
+    const mpn = dk.mfr_part_number || dk.part_number || cleanRef;
+    const k = mpn.toUpperCase();
+    const pkg = dk.package || (dk.parameters && (dk.parameters["Package / Case"] || dk.parameters["Boîtier / Empreinte"])) || "";
+    let ds = dk.datasheet_url || "";
+    if (ds && ds.startsWith("//")) ds = "https:" + ds;
+
+    if (candsMap.has(k)) {
+      const cand = candsMap.get(k);
+      cand.digikeyData = dk;
+      cand.source = "distrib";
+      if (!cand.manufacturer && dk.manufacturer) cand.manufacturer = dk.manufacturer;
+      if (!cand.package && pkg) cand.package = pkg;
+      if (!cand.stock && dk.stock) cand.stock = dk.stock;
+      if (!cand.price && dk.price) cand.price = dk.price;
+      if (!cand.datasheet && ds) cand.datasheet = ds;
+      cand.parameters = { ...(dk.parameters || {}), ...(cand.parameters || {}) };
+    } else {
+      candsMap.set(k, {
+        source: "digikey",
+        model: mpn,
+        manufacturer: dk.manufacturer || "",
+        package: pkg,
+        stock: dk.stock || 0,
+        price: dk.price || 0,
+        currency: dk.currency || "USD",
+        description: dk.description || "",
+        datasheet: ds,
+        mouserData: null,
+        digikeyData: dk,
+        parameters: { ...(dk.parameters || {}) }
+      });
+    }
+  });
+
+  return Array.from(candsMap.values());
+}
+
+/* ---------- Lancement de la recherche JLCPCB & Distributeurs ---------- */
+async function crLancerRecherche(overrideQuery, forceDistribOnly) {
   const q = overrideQuery !== undefined ? overrideQuery : document.getElementById("crInpSearch").value.trim();
   if (!q) return;
 
@@ -413,14 +508,37 @@ async function crLancerRecherche(overrideQuery) {
   document.getElementById("crBtnApply").disabled = true;
 
   try {
-    const res = await crApiAppel("jlc_search", { query: q, limit: 16 });
-    const rawResults = (res && res.results) || (Array.isArray(res) ? res : []);
+    let rawResults = [];
+    if (!forceDistribOnly) {
+      const res = await crApiAppel("jlc_search", { query: q, limit: 16 }).catch(e => {
+        console.warn("Erreur jlc_search:", e);
+        return { results: [] };
+      });
+      rawResults = (res && res.results) || (Array.isArray(res) ? res : []);
+    }
+
+    // Si aucun résultat chez JLCPCB (ou si recherche distributeurs explicite), bascule automatique sur Mouser / DigiKey
+    if (!rawResults.length) {
+      listEl.innerHTML =
+        '<div class="cr-loading"><span class="cr-spinner"></span> ' +
+        (forceDistribOnly ? 'Recherche chez Mouser & DigiKey...' : 'Non trouvé chez JLCPCB. Recherche automatique chez Mouser & DigiKey...') +
+        '</div>';
+
+      const distribRes = await crRechercherDistributeurs(q);
+      if (distribRes && distribRes.length > 0) {
+        rawResults = distribRes;
+      }
+    }
 
     CR_ETAT.candidates = rawResults;
     CR_ETAT.loadingSearch = false;
 
     if (!rawResults.length) {
-      listEl.innerHTML = '<div class="cr-placeholder">Aucun composant trouvé pour « ' + crEsc(q) + ' ». Essayez avec des termes plus généraux.</div>';
+      listEl.innerHTML =
+        '<div class="cr-placeholder">' +
+          'Aucun composant trouvé pour « ' + crEsc(q) + ' » chez JLCPCB, Mouser ou DigiKey.<br><br>' +
+          '<i>Conseil : Vérifiez la référence exacte du fabricant (MPN, ex: IRA-S400ST01A01, STM32F103, LM358...).</i>' +
+        '</div>';
       document.getElementById("crDetailsPanel").innerHTML = '<div class="cr-placeholder">Aucun résultat.</div>';
       return;
     }
@@ -439,7 +557,7 @@ function crTrierEtAfficherCandidats(autoSelectPremier) {
 
   let items = [...CR_ETAT.candidates];
 
-  // Filtre Basic si demandé
+  // Filtre Basic si demandé (ne masque pas les distributeurs tiers s'il n'y a pas de pièce basic)
   if (filterBasic) {
     const bas = items.filter(c => (c.library_type === "basic" || c.preferred));
     if (bas.length > 0) items = bas;
@@ -459,13 +577,21 @@ function crTrierEtAfficherCandidats(autoSelectPremier) {
   items.forEach((c, idx) => {
     const isBasic = c.library_type === "basic" || c.preferred;
     const isRec = idx === 0; // Le premier après tri est le recommandé
-    const selClass = (CR_ETAT.selectedCand && CR_ETAT.selectedCand.lcsc === c.lcsc) ? " active" : "";
+    const selClass = (CR_ETAT.selectedCand && (CR_ETAT.selectedCand.lcsc ? CR_ETAT.selectedCand.lcsc === c.lcsc : CR_ETAT.selectedCand.model === c.model)) ? " active" : "";
+
+    let badgeSource = "";
+    if (c.source === "mouser") badgeSource = '<span class="cr-badge cr-badge-mouser">Mouser</span>';
+    else if (c.source === "digikey") badgeSource = '<span class="cr-badge cr-badge-digikey">DigiKey</span>';
+    else if (c.source === "distrib") badgeSource = '<span class="cr-badge cr-badge-distrib">Mouser + DigiKey</span>';
+
+    const refTag = c.lcsc || (c.mouserData && c.mouserData.part_number) || (c.digikeyData && c.digikeyData.part_number) || c.model;
 
     html +=
-      '<div class="cr-card' + selClass + '" data-lcsc="' + crEsc(c.lcsc) + '" data-idx="' + idx + '">' +
+      '<div class="cr-card' + selClass + '" data-lcsc="' + crEsc(c.lcsc || "") + '" data-idx="' + idx + '">' +
         '<div class="cr-card-head">' +
           '<b class="cr-mpn">' + crEsc(c.model || c.lcsc) + '</b>' +
           '<div class="cr-badges">' +
+            badgeSource +
             (isRec ? '<span class="cr-badge cr-badge-rec" title="Recommandé : meilleur équilibre stock & sans frais">★ Recommandé</span>' : '') +
             (isBasic ? '<span class="cr-badge cr-badge-basic" title="Sans frais d’installation JLCPCB">Basic</span>' : '') +
           '</div>' +
@@ -477,8 +603,8 @@ function crTrierEtAfficherCandidats(autoSelectPremier) {
         '</div>' +
         '<div class="cr-card-meta">' +
           '<span>Stock : <b>' + crFmtEntier(c.stock) + '</b></span>' +
-          '<span>Prix : <b>' + crFmtPrix(c.price) + '</b></span>' +
-          '<span class="cr-lcsc-tag">' + crEsc(c.lcsc) + '</span>' +
+          '<span>Prix : <b>' + crFmtPrix(c.price, c.currency) + '</b></span>' +
+          '<span class="cr-lcsc-tag">' + crEsc(refTag) + '</span>' +
         '</div>' +
       '</div>';
   });
@@ -500,13 +626,61 @@ function crTrierEtAfficherCandidats(autoSelectPremier) {
   }
 }
 
-/* ---------- Sélection d'un candidat & Chargement Distributeurs ---------- */
+/* ---------- Helpers pour le retour systématique du pinout schématique ---------- */
+function crClassifierBroche(nom) {
+  const s = String(nom || "").toUpperCase().trim();
+  if (crIsPower(s)) return { cat: "alim", badge: "Alimentation", cls: "cr-pin-pwr" };
+  if (crIsGround(s)) return { cat: "gnd", badge: "Masse (GND)", cls: "cr-pin-gnd" };
+  if (/^(SDA|SCL|TX|RX|D\+|D\-|DP|DM|CAN|CLK|SCK|MISO|MOSI|CS|SS|NRST|BOOT)/.test(s)) {
+    return { cat: "bus", badge: "Bus / Comm", cls: "cr-pin-bus" };
+  }
+  return { cat: "sig", badge: "Signal / E-S", cls: "cr-pin-sig" };
+}
+
+function crBrocheRaccordementSchema(el, pinNum) {
+  if (!el || typeof allPins !== "function" || typeof nets !== "function" || typeof S === "undefined" || !Array.isArray(S.wires)) return null;
+  const pins = allPins(el);
+  const idx = pinNum - 1;
+  if (idx < 0 || idx >= pins.length) return null;
+  const pt = pins[idx];
+  const nInfo = nets();
+  const k = (typeof key === "function") ? key(pt.x, pt.y) : (pt.x + "," + pt.y);
+  const nObj = nInfo && nInfo.byPoint ? nInfo.byPoint.get(k) : null;
+  const netName = (nObj && nObj.name) ? String(nObj.name).trim() : "";
+  const hasWire = S.wires.some(w => (w.x1 === pt.x && w.y1 === pt.y) || (w.x2 === pt.x && w.y2 === pt.y) || (typeof insideSeg === "function" && insideSeg(pt, w)));
+  return { netName, hasWire, isAuto: !nObj || !nObj.named };
+}
+
+async function crRecupererBrochage(cand, mpn) {
+  let lcsc = cand.lcsc;
+  if (!lcsc && mpn) {
+    try {
+      const sRes = await crApiAppel("jlc_search", { query: mpn, limit: 1 }).catch(() => null);
+      const first = (sRes && sRes.results && sRes.results[0]);
+      if (first && first.lcsc) {
+        lcsc = first.lcsc;
+        if (!cand.lcsc) cand.lcsc = lcsc;
+      }
+    } catch (_) {}
+  }
+  if (!lcsc) return null;
+  try {
+    return await crApiAppel("jlc_get_pinout", { lcsc: lcsc }).catch(() => null);
+  } catch (_) {
+    return null;
+  }
+}
+
+/* ---------- Sélection d'un composant et chargement des fiches détaillées ---------- */
 async function crSelectionnerCandidat(cand) {
   CR_ETAT.selectedCand = cand;
 
   // Mise à jour visuelle dans la liste
   document.querySelectorAll(".cr-card").forEach(c => {
-    c.classList.toggle("active", c.getAttribute("data-lcsc") === cand.lcsc);
+    const isSel = cand.lcsc
+      ? (c.getAttribute("data-lcsc") === cand.lcsc)
+      : (c.querySelector(".cr-mpn") && c.querySelector(".cr-mpn").textContent === (cand.model || ""));
+    c.classList.toggle("active", isSel);
   });
 
   const pnl = document.getElementById("crDetailsPanel");
@@ -517,17 +691,24 @@ async function crSelectionnerCandidat(cand) {
   document.getElementById("crBtnApply").disabled = true;
 
   try {
-    // 1. Appel fiche complète JLCPCB
-    const jlcPromise = crApiAppel("jlc_get_part", { lcsc: cand.lcsc });
-
-    // 2. Interrogation automatique Mouser & DigiKey avec le MPN
     const mpn = cand.model || "";
-    const mouserPromise = mpn ? crApiAppel("mouser_get_part", { part_number: mpn }).catch(e => ({ error: e.message })) : Promise.resolve(null);
-    const digikeyPromise = mpn ? crApiAppel("digikey_get_part", { product_number: mpn }).catch(e => ({ error: e.message })) : Promise.resolve(null);
 
-    // 3. Optionnel : brochage si circuit intégré
-    const isIc = CR_ETAT.el && (typeof defOf === "function" ? typeof defOf(CR_ETAT.el.type).pins === "function" : false);
-    const pinoutPromise = (isIc && cand.lcsc) ? crApiAppel("jlc_get_pinout", { lcsc: cand.lcsc }).catch(() => null) : Promise.resolve(null);
+    // 1. Fiche complète JLCPCB (seulement si le code LCSC est connu)
+    const jlcPromise = cand.lcsc
+      ? crApiAppel("jlc_get_part", { lcsc: cand.lcsc }).catch(() => null)
+      : Promise.resolve(null);
+
+    // 2. Interrogation automatique Mouser & DigiKey si pas déjà présents
+    const mouserPromise = cand.mouserData
+      ? Promise.resolve({ results: [cand.mouserData] })
+      : (mpn ? crApiAppel("mouser_get_part", { part_number: mpn }).catch(e => ({ error: e.message })) : Promise.resolve(null));
+
+    const digikeyPromise = cand.digikeyData
+      ? Promise.resolve({ results: [cand.digikeyData] })
+      : (mpn ? crApiAppel("digikey_get_part", { product_number: mpn }).catch(e => ({ error: e.message })) : Promise.resolve(null));
+
+    // 3. Récupération systématique du brochage (Pinout schématique)
+    const pinoutPromise = crRecupererBrochage(cand, mpn);
 
     const [jlcData, mouserRes, digikeyRes, pinoutRes] = await Promise.all([
       jlcPromise,
@@ -536,10 +717,29 @@ async function crSelectionnerCandidat(cand) {
       pinoutPromise
     ]);
 
-    CR_ETAT.partDetails = jlcData || cand;
-    CR_ETAT.mouserData = (mouserRes && mouserRes.results && mouserRes.results[0]) || null;
-    CR_ETAT.digikeyData = (digikeyRes && digikeyRes.results && digikeyRes.results[0]) || null;
+    CR_ETAT.mouserData = (mouserRes && mouserRes.results && mouserRes.results[0]) || cand.mouserData || null;
+    CR_ETAT.digikeyData = (digikeyRes && digikeyRes.results && digikeyRes.results[0]) || cand.digikeyData || null;
+    CR_ETAT.pinoutMeta = (pinoutRes && typeof pinoutRes === "object" && !Array.isArray(pinoutRes)) ? pinoutRes : null;
     CR_ETAT.pinoutData = Array.isArray(pinoutRes) ? pinoutRes : (pinoutRes && pinoutRes.pins) || null;
+
+    if (jlcData) {
+      CR_ETAT.partDetails = jlcData;
+    } else {
+      const m = CR_ETAT.mouserData;
+      const dk = CR_ETAT.digikeyData;
+      CR_ETAT.partDetails = {
+        model: mpn,
+        manufacturer: (m && m.manufacturer) || (dk && dk.manufacturer) || cand.manufacturer || "",
+        package: (m && m.package) || (dk && dk.package) || cand.package || "",
+        description: (m && m.description) || (dk && dk.description) || cand.description || "",
+        datasheet: cand.datasheet || (m && m.datasheet_url) || (dk && dk.datasheet_url) || "",
+        stock: (m && m.stock) || (dk && dk.stock) || cand.stock || 0,
+        price: (m && m.price) || (dk && dk.price) || cand.price || 0,
+        currency: (m && m.currency) || (dk && dk.currency) || cand.currency || "USD",
+        parameters: { ...(cand.parameters || {}), ...((m && m.parameters) || {}), ...((dk && dk.parameters) || {}) }
+      };
+    }
+
     CR_ETAT.detectedConflicts = (CR_ETAT.pinoutData && CR_ETAT.el)
       ? crDetecterConflitsCablage(CR_ETAT.el, CR_ETAT.pinoutData)
       : [];
@@ -560,8 +760,13 @@ function crAfficherDetailsComplets() {
 
   const mpn = d.model || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.model) || "";
   const mfr = d.manufacturer || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.manufacturer) || "";
-  const pkg = d.package || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.package) || "";
-  const dsheetUrl = d.datasheet || d.datasheet_url || "";
+  let pkg = d.package || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.package) || "";
+  let dsheetUrl = d.datasheet || d.datasheet_url || (m && m.datasheet_url) || (dk && dk.datasheet_url) || "";
+  if (dsheetUrl && dsheetUrl.startsWith("//")) dsheetUrl = "https:" + dsheetUrl;
+
+  const params = d.parameters || (m && m.parameters) || (dk && dk.parameters) || {};
+  if (!pkg && params["Package / Case"]) pkg = params["Package / Case"];
+  else if (!pkg && params["Boîtier / Empreinte"]) pkg = params["Boîtier / Empreinte"];
 
   let html = '<div class="cr-det-scroll">';
 
@@ -578,11 +783,13 @@ function crAfficherDetailsComplets() {
     '<div class="cr-sect-title">DISTRIBUTEURS & DISPONIBILITÉ</div>' +
     '<div class="cr-distrib-grid">' +
       // Carte JLCPCB / LCSC
-      '<div class="cr-distrib-card cr-distrib-jlc">' +
+      '<div class="cr-distrib-card ' + (d.lcsc ? 'cr-distrib-jlc dispo' : 'indispo') + '">' +
         '<div class="cr-distrib-name">JLCPCB / LCSC</div>' +
-        '<div class="cr-distrib-stat">Stock : <b>' + crFmtEntier(d.stock || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.stock)) + '</b></div>' +
-        '<div class="cr-distrib-stat">Prix (1+) : <b>' + crFmtPrix(d.price || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.price)) + '</b></div>' +
-        '<div class="cr-distrib-ref">Réf : ' + crEsc(d.lcsc || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.lcsc)) + '</div>' +
+        (d.lcsc ? (
+          '<div class="cr-distrib-stat">Stock : <b>' + crFmtEntier(d.stock || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.stock)) + '</b></div>' +
+          '<div class="cr-distrib-stat">Prix (1+) : <b>' + crFmtPrix(d.price || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.price)) + '</b></div>' +
+          '<div class="cr-distrib-ref">Réf : ' + crEsc(d.lcsc || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.lcsc)) + '</div>'
+        ) : '<div class="cr-distrib-none">Non référencé JLCPCB</div>') +
       '</div>' +
       // Carte Mouser
       '<div class="cr-distrib-card' + (m ? ' dispo' : ' indispo') + '">' +
@@ -655,6 +862,11 @@ function crAfficherDetailsComplets() {
       specItems.push({ nom: a.name, val: a.value });
     }
   }
+  for (const k in params) {
+    if (params[k] && params[k] !== "-" && !specs[k] && !specItems.some(it => it.nom === k)) {
+      specItems.push({ nom: k, val: params[k] });
+    }
+  }
 
   specItems.forEach((sp) => {
     html +=
@@ -675,7 +887,7 @@ function crAfficherDetailsComplets() {
       '</label>';
   }
 
-  // 6. Code LCSC — Non-essentiel : décoché par défaut
+  // 6. Code LCSC — Non-essentiel : décoché par défaut (seulement si présent)
   if (d.lcsc) {
     html +=
       '<label class="cr-prop-row dim">' +
@@ -685,37 +897,123 @@ function crAfficherDetailsComplets() {
       '</label>';
   }
 
-  // 7. Réf Mouser — Non-essentiel
+  // 7. Réf Mouser — Prioritaire si non disponible JLCPCB
   if (m && m.part_number) {
+    const isMouserPrimary = !d.lcsc;
     html +=
-      '<label class="cr-prop-row dim">' +
-        '<input type="checkbox" id="cp_mouser" data-prop="mouser">' +
+      '<label class="cr-prop-row' + (isMouserPrimary ? '' : ' dim') + '">' +
+        '<input type="checkbox" id="cp_mouser" data-prop="mouser"' + (isMouserPrimary ? ' data-essential="1" checked' : '') + '>' +
         '<span class="cr-prop-k">Référence Mouser</span>' +
         '<span class="cr-prop-v">' + crEsc(m.part_number) + '</span>' +
       '</label>';
   }
 
-  // 8. Réf DigiKey — Non-essentiel
+  // 8. Réf DigiKey — Prioritaire si non disponible JLCPCB
   if (dk && dk.part_number) {
+    const isDkPrimary = !d.lcsc;
     html +=
-      '<label class="cr-prop-row dim">' +
-        '<input type="checkbox" id="cp_digikey" data-prop="digikey">' +
+      '<label class="cr-prop-row' + (isDkPrimary ? '' : ' dim') + '">' +
+        '<input type="checkbox" id="cp_digikey" data-prop="digikey"' + (isDkPrimary ? ' data-essential="1" checked' : '') + '>' +
         '<span class="cr-prop-k">Référence DigiKey</span>' +
         '<span class="cr-prop-v">' + crEsc(dk.part_number) + '</span>' +
       '</label>';
   }
 
-  // 9. Import du nom des broches (Pinout pour CI)
+  // 9. Import du nom des broches (Pinout schématique)
   if (pin && pin.length > 0) {
+    const elPins = (CR_ETAT.el && CR_ETAT.el.pinNames) || [];
+    const isAlreadySame = elPins.length > 0 && pin.every((p, idx) => elPins[idx] && elPins[idx].toUpperCase() === (p.name || "").toUpperCase());
     html +=
       '<label class="cr-prop-row cr-prop-pinout">' +
-        '<input type="checkbox" id="cp_pinout" data-prop="pinout" checked>' +
-        '<span class="cr-prop-k">Brochage EasyEDA</span>' +
-        '<span class="cr-prop-v">' + pin.length + ' broches trouvées</span>' +
+        '<input type="checkbox" id="cp_pinout" data-prop="pinout" data-essential="1" checked>' +
+        '<span class="cr-prop-k">Brochage officiel</span>' +
+        '<span class="cr-prop-v">' + pin.length + ' broches ' + (isAlreadySame ? '<b style="color:#52c41a">(identique à votre schéma ✓)</b>' : '(import / validation)') + '</span>' +
       '</label>';
   }
 
   html += '</div></div>';
+
+  // --- SECTION : RETOUR SYSTÉMATIQUE DU BROCHAGE SCHÉMATIQUE (PINOUT) ---
+  if (pin && pin.length > 0) {
+    html +=
+      '<div class="cr-sect-title cr-sect-pinout">⚡ BROCHAGE SCHÉMATIQUE OFFICIEL (PINOUT — ' + pin.length + ' BROCHES)</div>' +
+      '<div class="cr-pinout-box">' +
+        '<div class="cr-pinout-meta">' +
+          (pkg ? '<span>Boîtier : <b>' + crEsc(pkg) + '</b></span>' : '') +
+          '<span>Nombre de broches : <b>' + pin.length + '</b></span>' +
+          '<span>Source : <b style="color:#52c41a">Symbole EasyEDA / LCSC</b></span>' +
+        '</div>' +
+        '<div class="cr-pinout-scroll">' +
+          '<table class="cr-pinout-table">' +
+            '<thead>' +
+              '<tr>' +
+                '<th style="width:40px;text-align:center">N°</th>' +
+                '<th>Broche officielle</th>' +
+                '<th style="width:110px">Type électrique</th>' +
+                '<th>Fil schématique actuel</th>' +
+                '<th style="width:120px">Concordance</th>' +
+              '</tr>' +
+            '</thead>' +
+            '<tbody>';
+
+    pin.forEach(p => {
+      const num = parseInt(p.number, 10);
+      const nom = p.name || "";
+      const typeInfo = crClassifierBroche(nom);
+      const racc = crBrocheRaccordementSchema(CR_ETAT.el, num);
+      const nomActuel = (CR_ETAT.el && CR_ETAT.el.pinNames && CR_ETAT.el.pinNames[num - 1]) || "";
+
+      let cellNom = '<b>' + crEsc(nom) + '</b>';
+      if (nomActuel && nomActuel.toUpperCase() === nom.toUpperCase()) {
+        cellNom += ' <span style="color:#52c41a;font-size:10px;font-weight:normal" title="Votre schéma porte déjà ce nom officiel">✓ Actuel</span>';
+      } else if (nomActuel) {
+        cellNom += '<div style="font-size:10px;color:var(--txt-dim);font-family:var(--mono)">Actuel sur schéma : ' + crEsc(nomActuel) + '</div>';
+      }
+
+      let netTxt = '<span style="color:var(--txt-dim);font-style:italic">Non raccordé</span>';
+      let stTxt = '<span class="cr-pin-badge-ready">Prêt à câbler</span>';
+      if (nomActuel && nomActuel.toUpperCase() === nom.toUpperCase() && (!racc || !racc.hasWire)) {
+        stTxt = '<span class="cr-conf-badge cr-conf-badge-ok">✓ Broche définie</span>';
+      }
+
+      if (racc && racc.hasWire) {
+        netTxt = '<b style="color:#60a5fa">' + crEsc(racc.netName || "Net sans nom") + '</b>';
+        const normNet = crNormSig(racc.netName);
+        const normPin = crNormSig(nom);
+
+        if (typeInfo.cat === "alim" && crIsGround(racc.netName)) {
+          stTxt = '<span class="cr-conf-badge cr-conf-badge-crit">⚠️ Court-circuit VCC/GND</span>';
+        } else if (typeInfo.cat === "gnd" && crIsPower(racc.netName)) {
+          stTxt = '<span class="cr-conf-badge cr-conf-badge-crit">⚠️ Court-circuit GND/VCC</span>';
+        } else if (normNet && normPin && (normNet === normPin || normNet.includes(normPin) || normPin.includes(normNet))) {
+          stTxt = '<span class="cr-conf-badge cr-conf-badge-ok">✓ Concordant</span>';
+        } else if (typeInfo.cat === "gnd" && crIsGround(racc.netName)) {
+          stTxt = '<span class="cr-conf-badge cr-conf-badge-ok">✓ Masse OK</span>';
+        } else if (typeInfo.cat === "alim" && crIsPower(racc.netName)) {
+          stTxt = '<span class="cr-conf-badge cr-conf-badge-ok">✓ Alim OK</span>';
+        } else {
+          stTxt = '<span class="cr-conf-badge cr-conf-badge-info">Câblé (' + crEsc(racc.netName) + ')</span>';
+        }
+      }
+
+      html +=
+        '<tr>' +
+          '<td class="cr-pin-num-cell">#' + crEsc(p.number) + '</td>' +
+          '<td class="cr-pin-name-cell">' + cellNom + '</td>' +
+          '<td><span class="cr-pin-pill ' + typeInfo.cls + '">' + crEsc(typeInfo.badge) + '</span></td>' +
+          '<td>' + netTxt + '</td>' +
+          '<td>' + stTxt + '</td>' +
+        '</tr>';
+    });
+
+    html += '</tbody></table></div></div>';
+  } else {
+    html +=
+      '<div class="cr-sect-title">⚡ BROCHAGE DU COMPOSANT (PINOUT)</div>' +
+      '<div class="cr-pinout-box cr-pinout-none">' +
+        '<i>Brochage non fourni par la base de données pour cette référence (composant standard ou passif). Le schéma conserve son brochage standard.</i>' +
+      '</div>';
+  }
 
   // --- SECTION 3 : Analyse du câblage schématique et détection d'inversions ---
   if (CR_ETAT.detectedConflicts && CR_ETAT.detectedConflicts.length > 0) {
@@ -797,8 +1095,13 @@ async function crAppliquerAuComposant() {
 
   const mpn = d.model || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.model) || "";
   const mfr = d.manufacturer || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.manufacturer) || "";
-  const pkg = d.package || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.package) || "";
-  const dsheetUrl = d.datasheet || d.datasheet_url || "";
+  let pkg = d.package || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.package) || "";
+  const params = d.parameters || (CR_ETAT.mouserData && CR_ETAT.mouserData.parameters) || (CR_ETAT.digikeyData && CR_ETAT.digikeyData.parameters) || {};
+  if (!pkg && params["Package / Case"]) pkg = params["Package / Case"];
+  else if (!pkg && params["Boîtier / Empreinte"]) pkg = params["Boîtier / Empreinte"];
+
+  let dsheetUrl = d.datasheet || d.datasheet_url || (CR_ETAT.mouserData && CR_ETAT.mouserData.datasheet_url) || (CR_ETAT.digikeyData && CR_ETAT.digikeyData.datasheet_url) || "";
+  if (dsheetUrl && dsheetUrl.startsWith("//")) dsheetUrl = "https:" + dsheetUrl;
 
   // Spécifications sélectionnées
   const specsSelectionnees = {};
@@ -818,12 +1121,13 @@ async function crAppliquerAuComposant() {
   if (Object.keys(specsSelectionnees).length > 0) el.specs = specsSelectionnees;
 
   if (checkLcsc && d.lcsc) el.lcsc = d.lcsc;
+  else if (!d.lcsc) delete el.lcsc;
   if (checkMouser && CR_ETAT.mouserData) el.mouser_part = CR_ETAT.mouserData.part_number;
   if (checkDigikey && CR_ETAT.digikeyData) el.digikey_part = CR_ETAT.digikeyData.part_number;
 
   // Enregistrer le résumé des distributeurs
   el.distributeurs = {
-    jlc: { stock: d.stock, prix: d.price },
+    jlc: d.lcsc ? { stock: d.stock, prix: d.price } : null,
     mouser: CR_ETAT.mouserData ? { stock: CR_ETAT.mouserData.stock, prix: CR_ETAT.mouserData.price } : null,
     digikey: CR_ETAT.digikeyData ? { stock: CR_ETAT.digikeyData.stock, prix: CR_ETAT.digikeyData.price } : null
   };
@@ -839,6 +1143,8 @@ async function crAppliquerAuComposant() {
         if (idx + 1 > maxPin) maxPin = idx + 1;
       }
     });
+    el.pinout = CR_ETAT.pinoutData.map(p => ({ number: String(p.number), name: String(p.name || "") }));
+    el.pinoutVerified = true;
     if (el.type === "ic" && maxPin !== (el.npins || 8)) {
       if (typeof icSetCount === "function") icSetCount(el, maxPin);
       else el.npins = maxPin;
@@ -903,6 +1209,8 @@ async function crAppliquerAuComposant() {
         if (checkDigikey && el.digikey_part) c.digikey_part = el.digikey_part;
         if (checkPinout && el.pinNames) {
           c.pinNames = [...el.pinNames];
+          if (el.pinout) c.pinout = JSON.parse(JSON.stringify(el.pinout));
+          c.pinoutVerified = true;
           if (c.type === "ic" && el.npins && c.npins !== el.npins) {
             if (typeof icSetCount === "function") icSetCount(c, el.npins);
             else c.npins = el.npins;
@@ -917,6 +1225,12 @@ async function crAppliquerAuComposant() {
     });
   }
 
+  // Émission d'un signal inter-outils pour avertir l'éditeur PCB s'il est ouvert
+  try {
+    const bc = (typeof sessCanal === "function") ? sessCanal() : null;
+    if (bc) bc.postMessage({ v: 1, type: "pinout_update", ref: el.ref, mpn: mpn, pkg: pkg, pinout: el.pinout });
+  } catch (_) {}
+
   // Fermeture & Rafraîchissement de l'interface
   crFermer();
 
@@ -926,6 +1240,7 @@ async function crAppliquerAuComposant() {
   const fHint = document.getElementById("fHint");
   if (fHint) {
     let msg = "Composant " + (el.ref || "sélectionné") + " enrichi (" + (mpn || el.value) + ")";
+    if (el.pinout && el.pinout.length > 0) msg += " · ⚡ Pinout schématique (" + el.pinout.length + " broches) validé";
     if (nbRealign > 0) msg += " · ⚡ " + nbRealign + " inversion(s)/connexion(s) de fil(s) réalignée(s)";
     if (nbPropag > 0) msg += " + " + nbPropag + " autre(s) composant(s) identique(s)";
     if (el.datasheet_local) msg += " · Fiche technique sauvegardée dans datasheets/";

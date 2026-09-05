@@ -39,6 +39,8 @@ function normComp(c,i){
     if(c.mouser_part) el.mouser_part = String(c.mouser_part).slice(0, 50);
     if(c.digikey_part) el.digikey_part = String(c.digikey_part).slice(0, 50);
     if(c.distributeurs && typeof c.distributeurs === "object") el.distributeurs = c.distributeurs;
+    if(Array.isArray(c.pinout)) el.pinout = c.pinout.map(p=>({number:String(p.number||""), name:String(p.name||"")}));
+    if(c.pinoutVerified) el.pinoutVerified = true;
   }
   /* Libellés déplacés à la main : deux nombres, bornés. Un décalage aberrant
      enverrait le repère à l'autre bout de la feuille, hors de toute prise. */

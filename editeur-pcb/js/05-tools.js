@@ -909,7 +909,7 @@ function selectRun(t0,e){
   const n=r.tracks.size;
   hint(twice
     ? "Piste entière sur toutes les couches : "+n+" segment(s), "+r.vias.size+" via(s)."
-    : "Piste entière : "+n+" segment(s). Un second Maj+clic la prend sur toutes les couches.");
+    : "Piste entière : "+n+" segment(s). Un second Maj+clic ou double-clic la prend sur toutes les couches.");
   return r;
 }
 /* ==========================================================================
@@ -2979,10 +2979,12 @@ cv.addEventListener("pointerdown",e=>{
     draw(); return;
   }
   const h=hitTest(p.x,p.y,e);
-  /* Maj+clic sur une piste : c'est la piste entière qui est prise, et le
+  /* Maj+clic ou double-clic sur une piste : c'est la piste entière qui est prise, et le
      doublé l'étend à toutes les couches (`selectRun`). Ailleurs — empreinte,
-     via, zone, vide — Maj garde son rôle d'ajout, comme Ctrl. */
-  if(e.shiftKey&&h&&h.track){
+     via, zone, vide — Maj garde son rôle d'ajout, comme Ctrl.
+     Ctrl+Maj+clic ou Ctrl+double-clic ajoute la piste entière à la sélection. */
+  const isDblTrack = !!(e && e.detail >= 2);
+  if((e.shiftKey||isDblTrack)&&h&&h.track){
     selectRun(h.track,e);
     const tn=h.track.net||null;
     if(tn){S.hlNet=tn;revealNet(tn);}
@@ -3360,11 +3362,21 @@ cv.addEventListener("contextmenu",e=>{
     clearSel();S.hlNet=null;refreshPanels();draw();
   }
 });
-cv.addEventListener("dblclick",()=>{
+cv.addEventListener("dblclick",e=>{
   if(S.dp)dpCommit();
   else if(S.route)commitRoute();
   else if(S.zoneDraft)closeZone();
   else if(S.edgeDraft)closeEdge();
+  else if(e&&typeof hitTest==="function"){
+    const r=cv.getBoundingClientRect();
+    const p=s2w(e.clientX-r.left,e.clientY-r.top);
+    const h=hitTest(p.x,p.y,e);
+    if(h&&h.track){
+      selectRun(h.track,e);
+      if(h.track.net){S.hlNet=h.track.net;revealNet(h.track.net);}
+      refreshPanels();draw();
+    }
+  }
 });
 cv.addEventListener("auxclick",e=>{if(e.button===1)e.preventDefault();});
 cv.addEventListener("wheel",e=>{

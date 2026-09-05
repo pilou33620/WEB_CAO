@@ -300,11 +300,13 @@ function simSurPoly(p,cum,u){
 function simProjPoly(p,cum,x,y){
   const cp={x:0,y:0};
   let best=null;
+  const total=(cum&&cum.length)?cum[cum.length-1]:1;
   for(let i=0;i+3<p.length;i+=2){
     const d=simDistSeg(x,y,p[i],p[i+1],p[i+2],p[i+3],cp);
     if(best&&d>=best.d)continue;
     const dx=p[i+2]-p[i], dy=p[i+3]-p[i+1], l=Math.hypot(dx,dy)||1;
-    best={d:d, s:cum[i/2]+Math.hypot(cp.x-p[i],cp.y-p[i+1]),
+    const s=cum[i/2]+Math.hypot(cp.x-p[i],cp.y-p[i+1]);
+    best={d:d, s:s, u:(total>0?s/total:0), x:cp.x, y:cp.y,
           cote:(-dy/l)*(x-cp.x)+(dx/l)*(y-cp.y)};
   }
   return best;
@@ -941,6 +943,58 @@ function simCoutureIpc(entrees,refs){
   return {n:n, ecartMax:Math.round(pire*1000)/1000, couloir:SIM_COULOIR};
 }
 
+/* Retrouver toutes les pistes et arcs connectés du même net sur la même couche. */
+function simPistesChaineMemeCouche(piste0){
+  if(typeof mdlChainePistesMemeCouche==="function")return mdlChainePistesMemeCouche(piste0);
+  if(!piste0||piste0.n==null||piste0.n<0||typeof V==="undefined"||!V.parNet)return [piste0];
+  const n=V.parNet[piste0.n];
+  if(!n||!n.pistes)return [piste0];
+  const cands=n.pistes.filter(p=>p.c===piste0.c&&p.p&&p.p.length>=4);
+  const arcs=(n.arcs||[]).filter(a=>a.c===piste0.c);
+  if(cands.length<=1&&!arcs.length)return cands.length?cands:[piste0];
+  const k=typeof simKUnite==="function"?simKUnite():1;
+  const tol=typeof SIM_TOL_CHAINE_IPC!=="undefined"?SIM_TOL_CHAINE_IPC:0.02;
+  const boutsMap=new Map();
+  for(const p of cands){
+    boutsMap.set(p, simBoutsPiste(p, k));
+  }
+  const arcObjs=[];
+  for(const a of arcs){
+    const pts=simArcEnPolyligne(a);
+    if(!pts)continue;
+    const ao={c:a.c, n:a.n, w:a.w, p:pts, arc:a};
+    arcObjs.push(ao);
+    boutsMap.set(ao, simBoutsPiste(ao, k));
+  }
+  const tous=[...cands, ...arcObjs];
+  const retenus=new Set([piste0]);
+  const stack=[piste0];
+  while(stack.length){
+    const cur=stack.pop();
+    const curBouts=boutsMap.get(cur);
+    if(!curBouts)continue;
+    for(const cand of tous){
+      if(retenus.has(cand))continue;
+      const candBouts=boutsMap.get(cand);
+      if(!candBouts)continue;
+      let touche=false;
+      for(const b1 of curBouts){
+        for(const b2 of candBouts){
+          if(Math.hypot(b1.x-b2.x, b1.y-b2.y)<=tol){
+            touche=true; break;
+          }
+        }
+        if(touche)break;
+      }
+      if(touche){
+        retenus.add(cand);
+        stack.push(cand);
+      }
+    }
+  }
+  return [...retenus];
+}
+
 /* Les pistes qu'UNE désignation couvre, avec leur couche.
 
    `vus` porte les objets du modèle déjà pris : deux entrées de la sélection se
@@ -954,10 +1008,16 @@ function simZPistesDe(s,mev,out,vus){
     if(vus.has(src))return;
     vus.add(src); out.push(e);
   };
-  /* Une piste désignée, sans Maj : elle seule. C'est la réponse à « qu'est-ce
-     qui court ici », et c'est le geste le plus fréquent. */
+  /* Une piste désignée, sans Maj : toute la chaîne continue de cette piste sur sa couche. */
   if(s.type==="piste"&&mev.couche>=0){
-    pousser(s.piste,{piste:s.piste, couche:s.couche});
+    const chaine=simPistesChaineMemeCouche(s.piste);
+    for(const p of chaine){
+      if(p.p)pousser(p,{piste:p, couche:s.couche});
+      else if(p.s&&p.e){
+        const pts=simArcEnPolyligne(p);
+        if(pts)pousser(p,{piste:{c:p.c, n:p.n, w:p.w, p:pts, arc:p}, couche:s.couche});
+      }
+    }
     return out;
   }
   /* Sinon le net entier. Les perçages n'ont pas d'impédance de ligne. */
@@ -1531,8 +1591,50 @@ function simVoile(c,W,H){
 /* TROIS ANALYSES PEIGNENT CE CUIVRE, ET PAS LA MÊME GRANDEUR — voir
    `simCarteSegment` dans commun/simulation-em.js : ce fichier ne sait plus ce
    qu'il peint, il sait seulement où. */
+var simZDrawnLabelsIpc=new Set();
+
+/* Recherche de la piste partenaire de la paire différentielle sur la même couche. */
+function simPistePartenaireIpc(pisteSource, netVoisinNom){
+  if(!pisteSource||!netVoisinNom||typeof V==="undefined"||!V.parNet)return null;
+  const n=V.parNet.find(x=>x&&x.nom===netVoisinNom);
+  if(!n||!n.pistes||!n.pistes.length)return null;
+  const couche=(pisteSource.c!=null)?pisteSource.c:(pisteSource.coucheIdx!=null?pisteSource.coucheIdx:-1);
+  const cands=n.pistes.filter(p=>(couche<0||p.c===couche)&&p.p&&p.p.length>=4&&p!==pisteSource);
+  if(!cands.length)return null;
+  if(cands.length===1)return cands[0];
+  const cumSource=pisteSource._cum||(pisteSource._cum=simCumul(pisteSource.p));
+  const pMid=simSurPoly(pisteSource.p,cumSource,0.5);
+  let best=null, bestDist=Infinity;
+  for(const cand of cands){
+    const cum=cand._cum||(cand._cum=simCumul(cand.p));
+    const pr=simProjPoly(cand.p,cum,pMid.x,pMid.y);
+    if(pr&&pr.d<bestDist){
+      bestDist=pr.d;
+      best=cand;
+    }
+  }
+  return best;
+}
+
+/* Projection d'un tronçon [u1, u2] d'une piste sur sa partenaire pour l'éclairer ensemble. */
+function simProjSegmentSurPisteIpc(pSource, cumSource, u1, u2, pCible, cumCible){
+  if(!pSource||!pCible||!cumSource||!cumCible)return null;
+  const q1=simSurPoly(pSource.p,cumSource,u1);
+  const q2=simSurPoly(pSource.p,cumSource,u2);
+  const pr1=simProjPoly(pCible.p,cumCible,q1.x,q1.y);
+  const pr2=simProjPoly(pCible.p,cumCible,q2.x,q2.y);
+  if(!pr1||!pr2)return null;
+  const k=typeof simKUnite==="function"?simKUnite():1;
+  if(pr1.d*k>4.0&&pr2.d*k>4.0)return null;
+  const minU=Math.max(0,Math.min(pr1.u,pr2.u));
+  const maxU=Math.min(1,Math.max(pr1.u,pr2.u));
+  if(maxU-minU<1e-4)return null;
+  return {u1:minU, u2:maxU, q1, q2, p1:{x:pr1.x,y:pr1.y}, p2:{x:pr2.x,y:pr2.y}};
+}
+
 function simZTrace(c,dpr){
   if(typeof simCarteActive!=="function"||!simCarteActive())return;
+  if(typeof simZDrawnLabelsIpc!=="undefined"&&simZDrawnLabelsIpc.clear)simZDrawnLabelsIpc.clear();
   if(typeof simPourChaqueLot!=="function"){simZTraceLot(c,dpr,null);return;}
   simPourChaqueLot(function(lot){simZTraceLot(c,dpr,lot);});
 }
@@ -1541,6 +1643,7 @@ function simZTraceLot(c,dpr,lot){
   poserMonde(c,dpr);
   const px=1/V.vue.scale;                    // un pixel écran, en unités monde
   c.lineCap="round"; c.lineJoin="round";
+  const quoi=typeof simCarteQuoi==="function"?simCarteQuoi():"";
 
   const traits=[];
   for(let i=0;i<SIM.objets.length;i++){
@@ -1549,36 +1652,74 @@ function simZTraceLot(c,dpr,lot){
     const o=s.obj;
     traits.push({chemin:simSousPoly(o.piste.p,o.cum,o.u1,o.u2),
                  w:o.piste.w||0, valeur:s.valeur, texte:s.texte,
-                 couleur:s.couleur, obj:o, seg:s.seg});
+                 couleur:s.couleur, obj:o, seg:s.seg, chaleur:s.chaleur});
   }
+
+  // En mode Z différentielle, on repère aussi les tronçons de la piste partenaire
+  const passesDiff=[];
+  if(quoi==="zdiff"){
+    const netGlobal=typeof simCarteDiffPartenaire==="function"?(simCarteDiffPartenaire()||{}).net:"";
+    for(let i=0;i<SIM.objets.length;i++){
+      const s=simCarteSegment(i);
+      if(!s||!s.obj||!s.obj.piste||!s.obj.piste.p)continue;
+      let netVoisin=(s.chaleur&&s.chaleur.z_diff_net)||"";
+      if(!netVoisin&&typeof SIM!=="undefined"&&SIM.lots&&SIM.lots.length>=2){
+        const curNet=(lot&&lot.net)||(SIM.res&&SIM.res.net)||(s.obj&&s.obj.piste&&s.obj.piste.n>=0&&mdlNetNom(s.obj.piste.n))||"";
+        const alt=SIM.lots.find(l=>l&&l!==lot&&l.net&&l.net!==curNet);
+        if(alt)netVoisin=alt.net;
+      }
+      if(!netVoisin)netVoisin=netGlobal;
+      if(!netVoisin)continue;
+      const vt=simPistePartenaireIpc(s.obj.piste, netVoisin);
+      if(vt){
+        const vtCum=vt._cum||(vt._cum=simCumul(vt.p));
+        const proj=simProjSegmentSurPisteIpc(s.obj.piste, s.obj.cum, s.obj.u1, s.obj.u2, vt, vtCum);
+        if(proj){
+          passesDiff.push({
+            chemin:simSousPoly(vt.p, vtCum, proj.u1, proj.u2),
+            w:vt.w||0,
+            couleur:s.couleur
+          });
+        }
+      }
+    }
+  }
+
   for(const t of traits){
     c.strokeStyle=t.couleur(0.30);
     c.lineWidth=t.w+px*7; c.stroke(t.chemin);
   }
+  for(const pd of passesDiff){
+    c.strokeStyle=pd.couleur(0.30);
+    c.lineWidth=pd.w+px*7; c.stroke(pd.chemin);
+  }
+
   for(const t of traits){
     c.strokeStyle=t.couleur(0.95);
     c.lineWidth=Math.max(t.w,px*2.5); c.stroke(t.chemin);
   }
+  for(const pd of passesDiff){
+    c.strokeStyle=pd.couleur(0.95);
+    c.lineWidth=Math.max(pd.w,px*2.5); c.stroke(pd.chemin);
+  }
+
   for(const t of traits){
     c.strokeStyle=t.couleur(1);
     c.lineWidth=px*2; c.stroke(t.chemin);
   }
-  simZValeurs(c,dpr,traits);
+  for(const pd of passesDiff){
+    c.strokeStyle=pd.couleur(1);
+    c.lineWidth=px*2; c.stroke(pd.chemin);
+  }
+
+  simZValeurs(c,dpr,traits,lot);
   simZNumeroLot(c,dpr,lot,traits);
 }
 
-
-/* LE NUMÉRO DU LOT, POSÉ SUR SON CUIVRE. Le tableau parle de « lot 3 » ; sans
-   ce jeton, rien sur la carte ne dit lequel c'est, et il faudrait déplier les
-   six fiches pour retrouver le morceau qui sort de la bande. Il ne paraît que
-   s'il y a plus d'un lot : sur une sélection ordinaire il n'y aurait rien à
-   distinguer, et un chiffre de plus au milieu du cuivre gênerait la lecture.
-
-   AU DÉBUT DU PARCOURS, et non au milieu : le milieu porte déjà l'étiquette
-   d'impédance, et deux cartouches au même endroit se recouvrent. */
 function simZNumeroLot(c,dpr,lot,traits){
   if(!lot||!lot.rang||!traits.length)return;
   if(typeof simLotsMultiples!=="function"||!simLotsMultiples())return;
+  if(typeof simLotsSontPaireDiff==="function"&&simLotsSontPaireDiff())return; // Deux moitiés d'une même paire : ne pas polluer avec (1) et (2)
   const o=traits[0].obj;
   if(!o||!o.piste||!o.piste.p)return;
   const m=simSurPoly(o.piste.p,o.cum,o.u1);
@@ -1843,7 +1984,8 @@ function simRetourClicIpc(wx,wy){
    Le texte est tracé en pixels écran, pas en unités monde : une étiquette qui
    grossit avec le zoom finit par couvrir la carte, et elle doit rester lisible
    quand on dézoome pour voir la liaison entière. */
-function simZValeurs(c,dpr,traits){
+function simZValeurs(c,dpr,traits,lot){
+  const quoi=typeof simCarteQuoi==="function"?simCarteQuoi():"";
   const parValeur=new Map();
   for(const t of traits){
     if(!t.texte)continue;
@@ -1853,7 +1995,7 @@ function simZValeurs(c,dpr,traits){
     const p=parValeur.get(t.texte);
     if(!p||lg>p.lg)
       parValeur.set(t.texte,{lg:lg, valeur:t.valeur, texte:t.texte,
-                             couleur:t.couleur, obj:t.obj});
+                             couleur:t.couleur, obj:t.obj, chaleur:t.chaleur});
   }
   if(!parValeur.size)return;
   const retenues=simCarteRetenir(parValeur);
@@ -1869,16 +2011,132 @@ function simZValeurs(c,dpr,traits){
        qu'elle chiffre. Posée au sommet médian de la polyligne, comme avant,
        elles se seraient toutes empilées au même endroit. */
     const o=v.obj;
-    const m=simSurPoly(o.piste.p,o.cum,(o.u1+o.u2)/2);
-    const e=w2s(m.x,m.y);
+    const m1=simSurPoly(o.piste.p,o.cum,(o.u1+o.u2)/2);
+    let e1=w2s(m1.x,m1.y);
+    let e2=null;
+    let e=e1;
+
+    if(quoi==="zdiff"){
+      let netVoisin=(v.chaleur&&v.chaleur.z_diff_net)||"";
+      let altLot=null;
+      if(typeof SIM!=="undefined"&&SIM.lots&&SIM.lots.length>=2){
+        const curNet=(lot&&lot.net)||(SIM.res&&SIM.res.net)||(o.piste&&o.piste.n>=0&&mdlNetNom(o.piste.n))||"";
+        altLot=SIM.lots.find(l=>l&&l!==lot&&l.net&&l.net!==curNet);
+        if(!netVoisin&&altLot)netVoisin=altLot.net;
+      }
+      if(!netVoisin&&typeof simCarteDiffPartenaire==="function"){
+        netVoisin=(simCarteDiffPartenaire()||{}).net||"";
+      }
+
+      // Collecter toutes les pistes candidates du partenaire sur la même couche
+      const cands=[];
+      const couche=(o.piste&&o.piste.c!=null)?o.piste.c:(o.coucheIdx!=null?o.coucheIdx:-1);
+      if(altLot&&altLot.objets){
+        for(const ao of altLot.objets){
+          if(ao&&ao.piste&&ao.piste.p&&ao.piste.p.length>=4&&ao.piste!==o.piste){
+            if(!cands.includes(ao.piste))cands.push(ao.piste);
+          }
+        }
+      }
+      if(netVoisin&&typeof V!=="undefined"&&V.parNet){
+        const n=V.parNet.find(x=>x&&x.nom===netVoisin);
+        if(n&&n.pistes){
+          for(const p of n.pistes){
+            if((couche<0||p.c===couche)&&p.p&&p.p.length>=4&&p!==o.piste){
+              if(!cands.includes(p))cands.push(p);
+            }
+          }
+        }
+        if(n&&n.arcs){
+          for(const a of n.arcs){
+            if(couche<0||a.c===couche){
+              const pts=simArcEnPolyligne(a);
+              if(pts&&pts.length>=4){
+                const ao={c:a.c, n:a.n, w:a.w, p:pts, arc:a};
+                cands.push(ao);
+              }
+            }
+          }
+        }
+      }
+
+      // Projeter m1 sur tous les candidats pour trouver le point perpendiculaire le plus proche
+      const k=typeof simKUnite==="function"?simKUnite():1;
+      let bestPr=null, bestD=Infinity;
+      for(const cand of cands){
+        const candCum=cand._cum||(cand._cum=simCumul(cand.p));
+        const pr=simProjPoly(cand.p,candCum,m1.x,m1.y);
+        if(pr&&pr.d*k<=4.0&&pr.d<bestD){
+          bestD=pr.d;
+          bestPr=pr;
+        }
+      }
+
+      if(bestPr){
+        e2=w2s(bestPr.x,bestPr.y);
+        e={x:(e1.x+e2.x)/2, y:(e1.y+e2.y)/2};
+      }
+    }
+
+    // Déduplication : si deux lots calculent la même étiquette de paire, on ne la dessine qu'une fois
+    const isDiffPair=typeof simLotsSontPaireDiff==="function"&&simLotsSontPaireDiff();
+    const labelKey=isDiffPair
+      ? ("diff_"+v.texte)
+      : (v.texte+"_"+Math.round(e.x/8)+"_"+Math.round(e.y/8));
+    if(simZDrawnLabelsIpc.has(labelKey))continue;
+    simZDrawnLabelsIpc.add(labelKey);
+
     const txt=v.texte;
-    const w=c.measureText(txt).width+10;
-    c.fillStyle="rgba(15,16,18,0.82)";
+    const w=c.measureText(txt).width+14;
+    const h=19;
+
+    // Repère de couplage / accolade entre les deux pistes
+    if(e2){
+      const dx=e2.x-e1.x, dy=e2.y-e1.y;
+      const d=Math.hypot(dx,dy);
+      if(d>1){
+        const tx=-dy/d, ty=dx/d;
+        const tk=4.5;
+
+        c.save();
+        c.strokeStyle=v.couleur(0.7);
+        c.lineWidth=1.2;
+
+        // 1. Ligne de liaison entre les 2 pistes (en pointillés discrets)
+        c.beginPath();
+        c.setLineDash([2,2]);
+        c.moveTo(e1.x,e1.y);
+        c.lineTo(e2.x,e2.y);
+        c.stroke();
+        c.setLineDash([]);
+
+        // 2. Ticks perpendiculaires sur chaque piste
+        c.beginPath();
+        c.moveTo(e1.x-tx*tk, e1.y-ty*tk);
+        c.lineTo(e1.x+tx*tk, e1.y+ty*tk);
+        c.moveTo(e2.x-tx*tk, e2.y-ty*tk);
+        c.lineTo(e2.x+tx*tk, e2.y+ty*tk);
+        c.stroke();
+
+        // 3. Petits points de contact sur le cuivre
+        c.fillStyle=v.couleur(1);
+        c.beginPath();
+        c.arc(e1.x,e1.y,2.2,0,2*Math.PI);
+        c.arc(e2.x,e2.y,2.2,0,2*Math.PI);
+        c.fill();
+
+        c.restore();
+      }
+    }
+
+    /* Un cartouche sombre sous le texte */
+    c.fillStyle="rgba(15,16,18,0.88)";
     c.beginPath();
-    if(c.roundRect)c.roundRect(e.x-w/2,e.y-9,w,18,4);
-    else c.rect(e.x-w/2,e.y-9,w,18);
+    if(c.roundRect)c.roundRect(e.x-w/2,e.y-h/2,w,h,4);
+    else c.rect(e.x-w/2,e.y-h/2,w,h);
     c.fill();
-    c.strokeStyle=v.couleur(1); c.lineWidth=1.2; c.stroke();
+    c.strokeStyle=v.couleur(1); c.lineWidth=1.3;
+    c.stroke();
     c.fillStyle="#e6e8ec";
     c.fillText(txt,e.x,e.y+0.5);
   }

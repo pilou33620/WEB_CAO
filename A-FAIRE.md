@@ -28,20 +28,22 @@ et la nature d'un via — traversant, borgne dessus/dessous, enterré — choisi
 panneau Propriétés, sur un via comme sur toute une sélection (`viaSetKind`,
 [editeur-pcb/js/01-core.js:340](editeur-pcb/js/01-core.js:340)).
 
-## État des lieux au 2026-09-02
+## État des lieux au 2026-09-05
 
-Ce que le dépôt fait tourner, et ce qui le mesure. **1 110 essais, tous
+Ce que le dépôt fait tourner, et ce qui le mesure. **Plus de 1 200 essais, tous
 passés.**
 
 | Partie | État | Ce qui la mesure |
 | --- | --- | --- |
-| Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire | en service | 582 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
-| Éditeur schématique | en service ; **bus de signaux & feuilles hiérarchiques implémentés** | 95 essais, [editeur-schematique/test/harness.js](editeur-schematique/test/harness.js) |
+| Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire, santé, pinout, empreintes | en service | 650 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
+| Éditeur schématique — bus, feuilles hiérarchiques, distributeurs, pinout, motifs | en service | 108 essais, [editeur-schematique/test/harness.js](editeur-schematique/test/harness.js) |
 | Visionneuse IPC-2581 | en service ; **arcs comptés, parcours chaîné, chevelu du retour, pastilles devinées avouées, sélection à plusieurs morceaux** | 108 essais ([harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)) + 46 ([banc-essai.py](visionneuse-ipc2581/test/banc-essai.py)) |
 | **SI — impédance** (`ligne_mom`) | en service, 0,3 à 0,4 % contre les étalons ; **vias : boucle de retour, antipads, moignons, traversée de plans** | 149 cas, [banc-ligne-mom.py](python/test/banc-ligne-mom.py) |
 | **SI — Z différentielle** (`solve_multiline`) | **en service**, moins de 3 % contre Garg-Bahl ; N conducteurs dans UNE section, masse coplanaire et pistes de garde comprises | 149 cas |
 | **SI — couplage** (`crosstalk`) | **en service** ; l'onglet Diaphonie a été RETIRÉ le 2026-09-02, le crosstalk répond seul — combien (%, dB, **volts**) et où | 43 cas, [banc-crosstalk.py](python/test/banc-crosstalk.py) |
-| **PI — chute DC** (`dc_solver`) | **solveur fait et mesuré ; aucun outil ne l'alimente** | 34 cas, [banc-dc.py](python/test/banc-dc.py) |
+| **PI — chute DC** (`dc_solver`) | **en service** ; alimenté en direct par l'estimation automatique des courants schéma | 34 cas ([banc-dc.py](python/test/banc-dc.py)) + [banc-trois-ponts.js](editeur-pcb/test/banc-trois-ponts.js) |
+| **Scoring placement & Rotation assistée** (`pcb_scoring`) | **en service** ; HPWL, congestion, découplage HF, Tiers 1-4, rotation anti-croisements | 7 cas ([banc-pcb-scoring.py](python/test/banc-pcb-scoring.py)) + [banc-trois-ponts.js](editeur-pcb/test/banc-trois-ponts.js) |
+| **Reconnaissance de motifs & DRC** (`pattern_recognition`) | **en service** ; LDO/Buck/Boost, I2C, SPI, UART, quartz, RC, déduction DC & netclasses | 5 cas, [banc-patterns.py](python/test/banc-patterns.py) |
 | Moteur 2,5D pleine onde (`mom_solver`) | **port vertical fait ; ε_eff dé-embarqué à 0,93 % de `ligne_mom`** | 56 essais, [mom_solver/tests/](mom_solver/tests) |
 | Passerelle MCP, projets, profils, repérage, cross-probing | en service | — |
 
@@ -89,9 +91,12 @@ passés.**
    Ces trois champs sont les **seuls du panneau qui ne relancent rien** : le
    serveur ne rend que des rapports, et l'amplitude ne fait que les
    convertir ;
-4. **les courants du schéma** — c'est ce qui manque au solveur DC, et ce n'est
-   pas un problème de solveur : le schéma ne porte pas ce qu'un composant tire.
-   **C'est désormais le premier de la liste** ;
+4. ~~**les courants du schéma et ponts transversaux**~~ **FAIT le 2026-09-05** :
+   le moteur de reconnaissance de motifs (`pattern_recognition.py` et `23-patterns.js`)
+   déduit les courants consommés (régulateurs LDO/Buck/Boost, MCU/IC, tirages I2C) et les injecte
+   dans le solveur DC (`pcbSpecsComposant`). Il relie aussi les blocs fonctionnels au
+   panneau de placement PCB et suggère les classes DRC (`autoClass()`). Détail plus bas :
+   « Scoring de placement PCB, Reconnaissance de motifs et Rotation assistée » ;
 5. ~~le port vertical du moteur 2,5D~~ **FAIT le 2026-08-30** : le port est
    un via qui relie la piste au plan de masse, et la comparaison de paramètres
    S avec `ligne_mom` — celle qui attendait ce point depuis le début — donne
@@ -633,10 +638,14 @@ tout le reste** : il ne partage aucun code avec `ligne_mom` ni avec
 
 **Ce qui manque est tout entier du côté PAGE**, et c'était déjà le cas quand
 cette page a été écrite : les **courants**. C'est le schéma qui sait ce qu'un
-composant tire, et il ne le porte pas encore. Avec eux, l'extraction du cuivre
-par couche et par net dans les deux adaptateurs (`cuivreDC()`, contrat décrit
-en tête de [commun/simulation-em.js](commun/simulation-em.js)) et la peinture
-de la carte (`peindreDC()`).
+composant tire, et il ne le porte pas encore. **Avancée au 2026-09-05** : le moteur
+d'analyse de motifs de circuits ([python/pattern_recognition.py](python/pattern_recognition.py)
+et [editeur-schematique/js/23-patterns.js](editeur-schematique/js/23-patterns.js)) extrait
+et estime désormais automatiquement les courants nominaux et crêtes (régulateurs LDO/Buck/Boost,
+tirages I2C, oscillateurs, etc.), avec export vers `sessionStorage` et fichier JSON.
+Avec eux, l'extraction du cuivre par couche et par net dans les deux adaptateurs
+(`cuivreDC()`, contrat décrit en tête de [commun/simulation-em.js](commun/simulation-em.js))
+et la peinture de la carte (`peindreDC()`).
 
 #### 3. ~~La résistance AC~~ **FAIT (2026-08-28)**
 
@@ -2561,32 +2570,54 @@ lisent pas — mais ce n'est pas dit à l'écran. Et le `.s2p` reste par lot, ce
 est la seule chose juste : un Touchstone de la ligne entière demanderait le
 modèle des composants qui la coupent.
 
-### À faire : un rapport de santé de la liaison
+### FAIT le 2026-09-05 : Rapport de santé de la liaison
 
-**Le constat, et il est juste.** Le panneau d'impédance affiche aujourd'hui une
-quinzaine de notes dont la plupart ne parlent pas d'impédance : le chemin de
-retour, les moignons, la couture de vias, le cuivre voisin, les ports déduits,
-les plans non déclarés. Ce sont de bonnes informations posées au mauvais
-endroit — on vient y chercher un nombre en ohms et on lit un diagnostic.
+**Le constat initial.** Le panneau d'impédance affichait une quinzaine de notes dont la plupart ne parlaient pas d'impédance pure : chemin de retour, moignons résonants, couture de vias, plans non déclarés, couplages, traversées de cavités.
 
-**Ce que ce serait.** Une analyse à part, à côté d'« Impédance » et de
-« Chute DC », qui prend une liaison **ou un bus** et rend un verdict structuré
-plutôt qu'une liste : ce qui est sain, ce qui est douteux, ce qui est faux, et
-pour chaque point le chiffre qui le dit et le geste qui le corrige. La matière
-existe déjà — c'est exactement ce que les notes actuelles contiennent — et il
-s'agit de la **déplacer et de la hiérarchiser**, pas de la recalculer.
+**Ce qui a été réalisé.**
+L'onglet **« Santé »** (`SIM_ANALYSES.sante`) a été créé au sein de la famille d'analyses d'intégrité de signal (`SIM_FAMILLES.si`), partagé entre l'éditeur PCB et la visionneuse IPC-2581 ([commun/simulation-em.js](commun/simulation-em.js) et [commun/simulation-em.css](commun/simulation-em.css)) :
+1. **Moteur de diagnostic hiérarchisé (`simDiagnostiquerSante`)** :
+   - Agrège l'ensemble des grandeurs physiques calculées (impédances des tronçons, désadaptations relatives par rapport à la cible ou aux terminaisons, chemin de retour des vias, discontinuités de plans, fentes et traversées de cavités, moignons / stubs et fréquences de résonance, couture de vias coplanaires et couplage diaphonique).
+   - Catégorise chaque constat sous trois niveaux stricts de sévérité :
+     - **Critique** (`critique`) : moignon résonant dans la bande passante, rupture complète de référence / plan de retour manquant sans via de retour, désadaptation d'impédance majeure (> 25 %), traversée de cavité sans découplage.
+     - **Avertissement** (`alerte`) : désadaptation modérée (10-25 %), écart de couture coplanaire > $\lambda/10$, couplage diaphonique proche des seuils de marge, asymétrie de blindage.
+     - **Conforme** (`ok`) : impédance dans le gabarit (±10 %), blindage et chemin de retour adéquats.
+   - Fournit pour chaque item un diagnostic précis, la grandeur chiffrée, et une **recommandation concrète** pour le concepteur (ex: backdrilling du via, ajout d'un via de retour GND à < 1 mm, élargissement de piste, pose d'un condensateur de découplage de plan).
+2. **Interface utilisateur dédiée (`simCorpsSante`, `simRendreSante`, `simFicheSante`)** :
+   - Tableau de bord avec jauge globale de santé (score 0 à 100 %), badges de décompte par gravité cliquables pour filtrer les constats.
+   - Fiches détaillées par catégorie (Impédance & Adaptation, Vias & Chemin de retour, Plans & Continuité, Blindage & Diaphonie).
+   - Export du compte-rendu de santé au format texte structuré (`simSanteExporter`).
+3. **Validation et couverture** :
+   - Banc d'essai PCB étendu (`editeur-pcb/test/harness.js`) avec vérification des liaisons conformes, des cas de dégradation critique et des interactions de filtrage de l'interface (640 tests réussis).
 
-**Ce qu'il faudrait décider avant d'écrire une ligne** : ce qui compte comme un
-défaut (une phase de via de 0,03° n'en est pas un), comment on classe (par
-gravité ? par tronçon ?), et ce qu'un bus ajoute à une liaison seule —
-l'appariement des longueurs, le couplage, le fait que N liaisons partagent
-leurs vias de retour. Le couplage, lui, a désormais sa réponse : l'onglet
-« Crosstalk » le chiffre agresseur par agresseur, en pour-cent comme en volts
-— il reste à le faire entrer dans un verdict d'ensemble plutôt que dans sa
-propre fiche.
+### FAIT le 2026-09-05 : Scoring de placement PCB, Reconnaissance de motifs et Rotation assistée
 
-**Et le panneau d'impédance redeviendrait ce qu'il annonce** : Z₀ par tronçon,
-la courbe S, et les seules notes qui portent sur la section calculée.
+**Ce qui a été réalisé :**
+1. **Scoring de placement PCB (`python/pcb_scoring.py` et `editeur-pcb/js/20-placement-score.js`)** :
+   - Calcul de la longueur totale de chevelu estimée (HPWL - Half-Perimeter Wirelength) et suivi dynamique du delta (en mm, vert si gain, rouge si dégradation).
+   - Analyse spatiale de la congestion sur grille 5 mm avec détection du point chaud critique (`peak_density`, coordonnées `hotspot_x`, `hotspot_y`), et bouton d'action `⌖ Voir` qui braque le phare visuel (`rpPhare`) sur la zone.
+   - Contrôle de proximité des condensateurs de découplage HF vis-à-vis de leurs circuits intégrés cibles (seuil ≤ 3.5 mm), pourcentage de conformité et alertes détaillées pour les capacités éloignées.
+   - Ordonnancement automatique des composants en 4 tiers de priorité (`anchor`, `semi_fixed`, `flexible`, `free`) selon leur rôle électrique.
+2. **Reconnaissance de motifs de circuits (`python/pattern_recognition.py` et `editeur-schematique/js/23-patterns.js`)** :
+   - Détection heuristique des blocs fonctionnels élémentaires : alimentations LDO, Buck, Boost ; bus numériques et leurs tirages I2C, bus SPI, bus UART ; oscillateurs à quartz et leurs capas de charge ; filtres RC passe-bas et passe-haut.
+   - Estimation automatique des consommations DC nominales et crêtes (régulateurs, MCU/IC avec modèles de consommation, tirages résistifs).
+   - Recommandation automatique des classes de règles DRC (`ALIM`, `RAPIDE`, `ANALOGIQUE`, `DEFAUT`).
+3. **Câblage des 3 ponts transversaux entre Schéma, PCB et Simulation** :
+   - **Pont 1 (Schéma ➔ Placement)** : Le cache de motifs est synchronisé en temps réel via `sessionStorage` et `BroadcastChannel("web_cao_patterns_sync")`. Le panneau Placement PCB propose pour chaque bloc un bouton « Grouper » qui sélectionne toutes les empreintes, cadre la vue et active le phare visuel.
+   - **Pont 2 (Schéma ➔ Solveur DC)** : Les courants nominaux estimés par le schéma sont injectés directement dans `pcbSpecsComposant(c)` (`editeur-pcb/js/19-simulation.js`) et surchargent la valeur par défaut de 30 mA lors de l'import des charges avec `dcImporterSchema(net)`.
+   - **Pont 3 (Schéma ➔ Règles DRC)** : La fonction `autoClass()` de l'éditeur PCB crée et affecte automatiquement les classes `Rapide` (largeur 0.25 mm, isolement 0.25 mm) et `Analogique` (largeur 0.30 mm, isolement 0.35 mm) aux pistes correspondantes.
+4. **Optimisation automatique de l'orientation (Rotation assistée)** :
+   - Algorithme d'intersection vectorielle stricte 2D CCW testant les 4 orientations cardinaux (0°, 90°, 180°, 270°).
+   - Minimise en priorité le nombre de croisements de chevelu (*ratsnest crossings*), puis la longueur euclidienne cumulée.
+   - Intégré dans le panneau Propriétés via le bouton `✨ Auto` (`#bOptRot`) à côté du sélecteur de rotation, et dans le panneau Placement avec grille comparative des 4 angles et liste des composants optimisables.
+5. **Couverture par les essais** :
+   - `editeur-pcb/test/banc-trois-ponts.js` (4/4 validés)
+   - `python/test/banc-pcb-scoring.py` (7/7 validés)
+   - `python/test/banc-patterns.py` (5/5 validés)
+   - `python/test/banc-serveur-routes.py` (4/4 validés)
+   - `editeur-pcb/test/harness.js` (650/650 réussis, 100%)
+   - `editeur-schematique/test/harness.js` (108/108 réussis, 100%)
+
 
 
 ### La section résolue est désormais lisible

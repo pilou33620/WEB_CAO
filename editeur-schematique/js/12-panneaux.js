@@ -121,9 +121,10 @@ function pkgField(el){
      ' style="margin-top:6px'+(custom?"":";display:none")+'">';
   h+='</div>';
 
-  if(base&&base.flat&&n!==2)
+  const expPins = base ? (base.pinCount || (base.flat ? 2 : null)) : null;
+  if(base&&base.flat&&expPins!==null&&n!==expPins)
     h+='<div class="pinnote"><span class="warn">'+esc(base.b)+' est un boîtier à '+
-       '2 bornes, le symbole en a '+n+'.</span></div>';
+       expPins+' borne'+(expPins>1?'s':'')+', le symbole en a '+n+'.</span></div>';
   else if(parsed&&parsed.pins&&n&&parsed.pins!==n)
     h+='<div class="pinnote"><span class="warn">'+esc(cur)+' a '+parsed.pins+
        ' broches, le symbole en a '+n+'.</span> Volontaire ? sinon prenez un '+
@@ -140,7 +141,7 @@ function bindPkgField(el){
         fr=document.getElementById("pPkgFree"),
         tx=document.getElementById("pPkgTxt");
   const set=v=>{
-    if(v)el.pkg=String(v).slice(0,40);else delete el.pkg;
+    if(v)el.pkg=String(v).slice(0,80);else delete el.pkg;
     buildList();
   };
   const baseOf=()=>PKG_BASES.find(b=>b.b===bs.value)||null;
@@ -342,6 +343,19 @@ function refreshPanels(){
               (el.mpn ? '<div style="margin-bottom:3px;"><span style="color:var(--txt-dim)">MPN :</span> <b style="color:var(--txt)">' + esc(el.mpn) + '</b></div>' : '') +
               (el.manufacturer ? '<div style="margin-bottom:3px;"><span style="color:var(--txt-dim)">Fabricant :</span> <b>' + esc(el.manufacturer) + '</b></div>' : '') +
               (specsRows ? '<table style="width:100%; font-size:10.5px; margin-top:5px; border-collapse:collapse;">' + specsRows + '</table>' : '') +
+              ((el.pinout && el.pinout.length) || (el.pinNames && el.pinNames.some(x=>x)) ? (
+                '<div style="margin-top:8px; padding-top:6px; border-top:1px dashed var(--border); font-size:10.5px;">' +
+                  '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">' +
+                    '<span style="color:#52c41a; font-weight:bold;">⚡ Brochage validé</span>' +
+                    '<span style="color:var(--txt-dim); font-size:10px;">' + ((el.pinout && el.pinout.length) || (el.pinNames && el.pinNames.length) || 0) + ' broches</span>' +
+                  '</div>' +
+                  '<div style="max-height:85px; overflow-y:auto; font-family:var(--mono); font-size:10px; background:rgba(0,0,0,0.25); border-radius:4px; padding:4px 6px; line-height:1.4;">' +
+                    ((el.pinout && el.pinout.length)
+                      ? el.pinout.map(p => '<div><span style="color:#f0abfc;font-weight:bold">#' + esc(p.number) + '</span> ' + esc(p.name) + '</div>').join('')
+                      : (el.pinNames || []).map((nm, idx) => nm ? '<div><span style="color:#f0abfc;font-weight:bold">#' + (idx+1) + '</span> ' + esc(nm) + '</div>' : '').join('')) +
+                  '</div>' +
+                '</div>'
+              ) : '') +
               (el.datasheet_local || el.datasheet_url ? (
                 '<div style="margin-top:8px; padding-top:6px; border-top:1px dashed var(--border);">' +
                   '<button class="tb mini" id="pOpenDs" style="width:100%; border-color:var(--blue); color:var(--blue); text-align:center;">' +

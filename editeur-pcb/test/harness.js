@@ -64,7 +64,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
-  "pushClear","magnet","projOnSeg","mitreSel","mitreAt","collinearRun","runFrom","segClearBad","setActive","segSegDist","segCross","routeBad","focusNet","cancelRoute","updateRoute","classOf","syncAutoZones","detachAuto","zoneCanvas","inPoly","hitTest","px","dist","boardZonePts",
+  "pushClear","magnet","projOnSeg","trkAt","mitreSel","mitreAt","collinearRun","runFrom","segClearBad","setActive","segSegDist","segCross","routeBad","focusNet","cancelRoute","updateRoute","classOf","syncAutoZones","detachAuto","zoneCanvas","inPoly","hitTest","px","dist","boardZonePts",
   "selectLayerZones","zoneUnder",
   /* repérage commun : chercher un repère, mesurer une distance
      (commun/reperage.js + le module d'adaptation de l'éditeur) */
@@ -204,7 +204,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* Les unites d'une borne, et le champ de saisie commun a tout le panneau. */
   "SIM_DC_UNITES_V","SIM_DC_UNITES_A","simDCUnites","simDCUnite",
   "simDCListeUnite","simChamp","simCorpsImpedance","simCorpsDiff",
-  "simCorpsCrosstalk","simCorpsRetour",
+  "simCorpsCrosstalk","simCorpsRetour","simCorpsSante",
   "simThermiqueDC","simDCThermique","simDCThermiquePcb",
   /* Le choix de la couche peinte, et l'oubli qui va avec. */
   "simDCOublier","simDCCouchePeinte","simDCCouchesPeintes",
@@ -218,7 +218,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simDCExportCsv","simDCExportJson","simDCNomFichier","simCsvLigne",
   "SIM_DC_VIA_ACTIF","SIM_DC_ACTIF_SEUIL","simPorteesSupposees",
   "simCulsDeSac","simDCCoucheInteressante",
-  "simChampTexte","SIM_XT","simRendreCrosstalk","simRendreRetour",
+  "simChampTexte","SIM_XT","simRendreCrosstalk","simRendreRetour","simRendreSante",
+  "simDiagnostiquerSante","simFicheSante",
   "simRendreImpedance","simRendreDiff","simDCCsvTexte","simDCJsonTexte",
   "simDCTraceSonde",
   /* liaison schéma & simulations enrichies */
@@ -226,6 +227,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "pcbParseFrequence","pcbDefinirSchema","pcbSchemaDoc","pcbComposantsSchema",
   "pcbSpecsComposant","pcbNetComposants","simFicheSchemaAdaptation","simDiffApres",
   "applyNetlist","pcbNettoyerPistesConflits",
+  "pcbVerifierPinout","pcbVerifierPinoutComposant","pcbVerifierEtNotifierPinout","pcbAfficherToastPinout","pcbOuvrirDialoguePinout",
   "SIM_DC_NOEUDS_CIBLE","SIM_DC_CARREAUX_MAX","SIM_DC_MARGE_GRILLE",
   "simRefCandidatsPcb","simPlagesDe","simMemeEcart","simZoneEn","simCoteEn",
   "simEcartsA","simPlages","simSegments","simCouturePcb","simEspacement",
@@ -254,6 +256,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simZSegment","simZActif","simZVerdict","simZTolAbs",
   "simZDiffCouleur","simZDiffTolAbs","simZDiffVerdict",
   "simCarteDiffPartenaire","simCarteDiffLegende",
+  "simTrackU","simPistePartenaire","simProjSegmentSurPiste","simLotsSontPaireDiff",
+  "simZValeurs","simZDrawnLabels",
   /* Le voile : ce qui n'est pas dans la simulation s'estompe. */
   "simVoileActif","SIM_VOILE_ALPHA",
   /* Choisir sa paire a la main plutot que de la laisser deviner. */
@@ -15033,6 +15037,563 @@ NET "GND"
     throw new Error("la piste en conflit n'a pas été supprimée");
 });
 
+T("Rapport de santé : diagnostic d'une liaison saine et conforme", ()=>{
+  const resSaine = {
+    segments: [
+      { z0: 50.2, longueur_mm: 20, w: 0.25, coplanaire: false, couche: "Top" },
+      { z0: 49.8, longueur_mm: 15, w: 0.25, coplanaire: false, couche: "Top" }
+    ],
+    discontinuites: {
+      transitions: [],
+      vias_hors_chaine: [],
+      coudes: []
+    },
+    points_s: [
+      { freq_hz: 1e9, s11_db: -28.5, s21_db: -0.15 },
+      { freq_hz: 2.4e9, s11_db: -24.2, s21_db: -0.32 }
+    ]
+  };
+
+  const diag = simDiagnostiquerSante(resSaine, null, { zCible: 50 });
+  if (diag.score_global < 90) throw new Error("Le score d'une ligne saine doit dépasser 90, obtenu: " + diag.score_global);
+  if (diag.statut !== "ok") throw new Error("Le statut global doit être 'ok', obtenu: " + diag.statut);
+  if (diag.compte.critique !== 0) throw new Error("0 critique attendu, obtenu: " + diag.compte.critique);
+  if (diag.compte.alerte !== 0) throw new Error("0 alerte attendue, obtenu: " + diag.compte.alerte);
+  if (!diag.items.some(i => i.id === "z0_cible" && i.severite === "ok")) {
+    throw new Error("Item z0_cible conforme attendu");
+  }
+  if (!diag.items.some(i => i.id === "vias_aucun" && i.severite === "ok")) {
+    throw new Error("Item vias_aucun attendu pour une ligne planaire");
+  }
+});
+
+T("Rapport de santé : détection des défauts critiques (moignon résonant, rupture de retour, forte désadaptation)", ()=>{
+  const resDegradee = {
+    segments: [
+      { z0: 72.5, longueur_mm: 30, w: 0.12, coplanaire: true, ecart: 0.2, ecart_g: 0.15, ecart_d: 0.35, couche: "Top" }
+    ],
+    discontinuites: {
+      transitions: [{
+        troncon: 1,
+        hauteur_mm: 1.6,
+        cotes: { percage_mm: 0.3, antipad_mm: 0.6, antipad_max: 0.9 },
+        moignons: {
+          depart: null,
+          arrivee: { longueur_mm: 1.1, capacite_fF: 220, resonance_hz: 1.8e9 }
+        },
+        retour: { retenus: 0, vias: [] },
+        cavite: { plan_haut: "GND", plan_bas: "+3.3V", impedance_fc_ohm: 45.0, pont_decouplage: false }
+      }],
+      vias_hors_chaine: []
+    },
+    points_s: [
+      { freq_hz: 1.8e9, s11_db: -4.2, s21_db: -12.5 }
+    ]
+  };
+
+  const diag = simDiagnostiquerSante(resDegradee, { voisinage: [{ distance: 0.15, net: "CLK_FAST" }] }, { zCible: 50, fMax: 2.5e9 });
+
+  if (diag.statut !== "critique") throw new Error("Statut attendu 'critique', obtenu: " + diag.statut);
+  if (diag.compte.critique < 3) throw new Error("Au moins 3 défauts critiques attendus, obtenu: " + diag.compte.critique);
+  
+  const idsCritiques = diag.items.filter(i => i.severite === "critique").map(i => i.id);
+  if (!idsCritiques.includes("z0_cible")) throw new Error("Défaut critique Z0 cible attendu");
+  if (!idsCritiques.includes("moignon_crit")) throw new Error("Défaut critique moignon résonant attendu");
+  if (!idsCritiques.includes("retour_aucun")) throw new Error("Défaut critique boucle de retour absente attendu");
+  if (!idsCritiques.includes("cavite_non_decouplee")) throw new Error("Défaut critique cavité non découplée attendu");
+
+  // Vérifier qu'un geste correctif est bien fourni
+  const moignon = diag.items.find(i => i.id === "moignon_crit");
+  if (!moignon.recommandation || !moignon.recommandation.includes("contre-perçage")) {
+    throw new Error("Geste correctif de contre-perçage attendu pour le moignon");
+  }
+});
+
+T("Rapport de santé : rendu HTML, structure des fiches et filtres", ()=>{
+  const garde = [SIM.res, SIM.doc, SIM.analyse, SIM.santeFiltre];
+  try {
+    SIM.res = {
+      segments: [{ z0: 62.0, longueur_mm: 10, w: 0.18, coplanaire: false, couche: "Top" }],
+      discontinuites: { transitions: [], vias_hors_chaine: [] },
+      points_s: [{ freq_hz: 1e9, s11_db: -14.0 }]
+    };
+    SIM.doc = { voisinage: [] };
+    SIM.analyse = "sante";
+    SIM.santeFiltre = "tous";
+
+    const htmlTous = simRendreSante();
+    if (!htmlTous.includes("simSanteHeader")) throw new Error("En-tête simSanteHeader absent");
+    if (!htmlTous.includes("Score global de santé")) throw new Error("Libellé du score global absent");
+    if (!htmlTous.includes("simSanteCard")) throw new Error("Cartes de diagnostic absentes");
+
+    SIM.santeFiltre = "anomalies";
+    const htmlAnomalies = simRendreSante();
+    if (!htmlAnomalies.includes("simSanteCard")) throw new Error("Les cartes d'anomalies doivent être présentes");
+  } finally {
+    [SIM.res, SIM.doc, SIM.analyse, SIM.santeFiltre] = garde;
+  }
+});
+
+/* ==========================================================================
+   Vérification et conformité du Pinout PCB (Pitch, Span, Boîtier, Nets)
+   ========================================================================== */
+
+T("Pinout PCB : conformité complète d'un composant (pas, taille de boîtier, broches)", ()=>{
+  const schDoc = {
+    pages: [{
+      comps: [{
+        ref: "U1",
+        value: "NE555",
+        pkg: "SOIC-8",
+        npins: 8,
+        pinout: [
+          { number: 1, name: "GND", type: "power" },
+          { number: 2, name: "TRIG", type: "input" },
+          { number: 3, name: "OUT", type: "output" },
+          { number: 4, name: "RESET", type: "input" },
+          { number: 5, name: "CTRL", type: "passive" },
+          { number: 6, name: "THRES", type: "input" },
+          { number: 7, name: "DISCH", type: "output" },
+          { number: 8, name: "VCC", type: "power" }
+        ]
+      }]
+    }]
+  };
+  pcbDefinirSchema(schDoc);
+
+  // Empreinte PCB conforme créée avec SOIC-8 (pitch 1.27, span 5.4, 8 pins)
+  const fp = mkFp("U1", "NE555", "SOIC-8", 8);
+  fp.nets = { 1: "GND", 8: "+5V" };
+  S.fps = [fp];
+
+  const diag = pcbVerifierPinoutComposant(pcbComposantsSchema().get("U1"), fp);
+  if (!diag) throw new Error("Diagnostic non retourné");
+  if (!diag.conforme) throw new Error("Le composant devrait être déclaré conforme");
+  if (!diag.pitchCheck.ok) throw new Error("Le pas (pitch) 1.27mm devrait être conforme");
+  if (!diag.spanCheck.ok) throw new Error("La taille de boîtier (span) 5.4mm devrait être conforme");
+  if (!diag.pinCountCheck.ok) throw new Error("Le nombre de pastilles (8) devrait être conforme");
+  if (diag.anomalies.length > 0) throw new Error("Aucune anomalie attendue : " + diag.anomalies.join(", "));
+
+  const verifGlobale = pcbVerifierPinout();
+  if (!verifGlobale.conforme) throw new Error("La vérification globale PCB devrait être conforme");
+  if (verifGlobale.nbAnomalies !== 0) throw new Error("nbAnomalies devrait valoir 0");
+});
+
+T("Pinout PCB : détection d'une mauvaise distance entre les pins (pitch)", ()=>{
+  const schDoc = {
+    pages: [{
+      comps: [{
+        ref: "U2",
+        value: "ATmega328",
+        pkg: "SOIC-28", // attend pitch 1.27 mm
+        npins: 28
+      }]
+    }]
+  };
+  pcbDefinirSchema(schDoc);
+
+  // Empreinte PCB avec un mauvais pas de 2.54 mm (type DIP au lieu de SOIC)
+  const fp = mkFp("U2", "ATmega328", "SOIC-28", 28);
+  fp.pitch = 2.54; // Mauvaise distance entre broches !
+  S.fps = [fp];
+
+  const diag = pcbVerifierPinoutComposant(pcbComposantsSchema().get("U2"), fp);
+  if (diag.conforme) throw new Error("Une anomalie de pas doit être détectée");
+  if (diag.pitchCheck.ok) throw new Error("pitchCheck devrait être faux");
+  if (!diag.anomalies.some(a => a.toLowerCase().includes("pitch") || a.toLowerCase().includes("distance"))) {
+    throw new Error("L'anomalie de pitch doit être explicitement mentionnée dans le diagnostic");
+  }
+  if (!diag.peutReposer) throw new Error("L'empreinte devrait proposer une correction automatique (peutReposer)");
+});
+
+T("Pinout PCB : détection d'une mauvaise taille / écartement du boîtier (span)", ()=>{
+  const schDoc = {
+    pages: [{
+      comps: [{
+        ref: "U3",
+        value: "LM358",
+        pkg: "DIP-8", // attend span 7.62 mm
+        npins: 8
+      }]
+    }]
+  };
+  pcbDefinirSchema(schDoc);
+
+  // Empreinte PCB avec un écartement incorrect de 4.0 mm
+  const fp = mkFp("U3", "LM358", "DIP-8", 8);
+  fp.span = 4.0; // Mauvaise taille de boîtier !
+  S.fps = [fp];
+
+  const diag = pcbVerifierPinoutComposant(pcbComposantsSchema().get("U3"), fp);
+  if (diag.conforme) throw new Error("Une anomalie de span/boîtier doit être détectée");
+  if (diag.spanCheck.ok) throw new Error("spanCheck devrait être faux");
+  if (!diag.anomalies.some(a => a.toLowerCase().includes("taille") || a.toLowerCase().includes("boîtier") || a.toLowerCase().includes("écartement"))) {
+    throw new Error("L'anomalie de taille de boîtier doit être mentionnée");
+  }
+
+  // Vérifier la correction automatique avec applyPkgGeom
+  const okRepose = applyPkgGeom(fp);
+  if (!okRepose) throw new Error("applyPkgGeom devrait réussir");
+  const diagApres = pcbVerifierPinoutComposant(pcbComposantsSchema().get("U3"), fp);
+  if (!diagApres.conforme) throw new Error("Le composant devrait être devenu conforme après reposer l'empreinte");
+  if (!diagApres.spanCheck.ok) throw new Error("Le span devrait être redevenu conforme (7.62 mm)");
+});
+
+T("Pinout PCB : détection d'inversion alim / masse et court-circuit sur les broches", ()=>{
+  const schDoc = {
+    pages: [{
+      comps: [{
+        ref: "U4",
+        value: "STM32F103",
+        pkg: "LQFP-48",
+        npins: 48,
+        pinout: [
+          { number: 1, name: "VBAT", type: "power" },
+          { number: 8, name: "VSSA", type: "power" },
+          { number: 9, name: "VDDA", type: "power" }
+        ]
+      }]
+    }]
+  };
+  pcbDefinirSchema(schDoc);
+
+  const fp = mkFp("U4", "STM32F103", "LQFP-48", 48);
+  // Court-circuit : VSSA (masse) relié au net 3V3, et VDDA (alim) relié à GND !
+  fp.nets = { 8: "3V3", 9: "GND" };
+  S.fps = [fp];
+
+  const diag = pcbVerifierPinoutComposant(pcbComposantsSchema().get("U4"), fp);
+  if (diag.conforme) throw new Error("L'inversion alimentation/masse doit rendre le pinout non-conforme");
+  const p8 = diag.pins.find(p => p.pin === 8);
+  const p9 = diag.pins.find(p => p.pin === 9);
+  if (!p8 || p8.statut !== "critique") throw new Error("La broche 8 (masse connectée à 3V3) doit être en statut critique");
+  if (!p9 || p9.statut !== "critique") throw new Error("La broche 9 (alim connectée à GND) doit être en statut critique");
+});
+
+T("Pinout PCB : mise à jour de l'UI (bouton entête bCheckPinout et toast)", ()=>{
+  // Création du bouton et toast dans le DOM stub
+  let btn = document.getElementById("bCheckPinout");
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.id = "bCheckPinout";
+    document.body.appendChild(btn);
+  }
+
+  const schDoc = {
+    pages: [{
+      comps: [{
+        ref: "R1",
+        value: "10k",
+        pkg: "0805",
+        npins: 2
+      }]
+    }]
+  };
+  pcbDefinirSchema(schDoc);
+
+  const fp = mkFp("R1", "10k", "0805", 2);
+  S.fps = [fp];
+
+  const res = pcbVerifierEtNotifierPinout(false);
+  if (!res || !res.conforme) throw new Error("Vérification R1 devrait réussir");
+  if (!btn.className.includes("pcb-btn-pinout-ok")) {
+    throw new Error("Le bouton bCheckPinout devrait avoir la classe pcb-btn-pinout-ok");
+  }
+  if (!btn.innerHTML.includes("Conforme")) {
+    throw new Error("Le texte du bouton devrait indiquer Conforme");
+  }
+
+  const toast = document.getElementById("pcbPinoutToast");
+  if (!toast) throw new Error("Le toast de notification de pinout devrait être présent dans le DOM");
+  if (!toast.className.includes("ok")) throw new Error("Le toast devrait avoir la classe ok");
+});
+
+T("empreinte Trou metalise : reconnaissance géométrique, pastille oblongue et drill 1.2mm", ()=>{
+  const pkgName = "Trou metalise diam. trou 1.2mm - dim. plated 2.54mmx1.6mm";
+  const g = pkgGeom(pkgName, 1);
+  if(!g) throw new Error("pkgGeom n'a pas reconnu : " + pkgName);
+  if(g.pins !== 1) throw new Error("pins attendu 1, obtenu " + g.pins);
+  if(!Array.isArray(g.pads) || g.pads.length !== 1) throw new Error("pads manquant dans pkgGeom");
+  const p = g.pads[0];
+  if(Math.abs(p.drill - 1.2) > 1e-4) throw new Error("drill attendu 1.2, obtenu " + p.drill);
+  if(Math.abs(p.w - 2.54) > 1e-4) throw new Error("largeur w attendue 2.54, obtenue " + p.w);
+  if(Math.abs(p.h - 1.6) > 1e-4) throw new Error("hauteur h attendue 1.6, obtenue " + p.h);
+  if(p.shape !== "oval") throw new Error("forme attendue 'oval', obtenue " + p.shape);
+
+  // Création par mkFp
+  const fp = mkFp("TP1", "TP", pkgName, 1);
+  const pads = padsOf(fp);
+  if(pads.length !== 1) throw new Error("padsOf(fp) doit contenir 1 pastille");
+  if(Math.abs(pads[0].drill - 1.2) > 1e-4) throw new Error("drill de pastille incorrect : " + pads[0].drill);
+  if(Math.abs(pads[0].w - 2.54) > 1e-4 || Math.abs(pads[0].h - 1.6) > 1e-4) {
+    throw new Error("dimensions pastille incorrectes : " + pads[0].w + "x" + pads[0].h);
+  }
+
+  // Import par netlist
+  const nl = `* Netlist test
+=== Composants ===
+    TP1     TP                ` + pkgName + `
+=== Feuille 1 — Schéma ===
+NET "GND"
+    TP1.1
+`;
+  carteVide();
+  const res = applyNetlist(nl, true);
+  if(res.err) throw new Error("Erreur import netlist : " + res.err);
+  const importedFp = S.fps.find(f => f.ref === "TP1");
+  if(!importedFp) throw new Error("TP1 non trouvé dans S.fps après import");
+  const impPads = padsOf(importedFp);
+  if(impPads.length !== 1) throw new Error("Pastilles de TP1 importé != 1");
+  if(Math.abs(impPads[0].drill - 1.2) > 1e-4) throw new Error("drill après import != 1.2");
+  if(impPads[0].net !== "GND") throw new Error("Net de la pastille TP1.1 attendu 'GND', obtenu: " + impPads[0].net);
+
+  // Vérification de conformité pinout
+  const diag = pcbVerifierPinoutComposant({ ref: "TP1", value: "TP", pkg: pkgName, npins: 1 }, importedFp);
+  if(!diag || !diag.conforme) throw new Error("TP1 devrait être conforme : " + JSON.stringify(diag));
+});
+
+T("empreintes Barrettes 2.54 mm et 1.27 mm : reconnaissance et géométrie", ()=>{
+  // Barrettes 2.54 mm
+  const g254_4 = pkgGeom("HEADER-2.54-1x4", 4);
+  if(!g254_4 || g254_4.pins !== 4 || g254_4.pitch !== 2.54 || g254_4.style !== "row") {
+    throw new Error("Échec pkgGeom HEADER-2.54-1x4 : " + JSON.stringify(g254_4));
+  }
+  const fp254_4 = mkFp("J1", "CONN4", "HEADER-2.54-1x4", 4);
+  const pads254 = padsOf(fp254_4);
+  if(pads254.length !== 4) throw new Error("HEADER-2.54-1x4 doit avoir 4 pastilles");
+  if(pads254[0].shape !== "rect" || pads254[1].shape !== "circ") throw new Error("Broche 1 carrée, suivantes rondes");
+  if(pads254[0].drill <= 0) throw new Error("Les pastilles de barrette doivent être traversantes");
+
+  // Barrettes double rangée 2.54 mm
+  const g254_2x5 = pkgGeom("HEADER-2.54-2x5", 10);
+  if(!g254_2x5 || g254_2x5.pins !== 10 || g254_2x5.style !== "dip" || g254_2x5.span !== 2.54) {
+    throw new Error("Échec pkgGeom HEADER-2.54-2x5 : " + JSON.stringify(g254_2x5));
+  }
+
+  // Barrettes 1.27 mm
+  const g127_4 = pkgGeom("HEADER-1.27-1x4", 4);
+  if(!g127_4 || g127_4.pins !== 4 || g127_4.pitch !== 1.27 || g127_4.style !== "row") {
+    throw new Error("Échec pkgGeom HEADER-1.27-1x4 : " + JSON.stringify(g127_4));
+  }
+
+  // Barrettes double rangée 1.27 mm
+  const g127_2x5 = pkgGeom("HEADER-1.27-2x5", 10);
+  if(!g127_2x5 || g127_2x5.pins !== 10 || g127_2x5.style !== "dip" || g127_2x5.span !== 1.27) {
+    throw new Error("Échec pkgGeom HEADER-1.27-2x5 : " + JSON.stringify(g127_2x5));
+  }
+});
+
+T("empreintes Connecteurs USB : USB-C-6P, USB-C-16P, MICRO-USB-B", ()=>{
+  // USB-C 6P (Alim)
+  const gC6 = pkgGeom("USB-C-6P", 5);
+  if(!gC6 || !Array.isArray(gC6.pads) || gC6.pads.length !== 10) {
+    throw new Error("USB-C-6P doit comporter 10 pastilles (6 CMS + 4 traversantes de blindage)");
+  }
+  const fpC6 = mkFp("J_USB1", "USB-C", "USB-C-6P", 5);
+  const padsC6 = padsOf(fpC6);
+  const smdC6 = padsC6.filter(p => p.drill === 0);
+  const pthC6 = padsC6.filter(p => p.drill > 0);
+  if(smdC6.length !== 6 || pthC6.length !== 4) {
+    throw new Error("Mauvaise répartition CMS / traversant pour USB-C-6P : " + smdC6.length + " / " + pthC6.length);
+  }
+
+  // USB-C 16P
+  const gC16 = pkgGeom("USB-C-16P", 8);
+  if(!gC16 || !Array.isArray(gC16.pads) || gC16.pads.length !== 16) {
+    throw new Error("USB-C-16P doit comporter 16 pastilles (12 CMS + 4 traversantes)");
+  }
+  const fpC16 = mkFp("J_USB2", "USB-C", "USB-C-16P", 8);
+  const padsC16 = padsOf(fpC16);
+  if(padsC16.length !== 16) throw new Error("Nombre de pastilles USB-C-16P incorrect : " + padsC16.length);
+
+  // Micro-USB Type-B
+  const gMicro = pkgGeom("MICRO-USB-B", 6);
+  if(!gMicro || !Array.isArray(gMicro.pads) || gMicro.pads.length !== 9) {
+    throw new Error("MICRO-USB-B doit comporter 9 pastilles (5 CMS + 4 traversantes)");
+  }
+  const fpMicro = mkFp("J_USB3", "MICRO-USB", "MICRO-USB-B", 6);
+  const padsMicro = padsOf(fpMicro);
+  if(padsMicro.length !== 9) throw new Error("Nombre de pastilles MICRO-USB-B incorrect : " + padsMicro.length);
+});
+
+T("empreintes Diodes & Protections : SOT-23-6 et SOD-523", ()=>{
+  const gSOT = pkgGeom("SOT-23-6", 6);
+  if(!gSOT || gSOT.pins !== 6 || gSOT.style !== "sop" || gSOT.pitch !== 0.95) {
+    throw new Error("Échec pkgGeom SOT-23-6 : " + JSON.stringify(gSOT));
+  }
+  const fpSOT = mkFp("U_ESD", "USBLC6", "SOT-23-6", 6);
+  const padsSOT = padsOf(fpSOT);
+  if(padsSOT.length !== 6) throw new Error("SOT-23-6 doit avoir 6 pastilles");
+
+  const gSOD = pkgGeom("SOD-523", 2);
+  if(!gSOD || gSOD.pins !== 2 || gSOD.style !== "chip" || gSOD.span !== 1.6) {
+    throw new Error("Échec pkgGeom SOD-523 : " + JSON.stringify(gSOD));
+  }
+});
+
+T("importation netlist complète : intégration des 5 familles de nouveaux composants", ()=>{
+  const nl = `* Netlist complète nouveaux composants
+=== Composants ===
+    U1      LM358             SOIC-8
+    FB1     120R              0805
+    D1      TVS               SOD-323
+    U2      USBLC6            SOT-23-6
+    J1      USB-C             USB-C-6P
+    J2      USB-C             USB-C-16P
+    J3      MICRO-USB         MICRO-USB-B
+    J4      CONN4             HEADER-2.54-1x4
+    J5      CONN2x5           HEADER-1.27-2x5
+=== Feuille 1 — Schéma ===
+NET "VBUS"
+    J1.1  J2.1  J3.1  FB1.1
+NET "GND"
+    J1.2  J2.2  J3.5  U1.5  U2.2  D1.1
+NET "VCC"
+    FB1.2  U1.4  U2.5
+NET "USB_DP"
+    J2.3  J3.3  U2.1  J4.2
+NET "USB_DM"
+    J2.4  J3.2  U2.3  J4.3
+NET "SHIELD"
+    J1.5  J2.8  J3.6
+`;
+  carteVide();
+  const res = applyNetlist(nl, true);
+  if(res.err) throw new Error("Erreur import netlist : " + res.err);
+
+  const refs = ["U1","FB1","D1","U2","J1","J2","J3","J4","J5"];
+  for(const ref of refs) {
+    const fp = S.fps.find(f => f.ref === ref);
+    if(!fp) throw new Error("Composant manquant après import : " + ref);
+    const pads = padsOf(fp);
+    if(!pads.length) throw new Error("Aucune pastille pour " + ref);
+  }
+
+  // Vérifier qu'un signal commun (VBUS) est bien rattaché aux pastilles correspondantes
+  const j1 = S.fps.find(f => f.ref === "J1");
+  const j1Pads = padsOf(j1);
+  const j1VbusPads = j1Pads.filter(p => p.n === 1);
+  if(j1VbusPads.length !== 2) throw new Error("J1 devrait avoir 2 pastilles d'alim VBUS (n:1)");
+  for(const p of j1VbusPads) {
+    if(p.net !== "VBUS") throw new Error("Pastille VBUS de J1 mal rattachée : " + p.net);
+  }
+
+  // Vérifier J5 (HEADER-1.27-2x5)
+  const j5 = S.fps.find(f => f.ref === "J5");
+  if(j5.pitch !== 1.27 || j5.span !== 1.27 || j5.pins !== 10) {
+    throw new Error("J5 (HEADER-1.27-2x5) géométrie incorrecte : " + JSON.stringify(j5));
+  }
+});
+
+T("simulation EM - Z Différentielle : projection géométrique, piste partenaire et déduplication de paire", () => {
+  S.tracks = [];
+  const tP = { l: 0, net: "D_P", w: 0.2, x1: 10, y1: 10, x2: 10, y2: 40 };
+  const tN = { l: 0, net: "D_N", w: 0.2, x1: 10.3, y1: 10, x2: 10.3, y2: 40 };
+  const tLoin = { l: 0, net: "D_N", w: 0.2, x1: 50, y1: 10, x2: 50, y2: 40 };
+  const tAutreCouche = { l: 1, net: "D_N", w: 0.2, x1: 10.3, y1: 10, x2: 10.3, y2: 40 };
+  S.tracks.push(tP, tN, tLoin, tAutreCouche);
+
+  // 1. Détection de la piste partenaire
+  const vt = simPistePartenaire(tP, "D_N");
+  if (!vt || vt !== tN) throw new Error("La piste partenaire D_N devrait être tN");
+
+  const vtFaux = simPistePartenaire(tP, "INCONNU");
+  if (vtFaux !== null) throw new Error("Aucun partenaire ne devrait être trouvé pour un net inexistant");
+
+  // 2. Calcul du paramètre u sur la piste
+  const uMid = simTrackU(tP, { x: 10, y: 25 });
+  if (Math.abs(uMid - 0.5) > 1e-4) throw new Error("u au milieu devrait être 0.5, obtenu: " + uMid);
+
+  // 3. Projection du segment sur la piste partenaire
+  const proj = simProjSegmentSurPiste(tP, 0.2, 0.8, tN);
+  if (!proj) throw new Error("La projection devrait réussir pour deux pistes couplées");
+  if (Math.abs(proj.u1 - 0.2) > 1e-3 || Math.abs(proj.u2 - 0.8) > 1e-3) {
+    throw new Error("u1 et u2 projetés invalides : " + JSON.stringify(proj));
+  }
+
+  // 4. Détection de lots appariés pour suppression des badges redondants (1) et (2)
+  SIM.lots = [
+    { net: "D_P", res: { couplage: { chaleur: [{ z_diff_net: "D_N" }] } } },
+    { net: "D_N", res: { couplage: { chaleur: [{ z_diff_net: "D_P" }] } } }
+  ];
+  // En mode autre que zdiff, retourne false
+  if (simLotsSontPaireDiff()) throw new Error("simLotsSontPaireDiff ne doit être actif qu'en mode zdiff");
+
+  // Simule l'analyse en mode zdiff
+  SIM.analyse = "zdiff";
+  if (!simLotsSontPaireDiff()) throw new Error("Deux lots mutuellement appariés en zdiff doivent être reconnus comme paire");
+
+  // 5. Test du rendu de l'accolade visuelle, centrage et déduplication pour la paire différentielle
+  SIM.ouvert = true;
+  SIM.analyse = "diff";
+  const lotP = {
+    net: "D_P",
+    objets: [{ trk: tP, u1: 0, u2: 1 }],
+    res: {
+      segments: [{ longueur: 10, z0: 50 }],
+      couplage: { chaleur: [{ z_diff: 100, z_diff_net: "D_N" }] }
+    }
+  };
+  const lotN = {
+    net: "D_N",
+    objets: [{ trk: tN, u1: 0, u2: 1 }],
+    res: {
+      segments: [{ longueur: 10, z0: 50 }],
+      couplage: { chaleur: [{ z_diff: 100, z_diff_net: "D_P" }] }
+    }
+  };
+  SIM.lots = [lotP, lotN];
+  simZDrawnLabels.clear();
+
+  const canvasEd = {
+    traits: [], cercles: [], txt: [], _p: null,
+    save() {}, restore() {}, setTransform() {}, scale() {},
+    stroke() { if (this._p) this.traits.push(this._p); this._p = null; },
+    beginPath() { this._p = null; },
+    moveTo(x, y) { this._p = [x, y, x, y]; },
+    lineTo(x, y) { if (this._p) { this._p[2] = x; this._p[3] = y; } },
+    arc(x, y, r) { this.cercles.push([x, y, r]); this._p = null; },
+    rect() {}, roundRect() {}, fill() {},
+    fillText(s, x, y) { this.txt.push({ s, x, y }); },
+    measureText(s) { return { width: 6 * String(s).length }; },
+    setLineDash() {}
+  };
+
+  SIM.objets = lotP.objets;
+  SIM.res = lotP.res;
+
+  simZValeurs(canvasEd, lotP);
+
+  if (canvasEd.txt.length !== 1 || canvasEd.txt[0].s !== "100,0 Ω") {
+    throw new Error("Badge '100,0 Ω' attendu, obtenu: " + JSON.stringify(canvasEd.txt));
+  }
+  // tP est à x=10, tN est à x=10.3 => milieu calculé par w2s
+  const expMidX = (w2s(10, 25).x + w2s(10.3, 25).x) / 2;
+  if (Math.abs(canvasEd.txt[0].x - expMidX) > 1e-3) {
+    throw new Error("Le cartouche doit être centré entre les deux pistes à " + expMidX + ", obtenu: " + canvasEd.txt[0].x);
+  }
+  if (canvasEd.cercles.length !== 2) {
+    throw new Error("2 points de contact attendus (sur tP et tN), obtenu: " + canvasEd.cercles.length);
+  }
+  if (canvasEd.traits.length < 1) {
+    throw new Error("La ligne pointillée de liaison doit être tracée");
+  }
+
+  // Second lot: déduplication
+  SIM.objets = lotN.objets;
+  SIM.res = lotN.res;
+  simZValeurs(canvasEd, lotN);
+  if (canvasEd.txt.length !== 1) {
+    throw new Error("Le second lot ne doit pas dupliquer le badge");
+  }
+
+  SIM.analyse = "impedance";
+  SIM.lots = [];
+  SIM.ouvert = false;
+  S.tracks = [];
+});
+
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
 process.exit(ko?1:0);
+
 

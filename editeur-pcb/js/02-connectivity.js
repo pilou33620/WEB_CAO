@@ -776,6 +776,11 @@ function applyNetlist(txt,dropMissing){
         if(!fpFree(fp)){
           const g=fpGeomFor(meta.pkg,pins);
           fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
+          if(g.pads){
+            fp.pads=g.pads.map(padClone);
+            if(g.body)fp.body={...g.body};
+            fpSyncPins(fp);
+          }
           repkg.push(fp);
         }
       }

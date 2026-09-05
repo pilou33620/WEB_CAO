@@ -218,6 +218,9 @@ class Component:
     mount_type: str = "UNKNOWN"
     value: str = ""  # Valeur du composant (ex: 10k, 100nF)
     tolerance: str = ""  # Tolérance du composant (ex: +-0.1pF, 5%)
+    comp_type: str = ""  # Type de composant (RESISTOR, CAPACITOR, INDUCTOR, etc.)
+    part_number: str = ""  # Référence de pièce / OEMDesignNumberRef
+    properties: Dict[str, str] = field(default_factory=dict)  # Propriétés personnalisées (<Property>)
     package_obj: Optional[Package] = None
     # Broche -> nom de net, tel que le donnent les <LogicalNet><PinRef> du
     # fichier -- pas les <Pad> internes a un <Pin>, quasi toujours absents
