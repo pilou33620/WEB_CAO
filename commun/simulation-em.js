@@ -4365,11 +4365,22 @@ function simRetourCellule(t){
                   (r.plans_arrivee||["?"]).join("/"))+"</span>";
   if(r.source==="absent")
     return '<span class="simFaible">non envoyé</span>';
-  if(!r.retenus)
+  if(!r.retenus){
+    if(r.plus_proche_hors_rayon_mm!=null){
+      return '<span class="z0ko" title="Aucun via dans le rayon de '+(r.rayon_mm||5)+' mm — le plus proche trouvé est à '+simNb(r.plus_proche_hors_rayon_mm,2)+' mm (trop éloigné, boucle ouverte)">aucun &le; '+(r.rayon_mm||5)+' mm</span><br><small class="simFaible">plus proche : '+simNb(r.plus_proche_hors_rayon_mm,2)+' mm</small>';
+    }
     return '<span class="z0ko">aucun</span>';
+  }
   const proche=(r.vias||[]).filter(v=>v.retenu)
                            .reduce((m,v)=>Math.min(m,v.distance_mm),Infinity);
   const score=(t.modelise||{}).score_reconstruction_pct;
+  const isVigi = (r.statut === "vigilance" || (isFinite(proche) && proche > (r.rayon_optimal_mm || 1.8)));
+  if(isVigi){
+    return '<span class="z0warn" style="color:#f59f00;font-weight:700;" title="Zone de vigilance (1,8 mm &lt; d &le; 5,0 mm) : boucle large, inductance de boucle réelle calculée">vigilance</span><br><small style="color:#f59f00;">'+
+           r.retenus+" via"+(r.retenus>1?"s":"")+" · "+simNb(proche,2)+" mm"+
+           (score!=null?" · "+simNb(score,1)+"%":"")+
+           "</small>";
+  }
   return '<span class="z0ok">'+r.retenus+" via"+(r.retenus>1?"s":"")+
          "</span><br><small>"+simNb(proche,2)+" mm"+
          (score!=null?" · "+simNb(score,1)+"%":"")+
@@ -4419,6 +4430,14 @@ function simCheveluRes(){
   let idx=0;
   for(const t of trs){
     const ret=t.retour||{}, mod=t.modelise||{}, cotes=t.cotes||{};
+    /* LES PONTS VIENNENT DU RÉSULTAT, PAS DE LA PAGE. Ce chevelu-ci est celui
+       qui lit `SIM.res` — c'est le seul que la visionneuse ait, et l'éditeur
+       s'en sert aussi hors routage. Le serveur a déjà fait le travail :
+       `cavite.ponts_detail` porte chaque découplage retenu, sa distance, son
+       repère ET SA PART du courant, calculée par division de courant complexe.
+       On n'en refait donc rien ici — deux calculs pour une même grandeur, ce
+       sont deux valeurs le jour où l'un bouge. */
+    const cav=t.cavite||{};
     /* SANS POSITION, PAS DE TRAIT. Une page qui n'envoie pas le via ne peut
        pas se voir dessiner son chevelu, et l'inventer au raccord serait poser
        un point là où l'outil n'en connaît aucun. */
@@ -4447,7 +4466,18 @@ function simCheveluRes(){
          inductance trop petite de près de vingt pour cent, donc flatteuse — le
          chevelu doit le dire, sinon il donne à voir une certitude qu'il n'a
          pas. */
-      supposee:!!ret.portee_supposee
+      supposee:!!ret.portee_supposee,
+      /* Le chemin que le retour prend RÉELLEMENT quand aucun via de masse ne
+         peut refermer : les découplages qui joignent les deux plans, chacun
+         avec sa part. Vide quand la référence ne change pas de net — le retour
+         passe alors par les vias de masse, qui sont déjà à l'écran. */
+      ponts:(cav.ponts_detail||[]),
+      partCavite:cav.part_cavite==null?0:cav.part_cavite,
+      freqParts:cav.freq_parts_hz||0,
+      pontRayon:cav.rayon_mm||0,
+      /* `cherche` à faux veut dire que la page n'a pas regardé : ce n'est pas
+         « il n'y a pas de découplage », et les deux ne se disent pas pareil. */
+      pontsCherches:cav.plan_haut?cav.cherche!==false:null
     });
   }
   return out;
@@ -4533,11 +4563,33 @@ function simRetourNotes(vias){
        " mm entre eux. <b>Aucun via de masse ne peut les joindre</b> : il "+
        "joindrait de la masse à de la masse. Le courant passe par la capacité "+
        "répartie des deux plans ("+simNb(cav.capacite_plans_pF,0)+" pF"+
-       (cav.aire_source==="page"?"":", aire supposée")+") et par les "+
-       "découplages.</p>";
+       (cav.aire_source==="page"?"":", aire supposée")+
+       (cav.aire_majoree?", aire de la CARTE ENTIÈRE donc majorée":"")+
+       ") et par les découplages.</p>";
+    /* UNE DÉDUCTION NE S'ANNONCE PAS COMME UNE LECTURE. Le net d'un plan peut
+       venir du RÔLE forcé dans l'empilage plutôt que de son cuivre — « PWR »
+       sur une couche déclarée d'alimentation dont aucun net d'alim ne porte de
+       zone. Tout le verdict ci-dessus en découle, et il est CRITIQUE : la
+       personne qui le lit doit savoir sur quoi il repose. */
+    const sup=(cavites[0].retour&&cavites[0].retour.nets_supposes)||[];
+    if(sup.length)
+      h+='<p class="simNote">· Le net de <b>'+simEsc(sup.join(" / "))+
+         "</b> n'a pas été lu dans le cuivre : il est <b>déduit du rôle</b> "+
+         "donné à la couche dans l'empilage. Tout ce verdict en dépend — "+
+         "vérifiez ce rôle avant d'y croire.</p>";
     if(cav.etalement_seul){
-      h+='<p class="simNote">· Cette page ne cherche pas les découplages : on '+
-         "ne compte que l'étalement dans les plans ("+
+      /* POURQUOI ON N'A PAS CHERCHÉ, quand la page sait le dire. La phrase
+         générique « cette page ne cherche pas les découplages » était la seule
+         possible ici, et elle est FAUSSE dès que la page cherche mais s'arrête :
+         net d'un plan illisible, deux plans du même net, empilage pas prêt.
+         Trois causes, trois gestes — et un seul message, de quoi chercher une
+         heure une fonction qui marche. */
+      h+='<p class="simNote">· '+
+         (cav.ponts_raison
+            ? "Les découplages n'ont pas été cherchés — <b>"+
+              simEsc(cav.ponts_raison)+"</b>. On"
+            : "Cette page ne cherche pas les découplages : on")+
+         " ne compte que l'étalement dans les plans ("+
          simNb(cav.etalement_cavite_nH,2)+" nH), et la traversée est donc "+
          "<b>sous-estimée</b>.</p>";
     }else{
@@ -4545,11 +4597,14 @@ function simRetourNotes(vias){
          simNb(cav.impedance_fc_ohm,2)+" Ω</b> à f₀, cascadés dans le "+
          "résultat"+
          (cav.borne
-           ? " — mais aucun découplage n'a été trouvé dans "+
-             simNb(cav.rayon_mm,1)+" mm : on a supposé le plus proche <b>à ce "+
-             "rayon</b>, ce qui est un <b>minorant</b>."
-           : ", par "+simEsc(cav.pont.repere||"le découplage le plus proche")+
-             " à "+simNb(cav.pont.distance_mm,2)+" mm.")+
+            ? " — aucun découplage n'a été trouvé dans le rayon optimal de "+
+              simNb(cav.rayon_mm,1)+" mm"+
+              (cav.plus_proche_hors_rayon_mm!=null
+                ? " (le plus proche trouvé "+(cav.plus_proche_hors_rayon_ref?"["+simEsc(cav.plus_proche_hors_rayon_ref)+"] ":"")+"est à <b>"+simNb(cav.plus_proche_hors_rayon_mm,2)+" mm</b>, trop éloigné)"
+                : "")+
+              " : on a supposé le plus proche <b>à ce rayon</b>, ce qui est un <b>minorant</b>."
+            : ", par "+simEsc(cav.pont.repere||"le découplage le plus proche")+
+              " à "+simNb(cav.pont.distance_mm,2)+" mm.")+
          " Elle se décompose en "+simNb(cav.etalement_nH,2)+
          " nH d'étalement dans les plans (Bogatin éq. 13-35) et "+
          simNb(cav.esl_nH,2)+" nH de montage du condensateur"+
@@ -4565,71 +4620,173 @@ function simRetourNotes(vias){
     }
   }
 
-  /* LE BILAN DE SANTÉ DU SIGNAL ET LA DÉCOMPOSITION HARMONIQUE */
+  /* LE BILAN DE SANTÉ DU SIGNAL */
   const avecBilan=vias.filter(t=>t.bilan_sante||(t.cavite||{}).bilan_sante);
   if(avecBilan.length){
     const b=avecBilan[0].bilan_sante||(avecBilan[0].cavite||{}).bilan_sante;
-    const estCavite=!!((avecBilan[0].cavite||{}).plan_haut);
-    h+='<div class="simBilanBloc" style="margin-top:8px; padding:8px 12px; background:rgba(255,255,255,0.03); border-left:3px solid #49c07a; border-radius:3px;">';
+    const isDegrade = (b.score_reconstruction_pct != null && b.score_reconstruction_pct < 85);
+    const colBilan = isDegrade ? "#f59f00" : "#49c07a";
+    const fBilan = (b.f_fondamentale || b.f0_hz || (resHF && resHF.f_centre) || 0);
+    const trBilan = (b.temps_montee || b.temps_montee_s || (resHF && resHF.temps_montee) || 0);
+    const avertBilan = (fBilan > 0 && trBilan > (0.5 / fBilan))
+      ? '<div style="margin-top:4px; color:#f59f00; font-size:10.5px; font-weight:600;">⚠️ Attention : le temps de montée (t<sub>r</sub>) dépasse une demi-période du signal.</div>'
+      : '';
+    h+='<div class="simBilanBloc" style="margin-top:8px; padding:8px 12px; background:rgba(255,255,255,0.03); border-left:3px solid '+colBilan+'; border-radius:3px;">';
     h+='<p class="simNote" style="margin:0 0 6px 0;">· <b>Bilan de santé du signal : '+simNb(b.score_reconstruction_pct,1)+
        '% de fidélité de reconstruction</b> — '+simEsc(b.verdict)+
-       '<br><small>Signal f₀ = '+simFreq(b.f_fondamentale||b.f0_hz)+
-       ', front t<sub>r</sub> = '+simRetard(b.temps_montee||b.temps_montee_s)+
-       ' (f<sub>knee</sub> = '+simFreq(b.f_knee||b.f_knee_hz)+')</small></p>';
-
-    if(b.harmoniques&&b.harmoniques.length){
-      h+='<details class="simBilanDetails" style="margin-top:6px; cursor:pointer;">'+
-         '<summary style="font-size:11px; color:#88a; outline:none; user-select:none; font-weight:bold;">'+
-         '▶ Afficher la décomposition des '+b.harmoniques.length+' premières harmoniques du signal'+
-         '</summary>'+
-         '<table class="simTab simTabD" style="margin-top:6px; font-size:10px; width:100%;">'+
-         '<tr><th>Harmonique</th><th>Fréquence</th><th>Atténuation</th><th>Déphasage</th>'+
-         (estCavite
-           ? '<th>Pont Découpl.</th><th>Cavité Plans</th><th>Z traversée</th>'
-           : '<th>Chemin Retour</th>')+
-         '</tr>';
-
-      for(const row of b.harmoniques){
-        h+='<tr>'+
-           '<td>H'+row.harmonique+'</td>'+
-           '<td>'+simFreq(row.freq_hz)+'</td>'+
-           '<td>'+(row.attenuation_db!=null?simNb(row.attenuation_db,3)+' dB':'—')+'</td>'+
-           '<td>'+(row.phase_deg!=null?simNb(row.phase_deg,1)+'°':'—')+
-           (row.dispersion_deg?' <small class="simFaible">('+simNb(row.dispersion_deg,1)+'°)</small>':'')+'</td>';
-        if(estCavite){
-          h+='<td>'+(row.part_pont_pct!=null?simNb(row.part_pont_pct,1)+' %':'—')+'</td>'+
-             '<td>'+(row.part_cavite_pct!=null?simNb(row.part_cavite_pct,1)+' %':'—')+'</td>'+
-             '<td>'+(row.z_traversee_ohm!=null?simNb(row.z_traversee_ohm,2)+' Ω':'—')+'</td>';
-        } else {
-          h+='<td><span class="z0ok">100 % vias masse</span></td>';
-        }
-        h+='</tr>';
-      }
-
-      if(b.sondes_hf&&b.sondes_hf.length&&estCavite){
-        h+='<tr style="background:rgba(255,255,255,0.02); font-weight:bold;"><td colspan="7">Sondes Haute Fréquence (Front de montée)</td></tr>';
-        for(const shf of b.sondes_hf){
-          h+='<tr class="simFaible">'+
-             '<td>'+simEsc(shf.nom)+'</td>'+
-             '<td>'+simFreq(shf.freq_hz)+'</td>'+
-             '<td>'+(shf.attenuation_db!=null?simNb(shf.attenuation_db,3)+' dB':'—')+'</td>'+
-             '<td>'+(shf.phase_deg!=null?simNb(shf.phase_deg,1)+'°':'—')+'</td>'+
-             '<td>'+(shf.part_pont_pct!=null?simNb(shf.part_pont_pct,1)+' %':'—')+'</td>'+
-             '<td>'+(shf.part_cavite_pct!=null?simNb(shf.part_cavite_pct,1)+' %':'—')+'</td>'+
-             '<td>'+(shf.z_traversee_ohm!=null?simNb(shf.z_traversee_ohm,2)+' Ω':'—')+'</td>'+
-             '</tr>';
-        }
-      }
-
-      h+='</table></details>';
-    }
+       '<br><small>Signal f₀ = '+simFreq(fBilan)+
+       ', front t<sub>r</sub> = '+simRetard(trBilan)+
+       ' (f<sub>knee</sub> = '+simFreq(b.f_knee||b.f_knee_hz)+')</small></p>'+
+       avertBilan;
     h+='</div>';
   }
-  if(nus.length)
-    h+='<p class="simNote">· Aucun via de masse ne referme la boucle à '+
-       (nus.length>1?nus.length+" vias":"ce via")+" : le chiffre affiché est "+
-       "la self d'un conducteur seul, c'est-à-dire un <b>plancher</b> — la "+
-       "boucle réelle vaut davantage — et il <b>ne dépend pas du routage</b>.</p>";
+
+  /* BILAN D'IMPACT PHYSIQUE DU RETOUR HF, REBOND DE MASSE & CEM */
+  const resHF = (typeof SIM !== "undefined" && SIM.res) || {};
+  const avecImpact = vias.filter(t => t.impact_retour || ((t.retour||{}).vias||[]).some(v => v.retenu));
+  if (avecImpact.length) {
+    const vigis = avecImpact.filter(t => {
+      const imp = t.impact_retour;
+      if (imp && imp.statut === "vigilance") return true;
+      const r = t.retour || {};
+      const proche = (r.vias || []).filter(v => v.retenu).reduce((m, v) => Math.min(m, v.distance_mm), Infinity);
+      return isFinite(proche) && proche > (r.rayon_optimal_mm || 1.8);
+    });
+
+    const estVigi = vigis.length > 0;
+    const bordCouleur = estVigi ? "#f59f00" : "#49c07a";
+    const titreCouleur = estVigi ? "#f59f00" : "#49c07a";
+
+    const tRef = vigis[0] || avecImpact[0];
+    const impGlobal = tRef.impact_retour || {};
+    const trGlobal = impGlobal.tr_s != null ? impGlobal.tr_s : (resHF.temps_montee || 35e-12);
+    const fkneeGlobal = impGlobal.fknee_hz != null ? impGlobal.fknee_hz : (0.35 / trGlobal);
+
+    h += '<div class="simBilanBloc" style="margin-top:8px; padding:8px 12px; background:rgba(255,255,255,0.03); border-left:3px solid ' + bordCouleur + '; border-radius:3px;">';
+    h += '<p style="margin:0 0 6px 0; font-weight:700; font-size:11px; color:' + titreCouleur + ';">⚡ Bilan d\'impact physique du retour HF &amp; Rayonnement CEM</p>';
+    h += '<p class="simNote" style="margin:0 0 8px 0; line-height:1.45;">' +
+         '<b>En haute fréquence</b> (front t<sub>r</sub> = ' + simRetard(trGlobal) +
+         ', soit f<sub>knee</sub> = ' + simFreq(fkneeGlobal) + ') :<br>' +
+         'Le courant cherche le chemin de moindre inductance de boucle (Z = j&omega;L). ' +
+         'L\'inductance d\'une boucle dépend directement de sa surface (S = hauteur h &times; distance d au retour).' +
+         '</p>';
+
+    if (estVigi) {
+      vigis.forEach(function(tv) {
+        const vImp = tv.impact_retour || impGlobal;
+        const vIdx = vias.indexOf(tv) + 1;
+        const rTv = tv.retour || {};
+        const mTv = tv.modelise || {};
+
+        const dRet = (vImp.distance_retour_mm != null ? vImp.distance_retour_mm : (vImp.d_retour_mm != null ? vImp.d_retour_mm : (rTv.vias && rTv.vias[0] ? rTv.vias[0].distance_mm : 3.65)));
+        const lBoucle = (vImp.l_boucle_nh != null ? vImp.l_boucle_nh : (vImp.inductance_boucle_nH != null ? vImp.inductance_boucle_nH : (mTv.inductance_nH != null ? mTv.inductance_nH : 0.86)));
+        const trS = (vImp.tr_s != null ? vImp.tr_s : trGlobal);
+        const fKnee = (vImp.fknee_hz != null ? vImp.fknee_hz : fkneeGlobal);
+        const zL = (vImp.z_knee_ohm != null ? vImp.z_knee_ohm : (vImp.zl_fknee_ohm != null ? vImp.zl_fknee_ohm : (2 * Math.PI * fKnee * lBoucle * 1e-9)));
+        const diA = (vImp.i_signal_a != null ? vImp.i_signal_a : (vImp.di_A != null ? vImp.di_A : (3.3 / 50.0)));
+        const gbV = (vImp.ground_bounce_v != null ? vImp.ground_bounce_v : (vImp.delta_v_ground_bounce_v != null ? vImp.delta_v_ground_bounce_v : (lBoucle * 1e-9 * (diA / trS))));
+        const sBoucle = (vImp.aire_boucle_mm2 != null ? vImp.aire_boucle_mm2 : (((tv.cotes && tv.cotes.hauteur_mm) || 1.6) * dRet));
+        const dCible = (vImp.d_cible_mm != null ? vImp.d_cible_mm : 1.0);
+        const gainL = (vImp.gain_l_nh != null ? vImp.gain_l_nh : (vImp.gain_inductance_nH != null ? vImp.gain_inductance_nH : Math.max(0.04, lBoucle - 0.25)));
+        const gainZ = (vImp.gain_z_ohm != null ? vImp.gain_z_ohm : (vImp.gain_impedance_ohm != null ? vImp.gain_impedance_ohm : (2 * Math.PI * fKnee * gainL * 1e-9)));
+        const gainGb = (vImp.gain_gb_v != null ? vImp.gain_gb_v : (vImp.gain_ground_bounce_v != null ? vImp.gain_ground_bounce_v : (gainL * 1e-9 * (diA / trS))));
+        const gainCem = (vImp.gain_cem_db != null ? vImp.gain_cem_db : (vImp.gain_emc_db != null ? vImp.gain_emc_db : (dRet > 1.0 ? 20 * Math.log10(dRet / 1.0) : 0)));
+
+        const eMax = (vImp.cem_pire_champ_dbuv_m != null ? vImp.cem_pire_champ_dbuv_m : vImp.e_max_cispr32_dbuv_m);
+        const margeCispr = (vImp.cem_pire_marge_db != null ? vImp.cem_pire_marge_db : vImp.marge_cispr32_db);
+
+        const zLStr = zL < 0.1 ? simNb(zL, 3) : simNb(zL, 1);
+        const gbStr = gbV < 0.01 ? simNb(gbV * 1000, 1) + ' mV' : simNb(gbV, 2) + ' V';
+        const gainZStr = gainZ < 0.1 ? simNb(gainZ, 3) : simNb(gainZ, 1);
+        const gainGbStr = gainGb < 0.01 ? simNb(gainGb * 1000, 1) + ' mV' : simNb(gainGb, 2) + ' V';
+
+        let cemTxt = '';
+        if (eMax != null) {
+          cemTxt = 'champ max estimé E<sub>max</sub> &approx; <b>' + simNb(eMax, 1) + ' dB&mu;V/m</b> à 3 m — ' +
+            (margeCispr != null && margeCispr < 0
+              ? '<span style="color:#e8564a; font-weight:700;">dépassement de ' + simNb(-margeCispr, 1) + ' dB de la norme CISPR 32 Classe B</span>'
+              : 'marge CISPR 32 Classe B : +' + simNb(margeCispr != null ? margeCispr : 40 - eMax, 1) + ' dB');
+        } else {
+          const f_mhz = Math.min(fKnee, 1e9) / 1e6;
+          const e_approx = 1.316e-14 * (f_mhz * f_mhz) * (sBoucle * 1e-6) * diA * (1.0 / 3.0);
+          const e_db = 20 * Math.log10(Math.max(e_approx, 1e-12) / 1e-6);
+          const m_db = 40.0 - e_db;
+          cemTxt = 'champ max estimé E<sub>max</sub> &approx; <b>' + simNb(e_db, 1) + ' dB&mu;V/m</b> à 3 m — ' +
+            (m_db < 0
+              ? '<span style="color:#e8564a; font-weight:700;">dépassement de ' + simNb(-m_db, 1) + ' dB de la norme CISPR 32 Classe B</span>'
+              : 'marge CISPR 32 Classe B : +' + simNb(m_db, 1) + ' dB');
+        }
+
+        const f0Sig = (vImp.f0_hz || resHF.f_centre || 0);
+        let alerteTrTxt = '';
+        if (f0Sig > 0 && trS > (0.5 / f0Sig)) {
+          alerteTrTxt = '<div style="margin:4px 0 6px; padding:4px 8px; background:rgba(245,159,0,0.15); border-left:3px solid #f59f00; border-radius:3px; font-size:10.5px; color:#f59f00; font-weight:600;">' +
+            '⚠️ Attention : le temps de montée (t<sub>r</sub>) dépasse une demi-période du signal.' +
+            '</div>';
+        }
+        let zLNote = '';
+
+        h += '<div style="margin:6px 0; padding:8px 10px; background:rgba(245,159,0,0.08); border-radius:4px; border:1px solid rgba(245,159,0,0.25);">';
+        h += '<div style="font-weight:700; font-size:11px; color:#f59f00; margin-bottom:4px;">' +
+             'Via #' + vIdx + ' — Boucle large (retour à ' + simNb(dRet, 2) + ' mm &gt; 1,8 mm, zone de vigilance) :</div>';
+        h += alerteTrTxt;
+        h += '<ul style="margin:0 0 6px 16px; padding:0; font-size:10.5px; line-height:1.45; color:var(--txt);">';
+        h += '<li><b>Surface de boucle élargie :</b> S &approx; ' + simNb(sBoucle, 2) + ' mm² &rarr; ' +
+             'L\'inductance de boucle monte à <b>' + simNb(lBoucle, 3) + ' nH</b> (contre ~0,30 nH pour un retour optimal &le; 1,8 mm).</li>';
+        h += '<li><b>Impédance de retour élevée :</b> À f<sub>knee</sub> = ' + simFreq(fKnee) +
+             ', Z<sub>L</sub> = 2&pi;&middot;f&middot;L &approx; <b>' + zLStr + ' &Omega;</b>' + zLNote + ' ! ' +
+             'Le courant de retour rencontre un obstacle sur le plan de masse au lieu d\'un plan idéal continu à 0 &Omega;.</li>';
+        h += '<li><b>Rebond de masse (Ground Bounce) &amp; Diaphonie :</b> Avec un front de ' + simRetard(trS) +
+             ' et une commutation &Delta;I &approx; ' + Math.round(diA * 1000) + ' mA, ' +
+             '&Delta;V = L&middot;(dI/dt) induit une pointe de tension de <b>&Delta;V &approx; ' + gbStr + '</b> créant un bruit de masse localisé qui pollue les signaux voisins.</li>';
+        h += '<li><b>Rayonnement &amp; CEM (Antenne cadre) :</b> La boucle agit comme une antenne rayonnante (' + cemTxt + ').</li>';
+        h += '</ul>';
+        h += '<div style="font-size:10px; color:#f59f00; font-weight:600; line-height:1.35; padding-top:4px; border-top:1px dashed rgba(245,159,0,0.3);">' +
+             '💡 <b>Conseil d\'optimisation :</b> Rapprocher le via de masse à &le; ' + simNb(dCible, 1) + ' mm ferait gagner <b>' +
+             simNb(gainL, 2) + ' nH</b> d\'inductance, abaisserait l\'impédance de retour de <b>' +
+             gainZStr + ' &Omega;</b>, réduirait le rebond de masse de <b>' +
+             gainGbStr + '</b> et améliorerait la marge CEM de <b>+' +
+             simNb(gainCem, 1) + ' dB</b>.</div>';
+        h += '</div>';
+      });
+    } else {
+      const impOpt = (tRef && tRef.impact_retour) || impGlobal || {};
+      const dOpt = impOpt.distance_retour_mm != null ? impOpt.distance_retour_mm : (impOpt.d_retour_mm != null ? impOpt.d_retour_mm : 1.0);
+      const lOpt = impOpt.l_boucle_nh != null ? impOpt.l_boucle_nh : (impOpt.inductance_boucle_nH != null ? impOpt.inductance_boucle_nH : 0.30);
+      const zOpt = impOpt.z_knee_ohm != null ? impOpt.z_knee_ohm : (impOpt.zl_fknee_ohm != null ? impOpt.zl_fknee_ohm : 0.02);
+      const gbOpt = impOpt.ground_bounce_v != null ? impOpt.ground_bounce_v : (impOpt.delta_v_ground_bounce_v != null ? impOpt.delta_v_ground_bounce_v : 0.01);
+      const mOpt = impOpt.cem_pire_marge_db != null ? impOpt.cem_pire_marge_db : (impOpt.marge_cispr32_db != null ? impOpt.marge_cispr32_db : 60.0);
+      const zOptStr = zOpt < 0.1 ? simNb(zOpt, 3) : simNb(zOpt, 1);
+      const gbOptStr = gbOpt < 0.01 ? simNb(gbOpt * 1000, 1) + ' mV' : simNb(gbOpt, 2) + ' V';
+      h += '<p class="simNote" style="margin:0; color:#49c07a;">' +
+           '✔ <b>Zone optimale (&le; 1,8 mm) :</b> Boucle courte (d &le; ' + simNb(dOpt, 2) + ' mm), ' +
+           'inductance maîtrisée (' + simNb(lOpt, 3) + ' nH), impédance de retour Z<sub>L</sub> &approx; ' +
+           zOptStr + ' &Omega;, rebond de masse &Delta;V &approx; ' +
+           gbOptStr + ' et émissions CEM maîtrisées (marge CISPR 32 : +' +
+           simNb(mOpt, 1) + ' dB).' +
+           '</p>';
+    }
+    h += '</div>';
+  }
+
+  if(nus.length){
+    const dHors=nus[0].retour&&nus[0].retour.plus_proche_hors_rayon_mm;
+    const rOpt=(nus[0].retour&&nus[0].retour.rayon_optimal_mm)||1.8;
+    const rMax=(nus[0].retour&&nus[0].retour.rayon_mm)||5.0;
+    if(dHors!=null){
+      h+='<p class="simNote">· <b>Aucun via de masse dans le rayon de '+simNb(rMax,1)+' mm</b> à '+
+         (nus.length>1?nus.length+" vias":"ce via")+" — le plus proche trouvé est à <b>"+
+         simNb(dHors,2)+" mm</b> (trop éloigné &gt; "+simNb(rMax,1)+" mm, boucle ouverte). "+
+         "Le chiffre affiché est la self d'un conducteur seul, c'est-à-dire un <b>plancher</b> "+
+         "— la boucle réelle vaut davantage — et il <b>ne dépend pas du routage</b>. "+
+         "Placez un via de masse de retour dans la zone optimale (&le; "+simNb(rOpt,1)+" mm) pour refermer la boucle.</p>";
+    }else{
+      h+='<p class="simNote">· Aucun via de masse ne referme la boucle à '+
+         (nus.length>1?nus.length+" vias":"ce via")+" : le chiffre affiché est "+
+         "la self d'un conducteur seul, c'est-à-dire un <b>plancher</b> — la "+
+         "boucle réelle vaut davantage — et il <b>ne dépend pas du routage</b>.</p>";
+    }
+  }
   if(muets.length)
     h+='<p class="simNote">· Les vias de masse voisins ne sont pas envoyés par '+
        "cette page : le chiffre affiché est la self d'un conducteur seul, un "+
@@ -4928,8 +5085,7 @@ function simCorpsRetour(){
   '<div class="pnl-bar simBarF">'+
     '<span class="pnl-lbl">Fréquence</span>'+
     simChamp("simFc","Fréquence de travail / fondamentale : elle ne change pas l’inductance "+
-                     "de boucle, mais elle décide de ce qui compte comme "+
-                     "long, et positionne les harmoniques basses")+
+                     "de boucle, mais elle décide de ce qui compte comme long")+
     simChampUnite("simFUnite","la fréquence de travail")+
     '<span class="simGr"><span class="pnl-lbl">t<sub>r</sub></span>'+
     simChamp("simTr","Temps de montée du signal (10-90%). Détermine le spectre HF (f_knee = 0,35 / tr) "+
@@ -4978,6 +5134,7 @@ function simBrancherRetour(){
   pose("simFUnite","onchange",function(){simUniteChanger(this.value,"fc");});
   pose("simTr","oninput",function(){
     simSaisie();
+    simFAvertEcrire();
     if(SIM.res&&!SIM.occupe){
       SIM.res=null; SIM.objets=[];
       SIM.err="Le temps de montée a changé : relancez le calcul.";
@@ -5043,14 +5200,25 @@ function simFicheRetour(){
   const ouverts=vias.filter(t=>!ferme(t));
   const graves=vias.filter(t=>(t.retour||{}).reference_change
                               &&!(t.retour||{}).raccorde);
+  const vigilances=vias.filter(t=>{
+    const r=t.retour||{};
+    if(!ferme(t))return false;
+    if(r.statut==="vigilance")return true;
+    const proche=(r.vias||[]).filter(v=>v.retenu)
+                             .reduce((m,v)=>Math.min(m,v.distance_mm),Infinity);
+    return isFinite(proche)&&proche>(r.rayon_optimal_mm||1.8);
+  });
   let h='<p class="simVerdict '+
-    (ouverts.length||graves.length?"dehors":"dedans")+'">'+
+    (ouverts.length||graves.length?"dehors":(vigilances.length?"vigilance":"dedans"))+'">'+
     (ouverts.length
       ? ouverts.length+" via"+(ouverts.length>1?"s":"")+" sur "+vias.length+
         " sans retour identifié"
-      : (vias.length>1
-          ? "Les "+vias.length+" vias ont un retour identifié"
-          : "Le via a un retour identifié"))+
+      : (vigilances.length
+          ? vigilances.length+" via"+(vigilances.length>1?"s":"")+" sur "+vias.length+
+            " en zone de vigilance (boucle large &gt; 1,8 mm)"
+          : (vias.length>1
+              ? "Les "+vias.length+" vias ont un retour identifié"
+              : "Le via a un retour identifié")))+
     ' <span>'+simEsc(SIM.portee||res.net||"—")+" · "+
     simFreq(res.f_centre)+
     (res.temps_montee?" · t<sub>r</sub> "+simRetard(res.temps_montee):"")+"</span></p>";
@@ -5082,9 +5250,13 @@ function simFicheRetour(){
     const gndVias=r.vias||[];
     const gndItems=gndVias.map(function(v, idx){
       const isGndSel=(estActif&&typeof SIM!=="undefined"&&SIM.gndViaActif===idx);
-      const cls=v.retenu?(v.part>=0.20?"z0ok":"simFaible"):"z0ko";
-      return '<div class="simGndItem '+cls+(isGndSel?' simGndActif':'')+'" data-via-idx="'+vIdx+'" data-gnd-idx="'+idx+'" title="Cliquez pour isoler ce via de retour sur le PCB">'+
+      const isVigiGnd=v.retenu&&(v.statut==="vigilance"||v.distance_mm>(r.rayon_optimal_mm||1.8));
+      const cls=v.retenu?(isVigiGnd?"simVigilance":(v.part>=0.20?"z0ok":"simFaible")):"z0ko";
+      const plansTip=(v.plans&&v.plans.length)?' · Connecté aux plans : '+simEsc(v.plans.join(', ')):'';
+      return '<div class="simGndItem '+cls+(isGndSel?' simGndActif':'')+'" data-via-idx="'+vIdx+'" data-gnd-idx="'+idx+'" title="Cliquez pour isoler ce via de retour sur le PCB'+plansTip+(isVigiGnd?' [Zone de vigilance : boucle large]':'')+'">'+
              '#'+(idx+1)+' · '+simNb(v.distance_mm,2)+" mm"+
+             (isVigiGnd?' <span style="color:#f59f00;font-size:9px;font-weight:700;">[vigilance]</span>':'')+
+             (v.plans&&v.plans.length?' <span class="simFaible" style="font-size:9px;" title="Plans connectés : '+simEsc(v.plans.join(', '))+'">['+simEsc(v.plans.join('/'))+']</span>':'')+
              (v.retenu?" · <b>"+Math.round((v.part||0)*100)+" %</b>":" · <i>écarté</i>")+
              (v.raison?' <small title="'+simEsc(v.raison)+'">('+simEsc(v.raison)+')</small>':'')+
              '</div>';
@@ -5092,7 +5264,9 @@ function simFicheRetour(){
     const gndCol=gndVias.length>3
       ? '<div class="simGndScroll" title="Faites défiler pour voir tous les vias">'+
         gndItems+'</div>'
-      : (gndItems||'<span class="simFaible">aucun</span>');
+      : (gndItems||(r.plus_proche_hors_rayon_mm!=null
+          ? '<span class="simFaible" title="Aucun via de masse dans le rayon de '+(r.rayon_mm||5)+' mm">aucun &le; '+(r.rayon_mm||5)+' mm<br><small style="color:#e8564a;">(plus proche à '+simNb(r.plus_proche_hors_rayon_mm,2)+' mm)</small></span>'
+          : '<span class="simFaible">aucun</span>'));
 
     const posTxt=r.x==null?"—":(simNb(r.x,2)+" ; "+simNb(r.y,2));
 
@@ -5241,6 +5415,7 @@ function simBrancherSante(){
   pose("simFUnite","onchange",function(){simUniteChanger(this.value,"fc");});
   pose("simTr","oninput",function(){
     simSaisie();
+    simFAvertEcrire();
     if(SIM.res&&!SIM.occupe){
       SIM.res=null; SIM.objets=[];
       SIM.err="Le temps de montée a changé : relancez le calcul.";
@@ -5507,50 +5682,108 @@ function simDiagnostiquerSante(res, doc, opt){
   }
 
   // --- PILIER 3 : CHEMIN DE RETOUR & PLANS ---
+  /* UN VIA DE MASSE PRÉSENT N'EST PAS UN VIA DE MASSE QUI TRAVAILLE, et c'est
+     toute la différence que cette fiche doit porter. `retour.vias` liste TOUS
+     les candidats que le serveur a examinés — ceux qu'il a retenus ET ceux
+     qu'il a écartés en disant pourquoi : mauvais net, portée trop courte, ou
+     — le cas grave — un via de masse qui ne peut pas rejoindre un plan
+     d'alimentation. Lire `vias[0]` sans filtrer, ce que faisait la version
+     précédente, faisait sortir « chemin de retour bien refermé » sur une
+     transition GND → PWR dont le via de masse voisin, à 0,3 mm, ne referme
+     RIEN. Un vert sur le seul défaut que cette analyse existe pour trouver.
+     ON NE LIT DONC QUE LES RETENUS. */
+  const retenusDe = t => ((t.retour || {}).vias || []).filter(v => v.retenu);
   if(transitions.length > 0){
-    const sansRetour = transitions.filter(t => {
-      const r = t.retour || {};
-      return (!r.retenus || r.retenus === 0) && (r.vias || []).length === 0;
-    });
+    /* Les trois états ne se confondent pas, et la fiche ne doit pas conclure
+       sur la carte quand elle n'a pas regardé :
+         · `muettes`  — la page n'envoie pas les vias voisins : limite de
+                        l'outil, pas défaut de la carte ;
+         · `barrees`  — la référence change et les nets diffèrent : AUCUN via
+                        de masse ne peut refermer, c'est l'item de cavité qui
+                        en parle, pas celui-ci ;
+         · `ouvertes` — le retour POUVAIT se refermer et ne se referme pas. */
+    const utiles = transitions.filter(t => (t.retour || {}).source !== "absent"
+                                           && !(t.retour || {}).reference_change);
+    const muettes = transitions.filter(t => (t.retour || {}).source === "absent");
+    const ouvertes = utiles.filter(t => retenusDe(t).length === 0);
+    /* « aucun candidat » et « des candidats, tous écartés » sont deux cartes
+       différentes et deux gestes différents : poser un via, ou corriger celui
+       qui est déjà là (portée, net). Le chiffre le dit. */
+    const ecartees = ouvertes.filter(t => ((t.retour || {}).vias || []).length > 0);
 
-    if(sansRetour.length > 0){
+    if(muettes.length > 0 && utiles.length === 0){
+      items.push({
+        id: "retour_non_sonde",
+        categorie: "retour",
+        nomCategorie: "Chemin de retour & Plans",
+        titre: "Chemin de retour vertical non sondé",
+        severite: "alerte",
+        chiffre: muettes.length + " transition(s) sans voisinage envoyé par la page",
+        impact: "L'inductance affichée est celle d'un conducteur seul : elle ne dépend pas du placement des vias de masse, et ne peut ni confirmer ni infirmer la continuité du retour.",
+        recommandation: "Ouvrir la liaison dans l'éditeur de PCB, qui envoie les vias de masse voisins, pour obtenir un verdict sur le retour."
+      });
+    }
+
+    if(ouvertes.length > 0){
+      const pire = ecartees[0] || ouvertes[0];
+      const raisonPire = (((pire.retour || {}).vias || [])[0] || {}).raison || "";
       items.push({
         id: "retour_aucun",
         categorie: "retour",
         nomCategorie: "Chemin de retour & Plans",
-        titre: "Boucle de retour ouverte (aucun via de masse)",
+        titre: ecartees.length
+          ? "Boucle de retour ouverte (vias de masse présents mais inopérants)"
+          : "Boucle de retour ouverte (aucun via de masse)",
         severite: "critique",
-        chiffre: sansRetour.length + " transition(s) de via sans aucun via de masse à portée",
-        impact: "Le courant de retour haute fréquence doit trouver un chemin lointain : inductance de boucle décuplée, fort rayonnement CEM et rebonds de masse massifs.",
-        recommandation: "Placer impérativement 1 ou 2 vias de masse à moins de 0,5 mm de chaque via de signal pour fermer la boucle."
+        chiffre: ecartees.length
+          ? ouvertes.length + " transition(s) dont " + ecartees.length +
+            " avec des vias de masse écartés" +
+            (raisonPire ? " — le plus proche : " + simEsc(raisonPire) : "")
+          : ouvertes.length + " transition(s) de via sans aucun via de masse à portée",
+        impact: "Le courant de retour haute fréquence doit trouver un chemin lointain : inductance de boucle décuplée, fort rayonnement CEM et rebonds de masse massifs. L'inductance affichée est un PLANCHER — la vraie boucle vaut davantage.",
+        recommandation: ecartees.length
+          ? "Corriger le via de masse déjà posé : lui donner la portée du via de signal, et un net de référence commun aux deux plans."
+          : "Poser un via de masse au pied du via de signal — au plus près que la fabrication permet (entraxe typique 0,7 à 1 mm avec des pastilles de 0,55 mm)."
       });
-    } else {
-      const eloignes = transitions.filter(t => {
-        const r = t.retour || {};
-        const vProche = (r.vias || [])[0];
-        return vProche && vProche.distance_mm > 0.8;
-      });
-
+    } else if(utiles.length > 0){
+      /* LE SEUIL EST EN DISTANCE, LE CHIFFRE EST CELUI DU MODÈLE. Annoncer
+         « L_boucle > 1,2 nH » au-delà de 0,8 mm était faux sur tout empilage
+         courant : l'inductance de boucle croît AVEC L'ÉPAISSEUR TRAVERSÉE
+         autant qu'avec l'écart. Sur 1,5 mm de stratifié, un retour à 0,8 mm
+         vaut 0,78 nH et il faut 8 mm pour atteindre 1,2 ; sur 2,4 mm, 0,8 mm
+         suffit à les dépasser. On lit donc l'inductance que le modèle a
+         calculée pour CETTE transition, au lieu d'en promettre une. */
+      const lDe = t => {
+        const m = t.modelise || {};
+        return String(m.inductance_source || "").indexOf("boucle") === 0
+          ? m.inductance_nH : null;
+      };
+      const eloignes = utiles.filter(t => (retenusDe(t)[0] || {}).distance_mm > 0.8);
       if(eloignes.length > 0){
-        const dMax = Math.max(...eloignes.map(t => (t.retour.vias[0]||{}).distance_mm || 0));
+        const dMax = Math.max(...eloignes.map(t => (retenusDe(t)[0] || {}).distance_mm || 0));
+        const lMax = Math.max(...eloignes.map(t => lDe(t) || 0));
         items.push({
           id: "retour_eloigne",
           categorie: "retour",
           nomCategorie: "Chemin de retour & Plans",
           titre: "Vias de masse de retour trop distants",
           severite: "alerte",
-          chiffre: "Via de retour le plus proche situé à " + simNb(dMax, 2) + " mm (> 0,8 mm)",
-          impact: "Augmentation mesurable de l'inductance de boucle (L_boucle > 1,2 nH).",
-          recommandation: "Rapprocher les vias de masse à moins de 0,5 mm du via de signal."
+          chiffre: "Via de retour utile le plus proche à " + simNb(dMax, 2) + " mm (> 0,8 mm)" +
+                   (lMax > 0 ? " · L_boucle = " + simNb(lMax, 2) + " nH" : ""),
+          impact: "L'inductance de boucle croît en logarithme avec cet écart et linéairement avec l'épaisseur traversée : c'est elle qui ralentit le front et fait remonter le rebond de masse.",
+          recommandation: "Rapprocher les vias de masse du via de signal, ou en poser un second à l'opposé — deux vias en vis-à-vis valent mieux qu'un seul deux fois plus près."
         });
       } else {
+        const dMax = Math.max(...utiles.map(t => (retenusDe(t)[0] || {}).distance_mm || 0));
+        const lMax = Math.max(...utiles.map(t => lDe(t) || 0));
         items.push({
           id: "retour_ok",
           categorie: "retour",
           nomCategorie: "Chemin de retour & Plans",
           titre: "Chemin de retour vertical bien refermé",
           severite: "ok",
-          chiffre: "Vias de masse présents à proximité immédiate (< 0,8 mm)",
+          chiffre: "Via de masse utile à " + simNb(dMax, 2) + " mm (< 0,8 mm)" +
+                   (lMax > 0 ? " · L_boucle = " + simNb(lMax, 2) + " nH" : ""),
           impact: "Inductance de boucle minimale, confinant le champ EM entre le via de signal et son blindage.",
           recommandation: "Conserver cette disposition de couture."
         });
@@ -5558,19 +5791,67 @@ function simDiagnostiquerSante(res, doc, opt){
     }
 
     // Traversée de plans (cavité GND -> PWR)
+    /* LES CLÉS SONT CELLES QUE LE SERVEUR ÉMET. La version précédente lisait
+       `cav.pont_decouplage` et `cav.c_pont`, qui n'existent NULLE PART dans la
+       fiche rendue par `_cavite_de_retour` — elle porte `pont` (l'objet du
+       découplage retenu, avec son repère et sa distance) et `capacite_pont_F`.
+       Le test était donc toujours vrai et la branche « traversée découplée »
+       inatteignable : toute traversée sortait « critique — sans condensateur
+       de pontage », même avec un 100 nF à 0,3 mm. */
     const avecCavite = transitions.filter(t => (t.cavite || {}).plan_haut);
     if(avecCavite.length > 0){
       const cav = avecCavite[0].cavite;
-      if(!cav.pont_decouplage && !cav.c_pont){
+      const zt = cav.impedance_fc_ohm;
+      const entre = "(" + simEsc(cav.plan_haut) + " → " + simEsc(cav.plan_bas) + ")";
+      const cout = (zt != null ? " · Z traversée = " + simNb(zt, 2) + " Ω" : "");
+      /* LE VIA DE MASSE POSÉ À CÔTÉ, ET POURQUOI IL N'Y PEUT RIEN. C'est le
+         geste réflexe — un via de signal qui plonge, un via de masse au pied —
+         et il est juste PARTOUT SAUF ICI : entre deux plans de nets
+         différents, un via de masse joindrait de la masse à de la masse. Il ne
+         referme pas ce retour-là. Le dire dans l'item de la traversée est le
+         seul endroit où la personne qui vient de le poser va le lire. */
+      const ecarteProche = avecCavite
+        .map(t => ((t.retour || {}).vias || []).filter(v => !v.retenu)[0])
+        .filter(Boolean)
+        .sort((a, b) => a.distance_mm - b.distance_mm)[0];
+      const vain = ecarteProche
+        ? " · le via de masse à " + simNb(ecarteProche.distance_mm, 2) +
+          " mm n'y peut rien (" + simEsc(ecarteProche.raison || "écarté") + ")"
+        : "";
+      if(cav.etalement_seul || cav.cherche === false){
+        /* On n'a pas cherché les découplages : ce n'est pas un constat sur la
+           carte, c'est une limite de l'outil, et les deux ne se disent pas de
+           la même façon. */
+        items.push({
+          id: "cavite_non_sondee",
+          categorie: "retour",
+          nomCategorie: "Chemin de retour & Plans",
+          titre: "Changement de plan de référence — découplages non sondés",
+          severite: "alerte",
+          chiffre: "Traversée entre plans " + entre +
+                   " · seul l'étalement est compté (" + simNb(cav.etalement_cavite_nH, 2) + " nH)" + vain,
+          impact: "Le retour change de plan par la capacité répartie des deux plans et par les découplages qui les joignent. Faute de les avoir cherchés, la traversée est SOUS-ESTIMÉE.",
+          recommandation: "Ouvrir la liaison dans l'éditeur de PCB, qui envoie les condensateurs joignant les deux plans, pour chiffrer la traversée."
+        });
+      } else if(cav.borne || !cav.pont){
+        /* CHERCHÉ, RIEN TROUVÉ — le défaut grave, et il reste critique. Quand
+           le rayon de recherche est connu, le serveur suppose un pont À CE
+           RAYON : le chiffre est alors un MINORANT, le vrai découplage peut
+           être bien plus loin. C'est `borne`. Sans `pont` du tout, on n'a même
+           pas cela. Les deux disent la même chose à la personne qui route :
+           rien ne referme le retour près de ce via. */
         items.push({
           id: "cavite_non_decouplee",
           categorie: "retour",
           nomCategorie: "Chemin de retour & Plans",
           titre: "Changement de plan de référence sans condensateur de pontage",
           severite: "critique",
-          chiffre: "Traversée entre plans (" + simEsc(cav.plan_haut) + " → " + simEsc(cav.plan_bas) + ") · Z traversée = " + simNb(cav.impedance_fc_ohm, 1) + " Ω",
-          impact: "Rupture de continuité de référence : le courant de retour traverse la cavité diélectrique, injecte du bruit dans les plans d'alimentation et rayonne fortement.",
-          recommandation: "Router le signal sans changer de plan de référence, ou placer un condensateur de découplage de liaison (10 nF - 100 nF) à moins de 1 mm de la transition."
+          chiffre: "Traversée entre plans " + entre + cout +
+                   (cav.rayon_mm
+                      ? " · aucun découplage dans " + simNb(cav.rayon_mm, 1) + " mm (minorant)"
+                      : "") + vain,
+          impact: "Rupture de continuité de référence : le courant de retour traverse la cavité diélectrique, injecte du bruit dans les plans d'alimentation et rayonne fortement. Le chiffre est un MINORANT — le vrai découplage peut être bien plus loin.",
+          recommandation: "Router le signal sans changer de plan de référence, ou placer un condensateur de découplage de liaison (10 nF - 100 nF) au pied de la transition."
         });
       } else {
         items.push({
@@ -5578,13 +5859,163 @@ function simDiagnostiquerSante(res, doc, opt){
           categorie: "retour",
           nomCategorie: "Chemin de retour & Plans",
           titre: "Traversée de cavité avec pont de découplage",
-          severite: "ok",
-          chiffre: "Pont de découplage présent à proximité · Z traversée = " + simNb(cav.impedance_fc_ohm, 2) + " Ω",
-          impact: "Le condensateur assure la continuité du courant de retour alternatif entre les deux plans.",
-          recommandation: "Maintenir les pistes de raccordement du condensateur très courtes."
+          severite: (zt != null && zt > 5) ? "alerte" : "ok",
+          chiffre: "Découplage " + simEsc(cav.pont.repere || "le plus proche") +
+                   " à " + simNb(cav.pont.distance_mm, 2) + " mm" + cout,
+          impact: (zt != null && zt > 5)
+            ? "Le condensateur assure la continuité du retour, mais la traversée pèse encore un dixième de l'impédance de la ligne : le front s'en ressent."
+            : "Le condensateur assure la continuité du courant de retour alternatif entre les deux plans.",
+          recommandation: "L'étalement croît linéairement avec l'ÉCARTEMENT des plans et seulement en logarithme avec la distance au condensateur : amincir le diélectrique entre plans gagne davantage que rapprocher le découplage."
         });
       }
     }
+  }
+
+  /* LES FENTES DU PLAN DE RÉFÉRENCE. Le pilier les annonçait dans son titre et
+     n'en disait rien : le document les porte (`doc.fentes`, sondées le long du
+     parcours), la carte les dessine, l'analyse de couplage les lit — mais la
+     fiche du chemin de retour, non. C'est pourtant le défaut de retour le plus
+     courant sur une carte réelle, et le seul qui coûte cher à basse fréquence.
+     `null` veut dire « on n'a pas su sonder » et ne produit rien : c'est la
+     même règle que partout ailleurs ici. */
+  const fentes = (doc || {}).fentes;
+  if(fentes && fentes.length){
+    const pire = fentes.reduce((a, b) => ((b.longueur || 0) > (a.longueur || 0) ? b : a));
+    const total = fentes.reduce((s, f) => s + (f.longueur || 0), 0);
+    items.push({
+      id: "fente_plan",
+      categorie: "retour",
+      nomCategorie: "Chemin de retour & Plans",
+      titre: "Discontinuité du plan de référence sous le parcours",
+      severite: (pire.longueur || 0) > 2 ? "critique" : "alerte",
+      chiffre: fentes.length + " fente(s) sur " + simNb(total, 2) +
+               " mm cumulés · la plus longue " + simNb(pire.longueur, 2) +
+               " mm à s = " + simNb(pire.s, 2) + " mm",
+      impact: "Le courant de retour ne peut pas suivre la piste : il contourne la fente. La boucle ainsi ouverte porte toute l'inductance et tout le rayonnement, et Z₀ n'a plus de sens sur cette portion.",
+      recommandation: "Faire contourner la fente à la piste plutôt qu'au retour, ou refermer le plan. Un condensateur de pontage au franchissement ne rattrape que la haute fréquence."
+    });
+  } else if(doc && !doc.fentes){
+    /* LE DOCUMENT EST LÀ, LE RELEVÉ N'Y EST PAS. `fentes` à `null` veut dire
+       « la page n'a pas su sonder » — un plan de référence sans zone de
+       cuivre, une source qui ne porte pas les contours. Ce n'est PAS « aucune
+       fente », et l'écrire en vert serait affirmer une continuité qu'on n'a
+       pas vérifiée. Sans document du tout, en revanche, on ne dit rien : il
+       n'y a pas de carte sur laquelle se prononcer. */
+    items.push({
+      id: "fente_non_sondee",
+      categorie: "retour",
+      nomCategorie: "Chemin de retour & Plans",
+      titre: "Fentes du plan de référence non sondées",
+      severite: "alerte",
+      chiffre: "Le document ne porte pas de relevé de continuité du plan",
+      impact: "Une fente sous le parcours ouvre la boucle de retour sans rien changer au dessin de la piste : elle ne peut pas être vue ici.",
+      recommandation: "Ouvrir la liaison dans l'éditeur de PCB, qui sonde le cuivre du plan de référence le long du parcours."
+    });
+  }
+
+  /* CE QUE LA BOUCLE RAYONNE. « Une boucle ouverte rayonne » est un conseil
+     qu'on répète sans jamais le chiffrer, et un conseil qu'on ne chiffre pas ne
+     se hiérarchise pas : on ne sait pas s'il faut refaire le routage ou passer
+     à autre chose. Trois millimètres carrés à 36 MHz et deux cents à 500 MHz ne
+     demandent pas la même journée de travail.
+
+     LE CHIFFRE EST UN PLANCHER, et chaque item le porte : sur une carte réelle,
+     l'émission qui fait échouer l'essai vient du mode commun sur les CÂBLES,
+     vingt à quarante décibels au-dessus de la boucle différentielle. Une marge
+     confortable ne promet donc rien ; une marge serrée est une certitude. */
+  /* LE COURANT QUI REVIENT PAR LA CAPACITÉ DES PLANS N'EST PAS UN CHEMIN
+     NEUTRE. Il existe — c'est du courant de déplacement, il se referme, et le
+     refuser reviendrait à déclarer impossible ce qui arrive sur toute carte
+     multicouche. Mais il n'entre pas dans un conducteur : il entre dans la
+     CAVITÉ, s'y propage jusqu'aux bords de la carte, y rayonne, et revient en
+     bruit sur l'alimentation. RIEN DE CELA NE SE VOIT SUR S21 — le signal, lui,
+     passe. La fiche pouvait donc afficher « traversée 0,08 Ω, front intact »
+     sur une transition qui injecte la moitié de son retour dans le plan
+     d'alim. C'est exactement ce qu'il faut dire. */
+  const cavParts = transitions
+    .map(t => t.cavite)
+    .filter(c => c && c.part_cavite != null && c.part_cavite > 0.20);
+  if(cavParts.length){
+    const c = cavParts.reduce((a, b) => (b.part_cavite > a.part_cavite ? b : a));
+    /* AU-DELÀ DE CENT POUR CENT, CE N'EST PLUS UN PARTAGE. Les deux branches
+       sont en opposition de phase et le courant CIRCULE entre elles :
+       l'inductance des découplages contre la capacité des plans, c'est
+       l'antirésonance parallèle. Écrire « 111 % passe par la cavité » serait
+       absurde ; c'est le phénomène qu'il faut nommer, parce que c'est LUI le
+       défaut — et l'impédance de la traversée y culmine. */
+    const anti = c.part_cavite > 1.0;
+    items.push({
+      id: anti ? "cavite_antiresonance" : "retour_par_la_cavite",
+      categorie: "retour",
+      nomCategorie: "Chemin de retour & Plans",
+      titre: anti
+        ? "Antirésonance de la traversée : le courant circule au lieu de revenir"
+        : "Le retour passe par la capacité des plans, pas par un découplage",
+      severite: (anti || c.part_cavite > 0.50) ? "critique" : "alerte",
+      chiffre: (anti
+        ? "Antirésonance près de " + simNb((c.freq_parts_hz || 0) / 1e6, 0) +
+          " MHz · " + simNb(100 * c.part_cavite, 0) +
+          " % du courant du signal circule dans la seule cavité · |Z| = " +
+          simNb(c.impedance_fc_ohm, 1) + " Ω"
+        : simNb(100 * c.part_cavite, 0) + " % du courant de retour traverse par la capacité répartie à " +
+          simNb((c.freq_parts_hz || 0) / 1e6, 1) + " MHz") +
+        " · plans " + simEsc(c.plan_haut) + " / " + simEsc(c.plan_bas) +
+        " (" + simNb(c.capacite_plans_pF, 0) + " pF" +
+        (c.aire_majoree ? ", aire de la carte entière — donc MAJORÉE" : "") + ")",
+      impact: anti
+        ? "L'inductance des découplages et la capacité répartie des plans s'annulent : l'impédance de la traversée y culmine, et le courant fait des allers-retours entre les deux branches au lieu de revenir à la source."
+        : "Ce courant se referme, mais dans la CAVITÉ entre les deux plans : il s'y propage jusqu'aux bords de la carte, y rayonne, et revient en bruit sur l'alimentation. Rien de cela n'apparaît sur S₂₁, où le signal passe intact.",
+      recommandation: anti
+        ? "Rapprocher un découplage du via déplace cette fréquence vers le haut ; amincir le diélectrique entre les deux plans la déplace AUSSI et baisse le pic. Le seul remède qui l'annule est de garder la même référence des deux côtés du via."
+        : "Poser un condensateur de liaison (10 nF - 100 nF) au pied de la transition : il ramène le courant de retour dans du cuivre. Ou garder la même référence des deux côtés du via, ce qui supprime le problème au lieu de le déplacer."
+    });
+  }
+
+  const rays = transitions.map(t => t.rayonnement).filter(Boolean);
+  const avecMarge = rays.filter(r => r.pire && r.pire.marge_db != null);
+  const reserveMC = " Ce chiffre est un PLANCHER : le mode commun sur les câbles" +
+    " domine l'émission réelle de 20 à 40 dB.";
+  if(avecMarge.length){
+    const ray = avecMarge.reduce((a, b) => (b.pire.marge_db < a.pire.marge_db ? b : a));
+    const p = ray.pire;
+    const serre = p.marge_db < 20;
+    items.push({
+      id: p.marge_db < 0 ? "rayonnement_hors_limite"
+                         : (serre ? "rayonnement_serre" : "rayonnement_ok"),
+      categorie: "retour",
+      nomCategorie: "Chemin de retour & Plans",
+      titre: p.marge_db < 0 ? "Rayonnement de la boucle de retour au-dessus de la limite"
+        : (serre ? "Marge de rayonnement étroite sur la boucle de retour"
+                 : "Rayonnement de la boucle de retour négligeable"),
+      severite: p.marge_db < 0 ? "critique" : (serre ? "alerte" : "ok"),
+      chiffre: "Boucle de " + simNb(ray.aire_boucle_mm2, 2) + " mm²" +
+               (ray.minorant ? " (minorant)" : "") + " · " +
+               simNb(p.champ_dbuv_m, 0) + " dB(µV/m) à " +
+               simNb(p.freq_hz / 1e6, 0) + " MHz, mesuré à " +
+               simNb(ray.distance_m, 0) + " m · limite CISPR 32 classe " +
+               simEsc(ray.classe) + " = " + simNb(p.limite_dbuv_m, 0) +
+               " → marge " + (p.marge_db >= 0 ? "+" : "") + simNb(p.marge_db, 1) + " dB",
+      impact: (serre
+        ? "Le courant de retour circule dans une boucle qui se comporte en antenne cadre : le champ croît comme le CARRÉ de la fréquence et proportionnellement à l'aire."
+        : "L'aire enfermée par le courant de retour est trop petite pour rayonner à ce rythme de signal.") +
+        reserveMC +
+        (p.champ_lointain ? ""
+          : " À cette fréquence la sonde est en champ PROCHE (λ/2π > distance) : la formule surestime."),
+      recommandation: serre
+        ? "Réduire l'AIRE de la boucle : rapprocher le via de masse (ou le condensateur de pontage) du via de signal, et amincir le diélectrique entre les deux plans concernés. C'est le seul geste qui agit à la fois sur l'inductance de boucle et sur l'émission."
+        : "Rien à faire de ce côté. Surveiller si le front s'accélère : le champ croît comme f²."
+    });
+  }else if(rays.some(r => r.hors_bande)){
+    items.push({
+      id: "rayonnement_hors_bande",
+      categorie: "retour",
+      nomCategorie: "Chemin de retour & Plans",
+      titre: "Rayonnement de la boucle hors de la bande réglementée",
+      severite: "ok",
+      chiffre: "Aucune harmonique de ce signal n'atteint 30 MHz, où commence la bande d'émission rayonnée de CISPR 32",
+      impact: "Le rayonnement de la boucle de retour n'est pas jugé ici. Cela ne vaut QUE pour la boucle : le mode commun sur les câbles, lui, se mesure à partir de 30 MHz quel que soit le rythme du signal." + reserveMC,
+      recommandation: "Rien à faire de ce côté tant que le front ne s'accélère pas."
+    });
   }
 
   // Couture de masse coplanaire
@@ -6312,12 +6743,9 @@ function simRendreDiff(){
       "impair.",SIM.lots.length,SIM.lotsAttendus);
   if(SIM.err)return '<p class="simErr">'+simEsc(SIM.err)+"</p>";
   if(!SIM.res)
-    return '<p class="simEtat">Sélectionnez UNE des deux pistes de la paire, '+
-      "puis calculez.<br><small>L’autre n’a pas à être sélectionnée : elle "+
-      "est trouvée dans le voisinage, comme le serait n’importe quel cuivre "+
-      "qui longe. Z différentielle et Z commune sortent de la même section à "+
-      "deux conducteurs — la sélectionner en entier ne changerait "+
-      "rien.</small></p>";
+    return '<p class="simEtat">Sélectionnez la paire différentielle, puis calculez.<br>'+
+      "<small>Double-clic gauche sur la 1ère piste (sélectionne toute la piste sur la couche).<br>"+
+      "Maintenez Ctrl et faites un double-clic gauche (ou un simple clic gauche avec Ctrl) sur la 2ème piste pour l'ajouter.</small></p>";
   return simFicheDiff();
 }
 
@@ -10049,24 +10477,1521 @@ function simXtExportJson(){
                  simXtNomFichier("-crosstalk.json"),"application/json");
 }
 
+/* ===========================================================================
+   L'ANALYSE « BUS SYNCHRONE » (Timing Closure : Setup & Hold)
+   
+   Vérification physique de la fermeture temporelle d'un bus synchrone nommé :
+   temps de vol réels de transmission, skews relatifs aux horloges,
+   marges d'établissement (Setup Slack) et de maintien (Hold Slack),
+   détection des violations et calcul d'allongement par serpentins.
+   =========================================================================== */
+const SIM_BUS_PROTOCOLES={
+  spi:{
+    nom:"SPI (Synchrone)",
+    court:"SPI",
+    methode:"timing",
+    freq:25,
+    tsu:3.0,
+    th:1.5,
+    tcoMin:1.5,
+    tcoMax:7.0,
+    rpu:4.7,
+    baud:115200,
+    desc:"Bus synchrone 4 fils (SCK, MOSI, MISO, CS). Vérification des skews d'aller et aller-retour."
+  },
+  qspi:{
+    nom:"QSPI Flash (Rapide)",
+    court:"QSPI",
+    methode:"timing",
+    freq:100,
+    tsu:1.5,
+    th:0.8,
+    tcoMin:1.2,
+    tcoMax:3.5,
+    rpu:4.7,
+    baud:115200,
+    desc:"Quad-SPI Flash haute vitesse. Skew strict sur les 4 lignes de données IO0..IO3."
+  },
+  i2c:{
+    nom:"I2C (Open-Drain)",
+    court:"I2C",
+    methode:"i2c",
+    freq:0.4,
+    tsu:0.1,
+    th:0,
+    tcoMin:0,
+    tcoMax:0.9,
+    rpu:4.7,
+    baud:115200,
+    desc:"Bus open-drain 2 fils (SCL, SDA). Vérification de la capacité parasite et du temps de montée RC."
+  },
+  uart:{
+    nom:"UART Asynchrone",
+    court:"UART",
+    methode:"uart",
+    freq:0.1152,
+    tsu:0,
+    th:0,
+    tcoMin:0,
+    tcoMax:0,
+    rpu:4.7,
+    baud:115200,
+    desc:"Liaison série point-à-point (TX, RX). Vérification de l'intégrité de signal et dégradation de front."
+  },
+  rgmii:{
+    nom:"RGMII Gigabit (125 MHz)",
+    court:"RGMII",
+    methode:"timing",
+    freq:125,
+    tsu:1.0,
+    th:0.8,
+    tcoMin:-0.5,
+    tcoMax:0.5,
+    rpu:4.7,
+    baud:115200,
+    desc:"Bus Ethernet source-synchrone DDR 125 MHz. Skew horloge/données critique."
+  },
+  sdram:{
+    nom:"SDRAM / DDR",
+    court:"SDRAM",
+    methode:"timing",
+    freq:133,
+    tsu:1.5,
+    th:0.8,
+    tcoMin:1.5,
+    tcoMax:5.4,
+    rpu:4.7,
+    baud:115200,
+    desc:"Bus mémoire synchrone. Vérification de l'alignement des temps de vol."
+  },
+  custom:{
+    nom:"Manuel / Expert",
+    court:"MANUEL",
+    methode:"timing",
+    freq:50,
+    tsu:2.0,
+    th:1.0,
+    tcoMin:1.0,
+    tcoMax:5.0,
+    rpu:4.7,
+    baud:115200,
+    desc:"Paramétrage entièrement libre de la fréquence et des contraintes d'émission/réception."
+  }
+};
+
+const SIM_BUS_PRESETS={
+  spi50:    {freq:50,  tsu:3.0, th:1.0, tcoMin:2.0, tcoMax:6.0},
+  qspi100:  {freq:100, tsu:1.5, th:0.8, tcoMin:1.2, tcoMax:3.5},
+  sdram133: {freq:133, tsu:1.5, th:0.8, tcoMin:1.5, tcoMax:5.4},
+  rgmii125: {freq:125, tsu:1.0, th:0.8, tcoMin:1.2, tcoMax:2.6},
+  ddr200:   {freq:200, tsu:0.5, th:0.4, tcoMin:0.6, tcoMax:1.8}
+};
+
+const SIM_BUS={
+  nom:"Bus synchrone",
+  comp1:"",
+  comp2:"",
+  protocole:"spi",
+  freqMhz:25,
+  tsu:3.0,
+  th:1.5,
+  tcoMin:1.5,
+  tcoMax:7.0,
+  rpuK:4.7,
+  baudrate:115200,
+  clocks:[],
+  datas:[],
+  dataClockMap:{},
+  result:null,
+  erreur:""
+};
+
+const _simR1=v=>Math.round(v*10)/10;
+const _simR2=v=>Math.round(v*100)/100;
+const _simR3=v=>Math.round(v*1000)/1000;
+
+function simCorpsBus(){
+  const b=SIM_BUS;
+  const pKey=b.protocole||"spi";
+  const pCfg=SIM_BUS_PROTOCOLES[pKey]||SIM_BUS_PROTOCOLES.spi;
+
+  // Ligne 1 : Choix du protocole et réglages associés
+  let h='<div class="pnl-bar" id="simBusRowParams" style="gap:6px;flex-wrap:wrap;background:rgba(255,255,255,0.02);padding:4px 6px;border-radius:4px;border:1px solid var(--border2)">'+
+    '<span class="pnl-lbl">Protocole</span>'+
+    '<select class="simU simUSel" id="simBusProtocole" title="Protocole du bus (définit automatiquement la méthode et les tolérances)" style="max-width:130px">';
+  for(const k in SIM_BUS_PROTOCOLES){
+    h+='<option value="'+k+'"'+(k===pKey?' selected':'')+'>'+simEsc(SIM_BUS_PROTOCOLES[k].nom)+'</option>';
+  }
+  h+='</select>'+
+    '<span class="simBusProtoBadge simBusProto_'+pKey+'">'+pCfg.court+'</span>';
+
+  if(pCfg.methode==="i2c"){
+    h+='<span class="pnl-lbl">Mode</span>'+
+      '<select class="simU simUSel" id="simBusI2cMode" title="Mode I2C">'+
+        '<option value="0.1"'+(b.freqMhz<=0.1?' selected':'')+'>Standard (100 kHz)</option>'+
+        '<option value="0.4"'+(b.freqMhz>0.1&&b.freqMhz<=0.4?' selected':'')+'>Fast-mode (400 kHz)</option>'+
+        '<option value="1.0"'+(b.freqMhz>0.4?' selected':'')+'>Fast-mode Plus (1 MHz)</option>'+
+      '</select>'+
+      '<span class="pnl-lbl">R_pullup</span>'+
+      '<input class="simChamp" id="simBusRpu" value="'+(b.rpuK||4.7)+'" style="width:40px" title="Résistance de pull-up (kΩ)">'+
+      '<span class="simU">kΩ</span>';
+  }else if(pCfg.methode==="uart"){
+    h+='<span class="pnl-lbl">Débit</span>'+
+      '<select class="simU simUSel" id="simBusBaud" title="Baudrate UART">';
+    for(const bd of [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]){
+      h+='<option value="'+bd+'"'+(bd===(b.baudrate||115200)?' selected':'')+'>'+bd+' bauds</option>';
+    }
+    h+='</select>';
+  }else{ // timing (SPI, QSPI, RGMII, SDRAM, Custom)
+    h+='<span class="pnl-lbl">f</span>'+
+      '<input class="simChamp" id="simBusFreq" value="'+b.freqMhz+'" style="width:40px" title="Fréquence d\'horloge du bus (MHz)">'+
+      '<span class="simU">MHz</span>'+
+      '<span class="simU">t_su</span>'+
+      '<input class="simChamp" id="simBusTsu" value="'+b.tsu+'" style="width:36px" title="Setup Time : temps d\'établissement requis (ns)">'+
+      '<span class="simU">ns</span>'+
+      '<span class="simU">t_h</span>'+
+      '<input class="simChamp" id="simBusTh" value="'+b.th+'" style="width:36px" title="Hold Time : temps de maintien requis (ns)">'+
+      '<span class="simU">ns</span>'+
+      '<span class="simU">T_co min</span>'+
+      '<input class="simChamp" id="simBusTcoMin" value="'+b.tcoMin+'" style="width:36px" title="Délai min d\'émission (clock-to-output hold, ns)">'+
+      '<span class="simU">ns</span>'+
+      '<span class="simU">T_co max</span>'+
+      '<input class="simChamp" id="simBusTcoMax" value="'+b.tcoMax+'" style="width:36px" title="Délai max d\'émission (clock-to-output valid, ns)">'+
+      '<span class="simU">ns</span>';
+  }
+  h+='</div>';
+
+  // Ligne 2 : Nom, gestion manuelle des signaux et boutons d'action
+  h+='<div class="pnl-bar simBarFixe" style="gap:6px;flex-wrap:wrap">'+
+    '<span class="pnl-lbl">Nom</span>'+
+    '<input class="simChamp simChampTexte" id="simBusNom" value="'+simEsc(b.nom)+'" style="width:125px" placeholder="Nom du bus">'+
+    '<select class="simU simUSel" id="simBusAddNet" title="Sélectionner un net du design à ajouter manuellement au bus" style="max-width:130px">'+
+      '<option value="">+ Ajouter net… ▾</option>'+
+    '</select>'+
+    '<button class="tb mini" id="simBusAddClk" title="Ajouter une ligne Horloge (CLK)">+ Horloge</button>'+
+    '<button class="tb mini" id="simBusAddData" title="Ajouter une ligne Donnée (DATA)">+ Donnée</button>'+
+    '<button class="tb mini" id="simBusRaz" title="Vider tous les signaux">Vider</button>'+
+    '<button class="tb mini on" id="simBusGo" title="Lancer la simulation du bus">▶ Simuler</button>'+
+    '<button class="tb mini" id="simBusCsv" title="Exporter le rapport au format .csv">.csv</button>'+
+    '<button class="tb mini" id="simBusJson" title="Exporter la configuration au format .json">.json</button>'+
+  '</div>'+
+  '<div class="simBusNetsList" id="simBusNetsBar"></div>';
+
+  return h;
+}
+
+function simBusRendreComposants(){
+  const c1Sel=simEl("simBusComp1");
+  const c2Sel=simEl("simBusComp2");
+  if(!c1Sel||!c2Sel) return;
+  const comps=(SIM_ED&&typeof SIM_ED.listeComposants==="function")?SIM_ED.listeComposants():[];
+
+  let h1='<option value="">Composant 1…</option>';
+  let h2='<option value="">Composant 2…</option>';
+  for(const c of comps){
+    const desc=c.ref+(c.val?' ('+c.val+')':'');
+    h1+='<option value="'+simEsc(c.ref)+'"'+(c.ref===SIM_BUS.comp1?' selected':'')+'>'+simEsc(desc)+'</option>';
+    h2+='<option value="'+simEsc(c.ref)+'"'+(c.ref===SIM_BUS.comp2?' selected':'')+'>'+simEsc(desc)+'</option>';
+  }
+  c1Sel.innerHTML=h1;
+  c2Sel.innerHTML=h2;
+}
+
+function simBusClassifierNets(nets, proto){
+  const clocks=[], datas=[];
+  const p=proto||"spi";
+
+  for(const net of nets){
+    const u=net.toUpperCase();
+    if(p==="i2c"){
+      if(u.includes("SCL")||u.includes("CLK")||u.includes("CK")){
+        clocks.push(net);
+      }else{
+        datas.push(net);
+      }
+    }else if(p==="uart"){
+      datas.push(net);
+    }else{
+      if(u.includes("CLK")||u.includes("SCK")||u.includes("CK")){
+        clocks.push(net);
+      }else{
+        datas.push(net);
+      }
+    }
+  }
+
+  if(p!=="uart"&&clocks.length===0&&datas.length>0){
+    clocks.push(datas.shift());
+  }
+
+  return {clocks, datas};
+}
+
+function simBusLierComposants(){
+  const c1Sel=simEl("simBusComp1");
+  const c2Sel=simEl("simBusComp2");
+  const protoSel=simEl("simBusProtocole");
+  const c1=(c1Sel&&c1Sel.value)?c1Sel.value:SIM_BUS.comp1;
+  const c2=(c2Sel&&c2Sel.value)?c2Sel.value:SIM_BUS.comp2;
+  const proto=(protoSel&&protoSel.value)?protoSel.value:SIM_BUS.protocole;
+
+  SIM_BUS.comp1=c1;
+  SIM_BUS.comp2=c2;
+  SIM_BUS.protocole=proto;
+
+  if(!c1||!c2){
+    SIM_BUS.erreur="Veuillez sélectionner Composant 1 et Composant 2.";
+    simRendre();
+    return;
+  }
+  if(c1===c2){
+    SIM_BUS.erreur="Veuillez choisir deux composants différents.";
+    simRendre();
+    return;
+  }
+  if(!SIM_ED||typeof SIM_ED.netsEntreComposants!=="function"){
+    SIM_BUS.erreur="L'outil ne fournit pas d'inspection de liaison inter-composants.";
+    simRendre();
+    return;
+  }
+
+  const nets=SIM_ED.netsEntreComposants(c1,c2);
+  if(!nets||!nets.length){
+    SIM_BUS.erreur="Aucun net commun trouvé entre "+c1+" et "+c2+".";
+    simRendre();
+    return;
+  }
+
+  const pCfg=SIM_BUS_PROTOCOLES[proto]||SIM_BUS_PROTOCOLES.spi;
+  SIM_BUS.nom=pCfg.court+" "+c1+" ➔ "+c2;
+  const nomIn=simEl("simBusNom");
+  if(nomIn) nomIn.value=SIM_BUS.nom;
+
+  if(pCfg.freq) SIM_BUS.freqMhz=pCfg.freq;
+  if(pCfg.tsu) SIM_BUS.tsu=pCfg.tsu;
+  if(pCfg.th) SIM_BUS.th=pCfg.th;
+  if(pCfg.tcoMin) SIM_BUS.tcoMin=pCfg.tcoMin;
+  if(pCfg.tcoMax) SIM_BUS.tcoMax=pCfg.tcoMax;
+  if(pCfg.rpu) SIM_BUS.rpuK=pCfg.rpu;
+  if(pCfg.baud) SIM_BUS.baudrate=pCfg.baud;
+
+  const classed=simBusClassifierNets(nets, proto);
+  SIM_BUS.clocks=classed.clocks;
+  SIM_BUS.datas=classed.datas;
+  SIM_BUS.dataClockMap={};
+  SIM_BUS.erreur="";
+
+  simPoser();
+  simBusCalculer();
+}
+
+function simBusRendreNetsBar(){
+  const bar=simEl("simBusNetsBar");
+  if(!bar)return;
+  const allNets=(SIM_ED&&typeof SIM_ED.listeNets==="function")?SIM_ED.listeNets():[];
+
+  // Met à jour la liste déroulante "+ Ajouter net..."
+  const addNetSel=simEl("simBusAddNet");
+  if(addNetSel){
+    const selNets=(SIM_ED&&typeof SIM_ED.netsSelectionnes==="function")?SIM_ED.netsSelectionnes():[];
+    let optHtml='<option value="">+ Ajouter net… ▾</option>';
+    const estDansBus=(n)=>{
+      for(const c of [...SIM_BUS.clocks, ...SIM_BUS.datas]){
+        const parts=c.replace(/\s*\([^)]*\)/g, "").split("+").map(s=>s.trim());
+        if(parts.includes(n)) return true;
+      }
+      return false;
+    };
+    const dispoNets=allNets.filter(n=>!estDansBus(n));
+    const selDispo=selNets.filter(n=>!estDansBus(n));
+    if(selDispo.length){
+      optHtml+='<optgroup label="Sélectionné sur la carte">';
+      for(const sn of selDispo){
+        optHtml+='<option value="'+simEsc(sn)+'">⚡ '+simEsc(sn)+'</option>';
+      }
+      optHtml+='</optgroup>';
+    }
+    const seriesBridges=(SIM_ED&&typeof SIM_ED.listeLiaisonsSeries==="function")?SIM_ED.listeLiaisonsSeries():[];
+    const bridgesDispo=seriesBridges.filter(b=>!SIM_BUS.clocks.includes(b)&&!SIM_BUS.datas.includes(b));
+    if(bridgesDispo.length){
+      optHtml+='<optgroup label="Liaisons série (Résistances d\'adaptation)">';
+      for(const sb of bridgesDispo){
+        optHtml+='<option value="'+simEsc(sb)+'">🔗 '+simEsc(sb)+'</option>';
+      }
+      optHtml+='</optgroup>';
+    }
+    optHtml+='<optgroup label="Tous les nets du design">';
+    for(const an of dispoNets){
+      optHtml+='<option value="'+simEsc(an)+'">'+simEsc(an)+'</option>';
+    }
+    optHtml+='</optgroup>';
+    addNetSel.innerHTML=optHtml;
+  }
+
+  if(!SIM_BUS.clocks.length&&!SIM_BUS.datas.length){
+    bar.innerHTML='<p class="simNote" style="margin:4px 0">Aucun signal dans le bus. Choisissez vos signaux via <b>+ Ajouter net… ▾</b> ou les boutons <b>+ Horloge / + Donnée</b>.<br><small>Cochez <b>R série</b> sur n\'importe quelle ligne pour prendre en compte une résistance d\'adaptation série (détection automatique ou manuelle).</small></p>';
+    return;
+  }
+
+  const renderNetOptions=(currentNet, pool)=>{
+    let opts='';
+    const baseList = pool || allNets;
+    const list = (currentNet && !baseList.includes(currentNet)) ? [currentNet, ...baseList] : baseList;
+    for(const n of list){
+      opts+='<option value="'+simEsc(n)+'"'+(n===currentNet?' selected':'')+'>'+simEsc(n)+'</option>';
+    }
+    return opts;
+  };
+
+  const renderPill=(role, net, extraHtml)=>{
+    const isChained=net.includes("+");
+    const cleanBase=net.replace(/\s*\([^)]*\)/g, "").split("+")[0].trim();
+    const cleanAval=isChained?net.replace(/\s*\([^)]*\)/g, "").split("+")[1].trim():"";
+    const rAnnotMatch=net.match(/\(([^)]+)\)/);
+    const rAnnot=rAnnotMatch?rAnnotMatch[1]:"";
+
+    const roleClass=role==="clk"?"simBusRoleClk":"simBusRoleData";
+    const roleLabel=role==="clk"?"⏱ CLK":"⇄ DATA";
+    const roleTitle=role==="clk"
+      ?"Rôle : Horloge (CLK) — Cliquez pour basculer en Donnée (DATA)"
+      :"Rôle : Donnée (DATA) — Cliquez pour basculer en Horloge (CLK)";
+
+    let rSerieHtml="";
+    if(isChained){
+      const dispoAval=allNets.filter(n=>n!==cleanBase);
+      let rComp = "R";
+      let rValNum = 22;
+      if(rAnnot){
+        const parts = rAnnot.trim().split(/\s+/);
+        rComp = parts[0] || "R";
+        if(parts.length > 1){
+          const valStr = parts.slice(1).join(" ");
+          const vMatch = valStr.match(/([0-9]+(?:\.[0-9]+)?)/);
+          if(vMatch){
+            let valNum = parseFloat(vMatch[1]);
+            if(/k/i.test(valStr)) valNum *= 1000;
+            rValNum = valNum;
+          }
+        }else{
+          const vMatch = parts[0].match(/([0-9]+(?:\.[0-9]+)?)/);
+          if(/^[A-Za-z]+/.test(parts[0]) && !/[ΩR]/i.test(parts[0])){
+            rComp = parts[0];
+            rValNum = 22;
+          }else if(vMatch){
+            rValNum = parseFloat(vMatch[1]);
+          }
+        }
+      }
+      rSerieHtml='<label class="simBusRSerieLabel" title="Résistance d\'adaptation série active sur cette ligne">'+
+          '<input type="checkbox" class="simBusRSerieChk" data-rserie-toggle="'+role+':'+simEsc(net)+'" checked> R série'+
+        '</label>'+
+        '<span style="color:var(--txt-dim);font-size:10px;margin:0 1px">➔</span>'+
+        '<span class="simBadge" style="font-size:8.5px;background:rgba(99,102,241,0.18);color:#a5b4fc;border:1px solid rgba(99,102,241,0.35);padding:1px 4px;border-radius:3px" title="Composant série d\'adaptation (référence PCB)">'+
+          simEsc(rComp)+
+        '</span>'+
+        '<input type="number" class="simBusRValInput" data-rval-change="'+role+':'+simEsc(net)+'" value="'+rValNum+'" min="0" max="100000" step="any" title="Valeur de la résistance d\'adaptation en Ohms (modifiable pour tester différentes valeurs)">'+
+        '<span style="font-size:10px;color:var(--txt-dim);margin:0 2px 0 1px">Ω</span>'+
+        '<span style="color:var(--txt-dim);font-size:10px;margin:0 1px">➔</span>'+
+        '<select class="simBusNetSelect" data-downstream-change="'+role+':'+simEsc(net)+'" title="Net aval (suite du bus après la résistance série)">'+
+          renderNetOptions(cleanAval, dispoAval)+
+        '</select>'+
+        '<button class="simBusDelBtn" data-unchain="'+role+':'+simEsc(net)+'" title="Déchaîner / retirer la résistance série">✂</button>';
+    }else{
+      rSerieHtml='<label class="simBusRSerieLabel" title="Cocher s\'il y a une résistance d\'adaptation série sur cette ligne (ex: damping 22Ω)">'+
+          '<input type="checkbox" class="simBusRSerieChk" data-rserie-toggle="'+role+':'+simEsc(net)+'"> R série'+
+        '</label>';
+    }
+
+    return '<span class="simBusNetPill">'+
+      '<button class="simBusRoleBtn '+roleClass+'" data-role-toggle="'+role+':'+simEsc(net)+'" title="'+simEsc(roleTitle)+'">'+roleLabel+'</button>'+
+      '<select class="simBusNetSelect" data-net-change="'+role+':'+simEsc(net)+'" title="Net émetteur / amont : cliquez pour choisir un autre net">'+
+        renderNetOptions(cleanBase, allNets)+
+      '</select>'+
+      rSerieHtml+
+      (extraHtml||'')+
+      '<button class="simBusDelBtn" data-del-net="'+role+':'+simEsc(net)+'" title="Retirer ce signal">×</button>'+
+    '</span>';
+  };
+
+  let h='';
+  for(const clk of SIM_BUS.clocks){
+    h+=renderPill("clk", clk);
+  }
+
+  for(const data of SIM_BUS.datas){
+    let selClkHtml="";
+    if(SIM_BUS.clocks.length>1){
+      const curClk=SIM_BUS.dataClockMap[data]||SIM_BUS.clocks[0];
+      selClkHtml='<span style="color:var(--txt-dim);font-size:9.5px;margin-left:2px">ref:</span>'+
+        '<select class="simU simUSel" data-clk-map="'+simEsc(data)+'" style="padding:1px 12px 1px 2px;font-size:9.5px" title="Horloge de référence associée">'+
+          SIM_BUS.clocks.map(c=>'<option value="'+simEsc(c)+'"'+(c===curClk?' selected':'')+'>'+simEsc(c)+'</option>').join('')+
+        '</select>';
+    }
+    h+=renderPill("data", data, selClkHtml);
+  }
+
+  bar.innerHTML=h;
+
+  bar.querySelectorAll("[data-role-toggle]").forEach(btn=>{
+    btn.onclick=()=>{
+      const parts=btn.getAttribute("data-role-toggle").split(":");
+      simBusBasculerRole(parts[0], parts.slice(1).join(":"));
+    };
+  });
+
+  bar.querySelectorAll("[data-net-change]").forEach(sel=>{
+    sel.onchange=()=>{
+      const parts=sel.getAttribute("data-net-change").split(":");
+      simBusChangerNet(parts[0], parts.slice(1).join(":"), sel.value);
+    };
+  });
+
+  bar.querySelectorAll("[data-rserie-toggle]").forEach(chk=>{
+    chk.onchange=()=>{
+      const parts=chk.getAttribute("data-rserie-toggle").split(":");
+      const role=parts[0];
+      const targetNet=parts.slice(1).join(":");
+      if(chk.checked){
+        simBusActiverRSerie(role, targetNet);
+      }else{
+        simBusDesactiverRSerie(role, targetNet);
+      }
+    };
+  });
+
+  bar.querySelectorAll("[data-rval-change]").forEach(inp=>{
+    inp.onchange=()=>{
+      const parts=inp.getAttribute("data-rval-change").split(":");
+      const role=parts[0];
+      const targetNet=parts.slice(1).join(":");
+      simBusChangerRSerieVal(role, targetNet, inp.value);
+    };
+    inp.onkeydown=(e)=>{
+      if(e.key==="Enter"){
+        inp.blur();
+      }
+    };
+  });
+
+  bar.querySelectorAll("[data-downstream-change]").forEach(sel=>{
+    sel.onchange=()=>{
+      const parts=sel.getAttribute("data-downstream-change").split(":");
+      const role=parts[0];
+      const targetNet=parts.slice(1).join(":");
+      simBusChangerNetAval(role, targetNet, sel.value);
+    };
+  });
+
+  bar.querySelectorAll("[data-unchain]").forEach(btn=>{
+    btn.onclick=()=>{
+      const parts=btn.getAttribute("data-unchain").split(":");
+      simBusDesactiverRSerie(parts[0], parts.slice(1).join(":"));
+    };
+  });
+
+  bar.querySelectorAll("[data-del-net]").forEach(btn=>{
+    btn.onclick=()=>{
+      const parts=btn.getAttribute("data-del-net").split(":");
+      simBusSupprimerSignal(parts[0], parts.slice(1).join(":"));
+    };
+  });
+
+  bar.querySelectorAll("[data-clk-map]").forEach(sel=>{
+    sel.onchange=()=>{
+      const n=sel.getAttribute("data-clk-map");
+      SIM_BUS.dataClockMap[n]=sel.value;
+      simBusCalculer();
+    };
+  });
+}
+
+function simBusSuivreSelection(){
+  if(!SIM_ED||typeof SIM_ED.netsSelectionnes!=="function") return;
+  const selNets=SIM_ED.netsSelectionnes();
+  if(!selNets||!selNets.length) return;
+
+  let modif=false;
+  for(const rawNet of selNets){
+    if(!rawNet) continue;
+    const cleanSel=rawNet.replace(/\s*\([^)]*\)/g, "").split("+")[0].trim();
+    if(!cleanSel) continue;
+    const cleanSelUpper=cleanSel.toUpperCase();
+
+    // 1. Si le net est déjà présent sans pont, vérifier si un pont est désormais disponible
+    let upgraded=false;
+    const resNet=simBusResoudreNetAvecPont(cleanSel);
+    if(resNet!==cleanSel){
+      const clkIdx=SIM_BUS.clocks.findIndex(c=>c.trim().toUpperCase()===cleanSelUpper);
+      if(clkIdx>=0&&!SIM_BUS.clocks[clkIdx].includes("+")){
+        SIM_BUS.clocks[clkIdx]=resNet;
+        modif=true; upgraded=true;
+      }
+      const dataIdx=SIM_BUS.datas.findIndex(d=>d.trim().toUpperCase()===cleanSelUpper);
+      if(dataIdx>=0&&!SIM_BUS.datas[dataIdx].includes("+")){
+        SIM_BUS.datas[dataIdx]=resNet;
+        if(SIM_BUS.dataClockMap[cleanSel]){
+          SIM_BUS.dataClockMap[resNet]=SIM_BUS.dataClockMap[cleanSel];
+          delete SIM_BUS.dataClockMap[cleanSel];
+        }
+        modif=true; upgraded=true;
+      }
+    }
+    if(upgraded) continue;
+
+    // 2. Vérifier si ce net est déjà présent (en amont ou en aval)
+    const dejaPresent=[...SIM_BUS.clocks, ...SIM_BUS.datas].some(s=>{
+      const parts=s.replace(/\s*\([^)]*\)/g, "").split("+").map(x=>x.trim().toUpperCase());
+      return parts.includes(cleanSelUpper);
+    });
+
+    if(!dejaPresent){
+      if(/clk|ck|sck|scl|bclk/i.test(resNet)&&!SIM_BUS.clocks.length&&SIM_BUS.protocole!=="uart"){
+        SIM_BUS.clocks.push(resNet);
+      }else if(!SIM_BUS.datas.includes(resNet)&&!SIM_BUS.clocks.includes(resNet)){
+        SIM_BUS.datas.push(resNet);
+      }
+      modif=true;
+    }
+  }
+
+  if(modif){
+    simBusRendreNetsBar();
+    simBusCalculer();
+  }
+}
+
+function simBusResoudreNetAvecPont(net){
+  if(!net) return net;
+  if(net.includes("+")) return net; // Déjà un net composé
+  if(SIM_ED && typeof SIM_ED.trouverPontSerie === "function"){
+    const pont = SIM_ED.trouverPontSerie(net);
+    if(pont && pont.netAval){
+      return pont.label;
+    }
+  }
+  return net;
+}
+
+function simBusChangerRSerieVal(role, targetNet, newValOhms){
+  const parts=targetNet.replace(/\s*\([^)]*\)/g, "").split("+");
+  const cleanBase=parts[0].trim();
+  const cleanAval=(parts[1]||"").trim();
+  const rAnnotMatch=targetNet.match(/\(([^)]+)\)/);
+  let compRef="R";
+  if(rAnnotMatch){
+    compRef=rAnnotMatch[1].trim().split(/\s+/)[0]||"R";
+  }
+  let vNum=parseFloat(newValOhms);
+  if(isNaN(vNum)||vNum<0) vNum=0;
+  const newNet=cleanBase+(cleanAval?(" + "+cleanAval):"")+" ("+compRef+" "+vNum+"Ω)";
+
+  if(role==="clk"){
+    const idx=SIM_BUS.clocks.indexOf(targetNet);
+    if(idx>=0) SIM_BUS.clocks[idx]=newNet;
+    for(const k in SIM_BUS.dataClockMap){
+      if(SIM_BUS.dataClockMap[k]===targetNet) SIM_BUS.dataClockMap[k]=newNet;
+    }
+  }else{
+    const idx=SIM_BUS.datas.indexOf(targetNet);
+    if(idx>=0) SIM_BUS.datas[idx]=newNet;
+    if(SIM_BUS.dataClockMap[targetNet]){
+      SIM_BUS.dataClockMap[newNet]=SIM_BUS.dataClockMap[targetNet];
+      delete SIM_BUS.dataClockMap[targetNet];
+    }
+  }
+
+  simBusRendreNetsBar();
+  simBusCalculer();
+}
+
+function simBusActiverRSerie(role, targetNet){
+  const cleanBase=targetNet.replace(/\s*\([^)]*\)/g, "").split("+")[0].trim();
+  const allNets=(SIM_ED&&typeof SIM_ED.listeNets==="function")?SIM_ED.listeNets():[];
+
+  // 1. Chercher si un composant passif série existe sur la carte connecté à ce net
+  const pont=(SIM_ED&&typeof SIM_ED.trouverPontSerie==="function")?SIM_ED.trouverPontSerie(cleanBase):null;
+
+  let newNet="";
+  if(pont&&pont.netAval){
+    newNet=pont.label;
+  }else{
+    const dispo=allNets.filter(n=>n!==cleanBase&&!SIM_BUS.clocks.includes(n)&&!SIM_BUS.datas.includes(n));
+    const nextNet=dispo[0]||(cleanBase+"_LOAD");
+    newNet=cleanBase+" + "+nextNet+" (R 22Ω)";
+  }
+
+  if(role==="clk"){
+    const idx=SIM_BUS.clocks.indexOf(targetNet);
+    if(idx>=0) SIM_BUS.clocks[idx]=newNet;
+    for(const k in SIM_BUS.dataClockMap){
+      if(SIM_BUS.dataClockMap[k]===targetNet) SIM_BUS.dataClockMap[k]=newNet;
+    }
+  }else{
+    const idx=SIM_BUS.datas.indexOf(targetNet);
+    if(idx>=0) SIM_BUS.datas[idx]=newNet;
+    if(SIM_BUS.dataClockMap[targetNet]){
+      SIM_BUS.dataClockMap[newNet]=SIM_BUS.dataClockMap[targetNet];
+      delete SIM_BUS.dataClockMap[targetNet];
+    }
+  }
+
+  simBusRendreNetsBar();
+  simBusCalculer();
+}
+
+function simBusDesactiverRSerie(role, targetNet){
+  const cleanBase=targetNet.replace(/\s*\([^)]*\)/g, "").split("+")[0].trim();
+  if(role==="clk"){
+    const idx=SIM_BUS.clocks.indexOf(targetNet);
+    if(idx>=0) SIM_BUS.clocks[idx]=cleanBase;
+    for(const k in SIM_BUS.dataClockMap){
+      if(SIM_BUS.dataClockMap[k]===targetNet) SIM_BUS.dataClockMap[k]=cleanBase;
+    }
+  }else{
+    const idx=SIM_BUS.datas.indexOf(targetNet);
+    if(idx>=0) SIM_BUS.datas[idx]=cleanBase;
+    if(SIM_BUS.dataClockMap[targetNet]){
+      SIM_BUS.dataClockMap[cleanBase]=SIM_BUS.dataClockMap[targetNet];
+      delete SIM_BUS.dataClockMap[targetNet];
+    }
+  }
+
+  simBusRendreNetsBar();
+  simBusCalculer();
+}
+
+function simBusChangerNetAval(role, targetNet, newAval){
+  if(!newAval) return;
+  const parts=targetNet.replace(/\s*\([^)]*\)/g, "").split("+");
+  const cleanBase=parts[0].trim();
+  const rAnnotMatch=targetNet.match(/\(([^)]+)\)/);
+  const annot=rAnnotMatch?(" ("+rAnnotMatch[1]+")"):"";
+  const newNet=cleanBase+" + "+newAval+annot;
+
+  if(role==="clk"){
+    const idx=SIM_BUS.clocks.indexOf(targetNet);
+    if(idx>=0) SIM_BUS.clocks[idx]=newNet;
+    for(const k in SIM_BUS.dataClockMap){
+      if(SIM_BUS.dataClockMap[k]===targetNet) SIM_BUS.dataClockMap[k]=newNet;
+    }
+  }else{
+    const idx=SIM_BUS.datas.indexOf(targetNet);
+    if(idx>=0) SIM_BUS.datas[idx]=newNet;
+    if(SIM_BUS.dataClockMap[targetNet]){
+      SIM_BUS.dataClockMap[newNet]=SIM_BUS.dataClockMap[targetNet];
+      delete SIM_BUS.dataClockMap[targetNet];
+    }
+  }
+
+  simBusRendreNetsBar();
+  simBusCalculer();
+}
+
+function simBusChainerNet(role, targetNet, netToAdd){
+  if(!netToAdd) return;
+  const newNet=targetNet+" + "+netToAdd;
+  if(role==="clk"){
+    const idx=SIM_BUS.clocks.indexOf(targetNet);
+    if(idx>=0) SIM_BUS.clocks[idx]=newNet;
+    for(const k in SIM_BUS.dataClockMap){
+      if(SIM_BUS.dataClockMap[k]===targetNet) SIM_BUS.dataClockMap[k]=newNet;
+    }
+  }else{
+    const idx=SIM_BUS.datas.indexOf(targetNet);
+    if(idx>=0) SIM_BUS.datas[idx]=newNet;
+    if(SIM_BUS.dataClockMap[targetNet]){
+      SIM_BUS.dataClockMap[newNet]=SIM_BUS.dataClockMap[targetNet];
+      delete SIM_BUS.dataClockMap[targetNet];
+    }
+  }
+  simBusRendreNetsBar();
+  simBusCalculer();
+}
+
+function simBusDechainerNet(role, targetNet){
+  simBusDesactiverRSerie(role, targetNet);
+}
+
+function simBusBasculerRole(role, net){
+  if(role==="clk"){
+    SIM_BUS.clocks=SIM_BUS.clocks.filter(x=>x!==net);
+    if(!SIM_BUS.datas.includes(net)) SIM_BUS.datas.push(net);
+  }else{
+    SIM_BUS.datas=SIM_BUS.datas.filter(x=>x!==net);
+    if(!SIM_BUS.clocks.includes(net)) SIM_BUS.clocks.push(net);
+    delete SIM_BUS.dataClockMap[net];
+  }
+  simBusRendreNetsBar();
+  simBusCalculer();
+}
+
+function simBusChangerNet(role, oldNet, newNet){
+  if(!newNet) return;
+  const cleanOld=oldNet.replace(/\s*\([^)]*\)/g, "").split("+")[0].trim();
+  if(oldNet.includes("+") && cleanOld===newNet) return;
+
+  let targetReplacement=newNet;
+  const pontAuto=(SIM_ED&&typeof SIM_ED.trouverPontSerie==="function")?SIM_ED.trouverPontSerie(newNet):null;
+  if(pontAuto&&pontAuto.netAval){
+    targetReplacement=pontAuto.label;
+  }else if(oldNet.includes("+")){
+    const oldAval=oldNet.replace(/\s*\([^)]*\)/g, "").split("+")[1].trim();
+    const rAnnotMatch=oldNet.match(/\(([^)]+)\)/);
+    const annot=rAnnotMatch?(" ("+rAnnotMatch[1]+")"):"";
+    if(newNet!==oldAval){
+      targetReplacement=newNet+" + "+oldAval+annot;
+    }
+  }
+
+  if(role==="clk"){
+    const idx=SIM_BUS.clocks.indexOf(oldNet);
+    if(idx>=0) SIM_BUS.clocks[idx]=targetReplacement;
+    for(const k in SIM_BUS.dataClockMap){
+      if(SIM_BUS.dataClockMap[k]===oldNet) SIM_BUS.dataClockMap[k]=targetReplacement;
+    }
+  }else{
+    const idx=SIM_BUS.datas.indexOf(oldNet);
+    if(idx>=0) SIM_BUS.datas[idx]=targetReplacement;
+    if(SIM_BUS.dataClockMap[oldNet]){
+      SIM_BUS.dataClockMap[targetReplacement]=SIM_BUS.dataClockMap[oldNet];
+      delete SIM_BUS.dataClockMap[oldNet];
+    }
+  }
+  simBusRendreNetsBar();
+  simBusCalculer();
+}
+
+function simBusSupprimerSignal(role, net){
+  SIM_BUS.clocks=SIM_BUS.clocks.filter(x=>x!==net);
+  SIM_BUS.datas=SIM_BUS.datas.filter(x=>x!==net);
+  delete SIM_BUS.dataClockMap[net];
+  simBusRendreNetsBar();
+  simBusCalculer();
+}
+
+function simBrancherBus(){
+  const protoSel=simEl("simBusProtocole");
+  if(protoSel) protoSel.onchange=()=>{
+    SIM_BUS.protocole=protoSel.value;
+    const p=SIM_BUS_PROTOCOLES[protoSel.value];
+    if(p){
+      if(p.freq) SIM_BUS.freqMhz=p.freq;
+      if(p.tsu) SIM_BUS.tsu=p.tsu;
+      if(p.th) SIM_BUS.th=p.th;
+      if(p.tcoMin) SIM_BUS.tcoMin=p.tcoMin;
+      if(p.tcoMax) SIM_BUS.tcoMax=p.tcoMax;
+      if(p.rpu) SIM_BUS.rpuK=p.rpu;
+      if(p.baud) SIM_BUS.baudrate=p.baud;
+    }
+    simPoser();
+    simBusCalculer();
+  };
+
+  const nomIn=simEl("simBusNom");
+  if(nomIn){
+    nomIn.value=SIM_BUS.nom||"";
+    nomIn.oninput=()=>{SIM_BUS.nom=nomIn.value.trim()||"Bus synchrone";};
+  }
+
+  const numInput=(id, key)=>{
+    const el=simEl(id);
+    if(!el)return;
+    el.value=SIM_BUS[key];
+    el.oninput=()=>{
+      const v=parseFloat(String(el.value).replace(",","."));
+      if(isFinite(v)&&v>=0){
+        SIM_BUS[key]=v;
+        simBusCalculer();
+      }
+    };
+  };
+  numInput("simBusFreq","freqMhz");
+  numInput("simBusTsu","tsu");
+  numInput("simBusTh","th");
+  numInput("simBusTcoMin","tcoMin");
+  numInput("simBusTcoMax","tcoMax");
+  numInput("simBusRpu","rpuK");
+
+  const selI2cMode=simEl("simBusI2cMode");
+  if(selI2cMode){
+    selI2cMode.onchange=()=>{
+      SIM_BUS.freqMhz=parseFloat(selI2cMode.value)||0.4;
+      simBusCalculer();
+    };
+  }
+
+  const selBaud=simEl("simBusBaud");
+  if(selBaud){
+    selBaud.onchange=()=>{
+      SIM_BUS.baudrate=parseInt(selBaud.value,10)||115200;
+      simBusCalculer();
+    };
+  }
+
+  const addNetSel=simEl("simBusAddNet");
+  if(addNetSel){
+    addNetSel.onchange=()=>{
+      let net=addNetSel.value;
+      if(!net)return;
+      net=simBusResoudreNetAvecPont(net);
+      if(/clk|ck|sck|scl/i.test(net)&&!SIM_BUS.clocks.length&&SIM_BUS.protocole!=="uart"){
+        if(!SIM_BUS.clocks.includes(net)) SIM_BUS.clocks.push(net);
+      }else{
+        if(!SIM_BUS.datas.includes(net)&&!SIM_BUS.clocks.includes(net)) SIM_BUS.datas.push(net);
+      }
+      addNetSel.value="";
+      simBusRendreNetsBar();
+      simBusCalculer();
+    };
+  }
+
+  const bAddClk=simEl("simBusAddClk");
+  if(bAddClk){
+    bAddClk.onclick=()=>{
+      const all=(SIM_ED&&typeof SIM_ED.listeNets==="function")?SIM_ED.listeNets():[];
+      const dispo=all.filter(n=>!SIM_BUS.clocks.includes(n)&&!SIM_BUS.datas.includes(n));
+      const clkCandidate=dispo.find(n=>/clk|ck|sck|scl/i.test(n))||dispo[0]||("CLK_"+(SIM_BUS.clocks.length+1));
+      SIM_BUS.clocks.push(simBusResoudreNetAvecPont(clkCandidate));
+      simBusRendreNetsBar();
+      simBusCalculer();
+    };
+  }
+
+  const bAddData=simEl("simBusAddData");
+  if(bAddData){
+    bAddData.onclick=()=>{
+      const all=(SIM_ED&&typeof SIM_ED.listeNets==="function")?SIM_ED.listeNets():[];
+      const dispo=all.filter(n=>!SIM_BUS.clocks.includes(n)&&!SIM_BUS.datas.includes(n));
+      const dataCandidate=dispo[0]||all.find(n=>!SIM_BUS.clocks.includes(n)&&!SIM_BUS.datas.includes(n))||("DATA_"+(SIM_BUS.datas.length+1));
+      SIM_BUS.datas.push(simBusResoudreNetAvecPont(dataCandidate));
+      simBusRendreNetsBar();
+      simBusCalculer();
+    };
+  }
+
+  const bRaz=simEl("simBusRaz");
+  if(bRaz){
+    bRaz.onclick=()=>{
+      SIM_BUS.clocks=[];
+      SIM_BUS.datas=[];
+      SIM_BUS.dataClockMap={};
+      SIM_BUS.result=null;
+      SIM_BUS.erreur="";
+      simBusRendreNetsBar();
+      simRendre();
+    };
+  }
+
+  const bGo=simEl("simBusGo");
+  if(bGo) bGo.onclick=()=>{ simBusCalculer(); };
+
+  const bCsv=simEl("simBusCsv");
+  if(bCsv) bCsv.onclick=simBusExportCsv;
+
+  const bJson=simEl("simBusJson");
+  if(bJson) bJson.onclick=simBusExportJson;
+
+  // Auto-population au premier affichage si vide
+  if(!SIM_BUS.clocks.length&&!SIM_BUS.datas.length){
+    let initNets=[];
+    if(SIM_ED&&typeof SIM_ED.netsSelectionnes==="function"){
+      initNets=SIM_ED.netsSelectionnes();
+    }
+    if(!initNets.length&&SIM_ED&&typeof SIM_ED.listeNets==="function"){
+      const all=SIM_ED.listeNets();
+      const clk=all.find(n=>/clk|ck|sck|bclk/i.test(n));
+      if(clk){
+        initNets=[clk, ...all.filter(n=>n!==clk).slice(0,7)];
+      }
+    }
+    for(const n of initNets){
+      const resNet=simBusResoudreNetAvecPont(n);
+      if(/clk|ck|sck|bclk/i.test(resNet)&&!SIM_BUS.clocks.length){
+        SIM_BUS.clocks.push(resNet);
+      }else if(!SIM_BUS.datas.includes(resNet)){
+        SIM_BUS.datas.push(resNet);
+      }
+    }
+  }
+
+  simBusRendreNetsBar();
+  simBusCalculer();
+}
+
+function simBusCalculer(){
+  SIM_BUS.erreur="";
+  const proto=SIM_BUS.protocole||"spi";
+  const pCfg=SIM_BUS_PROTOCOLES[proto]||SIM_BUS_PROTOCOLES.spi;
+
+  if(!SIM_ED||typeof SIM_ED.busNetFlight!=="function"){
+    SIM_BUS.erreur="Cet outil ne fournit pas de calcul physique de bus.";
+    simRendre();
+    return;
+  }
+
+  const allSignals=[...SIM_BUS.clocks, ...SIM_BUS.datas];
+  if(!allSignals.length){
+    SIM_BUS.result=null;
+    SIM_BUS.erreur="";
+    simRendre();
+    return;
+  }
+
+  if(pCfg.methode==="i2c"){
+    // -------------------------------------------------------------
+    // SIMULATION I2C : Capacité parasite & Temps de montée RC
+    // -------------------------------------------------------------
+    const allSignals=[...SIM_BUS.clocks, ...SIM_BUS.datas];
+    if(!allSignals.length){
+      SIM_BUS.erreur="Veuillez désigner au moins une ligne I2C (ex: SCL, SDA).";
+      simRendre();
+      return;
+    }
+    const fMhz=SIM_BUS.freqMhz||0.4;
+    const rpuOhm=(SIM_BUS.rpuK||4.7)*1000;
+    let trMaxNs=1000, maxCbusPf=400, modeNom="Standard-mode (100 kHz)";
+    if(fMhz>0.4){
+      trMaxNs=120; maxCbusPf=550; modeNom="Fast-mode Plus (1 MHz)";
+    }else if(fMhz>0.1){
+      trMaxNs=300; maxCbusPf=400; modeNom="Fast-mode (400 kHz)";
+    }
+
+    const signals=[];
+    let allPass=true;
+    let maxCapSeen=0;
+    let maxTrSeen=0;
+
+    for(const net of allSignals){
+      const info=SIM_ED.busNetFlight(net);
+      const capPf=info.capPf||_simR2(info.len*0.08)||1.0;
+      if(capPf>maxCapSeen) maxCapSeen=capPf;
+
+      // Temps de montée standard I2C : tr = ln(0.7/0.3) * Rpu * C ≈ 0.8473 * Rpu * C
+      const trNs=_simR1(0.8473 * rpuOhm * (capPf * 1e-12) * 1e9);
+      if(trNs>maxTrSeen) maxTrSeen=trNs;
+
+      const rpuMaxK=_simR1((trMaxNs * 1e-9) / (0.8473 * (capPf * 1e-12) * 1000));
+      let status="ok";
+      if(capPf>maxCbusPf){
+        status="cap_violation";
+        allPass=false;
+      }else if(trNs>trMaxNs){
+        status="rise_violation";
+        allPass=false;
+      }
+
+      signals.push({
+        net:net,
+        role:SIM_BUS.clocks.includes(net)?"SCL (Clock)":"SDA (Data)",
+        len:info.len,
+        capPf:capPf,
+        trNs:trNs,
+        trMaxNs:trMaxNs,
+        rpuMaxK:rpuMaxK,
+        status:status
+      });
+    }
+
+    SIM_BUS.result={
+      methode:"i2c",
+      protocole:proto,
+      protoNom:pCfg.nom,
+      modeNom:modeNom,
+      fMhz:fMhz,
+      rpuK:SIM_BUS.rpuK||4.7,
+      allPass:allPass,
+      signals:signals,
+      summary:{
+        allPass:allPass,
+        maxCapPf:_simR2(maxCapSeen),
+        maxTrNs:_simR1(maxTrSeen),
+        maxCbusPf:maxCbusPf,
+        trMaxNs:trMaxNs,
+        signalsCount:signals.length
+      }
+    };
+    simRendre();
+    return;
+  }
+
+  if(pCfg.methode==="uart"){
+    // -------------------------------------------------------------
+    // SIMULATION UART : Intégrité asynchrone point-à-point
+    // -------------------------------------------------------------
+    const allSignals=[...SIM_BUS.clocks, ...SIM_BUS.datas];
+    if(!allSignals.length){
+      SIM_BUS.erreur="Veuillez désigner au moins une ligne UART (ex: TX, RX).";
+      simRendre();
+      return;
+    }
+    const baud=SIM_BUS.baudrate||115200;
+    const tbitNs=_simR1(1e9 / baud);
+
+    const signals=[];
+    let allPass=true;
+    let maxFlightPs=0;
+
+    for(const net of allSignals){
+      const info=SIM_ED.busNetFlight(net);
+      if(info.tflight>maxFlightPs) maxFlightPs=info.tflight;
+      const tflightNs=_simR3(info.tflight/1000);
+      const ratioPct=_simR2((tflightNs/tbitNs)*100);
+      let status="ok";
+      if(ratioPct>5){
+        status="warning";
+        allPass=false;
+      }
+      signals.push({
+        net:net,
+        role:/tx/i.test(net)?"TX (Émission)":(/rx/i.test(net)?"RX (Réception)":"Ligne UART"),
+        len:info.len,
+        tflightPs:info.tflight,
+        tbitNs:tbitNs,
+        ratioPct:ratioPct,
+        status:status
+      });
+    }
+
+    SIM_BUS.result={
+      methode:"uart",
+      protocole:proto,
+      protoNom:pCfg.nom,
+      baudrate:baud,
+      tbitNs:tbitNs,
+      allPass:allPass,
+      signals:signals,
+      summary:{
+        allPass:allPass,
+        baudrate:baud,
+        tbitNs:tbitNs,
+        maxFlightPs:maxFlightPs,
+        signalsCount:signals.length
+      }
+    };
+    simRendre();
+    return;
+  }
+
+  // -------------------------------------------------------------
+  // SIMULATION SYNCHRONE (SPI, QSPI, RGMII, SDRAM, Custom)
+  // -------------------------------------------------------------
+  if(!SIM_BUS.clocks.length || !SIM_BUS.datas.length){
+    if(SIM_BUS.clocks.length && !SIM_BUS.datas.length){
+      SIM_BUS.erreur="Veuillez désigner au moins un signal de Donnée (DATA) pour calculer le bus synchrone.";
+    }else if(!SIM_BUS.clocks.length && SIM_BUS.datas.length){
+      SIM_BUS.erreur="Veuillez désigner au moins un signal d'Horloge (CLK) pour calculer le bus synchrone.";
+    }
+    SIM_BUS.result=null;
+    simRendre();
+    return;
+  }
+
+  const freq=Math.max(1, SIM_BUS.freqMhz||100);
+  const Tcyc=1000/freq;
+  const TcycPs=Tcyc*1000;
+  const tsuPs=SIM_BUS.tsu*1000;
+  const thPs=SIM_BUS.th*1000;
+  const tcoMinPs=SIM_BUS.tcoMin*1000;
+  const tcoMaxPs=SIM_BUS.tcoMax*1000;
+
+  const clkMap={};
+  for(const clkNet of SIM_BUS.clocks){
+    clkMap[clkNet]=SIM_ED.busNetFlight(clkNet);
+  }
+
+  const signals=[];
+  let worstHoldSlack=Infinity;
+  let worstSetupSlack=Infinity;
+  let worstSkewPs=0;
+  let allPass=true;
+
+  for(const dataNet of SIM_BUS.datas){
+    const sInfo=SIM_ED.busNetFlight(dataNet);
+    let clkRefName=SIM_BUS.dataClockMap[dataNet]||SIM_BUS.clocks[0];
+    if(!clkMap[clkRefName]) clkRefName=SIM_BUS.clocks[0];
+    const clkInfo=clkMap[clkRefName]||{len:0,tflight:0,psmm:6.7};
+
+    const sDelay=(sInfo.tflightTotal||sInfo.tflight);
+    const clkDelay=(clkInfo.tflightTotal||clkInfo.tflight);
+
+    const isSpiReturn=(proto==="spi"||proto==="qspi")&&/miso|din|rx|so\b|somi/i.test(dataNet);
+
+    const skewPs=_simR1(sDelay - clkDelay);
+    const skewMm=_simR3(sInfo.len - clkInfo.len);
+    if(Math.abs(skewPs)>Math.abs(worstSkewPs)) worstSkewPs=skewPs;
+
+    let slackSuPs=0, slackHPs=0;
+    if(isSpiReturn){
+      // Ligne retour MISO (aller horloge + temps interne esclave + retour donnée)
+      const totalArrivalPs=clkDelay + tcoMaxPs + sDelay;
+      slackSuPs=_simR1(TcycPs - totalArrivalPs - tsuPs);
+      slackHPs=_simR1((sDelay - clkDelay) + tcoMinPs - thPs);
+    }else{
+      // Ligne aller classique MOSI
+      slackSuPs=_simR1((TcycPs + clkDelay - sDelay) - (tcoMaxPs + tsuPs));
+      slackHPs=_simR1((sDelay - clkDelay) + tcoMinPs - thPs);
+    }
+
+    if(slackHPs<worstHoldSlack) worstHoldSlack=slackHPs;
+    if(slackSuPs<worstSetupSlack) worstSetupSlack=slackSuPs;
+
+    const psmm=sInfo.psmm||clkInfo.psmm||6.7;
+    let status="ok";
+    let meanderNeededMm=0;
+    let meanderOptMm=0;
+
+    const tdataOptPs=(TcycPs + 2*clkDelay + thPs - tsuPs - tcoMinPs - tcoMaxPs)/2;
+    if(tdataOptPs>sDelay){
+      meanderOptMm=_simR2((tdataOptPs - sDelay)/psmm);
+    }
+
+    if(slackHPs<0){
+      status="hold_violation";
+      allPass=false;
+      const dtNeededPs=Math.abs(slackHPs);
+      meanderNeededMm=_simR2(dtNeededPs/psmm);
+      if(meanderOptMm<meanderNeededMm) meanderOptMm=meanderNeededMm;
+    }else if(slackSuPs<0){
+      status="setup_violation";
+      allPass=false;
+    }
+
+    let actionHtml="—";
+    if(status==="hold_violation"){
+      if(SIM_ED&&typeof SIM_ED.armerSerpentin==="function"){
+        actionHtml='<button class="tb mini on simBtnMeander" data-net="'+simEsc(dataNet)+'" data-add="'+meanderOptMm+'" title="Armer l\'outil serpentin pour ce net">Régler serpentin (+'+meanderOptMm+' mm)</button>';
+      }else{
+        actionHtml='<span style="color:var(--txt-danger,#ef4444);font-weight:600">Serpentin requis (+'+meanderOptMm+' mm)</span>';
+      }
+    }else if(meanderOptMm>0.3){
+      if(SIM_ED&&typeof SIM_ED.armerSerpentin==="function"){
+        actionHtml='<button class="tb mini simBtnMeander" data-net="'+simEsc(dataNet)+'" data-add="'+meanderOptMm+'" title="Centrer la donnée au milieu de l\'œil">Centrer (+'+meanderOptMm+' mm)</button>';
+      }else{
+        actionHtml='<span style="color:var(--txt-dim)">Allonger (+'+meanderOptMm+' mm)</span>';
+      }
+    }
+
+    signals.push({
+      net:dataNet,
+      clkRef:clkRefName,
+      isReturn:isSpiReturn,
+      direction:isSpiReturn?"Esclave ➔ Maître":"Maître ➔ Esclave",
+      len:sInfo.len,
+      tflight:sDelay,
+      tflightLine:sInfo.tflight,
+      rcDelayPs:sInfo.rcDelayPs||0,
+      rOhms:sInfo.rOhms||0,
+      rComp:sInfo.rComp||"",
+      psmm:psmm,
+      skewPs:skewPs,
+      skewMm:skewMm,
+      slackSuPs:slackSuPs,
+      slackHPs:slackHPs,
+      status:status,
+      meanderNeededMm:meanderNeededMm,
+      meanderOptMm:meanderOptMm,
+      action:actionHtml
+    });
+  }
+
+  SIM_BUS.result={
+    methode:"timing",
+    protocole:proto,
+    protoNom:pCfg.nom,
+    clkMap:clkMap,
+    signals:signals,
+    summary:{
+      allPass:allPass,
+      worstHoldSlack:worstHoldSlack===Infinity?0:worstHoldSlack,
+      worstSetupSlack:worstSetupSlack===Infinity?0:worstSetupSlack,
+      worstSkewPs:worstSkewPs,
+      freqMhz:freq,
+      Tcyc:Tcyc,
+      clocksCount:SIM_BUS.clocks.length,
+      datasCount:signals.length
+    }
+  };
+
+  simRendre();
+}
+
+function simBusFormatNetLabel(netName){
+  if(!netName) return "—";
+  if(!netName.includes("+")) return '<b>'+simEsc(netName)+'</b>';
+  const cleanStr=netName.replace(/\s*\([^)]*\)/g, "");
+  const parts=cleanStr.split("+").map(s=>s.trim());
+  const rMatch=netName.match(/\(([^)]+)\)/);
+  const rAnnot=rMatch?rMatch[1]:"R série";
+  return '<div style="display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:10.5px">'+
+    '<b>'+simEsc(parts[0])+'</b>'+
+    '<span style="color:var(--txt-dim);font-size:9px">➔</span>'+
+    '<span class="simBadge" style="font-size:8px;background:rgba(99,102,241,0.18);color:#a5b4fc;border:1px solid rgba(99,102,241,0.35);padding:1px 3px;border-radius:2px" title="Résistance / composant d\'adaptation série">'+simEsc(rAnnot)+'</span>'+
+    '<span style="color:var(--txt-dim);font-size:9px">➔</span>'+
+    '<b>'+simEsc(parts[1]||"")+'</b>'+
+  '</div>';
+}
+
+function simRendreBus(){
+  if(SIM_BUS.erreur){
+    return '<div class="simBusWrap"><p class="simErr">'+simEsc(SIM_BUS.erreur)+'</p></div>';
+  }
+  const r=SIM_BUS.result;
+  if(!r){
+    return '<div class="simBusWrap"><p class="simEtat">Choisissez votre <b>Protocole</b> et ajoutez vos signaux via <b>+ Ajouter net… ▾</b> ou les boutons <b>+ Horloge / + Donnée</b>, puis cliquez sur <b>▶ Simuler</b>.<br>'+
+      '<small>Cochez <b>R série</b> sur n\'importe quel signal pour prendre en compte automatiquement ou manuellement une résistance d\'adaptation série.</small></p></div>';
+  }
+
+  let h='<div class="simBusWrap">';
+
+  const compInfo=(SIM_BUS.comp1&&SIM_BUS.comp2)?(' · '+simEsc(SIM_BUS.comp1)+' ➔ '+simEsc(SIM_BUS.comp2)):'';
+  h+='<div class="simBusCard">'+
+    '<div class="simBusCardHead">'+
+      '<div><b>'+simEsc(SIM_BUS.nom||"Liaison Bus")+'</b>'+compInfo+' · <span class="simBusProtoBadge simBusProto_'+r.protocole+'">'+simEsc(r.protoNom)+'</span></div>'+
+      (r.allPass
+        ? '<span class="simBadge simBadgeOk">✔ CONFORME</span>'
+        : '<span class="simBadge simBadgeCritique">⚠ VIOLATIONS DÉTECTÉES</span>')+
+    '</div>';
+
+  if(r.methode==="i2c"){
+    const s=r.summary;
+    h+='<div style="font-size:10.5px;color:var(--txt-dim);display:flex;gap:14px;flex-wrap:wrap">'+
+      '<span>Mode : <b>'+r.modeNom+'</b></span>'+
+      '<span>Pull-up : <b>'+r.rpuK+' kΩ</b></span>'+
+      '<span>Capacité max : <b style="color:'+(s.maxCapPf<=s.maxCbusPf?'#49c07a':'#ef4444')+'">'+s.maxCapPf+' pF (limite '+s.maxCbusPf+' pF)</b></span>'+
+      '<span>Temps montée max : <b style="color:'+(s.maxTrNs<=s.trMaxNs?'#49c07a':'#f59e0b')+'">'+s.maxTrNs+' ns (limite '+s.trMaxNs+' ns)</b></span>'+
+    '</div>'+
+    '</div>';
+
+    h+='<div style="max-height:340px;overflow-y:auto;border:1px solid var(--border2);border-radius:4px">'+
+      '<table class="simBusTab">'+
+        '<thead><tr>'+
+          '<th>Signal</th>'+
+          '<th>Net</th>'+
+          '<th style="text-align:right">Longueur</th>'+
+          '<th style="text-align:right">Capacité C_bus</th>'+
+          '<th style="text-align:right">Temps montée t_r</th>'+
+          '<th style="text-align:right">Limite norme</th>'+
+          '<th style="text-align:center">Statut</th>'+
+          '<th>Recommandation R_pu</th>'+
+        '</tr></thead><tbody>';
+
+    for(const sig of r.signals){
+      let badgeHtml='<span class="simBadge simBadgeOk">OK</span>';
+      let recoHtml='R_pu ≤ '+sig.rpuMaxK+' kΩ';
+      if(sig.status==="cap_violation"){
+        badgeHtml='<span class="simBadge simBadgeCritique">CAP EXCESSIVE</span>';
+        recoHtml='Raccourcir la piste ou réduire le nombre de pastilles';
+      }else if(sig.status==="rise_violation"){
+        badgeHtml='<span class="simBadge simBadgeAlerte">MONTÉE LENTE</span>';
+        recoHtml='Diminuer R_pullup (max '+sig.rpuMaxK+' kΩ)';
+      }
+      h+='<tr>'+
+        '<td><span class="simBusRoleBtn '+(sig.role.includes("SCL")?'simBusRoleClk':'simBusRoleData')+'">'+simEsc(sig.role)+'</span></td>'+
+        '<td>'+simBusFormatNetLabel(sig.net)+'</td>'+
+        '<td class="n">'+sig.len+' mm</td>'+
+        '<td class="n">'+sig.capPf+' pF</td>'+
+        '<td class="n">'+sig.trNs+' ns</td>'+
+        '<td class="n" style="color:var(--txt-dim)">'+sig.trMaxNs+' ns</td>'+
+        '<td style="text-align:center">'+badgeHtml+'</td>'+
+        '<td style="font-size:10px">'+recoHtml+'</td>'+
+      '</tr>';
+    }
+    h+='</tbody></table></div>';
+    h+='<p class="simNote" style="margin-top:8px">· <b>Norme I2C</b> : La capacité totale d\'une ligne ne doit pas dépasser 400 pF (ou 550 pF en Fast+). Le temps de montée dépend directement de la résistance de pull-up (<code>t_r ≈ 0.847 · R_pu · C_bus</code>).</p>';
+
+  }else if(r.methode==="uart"){
+    const s=r.summary;
+    h+='<div style="font-size:10.5px;color:var(--txt-dim);display:flex;gap:14px;flex-wrap:wrap">'+
+      '<span>Débit : <b>'+s.baudrate+' bauds</b></span>'+
+      '<span>Durée d\'un bit : <b>'+s.tbitNs+' ns</b></span>'+
+      '<span>Temps de vol max : <b>'+s.maxFlightPs+' ps</b></span>'+
+    '</div>'+
+    '</div>';
+
+    h+='<div style="max-height:340px;overflow-y:auto;border:1px solid var(--border2);border-radius:4px">'+
+      '<table class="simBusTab">'+
+        '<thead><tr>'+
+          '<th>Signal</th>'+
+          '<th>Net</th>'+
+          '<th style="text-align:right">Longueur</th>'+
+          '<th style="text-align:right">Temps de vol</th>'+
+          '<th style="text-align:right">Durée du bit</th>'+
+          '<th style="text-align:right">Ratio vol / bit</th>'+
+          '<th style="text-align:center">Statut</th>'+
+        '</tr></thead><tbody>';
+
+    for(const sig of r.signals){
+      let badgeHtml='<span class="simBadge simBadgeOk">EXCELLENT</span>';
+      if(sig.status==="warning"){
+        badgeHtml='<span class="simBadge simBadgeAlerte">ATTENTION</span>';
+      }
+      h+='<tr>'+
+        '<td><span class="simBusRoleBtn simBusRoleData">'+simEsc(sig.role)+'</span></td>'+
+        '<td>'+simBusFormatNetLabel(sig.net)+'</td>'+
+        '<td class="n">'+sig.len+' mm</td>'+
+        '<td class="n">'+sig.tflightPs+' ps</td>'+
+        '<td class="n">'+sig.tbitNs+' ns</td>'+
+        '<td class="n">'+sig.ratioPct+' %</td>'+
+        '<td style="text-align:center">'+badgeHtml+'</td>'+
+      '</tr>';
+    }
+    h+='</tbody></table></div>';
+    h+='<p class="simNote" style="margin-top:8px">· <b>Liaison UART</b> : Le temps de vol sur le PCB est généralement négligeable (< 0.1% du temps bit). Les débits élevés (> 1 Mbauds) requièrent une vérification d\'adaptation d\'impédance en ligne de transmission.</p>';
+
+  }else{
+    // Timing (SPI, QSPI, RGMII, SDRAM, Custom)
+    const s=r.summary;
+    h+='<div style="font-size:10.5px;color:var(--txt-dim);display:flex;gap:12px;flex-wrap:wrap">'+
+      '<span>Worst Hold Slack : <b style="color:'+(s.worstHoldSlack>=0?'#49c07a':'#ef4444')+'">'+(s.worstHoldSlack>0?'+':'')+s.worstHoldSlack+' ps</b></span>'+
+      '<span>Worst Setup Slack : <b style="color:'+(s.worstSetupSlack>=0?'#49c07a':'#f59e0b')+'">'+(s.worstSetupSlack>0?'+':'')+s.worstSetupSlack+' ps</b></span>'+
+      '<span>Skew max : <b>'+s.worstSkewPs+' ps</b></span>'+
+      '<span>f = <b>'+s.freqMhz+' MHz</b> (T_cyc = '+_simR2(s.Tcyc)+' ns)</span>'+
+    '</div>'+
+    '</div>';
+
+    h+='<div style="max-height:340px;overflow-y:auto;border:1px solid var(--border2);border-radius:4px">'+
+      '<table class="simBusTab">'+
+        '<thead><tr>'+
+          '<th>Rôle</th>'+
+          '<th>Sens</th>'+
+          '<th>Horloge réf.</th>'+
+          '<th>Net</th>'+
+          '<th style="text-align:right">Longueur</th>'+
+          '<th style="text-align:right">Temps vol</th>'+
+          '<th style="text-align:right">Skew Δt</th>'+
+          '<th style="text-align:right">Hold Slack</th>'+
+          '<th style="text-align:right">Setup Slack</th>'+
+          '<th style="text-align:center">Statut</th>'+
+          '<th>Action / Reco</th>'+
+        '</tr></thead><tbody>';
+
+    for(const clkNet of SIM_BUS.clocks){
+      const ci=r.clkMap[clkNet]||{len:0,tflight:0};
+      h+='<tr style="background:rgba(59,130,246,0.08)">'+
+        '<td><span class="simBusRoleBtn simBusRoleClk">CLK</span></td>'+
+        '<td style="color:var(--txt-dim);font-size:10px">Maître ➔ Esclave</td>'+
+        '<td style="color:var(--txt-dim)">réf.</td>'+
+        '<td>'+simBusFormatNetLabel(clkNet)+'</td>'+
+        '<td class="n">'+ci.len+' mm</td>'+
+        '<td class="n"'+(ci.rcDelayPs?' title="Délai ligne: '+ci.tflight+' ps + Retard RC: '+ci.rcDelayPs+' ps"':'')+'>'+(ci.tflightTotal||ci.tflight)+' ps</td>'+
+        '<td class="n" style="color:var(--txt-dim)">0 ps</td>'+
+        '<td class="n" style="color:var(--txt-dim)">—</td>'+
+        '<td class="n" style="color:var(--txt-dim)">—</td>'+
+        '<td style="text-align:center"><span class="simBadge" style="background:rgba(59,130,246,0.2);color:#93c5fd">RÉF CLK</span></td>'+
+        '<td style="color:var(--txt-dim)">—</td>'+
+      '</tr>';
+    }
+
+    for(const sig of r.signals){
+      let badgeHtml="";
+      if(sig.status==="hold_violation"){
+        badgeHtml='<span class="simBadge simBadgeCritique">VIOLATION HOLD (-'+Math.abs(sig.slackHPs)+' ps)</span>';
+      }else if(sig.status==="setup_violation"){
+        badgeHtml='<span class="simBadge simBadgeAlerte">VIOLATION SETUP (-'+Math.abs(sig.slackSuPs)+' ps)</span>';
+      }else{
+        badgeHtml='<span class="simBadge simBadgeOk">CONFORME (+'+sig.slackHPs+' ps)</span>';
+      }
+
+      h+='<tr>'+
+        '<td><span class="simBusRoleBtn simBusRoleData">DATA</span></td>'+
+        '<td style="font-size:10px;color:var(--txt-dim)">'+simEsc(sig.direction||"—")+'</td>'+
+        '<td><span style="font-family:var(--mono);font-size:10px">'+simEsc(sig.clkRef)+'</span></td>'+
+        '<td>'+simBusFormatNetLabel(sig.net)+'</td>'+
+        '<td class="n">'+sig.len+' mm</td>'+
+        '<td class="n"'+(sig.rcDelayPs?' title="Délai ligne: '+sig.tflightLine+' ps + Retard RC: '+sig.rcDelayPs+' ps"':'')+'>'+sig.tflight+' ps</td>'+
+        '<td class="n" style="color:'+(sig.skewPs>=0?'var(--txt)':'var(--yellow)')+'">'+(sig.skewPs>0?'+':'')+sig.skewPs+' ps</td>'+
+        '<td class="n" style="color:'+(sig.slackHPs>=0?'#49c07a':'#ef4444')+'">'+(sig.slackHPs>0?'+':'')+sig.slackHPs+' ps</td>'+
+        '<td class="n" style="color:'+(sig.slackSuPs>=0?'#49c07a':'#f59e0b')+'">'+(sig.slackSuPs>0?'+':'')+sig.slackSuPs+' ps</td>'+
+        '<td style="text-align:center">'+badgeHtml+'</td>'+
+        '<td>'+(sig.action||"—")+'</td>'+
+      '</tr>';
+    }
+
+    h+='</tbody></table></div>';
+    h+='<p class="simNote" style="margin-top:8px">· <b>Violation Hold</b> : le signal arrive trop vite sur le récepteur et écraserait la donnée précédente avant la fin de <code>t_h</code>. L\'ajout d\'un serpentin retarde la ligne pour la caler dans la fenêtre valide.<br>'+
+       '· <b>Violation Setup</b> : le signal arrive trop tard sur le récepteur (piste trop longue). En SPI, sur <code>MISO</code>, le temps total compte l\'aller de l\'horloge + le délai esclave + le retour de la donnée.</p>';
+  }
+
+  h+='</div>';
+  return h;
+}
+
+function simBusApres(){
+  const box=simEl("simSortie");
+  if(!box)return;
+  box.querySelectorAll(".simBtnMeander").forEach(btn=>{
+    btn.onclick=()=>{
+      const net=btn.getAttribute("data-net");
+      const addMm=parseFloat(btn.getAttribute("data-add"))||0;
+      if(SIM_ED&&typeof SIM_ED.armerSerpentin==="function"){
+        SIM_ED.armerSerpentin(net, addMm);
+      }
+    };
+  });
+}
+
+function simBusExportCsv(){
+  if(!SIM_BUS.result){
+    SIM_BUS.erreur="Rien à exporter : simulez d'abord le bus.";
+    simRendre();
+    return;
+  }
+  const r=SIM_BUS.result;
+  const n=v=>String(v).replace(".",",");
+  const l=["bus_nom;"+(SIM_BUS.nom||"bus")+";protocole;"+r.protocole+";composant_1;"+(SIM_BUS.comp1||"")+";composant_2;"+(SIM_BUS.comp2||"")];
+  if(r.methode==="i2c"){
+    l.push("signal;net;longueur_mm;cap_pf;tr_ns;tr_max_ns;statut;rpu_max_k");
+    for(const sig of r.signals){
+      l.push([sig.role, sig.net, n(sig.len), n(sig.capPf), n(sig.trNs), n(sig.trMaxNs), sig.status, n(sig.rpuMaxK)].join(";"));
+    }
+  }else if(r.methode==="uart"){
+    l.push("signal;net;longueur_mm;tflight_ps;tbit_ns;ratio_pct;statut");
+    for(const sig of r.signals){
+      l.push([sig.role, sig.net, n(sig.len), n(sig.tflightPs), n(sig.tbitNs), n(sig.ratioPct), sig.status].join(";"));
+    }
+  }else{
+    l.push("role;direction;horloge_ref;net;longueur_mm;tflight_ps;skew_ps;hold_slack_ps;setup_slack_ps;statut;meander_opt_mm");
+    for(const clk of SIM_BUS.clocks){
+      const ci=r.clkMap[clk]||{len:0,tflight:0};
+      l.push("HORLOGE;aller;ref;"+clk+";"+n(ci.len)+";"+n(ci.tflight)+";0;0;0;REF_CLK;0");
+    }
+    for(const sig of r.signals){
+      l.push(["DATA", sig.direction||"", sig.clkRef, sig.net, n(sig.len), n(sig.tflight), n(sig.skewPs), n(sig.slackHPs), n(sig.slackSuPs), sig.status, n(sig.meanderOptMm)].join(";"));
+    }
+  }
+  const nom=(SIM_BUS.nom||"bus").toLowerCase().replace(/[^a-z0-9_-]+/g,"_")+"-"+r.protocole+".csv";
+  simTelecharger("\ufeff"+l.join("\r\n")+"\r\n", nom, "text/csv;charset=utf-8");
+}
+
+function simBusExportJson(){
+  const obj={
+    nom:SIM_BUS.nom,
+    comp1:SIM_BUS.comp1,
+    comp2:SIM_BUS.comp2,
+    protocole:SIM_BUS.protocole,
+    params:{
+      freqMhz:SIM_BUS.freqMhz,
+      tsu:SIM_BUS.tsu,
+      th:SIM_BUS.th,
+      tcoMin:SIM_BUS.tcoMin,
+      tcoMax:SIM_BUS.tcoMax,
+      rpuK:SIM_BUS.rpuK,
+      baudrate:SIM_BUS.baudrate
+    },
+    clocks:SIM_BUS.clocks,
+    datas:SIM_BUS.datas,
+    dataClockMap:SIM_BUS.dataClockMap,
+    result:SIM_BUS.result
+  };
+  const nom=(SIM_BUS.nom||"bus").toLowerCase().replace(/[^a-z0-9_-]+/g,"_")+"-"+SIM_BUS.protocole+".json";
+  simTelecharger(JSON.stringify(obj,null,2), nom, "application/json");
+}
+
 const SIM_FAMILLES=[
   {cle:"si", court:"SI", nom:"Intégrité du signal",
    quoi:"Ce qu'un front devient en parcourant le cuivre : impédance, retard, "+
         "pertes, réflexions.",
-   /* TROIS ANALYSES LISENT LA MEME REPONSE DU SERVEUR, et c'est voulu : elles
-      ne posent pas la meme question. L'impedance est une propriete de la
-      SECTION DROITE, le chemin de retour une propriete de la LIAISON
-      VERTICALE, la Z differentielle une propriete de DEUX sections cote a
-      cote. Une piste parfaitement a 50 ohms peut avoir un retour
-      catastrophique : ce sont des defauts distincts, et les empiler dans une
-      fiche unique est ce qui les rendait invisibles. */
-   /* « CROSSTALK » EST À PART, ET C'EST ASSUMÉ. Elle ne partage pas leur
-      réponse du serveur — c'est une autre route, un autre calcul, un autre
-      résultat —, et elle répond seule à la question du couplage : combien une
-      voisine prend, ET où le long du parcours cela se fabrique. Elle a
-      remplacé l'onglet « Diaphonie », qui ne disait que le premier des deux
-      et le disait sur une section droite unique. */
-   analyses:["impedance","diff","crosstalk","retour","sante"]},
+   analyses:["impedance","diff","crosstalk","retour","sante","bus"]},
   {cle:"pi", court:"PI", nom:"Intégrité de l'alimentation",
    quoi:"Ce que le réseau de distribution laisse passer : chute continue, "+
         "impédance vue par le composant, résonances de plan.",
@@ -10180,6 +12105,20 @@ const SIM_ANALYSES={
        dépend du résultat. Il naît et meurt donc avec chaque rendu, et sans ce
        crochet il serait là, garni du bon état, et muet au clic. */
     apres:simDCBrancherFiche
+  },
+  bus:{
+    nom:"Bus synchrone",
+    titre:"Fermeture temporelle Setup & Hold d'un bus synchrone nommé : calcul des temps de vol physiques réels, skews relatifs aux horloges et compensation par serpentins.",
+    peint:false,
+    carte:"",
+    corps:simCorpsBus,
+    brancher:simBrancherBus,
+    rendre:simRendreBus,
+    apres:simBusApres,
+    relancer:simBusCalculer,
+    oublier:function(){
+      return false;
+    }
   }
 };
 
@@ -10465,6 +12404,7 @@ function simUniteChanger(cle,laquelle){
   else if(laquelle==="swing")SIM.saisie.uniteV=cle;
   else                  SIM.saisie.unite=cle;
   simSaisieEcrire();                 // le réécrit dans la nouvelle
+  simFAvertEcrire();
   if(laquelle==="swing"){simBruitAbsEcrire();simRendre();}
 }
 
@@ -10499,10 +12439,15 @@ function simFAvertEcrire(){
   if(!el)return;
   const s=SIM.saisie;
   const f1=Math.min(s.f1,s.f2), f2=Math.max(s.f1,s.f2);
-  const txt=(s.fc<f1||s.fc>f2)
-    ? "f₀ "+simFreq(s.fc)+" est hors de la bande S ("+simFreq(f1)+" – "+
-      simFreq(f2)+") : le serveur étendra automatiquement la bande pour inclure f₀."
-    : "";
+  const msgs=[];
+  if(s.fc<f1||s.fc>f2){
+    msgs.push("f₀ "+simFreq(s.fc)+" est hors de la bande S ("+simFreq(f1)+" – "+
+      simFreq(f2)+") : le serveur étendra automatiquement la bande pour inclure f₀.");
+  }
+  if(s.fc>0 && s.tr>0 && s.tr > (0.5 / s.fc)){
+    msgs.push("Attention : le temps de montée (tr) dépasse une demi-période du signal.");
+  }
+  const txt=msgs.join(" · ");
   el.textContent=txt;
   const bar=el.parentNode;
   if(bar)bar.style.display=txt?"flex":"none";
@@ -11292,10 +13237,11 @@ function simRafraichir(garderCarte){
     return eu;
   })();
   if(avait){SIM.err=""; simRendre();}
-  /* La carte a peut-être changé : les candidats à la masse de référence avec
-     elle. `simRefEcrire` relit la liste et remet la proposition en vigueur si
-     ce n'est plus la même carte — c'est `simRefSet` qui le décide, ici on ne
-     fait que réafficher. */
+  if(SIM.analyse==="bus"){
+    simBusSuivreSelection();
+    simBusRendreNetsBar();
+  }
+
   simRefEcrire();
   if(!garderCarte)simRepeindre();
 

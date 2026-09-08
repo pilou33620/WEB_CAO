@@ -233,6 +233,10 @@ var PLACEMENT_SCORE = (function() {
     }
   }
 
+  function esc(s) {
+    return String(s || "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  }
+
   /* ---------- Rendu HTML du panneau ---------- */
   function rendrePanneau(data, erreur) {
     const el = document.getElementById("pnlPlacementBody");
@@ -242,7 +246,7 @@ var PLACEMENT_SCORE = (function() {
       el.innerHTML = `
         <div style="padding:12px;color:var(--txt-dim);font-size:12px;line-height:1.5;">
           <div style="color:var(--yellow);font-weight:600;margin-bottom:6px;">⚠️ Serveur d'analyse non disponible</div>
-          <div>${erreur}</div>
+          <div>${esc(erreur)}</div>
           <div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">Lancez <code>python serveur.py</code> en console pour activer le calcul en temps réel.</div>
           <button class="tb" id="bPlacementRefresh" style="margin-top:10px;width:100%;justify-content:center;">🔄 Réessayer</button>
         </div>
@@ -260,7 +264,7 @@ var PLACEMENT_SCORE = (function() {
       const diff = hpwl - _dernierHpwl;
       if (Math.abs(diff) >= 0.1) {
         const signe = diff > 0 ? "+" : "";
-        const col = diff < 0 ? "#4cd964" : "#ff5c5c"; // vert si en baisse (bon), rouge si en hausse
+        const col = diff < 0 ? "#4cd964" : "#ff5c5c";
         hpwlDeltaHtml = `<span style="color:${col};font-size:11px;margin-left:6px;font-family:var(--mono);">(${signe}${diff.toFixed(1)} mm)</span>`;
       }
     }
@@ -270,7 +274,6 @@ var PLACEMENT_SCORE = (function() {
     const worst = data.top_contributeurs || [];
     const tiers = (data.ordonnancement && data.ordonnancement.tiers) ? data.ordonnancement.tiers : {};
 
-    // Détection de composant sélectionné pour orientation assistée
     let selRef = null;
     if (typeof S !== "undefined" && S.sel && S.sel.fps && S.sel.fps.size === 1) {
       const selId = [...S.sel.fps][0];
@@ -278,65 +281,72 @@ var PLACEMENT_SCORE = (function() {
       if (selFp) selRef = selFp.ref;
     }
 
-    let diagSel = selRef ? evaluerRotationComposant(selRef) : null;
-    let sugsRot = (data && Array.isArray(data.rotations_suggerees)) ? data.rotations_suggerees : [];
-    if (!sugsRot.length && typeof S !== "undefined" && Array.isArray(S.fps)) {
-      for (const fp of S.fps) {
-        const diag = evaluerRotationComposant(fp.ref);
-        if (diag && (diag.gainCroisements > 0 || (diag.gainCroisements === 0 && diag.gainLongueurMm >= 8.0 && diag.rotActuelle !== diag.rotOptimale))) {
-          sugsRot.push(diag);
+    const diagSel = selRef ? evaluerRotationComposant(selRef) : null;
+    const listerSuggestionsRotations = () => {
+      let sugs = [];
+      if (typeof S !== "undefined" && Array.isArray(S.fps)) {
+        for (const fp of S.fps) {
+          const diag = evaluerRotationComposant(fp.ref);
+          if (diag && (diag.gainCroisements > 0 || (diag.gainCroisements === 0 && diag.gainLongueurMm >= 8.0 && diag.rotActuelle !== diag.rotOptimale))) {
+            sugs.push(diag);
+          }
         }
+        sugs.sort((a, b) => b.gainCroisements - a.gainCroisements || b.gainLongueurMm - a.gainLongueurMm);
       }
-      sugsRot.sort((a, b) => b.gainCroisements - a.gainCroisements || b.gainLongueurMm - a.gainLongueurMm);
-    }
+      return sugs;
+    };
+    const sugsRot = !diagSel ? listerSuggestionsRotations() : [];
 
     let html = `
-      <div style="padding:10px;display:flex;flex-direction:column;gap:12px;font-size:12px;">
+      <div style="padding:10px;display:flex;flex-direction:column;gap:10px;font-size:12px;">
 
-        <!-- 1. En-tête HPWL -->
-        <div style="background:var(--panel2);border:1px solid var(--border2);border-radius:6px;padding:10px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-weight:600;text-transform:uppercase;font-size:10px;color:var(--txt-dim);letter-spacing:0.08em;">Chevelu minimal (HPWL)</span>
-            <button class="tb" id="bPlacementRefresh" style="padding:2px 6px;font-size:10px;" title="Recalculer">🔄</button>
+        <!-- 1. En-tête : HPWL & Congestion -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <!-- Tuile HPWL -->
+          <div style="background:var(--panel2);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-weight:600;text-transform:uppercase;font-size:10px;color:var(--txt-dim);letter-spacing:0.08em;">HPWL (Cuivre)</span>
+              <button class="tb" id="bPlacementRefresh" style="padding:2px 6px;font-size:10px;" title="Recalculer le placement">🔄</button>
+            </div>
+            <div style="font-size:16px;font-weight:700;color:var(--txt);margin-top:4px;font-family:var(--mono);">
+              ${hpwl.toFixed(1)} <span style="font-size:11px;font-weight:400;color:var(--txt-dim);">mm</span>
+              ${hpwlDeltaHtml}
+            </div>
           </div>
-          <div style="margin-top:4px;display:flex;align-items:baseline;">
-            <span style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--blue);">${hpwl.toFixed(1)} <span style="font-size:12px;font-weight:normal;color:var(--txt-dim);">mm</span></span>
-            ${hpwlDeltaHtml}
+
+          <!-- Tuile Congestion -->
+          <div style="background:var(--panel2);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-weight:600;text-transform:uppercase;font-size:10px;color:var(--txt-dim);letter-spacing:0.08em;">Congestion max</span>
+              ${cong.hotspot_valeur >= 4 ? `
+                <button class="tb" id="bCiblerHotspot" style="padding:2px 5px;font-size:10px;color:var(--red);" title="Centrer la vue sur le point chaud">📍</button>
+              ` : ''}
+            </div>
+            <div style="font-size:16px;font-weight:700;color:${(cong.hotspot_valeur >= 6) ? 'var(--red)' : ((cong.hotspot_valeur >= 4) ? 'var(--yellow)' : '#4cd964')};margin-top:4px;font-family:var(--mono);">
+              ${cong.hotspot_valeur || 0} <span style="font-size:11px;font-weight:400;color:var(--txt-dim);">nets / cell</span>
+            </div>
           </div>
-          <div style="font-size:10px;color:var(--txt-dim);margin-top:2px;">Estimation physique de la longueur totale de cuivre.</div>
         </div>
 
-        <!-- 2. Congestion & Point chaud -->
-        <div style="background:var(--panel2);border:1px solid var(--border2);border-radius:6px;padding:10px;">
-          <div style="font-weight:600;text-transform:uppercase;font-size:10px;color:var(--txt-dim);letter-spacing:0.08em;">Congestion & Hotspot</div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
-            <span>Densité max : <b>${cong.peak_density || 0}</b> pastilles / 5mm</span>
-            ${(cong.peak_density > 0) ? `
-              <button class="tb" id="bCiblerHotspot" style="padding:3px 8px;font-size:11px;" title="Braquer le phare visuel sur le point chaud">
-                ⌖ Voir (X=${cong.hotspot_x}, Y=${cong.hotspot_y})
-              </button>
-            ` : ""}
-          </div>
-        </div>
-
-        <!-- 3. Orientation assistée (anti-croisements) -->
+        <!-- 2. Orientation optimale (Assistance rotation) -->
         <div style="background:var(--panel2);border:1px solid var(--border2);border-radius:6px;padding:10px;">
           <div style="display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-weight:600;text-transform:uppercase;font-size:10px;color:var(--txt-dim);letter-spacing:0.08em;">Orientation assistée</span>
-            ${selRef ? `<span style="font-family:var(--mono);font-size:10px;color:var(--cyan);font-weight:700;">${selRef}</span>` : ''}
+            <span style="font-weight:600;text-transform:uppercase;font-size:10px;color:var(--txt-dim);letter-spacing:0.08em;">
+              ${diagSel ? `Orientation de ${esc(selRef)}` : 'Optimisations d\'angle'}
+            </span>
+            ${diagSel ? `
+              <span style="font-size:10px;color:${diagSel.rotActuelle === diagSel.rotOptimale ? '#4cd964' : 'var(--yellow)'};font-weight:600;">
+                ${diagSel.rotActuelle === diagSel.rotOptimale ? 'Optimal ✓' : 'Améliorable'}
+              </span>
+            ` : ''}
           </div>
 
           ${diagSel ? `
-            <div style="margin-top:6px;background:rgba(255,255,255,0.03);padding:6px;border-radius:4px;">
-              <div style="display:flex;justify-content:space-between;font-size:11px;">
-                <span>Actuelle : <b>${diagSel.rotActuelle}°</b> (${diagSel.croisementsActuels} cr.)</span>
-                <span style="color:${diagSel.rotActuelle === diagSel.rotOptimale ? '#4cd964' : 'var(--yellow)'};font-weight:600;">
-                  ${diagSel.rotActuelle === diagSel.rotOptimale ? '✓ Optimale' : 'Gain : -' + diagSel.gainCroisements + ' cr.'}
-                </span>
-              </div>
-              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:6px;">
+            <div style="margin-top:8px;">
+              <div style="font-size:11px;color:var(--txt-dim);margin-bottom:6px;">Impact aux 4 angles cardinaux :</div>
+              <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:4px;">
                 ${diagSel.rotations.map(r => `
-                  <button class="tb btn-rot-angle" data-ref="${selRef}" data-angle="${r.angle}"
+                  <button class="tb btn-rot-angle" data-ref="${esc(selRef)}" data-angle="${r.angle}"
                           style="padding:4px 2px;font-size:10px;display:flex;flex-direction:column;align-items:center;gap:1px;${r.angle === diagSel.rotOptimale ? 'border-color:#4cd964;background:rgba(76,217,100,0.1);color:#4cd964;font-weight:700;' : (r.angle === diagSel.rotActuelle ? 'border-color:var(--blue);' : '')}"
                           title="${r.croisements} croisement(s), ${r.longueurMm} mm">
                     <span>${r.angle}°</span>
@@ -345,7 +355,7 @@ var PLACEMENT_SCORE = (function() {
                 `).join("")}
               </div>
               ${diagSel.rotActuelle !== diagSel.rotOptimale ? `
-                <button class="tb btn-rot-angle" data-ref="${selRef}" data-angle="${diagSel.rotOptimale}"
+                <button class="tb btn-rot-angle" data-ref="${esc(selRef)}" data-angle="${diagSel.rotOptimale}"
                         style="margin-top:6px;width:100%;justify-content:center;font-size:11px;background:rgba(76,217,100,0.15);border-color:#4cd964;color:#4cd964;font-weight:600;">
                   ✨ Tourner à ${diagSel.rotOptimale}° (-${diagSel.gainCroisements} cr., -${diagSel.gainLongueurMm} mm)
                 </button>
@@ -356,10 +366,10 @@ var PLACEMENT_SCORE = (function() {
               ${sugsRot.slice(0, 5).map(s => `
                 <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.03);padding:3px 6px;border-radius:4px;font-size:11px;">
                   <span>
-                    <a href="#" class="lk-fp" data-ref="${s.ref}" style="color:var(--cyan);text-decoration:none;font-weight:600;">${s.ref}</a>
+                    <a href="#" class="lk-fp" data-ref="${esc(s.ref)}" style="color:var(--cyan);text-decoration:none;font-weight:600;">${esc(s.ref)}</a>
                     <span style="font-size:10px;color:var(--txt-dim);margin-left:4px;">${s.rotActuelle}° ➔ <b>${s.rotOptimale}°</b></span>
                   </span>
-                  <button class="tb btn-rot-angle" data-ref="${s.ref}" data-angle="${s.rotOptimale}" style="padding:1px 5px;font-size:10px;" title="Appliquer l'orientation optimale">
+                  <button class="tb btn-rot-angle" data-ref="${esc(s.ref)}" data-angle="${s.rotOptimale}" style="padding:1px 5px;font-size:10px;" title="Appliquer l'orientation optimale">
                     ${s.gainCroisements > 0 ? '-' + s.gainCroisements + ' cr.' : '-' + s.gainLongueurMm + 'mm'}
                   </button>
                 </div>
@@ -393,8 +403,8 @@ var PLACEMENT_SCORE = (function() {
                 ${dec.details.filter(d => !d.conforme).map(d => `
                   <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(255,180,0,0.08);padding:2px 6px;border-radius:3px;">
                     <span>
-                      <a href="#" class="lk-fp" data-ref="${d.cap_ref}" style="color:var(--cyan);text-decoration:none;font-weight:600;">${d.cap_ref}</a>
-                      ➔ <a href="#" class="lk-fp" data-ref="${d.ic_ref}" style="color:var(--txt);text-decoration:none;">${d.ic_ref}</a>
+                      <a href="#" class="lk-fp" data-ref="${esc(d.cap_ref)}" style="color:var(--cyan);text-decoration:none;font-weight:600;">${esc(d.cap_ref)}</a>
+                      ➔ <a href="#" class="lk-fp" data-ref="${esc(d.ic_ref)}" style="color:var(--txt);text-decoration:none;">${esc(d.ic_ref)}</a>
                     </span>
                     <span style="font-family:var(--mono);font-size:10px;color:var(--red);">${d.dist_mm} mm</span>
                   </div>
@@ -410,8 +420,8 @@ var PLACEMENT_SCORE = (function() {
             <div style="font-weight:600;text-transform:uppercase;font-size:10px;color:var(--txt-dim);letter-spacing:0.08em;margin-bottom:6px;">Composants les plus étirés</div>
             <div style="display:flex;flex-wrap:wrap;gap:4px;">
               ${worst.map(w => `
-                <button class="tb lk-fp" data-ref="${w.ref}" style="padding:2px 6px;font-size:11px;" title="Déplacement moyen : ${w.deplacement_moyen_mm} mm">
-                  ${w.ref} <span style="color:var(--txt-dim);font-size:9px;font-family:var(--mono);">${w.deplacement_moyen_mm}mm</span>
+                <button class="tb lk-fp" data-ref="${esc(w.ref)}" style="padding:2px 6px;font-size:11px;" title="Déplacement moyen : ${w.deplacement_moyen_mm} mm">
+                  ${esc(w.ref)} <span style="color:var(--txt-dim);font-size:9px;font-family:var(--mono);">${w.deplacement_moyen_mm}mm</span>
                 </button>
               `).join("")}
             </div>
@@ -426,8 +436,8 @@ var PLACEMENT_SCORE = (function() {
               ${_patternsCache.motifs.map((m, idx) => `
                 <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(63,160,234,0.08);padding:4px 8px;border-radius:4px;border:1px solid rgba(63,160,234,0.2);">
                   <div>
-                    <span style="font-weight:600;color:var(--blue);">${m.label || m.type}</span>
-                    <span style="font-size:10px;color:var(--txt-dim);margin-left:4px;">(${(m.components||[]).join(", ")})</span>
+                    <span style="font-weight:600;color:var(--blue);">${esc(m.label || m.type)}</span>
+                    <span style="font-size:10px;color:var(--txt-dim);margin-left:4px;">(${esc((m.components||[]).join(", "))})</span>
                   </div>
                   <button class="tb btn-grp" data-idx="${idx}" style="padding:2px 6px;font-size:10px;" title="Sélectionner tout le bloc pour déplacement">
                     Grouper
@@ -446,19 +456,19 @@ var PLACEMENT_SCORE = (function() {
           <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;font-size:11px;">
             <div>
               <span style="color:var(--yellow);font-weight:600;">Tier 1 - Ancres (${(tiers.anchor||[]).length}) :</span>
-              <span style="color:var(--txt-dim);">${(tiers.anchor||[]).join(", ") || "aucun"}</span>
+              <span style="color:var(--txt-dim);">${esc((tiers.anchor||[]).join(", ") || "aucun")}</span>
             </div>
             <div>
               <span style="color:var(--blue);font-weight:600;">Tier 2 - Actifs (${(tiers.semi_fixed||[]).length}) :</span>
-              <span style="color:var(--txt-dim);">${(tiers.semi_fixed||[]).join(", ") || "aucun"}</span>
+              <span style="color:var(--txt-dim);">${esc((tiers.semi_fixed||[]).join(", ") || "aucun")}</span>
             </div>
             <div>
               <span style="color:var(--cyan);font-weight:600;">Tier 3 - Flexibles (${(tiers.flexible||[]).length}) :</span>
-              <span style="color:var(--txt-dim);">${(tiers.flexible||[]).join(", ") || "aucun"}</span>
+              <span style="color:var(--txt-dim);">${esc((tiers.flexible||[]).join(", ") || "aucun")}</span>
             </div>
             <div>
               <span style="color:var(--txt-dim);font-weight:600;">Tier 4 - Passifs libres (${(tiers.free||[]).length}) :</span>
-              <span style="color:var(--txt-dim);">${(tiers.free||[]).slice(0, 15).join(", ")}${(tiers.free||[]).length > 15 ? '...' : ''}</span>
+              <span style="color:var(--txt-dim);">${esc((tiers.free||[]).slice(0, 15).join(", "))}${(tiers.free||[]).length > 15 ? '...' : ''}</span>
             </div>
           </div>
         </details>

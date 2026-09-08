@@ -1305,6 +1305,265 @@ function dpLayerEdit(i){
 }
 
 /* ==========================================================================
+   Serpentins d'appariement de longueur (Length Matching Meanders)
+   --------------------------------------------------------------------------
+   Génère un accordéon de compensation de retard (meander) sur un segment droit.
+   Permet d'égaliser la longueur des pistes d'une paire différentielle (skew = 0)
+   ou d'un bus synchrone.
+   ========================================================================== */
+
+function dpSkewForTrack(track){
+  if(!track||!track.net||!S.dpPairs)return null;
+  const pair=S.dpPairs.find(p=>p.p===track.net||p.n===track.net);
+  if(!pair)return null;
+  const coup=dpCoupling(pair);
+  const isP=track.net===pair.p;
+  const diff=coup.len-coup.lenN;
+  const needed=isP?(coup.lenN-coup.len):(coup.len-coup.lenN);
+  return {
+    pair:pair,
+    isP:isP,
+    lenP:coup.len,
+    lenN:coup.lenN,
+    skew:r3(Math.abs(diff)),
+    needed:r3(Math.max(0,needed))
+  };
+}
+
+function dpMeander(track, opts){
+  opts=opts||{};
+  const mOpts=(typeof S!=="undefined"&&S.meanderOpts)?S.meanderOpts:{};
+  if(!track)return {tracks:[], addedLen:0};
+  const L=Math.hypot(track.x2-track.x1, track.y2-track.y1);
+  if(L<0.4||isArc(track)){
+    return {tracks:[Object.assign({},track)], addedLen:0};
+  }
+  const ux=(track.x2-track.x1)/L, uy=(track.y2-track.y1)/L;
+  const sWanted=(opts.side!=null&&opts.side!==0)?opts.side:mOpts.side;
+  const side=(sWanted===-1||sWanted<0)?-1:1;
+  const nx=-uy*side, ny=ux*side;
+
+  const w=track.w||0.25;
+  const target=(opts.targetDelta!=null)?Math.max(0,opts.targetDelta):(mOpts.targetDelta?Math.max(0,mOpts.targetDelta):0);
+
+  // Pitch et amplitude (respecte les réglages de S.meanderOpts)
+  const pWanted=(opts.pitch!=null)?opts.pitch:(mOpts.pitch||1.2);
+  const aWanted=(opts.amplitude!=null)?opts.amplitude:(mOpts.amplitude||1.5);
+  let pitch=Math.max(w*2.5, pWanted);
+  let amp=Math.max(w*2.0, aWanted);
+  const r=Math.min(pitch*0.25, amp*0.25, 0.35); // coin à 45°
+  const deltaPerCycle=Math.max(0.1, 2*amp-2*r*(2-Math.sqrt(2)));
+
+  const margin=Math.max(0.2, pitch*0.4);
+  const avail=Math.max(0, L-2*margin);
+  const maxCycles=Math.max(1, Math.floor(avail/pitch));
+
+  let N=1;
+  if(target>0){
+    N=Math.max(1, Math.min(maxCycles, Math.round(target/deltaPerCycle)));
+    if(N>0&&target/N>0.1){
+      amp=Math.max(w*1.5, (target/N + 2*r*(2-Math.sqrt(2)))/2);
+    }
+  }else{
+    N=Math.min(maxCycles, Math.max(1, Math.floor(avail/(pitch*1.5))));
+  }
+
+  if(N*pitch>avail){
+    pitch=avail/Math.max(1, N);
+    if(pitch<w*2){
+      return {tracks:[Object.assign({},track)], addedLen:0};
+    }
+  }
+
+  const span=N*pitch;
+  const tStart=margin+(avail-span)/2;
+
+  function pt(t, d){
+    return {
+      x: r4(track.x1 + t*ux + d*nx),
+      y: r4(track.y1 + t*uy + d*ny)
+    };
+  }
+
+  const pts=[pt(0, 0)];
+  if(tStart>0.01) pts.push(pt(tStart, 0));
+
+  for(let i=0; i<N; i++){
+    const t0=tStart+i*pitch;
+    const t1=t0+r;
+    const t2=t0+pitch/2-r;
+    const t3=t0+pitch/2;
+
+    pts.push(pt(t0, 0));
+    pts.push(pt(t0, amp-r));
+    pts.push(pt(t1, amp));
+    pts.push(pt(t2, amp));
+    pts.push(pt(t3, amp-r));
+    pts.push(pt(t3, 0));
+  }
+
+  pts.push(pt(tStart+N*pitch, 0));
+  pts.push(pt(L, 0));
+
+  const outTracks=[];
+  let totalNewLen=0;
+  for(let j=0; j+1<pts.length; j++){
+    const pA=pts[j], pB=pts[j+1];
+    const segL=Math.hypot(pB.x-pA.x, pB.y-pA.y);
+    if(segL>1e-4){
+      outTracks.push({
+        l: track.l,
+        net: track.net,
+        w: track.w,
+        x1: pA.x, y1: pA.y,
+        x2: pB.x, y2: pB.y
+      });
+      totalNewLen+=segL;
+    }
+  }
+
+  const addedLen=r3(Math.max(0, totalNewLen-L));
+  return {tracks:outTracks, addedLen:addedLen};
+}
+
+/* ==========================================================================
+   Simulateur d'appariement de bus synchrone (Timing Closure: Setup & Hold)
+   --------------------------------------------------------------------------
+   Analyse le retard de vol (T_flight) de signaux de données synchrones par
+   rapport à un signal d'horloge commun (CLK).
+   Calcule les marges réelles de Setup Slack et Hold Slack en picosecondes.
+   Identifie les violations de Hold (données trop rapides) et détermine la
+   longueur de serpentin minimale et optimale pour fermer le timing.
+   ========================================================================== */
+
+const BUS_PRESETS=[
+  {id:"custom",   name:"Personnalisé",                    freq:100, tsu:1.5, th:0.8, tcoMin:1.2, tcoMax:3.5},
+  {id:"spi50",    name:"SPI standard (50 MHz)",           freq:50,  tsu:3.0, th:1.0, tcoMin:2.0, tcoMax:6.0},
+  {id:"qspi100",  name:"QSPI Flash (100 MHz)",            freq:100, tsu:1.5, th:0.8, tcoMin:1.2, tcoMax:3.5},
+  {id:"sdram133", name:"SDRAM PC133 (133 MHz)",           freq:133, tsu:1.5, th:0.8, tcoMin:1.5, tcoMax:5.4},
+  {id:"rgmii125", name:"RGMII Ethernet Gigabit (125 MHz)",freq:125, tsu:1.0, th:0.8, tcoMin:1.2, tcoMax:2.6},
+  {id:"ddr200",   name:"DDR / Bus rapide (200 MHz)",      freq:200, tsu:0.5, th:0.4, tcoMin:0.6, tcoMax:1.8}
+];
+
+function busSkewAnalyze(netNames, clkNetName, opts){
+  opts=opts||{};
+  const freq=Math.max(1, opts.freqMhz||100);
+  const Tcyc=1000/freq;                 // période en nanosecondes
+  const TcycPs=Tcyc*1000;               // période en picosecondes
+  const tsuPs=(opts.tsu!=null?opts.tsu:1.5)*1000;
+  const thPs=(opts.th!=null?opts.th:1.0)*1000;
+  const tcoMinPs=(opts.tcoMin!=null?opts.tcoMin:0.0)*1000;
+  const tcoMaxPs=(opts.tcoMax!=null?opts.tcoMax:0.5)*1000;
+
+  function netFlightInfo(netName){
+    let trks=[];
+    let vs=[];
+    if(typeof netTracks==="function"){
+      const g=netTracks(netName);
+      trks=g.tracks||[];
+      vs=g.vias||[];
+    }else if(typeof S!=="undefined"){
+      trks=(S.tracks||[]).filter(t=>t.net===netName);
+      vs=(S.vias||[]).filter(v=>v.net===netName);
+    }
+    const lt=(typeof ltLine==="function")?ltLine(trks,vs):{len:0,tpdAll:0,psmm:6.7};
+    const len=r3(lt.len||0);
+    const tflightPs=r1((lt.tpdAll||0)*1e12);
+    const psmm=(len>0&&tflightPs>0)?r2(tflightPs/len):(lt.psmm?r2(lt.psmm):6.7);
+    return {
+      net:netName,
+      len:len,
+      tflight:tflightPs,
+      psmm:psmm,
+      trks:trks,
+      vias:vs,
+      lt:lt
+    };
+  }
+
+  const clkInfo=netFlightInfo(clkNetName);
+  const signals=[];
+  let worstHoldSlack=Infinity;
+  let worstSetupSlack=Infinity;
+  let worstSkewPs=0;
+  let allPass=true;
+
+  const validNets=(netNames||[]).filter(n=>n&&n!==clkNetName);
+  for(const netName of validNets){
+    const sInfo=netFlightInfo(netName);
+    const skewPs=r1(sInfo.tflight - clkInfo.tflight);
+    const skewMm=r3(sInfo.len - clkInfo.len);
+    if(Math.abs(skewPs)>Math.abs(worstSkewPs)) worstSkewPs=skewPs;
+
+    // Slack Setup : (Tcyc + Tclk - Tdata) - (Tco_max + Tsu)
+    const slackSuPs=r1((TcycPs + clkInfo.tflight - sInfo.tflight) - (tcoMaxPs + tsuPs));
+    // Slack Hold : (Tdata - Tclk) + Tco_min - Th
+    const slackHPs=r1((sInfo.tflight - clkInfo.tflight) + tcoMinPs - thPs);
+
+    if(slackHPs<worstHoldSlack) worstHoldSlack=slackHPs;
+    if(slackSuPs<worstSetupSlack) worstSetupSlack=slackSuPs;
+
+    const psmm=sInfo.psmm||6.7;
+    let status="ok";
+    let meanderNeededMm=0;
+    let meanderOptMm=0;
+
+    // Calcul du point de centrage optimal dans l'œil : Tdata_opt
+    // tel que Slack_Hold = Slack_Setup
+    const tdataOptPs=(TcycPs + 2*clkInfo.tflight + thPs - tsuPs - tcoMinPs - tcoMaxPs)/2;
+    if(tdataOptPs>sInfo.tflight){
+      meanderOptMm=r2((tdataOptPs - sInfo.tflight)/psmm);
+    }
+
+    if(slackHPs<0){
+      status="hold_violation"; // Violation de maintien : donnée trop rapide !
+      allPass=false;
+      const dtNeededPs=Math.abs(slackHPs);
+      meanderNeededMm=r2(dtNeededPs/psmm);
+      if(meanderOptMm<meanderNeededMm) meanderOptMm=meanderNeededMm;
+    }else if(slackSuPs<0){
+      status="setup_violation"; // Violation d'établissement : donnée trop lente !
+      allPass=false;
+    }
+
+    signals.push({
+      net:netName,
+      len:sInfo.len,
+      tflight:sInfo.tflight,
+      psmm:sInfo.psmm,
+      skewPs:skewPs,
+      skewMm:skewMm,
+      slackSuPs:slackSuPs,
+      slackHPs:slackHPs,
+      status:status,
+      meanderNeededMm:meanderNeededMm,
+      meanderOptMm:meanderOptMm,
+      trksCount:sInfo.trks.length,
+      viasCount:sInfo.vias.length
+    });
+  }
+
+  return {
+    clk:clkInfo,
+    signals:signals,
+    params:{
+      freqMhz:freq,
+      TcycPs:r1(TcycPs),
+      tsuPs:r1(tsuPs),
+      thPs:r1(thPs),
+      tcoMinPs:r1(tcoMinPs),
+      tcoMaxPs:r1(tcoMaxPs)
+    },
+    summary:{
+      pass:allPass,
+      worstHoldSlack:worstHoldSlack===Infinity?0:worstHoldSlack,
+      worstSetupSlack:worstSetupSlack===Infinity?0:worstSetupSlack,
+      worstSkewPs:worstSkewPs
+    }
+  };
+}
+
+/* ==========================================================================
    Premier affichage
    Ce fichier se charge APRÈS 07-app.js, dont l'`init()` a déjà tout monté :
    c'est donc ici que le panneau se remplit une première fois. L'appeler depuis

@@ -52,6 +52,28 @@ const PNS_D4=[{x:1,y:0},{x:0,y:1},{x:-1,y:0},{x:0,y:-1}];
 function pnsSupPad(q,dx,dy){
   const c=q.x*dx+q.y*dy;
   if(q.shape==="circ")return c+Math.max(q.w,q.h)/2;
+  if(q.shape==="poly"&&Array.isArray(q.pts)&&q.pts.length>=3){
+    const ca=Math.cos(q.rot||0), sa=Math.sin(q.rot||0);
+    let maxD=-Infinity;
+    for(const p of q.pts){
+      const lx=p.x*ca-p.y*sa, ly=p.x*sa+p.y*ca;
+      const d=lx*dx+ly*dy;
+      if(d>maxD)maxD=d;
+    }
+    return c+maxD;
+  }
+  if(q.shape==="chamfer"){
+    const ch=q.chamfer!=null?q.chamfer:padChamferVal(q);
+    const pts=padChamferPts(q.w,q.h,ch,q.chamferCorners);
+    const ca=Math.cos(q.rot||0), sa=Math.sin(q.rot||0);
+    let maxD=-Infinity;
+    for(const p of pts){
+      const lx=p.x*ca-p.y*sa, ly=p.x*sa+p.y*ca;
+      const d=lx*dx+ly*dy;
+      if(d>maxD)maxD=d;
+    }
+    return c+maxD;
+  }
   const r=q.shape==="oval"?Math.min(q.w,q.h)/2:0;
   const ca=Math.cos(q.rot||0), sa=Math.sin(q.rot||0);
   return c+Math.abs(dx*ca+dy*sa)*(q.w/2-r)+Math.abs(-dx*sa+dy*ca)*(q.h/2-r)+r;

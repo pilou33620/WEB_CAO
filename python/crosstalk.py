@@ -1018,7 +1018,12 @@ def _modes_mtl(l_mat, c_mat):
     `lambda_i` est le carre de l'inverse de la vitesse du mode i : le retard du
     mode sur une longueur d est d . sqrt(lambda_i).
     """
-    lh = np.linalg.cholesky(l_mat)
+    try:
+        lh = np.linalg.cholesky(l_mat)
+    except np.linalg.LinAlgError:
+        raise ErreurCrosstalk(
+            "Section non physique : matrice d'inductance non définie positive.",
+            "La géométrie de la section est incohérente.")
     sym = lh.T @ c_mat @ lh
     valeurs, vecteurs = np.linalg.eigh((sym + sym.T) / 2.0)
     if np.any(valeurs <= 0):
@@ -1029,7 +1034,12 @@ def _modes_mtl(l_mat, c_mat):
             " qui se touchent, ou une permittivité nulle.")
     racines = np.sqrt(valeurs)
     t_mat = lh @ vecteurs
-    w_mat = np.linalg.solve(l_mat, t_mat * racines[None, :])
+    try:
+        w_mat = np.linalg.solve(l_mat, t_mat * racines[None, :])
+    except np.linalg.LinAlgError:
+        raise ErreurCrosstalk(
+            "Section non physique : matrice d'inductance singulière.",
+            "La géométrie de la section est incohérente.")
     return t_mat, w_mat, racines
 
 
@@ -1063,7 +1073,12 @@ def chaine_mtl(l_mat, c_mat, longueur, omegas, tan_delta=0.0):
         w_mat = w_mat.astype(complex) * facteur
     q = np.block([[t_mat.astype(complex), t_mat.astype(complex)],
                   [w_mat, -w_mat]]).astype(complex)
-    q_inv = np.linalg.inv(q)
+    try:
+        q_inv = np.linalg.inv(q)
+    except np.linalg.LinAlgError:
+        raise ErreurCrosstalk(
+            "Réseau non physique : matrice modale singulière.",
+            "Vérifiez l'espacement entre conducteurs.")
     t_c, w_c = t_mat.astype(complex), w_mat.astype(complex)
 
     phi = np.empty((len(omegas), 2 * n, 2 * n), dtype=complex)
@@ -1104,7 +1119,12 @@ def s_depuis_chaine(phi, z0):
     m_i = np.block([[-b_b, zero], [d_b, ident]])
     gauche = z0 * m_v - m_i
     droite = z0 * m_v + m_i
-    return -np.linalg.solve(gauche, droite)
+    try:
+        return -np.linalg.solve(gauche, droite)
+    except np.linalg.LinAlgError:
+        raise ErreurCrosstalk(
+            "Réseau singulier : impossible de calculer les paramètres S.",
+            "Vérifiez l'adaptation d'impédance de référence.")
 
 
 # ==========================================================================
@@ -3576,7 +3596,6 @@ def _lire_couples(base, doc, freqs, s_mat, conducteurs, infos, parcours,
     victime -- un bus qui commute d'un bloc --, et elle ne se fait que sur
     demande explicite.
     """
-    longueur = parcours[-1]["s1"]
     seuil_db = _nb(reglages.get("seuil_db"), -40.0)
     profils = _profils(conducteurs, infos, parcours, couches, reglages, cache,
                        notes)
@@ -3772,6 +3791,10 @@ def _lire_couples(base, doc, freqs, s_mat, conducteurs, infos, parcours,
                               couples, _nb(reglages.get("risque"), 0.5))
     _avertir(base, couples, lignes, reglages, masse, avert, notes,
              base.setdefault("graves", []), espacements)
+    a_doc = (doc.get("analyse") or {})
+    fc_xt = _nb(a_doc.get("f_centre"), _nb(a_doc.get("f_fondamentale"), 0.0))
+    if fc_xt > 0 and t_r > 0 and t_r > (0.5 / fc_xt):
+        avert.append("Attention : le temps de montée (tr) dépasse une demi-période du signal.")
     # L'ECHELLE DE COULEUR COUVRE CE QUI EST DESSINE, confirmee ou non :
     # « rouge = le maximum de la carte » cesserait d'etre vrai si une courbe
     # affichee depassait le maximum annonce.

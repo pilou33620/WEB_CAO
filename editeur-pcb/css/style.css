@@ -468,6 +468,35 @@
   #silkMenu .row+.row{margin-top:6px}
   #silkMenu button.tb{width:100%;justify-content:flex-start}
   #silkMenu button.tb.sel{border-color:var(--blue);background:var(--blue-dim);color:#fff}
+  /* ---------- menu du bouton « serpentin » ---------- */
+  #meanderMenu{
+    position:fixed;display:none;z-index:80;width:270px;
+    background:var(--panel);border:1px solid var(--border2);border-radius:7px;
+    box-shadow:0 18px 40px rgba(0,0,0,.55);overflow:hidden;
+  }
+  #meanderMenu.on{display:block}
+  #meanderMenu .mtitle{font-family:var(--mono);font-size:9px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--txt-dim);padding:8px 12px 6px}
+  #meanderMenu .prop{padding:8px 12px;border-bottom:1px solid var(--border)}
+  #meanderMenu .prop:last-child{border-bottom:none}
+  #meanderMenu .row{margin-top:0}
+  #meanderMenu .row+.row{margin-top:6px}
+  #meanderMenu button.tb{width:100%}
+
+  /* ---------- modale d'analyse de bus synchrone ---------- */
+  #busSkewModal .box{width:860px;max-width:96vw;max-height:88vh;overflow-y:auto}
+  .bs-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .bs-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:11.5px}
+  .bs-table th,.bs-table td{padding:5px 7px;border-bottom:1px solid var(--border);text-align:left}
+  .bs-table th{font-size:10px;letter-spacing:.08em;color:var(--txt-dim);text-transform:uppercase}
+  .bs-table td.n{text-align:right;font-family:var(--mono);font-size:11px}
+  .bs-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:.05em}
+  .bs-badge.ok{background:#064e3b;color:#6ee7b7}
+  .bs-badge.hold{background:#7f1d1d;color:#fca5a5}
+  .bs-badge.setup{background:#78350f;color:#fde68a}
+  .bs-badge.clk{background:#1e3a8a;color:#93c5fd}
+  .bs-btn-meander{padding:3px 8px;font-size:10.5px;cursor:pointer;background:var(--blue-deep);color:#fff;border:none;border-radius:4px}
+  .bs-btn-meander:hover{background:var(--blue)}
   @media (max-width:980px){
     aside{width:168px}aside.right{width:206px}
     #coordBox .cihint{display:none}

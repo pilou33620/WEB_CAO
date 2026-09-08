@@ -98,10 +98,12 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "worstAspect","applyPreset","presetsFor","diCount","cuT","diAt","maskFaces",
   "stackAsym","asymLabel","viaBuild","viaCensus","aspectOf","viaTented",
   "VIA_FINISH","roleCheck","ASPECT_WARN","ASPECT_MAX",
-  "umLabel","ozLabel","buildStackup","stackReport","r3","padLayers","segPadDist",
+  "umLabel","ozLabel","buildStackup","stackReport","padLayers","segPadDist",
   "normStack","stkPick","CU_ROLES","CU_ROLE_SHORT","rolePlane",
   "layerRole","roleLabel","setLayerRole","coherentRole","roleFromPlane",
-  "roleNet","STACK_PRESETS","FINISHES","MASK_COLORS","DI_KIND","OZ","r4",
+  "roleNet","STACK_PRESETS","FINISHES","MASK_COLORS","DI_KIND","OZ","r1","r2","r3","r4",
+  "PAD_SHAPES","padShape","padRadius","padChamferVal","padChamferPts","polyOffset",
+  "ptPolyDist","padWorldPts","padClone","padDist","padHalf","fpSetPad","gPad",
   /* sélection multiple et presse-papier */
   "selectHit","toggleHit","altTarget","selCount","trackRun","selectRun","deleteSel","unrouteSel","copySelPcb","cutSelPcb",
   "pasteClipPcb","pcbClipContent","pcbSetClip","pcbGetClip","freeFpRef","GRID_STEPS",
@@ -121,6 +123,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "dpBack","drawDp","dpCoupling","dpDrc","dpMakePair","dpFromSel","dpAutoAll","dpDelete",
   "dpNetFree","dpNetOpts","dpMateGuess",
   "dpPanelRule","dpMaterialize","dpFigure","dpLayerCells","buildDiffPairs",
+  "dpMeander","dpSkewForTrack","busSkewAnalyze","BUS_PRESETS",
+  "meanderMenuToggle","meanderMenuClose","busSkewOpen","busSkewClose",
   /* ligne de transmission : impédance, retard, C et L de la sélection */
   "LT_C0","LT_KIND","ltEeff","ltZ0","ltSeg","ltVia","ltLine",
   "ltT","ltC","ltL","ltRange","ltTable","ltSection","propsTrack","propsTracks",
@@ -205,6 +209,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "SIM_DC_UNITES_V","SIM_DC_UNITES_A","simDCUnites","simDCUnite",
   "simDCListeUnite","simChamp","simCorpsImpedance","simCorpsDiff",
   "simCorpsCrosstalk","simCorpsRetour","simCorpsSante",
+  "SIM_BUS","simCorpsBus","simBrancherBus","simRendreBus","simBusCalculer","SIM_BUS_PRESETS","SIM_BUS_PROTOCOLES",
+  "simInit","simRafraichir","simAllerAnalyse","simBusRendreNetsBar",
+  "simBusBasculerRole","simBusChangerNet","simBusChainerNet","simBusDechainerNet","simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNetAval","simBusChangerRSerieVal","simBusResoudreNetAvecPont","simBusLierComposants","simBusClassifierNets","simBusSupprimerSignal",
   "simThermiqueDC","simDCThermique","simDCThermiquePcb",
   /* Le choix de la couche peinte, et l'oubli qui va avec. */
   "simDCOublier","simDCCouchePeinte","simDCCouchesPeintes",
@@ -305,7 +312,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "SIM_XT_PAS_TRAIT",
 
   "simXtParcours","simXtAbscisse","simXtCouture","simXtFentes",
-  "simXtViasMasse","simXtPlanDe","simXtZoneMasse","SIM_XT_PAS",
+  "simXtViasMasse","simXtPlansDe","simXtZoneMasse","SIM_XT_PAS",
   "simXtProbleme","simRefSet",
   /* Le chemin de retour a son propre onglet : « Current Return Path ». */
   "simFicheRetour","simRendreRetour","simCorpsRetour","simViaNotes",
@@ -319,8 +326,15 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simUniteChanger","simCorpsImpedance","simEl","SIM_UNITES",
   /* Le chemin de retour et son chevelu. */
   "simBoucleVias","simMutuelleVia","simGroverF","simResoudre",
+  /* La traversée entre plans, côté page : la part de chaque pont, et
+     l'étalement qui y mène. Mêmes formules que `ligne_mom`. */
+  "simPartsPonts","simEtalementViaVia","simHauteurCavite",
+  "SIM_ESL_PONT","SIM_C_PONT","SIM_ESR_PONT",
   "simVoisinageVia","simChevelu","simRetourActif","simCotesVia",
   "simAntipadVia","simPlansRef","simPlansJoints","simPlansOntUnNet",
+  /* Le net du plan AU DROIT D'UN POINT : c'est lui qui distingue deux
+     versements d'une meme couche, et le banc doit pouvoir le lire. */
+  "simNetPlanEn",
   "simRetourCouleur","SIM_RAYON_RETOUR",
   "simPontsPlans","SIM_RAYON_PONT",
   "simProjU","simTangente","simStackup","simCuIndex",
@@ -2980,6 +2994,30 @@ T("panneau d'empilage : le rôle se change depuis la coupe",()=>{
   if($("stk").innerHTML.indexOf("skRole")<0)throw new Error("sélecteur de rôle absent");
   S.zones=[];S.cuL.forEach(L=>{L.plane=false;L.net="";L.role="signal";});touch();
 });
+T("couches : badges GND et PWR dans les onglets, la liste et sélection directe dans la couche active",()=>{
+  setCuCount(4);
+  setLayerRole(1, "gnd", "GND");
+  setLayerRole(2, "pwr", "+3V3");
+  buildTabs();
+  buildLayers();
+  const tabsH = $("tabs").innerHTML;
+  if(tabsH.indexOf("GND") < 0) throw new Error("GND attendu dans les onglets de couche");
+  if(tabsH.indexOf("PWR") < 0) throw new Error("PWR attendu dans les onglets de couche");
+  const layersH = $("layers").innerHTML;
+  if(layersH.indexOf(">GND<") < 0) throw new Error("badge GND attendu dans la liste des couches");
+  if(layersH.indexOf(">PWR<") < 0) throw new Error("badge PWR attendu dans la liste des couches");
+  // Sélection active sur la couche 2 (pwr)
+  S.active = 2;
+  buildLayers();
+  const actH = $("actLay").innerHTML;
+  if(actH.indexOf('id="laRole"') < 0) throw new Error("sélecteur de rôle attendu dans la couche active");
+  if(actH.indexOf('id="laNet"') < 0) throw new Error("sélecteur de net attendu dans la couche active pour un plan");
+  // Repasser en signal depuis la couche active
+  $("laRole").value = "signal";
+  $("laRole").onchange();
+  if(layerRole(2) !== "signal") throw new Error("changement de rôle depuis la couche active non pris en compte");
+  S.zones=[];S.cuL.forEach(L=>{L.plane=false;L.net="";L.role="signal";});touch();
+});
 T("panneau d'empilage : les boutons sans effet le disent",()=>{
   setCuCount(4);applyPreset(presetsFor(4)[0]);
   buildStackup();
@@ -5260,6 +5298,544 @@ T("supprimer une paire laisse le cuivre en place",()=>{
   undo();
   if(S.dpPairs.length!==1)throw new Error("annuler devait rendre la paire");
 });
+T("mode serpentin : la barre, le clavier et le pied de page",()=>{
+  setMode("meander");
+  if(S.mode!=="meander")throw new Error("mode non pris");
+  if(!$("mMeander").classList.contains("on"))throw new Error("bouton non allumé");
+  if($("fMode").textContent!=="Serpentin (Appariement)")throw new Error("pied de page : "+$("fMode").textContent);
+  key("t");
+  if(S.mode!=="track")throw new Error("T doit rendre la main au tracé simple");
+  key("m");
+  if(S.mode!=="meander")throw new Error("M doit revenir au serpentin");
+  setMode("select");
+  if($("mMeander").classList.contains("on"))throw new Error("bouton resté allumé");
+});
+T("dpMeander : accordéon 45° et compensation d'écart",()=>{
+  const t = { x1: 10, y1: 20, x2: 30, y2: 20, w: 0.25, l: 0, net: "NET1" };
+  const res = dpMeander(t, { targetDelta: 5.0, pitch: 1.2, side: 1 });
+  if(!res.tracks || res.tracks.length <= 1) throw new Error("doit générer plusieurs segments de serpentin");
+  let totalL = 0;
+  for(const seg of res.tracks){
+    totalL += Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1);
+  }
+  const origL = Math.hypot(t.x2 - t.x1, t.y2 - t.y1);
+  const diff = totalL - origL;
+  if(diff <= 1.0) throw new Error("le serpentin doit allonger la piste, diff=" + diff);
+  const first = res.tracks[0];
+  const last = res.tracks[res.tracks.length - 1];
+  if(Math.abs(first.x1 - t.x1) > 0.01 || Math.abs(first.y1 - t.y1) > 0.01) throw new Error("début non préservé");
+  if(Math.abs(last.x2 - t.x2) > 0.01 || Math.abs(last.y2 - t.y2) > 0.01) throw new Error("fin non préservée");
+});
+T("dpSkewForTrack : détection du retard différentiel et de la piste courte",()=>{
+  carteDp();
+  dpAutoAll();
+  const pair = S.dpPairs[0];
+  S.tracks = [
+    { id: 101, net: pair.p, l: 0, w: 0.25, x1: 10, y1: 10, x2: 30, y2: 10 },
+    { id: 102, net: pair.n, l: 0, w: 0.25, x1: 10, y1: 12, x2: 25, y2: 12 }
+  ];
+  const skewP = dpSkewForTrack(S.tracks[0]);
+  if(!skewP) throw new Error("piste de paire différentielle non reconnue");
+  if(skewP.pair !== pair) throw new Error("mauvaise paire");
+  if(skewP.isP !== true) throw new Error("doit être P");
+  if(Math.abs(skewP.skew - 5.0) > 0.1) throw new Error("skew erroné: " + skewP.skew);
+  if(skewP.needed !== 0) throw new Error("la piste P est la plus longue, needed doit valoir 0");
+
+  const skewN = dpSkewForTrack(S.tracks[1]);
+  if(skewN.isP !== false) throw new Error("doit être N");
+  if(Math.abs(skewN.needed - 5.0) > 0.1) throw new Error("needed N erroné: " + skewN.needed);
+});
+T("busSkewAnalyze : fermeture temporelle Setup et Hold d'un bus synchrone",()=>{
+  carteVide();
+  S.tracks = [
+    { id: 201, net: "CLK", l: 0, w: 0.25, x1: 0, y1: 0, x2: 30, y2: 0 },
+    { id: 202, net: "D0",  l: 0, w: 0.25, x1: 0, y1: 5, x2: 30, y2: 5 },
+    { id: 203, net: "D1",  l: 0, w: 0.25, x1: 0, y1: 10, x2: 10, y2: 10 },
+    { id: 204, net: "D2",  l: 0, w: 0.25, x1: 0, y1: 15, x2: 80, y2: 15 }
+  ];
+  const res = busSkewAnalyze(["CLK", "D0", "D1", "D2"], "CLK", {
+    freqMhz: 50,
+    tsu: 2.0,
+    th: 1.0,
+    tcoMin: 1.0,
+    tcoMax: 17.8
+  });
+
+  if(!res.clk || res.clk.net !== "CLK") throw new Error("CLK mal identifiée");
+  if(res.signals.length !== 3) throw new Error("nombre de signaux data incorrect: " + res.signals.length);
+
+  const d0 = res.signals.find(s => s.net === "D0");
+  const d1 = res.signals.find(s => s.net === "D1");
+  const d2 = res.signals.find(s => s.net === "D2");
+
+  if(d0.status !== "ok") throw new Error("D0 doit être OK mais est: " + d0.status);
+  if(d1.status !== "hold_violation") throw new Error("D1 doit être en hold_violation mais est: " + d1.status);
+  if(d1.meanderNeededMm <= 0) throw new Error("D1 doit nécessiter un serpentin positif: " + d1.meanderNeededMm);
+  if(d1.meanderOptMm < d1.meanderNeededMm) throw new Error("meanderOpt doit être >= au minimum requis");
+
+  if(d2.status !== "setup_violation") throw new Error("D2 doit être en setup_violation mais est: " + d2.status);
+  if(res.summary.pass !== false) throw new Error("summary.pass doit être faux");
+});
+T("meanderMenu et S.meanderOpts : réglages personnalisés de serpentin",()=>{
+  S.meanderOpts = { amplitude: 3.0, pitch: 2.0, side: 1, targetDelta: 0 };
+  const t = { x1: 10, y1: 10, x2: 40, y2: 10, w: 0.25, l: 0, net: "NET_A" };
+  const res = dpMeander(t);
+  if(!res.tracks || res.tracks.length < 2) throw new Error("serpentin non généré");
+  const maxY = Math.max(...res.tracks.map(k => Math.max(k.y1, k.y2)));
+  if(maxY < 12.5) throw new Error("amplitude personnalisée non respectée: maxY=" + maxY);
+});
+T("meanderDraft : prise en compte des réglages de S.meanderOpts au clic initial",()=>{
+  S.meanderOpts = { amplitude: 4.0, pitch: 2.5, side: -1, targetDelta: 6.0 };
+  const trk = { id: 999, x1: 0, y1: 0, x2: 50, y2: 0, w: 0.25, l: 0, net: "TEST_NET" };
+  const mOpts = (typeof S !== "undefined" && S.meanderOpts) ? S.meanderOpts : {};
+  const draft = {
+    track: trk,
+    startP: { x: 25, y: 0 },
+    targetDelta: mOpts.targetDelta || null,
+    side: (mOpts.side != null && mOpts.side !== 0) ? mOpts.side : 1,
+    amplitude: mOpts.amplitude || 1.5,
+    pitch: mOpts.pitch || 1.2,
+    result: dpMeander(trk, {
+      targetDelta: mOpts.targetDelta,
+      amplitude: mOpts.amplitude,
+      pitch: mOpts.pitch,
+      side: mOpts.side
+    })
+  };
+  if(draft.amplitude !== 4.0) throw new Error("amplitude non lue de S.meanderOpts");
+  if(draft.pitch !== 2.5) throw new Error("pitch non lu de S.meanderOpts");
+  if(draft.side !== -1) throw new Error("side non lu de S.meanderOpts");
+  if(draft.targetDelta !== 6.0) throw new Error("targetDelta non lu de S.meanderOpts");
+  if(!draft.result || !draft.result.tracks || draft.result.tracks.length < 2) throw new Error("result dpMeander invalide");
+});
+T("modale busSkewModal : cycle d'ouverture, calcul et fermeture",()=>{
+  busSkewOpen(["CLK", "D0", "D1"]);
+  const m = $("busSkewModal");
+  if(!m || m.hidden) throw new Error("modale non ouverte");
+  busSkewClose();
+  if(!m.hidden) throw new Error("modale non fermée");
+});
+T("SIM_BUS dans le panneau de simulation : calcul sur bus nommé avec paramètres manuels",()=>{
+  carteVide();
+  S.tracks = [
+    { id: 301, net: "CLK", l: 0, w: 0.25, x1: 0, y1: 0, x2: 30, y2: 0 },
+    { id: 302, net: "D0",  l: 0, w: 0.25, x1: 0, y1: 5, x2: 30, y2: 5 },
+    { id: 303, net: "D1",  l: 0, w: 0.25, x1: 0, y1: 10, x2: 10, y2: 10 },
+    { id: 304, net: "D2",  l: 0, w: 0.25, x1: 0, y1: 15, x2: 80, y2: 15 }
+  ];
+  SIM_BUS.nom = "Bus Mémoire QSPI Flash";
+  SIM_BUS.clocks = ["CLK"];
+  SIM_BUS.datas = ["D0", "D1", "D2"];
+  SIM_BUS.dataClockMap = {};
+  SIM_BUS.freqMhz = 50;
+  SIM_BUS.tsu = 2.0;
+  SIM_BUS.th = 1.0;
+  SIM_BUS.tcoMin = 1.0;
+  SIM_BUS.tcoMax = 17.8;
+
+  simBusCalculer();
+
+  if(!SIM_BUS.result) throw new Error("résultat non calculé");
+  const res = SIM_BUS.result;
+  if(res.summary.clocksCount !== 1) throw new Error("horloge mal comptée");
+  if(res.signals.length !== 3) throw new Error("nombre de signaux incorrect");
+
+  const d0 = res.signals.find(s => s.net === "D0");
+  const d1 = res.signals.find(s => s.net === "D1");
+  const d2 = res.signals.find(s => s.net === "D2");
+
+  if(d0.status !== "ok") throw new Error("D0 doit être OK mais est: " + d0.status);
+  if(d1.status !== "hold_violation") throw new Error("D1 doit être en hold_violation mais est: " + d1.status);
+  if(d1.meanderNeededMm <= 0) throw new Error("D1 meanderNeededMm doit être positif");
+  if(d2.status !== "setup_violation") throw new Error("D2 doit être en setup_violation mais est: " + d2.status);
+
+  // Vérification de la fonction de rendu HTML
+  const html = simRendreBus();
+  if(!html.includes("Bus Mémoire QSPI Flash")) throw new Error("le nom du bus doit apparaître dans le rendu");
+  if(!html.includes("VIOLATION HOLD")) throw new Error("le badge de violation hold doit apparaître");
+});
+T("SIM_BUS : bus à horloges multiples",()=>{
+  carteVide();
+  S.tracks = [
+    { id: 401, net: "CLK_A", l: 0, w: 0.25, x1: 0, y1: 0, x2: 25, y2: 0 },
+    { id: 402, net: "CLK_B", l: 0, w: 0.25, x1: 0, y1: 5, x2: 40, y2: 5 },
+    { id: 403, net: "D_A0",  l: 0, w: 0.25, x1: 0, y1: 10, x2: 25, y2: 10 },
+    { id: 404, net: "D_B0",  l: 0, w: 0.25, x1: 0, y1: 15, x2: 40, y2: 15 }
+  ];
+  SIM_BUS.nom = "Bus Double Horloge";
+  SIM_BUS.clocks = ["CLK_A", "CLK_B"];
+  SIM_BUS.datas = ["D_A0", "D_B0"];
+  SIM_BUS.dataClockMap = {
+    "D_A0": "CLK_A",
+    "D_B0": "CLK_B"
+  };
+  SIM_BUS.freqMhz = 50;
+  SIM_BUS.tsu = 2.0;
+  SIM_BUS.th = 1.0;
+  SIM_BUS.tcoMin = 1.0;
+  SIM_BUS.tcoMax = 17.8;
+
+  simBusCalculer();
+
+  const res = SIM_BUS.result;
+  if(res.summary.clocksCount !== 2) throw new Error("doit comporter 2 horloges");
+  const da0 = res.signals.find(s => s.net === "D_A0");
+  const db0 = res.signals.find(s => s.net === "D_B0");
+  if(da0.clkRef !== "CLK_A") throw new Error("D_A0 doit être référencée à CLK_A mais est à: " + da0.clkRef);
+  if(db0.clkRef !== "CLK_B") throw new Error("D_B0 doit être référencée à CLK_B mais est à: " + db0.clkRef);
+  if(da0.status !== "ok" || db0.status !== "ok") throw new Error("les deux signaux appariés doivent être OK");
+});
+
+T("SIM_BUS : liaison composants, protocoles (SPI/I2C/UART) et gestion directe des nets",()=>{
+  carteVide();
+  S.fps = [
+    { id: 1, ref: "U1", pkg: "SOIC-8", pins: 4, nets: { 1: "CLK_SPI", 2: "MISO", 3: "MOSI", 4: "VCC" }, pads: [
+      { n: 1, net: "CLK_SPI", x: 0, y: 0, w: 1, h: 1, shape: "rect", drill: 0 },
+      { n: 2, net: "MISO", x: 2, y: 0, w: 1, h: 1, shape: "rect", drill: 0 },
+      { n: 3, net: "MOSI", x: 4, y: 0, w: 1, h: 1, shape: "rect", drill: 0 },
+      { n: 4, net: "VCC", x: 6, y: 0, w: 1, h: 1, shape: "rect", drill: 0 }
+    ] },
+    { id: 2, ref: "U2", pkg: "SOIC-8", pins: 4, nets: { 1: "CLK_SPI", 2: "MISO", 3: "MOSI", 4: "GND" }, pads: [
+      { n: 1, net: "CLK_SPI", x: 0, y: 10, w: 1, h: 1, shape: "rect", drill: 0 },
+      { n: 2, net: "MISO", x: 2, y: 10, w: 1, h: 1, shape: "rect", drill: 0 },
+      { n: 3, net: "MOSI", x: 4, y: 10, w: 1, h: 1, shape: "rect", drill: 0 },
+      { n: 4, net: "GND", x: 6, y: 10, w: 1, h: 1, shape: "rect", drill: 0 }
+    ] }
+  ];
+  S.tracks = [
+    { id: 501, net: "CLK_SPI", l: 0, w: 0.25, x1: 0, y1: 0, x2: 30, y2: 0 },
+    { id: 502, net: "MISO",    l: 0, w: 0.25, x1: 0, y1: 5, x2: 30, y2: 5 },
+    { id: 503, net: "MOSI",    l: 0, w: 0.25, x1: 0, y1: 10, x2: 30, y2: 10 },
+    { id: 504, net: "SCL",     l: 0, w: 0.25, x1: 0, y1: 15, x2: 25, y2: 15 },
+    { id: 505, net: "SDA",     l: 0, w: 0.25, x1: 0, y1: 20, x2: 25, y2: 20 },
+    { id: 506, net: "UART_TX", l: 0, w: 0.25, x1: 0, y1: 25, x2: 40, y2: 25 },
+    { id: 507, net: "UART_RX", l: 0, w: 0.25, x1: 0, y1: 30, x2: 40, y2: 30 }
+  ];
+  const cont = document.createElement("div");
+  simInit(SIM_PCB, cont);
+  simAllerAnalyse("bus");
+
+  // 1. Détection des composants et nets partagés
+  const comps = SIM_PCB.listeComposants();
+  if(!comps.some(c=>c.ref==="U1") || !comps.some(c=>c.ref==="U2"))
+    throw new Error("listeComposants doit contenir U1 et U2");
+
+  const netsPartages = SIM_PCB.netsEntreComposants("U1", "U2");
+  if(!netsPartages.includes("CLK_SPI") || !netsPartages.includes("MISO") || !netsPartages.includes("MOSI"))
+    throw new Error("netsEntreComposants doit trouver CLK_SPI, MISO, MOSI");
+  if(netsPartages.includes("VCC") || netsPartages.includes("GND"))
+    throw new Error("netsEntreComposants ne doit pas inclure les nets non partagés");
+
+  // 2. Classification automatique des signaux SPI
+  const classed = simBusClassifierNets(netsPartages, "spi");
+  if(!classed.clocks.includes("CLK_SPI"))
+    throw new Error("CLK_SPI aurait dû être classé en horloge");
+  if(!classed.datas.includes("MOSI") || !classed.datas.includes("MISO"))
+    throw new Error("MOSI et MISO auraient dû être classés en données");
+
+  // 3. Configuration directe du protocole et des signaux (choix utilisateur)
+  SIM_BUS.protocole = "spi";
+  SIM_BUS.clocks = ["CLK_SPI"];
+  SIM_BUS.datas = ["MOSI", "MISO"];
+  simBusRendreNetsBar();
+  simBusCalculer();
+
+  if(SIM_BUS.clocks.length !== 1 || SIM_BUS.clocks[0] !== "CLK_SPI")
+    throw new Error("l'horloge CLK_SPI n'a pas été configurée");
+  if(SIM_BUS.datas.length !== 2)
+    throw new Error("le bus doit avoir 2 signaux de données");
+  if(!SIM_BUS.result || SIM_BUS.result.protocole !== "spi")
+    throw new Error("le calcul SPI a échoué");
+
+  // 4. Vérification de l'interface de contrôle des signaux (pilules HTML)
+  const bar = simEl("simBusNetsBar");
+  if(!bar) throw new Error("barre de nets absente");
+  if(!bar.innerHTML.includes('data-net-change="clk:CLK_SPI"'))
+    throw new Error("sélecteur direct data-net-change pour CLK_SPI absent");
+  if(!bar.innerHTML.includes('data-role-toggle="clk:CLK_SPI"'))
+    throw new Error("bouton bascule rôle clk:CLK_SPI absent");
+  if(!bar.innerHTML.includes("⏱ CLK"))
+    throw new Error("étiquette ⏱ CLK absente");
+  if(!bar.innerHTML.includes("⇄ DATA"))
+    throw new Error("étiquette ⇄ DATA absente");
+  if(bar.innerHTML.includes("data-net-pick"))
+    throw new Error("le bouton de ciblage carte (pipette) ne doit plus exister");
+
+  // 5. Modification directe de net et basculement de rôle
+  simBusChangerNet("clk", "CLK_SPI", "MOSI");
+  if(!SIM_BUS.clocks.includes("MOSI") || SIM_BUS.clocks.includes("CLK_SPI"))
+    throw new Error("simBusChangerNet n'a pas changé CLK_SPI en MOSI");
+
+  simBusBasculerRole("clk", "MOSI");
+  if(!SIM_BUS.datas.includes("MOSI") || SIM_BUS.clocks.includes("MOSI"))
+    throw new Error("simBusBasculerRole n'a pas basculé MOSI en DATA");
+
+  simBusSupprimerSignal("data", "MOSI");
+  if(SIM_BUS.datas.includes("MOSI"))
+    throw new Error("simBusSupprimerSignal n'a pas retiré MOSI");
+
+  // 6. Test du protocole I2C
+  SIM_BUS.clocks = ["SCL"];
+  SIM_BUS.datas = ["SDA"];
+  SIM_BUS.protocole = "i2c";
+  SIM_BUS.rpuK = 4.7;
+  simBusCalculer();
+  const resI2C = SIM_BUS.result;
+  if(!resI2C || resI2C.methode !== "i2c")
+    throw new Error("l'analyse I2C n'a pas été appliquée");
+  if(typeof resI2C.summary.maxCapPf !== "number" || typeof resI2C.summary.maxTrNs !== "number")
+    throw new Error("synthèse I2C (maxCapPf, maxTrNs) invalide");
+
+  // 7. Test du protocole UART
+  SIM_BUS.clocks = [];
+  SIM_BUS.datas = ["UART_TX", "UART_RX"];
+  SIM_BUS.protocole = "uart";
+  SIM_BUS.baudrate = 115200;
+  simBusCalculer();
+  const resUart = SIM_BUS.result;
+  if(!resUart || resUart.methode !== "uart")
+    throw new Error("l'analyse UART n'a pas été appliquée");
+  if(resUart.summary.signalsCount !== 2 || resUart.summary.baudrate !== 115200)
+    throw new Error("synthèse UART invalide");
+});
+
+T("simulation EM - Bus numérique : détection résistance série (XNet), cumul temps de vol et chaînage manuel", () => {
+  carteVide();
+  // Montage : U1 (émetteur) -> SPI_CLK_A -> R1 (22Ω) -> SPI_CLK_B -> U2 (récepteur)
+  // et données directes MOSI
+  S.fps = [
+    { id: 10, ref: "U1", pkg: "QFN-16", pins: 2, nets: { 1: "SPI_CLK_A", 2: "MOSI" }, pads: [
+      { n: 1, net: "SPI_CLK_A", x: 0, y: 0, w: 1, h: 1, shape: "rect", drill: 0 },
+      { n: 2, net: "MOSI", x: 2, y: 0, w: 1, h: 1, shape: "rect", drill: 0 }
+    ] },
+    { id: 20, ref: "R1", value: "22Ω", pkg: "0603", pins: 2, nets: { 1: "SPI_CLK_A", 2: "SPI_CLK_B" }, pads: [
+      { n: 1, net: "SPI_CLK_A", x: 20, y: 0, w: 0.8, h: 0.8, shape: "rect", drill: 0 },
+      { n: 2, net: "SPI_CLK_B", x: 22, y: 0, w: 0.8, h: 0.8, shape: "rect", drill: 0 }
+    ] },
+    { id: 30, ref: "U2", pkg: "SOIC-8", pins: 2, nets: { 1: "SPI_CLK_B", 2: "MOSI" }, pads: [
+      { n: 1, net: "SPI_CLK_B", x: 40, y: 0, w: 1, h: 1, shape: "rect", drill: 0 },
+      { n: 2, net: "MOSI", x: 42, y: 0, w: 1, h: 1, shape: "rect", drill: 0 }
+    ] }
+  ];
+  S.tracks = [
+    { id: 601, net: "SPI_CLK_A", l: 0, w: 0.25, x1: 0, y1: 0, x2: 20, y2: 0 },
+    { id: 602, net: "SPI_CLK_B", l: 0, w: 0.25, x1: 22, y1: 0, x2: 42, y2: 0 },
+    { id: 603, net: "MOSI",      l: 0, w: 0.25, x1: 2, y1: 5, x2: 42, y2: 5 }
+  ];
+
+  const cont = document.createElement("div");
+  simInit(SIM_PCB, cont);
+  simAllerAnalyse("bus");
+
+  // 1. Détection automatique du pont passif série (XNet)
+  const bridges = SIM_PCB.listeLiaisonsSeries();
+  if(!bridges.some(b => b.includes("SPI_CLK_A + SPI_CLK_B") && b.includes("R1 22Ω"))){
+    throw new Error("listeLiaisonsSeries n'a pas détecté le pont R1 entre SPI_CLK_A et SPI_CLK_B : " + JSON.stringify(bridges));
+  }
+
+  const netsPartages = SIM_PCB.netsEntreComposants("U1", "U2");
+  if(!netsPartages.includes("MOSI")){
+    throw new Error("netsEntreComposants doit contenir le net direct MOSI");
+  }
+  const xnetDetecte = netsPartages.find(n => n.includes("SPI_CLK_A + SPI_CLK_B"));
+  if(!xnetDetecte || !xnetDetecte.includes("R1 22Ω")){
+    throw new Error("netsEntreComposants doit contenir la liaison série R1 (22Ω) entre U1 et U2 : " + JSON.stringify(netsPartages));
+  }
+
+  // 2. Calcul du temps de vol et capacité cumulés pour le net composé
+  const flightA = SIM_PCB.busNetFlight("SPI_CLK_A");
+  const flightB = SIM_PCB.busNetFlight("SPI_CLK_B");
+  const flightCumul = SIM_PCB.busNetFlight(xnetDetecte);
+
+  if(Math.abs(flightCumul.len - (flightA.len + flightB.len)) > 0.05){
+    throw new Error("la longueur cumulée (" + flightCumul.len + ") ne correspond pas à la somme A+B (" + (flightA.len + flightB.len) + ")");
+  }
+  if(Math.abs(flightCumul.tflight - (flightA.tflight + flightB.tflight)) > 0.01){
+    throw new Error("le temps de vol cumulé (" + flightCumul.tflight + ") ne correspond pas à la somme A+B (" + (flightA.tflight + flightB.tflight) + ")");
+  }
+  if(Math.abs(flightCumul.capPf - (flightA.capPf + flightB.capPf)) > 0.05){
+    throw new Error("la capacité cumulée (" + flightCumul.capPf + ") ne correspond pas à la somme A+B (" + (flightA.capPf + flightB.capPf) + ")");
+  }
+
+  // 3. Test de la case à cocher "R série" et détection automatique du composant série
+  SIM_BUS.clocks = ["SPI_CLK_A"];
+  SIM_BUS.datas = ["MOSI"];
+  SIM_BUS.protocole = "spi";
+
+  const pontAuto = SIM_PCB.trouverPontSerie("SPI_CLK_A");
+  if(!pontAuto || pontAuto.comp !== "R1" || pontAuto.netAval !== "SPI_CLK_B"){
+    throw new Error("trouverPontSerie doit détecter R1 entre SPI_CLK_A et SPI_CLK_B : " + JSON.stringify(pontAuto));
+  }
+
+  // Activer la résistance série sur la ligne d'horloge SPI_CLK_A
+  simBusActiverRSerie("clk", "SPI_CLK_A");
+  if(!SIM_BUS.clocks[0].includes("SPI_CLK_A + SPI_CLK_B") || !SIM_BUS.clocks[0].includes("R1 22Ω")){
+    throw new Error("simBusActiverRSerie n'a pas composé automatiquement le net avec le pont R1 22Ω : " + SIM_BUS.clocks[0]);
+  }
+
+  simBusRendreNetsBar();
+  const bar = simEl("simBusNetsBar");
+  if(!bar || !bar.innerHTML.includes("simBusRSerieChk")){
+    throw new Error("la case à cocher R série doit être présente dans la pilule");
+  }
+  if(!bar.innerHTML.includes("simBusRValInput")){
+    throw new Error("le champ de saisie de la valeur de résistance (simBusRValInput) doit être présent");
+  }
+  if(!bar.innerHTML.includes("data-downstream-change")){
+    throw new Error("le sélecteur du net aval doit être présent");
+  }
+  if(!bar.innerHTML.includes("data-unchain")){
+    throw new Error("le bouton de déchaînage (data-unchain / ciseaux) doit être présent");
+  }
+
+  // Modification manuelle de la valeur de la résistance (ex: de 22Ω à 47Ω)
+  simBusChangerRSerieVal("clk", SIM_BUS.clocks[0], 47);
+  if(!SIM_BUS.clocks[0].includes("R1 47Ω")){
+    throw new Error("simBusChangerRSerieVal n'a pas mis à jour la valeur de résistance en 47Ω : " + SIM_BUS.clocks[0]);
+  }
+  const flight47 = SIM_PCB.busNetFlight(SIM_BUS.clocks[0]);
+  if(flight47.rOhms !== 47){
+    throw new Error("le calcul physique busNetFlight doit lire rOhms = 47 : " + flight47.rOhms);
+  }
+
+  // Modification manuelle du net aval
+  simBusChangerNetAval("clk", SIM_BUS.clocks[0], "SPI_CLK_B_ALT");
+  if(!SIM_BUS.clocks[0].includes("SPI_CLK_B_ALT")){
+    throw new Error("simBusChangerNetAval n'a pas mis à jour le net aval : " + SIM_BUS.clocks[0]);
+  }
+
+  // Décocher la case R série : retour immédiat au net simple initial
+  simBusDesactiverRSerie("clk", SIM_BUS.clocks[0]);
+  if(SIM_BUS.clocks[0] !== "SPI_CLK_A"){
+    throw new Error("simBusDesactiverRSerie aurait dû restituer SPI_CLK_A : " + SIM_BUS.clocks[0]);
+  }
+});
+
+T("simulation EM - Bus numérique : détection automatique d'une résistance 560Ω (MOSI -> R1 560Ω -> SPI_SIGN004101) et flexibilité manuelle", () => {
+  carteVide();
+  // Montage réel : U1 (MCU) émet MOSI -> R1 (résistance CMS 560 ohm) -> SPI_SIGN004101 -> U2 (Périphérique)
+  // et horloge SCK directe
+  S.fps = [
+    { id: 10, ref: "U1", pkg: "QFN-16", pins: 2, nets: { 1: "MOSI", 2: "SCK" }, pads: [
+      { n: 1, net: "MOSI", x: 0, y: 0, w: 1, h: 1, shape: "rect", drill: 0 },
+      { n: 2, net: "SCK",  x: 0, y: 2, w: 1, h: 1, shape: "rect", drill: 0 }
+    ] },
+    // R1 est une résistance CMS standard (ex: 0402/0603) avec value: "560 ohm"
+    { id: 20, ref: "R1", value: "560 ohm", pkg: "0402", style: "chip", pins: 2, nets: { 1: "MOSI", 2: "SPI_SIGN004101" }, pads: [
+      { n: 1, net: "MOSI",            x: 15, y: 0, w: 0.6, h: 0.6, shape: "rect", drill: 0 },
+      { n: 2, net: "SPI_SIGN004101", x: 16, y: 0, w: 0.6, h: 0.6, shape: "rect", drill: 0 }
+    ] },
+    { id: 30, ref: "U2", pkg: "SOIC-8", pins: 2, nets: { 1: "SPI_SIGN004101", 2: "SCK" }, pads: [
+      { n: 1, net: "SPI_SIGN004101", x: 30, y: 0, w: 1, h: 1, shape: "rect", drill: 0 },
+      { n: 2, net: "SCK",            x: 30, y: 2, w: 1, h: 1, shape: "rect", drill: 0 }
+    ] }
+  ];
+  S.tracks = [
+    { id: 701, net: "MOSI",            l: 0, w: 0.2, x1: 0,  y1: 0, x2: 15, y2: 0 },
+    { id: 702, net: "SPI_SIGN004101", l: 0, w: 0.2, x1: 16, y1: 0, x2: 30, y2: 0 },
+    { id: 703, net: "SCK",             l: 0, w: 0.2, x1: 0,  y1: 2, x2: 30, y2: 2 }
+  ];
+
+  const cont = document.createElement("div");
+  simInit(SIM_PCB, cont);
+  simAllerAnalyse("bus");
+
+  // 1. Détection automatique : donner le premier net "MOSI" doit détecter R1, vérifier que c'est une résistance, extraire 560Ω et trouver le net du second pad (SPI_SIGN004101)
+  const pontMosi = SIM_PCB.trouverPontSerie("MOSI");
+  if(!pontMosi) throw new Error("trouverPontSerie n'a pas détecté le pont série sur MOSI");
+  if(pontMosi.comp !== "R1") throw new Error("le composant détecté doit être R1 : " + pontMosi.comp);
+  if(pontMosi.rOhms !== 560) throw new Error("la valeur extraite doit être 560Ω : " + pontMosi.rOhms);
+  if(pontMosi.netAval !== "SPI_SIGN004101") throw new Error("le net du second pad doit être SPI_SIGN004101 : " + pontMosi.netAval);
+  if(!pontMosi.label.includes("MOSI + SPI_SIGN004101 (R1 560Ω)")){
+    throw new Error("le label auto-généré est incorrect : " + pontMosi.label);
+  }
+
+  // 2. Résolution automatique lors de l'ajout du signal dans le bus
+  const netResolu = simBusResoudreNetAvecPont("MOSI");
+  if(netResolu !== "MOSI + SPI_SIGN004101 (R1 560Ω)"){
+    throw new Error("simBusResoudreNetAvecPont n'a pas résolu MOSI en net ponté 560Ω : " + netResolu);
+  }
+
+  SIM_BUS.clocks = ["SCK"];
+  SIM_BUS.datas = [netResolu];
+  simBusRendreNetsBar();
+
+  const bar = simEl("simBusNetsBar");
+  if(!bar) throw new Error("simBusNetsBar absent");
+  if(!bar.innerHTML.includes("simBusRValInput")){
+    throw new Error("le champ d'édition de la résistance (simBusRValInput) doit être présent");
+  }
+  if(!bar.innerHTML.includes('value="560"')){
+    throw new Error("la valeur 560Ω doit être injectée dans l'input : " + bar.innerHTML);
+  }
+
+  // 3. Calcul physique avec retard RC induit par la résistance de 560Ω
+  const flight = SIM_PCB.busNetFlight(SIM_BUS.datas[0]);
+  if(flight.rOhms !== 560) throw new Error("busNetFlight rOhms incorrect : " + flight.rOhms);
+  if(flight.rcDelayPs <= 0) throw new Error("un retard RC doit être calculé pour 560Ω : " + flight.rcDelayPs);
+  if(flight.tflightTotal <= flight.tflight) throw new Error("tflightTotal doit inclure le retard RC : " + flight.tflightTotal);
+
+  // 4. Flexibilité / mode manuel préservé : modification manuelle de la valeur de résistance (ex: passage à 1000Ω)
+  simBusChangerRSerieVal("data", SIM_BUS.datas[0], 1000);
+  if(!SIM_BUS.datas[0].includes("R1 1000Ω")){
+    throw new Error("la modification manuelle de la résistance en 1000Ω a échoué : " + SIM_BUS.datas[0]);
+  }
+  const flight1000 = SIM_PCB.busNetFlight(SIM_BUS.datas[0]);
+  if(flight1000.rOhms !== 1000) throw new Error("busNetFlight doit lire 1000Ω : " + flight1000.rOhms);
+  if(flight1000.rcDelayPs <= flight.rcDelayPs){
+    throw new Error("le retard RC avec 1000Ω doit être supérieur à celui avec 560Ω");
+  }
+
+  // 5. Flexibilité manuelle : modification du net aval
+  simBusChangerNetAval("data", SIM_BUS.datas[0], "SPI_ALT_NET");
+  if(!SIM_BUS.datas[0].includes("SPI_ALT_NET")){
+    throw new Error("la modification manuelle du net aval a échoué : " + SIM_BUS.datas[0]);
+  }
+
+  // 6. Déchaînage manuel (ciseaux / décochage)
+  simBusDesactiverRSerie("data", SIM_BUS.datas[0]);
+  if(SIM_BUS.datas[0] !== "MOSI"){
+    throw new Error("le déchaînage doit restituer le net de base MOSI seul : " + SIM_BUS.datas[0]);
+  }
+
+  // 7. Ré-activation de la résistance série sur MOSI : re-détection automatique de R1 560Ω et SPI_SIGN004101
+  simBusActiverRSerie("data", "MOSI");
+  if(!SIM_BUS.datas[0].includes("MOSI + SPI_SIGN004101 (R1 560Ω)")){
+    throw new Error("la ré-activation de R série doit re-détecter R1 560Ω : " + SIM_BUS.datas[0]);
+  }
+
+  // 8. Mise à jour automatique lors de la sélection d'un net sur le PCB (S.hlNet ou clic piste)
+  // Vider le bus
+  SIM_BUS.clocks = ["SCK"];
+  SIM_BUS.datas = [];
+  SIM_BUS.result = null;
+
+  // L'utilisateur sélectionne le net "mosi" (en minuscule pour tester l'insensibilité à la casse) sur le PCB / netlist
+  S.hlNet = "mosi";
+  const netsSel = SIM_PCB.netsSelectionnes();
+  if(!netsSel.includes("mosi")){
+    throw new Error("netsSelectionnes doit inclure S.hlNet : " + JSON.stringify(netsSel));
+  }
+
+  // Déclencher le rafraîchissement automatique de sélection
+  simRafraichir(true);
+
+  // Vérifier que le bus a été mis à jour AUTOMATIQUEMENT avec la détection de la résistance 560Ω et calculé sans clic manuel
+  if(!SIM_BUS.datas.length){
+    throw new Error("Le signal mosi n'a pas été ajouté automatiquement au bus lors de la sélection");
+  }
+  const dataSignal = SIM_BUS.datas[0];
+  if(!dataSignal.includes("R1") || !dataSignal.includes("560Ω") || !dataSignal.includes("SPI_SIGN004101")){
+    throw new Error("Le net sélectionné mosi doit avoir sa résistance R1 560Ω et SPI_SIGN004101 auto-détectés : " + dataSignal);
+  }
+  if(!SIM_BUS.result){
+    throw new Error("Le calcul du bus n'a pas été mis à jour automatiquement suite à la sélection du net (SIM_BUS.result est null)");
+  }
+  if(SIM_BUS.result.signals.length !== 1 || !SIM_BUS.result.signals[0].rcDelayPs){
+    throw new Error("Le résultat du calcul du bus doit intégrer le retard RC de la résistance de 560Ω : " + JSON.stringify(SIM_BUS.result));
+  }
+});
+
 
 /* ==========================================================================
    Session d'onglet (commun/session.js)
@@ -8570,8 +9146,13 @@ T("un via loin du raccord ne donne pas ses cotes",()=>{
 function simCarteRetour(netInterne){
   carte4c();
   S.cuts=[]; S.vias=[];
-  S.cuL[1].net="GND";
-  S.cuL[2].net=netInterne||"PWR";
+  /* PAR `setLayerRole`, ET NON EN ÉCRIVANT `S.cuL[i].net`. Le net d'un plan
+     n'est plus lu à la couche mais AU DROIT DU VIA, dans le cuivre : c'est
+     `syncAutoZones` — que `setLayerRole` appelle — qui fait suivre la zone.
+     Poser le net à la main laissait le cuivre sur son ancien net, et la carte
+     d'essai ne décrivait plus la carte qu'elle prétendait décrire. */
+  setLayerRole(1, "gnd", "GND");
+  setLayerRole(2, "pwr", netInterne || "PWR");
   const xm=(SIM_X1+SIM_X2)/2;
   S.tracks.push({l:0, net:"N$1", w:SIM_W, x1:SIM_X1, y1:SIM_Y, x2:xm, y2:SIM_Y});
   S.tracks.push({l:3, net:"N$1", w:SIM_W, x1:xm, y1:SIM_Y, x2:SIM_X2, y2:SIM_Y});
@@ -8669,6 +9250,29 @@ T("une référence qui change écarte le via de masse, en disant pourquoi",()=>{
   if(!(g2.L>g.L))
     throw new Error("la boucle refermée passe SOUS le plancher : "+
                     (g2.L*1e9).toFixed(3)+" contre "+(g.L*1e9).toFixed(3));
+});
+
+T("un via de masse au-delà de 5 mm n'est pas retenu mais sa distance est enregistrée",()=>{
+  const c=simCarteRetour("GND");
+  const dHors = SIM_RAYON_RETOUR + 1.2;
+  simPoserMasse(c.x + dHors, SIM_Y);
+  const g=simVoisinageVia(c.via);
+  if(g.retenus.length)
+    throw new Error("un via à " + dHors + " mm ne doit pas être retenu dans le rayon de " + SIM_RAYON_RETOUR + " mm");
+  if(!g.seul)
+    throw new Error("sans via à portée, l'inductance doit être un plancher");
+  if(Math.abs((g.horsRayonDist || 0) - dHors) > 0.01)
+    throw new Error("la distance du via hors rayon doit valoir " + dHors + " mm : " + g.horsRayonDist);
+});
+
+T("un via de masse en zone de vigilance (entre 1,8 et 5,0 mm) est retenu avec statut vigilance",()=>{
+  const c=simCarteRetour("GND");
+  simPoserMasse(c.x + 3.65, SIM_Y);
+  const g=simVoisinageVia(c.via);
+  if(g.retenus.length !== 1)
+    throw new Error("le via à 3,65 mm doit être retenu");
+  if(g.retenus[0].statut !== "vigilance")
+    throw new Error("le statut doit être vigilance : " + g.retenus[0].statut);
 });
 
 T("trois vias de masse comptent pour trois, et disent lequel travaille",()=>{
@@ -8770,10 +9374,11 @@ T("le via envoyé porte sa position, son antipad et ses retours",()=>{
 
 T("un via de masse hors de portée n'est ni retenu ni envoyé",()=>{
   const c=simCarteRetour("GND");
-  simPoserMasse(c.x+4.0, SIM_Y);      /* au-delà des 3 mm du rayon */
+  const dHors = SIM_RAYON_RETOUR + 1.0;
+  simPoserMasse(c.x + dHors, SIM_Y);      /* au-delà du rayon maximal */
   const g=simVoisinageVia(c.via);
   if(g.voisins.length)
-    throw new Error("un via à 4 mm a été ramassé");
+    throw new Error("un via à " + dHors + " mm a été ramassé");
   if(!g.seul)throw new Error("sans retour à portée, ce n'est pas une boucle");
   const env=simSegments().envoi[1].via;
   if(env.retours.length)throw new Error("un via hors de portée a été envoyé");
@@ -8818,7 +9423,13 @@ T("le chevelu distingue le défaut, le doute et le cas ordinaire",()=>{
 
   /* 3. Les mêmes plans, sans net déclaré : on ne peut pas trancher. */
   const c=simCarteRetour("GND");
+  /* SANS NET DÉCLARÉ, NI SUR LA COUCHE NI SUR SON CUIVRE. Le net d'un plan se
+     lit maintenant DANS LE CUIVRE au droit du via, et la couche n'est plus
+     qu'un repli : vider l'un sans l'autre décrirait une carte impossible —
+     du cuivre qui porte un net sur une couche qui n'en déclare aucun. C'est le
+     cas d'un fichier antérieur aux rôles, où rien ne dit ce que le plan porte. */
   S.cuL[1].net=""; S.cuL[2].net="";
+  for(const z of S.zones)if(z.l===1||z.l===2)z.net="";
   touch();
   simPoserMasse(c.x+0.6, SIM_Y);
   const gc=simVoisinageVia(c.via);
@@ -8826,6 +9437,151 @@ T("le chevelu distingue le défaut, le doute et le cas ordinaire",()=>{
     throw new Error("sans net déclaré, on ne peut conclure ni oui ni non");
   if(gc.change)throw new Error("le défaut grave exige la certitude");
   if(!gc.doute)throw new Error("le doute n'est pas signalé");
+});
+
+T("un via de masse hors de l'îlot ne referme pas le retour de l'îlot", ()=>{
+  /* LE MÊME PLAN N'EST PAS LE MÊME CUIVRE, et c'était le dernier endroit où
+     l'hypothèse « un net par couche » survivait. `simPlansJoints` mesure le
+     cuivre au droit du VIA DE MASSE ; le retour circule dans le cuivre au
+     droit du VIA DE SIGNAL. Les deux mesures étaient bonnes, et on les
+     comparait par INDICE DE COUCHE — ce qui les réconcilie à tort dès que la
+     frontière du versement passe entre les deux vias.
+
+     LE CAS VIENT D'UNE CARTE RÉELLE. Via de signal DANS l'îlot d'alimentation,
+     vias de masse à deux millimètres mais HORS de l'îlot : les indices
+     concordaient, les vias étaient retenus, et l'inductance sortait comme une
+     MESURE de boucle au lieu d'un plancher. C'est le sens qui flatte. */
+  const c = simCarteRetour("GND");            /* les deux plans internes en GND */
+  /* L'Îlot d'alimentation entoure le via de signal (x = 30) et s'arrête à 32. */
+  S.zones.push({id:S.nextId++, l:2, net:"+3V3", auto:false,
+                pts:[{x:26,y:14},{x:32,y:14},{x:32,y:26},{x:26,y:26}]});
+  /* Le via de masse est À PORTÉE (2,6 mm < SIM_RAYON_RETOUR) mais DEHORS : sous
+     LUI, la couche 2 est bien de la masse. Sa propre mesure ne peut donc pas
+     l'écarter — c'est la comparaison avec le point du via de signal qui doit
+     le faire. */
+  const gnd = simPoserMasse(32.6, SIM_Y);
+  touch();
+
+  if(simNetPlanEn(2, gnd.x, SIM_Y) !== "GND")
+    throw new Error("sous le via de masse, la couche 2 doit être de la masse : "
+                    + simNetPlanEn(2, gnd.x, SIM_Y));
+  if(simNetPlanEn(2, c.x, SIM_Y) !== "+3V3")
+    throw new Error("sous le via de signal, la couche 2 doit être l'îlot : "
+                    + simNetPlanEn(2, c.x, SIM_Y));
+  if(simPlansJoints(gnd, true).indexOf(2) < 0)
+    throw new Error("le via de masse touche bien la couche 2 : c'est ce qui"
+                    + " rendait le défaut invisible");
+
+  const g = simVoisinageVia(c.via);
+  const f = g.voisins.find(x => x.via === gnd);
+  if(!f) throw new Error("le via de masse doit être listé comme candidat");
+  if(f.retenu)
+    throw new Error("un via de masse hors de l'îlot ne porte pas ce retour");
+  if(!/autre versement/.test(f.raison) || !/\+3V3/.test(f.raison)
+     || !/Inner 2/.test(f.raison) || f.raison.length > 40)
+    throw new Error("la raison doit envoyer regarder la DÉCOUPE du plan, et"
+                    + " nommer le net croisé : " + f.raison);
+  if(g.retenus.length)
+    throw new Error("aucun retour retenu, or " + g.retenus.length);
+  if(!g.seul)
+    throw new Error("sans retour retenu, l'inductance est un PLANCHER");
+
+  /* ET LE MÊME VIA REDEVIENT UTILE dès que le via de signal sort de l'îlot :
+     ce n'est pas le via qu'on condamne, c'est le couple. */
+  const dehors = {x:34, y:SIM_Y, d:0.55, drill:0.25, a:0, b:3, net:"N$3"};
+  S.vias.push(dehors); touch();
+  const h = simVoisinageVia(dehors);
+  const fb = h.voisins.find(x => x.via === gnd);
+  if(!fb || !fb.retenu)
+    throw new Error("hors de l'îlot, ce même via referme la boucle : "
+                    + (fb ? fb.raison : "absent"));
+  if(h.seul) throw new Error("l'inductance doit y être une MESURE");
+});
+
+T("un plan n'est pas d'un seul net : l'éditeur lit le cuivre SOUS le via", ()=>{
+  /* CE QUE L'HYPOTHÈSE « UN NET PAR COUCHE » COÛTAIT, ET C'EST LE MÊME DÉFAUT
+     QUE CÔTÉ VISIONNEUSE. Une couche de plan est PARTITIONNÉE : un versement
+     d'alimentation ici, de la masse tout autour. Lire `S.cuL[i].net`, c'est
+     appliquer à TOUTE la surface le net que l'empilage donne à la couche.
+
+     Les deux erreurs sont symétriques, et les deux sont graves :
+       · un via posé là où le plan est de la MASSE sortait « la référence change
+         de net, aucun via de masse ne peut refermer » — faux, et ses vias de
+         retour, qui travaillent, étaient écartés ;
+       · un via posé DANS l'îlot d'alimentation d'une couche par ailleurs
+         majoritairement de masse passait pour sain — alors qu'il traverse
+         vraiment GND → PWR. C'est le sens dangereux, celui qui part en
+         production. */
+  const c = simCarteRetour("GND");          /* les deux plans internes en GND */
+  /* On pose un ÎLOT +3V3 sur la couche 2, à gauche, comme un versement d'alim
+     au milieu d'un plan de masse. Une zone NON auto : elle ne suit pas le rôle
+     de la couche, exactement comme un versement dessiné à la main. */
+  S.zones.push({id:S.nextId++, l:2, net:"+3V3", auto:false,
+                pts:[{x:2,y:12},{x:14,y:12},{x:14,y:28},{x:2,y:28}]});
+  touch();
+
+  /* 1. LE VIA DE LA CARTE est à x=30 : hors de l'îlot, sur la masse. Rien ne
+     change — les deux plans sont de la masse ICI. */
+  simPoserMasse(c.x + 0.6, SIM_Y);
+  const loin = simVoisinageVia(c.via);
+  if(loin.netsDiff !== false)
+    throw new Error("à x=30 les deux plans sont de la masse : netsDiff=" + loin.netsDiff);
+  if(loin.change) throw new Error("aucun défaut ici : le retour reste dans le cuivre");
+  if(loin.retenus.length !== 1)
+    throw new Error("le via de masse doit refermer la boucle, obtenu " +
+                    loin.retenus.length);
+  if(loin.seul) throw new Error("l'inductance doit être une MESURE, pas un plancher");
+
+  /* 2. LE MÊME DESSIN, un via posé DANS l'îlot. La référence change pour de
+     bon, et le via de masse à côté ne peut plus rien : il ne touche pas le
+     cuivre +3V3 sous lui. */
+  const dans = {x:8, y:SIM_Y, d:0.55, drill:0.25, a:0, b:3, net:"N$2"};
+  S.vias.push(dans);
+  simPoserMasse(8.6, SIM_Y);
+  touch();
+  const ilot = simVoisinageVia(dans);
+  if(ilot.netsDiff !== true)
+    throw new Error("dans l'îlot, GND et +3V3 sont deux nets : netsDiff=" +
+                    ilot.netsDiff);
+  if(!ilot.change) throw new Error("le défaut grave doit être vu DANS l'îlot");
+  if(ilot.retenus.length)
+    throw new Error("un via de masse ne joint pas GND à +3V3, or " +
+                    ilot.retenus.length + " est retenu");
+  if(!ilot.seul)
+    throw new Error("sans retour retenu, l'inductance est un PLANCHER");
+  if(!/ne rejoint pas/.test(ilot.voisins[0].raison))
+    throw new Error("la raison doit nommer le plan : " + ilot.voisins[0].raison);
+
+  /* 3. ET LA RECHERCHE DE PONTS SUIT LE MÊME NET LOCAL : rien à ponter hors de
+     l'îlot, quelque chose à ponter dedans. */
+  if(simPontsPlans(0, 3, c.via.x, SIM_Y) !== null)
+    throw new Error("hors de l'îlot, les deux plans sont de la masse : rien à ponter");
+  const dedans = simPontsPlans(0, 3, 8, SIM_Y);
+  if(dedans === null)
+    throw new Error("dans l'îlot, les nets diffèrent : il faut chercher un pont");
+});
+
+T("plan PWR avec plan de masse GND : simCotesVia transmet plans_nets et plans_joints", ()=>{
+  /* Quand la couche 2 a le rôle 'pwr' (+3V3 dans l'empilage), mais qu'une zone
+     de masse GND la remplit autour du via, simCotesVia doit envoyer
+     plans_nets: { "Inner 2": "GND" } et plans_joints: ["Inner 1", "Inner 2"]. */
+  const c = simCarteRetour("PWR");   /* couche 2 déclarée PWR */
+  /* On verse un plan de masse GND sur toute la zone entourant les vias */
+  S.zones.push({id:S.nextId++, l:2, net:"GND", auto:false,
+                pts:[{x:10,y:5},{x:50,y:5},{x:50,y:35},{x:10,y:35}]});
+  const gnd = simPoserMasse(c.x + 0.8, SIM_Y);
+  touch();
+
+  const cotes = simCotesVia(c.via, c.x, SIM_Y, 0, 3);
+  if(!cotes.plans_nets || cotes.plans_nets["Inner 2"] !== "GND")
+    throw new Error("plans_nets doit attester de la masse sur Inner 2 : " + JSON.stringify(cotes.plans_nets));
+  if(!cotes.retours || !cotes.retours.length)
+    throw new Error("un via de masse doit être présent dans retours");
+  const r0 = cotes.retours[0];
+  if(!r0.plans_joints || r0.plans_joints.indexOf("Inner 2") < 0)
+    throw new Error("plans_joints du via de masse doit inclure Inner 2 : " + JSON.stringify(r0.plans_joints));
+  if(r0.plans_joints.indexOf("Inner 1") < 0)
+    throw new Error("plans_joints du via de masse doit inclure Inner 1 : " + JSON.stringify(r0.plans_joints));
 });
 
 T("les découplages qui joignent les deux plans partent avec le via",()=>{
@@ -15109,6 +15865,445 @@ T("Rapport de santé : détection des défauts critiques (moignon résonant, rup
   }
 });
 
+T("Rapport de santé : un via de masse qui ne referme rien n'est pas un chemin de retour", ()=>{
+  /* LE FAUX VERT. `retour.vias` liste TOUS les candidats — retenus ET écartés.
+     La version précédente exigeait `vias.length === 0` pour crier au défaut,
+     puis lisait `vias[0]` sans filtrer : une transition GND → PWR dont le via
+     de masse voisin à 0,3 mm ne referme RIEN sortait « chemin de retour bien
+     refermé », en vert, sur le seul défaut que cette analyse existe pour
+     trouver. */
+  const res = {
+    segments: [{ z0: 50.0, longueur_mm: 20, w: 0.25, coplanaire: false, couche: "Top" }],
+    discontinuites: {
+      transitions: [{
+        troncon: 1, hauteur_mm: 1.6,
+        cotes: { percage_mm: 0.3, antipad_mm: 0.6 },
+        moignons: { depart: null, arrivee: null },
+        retour: {
+          retenus: 0, trouves: 1, raccorde: false, source: "self",
+          plan_change: true, nets_differents: null, reference_change: false,
+          vias: [{ x: 0.3, y: 0, distance_mm: 0.3, net: "GND", retenu: false,
+                   raison: "ne rejoint pas PWR, le plan d'arrivée" }]
+        }
+      }],
+      vias_hors_chaine: []
+    },
+    points_s: [{ freq_hz: 1e9, s11_db: -25.0, s21_db: -0.2 }]
+  };
+
+  const diag = simDiagnostiquerSante(res, { fentes: [] }, { zCible: 50, fMax: 2e9 });
+  const ids = diag.items.map(i => i.id);
+  if (ids.includes("retour_ok"))
+    throw new Error("un via de masse écarté ne doit pas produire un verdict vert");
+  const item = diag.items.find(i => i.id === "retour_aucun");
+  if (!item) throw new Error("retour_aucun attendu quand aucun via retenu");
+  if (item.severite !== "critique")
+    throw new Error("retour_aucun doit rester critique, obtenu: " + item.severite);
+  if (!item.chiffre.includes("écartés"))
+    throw new Error("le chiffre doit dire que des vias étaient là et ont été écartés : " + item.chiffre);
+  if (!item.chiffre.includes("ne rejoint pas PWR"))
+    throw new Error("le chiffre doit porter la raison du serveur : " + item.chiffre);
+});
+
+T("Rapport de santé : un découplage trouvé rend la traversée de plan conforme", ()=>{
+  /* LA BRANCHE MORTE. Le test lisait `cav.pont_decouplage` et `cav.c_pont`,
+     deux clés que `_cavite_de_retour` n'émet NULLE PART — elle porte `pont` et
+     `capacite_pont_F`. Toute traversée sortait donc « critique — sans
+     condensateur de pontage », même avec un 100 nF au pied du via. */
+  const base = t => ({
+    segments: [{ z0: 50.0, longueur_mm: 20, w: 0.25, coplanaire: false, couche: "Top" }],
+    discontinuites: { transitions: [t], vias_hors_chaine: [] },
+    points_s: [{ freq_hz: 1e9, s11_db: -25.0, s21_db: -0.2 }]
+  });
+  const retourOk = {
+    retenus: 1, trouves: 1, raccorde: true, source: "boucle",
+    vias: [{ x: 0.4, y: 0, distance_mm: 0.4, net: "GND", retenu: true, part: 1 }]
+  };
+  const trav = {
+    troncon: 1, hauteur_mm: 1.6,
+    cotes: { percage_mm: 0.3, antipad_mm: 0.6 },
+    moignons: { depart: null, arrivee: null },
+    retour: retourOk,
+    modelise: { inductance_nH: 0.52, inductance_source: "boucle+cavite" },
+    cavite: {
+      plan_haut: "GND", plan_bas: "+3.3V", hauteur_mm: 0.2,
+      cherche: true, ponts: 2, borne: false,
+      pont: { x: 1.2, y: 0, distance_mm: 1.2, repere: "C12" },
+      capacite_pont_F: 1e-7, capacite_plans_pF: 76.2,
+      etalement_cavite_nH: 0.17, impedance_fc_ohm: 0.84
+    }
+  };
+
+  const diag = simDiagnostiquerSante(base(trav), { fentes: [] }, { zCible: 50, fMax: 2e9 });
+  const item = diag.items.find(i => i.id === "cavite_decouplee");
+  if (!item) throw new Error("cavite_decouplee attendu quand un pont est trouvé");
+  if (item.severite !== "ok")
+    throw new Error("une traversée à 0,84 ohm doit être conforme, obtenu: " + item.severite);
+  if (!item.chiffre.includes("C12") || !item.chiffre.includes("1,2"))
+    throw new Error("le repère et la distance du découplage doivent figurer : " + item.chiffre);
+  if (diag.items.some(i => i.id === "cavite_non_decouplee"))
+    throw new Error("aucun défaut de pontage ne doit sortir quand le pont est là");
+
+  /* Cherché, rien trouvé dans le rayon : le défaut grave, et il reste critique. */
+  const sansPont = JSON.parse(JSON.stringify(trav));
+  sansPont.cavite.ponts = 0;
+  sansPont.cavite.borne = true;
+  sansPont.cavite.rayon_mm = 10;
+  sansPont.cavite.impedance_fc_ohm = 4.6;
+  const diag2 = simDiagnostiquerSante(base(sansPont), { fentes: [] }, { zCible: 50, fMax: 2e9 });
+  const crit = diag2.items.find(i => i.id === "cavite_non_decouplee");
+  if (!crit || crit.severite !== "critique")
+    throw new Error("cherché sans rien trouver doit rester critique");
+  if (!crit.chiffre.includes("minorant"))
+    throw new Error("le chiffre doit se dire minorant : " + crit.chiffre);
+
+  /* LE VIA DE MASSE POSÉ AU PIED, ET POURQUOI IL N'Y PEUT RIEN. Entre deux
+     plans de nets différents, un via de masse joindrait de la masse à de la
+     masse : c'est le geste réflexe, et c'est le seul cas où il ne sert pas.
+     L'item de la traversée est le seul endroit où celui qui vient de le poser
+     va le lire. */
+  const avecVain = JSON.parse(JSON.stringify(sansPont));
+  avecVain.retour = {
+    retenus: 0, trouves: 1, raccorde: false, source: "self",
+    plan_change: true, nets_differents: true, reference_change: true,
+    vias: [{ x: 0.7, y: 0, distance_mm: 0.7, net: "GND", retenu: false,
+             raison: "ne rejoint pas L2, le plan d'arrivée" }]
+  };
+  const diag3 = simDiagnostiquerSante(base(avecVain), { fentes: [] }, { zCible: 50, fMax: 2e9 });
+  const crit3 = diag3.items.find(i => i.id === "cavite_non_decouplee");
+  if (!crit3) throw new Error("cavite_non_decouplee attendu");
+  if (!crit3.chiffre.includes("0,70 mm n'y peut rien"))
+    throw new Error("le via de masse écarté doit être nommé : " + crit3.chiffre);
+  if (diag3.items.some(i => i.id === "retour_aucun" || i.id === "retour_ok"))
+    throw new Error("un changement de référence se juge par la traversée, pas par le pilier des vias de retour");
+});
+
+T("Rapport de santé : le seuil d'éloignement lit les vias RETENUS et l'inductance du modèle", ()=>{
+  /* Le seuil annonçait « L_boucle > 1,2 nH » au-delà de 0,8 mm, ce qui est faux
+     sur tout empilage courant : l'inductance de boucle croît avec l'ÉPAISSEUR
+     traversée autant qu'avec l'écart. On lit donc celle que le modèle a
+     calculée pour CETTE transition. Et on la lit sur le via RETENU, pas sur le
+     plus proche — qui peut être un via écarté. */
+  const res = {
+    segments: [{ z0: 50.0, longueur_mm: 20, w: 0.25, coplanaire: false, couche: "Top" }],
+    discontinuites: {
+      transitions: [{
+        troncon: 1, hauteur_mm: 1.6,
+        cotes: { percage_mm: 0.3, antipad_mm: 0.6 },
+        moignons: { depart: null, arrivee: null },
+        modelise: { inductance_nH: 1.05, inductance_source: "boucle" },
+        retour: {
+          retenus: 1, trouves: 2, raccorde: true, source: "boucle",
+          vias: [
+            { x: 0.3, y: 0, distance_mm: 0.3, net: "GND", retenu: false,
+              raison: "ne couvre pas Top vers Bottom" },
+            { x: 1.6, y: 0, distance_mm: 1.6, net: "GND", retenu: true, part: 1 }
+          ]
+        }
+      }],
+      vias_hors_chaine: []
+    },
+    points_s: [{ freq_hz: 1e9, s11_db: -25.0, s21_db: -0.2 }]
+  };
+
+  const diag = simDiagnostiquerSante(res, { fentes: [] }, { zCible: 50, fMax: 2e9 });
+  if (diag.items.some(i => i.id === "retour_ok"))
+    throw new Error("le via écarté à 0,3 mm ne doit pas faire passer la transition en vert");
+  const item = diag.items.find(i => i.id === "retour_eloigne");
+  if (!item) throw new Error("retour_eloigne attendu : le via RETENU est à 1,6 mm");
+  if (!item.chiffre.includes("1,60"))
+    throw new Error("la distance doit être celle du via retenu : " + item.chiffre);
+  if (!item.chiffre.includes("1,05"))
+    throw new Error("l'inductance doit venir du modèle, pas d'un seuil en dur : " + item.chiffre);
+});
+
+T("Rapport de santé : les fentes du plan de référence entrent dans le pilier du retour", ()=>{
+  /* Le pilier annonçait « fentes » dans son titre et n'en disait rien : le
+     document les portait, la carte les dessinait, l'analyse de couplage les
+     lisait — mais la fiche du chemin de retour, non. C'est pourtant le défaut
+     de retour le plus courant sur une carte réelle. */
+  const res = {
+    segments: [{ z0: 50.0, longueur_mm: 30, w: 0.25, coplanaire: false, couche: "Top" }],
+    discontinuites: { transitions: [], vias_hors_chaine: [] },
+    points_s: [{ freq_hz: 1e9, s11_db: -25.0, s21_db: -0.2 }]
+  };
+
+  const avec = simDiagnostiquerSante(res, {
+    fentes: [{ s: 5.0, longueur: 3.2, quoi: "le plan de référence L1 n'a pas de cuivre de retour" },
+             { s: 18.0, longueur: 0.9, quoi: "idem" }]
+  }, { zCible: 50, fMax: 2e9 });
+  const item = avec.items.find(i => i.id === "fente_plan");
+  if (!item) throw new Error("fente_plan attendu quand le document porte des fentes");
+  if (item.severite !== "critique")
+    throw new Error("une fente de 3,2 mm doit être critique, obtenu: " + item.severite);
+  if (!item.chiffre.includes("4,10"))
+    throw new Error("le cumul des fentes doit figurer : " + item.chiffre);
+
+  /* Un relevé VIDE est un constat, pas une ignorance : rien ne sort. */
+  const sans = simDiagnostiquerSante(res, { fentes: [] }, { zCible: 50, fMax: 2e9 });
+  if (sans.items.some(i => i.id === "fente_plan" || i.id === "fente_non_sondee"))
+    throw new Error("un relevé vide ne doit produire ni défaut ni réserve");
+
+  /* Un document SANS relevé est une ignorance, et elle se dit. */
+  const muet = simDiagnostiquerSante(res, { voisinage: [] }, { zCible: 50, fMax: 2e9 });
+  if (!muet.items.some(i => i.id === "fente_non_sondee"))
+    throw new Error("un document sans relevé de fentes doit lever une réserve");
+
+  /* Pas de document du tout : on ne se prononce sur rien. */
+  const rien = simDiagnostiquerSante(res, null, { zCible: 50, fMax: 2e9 });
+  if (rien.items.some(i => i.id === "fente_non_sondee"))
+    throw new Error("sans document, il n'y a pas de carte sur laquelle se prononcer");
+});
+
+T("Rapport de santé : le rayonnement de la boucle se chiffre et se hiérarchise", ()=>{
+  /* « Une boucle ouverte rayonne » est un conseil qu'on répète sans jamais le
+     chiffrer, et un conseil qu'on ne chiffre pas ne se hiérarchise pas. Trois
+     états, et ils ne se confondent pas : sous la limite (rien à faire), marge
+     étroite (à surveiller), au-dessus (à corriger). Plus un quatrième : le
+     spectre ne touche pas la bande réglementée, qui commence à 30 MHz. */
+  const base = ray => ({
+    segments: [{ z0: 50.0, longueur_mm: 20, w: 0.25, coplanaire: false, couche: "Top" }],
+    discontinuites: {
+      transitions: [{
+        troncon: 1, hauteur_mm: 1.6,
+        cotes: { percage_mm: 0.3, antipad_mm: 0.6 },
+        moignons: { depart: null, arrivee: null },
+        retour: { retenus: 1, trouves: 1, raccorde: true, source: "boucle",
+                  vias: [{ x: 0.5, y: 0, distance_mm: 0.5, net: "GND", retenu: true, part: 1 }] },
+        modelise: { inductance_nH: 0.55, inductance_source: "boucle" },
+        rayonnement: ray
+      }],
+      vias_hors_chaine: []
+    },
+    points_s: [{ freq_hz: 1e9, s11_db: -25.0, s21_db: -0.2 }]
+  });
+  const fiche = (marge, extra) => Object.assign({
+    aire_boucle_mm2: 8.52, distance_m: 3, classe: "B", minorant: false,
+    hors_bande: false,
+    pire: { harmonique: 5, freq_hz: 5e8, champ_dbuv_m: 47 - marge,
+            limite_dbuv_m: 47, marge_db: marge, champ_lointain: true }
+  }, extra || {});
+
+  const large = simDiagnostiquerSante(base(fiche(46.2)), { fentes: [] }, { zCible: 50, fMax: 2e9 });
+  const ok = large.items.find(i => i.id === "rayonnement_ok");
+  if (!ok || ok.severite !== "ok")
+    throw new Error("46 dB de marge doivent être conformes");
+  if (!ok.chiffre.includes("8,52 mm²"))
+    throw new Error("l'aire de la boucle doit figurer : " + ok.chiffre);
+  if (!ok.chiffre.includes("CISPR 32 classe B"))
+    throw new Error("la norme et la classe doivent être nommées : " + ok.chiffre);
+
+  const etroit = simDiagnostiquerSante(base(fiche(4.5)), { fentes: [] }, { zCible: 50, fMax: 2e9 });
+  const al = etroit.items.find(i => i.id === "rayonnement_serre");
+  if (!al || al.severite !== "alerte")
+    throw new Error("4,5 dB de marge doivent lever une alerte");
+  if (!al.recommandation.includes("AIRE"))
+    throw new Error("le geste correctif doit viser l'aire : " + al.recommandation);
+
+  const dehors = simDiagnostiquerSante(base(fiche(-3.5)), { fentes: [] }, { zCible: 50, fMax: 2e9 });
+  const cr = dehors.items.find(i => i.id === "rayonnement_hors_limite");
+  if (!cr || cr.severite !== "critique")
+    throw new Error("une marge négative doit être critique");
+
+  /* LE PLANCHER SE DIT, TOUJOURS : le mode commun sur les câbles domine
+     l'émission réelle de 20 à 40 dB. Un chiffre confortable ici ne promet rien
+     sur l'essai, et la fiche ne doit jamais laisser croire le contraire. */
+  for (const it of [ok, al, cr])
+    if (!it.impact.includes("mode commun"))
+      throw new Error("la réserve du mode commun manque sur " + it.id);
+
+  /* Champ PROCHE : la formule surestime, et la fiche le porte. */
+  const proche = simDiagnostiquerSante(
+    base(fiche(12, { pire: { harmonique: 1, freq_hz: 12e6, champ_dbuv_m: 28,
+                             limite_dbuv_m: 40, marge_db: 12, champ_lointain: false } })),
+    { fentes: [] }, { zCible: 50, fMax: 2e9 });
+  const pr = proche.items.find(i => i.id === "rayonnement_serre");
+  if (!pr || !pr.impact.includes("champ PROCHE"))
+    throw new Error("le champ proche doit être signalé : " + (pr ? pr.impact : "aucun item"));
+
+  /* Sous 30 MHz, CISPR 32 ne fixe AUCUNE limite rayonnée. Ce n'est pas une
+     absence de résultat, c'est un résultat. */
+  const hb = simDiagnostiquerSante(
+    base({ aire_boucle_mm2: 8.52, distance_m: 3, classe: "B",
+           minorant: false, hors_bande: true, pire: null }),
+    { fentes: [] }, { zCible: 50, fMax: 2e9 });
+  const it = hb.items.find(i => i.id === "rayonnement_hors_bande");
+  if (!it || it.severite !== "ok")
+    throw new Error("un spectre sous 30 MHz doit sortir « hors bande », conforme");
+  if (!it.impact.includes("mode commun"))
+    throw new Error("même hors bande, le mode commun se mesure dès 30 MHz : " + it.impact);
+});
+
+T("Chevelu du retour : sur GND→PWR, c'est le découplage qui porte le retour, pas les vias de masse", ()=>{
+  /* CE QUE LE CHEVELU MONTRAIT, ET CE QU'IL NE MONTRAIT PAS. Sur un empilage
+     TOP / GND / PWR / BOT, un via de signal qui plonge de TOP à BOT change de
+     NET de référence : la piste du haut se réfère à GND, celle du bas à PWR.
+     AUCUN via de masse ne peut refermer ce retour — il joindrait de la masse à
+     de la masse. Le chevelu les barrait tous en rouge, à juste titre, mais ne
+     désignait jamais ce qui porte RÉELLEMENT le courant : le condensateur qui
+     joint les deux plans. On voyait le défaut sans voir le chemin. */
+  const garde = {cu:S.cu, cuL:S.cuL, di:S.di, vias:S.vias, fps:S.fps,
+                 ref:SIM.ref, refAuto:SIM.refAuto, refCle:SIM.refCle};
+  try{
+    S.cu = 4;
+    /* `coherentRole` exige que `plane` et le rôle s'accordent : un rôle de
+       plan sur une couche qui ne porte pas de cuivre plein ne veut rien dire. */
+    S.cuL = [{name:"Top", role:"signal", plane:false},
+             {name:"L1", role:"gnd", plane:true, net:"GND"},
+             {name:"L2", role:"pwr", plane:true, net:"+3.3V"},
+             {name:"Bottom", role:"signal", plane:false}];
+    if(Array.isArray(S.di))
+      S.di = [{t:0.2, er:4.3}, {t:1.065, er:4.5}, {t:0.2, er:4.3}];
+
+    const viaSig = {x:10, y:10, a:0, b:3, d:0.55, drill:0.3, net:"SIG"};
+    /* Quatre vias de masse tout autour : le geste réflexe, et sur cet empilage
+       il ne sert à rien. Ils échouent TOUS pour la même raison. */
+    const gnds = [{x:10.7, y:10}, {x:9.3, y:10}, {x:10, y:10.7}, {x:10, y:9.3}]
+      .map(q => ({x:q.x, y:q.y, a:0, b:3, d:0.55, drill:0.3, net:"GND"}));
+    S.vias = [viaSig].concat(gnds);
+    /* Un 100 nF à deux bornes entre GND et +3,3 V, à 2 mm : le vrai chemin. */
+    /* Un 0402 à deux bornes : `padsOf` construit ses pastilles à partir du
+       style et du brochage, et lit leur net dans `nets`. Le filtre de
+       `simPontsPlans` est le NOMBRE DE BORNES — un composant à vingt pattes qui
+       touche les deux nets est un régulateur, il ne joint rien en alternatif. */
+    S.fps = [{ref:"C12", value:"100n", x:12, y:10, rot:0,
+              style:"chip", pins:2, pitch:0, span:1.0,
+              nets:{1:"GND", 2:"+3.3V"}}];
+    SIM.refCle = null; SIM.refAuto = true; SIM.ref = null;
+
+    const g = simVoisinageVia(viaSig);
+
+    /* 1. Le diagnostic : la référence change de NET, et c'est certain. */
+    if(!g.planChange) throw new Error("le plan de référence doit changer entre Top et Bottom");
+    if(g.netsDiff !== true) throw new Error("GND et +3.3V doivent être vus comme des nets différents");
+    if(!g.change) throw new Error("le défaut grave doit être nommé");
+
+    /* 2. AUCUN via de masse ne referme, et chacun le dit. */
+    if(g.retenus.length !== 0)
+      throw new Error("aucun via de masse ne peut joindre GND à PWR, or " +
+                      g.retenus.length + " sont retenus");
+    if(g.voisins.length !== 4)
+      throw new Error("les quatre vias de masse doivent rester VISIBLES — les " +
+                      "effacer laisserait croire qu'on ne les a pas regardés ; " +
+                      "obtenu " + g.voisins.length);
+    for(const f of g.voisins){
+      if(f.retenu) throw new Error("un via de masse retenu sur GND→PWR");
+      if(!/ne rejoint pas/.test(f.raison))
+        throw new Error("raison attendue « ne rejoint pas … » : " + f.raison);
+    }
+    /* Et la raison est LA MÊME pour les quatre : c'est un refus STRUCTUREL, pas
+       quatre défauts distincts. C'est ce qui justifie de ne l'écrire qu'une
+       fois et de mettre les traits en sourdine. */
+    const raisons = new Set(g.voisins.map(f => f.raison));
+    if(raisons.size !== 1)
+      throw new Error("un refus structurel doit donner UNE seule raison, obtenu " +
+                      raisons.size);
+
+    /* 3. LE CHEMIN RÉEL : le condensateur, retenu et coté. */
+    if(!g.pont) throw new Error("le découplage qui joint les deux plans doit être remonté au dessin");
+    if(g.pont.repere !== "C12") throw new Error("le repère du découplage doit être porté, obtenu : " + g.pont.repere);
+    if(Math.abs(Math.hypot(g.pont.x - viaSig.x, g.pont.y - viaSig.y) - 2) > 1e-6)
+      throw new Error("le découplage doit être coté à 2 mm du via");
+    if(!(Math.abs(g.pont.capacite_F - 1e-7) < 1e-12))
+      throw new Error("la valeur lue sur le composant doit voyager : " + g.pont.capacite_F);
+    if(!(g.pontRayon > 0)) throw new Error("le rayon de recherche du pont doit être porté");
+
+    /* 4. L'inductance affichée reste un PLANCHER : rien ne referme la boucle. */
+    if(!g.seul) throw new Error("sans retour retenu, l'inductance rendue est une self partielle");
+
+    /* 5. LE MÊME DESSIN AVEC DEUX PLANS DE MASSE : le via de masse travaille,
+       et il n'y a plus de pont à montrer — le retour passe par lui. */
+    S.cuL[2] = {name:"L2", role:"gnd", plane:true, net:"GND"};
+    SIM.refCle = null; SIM.refAuto = true; SIM.ref = null;
+    const g2 = simVoisinageVia(viaSig);
+    if(g2.change) throw new Error("deux plans de masse ne sont pas un changement de référence");
+    if(g2.retenus.length !== 4)
+      throw new Error("les quatre vias de masse doivent refermer, obtenu " + g2.retenus.length);
+    if(g2.pont)
+      throw new Error("sans changement de net, le retour passe par les vias de masse : " +
+                      "aucun pont à montrer");
+    if(g2.seul) throw new Error("avec des retours retenus, l'inductance est une mesure");
+    /* QUATRE RETOURS SYMÉTRIQUES À 0,7 mm PASSENT SOUS LE PLANCHER, et c'est
+       bien ce qu'on attend d'une couture serrée. */
+    if(!(g2.L < g.L))
+      throw new Error("quatre retours à 0,7 mm devraient passer sous le plancher : " +
+                      (g2.L * 1e9).toFixed(3) + " nH contre " + (g.L * 1e9).toFixed(3));
+
+    /* MAIS LE PLANCHER N'EST PAS UNE BOUCLE, ET C'EST LE PIÈGE DE LECTURE.
+       Avec UN SEUL retour à 0,7 mm, l'inductance MONTE au-dessus du plancher —
+       parce qu'elle cesse d'être une borne inférieure pour devenir une mesure.
+       Quelqu'un qui pose un via de masse et voit le nombre grimper doit trouver
+       cette explication dans l'outil, pas la deviner. */
+    S.vias = [viaSig, gnds[0]];
+    const g3 = simVoisinageVia(viaSig);
+    if(g3.retenus.length !== 1) throw new Error("un seul via de retour attendu");
+    if(!(g3.L > g.L))
+      throw new Error("un seul retour à 0,7 mm devrait passer AU-DESSUS du plancher : " +
+                      (g3.L * 1e9).toFixed(3) + " nH contre " + (g.L * 1e9).toFixed(3));
+  } finally {
+    S.cu = garde.cu; S.cuL = garde.cuL; S.di = garde.di;
+    S.vias = garde.vias; S.fps = garde.fps;
+    SIM.ref = garde.ref; SIM.refAuto = garde.refAuto; SIM.refCle = garde.refCle;
+  }
+});
+
+T("Chevelu du retour : la part de chaque condensateur, MÊME formule que le serveur", ()=>{
+  /* LE CHEVELU DOIT RÉPONDRE PENDANT QU'ON DÉPLACE UN VIA, sans aller-retour au
+     serveur : c'est ce qui fait vivre `simPartsPonts` à côté de
+     `ligne_mom.repartition_traversee`. Il faut donc que ce soit la MÊME
+     physique — deux calculs pour une même grandeur, ce sont deux valeurs le
+     jour où l'un bouge. Les valeurs de référence viennent du banc Python
+     (`tous_les_ponts_comptent_pas_seulement_le_plus_proche`). */
+  const ref = {
+    freq: 12e6, lCav: 1.0917e-9, cPlans: 74.82e-12,
+    branches: [{l:2.6704e-9, c:100e-9, esr:0.03},
+               {l:3.2808e-9, c:100e-9, esr:0.03},
+               {l:3.7735e-9, c:1e-9,   esr:0.03}],
+    parts: [0.6166, 0.3899, 0.0036], cavite: 0.0003
+  };
+  const r = simPartsPonts(ref.freq, ref.lCav, ref.cPlans, ref.branches);
+  for(let i = 0; i < ref.parts.length; i++)
+    if(Math.abs(r.parts[i] - ref.parts[i]) > 1e-3)
+      throw new Error("part " + i + " : " + r.parts[i].toFixed(6) +
+                      " contre " + ref.parts[i] + " côté serveur");
+  if(Math.abs(r.cavite - ref.cavite) > 1e-3)
+    throw new Error("part de cavité : " + r.cavite.toFixed(6) + " contre " + ref.cavite);
+
+  /* LA VALEUR DU CONDENSATEUR COMPTE PLUS QUE SA DISTANCE en basse fréquence :
+     c'est SA capacité qui fixe l'impédance de la branche, pas son étalement. */
+  if(!(r.parts[2] < 0.01))
+    throw new Error("un 1 nF à 7 mm ne doit presque rien porter à 12 MHz : " + r.parts[2]);
+  if(!(r.parts[0] > r.parts[1] && r.parts[1] > r.parts[2]))
+    throw new Error("l'ordre des parts ne suit pas les branches");
+
+  /* LA SOMME PEUT DÉPASSER 100 %, et c'est le courant circulant de
+     l'antirésonance — pas une erreur. Forcer la somme à un l'effacerait. */
+  const haut = simPartsPonts(3e8, ref.lCav, ref.cPlans, ref.branches);
+  const somme = haut.parts.reduce((a, b) => a + b, 0) + haut.cavite;
+  if(!(somme > 1.5))
+    throw new Error("le courant circulant doit apparaître près de l'antirésonance, somme = " + somme);
+
+  /* Une fréquence nulle ne rend pas NaN : elle rend « tout par la cavité ». */
+  const zero = simPartsPonts(0, ref.lCav, ref.cPlans, ref.branches);
+  if(!(zero.cavite === 1) || zero.parts.some(x => x !== 0))
+    throw new Error("à fréquence nulle, le partage n'est pas défini et doit se lire ainsi");
+
+  /* L'ÉTALEMENT ENTRE DEUX VIAS est la même équation 13-35 que côté serveur :
+     21 pH par mil d'écartement entre plans, en logarithme de la distance. */
+  const l1 = simEtalementViaVia(1.065, 2.0, 0.3);
+  const l2 = simEtalementViaVia(1.065, 4.0, 0.3);
+  if(Math.abs(l1 - 1.6704e-9) > 1e-11)
+    throw new Error("étalement à 2 mm : " + l1.toExponential(4) + " au lieu de 1,6704 nH");
+  if(!(l2 > l1))
+    throw new Error("l'étalement doit croître avec la distance");
+  /* Linéaire en écartement des plans, logarithmique en distance : c'est le
+     conseil que la fiche porte, et il n'est pas celui qu'on attend. */
+  if(Math.abs(simEtalementViaVia(2.130, 2.0, 0.3) - 2 * l1) > 1e-13)
+    throw new Error("l'étalement doit être LINÉAIRE en écartement des plans");
+  if(simEtalementViaVia(1.065, 0.2, 0.3) !== 0)
+    throw new Error("un pont plus proche que le perçage n'a pas de sens");
+});
+
 T("Rapport de santé : rendu HTML, structure des fiches et filtres", ()=>{
   const garde = [SIM.res, SIM.doc, SIM.analyse, SIM.santeFiltre];
   try {
@@ -15591,6 +16786,95 @@ T("simulation EM - Z Différentielle : projection géométrique, piste partenair
   SIM.lots = [];
   SIM.ouvert = false;
   S.tracks = [];
+});
+
+T("pastilles de formes arbitraires : polygone, chanfrein, découpe thermique et export Gerber", function(){
+  // 1. PAD_SHAPES et padShape
+  if(!PAD_SHAPES.chamfer || !PAD_SHAPES.poly){
+    throw new Error("PAD_SHAPES doit contenir chamfer et poly: " + JSON.stringify(PAD_SHAPES));
+  }
+  if(padShape("chamfer") !== "chamfer" || padShape("poly") !== "poly"){
+    throw new Error("padShape doit accepter chamfer et poly");
+  }
+
+  // 2. padChamferPts
+  // Rectangle 2x2mm avec chanfrein 0.5mm sur 4 coins (octogone à 8 sommets)
+  const pts4 = padChamferPts(2, 2, 0.5, "all");
+  if(pts4.length !== 8){
+    throw new Error("padChamferPts 4 coins doit produire 8 sommets, obtenu: " + pts4.length);
+  }
+  // Sommet 0: x = -1 + 0.5 = -0.5, y = -1
+  if(Math.abs(pts4[0].x - (-0.5)) > 1e-6 || Math.abs(pts4[0].y - (-1)) > 1e-6){
+    throw new Error("Sommet 0 de chanfrein incorrect: " + JSON.stringify(pts4[0]));
+  }
+  // Chanfrein pin 1 uniquement: 5 sommets
+  const ptsPin1 = padChamferPts(2, 2, 0.5, "pin1");
+  if(ptsPin1.length !== 5){
+    throw new Error("padChamferPts pin1 doit produire 5 sommets, obtenu: " + ptsPin1.length);
+  }
+
+  // 3. polyOffset
+  // Triangle équilatéral ou carré
+  const carre = [{x:-1, y:-1}, {x:1, y:-1}, {x:1, y:1}, {x:-1, y:1}];
+  const carreDilate = polyOffset(carre, 0.2);
+  if(carreDilate.length !== 4){
+    throw new Error("polyOffset doit conserver le nombre de sommets d'un carré");
+  }
+  // Pour un carré dilaté de 0.2, les sommets doivent être autour de (+-1.2, +-1.2)
+  if(Math.abs(Math.abs(carreDilate[0].x) - 1.2) > 0.05 || Math.abs(Math.abs(carreDilate[0].y) - 1.2) > 0.05){
+    throw new Error("polyOffset carré dilaté incorrect: " + JSON.stringify(carreDilate));
+  }
+
+  // 4. ptPolyDist & padDist
+  // Point au centre (0, 0) d'une pastille polygone carré 2x2: à l'intérieur à distance -1mm du bord
+  const padPoly = {
+    n: 1, x: 10, y: 10, w: 2, h: 2, rot: 0,
+    shape: "poly",
+    pts: [{x:-1, y:-1}, {x:1, y:-1}, {x:1, y:1}, {x:-1, y:1}]
+  };
+  const dCentre = padDist(10, 10, padPoly);
+  if(Math.abs(dCentre - (-1)) > 1e-4){
+    throw new Error("padDist au centre du polygone doit valoir -1, obtenu: " + dCentre);
+  }
+  // Point à l'extérieur: (10, 12) -> distance = 2 - 1 = +1mm
+  const dExt = padDist(10, 12, padPoly);
+  if(Math.abs(dExt - 1) > 1e-4){
+    throw new Error("padDist à l'extérieur doit valoir +1, obtenu: " + dExt);
+  }
+
+  // 5. padDist sur pastille chamfer
+  const padChamf = {
+    n: 2, x: 20, y: 20, w: 2, h: 2, rot: 0,
+    shape: "chamfer", chamfer: 0.5, chamferCorners: "all"
+  };
+  const dChamfCentre = padDist(20, 20, padChamf);
+  if(dChamfCentre >= 0){
+    throw new Error("padDist au centre du chanfrein doit être négatif");
+  }
+
+  // 6. padClone avec champs personnalisés (pts, chamfer, thermalSpokes, etc.)
+  const qSource = {
+    n: 3, x: 5, y: 6, w: 2.5, h: 1.8, rot: 45, drill: 0,
+    shape: "poly", pts: [{x:-1, y:-0.5}, {x:1, y:-0.5}, {x:0, y:1}],
+    chamfer: 0.3, chamferCorners: "pin1",
+    thermalSpokes: 2, thermalWidth: 0.4, thermalAngle: 45
+  };
+  const qCopie = padClone(qSource);
+  if(qCopie.shape !== "poly" || !Array.isArray(qCopie.pts) || qCopie.pts.length !== 3){
+    throw new Error("padClone doit cloner les sommets pts");
+  }
+  if(qCopie.thermalSpokes !== 2 || qCopie.thermalWidth !== 0.4 || qCopie.thermalAngle !== 45){
+    throw new Error("padClone doit cloner les réglages thermiques: " + JSON.stringify(qCopie));
+  }
+
+  // 7. gPad et export Gerber: doit émettre G36/G37 pour poly et chamfer
+  const body = [];
+  const A = { get: function(k){ return "10"; } };
+  gPad(body, A, padPoly, 0);
+  const gerberStr = body.join("\n");
+  if(!gerberStr.includes("G36*") || !gerberStr.includes("G37*")){
+    throw new Error("gPad pour une pastille polygone doit générer une région Gerber G36*/G37*, obtenu: " + gerberStr);
+  }
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

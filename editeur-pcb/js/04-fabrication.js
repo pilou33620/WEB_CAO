@@ -51,6 +51,19 @@ function padOpening(c,q,grow,color,lw){
   const g=grow||0;
   c.beginPath();
   if(q.shape==="circ")c.arc(0,0,Math.max(q.w,q.h)/2+g,0,Math.PI*2);
+  else if(q.shape==="poly"&&Array.isArray(q.pts)&&q.pts.length>=3){
+    const pts=polyOffset(q.pts,g);
+    c.moveTo(pts[0].x,pts[0].y);
+    for(let i=1;i<pts.length;i++)c.lineTo(pts[i].x,pts[i].y);
+    c.closePath();
+  }
+  else if(q.shape==="chamfer"){
+    const ch=(q.chamfer!=null?q.chamfer:padChamferVal(q))+g;
+    const pts=padChamferPts(q.w+2*g,q.h+2*g,ch,q.chamferCorners);
+    c.moveTo(pts[0].x,pts[0].y);
+    for(let i=1;i<pts.length;i++)c.lineTo(pts[i].x,pts[i].y);
+    c.closePath();
+  }
   else{
     const w=Math.max(0.02,q.w+2*g), h=Math.max(0.02,q.h+2*g), r=padRadius(q.shape,w,h);
     c.moveTo(-w/2+r,-h/2);
@@ -221,6 +234,13 @@ function gRegion(body,pts){
   body.push(gXY(pts[0].x,pts[0].y)+"D01*");
   body.push("G37*");
 }
+function gPad(body,A,q,grow){
+  if(q.shape==="poly"||q.shape==="chamfer"){
+    gRegion(body,padWorldPts(q,grow));
+  }else{
+    gFlash(body,A,apForPad(A,q,grow),q.x,q.y);
+  }
+}
 /* Extérieur du contour de carte, en une seule région : le rectangle englobant
    parcouru dans un sens, le contour dans l'autre, reliés par une entaille —
    c'est la construction admise pour une région à trou. Puis une bande au trait
@@ -280,19 +300,23 @@ function gerberCopper(i){
         const z=zn(q.x,q.y);
         if(z===null)continue;
         const same=(z===q.net&&q.net);
-        gFlash(body,A,apForPad(A,q,same?classOf(z).clr:
-          clrK(z,q.net,"cu",q.drill>0?"th":"smd")),q.x,q.y);
+        gPad(body,A,q,same?classOf(z).clr:
+          clrK(z,q.net,"cu",q.drill>0?"th":"smd"));
         if(same)thermals.push(q);
         else if(q.drill>0)
           gFlash(body,A,A.get("C,"+fmt(q.drill+2*clrK(z,q.net,"cu","th"),4)),q.x,q.y);
       }
     body.push("%LPD*%");
-    const tw=S.rule.thermal;
-    for(const q of thermals){          // les quatre bras des liaisons thermiques
+    for(const q of thermals){          // liaisons thermiques (personnalisées ou 4 bras par défaut)
+      const tw=(q.thermalWidth>0)?q.thermalWidth:S.rule.thermal;
+      const spokes=(q.thermalSpokes>0)?q.thermalSpokes:4;
+      const baseAngle=q.rot+((q.thermalAngle||0)*Math.PI/180);
       const len=Math.max(q.w,q.h)/2+classOf(q.net).clr+0.2;
-      const ca=Math.cos(q.rot), sa=Math.sin(q.rot);
-      gSeg(body,A,q.x-len*ca,q.y-len*sa,q.x+len*ca,q.y+len*sa,tw);
-      gSeg(body,A,q.x+len*sa,q.y-len*ca,q.x-len*sa,q.y+len*ca,tw);
+      for(let k=0;k<spokes;k++){
+        const ang=baseAngle+(Math.PI*2/spokes)*k;
+        const ca=Math.cos(ang), sa=Math.sin(ang);
+        gSeg(body,A,q.x,q.y,q.x+len*ca,q.y+len*sa,tw);
+      }
       if(q.drill>0){
         body.push("%LPC*%");
         gFlash(body,A,A.get("C,"+fmt(q.drill,4)),q.x,q.y);
@@ -306,18 +330,18 @@ function gerberCopper(i){
     if(i>=v.a&&i<=v.b)gFlash(body,A,A.get("C,"+fmt(v.d,4)),v.x,v.y);
   for(const fp of S.fps)
     for(const q of padsWorld(fp))
-      if(padLayers(fp,q).includes(i))gFlash(body,A,apForPad(A,q,0),q.x,q.y);
+      if(padLayers(fp,q).includes(i))gPad(body,A,q,0);
   const fn="Copper,L"+(i+1)+","+(i===0?"Top":(i===S.cu-1?"Bot":"Inr"));
   return gAssemble(gHeader(fn),A,body);
 }
 function gerberMask(side){
   const A=apSet(), body=[];
-  for(const o of maskOpenings(side))gFlash(body,A,apForPad(A,o.q,o.grow),o.q.x,o.q.y);
+  for(const o of maskOpenings(side))gPad(body,A,o.q,o.grow);
   return gAssemble(gHeader("Soldermask,"+(side?"Bot":"Top")),A,body);
 }
 function gerberPaste(side){
   const A=apSet(), body=[];
-  for(const o of pasteOpenings(side))gFlash(body,A,apForPad(A,o.q,o.grow),o.q.x,o.q.y);
+  for(const o of pasteOpenings(side))gPad(body,A,o.q,o.grow);
   return gAssemble(gHeader("Paste,"+(side?"Bot":"Top")),A,body);
 }
 function gerberSilk(side){

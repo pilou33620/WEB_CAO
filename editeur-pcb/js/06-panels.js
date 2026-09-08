@@ -13,10 +13,12 @@ function buildTabs(){
   let h="";
   for(let i=0;i<S.cu;i++){
     const L=S.cuL[i];
+    const r=layerRole(i);
+    const plBadge=r==="gnd"?"GND":(r==="pwr"?"PWR":"PLAN");
     h+='<div class="tab'+(i===S.active?" on":"")+(L.vis?"":" hid")+'" data-i="'+i+'">'+
        '<i class="dot" style="background:'+esc(L.color)+'"></i>'+
        '<span>'+esc(L.name)+'</span>'+
-       (L.plane?'<span class="pl">PLAN '+esc(L.net||"—")+'</span>':
+       (L.plane?'<span class="pl">'+plBadge+(L.net&&L.net!==plBadge?' '+esc(L.net):"")+'</span>':
         (zn[i]?'<span class="pl">'+zn[i]+' ZONE'+(zn[i]>1?"S":"")+'</span>':""))+
        '<span class="num">'+cuId(i,S.cu)+' · '+(i+1)+'</span></div>';
   }
@@ -35,12 +37,14 @@ function buildLayers(){
   let h="";
   for(let i=0;i<S.cu;i++){
     const L=S.cuL[i];
+    const r=layerRole(i);
+    const plBadge=r==="gnd"?"GND":(r==="pwr"?"PWR":"PLAN");
     h+='<div class="lay'+(i===S.active?" on":"")+(L.vis?"":" off")+'" data-i="'+i+'">'+
        '<i class="sw" style="background:'+esc(L.color)+'"></i>'+
        '<span class="nm">'+esc(L.name)+'</span>'+
        (L.plane||zn[i]
          ? '<span class="pl" data-zone="'+i+'" title="Sélectionner le cuivre plein de cette couche">'+
-           (L.plane?"PLAN":zn[i])+'</span>'
+           (L.plane?plBadge:zn[i])+'</span>'
          : "")+
        '<span class="tp">'+cuId(i,S.cu)+' · '+cnt[i]+'</span>'+
        '<span class="eye" data-eye="'+i+'">'+(L.vis?"◉":"○")+'</span></div>';
@@ -87,17 +91,44 @@ function buildActiveLayer(){
   if(!box)return;
   const L=S.cuL[S.active];
   const n=S.zones.filter(z=>z.l===S.active).length;
+  const role=layerRole(S.active);
+  const nets=netTable();
   box.innerHTML=
     '<div class="prop"><label>Nom de la couche</label>'+
       '<input id="laName" value="'+esc(L.name)+'"></div>'+
     '<div class="prop two"><div><label>Couleur</label>'+
       '<input id="laCol" type="color" value="'+esc(L.color)+'" style="padding:2px;height:30px"></div>'+
-      '<div><label>Zones posées</label><input value="'+n+'" disabled></div></div>';
+      '<div><label>Rôle de la couche</label><select id="laRole">'+
+        Object.keys(CU_ROLES).map(k=>'<option value="'+k+'"'+(k===role?" selected":"")+'>'+
+          esc(CU_ROLES[k])+'</option>').join("")+'</select></div></div>'+
+    (rolePlane(role)
+      ? '<div class="prop two"><div><label>Net du plan</label><select id="laNet">'+
+          '<option value="">— aucun —</option>'+
+          nets.map(x=>'<option'+(x.name===L.net?" selected":"")+'>'+esc(x.name)+'</option>').join("")+
+          '</select></div><div><label>Zones posées</label><input value="'+n+'" disabled></div></div>'
+      : '<div class="prop"><label>Zones posées</label><input value="'+n+'" disabled></div>');
   const nm=$("laName");
   if(nm)nm.onchange=()=>{L.name=nm.value.trim()||cuLabel(S.active,S.cu);L.custom=true;
     buildLayers();buildTabs();};
   const col=$("laCol");
   if(col)col.oninput=()=>{L.color=col.value;L.custom=true;touch();buildLayers();buildTabs();draw();};
+  const rl=$("laRole");
+  if(rl)rl.onchange=()=>{
+    const r=rl.value;
+    push();
+    if(!setLayerRole(S.active,r))return;
+    buildLayers();buildTabs();refreshPanels();draw();
+    hint(rolePlane(r)
+      ? CU_ROLES[r]+" sur "+cuId(S.active,S.cu)+" ("+(L.net||"aucun net")+
+        ") : la zone pleine carte suit le contour."
+      : "Couche repassée en « "+CU_ROLES[r].toLowerCase()+
+        " » : son plan pleine carte est retiré.");
+  };
+  const nt=$("laNet");
+  if(nt)nt.onchange=()=>{
+    push();setLayerRole(S.active,layerRole(S.active),nt.value);
+    buildLayers();buildTabs();refreshPanels();draw();
+  };
   zoneMenuSync();
 }
 /* ==========================================================================
@@ -664,6 +695,281 @@ function silkMenuToggle(){
   const m=$("silkMenu");
   if(m&&m.classList.contains("on"))silkMenuClose();else silkMenuOpen();
 }
+
+/* ---------- menu déroulant du bouton Serpentin ---------- */
+function meanderMenuBuild(){
+  let m=$("meanderMenu");
+  if(!m){
+    m=document.createElement("div");
+    m.id="meanderMenu";
+    document.body.appendChild(m);
+  }
+  const opts=S.meanderOpts=S.meanderOpts||{amplitude:1.5,pitch:1.2,side:0,targetDelta:0};
+  m.innerHTML=
+    '<div class="mtitle">Réglages du Serpentin</div>'+
+    '<div class="prop">'+
+      numProp("mmAmp","Amplitude max (mm)",opts.amplitude||1.5,0.1,0.5)+
+      numProp("mmPitch","Pas / Pitch (mm)",opts.pitch||1.2,0.1,0.3)+
+    '</div>'+
+    '<div class="prop">'+
+      numProp("mmDelta","Allongement forcé ΔL (mm)",opts.targetDelta||0,0.1,0)+
+      '<div class="cihint" style="margin-top:4px;font-size:10px;color:var(--txt-dim)">0 = étirement libre à la souris</div>'+
+    '</div>'+
+    '<div class="prop"><div class="row">'+
+      '<button class="tb" id="mmBusSkew">⚡ Simuler appariement de bus (Skew)…</button>'+
+    '</div></div>';
+
+  const inAmp=$("mmAmp"), inPitch=$("mmPitch"), inDelta=$("mmDelta");
+  if(inAmp)inAmp.onchange=()=>{opts.amplitude=Math.max(0.5,parseFloat(inAmp.value)||1.5);};
+  if(inPitch)inPitch.onchange=()=>{opts.pitch=Math.max(0.3,parseFloat(inPitch.value)||1.2);};
+  if(inDelta)inDelta.onchange=()=>{opts.targetDelta=Math.max(0,parseFloat(inDelta.value)||0);};
+  const bSim=$("mmBusSkew");
+  if(bSim)bSim.onclick=()=>{meanderMenuClose();busSkewOpen();};
+  return m;
+}
+function meanderMenuOpen(){
+  const m=meanderMenuBuild(), b=$("mMeander"), r=b&&b.getBoundingClientRect?b.getBoundingClientRect():null;
+  m.classList.add("on");
+  if(!r)return;
+  const w=m.offsetWidth||270, hg=m.offsetHeight||220;
+  m.style.left=Math.max(6,Math.min(innerWidth-w-6,r.left))+"px";
+  m.style.top=Math.max(6,Math.min(innerHeight-hg-6,r.bottom+5))+"px";
+}
+function meanderMenuClose(){
+  const m=$("meanderMenu");if(m)m.classList.remove("on");
+}
+function meanderMenuToggle(){
+  const m=$("meanderMenu");
+  if(m&&m.classList.contains("on"))meanderMenuClose();else meanderMenuOpen();
+}
+
+/* ==========================================================================
+   Modale d'analyse d'appariement de bus synchrone (Timing: Setup & Hold)
+   ========================================================================== */
+let _bsState={
+  open:false,
+  busNom:"Bus synchrone",
+  presetId:"qspi100",
+  freqMhz:100,
+  tsu:1.5,
+  th:0.8,
+  tcoMin:1.2,
+  tcoMax:3.5,
+  clkNet:null,
+  selectedNets:[]
+};
+
+function busSkewBuild(){
+  let d=$("busSkewModal");
+  if(!d){
+    d=document.createElement("div");
+    d.id="busSkewModal";
+    d.className="modal";
+    d.hidden=true;
+    document.body.appendChild(d);
+  }
+  return d;
+}
+
+function busSkewOpen(netsPreselected){
+  const d=busSkewBuild();
+  d.hidden=false;
+  _bsState.open=true;
+
+  let nets=[];
+  if(netsPreselected&&netsPreselected.length){
+    nets=[...new Set(netsPreselected)];
+  } else if(S.sel&&S.sel.tracks&&S.sel.tracks.size){
+    nets=[...new Set([...S.sel.tracks].map(t=>t.net).filter(Boolean))];
+  }
+  if(!nets.length){
+    const all=netTable().map(x=>x.name).filter(n=>n&&n!=="GND"&&n!=="VCC"&&n!=="+3V3"&&n!=="+5V");
+    nets=all.slice(0,8);
+  }
+  _bsState.selectedNets=nets;
+
+  if(!_bsState.clkNet||!nets.includes(_bsState.clkNet)){
+    const clkGuess=nets.find(n=>/clk|ck|sck|bclk/i.test(n))||nets[0]||"";
+    _bsState.clkNet=clkGuess;
+  }
+
+  busSkewSync();
+}
+
+function busSkewClose(){
+  const d=$("busSkewModal");
+  if(d)d.hidden=true;
+  _bsState.open=false;
+}
+
+function busSkewSync(){
+  const d=$("busSkewModal");
+  if(!d||!_bsState.open)return;
+
+  const res=(typeof busSkewAnalyze==="function")
+    ? busSkewAnalyze(_bsState.selectedNets, _bsState.clkNet, {
+        freqMhz:_bsState.freqMhz,
+        tsu:_bsState.tsu,
+        th:_bsState.th,
+        tcoMin:_bsState.tcoMin,
+        tcoMax:_bsState.tcoMax
+      })
+    : {clk:{net:_bsState.clkNet,len:0,tflight:0},signals:[],summary:{pass:true,worstHoldSlack:0,worstSetupSlack:0,worstSkewPs:0}};
+
+  const presets=(typeof BUS_PRESETS!=="undefined")?BUS_PRESETS:[];
+
+  let h='<div class="box">'+
+    '<div class="bs-head">'+
+      '<h3>⚡ Analyse de Bus Synchrone (Timing Closure: Setup & Hold)</h3>'+
+      '<button class="rpx" id="bsClose" title="Fermer">&#10005;</button>'+
+    '</div>'+
+    '<p>Vérifie les marges d\'établissement (Setup) et de maintien (Hold) relatives à l\'horloge. '+
+    'Une violation de Hold (donnée trop rapide) exige un serpentin d\'allongement pour éviter d\'écraser la donnée précédente.</p>'+
+
+    '<div class="prop four" style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">'+
+      '<div><label>Nom du bus</label><input type="text" id="bsNom" value="'+esc(_bsState.busNom||"Bus synchrone")+'" style="background:var(--panel2);border:1px solid var(--border);color:var(--txt);padding:3px 6px;border-radius:3px;font-size:11px;width:130px"></div>'+
+      '<div><label>Protocole / Préréglage</label><select id="bsPresetSelect">'+
+        presets.map(p=>'<option value="'+p.id+'"'+(p.id===_bsState.presetId?' selected':'')+'>'+esc(p.name)+'</option>').join('')+
+      '</select></div>'+
+      numProp("bsFreq","Fréquence (MHz)",_bsState.freqMhz,10,1)+
+      numProp("bsTsu","Setup t_su (ns)",_bsState.tsu,0.1,0)+
+      numProp("bsTh","Hold t_h (ns)",_bsState.th,0.1,0)+
+      numProp("bsTcoMin","T_co min (ns)",_bsState.tcoMin,0.1,0)+
+      numProp("bsTcoMax","T_co max (ns)",_bsState.tcoMax,0.1,0)+
+    '</div>'+
+
+    '<div style="margin:10px 0;max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">'+
+      '<table class="bs-table">'+
+        '<thead><tr>'+
+          '<th>Rôle</th>'+
+          '<th>Net</th>'+
+          '<th style="text-align:right">Longueur</th>'+
+          '<th style="text-align:right">Temps de vol</th>'+
+          '<th style="text-align:right">Skew Δt</th>'+
+          '<th style="text-align:right">Hold Slack</th>'+
+          '<th style="text-align:right">Setup Slack</th>'+
+          '<th style="text-align:center">Statut</th>'+
+          '<th>Action</th>'+
+        '</tr></thead><tbody>';
+
+  // Ligne de l'horloge
+  h+='<tr style="background:rgba(30,58,138,0.15)">'+
+    '<td><span class="bs-badge clk">HORLOGE</span></td>'+
+    '<td><b>'+esc(res.clk.net||"—")+'</b></td>'+
+    '<td class="n">'+fmt(res.clk.len,2)+' mm</td>'+
+    '<td class="n">'+fmt(res.clk.tflight,1)+' ps</td>'+
+    '<td class="n" style="color:var(--txt-dim)">réf.</td>'+
+    '<td class="n" style="color:var(--txt-dim)">—</td>'+
+    '<td class="n" style="color:var(--txt-dim)">—</td>'+
+    '<td style="text-align:center"><span class="bs-badge clk">RÉF CLK</span></td>'+
+    '<td>—</td>'+
+  '</tr>';
+
+  // Lignes des signaux de données
+  for(const sig of res.signals){
+    let badgeHtml="";
+    let actionHtml="—";
+    if(sig.status==="hold_violation"){
+      badgeHtml='<span class="bs-badge hold">VIOLATION HOLD (-'+fmt(Math.abs(sig.slackHPs),0)+' ps)</span>';
+      actionHtml='<button class="bs-btn-meander" data-net="'+esc(sig.net)+'" data-add="'+sig.meanderOptMm+'" title="Armer l\'outil serpentin pour ce net">Régler serpentin (+'+fmt(sig.meanderOptMm,2)+' mm)</button>';
+    } else if(sig.status==="setup_violation"){
+      badgeHtml='<span class="bs-badge setup">VIOLATION SETUP (-'+fmt(Math.abs(sig.slackSuPs),0)+' ps)</span>';
+      actionHtml='<span style="font-size:10px;color:var(--yellow)">Piste trop longue</span>';
+    } else {
+      badgeHtml='<span class="bs-badge ok">CONFORME (+'+fmt(sig.slackHPs,0)+' ps)</span>';
+      if(sig.meanderOptMm>0.3){
+        actionHtml='<button class="bs-btn-meander" style="background:var(--panel2);border:1px solid var(--border);color:var(--txt)" data-net="'+esc(sig.net)+'" data-add="'+sig.meanderOptMm+'" title="Centrer dans la fenêtre valide">Centrer (+'+fmt(sig.meanderOptMm,2)+' mm)</button>';
+      }
+    }
+
+    h+='<tr>'+
+      '<td><label style="cursor:pointer;font-size:10.5px"><input type="radio" name="bsClkPick" value="'+esc(sig.net)+'"'+(sig.net===_bsState.clkNet?' checked':'')+'> CLK</label></td>'+
+      '<td>'+esc(sig.net)+'</td>'+
+      '<td class="n">'+fmt(sig.len,2)+' mm</td>'+
+      '<td class="n">'+fmt(sig.tflight,1)+' ps</td>'+
+      '<td class="n" style="color:'+(sig.skewPs>=0?'var(--txt)':'var(--yellow)')+'">'+(sig.skewPs>0?'+':'')+fmt(sig.skewPs,1)+' ps</td>'+
+      '<td class="n" style="color:'+(sig.slackHPs>=0?'#6ee7b7':'#fca5a5')+'">'+(sig.slackHPs>0?'+':'')+fmt(sig.slackHPs,0)+' ps</td>'+
+      '<td class="n" style="color:'+(sig.slackSuPs>=0?'#6ee7b7':'#fde68a')+'">'+(sig.slackSuPs>0?'+':'')+fmt(sig.slackSuPs,0)+' ps</td>'+
+      '<td style="text-align:center">'+badgeHtml+'</td>'+
+      '<td>'+actionHtml+'</td>'+
+    '</tr>';
+  }
+
+  h+='</tbody></table></div>';
+
+  let summaryClass=res.summary.pass?"ok":"hold";
+  let summaryText=res.summary.pass
+    ? "✔ Toutes les contraintes de Setup et Hold sont respectées (Worst Hold : +"+fmt(res.summary.worstHoldSlack,0)+" ps, Worst Setup : +"+fmt(res.summary.worstSetupSlack,0)+" ps)."
+    : "⚠ Violation de maintien (Hold) détectée : les données arrivent trop tôt. Cliquez sur « Régler serpentin » pour retarder le signal en lui ajoutant un méandre.";
+
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">'+
+    '<div class="bs-badge '+summaryClass+'" style="font-size:11px;padding:5px 10px">'+summaryText+'</div>'+
+    '<div><button class="tb" id="bsBtnOuvrirSim" style="margin-right:6px">Ouvrir dans Simulation EM ↗</button>'+
+    '<button class="tb" id="bsBtnFermer">Fermer</button></div>'+
+  '</div></div>';
+
+  d.innerHTML=h;
+
+  const bClose=$("bsClose"), bFermer=$("bsBtnFermer"), bOuvrirSim=$("bsBtnOuvrirSim");
+  if(bClose)bClose.onclick=busSkewClose;
+  if(bFermer)bFermer.onclick=busSkewClose;
+  if(bOuvrirSim)bOuvrirSim.onclick=()=>{
+    busSkewClose();
+    if(typeof simOuvrir==="function")simOuvrir();
+    if(typeof simAllerAnalyse==="function")simAllerAnalyse("bus");
+  };
+
+  const inNom=$("bsNom");
+  if(inNom)inNom.oninput=()=>{_bsState.busNom=inNom.value;};
+
+  const selPreset=$("bsPresetSelect");
+  if(selPreset)selPreset.onchange=()=>{
+    const p=presets.find(x=>x.id===selPreset.value);
+    if(p){
+      _bsState.presetId=p.id;
+      _bsState.freqMhz=p.freq;
+      _bsState.tsu=p.tsu;
+      _bsState.th=p.th;
+      _bsState.tcoMin=p.tcoMin;
+      _bsState.tcoMax=p.tcoMax;
+      busSkewSync();
+    }
+  };
+
+  const inFreq=$("bsFreq"), inTsu=$("bsTsu"), inTh=$("bsTh"), inTcoMin=$("bsTcoMin"), inTcoMax=$("bsTcoMax");
+  if(inFreq)inFreq.onchange=()=>{_bsState.freqMhz=parseFloat(inFreq.value)||100;_bsState.presetId="custom";busSkewSync();};
+  if(inTsu)inTsu.onchange=()=>{_bsState.tsu=parseFloat(inTsu.value)||1.5;_bsState.presetId="custom";busSkewSync();};
+  if(inTh)inTh.onchange=()=>{_bsState.th=parseFloat(inTh.value)||1.0;_bsState.presetId="custom";busSkewSync();};
+  if(inTcoMin)inTcoMin.onchange=()=>{_bsState.tcoMin=parseFloat(inTcoMin.value)||0;_bsState.presetId="custom";busSkewSync();};
+  if(inTcoMax)inTcoMax.onchange=()=>{_bsState.tcoMax=parseFloat(inTcoMax.value)||0.5;_bsState.presetId="custom";busSkewSync();};
+
+  d.querySelectorAll('input[name="bsClkPick"]').forEach(r=>{
+    r.onchange=()=>{
+      _bsState.clkNet=r.value;
+      busSkewSync();
+    };
+  });
+
+  d.querySelectorAll('.bs-btn-meander').forEach(btn=>{
+    btn.onclick=()=>{
+      const net=btn.dataset.net;
+      const addMm=parseFloat(btn.dataset.add)||0;
+      busSkewArmMeander(net, addMm);
+    };
+  });
+}
+
+function busSkewArmMeander(netName, addMm){
+  busSkewClose();
+  if(!netName)return;
+  if(!S.meanderOpts)S.meanderOpts={};
+  S.meanderOpts.targetDelta=r2(addMm);
+  if(typeof selectNetRouting==="function")selectNetRouting(netName);
+  if(typeof setMode==="function")setMode("meander");
+  if(typeof hint==="function"){
+    hint("Serpentin armé (+"+fmt(addMm,2)+" mm) pour le net "+netName+" · Cliquez sur une portion droite pour poser l'accordéon.");
+  }
+}
 /* Ce que le nom du boîtier a décidé — ou pourquoi il n'a rien décidé. Le
    schématique laisse saisir n'importe quel nom : autant dire lequel est
    compris, et laisser reposer l'empreinte d'un clic quand les cotes ont été
@@ -718,6 +1024,8 @@ function propsFp(box,fp){
     diag = pcbVerifierPinoutComposant(schComp || { ref: fp.ref, value: fp.value, pkg: fp.pkg }, fp);
   }
 
+  const hasDs = !!(schComp && (schComp.datasheet_local || schComp.datasheet_url));
+
   let h='<div class="prop"><label>Repère</label><input id="pRef" value="'+esc(fp.ref)+'"></div>'+
     '<div class="prop two"><div><label>Valeur</label><input id="pVal" value="'+esc(fp.value||"")+'"></div>'+
     '<div><label>Boîtier</label><input id="pPkg" value="'+esc(fp.pkg||"")+'"></div></div>'+
@@ -735,6 +1043,13 @@ function propsFp(box,fp){
           '<div>• <b>Taille boîtier :</b> ' + (diag.spanCheck ? esc(diag.spanCheck.msg) : "—") + '</div>' +
           '<div>• <b>Pastilles :</b> ' + (diag.pinCountCheck ? esc(diag.pinCountCheck.msg) : "—") + '</div>' +
         '</div>' +
+      '</div>'
+    ) : '') +
+    (hasDs ? (
+      '<div style="margin:4px 0 6px 0">' +
+        '<button class="tb mini" id="pFpOpenDs" style="width:100%;border-color:var(--blue);color:var(--blue);font-size:11px;padding:3px 6px;text-align:center">' +
+          '📄 Ouvrir la Datasheet' + (schComp.datasheet_local ? ' (locale)' : ' ↗') +
+        '</button>' +
       '</div>'
     ) : '') +
     '<div class="prop"><label>Empreinte générique</label><select id="pStyle"'+dis+'>'+
@@ -807,6 +1122,19 @@ function propsFp(box,fp){
   const bPinout=$("pFpInspectPinout");
   if(bPinout&&typeof pcbOuvrirDialoguePinout==="function"){
     bPinout.onclick=()=>pcbOuvrirDialoguePinout();
+  }
+  const bOpenDs=$("pFpOpenDs");
+  if(bOpenDs&&schComp){
+    bOpenDs.onclick=()=>{
+      if(schComp.datasheet_url&&(schComp.datasheet_url.startsWith("/api/datasheet/ouvrir")||schComp.datasheet_url.startsWith("http://")||schComp.datasheet_url.startsWith("https://"))){
+        window.open(schComp.datasheet_url,"_blank");
+      }else if(schComp.datasheet_local){
+        const nomP=(typeof projNom==="function"?projNom():"")||(typeof pcbProjNom==="function"?pcbProjNom():"")||"";
+        window.open("/api/datasheet/ouvrir?projet="+encodeURIComponent(nomP)+"&fichier="+encodeURIComponent(schComp.datasheet_local),"_blank");
+      }else if(schComp.datasheet_web&&(schComp.datasheet_web.startsWith("http://")||schComp.datasheet_web.startsWith("https://"))){
+        window.open(schComp.datasheet_web,"_blank");
+      }
+    };
   }
   const fe=$("pFpEd");
   if(fe)fe.onclick=()=>feOpen(fp);
@@ -1076,7 +1404,7 @@ function propsTrack(box,t){
   };
 }
 function propsTracks(box,list,vias){
-  const nets=[...new Set(list.map(t=>t.net||"—"))];
+  const nets=[...new Set(list.map(t=>t.net||"—"))].filter(n=>n&&n!=="—");
   const vi=vias||[];
   mpNeuf();
   box.innerHTML=
@@ -1084,6 +1412,10 @@ function propsTracks(box,list,vias){
       (vi.length?' et '+vi.length+' via'+(vi.length>1?'s':""):"")+
       ' sélectionné'+(list.length+vi.length>1?"s":"")+' · net'+(nets.length>1?"s":"")+
       ' '+esc(nets.join(", "))+'</div>'+
+    (nets.length>=2
+      ? '<div class="prop"><div class="row">'+
+          '<button class="tb" id="msBusSkew" style="width:100%;color:var(--yellow);font-weight:600">⚡ Simuler l\'appariement du bus ('+nets.length+' nets)…</button></div></div>'
+      : '')+
     '<div class="prop"><label>Couche</label><select id="msL">'+
       '<option value="">— inchangée —</option>'+
       S.cuL.map((L,i)=>'<option value="'+i+'">'+esc(L.name)+' — '+cuId(i,S.cu)+'</option>').join("")+
@@ -1103,6 +1435,7 @@ function propsTracks(box,list,vias){
     mpSection("vias",vi)+
     ltSection(list,vi);
   $("msMit").onclick=mitreSel;
+  if($("msBusSkew")) $("msBusSkew").onclick=()=>busSkewOpen(nets);
   $("msL").onchange=()=>{
     const v=$("msL").value;
     if(v==="")return;

@@ -25,35 +25,49 @@
   body {
     background: var(--bg); color: var(--txt); font-family: var(--ui);
     display: flex; align-items: center; justify-content: center;
-    min-height: 100vh; margin: 0; padding: 24px;
+    min-height: 100vh; margin: 0; padding: 20px;
   }
   .container {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 32px 34px 30px;
+    border-radius: 10px;
+    padding: 24px 28px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-    max-width: 880px; width: 100%;
+    max-width: 1240px; width: 100%;
+  }
+
+  /* Entête compacte en paysage */
+  .dash-header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px; margin-bottom: 16px; padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
   }
   .brand { display: flex; align-items: baseline; gap: 10px; }
   .brand i { display: inline-block; width: 4px; height: 18px; background: var(--red);
     border-radius: 1px; transform: translateY(3px); }
   h1 { margin: 0; font-size: 20px; letter-spacing: 0.1em; font-weight: 600; text-transform: uppercase; }
   .brand span { font-family: var(--mono); font-size: 10px; color: var(--txt-dim); letter-spacing: 0.18em; }
-  p.intro { color: var(--txt-dim); margin: 12px 0 26px; font-size: 14px; }
-  .actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+  p.intro { color: var(--txt-dim); margin: 0; font-size: 13px; }
+
+  /* Bandeau horizontal des 4 outils principaux */
+  .actions {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
   a.btn {
-    display: flex; flex-direction: column; gap: 7px;
+    display: flex; flex-direction: column; gap: 6px;
     background: var(--panel2);
     color: var(--txt);
     border: 1px solid var(--border2);
-    padding: 16px 18px;
+    padding: 13px 15px;
     border-radius: 6px;
     text-decoration: none;
     transition: all 0.15s;
   }
   a.btn b { font-size: 14px; font-weight: 600; color: var(--blue); }
-  a.btn small { font-size: 12px; color: var(--txt-dim); line-height: 1.45; }
+  a.btn small { font-size: 11.5px; color: var(--txt-dim); line-height: 1.4; }
   a.btn em {
     font-family: var(--mono); font-style: normal; font-size: 9px;
     letter-spacing: 0.16em; text-transform: uppercase; color: var(--yellow); opacity: 0.85;
@@ -61,16 +75,27 @@
   a.btn:hover { border-color: var(--blue); background: #20242a; }
   a.btn:hover b { color: #fff; }
   a.btn:hover small { color: var(--txt); }
-  footer {
-    margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border);
-    font-family: var(--mono); font-size: 11px; color: var(--txt-dim); line-height: 1.6;
-  }
-  footer code { color: var(--blue); }
 
-  /* ---------- utilisateurs ---------- */
+  /* Grille paysage : Projet à gauche, Utilisateur & Ergonomie à droite */
+  .dash-grid {
+    display: grid;
+    grid-template-columns: 1.06fr 0.94fr;
+    gap: 16px;
+    align-items: stretch;
+  }
+  .dash-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* ---------- utilisateurs & panneaux ---------- */
   .users {
-    margin: 0 0 22px; padding: 14px 16px 12px;
+    margin: 0; padding: 14px 16px 12px;
     background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
+  }
+  .dash-col > #blocProjet {
+    height: 100%;
   }
   .users h2 {
     margin: 0 0 10px; font-family: var(--mono); font-size: 9px;
@@ -122,8 +147,6 @@
   .urec em { font-family: var(--mono); font-style: normal; color: var(--yellow); opacity: .85; }
 
   /* ---------- projet ---------- */
-  /* Le nom courant, bien lisible : c'est lui qui se retrouve sur le Master
-     Drawing et dans les noms de fichiers exportés. */
   .pcur {
     margin-top: 10px; font-family: var(--mono); font-size: 12px;
     line-height: 1.8; color: var(--txt-dim);
@@ -131,107 +154,43 @@
   .pcur b { color: var(--yellow); font-weight: 600; font-size: 14px; }
   .pcur span { color: var(--blue); }
   .pcur i { font-style: normal; color: var(--txt-dim); opacity: .8; }
-  /* Le dossier sur le disque : séparé du nom par un filet, parce que ce sont
-     deux choses distinctes — on peut nommer un projet sans le rattacher. */
   .pdos {
     margin-top: 14px; padding-top: 12px;
     border-top: 1px dashed var(--border2);
   }
   .pdos .pcur span { display: inline-block; margin-left: 10px; color: var(--txt-dim); }
-  /* Le geste principal de cette rangée : ouvrir l'explorateur. Les autres
-     boutons sont des replis, ils n'ont pas à lui disputer le regard. */
   .urow button.fort { border-color: var(--blue); color: #fff; }
   .urow button.fort:hover { background: #20242a; }
+
+  /* Footer en 2 colonnes paysage */
+  footer {
+    margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);
+    font-family: var(--mono); font-size: 11px; color: var(--txt-dim); line-height: 1.5;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+  }
+  footer code { color: var(--blue); }
+
+  /* Adaptation responsive pour écrans étroits */
+  @media (max-width: 980px) {
+    .actions { grid-template-columns: repeat(2, 1fr); }
+    .dash-grid { grid-template-columns: 1fr; }
+    footer { grid-template-columns: 1fr; gap: 8px; }
+  }
+  @media (max-width: 580px) {
+    .actions { grid-template-columns: 1fr; }
+    body { padding: 12px; }
+    .container { padding: 18px 14px; }
+  }
 </style>
 </head>
 <body>
   <div class="container">
-    <div class="brand"><i></i><h1>CAO Web</h1><span>SCHÉMA · PCB · COMPOSANTS</span></div>
-    <p class="intro">Par quoi commencez-vous ?</p>
+    <header class="dash-header">
+      <div class="brand"><i></i><h1>CAO Web</h1><span>SCHÉMA · PCB · COMPOSANTS</span></div>
+      <p class="intro">Par quoi commencez-vous ?</p>
+    </header>
 
-    <!-- Sur quoi on travaille : un nom global, dont les deux éditeurs dérivent
-         le leur (« carte PIR » donne « carte PIR-SCH » et « carte PIR-PCB »).
-         C'est ce nom qui part sur le Master Drawing et sur les fichiers
-         exportés. Voir commun/projet.js. -->
-    <div class="users">
-      <h2>Projet</h2>
-      <div class="ulist" id="pList"></div>
-      <div class="urow">
-        <input id="pNom" maxlength="60" autocomplete="off"
-               placeholder="Nom d'un nouveau projet… (ex. carte PIR)"
-               aria-label="Nom d'un nouveau projet">
-        <button id="pAdd">Nouveau projet</button>
-        <button id="pDel" class="danger">Oublier celui-ci</button>
-      </div>
-      <div class="pcur" id="pCur"></div>
-
-      <!-- Dossier sur le disque. « Ouvrir » ouvre l'explorateur : c'est le
-           même geste pour un projet existant et pour un nouveau, seule la
-           présence d'un projet.cao.json dans le dossier choisi fait la
-           différence. Le champ de chemin reste là pour les navigateurs sans
-           sélecteur de dossier, où c'est serveur.py qui tient le disque.
-           Voir commun/projet-disque.js. -->
-      <div class="pdos">
-        <div class="urow">
-          <button id="pOuvre" class="fort">📁 Ouvrir un dossier…</button>
-          <input id="pChem" maxlength="400" autocomplete="off"
-                 placeholder="…ou un chemin écrit à la main (ex. carte PIR, ou D:\projets\carte PIR)"
-                 aria-label="Dossier du projet">
-          <button id="pChemGo">Ouvrir ce chemin</button>
-          <button id="pDetach" class="danger">Détacher</button>
-        </div>
-
-        <!-- Créer un projet sans boîte de dialogue : c'est le repli des
-             navigateurs sans sélecteur de dossier, où « Ouvrir » ne peut rien
-             désigner. La racine se choisit parmi celles déclarées au démarrage
-             du serveur — jamais ici, c'est ce qui en fait une frontière — et le
-             sous-dossier est libre. Masquée dès que l'explorateur est là. -->
-        <div class="urow" id="pNeufRow">
-          <!-- Masqué tant que le serveur n'a pas dit ses racines : un menu
-               déroulant vide n'est pas un choix, c'est une question sans
-               réponse. Il ne se montre que s'il y a plus d'une racine. -->
-          <select id="pRac" aria-label="Racine où créer le projet" hidden></select>
-          <input id="pSous" maxlength="200" autocomplete="off"
-                 placeholder="Sous-dossier… (facultatif, ex. clients/acme)"
-                 aria-label="Sous-dossier où créer le projet">
-          <button id="pCree">Créer le projet ici</button>
-        </div>
-        <div class="pcur" id="pDosEtat"></div>
-        <div class="ulist" id="pDosList"></div>
-      </div>
-    </div>
-
-    <!-- Qui travaille : panneaux, réglages d'affichage et derniers documents
-         appartiennent à la personne choisie ici, et la suivent d'un outil à
-         l'autre. Voir commun/profils.js. -->
-    <div class="users">
-      <h2>Utilisateur</h2>
-      <div class="ulist" id="uList"></div>
-      <div class="urow">
-        <input id="uNom" maxlength="40" autocomplete="off"
-               placeholder="Nom d'un nouvel utilisateur…"
-               aria-label="Nom d'un nouvel utilisateur">
-        <button id="uAdd">Ajouter</button>
-        <button id="uDel" class="danger">Supprimer celui-ci</button>
-      </div>
-      <div class="uinfo" id="uInfo"></div>
-      <div class="urec" id="uRec"></div>
-    </div>
-
-    <!-- Option d'ergonomie : Mode tactile pour iPad et tablettes -->
-    <div class="users" id="blocTactile">
-      <h2>Ergonomie & Écran tactile</h2>
-      <label style="display:flex; align-items:flex-start; gap:12px; cursor:pointer; user-select:none;">
-        <input type="checkbox" id="chkModeTactile" style="margin-top:3px; width:18px; height:18px; cursor:pointer; accent-color:var(--blue);">
-        <div>
-          <b style="color:var(--txt); font-size:13px;">Mode tactile (iPad Pro / tablette / écran tactile)</b>
-          <div style="font-size:12px; color:var(--txt-dim); margin-top:3px; line-height:1.45;">
-            Active la navigation multi-touch (pincement pour zoomer, déplacement à 2 doigts), la détection stylet (Apple Pencil) et la barre d'actions rapides sous le pouce (pivoter, annuler, via, échap).
-          </div>
-        </div>
-      </label>
-    </div>
-
+    <!-- Les 4 applications principales en bandeau horizontal -->
     <div class="actions">
       <a href="editeur-schematique/editeur-schematique.html" class="btn">
         <em>Saisie</em>
@@ -246,24 +205,96 @@
       <a href="recherche-composants/recherche-composants.html" class="btn">
         <em>Bibliothèque</em>
         <b>Recherche de composants</b>
-        <small>Stock JLCPCB, équivalences, brochages, modèles CAO et cartes
-        de référence, via pcbparts.dev.</small>
+        <small>Stock JLCPCB, équivalences, brochages, modèles CAO et cartes de référence, via pcbparts.dev.</small>
       </a>
       <a href="visionneuse-ipc2581/visionneuse-ipc2581.html" class="btn">
         <em>Import</em>
         <b>Visionneuse IPC-2581</b>
-        <small>Ouvrir la carte livrée par un fabricant : empilage, cuivre,
-        perçages, composants et nets, couche par couche.</small>
+        <small>Ouvrir la carte livrée par un fabricant : empilage, cuivre, perçages, composants et nets.</small>
       </a>
     </div>
+
+    <!-- Disposition paysage : 2 colonnes équilibrées -->
+    <div class="dash-grid">
+      <!-- Colonne gauche : Projet & Dossier -->
+      <div class="dash-col">
+        <div class="users" id="blocProjet">
+          <h2>Projet</h2>
+          <div class="ulist" id="pList"></div>
+          <div class="urow">
+            <input id="pNom" maxlength="60" autocomplete="off"
+                   placeholder="Nom d'un nouveau projet… (ex. carte PIR)"
+                   aria-label="Nom d'un nouveau projet">
+            <button id="pAdd">Nouveau projet</button>
+            <button id="pDel" class="danger">Oublier celui-ci</button>
+          </div>
+          <div class="pcur" id="pCur"></div>
+
+          <!-- Dossier sur le disque -->
+          <div class="pdos">
+            <div class="urow">
+              <button id="pOuvre" class="fort">📁 Ouvrir un dossier…</button>
+              <input id="pChem" maxlength="400" autocomplete="off"
+                     placeholder="…ou un chemin écrit à la main (ex. carte PIR, ou D:\projets\carte PIR)"
+                     aria-label="Dossier du projet">
+              <button id="pChemGo">Ouvrir ce chemin</button>
+              <button id="pDetach" class="danger">Détacher</button>
+            </div>
+
+            <div class="urow" id="pNeufRow">
+              <select id="pRac" aria-label="Racine où créer le projet" hidden></select>
+              <input id="pSous" maxlength="200" autocomplete="off"
+                     placeholder="Sous-dossier… (facultatif, ex. clients/acme)"
+                     aria-label="Sous-dossier où créer le projet">
+              <button id="pCree">Créer le projet ici</button>
+            </div>
+            <div class="pcur" id="pDosEtat"></div>
+            <div class="ulist" id="pDosList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Colonne droite : Utilisateur & Ergonomie -->
+      <div class="dash-col">
+        <div class="users" id="blocUtilisateur">
+          <h2>Utilisateur</h2>
+          <div class="ulist" id="uList"></div>
+          <div class="urow">
+            <input id="uNom" maxlength="40" autocomplete="off"
+                   placeholder="Nom d'un nouvel utilisateur…"
+                   aria-label="Nom d'un nouvel utilisateur">
+            <button id="uAdd">Ajouter</button>
+            <button id="uDel" class="danger">Supprimer celui-ci</button>
+          </div>
+          <div class="uinfo" id="uInfo"></div>
+          <div class="urec" id="uRec"></div>
+        </div>
+
+        <!-- Option d'ergonomie : Mode tactile pour iPad et tablettes -->
+        <div class="users" id="blocTactile">
+          <h2>Ergonomie & Écran tactile</h2>
+          <label style="display:flex; align-items:flex-start; gap:12px; cursor:pointer; user-select:none;">
+            <input type="checkbox" id="chkModeTactile" style="margin-top:3px; width:18px; height:18px; cursor:pointer; accent-color:var(--blue);">
+            <div>
+              <b style="color:var(--txt); font-size:13px;">Mode tactile (iPad Pro / tablette / écran tactile)</b>
+              <div style="font-size:12px; color:var(--txt-dim); margin-top:3px; line-height:1.45;">
+                Active la navigation multi-touch (pincement pour zoomer, déplacement à 2 doigts), la détection stylet (Apple Pencil) et la barre d'actions rapides sous le pouce.
+              </div>
+            </div>
+          </label>
+        </div>
+      </div>
+    </div>
+
     <footer>
-      Les deux éditeurs s'ouvrent sans serveur ni dépendance.<br>
-      Une fois un outil ouvert, les boutons de son entête mènent aux deux autres
-      sans perdre le travail en cours, tant que l'onglet reste ouvert.<br>
-      La recherche de composants et la visionneuse IPC-2581 ont besoin du
-      serveur du dépôt : <code>python serveur.py</code><br>
-      Le parseur IPC-2581 est en Python — d'où le serveur ; une fois la carte
-      traduite, son <code>.json</code> se rouvre en double-clic.
+      <div>
+        Les deux éditeurs s'ouvrent sans serveur ni dépendance.<br>
+        Une fois un outil ouvert, les boutons de son entête mènent aux deux autres sans perdre le travail en cours, tant que l'onglet reste ouvert.
+      </div>
+      <div>
+        La recherche de composants et la visionneuse IPC-2581 ont besoin du serveur du dépôt : <code>python serveur.py</code><br>
+        Le parseur IPC-2581 est en Python — d'où le serveur ; une fois la carte traduite, son <code>.json</code> se rouvre en double-clic.
+      </div>
     </footer>
   </div>
 

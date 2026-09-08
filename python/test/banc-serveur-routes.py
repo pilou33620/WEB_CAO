@@ -86,6 +86,108 @@ def test_routes():
         assert data["total_motifs"] >= 1
         print("[PASS] POST /api/schema/patterns (total motifs: %d)" % data["total_motifs"])
 
+        # 5. POST /api/datasheet/telecharger
+        payload_ds_inv = json.dumps({"url": "ftp://invalide", "mpn": "TEST"}).encode("utf-8")
+        
+        # 5a. PROJETS_OUVERT = False -> Rejet 403 propre
+        serveur.PROJETS_OUVERT = False
+        conn.request("POST", "/api/datasheet/telecharger", body=payload_ds_inv, headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 403, "Attendu 403, reçu %d" % res.status
+        data = json.loads(res.read().decode("utf-8"))
+        assert "refuses" in data.get("detail", "")
+        print("[PASS] POST /api/datasheet/telecharger (rejet 403 en écoute réseau)")
+
+        # 5b. PROJETS_OUVERT = True -> Traitement et rejet URL invalide 400
+        serveur.PROJETS_OUVERT = True
+        conn.request("POST", "/api/datasheet/telecharger", body=payload_ds_inv, headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 400, "Attendu 400, reçu %d" % res.status
+        data = json.loads(res.read().decode("utf-8"))
+        assert "URL invalide" in data.get("detail", "")
+        print("[PASS] POST /api/datasheet/telecharger (rejet URL invalide 400)")
+
+        # 6. GET /api/datasheet/ouvrir (fichier manquant -> 400)
+        conn.request("GET", "/api/datasheet/ouvrir")
+        res = conn.getresponse()
+        assert res.status == 400
+        res.read()
+        print("[PASS] GET /api/datasheet/ouvrir (fichier manquant -> 400)")
+
+        # 7. GET /api/datasheet/ouvrir (fichier inexistant -> 404)
+        conn.request("GET", "/api/datasheet/ouvrir?fichier=non_existant_test_12345.pdf")
+        res = conn.getresponse()
+        # 8. Protection SSRF sur /api/datasheet/telecharger
+        serveur.PROJETS_OUVERT = True
+        for ssrf_url in [
+            "http://127.0.0.1/secret.pdf",
+            "http://localhost/secret.pdf",
+            "http://10.0.0.1/secret.pdf",
+            "http://192.168.1.1/secret.pdf",
+            "http://169.254.169.254/latest/meta-data",
+        ]:
+            body_ssrf = json.dumps({"url": ssrf_url, "mpn": "TEST"}).encode("utf-8")
+            conn.request("POST", "/api/datasheet/telecharger", body=body_ssrf, headers={"Content-Type": "application/json"})
+            res = conn.getresponse()
+            assert res.status == 400, "SSRF non bloqué pour %s : reçu %d" % (ssrf_url, res.status)
+            res_data = json.loads(res.read().decode("utf-8"))
+            assert "non autorisee" in res_data.get("detail", "") or "invalide" in res_data.get("detail", ""), res_data
+        print("[PASS] POST /api/datasheet/telecharger (protection SSRF active sur IPs privées/locales)")
+
+        # 9. Protection contre la fuite de fichiers sensibles
+        for secret_file in ["/LIB_composants.csv", "/mom_solver.log", "/serveur.py", "/python/ipc2581_parser.py"]:
+            conn.request("GET", secret_file)
+            res = conn.getresponse()
+            assert res.status == 404, "Fichier sensible non masqué : %s -> %d" % (secret_file, res.status)
+            res.read()
+        print("[PASS] GET fichiers sensibles masqués (404 pour .csv, .log, .py)")
+
+        # 10. Désactivation du listing de répertoire
+        conn.request("GET", "/datasheets/")
+        res = conn.getresponse()
+        assert res.status == 404, "Listing de répertoire actif : reçu %d" % res.status
+        res.read()
+        print("[PASS] GET /datasheets/ (listing de répertoire désactivé -> 404)")
+
+        # 11. Validation Host Header / Anti-DNS Rebinding
+        conn_evil = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        try:
+            conn_evil.request("GET", "/api/pcb/score-placement", headers={"Host": "evil-attacker.com"})
+            res = conn_evil.getresponse()
+            assert res.status == 403, "Attendu 403 pour Host malveillant, reçu %d" % res.status
+            res.read()
+            print("[PASS] Validation Host header (403 pour hôte DNS Rebinding non autorisé)")
+        finally:
+            conn_evil.close()
+
+        # 12. Protection CSRF (Origin header inter-origines non autorisé)
+        conn.request("POST", "/api/pcb/score-placement", body=payload_pcb, headers={
+            "Content-Type": "application/json",
+            "Origin": "https://evil-attacker.com"
+        })
+        res = conn.getresponse()
+        assert res.status == 403, "Attendu 403 pour Origin CSRF non autorisée, reçu %d" % res.status
+        res.read()
+        print("[PASS] Protection CSRF / Origin non autorisée -> 403")
+
+        # 13. Protection XML Entity Expansion (Billion Laughs / DTD)
+        if os.path.join(DOSSIER_ROOT, "python") not in sys.path:
+            sys.path.insert(0, os.path.join(DOSSIER_ROOT, "python"))
+        from ipc2581_parser import IPC2581Parser, IPC2581ParseError
+        import io
+        xml_xxe = b"""<?xml version="1.0"?>
+        <!DOCTYPE lolz [
+          <!ENTITY lol "lol">
+          <!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
+        ]>
+        <IPC-2581></IPC-2581>"""
+        try:
+            IPC2581Parser(io.BytesIO(xml_xxe)).parse()
+            assert False, "XXE / Entity expansion n'a pas levé d'erreur"
+        except IPC2581ParseError as exc:
+            assert "interdite" in str(exc)
+        print("[PASS] Protection XML Entity Expansion (<!ENTITY rejeté avec succès)")
+
     finally:
         conn.close()
         httpd.shutdown()
@@ -93,4 +195,4 @@ def test_routes():
 
 if __name__ == "__main__":
     test_routes()
-    print("\n TOUTES LES ROUTES DU SERVEUR SONT VALIDÉES AVEC SUCCÈS.")
+    print("\n TOUTES LES ROUTES DU SERVEUR ET SÉCURITÉS SONT VALIDÉES AVEC SUCCÈS.")

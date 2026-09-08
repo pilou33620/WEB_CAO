@@ -438,7 +438,21 @@ def charger_octets(data: bytes, nom: str = "") -> IPCDesign:
                 "Le fichier IPC-2581 dans l'archive depasse la taille maximale autorisee (%d Mo)."
                 % (MAX_DECOMPRESSE // (1024 * 1024)))
         interne = choix.filename
-        data = archive.read(choix)
+        # Decompression bornee en streaming pour neutraliser les Zip Bombs
+        octets = []
+        total_lu = 0
+        with archive.open(choix) as flux_zip:
+            while True:
+                morceau = flux_zip.read(64 * 1024)
+                if not morceau:
+                    break
+                total_lu += len(morceau)
+                if total_lu > MAX_DECOMPRESSE:
+                    raise IPC2581ParseError(
+                        "Decompression interrompue : le volume reel depasse %d Mo (Zip Bomb)."
+                        % (MAX_DECOMPRESSE // (1024 * 1024)))
+                octets.append(morceau)
+        data = b"".join(octets)
 
     return IPC2581Parser(_Flux(data, interne or nom or "(flux)")).parse()
 

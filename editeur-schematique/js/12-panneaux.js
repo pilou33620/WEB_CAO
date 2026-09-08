@@ -575,12 +575,12 @@ function refreshPanels(){
 
     const bOpenDs = document.getElementById("pOpenDs");
     if (bOpenDs) bOpenDs.onclick = () => {
-      if (el.datasheet_url && (el.datasheet_url.startsWith("/api/datasheet/ouvrir") || el.datasheet_url.startsWith("http"))) {
+      if (el.datasheet_url && (el.datasheet_url.startsWith("/api/datasheet/ouvrir") || el.datasheet_url.startsWith("http://") || el.datasheet_url.startsWith("https://"))) {
         window.open(el.datasheet_url, "_blank");
       } else if (el.datasheet_local) {
         const nomP = (typeof projNom === "function" ? projNom() : "") || "";
         window.open("/api/datasheet/ouvrir?projet=" + encodeURIComponent(nomP) + "&fichier=" + encodeURIComponent(el.datasheet_local), "_blank");
-      } else if (el.datasheet_web) {
+      } else if (el.datasheet_web && (el.datasheet_web.startsWith("http://") || el.datasheet_web.startsWith("https://"))) {
         window.open(el.datasheet_web, "_blank");
       }
     };

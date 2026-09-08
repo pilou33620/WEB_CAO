@@ -445,7 +445,7 @@ def green_spectral_micro_masque(beta, h, masque_epaisseur, epsilon_r, epsilon_ma
 
     ch_bc = np.cosh(bc)
     sh_bc = np.sinh(bc)
-    th_h = np.tanh(bh)
+    th_h = np.maximum(np.tanh(bh), 1e-30)
 
     # K = ch + sh/εr_m, M = εr_m sh + ch
     K = ch_bc + sh_bc / er_m
@@ -1235,10 +1235,12 @@ def _modes(l_mat, c_mat):
         if v[pic] < 0:
             v = -v
         vitesse = 1.0 / math.sqrt(valeurs[k]) if valeurs[k] > 0 else 0.0
+        max_v = float(np.max(np.abs(v)))
+        norm = max_v if max_v > 1e-15 else 1.0
         modes.append({
             "eps_eff": float(valeurs[k] * C_0 * C_0),
             "vitesse": float(vitesse),
-            "tensions": [float(x) for x in v / np.max(np.abs(v))],
+            "tensions": [float(x) for x in v / norm],
         })
     return modes
 
@@ -1302,7 +1304,10 @@ def solve_multiline(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
     # [L] = mu0 eps0 [C0]^-1, et rien de plus : le milieu n'est pas magnetique,
     # donc l'inductance est celle de la MEME geometrie sans dielectrique. C'est
     # la seule facon d'obtenir [L] sans un second solveur, et elle est exacte.
-    l_mat = MU_0 * EPSILON_0 * np.linalg.inv(c0)
+    try:
+        l_mat = MU_0 * EPSILON_0 * np.linalg.inv(c0)
+    except np.linalg.LinAlgError:
+        raise ValueError("matrice de capacite singuliere : geometrie incoherente")
 
     lignes = []
     for i, place in enumerate(ports):
@@ -1422,7 +1427,11 @@ def sous_systeme(c_mat, c0_mat, indices):
     idx = np.ix_(list(indices), list(indices))
     c_sous = c_mat[idx]
     c0_sous = c0_mat[idx]
-    return c_sous, MU_0 * EPSILON_0 * np.linalg.inv(c0_sous)
+    try:
+        l_sous = MU_0 * EPSILON_0 * np.linalg.inv(c0_sous)
+    except np.linalg.LinAlgError:
+        raise ValueError("sous-matrice de capacite singuliere")
+    return c_sous, l_sous
 
 
 def dispersion_getsinger(z0_statique, eps_eff_statique, epsilon_r, h, freq):
@@ -2268,10 +2277,32 @@ def capacite_paire_plans(aire, hauteur_plans, epsilon_r):
 # Le coefficient de l'equation 13-35, en henrys par metre de separation entre
 # plans. Bogatin l'ecrit 21 pH par mil ; en SI cela fait 21e-12 / 25,4e-6.
 # Il vaut 4,13 fois mu0/(2 pi), qui est le coefficient du cas a un seul contact
-# (equation 13-31) : c'est le prix des deux constrictions et des deux plans.
-# Le chiffre est EMPIRIQUE -- il n'y a pas de forme fermee exacte pour cette
-# geometrie, le livre le dit -- et c'est pour cela qu'il est nomme ici plutot
-# que derive.
+# (equation 13-31).
+#
+# CE QUE LA FORME FERMEE 2D EN DIT, ET POURQUOI ON GARDE QUAND MEME LE CHIFFRE
+# DU LIVRE. Le rapport de 4,13 ne se derive PAS de « deux constrictions au lieu
+# d'une » -- c'est ce que ce commentaire affirmait, et c'est faux. Dans la
+# limite plans minces (h << s), le probleme est 2D et se resout exactement :
+# le champ entre les plaques est celui de deux fils, H = I/(2 pi rho) autour
+# de chacun, et le flux embrasse sur la hauteur h vaut
+#
+#     Phi = mu0 h I / (2 pi) * 2 ln((s - r) / r)   ->   L = (mu0 h / pi) ln(s/r)
+#
+# soit DEUX fois l'equation 13-31, et non quatre. Le facteur exact de la
+# geometrie a deux contacts est 2.
+#
+# On garde neanmoins 21 pH/mil, pour deux raisons qui se disent :
+#   · Le livre ecrit ln(B/D) avec le DIAMETRE, la forme fermee ln(s/r) avec le
+#     rayon ; l'ecart de ln(2) reprend une partie du facteur. Net, sur les
+#     geometries de ce simulateur, le coefficient du livre rend 1,3 a 1,7 fois
+#     la forme fermee 2D -- pas 2.
+#   · Le reste va dans le sens PRUDENT. La limite 2D suppose h << s, ce qui
+#     cesse d'etre vrai des que le condensateur est proche ; l'ajustement
+#     empirique couvre ce que le 2D neglige, et une inductance de traversee
+#     surestimee n'a jamais flatte une carte.
+#
+# La forme fermee reste donc la BORNE INFERIEURE de cette grandeur, et c'est
+# `inductance_etalement_via_via_2d` qui la rend, pour qui veut comparer.
 COEFF_ETALEMENT_VIA_VIA = 21.0e-12 / 25.4e-6
 
 
@@ -2324,6 +2355,9 @@ def inductance_etalement_via_via(hauteur_plans, ecart, diametre_via):
     logarithme avec `ecart`. Rapprocher le decouplage de moitie ne gagne que
     ln(2) ; amincir le dielectrique entre plans de moitie gagne la moitie. C'est
     le conseil que la fiche doit porter, et il n'est pas celui qu'on attend.
+
+    Voir `inductance_etalement_via_via_2d` pour la borne inferieure exacte, et
+    le commentaire de `COEFF_ETALEMENT_VIA_VIA` pour ce qui les separe.
     """
     h = float(hauteur_plans)
     b = float(ecart)
@@ -2331,6 +2365,31 @@ def inductance_etalement_via_via(hauteur_plans, ecart, diametre_via):
     if not (h > 0 and d > 0 and b > d):
         return 0.0
     return COEFF_ETALEMENT_VIA_VIA * h * np.log(b / d)
+
+
+def inductance_etalement_via_via_2d(hauteur_plans, ecart, diametre_via):
+    """La MEME grandeur, dans la limite plans minces. Forme fermee. EN METRES.
+
+        L = (mu0 h / pi) * ln((s - r) / r)          h << s
+
+    C'est l'integrale exacte du flux entre deux plaques paralleles pour deux
+    contacts ponctuels portant +I et -I : le champ y est celui de deux fils, et
+    le calcul se fait a la main. Elle vaut DEUX fois l'equation 13-31, et c'est
+    le facteur exact de la geometrie a deux contacts.
+
+    ELLE N'EST PAS LA VALEUR RETENUE PAR LE MODELE, et c'est voulu : elle
+    suppose h << s, ce qui cesse d'etre vrai des que le condensateur est
+    proche, et elle neglige alors ce que l'ajustement empirique du livre
+    couvre. Elle sert de BORNE INFERIEURE -- pour verifier que le chiffre
+    retenu reste du bon cote -- et de reference quand on veut savoir ce que
+    l'empirique ajoute.
+    """
+    h = float(hauteur_plans)
+    s = float(ecart)
+    r = float(diametre_via) / 2.0
+    if not (h > 0 and r > 0 and s > 2.0 * r):
+        return 0.0
+    return (MU_0 * h / np.pi) * np.log((s - r) / r)
 
 
 def impedance_paire_plans(hauteur_plans, largeur, epsilon_r):
@@ -2352,6 +2411,125 @@ def impedance_paire_plans(hauteur_plans, largeur, epsilon_r):
     if not (h > 0 and w > 0 and er > 0):
         return 0.0
     return (377.0 / np.sqrt(er)) * h / w
+
+
+def _branches_traversee(freq, l_cavite, c_plans, ponts=()):
+    """Les admittances des chemins par lesquels le retour change de plan.
+
+    Rend (y_cavite, [y_pont_k]) a la pulsation de `freq`. Un chemin dont
+    l'impedance est nulle -- resonance serie sans perte -- rend une admittance
+    infinie : l'appelant le traite, on ne l'inverse pas ici.
+
+    LE COURANT NE CHOISIT PAS UN SEUL PONT. Chaque condensateur qui joint les
+    deux plans est une branche en parallele, et le courant s'y repartit en
+    raison de leurs ADMITTANCES. Ne compter que le plus proche -- ce que
+    faisait la version precedente -- surestime l'impedance de la traversee :
+    c'etait le sens prudent, ce n'est pas le sens juste, et sur un plan
+    correctement decouple l'ecart atteint un facteur trois.
+    """
+    omega = 2.0 * np.pi * float(freq)
+    if omega <= 0:
+        return None, []
+
+    def _y(l_serie, c_serie, r_serie):
+        z = complex(r_serie, omega * float(l_serie))
+        if c_serie and c_serie > 0:
+            z += 1.0 / (1j * omega * float(c_serie))
+        return None if abs(z) < 1e-15 else 1.0 / z
+
+    y_cav = _y(l_cavite, c_plans, 0.0)
+    y_ponts = [_y(p.get("l", 0.0), p.get("c"), p.get("esr", 0.0))
+               for p in (ponts or ())]
+    return y_cav, y_ponts
+
+
+def impedance_traversee_ponts(freq, l_cavite, c_plans, ponts=()):
+    """L'impedance de la traversee, TOUS les ponts comptes. EN SI, complexe.
+
+    La cavite et chaque pont sont en PARALLELE : Z = 1 / (Y_cav + somme Y_k).
+    Sans pont, c'est la cavite seule -- le chemin qui existe toujours.
+    """
+    y_cav, y_ponts = _branches_traversee(freq, l_cavite, c_plans, ponts)
+    if y_cav is None and not y_ponts:
+        return 0.0 + 0.0j
+    # Une branche en court-circuit franc emporte tout : Z de la traversee = 0.
+    if y_cav is None or any(y is None for y in y_ponts):
+        return 0.0 + 0.0j
+    total = y_cav + sum(y_ponts)
+    if abs(total) < 1e-300:
+        # Antiresonance idealement sans perte : l'impedance diverge. On rend un
+        # grand nombre fini plutot qu'un infini qui contaminerait la cascade.
+        return complex(1e12, 0.0)
+    return 1.0 / total
+
+
+def repartition_traversee(freq, l_cavite, c_plans, ponts=()):
+    """Le partage du courant de retour entre la cavite et CHAQUE pont.
+
+    Rend (parts_ponts, part_cavite) : les MODULES |I_k / I_total|, dans l'ordre
+    des `ponts`. Comme pour deux branches, la somme depasse un au voisinage de
+    l'antiresonance -- c'est le courant circulant, et c'est une lecture, pas
+    une erreur. Voir `repartition_retour_plans`.
+
+    C'EST CE QUE LE CHEVELU DOIT PEINDRE. Un via de masse porte sa part du
+    retour, et le dessin l'ecrit depuis toujours ; un condensateur de pontage
+    porte la sienne, et le dessin n'en montrait qu'un, sans part. Sur une carte
+    ou trois decouplages entourent la transition, « lequel travaille » est
+    exactement la question qu'on se pose.
+    """
+    y_cav, y_ponts = _branches_traversee(freq, l_cavite, c_plans, ponts)
+    if y_cav is None and not y_ponts:
+        return [0.0] * len(ponts or ()), 1.0
+    # Un court-circuit franc prend tout le courant.
+    courts = [k for k, y in enumerate(y_ponts) if y is None]
+    if courts:
+        parts = [0.0] * len(y_ponts)
+        for k in courts:
+            parts[k] = 1.0 / len(courts)
+        return parts, 0.0
+    if y_cav is None:
+        return [0.0] * len(y_ponts), 1.0
+    total = y_cav + sum(y_ponts)
+    if abs(total) < 1e-300:
+        return [1.0] * len(y_ponts), 1.0
+    return [abs(y / total) for y in y_ponts], abs(y_cav / total)
+
+
+def _ponts_du_param(param):
+    """Les branches de pont d'un dict de parametres de cavite.
+
+    `ponts` (liste) est la forme generale ; `l_pont`/`esr_pont`/`c_pont` le
+    raccourci a un pont, garde pour les appelants qui n'en ont qu'un. UNE SEULE
+    LECTURE de ces deux formes, ici, pour que l'impedance cascadee et la
+    repartition affichee ne puissent pas divorcer.
+    """
+    ponts = (param or {}).get("ponts")
+    if ponts:
+        return list(ponts)
+    if (param or {}).get("l_pont") is None:
+        return []
+    return [{"l": param["l_pont"], "esr": param.get("esr_pont", 0.0),
+             "c": param.get("c_pont")}]
+
+
+def impedance_traversee_param(freq, param):
+    """L'impedance de la traversee, lue depuis un dict de parametres. EN SI."""
+    if not param:
+        return 0.0 + 0.0j
+    return impedance_traversee_ponts(freq, param.get("l_cavite", 0.0),
+                                     param.get("c_plans", 0.0),
+                                     _ponts_du_param(param))
+
+
+def repartition_traversee_param(freq, param):
+    """Le partage du courant, lu depuis un dict de parametres.
+
+    Rend (parts_ponts, part_cavite)."""
+    if not param:
+        return [], 1.0
+    return repartition_traversee(freq, param.get("l_cavite", 0.0),
+                                 param.get("c_plans", 0.0),
+                                 _ponts_du_param(param))
 
 
 def impedance_traversee_plans(freq, l_etalement_cavite, c_plans,
@@ -2376,26 +2554,18 @@ def impedance_traversee_plans(freq, l_etalement_cavite, c_plans,
     sont les resonances propres de la cavite plus haut en frequence -- il y
     faudrait un solveur 3D, le livre le dit.
 
+    UN SEUL PONT EST LE CAS PARTICULIER, PAS LE MODELE. Sur une carte, plusieurs
+    condensateurs joignent les deux plans autour d'une transition, et ils sont
+    tous en parallele. `impedance_traversee_ponts` est la forme generale ; celle-ci
+    n'en est que le raccourci a un pont, gardee parce qu'elle se lit mieux la ou
+    il n'y en a qu'un. UNE SEULE IMPLEMENTATION derriere les deux : deux
+    calculs pour une meme grandeur, ce sont deux valeurs le jour ou l'un bouge.
+
     Rend une impedance complexe, en ohms.
     """
-    omega = 2.0 * np.pi * float(freq)
-    if omega <= 0:
-        return 0.0 + 0.0j
-
-    def _branche(l_serie, c_serie, r_serie):
-        z = complex(r_serie, omega * float(l_serie))
-        if c_serie and c_serie > 0:
-            z += 1.0 / (1j * omega * float(c_serie))
-        return z
-
-    z_cav = _branche(l_etalement_cavite, c_plans, 0.0)
-    if l_pont is None:
-        return z_cav
-    z_pont = _branche(l_pont, c_pont, esr_pont)
-    somme = z_cav + z_pont
-    if abs(somme) < 1e-300:
-        return 0.0 + 0.0j
-    return z_cav * z_pont / somme
+    ponts = () if l_pont is None else ({"l": l_pont, "esr": esr_pont,
+                                        "c": c_pont},)
+    return impedance_traversee_ponts(freq, l_etalement_cavite, c_plans, ponts)
 
 
 def abcd_via_complet(l_boucle, c_totale, freq, y_depart=0.0, y_arrivee=0.0,
@@ -2486,31 +2656,205 @@ def repartition_retour_plans(freq, l_cavite, c_plans, l_pont=None,
     differentes se partage entre le courant de deplacement de la cavite
     inter-plans et le courant traversant le condensateur de decouplage (pont).
 
-    Rend (part_pont, part_cavite) : deux fractions entre 0.0 et 1.0 (somme = 1.0).
+    LE PARTAGE EST COMPLEXE, ET LE FORCER A SOMMER A UN ETAIT FAUX. Deux
+    branches en parallele se partagent le courant en raison de leurs
+    ADMITTANCES COMPLEXES : I_k / I_total = Y_k / (Y_cav + Y_pont). La version
+    precedente prenait 1/|Z| de chaque branche et normalisait la somme a 1,
+    ce qui n'est le bon calcul que si les deux impedances ont la meme phase.
+
+    ET LA DIFFERENCE N'EST PAS UN DETAIL : elle est maximale exactement la ou
+    ce modele existe pour regarder. A l'antiresonance parallele -- l'inductance
+    du pont contre la capacite des plans --, les deux courants sont EN
+    OPPOSITION DE PHASE et chacun DEPASSE le courant total : c'est le courant
+    circulant, et c'est le phenomene lui-meme. Sur le cas du banc a 300 MHz,
+    l'ancienne formule annoncait 73 % / 27 % la ou la verite est 159 % / 59 %.
+    Une somme forcee a 100 % ne peut pas l'ecrire, donc l'effacait.
+
+    Rend (part_pont, part_cavite) : les deux MODULES |I_k / I_total|. Ils
+    somment a 1 quand les deux branches sont en phase, et davantage -- jusqu'a
+    plusieurs fois -- au voisinage de l'antiresonance. Un total superieur a 1
+    est donc une LECTURE, pas une erreur : il dit combien de courant circule
+    entre les deux branches sans jamais rejoindre le signal.
     """
-    omega = 2.0 * np.pi * float(freq)
-    if omega <= 0.0:
+    if float(freq) <= 0.0:
         return (0.0, 1.0) if l_pont is None else (1.0, 0.0)
-
-    def _branche(l_serie, c_serie, r_serie):
-        z = complex(r_serie, omega * float(l_serie))
-        if c_serie and c_serie > 0:
-            z += 1.0 / (1j * omega * float(c_serie))
-        return z
-
-    z_cav = _branche(l_cavite, c_plans, 0.0)
     if l_pont is None:
         return 0.0, 1.0
+    # UNE SEULE IMPLEMENTATION : `repartition_traversee` porte le calcul pour un
+    # nombre quelconque de ponts, celle-ci n'en est que la lecture a un pont.
+    parts, part_cav = repartition_traversee(
+        freq, l_cavite, c_plans,
+        ({"l": l_pont, "esr": esr_pont, "c": c_pont},))
+    return parts[0], part_cav
 
-    z_pont = _branche(l_pont, c_pont, esr_pont)
 
-    # Les courants se partagent en raison inverse des impedances (admittances)
-    y_cav = 1.0 / max(abs(z_cav), 1e-15)
-    y_pont = 1.0 / max(abs(z_pont), 1e-15)
-    tot = y_cav + y_pont
-    if tot <= 0.0:
-        return 0.0, 1.0
-    return y_pont / tot, y_cav / tot
+# ==========================================================================
+# CE QUE LA BOUCLE DE RETOUR RAYONNE -- UN ORDRE DE GRANDEUR, ET SES LIMITES
+# --------------------------------------------------------------------------
+# POURQUOI CE CHIFFRE EXISTE. « Une boucle de retour ouverte rayonne » est un
+# conseil qu'on repete sans jamais le chiffrer, et un conseil qu'on ne chiffre
+# pas ne se hierarchise pas : on ne sait pas s'il faut refaire le routage ou
+# passer a autre chose. Une boucle de trois millimetres carres a 36 MHz et une
+# boucle de deux cents a 500 MHz ne demandent pas la meme journee de travail.
+#
+# LE MODELE : DIPOLE MAGNETIQUE, CHAMP LOINTAIN. Une boucle de courant petite
+# devant la longueur d'onde est un dipole magnetique de moment m = I*A. Son
+# champ lointain vaut
+#
+#     E = eta0 * k^2 * m / (4 pi r)     avec k = 2 pi f / c
+#       = (eta0 pi / c^2) * f^2 * I * A / r
+#       = 1,3169e-14 * f^2 * A * I / r      [SI : Hz, m^2, A, m]
+#
+# C'est la forme fermee exacte pour cette geometrie, pas un ajustement -- elle
+# se derive en trois lignes du potentiel vecteur. C'est la formule du
+# « differential mode radiation » des manuels de CEM (Ott, Paul).
+#
+# CE QU'ELLE NE DIT PAS, ET C'EST LE PLUS IMPORTANT :
+#
+#   · LE MODE COMMUN DOMINE PRESQUE TOUJOURS. Sur une carte reelle, l'emission
+#     qui fait echouer l'essai vient du courant de mode commun sur les CABLES,
+#     pas de la boucle differentielle sur le cuivre. Quelques microamperes de
+#     mode commun sur un cordon d'un metre rayonnent autant que des dizaines de
+#     milliamperes dans une boucle de quelques millimetres carres -- l'ecart
+#     courant est de vingt a quarante decibels. Ce chiffre-ci est donc un
+#     PLANCHER de l'emission, jamais une prediction du resultat d'essai.
+#   · LE CHAMP LOINTAIN COMMENCE A lambda/2pi. A trois metres, cela veut dire
+#     au-dessus de 16 MHz ; en dessous, la formule ne vaut plus et on le dit.
+#   · PAS DE BOITIER, PAS DE PLAN DE SOL REEL, PAS DE RESONANCE DE STRUCTURE.
+#     Le facteur deux du sol d'un site d'essai est pris au pire ; le reste est
+#     hors de portee d'une forme fermee.
+#
+# ON REND DONC UN ORDRE DE GRANDEUR ET SA MARGE, en le nommant comme tel.
+# ==========================================================================
+
+# eta0 * pi / c^2 = mu0 * pi / c : le coefficient du dipole magnetique en
+# champ lointain. On l'ECRIT a partir de mu0 et c plutot que de recopier le
+# 1,3169e-14 des manuels -- une constante recopiee est une constante qu'on ne
+# peut plus verifier.
+COEFF_DIPOLE_MAGNETIQUE = MU_0 * np.pi / C_0
+
+# Le champ lointain d'une boucle ne commence qu'a lambda / 2 pi de la boucle.
+# En deca, la formule surestime -- le champ y decroit en 1/r^3, pas en 1/r.
+def distance_champ_lointain(freq):
+    """La distance a partir de laquelle le champ lointain vaut, en metres."""
+    f = float(freq)
+    return (C_0 / (2.0 * np.pi * f)) if f > 0 else float("inf")
+
+
+def champ_boucle_rayonnant(freq, aire, courant, distance=3.0, sol=True):
+    """Le champ E rayonne par une boucle de courant, en V/m. EN SI.
+
+        E = 1,3169e-14 * f^2 * A * I / r
+
+    `courant` est la valeur EFFICACE de l'harmonique -- les limites de CEM se
+    lisent sur un recepteur calibre en efficace, et donner l'amplitude ferait
+    trois decibels de pessimisme gratuit.
+
+    `sol` a vrai ajoute le facteur DEUX de la reflexion sur le plan de sol d'un
+    site d'essai : c'est le pire cas, celui ou l'onde directe et l'onde
+    reflechie arrivent en phase sur l'antenne. C'est ainsi que la mesure se
+    fait, donc c'est ainsi qu'on compare.
+    """
+    f, a, i, r = float(freq), float(aire), float(courant), float(distance)
+    if not (f > 0 and a > 0 and i > 0 and r > 0):
+        return 0.0
+    e = COEFF_DIPOLE_MAGNETIQUE * f * f * a * i / r
+    return e * (2.0 if sol else 1.0)
+
+
+def en_dbuv_par_metre(champ):
+    """Un champ en V/m vers les dB microvolts par metre des normes."""
+    e = float(champ)
+    if e <= 0:
+        return float("-inf")
+    return 20.0 * np.log10(e / 1e-6)
+
+
+# CISPR 32 / EN 55032, emission rayonnee, en dB(uV/m). Les valeurs a 10 m sont
+# celles de la norme ; celles a 3 m sont celles de sa table pour cette
+# distance, et NON une extrapolation en 1/r -- la norme les donne, on les lit.
+LIMITES_CISPR32 = {
+    ("B", 10.0): ((30e6, 230e6, 30.0), (230e6, 1e9, 37.0)),
+    ("B", 3.0): ((30e6, 230e6, 40.0), (230e6, 1e9, 47.0)),
+    ("A", 10.0): ((30e6, 230e6, 40.0), (230e6, 1e9, 47.0)),
+    ("A", 3.0): ((30e6, 230e6, 50.0), (230e6, 1e9, 57.0)),
+}
+
+
+def limite_cispr32(freq, distance=3.0, classe="B"):
+    """La limite d'emission rayonnee a cette frequence, en dB(uV/m).
+
+    Rend None HORS DE LA BANDE REGLEMENTEE, et ce n'est pas un detail : sous
+    30 MHz, CISPR 32 ne fixe AUCUNE limite rayonnee. Un signal de 12 MHz n'a
+    donc pas de limite sur sa fondamentale -- seules ses harmoniques a partir
+    de la troisieme y tombent. Rendre zero ferait croire au contraire.
+    """
+    table = LIMITES_CISPR32.get((str(classe).upper(), float(distance)))
+    if not table:
+        return None
+    f = float(freq)
+    for f1, f2, lim in table:
+        if f1 <= f < f2:
+            return lim
+    return None
+
+
+def rayonnement_boucle(f0, tr, aire, z0=50.0, v0=3.3, distance=3.0,
+                       classe="B", nb_harmoniques=10):
+    """Ce qu'une boucle de retour d'aire `aire` rayonne, harmonique par
+    harmonique, et ce qu'il reste de marge sur la limite. EN SI.
+
+    Le courant de chaque harmonique est celui que la ligne porte : l'amplitude
+    du spectre trapezoidal divisee par l'impedance caracteristique, ramenee en
+    efficace. C'est le meme spectre que `bilan_sante_transition`, et il faut
+    que ce soit le meme : deux spectres pour un meme signal, ce sont deux
+    verdicts le jour ou l'un bouge.
+
+    Rend un dict avec la liste des harmoniques et la PIRE marge -- celle qui
+    decide. `marge_db` positive veut dire sous la limite.
+    """
+    aire = float(aire)
+    if not (aire > 0):
+        return None
+    z0 = float(z0) if z0 and z0 > 0 else 50.0
+    spectre = spectre_signal_trapeze(f0, tr, v0=v0,
+                                     nb_harmoniques=nb_harmoniques)
+    r = float(distance)
+    lignes, pire = [], None
+    for item in spectre:
+        f = item["freq"]
+        i_eff = item["amplitude"] / z0 / np.sqrt(2.0)
+        e = champ_boucle_rayonnant(f, aire, i_eff, distance=r, sol=True)
+        e_db = en_dbuv_par_metre(e)
+        lim = limite_cispr32(f, distance=r, classe=classe)
+        d_ll = distance_champ_lointain(f)
+        ligne = {
+            "harmonique": item["harmonique"],
+            "freq_hz": f,
+            "courant_eff_ma": round(i_eff * 1e3, 4),
+            "champ_dbuv_m": (round(e_db, 2) if np.isfinite(e_db) else None),
+            "limite_dbuv_m": lim,
+            "marge_db": (round(lim - e_db, 2)
+                         if (lim is not None and np.isfinite(e_db)) else None),
+            # Le champ lointain commence a lambda/2pi : plus loin que la sonde,
+            # et la formule ne vaut plus. On le porte par harmonique, parce que
+            # c'est par harmonique que cela bascule.
+            "champ_lointain": bool(r >= d_ll),
+        }
+        lignes.append(ligne)
+        if ligne["marge_db"] is not None and (pire is None
+                                              or ligne["marge_db"] < pire["marge_db"]):
+            pire = ligne
+    return {
+        "aire_boucle_mm2": round(aire * 1e6, 4),
+        "distance_m": r,
+        "classe": str(classe).upper(),
+        "harmoniques": lignes,
+        "pire": pire,
+        # Aucune harmonique dans la bande reglementee : c'est une information,
+        # pas une absence de resultat.
+        "hors_bande": pire is None,
+    }
 
 
 def spectre_signal_trapeze(f0, tr, v0=3.3, nb_harmoniques=10):
@@ -2542,133 +2886,38 @@ def spectre_signal_trapeze(f0, tr, v0=3.3, nb_harmoniques=10):
 
 def bilan_sante_transition(l_boucle, c_totale, param_cavite, z0=50.0,
                            y_depart=0.0, y_arrivee=0.0,
-                           f0=10e3, tr=1e-9, v0=3.3, nb_harmoniques=10):
+                           f0=10e3, tr=1e-9, v0=3.3, nb_harmoniques=10,
+                           retour_ferme=None):
     """Bilan de sante du signal a travers la transition et sa traversee de plan.
 
-    Calcule pour chaque harmonique impaire (de la fondamentale f0 jusqu'a la
-    nb_harmoniques-ieme) et pour des points de sonde haute frequence jusqu'au
-    genou du front (f_knee = 0.35 / tr) :
-      - L'attenuation en transmission (S21 en dB)
-      - Le dephasage (degres)
-      - La repartition du courant de retour (% decouplage vs % cavite)
+    Evalue la preservation du front montant a travers la transition et sa
+    boucle de retour (bande 1 MHz a f_knee = 0.35 / tr) en combinant la
+    transmission spectrale sans reflexion et l'allongement du temps de montee.
 
     Evalue un score global de reconstruction du signal (0 a 100 %).
+
+    `retour_ferme` dit si des vias de retour referment effectivement la boucle :
+    True, False, ou None quand on ne l'a pas verifie. LE SCORE NE LE SAIT PAS
+    TOUT SEUL -- il ne voit qu'une inductance, sans savoir si elle est une
+    mesure ou un plancher --, et le verdict le disait pourtant : « boucle de
+    retour refermee de facon optimale » sortait sur des transitions ou RIEN ne
+    la referme. Le score reste ce qu'il est, le verdict cesse de l'inventer.
     """
     f0 = float(f0) if f0 and f0 > 0 else 10e3
     tr = float(tr) if tr and tr > 0 else 1e-9
     z0 = float(z0) if z0 and z0 > 0 else 50.0
     f_knee = 0.35 / tr
 
-    spectre = spectre_signal_trapeze(f0, tr, v0=v0, nb_harmoniques=nb_harmoniques)
-
     a_cavite = bool(param_cavite and param_cavite.get("c_plans") is not None
                     and param_cavite.get("l_cavite") is not None)
 
-    def _evaluer_freq(f_hz):
-        if a_cavite:
-            z_trav = impedance_traversee_plans(
-                f_hz, param_cavite["l_cavite"], param_cavite["c_plans"],
-                l_pont=param_cavite.get("l_pont"),
-                esr_pont=param_cavite.get("esr_pont", 0.0),
-                c_pont=param_cavite.get("c_pont"))
-
-            part_pont, part_cav = repartition_retour_plans(
-                f_hz, param_cavite["l_cavite"], param_cavite["c_plans"],
-                l_pont=param_cavite.get("l_pont"),
-                esr_pont=param_cavite.get("esr_pont", 0.0),
-                c_pont=param_cavite.get("c_pont"))
-            part_pont_pct = round(part_pont * 100.0, 1)
-            part_cavite_pct = round(part_cav * 100.0, 1)
-        else:
-            z_trav = 0.0
-            part_pont_pct = 0.0
-            part_cavite_pct = 0.0
-
-        mat = abcd_via_complet(l_boucle, c_totale, f_hz,
-                               y_depart=y_depart, y_arrivee=y_arrivee,
-                               z_traversee=z_trav)
-        s = cascade_to_s(mat, z_ref=z0)
-        s21 = s[1, 0]
-        att_db = 20.0 * np.log10(max(abs(s21), 1e-12))
-        phase_deg = math.degrees(np.angle(s21))
-
-        res = {
-            "s21": s21,
-            "attenuation_db": round(att_db, 3),
-            "phase_deg": round(phase_deg, 3),
-            "part_pont_pct": part_pont_pct,
-            "part_cavite_pct": part_cavite_pct,
-            "z_traversee_ohm": round(abs(z_trav), 3),
-        }
-        if not a_cavite:
-            res["part_vias_gnd_pct"] = 100.0
-        return res
-
-    # 1. Analyse des harmoniques demandees
-    harmoniques_eval = []
-    tau_0 = None
-    for item in spectre:
-        fn = item["freq"]
-        ev = _evaluer_freq(fn)
-        if tau_0 is None:
-            phi_rad = math.radians(ev["phase_deg"])
-            omega_1 = 2.0 * np.pi * fn
-            tau_0 = -phi_rad / omega_1 if omega_1 > 0 else 0.0
-
-        phi_rad = math.radians(ev["phase_deg"])
-        disp_rad = phi_rad + 2.0 * np.pi * fn * tau_0
-        ev["dispersion_deg"] = round(math.degrees(disp_rad), 3)
-
-        h_dict = {
-            "harmonique": item["harmonique"],
-            "freq_hz": fn,
-            "amplitude_v": round(item["amplitude"], 4),
-            "puissance_relative": round(item["puissance_relative"], 4),
-            "attenuation_db": ev["attenuation_db"],
-            "phase_deg": ev["phase_deg"],
-            "dispersion_deg": ev["dispersion_deg"],
-            "part_pont_pct": ev["part_pont_pct"],
-            "part_cavite_pct": ev["part_cavite_pct"],
-            "z_traversee_ohm": ev["z_traversee_ohm"],
-            "module_s21": abs(ev["s21"]),
-        }
-        if "part_vias_gnd_pct" in ev:
-            h_dict["part_vias_gnd_pct"] = ev["part_vias_gnd_pct"]
-        harmoniques_eval.append(h_dict)
-
-    # 2. Points de sondes haute frequence jusqu'au genou (HF / front)
-    ratios_hf = [0.05, 0.15, 0.35, 0.70, 1.0]
-    sondes_hf = []
-    for r in ratios_hf:
-        fhf = r * f_knee
-        ev = _evaluer_freq(fhf)
-        hf_dict = {
-            "nom": "%.0f%% f_knee" % (r * 100),
-            "freq_hz": round(fhf, 1),
-            "attenuation_db": ev["attenuation_db"],
-            "phase_deg": ev["phase_deg"],
-            "part_pont_pct": ev["part_pont_pct"],
-            "part_cavite_pct": ev["part_cavite_pct"],
-            "z_traversee_ohm": ev["z_traversee_ohm"],
-        }
-        if "part_vias_gnd_pct" in ev:
-            hf_dict["part_vias_gnd_pct"] = ev["part_vias_gnd_pct"]
-        sondes_hf.append(hf_dict)
-
-    # 3. Calcul du score de fidelite / reconstruction du signal
+    # Calcul du score de fidelite / reconstruction du signal
     # Evalue la preservation du front montant (bande 1 MHz a f_knee)
     # combinant la transmission spectrale sans reflexion et la preservation du temps de montee.
     freq_sweep = np.logspace(np.log10(1e6), np.log10(max(f_knee, 2e6)), 40)
     scores_sweep = []
     for f in freq_sweep:
-        if a_cavite:
-            zt = impedance_traversee_plans(
-                f, param_cavite["l_cavite"], param_cavite["c_plans"],
-                l_pont=param_cavite.get("l_pont"),
-                esr_pont=param_cavite.get("esr_pont", 0.0),
-                c_pont=param_cavite.get("c_pont"))
-        else:
-            zt = 0.0
+        zt = impedance_traversee_param(f, param_cavite) if a_cavite else 0.0
         mat = abcd_via_complet(l_boucle, c_totale, f,
                                y_depart=y_depart, y_arrivee=y_arrivee,
                                z_traversee=zt)
@@ -2678,28 +2927,61 @@ def bilan_sante_transition(l_boucle, c_totale, param_cavite, z0=50.0,
         scores_sweep.append(s21 * max(0.0, 1.0 - s11))
 
     t_moyen = float(np.mean(scores_sweep)) if scores_sweep else 1.0
+
+    # LE FRONT VOIT TOUTE L'INDUCTANCE SERIE, ET L'ANCIENNE VERSION EN JETAIT
+    # LA MOITIE. Des qu'une cavite etait presente, `l_ret` valait l'inductance
+    # du PONT seule -- ou `l_cavite + 5 nH`, une constante que rien ne
+    # justifiait -- et l'inductance de boucle du via, celle que tout le reste
+    # de l'outil sert a mesurer, DISPARAISSAIT du terme de temps de montee.
+    # Consequence mesuree : un via a 50 nH de boucle notait 4,98 % sans
+    # traversee de plan et 46,11 % avec. Ajouter un changement de reference
+    # AMELIORAIT le score d'un facteur neuf -- l'inverse de la physique, et
+    # l'inverse du classement que cette fiche existe pour rendre.
+    #
+    # Les deux inductances sont EN SERIE sur le meme courant : le barreau avec
+    # sa boucle de retour, puis le passage d'un plan a l'autre. On les somme,
+    # et on prend la traversee au GENOU DU FRONT, qui est la frequence dont le
+    # temps de montee parle.
+    l_serie = float(l_boucle)
     if a_cavite:
-        l_ret = (param_cavite.get("l_pont")
-                 if param_cavite.get("l_pont") is not None
-                 else param_cavite.get("l_cavite", 5e-9) + 5e-9)
-    else:
-        l_ret = float(l_boucle)
-    delta_tr = 2.2 * float(l_ret) / (2.0 * z0)
+        z_knee = impedance_traversee_param(f_knee, param_cavite)
+        omega_knee = 2.0 * np.pi * f_knee
+        # Au-dessus de l'antiresonance la traversee devient CAPACITIVE : elle ne
+        # ralentit alors pas le front, elle le derive. Ce n'est pas un
+        # allongement du temps de montee, et `t_moyen` -- qui cascade
+        # l'impedance complexe entiere -- en rend deja compte.
+        if omega_knee > 0:
+            l_serie += max(0.0, z_knee.imag) / omega_knee
+    delta_tr = 2.2 * l_serie / (2.0 * z0)
     eta_tr = tr / (tr + delta_tr)
     score_pct = round(t_moyen * eta_tr * 100.0, 2)
     score_pct = max(0.0, min(100.0, score_pct))
 
+    # LE VERDICT NE PARLE QUE DE CE QUE LE SCORE MESURE. « Excellent : signal
+    # quasiment intact, boucle de retour refermee de facon optimale » sortait
+    # sur une transition GND -> PWR ou RIEN ne referme la boucle et ou
+    # l'inductance affichee est un PLANCHER : la premiere moitie de la phrase
+    # etait vraie, la seconde inventee. Le score porte sur le FRONT ; il ne
+    # sait rien de la boucle tant qu'on ne le lui dit pas.
     if score_pct >= 95.0:
-        verdict = "Excellent : signal quasiment intact, boucle de retour refermee de facon optimale"
+        verdict = "Excellent : le front traverse la transition quasiment intact"
     elif score_pct >= 90.0:
         verdict = "Bon : front preserve, amortissement ou oscillations minimes"
     elif score_pct >= 75.0:
         verdict = "Degrade : depassements (ringing) et ralentissement notable du front"
     else:
-        verdict = "Critique : forte dispersion et attenuation des harmoniques, integrite compromise"
+        verdict = "Critique : forte dispersion et attenuation, integrite compromise"
 
-    for h in harmoniques_eval:
-        del h["module_s21"]
+    # ET CE QU'IL NE MESURE PAS SE DIT, plutot que de se deviner au silence. Un
+    # front intact ne prouve pas que le retour est referme : a basse frequence
+    # une boucle ouverte coute quelques dizaines de picosecondes, invisibles
+    # sur le front et bien reelles pour le rayonnement et le bruit de plan.
+    if retour_ferme is False:
+        verdict += (" — mais rien ne referme la boucle de retour : l'inductance"
+                    " affichee est un plancher, la vraie est plus grande, et le"
+                    " courant revient par un chemin que ce score ne mesure pas")
+    elif retour_ferme is None:
+        verdict += " (l'etat de la boucle de retour n'a pas ete verifie)"
 
     return {
         "f0_hz": f0,
@@ -2710,7 +2992,5 @@ def bilan_sante_transition(l_boucle, c_totale, param_cavite, z0=50.0,
         "f_knee": round(f_knee, 1),
         "score_reconstruction_pct": score_pct,
         "verdict": verdict,
-        "harmoniques": harmoniques_eval,
-        "sondes_hf": sondes_hf,
     }
 

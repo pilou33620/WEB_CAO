@@ -1170,7 +1170,6 @@ def la_meme_carte_avec_deux_plans_de_masse_se_referme():
     assert t["modelise"]["inductance_source"] == "boucle"
     assert "bilan_sante" in t, "bilan_sante doit être calculé pour la boucle de masse"
     assert t["bilan_sante"]["score_reconstruction_pct"] > 90.0
-    assert all(h.get("part_vias_gnd_pct") == 100.0 for h in t["bilan_sante"]["harmoniques"])
     assert not any("de la masse à de la masse" in a
                    for a in r["avertissements"]), (
         "l'avertissement grave est sorti sur une liaison saine")
@@ -1871,12 +1870,22 @@ T("une déduction et une observation ne se disent pas pareil",
   une_deduction_et_une_observation_ne_se_disent_pas_pareil)
 
 
-def la_repartition_spectrale_somme_a_un_et_bascule_en_frequence():
-    """LA REPARTITION CAVITE / DECOUPLAGE SUIT LA PHYSIQUE A TOUTE FREQUENCE.
+def la_repartition_spectrale_est_une_division_de_courant_complexe():
+    """LA REPARTITION CAVITE / DECOUPLAGE EST LA DIVISION DE COURANT EXACTE.
 
-    A 10 kHz, la cavite a une impedance de plusieurs kilo-ohms et le decouplage
-    porte plus de 95 % du retour. A tres haute frequence (500 MHz), l'ESL du
-    decouplage bloque et la cavite inter-plans prend le dessus.
+    Deux branches en parallele se partagent le courant en raison de leurs
+    ADMITTANCES COMPLEXES : I_k / I_total = Y_k / (Y_cav + Y_pont). L'ancienne
+    version prenait 1/|Z| de chaque branche et NORMALISAIT la somme a 1, ce qui
+    n'est le bon calcul que si les deux impedances ont la meme phase.
+
+    LA DIFFERENCE EST MAXIMALE LA OU CE MODELE EXISTE POUR REGARDER. Au
+    voisinage de l'antiresonance parallele -- l'ESL du pont contre la capacite
+    des plans --, les deux courants sont en OPPOSITION DE PHASE et chacun
+    DEPASSE le courant total : c'est le courant circulant, et c'est le
+    phenomene lui-meme. Une somme forcee a 100 % ne peut pas l'ecrire, donc
+    l'effacait.
+
+    On verifie donc contre la division de courant calculee ici, a la main.
     """
     l_cav = 0.05e-9
     c_plans = 1e-9
@@ -1884,30 +1893,843 @@ def la_repartition_spectrale_somme_a_un_et_bascule_en_frequence():
     c_pont = 100e-9
     esr_pont = 0.03
 
-    # A 10 kHz : decouplage ultra-dominant
+    def _exact(freq):
+        w = 2.0 * np.pi * freq
+        z_cav = 1j * w * l_cav + 1.0 / (1j * w * c_plans)
+        z_pont = esr_pont + 1j * w * l_pont + 1.0 / (1j * w * c_pont)
+        y_cav, y_pont = 1.0 / z_cav, 1.0 / z_pont
+        return abs(y_pont / (y_cav + y_pont)), abs(y_cav / (y_cav + y_pont))
+
+    # A 10 kHz : les deux branches sont capacitives, donc en phase. La somme
+    # vaut un, et le decouplage porte tout.
     pp_bf, pc_bf = _tl.repartition_retour_plans(10e3, l_cav, c_plans,
                                                 l_pont=l_pont, esr_pont=esr_pont,
                                                 c_pont=c_pont)
-    proche(pp_bf + pc_bf, 1.0, 1e-6, "somme a 10 kHz")
+    ep_bf, ec_bf = _exact(10e3)
+    proche(pp_bf, ep_bf, 1e-9, "part du pont a 10 kHz")
+    proche(pc_bf, ec_bf, 1e-9, "part de la cavite a 10 kHz")
+    proche(pp_bf + pc_bf, 1.0, 1e-3, "somme a 10 kHz")
     assert pp_bf > 0.95, "le decouplage ne porte pas le retour a 10 kHz (%.2f)" % pp_bf
     assert pc_bf < 0.05, "la cavite porte trop de retour a 10 kHz (%.2f)" % pc_bf
 
-    # A 500 MHz : la cavite prend le dessus face a l'ESL du condensateur
+    # A 500 MHz : la cavite prend le dessus face a l'ESL du condensateur, et le
+    # courant CIRCULE entre les deux branches -- la somme depasse un.
     pp_hf, pc_hf = _tl.repartition_retour_plans(500e6, l_cav, c_plans,
                                                 l_pont=l_pont, esr_pont=esr_pont,
                                                 c_pont=c_pont)
-    proche(pp_hf + pc_hf, 1.0, 1e-6, "somme a 500 MHz")
+    ep_hf, ec_hf = _exact(500e6)
+    proche(pp_hf, ep_hf, 1e-9, "part du pont a 500 MHz")
+    proche(pc_hf, ec_hf, 1e-9, "part de la cavite a 500 MHz")
     assert pc_hf > pp_hf, (
         "la cavite ne prend pas le dessus en HF : cavite=%.2f, pont=%.2f"
         % (pc_hf, pp_hf))
 
+    # ET LE COURANT CIRCULANT EXISTE, ce qui est le point : a l'antiresonance
+    # les deux parts depassent chacune 100 % et la somme vaut plusieurs fois un.
+    f_anti = 1.0 / (2.0 * np.pi * np.sqrt(l_pont * c_plans))
+    pp_ar, pc_ar = _tl.repartition_retour_plans(f_anti, l_cav, c_plans,
+                                                l_pont=l_pont, esr_pont=esr_pont,
+                                                c_pont=c_pont)
+    assert pp_ar > 1.0 and pc_ar > 1.0, (
+        "le courant circulant de l'antiresonance (%.0f MHz) n'apparait pas :"
+        " pont=%.2f, cavite=%.2f" % (f_anti / 1e6, pp_ar, pc_ar))
+
+
+def le_retour_par_la_cavite_est_nomme_comme_un_defaut():
+    """UN CHEMIN QUI EXISTE N'EST PAS UN CHEMIN BENIN.
+
+    Bogatin 7.14 a raison : le retour change de plan par la capacite repartie
+    de la paire de plans, en courant de deplacement, et refuser de le chiffrer
+    declarait impossible ce qui se produit sur toute carte multicouche.
+
+    MAIS CE COURANT-LA N'ENTRE PAS DANS UN CONDUCTEUR, IL ENTRE DANS LA CAVITE :
+    il s'y propage jusqu'aux bords de la carte, y rayonne, et revient en bruit
+    sur le reseau d'alimentation. RIEN DE CELA NE SE VOIT SUR S21 -- le signal,
+    lui, passe. La fiche pouvait donc annoncer « traversee 0,09 ohm, front
+    intact » sur une transition qui injecte l'essentiel de son retour dans le
+    plan d'alimentation.
+    """
+    _stack = [dict(_cu("TOP", "signal")), _di("PP", 0.200, 4.30),
+              dict(_cu("L1", "plane"), net="GND"), _di("CORE", 1.065, 4.50),
+              dict(_cu("L2", "plane"), net="PWR"), _di("PP2", 0.200, 4.30),
+              dict(_cu("BOT", "signal"))]
+
+    def _r(f0, tr, dist_pont=8.0):
+        via = _via_moignon(0, 6, ponts=[{"x": 10.0 + dist_pont, "y": 0.0,
+                                         "repere": "C9", "capacite_F": 100e-9}],
+                           rayon=10.0)
+        via["aire_plans_mm2"] = 2000.0
+        via["er_plans"] = 4.50
+        via["aire_plans_majoree"] = True
+        d = _doc_moignon(_stack, 0, 6, via, fc=f0, fmax=3e9)
+        d["analyse"]["f_debut"] = 10e6
+        d["f_fondamentale"], d["temps_montee"] = f0, tr
+        return _se.simuler(d)
+
+    # 1. SIGNAL LENT : le decouplage travaille, la cavite ne prend rien, et on
+    #    ne dit rien -- un avertissement qui sort sur le cas ordinaire cesse
+    #    d'etre lu.
+    lent = _r(10e6, 35e-9)
+    cav = lent["discontinuites"]["transitions"][0]["cavite"]
+    assert cav["part_cavite"] < 0.05, (
+        "a 10 MHz un 100 nF doit tout porter (%.3f par la cavite)"
+        % cav["part_cavite"])
+    assert not any("CAPACITÉ RÉPARTIE" in a for a in lent["avertissements"]), (
+        "rien a dire quand le decouplage fait son travail")
+
+    # 2. SIGNAL RAPIDE : l'ESL du condensateur bloque, la cavite prend le
+    #    dessus, et cela DOIT se dire -- avec ce que ce courant fait vraiment.
+    vite = _r(600e6, 0.2e-9)
+    cav2 = vite["discontinuites"]["transitions"][0]["cavite"]
+    assert cav2["part_cavite"] > 0.50, (
+        "a 600 MHz la cavite doit prendre le dessus (%.3f)" % cav2["part_cavite"])
+    msg = [a for a in vite["avertissements"] if "CAPACITÉ RÉPARTIE" in a]
+    assert msg, "le retour par la cavite doit etre nomme"
+    for mot in ("bruit", "alimentation", "S21"):
+        assert mot in msg[0], (
+            "le message doit dire ce que ce courant fait vraiment (« %s ») : %s"
+            % (mot, msg[0]))
+
+    # 3. ANTIRESONANCE : au-dela de cent pour cent ce n'est plus un partage,
+    #    c'est du courant qui CIRCULE. « 111 % passe par la cavite » serait
+    #    absurde ; c'est le phenomene qu'il faut nommer.
+    anti = _r(200e6, 0.5e-9)
+    cav3 = anti["discontinuites"]["transitions"][0]["cavite"]
+    assert cav3["part_cavite"] > 1.0, (
+        "le cas de test doit tomber sur l'antiresonance (%.3f)"
+        % cav3["part_cavite"])
+    m3 = [a for a in anti["avertissements"] if "ANTIRÉSONANCE" in a]
+    assert m3, "l'antiresonance doit etre nommee plutot que rendue en pourcents"
+    assert "CIRCULE" in m3[0], "le courant circulant doit etre dit"
+    # ET LES AVERTISSEMENTS SUIVANTS SURVIVENT : le message de l'antiresonance
+    # ne doit pas court-circuiter la suite de la liste.
+    assert any("rayonne" in a or "CISPR" in a for a in anti["avertissements"]), (
+        "le rayonnement doit encore etre evalue apres le message d'antiresonance")
+
+
+def une_cavite_non_sondee_n_invente_pas_de_part():
+    """« CENT POUR CENT PAR LA CAVITE » NE VEUT RIEN DIRE SANS CAVITE MODELISEE.
+
+    Quand la page ne cherche pas les decouplages, la branche capacitive de la
+    cavite n'existe pas dans le modele -- `c_plans` vaut zero et il ne reste
+    qu'un etalement en serie. Le partage rendait alors 100 %, et la fiche
+    allait ecrire « tout le retour passe par la capacite repartie des plans » :
+    c'est faux, on n'a simplement pas regarde. Deux enonces differents, et
+    celui-la est un enonce sur la CARTE la ou on n'a qu'une limite de l'OUTIL.
+    """
+    stack = [dict(_cu("TOP", "signal")), _di("PP", 0.200, 4.30),
+             dict(_cu("L1", "plane"), net="GND"), _di("CORE", 1.065, 4.50),
+             dict(_cu("L2", "plane"), net="PWR"), _di("PP2", 0.200, 4.30),
+             dict(_cu("BOT", "signal"))]
+    # Pas de `ponts` du tout : la page ne cherche pas.
+    d = _doc_moignon(stack, 0, 6, _via_moignon(0, 6), fc=10e6, fmax=1e9)
+    d["analyse"]["f_debut"] = 1e6
+    d["f_fondamentale"], d["temps_montee"] = 10e6, 35e-9
+    r = _se.simuler(d)
+    cav = r["discontinuites"]["transitions"][0]["cavite"]
+
+    assert cav.get("etalement_seul") is True, "le cas non sonde doit etre nomme"
+    assert cav.get("part_cavite") is None, (
+        "sans branche capacitive, la part de cavite ne doit pas s'inventer (%s)"
+        % cav.get("part_cavite"))
+    assert not any("CAPACITÉ RÉPARTIE" in a for a in r["avertissements"]), (
+        "on ne doit pas affirmer un chemin qu'on n'a pas cherche")
+    # Mais la SOUS-ESTIMATION, elle, se dit.
+    assert any("SOUS-ESTIMÉE" in a for a in r["avertissements"]), (
+        "la traversee sous-estimee doit etre annoncee")
+
+
+def l_aire_des_plans_majoree_se_dit():
+    """UNE APPROXIMATION QUI FLATTE DOIT SE LIRE.
+
+    La page envoie l'aire de la CARTE ENTIERE, jamais celle des deux versements
+    en regard : mesurer l'intersection de deux jeux de polygones a trous n'en
+    vaut pas encore la peine. Une aire majoree donne une capacite majoree, donc
+    une cavite qui parait MOINS chere a traverser qu'elle ne l'est.
+
+    LE CHAMP ARRIVAIT ET N'ETAIT PAS LU. La fiche disait « aire supposee »
+    quand elle venait du repli -- et ne disait RIEN quand elle venait de la
+    page, c'est-a-dire justement quand elle majore.
+    """
+    _stack = [dict(_cu("TOP", "signal")), _di("PP", 0.200, 4.30),
+              dict(_cu("L1", "plane"), net="GND"), _di("CORE", 1.065, 4.50),
+              dict(_cu("L2", "plane"), net="PWR"), _di("PP2", 0.200, 4.30),
+              dict(_cu("BOT", "signal"))]
+
+    def _cav(majoree):
+        via = _via_moignon(0, 6, ponts=[{"x": 12.0, "y": 0.0, "repere": "C12",
+                                         "capacite_F": 100e-9}], rayon=10.0)
+        via["aire_plans_mm2"] = 2000.0
+        via["er_plans"] = 4.50
+        if majoree:
+            via["aire_plans_majoree"] = True
+        d = _doc_moignon(_stack, 0, 6, via, fc=12e6, fmax=100e6)
+        d["analyse"]["f_debut"] = 1e6
+        d["f_fondamentale"], d["temps_montee"] = 12e6, 13e-9
+        r = _se.simuler(d)
+        return r["discontinuites"]["transitions"][0]["cavite"], r["avertissements"]
+
+    cav_maj, av_maj = _cav(True)
+    cav_non, av_non = _cav(False)
+
+    assert cav_maj["aire_majoree"] is True, "le champ de la page doit etre lu"
+    assert cav_non["aire_majoree"] is False, "et ne pas s'inventer"
+    assert any("majorée" in a for a in av_maj), (
+        "une aire majoree doit se dire dans l'avertissement")
+    assert not any("majorée" in a for a in av_non), (
+        "une aire non declaree majoree ne doit pas porter la reserve")
+
+
+def une_reference_absente_ne_se_dit_pas_comme_une_reference_qui_change():
+    """PAS DE CUIVRE = PAS DE REFERENCE, ET CE N'EST PAS LE MEME DEFAUT.
+
+    Entre deux versements d'alimentation, dans une decoupe, au bord d'un
+    degagement : le plan de reference n'a AUCUN cuivre au droit du via. Le net
+    de la couche sert alors de repli, et l'outil annoncait « la reference change
+    vers +3V3 » -- une phrase plausible et FAUSSE, puisque ce +3V3 n'est pas la.
+
+    C'EST UN DEFAUT D'UN AUTRE ORDRE, ET PLUS GRAVE : le courant de retour n'a
+    rien a suivre, et aucun condensateur de pontage ne rattrape une reference
+    ABSENTE. Il passe donc AVANT le message de changement de reference, et il le
+    remplace.
+    """
+    stack = [dict(_cu("TOP", "signal")), _di("PP", 0.200, 4.30),
+             dict(_cu("L1", "plane"), net="GND"), _di("CORE", 0.710, 4.50),
+             dict(_cu("L2", "plane"), net="+3V3"), _di("PP2", 0.200, 4.30),
+             dict(_cu("BOT", "signal"))]
+    via = _via_moignon(0, 6, retours=[_retour_via(10.7, 0.0)])
+    via["plans_sans_cuivre"] = ["L2"]
+    d = _doc_moignon(stack, 0, 6, via, fc=10e6, fmax=1e9)
+    d["analyse"]["f_debut"] = 1e6
+    d["f_fondamentale"], d["temps_montee"] = 10e6, 35e-9
+    r = _se.simuler(d)
+    t = r["discontinuites"]["transitions"][0]
+
+    assert t["retour"]["plans_sans_cuivre"] == ["L2"], (
+        "la mesure de la page doit remonter : %s"
+        % t["retour"]["plans_sans_cuivre"])
+    msg = [a for a in r["avertissements"] if "AUCUN CUIVRE" in a]
+    assert msg, "une reference absente doit etre nommee"
+    for mot in ("ABSENTE", "repli", "aucun condensateur"):
+        assert mot in msg[0], "le message doit dire « %s » : %s" % (mot, msg[0])
+
+    # ON NE RETIENT QUE DES PLANS QUI SONT BIEN DES REFERENCES ICI. Une page qui
+    # annoncerait une couche hors sujet ne doit pas faire sortir le message.
+    via2 = _via_moignon(0, 6, retours=[_retour_via(10.7, 0.0)])
+    via2["plans_sans_cuivre"] = ["UNE_COUCHE_QUI_NE_REFERENCE_RIEN"]
+    d2 = _doc_moignon(stack, 0, 6, via2, fc=10e6, fmax=1e9)
+    d2["analyse"]["f_debut"] = 1e6
+    d2["f_fondamentale"], d2["temps_montee"] = 10e6, 35e-9
+    r2 = _se.simuler(d2)
+    assert not r2["discontinuites"]["transitions"][0]["retour"]["plans_sans_cuivre"], (
+        "un plan qui n'est pas une reference de CE via ne compte pas")
+    assert not any("AUCUN CUIVRE" in a for a in r2["avertissements"]), (
+        "et rien ne doit sortir")
+
+
+def le_net_mesure_par_la_page_prime_sur_celui_de_la_couche():
+    """UN PLAN N'EST PAS D'UN SEUL NET, ET LE SUPPOSER ETAIT LE DEFAUT DE FOND.
+
+    L'empilage attribue un net a la COUCHE. Or une couche de plan est
+    PARTITIONNEE : un ilot d'alimentation de quelques millimetres carres, et
+    tout le reste en masse. Le net de la couche vaut alors « PWR », et il
+    s'appliquait a la couche ENTIERE.
+
+    CE QUE CELA FAISAIT DIRE. Un via de signal qui plonge la ou le plan est de
+    la MASSE sortait « la reference change de net, aucun via de masse ne peut
+    refermer » -- alors que les vias de masse autour referment parfaitement. On
+    criait au defaut grave sur un routage correct, et on ecartait dix vias de
+    retour qui travaillent.
+
+    SEULE LA PAGE A LA GEOMETRIE DU CUIVRE. Elle mesure le net AU DROIT DU VIA
+    et l'envoie ; le serveur le prefere partout ou elle parle, et retombe sur le
+    net de la couche la ou elle se tait.
+    """
+    stack = [dict(_cu("TOP", "signal")), _di("PP", 0.200, 4.30),
+             dict(_cu("L1", "plane"), net="GND"), _di("CORE", 0.710, 4.50),
+             dict(_cu("L2", "plane"), net="PWR"), _di("PP2", 0.200, 4.30),
+             dict(_cu("BOT", "signal"))]
+
+    def _r(plans_nets=None, joints=None):
+        ret = _retour_via(10.7, 0.0)
+        if joints is not None:
+            ret["plans_joints"] = joints
+        via = _via_moignon(0, 6, retours=[ret])
+        if plans_nets:
+            via["plans_nets"] = plans_nets
+        d = _doc_moignon(stack, 0, 6, via, fc=10e6, fmax=1e9)
+        d["analyse"]["f_debut"] = 1e6
+        d["f_fondamentale"], d["temps_montee"] = 10e6, 35e-9
+        return _se.simuler(d)["discontinuites"]["transitions"][0]
+
+    # 1. SANS MESURE : le net de la couche, et le verdict grave.
+    t = _r()
+    assert t["retour"]["nets_differents"] is True, "l'empilage dit GND puis PWR"
+    assert t["retour"]["retenus"] == 0, "aucun via ne peut joindre GND a PWR"
+
+    # 2. AVEC LA MESURE : ici L2 est de la MASSE, la reference ne change pas de
+    #    net, et le via de masse referme.
+    t2 = _r(plans_nets={"L1": "GND", "L2": "GND"},
+            joints=["L1", "L2"])
+    assert t2["retour"]["nets_differents"] is False, (
+        "mesure sur place : les deux plans sont de la masse")
+    assert t2["retour"]["reference_change"] is False, "il n'y a plus de defaut"
+    assert t2["retour"]["retenus"] == 1, (
+        "le via de masse referme la boucle (%d retenus)" % t2["retour"]["retenus"])
+    assert t2["modelise"]["inductance_source"] == "boucle", (
+        "l'inductance devient une MESURE : %s"
+        % t2["modelise"]["inductance_source"])
+    assert t2.get("cavite") is None, "sans changement de net, pas de cavite"
+
+    # 3. UNE MESURE PARTIELLE NE VAUT QUE POUR CE QU'ELLE DIT. Le plan que la
+    #    page n'a pas su mesurer garde le net de la couche.
+    t3 = _r(plans_nets={"L1": "GND"})
+    assert t3["retour"]["nets_arrivee"] == ["PWR"], (
+        "sans mesure sur L2, on retombe sur le net de la couche : %s"
+        % t3["retour"]["nets_arrivee"])
+
+    # 4. LA PORTEE RESTE LE MOT DU SERVEUR. La page suppose les vias
+    #    traversants ; elle ne peut pas declarer qu'un via touche un plan HORS
+    #    de son percage, et `plans_joints` ne doit pas le lui permettre.
+    ret = _retour_via(10.7, 0.0, lf=0, lt=2)      # borgne : TOP -> L1
+    ret["plans_joints"] = ["L1", "L2"]            # la page en annonce deux
+    via = _via_moignon(0, 6, retours=[ret])
+    via["plans_nets"] = {"L1": "GND", "L2": "GND"}
+    d = _doc_moignon(stack, 0, 6, via, fc=10e6, fmax=1e9)
+    d["analyse"]["f_debut"] = 1e6
+    d["f_fondamentale"], d["temps_montee"] = 10e6, 35e-9
+    t4 = _se.simuler(d)["discontinuites"]["transitions"][0]
+    f = t4["retour"]["vias"][0]
+    assert not f["retenu"], "un via borgne ne referme pas la hauteur"
+    assert "L2" not in f["plans"], (
+        "un via perce de TOP a L1 ne touche pas L2, quoi qu'en dise la page : %s"
+        % f["plans"])
+
+
+def un_via_de_masse_sur_un_autre_versement_ne_referme_rien():
+    """LE MEME PLAN N'EST PAS LE MEME CUIVRE, et c'etait le dernier endroit ou
+    l'hypothese « un net par couche » survivait.
+
+    LE CAS, ET IL VIENT D'UNE CARTE REELLE. Un via de signal plonge DANS un
+    ilot d'alimentation de L2 ; des vias de masse a un millimetre touchent L2
+    aussi -- mais HORS de l'ilot, sur la masse qui l'entoure. `plans_joints`
+    rend des NOMS DE COUCHE : « touche L2 » est vrai des deux cotes d'une
+    frontiere qui les separe electriquement.
+
+    CE QUE CELA DONNAIT, ET C'EST LE SENS QUI FLATTE. Les noms concordaient,
+    les vias etaient retenus, `raccorde` passait a vrai -- et l'inductance
+    sortait comme une MESURE de boucle. Elle cumulait meme la cavite
+    (« boucle+cavite »), donc le meme retour compte deux fois par deux chemins
+    dont un n'existe pas. Et le verdict CRITIQUE etait masque, puisqu'il exige
+    `not raccorde` : la fiche annoncait « les 2 vias ont un retour identifie »
+    sur le defaut meme qu'on cherchait a voir.
+
+    LA PREUVE EST LOCALE ET DISPONIBLE : la page a mesure le net sous le via de
+    SIGNAL, on connait celui du via de masse. Quand les deux sont lus et qu'ils
+    DIFFERENT, il est demontre que ce via touche un autre versement.
+    """
+    stack = [dict(_cu("TOP", "signal")), _di("PP", 0.200, 4.30),
+             dict(_cu("L1", "plane"), net="GND"), _di("CORE", 0.710, 4.50),
+             dict(_cu("L2", "plane"), net="GND"), _di("PP2", 0.200, 4.30),
+             dict(_cu("BOT", "signal"))]
+
+    def _t(plans_nets):
+        ret = _retour_via(10.7, 0.0)
+        ret["plans_joints"] = ["L1", "L2"]     # le via de masse touche les deux
+        via = _via_moignon(0, 6, retours=[ret])
+        via["plans_nets"] = plans_nets
+        d = _doc_moignon(stack, 0, 6, via, fc=10e6, fmax=1e9)
+        d["analyse"]["f_debut"] = 1e6
+        d["f_fondamentale"], d["temps_montee"] = 10e6, 35e-9
+        r = _se.simuler(d)
+        _t.dernier = r
+        return r["discontinuites"]["transitions"][0]
+
+    # 1. HORS DE L'ILOT : les deux plans sont de la masse SOUS LE VIA DE SIGNAL,
+    #    le via de masse touche la meme masse, il referme. Cas ordinaire.
+    bon = _t({"L1": "GND", "L2": "GND"})
+    assert bon["retour"]["retenus"] == 1, (
+        "sur la masse, le via referme : %d" % bon["retour"]["retenus"])
+    assert bon["modelise"]["inductance_source"] == "boucle"
+
+    # 2. DANS L'ILOT : sous le via de signal, L2 porte +3V3. Le via de masse
+    #    touche L2, mais pas CE cuivre-la. Il ne porte pas ce retour.
+    mal = _t({"L1": "GND", "L2": "+3V3"})
+    mal_r = _t.dernier
+    f = mal["retour"]["vias"][0]
+    assert not f["retenu"], "un via de masse ne porte pas le retour d'un ilot"
+    assert f["plans_autre_versement"] == ["L2"], (
+        "le plan croise doit etre nomme : %s" % f.get("plans_autre_versement"))
+    # LA RAISON PORTEE PAR LE VIA EST COURTE, parce qu'elle se peint sur le
+    # cuivre : la visionneuse la met telle quelle dans le cartouche du chevelu,
+    # et une phrase de cent caracteres y est illisible. Meme libelle que
+    # l'editeur, mot pour mot.
+    assert f["raison"] == "L2 : autre versement (+3V3 ici)", (
+        "libelle de canvas, court et identique a celui de l'editeur : %s"
+        % f["raison"])
+    assert mal["retour"]["retenus"] == 0
+    assert mal["retour"]["raccorde"] is False, (
+        "raccorde faux, sinon le verdict critique reste masque")
+    assert "boucle" not in mal["modelise"]["inductance_source"], (
+        "sans retour retenu, l'inductance est un PLANCHER, pas une mesure : %s"
+        % mal["modelise"]["inductance_source"])
+
+    # 3. ET LE CHIFFRE AFFICHE BAISSE -- c'est tout le probleme, et c'est
+    #    pourquoi l'ETIQUETTE est la seule protection. La self partielle du
+    #    barreau seul (0,52 nH ici) est PLUS PETITE que la boucle refermee par
+    #    un via lointain (0,67 nH) : L_boucle = L_self + L_retour - 2M, et un
+    #    retour a dix millimetres ne se mutualise presque pas. Un lecteur qui
+    #    ne verrait que le nombre conclurait que l'ilot est meilleur que la
+    #    masse. La fiche doit donc porter le mot, a la lettre.
+    assert mal["modelise"]["inductance_nH"] < bon["modelise"]["inductance_nH"], (
+        "cas connu : le plancher est plus BAS que la boucle -- si cela change,"
+        " le raisonnement de ce test doit etre revu")
+    assert "PLANCHER" in (mal["retour"].get("raison") or ""), (
+        "le nombre baisse : sans le mot, il se lit comme une amelioration"
+        " (%s)" % mal["retour"].get("raison"))
+    assert mal["retour"]["reference_change"] is True, (
+        "les nets differents sous le via de signal, c'est le defaut grave")
+
+    # 4. ET LE GESTE QUI REPARE EST DIT UNE FOIS, LONGUEMENT, dans les
+    #    avertissements -- pas dix fois sur la carte. Il n'envoie pas chercher
+    #    un percage trop court : il envoie regarder la DECOUPE du plan.
+    msg = [a for a in mal_r["avertissements"] if "MÊME CUIVRE" in a]
+    assert msg, "le croisement de versement doit etre explique une fois"
+    for mot in ("partitionné", "le cuivre ne l'est pas", "PLANCHER",
+                "pas d'ajouter un via"):
+        assert mot in msg[0], "il manque « %s » : %s" % (mot, msg[0])
+
+    # 5. QUAND LA PAGE SE TAIT, ON NE DEMONTRE RIEN et on garde le via : mieux
+    #    vaut une reserve dite qu'un refus invente.
+    muet = _t({"L1": "GND"})
+    assert muet["retour"]["vias"][0]["retenu"], (
+        "sans mesure sur L2, rien ne prouve que le versement differe")
+
+
+def tous_les_ponts_comptent_pas_seulement_le_plus_proche():
+    """PLUSIEURS CONDENSATEURS SONT PLUSIEURS BRANCHES EN PARALLELE.
+
+    La version precedente ne gardait que le condensateur le PLUS PROCHE, en
+    disant que c'etait « le sens prudent ». C'etait vrai et ce n'etait pas le
+    sens juste : le courant se repartit entre TOUS les ponts, en raison de
+    leurs admittances. Sur le cas du banc, ne compter que le plus proche
+    surestime l'impedance de la traversee d'un facteur 1,6.
+
+    ET LA VALEUR DU CONDENSATEUR COMPTE PLUS QUE SA DISTANCE en basse
+    frequence : un 1 nF a 7 mm ne porte que quatre millemes du retour la ou
+    deux 100 nF se partagent le reste. C'est SA capacite qui fixe l'impedance
+    de la branche, pas son etalement.
+    """
+    l_cav, c_plans = 1.0917e-9, 74.82e-12
+    ponts = [{"l": 2.6704e-9, "c": 100e-9, "esr": 0.03},   # C12 a 2 mm
+             {"l": 3.2808e-9, "c": 100e-9, "esr": 0.03},   # C13 a 4 mm
+             {"l": 3.7735e-9, "c": 1e-9, "esr": 0.03}]     # C14 a 7 mm, 1 nF
+    f = 12e6
+
+    parts, part_cav = _tl.repartition_traversee(f, l_cav, c_plans, ponts)
+    assert len(parts) == 3, "une part par pont"
+    assert parts[0] > parts[1] > parts[2], (
+        "l'ordre des parts ne suit pas les branches : %s" % parts)
+    proche(parts[0], 0.6166, 0.01, "part du 100 nF a 2 mm")
+    proche(parts[1], 0.3899, 0.01, "part du 100 nF a 4 mm")
+    assert parts[2] < 0.01, (
+        "un 1 nF a 7 mm ne doit presque rien porter a 12 MHz (%.4f)" % parts[2])
+    assert part_cav < 0.01, (
+        "la cavite ne porte presque rien face a des 100 nF (%.4f)" % part_cav)
+
+    # L'IMPEDANCE SUIT LA MEME LISTE. Un seul pont surestime.
+    z_tous = _tl.impedance_traversee_ponts(f, l_cav, c_plans, ponts)
+    z_seul = _tl.impedance_traversee_plans(f, l_cav, c_plans,
+                                           l_pont=ponts[0]["l"],
+                                           esr_pont=0.03, c_pont=ponts[0]["c"])
+    assert abs(z_seul) > abs(z_tous), (
+        "compter tous les ponts doit BAISSER l'impedance : %.4f contre %.4f"
+        % (abs(z_seul), abs(z_tous)))
+    proche(abs(z_seul) / abs(z_tous), 1.62, 0.05,
+           "le facteur entre un pont et trois")
+
+    # UNE SEULE IMPLEMENTATION derriere les deux formes. Le raccourci a un pont
+    # doit rendre EXACTEMENT ce que rend la forme generale avec une liste d'un.
+    z_g = _tl.impedance_traversee_ponts(f, l_cav, c_plans, [ponts[0]])
+    proche(abs(z_seul), abs(z_g), 1e-12, "le raccourci a un pont")
+    pp, pc = _tl.repartition_retour_plans(f, l_cav, c_plans,
+                                          l_pont=ponts[0]["l"],
+                                          esr_pont=0.03, c_pont=ponts[0]["c"])
+    pg, pcg = _tl.repartition_traversee(f, l_cav, c_plans, [ponts[0]])
+    proche(pp, pg[0], 1e-12, "la repartition a un pont")
+    proche(pc, pcg, 1e-12, "la part de cavite a un pont")
+
+    # SANS AUCUN PONT, c'est la cavite seule -- le chemin qui existe toujours.
+    z_cav = _tl.impedance_traversee_ponts(f, l_cav, c_plans, ())
+    proche(abs(z_cav), abs(_tl.impedance_traversee_plans(f, l_cav, c_plans)),
+           1e-12, "la cavite seule")
+
+
+def la_fiche_de_cavite_porte_chaque_pont_et_sa_part():
+    """CE QUE LE CHEVELU DOIT POUVOIR PEINDRE : un trait par pont, et sa part.
+
+    Un via de retour porte sa part du courant depuis toujours et le dessin
+    l'ecrit ; un condensateur de pontage n'en portait aucune -- on n'en montrait
+    qu'un, sans dire ce qu'il vaut. « Lequel travaille » est exactement la
+    question qu'on se pose devant trois decouplages autour d'une transition.
+    """
+    stack = [dict(_cu("TOP", "signal")), _di("PP", 0.200, 4.30),
+             dict(_cu("L1", "plane"), net="GND"), _di("CORE", 1.065, 4.50),
+             dict(_cu("L2", "plane"), net="PWR"), _di("PP2", 0.200, 4.30),
+             dict(_cu("BOT", "signal"))]
+    via = _via_moignon(0, 6, retours=[_retour_via(10.7, 0.0)],
+                       ponts=[{"x": 12.0, "y": 0.0, "repere": "C12",
+                               "capacite_F": 100e-9},
+                              {"x": 10.0, "y": 4.0, "repere": "C13",
+                               "capacite_F": 100e-9},
+                              {"x": 3.0, "y": 0.0, "repere": "C14",
+                               "capacite_F": 1e-9}],
+                       rayon=10.0)
+    via["aire_plans_mm2"] = 2000.0
+    via["er_plans"] = 4.50
+    d = _doc_moignon(stack, 0, 6, via, fc=12e6, fmax=100e6)
+    d["analyse"]["f_debut"] = 1e6
+    d["f_fondamentale"], d["temps_montee"] = 12e6, 13e-9
+
+    t = _se.simuler(d)["discontinuites"]["transitions"][0]
+    cav = t["cavite"]
+
+    detail = cav.get("ponts_detail") or []
+    assert len(detail) == 3, "les trois ponts doivent etre rendus, pas le seul plus proche"
+    for f in detail:
+        assert "part" in f, "chaque pont doit porter sa part du courant"
+        assert f["repere"], "chaque pont doit etre nomme"
+        assert f["distance_mm"] > 0, "chaque pont doit etre cote"
+    # Tries par distance, et le dominant est nomme dans `pont`.
+    assert [f["repere"] for f in detail] == ["C12", "C13", "C14"], (
+        "les ponts doivent etre tries par distance : %s"
+        % [f["repere"] for f in detail])
+    assert cav["pont"]["repere"] == "C12", "le pont nomme est le plus proche"
+
+    # LES PARTS SOMMENT A UN (ou davantage : courant circulant), et la cavite
+    # en fait partie -- sinon les pourcentages affiches ne somment a rien.
+    total = sum(f["part"] for f in detail) + cav["part_cavite"]
+    assert 0.98 <= total <= 3.0, (
+        "les parts doivent se lire comme un partage (somme %.3f)" % total)
+    assert detail[2]["part"] < 0.01, (
+        "le 1 nF a 7 mm ne doit presque rien porter a 12 MHz (%.4f)"
+        % detail[2]["part"])
+    assert cav["freq_parts_hz"] > 0, "la frequence des parts doit etre dite"
+
+    # ET LES BRANCHES PARTENT DANS LA CASCADE : l'impedance rendue est celle des
+    # TROIS ponts en parallele, pas celle du plus proche.
+    assert len(cav.get("ponts_branches") or []) == 3, (
+        "la cascade doit recevoir les trois branches")
+    z_seul = _tl.impedance_traversee_plans(
+        cav["freq_parts_hz"], cav["etalement_cavite_nH"] * 1e-9,
+        cav["capacite_plans_pF"] * 1e-12,
+        l_pont=(cav["etalement_nH"] + cav["esl_nH"]) * 1e-9,
+        esr_pont=0.03, c_pont=cav["capacite_pont_F"])
+    assert cav["impedance_fc_ohm"] < abs(z_seul), (
+        "trois ponts en parallele doivent peser MOINS qu'un seul : %.4f contre %.4f"
+        % (cav["impedance_fc_ohm"], abs(z_seul)))
+
+
+def le_rayonnement_de_la_boucle_est_le_dipole_magnetique():
+    """LA FORME FERMEE, ET LA BANDE OU ELLE SE JUGE.
+
+    Une boucle petite devant la longueur d'onde est un dipole magnetique :
+    E = eta0 k^2 I A / (4 pi r), soit 1,3169e-14 f^2 A I / r en SI. Le
+    coefficient s'ECRIT a partir de mu0 et c -- une constante recopiee est une
+    constante qu'on ne peut plus verifier.
+    """
+    coeff = _tl.MU_0 * np.pi / _tl.C_0
+    proche(_tl.COEFF_DIPOLE_MAGNETIQUE, coeff, 1e-12, "le coefficient du dipole")
+    proche(_tl.COEFF_DIPOLE_MAGNETIQUE, 1.31686e-14, 1e-5, "sa valeur numerique")
+
+    # Les trois dependances, une par une : f au CARRE, A et I lineaires, r en 1/r.
+    base = _tl.champ_boucle_rayonnant(100e6, 1e-6, 10e-3, 3.0, sol=False)
+    proche(_tl.champ_boucle_rayonnant(200e6, 1e-6, 10e-3, 3.0, sol=False) / base,
+           4.0, 1e-9, "le champ croit comme f au carre")
+    proche(_tl.champ_boucle_rayonnant(100e6, 2e-6, 10e-3, 3.0, sol=False) / base,
+           2.0, 1e-9, "le champ est lineaire en aire")
+    proche(_tl.champ_boucle_rayonnant(100e6, 1e-6, 20e-3, 3.0, sol=False) / base,
+           2.0, 1e-9, "le champ est lineaire en courant")
+    proche(_tl.champ_boucle_rayonnant(100e6, 1e-6, 10e-3, 6.0, sol=False) / base,
+           0.5, 1e-9, "le champ decroit en 1/r")
+    # La reflexion du sol d'un site d'essai vaut SIX decibels, au pire.
+    proche(_tl.champ_boucle_rayonnant(100e6, 1e-6, 10e-3, 3.0, sol=True) / base,
+           2.0, 1e-9, "la reflexion de sol")
+
+    # La bande reglementee de CISPR 32 COMMENCE A 30 MHz, et en dessous il n'y a
+    # pas de limite -- pas une limite large, PAS DE LIMITE. Rendre zero ferait
+    # croire au contraire, et c'est ce que la fiche doit savoir dire.
+    assert _tl.limite_cispr32(12e6, 3.0, "B") is None, (
+        "CISPR 32 ne fixe pas de limite rayonnee sous 30 MHz")
+    proche(_tl.limite_cispr32(36e6, 3.0, "B"), 40.0, 1e-9, "classe B a 3 m, VHF bas")
+    proche(_tl.limite_cispr32(500e6, 3.0, "B"), 47.0, 1e-9, "classe B a 3 m, UHF")
+    proche(_tl.limite_cispr32(36e6, 10.0, "B"), 30.0, 1e-9, "classe B a 10 m")
+
+    # Le champ lointain commence a lambda / 2 pi : a 3 m, au-dessus de 16 MHz.
+    assert _tl.distance_champ_lointain(12e6) > 3.0, "12 MHz : champ proche a 3 m"
+    assert _tl.distance_champ_lointain(36e6) < 3.0, "36 MHz : champ lointain a 3 m"
+
+
+def le_rayonnement_suit_l_aire_de_la_boucle_et_le_rythme():
+    """CE QUE LA FICHE DOIT RENDRE LISIBLE : ce qui fait bouger le chiffre.
+
+    A 12 MHz avec un front de 13 ns, une boucle de quelques millimetres carres
+    est a plus de trente decibels sous la limite -- il n'y a rien a faire. Le
+    MEME routage a 100 MHz avec un front de 300 ps passe au-dessus. C'est le
+    rythme du signal qui decide, pas le dessin, et c'est ce que la fiche doit
+    faire comprendre.
+    """
+    aire = 8.5e-6                      # 8,5 mm2 : un pont a 8 mm sur 1,065 mm
+
+    lent = _tl.rayonnement_boucle(12e6, 13e-9, aire, z0=50.0, v0=3.3,
+                                  distance=3.0, classe="B")
+    rapide = _tl.rayonnement_boucle(100e6, 0.3e-9, aire, z0=50.0, v0=3.3,
+                                    distance=3.0, classe="B")
+    assert lent["pire"]["marge_db"] > 30.0, (
+        "a 12 MHz / 13 ns la boucle ne doit rien couter (%.1f dB)"
+        % lent["pire"]["marge_db"])
+    assert rapide["pire"]["marge_db"] < lent["pire"]["marge_db"] - 30.0, (
+        "le rythme du signal doit dominer le verdict : %.1f contre %.1f dB"
+        % (rapide["pire"]["marge_db"], lent["pire"]["marge_db"]))
+
+    # Et le geste qui compte est l'AIRE : diviser la distance au pont par huit
+    # rend dix-huit decibels, parce que le champ est lineaire en aire.
+    serre = _tl.rayonnement_boucle(100e6, 0.3e-9, aire / 8.0, z0=50.0, v0=3.3,
+                                   distance=3.0, classe="B")
+    gagne = serre["pire"]["marge_db"] - rapide["pire"]["marge_db"]
+    proche(gagne, 20.0 * np.log10(8.0), 0.5, "le gain d'une aire divisee par huit")
+
+    # LA FONDAMENTALE DE 12 MHz EST HORS BANDE, et la fiche le porte plutot que
+    # d'inventer une limite.
+    h1 = lent["harmoniques"][0]
+    assert h1["limite_dbuv_m"] is None and h1["marge_db"] is None, (
+        "la fondamentale a 12 MHz ne doit pas avoir de limite")
+    assert h1["champ_lointain"] is False, "a 12 MHz, 3 m est en champ proche"
+
+
+def l_aire_de_la_boucle_se_lit_dans_la_geometrie():
+    """L'AIRE N'EST PAS UN REGLAGE, ELLE SE DEDUIT DU ROUTAGE.
+
+    Deux boucles, et elles ne se confondent pas : celle du VIA -- hauteur du
+    barreau par distance au via de masse -- et celle de la CAVITE quand la
+    reference change -- ecartement des DEUX PLANS par distance au pont. Prendre
+    la hauteur du via pour la seconde compterait du cuivre que le detour
+    n'enferme pas.
+    """
+    # Cas sain : deux plans de masse, un via de retour a 0,7 mm.
+    stack_gnd = [dict(_cu("TOP", "signal")), _di("PP", 0.200, 4.30),
+                 dict(_cu("L1", "plane"), net="GND"), _di("CORE", 1.065, 4.50),
+                 dict(_cu("L2", "plane"), net="GND"), _di("PP2", 0.200, 4.30),
+                 dict(_cu("BOT", "signal"))]
+    d = _doc_moignon(stack_gnd, 0, 6,
+                     _via_moignon(0, 6, retours=[_retour_via(10.7, 0.0)]),
+                     fc=100e6, fmax=1e9)
+    d["f_fondamentale"], d["temps_montee"] = 100e6, 1e-9
+    t = _se.simuler(d)["discontinuites"]["transitions"][0]
+    ray = t["rayonnement"]
+    h = _se._hauteur_via(stack_gnd, 0, 6)
+    proche(ray["via_mm2"], h * 0.7, 1e-3, "l'aire de la boucle du via")
+    assert ray["cavite_mm2"] is None, "sans changement de reference, pas de cavite"
+
+    # Cas GND -> PWR avec un pont a 2 mm : c'est l'ECARTEMENT DES PLANS qui
+    # multiplie, pas la hauteur du via.
+    stack_pwr = [dict(c) for c in stack_gnd]
+    stack_pwr[4] = dict(_cu("L2", "plane"), net="PWR")
+    via = _via_moignon(0, 6, retours=[_retour_via(10.7, 0.0)],
+                       ponts=[{"x": 12.0, "y": 0.0, "repere": "C12",
+                               "capacite_F": 1e-7}], rayon=10.0)
+    d2 = _doc_moignon(stack_pwr, 0, 6, via, fc=100e6, fmax=1e9)
+    d2["f_fondamentale"], d2["temps_montee"] = 100e6, 1e-9
+    t2 = _se.simuler(d2)["discontinuites"]["transitions"][0]
+    ray2 = t2["rayonnement"]
+    h_cav = t2["cavite"]["hauteur_mm"]
+    proche(ray2["cavite_mm2"], h_cav * 2.0, 1e-3, "l'aire de la boucle de cavite")
+    assert ray2["via_mm2"] is None, (
+        "aucun via de masse ne referme GND -> PWR : il n'y a pas de boucle de"
+        " via a compter")
+    assert ray2["aire_boucle_mm2"] > ray["aire_boucle_mm2"], (
+        "le detour par le pont doit enfermer plus que le via de retour direct")
+
+
+def le_verdict_n_affirme_pas_une_boucle_qu_il_ne_voit_pas():
+    """LE SCORE MESURE LE FRONT, PAS LA BOUCLE, ET LE VERDICT LE DISAIT QUAND MEME.
+
+    Sur une transition GND -> PWR ou AUCUN via de masse ne peut refermer le
+    retour, le bilan sortait « Excellent : signal quasiment intact, boucle de
+    retour refermee de facon optimale ». La premiere moitie etait vraie -- a
+    12 MHz avec un front de 13 ns, la traversee ne coute rien au signal --, la
+    seconde etait inventee : la fiche venait d'ecrire, une ligne plus haut, que
+    l'inductance rendue etait un PLANCHER faute de retour.
+    """
+    l_boucle, c_via = 0.69e-9, 88e-15
+
+    ouvert = _tl.bilan_sante_transition(l_boucle, c_via, None, z0=50.0,
+                                        f0=12e6, tr=13e-9, retour_ferme=False)
+    ferme = _tl.bilan_sante_transition(l_boucle, c_via, None, z0=50.0,
+                                       f0=12e6, tr=13e-9, retour_ferme=True)
+    muet = _tl.bilan_sante_transition(l_boucle, c_via, None, z0=50.0,
+                                      f0=12e6, tr=13e-9)
+
+    # Le score ne bouge pas : c'est bien le meme signal, et il passe.
+    proche(ouvert["score_reconstruction_pct"], ferme["score_reconstruction_pct"],
+           1e-9, "le score ne depend pas de ce qu'on sait de la boucle")
+    assert ouvert["score_reconstruction_pct"] > 95.0, (
+        "a 12 MHz avec tr = 13 ns le front doit passer (%.2f)"
+        % ouvert["score_reconstruction_pct"])
+
+    # Mais le verdict, lui, cesse d'affirmer ce qu'il ne voit pas.
+    assert "refermee de facon optimale" not in ouvert["verdict"], (
+        "le verdict affirme encore une boucle refermee : " + ouvert["verdict"])
+    assert "plancher" in ouvert["verdict"], (
+        "le verdict ne dit pas que le chiffre est un plancher : " + ouvert["verdict"])
+    assert "plancher" not in ferme["verdict"], (
+        "une boucle refermee n'a pas a porter la reserve : " + ferme["verdict"])
+    assert "n'a pas ete verifie" in muet["verdict"], (
+        "une boucle non verifiee doit se dire comme telle : " + muet["verdict"])
+
+
+def le_cas_top_gnd_pwr_bot_ecarte_le_via_de_masse_et_le_dit():
+    """LE CAS ORDINAIRE DES QUATRE COUCHES, ET CE QU'IL FAUT EN LIRE.
+
+    TOP (signal) / L1 (GND) / L2 (PWR) / BOT (signal), un via de signal qui
+    plonge de TOP a BOT, un via de masse a 0,7 mm. La piste du haut se refere a
+    L1, celle du bas a L2 : la reference change ET les nets different. Le via
+    de masse touche L1 et ne peut PAS toucher L2 -- il joindrait de la masse a
+    de l'alimentation. Il est donc ECARTE, en le disant, et l'inductance rendue
+    est un plancher.
+
+    C'EST LE PIEGE QUE CETTE ANALYSE EXISTE POUR MONTRER : le via de masse est
+    la, il a l'air de travailler, et il ne travaille pas.
+    """
+    stack = [dict(_cu("TOP", "signal")), _di("PP", 0.200, 4.30),
+             dict(_cu("L1", "plane"), net="GND"), _di("CORE", 1.065, 4.50),
+             dict(_cu("L2", "plane"), net="PWR"), _di("PP2", 0.200, 4.30),
+             dict(_cu("BOT", "signal"))]
+    via = _via_moignon(0, 6, retours=[_retour_via(10.7, 0.0)])
+    d = _doc_moignon(stack, 0, 6, via, fc=12e6, fmax=100e6)
+    d["analyse"]["f_debut"] = 1e6
+    d["f_fondamentale"], d["temps_montee"] = 12e6, 13e-9
+
+    r = _se.simuler(d)
+    t = r["discontinuites"]["transitions"][0]
+    ret = t["retour"]
+
+    assert ret["plans_depart"] == ["L1"] and ret["plans_arrivee"] == ["L2"], (
+        "les plans de reference ne sont pas ceux attendus : %s -> %s"
+        % (ret["plans_depart"], ret["plans_arrivee"]))
+    assert ret["nets_differents"] is True, "GND et PWR doivent etre vus differents"
+    assert ret["reference_change"] is True, "le defaut grave doit etre nomme"
+    assert ret["trouves"] == 1, "le via de masse doit etre vu"
+    assert ret["retenus"] == 0, "le via de masse ne peut PAS refermer GND -> PWR"
+    assert "ne rejoint pas L2" in ret["vias"][0]["raison"], (
+        "la raison de l'ecart doit nommer le plan d'arrivee : "
+        + ret["vias"][0]["raison"])
+    assert t["modelise"]["inductance_source"].startswith("self"), (
+        "sans retour retenu, l'inductance doit venir de la self partielle : %s"
+        % t["modelise"]["inductance_source"])
+    assert "refermee de facon optimale" not in t["bilan_sante"]["verdict"], (
+        "le verdict ne doit pas annoncer une boucle refermee : "
+        + t["bilan_sante"]["verdict"])
+    assert any("Aucun via de masse ne peut joindre les deux" in a
+               for a in r["avertissements"]), (
+        "l'avertissement de changement de reference manque")
+
+    # LA CORRECTION DE ROUTAGE : les deux plans internes sur de la masse. Le
+    # meme dessin de cuivre, le meme via de masse -- et cette fois il travaille.
+    stack_ok = [dict(c) for c in stack]
+    stack_ok[4] = dict(_cu("L2", "plane"), net="GND")
+    d2 = _doc_moignon(stack_ok, 0, 6, _via_moignon(0, 6, retours=[_retour_via(10.7, 0.0)]),
+                      fc=12e6, fmax=100e6)
+    d2["analyse"]["f_debut"] = 1e6
+    d2["f_fondamentale"], d2["temps_montee"] = 12e6, 13e-9
+    t2 = _se.simuler(d2)["discontinuites"]["transitions"][0]
+    assert t2["retour"]["retenus"] == 1, "sur deux plans de masse, le via referme"
+    assert t2["modelise"]["inductance_source"] == "boucle", (
+        "l'inductance doit devenir une mesure : %s"
+        % t2["modelise"]["inductance_source"])
+
+    # ET LE NOMBRE MONTE, ce qui est le piege de lecture : le plancher n'est pas
+    # une boucle. 0,69 nH de self partielle contre 0,80 nH de boucle reelle.
+    assert t2["modelise"]["inductance_nH"] > t["modelise"]["inductance_nH"], (
+        "le plancher (%.3f nH) devrait etre SOUS la boucle mesuree (%.3f nH)"
+        % (t["modelise"]["inductance_nH"], t2["modelise"]["inductance_nH"]))
+
+
+def une_traversee_de_plan_n_ameliore_jamais_le_score():
+    """AJOUTER UN DEFAUT NE PEUT PAS FAIRE MONTER LA NOTE.
+
+    Le terme de temps de montee du bilan de sante prenait, des qu'une cavite
+    etait presente, l'inductance du PONT SEULE -- ou `l_cavite + 5 nH`, une
+    constante que rien ne justifiait. L'inductance de BOUCLE du via, celle que
+    tout le reste de l'outil sert a mesurer, disparaissait alors du calcul.
+
+    MESURE AVANT CORRECTIF : un via a 50 nH de boucle notait 4,98 % sans
+    traversee de plan et 46,11 % avec. Ajouter un changement de reference
+    AMELIORAIT le score d'un facteur neuf. Les deux inductances sont en SERIE
+    sur le meme courant ; elles s'additionnent.
+    """
+    c_via = 120e-15
+    cav = {"l_cavite": 0.17e-9, "c_plans": 76e-12,
+           "l_pont": 1.3e-9, "esr_pont": 0.03, "c_pont": 100e-9}
+
+    for l_boucle in (0.63e-9, 2e-9, 10e-9, 50e-9):
+        sans = _tl.bilan_sante_transition(l_boucle, c_via, None, z0=50.0,
+                                          f0=100e6, tr=0.1e-9)
+        avec = _tl.bilan_sante_transition(l_boucle, c_via, cav, z0=50.0,
+                                          f0=100e6, tr=0.1e-9)
+        assert avec["score_reconstruction_pct"] <= sans["score_reconstruction_pct"], (
+            "L=%.1f nH : la traversee de plan FAIT MONTER le score"
+            " (%.2f sans, %.2f avec)"
+            % (l_boucle * 1e9, sans["score_reconstruction_pct"],
+               avec["score_reconstruction_pct"]))
+
+    # ET L'INDUCTANCE DE BOUCLE PESE ENCORE, cavite ou non : c'est la seule
+    # grandeur que le routage commande, elle doit rester lisible dans la note.
+    bon = _tl.bilan_sante_transition(0.63e-9, c_via, cav, z0=50.0,
+                                     f0=100e6, tr=0.1e-9)
+    mauvais = _tl.bilan_sante_transition(50e-9, c_via, cav, z0=50.0,
+                                         f0=100e6, tr=0.1e-9)
+    assert bon["score_reconstruction_pct"] - mauvais["score_reconstruction_pct"] > 20.0, (
+        "avec une cavite, l'inductance de boucle ne change presque plus la note"
+        " (%.2f contre %.2f)" % (bon["score_reconstruction_pct"],
+                                 mauvais["score_reconstruction_pct"]))
+
+
+def l_etalement_via_via_reste_au_dessus_de_la_forme_fermee():
+    """LE COEFFICIENT EMPIRIQUE MAJORE LA FORME FERMEE, ET C'EST LE BON SENS.
+
+    Dans la limite plans minces, deux contacts ponctuels dans une paire de
+    plans se resolvent exactement : L = (mu0 h / pi) ln(s/r), soit DEUX fois
+    l'equation 13-31 -- et non quatre, comme le commentaire l'affirmait. Le
+    coefficient de 21 pH/mil retenu par le modele rend 1,3 a 1,7 fois cette
+    valeur : il MAJORE, et une inductance de traversee surestimee n'a jamais
+    flatte une carte.
+    """
+    for h, s, d in ((1e-3, 2e-3, 0.25e-3),
+                    (0.2e-3, 1e-3, 0.3e-3),
+                    (0.5e-3, 5e-3, 0.3e-3)):
+        emp = _tl.inductance_etalement_via_via(h, s, d)
+        exact = _tl.inductance_etalement_via_via_2d(h, s, d)
+        assert exact > 0.0, "la forme fermee ne rend rien"
+        assert emp > exact, (
+            "le coefficient empirique passe SOUS la forme fermee :"
+            " %.4f nH contre %.4f" % (emp * 1e9, exact * 1e9))
+        assert emp / exact < 2.0, (
+            "le coefficient empirique s'ecarte de plus du double de la forme"
+            " fermee (%.2f fois)" % (emp / exact))
+
+    # Et elle vaut bien DEUX fois le cas via-vers-anneau, a argument egal.
+    h, s, r = 0.5e-3, 5e-3, 0.15e-3
+    anneau = _tl.inductance_etalement_via_anneau(h, r, s)
+    deux = _tl.inductance_etalement_via_via_2d(h, s, 2.0 * r)
+    proche(deux / anneau, 2.0, 0.02, "rapport deux-contacts / un-contact")
+
 
 def le_bilan_de_sante_evalue_la_reconstruction_et_chiffre_le_decouplage():
-    """LE BILAN DE SANTE CHIFFRE LA QUALITE DU SIGNAL ET LE RETOUR DES HARMONIQUES.
+    """LE BILAN DE SANTE CHIFFRE LA QUALITE DU SIGNAL ET LE RETOUR DU FRONT.
 
-    Il fournit les 10 premieres harmoniques, les sondes HF jusqu'au genou
-    (350 MHz pour tr=1 ns), et montre que rapprocher le decouplage ameliore
-    le score de reconstruction.
+    Il montre que rapprocher le decouplage ameliore le score de reconstruction
+    du signal.
     """
     proche_pont = _via_moignon(0, 6, ponts=[{"x": 12.0, "y": 0.0,
                                              "repere": "C1"}], rayon=10.0)
@@ -1931,19 +2753,7 @@ def le_bilan_de_sante_evalue_la_reconstruction_et_chiffre_le_decouplage():
     assert "bilan_sante" in ta, "bilan_sante absent de la transition a"
     bilan = ta["bilan_sante"]
 
-    assert len(bilan["harmoniques"]) == 10, "doit comporter 10 harmoniques"
-    assert len(bilan["sondes_hf"]) == 5, "doit comporter 5 sondes HF"
-
-    # L'harmonique 1 (10 kHz) : plus de 95% par le decouplage
-    h1 = bilan["harmoniques"][0]
-    assert h1["freq_hz"] == 10e3
-    assert h1["part_pont_pct"] > 90.0, "H1 doit passer en majorite par le pont"
-
-    # Sonde HF a 100% f_knee (350 MHz) : la cavite est active
-    hf_knee = bilan["sondes_hf"][-1]
-    assert hf_knee["freq_hz"] == 350e6
-    assert hf_knee["part_cavite_pct"] > h1["part_cavite_pct"], (
-        "la cavite doit porter plus de retour au genou (350 MHz) qu'a 10 kHz")
+    assert bilan["score_reconstruction_pct"] > 0, "le score doit etre positif"
 
     # Rapprocher le decouplage preserve mieux le signal
     score_a = ta["modelise"]["score_reconstruction_pct"]
@@ -1953,8 +2763,38 @@ def le_bilan_de_sante_evalue_la_reconstruction_et_chiffre_le_decouplage():
         % (score_a, score_b))
 
 
-T("la répartition spectrale somme à un et bascule en fréquence",
-  la_repartition_spectrale_somme_a_un_et_bascule_en_frequence)
+T("la répartition du retour est une division de courant complexe",
+  la_repartition_spectrale_est_une_division_de_courant_complexe)
+T("une traversée de plan n'améliore jamais le score",
+  une_traversee_de_plan_n_ameliore_jamais_le_score)
+T("l'étalement via-via majore la forme fermée",
+  l_etalement_via_via_reste_au_dessus_de_la_forme_fermee)
+T("le verdict n'affirme pas une boucle qu'il ne voit pas",
+  le_verdict_n_affirme_pas_une_boucle_qu_il_ne_voit_pas)
+T("TOP/GND/PWR/BOT : le via de masse est écarté, et c'est dit",
+  le_cas_top_gnd_pwr_bot_ecarte_le_via_de_masse_et_le_dit)
+T("le rayonnement de la boucle est le dipôle magnétique",
+  le_rayonnement_de_la_boucle_est_le_dipole_magnetique)
+T("le rayonnement suit l'aire de la boucle et le rythme",
+  le_rayonnement_suit_l_aire_de_la_boucle_et_le_rythme)
+T("l'aire de la boucle se lit dans la géométrie",
+  l_aire_de_la_boucle_se_lit_dans_la_geometrie)
+T("une référence absente ne se dit pas comme une référence qui change",
+  une_reference_absente_ne_se_dit_pas_comme_une_reference_qui_change)
+T("le net mesuré par la page prime sur celui de la couche",
+  le_net_mesure_par_la_page_prime_sur_celui_de_la_couche)
+T("un via de masse sur un autre versement ne referme rien",
+  un_via_de_masse_sur_un_autre_versement_ne_referme_rien)
+T("tous les ponts comptent, pas seulement le plus proche",
+  tous_les_ponts_comptent_pas_seulement_le_plus_proche)
+T("la fiche de cavité porte chaque pont et sa part",
+  la_fiche_de_cavite_porte_chaque_pont_et_sa_part)
+T("le retour par la cavité est nommé comme un défaut",
+  le_retour_par_la_cavite_est_nomme_comme_un_defaut)
+T("une cavité non sondée n'invente pas de part",
+  une_cavite_non_sondee_n_invente_pas_de_part)
+T("l'aire des plans majorée se dit",
+  l_aire_des_plans_majoree_se_dit)
 T("le bilan de santé évalue la reconstruction et chiffre le découplage",
   le_bilan_de_sante_evalue_la_reconstruction_et_chiffre_le_decouplage)
 
@@ -2145,6 +2985,45 @@ T("un via sans changement de couche n'en est pas un",
 T("la fiche du retour dit où est le via", la_fiche_du_retour_dit_ou_est_le_via)
 T("sans position, la fiche ne l'invente pas",
   sans_position_la_fiche_ne_l_invente_pas)
+
+
+def distance_du_plus_proche_via_hors_rayon_est_conservee():
+    """Quand aucun retour n'est dans le rayon, la distance du plus proche au-delà est transmise."""
+    doc = _doc_retour(_QUATRE_GND, [])
+    doc["geometry"]["objects"][1]["via"]["retours_rayon_mm"] = 3.0
+    doc["geometry"]["objects"][1]["via"]["retour_hors_rayon_mm"] = 4.2
+    r = _se.simuler(doc)
+    t = r["discontinuites"]["transitions"][0]
+    ret = t["retour"]
+    assert ret["retenus"] == 0
+    assert ret["plus_proche_hors_rayon_mm"] == 4.2
+    assert "4.20 mm" in ret["raison"]
+    assert "trop éloigné" in ret["raison"]
+
+
+def distance_du_plus_proche_pont_hors_rayon_est_conservee():
+    """Quand aucun découplage n'est dans le rayon, la distance du plus proche au-delà est transmise."""
+    stack = [dict(_cu("TOP", "signal")), _di("PP", 0.200, 4.30),
+             dict(_cu("L1", "plane"), net="GND"), _di("CORE", 1.065, 4.50),
+             dict(_cu("L2", "plane"), net="PWR"), _di("PP2", 0.200, 4.30),
+             dict(_cu("BOT", "signal"))]
+    via = _via_moignon(0, 6, ponts=[], rayon=10.0)
+    via["pont_hors_rayon_mm"] = 14.5
+    via["pont_hors_rayon_ref"] = "C42"
+    d = _doc_moignon(stack, 0, 6, via, fc=10e6, fmax=100e6)
+    r = _se.simuler(d)
+    cav = r["discontinuites"]["transitions"][0]["cavite"]
+    assert cav["borne"] is True
+    assert cav["plus_proche_hors_rayon_mm"] == 14.5
+    assert cav["plus_proche_hors_rayon_ref"] == "C42"
+    assert any("14.50 mm" in a and "C42" in a for a in r["avertissements"]), (
+        "la présence du découplage hors rayon doit être notée dans les avertissements")
+
+
+T("la distance du plus proche retour hors rayon est notée",
+  distance_du_plus_proche_via_hors_rayon_est_conservee)
+T("la distance du plus proche découplage hors rayon est notée",
+  distance_du_plus_proche_pont_hors_rayon_est_conservee)
 
 
 # ==========================================================================
@@ -3650,8 +4529,53 @@ def ce_que_le_calcul_ne_couvre_pas_est_rassemble_et_oriente():
     assert dits[-1] is bloc, "le bloc de cloture doit fermer la liste"
 
 
+def bilan_impact_physique_hf_et_zone_de_vigilance():
+    """Zone optimale (<= 1.8 mm) vs vigilance (1.8 < d <= 5.0 mm) et calcul d'impact HF."""
+    stack_gnd = [dict(_cu("TOP", "signal")), _di("PP", 0.200, 4.30),
+                 dict(_cu("L1", "plane"), net="GND"), _di("CORE", 1.065, 4.50),
+                 dict(_cu("L2", "plane"), net="GND"), _di("PP2", 0.200, 4.30),
+                 dict(_cu("BOT", "signal"))]
+    d_opt = _doc_moignon(stack_gnd, 0, 6,
+                         _via_moignon(0, 6, retours=[_retour_via(10.7, 0.0)]),
+                         fc=10e6, fmax=1e9)
+    d_opt["temps_montee"] = 35e-12
+    r_opt = _se.simuler(d_opt)
+    t_opt = r_opt["discontinuites"]["transitions"][0]
+    try:
+        assert t_opt["retour"]["statut"] == "optimal", "statut opt: %s" % t_opt["retour"]["statut"]
+        imp_opt = t_opt["impact_retour"]
+        assert imp_opt["statut"] == "optimal", "impact opt: %s" % imp_opt["statut"]
+        assert abs(imp_opt["fknee_hz"] - 10e9) < 1e6, "fknee: %s" % imp_opt["fknee_hz"]
+        assert imp_opt["z_knee_ohm"] > 0, "z_knee <= 0"
+        assert imp_opt["ground_bounce_v"] > 0, "gb <= 0"
+
+        d_vigi = _doc_moignon(stack_gnd, 0, 6,
+                              _via_moignon(0, 6, retours=[_retour_via(13.65, 0.0)]),
+                              fc=10e6, fmax=1e9)
+        d_vigi["temps_montee"] = 35e-12
+        r_vigi = _se.simuler(d_vigi)
+        t_vigi = r_vigi["discontinuites"]["transitions"][0]
+        assert t_vigi["retour"]["statut"] == "vigilance", "statut vigi: %s" % t_vigi["retour"]["statut"]
+        assert t_vigi["retour"]["retenus"] == 1, "retenus: %s" % t_vigi["retour"]["retenus"]
+        imp_vigi = t_vigi["impact_retour"]
+        assert imp_vigi["statut"] == "vigilance", "impact vigi statut: %s" % imp_vigi["statut"]
+        assert imp_vigi["l_boucle_nh"] > imp_opt["l_boucle_nh"], "l_boucle non superieure"
+        assert imp_vigi["z_knee_ohm"] > imp_opt["z_knee_ohm"], "z_knee non superieure"
+        assert imp_vigi["ground_bounce_v"] > imp_opt["ground_bounce_v"], "gb non superieur"
+        assert imp_vigi["gain_z_ohm"] > 0, "gain_z <= 0"
+        assert imp_vigi["gain_gb_v"] > 0, "gain_gb <= 0"
+        if "gain_cem_db" in imp_vigi:
+            assert imp_vigi["gain_cem_db"] > 5.0, "gain_cem <= 5: %s" % imp_vigi.get("gain_cem_db")
+    except Exception as err:
+        import traceback
+        traceback.print_exc()
+        raise
+
+
 T("ce que le calcul ne couvre pas est rassemble, et oriente",
   ce_que_le_calcul_ne_couvre_pas_est_rassemble_et_oriente)
+T("bilan d'impact physique HF et zone de vigilance du retour",
+  bilan_impact_physique_hf_et_zone_de_vigilance)
 
 
 print("\n" + "-" * 62)

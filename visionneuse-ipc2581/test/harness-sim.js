@@ -61,7 +61,8 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "V","LT","ltAire","ltPreparer","LT_SEUIL_PLAN","mdlLongueur",
   "mdlNetNom","mdlNb","mdlCharger","mdlCouches","mdlPlansDans",
   "mdlCheminsNet","mdlMevTout",
-  "SIM","SIM_IPC","simRefSet","simRefListe","simRefCandidats",
+  "SIM","SIM_IPC","simRefSet","simRefListe","simRefCandidats","simInit",
+  "SIM_BUS","simCorpsBus","simBrancherBus","simRendreBus","simBusCalculer","SIM_BUS_PRESETS",
   "simRefCandidatsIpc",
   "simRefIdx","simPlagesDe","simMemeEcart","simKUnite","simCumul","simSurPoly",
   "simProjPoly","simSousPoly","simDistSeg","simGrilleCuivre","simEcartsEn",
@@ -69,10 +70,18 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simAccrocherViasIpc","simViaAuRaccordIpc","simKUnite",
   "simChainePistes","simBoutsPiste","simZPistes","simArcEnPolyligne",
   "simJonctionsIpc","simJoncCommuneIpc","SIM_RAYON_JONCTION_IPC","simViasIpc",
-  "mdlArc",
+  "mdlArc","mdlArcAngle","mdlArcLongueur","ltArc","ltNet","ltPiste",
   "simCheveluRes","simRetourCouleurRes","simRetourActifIpc",
   "simRetourTraceIpc",
-  "simRetoursIpc","SIM_RAYON_RETOUR_IPC",
+  "simRetoursIpc","SIM_RAYON_RETOUR_IPC","SIM_RAYON_RETOUR_OPTIMAL_IPC",
+  /* Les découplages qui joignent deux plans de nets différents : c'est par
+     eux que le retour passe quand aucun via de masse ne peut refermer. */
+  "simPontsPlansIpc","simValeurFaradsIpc","simCaviteIpc",
+  "simBornesNetsIpc","simNbBornesIpc","simPlansCuDeIpc",
+  "simNetPlanEnIpc","simPlansNetsEnIpc","simPlansJointsEnIpc",
+  "simPlansSansCuivreIpc",
+  "simNetDuConducteurIpc","simNetPlanSupposeIpc",
+  "SIM_RAYON_PONT_IPC",
   "simStackupIpc","simNetDuPlanIpc",
   "simTopo","simTopoNom","simCoplanaire","simCouture","simVoisins",
   "simNb","simSection","simProvenanceIpc",
@@ -91,7 +100,8 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
      du parcours, les vias de couture qui s'y projettent, les fentes du plan
      sondées dessous, et les perçages de masse. */
   "simXtParcoursIpc","simXtAbscisseIpc","simXtCoutureIpc","simXtFentesIpc",
-  "simXtViasMasseIpc","simXtPlanDeIpc","simXtZoneMasseIpc",
+  "simXtViasMasseIpc","simXtPlansDeIpc","simXtNomCoucheIpc",
+  "simXtZoneMasseIpc",
   "simXtContoursIpc","simXtDansContourIpc","SIM_XT_PAS_IPC",
   /* Les zones a risque, posees sur le cuivre : l'algorithme est commun,
      l'outil ne fournit que les deux formes neutres, en MILLIMETRES. */
@@ -1682,12 +1692,14 @@ T("un trou de masse NON métallisé ne referme rien",()=>{
     throw new Error("un trou nu a été pris pour un via de retour");
 });
 
-T("un via de masse hors de portée n'est pas envoyé",()=>{
+T("un via de masse hors de portée n'est pas envoyé mais sa distance est notée",()=>{
   const xm = (X1 + X2) / 2;
   carteViaMasse([{x:xm + SIM_RAYON_RETOUR_IPC + 1.0, y:Y}]);
   const v = simSegments().envoi[1].via;
   if(v.retours.length)
     throw new Error("un via au-delà du rayon a été ramassé");
+  if(Math.abs((v.retour_hors_rayon_mm || 0) - (SIM_RAYON_RETOUR_IPC + 1.0)) > 0.01)
+    throw new Error("la distance du via hors portée n'est pas transmise : " + v.retour_hors_rayon_mm);
 });
 
 T("les retours sont rendus du plus proche au plus lointain",()=>{
@@ -1715,6 +1727,39 @@ T("sans net de référence, aucun retour n'est envoyé",()=>{
   SIM.refAuto = true; SIM.ref = null;
   if(v.retours.length)
     throw new Error("un via a servi de retour sans référence déclarée");
+});
+
+T("les retours de masse déclarés comme pastilles avec trou sont détectés",()=>{
+  const xm = (X1 + X2) / 2;
+  const o = padTraversante(0.55);
+  o.percages = [{x:xm, y:Y, d:0.25, n:0, p:"PTH"}]; // Via signal
+  o.padstacks["VIA_GND"] = {pad:0.50, trou:0.20, pads:[{c:"Top", d:0.50}, {c:"Bottom", d:0.50}]};
+  o.pads.push({x:xm + 1.2, y:Y, ps:"VIA_GND", n:1}); // Via masse à 1.2 mm sans élément dans percages
+  const c = carte({percages:o.percages, pads:o.pads, padstacks:o.padstacks,
+                   nets:["N$1", "GND"],
+                   plans:[plan(1, rect(2, 2, 58, 38), [])]});
+  c.modele.pistes = [{c:0, n:0, w:W, p:[X1,Y, xm,Y]},
+                     {c:1, n:0, w:W, p:[xm,Y, X2,Y]}];
+  mdlCharger(c.modele);
+  V.net = 0;
+  const v = simSegments().envoi[1].via;
+  if(!v || !v.retours || v.retours.length !== 1)
+    throw new Error("le via de masse en pastille traversante n'a pas été détecté ("+
+                    ((v && v.retours || []).length)+" trouvé(s))");
+  if(Math.abs(v.retours[0].drill_diameter - 0.20) > 1e-6)
+    throw new Error("perçage lu faux : "+v.retours[0].drill_diameter);
+});
+
+T("un via de masse en zone de vigilance (entre 1.8 et 5.0 mm) est transmis avec le rayon optimal",()=>{
+  const xm = (X1 + X2) / 2;
+  carteViaMasse([{x:xm + 3.65, y:Y}]);
+  const v = simSegments().envoi[1].via;
+  if(!v || !v.retours || v.retours.length !== 1)
+    throw new Error("le via à 3.65 mm en zone de vigilance doit être transmis");
+  if(v.retours_rayon_optimal_mm !== 1.8)
+    throw new Error("le rayon optimal doit être 1.8 mm");
+  if(v.retours_rayon_mm !== 5.0)
+    throw new Error("le rayon maximal doit être 5.0 mm");
 });
 
 /* ==========================================================================
@@ -3123,6 +3168,326 @@ T("le document de crosstalk porte les trois mesures, et pas les ports",()=>{
                     JSON.stringify(p.notes));
 });
 
+T("un plan n'est pas d'un seul net : le net se mesure AU POINT",()=>{
+  /* CE QUE L'HYPOTHÈSE « UN NET PAR COUCHE » COÛTAIT, ET C'EST GRAVE. Une
+     couche de plan est PARTITIONNÉE : sur une carte réelle, Conductor-3 porte un
+     îlot d'alimentation de quelques millimètres carrés et TOUT LE RESTE est de
+     la masse. Le net de la couche — celui de la plus grande zone, ou celui que
+     le rôle force — s'appliquait à la couche ENTIÈRE.
+
+     Conséquence : un via de signal qui plonge là où le plan est de la MASSE se
+     voyait déclaré « la référence change de net, aucun via de masse ne peut
+     refermer » — alors que les vias de masse autour de lui referment
+     parfaitement. On criait au défaut grave sur un routage correct, et on
+     écartait dix vias de retour qui travaillent. */
+  const empilage=[
+    {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR"},
+    {nom:"D1",     seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"L1",     seq:3, ep:0.035, type:"PLANE"},
+    {nom:"Coeur",  seq:4, ep:0.71,  type:"DIELECTRIC", dk:"4.5", df:"0.02"},
+    {nom:"L2",     seq:5, ep:0.035, type:"PLANE"},
+    {nom:"D2",     seq:6, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Bottom", seq:7, ep:0.035, type:"CONDUCTOR"}
+  ];
+  /* L2 : un ÎLOT d'alimentation à gauche, la masse sur tout le reste. C'est la
+     carte de l'utilisateur, en miniature. */
+  carte({empilage:empilage,
+         couches:["Top","L1","L2","Bottom"],
+         nets:["N$1","GND","N$2","+3V3"],
+         plans:[{c:1, n:1, g:[{o:rect(2,2,58,38), t:[]}]},
+                {c:2, n:3, g:[{o:rect(2,2,12,38), t:[]}]},
+                {c:2, n:1, g:[{o:rect(14,2,58,38), t:[]}]}],
+         padstacks:{p:{trou:0, pad:0.6, pads:[{c:0, d:0.6, f:"circle"}]}},
+         composants:[]});
+
+  /* 1. LE NET SE LIT AU POINT, ET IL CHANGE D'UN BOUT À L'AUTRE DE LA COUCHE. */
+  const iL2=LT.cu.findIndex(c=>c.nom==="L2");
+  const cL2=LT.cu[iL2].couche;
+  if(simNetPlanEnIpc(cL2, 6, 20)!=="+3V3")
+    throw new Error("dans l'îlot, le net est +3V3 : "+simNetPlanEnIpc(cL2, 6, 20));
+  if(simNetPlanEnIpc(cL2, 30, 20)!=="GND")
+    throw new Error("hors de l'îlot, le net est GND : "+simNetPlanEnIpc(cL2, 30, 20));
+  if(simNetPlanEnIpc(cL2, 13, 20)!=="")
+    throw new Error("entre les deux il n'y a pas de cuivre, et rien ne s'invente");
+
+  /* 2. LE NET DE LA COUCHE, LUI, N'EN VOIT QU'UN — c'est le piège. */
+  const netCouche=simNetDuConducteurIpc(LT.cu[iL2]);
+  if(netCouche!=="GND")
+    throw new Error("la plus grande zone de L2 est la masse : "+netCouche);
+
+  /* 3. LES PLANS DE RÉFÉRENCE D'UN VIA, MESURÉS À SA POSITION. À x=30 le plan
+     du dessous est de la MASSE : la référence ne change pas de net. */
+  const k=simKUnite();
+  const loin=simPlansNetsEnIpc(0, 3, 30*k, 20*k);
+  if(!loin||loin["L2"]!=="GND"||loin["L1"]!=="GND")
+    throw new Error("à x=30 les deux plans sont de la masse : "+JSON.stringify(loin));
+  /* Et dans l'îlot, elle change VRAIMENT. */
+  const dedans=simPlansNetsEnIpc(0, 3, 6*k, 20*k);
+  if(!dedans||dedans["L2"]!=="+3V3"||dedans["L1"]!=="GND")
+    throw new Error("dans l'îlot, L2 est une alimentation : "+JSON.stringify(dedans));
+
+  /* 4. LES PLANS QU'UN VIA DE MASSE RACCORDE, mesurés à SA position. */
+  const joints=simPlansJointsEnIpc(30, 20, "GND");
+  if(joints.indexOf("L1")<0||joints.indexOf("L2")<0)
+    throw new Error("à x=30 un via de masse touche les DEUX plans : "+JSON.stringify(joints));
+  const dansIlot=simPlansJointsEnIpc(6, 20, "GND");
+  if(dansIlot.indexOf("L2")>=0)
+    throw new Error("dans l'îlot d'alim, un via de masse ne touche PAS L2 : "+
+                    JSON.stringify(dansIlot));
+  if(dansIlot.indexOf("L1")<0)
+    throw new Error("il touche toujours L1, qui est de la masse partout");
+
+  /* 5. PAS DE CUIVRE DU TOUT = PAS DE RÉFÉRENCE. Entre l'îlot et le reste du
+     plan il y a une bande sans cuivre : ce n'est pas « la référence change »,
+     c'est « il n'y a pas de référence », et aucun condensateur ne rattrape
+     cela. */
+  const nu=simPlansSansCuivreIpc(0, 3, 13*k, 20*k);
+  if(nu.indexOf("L2")<0)
+    throw new Error("entre les deux versements, L2 n'a pas de cuivre : "+
+                    JSON.stringify(nu));
+  if(simPlansSansCuivreIpc(0, 3, 30*k, 20*k).length)
+    throw new Error("là où le cuivre est présent, rien à signaler");
+
+  /* 6. ET LA RECHERCHE DE PONTS SUIT LE MÊME NET LOCAL : là où les deux plans
+     sont de la masse, il n'y a rien à ponter. */
+  const rien=simPontsPlansIpc(0, 3, 30*k, 20*k);
+  if(rien.ponts!==null||!/même net/.test(rien.raison))
+    throw new Error("deux masses locales n'ont rien à ponter : "+JSON.stringify(rien));
+});
+
+T("un via au centre de son antipad reconnaît le plan de masse qui l'entoure",()=>{
+  const empilage=[
+    {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR"},
+    {nom:"D1",     seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"L1",     seq:3, ep:0.035, type:"PLANE"},
+    {nom:"Coeur",  seq:4, ep:0.71,  type:"DIELECTRIC", dk:"4.5", df:"0.02"},
+    {nom:"L2",     seq:5, ep:0.035, type:"PLANE"},
+    {nom:"D2",     seq:6, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Bottom", seq:7, ep:0.035, type:"CONDUCTOR"},
+  ];
+  carte({empilage:empilage,
+         couches:["Top","L1","L2","Bottom"],
+         nets:["N$1","GND","N$2","+3V3"],
+         plans:[{c:1, n:1, g:[{o:rect(0,0,50,50), t:[]}]},
+                {c:2, n:1, g:[{o:rect(0,0,50,50), t:[rect(15.8, 29.4, 16.8, 30.4)]}]}],
+         padstacks:{p:{trou:0.3, pad:0.6, pads:[{c:0, d:0.6, f:"circle"}]}},
+         composants:[]});
+  // L2 est configuré avec un rôle "pwr" dans l'empilage, mais porte un plan de masse GND
+  // avec un dégagement d'antipad de 1.0mm x 1.0mm autour du via à (16.3, 29.9)
+  const iL2=LT.cu.findIndex(c=>c.nom==="L2");
+  if(iL2>=0) LT.cu[iL2].role="pwr";
+  const cL2=LT.cu[iL2].couche;
+
+  // 1. Le via à (16.3, 29.9) est au centre de l'antipad : il doit reconnaître GND
+  const netVia=simNetPlanEnIpc(cL2, 16.3, 29.9);
+  if(netVia!=="GND")
+    throw new Error("le via dans son antipad doit voir GND, obtenu : "+JSON.stringify(netVia));
+
+  // 2. simPlansNetsEnIpc doit renvoyer GND pour L1 et L2
+  const k=simKUnite();
+  const pn=simPlansNetsEnIpc(0, 3, 16.3*k, 29.9*k);
+  if(!pn||pn["L1"]!=="GND"||pn["L2"]!=="GND")
+    throw new Error("plans_nets doit contenir L1:GND et L2:GND : "+JSON.stringify(pn));
+
+  // 3. simPontsPlansIpc : deux plans de même net -> pas de ponts à chercher
+  const rp=simPontsPlansIpc(0, 3, 16.3*k, 29.9*k);
+  if(rp.ponts!==null)
+    throw new Error("aucun pont ne doit être cherché entre deux masses : "+JSON.stringify(rp));
+
+  // 4. simPlansSansCuivreIpc : le cuivre est bien présent autour du via
+  const sc=simPlansSansCuivreIpc(0, 3, 16.3*k, 29.9*k);
+  if(sc.length)
+    throw new Error("le plan L2 est présent autour du via : "+JSON.stringify(sc));
+});
+
+T("les découplages qui joignent deux plans partent avec le via",()=>{
+  /* CE QUE CETTE PAGE NE CHERCHAIT PAS. `simPontsPlans` vivait dans l'éditeur
+     PCB seulement : la visionneuse envoyait `ponts` absent, le serveur
+     répondait « cette page ne cherche pas les découplages », ne comptait que
+     l'étalement dans les plans — donc SOUS-ESTIMAIT la traversée — et le
+     chevelu ne montrait jamais par où le retour passe réellement. Sur des
+     fichiers IPC-2581, c'est-à-dire sur les cartes qu'on reçoit d'un
+     fabricant : celles qu'on ne peut pas corriger soi-même. */
+  const empilage=[
+    {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR"},
+    {nom:"D1",     seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"L1",     seq:3, ep:0.035, type:"PLANE"},
+    {nom:"Coeur",  seq:4, ep:1.065, type:"DIELECTRIC", dk:"4.5", df:"0.02"},
+    {nom:"L2",     seq:5, ep:0.035, type:"PLANE"},
+    {nom:"D2",     seq:6, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Bottom", seq:7, ep:0.035, type:"CONDUCTOR"}
+  ];
+  /* GND sur L1, +3V3 sur L2 : la référence change de NET entre Top et Bottom,
+     et AUCUN via de masse ne peut joindre les deux. */
+  /* `c` est un index dans `couches` : 0=Top, 1=L1, 2=L2, 3=Bottom. */
+  const plansGnd=[{c:1, n:1, g:[{o:rect(2,2,58,38), t:[]}]}];
+  const plansPwr=[{c:2, n:3, g:[{o:rect(2,2,58,38), t:[]}]}];
+  /* Un 100 nF à deux bornes entre GND et +3V3, et un régulateur à trois pattes
+     qui touche les deux nets lui aussi : le filtre est le NOMBRE DE BORNES. */
+  const composants=[
+    {ref:"C12", val:"100nF", x:X1+3, y:Y, r:0, m:0,
+     pads:[{x:-0.5, y:0, ps:"p", n:1}, {x:0.5, y:0, ps:"p", n:3}], pins:[]},
+    {ref:"U9",  val:"AMS1117", x:X1+5, y:Y, r:0, m:0,
+     pads:[{x:-1, y:0, ps:"p", n:1}, {x:0, y:0, ps:"p", n:3},
+           {x:1, y:0, ps:"p", n:3}], pins:[]},
+    /* Et un découplage HORS du rayon de dix millimètres. */
+    {ref:"C99", val:"100nF", x:X1+40, y:Y, r:0, m:0,
+     pads:[{x:-0.5, y:0, ps:"p", n:1}, {x:0.5, y:0, ps:"p", n:3}], pins:[]}
+  ];
+  carte({empilage:empilage,
+         couches:["Top","L1","L2","Bottom"],
+         nets:["N$1","GND","N$2","+3V3"],
+         plans:plansGnd.concat(plansPwr),
+         padstacks:{p:{trou:0, pad:0.6, pads:[{c:0, d:0.6, f:"circle"}]}},
+         composants:composants});
+
+  /* LE RÔLE SE FORCE, COMME DANS LE PANNEAU D'EMPILAGE — et il le FAUT ici :
+     `ltAutoRole` classe toute couche de type PLANE en « gnd », quel que soit
+     son net. Sans ce forçage, les deux plans internes sont vus comme deux
+     masses et il n'y a rien à ponter. C'est exactement pour cela que le
+     sélecteur signal / gnd / pwr existe. */
+  const forcer = r => {V.sur.role = r; ltPreparer();};
+  forcer({"L2":"pwr"});
+
+  /* 1. LE FILTRE. Deux bornes, dans le rayon, joignant les deux nets. */
+  const rp=simPontsPlansIpc(0, 3, X1, Y);
+  const ponts=rp.ponts;
+  if(ponts===null)
+    throw new Error("les nets des plans sont déclarés et diffèrent : on doit "+
+                    "chercher — "+rp.raison);
+  const refs=ponts.map(p=>p.repere);
+  if(refs.indexOf("C12")<0)
+    throw new Error("le 100 nF à deux bornes doit être retenu : "+JSON.stringify(refs));
+  if(refs.indexOf("U9")>=0)
+    throw new Error("un régulateur à trois pattes ne joint rien en alternatif : "+
+                    JSON.stringify(refs));
+  if(refs.indexOf("C99")>=0)
+    throw new Error("un découplage hors du rayon de recherche ne doit pas être retenu");
+
+  /* 2. LA VALEUR VOYAGE. En dessous de sa résonance c'est SA capacité qui fixe
+     l'impédance de la branche, pas son inductance. */
+  const c12=ponts.find(p=>p.repere==="C12");
+  if(!(Math.abs(c12.capacite_F-1e-7)<1e-12))
+    throw new Error("la valeur lue dans `val` doit partir : "+c12.capacite_F);
+  if(Math.abs(Math.hypot(c12.x-X1, c12.y-Y)-3)>1e-6)
+    throw new Error("le découplage doit être coté à 3 mm du via");
+
+  /* 3. ON NE REND RIEN QUAND IL N'Y A RIEN À TRAVERSER. Deux plans du MÊME net :
+     le retour passe par le premier via de masse venu. */
+  carte({empilage:empilage,
+         couches:["Top","L1","L2","Bottom"],
+         nets:["N$1","GND","N$2","+3V3"],
+         plans:plansGnd.concat([{c:2, n:1, g:[{o:rect(2,2,58,38), t:[]}]}]),
+         padstacks:{p:{trou:0, pad:0.6, pads:[{c:0, d:0.6, f:"circle"}]}},
+         composants:composants});
+  /* Rôle rendu à la détection automatique : sinon le forçage « pwr » de
+     l'étape précédente survit et fabrique un net « PWR » sur ce plan de masse
+     — ce qui est justement le sujet de l'étape 7. */
+  forcer({});
+  const memeNet=simPontsPlansIpc(0, 3, X1, Y);
+  if(memeNet.ponts!==null)
+    throw new Error("deux plans de masse n'ont rien à faire joindre");
+  if(!/même net/.test(memeNet.raison))
+    throw new Error("la raison doit nommer la cause : "+memeNet.raison);
+
+  /* 5. LE NET D'UNE BORNE VIENT DE `<LogicalNet>`, PAS DES PADS. C'est ce que
+     le parseur écrit noir sur blanc, et c'est la forme d'un export RÉEL : ne
+     lire que les pads faisait manquer TOUS les découplages d'un vrai fichier —
+     la fiche annonçait « aucun découplage » sur une carte qui en porte
+     cinquante. On lit les deux, et on prend celle qui parle. */
+  carte({empilage:empilage,
+         couches:["Top","L1","L2","Bottom"],
+         nets:["N$1","GND","N$2","+3V3"],
+         plans:plansGnd.concat(plansPwr),
+         padstacks:{p:{trou:0, pad:0.6, pads:[{c:0, d:0.6, f:"circle"}]}},
+         composants:[
+           /* Pads SANS net, brochage AVEC : la forme d'un export réel. */
+           {ref:"C40", val:"100nF", x:X1+3, y:Y, r:0, m:0,
+            pads:[{x:-0.5,y:0,ps:"p"},{x:0.5,y:0,ps:"p"}],
+            pins:[{num:"1",x:-0.5,y:0,n:1},{num:"2",x:0.5,y:0,n:3}]},
+           /* Et un régulateur : trois broches, il ne joint rien en alternatif. */
+           {ref:"U9", val:"AMS1117", x:X1+4, y:Y, r:0, m:0, pads:[],
+            pins:[{num:"1",x:-1,y:0,n:1},{num:"2",x:0,y:0,n:3},
+                  {num:"3",x:1,y:0,n:3}]}
+         ]});
+  forcer({"L2":"pwr"});
+  const parPins=simPontsPlansIpc(0, 3, X1, Y);
+  if(!parPins.ponts||!parPins.ponts.length)
+    throw new Error("le net porté par les PINS doit être lu : "+parPins.raison);
+  if(parPins.ponts.length!==1||parPins.ponts[0].repere!=="C40")
+    throw new Error("seul le composant à deux bornes doit être retenu : "+
+                    JSON.stringify(parPins.ponts.map(p=>p.repere)));
+
+  /* 6. CHERCHÉ ET RIEN VU : c'est un CONSTAT sur la carte, et la raison doit le
+     distinguer d'un fichier qui ne déclare aucune borne. */
+  carte({empilage:empilage,
+         couches:["Top","L1","L2","Bottom"],
+         nets:["N$1","GND","N$2","+3V3"],
+         plans:plansGnd.concat(plansPwr),
+         padstacks:{p:{trou:0, pad:0.6, pads:[{c:0, d:0.6, f:"circle"}]}},
+         composants:[{ref:"C99", val:"100nF", x:X1+40, y:Y, r:0, m:0,
+                      pads:[], pins:[{num:"1",x:-0.5,y:0,n:1},
+                                     {num:"2",x:0.5,y:0,n:3}]}]});
+  forcer({"L2":"pwr"});
+  const vide=simPontsPlansIpc(0, 3, X1, Y);
+  if(!vide.ponts||vide.ponts.length)
+    throw new Error("un découplage hors du rayon ne doit pas être retenu");
+  if(!/dans 10 mm/.test(vide.raison))
+    throw new Error("la raison doit dire jusqu'où on a cherché : "+vide.raison);
+
+  /* 4. LA LECTURE DES VALEURS. Sans préfixe, « 100 » seul n'est pas cent
+     farads : c'est une valeur qu'on ne sait pas lire, et l'inventer serait
+     pire que de l'ignorer — le serveur a son repli, annoncé. */
+  if(simValeurFaradsIpc("100nF")!==1e-7&&Math.abs(simValeurFaradsIpc("100nF")-1e-7)>1e-12)
+    throw new Error("100nF");
+  if(Math.abs(simValeurFaradsIpc("4u7")-4e-6)>1e-12&&simValeurFaradsIpc("4u7")!==0)
+    throw new Error("4u7 doit se lire 4 µF ou pas du tout, pas autre chose");
+  if(simValeurFaradsIpc("100")!==0)
+    throw new Error("une valeur sans préfixe ne se devine pas");
+  if(simValeurFaradsIpc("")!==0||simValeurFaradsIpc(null)!==0)
+    throw new Error("une valeur absente ne se devine pas non plus");
+
+  /* 7. UNE DÉDUCTION NE S'ANNONCE PAS COMME UNE LECTURE — et les deux lecteurs
+     du net d'un plan doivent s'accorder. C'est le défaut qui a coûté une
+     enquête entière : `simStackupIpc` passait le RÔLE à `simNetDuPlanIpc`,
+     `simPontsPlansIpc` passait l'index de boucle de son `.map` — donc deux
+     nets différents pour la même couche. Le serveur voyait « GND → PWR » et
+     criait au défaut grave ; la page voyait « GND → GND » et renonçait à
+     chercher les découplages. */
+  /* L2 N'A PAS DE CUIVRE AU DROIT DU VIA — sa zone s'arrête avant. La mesure
+     locale ne peut donc rien dire, et c'est le rôle forcé qui tranche : c'est
+     précisément le cas où le net est DÉDUIT. Là où le cuivre parle, en
+     revanche, c'est lui qui a le dernier mot — voir l'essai « un plan n'est pas
+     d'un seul net ». */
+  carte({empilage:empilage,
+         couches:["Top","L1","L2","Bottom"],
+         nets:["N$1","GND","N$2"],
+         plans:[{c:1, n:1, g:[{o:rect(2,2,58,38), t:[]}]},
+                {c:2, n:1, g:[{o:rect(2,2,10,38), t:[]}]}],
+         padstacks:{p:{trou:0, pad:0.6, pads:[{c:0, d:0.6, f:"circle"}]}},
+         composants:[]});
+  forcer({"L2":"pwr"});
+  const pile=simStackupIpc().layers.filter(c=>c.type==="copper");
+  const l2=pile.find(c=>c.name==="L2");
+  if(l2.net!=="PWR")
+    throw new Error("un plan forcé en pwr sans net d'alim rend le littéral PWR : "+l2.net);
+  if(l2.net_suppose!==true)
+    throw new Error("ce net est DÉDUIT du rôle, pas lu : il doit être marqué");
+  const l1=pile.find(c=>c.name==="L1");
+  if(l1.net!=="GND"||l1.net_suppose)
+    throw new Error("un net LU dans le cuivre ne doit pas être marqué supposé : "+
+                    l1.net+" / "+l1.net_suppose);
+  /* ET LES DEUX LECTEURS VOIENT LE MÊME NET. */
+  const iL2=LT.cu.findIndex(c=>c.nom==="L2");
+  if(simNetDuConducteurIpc(LT.cu[iL2])!==l2.net)
+    throw new Error("les deux lectures du net d'un plan divergent : "+
+                    simNetDuConducteurIpc(LT.cu[iL2])+" contre "+l2.net);
+  const parRole=simPontsPlansIpc(0, 3, X1, Y);
+  if(parRole.ponts===null)
+    throw new Error("avec le rôle passé, les nets diffèrent : on doit chercher — "+
+                    parRole.raison);
+});
+
 T("un plan qu'on n'a pas su sonder ne met pas de fentes dans le document",()=>{
   /* LE CHAMP EST ABSENT, et c'est ce qui fait écrire au serveur « rien n'a pu
      être examiné » au lieu de « aucune zone de vigilance ».
@@ -3256,6 +3621,18 @@ T("le rôle d'une couche de cuivre peut être forcé en signal ou en plan",()=>{
   st = simStackupIpc();
   let cu0 = st.layers.find(l => l.name === c0.nom);
   if(cu0.role !== "plane") throw new Error("simStackupIpc devrait émettre role: plane pour c0");
+
+  // Forcer c0 en PWR et c1 en GND
+  V.sur.role[c0.nom] = "pwr";
+  V.sur.role[c1.nom] = "gnd";
+  ltPreparer();
+  if(LT.cu[0].role !== "pwr" || !LT.cu[0].plan) throw new Error("c0 devrait être pwr");
+  if(LT.cu[1].role !== "gnd" || !LT.cu[1].plan) throw new Error("c1 devrait être gnd");
+  st = simStackupIpc();
+  cu0 = st.layers.find(l => l.name === c0.nom);
+  cu1 = st.layers.find(l => l.name === c1.nom);
+  if(cu0.role !== "plane" || cu0.net !== "PWR") throw new Error("simStackupIpc pour c0 (pwr) invalide: " + JSON.stringify(cu0));
+  if(cu1.role !== "plane" || cu1.net !== "GND") throw new Error("simStackupIpc pour c1 (gnd) invalide: " + JSON.stringify(cu1));
 
   // Nettoyage de la surcharge
   delete V.sur.role[c0.nom];
@@ -3455,5 +3832,169 @@ T("sélection et chaînage de piste sur la même couche : mdlChainePistesMemeCou
   V.sel = [];
 });
 
+T("arcs dans ltNet et mdlArcLongueur : calcul exact de longueur, impédance et agrégation", function(){
+  // 1. mdlArcLongueur sur différents angles
+  // Quart de cercle r=10mm, de (10, 0) à (0, 10), centre (0, 0), sens direct (trigonométrique, h=false)
+  const arcQuart = { s: [10, 0], e: [0, 10], m: [0, 0], h: false, w: 0.2, c: 0, n: 0 };
+  const lenQuart = mdlArcLongueur(arcQuart);
+  const attQuart = 10 * Math.PI / 2; // ~15.70796
+  if(Math.abs(lenQuart - attQuart) > 1e-4){
+    throw new Error("Longueur quart de cercle incorrecte: " + lenQuart + " attendu: " + attQuart);
+  }
+
+  // Demi-cercle r=5mm sens horaire (h=true), de (5, 0) à (-5, 0), centre (0, 0)
+  const arcDemiH = { s: [5, 0], e: [-5, 0], m: [0, 0], h: true, w: 0.2, c: 0, n: 0 };
+  const lenDemiH = mdlArcLongueur(arcDemiH);
+  const attDemi = 5 * Math.PI; // ~15.70796
+  if(Math.abs(lenDemiH - attDemi) > 1e-4){
+    throw new Error("Longueur demi-cercle horaire incorrecte: " + lenDemiH + " attendu: " + attDemi);
+  }
+
+  // 2. Modèle avec net contenant piste + arc
+  V.unite = "mm";
+  V.couches = [
+    { nom: "TOP", signal: true, plan: false, pistes: [], arcs: [], plans: [], pads: [], textes: [], cpt: 0 },
+    { nom: "GND", signal: false, plan: true, pistes: [], arcs: [], plans: [], pads: [], textes: [], cpt: 0 }
+  ];
+  // Initialiser LT (empilage)
+  LT.pret = true;
+  LT.cu = [
+    { nom: "TOP", couche: 0, plan: false, signal: true, ep: 0.035, epSrc: true, num: 1 },
+    { nom: "GND", couche: 1, plan: true, signal: false, ep: 0.035, epSrc: true, num: 2 }
+  ];
+  LT.diel = [
+    { nom: "FR4", t: 0.2, tSrc: true, er: 4.5, erSrc: true, num: 1 }
+  ];
+  LT.gap = [
+    { c1: 0, c2: 1, t: 0.2, er: 4.5, cle: "TOP/GND", erConnu: true, epSupposee: false, tSrc: true, erSrc: true }
+  ];
+
+  const p1 = { p: [0, 0, 10, 0], w: 0.2, c: 0, n: 0 }; // L=10mm
+  const a1 = arcQuart; // L=15.708mm
+
+  V.parNet = [
+    { i: 0, nom: "NET_MIXTE", pistes: [p1], arcs: [a1], plans: [], pads: [], trous: [], longueur: 10 + lenQuart, couches: new Set([0]) },
+    { i: 1, nom: "NET_ARC_SEUL", pistes: [], arcs: [a1], plans: [], pads: [], trous: [], longueur: lenQuart, couches: new Set([0]) }
+  ];
+
+  // Test ltArc direct
+  const resArc = ltArc(a1, 0);
+  if(!resArc || !(resArc.len > 0) || !(resArc.z0 > 0) || !(resArc.tpd > 0)){
+    throw new Error("ltArc doit retourner une géométrie et impédance valide: " + JSON.stringify(resArc));
+  }
+  if(Math.abs(resArc.len - lenQuart) > 1e-4){
+    throw new Error("ltArc len incorrecte: " + resArc.len + " vs " + lenQuart);
+  }
+
+  // Test ltNet avec piste + arc
+  const resNetMixte = ltNet(0);
+  if(!resNetMixte){
+    throw new Error("ltNet doit retourner un résultat pour un net contenant piste et arc");
+  }
+  if(resNetMixte.pistes !== 1 || resNetMixte.arcs !== 1){
+    throw new Error("ltNet décompte incorrect: pistes=" + resNetMixte.pistes + " arcs=" + resNetMixte.arcs);
+  }
+  const lenTotale = 10 + lenQuart;
+  if(Math.abs(resNetMixte.len - lenTotale) > 1e-4){
+    throw new Error("ltNet longueur totale incorrecte: " + resNetMixte.len + " vs " + lenTotale);
+  }
+  if(resNetMixte.morceaux.length !== 1 || resNetMixte.morceaux[0].n !== 2){
+    throw new Error("ltNet doit grouper piste et arc de même couche/largeur dans morceaux: " + JSON.stringify(resNetMixte.morceaux));
+  }
+
+  // Test ltNet avec arc seul
+  const resNetArcSeul = ltNet(1);
+  if(!resNetArcSeul || resNetArcSeul.arcs !== 1 || resNetArcSeul.pistes !== 0){
+    throw new Error("ltNet doit fonctionner sur un net composé uniquement d'arcs");
+  }
+  if(Math.abs(resNetArcSeul.len - lenQuart) > 1e-4){
+    throw new Error("ltNet arc seul longueur incorrecte: " + resNetArcSeul.len);
+  }
+
+  V.parNet = null;
+  V.couches = null;
+  LT.pret = false;
+});
+T("SIM_BUS dans visionneuse IPC-2581 : extraction temps de vol et fermeture temporelle", function(){
+  carte({nets: ["CLK", "DATA0", "DATA1", "GND"]});
+  V.unite = "mm";
+  V.parNet[0].pistes = [{ c: 0, w: 0.25, p: [0, 0, 30, 0] }];
+  V.parNet[0].arcs = [];
+  V.parNet[1].pistes = [{ c: 0, w: 0.25, p: [0, 5, 30, 5] }];
+  V.parNet[1].arcs = [];
+  V.parNet[2].pistes = [{ c: 0, w: 0.25, p: [0, 10, 10, 10] }];
+  V.parNet[2].arcs = [];
+
+  const clkFlight = SIM_IPC.busNetFlight("CLK");
+  if(Math.abs(clkFlight.len - 30) > 0.1) throw new Error("len CLK incorrecte: " + clkFlight.len);
+  if(clkFlight.tflight <= 0) throw new Error("tflight CLK doit être positif: " + clkFlight.tflight);
+
+  // Initialisation du panneau avec l'adaptateur IPC
+  simInit(SIM_IPC, document.createElement("div"));
+  SIM_BUS.nom = "Bus IPC Test";
+  SIM_BUS.clocks = ["CLK"];
+  SIM_BUS.datas = ["DATA0", "DATA1"];
+  SIM_BUS.dataClockMap = {};
+  SIM_BUS.freqMhz = 50;
+  SIM_BUS.tsu = 2.0;
+  SIM_BUS.th = 1.0;
+  SIM_BUS.tcoMin = 1.0;
+  SIM_BUS.tcoMax = 17.8;
+
+  simBusCalculer();
+
+  if(!SIM_BUS.result) throw new Error("calcul de bus IPC échoué");
+  const res = SIM_BUS.result;
+  const d0 = res.signals.find(s => s.net === "DATA0");
+  const d1 = res.signals.find(s => s.net === "DATA1");
+  if(d0.status !== "ok") throw new Error("DATA0 doit être OK mais est: " + d0.status);
+  if(d1.status !== "hold_violation") throw new Error("DATA1 doit être en hold_violation mais est: " + d1.status);
+  if(d1.meanderNeededMm <= 0) throw new Error("DATA1 doit avoir besoin de serpentin");
+
+  const html = simRendreBus();
+  if(!html.includes("Bus IPC Test")) throw new Error("le nom du bus doit figurer dans le rendu");
+  if(!html.includes("Serpentin requis")) throw new Error("la recommandation IPC doit apparaître");
+
+  V.parNet = null;
+  V.couches = null;
+  LT.pret = false;
+});
+
+T("SIM_BUS dans visionneuse IPC-2581 : détection pont série 560Ω et calcul RC", function(){
+  carte({nets: ["MOSI", "SPI_SIGN004101", "GND"]});
+  V.unite = "mm";
+  const compR1 = {
+    ref: "R1",
+    valeur: "560 ohm",
+    package: "0402",
+    pads: [
+      { n: 0 },
+      { n: 1 }
+    ]
+  };
+  V.parRef = new Map([["R1", compR1]]);
+  V.parNet[0].pistes = [{ c: 0, w: 0.2, p: [0, 0, 15, 0] }];
+  V.parNet[0].arcs = [];
+  V.parNet[1].pistes = [{ c: 0, w: 0.2, p: [16, 0, 30, 0] }];
+  V.parNet[1].arcs = [];
+
+  const pont = SIM_IPC.trouverPontSerie("MOSI");
+  if(!pont) throw new Error("trouverPontSerie IPC n'a pas détecté le pont");
+  if(pont.comp !== "R1" || pont.rOhms !== 560 || pont.netAval !== "SPI_SIGN004101"){
+    throw new Error("pont série détecté invalide: " + JSON.stringify(pont));
+  }
+
+  const flight = SIM_IPC.busNetFlight(pont.label);
+  if(flight.rOhms !== 560) throw new Error("busNetFlight doit lire 560 ohms: " + flight.rOhms);
+  if(flight.rcDelayPs <= 0) throw new Error("retard RC doit être positif: " + flight.rcDelayPs);
+  if(flight.tflightTotal <= flight.tflight) throw new Error("tflightTotal doit inclure le retard RC");
+
+  V.parNet = null;
+  V.parRef = null;
+  V.couches = null;
+  LT.pret = false;
+});
+
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
 process.exit(ko?1:0);
+

@@ -160,6 +160,18 @@ function mdlArc(a){
   if(Math.abs(d-f)<1e-9)f=d+(a.h?-2*Math.PI:2*Math.PI);
   return {r:r,d:d,f:f,h:!!a.h,cx:a.m[0],cy:a.m[1]};
 }
+function mdlArcAngle(g){
+  let d=g.f-g.d;
+  if(g.h){ while(d>0)d-=2*Math.PI; }
+  else   { while(d<0)d+=2*Math.PI; }
+  return Math.abs(d);
+}
+function mdlArcLongueur(a){
+  if(!a||!a.s||!a.e||!a.m)return 0;
+  const g=mdlArc(a);
+  if(!(g.r>0))return Math.hypot(a.e[0]-a.s[0],a.e[1]-a.s[1]);
+  return g.r*mdlArcAngle(g);
+}
 
 /* ==========================================================================
    Formes de pastilles
@@ -618,7 +630,7 @@ function mdlCharger(modele,nomFichier){
   }
   for(const a of modele.arcs){
     const c=V.couches[a.c]; if(c){c.arcs.push(a);c.cpt++;}
-    const n=net(a.n); if(n){n.arcs.push(a);if(a.c>=0)n.couches.add(a.c);}
+    const n=net(a.n); if(n){n.arcs.push(a);n.longueur+=mdlArcLongueur(a);if(a.c>=0)n.couches.add(a.c);}
   }
   for(const g of modele.plans){
     const c=V.couches[g.c]; if(c){c.plans.push(g);c.cpt++;}
@@ -1017,21 +1029,56 @@ function ltPreparer(){
   }
   for(const e of LT.cu){
     e.planSrcAuto=ltEstPlan(e);
+    e.roleAuto=ltAutoRole(e);
     const surRole=V.sur&&V.sur.role&&V.sur.role[e.nom];
-    if(surRole==="plan"||surRole==="signal"){
-      e.plan=(surRole==="plan");
+    if(surRole==="gnd"||surRole==="pwr"||surRole==="signal"||surRole==="plan"){
+      e.role=(surRole==="plan"?"gnd":surRole);
+      e.plan=(e.role==="gnd"||e.role==="pwr");
       e.planSrc="saisi";
       e.roleSaisi=true;
     }else{
+      e.role=e.roleAuto;
       e.planSrc=e.planSrcAuto;
-      e.plan=!!e.planSrc;
+      e.plan=(e.role==="gnd"||e.role==="pwr");
       e.roleSaisi=false;
     }
-    e.role=e.plan?"plan":"signal";
     const c=V.couches[e.couche];
     e.taux=c?c.tauxPlan:0;
   }
   LT.pret=LT.cu.length>0;
+}
+
+/* Auto-détection fine du rôle de la couche : GND, PWR ou Signal */
+function ltAutoRole(cu){
+  if(!cu)return "signal";
+  const e=LT.pile[cu.rang];
+  const typeStr=String((e&&e.type)||"").toUpperCase();
+  const nomStr=String(cu.nom||"").toUpperCase();
+  if(/GROUND|GND/.test(typeStr)||/GND|MASSE|0V|VSS/i.test(nomStr))return "gnd";
+  if(/POWER|PWR/.test(typeStr)||/POWER|PWR|VCC|VDD|ALIM|\+3V|\+5V|\+12V/i.test(nomStr))return "pwr";
+  /* LE NET AVANT LE TYPE, ET C'EST LE CORRECTIF. `/PLANE/ -> "gnd"` passait
+     AVANT toute lecture du net : une couche déclarée PLANE dans le fichier
+     sortait « masse » quels que soient les versements qu'elle porte, et le test
+     des noms au-dessus ne regarde que le nom de la COUCHE — « Conductor-3 » n'y
+     répond rien. Un plan d'alimentation d'un fichier IPC-2581 ordinaire était
+     donc systématiquement pris pour une masse, et il fallait forcer le rôle à
+     la main pour que l'outil voie le changement de référence.
+     ON LIT DONC LE CUIVRE : le net du plus grand versement de la couche dit ce
+     qu'elle est, bien mieux que son type. Le nom de net l'emporte sur le type
+     déclaré, jamais l'inverse. */
+  const netPlan=(typeof simNetDuPlanIpc==="function")?simNetDuPlanIpc(cu.couche):"";
+  if(/GND|MASSE|0V|VSS/i.test(netPlan))return "gnd";
+  if(/VCC|VDD|\+|PWR|POWER|ALIM/i.test(netPlan))return "pwr";
+  if(/PLANE/.test(typeStr))return "gnd";
+  const c=V.couches[cu.couche];
+  if(c&&c.tauxPlan>=LT_SEUIL_PLAN){
+    if(typeof simNetDuPlanIpc==="function"){
+      const net=simNetDuPlanIpc(cu.couche);
+      if(/VCC|VDD|\+|PWR|POWER|ALIM/i.test(net))return "pwr";
+    }
+    return "gnd";
+  }
+  return "signal";
 }
 
 /* Une couche de cuivre sert-elle de plan de référence ? Le fichier le dit
@@ -1181,6 +1228,20 @@ function ltPiste(piste,coucheIdx){
                    larg:!(piste.w>0)}};
 }
 
+function ltArc(arc,coucheIdx){
+  const g=ltGeom(coucheIdx==null?arc.c:coucheIdx);
+  if(!g)return null;
+  const k=(V.unite==="in")?25.4:1;
+  const w=(arc.w||0)*k, len=mdlArcLongueur(arc)*k;
+  const eeff=ltEeff(g,w), z0=ltZ0(g,w);
+  const tpd=len*Math.sqrt(eeff)/LT_C0;
+  return {g:g, w:w, len:len, eeff:eeff, z0:z0, tpd:tpd,
+          c:z0>0?tpd/z0:0, ind:tpd*z0,
+          psmm:len>0?tpd*1e12/len:0,
+          suppose:{er:!g.erConnu, ep:g.epSupposee, plan:g.ref===0,
+                   larg:!(arc.w>0)}};
+}
+
 /* Ce que vaut un net entier comme ligne. Un net n'a pas une impédance : il en
    a autant que de morceaux — une largeur ici, un changement de couche là — et
    en faire une somme n'aurait aucun sens. Ce qui s'additionne, ce sont les
@@ -1195,46 +1256,43 @@ function ltPiste(piste,coucheIdx){
    parcourir ne se sent pas. */
 function ltNet(i){
   const n=V.parNet[i];
-  if(!n||!n.pistes.length)return null;
+  if(!n||(!n.pistes.length&&!n.arcs.length))return null;
   const k=(V.unite==="in")?25.4:1;
   const morceaux=new Map();
-  const out={len:0, tpd:0, c:0, ind:0, pistes:0,
+  const out={len:0, tpd:0, c:0, ind:0, pistes:0, arcs:0,
              z0min:Infinity, z0max:0, z0moy:0, lenZ0:0,
-             lenHors:0, couchesHors:[], morceaux:[], arcs:n.arcs.length,
+             lenHors:0, couchesHors:[], morceaux:[],
              suppose:{er:false, ep:false, plan:false, larg:false}};
   const hors=new Set();
-  for(const p of n.pistes){
-    const e=ltPiste(p,p.c);
+
+  function ajouterMorceau(e, obj, isArc){
     if(!e){
-      /* Une couche hors empilage n'a pas de ligne à calculer. Sa longueur
-         existe pourtant : la compter dans le total ferait un retard sans
-         impédance, l'oublier ferait un net plus court qu'il n'est. On la met
-         de côté, et on le dit. */
-      out.lenHors+=mdlLongueur(p.p)*k;
-      hors.add(p.c);
-      continue;
+      const segLen=(isArc?mdlArcLongueur(obj):mdlLongueur(obj.p))*k;
+      out.lenHors+=segLen;
+      hors.add(obj.c);
+      return;
     }
-    out.len+=e.len; out.tpd+=e.tpd; out.c+=e.c; out.ind+=e.ind; out.pistes++;
+    out.len+=e.len; out.tpd+=e.tpd; out.c+=e.c; out.ind+=e.ind;
+    if(isArc)out.arcs++; else out.pistes++;
     for(const f in out.suppose)if(e.suppose[f])out.suppose[f]=true;
     if(e.z0>0){
       if(e.z0<out.z0min)out.z0min=e.z0;
       if(e.z0>out.z0max)out.z0max=e.z0;
       out.z0moy+=e.z0*e.len; out.lenZ0+=e.len;
     }
-    /* Le détail se groupe par couche et par largeur : c'est ce qui définit une
-       impédance, et deux pistes qui la partagent n'ont rien à dire de plus
-       l'une que l'autre. Combien elles sont se garde tout de même : un tronçon
-       de 1,6 mm fait de deux pistes ne ressemble pas à la piste de 0,6 mm
-       qu'on vient de cliquer, et sans ce nombre l'écart passe pour une
-       erreur. */
-    const cle=p.c+"|"+Math.round((p.w||0)*1000);
+    const cle=obj.c+"|"+Math.round((obj.w||0)*1000);
     let m=morceaux.get(cle);
     if(!m){
-      m={couche:p.c, w:e.w, z0:e.z0, eeff:e.eeff, len:0, n:0};
+      m={couche:obj.c, w:e.w, z0:e.z0, eeff:e.eeff, len:0, n:0, pistes:0, arcs:0};
       morceaux.set(cle,m);
     }
     m.len+=e.len; m.n++;
+    if(isArc)m.arcs++; else m.pistes++;
   }
+
+  for(const p of n.pistes)ajouterMorceau(ltPiste(p,p.c),p,false);
+  for(const a of n.arcs)ajouterMorceau(ltArc(a,a.c),a,true);
+
   out.z0moy=out.lenZ0>0?out.z0moy/out.lenZ0:0;
   if(!(out.z0max>0))out.z0min=0;
   out.couchesHors=[...hors];

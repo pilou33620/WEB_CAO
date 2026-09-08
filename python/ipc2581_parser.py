@@ -181,8 +181,30 @@ class IPC2581Parser:
         # `_lire_span`.
         self.drill_spans: Dict[str, tuple] = {}
 
+    def _verifier_xml_sur(self):
+        """Rejette les entites DTD XML (<!ENTITY) pour prevenir les attaques Billion Laughs / DoS."""
+        if hasattr(self.xml_file, "seek") and hasattr(self.xml_file, "read"):
+            pos = self.xml_file.tell()
+            self.xml_file.seek(0)
+            debut = self.xml_file.read(65536)
+            self.xml_file.seek(pos)
+            debut_b = debut.encode("utf-8", errors="ignore") if isinstance(debut, str) else bytes(debut)
+            if b"<!ENTITY" in debut_b.upper():
+                raise IPC2581ParseError("Declaration d'entite XML interdite (<!ENTITY).")
+        elif isinstance(self.xml_file, str):
+            try:
+                import os
+                if os.path.isfile(self.xml_file):
+                    with open(self.xml_file, "rb") as f:
+                        debut_b = f.read(65536)
+                        if b"<!ENTITY" in debut_b.upper():
+                            raise IPC2581ParseError("Declaration d'entite XML interdite (<!ENTITY).")
+            except OSError:
+                pass
+
     def parse(self) -> IPCDesign:
         logger.info(f"Début de l'import du fichier IPC-2581 : {self.xml_file}")
+        self._verifier_xml_sur()
         try:
             self.tree = ET.parse(self.xml_file)
             self.root = self.tree.getroot()

@@ -197,6 +197,8 @@ select.ltRoleSelect option{background:#15181e;color:var(--txt)}
   line-height:1.2;vertical-align:middle;margin-left:4px;
 }
 .badgeFonction.fn-plan{background:#2a2312;color:var(--yellow);border:1px solid #5a4718}
+.badgeFonction.fn-gnd{background:rgba(63,160,234,.15);color:var(--blue);border:1px solid rgba(63,160,234,.35)}
+.badgeFonction.fn-pwr{background:rgba(232,68,58,.15);color:#f0796f;border:1px solid rgba(232,68,58,.35)}
 .badgeFonction.fn-sig{background:#12241b;color:var(--green);border:1px solid #1f4a33}
 .badgeFonction.fn-diel{background:#1c1d1a;color:#9b9e93;border:1px solid #363a32}
 .badgeFonction.fn-masque{background:#22172f;color:#c084fc;border:1px solid #4a2d6b}

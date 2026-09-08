@@ -1038,6 +1038,8 @@ def doc_valide(doc):
         t_r = 0.0
         ajuste.append("Temps de montée négatif : ignoré, il est déduit de la"
                       " bande.")
+    elif fc > 0 and t_r > (0.5 / fc):
+        ajuste.append("Attention : le temps de montée (tr) dépasse une demi-période du signal.")
 
     return couches, objets, {"f_debut": f1, "f_fin": f2, "points": points,
                              "f_centre": fc, "temps_montee": t_r,
@@ -1051,17 +1053,18 @@ def doc_valide(doc):
 # lire, et il emporte avec lui ceux qui comptent. Ce qui reste vraiment hors
 # modele est enumere ici, et rien d'autre.
 AVERTISSEMENTS_MODELE = [
-    "Modèle de ligne : la piste est vue comme une suite de sections droites"
+    ("Modèle de ligne : la piste est vue comme une suite de sections droites"
     " uniformes, avec ses coudes, ses vias et leurs moignons cascadés en"
-    " éléments localisés. N'y sont pas : le rayonnement, et la cavité entre"
-    " plans hors du chemin de retour chiffré au raccord.",
-    "Le couplage aux pistes voisines est calculé À PART — Z différentielle,"
+    " éléments localisés. N'y sont pas : la cavité entre plans hors du chemin"
+    " de retour chiffré au raccord, et le rayonnement — sauf celui de la"
+    " boucle de retour d'un via, estimé à part et donné comme un plancher."),
+    ("Le couplage aux pistes voisines est calculé À PART — Z différentielle,"
     " section à deux conducteurs — et n'entre PAS dans la cascade :"
     " le Z₀ et les paramètres S ci-dessus sont ceux de la piste prise seule."
-    " Une piste couplée n'a pas une impédance mais deux, une par mode.",
-    "Le calcul de section est quasi-statique ; la dispersion est ajoutée par"
+    " Une piste couplée n'a pas une impédance mais deux, une par mode."),
+    ("Le calcul de section est quasi-statique ; la dispersion est ajoutée par"
     " le modèle de Getsinger, qui est un modèle et non un calcul. Au-delà de"
-    " quelques gigahertz sur stratifié courant, l'écart se creuse.",
+    " quelques gigahertz sur stratifié courant, l'écart se creuse."),
 ]
 
 
@@ -1399,6 +1402,26 @@ def _net_du_plan(couches, nom):
     return ""
 
 
+def _net_du_plan_suppose(couches, nom):
+    """Ce plan porte-t-il un net DEDUIT plutot que lu ?
+
+    La page peut forcer le role d'une couche -- signal, gnd, pwr -- et en tirer
+    un net quand aucun cuivre ne le donne : « PWR » sur une couche declaree
+    d'alimentation dont aucun net d'alimentation ne porte de zone. Le nom rendu
+    n'existe alors PAS sur la carte.
+
+    C'EST DEFENDABLE, ET CELA DOIT SE DIRE. Honorer « cette couche est une
+    alim » vaut mieux que de rendre vide. Mais le verdict qui en decoule --
+    « les nets different », donc « aucun via de masse ne peut refermer », donc
+    CRITIQUE -- repose alors sur un nom invente, et une fiche qui l'affirme sans
+    reserve fait passer une deduction pour une lecture.
+    """
+    for c in couches:
+        if c.get("type") == "copper" and (c.get("name") or "") == nom:
+            return bool(c.get("net_suppose"))
+    return False
+
+
 def _plans_ont_un_net(couches):
     """L'empilage declare-t-il le net de ses plans ?
 
@@ -1421,7 +1444,8 @@ def _plans_ont_un_net(couches):
     return False
 
 
-def _plans_touches(couches, couche_a, couche_b, net, verifier_net=True):
+def _plans_touches(couches, couche_a, couche_b, net, verifier_net=True,
+                   seulement_plans=True):
     """Les noms des plans de role « plan » qu'un via de `net` RACCORDE.
 
     C'est ce qui decide si un via de masse referme la boucle : il faut qu'il
@@ -1429,6 +1453,8 @@ def _plans_touches(couches, couche_a, couche_b, net, verifier_net=True):
 
     `verifier_net` a faux -- empilage sans nets de plan declares --, tout plan
     dans la portee compte. Voir `_plans_ont_un_net`.
+    `seulement_plans` a faux permet d'admettre toute couche conductrice dans la
+    portee du percage quand la page a certifie la connexion locale.
     """
     lo, hi = sorted((int(couche_a), int(couche_b)))
     noms = set()
@@ -1436,7 +1462,9 @@ def _plans_touches(couches, couche_a, couche_b, net, verifier_net=True):
         if not (0 <= i < len(couches)):
             continue
         c = couches[i]
-        if c.get("type") != "copper" or c.get("role") != "plane":
+        if c.get("type") != "copper":
+            continue
+        if seulement_plans and c.get("role") != "plane":
             continue
         if verifier_net and net and (c.get("net") or "") != net:
             continue
@@ -1444,6 +1472,29 @@ def _plans_touches(couches, couche_a, couche_b, net, verifier_net=True):
         if nom:
             noms.add(nom)
     return noms
+
+
+def _pourquoi_pas_le_plan(refs, autre, locaux, net, quel):
+    """Pourquoi ce via de masse ne porte pas le retour sur ce plan-la.
+
+    DEUX REFUS QUI NE SE DISENT PAS PAREIL, et les confondre coutait une heure
+    a qui lit la fiche. « Il ne touche pas le plan » envoie chercher un percage
+    trop court ou un via borgne. « Il touche le plan, mais un autre versement »
+    envoie regarder la DECOUPE du plan -- et c'est le seul geste qui repare.
+    """
+    noms = sorted(refs)
+    croise = sorted(set(noms) & autre)
+    if croise:
+        # COURT, PARCE QUE LA VISIONNEUSE LE PEINT SUR LE CUIVRE. Cette chaine
+        # part telle quelle dans le cartouche du chevelu, au milieu de la carte :
+        # une phrase de cent caracteres y est illisible, et un chevelu illisible
+        # ne se lit plus du tout. L'explication longue est dite UNE FOIS dans les
+        # avertissements, ou elle ne se repete pas par via. Meme libelle que
+        # l'editeur, mot pour mot : les deux pages doivent se lire pareil.
+        nom = croise[0]
+        sous = str(locaux.get(nom) or "").strip()
+        return "%s : autre versement (%s ici)" % (nom, sous)
+    return "ne rejoint pas %s, le plan %s" % (" / ".join(noms), quel)
 
 
 def _analyse_retour(trans, via, couches, segments, z_bornes, refs_nets,
@@ -1496,8 +1547,34 @@ def _analyse_retour(trans, via, couches, segments, z_bornes, refs_nets,
     #   · nets connus et IDENTIQUES     -> cas ordinaire, un via de masse suffit ;
     #   · nets INCONNUS                 -> on ne sait pas, et on le dit.
     plan_change = bool(refs_av and refs_ap and not (refs_av & refs_ap))
-    nets_av = set(n for n in (_net_du_plan(couches, x) for x in refs_av) if n)
-    nets_ap = set(n for n in (_net_du_plan(couches, x) for x in refs_ap) if n)
+
+    # UN PLAN N'EST PAS D'UN SEUL NET, ET LE SUPPOSER ETAIT LE DEFAUT DE FOND.
+    # `_net_du_plan` lit le net que l'empilage attribue a la COUCHE. Or une
+    # couche de plan est PARTITIONNEE : sur une carte reelle, Conductor-3 porte
+    # un ilot d'alimentation de quelques millimetres carres et tout le reste est
+    # de la masse. Le net de la couche est alors « PWR » -- celui de la plus
+    # grande zone, ou celui que le role force -- et il s'appliquait a la couche
+    # ENTIERE.
+    #
+    # CE QUE CELA FAISAIT DIRE. Un via de signal qui plonge la ou Conductor-3
+    # est de la MASSE sortait « la reference change de net, aucun via de masse
+    # ne peut refermer » -- alors que les vias de masse autour de lui referment
+    # parfaitement, puisqu'ils touchent la meme masse des deux cotes. On criait
+    # au defaut grave sur un routage correct, et on ecartait dix vias de retour
+    # qui travaillent.
+    #
+    # LE NET D'UN PLAN EST DONC UNE PROPRIETE DU POINT. Seule la page a la
+    # geometrie du cuivre : elle mesure le net AU DROIT DU VIA et l'envoie dans
+    # `plans_nets`. On la prefere partout ou elle parle, et on retombe sur le
+    # net de la couche -- avec sa reserve -- la ou elle se taît.
+    locaux = (via or {}).get("plans_nets") or {}
+
+    def _net_plan(nom):
+        mesure = str(locaux.get(nom) or "").strip()
+        return mesure if mesure else _net_du_plan(couches, nom)
+
+    nets_av = set(n for n in (_net_plan(x) for x in refs_av) if n)
+    nets_ap = set(n for n in (_net_plan(x) for x in refs_ap) if n)
     if not plan_change:
         nets_differents = False
     elif nets_av and nets_ap:
@@ -1510,6 +1587,20 @@ def _analyse_retour(trans, via, couches, segments, z_bornes, refs_nets,
         "plans_arrivee": sorted(refs_ap),
         "nets_depart": sorted(nets_av),
         "nets_arrivee": sorted(nets_ap),
+        # LE NET D'UN PLAN PEUT ETRE DEDUIT DU ROLE plutot que lu dans le
+        # cuivre -- voir `_net_du_plan_suppose`. Quand c'est le cas, tout le
+        # verdict qui en decoule est une deduction, et la fiche doit le porter.
+        # PAS DE CUIVRE DU TOUT sous le via, sur ce plan de reference. Ce n'est
+        # pas « la reference change », c'est « il n'y a pas de reference » : le
+        # net rendu pour cette couche n'est qu'un repli, et aucun condensateur
+        # de pontage ne rattrape une reference ABSENTE. Seule la page peut le
+        # mesurer -- le serveur n'a pas la geometrie du cuivre.
+        "plans_sans_cuivre": sorted(
+            str(n) for n in ((via or {}).get("plans_sans_cuivre") or ())
+            if n and str(n) in (refs_av | refs_ap)),
+        "nets_supposes": sorted(
+            n for n in (refs_av | refs_ap)
+            if _net_du_plan_suppose(couches, n)),
         # Le PLAN change : c'est une propriete des noms, toujours calculable.
         "plan_change": plan_change,
         # Les NETS different : vrai, faux, ou None quand on ne peut pas le dire.
@@ -1568,8 +1659,52 @@ def _analyse_retour(trans, via, couches, segments, z_bornes, refs_nets,
         vz1 = z_bornes[vlo] if vlo < len(z_bornes) else 0.0
         vz2 = z_bornes[vhi + 1] if vhi + 1 < len(z_bornes) else vz1
         net = str(v.get("net") or "")
-        touche = _plans_touches(couches, va, vb, net,
-                                not retour["plans_incertains"])
+        # LES PLANS QU'IL RACCORDE : MESURE D'ABORD, DEDUCTION ENSUITE.
+        # `_plans_touches` ne peut repondre qu'a la couche -- il n'a pas la
+        # geometrie du cuivre. La page l'a : elle regarde, au droit de CE via,
+        # quels plans portent SON net, et l'envoie dans `plans_joints`. Sur un
+        # plan partitionne c'est la seule reponse juste. On restreint quand meme
+        # a la PORTEE du percage : la page suppose les vias traversants, elle ne
+        # peut pas trancher cela.
+        joints = v.get("plans_joints")
+        if joints is None:
+            touche = _plans_touches(couches, va, vb, net,
+                                    not retour["plans_incertains"])
+        else:
+            portee = _plans_touches(couches, va, vb, net, False,
+                                    seulement_plans=False)
+            touche = set(str(n) for n in joints if n) & portee
+
+        # LE MEME PLAN N'EST PAS LE MEME CUIVRE, et c'est le dernier endroit
+        # ou l'hypothese « un net par couche » survivait. `plans_joints` dit
+        # quels plans ce via de masse touche -- AU DROIT DE LUI. Le courant de
+        # retour, lui, circule dans le cuivre AU DROIT DU VIA DE SIGNAL. Sur un
+        # plan partitionne, les deux ne sont pas le meme VERSEMENT, et le nom de
+        # la couche ne les distingue pas : « touche Conductor-2 » est vrai des
+        # deux cotes d'une frontiere qui les separe electriquement.
+        #
+        # CE QUE CELA FAISAIT DIRE, ET C'EST LE SENS QUI FLATTE. Un via de
+        # signal qui plonge DANS un ilot d'alimentation de Conductor-2, avec des
+        # vias de masse a un millimetre qui touchent Conductor-2 HORS de l'ilot :
+        # les noms concordaient, les vias etaient retenus, `raccorde` passait a
+        # vrai -- et l'inductance sortait comme une MESURE de boucle. Elle
+        # cumulait meme la cavite (« boucle+cavite »), donc le meme retour
+        # compte deux fois par deux chemins dont un n'existe pas. Le verdict
+        # CRITIQUE, lui, etait masque : il exige `not raccorde`.
+        #
+        # LA PREUVE EST DISPONIBLE, ET ELLE EST LOCALE. La page a mesure le net
+        # sous le via de SIGNAL (`plans_nets`) ; on connait celui du via de
+        # masse. Quand les deux sont lus et qu'ils DIFFERENT, il est demontre
+        # que ce via touche un AUTRE versement : il ne porte pas ce retour. Quand
+        # la page se tait, on ne peut rien demontrer et on garde le via -- avec
+        # les reserves que la fiche porte deja.
+        autre = set()
+        if net:
+            for nom in touche:
+                sous_signal = str(locaux.get(nom) or "").strip()
+                if sous_signal and sous_signal != net:
+                    autre.add(nom)
+        porte = touche - autre
 
         fiche = {"x": round(vx, 4), "y": round(vy, 4),
                  "distance_mm": round(dist, 4),
@@ -1577,6 +1712,8 @@ def _analyse_retour(trans, via, couches, segments, z_bornes, refs_nets,
                  "percage_mm": round(_nombre(v.get("drill_diameter"), 0.3), 4),
                  "plans": sorted(touche),
                  "part": 0.0, "retenu": False, "raison": ""}
+        if autre:
+            fiche["plans_autre_versement"] = sorted(autre)
 
         # 1. Est-ce bien de la masse ? Un via d'un autre signal ne porte pas le
         #    retour, meme s'il est a cote.
@@ -1590,12 +1727,12 @@ def _analyse_retour(trans, via, couches, segments, z_bornes, refs_nets,
                                % (vz1, vz2, z1, z2))
         # 3. Rejoint-il les DEUX plans de reference ? C'est ici que le cas
         #    GND -> PWR tombe, et il doit tomber en le disant.
-        elif refs_av and not (touche & refs_av):
-            fiche["raison"] = ("ne rejoint pas %s, le plan de départ"
-                               % " / ".join(sorted(refs_av)))
-        elif refs_ap and not (touche & refs_ap):
-            fiche["raison"] = ("ne rejoint pas %s, le plan d'arrivée"
-                               % " / ".join(sorted(refs_ap)))
+        elif refs_av and not (porte & refs_av):
+            fiche["raison"] = _pourquoi_pas_le_plan(refs_av, autre, locaux,
+                                                    net, "de départ")
+        elif refs_ap and not (porte & refs_ap):
+            fiche["raison"] = _pourquoi_pas_le_plan(refs_ap, autre, locaux,
+                                                    net, "d'arrivée")
         else:
             fiche["retenu"] = True
             # LA PORTEE PEUT ETRE SUPPOSEE, ET ALORS TOUT LE RESTE L'EST.
@@ -1614,10 +1751,65 @@ def _analyse_retour(trans, via, couches, segments, z_bornes, refs_nets,
     retour["retenus"] = len(retenus)
     retour["raccorde"] = bool(retenus)
     retour["vias"].sort(key=lambda f: f["distance_mm"])
+    # JUSQU'OU A-T-ON REGARDE. « Aucun via de masse ne referme la boucle » est
+    # un enonce sur la CARTE ; sans le rayon, c'est en fait un enonce sur le
+    # RAYON CHERCHE, et les deux ne se disent pas pareil -- c'est le meme soin
+    # que `cavite.cherche` prend deja pour les decouplages. La page l'envoie
+    # quand elle le connait ; sinon le champ reste absent et la phrase ne le
+    # promet pas.
+    rayon = _nombre((via or {}).get("retours_rayon_mm"), 0.0)
+    rayon_opt = _nombre((via or {}).get("retours_rayon_optimal_mm"), 1.8)
+    if rayon > 0:
+        retour["rayon_mm"] = round(rayon, 3)
+    retour["rayon_optimal_mm"] = round(rayon_opt, 3)
+    d_hors = _nombre((via or {}).get("retour_hors_rayon_mm"), None)
+    if d_hors is not None:
+        retour["plus_proche_hors_rayon_mm"] = round(d_hors, 3)
     if not retenus:
-        retour["raison"] = (
-            "aucun via de masse ne referme la boucle : l'inductance rendue est"
-            " celle d'un conducteur seul, et elle ne dépend pas du routage")
+        retour["statut"] = "ouvert"
+        ou = (" dans un rayon de %.1f mm" % rayon) if rayon > 0 else ""
+        if retour["vias"]:
+            retour["raison"] = (
+                "des vias de masse sont présents%s mais aucun ne referme la"
+                " boucle (%s) : l'inductance rendue est un PLANCHER — la self"
+                " partielle du barreau —, et la boucle réelle vaut davantage"
+                % (ou, retour["vias"][0].get("raison") or "voir la fiche"))
+        else:
+            if d_hors is not None:
+                retour["raison"] = (
+                    "aucun via de masse%s — le plus proche trouvé est à %.2f mm"
+                    " (trop éloigné, boucle ouverte) : l'inductance rendue est un"
+                    " PLANCHER — la self partielle du barreau —, elle ne dépend"
+                    " pas du routage, et la boucle réelle vaut davantage"
+                    % (ou, d_hors))
+            else:
+                retour["raison"] = (
+                    "aucun via de masse%s : l'inductance rendue est un PLANCHER —"
+                    " la self partielle du barreau —, elle ne dépend pas du"
+                    " routage, et la boucle réelle vaut davantage" % ou)
+    else:
+        d_min = min(f["distance_mm"] for f, _, _, _ in retenus)
+        retour["plus_proche_retenu_mm"] = round(d_min, 4)
+        for f, _, _, _ in retenus:
+            if f["distance_mm"] <= rayon_opt:
+                f["statut"] = "optimal"
+            else:
+                f["statut"] = "vigilance"
+                f["reserve"] = (
+                    "boucle large (distance %.2f mm > rayon optimal %.1f mm)"
+                    % (f["distance_mm"], rayon_opt)
+                )
+        if d_min <= rayon_opt:
+            retour["statut"] = "optimal"
+        else:
+            retour["statut"] = "vigilance"
+            retour["vigilance_raison"] = (
+                "boucle large : le via de retour le plus proche est à %.2f mm"
+                " (zone de vigilance : > %.1f mm). Le via est retenu et"
+                " l'inductance de boucle réelle est calculée, mais l'impédance"
+                " HF, le rebond de masse et le rayonnement augmentent fortement."
+                % (d_min, rayon_opt)
+            )
     trans["retour"] = retour
     return retour
 
@@ -1729,6 +1921,114 @@ def _capacite_transition(trans, via, couches, segments, seg_av, seg_ap,
     return c_tot
 
 
+# L'amplitude supposee du signal, en volts, quand la page ne l'envoie pas. Elle
+# ne sert qu'au rayonnement, ou elle entre LINEAIREMENT : se tromper d'un
+# facteur deux sur l'amplitude, c'est six decibels sur le champ. Trois volts
+# trois est l'amplitude logique la plus courante, et c'est aussi la valeur que
+# le panneau « Signal » propose par defaut.
+AMPLITUDE_REPLI = 3.3
+
+# La distance de mesure supposee, en metres, et la classe visee. Trois metres
+# et la classe B sont ce qu'un bureau d'etudes mesure en pre-conformite.
+DISTANCE_MESURE_REPLI = 3.0
+CLASSE_CEM_REPLI = "B"
+
+
+def _aire_boucle_retour(trans, h_via_mm):
+    """L'aire de la boucle que le courant de retour enferme, en m2, et de quoi
+    elle est faite. Rend (aire_m2, detail) ou (0.0, detail) quand on ne sait pas.
+
+    DEUX BOUCLES, ET ELLES NE SE CONFONDENT PAS :
+
+      · LA BOUCLE DU VIA. Le courant descend le barreau sur toute sa hauteur et
+        remonte par le via de masse le plus proche, a `d` de la. Dans le plan
+        vertical qui les contient, cela enferme h_via * d.
+      · LA BOUCLE DE LA CAVITE, quand la reference change. Le retour arrive par
+        un plan, doit repartir par l'autre, et fait pour cela le detour du
+        condensateur de pontage. Le rectangle enferme est large de la distance
+        au pont et haut de l'ECARTEMENT DES DEUX PLANS -- pas de la hauteur du
+        via : le detour ne se fait qu'entre ces deux plans-la.
+
+    ON N'ADDITIONNE PAS UNE AIRE QU'ON N'A PAS. Sans via de retour retenu, la
+    boucle du via n'est pas definie -- le courant revient par du cuivre lointain
+    qu'on ne sait pas situer. On rend alors la seule aire connue, et `minorant`
+    dit que la vraie est plus grande.
+    """
+    ret = trans.get("retour") or {}
+    cav = trans.get("cavite") or {}
+    detail = {"minorant": False, "via_mm2": None, "cavite_mm2": None}
+    aire_mm2 = 0.0
+
+    retenus = [f for f in (ret.get("vias") or []) if f.get("retenu")]
+    if retenus:
+        d = min(f["distance_mm"] for f in retenus)
+        a = float(h_via_mm) * d
+        detail["via_mm2"] = round(a, 4)
+        detail["distance_retour_mm"] = round(d, 4)
+        aire_mm2 += a
+    elif ret.get("source") != "absent" and not cav.get("plan_haut"):
+        # Rien ne referme, et il n'y a pas de cavite pour l'expliquer : la
+        # boucle passe par du cuivre lointain. Le rayon cherche est le seul
+        # minorant honnete dont on dispose.
+        r = _nombre(ret.get("rayon_mm"), 0.0)
+        if r > 0:
+            a = float(h_via_mm) * r
+            detail["via_mm2"] = round(a, 4)
+            detail["distance_retour_mm"] = round(r, 4)
+            detail["minorant"] = True
+            aire_mm2 += a
+
+    if cav.get("plan_haut"):
+        h_cav = _nombre(cav.get("hauteur_mm"), 0.0)
+        d_pont = _nombre((cav.get("pont") or {}).get("distance_mm"), 0.0)
+        if h_cav > 0 and d_pont > 0:
+            a = h_cav * d_pont
+            detail["cavite_mm2"] = round(a, 4)
+            detail["distance_pont_mm"] = round(d_pont, 4)
+            detail["hauteur_cavite_mm"] = round(h_cav, 4)
+            # Un pont SUPPOSE au rayon de recherche est un minorant, et l'aire
+            # qu'il donne l'est donc aussi.
+            if cav.get("borne"):
+                detail["minorant"] = True
+            aire_mm2 += a
+        elif h_cav > 0:
+            detail["minorant"] = True
+
+    return aire_mm2 * 1e-6, detail
+
+
+def _rayonnement_transition(trans, h_via_mm, z0, f0, tr, v0,
+                            distance=DISTANCE_MESURE_REPLI,
+                            classe=CLASSE_CEM_REPLI):
+    """Ce que la boucle de retour de cette transition rayonne, et sa marge.
+
+    C'EST UN PLANCHER, ET LA FICHE DOIT LE PORTER JUSQU'AU BOUT. Le modele est
+    celui du dipole magnetique : une boucle de courant petite devant la
+    longueur d'onde, en champ lointain, sur un site d'essai. Sur une carte
+    reelle, l'emission qui fait echouer l'essai vient presque toujours du
+    courant de MODE COMMUN sur les cables, vingt a quarante decibels au-dessus
+    de ce que la boucle differentielle rend ici. Un chiffre confortable ne
+    promet donc RIEN sur le resultat d'essai ; un chiffre serre, en revanche,
+    est une certitude d'echec, et c'est ce qui le rend utile.
+    """
+    aire, detail = _aire_boucle_retour(trans, h_via_mm)
+    if aire <= 0:
+        return None
+    fiche = tl.rayonnement_boucle(f0, tr, aire, z0=z0, v0=v0,
+                                  distance=distance, classe=classe)
+    if not fiche:
+        return None
+    fiche.update(detail)
+    fiche["amplitude_v"] = round(float(v0), 3)
+    fiche["modele"] = "dipole magnetique, champ lointain, reflexion de sol"
+    fiche["reserve"] = (
+        "plancher : le mode commun sur les câbles domine presque toujours"
+        " l'émission réelle, de 20 à 40 dB. Une marge confortable ici ne promet"
+        " rien sur l'essai ; une marge serrée est en revanche une certitude"
+        " d'échec.")
+    return fiche
+
+
 def _impedance_traversee(param, freq):
     """L'impedance serie de la traversee entre plans a une frequence. EN SI.
 
@@ -1737,10 +2037,11 @@ def _impedance_traversee(param, freq):
     """
     if not param:
         return 0.0 + 0.0j
-    return tl.impedance_traversee_plans(
-        freq, param["l_cavite"], param["c_plans"],
-        l_pont=param["l_pont"], esr_pont=param["esr_pont"],
-        c_pont=param["c_pont"])
+    # UN SEUL LECTEUR DU DICT DE PARAMETRES, cote bibliotheque : la liste des
+    # ponts et le raccourci a un pont s'y lisent au meme endroit, donc
+    # l'impedance cascadee ici et la repartition affichee dans la fiche ne
+    # peuvent pas divorcer.
+    return tl.impedance_traversee_param(freq, param)
 
 
 def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
@@ -1816,6 +2117,10 @@ def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
                 "l_pont": None, "esr_pont": 0.0, "c_pont": None,
             }
             if cav.get("pont") is not None:
+                # TOUS LES PONTS sont en parallele. `l_pont`/`c_pont` restent
+                # renseignes -- ce sont ceux du DOMINANT, que la fiche nomme --
+                # mais c'est `ponts` que la cascade lit.
+                param_cav["ponts"] = list(cav.get("ponts_branches") or ())
                 param_cav["l_pont"] = (
                     _nombre(cav.get("etalement_nH"), 0.0) * 1e-9
                     + _nombre(cav.get("esl_nH"), ESL_PONT_REPLI) * 1e-9)
@@ -1830,6 +2135,26 @@ def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
                              "l_pont": None, "esr_pont": 0.0, "c_pont": None}
             z_c = _impedance_traversee(param_cav, f_eval_cav)
             cav["impedance_fc_ohm"] = round(abs(z_c), 4)
+            # LA PART DU COURANT DE CHAQUE PONT, a la frequence d'evaluation.
+            # C'est la meme grandeur que la `part` d'un via de retour, et elle
+            # se lit au meme endroit : le chevelu peint l'une comme l'autre.
+            # « Lequel travaille » est la question qu'on se pose devant trois
+            # decouplages autour d'une transition.
+            parts, part_cav = tl.repartition_traversee_param(f_eval_cav,
+                                                             param_cav)
+            for f_pont, part in zip(cav.get("ponts_detail") or (), parts):
+                f_pont["part"] = round(part, 4)
+            # « CENT POUR CENT PAR LA CAVITE » NE VEUT RIEN DIRE QUAND IL N'Y A
+            # PAS DE CAVITE MODELISEE. Dans le cas `etalement_seul` -- la page
+            # ne cherche pas les decouplages -- `c_plans` vaut zero : la branche
+            # n'a plus de capacite, ce n'est plus la cavite, c'est un simple
+            # etalement en serie. Le partage rendait 100 % et la fiche allait
+            # ecrire « tout le retour passe par la capacite repartie des
+            # plans », ce qui est faux : on n'a pas regarde, voila tout. On ne
+            # rend donc la part que quand la branche capacitive existe.
+            if param_cav.get("c_plans"):
+                cav["part_cavite"] = round(part_cav, 4)
+            cav["freq_parts_hz"] = f_eval_cav
             cav["inductance_equivalente_nH"] = (
                 round(max(0.0, z_c.imag) / omega_eval * 1e9, 4) if omega_eval else 0.0)
             source = ("boucle+cavite" if source == "boucle"
@@ -1854,11 +2179,24 @@ def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
     # SERIE, donc elle compte comme une inductance de plus. L'omettre laissait
     # la colonne « Phase » identique avec et sans changement de reference,
     # c'est-a-dire mensongere sur le seul point qui distinguait les deux cartes.
+    #
+    # ET ELLE COMPTE LA REACTANCE SIGNEE. `max(0, Im Z)` ecrasait a zero toute
+    # traversee CAPACITIVE -- c'est-a-dire tout ce qui est au-dessus de
+    # l'antiresonance parallele, la ou |Z| culmine. Sur le cas du banc, a
+    # 500 MHz, la traversee vaut +1,7 - 30,7j ohm et la phase affichee n'en
+    # portait RIEN : zero contribution a la frequence la plus defavorable,
+    # exactement le contraire de ce que ce commentaire annonce. La cascade,
+    # elle, a toujours vu le Z complexe entier -- les parametres S etaient
+    # justes, seule la colonne « Phase » mentait.
+    #
+    # Une reactance negative n'est pas une inductance negative : c'est une
+    # capacite serie. On la rend telle quelle, en OHMS (`traversee_reactance_ohm`),
+    # et l'inductance equivalente reste None quand elle n'a pas de sens.
     c_effective = c_via + (y_dep.imag + y_arr.imag) / omega_c if omega_c else c_via
     z_trav = _impedance_traversee(param_cav, f_eval_cav if param_cav else fc)
-    l_trav = ((max(0.0, z_trav.imag) / omega_eval)
-              if (param_cav and omega_eval)
-              else ((max(0.0, z_trav.imag) / omega_c) if omega_c else 0.0))
+    omega_trav = omega_eval if (param_cav and omega_eval) else omega_c
+    x_trav = z_trav.imag if omega_trav else 0.0
+    l_trav = (x_trav / omega_trav) if omega_trav else 0.0
     trans["modelise"] = {
         "type": "pi_L_C" if not (y_dep or y_arr) else "pi_L_C_moignons",
         "inductance_nH": round(l_via * 1e9, 4),
@@ -1871,24 +2209,144 @@ def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
         # chevelu ne montre que la premiere. Les additionner rendrait la fiche
         # incomparable avec ce qu'on voit sur le cuivre.
         "traversee_ohm": round(abs(z_trav), 4) if param_cav else None,
-        "traversee_equivalent_nH": round(l_trav * 1e9, 4) if param_cav else None,
+        "traversee_reactance_ohm": round(x_trav, 4) if param_cav else None,
+        # L'inductance equivalente n'existe que si la traversee est inductive.
+        # Au-dessus de l'antiresonance elle ne l'est pas, et un chiffre negatif
+        # en nanohenrys ne veut rien dire : on rend None, la reactance ci-dessus
+        # porte alors l'information.
+        "traversee_equivalent_nH": (round(l_trav * 1e9, 4)
+                                    if (param_cav and x_trav > 0) else None),
+        # La traversee entre plans entre par sa REACTANCE, a la frequence ou
+        # elle a ete evaluee : X/Z0 radians de retard. Passer par une
+        # inductance equivalente puis la remultiplier par omega_c melangeait
+        # deux frequences des que `f_eval_cav` differait de `fc`.
         "phase_deg": round(math.degrees(
-            omega_c * ((l_via + l_trav) / z0 + c_effective * z0)), 4),
+            omega_c * (l_via / z0 + c_effective * z0) + x_trav / z0), 4),
         "cotes_supposees": trans.get("cotes_supposees", True),
     }
 
-    # PALIER 5 : LE BILAN DE SANTE DU SIGNAL ET LA REPARTITION SPECTRALE
-    # Evalue comment le signal est transmis et par ou les harmoniques reviennent
+    # PALIER 5 : LE BILAN DE SANTE DU SIGNAL
+    # Evalue comment le signal est transmis et le score de reconstruction du front
     # (pont de decouplage vs cavite inter-plans, ou boucle par vias de masse).
+    # L'ETAT DE LA BOUCLE SE TRANSMET AU BILAN. Sans lui, le verdict annonçait
+    # « boucle de retour refermée de façon optimale » sur une transition
+    # GND → PWR où aucun via ne peut la refermer — la seule phrase de la fiche
+    # qui affirmait le contraire de ce que la ligne du dessus venait de dire.
+    # `source` vaut « absent » quand la page n'a pas envoyé les voisins : on ne
+    # sait pas, et None le dit.
+    ret_fiche = trans.get("retour") or {}
+    retour_ferme = (None if ret_fiche.get("source") == "absent"
+                    else bool(ret_fiche.get("raccorde")))
     bilan = tl.bilan_sante_transition(
         l_via, c_effective, param_cav, z0=z0,
         y_depart=y_dep, y_arrivee=y_arr,
-        f0=f0_sig, tr=tr_sig)
+        f0=f0_sig, tr=tr_sig, retour_ferme=retour_ferme)
     trans["bilan_sante"] = bilan
     if cav:
         cav["bilan_sante"] = bilan
     trans["modelise"]["score_reconstruction_pct"] = bilan["score_reconstruction_pct"]
     trans["modelise"]["verdict_reconstruction"] = bilan["verdict"]
+
+    # PALIER 6 : CE QUE LA BOUCLE RAYONNE
+    # L'amplitude vient de la rangée « Signal » du panneau, qui la porte déjà
+    # pour la diaphonie — un seul chiffre pour un seul signal. Elle voyage dans
+    # `analyse` comme le temps de montée ; zéro veut dire « prends le repli ».
+    v0_sig = _nombre((via or {}).get("amplitude_v"),
+                     _nombre((doc or {}).get("amplitude_v"),
+                             _nombre(((doc or {}).get("analyse") or {})
+                                     .get("amplitude_v"), AMPLITUDE_REPLI)))
+    if v0_sig <= 0:
+        v0_sig = AMPLITUDE_REPLI
+    ray = _rayonnement_transition(trans, h_via, z0=z0, f0=f0_sig, tr=tr_sig,
+                                  v0=v0_sig)
+    if ray:
+        trans["rayonnement"] = ray
+
+    # PALIER 7 : BILAN D'IMPACT PHYSIQUE DU RETOUR HF & REBOND DE MASSE & CEM
+    fknee = 0.35 / tr_sig if tr_sig > 0 else f0_sig
+    omega_knee = 2.0 * math.pi * fknee
+    z_knee = omega_knee * l_via
+    i_signal = v0_sig / z0 if z0 > 0 else 0.0
+    di_dt = i_signal / tr_sig if tr_sig > 0 else 0.0
+    delta_v_gb = l_via * di_dt
+
+    # Référence optimale (via de retour à 1.0 mm dans la zone optimale <= 1.8 mm)
+    h_m = float(h_via) * 1e-3
+    r_drill = float(d_percage) * 1e-3 / 2.0
+    try:
+        l_opt, _ = tl.inductance_boucle_vias(
+            {"x": 0.0, "y": 0.0, "z1": 0.0, "z2": h_m, "rayon": r_drill},
+            [{"x": 1.0e-3, "y": 0.0, "z1": 0.0, "z2": h_m, "rayon": r_drill}])
+    except Exception:
+        l_opt = 0.30e-9
+    if not (l_opt > 0):
+        l_opt = 0.30e-9
+
+    z_knee_opt = omega_knee * l_opt
+    delta_v_gb_opt = l_opt * di_dt
+
+    d_proche = ret_fiche.get("plus_proche_retenu_mm")
+    if d_proche is None and ret_fiche.get("vias"):
+        d_retenus = [v["distance_mm"] for v in ret_fiche["vias"] if v.get("retenu")]
+        if d_retenus:
+            d_proche = min(d_retenus)
+
+    gain_l = round(max(0.0, (l_via - l_opt) * 1e9), 4)
+    gain_zl = round(max(0.0, z_knee - z_knee_opt), 2)
+    gain_gb = round(max(0.0, delta_v_gb - delta_v_gb_opt), 3)
+    gain_cem = round(20.0 * math.log10(d_proche / 1.0), 1) if (d_proche and d_proche > 1.0) else 0.0
+
+    champ_pire = None
+    marge_pire = None
+    if ray and ray.get("pire"):
+        cp = ray["pire"].get("champ_dbuv_m")
+        if cp is not None:
+            champ_pire = round(float(cp), 2)
+        mp = ray["pire"].get("marge_db")
+        if mp is not None:
+            marge_pire = round(float(mp), 2)
+
+    impact = {
+        "f0_hz": float(f0_sig),
+        "tr_s": float(tr_sig),
+        "fknee_hz": float(fknee),
+        "z0_ohm": round(float(z0), 2),
+        "v0_v": round(float(v0_sig), 3),
+        "i_signal_a": round(float(i_signal), 4),
+        "di_A": round(float(i_signal), 4),
+        "l_boucle_nh": round(float(l_via * 1e9), 4),
+        "inductance_boucle_nH": round(float(l_via * 1e9), 4),
+        "source": source,
+        "z_knee_ohm": round(float(z_knee), 2),
+        "zl_fknee_ohm": round(float(z_knee), 2),
+        "ground_bounce_v": round(float(delta_v_gb), 3),
+        "delta_v_ground_bounce_v": round(float(delta_v_gb), 3),
+        "distance_retour_mm": round(float(d_proche), 3) if d_proche is not None else None,
+        "d_retour_mm": round(float(d_proche), 3) if d_proche is not None else None,
+        "statut": ret_fiche.get("statut", "ouvert" if not ret_fiche.get("raccorde") else "optimal"),
+        "opt_l_boucle_nh": round(float(l_opt * 1e9), 4),
+        "opt_z_knee_ohm": round(float(z_knee_opt), 2),
+        "opt_ground_bounce_v": round(float(delta_v_gb_opt), 3),
+        "gain_z_ohm": gain_zl,
+        "gain_impedance_ohm": gain_zl,
+        "gain_gb_v": gain_gb,
+        "gain_ground_bounce_v": gain_gb,
+        "gain_l_nh": gain_l,
+        "gain_inductance_nH": gain_l,
+        "gain_cem_db": gain_cem,
+        "gain_emc_db": gain_cem,
+        "d_cible_mm": 1.0,
+        "cem_pire_champ_dbuv_m": champ_pire,
+        "e_max_cispr32_dbuv_m": champ_pire,
+        "cem_pire_marge_db": marge_pire,
+        "marge_cispr32_db": marge_pire,
+    }
+    if ray and ray.get("aire_boucle_mm2"):
+        impact["aire_boucle_mm2"] = round(float(ray["aire_boucle_mm2"]), 4)
+        if ray.get("pire"):
+            impact["cem_pire_freq_hz"] = float(ray["pire"].get("freq_hz") or 0.0)
+
+    trans["impact_retour"] = impact
 
     return {"l": l_via, "c": c_via,
             "moignon_depart": moignons["depart"],
@@ -2176,6 +2634,14 @@ def _cavite_de_retour(trans, via, couches, segments, d_percage):
     fiche.update({
         "aire_plans_mm2": round(aire, 1),
         "aire_source": "page" if a_aire else "repli",
+        # L'AIRE ENVOYEE EST CELLE DE LA CARTE, PAS CELLE DES DEUX VERSEMENTS
+        # EN REGARD, et la page le declare. Ce champ arrivait et n'etait pas lu :
+        # la fiche disait « aire supposee » quand elle venait du repli, et NE
+        # DISAIT RIEN quand elle venait de la page -- alors que c'est justement
+        # la qu'elle majore. Une aire majoree donne une capacite majoree, donc
+        # une cavite qui parait MOINS chere a traverser qu'elle ne l'est. C'est
+        # le sens qui flatte, et il doit se lire.
+        "aire_majoree": bool((via or {}).get("aire_plans_majoree")),
         "capacite_plans_pF": round(c_plans * 1e12, 2),
         "etalement_cavite_nH": round(l_cavite * 1e9, 4),
         "impedance_plans_ohm": round(
@@ -2184,64 +2650,122 @@ def _cavite_de_retour(trans, via, couches, segments, d_percage):
     })
 
     if ponts is None:
-        fiche["raison"] = ("cette page ne cherche pas les découplages qui"
-                           " joignent %s à %s : seul l'étalement dans les plans"
-                           " est compté, et la traversée est donc"
-                           " sous-estimée" % (haut, bas))
+        # LA PAGE PEUT DIRE POURQUOI, ET IL FAUT L'ECOUTER. « Cette page ne
+        # cherche pas les decouplages » etait la seule phrase possible ici, et
+        # elle est FAUSSE des que la page cherche mais s'arrete : nets des plans
+        # illisibles, deux plans du meme net, empilage pas pret. Trois causes,
+        # trois gestes differents, un seul message -- de quoi chercher une heure
+        # une fonction qui marche.
+        pourquoi = str((via or {}).get("ponts_raison") or "").strip()
+        fiche["ponts_raison"] = pourquoi
+        fiche["raison"] = (
+            ("les découplages qui joignent %s à %s n'ont pas été cherchés : %s."
+             " Seul l'étalement dans les plans est compté, et la traversée est"
+             " donc sous-estimée" % (haut, bas, pourquoi))
+            if pourquoi else
+            ("cette page ne cherche pas les découplages qui"
+             " joignent %s à %s : seul l'étalement dans les plans"
+             " est compté, et la traversée est donc"
+             " sous-estimée" % (haut, bas)))
         fiche["etalement_seul"] = True
         fiche["inductance_nH"] = round(l_cavite * 1e9, 4)
         return fiche
 
     fiche["ponts"] = len(ponts)
     rayon = _nombre((via or {}).get("ponts_rayon_mm"), 0.0)
-    meilleur = None
+
+    # TOUS LES PONTS, ET NON LE PLUS PROCHE. La version precedente ne gardait
+    # que le condensateur le plus proche, en disant que c'etait « le sens
+    # prudent ». C'etait vrai, et ce n'etait pas le sens JUSTE : plusieurs
+    # condensateurs qui joignent les deux plans sont autant de branches EN
+    # PARALLELE, et le courant s'y repartit en raison de leurs admittances.
+    # Sur un plan correctement decouple, ne compter que le plus proche
+    # surestime l'impedance de la traversee d'un facteur trois.
+    #
+    # ET CE N'EST PAS LE MEME PHENOMENE QUE POUR LES VIAS DE RETOUR. La mutuelle
+    # empeche des vias serres de travailler independamment -- c'est pourquoi
+    # `inductance_boucle_vias` resout un systeme au lieu de sommer. Ici les
+    # condensateurs sont a des millimetres les uns des autres, avec leur propre
+    # capacite et leur propre ESL en serie : c'est la CAPACITE qui fixe leur
+    # impedance en dessous de leur resonance, pas leur inductance, et la
+    # mutuelle entre leurs vias de montage est negligeable devant. On les met
+    # donc en parallele, et on le dit.
+    detail = []
     for p in ponts:
         d = math.hypot(_nombre(p.get("x"), 0.0) - x0,
                        _nombre(p.get("y"), 0.0) - y0)
-        if meilleur is None or d < meilleur[0]:
-            meilleur = (d, p)
+        # EQUATION 13-35, ET NON 13-31 : deux contacts ponctuels, pas un via
+        # vers un anneau. Le courant s'etale au depart ET se resserre a
+        # l'arrivee, dans les deux plans.
+        l_etal = tl.inductance_etalement_via_via(h_cav * 1e-3, d * 1e-3,
+                                                 max(d_percage, 1e-3) * 1e-3)
+        detail.append({
+            "x": round(_nombre(p.get("x"), x0), 4),
+            "y": round(_nombre(p.get("y"), y0), 4),
+            "distance_mm": round(d, 4),
+            "repere": str(p.get("repere") or ""),
+            "etalement_nH": round(l_etal * 1e9, 4),
+            "esl_nH": round(_nombre(p.get("esl_nH"), ESL_PONT_REPLI), 3),
+            "esl_source": "page" if p.get("esl_nH") is not None else "repli",
+            "capacite_F": _nombre(p.get("capacite_F"), C_PONT_REPLI),
+            "capacite_source": "page" if p.get("capacite_F") is not None else "repli",
+            "_l": l_etal + _nombre(p.get("esl_nH"), ESL_PONT_REPLI) * 1e-9,
+            "_c": _nombre(p.get("capacite_F"), C_PONT_REPLI),
+        })
+    detail.sort(key=lambda f: f["distance_mm"])
 
-    if meilleur is None:
+    if not detail:
         # Cherche, rien vu : le pont est AU MOINS au rayon. Minorant.
+        pourquoi = str((via or {}).get("ponts_raison") or "").strip()
+        if pourquoi:
+            fiche["ponts_raison"] = pourquoi
         if not (rayon > 0):
             fiche["raison"] = ("aucun découplage ne joint %s à %s près du via,"
-                               " et la page ne dit pas jusqu'où elle a cherché"
-                               % (haut, bas))
+                               " et la page ne dit pas jusqu'où elle a cherché%s"
+                               % (haut, bas,
+                                  (" — " + pourquoi) if pourquoi else ""))
             fiche["etalement_seul"] = True
             fiche["inductance_nH"] = round(l_cavite * 1e9, 4)
             return fiche
-        dist, p, borne = rayon, {}, True
+        l_etal = tl.inductance_etalement_via_via(h_cav * 1e-3, rayon * 1e-3,
+                                                 max(d_percage, 1e-3) * 1e-3)
+        detail = [{
+            "x": round(x0, 4), "y": round(y0, 4),
+            "distance_mm": round(rayon, 4), "repere": "",
+            "etalement_nH": round(l_etal * 1e9, 4),
+            "esl_nH": round(ESL_PONT_REPLI, 3), "esl_source": "repli",
+            "capacite_F": C_PONT_REPLI, "capacite_source": "repli",
+            "_l": l_etal + ESL_PONT_REPLI * 1e-9, "_c": C_PONT_REPLI,
+        }]
+        borne = True
     else:
-        dist, p = meilleur
         borne = False
 
-    # LE PLUS PROCHE, ET LUI SEUL. Deux condensateurs en parallele divisent
-    # l'inductance, mais leur mutuelle les en empeche largement -- c'est le
-    # meme phenomene que pour les vias de retour. Ne compter que le plus proche
-    # SURESTIME l'inductance : c'est le sens prudent, et il est dit.
-    a_esl = p.get("esl_nH") is not None
-    esl = _nombre(p.get("esl_nH"), ESL_PONT_REPLI)
-    a_cap = p.get("capacite_F") is not None
-    c_pont = _nombre(p.get("capacite_F"), C_PONT_REPLI)
-    # EQUATION 13-35, ET NON 13-31 : deux contacts ponctuels, pas un via vers un
-    # anneau. Le courant s'etale au depart ET se resserre a l'arrivee, dans les
-    # deux plans. L'ancienne version employait 13-31 et sous-estimait d'un
-    # facteur trois.
-    l_etal = tl.inductance_etalement_via_via(h_cav * 1e-3, dist * 1e-3,
-                                             max(d_percage, 1e-3) * 1e-3)
+    # `pont` reste LE DOMINANT -- le plus proche -- parce que c'est lui que la
+    # fiche nomme et que le chevelu met en avant. `ponts_detail` porte les
+    # autres, avec leur part du courant : « lequel travaille » est exactement la
+    # question qu'on se pose devant trois decouplages autour d'une transition.
+    dom = detail[0]
+    d_hors_pont = _nombre((via or {}).get("pont_hors_rayon_mm"), None)
+    ref_hors_pont = (via or {}).get("pont_hors_rayon_ref")
     fiche.update({
         "borne": borne,
         "rayon_mm": round(rayon, 4) if rayon > 0 else None,
-        "pont": {"x": round(_nombre(p.get("x"), x0), 4),
-                 "y": round(_nombre(p.get("y"), y0), 4),
-                 "distance_mm": round(dist, 4),
-                 "repere": str(p.get("repere") or "")},
-        "inductance_nH": round((l_etal + esl * 1e-9) * 1e9, 4),
-        "etalement_nH": round(l_etal * 1e9, 4),
-        "esl_nH": round(esl, 3),
-        "esl_source": "page" if a_esl else "repli",
-        "capacite_pont_F": c_pont,
-        "capacite_pont_source": "page" if a_cap else "repli",
+        "plus_proche_hors_rayon_mm": round(d_hors_pont, 3) if d_hors_pont is not None else None,
+        "plus_proche_hors_rayon_ref": str(ref_hors_pont) if ref_hors_pont else None,
+        "pont": {"x": dom["x"], "y": dom["y"],
+                 "distance_mm": dom["distance_mm"],
+                 "repere": dom["repere"]},
+        "ponts_detail": [{k: v for k, v in f.items() if not k.startswith("_")}
+                         for f in detail],
+        "ponts_branches": [{"l": f["_l"], "esr": ESR_PONT_REPLI, "c": f["_c"]}
+                           for f in detail],
+        "inductance_nH": round(dom["_l"] * 1e9, 4),
+        "etalement_nH": dom["etalement_nH"],
+        "esl_nH": dom["esl_nH"],
+        "esl_source": dom["esl_source"],
+        "capacite_pont_F": dom["capacite_F"],
+        "capacite_pont_source": dom["capacite_source"],
     })
     return fiche
 
@@ -2380,12 +2904,21 @@ def _avertir_retour(transitions, f_fin=0.0):
         t = change[0]
         r = t["retour"]
         cherche = bool((t.get("cavite") or {}).get("cherche"))
+        # UNE DEDUCTION NE S'ANNONCE PAS COMME UNE LECTURE. Quand le net d'un
+        # des deux plans vient du ROLE force et non du cuivre, tout ce verdict
+        # en decoule -- et il reste un verdict CRITIQUE. On le dit ici, une
+        # fois, plutot que de laisser croire que la carte l'affirme.
+        supposes = r.get("nets_supposes") or []
+        reserve = ((" Le net de %s n'a pas été lu dans le cuivre : il est DÉDUIT"
+                    " du rôle donné à la couche dans l'empilage. Tout ce verdict"
+                    " en dépend — vérifiez ce rôle avant d'y croire."
+                    % " / ".join(supposes)) if supposes else "")
         commun = ("Le plan de référence change à %d via(s) — %s d'un côté, %s"
                   " de l'autre. Aucun via de masse ne peut joindre les deux :"
                   " il joindrait de la masse à de la masse. Le retour doit"
-                  " passer par un condensateur de découplage."
+                  " passer par un condensateur de découplage.%s"
                   % (len(change), " / ".join(r.get("plans_depart") or ["?"]),
-                     " / ".join(r.get("plans_arrivee") or ["?"])))
+                     " / ".join(r.get("plans_arrivee") or ["?"]), reserve))
         if cherche:
             out.append(
                 commun + " Il n'y en a AUCUN près de ce via : le courant de"
@@ -2409,25 +2942,43 @@ def _avertir_retour(transitions, f_fin=0.0):
         tete = ("Le plan de référence change à %d via(s) — %s → %s. Aucun via"
                 " de masse ne peut joindre les deux : il joindrait de la masse"
                 " à de la masse. Le retour passe par la capacité répartie des"
-                " deux plans (%.0f pF) et par les découplages qui les joignent"
+                " deux plans (%.0f pF%s) et par les découplages qui les joignent"
                 % (len(chiffre), cav["plan_haut"], cav["plan_bas"],
-                   cav.get("capacite_plans_pF") or 0.0))
+                   cav.get("capacite_plans_pF") or 0.0,
+                   ", calculée sur l'aire de la CARTE ENTIÈRE — donc majorée,"
+                   " et la traversée en paraît moins chère qu'elle ne l'est"
+                   if cav.get("aire_majoree") else ""))
         cout = (" : la traversée pèse %.2f Ω à la fréquence centrale, cascadés"
                 " dans le résultat." % cav["impedance_fc_ohm"])
+        sup = (chiffre[0].get("retour") or {}).get("nets_supposes") or []
+        if sup:
+            tete += (" — étant entendu que le net de %s est DÉDUIT du rôle donné"
+                     " à la couche, et non lu dans le cuivre"
+                     % " / ".join(sup))
         if cav.get("etalement_seul"):
-            out.append(
-                tete + ". Cette page ne cherche pas les découplages : on ne"
-                " compte que l'étalement dans les plans (%.2f nH), et la"
-                " traversée est donc SOUS-ESTIMÉE."
-                % (cav.get("etalement_cavite_nH") or 0.0))
+            pourquoi = str(cav.get("ponts_raison") or "").strip()
+            etal = cav.get("etalement_cavite_nH") or 0.0
+            if pourquoi:
+                queue = (". Les découplages n'ont pas été cherchés — %s. On ne"
+                         " compte donc que l'étalement dans les plans (%.2f nH),"
+                         " et la traversée est SOUS-ESTIMÉE." % (pourquoi, etal))
+            else:
+                queue = (". Cette page ne cherche pas les découplages : on ne"
+                         " compte que l'étalement dans les plans (%.2f nH), et"
+                         " la traversée est donc SOUS-ESTIMÉE." % etal)
+            out.append(tete + queue)
         elif cav.get("borne"):
+            plus_proche_info = ""
+            if cav.get("plus_proche_hors_rayon_mm") is not None:
+                ref_txt = (" [%s]" % cav["plus_proche_hors_rayon_ref"]) if cav.get("plus_proche_hors_rayon_ref") else ""
+                plus_proche_info = " (le plus proche trouvé%s est à %.2f mm, trop éloigné)" % (ref_txt, cav["plus_proche_hors_rayon_mm"])
             out.append(
                 tete + cout +
-                " Aucun découplage n'a été trouvé dans un rayon de %.1f mm : on"
+                " Aucun découplage n'a été trouvé dans un rayon de %.1f mm%s : on"
                 " a supposé le plus proche À CE RAYON, ce qui est un MINORANT —"
                 " le vrai peut être bien plus loin. Poser un condensateur au"
                 " pied du via, ou garder la même référence, sont les deux"
-                " façons de l'éviter." % cav["rayon_mm"])
+                " façons de l'éviter." % (cav["rayon_mm"], plus_proche_info))
         else:
             out.append(
                 tete + cout +
@@ -2485,18 +3036,166 @@ def _avertir_retour(transitions, f_fin=0.0):
             % (len(doute), " / ".join(r.get("plans_depart") or ["?"]),
                " / ".join(r.get("plans_arrivee") or ["?"]),
                " et ".join(manque)))
-    if sans:
+    # PAS DE REFERENCE DU TOUT, ET CELA PASSE AVANT LE RESTE. « La reference
+    # change vers X » n'a aucun sens quand X n'a pas de cuivre au droit du via.
+    # Le courant de retour n'a alors rien a suivre, et aucun condensateur de
+    # pontage ne le rattrape : c'est un defaut d'un AUTRE ORDRE.
+    nus = [t for t in transitions
+           if ((t.get("retour") or {}).get("plans_sans_cuivre") or [])]
+    if nus:
+        r = nus[0]["retour"]
         out.append(
-            "Aucun via de masse ne referme la boucle à %d via(s) de signal :"
-            " l'inductance affichée est celle d'un conducteur seul et ne dépend"
-            " pas du routage. Un via de retour à moins d'un millimètre la"
-            " ferait tomber de moitié." % len(sans))
+            "À %d via(s), le plan de référence %s n'a AUCUN CUIVRE au droit du"
+            " via. Ce n'est pas un changement de référence, c'est une référence"
+            " ABSENTE : le courant de retour n'a rien à suivre à cet endroit, et"
+            " aucun condensateur de pontage ne rattrape cela. Le net affiché"
+            " pour cette couche n'est qu'un repli — c'est celui que l'empilage"
+            " lui donne, pas celui du cuivre, puisqu'il n'y en a pas. Déplacer"
+            " le via sur du cuivre de référence, ou refermer le plan."
+            % (len(nus), " / ".join(r["plans_sans_cuivre"])))
+
+    # LE MEME PLAN, UN AUTRE CUIVRE : le dit UNE FOIS, et longuement. La raison
+    # portee par chaque via de masse est courte parce qu'elle se peint sur la
+    # carte ; le geste qui repare, lui, demande une phrase, et il n'a pas a se
+    # repeter dix fois. Il ne s'agit pas de chercher un percage trop court : il
+    # s'agit de regarder la DECOUPE du plan.
+    croises = [(t, f) for t in transitions
+               for f in ((t.get("retour") or {}).get("vias") or ())
+               if f.get("plans_autre_versement")]
+    if croises:
+        t0, f0 = croises[0]
+        nom = f0["plans_autre_versement"][0]
+        out.append(
+            "%d via(s) de masse touchent bien %s, mais pas LE MÊME CUIVRE que"
+            " le via de signal : le plan y est partitionné, et la frontière du"
+            " versement passe entre les deux. Le nom de la couche est le même,"
+            " le cuivre ne l'est pas — un via de masse posé hors de l'îlot ne"
+            " porte pas le retour de ce qui se passe dedans, aussi près soit-il"
+            " (%.2f mm ici). Ils ne sont donc pas comptés, et l'inductance"
+            " affichée est un PLANCHER. Le geste n'est pas d'ajouter un via :"
+            " c'est de garder la même référence des deux côtés de la"
+            " traversée, ou de la déplacer hors du versement."
+            % (len(croises), nom, f0.get("distance_mm") or 0.0))
+
+    if sans:
+        # LE CHIFFRE AFFICHE EST UN PLANCHER, ET LE CONSEIL DOIT LE DIRE, SINON
+        # IL LE CONTREDIT. L'ancienne phrase promettait que poser un via de
+        # retour ferait « tomber de moitié » l'inductance affichée. C'est le
+        # contraire de ce que l'outil montre ensuite : sans retour il rend la
+        # SELF PARTIELLE -- 0,628 nH sur 1,5 mm de stratifie --, et un retour
+        # unique a 1 mm donne une boucle de 0,860 nH, soit +37 %. Il faut
+        # descendre sous 0,55 mm pour qu'un seul via passe sous le plancher.
+        # La personne qui suit le conseil voyait donc le nombre MONTER.
+        #
+        # Le conseil reste juste sur la CARTE -- la vraie boucle sans via de
+        # retour, qui se referme par le cuivre lointain, vaut bien plus que ce
+        # plancher --, mais il ne parle pas de la meme grandeur. On le dit.
+        rayon = next((r.get("rayon_mm") for r in
+                      ((t.get("retour") or {}) for t in sans)
+                      if r.get("rayon_mm")), None)
+        out.append(
+            "Aucun via de masse ne referme la boucle à %d via(s) de signal%s :"
+            " l'inductance affichée est un PLANCHER — la self partielle du"
+            " barreau, qui ne dépend pas du routage. La boucle réelle, qui se"
+            " referme par le cuivre lointain des plans, vaut plusieurs fois"
+            " cela. Poser un via de retour rend la boucle CALCULABLE et la fait"
+            " chuter, mais le nombre affiché peut alors MONTER : il cesse"
+            " d'être un plancher pour devenir une mesure. Il faut un retour à"
+            " moins de 0,5 mm environ pour passer sous le plancher avec un"
+            " seul via, ou deux vias en vis-à-vis à 1 mm."
+            % (len(sans),
+               (" (rayon cherché : %.1f mm)" % rayon) if rayon else ""))
     if muet:
         out.append(
             "Les vias de masse voisins ne sont pas envoyés par cette page :"
             " l'inductance des %d via(s) est celle d'un conducteur seul, sans"
             " boucle de retour. Elle ne dépend donc pas de leur placement."
             % len(muet))
+
+    # LE COURANT QUI REVIENT PAR LA CAPACITE DES PLANS N'EST PAS UN CHEMIN
+    # NEUTRE, ET LE MODELE LE PRESENTAIT COMME TEL. Bogatin 7.14 a raison : ce
+    # chemin EXISTE, le courant de deplacement traverse la cavite, et refuser de
+    # le chiffrer -- ce que faisait la toute premiere version -- declarait
+    # impossible ce qui se produit sur toute carte multicouche.
+    #
+    # MAIS EXISTER N'EST PAS ETRE BENIN. Ce courant-la ne rentre pas dans un
+    # conducteur, il ENTRE DANS LA CAVITE : il excite la paire de plans, se
+    # promene jusqu'aux bords, y rayonne, et revient en bruit sur le reseau
+    # d'alimentation. Rien de tout cela ne se voit dans S21 -- le signal, lui,
+    # passe. La fiche pouvait donc annoncer « traversée : 0,08 Ω, front intact »
+    # sur une transition qui injecte la moitie de son courant de retour dans le
+    # plan d'alimentation, et c'est precisement ce que la personne qui route
+    # doit savoir.
+    #
+    # On ne le dit qu'au-dessus d'un cinquieme du courant : en dessous, un
+    # decouplage proche fait son travail et la cavite ne prend que des miettes.
+    cav_part = [(t.get("cavite") or {}) for t in transitions]
+    cav_part = [c for c in cav_part
+                if c.get("part_cavite") is not None and c["part_cavite"] > 0.20]
+    if cav_part:
+        c = max(cav_part, key=lambda c: c["part_cavite"])
+        # AU-DELA DE CENT POUR CENT, CE N'EST PLUS UN PARTAGE. Les deux branches
+        # sont en opposition de phase et le courant CIRCULE entre elles :
+        # l'inductance du pont contre la capacite des plans, l'antiresonance
+        # parallele. Ecrire « 111 % passe par la cavite » serait absurde ; c'est
+        # le phenomene qu'il faut nommer, parce que c'est lui le defaut.
+        if c["part_cavite"] > 1.0:
+            out.append(
+                "La traversée est en ANTIRÉSONANCE près de %.0f MHz : l'inductance"
+                " des découplages et la capacité répartie des plans %s / %s"
+                " s'annulent, et le courant CIRCULE entre les deux au lieu de"
+                " revenir — %.0f %% du courant du signal dans la seule cavité."
+                " C'est le pire cas de la traversée : l'impédance y culmine"
+                " (%.1f Ω). Rapprocher un découplage du via déplace cette"
+                " fréquence vers le haut ; l'amincissement du diélectrique entre"
+                " plans la déplace aussi, et baisse le pic."
+                % ((c.get("freq_parts_hz") or 0.0) / 1e6,
+                   c["plan_haut"], c["plan_bas"], 100.0 * c["part_cavite"],
+                   c.get("impedance_fc_ohm") or 0.0))
+        else:
+            out.append(
+                "%.0f %% du courant de retour traverse par la CAPACITÉ RÉPARTIE"
+                " des plans %s / %s, et non par un découplage (à %.1f MHz). Ce"
+                " chemin existe — c'est du courant de déplacement, il se referme"
+                " — mais il n'est pas neutre : ce courant entre dans la cavité"
+                " entre les deux plans, s'y propage jusqu'aux bords de la carte"
+                " et revient en bruit sur l'alimentation. Rien de cela ne se voit"
+                " sur S21, où le signal passe. Un condensateur de liaison au pied"
+                " du via ramène ce courant dans du cuivre."
+                % (100.0 * c["part_cavite"], c["plan_haut"], c["plan_bas"],
+                   (c.get("freq_parts_hz") or 0.0) / 1e6))
+
+    # LE RAYONNEMENT NE SE DIT QUE QUAND IL A QUELQUE CHOSE A DIRE. Une marge
+    # de cinquante décibels n'apprend rien à personne et userait l'attention ;
+    # une marge de dix la commande. On ne sort donc la phrase qu'au-dessous du
+    # seuil, ou pour dire que le spectre ne touche pas la bande réglementée
+    # quand la boucle est par ailleurs signalée comme ouverte.
+    pires = [(t.get("rayonnement") or {}).get("pire") for t in transitions]
+    pires = [p for p in pires if p and p.get("marge_db") is not None]
+    if pires:
+        pire = min(pires, key=lambda p: p["marge_db"])
+        ray = next(t["rayonnement"] for t in transitions
+                   if (t.get("rayonnement") or {}).get("pire") is pire)
+        if pire["marge_db"] < 20.0:
+            out.append(
+                "La boucle de retour enferme %.2f mm² : à %.0f MHz elle rayonne"
+                " %.0f dB(µV/m) à %.0f m, pour une limite CISPR 32 classe %s de"
+                " %.0f — il ne reste que %.0f dB%s. Et c'est un PLANCHER : le"
+                " mode commun sur les câbles domine l'émission réelle de 20 à"
+                " 40 dB. Réduire l'aire de la boucle est le seul geste qui agit"
+                " sur les deux à la fois."
+                % (ray["aire_boucle_mm2"], pire["freq_hz"] / 1e6,
+                   pire["champ_dbuv_m"], ray["distance_m"], ray["classe"],
+                   pire["limite_dbuv_m"], pire["marge_db"],
+                   ", et l'aire est un minorant" if ray.get("minorant") else ""))
+    elif any((t.get("rayonnement") or {}).get("hors_bande")
+             for t in transitions):
+        out.append(
+            "Aucune harmonique de ce signal ne tombe dans la bande d'émission"
+            " rayonnée de CISPR 32, qui commence à 30 MHz : le rayonnement de"
+            " la boucle de retour n'est pas jugé ici. Cela ne vaut que pour la"
+            " boucle — le mode commun sur les câbles, lui, se juge à partir de"
+            " 30 MHz quel que soit le rythme du signal.")
     return out
 
 
@@ -4322,13 +5021,13 @@ def _couplage(couches, objets, doc, analyse, avertissements):
                else "aucune trouvée",
                (" (%d longement(s) ainsi blindé(s) ici)" % superposes_blindes)
                if superposes_blindes else ""),
-            "Toutes les voisines d'une même piste entrent dans la MÊME"
+            ("Toutes les voisines d'une même piste entrent dans la MÊME"
             " section : une piste et ses deux voisines font un problème à"
             " trois conducteurs, pas deux problèmes à deux. La masse"
             " coplanaire borde le groupe, à l'écart que la page a mesuré, et"
             " une piste du net de masse qui longe est posée comme une PISTE DE"
-            " GARDE — dans la section, à zéro volt, sans port.",
-            "Quand une voisine se trouve PLUS LOIN que là où commence le"
+            " GARDE — dans la section, à zéro volt, sans port."),
+            ("Quand une voisine se trouve PLUS LOIN que là où commence le"
             " cuivre de masse, ce cuivre s'interpose : il est posé dans la"
             " section comme une garde, à zéro volt, large de ce que laissent"
             " les deux dégagements mesurés. Sans cela la masse était repoussée"
@@ -4338,7 +5037,7 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             " Cette garde-là est déduite de deux mesures, pas lue dans le"
             " fichier : la section la marque « déduite ». Elle suppose le"
             " cuivre TENU à zéro volt sur toute la longueur, ce qu'un plan"
-            " cousu de vias fait et qu'une garde sans vias ne fait pas.",
+            " cousu de vias fait et qu'une garde sans vias ne fait pas."),
             "Un cuivre de masse n'est tenu à zéro volt que s'il est COUSU au"
             " plan par des vias. Le critère est une longueur d'onde et non un"
             " nombre de vias : le plus grand trou entre deux coutures doit"
@@ -4349,7 +5048,7 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             " peut devenir PIRE qu'en l'absence de tout cuivre. La résonance"
             " d'un tel cuivre, elle, n'est pas chiffrée : le quasi-statique"
             " rend le transfert, pas le pic." % _couture_max(t_r),
-            "LA MÊME RÈGLE VAUT POUR LE PLAN ARROSÉ QUI BORDE le groupe, et"
+            ("LA MÊME RÈGLE VAUT POUR LE PLAN ARROSÉ QUI BORDE le groupe, et"
             " plus seulement pour les gardes posées entre les pistes. Le"
             " solveur le pose à 0 V parfait ; quand sa couture dépasse le même"
             " seuil, l'effet coplanaire de ce côté est ANNULÉ — l'écart au plan"
@@ -4358,24 +5057,24 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             " fidèle : un plan sans vias sur la longueur du longement ne tient"
             " rien. Une couture NON MESURÉE — la page ne l'envoie pas — vaut"
             " zéro et se lit « tenu » : on suppose bon ce qu'on ne sait pas, et"
-            " le calcul reste alors optimiste de ce côté-là.",
+            " le calcul reste alors optimiste de ce côté-là."),
             "Le temps de montée retenu est %s. Il ne change ni [C] ni [L],"
             " et il n'entre pas dans la Z différentielle : il ne sert ici"
             " qu'au seuil de couture, qui est une longueur d'onde au genou du"
             " front."
             % source_tr,
-            "Un partenaire différentiel DÉCLARÉ — ou nommé par ses suffixes —"
+            ("Un partenaire différentiel DÉCLARÉ — ou nommé par ses suffixes —"
             " est ce que cette page juge ; une voisine simplement proche ne"
             " fait PAS une paire, et le repli « la plus proche » est un repli"
             " d'affichage, dit comme tel sur la carte. Ce qu'une voisine"
             " PREND, en pour-cent comme en volts, se lit sous l'onglet"
-            " Crosstalk : cette page-ci ne répond qu'en ohms.",
-            "La Z différentielle peinte sur la carte est celle d'une section à"
+            " Crosstalk : cette page-ci ne répond qu'en ohms."),
+            ("La Z différentielle peinte sur la carte est celle d'une section à"
             " DEUX conducteurs — la sélection et sa paire — reprise à l'écart"
             " de chaque tronçon. Elle n'est donc pas celle du tableau, qui"
             " tient les autres voisines à la masse : les deux se rejoignent"
             " quand la paire est seule, et diffèrent quand elle est prise dans"
-            " un bus.",
+            " un bus."),
             # LE BLOC DE CLOTURE, ET IL NE REPETE PAS LES AUTRES : il les
             # RASSEMBLE. Les manques sont dits plus haut, chacun a l'endroit ou
             # il se produit -- entre couches sous la regle d'appariement, la
@@ -4386,19 +5085,21 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             # lignes ne fait : les deux rendent le chiffre OPTIMISTE. Un
             # utilisateur a le droit de savoir de quel cote penche ce qui
             # reste.
-            "CE QUE CE CALCUL NE COUVRE PAS, rassemblé — et dans quel sens :"
-            " (1) la RÉSONANCE d'un cuivre de masse flottant, qui sonne aux"
-            " multiples de λ/2 : le quasi-statique rend le transfert, pas le"
-            " pic → OPTIMISTE à ces fréquences ; (2) le COUPLAGE ENTRE"
-            " COUCHES — deux pistes superposées couplent, et la section pose"
-            " tous ses conducteurs à la même hauteur → VU mais NON CHIFFRÉ :"
-            " la géométrie est cherchée et signalée, le couplage ne l'est"
-            " pas → OPTIMISTE quand il y en a. Les deux vont donc dans le sens"
-            " rassurant : ce qui est affiché est un PLANCHER sur une carte mal"
-            " cousue, ou routée en parallèle sur deux couches adossées. Aller"
-            " plus loin demande un solveur de section à conducteurs empilés —"
-            " ou le moteur 2,5D, qui discrétise une surface et non une section"
-            " droite.",
+            (
+                "CE QUE CE CALCUL NE COUVRE PAS, rassemblé — et dans quel sens :"
+                " (1) la RÉSONANCE d'un cuivre de masse flottant, qui sonne aux"
+                " multiples de λ/2 : le quasi-statique rend le transfert, pas le"
+                " pic → OPTIMISTE à ces fréquences ; (2) le COUPLAGE ENTRE"
+                " COUCHES — deux pistes superposées couplent, et la section pose"
+                " tous ses conducteurs à la même hauteur → VU mais NON CHIFFRÉ :"
+                " la géométrie est cherchée et signalée, le couplage ne l'est"
+                " pas → OPTIMISTE quand il y en a. Les deux vont donc dans le sens"
+                " rassurant : ce qui est affiché est un PLANCHER sur une carte mal"
+                " cousue, ou routée en parallèle sur deux couches adossées. Aller"
+                " plus loin demande un solveur de section à conducteurs empilés —"
+                " ou le moteur 2,5D, qui discrétise une surface et non une section"
+                " droite."
+            ),
         ],
     }
 
@@ -4442,7 +5143,6 @@ def simuler(doc, journal=None):
     # qu'un chiffre absent. Les impedances par troncon et la carte de chaleur,
     # elles, ne dependent que de la section de chacun : elles restent rendues.
     topo = _topologie(objets)
-    ruptures, ruptures_detail = topo["ruptures"], topo["ruptures_detail"]
     refus = raison_topologie(topo)
     if refus:
         avertissements.append(
@@ -4761,14 +5461,16 @@ def simuler(doc, journal=None):
     # reste qu'un chiffre dont on ne sait plus contre quoi il a ete calcule.
     refs = [str(x) for x in (doc.get("reference_nets") or []) if str(x).strip()]
 
-    entete = ["Genere par WEB_CAO -- MoM quasi-statique sur la section droite"
-              " (python/ligne_mom.py), mise en cascade ABCD",
-              "Source : %s" % (doc.get("source") or "inconnue"),
-              "Carte : %s" % (doc.get("carte") or "-"),
-              "Net : %s" % (doc.get("net") or "-"),
-              "Masse de reference : %s" % (", ".join(refs) if refs
-                                           else "non declaree"),
-              "Z0 moyen : %.2f ohm a %.4f GHz" % (ligne["z0_moyen"], fc / 1e9)]
+    entete = [
+        ("Genere par WEB_CAO -- MoM quasi-statique sur la section droite"
+         " (python/ligne_mom.py), mise en cascade ABCD"),
+        "Source : %s" % (doc.get("source") or "inconnue"),
+        "Carte : %s" % (doc.get("carte") or "-"),
+        "Net : %s" % (doc.get("net") or "-"),
+        "Masse de reference : %s" % (", ".join(refs) if refs
+                                     else "non declaree"),
+        "Z0 moyen : %.2f ohm a %.4f GHz" % (ligne["z0_moyen"], fc / 1e9),
+    ]
 
     # LOT 3b : enrichir les discontinuités avec les valeurs modélisées
     # CE QUI EST AFFICHE EST CE QUI EST APPLIQUE. Les memes fonctions, les

@@ -763,6 +763,7 @@ function crAfficherDetailsComplets() {
   let pkg = d.package || (CR_ETAT.selectedCand && CR_ETAT.selectedCand.package) || "";
   let dsheetUrl = d.datasheet || d.datasheet_url || (m && m.datasheet_url) || (dk && dk.datasheet_url) || "";
   if (dsheetUrl && dsheetUrl.startsWith("//")) dsheetUrl = "https:" + dsheetUrl;
+  if (dsheetUrl && !dsheetUrl.startsWith("http://") && !dsheetUrl.startsWith("https://")) dsheetUrl = "";
 
   const params = d.parameters || (m && m.parameters) || (dk && dk.parameters) || {};
   if (!pkg && params["Package / Case"]) pkg = params["Package / Case"];
@@ -1102,6 +1103,7 @@ async function crAppliquerAuComposant() {
 
   let dsheetUrl = d.datasheet || d.datasheet_url || (CR_ETAT.mouserData && CR_ETAT.mouserData.datasheet_url) || (CR_ETAT.digikeyData && CR_ETAT.digikeyData.datasheet_url) || "";
   if (dsheetUrl && dsheetUrl.startsWith("//")) dsheetUrl = "https:" + dsheetUrl;
+  if (dsheetUrl && !dsheetUrl.startsWith("http://") && !dsheetUrl.startsWith("https://")) dsheetUrl = "";
 
   // Spécifications sélectionnées
   const specsSelectionnees = {};

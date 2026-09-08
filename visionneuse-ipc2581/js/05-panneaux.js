@@ -133,14 +133,14 @@ function pnlInfos(){
 function pnlBadgeFonction(e, c){
   if(c && c.cuivre){
     const cu = LT.cu && LT.cu.find(x => x.nom === e.nom);
-    const estPlan = cu ? cu.plan : (e.type && /PLANE|POWER|GROUND/i.test(e.type));
-    const roleLbl = estPlan ? "Plan" : "Signal";
-    const cls = estPlan ? "fn-plan" : "fn-sig";
+    const role = cu ? cu.role : (e.type && /POWER|PWR/i.test(e.type) ? "pwr" : (e.type && /GROUND|GND|PLANE/i.test(e.type) ? "gnd" : "signal"));
+    const roleLbl = role === "pwr" ? "PWR" : (role === "gnd" ? "GND" : "Signal");
+    const cls = role === "pwr" ? "fn-pwr" : (role === "gnd" ? "fn-gnd" : "fn-sig");
     let srcDet = "";
     if(cu){
       if(cu.roleSaisi) srcDet = "Rôle forcé pour la simulation (" + roleLbl + ")";
-      else if(cu.planSrc === "declare") srcDet = "Plan déclaré dans le fichier IPC-2581";
-      else if(cu.taux > 0) srcDet = "Déduit géométriquement (" + Math.round(cu.taux*100) + " % de cuivre plein)";
+      else if(cu.planSrc === "declare") srcDet = "Plan déclaré dans le fichier IPC-2581 (" + roleLbl + ")";
+      else if(cu.taux > 0) srcDet = "Déduit géométriquement (" + Math.round(cu.taux*100) + " % de cuivre plein - " + roleLbl + ")";
       else srcDet = "Couche de signal";
     }
     return ' <span class="badgeFonction ' + cls + '" title="' + mdlEsc(srcDet) + '">' + roleLbl + '</span>';
@@ -191,16 +191,18 @@ function pnlEmpilageForm(){
     +'<table class="pileForm">';
   for(let i=0;i<LT.cu.length;i++){
     const e=LT.cu[i], c=V.couches[e.couche];
+    const roleLbl = e.role === "pwr" ? "PWR" : (e.role === "gnd" ? "GND" : "Signal");
     const autoDet = e.planSrcAuto === "declare"
-      ? "déclaré dans le fichier"
-      : (e.taux > 0 ? "déduit : " + Math.round(e.taux*100) + " % de cuivre" : "signal");
+      ? ("déclaré " + (e.roleAuto === "pwr" ? "PWR" : "GND") + " dans le fichier")
+      : (e.taux > 0 ? "déduit : " + Math.round(e.taux*100) + " % de cuivre (" + (e.roleAuto === "pwr" ? "PWR" : "GND") + ")" : "signal");
     const tip = e.roleSaisi
-      ? "Rôle forcé pour la simulation (initialement " + autoDet + "). Cliquez pour changer."
+      ? "Rôle forcé pour la simulation (" + roleLbl + ", initialement " + autoDet + "). Cliquez pour changer."
       : "Rôle auto-détecté (" + autoDet + "). Modifiable pour la simulation.";
     const selRole = '<select class="ltRoleSelect' + (e.roleSaisi ? ' saisi' : '') + '"'
       + ' data-lt-role="' + mdlEsc(e.nom) + '" title="' + mdlEsc(tip) + '">'
-      + '<option value="signal"' + (!e.plan ? ' selected' : '') + '>Signal</option>'
-      + '<option value="plan"' + (e.plan ? ' selected' : '') + '>Plan</option>'
+      + '<option value="signal"' + (e.role === 'signal' ? ' selected' : '') + '>Signal</option>'
+      + '<option value="gnd"' + (e.role === 'gnd' ? ' selected' : '') + '>GND</option>'
+      + '<option value="pwr"' + (e.role === 'pwr' ? ' selected' : '') + '>PWR</option>'
       + '</select>';
     h+='<tr class="cu"><td class="g">'
       +'<span class="pastille" style="background:'+((c&&c.couleur)||"#4a4f57")+'"></span>'
@@ -269,9 +271,8 @@ function ltSurcharger(quoi,cle,valeur){
 function ltSurchargerRole(cle, role){
   if(!V.sur.role)V.sur.role={};
   const e=LT.cu&&LT.cu.find(x=>x.nom===cle);
-  const autoPlan=e?!!e.planSrcAuto:false;
-  const nouveauPlan=(role==="plan");
-  if(e && nouveauPlan===autoPlan){
+  const autoRole=e?e.roleAuto:"signal";
+  if(e && role===autoRole){
     delete V.sur.role[cle];
   }else{
     V.sur.role[cle]=role;
@@ -753,6 +754,14 @@ function pnlLigne(piste,coucheIdx){
 /* « une piste », « deux pistes » — l'accord est la moitié de ce qui rend un
    tableau lisible. */
 function pnlPistes(n){ return n+(n>1?" pistes":" piste"); }
+function pnlArcs(n){ return n+(n>1?" arcs":" arc"); }
+function pnlSegments(pistes, arcs){
+  const p=pistes?pnlPistes(pistes):"";
+  const a=arcs?pnlArcs(arcs):"";
+  if(p&&a)return p+" + "+a;
+  if(a)return a;
+  return p||"0 piste";
+}
 
 /* Le net entier comme ligne — ce que Maj+clic demande. La question n'est plus
    « que vaut ce bout de piste » mais « que vaut ce signal d'un bout à
@@ -773,11 +782,11 @@ function pnlLigneNet(i){
       : '<span class="val">'+mdlNb(t.z0moy,1)+" Ω</span>";
 
   let h="<h3>Ligne de transmission — net entier</h3><table>"
-    /* Le nombre de pistes, tout de suite : c'est la différence entre cette
+    /* Le nombre de pistes et d'arcs, tout de suite : c'est la différence entre cette
        fiche et celle d'un clic simple, qui ne parle que d'une seule d'entre
        elles. Le même nombre que « Pistes » dans la fiche du net juste
-       au-dessus, aux pistes hors empilage près. */
-    +l3("Longueur calculée",ltMm(t.len,2)+" · "+pnlPistes(t.pistes))
+       au-dessus, aux éléments hors empilage près. */
+    +l3("Longueur calculée",ltMm(t.len,2)+" · "+pnlSegments(t.pistes,t.arcs))
     +l3("Impédance Z₀",z0)
     +l3("Retard total",ltT(t.tpd))
     +l3("Capacité totale",t.lenZ0>0?ltC(t.c):"—")
@@ -791,7 +800,7 @@ function pnlLigneNet(i){
     h+="<h3>Par couche et largeur</h3><table>";
     for(const m of t.morceaux.slice(0,12))
       h+="<tr><td>"+mdlEsc(mdlCoucheNom(m.couche))+"</td><td>"
-        +ltMm(m.len,2)+" en "+pnlPistes(m.n)+" · "+ltMm(m.w,3)
+        +ltMm(m.len,2)+" en "+pnlSegments(m.pistes,m.arcs)+" · "+ltMm(m.w,3)
         +" · "+(m.z0>0?mdlNb(m.z0,1)+" Ω":"—")+"</td></tr>";
     if(t.morceaux.length>12)
       h+='<tr><td colspan="2">… et '+(t.morceaux.length-12)
@@ -814,9 +823,6 @@ function pnlLigneNet(i){
     dehors.push(ltMm(t.lenHors,2)+" de ce net courent sur des couches hors "
       +"empilage ("+t.couchesHors.map(mdlCoucheNom).join(", ")
       +") : cette longueur n'est comptée dans aucun total");
-  if(t.arcs)
-    dehors.push(t.arcs+" arc(s) de ce net ne sont pas comptés : IPC-2581 les "
-      +"décrit à part des pistes, et leur longueur n'entre nulle part ici");
   if(dehors.length)
     h+='<div class="note attention">'+dehors.map(mdlEsc).join("<br>")+"</div>";
   if(varie)

@@ -766,7 +766,8 @@ cls(){
       '<button class="tb" id="clsRen">Renommer</button>'+
       (RE.cls>0?'<button class="tb" id="clsDel">Supprimer</button>':"")+
       '</div><div class="row">'+
-      '<button class="tb" id="clsApply">Recaler le routage posé</button></div></div>'+
+      '<button class="tb" id="clsApply">Recaler le routage posé</button>'+
+      '<button class="tb" id="clsAutoSchema" title="Déduit les classes depuis les motifs du schéma (Rapide, Analogique, Alim)">Classes du schéma</button></div></div>'+
     '<div class="cat">Les classes du document</div>'+reClassTable()+
     '<div class="restate pad">'+n+' net(s) suivent « '+esc(c.name)+' ». Le '+
     'rattachement d\'un net à sa classe se fait dans la liste des nets, colonne '+
@@ -1201,6 +1202,13 @@ function reBind(){
   num("clsVia",v=>c.via=Math.max(0.2,v));
   num("clsDrill",v=>c.drill=clamp(v,0.1,c.via-0.1));
   clk("clsApply",()=>{applyClasses();reSync();});
+  clk("clsAutoSchema",()=>{
+    if(typeof pcbAppliquerClassesSuggerees==="function"){
+      pcbAppliquerClassesSuggerees();
+      reSync();
+      if(typeof toast==="function")toast("Classes synchronisées depuis le schéma");
+    }
+  });
   clk("clsNew",()=>{
     const n=(prompt("Nom de la nouvelle classe :","Classe "+(S.classes.length+1))||"").trim();
     if(!n)return;

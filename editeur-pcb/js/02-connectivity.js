@@ -359,6 +359,14 @@ function padDist(px,py,q){
   const dx=px-q.x, dy=py-q.y, ca=Math.cos(-q.rot), sa=Math.sin(-q.rot);
   const lx=dx*ca-dy*sa, ly=dx*sa+dy*ca;
   if(q.shape==="circ")return Math.hypot(lx,ly)-Math.max(q.w,q.h)/2;
+  if(q.shape==="poly"&&Array.isArray(q.pts)&&q.pts.length>=3){
+    return ptPolyDist(lx,ly,q.pts);
+  }
+  if(q.shape==="chamfer"){
+    const ch=q.chamfer!=null?q.chamfer:padChamferVal(q);
+    const pts=padChamferPts(q.w,q.h,ch,q.chamferCorners);
+    return ptPolyDist(lx,ly,pts);
+  }
   const r=(q.shape==="oval")?Math.min(q.w,q.h)/2:0;
   const ex=Math.abs(lx)-(q.w/2-r), ey=Math.abs(ly)-(q.h/2-r);
   if(ex<=0&&ey<=0)return Math.max(ex,ey)-r;

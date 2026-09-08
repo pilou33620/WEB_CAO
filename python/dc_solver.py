@@ -703,9 +703,9 @@ def _densite_et_echauffement(maillage, potentiel, rho, externes, th):
     for i in range(n):
         cle = cellules[i]
         t = eps[i]
-        if t <= 0:
-            continue
         face = t * pas                      # la section que traverse une arete
+        if face <= 0:
+            continue
         composante = []
         for dx, dy in ((1, 0), (0, 1)):
             avant = voisin(cle, -dx, -dy)

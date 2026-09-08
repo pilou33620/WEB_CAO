@@ -30,6 +30,8 @@ const PWR_RE = /^(gnd|agnd|dgnd|pgnd|masse|0v|vcc|vdd|vee|vss|\+?\d+v\d*|v\+|v-)
 /* ---------- helpers courts ---------- */
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => v<a?a:(v>b?b:v);
+const r1 = v => Math.round(v*10)/10;
+const r2 = v => Math.round(v*100)/100;
 const r3 = v => Math.round(v*1000)/1000;
 /* le cuivre se compte en dizaines de micromètres : trois décimales de
    millimètre ne suffisent pas à écrire 17,5 µm sans le déformer */
@@ -222,9 +224,9 @@ function cuColor(i,n){
    c'est par là que passent le panneau d'empilage et le menu « Zone cuivre ».
    ========================================================================== */
 const CU_ROLES={signal:"Signal",mixed:"Mixte (signal + cuivre)",
-                gnd:"Plan de masse",pwr:"Plan d'alimentation",shield:"Blindage"};
-const CU_ROLE_SHORT={signal:"Signal",mixed:"Mixte",gnd:"Masse",
-                     pwr:"Alim.",shield:"Blindage"};
+                gnd:"GND (Plan de masse)",pwr:"PWR (Plan d'alimentation)",shield:"Blindage"};
+const CU_ROLE_SHORT={signal:"Signal",mixed:"Mixte",gnd:"GND",
+                     pwr:"PWR",shield:"Blindage"};
 const GND_RE=/^(gnd|agnd|dgnd|pgnd|masse|0v|vss|vee)$/i;
 /* les trois rôles qui entretiennent une zone pleine carte */
 function rolePlane(r){return r==="gnd"||r==="pwr"||r==="shield";}
@@ -682,6 +684,7 @@ const S = {
   zoneDraft:null,             // zone en cours de saisie
   cutDraft:null,              // découpe de zone en cours
   silkDraft:null, silkShape:"line",   // tracé de sérigraphie en cours et forme active (line|rect)
+  meanderDraft:null, meanderOpts:{amplitude:1.5,pitch:1.2,side:0,targetDelta:0}, // accordéons de retard
   hlNet:null,                 // net mis en avant
   hlText:null,                // texte de composant en cours de déplacement
   drc:[], drcRun:false,
@@ -1077,34 +1080,163 @@ function mkFp(ref,value,pkg,pins){
    égaux : le bouton « Carré » de la fenêtre d'empreinte les recopie l'un sur
    l'autre, il n'y a pas de forme de plus pour cela. */
 const PAD_SHAPES={
-  rect :"Rectangle (coins adoucis)",
-  sharp:"Rectangle (angles droits)",
-  oval :"Oblong (bouts ronds)",
-  circ :"Rond"
+  rect   :"Rectangle (coins adoucis)",
+  sharp  :"Rectangle (angles droits)",
+  oval   :"Oblong (bouts ronds)",
+  circ   :"Rond",
+  chamfer:"Rectangle chanfreiné",
+  poly   :"Polygone arbitraire"
 };
 /* Forme inconnue — fichier d'une autre version, .json retouché — : le
    rectangle adouci, celle qu'ont toujours eue les empreintes calculées. */
 function padShape(s){return PAD_SHAPES[s]?s:"rect";}
 function padRadius(shape,w,h){
-  if(shape==="sharp")return 0;
+  if(shape==="sharp"||shape==="chamfer"||shape==="poly")return 0;
   if(shape==="oval") return Math.min(w,h)/2;
   return Math.min(w,h)*0.22;
+}
+function padChamferVal(q){
+  if(q&&q.chamfer!=null)return q.chamfer;
+  return Math.min((q&&q.w)||1,(q&&q.h)||1)*0.25;
+}
+/* Calcule les sommets locaux d'un rectangle chanfreiné.
+   corners: "pin1" pour chanfreiner uniquement le coin 0 (haut-gauche), ou [c0, c1, c2, c3],
+   ou null/undefined pour les 4 coins. */
+function padChamferPts(w,h,chamfer,corners){
+  const c=Math.max(0,Math.min(chamfer!=null?chamfer:Math.min(w,h)*0.25,w/2,h/2));
+  if(c<=1e-6){
+    return [{x:-w/2,y:-h/2},{x:w/2,y:-h/2},{x:w/2,y:h/2},{x:-w/2,y:h/2}];
+  }
+  let c0=true,c1=true,c2=true,c3=true;
+  if(corners==="pin1"){c1=c2=c3=false;}
+  else if(Array.isArray(corners)){
+    c0=!!corners[0];c1=!!corners[1];c2=!!corners[2];c3=!!corners[3];
+  }
+  const pts=[];
+  if(c0)pts.push({x:-w/2+c,y:-h/2});
+  else pts.push({x:-w/2,y:-h/2});
+
+  if(c1){
+    pts.push({x:w/2-c,y:-h/2});
+    pts.push({x:w/2,y:-h/2+c});
+  }else pts.push({x:w/2,y:-h/2});
+
+  if(c2){
+    pts.push({x:w/2,y:h/2-c});
+    pts.push({x:w/2-c,y:h/2});
+  }else pts.push({x:w/2,y:h/2});
+
+  if(c3){
+    pts.push({x:-w/2+c,y:h/2});
+    pts.push({x:-w/2,y:h/2-c});
+  }else pts.push({x:-w/2,y:h/2});
+
+  if(c0)pts.push({x:-w/2,y:-h/2+c});
+  return pts;
+}
+/* Décalage / dilatation d'un polygone de 'g' unités vers l'extérieur (ou intérieur si g < 0) */
+function polyOffset(pts,g){
+  if(!pts||pts.length<3||Math.abs(g)<1e-6)return pts?pts.map(p=>({x:p.x,y:p.y})):[];
+  let area=0;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    area+=(pts[j].x*pts[i].y-pts[i].x*pts[j].y);
+  }
+  const sign=area>0?1:-1;
+  const out=[], N=pts.length;
+  for(let i=0;i<N;i++){
+    const prev=pts[(i-1+N)%N], curr=pts[i], next=pts[(i+1)%N];
+    const dx1=curr.x-prev.x, dy1=curr.y-prev.y;
+    const l1=Math.hypot(dx1,dy1)||1e-6;
+    const n1x=dy1/l1*sign, n1y=-dx1/l1*sign;
+    const dx2=next.x-curr.x, dy2=next.y-curr.y;
+    const l2=Math.hypot(dx2,dy2)||1e-6;
+    const n2x=dy2/l2*sign, n2y=-dx2/l2*sign;
+    const bnx=n1x+n2x, bny=n1y+n2y;
+    const bl=Math.hypot(bnx,bny);
+    if(bl<1e-6){
+      out.push({x:curr.x+n1x*g,y:curr.y+n1y*g});
+    }else{
+      const cosHalf=(n1x*(bnx/bl)+n1y*(bny/bl));
+      const miterDist=g/(cosHalf>0.1?cosHalf:0.1);
+      const clampedDist=Math.max(-3*Math.abs(g),Math.min(3*Math.abs(g),miterDist));
+      out.push({x:curr.x+(bnx/bl)*clampedDist,y:curr.y+(bny/bl)*clampedDist});
+    }
+  }
+  return out;
+}
+/* Distance signée d'un point à un polygone : négative à l'intérieur, positive à l'extérieur */
+function ptPolyDist(px,py,pts){
+  if(!pts||pts.length<3)return 0;
+  let minDist=Infinity;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    const d=segDist(px,py,pts[j].x,pts[j].y,pts[i].x,pts[i].y);
+    if(d<minDist)minDist=d;
+  }
+  let inside=false;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    const xi=pts[i].x, yi=pts[i].y;
+    const xj=pts[j].x, yj=pts[j].y;
+    const intersect=((yi>py)!==(yj>py))&&(px<(xj-xi)*(py-yi)/(yj-yi+1e-12)+xi);
+    if(intersect)inside=!inside;
+  }
+  return inside?-minDist:minDist;
+}
+/* Retourne les sommets d'une pastille en coordonnées carte (monde), dilatée de grow */
+function padWorldPts(q,grow){
+  const g=grow||0;
+  let localPts;
+  if(q.shape==="poly"&&Array.isArray(q.pts)&&q.pts.length>=3){
+    localPts=polyOffset(q.pts,g);
+  }else if(q.shape==="chamfer"){
+    const ch=(q.chamfer!=null?q.chamfer:padChamferVal(q))+g;
+    localPts=padChamferPts(q.w+2*g,q.h+2*g,ch,q.chamferCorners);
+  }else if(q.shape==="circ"){
+    const r=Math.max(q.w,q.h)/2+g;
+    localPts=[];
+    for(let i=0;i<24;i++){
+      const a=i*Math.PI*2/24;
+      localPts.push({x:r*Math.cos(a),y:r*Math.sin(a)});
+    }
+  }else if(q.shape==="oval"){
+    const w=q.w+2*g, h=q.h+2*g, r=Math.min(w,h)/2;
+    localPts=[];
+    const dx=Math.max(0,w/2-r), dy=Math.max(0,h/2-r);
+    for(let i=0;i<=12;i++){
+      const a=-Math.PI/2+Math.PI*i/12;
+      localPts.push({x:dx+r*Math.cos(a),y:r*Math.sin(a)+dy});
+    }
+    for(let i=0;i<=12;i++){
+      const a=Math.PI/2+Math.PI*i/12;
+      localPts.push({x:-dx+r*Math.cos(a),y:-dy+r*Math.sin(a)});
+    }
+  }else{
+    const w=q.w+2*g, h=q.h+2*g;
+    localPts=[{x:-w/2,y:-h/2},{x:w/2,y:-h/2},{x:w/2,y:h/2},{x:-w/2,y:h/2}];
+  }
+  const ca=Math.cos(q.rot||0), sa=Math.sin(q.rot||0);
+  return localPts.map(p=>({x:q.x+p.x*ca-p.y*sa, y:q.y+p.x*sa+p.y*ca}));
 }
 function fpFree(fp){
   return (fp&&Array.isArray(fp.pads)&&fp.pads.length)?fp.pads:null;
 }
-/* Copie normalisée d'une pastille. L'arrondi est au dixième de micromètre,
-   comme pour les épaisseurs de cuivre : les cotes calculées sont des produits
-   (2,54 × 0,68 = 1,7272 mm de pastille traversante), et arrondir au micromètre
-   déplacerait le cuivre au moment de figer l'empreinte. */
-/* L'ordre des champs suit celui des pastilles calculées — n, x, y, w, h,
-   forme, perçage, rotation — pour qu'une empreinte figée et la même encore
-   calculée s'écrivent exactement pareil. */
+/* Copie normalisée d'une pastille. */
 function padClone(q){
-  return {n:Math.max(1,Math.round(q.n)||1), x:r4(q.x), y:r4(q.y),
-          w:Math.max(0.05,r4(q.w)), h:Math.max(0.05,r4(q.h)),
-          shape:padShape(q.shape), drill:Math.max(0,r4(q.drill||0)),
-          rot:padRot(q.rot)};
+  const out={n:Math.max(1,Math.round(q.n)||1), x:r4(q.x), y:r4(q.y),
+             w:Math.max(0.05,r4(q.w)), h:Math.max(0.05,r4(q.h)),
+             shape:padShape(q.shape), drill:Math.max(0,r4(q.drill||0)),
+             rot:padRot(q.rot)};
+  if(q.shape==="poly"&&Array.isArray(q.pts)){
+    out.pts=q.pts.map(p=>({x:r4(p.x!=null?p.x:p[0]||0), y:r4(p.y!=null?p.y:p[1]||0)}));
+  }
+  if(q.shape==="chamfer"||q.chamfer!=null){
+    out.chamfer=q.chamfer!=null?r4(q.chamfer):r4(Math.min(out.w,out.h)*0.25);
+    if(q.chamferCorners)out.chamferCorners=Array.isArray(q.chamferCorners)?[...q.chamferCorners]:q.chamferCorners;
+  }
+  if(q.thermalSpokes!=null)out.thermalSpokes=clamp(Math.round(q.thermalSpokes),1,8);
+  if(q.thermalAngle!=null)out.thermalAngle=padRot(q.thermalAngle);
+  if(q.thermalWidth!=null)out.thermalWidth=Math.max(0.05,r4(q.thermalWidth));
+  if(q.thermalGap!=null)out.thermalGap=Math.max(0,r4(q.thermalGap));
+  return out;
 }
 /* Rotation d'une pastille, en degrés, dans le repère de l'empreinte — comme
    `fp.rot` pour l'empreinte entière. Ramenée dans [0, 360[ : deux pastilles
@@ -1173,13 +1305,23 @@ function padsOf(fp){
      padsWorld() qui le convertit en radians et y ajoute la rotation de
      l'empreinte. Les empreintes calculées ne tournent pas leurs pastilles —
      un côté vertical de QFP échange largeur et hauteur, il ne pivote pas. */
-  for(const q of out){q.rot=padRot(q.rot);q.net=fp.nets[q.n]||"";}
+  for(const q of out){q.rot=padRot(q.rot);q.net=(fp.nets?fp.nets[q.n]:"")||q.net||"";}
   return out;
 }
 /* enveloppe du corps (sérigraphie) en coordonnées locales */
 /* Demi-encombrement d'une pastille tournée : la boîte droite qui la contient.
    Une pastille non tournée retrouve exactement w/2 et h/2. */
 function padHalf(q){
+  if(q.shape==="poly"&&Array.isArray(q.pts)&&q.pts.length>=3){
+    const a=(q.rot||0)*Math.PI/180, c=Math.cos(a), s=Math.sin(a);
+    let maxX=0, maxY=0;
+    for(const p of q.pts){
+      const rx=Math.abs(p.x*c-p.y*s), ry=Math.abs(p.x*s+p.y*c);
+      if(rx>maxX)maxX=rx;
+      if(ry>maxY)maxY=ry;
+    }
+    return {x:maxX, y:maxY};
+  }
   const a=(q.rot||0)*Math.PI/180, ca=Math.abs(Math.cos(a)), sa=Math.abs(Math.sin(a));
   return {x:(q.w*ca+q.h*sa)/2, y:(q.w*sa+q.h*ca)/2};
 }
@@ -1279,6 +1421,20 @@ function fpSetPad(fp,i,k,v){
     q[k]=clamp(r4(+v||0),0.05,200);
   }else if(k==="drill"){
     q.drill=clamp(r4(+v||0),0,200);
+  }else if(k==="chamfer"){
+    q.chamfer=clamp(r4(+v||0),0,Math.min(q.w,q.h)/2);
+  }else if(k==="chamferCorners"){
+    q.chamferCorners=v;
+  }else if(k==="pts"){
+    if(Array.isArray(v))q.pts=v.map(p=>({x:r4(p.x!=null?p.x:p[0]||0), y:r4(p.y!=null?p.y:p[1]||0)}));
+  }else if(k==="thermalSpokes"){
+    q.thermalSpokes=clamp(Math.round(+v||4),1,8);
+  }else if(k==="thermalAngle"){
+    q.thermalAngle=padRot(v);
+  }else if(k==="thermalWidth"){
+    q.thermalWidth=clamp(r4(+v||0),0,200);
+  }else if(k==="thermalGap"){
+    q.thermalGap=clamp(r4(+v||0),0,200);
   }else return false;
   /* le perçage se recale après coup : retailler la pastille au-dessous de son
      trou ne doit pas laisser un anneau négatif */

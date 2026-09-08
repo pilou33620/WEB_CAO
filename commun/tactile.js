@@ -74,7 +74,7 @@ function tactileSimulerTouche(key, code, opts){
   if(typeof document === "undefined") return;
   const target = document.activeElement && document.activeElement !== document.body
                ? document.activeElement
-               : (document.getElementById("board") || document.getElementById("schCv") || document);
+               : (document.getElementById("board") || document.getElementById("sheet") || document.getElementById("carte") || document.getElementById("schCv") || document);
   if(!target || typeof target.dispatchEvent !== "function") return;
   try{
     const evInit = {
@@ -228,7 +228,9 @@ function tactileCreerHud(outil){
   if(bMiroir){
     bMiroir.onclick = function(e){
       e.preventDefault();
-      tactileSimulerTouche("m", "KeyM");
+      const el = document.getElementById("bMir") || document.getElementById("pMir");
+      if(el) el.click();
+      else tactileSimulerTouche("m", "KeyM");
     };
   }
 
@@ -259,6 +261,7 @@ function tactileCreerHud(outil){
       e.preventDefault();
       const el = document.getElementById("bFit") || document.getElementById("btnFit");
       if(el) el.click();
+      else if(typeof fit === "function") fit();
       else if(typeof zoomAjuster === "function") zoomAjuster();
     };
   }
@@ -266,14 +269,24 @@ function tactileCreerHud(outil){
   if(bZoomIn){
     bZoomIn.onclick = function(e){
       e.preventDefault();
-      if(typeof zoomer === "function") zoomer(1.2);
+      if(typeof zoomer === "function"){
+        const cv = document.getElementById("carte") || document.getElementById("board") || document.getElementById("sheet");
+        const cx = cv ? (cv.clientWidth || 0) / 2 : 0;
+        const cy = cv ? (cv.clientHeight || 0) / 2 : 0;
+        zoomer(1.2, cx, cy);
+      }
     };
   }
   const bZoomOut = hud.querySelector("#hudZoomOut");
   if(bZoomOut){
     bZoomOut.onclick = function(e){
       e.preventDefault();
-      if(typeof zoomer === "function") zoomer(1 / 1.2);
+      if(typeof zoomer === "function"){
+        const cv = document.getElementById("carte") || document.getElementById("board") || document.getElementById("sheet");
+        const cx = cv ? (cv.clientWidth || 0) / 2 : 0;
+        const cy = cv ? (cv.clientHeight || 0) / 2 : 0;
+        zoomer(1 / 1.2, cx, cy);
+      }
     };
   }
 

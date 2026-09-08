@@ -4,8 +4,14 @@
     {
       "name": "serveur CAO Web",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["serveur.py", "--port", "8000", "--sans-navigateur", "--sans-pause"],
-      "port": 8000
+      "runtimeArgs": [
+        "serveur.py",
+        "--port",
+        "8137",
+        "--sans-navigateur",
+        "--sans-pause"
+      ],
+      "port": 8137
     }
   ]
 }

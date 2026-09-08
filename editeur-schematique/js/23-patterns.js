@@ -78,6 +78,10 @@ var SCHEMA_PATTERNS = (function() {
     if (typeof draw === "function") draw();
   }
 
+  function esc(s) {
+    return String(s || "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  }
+
   /* ---------- Rendu du panneau dans l'interface ---------- */
   function rendrePanneau(data, erreur) {
     const el = document.getElementById("pnlPatternsBody");
@@ -87,7 +91,7 @@ var SCHEMA_PATTERNS = (function() {
       el.innerHTML = `
         <div style="padding:12px;color:var(--txt-dim);font-size:12px;line-height:1.5;">
           <div style="color:var(--yellow);font-weight:600;margin-bottom:6px;">⚠️ Serveur non disponible</div>
-          <div>${erreur}</div>
+          <div>${esc(erreur)}</div>
           <div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">Lancez <code>python serveur.py</code> pour activer la reconnaissance de motifs.</div>
           <button class="tb" id="bPatternsRefresh" style="margin-top:10px;width:100%;justify-content:center;">🔄 Réessayer</button>
         </div>
@@ -127,17 +131,17 @@ var SCHEMA_PATTERNS = (function() {
           ${motifs.map((m, idx) => `
             <div style="background:var(--panel2);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;">
               <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span style="font-weight:600;color:var(--blue);">${m.label || m.type}</span>
+                <span style="font-weight:600;color:var(--blue);">${esc(m.label || m.type)}</span>
                 <span style="font-size:10px;padding:2px 5px;background:rgba(63,160,234,0.15);color:var(--blue);border-radius:3px;">
-                  ${m.suggested_netclass || 'Signal'}
+                  ${esc(m.suggested_netclass || 'Signal')}
                 </span>
               </div>
 
               <!-- Composants du bloc -->
               <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">
                 ${(m.components || []).map(r => `
-                  <button class="tb lk-sch-comp" data-ref="${r}" style="padding:2px 6px;font-size:10px;" title="Sélectionner au schéma">
-                    ${r}
+                  <button class="tb lk-sch-comp" data-ref="${esc(r)}" style="padding:2px 6px;font-size:10px;" title="Sélectionner au schéma">
+                    ${esc(r)}
                   </button>
                 `).join("")}
               </div>
@@ -145,13 +149,13 @@ var SCHEMA_PATTERNS = (function() {
               <!-- Équipotentielles associées -->
               ${m.nets && m.nets.length > 0 ? `
                 <div style="margin-top:6px;font-size:10px;color:var(--txt-dim);">
-                  Nets : <b>${m.nets.join(", ")}</b>
+                  Nets : <b>${(m.nets || []).map(esc).join(", ")}</b>
                 </div>
               ` : ""}
 
               ${m.output_voltage ? `
                 <div style="margin-top:4px;font-size:10px;color:var(--yellow);">
-                  ⚡ Tension inférée : <b>${m.output_voltage} V</b>
+                  ⚡ Tension inférée : <b>${esc(m.output_voltage)} V</b>
                 </div>
               ` : ""}
             </div>
@@ -172,8 +176,8 @@ var SCHEMA_PATTERNS = (function() {
             <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px;font-size:11px;">
               ${courants.map(c => `
                 <div style="display:flex;justify-content:space-between;color:var(--txt-dim);">
-                  <span>${c.source} (${c.type})</span>
-                  <span style="font-family:var(--mono);color:var(--txt);font-weight:600;">${c.courant_ma} mA</span>
+                  <span>${esc(c.source)} (${esc(c.type)})</span>
+                  <span style="font-family:var(--mono);color:var(--txt);font-weight:600;">${esc(c.courant_ma)} mA</span>
                 </div>
               `).join("")}
             </div>

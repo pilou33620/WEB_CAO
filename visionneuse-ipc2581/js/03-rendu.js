@@ -105,6 +105,8 @@ function fit(){
    centre de l'écran — sans quoi on perd de vue ce qu'on regardait. */
 function zoomer(k,px,py){
   if(!V.modele)return;
+  if(px==null) px=(typeof cv!=="undefined"&&cv&&cv.clientWidth)?cv.clientWidth/2:0;
+  if(py==null) py=(typeof cv!=="undefined"&&cv&&cv.clientHeight)?cv.clientHeight/2:0;
   const vise=s2w(px,py);
   V.vue.scale=Math.max(0.02,Math.min(4000,V.vue.scale*k));
   /* On replace la vue pour que le point vise retombe sous le curseur : c'est

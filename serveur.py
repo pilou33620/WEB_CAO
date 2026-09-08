@@ -296,6 +296,7 @@ cet acces.
 """
 import argparse
 import http.server
+import ipaddress
 import json
 import os
 import posixpath
@@ -306,6 +307,7 @@ import sys
 import threading
 import traceback
 import urllib.parse
+import urllib.request
 import webbrowser
 
 DEFAULT_PORT = 8000
@@ -633,6 +635,52 @@ ORIGINES = re.compile(
     r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$")
 
 
+def _valider_url_telechargement(url):
+    """Valide qu'une URL est http/https et ne pointe pas vers le reseau local ou prive (anti-SSRF)."""
+    if not url or not isinstance(url, str):
+        raise ValueError("URL manquante ou invalide")
+    url = url.strip()
+    p = urllib.parse.urlparse(url)
+    if p.scheme not in ("http", "https"):
+        raise ValueError("Protocole non autorise (http ou https uniquement)")
+    hostname = p.hostname
+    if not hostname:
+        raise ValueError("Nom d'hote manquant dans l'URL")
+
+    # Verification du port si specifie
+    if p.port and p.port not in (80, 443, 8080, 8443):
+        raise ValueError("Port %d non autorise" % p.port)
+
+    # Resolution DNS et verification des adresses IP
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as exc:
+        raise ValueError("Nom d'hote introuvable : %s" % hostname) from exc
+
+    if not infos:
+        raise ValueError("Impossible de resoudre l'hote : %s" % hostname)
+
+    for info in infos:
+        ip_str = info[4][0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            raise ValueError("Adresse IP invalide : %s" % ip_str)
+        if (ip.is_loopback or ip.is_private or ip.is_link_local or
+                ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            raise ValueError("Acces refuse a l'adresse privee ou locale (%s)" % ip_str)
+    return url
+
+
+class _SecRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Interdit les redirections vers des adresses locales ou privees."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _valider_url_telechargement(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+
 def get_local_ip():
     """Adresse IP de la machine sur le reseau local."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -810,10 +858,32 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     # qui verifie le nom demande. Servir le dossier en plus n'ajouterait
     # rien et donnerait un second chemin a surveiller.
     HIDDEN = ('.git', '.github', '.gitignore', '.venv', '__pycache__', '.env',
-              'profils', 'api_key_free_ia_studio.txt')
+              'profils', 'api_key_free_ia_studio.txt', 'LIB_composants.csv',
+              'mom_solver.log')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
+
+    def parse_request(self):
+        if not super().parse_request():
+            return False
+        # Protection DNS Rebinding : validation de l'en-tete Host
+        hote_brut = (self.headers.get("Host") or "").split(":")[0].strip("[]")
+        if hote_brut:
+            hotes_permis = {"localhost", "127.0.0.1", "::1"}
+            try:
+                srv_ip = self.server.server_address[0]
+                if srv_ip:
+                    hotes_permis.add(str(srv_ip).split("%")[0].strip("[]"))
+            except (AttributeError, IndexError):
+                pass
+            loc_ip = get_local_ip()
+            if loc_ip:
+                hotes_permis.add(loc_ip)
+            if hote_brut.lower() not in hotes_permis:
+                self.send_error(403, "Host non autorise (protection DNS Rebinding)")
+                return False
+        return True
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -831,9 +901,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if real != root and not real.startswith(root + os.sep):
             return True            # remontee hors du depot
         rel = os.path.relpath(real, root)
+        parts = [p for p in rel.split(os.sep) if p not in ('.', '..')]
+        # Si l'ecoute n'est pas locale, le dossier des projets n'est pas servi statiquement
+        if not PROJETS_OUVERT and parts and parts[0] == PROJETS:
+            return True
         return any(part in self.HIDDEN or part.startswith('.') or
-                   part.startswith('api_key') or part.endswith('.key')
-                   for part in rel.split(os.sep) if part not in ('.', '..'))
+                   part.startswith('api_key') or part.endswith('.key') or
+                   part.endswith('.py') or part.endswith('.pyc') or
+                   part.endswith('.log')
+                   for part in parts)
 
     def translate_path(self, path):
         filepath = super().translate_path(path)
@@ -849,29 +925,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         return filepath
 
     def list_directory(self, path):
-        """Meme role que la version d'origine, mais l'echec est explique.
-
-        « 404 -- No permission to list directory » n'apprend rien a celui qui
-        le lit dans Safari, et sur iPad la console de Pyto n'est pas toujours
-        visible : on dit quel dossier, quelle erreur systeme, et quoi faire.
-        """
-        try:
-            os.listdir(path)
-        except OSError as exc:
-            self.send_error(
-                404, "Dossier illisible",
-                "%s\n%s\n\nDossier servi (ROOT) : %s\n\n"
-                "Le systeme refuse la lecture de ce dossier : c'est une"
-                " autorisation qui manque, et --dossier n'y changera rien."
-                " Sous Pyto (iPad), deux issues : barre laterale >"
-                " « Ouvrir dossier » > choisir ce dossier ; ou, plus sur,"
-                " deplacer le depot dans le dossier propre a Pyto"
-                " (Fichiers > Sur mon iPad > Pyto) et le relancer de la."
-                " Le copier depuis Python est impossible : la lecture du"
-                " dossier d'origine est justement ce que le systeme refuse."
-                % (path, exc, ROOT))
-            return None
-        return super().list_directory(path)
+        # Desactivation stricte du listage de repertoire pour eviter la fuite d'arborescence
+        self.send_error(404, "File not found")
+        return None
 
     def send_head(self):
         # le filtrage se fait ici : translate_path est aussi appele par
@@ -902,6 +958,14 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if origine and ORIGINES.match(origine):
             self.send_header("Access-Control-Allow-Origin", origine)
             self.send_header("Vary", "Origin")
+
+    def _valider_csrf(self):
+        """Rejette les requetes modificatrices provenant d'une origine non autorisee."""
+        origine = self.headers.get("Origin")
+        if origine and not ORIGINES.match(origine):
+            self._envoyer_json({"detail": "Origine inter-site refusee (protection CSRF)"}, 403)
+            return False
+        return True
 
     def _envoyer_json(self, charge, code=200):
         corps = json.dumps(charge).encode("utf-8")
@@ -1077,6 +1141,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurProjet(403, "Dossiers de projet refuses : ce serveur"
                                     " ecoute sur le reseau. Relancez-le avec"
                                     " --local pour ouvrir cette route.")
+        return True
 
     def _projet_params(self):
         return urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -1570,12 +1635,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         """Execute action() et gere les reponses de telechargement/consultation."""
         try:
             action()
+        except ErreurProjet as exc:
+            self.close_connection = True
+            self._envoyer_json({"detail": exc.message}, exc.code)
         except Exception as exc:                       # noqa: BLE001
+            self.close_connection = True
             self._envoyer_json({"detail": "Erreur datasheet : %s" % exc}, 500)
 
     def _datasheet_telecharger(self):
-        if not self._projet_garde():
-            return
+        self._projet_garde()
         taille = int(self.headers.get("Content-Length") or 0)
         if taille > MAX_CORPS:
             self._envoyer_json({"detail": "Requete trop grande"}, 413)
@@ -1587,8 +1655,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         url = str(corps.get("url") or "").strip()
-        if not url or not (url.startswith("http://") or url.startswith("https://")):
-            self._envoyer_json({"detail": "URL invalide"}, 400)
+        try:
+            url = _valider_url_telechargement(url)
+        except ValueError as exc:
+            self._envoyer_json({"detail": "URL invalide ou interdite (anti-SSRF) : %s" % exc}, 400)
             return
 
         mpn = str(corps.get("mpn") or "datasheet").strip()
@@ -1624,9 +1694,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             "Accept": "application/pdf,*/*"
         }
         max_datasheet = 50 * 1024 * 1024  # 50 Mo max
+        opener = urllib.request.build_opener(_SecRedirectHandler())
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=25) as resp:
+            with opener.open(req, timeout=25) as resp:
                 contenu = resp.read(max_datasheet + 1)
                 if len(contenu) > max_datasheet:
                     self._envoyer_json({"detail": "Le fichier distant depasse la taille limite de 50 Mo"}, 413)
@@ -1642,8 +1713,13 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                     if not pdf_trouve and liens_pdf:
                         pdf_trouve = liens_pdf[0]
                     if pdf_trouve:
+                        try:
+                            pdf_trouve = _valider_url_telechargement(pdf_trouve)
+                        except ValueError as exc:
+                            self._envoyer_json({"detail": "Lien PDF distant refuse (anti-SSRF) : %s" % exc}, 400)
+                            return
                         req2 = urllib.request.Request(pdf_trouve, headers=headers)
-                        with urllib.request.urlopen(req2, timeout=25) as resp2:
+                        with opener.open(req2, timeout=25) as resp2:
                             contenu = resp2.read(max_datasheet + 1)
                             if len(contenu) > max_datasheet:
                                 self._envoyer_json({"detail": "Le fichier PDF distant depasse la taille limite de 50 Mo"}, 413)
@@ -1676,6 +1752,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         })
 
     def _datasheet_ouvrir(self):
+        self._projet_garde()
         params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         projet = (params.get("projet") or [""])[0]
         fichier = (params.get("fichier") or [""])[0]
@@ -1683,6 +1760,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(400, "Nom de fichier manquant")
             return
         nom_base = os.path.basename(fichier)
+        if not nom_base.lower().endswith(".pdf") or ".." in nom_base or NOM_INTERDIT.search(nom_base):
+            self.send_error(400, "Nom de fichier datasheet invalide")
+            return
         dossier_parent = None
         if projet:
             try:
@@ -1694,7 +1774,18 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if not dossier_parent:
             dossier_parent = os.path.join(racine_projets(), "_communs")
 
-        chemin = os.path.join(dossier_parent, "datasheets", nom_base)
+        dossier_datasheets = os.path.join(dossier_parent, "datasheets")
+        chemin = os.path.abspath(os.path.join(dossier_datasheets, nom_base))
+        try:
+            real_parent = os.path.realpath(dossier_datasheets)
+            real_chemin = os.path.realpath(chemin)
+            if not real_chemin.startswith(real_parent + os.sep):
+                self.send_error(403, "Acces refuse hors du dossier datasheets")
+                return
+        except OSError:
+            self.send_error(400, "Chemin invalide")
+            return
+
         if not os.path.exists(chemin):
             self.send_error(404, "Datasheet introuvable")
             return
@@ -1740,6 +1831,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_PUT(self):
+        if not self._valider_csrf():
+            return
         route = self._route()
         if route == "/api/profil":
             self._profil_api(self._profil_ecrire)
@@ -1753,12 +1846,16 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.send_error(405, "Unsupported method (PUT)")
 
     def do_DELETE(self):
+        if not self._valider_csrf():
+            return
         if self._route() != "/api/profil":
             self.send_error(405, "Unsupported method (DELETE)")
             return
         self._profil_api(self._profil_effacer)
 
     def do_POST(self):
+        if not self._valider_csrf():
+            return
         route = self._route()
         if route == "/api/ipc2581":
             self._ipc_api(self._ipc2581_importer)

@@ -58,7 +58,7 @@ function prefSurcharges(){
   if(p.sur.role&&typeof p.sur.role==="object"){
     for(const cle in p.sur.role){
       const r=String(p.sur.role[cle]||"").toLowerCase();
-      if(r==="plan"||r==="signal")V.sur.role[cle]=r;
+      if(r==="plan"||r==="signal"||r==="gnd"||r==="pwr")V.sur.role[cle]=r;
     }
   }
 }

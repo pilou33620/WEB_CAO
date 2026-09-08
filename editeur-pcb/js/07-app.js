@@ -422,6 +422,11 @@ $("mSelect").onclick=()=>setMode("select");
 $("mTrack").onclick=()=>setMode("track");
 $("mVia").onclick=()=>setMode("via");
 $("mDiff").onclick=()=>setMode("dpair");
+if($("mMeander")) $("mMeander").onclick=e=>{
+  e.stopPropagation();
+  setMode("meander");
+  if(typeof meanderMenuToggle==="function")meanderMenuToggle();
+};
 /* Le bouton passe en mode zone et déplie ses options :
    rôle de la couche active, net du plan, deux façons de poser du cuivre. */
 $("mZone").onclick=e=>{e.stopPropagation();setMode("zone");zoneMenuToggle();};
@@ -429,6 +434,11 @@ if($("mSilk")) $("mSilk").onclick=e=>{e.stopPropagation();setMode("silk");silkMe
 $("mEdge").onclick=()=>setMode("edge");
 $("mOrigin").onclick=()=>setMode("origin");
 $("mErase").onclick=()=>setMode("cut");
+if($("bFootprint")) $("bFootprint").onclick=()=>{
+  const fp=S.sel.fps.size===1?fpById([...S.sel.fps][0]):(S.fps&&S.fps[0]);
+  if(fp&&typeof feOpen==="function")feOpen(fp);
+  else hint("Aucune empreinte à éditer sur la carte.");
+};
 $("bRot").onclick=rotateSel;
 $("bFlip").onclick=flipSel;
 $("bUnroute").onclick=unrouteSel;
@@ -517,6 +527,9 @@ document.addEventListener("pointerdown",e=>{
   const sm=$("silkMenu");
   if(sm&&sm.classList.contains("on")&&!sm.contains(e.target)&&!($("mSilk")&&$("mSilk").contains(e.target)))
     silkMenuClose();
+  const mm=$("meanderMenu");
+  if(mm&&mm.classList.contains("on")&&!mm.contains(e.target)&&!($("mMeander")&&$("mMeander").contains(e.target)))
+    if(typeof meanderMenuClose==="function")meanderMenuClose();
 });
 document.addEventListener("keydown",e=>{
   if(e.key!=="Escape")return;
@@ -524,8 +537,16 @@ document.addEventListener("keydown",e=>{
   if(m&&m.classList.contains("on")){zoneMenuClose();e.stopPropagation();}
   const sm=$("silkMenu");
   if(sm&&sm.classList.contains("on")){silkMenuClose();e.stopPropagation();}
+  const mm=$("meanderMenu");
+  if(mm&&mm.classList.contains("on")){if(typeof meanderMenuClose==="function")meanderMenuClose();e.stopPropagation();}
+  const bsm=$("busSkewModal");
+  if(bsm&&!bsm.hidden){if(typeof busSkewClose==="function")busSkewClose();e.stopPropagation();}
 },true);
-window.addEventListener("resize",()=>{zoneMenuClose();silkMenuClose();resize();});
+window.addEventListener("resize",()=>{
+  zoneMenuClose();silkMenuClose();
+  if(typeof meanderMenuClose==="function")meanderMenuClose();
+  resize();
+});
 window.addEventListener("beforeunload",e=>{
   /* Changer d'outil met la carte en session : il n'y a rien à perdre, la
      question ne se pose plus. Elle reste posée pour une vraie fermeture. */

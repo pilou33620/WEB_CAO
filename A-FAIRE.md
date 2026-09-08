@@ -3,9 +3,9 @@
 Ce qui manque pour que la chaîne soit un outil convenable. Un titre = une
 tâche ; le corps dit ce qui existe déjà et où, pour ne pas repartir de zéro.
 
-Ce qui est *assumé* comme absent — auto-routeur, serpentin d'appariement,
-sauvegarde disque automatique — n'est pas ici : c'est dans les « Limites
-connues » de [editeur-pcb/README.md](editeur-pcb/README.md#limites-connues) et
+Ce qui est *assumé* comme absent — auto-routeur, sauvegarde disque automatique —
+n'est pas ici : c'est dans les « Limites connues » de
+[editeur-pcb/README.md](editeur-pcb/README.md#limites-connues) et
 [editeur-schematique/README.md](editeur-schematique/README.md#limites-connues).
 
 Ce qui en sort est retiré d'ici et documenté là où il vit. **Fait :** l'outil de
@@ -35,9 +35,9 @@ passés.**
 
 | Partie | État | Ce qui la mesure |
 | --- | --- | --- |
-| Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire, santé, pinout, empreintes | en service | 650 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
+| Éditeur PCB — géométrie, routage, DRC, fabrication, coplanaire, santé, pinout, empreintes | en service | 660 essais, [editeur-pcb/test/harness.js](editeur-pcb/test/harness.js) |
 | Éditeur schématique — bus, feuilles hiérarchiques, distributeurs, pinout, motifs | en service | 108 essais, [editeur-schematique/test/harness.js](editeur-schematique/test/harness.js) |
-| Visionneuse IPC-2581 | en service ; **arcs comptés, parcours chaîné, chevelu du retour, pastilles devinées avouées, sélection à plusieurs morceaux** | 108 essais ([harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)) + 46 ([banc-essai.py](visionneuse-ipc2581/test/banc-essai.py)) |
+| Visionneuse IPC-2581 | en service ; **arcs comptés, parcours chaîné, chevelu du retour, pastilles devinées avouées, sélection à plusieurs morceaux** | 123 essais ([harness-sim.js](visionneuse-ipc2581/test/harness-sim.js)) + 46 ([banc-essai.py](visionneuse-ipc2581/test/banc-essai.py)) |
 | **SI — impédance** (`ligne_mom`) | en service, 0,3 à 0,4 % contre les étalons ; **vias : boucle de retour, antipads, moignons, traversée de plans** | 149 cas, [banc-ligne-mom.py](python/test/banc-ligne-mom.py) |
 | **SI — Z différentielle** (`solve_multiline`) | **en service**, moins de 3 % contre Garg-Bahl ; N conducteurs dans UNE section, masse coplanaire et pistes de garde comprises | 149 cas |
 | **SI — couplage** (`crosstalk`) | **en service** ; l'onglet Diaphonie a été RETIRÉ le 2026-09-02, le crosstalk répond seul — combien (%, dB, **volts**) et où | 43 cas, [banc-crosstalk.py](python/test/banc-crosstalk.py) |
@@ -101,7 +101,12 @@ passés.**
    un via qui relie la piste au plan de masse, et la comparaison de paramètres
    S avec `ligne_mom` — celle qui attendait ce point depuis le début — donne
    **0,93 %** sur ε_eff dé-embarqué. Ce qui reste au moteur est du confort, pas
-   du blocage : voir « L'état du moteur 2,5D » plus bas.
+   du blocage : voir « L'état du moteur 2,5D » plus bas ;
+6. ~~**Prise en compte des arcs dans ltNet, pastilles polygonales arbitraires, et serpentins d'appariement avec simulateur de bus nommé & fermeture temporelle Setup/Hold**~~ **FAIT le 2026-09-06** :
+   - **Arcs dans ltNet** : prise en compte de la longueur géométrique exacte des arcs de cercle dans `ltNet` et `mdlArcLongueur` côté éditeur PCB et visionneuse IPC-2581 (impédance et délai de propagation exacts) ;
+   - **Pastilles arbitraires** : support complet des pastilles polygonales (`poly`), chanfreinées (`chamfer`) et découpes thermiques personnalisées (`thermalCutout`), avec hit-test point dans polygone, masques de vernis/pâte et export Gerber standard RS-274X (`G36`/`G37`) ;
+   - **Serpentins d'appariement & timing closure** : menu interactif des options de serpentin (`amplitude`, `pas`, `côté`, `targetDelta`), et outil complet de simulation temporelle des bus synchrones (`busSkewAnalyze`, modale `busSkewModal`) intégrant calcul physique des temps de vol ($T_{flight}$), vérification formelle de Setup Slack ($\text{Slack}_{su}$) et Hold Slack ($\text{Slack}_h$), pré-réglages protocoles (SPI, QSPI, SDRAM, RGMII, DDR), détection automatique des violations de maintien (données trop rapides) et armement direct de l'outil serpentin avec l'allongement $\Delta L_{opt}$ calculé ;
+   - **Simulateur de bus nommé partagé** : nouvel onglet « Bus synchrone » dans le panneau de Simulation EM commun (`commun/simulation-em.js`, famille SI), accessible à la fois dans l'Éditeur PCB et dans la Visionneuse IPC-2581. Permet de nommer le bus, de sélectionner librement les $X$ signaux de données et la ou les horloges de référence (support multi-horloges avec association dynamique par signal), de saisir à la main directement tous les paramètres temporels ($f$, $T_{cyc}$, $t_{su}$, $t_h$, $T_{co\_min}$, $T_{co\_max}$), de visualiser l'œil temporel et d'exporter les résultats au format CSV et JSON.
 
 ## Simulation électromagnétique
 
@@ -2869,3 +2874,26 @@ Au fur et à mesure qu'un circuit grossit, empiler des feuilles à plat dans une
    - Persistance dans le document JSON du schéma (`doc.sheets`, coordonnées des blocs hiérarchiques, liaisons inter-feuilles).
    - Maintien d'une rétrocompatibilité totale avec les schémas existants non hiérarchiques (mode séquentiel plat classique préservé si aucune hiérarchie n'est déclarée).
 
+---
+
+## D. Éditeur PCB et ergonomie
+
+### Prise en compte des arcs dans `ltNet` [FAIT]
+
+- La simulation EM et le solveur DC prennent parfaitement en compte les pistes en arc de cercle (découpées en segments/polylignes fines).
+- La fiche rapide `ltNet` du panneau Sélection calcule désormais la longueur exacte (`mdlArcLongueur`), l'impédance, le délai et les caractéristiques de chaque arc (`ltArc`), les agrège dans le total textuel du net et dans `pnlSegments`, et l'avertissement « arcs non comptés » a été retiré.
+
+### Pastilles de formes arbitraires [FAIT]
+
+- Support complet des formes `poly` (polygone arbitraire défini par `pts`) et `chamfer` (rectangle chanfreiné à 45° sur les 4 coins ou pin 1 seul).
+- Découpes thermiques personnalisables : nombre de branches (`thermalSpokes`), largeur (`thermalWidth`), angle d'orientation (`thermalAngle`).
+- Prise en compte dans le rendu canvas, le modèle de géométrie, le calcul d'isolation DRC/PNS, le solveur DC, l'éditeur d'empreintes et la génération Gerber RS-274X (`G36*...G37*`).
+- Ajout du raccourci/bouton dans la barre d'outils (`bFootprint`).
+
+### Serpentins d'appariement de longueur (*length matching meanders*) [FAIT]
+
+- Outil interactif pour générer des accordéons de retard sur les paires différentielles ou bus synchrones.
+- Détection automatique de la désynchronisation (*skew*) et de la compensation requise via `dpSkewForTrack(track)`.
+- Générateur d'accordéons paramétriques à 45° via `dpMeander(track, opts)`.
+- Mode interactif `meander` activé via le bouton de la barre d'outils `mMeander` ou le raccourci clavier `M`.
+- Prévisualisation dynamique sur canevas avec badge de delta de longueur (`+X.XX mm`) et application avec annulation Ctrl+Z.

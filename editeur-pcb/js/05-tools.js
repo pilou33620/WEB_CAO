@@ -2822,6 +2822,36 @@ cv.addEventListener("pointerdown",e=>{
   }
   if(e.button!==0)return;
   if(S.mode==="mesure"){rpMesClic(p.x,p.y);draw();return;}
+  if(S.mode==="meander"){
+    const hit=hitTest(p.x,p.y);
+    if(hit&&hit.track&&!isArc(hit.track)){
+      const skewInfo=typeof dpSkewForTrack==="function"?dpSkewForTrack(hit.track):null;
+      const mOpts=(typeof S!=="undefined"&&S.meanderOpts)?S.meanderOpts:{};
+      const targetDelta=(skewInfo&&skewInfo.needed>0)?skewInfo.needed:(mOpts.targetDelta||null);
+      const side=(mOpts.side!=null&&mOpts.side!==0)?mOpts.side:1;
+      const amplitude=mOpts.amplitude||1.5;
+      const pitch=mOpts.pitch||1.2;
+      S.meanderDraft={
+        track:hit.track,
+        startP:{x:p.x,y:p.y},
+        targetDelta:targetDelta,
+        side:side,
+        amplitude:amplitude,
+        pitch:pitch,
+        result:null
+      };
+      if(typeof dpMeander==="function"){
+        S.meanderDraft.result=dpMeander(hit.track,{
+          targetDelta:targetDelta,
+          amplitude:amplitude,
+          pitch:pitch,
+          side:side
+        });
+      }
+      draw();
+      return;
+    }
+  }
   /* DÉSIGNER UNE BORNE DE CHUTE CONTINUE. Le panneau de simulation arme
      l'attente ; le clic suivant choisit la pastille et rend la main au mode
      « sélection ». Le test passe par `typeof` parce que 19-simulation.js est
@@ -3203,6 +3233,29 @@ cv.addEventListener("pointermove",e=>{
     draw();return;
   }
   if(S.mode==="mesure"){if(rpMesBouge(p.x,p.y))draw();return;}
+  if(S.mode==="meander"&&S.meanderDraft){
+    const trk=S.meanderDraft.track;
+    const L=Math.hypot(trk.x2-trk.x1,trk.y2-trk.y1);
+    if(L>0.1){
+      const ux=(trk.x2-trk.x1)/L, uy=(trk.y2-trk.y1)/L;
+      const dx=p.x-S.meanderDraft.startP.x, dy=p.y-S.meanderDraft.startP.y;
+      const dNorm=(-uy*dx+ux*dy);
+      const side=dNorm>=0?1:-1;
+      const amp=Math.max(0.5, Math.min(10, Math.abs(dNorm)+1.0));
+      S.meanderDraft.side=side;
+      S.meanderDraft.amplitude=amp;
+      if(typeof dpMeander==="function"){
+        S.meanderDraft.result=dpMeander(trk,{
+          targetDelta:S.meanderDraft.targetDelta,
+          amplitude:amp,
+          pitch:S.meanderDraft.pitch||1.2,
+          side:side
+        });
+      }
+      draw();
+      return;
+    }
+  }
   /* LA SONDE DE LA CARTE DE CHALEUR. Elle passe AVANT les modes de tracé :
      lire une valeur ne doit pas demander de quitter ce qu'on faisait. Elle ne
      RETOURNE PAS, elle non plus — le mode en cours garde la main derrière.
@@ -3241,6 +3294,22 @@ cv.addEventListener("pointerup",e=>{
   PTR_PCB.delete(e.pointerId);
   if(PTR_PCB.size<2)PINCH_PCB=null;
   if(S.hlText){S.hlText=null;draw();}
+  if(S.mode==="meander"&&S.meanderDraft){
+    const d=S.meanderDraft;
+    if(d.result&&d.result.tracks&&d.result.tracks.length>1){
+      push();
+      const idx=S.tracks.indexOf(d.track);
+      if(idx>=0){
+        S.tracks.splice(idx,1,...d.result.tracks);
+        touch();
+        refreshPanels();
+        hint("Serpentin appliqué : +"+fmt(d.result.addedLen,2)+" mm ajoutés au tracé.");
+      }
+    }
+    S.meanderDraft=null;
+    draw();
+    return;
+  }
   if(drag&&drag.drawingEnd){
     drag=null;refreshPanels();draw();return;
   }
@@ -3496,6 +3565,8 @@ document.addEventListener("keydown",e=>{
     /* P comme paire : le tracé couplé. Le raccourci ne prend rien à personne —
        la piste seule est en T, le via en V. */
     case "p":setMode("dpair");break;
+    /* M comme meander / serpentin d'appariement de longueur. */
+    case "m":setMode("meander");break;
     case "z":setMode("zone");break;
     case "x":setMode("cut");break;
     case "e":setMode("edge");break;
@@ -3538,6 +3609,7 @@ document.addEventListener("keydown",e=>{
       // Échap termine ce qui est en cours puis rend la main à la sélection
       if(S.dp)dpCommit();
       else if(S.route)commitRoute();
+      else if(S.meanderDraft){S.meanderDraft=null;hint("Serpentin annulé.");}
       else if(S.zoneDraft){S.zoneDraft=null;hint("Zone abandonnée.");}
       else if(S.cutDraft){S.cutDraft=null;hint("Découpe abandonnée.");}
       else if(S.edgeDraft){S.edgeDraft=null;hint("Contour abandonné.");}
@@ -3588,20 +3660,22 @@ function setMode(m){
   if(S.zoneDraft&&m!=="zone")S.zoneDraft=null;
   if(S.edgeDraft&&m!=="edge")S.edgeDraft=null;
   if(S.silkDraft&&m!=="silk")S.silkDraft=null;
+  if(S.meanderDraft&&m!=="meander")S.meanderDraft=null;
   /* La cote appartient au mode : la garder affichee en revenant a la selection
      laisserait une annotation qu'aucun geste ne reprend. */
   if(m!=="mesure"&&typeof rpMesRaz==="function")rpMesRaz();
   S.mode=m;S.hover=null;
   if(m!=="zone")zoneMenuClose();
+  if(m!=="meander"&&typeof meanderMenuClose==="function")meanderMenuClose();
   for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],
-                        ["mDiff","dpair"],
+                        ["mDiff","dpair"],["mMeander","meander"],
                         ["mZone","zone"],["mSilk","silk"],["mEdge","edge"],["mOrigin","origin"],
                         ["mErase","erase"],["mMesure","mesure"]]){
     const b=$(id);
     if(b)b.classList.toggle("on",m===md);
   }
   $("fMode").textContent={select:"Sélection",track:"Piste",via:"Via",
-                          dpair:"Paire différentielle",
+                          dpair:"Paire différentielle",meander:"Serpentin (Appariement)",
                           zone:"Zone de cuivre",silk:"Sérigraphie",edge:"Contour de carte",
                           origin:"Origine",erase:"Gomme",
                           mesure:"Mesure"}[m];
@@ -3616,6 +3690,7 @@ function setMode(m){
     dpair:"Clic sur une pastille de la paire pour partir — l'autre net est trouvé tout seul · "+
           "V pose les deux vias en éventail · « / » bascule la posture · 1-8 change de couche · "+
           "arrivée sur les pastilles d'en face pour terminer · Échap dépose ce qui est tracé.",
+    meander:"Cliquez et étirez une piste droite pour générer un serpentin d'appariement de longueur (accordéon) · Échap annule.",
     zone:"Clic pour chaque sommet, retour sur le premier point pour fermer · Maj contraint à 45° · Entrée ferme, Échap abandonne.",
     silk:"Cliquez et glissez (ou deux clics) pour tracer un trait de sérigraphie (F.SilkS/B.SilkS) · Maj contraint à l'horizontale/verticale/45° · Échap annule.",
     edge:"Dessinez le contour de la carte, sommet par sommet · retour sur le premier point pour fermer · Maj contraint à 45°.",

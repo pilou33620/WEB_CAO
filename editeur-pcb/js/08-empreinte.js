@@ -397,6 +397,25 @@ function feSide(){
             (q.shape===k?" selected":"")+'>'+esc(PAD_SHAPES[k])+'</option>').join("")+
           '</select>'+
         '</div>'+
+        (q.shape==="chamfer"
+          ?'<div class="row" style="margin-top:4px">'+
+            numProp("feChamfer","Chanfrein (mm)",fmt(q.chamfer!=null?q.chamfer:padChamferVal(q),3),0.05,0)+
+            '<div class="prop" style="border:0"><label>Coins</label><select id="feChamferCorners">'+
+              '<option value="all"'+(!q.chamferCorners||q.chamferCorners==="all"?" selected":"")+'>4 coins</option>'+
+              '<option value="pin1"'+(q.chamferCorners==="pin1"?" selected":"")+'>Broche 1 seule</option>'+
+            '</select></div>'+
+          '</div>'
+          :"")+
+        (q.shape==="poly"
+          ?'<div class="prop" style="padding:4px 0 0;border:0"><label>Sommets X,Y (mm relatifs)</label>'+
+            '<input type="text" id="fePts" value="'+esc((q.pts||[]).map(p=>p.x+","+p.y).join(" "))+'" style="width:100%" placeholder="-1,-0.5 1,-0.5 0,1">'+
+          '</div>'
+          :"")+
+        '<div class="row" style="margin-top:4px">'+
+          numProp("feThSpokes","Bras therm.",q.thermalSpokes||4,1,1)+
+          numProp("feThWidth","Larg. bras",fmt(q.thermalWidth||0,3),0.05,0)+
+          numProp("feThAngle","Angle bras (°)",fmt(q.thermalAngle||0,1),5,0)+
+        '</div>'+
         '<div class="row">'+
           numProp("feDrill","Perçage (0 = CMS)",fmt(q.drill,3),0.05,0)+
           '<div><label>&nbsp;</label>'+
@@ -531,6 +550,18 @@ function feWire(){
     feNum(id,v=>fpSetPad(fp,FE.sel,k,v));
   const sh=$("feShape");
   if(sh)sh.onchange=()=>{fePush();fpSetPad(fp,FE.sel,"shape",sh.value);feSync();};
+  feNum("feChamfer",v=>fpSetPad(fp,FE.sel,"chamfer",v));
+  const cc=$("feChamferCorners");
+  if(cc)cc.onchange=()=>{fePush();fpSetPad(fp,FE.sel,"chamferCorners",cc.value);feSync();};
+  const ptIn=$("fePts");
+  if(ptIn)ptIn.onchange=()=>{
+    const toks=ptIn.value.trim().split(/\s+/).map(s=>s.split(",").map(Number));
+    const pts=toks.filter(t=>t.length>=2&&Number.isFinite(t[0])&&Number.isFinite(t[1])).map(t=>({x:t[0],y:t[1]}));
+    if(pts.length>=3){fePush();fpSetPad(fp,FE.sel,"pts",pts);feSync();}
+  };
+  feNum("feThSpokes",v=>fpSetPad(fp,FE.sel,"thermalSpokes",v));
+  feNum("feThWidth",v=>fpSetPad(fp,FE.sel,"thermalWidth",v));
+  feNum("feThAngle",v=>fpSetPad(fp,FE.sel,"thermalAngle",v));
   const sq=$("feSq");
   if(sq)sq.onclick=()=>{
     const p=padsOf(fp)[FE.sel];
@@ -574,6 +605,12 @@ function feWire(){
       if(i===FE.sel)continue;
       fpSetPad(fp,i,"w",q.w);fpSetPad(fp,i,"h",q.h);
       fpSetPad(fp,i,"shape",q.shape);fpSetPad(fp,i,"drill",q.drill);
+      if(q.chamfer!=null)fpSetPad(fp,i,"chamfer",q.chamfer);
+      if(q.chamferCorners)fpSetPad(fp,i,"chamferCorners",q.chamferCorners);
+      if(q.pts)fpSetPad(fp,i,"pts",q.pts);
+      if(q.thermalSpokes!=null)fpSetPad(fp,i,"thermalSpokes",q.thermalSpokes);
+      if(q.thermalWidth!=null)fpSetPad(fp,i,"thermalWidth",q.thermalWidth);
+      if(q.thermalAngle!=null)fpSetPad(fp,i,"thermalAngle",q.thermalAngle);
     }
     const n=fp.pads.length-1;
     feSync();

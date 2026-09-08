@@ -189,16 +189,21 @@ function zoneCanvas(i){
       if(same)thermals.push(q);
       else if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2+clr,0,Math.PI*2);c.fill();}
     }
-  /* liaisons thermiques : quatre bras, sinon la pastille chaufferait toute la
-     zone au moment du brasage */
+  /* liaisons thermiques : quatre bras par défaut, ou configuration personnalisée */
   c.globalCompositeOperation="source-over";
   c.fillStyle=col;
-  const tw=S.rule.thermal;
   for(const q of thermals){
+    const tw=(q.thermalWidth>0)?q.thermalWidth:S.rule.thermal;
+    const spokes=(q.thermalSpokes>0)?q.thermalSpokes:4;
+    const baseAngle=((q.thermalAngle||0)*Math.PI/180);
     const len=Math.max(q.w,q.h)/2+clr+0.2;
-    c.save();c.translate(q.x,q.y);c.rotate(q.rot);
-    c.fillRect(-len,-tw/2,len*2,tw);
-    c.fillRect(-tw/2,-len,tw,len*2);
+    c.save();c.translate(q.x,q.y);c.rotate(q.rot+baseAngle);
+    for(let k=0;k<spokes;k++){
+      const ang=(Math.PI*2/spokes)*k;
+      c.save();c.rotate(ang);
+      c.fillRect(0,-tw/2,len,tw);
+      c.restore();
+    }
     c.restore();
     if(q.drill>0){
       c.save();c.globalCompositeOperation="destination-out";
@@ -216,11 +221,21 @@ function padPath(c,q,grow){
   const g=grow||0;
   c.beginPath();
   if(q.shape==="circ")c.arc(0,0,Math.max(q.w,q.h)/2+g,0,Math.PI*2);
+  else if(q.shape==="poly"&&Array.isArray(q.pts)&&q.pts.length>=3){
+    const pts=polyOffset(q.pts,g);
+    c.moveTo(pts[0].x,pts[0].y);
+    for(let i=1;i<pts.length;i++)c.lineTo(pts[i].x,pts[i].y);
+    c.closePath();
+  }
+  else if(q.shape==="chamfer"){
+    const ch=(q.chamfer!=null?q.chamfer:padChamferVal(q))+g;
+    const pts=padChamferPts(q.w+2*g,q.h+2*g,ch,q.chamferCorners);
+    c.moveTo(pts[0].x,pts[0].y);
+    for(let i=1;i<pts.length;i++)c.lineTo(pts[i].x,pts[i].y);
+    c.closePath();
+  }
   else{
-    /* Les trois autres formes ne diffèrent que par le rayon des coins : nul
-       pour les angles droits, la moitié du petit côté pour l'oblong. Le rayon
-       se prend sur la pastille dilatée — un masque plus large qu'une plage
-       reste de la même famille de formes. */
+    /* Les formes standard (rect, sharp, oval) selon le rayon des coins */
     const w=q.w+2*g, h=q.h+2*g, r=padRadius(q.shape,w,h);
     c.moveTo(-w/2+r,-h/2);
     c.arcTo(w/2,-h/2,w/2,h/2,r);c.arcTo(w/2,h/2,-w/2,h/2,r);
@@ -744,6 +759,45 @@ function drawRoute(c){
     c.beginPath();c.arc(R.end.x,R.end.y,px(7),0,Math.PI*2);c.stroke();
   }
 }
+function drawMeanderDraft(c){
+  if(S.mode!=="meander")return;
+  const d=S.meanderDraft;
+  if(!d||!d.result||!d.result.tracks||!d.result.tracks.length)return;
+  c.save();
+  c.lineCap="round";c.lineJoin="round";
+  c.strokeStyle="#00d4ff";
+  c.lineWidth=d.track.w;
+  c.beginPath();
+  for(const t of d.result.tracks){
+    c.moveTo(t.x1,t.y1);
+    c.lineTo(t.x2,t.y2);
+  }
+  c.stroke();
+
+  c.strokeStyle="rgba(255,255,255,0.45)";
+  c.lineWidth=px(1);
+  c.setLineDash([px(3),px(3)]);
+  c.beginPath();
+  c.moveTo(d.track.x1,d.track.y1);
+  c.lineTo(d.track.x2,d.track.y2);
+  c.stroke();
+  c.setLineDash([]);
+
+  const mx=(d.track.x1+d.track.x2)/2, my=(d.track.y1+d.track.y2)/2;
+  const txt="+"+fmt(d.result.addedLen,2)+" mm";
+  c.font="bold "+px(11)+"px monospace";
+  const tw=c.measureText(txt).width;
+  c.fillStyle="rgba(0,0,0,0.85)";
+  c.fillRect(mx-tw/2-px(4),my-px(18),tw+px(8),px(14));
+  c.strokeStyle="#00d4ff";
+  c.lineWidth=px(1);
+  c.strokeRect(mx-tw/2-px(4),my-px(18),tw+px(8),px(14));
+  c.fillStyle="#00d4ff";
+  c.textAlign="center";
+  c.textBaseline="middle";
+  c.fillText(txt,mx,my-px(11));
+  c.restore();
+}
 function drawTextLink(c){
   if(!S.hlText)return;
   const fp=S.hlText.fpText;
@@ -806,6 +860,7 @@ function paint(c,dpr,w,h,noGrid){
   drawCutDraft(c);
   drawEdgeDraft(c);
   drawOrigin(c);
+  if(typeof drawMeanderDraft==="function")drawMeanderDraft(c);
   drawTextLink(c);
   drawHover(c);
   drawDrc(c);

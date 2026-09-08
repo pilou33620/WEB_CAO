@@ -210,6 +210,37 @@ function simZoneEn(l,x,y){
   return null;
 }
 
+/* LE NET DU CUIVRE DE PLAN EN CE POINT — et non celui de la couche.
+
+   CE QUE L'HYPOTHÈSE « UN NET PAR COUCHE » COÛTAIT. Une couche de plan est
+   PARTITIONNÉE : sur une carte réelle, le plan d'alimentation porte plusieurs
+   versements — +3V3 ici, +5V là — et souvent de la masse sur tout ce qui reste.
+   Lire `S.cuL[i].net`, c'est appliquer à TOUTE la surface le net que l'empilage
+   donne à la couche.
+
+   Les deux erreurs que cela produit, et elles sont symétriques :
+     · un via qui plonge là où le plan est de la MASSE se voyait déclaré
+       « la référence change de net, aucun via de masse ne peut refermer » —
+       faux, et ses vias de retour, qui travaillent, étaient écartés ;
+     · un via qui plonge dans un ÎLOT D'ALIMENTATION d'une couche par ailleurs
+       majoritairement de masse passait pour sain — alors qu'il traverse
+       vraiment GND → PWR. C'est le sens dangereux.
+
+   LE NET D'UN PLAN EST DONC UNE PROPRIÉTÉ DU POINT. `simZoneEn` sait le dire :
+   la dernière zone posée l'emporte, une découpe rend son creux. On retombe sur
+   le net de la couche quand il n'y a AUCUN cuivre au droit du point — la couche
+   déclare ce qu'elle est, à défaut de mieux, et c'est un repli, pas une mesure. */
+function simNetPlanEn(l, x, y){
+  const z = simZoneEn(l, x, y);
+  const net = z ? String(z.net || "").trim() : "";
+  /* UNE ZONE SANS NET DÉCLARÉ N'EST PAS UNE MESURE. Du cuivre dont on ignore le
+     net ne dit rien de plus que la couche qui le porte : on retombe sur le net
+     de la couche, comme lorsqu'il n'y a pas de cuivre du tout. Rendre la chaîne
+     vide, ce serait remplacer « je ne sais pas » par « aucun net », c'est-à-dire
+     effacer le seul renseignement dont on dispose. */
+  return net || String((S.cuL[l] && S.cuL[l].net) || "").trim();
+}
+
 /* La tangente unitaire de la piste à la fraction `u`. Prise numériquement : une
    droite et un arc y répondent du même coup, et `trkAt` sait déjà placer le
    point sur l'axe dans les deux cas. */
@@ -485,6 +516,73 @@ function simValeurFarads(txt){
    millimètre. */
 const SIM_RAYON_PONT = 10.0;
 
+/* Les replis du serveur, repris à l'identique : `ESL_PONT_REPLI`,
+   `C_PONT_REPLI` et `ESR_PONT_REPLI` de simulation_em.py. Deux jeux de valeurs
+   pour une même hypothèse, ce sont deux chiffres le jour où l'un bouge. */
+const SIM_ESL_PONT = 1.0e-9;      /* H — un 0402 sur deux vias courts */
+const SIM_C_PONT   = 100e-9;      /* F — la valeur universelle du découplage */
+const SIM_ESR_PONT = 0.03;        /* Ω — un MLCC 0402 X7R */
+
+/* L'étalement entre DEUX contacts de via dans une paire de plans, en HENRYS.
+   MÊME FORMULE QUE `ligne_mom.inductance_etalement_via_via` — équation 13-35
+   de Bogatin, 21 pH par mil d'écartement entre plans. `h` et `d` en mm. */
+function simEtalementViaVia(h, ecart, diam){
+  if(!(h > 0 && diam > 0 && ecart > diam)) return 0;
+  return (21e-12 / 25.4e-6) * (h * 1e-3) * Math.log(ecart / diam);
+}
+
+/* LA PART DU COURANT DE RETOUR DE CHAQUE PONT, à une fréquence donnée.
+
+   MÊME PHYSIQUE QUE `ligne_mom.repartition_traversee` : la cavité inter-plans
+   et chaque condensateur sont des branches EN PARALLÈLE, et le courant s'y
+   répartit en raison de leurs ADMITTANCES complexes — I_k/I_tot = Y_k/ΣY.
+
+   POURQUOI C'EST ICI AUSSI. Le chevelu doit répondre pendant qu'on déplace un
+   via, sans aller-retour au serveur : c'est la même raison qui fait vivre
+   `simBoucleVias` à côté de `inductance_boucle_vias`. Il faut donc que ce soit
+   la MÊME formule, et le banc d'essai le vérifie.
+
+   LA SOMME PEUT DÉPASSER 100 %, et ce n'est pas une erreur : au voisinage de
+   l'antirésonance parallèle les branches sont en opposition de phase et le
+   courant circule entre elles. Forcer la somme à un effacerait justement le
+   phénomène qu'on veut voir. */
+function simHauteurCavite(cuA, cuB){
+  /* L'ÉCARTEMENT ÉLECTRIQUE de deux plans, en millimètres : le diélectrique qui
+     les sépare, SANS le cuivre des plans eux-mêmes. C'est la hauteur de la
+     cavité, pas l'épaisseur de l'empilage — et c'est elle qui commande
+     l'étalement, LINÉAIREMENT. Même règle que `_plans_de_la_paire` côté
+     serveur. */
+  const lo = Math.min(cuA, cuB), hi = Math.max(cuA, cuB);
+  let h = 0;
+  for(let i = lo; i < hi; i++){
+    const d = diAt(i);
+    if(d && d.t > 0) h += d.t;
+  }
+  return h;
+}
+
+function simPartsPonts(freq, lCavite, cPlans, branches){
+  const w = 2 * Math.PI * freq;
+  const n = branches.length;
+  if(!(w > 0)) return {parts:new Array(n).fill(0), cavite:1};
+  /* Une admittance complexe, en {re, im}, pour une branche R-L-C série. */
+  const adm = (l, c, r) => {
+    let zr = r, zi = w * l;
+    if(c > 0) zi -= 1 / (w * c);
+    const m2 = zr * zr + zi * zi;
+    return m2 < 1e-30 ? null : {re:zr / m2, im:-zi / m2};
+  };
+  const yc = adm(lCavite, cPlans, 0);
+  const ys = branches.map(b => adm(b.l, b.c, b.esr));
+  if(!yc || ys.some(y => !y)) return {parts:new Array(n).fill(0), cavite:1};
+  let sr = yc.re, si = yc.im;
+  for(const y of ys){sr += y.re; si += y.im;}
+  const s2 = sr * sr + si * si;
+  if(s2 < 1e-60) return {parts:new Array(n).fill(1), cavite:1};
+  const mod = y => Math.sqrt((y.re * y.re + y.im * y.im) / s2);
+  return {parts:ys.map(mod), cavite:mod(yc)};
+}
+
 /* Ce qui JOINT deux plans de nets différents près d'un via : un condensateur
    de découplage, et rien d'autre.
 
@@ -499,8 +597,11 @@ const SIM_RAYON_PONT = 10.0;
    ON N'ENVOIE RIEN QUAND LES DEUX PLANS SONT DU MÊME NET : le retour passe
    alors par le premier via de masse venu, ce dont la boucle du palier 1 rend
    déjà compte. */
-function simPontsPlans(cuA, cuB, x, y){
-  const netDe = i => String((S.cuL[i] && S.cuL[i].net) || "").trim();
+function simPontsPlans(cuA, cuB, x, y, extraOut){
+  /* LE NET AU DROIT DU VIA — voir `simNetPlanEn`. Un plan partitionné n'a pas
+     UN net : ici de la masse, trois centimètres plus loin une alimentation.
+     C'est le cuivre SOUS LE VIA qui dit s'il y a quelque chose à ponter. */
+  const netDe = i => simNetPlanEn(i, x, y);
   const nA = new Set(simPlansRef(cuA).map(netDe).filter(Boolean));
   const nB = new Set(simPlansRef(cuB).map(netDe).filter(Boolean));
   if(!nA.size || !nB.size) return null;              /* nets non déclarés */
@@ -509,9 +610,8 @@ function simPontsPlans(cuA, cuB, x, y){
   if(commun) return null;                            /* rien à traverser */
 
   const out = [];
+  let dHorsPontMin = Infinity, refHorsPontMin = "";
   for(const fp of S.fps){
-    const d = Math.hypot(fp.x - x, fp.y - y);
-    if(d > SIM_RAYON_PONT) continue;
     const pads = padsOf(fp);
     if(pads.length !== 2) continue;
     const nets = new Set(pads.map(q => String(q.net || "").trim())
@@ -519,6 +619,14 @@ function simPontsPlans(cuA, cuB, x, y){
     let a = false, b = false;
     nets.forEach(n => {if(nA.has(n)) a = true; if(nB.has(n)) b = true;});
     if(!a || !b) continue;
+    const d = Math.hypot(fp.x - x, fp.y - y);
+    if(d > SIM_RAYON_PONT){
+      if(d < dHorsPontMin){
+        dHorsPontMin = d;
+        refHorsPontMin = fp.ref || "";
+      }
+      continue;
+    }
     /* LA VALEUR DU CONDENSATEUR COMPTE, ET PLUS QU'ON NE CROIT. En dessous de
        sa résonance propre, c'est SA capacité qui fixe l'impédance de la
        branche, pas son inductance : un 100 nF vaut 1,6 Ω à 1 MHz, là où son
@@ -532,6 +640,12 @@ function simPontsPlans(cuA, cuB, x, y){
   }
   out.sort((p, q) => Math.hypot(p.x - x, p.y - y) -
                      Math.hypot(q.x - x, q.y - y));
+  if(extraOut && typeof extraOut === "object"){
+    if(isFinite(dHorsPontMin)){
+      extraOut.pont_hors_rayon_mm = r3(dHorsPontMin);
+      extraOut.pont_hors_rayon_ref = refHorsPontMin || null;
+    }
+  }
   return out;
 }
 
@@ -564,14 +678,32 @@ function simCotesVia(v, x, y, cuA, cuB){
   const ref = v || {x: x, y: y, a: Math.min(cuA, cuB), b: Math.max(cuA, cuB),
                     d: 0.55, drill: 0.3, net: ""};
   const g = simVoisinageVia(ref);
+  /* JUSQU'OÙ ON A CHERCHÉ. Sans ce chiffre, « aucun via de masse ne referme la
+     boucle » se lit comme un constat sur la carte alors que c'en est un sur le
+     rayon. C'est le même soin que `ponts_rayon_mm` prend déjà en face. */
+  out.retours_rayon_mm = SIM_RAYON_RETOUR;
+  out.retours_rayon_optimal_mm = SIM_RAYON_RETOUR_OPTIMAL;
+  if(g.horsRayonDist != null)
+    out.retour_hors_rayon_mm = g.horsRayonDist;
+  /* PAS DE CUIVRE SOUS LE VIA = PAS DE RÉFÉRENCE. Voir `simVoisinageVia`. */
+  if((g.sansCuivre || []).length)
+    out.plans_sans_cuivre = g.sansCuivre.map(i => cuLabel(i, S.cu));
+  if(g.plansNets && Object.keys(g.plansNets).length)
+    out.plans_nets = Object.assign({}, g.plansNets);
   out.retours = g.voisins.map(f => ({
     x: r3(f.via.x), y: r3(f.via.y),
     layer_from: simCuIndex(Math.min(f.via.a, f.via.b)),
     layer_to: simCuIndex(Math.max(f.via.a, f.via.b)),
     drill_diameter: f.via.drill, pad_diameter: f.via.d,
-    net: f.via.net || ""
+    net: f.via.net || "",
+    plans_joints: (f.plans_joints || []).slice()
   }));
-  const ponts = simPontsPlans(cuA, cuB, x, y);
+  const extraPont = {};
+  const ponts = simPontsPlans(cuA, cuB, x, y, extraPont);
+  if(extraPont.pont_hors_rayon_mm != null){
+    out.pont_hors_rayon_mm = extraPont.pont_hors_rayon_mm;
+    out.pont_hors_rayon_ref = extraPont.pont_hors_rayon_ref;
+  }
   if(ponts){
     out.ponts = ponts;
     out.ponts_rayon_mm = SIM_RAYON_PONT;
@@ -1381,11 +1513,10 @@ function simZValeurs(c,lot){
    ========================================================================== */
 
 const SIM_MU0 = 4e-7 * Math.PI;
-/* Le rayon de recherche d'un via de masse, en millimètres. Au-delà de trois
-   millimètres un retour ne referme plus grand-chose — l'inductance de boucle
-   plafonne, elle croît en logarithme — mais on cherche large exprès : dire
-   « le plus proche est à 4 mm » vaut mieux que dire « aucun ». */
-const SIM_RAYON_RETOUR = 3.0;
+/* Le rayon de recherche d'un via de masse, en millimètres : zone optimale ≤ 1,8 mm,
+   zone de vigilance jusqu'à 5,0 mm. */
+const SIM_RAYON_RETOUR = 5.0;
+const SIM_RAYON_RETOUR_OPTIMAL = 1.8;
 
 /* La primitive de Grover, et la mutuelle de deux filaments parallèles de même
    longueur `h` écartés de `d`. TOUT EN MÈTRES.
@@ -1493,10 +1624,12 @@ function simBoucleVias(hauteur, signal, retours){
    `section_de_couche` côté serveur — celle qui décide de l'impédance. */
 function simPlansRef(l){
   const out = [];
+  const estRef = i => rolePlane(layerRole(i)) ||
+    S.zones.some(z => z.l === i && z.pts && z.pts.length >= 3);
   for(let i = l - 1; i >= 0; i--)
-    if(rolePlane(layerRole(i))){out.push(i); break;}
+    if(estRef(i)){out.push(i); break;}
   for(let i = l + 1; i < S.cu; i++)
-    if(rolePlane(layerRole(i))){out.push(i); break;}
+    if(estRef(i)){out.push(i); break;}
   return out;
 }
 
@@ -1523,8 +1656,15 @@ function simPlansOntUnNet(){
 function simPlansJoints(v, verifierNet){
   const lo = Math.min(v.a, v.b), hi = Math.max(v.a, v.b), out = [];
   for(let i = lo; i <= hi; i++){
-    if(!rolePlane(layerRole(i))) continue;
-    const net = (S.cuL[i] && S.cuL[i].net) || "";
+    if(!rolePlane(layerRole(i)) && !simZoneEn(i, v.x, v.y)) continue;
+    /* LE NET AU DROIT DU VIA, ET NON CELUI DE LA COUCHE. Un plan est
+       PARTITIONNÉ : un îlot d'alimentation ici, de la masse trois centimètres
+       plus loin. Le net de la couche est celui qu'on lui a donné dans
+       l'empilage, et il s'appliquait à toute sa surface — donc ce via de masse
+       était réputé toucher le plan PARTOUT, y compris au milieu d'un versement
+       d'alimentation où il ne touche rien. Ce qui décide, c'est le cuivre
+       SOUS LE VIA. */
+    const net = simNetPlanEn(i, v.x, v.y);
     if(verifierNet && v.net && net !== v.net) continue;
     out.push(i);
   }
@@ -1551,6 +1691,7 @@ function simVoisinageVia(v){
 
   const verifNet = simPlansOntUnNet();
   const out = [];
+  let dHorsMin = Infinity, wHorsProche = null;
   for(const w of S.vias){
     /* ON S'ÉCARTE SOI-MÊME PAR LA POSITION, ET NON PAR L'IDENTITÉ : le via de
        référence peut être un via de SUBSTITUTION posé au raccord quand le vrai
@@ -1561,8 +1702,15 @@ function simVoisinageVia(v){
     if(w === v) continue;
     if(Math.abs(w.x - v.x) <= SIM_TOL_VIA &&
        Math.abs(w.y - v.y) <= SIM_TOL_VIA) continue;
+    if(!refs.has(w.net)) continue;
     const d = Math.hypot(w.x - v.x, w.y - v.y);
-    if(d > SIM_RAYON_RETOUR) continue;
+    if(d > SIM_RAYON_RETOUR){
+      if(d < dHorsMin){
+        dHorsMin = d;
+        wHorsProche = w;
+      }
+      continue;
+    }
     const f = {via:w, distance:r3(d), part:0, retenu:false, raison:""};
     const wlo = Math.min(w.a, w.b), whi = Math.max(w.a, w.b);
     /* UN VIA QUI N'EST PAS SUR UNE MASSE N'EST PAS UN CANDIDAT, il est HORS
@@ -1572,13 +1720,53 @@ function simVoisinageVia(v){
        qui, lui, aurait pu refermer la boucle et ne le fait pas. */
     if(!refs.has(w.net)) continue;
     const joints = simPlansJoints(w, verifNet);
+    f.plans_joints = joints.map(i => cuLabel(i, S.cu));
+    /* LE MÊME PLAN N'EST PAS LE MÊME CUIVRE. `simPlansJoints` regarde le
+       cuivre au droit de CE VIA DE MASSE ; le courant de retour, lui, circule
+       dans le cuivre au droit du VIA DE SIGNAL. Sur un plan partitionné les
+       deux ne sont pas le même versement, et l'indice de couche ne les
+       distingue pas : « rejoint Inner 2 » était vrai des deux côtés d'une
+       frontière qui les sépare électriquement.
+
+       C'EST LE SENS QUI FLATTE, et c'est pour cela qu'il fallait le fermer. Un
+       via de signal qui plonge DANS un îlot d'alimentation, avec des vias de
+       masse à un millimètre qui touchent la même couche HORS de l'îlot : les
+       indices concordaient, les vias étaient retenus, et l'inductance sortait
+       comme une MESURE de boucle au lieu d'un plancher. Même règle que
+       `_analyse_retour` côté serveur : le chevelu et la fiche jugent la même
+       chose, sinon l'un des deux mentira le jour où l'autre bougera. */
+    const autre = joints.filter(i => {
+      const sous = simNetPlanEn(i, v.x, v.y);
+      return sous && w.net && sous !== w.net;
+    });
+    const porte = joints.filter(i => autre.indexOf(i) < 0);
+    f.porte = porte.map(i => cuLabel(i, S.cu));
+    /* DEUX REFUS QUI NE SE DISENT PAS PAREIL : « il ne rejoint pas le plan »
+       envoie chercher un via borgne, « il le rejoint sur un autre versement »
+       envoie regarder la DÉCOUPE du plan. C'est le seul geste qui répare. */
+    const pourquoi = refsPlans => {
+      const croise = refsPlans.filter(i => autre.indexOf(i) >= 0);
+      if(croise.length)
+        /* COURT, PARCE QUE C'EST UN LIBELLÉ DE CANVAS et qu'il se pose au
+           milieu du cuivre. Trois mots portent le geste : le plan, le fait que
+           le cuivre diffère, et le net qui occupe la place sous le via. */
+        return cuLabel(croise[0], S.cu) + " : autre versement (" +
+               (simNetPlanEn(croise[0], v.x, v.y) || "?") + " ici)";
+      return "ne rejoint pas " + refsPlans.map(i => cuLabel(i, S.cu)).join("/");
+    };
     if(wlo > lo || whi < hi)
       f.raison = "ne couvre pas " + cuLabel(lo, S.cu) + "→" + cuLabel(hi, S.cu);
-    else if(pDep.length && !dedans(pDep, joints))
-      f.raison = "ne rejoint pas " + pDep.map(i => cuLabel(i, S.cu)).join("/");
-    else if(pArr.length && !dedans(pArr, joints))
-      f.raison = "ne rejoint pas " + pArr.map(i => cuLabel(i, S.cu)).join("/");
-    else f.retenu = true;
+    else if(pDep.length && !dedans(pDep, porte)) f.raison = pourquoi(pDep);
+    else if(pArr.length && !dedans(pArr, porte)) f.raison = pourquoi(pArr);
+    else {
+      f.retenu = true;
+      if(f.distance > SIM_RAYON_RETOUR_OPTIMAL){
+        f.statut = "vigilance";
+        f.reserve = "boucle large (distance " + simNb(f.distance,2) + " mm > rayon optimal " + SIM_RAYON_RETOUR_OPTIMAL + " mm)";
+      }else{
+        f.statut = "optimal";
+      }
+    }
     out.push(f);
   }
   out.sort((a, b) => a.distance - b.distance);
@@ -1598,7 +1786,10 @@ function simVoisinageVia(v){
      TROIS ÉTATS, DONC, ET PAS DEUX — c'est la même règle que `_analyse_retour`
      côté serveur, et il faut qu'elle soit la même : le chevelu et la fiche
      jugent la même chose. */
-  const netDe = i => String((S.cuL[i] && S.cuL[i].net) || "").trim();
+  /* LE NET AU DROIT DU VIA, pas celui de la couche — voir `simNetPlanEn`.
+     C'est ce qui décide si la référence change VRAIMENT ici, et donc si les
+     vias de masse voisins peuvent refermer la boucle ou non. */
+  const netDe = i => simNetPlanEn(i, v.x, v.y);
   const nDep = new Set(pDep.map(netDe).filter(Boolean));
   const nArr = new Set(pArr.map(netDe).filter(Boolean));
   const planChange = pDep.length > 0 && pArr.length > 0 && !dedans(pDep, pArr);
@@ -1609,13 +1800,101 @@ function simVoisinageVia(v){
       nDep.forEach(n => {if(nArr.has(n)) netsDiff = false;});
     }else netsDiff = null;                 /* l'empilage ne les déclare pas */
   }
+  /* QUAND AUCUN VIA DE MASSE NE PEUT REFERMER, QUELQUE CHOSE LE FAIT QUAND
+     MÊME, et le chevelu ne le montrait pas. Il traçait les vias de masse — tous
+     barrés de rouge, à juste titre — et écrivait « aucun via ne peut joindre
+     les deux » sans jamais désigner ce qui porte RÉELLEMENT le retour : le
+     condensateur de découplage qui joint les deux plans. On voyait le défaut,
+     pas le chemin — et le geste correctif (« rapprocher le découplage ») n'avait
+     aucun objet à l'écran sur lequel se poser. `simPontsPlans` le calcule déjà
+     pour l'envoi au serveur ; on le remonte ici et le dessin s'en sert.
+
+     LE PONT RETENU EST LE PLUS PROCHE — la liste est triée par distance —,
+     parce que c'est lui qui porte l'essentiel du courant : l'étalement croît
+     avec la distance, et deux condensateurs en parallèle ne se partagent pas
+     la charge à parts égales.
+
+     RIEN QUAND LA RÉFÉRENCE NE CHANGE PAS DE NET : le retour passe alors par
+     les vias de masse, qui sont déjà à l'écran. */
+  /* PAS DE CUIVRE DU TOUT SOUS LE VIA : ce n'est pas « la référence change »,
+     c'est « il n'y a pas de référence ». Le net de la couche sert alors de
+     repli et l'outil annonce un changement vers un plan qui n'existe pas ICI —
+     une phrase plausible et fausse. Entre deux versements d'alimentation, dans
+     une découpe, au bord d'un dégagement : le courant de retour n'a aucun
+     cuivre à suivre, et c'est un défaut d'un autre ordre, plus grave que le
+     changement de référence, parce qu'aucun condensateur ne le rattrape. */
+  const sansCuivre = [...new Set([...pDep, ...pArr])]
+    .filter(i => !simZoneEn(i, v.x, v.y));
+
+  const ponts = (planChange && netsDiff === true)
+    ? (simPontsPlans(lo, hi, v.x, v.y) || []) : [];
+
+  /* ET LEQUEL TRAVAILLE. Un via de retour porte sa part du courant depuis
+     toujours — le chevelu la peint —, un condensateur de pontage n'en portait
+     aucune : on n'en montrait qu'un, le plus proche, sans dire ce qu'il vaut.
+     Or ils sont TOUS en parallèle, et sur une carte où trois découplages
+     entourent la transition, « lequel travaille » est exactement la question.
+     MÊME CALCUL QUE `_cavite_de_retour` côté serveur, à la même fréquence. */
+  let partCavite = 0, freqParts = 0;
+  if(ponts.length){
+    const hCav = simHauteurCavite(pDep[0], pArr[0]);
+    const b = S.board || {};
+    const aire = Math.max(0, (b.w || 0) * (b.h || 0)) || 400;
+    const di = diAt(Math.min(pDep[0], pArr[0]));
+    const er = (di && di.er > 0) ? di.er : 4.3;
+    /* La capacité répartie des deux plans, et l'étalement du via vers la cavité
+       entière — les deux chemins qui existent sans aucun pont. */
+    const cPlans = 8.854187817e-12 * er * (aire * 1e-6) / Math.max(hCav * 1e-3, 1e-9);
+    const rExt = Math.sqrt(aire / Math.PI) * 1e-3;
+    const rVia = Math.max(v.drill, 1e-3) * 1e-3 / 2;
+    const lCav = (hCav > 0 && rExt > rVia)
+      ? (4e-7 * Math.PI) * (hCav * 1e-3) / (2 * Math.PI) * Math.log(rExt / rVia)
+      : 0;
+    const fc = Number((SIM.saisie && SIM.saisie.fc) || 0) || 1e9;
+    const tr = Number((SIM.saisie && SIM.saisie.tr) || 0);
+    /* MÊME RÈGLE QUE LE SERVEUR : sous le mégahertz, la bande utile est celle
+       du FRONT, pas de la fondamentale. */
+    const fEval = (fc < 1e6 && tr > 0) ? Math.max(fc, 0.35 / tr) : fc;
+    const branches = ponts.map(p => ({
+      l: simEtalementViaVia(hCav, Math.hypot(p.x - v.x, p.y - v.y),
+                            Math.max(v.drill, 1e-3)) + SIM_ESL_PONT,
+      c: p.capacite_F || SIM_C_PONT,
+      esr: SIM_ESR_PONT
+    }));
+    const r = simPartsPonts(fEval, lCav, cPlans, branches);
+    ponts.forEach((p, i) => {p.part = r.parts[i] || 0;});
+    partCavite = r.cavite;
+    /* LA PART DÉPEND DE LA FRÉQUENCE, et fortement : à 12 MHz un 100 nF proche
+       porte tout, à 100 MHz c'est le petit condensateur qui prend la main, à
+       1 GHz c'est la cavité. Une part affichée sans sa fréquence est un chiffre
+       qu'on ne peut pas relire — l'inductance de boucle, elle, n'en dépend pas,
+       et c'est pour cela que sa cartouche n'en porte pas. */
+    freqParts = fEval;
+    /* Le pont qui porte le PLUS DE COURANT n'est pas toujours le plus proche :
+       un 100 nF à 3 mm bat un 1 nF à 1 mm en dessous de leurs résonances. On
+       trie donc par part décroissante, et `pont` devient le dominant. */
+    ponts.sort((a, c) => (c.part || 0) - (a.part || 0));
+  }
+
+  const plansNets = {};
+  for(const i of [...new Set([...pDep, ...pArr])]){
+    const n = simNetPlanEn(i, v.x, v.y);
+    if(n) plansNets[cuLabel(i, S.cu)] = n;
+  }
+
   return {via:v, hauteur:hauteur, voisins:out, retenus:retenus,
+          horsRayonDist: isFinite(dHorsMin) ? r3(dHorsMin) : null,
+          horsRayonProche: wHorsProche,
+          partCavite:partCavite, freqParts:freqParts,
           L:r.L, seul:r.seul, netsIncertains:!verifNet,
           planChange:planChange, netsDiff:netsDiff,
           /* `change` reste le nom du DÉFAUT : un changement que rien ne peut
              rejoindre, et il exige désormais la certitude. */
           change:planChange && netsDiff === true,
           doute:planChange && netsDiff === null,
+          ponts:ponts, pont:ponts[0] || null, pontRayon:SIM_RAYON_PONT,
+          sansCuivre:sansCuivre,
+          plansNets:plansNets,
           plansDep:pDep, plansArr:pArr};
 }
 
@@ -1703,6 +1982,15 @@ function simRetourTrace(c, dpr){
           c.strokeStyle = (f.part >= 0.20 ? "#5efc82" : "#ffd166");
       }
       c.lineWidth = baseW;
+      /* UN REFUS STRUCTUREL NE SE RÉPÈTE PAS PAR VIA. Quand la référence change
+         de NET, AUCUN via de masse ne peut refermer — ils échouent tous pour
+         la même raison, et sur un plan bien cousu cela fait une douzaine de
+         traits rouges identiques qui noient le seul trait qui compte : celui du
+         condensateur. On les garde VISIBLES — les effacer laisserait croire
+         qu'on ne les a pas regardés, et la personne qui vient d'en poser un a
+         besoin de le voir barré — mais on les met en sourdine. Le message est
+         dit une fois, sous le via. */
+      if(!f.retenu && g.change && !isThisGnd) c.globalAlpha *= 0.40;
       c.setLineDash(f.retenu ? [] : [px(3), px(3)]);
       c.beginPath();
       c.moveTo(g.via.x, g.via.y);
@@ -1721,6 +2009,38 @@ function simRetourTrace(c, dpr){
         c.stroke();
         c.restore();
       }
+      c.restore();
+    }
+
+    /* LE CHEMIN QUE LE RETOUR PREND VRAIMENT. Quand la référence change de net,
+       aucun via de masse ne referme — ils sont tous barrés — et le courant
+       passe par le condensateur qui joint les deux plans. On le trace en CYAN,
+       d'un trait long : c'est un AUTRE chemin, pas un via de retour, et il ne
+       doit pas se confondre avec eux. */
+    /* UN TRAIT PAR CONDENSATEUR, ET SON ÉPAISSEUR DIT SA PART — exactement
+       comme pour les vias de retour. N'en montrer qu'un, le plus proche,
+       laissait croire qu'il porte tout le courant : sur une carte où trois
+       découplages entourent la transition, ils se le partagent, et « lequel
+       travaille » est la question qu'on se pose. */
+    for(const p of (g.ponts || [])){
+      const part = Math.max(p.part || 0, 0);
+      c.save();
+      /* Sous 5 % le trait s'efface presque : ce pont est là, il ne sert pas —
+         c'est une information, pas un chemin. */
+      if(part < 0.05) c.globalAlpha *= 0.35;
+      c.setLineDash([px(7), px(4)]);
+      c.strokeStyle = "#38bdf8";
+      c.lineWidth = px((isSel ? 1.4 : 1.0) * (1.0 + 3.0 * part));
+      c.beginPath();
+      c.moveTo(g.via.x, g.via.y);
+      c.lineTo(p.x, p.y);
+      c.stroke();
+      c.setLineDash([]);
+      c.beginPath();
+      c.arc(p.x, p.y, px(7), 0, Math.PI * 2);
+      c.fillStyle = "rgba(56, 189, 248, " + (0.10 + 0.30 * part).toFixed(3) + ")";
+      c.fill();
+      c.stroke();
       c.restore();
     }
 
@@ -1771,6 +2091,14 @@ function simRetourValeurs(c, liens, dpr){
     if(dimmed) continue;
 
     const o = w2s(g.via.x, g.via.y);
+    /* UNE MÊME RAISON NE S'ÉCRIT QU'UNE FOIS. Sur un plan bien cousu, dix vias
+       de masse écartés portent dix fois « ne rejoint pas L2 » : la répétition
+       n'ajoute rien et couvre le reste du dessin. On garde tous les TRAITS —
+       chacun désigne un via qu'on a bien examiné — et on ne pose l'étiquette
+       qu'au premier de chaque raison. Une raison DIFFÉRENTE, elle, s'écrit :
+       « ne couvre pas Top→Bottom » demande un autre geste que « ne rejoint
+       pas L2 », et les confondre ferait manquer le via borgne. */
+    const raisonsVues = new Set();
     for(let fIdx = 0; fIdx < g.voisins.length; fIdx++){
       const f = g.voisins[fIdx];
       const isThisGnd = (isSel && actifGnd === fIdx);
@@ -1781,7 +2109,14 @@ function simRetourValeurs(c, liens, dpr){
       const lg = Math.hypot(e.x - o.x, e.y - o.y);
       if(lg < 45 && f.retenu && !isSel && !isThisGnd) continue;
       const m = {x:o.x + 0.66 * (e.x - o.x), y:o.y + 0.66 * (e.y - o.y)};
-      if(!f.retenu) cartouche(m, f.raison, "#e8564a", -14, true, isThisGnd || isSel);
+      if(!f.retenu){
+        /* Le via explicitement ciblé au rapport garde la sienne, toujours :
+           on a cliqué dessus pour la lire. */
+        if(isThisGnd || !raisonsVues.has(f.raison)){
+          raisonsVues.add(f.raison);
+          cartouche(m, f.raison, "#e8564a", -14, true, isThisGnd || isSel);
+        }
+      }
       else if(f.part >= 0.05 || isThisGnd)
         cartouche(m, Math.round(100 * f.part) + " %",
                   isThisGnd ? "#ffe066" : simRetourCouleur(f), 0, true, isThisGnd || isSel);
@@ -1795,9 +2130,52 @@ function simRetourValeurs(c, liens, dpr){
 
     const noms = g.plansDep.map(i => cuLabel(i, S.cu)).join("/") + " → " +
                  g.plansArr.map(i => cuLabel(i, S.cu)).join("/");
-    if(g.change)
+    /* PAS DE RÉFÉRENCE DU TOUT — et cela se dit AVANT le reste. Un plan sans
+       cuivre au droit du via n'est pas une référence qui change, c'est une
+       référence absente : aucun condensateur ne rattrape cela, et le net que
+       la fiche affiche pour cette couche n'est qu'un repli. */
+    if((g.sansCuivre || []).length){
+      /* ET C'EST LE SEUL MESSAGE : « la référence change vers X » n'a aucun sens
+         quand X n'a pas de cuivre ici. Le dire quand même, ce serait empiler
+         une phrase plausible sur une phrase vraie. */
+      cartouche(o, "aucun cuivre sur " +
+                g.sansCuivre.map(i => cuLabel(i, S.cu)).join("/") +
+                " sous ce via : pas de plan de référence ici",
+                "#e8564a", Math.max(20, rayon), true, isSel);
+    }else if(g.change){
       cartouche(o, "référence " + noms + " : aucun via ne peut joindre les deux",
                 "#e8564a", Math.max(20, rayon), true, isSel);
+      /* ET CE QUI PORTE LE RETOUR À LEUR PLACE, nommé, coté et CHIFFRÉ. Sans
+         ces étiquettes, le dessin disait le défaut sans jamais désigner le
+         chemin — ni dire lequel des découplages le porte. */
+      if(g.ponts && g.ponts.length){
+        for(const p of g.ponts){
+          const part = Math.max(p.part || 0, 0);
+          /* On n'étiquette que ce qui travaille : sous 5 % le trait pâle suffit
+             à dire « il est là et il ne sert pas ». */
+          if(part < 0.05 && g.ponts.length > 1) continue;
+          const e = w2s(p.x, p.y);
+          const d = Math.hypot(p.x - g.via.x, p.y - g.via.y);
+          cartouche({x:o.x + 0.6 * (e.x - o.x), y:o.y + 0.6 * (e.y - o.y)},
+                    (p.repere || "découplage") + " · " + simNb(d, 2) + " mm · " +
+                    Math.round(100 * part) + " %", "#38bdf8", -12, true, isSel);
+        }
+        /* LA CAVITÉ EST UN CHEMIN SANS OBJET À DESSINER : le courant de
+           déplacement passe par la capacité répartie des deux plans, il ne
+           traverse aucun composant. On ne peut pas lui tracer un trait, alors
+           on écrit sa part sous le via — sinon les pourcentages affichés ne
+           somment à rien et la lecture est fausse. */
+        cartouche(o, (g.partCavite >= 0.005
+                        ? Math.round(100 * g.partCavite) +
+                          " % par la capacité des plans · "
+                        : "") + "parts à " + simFreq(g.freqParts),
+                  "#38bdf8", Math.max(20, rayon) + 17, true, isSel);
+      }else{
+        cartouche(o, "aucun découplage entre les deux plans dans " +
+                  simNb(g.pontRayon, 0) + " mm",
+                  "#e8564a", Math.max(20, rayon) + 17, true, isSel);
+      }
+    }
     else if(g.doute)
       cartouche(o, "référence " + noms + " : nets des plans non déclarés",
                 "#e0a63c", Math.max(20, rayon), true, isSel);
@@ -1913,6 +2291,14 @@ function simDCPolyPastille(q){
   const c=Math.cos(q.rot), s=Math.sin(q.rot);
   const mo=(lx,ly)=>[q.x+lx*c-ly*s, q.y+lx*s+ly*c];
   if(q.shape==="circ")return simDCCercle(q.x,q.y,Math.max(q.w,q.h)/2);
+  if(q.shape==="poly"&&Array.isArray(q.pts)&&q.pts.length>=3){
+    return q.pts.map(p=>mo(p.x!=null?p.x:p[0], p.y!=null?p.y:p[1]));
+  }
+  if(q.shape==="chamfer"){
+    const ch=q.chamfer!=null?q.chamfer:padChamferVal(q);
+    const pts=padChamferPts(q.w,q.h,ch,q.chamferCorners);
+    return pts.map(p=>mo(p.x,p.y));
+  }
   if(q.shape==="oval"){
     const r=Math.min(q.w,q.h)/2;
     const dx=Math.max(0,q.w/2-r), dy=Math.max(0,q.h/2-r);
@@ -2298,8 +2684,13 @@ function simDocPcb(liste,opts){
   if(!sel.length)
     return {erreur:"Aucune piste sélectionnée.",
             conseil:S.tracks.length
-              ? "Cliquez une piste sur la carte. Maj+clic la prend entière, "+
-                "Ctrl+clic ajoute un morceau à la sélection."
+              ? ((typeof SIM!=="undefined"&&(SIM.analyse==="diff"||SIM.analyse==="zdiff"))
+                  ? "Double-clic gauche sur la 1ère piste\n"+
+                    "→ toute la piste sur la couche est sélectionnée.\n"+
+                    "Maintenez Ctrl et faites un double-clic gauche (ou un simple clic gauche avec Ctrl) sur la 2ème piste\n"+
+                    "→ toute la 2ème piste s'ajoute à la sélection."
+                  : "Double-clic gauche sur une piste : toute la piste sur la couche est sélectionnée.\n"+
+                    "Ctrl+clic ajoute un morceau à la sélection, Maj+clic prend le net entier.")
               : "Cette carte n'a pas encore de piste routée."};
 
   const g=simSegments(liste);
@@ -2343,8 +2734,15 @@ function simDocPcb(liste,opts){
       /* LE TEMPS DE MONTÉE est déjà en SECONDES dans la saisie, comme les
          fréquences y sont en hertz : l'unité du champ ne dit que dans quoi on
          l'écrit. Zéro veut dire « déduis-le de la bande ». */
+      /* L'AMPLITUDE voyage avec le temps de montée, et pour la même raison :
+         elle vient de la rangée « Signal » du panneau, qui la porte déjà pour
+         la diaphonie. Le serveur en a besoin pour le RAYONNEMENT de la boucle
+         de retour, où elle entre LINÉAIREMENT — se tromper d'un facteur deux
+         sur l'amplitude, c'est six décibels sur le champ. Zéro veut dire
+         « prends ton repli ». */
       analyse:{f_debut:opts.f1, f_fin:opts.f2, points:opts.points,
-               f_centre:opts.fc, temps_montee:opts.tr||0}
+               f_centre:opts.fc, temps_montee:opts.tr||0,
+               amplitude_v:(SIM.saisie&&SIM.saisie.swing)||0}
     },
     objets:g.objets,
     portee:simPortee(g.objets,liste),
@@ -2458,14 +2856,19 @@ function simXtCouture(par,refs){
   return out.sort((a,b)=>a.s-b.s);
 }
 
-/* Le plan de référence le plus proche d'une couche de signal : d'abord
-   dessous, puis dessus. C'est le même ordre que `section_de_couche` côté
-   serveur — le plan qui porte le retour est celui qui fait face à la piste, et
-   sur un empilage courant il est en dessous. */
-function simXtPlanDe(l){
-  for(let i=l+1;i<S.cu;i++)if(rolePlane(layerRole(i)))return i;
-  for(let i=l-1;i>=0;i--)if(rolePlane(layerRole(i)))return i;
-  return -1;
+/* LES PLANS DE RÉFÉRENCE d'une couche de signal — au pluriel, et c'est le
+   correctif. Cette fonction ne rendait que le premier plan EN DESSOUS, avec
+   repli sur celui du dessus. Correct pour un microruban, qui n'en a qu'un ;
+   faux pour une triplaque, qui en a deux et dont le retour se partage entre
+   eux. Une fente dans le plan du DESSUS d'une piste interne n'était donc
+   jamais sondée, alors que `simPlansRef` — celle qui décide de Z₀ — retient
+   bien les deux.
+
+   ON REND LA MÊME CHOSE QUE `simPlansRef`, et il faut que ce soit la même :
+   deux règles pour désigner le plan de retour, ce sont deux verdicts le jour
+   où l'une bouge. */
+function simXtPlansDe(l){
+  return simPlansRef(l);
 }
 
 /* Les discontinuités du plan sous le parcours, en intervalles d'abscisse.
@@ -2481,27 +2884,35 @@ function simXtFentes(par,refs){
   const trous=[];
   let courant=null;
   for(const e of par.liste){
-    const plan=simXtPlanDe(e.o.l);
+    /* TOUS LES PLANS DE RÉFÉRENCE, ET PLUS SEULEMENT CELUI DU DESSOUS. Une
+       triplaque en a deux, et le courant de retour se partage entre eux : une
+       fente dans l'un ouvre la boucle même si l'autre est intact. Ne sonder
+       que le premier trouvé en descendant laissait invisible toute fente au
+       DESSUS d'une piste interne. */
+    const plans=simXtPlansDe(e.o.l).filter(i=>S.zones.some(z=>z.l===i));
     /* UNE COUCHE SANS PLAN N'A PAS DE FENTE À AVOIR : c'est un défaut d'un
        autre ordre, que l'onglet Impédance signale déjà. On passe, sans
        compter ce tronçon comme sondé. */
-    if(plan<0)continue;
-    if(!S.zones.some(z=>z.l===plan))continue;
+    if(!plans.length)continue;
     sondable=true;
     const n=Math.max(1,Math.round(e.longueur/pas));
     for(let k=0;k<=n;k++){
       const f=k/n;
       const u=e.o.ua+(e.o.ub-e.o.ua)*f;
       const p=trkAt(e.o.trk,u);
-      const z=simXtZoneMasse(plan,p.x,p.y,refs);
+      /* UN SEUL PLAN PERCÉ SUFFIT À OUVRIR LA BOUCLE. On note lequel : « le
+         plan du dessus » et « le plan du dessous » ne demandent pas le même
+         geste, et sur une triplaque la fiche doit pouvoir le dire. */
+      const nus=plans.filter(i=>!simXtZoneMasse(i,p.x,p.y,refs));
       const s=e.s0+f*e.longueur;
-      if(z){
+      if(!nus.length){
         if(courant){trous.push(courant);courant=null;}
       }else if(courant&&s-courant.fin<=pas*1.5){
         courant.fin=s;
+        for(const i of nus)if(courant.plans.indexOf(i)<0)courant.plans.push(i);
       }else{
         if(courant)trous.push(courant);
-        courant={debut:s, fin:s};
+        courant={debut:s, fin:s, plans:nus.slice()};
       }
     }
   }
@@ -2512,8 +2923,12 @@ function simXtFentes(par,refs){
      pas — en deçà, on inonderait la carte de marques que rien ne justifie. */
   return trous.filter(t=>t.fin-t.debut>=pas*1.5)
     .map(t=>({s:r3(t.debut), longueur:r3(t.fin-t.debut),
-              quoi:"le plan de référence n'a pas de cuivre de masse sous le "+
-                   "parcours sur "+r3(t.fin-t.debut)+" mm"}));
+              quoi:(t.plans.length>1
+                      ? "les plans de référence "+t.plans.map(i=>cuLabel(i,S.cu)).join(" / ")+
+                        " n'ont pas de cuivre de retour"
+                      : "le plan de référence "+cuLabel(t.plans[0],S.cu)+
+                        " n'a pas de cuivre de retour")+
+                   " sous le parcours sur "+r3(t.fin-t.debut)+" mm"}));
 }
 
 /* Y a-t-il du cuivre DE MASSE sur cette couche, en ce point ? Le cuivre d'un
@@ -2766,6 +3181,7 @@ function pcbComposantsSchema(doc){
         specs:c.specs||{},
         distributeurs:c.distributeurs||{},
         datasheet_local:c.datasheet_local||"",
+        datasheet_url:c.datasheet_url||c.datasheet_web||c.datasheet||"",
         pinNames:Array.isArray(c.pinNames)?c.pinNames:(c.pinNames||[]),
         pinout:Array.isArray(c.pinout)?c.pinout:[],
         pinoutVerified:!!c.pinoutVerified,
@@ -3169,6 +3585,110 @@ function pcbNetComposants(net){
   return {sources, charges, resistances, ics, autres};
 }
 
+/* Récupère toutes les pastilles d'une empreinte avec leur net associé (nets direct ou piste touchant la pastille) */
+function simFpPadsNets(fp){
+  if(!fp) return [];
+  const isPwr = n => /^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
+  let pads = [];
+  if(typeof padsWorld === "function"){
+    try { pads = padsWorld(fp) || []; } catch(e){ pads = []; }
+  }
+  if(!pads.length && typeof padsOf === "function"){
+    try { pads = padsOf(fp) || []; } catch(e){ pads = []; }
+  }
+  if(!pads.length && Array.isArray(fp.pads)){
+    pads = fp.pads;
+  }
+
+  const out = [];
+  for(let i = 0; i < pads.length; i++){
+    const q = pads[i];
+    const pinNum = q.n != null ? q.n : (i + 1);
+    let net = (q && q.net) || "";
+    if(!net && fp.nets){
+      net = fp.nets[pinNum] || fp.nets[String(pinNum)] || (Array.isArray(fp.nets) ? (fp.nets[i + 1] || fp.nets[i]) : "") || "";
+    }
+
+    if(!net && typeof S !== "undefined" && Array.isArray(S.tracks)){
+      for(const t of S.tracks){
+        if(!t.net || isPwr(t.net)) continue;
+        if(typeof segPadDist === "function"){
+          if(segPadDist(t, q) <= 0.05){
+            net = t.net;
+            break;
+          }
+        }else if(typeof padDist === "function"){
+          if(padDist(t.x1, t.y1, q) <= 0.05 || padDist(t.x2, t.y2, q) <= 0.05){
+            net = t.net;
+            break;
+          }
+        }else{
+          const padRadius = Math.max(q.w || 0.8, q.h || 0.8) / 2 + 0.15;
+          const qx = q.x || 0, qy = q.y || 0;
+          const d1 = Math.hypot(t.x1 - qx, t.y1 - qy);
+          const d2 = Math.hypot(t.x2 - qx, t.y2 - qy);
+          if(d1 <= padRadius || d2 <= padRadius){
+            net = t.net;
+            break;
+          }
+          const dx = t.x2 - t.x1, dy = t.y2 - t.y1;
+          const l2 = dx*dx + dy*dy;
+          if(l2 > 0){
+            const u = Math.max(0, Math.min(1, ((qx - t.x1)*dx + (qy - t.y1)*dy) / l2));
+            if(Math.hypot(qx - (t.x1 + u*dx), qy - (t.y1 + u*dy)) <= padRadius){
+              net = t.net;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if(!net && typeof S !== "undefined" && Array.isArray(S.vias)){
+      for(const v of S.vias){
+        if(!v.net || isPwr(v.net)) continue;
+        if(typeof padDist === "function"){
+          if(padDist(v.x, v.y, q) <= 0.05){
+            net = v.net;
+            break;
+          }
+        }else{
+          const padRadius = Math.max(q.w || 0.8, q.h || 0.8) / 2 + 0.15;
+          if(Math.hypot(v.x - (q.x || 0), v.y - (q.y || 0)) <= padRadius){
+            net = v.net;
+            break;
+          }
+        }
+      }
+    }
+
+    out.push({ pin: pinNum, pad: q, net: net });
+  }
+  if(!out.length && fp.nets){
+    for(const k of Object.keys(fp.nets)){
+      out.push({ pin: k, pad: null, net: fp.nets[k] });
+    }
+  }
+  return out;
+}
+
+/* Ensemble des nets d'une empreinte (hors alimentations) */
+function simFpNetSet(fp){
+  const set = new Set();
+  const isPwr = n => /^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
+  if(fp && fp.nets){
+    for(const k of Object.keys(fp.nets)){
+      const n = fp.nets[k];
+      if(n && !isPwr(n)) set.add(n);
+    }
+  }
+  const pn = simFpPadsNets(fp);
+  for(const item of pn){
+    if(item.net && !isPwr(item.net)) set.add(item.net);
+  }
+  return set;
+}
+
 const SIM_PCB={
   outil:"editeur-pcb",
 
@@ -3331,8 +3851,13 @@ const SIM_PCB={
     if(!S.sel.tracks.size)
       return {erreur:"Aucune piste sélectionnée.",
               conseil:S.tracks.length
-                ? "Cliquez une piste sur la carte. Maj+clic la prend entière, "+
-                  "Ctrl+clic ajoute un morceau à la sélection."
+                ? ((typeof SIM!=="undefined"&&(SIM.analyse==="diff"||SIM.analyse==="zdiff"))
+                    ? "Double-clic gauche sur la 1ère piste\n"+
+                      "→ toute la piste sur la couche est sélectionnée.\n"+
+                      "Maintenez Ctrl et faites un double-clic gauche (ou un simple clic gauche avec Ctrl) sur la 2ème piste\n"+
+                      "→ toute la 2ème piste s'ajoute à la sélection."
+                    : "Double-clic gauche sur une piste : toute la piste sur la couche est sélectionnée.\n"+
+                      "Ctrl+clic ajoute un morceau à la sélection, Maj+clic prend le net entier.")
                 : "Cette carte n'a pas encore de piste routée."};
     const sel=[...S.sel.tracks].filter(t=>trkLen(t)>0);
     if(!sel.length)
@@ -3768,6 +4293,267 @@ const SIM_PCB={
       if(typeof draw==="function")draw();
     }
   },
+  /* Extraction physique du temps de vol pour l'analyse de bus synchrone (supporte les XNets / nets composés "NET1 + NET2") */
+  busNetFlight:function(netName){
+    if(!netName) return {net:"", len:0, tflight:0, psmm:6.7, capPf:0, trksCount:0, viasCount:0};
+    const cleanStr = String(netName).replace(/\s*\([^)]*\)/g, "");
+    const parts = cleanStr.split(/[\+,]/).map(s=>s.trim()).filter(Boolean);
+    let totalLen = 0, totalTflightPs = 0, totalCapPf = 0, totalTrks = 0, totalVias = 0;
+
+    for(const partNet of parts){
+      let trks=[], vs=[];
+      if(typeof netTracks==="function"){
+        const g=netTracks(partNet);
+        trks=g.tracks||[];
+        vs=g.vias||[];
+      }else if(typeof S!=="undefined"){
+        trks=(S.tracks||[]).filter(t=>t.net===partNet);
+        vs=(S.vias||[]).filter(v=>v.net===partNet);
+      }
+      const lt=(typeof ltLine==="function")?ltLine(trks,vs):{len:0,tpdAll:0,c:0,psmm:6.7};
+      const len=(typeof r3==="function")?r3(lt.len||0):Math.round((lt.len||0)*1000)/1000;
+      const tflightPs=(typeof r1==="function")?r1((lt.tpdAll||0)*1e12):Math.round(((lt.tpdAll||0)*1e12)*10)/10;
+      const capPf=Math.round(((lt.c||0)+((lt.vias&&lt.vias.cap)||0))*1e12*100)/100;
+      totalLen += len;
+      totalTflightPs += tflightPs;
+      totalCapPf += capPf;
+      totalTrks += trks.length;
+      totalVias += vs.length;
+    }
+    const len=Math.round(totalLen*1000)/1000;
+    const tflight=Math.round(totalTflightPs*10)/10;
+    const psmm=(len>0&&tflight>0)?Math.round((tflight/len)*100)/100:6.7;
+    const capPf=Math.round(totalCapPf*100)/100;
+
+    // Détection d'une résistance série et calcul du retard RC induit
+    let rOhms = 0, rComp = "", rcDelayPs = 0;
+    const rMatch = String(netName).match(/\(([^)]+)\)/);
+    if(rMatch){
+      const raw = rMatch[1].trim();
+      const tokens = raw.split(/\s+/);
+      if(tokens.length > 1){
+        rComp = tokens[0] || "";
+        const valStr = tokens.slice(1).join(" ");
+        const valMatch = valStr.match(/([0-9]+(?:\.[0-9]+)?)/);
+        if(valMatch){
+          let valNum = parseFloat(valMatch[1]);
+          if(/k/i.test(valStr)) valNum *= 1000;
+          rOhms = valNum;
+        }
+      }else if(tokens.length === 1){
+        const vMatch = tokens[0].match(/([0-9]+(?:\.[0-9]+)?)/);
+        if(/^[A-Za-z]+/.test(tokens[0]) && !/[ΩR]/i.test(tokens[0])){
+          rComp = tokens[0];
+          rOhms = 22;
+        }else if(vMatch){
+          rOhms = parseFloat(vMatch[1]);
+        }
+      }
+      if(rOhms > 0 && parts.length > 1){
+        let capAvalPf = 2.5; // Capacité d'entrée récepteur typique (pF)
+        for(let pi = 1; pi < parts.length; pi++){
+          let trks=[], vs=[];
+          if(typeof netTracks==="function"){
+            const g=netTracks(parts[pi]);
+            trks=g.tracks||[]; vs=g.vias||[];
+          }else if(typeof S!=="undefined"){
+            trks=(S.tracks||[]).filter(t=>t.net===parts[pi]);
+            vs=(S.vias||[]).filter(v=>v.net===parts[pi]);
+          }
+          const lt=(typeof ltLine==="function")?ltLine(trks,vs):{c:0};
+          capAvalPf += ((lt.c||0)+((lt.vias&&lt.vias.cap)||0))*1e12;
+        }
+        rcDelayPs = Math.round(0.693 * rOhms * capAvalPf * 10) / 10;
+      }
+    }
+
+    return {
+      net:netName,
+      len:len,
+      tflight:tflight,
+      tflightTotal:Math.round((tflight+rcDelayPs)*10)/10,
+      rcDelayPs:rcDelayPs,
+      rOhms:rOhms,
+      rComp:rComp,
+      psmm:psmm,
+      capPf:capPf,
+      trksCount:totalTrks,
+      viasCount:totalVias
+    };
+  },
+
+  trouverPontSerie:function(netName){
+    if(typeof S==="undefined"||!Array.isArray(S.fps)||!netName) return null;
+    const cleanTarget = String(netName).trim();
+    const cleanTargetUpper = cleanTarget.toUpperCase();
+    const isPwr=n=>/^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
+    const isResistor=(ref, val)=>/^(R|RN)\b/i.test(ref||"") || /^R\d+/i.test(ref||"") || /(?:ohm|Ω|\d+R\d*)/i.test(String(val||""));
+    const isPassiveRef=r=>/^(R|RN|L|FB|C)/i.test(r||"");
+    let fallback=null;
+    for(const fp of S.fps){
+      const pn = simFpPadsNets(fp);
+      const fNets = [...new Set(pn.map(p=>p.net).filter(n=>n&&!isPwr(n)))];
+      if(fNets.length === 2){
+        const [nA, nB] = fNets;
+        const matchA = (nA.trim().toUpperCase() === cleanTargetUpper);
+        const matchB = (nB.trim().toUpperCase() === cleanTargetUpper);
+        if(nA !== nB && (matchA || matchB)){
+          const aval = (matchA ? nB : nA);
+          const rawVal = fp.value || fp.val || "";
+          let parsedR = (typeof pcbParseResistance === "function") ? pcbParseResistance(rawVal) : null;
+          if(parsedR == null && typeof sessLireSchema === "function"){
+            try {
+              const sch = sessLireSchema();
+              if(sch && Array.isArray(sch.pages)){
+                for(const pg of sch.pages){
+                  const sc = (pg.comps || []).find(c => c && c.ref === fp.ref);
+                  if(sc && (sc.value || sc.spec)){
+                    const sv = pcbParseResistance(sc.value || sc.spec);
+                    if(sv != null && sv >= 0){ parsedR = sv; break; }
+                  }
+                }
+              }
+            } catch(e) {}
+          }
+          const rOhms = (parsedR != null && parsedR >= 0) ? parsedR : 22;
+          const cleanVal = (rawVal ? String(rawVal).trim() : "") || (rOhms + "Ω");
+          const valSuffix = " " + (rOhms > 0 ? (rOhms + "Ω") : cleanVal);
+          const bridge = {
+            comp: fp.ref || "R",
+            val: cleanVal,
+            rOhms: rOhms,
+            netAmont: cleanTarget,
+            netAval: aval,
+            annotation: (fp.ref || "R") + valSuffix,
+            label: cleanTarget + " + " + aval + " (" + (fp.ref || "R") + valSuffix + ")"
+          };
+          if(isResistor(fp.ref, rawVal) || parsedR != null){
+            return bridge;
+          }
+          if(isPassiveRef(fp.ref) && !fallback){
+            fallback = bridge;
+          }
+        }
+      }
+    }
+    return fallback;
+  },
+
+  listeComposants:function(){
+    if(typeof S==="undefined"||!Array.isArray(S.fps)) return [];
+    return S.fps.map(fp=>({
+      ref: fp.ref||("U"+fp.id),
+      val: fp.value||fp.pkg||"",
+      pkg: fp.pkg||""
+    })).sort((a,b)=>a.ref.localeCompare(b.ref, undefined, {numeric:true}));
+  },
+
+  netsEntreComposants:function(ref1, ref2){
+    if(typeof S==="undefined"||!Array.isArray(S.fps)||!ref1||!ref2) return [];
+    const fp1=S.fps.find(f=>(f.ref===ref1||("U"+f.id)===ref1));
+    const fp2=S.fps.find(f=>(f.ref===ref2||("U"+f.id)===ref2));
+    if(!fp1||!fp2) return [];
+    const isPwr=n=>/^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
+    const s1=simFpNetSet(fp1), s2=simFpNetSet(fp2);
+    const common=[];
+
+    // 1. Nets directement communs
+    for(const n of s1){
+      if(s2.has(n)&&!isPwr(n)){
+        common.push(n);
+      }
+    }
+
+    // 2. Nets chaînés via un composant passif série à 2 broches (ex: résistance d'adaptation R, ferrite L, capa C)
+    for(const fp of S.fps){
+      if(fp===fp1||fp===fp2) continue;
+      const pn = simFpPadsNets(fp);
+      const fNets=[...new Set(pn.map(p=>p.net).filter(n=>n&&!isPwr(n)))];
+      if(fNets.length===2){
+        const [nA, nB] = fNets;
+        if(nA!==nB){
+          const rawVal = fp.value || fp.val || "";
+          const parsedR = (typeof pcbParseResistance === "function") ? pcbParseResistance(rawVal) : null;
+          const rOhms = (parsedR != null && parsedR >= 0) ? parsedR : 22;
+          const valSuffix = " " + (rOhms > 0 ? (rOhms + "Ω") : (rawVal || "22Ω"));
+          if(s1.has(nA) && s2.has(nB)){
+            common.push(nA + " + " + nB + " (" + (fp.ref||"R") + valSuffix + ")");
+          }else if(s1.has(nB) && s2.has(nA)){
+            common.push(nB + " + " + nA + " (" + (fp.ref||"R") + valSuffix + ")");
+          }
+        }
+      }
+    }
+
+    return common.sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
+  },
+
+  listeLiaisonsSeries:function(){
+    if(typeof S==="undefined"||!Array.isArray(S.fps)) return [];
+    const isPwr=n=>/^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
+    const bridges=[];
+    for(const fp of S.fps){
+      const pn = simFpPadsNets(fp);
+      const fNets=[...new Set(pn.map(p=>p.net).filter(n=>n&&!isPwr(n)))];
+      if(fNets.length===2){
+        const [nA, nB] = fNets;
+        if(nA!==nB){
+          const rawVal = fp.value || fp.val || "";
+          const parsedR = (typeof pcbParseResistance === "function") ? pcbParseResistance(rawVal) : null;
+          const rOhms = (parsedR != null && parsedR >= 0) ? parsedR : 22;
+          const valSuffix = " " + (rOhms > 0 ? (rOhms + "Ω") : (rawVal || "22Ω"));
+          bridges.push(nA + " + " + nB + " (" + (fp.ref||"R") + valSuffix + ")");
+        }
+      }
+    }
+    return bridges.sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
+  },
+
+  listeNets:function(){
+    if(typeof netTable==="function"){
+      return netTable().map(x=>x.name).filter(n=>n&&n!=="GND"&&n!=="VCC"&&n!=="+3V3"&&n!=="+5V");
+    }
+    if(typeof S!=="undefined"&&S.tracks){
+      return [...new Set(S.tracks.map(t=>t.net).filter(Boolean))];
+    }
+    return [];
+  },
+
+  netsSelectionnes:function(){
+    const res = new Set();
+    if(typeof S!=="undefined"){
+      if(S.hlNet) res.add(S.hlNet);
+      if(typeof focusNet==="function"){
+        const fn = focusNet();
+        if(fn) res.add(fn);
+      }
+      if(S.sel){
+        if(S.sel.tracks&&S.sel.tracks.size){
+          for(const t of S.sel.tracks) if(t&&t.net) res.add(t.net);
+        }
+        if(S.sel.vias&&S.sel.vias.size){
+          for(const v of S.sel.vias) if(v&&v.net) res.add(v.net);
+        }
+        if(S.sel.fps&&S.sel.fps.size&&Array.isArray(S.fps)){
+          for(const fid of S.sel.fps){
+            const fp = S.fps.find(f=>f.id===fid);
+            if(fp&&typeof simFpPadsNets==="function"){
+              const pn = simFpPadsNets(fp);
+              for(const p of pn) if(p&&p.net) res.add(p.net);
+            }
+          }
+        }
+      }
+    }
+    return [...res].filter(Boolean);
+  },
+
+  armerSerpentin:function(netName, addMm){
+    if(typeof busSkewArmMeander==="function"){
+      busSkewArmMeander(netName, addMm);
+    }
+  },
+
   astuce:function(t){
     if(typeof hint==="function")hint(t);
   }
