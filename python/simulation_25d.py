@@ -787,7 +787,7 @@ def _eps_plausible(couches: List[Dict], eps_eff: float) -> Tuple[bool, str]:
 # d'un via, la verticale monte a 0,458. Les seuils sont donc places a environ
 # quatre fois le bruit et trois fois sous le signal : il n'y a pas de zone
 # grise a arbitrer.
-SEUIL_PERP = 0.15
+SEUIL_PERP = 0.20
 SEUIL_VERT = 0.10
 MAX_POINTS_CHAUDS = 12
 
