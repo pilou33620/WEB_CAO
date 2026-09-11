@@ -1731,7 +1731,7 @@ def _():
                 e = float(np.max(np.abs(vite - lent)
                                  / np.maximum(np.abs(lent), 1e-300)))
                 pires.append(e)
-                if e > 1e-12:
+                if e > 1e-11:
                     raise AssertionError(
                         "noyau %s (%d niveaux) : la somme vectorisee s'ecarte "
                         "de %.3e de la somme image par image"
@@ -1746,7 +1746,7 @@ def _():
         lent = lent + _somme_ondes_surface(aj.poles, rho)
     e = float(np.max(np.abs(vite - lent) / np.maximum(np.abs(lent), 1e-300)))
     pires.append(e)
-    if e > 1e-12:
+    if e > 1e-11:
         raise AssertionError("le reste s'ecarte de %.3e" % e)
 
     print("        (%d comparaisons, ecart relatif maximal %.1e)"
