@@ -1,0 +1,65 @@
+{
+  "format": "schsym-1",
+  "id": "header_1x3",
+  "name": "Barrette 1x3",
+  "category": "Divers",
+  "prefix": "J",
+  "defaultValue": "CONN3",
+  "defaultPkg": "HEADER-2.54-1x3",
+  "pinCount": 3,
+  "pins": [
+    {
+      "n": 1,
+      "x": -40,
+      "y": -20
+    },
+    {
+      "n": 2,
+      "x": -40,
+      "y": 0
+    },
+    {
+      "n": 3,
+      "x": -40,
+      "y": 20
+    }
+  ],
+  "ext": [
+    -40,
+    -35,
+    20,
+    35
+  ],
+  "primitives": [
+    {
+      "op": "line",
+      "x1": -40,
+      "y1": -20,
+      "x2": -15,
+      "y2": -20
+    },
+    {
+      "op": "line",
+      "x1": -40,
+      "y1": 0,
+      "x2": -15,
+      "y2": 0
+    },
+    {
+      "op": "line",
+      "x1": -40,
+      "y1": 20,
+      "x2": -15,
+      "y2": 20
+    },
+    {
+      "op": "rect",
+      "x": -15,
+      "y": -35,
+      "w": 30,
+      "h": 70,
+      "r": 3,
+      "fill": true
+    }
+  ]
+}

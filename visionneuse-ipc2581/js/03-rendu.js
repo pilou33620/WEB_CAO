@@ -192,6 +192,7 @@ function peindre(c,dpr,W,H){
      et n'existe que tant que l'une d'elles peint. */
   if(typeof simVoile==="function")simVoile(c,W,H);
   if(typeof simZTrace==="function")simZTrace(c,dpr);
+  if(typeof simMaillageTrace==="function")simMaillageTrace(c,dpr);
   /* La carte de POTENTIEL (chute DC). Elle ne s'affiche jamais en même
      temps que celle des impédances : `simDCActif()` exige l'onglet DC,
      `simZActif()` l'onglet Impédance. La couche montrée est celle de la

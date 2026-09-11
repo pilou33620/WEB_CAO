@@ -1,0 +1,5 @@
+* Modele SPICE Resistance avec inductance parasite (ESL)
+.subckt RESISTOR 1 2 PARAMS: R=10k Lpar=0.5nH
+R1 1 3 {R}
+L1 3 2 {Lpar}
+.ends RESISTOR

@@ -304,6 +304,17 @@ import math
 import numpy as np
 
 
+VERSION = "2.5.0"
+
+
+def etat():
+    return {
+        "dispo": True,
+        "version": VERSION,
+        "nom": "Solveur MoM (section droite et discontinuites)",
+    }
+
+
 EPSILON_0 = 8.854187817e-12
 MU_0 = 4 * np.pi * 1e-7
 C_0 = 2.99792458e8

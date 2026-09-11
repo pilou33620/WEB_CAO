@@ -1,0 +1,38 @@
+{
+  "format": "pcbfp-1",
+  "name": "SOD-323",
+  "pkg": "SOD-323",
+  "pins": 2,
+  "style": "chip",
+  "pitch": 2.4,
+  "span": 2.4,
+  "pads": [
+    {
+      "n": 1,
+      "x": -1.2,
+      "y": 0,
+      "w": 1.32,
+      "h": 1.488,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 1.2,
+      "y": 0,
+      "w": 1.32,
+      "h": 1.488,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -2.11,
+    "y1": -1.094,
+    "x2": 2.11,
+    "y2": 1.094
+  },
+  "description": "Diode CMS SOD-323 2 broches"
+}

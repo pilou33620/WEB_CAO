@@ -2474,7 +2474,7 @@ function simDCBornePastille(x,y){
         bd=d;
         const cu=couches.indexOf(S.active)>=0?S.active:couches[0];
         let nom=(fp.ref||"?")+"."+(q.n==null?"?":q.n);
-        let specVal=null, specU=null;
+        let specVal=null, specU=null, specProv=null;
         if(typeof pcbComposantsSchema==="function"&&typeof pcbSpecsComposant==="function"){
           const sm=pcbComposantsSchema();
           const c=sm&&sm.get(fp.ref);
@@ -2484,6 +2484,7 @@ function simDCBornePastille(x,y){
             const pinNom=c.pinNames&&(c.pinNames[pinKey]||c.pinNames[q.n]);
             if(pinNom)nom+=" ("+pinNom+")";
             else if(sp.mpn||sp.value)nom+=" ("+(sp.mpn||sp.value)+")";
+            specProv=sp.provenance;
             if(sp.estSource&&sp.tension!=null){
               specVal=sp.tension; specU="V";
             }else if(sp.estCharge&&sp.courant!=null){
@@ -2496,7 +2497,7 @@ function simDCBornePastille(x,y){
               x:q.x, y:q.y, couche:cu, net:q.net||"",
               w:q.w, h:q.h, shape:q.shape, rot:q.rot,
               couches:couches.slice(),
-              specValeur:specVal, specUnite:specU};
+              specValeur:specVal, specUnite:specU, specProvenance:specProv};
       }
     }
   /* Une pastille à plus d'un millimètre du clic n'est pas celle qu'on visait :
@@ -2523,7 +2524,9 @@ function simDCClic(x,y){
     /* Une valeur d'usine UTILISABLE : 3,3 V pour une alimentation, un ampère
        pour un consommateur. Si le schéma fournit une spécification réelle pour
        ce composant, elle est prise d'office. */
-    if(b.specValeur!=null&&(role==="source"?b.specUnite==="V":b.specUnite!=="V")){
+    const aSpec = b.specValeur!=null&&(role==="source"?b.specUnite==="V":b.specUnite!=="V");
+    b.provenance = aSpec ? (b.specProvenance || "catalogue") : "manuel";
+    if(aSpec){
       b.valeur=b.specValeur;
       if(b.specUnite)b.unite=b.specUnite;
     }else{
@@ -2546,6 +2549,7 @@ function simDCClic(x,y){
       const av=SIM_DCB.bornes[k];
       b.valeur=av.valeur; b.unite=av.unite;
       if(av.renomme){b.nom=av.nom;b.renomme=true;}
+      if(av.provenance)b.provenance=av.provenance;
       SIM_DCB.bornes[k]=b;
     }
     else SIM_DCB.bornes.push(b);
@@ -3103,19 +3107,66 @@ function pcbParsePuissance(val){
 }
 
 function pcbParseResistance(val){
-  if(val==null)return null;
+  if(val==null) return null;
   const s=String(val).trim();
-  const mCode=s.match(/^(\d+)[rR](\d+)$/);
-  if(mCode)return parseFloat(mCode[1]+"."+mCode[2]);
-  const mCodeK=s.match(/^(\d+)[kK](\d+)$/);
-  if(mCodeK)return parseFloat(mCodeK[1]+"."+mCodeK[2])*1000;
-  const m=s.match(/(\d+(?:[.,]\d+)?)\s*(k|m|r|ohm|Ω)?/i);
-  if(!m)return null;
-  const n=parseFloat(m[1].replace(",","."));
-  const u=(m[2]||"").toLowerCase();
-  if(u.includes("k"))return n*1000;
-  if(u.includes("m")&&!u.includes("ohm"))return n*1e6;
-  return n;
+  if(!s) return null;
+
+  const pkgCodes = ["0402", "0603", "0805", "1206", "1210", "1812", "2010", "2512", "0201", "01005"];
+  if(pkgCodes.includes(s)) return null;
+
+  // 1. Valeur numérique pure (ex: "560", "22", "1000", "4.7")
+  if(/^\d+(?:[.,]\d+)?$/.test(s)){
+    return parseFloat(s.replace(",", "."));
+  }
+
+  // 2. Format R standard : 4R7 -> 4.7, 22R -> 22, 0R5 -> 0.5, 22R0 -> 22.0
+  const mCode = s.match(/\b(\d+)[rR](\d*)\b/);
+  if(mCode){
+    const dec = mCode[2] ? ("." + mCode[2]) : "";
+    return parseFloat(mCode[1] + dec);
+  }
+
+  // 3. Format K standard : 4K7 -> 4700, 10K -> 10000, 10K5 -> 10500
+  const mCodeK = s.match(/\b(\d+)[kK](\d*)\b/);
+  if(mCodeK){
+    const dec = mCodeK[2] ? ("." + mCodeK[2]) : "";
+    return parseFloat(mCodeK[1] + dec) * 1000;
+  }
+
+  // 4. Format M standard : 1M -> 1e6, 2M2 -> 2.2e6
+  const mCodeM = s.match(/\b(\d+)[mM](\d*)\b/);
+  if(mCodeM && !/ohm/i.test(s)){
+    const dec = mCodeM[2] ? ("." + mCodeM[2]) : "";
+    return parseFloat(mCodeM[1] + dec) * 1e6;
+  }
+
+  // 5. Format R préfixe : R10 -> 0.10, R050 -> 0.050
+  const mPreR = s.match(/\b[rR](\d+(?:[.,]\d+)?)\b/);
+  if(mPreR){
+    return parseFloat("0." + mPreR[1].replace(",", ""));
+  }
+
+  // 6. Format avec unité explicite : "560 ohm", "22 Ω", "4.7 kohm", "10k"
+  const mUnit = s.match(/(\d+(?:[.,]\d+)?)\s*(k|m|r|ohm|Ω)\b/i);
+  if(mUnit){
+    const n = parseFloat(mUnit[1].replace(",", "."));
+    const u = mUnit[2].toLowerCase();
+    if(u.includes("k")) return n * 1000;
+    if(u.includes("m") && !u.includes("ohm")) return n * 1e6;
+    return n;
+  }
+
+  // 7. Nombre isolé ne correspondant pas à un code boîtier (0402, 0603, etc.)
+  const allNums = s.match(/\b\d+(?:[.,]\d+)?\b/g);
+  if(allNums){
+    for(const numStr of allNums){
+      if(["0402", "0603", "0805", "1206", "1210", "1812", "2010", "2512", "0201", "01005"].includes(numStr)) continue;
+      const n = parseFloat(numStr.replace(",", "."));
+      if(n >= 0) return n;
+    }
+  }
+
+  return null;
 }
 
 function pcbParseFrequence(val){
@@ -3179,6 +3230,7 @@ function pcbComposantsSchema(doc){
         mpn:c.mpn||c.csvMpn||c.csvPartName||"",
         manufacturer:c.manufacturer||"",
         specs:c.specs||{},
+        specsProvenance:c.specsProvenance||"",
         distributeurs:c.distributeurs||{},
         datasheet_local:c.datasheet_local||"",
         datasheet_url:c.datasheet_url||c.datasheet_web||c.datasheet||"",
@@ -3199,22 +3251,71 @@ function pcbSpecsComposant(c){
   if(!c)return null;
   const sp=c.specs||{};
   let voltOut=null, voltIn=null, curr=null, power=null, res=null, freq=null;
+  let prov=c.specsProvenance || null;
   
   for(const [k,v] of Object.entries(sp)){
+    if(v==null || v==="" || v==="xx" || v==="-") continue;
     const kl=k.toLowerCase();
-    if(kl.includes("output")&&kl.includes("volt"))voltOut=voltOut||pcbParseVolt(v);
-    else if((kl.includes("supply")||kl.includes("operating")||kl.includes("input")||kl.includes("forward"))&&kl.includes("volt"))voltIn=voltIn||pcbParseVolt(v);
+    if((kl.includes("output")||kl.includes("out"))&&kl.includes("volt"))voltOut=voltOut||pcbParseVolt(v);
+    else if((kl.includes("supply")||kl.includes("operating")||kl.includes("input")||kl.includes("forward")||kl.includes("rating")||kl.includes("rated")||kl.includes("nom")||kl.includes("tension"))&&kl.includes("volt"))voltIn=voltIn||pcbParseVolt(v);
     else if(kl.includes("resistance"))res=res||pcbParseResistance(v);
-    else if(kl.includes("current")&&(kl.includes("supply")||kl.includes("operating")||kl.includes("max")||kl.includes("output")||kl.includes("forward")))curr=curr||pcbParseCourant(v);
-    else if(kl.includes("power")||kl.includes("watt"))power=power||pcbParsePuissance(v);
+    else if((kl.includes("current")||kl.includes("courant"))&&(kl.includes("supply")||kl.includes("operating")||kl.includes("max")||kl.includes("output")||kl.includes("forward")||kl.includes("rating")||kl.includes("rated")||kl.includes("consommation")||kl.includes("load")||kl.includes("charge")||kl.includes("nom")))curr=curr||pcbParseCourant(v);
+    else if(kl.includes("power")||kl.includes("watt")||kl.includes("puissance"))power=power||pcbParsePuissance(v);
     else if(kl.includes("freq")||kl.includes("speed")||kl.includes("clock"))freq=freq||pcbParseFrequence(v);
+  }
+
+  if(!prov && (curr!=null || voltOut!=null || voltIn!=null)){
+    prov = (sp["Current Rating"]||sp["Voltage Rating"]||sp["current Rating"]||sp["voltage rating"]) ? "catalogue" : "schema";
+  }
+
+  // Repli direct sur le catalogue CSV en mémoire si présent
+  if((curr==null || (voltOut==null && voltIn==null)) && typeof window!=="undefined" && Array.isArray(window.CSV_LIB)){
+    const targetPart=(c.csvPartName||c.mpn||c.value||"").toLowerCase().trim();
+    const targetMpn=(c.mpn||c.csvMpn||"").toLowerCase().trim();
+    if(targetPart || targetMpn){
+      const entry=window.CSV_LIB.find(it=>{
+        const p=(it["Part Name"]||"").toLowerCase().trim();
+        const pn=(it["Part Number"]||it["Part Number "]||it["MPN"]||"").toLowerCase().trim();
+        return (targetPart && p===targetPart) || (targetMpn && pn===targetMpn) || (targetPart && pn===targetPart);
+      });
+      if(entry){
+        const vRating=entry["Voltage Rating"]||entry["voltage rating"]||entry["Voltage"]||"";
+        const cRating=entry["current Rating"]||entry["Current Rating"]||entry["current rating"]||"";
+        const wRating=entry["wattage"]||entry["Wattage"]||"";
+        const fRating=entry["fréquency"]||entry["frequency"]||entry["Frequency"]||"";
+        
+        if(voltOut==null && voltIn==null && vRating && vRating!=="xx" && vRating!=="-"){
+          const parsedV=pcbParseVolt(vRating);
+          if(parsedV!=null){
+            if(c.type==="regulator"||/^(VR|REG)/i.test(c.ref)) voltOut=parsedV;
+            else voltIn=parsedV;
+            prov="catalogue";
+          }
+        }
+        if(curr==null && cRating && cRating!=="xx" && cRating!=="-"){
+          const parsedI=pcbParseCourant(cRating);
+          if(parsedI!=null){
+            curr=parsedI;
+            prov="catalogue";
+          }
+        }
+        if(power==null && wRating && wRating!=="xx" && wRating!=="-"){
+          power=pcbParsePuissance(wRating);
+        }
+        if(freq==null && fRating && fRating!=="xx" && fRating!=="-"){
+          freq=pcbParseFrequence(fRating);
+        }
+      }
+    }
   }
   
   if(voltOut==null&&(c.type==="regulator"||/^(VR|REG|U_REG)/i.test(c.ref))){
     voltOut=pcbParseVolt(c.value)||pcbParseVolt(c.mpn);
+    if(voltOut!=null && !prov) prov="schema";
   }
   if(voltIn==null){
     voltIn=pcbParseVolt(c.value);
+    if(voltIn!=null && !prov) prov="schema";
   }
   if(res==null&&(c.type==="resistor"||/^R/i.test(c.ref))){
     res=pcbParseResistance(c.value);
@@ -3228,6 +3329,7 @@ function pcbSpecsComposant(c){
   let courantConsomme=curr;
   if(courantConsomme==null&&power!=null&&(voltIn||voltOut||3.3)>0){
     courantConsomme=power/(voltIn||voltOut||3.3);
+    if(courantConsomme!=null && !prov) prov="schema";
   }
 
   /* Surcharge issue de l'analyse des motifs de circuits du schéma */
@@ -3241,11 +3343,12 @@ function pcbSpecsComposant(c){
           if (courantConsomme == null && match.courant_ma != null) {
             if (estCharge || match.role === "charge") {
               courantConsomme = match.courant_ma / 1000.0;
+              prov="motif";
             }
           }
           if (match.tension_v != null) {
-            if (estSource) voltOut = match.tension_v;
-            else if (voltIn == null) voltIn = match.tension_v;
+            if (estSource) { voltOut = match.tension_v; prov="motif"; }
+            else if (voltIn == null) { voltIn = match.tension_v; prov="motif"; }
           }
         }
       }
@@ -3255,6 +3358,9 @@ function pcbSpecsComposant(c){
   if(courantConsomme==null&&estCharge){
     if(c.type==="led"||/^D/i.test(c.ref))courantConsomme=0.015;
     else courantConsomme=0.030;
+    prov="defaut";
+  } else if(!prov) {
+    prov="defaut";
   }
   
   return {
@@ -3274,6 +3380,7 @@ function pcbSpecsComposant(c){
     estSource:estSource,
     estCharge:estCharge,
     specs:sp,
+    provenance:prov,
     pinNames:c.pinNames||{}
   };
 }
@@ -3531,7 +3638,8 @@ function pcbNetComposants(net){
       
       if(sp.estSource){
         if(/^(VOUT|OUT|\+V|3V3|5V|VBUS|VIN_EXT|VDD_EXT|1\b)/i.test(pinNom)||
-           c.type==="vcc"||/^(J|CON|BAT|PWR)/i.test(fp.ref)||padsNet.length===1){
+           c.type==="vcc"||/^(J|CON|BAT|PWR)/i.test(fp.ref)||padsNet.length===1||
+           !/^(GND|VSS|0V|ADJ|FB|EN|NC|SHDN)/i.test(pinNom)){
           isSource=true;
         }
       }
@@ -3546,21 +3654,33 @@ function pcbNetComposants(net){
       const baseNom=fp.ref+"."+(q.n!=null?q.n:"?");
       
       if(isSource){
+        const nbSrc = Math.max(1, padsNet.length);
+        const pinIdx = padsNet.indexOf(q) + 1;
         sources.push({
           fp:fp, pad:q, comp:c, specs:sp, couche:cu,
           role:"source",
           valeur:sp.voltOut||sp.tension||3.3,
           unite:"V",
-          nom:baseNom+(pinNom?" ("+pinNom+")":" (Source)")
+          provenance:sp.provenance||"catalogue",
+          compRef:fp.ref,
+          nbBroches:nbSrc,
+          nom:baseNom+(pinNom?" ("+pinNom+")":" (Source)")+(nbSrc>1?" ["+pinIdx+"/"+nbSrc+"]":"")
         });
       }else if(isCharge){
-        const padI=(sp.courant||0.03)/Math.max(1,padsNet.length);
+        const nbChg = Math.max(1, padsNet.length);
+        const pinIdx = padsNet.indexOf(q) + 1;
+        const totalI = sp.courant || 0.03;
+        const padI = totalI / nbChg;
         charges.push({
           fp:fp, pad:q, comp:c, specs:sp, couche:cu,
           role:"charge",
           valeur:padI,
           unite:padI<0.001?"µA":(padI<1?"mA":"A"),
-          nom:baseNom+(pinNom?" ("+pinNom+")":(sp.mpn?" ("+sp.mpn+")":""))
+          provenance:sp.provenance||"catalogue",
+          compRef:fp.ref,
+          totalCompI:totalI,
+          nbBroches:nbChg,
+          nom:baseNom+(pinNom?" ("+pinNom+")":(sp.mpn?" ("+sp.mpn+")":""))+(nbChg>1?" ["+pinIdx+"/"+nbChg+"]":"")
         });
       }else if(sp.resistance!=null){
         resistances.push({
@@ -3590,8 +3710,9 @@ function simFpPadsNets(fp){
   if(!fp) return [];
   const isPwr = n => /^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
   let pads = [];
+  let isWorldPads = false;
   if(typeof padsWorld === "function"){
-    try { pads = padsWorld(fp) || []; } catch(e){ pads = []; }
+    try { pads = padsWorld(fp) || []; isWorldPads = pads.length > 0; } catch(e){ pads = []; }
   }
   if(!pads.length && typeof padsOf === "function"){
     try { pads = padsOf(fp) || []; } catch(e){ pads = []; }
@@ -3605,26 +3726,33 @@ function simFpPadsNets(fp){
     const q = pads[i];
     const pinNum = q.n != null ? q.n : (i + 1);
     let net = (q && q.net) || "";
-    if(!net && fp.nets){
-      net = fp.nets[pinNum] || fp.nets[String(pinNum)] || (Array.isArray(fp.nets) ? (fp.nets[i + 1] || fp.nets[i]) : "") || "";
+    if(!net && fp.nets && typeof fp.nets === "object"){
+      net = fp.nets[pinNum] || fp.nets[String(pinNum)] ||
+            fp.nets[i + 1] || fp.nets[String(i + 1)] ||
+            fp.nets[i] || fp.nets[String(i)] || "";
+      if(!net && Array.isArray(fp.nets)){
+        net = fp.nets[i] || fp.nets[i + 1] || "";
+      }
     }
+
+    const qx = isWorldPads ? (q.x || 0) : ((fp.x || 0) + (q.x || 0));
+    const qy = isWorldPads ? (q.y || 0) : ((fp.y || 0) + (q.y || 0));
+    const padRadius = Math.max(q.w || 0.8, q.h || 0.8) / 2 + 0.15;
 
     if(!net && typeof S !== "undefined" && Array.isArray(S.tracks)){
       for(const t of S.tracks){
         if(!t.net || isPwr(t.net)) continue;
-        if(typeof segPadDist === "function"){
+        if(typeof segPadDist === "function" && isWorldPads){
           if(segPadDist(t, q) <= 0.05){
             net = t.net;
             break;
           }
-        }else if(typeof padDist === "function"){
+        }else if(typeof padDist === "function" && isWorldPads){
           if(padDist(t.x1, t.y1, q) <= 0.05 || padDist(t.x2, t.y2, q) <= 0.05){
             net = t.net;
             break;
           }
         }else{
-          const padRadius = Math.max(q.w || 0.8, q.h || 0.8) / 2 + 0.15;
-          const qx = q.x || 0, qy = q.y || 0;
           const d1 = Math.hypot(t.x1 - qx, t.y1 - qy);
           const d2 = Math.hypot(t.x2 - qx, t.y2 - qy);
           if(d1 <= padRadius || d2 <= padRadius){
@@ -3647,14 +3775,13 @@ function simFpPadsNets(fp){
     if(!net && typeof S !== "undefined" && Array.isArray(S.vias)){
       for(const v of S.vias){
         if(!v.net || isPwr(v.net)) continue;
-        if(typeof padDist === "function"){
+        if(typeof padDist === "function" && isWorldPads){
           if(padDist(v.x, v.y, q) <= 0.05){
             net = v.net;
             break;
           }
         }else{
-          const padRadius = Math.max(q.w || 0.8, q.h || 0.8) / 2 + 0.15;
-          if(Math.hypot(v.x - (q.x || 0), v.y - (q.y || 0)) <= padRadius){
+          if(Math.hypot(v.x - qx, v.y - qy) <= padRadius){
             net = v.net;
             break;
           }
@@ -3662,13 +3789,16 @@ function simFpPadsNets(fp){
       }
     }
 
-    out.push({ pin: pinNum, pad: q, net: net });
+    out.push({ pin: pinNum, pad: q, net: net || "" });
   }
-  if(!out.length && fp.nets){
-    for(const k of Object.keys(fp.nets)){
-      out.push({ pin: k, pad: null, net: fp.nets[k] });
+
+  // Si aucune pastille n'a pu être instanciée géométriquement, extraire directement depuis fp.nets
+  if(!out.length && fp.nets && typeof fp.nets === "object"){
+    for(const [k, n] of Object.entries(fp.nets)){
+      if(n) out.push({ pin: k, pad: null, net: String(n).trim() });
     }
   }
+
   return out;
 }
 
@@ -3687,6 +3817,50 @@ function simFpNetSet(fp){
     if(item.net && !isPwr(item.net)) set.add(item.net);
   }
   return set;
+}
+
+/* Extrait la valeur et la résistance en ohms d'une empreinte PCB (avec repli schéma) */
+function simPcbValeurResistance(fp){
+  const rawVal = fp.value || fp.val || fp.spec || (fp.props && (fp.props.VALUE || fp.props.Value)) || "";
+  let parsedR = pcbParseResistance(rawVal);
+  if(parsedR == null){
+    try {
+      let sch = null;
+      if(typeof sessLire === "function"){
+        const s = sessLire("schema");
+        sch = (s && s.etat && s.etat.doc) || (s && s.etat);
+      }
+      if(!sch && typeof pcbSchemaDoc === "function"){
+        sch = pcbSchemaDoc();
+      }
+      if(!sch && typeof localStorage !== "undefined"){
+        const raw = localStorage.getItem("cao_schema_backup") || localStorage.getItem("schema_auto");
+        if(raw) sch = JSON.parse(raw);
+      }
+      if(sch && Array.isArray(sch.pages)){
+        for(const pg of sch.pages){
+          const sc = (pg.comps || []).find(c => c && c.ref === fp.ref);
+          if(sc && (sc.value || sc.spec)){
+            const sv = pcbParseResistance(sc.value || sc.spec);
+            if(sv != null && sv >= 0){ parsedR = sv; break; }
+          }
+        }
+      }
+    } catch(e) {}
+  }
+  return { rawVal: String(rawVal).trim(), parsedR: parsedR };
+}
+
+/* Vérifie si l'empreinte PCB correspond à une résistance */
+function simEstResistancePcb(ref, val, type){
+  if(type && /resistor/i.test(String(type))) return true;
+  const r = String(ref || "").trim();
+  if(/^(R|RN|RP|RA|RES|RS)[0-9_]/i.test(r)) return true;
+  if(/^(R|RN|RP|RA|RES|RS)$/i.test(r)) return true;
+  if(/^R[A-Z0-9_-]*$/i.test(r)) return true;
+  const v = String(val || "").trim();
+  if(/(?:ohm|Ω|\b\d+[rR]\d*\b|\b\d+[kK]\d*\b)/i.test(v)) return true;
+  return false;
 }
 
 const SIM_PCB={
@@ -4020,34 +4194,52 @@ const SIM_PCB={
       return {erreur:"Aucun composant (source ou charge) trouvé sur le net "+net+" dans le schéma."};
     }
     
+    const prevBornes = SIM_DCB.bornes.slice();
     SIM_DCB.bornes=[];
     for(const s of sources){
-      SIM_DCB.bornes.push({
-        nom:s.nom,
-        x:s.pad.x, y:s.pad.y,
-        couche:s.couche,
-        net:net,
-        w:s.pad.w, h:s.pad.h, shape:s.pad.shape, rot:s.pad.rot,
-        couches:padLayers(s.fp,s.pad).slice(),
-        role:"source",
-        valeur:s.valeur,
-        unite:s.unite||"V",
-        provenance:"schema"
-      });
+      const exist = prevBornes.find(b=>Math.abs(b.x-s.pad.x)<1e-6&&Math.abs(b.y-s.pad.y)<1e-6&&b.couche===s.couche);
+      if(exist && exist.provenance === "manuel"){
+        SIM_DCB.bornes.push(exist);
+      } else {
+        SIM_DCB.bornes.push({
+          nom: (exist && exist.renomme) ? exist.nom : s.nom,
+          renomme: !!(exist && exist.renomme),
+          x: s.pad.x, y: s.pad.y,
+          couche: s.couche,
+          net: net,
+          w: s.pad.w, h: s.pad.h, shape: s.pad.shape, rot: s.pad.rot,
+          couches: padLayers(s.fp,s.pad).slice(),
+          role: "source",
+          valeur: s.valeur,
+          unite: s.unite||"V",
+          provenance: s.provenance||"catalogue",
+          compRef: s.compRef||(s.comp?s.comp.ref:""),
+          nbBroches: s.nbBroches||1
+        });
+      }
     }
     for(const c of charges){
-      SIM_DCB.bornes.push({
-        nom:c.nom,
-        x:c.pad.x, y:c.pad.y,
-        couche:c.couche,
-        net:net,
-        w:c.pad.w, h:c.pad.h, shape:c.pad.shape, rot:c.pad.rot,
-        couches:padLayers(c.fp,c.pad).slice(),
-        role:"charge",
-        valeur:c.valeur,
-        unite:c.unite||"A",
-        provenance:"schema"
-      });
+      const exist = prevBornes.find(b=>Math.abs(b.x-c.pad.x)<1e-6&&Math.abs(b.y-c.pad.y)<1e-6&&b.couche===c.couche);
+      if(exist && exist.provenance === "manuel"){
+        SIM_DCB.bornes.push(exist);
+      } else {
+        SIM_DCB.bornes.push({
+          nom: (exist && exist.renomme) ? exist.nom : c.nom,
+          renomme: !!(exist && exist.renomme),
+          x: c.pad.x, y: c.pad.y,
+          couche: c.couche,
+          net: net,
+          w: c.pad.w, h: c.pad.h, shape: c.pad.shape, rot: c.pad.rot,
+          couches: padLayers(c.fp,c.pad).slice(),
+          role: "charge",
+          valeur: c.valeur,
+          unite: c.unite||"A",
+          provenance: c.provenance||"catalogue",
+          compRef: c.compRef||(c.comp?c.comp.ref:""),
+          totalCompI: c.totalCompI,
+          nbBroches: c.nbBroches||1
+        });
+      }
     }
     const totI=charges.reduce((acc,c)=>acc+c.valeur,0);
     const totTxt=totI<0.001?simNb(totI*1e6,1)+" µA":(totI<1?simNb(totI*1e3,1)+" mA":simNb(totI,2)+" A");
@@ -4090,7 +4282,10 @@ const SIM_PCB={
      référence. Le panneau la pose, l'adaptateur la garde avec la pastille. */
   dcValeur:function(k,v){
     const b=SIM_DCB.bornes[k];
-    if(b)b.valeur=(+v)||0;
+    if(b){
+      b.valeur=(+v)||0;
+      b.provenance="manuel";
+    }
   },
 
   dcOublier:function(k){
@@ -4384,55 +4579,67 @@ const SIM_PCB={
 
   trouverPontSerie:function(netName){
     if(typeof S==="undefined"||!Array.isArray(S.fps)||!netName) return null;
-    const cleanTarget = String(netName).trim();
+    const cleanTarget = String(netName).replace(/\s*\([^)]*\)/g, "").split(/[\+,]/)[0].trim();
+    if(!cleanTarget) return null;
     const cleanTargetUpper = cleanTarget.toUpperCase();
     const isPwr=n=>/^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
-    const isResistor=(ref, val)=>/^(R|RN)\b/i.test(ref||"") || /^R\d+/i.test(ref||"") || /(?:ohm|Ω|\d+R\d*)/i.test(String(val||""));
-    const isPassiveRef=r=>/^(R|RN|L|FB|C)/i.test(r||"");
+    const isPassiveRef=r=>/^(R|RN|RP|RA|RES|RS|L|FB|C)/i.test(r||"");
+
     let fallback=null;
     for(const fp of S.fps){
+      if(!fp) continue;
+      const ref = fp.ref || ("U" + fp.id);
       const pn = simFpPadsNets(fp);
-      const fNets = [...new Set(pn.map(p=>p.net).filter(n=>n&&!isPwr(n)))];
-      if(fNets.length === 2){
-        const [nA, nB] = fNets;
-        const matchA = (nA.trim().toUpperCase() === cleanTargetUpper);
-        const matchB = (nB.trim().toUpperCase() === cleanTargetUpper);
-        if(nA !== nB && (matchA || matchB)){
-          const aval = (matchA ? nB : nA);
-          const rawVal = fp.value || fp.val || "";
-          let parsedR = (typeof pcbParseResistance === "function") ? pcbParseResistance(rawVal) : null;
-          if(parsedR == null && typeof sessLireSchema === "function"){
-            try {
-              const sch = sessLireSchema();
-              if(sch && Array.isArray(sch.pages)){
-                for(const pg of sch.pages){
-                  const sc = (pg.comps || []).find(c => c && c.ref === fp.ref);
-                  if(sc && (sc.value || sc.spec)){
-                    const sv = pcbParseResistance(sc.value || sc.spec);
-                    if(sv != null && sv >= 0){ parsedR = sv; break; }
-                  }
-                }
-              }
-            } catch(e) {}
+      const allNets = [...new Set(pn.map(p=>p.net).filter(n=>n&&!isPwr(n)))];
+      if(!allNets.some(n=>n.trim().toUpperCase() === cleanTargetUpper)) continue;
+
+      let aval = null;
+      if(allNets.length === 2){
+        const other = allNets.find(n=>n.trim().toUpperCase() !== cleanTargetUpper);
+        if(other) aval = other;
+      }else if(allNets.length > 2){
+        // Réseau de résistances ou multi-pins : apparier la broche associée
+        const targetPinObj = pn.find(p=>p.net && p.net.trim().toUpperCase() === cleanTargetUpper);
+        if(targetPinObj){
+          const pNum = parseInt(targetPinObj.pin, 10);
+          if(!isNaN(pNum)){
+            const pinNums = pn.map(p => parseInt(p.pin, 10)).filter(n => !isNaN(n));
+            const maxPin = pinNums.length ? Math.max(...pinNums) : 8;
+            const nTotal = Math.max(pn.length, maxPin);
+            const oppPin = String(nTotal + 1 - pNum);
+            const consPin = String(pNum % 2 === 1 ? pNum + 1 : pNum - 1);
+            let paired = pn.find(p => String(p.pin) === oppPin);
+            if(!paired) paired = pn.find(p => String(p.pin) === consPin);
+            if(paired && paired.net && paired.net.trim().toUpperCase() !== cleanTargetUpper){
+              aval = paired.net;
+            }
           }
-          const rOhms = (parsedR != null && parsedR >= 0) ? parsedR : 22;
-          const cleanVal = (rawVal ? String(rawVal).trim() : "") || (rOhms + "Ω");
-          const valSuffix = " " + (rOhms > 0 ? (rOhms + "Ω") : cleanVal);
-          const bridge = {
-            comp: fp.ref || "R",
-            val: cleanVal,
-            rOhms: rOhms,
-            netAmont: cleanTarget,
-            netAval: aval,
-            annotation: (fp.ref || "R") + valSuffix,
-            label: cleanTarget + " + " + aval + " (" + (fp.ref || "R") + valSuffix + ")"
-          };
-          if(isResistor(fp.ref, rawVal) || parsedR != null){
-            return bridge;
-          }
-          if(isPassiveRef(fp.ref) && !fallback){
-            fallback = bridge;
-          }
+        }
+        if(!aval){
+          const other = allNets.find(n=>n.trim().toUpperCase() !== cleanTargetUpper);
+          if(other) aval = other;
+        }
+      }
+
+      if(aval && aval.trim().toUpperCase() !== cleanTargetUpper){
+        const { rawVal, parsedR } = simPcbValeurResistance(fp);
+        const rOhms = (parsedR != null && parsedR >= 0) ? parsedR : 22;
+        const cleanVal = (parsedR != null && parsedR >= 0) ? (rOhms + "Ω") : (rawVal || (rOhms + "Ω"));
+        const valSuffix = " " + (rOhms >= 0 ? (rOhms + "Ω") : cleanVal);
+        const bridge = {
+          comp: ref || "R",
+          val: cleanVal,
+          rOhms: rOhms,
+          netAmont: cleanTarget,
+          netAval: aval,
+          annotation: (ref || "R") + valSuffix,
+          label: cleanTarget + " + " + aval + " (" + (ref || "R") + valSuffix + ")"
+        };
+        if(simEstResistancePcb(ref, rawVal, fp.type) || parsedR != null){
+          return bridge;
+        }
+        if(isPassiveRef(ref) && !fallback){
+          fallback = bridge;
         }
       }
     }
@@ -4464,22 +4671,37 @@ const SIM_PCB={
       }
     }
 
-    // 2. Nets chaînés via un composant passif série à 2 broches (ex: résistance d'adaptation R, ferrite L, capa C)
+    // 2. Nets chaînés via un composant passif série
     for(const fp of S.fps){
       if(fp===fp1||fp===fp2) continue;
+      const ref = fp.ref || ("U" + fp.id);
       const pn = simFpPadsNets(fp);
       const fNets=[...new Set(pn.map(p=>p.net).filter(n=>n&&!isPwr(n)))];
-      if(fNets.length===2){
-        const [nA, nB] = fNets;
-        if(nA!==nB){
-          const rawVal = fp.value || fp.val || "";
-          const parsedR = (typeof pcbParseResistance === "function") ? pcbParseResistance(rawVal) : null;
-          const rOhms = (parsedR != null && parsedR >= 0) ? parsedR : 22;
-          const valSuffix = " " + (rOhms > 0 ? (rOhms + "Ω") : (rawVal || "22Ω"));
-          if(s1.has(nA) && s2.has(nB)){
-            common.push(nA + " + " + nB + " (" + (fp.ref||"R") + valSuffix + ")");
-          }else if(s1.has(nB) && s2.has(nA)){
-            common.push(nB + " + " + nA + " (" + (fp.ref||"R") + valSuffix + ")");
+      if(fNets.length >= 2){
+        const { rawVal, parsedR } = simPcbValeurResistance(fp);
+        const rOhms = (parsedR != null && parsedR >= 0) ? parsedR : 22;
+        const cleanVal = (parsedR != null && parsedR >= 0) ? (rOhms + "Ω") : (rawVal || (rOhms + "Ω"));
+        const valSuffix = " " + (rOhms >= 0 ? (rOhms + "Ω") : cleanVal);
+
+        if(fNets.length === 2){
+          const [nA, nB] = fNets;
+          if(nA !== nB){
+            if(s1.has(nA) && s2.has(nB)){
+              common.push(nA + " + " + nB + " (" + (ref || "R") + valSuffix + ")");
+            }else if(s1.has(nB) && s2.has(nA)){
+              common.push(nB + " + " + nA + " (" + (ref || "R") + valSuffix + ")");
+            }
+          }
+        }else{
+          for(const nA of fNets){
+            if(s1.has(nA)){
+              for(const nB of fNets){
+                if(nA !== nB && s2.has(nB)){
+                  const label = nA + " + " + nB + " (" + (ref || "R") + valSuffix + ")";
+                  if(!common.includes(label)) common.push(label);
+                }
+              }
+            }
           }
         }
       }
@@ -4493,16 +4715,39 @@ const SIM_PCB={
     const isPwr=n=>/^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
     const bridges=[];
     for(const fp of S.fps){
+      const ref = fp.ref || ("U" + fp.id);
       const pn = simFpPadsNets(fp);
       const fNets=[...new Set(pn.map(p=>p.net).filter(n=>n&&!isPwr(n)))];
-      if(fNets.length===2){
-        const [nA, nB] = fNets;
-        if(nA!==nB){
-          const rawVal = fp.value || fp.val || "";
-          const parsedR = (typeof pcbParseResistance === "function") ? pcbParseResistance(rawVal) : null;
-          const rOhms = (parsedR != null && parsedR >= 0) ? parsedR : 22;
-          const valSuffix = " " + (rOhms > 0 ? (rOhms + "Ω") : (rawVal || "22Ω"));
-          bridges.push(nA + " + " + nB + " (" + (fp.ref||"R") + valSuffix + ")");
+      if(fNets.length >= 2){
+        const { rawVal, parsedR } = simPcbValeurResistance(fp);
+        const rOhms = (parsedR != null && parsedR >= 0) ? parsedR : 22;
+        const cleanVal = (parsedR != null && parsedR >= 0) ? (rOhms + "Ω") : (rawVal || (rOhms + "Ω"));
+        const valSuffix = " " + (rOhms >= 0 ? (rOhms + "Ω") : cleanVal);
+        if(fNets.length === 2){
+          const [nA, nB] = fNets;
+          if(nA !== nB){
+            bridges.push(nA + " + " + nB + " (" + (ref || "R") + valSuffix + ")");
+          }
+        }else if(simEstResistancePcb(ref, rawVal, fp.type)){
+          for(const p of pn){
+            if(!p.net || isPwr(p.net)) continue;
+            const pNum = parseInt(p.pin, 10);
+            if(isNaN(pNum)) continue;
+            const pinNums = pn.map(x => parseInt(x.pin, 10)).filter(n => !isNaN(n));
+            const maxPin = pinNums.length ? Math.max(...pinNums) : 8;
+            const nTotal = Math.max(pn.length, maxPin);
+            const oppPin = String(nTotal + 1 - pNum);
+            const consPin = String(pNum % 2 === 1 ? pNum + 1 : pNum - 1);
+            let paired = pn.find(x => String(x.pin) === oppPin);
+            if(!paired) paired = pn.find(x => String(x.pin) === consPin);
+            if(paired && paired.net && paired.net !== p.net && !isPwr(paired.net)){
+              const bLabel = p.net + " + " + paired.net + " (" + (ref || "R") + valSuffix + ")";
+              const revLabel = paired.net + " + " + p.net + " (" + (ref || "R") + valSuffix + ")";
+              if(!bridges.includes(bLabel) && !bridges.includes(revLabel)){
+                bridges.push(bLabel);
+              }
+            }
+          }
         }
       }
     }

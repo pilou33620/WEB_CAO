@@ -1,0 +1,58 @@
+{
+  "format": "pcbfp-1",
+  "name": "SOT-223",
+  "pkg": "SOT-223",
+  "pins": 4,
+  "style": "sop",
+  "pitch": 2.3,
+  "span": 6.3,
+  "pads": [
+    {
+      "n": 1,
+      "x": -3.15,
+      "y": -1.15,
+      "w": 1.89,
+      "h": 1.265,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": -3.15,
+      "y": 1.15,
+      "w": 1.89,
+      "h": 1.265,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 3,
+      "x": 3.15,
+      "y": 1.15,
+      "w": 1.89,
+      "h": 1.265,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 4,
+      "x": 3.15,
+      "y": -1.15,
+      "w": 1.89,
+      "h": 1.265,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -2.25,
+    "y1": -2.1825,
+    "x2": 2.25,
+    "y2": 2.1825
+  },
+  "description": "Boîtier CMS régulateur SOT-223 4 broches"
+}

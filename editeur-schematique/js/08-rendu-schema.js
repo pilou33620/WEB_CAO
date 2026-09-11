@@ -222,10 +222,25 @@ function drawDrawings(c){
     if(d.shape==="rect"){
       const rx=Math.min(d.x1,d.x2), ry=Math.min(d.y1,d.y2);
       const rw=Math.abs(d.x2-d.x1), rh=Math.abs(d.y2-d.y1);
+      if(d.isZone || d.category || (d.style==="dashed" && d.label)){
+        c.fillStyle = (d.color||"#6b7280") + "12";
+        c.fillRect(rx,ry,rw,rh);
+      }
       c.strokeRect(rx,ry,rw,rh);
       c.setLineDash([]);
       if(d.label){
-        TXT(c,d.label,rx+10,ry+14,11.5,d.color||"#6b7280","left");
+        if(d.isZone || d.category){
+          const tag = (d.category ? "["+d.category.toUpperCase()+"] " : "") + d.label;
+          c.font="600 11px system-ui, -apple-system, sans-serif";
+          const tw=c.measureText(tag).width;
+          const pw=Math.min(tw+14, Math.max(rw-10, 40));
+          c.fillStyle=d.color||"#f59e0b";
+          c.fillRect(rx,ry,pw,20);
+          c.fillStyle="#111827";
+          c.fillText(tag,rx+7,ry+14);
+        }else{
+          TXT(c,d.label,rx+10,ry+14,11.5,d.color||"#6b7280","left");
+        }
       }
     }else{
       c.beginPath();

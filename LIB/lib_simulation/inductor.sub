@@ -1,0 +1,6 @@
+* Modele SPICE Inductance avec resistance serie (DCR) et capacite parasite
+.subckt INDUCTOR 1 2 PARAMS: L=10u DCR=0.1 Cpar=2pF
+L1 1 3 {L}
+R_dcr 3 2 {DCR}
+C_par 1 2 {Cpar}
+.ends INDUCTOR

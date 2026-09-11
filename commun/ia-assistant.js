@@ -14,7 +14,7 @@
 (function() {
   /* ---------- État privé éphémère ---------- */
   let _cleApi = "";             // Variable en mémoire vive uniquement, JAMAIS persistée
-  let _modele = "gemma-4-31b-it"; // Modèle Google AI Studio
+  let _modele = "gemini-2.5-flash"; // Modèle Google AI Studio (Gemini 2.5 Flash, Gemini 2.5 Pro ou Gemma 4)
   let _historique = [];         // Messages de la session en cours
   let _enAttente = false;       // Requête en cours
   let _inclureContexte = true;  // Transmettre l'état CAO courant
@@ -24,7 +24,7 @@
   /* ---------- Détection de l'outil courant ---------- */
   function detecterOutil() {
     const p = (typeof window !== "undefined" && window.location && window.location.pathname) ? window.location.pathname.toLowerCase() : "";
-    if (p.includes("pcb") || (typeof S !== "undefined" && S && Array.isArray(S.fp))) return "pcb";
+    if (p.includes("pcb") || (typeof S !== "undefined" && S && (Array.isArray(S.fps) || Array.isArray(S.fp)))) return "pcb";
     if (p.includes("ipc") || (typeof V !== "undefined" && V && typeof V.modele !== "undefined")) return "ipc2581";
     return "schema";
   }
@@ -111,9 +111,10 @@
           const cu = S.layers.filter(l => l && l.cu);
           resume.push("Empilage cuivre : " + cu.length + " couche(s).");
         }
-        if (Array.isArray(S.fp) && S.fp.length > 0) {
-          const fpList = S.fp.map(f => (f.ref || "Fp") + (f.value ? (" [" + f.value + "]") : "") + (f.pkg ? (" (" + f.pkg + ")") : ""));
-          resume.push("\nComposants posés sur le PCB (" + S.fp.length + ") :\n  * " + fpList.slice(0, 40).join("\n  * ") + (fpList.length > 40 ? ("\n  * ... (" + (fpList.length - 40) + " autres)") : ""));
+        const fpsArr = Array.isArray(S.fps) ? S.fps : (Array.isArray(S.fp) ? S.fp : []);
+        if (fpsArr.length > 0) {
+          const fpList = fpsArr.map(f => (f.ref || "Fp") + ((f.val || f.value) ? (" [" + (f.val || f.value) + "]") : "") + ((f.pkg || f.package) ? (" (" + (f.pkg || f.package) + ")") : ""));
+          resume.push("\nComposants posés sur le PCB (" + fpsArr.length + ") :\n  * " + fpList.slice(0, 40).join("\n  * ") + (fpsArr.length > 40 ? ("\n  * ... (" + (fpsArr.length - 40) + " autres)") : ""));
         }
         if (Array.isArray(S.tracks)) {
           resume.push("\nRoutage : " + S.tracks.length + " segments de piste" + (Array.isArray(S.vias) ? (", " + S.vias.length + " vias") : "") + ".");
@@ -258,11 +259,13 @@
       }
 
       if (S.sel && S.sel.fps && S.sel.fps.size > 0) {
-        const fps = Array.from(S.sel.fps).map(f => ({
-          ref: f.ref,
-          val: f.val,
-          package: f.package,
-          layer: f.layer,
+        const tousFps = Array.isArray(S.fps) ? S.fps : (Array.isArray(S.fp) ? S.fp : []);
+        const selFps = tousFps.filter(f => S.sel.fps.has(f.id) || S.sel.fps.has(f));
+        const fps = selFps.map(f => ({
+          ref: f.ref || "Fp",
+          val: f.val || f.value || "",
+          package: f.pkg || f.package || "",
+          layer: f.layer != null ? f.layer : 0,
           padsCount: (f.pads || []).length
         }));
         return {
@@ -584,7 +587,11 @@
         '<div class="ia-panel-status" id="iaPanelStatus" hidden>' +
           '<div class="ia-status-left">' +
             '<span class="ia-status-dot"></span>' +
-            '<span class="ia-status-model">Gemma 4 31B</span>' +
+            '<select id="iaModelSelect" class="ia-model-select" title="Modèle d\'IA Google AI Studio">' +
+              '<option value="gemini-2.5-flash">Gemini 2.5 Flash</option>' +
+              '<option value="gemini-2.5-pro">Gemini 2.5 Pro</option>' +
+              '<option value="gemma-4-31b-it">Gemma 4 31B</option>' +
+            '</select>' +
             '<span class="ia-status-ctx" id="iaContextText">Prêt</span>' +
           '</div>' +
           '<div class="ia-status-actions">' +
@@ -605,7 +612,7 @@
         /* 5. Pied de panneau : Saisie de message et envoi */
         '<div class="ia-footer">' +
           '<div class="ia-input-row">' +
-            '<textarea id="iaInput" class="ia-textarea" rows="2" placeholder="Posez votre question technique à Gemma 4 31B... (Entrée pour envoyer, Maj+Entrée pour nouvelle ligne)"></textarea>' +
+            '<textarea id="iaInput" class="ia-textarea" rows="2" placeholder="Posez votre question technique à l\'Assistant IA... (Entrée pour envoyer, Maj+Entrée pour nouvelle ligne)"></textarea>' +
             '<button type="button" class="ia-btn-send" id="iaBtnSend" title="Envoyer le message (Entrée)">' +
               '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>' +
             '</button>' +
@@ -614,10 +621,21 @@
             '<label title="Transmet un résumé technique du circuit/carte pour guider la réponse">' +
               '<input type="checkbox" id="iaChkContext" checked> Contexte projet' +
             '</label>' +
-            '<span>Gemma 4 31B · Session éphémère</span>' +
+            '<span id="iaFooterModelLabel">Google AI Studio · Session active</span>' +
           '</div>' +
         '</div>' +
       '</div>';
+
+    /* Modèle sélectionné */
+    const selModel = document.getElementById("iaModelSelect");
+    if (selModel) {
+      selModel.value = _modele;
+      selModel.addEventListener("change", function() {
+        _modele = this.value;
+        const lbl = document.getElementById("iaFooterModelLabel");
+        if (lbl) lbl.textContent = this.options[this.selectedIndex].text + " · Session active";
+      });
+    }
 
     /* Bouton fermer dans l'en-tête du panneau workspace */
     const panelSection = document.querySelector('.pnl[data-pnl="ia"]');
@@ -728,7 +746,8 @@
       }
       return;
     }
-    _cleApi = val; // Mémorisé UNIQUEMENT dans la variable en mémoire vive (RAM)
+    _cleApi = val; // Mémorisé dans la variable RAM et synchronisé dans la session
+    try { sessionStorage.setItem("cao_ia_cle", val); } catch (_) {}
     input.value = ""; // Vider immédiatement le champ HTML
     basculerVersChat();
 
@@ -772,9 +791,10 @@
     }
   }
 
-  /* ---------- Purge stricte de la clé en mémoire vive ---------- */
+  /* ---------- Purge de la clé ---------- */
   function iaPurgerCle() {
     _cleApi = "";
+    try { sessionStorage.removeItem("cao_ia_cle"); } catch (_) {}
     _historique = [];
     _questionEnAttente = "";
     iaCacherMenuContextuel();
@@ -890,6 +910,16 @@
           // Recherche par référence exacte (insensible à la casse, ex: R1, C1)
           let comp = S.comps.find(c => (c.ref || "").trim().toUpperCase() === refCible.toUpperCase());
 
+          // Si non trouvé sur la feuille active, chercher sur les autres feuilles
+          if (!comp && Array.isArray(S.pages)) {
+            for (const p of S.pages) {
+              if (Array.isArray(p.comps)) {
+                comp = p.comps.find(c => (c.ref || "").trim().toUpperCase() === refCible.toUpperCase());
+                if (comp) break;
+              }
+            }
+          }
+
           // Si non trouvé par référence exacte et qu'il y a des composants sélectionnés
           if (!comp && S.sel && S.sel.size > 0) {
             const selComps = S.comps.filter(c => S.sel.has(c.id));
@@ -993,12 +1023,12 @@
     
     // Extraction des blocs de code ```lang ... ``` et des blocs ```action ... ```
     const codeBlocks = [];
-    let txt = texte.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, function(_, lang, code) {
+    let txt = texte.replace(/```([a-zA-Z0-9_:-]*)[^\S\r\n]*\r?\n([\s\S]*?)```/g, function(_, lang, code) {
       const idx = codeBlocks.length;
       const langLower = (lang || "").toLowerCase();
 
-      // Interception des blocs d'action interactive
-      if (langLower === "action") {
+      // Interception des blocs d'action interactive (```action, ```action:pcb, ```action:sch, etc.)
+      if (langLower === "action" || langLower.startsWith("action:")) {
         try {
           const act = JSON.parse(code.trim());
           const b64 = encoderBase64Utf8(JSON.stringify(act));
@@ -1396,31 +1426,20 @@
           text: "Bien reçu. Je réponds exclusivement en langue française, avec rigueur et clarté technique, directement et sans aucun préambule ou méta-commentaire en anglais. Je suis prêt à analyser vos schémas et projets CAO."
         }]
       });
-
-      const messagesPourApi = _historique.filter(m => !m.localManual);
-      messagesPourApi.forEach((m, idx) => {
-        let txtMsg = (m.parts && m.parts[0] && m.parts[0].text) ? m.parts[0].text : "";
-        if (idx === 0 && contexteProjetTexte) {
-          txtMsg = contexteProjetTexte + "\n\n" + txtMsg;
-        }
-        contents.push({
-          role: m.role,
-          parts: [{ text: txtMsg }]
-        });
-      });
-    } else {
-      const messagesPourApi = _historique.filter(m => !m.localManual);
-      messagesPourApi.forEach((m, idx) => {
-        let txtMsg = (m.parts && m.parts[0] && m.parts[0].text) ? m.parts[0].text : "";
-        if (idx === 0 && contexteProjetTexte) {
-          txtMsg = contexteProjetTexte + "\n\n" + txtMsg;
-        }
-        contents.push({
-          role: m.role,
-          parts: [{ text: txtMsg }]
-        });
-      });
     }
+
+    const messagesPourApi = _historique.filter(m => !m.localManual);
+    messagesPourApi.forEach((m, idx) => {
+      let txtMsg = (m.parts && m.parts[0] && m.parts[0].text) ? m.parts[0].text : "";
+      // Injecter le contexte projet le plus frais au dernier message de l'utilisateur
+      if (idx === messagesPourApi.length - 1 && m.role === "user" && contexteProjetTexte) {
+        txtMsg = contexteProjetTexte + "\n\n" + txtMsg;
+      }
+      contents.push({
+        role: m.role,
+        parts: [{ text: txtMsg }]
+      });
+    });
 
     const corps = {
       contents: contents,
@@ -1518,7 +1537,7 @@
    * Ouvre la section IA dans l'espace de travail.
    * Si la clé API n'a pas été saisie pour cette ouverture, la redemande.
    */
-  window.iaOuvrir = function() {
+  window.iaOuvrir = async function() {
     construireDom();
     if (typeof wsShow === "function") {
       wsShow("ia");
@@ -1530,6 +1549,27 @@
 
     const btn = document.getElementById("bIaAssistant");
     if (btn) btn.classList.add("on");
+
+    if (!_cleApi) {
+      // 1. Tenter depuis la session courante
+      try {
+        const stocke = sessionStorage.getItem("cao_ia_cle");
+        if (stocke) _cleApi = stocke;
+      } catch (_) {}
+
+      // 2. Tenter depuis le serveur local (/api/ia/cle)
+      if (!_cleApi) {
+        try {
+          const resp = await fetch("/api/ia/cle");
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data && data.dispo && data.cle) {
+              _cleApi = data.cle;
+            }
+          }
+        } catch (_) {}
+      }
+    }
 
     if (!_cleApi) {
       afficherEcranCle();

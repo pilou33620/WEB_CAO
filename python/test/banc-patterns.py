@@ -118,10 +118,85 @@ def test_analyser_motifs_complet():
     print("[PASS] test_analyser_motifs_complet")
 
 
+def test_alimentation_buck():
+    comps = {
+        "U1": {"val": "MP1584", "type": "ic"},
+        "L1": {"val": "10uH", "type": "inductor"},
+        "D1": {"val": "B5819W", "type": "diode"},
+        "C1": {"val": "10uF", "type": "cap"},
+        "C2": {"val": "22uF", "type": "cap"},
+        "R1": {"val": "10k", "type": "res"},
+        "R2": {"val": "3.3k", "type": "res"}
+    }
+    nets = {
+        "VIN": [{"ref": "U1", "pin": 1}, {"ref": "C1", "pin": 1}],
+        "SW": [{"ref": "U1", "pin": 2}, {"ref": "L1", "pin": 1}, {"ref": "D1", "pin": 1}],
+        "VOUT": [{"ref": "L1", "pin": 2}, {"ref": "C2", "pin": 1}, {"ref": "R1", "pin": 1}],
+        "FB": [{"ref": "U1", "pin": 3}, {"ref": "R1", "pin": 2}, {"ref": "R2", "pin": 1}],
+        "GND": [{"ref": "U1", "pin": 4}, {"ref": "D1", "pin": 2}, {"ref": "C1", "pin": 2}, {"ref": "C2", "pin": 2}, {"ref": "R2", "pin": 2}]
+    }
+    alims = identifier_alimentations(comps, nets)
+    assert len(alims) >= 1
+    buck = [a for a in alims if a.get("subtype") == "switching_regulator"][0]
+    assert buck["layout_template"] == "buck_compact"
+    assert buck["role_map"]["ic"] == "U1"
+    assert buck["role_map"]["sw_inductor"] == "L1"
+    assert "D1" in buck["role_map"]["diodes"]
+    assert "C1" in buck["role_map"]["cin"]
+    assert "C2" in buck["role_map"]["cout"]
+    print("[PASS] test_alimentation_buck")
+
+
+def test_zones_schematiques():
+    comps = {
+        "U1": {"val": "AMS1117-3.3", "type": "ic"},
+        "C1": {"val": "10uF", "type": "cap"},
+        "C2": {"val": "10uF", "type": "cap"},
+        "U2": {"val": "STM32F103", "type": "ic"},
+        "C3": {"val": "100nF", "type": "cap"}
+    }
+    nets = {
+        "VCC": [{"ref": "U1", "pin": 2}, {"ref": "C2", "pin": 1}, {"ref": "U2", "pin": 1}, {"ref": "C3", "pin": 1}],
+        "GND": [{"ref": "U1", "pin": 1}, {"ref": "C1", "pin": 2}, {"ref": "C2", "pin": 2}, {"ref": "U2", "pin": 2}, {"ref": "C3", "pin": 2}]
+    }
+    zones = [
+        {
+            "id": "zone_alim",
+            "nom": "Alimentation 3.3V",
+            "categorie": "Alimentation",
+            "couleur": "#f59e0b",
+            "composants": ["U1", "C1", "C2"]
+        },
+        {
+            "id": "zone_mcu",
+            "nom": "Cœur MCU",
+            "categorie": "MCU",
+            "couleur": "#3fa0ea",
+            "composants": ["U2", "C3"]
+        }
+    ]
+    res = analyser_motifs_schema({"components": comps, "nets": nets, "zones": zones})
+    assert res["succes"] is True
+    assert "zones" in res
+    assert len(res["zones"]) == 2
+    assert res["zones"][0]["nom"] == "Alimentation 3.3V"
+    assert res["zones"][0]["ancre"] == "U1"
+    assert res["zones"][1]["ancre"] == "U2"
+    # Les zones doivent être incluses dans les motifs
+    zm = [m for m in res["motifs"] if m.get("is_user_zone")]
+    assert len(zm) == 2
+    assert zm[0]["layout_template"] in ("buck_compact", "ldo_inline")
+    assert zm[1]["layout_template"] == "mcu_decoupling"
+    print("[PASS] test_zones_schematiques")
+
+
 if __name__ == "__main__":
     test_alimentation_ldo()
+    test_alimentation_buck()
     test_bus_i2c()
     test_oscillateur()
     test_filtre_rc()
     test_analyser_motifs_complet()
+    test_zones_schematiques()
     print("\n TOUS LES TESTS DE PATTERN_RECOGNITION SONT VALIDÉS AVEC SUCCÈS.")
+

@@ -1,0 +1,6 @@
+* Modele SPICE Transistor NPN petit signal (2N3904)
+.model Q2N3904 NPN (Is=1E-14 Vaf=100 Bf=300 Ikf=0.4 Xtb=1.5 Br=4 Cjc=4p Cje=8p Rb=10 Rc=1)
+.subckt BJT_NPN 1 2 3
+* 1=Collecteur, 2=Base, 3=Emetteur
+Q1 1 2 3 Q2N3904
+.ends BJT_NPN

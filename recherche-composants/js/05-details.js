@@ -38,6 +38,8 @@ function bouton(libelle,outil,args,titre){
 function actionsHTML(o){
   const b=[], ref=o.model||o.mfr_part_number||o.mpn||o.part_number||o.product_number;
   if(o.lcsc){
+    b.push('<button class="tb mini primary" data-act-lib="'+esc(o.lcsc)+
+           '" title="Importer directement dans Gestion LIB (39 colonnes normalisées)">⚡ Ajouter à Gestion LIB</button>');
     b.push('<button class="tb mini" data-act-copie="'+esc(o.lcsc)+
            '" title="Copier le code LCSC">Copier '+esc(o.lcsc)+"</button>");
     b.push(bouton("Fiche complète","jlc_get_part",{lcsc:o.lcsc}));
@@ -134,6 +136,12 @@ function brancherActions(){
         navigator.clipboard.writeText(t).then(function(){hint(t+" copié.");},
                                               function(){hint("Copie refusée par le navigateur.");});
       else hint("Copie indisponible : "+t);
+      return;
+    }
+    const lib=ev.target.closest("[data-act-lib]");
+    if(lib){
+      const c=lib.dataset.actLib;
+      window.open("../gestion-lib/gestion-lib.html?importer_lcsc="+encodeURIComponent(c), "_blank");
       return;
     }
     const b=ev.target.closest("[data-act-outil]");

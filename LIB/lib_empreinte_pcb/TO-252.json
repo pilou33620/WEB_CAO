@@ -1,0 +1,48 @@
+{
+  "format": "pcbfp-1",
+  "name": "TO-252",
+  "pkg": "TO-252",
+  "pins": 3,
+  "style": "sop",
+  "pitch": 2.3,
+  "span": 6.5,
+  "pads": [
+    {
+      "n": 1,
+      "x": -3.25,
+      "y": -1.15,
+      "w": 1.95,
+      "h": 1.265,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": -3.25,
+      "y": 1.15,
+      "w": 1.95,
+      "h": 1.265,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 3,
+      "x": 3.25,
+      "y": 0,
+      "w": 1.95,
+      "h": 1.265,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -2.35,
+    "y1": -2.1825,
+    "x2": 2.35,
+    "y2": 2.1825
+  },
+  "description": "Boîtier puissance CMS TO-252 (DPAK)"
+}

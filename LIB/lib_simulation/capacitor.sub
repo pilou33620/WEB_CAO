@@ -1,0 +1,6 @@
+* Modele SPICE Condensateur reel avec ESR et ESL
+.subckt CAPACITOR 1 2 PARAMS: C=100n ESR=0.05 ESL=1nH
+C1 1 3 {C}
+R_esr 3 4 {ESR}
+L_esl 4 2 {ESL}
+.ends CAPACITOR

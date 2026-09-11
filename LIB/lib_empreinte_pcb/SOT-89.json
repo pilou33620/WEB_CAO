@@ -1,0 +1,48 @@
+{
+  "format": "pcbfp-1",
+  "name": "SOT-89",
+  "pkg": "SOT-89",
+  "pins": 3,
+  "style": "sop",
+  "pitch": 1.5,
+  "span": 3,
+  "pads": [
+    {
+      "n": 1,
+      "x": -1.5,
+      "y": -0.75,
+      "w": 0.9,
+      "h": 0.825,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": -1.5,
+      "y": 0.75,
+      "w": 0.9,
+      "h": 0.825,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 3,
+      "x": 1.5,
+      "y": 0,
+      "w": 0.9,
+      "h": 0.825,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -0.6,
+    "y1": -1.5625,
+    "x2": 0.6,
+    "y2": 1.5625
+  },
+  "description": "Boîtier CMS SOT-89 3 broches"
+}

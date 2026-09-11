@@ -6,7 +6,6 @@ Formulation MPIE (Mixed Potential Integral Equation) en milieu stratifié
 import numpy as np
 import logging
 from typing import Dict, List, Optional, Tuple
-from numba import njit, prange
 
 try:
     from .mesher import RWGBasis
@@ -738,143 +737,14 @@ def fill_z_matrix(rwg_basis: List[RWGBasis], freq: float,
     return z_matrix
 
 
-@njit(parallel=True)
-def fill_z_matrix_freespace_numba(centers: np.ndarray, edge_lengths: np.ndarray,
-                                  areas: np.ndarray, freq: float) -> np.ndarray:
-    """
-    Noyau Numba : matrice Z de RÉFÉRENCE EN ESPACE LIBRE (benchmark uniquement)
-
-    ATTENTION - Ne pas utiliser dans le pipeline de simulation.
-
-    Le retour d'analyse signalait ce noyau comme « code mort ». Le brancher
-    dans fill_z_matrix serait toutefois pire que de le laisser inutilisé :
-    il n'a accès ni au stackup ni aux images DCIM, et suppose donc un milieu
-    homogène en espace libre. Sur un microruban sur FR4, il ignorerait le
-    couplage piste/plan de masse à travers le diélectrique et renverrait des
-    paramètres S plausibles mais faux, sans aucun avertissement.
-
-    Il évalue en outre la fonction de Green au centre de l'arête (1 point),
-    ce qui est précisément l'erreur de quadrature corrigée au point 2.2.
-
-    Pour accélérer réellement l'assemblage stratifié, il faudrait tabuler les
-    deux noyaux de `NoyauxGreen` sur une grille de rho par fréquence puis
-    interpoler dans un noyau nopython. C'est un chantier distinct, avec sa
-    propre validation d'erreur d'interpolation. Le cache de moments par paire
-    de triangles (voir `MomentsTriangles`) est le gain qui a été pris, parce
-    qu'il est exact ; celui-là ne l'est pas.
-
-    Conservé comme référence analytique pour tests de non-régression : sur une
-    géométrie sans substrat (epsilon_r = 1), le chemin Python doit converger
-    vers ce résultat au raffinement du maillage.
-
-    Args:
-        centers: Nx3 array des centres des arêtes
-        edge_lengths: N array des longueurs d'arêtes
-        areas: Nx2 array des aires (T+, T-)
-        freq: Fréquence
-
-    Returns:
-        Matrice Z en espace libre homogène
-    """
-    n = len(centers)
-    z_matrix = np.zeros((n, n), dtype=np.complex128)
-    omega = 2 * np.pi * freq
-    k = omega / 3e8
-    
-    for m in prange(n):
-        for n_idx in range(n):
-            if m == n_idx:
-                # Auto-interaction
-                area_avg = (areas[m, 0] + areas[m, 1]) / 2
-                r_eq = np.sqrt(area_avg / np.pi)
-                z_matrix[m, n_idx] = 1j * omega * MU_0 / (4 * np.pi) * np.log(2 * r_eq)
-            else:
-                # Interaction mutuelle
-                r_vec = centers[m] - centers[n_idx]
-                r = np.sqrt(r_vec[0]**2 + r_vec[1]**2 + r_vec[2]**2)
-                
-                if r > 1e-10:
-                    g = np.exp(-1j * k * r) / (4 * np.pi * r)
-                    l_m = edge_lengths[m]
-                    l_n = edge_lengths[n_idx]
-                    a_m = (areas[m, 0] + areas[m, 1]) / 2
-                    a_n = (areas[n_idx, 0] + areas[n_idx, 1]) / 2
-                    
-                    z_matrix[m, n_idx] = -1j * omega * MU_0 * l_m * l_n / (4 * a_m * a_n) * g
-    
-    return z_matrix
-
-
-# ==========================================================================
-# LE PORT VERTICAL A DEMENAGE, ET CE QUI ETAIT ICI A ETE SUPPRIME (2026-08-30)
-# --------------------------------------------------------------------------
-# CE QU'IL Y AVAIT : `_creer_via_port()`, `excitation_via_port()` et
-# `courant_total_via()`. Elles annoncaient un port vertical et n'en faisaient
-# pas un. `excitation_via_port` cherchait les aretes HORIZONTALES situees a
-# moins d'un demi-millimetre du via et leur posait une tension ponderee par
-# « 1 - distance/seuil » -- un poids qui ne vient d'aucun calcul, sur des
-# fonctions de base qui ne portent aucun courant vertical. `_creer_via_port`
-# empilait des sommets et UN triangle sans jamais rendre de fonction de base,
-# et sa propre suite de commentaires le disait (« Pour simplifier », « on
-# approxime »). `courant_total_via` sommait des courants d'aretes voisines
-# sans signe, donc sans savoir dans quel sens ils traversaient quoi que ce
-# soit.
-#
-# POURQUOI LES SUPPRIMER PLUTOT QUE LES LAISSER. Elles etaient exportees par
-# `mom_solver/__init__.py`, donc appelables, et leur nom promettait ce que le
-# corps ne faisait pas. Du code faux qu'on peut appeler finit par etre appele.
-#
-# CE QUI LES REMPLACE, ET OU :
-#   · le MAILLAGE du fut et les demi-RWG du bas -- `mesher.percer_via_port`,
-#     `mesher.demi_rwg_du_bas`, `mesher.maillage_avec_ports_verticaux` ;
-#   · la PHYSIQUE du courant vertical -- `green_layered.green_spectral_zz` et
-#     `green_layered.noyaux_verticaux` ;
-#   · l'EXCITATION -- rien de nouveau : la coupe rendue par
-#     `maillage_avec_ports_verticaux` passe dans `vecteur_de_coupe` et
-#     `courant_de_coupe` comme n'importe quelle autre, parce que la fente du
-#     bas du fut EST une coupe au sens de ce module ;
-#   · le DE-EMBARQUEMENT -- `solver_extract.deembarquement_deux_longueurs`.
-# ==========================================================================
-#
-#     |Y21 / Y11| = 1,5 . 10^-5      |S11| = 1,0000     |S21| = 0,0000
-#
-# CE N'EST PAS UNE IMPRECISION, C'EST UN COURT-CIRCUIT. Une tension imposee sur
-# une seule arete interne d'un ruban continu est contournee par le metal d'a
-# cote : le courant fait le tour de la « fente » par les triangles voisins sans
-# jamais descendre la ligne. L'admittance vue est celle de cette boucle locale
-# -- pres d'un siemens, soit une impedance d'entree de l'ordre de l'ohm -- et
-# elle noie completement le chemin utile. Le solveur rendait donc |S21| = 0
-# quelle que soit la geometrie, et aucun travail sur la fonction de Green ne
-# l'aurait montre.
-#
-# ORIENTER MIEUX L'ARETE NE SUFFIT PAS, et c'est mesure aussi : en prenant la
-# mieux alignee sur l'axe de la ligne, |Y21/Y11| tombe a 3,4 . 10^-6 -- ca
-# empire. En excitant toutes les aretes bien alignees du voisinage, 5 . 10^-4.
-# Toujours rien.
-#
-# CE QU'IL FAUT EST UNE COUPE COMPLETE : un ensemble d'aretes tel que TOUT
-# chemin de courant d'un cote a l'autre en traverse une. Alors la tension n'est
-# plus contournable, et le modele delta-gap redevient ce qu'il est cense etre.
-#
-# ET UNE COUPE SE RECONNAIT SANS GEOMETRIE COMPLIQUEE. On coupe l'ensemble des
-# TRIANGLES par un plan ; les aretes de la coupe sont exactement celles dont les
-# deux triangles tombent de part et d'autre. C'est, par construction, la
-# frontiere entre les deux paquets de triangles : rien ne passe d'un paquet a
-# l'autre sans franchir une de ces aretes. Le critere ne suppose ni maillage
-# regulier, ni piste rectiligne, et il vaut aussi bien pour un port au bord
-# qu'au milieu d'un plan.
-#
-# CE QUE CETTE VERSION NE FAIT TOUJOURS PAS -- le « lot 5 bis » de A-FAIRE :
-#   · pas de DE-EMBARQUEMENT. La coupe porte encore la reactance de la
-#     discontinuite d'acces ; sur une ligne courte elle n'est pas negligeable.
-#     Se fait par la methode des deux longueurs, et demande deux resolutions ;
-#   · pas de pastille, de via, ni de connecteur : le port est une fente idelae
-#     dans le plan du cuivre ;
-#   · la DIRECTION du port est deduite -- du champ 'direction' quand le JSON le
-#     porte, sinon du centre de gravite du maillage. Juste pour un acces en
-#     bout de piste, ce qui est le cas courant ; a revoir pour un port au
-#     milieu d'une structure.
-# ==========================================================================
+# LE NOYAU NUMBA D'ESPACE LIBRE A ETE RETIRE (1.1.0). C'etait une matrice Z
+# de reference EN ESPACE LIBRE, ecrite pour un etalonnage, et personne ne
+# l'appelait -- ni le moteur, ni la route, ni un banc. Elle coutait
+# pourtant `from numba import njit, prange` EN DUR en tete de ce module :
+# numba etait donc une dependance obligatoire de /api/simulation-25d, par
+# le seul fait d'exister. La physique de ce solveur est STRATIFIEE, jamais
+# en espace libre ; l'etalon qui compte est `mom_solver/tests/banc_dcim.py`,
+# qui compare la fonction de Green a l'integrale de Sommerfeld.
 
 def _cotes_du_plan(vertices, elements, point, normale):
     """De quel cote du plan tombe chaque triangle (par son centre de gravite)."""
@@ -1053,22 +923,8 @@ def build_v_vector(rwg_basis: List[RWGBasis], ports: List[Dict], freq: float,
     return v
 
 
-def apply_preconditioner(z_matrix: np.ndarray) -> np.ndarray:
-    """
-    Applique un préconditionneur pour améliorer le conditionnement
-    
-    Args:
-        z_matrix: Matrice d'impédance
-        
-    Returns:
-        Matrice préconditionnée
-    """
-    # Préconditionneur diagonal simple
-    diag = np.diag(z_matrix)
-    diag_sqrt = np.sqrt(np.abs(diag))
-    
-    precond = np.diag(1.0 / (diag_sqrt + 1e-12))
-    
-    z_precond = precond @ z_matrix @ precond
-    
-    return z_precond, precond
+# `apply_preconditioner` A ETE RETIRE (1.1.0) : personne ne l'appelait, et
+# la resolution passe par une factorisation LU directe (`lu_factor` /
+# `lu_solve` dans `solver_extract.compute_s_parameters`), qui n'a pas
+# besoin d'un preconditionneur. Il rendait d'ailleurs un COUPLE la ou son
+# annotation promettait une matrice -- signe qu'il n'avait jamais servi.

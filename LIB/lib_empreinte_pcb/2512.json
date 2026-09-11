@@ -1,0 +1,38 @@
+{
+  "format": "pcbfp-1",
+  "name": "2512",
+  "pkg": "2512",
+  "pins": 2,
+  "style": "chip",
+  "pitch": 6.2,
+  "span": 6.2,
+  "pads": [
+    {
+      "n": 1,
+      "x": -3.1,
+      "y": 0,
+      "w": 3.41,
+      "h": 3.844,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 3.1,
+      "y": 0,
+      "w": 3.41,
+      "h": 3.844,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -5.055,
+    "y1": -2.272,
+    "x2": 5.055,
+    "y2": 2.272
+  },
+  "description": "CMS 2512 (6.3 x 3.2 mm) shunt de puissance"
+}

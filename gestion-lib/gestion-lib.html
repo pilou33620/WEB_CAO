@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gestion LIB — CAO Web</title>
+<link rel="stylesheet" href="../commun/tactile.css">
+<link rel="stylesheet" href="css/gestion-lib.css">
+</head>
+<body>
+
+  <!-- En-tête de l'application -->
+  <header class="app-header">
+    <div class="brand">
+      <i></i>
+      <b>Gestion LIB</b>
+      <span>CATALOGUE · EMPREINTES · MODÈLES</span>
+    </div>
+
+    <div class="header-tools">
+      <a href="../index.html" class="tb" title="Retour au tableau de bord principal">⌂ Accueil</a>
+      <a href="../editeur-schematique/editeur-schematique.html" class="tb" title="Ouvrir l'éditeur schématique">Éditeur schématique</a>
+      <a href="../editeur-pcb/editeur-pcb.html" class="tb" title="Ouvrir l'éditeur PCB">Éditeur PCB</a>
+      <a href="../recherche-composants/recherche-composants.html" class="tb" title="Recherche de composants JLCPCB">Recherche composants</a>
+      <a href="../visionneuse-ipc2581/visionneuse-ipc2581.html" class="tb" title="Ouvrir la visionneuse IPC-2581">Visionneuse IPC-2581</a>
+      <div class="sep"></div>
+      <button class="tb" id="bNewPcb" title="Créer une nouvelle empreinte PCB">📐 Nouvelle empreinte</button>
+      <button class="tb" id="bNewSch" title="Créer un nouveau symbole schématique">⚡ Nouveau symbole</button>
+      <button class="tb" id="bNewComp">➕ Nouveau composant</button>
+      <button class="tb jlc-btn" id="bImportJlc" onclick="ouvrirModalImportJlc()" title="Importer directement un composant JLCPCB / LCSC">⚡ Importer JLCPCB / LCSC</button>
+      <button class="tb" id="bAutoAssoc" title="Associe automatiquement les empreintes PCB et symboles selon le préfixe et boîtier">🔄 Auto-associer</button>
+      <button class="tb" id="bExportCsv" title="Télécharger le fichier CSV mis à jour">📥 Exporter CSV</button>
+      <button class="tb success" id="bSave" title="Enregistrer les modifications sur le serveur (LIB/LIB_composants.csv)">💾 Enregistrer</button>
+      <button class="tb primary" id="bModeIaLib" title="Ouvrir l'Assistant IA pour la bibliothèque">✨ Assistant IA LIB</button>
+    </div>
+  </header>
+
+  <!-- Navigation par onglets -->
+  <nav class="nav-tabs">
+    <button class="tab-btn active" data-tab="composants">
+      📋 Catalogue Composants (CSV) <span class="badge" id="badgeComps">0</span>
+    </button>
+    <button class="tab-btn" data-tab="pcb">
+      📐 Empreintes PCB <span class="badge" id="badgePcb">0</span>
+    </button>
+    <button class="tab-btn" data-tab="schematique">
+      ⚡ Symboles Schématiques <span class="badge" id="badgeSch">0</span>
+    </button>
+    <button class="tab-btn" data-tab="simulation">
+      🔬 Modèles Simulation <span class="badge" id="badgeSim">0</span>
+    </button>
+  </nav>
+
+  <!-- Bandeau de statistiques -->
+  <div class="stats-band">
+    <div class="stats-items">
+      <span class="stat-pill">Total composants : <b id="statTotalComps">0</b></span>
+      <span class="stat-pill ok">Empreintes PCB associées : <b id="statPcbAssoc">0 (0 %)</b></span>
+      <span class="stat-pill ok">Symboles schéma associés : <b id="statSchAssoc">0 (0 %)</b></span>
+      <span class="stat-pill">Modèles simu associés : <b id="statSimAssoc">0 (0 %)</b></span>
+    </div>
+    <div id="compListCount" style="color:var(--txt-dim); font-size:11px;">0 affiché(s)</div>
+  </div>
+
+  <!-- Contenu principal -->
+  <div class="main-layout">
+    
+    <!-- 1. Vue Catalogue Composants -->
+    <div class="view-panel" id="viewComposants">
+      <div class="toolbar-filter">
+        <div class="search-box">
+          <span class="icon">🔍</span>
+          <input type="search" id="searchComp" placeholder="Rechercher par référence, description, valeur, boîtier, fabricant..." autocomplete="off">
+        </div>
+
+        <select class="filter-select" id="filterPrefix">
+          <option value="TOUS">Tous les préfixes (R, C, U...)</option>
+        </select>
+
+        <select class="filter-select" id="filterStatut">
+          <option value="TOUS">Tous les statuts d'association</option>
+          <option value="COMPLET">Associés à 100% (PCB + Schéma)</option>
+          <option value="SANS_PCB">Empreinte PCB manquante</option>
+          <option value="SANS_SCH">Symbole schéma manquant</option>
+          <option value="SANS_SIM">Modèle simulation manquant</option>
+          <option value="NON_ASSOCIE">Non associés (partiels ou vides)</option>
+        </select>
+
+        <button class="tb" id="bReglerColonnes" title="Choisir les colonnes visibles du catalogue CSV">⚙️ Colonnes (<span id="countColVisibles">9</span>)</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="lib-table">
+          <thead id="tableHeadComps">
+            <tr>
+              <th style="min-width:140px;">Part Name</th>
+              <th style="width:60px;">Préfixe</th>
+              <th style="min-width:100px;">Boîtier</th>
+              <th style="min-width:80px;">Valeur</th>
+              <th>Description</th>
+              <th style="min-width:160px; color:var(--blue);">Empreinte PCB</th>
+              <th style="min-width:160px; color:var(--blue);">Empreinte Schéma</th>
+              <th style="min-width:160px; color:var(--yellow);">Modèle Simulation</th>
+            </tr>
+          </thead>
+          <tbody id="tableBodyComps"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 2. Vue Empreintes PCB -->
+    <div class="view-panel" id="viewPcb" hidden>
+      <div class="toolbar-filter" style="justify-content:space-between;">
+        <span style="font-weight:600; color:#fff;">Bibliothèque d'empreintes PCB (LIB/lib_empreinte_pcb/)</span>
+        <button class="tb primary mini" onclick="creerNouvelleEmpreintePcb()">➕ Nouvelle empreinte PCB</button>
+      </div>
+      <div class="cards-grid" id="gridPcbCards"></div>
+    </div>
+
+    <!-- 3. Vue Symboles Schématiques -->
+    <div class="view-panel" id="viewSch" hidden>
+      <div class="toolbar-filter" style="justify-content:space-between;">
+        <span style="font-weight:600; color:#fff;">Bibliothèque de symboles schématiques (LIB/lib_empreinte_schematique/)</span>
+        <button class="tb primary mini" onclick="creerNouveauSymboleSch()">➕ Nouveau symbole schématique</button>
+      </div>
+      <div class="cards-grid" id="gridSchCards"></div>
+    </div>
+
+    <!-- 4. Vue Modèles Simulation -->
+    <div class="view-panel" id="viewSim" hidden>
+      <div class="toolbar-filter">
+        <span style="font-weight:600; color:#fff;">Modèles de simulation SPICE (LIB/lib_simulation/)</span>
+      </div>
+      <div style="padding:16px; overflow-y:auto; flex:1;" id="gridSimCards"></div>
+    </div>
+
+    <!-- Volet Inspecteur Latéral -->
+    <aside class="inspector-panel" id="inspectorPanel">
+      <div class="inspector-head">
+        <b id="inspPartName">Sélectionnez un composant</b>
+      </div>
+      <div class="inspector-body">
+        
+        <!-- Fiche d'identité -->
+        <div style="font-size:12px; line-height:1.6; border-bottom:1px solid var(--border); padding-bottom:10px;">
+          <div id="inspDesc" style="color:var(--txt); margin-bottom:6px; font-weight:500;"></div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11.5px; color:var(--txt-dim);">
+            <div>Boîtier : <b id="inspPkg" style="color:var(--txt);">—</b></div>
+            <div>Valeur : <b id="inspVal" style="color:var(--txt);">—</b></div>
+            <div>Fabricant : <b id="inspMfr" style="color:var(--txt);">—</b></div>
+            <div>MPN : <b id="inspMpn" style="color:var(--txt);">—</b></div>
+          </div>
+        </div>
+
+        <!-- Aperçu Symbole Schématique -->
+        <div class="preview-card">
+          <div class="preview-card-head">
+            <span>SYMBOLE SCHÉMA</span>
+            <span class="type-label" id="inspSchName">—</span>
+          </div>
+          <div class="preview-canvas-wrap">
+            <canvas id="canvasSchInsp"></canvas>
+            <div class="preview-controls">
+              <button onclick="if(schRendererMain) schRendererMain.autoFit();" title="Recadrer">⊡</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Aperçu Empreinte PCB -->
+        <div class="preview-card">
+          <div class="preview-card-head">
+            <span>EMPREINTE PCB</span>
+            <span class="type-label" id="inspPcbName">—</span>
+          </div>
+          <div class="preview-canvas-wrap">
+            <canvas id="canvasPcbInsp"></canvas>
+            <div class="preview-controls">
+              <button onclick="if(pcbRendererMain) pcbRendererMain.autoFit();" title="Recadrer">⊡</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Aperçu Modèle Simulation -->
+        <div class="preview-card" id="inspSimWrap" hidden>
+          <div class="preview-card-head">
+            <span>MODÈLE SPICE</span>
+            <span class="type-label">.SUB</span>
+          </div>
+          <pre style="margin:0; padding:10px; font-family:var(--mono); font-size:11px; background:#090a0c; color:#93c5fd; overflow-x:auto;" id="inspSimCode"></pre>
+        </div>
+
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- Modale : Nouveau Composant -->
+  <div class="modal-overlay" id="modalNouveauComp" hidden style="display:none;" onclick="if(event.target===this)fermerModaleNouveauComposant()">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>Ajouter un composant à la bibliothèque</h3>
+        <button class="tb mini" onclick="fermerModaleNouveauComposant()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Part Name *</label>
+          <input id="newPartName" placeholder="ex: RES_0603_10K, NE555P, STM32F103...">
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+          <div class="form-group">
+            <label>Préfixe (Ref Des) *</label>
+            <input id="newPrefix" placeholder="ex: R, C, U, Q, D..." maxlength="5">
+          </div>
+          <div class="form-group">
+            <label>Boîtier (Package)</label>
+            <input id="newPackage" placeholder="ex: 0603, SOIC-8, QFN-24...">
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+          <div class="form-group">
+            <label>Valeur</label>
+            <input id="newVal" placeholder="ex: 10k, 100n, 3.3V...">
+          </div>
+          <div class="form-group">
+            <label>Fabricant</label>
+            <input id="newMfr" placeholder="ex: Yageo, Texas Instruments...">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="newDesc" rows="2" placeholder="Description technique du composant..."></textarea>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="tb" onclick="fermerModaleNouveauComposant()">Annuler</button>
+        <button class="tb primary" onclick="creerNouveauComposant()">Ajouter et auto-associer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale : Sélecteur de Colonnes (Catalogue CSV) -->
+  <div class="modal-overlay" id="modalColonnes" hidden style="display:none;" onclick="if(event.target===this)fermerModaleColonnes()">
+    <div class="modal-box cols-modal">
+      <div class="modal-head">
+        <h3>Colonnes du catalogue composants</h3>
+        <button class="tb mini" onclick="fermerModaleColonnes()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="cols-toolbar">
+          <div class="search-box cols-search">
+            <span class="icon">🔍</span>
+            <input type="search" id="searchColonnes" placeholder="Filtrer les colonnes..." autocomplete="off">
+          </div>
+          <div style="display:flex; gap:6px;">
+            <button class="tb mini" onclick="cocherToutesColonnes(true)">Tout cocher</button>
+            <button class="tb mini" onclick="reinitialiserColonnesDefaut()">Par défaut</button>
+            <button class="tb mini" onclick="cocherToutesColonnes(false)">Tout décocher</button>
+          </div>
+        </div>
+        <div class="cols-grid" id="gridColonnesPicker"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="tb" onclick="fermerModaleColonnes()">Annuler</button>
+        <button class="tb primary" onclick="appliquerColonnesSelectionnees()">Appliquer (<span id="countSelectionCols">0</span>)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale : Éditeur d'Empreinte PCB & Symbole Schématique -->
+  <div class="modal-overlay" id="modalEditeurLib" hidden style="display:none;">
+    <div class="modal-box large-editor">
+      <div class="modal-head">
+        <h3 id="editeurModalTitre">Éditeur</h3>
+        <div class="editor-head-tools">
+          <input type="text" id="editeurNomFichier" placeholder="nom_fichier.json" style="width:200px; font-family:var(--mono); font-size:12px; background:var(--bg); color:var(--txt); border:1px solid var(--border); border-radius:4px; padding:4px 8px;">
+          <div class="sep"></div>
+          <button class="tb mini" id="btnHeadUndo" onclick="editeurUndo()" title="Annuler (Ctrl+Z)" disabled>↩</button>
+          <button class="tb mini" id="btnHeadRedo" onclick="editeurRedo()" title="Rétablir (Ctrl+Y / Ctrl+Maj+Z)" disabled>↪</button>
+          <div class="sep"></div>
+          <button class="tb mini active" id="btnEditeurVueVisuel" onclick="basculerVueEditeur('visuel')">🎨 Visuel & Paramètres</button>
+          <button class="tb mini" id="btnEditeurVueJson" onclick="basculerVueEditeur('json')">📝 Code JSON</button>
+          <div class="sep"></div>
+          <button class="tb success mini" onclick="editeurEnregistrer()">💾 Enregistrer</button>
+          <button class="tb mini" onclick="fermerEditeurLib()">✕ Fermer</button>
+        </div>
+      </div>
+
+      <!-- Vue 1 : Split Visuel / Paramètres -->
+      <div class="editor-body-split" id="editeurSplitVisuel">
+        <!-- Canvas interactif -->
+        <div class="editor-canvas-pane">
+          <div class="editor-canvas-bar">
+            <button id="btnOutilPan" class="tb mini tool-btn" onclick="editeurChangerOutil('pan')" title="Déplacer la vue (Pan)">✋ Vue</button>
+            <button id="btnOutilDeplacer" class="tb mini tool-btn active" onclick="editeurChangerOutil('move')" title="Déplacer manuellement une broche / pastille">🖐️ Déplacer</button>
+            <button id="btnOutilLigne" class="tb mini tool-btn" onclick="editeurChangerOutil('line')" title="Ajouter un trait / ligne (sérigraphie ou corps)">📏 Tracer trait</button>
+            <div class="sep" style="width:1px; height:18px; background:var(--border); margin:0 2px;"></div>
+            <button id="btnEditeurUndo" class="tb mini tool-btn" onclick="editeurUndo()" title="Annuler la dernière action (Ctrl+Z)" disabled>↩ Annuler</button>
+            <button id="btnEditeurRedo" class="tb mini tool-btn" onclick="editeurRedo()" title="Rétablir l'action (Ctrl+Y / Ctrl+Maj+Z)" disabled>↪ Rétablir</button>
+            <div class="sep" style="width:1px; height:18px; background:var(--border); margin:0 2px;"></div>
+            <select id="editeurSelGrille" onchange="editeurChangerPasGrille(this.value)" style="background:var(--panel); color:var(--txt); border:1px solid var(--border); border-radius:4px; font-size:11px; padding:2px 4px; font-family:var(--mono);" title="Pas de la grille magnétique">
+              <option value="0.1">Pas: 0.1 mm</option>
+            </select>
+            <div class="sep" style="width:1px; height:18px; background:var(--border); margin:0 2px;"></div>
+            <button class="tb mini" onclick="if(EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.autoFit();" title="Recadrer / Centrer">⊡ Centrer</button>
+            <button class="tb mini" onclick="if(EDITEUR_LIB.renderer){ EDITEUR_LIB.renderer.zoom *= 1.25; EDITEUR_LIB.renderer.render(); }" title="Zoom avant">➕</button>
+            <button class="tb mini" onclick="if(EDITEUR_LIB.renderer){ EDITEUR_LIB.renderer.zoom /= 1.25; EDITEUR_LIB.renderer.render(); }" title="Zoom arrière">➖</button>
+          </div>
+          <canvas id="canvasEditeurLib"></canvas>
+          <div class="editor-canvas-info" id="editeurCanvasInfo">Glisser pour déplacer · Molette pour zoomer</div>
+        </div>
+
+        <!-- Volet de configuration -->
+        <div class="editor-sidebar-pane">
+          <div class="editor-sidebar-tabs">
+            <button class="editor-subtab-btn active" data-subtab="general" onclick="basculerSousOngletEditeur('general')">Général</button>
+            <button class="editor-subtab-btn" data-subtab="elements" onclick="basculerSousOngletEditeur('elements')">Pastilles / Broches</button>
+            <button class="editor-subtab-btn" data-subtab="traits" onclick="basculerSousOngletEditeur('traits')">📏 Traits / Lignes</button>
+            <button class="editor-subtab-btn" data-subtab="generateur" onclick="basculerSousOngletEditeur('generateur')">⚡ Générateurs</button>
+          </div>
+          <div class="editor-sidebar-content">
+            <div id="editeurTabGeneral"></div>
+            <div id="editeurTabElements" hidden></div>
+            <div id="editeurTabTraits" hidden></div>
+            <div id="editeurTabGenerateur" hidden></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vue 2 : Code JSON brut -->
+      <div class="editor-json-pane" id="editeurPaneJson" hidden>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <span style="color:var(--txt-dim); font-size:11px;">Éditeur JSON en direct — Toute modification syntaxiquement valide met à jour le modèle</span>
+          <button class="tb mini" onclick="const ta=document.getElementById('editeurCodeJson'); try{ ta.value = JSON.stringify(JSON.parse(ta.value), null, 2); }catch(_){}">Formatage auto</button>
+        </div>
+        <div class="editor-json-err" id="editeurJsonErr"></div>
+        <textarea id="editeurCodeJson" spellcheck="false"></textarea>
+      </div>
+
+      <div class="modal-foot">
+        <button class="tb" onclick="fermerEditeurLib()">Fermer</button>
+        <button class="tb success" onclick="editeurEnregistrer()">💾 Enregistrer le fichier</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Volet Latéral : Assistant IA LIB -->
+  <aside class="ia-panel-drawer" id="panelIaLib">
+    <div class="ia-head">
+      <div class="ia-brand">
+        <i>✨</i>
+        <span>Assistant IA LIB</span>
+      </div>
+      <button class="tb mini" onclick="iaLibFermer()">✕</button>
+    </div>
+
+    <!-- Barre de configuration IA -->
+    <div class="ia-config-bar">
+      <span>Modèle :</span>
+      <select id="iaModelSelect">
+        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Rapide)</option>
+        <option value="gemini-2.5-pro">Gemini 2.5 Pro (Avancé)</option>
+        <option value="gemma-4-31b-it">Gemma 4 31B</option>
+      </select>
+      <span class="ia-key-pill missing" id="iaKeyPill" onclick="demanderCleApi()">🔑 Saisir clé</span>
+    </div>
+
+    <!-- Messages du chat -->
+    <div class="ia-chat-messages" id="iaChatMessages"></div>
+
+    <!-- Zone de saisie et suggestions -->
+    <div class="ia-input-area">
+      <div class="ia-quick-suggestions">
+        <span class="ia-chip" onclick="iaActionRapide('pcb_qfn')">📐 QFN-16</span>
+        <span class="ia-chip" onclick="iaActionRapide('pcb_corriger')">📐 Corriger PCB</span>
+        <span class="ia-chip" onclick="iaActionRapide('sch_ldo')">⚡ Régulateur LDO</span>
+        <span class="ia-chip" onclick="iaActionRapide('sch_corriger')">⚡ Corriger Schéma</span>
+        <span class="ia-chip" onclick="iaActionRapide('cat_completer')">📋 Compléter composant</span>
+        <span class="ia-chip" onclick="iaActionRapide('cat_auditer')">🔍 Audit catalogue</span>
+      </div>
+      <div class="ia-prompt-row">
+        <textarea id="iaPromptInput" placeholder="Demandez une empreinte, un symbole ou une correction..." onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); envoyerPromptIa(); }"></textarea>
+        <button class="ia-btn-send" onclick="envoyerPromptIa()" title="Envoyer">➤</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Toasts de notification -->
+  <div id="toastContainer"></div>
+
+  <!-- Scripts -->
+  <script src="../commun/session.js"></script>
+  <script src="js/01-donnees.js"></script>
+  <script src="js/02-rendu-pcb.js"></script>
+  <script src="js/03-rendu-symbole.js"></script>
+  <script src="js/04-ui.js"></script>
+  <script src="js/05-editeur-lib.js"></script>
+  <script src="js/06-ia-lib.js"></script>
+  <script src="js/07-import-jlc.js"></script>
+</body>
+</html>

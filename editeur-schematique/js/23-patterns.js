@@ -61,7 +61,9 @@ var SCHEMA_PATTERNS = (function() {
       });
     }
 
-    return { components: compsMap, nets: netsMap };
+    const zonesList = (typeof schToutesLesZones === "function") ? schToutesLesZones() : [];
+
+    return { components: compsMap, nets: netsMap, zones: zonesList };
   }
 
   /* ---------- Cibler un composant au schéma ---------- */
@@ -243,9 +245,14 @@ var SCHEMA_PATTERNS = (function() {
           _derniersMotifs = data;
           rendrePanneau(data, null);
 
-          // Transmet les motifs, courants DC et netclasses à l'éditeur PCB
+          // Transmet les motifs, courants DC, netclasses et zones à l'éditeur PCB
           try {
             sessionStorage.setItem("web_cao_patterns_cache", JSON.stringify(data));
+            if (Array.isArray(data.zones)) {
+              sessionStorage.setItem("web_cao_zones", JSON.stringify(data.zones));
+            } else if (Array.isArray(doc.zones)) {
+              sessionStorage.setItem("web_cao_zones", JSON.stringify(doc.zones));
+            }
             const cDc = data.courants_dc_estimes || data.courants_dc || [];
             sessionStorage.setItem("web_cao_courants_dc", JSON.stringify(cDc));
             if (data.classes_suggerees) {
@@ -253,7 +260,7 @@ var SCHEMA_PATTERNS = (function() {
             }
             if (typeof BroadcastChannel !== "undefined") {
               const bc = new BroadcastChannel("web_cao_patterns_sync");
-              bc.postMessage({ type: "patterns_updated", data: data });
+              bc.postMessage({ type: "patterns_updated", data: data, zones: data.zones || doc.zones || [] });
               bc.close();
             }
           } catch (_) {}

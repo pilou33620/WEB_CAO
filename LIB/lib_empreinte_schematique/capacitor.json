@@ -1,0 +1,60 @@
+{
+  "format": "schsym-1",
+  "id": "capacitor",
+  "name": "Condensateur",
+  "category": "Passifs",
+  "prefix": "C",
+  "defaultValue": "100n",
+  "defaultPkg": "0603",
+  "pinCount": 2,
+  "pins": [
+    {
+      "n": 1,
+      "x": -40,
+      "y": 0
+    },
+    {
+      "n": 2,
+      "x": 40,
+      "y": 0
+    }
+  ],
+  "ext": [
+    -40,
+    -15,
+    40,
+    15
+  ],
+  "primitives": [
+    {
+      "op": "line",
+      "x1": -40,
+      "y1": 0,
+      "x2": -5,
+      "y2": 0
+    },
+    {
+      "op": "line",
+      "x1": 5,
+      "y1": 0,
+      "x2": 40,
+      "y2": 0
+    },
+    {
+      "op": "line",
+      "x1": -5,
+      "y1": -15,
+      "x2": -5,
+      "y2": 15,
+      "width": 4.5
+    },
+    {
+      "op": "line",
+      "x1": 5,
+      "y1": -15,
+      "x2": 5,
+      "y2": 15,
+      "width": 4.5
+    }
+  ]
+}

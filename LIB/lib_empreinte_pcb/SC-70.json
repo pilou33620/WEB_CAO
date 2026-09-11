@@ -1,0 +1,48 @@
+{
+  "format": "pcbfp-1",
+  "name": "SC-70",
+  "pkg": "SC-70",
+  "pins": 3,
+  "style": "sop",
+  "pitch": 0.65,
+  "span": 2.1,
+  "pads": [
+    {
+      "n": 1,
+      "x": -1.05,
+      "y": -0.325,
+      "w": 0.9,
+      "h": 0.3575,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": -1.05,
+      "y": 0.325,
+      "w": 0.9,
+      "h": 0.3575,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 3,
+      "x": 1.05,
+      "y": 0,
+      "w": 0.9,
+      "h": 0.3575,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -0.15,
+    "y1": -0.9037,
+    "x2": 0.15,
+    "y2": 0.9038
+  },
+  "description": "Boîtier ultra-compact SC-70-3 (SOT-323)"
+}

@@ -1,0 +1,46 @@
+{
+  "format": "schsym-1",
+  "id": "antenna",
+  "name": "Antenne",
+  "category": "Divers",
+  "prefix": "E",
+  "defaultValue": "ANT",
+  "defaultPkg": "SMA",
+  "pinCount": 1,
+  "pins": [
+    {
+      "n": 1,
+      "x": 0,
+      "y": 40
+    }
+  ],
+  "ext": [
+    -25,
+    -30,
+    25,
+    40
+  ],
+  "primitives": [
+    {
+      "op": "line",
+      "x1": 0,
+      "y1": 40,
+      "x2": 0,
+      "y2": -10
+    },
+    {
+      "op": "line",
+      "x1": 0,
+      "y1": -10,
+      "x2": -20,
+      "y2": -30
+    },
+    {
+      "op": "line",
+      "x1": 0,
+      "y1": -10,
+      "x2": 20,
+      "y2": -30
+    }
+  ]
+}

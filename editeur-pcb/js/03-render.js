@@ -887,6 +887,7 @@ function paint(c,dpr,w,h,noGrid){
      et n'existe que tant que l'une d'elles peint. */
   if(!noGrid&&typeof simVoile==="function")simVoile(c,w,h);
   if(!noGrid&&typeof simZTrace==="function")simZTrace(c);
+  if(!noGrid&&typeof simMaillageTrace==="function")simMaillageTrace(c,dpr);
   /* La carte de POTENTIEL (chute DC), sur la couche affichée. Elle passe au
      même rang que la carte d'impédance et pour la même raison — les deux
      jugent le tracé —, et jamais en même temps qu'elle : `simDCActif()` exige
@@ -916,10 +917,10 @@ function paint(c,dpr,w,h,noGrid){
   if(!noGrid&&typeof simDCTraceSonde==="function")
     simDCTraceSonde(c,dpr,w2s);
   if(!noGrid&&typeof rpMesTrace==="function")rpMesTrace(c,dpr);
-  /* Le phare du cross-probing, tout en haut de la pile : il désigne, il ne
-     décrit pas. Comme la cote, il est absent du .png exporté — ni l'un ni
-     l'autre ne font partie de la carte. */
   if(!noGrid&&typeof rpPhareTrace==="function")rpPhareTrace(c,dpr);
+  /* Badges visuels et color-coding des blocs et zones fonctionnels (Rooms) */
+  if(!noGrid&&typeof BLOC_PLACEMENT!=="undefined"&&BLOC_PLACEMENT.peindreBadgesZones)
+    BLOC_PLACEMENT.peindreBadgesZones(c,dpr);
   c.setTransform(1,0,0,1,0,0);
 }
 function draw(){

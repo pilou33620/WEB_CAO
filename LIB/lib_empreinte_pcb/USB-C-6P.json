@@ -1,0 +1,118 @@
+{
+  "format": "pcbfp-1",
+  "name": "USB-C-6P",
+  "pkg": "USB-C-6P",
+  "pins": 5,
+  "style": "row",
+  "pitch": 0.5,
+  "span": 3,
+  "pads": [
+    {
+      "n": 1,
+      "x": -1.25,
+      "y": -1.5,
+      "w": 0.6,
+      "h": 1.2,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 1,
+      "x": 1.25,
+      "y": -1.5,
+      "w": 0.6,
+      "h": 1.2,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": -2.75,
+      "y": -1.5,
+      "w": 0.8,
+      "h": 1.2,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 2.75,
+      "y": -1.5,
+      "w": 0.8,
+      "h": 1.2,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 3,
+      "x": -0.5,
+      "y": -1.5,
+      "w": 0.4,
+      "h": 1.2,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 4,
+      "x": 0.5,
+      "y": -1.5,
+      "w": 0.4,
+      "h": 1.2,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 5,
+      "x": -4.3,
+      "y": -1,
+      "w": 1.6,
+      "h": 2,
+      "shape": "oval",
+      "drill": 0.9,
+      "rot": 0
+    },
+    {
+      "n": 5,
+      "x": 4.3,
+      "y": -1,
+      "w": 1.6,
+      "h": 2,
+      "shape": "oval",
+      "drill": 0.9,
+      "rot": 0
+    },
+    {
+      "n": 5,
+      "x": -4.3,
+      "y": 3.2,
+      "w": 1.6,
+      "h": 2,
+      "shape": "oval",
+      "drill": 0.9,
+      "rot": 0
+    },
+    {
+      "n": 5,
+      "x": 4.3,
+      "y": 3.2,
+      "w": 1.6,
+      "h": 2,
+      "shape": "oval",
+      "drill": 0.9,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -4.5,
+    "y1": -2.5,
+    "x2": 4.5,
+    "y2": 4.5
+  },
+  "description": "USB Type-C alimentation (VBUS, GND, CC1, CC2, Blindage)"
+}

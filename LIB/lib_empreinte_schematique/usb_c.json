@@ -1,0 +1,76 @@
+{
+  "format": "schsym-1",
+  "id": "usb_c",
+  "name": "Connecteur USB Type-C",
+  "category": "Divers",
+  "prefix": "J",
+  "defaultValue": "USB-C",
+  "defaultPkg": "USB-C-16P",
+  "pinCount": 8,
+  "pins": [
+    {
+      "n": 1,
+      "x": -40,
+      "y": -60
+    },
+    {
+      "n": 2,
+      "x": -40,
+      "y": -40
+    },
+    {
+      "n": 3,
+      "x": -40,
+      "y": -20
+    },
+    {
+      "n": 4,
+      "x": -40,
+      "y": 0
+    },
+    {
+      "n": 5,
+      "x": -40,
+      "y": 20
+    },
+    {
+      "n": 6,
+      "x": -40,
+      "y": 40
+    },
+    {
+      "n": 7,
+      "x": -40,
+      "y": 60
+    },
+    {
+      "n": 8,
+      "x": -40,
+      "y": 80
+    }
+  ],
+  "ext": [
+    -40,
+    -75,
+    35,
+    95
+  ],
+  "primitives": [
+    {
+      "op": "rect",
+      "x": -20,
+      "y": -70,
+      "w": 50,
+      "h": 160,
+      "r": 6,
+      "fill": true
+    },
+    {
+      "op": "text",
+      "text": "USB-C",
+      "x": 8,
+      "y": -55,
+      "size": 9
+    }
+  ]
+}

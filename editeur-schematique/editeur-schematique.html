@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="../commun/reperage.css">
 <link rel="stylesheet" href="../commun/ia-assistant.css">
 <link rel="stylesheet" href="../commun/tactile.css">
+<link rel="stylesheet" href="../commun/explorateur-lib.css">
 </head>
 <body>
 
@@ -19,11 +20,13 @@
   <div class="tools">
     <button class="tb" data-cao-nav="pcb" title="Passer au routage — le schéma en cours reste dans l'onglet">➔ Éditeur PCB</button>
     <button class="tb" data-cao-nav="composants" title="Chercher une référence — le schéma reste dans l'onglet">⌕ Composants</button>
+    <button class="tb" data-cao-nav="lib" title="Gestion des bibliothèques (catalogue, empreintes, symboles)">📚 Gestion LIB</button>
     <button class="tb" data-cao-nav="accueil" title="Page d'accueil">⌂ Accueil</button>
     <button class="tb" id="bProfil" data-cao-profil title="Utilisateur : panneaux, réglages et derniers documents lui appartiennent">👤 …</button>
     <button class="tb tb-ia" id="bIaAssistant" title="Assistant IA technique — Gemma 4 31B (Google AI Studio)"><span class="ia-sparkle">✨</span> IA</button>
     <button class="tb tb-tactile-indicator" id="bTactileToggle" title="Mode tactile (iPad / tablette)"><span class="tactile-dot"></span> 📱 Tactile</button>
     <div class="sep"></div>
+    <button class="tb" id="bAddComp" title="Ajouter un composant depuis la bibliothèque (A)">➕ Composant <kbd>A</kbd></button>
     <button class="tb on" id="mSelect">Sélection <kbd>V</kbd></button>
     <button class="tb" id="mWire">Fil <kbd>W</kbd></button>
     <button class="tb" id="mBus" title="Tracer un bus de signaux (trait épais)">Bus <kbd>B</kbd></button>
@@ -58,6 +61,7 @@
     <button class="tb" id="bNetlist">Netlist .txt</button>
     <button class="tb" id="bCsv">Nomenclature .csv</button>
     <button class="tb" id="bNew">Nouveau</button>
+    <button class="tb" id="bExemples" title="Deux schémas complets à ouvrir : Interface IoT 4 couches (paire diff, bus SPI, RF 50 Ω) ou Commande 12 V 2 couches">Exemples…</button>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" style="display:none">
 </header>
@@ -220,6 +224,8 @@
 <script src="js/21-reperage.js"></script>
 <script src="js/22-recherche-composants.js"></script>
 <script src="js/23-patterns.js"></script>
+<script src="js/24-lib-sync.js"></script>
+<script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/ia-assistant.js"></script>
 <script src="../commun/tactile.js"></script>

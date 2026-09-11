@@ -283,6 +283,7 @@ function sessionSchema(){
   const curProj=(typeof projNom==="function"?projNom():"");
   const repris=sessBrancher("schema",()=>({
     doc:JSON.parse(serialize()),
+    netlist:(typeof netlistText==="function"?netlistText():null),
     sale:S.dirty,
     projet:curProj
   }),schSonde);

@@ -1,0 +1,38 @@
+{
+  "format": "pcbfp-1",
+  "name": "01005",
+  "pkg": "01005",
+  "pins": 2,
+  "style": "chip",
+  "pitch": 0.35,
+  "span": 0.35,
+  "pads": [
+    {
+      "n": 1,
+      "x": -0.175,
+      "y": 0,
+      "w": 0.4,
+      "h": 0.45,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 0.175,
+      "y": 0,
+      "w": 0.4,
+      "h": 0.45,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -0.625,
+    "y1": -0.575,
+    "x2": 0.625,
+    "y2": 0.575
+  },
+  "description": "CMS 01005 (0.4 x 0.2 mm) très haute densité"
+}

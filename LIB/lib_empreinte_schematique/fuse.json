@@ -1,0 +1,60 @@
+{
+  "format": "schsym-1",
+  "id": "fuse",
+  "name": "Fusible",
+  "category": "Passifs",
+  "prefix": "F",
+  "defaultValue": "1A",
+  "defaultPkg": "0603",
+  "pinCount": 2,
+  "pins": [
+    {
+      "n": 1,
+      "x": -40,
+      "y": 0
+    },
+    {
+      "n": 2,
+      "x": 40,
+      "y": 0
+    }
+  ],
+  "ext": [
+    -40,
+    -10,
+    40,
+    10
+  ],
+  "primitives": [
+    {
+      "op": "line",
+      "x1": -40,
+      "y1": 0,
+      "x2": -25,
+      "y2": 0
+    },
+    {
+      "op": "line",
+      "x1": 25,
+      "y1": 0,
+      "x2": 40,
+      "y2": 0
+    },
+    {
+      "op": "rect",
+      "x": -25,
+      "y": -10,
+      "w": 50,
+      "h": 20,
+      "r": 3,
+      "fill": false
+    },
+    {
+      "op": "line",
+      "x1": -25,
+      "y1": 0,
+      "x2": 25,
+      "y2": 0
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "format": "pcbfp-1",
+  "name": "MICRO-USB-B",
+  "pkg": "MICRO-USB-B",
+  "pins": 6,
+  "style": "row",
+  "pitch": 0.65,
+  "span": 2.6,
+  "pads": [
+    {
+      "n": 1,
+      "x": -1.3,
+      "y": -1.5,
+      "w": 0.4,
+      "h": 1.35,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": -0.65,
+      "y": -1.5,
+      "w": 0.4,
+      "h": 1.35,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 3,
+      "x": 0,
+      "y": -1.5,
+      "w": 0.4,
+      "h": 1.35,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 4,
+      "x": 0.65,
+      "y": -1.5,
+      "w": 0.4,
+      "h": 1.35,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 5,
+      "x": 1.3,
+      "y": -1.5,
+      "w": 0.4,
+      "h": 1.35,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 6,
+      "x": -3.5,
+      "y": -1,
+      "w": 1.6,
+      "h": 1.8,
+      "shape": "oval",
+      "drill": 0.9,
+      "rot": 0
+    },
+    {
+      "n": 6,
+      "x": 3.5,
+      "y": -1,
+      "w": 1.6,
+      "h": 1.8,
+      "shape": "oval",
+      "drill": 0.9,
+      "rot": 0
+    },
+    {
+      "n": 6,
+      "x": -3.5,
+      "y": 2.5,
+      "w": 1.6,
+      "h": 1.8,
+      "shape": "oval",
+      "drill": 0.9,
+      "rot": 0
+    },
+    {
+      "n": 6,
+      "x": 3.5,
+      "y": 2.5,
+      "w": 1.6,
+      "h": 1.8,
+      "shape": "oval",
+      "drill": 0.9,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -3.8,
+    "y1": -2.5,
+    "x2": 3.8,
+    "y2": 3.5
+  },
+  "description": "Connecteur Micro-USB Type-B 5 broches + blindage"
+}

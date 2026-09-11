@@ -1,0 +1,46 @@
+{
+  "format": "schsym-1",
+  "id": "testpoint_pth",
+  "name": "Point de Test Percé",
+  "category": "Divers",
+  "prefix": "TP",
+  "defaultValue": "TP",
+  "defaultPkg": "Trou-metalise-1.2mm",
+  "pinCount": 1,
+  "pins": [
+    {
+      "n": 1,
+      "x": 0,
+      "y": 20
+    }
+  ],
+  "ext": [
+    -10,
+    -7,
+    10,
+    20
+  ],
+  "primitives": [
+    {
+      "op": "line",
+      "x1": 0,
+      "y1": 20,
+      "x2": 0,
+      "y2": 7
+    },
+    {
+      "op": "circle",
+      "x": 0,
+      "y": 0,
+      "r": 7,
+      "fill": true
+    },
+    {
+      "op": "circle",
+      "x": 0,
+      "y": 0,
+      "r": 3,
+      "fill": "hole"
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "format": "schsym-1",
+  "id": "cap_pol",
+  "name": "Chimique / Polarisé",
+  "category": "Passifs",
+  "prefix": "C",
+  "defaultValue": "470µ",
+  "defaultPkg": "0805",
+  "pinCount": 2,
+  "pins": [
+    {
+      "n": 1,
+      "x": -40,
+      "y": 0
+    },
+    {
+      "n": 2,
+      "x": 40,
+      "y": 0
+    }
+  ],
+  "ext": [
+    -40,
+    -20,
+    40,
+    20
+  ],
+  "primitives": [
+    {
+      "op": "line",
+      "x1": -40,
+      "y1": 0,
+      "x2": -5,
+      "y2": 0
+    },
+    {
+      "op": "line",
+      "x1": 5,
+      "y1": 0,
+      "x2": 40,
+      "y2": 0
+    },
+    {
+      "op": "line",
+      "x1": -5,
+      "y1": -15,
+      "x2": -5,
+      "y2": 15,
+      "width": 4.5
+    },
+    {
+      "op": "arc",
+      "cx": 25,
+      "cy": 0,
+      "r": 20,
+      "start": 2.261946710584651,
+      "end": 4.0212385965949355
+    },
+    {
+      "op": "text",
+      "text": "+",
+      "x": -20,
+      "y": -20,
+      "size": 14
+    }
+  ]
+}

@@ -85,6 +85,9 @@ function exFp(D,o){
             x:o.x,y:o.y,rot:o.rot||0,side:0,nets:o.nets||{}};
   if(o.pads)fp.pads=o.pads;
   if(o.body)fp.body=o.body;
+  if(o.csvPartName)fp.csvPartName=o.csvPartName;
+  if(o.csvMpn)fp.csvMpn=o.csvMpn;
+  if(o.manufacturer)fp.manufacturer=o.manufacturer;
   D.fps.push(fp);
   return fp;
 }
@@ -164,22 +167,31 @@ function exemple1(){
 
   /* ---------- les composants ---------- */
   const J1=exFp(D,{ref:"J1",val:"Entrée 12 V",pins:3,x:5,y:16,rot:90,
+                   csvPartName:"CONN_3-2.54mm-TRAV",csvMpn:"CONN_3_TRAV",
                    nets:{1:"12V",2:"GND",3:"EN"}});
   const C1=exFp(D,{ref:"C1",val:"10µ",pkg:"1206",x:8,y:14,rot:90,
+                   csvPartName:"C1210_10uF_X7R_35V_SE",csvMpn:"C1210C106K5RACAUTO",
                    nets:{1:"12V",2:"GND"}});
   const U1=exFp(D,{ref:"U1",val:"AMS1117-5.0",pkg:"SOT-223-4",pins:4,x:14,y:11,
+                   csvPartName:"AMS1117-5.0",csvMpn:"AMS1117-5.0",
                    nets:{1:"12V",2:"GND",3:"+5V",4:"+5V"}});
   const C2=exFp(D,{ref:"C2",val:"22µ",pkg:"1206",x:22,y:11,rot:90,
+                   csvPartName:"C1210_10uF_X7R_35V_SE",csvMpn:"C1210C106K5RACAUTO",
                    nets:{1:"+5V",2:"GND"}});
   const R2=exFp(D,{ref:"R2",val:"1k",pkg:"0603",x:12,y:20.5,
+                   csvPartName:"R0603_1K",csvMpn:"RC0603FR-071KL",
                    nets:{1:"EN",2:"BASE_Q3"}});
   const Q3=exFp(D,{ref:"Q3",val:"MMBT5551",pkg:"SOT-23",pins:3,x:18,y:22,
+                   csvPartName:"TRAN_NPN_BC847B_185",csvMpn:"BC847B,215",manufacturer:"Nexperia",
                    nets:{1:"BASE_Q3",2:"GND",3:"SORTIE"}});
   const R3=exFp(D,{ref:"R3",val:"100k",pkg:"0603",x:14,y:25,rot:90,
+                   csvPartName:"R0603_100K",csvMpn:"RC0603FR-07100KL",
                    nets:{1:"BASE_Q3",2:"GND"}});
   const R1=exFp(D,{ref:"R1",val:"100k",pkg:"0603",x:24.75,y:25,rot:90,
+                   csvPartName:"R0603_100K",csvMpn:"RC0603FR-07100KL",
                    nets:{1:"SORTIE",2:"12V"}});
   const J2=exFp(D,{ref:"J2",val:"Sortie",pins:3,x:45,y:16,rot:90,
+                   csvPartName:"CONN_3-2.54mm-TRAV",csvMpn:"CONN_3_TRAV",
                    nets:{1:"+5V",2:"GND",3:"SORTIE"}});
 
   /* ---------- 12 V : bornier → condensateur → régulateur ---------- */
@@ -217,100 +229,177 @@ function exemple1(){
 }
 
 /* ==========================================================================
-   Exemple 2 — « Interface USB 2.0 », 4 couches
+   Exemple 2 — « Interface IoT & Bus Haute Vitesse », 4 couches
    --------------------------------------------------------------------------
-   Un connecteur USB micro-B, un régulateur 3,3 V, un microcontrôleur en
-   TQFP-32 et un connecteur de programmation, sur 60 × 40 mm. L'empilage est
-   celui d'usine : signal / masse / alimentation / signal.
+   Carte 4 couches 66 × 42 mm avec composants de la bibliothèque (LIB) :
+     · Microcontrôleur (U1, MCU_STM32WL55CCU6 en TQFP-32)
+     · Mémoire Flash SPI (U2, IC_FLASH_M95P08-IXMNT/E en SOIC-8)
+     · Régulateur LDO 3,3 V (U3, REG_LP2980AIM5X-3.3 en SOT-23-5)
+     · Connecteur USB (J1, CONN-USB_Mini_651005136421 / MICRO-USB-B)
+     · Connecteur SWD (J2, CONN_4-2.54mm-TRAV en HEADER-2.54-1x4)
+     · Embase SMA 50 Ω (J3, CONN_Embase_SMA_CI_Bord_de_carte en SMA-EDGE)
+     · Condensateurs de filtrage et découplage C1..C5 de la bibliothèque.
 
    Ce qu'elle montre :
-     · les deux couches internes données entièrement à un net — masse en L2,
-       3,3 V en L3. Une broche d'alimentation ne se route plus : elle sort de
-       sa pastille et descend au plan par un via, en trois dixièmes de
-       millimètre. C'est tout l'intérêt des quatre couches, et c'est pour cela
-       que les découplages tiennent en deux vias chacun ;
-     · **la paire différentielle USB**, tracée sur le dessus, du connecteur au
-       microcontrôleur : 0,25 mm de piste, 0,15 mm d'écart, tenus d'un bout à
-       l'autre. Elle ne change pas de couche — le plan de masse de L2 lui sert
-       de référence sur toute sa longueur, et un via de plus casserait ce
-       couplage ; les seuls écarts sont les deux éventails, là où les pistes
-       s'ouvrent pour rejoindre des pastilles plus écartées que la paire ;
-     · la règle de paire qui va avec, visible dans la fenêtre « Règles… » :
-       profil D90, largeur et écart bornés, longueur découplée admise ;
-     · un bus SWD passé au dos par deux vias, pour montrer qu'une couche
-       extérieure sert encore au signal quand les internes sont prises.
+     · **Paire différentielle USB 2.0 (90 Ω)** : USB_DP / USB_DM tracée sur L1
+       au-dessus du plan de masse continu L2, 0,25 mm de piste et 0,15 mm d'écart,
+       tenus d'un bout à l'autre sans traversée de plan ;
+     · **Bus de données SPI** : signaux rapides SPI_SCK, SPI_MOSI, SPI_MISO,
+       SPI_CS reliant le MCU à la mémoire Flash SOIC-8 ;
+     · **Piste à impédance contrôlée 50 Ω** : ligne RF_ANT calibrée à 0,38 mm
+       sur microruban au-dessus de la masse de référence L2, reliant la broche RF
+       du MCU à l'embase SMA bord de carte ;
+     · **Alimentations par plans internes** : masse intégrale en L2, +3,3 V en L3 ;
+     · **Routage multicouche au dos** : bus SWD et signaux SPI passant en L4 (Bottom).
    ========================================================================== */
 function exemple2(){
-  const D=exDoc(4,60,40);
+  const D=exDoc(4,66,42);
   exPower(D,["+5V","+3V3","GND"]);
   exPlane(D,1,"gnd","GND");
   exPlane(D,2,"pwr","+3V3");
-  const W=0.4, S1=0.25;
-  const VD=0.8, VF=0.4;              // via d'alimentation
-  const vd=0.6, vf=0.3;              // via de signal
+
+  D.classes.push({name:"Impédance 50Ω",w:0.38,clr:0.25,via:0.8,drill:0.4});
+  D.netClass["RF_ANT"]="Impédance 50Ω";
+
+  const W=0.4, S1=0.25, WRF=0.38;
+  const VD=0.8, VF=0.4;
+  const vd=0.6, vf=0.3;
   const TOP=0, BOT=3;
 
-  /* La paire et sa règle. Le couple largeur/écart tient les 90 Ω différentiels
-     de l'USB 2.0 sur le diélectrique extérieur de cet empilage ; la fenêtre des
-     règles affiche l'impédance calculée en regard du profil demandé. */
   D.dpPairs.push({id:D.nextId++,name:"USB",p:"USB_DP",n:"USB_DM"});
-  D.dpRules.push({name:"USB 2.0 — 90 Ω",comment:"Paire du connecteur au microcontrôleur",
-                  uid:"USBDIFFP",scope:"USB",allLayers:true,
-                  minW:0.2,prefW:0.25,maxW:0.35,
-                  minGap:0.13,prefGap:0.15,maxGap:0.4,
-                  maxUncoupled:12.7,useImp:true,imp:"D90",layers:{}});
+  D.dpRules.push({
+    name:"USB 2.0 — 90 Ω",comment:"Paire USB vers MCU",
+    uid:"USBDIFFP",scope:"USB",allLayers:true,
+    minW:0.2,prefW:0.25,maxW:0.35,
+    minGap:0.13,prefGap:0.15,maxGap:0.4,
+    maxUncoupled:12.7,useImp:true,imp:"D90",layers:{}
+  });
 
-  /* ---------- les composants ----------
-     Le connecteur n'est pas dans la table des boîtiers : ses sept pastilles
-     sont dessinées à la main — cinq contacts au pas de 0,65 mm et deux pattes
-     de blindage. La broche 4 (ID) reste en l'air : c'est ainsi qu'on câble un
-     port périphérique. */
-  const J1=exFp(D,{ref:"J1",val:"USB micro-B",pkg:"USB-MICRO-B",style:"chip",
-                   pins:7,x:7,y:20,
-                   nets:{1:"+5V",2:"USB_DM",3:"USB_DP",5:"GND",6:"GND",7:"GND"},
-                   body:{x1:-1.6,y1:-4.6,x2:1,y2:4.6},
-                   pads:[{n:1,x:0,y:-1.3,w:1.4,h:0.4,shape:"rect",drill:0},
-                         {n:2,x:0,y:-0.65,w:1.4,h:0.4,shape:"rect",drill:0},
-                         {n:3,x:0,y:0,w:1.4,h:0.4,shape:"rect",drill:0},
-                         {n:4,x:0,y:0.65,w:1.4,h:0.4,shape:"rect",drill:0},
-                         {n:5,x:0,y:1.3,w:1.4,h:0.4,shape:"rect",drill:0},
-                         {n:6,x:-0.6,y:-3.6,w:1.8,h:1.4,shape:"rect",drill:0},
-                         {n:7,x:-0.6,y:3.6,w:1.8,h:1.4,shape:"rect",drill:0}]});
-  const U3=exFp(D,{ref:"U3",val:"AP2112K-3.3",pkg:"SOT-23-5",pins:5,x:14,y:10,
-                   nets:{1:"+5V",2:"GND",3:"+5V",5:"+3V3"}});
-  const C1=exFp(D,{ref:"C1",val:"10µ",pkg:"0805",x:8.05,y:13.7,rot:270,
-                   nets:{1:"+5V",2:"GND"}});
-  const C2=exFp(D,{ref:"C2",val:"1µ",pkg:"0603",x:18.525,y:13.5,rot:90,
-                   nets:{1:"+3V3",2:"GND"}});
-  const U1=exFp(D,{ref:"U1",val:"MCU",pkg:"TQFP-32",pins:32,x:40,y:20,
-                   nets:{1:"+3V3",4:"USB_DM",5:"USB_DP",8:"GND",
-                         17:"+3V3",20:"SWDIO",21:"SWCLK",24:"GND"}});
-  const C3=exFp(D,{ref:"C3",val:"100n",pkg:"0402",x:32,y:14,rot:90,
-                   nets:{1:"+3V3",2:"GND"}});
-  const C4=exFp(D,{ref:"C4",val:"100n",pkg:"0402",x:47,y:26,rot:90,
-                   nets:{1:"+3V3",2:"GND"}});
-  const J2=exFp(D,{ref:"J2",val:"SWD",pins:4,x:50,y:32,
-                   nets:{1:"+3V3",2:"SWDIO",3:"SWCLK",4:"GND"}});
+  // J1: USB Micro-B (x: 7, y: 20)
+  const J1=exFp(D,{
+    ref:"J1",val:"USB micro-B",pkg:"MICRO-USB-B",style:"chip",pins:7,x:7,y:20,
+    nets:{1:"+5V",2:"USB_DM",3:"USB_DP",5:"GND",6:"GND",7:"GND"},
+    csvPartName:"CONN-USB_Mini_651005136421",
+    body:{x1:-1.6,y1:-4.6,x2:1,y2:4.6},
+    pads:[
+      {n:1,x:0,y:-1.3,w:1.4,h:0.4,shape:"rect",drill:0},
+      {n:2,x:0,y:-0.65,w:1.4,h:0.4,shape:"rect",drill:0},
+      {n:3,x:0,y:0,w:1.4,h:0.4,shape:"rect",drill:0},
+      {n:4,x:0,y:0.65,w:1.4,h:0.4,shape:"rect",drill:0},
+      {n:5,x:0,y:1.3,w:1.4,h:0.4,shape:"rect",drill:0},
+      {n:6,x:-0.6,y:-3.6,w:1.8,h:1.4,shape:"rect",drill:0},
+      {n:7,x:-0.6,y:3.6,w:1.8,h:1.4,shape:"rect",drill:0}
+    ]
+  });
 
-  /* ---------- 5 V : du connecteur au régulateur ---------- */
-  exWire(D,TOP,"+5V",W,[exPin(J1,1),{x:8.05,y:17.65},{x:8.05,y:17},
-                        exPin(C1,1)]);
-  exWire(D,TOP,"+5V",W,[{x:8.05,y:17},{x:11,y:14.05},{x:11,y:10.95},
-                        {x:11,y:9.05},exPin(U3,1)]);
-  exWire(D,TOP,"+5V",W,[{x:11,y:10.95},exPin(U3,3)]);   // EN tenu à l'entrée
+  // U3: LDO 3.3V LP2980 (x: 14, y: 10)
+  const U3=exFp(D,{
+    ref:"U3",val:"LP2980-3.3",pkg:"SOT-23-5",pins:5,x:14,y:10,
+    csvPartName:"REG_LP2980AIM5X-3.3",
+    nets:{1:"+5V",2:"GND",3:"+5V",5:"+3V3"}
+  });
 
-  /* ---------- 3,3 V : la sortie du régulateur, son condensateur, le plan ---------- */
-  exWire(D,TOP,"+3V3",W,[exPin(U3,5),{x:16.5,y:9.525},{x:18.525,y:11.55},
-                         exPin(C2,1)]);
+  // C1: 10µF 0805
+  const C1=exFp(D,{
+    ref:"C1",val:"10µ",pkg:"0805",x:8.05,y:13.7,rot:270,
+    csvPartName:"C0805_10uF_X5R_16V_AUTO_TY",
+    nets:{1:"+5V",2:"GND"}
+  });
+
+  // C2: 1µF 0603
+  const C2=exFp(D,{
+    ref:"C2",val:"1µ",pkg:"0603",x:18.525,y:13.5,rot:90,
+    csvPartName:"C0603_1uF_X7R_25V_AUTO_MU",
+    nets:{1:"+3V3",2:"GND"}
+  });
+
+  // U1: MCU TQFP-32 (x: 40, y: 20)
+  const U1=exFp(D,{
+    ref:"U1",val:"STM32WL55",pkg:"TQFP-32",pins:32,x:40,y:20,
+    csvPartName:"MCU_STM32WL55CCU6",
+    nets:{
+      1:"+3V3",4:"USB_DM",5:"USB_DP",8:"GND",
+      10:"SPI_SCK",11:"SPI_MOSI",12:"SPI_MISO",13:"SPI_CS",
+      17:"+3V3",20:"SWDIO",21:"SWCLK",23:"RF_ANT",24:"GND"
+    }
+  });
+
+  // C3, C4: 100nF decoupling
+  const C3=exFp(D,{
+    ref:"C3",val:"100n",pkg:"0402",x:32,y:14,rot:90,
+    csvPartName:"C0402_100nF_X7R_50V_MU",
+    nets:{1:"+3V3",2:"GND"}
+  });
+  const C4=exFp(D,{
+    ref:"C4",val:"100n",pkg:"0402",x:47,y:14,rot:90,
+    csvPartName:"C0402_100nF_X7R_50V_MU",
+    nets:{1:"+3V3",2:"GND"}
+  });
+
+  // U2: SPI Flash SOIC-8 (x: 27, y: 33, rot: 0)
+  const U2=exFp(D,{
+    ref:"U2",val:"M95P08",pkg:"SOIC-8",pins:8,x:27,y:33,
+    csvPartName:"IC_FLASH_M95P08-IXMNT/E",
+    nets:{
+      1:"SPI_CS",2:"SPI_MISO",3:"+3V3",4:"GND",
+      5:"SPI_MOSI",6:"SPI_SCK",7:"+3V3",8:"+3V3"
+    }
+  });
+
+  // C5: 100nF decoupling Flash (x: 27, y: 39, rot: 0)
+  const C5=exFp(D,{
+    ref:"C5",val:"100n",pkg:"0402",x:27,y:39,rot:0,
+    csvPartName:"C0402_100nF_X7R_50V_MU",
+    nets:{1:"+3V3",2:"GND"}
+  });
+
+  // J3: SMA Edge Connector 50 Ω (x: 58, y: 18)
+  const J3=exFp(D,{
+    ref:"J3",val:"SMA 50Ω",pkg:"SMA-EDGE",pins:5,x:58,y:18,
+    csvPartName:"CONN_Embase_SMA_CI_Bord_de_carte",
+    body:{x1:-2.5,y1:-3.5,x2:2.5,y2:3.5},
+    pads:[
+      {n:1,x:-1.5,y:0,w:2.0,h:0.8,shape:"rect",drill:0},
+      {n:2,x:-1.5,y:-2.5,w:2.0,h:1.5,shape:"rect",drill:0},
+      {n:3,x:-1.5,y:2.5,w:2.0,h:1.5,shape:"rect",drill:0},
+      {n:4,x:1.5,y:-2.5,w:2.0,h:1.5,shape:"rect",drill:0},
+      {n:5,x:1.5,y:2.5,w:2.0,h:1.5,shape:"rect",drill:0}
+    ],
+    nets:{1:"RF_ANT",2:"GND",3:"GND",4:"GND",5:"GND"}
+  });
+
+  // J2: SWD Header (x: 54, y: 32)
+  const J2=exFp(D,{
+    ref:"J2",val:"SWD",pkg:"HEADER-2.54-1x4",pins:4,x:54,y:32,
+    csvPartName:"CONN_4-2.54mm-TRAV",
+    nets:{1:"+3V3",2:"SWDIO",3:"SWCLK",4:"GND"}
+  });
+
+  /* ---------- 5 V ---------- */
+  exWire(D,TOP,"+5V",W,[exPin(J1,1),{x:8.05,y:17.65},{x:8.05,y:17},exPin(C1,1)]);
+  exWire(D,TOP,"+5V",W,[{x:8.05,y:17},{x:11,y:14.05},{x:11,y:10.95},{x:11,y:9.05},exPin(U3,1)]);
+  exWire(D,TOP,"+5V",W,[{x:11,y:10.95},exPin(U3,3)]);
+
+  /* ---------- 3,3 V ---------- */
+  exWire(D,TOP,"+3V3",W,[exPin(U3,5),{x:16.5,y:9.525},{x:18.525,y:11.55},exPin(C2,1)]);
   exStub(D,TOP,"+3V3",W,[exPin(C2,1),{x:20.5,y:12.75}],VD,VF);
-  /* Au-delà, le 3,3 V ne se route plus : il est dans le plan L3, et chaque
-     broche qui en veut y descend par un via. */
   exStub(D,TOP,"+3V3",W,[exPin(U1,1),{x:34,y:17.2}],VD,VF);
   exStub(D,TOP,"+3V3",W,[exPin(U1,17),{x:46,y:22.8}],VD,VF);
   exStub(D,TOP,"+3V3",W,[exPin(C3,1),{x:32,y:12.5}],VD,VF);
-  exStub(D,TOP,"+3V3",W,[exPin(C4,1),{x:47,y:24.5}],VD,VF);
+  exStub(D,TOP,"+3V3",W,[exPin(C4,1),{x:47,y:12.5}],VD,VF);
 
-  /* ---------- masse : même chose vers le plan L2 ---------- */
+  // U2 pins 7, 8
+  const u2p8=exPin(U2,8), u2p7=exPin(U2,7);
+  exWire(D,TOP,"+3V3",W,[u2p8,u2p7]);
+  exStub(D,TOP,"+3V3",W,[u2p8,{x:u2p8.x+2.8,y:u2p8.y-1.5}],VD,VF);
+  // U2 pin 3
+  exStub(D,TOP,"+3V3",W,[exPin(U2,3),{x:22.0,y:33.63}],VD,VF);
+  // C5 pin 1
+  exStub(D,TOP,"+3V3",W,[exPin(C5,1),{x:25.0,y:39.0}],VD,VF);
+  // J2 pin 1
+  exStub(D,TOP,"+3V3",W,[exPin(J2,1),{x:50.19,y:30}],VD,VF);
+
+  /* ---------- GND ---------- */
   exStub(D,TOP,"GND",W,[exPin(J1,5),{x:8.6,y:22.9}],VD,VF);
   exStub(D,TOP,"GND",W,[exPin(J1,6),{x:6.4,y:14.8}],VD,VF);
   exStub(D,TOP,"GND",W,[exPin(J1,7),{x:6.4,y:25.2}],VD,VF);
@@ -318,20 +407,42 @@ function exemple2(){
   exStub(D,TOP,"GND",W,[exPin(U3,2),{x:13.9,y:10},{x:13.9,y:11.8}],VD,VF);
   exStub(D,TOP,"GND",W,[exPin(C2,2),{x:18.525,y:16}],VD,VF);
   exStub(D,TOP,"GND",W,[exPin(U1,8),{x:34,y:22.8}],VD,VF);
-  exStub(D,TOP,"GND",W,[exPin(U1,24),{x:46,y:17.2}],VD,VF);
+  exStub(D,TOP,"GND",W,[exPin(U1,24),{x:44.6,y:15.0}],VD,VF);
   exStub(D,TOP,"GND",W,[exPin(C3,2),{x:32,y:15.5}],VD,VF);
-  exStub(D,TOP,"GND",W,[exPin(C4,2),{x:47,y:27.5}],VD,VF);
+  exStub(D,TOP,"GND",W,[exPin(C4,2),{x:47,y:15.5}],VD,VF);
+  exStub(D,TOP,"GND",W,[exPin(U2,4),{x:22.0,y:34.91}],VD,VF);
+  exStub(D,TOP,"GND",W,[exPin(C5,2),{x:29.0,y:39.0}],VD,VF);
+  exStub(D,TOP,"GND",W,[exPin(J3,2),{x:56.5,y:14.5}],VD,VF);
+  exStub(D,TOP,"GND",W,[exPin(J3,3),{x:56.5,y:21.5}],VD,VF);
+  exStub(D,TOP,"GND",W,[exPin(J3,4),{x:59.5,y:14.5}],VD,VF);
+  exStub(D,TOP,"GND",W,[exPin(J3,5),{x:59.5,y:21.5}],VD,VF);
 
-  /* ---------- la paire différentielle ----------
-     L'axe part à 0,325 mm au-dessus des deux pastilles du connecteur, traverse
-     la carte tout droit, et se relève d'un coude à 45° pour arriver dans l'axe
-     des deux broches du microcontrôleur. Les deux pistes suivent, décalées de
-     part et d'autre au demi-pas ; les éventails se font tout seuls. */
+  /* ---------- USB Differential Pair ---------- */
   exPair(D,TOP,D.dpPairs[0],0.25,0.15,
          [{x:9,y:19.675},{x:31,y:19.675},{x:31.325,y:20},{x:33.4,y:20}],
          exPin(J1,3),exPin(J1,2),exPin(U1,5),exPin(U1,4));
 
-  /* ---------- SWD : deux vias, et la fin du trajet au dos ---------- */
+  /* ---------- Controlled Impedance 50Ω Trace (RF_ANT) ---------- */
+  exWire(D,TOP,"RF_ANT",WRF,[exPin(U1,23),exPin(J3,1)]);
+
+  /* ---------- SPI Bus ---------- */
+  const u1_10=exPin(U1,10), u2_6=exPin(U2,6);
+  exWire(D,TOP,"SPI_SCK",S1,[u1_10,{x:u1_10.x,y:32.0},{x:u1_10.x-(u2_6.y-32.0),y:u2_6.y},u2_6]);
+
+  const u1_11=exPin(U1,11), u2_5=exPin(U2,5);
+  exWire(D,TOP,"SPI_MOSI",S1,[u1_11,{x:u1_11.x,y:33.0},{x:u1_11.x-(u2_5.y-33.0),y:u2_5.y},u2_5]);
+
+  const u1_12=exPin(U1,12), u2_2=exPin(U2,2);
+  exStub(D,TOP,"SPI_MISO",S1,[u1_12,{x:u1_12.x,y:26.5}],vd,vf);
+  exWire(D,BOT,"SPI_MISO",S1,[{x:u1_12.x,y:26.5},{x:u1_12.x,y:37.0},{x:21.0,y:37.0},{x:21.0,y:u2_2.y},{x:u2_2.x-1.5,y:u2_2.y}]);
+  exStub(D,TOP,"SPI_MISO",S1,[u2_2,{x:u2_2.x-1.5,y:u2_2.y}],vd,vf);
+
+  const u1_13=exPin(U1,13), u2_1=exPin(U2,1);
+  exStub(D,TOP,"SPI_CS",S1,[u1_13,{x:u1_13.x,y:26.0}],vd,vf);
+  exWire(D,BOT,"SPI_CS",S1,[{x:u1_13.x,y:26.0},{x:u1_13.x,y:38.0},{x:20.0,y:38.0},{x:20.0,y:u2_1.y},{x:u2_1.x-1.5,y:u2_1.y}]);
+  exStub(D,TOP,"SPI_CS",S1,[u2_1,{x:u2_1.x-1.5,y:u2_1.y}],vd,vf);
+
+  /* ---------- SWD (routed on bottom layer) ---------- */
   exStub(D,TOP,"SWDIO",S1,[exPin(U1,20),{x:46.4,y:20.4}],vd,vf);
   exStub(D,TOP,"SWCLK",S1,[exPin(U1,21),{x:47.6,y:19.6}],vd,vf);
   exWire(D,BOT,"SWDIO",S1,[{x:46.4,y:20.4},{x:48.73,y:22.73},exPin(J2,2)]);
@@ -344,11 +455,12 @@ function exemple2(){
    ========================================================================== */
 const EXEMPLES=[
   {titre:"Commande 12 V — 2 couches",
-   sous:"50 × 32 mm · 9 empreintes · plan de masse au dos",
-   texte:"La carte du schéma de démonstration de l'éditeur schématique : "+
+   sous:"50 × 32 mm · 9 empreintes (LIB) · plan de masse au dos",
+   texte:"Carte de commande intégrant les composants de la bibliothèque : "+
          "régulateur 12 V → 5 V, étage de commande NPN, bornier d'entrée et "+
          "bornier de sortie.",
-   points:["Toute la couche du dessous donnée à la masse : chaque pastille CMS "+
+   points:["Composants issus de LIB_composants.csv (BC847B, R0603, C1210, borniers).",
+           "Toute la couche du dessous donnée à la masse : chaque pastille CMS "+
            "y descend par son via, les pastilles traversantes des borniers y "+
            "touchent sans rien de plus.",
            "Deux classes de net : 0,4 mm pour les alimentations, 0,25 mm pour "+
@@ -356,20 +468,19 @@ const EXEMPLES=[
            "Le 12 V du collecteur passe par le bord de la carte : sur deux "+
            "couches dont l'une est un plan, on contourne plutôt que de croiser."],
    build:exemple1},
-  {titre:"Interface USB 2.0 — 4 couches",
-   sous:"60 × 40 mm · paire différentielle · plans masse et 3,3 V",
-   texte:"Connecteur USB micro-B, régulateur 3,3 V, microcontrôleur TQFP-32 et "+
-         "connecteur de programmation, sur l'empilage d'usine signal / masse / "+
-         "alimentation / signal.",
-   points:["La paire USB tracée sur le dessus, 0,25 mm de piste et 0,15 mm "+
-           "d'écart tenus d'un bout à l'autre, sans changement de couche : le "+
-           "plan de masse de L2 lui sert de référence sur toute sa longueur.",
-           "Sa règle de paire est dans la fenêtre « Règles… » — profil D90, "+
-           "largeur et écart bornés, longueur découplée admise.",
-           "Les alimentations ne se routent plus : deux couches internes "+
-           "entières, et un via par broche pour y descendre.",
-           "Le bus SWD passe au dos par deux vias : une couche extérieure sert "+
-           "encore au signal quand les internes sont prises."],
+  {titre:"Interface IoT & Bus Haute Vitesse — 4 couches",
+   sous:"66 × 42 mm · paire diff 90 Ω · bus SPI · piste 50 Ω · plans internes",
+   texte:"Carte microcontrôleur complète avec composants de notre bibliothèque : "+
+         "MCU STM32WL55 (TQFP-32), Flash SPI M95P08 (SOIC-8), régulateur LDO 3,3 V "+
+         "(SOT-23-5), connecteur USB micro-B, connecteur SWD et embase SMA RF.",
+   points:["**Paire différentielle USB 2.0 (90 Ω)** : 0,25 mm de piste et 0,15 mm "+
+           "d'écart tenus d'un bout à l'autre au-dessus du plan de masse L2.",
+           "**Bus de données SPI** : liaisons SCK, MOSI, MISO, CS reliant le MCU "+
+           "à la mémoire Flash SPI SOIC-8.",
+           "**Ligne à impédance contrôlée 50 Ω** : piste RF_ANT calibrée à 0,38 mm "+
+           "reliant le MCU à l'embase SMA bord de carte.",
+           "Plans internes dédiés : masse en L2, alimentation +3,3 V en L3.",
+           "Routage multicouche : bus SWD et signaux de bus passés en couche arrière (Bottom)."],
    build:exemple2}
 ];
 

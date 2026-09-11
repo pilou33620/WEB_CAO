@@ -1,0 +1,28 @@
+{
+  "format": "pcbfp-1",
+  "name": "TP-PTH",
+  "pkg": "TP-PTH",
+  "pins": 1,
+  "style": "row",
+  "pitch": 2.54,
+  "span": 2.54,
+  "pads": [
+    {
+      "n": 1,
+      "x": 0,
+      "y": 0,
+      "w": 2,
+      "h": 2,
+      "shape": "circ",
+      "drill": 1,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -1.25,
+    "y1": -1.35,
+    "x2": 1.25,
+    "y2": 1.35
+  },
+  "description": "Point de test traversant percé"
+}

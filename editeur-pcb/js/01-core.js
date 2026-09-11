@@ -967,6 +967,122 @@ const PKG_LIB={
     body:{x1:-3.8, y1:-2.5, x2:3.8, y2:3.5}
   }
 };
+/* ==========================================================================
+   Bibliothèque d'empreintes centralisée (LIB)
+   ========================================================================== */
+const PCB_LIB_CACHE = new Map();
+
+// Liste par défaut des empreintes issues de LIB/lib_empreinte_pcb
+const PCB_LIB_DEFAUT = [
+  "01005", "0201", "0402", "0603", "0805", "1206", "1210", "1812", "2512",
+  "SMA", "SMB", "SMC", "MELF", "MiniMELF", "SOD-123", "SOD-323", "SOD-523",
+  "SOT-23", "SOT-23-5", "SOT-23-6", "SOT-89", "SOT-223", "SC-70", "SC-70-6",
+  "DIP-4", "DIP-6", "DIP-8", "DIP-14", "DIP-16", "DIP-18", "DIP-20", "DIP-24", "DIP-28", "DIP-32", "DIP-40",
+  "SOIC-8", "SOIC-14", "SOIC-16", "SOIC-20", "SOIC-24", "SOIC-28",
+  "TSSOP-8", "TSSOP-14", "TSSOP-16", "TSSOP-20", "TSSOP-24", "TSSOP-28",
+  "SSOP-14", "SSOP-16", "SSOP-20", "SSOP-28", "MSOP-8", "MSOP-10",
+  "DFN-8", "DFN-10", "WSON-8",
+  "QFN-16", "QFN-20", "QFN-24", "QFN-28", "QFN-32", "QFN-40", "QFN-48", "QFN-64",
+  "TQFP-32", "TQFP-44", "LQFP-48", "LQFP-64", "LQFP-100",
+  "BGA-16", "BGA-64", "BGA-100", "BGA-256",
+  "TO-92", "TO-220", "TO-247", "TO-252", "TO-263",
+  "HEADER-2.54-1x2", "HEADER-2.54-1x3", "HEADER-2.54-1x4", "HEADER-2.54-1x6", "HEADER-2.54-1x8", "HEADER-2.54-2x5",
+  "HEADER-1.27-1x2", "HEADER-1.27-1x3", "HEADER-1.27-1x4", "HEADER-1.27-1x6", "HEADER-1.27-1x8", "HEADER-1.27-2x5",
+  "USB-C-6P", "USB-C-16P", "MICRO-USB-B",
+  "TP-PTH", "TP-SMD", "Trou-metalise-1.2mm"
+];
+
+let PCB_LIB_LIST = [...PCB_LIB_DEFAUT];
+
+async function pcbChargerCatalogueEmpreintes(){
+  try {
+    const res = await fetch("/api/lib/fichiers");
+    if(res.ok){
+      const data = await res.json();
+      if(Array.isArray(data.pcb) && data.pcb.length > 0){
+        const list = data.pcb.map(f => f.replace(/\.json$/i, ""));
+        PCB_LIB_LIST = Array.from(new Set([...list, ...PCB_LIB_DEFAUT])).sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
+      }
+    }
+  } catch(_) {}
+}
+
+function pcbObtenirEmpreinteLib(pkg){
+  if(!pkg) return null;
+  const cle = pkgKey(pkg);
+  let def = null;
+  if(PCB_LIB_CACHE && typeof PCB_LIB_CACHE.get === "function"){
+    def = PCB_LIB_CACHE.get(cle) || PCB_LIB_CACHE.get(pkg);
+  }
+  if(!def && PCB_LIB_CACHE){
+    def = PCB_LIB_CACHE[cle] || PCB_LIB_CACHE[pkg];
+  }
+  if(def) return def;
+
+  const nomFichier = pkg.endsWith(".json") ? pkg : (pkg + ".json");
+  return fetch("/api/lib/fichier?type=pcb&nom=" + encodeURIComponent(nomFichier))
+    .then(res => res.ok ? res.json() : null)
+    .then(data => {
+      if(!data) return null;
+      const contenu = data.data !== undefined ? data.data : data.contenu;
+      if(contenu && typeof contenu === "object"){
+        if(PCB_LIB_CACHE && typeof PCB_LIB_CACHE.set === "function") PCB_LIB_CACHE.set(cle, contenu);
+        else if(PCB_LIB_CACHE) PCB_LIB_CACHE[cle] = contenu;
+        return contenu;
+      }
+      return null;
+    })
+    .catch(() => null);
+}
+
+function pcbAppliquerDefEmpreinte(fp, pkgName, def){
+  if(!fp || !pkgName || !def) return false;
+  // Conserver les associations de net existantes par numéro de broche
+  const netMap = {};
+  if(fp.nets && typeof fp.nets === "object"){
+    for(const [n, net] of Object.entries(fp.nets)){
+      if(net) netMap[n] = net;
+    }
+  }
+  if(Array.isArray(fp.pads)){
+    for(const q of fp.pads){
+      if(q.net && q.n) netMap[q.n] = q.net;
+    }
+  }
+
+  if(Array.isArray(def.pads)){
+    fp.pkg = pkgName;
+    fp.style = def.style || "chip";
+    fp.pitch = def.pitch || 1.0;
+    fp.span = def.span || 1.0;
+    fp.pins = Math.max(fpWiredPins(fp), def.pins || def.pads.length);
+    fp.pads = def.pads.map(padClone);
+    for(const q of fp.pads){
+      if(!q.net && q.n && netMap[q.n]){
+        q.net = netMap[q.n];
+      }
+    }
+    if(!fp.nets) fp.nets = {};
+    for(const [n, net] of Object.entries(netMap)){
+      fp.nets[n] = net;
+    }
+    if(def.body) fp.body = {...def.body};
+    fpSyncPins(fp);
+    return true;
+  }
+  fp.pkg = pkgName;
+  return applyPkgGeom(fp);
+}
+
+function pcbAppliquerEmpreinteLib(fp, pkgName){
+  if(!fp || !pkgName) return false;
+  const def = pcbObtenirEmpreinteLib(pkgName);
+  if(def && typeof def.then === "function"){
+    return def.then(d => pcbAppliquerDefEmpreinte(fp, pkgName, d));
+  }
+  return pcbAppliquerDefEmpreinte(fp, pkgName, def);
+}
+
 /* Clé de comparaison : majuscules, surnom entre parenthèses écarté (le
    schématique propose « TO-252 (DPAK) »), séparateurs ignorés. « SOT-23-5 »,
    « SOT23-5 » et « sot 23 5 » désignent alors le même boîtier à cinq broches. */
@@ -983,6 +1099,28 @@ function quadSide(pins){return Math.max(1,Math.ceil(pins/4));}
 function pkgGeom(pkg,pinsHint){
   const key=pkgKey(pkg);
   if(!key)return null;
+
+  // 1. Recherche dans le cache de la bibliothèque centralisée LIB
+  let libDef = null;
+  if(PCB_LIB_CACHE && typeof PCB_LIB_CACHE.get === "function"){
+    libDef = PCB_LIB_CACHE.get(key) || PCB_LIB_CACHE.get(pkg);
+  }
+  if(!libDef && PCB_LIB_CACHE){
+    libDef = PCB_LIB_CACHE[key] || PCB_LIB_CACHE[pkg];
+  }
+  if(libDef){
+    const g={
+        style:libDef.style||"chip",
+        pitch:libDef.pitch||1.0,
+        span:libDef.span||1.0,
+        pins:Math.max(pinsHint|0,libDef.pins||(libDef.pads?libDef.pads.length:2)),
+        pkg:libDef.name||pkg
+      };
+      if(Array.isArray(libDef.pads))g.pads=libDef.pads.map(padClone);
+      if(libDef.body)g.body={...libDef.body};
+      return g;
+  }
+
   let hit=null;
   for(const name of Object.keys(PKG_LIB)){
     const k=pkgKey(name);

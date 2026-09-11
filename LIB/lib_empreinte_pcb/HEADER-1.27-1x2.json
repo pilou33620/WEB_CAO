@@ -1,0 +1,38 @@
+{
+  "format": "pcbfp-1",
+  "name": "HEADER-1.27-1x2",
+  "pkg": "HEADER-1.27-1x2",
+  "pins": 2,
+  "style": "row",
+  "pitch": 1.27,
+  "span": 1.27,
+  "pads": [
+    {
+      "n": 1,
+      "x": -0.635,
+      "y": 0,
+      "w": 0.8636,
+      "h": 0.8636,
+      "shape": "rect",
+      "drill": 0.4318,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 0.635,
+      "y": 0,
+      "w": 0.8636,
+      "h": 0.8636,
+      "shape": "circ",
+      "drill": 0.4318,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -1.3168,
+    "y1": -0.7818,
+    "x2": 1.3168,
+    "y2": 0.7818
+  },
+  "description": "Barrette 1 rangée 2 broches pas 1.27 mm"
+}

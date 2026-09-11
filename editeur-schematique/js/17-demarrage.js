@@ -17,7 +17,7 @@ if(PROJ_ACTIF){
   S.dirty=false;
 }else{
   // SANS PROJET : on charge la schématique exemple (démo)
-  S.pages=[newHierPage("Hiérarchie"),newPage("Commande NPN"),newPage("Alimentation")];
+  S.pages=[newHierPage("Hiérarchie"),newPage("Microcontrôleur & Bus"),newPage("Alimentation & RF")];
   loadPage(2);demo2();touchWires();resolveSplits();storeCurrent();
   loadPage(1);demo();touchWires();resolveSplits();storeCurrent();
   loadPage(0); // ouvre sur la feuille hiérarchique racine

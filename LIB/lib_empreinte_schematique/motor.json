@@ -1,0 +1,58 @@
+{
+  "format": "schsym-1",
+  "id": "motor",
+  "name": "Moteur DC",
+  "category": "Divers",
+  "prefix": "M",
+  "defaultValue": "DC",
+  "defaultPkg": "",
+  "pinCount": 2,
+  "pins": [
+    {
+      "n": 1,
+      "x": 0,
+      "y": -40
+    },
+    {
+      "n": 2,
+      "x": 0,
+      "y": 40
+    }
+  ],
+  "ext": [
+    -20,
+    -40,
+    20,
+    40
+  ],
+  "primitives": [
+    {
+      "op": "line",
+      "x1": 0,
+      "y1": -40,
+      "x2": 0,
+      "y2": -20
+    },
+    {
+      "op": "line",
+      "x1": 0,
+      "y1": 20,
+      "x2": 0,
+      "y2": 40
+    },
+    {
+      "op": "circle",
+      "x": 0,
+      "y": 0,
+      "r": 20,
+      "fill": true
+    },
+    {
+      "op": "text",
+      "text": "M",
+      "x": 0,
+      "y": 0,
+      "size": 14
+    }
+  ]
+}

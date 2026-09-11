@@ -482,6 +482,12 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-crosstalk-1"
 FORMAT_RESULTAT = "cao-crosstalk-resultat-1"
+VERSION = "3.1.0"
+VERSION_MOTEURS = {
+    "crosstalk": VERSION,
+    "simulation_em": getattr(se, "VERSION", "4.1.0") if se is not None else "indisponible",
+    "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
+}
 
 C_0 = 299792458.0
 
@@ -560,10 +566,14 @@ def etat():
     """Ce que le serveur sait faire ; la page le demande avant de lancer."""
     if ERREUR_SOLVEUR is not None:
         return {"dispo": False,
+                "version": VERSION,
+                "moteurs": VERSION_MOTEURS,
                 "detail": "Analyse de crosstalk indisponible : %s"
                           % ERREUR_SOLVEUR,
                 "conseil": "Elle a besoin de numpy : « pip install numpy »."}
     return {"dispo": True, "format": FORMAT, "resultat": FORMAT_RESULTAT,
+            "version": VERSION,
+            "moteurs": VERSION_MOTEURS,
             "max": MAX_CORPS,
             "source": "le design seul (IPC-2581 ou editeur PCB) : aucun"
                       " fichier de parametres S n'est accepte en entree",
@@ -3320,6 +3330,7 @@ def analyser(doc, journal=None):
 
     masse = controle_masse(doc, parcours, analyse)
     base = {"format": FORMAT_RESULTAT, "carte": str(doc.get("carte") or ""),
+            "version": VERSION, "moteurs": VERSION_MOTEURS,
             "bande_deduite": deduite,
             "agresseurs": nets_agresseurs, "principal": principal,
             "longueur": round(longueur, 3), "etape0": etape0, "masse": masse,

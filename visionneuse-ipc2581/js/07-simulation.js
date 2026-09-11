@@ -3745,19 +3745,191 @@ function simXtRisqueTraceIpc(c,dpr){
 }
 
 function simParseResistance(val){
-  if(val==null)return null;
+  if(val==null) return null;
   const s=String(val).trim();
-  const mCode=s.match(/^(\d+)[rR](\d+)$/);
-  if(mCode)return parseFloat(mCode[1]+"."+mCode[2]);
-  const mCodeK=s.match(/^(\d+)[kK](\d+)$/);
-  if(mCodeK)return parseFloat(mCodeK[1]+"."+mCodeK[2])*1000;
-  const m=s.match(/(\d+(?:[.,]\d+)?)\s*(k|m|r|ohm|Ω)?/i);
-  if(!m)return null;
-  const n=parseFloat(m[1].replace(",","."));
-  const u=(m[2]||"").toLowerCase();
-  if(u.includes("k"))return n*1000;
-  if(u.includes("m")&&!u.includes("ohm"))return n*1e6;
-  return n;
+  if(!s) return null;
+
+  const pkgCodes = ["0402", "0603", "0805", "1206", "1210", "1812", "2010", "2512", "0201", "01005"];
+  if(pkgCodes.includes(s)) return null;
+
+  // 1. Valeur numérique pure (ex: "560", "22", "1000", "4.7")
+  if(/^\d+(?:[.,]\d+)?$/.test(s)){
+    return parseFloat(s.replace(",", "."));
+  }
+
+  // 2. Format R standard : 4R7 -> 4.7, 22R -> 22, 0R5 -> 0.5, 22R0 -> 22.0
+  const mCode = s.match(/\b(\d+)[rR](\d*)\b/);
+  if(mCode){
+    const dec = mCode[2] ? ("." + mCode[2]) : "";
+    return parseFloat(mCode[1] + dec);
+  }
+
+  // 3. Format K standard : 4K7 -> 4700, 10K -> 10000, 10K5 -> 10500
+  const mCodeK = s.match(/\b(\d+)[kK](\d*)\b/);
+  if(mCodeK){
+    const dec = mCodeK[2] ? ("." + mCodeK[2]) : "";
+    return parseFloat(mCodeK[1] + dec) * 1000;
+  }
+
+  // 4. Format M standard : 1M -> 1e6, 2M2 -> 2.2e6
+  const mCodeM = s.match(/\b(\d+)[mM](\d*)\b/);
+  if(mCodeM && !/ohm/i.test(s)){
+    const dec = mCodeM[2] ? ("." + mCodeM[2]) : "";
+    return parseFloat(mCodeM[1] + dec) * 1e6;
+  }
+
+  // 5. Format R préfixe : R10 -> 0.10, R050 -> 0.050
+  const mPreR = s.match(/\b[rR](\d+(?:[.,]\d+)?)\b/);
+  if(mPreR){
+    return parseFloat("0." + mPreR[1].replace(",", ""));
+  }
+
+  // 6. Format avec unité explicite : "560 ohm", "22 Ω", "4.7 kohm", "10k"
+  const mUnit = s.match(/(\d+(?:[.,]\d+)?)\s*(k|m|r|ohm|Ω)\b/i);
+  if(mUnit){
+    const n = parseFloat(mUnit[1].replace(",", "."));
+    const u = mUnit[2].toLowerCase();
+    if(u.includes("k")) return n * 1000;
+    if(u.includes("m") && !u.includes("ohm")) return n * 1e6;
+    return n;
+  }
+
+  // 7. Nombre isolé ne correspondant pas à un code boîtier (0402, 0603, etc.)
+  const allNums = s.match(/\b\d+(?:[.,]\d+)?\b/g);
+  if(allNums){
+    for(const numStr of allNums){
+      if(["0402", "0603", "0805", "1206", "1210", "1812", "2010", "2512", "0201", "01005"].includes(numStr)) continue;
+      const n = parseFloat(numStr.replace(",", "."));
+      if(n >= 0) return n;
+    }
+  }
+
+  return null;
+}
+
+/* Récupère toutes les broches/pastilles d'un composant IPC-2581 avec leur net associé */
+function simIpcCompNets(comp){
+  const pinNets = [];
+  const allNets = new Set();
+  const isPwr = n => /^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
+
+  // 1. Depuis comp.pins (principale source des nets logiques dans IPC-2581 via <LogicalNet>)
+  if(comp.pins && Array.isArray(comp.pins)){
+    for(let i = 0; i < comp.pins.length; i++){
+      const p = comp.pins[i];
+      let nom = "";
+      if(p.net) nom = String(p.net).trim();
+      else if(typeof p.n === "string") nom = p.n.trim();
+      else if(p.n != null && typeof p.n === "number" && p.n >= 0){
+        nom = (typeof mdlNetNom === "function") ? mdlNetNom(p.n) : ((V.modele && V.modele.nets && V.modele.nets[p.n]) || (V.parNet && V.parNet[p.n] && V.parNet[p.n].nom) || "");
+      }
+      const pinNum = p.num != null ? String(p.num) : (p.p != null ? String(p.p) : String(i + 1));
+      if(nom && !isPwr(nom)){
+        pinNets.push({ pin: pinNum, net: nom });
+        allNets.add(nom);
+      }
+    }
+  }
+
+  // 2. Depuis comp.pads (si les pastilles portent des nets ou pointent vers une broche)
+  if(comp.pads && Array.isArray(comp.pads)){
+    for(let i = 0; i < comp.pads.length; i++){
+      const q = comp.pads[i];
+      const pinNum = q.num != null ? String(q.num) : (q.pin != null ? String(q.pin) : (q.p != null ? String(q.p) : String(i + 1)));
+      let nom = "";
+      if(q.net) nom = String(q.net).trim();
+      else if(typeof q.n === "string") nom = q.n.trim();
+      else if(q.n != null && typeof q.n === "number" && q.n >= 0){
+        nom = (typeof mdlNetNom === "function") ? mdlNetNom(q.n) : ((V.modele && V.modele.nets && V.modele.nets[q.n]) || (V.parNet && V.parNet[q.n] && V.parNet[q.n].nom) || "");
+      }
+      if(!nom && comp.pins){
+        const matchedPin = comp.pins.find(bp => String(bp.num != null ? bp.num : bp.p) === pinNum);
+        if(matchedPin){
+          if(matchedPin.net) nom = String(matchedPin.net).trim();
+          else if(typeof matchedPin.n === "string") nom = matchedPin.n.trim();
+          else if(matchedPin.n != null && typeof matchedPin.n === "number" && matchedPin.n >= 0){
+            nom = (typeof mdlNetNom === "function") ? mdlNetNom(matchedPin.n) : ((V.modele && V.modele.nets && V.modele.nets[matchedPin.n]) || "");
+          }
+        }
+      }
+      if(nom && !isPwr(nom)){
+        if(!pinNets.some(item => item.pin === pinNum && item.net === nom)){
+          pinNets.push({ pin: pinNum, net: nom });
+        }
+        allNets.add(nom);
+      }
+    }
+  }
+
+  // 3. Si aucun net ou un seul net trouvé, inspecter géométriquement les pistes de cuivre dans V.parNet
+  if(allNets.size < 2 && typeof V !== "undefined" && V.parNet && Array.isArray(V.parNet)){
+    const pads = comp.pads || [];
+    for(let i = 0; i < pads.length; i++){
+      const q = pads[i];
+      const pinNum = q.pin != null ? String(q.pin) : String(i + 1);
+      if(pinNets.some(item => item.pin === pinNum)) continue;
+
+      let wx = q.x || 0, wy = q.y || 0;
+      if(typeof mdlPlacer === "function"){
+        const pt = mdlPlacer(q.x || 0, q.y || 0, comp.x || 0, comp.y || 0, comp.r || 0, !!comp.m);
+        wx = pt.x; wy = pt.y;
+      }else{
+        wx = (comp.x || 0) + (q.x || 0);
+        wy = (comp.y || 0) + (q.y || 0);
+      }
+
+      const padR = 0.6;
+      for(const nObj of V.parNet){
+        if(!nObj || !nObj.nom || isPwr(nObj.nom)) continue;
+        let touch = false;
+        for(const trk of (nObj.pistes || [])){
+          if(trk.p && trk.p.length >= 4){
+            const x1 = trk.p[0], y1 = trk.p[1], x2 = trk.p[2], y2 = trk.p[3];
+            const dx = x2 - x1, dy = y2 - y1;
+            const l2 = dx*dx + dy*dy;
+            let dist = Math.hypot(wx - x1, wy - y1);
+            if(l2 > 0){
+              const u = Math.max(0, Math.min(1, ((wx - x1)*dx + (wy - y1)*dy) / l2));
+              dist = Math.hypot(wx - (x1 + u*dx), wy - (y1 + u*dy));
+            }
+            if(dist <= padR + (trk.w || 0.2)/2){
+              touch = true; break;
+            }
+          }
+        }
+        if(touch){
+          pinNets.push({ pin: pinNum, net: nObj.nom });
+          allNets.add(nObj.nom);
+          break;
+        }
+      }
+    }
+  }
+
+  return { pinNets, allNets: [...allNets] };
+}
+
+/* Extrait la valeur et la résistance en ohms d'un composant IPC-2581 */
+function simIpcValeurComp(comp){
+  const rawVal = comp.val || comp.valeur ||
+    (comp.props && (comp.props.VALUE || comp.props.Value || comp.props.VALEUR || comp.props.valeur ||
+                    comp.props.RESISTANCE || comp.props.Resistance || comp.props.resistance ||
+                    comp.props.PART_NAME || comp.props.DEVICE || comp.props.Description)) ||
+    comp.part || "";
+  const parsedR = simParseResistance(rawVal);
+  return { rawVal: String(rawVal).trim(), parsedR: parsedR };
+}
+
+/* Vérifie si le composant est une résistance */
+function simEstResistanceIpc(ref, val, type){
+  if(type && /resistor/i.test(String(type))) return true;
+  const r = String(ref || "").trim();
+  if(/^(R|RN|RP|RA|RES|RS)[0-9_]/i.test(r)) return true;
+  if(/^(R|RN|RP|RA|RES|RS)$/i.test(r)) return true;
+  if(/^R[A-Z0-9_-]*$/i.test(r)) return true;
+  const v = String(val || "").trim();
+  if(/(?:ohm|Ω|\b\d+[rR]\d*\b|\b\d+[kK]\d*\b)/i.test(v)) return true;
+  return false;
 }
 
 const SIM_IPC={
@@ -4499,66 +4671,113 @@ const SIM_IPC={
   },
 
   trouverPontSerie:function(netName){
-    if(typeof V==="undefined"||!V||!V.parRef||!netName) return null;
-    const cleanTarget = String(netName).trim();
+    if(typeof V==="undefined"||!V||!netName) return null;
+    const cleanTarget = String(netName).replace(/\s*\([^)]*\)/g, "").split("+")[0].trim();
+    if(!cleanTarget) return null;
     const cleanTargetUpper = cleanTarget.toUpperCase();
-    const isPwr=n=>/^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
-    const getNetNames=c=>new Set((c.pads||[]).map(p=>(V.parNet&&V.parNet[p.n])?V.parNet[p.n].nom:null).filter(Boolean));
-    const isResistor=(ref, val)=>/^(R|RN)\b/i.test(ref||"") || /^R\d+/i.test(ref||"") || /(?:ohm|Ω|\d+R\d*)/i.test(String(val||""));
-    const isPassiveRef=r=>/^(R|RN|L|FB|C)/i.test(r||"");
+    const isPassiveRef=r=>/^(R|RN|RP|RA|RES|RS|L|FB|C)/i.test(r||"");
+
+    let entries = [];
+    if(V.parRef instanceof Map){
+      entries = [...V.parRef.entries()];
+    }else if(V.parRef && typeof V.parRef === "object"){
+      entries = Object.entries(V.parRef);
+    }else if(V.modele && Array.isArray(V.modele.composants)){
+      entries = V.modele.composants.map(c => [c.ref, c]);
+    }
+
     let fallback=null;
-    for(const [ref, comp] of V.parRef.entries()){
-      const fNets=[...getNetNames(comp)].filter(n=>!isPwr(n));
-      if(fNets.length===2){
-        const [nA, nB] = fNets;
-        const matchA = (nA.trim().toUpperCase() === cleanTargetUpper);
-        const matchB = (nB.trim().toUpperCase() === cleanTargetUpper);
-        if(nA!==nB && (matchA || matchB)){
-          const aval = (matchA ? nB : nA);
-          const rawVal = comp.valeur ? String(comp.valeur).trim() : "";
-          const parsedR = simParseResistance(rawVal);
-          const rOhms = (parsedR != null && parsedR >= 0) ? parsedR : 22;
-          const cleanVal = (rawVal ? String(rawVal).trim() : "") || (rOhms + "Ω");
-          const valSuffix = " " + (rOhms > 0 ? (rOhms + "Ω") : cleanVal);
-          const bridge = {
-            comp: ref||"R",
-            val: cleanVal,
-            rOhms: rOhms,
-            netAmont: cleanTarget,
-            netAval: aval,
-            annotation: (ref||"R") + valSuffix,
-            label: cleanTarget + " + " + aval + " (" + (ref||"R") + valSuffix + ")"
-          };
-          if(isResistor(ref, rawVal) || parsedR != null){
-            return bridge;
+    for(const [ref, comp] of entries){
+      if(!comp) continue;
+      const { pinNets, allNets } = simIpcCompNets(comp);
+      if(!allNets.some(n => n.trim().toUpperCase() === cleanTargetUpper)) continue;
+
+      let aval = null;
+      if(allNets.length === 2){
+        const other = allNets.find(n => n.trim().toUpperCase() !== cleanTargetUpper);
+        if(other) aval = other;
+      }else if(allNets.length > 2){
+        // Réseau de résistances ou multi-pins : trouver la broche associée
+        const targetPinObj = pinNets.find(p => p.net.trim().toUpperCase() === cleanTargetUpper);
+        if(targetPinObj){
+          const pNum = parseInt(targetPinObj.pin, 10);
+          if(!isNaN(pNum)){
+            const pinNums = pinNets.map(p => parseInt(p.pin, 10)).filter(n => !isNaN(n));
+            const maxPin = pinNums.length ? Math.max(...pinNums) : 8;
+            const nTotal = Math.max(comp.pins ? comp.pins.length : 0, comp.pads ? comp.pads.length : 0, maxPin);
+            const oppPin = String(nTotal + 1 - pNum);
+            const consPin = String(pNum % 2 === 1 ? pNum + 1 : pNum - 1);
+            let paired = pinNets.find(p => p.pin === oppPin);
+            if(!paired) paired = pinNets.find(p => p.pin === consPin);
+            if(paired && paired.net.trim().toUpperCase() !== cleanTargetUpper){
+              aval = paired.net;
+            }
           }
-          if(isPassiveRef(ref) && !fallback) fallback = bridge;
         }
+        if(!aval){
+          const other = allNets.find(n => n.trim().toUpperCase() !== cleanTargetUpper);
+          if(other) aval = other;
+        }
+      }
+
+      if(aval && aval.trim().toUpperCase() !== cleanTargetUpper){
+        const { rawVal, parsedR } = simIpcValeurComp(comp);
+        const rOhms = (parsedR != null && parsedR >= 0) ? parsedR : 22;
+        const cleanVal = (parsedR != null && parsedR >= 0) ? (rOhms + "Ω") : (rawVal || (rOhms + "Ω"));
+        const valSuffix = " " + (rOhms >= 0 ? (rOhms + "Ω") : cleanVal);
+        const bridge = {
+          comp: ref || "R",
+          val: cleanVal,
+          rOhms: rOhms,
+          netAmont: cleanTarget,
+          netAval: aval,
+          annotation: (ref || "R") + valSuffix,
+          label: cleanTarget + " + " + aval + " (" + (ref || "R") + valSuffix + ")"
+        };
+        if(simEstResistanceIpc(ref, rawVal, comp.type) || parsedR != null){
+          return bridge;
+        }
+        if(isPassiveRef(ref) && !fallback) fallback = bridge;
       }
     }
     return fallback;
   },
 
   listeComposants:function(){
-    if(typeof V==="undefined"||!V||!V.parRef) return [];
+    if(typeof V==="undefined"||!V) return [];
+    let entries = [];
+    if(V.parRef instanceof Map) entries = [...V.parRef.entries()];
+    else if(V.parRef && typeof V.parRef === "object") entries = Object.entries(V.parRef);
+    else if(V.modele && Array.isArray(V.modele.composants)) entries = V.modele.composants.map(c => [c.ref, c]);
+
     const comps=[];
-    for(const [ref, comp] of V.parRef.entries()){
+    for(const [ref, comp] of entries){
+      const { rawVal } = simIpcValeurComp(comp);
       comps.push({
         ref: ref,
-        val: comp.valeur||comp.part||comp.package||"",
-        pkg: comp.package||""
+        val: rawVal || comp.package || "",
+        pkg: comp.package || comp.pkg || ""
       });
     }
     return comps.sort((a,b)=>a.ref.localeCompare(b.ref, undefined, {numeric:true}));
   },
 
   netsEntreComposants:function(ref1, ref2){
-    if(typeof V==="undefined"||!V||!V.parRef||!ref1||!ref2) return [];
-    const c1=V.parRef.get(ref1), c2=V.parRef.get(ref2);
+    if(typeof V==="undefined"||!V||!ref1||!ref2) return [];
+    let c1 = null, c2 = null;
+    if(V.parRef instanceof Map){
+      c1 = V.parRef.get(ref1); c2 = V.parRef.get(ref2);
+    }else if(V.parRef && typeof V.parRef === "object"){
+      c1 = V.parRef[ref1]; c2 = V.parRef[ref2];
+    }else if(V.modele && Array.isArray(V.modele.composants)){
+      c1 = V.modele.composants.find(c => c.ref === ref1);
+      c2 = V.modele.composants.find(c => c.ref === ref2);
+    }
     if(!c1||!c2) return [];
+
     const isPwr=n=>/^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
-    const getNetNames=c=>new Set((c.pads||[]).map(p=>(V.parNet&&V.parNet[p.n])?V.parNet[p.n].nom:null).filter(Boolean));
-    const s1=getNetNames(c1), s2=getNetNames(c2);
+    const s1 = new Set(simIpcCompNets(c1).allNets);
+    const s2 = new Set(simIpcCompNets(c2).allNets);
     const common=[];
 
     // 1. Nets directement communs
@@ -4568,17 +4787,21 @@ const SIM_IPC={
       }
     }
 
-    // 2. Nets chaînés via un composant passif série à 2 broches (ex: R, L, C)
-    for(const [ref, comp] of V.parRef.entries()){
+    // 2. Nets chaînés via un composant passif série
+    let entries = [];
+    if(V.parRef instanceof Map) entries = [...V.parRef.entries()];
+    else if(V.parRef && typeof V.parRef === "object") entries = Object.entries(V.parRef);
+    else if(V.modele && Array.isArray(V.modele.composants)) entries = V.modele.composants.map(c => [c.ref, c]);
+
+    for(const [ref, comp] of entries){
       if(ref===ref1||ref===ref2) continue;
-      const fNets=[...getNetNames(comp)].filter(n=>!isPwr(n));
-      if(fNets.length===2){
-        const [nA, nB] = fNets;
+      const { allNets } = simIpcCompNets(comp);
+      if(allNets.length===2){
+        const [nA, nB] = allNets;
         if(nA!==nB){
-          const rawVal = comp.valeur ? String(comp.valeur).trim() : "";
-          const parsedR = simParseResistance(rawVal);
+          const { rawVal, parsedR } = simIpcValeurComp(comp);
           const rOhms = (parsedR != null && parsedR >= 0) ? parsedR : 22;
-          const valSuffix = " " + (rOhms > 0 ? (rOhms + "Ω") : (rawVal || "22Ω"));
+          const valSuffix = " " + (rOhms >= 0 ? (rOhms + "Ω") : (rawVal || "22Ω"));
           if(s1.has(nA) && s2.has(nB)){
             common.push(nA + " + " + nB + " (" + ref + valSuffix + ")");
           }else if(s1.has(nB) && s2.has(nA)){
@@ -4592,19 +4815,21 @@ const SIM_IPC={
   },
 
   listeLiaisonsSeries:function(){
-    if(typeof V==="undefined"||!V||!V.parRef) return [];
-    const isPwr=n=>/^(GND|VCC|\+?3V3|\+?5V|\+?1V[0-9]|\+?2V[0-9]|VDD|VSS|VIN|VBAT)$/i.test(n);
-    const getNetNames=c=>new Set((c.pads||[]).map(p=>(V.parNet&&V.parNet[p.n])?V.parNet[p.n].nom:null).filter(Boolean));
+    if(typeof V==="undefined"||!V) return [];
+    let entries = [];
+    if(V.parRef instanceof Map) entries = [...V.parRef.entries()];
+    else if(V.parRef && typeof V.parRef === "object") entries = Object.entries(V.parRef);
+    else if(V.modele && Array.isArray(V.modele.composants)) entries = V.modele.composants.map(c => [c.ref, c]);
+
     const bridges=[];
-    for(const [ref, comp] of V.parRef.entries()){
-      const fNets=[...getNetNames(comp)].filter(n=>!isPwr(n));
-      if(fNets.length===2){
-        const [nA, nB] = fNets;
+    for(const [ref, comp] of entries){
+      const { allNets } = simIpcCompNets(comp);
+      if(allNets.length===2){
+        const [nA, nB] = allNets;
         if(nA!==nB){
-          const rawVal = comp.valeur ? String(comp.valeur).trim() : "";
-          const parsedR = simParseResistance(rawVal);
+          const { rawVal, parsedR } = simIpcValeurComp(comp);
           const rOhms = (parsedR != null && parsedR >= 0) ? parsedR : 22;
-          const valSuffix = " " + (rOhms > 0 ? (rOhms + "Ω") : (rawVal || "22Ω"));
+          const valSuffix = " " + (rOhms >= 0 ? (rOhms + "Ω") : (rawVal || "22Ω"));
           bridges.push(nA + " + " + nB + " (" + ref + valSuffix + ")");
         }
       }
@@ -4618,10 +4843,31 @@ const SIM_IPC={
   },
 
   netsSelectionnes:function(){
-    if(typeof V!=="undefined"&&V.netSurbrillance!=null&&V.parNet&&V.parNet[V.netSurbrillance]){
-      return [V.parNet[V.netSurbrillance].nom];
+    if(typeof V==="undefined"||!V) return [];
+    const res = new Set();
+    if(typeof selNets === "function"){
+      try {
+        for(const idx of selNets()){
+          const n = (typeof mdlNetNom === "function") ? mdlNetNom(idx) : (V.parNet && V.parNet[idx] ? V.parNet[idx].nom : "");
+          if(n) res.add(n);
+        }
+      } catch(e) {}
     }
-    return [];
+    if(V.net != null && V.net >= 0){
+      const n = (typeof mdlNetNom === "function") ? mdlNetNom(V.net) : (V.parNet && V.parNet[V.net] ? V.parNet[V.net].nom : "");
+      if(n) res.add(n);
+    }
+    if(V.sel && Array.isArray(V.sel)){
+      for(const e of V.sel){
+        if(!e || !e.s) continue;
+        const netIdx = e.s.net != null ? e.s.net : (e.s.n != null ? e.s.n : (e.s.piste && e.s.piste.n));
+        if(netIdx != null && netIdx >= 0){
+          const n = (typeof mdlNetNom === "function") ? mdlNetNom(netIdx) : (V.parNet && V.parNet[netIdx] ? V.parNet[netIdx].nom : "");
+          if(n) res.add(n);
+        }
+      }
+    }
+    return [...res].filter(Boolean);
   },
 
   astuce:function(t){

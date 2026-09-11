@@ -1,0 +1,28 @@
+{
+  "format": "pcbfp-1",
+  "name": "Trou-metalise-1.2mm",
+  "pkg": "Trou-metalise-1.2mm",
+  "pins": 1,
+  "style": "row",
+  "pitch": 2.54,
+  "span": 2.54,
+  "pads": [
+    {
+      "n": 1,
+      "x": 0,
+      "y": 0,
+      "w": 2.54,
+      "h": 1.6,
+      "shape": "oval",
+      "drill": 1.2,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -1.52,
+    "y1": -1.15,
+    "x2": 1.52,
+    "y2": 1.15
+  },
+  "description": "Trou métallisé diamètre 1.2 mm pastille 2.54 x 1.6 mm"
+}

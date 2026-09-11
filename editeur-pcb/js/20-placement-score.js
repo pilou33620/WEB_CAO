@@ -428,20 +428,38 @@ var PLACEMENT_SCORE = (function() {
           </div>
         ` : ""}
 
-        <!-- 5. Blocs fonctionnels (motifs schéma) -->
+        <!-- 5. Blocs fonctionnels (motifs schéma & zones Rooms) -->
         ${_patternsCache && Array.isArray(_patternsCache.motifs) && _patternsCache.motifs.length > 0 ? `
           <div style="background:var(--panel2);border:1px solid var(--border2);border-radius:6px;padding:10px;">
-            <div style="font-weight:600;text-transform:uppercase;font-size:10px;color:var(--txt-dim);letter-spacing:0.08em;margin-bottom:6px;">Groupes de placement détectés</div>
-            <div style="display:flex;flex-direction:column;gap:5px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span style="font-weight:600;text-transform:uppercase;font-size:10px;color:var(--txt-dim);letter-spacing:0.08em;">Groupes de placement & Zones</span>
+              <span style="font-size:10px;color:var(--txt-dim);">${_patternsCache.motifs.length} bloc(s)</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;">
               ${_patternsCache.motifs.map((m, idx) => `
-                <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(63,160,234,0.08);padding:4px 8px;border-radius:4px;border:1px solid rgba(63,160,234,0.2);">
-                  <div>
-                    <span style="font-weight:600;color:var(--blue);">${esc(m.label || m.type)}</span>
-                    <span style="font-size:10px;color:var(--txt-dim);margin-left:4px;">(${esc((m.components||[]).join(", "))})</span>
+                <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-left:4px solid ${m.color || 'var(--blue)'};padding:6px 8px;border-radius:4px;display:flex;flex-direction:column;gap:5px;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div style="display:flex;align-items:center;gap:6px;min-width:0;">
+                      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${m.color || 'var(--blue)'};flex-shrink:0;"></span>
+                      <span style="font-weight:600;color:var(--txt);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(m.label || m.nom || m.type)}</span>
+                      ${m.is_user_zone ? `<span style="font-size:9px;background:rgba(59,130,246,0.2);color:var(--blue);padding:1px 4px;border-radius:3px;font-weight:600;flex-shrink:0;">Zone</span>` : ''}
+                    </div>
+                    <span style="font-size:10px;color:var(--txt-dim);font-family:var(--mono);flex-shrink:0;margin-left:4px;">${(m.components||[]).length} comp.</span>
                   </div>
-                  <button class="tb btn-grp" data-idx="${idx}" style="padding:2px 6px;font-size:10px;" title="Sélectionner tout le bloc pour déplacement">
-                    Grouper
-                  </button>
+                  <div style="font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc((m.components||[]).join(', '))}">
+                    ${esc((m.components||[]).join(", "))}
+                  </div>
+                  <div style="display:flex;gap:4px;margin-top:2px;">
+                    <button class="tb btn-grp" data-idx="${idx}" style="flex:1;padding:3px 4px;font-size:10px;justify-content:center;" title="Sélectionner tous les composants du bloc">
+                      🖐 Grouper
+                    </button>
+                    <button class="tb btn-bloc-compact" data-idx="${idx}" style="flex:1;padding:3px 4px;font-size:10px;justify-content:center;background:rgba(76,217,100,0.12);border-color:#4cd964;color:#4cd964;font-weight:600;" title="Disposer et compacter le bloc autour de son ancre (résolution des collisions + rotations DRC)">
+                      📐 Disposer
+                    </button>
+                    <button class="tb btn-bloc-depot" data-idx="${idx}" style="flex:1;padding:3px 4px;font-size:10px;justify-content:center;background:rgba(63,160,234,0.12);border-color:var(--blue);color:var(--blue);font-weight:600;" title="Déposer en grappe compacte dans un emplacement libre de la carte">
+                      🎯 Déposer
+                    </button>
+                  </div>
                 </div>
               `).join("")}
             </div>
@@ -499,6 +517,28 @@ var PLACEMENT_SCORE = (function() {
         const idx = parseInt(btn.getAttribute("data-idx"), 10);
         if (_patternsCache && _patternsCache.motifs && _patternsCache.motifs[idx]) {
           selectionnerGroupe(_patternsCache.motifs[idx].components || []);
+        }
+      };
+    });
+
+    el.querySelectorAll(".btn-bloc-compact").forEach(btn => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        const idx = parseInt(btn.getAttribute("data-idx"), 10);
+        const m = _patternsCache && _patternsCache.motifs && _patternsCache.motifs[idx];
+        if (m && typeof BLOC_PLACEMENT !== "undefined" && BLOC_PLACEMENT.compacterSurPlace) {
+          BLOC_PLACEMENT.compacterSurPlace(m);
+        }
+      };
+    });
+
+    el.querySelectorAll(".btn-bloc-depot").forEach(btn => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        const idx = parseInt(btn.getAttribute("data-idx"), 10);
+        const m = _patternsCache && _patternsCache.motifs && _patternsCache.motifs[idx];
+        if (m && typeof BLOC_PLACEMENT !== "undefined" && BLOC_PLACEMENT.deposerEnGrappe) {
+          BLOC_PLACEMENT.deposerEnGrappe(m);
         }
       };
     });
@@ -594,6 +634,9 @@ var PLACEMENT_SCORE = (function() {
 
   function injecterMotifs(motifsData) {
     _patternsCache = motifsData;
+    if (typeof BLOC_PLACEMENT !== "undefined" && BLOC_PLACEMENT.injecterMotifs) {
+      BLOC_PLACEMENT.injecterMotifs(motifsData);
+    }
     if (_dernierResultat) rendrePanneau(_dernierResultat, null);
   }
 

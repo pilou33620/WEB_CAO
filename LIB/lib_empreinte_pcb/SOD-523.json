@@ -1,0 +1,38 @@
+{
+  "format": "pcbfp-1",
+  "name": "SOD-523",
+  "pkg": "SOD-523",
+  "pins": 2,
+  "style": "chip",
+  "pitch": 1.6,
+  "span": 1.6,
+  "pads": [
+    {
+      "n": 1,
+      "x": -0.8,
+      "y": 0,
+      "w": 0.88,
+      "h": 0.992,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 0.8,
+      "y": 0,
+      "w": 0.88,
+      "h": 0.992,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -1.49,
+    "y1": -0.846,
+    "x2": 1.49,
+    "y2": 0.846
+  },
+  "description": "Diode CMS ultra-compacte SOD-523"
+}

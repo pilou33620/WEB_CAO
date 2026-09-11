@@ -1192,3 +1192,81 @@ b.simXtV,.simXtCoche b.simXtV,.simXtLect b.simXtV{
   outline:none;
 }
 
+/* ---------- Sélecteur de moteur 2D / 2.5D & Maillage / Jsurf ---------- */
+.simMoteurBar{
+  display:flex;align-items:center;gap:5px;padding:4px 8px;
+  background:var(--panel2);border-bottom:1px solid var(--border2);
+}
+.simMoteurBar .pnl-lbl{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--txt-dim);margin-right:2px;
+}
+.simMoteurBar .simOnglet{
+  transition:all .15s ease;
+}
+.simMoteurActions{
+  display:inline-flex;align-items:center;gap:4px;
+}
+.simBadgeMoteur{
+  display:inline-block;padding:1px 6px;border-radius:3px;
+  font-family:var(--mono);font-size:9.5px;font-weight:600;
+  letter-spacing:0.03em;vertical-align:middle;
+}
+.simBadge25d{
+  background:rgba(99,102,241,0.18);color:#a5b4fc;border:1px solid rgba(99,102,241,0.45);
+}
+.simBadge2d{
+  background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.35);
+}
+#simMaille25D{width:36px}
+.simBtnJsurf, .simBtnMaillage{
+  padding:2px 7px;font-weight:500;font-size:10.5px;transition:all .15s ease;
+  border-radius:4px;cursor:pointer;
+  background:var(--panel);border:1px solid var(--border2);color:var(--txt-dim);
+}
+.simBtnJsurf:hover, .simBtnMaillage:hover{
+  color:var(--txt);border-color:var(--border);
+}
+.simBtnJsurf.on{
+  background:rgba(245,158,11,0.15);color:#fbbf24;border-color:rgba(245,158,11,0.6);
+}
+.simBtnMaillage.on{
+  background:rgba(0,220,255,0.15);color:#00dcff;border-color:rgba(0,220,255,0.6);
+}
+
+
+
+/* ==========================================================================
+   LA COURBE DU COURANT HORS DE L'AXE — moteur 2,5D
+   --------------------------------------------------------------------------
+   Elle accompagne le tableau de `simPointsChauds` : deux traces le long de
+   l'abscisse curviligne, la part transverse et la part verticale, avec le
+   seuil qui a décidé de chaque ligne du tableau. Une courbe sans son seuil ne
+   se lit pas — on ne saurait pas pourquoi tel pic est retenu et tel autre non.
+   ========================================================================== */
+.simPCCourbe{
+  display:block;width:100%;height:84px;margin:6px 0 2px;
+  background:rgba(15,17,23,0.55);border:1px solid var(--border);border-radius:4px;
+}
+/* La part TRANSVERSE : c'est la trace principale, celle du tableau. */
+.simPCCourbe .simPCTrace{
+  fill:none;stroke:#00dcff;stroke-width:1.6;vector-effect:non-scaling-stroke;
+  stroke-linejoin:round;stroke-linecap:round;
+}
+/* La part VERTICALE, en magenta — la même couleur que les fûts de via sur le
+   calque de maillage, parce que c'est la même chose qu'elle désigne. */
+.simPCCourbe .simPCVert{
+  fill:none;stroke:#ff3cdc;stroke-width:1.4;vector-effect:non-scaling-stroke;
+  stroke-dasharray:3 2;stroke-linejoin:round;
+}
+.simPCCourbe .simPCSeuil{
+  stroke:rgba(245,158,11,0.75);stroke-width:1;stroke-dasharray:4 3;
+  vector-effect:non-scaling-stroke;
+}
+.simPCCourbe .simPCPic{fill:#fbbf24;stroke:#0f1117;stroke-width:0.8;}
+/* Les bords écartés de la recherche : grisés, pour qu'on voie que les courbes
+   y montent sans que personne ne les ait comptées. */
+.simPCCourbe .simPCBord{fill:rgba(139,145,156,0.14);}
+.simPCCourbe .simPCAxe{
+  fill:#94a3b8;font:500 9px "JetBrains Mono","SF Mono",Consolas,monospace;
+}

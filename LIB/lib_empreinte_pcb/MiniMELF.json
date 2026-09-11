@@ -1,0 +1,38 @@
+{
+  "format": "pcbfp-1",
+  "name": "MiniMELF",
+  "pkg": "MiniMELF",
+  "pins": 2,
+  "style": "chip",
+  "pitch": 3.2,
+  "span": 3.2,
+  "pads": [
+    {
+      "n": 1,
+      "x": -1.6,
+      "y": 0,
+      "w": 1.76,
+      "h": 1.984,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 1.6,
+      "y": 0,
+      "w": 1.76,
+      "h": 1.984,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -2.73,
+    "y1": -1.342,
+    "x2": 2.73,
+    "y2": 1.342
+  },
+  "description": "Diode cylindrique MiniMELF (SOD-80)"
+}

@@ -98,18 +98,34 @@ def identifier_alimentations(
             v_out = None
 
         if type_reg:
-            # Cherche les condensateurs voisins sur les mêmes nets
+            # Cherche les condensateurs et passifs voisins sur les mêmes nets
             comp_nets = []
             for n_name, pins in nets.items():
                 if any(p.get("ref") == ref or p.get("component") == ref for p in pins):
                     comp_nets.append(n_name)
 
+            cin_list = []
+            cout_list = []
             associes = []
+
             for n_name in comp_nets:
+                is_in_net = bool(re.search(r"IN|VCC|VBAT|RAW|VIN|12V|24V", n_name, re.IGNORECASE))
+                is_out_net = bool(re.search(r"OUT|VOUT|3V3|3\.3V|5V|1V8|2V5", n_name, re.IGNORECASE))
                 for p in nets.get(n_name, []):
                     c_ref = p.get("ref") or p.get("component") or ""
-                    if c_ref and c_ref != ref and (c_ref.startswith("C") or c_ref.startswith("R")):
-                        if c_ref not in associes:
+                    if c_ref and c_ref != ref:
+                        if c_ref.startswith("C"):
+                            if c_ref not in associes:
+                                associes.append(c_ref)
+                            if is_in_net and not is_out_net and c_ref not in cin_list:
+                                cin_list.append(c_ref)
+                            elif is_out_net and c_ref not in cout_list:
+                                cout_list.append(c_ref)
+                            elif not cin_list:
+                                cin_list.append(c_ref)
+                            elif c_ref not in cout_list:
+                                cout_list.append(c_ref)
+                        elif c_ref.startswith("R") and c_ref not in associes:
                             associes.append(c_ref)
 
             resultats.append({
@@ -121,6 +137,13 @@ def identifier_alimentations(
                 "value": val,
                 "output_voltage": v_out,
                 "components": [ref] + associes,
+                "role_map": {
+                    "ic": ref,
+                    "cin": cin_list,
+                    "cout": cout_list,
+                    "passives": [c for c in associes if c not in cin_list and c not in cout_list]
+                },
+                "layout_template": "ldo_inline",
                 "nets": comp_nets,
                 "suggested_netclass": "Alimentation",
                 "sim_recommendation": "DC_DROP"
@@ -132,24 +155,53 @@ def identifier_alimentations(
         nom = (ref + " " + val).upper()
 
         if _RE_SWITCHER.search(nom):
-            # Cherche l'inductance connectée
+            # Cherche l'inductance connectée et les diodes / capas
             comp_nets = []
             inductors = []
+            diodes = []
+            cin_list = []
+            cout_list = []
+            feedback_res = []
+
             for n_name, pins in nets.items():
                 has_ic = any(p.get("ref") == ref or p.get("component") == ref for p in pins)
                 if has_ic:
                     comp_nets.append(n_name)
+                    is_sw_net = bool(re.search(r"SW|LX|IND|COIL", n_name, re.IGNORECASE))
+                    is_in_net = bool(re.search(r"IN|VIN|VCC|VBAT|RAW", n_name, re.IGNORECASE))
+                    is_out_net = bool(re.search(r"OUT|VOUT|3V3|5V|FB", n_name, re.IGNORECASE))
+
                     for p in pins:
                         c_ref = p.get("ref") or p.get("component") or ""
                         if c_ref.startswith("L") and c_ref not in inductors:
                             inductors.append(c_ref)
+                        elif c_ref.startswith("D") and c_ref not in diodes:
+                            diodes.append(c_ref)
+                        elif c_ref.startswith("C"):
+                            if is_in_net and c_ref not in cin_list:
+                                cin_list.append(c_ref)
+                            elif is_out_net and c_ref not in cout_list:
+                                cout_list.append(c_ref)
+                        elif c_ref.startswith("R") and c_ref not in feedback_res:
+                            feedback_res.append(c_ref)
 
-            associes = list(inductors)
-            for n_name in comp_nets:
-                for p in nets.get(n_name, []):
-                    c_ref = p.get("ref") or p.get("component") or ""
-                    if c_ref and c_ref != ref and c_ref.startswith("C") and c_ref not in associes:
-                        associes.append(c_ref)
+            # Cherche aussi sur les nets de l'inductance pour trouver cout
+            for ind_ref in inductors:
+                for n_name, pins in nets.items():
+                    if any(p.get("ref") == ind_ref or p.get("component") == ind_ref for p in pins):
+                        if n_name not in comp_nets:
+                            comp_nets.append(n_name)
+                        for p in pins:
+                            c_ref = p.get("ref") or p.get("component") or ""
+                            if c_ref.startswith("C") and c_ref not in cin_list and c_ref not in cout_list:
+                                cout_list.append(c_ref)
+
+            associes = list(inductors) + list(diodes) + list(cin_list) + list(cout_list) + list(feedback_res)
+            # Déduplication
+            unique_comps = []
+            for c in [ref] + associes:
+                if c and c not in unique_comps:
+                    unique_comps.append(c)
 
             resultats.append({
                 "id": f"buck_{ref.lower()}",
@@ -158,7 +210,17 @@ def identifier_alimentations(
                 "label": f"Hacheur {val or ref}",
                 "main_component": ref,
                 "value": val,
-                "components": [ref] + associes,
+                "components": unique_comps,
+                "role_map": {
+                    "ic": ref,
+                    "sw_inductor": inductors[0] if inductors else None,
+                    "inductors": inductors,
+                    "diodes": diodes,
+                    "cin": cin_list,
+                    "cout": cout_list,
+                    "feedback": feedback_res
+                },
+                "layout_template": "buck_compact",
                 "nets": comp_nets,
                 "suggested_netclass": "Alimentation",
                 "sim_recommendation": "DC_DROP_AND_EM"
@@ -295,6 +357,13 @@ def identifier_oscillateurs(
             "main_component": ref,
             "value": val,
             "components": [ref] + caps,
+            "role_map": {
+                "crystal": ref,
+                "c_load_1": caps[0] if len(caps) > 0 else None,
+                "c_load_2": caps[1] if len(caps) > 1 else None,
+                "c_loads": caps
+            },
+            "layout_template": "crystal_symmetric",
             "nets": q_nets,
             "suggested_netclass": "Rapide",
             "sim_recommendation": "CROSSTALK_AND_LENGTH"
@@ -338,6 +407,11 @@ def identifier_filtres(
                             "subtype": "rc_lowpass",
                             "label": f"Filtre RC ({r_ref}+{c_ref})",
                             "components": [r_ref, c_ref],
+                            "role_map": {
+                                "r_series": r_ref,
+                                "c_shunt": c_ref
+                            },
+                            "layout_template": "filter_inline",
                             "nets": [n_name],
                             "suggested_netclass": "Analogique",
                             "sim_recommendation": None
@@ -413,21 +487,81 @@ def analyser_motifs_schema(data: Dict[str, Any]) -> Dict[str, Any]:
     """Point d'entrée principal pour analyser un schéma.
 
     Args:
-        data: Dict contenant "components" et "nets".
+        data: Dict contenant "components", "nets" et facultativement "zones".
 
     Returns:
-        Dict avec la liste complète des motifs, suggestions de classes et courants.
+        Dict avec la liste complète des motifs, suggestions de classes, courants et zones.
     """
     components = data.get("components", {})
     nets = data.get("nets", {})
+    zones_brutes = data.get("zones") or data.get("rooms") or []
 
     alims = identifier_alimentations(components, nets)
     bus = identifier_bus_numeriques(components, nets)
     oscs = identifier_oscillateurs(components, nets)
     filtres = identifier_filtres(components, nets)
 
-    tous_motifs = alims + bus + oscs + filtres
+    motifs_auto = alims + bus + oscs + filtres
     courants = estimer_courants_dc(alims, components)
+
+    # Intégration des zones schématiques définies par l'utilisateur
+    zones_motifs = []
+    zones_export = []
+    for i, z in enumerate(zones_brutes):
+        if not isinstance(z, dict):
+            continue
+        z_id = z.get("id") or f"zone_{i+1}"
+        z_nom = z.get("name") or z.get("nom") or f"Zone {i+1}"
+        z_cat = (z.get("category") or z.get("categorie") or "general").lower()
+        z_col = z.get("color") or z.get("couleur") or "#3fa0ea"
+        z_comps = z.get("components") or z.get("composants") or []
+        if not isinstance(z_comps, list):
+            z_comps = []
+
+        # Tente d'associer un gabarit selon la catégorie de zone
+        template = "cluster_free"
+        if "alim" in z_cat or "power" in z_cat or "buck" in z_cat:
+            template = "buck_compact" if any(c.startswith("L") for c in z_comps) else "ldo_inline"
+        elif "mcu" in z_cat or "micro" in z_cat or "numerique" in z_cat:
+            template = "mcu_decoupling"
+        elif "osc" in z_cat or "clock" in z_cat or "quartz" in z_cat:
+            template = "crystal_symmetric"
+        elif "filt" in z_cat:
+            template = "filter_inline"
+
+        # Tente d'identifier le composant ancre dans la zone
+        anchor = None
+        for c in z_comps:
+            if c.startswith("U") or c.startswith("IC") or c.startswith("Y"):
+                anchor = c
+                break
+        if not anchor and z_comps:
+            anchor = z_comps[0]
+
+        zone_obj = {
+            "id": z_id,
+            "type": "schematic_zone",
+            "subtype": z_cat,
+            "label": f"Zone: {z_nom}",
+            "zone_name": z_nom,
+            "category": z_cat,
+            "color": z_col,
+            "main_component": anchor,
+            "components": z_comps,
+            "is_user_zone": True,
+            "layout_template": template
+        }
+        zones_motifs.append(zone_obj)
+        zones_export.append({
+            "id": z_id,
+            "nom": z_nom,
+            "categorie": z_cat,
+            "couleur": z_col,
+            "composants": z_comps,
+            "ancre": anchor
+        })
+
+    tous_motifs = zones_motifs + motifs_auto
 
     # Dictionnaire des classes de nets suggérées
     suggestions_netclasses = {}
@@ -441,6 +575,7 @@ def analyser_motifs_schema(data: Dict[str, Any]) -> Dict[str, Any]:
         "succes": True,
         "total_motifs": len(tous_motifs),
         "motifs": tous_motifs,
+        "zones": zones_export,
         "classes_suggerees": suggestions_netclasses,
         "courants_dc_estimes": courants
     }

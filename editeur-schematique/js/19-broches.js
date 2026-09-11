@@ -465,15 +465,15 @@ function ceBuild(){
             '<input id="ceMfr" placeholder="ex: Texas Instruments, Yageo...">' +
           '</div>' +
           '<div class="row" style="margin-top:16px;">' +
-            '<button class="tb" id="ceBtnPinEd" style="width:100%; border-color:var(--blue); color:var(--blue); font-weight:600;">' +
-              '⤢ Placement graphique des broches…' +
+            '<button class="tb" id="ceBtnOpenLib" style="width:100%; border-color:var(--yellow); color:var(--yellow); font-weight:600;">' +
+              '📚 Ouvrir dans Gestion LIB ↗' +
             '</button>' +
           '</div>' +
         '</div>' +
         '<div class="ce-pins-col">' +
           '<div class="ce-pins-head">' +
-            '<span class="ce-section-title" style="margin:0">Broches (<span id="cePinCount">0</span>)</span>' +
-            '<button class="tb mini" id="cePinAdd" title="Ajouter une broche">+ Ajouter broche</button>' +
+            '<span class="ce-section-title" style="margin:0">Broches connectées (<span id="cePinCount">0</span>)</span>' +
+            '<span style="font-size:10.5px; color:var(--txt-dim);">(Tracé géré dans Gestion LIB)</span>' +
           '</div>' +
           '<div class="ce-pins-table-wrap scroll">' +
             '<table class="ce-pins-table">' +
@@ -483,7 +483,6 @@ function ceBuild(){
                   '<th>Nom de la broche</th>' +
                   '<th style="width:75px; text-align:center;">Pos (X,Y)</th>' +
                   '<th>Net connecté</th>' +
-                  '<th style="width:30px;"></th>' +
                 '</tr>' +
               '</thead>' +
               '<tbody id="cePinTbody"></tbody>' +
@@ -587,28 +586,13 @@ function ceBuild(){
     }
   };
 
-  ceEl("ceBtnPinEd").onclick = () => {
-    const el = CE.el;
-    ceClose();
-    peOpen(el);
-  };
-
-  ceEl("cePinAdd").onclick = () => {
-    if(!CE.el) return;
-    cePush();
-    const cur = pinsOf(CE.el);
-    const newPos = cur.map(p => [p[0], p[1]]);
-    let mx = -1e9, my = 1e9;
-    for(const p of newPos){ mx = Math.max(mx, p[0]); my = Math.min(my, p[1]); }
-    if(!newPos.length){ mx = 0; my = 0; }
-    newPos.push([icStep(mx) + 2*IC_STEP, icStep(my)]);
-    CE.el.pinPos = newPos;
-    CE.el.npins = newPos.length;
-    if(!Array.isArray(CE.el.pinNames)) CE.el.pinNames = [];
-    while(CE.el.pinNames.length < newPos.length) CE.el.pinNames.push("");
-    ceSync();
-    draw();
-  };
+  const bOpenLib = ceEl("ceBtnOpenLib");
+  if(bOpenLib){
+    bOpenLib.onclick = () => {
+      const nom = (CE.el && (CE.el.csvPartName || CE.el.value)) || "";
+      window.open("../gestion-lib/gestion-lib.html?comp=" + encodeURIComponent(nom), "_blank");
+    };
+  }
 }
 
 function ceOpen(el){
@@ -699,9 +683,6 @@ function ceSync(){
       '<td style="text-align:center; font-family:var(--mono); font-size:10px; color:var(--txt-dim);">' + Math.round(p[0]/IC_STEP) + ' , ' + Math.round(p[1]/IC_STEP) + '</td>' +
       '<td style="font-size:11px;">' +
         (live ? '<span style="color:' + netColor(n) + '; font-weight:600;">' + esc(n.name) + '</span>' : '<span style="color:var(--txt-dim); font-style:italic;">non connecté</span>') +
-      '</td>' +
-      '<td style="text-align:center;">' +
-        '<button class="pnl-btn ce-pin-del" data-idx="' + i + '" title="Supprimer la broche" style="font-size:11px; color:#ff7875;">✕</button>' +
       '</td>';
     tbody.appendChild(tr);
   });
@@ -712,22 +693,6 @@ function ceSync(){
       const idx = +inp.dataset.idx;
       while(el.pinNames.length <= idx) el.pinNames.push("");
       el.pinNames[idx] = inp.value.trim().slice(0, 32);
-      draw();
-    };
-  });
-
-  tbody.querySelectorAll(".ce-pin-del").forEach(btn => {
-    btn.onclick = () => {
-      const idx = +btn.dataset.idx;
-      cePush();
-      reshapeComp(el, () => {
-        const curPins = pinsOf(el);
-        const newPins = curPins.filter((_, k) => k !== idx);
-        el.pinPos = newPins;
-        el.npins = newPins.length;
-        if(Array.isArray(el.pinNames)) el.pinNames.splice(idx, 1);
-      });
-      ceSync();
       draw();
     };
   });

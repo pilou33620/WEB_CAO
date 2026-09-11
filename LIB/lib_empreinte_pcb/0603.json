@@ -1,0 +1,38 @@
+{
+  "format": "pcbfp-1",
+  "name": "0603",
+  "pkg": "0603",
+  "pins": 2,
+  "style": "chip",
+  "pitch": 1.5,
+  "span": 1.5,
+  "pads": [
+    {
+      "n": 1,
+      "x": -0.75,
+      "y": 0,
+      "w": 0.825,
+      "h": 0.93,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 0.75,
+      "y": 0,
+      "w": 0.825,
+      "h": 0.93,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -1.4125,
+    "y1": -0.815,
+    "x2": 1.4125,
+    "y2": 0.815
+  },
+  "description": "CMS 0603 (1.6 x 0.8 mm) standard prototypage"
+}

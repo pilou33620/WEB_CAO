@@ -63,6 +63,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "mdlCheminsNet","mdlMevTout",
   "SIM","SIM_IPC","simRefSet","simRefListe","simRefCandidats","simInit",
   "SIM_BUS","simCorpsBus","simBrancherBus","simRendreBus","simBusCalculer","SIM_BUS_PRESETS",
+  "simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNet","simBusChangerRSerieVal","simBusChangerNetAval","simBusResoudreNetAvecPont","SIM_ED",
   "simRefCandidatsIpc",
   "simRefIdx","simPlagesDe","simMemeEcart","simKUnite","simCumul","simSurPoly",
   "simProjPoly","simSousPoly","simDistSeg","simGrilleCuivre","simEcartsEn",
@@ -3988,6 +3989,72 @@ T("SIM_BUS dans visionneuse IPC-2581 : détection pont série 560Ω et calcul RC
   if(flight.rOhms !== 560) throw new Error("busNetFlight doit lire 560 ohms: " + flight.rOhms);
   if(flight.rcDelayPs <= 0) throw new Error("retard RC doit être positif: " + flight.rcDelayPs);
   if(flight.tflightTotal <= flight.tflight) throw new Error("tflightTotal doit inclure le retard RC");
+
+  V.parNet = null;
+  V.parRef = null;
+  V.couches = null;
+  LT.pret = false;
+});
+
+T("SIM_BUS dans visionneuse IPC-2581 : détection pont série avec comp.pins (sans pad.n) et comp.val", function(){
+  carte({nets: ["DATA0", "DATA0_R", "GND"]});
+  V.unite = "mm";
+  const compR1 = {
+    ref: "R12",
+    val: "560 ohm",
+    type: "RESISTOR",
+    package: "0402",
+    pins: [
+      { p: "1", n: "DATA0" },
+      { p: "2", n: "DATA0_R" }
+    ],
+    pads: [
+      { x: 0, y: 0, w: 0.5, h: 0.5 },
+      { x: 1, y: 0, w: 0.5, h: 0.5 }
+    ]
+  };
+  V.parRef = new Map([["R12", compR1]]);
+  V.parNet[0].pistes = [{ c: 0, w: 0.2, p: [0, 0, 10, 0] }];
+  V.parNet[0].arcs = [];
+  V.parNet[1].pistes = [{ c: 0, w: 0.2, p: [11, 0, 20, 0] }];
+  V.parNet[1].arcs = [];
+
+  // Test trouverPontSerie
+  const pont = SIM_IPC.trouverPontSerie("DATA0");
+  if(!pont) throw new Error("trouverPontSerie IPC n'a pas détecté le pont avec comp.pins");
+  if(pont.comp !== "R12" || pont.rOhms !== 560 || pont.netAval !== "DATA0_R"){
+    throw new Error("pont série détecté invalide: " + JSON.stringify(pont));
+  }
+  if(!pont.label.includes("DATA0 + DATA0_R") || !pont.label.includes("560Ω")){
+    throw new Error("label du pont invalide: " + pont.label);
+  }
+
+  // Test simBusActiverRSerie
+  global.SIM_ED = SIM_IPC;
+  SIM_BUS.clocks = [];
+  SIM_BUS.datas = ["DATA0"];
+  SIM_BUS.dataClockMap = {};
+  simBusActiverRSerie("data", "DATA0");
+
+  if(SIM_BUS.datas[0] !== pont.label){
+    throw new Error("simBusActiverRSerie doit remplacer DATA0 par " + pont.label + " mais a: " + SIM_BUS.datas[0]);
+  }
+
+  // Test réseau de résistances 8-pin RN1
+  const compRN = {
+    ref: "RN1",
+    val: "33R",
+    pins: [
+      { p: "1", n: "D0" }, { p: "8", n: "D0_R" },
+      { p: "2", n: "D1" }, { p: "7", n: "D1_R" }
+    ]
+  };
+  V.parRef.set("RN1", compRN);
+  const pontRN = SIM_IPC.trouverPontSerie("D0");
+  if(!pontRN) throw new Error("trouverPontSerie IPC doit détecter RN1");
+  if(pontRN.comp !== "RN1" || pontRN.rOhms !== 33 || pontRN.netAval !== "D0_R"){
+    throw new Error("pont réseau RN1 invalide: " + JSON.stringify(pontRN));
+  }
 
   V.parNet = null;
   V.parRef = null;

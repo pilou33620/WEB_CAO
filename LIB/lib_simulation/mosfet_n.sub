@@ -1,0 +1,6 @@
+* Modele SPICE MOSFET Canal N
+.model NMOS_STD NMOS (Level=1 Vto=1.5 Kp=20u Gamma=0.37 Phi=0.65 Lambda=0.02)
+.subckt NMOS_3PIN 1 2 3
+* 1=Drain, 2=Grille, 3=Source
+M1 1 2 3 3 NMOS_STD W=100u L=1u
+.ends NMOS_3PIN

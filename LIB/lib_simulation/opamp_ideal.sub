@@ -1,0 +1,8 @@
+* Modele SPICE AOP Ideal avec gain fini et poles
+.subckt OPAMP_IDEAL 1 2 3 4 5
+* 1:In+  2:In-  3:VCC  4:VEE  5:Out
+E1 6 0 1 2 100000
+R1 6 7 1k
+C1 7 0 1.59u
+E2 5 0 7 0 1
+.ends OPAMP_IDEAL

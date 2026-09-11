@@ -196,26 +196,38 @@ def extract_polygons(data: Dict) -> List[Dict]:
     return polygons
 
 
-def build_geometry_model(polygons: List[Dict], stackup: Dict) -> Dict:
+def build_geometry_model(polygons: List[Dict], stackup: Dict,
+                         ports: List[Dict] = None) -> Dict:
     """
     Construit un modèle géométrique unifié pour le mailleur
-    
+
     Args:
         polygons: Liste des polygones de cuivre
         stackup: Stackup du PCB
-        
+        ports: les ports, quand l'appelant les a déjà localisés. UN SEUL
+            DETECTEUR DE PORTS PAR CALCUL, et c'est tout l'objet de cet
+            argument : `simulation_25d` localise les bornes de la chaîne sur
+            les objets d'ORIGINE -- avant la fusion géométrique, qui remplace
+            les pistes par des zones et leur ôte `start` / `end` --, puis
+            écrasait `geometry['ports']`. `detect_ports` tournait donc pour
+            rien, retombait sur son repli de boîte englobante, et laissait au
+            journal un « aucun port explicite détecté » qui ne décrivait pas
+            le calcul réellement fait.
+
     Returns:
         Modèle géométrique complet avec métadonnées
     """
     logger.debug("Construction du modèle géométrique")
-    
+
     # Identification des plans de masse
     ground_planes = [p for p in polygons if p['role'] in ['ground', 'plane']]
     signal_objects = [p for p in polygons if p['role'] == 'signal']
-    
-    # Détection automatique des ports (gaps dans les pistes)
-    ports = detect_ports(signal_objects)
-    
+
+    # Détection automatique des ports (gaps dans les pistes), sauf si
+    # l'appelant les apporte.
+    if ports is None:
+        ports = detect_ports(signal_objects)
+
     # Calcul du bounding box global
     all_vertices = np.vstack([p['vertices'] for p in polygons])
     bbox = {
@@ -338,46 +350,8 @@ def _resolve_port_position(obj: Dict) -> np.ndarray:
 
     return None
 
-
-def identify_nets(polygons: List[Dict]) -> Dict[str, List[int]]:
-    """
-    Regroupe les polygones par net
-    
-    Args:
-        polygons: Liste des polygones
-        
-    Returns:
-        Dictionnaire {nom_net: [indices de polygones]}
-    """
-    nets = {}
-    
-    for i, poly in enumerate(polygons):
-        net_name = poly.get('net', 'unnamed')
-        if net_name not in nets:
-            nets[net_name] = []
-        nets[net_name].append(i)
-    
-    return nets
-
-
-def get_layer_z_position(layer_index: int, stackup: Dict) -> float:
-    """
-    Retourne la position Z (altitude) d'une couche de cuivre
-    
-    Args:
-        layer_index: Indice de la couche
-        stackup: Structure du stackup
-        
-    Returns:
-        Position Z en mètres
-    """
-    layers = stackup['layers']
-    
-    if layer_index < 0 or layer_index >= len(layers):
-        raise ValueError(f"Indice de couche invalide : {layer_index}")
-    
-    # Position au milieu de la couche de cuivre
-    layer = layers[layer_index]
-    z_position = (layer['z_bottom'] + layer['z_top']) / 2
-    
-    return z_position
+# `identify_nets` ET `get_layer_z_position` ONT ETE RETIRES EN 1.1.0 :
+# personne ne les appelait. Le second doublait par ailleurs `z_top` /
+# `z_bottom`, que `extract_stackup` pose deja sur chaque couche -- et un
+# second calcul de la meme altitude est exactement le genre de chose qui
+# finit par ne plus donner le meme resultat que le premier.

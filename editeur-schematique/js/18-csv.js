@@ -79,30 +79,51 @@ function initManualCsvLoader() {
 function loadCSVLib() {
     initManualCsvLoader();
     
-    const paths = [
-        '../LIB_composants.csv',
-        '../../LIB_composants.csv',
-        '/LIB_composants.csv'
-    ];
-    let pathIndex = 0;
-    function tryNextPath() {
-        if (pathIndex >= paths.length) {
-            console.warn("Impossible de charger LIB_composants.csv via HTTP (bloqué par CORS en mode fichier local ?).");
-            if (typeof refreshPanels === "function") refreshPanels();
-            return;
-        }
-        fetch(paths[pathIndex])
-            .then(response => {
-                if (!response.ok) throw new Error("HTTP error " + response.status);
-                return response.text();
-            })
-            .then(text => loadCSVFromString(text, paths[pathIndex]))
-            .catch(err => {
-                pathIndex++;
-                tryNextPath();
-            });
-    }
-    tryNextPath();
+    // Tentative de chargement prioritaire via l'API serveur
+    fetch('/api/lib/composants')
+        .then(response => {
+            if (!response.ok) throw new Error("API error " + response.status);
+            return response.json();
+        })
+        .then(data => {
+            if (data && Array.isArray(data.composants)) {
+                window.CSV_LIB = data.composants;
+                console.log("CSV_LIB chargé via API:", data.composants.length, "composants");
+                if (typeof refreshPanels === "function") refreshPanels();
+            } else {
+                throw new Error("Format API inattendu");
+            }
+        })
+        .catch(() => {
+            // Repli sur les fichiers statiques si mode hors-ligne
+            const paths = [
+                '../LIB/LIB_composants.csv',
+                '../../LIB/LIB_composants.csv',
+                '/LIB/LIB_composants.csv',
+                '../LIB_composants.csv',
+                '../../LIB_composants.csv',
+                '/LIB_composants.csv'
+            ];
+            let pathIndex = 0;
+            function tryNextPath() {
+                if (pathIndex >= paths.length) {
+                    console.warn("Impossible de charger LIB_composants.csv via HTTP (bloqué par CORS en mode fichier local ?).");
+                    if (typeof refreshPanels === "function") refreshPanels();
+                    return;
+                }
+                fetch(paths[pathIndex])
+                    .then(response => {
+                        if (!response.ok) throw new Error("HTTP error " + response.status);
+                        return response.text();
+                    })
+                    .then(text => loadCSVFromString(text, paths[pathIndex]))
+                    .catch(() => {
+                        pathIndex++;
+                        tryNextPath();
+                    });
+            }
+            tryNextPath();
+        });
 }
 
 loadCSVLib();

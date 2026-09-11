@@ -30,7 +30,7 @@ def test_routes():
     fil = threading.Thread(target=httpd.serve_forever, daemon=True)
     fil.start()
 
-    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
 
     try:
         # 1. GET /api/pcb/score-placement
@@ -187,6 +187,174 @@ def test_routes():
         except IPC2581ParseError as exc:
             assert "interdite" in str(exc)
         print("[PASS] Protection XML Entity Expansion (<!ENTITY rejeté avec succès)")
+
+        # 14. GET /api/simulation-25d
+        conn.request("GET", "/api/simulation-25d")
+        res = conn.getresponse()
+        assert res.status == 200
+        data = json.loads(res.read().decode("utf-8"))
+        assert data.get("dispo") is True
+        assert data.get("moteur") == "2.5d"
+        print("[PASS] GET /api/simulation-25d")
+
+        # 15. POST /api/simulation-25d
+        payload_sim = {
+            "format": "cao-sim-em-3",
+            "stackup": {
+                "layers": [
+                    {"type": "copper", "role": "signal", "thickness": 0.035, "name": "TOP"},
+                    {"type": "dielectric", "thickness": 0.370, "epsilon_r": 4.37, "name": "FR4"},
+                    {"type": "copper", "role": "plane", "thickness": 0.035, "name": "GND"}
+                ]
+            },
+            "geometry": {
+                "objects": [
+                    {"type": "track", "start": [0.0, 0.0], "end": [5.0, 0.0], "width": 1.05, "layer": 0, "net": "SIG"}
+                ]
+            },
+            "options": {"mesh_size_mm": 0.40},
+            "analyse": {"f_debut": 2e9, "f_fin": 2e9, "f_centrale": 2e9, "points": 1}
+        }
+        conn.request("POST", "/api/simulation-25d", body=json.dumps(payload_sim).encode("utf-8"), headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 200
+        data = json.loads(res.read().decode("utf-8"))
+        assert data.get("format") == "cao-sim-em-resultat-5"
+        assert data.get("moteur") == "2.5d"
+        print("[PASS] POST /api/simulation-25d (2.5D MoM solver)")
+
+        # 16. POST /api/simulation (dispatch avec moteur='2.5d')
+        payload_sim_25d = dict(payload_sim)
+        payload_sim_25d["moteur"] = "2.5d"
+        conn.request("POST", "/api/simulation", body=json.dumps(payload_sim_25d).encode("utf-8"), headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 200
+        data = json.loads(res.read().decode("utf-8"))
+        assert data.get("moteur") == "2.5d"
+        print("[PASS] POST /api/simulation avec moteur='2.5d' -> dispatch vers 2.5D")
+
+        # 17. POST /api/simulation (moteur 2D par défaut)
+        payload_sim_2d = dict(payload_sim)
+        payload_sim_2d["moteur"] = "2d"
+        conn.request("POST", "/api/simulation", body=json.dumps(payload_sim_2d).encode("utf-8"), headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 200
+        data = json.loads(res.read().decode("utf-8"))
+        assert data.get("format") == "cao-sim-em-resultat-5"
+        assert "ligne" in data
+        print("[PASS] POST /api/simulation avec moteur='2d' -> dispatch vers 2D standard")
+
+        # ==============================================================
+        # 18-22. LES DEUX ROUTES QUI N'ETAIENT PAS COUVERTES
+        # --------------------------------------------------------------
+        # /api/simulation-dc et /api/crosstalk n'avaient AUCUN essai de
+        # route, alors que les quatre routes de calcul partagent desormais
+        # une seule lecture de document (`_lire_document`) : une regression
+        # sur elle les toucherait toutes les quatre, et deux seulement se
+        # seraient plaintes. C'est aussi en ecrivant ces essais qu'on a vu
+        # que la route DC n'avait aucun plafond de taille de corps.
+        # ==============================================================
+
+        # 18. GET /api/simulation-dc
+        conn.request("GET", "/api/simulation-dc")
+        res = conn.getresponse()
+        assert res.status == 200
+        data = json.loads(res.read().decode("utf-8"))
+        assert data.get("dispo") is True, data
+        assert "methode" in data
+        print("[PASS] GET /api/simulation-dc")
+
+        # 19. POST /api/simulation-dc : un barreau, une source, une reference
+        payload_dc = {
+            "format": "cao-sim-dc-1",
+            "carte": "banc_routes",
+            "polygones": [{"layer": 0, "net": "VCC", "epaisseur": 0.035,
+                           "sommets": [[0, 0], [20, 0], [20, 5], [0, 5]]}],
+            "sources": [{"x": 1.0, "y": 2.5, "layer": 0, "net": "VCC",
+                         "courant": 1.0}],
+            "references": [{"x": 19.0, "y": 2.5, "layer": 0, "net": "VCC",
+                            "tension": 0.0}],
+            "pas": 0.5,
+        }
+        conn.request("POST", "/api/simulation-dc",
+                     body=json.dumps(payload_dc).encode("utf-8"),
+                     headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 200, res.read()[:300]
+        data = json.loads(res.read().decode("utf-8"))
+        assert data.get("format") == "cao-sim-dc-resultat-1", data.get("format")
+        assert "potentiel" in data and "densite" in data
+        # LA CARTE DE CHALEUR EST POSEE PAR LA ROUTE, une par couche : c'est
+        # elle qui l'ajoute au resultat, pas le solveur.
+        assert "cartes" in data, "la route doit ajouter les cartes par couche"
+        print("[PASS] POST /api/simulation-dc (IR drop, %d couche(s) peinte(s))"
+              % len(data["cartes"]))
+
+        # 20. GET /api/crosstalk
+        conn.request("GET", "/api/crosstalk")
+        res = conn.getresponse()
+        assert res.status == 200
+        data = json.loads(res.read().decode("utf-8"))
+        assert data.get("dispo") is True, data
+        print("[PASS] GET /api/crosstalk")
+
+        # 21. POST /api/crosstalk : un refus PROPRE valide la route aussi bien
+        # qu'un calcul, et coute mille fois moins cher. Ce qu'on eprouve ici
+        # est la chaine lecture -> module -> traduction du refus en 422.
+        conn.request("POST", "/api/crosstalk",
+                     body=json.dumps({"format": "n'importe quoi"}).encode("utf-8"),
+                     headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 422, "%d au lieu de 422" % res.status
+        detail = json.loads(res.read().decode("utf-8")).get("detail", "")
+        assert "format" in detail.lower(), detail
+        print("[PASS] POST /api/crosstalk (document hors format -> 422 motive)")
+
+        # 22. LES QUATRE ROUTES DE CALCUL REFUSENT UN CORPS VIDE DE LA MEME
+        # FACON. C'est le contrat de `_lire_document`, et le seul moyen de
+        # verifier qu'elles passent bien toutes les quatre par elle.
+        for route in ("/api/simulation", "/api/simulation-25d",
+                      "/api/simulation-dc", "/api/crosstalk"):
+            conn.request("POST", route, body=b"",
+                         headers={"Content-Type": "application/json"})
+            res = conn.getresponse()
+            corps = res.read()
+            assert res.status == 400, "%s : %d au lieu de 400" % (route, res.status)
+            assert b"vide" in corps, "%s : %s" % (route, corps[:120])
+        print("[PASS] Les 4 routes de calcul refusent un corps vide (400)")
+
+        # 23. ET UN CORPS TROP GROS, de la meme facon. La route DC n'avait
+        # aucun plafond : elle lisait ce qui venait, alors que son document
+        # porte les polygones de couches entieres.
+        #
+        # UNE CONNEXION NEUVE PAR ESSAI, ET C'EST LA REGLE DU 413. Le serveur
+        # refuse sur le SEUL Content-Length, sans lire le corps -- c'est tout
+        # l'interet du plafond, ne pas ingerer cinq megaoctets pour les jeter.
+        # Mais les octets non lus restent alors dans le tuyau, et la connexion
+        # persistante devient inutilisable : la reutiliser leve un
+        # ConnectionAbortedError qu'on lirait comme une panne du serveur.
+        import serveur as _srv
+        gros = json.dumps({"format": "cao-sim-em-3",
+                           "bourrage": "x" * (5 * 1024 * 1024)}).encode("utf-8")
+        for route, plafond in (("/api/simulation", _srv.MAX_SIM),
+                               ("/api/simulation-25d", _srv.MAX_25D),
+                               ("/api/crosstalk", _srv.MAX_CROSSTALK),
+                               ("/api/simulation-dc", _srv.MAX_DC)):
+            if len(gros) <= plafond:
+                continue
+            c413 = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            try:
+                c413.request("POST", route, body=gros,
+                             headers={"Content-Type": "application/json"})
+                res = c413.getresponse()
+                corps = res.read()
+                assert res.status == 413, "%s : %d au lieu de 413" % (route, res.status)
+                assert b"maximum" in corps, "%s : %s" % (route, corps[:120])
+            finally:
+                c413.close()
+        assert _srv.MAX_DC > 0, "la route DC doit avoir un plafond"
+        print("[PASS] Plafond de taille sur les routes de calcul (413), DC compris"
+              " (%d Mo)" % (_srv.MAX_DC // 1048576))
 
     finally:
         conn.close()

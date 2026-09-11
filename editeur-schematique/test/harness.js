@@ -51,7 +51,7 @@ const code=fs.readFileSync(path.join(__dirname,"..","dist","schema.js"),"utf8");
 const EXPOSE=[
   /* état et feuilles */
   "S","G","newPage","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
-  "addComp",
+  "addComp","schComposantsDansZone","schToutesLesZones",
   "push","undo","redo","touchWires","buildTabs","draw","fit","resize",
   /* bus et hiérarchie */
   "C_BUS","BUS_WIDTH","sheetBlocks","hitSheetBlock","newHierPage",
@@ -110,7 +110,14 @@ const EXPOSE=[
   "setGrid","setGridStep","setNetLabels","setListTab",
   /* recherche de composants & conflits */
   "crDetecterConflitsCablage","crRealignerFilsBroches",
-  "CR_ETAT","crBuildModal","crRechercherDistributeurs","crTrierEtAfficherCandidats","crAppliquerAuComposant"
+  "CR_ETAT","crBuildModal","crRechercherDistributeurs","crTrierEtAfficherCandidats","crAppliquerAuComposant",
+  /* synchronisation et alertes Gestion LIB */
+  "SCH_LIB_ALERTE","schTrouverComposantsAmettreAJour","schComposantAlerteLib",
+  "schAppliquerMajLibComposant","schAppliquerMajLibTous","sessDiffuserLibModif","sessEcouterLibModif",
+  /* explorateur visuel de bibliothèque */
+  "ELIB","explorateurLibOuvrir","explorateurLibFermer","elibClassifierItem","elibIsSmd","elibIsTht","elibHasSpice","elibFiltrerEtAfficher","schOuvrirExplorateurLib",
+  /* schémas d'exemples */
+  "demo","demo2","demo12v","demo12v_p2","SCH_EXEMPLES","schChargerExemple","schExOuvrir"
 ];
 /* les noms absents du bundle sont ignorés : le banc d'essai reste utilisable
    même si un module est renommé, les essais concernés échoueront tout seuls */
@@ -1994,6 +2001,264 @@ T("nouveaux symboles schématiques : AOP 5 broches, TVS, ESD, USB, Barrettes, Fe
   if(!fam127) throw new Error("Famille Barrettes 1,27 mm absente");
   const b4 = fam127.bases.find(b => b.base.b === "HEADER-1.27-1x4");
   if(!b4 || !b4.fit) throw new Error("HEADER-1.27-1x4 devrait être 'fit' pour header_1x4");
+});
+
+T("Gestion LIB : association complète du composant (Part Name, symbole, empreinte PCB, netlist)", () => {
+  const r1 = C("resistor", 10, 10, {
+    ref: "R1",
+    value: "10k",
+    pkg: "0603",
+    csvPartName: "RES_0603_10K",
+    fpPcb: "0603.json",
+    symSch: "resistor.json",
+    simModel: "resistor.sub"
+  });
+  sheet([r1], []);
+  const nl = netlistText();
+  if(!nl.includes("R1") || !nl.includes("0603")) {
+    throw new Error("La netlist doit comporter R1 et 0603");
+  }
+  const s = JSON.parse(serialize());
+  const c = s.pages[0].comps[0];
+  if(c.csvPartName !== "RES_0603_10K" || c.fpPcb !== "0603.json" || c.symSch !== "resistor.json") {
+    throw new Error("Les métadonnées LIB ne sont pas conservées dans le schéma: " + JSON.stringify(c));
+  }
+});
+
+T("Gestion LIB Schématique : réception d'alerte de modification et mise à jour assistée", () => {
+  const r1 = C("resistor", 10, 10, {
+    id: 9901,
+    ref: "R1",
+    val: "10k",
+    pkg: "0603",
+    csvPartName: "RES_0603_10K",
+    symSch: "resistor.json",
+    fpPcb: "0603.json"
+  });
+  sheet([r1], []);
+
+  // Détection des composants concernés
+  const matches = schTrouverComposantsAmettreAJour({
+    genre: "fichier",
+    typeFichier: "schematique",
+    nom: "resistor.json"
+  });
+  if(matches.length !== 1 || matches[0].id !== r1.id) {
+    throw new Error("schTrouverComposantsAmettreAJour doit trouver R1 pour resistor.json");
+  }
+
+  // Simulation d'une alerte reçue
+  SCH_LIB_ALERTE.active = true;
+  SCH_LIB_ALERTE.compIds = new Set([r1.id]);
+  if(!schComposantAlerteLib(r1)) {
+    throw new Error("schComposantAlerteLib doit indiquer une alerte active pour R1");
+  }
+
+  // Application de la mise à jour assistée avec nouvelle métadonnée
+  window.CSV_LIB = [{
+    "Part Name": "RES_0603_10K",
+    "Manufacturer": "YAGEO",
+    "MPN": "RC0603FR-0710KL",
+    "Empreinte PCB": "0603_DENSE.json",
+    "Empreinte Schématique": "resistor.json"
+  }];
+
+  const count = schAppliquerMajLibTous({ genre: "fichier", nom: "resistor.json" });
+  if(count !== 1) throw new Error("1 composant aurait dû être mis à jour, obtenu: " + count);
+  if(r1.manufacturer !== "YAGEO" || r1.mpn !== "RC0603FR-0710KL" || r1.fpPcb !== "0603_DENSE.json") {
+    throw new Error("Les champs mis à jour n'ont pas été appliqués: " + JSON.stringify(r1));
+  }
+  if(schComposantAlerteLib(r1)) {
+    throw new Error("L'alerte doit être levée après la mise à jour de R1");
+  }
+});
+
+T("Zones fonctionnelles schématiques : inclusion géométrique et capture des composants", () => {
+  const u1 = C("ic", 3, 3, { id: 101, ref: "U1", val: "LM2596" });
+  const l1 = C("inductor", 4, 3, { id: 102, ref: "L1", val: "33uH" });
+  const c1 = C("capacitor", 2, 3, { id: 103, ref: "C1", val: "100uF" });
+  const r_hors = C("resistor", 20, 20, { id: 104, ref: "R99", val: "10k" });
+
+  sheet([u1, l1, c1, r_hors], []);
+
+  const zoneAlim = {
+    id: 1,
+    shape: "rect",
+    x1: 1 * G, y1: 1 * G,
+    x2: 6 * G, y2: 6 * G,
+    isZone: true,
+    category: "Alimentation",
+    color: "#f59e0b",
+    label: "BUCK_5V"
+  };
+
+  const inclus = schComposantsDansZone(zoneAlim, S.comps);
+  if(inclus.length !== 3) {
+    throw new Error("3 composants attendus dans la zone BUCK_5V, obtenu: " + inclus.length);
+  }
+  if(!inclus.includes("U1") || !inclus.includes("L1") || !inclus.includes("C1")) {
+    throw new Error("U1, L1 et C1 doivent être capturés dans la zone: " + inclus.join(", "));
+  }
+  if(inclus.includes("R99")) {
+    throw new Error("R99 est hors de la zone et ne doit pas être capturé");
+  }
+
+  S.drawings = [zoneAlim];
+  const toutes = schToutesLesZones();
+  if(toutes.length !== 1) {
+    throw new Error("1 zone attendue dans schToutesLesZones, obtenu: " + toutes.length);
+  }
+  const z0 = toutes[0];
+  if(z0.nom !== "BUCK_5V" || z0.categorie !== "Alimentation" || z0.couleur !== "#f59e0b") {
+    throw new Error("Métadonnées de zone non conformes: " + JSON.stringify(z0));
+  }
+  if(z0.composants.length !== 3) {
+    throw new Error("La zone retournée doit lister ses 3 composants: " + JSON.stringify(z0.composants));
+  }
+});
+
+T("Explorateur visuel pop-up : initialisation, recherche, classification et pose d'un composant", () => {
+  // 1. Module ELIB disponible
+  if(typeof explorateurLibOuvrir !== "function" || typeof ELIB === "undefined") {
+    throw new Error("explorateurLibOuvrir ou ELIB absent");
+  }
+
+  // 2. Base de composants d'essai
+  window.CSV_LIB = [
+    {
+      "Part Name": "C0402_100NF",
+      "Reference designator Prefix": "C",
+      "Value": "100nF",
+      "Package type": "0402",
+      "Empreinte PCB": "0402.json",
+      "Empreinte Schématique": "cap",
+      "Modèle Simulation": "murata_gcm155.sub",
+      "Voltage Rating": "10V",
+      "Description": "Condensateur céramique CMS 100nF 10V X7R 0402",
+      "Manufacturer": "Murata",
+      "Part Number": "GCM155R71A104KA55D"
+    },
+    {
+      "Part Name": "RES0603_10K",
+      "Reference designator Prefix": "R",
+      "Value": "10k",
+      "Package type": "0603",
+      "Empreinte PCB": "0603.json",
+      "Empreinte Schématique": "resistor",
+      "Modèle Simulation": "-",
+      "current Rating": "50mA",
+      "Description": "Résistance couche épaisse 10k 1% 0603",
+      "Manufacturer": "Yageo",
+      "Part Number": "RC0603FR-0710KL"
+    },
+    {
+      "Part Name": "STM32F103C8T6",
+      "Reference designator Prefix": "U",
+      "Value": "STM32F103",
+      "Package type": "LQFP-48",
+      "Empreinte PCB": "LQFP-48.json",
+      "Empreinte Schématique": "ic",
+      "Description": "Microcontrôleur ARM Cortex-M3 72MHz 64KB Flash",
+      "Manufacturer": "STMicroelectronics",
+      "Part Number": "STM32F103C8T6"
+    }
+  ];
+
+  // 3. Test de classification
+  if(elibClassifierItem(window.CSV_LIB[0]) !== "c") throw new Error("C0402 doit être classé en 'c'");
+  if(elibClassifierItem(window.CSV_LIB[1]) !== "r") throw new Error("RES0603 doit être classé en 'r'");
+  if(elibClassifierItem(window.CSV_LIB[2]) !== "ic") throw new Error("STM32 doit être classé en 'ic'");
+
+  if(!elibIsSmd(window.CSV_LIB[0])) throw new Error("0402 doit être détecté CMS (SMD)");
+  if(!elibHasSpice(window.CSV_LIB[0])) throw new Error("C0402 possède un modèle SPICE");
+  if(elibHasSpice(window.CSV_LIB[1])) throw new Error("RES0603 n'a pas de modèle SPICE");
+
+  // 4. Ouverture et sélection via explorateurLibOuvrir
+  let selected = null;
+  explorateurLibOuvrir({
+    mode: "schema",
+    onSelect: (item) => { selected = item; }
+  });
+
+  if(!ELIB.open) throw new Error("ELIB doit être ouvert");
+  if(ELIB.items.length !== 3) throw new Error("3 composants attendus dans ELIB.items");
+
+  // Simuler recherche '100n'
+  ELIB.query = "100n";
+  elibFiltrerEtAfficher();
+  if(ELIB.filtered.length !== 1 || ELIB.filtered[0]["Part Name"] !== "C0402_100NF") {
+    throw new Error("La recherche '100n' doit trouver exactement C0402_100NF");
+  }
+
+  // Fermer
+  explorateurLibFermer();
+  if(ELIB.open) throw new Error("ELIB doit être fermé");
+
+  // 5. Test de pose interactive sur le schéma avec enrichissement complet
+  S.comps = [];
+  S.place = "capacitor";
+  S.placeRot = 90;
+  S.placeLibItem = window.CSV_LIB[0];
+
+  const el = addComp(S.place, 20 * G, 15 * G);
+  el.rot = S.placeRot;
+  const it = S.placeLibItem;
+  el.csvPartName = it["Part Name"];
+  el.csvMpn = it["Part Number"];
+  el.manufacturer = it["Manufacturer"];
+  el.value = it["Value"];
+  el.symSch = it["Empreinte Schématique"];
+  el.fpPcb = it["Empreinte PCB"];
+  el.pkg = it["Package type"];
+  el.simModel = it["Modèle Simulation"];
+  el.specs = { "Voltage Rating": it["Voltage Rating"] };
+
+  if(el.csvPartName !== "C0402_100NF") throw new Error("csvPartName non assigné: " + el.csvPartName);
+  if(el.value !== "100nF") throw new Error("valeur non assignée: " + el.value);
+  if(el.pkg !== "0402") throw new Error("boîtier non assigné: " + el.pkg);
+  if(el.simModel !== "murata_gcm155.sub") throw new Error("modèle SPICE non assigné: " + el.simModel);
+  if(el.rot !== 90) throw new Error("rotation non respectée");
+  if(!el.ref.startsWith("C")) throw new Error("préfixe C attendu pour condensateur: " + el.ref);
+});
+
+T("schémas d'exemples : exemple 0 (IoT 4 couches) raccordé au PCB", function(){
+  schChargerExemple(0);
+  if(S.pages.length !== 3) throw new Error("3 feuilles attendues: " + S.pages.length);
+  if(S.pages[1].name !== "Microcontrôleur & Bus") throw new Error("Feuille 1 erronée: " + S.pages[1].name);
+  if(S.pages[2].name !== "Alimentation & RF") throw new Error("Feuille 2 erronée: " + S.pages[2].name);
+
+  const dNets = docNets();
+  const netNames = dNets.groups.map(g => g.name);
+  const required = ["+3V3", "+5V", "GND", "RF_ANT", "SPI_CS", "SPI_MISO", "SPI_MOSI", "SPI_SCK", "SWCLK", "SWDIO", "USB_DM", "USB_DP"];
+  for(const r of required){
+    if(!netNames.includes(r)) throw new Error("Net manquant dans exemple 0: " + r);
+  }
+
+  const bom = bomRows();
+  const refs = bom.map(b => b.ref);
+  const requiredRefs = ["U1", "U2", "U3", "J1", "J2", "J3", "C1", "C2", "C3", "C4", "C5"];
+  for(const rf of requiredRefs){
+    if(!refs.includes(rf)) throw new Error("Composant manquant dans BOM: " + rf);
+  }
+
+  // Vérification de la présence des métadonnées LIB
+  const u1 = bom.find(b => b.ref === "U1");
+  if(!u1.csvPartName || u1.csvPartName !== "MCU_STM32WL55CCU6") throw new Error("PartName erroné U1: " + u1.csvPartName);
+  const j1 = bom.find(b => b.ref === "J1");
+  if(!j1.csvPartName || j1.csvPartName !== "CONN-USB_Mini_651005136421") throw new Error("PartName erroné J1: " + j1.csvPartName);
+});
+
+T("schémas d'exemples : exemple 1 (Commande 12 V 2 couches) raccordé au PCB", function(){
+  schChargerExemple(1);
+  if(S.pages.length !== 3) throw new Error("3 feuilles attendues: " + S.pages.length);
+  if(S.pages[1].name !== "Commande NPN") throw new Error("Feuille 1 erronée: " + S.pages[1].name);
+  if(S.pages[2].name !== "Alimentation") throw new Error("Feuille 2 erronée: " + S.pages[2].name);
+
+  const dNets = docNets();
+  const netNames = dNets.groups.map(g => g.name);
+  if(!netNames.includes("+5V") || !netNames.includes("12V") || !netNames.includes("GND")){
+    throw new Error("Rails d'alimentation manquants dans exemple 1");
+  }
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

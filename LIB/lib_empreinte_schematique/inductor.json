@@ -1,0 +1,68 @@
+{
+  "format": "schsym-1",
+  "id": "inductor",
+  "name": "Bobine / Inductance",
+  "category": "Passifs",
+  "prefix": "L",
+  "defaultValue": "10µH",
+  "defaultPkg": "0805",
+  "pinCount": 2,
+  "pins": [
+    {
+      "n": 1,
+      "x": -40,
+      "y": 0
+    },
+    {
+      "n": 2,
+      "x": 40,
+      "y": 0
+    }
+  ],
+  "ext": [
+    -40,
+    -10,
+    40,
+    10
+  ],
+  "primitives": [
+    {
+      "op": "line",
+      "x1": -40,
+      "y1": 0,
+      "x2": -30,
+      "y2": 0
+    },
+    {
+      "op": "arc",
+      "cx": -20,
+      "cy": 0,
+      "r": 10,
+      "start": 3.141592653589793,
+      "end": 0
+    },
+    {
+      "op": "arc",
+      "cx": 0,
+      "cy": 0,
+      "r": 10,
+      "start": 3.141592653589793,
+      "end": 0
+    },
+    {
+      "op": "arc",
+      "cx": 20,
+      "cy": 0,
+      "r": 10,
+      "start": 3.141592653589793,
+      "end": 0
+    },
+    {
+      "op": "line",
+      "x1": 30,
+      "y1": 0,
+      "x2": 40,
+      "y2": 0
+    }
+  ]
+}

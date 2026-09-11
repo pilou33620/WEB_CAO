@@ -1,0 +1,59 @@
+{
+  "format": "schsym-1",
+  "id": "header_1x6",
+  "name": "Barrette 1x6",
+  "category": "Divers",
+  "prefix": "J",
+  "defaultValue": "CONN6",
+  "defaultPkg": "HEADER-2.54-1x6",
+  "pinCount": 6,
+  "pins": [
+    {
+      "n": 1,
+      "x": -40,
+      "y": -60
+    },
+    {
+      "n": 2,
+      "x": -40,
+      "y": -40
+    },
+    {
+      "n": 3,
+      "x": -40,
+      "y": -20
+    },
+    {
+      "n": 4,
+      "x": -40,
+      "y": 0
+    },
+    {
+      "n": 5,
+      "x": -40,
+      "y": 20
+    },
+    {
+      "n": 6,
+      "x": -40,
+      "y": 40
+    }
+  ],
+  "ext": [
+    -40,
+    -75,
+    20,
+    55
+  ],
+  "primitives": [
+    {
+      "op": "rect",
+      "x": -15,
+      "y": -70,
+      "w": 30,
+      "h": 120,
+      "r": 3,
+      "fill": true
+    }
+  ]
+}

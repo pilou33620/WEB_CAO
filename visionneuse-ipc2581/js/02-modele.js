@@ -34,7 +34,7 @@ const V={
   bbox:null,            // {x1,y1,x2,y2} de la carte
   vue:{scale:1,ox:0,oy:0,flip:false},
   aff:{plans:true,pistes:true,pads:true,trous:true,textes:true,
-       composants:true,refs:false,contour:true},
+       composants:true,refs:false,contour:true,jsurf:false,maillage:false},
   net:-1,               // net mis en évidence, -1 = aucun
   /* Jusqu'où va cette mise en évidence. Un net traverse la carte : le montrer
      en entier répond à « où va ce signal », le montrer sur la seule couche

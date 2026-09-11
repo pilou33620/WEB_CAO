@@ -634,13 +634,17 @@ def hauteur_electrique(stackup, z_piste=None):
     Green cascade soient la meme chose.
     """
     profil = profil_spectral(stackup, z_piste)
-    bas, masse_bas = profil[0], profil[2]
-    if not masse_bas:
-        raise ValueError(
-            "hauteur_electrique : la pile sous la piste ne bute sur aucun plan "
-            "de masse. Un via de port relie la piste au plan ; sans plan il "
-            "n'y a pas de port.")
-    return float(sum(e for e, _ in bas if e > 0))
+    bas, haut, masse_bas, masse_haut = profil[0], profil[1], profil[2], profil[3]
+    if masse_bas:
+        return float(sum(e for e, _ in bas if e > 0))
+    if masse_haut:
+        # Le plan de masse est au-dessus de la couche de signal :
+        # la hauteur electrique est negative pour percer vers le haut
+        return float(-sum(e for e, _ in haut if e > 0))
+    raise ValueError(
+        "hauteur_electrique : la pile sous/sur la piste ne bute sur aucun plan "
+        "de masse. Un via de port relie la piste au plan ; sans plan il "
+        "n'y a pas de port.")
 
 
 def _triangle_le_plus_proche(mesh, position_xy, z_cible=None):
@@ -781,6 +785,90 @@ def demi_rwg_du_bas(mesh, aretes_bas, decalage=0):
     return demi, coupe
 
 
+def mailler_via_interne(mesh: Dict, position_xy: Tuple[float, float],
+                         z_haut: float, z_bas: float,
+                         couche_haut: Optional[int] = None,
+                         couche_bas: Optional[int] = None) -> Dict:
+    """Relie deux couches de signal par un fût vertical maillé (via interne).
+
+    Au lieu d'un port se terminant sur un plan analytique par une demi-RWG,
+    le via interne relie deux polygones réels de signal :
+    1. Localise le triangle le plus proche à z_haut et à z_bas.
+    2. Aligne cycliquement les sommets pour minimiser la distance transversale
+       et éviter toute torsion géométrique des parois.
+    3. Retire les deux triangles horizontaux.
+    4. Construit 6 triangles de paroi verticale (3 faces quadrilatères scindées).
+
+    Toutes les arêtes du fût ainsi créé bordent exactement deux triangles,
+    permettant à `build_rwg_basis` d'instancier des RWG complètes sans jonction en T.
+
+    Args:
+        mesh: dictionnaire de maillage (vertices, elements, layer_ids, etc.)
+        position_xy: (x, y) du via de signal, en mètres
+        z_haut: altitude de la couche de départ (en mètres)
+        z_bas: altitude de la couche d'arrivée (en mètres)
+        couche_haut: indice de couche de départ (optionnel)
+        couche_bas: indice de couche d'arrivée (optionnel)
+
+    Returns:
+        maille: dictionnaire de maillage mis à jour avec les triangles de paroi
+    """
+    vertices = np.asarray(mesh['vertices'], dtype=float)
+    elements = np.asarray(mesh['elements'], dtype=int)
+    layer_ids = np.asarray(mesh.get('layer_ids', np.zeros(len(elements), dtype=int)))
+
+    i_haut = _triangle_le_plus_proche(mesh, position_xy, z_cible=z_haut)
+    i_bas = _triangle_le_plus_proche(mesh, position_xy, z_cible=z_bas)
+
+    if i_haut == i_bas:
+        raise ValueError("mailler_via_interne : les deux couches cibles désignent le même triangle")
+
+    trou_haut = elements[i_haut].copy()
+    trou_bas = elements[i_bas].copy()
+
+    couche_paroi = int(layer_ids[i_haut]) if couche_haut is None else int(couche_haut)
+
+    # Alignement cyclique des sommets bas avec les sommets haut
+    p_haut = vertices[trou_haut, :2]
+    best_shift = 0
+    best_dist2 = float('inf')
+    for s in range(3):
+        q_cand = vertices[trou_bas[(np.arange(3) + s) % 3], :2]
+        d2 = np.sum((p_haut - q_cand) ** 2)
+        if d2 < best_dist2:
+            best_dist2 = d2
+            best_shift = s
+
+    trou_bas_aligne = trou_bas[(np.arange(3) + best_shift) % 3]
+
+    # Retrait des deux triangles horizontaux
+    garde = np.array([i for i in range(len(elements)) if i not in (i_haut, i_bas)], dtype=int)
+    elements = elements[garde]
+    layer_ids = layer_ids[garde]
+
+    # Construction des 3 parois (2 triangles par face)
+    parois = []
+    for k in range(3):
+        p_a = int(trou_haut[k])
+        p_b = int(trou_haut[(k + 1) % 3])
+        q_a = int(trou_bas_aligne[k])
+        q_b = int(trou_bas_aligne[(k + 1) % 3])
+
+        parois.append((p_a, p_b, q_b))
+        parois.append((p_a, q_b, q_a))
+
+    elements = np.vstack([elements, np.asarray(parois, dtype=int)])
+    layer_ids = np.concatenate([layer_ids, np.full(len(parois), couche_paroi, dtype=int)])
+
+    maille = dict(mesh)
+    maille['vertices'] = vertices
+    maille['elements'] = elements
+    maille['layer_ids'] = layer_ids
+    maille['num_vertices'] = len(vertices)
+    maille['num_elements'] = len(elements)
+    return maille
+
+
 def maillage_avec_ports_verticaux(mesh, positions, hauteur, z_cible=None):
     """Le maillage perce de tous ses ports, ses RWG, et la coupe de chaque port.
 
@@ -788,23 +876,35 @@ def maillage_avec_ports_verticaux(mesh, positions, hauteur, z_cible=None):
     ordinaires ENSUITE, et on ajoute les demi-RWG a la fin. Percer entre deux
     constructions renumeroterait les triangles sous les RWG deja faites.
 
+    Args:
+        mesh: le maillage de base
+        positions: liste des (x, y) de chaque port
+        hauteur: hauteur unique ou liste des hauteurs pour chaque port
+        z_cible: altitude unique ou liste des altitudes cibles pour chaque port
+
     Returns:
         (mesh, rwg_basis, coupes) -- `coupes` est une liste par port, prete
         pour `build_v_vector`, `compute_s_parameters` et `courant_de_coupe`.
     """
+    if not isinstance(hauteur, (list, tuple)):
+        hauteurs = [hauteur] * len(positions)
+    else:
+        hauteurs = list(hauteur)
+
+    if not isinstance(z_cible, (list, tuple)):
+        z_cibles = [z_cible] * len(positions)
+    else:
+        z_cibles = list(z_cible)
+
     aretes_par_port = []
-    for xy in positions:
-        mesh, aretes = percer_via_port(mesh, xy, hauteur, z_cible)
+    for xy, h, z_c in zip(positions, hauteurs, z_cibles):
+        mesh, aretes = percer_via_port(mesh, xy, h, z_c)
         aretes_par_port.append(aretes)
 
     # LES TROUS DEJA PERCES DECALENT LES TRIANGLES DES PRECEDENTS. Chaque
     # percage retire un triangle, donc tous les indices au-dessus reculent
     # d'un. On corrige apres coup plutot que de percer un par un et de
     # reconstruire : c'est le meme calcul, en une passe.
-    #
-    # En pratique `percer_via_port` ajoute ses parois EN FIN de tableau et ne
-    # retire qu'un triangle situe AVANT elles, donc les indices rendus par un
-    # percage anterieur reculent d'exactement un par percage ulterieur.
     for k, aretes in enumerate(aretes_par_port):
         recul = len(aretes_par_port) - 1 - k
         if recul:

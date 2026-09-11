@@ -1,0 +1,547 @@
+/* =============================================================================
+   commun/explorateur-lib.css
+   Explorateur visuel pop-up de bibliothèque (Schéma & PCB)
+   ============================================================================= */
+
+.elib-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 12, 0.78);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 12000;
+  font-family: var(--ui, "Segoe UI", system-ui, sans-serif);
+  color-scheme: dark;
+}
+
+.elib-modal[hidden] {
+  display: none !important;
+}
+
+.elib-box {
+  width: min(1140px, 96vw);
+  height: min(780px, 92vh);
+  background: var(--panel, #15181f);
+  border: 1px solid var(--border2, #2f3644);
+  border-radius: 8px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: elibZoomIn 0.16s ease-out;
+}
+
+@keyframes elibZoomIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* En-tête */
+.elib-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--panel2, #1b1f28);
+  border-bottom: 1px solid var(--border, #242934);
+}
+
+.elib-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.elib-icon {
+  font-size: 18px;
+  color: var(--blue, #3b82f6);
+}
+
+.elib-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
+
+.elib-subtitle {
+  font-size: 12px;
+  color: var(--txt-dim, #94a3b8);
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border, #242934);
+}
+
+.elib-close {
+  background: transparent;
+  border: none;
+  color: var(--txt-dim, #94a3b8);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.elib-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+/* Barre de recherche et filtres */
+.elib-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--bg, #101217);
+  border-bottom: 1px solid var(--border, #242934);
+  flex-wrap: wrap;
+}
+
+.elib-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 240px;
+  display: flex;
+  align-items: center;
+}
+
+.elib-search-ico {
+  position: absolute;
+  left: 10px;
+  color: var(--txt-dim, #94a3b8);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.elib-search-input {
+  width: 100%;
+  padding: 7px 30px 7px 32px;
+  background: var(--panel2, #1b1f28);
+  border: 1px solid var(--border2, #2f3644);
+  border-radius: 5px;
+  color: var(--txt, #e2e8f0);
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.elib-search-input:focus {
+  outline: none;
+  border-color: var(--blue, #3b82f6);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+
+.elib-search-clear {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--txt-dim, #94a3b8);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  display: none;
+}
+
+.elib-search-clear.on {
+  display: block;
+}
+
+.elib-select {
+  padding: 7px 10px;
+  background: var(--panel2, #1b1f28);
+  border: 1px solid var(--border2, #2f3644);
+  border-radius: 5px;
+  color: var(--txt, #e2e8f0);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.elib-select:focus {
+  outline: none;
+  border-color: var(--blue, #3b82f6);
+}
+
+.elib-filters-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11.5px;
+  color: var(--txt-dim, #94a3b8);
+}
+
+.elib-filters-row label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.elib-filters-row input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--blue, #3b82f6);
+}
+
+.elib-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--txt-dim, #94a3b8);
+  font-family: var(--mono, monospace);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Corps en deux volets */
+.elib-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Volet gauche : Grille de cartes */
+.elib-left {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 14px;
+  background: var(--bg, #101217);
+  border-right: 1px solid var(--border, #242934);
+}
+
+.elib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.elib-card {
+  background: var(--panel, #15181f);
+  border: 1px solid var(--border, #242934);
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+  position: relative;
+  user-select: none;
+}
+
+.elib-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border2, #3b4252);
+  background: var(--panel2, #1a1d26);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.elib-card.selected {
+  border-color: var(--blue, #3b82f6);
+  background: rgba(59, 130, 246, 0.09);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+}
+
+.elib-card-thumb-wrap {
+  width: 100%;
+  height: 90px;
+  background: #090a0d;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.elib-card-thumb {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.elib-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.elib-card-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.elib-card-val {
+  font-size: 11px;
+  color: var(--yellow, #f59e0b);
+  font-family: var(--mono, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.elib-card-pkg {
+  font-size: 10px;
+  color: var(--txt-dim, #94a3b8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.elib-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+
+.elib-badge {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.elib-badge-spice {
+  background: rgba(34, 197, 94, 0.16);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.elib-badge-smd {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.elib-badge-tht {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.elib-badge-pins {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--txt-dim, #94a3b8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* État vide */
+.elib-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 240px;
+  color: var(--txt-dim, #94a3b8);
+  font-size: 13px;
+  gap: 8px;
+}
+
+/* Volet droit : Fiche d'inspection détaillée */
+.elib-right {
+  width: 410px;
+  flex: none;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--panel, #15181f);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.elib-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--txt-dim, #94a3b8);
+  font-size: 12px;
+  text-align: center;
+  padding: 20px;
+  line-height: 1.6;
+}
+
+.elib-detail-sect {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.elib-detail-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.3;
+}
+
+.elib-detail-mfr {
+  font-size: 12px;
+  color: var(--blue, #3b82f6);
+  font-weight: 500;
+}
+
+.elib-detail-desc {
+  font-size: 11.5px;
+  color: var(--txt-dim, #94a3b8);
+  line-height: 1.5;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 6px 10px;
+  border-radius: 4px;
+  border-left: 2px solid var(--border2, #2f3644);
+}
+
+/* Double prévisualisation (Symbole & Empreinte) */
+.elib-preview-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border, #242934);
+  gap: 4px;
+}
+
+.elib-preview-tab {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  color: var(--txt-dim, #94a3b8);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.15s;
+}
+
+.elib-preview-tab.on {
+  color: var(--blue, #3b82f6);
+  border-bottom-color: var(--blue, #3b82f6);
+}
+
+.elib-dual-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.elib-preview-box {
+  background: #090a0d;
+  border: 1px solid var(--border, #242934);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.elib-preview-label {
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--txt-dim, #94a3b8);
+  display: flex;
+  justify-content: space-between;
+}
+
+.elib-preview-cvs {
+  width: 100%;
+  height: 130px;
+  display: block;
+}
+
+/* Tableaux de caractéristiques */
+.elib-props-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.elib-props-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.elib-props-k {
+  color: var(--txt-dim, #94a3b8);
+  width: 42%;
+}
+
+.elib-props-v {
+  color: var(--txt, #e2e8f0);
+  font-family: var(--mono, monospace);
+  font-weight: 500;
+}
+
+/* Pied de page modal */
+.elib-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--panel2, #1b1f28);
+  border-top: 1px solid var(--border, #242934);
+}
+
+.elib-foot-hint {
+  font-size: 11.5px;
+  color: var(--txt-dim, #94a3b8);
+}
+
+.elib-foot-acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.elib-btn {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 4px;
+  border: 1px solid var(--border2, #2f3644);
+  background: var(--panel, #15181f);
+  color: var(--txt, #e2e8f0);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.elib-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.elib-btn-primary {
+  background: var(--blue, #3b82f6);
+  border-color: #2563eb;
+  color: #fff;
+  font-weight: 600;
+}
+
+.elib-btn-primary:hover {
+  background: #2563eb;
+  border-color: #1d4ed8;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.35);
+}
+
+.elib-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}

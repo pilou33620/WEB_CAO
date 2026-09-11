@@ -1,0 +1,39 @@
+{
+  "format": "schsym-1",
+  "id": "hole",
+  "name": "Trou mécanique",
+  "category": "Divers",
+  "prefix": "MECA",
+  "defaultValue": "M3",
+  "defaultPkg": "",
+  "pinCount": 1,
+  "pins": [
+    {
+      "n": 1,
+      "x": 0,
+      "y": 20
+    }
+  ],
+  "ext": [
+    -15,
+    -15,
+    15,
+    20
+  ],
+  "primitives": [
+    {
+      "op": "circle",
+      "x": 0,
+      "y": 0,
+      "r": 10,
+      "fill": false
+    },
+    {
+      "op": "line",
+      "x1": 0,
+      "y1": 10,
+      "x2": 0,
+      "y2": 20
+    }
+  ]
+}

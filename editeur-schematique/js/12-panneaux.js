@@ -211,12 +211,32 @@ function refreshPanels(){
     const isRect=d.shape==="rect";
     const dx=Math.abs(d.x2-d.x1)/G, dy=Math.abs(d.y2-d.y1)/G;
     const len=Math.round(Math.hypot((d.x2-d.x1)/G,(d.y2-d.y1)/G)*10)/10;
+    const inclus = isRect && typeof schComposantsDansZone === "function" ? schComposantsDansZone(d) : [];
+
     box.innerHTML=
       '<div class="prop"><label>Forme</label>'+
       '<select id="pDShape">'+
       '<option value="line"'+(!isRect?" selected":"")+'>Trait (segment)</option>'+
       '<option value="rect"'+(isRect?" selected":"")+'>Rectangle (cadre)</option>'+
       '</select></div>'+
+      (isRect ? (
+        '<div class="prop"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-weight:600;color:var(--txt);">'+
+        '<input type="checkbox" id="pDIsZone"'+(d.isZone||d.category?' checked':'')+' style="width:16px;height:16px;accent-color:var(--yellow);"> '+
+        'Zone fonctionnelle (Room)</label></div>'+
+        '<div class="prop"><label>Catégorie</label>'+
+        '<select id="pDCategory">'+
+        '<option value="Alimentation"'+((d.category||"Alimentation")==="Alimentation"?' selected':'')+'>Alimentation / Régulation</option>'+
+        '<option value="Microcontrôleur"'+(d.category==="Microcontrôleur"?' selected':'')+'>Microcontrôleur / Numérique</option>'+
+        '<option value="Analogique"'+(d.category==="Analogique"?' selected':'')+'>Analogique / Capteurs / Audio</option>'+
+        '<option value="Puissance"'+(d.category==="Puissance"?' selected':'')+'>Étage de puissance / Moteurs</option>'+
+        '<option value="Communication"'+(d.category==="Communication"?' selected':'')+'>Bus / Communication (I2C, SPI...)</option>'+
+        '<option value="Filtrage"'+(d.category==="Filtrage"?' selected':'')+'>Filtrage / Protections ESD</option>'+
+        '</select></div>'+
+        '<div class="prop"><label>Composants capturés ('+inclus.length+')</label>'+
+        '<div style="font-family:var(--mono);font-size:11px;color:'+(inclus.length?'var(--yellow)':'var(--txt-dim)')+';background:var(--bg);padding:5px 8px;border-radius:4px;border:1px solid var(--border2);max-height:60px;overflow-y:auto;">'+
+        (inclus.length ? inclus.join(', ') : 'Aucun (déposez des composants dans le cadre)')+
+        '</div></div>'
+      ) : '')+
       '<div class="prop"><label>Style de trait</label>'+
       '<select id="pDStyle">'+
       '<option value="dashed"'+(d.style==="dashed"?" selected":"")+'>Tirets (délimitation)</option>'+
@@ -232,15 +252,15 @@ function refreshPanels(){
       '</select></div>'+
       '<div class="prop"><label>Couleur</label>'+
       '<select id="pDColor">'+
+      '<option value="#f59e0b"'+(d.color==="#f59e0b"?" selected":"")+'>Ambre / Alim (#f59e0b)</option>'+
+      '<option value="#2f86cc"'+(d.color==="#2f86cc"?" selected":"")+'>Bleu MCU (#2f86cc)</option>'+
+      '<option value="#10b981"'+(d.color==="#10b981"?" selected":"")+'>Vert Analogique (#10b981)</option>'+
+      '<option value="#ef4444"'+(d.color==="#ef4444"?" selected":"")+'>Rouge Puissance (#ef4444)</option>'+
+      '<option value="#a855f7"'+(d.color==="#a855f7"?" selected":"")+'>Violet Bus (#a855f7)</option>'+
       '<option value="#6b7280"'+(d.color==="#6b7280"||!d.color?" selected":"")+'>Gris délimitation (#6b7280)</option>'+
-      '<option value="#2f86cc"'+(d.color==="#2f86cc"?" selected":"")+'>Bleu schéma (#2f86cc)</option>'+
-      '<option value="#10b981"'+(d.color==="#10b981"?" selected":"")+'>Vert (#10b981)</option>'+
-      '<option value="#f59e0b"'+(d.color==="#f59e0b"?" selected":"")+'>Ambre (#f59e0b)</option>'+
-      '<option value="#ef4444"'+(d.color==="#ef4444"?" selected":"")+'>Rouge (#ef4444)</option>'+
-      '<option value="#a855f7"'+(d.color==="#a855f7"?" selected":"")+'>Violet (#a855f7)</option>'+
       '</select></div>'+
-      '<div class="prop"><label>Libellé de zone (optionnel)</label>'+
-      '<input id="pDLabel" placeholder="Ex: ALIMENTATION, MCU..." value="'+esc(d.label||"")+'"></div>'+
+      '<div class="prop"><label>Nom / Libellé de zone</label>'+
+      '<input id="pDLabel" placeholder="Ex: ALIMENTATION 5V, MCU..." value="'+esc(d.label||"")+'"></div>'+
       '<div class="prop"><label>Dimensions</label>'+
       '<div style="font-family:var(--mono);font-size:11px;color:var(--txt-dim);padding:4px 0">'+
       'X1: '+(d.x1/G).toFixed(1)+' · Y1: '+(d.y1/G).toFixed(1)+' mm<br>'+
@@ -251,15 +271,46 @@ function refreshPanels(){
 
     const sShape=document.getElementById("pDShape");
     if(sShape) sShape.onchange=e=>{push();d.shape=e.target.value;d.type=d.shape;refreshPanels();draw();};
+    const cIsZone=document.getElementById("pDIsZone");
+    if(cIsZone) cIsZone.onchange=e=>{
+      push();
+      d.isZone = e.target.checked;
+      if(d.isZone){
+        if(!d.category) d.category="Alimentation";
+        if(!d.color||d.color==="#6b7280") d.color="#f59e0b";
+        if(!d.label) d.label="ALIMENTATION";
+      }
+      refreshPanels();draw();
+      if(typeof SCHEMA_PATTERNS!=="undefined"&&SCHEMA_PATTERNS.analyser) SCHEMA_PATTERNS.analyser(150);
+    };
+    const sCat=document.getElementById("pDCategory");
+    if(sCat) sCat.onchange=e=>{
+      push();
+      d.category=e.target.value;
+      d.isZone=true;
+      if(d.category==="Alimentation") d.color="#f59e0b";
+      else if(d.category==="Microcontrôleur") d.color="#2f86cc";
+      else if(d.category==="Analogique") d.color="#10b981";
+      else if(d.category==="Puissance") d.color="#ef4444";
+      else if(d.category==="Communication") d.color="#a855f7";
+      refreshPanels();draw();
+      if(typeof SCHEMA_PATTERNS!=="undefined"&&SCHEMA_PATTERNS.analyser) SCHEMA_PATTERNS.analyser(150);
+    };
     const sStyle=document.getElementById("pDStyle");
     if(sStyle) sStyle.onchange=e=>{push();d.style=e.target.value;draw();};
     const sWidth=document.getElementById("pDWidth");
     if(sWidth) sWidth.onchange=e=>{push();d.width=+e.target.value;draw();};
     const sColor=document.getElementById("pDColor");
-    if(sColor) sColor.onchange=e=>{push();d.color=e.target.value;draw();};
+    if(sColor) sColor.onchange=e=>{
+      push();d.color=e.target.value;draw();
+      if(typeof SCHEMA_PATTERNS!=="undefined"&&SCHEMA_PATTERNS.analyser) SCHEMA_PATTERNS.analyser(150);
+    };
     const iLabel=document.getElementById("pDLabel");
     if(iLabel) iLabel.oninput=e=>{d.label=e.target.value;draw();};
-    if(iLabel) iLabel.onchange=e=>{push();d.label=e.target.value;draw();};
+    if(iLabel) iLabel.onchange=e=>{
+      push();d.label=e.target.value;draw();
+      if(typeof SCHEMA_PATTERNS!=="undefined"&&SCHEMA_PATTERNS.analyser) SCHEMA_PATTERNS.analyser(150);
+    };
     const bDel=document.getElementById("pDDel");
     if(bDel) bDel.onclick=delSel;
     propsRefocus(_focus);
@@ -368,21 +419,34 @@ function refreshPanels(){
         '</div>';
 
       const isLoaded = window.CSV_LIB && window.CSV_LIB.length > 0;
+      const alerteMaj = (typeof schComposantAlerteLib === "function" && schComposantAlerteLib(el)) ?
+        ('<div style="background:rgba(245,158,11,0.15); border:1px solid #f59e0b; border-radius:4px; padding:6px 8px; margin-top:6px; font-size:11px;">' +
+          '<div style="color:#f59e0b; font-weight:bold; margin-bottom:2px;">⚠️ Version LIB plus récente</div>' +
+          '<div style="color:var(--txt-dim); margin-bottom:6px;">Ce composant ou son symbole a été modifié dans Gestion LIB.</div>' +
+          '<button class="tb mini on" id="pUpdateFromLib" style="width:100%; border-color:#f59e0b; color:#f59e0b; font-weight:600;">🔄 Mettre à jour depuis la LIB</button>' +
+        '</div>') : '';
+
       csvHtml = '<div style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">' +
-                '<label style="color:var(--blue)">Bibliothèque CSV ' + (isLoaded ? "("+window.CSV_LIB.length+" réf)" : "(Non chargée)") + '</label>' +
+                '<label style="color:var(--blue)">Catalogue LIB ' + (isLoaded ? "("+window.CSV_LIB.length+" réf)" : "(Non chargé)") + '</label>' +
                 (!isLoaded ? '<button class="tb" style="margin-top:5px; margin-bottom:10px; width:100%; border-color:var(--blue); color:var(--blue);" onclick="document.getElementById(\'csvIn\').click()">Charger le CSV manuellement</button>' : '') +
                 '<input id="pCsvSearch" placeholder="Rechercher (ex: 10k, A4984...)" value="'+esc(el.csvPartName||"")+'" ' + (isLoaded?"":"disabled") + ' style="margin-bottom:5px;">' +
-                '<select id="pCsvList" size="5" style="width:100%; font-size:11px; background:var(--bg); color:var(--txt); border:1px solid var(--border);" ' + (isLoaded?"":"disabled") + '></select>' +
+                '<select id="pCsvList" size="4" style="width:100%; font-size:11px; background:var(--bg); color:var(--txt); border:1px solid var(--border); margin-bottom:6px;" ' + (isLoaded?"":"disabled") + '></select>' +
+                '<div style="background:var(--panel2); border:1px solid var(--border2); border-radius:4px; padding:6px 8px; font-size:11px; line-height:1.5;">' +
+                  '<div><span style="color:var(--txt-dim)">Part Name :</span> <b style="color:var(--yellow)">' + esc(el.csvPartName || "Non associé") + '</b></div>' +
+                  '<div><span style="color:var(--txt-dim)">Symbole :</span> <b style="color:var(--blue)">' + esc(el.symSch || def.n || el.type) + '</b></div>' +
+                  '<div><span style="color:var(--txt-dim)">Empreinte PCB :</span> <b style="color:#a78bfa">' + esc(el.fpPcb || el.pkg || "Non définie") + '</b></div>' +
+                  (el.simModel ? '<div><span style="color:var(--txt-dim)">Modèle Simu :</span> <b style="color:#4ade80">' + esc(el.simModel) + '</b></div>' : '') +
+                  ((el.manufacturer || el.csvMpn) ? '<div><span style="color:var(--txt-dim)">MPN / Mfr :</span> <span style="color:var(--txt)">' + esc((el.manufacturer ? el.manufacturer + " " : "") + (el.csvMpn || "")) + '</span></div>' : '') +
+                '</div>' +
+                alerteMaj +
+                '<button class="tb" id="pOpenLib" style="width:100%; margin-top:6px; border-color:var(--yellow); color:var(--yellow); font-weight:600;" title="Ouvrir ce composant dans Gestion LIB">📚 Ouvrir dans Gestion LIB ↗</button>' +
                 '</div>';
     }
     
     html += enrichHtml + csvHtml +
       (def.noRef?"":pkgField(el))+
       '<div class="row"><button class="tb" id="pRot">Pivoter</button><button class="tb" id="pMir">Miroir</button></div>'+
-      '<div class="row"><button class="tb" id="pCompEd" style="width:100%; border-color:var(--blue); color:var(--blue); font-weight:600;">✎ Éditer le composant…</button></div>'+
-      ((pinCount(el)>0 && typeof def.pins!=="function")
-        ? '<div class="row"><button class="tb" id="pPins" style="width:100%;">⚡ Éditer les broches…</button></div>'
-        : "")+
+      '<div class="row"><button class="tb" id="pCompEd" style="width:100%; border-color:var(--blue); color:var(--blue); font-weight:600;">✎ Détails du composant…</button></div>'+
       ((el.refOff||el.valOff)
         ? '<div class="row"><button class="tb" id="pTxt">Replacer les textes</button></div>'
         : "")+
@@ -398,37 +462,6 @@ function refreshPanels(){
         ? '<div class="pinnote">Étiquette globale : toutes les étiquettes de même nom, '+
           'sur n\'importe quelle feuille, forment un seul net.</div>'
         : "");
-    if(typeof def.pins==="function"){
-      const g=icGeom(el);
-      if(!el.pinNames)el.pinNames=[];
-      const named=el.pinNames.filter(x=>x&&String(x).trim()).length;
-      html+='<div class="prop"><label>Nombre de broches</label>'+
-            '<input id="pN" type="number" min="'+(g.quad?IC_QUAD_MIN:2)+'" max="64" step="1" value="'+g.n+'">'+
-            '<label style="margin-top:8px">Représentation</label>'+
-            '<select id="pShape">'+
-            '<option value="dip"'+(g.shape==="dip"?" selected":"")+'>Rectangulaire — 2 rangées (DIP, SOIC…)</option>'+
-            '<option value="quad"'+(g.shape==="quad"?" selected":"")+'>Carrée — 4 côtés (QFP, QFN…)</option>'+
-            '<option value="libre"'+(g.shape==="libre"?" selected":"")+'>Libre — broches placées à la main</option>'+
-            '</select></div>'+
-            (g.shape==="libre"
-              ? '<div class="pinnote">Disposition libre : chaque broche est posée où vous '+
-                'l\'avez mise. Revenir à une forme rectangulaire ou carrée efface ce placement.</div>'
-              : g.quad
-              ? '<div class="pinnote">Numérotation antihoraire depuis le repère : '+
-                'côté gauche de haut en bas, puis bas, droite, haut. Les broches se '+
-                'répartissent au mieux sur les quatre côtés ('+g.cnt.join(" + ")+').</div>'
-              : g.n>=24
-              ? '<div class="pinnote">'+g.n+' broches sur deux rangées font un symbole très haut : '+
-                'la représentation carrée sera sans doute plus lisible.</div>'
-              : "")+
-            '<div class="prop"><label>Brochage</label>'+
-            '<div class="row" style="margin-top:0">'+
-            '<button class="tb" id="pPins">Éditer les broches…</button></div></div>'+
-            '<div class="pinnote">'+g.n+' broche(s)'+
-            (named?' · '+named+' nommée(s)':'')+
-            '. L\'éditeur montre le composant avec ses pattes : on les nomme et '+
-            'on les déplace sur la grille, le câblage suit.</div>';
-    }
     html+=connList(el);
     box.innerHTML=html;
     bindNetCells(box);
@@ -460,20 +493,6 @@ function refreshPanels(){
     document.getElementById("pDel").onclick=delSel;
     const pce=document.getElementById("pCompEd");
     if(pce)pce.onclick=()=>{if(typeof ceOpen==="function")ceOpen(el);};
-    const pn=document.getElementById("pN");
-    if(pn)pn.onchange=()=>{
-      push();
-      icSetCount(el,+pn.value||8);
-      refreshPanels();draw();
-    };
-    const psh=document.getElementById("pShape");
-    if(psh)psh.onchange=()=>{
-      push();
-      icSetShape(el,psh.value);
-      refreshPanels();draw();
-    };
-    const pp=document.getElementById("pPins");
-    if(pp)pp.onclick=()=>peOpen(el);
     
     // -- Logique de recherche CSV --
     const searchInp = document.getElementById("pCsvSearch");
@@ -529,10 +548,14 @@ function refreshPanels(){
             for(const m of matches) {
                 const opt = document.createElement("option");
                 opt.value = m["Part Name"];
-                opt.textContent = m["Part Name"] + " | " + m["Value"] + " | " + m["Part Number"];
-                opt.dataset.val = m["Value"];
-                opt.dataset.pkg = m["Package type"];
-                opt.dataset.mpn = m["Part Number"];
+                opt.textContent = m["Part Name"] + " | " + (m["Value"] || "") + " | " + (m["Empreinte PCB"] || m["Package type"] || "");
+                opt.dataset.val = m["Value"] || "";
+                opt.dataset.pkg = m["Package type"] || "";
+                opt.dataset.fp = m["Empreinte PCB"] || "";
+                opt.dataset.sch = m["Empreinte Schématique"] || m["Empreinte Schematique"] || "";
+                opt.dataset.sim = m["Modèle Simulation"] || m["Modele Simulation"] || "";
+                opt.dataset.mpn = m["Part Number"] || m["Part Number "] || "";
+                opt.dataset.mfr = m["Manufacturer"] || "";
                 listSel.appendChild(opt);
             }
         };
@@ -544,12 +567,76 @@ function refreshPanels(){
             push();
             el.csvPartName = opt.value;
             el.csvMpn = opt.dataset.mpn;
+            if (opt.dataset.mfr) el.manufacturer = opt.dataset.mfr;
             if (opt.dataset.val) el.value = opt.dataset.val;
-            if (opt.dataset.pkg && opt.dataset.pkg !== "xx") {
+            if (opt.dataset.sch) el.symSch = opt.dataset.sch;
+            if (opt.dataset.fp) {
+                el.fpPcb = opt.dataset.fp;
+                const cleanPkg = opt.dataset.fp.replace(/\.json$/i, "");
+                if (cleanPkg) el.pkg = cleanPkg;
+            } else if (opt.dataset.pkg && opt.dataset.pkg !== "xx") {
                 el.pkg = opt.dataset.pkg;
             }
+            if (opt.dataset.sim) el.simModel = opt.dataset.sim;
+
+            // Spécifications électriques issues du catalogue LIB CSV
+            if (window.CSV_LIB && Array.isArray(window.CSV_LIB)) {
+                const item = window.CSV_LIB.find(it => (it["Part Name"] || "") === opt.value);
+                if (item) {
+                    const specs = el.specs ? { ...el.specs } : {};
+                    const vRating = item["Voltage Rating"] || item["voltage rating"] || item["Voltage"] || "";
+                    const cRating = item["current Rating"] || item["Current Rating"] || item["current rating"] || "";
+                    const wRating = item["wattage"] || item["Wattage"] || "";
+                    const fRating = item["fréquency"] || item["frequency"] || item["Frequency"] || "";
+
+                    const isSrc = el.type === "vcc" || el.type === "regulator" || /^(VR|REG|PWR|BAT|J|CON)/i.test(el.ref || "");
+                    let aDesSpecs = false;
+
+                    if (vRating && vRating !== "xx" && vRating !== "-") {
+                        specs[isSrc ? "Output Voltage" : "Operating Voltage"] = vRating;
+                        specs["Voltage Rating"] = vRating;
+                        aDesSpecs = true;
+                    }
+                    if (cRating && cRating !== "xx" && cRating !== "-") {
+                        specs[isSrc ? "Max Current" : "Supply Current"] = cRating;
+                        specs["Current Rating"] = cRating;
+                        aDesSpecs = true;
+                    }
+                    if (wRating && wRating !== "xx" && wRating !== "-") {
+                        specs["Power Rating"] = wRating;
+                        aDesSpecs = true;
+                    }
+                    if (fRating && fRating !== "xx" && fRating !== "-") {
+                        specs["Frequency"] = fRating;
+                        aDesSpecs = true;
+                    }
+
+                    if (aDesSpecs) {
+                        el.specs = specs;
+                        if (!el.specsProvenance || el.specsProvenance === "defaut") {
+                            el.specsProvenance = "catalogue";
+                        }
+                    }
+                }
+            }
+
             refreshPanels(); 
             draw();
+        };
+    }
+    const bOpenLib = document.getElementById("pOpenLib");
+    if (bOpenLib) {
+        bOpenLib.onclick = () => {
+            const nom = el.csvPartName || el.value || "";
+            window.open("../gestion-lib/gestion-lib.html?comp=" + encodeURIComponent(nom), "_blank");
+        };
+    }
+    const bUpdateFromLib = document.getElementById("pUpdateFromLib");
+    if (bUpdateFromLib) {
+        bUpdateFromLib.onclick = () => {
+            if (typeof schAppliquerMajLibComposant === "function") {
+                schAppliquerMajLibComposant(el);
+            }
         };
     }
     // ---------------------------------
@@ -807,12 +894,16 @@ function drawMenuBuild(){
     '<div class="prop"><div class="row">'+
     '<button class="tb'+(!isRect?' sel':'')+'" id="dmLine">─ Trait (segment) <kbd>T</kbd></button>'+
     '</div><div class="row">'+
-    '<button class="tb'+(isRect?' sel':'')+'" id="dmRect">▢ Rectangle (cadre) <kbd>Shift+T</kbd></button>'+
+    '<button class="tb'+(isRect&&!S.drawIsZone?' sel':'')+'" id="dmRect">▢ Rectangle (cadre) <kbd>Shift+T</kbd></button>'+
+    '</div><div class="row">'+
+    '<button class="tb'+(isRect&&S.drawIsZone?' sel':'')+'" id="dmZone">🔲 Zone fonctionnelle (Room) <kbd>Z</kbd></button>'+
     '</div></div>';
   const bLine=document.getElementById("dmLine");
-  if(bLine)bLine.onclick=()=>{S.drawShape="line";setMode("draw");drawMenuClose();};
+  if(bLine)bLine.onclick=()=>{S.drawShape="line";S.drawIsZone=false;setMode("draw");drawMenuClose();};
   const bRect=document.getElementById("dmRect");
-  if(bRect)bRect.onclick=()=>{S.drawShape="rect";setMode("draw");drawMenuClose();};
+  if(bRect)bRect.onclick=()=>{S.drawShape="rect";S.drawIsZone=false;setMode("draw");drawMenuClose();};
+  const bZone=document.getElementById("dmZone");
+  if(bZone)bZone.onclick=()=>{S.drawShape="rect";S.drawIsZone=true;setMode("draw");drawMenuClose();};
   return m;
 }
 function drawMenuOpen(){

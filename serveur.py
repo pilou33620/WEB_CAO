@@ -392,11 +392,27 @@ except Exception as _exc:                              # noqa: BLE001
     crosstalk = None
     ERREUR_CROSSTALK = _exc
 
+# Solveur MoM 2.5D pleine onde (surfacique, fonctions RWG).
+try:
+    import simulation_25d
+    ERREUR_25D = None
+except Exception as _exc:                              # noqa: BLE001
+    simulation_25d = None
+    ERREUR_25D = _exc
+
 # Un document de simulation ne porte qu'un net et son empilage : il est petit.
 MAX_SIM = getattr(simulation_em, "MAX_CORPS", 4 * 1024 * 1024)
 # Celui du crosstalk porte un parcours et son voisinage : meme ordre de
 # grandeur, et le plafond reste le sien pour pouvoir bouger seul.
 MAX_CROSSTALK = getattr(crosstalk, "MAX_CORPS", 4 * 1024 * 1024)
+# Celui du 2,5D est le meme document que celui du moteur 2D -- une selection --,
+# d'ou le meme plafond, pris chez lui pour qu'il puisse bouger seul.
+MAX_25D = getattr(simulation_25d, "MAX_CORPS", MAX_SIM)
+# ET CELUI DU DC, QUI N'EN AVAIT AUCUN. Les trois autres routes refusaient un
+# corps trop gros ; celle-la lisait ce qui venait, et son document porte les
+# POLYGONES de cuivre d'une ou plusieurs couches entieres -- de loin le plus
+# gros des quatre. Un plafond plus haut que les autres, donc, mais un plafond.
+MAX_DC = getattr(dc_solver, "MAX_CORPS", 16 * 1024 * 1024)
 
 # -- scoring PCB et reconnaissance de motifs --------------------------------
 try:
@@ -474,6 +490,41 @@ def nom_profil(brut):
     if NOMS_RESERVES.match(nom):
         return None
     return nom
+
+
+# -- bibliotheques CAO (LIB) ------------------------------------------------
+LIB_DIR_NAME = "LIB"
+LIB_SOUS_DOSSIERS = {
+    "pcb": "lib_empreinte_pcb",
+    "schematique": "lib_empreinte_schematique",
+    "simulation": "lib_simulation"
+}
+
+
+class ErreurLib(Exception):
+    """Refus explicite d'une route de bibliotheque : code HTTP + message lisible."""
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def dossier_lib():
+    """Le dossier centralise LIB, a cote d'index.html."""
+    return os.path.join(ROOT, LIB_DIR_NAME)
+
+
+def chemin_lib_fichier(genre, nom_brut):
+    """Valide le genre et le nom de fichier pour eviter toute traversee de dossier."""
+    if genre not in LIB_SOUS_DOSSIERS:
+        raise ErreurLib(400, "Genre de bibliotheque invalide (attendu: pcb, schematique, simulation)")
+    nom = os.path.basename(str(nom_brut or "").strip())
+    if not nom or nom in ('.', '..') or '/' in str(nom_brut) or '\\' in str(nom_brut):
+        raise ErreurLib(400, "Nom de fichier invalide")
+    rep = os.path.join(dossier_lib(), LIB_SOUS_DOSSIERS[genre])
+    os.makedirs(rep, exist_ok=True)
+    return os.path.join(rep, nom)
 
 
 # -- dossiers de projet -----------------------------------------------------
@@ -1345,6 +1396,185 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self._projet_fichier_ecrire(chemin, charge, "Le document %s" % outil)
         return {"ok": True, "fichier": os.path.basename(chemin)}
 
+    # -- bibliotheques CAO (LIB) -------------------------------------------
+    def _lib_api(self, action):
+        """Execute action() et traduit les erreurs en JSON {"detail": ...}."""
+        try:
+            self._envoyer_json(action())
+        except ErreurLib as exc:
+            self.close_connection = True
+            self._envoyer_json({"detail": exc.message}, exc.code)
+        except Exception as exc:                       # noqa: BLE001
+            self.close_connection = True
+            self._envoyer_json({"detail": "Erreur interne : %s" % exc}, 500)
+
+    def _lib_composants_lire(self):
+        """Lit LIB/LIB_composants.csv et renvoie colonnes + liste de composants en JSON."""
+        chemin = os.path.join(dossier_lib(), "LIB_composants.csv")
+        if not os.path.exists(chemin):
+            chemin = os.path.join(ROOT, "LIB_composants.csv")
+        if not os.path.exists(chemin):
+            raise ErreurLib(404, "Fichier LIB_composants.csv introuvable")
+
+        contenu = None
+        for enc in ("utf-8", "latin1", "cp1252"):
+            try:
+                with open(chemin, "r", encoding=enc) as f:
+                    contenu = f.read()
+                break
+            except UnicodeDecodeError:
+                continue
+
+        if contenu is None:
+            raise ErreurLib(500, "Impossible de decoder LIB_composants.csv")
+
+        lignes = [l for l in contenu.splitlines() if l.strip()]
+        if not lignes:
+            return {"colonnes": [], "composants": [], "total": 0}
+
+        import csv
+        lecteur = csv.reader(lignes, delimiter=';')
+        try:
+            colonnes = [c.strip() for c in next(lecteur)]
+        except StopIteration:
+            return {"colonnes": [], "composants": [], "total": 0}
+
+        composants = []
+        for i, row in enumerate(lecteur):
+            item = {}
+            for j, col in enumerate(colonnes):
+                item[col] = row[j].strip() if j < len(row) else ""
+            item["_id"] = i
+            composants.append(item)
+
+        return {"colonnes": colonnes, "composants": composants, "total": len(composants)}
+
+    def _lib_composants_ecrire(self):
+        """Ecrit la liste des composants dans LIB/LIB_composants.csv."""
+        charge = self._lire_json()
+        if not isinstance(charge, dict):
+            raise ErreurLib(400, "Corps JSON invalide (objet attendu)")
+
+        composants = charge.get("composants")
+        if not isinstance(composants, list):
+            raise ErreurLib(400, "Liste de composants manquante ou invalide")
+
+        colonnes = charge.get("colonnes")
+        if not colonnes or not isinstance(colonnes, list):
+            if composants and isinstance(composants[0], dict):
+                colonnes = [k for k in composants[0].keys() if k != "_id"]
+            else:
+                raise ErreurLib(400, "Colonnes non definies")
+
+        import csv
+        import io
+        sortie = io.StringIO()
+        ecrivain = csv.writer(sortie, delimiter=';', quoting=csv.QUOTE_MINIMAL, lineterminator='\r\n')
+        ecrivain.writerow(colonnes)
+        for comp in composants:
+            if isinstance(comp, dict):
+                ligne = [str(comp.get(col, "")) for col in colonnes]
+                ecrivain.writerow(ligne)
+
+        texte = sortie.getvalue()
+        dossier = dossier_lib()
+        os.makedirs(dossier, exist_ok=True)
+        cible = os.path.join(dossier, "LIB_composants.csv")
+        try:
+            with open(cible, "w", encoding="utf-8") as f:
+                f.write(texte)
+        except OSError as exc:
+            raise ErreurLib(500, "Impossible d'ecrire %s : %s" % (cible, exc))
+
+        racine_csv = os.path.join(ROOT, "LIB_composants.csv")
+        try:
+            with open(racine_csv, "w", encoding="utf-8") as f:
+                f.write(texte)
+        except OSError:
+            pass
+
+        return {"ok": True, "total": len(composants), "message": "Composants enregistres"}
+
+    def _lib_fichiers_liste(self):
+        """Liste les fichiers d'empreintes PCB, symboles schematiques et modeles de simulation."""
+        dossier = dossier_lib()
+        res = {"pcb": [], "schematique": [], "simulation": []}
+        for genre, sous in LIB_SOUS_DOSSIERS.items():
+            rep = os.path.join(dossier, sous)
+            if os.path.exists(rep):
+                try:
+                    fichiers = sorted(os.listdir(rep), key=lambda s: s.lower())
+                    res[genre] = [f for f in fichiers if os.path.isfile(os.path.join(rep, f))]
+                except OSError:
+                    res[genre] = []
+        return res
+
+    def _lib_fichier_lire(self):
+        """Lit un fichier individuel d'empreinte ou de modele."""
+        params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        genre = (params.get("type") or [""])[0]
+        nom = (params.get("nom") or [""])[0]
+        if not genre or not nom:
+            raise ErreurLib(400, "Parametres 'type' et 'nom' requis")
+        chemin = chemin_lib_fichier(genre, nom)
+        if not os.path.exists(chemin):
+            raise ErreurLib(404, "Fichier introuvable : %s" % nom)
+        try:
+            with open(chemin, "r", encoding="utf-8") as f:
+                contenu = f.read()
+        except OSError as exc:
+            raise ErreurLib(500, "Erreur de lecture : %s" % exc)
+
+        if nom.endswith(".json"):
+            try:
+                data = json.loads(contenu)
+                return {"type": genre, "nom": nom, "data": data}
+            except ValueError:
+                pass
+        return {"type": genre, "nom": nom, "contenu": contenu}
+
+    def _lib_fichier_ecrire(self):
+        """Ecrit un fichier individuel d'empreinte ou de modele."""
+        charge = self._lire_json()
+        if not isinstance(charge, dict):
+            raise ErreurLib(400, "Corps JSON invalide")
+        genre = charge.get("type")
+        nom = charge.get("nom")
+        if not genre or not nom:
+            raise ErreurLib(400, "Champs 'type' et 'nom' requis")
+        chemin = chemin_lib_fichier(genre, nom)
+
+        if "data" in charge and isinstance(charge["data"], (dict, list)):
+            contenu = json.dumps(charge["data"], indent=2, ensure_ascii=False)
+        elif "contenu" in charge:
+            contenu = str(charge["contenu"])
+        else:
+            raise ErreurLib(400, "Champ 'data' ou 'contenu' requis")
+
+        try:
+            with open(chemin, "w", encoding="utf-8") as f:
+                f.write(contenu)
+        except OSError as exc:
+            raise ErreurLib(500, "Erreur d'ecriture : %s" % exc)
+
+        return {"ok": True, "type": genre, "nom": nom}
+
+    def _lib_fichier_effacer(self):
+        """Supprime un fichier individuel d'empreinte ou de modele."""
+        params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        genre = (params.get("type") or [""])[0]
+        nom = (params.get("nom") or [""])[0]
+        if not genre or not nom:
+            raise ErreurLib(400, "Parametres 'type' et 'nom' requis")
+        chemin = chemin_lib_fichier(genre, nom)
+        if not os.path.exists(chemin):
+            raise ErreurLib(404, "Fichier introuvable : %s" % nom)
+        try:
+            os.remove(chemin)
+        except OSError as exc:
+            raise ErreurLib(500, "Erreur suppression : %s" % exc)
+        return {"ok": True, "supprime": nom}
+
     # -- import IPC-2581 ---------------------------------------------------
     # La visionneuse envoie le fichier tel quel, le serveur rend le modele en
     # JSON. Le parseur est en Python (python/ipc2581_parser.py) : c'est la seule
@@ -1445,21 +1675,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if crosstalk is None:
             raise ErreurIPC(503, "Analyse de crosstalk indisponible : %s"
                                  % ERREUR_CROSSTALK)
-        try:
-            taille = int(self.headers.get("Content-Length") or 0)
-        except ValueError:
-            raise ErreurIPC(400, "Content-Length invalide")
-        if taille <= 0:
-            raise ErreurIPC(400, "Document vide")
-        if taille > MAX_CROSSTALK:
-            raise ErreurIPC(413, "Document trop grand : %.1f Mo, maximum %d Mo"
-                                 % (taille / 1048576.0,
-                                    MAX_CROSSTALK // 1048576))
-        corps = self.rfile.read(taille)
-        try:
-            doc = json.loads(corps.decode("utf-8"))
-        except (ValueError, UnicodeDecodeError) as exc:
-            raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
+        doc = self._lire_document(MAX_CROSSTALK)
         try:
             return crosstalk.analyser(doc, journal=sys.stderr.write)
         except crosstalk.ErreurCrosstalk as exc:
@@ -1471,25 +1687,80 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurIPC(413, "Reseau trop lourd pour la memoire"
                                  " disponible")
 
-    def _simulation_lancer(self):
-        """Corps de la requete (document JSON) -> parametres S de la ligne."""
-        if simulation_em is None:
-            raise ErreurIPC(503, "Solveur EM indisponible : %s" % ERREUR_SIM)
+    # -- la lecture d'un document, ecrite UNE fois ---------------------------
+    # Les quatre routes de calcul lisaient toutes les memes six lignes :
+    # Content-Length, le plafond, la lecture, le decodage JSON. Une seule les
+    # porte maintenant -- et c'est en la factorisant qu'on a vu que celle du DC
+    # n'avait pas de plafond du tout.
+    def _lire_document(self, plafond):
+        """Le corps de la requete, en dict. Refuse vide, trop gros, illisible."""
         try:
             taille = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             raise ErreurIPC(400, "Content-Length invalide")
         if taille <= 0:
             raise ErreurIPC(400, "Document vide")
-        if taille > MAX_SIM:
+        if taille > plafond:
+            # UN REFUS QUI N'ARRIVE PAS N'EST PAS UN REFUS. On repondait 413
+            # sans lire le corps -- economie legitime : pourquoi ingerer cinq
+            # megaoctets pour les jeter ? --, mais les octets non lus restaient
+            # dans le tuyau, et le systeme coupait la connexion avant que le
+            # client ait pu lire la reponse. Cote page, cela donnait un
+            # « Failed to fetch » au lieu de « Document trop grand : 5,2 Mo,
+            # maximum 4 Mo », c'est-a-dire une panne au lieu d'une consigne.
+            #
+            # ON VIDE DONC, MAIS PAS SANS LIMITE : de quoi laisser passer un
+            # depassement ordinaire (le double du plafond), et l'on FERME au
+            # lieu de lire au-dela. Un client qui annonce un gigaoctet n'a pas
+            # droit a ce qu'on le lise pour lui dire non.
+            a_vider = min(taille, 2 * plafond)
+            reste = a_vider
+            try:
+                while reste > 0:
+                    bloc = self.rfile.read(min(65536, reste))
+                    if not bloc:
+                        break
+                    reste -= len(bloc)
+            except OSError:
+                pass
+            if taille > a_vider:
+                self.close_connection = True
             raise ErreurIPC(413, "Document trop grand : %.1f Mo, maximum %d Mo"
-                                 % (taille / 1048576.0, MAX_SIM // 1048576))
-
+                                 % (taille / 1048576.0, plafond // 1048576))
         corps = self.rfile.read(taille)
         try:
-            doc = json.loads(corps.decode("utf-8"))
+            return json.loads(corps.decode("utf-8"))
         except (ValueError, UnicodeDecodeError) as exc:
             raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
+
+    # -- l'appel au solveur 2,5D, ecrit UNE fois ----------------------------
+    # DEUX PORTES, UN SEUL CORPS. /api/simulation-25d et /api/simulation avec
+    # « moteur: 2.5d » menent au meme calcul ; elles en recopiaient l'appel et
+    # la traduction des refus, ce qui est deja une divergence en puissance.
+    def _appeler_25d(self, doc):
+        if simulation_25d is None:
+            raise ErreurIPC(503, "Solveur MoM 2.5D indisponible : %s"
+                                 % ERREUR_25D)
+        try:
+            return simulation_25d.simuler_25d(doc, journal=sys.stderr.write)
+        except simulation_25d.ErreurSimulation25D as exc:
+            detail = exc.message
+            if exc.conseil:
+                detail += "\n" + exc.conseil
+            raise ErreurIPC(422, detail)
+        except MemoryError:
+            raise ErreurIPC(413, "Maillage 2.5D trop lourd pour la memoire"
+                                 " disponible")
+
+    def _simulation_lancer(self):
+        """Corps de la requete (document JSON) -> parametres S de la ligne."""
+        if simulation_em is None:
+            raise ErreurIPC(503, "Solveur EM indisponible : %s" % ERREUR_SIM)
+        doc = self._lire_document(MAX_SIM)
+
+        moteur = str(doc.get("moteur", "2d")).lower()
+        if moteur in ("2.5d", "mom_solver", "25d"):
+            return self._appeler_25d(doc)
 
         try:
             resultat = simulation_em.simuler(doc, journal=sys.stderr.write)
@@ -1504,22 +1775,34 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurIPC(413, "Maillage trop lourd pour la memoire disponible")
         return resultat
 
+    def _simulation_25d_etat(self):
+        """GET /api/simulation-25d : disponibilite du solveur 2.5D."""
+        if simulation_25d is None:
+            return {"dispo": False,
+                    "moteur": "2.5d",
+                    "detail": "Solveur 2.5D indisponible : %s" % ERREUR_25D,
+                    "conseil": "Le solveur a besoin de numpy, scipy et shapely."}
+        return simulation_25d.etat()
+
+    def _simulation_25d_lancer(self):
+        """POST /api/simulation-25d : calcul 2.5D pleine onde direct.
+
+        ELLE EXISTE POUR CEUX QUI N'ONT PAS LE PANNEAU. La page passe par
+        /api/simulation avec « moteur: 2.5d » -- un seul point d'entree pour
+        les deux moteurs, ce qui lui evite de choisir une URL --, mais un
+        script, un banc d'essai ou un autre outil a besoin d'une adresse qui
+        dise ce qu'elle calcule. Les deux menent au MEME corps, `_appeler_25d`.
+        """
+        return self._appeler_25d(self._lire_document(MAX_25D))
+
     def _dc_lancer(self):
         """POST /api/simulation-dc : calcul DC (IR drop)."""
         if dc_solver is None:
             raise ErreurIPC(503, "Solveur DC indisponible : %s" % ERREUR_DC)
-        try:
-            taille = int(self.headers.get("Content-Length") or 0)
-        except ValueError:
-            raise ErreurIPC(400, "Content-Length invalide")
-        if taille <= 0:
-            raise ErreurIPC(400, "Document vide")
-
-        corps = self.rfile.read(taille)
-        try:
-            doc = json.loads(corps.decode("utf-8"))
-        except (ValueError, UnicodeDecodeError) as exc:
-            raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
+        # UN PLAFOND, ENFIN. Cette route lisait ce qui venait, seule des quatre
+        # a n'avoir aucune borne, alors que son document est le plus gros : il
+        # porte les polygones de cuivre de couches entieres.
+        doc = self._lire_document(MAX_DC)
 
         # Le document est en MILLIMETRES : c'est resoudre_document qui
         # convertit, une fois, et lui seul.
@@ -1629,6 +1912,22 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as exc:                       # noqa: BLE001
             self.close_connection = True
             self._envoyer_json({"detail": "Erreur interne : %s" % exc}, 500)
+
+    # -- cle IA locale ----------------------------------------------------
+    def _ia_cle_api(self):
+        """GET /api/ia/cle : renvoie la cle API Google AI Studio si presente localement."""
+        cle = (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
+        if not cle:
+            chemin = os.path.join(ROOT, "api_key_free_ia_studio.txt")
+            if os.path.isfile(chemin):
+                try:
+                    with open(chemin, "r", encoding="utf-8") as f:
+                        txt = f.read().strip()
+                        if txt and not txt.startswith("YOUR_GEMINI"):
+                            cle = txt
+                except OSError:
+                    pass
+        self._envoyer_json({"dispo": bool(cle), "cle": cle})
 
     # -- datasheets composants --------------------------------------------
     def _datasheet_api(self, action):
@@ -1809,16 +2108,18 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def do_OPTIONS(self):
         route = self._route()
         if route in ("/api/profils", "/api/profil",
-                     "/api/projets", "/api/projet", "/api/projet/doc"):
+                     "/api/projets", "/api/projet", "/api/projet/doc",
+                     "/api/lib/composants", "/api/lib/fichiers", "/api/lib/fichier",
+                     "/api/ia/cle"):
             self.send_response(204)
             self.send_header("Access-Control-Allow-Methods",
-                             "GET, PUT, DELETE, OPTIONS")
+                             "GET, POST, PUT, DELETE, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self._cors()
             self.end_headers()
             return
         if route not in ("/api/tools", "/api/tool", "/api/ipc2581",
-                         "/api/simulation", "/api/simulation-dc",
+                         "/api/simulation", "/api/simulation-25d", "/api/simulation-dc",
                          "/api/crosstalk", "/api/datasheet/telecharger",
                          "/api/datasheet/ouvrir",
                          "/api/pcb/score-placement", "/api/schema/patterns"):
@@ -1843,25 +2144,44 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/projet/doc":
             self._projet_api(self._projet_doc_ecrire)
             return
+        if route == "/api/lib/composants":
+            self._lib_api(self._lib_composants_ecrire)
+            return
+        if route == "/api/lib/fichier":
+            self._lib_api(self._lib_fichier_ecrire)
+            return
         self.send_error(405, "Unsupported method (PUT)")
 
     def do_DELETE(self):
         if not self._valider_csrf():
             return
-        if self._route() != "/api/profil":
-            self.send_error(405, "Unsupported method (DELETE)")
+        route = self._route()
+        if route == "/api/profil":
+            self._profil_api(self._profil_effacer)
             return
-        self._profil_api(self._profil_effacer)
+        if route == "/api/lib/fichier":
+            self._lib_api(self._lib_fichier_effacer)
+            return
+        self.send_error(405, "Unsupported method (DELETE)")
 
     def do_POST(self):
         if not self._valider_csrf():
             return
         route = self._route()
+        if route == "/api/lib/composants":
+            self._lib_api(self._lib_composants_ecrire)
+            return
+        if route == "/api/lib/fichier":
+            self._lib_api(self._lib_fichier_ecrire)
+            return
         if route == "/api/ipc2581":
             self._ipc_api(self._ipc2581_importer)
             return
         if route == "/api/simulation":
             self._ipc_api(self._simulation_lancer)
+            return
+        if route == "/api/simulation-25d":
+            self._ipc_api(self._simulation_25d_lancer)
             return
         if route == "/api/simulation-dc":
             self._ipc_api(self._dc_lancer)
@@ -1922,6 +2242,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/simulation":
             self._ipc_api(self._simulation_etat)
             return
+        if route == "/api/simulation-25d":
+            self._ipc_api(self._simulation_25d_etat)
+            return
         if route == "/api/simulation-dc":
             self._ipc_api(self._dc_etat)
             return
@@ -1933,6 +2256,18 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/schema/patterns":
             self._ipc_api(self._patterns_etat)
+            return
+        if route == "/api/lib/composants":
+            self._lib_api(self._lib_composants_lire)
+            return
+        if route == "/api/lib/fichiers":
+            self._lib_api(self._lib_fichiers_liste)
+            return
+        if route == "/api/lib/fichier":
+            self._lib_api(self._lib_fichier_lire)
+            return
+        if route == "/api/ia/cle":
+            self._ia_cle_api()
             return
         super().do_GET()
 
@@ -1949,6 +2284,18 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/schema/patterns":
             self._ipc_api(self._patterns_etat)
+            return
+        if route == "/api/lib/composants":
+            self._lib_api(self._lib_composants_lire)
+            return
+        if route == "/api/lib/fichiers":
+            self._lib_api(self._lib_fichiers_liste)
+            return
+        if route == "/api/lib/fichier":
+            self._lib_api(self._lib_fichier_lire)
+            return
+        if route == "/api/ia/cle":
+            self._ia_cle_api()
             return
         if route == "/api/profils":
             self._profil_api(self._profils_index)
@@ -1970,6 +2317,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/simulation":
             self._ipc_api(self._simulation_etat)
+            return
+        if route == "/api/simulation-25d":
+            self._ipc_api(self._simulation_25d_etat)
             return
         if route == "/api/simulation-dc":
             self._ipc_api(self._dc_etat)
@@ -2094,6 +2444,12 @@ def start_server(host, port, navigateur=True):
     else:
         print("  simulation EM : /api/simulation ->"
               " MoM sur la section droite (python/ligne_mom.py)")
+    if simulation_25d is None:
+        print("  simulation 2.5D : /api/simulation-25d -> indisponible (%s)"
+              % ERREUR_25D)
+    else:
+        print("  simulation 2.5D : /api/simulation-25d (ou /api/simulation moteur='2.5d') ->"
+              " MoM pleine onde (python/simulation_25d.py)")
     if crosstalk is None:
         print("  crosstalk     : /api/crosstalk -> indisponible (%s)"
               % ERREUR_CROSSTALK)

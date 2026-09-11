@@ -217,7 +217,8 @@
   background: #44cf6c;
   flex-shrink: 0;
 }
-.ia-status-model {
+.ia-status-model,
+.ia-model-select {
   font-family: var(--mono, monospace);
   font-size: 10px;
   color: var(--blue, #3fa0ea);
@@ -225,6 +226,11 @@
   padding: 1px 5px;
   border-radius: 3px;
   border: 1px solid rgba(63, 160, 234, 0.25);
+  cursor: pointer;
+  outline: none;
+}
+.ia-model-select:hover {
+  border-color: var(--blue, #3fa0ea);
 }
 .ia-status-ctx {
   font-family: var(--mono, monospace);

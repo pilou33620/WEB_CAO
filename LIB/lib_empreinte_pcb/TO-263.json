@@ -1,0 +1,48 @@
+{
+  "format": "pcbfp-1",
+  "name": "TO-263",
+  "pkg": "TO-263",
+  "pins": 3,
+  "style": "sop",
+  "pitch": 2.54,
+  "span": 8.6,
+  "pads": [
+    {
+      "n": 1,
+      "x": -4.3,
+      "y": -1.27,
+      "w": 2.58,
+      "h": 1.397,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": -4.3,
+      "y": 1.27,
+      "w": 2.58,
+      "h": 1.397,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 3,
+      "x": 4.3,
+      "y": 0,
+      "w": 2.58,
+      "h": 1.397,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -3.4,
+    "y1": -2.3685,
+    "x2": 3.4,
+    "y2": 2.3685
+  },
+  "description": "Boîtier puissance CMS TO-263 (D2PAK)"
+}

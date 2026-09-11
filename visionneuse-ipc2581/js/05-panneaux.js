@@ -52,7 +52,8 @@ const ELEMENTS=[
   ["trous","Perçages","Les trous, métallisés ou non"],
   ["textes","Textes","Les textes du fichier (sérigraphie, repères)"],
   ["composants","Boîtiers","Le cadre de chaque composant"],
-  ["refs","Repères","Le repère écrit dans le cadre du composant"]
+  ["refs","Repères","Le repère écrit dans le cadre du composant"],
+  ["maillage","Maillage","Maillage filaire RWG 2.5D (Ctrl+Alt+M)"]
 ];
 function pnlElements(){
   const box=$("barElements");
@@ -68,7 +69,7 @@ function pnlElements(){
 /* Trois de ces réglages ont aussi leur bouton dans l'entête, avec un raccourci
    clavier : c'est le même état, il faut donc que le même geste rafraîchisse
    les deux. */
-const BOUTON_AFF={refs:"bRefs",trous:"bTrous",plans:"bPlans"};
+const BOUTON_AFF={refs:"bRefs",trous:"bTrous",plans:"bPlans",jsurf:"bJsurf",maillage:"bMaillage"};
 
 function pnlCouchesToutes(valeur,cuivreSeul){
   for(const c of V.couches)

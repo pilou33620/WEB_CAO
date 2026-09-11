@@ -1,0 +1,38 @@
+{
+  "format": "pcbfp-1",
+  "name": "MELF",
+  "pkg": "MELF",
+  "pins": 2,
+  "style": "chip",
+  "pitch": 5,
+  "span": 5,
+  "pads": [
+    {
+      "n": 1,
+      "x": -2.5,
+      "y": 0,
+      "w": 2.75,
+      "h": 3.1,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 2.5,
+      "y": 0,
+      "w": 2.75,
+      "h": 3.1,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -4.125,
+    "y1": -1.9,
+    "x2": 4.125,
+    "y2": 1.9
+  },
+  "description": "Diode cylindrique MELF (DO-213AB)"
+}

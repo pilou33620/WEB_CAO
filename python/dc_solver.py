@@ -94,6 +94,10 @@ PLACAGE_DEFAUT = 25e-6              # placage de trou metallise courant
 MAX_NOEUDS = 400000
 FORMAT = "cao-sim-dc-1"
 FORMAT_RESULTAT = "cao-sim-dc-resultat-1"
+VERSION = "2.1.0"
+VERSION_MOTEURS = {
+    "dc_solver": VERSION,
+}
 
 
 class ErreurDC(Exception):
@@ -109,6 +113,8 @@ def etat():
     """Ce que le serveur sait calculer : la page le demande avant de lancer."""
     if ERREUR_SOLVEUR is not None:
         return {"dispo": False,
+                "version": VERSION,
+                "moteurs": VERSION_MOTEURS,
                 "detail": "Solveur DC indisponible : %s" % ERREUR_SOLVEUR,
                 "conseil": "Le solveur a besoin de numpy et de scipy :"
                            " « pip install numpy scipy »."}
@@ -116,10 +122,14 @@ def etat():
         import scipy.sparse                            # noqa: F401
     except Exception as exc:                           # noqa: BLE001
         return {"dispo": False,
+                "version": VERSION,
+                "moteurs": VERSION_MOTEURS,
                 "detail": "Solveur DC indisponible : %s" % exc,
                 "conseil": "Le solveur a besoin de scipy :"
                            " « pip install scipy »."}
-    return {"dispo": True, "format": FORMAT,
+    return {"dispo": True, "format": FORMAT, "resultat": FORMAT_RESULTAT,
+            "version": VERSION,
+            "moteurs": VERSION_MOTEURS,
             "methode": "réseau résistif surfacique, gradient conjugué",
             "modeles_thermiques": list(MODELES_THERMIQUES),
             "max_noeuds": MAX_NOEUDS}
@@ -1401,6 +1411,9 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
             # geometrie, pas celui des modeles.
             "echauffement_etalement": etalement[kt],
             "echauffement_ipc2221": charte[kt],
+            "modele_principal": "etalement",
+            "reference_normative": "ipc2221",
+            "ecart_modeles_degres": round(abs(etalement[kt] - charte[kt]), 2),
         }
 
     if journal:
@@ -1418,6 +1431,8 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
                    time.time() - debut))
     return {
         "format": FORMAT_RESULTAT,
+        "version": VERSION,
+        "moteurs": VERSION_MOTEURS,
         "duree": time.time() - debut,
         "potentiel": potentiel.tolist(),
         "densite": densites,
@@ -1439,6 +1454,8 @@ def resoudre_dc(polygones, sources=None, references=None, vias=None, externes=No
         "culs_de_sac": culs,
         "thermique": {
             "modele": th["modele"],
+            "modele_principal": "etalement",
+            "reference_normative": "ipc2221",
             "k_stratifie": th["k_stratifie"],
             "epaisseur_stratifie": th["epaisseur_stratifie"],
             "cuivre_etaleur": th["cuivre_etaleur"],

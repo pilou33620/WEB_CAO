@@ -66,7 +66,8 @@ window.addEventListener("keydown",e=>{
      quitter le mode, et c'est seulement une fois la cote effacée qu'Échap rend
      la main à la sélection. */
   if(k==="escape"&&S.mode==="mesure"&&rpMesEnCours()){rpMesRaz();rpMesDire();draw();return;}
-  if(k==="escape"){if(typeof drawMenuClose==="function")drawMenuClose();setMode("select");S.wireStart=null;S.drawStart=null;S.place=null;clearSel();setPalette(null);refreshPanels();draw();return;}
+  if(k==="escape"){if(typeof drawMenuClose==="function")drawMenuClose();setMode("select");S.wireStart=null;S.drawStart=null;S.place=null;S.placeLibItem=null;clearSel();setPalette(null);refreshPanels();draw();return;}
+  if(k==="a"&&!mod){e.preventDefault();schOuvrirExplorateurLib();return;}
   if(k==="v"){setMode("select");return;}
   if(k==="w"){setMode("wire");return;}
   if(k==="b"){setMode("bus");return;}
@@ -76,6 +77,8 @@ window.addEventListener("keydown",e=>{
   if(k==="k"){setMode("mesure");return;}
   if(k==="r"){if(S.place){S.placeRot=((S.placeRot||0)+90)%360;draw();}else rotateSel();return;}
   if(k==="m"){mirrorSel();return;}
+  if(k==="z"&&!mod){S.drawShape="rect";S.drawIsZone=true;setMode("draw");return;}
+  if(k==="t"&&!mod){S.drawShape=e.shiftKey?"rect":"line";S.drawIsZone=false;setMode("draw");return;}
   /* Montrer la sélection sur le PCB resté ouvert dans un autre onglet.
      Le geste vit dans js/21-reperage.js, chargé après celui-ci. */
   if(k==="l"){if(typeof schMontrerAilleurs==="function")schMontrerAilleurs();return;}
@@ -157,3 +160,42 @@ document.getElementById("bNew").onclick=()=>{
   storeCurrent();touchWires();refreshPanels();draw();
 };
 document.getElementById("bOpen").onclick=()=>document.getElementById("fileIn").click();
+
+const bAddComp = document.getElementById("bAddComp");
+if(bAddComp) bAddComp.onclick = () => schOuvrirExplorateurLib();
+
+function schOuvrirExplorateurLib() {
+  if(typeof explorateurLibOuvrir !== "function") return;
+  explorateurLibOuvrir({
+    mode: "schema",
+    onSelect: (item) => {
+      let compType = "resistor";
+      const cat = (typeof elibClassifierItem === "function") ? elibClassifierItem(item) : "r";
+      if(cat === "r") compType = "resistor";
+      else if(cat === "c") compType = "capacitor";
+      else if(cat === "l") compType = "inductor";
+      else if(cat === "d") compType = "diode";
+      else if(cat === "q") compType = "npn";
+      else if(cat === "ic") compType = "ic";
+      else if(cat === "conn") compType = "connector";
+      else if(cat === "pwr") compType = "vcc";
+      else compType = "ic";
+
+      const sym = String(item["Empreinte Schématique"] || item["Empreinte Schematique"] || "").toLowerCase();
+      if(sym && typeof defOf === "function") {
+        try { if(defOf(sym)) compType = sym; } catch(_) {}
+      }
+
+      setMode("select");
+      S.place = compType;
+      S.placeRot = 0;
+      S.placeLibItem = item;
+      if(typeof setPalette === "function") setPalette(compType);
+      const hintEl = document.getElementById("fHint");
+      if(hintEl) {
+        hintEl.textContent = "Clic sur la feuille pour poser " + (item["Part Name"] || compType) + " · R pour pivoter · Maj+clic pour en poser plusieurs.";
+      }
+      draw();
+    }
+  });
+}

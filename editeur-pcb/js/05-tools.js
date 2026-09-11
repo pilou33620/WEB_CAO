@@ -273,6 +273,10 @@ function normFp(f,i){
   /* décalages du repère et de la valeur : présents seulement si déplacés */
   for(const k of ["refOffX","refOffY","valOffX","valOffY"])
     if(f[k]!=null&&Number.isFinite(+f[k]))out[k]=clamp(+f[k],-COORD,COORD);
+  /* métadonnées de bibliothèque (LIB_composants.csv) */
+  if(f.csvPartName)out.csvPartName=dStr(f.csvPartName,100);
+  if(f.csvMpn)out.csvMpn=dStr(f.csvMpn,100);
+  if(f.manufacturer)out.manufacturer=dStr(f.manufacturer,100);
   /* empreinte dessinée à la main : la liste de pastilles l'emporte sur les
      cotes, et le brochage se relit dessus — un fichier retouché qui annonce
      deux broches pour huit pastilles ne doit pas perdre six nets */
@@ -3571,6 +3575,7 @@ document.addEventListener("keydown",e=>{
     case "x":setMode("cut");break;
     case "e":setMode("edge");break;
     case "o":setMode("origin");break;
+    case "a":pcbOuvrirExplorateurLib();break;
     /* K comme « kote » — C est pris par le copier, M par rien mais se confond
        avec le miroir du schématique. */
     case "k":setMode("mesure");break;

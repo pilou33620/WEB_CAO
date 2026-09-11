@@ -1,0 +1,72 @@
+{
+  "format": "schsym-1",
+  "id": "potentiometer",
+  "name": "Potentiomètre",
+  "category": "Passifs",
+  "prefix": "RV",
+  "defaultValue": "10k",
+  "defaultPkg": "0603",
+  "pinCount": 3,
+  "pins": [
+    {
+      "n": 1,
+      "x": -40,
+      "y": 0
+    },
+    {
+      "n": 2,
+      "x": 40,
+      "y": 0
+    },
+    {
+      "n": 3,
+      "x": 0,
+      "y": -40
+    }
+  ],
+  "ext": [
+    -40,
+    -40,
+    40,
+    10
+  ],
+  "primitives": [
+    {
+      "op": "line",
+      "x1": -40,
+      "y1": 0,
+      "x2": -20,
+      "y2": 0
+    },
+    {
+      "op": "line",
+      "x1": 20,
+      "y1": 0,
+      "x2": 40,
+      "y2": 0
+    },
+    {
+      "op": "rect",
+      "x": -20,
+      "y": -10,
+      "w": 40,
+      "h": 20,
+      "r": 4,
+      "fill": true
+    },
+    {
+      "op": "line",
+      "x1": 0,
+      "y1": -40,
+      "x2": 0,
+      "y2": -20
+    },
+    {
+      "op": "arrow",
+      "x": 0,
+      "y": -15,
+      "angle": 1.5707963267948966,
+      "size": 10
+    }
+  ]
+}

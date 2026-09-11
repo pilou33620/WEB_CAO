@@ -47,6 +47,7 @@ const code=fs.readFileSync(path.join(__dirname,"..","dist","pcb.js"),"utf8");
 const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","startRoute",
   "updateRoute","stepRoute","commitRoute","routeToLayer","runDrc","buildTabs",
   "buildLayers","refreshPanels","buildList","buildProps","clearSel","rotateSel",
+  "BLOC_PLACEMENT","PLACEMENT_SCORE","fpBBox",
   /* sélection multiple : les groupes du panneau Propriétés */
   "mpOuvert","mpRaz","mpIdx","mpSection","mpRangs","MP_MIX",
   /* nature d'un via : traversant, borgne dessus/dessous, enterre */
@@ -155,6 +156,10 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "PNS_OPT_WIN","pnsAnchors","pnsMergeTry","pnsOptimize","routeOptimizeTail",
   /* boîtiers nommés : le nom venu du schéma décide de l'empreinte */
   "PKG_LIB","pkgKey","pkgGeom","fpGeomFor","applyPkgGeom","fpWiredPins",
+  "PCB_LIB_CACHE","PCB_LIB_LIST","pcbChargerCatalogueEmpreintes","pcbObtenirEmpreinteLib","pcbAppliquerEmpreinteLib",
+  "PCB_LIB_ALERTE","pcbTrouverEmpreintesAmettreAJour","pcbEmpreinteAlerteLib","pcbAppliquerMajLib",
+  "sessDiffuserLibModif","sessEcouterLibModif",
+  "ELIB","explorateurLibOuvrir","explorateurLibFermer","elibFiltrerEtAfficher","pcbOuvrirExplorateurLib","pcbPlacerEmpreinteDepuisLib",
   "parseNetlist","parseCompLine","applyNetlist","STYLES","bodyOf",
   /* empreintes dessinees a la main et bibliotheque personnelle */
   "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
@@ -15711,6 +15716,176 @@ T("simulation Chute DC : importation automatique des sources et charges du sché
     throw new Error("nom de charge attendu U1.9 : "+chg.nom);
 });
 
+T("simulation Chute DC : reconnaissance des clés directes du catalogue CSV (current Rating, Voltage Rating)",()=>{
+  const c = {
+    ref: "U3",
+    type: "ic",
+    value: "SENSOR_XYZ",
+    specs: {
+      "Voltage Rating": "3.3V",
+      "current Rating": "120mA"
+    }
+  };
+  const sp = pcbSpecsComposant(c);
+  if(!sp) throw new Error("sp null");
+  if(Math.abs(sp.courant - 0.12) > 1e-6) throw new Error("courant attendu: 0.12A, obtenu: "+sp.courant);
+  if(Math.abs(sp.tension - 3.3) > 1e-6) throw new Error("tension attendue: 3.3V, obtenu: "+sp.tension);
+  if(sp.provenance !== "catalogue") throw new Error("provenance catalogue attendue, obtenu: "+sp.provenance);
+});
+
+T("simulation Chute DC : repli automatique direct sur catalogue window.CSV_LIB",()=>{
+  window.CSV_LIB = [
+    {
+      "Part Name": "IC_TEST_CAT",
+      "Voltage Rating": "1.8V",
+      "current Rating": "80mA",
+      "Reference designator Prefix": "U"
+    }
+  ];
+  const c = {
+    ref: "U_CAT",
+    type: "ic",
+    value: "IC_TEST_CAT",
+    specs: {} // specs vides dans le schéma
+  };
+  const sp = pcbSpecsComposant(c);
+  if(!sp) throw new Error("sp null");
+  if(Math.abs(sp.courant - 0.08) > 1e-6) throw new Error("courant attendu 80mA (0.08A), obtenu: "+sp.courant);
+  if(Math.abs(sp.voltIn - 1.8) > 1e-6) throw new Error("voltIn attendu 1.8V, obtenu: "+sp.voltIn);
+  if(sp.provenance !== "catalogue") throw new Error("provenance catalogue attendue, obtenu: "+sp.provenance);
+});
+
+T("simulation Chute DC : source multi-broches (ex: connecteur J1 avec 2 broches sur rail +5V)",()=>{
+  S.fps = [];
+  S.tracks = [];
+  S.vias = [];
+  S.zones = [];
+
+  const schDoc = {
+    pages: [{
+      comps: [
+        {
+          ref: "J1",
+          type: "conn",
+          value: "CONN_2P",
+          specs: { "Output Voltage": "5.0V", "Max Current": "2A" },
+          pinNames: { "1": "VBUS", "2": "VBUS" }
+        },
+        {
+          ref: "U_LOAD",
+          type: "ic",
+          value: "TEST_LOAD",
+          specs: { "Supply Current": "100mA" },
+          pinNames: { "1": "VIN" }
+        }
+      ]
+    }]
+  };
+  pcbDefinirSchema(schDoc);
+
+  // Connecteur J1 avec 2 broches sur +5V
+  const fpJ1 = mkFp("J1", "CONN_2P", "HEADER-2", 2);
+  fpJ1.x = 10; fpJ1.y = 10;
+  fpJ1.nets = { 1: "+5V", 2: "+5V" };
+  S.fps.push(fpJ1);
+
+  // Charge U_LOAD avec 1 broche sur +5V
+  const fpL = mkFp("U_LOAD", "TEST_LOAD", "SOIC-8", 8);
+  fpL.x = 30; fpL.y = 10;
+  fpL.nets = { 1: "+5V" };
+  S.fps.push(fpL);
+
+  const res = SIM_PCB.dcImporterSchema("+5V");
+  if(!res.ok) throw new Error("dcImporterSchema a échoué : "+res.erreur);
+  if(res.nSources !== 2) throw new Error("2 sources attendues pour J1 multi-broches, obtenu: "+res.nSources);
+  if(res.nCharges !== 1) throw new Error("1 charge attendue, obtenu: "+res.nCharges);
+
+  const srcBornes = SIM_DCB.bornes.filter(b => b.role === "source");
+  if(srcBornes.length !== 2) throw new Error("2 bornes sources attendues, obtenu: "+srcBornes.length);
+  if(srcBornes[0].valeur !== 5 || srcBornes[1].valeur !== 5)
+    throw new Error("toutes les broches sources doivent avoir la tension 5V");
+  if(srcBornes[0].nom.indexOf("[1/2]") < 0 || srcBornes[1].nom.indexOf("[2/2]") < 0)
+    throw new Error("nommage multi-broches source attendu ([1/2] et [2/2]) : "+srcBornes.map(b=>b.nom).join(", "));
+});
+
+T("simulation Chute DC : charge multi-broches et division équitable du courant (ex: MCU avec 4 broches VDD)",()=>{
+  S.fps = [];
+  S.tracks = [];
+  S.vias = [];
+  S.zones = [];
+
+  const schDoc = {
+    pages: [{
+      comps: [
+        {
+          ref: "VR1",
+          type: "regulator",
+          value: "REG_3V3",
+          specs: { "Output Voltage": "3.3V" },
+          pinNames: { "2": "VOUT" }
+        },
+        {
+          ref: "MCU1",
+          type: "ic",
+          value: "MCU_4VDD",
+          specs: { "Supply Current": "120mA" },
+          pinNames: { "1": "VDD1", "2": "VDD2", "3": "VDD3", "4": "VDD4" }
+        }
+      ]
+    }]
+  };
+  pcbDefinirSchema(schDoc);
+
+  const fpVR = mkFp("VR1", "REG_3V3", "SOT-223", 3);
+  fpVR.x = 10; fpVR.y = 10;
+  fpVR.nets = { 2: "+3.3V" };
+  S.fps.push(fpVR);
+
+  // MCU avec 4 pastilles reliées au même rail +3.3V
+  const fpMcu = mkFp("MCU1", "MCU_4VDD", "LQFP-48", 48);
+  fpMcu.x = 50; fpMcu.y = 10;
+  fpMcu.nets = { 1: "+3.3V", 2: "+3.3V", 3: "+3.3V", 4: "+3.3V" };
+  S.fps.push(fpMcu);
+
+  const res = SIM_PCB.dcImporterSchema("+3.3V");
+  if(!res.ok) throw new Error("dcImporterSchema a échoué : "+res.erreur);
+  if(res.nCharges !== 4) throw new Error("4 charges attendues pour les 4 VDD, obtenu: "+res.nCharges);
+
+  const charges = SIM_DCB.bornes.filter(b => b.role === "charge");
+  if(charges.length !== 4) throw new Error("4 bornes de charges attendues");
+  // 120 mA divisé par 4 broches = 30 mA (0.03 A) par broche
+  for(const c of charges){
+    if(Math.abs(c.valeur - 0.03) > 1e-6)
+      throw new Error("courant par broche attendu: 0.03 A (30mA), obtenu: "+c.valeur);
+    if(c.nbBroches !== 4)
+      throw new Error("nbBroches attendu: 4, obtenu: "+c.nbBroches);
+  }
+  if(charges[0].nom.indexOf("[1/4]") < 0 || charges[3].nom.indexOf("[4/4]") < 0)
+    throw new Error("nommage multi-broches charge attendu ([1/4]..[4/4]) : "+charges.map(b=>b.nom).join(", "));
+});
+
+T("simulation Chute DC : préservation des personnalisations manuelles lors d'un ré-import",()=>{
+  // A partir de l'état précédent : l'utilisateur modifie la borne 0 du MCU à 60 mA
+  const charges = SIM_DCB.bornes.filter(b => b.role === "charge");
+  const idx = SIM_DCB.bornes.indexOf(charges[0]);
+  SIM_PCB.dcValeur(idx, 0.06); // 60 mA manuels
+
+  if(SIM_DCB.bornes[idx].valeur !== 0.06 || SIM_DCB.bornes[idx].provenance !== "manuel")
+    throw new Error("la borne modifiée doit porter la valeur 0.06 et provenance manuel");
+
+  // L'utilisateur relance un import du schéma sur le même rail
+  const res = SIM_PCB.dcImporterSchema("+3.3V");
+  if(!res.ok) throw new Error("ré-import échoué");
+
+  // La borne personnalisée manuellement doit être conservée à 0.06 A
+  const chgPerso = SIM_DCB.bornes.find(b => b.role === "charge" && Math.abs(b.x - charges[0].x) < 1e-6 && Math.abs(b.y - charges[0].y) < 1e-6);
+  if(!chgPerso) throw new Error("borne personnalisée introuvable");
+  if(Math.abs(chgPerso.valeur - 0.06) > 1e-6)
+    throw new Error("la valeur manuelle a été écrasée lors du ré-import ! Valeur actuelle: "+chgPerso.valeur);
+  if(chgPerso.provenance !== "manuel")
+    throw new Error("la provenance manuelle doit être conservée");
+});
+
 T("simulation EM - Crosstalk : amplitude (swing) et marge récepteur issues du schéma",()=>{
   const info=SIM_PCB.schemaInfosCrosstalk("+3.3V");
   if(info.swing!==3.3)throw new Error("swing attendu: 3.3, obtenu: "+info.swing);
@@ -16877,7 +17052,381 @@ T("pastilles de formes arbitraires : polygone, chanfrein, découpe thermique et 
   }
 });
 
+T("Gestion LIB PCB : catalogue centralisé d'empreintes et application depuis le cache LIB", function(){
+  if(typeof PCB_LIB_CACHE !== "object"){
+    throw new Error("PCB_LIB_CACHE doit être défini");
+  }
+  // Enregistrer une empreinte issue de la bibliothèque centralisée
+  PCB_LIB_CACHE["TEST_LIB_FP"] = {
+    pads: [
+      { n: 1, x: -2, y: 0, w: 1.2, h: 1.2, shape: "rect" },
+      { n: 2, x: 2, y: 0, w: 1.2, h: 1.2, shape: "round" }
+    ],
+    body: { w: 6, h: 3 }
+  };
+
+  const fp = pcbObtenirEmpreinteLib("TEST_LIB_FP");
+  if(!fp || !Array.isArray(fp.pads) || fp.pads.length !== 2){
+    throw new Error("pcbObtenirEmpreinteLib doit retourner l'empreinte du cache avec 2 pastilles");
+  }
+
+  // pkgGeom doit automatiquement résoudre depuis le cache LIB
+  const geom = pkgGeom("TEST_LIB_FP");
+  if(!geom || !geom.pads || geom.pads.length !== 2){
+    throw new Error("pkgGeom doit retourner la géométrie depuis PCB_LIB_CACHE");
+  }
+
+  // Application à un composant
+  const comp = { id: "U99", ref: "U99", val: "TEST", pkg: "DIP8", x: 50, y: 50 };
+  const okApp = pcbAppliquerEmpreinteLib(comp, "TEST_LIB_FP");
+  if(!okApp || comp.pkg !== "TEST_LIB_FP"){
+    throw new Error("pcbAppliquerEmpreinteLib doit modifier le boîtier du composant");
+  }
+});
+
+T("Gestion LIB PCB : alerte de modification d'empreinte et mise à jour assistée", function(){
+  // Préparer une empreinte sur la carte
+  const c1 = mkFp("C1", "100nF", "TEST_RELOAD_FP", 2);
+  c1.pads = [
+    { n: 1, x: -1, y: 0, w: 0.8, h: 0.8, shape: "rect", net: "GND" },
+    { n: 2, x: 1, y: 0, w: 0.8, h: 0.8, shape: "rect", net: "+5V" }
+  ];
+  c1.nets = { 1: "GND", 2: "+5V" };
+  S.fps = [c1];
+
+  // Détection des empreintes ciblées
+  const matches = pcbTrouverEmpreintesAmettreAJour("TEST_RELOAD_FP");
+  if(matches.length !== 1 || matches[0].ref !== "C1") {
+    throw new Error("pcbTrouverEmpreintesAmettreAJour doit trouver C1");
+  }
+
+  // Simulation de l'alerte
+  PCB_LIB_ALERTE.active = true;
+  PCB_LIB_ALERTE.pkgNames = new Set(["TEST_RELOAD_FP"]);
+  if(!pcbEmpreinteAlerteLib(c1)) {
+    throw new Error("pcbEmpreinteAlerteLib doit retourner true pour C1");
+  }
+
+  // Nouvelle version en bibliothèque (pastilles agrandies à 1.2x1.2 mm)
+  PCB_LIB_CACHE["TEST_RELOAD_FP"] = {
+    pads: [
+      { n: 1, x: -1.2, y: 0, w: 1.2, h: 1.2, shape: "rect" },
+      { n: 2, x: 1.2, y: 0, w: 1.2, h: 1.2, shape: "round" }
+    ],
+    body: { w: 4, h: 2 }
+  };
+
+  pcbAppliquerMajLib("TEST_RELOAD_FP");
+
+  if(c1.pads[0].w !== 1.2 || c1.pads[1].w !== 1.2) {
+    throw new Error("La géométrie des pastilles n'a pas été mise à jour");
+  }
+  // Les nets doivent être préservés
+  if(c1.pads[0].net !== "GND" || c1.pads[1].net !== "+5V") {
+    throw new Error("Les liaisons net des pastilles doivent être conservées après mise à jour LIB");
+  }
+  if(pcbEmpreinteAlerteLib(c1)) {
+    throw new Error("L'alerte doit être levée après la mise à jour");
+  }
+});
+
+T("Pré-placement assisté par blocs : module BLOC_PLACEMENT et gestion des zones", function(){
+  if (typeof BLOC_PLACEMENT === "undefined") {
+    throw new Error("BLOC_PLACEMENT doit être défini");
+  }
+
+  // Injection de zones et vérification de la détection
+  const zonesTest = [
+    { id: "z1", nom: "Alim Principale", categorie: "power", couleur: "#10b981", composants: ["U1", "C1", "C2", "L1"] },
+    { id: "z2", nom: "MCU Core", categorie: "mcu", couleur: "#3b82f6", composants: ["U2", "Y1", "C3", "C4"] }
+  ];
+  BLOC_PLACEMENT.injecterZones(zonesTest);
+
+  const fpU1 = { id: 1, ref: "U1", x: 20, y: 20 };
+  const fpY1 = { id: 2, ref: "Y1", x: 40, y: 40 };
+  const fpInconnu = { id: 3, ref: "R99", x: 50, y: 50 };
+
+  const zU1 = BLOC_PLACEMENT.trouverZonePourFp(fpU1);
+  if (!zU1 || zU1.nom !== "Alim Principale") {
+    throw new Error("trouverZonePourFp(U1) doit identifier la zone 'Alim Principale'");
+  }
+
+  const zY1 = BLOC_PLACEMENT.trouverZonePourFp(fpY1);
+  if (!zY1 || zY1.nom !== "MCU Core") {
+    throw new Error("trouverZonePourFp(Y1) doit identifier la zone 'MCU Core'");
+  }
+
+  const zR99 = BLOC_PLACEMENT.trouverZonePourFp(fpInconnu);
+  if (zR99 !== null) {
+    throw new Error("trouverZonePourFp(R99) doit retourner null pour un composant hors zone");
+  }
+});
+
+T("Pré-placement assisté par blocs : gabarit buck_compact et agencement anti-collision", function(){
+  // Configuration d'un convertisseur Buck
+  const u1 = mkFp("U1", "TPS5430", "SOIC-8", 8);
+  u1.x = 30; u1.y = 30;
+  const cIn = mkFp("C1", "10uF", "0805", 2);
+  cIn.x = 5; cIn.y = 5;
+  const ind = mkFp("L1", "10uH", "IND_SMD_6x6", 2);
+  ind.x = 5; ind.y = 10;
+  const d1 = mkFp("D1", "B340A", "SMA", 2);
+  d1.x = 5; d1.y = 15;
+  const cOut = mkFp("C2", "22uF", "0805", 2);
+  cOut.x = 5; cOut.y = 20;
+
+  S.fps = [u1, cIn, ind, d1, cOut];
+
+  const motifBuck = {
+    id: "pat_buck_1",
+    type: "buck_converter",
+    label: "Alimentation Buck TPS5430",
+    layout_template: "buck_compact",
+    main_component: "U1",
+    components: ["U1", "C1", "L1", "D1", "C2"],
+    role_map: {
+      cin: ["C1"],
+      sw_inductor: "L1",
+      diodes: ["D1"],
+      cout: ["C2"]
+    }
+  };
+
+  const res = BLOC_PLACEMENT.calculerAgencement(motifBuck);
+  if (!res || !res.anchor) {
+    throw new Error("calculerAgencement doit retourner le résultat d'agencement");
+  }
+
+  if (res.anchor.ref !== "U1") {
+    throw new Error("L'ancre doit être U1");
+  }
+
+  // Vérification de la disposition relative
+  // C1 (Cin) doit être à gauche de U1 (x_C1 < x_U1)
+  if (cIn.x >= u1.x) {
+    throw new Error("C1 (Cin) doit être placé à gauche de U1 (x < u1.x)");
+  }
+
+  // L1 (inductance de découpage) doit être à droite de U1 (x_L1 > x_U1)
+  if (ind.x <= u1.x) {
+    throw new Error("L1 (inductance) doit être placée à droite de U1 (x > u1.x)");
+  }
+
+  // C2 (Cout) doit être à droite de l'inductance L1
+  if (cOut.x <= ind.x) {
+    throw new Error("C2 (Cout) doit être placé à droite de l'inductance L1 (x > ind.x)");
+  }
+
+  // Vérification anti-collision : aucune empreinte ne doit se chevaucher
+  for (let i = 0; i < S.fps.length; i++) {
+    for (let j = i + 1; j < S.fps.length; j++) {
+      const a = S.fps[i], b = S.fps[j];
+      const ba = fpBBox(a), bb = fpBBox(b);
+      const overlapX = Math.min(ba.x2, bb.x2) - Math.max(ba.x1, bb.x1);
+      const overlapY = Math.min(ba.y2, bb.y2) - Math.max(ba.y1, bb.y1);
+      if (overlapX > 0 && overlapY > 0) {
+        throw new Error("Collision détectée entre " + a.ref + " et " + b.ref + " après agencement");
+      }
+    }
+  }
+});
+
+T("Pré-placement assisté par blocs : actions compacterSurPlace et deposerEnGrappe", function(){
+  const u1 = mkFp("U1", "TPS5430", "SOIC-8", 8);
+  u1.x = 25; u1.y = 25;
+  const cIn = mkFp("C1", "10uF", "0805", 2);
+  cIn.x = 5; cIn.y = 5;
+  const ind = mkFp("L1", "10uH", "IND_SMD_6x6", 2);
+  ind.x = 5; ind.y = 10;
+  S.fps = [u1, cIn, ind];
+  S.board = { x: 0, y: 0, w: 100, h: 80 };
+
+  const motif = {
+    id: "pat_test",
+    label: "Bloc test",
+    layout_template: "buck_compact",
+    components: ["U1", "C1", "L1"],
+    role_map: { cin: ["C1"], sw_inductor: "L1" }
+  };
+  BLOC_PLACEMENT.injecterMotifs({ motifs: [motif] });
+
+  // Action 1-clic : Compacter sur place
+  const okCompact = BLOC_PLACEMENT.compacterSurPlace(motif);
+  if (!okCompact) {
+    throw new Error("compacterSurPlace doit réussir");
+  }
+
+  // U1 doit être resté ancre (proche de (25, 25))
+  if (Math.abs(u1.x - 25) > 0.01 || Math.abs(u1.y - 25) > 0.01) {
+    throw new Error("L'ancre U1 doit rester à sa position d'origine lors de compacterSurPlace");
+  }
+  // C1 et L1 ont été rapprochés de U1
+  if (Math.hypot(cIn.x - u1.x, cIn.y - u1.y) > 15) {
+    throw new Error("C1 doit être compacté à proximité de U1");
+  }
+
+  // Action 1-clic : Déposer en grappe
+  const okDepot = BLOC_PLACEMENT.deposerEnGrappe(motif, 60, 50);
+  if (!okDepot) {
+    throw new Error("deposerEnGrappe doit réussir");
+  }
+
+  if (Math.abs(u1.x - 60) > 0.01 || Math.abs(u1.y - 50) > 0.01) {
+    throw new Error("L'ancre U1 doit être déposée à la position cible (60, 50)");
+  }
+  // La disposition relative entre C1 et U1 doit être préservée
+  if (cIn.x >= u1.x) {
+    throw new Error("L'agencement relatif doit être préservé lors du dépôt en grappe");
+  }
+});
+
+T("simulation EM - Bus numérique : détection pont série réseau de résistances RN1 et repli schéma", () => {
+  carteVide();
+  // 1. Test parsing syntaxe résistance
+  if(pcbParseResistance("560") !== 560) throw new Error("pcbParseResistance 560 doit valoir 560");
+  if(pcbParseResistance("560 ohm") !== 560) throw new Error("pcbParseResistance 560 ohm doit valoir 560");
+  if(pcbParseResistance("4R7") !== 4.7) throw new Error("pcbParseResistance 4R7 doit valoir 4.7");
+  if(pcbParseResistance("22R") !== 22) throw new Error("pcbParseResistance 22R doit valoir 22");
+  if(pcbParseResistance("10k") !== 10000) throw new Error("pcbParseResistance 10k doit valoir 10000");
+  if(pcbParseResistance("R050") !== 0.05) throw new Error("pcbParseResistance R050 doit valoir 0.05");
+  if(pcbParseResistance("0402") !== null) throw new Error("0402 ne doit pas être pris pour une résistance");
+
+  // 2. Test réseau de résistances RN1 à 8 broches
+  S.fps = [
+    {
+      id: 50, ref: "RN1", value: "33Ω", pkg: "RES_ARRAY_0402x4", pins: 8,
+      nets: { 1: "D0", 8: "D0_DOWN", 2: "D1", 7: "D1_DOWN", 3: "D2", 6: "D2_DOWN", 4: "D3", 5: "D3_DOWN" },
+      pads: [
+        { n: 1, net: "D0", x: 0, y: 0 },
+        { n: 2, net: "D1", x: 0.5, y: 0 },
+        { n: 3, net: "D2", x: 1.0, y: 0 },
+        { n: 4, net: "D3", x: 1.5, y: 0 },
+        { n: 5, net: "D3_DOWN", x: 1.5, y: 1 },
+        { n: 6, net: "D2_DOWN", x: 1.0, y: 1 },
+        { n: 7, net: "D1_DOWN", x: 0.5, y: 1 },
+        { n: 8, net: "D0_DOWN", x: 0, y: 1 }
+      ]
+    },
+    // R2 : empreinte sans value, dont la valeur est dans le schéma
+    {
+      id: 60, ref: "R2", value: "", pkg: "0402", pins: 2,
+      nets: { 1: "CLK_IN", 2: "CLK_OUT" },
+      pads: [
+        { n: 1, net: "CLK_IN", x: 10, y: 0 },
+        { n: 2, net: "CLK_OUT", x: 11, y: 0 }
+      ]
+    }
+  ];
+
+  // Définir un schéma avec R2 valant "47Ω"
+  const schDoc = {
+    pages: [{
+      comps: [{ ref: "R2", spec: "47Ω", pkg: "0402" }]
+    }]
+  };
+  pcbDefinirSchema(schDoc);
+
+  SIM.res = null;
+  SIM.analyse = "bus";
+  const cont = document.createElement("div");
+  simInit(SIM_PCB, cont);
+
+  // Détection RN1 sur D0 -> doit trouver D0_DOWN et 33Ω
+  const pontD0 = SIM_PCB.trouverPontSerie("D0");
+  if(!pontD0) throw new Error("trouverPontSerie doit détecter RN1 sur D0");
+  if(pontD0.comp !== "RN1" || pontD0.rOhms !== 33 || pontD0.netAval !== "D0_DOWN"){
+    throw new Error("pont RN1 D0 invalide: " + JSON.stringify(pontD0));
+  }
+
+  // Détection RN1 sur D1 -> doit trouver D1_DOWN et 33Ω
+  const pontD1 = SIM_PCB.trouverPontSerie("D1");
+  if(!pontD1) throw new Error("trouverPontSerie doit détecter RN1 sur D1");
+  if(pontD1.netAval !== "D1_DOWN"){
+    throw new Error("pont RN1 D1 doit avoir netAval D1_DOWN: " + JSON.stringify(pontD1));
+  }
+
+  // Détection R2 avec repli schéma -> doit extraire 47Ω
+  const pontR2 = SIM_PCB.trouverPontSerie("CLK_IN");
+  if(!pontR2) throw new Error("trouverPontSerie doit détecter R2 sur CLK_IN");
+  if(pontR2.comp !== "R2" || pontR2.rOhms !== 47 || pontR2.netAval !== "CLK_OUT"){
+    throw new Error("pont R2 repli schéma invalide: " + JSON.stringify(pontR2));
+  }
+
+  // Test de simBusActiverRSerie sur D0
+  SIM_BUS.clocks = [];
+  SIM_BUS.datas = ["D0"];
+  SIM_BUS.dataClockMap = {};
+  simBusActiverRSerie("data", "D0");
+  if(SIM_BUS.datas[0] !== "D0 + D0_DOWN (RN1 33Ω)"){
+    throw new Error("simBusActiverRSerie datas[0] doit être D0 + D0_DOWN (RN1 33Ω) mais a: " + SIM_BUS.datas[0]);
+  }
+
+  // Test de simBusChangerNet avec R série active : changer D0 -> CLK_IN
+  simBusChangerNet("data", SIM_BUS.datas[0], "CLK_IN");
+  if(SIM_BUS.datas[0] !== "CLK_IN + CLK_OUT (R2 47Ω)"){
+    throw new Error("simBusChangerNet doit détecter automatiquement R2 47Ω et CLK_OUT pour CLK_IN mais a: " + SIM_BUS.datas[0]);
+  }
+});
+
+T("Explorateur visuel pop-up PCB : initialisation en mode empreinte, sélection et pose sur carte", () => {
+  if (typeof explorateurLibOuvrir !== "function" || typeof ELIB === "undefined") {
+    throw new Error("explorateurLibOuvrir ou ELIB non disponible dans l'éditeur PCB");
+  }
+
+  window.CSV_LIB = [
+    {
+      "Part Name": "RES_0805_1K",
+      "Reference designator Prefix": "R",
+      "Value": "1k",
+      "Package type": "0805",
+      "Empreinte PCB": "0805.json",
+      "Description": "Résistance CMS 1k 0805"
+    },
+    {
+      "Part Name": "MCU_STM32_LQFP48",
+      "Reference designator Prefix": "U",
+      "Value": "STM32F0",
+      "Package type": "LQFP-48",
+      "Empreinte PCB": "LQFP-48.json",
+      "Description": "MCU 48 broches"
+    }
+  ];
+
+  let selectedItem = null;
+  explorateurLibOuvrir({
+    mode: "pcb",
+    onSelect: (item) => { selectedItem = item; }
+  });
+
+  if (!ELIB.open) throw new Error("Le modal ELIB doit être ouvert");
+  if (ELIB.mode !== "pcb") throw new Error("ELIB doit être configuré en mode 'pcb'");
+
+  // Filtrer
+  ELIB.query = "LQFP";
+  elibFiltrerEtAfficher();
+  if (ELIB.filtered.length !== 1 || ELIB.filtered[0]["Part Name"] !== "MCU_STM32_LQFP48") {
+    throw new Error("Filtre LQFP incorrect dans l'explorateur PCB");
+  }
+
+  explorateurLibFermer();
+  if (ELIB.open) throw new Error("Le modal ELIB doit être fermé");
+
+  // Tester la pose directe de l'empreinte
+  S.fps = [];
+  pcbPlacerEmpreinteDepuisLib(window.CSV_LIB[1]);
+
+  if (S.fps.length !== 1) throw new Error("1 empreinte attendue sur la carte, obtenu: " + S.fps.length);
+  const fp = S.fps[0];
+  if (!fp.ref.startsWith("U")) throw new Error("Préfixe U attendu pour le MCU: " + fp.ref);
+  if (fp.value !== "STM32F0") throw new Error("Valeur attendue STM32F0: " + fp.value);
+  if (!S.sel.fps.has(fp.id)) throw new Error("L'empreinte posée doit être immédiatement sélectionnée");
+
+  const pads = padsOf(fp);
+  if (pads.length !== 48) throw new Error("48 pastilles attendues pour le boîtier LQFP-48, obtenu: " + pads.length);
+});
+
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
 process.exit(ko?1:0);
+
 
 

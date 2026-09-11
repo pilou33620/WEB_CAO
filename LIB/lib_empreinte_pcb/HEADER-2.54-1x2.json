@@ -1,0 +1,38 @@
+{
+  "format": "pcbfp-1",
+  "name": "HEADER-2.54-1x2",
+  "pkg": "HEADER-2.54-1x2",
+  "pins": 2,
+  "style": "row",
+  "pitch": 2.54,
+  "span": 2.54,
+  "pads": [
+    {
+      "n": 1,
+      "x": -1.27,
+      "y": 0,
+      "w": 1.7272,
+      "h": 1.7272,
+      "shape": "rect",
+      "drill": 0.8636,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 1.27,
+      "y": 0,
+      "w": 1.7272,
+      "h": 1.7272,
+      "shape": "circ",
+      "drill": 0.8636,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -2.3836,
+    "y1": -1.2136,
+    "x2": 2.3836,
+    "y2": 1.2136
+  },
+  "description": "Barrette 1 rangée 2 broches pas 2.54 mm"
+}

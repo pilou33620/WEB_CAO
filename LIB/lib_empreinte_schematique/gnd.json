@@ -1,0 +1,54 @@
+{
+  "format": "schsym-1",
+  "id": "gnd",
+  "name": "Masse (GND)",
+  "category": "Alimentation",
+  "prefix": "#",
+  "defaultValue": "GND",
+  "defaultPkg": "",
+  "pinCount": 1,
+  "pins": [
+    {
+      "n": 1,
+      "x": 0,
+      "y": -20
+    }
+  ],
+  "ext": [
+    -20,
+    -20,
+    20,
+    10
+  ],
+  "primitives": [
+    {
+      "op": "line",
+      "x1": 0,
+      "y1": -20,
+      "x2": 0,
+      "y2": 0
+    },
+    {
+      "op": "line",
+      "x1": -20,
+      "y1": 0,
+      "x2": 20,
+      "y2": 0,
+      "width": 4.5
+    },
+    {
+      "op": "line",
+      "x1": -10,
+      "y1": 5,
+      "x2": 10,
+      "y2": 5
+    },
+    {
+      "op": "line",
+      "x1": -5,
+      "y1": 10,
+      "x2": 5,
+      "y2": 10
+    }
+  ]
+}

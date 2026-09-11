@@ -385,7 +385,12 @@ function openImport(){
   const m=document.createElement("div");
   m.className="modal";
   m.innerHTML='<div class="box"><h3>Importer une netlist</h3>'+
-    '<p>Collez le contenu du fichier <b>netlist.txt</b> exporté par l\'éditeur schématique, ou choisissez-le sur le disque. Les empreintes déjà posées gardent leur position ; seules les nouvelles sont ajoutées. Le boîtier indiqué par le schéma (0603, SOIC-8, TQFP-64…) fixe le style et les cotes de l\'empreinte : il n\'y a qu\'à replacer et router.</p>'+
+    '<p>Synchronisez directement la netlist depuis le schéma ouvert, collez le contenu du fichier <b>netlist.txt</b>, ou choisissez-le sur le disque. Les empreintes déjà posées gardent leur position ; les nouvelles sont créées à partir du catalogue d\'empreintes LIB.</p>'+
+    '<div style="margin-bottom:12px;">'+
+      '<button class="tb" id="nlSyncSch" style="width:100%;border-color:var(--yellow);color:var(--yellow);font-weight:600;padding:8px 12px;font-size:12.5px;">'+
+        '🔄 Synchroniser directement depuis le schéma ouvert'+
+      '</button>'+
+    '</div>'+
     '<textarea id="nlTxt" placeholder="=== Composants ===&#10;    R1      10k        0603&#10;&#10;=== Feuille 1 — Principale ===&#10;NET &quot;+5V&quot;&#10;    U1.8&#10;    C1.1"></textarea>'+
     '<label style="display:flex;align-items:center;gap:7px;margin-top:9px;font-size:12px;color:var(--txt-dim)">'+
     '<input type="checkbox" id="nlDrop" style="accent-color:var(--blue)"> supprimer les empreintes absentes de la netlist</label>'+
@@ -405,9 +410,29 @@ function openImport(){
     r.readAsText(f);
     $("netIn").value="";
   };
+  const bSync=$("nlSyncSch");
+  if(bSync){
+    bSync.onclick=()=>{
+      const schSess=(typeof sessLire==="function"?sessLire("schema"):null);
+      let txt=(schSess&&schSess.etat&&schSess.etat.netlist)||"";
+      if(!txt&&typeof S!=="undefined"&&S.schDoc&&typeof netlistText==="function"){
+        try{txt=netlistText();}catch(_){}
+      }
+      if(!txt){
+        alert("Aucune netlist trouvée dans la session active du schéma.\n\nOuvrez d'abord le schéma dans cet onglet ou ce projet pour exporter sa netlist.");
+        return;
+      }
+      const t=$("nlTxt");
+      if(t)t.value=txt;
+      const drop=$("nlDrop")?$("nlDrop").checked:false;
+      close();
+      importNetlist(txt,drop);
+      hint("Netlist synchronisée depuis le schéma ouvert avec succès.");
+    };
+  }
   $("nlOk").onclick=()=>{
     const txt=$("nlTxt").value;
-    if(!txt.trim()){alert("Collez d'abord une netlist.");return;}
+    if(!txt.trim()){alert("Collez d'abord une netlist ou synchronisez depuis le schéma.");return;}
     const drop=$("nlDrop").checked;
     close();
     importNetlist(txt,drop);
@@ -434,11 +459,8 @@ if($("mSilk")) $("mSilk").onclick=e=>{e.stopPropagation();setMode("silk");silkMe
 $("mEdge").onclick=()=>setMode("edge");
 $("mOrigin").onclick=()=>setMode("origin");
 $("mErase").onclick=()=>setMode("cut");
-if($("bFootprint")) $("bFootprint").onclick=()=>{
-  const fp=S.sel.fps.size===1?fpById([...S.sel.fps][0]):(S.fps&&S.fps[0]);
-  if(fp&&typeof feOpen==="function")feOpen(fp);
-  else hint("Aucune empreinte à éditer sur la carte.");
-};
+if($("bAddFp")) $("bAddFp").onclick=()=>pcbOuvrirExplorateurLib();
+if($("bFootprint")) $("bFootprint").onclick=()=>pcbOuvrirExplorateurLib();
 $("bRot").onclick=rotateSel;
 $("bFlip").onclick=flipSel;
 $("bUnroute").onclick=unrouteSel;
@@ -610,6 +632,7 @@ function sessionPcb(){
    Démarrage
    ========================================================================== */
 function init(){
+  if(typeof pcbChargerCatalogueEmpreintes === "function") pcbChargerCatalogueEmpreintes();
   setCuCount(2,true);
   $("cuCount").value="2";
   /* Pas de `reSync()` ici : la fenêtre des règles vit dans un fichier chargé
@@ -717,5 +740,78 @@ try {
     });
   }
 } catch (_) {}
+
+function pcbPlacerEmpreinteDepuisLib(item) {
+  if (!item) return;
+  const p = String(item["Reference designator Prefix"] || "U").trim().toUpperCase() || "U";
+  const val = String(item["Value"] || "").trim();
+  const pkg = String(item["Package type"] || item["Empreinte PCB"] || "SOIC-8").trim();
+  const cleanPkg = pkg.replace(/\.json$/i, "").trim() || "SOIC-8";
+
+  // Trouver un repère libre U1, U2, etc.
+  const used = new Set(S.fps.map(f => f.ref));
+  const newRef = freeFpRef(p + "1", used);
+
+  // Estimer le nombre de broches
+  let pins = 8;
+  const mPins = cleanPkg.match(/\b(\d+)\b/);
+  if (mPins && parseInt(mPins[1], 10) > 0) {
+    pins = parseInt(mPins[1], 10);
+  } else if (/0402|0603|0805|1206|2512/i.test(cleanPkg)) {
+    pins = 2;
+  } else if (/SOT-?23/i.test(cleanPkg)) {
+    pins = 3;
+  }
+
+  // Créer l'empreinte avec le moteur géométrique
+  const fp = mkFp(newRef, val, cleanPkg, pins);
+
+  // Si une définition personnalisée existe dans la bibliothèque locale, l'appliquer
+  if (typeof fpLibGet === "function") {
+    const def = fpLibGet(cleanPkg) || fpLibGet(pkg);
+    if (def) fpApplyDef(fp, def);
+  }
+
+  // Positionner au centre de la vue ou de la carte, ou sous la souris si active
+  let posX = snapX(S.mouse && S.mouse.x ? S.mouse.x : 0);
+  let posY = snapY(S.mouse && S.mouse.y ? S.mouse.y : 0);
+
+  if (!posX && !posY) {
+    if (S.board && Array.isArray(S.board.pts) && S.board.pts.length > 0) {
+      let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+      for (const pt of S.board.pts) {
+        minX = Math.min(minX, pt.x); maxX = Math.max(maxX, pt.x);
+        minY = Math.min(minY, pt.y); maxY = Math.max(maxY, pt.y);
+      }
+      posX = snapX((minX + maxX) / 2);
+      posY = snapY((minY + maxY) / 2);
+    } else {
+      posX = 50; posY = 40;
+    }
+  }
+
+  fp.x = posX;
+  fp.y = posY;
+
+  push();
+  S.fps.push(fp);
+  clearSel();
+  S.sel.fps.add(fp.id);
+  touch();
+  refreshPanels();
+  draw();
+
+  hint("Empreinte " + fp.ref + " (" + (fp.pkg || cleanPkg) + ") posée sur la carte · R pour pivoter, glissez pour déplacer.");
+}
+
+function pcbOuvrirExplorateurLib() {
+  if (typeof explorateurLibOuvrir !== "function") return;
+  explorateurLibOuvrir({
+    mode: "pcb",
+    onSelect: (item) => {
+      pcbPlacerEmpreinteDepuisLib(item);
+    }
+  });
+}
 
 init();

@@ -1,0 +1,38 @@
+{
+  "format": "pcbfp-1",
+  "name": "SOD-123",
+  "pkg": "SOD-123",
+  "pins": 2,
+  "style": "chip",
+  "pitch": 3.6,
+  "span": 3.6,
+  "pads": [
+    {
+      "n": 1,
+      "x": -1.8,
+      "y": 0,
+      "w": 1.98,
+      "h": 2.232,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 1.8,
+      "y": 0,
+      "w": 1.98,
+      "h": 2.232,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -3.04,
+    "y1": -1.466,
+    "x2": 3.04,
+    "y2": 1.466
+  },
+  "description": "Diode CMS compacte SOD-123"
+}

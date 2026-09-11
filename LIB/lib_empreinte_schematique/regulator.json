@@ -1,0 +1,72 @@
+{
+  "format": "schsym-1",
+  "id": "regulator",
+  "name": "Régulateur de tension",
+  "category": "Intégrés",
+  "prefix": "U",
+  "defaultValue": "AMS1117",
+  "defaultPkg": "SOT-223",
+  "pinCount": 3,
+  "pins": [
+    {
+      "n": 1,
+      "x": -60,
+      "y": 0
+    },
+    {
+      "n": 2,
+      "x": 60,
+      "y": 0
+    },
+    {
+      "n": 3,
+      "x": 0,
+      "y": 60
+    }
+  ],
+  "ext": [
+    -60,
+    -25,
+    60,
+    60
+  ],
+  "primitives": [
+    {
+      "op": "rect",
+      "x": -40,
+      "y": -25,
+      "w": 80,
+      "h": 50,
+      "r": 4,
+      "fill": true
+    },
+    {
+      "op": "line",
+      "x1": -60,
+      "y1": 0,
+      "x2": -40,
+      "y2": 0
+    },
+    {
+      "op": "line",
+      "x1": 40,
+      "y1": 0,
+      "x2": 60,
+      "y2": 0
+    },
+    {
+      "op": "line",
+      "x1": 0,
+      "y1": 25,
+      "x2": 0,
+      "y2": 60
+    },
+    {
+      "op": "text",
+      "text": "REG",
+      "x": 0,
+      "y": 0,
+      "size": 12
+    }
+  ]
+}

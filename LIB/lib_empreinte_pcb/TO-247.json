@@ -1,0 +1,48 @@
+{
+  "format": "pcbfp-1",
+  "name": "TO-247",
+  "pkg": "TO-247",
+  "pins": 3,
+  "style": "row",
+  "pitch": 5.45,
+  "span": 5.45,
+  "pads": [
+    {
+      "n": 1,
+      "x": -5.45,
+      "y": 0,
+      "w": 3.706,
+      "h": 3.706,
+      "shape": "rect",
+      "drill": 1,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 0,
+      "y": 0,
+      "w": 3.706,
+      "h": 3.706,
+      "shape": "circ",
+      "drill": 1,
+      "rot": 0
+    },
+    {
+      "n": 3,
+      "x": 5.45,
+      "y": 0,
+      "w": 3.706,
+      "h": 3.706,
+      "shape": "circ",
+      "drill": 1,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -7.553,
+    "y1": -2.203,
+    "x2": 7.553,
+    "y2": 2.203
+  },
+  "description": "Boîtier puissance traversant TO-247"
+}

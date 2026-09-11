@@ -342,7 +342,7 @@ function pasteClip(){
 }
 function setMode(m){
   S.mode=m;S.wireStart=null;S.drawStart=null;S.hoverPin=null;
-  if(m!=="select"){S.place=null;setPalette(null);}
+  if(m!=="select"){S.place=null;S.placeLibItem=null;setPalette(null);}
   /* La cote appartient au mode : la garder affichée en revenant à la sélection
      laisserait une annotation qu'aucun geste ne reprend. */
   if(m!=="mesure"&&typeof rpMesRaz==="function")rpMesRaz();

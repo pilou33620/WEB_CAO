@@ -388,7 +388,42 @@ cv.addEventListener("pointerdown",e=>{
     push();
     const el=addComp(S.place,p.x,p.y);
     el.rot=S.placeRot||0;
-    if(!e.shiftKey){S.place=null;setPalette(null);}
+    if(S.placeLibItem){
+      const it=S.placeLibItem;
+      el.csvPartName = it["Part Name"] || "";
+      el.csvMpn = it["Part Number"] || it["Part Number "] || "";
+      if(it["Manufacturer"]) el.manufacturer = it["Manufacturer"];
+      if(it["Value"]) el.value = it["Value"];
+      const sym = it["Empreinte Schématique"] || it["Empreinte Schematique"] || "";
+      if(sym) el.symSch = sym;
+      const fp = it["Empreinte PCB"] || "";
+      if(fp) {
+        el.fpPcb = fp;
+        const cleanPkg = fp.replace(/\.json$/i, "");
+        if(cleanPkg) el.pkg = cleanPkg;
+      } else if(it["Package type"] && it["Package type"] !== "xx") {
+        el.pkg = it["Package type"];
+      }
+      const sim = it["Modèle Simulation"] || it["Modele Simulation"] || "";
+      if(sim && sim !== "-" && sim !== "xx") el.simModel = sim;
+
+      // Spécifications électriques
+      const specs = el.specs ? { ...el.specs } : {};
+      const vRating = it["Voltage Rating"] || it["Voltage"] || "";
+      const cRating = it["current Rating"] || it["Current Rating"] || "";
+      const wRating = it["wattage"] || it["Wattage"] || "";
+      const fRating = it["fréquency"] || it["frequency"] || "";
+      let hasSpecs = false;
+      if (vRating && vRating !== "xx" && vRating !== "-") { specs["Voltage Rating"] = vRating; hasSpecs = true; }
+      if (cRating && cRating !== "xx" && cRating !== "-") { specs["Current Rating"] = cRating; hasSpecs = true; }
+      if (wRating && wRating !== "xx" && wRating !== "-") { specs["Power Rating"] = wRating; hasSpecs = true; }
+      if (fRating && fRating !== "xx" && fRating !== "-") { specs["Frequency"] = fRating; hasSpecs = true; }
+      if (hasSpecs) {
+        el.specs = specs;
+        el.specsProvenance = "catalogue";
+      }
+    }
+    if(!e.shiftKey){S.place=null;S.placeLibItem=null;setPalette(null);}
     clearSel();S.sel.add(el.id);
     refreshPanels();draw();return;
   }
@@ -401,16 +436,24 @@ cv.addEventListener("pointerdown",e=>{
       S.drawStart=pt;
     }else{
       if(pt.x!==S.drawStart.x||pt.y!==S.drawStart.y){
-        push();
         const sh=S.drawShape||"line";
-        const nd={id:S.uid++,shape:sh,type:sh,x1:S.drawStart.x,y1:S.drawStart.y,x2:pt.x,y2:pt.y,
-                  style:"dashed",width:2,color:"#6b7280",label:""};
+        const isZ=Boolean(S.drawIsZone||sh==="zone");
+        const realSh=(sh==="zone"?"rect":sh);
+        const col=isZ?"#f59e0b":(realSh==="rect"?"#2f86cc":"#6b7280");
+        const lbl=isZ?"ALIMENTATION":"";
+        const cat=isZ?"Alimentation":"";
+        const nd={id:S.uid++,shape:realSh,type:realSh,x1:S.drawStart.x,y1:S.drawStart.y,x2:pt.x,y2:pt.y,
+                  style:"dashed",width:2,color:col,label:lbl,isZone:isZ,category:cat};
         if(!S.drawings)S.drawings=[];
         S.drawings.push(nd);
         clearSel();
         S.selD.add(nd.id);
+        if(isZ&&typeof SCHEMA_PATTERNS!=="undefined"&&SCHEMA_PATTERNS.analyser){
+          SCHEMA_PATTERNS.analyser(150);
+        }
       }
       S.drawStart=null;
+      S.drawIsZone=false;
     }
     refreshPanels();draw();return;
   }
@@ -686,7 +729,7 @@ cv.addEventListener("contextmenu",e=>{
   e.preventDefault();
   if(S.wireStart){S.wireStart=null;draw();}
   else if(S.drawStart){S.drawStart=null;draw();}
-  else if(S.place){S.place=null;setPalette(null);draw();}
+  else if(S.place){S.place=null;S.placeLibItem=null;setPalette(null);draw();}
   else{
     const p=mpos(e);
     if(selCount() === 0 && typeof hitComp === "function"){

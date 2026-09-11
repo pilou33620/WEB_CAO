@@ -208,68 +208,6 @@ def convert_y_to_s(y_matrix: np.ndarray, z0: np.ndarray) -> np.ndarray:
         s_matrix = np.linalg.lstsq(denominator.T, numerator.T, rcond=None)[0].T
 
     return s_matrix
-
-
-def compute_z_parameters(currents: np.ndarray, v_ports: np.ndarray,
-                        ports: List[Dict]) -> np.ndarray:
-    """
-    Calcule les paramètres d'impédance Z
-    
-    Z_ij = V_i / I_j (avec I_k = 0 pour k ≠ j)
-    
-    Args:
-        currents: Vecteur des courants
-        v_ports: Tensions aux ports
-        ports: Liste des ports
-        
-    Returns:
-        Matrice Z des paramètres d'impédance
-    """
-    num_ports = len(ports)
-    z_params = np.zeros((num_ports, num_ports), dtype=complex)
-    
-    # Extraction des courants aux ports
-    # Simplification : un port par région
-    
-    for i in range(num_ports):
-        for j in range(num_ports):
-            if i == j:
-                # Impédance d'entrée
-                z_params[i, j] = ports[i].get('impedance', 50.0)
-            else:
-                # Impédance de transfert
-                z_params[i, j] = 0.0 + 0j
-    
-    return z_params
-
-
-def convert_z_to_s(z_params: np.ndarray, z0: float = 50.0) -> np.ndarray:
-    """
-    Convertit les paramètres Z en paramètres S
-    
-    S = (Z - Z0·I)·(Z + Z0·I)^(-1)
-    
-    Args:
-        z_params: Matrice Z
-        z0: Impédance de référence
-        
-    Returns:
-        Matrice S
-    """
-    n = z_params.shape[0]
-    z0_matrix = z0 * np.eye(n)
-    
-    numerator = z_params - z0_matrix
-    denominator = z_params + z0_matrix
-    
-    try:
-        s_params = numerator @ np.linalg.inv(denominator)
-        return s_params
-    except np.linalg.LinAlgError:
-        logger.warning("Inversion impossible pour conversion Z->S")
-        return np.eye(n, dtype=complex)
-
-
 def export_touchstone(s_params_list: List[np.ndarray], freq_array: np.ndarray,
                      ports: List[Dict], filename: str):
     """
@@ -389,118 +327,15 @@ def compute_current_density(currents: np.ndarray, rwg_basis: List,
         
         # Contribution au triangle T-
         # J = I_n * f_n où f_n = l_n/(2*A_n) * (r_n - r) = - l_n/(2*A_n) * (r - r_n)
-        c_minus = np.mean(vertices[elements[tri_minus]], axis=0)
-        v_minus = vertices[rwg.vertex_minus]
-        rho_minus = c_minus - v_minus
-        vec_minus = np.zeros(3, dtype=float)
-        vec_minus[:min(3, len(rho_minus))] = rho_minus[:min(3, len(rho_minus))]
-        j_density[tri_minus] -= current_coef * (rwg.edge_length / (2 * rwg.area_minus)) * vec_minus
+        if rwg.area_minus > 1e-15:
+            c_minus = np.mean(vertices[elements[tri_minus]], axis=0)
+            v_minus = vertices[rwg.vertex_minus]
+            rho_minus = c_minus - v_minus
+            vec_minus = np.zeros(3, dtype=float)
+            vec_minus[:min(3, len(rho_minus))] = rho_minus[:min(3, len(rho_minus))]
+            j_density[tri_minus] -= current_coef * (rwg.edge_length / (2 * rwg.area_minus)) * vec_minus
     
     return j_density
-
-
-def compute_power_flow(currents: np.ndarray, z_matrix: np.ndarray,
-                      v_vector: np.ndarray) -> Dict[str, float]:
-    """
-    Calcule les bilans de puissance
-    
-    Args:
-        currents: Vecteur des courants
-        z_matrix: Matrice d'impédance
-        v_vector: Vecteur d'excitation
-        
-    Returns:
-        Dictionnaire avec les puissances (incidente, réfléchie, dissipée)
-    """
-    # Puissance complexe : P = 1/2 · V* · I
-    power_complex = 0.5 * (np.conj(v_vector) @ currents)
-
-    # Puissance active et réactive
-    p_active = float(power_complex.real)
-    p_reactive = float(power_complex.imag)
-
-    # CORRECTION: p_incident était un tableau (np.abs(v_vector)**2 renvoie un
-    # vecteur), ce qui faisait lever ValueError au test `if p_incident > 0`.
-    # Puissance incidente scalaire : P = |V|²/(2·Z₀)
-    z0 = 50.0
-    v_mag_sq = float(np.sum(np.abs(v_vector)**2))
-    p_incident = v_mag_sq / (2 * z0)
-
-    # Puissance dissipée dans les pertes
-    # P_loss = 1/2 · Re(I* · Z · I)
-    z_currents = z_matrix @ currents
-    p_loss = float(0.5 * (np.conj(currents) @ z_currents).real)
-
-    return {
-        'incident': p_incident,
-        'active': p_active,
-        'reactive': p_reactive,
-        'loss': p_loss,
-        'efficiency': (p_active / p_incident) if p_incident > 0 else 0.0
-    }
-
-
-def compute_vswr(s11: complex) -> float:
-    """
-    Calcule le VSWR (Voltage Standing Wave Ratio) à partir de S11
-    
-    VSWR = (1 + |Γ|) / (1 - |Γ|)
-    
-    Args:
-        s11: Coefficient de réflexion
-        
-    Returns:
-        VSWR
-    """
-    gamma = np.abs(s11)
-    
-    if gamma >= 1.0:
-        return np.inf
-    
-    vswr = (1 + gamma) / (1 - gamma)
-    return vswr
-
-
-def compute_return_loss(s11: complex) -> float:
-    """
-    Calcule la perte de retour en dB
-    
-    RL = -20·log10(|S11|)
-    
-    Args:
-        s11: Coefficient de réflexion
-        
-    Returns:
-        Perte de retour en dB
-    """
-    mag = np.abs(s11)
-    
-    if mag < 1e-10:
-        return 100.0  # Très faible réflexion
-    
-    return -20 * np.log10(mag)
-
-
-def compute_insertion_loss(s21: complex) -> float:
-    """
-    Calcule la perte d'insertion en dB
-    
-    IL = -20·log10(|S21|)
-    
-    Args:
-        s21: Coefficient de transmission
-        
-    Returns:
-        Perte d'insertion en dB
-    """
-    mag = np.abs(s21)
-    
-    if mag < 1e-10:
-        return 100.0
-    
-    return -20 * np.log10(mag)
-
-
 # ==========================================================================
 # LE DE-EMBARQUEMENT PAR DEUX LONGUEURS
 # --------------------------------------------------------------------------
@@ -626,3 +461,176 @@ def deembarquement_deux_longueurs(s_courte, s_longue, delta_l, freq,
         'tours': int(tours),
         'phase_ambigue': eps_eff_attendu is None,
     }
+
+
+# ==========================================================================
+# LES PARAMETRES DE LIGNE, LUS SUR UNE SEULE SIMULATION
+# --------------------------------------------------------------------------
+# CE QUE CETTE FONCTION EXISTE POUR NE PLUS FAIRE. L'impedance qu'un panneau
+# peint sur une piste est une impedance CARACTERISTIQUE : celle de la ligne,
+# independante de ce qu'on branche au bout. Ce qu'un deux-ports donne le plus
+# facilement est tout autre chose -- l'impedance d'ENTREE,
+#
+#     Z_in = Z_ref (1 + S11) / (1 - S11)
+#
+# qui est celle de la ligne CHARGEE par le port d'en face. Les deux se
+# confondent quand la ligne est adaptee et divergent des qu'elle ne l'est pas.
+# Mesure sur un microruban de 6 mm, FR4 de 0,370 mm, a 2 GHz :
+#
+#     largeur    Z0 vrai     Z_in
+#     0,35 mm    71,5 ohm    55,7 ohm
+#     0,70 mm    50,8 ohm    49,9 ohm
+#     1,05 mm    38,7 ohm    43,3 ohm
+#     2,00 mm    25,0 ohm    28,7 ohm
+#
+# L'ERREUR EST TOUJOURS DANS LE SENS DE Z_ref, ce qui est le pire des cas :
+# une piste desadaptee se lit comme une piste correcte, et c'est precisement
+# la question qu'on etait venu poser.
+#
+# LA LECTURE JUSTE, ET ELLE TIENT EN DEUX FORMULES (Eisenstadt et Eo, IEEE
+# Trans. CHMT 15(4), 1992). Pour un deux-ports reciproque dont les plans de
+# reference sont aux DEUX BOUTS de la ligne :
+#
+#     Z0^2 = Z_ref^2 . [ (1+S11)^2 - S21 S12 ] / [ (1-S11)^2 - S21 S12 ]
+#     cosh(gamma L) = (1 - S11 S22 + S21 S12) / (2 S21)
+#
+# d'ou eps_eff = (beta c / omega)^2, le retard beta L / omega et
+# l'attenuation en dB/m. TOUT SORT DE LA MEME MATRICE S que le solveur vient
+# de rendre : aucune formule analytique ne se glisse dans le resultat, et
+# c'est tout l'interet d'avoir paye un calcul pleine onde.
+#
+# CE QU'ELLE INCLUT, ET QUE LE DE-EMBARQUEMENT A DEUX LONGUEURS RETIRE. Les
+# plans de reference sont ceux des PORTS, fut de via d'acces compris : sa
+# reactance est donc comptee DANS la ligne, la ou `deembarquement_deux_
+# longueurs` juste au-dessus sait l'enlever -- au prix d'une seconde
+# simulation. C'est un choix, pas un oubli : sur les cas mesures l'ecart a
+# Hammerstad reste sous 2 %, et doubler le prix du calcul pour gagner ces
+# 2 % ne serait pas un bon echange sur une route interactive.
+#
+# ET ELLE SUPPOSE LA LIGNE UNIFORME. Sur un parcours qui change de largeur, de
+# couche ou qui tourne, Z0 rendu est celui de la ligne uniforme EQUIVALENTE --
+# une moyenne, qui a un sens pour la liaison entiere et aucun troncon par
+# troncon. C'est a l'appelant de ne pas la peindre comme une valeur locale.
+#
+# L'AMBIGUITE DE PHASE EST LA MEME QU'A COTE, et desamorcee pareil : arccosh
+# ne rend gamma L que modulo 2 pi j et au signe pres. On prend la
+# determination physique -- un milieu passif n'amplifie pas, donc alpha >= 0 --
+# et l'on DIT quand la ligne depasse la demi-longueur d'onde guidee, seuil
+# au-dela duquel le nombre de tours ne se deduit plus de la seule matrice.
+# ==========================================================================
+
+def parametres_de_ligne(s, z_ref, longueur, freq, eps_eff_attendu=None):
+    """Z0, gamma et eps_eff d'une ligne uniforme, depuis SA matrice S.
+
+    Args:
+        s: la matrice S 2x2 du troncon, normalisee sur z_ref
+        z_ref: l'impedance de reference des ports, en ohms
+        longueur: la longueur physique de la ligne, en METRES
+        freq: la frequence, en hertz
+        eps_eff_attendu: si donne, leve l'ambiguite de 2 pi sur beta L, et
+              sert a la verifier
+
+    Returns:
+        dict avec 'z0' (complexe), 'z0_reel', 'z_in', 'gamma', 'beta',
+        'alpha_np_par_m', 'alpha_db_par_m', 'eps_eff', 'retard', 'tours',
+        'phase_ambigue'
+
+    LES REFUS SONT EXPLICITES, comme partout ailleurs dans cette chaine. Une
+    matrice dont S21 est nul ne porte AUCUNE ligne -- c'est une coupure, un
+    via qui n'a pas ete maille, un port pose a cote du cuivre --, et rendre un
+    Z0 dessus serait inventer un chiffre sur une structure ouverte.
+    """
+    s = np.asarray(s, dtype=complex)
+    if s.shape != (2, 2):
+        raise ValueError("parametres_de_ligne : il faut une matrice S 2x2, "
+                         "recu %s" % (s.shape,))
+    if not (longueur > 0):
+        raise ValueError("parametres_de_ligne : la longueur doit etre > 0")
+    if not (z_ref > 0):
+        raise ValueError("parametres_de_ligne : z_ref doit etre > 0")
+
+    s11, s12 = s[0, 0], s[0, 1]
+    s21, s22 = s[1, 0], s[1, 1]
+
+    if not np.isfinite(s).all():
+        raise ValueError("parametres_de_ligne : la matrice S porte des nan "
+                         "ou des infinis -- le solveur n'a pas abouti")
+    if abs(s21) < 1e-12:
+        raise ValueError(
+            "parametres_de_ligne : |S21| = %.3g, la structure ne transmet "
+            "rien. Il n'y a pas de ligne a caracteriser." % abs(s21))
+
+    croise = s21 * s12
+    num = (1.0 + s11) ** 2 - croise
+    den = (1.0 - s11) ** 2 - croise
+    if abs(den) < 1e-300:
+        raise ValueError("parametres_de_ligne : denominateur nul, Z0 n'est "
+                         "pas defini sur cette matrice")
+
+    z0 = z_ref * np.sqrt(num / den)
+    # LA RACINE A DEUX BRANCHES ET UNE SEULE EST PHYSIQUE : l'impedance
+    # caracteristique d'une ligne passive a une partie reelle POSITIVE. numpy
+    # rend la determination principale, qui peut tomber du mauvais cote.
+    if z0.real < 0:
+        z0 = -z0
+
+    cosh_gl = (1.0 - s11 * s22 + croise) / (2.0 * s21)
+    g_l = np.arccosh(cosh_gl)
+    # MEME REGLE POUR gamma, et pour la meme raison : un milieu passif
+    # n'amplifie pas, donc alpha >= 0.
+    if g_l.real < 0:
+        g_l = -g_l
+
+    tours = 0
+    if eps_eff_attendu is not None and eps_eff_attendu > 0 and freq > 0:
+        beta_attendu = 2.0 * np.pi * freq * np.sqrt(eps_eff_attendu) / C_0
+        cible = beta_attendu * longueur
+        tours = int(np.round((cible - g_l.imag) / (2.0 * np.pi)))
+        g_l = g_l + 2j * np.pi * tours
+
+    # LA DEMI-LONGUEUR D'ONDE GUIDEE EST LE SEUIL, et non la longueur d'onde :
+    # au-dela de beta L = pi, deux geometries differentes rendent le meme
+    # cosh, et rien dans la matrice ne dit laquelle on tient.
+    ambigue = bool(eps_eff_attendu is None and abs(g_l.imag) > np.pi)
+
+    gamma = g_l / longueur
+    omega = 2.0 * np.pi * freq
+    beta = float(gamma.imag)
+    alpha = float(gamma.real)
+    eps_eff = float((beta * C_0 / omega) ** 2) if omega > 0 else 0.0
+    retard = float(beta * longueur / omega) if omega > 0 else 0.0
+
+    z_in = (z_ref * (1.0 + s11) / (1.0 - s11)
+            if abs(1.0 - s11) > 1e-12 else complex(float('inf'), 0.0))
+
+    return {
+        'z0': complex(z0),
+        'z0_reel': float(z0.real),
+        'z_in': complex(z_in),
+        'gamma': complex(gamma),
+        'beta': beta,
+        'alpha_np_par_m': alpha,
+        'alpha_db_par_m': float(alpha * 8.685889638065035),
+        'eps_eff': eps_eff,
+        'retard': retard,
+        'tours': int(tours),
+        'phase_ambigue': ambigue,
+    }
+
+# ==========================================================================
+# CE QUI A ETE RETIRE EN 1.1.0, ET POURQUOI
+# --------------------------------------------------------------------------
+# Six fonctions que personne n'appelait : `compute_z_parameters`,
+# `convert_z_to_s`, `compute_power_flow`, `compute_vswr`,
+# `compute_return_loss` et `compute_insertion_loss`. Ni le moteur, ni la
+# route /api/simulation-25d, ni un banc d'essai, ni le CLI.
+#
+# ELLES N'ETAIENT PAS SEULEMENT INERTES, ELLES ETAIENT CONCURRENTES. La
+# chaine passe par la matrice d'ADMITTANCE -- une excitation en fente par
+# coupe de port, `convert_y_to_s` au bout --, et ces deux-la offraient une
+# seconde route par la matrice d'impedance, avec une autre convention de
+# port. Deux chemins pour le meme S sur le meme maillage, dont un jamais
+# eprouve : c'est ainsi qu'on se retrouve un jour a debattre duquel des
+# deux avait raison. Le VSWR et les deux pertes en dB, eux, sont trois
+# lignes d'arithmetique que l'appelant ecrit ou il en a besoin.
+# ==========================================================================

@@ -45,6 +45,52 @@ function pruneSel(){
     for(const d of S.selD) if(!liveD.has(d)) S.selD.delete(d);
   }
 }
+
+/* ---------- Zones fonctionnelles (Rooms) ---------- */
+function schComposantsDansZone(zone, compsList){
+  if(!zone)return [];
+  const comps=compsList||(typeof S!=="undefined"?S.comps:[]);
+  if(!Array.isArray(comps))return [];
+  const xMin=Math.min(zone.x1,zone.x2), xMax=Math.max(zone.x1,zone.x2);
+  const yMin=Math.min(zone.y1,zone.y2), yMax=Math.max(zone.y1,zone.y2);
+  const inclus=[];
+  for(const c of comps){
+    if(!c||!c.ref)continue;
+    const cx=c.x||0, cy=c.y||0;
+    if(cx>=xMin&&cx<=xMax&&cy>=yMin&&cy<=yMax){
+      inclus.push(c.ref);
+    }
+  }
+  return inclus;
+}
+
+function schToutesLesZones(){
+  const zones=[];
+  if(typeof S==="undefined")return zones;
+  const pages=(Array.isArray(S.pages)&&S.pages.length>0)?S.pages:[{comps:S.comps,drawings:S.drawings}];
+  pages.forEach((p,pIdx)=>{
+    const dList=(p===S||pIdx===S.page)?(S.drawings||[]):(p.drawings||[]);
+    const cList=(p===S||pIdx===S.page)?(S.comps||[]):(p.comps||[]);
+    dList.forEach(d=>{
+      if(d&&(d.isZone||(d.shape==="rect"&&d.label))){
+        const comps=schComposantsDansZone(d,cList);
+        zones.push({
+          id:d.id||("zone_"+zones.length),
+          nom:d.label||("Zone "+(zones.length+1)),
+          name:d.label||("Zone "+(zones.length+1)),
+          categorie:d.category||"Alimentation",
+          category:d.category||"Alimentation",
+          couleur:d.color||"#f59e0b",
+          color:d.color||"#f59e0b",
+          composants:comps,
+          components:comps,
+          page:pIdx
+        });
+      }
+    });
+  });
+  return zones;
+}
 const cv=document.getElementById("sheet"), ctx=cv.getContext("2d");
 
 /* ---------- géométrie ---------- */

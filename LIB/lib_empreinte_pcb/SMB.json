@@ -1,0 +1,38 @@
+{
+  "format": "pcbfp-1",
+  "name": "SMB",
+  "pkg": "SMB",
+  "pins": 2,
+  "style": "chip",
+  "pitch": 5.2,
+  "span": 5.2,
+  "pads": [
+    {
+      "n": 1,
+      "x": -2.6,
+      "y": 0,
+      "w": 2.86,
+      "h": 3.224,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 2.6,
+      "y": 0,
+      "w": 2.86,
+      "h": 3.224,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -4.28,
+    "y1": -1.962,
+    "x2": 4.28,
+    "y2": 1.962
+  },
+  "description": "Diode DO-214AA (SMB)"
+}

@@ -851,8 +851,9 @@ que sur une ligne longue devant la longueur d'onde, et c'est mesuré
 (|S₂₁| = 0,007 à L/λ_g = 0,07, 0,540 à 1,50). Tant que ce port n'existe pas,
 |S₂₁| mesure le couplage de la fente et non la ligne.
 
-Le détail, les mesures et le cas de non-régression à viser sont dans
-[A-FAIRE.md](../A-FAIRE.md). Le jour où ce port sera là, le moteur apportera ce
+Le détail, les mesures et le cas de non-régression sont dans
+[HISTORIQUE_DEVELOPPEMENT.md](HISTORIQUE_DEVELOPPEMENT.md) et [A-FAIRE.md](../A-FAIRE.md).
+Le jour où ce port sera là, le moteur apportera ce
 que le modèle de ligne ne peut pas donner — les coudes réels, les résonances,
 le rayonnement, le couplage entre pistes non parallèles — et les deux se
 compléteront.

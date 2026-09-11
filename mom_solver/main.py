@@ -11,6 +11,56 @@ import logging
 import json
 from pathlib import Path
 
+# ==========================================================================
+# LE CLI ET LA ROUTE PARTAGENT LA MEME ORCHESTRATION
+# --------------------------------------------------------------------------
+# CE QUE CELA CORRIGE, ET C'EST GROS. Il y avait DEUX pipelines sur ce meme
+# solveur : celui-ci, et `python/simulation_25d.py` derriere
+# /api/simulation-25d. Ils ne faisaient pas la meme chose sur le meme
+# fichier :
+#
+#   ce module (avant)              simulation_25d.py
+#   ---------------------------    -------------------------------
+#   ports par `detect_ports`       bornes de la chaine, avant fusion
+#   une hauteur de fut pour tous   une par port
+#   pas de renversement d'empilage renverse quand les plans sont au-dessus
+#   pas de fusion des troncons     unary_union par (couche, net)
+#   pas de vias internes           futs verticaux mailles
+#   Touchstone en GHz              Touchstone en Hz
+#
+# Autrement dit : le meme .json rendait deux resultats differents selon qu'on
+# passait par la page ou par la ligne de commande -- alors que requirements.txt
+# recommande justement le CLI comme voie hors ligne. C'est exactement le defaut
+# que l'en-tete 4.0.0 de `simulation_em` interdit par son nom : « deux verdicts
+# concurrents sur le meme cuivre, et rien pour les arbitrer ».
+#
+# LE MODE `--port via` DELEGUE DONC A `simuler_25d`, sans rien recopier. Le
+# mode `--port fente` garde le pipeline direct ci-dessous : ce n'est pas une
+# seconde version du meme calcul, c'est un AUTRE MODELE DE PORT, que le banc
+# `banc_chaine` emploie comme temoin -- il mesure que la fente ne transmet pas
+# une ligne courte la ou le via transmet, sur le meme maillage.
+#
+# LE SENS DE LA DEPENDANCE EST VOULU : c'est ce script de ligne de commande qui
+# va chercher le connecteur, et jamais le paquet `mom_solver` qui dependrait de
+# `python/`. Le paquet reste utilisable seul.
+# ==========================================================================
+_RACINE = Path(__file__).resolve().parent.parent
+# LES DEUX CHEMINS, ET LE SECOND N'EST PAS FACULTATIF. `python/` porte le
+# connecteur ; la RACINE porte le paquet `mom_solver` lui-meme, dont le
+# connecteur a besoin. Lance en script (`python mom_solver/main.py`), seul le
+# dossier `mom_solver/` est sur sys.path : `import mom_solver` echouait alors,
+# et le refus qui en sortait -- « No module named 'mom_solver' » -- accusait le
+# solveur d'etre absent depuis l'interieur du solveur.
+for _p in (str(_RACINE), str(_RACINE / "python")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+try:
+    import simulation_25d
+    ERREUR_CONNECTEUR = None
+except Exception as _exc:                              # noqa: BLE001
+    simulation_25d = None
+    ERREUR_CONNECTEUR = _exc
+
 try:
     from .pcb_parser import load_json, extract_stackup, extract_polygons, build_geometry_model
     from .mesher import (generate_2d_mesh, extract_edges, build_rwg_basis,
@@ -136,6 +186,81 @@ def parse_arguments():
     return parser.parse_args()
 
 
+def _via_par_le_connecteur(args, data, input_path, logger):
+    """Le calcul de la route, lance depuis la ligne de commande.
+
+    RIEN N'EST RECOPIE ICI : on complete le document avec la bande demandee
+    et on appelle `simulation_25d.simuler_25d`, celui-la meme que sert
+    /api/simulation-25d. Les deux voies rendent donc, sur le meme fichier,
+    exactement le meme Touchstone et les memes chiffres.
+    """
+    if simulation_25d is None:
+        raise RuntimeError(
+            "Le connecteur python/simulation_25d.py est introuvable : %s. "
+            "Le mode « --port fente » ne l'exige pas." % ERREUR_CONNECTEUR)
+
+    doc = dict(data)
+    # LA BANDE VIENT DE LA LIGNE DE COMMANDE et remplace celle du fichier :
+    # c'est ce que l'utilisateur vient de taper qui gagne.
+    doc['analyse'] = {
+        'f_debut': args.freq_start,
+        'f_fin': args.freq_stop,
+        'points': args.freq_points,
+    }
+    if not doc.get('format'):
+        # Un fichier exporte par la page porte « format » ; un fichier ecrit a
+        # la main peut ne porter que « version ». On complete, et on le dit.
+        doc['format'] = simulation_25d.FORMAT
+        logger.info("  Le fichier ne porte pas de « format » : lu comme « %s »."
+                    % simulation_25d.FORMAT)
+
+    logger.info("Résolution par l'orchestration de /api/simulation-25d")
+    try:
+        res = simulation_25d.simuler_25d(
+            doc, journal=lambda t: logger.info("  " + t.rstrip("\n")),
+            mesh_size_mm=args.mesh_size)
+    except simulation_25d.ErreurSimulation25D as exc:
+        logger.error("Refus du solveur : %s", exc.message)
+        if exc.conseil:
+            logger.error("  %s", exc.conseil)
+        return 2
+
+    if args.output:
+        output_base = Path(args.output)
+    else:
+        output_base = Path('exports') / input_path.stem
+    output_base.parent.mkdir(parents=True, exist_ok=True)
+
+    n_ports = res.get('ports', 2)
+    chemin_ts = str(output_base.with_suffix('.s%dp' % n_ports))
+    with open(chemin_ts, 'w', encoding='utf-8') as f:
+        f.write(res['touchstone'])
+    logger.info("  ✓ Paramètres S : %s", chemin_ts)
+
+    chemin_json = str(output_base.with_suffix('.resultat.json'))
+    sans_maillage = {k: v for k, v in res.items() if k != 'maillage'}
+    with open(chemin_json, 'w', encoding='utf-8') as f:
+        json.dump(sans_maillage, f, indent=2, ensure_ascii=False)
+    logger.info("  ✓ Résultat complet : %s", chemin_json)
+
+    if args.export_currents:
+        chemin_c = str(output_base.with_suffix('.currents.json'))
+        with open(chemin_c, 'w', encoding='utf-8') as f:
+            json.dump(res['maillage'], f, indent=2)
+        logger.info("  ✓ Maillage et courants : %s", chemin_c)
+
+    L = res['ligne']
+    logger.info("  Z0 = %.2f ohm, eps_eff = %.4f, S11 = %.2f dB, S21 = %.2f dB",
+                L['z0_moyen'], L['eps_eff'], L['s11_db'], L['s21_db'])
+    for a in res.get('avertissements', []):
+        logger.info("  · %s", a)
+
+    logger.info("=" * 60)
+    logger.info("Simulation terminée avec succès")
+    logger.info("=" * 60)
+    return 0
+
+
 def main():
     """Fonction principale : orchestration du pipeline de simulation"""
     
@@ -156,10 +281,21 @@ def main():
         input_path = Path(args.input)
         if not input_path.exists():
             raise FileNotFoundError(f"Fichier d'entrée introuvable : {args.input}")
-        
+
         data = load_json(str(input_path))
         logger.info(f"  ✓ Fichier chargé : {input_path.name}")
-        
+
+        # LE PORT VIA -- LE DEFAUT -- PASSE PAR L'ORCHESTRATION DE LA ROUTE.
+        # Voir le grand commentaire en tête de ce fichier.
+        if args.port == 'via':
+            return _via_par_le_connecteur(args, data, input_path, logger)
+
+        logger.warning(
+            "  --port fente : pipeline direct, DIFFERENT de celui de la route"
+            " /api/simulation-25d. C'est un autre modele de port (excitation"
+            " en serie), utile comme temoin ; les chiffres ne sont pas"
+            " comparables a ceux de la page.")
+
         # Étape 2 : Extraction de la géométrie
         logger.info("Étape 2/6 : Extraction de la géométrie")
         stackup = extract_stackup(data)

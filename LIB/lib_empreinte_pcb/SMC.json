@@ -1,0 +1,38 @@
+{
+  "format": "pcbfp-1",
+  "name": "SMC",
+  "pkg": "SMC",
+  "pins": 2,
+  "style": "chip",
+  "pitch": 7,
+  "span": 7,
+  "pads": [
+    {
+      "n": 1,
+      "x": -3.5,
+      "y": 0,
+      "w": 3.85,
+      "h": 4.34,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    },
+    {
+      "n": 2,
+      "x": 3.5,
+      "y": 0,
+      "w": 3.85,
+      "h": 4.34,
+      "shape": "rect",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -5.675,
+    "y1": -2.52,
+    "x2": 5.675,
+    "y2": 2.52
+  },
+  "description": "Diode DO-214AB (SMC)"
+}

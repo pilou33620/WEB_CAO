@@ -583,7 +583,9 @@ EN MILLIMETRES, comme tout ce qui circule entre les outils du depot.
     ports      [{id, position, layer, impedance}] -- l'impedance de reference
     analyse    {f_debut, f_fin, points, f_centre}   (Hz)
 
-Le resultat, format « cao-sim-em-resultat-4 » :
+Le resultat, format « cao-sim-em-resultat-5 » (c'est `FORMAT_RESULTAT`, plus
+bas, qui fait foi : cette page a annonce le « -4 » pendant deux versions apres
+que le code eut passe au « -5 ») :
 
     f_centre        la frequence a laquelle les impedances sont donnees
     segments        un par objet envoye, DANS LE MEME ORDRE : {z0, eps_eff,
@@ -629,6 +631,11 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
+VERSION = "4.1.0"
+VERSION_MOTEURS = {
+    "simulation_em": VERSION,
+    "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
+}
 
 # -- les garde-fous ---------------------------------------------------------
 # Le calcul de section coute une matrice pleine N x N par troncon, N etant le
@@ -647,24 +654,28 @@ MAX_CORPS = 4 * 1024 * 1024
 class ErreurSimulation(Exception):
     """Refus explicite, avec de quoi corriger le tir.
 
-    `conseil` est ce qu'il faut changer. Les deux pages l'affichent sous le
-    message : un refus qui ne dit pas quoi faire oblige a deviner.
+    L'erreur porte un message d'une ligne pour la barre d'etat, et un conseil
+    actionnable -- ce qu'il faut changer dans le dessin ou dans l'empilage pour
+    que le calcul passe. Pas de stack trace cote client.
     """
-
     def __init__(self, message, conseil=""):
-        Exception.__init__(self, message)
-        self.message = message
-        self.conseil = conseil
+        super(ErreurSimulation, self).__init__(message)
+        self.message = str(message)
+        self.conseil = str(conseil)
 
 
 def etat():
     """Ce que le serveur sait faire : les pages le demandent avant de lancer."""
     if ERREUR_SOLVEUR is not None:
         return {"dispo": False,
+                "version": VERSION,
+                "moteurs": VERSION_MOTEURS,
                 "detail": "Solveur EM indisponible : %s" % ERREUR_SOLVEUR,
                 "conseil": "Le solveur a besoin de numpy :"
                            " « pip install numpy »."}
     return {"dispo": True, "format": FORMAT, "resultat": FORMAT_RESULTAT,
+            "version": VERSION,
+            "moteurs": VERSION_MOTEURS,
             "max": MAX_CORPS,
             "methode": "MoM quasi-statique sur la section droite"
                        " + mise en cascade ABCD",
@@ -5506,6 +5517,8 @@ def simuler(doc, journal=None):
 
     return {
         "format": FORMAT_RESULTAT,
+        "version": VERSION,
+        "moteurs": VERSION_MOTEURS,
         "carte": doc.get("carte") or "",
         "net": doc.get("net") or "",
         "reference_nets": refs,

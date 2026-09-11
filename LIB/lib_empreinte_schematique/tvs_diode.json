@@ -1,0 +1,88 @@
+{
+  "format": "schsym-1",
+  "id": "tvs_diode",
+  "name": "Diode TVS",
+  "category": "Semi-conducteurs",
+  "prefix": "D",
+  "defaultValue": "TVS",
+  "defaultPkg": "SOD-323",
+  "pinCount": 2,
+  "pins": [
+    {
+      "n": 1,
+      "x": -40,
+      "y": 0
+    },
+    {
+      "n": 2,
+      "x": 40,
+      "y": 0
+    }
+  ],
+  "ext": [
+    -40,
+    -15,
+    40,
+    15
+  ],
+  "primitives": [
+    {
+      "op": "line",
+      "x1": -40,
+      "y1": 0,
+      "x2": -15,
+      "y2": 0
+    },
+    {
+      "op": "line",
+      "x1": 15,
+      "y1": 0,
+      "x2": 40,
+      "y2": 0
+    },
+    {
+      "op": "poly",
+      "pts": [
+        [
+          -15,
+          -10
+        ],
+        [
+          -15,
+          10
+        ],
+        [
+          -2,
+          0
+        ]
+      ],
+      "fill": true
+    },
+    {
+      "op": "poly",
+      "pts": [
+        [
+          15,
+          -10
+        ],
+        [
+          15,
+          10
+        ],
+        [
+          2,
+          0
+        ]
+      ],
+      "fill": true
+    },
+    {
+      "op": "line",
+      "x1": 0,
+      "y1": -12,
+      "x2": 0,
+      "y2": 12,
+      "width": 4.5
+    }
+  ]
+}

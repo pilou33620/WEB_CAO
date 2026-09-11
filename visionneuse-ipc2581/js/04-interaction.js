@@ -424,6 +424,16 @@ document.addEventListener("keydown",function(e){
   else if(k==="r"){basculer("refs","bRefs");}
   else if(k==="d"){basculer("trous","bTrous");}
   else if(k==="p"){basculer("plans","bPlans");}
+  else if(k==="j"){
+    if(typeof simBasculerJsurf==="function")simBasculerJsurf();
+  }
+  else if(k==="m"){
+    if(typeof simBasculerMaillage==="function"){
+      simBasculerMaillage();
+    }else{
+      basculer("maillage","bMaillage");
+    }
+  }
   else if(k==="escape"){choisirRien();}
   else if(k==="+"||k==="="){zoomer(1.25,cv.clientWidth/2,cv.clientHeight/2);}
   else if(k==="-"){zoomer(0.8,cv.clientWidth/2,cv.clientHeight/2);}
@@ -434,6 +444,8 @@ document.addEventListener("keydown",function(e){
 
 function basculer(cle,bouton){
   V.aff[cle]=!V.aff[cle];
+  if(cle==="jsurf"&&typeof simBasculerJsurf==="function")simBasculerJsurf(V.aff.jsurf);
+  if(cle==="maillage"&&typeof simBasculerMaillage==="function")simBasculerMaillage(V.aff.maillage);
   const b=bouton?document.getElementById(bouton):null;
   if(b)b.classList.toggle("on",!!V.aff[cle]);
   pnlElements();

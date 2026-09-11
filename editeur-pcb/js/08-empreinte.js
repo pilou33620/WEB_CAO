@@ -248,11 +248,10 @@ function feBuild(){
 }
 function feOpen(fp){
   if(!fp)return;
-  feBuild();
-  FE.open=true;FE.fp=fp;FE.sel=0;FE.drag=null;FE.pushed=false;FE.fit=true;
-  $("fpEd").hidden=false;
-  feHint("");
-  feSync();
+  const nom=fp.pkg?(fp.pkg.endsWith(".json")?fp.pkg:(fp.pkg+".json")):"";
+  if(typeof window!=="undefined" && typeof window.open==="function"){
+    window.open("../gestion-lib/gestion-lib.html?tab=pcb&nom="+encodeURIComponent(nom),"_blank");
+  }
 }
 /* Fermer la fenêtre vaut validation : l'origine y revient au centre du
    composant. C'est la poignée par laquelle l'empreinte se déplace et le point

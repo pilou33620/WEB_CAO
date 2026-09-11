@@ -42,6 +42,7 @@ const SESS_OUTILS = {
   schema:     {titre:"Éditeur schématique",     page:"editeur-schematique/editeur-schematique.html"},
   pcb:        {titre:"Éditeur PCB",             page:"editeur-pcb/editeur-pcb.html"},
   composants: {titre:"Recherche de composants", page:"recherche-composants/recherche-composants.html"},
+  lib:        {titre:"Gestionnaire de bibliothèque", page:"gestion-lib/gestion-lib.html"},
   ipc2581:    {titre:"Visionneuse IPC-2581",     page:"visionneuse-ipc2581/visionneuse-ipc2581.html"},
   accueil:    {titre:"Accueil",                 page:"index.html"}
 };
@@ -263,6 +264,61 @@ function sessMontrerAilleurs(cible, quoi, valeur, retour){
   }catch(_){ fini("indisponible"); return false; }
   try{ setTimeout(function(){ fini("personne"); }, SESS_ACK_MS); }
   catch(_){ fini("personne"); }
+  return true;
+}
+
+/* ==========================================================================
+   Mises à jour de bibliothèque (Gestion LIB)
+   --------------------------------------------------------------------------
+   BroadcastChannel dédié aux modifications enregistrées dans Gestion LIB :
+   empreintes, symboles, modèles ou catalogue CSV. Permet au schéma et au PCB
+   d'afficher des alertes non-bloquantes et de proposer la mise à jour assistée.
+   ========================================================================== */
+const SESS_LIB_CANAL = "cao.lib.v1";
+let SESS_LIB_BC;
+
+function sessLibCanal(){
+  if(SESS_LIB_BC !== undefined) return SESS_LIB_BC;
+  SESS_LIB_BC = null;
+  try{
+    if(typeof BroadcastChannel === "function")
+      SESS_LIB_BC = new BroadcastChannel(SESS_LIB_CANAL);
+  }catch(_){ SESS_LIB_BC = null; }
+  return SESS_LIB_BC;
+}
+
+function sessDiffuserLibModif(detail){
+  const bc = sessLibCanal();
+  if(!bc || !detail) return false;
+  const msg = {
+    v: 1,
+    type: "lib_modif",
+    genre: detail.genre || "fichier",
+    typeFichier: detail.typeFichier || detail.type || "",
+    nom: detail.nom || "",
+    data: detail.data !== undefined ? detail.data : null,
+    t: detail.t || Date.now()
+  };
+  try{
+    bc.postMessage(msg);
+    return true;
+  }catch(_){ return false; }
+}
+
+function sessEcouterLibModif(fn){
+  const bc = sessLibCanal();
+  if(!bc || typeof fn !== "function") return false;
+  if(!bc._libListeners){
+    bc._libListeners = [];
+    bc.onmessage = function(ev){
+      const m = ev && ev.data;
+      if(!m || m.v !== 1 || m.type !== "lib_modif") return;
+      for(const listener of bc._libListeners.slice()){
+        try{ listener(m); }catch(e){ console.warn("Erreur écouteur lib modif:", e); }
+      }
+    };
+  }
+  bc._libListeners.push(fn);
   return true;
 }
 

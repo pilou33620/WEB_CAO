@@ -1,0 +1,61 @@
+{
+  "format": "schsym-1",
+  "id": "ferrite_bead",
+  "name": "Perle de ferrite",
+  "category": "Passifs",
+  "prefix": "FB",
+  "defaultValue": "120R",
+  "defaultPkg": "0805",
+  "pinCount": 2,
+  "pins": [
+    {
+      "n": 1,
+      "x": -40,
+      "y": 0
+    },
+    {
+      "n": 2,
+      "x": 40,
+      "y": 0
+    }
+  ],
+  "ext": [
+    -40,
+    -10,
+    40,
+    10
+  ],
+  "primitives": [
+    {
+      "op": "line",
+      "x1": -40,
+      "y1": 0,
+      "x2": -18,
+      "y2": 0
+    },
+    {
+      "op": "line",
+      "x1": 18,
+      "y1": 0,
+      "x2": 40,
+      "y2": 0
+    },
+    {
+      "op": "rect",
+      "x": -18,
+      "y": -9,
+      "w": 36,
+      "h": 18,
+      "r": 4,
+      "fill": true
+    },
+    {
+      "op": "line",
+      "x1": -14,
+      "y1": 0,
+      "x2": 14,
+      "y2": 0,
+      "width": 4.5
+    }
+  ]
+}

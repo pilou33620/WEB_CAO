@@ -20,13 +20,63 @@ jobs:
 
       - name: Vérification syntaxique des scripts Python
         run: |
-          python -m compileall -q serveur.py python commun/outils \
+          # mom_solver/ EST DANS CETTE LISTE DEPUIS QU'IL EST DANS LE CHEMIN DE
+          # CALCUL. Il en était absent — le moteur 2,5D pleine onde, six mille
+          # lignes derrière /api/simulation-25d, n'était donc même pas vérifié
+          # syntaxiquement par l'intégration continue.
+          python -m compileall -q serveur.py python mom_solver commun/outils \
             editeur-pcb/outils editeur-schematique/outils
+
+      # ====================================================================
+      # LES SOLVEURS
+      # --------------------------------------------------------------------
+      # ILS N'ÉTAIENT PAS ICI, ET C'EST LE PLUS GROS TROU DE CETTE CHAÎNE.
+      # Sept bancs, quelque quatre cents cas — la méthode des moments sur la
+      # section, la fonction de Green stratifiée, le crosstalk, l'IR drop, le
+      # 2,5D pleine onde, les routes du serveur — écrits, tenus à jour, et
+      # jamais lancés par personne d'autre que celui qui venait de les
+      # modifier. Un dépôt qui garde des bancs sans les exécuter en a le coût
+      # et pas le bénéfice.
+      #
+      # LES DÉPENDANCES SONT INSTALLÉES ICI ET NULLE PART AILLEURS : c'est ce
+      # qui permet à requirements.txt de rester vide, donc au double-clic sur
+      # serveur.py de marcher sans réseau. Voir son en-tête.
+      - name: Solveurs — dépendances de calcul
+        run: pip install --quiet numpy scipy shapely
+
+      - name: Solveur de section (MoM 2D) — banc d'essai
+        run: python python/test/banc-ligne-mom.py
+
+      - name: Fonction de Green stratifiée et DCIM — banc d'essai
+        run: python mom_solver/tests/banc_dcim.py
+
+      - name: Assemblage MoM, ports et quadrature — banc d'essai
+        run: python mom_solver/tests/banc_moteur.py
+
+      - name: Chaîne 2,5D complète (port via contre port fente) — banc d'essai
+        run: python mom_solver/tests/banc_chaine.py
+
+      - name: Connecteur 2,5D (cao-sim-em-3 vers mom_solver) — banc d'essai
+        run: python python/test/banc-simulation-25d.py
+
+      - name: Crosstalk (MTL en cascade) — banc d'essai
+        run: python python/test/banc-crosstalk.py
+
+      - name: Chute de tension continue (IR drop) — banc d'essai
+        run: python python/test/banc-dc.py
+
+      - name: Scoring de placement PCB — banc d'essai
+        run: python python/test/banc-pcb-scoring.py
+
+      - name: Reconnaissance de motifs schématiques — banc d'essai
+        run: python python/test/banc-patterns.py
+
+      - name: Routes du serveur et sécurités — banc d'essai
+        run: python python/test/banc-serveur-routes.py
 
       - name: Visionneuse IPC-2581 — banc d'essai du parseur
         run: |
-          # Le seul banc d'essai en Python du dépôt, parce que c'est la seule
-          # moitié d'outil qui ne tourne pas dans le navigateur. Il porte sa
+          # La moitié d'outil qui ne tourne pas dans le navigateur. Il porte sa
           # propre carte d'essai : rien à télécharger, rien de lourd versionné.
           python visionneuse-ipc2581/test/banc-essai.py
 
@@ -39,6 +89,14 @@ jobs:
           # parseur. Rien ne l'empêchait de tourner ici ; il n'y était pas.
           node visionneuse-ipc2581/test/harness-sim.js
 
+      # LE MONOFICHIER N'EST PAS VERSIONNÉ (.gitignore : « dist/ »), et il n'y a
+      # donc rien à y vérifier de fraîcheur : chaque exécution le reconstruit
+      # depuis les sources, ci-dessous. C'est le bon choix — un artefact de
+      # deux mégaoctets dans l'historique n'apporte rien —, mais il a une
+      # conséquence à connaître : un dist/ resté sur un poste peut avoir des
+      # semaines de retard sur js/ sans que rien ne le signale, et c'est ce
+      # fichier-là qu'on ouvre en double-clic. Après avoir touché à js/,
+      # relancer build-monofichier.py fait partie du geste.
       - name: Éditeur PCB — assemblage puis banc d'essai
         run: |
           python editeur-pcb/outils/build-monofichier.py

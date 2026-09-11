@@ -1,0 +1,65 @@
+{
+  "format": "schsym-1",
+  "id": "switch",
+  "name": "Interrupteur",
+  "category": "Divers",
+  "prefix": "SW",
+  "defaultValue": "SPST",
+  "defaultPkg": "0603",
+  "pinCount": 2,
+  "pins": [
+    {
+      "n": 1,
+      "x": -40,
+      "y": 0
+    },
+    {
+      "n": 2,
+      "x": 40,
+      "y": 0
+    }
+  ],
+  "ext": [
+    -40,
+    -25,
+    40,
+    15
+  ],
+  "primitives": [
+    {
+      "op": "line",
+      "x1": -40,
+      "y1": 0,
+      "x2": -20,
+      "y2": 0
+    },
+    {
+      "op": "line",
+      "x1": 20,
+      "y1": 0,
+      "x2": 40,
+      "y2": 0
+    },
+    {
+      "op": "circle",
+      "x": -20,
+      "y": 0,
+      "r": 5,
+      "fill": true
+    },
+    {
+      "op": "circle",
+      "x": 20,
+      "y": 0,
+      "r": 5,
+      "fill": true
+    },
+    {
+      "op": "line",
+      "x1": -15,
+      "y1": -5,
+      "x2": 20,
+      "y2": -20
+    }
+  ]
+}

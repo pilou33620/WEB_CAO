@@ -1,7 +1,9 @@
 # =============================================================================
 # WEB_CAO -- dependances Python
 #
-# Aucune. Volontairement.
+# Aucune. Volontairement -- voir « LES EXCEPTIONS » plus bas pour les quatre
+# solveurs, qui achetent chacun une fonction de plus sans etre le prix des
+# autres.
 #
 #     pip install -r requirements.txt      # n'installe rien, et c'est le but
 #
@@ -27,41 +29,70 @@
 # /api/tools et /api/tool que serveur.py, alors que toute la logique de
 # protocole MCP vit dans passerelle_mcp.py, en bibliotheque standard.
 #
-# Les bancs d'essai tournent sous Node, pas sous Python (voir README.md) ; le
-# paquet npm facultatif « canvas » n'a rien a faire ici.
+# Les bancs d'essai des deux EDITEURS tournent sous Node (voir README.md) ; le
+# paquet npm facultatif « canvas » n'a rien a faire ici. Ceux des SOLVEURS sont
+# en Python -- sept fichiers, quelque quatre cents cas -- et demandent ce que
+# demande le solveur qu'ils eprouvent, ni plus : voir « LES EXCEPTIONS ».
+# Aucun n'a besoin de pytest.
 #
 # -----------------------------------------------------------------------------
-# UNE EXCEPTION, ET ELLE EST HORS DE CE FICHIER : le solveur electromagnetique
+# LES EXCEPTIONS, ET ELLES SONT HORS DE CE FICHIER : les quatre solveurs
 #
-# python/ligne_mom.py -- methode des moments sur la section droite, qui donne
-# l'impedance d'une piste -- a besoin de NUMPY, et de numpy seul. Ce paquet
-# n'est PAS liste ici, et ce n'est pas un oubli : la garantie ci-dessus tient
-# toujours, parce que rien de ce que le depot fait par ailleurs n'en depend.
+# Chacune achete une fonction de plus ; aucune n'est le prix de celles qui
+# existaient. Les ecrire en ligne de paquet les rendrait obligatoires --
+# « pip install -r requirements.txt » echouerait derriere un proxy
+# d'entreprise, et le depot perdrait exactement ce que ce fichier protege.
 #
-# SCIPY N'EST PAS UNE DEPENDANCE DU SOLVEUR, contrairement a ce que trois
-# messages de ce depot ont longtemps affirme. Seul le banc d'essai l'importe,
-# pour les integrales elliptiques de son etalon de triplaque -- et un banc
-# d'essai n'a pas a peser sur ce qu'il faut installer pour se servir de
-# l'outil. (mom_solver/, le moteur 2,5D pleine onde livre a part, demande bien
-# numpy, scipy et numba -- mais il n'est pas dans le chemin de calcul.)
+#   /api/simulation, moteur 2D    numpy
+#     python/simulation_em.py et python/ligne_mom.py -- methode des moments sur
+#     la SECTION DROITE, qui donne l'impedance d'une piste. numpy, et numpy
+#     seul.
+#
+#   /api/crosstalk                numpy
+#     python/crosstalk.py -- matrices MTL en cascade le long du parcours. Il
+#     reprend une quinzaine d'aides de simulation_em, dont il depend donc.
+#
+#   /api/simulation-dc            numpy + SCIPY
+#     python/dc_solver.py -- reseau resistif surfacique, gradient conjugue.
+#     SCIPY EST BIEN DANS SON CHEMIN DE CALCUL (scipy.sparse pour la matrice,
+#     scipy.sparse.linalg.cg pour la resolution), et cette page a longtemps
+#     affirme le contraire : « scipy n'est pas une dependance du solveur, seul
+#     le banc d'essai l'importe ». C'etait vrai du solveur de SECTION, et faux
+#     du solveur DC depuis sa reecriture 2.0.0. `dc_solver.etat()` verifie la
+#     presence de scipy et repond 503 en la nommant.
+#
+#   /api/simulation-25d           numpy + scipy + SHAPELY
+#     mom_solver/ et python/simulation_25d.py -- MoM SURFACIQUE pleine onde,
+#     base RWG, fonction de Green stratifiee. IL EST DANS LE CHEMIN DE CALCUL
+#     DEPUIS QUE LE CONNECTEUR EXISTE : cette page le decrivait comme « livre a
+#     part, mais pas dans le chemin de calcul », ce qui n'est plus vrai. scipy
+#     y sert a la factorisation LU, shapely a fusionner les troncons
+#     consecutifs d'une piste -- sans lui le maillage n'est pas continu d'un
+#     segment au suivant, et le calcul le DIT dans ses avertissements plutot
+#     que de rendre une ligne coupee en silence.
+#
+#     NUMBA N'EN FAIT PLUS PARTIE. `mom_engine` l'importait en dur pour un
+#     noyau d'espace libre que personne n'appelait ; les deux ont ete retires
+#     en 1.1.0, et le paquet s'importe desormais sans numba.
+#
+# CE QUI MARCHE SANS RIEN INSTALLER, et c'est le fond de l'affaire :
 #
 #   · les deux editeurs s'ouvrent en double-clic, sans Python du tout ;
 #   · serveur.py demarre, sert les pages, la recherche de composants, les
 #     profils, les projets et la lecture IPC-2581 sans numpy ;
-#   · seule la route /api/simulation manque a l'appel. Elle repond alors 503 en
-#     nommant ce qui manque, le panneau « Simulation EM » l'affiche, et son
-#     bouton « Exporter .json » continue de servir : le probleme s'enregistre et
-#     se donne au solveur en ligne de commande sur une autre machine.
+#   · seules les quatre routes de calcul manquent a l'appel. Chacune repond
+#     503 en nommant ce qui manque, le panneau l'affiche, et son bouton
+#     « Exporter .json » continue de servir : le probleme s'enregistre et se
+#     donne au solveur en ligne de commande sur une autre machine.
 #
-# Autrement dit : ce paquet achete une fonction de plus, il n'est le prix
-# d'aucune de celles qui existaient. L'ecrire ici le rendrait
-# obligatoire -- « pip install -r requirements.txt » echouerait derriere un
-# proxy d'entreprise, et le depot perdrait exactement ce que ce fichier
-# protege. Pour s'en servir :
+# Pour s'en servir, du moins cher au plus cher :
 #
-#     pip install numpy
+#     pip install numpy                      # impedance et crosstalk
+#     pip install numpy scipy                # + IR drop
+#     pip install numpy scipy shapely        # + 2,5D pleine onde
 #
-# Le banc d'essai du solveur se lance sans pytest. Lui seul demande scipy :
+# Les bancs d'essai se lancent sans pytest. Celui du solveur de section demande
+# scipy, pour les integrales elliptiques de son etalon de triplaque :
 #
 #     pip install scipy
 #     python python/test/banc-ligne-mom.py

@@ -192,6 +192,7 @@
 
 const SIM_PORT=8000;                   // DEFAULT_PORT de serveur.py
 const SIM_ROUTE="/api/simulation";
+const SIM_25D_ROUTE="/api/simulation-25d";
 const SIM_DC_ROUTE="/api/simulation-dc";
 const SIM_DC_FORMAT="cao-sim-dc-1";   // FORMAT de python/dc_solver.py
 
@@ -411,7 +412,10 @@ function simBrancherDC(){
   const q=simEl("simDCQuoi");
   if(q){
     q.value=SIM.dcQuoi;
-    q.onchange=()=>{simDCRepeindre(q.value);simRendre();};
+    q.onchange=()=>{
+      simDCRepeindre(q.value);
+      simRendre();
+    };
   }
   /* LES BUDGETS ET LE STRATIFIÉ. Les deux premiers ne relancent rien — ils ne
      changent que le verdict, donc un rendu suffit. Le troisième est une ENTRÉE
@@ -563,11 +567,29 @@ function simRendreBornes(){
   let h='';
   bornes.forEach((b,k)=>{
     const src=b.role==="source";
+    const prov = b.provenance || "defaut";
+    let bTxt = "Défaut", bSty = "background:#374151; color:#9ca3af; border:1px solid #4b5563;";
+    if(prov === "catalogue" || prov === "lib"){
+      bTxt = "LIB";
+      bSty = "background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid #0284c7;";
+    } else if(prov === "recherche" || prov === "api"){
+      bTxt = "API";
+      bSty = "background:rgba(192,132,252,0.15); color:#c084fc; border:1px solid #9333ea;";
+    } else if(prov === "motif"){
+      bTxt = "Motif";
+      bSty = "background:rgba(96,165,250,0.15); color:#60a5fa; border:1px solid #2563eb;";
+    } else if(prov === "manuel"){
+      bTxt = "Manuel";
+      bSty = "background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid #d97706;";
+    }
+    const bTip = "Origine : " + prov + (b.nbBroches > 1 ? (" (Partagé sur " + b.nbBroches + " broches)") : "");
+
     h+='<div class="pnl-bar">'+
        '<span class="pnl-lbl" title="'+(src
           ? "Alimentation : sa tension est imposée"
           : "Consommateur : son courant est imposé")+'">'+
        (src?"source":"charge")+'</span>'+
+       '<span class="simBadge" style="font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:3px; margin-right:4px; line-height:1; cursor:default; '+bSty+'" title="'+simEsc(bTip)+'">'+bTxt+'</span>'+
        /* LE REPERE SE RENOMME, ET C'EST TOUT L'INTERET. « pastille 32.1 ;
           72.34 » est ce que le fichier sait dire ; ce n'est pas ce que la
           carte veut dire. Sur cinq bornes, deux couples de coordonnees ne se
@@ -616,8 +638,10 @@ function simRendreBornes(){
       ch.value=simNbLibre(b.valeur/u.f);
       ch.onchange=()=>{
         const v=parseFloat(String(ch.value).replace(",","."));
+        b.provenance = "manuel";
         if(SIM_ED.dcValeur)
           SIM_ED.dcValeur(k,isFinite(v)?v*simDCUnite(b).f:0);
+        simRendre();
       };
     }
     const su=simEl("simDCU"+k);
@@ -862,11 +886,11 @@ function simDCFinesse(polygones){
    chaud à côté de son écart. C'est ce chiffre-là qu'on met en face d'un Tg.
    ========================================================================== */
 const SIM_DC_GRANDEURS=[
-  {cle:"echauffement", nom:"Échauffement", unite:"°C", facteur:1, dec:2,
+  {cle:"echauffement", nom:"Échauffement (étalement)", unite:"°C", facteur:1, dec:2,
    aide:"La montée en température au-dessus de l'ambiante, par ÉTALEMENT "+
         "dans la carte : la conduction du stratifié et des plans de cuivre, "+
-        "que la campagne IPC-2152 a mesurée. C'est un chiffre : il ne dépend "+
-        "pas de la finesse du maillage. C'est un ÉCART, et un écart vaut "+
+        "que la campagne IPC-2152 a mesurée. C'est le modèle physique principal "+
+        "(chiffre indépendant de la finesse du maillage). C'est un ÉCART, et un écart vaut "+
         "autant en kelvins qu'en degrés Celsius — les deux normes l'écrivent "+
         "en °C."},
   {cle:"densite", nom:"Densité", unite:"A/mm²", facteur:1, dec:1,
@@ -881,13 +905,12 @@ const SIM_DC_GRANDEURS=[
      ressemblent, la carte n'évacue rien et le stratifié ne sert à rien ; là
      où elles s'écartent, c'est un plan qui travaille — et ce sont ces
      endroits-là qu'on ne peut pas deviner de la géométrie. */
-  {cle:"echauffement_ipc2221", nom:"Échauffement IPC-2221", unite:"°C",
+  {cle:"echauffement_ipc2221", nom:"Réf. IPC-2221", unite:"°C",
    facteur:1, dec:2,
    aide:"La même montée, lue sur la charte historique IPC-2221 : un "+
         "conducteur ISOLÉ à l'air calme, sans stratifié ni plan. Elle "+
-        "ignore donc tout ce qui refroidit la carte, et rend une couche "+
-        "interne 4,83 fois plus chaude qu'une externe — ce que la campagne "+
-        "IPC-2152 a mesuré faux. À comparer avec l'autre, pas à lire seule."}
+        "ignore donc tout ce qui refroidit la carte, et sert de référence comparative "+
+        "empirique normative. À comparer avec l'étalement, pas à lire comme équivalent."}
 ];
 function simDCGrandeur(cle){
   return SIM_DC_GRANDEURS.find(g=>g.cle===(cle||SIM.dcQuoi))
@@ -1820,7 +1843,7 @@ function simTableauPire(res){
      à côté, en gris : là où les deux se ressemblent, la carte n'évacue rien ;
      là où elles s'écartent, c'est un plan qui travaille. */
   let html='<table class="simTab simTabDC"><tr><th>Net</th>'+
-           "<th>Échauffement</th><th>IPC-2221</th><th>Section</th>"+
+           "<th>Échauffement (étalement)</th><th>Réf. IPC-2221</th><th>Écart</th><th>Section</th>"+
            "<th>Densité de pointe</th></tr>";
   for(const net of Object.keys(pires).sort()){
     const p=pires[net];
@@ -1831,22 +1854,26 @@ function simTableauPire(res){
     const cls=(p.echauffement>bud)?"z0ko"
              :((p.echauffement>0.8*bud)?"z0limite":"z0ok");
     const charte=p.echauffement_ipc2221;
+    const ecart=(p.ecart_modeles_degres!==undefined)
+      ? p.ecart_modeles_degres
+      : (charte>0 ? Math.abs(p.echauffement - charte) : null);
+    const ecartTxt=(ecart!==null) ? simNb(ecart,2)+" °C" : "—";
     /* L'ÉCART EN GRAND, L'ABSOLU EN PETIT DESSOUS. L'écart est ce sur quoi on
        élargit une piste ; l'absolu est ce qu'on compare au Tg du stratifié ou
        à la cote d'un boîtier. Les deux se lisent, et ni l'un ni l'autre ne
        remplace l'autre. */
     html+="<tr><td>"+simEsc(net)+"</td>"+
           '<td class="'+cls+'" title="'+
-          simEsc("Le plus chaud"+ou+". Ambiante "+
+          simEsc("Échauffement physique par étalement thermique"+ou+". Ambiante "+
                  simNb(SIM.dcAmbiante,0)+" °C.")+'">+'+
           simNb(p.echauffement,2)+" °C<small>"+
           simNb(SIM.dcAmbiante+p.echauffement,1)+" °C</small></td>"+
           '<td class="simFaible" title="'+
-          simEsc("La charte historique, au MÊME point : elle ignore le "+
-                 "stratifié et les plans, et rend une couche interne 4,83 "+
-                 "fois plus chaude qu'une externe — ce que la campagne "+
-                 "IPC-2152 a mesuré faux.")+'">'+
+          simEsc("Référence normative comparative IPC-2221, au MÊME point (conducteur isolé dans l'air calme).")+'">'+
           (charte>0?"+"+simNb(charte,2)+" °C":"—")+"</td>"+
+          '<td class="simFaible" title="'+
+          simEsc("Écart absolu entre le modèle d'étalement physique et la référence IPC-2221.")+'">'+
+          ecartTxt+"</td>"+
           "<td>"+simNb(p.largeur_chaude,2)+" mm</td>"+
           '<td title="'+simEsc("Maximum ponctuel : il dit où regarder, pas "+
             "combien. À un angle vif il croît quand on affine la trame.")+
@@ -2530,6 +2557,10 @@ let SIM_ETAT=null;                     // réponse de la sonde : {dispo, limites
    dans le dos de quelqu'un qui n'a encore rien demandé. */
 const SIM={
   ouvert:false, occupe:false, suivre:false,
+  /* Le moteur de calcul actif : '2d' (rapide, quasi-TEM) ou '2.5d' (pleine onde MoM RWG). */
+  moteur:"2d", moteur25dDispo:null, moteur25dInfo:null,
+  maillage:null, voirMaillage:(function(){try{return localStorage.getItem("sim_voir_maillage")==="1";}catch(_){return false;}})(),
+  voirJsurf:(function(){try{return localStorage.getItem("sim_voir_jsurf")==="1";}catch(_){return false;}})(),
   res:null, objets:[], doc:null, err:"", portee:"", notes:[],
   /* LES LOTS : une sélection éparse, un résultat par morceau. `res`, `objets`,
      `portee`, `notes`, `couture` et `voisins` ci-dessus ne cessent pas
@@ -2614,7 +2645,7 @@ const SIM={
      mégahertz alors que le champ attendait des gigahertz donnait une bande
      ramenée de force, des pertes fausses d'un facteur trois, et rien à
      l'écran pour le voir avant le calcul. */
-  saisie:{f1:1e8, f2:5e9, points:21, fc:1e9, z0:50, cible:50, tolPct:10,
+  saisie:{f1:1e8, f2:5e9, points:21, fc:1e9, z0:50, cible:50, tolPct:10, maille25d:null,
           /* LE COUPLAGE A SES PROPRES REGLAGES, et aucun ne change le calcul
              de la ligne seule. `cibleDiff`/`tolDiffPct` colorent le verdict de
              Z differentielle -- 100 ohms est la cible de l'USB et de
@@ -3057,6 +3088,119 @@ async function simErreur(rep){
   }catch(e){}
   return detail||("HTTP "+rep.status);
 }
+
+/* ==========================================================================
+   Sélecteur de moteur 2D / 2.5D
+   Permet d'activer le solveur MoM 2.5D pleine onde ou de conserver le moteur
+   2D quasi-TEM historique (ligne de transmission analytique / MoM 2D section).
+   ========================================================================== */
+function simMoteurBar(){
+  const is25d = (SIM.moteur === "2.5d");
+  const dispo = (SIM.moteur25dDispo !== false);
+  const mOn = !!SIM.voirMaillage;
+  const jOn = !!SIM.voirJsurf;
+  return '<div class="pnl-bar simMoteurBar" id="simMoteurBar">'+
+    '<span class="pnl-lbl">Moteur</span>'+
+    '<button type="button" class="simOnglet mini' + (!is25d ? ' on' : '') + '" id="simMoteur2D" title="Moteur 2D quasi-TEM (ligne analytique / MoM 2D section) — calcul instantané (ms)">2D Ligne</button>'+
+    '<button type="button" class="simOnglet mini' + (is25d ? ' on' : '') + '" id="simMoteur25D" title="' +
+      (dispo ? 'Solveur 2.5D MoM pleine onde (maillage RWG surfacique avec discontinuités et vias). Cliquez pour basculer 2D / 2.5D.' : 'Solveur 2.5D MoM indisponible sur le serveur (vérifiez numpy, scipy, shapely)') +
+      '"' + (!dispo ? ' disabled style="opacity:0.5;cursor:not-allowed;"' : '') + '>2.5D MoM' + (dispo ? '' : ' ⚠') + '</button>'+
+    '<span class="simGr simMoteurActions" style="margin-left:auto;">'+
+      '<span class="simGr" id="sim25dMailleZone" style="' + (is25d ? '' : 'display:none;') + '">'+
+        '<span class="pnl-lbl" title="Taille maximale des mailles RWG en mm">Maille</span>'+
+        '<input type="text" class="simChamp" id="simMaille25D" placeholder="auto" style="width:36px;" title="Taille max de maille en mm (ex: 0.35). Vide = automatique">'+
+        '<span class="simU">mm</span>'+
+      '</span>'+
+      '<button type="button" class="tb mini simBtnMaillage' + (mOn ? ' on' : '') + '" id="simBtnMaillage" title="Afficher / masquer le maillage filaire 2.5D RWG [Ctrl+Alt+M ou M]">Maillage 2.5D</button>'+
+      '<button type="button" class="tb mini simBtnJsurf' + (jOn ? ' on' : '') + '" id="simBtnJsurf" title="Afficher / masquer la densité de courant HF de surface Jsurf (Heatmap) [J]" style="' + (is25d ? '' : 'display:none;') + '">Jsurf</button>'+
+    '</span>'+
+  '</div>';
+}
+
+function simBrancherMoteur(){
+  const b2d = simEl("simMoteur2D");
+  const b25d = simEl("simMoteur25D");
+  if(b2d) b2d.onclick = () => simMoteurChanger("2d");
+  if(b25d) b25d.onclick = () => {
+    simMoteurChanger(SIM.moteur === "2.5d" ? "2d" : "2.5d");
+  };
+  const inpMaille = simEl("simMaille25D");
+  if(inpMaille){
+    inpMaille.value = (SIM.saisie && SIM.saisie.maille25d) ? simNbLibre(SIM.saisie.maille25d) : "";
+    inpMaille.oninput = function(){
+      const val = parseFloat(this.value.replace(",", "."));
+      if(SIM.saisie) SIM.saisie.maille25d = (isFinite(val) && val > 0) ? val : null;
+    };
+  }
+  const btnM = simEl("simBtnMaillage");
+  if(btnM){
+    btnM.onclick = function(){
+      simBasculerMaillage();
+    };
+  }
+  const btnJ = simEl("simBtnJsurf");
+  if(btnJ){
+    btnJ.onclick = function(){
+      simBasculerJsurf();
+    };
+  }
+}
+
+function simMoteurChanger(m){
+  if(m === "2.5d" && SIM.moteur25dDispo === false){
+    alert("Le solveur 2.5D MoM n'est pas disponible sur le serveur.\nVérifiez l'installation de numpy, scipy et shapely.");
+    return;
+  }
+  if(m === SIM.moteur) return;
+  if(typeof simSaisie === "function") simSaisie();
+  SIM.moteur = m;
+  const ctl = simEl("simCtl");
+  if(ctl && simCalculable() && simAnalyse().corps){
+    ctl.innerHTML = simAnalyse().corps();
+    if(simAnalyse().brancher) simAnalyse().brancher();
+    simPlierAppliquer();
+  }
+  if(SIM.res && !SIM.occupe){
+    simOublierRes();
+    SIM.err = "Moteur changé (" + (SIM.moteur === "2.5d" ? "2.5D MoM" : "2D Ligne") + ") : relancez le calcul.";
+  }
+  simRendre();
+  simSyncAffichage();
+  simRepeindre();
+}
+
+function simMajBoutonsMoteur(){
+  const b25d = simEl("simMoteur25D");
+  if(!b25d) return;
+  const dispo = (SIM.moteur25dDispo !== false);
+  b25d.disabled = !dispo;
+  b25d.style.opacity = dispo ? "" : "0.5";
+  b25d.style.cursor = dispo ? "" : "not-allowed";
+  b25d.title = dispo
+    ? "Solveur 2.5D MoM pleine onde (maillage RWG surfacique avec discontinuités et ports verticaux)"
+    : "Solveur 2.5D MoM indisponible sur le serveur (vérifiez numpy, scipy, shapely)";
+  b25d.textContent = "2.5D MoM" + (dispo ? "" : " ⚠");
+}
+
+async function simSonder25d(){
+  const bases = SIM_BASE ? [SIM_BASE] : simCandidats();
+  for(const base of bases){
+    try{
+      const rep = await fetch(base + SIM_25D_ROUTE, {headers:{Accept:"application/json"}});
+      if(rep.ok){
+        const j = await rep.json();
+        SIM.moteur25dDispo = !!(j && j.dispo);
+        SIM.moteur25dInfo = j;
+        simMajBoutonsMoteur();
+        return SIM.moteur25dDispo;
+      }
+    }catch(e){}
+  }
+  SIM.moteur25dDispo = false;
+  simMajBoutonsMoteur();
+  return false;
+}
+
 async function simConnecter(){
   if(SIM_ETAT)return SIM_ETAT;
   const essais=[];
@@ -3071,6 +3215,7 @@ async function simConnecter(){
         continue;
       }
       SIM_BASE=base; SIM_ETAT=j;
+      simSonder25d();
       return SIM_ETAT;
     }catch(e){
       essais.push((base||"cette page")+" : "+(e.message||"injoignable"));
@@ -3442,7 +3587,7 @@ function simZLegende(){
 
 function simFiche(){
   const res=SIM.res;
-  if(!res)return "";
+  if(!res||!res.ligne)return "";
   const L=res.ligne;
   let h="";
 
@@ -3478,7 +3623,12 @@ function simFiche(){
      « cao-sim-em-resultat-5 » : `!==false` les tient pour valables, ce qu'ils
      étaient — la question ne se posait pas encore. */
   const cumuls=L.cumuls_valides!==false;
+  const is25d=(res.moteur==="2.5d"||(res.segments&&res.segments[0]&&res.segments[0].topo==="2.5d_pleine_onde"));
+  const badgeMoteur=is25d
+    ? '<span class="simBadgeMoteur simBadge25d" title="Résolution 2.5D MoM pleine onde : '+(L.triangles||'?')+' triangles, '+(L.rwg||'?')+' RWG">2.5D MoM'+(L.rwg?' ('+L.rwg+' RWG)':'')+'</span>'
+    : '<span class="simBadgeMoteur simBadge2d" title="Modèle 2D de ligne quasi-TEM (section)">2D Ligne</span>';
   h+='<div class="simMeta"><span>'+simEsc(SIM.portee||res.net||"—")+"</span>"+
+     badgeMoteur+
      "<span>"+L.troncons+" tronçon"+(L.troncons>1?"s":"")+"</span>"+
      "<span>"+simNb(L.longueur,2)+" mm</span>"+
      /* LE RETARD ET LES PERTES SONT DES CUMULS LE LONG D'UN PARCOURS. Sur
@@ -3673,6 +3823,7 @@ function simSection(res){
 function simTopoNom(s){
   if(s.topo==="strip")return "triplaque";
   if(s.topo==="micro")return s.couvert?"microruban couvert":"microruban";
+  if(s.topo==="2.5d_pleine_onde"||s.topo==="2.5d_mom"||s.topo==="2.5d")return "pleine onde 2.5D MoM";
   return "";                       // topologie inconnue : rien à nommer
 }
 
@@ -4074,6 +4225,7 @@ function simFicheSchemaAdaptation(res){
    normes ; les distinguer ici évite de croire à une erreur en comparant deux
    lignes du tableau. */
 function simTopo(s){
+  if(s.topo==="2.5d_pleine_onde"||s.topo==="2.5d_mom"||s.topo==="2.5d")return "2.5D MoM";
   const base=simTopoNom(s);
   if(!base)return "—";
   /* « Coplanaire » n'est pas un détail de vocabulaire : c'est ce qui sépare
@@ -4125,8 +4277,179 @@ function simCoteSource(c,cle){
   return (c&&c[cle+"_source"])||"repli";
 }
 
+/* ==========================================================================
+   OÙ LE COURANT TOURNE — la section « Discontinuités » du moteur 2,5D
+   --------------------------------------------------------------------------
+   POURQUOI CETTE SECTION EXISTE, ET CE QU'ELLE NE DIT PAS. Le moteur 2D nomme
+   chaque discontinuité et la CHIFFRE : « le coude vaut 29 fF et 3,3° de phase,
+   le via 65,6 fF et 41 pH de boucle ». Le 2,5D les résout sans modèle — il
+   voit d'ailleurs 0,67 dB de perte là où le modèle localisé du 2D n'en voit
+   que 0,19 — mais il ne sait pas les isoler : il faudrait résoudre la même
+   géométrie SANS chacune d'elles, une résolution de plus par discontinuité.
+
+   CE QU'IL PEUT DIRE POUR RIEN, EN REVANCHE : OÙ, ET DE QUEL GENRE. Sur un
+   tronçon droit, le courant va tout droit ; à un coude il vire, à un via il
+   descend. La part du courant qui n'est pas dans l'axe du parcours EST, par
+   définition, le courant que la géométrie redirige. Mesuré : 0,035 de bruit
+   sur une ligne droite, 0,590 à un coude à 90°, et une part verticale de
+   0,458 au fût d'un via contre EXACTEMENT zéro sur du cuivre à plat — ce qui
+   distingue un coude d'un via sans rien supposer. Voir `_points_chauds` côté
+   serveur, qui porte les mesures et les deux fausses pistes écartées avant.
+
+   ELLE NE REMPLACE DONC PAS LE MOTEUR 2D, ET LE DIT À CHAQUE FOIS. « 59 % du
+   courant passe en travers au coude de 4,0 mm » est une localisation, pas un
+   chiffrage : pour les farads et les henrys, il faut repasser la même
+   sélection en 2D. Un utilisateur qui lirait ce tableau comme un bilan de
+   discontinuités repartirait en croyant tenir un chiffre qu'il n'a pas.
+   ========================================================================== */
+function simPointsChauds(res){
+  const pc=(res.discontinuites||{}).points_chauds;
+  if(!pc)return "";
+  const pts=pc.points||[];
+
+  /* LE SILENCE EST UNE RÉPONSE, ET ICI C'EN EST UNE BONNE. Rien au-dessus du
+     seuil veut dire que le courant reste dans l'axe du ruban d'un bout à
+     l'autre — donc qu'aucun coude et aucun via ne le fait tourner
+     franchement. C'est une information, pas une absence. */
+  if(!pts.length){
+    if(!(pc.longueur_mm>0))return "";
+    return '<p class="simNote">· <b>Le courant reste dans l\'axe</b> sur les '+
+      simNb(pc.longueur_mm,2)+" mm de la liaison : sa part transverse ne "+
+      "dépasse nulle part "+simNb(pc.seuil_perp*100,0)+" % (fond de bruit du "+
+      "maillage : "+simNb(pc.fond_de_bruit*100,1)+" %), et sa part verticale "+
+      "reste nulle hors des ports. Aucun coude ni via ne le redirige "+
+      "franchement. <i>Ce que les discontinuités COÛTENT en farads et en "+
+      "henrys se lit avec le moteur 2D, sur la même sélection.</i></p>";
+  }
+
+  let h='<p class="simVerdict dedans">Où le courant tourne <span>'+
+        pts.length+" endroit"+(pts.length>1?"s":"")+
+        " sur "+simNb(pc.longueur_mm,2)+" mm</span></p>";
+
+  h+=simPointsChaudsCourbe(pc);
+
+  h+='<table class="simTab simTabD"><tr><th>À</th><th>Genre</th>'+
+     "<th>Cause</th><th>En travers</th><th>Vertical</th><th>Étendue</th></tr>";
+  for(const p of pts){
+    /* LA CAUSE EST APPARIÉE PAR L'ABSCISSE, avec une tolérance liée à la
+       maille. « Non nommée » veut dire qu'aucun coude ni via ne tombe assez
+       près : l'entassement vient alors d'autre chose — un bord de zone, une
+       jonction de largeur — et on ne devine pas. */
+    const cause=p.cause
+      ? simEsc(p.cause)+(p.ecart_repere_mm>0
+          ? ' <small>à '+simNb(p.ecart_repere_mm,2)+" mm</small>" : "")
+      : '<i class="simFaible">non nommée</i>';
+    /* LE VERTICAL EST UN DISCRIMINANT BINAIRE : il vaut exactement zéro sur du
+       cuivre à plat. Un tiret plutôt qu'un « 0,000 » — l'un se lit « il n'y en
+       a pas », l'autre se lit « c'est petit ». */
+    const vert=(p.part_verticale>=pc.seuil_vert)
+      ? simNb(p.part_verticale*100,0)+" %"
+      : '<span class="simFaible">—</span>';
+    h+="<tr><td>"+simNb(p.s_mm,2)+" mm</td>"+
+       "<td>"+simEsc(p.genre)+"</td>"+
+       "<td>"+cause+"</td>"+
+       "<td>"+simNb(p.part_transverse*100,0)+" %</td>"+
+       "<td>"+vert+"</td>"+
+       "<td>"+simNb(p.etendue_mm,2)+" mm</td></tr>";
+  }
+  h+="</table>";
+
+  const pire=pts[0];
+  h+='<p class="simNote">· <b>C\'est un OÙ, pas un COMBIEN.</b> Ces '+
+     "pourcentages sont la part du courant qui sort de l'axe du parcours : "+
+     "« "+simNb(pire.part_transverse*100,0)+" % en travers » veut dire qu'à "+
+     "cet endroit-là, "+simNb(pire.part_transverse*100,0)+" % du courant "+
+     "traverse le ruban au lieu de le suivre. C'est vérifiable sur la carte "+
+     "Jsurf, et cela localise la discontinuité — cela ne la chiffre pas. Pour "+
+     "ce qu'elle coûte — capacité, inductance de boucle, phase, chemin de "+
+     "retour et couture — repassez la même sélection au moteur 2D, qui la "+
+     "modélise élément par élément.</p>";
+
+  h+='<p class="simNote">· Le fond de bruit du maillage est à '+
+     simNb(pc.fond_de_bruit*100,1)+" % ; le seuil est à "+
+     simNb(pc.seuil_perp*100,0)+" %. Les "+simNb(pc.bords_ecartes_mm,2)+
+     " mm de chaque extrémité sont écartés : le fût du port y fait descendre "+
+     "le courant vers le plan (part verticale de l'ordre de 50 %), et ce fût "+
+     "n'est pas sur la carte — la piste réelle continue au-delà.</p>";
+
+  if(pc.largeur_constante===false)
+    h+='<p class="simNote">· La sélection n\'est pas de largeur constante : '+
+       "un changement de largeur fait tourner le courant lui aussi, et peut "+
+       "donc ressortir ici — ce qui est légitime, c'en est une.</p>";
+
+  h+='<p class="simNote">· Ces endroits sont marqués sur la carte par le '+
+     "bouton <b>Maillage 2.5D</b>, avec leur abscisse.</p>";
+
+  return h;
+}
+
+/* Les deux profils le long du parcours, et les seuils qui ont décidé.
+   UN SVG ÉCRIT À LA MAIN, comme la courbe des paramètres S et pour la même
+   raison : il se redimensionne avec le panneau sans qu'on écoute quoi que ce
+   soit. Toute géométrie passe par `simXY` — la virgule décimale française
+   dans un attribut SVG coûte le dessin entier, voir son commentaire. */
+function simPointsChaudsCourbe(pc){
+  const pp=pc.profil_perp||[], pv=pc.profil_vert||[];
+  if(pp.length<4)return "";
+  const W=520, H=84, mg=4, hb=14;
+  const n=pp.length;
+  const sp=pc.seuil_perp||0.15;
+  const haut=Math.max(sp*1.4, ...pp, ...pv, 0.2);
+  const ech=v=>H-hb-mg-Math.max(0,Math.min(1,v/haut))*(H-hb-2*mg);
+  const abs=i=>mg+(i+0.5)/n*(W-2*mg);
+  const trace=(serie)=>{
+    let d="";
+    for(let i=0;i<n;i++){
+      const v=serie[i];
+      if(!isFinite(v))continue;
+      d+=(d?"L":"M")+simXY(abs(i))+" "+simXY(ech(v))+" ";
+    }
+    return d;
+  };
+
+  let h='<svg class="simPCCourbe" viewBox="0 0 '+W+" "+H+
+        '" preserveAspectRatio="none" role="img">';
+  /* Les bords écartés, grisés : on voit ainsi que les courbes y montent sans
+     que personne ne les ait comptées — c'est le fût du port. */
+  const nb=Math.round((pc.bords_ecartes_mm||0)/Math.max(pc.pas_mm||1,1e-6));
+  if(nb>0){
+    const lg=nb/n*(W-2*mg);
+    h+='<rect x="'+simXY(mg)+'" y="'+simXY(mg)+'" width="'+simXY(lg)+
+       '" height="'+simXY(H-hb-2*mg)+'" class="simPCBord"/>';
+    h+='<rect x="'+simXY(W-mg-lg)+'" y="'+simXY(mg)+'" width="'+simXY(lg)+
+       '" height="'+simXY(H-hb-2*mg)+'" class="simPCBord"/>';
+  }
+  h+='<line x1="'+simXY(mg)+'" y1="'+simXY(ech(sp))+'" x2="'+simXY(W-mg)+
+     '" y2="'+simXY(ech(sp))+'" class="simPCSeuil"/>';
+  h+='<path d="'+trace(pv)+'" class="simPCVert"/>';
+  h+='<path d="'+trace(pp)+'" class="simPCTrace"/>';
+  for(const p of (pc.points||[])){
+    const i=Math.min(n-1,Math.max(0,
+      Math.round(p.s_mm/Math.max(pc.pas_mm,1e-6)-0.5)));
+    h+='<circle cx="'+simXY(abs(i))+'" cy="'+
+       simXY(ech(Math.max(p.part_transverse,p.part_verticale)))+
+       '" r="2.6" class="simPCPic"/>';
+  }
+  h+='<text x="'+simXY(mg)+'" y="'+simXY(H-3)+'" class="simPCAxe">0</text>';
+  h+='<text x="'+simXY(W-mg)+'" y="'+simXY(H-3)+
+     '" class="simPCAxe" text-anchor="end">'+simNb(pc.longueur_mm,1)+
+     " mm</text>";
+  h+='<text x="'+simXY(W/2)+'" y="'+simXY(H-3)+
+     '" class="simPCAxe" text-anchor="middle">'+
+     "courant hors de l'axe — en travers, vertical</text>";
+  h+="</svg>";
+  return h;
+}
+
 function simDiscontinuites(res){
   const d=res.discontinuites||{};
+  /* EN 2,5D, C'EST UNE AUTRE SECTION. Le tableau ci-dessous chiffre des L et
+     des C que ce moteur-là ne produit pas : ses listes `coudes` et
+     `transitions` sont vides par construction, et l'ancien code tombait donc
+     dans la note « aucune discontinuité entre les tronçons — la liaison est
+     une suite de sections droites sur une seule couche », qui est FAUSSE sur
+     une liaison à coudes et à vias. Voir `simPointsChauds`. */
+  if(d.points_chauds)return simPointsChauds(res);
   /* LES VIAS HORS PARCOURS ENTRENT DANS LA MÊME TABLE, et il le faut : c'est
      là qu'on vient chercher « qu'est-ce que ce via me coûte ». Ils n'entrent
      PAS dans la cascade — ils portent `cascade:false` —, et le tableau le dit
@@ -10866,19 +11189,39 @@ function simBusRendreNetsBar(){
         rComp = parts[0] || "R";
         if(parts.length > 1){
           const valStr = parts.slice(1).join(" ");
-          const vMatch = valStr.match(/([0-9]+(?:\.[0-9]+)?)/);
-          if(vMatch){
-            let valNum = parseFloat(vMatch[1]);
-            if(/k/i.test(valStr)) valNum *= 1000;
-            rValNum = valNum;
+          let parsed = null;
+          if(typeof simParseResistance === "function"){
+            parsed = simParseResistance(valStr);
+          }else if(typeof pcbParseResistance === "function"){
+            parsed = pcbParseResistance(valStr);
+          }
+          if(parsed != null && parsed >= 0){
+            rValNum = parsed;
+          }else{
+            const vMatch = valStr.match(/([0-9]+(?:\.[0-9]+)?)/);
+            if(vMatch){
+              let valNum = parseFloat(vMatch[1]);
+              if(/k/i.test(valStr)) valNum *= 1000;
+              rValNum = valNum;
+            }
           }
         }else{
-          const vMatch = parts[0].match(/([0-9]+(?:\.[0-9]+)?)/);
-          if(/^[A-Za-z]+/.test(parts[0]) && !/[ΩR]/i.test(parts[0])){
-            rComp = parts[0];
-            rValNum = 22;
-          }else if(vMatch){
-            rValNum = parseFloat(vMatch[1]);
+          let parsed = null;
+          if(typeof simParseResistance === "function"){
+            parsed = simParseResistance(parts[0]);
+          }else if(typeof pcbParseResistance === "function"){
+            parsed = pcbParseResistance(parts[0]);
+          }
+          if(parsed != null && parsed >= 0){
+            rValNum = parsed;
+          }else{
+            const vMatch = parts[0].match(/([0-9]+(?:\.[0-9]+)?)/);
+            if(/^[A-Za-z]+/.test(parts[0]) && !/[ΩR]/i.test(parts[0])){
+              rComp = parts[0];
+              rValNum = 22;
+            }else if(vMatch){
+              rValNum = parseFloat(vMatch[1]);
+            }
           }
         }
       }
@@ -11231,15 +11574,17 @@ function simBusChangerNet(role, oldNet, newNet){
   if(oldNet.includes("+") && cleanOld===newNet) return;
 
   let targetReplacement=newNet;
-  const pontAuto=(SIM_ED&&typeof SIM_ED.trouverPontSerie==="function")?SIM_ED.trouverPontSerie(newNet):null;
-  if(pontAuto&&pontAuto.netAval){
-    targetReplacement=pontAuto.label;
-  }else if(oldNet.includes("+")){
-    const oldAval=oldNet.replace(/\s*\([^)]*\)/g, "").split("+")[1].trim();
-    const rAnnotMatch=oldNet.match(/\(([^)]+)\)/);
-    const annot=rAnnotMatch?(" ("+rAnnotMatch[1]+")"):"";
-    if(newNet!==oldAval){
-      targetReplacement=newNet+" + "+oldAval+annot;
+  if(oldNet.includes("+")){
+    const pontAuto=(SIM_ED&&typeof SIM_ED.trouverPontSerie==="function")?SIM_ED.trouverPontSerie(newNet):null;
+    if(pontAuto&&pontAuto.netAval){
+      targetReplacement=pontAuto.label;
+    }else{
+      const allNets=(SIM_ED&&typeof SIM_ED.listeNets==="function")?SIM_ED.listeNets():[];
+      const dispo=allNets.filter(n=>n!==newNet&&!SIM_BUS.clocks.includes(n)&&!SIM_BUS.datas.includes(n));
+      const nextNet=dispo[0]||(newNet+"_LOAD");
+      const rAnnotMatch=oldNet.match(/\(([^)]+)\)/);
+      const annot=rAnnotMatch?(" ("+rAnnotMatch[1]+")"):" (R 22Ω)";
+      targetReplacement=newNet+" + "+nextNet+annot;
     }
   }
 
@@ -12198,6 +12543,7 @@ function simPoser(){
     b.onclick=function(){simAllerFamille(this.getAttribute("data-fam"));};
   if(onglets)for(const b of onglets.querySelectorAll("[data-ana]"))
     b.onclick=function(){simAllerAnalyse(this.getAttribute("data-ana"));};
+  simBrancherMoteur();
   const pl=simEl("simPlier");
   if(pl)pl.onclick=function(){
     SIM.plie=!SIM.plie;
@@ -12243,6 +12589,7 @@ function simCorpsImpedance(){
      remplit à part (`simRefEcrire`) parce qu'elle dépend de la carte ouverte, et
      que ce corps-là est posé une fois pour toutes. */
   '<div class="pnl-bar simRefBar" id="simRefBar"></div>'+
+  simMoteurBar()+
   '<div class="pnl-bar">'+
     '<span class="pnl-lbl">Cible</span>'+
     simChamp("simZCible","Impédance visée pour la piste sélectionnée")+
@@ -12333,6 +12680,7 @@ function simSaisieEcrire(){
      « je n'en donne pas », et l'on juge alors au pourcentage. Y écrire 0
      ferait croire à un récepteur sans aucune marge de bruit. */
   pose("simMarge",s.marge>0?String(Math.round(s.marge*1e3)):"");
+  pose("simMaille25D",s.maille25d?simNbLibre(s.maille25d):"");
   const sel=simEl("simFUnite");
   if(sel)sel.value=simUnite().cle;
   const selb1=simEl("simFUniteBande1");
@@ -12382,6 +12730,8 @@ function simSaisie(){
      sur le budget en pourcentage. */
   const mg=simEl("simMarge");
   if(mg)s.marge=String(mg.value).trim()?lu("simMarge",s.marge*1e3,0)/1e3:0;
+  const m25=simEl("simMaille25D");
+  if(m25)s.maille25d=String(m25.value).trim()?lu("simMaille25D",s.maille25d||0.35,0.05):null;
   return s;
 }
 
@@ -12616,8 +12966,10 @@ function simRendreImpedance(){
   if(SIM.occupe){
     /* LES LOTS SONT UNE PROGRESSION RÉELLE, et la barre est alors déterminée :
        chaque lot est un aller-retour, et on sait combien il en reste. */
-    const h=simProgres("Une résolution de section par largeur et par couche, "+
-      "puis les paramètres S sur la bande.",
+    const msg=SIM.moteur==="2.5d"
+      ? "Résolution MoM 2.5D pleine onde (maillage RWG surfacique et inversion Z)..."
+      : "Une résolution de section par largeur et par couche, puis les paramètres S sur la bande.";
+    const h=simProgres(msg,
       SIM.lots.length,SIM.lotsAttendus);
     /* Les lots déjà rendus restent affichés pendant que les suivants
        calculent : sur une ligne coupée en six, attendre six allers-retours
@@ -12678,7 +13030,7 @@ function simRendreImpedance(){
    comme le reflet. Un seul endroit le fait, sinon un lot survit à la sélection
    qui l'a produit et la carte peint des couleurs qui ne sont plus à personne. */
 function simOublierRes(){
-  SIM.res=null; SIM.objets=[]; SIM.lots=[]; SIM.lotActif=0; SIM.lotsAttendus=0;
+  SIM.res=null; SIM.maillage=null; SIM.objets=[]; SIM.lots=[]; SIM.lotActif=0; SIM.lotsAttendus=0;
 }
 
 /* Les lots à peindre. Un résultat sans lot — il n'y en a plus, mais un banc
@@ -12716,15 +13068,15 @@ function simLotsSontPaireDiff(){
    les réécrire tous les deux, et de les tenir d'accord ensuite. */
 function simPourChaqueLot(fn){
   const lots=simLotsPeints();
-  const res0=SIM.res, obj0=SIM.objets, doc0=SIM.doc;
+  const res0=SIM.res, obj0=SIM.objets, doc0=SIM.doc, mail0=SIM.maillage;
   try{
     /* LE DOCUMENT SUIT, ET IL LE FAUT : la carte des voisines lit sa géométrie
        dans `SIM.doc.voisinage`, et chaque lot a le sien. Sans ce reflet-là, le
        lot 3 peindrait ses couleurs sur le voisinage du lot 1. */
     for(const l of lots){
-      SIM.res=l.res; SIM.objets=l.objets; SIM.doc=l.doc||doc0; fn(l);
+      SIM.res=l.res; SIM.maillage=(l.res&&l.res.maillage)||null; SIM.objets=l.objets; SIM.doc=l.doc||doc0; fn(l);
     }
-  }finally{SIM.res=res0; SIM.objets=obj0; SIM.doc=doc0;}
+  }finally{SIM.res=res0; SIM.maillage=mail0; SIM.objets=obj0; SIM.doc=doc0;}
 }
 
 /* Le lot actif, reflété dans l'état que tout le reste lit. */
@@ -12732,7 +13084,7 @@ function simLotMirroir(i){
   const l=SIM.lots[i];
   if(!l)return false;
   SIM.lotActif=i;
-  SIM.res=l.res; SIM.objets=l.objets; SIM.doc=l.doc;
+  SIM.res=l.res; SIM.maillage=(l.res&&l.res.maillage)||null; SIM.objets=l.objets; SIM.doc=l.doc;
   SIM.portee=l.portee||""; SIM.notes=l.notes||[];
   SIM.couture=l.couture||null; SIM.voisins=l.voisins||[];
   SIM.err=l.err||"";
@@ -12847,7 +13199,13 @@ function simBrancherLots(){
    doivent être le même document. */
 function simDocFinir(doc){
   doc.format=SIM_FORMAT;
-  doc.source=SIM_ED?SIM_ED.outil:"";
+  const moteurActif = (SIM.analyse === "impedance" && SIM.moteur === "2.5d") ? "2.5d" : "2d";
+  doc.moteur = moteurActif;
+  if(moteurActif === "2.5d"){
+    if(!doc.options)doc.options={};
+    if(SIM.saisie&&SIM.saisie.maille25d>0)
+      doc.options.mesh_size_mm=SIM.saisie.maille25d;
+  }
   /* L'HYPOTHÈSE PART AVEC LE PROBLÈME. Le serveur ne s'en sert pas — les écarts
      sont déjà mesurés — mais le résultat, le .csv et l'entête Touchstone doivent
      dire ce qui a été tenu pour de la masse. Un chiffre sans son hypothèse
@@ -12924,7 +13282,8 @@ async function simGo(){
   const P=simProblemes();
   if(!P){simRendre();simRepeindre();return;}
   SIM.occupe=true; SIM.lotsAttendus=P.length;
-  simProgresDemarrer(P.length>1?(P.length+" morceau(x)"):"");
+  const tagM=SIM.moteur==="2.5d"?" · 2.5D MoM":"";
+  simProgresDemarrer(P.length>1?(P.length+" morceau(x)"+tagM):(tagM.trim()));
   simRendre(); simRepeindre();
   try{
     /* UN LOT À LA FOIS, ET LE PANNEAU SUIT. Quatre morceaux sont quatre
@@ -12987,14 +13346,15 @@ async function simGo(){
           z.filter(b=>!b.dehors).length+" dans la tolérance.");
       }else{
         const res=calcules[0].res;
-        SIM_ED.astuce("Simulation : "+res.ligne.troncons+" tronçon(s), Z₀ "+
+        const tag=(res&&res.moteur==="2.5d")?" [2.5D MoM]":"";
+        SIM_ED.astuce("Simulation"+tag+" : "+res.ligne.troncons+" tronçon(s), Z₀ "+
                       simNb(res.ligne.z0_min,1)+"–"+simNb(res.ligne.z0_max,1)+
                       " Ω à "+simFreq(res.f_centre)+".");
       }
     }
   }catch(e){
     SIM.err=e.message||String(e);
-    SIM.res=null; SIM.objets=[]; SIM.lots=[];
+    SIM.res=null; SIM.maillage=null; SIM.objets=[]; SIM.lots=[];
   }finally{
     SIM.occupe=false; SIM.lotsAttendus=0; simProgresFini();
     simRendre(); simRepeindre();
@@ -13159,6 +13519,7 @@ function simInit(adaptateur,conteneur){
   box.innerHTML=simCorps();
   SIM.ouvert=true;
   simPoser();
+  simSonder25d();
   return true;
 }
 
@@ -13168,6 +13529,7 @@ function simInit(adaptateur,conteneur){
    Les valeurs, elles, vivent dans `SIM.saisie` : elles survivent au va-et-vient
    entre les onglets, ce qui est bien le moindre. */
 function simBrancherImpedance(){
+  simBrancherMoteur();
   simSaisieEcrire();
   simRefEcrire();
   const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
@@ -13252,4 +13614,540 @@ function simRafraichir(garderCarte){
   const relancer=a.relancer||simGo;
   if(SIM_MINUTEUR)clearTimeout(SIM_MINUTEUR);
   SIM_MINUTEUR=setTimeout(function(){SIM_MINUTEUR=null;relancer();},180);
+}
+
+/* ==========================================================================
+   Visualisation graphique du maillage 2.5D (Wireframe MoM / RWG)
+   Superposition sur la carte PCB des triangles RWG générés par mom_solver,
+   pour visualiser la discrétisation, les vias de ports et les vias internes.
+   Activation sans encombrement de l'interface :
+     - Commande DevTools / console : simVoirMaillage(true/false)
+     - Raccourci clavier global : Ctrl+Alt+M (ou Cmd+Alt+M)
+   ========================================================================== */
+
+function simMaillageActif(){
+  if(!SIM.voirMaillage && !SIM.voirJsurf)return false;
+  const m=SIM.maillage||(SIM.res&&SIM.res.maillage);
+  return !!(m&&Array.isArray(m.sommets)&&Array.isArray(m.elements)&&m.elements.length>0);
+}
+
+function simSyncAffichage(){
+  if(typeof document==="undefined")return;
+  const bM=document.getElementById("simBtnMaillage");
+  if(bM)bM.classList.toggle("on",!!SIM.voirMaillage);
+  const dcJ=document.getElementById("simBtnDCCourant");
+  if(dcJ)dcJ.classList.toggle("on",SIM.dcQuoi==="densite");
+  const b2d=document.getElementById("simMoteur2D");
+  if(b2d)b2d.classList.toggle("on",SIM.moteur!=="2.5d");
+  const b25d=document.getElementById("simMoteur25D");
+  if(b25d)b25d.classList.toggle("on",SIM.moteur==="2.5d");
+  const zMaille=document.getElementById("sim25dMailleZone");
+  if(zMaille)zMaille.style.display=(SIM.moteur==="2.5d"?"":"none");
+  const subJ=document.getElementById("simBtnJsurf");
+  if(subJ){
+    subJ.classList.toggle("on",!!SIM.voirJsurf);
+    subJ.style.display=(SIM.moteur==="2.5d"?"":"none");
+  }
+  if(typeof V!=="undefined"&&V&&V.aff){
+    V.aff.jsurf=!!SIM.voirJsurf;
+    V.aff.maillage=!!SIM.voirMaillage;
+    if(typeof pnlElements==="function")pnlElements();
+  }
+}
+
+function simBasculerMaillage(actif){
+  if(typeof actif==="undefined"){
+    SIM.voirMaillage=!SIM.voirMaillage;
+  }else{
+    SIM.voirMaillage=!!actif;
+  }
+  try{
+    localStorage.setItem("sim_voir_maillage",SIM.voirMaillage?"1":"0");
+  }catch(_){}
+
+  simSyncAffichage();
+
+  const m=SIM.maillage||(SIM.res&&SIM.res.maillage);
+  const info=m?(" ("+m.elements.length+" triangles, "+(m.num_rwg||0)+" arêtes RWG)"):" (aucun calcul 2.5D en mémoire)";
+  const msg="Visualisation du maillage 2.5D : "+(SIM.voirMaillage?"ACTIVÉE":"DÉSACTIVÉE")+info+" — Raccourci : M ou Ctrl+Alt+M";
+  if(typeof console!=="undefined"&&console.log)
+    console.log("%c[Simulation 2.5D] "+msg,"color: #00dcff; font-weight: bold;");
+
+  if(typeof SIM_ED!=="undefined"&&SIM_ED.astuce){
+    SIM_ED.astuce("Maillage 2.5D : "+(SIM.voirMaillage?"affiché":"masqué")+" [M]");
+  }
+
+  simRepeindre();
+  return SIM.voirMaillage;
+}
+
+function simBasculerJsurf(actif){
+  if(typeof actif==="undefined"){
+    SIM.voirJsurf=!SIM.voirJsurf;
+  }else{
+    SIM.voirJsurf=!!actif;
+  }
+  try{
+    localStorage.setItem("sim_voir_jsurf",SIM.voirJsurf?"1":"0");
+  }catch(_){}
+
+  simSyncAffichage();
+
+  const m=SIM.maillage||(SIM.res&&SIM.res.maillage);
+  const info=(m&&m.courant_max!=null)?(" (max: "+m.courant_max+" A/m)"):"" ;
+  const msg="Densité de courant Jsurf (Heatmap HF) : "+(SIM.voirJsurf?"ACTIVÉE":"DÉSACTIVÉE")+info+" — Raccourci : J";
+  if(typeof console!=="undefined"&&console.log)
+    console.log("%c[Simulation 2.5D] "+msg,"color: #ffaa00; font-weight: bold;");
+
+  if(typeof SIM_ED!=="undefined"&&SIM_ED.astuce){
+    SIM_ED.astuce("Courants Jsurf : "+(SIM.voirJsurf?"affichés (Heatmap HF)":"masqués")+" [J]");
+  }
+
+  simRepeindre();
+  return SIM.voirJsurf;
+}
+
+if(typeof window!=="undefined"){
+  window.simVoirMaillage=simBasculerMaillage;
+  window.simMaillage=simBasculerMaillage;
+  window.simVoirJsurf=simBasculerJsurf;
+  window.simJsurf=simBasculerJsurf;
+  window.simSyncAffichage=simSyncAffichage;
+
+  window.addEventListener("keydown",function(e){
+    const tag=(e.target&&e.target.tagName)?e.target.tagName.toLowerCase():"";
+    if(tag==="input"||tag==="textarea"||tag==="select")return;
+    if((e.ctrlKey||e.metaKey)&&e.altKey&&(e.key==="m"||e.key==="M"||e.code==="KeyM")){
+      e.preventDefault();
+      simBasculerMaillage();
+      return;
+    }
+    if(typeof V==="undefined"&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
+      if(e.key==="j"||e.key==="J"){
+        e.preventDefault();
+        simBasculerJsurf();
+      }else if(e.key==="m"||e.key==="M"){
+        e.preventDefault();
+        simBasculerMaillage();
+      }
+    }
+  });
+}
+
+function simJColor(t,alpha){
+  t=Math.max(0,Math.min(1,t));
+  let r,g,b;
+  if(t<0.25){
+    const s=t/0.25;
+    r=Math.round(15+s*10);
+    g=Math.round(35+s*165);
+    b=Math.round(190+s*65);
+  }else if(t<0.5){
+    const s=(t-0.25)/0.25;
+    r=Math.round(25+s*25);
+    g=Math.round(200+s*45);
+    b=Math.round(255-s*195);
+  }else if(t<0.75){
+    const s=(t-0.5)/0.25;
+    r=Math.round(50+s*205);
+    g=Math.round(245-s*35);
+    b=Math.round(60-s*60);
+  }else{
+    const s=(t-0.75)/0.25;
+    r=255;
+    g=Math.round(210-s*175);
+    b=Math.round(0+s*25);
+  }
+  return "rgba("+r+","+g+","+b+","+(alpha!=null?alpha:0.85)+")";
+}
+
+function simMaillageTrace(c,dpr){
+  if(!simMaillageActif())return;
+  const m=SIM.maillage||(SIM.res&&SIM.res.maillage);
+  if(!m||!m.elements||!m.sommets)return;
+
+  if(typeof poserMonde==="function")poserMonde(c,dpr);
+
+  const k=typeof simKUnite==="function"?simKUnite():1;
+  const toMonde=v=>v/k;
+  const pxW=(typeof px==="function")?px(1):(typeof V!=="undefined"&&V.vue&&V.vue.scale?(1/(V.vue.scale*(dpr||1))):0.05);
+
+  c.save();
+  c.lineCap="round";
+  c.lineJoin="round";
+
+  const sommets=m.sommets;
+  const elements=m.elements;
+
+  const avecJ = !!(SIM.voirJsurf && Array.isArray(m.courants) && m.courants.length === elements.length);
+  const jMin = (m.courant_min != null) ? m.courant_min : 0;
+  const jMax = (m.courant_max != null && m.courant_max > jMin) ? m.courant_max : (jMin + 1e-6);
+
+  /* ÉCHELLE LOGARITHMIQUE, ET C'EST LE FOND DU SUJET. Jsurf n'est pas une
+     grandeur qui s'étale : le courant se concentre sur les BORDS du ruban,
+     avec une singularité de coin qui monte de plusieurs décades au-dessus du
+     milieu de la piste. Sur une échelle linéaire min → max, tout le cuivre
+     tombait dans la première teinte et deux triangles portaient la dernière —
+     une carte où l'information est celle qu'on ne voit pas.
+
+     LE PLANCHER EST À 60 dB SOUS LE MAXIMUM, ce qui est la dynamique qu'un
+     œil lit sur un dégradé de cent soixante pixels. Ce qui est en dessous est
+     ramené au plancher plutôt qu'écrêté à zéro : « négligeable » et « nul »
+     ne se lisent pas pareil, et sur du cuivre conducteur c'est toujours le
+     premier. */
+  const J_DYN = 1e3;                       /* 60 dB en amplitude */
+  const jSol = Math.max(jMax / J_DYN, Math.max(jMin, jMax * 1e-9));
+  const jLog = Math.log(Math.max(jMax / jSol, 1.0000001));
+  const jNorme = v => {
+    if(!(v > jSol)) return 0;
+    return Math.max(0, Math.min(1, Math.log(v / jSol) / jLog));
+  };
+
+  if(avecJ){
+    // Mode Heatmap Jsurf : remplissage en fausses couleurs de chaque triangle (plans et fûts verticaux)
+    for(let i=0;i<elements.length;i++){
+      const el=elements[i];
+      const p0=sommets[el[0]], p1=sommets[el[1]], p2=sommets[el[2]];
+      if(!p0||!p1||!p2)continue;
+      const colFill=simJColor(jNorme(m.courants[i]),0.85);
+
+      c.beginPath();
+      c.moveTo(toMonde(p0[0]),toMonde(p0[1]));
+      c.lineTo(toMonde(p1[0]),toMonde(p1[1]));
+      c.lineTo(toMonde(p2[0]),toMonde(p2[1]));
+      c.closePath();
+      c.fillStyle=colFill;
+      c.fill();
+      c.strokeStyle="rgba(10, 15, 25, 0.45)";
+      c.lineWidth=Math.max(pxW*0.7, 0.008);
+      c.stroke();
+    }
+  }else{
+    /* Mode fil de fer. Cyan pour le cuivre à plat, magenta pour les parois de
+       via — et UNE TEINTE PAR COUCHE, ce qui manquait.
+
+       CE QUI CLOCHAIT. Le maillage 2,5D est une structure en TROIS
+       dimensions, projetée à plat sur la carte. Sur une liaison qui change de
+       couche, les triangles de TOP et ceux d'IN1 se peignaient l'un sur
+       l'autre, du même cyan, sans rien pour les séparer ni les nommer : on
+       voyait un enchevêtrement là où il y a deux étages.
+
+       ET C'EST `layer_ids` QUI FAIT FOI, non le z. Le serveur l'exportait, et
+       personne ne le lisait. Attention toutefois : les PAROIS d'un via portent
+       le layer_id d'une couche de signal tout en s'étendant entre deux z —
+       c'est donc le z, et lui seul, qui reconnaît une paroi, et `layer_ids`,
+       et lui seul, qui nomme une couche. Les deux ne sont pas
+       interchangeables, et c'est pour l'avoir cru que le calque re-déduisait
+       tout du z.
+
+       ON NE FILTRE PAS SUR LA COUCHE AFFICHÉE, contrairement à la carte de
+       potentiel DC. Celle-là peint un champ scalaire, et superposer deux
+       couches y mélangerait deux potentiels ; ici on montre une GÉOMÉTRIE, et
+       cacher l'étage d'en face cacherait justement le via qui les relie. On
+       distingue, on ne masque pas. */
+    const couches=Array.isArray(m.couches)?m.couches:[];
+    const layerIds=Array.isArray(m.layer_ids)&&m.layer_ids.length===elements.length
+      ? m.layer_ids : null;
+    /* Les couches présentes, de la plus basse à la plus haute : c'est l'ordre
+       du dégradé, et le haut de la pile est le plus vif — c'est celui qu'on
+       regarde. */
+    const rangs=new Map();
+    if(layerIds){
+      const vues=[...new Set(layerIds)].sort((a,b)=>{
+        const za=(couches.find(x=>x.layer===a)||{}).z, zb=(couches.find(x=>x.layer===b)||{}).z;
+        return (za==null||zb==null)?(a-b):(za-zb);
+      });
+      vues.forEach((id,k)=>rangs.set(id,k));
+    }
+    const nbCouches=Math.max(rangs.size,1);
+    const clefDe=i=>layerIds?layerIds[i]:0;
+
+    // 1ère passe : le cuivre à plat, une passe par couche.
+    const parCouche=new Map();
+    for(let i=0;i<elements.length;i++){
+      const el=elements[i];
+      const p0=sommets[el[0]], p1=sommets[el[1]], p2=sommets[el[2]];
+      if(!p0||!p1||!p2)continue;
+      const isVia=Math.abs(p0[2]-p1[2])>1e-4||Math.abs(p1[2]-p2[2])>1e-4;
+      if(isVia)continue;
+      const k=clefDe(i);
+      if(!parCouche.has(k))parCouche.set(k,[]);
+      parCouche.get(k).push([p0,p1,p2]);
+    }
+    for(const [k,tris] of [...parCouche.entries()].sort(
+          (a,b)=>(rangs.get(a[0])||0)-(rangs.get(b[0])||0))){
+      /* La plus haute couche à pleine intensité, les autres estompées — mais
+         jamais sous 45 %, sans quoi une couche interne deviendrait invisible
+         au lieu de secondaire. */
+      const rang=rangs.has(k)?rangs.get(k):0;
+      const f=nbCouches>1?(0.45+0.55*(rang/(nbCouches-1))):1;
+      c.beginPath();
+      for(const t of tris){
+        c.moveTo(toMonde(t[0][0]),toMonde(t[0][1]));
+        c.lineTo(toMonde(t[1][0]),toMonde(t[1][1]));
+        c.lineTo(toMonde(t[2][0]),toMonde(t[2][1]));
+        c.closePath();
+      }
+      c.fillStyle="rgba(0, 220, 255, "+(0.09*f).toFixed(3)+")";
+      c.fill();
+      c.strokeStyle="rgba(0, 220, 255, "+(0.85*f).toFixed(3)+")";
+      c.lineWidth=Math.max(pxW*1.2*(0.6+0.4*f), 0.015);
+      if(nbCouches>1&&f<1)c.setLineDash([pxW*4,pxW*3]);
+      c.stroke();
+      c.setLineDash([]);
+    }
+
+    // 2ème passe : fûts cylindriques de vias (parois verticales RWG)
+    c.beginPath();
+    let nbVias=0;
+    for(let i=0;i<elements.length;i++){
+      const el=elements[i];
+      const p0=sommets[el[0]], p1=sommets[el[1]], p2=sommets[el[2]];
+      if(!p0||!p1||!p2)continue;
+      const isVia=Math.abs(p0[2]-p1[2])>1e-4||Math.abs(p1[2]-p2[2])>1e-4;
+      if(!isVia)continue;
+      c.moveTo(toMonde(p0[0]),toMonde(p0[1]));
+      c.lineTo(toMonde(p1[0]),toMonde(p1[1]));
+      c.lineTo(toMonde(p2[0]),toMonde(p2[1]));
+      c.closePath();
+      nbVias++;
+    }
+    if(nbVias>0){
+      c.fillStyle="rgba(255, 60, 220, 0.22)";
+      c.fill();
+      c.strokeStyle="rgba(255, 60, 220, 0.95)";
+      c.lineWidth=Math.max(pxW*1.8, 0.03);
+      c.stroke();
+    }
+  }
+
+  // 3ème passe : repères graphiques sur les ports (cercles d'excitation)
+  if(Array.isArray(m.ports)){
+    for(const pt of m.ports){
+      const x=toMonde(pt.x), y=toMonde(pt.y);
+      c.beginPath();
+      c.arc(x,y,pxW*7,0,2*Math.PI);
+      c.fillStyle="rgba(255, 200, 0, 0.25)";
+      c.fill();
+      c.strokeStyle="#ffc800";
+      c.lineWidth=Math.max(pxW*1.8, 0.025);
+      c.stroke();
+
+      c.beginPath();
+      c.arc(x,y,pxW*2.5,0,2*Math.PI);
+      c.fillStyle="#ffc800";
+      c.fill();
+    }
+  }
+
+  /* 3ème passe bis : OÙ LE COURANT TOURNE. Les endroits que
+     `_points_chauds` a trouvés, posés sur le cuivre — c'est la moitié utile
+     de ce calque, puisque c'est la seule chose que le 2,5D sache dire des
+     discontinuités. Un anneau plutôt qu'un disque : il désigne sans cacher le
+     maillage qu'il désigne. */
+  const pcm=((SIM.res&&SIM.res.discontinuites)||{}).points_chauds;
+  if(pcm&&Array.isArray(pcm.points)){
+    for(const p of pcm.points){
+      const x=toMonde(p.x), y=toMonde(p.y);
+      const vertical=(p.part_verticale>=(pcm.seuil_vert||0.1));
+      const col=vertical?"#ff3cdc":"#fbbf24";
+      c.beginPath();
+      c.arc(x,y,pxW*10,0,2*Math.PI);
+      c.strokeStyle=col;
+      c.lineWidth=Math.max(pxW*2.2, 0.03);
+      c.stroke();
+      c.beginPath();
+      c.arc(x,y,pxW*5,0,2*Math.PI);
+      c.strokeStyle=col;
+      c.lineWidth=Math.max(pxW*1.2, 0.018);
+      c.stroke();
+    }
+  }
+
+  // 4ème passe : repères graphiques sur les vias internes (transition de couche)
+  if(Array.isArray(m.vias_internes)){
+    for(const vi of m.vias_internes){
+      const x=toMonde(vi.x), y=toMonde(vi.y);
+      c.beginPath();
+      c.arc(x,y,pxW*8,0,2*Math.PI);
+      c.fillStyle="rgba(255, 60, 220, 0.25)";
+      c.fill();
+      c.strokeStyle="#ff3cdc";
+      c.lineWidth=Math.max(pxW*2.0, 0.03);
+      c.stroke();
+
+      c.beginPath();
+      c.arc(x,y,pxW*3.0,0,2*Math.PI);
+      c.fillStyle="#ff3cdc";
+      c.fill();
+    }
+  }
+
+  // 5ème passe : étiquettes et échelle de légende en coordonnées écran
+  if(typeof w2s==="function"){
+    c.save();
+    c.setTransform(1,0,0,1,0,0);
+    const dprVal=dpr||window.devicePixelRatio||1;
+    c.scale(dprVal,dprVal);
+    c.font="700 11px \"JetBrains Mono\",\"SF Mono\",Consolas,monospace";
+    c.textAlign="center";
+    c.textBaseline="middle";
+
+    if(Array.isArray(m.ports)){
+      m.ports.forEach((pt,idx)=>{
+        const scr=w2s(toMonde(pt.x),toMonde(pt.y));
+        if(!scr)return;
+        const label="P"+(idx+1);
+        const by=scr.y-15;
+        c.beginPath();
+        c.arc(scr.x,by,9,0,2*Math.PI);
+        c.fillStyle="rgba(15, 16, 20, 0.88)";
+        c.fill();
+        c.strokeStyle="#ffc800";
+        c.lineWidth=1.6;
+        c.stroke();
+        c.fillStyle="#ffc800";
+        c.fillText(label,scr.x,by+0.5);
+      });
+    }
+
+    /* L'ABSCISSE DES POINTS CHAUDS, en clair sur la carte. Sans elle, le
+       tableau du panneau dit « à 4,00 mm » et la carte porte un anneau : rien
+       ne dit que c'est le même endroit. */
+    if(pcm&&Array.isArray(pcm.points)){
+      pcm.points.forEach(p=>{
+        const scr=w2s(toMonde(p.x),toMonde(p.y));
+        if(!scr)return;
+        const vertical=(p.part_verticale>=(pcm.seuil_vert||0.1));
+        const col=vertical?"#ff3cdc":"#fbbf24";
+        const label=simNb(p.s_mm,1)+" mm";
+        const tw=c.measureText(label).width;
+        const bw=Math.max(tw+8,30), by=scr.y-24;
+        c.beginPath();
+        if(c.roundRect)c.roundRect(scr.x-bw/2,by-8,bw,16,3);
+        else c.rect(scr.x-bw/2,by-8,bw,16);
+        c.fillStyle="rgba(15, 16, 20, 0.88)";
+        c.fill();
+        c.strokeStyle=col;
+        c.lineWidth=1.4;
+        c.stroke();
+        c.fillStyle=col;
+        c.fillText(label,scr.x,by+0.5);
+      });
+    }
+
+    if(Array.isArray(m.vias_internes)){
+      m.vias_internes.forEach((vi,idx)=>{
+        const scr=w2s(toMonde(vi.x),toMonde(vi.y));
+        if(!scr)return;
+        const label="VIA"+(m.vias_internes.length>1?(" "+(idx+1)):"");
+        const by=scr.y+15;
+        const tw=c.measureText(label).width;
+        const bw=Math.max(tw+8,28);
+        c.beginPath();
+        if(c.roundRect)c.roundRect(scr.x-bw/2,by-8,bw,16,3);
+        else c.rect(scr.x-bw/2,by-8,bw,16);
+        c.fillStyle="rgba(15, 16, 20, 0.88)";
+        c.fill();
+        c.strokeStyle="#ff3cdc";
+        c.lineWidth=1.6;
+        c.stroke();
+        c.fillStyle="#ff3cdc";
+        c.fillText(label,scr.x,by+0.5);
+      });
+    }
+
+    // Échelle de légende de la Heatmap Jsurf
+    if(avecJ && c.canvas){
+      const canH = c.canvas.height / dprVal;
+      const legX = 20, legY = Math.max(canH - 65, 40);
+      const legW = 160, barH = 8;
+
+      c.save();
+      c.beginPath();
+      if(c.roundRect)c.roundRect(legX - 8, legY - 18, legW + 16, 50, 6);
+      else c.rect(legX - 8, legY - 18, legW + 16, 50);
+      c.fillStyle = "rgba(15, 17, 23, 0.88)";
+      c.fill();
+      c.strokeStyle = "rgba(255, 255, 255, 0.15)";
+      c.lineWidth = 1;
+      c.stroke();
+
+      // Titre — L'ÉCHELLE EST NOMMÉE. Une graduation logarithmique lue comme
+      // linéaire fait sous-estimer d'un facteur mille l'écart entre le bord et
+      // le milieu du ruban ; le dire coûte quatre caractères.
+      c.font = "600 10px \"JetBrains Mono\",\"SF Mono\",Consolas,monospace";
+      c.fillStyle = "#e2e8f0";
+      c.textAlign = "left";
+      c.fillText("Jsurf (" + (m.courant_unite || "A/m") + ") [fc] · log 60 dB",
+                 legX, legY - 6);
+
+      // Barre de dégradé
+      const grad = c.createLinearGradient(legX, legY, legX + legW, legY);
+      grad.addColorStop(0.00, "rgb(15, 35, 190)");
+      grad.addColorStop(0.25, "rgb(25, 200, 255)");
+      grad.addColorStop(0.50, "rgb(50, 245, 60)");
+      grad.addColorStop(0.75, "rgb(255, 210, 0)");
+      grad.addColorStop(1.00, "rgb(255, 35, 25)");
+      c.fillStyle = grad;
+      c.fillRect(legX, legY, legW, barH);
+      c.strokeStyle = "rgba(0, 0, 0, 0.6)";
+      c.lineWidth = 0.8;
+      c.strokeRect(legX, legY, legW, barH);
+
+      /* Graduations : plancher, milieu GÉOMÉTRIQUE, maximum. La moyenne
+         arithmétique était fausse sous cette barre depuis qu'elle est
+         logarithmique — le milieu d'un dégradé log est la racine du produit
+         des bouts, pas leur demi-somme. */
+      const nb = v => (typeof simNb === "function") ? simNb(v, 1) : v.toFixed(1);
+      c.font = "500 9px \"JetBrains Mono\",\"SF Mono\",Consolas,monospace";
+      c.fillStyle = "#94a3b8";
+      c.textAlign = "left";
+      c.fillText("≤" + nb(jSol), legX, legY + barH + 10);
+      c.textAlign = "center";
+      c.fillText(nb(Math.sqrt(jSol * jMax)), legX + legW/2, legY + barH + 10);
+      c.textAlign = "right";
+      c.fillText(nb(jMax), legX + legW, legY + barH + 10);
+      c.restore();
+    }
+
+    /* LES COUCHES QUE LE CALQUE MONTRE, NOMMÉES. Sans cette ligne, un
+       maillage à deux étages est un enchevêtrement dont rien ne dit lequel
+       est lequel — et c'est précisément ce que `maillage.couches` est venu
+       apporter. La plus haute d'abord, comme le dégradé du fil de fer. */
+    if(!avecJ && Array.isArray(m.couches) && m.couches.length > 1 && c.canvas){
+      const canH = c.canvas.height / dprVal;
+      const lx = 20, ly = Math.max(canH - 60, 40);
+      const rangees = [...m.couches].sort((a,b)=>(b.z||0)-(a.z||0));
+      c.save();
+      c.font = "500 10px \"JetBrains Mono\",\"SF Mono\",Consolas,monospace";
+      c.textAlign = "left";
+      const lw = 8 + 14 + Math.max(...rangees.map(r =>
+        c.measureText(r.nom + "  " + (typeof simNb==="function"?simNb(r.z,3):r.z) + " mm").width)) + 12;
+      c.beginPath();
+      if(c.roundRect)c.roundRect(lx - 8, ly - 14, lw, 18*rangees.length + 10, 6);
+      else c.rect(lx - 8, ly - 14, lw, 18*rangees.length + 10);
+      c.fillStyle = "rgba(15, 17, 23, 0.88)";
+      c.fill();
+      c.strokeStyle = "rgba(255, 255, 255, 0.15)";
+      c.lineWidth = 1;
+      c.stroke();
+      rangees.forEach((r, k) => {
+        const f = rangees.length > 1 ? (1 - 0.55*(k/(rangees.length - 1))) : 1;
+        const y = ly + 18*k;
+        c.fillStyle = "rgba(0, 220, 255, " + (0.85*f).toFixed(3) + ")";
+        c.fillRect(lx, y - 4, 10, 3);
+        c.fillStyle = "#cbd5e1";
+        c.textBaseline = "middle";
+        c.fillText(r.nom + "  " +
+                   (typeof simNb === "function" ? simNb(r.z, 3) : r.z) + " mm",
+                   lx + 16, y - 2);
+      });
+      c.restore();
+    }
+
+    c.restore();
+  }
+
+  c.restore();
 }

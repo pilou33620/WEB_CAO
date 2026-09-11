@@ -1055,10 +1055,23 @@ function propsFp(box,fp){
     '<div class="prop"><label>Empreinte générique</label><select id="pStyle"'+dis+'>'+
     Object.keys(STYLES).map(k=>'<option value="'+esc(k)+'"'+(fp.style===k?" selected":"")+'>'+
       esc(STYLES[k].n)+'</option>').join("")+'</select></div>'+
-    '<div class="prop"><div class="row" style="margin-top:0">'+
-      '<button class="tb" id="pFpEd">Modifier l&rsquo;empreinte…</button>'+
-      (free?'<button class="tb" id="pFpGen">Revenir au générique</button>':"")+
-    '</div></div>'+
+    '<div class="prop"><label>Empreinte Catalogue LIB</label>' +
+    '<div style="display:flex;gap:4px;align-items:center;">' +
+      '<select id="pFpLibSel" style="flex:1;font-size:11px;">' +
+        (typeof PCB_LIB_LIST !== "undefined" ? PCB_LIB_LIST.map(n =>
+          '<option value="' + esc(n) + '"' + ((fp.pkg && pkgKey(fp.pkg) === pkgKey(n)) ? " selected" : "") + '>' + esc(n) + '</option>'
+        ).join("") : "") +
+      '</select>' +
+      '<button class="tb" id="pFpApplyLib" style="padding:3px 8px;font-size:11px;" title="Appliquer cette empreinte de la bibliothèque">Appliquer</button>' +
+    '</div>' +
+    ((typeof pcbEmpreinteAlerteLib === "function" && pcbEmpreinteAlerteLib(fp)) ?
+      ('<div style="background:rgba(245,158,11,0.15);border:1px solid #f59e0b;border-radius:4px;padding:6px 8px;margin-top:6px;font-size:11px;">' +
+        '<div style="color:#f59e0b;font-weight:bold;margin-bottom:2px;">⚠️ Version LIB plus récente</div>' +
+        '<div style="color:var(--txt-dim);margin-bottom:6px;">La géométrie de cette empreinte a été mise à jour dans Gestion LIB.</div>' +
+        '<button class="tb mini on" id="pFpUpdateFromLib" style="width:100%;border-color:#f59e0b;color:#f59e0b;font-weight:600;">🔄 Recharger depuis la LIB</button>' +
+      '</div>') : '') +
+    '<button class="tb" id="pFpOpenLib" style="width:100%;margin-top:6px;border-color:var(--yellow);color:var(--yellow);font-weight:600;" title="Ouvrir cette empreinte dans Gestion LIB">📐 Ouvrir dans Gestion LIB ↗</button>' +
+    '</div>'+
     '<div class="prop two">'+numProp("pPins","Broches",fp.pins,1,1)+
       numProp("pPitch","Pas (mm)",fp.pitch,0.01,0.2,free)+'</div>'+
     '<div class="prop two">'+numProp("pSpan","Écartement",fp.span,0.01,0.2,free)+
@@ -1136,15 +1149,42 @@ function propsFp(box,fp){
       }
     };
   }
-  const fe=$("pFpEd");
-  if(fe)fe.onclick=()=>feOpen(fp);
-  const fg=$("pFpGen");
-  if(fg)fg.onclick=()=>{
-    if(!confirm("Revenir à l'empreinte calculée ? Les pastilles placées à la "+
-                "main seront perdues (Ctrl+Z les rendra)."))return;
-    push();fpGeneric(fp);touch();refreshPanels();draw();
-    hint("Empreinte "+fp.ref+" rendue au calcul automatique.");
-  };
+  const bFpApplyLib=$("pFpApplyLib");
+  if(bFpApplyLib){
+    bFpApplyLib.onclick=async (e)=>{
+      e.preventDefault();
+      const selVal=$("pFpLibSel")?$("pFpLibSel").value:"";
+      if(!selVal)return;
+      push();
+      fp.pkg=selVal;
+      const inpPkg=$("pPkg");
+      if(inpPkg)inpPkg.value=selVal;
+      if(typeof pcbAppliquerEmpreinteLib==="function"){
+        await pcbAppliquerEmpreinteLib(fp,selVal);
+      }else{
+        applyPkgGeom(fp);
+      }
+      touch();refreshPanels();draw();
+      hint("Empreinte "+fp.ref+" mise à jour sur "+selVal+".");
+    };
+  }
+  const bFpOpenLib=$("pFpOpenLib");
+  if(bFpOpenLib){
+    bFpOpenLib.onclick=(e)=>{
+      e.preventDefault();
+      const nom=fp.pkg?(fp.pkg.endsWith(".json")?fp.pkg:(fp.pkg+".json")):"";
+      window.open("../gestion-lib/gestion-lib.html?tab=pcb&nom="+encodeURIComponent(nom),"_blank");
+    };
+  }
+  const bFpUpLib=$("pFpUpdateFromLib");
+  if(bFpUpLib){
+    bFpUpLib.onclick=async (e)=>{
+      e.preventDefault();
+      if(typeof pcbAppliquerMajLib==="function"){
+        await pcbAppliquerMajLib(fp.pkg);
+      }
+    };
+  }
   box.querySelectorAll("tr[data-net]").forEach(tr=>{
     tr.onclick=()=>{
       const n=tr.dataset.net;

@@ -1,0 +1,28 @@
+{
+  "format": "pcbfp-1",
+  "name": "TP-SMD",
+  "pkg": "TP-SMD",
+  "pins": 1,
+  "style": "chip",
+  "pitch": 1.5,
+  "span": 1.5,
+  "pads": [
+    {
+      "n": 1,
+      "x": 0,
+      "y": 0,
+      "w": 1.5,
+      "h": 1.5,
+      "shape": "circ",
+      "drill": 0,
+      "rot": 0
+    }
+  ],
+  "body": {
+    "x1": -1,
+    "y1": -1.1,
+    "x2": 1,
+    "y2": 1.1
+  },
+  "description": "Point de test CMS circulaire"
+}
