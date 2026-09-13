@@ -2,6 +2,14 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.15.0
+# Date: 2026-09-13
+# Explication: recherche et application automatique des mises a jour GitHub au
+#   demarrage avec redemarrage transparent de l'outil avant lancement du serveur HTTP.
+# Fonctions ajoutees/modifiees :
+# - verifier_et_appliquer_maj, redemarrer_application
+# - main (--sans-maj, verification des mises a jour et redemarrage)
+#
 # Version: 2.14.0
 # Date: 2026-09-13
 # Explication: configuration dynamique du dossier de la bibliotheque centrale
@@ -320,6 +328,7 @@ import re
 import shutil
 import socket
 import socketserver
+import subprocess
 import sys
 import threading
 import traceback
@@ -735,6 +744,11 @@ def definir_dossier_lib(chemin_brut, initialiser=True):
             "fichiers_copies": 0,
             "message": "Bibliotheque reinitialisee au dossier par defaut du depot."
         }
+
+    if chemin.lower().startswith(("http://", "https://", "www.")):
+        raise ErreurLib(400, "Un lien web (URL) ne permet pas d'enregistrer vos fichiers sur le disque. "
+                             "Pour synchroniser avec Google Drive, utilisez le dossier local synchronisé par "
+                             "« Google Drive pour ordinateur » (ex: G:\\Mon Drive\\...).")
 
     cible = os.path.abspath(os.path.expanduser(chemin))
     copies = 0
@@ -2824,6 +2838,155 @@ def start_server(host, port, navigateur=True):
     return 0
 
 
+def verifier_et_appliquer_maj(dossier_racine=None):
+    """Recherche les mises a jour sur GitHub via Git et les applique si disponible.
+
+    Renvoie True si une mise a jour a ete telechargee et appliquee avec succes
+    (necessitant un redemarrage du script pour executer le code a jour), ou False
+    si l'outil est deja a jour, hors-ligne, ou dans l'impossibilite d'appliquer
+    la mise a jour sans intervention manuelle.
+    """
+    racine = dossier_racine or ROOT
+    # Git doit etre disponible dans l'environnement
+    if not shutil.which("git"):
+        return False
+
+    # Le dossier doit etre un depot Git
+    dossier_git = os.path.join(racine, ".git")
+    if not os.path.isdir(dossier_git):
+        res_test = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=racine, capture_output=True, text=True
+        )
+        if res_test.returncode != 0:
+            return False
+
+    print("[*] Recherche de mises a jour sur GitHub...")
+    env_git = os.environ.copy()
+    env_git["GIT_TERMINAL_PROMPT"] = "0"
+
+    try:
+        fetch = subprocess.run(
+            ["git", "fetch", "--quiet", "origin"],
+            cwd=racine, capture_output=True, text=True, timeout=10, env=env_git
+        )
+        if fetch.returncode != 0:
+            print("[!] Impossible de contacter GitHub (hors ligne ou depot distant inaccessible).")
+            print("[*] Demarrage normal de l'outil...")
+            return False
+    except subprocess.TimeoutExpired:
+        print("[!] Delai de recherche de mise a jour depasse (reseau lent ou indisponible).")
+        print("[*] Demarrage normal de l'outil...")
+        return False
+    except Exception as exc:
+        print("[!] Echec de la recherche de mise a jour : %s" % exc)
+        print("[*] Demarrage normal de l'outil...")
+        return False
+
+    # Determination de la branche amont (upstream) ou repli sur origin/main
+    upstream = "@{u}"
+    res_up = subprocess.run(
+        ["git", "rev-parse", "--verify", "@{u}"],
+        cwd=racine, capture_output=True, text=True, timeout=5, env=env_git
+    )
+    if res_up.returncode != 0:
+        res_main = subprocess.run(
+            ["git", "rev-parse", "--verify", "origin/main"],
+            cwd=racine, capture_output=True, text=True, timeout=5, env=env_git
+        )
+        if res_main.returncode == 0:
+            upstream = "origin/main"
+        else:
+            # Aucune branche amont connue
+            return False
+
+    # Nombre de commits distants en attente de recuperation
+    res_count = subprocess.run(
+        ["git", "rev-list", "HEAD..%s" % upstream, "--count"],
+        cwd=racine, capture_output=True, text=True, timeout=5, env=env_git
+    )
+    if res_count.returncode != 0:
+        return False
+
+    try:
+        nb_commits = int(res_count.stdout.strip())
+    except ValueError:
+        return False
+
+    if nb_commits <= 0:
+        print("[*] Le logiciel est a jour.")
+        return False
+
+    print()
+    print("=" * 60)
+    print("MISE A JOUR DISPONIBLE (%d nouveau(x) commit(s) sur GitHub)" % nb_commits)
+    print("=" * 60)
+    print("  Application de la mise a jour en cours...")
+
+    # Detection de modifications locales non commitees dans les fichiers suivis
+    st_res = subprocess.run(
+        ["git", "status", "--porcelain", "-uno"],
+        cwd=racine, capture_output=True, text=True, timeout=5, env=env_git
+    )
+    dirty = bool(st_res.stdout.strip())
+    stashed = False
+    if dirty:
+        print("  Modifications locales detectees : mise en reserve temporaire...")
+        stash_res = subprocess.run(
+            ["git", "stash", "push", "-m", "Auto-stash WEB_CAO avant mise a jour"],
+            cwd=racine, capture_output=True, text=True, timeout=10, env=env_git
+        )
+        stashed = (stash_res.returncode == 0)
+
+    pull = subprocess.run(
+        ["git", "pull"],
+        cwd=racine, capture_output=True, text=True, timeout=30, env=env_git
+    )
+
+    if stashed:
+        print("  Restauration des modifications locales...")
+        subprocess.run(
+            ["git", "stash", "pop"],
+            cwd=racine, capture_output=True, text=True, timeout=10, env=env_git
+        )
+
+    if pull.returncode != 0:
+        err = pull.stderr.strip() or pull.stdout.strip()
+        print("[!] Echec de l'application de la mise a jour : %s" % err)
+        print("[*] Poursuite avec la version actuelle...")
+        return False
+
+    print()
+    print("=" * 60)
+    print("MISE A JOUR APPLIQUEE AVEC SUCCES")
+    print("=" * 60)
+    print("  Redemarrage automatique de l'outil...")
+    print("=" * 60)
+    print()
+    return True
+
+
+def redemarrer_application(argv=None):
+    """Relance le processus actuel avec les memes arguments apres une mise a jour."""
+    env = os.environ.copy()
+    env["WEB_CAO_DEJA_MAJ"] = "1"
+    cmd = [sys.executable, os.path.abspath(__file__)] + (sys.argv[1:] if argv is None else list(argv))
+    try:
+        if os.name == "nt":
+            # Sous Windows, subprocess.call permet de conserver la fenetre console
+            # ouverte (en particulier lors d'un lancement par double-clic).
+            code = subprocess.call(cmd, env=env)
+            os._exit(code)
+        else:
+            # Sous Unix / macOS, execv remplace l'image du processus courant
+            os.execv(sys.executable, cmd)
+    except KeyboardInterrupt:
+        sys.exit(0)
+    except Exception as exc:
+        print("[!] Erreur lors du redemarrage automatique : %s" % exc)
+        print("[*] Poursuite avec le processus actuel...")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", type=int, default=DEFAULT_PORT,
@@ -2838,6 +3001,8 @@ def main(argv=None):
     ap.add_argument("--sans-pause", action="store_true",
                     help="rendre la main sans attendre Entree a la fermeture"
                          " (Windows)")
+    ap.add_argument("--sans-maj", dest="verifier_maj", action="store_false", default=True,
+                    help="ne pas verifier les mises a jour GitHub au demarrage")
     ap.add_argument("--dossier", default=None,
                     help="dossier a servir (defaut : celui de ce script ;"
                          " utile quand __file__ ne le designe pas, sous Pyto)")
@@ -2854,6 +3019,9 @@ def main(argv=None):
         global ROOT, DOSSIER_IMPOSE
         ROOT = os.path.abspath(os.path.expanduser(args.dossier))
         DOSSIER_IMPOSE = True
+    if args.verifier_maj and os.environ.get("WEB_CAO_DEJA_MAJ") != "1":
+        if verifier_et_appliquer_maj(ROOT):
+            redemarrer_application(argv)
     if args.lib:
         global DOSSIER_LIB_IMPOSE
         definir_dossier_lib(args.lib, initialiser=False)

@@ -896,6 +896,10 @@ if(bLibAppliquer){
       if(champ) champ.focus();
       return;
     }
+    if(/^https?:\/\//i.test(val) || /^www\./i.test(val)){
+      libMsg("⚠️ Un lien web de navigateur ne permet pas d'enregistrer des composants et empreintes sur le disque. Pour synchroniser avec Google Drive, installez « Google Drive pour ordinateur » et indiquez le chemin du dossier synchronisé (ex: G:\\Mon Drive\\... ou C:\\Users\\...\\Google Drive).", true);
+      return;
+    }
     libAppliquer(val, initVide);
   };
 }
