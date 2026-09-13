@@ -1,99 +1,27 @@
 # =============================================================================
-# WEB_CAO -- dependances Python
+# WEB_CAO -- Dépendances Python
 #
-# Aucune. Volontairement -- voir « LES EXCEPTIONS » plus bas pour les quatre
-# solveurs, qui achetent chacun une fonction de plus sans etre le prix des
-# autres.
+# Le cœur de l'application (les éditeurs PCB et Schématique, serveur.py, la
+# passerelle MCP et le lecteur IPC-2581) fonctionne exclusivement avec la
+# bibliothèque standard Python, sans aucune dépendance externe obligatoire.
 #
-#     pip install -r requirements.txt      # n'installe rien, et c'est le but
+# Les paquets listés ci-dessous activent l'ensemble des solveurs numériques
+# avancés (SI / PI / 2.5D) ainsi que les bancs d'essai de calcul :
 #
-# Tout le code Python du depot n'utilise que la bibliotheque standard :
+#   pip install -r requirements.txt
 #
-#   serveur.py                              http.server, socketserver, ssl,
-#                                           webbrowser, argparse
-#   passerelle_mcp.py                       urllib.request, json, threading
-#   commun/outils/monofichier.py            assemblage du HTML autonome
-#   editeur-pcb/outils/*.py
-#   editeur-schematique/outils/*.py
+# Détail des composants activés :
+#   - numpy   : solveur d'impédance 2D MoM (ligne_mom.py) et diaphonie (crosstalk.py)
+#   - scipy   : solveur de chute DC / échauffement (dc_solver.py), matrices creuses,
+#               fonctions de Green (green_layered.py) et étalons de validation
+#   - shapely : fusion géométrique des polygones et tronçons pour le maillage
+#               du solveur 2,5D pleine onde (mom_solver/, simulation_25d.py)
 #
-# Verifie sur Python 3.10 et 3.12 (l'integration continue utilise 3.12).
-#
-# Ce fichier existe pour rendre la garantie explicite et verifiable : le jour
-# ou une ligne de paquet y apparait, le depot perd ce qui fait son interet --
-# un double-clic sur serveur.py fonctionne sur n'importe quelle machine ou
-# Python est installe, sans reseau, sans environnement virtuel, sans droits
-# d'administration, sans proxy d'entreprise a negocier.
-#
-# C'est pour cette raison que serveur-composants.py (FastAPI + uvicorn +
-# pydantic, port 8420) a ete supprime : il exposait les deux memes routes
-# /api/tools et /api/tool que serveur.py, alors que toute la logique de
-# protocole MCP vit dans passerelle_mcp.py, en bibliotheque standard.
-#
-# Les bancs d'essai des deux EDITEURS tournent sous Node (voir README.md) ; le
-# paquet npm facultatif « canvas » n'a rien a faire ici. Ceux des SOLVEURS sont
-# en Python -- sept fichiers, quelque quatre cents cas -- et demandent ce que
-# demande le solveur qu'ils eprouvent, ni plus : voir « LES EXCEPTIONS ».
-# Aucun n'a besoin de pytest.
-#
-# -----------------------------------------------------------------------------
-# LES EXCEPTIONS, ET ELLES SONT HORS DE CE FICHIER : les quatre solveurs
-#
-# Chacune achete une fonction de plus ; aucune n'est le prix de celles qui
-# existaient. Les ecrire en ligne de paquet les rendrait obligatoires --
-# « pip install -r requirements.txt » echouerait derriere un proxy
-# d'entreprise, et le depot perdrait exactement ce que ce fichier protege.
-#
-#   /api/simulation, moteur 2D    numpy
-#     python/simulation_em.py et python/ligne_mom.py -- methode des moments sur
-#     la SECTION DROITE, qui donne l'impedance d'une piste. numpy, et numpy
-#     seul.
-#
-#   /api/crosstalk                numpy
-#     python/crosstalk.py -- matrices MTL en cascade le long du parcours. Il
-#     reprend une quinzaine d'aides de simulation_em, dont il depend donc.
-#
-#   /api/simulation-dc            numpy + SCIPY
-#     python/dc_solver.py -- reseau resistif surfacique, gradient conjugue.
-#     SCIPY EST BIEN DANS SON CHEMIN DE CALCUL (scipy.sparse pour la matrice,
-#     scipy.sparse.linalg.cg pour la resolution), et cette page a longtemps
-#     affirme le contraire : « scipy n'est pas une dependance du solveur, seul
-#     le banc d'essai l'importe ». C'etait vrai du solveur de SECTION, et faux
-#     du solveur DC depuis sa reecriture 2.0.0. `dc_solver.etat()` verifie la
-#     presence de scipy et repond 503 en la nommant.
-#
-#   /api/simulation-25d           numpy + scipy + SHAPELY
-#     mom_solver/ et python/simulation_25d.py -- MoM SURFACIQUE pleine onde,
-#     base RWG, fonction de Green stratifiee. IL EST DANS LE CHEMIN DE CALCUL
-#     DEPUIS QUE LE CONNECTEUR EXISTE : cette page le decrivait comme « livre a
-#     part, mais pas dans le chemin de calcul », ce qui n'est plus vrai. scipy
-#     y sert a la factorisation LU, shapely a fusionner les troncons
-#     consecutifs d'une piste -- sans lui le maillage n'est pas continu d'un
-#     segment au suivant, et le calcul le DIT dans ses avertissements plutot
-#     que de rendre une ligne coupee en silence.
-#
-#     NUMBA N'EN FAIT PLUS PARTIE. `mom_engine` l'importait en dur pour un
-#     noyau d'espace libre que personne n'appelait ; les deux ont ete retires
-#     en 1.1.0, et le paquet s'importe desormais sans numba.
-#
-# CE QUI MARCHE SANS RIEN INSTALLER, et c'est le fond de l'affaire :
-#
-#   · les deux editeurs s'ouvrent en double-clic, sans Python du tout ;
-#   · serveur.py demarre, sert les pages, la recherche de composants, les
-#     profils, les projets et la lecture IPC-2581 sans numpy ;
-#   · seules les quatre routes de calcul manquent a l'appel. Chacune repond
-#     503 en nommant ce qui manque, le panneau l'affiche, et son bouton
-#     « Exporter .json » continue de servir : le probleme s'enregistre et se
-#     donne au solveur en ligne de commande sur une autre machine.
-#
-# Pour s'en servir, du moins cher au plus cher :
-#
-#     pip install numpy                      # impedance et crosstalk
-#     pip install numpy scipy                # + IR drop
-#     pip install numpy scipy shapely        # + 2,5D pleine onde
-#
-# Les bancs d'essai se lancent sans pytest. Celui du solveur de section demande
-# scipy, pour les integrales elliptiques de son etalon de triplaque :
-#
-#     pip install scipy
-#     python python/test/banc-ligne-mom.py
+# Optionnel (maillage alternatif avancé pour mom_solver, repli interne par défaut) :
+#   # pygmsh
+#   # meshio
 # =============================================================================
+
+numpy>=1.24.0
+scipy>=1.10.0
+shapely>=2.0.0

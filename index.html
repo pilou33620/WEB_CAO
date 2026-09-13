@@ -94,13 +94,30 @@
     margin: 0; padding: 14px 16px 12px;
     background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
   }
-  .dash-col > #blocProjet {
-    height: 100%;
-  }
   .users h2 {
     margin: 0 0 10px; font-family: var(--mono); font-size: 9px;
     letter-spacing: 0.18em; text-transform: uppercase; color: var(--txt-dim); font-weight: 400;
   }
+  .badge-lib {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 7px; border-radius: 4px; font-size: 11px;
+    font-family: var(--mono); font-weight: 500;
+  }
+  .badge-gdrive { background: rgba(66, 133, 244, 0.2); color: #8ab4f8; border: 1px solid rgba(66, 133, 244, 0.4); }
+  .badge-defaut { background: rgba(242, 199, 68, 0.15); color: var(--yellow); border: 1px solid rgba(242, 199, 68, 0.3); }
+  .badge-local { background: rgba(52, 168, 83, 0.2); color: #81c995; border: 1px solid rgba(52, 168, 83, 0.4); }
+  .badge-stat {
+    background: var(--panel); color: var(--txt-dim);
+    border: 1px solid var(--border2); font-size: 11px; padding: 2px 7px; border-radius: 4px;
+    font-family: var(--mono);
+  }
+  .badge-stat b { color: var(--txt); }
+  .btn-cloud-sugg {
+    background: var(--panel); color: #8ab4f8; border: 1px solid var(--border2);
+    border-radius: 4px; padding: 4px 9px; font-size: 11px; cursor: pointer;
+    font-family: var(--ui); transition: all 0.15s;
+  }
+  .btn-cloud-sugg:hover { border-color: var(--blue); background: #1c222c; }
   .ulist { display: flex; flex-wrap: wrap; gap: 8px; }
   .ulist button {
     display: flex; align-items: center; gap: 7px;
@@ -262,8 +279,44 @@
         </div>
       </div>
 
-      <!-- Colonne droite : Utilisateur & Ergonomie -->
+      <!-- Colonne droite : Bibliothèque, Utilisateur & Ergonomie -->
       <div class="dash-col">
+        <!-- Bloc Bibliothèque Centrale (LIB) -->
+        <div class="users" id="blocBibliotheque">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+            <h2 style="margin:0;">Bibliothèque centrale (LIB)</h2>
+            <div id="libBadge"></div>
+          </div>
+          <div class="pcur" id="libCur">
+            <i>Chargement de la configuration LIB…</i>
+          </div>
+
+          <div class="pdos" style="margin-top:10px; padding-top:10px;">
+            <div class="urow">
+              <input id="libChem" maxlength="400" autocomplete="off"
+                     placeholder="Chemin du dossier LIB… (ex. G:\Mon Drive\CAO\LIB ou D:\CAO\LIB)"
+                     aria-label="Chemin du dossier de la bibliothèque">
+              <button id="libAppliquer" class="fort">Appliquer ce dossier</button>
+              <button id="libParcourir" title="Parcourir les dossiers de cet ordinateur">📁 Parcourir…</button>
+              <button id="libDefaut" title="Revenir au dossier LIB par défaut du dépôt">Par défaut</button>
+            </div>
+
+            <div style="margin-top:10px; display:flex; align-items:center; gap:8px; font-size:12px; color:var(--txt-dim);">
+              <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; user-select:none;">
+                <input type="checkbox" id="libInitVide" checked style="accent-color:var(--blue); cursor:pointer;">
+                <span>Copier les composants et empreintes par défaut si le dossier est vide</span>
+              </label>
+            </div>
+
+            <div id="libCloudList" class="ulist" style="margin-top:10px;" hidden></div>
+            <div class="pcur" id="libMsg" style="margin-top:8px;"></div>
+
+            <div class="uinfo" style="margin-top:10px;">
+              💡 <b>Google Drive &amp; Cloud :</b> Pour utiliser votre bibliothèque sur Google Drive et y accéder depuis tous vos ordinateurs sans transporter de clé USB, installez l'application <em>Google Drive pour ordinateur</em>. Elle associe votre Drive à un lecteur ou dossier local (ex: <code>G:\Mon Drive\…</code> ou <code>C:\Users\…\Google Drive</code>). Renseignez ce chemin ici : tous vos composants et empreintes seront automatiquement sauvegardés et synchronisés dans votre Cloud !
+            </div>
+          </div>
+        </div>
+
         <div class="users" id="blocUtilisateur">
           <h2>Utilisateur</h2>
           <div class="ulist" id="uList"></div>
@@ -688,6 +741,189 @@ document.getElementById("uDel").onclick = function(){
 profSurChangement(uRendre);
 profSurListe(uRendre);
 uRendre();
+
+/* ==========================================================================
+   Bibliothèque centrale (LIB)
+   Permet d'indiquer le chemin du dossier de la LIB (local ou Google Drive)
+   et de synchroniser les composants et empreintes.
+   ========================================================================== */
+let LIB_CONFIG = null;
+
+function libEsc(s){
+  return String(s || "").replace(/[&<>"']/g, function(ch){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch];
+  });
+}
+
+function libMsg(txt, ennui){
+  const el = document.getElementById("libMsg");
+  if(!el) return;
+  el.innerHTML = ennui ? "<i style='color:var(--red);'>" + libEsc(txt) + "</i>" : "<span style='color:var(--txt);'>" + txt + "</span>";
+}
+
+function libRendreEtat(cfg){
+  LIB_CONFIG = cfg;
+  const elCur = document.getElementById("libCur");
+  const elBadge = document.getElementById("libBadge");
+  const elCloud = document.getElementById("libCloudList");
+  if(!elCur) return;
+
+  if(!cfg){
+    elCur.innerHTML = "<i>Serveur non connecté. Lancez <code>python serveur.py</code> pour gérer la bibliothèque centrale.</i>";
+    if(elBadge) elBadge.innerHTML = '<span class="badge-lib" style="background:#3a2020;color:#f87171;border:1px solid #7f1d1d;">Déconnecté</span>';
+    return;
+  }
+
+  // Badge d'état
+  if(elBadge){
+    if(cfg.google_drive){
+      elBadge.innerHTML = '<span class="badge-lib badge-gdrive">☁️ Google Drive</span>';
+    } else if(cfg.est_defaut){
+      elBadge.innerHTML = '<span class="badge-lib badge-defaut">Dépôt (par défaut)</span>';
+    } else {
+      elBadge.innerHTML = '<span class="badge-lib badge-local">Dossier personnalisé</span>';
+    }
+  }
+
+  // Statistiques du contenu
+  const st = cfg.statistiques || {};
+  const statsHtml = [
+    '<span class="badge-stat"><b>' + (st.composants || 0) + '</b> composant(s)</span>',
+    '<span class="badge-stat"><b>' + (st.pcb || 0) + '</b> empreinte(s) PCB</span>',
+    '<span class="badge-stat"><b>' + (st.schematique || 0) + '</b> symbole(s)</span>',
+    '<span class="badge-stat"><b>' + (st.simulation || 0) + '</b> modèle(s) SPICE</span>'
+  ].join(" ");
+
+  let detailChemin = "Dossier actif : <b>" + libEsc(cfg.chemin) + "</b>";
+  if(cfg.est_defaut) detailChemin += " <i>(inclus dans le dépôt CAO)</i>";
+  if(!cfg.existe) detailChemin += " <b style='color:var(--red);'>[Dossier introuvable]</b>";
+
+  elCur.innerHTML = detailChemin + "<br><div style='margin-top:6px; display:flex; flex-wrap:wrap; gap:6px;'>" + statsHtml + "</div>";
+
+  // Remplir le champ si vide et chemin personnalisé
+  const champ = document.getElementById("libChem");
+  if(champ && !champ.value.trim() && !cfg.est_defaut){
+    champ.value = cfg.chemin;
+  }
+
+  // Affichage des raccourcis de dossiers cloud détectés
+  if(elCloud){
+    if(Array.isArray(cfg.suggestions_cloud) && cfg.suggestions_cloud.length > 0){
+      elCloud.innerHTML = '<span style="font-size:11px; color:var(--txt-dim); align-self:center;">Cloud détecté :</span> ' +
+        cfg.suggestions_cloud.map(function(s){
+          return '<button type="button" class="btn-cloud-sugg" data-chemin="' + libEsc(s.chemin) + '" title="' + libEsc(s.chemin) + '">' +
+            '☁️ ' + libEsc(s.label) +
+            '</button>';
+        }).join("");
+      elCloud.querySelectorAll(".btn-cloud-sugg").forEach(function(b){
+        b.onclick = function(){
+          if(champ){
+            champ.value = b.dataset.chemin;
+            champ.focus();
+            libMsg("Chemin « " + libEsc(b.dataset.chemin) + " » prêt. Cliquez sur « Appliquer ce dossier ».");
+          }
+        };
+      });
+      elCloud.hidden = false;
+    } else {
+      elCloud.innerHTML = "";
+      elCloud.hidden = true;
+    }
+  }
+}
+
+async function libChargerConfig(){
+  try {
+    const res = await fetch("/api/lib/config");
+    if(res.ok){
+      const data = await res.json();
+      libRendreEtat(data);
+    } else {
+      libRendreEtat(null);
+    }
+  } catch(_) {
+    libRendreEtat(null);
+  }
+}
+
+async function libAppliquer(nouveauChemin, initialiser){
+  libMsg("Configuration en cours…");
+  try {
+    const res = await fetch("/api/lib/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chemin: nouveauChemin, initialiser: !!initialiser })
+    });
+    const data = await res.json();
+    if(!res.ok){
+      throw new Error(data.detail || ("Erreur " + res.status));
+    }
+    libRendreEtat(data);
+    libMsg("✓ " + (data.message || "Bibliothèque mise à jour avec succès."));
+  } catch(err) {
+    libMsg(err.message, true);
+  }
+}
+
+async function libParcourir(){
+  if(typeof window.showDirectoryPicker === "function"){
+    try {
+      const handle = await window.showDirectoryPicker();
+      if(handle && handle.name){
+        const champ = document.getElementById("libChem");
+        if(champ){
+          if(!champ.value || champ.value === handle.name){
+            champ.value = handle.name;
+          }
+          libMsg("Dossier « " + handle.name + " » sélectionné. S'il s'agit d'un lecteur ou dossier local, vous pouvez aussi taper ou coller son chemin absolu (ex: G:\\Mon Drive\\...), puis cliquer sur « Appliquer ».");
+        }
+      }
+    } catch(err) {
+      if(err.name !== "AbortError") libMsg(err.message, true);
+    }
+  } else {
+    alert("Sélection par explorateur non supportée par ce navigateur. Vous pouvez saisir ou coller directement le chemin complet du dossier (ex: G:\\Mon Drive\\CAO\\LIB).");
+  }
+}
+
+const bLibAppliquer = document.getElementById("libAppliquer");
+if(bLibAppliquer){
+  bLibAppliquer.onclick = function(){
+    const champ = document.getElementById("libChem");
+    const val = (champ && champ.value) ? champ.value.trim() : "";
+    const initVide = document.getElementById("libInitVide") ? document.getElementById("libInitVide").checked : true;
+    if(!val){
+      if(champ) champ.focus();
+      return;
+    }
+    libAppliquer(val, initVide);
+  };
+}
+
+const bLibDefaut = document.getElementById("libDefaut");
+if(bLibDefaut){
+  bLibDefaut.onclick = function(){
+    if(confirm("Revenir au dossier de bibliothèque par défaut inclus dans le dépôt CAO ?")){
+      const champ = document.getElementById("libChem");
+      if(champ) champ.value = "";
+      libAppliquer("", false);
+    }
+  };
+}
+
+const bLibParcourir = document.getElementById("libParcourir");
+if(bLibParcourir){
+  bLibParcourir.onclick = libParcourir;
+}
+
+const inLibChem = document.getElementById("libChem");
+if(inLibChem){
+  inLibChem.addEventListener("keydown", function(e){
+    if(e.key === "Enter") document.getElementById("libAppliquer").click();
+  });
+}
+
+libChargerConfig();
 
 /* ==========================================================================
    Mode tactile

@@ -150,7 +150,7 @@ WEB_CAO/
 │
 ├── profils/                       Profils utilisateurs sauvegardés (ex: Pilou.json)
 ├── LIB_composants.csv             Bibliothèque locale de références (optionnelle)
-└── requirements.txt               Fichier explicatif des garanties sans dépendance
+└── requirements.txt               Dépendances pour les solveurs SI/PI et bancs d'essai
 ```
 
 ---
@@ -164,14 +164,15 @@ Le projet est conçu selon une règle stricte : **zéro dépendance externe obli
 
 ### Dépendances facultatives (Solveurs avancés)
 Seuls les calculs de simulation électromagnétique et de chute continue utilisent des bibliothèques scientifiques :
-- **numpy** : requis uniquement pour le solveur d'impédance MoM (`python/ligne_mom.py`) et le crosstalk (`python/crosstalk.py`).
-- **scipy** : requis uniquement pour le gradient conjugué du solveur DC (`python/dc_solver.py`) et les intégrales elliptiques des bancs d'essai.
+- **numpy** : requis pour le solveur d'impédance MoM (`python/ligne_mom.py`) et le crosstalk (`python/crosstalk.py`).
+- **scipy** : requis pour le gradient conjugué du solveur DC (`python/dc_solver.py`), les fonctions de Green et les intégrales elliptiques des bancs d'essai.
+- **shapely** : requis pour la fusion des tronçons du solveur 2,5D pleine onde (`mom_solver/`, `python/simulation_25d.py`).
 
 ```bash
-pip install numpy scipy
+pip install -r requirements.txt
 ```
 
-Sans ces deux paquets, l'ensemble des 4 outils fonctionne normalement ; seules les requêtes de simulation numérique indiquent la commande d'installation nécessaire.
+Sans ces paquets, l'ensemble des 4 outils fonctionne normalement ; seules les requêtes de simulation numérique indiquent la commande d'installation nécessaire.
 
 ---
 

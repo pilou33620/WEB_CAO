@@ -2,6 +2,21 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.14.0
+# Date: 2026-09-13
+# Explication: configuration dynamique du dossier de la bibliotheque centrale
+#   LIB (/api/lib/config, argument --lib, persistance config_lib.json, routage
+#   transparent /LIB/..., detection Google Drive / Cloud, initialisation automatique).
+# Fonctions ajoutees/modifiees :
+# - LIB_CONFIG_FICHIER, DOSSIER_LIB_ACTIF, DOSSIER_LIB_IMPOSE
+# - chemin_config_lib, charger_config_lib, enregistrer_config_lib
+# - dossier_lib, detecter_dossiers_cloud, initialiser_lib_dans_dossier
+# - statistiques_lib, definir_dossier_lib
+# - CustomHandler.HIDDEN, CustomHandler.translate_path
+# - CustomHandler._lib_config_lire, _lib_config_ecrire
+# - CustomHandler.do_OPTIONS, do_GET, do_HEAD, do_POST, do_PUT (routage /api/lib/config)
+# - start_server (journal de la bibliotheque), main (--lib)
+#
 # Version: 2.13.0
 # Date: 2026-09-05
 # Explication: ajout des routes de scoring de placement PCB (/api/pcb/score-placement)
@@ -295,12 +310,14 @@ authentification -- a n'utiliser que sur un reseau de confiance. --local coupe
 cet acces.
 """
 import argparse
+import datetime
 import http.server
 import ipaddress
 import json
 import os
 import posixpath
 import re
+import shutil
 import socket
 import socketserver
 import sys
@@ -494,11 +511,15 @@ def nom_profil(brut):
 
 # -- bibliotheques CAO (LIB) ------------------------------------------------
 LIB_DIR_NAME = "LIB"
+LIB_CONFIG_FICHIER = "config_lib.json"
 LIB_SOUS_DOSSIERS = {
     "pcb": "lib_empreinte_pcb",
     "schematique": "lib_empreinte_schematique",
     "simulation": "lib_simulation"
 }
+
+DOSSIER_LIB_ACTIF = None
+DOSSIER_LIB_IMPOSE = False
 
 
 class ErreurLib(Exception):
@@ -510,8 +531,58 @@ class ErreurLib(Exception):
         self.message = message
 
 
+def chemin_config_lib():
+    """Chemin absolu vers le fichier de persistance de la LIB."""
+    return os.path.join(ROOT, LIB_CONFIG_FICHIER)
+
+
+def charger_config_lib():
+    """Lit config_lib.json s'il existe pour restaurer le dossier personnalise de la LIB."""
+    global DOSSIER_LIB_ACTIF
+    if DOSSIER_LIB_IMPOSE:
+        return
+    cfg_path = chemin_config_lib()
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                chemin = (data.get("chemin") or "").strip()
+                if chemin and os.path.exists(chemin):
+                    DOSSIER_LIB_ACTIF = os.path.abspath(chemin)
+        except Exception:
+            pass
+
+
+def enregistrer_config_lib(chemin):
+    """Enregistre le chemin de la LIB dans config_lib.json ou efface le fichier si par defaut."""
+    cfg_path = chemin_config_lib()
+    defaut = os.path.realpath(os.path.join(ROOT, LIB_DIR_NAME))
+    if not chemin or (os.path.exists(chemin) and os.path.realpath(chemin) == defaut):
+        try:
+            if os.path.exists(cfg_path):
+                os.remove(cfg_path)
+        except OSError:
+            pass
+        return
+    try:
+        data = {
+            "chemin": os.path.abspath(chemin),
+            "date": datetime.datetime.now().isoformat()
+        }
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except OSError as exc:
+        raise ErreurLib(500, "Impossible d'enregistrer config_lib.json : %s" % exc)
+
+
 def dossier_lib():
-    """Le dossier centralise LIB, a cote d'index.html."""
+    """Le dossier centralise LIB (personnalise ou par defaut sous ROOT)."""
+    global DOSSIER_LIB_ACTIF
+    if DOSSIER_LIB_ACTIF:
+        return DOSSIER_LIB_ACTIF
+    charger_config_lib()
+    if DOSSIER_LIB_ACTIF:
+        return DOSSIER_LIB_ACTIF
     return os.path.join(ROOT, LIB_DIR_NAME)
 
 
@@ -525,6 +596,179 @@ def chemin_lib_fichier(genre, nom_brut):
     rep = os.path.join(dossier_lib(), LIB_SOUS_DOSSIERS[genre])
     os.makedirs(rep, exist_ok=True)
     return os.path.join(rep, nom)
+
+
+def detecter_dossiers_cloud():
+    """Detecte les dossiers potentiels de Google Drive / Cloud sur la machine."""
+    suggestions = []
+    vues = set()
+
+    def ajouter(chemin, label):
+        if chemin and os.path.exists(chemin):
+            vrai = os.path.realpath(chemin)
+            if vrai not in vues:
+                vues.add(vrai)
+                suggestions.append({"label": label, "chemin": os.path.abspath(chemin)})
+
+    if sys.platform == "win32":
+        try:
+            import string
+            from ctypes import windll
+            bitmask = windll.kernel32.GetLogicalDrives()
+            for letter in string.ascii_uppercase:
+                if bitmask & 1:
+                    drive = letter + ":\\"
+                    for sous in ("Mon Drive", "My Drive"):
+                        d = os.path.join(drive, sous)
+                        if os.path.exists(d):
+                            ajouter(os.path.join(d, "CAO_LIB"), f"Google Drive ({letter}:\\{sous}\\CAO_LIB)")
+                            ajouter(d, f"Google Drive ({letter}:\\{sous})")
+                bitmask >>= 1
+        except Exception:
+            pass
+
+    user_home = os.path.expanduser("~")
+    candidats = [
+        (os.path.join(user_home, "Google Drive"), "Google Drive (Dossier utilisateur)"),
+        (os.path.join(user_home, "Mon Drive"), "Mon Drive (Dossier utilisateur)"),
+        (os.path.join(user_home, "My Drive"), "My Drive (Dossier utilisateur)"),
+        (os.path.join(user_home, "OneDrive"), "OneDrive (Dossier utilisateur)"),
+        (os.path.join(user_home, "Dropbox"), "Dropbox (Dossier utilisateur)"),
+    ]
+    for cand, lbl in candidats:
+        if os.path.exists(cand):
+            ajouter(os.path.join(cand, "CAO_LIB"), f"{lbl}\\CAO_LIB")
+            ajouter(cand, lbl)
+
+    return suggestions
+
+
+def initialiser_lib_dans_dossier(cible):
+    """Copie la structure par defaut de la LIB (CSV, empreintes, symboles) dans cible."""
+    source_lib = os.path.join(ROOT, LIB_DIR_NAME)
+    if not os.path.exists(source_lib):
+        return 0
+
+    os.makedirs(cible, exist_ok=True)
+    fichiers_copies = 0
+
+    src_csv = os.path.join(source_lib, "LIB_composants.csv")
+    if not os.path.exists(src_csv):
+        src_csv = os.path.join(ROOT, "LIB_composants.csv")
+    dst_csv = os.path.join(cible, "LIB_composants.csv")
+    if os.path.exists(src_csv) and not os.path.exists(dst_csv):
+        shutil.copy2(src_csv, dst_csv)
+        fichiers_copies += 1
+
+    for genre, sous in LIB_SOUS_DOSSIERS.items():
+        src_rep = os.path.join(source_lib, sous)
+        dst_rep = os.path.join(cible, sous)
+        os.makedirs(dst_rep, exist_ok=True)
+        if os.path.exists(src_rep) and os.path.isdir(src_rep):
+            for f in os.listdir(src_rep):
+                s_f = os.path.join(src_rep, f)
+                d_f = os.path.join(dst_rep, f)
+                if os.path.isfile(s_f) and not os.path.exists(d_f):
+                    shutil.copy2(s_f, d_f)
+                    fichiers_copies += 1
+
+    return fichiers_copies
+
+
+def statistiques_lib(dossier):
+    """Calcule les statistiques et l'etat d'un dossier de bibliotheque."""
+    existe = os.path.exists(dossier) if dossier else False
+    est_gdrive = False
+    if dossier:
+        norm = dossier.lower().replace("/", "\\")
+        if "google drive" in norm or "mon drive" in norm or "my drive" in norm or norm.startswith("g:\\"):
+            est_gdrive = True
+
+    stats = {
+        "composants": 0,
+        "pcb": 0,
+        "schematique": 0,
+        "simulation": 0,
+        "csv_present": False
+    }
+
+    if existe and os.path.isdir(dossier):
+        csv_path = os.path.join(dossier, "LIB_composants.csv")
+        if os.path.exists(csv_path):
+            stats["csv_present"] = True
+            try:
+                with open(csv_path, "r", encoding="utf-8", errors="replace") as f:
+                    lignes = [l for l in f if l.strip()]
+                    stats["composants"] = max(0, len(lignes) - 1)
+            except Exception:
+                pass
+
+        for genre, sous in LIB_SOUS_DOSSIERS.items():
+            rep = os.path.join(dossier, sous)
+            if os.path.exists(rep) and os.path.isdir(rep):
+                try:
+                    fichiers = [f for f in os.listdir(rep) if os.path.isfile(os.path.join(rep, f))]
+                    stats[genre] = len(fichiers)
+                except OSError:
+                    pass
+
+    return {
+        "existe": existe,
+        "google_drive": est_gdrive,
+        "statistiques": stats
+    }
+
+
+def definir_dossier_lib(chemin_brut, initialiser=True):
+    """Change le dossier actif de la LIB, initialise si vide si demande, et persiste."""
+    global DOSSIER_LIB_ACTIF
+    defaut = os.path.join(ROOT, LIB_DIR_NAME)
+    chemin = str(chemin_brut or "").strip().strip('"')
+
+    if not chemin or chemin.lower() in ("defaut", "default", "standard"):
+        DOSSIER_LIB_ACTIF = os.path.abspath(defaut)
+        enregistrer_config_lib(None)
+        return {
+            "ok": True,
+            "chemin": DOSSIER_LIB_ACTIF,
+            "est_defaut": True,
+            "fichiers_copies": 0,
+            "message": "Bibliotheque reinitialisee au dossier par defaut du depot."
+        }
+
+    cible = os.path.abspath(os.path.expanduser(chemin))
+    copies = 0
+    if not os.path.exists(cible):
+        if initialiser:
+            try:
+                os.makedirs(cible, exist_ok=True)
+                copies = initialiser_lib_dans_dossier(cible)
+            except OSError as exc:
+                raise ErreurLib(500, "Impossible de creer le dossier « %s » : %s" % (cible, exc))
+        else:
+            raise ErreurLib(404, "Le dossier « %s » n'existe pas." % cible)
+    else:
+        if not os.path.isdir(cible):
+            raise ErreurLib(400, "Le chemin « %s » n'est pas un dossier." % cible)
+        csv_path = os.path.join(cible, "LIB_composants.csv")
+        if not os.path.exists(csv_path) and initialiser:
+            copies = initialiser_lib_dans_dossier(cible)
+
+    DOSSIER_LIB_ACTIF = cible
+    enregistrer_config_lib(cible)
+
+    est_defaut = os.path.realpath(cible) == os.path.realpath(defaut)
+    msg = "Bibliotheque configuree sur %s" % cible
+    if copies > 0:
+        msg += " (%d fichiers par defaut copies)" % copies
+
+    return {
+        "ok": True,
+        "chemin": DOSSIER_LIB_ACTIF,
+        "est_defaut": est_defaut,
+        "fichiers_copies": copies,
+        "message": msg
+    }
 
 
 # -- dossiers de projet -----------------------------------------------------
@@ -910,7 +1154,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     # rien et donnerait un second chemin a surveiller.
     HIDDEN = ('.git', '.github', '.gitignore', '.venv', '__pycache__', '.env',
               'profils', 'api_key_free_ia_studio.txt', 'LIB_composants.csv',
-              'mom_solver.log')
+              'mom_solver.log', 'config_lib.json')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
@@ -941,6 +1185,21 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
         super().end_headers()
+
+    def translate_path(self, path):
+        """Traduit le chemin URL. Redirige /LIB/... vers dossier_lib()."""
+        clean = urllib.parse.unquote(urllib.parse.urlsplit(path).path)
+        if clean == "/LIB" or clean == "/LIB/" or clean.startswith("/LIB/"):
+            rel = clean[5:].lstrip("/\\") if clean.startswith("/LIB/") else ""
+            cible = os.path.abspath(os.path.join(dossier_lib(), rel))
+            try:
+                real_lib = os.path.realpath(dossier_lib())
+                real_cible = os.path.realpath(cible)
+                if real_cible == real_lib or real_cible.startswith(real_lib + os.sep):
+                    return cible
+            except OSError:
+                pass
+        return super().translate_path(path)
 
     def _hidden(self, path):
         """Vrai si le chemin sort de ROOT ou touche un fichier de travail."""
@@ -1575,6 +1834,35 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurLib(500, "Erreur suppression : %s" % exc)
         return {"ok": True, "supprime": nom}
 
+    def _lib_config_lire(self):
+        """GET /api/lib/config : etat, statistiques, chemin actif et suggestions cloud."""
+        dossier = dossier_lib()
+        defaut = os.path.join(ROOT, LIB_DIR_NAME)
+        est_defaut = os.path.realpath(dossier) == os.path.realpath(defaut) if os.path.exists(dossier) and os.path.exists(defaut) else (dossier == defaut)
+        info = statistiques_lib(dossier)
+        return {
+            "chemin": dossier,
+            "defaut": defaut,
+            "est_defaut": est_defaut,
+            "existe": info["existe"],
+            "google_drive": info["google_drive"],
+            "statistiques": info["statistiques"],
+            "suggestions_cloud": detecter_dossiers_cloud()
+        }
+
+    def _lib_config_ecrire(self):
+        """POST /api/lib/config : definir le chemin de la LIB."""
+        charge = self._lire_json()
+        if not isinstance(charge, dict):
+            raise ErreurLib(400, "Corps JSON invalide (objet attendu)")
+        chemin = charge.get("chemin")
+        initialiser = bool(charge.get("initialiser", True))
+        res = definir_dossier_lib(chemin, initialiser=initialiser)
+        info = statistiques_lib(res["chemin"])
+        res["statistiques"] = info["statistiques"]
+        res["google_drive"] = info["google_drive"]
+        return res
+
     # -- import IPC-2581 ---------------------------------------------------
     # La visionneuse envoie le fichier tel quel, le serveur rend le modele en
     # JSON. Le parseur est en Python (python/ipc2581_parser.py) : c'est la seule
@@ -2110,7 +2398,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route in ("/api/profils", "/api/profil",
                      "/api/projets", "/api/projet", "/api/projet/doc",
                      "/api/lib/composants", "/api/lib/fichiers", "/api/lib/fichier",
-                     "/api/ia/cle"):
+                     "/api/lib/config", "/api/ia/cle"):
             self.send_response(204)
             self.send_header("Access-Control-Allow-Methods",
                              "GET, POST, PUT, DELETE, OPTIONS")
@@ -2150,6 +2438,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/lib/fichier":
             self._lib_api(self._lib_fichier_ecrire)
             return
+        if route == "/api/lib/config":
+            self._lib_api(self._lib_config_ecrire)
+            return
         self.send_error(405, "Unsupported method (PUT)")
 
     def do_DELETE(self):
@@ -2173,6 +2464,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/lib/fichier":
             self._lib_api(self._lib_fichier_ecrire)
+            return
+        if route == "/api/lib/config":
+            self._lib_api(self._lib_config_ecrire)
             return
         if route == "/api/ipc2581":
             self._ipc_api(self._ipc2581_importer)
@@ -2266,6 +2560,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/lib/fichier":
             self._lib_api(self._lib_fichier_lire)
             return
+        if route == "/api/lib/config":
+            self._lib_api(self._lib_config_lire)
+            return
         if route == "/api/ia/cle":
             self._ia_cle_api()
             return
@@ -2293,6 +2590,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/lib/fichier":
             self._lib_api(self._lib_fichier_lire)
+            return
+        if route == "/api/lib/config":
+            self._lib_api(self._lib_config_lire)
             return
         if route == "/api/ia/cle":
             self._ia_cle_api()
@@ -2476,6 +2776,10 @@ def start_server(host, port, navigateur=True):
                   % ("racine :" if i == 0 else "        ", racine))
         if len(racines_projets()) > 1:
             print("                  (la premiere sert de defaut a la creation)")
+    d_lib = dossier_lib()
+    defaut_lib = os.path.join(ROOT, LIB_DIR_NAME)
+    lib_est_defaut = os.path.realpath(d_lib) == os.path.realpath(defaut_lib) if os.path.exists(d_lib) and os.path.exists(defaut_lib) else (d_lib == defaut_lib)
+    print("  bibliotheque  : %s %s" % (d_lib, "(personnalisee)" if not lib_est_defaut else "(par defaut)"))
     if is_local_only:
         print("  adresse       : %s" % url)
         print()
@@ -2542,11 +2846,18 @@ def main(argv=None):
                          " cote d'index.html). Repetable, ou plusieurs chemins"
                          " separes par « %s ». Aucun projet ne peut etre lu ni"
                          " ecrit hors de ces racines" % os.pathsep)
+    ap.add_argument("--lib", default=None, metavar="DOSSIER",
+                    help="chemin d'acces au dossier de la bibliotheque LIB (defaut :"
+                         " LIB/ a cote d'index.html ou config_lib.json)")
     args = ap.parse_args(argv)
     if args.dossier:
         global ROOT, DOSSIER_IMPOSE
         ROOT = os.path.abspath(os.path.expanduser(args.dossier))
         DOSSIER_IMPOSE = True
+    if args.lib:
+        global DOSSIER_LIB_IMPOSE
+        definir_dossier_lib(args.lib, initialiser=False)
+        DOSSIER_LIB_IMPOSE = True
     if args.projets:
         global RACINES_PROJETS
         # --projets se repete, et chaque valeur peut en contenir plusieurs :

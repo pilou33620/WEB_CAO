@@ -165,6 +165,57 @@ class TestLibRoutes(unittest.TestCase):
             self.assertEqual(len(cols), 39)
             self.assertEqual(cols, colonnes_attendues)
 
+    def test_10_lib_config_get(self):
+        req = urllib.request.Request(f"{BASE_URL}/api/lib/config")
+        with urllib.request.urlopen(req) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode("utf-8"))
+            self.assertIn("chemin", data)
+            self.assertIn("defaut", data)
+            self.assertTrue(data.get("est_defaut"))
+            self.assertTrue(data.get("existe"))
+            self.assertIn("statistiques", data)
+            self.assertGreater(data["statistiques"].get("composants", 0), 0)
+
+    def test_11_lib_config_post_personnalise_et_reset(self):
+        import shutil
+        dossier_tmp = os.path.join(ROOT, "_test_tmp_lib_custom")
+        if os.path.exists(dossier_tmp):
+            shutil.rmtree(dossier_tmp, ignore_errors=True)
+
+        try:
+            # 1. Configurer un dossier personnalisé avec initialisation automatique
+            payload = json.dumps({"chemin": dossier_tmp, "initialiser": True}).encode("utf-8")
+            req = urllib.request.Request(f"{BASE_URL}/api/lib/config", data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req) as resp:
+                self.assertEqual(resp.status, 200)
+                data = json.loads(resp.read().decode("utf-8"))
+                self.assertTrue(data.get("ok"))
+                self.assertFalse(data.get("est_defaut"))
+                self.assertGreater(data.get("fichiers_copies", 0), 0)
+                self.assertTrue(os.path.exists(os.path.join(dossier_tmp, "LIB_composants.csv")))
+
+            # 2. Vérifier que GET /api/lib/config reflète ce nouveau dossier
+            req_get = urllib.request.Request(f"{BASE_URL}/api/lib/config")
+            with urllib.request.urlopen(req_get) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.assertFalse(data.get("est_defaut"))
+                self.assertEqual(os.path.realpath(data["chemin"]), os.path.realpath(dossier_tmp))
+
+            # 3. Réinitialiser par défaut
+            payload_reset = json.dumps({"chemin": "", "initialiser": False}).encode("utf-8")
+            req_reset = urllib.request.Request(f"{BASE_URL}/api/lib/config", data=payload_reset, headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req_reset) as resp:
+                self.assertEqual(resp.status, 200)
+                data = json.loads(resp.read().decode("utf-8"))
+                self.assertTrue(data.get("ok"))
+                self.assertTrue(data.get("est_defaut"))
+
+        finally:
+            if os.path.exists(dossier_tmp):
+                shutil.rmtree(dossier_tmp, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()
+
