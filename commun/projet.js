@@ -104,7 +104,10 @@ function projNormaliser(o){
       if(!e || typeof e !== "object") continue;
       const v = projNomValide(e.nom);
       if(!v || p.liste.some(x => projMemeNom(x.nom, v))) continue;
-      p.liste.push({nom:v, t:(+e.t || 0)});
+      const entree = {nom:v, t:(+e.t || 0)};
+      if(e.chemin && typeof e.chemin === "string") entree.chemin = e.chemin.trim();
+      if(e.mode && typeof e.mode === "string") entree.mode = e.mode.trim();
+      p.liste.push(entree);
       if(p.liste.length >= PROJ_MEMOIRE) break;
     }
   return p;
@@ -137,7 +140,7 @@ function projNom(){ return projCharger().nom; }
 /* Ouvre un projet, existant ou nouveau — c'est le même geste, seule la
    présence dans la liste fait la différence. Renvoie le nom retenu, ou ""
    si le nom est refusé. */
-function projOuvrir(brut){
+function projOuvrir(brut, chemin, mode){
   const v = projNomValide(brut);
   if(!v) return "";
   const p = projCharger();
@@ -154,12 +157,28 @@ function projOuvrir(brut){
     }catch(_){}
   }
   p.nom = v;
+  const existant = p.liste.find(e => projMemeNom(e.nom, v));
+  const chemRetenu = (chemin && typeof chemin === "string") ? chemin.trim() : (existant && existant.chemin) || "";
+  const modeRetenu = (mode && typeof mode === "string") ? mode.trim() : (existant && existant.mode) || "";
   p.liste = p.liste.filter(e => !projMemeNom(e.nom, v));
-  p.liste.unshift({nom:v, t:Date.now()});
+  p.liste.unshift({nom:v, t:Date.now(), chemin:chemRetenu, mode:modeRetenu});
   if(p.liste.length > PROJ_MEMOIRE) p.liste.length = PROJ_MEMOIRE;
   projEnregistrer();
   projSignaler();
   return v;
+}
+/* Met à jour le chemin ou le mode d'un projet déjà listé. */
+function projRenseignerChemin(nom, chemin, mode){
+  const v = projNomValide(nom);
+  if(!v) return;
+  const p = projCharger();
+  const entree = p.liste.find(x => projMemeNom(x.nom, v));
+  if(entree){
+    if(chemin) entree.chemin = String(chemin).trim();
+    if(mode) entree.mode = String(mode).trim();
+    projEnregistrer();
+    projSignaler();
+  }
 }
 /* Referme sans rien oublier : le projet reste dans la liste, il n'est
    simplement plus celui sur lequel on travaille. */
@@ -204,7 +223,7 @@ function projOublier(brut){
 }
 /* Les projets connus, le plus récent d'abord. Copie, jamais la liste rangée. */
 function projListe(){
-  return projCharger().liste.map(e => ({nom:e.nom, t:e.t}));
+  return projCharger().liste.map(e => ({nom:e.nom, t:e.t, chemin:e.chemin||"", mode:e.mode||""}));
 }
 
 /* Le nom du document d'un outil : « carte PIR » + « pcb » → « carte PIR-PCB ».

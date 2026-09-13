@@ -179,6 +179,155 @@
   .urow button.fort { border-color: var(--blue); color: #fff; }
   .urow button.fort:hover { background: #20242a; }
 
+  /* ---------- Styles refonte gestion projet ---------- */
+  .p-actif-card {
+    background: #141b24;
+    border: 1px solid #234360;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .p-aucun-card {
+    background: var(--panel);
+    border: 1px dashed var(--border2);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-size: 12.5px;
+    color: var(--txt-dim);
+    text-align: center;
+  }
+  .p-docs-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  @media (max-width: 650px) {
+    .p-docs-grid { grid-template-columns: 1fr; }
+  }
+  .p-doc-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #0f1318;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    overflow: hidden;
+  }
+  .p-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border2);
+  }
+  .p-tab {
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: 2px solid transparent;
+    color: var(--txt-dim);
+    padding: 8px 14px;
+    font-size: 13px;
+    font-family: var(--ui);
+    font-weight: 500;
+    cursor: pointer;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    transition: all 0.15s ease;
+  }
+  .p-tab:hover {
+    color: var(--txt);
+  }
+  .p-tab.active {
+    background: var(--panel2);
+    color: var(--yellow);
+    border-color: var(--border2);
+    border-bottom-color: var(--yellow);
+    font-weight: 600;
+  }
+  .p-preview-box {
+    background: #111316;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-top: 10px;
+  }
+  .p-drop-zone {
+    border: 2px dashed var(--border2);
+    border-radius: 8px;
+    background: rgba(17, 19, 22, 0.6);
+    padding: 20px 16px;
+    text-align: center;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+  .p-drop-zone:hover {
+    border-color: var(--blue);
+    background: rgba(63, 160, 234, 0.05);
+  }
+  .btn-sugg {
+    background: var(--panel);
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    color: var(--txt-dim);
+    font-size: 11px;
+    padding: 3px 8px;
+    cursor: pointer;
+    font-family: var(--mono);
+    transition: all 0.15s;
+  }
+  .btn-sugg:hover {
+    border-color: var(--blue);
+    color: var(--txt);
+  }
+  .btn-sm {
+    background: var(--panel);
+    border: 1px solid var(--border2);
+    color: var(--txt);
+    border-radius: 4px;
+    padding: 4px 9px;
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-sm:hover { border-color: var(--blue); color: #fff; }
+  .btn-sm.danger:hover { border-color: var(--red); color: var(--red); }
+  .p-recents-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .p-recent-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    transition: all 0.15s;
+    cursor: pointer;
+  }
+  .p-recent-item:hover {
+    border-color: var(--blue);
+    background: #1c212a;
+  }
+  .p-recent-item.on {
+    border-color: var(--yellow);
+    background: #242217;
+  }
+  .p-recent-item .p-rec-info {
+    min-width: 0;
+    flex: 1;
+  }
+  .p-recent-item .p-rec-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   /* Footer en 2 colonnes paysage */
   footer {
     margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);
@@ -244,38 +393,183 @@
       <!-- Colonne gauche : Projet & Dossier -->
       <div class="dash-col">
         <div class="users" id="blocProjet">
-          <h2>Projet</h2>
-          <div class="ulist" id="pList"></div>
-          <div class="urow">
-            <input id="pNom" maxlength="60" autocomplete="off"
-                   placeholder="Nom d'un nouveau projet… (ex. carte PIR)"
-                   aria-label="Nom d'un nouveau projet">
-            <button id="pAdd">Nouveau projet</button>
-            <button id="pDel" class="danger">Oublier celui-ci</button>
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+            <h2 style="margin:0;">Projet</h2>
+            <div id="pBadgeActif"></div>
           </div>
-          <div class="pcur" id="pCur"></div>
 
-          <!-- Dossier sur le disque -->
-          <div class="pdos">
-            <div class="urow">
-              <button id="pOuvre" class="fort">📁 Ouvrir un dossier…</button>
-              <input id="pChem" maxlength="400" autocomplete="off"
-                     placeholder="…ou un chemin écrit à la main (ex. carte PIR, ou D:\projets\carte PIR)"
-                     aria-label="Dossier du projet">
-              <button id="pChemGo">Ouvrir ce chemin</button>
-              <button id="pDetach" class="danger">Détacher</button>
+          <!-- Fiche du projet actif (affichée si un projet est ouvert) -->
+          <div id="pProjetActifCard" class="p-actif-card" hidden>
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+              <div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="font-size:11px; color:var(--txt-dim); font-family:var(--mono); text-transform:uppercase;">Projet en cours :</span>
+                  <span id="pActifRev" class="badge-stat">REV A</span>
+                </div>
+                <div style="margin-top:2px;">
+                  <b id="pActifNom" style="font-size:18px; color:var(--yellow);"></b>
+                </div>
+                <div style="margin-top:6px; font-size:12px; font-family:var(--mono); color:var(--txt-dim); display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                  <span style="color:var(--blue);">📁 Dossier :</span>
+                  <code id="pActifChemin" style="color:var(--txt); background:var(--bg); padding:2px 6px; border-radius:4px; border:1px solid var(--border);"></code>
+                </div>
+              </div>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <button id="pBtnFermer" class="btn-sm" type="button" title="Fermer ce projet sans supprimer les fichiers">✕ Fermer</button>
+                <button id="pBtnDetacher" class="btn-sm danger" type="button" title="Détacher le dossier du support">🔗 Détacher</button>
+              </div>
             </div>
 
-            <div class="urow" id="pNeufRow">
-              <select id="pRac" aria-label="Racine où créer le projet" hidden></select>
-              <input id="pSous" maxlength="200" autocomplete="off"
-                     placeholder="Sous-dossier… (facultatif, ex. clients/acme)"
-                     aria-label="Sous-dossier où créer le projet">
-              <button id="pCree">Créer le projet ici</button>
+            <!-- Documents du projet -->
+            <div id="pActifDocs" class="p-docs-grid" style="margin-top:12px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.06);">
+              <div class="p-doc-item">
+                <span style="font-size:14px;">📐</span>
+                <div style="min-width:0;">
+                  <div style="font-size:10px; color:var(--txt-dim); font-family:var(--mono);">SCHÉMA</div>
+                  <div id="pDocSch" style="font-size:12px; font-weight:600; color:var(--txt);" class="truncate"><i>absent</i></div>
+                </div>
+              </div>
+              <div class="p-doc-item">
+                <span style="font-size:14px;">🔌</span>
+                <div style="min-width:0;">
+                  <div style="font-size:10px; color:var(--txt-dim); font-family:var(--mono);">PCB</div>
+                  <div id="pDocPcb" style="font-size:12px; font-weight:600; color:var(--txt);" class="truncate"><i>absent</i></div>
+                </div>
+              </div>
+              <div class="p-doc-item">
+                <span style="font-size:14px;">📦</span>
+                <div style="min-width:0;">
+                  <div style="font-size:10px; color:var(--txt-dim); font-family:var(--mono);">IPC-2581</div>
+                  <div id="pDocIpc" style="font-size:12px; font-weight:600; color:var(--txt);" class="truncate"><i>absent</i></div>
+                </div>
+              </div>
             </div>
-            <div class="pcur" id="pDosEtat"></div>
-            <div class="ulist" id="pDosList"></div>
           </div>
+
+          <!-- Message si aucun projet actif -->
+          <div id="pAucunProjet" class="p-aucun-card" style="margin-bottom:14px;">
+            <i>Aucun projet actuellement ouvert. Choisissez une option ci-dessous pour commencer.</i>
+          </div>
+
+          <!-- Sélecteur d'onglets : Nouveau Projet vs Ouvrir un projet -->
+          <div class="p-tabs" style="margin-bottom:14px;">
+            <button id="pTabNouveau" class="p-tab active" type="button">
+              <span>➕</span> Nouveau projet
+            </button>
+            <button id="pTabOuvrir" class="p-tab" type="button">
+              <span>📁</span> Ouvrir un projet existant
+            </button>
+          </div>
+
+          <!-- ==================== PANNEAU 1 : NOUVEAU PROJET ==================== -->
+          <div id="pPanelNouveau" class="p-panel-content">
+            <div style="font-size:12px; color:var(--txt-dim); margin-bottom:10px;">
+              Créer un nouveau projet en renseignant son <b>nom</b> et son <b>chemin d'accès</b> sur votre support :
+            </div>
+
+            <div style="margin-bottom:10px;">
+              <label for="pNomNouveau" style="display:block; font-size:11px; font-family:var(--mono); color:var(--txt-dim); text-transform:uppercase; margin-bottom:4px;">
+                1. Nom du projet <span style="color:var(--red);">*</span>
+              </label>
+              <input id="pNomNouveau" maxlength="60" autocomplete="off"
+                     placeholder="ex: Carte_Alimentation_12V, Capteur_PIR…"
+                     aria-label="Nom du nouveau projet"
+                     style="width:100%; box-sizing:border-box;">
+              <div style="font-size:11px; color:var(--txt-dim); margin-top:4px;">
+                Définit le dossier et les préfixes de fichiers (<code style="color:var(--blue);">-SCH.json</code>, <code style="color:var(--blue);">-PCB.json</code>).
+              </div>
+            </div>
+
+            <div style="margin-bottom:12px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <label for="pCheminNouveau" style="font-size:11px; font-family:var(--mono); color:var(--txt-dim); text-transform:uppercase;">
+                  2. Chemin d'accès / Dossier parent sur le support <span style="color:var(--red);">*</span>
+                </label>
+              </div>
+              <div class="urow" style="margin-top:0;">
+                <input id="pCheminNouveau" maxlength="400" autocomplete="off"
+                       placeholder="Dossier parent (ex: D:\projets ou C:\Users\…\Desktop)"
+                       aria-label="Chemin d'accès ou dossier parent">
+                <button id="pBtnParcourirNouveau" type="button" title="Parcourir le support pour choisir l'emplacement">
+                  📁 Parcourir…
+                </button>
+              </div>
+              <!-- Suggestions d'emplacements -->
+              <div id="pSuggEmplacements" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:6px;">
+                <span style="font-size:11px; color:var(--txt-dim);">Emplacements :</span>
+                <button type="button" class="btn-sugg" data-chemin="projets">📁 Projets locaux (dépôt)</button>
+              </div>
+            </div>
+
+            <!-- Aperçu interactif du dossier et des fichiers créés -->
+            <div class="p-preview-box" id="pApercuNouveau">
+              <div style="font-size:11px; font-family:var(--mono); color:var(--txt-dim); margin-bottom:6px; font-weight:600;">
+                👁️ Dossier et fichiers qui seront créés :
+              </div>
+              <div style="font-family:var(--mono); font-size:12px; color:var(--yellow); font-weight:bold;">
+                📁 <span id="pPrevDossier">D:\projets\NouveauProjet\</span>
+              </div>
+              <div style="padding-left:18px; margin-top:4px; font-size:11px; font-family:var(--mono); color:var(--txt-dim); display:flex; flex-direction:column; gap:2px;">
+                <div>📄 <span style="color:var(--blue);">projet.cao.json</span> <span style="opacity:0.7;">(manifeste du projet)</span></div>
+                <div>📄 <span id="pPrevSch" style="color:var(--txt);">NouveauProjet-SCH.json</span> <span style="opacity:0.7;">(schéma)</span></div>
+                <div>📄 <span id="pPrevPcb" style="color:var(--txt);">NouveauProjet-PCB.json</span> <span style="opacity:0.7;">(circuit imprimé)</span></div>
+              </div>
+            </div>
+
+            <div style="margin-top:12px; display:flex; justify-content:flex-end;">
+              <button id="pBtnCreerNouveau" class="fort" style="padding:8px 18px; font-size:13px;" type="button">
+                ✨ Créer et initialiser le projet
+              </button>
+            </div>
+          </div>
+
+          <!-- ==================== PANNEAU 2 : OUVRIR UN PROJET EXISTANT ==================== -->
+          <div id="pPanelOuvrir" class="p-panel-content" hidden>
+            <div style="font-size:12px; color:var(--txt-dim); margin-bottom:12px;">
+              Choisissez directement le dossier de votre projet sur le support (disque, clé USB, Google Drive...) :
+            </div>
+
+            <!-- Grand bouton de sélection directe du dossier sur le support -->
+            <div class="p-drop-zone" id="pZoneChoisirDossier">
+              <div style="font-size:28px; margin-bottom:6px;">📂</div>
+              <div style="font-size:14px; font-weight:600; color:var(--txt);">
+                Choisir le dossier du projet sur le support…
+              </div>
+              <div style="font-size:12px; color:var(--txt-dim); margin-top:4px;">
+                Sélectionnez le dossier de la carte. S'il contient <code>projet.cao.json</code>, il s'ouvre instantanément.
+              </div>
+              <button id="pBtnChoisirSupport" type="button" class="fort" style="margin-top:12px; padding:7px 16px;">
+                📁 Parcourir les dossiers…
+              </button>
+            </div>
+
+            <!-- Saisie directe d'un chemin -->
+            <div style="margin-top:14px; padding-top:12px; border-top:1px dashed var(--border2);">
+              <label for="pCheminExistant" style="display:block; font-size:11px; font-family:var(--mono); color:var(--txt-dim); text-transform:uppercase; margin-bottom:4px;">
+                Ou saisir directement le chemin du dossier :
+              </label>
+              <div class="urow" style="margin-top:0;">
+                <input id="pCheminExistant" maxlength="400" autocomplete="off"
+                       placeholder="Chemin d'accès complet ou sous-dossier (ex: D:\projets\carte PIR)"
+                       aria-label="Chemin du dossier existant">
+                <button id="pBtnOuvrirChemin" type="button">Ouvrir ce dossier</button>
+              </div>
+            </div>
+
+            <!-- Liste des projets récents sur le support -->
+            <div style="margin-top:14px; padding-top:12px; border-top:1px dashed var(--border2);">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-size:11px; font-family:var(--mono); color:var(--txt-dim); text-transform:uppercase; font-weight:600;">
+                  Projets récents sur le support
+                </span>
+                <span style="font-size:11px; color:var(--txt-dim);">1 clic pour rouvrir</span>
+              </div>
+              <div id="pListeRecents" class="p-recents-list"></div>
+            </div>
+          </div>
+
+          <!-- Message d'état / notification projet -->
+          <div class="pcur" id="pDosEtat" style="margin-top:12px;"></div>
         </div>
       </div>
 
@@ -426,280 +720,445 @@ function uRendre(){ uRendreListe(); uRendreInfo(); uRendreRecents(); }
    carte. Le nom vit dans localStorage (commun/projet.js) et non dans la
    session : un projet ne meurt pas à la fermeture de l'onglet.
    ========================================================================== */
-function pRendre(){
-  const nom = projNom();
-  /* Le nom en cours, et les deux noms qu'il donne aux éditeurs : on les
-     montre pour qu'on n'ait pas à deviner ce qui partira sur les fichiers. */
-  document.getElementById("pCur").innerHTML = nom
-    ? "Projet en cours : <b>" + uEsc(nom) + "</b>"
-      + "<span>" + uEsc(projDoc("schema")) + "</span>"
-      + "<span>" + uEsc(projDoc("pcb")) + "</span>"
-    : "<i>Aucun projet nommé. Les exports garderont leurs noms par défaut "
-      + "(<b>schema</b>, <b>carte</b>) et le Master Drawing un repère "
-      + "générique.</i>";
-  document.getElementById("pDel").hidden = !nom;
-  /* Les projets déjà nommés, pour y revenir sans les retaper */
-  const box = document.getElementById("pList");
-  box.innerHTML = projListe().map(function(e){
-    const on = projMemeNom(e.nom, nom);
-    return '<button data-projet="' + uEsc(e.nom) + '"'
-      + (on ? ' class="on"' : '') + '>'
-      + '<span class="ck">' + (on ? "\u2713" : "") + '</span>'
-      + uEsc(e.nom) + '</button>';
-  }).join("");
-  box.querySelectorAll("[data-projet]").forEach(function(b){
-    b.onclick = function(){ projOuvrir(b.dataset.projet); pRendre(); };
-  });
-}
-document.getElementById("pAdd").onclick = function(){
-  const champ = document.getElementById("pNom");
-  const nom = champ.value;
-  if(!nom.trim()){ champ.focus(); return; }
-  if(!projOuvrir(nom)){
-    alert("Nom refusé : ce nom devient un préfixe de nom de fichier.\n\n"
-      + "Évitez \\ / : * ? \" < > | et le point en début ou en fin, "
-      + "et tenez-vous en à 60 caractères.");
-    return;
-  }
-  champ.value = "";
-  pRendre();
-};
-document.getElementById("pNom").addEventListener("keydown", function(e){
-  if(e.key === "Enter") document.getElementById("pAdd").click();
-});
-document.getElementById("pDel").onclick = function(){
-  const nom = projNom();
-  if(!nom) return;
-  if(!confirm("Oublier le projet « " + nom + " » ?\n\n"
-    + "Seul le nom est oublié. Les schémas et les cartes sont des fichiers "
-    + "à part : ils ne sont pas touchés."))
-    return;
-  projOublier(nom);
-  pRendre();
-};
 /* ==========================================================================
-   Le dossier du projet
-   Un projet nommé, c'est déjà des noms de fichiers cohérents. Un projet
-   rattaché à un dossier, c'est mieux : les éditeurs y lisent et y réécrivent
-   leur document, et le fichier projet.cao.json fait le lien.
-   Deux voies, car un navigateur ne peut pas ouvrir un chemin qu'on lui tape :
-   serveur.py (chemin écrit à la main) ou le sélecteur de dossier du navigateur.
-   Voir commun/projet-disque.js.
+   Refonte Gestion de Projet : Nouveau projet & Ouvrir un projet existant
    ========================================================================== */
-function pDosMsg(txt, ennui){
-  const el = document.getElementById("pDosEtat");
-  el.innerHTML = ennui ? "<i>" + uEsc(txt) + "</i>" : txt;
-}
-/* Ce que le dossier contient déjà — c'est la réponse à « et mes fichiers ? ».
-   Un projet neuf n'a rien ; un projet repris a le schéma, la carte, la carte
-   IPC-2581 lue chez le fabricant, ou plusieurs des trois, et chaque outil
-   charge le sien à son ouverture. Aucun n'est obligatoire : beaucoup de
-   projets n'auront jamais d'IPC-2581, et « absent » n'est pas un reproche. */
-function pDosDocs(){
-  const d = projdDocuments();
-  return [["schema", "Schéma"], ["pcb", "PCB"],
-          ["ipc2581", "IPC-2581"]].map(function(x){
-    const e = d[x[0]];
-    return "<span>" + x[1] + " : "
-      + (e.present ? uEsc(e.fichier) : "<i>absent</i>") + "</span>";
-  }).join("");
-}
-function pDosRendre(){
-  const e = projdEtat();
-  /* Un dossier retrouvé dont l'autorisation s'est perdue au rechargement :
-     il ne manque qu'un clic, et un clic ne peut venir que de l'utilisateur. */
-  const rouvrir = projdAReconnecter();
-  document.getElementById("pDetach").hidden = !e.mode && !rouvrir;
-  /* Le bouton dit ce qu'il va faire. Sans sélecteur de dossier — hors
-     Chrome/Edge, ou en double-clic — il ne reste que le chemin écrit à la
-     main, et c'est lui qui prend la place. */
-  const bo = document.getElementById("pOuvre");
-  if(rouvrir){
-    bo.textContent = "📁 Rouvrir « " + rouvrir + " »";
-    bo.title = "Le dossier de la dernière fois est retrouvé ; le navigateur "
-             + "redemande l'autorisation d'y écrire.";
-  }else if(projdSelecteurDispo()){
-    bo.textContent = "📁 Ouvrir un dossier…";
-    bo.title = "Choisir le dossier du projet. S'il contient un projet.cao.json, "
-             + "le projet s'ouvre avec ses documents ; sinon, il en devient un.";
-  }else{
-    bo.textContent = "Ouvrir ce chemin";
-    bo.title = "Ce navigateur n'a pas de sélecteur de dossier : écrivez le "
-             + "chemin, serveur.py s'en occupe.";
+let PROJ_PARENT_HANDLE = null; // DirectoryHandle sélectionné pour un nouveau projet
+
+// Gestion des onglets : Nouveau Projet vs Ouvrir un projet
+const tabNouveau = document.getElementById("pTabNouveau");
+const tabOuvrir = document.getElementById("pTabOuvrir");
+const panelNouveau = document.getElementById("pPanelNouveau");
+const panelOuvrir = document.getElementById("pPanelOuvrir");
+
+function pBasculerOnglet(nouveau) {
+  if(nouveau) {
+    tabNouveau.classList.add("active");
+    tabOuvrir.classList.remove("active");
+    panelNouveau.hidden = false;
+    panelOuvrir.hidden = true;
+  } else {
+    tabOuvrir.classList.add("active");
+    tabNouveau.classList.remove("active");
+    panelOuvrir.hidden = false;
+    panelNouveau.hidden = true;
   }
-  document.getElementById("pChemGo").hidden = !projdSelecteurDispo();
-  if(e.mode){
-    const rev = projdRevision();
-    pDosMsg("Dossier rattaché (" + (e.mode === "serveur" ? "serveur" : "navigateur")
-      + ") : <b>" + uEsc(e.chemin) + "</b><span>révision " + uEsc(rev) + "</span>"
-      + "<br>" + pDosDocs());
-  }else if(rouvrir){
-    pDosMsg("Dossier « " + rouvrir + " » retrouvé, mais le navigateur redemande "
-      + "l'autorisation d'y écrire : cliquez sur « Rouvrir ».", true);
-  }else{
-    pDosMsg("Aucun dossier rattaché : les documents s'ouvrent et se "
-      + "téléchargent à la main.", true);
+}
+tabNouveau.onclick = function() { pBasculerOnglet(true); };
+tabOuvrir.onclick = function() { pBasculerOnglet(false); };
+
+// Aperçu dynamique pour la création d'un nouveau projet
+const inNomNouveau = document.getElementById("pNomNouveau");
+const inChemNouveau = document.getElementById("pCheminNouveau");
+const elPrevDossier = document.getElementById("pPrevDossier");
+const elPrevSch = document.getElementById("pPrevSch");
+const elPrevPcb = document.getElementById("pPrevPcb");
+
+function pMajApercuNouveau() {
+  const nom = (inNomNouveau && inNomNouveau.value.trim()) || "NouveauProjet";
+  let chem = (inChemNouveau && inChemNouveau.value.trim()) || "D:\\projets";
+  if(!chem.endsWith("\\") && !chem.endsWith("/")) {
+    chem += (chem.includes("/") ? "/" : "\\");
   }
-  /* La liste des projets du disque n'existe que par le serveur : le sélecteur
-     de dossier ne donne accès qu'au dossier choisi, jamais à son voisinage. */
-  const box = document.getElementById("pDosList");
-  projdServeurDispo().then(function(dispo){
-    /* Créer par le serveur — une racine déclarée, un sous-dossier — n'a de sens
-       que là où l'on ne peut pas désigner de dossier. Dès que l'explorateur est
-       disponible, « Ouvrir » fait déjà les deux gestes, et deux façons de créer
-       un projet, c'est une de trop : on ne montre celle-ci qu'en repli. */
-    document.getElementById("pNeufRow").hidden = !dispo || projdSelecteurDispo();
-    /* Le chemin écrit à la main n'a de sens que si le serveur tient le disque :
-       sans lui, un champ où taper un chemin ne mène nulle part. */
-    document.getElementById("pChem").hidden = !dispo;
-    document.getElementById("pChemGo").hidden = !dispo || !projdSelecteurDispo();
-    /* Ni serveur ni sélecteur : le bouton ne pourrait rien ouvrir. On le
-       retire plutôt que de le laisser répondre par un refus. */
-    document.getElementById("pOuvre").hidden = !dispo && !projdSelecteurDispo();
-    if(!dispo){
-      box.innerHTML = "";
-      if(!projdSelecteurDispo() && !e.mode && !rouvrir)
-        pDosMsg("Aucun dossier : lancez « python serveur.py --local » pour "
-          + "taper un chemin, ou utilisez Chrome/Edge pour choisir un dossier.",
-          true);
+  if(elPrevDossier) elPrevDossier.textContent = chem + nom + (chem.includes("/") ? "/" : "\\");
+  if(elPrevSch) elPrevSch.textContent = nom + "-SCH.json";
+  if(elPrevPcb) elPrevPcb.textContent = nom + "-PCB.json";
+}
+if(inNomNouveau) inNomNouveau.addEventListener("input", pMajApercuNouveau);
+if(inChemNouveau) inChemNouveau.addEventListener("input", function() {
+  PROJ_PARENT_HANDLE = null; // Saisie manuelle invalide le handle parent précédent
+  pMajApercuNouveau();
+});
+
+// Bouton Parcourir le support pour nouveau projet
+const bParcourirNouveau = document.getElementById("pBtnParcourirNouveau");
+if(bParcourirNouveau) {
+  bParcourirNouveau.onclick = async function() {
+    if(projdSelecteurDispo()) {
+      try {
+        const handle = await window.showDirectoryPicker({ mode: "readwrite", id: "cao-projet-parent" });
+        if(handle && handle.name) {
+          PROJ_PARENT_HANDLE = handle;
+          if(inChemNouveau) inChemNouveau.value = handle.name;
+          pMajApercuNouveau();
+          pDosMsg("Dossier parent « <b>" + uEsc(handle.name) + "</b> » sélectionné sur le support.");
+        }
+      } catch(err) {
+        if(err.name !== "AbortError") pDosMsg(err.message, true);
+      }
+    } else {
+      if(inChemNouveau) inChemNouveau.focus();
+      pDosMsg("Ce navigateur n'a pas de sélecteur de dossier natif. Saisissez le chemin du dossier parent ci-dessus.", true);
+    }
+  };
+}
+
+// Clics sur suggestions d'emplacements
+document.querySelectorAll(".btn-sugg").forEach(function(b) {
+  b.onclick = function() {
+    if(inChemNouveau) inChemNouveau.value = b.dataset.chemin;
+    PROJ_PARENT_HANDLE = null;
+    pMajApercuNouveau();
+  };
+});
+
+// Créer le nouveau projet
+const bCreerNouveau = document.getElementById("pBtnCreerNouveau");
+if(bCreerNouveau) {
+  bCreerNouveau.onclick = function() {
+    const brutNom = inNomNouveau ? inNomNouveau.value.trim() : "";
+    if(!brutNom) {
+      if(inNomNouveau) inNomNouveau.focus();
       return;
     }
-    return projdListerServeur().then(function(r){
-      /* Les racines viennent du serveur, jamais de la page : c'est la
-         frontière, et elle se déclare au démarrage (--projets). */
-      const dest = projdDestination();
-      const sel = document.getElementById("pRac");
-      sel.innerHTML = r.racines.map(function(rac){
-        return '<option value="' + uEsc(rac) + '"'
-          + (rac === dest.racine ? " selected" : "") + ">" + uEsc(rac) + "</option>";
-      }).join("");
-      sel.hidden = r.racines.length < 2;   // une seule racine : rien à choisir
-      if(!document.getElementById("pSous").value && dest.sous)
-        document.getElementById("pSous").value = dest.sous;
+    const nom = projNomValide(brutNom);
+    if(!nom) {
+      alert("Nom de projet refusé :\n\n" +
+            "Évitez les caractères \\ / : * ? \" < > | et les points en début ou fin de nom (max 60 caractères).");
+      if(inNomNouveau) inNomNouveau.focus();
+      return;
+    }
 
-      box.innerHTML = r.projets.map(function(p){
-        const on = e.chemin && e.chemin === p.chemin;
-        return '<button data-chemin="' + uEsc(p.chemin) + '"'
-          + ' data-racine="' + uEsc(p.racine) + '"'
-          + (on ? ' class="on"' : '') + '>'
-          + '<span class="ck">' + (on ? "\u2713" : "") + '</span>'
-          + uEsc(p.nom)
-          + (p.chemin !== p.nom ? ' <i>' + uEsc(p.chemin) + '</i>' : '')
-          + '</button>';
-      }).join("");
-      box.querySelectorAll("[data-chemin]").forEach(function(b){
-        b.onclick = function(){ pDosOuvrir(b.dataset.chemin, b.dataset.racine); };
-      });
-      if(!r.projets.length)
-        box.innerHTML = '<i>Aucun projet sous ' + uEsc(r.racines.join(" ; ")) + '</i>';
+    pDosMsg("Création du projet « " + uEsc(nom) + " »…");
+
+    // Si on a un dossier parent sélectionné via File System Access
+    if(PROJ_PARENT_HANDLE && typeof projdCreerDansParent === "function") {
+      projdCreerDansParent(PROJ_PARENT_HANDLE, nom)
+        .then(function(etat) {
+          if(inNomNouveau) inNomNouveau.value = "";
+          pDosFait(etat);
+        })
+        .catch(function(e) {
+          pDosMsg(e.message, true);
+        });
+      return;
+    }
+
+    // Sinon si serveur disponible
+    projdServeurDispo().then(function(dispo) {
+      if(dispo) {
+        const chemBrut = inChemNouveau ? inChemNouveau.value.trim() : "";
+        const destChemin = chemBrut ? (chemBrut.replace(/[\\/]+$/, "") + "/" + nom) : nom;
+        projdCreerServeur(nom, { chemin: destChemin })
+          .then(function(etat) {
+            if(inNomNouveau) inNomNouveau.value = "";
+            pDosFait(etat);
+          })
+          .catch(function(e) {
+            pDosMsg(e.message, true);
+          });
+        return;
+      }
+
+      // Sinon via sélecteur direct
+      if(projdSelecteurDispo()) {
+        projdChoisirDossier(true, nom)
+          .then(function(etat) {
+            if(inNomNouveau) inNomNouveau.value = "";
+            pDosFait(etat);
+          })
+          .catch(function(e) {
+            if(e && e.name === "AbortError") { pDosRendre(); return; }
+            pDosMsg(e.message, true);
+          });
+        return;
+      }
+
+      // Aucun moyen d'accès disque
+      projOuvrir(nom);
+      if(inNomNouveau) inNomNouveau.value = "";
+      pRendre();
+      pDosMsg("Projet virtuel « <b>" + uEsc(nom) + "</b> » créé en mémoire (aucun dossier rattaché).", true);
     });
-  }).catch(function(err){ pDosMsg(err.message, true); });
+  };
 }
-/* Après l'ouverture : dire lequel des deux gestes vient d'avoir lieu — on n'a
-   pas fait la même chose selon que le dossier était un projet ou non — et ce
-   qu'on y a trouvé. */
-function pDosFait(etat){
-  pRendre(); pDosRendre();
+if(inNomNouveau) {
+  inNomNouveau.addEventListener("keydown", function(e) {
+    if(e.key === "Enter") {
+      const b = document.getElementById("pBtnCreerNouveau");
+      if(b) b.click();
+    }
+  });
+}
+
+// Ouvrir un projet existant : Choisir le dossier sur le support
+function pChoisirDossierExistant() {
+  const rouvrir = projdAReconnecter();
+  if(rouvrir) {
+    pDosMsg("Réouverture de « " + uEsc(rouvrir) + " »…");
+    projdReconnecter().then(pDosFait).catch(function(e) { pDosMsg(e.message, true); });
+    return;
+  }
+
+  if(!projdSelecteurDispo()) {
+    const champ = document.getElementById("pCheminExistant");
+    if(champ && champ.value.trim()) {
+      pDosOuvrir(champ.value.trim());
+    } else if(champ) {
+      champ.focus();
+      pDosMsg("Saisissez le chemin du dossier sur le support ci-dessous.", true);
+    }
+    return;
+  }
+
+  pDosMsg("En attente de la sélection du dossier…");
+  projdChoisirDossier(function(d) {
+    if(d.vide) return true;
+    return confirm("« " + d.nom + " » ne contient pas de projet.cao.json, mais contient " + d.noms.length + " élément(s).\n\n" +
+                   "Voulez-vous l'initialiser comme nouveau projet nommé « " + d.nom + " » ?");
+  }).then(pDosFait).catch(function(e) {
+    if(e && e.name === "AbortError") { pDosRendre(); return; }
+    pDosMsg(e.message, true);
+  });
+}
+
+const bChoisirSupport = document.getElementById("pBtnChoisirSupport");
+if(bChoisirSupport) bChoisirSupport.onclick = pChoisirDossierExistant;
+const zDropDossier = document.getElementById("pZoneChoisirDossier");
+if(zDropDossier) {
+  zDropDossier.onclick = function(e) {
+    if(e.target && e.target.id === "pBtnChoisirSupport") return;
+    pChoisirDossierExistant();
+  };
+}
+
+// Saisie directe d'un chemin de dossier existant
+function pOuvrirCheminManuel() {
+  const champ = document.getElementById("pCheminExistant");
+  const val = champ ? champ.value.trim() : "";
+  if(!val) {
+    if(champ) champ.focus();
+    return;
+  }
+  pDosOuvrir(val);
+}
+const bOuvrirChemin = document.getElementById("pBtnOuvrirChemin");
+if(bOuvrirChemin) bOuvrirChemin.onclick = pOuvrirCheminManuel;
+const inChemExistant = document.getElementById("pCheminExistant");
+if(inChemExistant) {
+  inChemExistant.addEventListener("keydown", function(e) {
+    if(e.key === "Enter") pOuvrirCheminManuel();
+  });
+}
+
+// Fermer le projet
+const bFermer = document.getElementById("pBtnFermer");
+if(bFermer) {
+  bFermer.onclick = function() {
+    const nom = projNom() || projdChemin();
+    projFermer();
+    projdDetacher();
+    pRendre();
+    pDosRendre();
+    pDosMsg("Projet « " + uEsc(nom) + " » fermé. Vos fichiers restent intacts sur le support.");
+  };
+}
+
+// Détacher le dossier
+const bDetacher = document.getElementById("pBtnDetacher");
+if(bDetacher) {
+  bDetacher.onclick = function() {
+    if(!confirm("Détacher le dossier du projet ?\n\n" +
+                 "Rien n'est supprimé : les fichiers restent sur le disque, c'est le lien avec ce dossier qui se défait."))
+      return;
+    projdDetacher();
+    pRendre();
+    pDosRendre();
+    pDosMsg("Dossier détaché.");
+  };
+}
+
+function pDosMsg(txt, ennui) {
+  const el = document.getElementById("pDosEtat");
+  if(!el) return;
+  el.innerHTML = ennui ? "<i style='color:var(--red);'>" + txt + "</i>" : "<span style='color:var(--txt);'>" + txt + "</span>";
+}
+
+function pDosDocs() {
+  const d = projdDocuments();
+  return [["schema", "Schéma"], ["pcb", "PCB"], ["ipc2581", "IPC-2581"]].map(function(x) {
+    const e = d[x[0]];
+    return "<span>" + x[1] + " : " + (e.present ? uEsc(e.fichier) : "<i>absent</i>") + "</span>";
+  }).join("");
+}
+
+function pDosFait(etat) {
+  pRendre();
+  pDosRendre();
   const nom = projNom() || projdChemin();
-  if(etat && etat.neuf){
-    pDosMsg("Nouveau projet <b>" + uEsc(nom) + "</b> : <b>projet.cao.json</b> "
-      + "écrit dans <b>" + uEsc(projdChemin()) + "</b>. Ouvrez un éditeur "
-      + "ci-dessous : il enregistrera dans ce dossier.");
+  if(etat && etat.neuf) {
+    pDosMsg("Nouveau projet <b>" + uEsc(nom) + "</b> initialisé avec succès dans <b>" + uEsc(projdChemin()) + "</b>.");
     return;
   }
   const d = projdDocuments();
   const quoi = [];
-  if(d.schema.present) quoi.push("le schéma");
-  if(d.pcb.present) quoi.push("la carte");
-  if(d.ipc2581.present) quoi.push("la carte IPC-2581");
-  pDosMsg("Projet <b>" + uEsc(nom) + "</b> ouvert depuis <b>"
-    + uEsc(projdChemin()) + "</b>"
-    /* Trois documents possibles : « le schéma et la carte » se disait bien
-       avec un join, « le schéma et la carte et la carte IPC-2581 » non. */
-    + (quoi.length
-        ? " — " + (quoi.length > 1
-                    ? quoi.slice(0, -1).join(", ") + " et " + quoi[quoi.length - 1]
-                    : quoi[0])
-          + (quoi.length > 1 ? " seront chargés" : " sera chargé")
-          + " à l'ouverture de l'éditeur."
-        : " — ni schéma ni carte pour l'instant.")
-    + "<br>" + pDosDocs());
+  if(d.schema && d.schema.present) quoi.push("le schéma");
+  if(d.pcb && d.pcb.present) quoi.push("la carte PCB");
+  if(d.ipc2581 && d.ipc2581.present) quoi.push("le modèle IPC-2581");
+  pDosMsg("Projet <b>" + uEsc(nom) + "</b> ouvert depuis <b>" + uEsc(projdChemin()) + "</b>" +
+          (quoi.length ? " (" + quoi.join(", ") + " chargés)" : ""));
 }
-function pDosOuvrir(ou, racine){
-  pDosMsg("Ouverture…");
-  projdOuvrirServeur(ou, racine).then(pDosFait)
-    .catch(function(e){ pDosMsg(e.message, true); });
-}
-/* Le chemin écrit à la main : la voie du serveur, pour les navigateurs sans
-   sélecteur de dossier. */
-function pChemOuvrir(){
-  const champ = document.getElementById("pChem");
-  if(!champ.value.trim()){ champ.focus(); return; }
-  pDosOuvrir(champ.value.trim());
-}
-/* « Ouvrir », c'est l'explorateur — un projet existant et un nouveau projet,
-   c'est le même geste : on désigne un dossier. Ce qu'il contient tranche.
-   Un dossier avec projet.cao.json s'ouvre avec son schéma et sa carte ; un
-   dossier sans en reçoit un, et le projet commence là. */
-document.getElementById("pOuvre").onclick = function(){
-  const rouvrir = projdAReconnecter();
-  if(rouvrir){
-    pDosMsg("Réouverture de « " + rouvrir + " »…");
-    projdReconnecter().then(pDosFait)
-      .catch(function(e){ pDosMsg(e.message, true); });
-    return;
-  }
-  if(!projdSelecteurDispo()){ pChemOuvrir(); return; }
-  pDosMsg("En attente du dossier…");
-  /* Un dossier vide devient un projet sans qu'on demande — c'est le geste
-     « nouveau projet », et le dossier vient d'être créé pour ça. Un dossier
-     déjà rempli, en revanche, peut être celui qu'on visait de travers : on y
-     écrit projet.cao.json seulement après un mot. */
-  projdChoisirDossier(function(d){
-    if(d.vide) return true;
-    return confirm("« " + d.nom + " » ne contient pas de projet CAO "
-      + "(pas de projet.cao.json), mais " + d.noms.length + " élément(s).\n\n"
-      + "En faire un nouveau projet nommé « " + d.nom + " » ?");
-  }).then(pDosFait).catch(function(e){
-    /* Refermer la boîte de dialogue sans rien choisir n'est pas une erreur :
-       on remet l'état d'avant plutôt que d'afficher un reproche. */
-    if(e && e.name === "AbortError"){ pDosRendre(); return; }
+
+function pDosOuvrir(ou, racine) {
+  pDosMsg("Ouverture de " + uEsc(ou) + "…");
+  projdOuvrirServeur(ou, racine).then(pDosFait).catch(function(e) {
     pDosMsg(e.message, true);
   });
-};
-document.getElementById("pChemGo").onclick = pChemOuvrir;
-document.getElementById("pChem").addEventListener("keydown", function(e){
-  if(e.key === "Enter") pChemOuvrir();
-});
-document.getElementById("pCree").onclick = function(){
-  /* Le nom vient du champ du haut (ou du champ de chemin ou du projet en cours),
-     la destination des deux champs d'à côté : une racine déclarée, et un sous-dossier libre. */
-  const champNom = document.getElementById("pNom");
-  const champChem = document.getElementById("pChem");
-  const nom = (champNom && champNom.value.trim()) || (champChem && champChem.value.trim()) || projNom();
-  if(!nom){ (champNom || champChem).focus(); return; }
-  const racine = document.getElementById("pRac").value;
-  const sous = document.getElementById("pSous").value.trim()
-                 .replace(/^[\\\/]+/, "").replace(/[\\\/]+$/, "");
-  const ou = (sous ? sous + "/" : "") + nom;
-  pDosMsg("Création de " + uEsc(ou) + "…");
-  projdCreerServeur(nom, {racine:racine, sous:sous}).then(function(etat){
-    if(champNom) champNom.value = "";
-    if(champChem) champChem.value = "";
-    pDosFait(etat);
-  }).catch(function(e){ pDosMsg(e.message, true); });
-};
-document.getElementById("pDetach").onclick = function(){
-  if(!confirm("Détacher le dossier du projet ?\n\n"
-    + "Rien n'est supprimé : les fichiers restent sur le disque, c'est le lien "
-    + "qui se défait."))
-    return;
-  projdDetacher();
-  pDosRendre();
-};
+}
+
+function pRendre() {
+  const nom = projNom();
+  const etat = projdEtat();
+  const d = projdDocuments();
+  const actif = !!(nom || etat.chemin);
+
+  const cardActif = document.getElementById("pProjetActifCard");
+  const msgAucun = document.getElementById("pAucunProjet");
+  const badgeActif = document.getElementById("pBadgeActif");
+
+  if(cardActif && msgAucun) {
+    cardActif.hidden = !actif;
+    msgAucun.hidden = actif;
+  }
+
+  if(badgeActif) {
+    badgeActif.innerHTML = actif
+      ? '<span class="badge-lib badge-local" style="font-size:11px;">🟢 ' + uEsc(nom || etat.chemin) + '</span>'
+      : '<span class="badge-lib" style="background:#1c1e22; border:1px solid #3a3e46; color:var(--txt-dim); font-size:11px;">⚪ Aucun projet</span>';
+  }
+
+  if(actif) {
+    const elNom = document.getElementById("pActifNom");
+    const elRev = document.getElementById("pActifRev");
+    const elChem = document.getElementById("pActifChemin");
+    if(elNom) elNom.textContent = nom || (etat.chemin ? etat.chemin.split(/[\\/]/).pop() : "Projet");
+    if(elRev) elRev.textContent = "REV " + projdRevision();
+    if(elChem) elChem.textContent = etat.chemin || (nom ? "[Mémoire locale : " + nom + "]" : "Non rattaché");
+
+    const elDocSch = document.getElementById("pDocSch");
+    const elDocPcb = document.getElementById("pDocPcb");
+    const elDocIpc = document.getElementById("pDocIpc");
+
+    if(elDocSch) {
+      elDocSch.innerHTML = (d.schema && d.schema.present)
+        ? '<span style="color:var(--green);">✓ ' + uEsc(d.schema.fichier) + '</span>'
+        : '<span style="color:var(--txt-dim); font-style:italic;">non créé</span>';
+    }
+    if(elDocPcb) {
+      elDocPcb.innerHTML = (d.pcb && d.pcb.present)
+        ? '<span style="color:var(--green);">✓ ' + uEsc(d.pcb.fichier) + '</span>'
+        : '<span style="color:var(--txt-dim); font-style:italic;">non créé</span>';
+    }
+    if(elDocIpc) {
+      elDocIpc.innerHTML = (d.ipc2581 && d.ipc2581.present)
+        ? '<span style="color:var(--green);">✓ ' + uEsc(d.ipc2581.fichier) + '</span>'
+        : '<span style="color:var(--txt-dim); font-style:italic;">absent</span>';
+    }
+  }
+
+  // Rendu de la liste des projets récents
+  const boxRecents = document.getElementById("pListeRecents");
+  if(boxRecents) {
+    const liste = projListe();
+    if(!liste.length) {
+      boxRecents.innerHTML = '<div style="font-size:12px; color:var(--txt-dim); font-style:italic; padding:6px 0;">Aucun projet dans l\'historique récent.</div>';
+    } else {
+      boxRecents.innerHTML = liste.map(function(item) {
+        const estActif = projMemeNom(item.nom, nom);
+        const quand = uQuand(item.t);
+        const cheminDisp = item.chemin || item.nom;
+        return '<div class="p-recent-item' + (estActif ? ' on' : '') + '" data-nom="' + uEsc(item.nom) + '" data-chemin="' + uEsc(item.chemin) + '" data-mode="' + uEsc(item.mode) + '">' +
+          '<div class="p-rec-info">' +
+            '<div style="font-weight:600; font-size:13px; color:' + (estActif ? 'var(--yellow)' : 'var(--txt)') + '; display:flex; align-items:center; gap:6px;">' +
+              '<span>📁 ' + uEsc(item.nom) + '</span>' +
+              (estActif ? '<span style="font-size:10px; color:var(--yellow); font-family:var(--mono);">(en cours)</span>' : '') +
+            '</div>' +
+            '<div style="font-size:11px; font-family:var(--mono); color:var(--txt-dim);" class="truncate">' +
+              uEsc(cheminDisp) +
+            '</div>' +
+          '</div>' +
+          '<div class="p-rec-actions">' +
+            (quand ? '<span style="font-size:11px; color:var(--txt-dim); font-family:var(--mono);">' + quand + '</span>' : '') +
+            '<button type="button" class="btn-sm btn-rec-open" style="color:var(--blue); font-weight:600;">Ouvrir →</button>' +
+            '<button type="button" class="btn-sm danger btn-rec-del" title="Oublier ce projet de l\'historique">✕</button>' +
+          '</div>' +
+        '</div>';
+      }).join("");
+
+      boxRecents.querySelectorAll(".p-recent-item").forEach(function(el) {
+        const itemNom = el.dataset.nom;
+        const itemChem = el.dataset.chemin;
+        const itemMode = el.dataset.mode;
+
+        const bOpen = el.querySelector(".btn-rec-open");
+        if(bOpen) {
+          bOpen.onclick = function(e) {
+            e.stopPropagation();
+            if(itemChem && itemMode === "serveur") {
+              pDosOuvrir(itemChem);
+            } else {
+              projOuvrir(itemNom, itemChem, itemMode);
+              pRendre();
+            }
+          };
+        }
+
+        const bDel = el.querySelector(".btn-rec-del");
+        if(bDel) {
+          bDel.onclick = function(e) {
+            e.stopPropagation();
+            if(confirm("Oublier « " + itemNom + " » de l'historique récent ?\n(Les fichiers sur le disque ne sont pas supprimés)")) {
+              projOublier(itemNom);
+              pRendre();
+            }
+          };
+        }
+
+        el.onclick = function() {
+          if(itemChem && itemMode === "serveur") {
+            pDosOuvrir(itemChem);
+          } else {
+            projOuvrir(itemNom, itemChem, itemMode);
+            pRendre();
+          }
+        };
+      });
+    }
+  }
+}
+
+function pDosRendre() {
+  const e = projdEtat();
+  const rouvrir = projdAReconnecter();
+
+  // Mettre à jour les suggestions d'emplacements selon le serveur
+  const elSugg = document.getElementById("pSuggEmplacements");
+  projdServeurDispo().then(function(dispo) {
+    if(!dispo) return;
+    projdListerServeur().then(function(r) {
+      if(!elSugg || !r || !r.racines) return;
+      let html = '<span style="font-size:11px; color:var(--txt-dim);">Emplacements rapides :</span>';
+      r.racines.forEach(function(rac) {
+        const nomCourt = rac.split(/[\\/]/).filter(Boolean).pop() || rac;
+        html += '<button type="button" class="btn-sugg" data-chemin="' + uEsc(rac) + '">📁 ' + uEsc(nomCourt) + '</button>';
+      });
+      elSugg.innerHTML = html;
+      elSugg.querySelectorAll(".btn-sugg").forEach(function(b) {
+        b.onclick = function() {
+          if(inChemNouveau) inChemNouveau.value = b.dataset.chemin;
+          PROJ_PARENT_HANDLE = null;
+          pMajApercuNouveau();
+        };
+      });
+    }).catch(function(_) {});
+  });
+
+  pRendre();
+}
 
 /* Un autre onglet peut changer de projet : on suit sans recharger. */
 projSurChangement(function(){ pRendre(); pDosRendre(); });
+pMajApercuNouveau();
 pRendre();
 /* La reprise du dossier est asynchrone : projet-disque.js s'en occupe au
    chargement, et prévient par projSignaler() une fois le fichier lu. */

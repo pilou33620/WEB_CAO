@@ -293,7 +293,10 @@ function projdAdopter(mode, chemin, fichier, documents){
   PROJD = {mode:mode, chemin:chemin||"", fichier:fichier||null,
            documents:documents||null};
   const nom = fichier && fichier.nom;
-  if(nom) projOuvrir(nom);            // projSignaler() suit : l'entete se met a jour
+  if(nom){
+    if(typeof projOuvrir === "function") projOuvrir(nom, chemin, mode);
+    if(typeof projRenseignerChemin === "function") projRenseignerChemin(nom, chemin, mode);
+  }
   try{
     localStorage.setItem(PROJD_CLE, JSON.stringify({mode:mode, chemin:PROJD.chemin}));
   }catch(_){}
@@ -313,20 +316,25 @@ function projdOuvrirServeur(ou, racine){
 /* Cree le dossier et son fichier projet. Le nom du projet fait le nom du
    dossier : un dossier « carte PIR » qui contiendrait un projet appele
    autrement serait un piege a relire plus tard.
-   `dest` dit ou le ranger : {racine, sous}. La racine doit etre declaree au
+   `dest` dit ou le ranger : {racine, sous, chemin}. La racine doit etre declaree au
    demarrage du serveur ; le sous-dossier, lui, est libre ("clients/acme").
    Sans destination, c'est la premiere racine, a la racine. */
 function projdCreerServeur(nom, dest){
   const v = projNomValide(nom);
   if(!v) return Promise.reject(new Error("Nom de projet invalide"));
   const d = dest || projdDestination();
-  const sous = String((d && d.sous) || "").replace(/[\\/]+$/,"").replace(/^[\\/]+/,"");
-  const chemin = sous ? sous + "/" + v : v;
+  let chemin = "";
+  if(d && d.chemin && typeof d.chemin === "string" && d.chemin.trim()){
+    chemin = d.chemin.trim();
+  } else {
+    const sous = String((d && d.sous) || "").replace(/[\\/]+$/,"").replace(/^[\\/]+/,"");
+    chemin = sous ? sous + "/" + v : v;
+  }
   const f = projdNeuf(v);
   return projdApi("PUT","/api/projet",
                   {chemin:chemin, racine:(d && d.racine) || ""}, f)
     .then(function(r){
-      projdDestinationPoser((d && d.racine) || "", sous);
+      if(d && d.sous) projdDestinationPoser((d && d.racine) || "", d.sous);
       /* Un projet qui vient de naitre n'a ni schema ni carte : on le dit, plutot
          que de laisser croire a un releve manquant. */
       const vide = {schema:{fichier:projdNomDocDe(f,"schema"), present:false},
@@ -336,10 +344,35 @@ function projdCreerServeur(nom, dest){
       return etat;
     });
 }
+/* Cree un projet au sein d'un dossier parent via File System Access.
+   Cree le sous-dossier nom/ et y depose projet.cao.json. */
+function projdCreerDansParent(parentHandle, nom){
+  const v = projNomValide(nom);
+  if(!v) return Promise.reject(new Error("Nom de projet invalide"));
+  if(!parentHandle || typeof parentHandle.getDirectoryHandle !== "function")
+    return Promise.reject(new Error("Dossier parent invalide"));
+  return projdHandleAutorise(parentHandle, true).then(function(ok){
+    if(!ok) throw new Error("Acces au dossier parent refuse");
+    return parentHandle.getDirectoryHandle(v, {create: true});
+  }).then(function(childHandle){
+    const f = projdNeuf(v);
+    return projdEcrireFichierHandle(childHandle, PROJD_FICHIER, f).then(function(){
+      PROJD_HANDLE = childHandle;
+      PROJD_ATTENTE = null;
+      projdHandleGarder(childHandle);
+      return projdSonderDossier(childHandle, f).then(function(docs){
+        const nomChemin = (parentHandle.name ? parentHandle.name + "/" : "") + childHandle.name;
+        const etat = projdAdopter("dossier", nomChemin, f, docs);
+        etat.neuf = true;
+        return etat;
+      });
+    });
+  });
+}
 /* Voie selecteur : on demande le dossier, puis on lit son fichier projet. S'il
    n'en a pas et que `creer` est vrai, on l'ecrit -- c'est ainsi qu'on prend un
    dossier vide pour un projet neuf. */
-function projdChoisirDossier(creer){
+function projdChoisirDossier(creer, nomImpose){
   if(!projdSelecteurDispo())
     return Promise.reject(new Error("Ce navigateur n'a pas de selecteur de"
       + " dossier. Lancez serveur.py --local, ou utilisez Chrome ou Edge."));
@@ -347,7 +380,7 @@ function projdChoisirDossier(creer){
      fois : on range en general ses projets au meme endroit. */
   return window.showDirectoryPicker({mode:"readwrite", id:"cao-projet"})
     .then(function(h){
-      return projdAdopterHandle(h, creer === undefined ? true : creer);
+      return projdAdopterHandle(h, creer === undefined ? true : creer, nomImpose);
     });
 }
 /* Un dossier retenu devient le projet courant. Le fichier projet fait foi ;
@@ -355,7 +388,7 @@ function projdChoisirDossier(creer){
    dossier vide, ou un dossier qu'on vient de faire dans la boite de dialogue,
    devient un projet neuf. L'etat renvoye porte `neuf` : l'appelant a le droit
    de dire lequel des deux gestes vient d'avoir lieu. */
-function projdAdopterHandle(h, creer){
+function projdAdopterHandle(h, creer, nomImpose){
   let neuf = false;
   return projdHandleAutorise(h,true).then(function(ok){
     if(!ok) throw new Error("Acces au dossier refuse");
@@ -364,7 +397,7 @@ function projdAdopterHandle(h, creer){
         if(!oui) throw new Error("Ce dossier n'a pas de "+PROJD_FICHIER
           + " : ce n'est pas un projet. (" + e.message + ")");
         neuf = true;
-        const nom = projNomValide(h.name) || "projet";
+        const nom = projNomValide(nomImpose) || projNomValide(h.name) || "projet";
         const f = projdNeuf(nom);
         return projdEcrireFichierHandle(h,PROJD_FICHIER,f).then(function(){ return f; });
       });

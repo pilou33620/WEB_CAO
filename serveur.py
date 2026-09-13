@@ -901,8 +901,16 @@ def chemin_projet(brut, base=None):
         if not depart or os.path.realpath(base) != os.path.realpath(depart):
             raise ErreurProjet(403, "Racine inconnue : « %s ». Declarez-la au"
                                     " demarrage avec --projets." % base)
-    dossier = os.path.abspath(os.path.join(depart, os.path.expanduser(brut)))
+    if os.path.isabs(os.path.expanduser(brut)):
+        dossier = os.path.abspath(os.path.expanduser(brut))
+    else:
+        dossier = os.path.abspath(os.path.join(depart, os.path.expanduser(brut)))
     racine = sous_racine(dossier)
+    if not racine and PROJETS_OUVERT and os.path.isabs(os.path.expanduser(brut)):
+        parent_dir = os.path.dirname(dossier) or dossier
+        if parent_dir not in RACINES_PROJETS:
+            RACINES_PROJETS.append(parent_dir)
+        racine = parent_dir
     if not racine:
         raise ErreurProjet(403, "Hors des racines declarees : refuse. Racines :"
                                 " %s" % " ; ".join(racines_projets()))
