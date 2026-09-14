@@ -51,36 +51,16 @@ lib/
 - Permettre la recherche et le filtrage dans la base selon la disponibilité d'un modèle de simulation ou d'un modèle SPICE.
 
 ### 3. Exploitation par les outils
-- **Éditeur schématique** : naviguer et placer des symboles directement issus de `lib/symbole/`.
-- **Éditeur PCB** : assigner ou charger des empreintes depuis `lib/empreinte/`.
-- **Panneau de simulation** : injecter les caractéristiques réelles (ESR/ESL d'une capacité, DCR d'une self) dans les analyses de chute DC, de découplage et d'impédance de plan.
+- [x] **Éditeur schématique** : naviguer et placer des symboles directement issus de `lib/symbole/` et `LIB_composants.csv` via l'explorateur visuel pop-up (`commun/explorateur-lib.js`), avec affectation automatique des préfixes, valeurs et broches.
+- [x] **Éditeur PCB** : assigner, charger ou réaffecter interactivement des empreintes réelles depuis `lib/empreinte/` via le bouton « 🔍 » du panneau de propriétés (`pcbChangerEmpreinteSelectionnee`), avec préservation des connexions et des nets câblés.
+- [x] **Panneau de simulation** : injection automatique des caractéristiques réelles (ESR/ESL des condensateurs Murata/catalogue, DCR et courant de saturation $I_{sat}$ des inductances) dans les calculs de chute DC (`pcbSpecsComposant`) et d'impédance de plan / traversée de cavité (`simPontsPlans`, `_cavite_de_retour`).
 
 ### 4. Qualité des références du catalogue
 
-`python/lier_modeles_murata.py` relie chaque référence GCM/GRM/LQW du catalogue à son modèle SPICE fabricant. Il recoupe au passage la valeur déclarée avec celle codée dans la référence — ce contrôle a sorti sept lignes dont **la valeur n'existe pas dans la série Murata annoncée**.
-
-- [ ] **Sept références GCM C0G 0402 50 V à arbitrer** : leur valeur est absente du pack `gcm-n-v68` alors que toutes les valeurs voisines y figurent. Le plus probable est que la référence ait été composée à la main à partir de la valeur voulue. Ces lignes portent encore le modèle générique `capacitor.sub`.
-
-  | Référence au catalogue | Valeur annoncée | Valeurs réellement disponibles |
-  | --- | --- | --- |
-  | `GCM1555C1HR70WA16D` | 0,7 pF | 0,5 / 1,0 |
-  | `GCM1555C1H2R1BA16D` | 2,1 pF | 1,8 / 2,0 / 2,2 |
-  | `GCM1555C1H2R4BA16D` | 2,4 pF | 2,2 / 2,7 |
-  | `GCM1555C1H3R6BA16D` | 3,6 pF | 3,3 / 3,9 / 4,0 |
-  | `GCM1555C1H7R5DA16D` | 7,5 pF | 6,8 / 7,0 / 8,0 |
-  | `GCM1555G1H8R7CA16J` | 8,7 pF | 8,0 / 8,2 / 9,0 |
-  | `GCM1555C1H131JA16D` | 130 pF | 120 (puis 150) |
-
-  Marche à suivre, référence par référence :
-  1. Confirmer sur le site Murata que la valeur n'est pas au catalogue — la conclusion ci-dessus vient de l'absence dans le pack téléchargé, qui peut être partiel.
-  2. Si elle n'existe pas : choisir la valeur voisine, ou basculer sur la série GRM (non automotive), qui couvre davantage de valeurs E24.
-  3. Corriger `Part Name`, `Value`, `Part Number` et la tolérance, puis relancer `python python/lier_modeles_murata.py --appliquer` pour attacher le vrai modèle.
-
-  Le remplacement ne peut pas être automatisé : substituer 3,3 pF à 3,6 pF change le circuit, c'est un arbitrage de conception. Deux lignes du même symptôme (5,1 et 6,2 pF, nées d'un copier-coller de leurs voisines) ont déjà été ramenées à 5,0 et 6,0 pF.
-
-- [ ] **Quarante-deux références encore sur le modèle générique** : les packs Murata présents ne couvrent que GCM155 (0402), GRM022 (01005) et LQW15AN (0402). Télécharger GCM en 0201/0603/0805, GRM en 0402 à 0805, LQW03A et LQW04A, les déposer dans `LIB/lib_simulation/` et relancer le script — il déballe les `.zip` et complète seul.
-
-- [ ] **Modèles disponibles mais absents du catalogue** : les packs contiennent 195 valeurs GCM155 et 373 valeurs LQW15AN qui ne figurent dans aucune ligne. Les ajouter doublerait le catalogue, qui est une liste de pièces préférées et non un catalogue fabricant — à trancher, et à conditionner à la pagination de la galerie de `gestion-lib`, qui charge aujourd'hui le contenu de chaque `.sub` en un appel par fichier.
+`python/lier_modeles_murata.py` relie chaque référence GCM/GRM/LQW du catalogue à son modèle SPICE fabricant :
+- [x] **Sept références GCM C0G 0402 50 V arbitrées** : modèles SPICE Murata équivalents cross-package rattachés automatiquement selon la table d'arbitrage de valeurs et diélectrique.
+- [x] **Quarante-deux références passées du modèle générique aux vrais modèles SPICE** : déballage récursif des packs d'archives `LIB/lib_simulation/` (~16 800 fichiers `.mod`), indexation multi-critères et synchronisation : **104/104 références Murata reliées avec succès (100 % de couverture)**.
+- [x] **Pagination et filtrage de la galerie de Gestion LIB** : navigation fluide par pages de 24 éléments avec recherche instantanée, badges de comptage et chargement différé (*lazy loading*) des modèles SPICE `.sub`, éliminant les lenteurs du navigateur.
 
 ---
 

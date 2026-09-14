@@ -37,6 +37,7 @@ exports/
 # Donnees : la bibliotheque de composants contient des references internes et
 # n'est pas versionnee. Le blanc-seing « *.csv » a ete retire : il avalait
 # aussi les jeux d'essai. Retirer la ligne ci-dessous pour suivre le fichier.
+/LIB/
 /LIB_composants.csv
 
 # Doublons crees par l'explorateur Windows (« serveur - Copie.py »)
@@ -62,6 +63,7 @@ exports/
 # Le motif est ancre a la racine (« /*.xml » et non « *.xml ») pour la meme
 # raison que le blanc-seing « *.csv » a ete retire plus haut : un jeu d'essai
 # range dans un dossier test/ doit, lui, rester suivi.
+/IPC2581_Exemple/
 /*.xml
 /*.cvg
 /*.ipc

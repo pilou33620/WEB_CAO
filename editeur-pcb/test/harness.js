@@ -159,7 +159,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "PCB_LIB_CACHE","PCB_LIB_LIST","pcbChargerCatalogueEmpreintes","pcbObtenirEmpreinteLib","pcbAppliquerEmpreinteLib",
   "PCB_LIB_ALERTE","pcbTrouverEmpreintesAmettreAJour","pcbEmpreinteAlerteLib","pcbAppliquerMajLib",
   "sessDiffuserLibModif","sessEcouterLibModif",
-  "ELIB","explorateurLibOuvrir","explorateurLibFermer","elibFiltrerEtAfficher","pcbOuvrirExplorateurLib","pcbPlacerEmpreinteDepuisLib",
+  "ELIB","explorateurLibOuvrir","explorateurLibFermer","elibFiltrerEtAfficher","pcbOuvrirExplorateurLib","pcbPlacerEmpreinteDepuisLib","pcbChangerEmpreinteSelectionnee",
   "parseNetlist","parseCompLine","applyNetlist","STYLES","bodyOf",
   /* empreintes dessinees a la main et bibliotheque personnelle */
   "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
@@ -237,7 +237,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* liaison schéma & simulations enrichies */
   "pcbParseVolt","pcbParseCourant","pcbParsePuissance","pcbParseResistance",
   "pcbParseFrequence","pcbDefinirSchema","pcbSchemaDoc","pcbComposantsSchema",
-  "pcbSpecsComposant","pcbNetComposants","simFicheSchemaAdaptation","simDiffApres",
+  "pcbSpecsComposant","pcbParasitesComposant","SIM_PARASITES_MURATA","pcbNetComposants","simFicheSchemaAdaptation","simDiffApres",
   "applyNetlist","pcbNettoyerPistesConflits",
   "pcbVerifierPinout","pcbVerifierPinoutComposant","pcbVerifierEtNotifierPinout","pcbAfficherToastPinout","pcbOuvrirDialoguePinout",
   "SIM_DC_NOEUDS_CIBLE","SIM_DC_CARREAUX_MAX","SIM_DC_MARGE_GRILLE",
@@ -17423,6 +17423,125 @@ T("Explorateur visuel pop-up PCB : initialisation en mode empreinte, sélection 
 
   const pads = padsOf(fp);
   if (pads.length !== 48) throw new Error("48 pastilles attendues pour le boîtier LQFP-48, obtenu: " + pads.length);
+});
+
+T("Explorateur visuel pop-up PCB : réaffectation dynamique d'une empreinte existante via pcbChangerEmpreinteSelectionnee", () => {
+  if (typeof pcbChangerEmpreinteSelectionnee !== "function") {
+    throw new Error("pcbChangerEmpreinteSelectionnee non disponible");
+  }
+
+  // Poser un composant initial U1 en SOIC-8 avec un net câblé sur la broche 1
+  S.fps = [];
+  const fp = mkFp("U1", "LM358", "SOIC-8", 8);
+  fp.nets = { 1: "VCC", 4: "GND" };
+  fp.pads = [
+    { n: 1, x: -1.9, y: -1.9, w: 1.5, h: 0.6, shape: "rect", net: "VCC" },
+    { n: 2, x: -1.9, y: -0.63, w: 1.5, h: 0.6, shape: "rect" },
+    { n: 3, x: -1.9, y: 0.63, w: 1.5, h: 0.6, shape: "rect" },
+    { n: 4, x: -1.9, y: 1.9, w: 1.5, h: 0.6, shape: "rect", net: "GND" },
+    { n: 5, x: 1.9, y: 1.9, w: 1.5, h: 0.6, shape: "rect" },
+    { n: 6, x: 1.9, y: 0.63, w: 1.5, h: 0.6, shape: "rect" },
+    { n: 7, x: 1.9, y: -0.63, w: 1.5, h: 0.6, shape: "rect" },
+    { n: 8, x: 1.9, y: -1.9, w: 1.5, h: 0.6, shape: "rect" }
+  ];
+  S.fps.push(fp);
+  clearSel();
+  S.sel.fps.add(fp.id);
+
+  // Fournir une définition en cache de TSSOP-8
+  if (!PCB_LIB_CACHE) PCB_LIB_CACHE = {};
+  PCB_LIB_CACHE["TSSOP8"] = {
+    name: "TSSOP-8",
+    style: "smd",
+    pitch: 0.65,
+    span: 4.4,
+    pins: 8,
+    pads: [
+      { n: 1, x: -2.2, y: -0.975, w: 1.0, h: 0.4, shape: "rect" },
+      { n: 2, x: -2.2, y: -0.325, w: 1.0, h: 0.4, shape: "rect" },
+      { n: 3, x: -2.2, y: 0.325, w: 1.0, h: 0.4, shape: "rect" },
+      { n: 4, x: -2.2, y: 0.975, w: 1.0, h: 0.4, shape: "rect" },
+      { n: 5, x: 2.2, y: 0.975, w: 1.0, h: 0.4, shape: "rect" },
+      { n: 6, x: 2.2, y: 0.325, w: 1.0, h: 0.4, shape: "rect" },
+      { n: 7, x: 2.2, y: -0.325, w: 1.0, h: 0.4, shape: "rect" },
+      { n: 8, x: 2.2, y: -0.975, w: 1.0, h: 0.4, shape: "rect" }
+    ]
+  };
+
+  // Réaffecter l'empreinte via l'explorateur
+  let capturedOnSelect = null;
+  const originalExplorateur = (typeof window !== "undefined" && window.explorateurLibOuvrir) || explorateurLibOuvrir;
+  window.explorateurLibOuvrir = (opts) => {
+    capturedOnSelect = opts.onSelect;
+  };
+
+  pcbChangerEmpreinteSelectionnee(fp);
+  if (!capturedOnSelect) throw new Error("pcbChangerEmpreinteSelectionnee doit appeler explorateurLibOuvrir");
+
+  // Simuler la sélection d'un TSSOP-8 dans la bibliothèque
+  capturedOnSelect({
+    "Part Name": "OPAMP_TSSOP8",
+    "Package type": "TSSOP-8",
+    "Empreinte PCB": "TSSOP-8.json"
+  });
+
+  window.explorateurLibOuvrir = originalExplorateur;
+
+  if (fp.pkg !== "TSSOP-8") throw new Error("Boîtier attendu TSSOP-8, obtenu: " + fp.pkg);
+  if (fp.pitch !== 0.65) throw new Error("Pitch attendu 0.65 mm, obtenu: " + fp.pitch);
+  // Vérifier la préservation des nets connectés
+  const p1 = fp.pads.find(q => q.n === 1);
+  const p4 = fp.pads.find(q => q.n === 4);
+  if (!p1 || p1.net !== "VCC") throw new Error("Le net VCC de la broche 1 doit être conservé après réaffectation");
+  if (!p4 || p4.net !== "GND") throw new Error("Le net GND de la broche 4 doit être conservé après réaffectation");
+});
+
+T("Simulation SI/PI : injection des grandeurs parasites réelles (ESR/ESL Murata et DCR inductances)", () => {
+  if (typeof pcbParasitesComposant !== "function") {
+    throw new Error("pcbParasitesComposant non disponible");
+  }
+
+  // 1. Condensateur avec modèle réel Murata GCM
+  const compC = {
+    ref: "C1",
+    value: "12pF",
+    pkg: "0201",
+    mpn: "GCM0335C1E120FA16",
+    spice: "GCM0335C1E120FA16.sub"
+  };
+  const parC = pcbParasitesComposant(compC);
+  if (!parC) throw new Error("pcbParasitesComposant doit renvoyer un objet pour C1");
+  if (parC.provenance !== "spice") throw new Error("Provenance attendue 'spice' pour Murata GCM0335C1E120FA16: " + parC.provenance);
+  if (Math.abs(parC.esr - 0.188) > 1e-3) throw new Error("ESR attendu ~0.188 ohm, obtenu: " + parC.esr);
+  if (Math.abs(parC.esl - 1.97e-10) > 1e-12) throw new Error("ESL attendu ~0.197 nH, obtenu: " + parC.esl);
+
+  // 2. Inductance avec modèle réel Murata LQW
+  const compL = {
+    ref: "L1",
+    value: "10nH",
+    pkg: "0402",
+    mpn: "LQW15AN10NG00",
+    spice: "LQW15AN10NG00.sub"
+  };
+  const parL = pcbParasitesComposant(compL);
+  if (!parL) throw new Error("pcbParasitesComposant doit renvoyer un objet pour L1");
+  if (parL.provenance !== "spice") throw new Error("Provenance attendue 'spice' pour Murata LQW: " + parL.provenance);
+  if (Math.abs(parL.dcr - 0.12) > 1e-3) throw new Error("DCR attendu ~0.12 ohm, obtenu: " + parL.dcr);
+
+  // 3. Injection dans pcbSpecsComposant pour les calculs de chute DC
+  const spL = pcbSpecsComposant(compL);
+  if (!spL) throw new Error("pcbSpecsComposant doit renvoyer un objet pour L1");
+  if (Math.abs(spL.resistance - 0.12) > 1e-3) {
+    throw new Error("La résistance DC de L1 doit être égale à son DCR réel (0.12 ohm), obtenu: " + spL.resistance);
+  }
+  if (spL.dcr !== 0.12) throw new Error("DCR attendu 0.12 ohm dans specs: " + spL.dcr);
+
+  // 4. Heuristiques boîtier 0402 pour composant générique sans SPICE
+  const compGen = { ref: "C2", value: "100nF", pkg: "0402" };
+  const parGen = pcbParasitesComposant(compGen);
+  if (parGen.provenance !== "defaut") throw new Error("Provenance attendue 'defaut' pour composant sans modèle");
+  if (Math.abs(parGen.esl - 0.45e-9) > 1e-11) throw new Error("ESL 0402 attendu ~0.45 nH, obtenu: " + parGen.esl);
+  if (Math.abs(parGen.esr - 0.028) > 1e-3) throw new Error("ESR 100nF attendu ~0.028 ohm, obtenu: " + parGen.esr);
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

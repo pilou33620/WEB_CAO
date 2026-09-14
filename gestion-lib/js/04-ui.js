@@ -40,6 +40,34 @@ function initApp() {
     });
   }
 
+  // Écouteurs de recherche pour les galeries
+  const inpSearchPcb = document.getElementById("searchPcb");
+  if (inpSearchPcb) {
+    inpSearchPcb.addEventListener("input", () => {
+      LIB_GAL_STATE.pcb.query = inpSearchPcb.value;
+      LIB_GAL_STATE.pcb.page = 1;
+      rafraichirGaleriePcb();
+    });
+  }
+
+  const inpSearchSch = document.getElementById("searchSch");
+  if (inpSearchSch) {
+    inpSearchSch.addEventListener("input", () => {
+      LIB_GAL_STATE.sch.query = inpSearchSch.value;
+      LIB_GAL_STATE.sch.page = 1;
+      rafraichirGalerieSch();
+    });
+  }
+
+  const inpSearchSim = document.getElementById("searchSim");
+  if (inpSearchSim) {
+    inpSearchSim.addEventListener("input", () => {
+      LIB_GAL_STATE.sim.query = inpSearchSim.value;
+      LIB_GAL_STATE.sim.page = 1;
+      rafraichirGalerieSim();
+    });
+  }
+
   // Onglets
   document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -443,15 +471,81 @@ async function selectionnerComposant(id) {
   }
 }
 
-/* ---------- Rendu des galeries d'empreintes et symboles ---------- */
+/* ---------- Rendu des galeries d'empreintes, symboles et simulation avec pagination ---------- */
+
+const LIB_GAL_STATE = {
+  pcb: { page: 1, pageSize: 24, query: "" },
+  sch: { page: 1, pageSize: 24, query: "" },
+  sim: { page: 1, pageSize: 20, query: "" }
+};
+
+function rendrePaginationBar(barEl, current, total, onPageChange) {
+  if (!barEl) return;
+  if (total <= 1) {
+    barEl.innerHTML = "";
+    return;
+  }
+  let html = `<button class="page-btn" ${current <= 1 ? "disabled" : ""} data-p="${current - 1}" title="Page précédente">◀</button>`;
+
+  let startP = Math.max(1, current - 2);
+  let endP = Math.min(total, current + 2);
+  if (startP > 1) {
+    html += `<button class="page-btn" data-p="1">1</button>`;
+    if (startP > 2) html += `<span class="page-info">…</span>`;
+  }
+  for (let p = startP; p <= endP; p++) {
+    html += `<button class="page-btn ${p === current ? "active" : ""}" data-p="${p}">${p}</button>`;
+  }
+  if (endP < total) {
+    if (endP < total - 1) html += `<span class="page-info">…</span>`;
+    html += `<button class="page-btn" data-p="${total}">${total}</button>`;
+  }
+
+  html += `<button class="page-btn" ${current >= total ? "disabled" : ""} data-p="${current + 1}" title="Page suivante">▶</button>`;
+  html += `<span class="page-info">${current}/${total}</span>`;
+  barEl.innerHTML = html;
+
+  barEl.querySelectorAll(".page-btn[data-p]").forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const p = parseInt(b.getAttribute("data-p"), 10);
+      if (p >= 1 && p <= total && p !== current) {
+        onPageChange(p);
+      }
+    };
+  });
+}
 
 function rafraichirGaleriePcb() {
   const container = document.getElementById("gridPcbCards");
   if (!container) return;
-  const list = LIB_STATE.fichiers.pcb;
+  const rawList = LIB_STATE.fichiers.pcb || [];
+  const q = (LIB_GAL_STATE.pcb.query || "").toLowerCase().trim();
+  const list = rawList.filter(f => !q || f.toLowerCase().includes(q));
+
+  const countBadge = document.getElementById("countPcbBadge");
+  if (countBadge) countBadge.textContent = `${list.length} empreinte${list.length > 1 ? "s" : ""}`;
+
+  const pageSize = LIB_GAL_STATE.pcb.pageSize;
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  LIB_GAL_STATE.pcb.page = Math.max(1, Math.min(LIB_GAL_STATE.pcb.page, totalPages));
+  const page = LIB_GAL_STATE.pcb.page;
+
+  const pageBar = document.getElementById("pcbPaginationBar");
+  rendrePaginationBar(pageBar, page, totalPages, (newPage) => {
+    LIB_GAL_STATE.pcb.page = newPage;
+    rafraichirGaleriePcb();
+  });
+
+  const slice = list.slice((page - 1) * pageSize, page * pageSize);
+
+  if (slice.length === 0) {
+    container.innerHTML = `<div style="grid-column:1/-1; padding:32px; text-align:center; color:var(--txt-dim);">Aucune empreinte ne correspond à votre recherche.</div>`;
+    return;
+  }
 
   let html = "";
-  for (const f of list) {
+  for (const f of slice) {
     const base = f.replace(/\.json$/i, "");
     html += `
       <div class="lib-card" data-nom="${f}" data-type="pcb" title="Double-cliquez pour éditer l'empreinte">
@@ -471,8 +565,7 @@ function rafraichirGaleriePcb() {
   }
   container.innerHTML = html;
 
-  // Rendu paresseux des aperçus et écouteurs double-clic
-  list.forEach(async f => {
+  slice.forEach(async f => {
     const base = f.replace(/\.json$/i, "");
     const cv = document.getElementById(`cv_pcb_${base}`);
     if (cv) {
@@ -495,10 +588,33 @@ function rafraichirGaleriePcb() {
 function rafraichirGalerieSch() {
   const container = document.getElementById("gridSchCards");
   if (!container) return;
-  const list = LIB_STATE.fichiers.schematique;
+  const rawList = LIB_STATE.fichiers.schematique || [];
+  const q = (LIB_GAL_STATE.sch.query || "").toLowerCase().trim();
+  const list = rawList.filter(f => !q || f.toLowerCase().includes(q));
+
+  const countBadge = document.getElementById("countSchBadge");
+  if (countBadge) countBadge.textContent = `${list.length} symbole${list.length > 1 ? "s" : ""}`;
+
+  const pageSize = LIB_GAL_STATE.sch.pageSize;
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  LIB_GAL_STATE.sch.page = Math.max(1, Math.min(LIB_GAL_STATE.sch.page, totalPages));
+  const page = LIB_GAL_STATE.sch.page;
+
+  const pageBar = document.getElementById("schPaginationBar");
+  rendrePaginationBar(pageBar, page, totalPages, (newPage) => {
+    LIB_GAL_STATE.sch.page = newPage;
+    rafraichirGalerieSch();
+  });
+
+  const slice = list.slice((page - 1) * pageSize, page * pageSize);
+
+  if (slice.length === 0) {
+    container.innerHTML = `<div style="grid-column:1/-1; padding:32px; text-align:center; color:var(--txt-dim);">Aucun symbole ne correspond à votre recherche.</div>`;
+    return;
+  }
 
   let html = "";
-  for (const f of list) {
+  for (const f of slice) {
     const base = f.replace(/\.json$/i, "");
     html += `
       <div class="lib-card" data-nom="${f}" data-type="schematique" title="Double-cliquez pour éditer le symbole">
@@ -518,8 +634,7 @@ function rafraichirGalerieSch() {
   }
   container.innerHTML = html;
 
-  // Rendu des aperçus et écouteurs double-clic
-  list.forEach(async f => {
+  slice.forEach(async f => {
     const base = f.replace(/\.json$/i, "");
     const cv = document.getElementById(`cv_sch_${base}`);
     if (cv) {
@@ -542,10 +657,33 @@ function rafraichirGalerieSch() {
 function rafraichirGalerieSim() {
   const container = document.getElementById("gridSimCards");
   if (!container) return;
-  const list = LIB_STATE.fichiers.simulation;
+  const rawList = LIB_STATE.fichiers.simulation || [];
+  const q = (LIB_GAL_STATE.sim.query || "").toLowerCase().trim();
+  const list = rawList.filter(f => !q || f.toLowerCase().includes(q));
+
+  const countBadge = document.getElementById("countSimBadge");
+  if (countBadge) countBadge.textContent = `${list.length} modèle${list.length > 1 ? "s" : ""}`;
+
+  const pageSize = LIB_GAL_STATE.sim.pageSize;
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  LIB_GAL_STATE.sim.page = Math.max(1, Math.min(LIB_GAL_STATE.sim.page, totalPages));
+  const page = LIB_GAL_STATE.sim.page;
+
+  const pageBar = document.getElementById("simPaginationBar");
+  rendrePaginationBar(pageBar, page, totalPages, (newPage) => {
+    LIB_GAL_STATE.sim.page = newPage;
+    rafraichirGalerieSim();
+  });
+
+  const slice = list.slice((page - 1) * pageSize, page * pageSize);
+
+  if (slice.length === 0) {
+    container.innerHTML = `<div style="padding:32px; text-align:center; color:var(--txt-dim);">Aucun modèle de simulation ne correspond à votre recherche.</div>`;
+    return;
+  }
 
   let html = "";
-  for (const f of list) {
+  for (const f of slice) {
     html += `
       <div class="preview-card" style="margin-bottom:12px;">
         <div class="preview-card-head">
@@ -558,7 +696,7 @@ function rafraichirGalerieSim() {
   }
   container.innerHTML = html;
 
-  list.forEach(async f => {
+  slice.forEach(async f => {
     const el = document.getElementById(`sim_code_${f.replace(/\./g, '_')}`);
     if (el) {
       const data = await obtenirFichierLib("simulation", f);

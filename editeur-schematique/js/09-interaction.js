@@ -396,6 +396,14 @@ cv.addEventListener("pointerdown",e=>{
       if(it["Value"]) el.value = it["Value"];
       const sym = it["Empreinte Schématique"] || it["Empreinte Schematique"] || "";
       if(sym) el.symSch = sym;
+      const pref = String(it["Reference designator Prefix"] || "").trim().toUpperCase();
+      if(pref && typeof nextRef === "function" && !el.ref.startsWith(pref)) {
+        el.ref = nextRef(pref);
+      }
+      const nPins = parseInt(it["Number Of pins"], 10);
+      if((el.type === "ic" || el.type === "connector") && nPins > 0) {
+        el.pins = nPins;
+      }
       const fp = it["Empreinte PCB"] || "";
       if(fp) {
         el.fpPcb = fp;

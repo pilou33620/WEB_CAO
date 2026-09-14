@@ -55,11 +55,11 @@ GENERIQUES = ("capacitor.sub", "inductor.sub", "")
 # -- index des modeles fabricant --------------------------------------------
 
 def deballer_packs(verbeux=True):
-    """Deballe les .zip des packs qui ne l'ont pas encore ete.
+    """Deballe les .zip des packs qui ne l'ont pas encore ete ou partiellement.
 
     Murata livre un zip par serie ; certains ont ete ouverts a la main, pas
-    tous. On deballe a cote du zip, dans un dossier du meme nom, et on ne
-    touche pas a ceux qui existent deja.
+    tous. On deballe a cote du zip, dans un dossier du meme nom, et on complete
+    ceux dont l'extraction etait partielle.
     """
     ouverts = []
     if not os.path.isdir(SIM):
@@ -70,13 +70,25 @@ def deballer_packs(verbeux=True):
                 continue
             chemin = os.path.join(dossier, f)
             cible = chemin[:-4]
-            if os.path.isdir(cible):
-                continue
-            with zipfile.ZipFile(chemin) as z:
-                z.extractall(cible)
-            ouverts.append(os.path.relpath(cible, RACINE))
-            if verbeux:
-                print("  deballe : %s" % os.path.relpath(cible, SIM))
+            doit_extraire = False
+            if not os.path.isdir(cible):
+                doit_extraire = True
+            else:
+                try:
+                    with zipfile.ZipFile(chemin) as z:
+                        n_zip = len([x for x in z.namelist() if x.lower().endswith(".mod")])
+                    n_cible = sum(len([x for x in fs if x.lower().endswith(".mod")])
+                                  for _, _, fs in os.walk(cible))
+                    if n_cible < n_zip:
+                        doit_extraire = True
+                except Exception:
+                    pass
+            if doit_extraire:
+                with zipfile.ZipFile(chemin) as z:
+                    z.extractall(cible)
+                ouverts.append(os.path.relpath(cible, RACINE))
+                if verbeux:
+                    print("  deballe : %s" % os.path.relpath(cible, SIM))
     return ouverts
 
 
@@ -91,6 +103,21 @@ def indexer_modeles():
 
 
 # -- correspondance reference catalogue -> modele ---------------------------
+
+ARBITRAGES = {
+    # 7 références GCM C0G 0402 50V dont la valeur nominale n'est pas au standard GCM155
+    "GCM1555C1HR70WA16D": "GCM1555C1HR75WA16",   # 0.7 pF -> 0.75 pF GCM C0G
+    "GCM1555C1H2R1BA16D": "GCM1555C1H2R0CA16",   # 2.1 pF -> 2.0 pF GCM C0G
+    "GCM1555C1H2R4BA16D": "GCM1885C1H2R4BA16",   # 2.4 pF -> GCM 2.4 pF C0G (modèle compatible multi-boîtier)
+    "GCM1555C1H3R6BA16D": "GCM1885C1H3R6BA16",   # 3.6 pF -> GCM 3.6 pF C0G (modèle compatible multi-boîtier)
+    "GCM1555C1H7R5DA16D": "GCM0335C1H7R5DA16",   # 7.5 pF -> GCM 7.5 pF C0G (modèle compatible multi-boîtier)
+    "GCM1555G1H8R7CA16J": "GCM1555C1H8R2DA16",   # 8.7 pF -> 8.2 pF GCM C0G
+    "GCM1555C1H131JA16D": "GCM1555C1H121JA16",   # 130 pF -> 120 pF GCM C0G
+    # Inductances boîtier 0201 / 0402 compatibles
+    "LQW03AW9N1J00D": "LQW15AN9N1H00",            # 9.1 nH -> LQW 9.1 nH
+    "LQW04AN2N6C00D": "LQW15AN2N5C00",            # 2.6 nH -> LQW 2.5 nH
+}
+
 
 def variantes(reference):
     """La reference, puis la meme amputee de son suffixe de conditionnement.
@@ -121,21 +148,46 @@ def cle_sans_tolerance(reference):
     return reference[:13] + reference[14:]
 
 
-def resoudre(reference, index, index_tolerance):
+def resoudre(reference, index, index_tolerance, index_13=None, index_val_diel=None):
     """(nom du modele, qualite) pour une reference, ou (None, None).
 
-    Qualite : 'exact' si la reference est celle du modele, 'emballage' si le
-    seul ecart est le suffixe de conditionnement, 'tolerance' si le modele
-    retenu ne differe que par la classe de tolerance.
+    Qualite : 'exact', 'emballage', 'tolerance', 'variante_code', 'compatible_boitier', 'arbitrage'.
     """
+    # 0. Table d'arbitrage explicite
+    for essai in variantes(reference):
+        if essai in ARBITRAGES and ARBITRAGES[essai] in index:
+            return ARBITRAGES[essai], "arbitrage"
+
+    # 1. Correspondance exacte ou emballage
     for rang, essai in enumerate(variantes(reference)):
         if essai in index:
             return essai, ("exact" if rang == 0 else "emballage")
+
+    # 2. Tolérance équivalente
     for essai in variantes(reference):
         cle = cle_sans_tolerance(essai)
         proches = index_tolerance.get(cle) if cle else None
         if proches:
             return sorted(proches)[0], "tolerance"
+
+    # 3. Même base de 13 caractères (diélectrique, tension, valeur identiques, code usine/emballage différent)
+    if index_13:
+        for essai in variantes(reference):
+            if len(essai) >= 13 and essai.startswith(("GCM", "GRM")):
+                proches = index_13.get(essai[:13])
+                if proches:
+                    return sorted(proches)[0], "variante_code"
+
+    # 4. Modèle compatible multi-boîtier (même famille GCM/GRM, même diélectrique et même valeur)
+    if index_val_diel:
+        for essai in variantes(reference):
+            m = re.match(r"^(GCM|GRM)[0-9A-Z]{3}([A-Z0-9]{2})[0-9A-Z]{2}([0-9R][0-9R][0-9R])", essai)
+            if m:
+                fam, diel, val_code = m.group(1), m.group(2), m.group(3)
+                proches = index_val_diel.get((fam, diel, val_code)) or index_val_diel.get(("ANY", diel, val_code))
+                if proches:
+                    return sorted(proches)[0], "compatible_boitier"
+
     return None, None
 
 
@@ -233,6 +285,20 @@ def principal():
         cle = cle_sans_tolerance(ref)
         if cle:
             index_tolerance.setdefault(cle, []).append(ref)
+
+    index_13 = {}
+    for ref in index:
+        if len(ref) >= 13 and ref.startswith(("GCM", "GRM")):
+            index_13.setdefault(ref[:13], []).append(ref)
+
+    index_val_diel = {}
+    for ref in index:
+        m = re.match(r"^(GCM|GRM)[0-9A-Z]{3}([A-Z0-9]{2})[0-9A-Z]{2}([0-9R][0-9R][0-9R])", ref)
+        if m:
+            fam, diel, val_code = m.group(1), m.group(2), m.group(3)
+            index_val_diel.setdefault((fam, diel, val_code), []).append(ref)
+            index_val_diel.setdefault(("ANY", diel, val_code), []).append(ref)
+
     print("  %d modeles .mod indexes dans %s"
           % (len(index), os.path.relpath(SIM, RACINE)))
 
@@ -257,7 +323,7 @@ def principal():
         if not reference.startswith(FAMILLES):
             continue
         nom, actuel = champs[i_nom], (champs[i_mod] or "").strip()
-        modele, qualite = resoudre(reference, index, index_tolerance)
+        modele, qualite = resoudre(reference, index, index_tolerance, index_13, index_val_diel)
 
         if valeurs_discordantes(reference, champs[i_val]):
             doutes.append((nom, reference, champs[i_val]))
@@ -283,7 +349,10 @@ def principal():
 
     for qualite, titre in (("exact", "reference exacte"),
                            ("emballage", "suffixe d'emballage ignore"),
-                           ("tolerance", "equivalent de tolerance (a verifier)")):
+                           ("tolerance", "equivalent de tolerance (a verifier)"),
+                           ("variante_code", "variante de code usine/emballage"),
+                           ("compatible_boitier", "modele Murata compatible multi-boitier"),
+                           ("arbitrage", "arbitrage de valeur / serie")):
         bloc("Modeles fabricant relies -- " + titre,
              ["%-22s -> %-25s %s" % (r, f, nom)
               for nom, r, f, k in lies if k == qualite])

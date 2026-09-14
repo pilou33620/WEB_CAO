@@ -669,13 +669,13 @@ async function explorateurLibOuvrir(options) {
   const applyBtn = document.getElementById("elibBtnApply");
 
   if (ELIB.mode === "pcb") {
-    if (headTitle) headTitle.textContent = "Bibliothèque d'Empreintes PCB";
-    if (headSub) headSub.textContent = "Choisissez une empreinte à implanter sur le circuit";
-    if (applyBtn) applyBtn.textContent = "✔ Placer sur la carte";
+    if (headTitle) headTitle.textContent = opt.title || "Bibliothèque d'Empreintes PCB";
+    if (headSub) headSub.textContent = opt.subtitle || "Choisissez une empreinte à implanter sur le circuit";
+    if (applyBtn) applyBtn.textContent = opt.actionLabel || "✔ Placer sur la carte";
   } else {
-    if (headTitle) headTitle.textContent = "Explorateur Visuel de Bibliothèque";
-    if (headSub) headSub.textContent = "Choisissez un composant à insérer sur le schéma";
-    if (applyBtn) applyBtn.textContent = "✔ Placer sur le schéma";
+    if (headTitle) headTitle.textContent = opt.title || "Explorateur Visuel de Bibliothèque";
+    if (headSub) headSub.textContent = opt.subtitle || "Choisissez un composant à insérer sur le schéma";
+    if (applyBtn) applyBtn.textContent = opt.actionLabel || "✔ Placer sur le schéma";
   }
 
   // Chargement des données de bibliothèque

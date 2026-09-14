@@ -523,6 +523,125 @@ const SIM_ESL_PONT = 1.0e-9;      /* H — un 0402 sur deux vias courts */
 const SIM_C_PONT   = 100e-9;      /* F — la valeur universelle du découplage */
 const SIM_ESR_PONT = 0.03;        /* Ω — un MLCC 0402 X7R */
 
+/* Base des parasites réels des composants Murata (extraits des sous-circuits SPICE .sub/.mod) */
+const SIM_PARASITES_MURATA_DEFAUT = {"GCM0335C1E120FA16":{"c":1.2e-11,"esl":1.97e-10,"esr":0.188},"GCM0335C1E1R8CA16":{"c":1.8e-12,"esl":1.7e-10,"esr":0.28},"GCM0335C1E3R3CA16":{"c":3.3e-12,"esl":1.3e-10,"esr":0.248},"GCM0335C1E470FA16":{"c":4.7e-11,"esl":1.66e-10,"esr":0.126},"GCM0335C1E6R8CA16":{"c":6.8e-12,"esl":1.04e-10,"esr":0.195},"GCM0335C1ER70BA16":{"c":7e-13,"esl":2.02e-10,"esr":0.837},"GCM0335C1H7R5DA16":{"c":7.5e-12,"esl":7.19e-11,"esr":0.195},"GCM033R71E102KA03":{"c":1e-09,"esl":1.38e-10,"esr":0.228},"GCM1555C1H100JA16":{"c":1e-11,"esl":2.67e-10,"esr":0.211},"GCM1555C1H101JA16":{"c":1e-10,"esl":2.65e-10,"esr":0.0787},"GCM1555C1H120JA16":{"c":1.2e-11,"esl":2.25e-10,"esr":0.108},"GCM1555C1H121JA16":{"c":1.2e-10,"esl":1.45e-10,"esr":0.12},"GCM1555C1H150JA16":{"c":1.5e-11,"esl":2.37e-10,"esr":0.106},"GCM1555C1H181JA16":{"c":1.8e-10,"esl":1.15e-10,"esr":0.1},"GCM1555C1H1R5BA16":{"c":1.5e-12,"esl":3.66e-10,"esr":0.389},"GCM1555C1H1R8CA16":{"c":1.8e-12,"esl":3.44e-10,"esr":0.35},"GCM1555C1H220JA16":{"c":2.2e-11,"esl":1.7e-10,"esr":0.101},"GCM1555C1H221JA16":{"c":2.2e-10,"esl":2.06e-10,"esr":0.095},"GCM1555C1H2R0CA16":{"c":2e-12,"esl":3.35e-10,"esr":0.318},"GCM1555C1H330JA16":{"c":3.3e-11,"esl":2.32e-10,"esr":0.0805},"GCM1555C1H331JA16":{"c":3.3e-10,"esl":1.98e-10,"esr":0.0751},"GCM1555C1H390JA16":{"c":3.9e-11,"esl":1.54e-10,"esr":0.0755},"GCM1555C1H3R0BA16":{"c":3e-12,"esl":3.17e-10,"esr":0.274},"GCM1555C1H3R3CA16":{"c":3.3e-12,"esl":2.95e-10,"esr":0.272},"GCM1555C1H3R9BA16":{"c":3.9e-12,"esl":2.6e-10,"esr":0.254},"GCM1555C1H470JA16":{"c":4.7e-11,"esl":1e-10,"esr":0.0744},"GCM1555C1H471JA16":{"c":4.7e-10,"esl":1.3e-10,"esr":0.0529},"GCM1555C1H4R0BA16":{"c":4e-12,"esl":1.31e-10,"esr":0.25},"GCM1555C1H4R7CA16":{"c":4.7e-12,"esl":2.83e-10,"esr":0.247},"GCM1555C1H560JA16":{"c":5.6e-11,"esl":2.48e-10,"esr":0.0686},"GCM1555C1H5R0CA16":{"c":5e-12,"esl":2.99e-10,"esr":0.239},"GCM1555C1H5R6DA16":{"c":5.6e-12,"esl":2.93e-10,"esr":0.232},"GCM1555C1H680JA16":{"c":6.8e-11,"esl":2.48e-10,"esr":0.127},"GCM1555C1H6R0DA16":{"c":6e-12,"esl":2.7e-10,"esr":0.23},"GCM1555C1H6R8BA16":{"c":6.8e-12,"esl":2.77e-10,"esr":0.227},"GCM1555C1H6R8DA16":{"c":6.8e-12,"esl":2.77e-10,"esr":0.227},"GCM1555C1H8R2DA16":{"c":8.2e-12,"esl":2.94e-10,"esr":0.219},"GCM1555C1H9R0DA16":{"c":9e-12,"esl":2.95e-10,"esr":0.216},"GCM155R71C104KA55":{"c":1.02e-07,"esl":2.01e-10,"esr":0.0142},"GCM155R71H102KA37":{"c":1.01e-09,"esl":1.45e-10,"esr":0.245},"GCM155R71H103KA55":{"c":9.97e-09,"esl":1.92e-10,"esr":0.0493},"GCM155R71H104KE02":{"c":9.43e-08,"esl":1.53e-10,"esr":0.0167},"GCM155R71H152KA37":{"c":1.51e-09,"esl":1.43e-10,"esr":0.21},"GCM155R71H222KA37":{"c":2.2e-09,"esl":1.96e-10,"esr":0.165},"GCM155R71H223KA55":{"c":2.13e-08,"esl":1.85e-10,"esr":0.0345},"GCM1885C1H2R4BA16":{"c":2.4e-12,"esl":4.4e-10,"esr":0.322},"GCM1885C1H331JA16":{"c":3.3e-10,"esl":9e-11,"esr":0.0768},"GCM1885C1H332JA16":{"c":3.31e-09,"esl":5.56e-12,"esr":0.0144},"GCM1885C1H3R6BA16":{"c":3.6e-12,"esl":4.12e-10,"esr":0.257},"GCM188R71E105KA64":{"c":6.98e-07,"esl":1.99e-10,"esr":0.00775},"GCM188R71E474KA49":{"c":3.76e-07,"esl":1.53e-10,"esr":0.00878},"GCM188R71H102KA37":{"c":1.05e-09,"esl":1.6e-10,"esr":0.256},"GCM188R71H224KA64":{"c":2.18e-07,"esl":1.7e-10,"esr":0.00821},"GCM188R71H682KA37":{"c":6.82e-09,"esl":9e-11,"esr":0.0984},"GCM21BR71C475KA73":{"c":2.95e-06,"esl":1.74e-10,"esr":0.00442},"GCM21BR71E105KA56":{"c":9.89e-07,"esl":1.54e-10,"esr":0.00523},"GRM0115C1C240GE01":{"c":2.4e-11,"esl":8.87e-11,"esr":0.102},"GRM0115C1E221GE01":{"c":2.2e-10,"esl":7.9e-11,"esr":0.0664},"GRM011R60G104ME01":{"c":8.39e-08,"esl":8.02e-11,"esr":0.0296},"GRM022R60G105ME01":{"c":6.18e-07,"esl":1.03e-10,"esr":0.00902},"GRM0335C1H1R5CA01":{"c":1.5e-12,"esl":2.46e-10,"esr":0.29},"GRM0335C1H1R6CA01":{"c":1.6e-12,"esl":2.46e-10,"esr":0.29},"GRM0335C1H2R9CA01":{"c":2.9e-12,"esl":2.27e-10,"esr":0.25},"GRM1555C1H180GA01":{"c":1.8e-11,"esl":1.19e-10,"esr":0.12},"GRM155R61A474KE15":{"c":4.44e-07,"esl":2.01e-10,"esr":0.0112},"GRM155R61E225KE11":{"c":1.73e-06,"esl":1.79e-10,"esr":0.00635},"GRM155R71E473KA88":{"c":4.64e-08,"esl":1.46e-10,"esr":0.0219},"GRM188R61A106MAAL":{"c":7.91e-06,"esl":1.61e-10,"esr":0.00319},"GRM188R61C105KA12":{"c":9.32e-07,"esl":1.82e-11,"esr":0.00515},"GRM188R61C475KE11":{"c":3.68e-06,"esl":1.78e-10,"esr":0.00374},"GRM2165C1H471JA01":{"c":4.7e-10,"esl":1.82e-11,"esr":0.06},"GRM21BR61A226ME44":{"c":1.7e-05,"esl":1.6e-10,"esr":0.00211},"GRM21BR61A476ME15":{"c":3.8e-05,"esl":1.67e-10,"esr":0.00237},"GRM21BR71H474KA88":{"c":4.74e-07,"esl":1.57e-10,"esr":0.00695},"LQW15AN10NG00":{"l":1.2e-08,"dcr":0.12},"LQW15AN11NG00":{"l":1.26e-08,"dcr":0.1},"LQW15AN12NG00":{"l":1.4e-08,"dcr":0.1},"LQW15AN15NH00":{"l":1.72e-08,"dcr":0.11},"LQW15AN16NG80":{"l":1.69e-08,"dcr":0.105},"LQW15AN18NG80":{"l":1.94e-08,"dcr":0.108},"LQW15AN2N4B00":{"l":2.49e-09,"dcr":0.03},"LQW15AN2N5C00":{"l":3.12e-09,"dcr":0.03},"LQW15AN2N7B00":{"l":3.08e-09,"dcr":0.03},"LQW15AN2N7C00":{"l":3.08e-09,"dcr":0.03},"LQW15AN33NG00":{"l":3.87e-08,"dcr":0.45},"LQW15AN39NH00":{"l":4.5e-08,"dcr":0.5},"LQW15AN3N0B00":{"l":2.77e-09,"dcr":0.05},"LQW15AN3N3C10":{"l":3.37e-09,"dcr":0.028},"LQW15AN3N6C80":{"l":3.5e-09,"dcr":0.025},"LQW15AN3N9B00":{"l":4.39e-09,"dcr":0.05},"LQW15AN47NH00":{"l":5.51e-08,"dcr":0.77},"LQW15AN4N2B80":{"l":4.11e-09,"dcr":0.036},"LQW15AN4N7C00":{"l":5.58e-09,"dcr":0.05},"LQW15AN5N6C10":{"l":5.72e-09,"dcr":0.0368},"LQW15AN7N5G00":{"l":8.73e-09,"dcr":0.09},"LQW15AN8N2G00":{"l":8.91e-09,"dcr":0.1},"LQW15AN9N1H00":{"l":9.53e-09,"dcr":0.1},"LQW15AN9N5J80":{"l":9.93e-09,"dcr":0.067}};
+let SIM_PARASITES_MURATA = SIM_PARASITES_MURATA_DEFAUT;
+if (typeof require === "function") {
+  try {
+    const p = require("../../commun/parasites-murata.json");
+    if (p && typeof p === "object") SIM_PARASITES_MURATA = p;
+  } catch (_) {}
+}
+if (typeof window !== "undefined") {
+  window.SIM_PARASITES_MURATA = SIM_PARASITES_MURATA;
+}
+
+function pcbParasitesComposant(c) {
+  if (!c) return null;
+  const ref = c.ref || "";
+  const val = c.value || "";
+  const pkg = String(c.pkg || c["Package type"] || "").toUpperCase();
+  const mpn = String(c.mpn || c["Part Number"] || c["Part Number "] || "").toUpperCase();
+  const partName = String(c.csvPartName || c["Part Name"] || "").toUpperCase();
+  const spiceMod = String(c.spice || c["Modèle Simulation"] || "").replace(/\.(sub|mod)$/i, "").toUpperCase();
+
+  let esr = c.esr != null ? c.esr : (c.esr_ohm != null ? c.esr_ohm : null);
+  let esl = c.esl != null ? c.esl : (c.esl_nH != null ? c.esl_nH * 1e-9 : null);
+  let dcr = c.dcr != null ? c.dcr : null;
+  let isat = c.isat != null ? c.isat : null;
+  let l = c.l != null ? c.l : null;
+  let cap = c.c != null ? c.c : (c.capacite_F != null ? c.capacite_F : null);
+  let provenance = "defaut";
+
+  const dict = SIM_PARASITES_MURATA || (typeof window !== "undefined" && window.SIM_PARASITES_MURATA) || null;
+  if (dict) {
+    const cle = spiceMod || mpn || partName;
+    const hit = dict[cle] || (mpn ? dict[mpn] : null) || (spiceMod ? dict[spiceMod] : null) || (partName ? dict[partName] : null);
+    if (hit) {
+      if (hit.esr != null && esr == null) { esr = hit.esr; provenance = "spice"; }
+      if (hit.esl != null && esl == null) { esl = hit.esl; provenance = "spice"; }
+      if (hit.dcr != null && dcr == null) { dcr = hit.dcr; provenance = "spice"; }
+      if (hit.l != null && l == null) l = hit.l;
+      if (hit.c != null && cap == null) cap = hit.c;
+    }
+  }
+
+  if (typeof window !== "undefined" && Array.isArray(window.CSV_LIB)) {
+    const entry = window.CSV_LIB.find(it => {
+      const p = String(it["Part Name"] || "").toUpperCase().trim();
+      const pn = String(it["Part Number"] || it["Part Number "] || "").toUpperCase().trim();
+      return (mpn && pn === mpn) || (partName && p === partName) || (pn && pn === partName);
+    });
+    if (entry) {
+      const desc = String(entry["Description"] || "");
+      const cRating = String(entry["current Rating"] || entry["Current Rating"] || "");
+      if (isat == null && cRating && cRating !== "xx" && cRating !== "-") {
+        if (typeof pcbParseCourant === "function") isat = pcbParseCourant(cRating);
+      }
+      if (dcr == null) {
+        const mDcr = desc.match(/(\d+(?:[.,]\d+)?)\s*(m?R|mOhm)/i);
+        if (mDcr) {
+          let vDcr = parseFloat(mDcr[1].replace(",", "."));
+          if (/mR|mOhm/i.test(mDcr[2])) vDcr *= 1e-3;
+          dcr = vDcr;
+          if (provenance === "defaut") provenance = "catalogue";
+        }
+      }
+    }
+  }
+
+  const isCapa = c.type === "capacitor" || /^[cC]/i.test(ref) || /[pnum]F/i.test(val);
+  const isInduc = c.type === "inductor" || /^(L|FB|BEAD|SELF)/i.test(ref) || /[pnum]H/i.test(val);
+
+  if (isCapa) {
+    if (cap == null) cap = simValeurFarads(val);
+    if (esl == null) {
+      if (/0201/i.test(pkg) || /0201/i.test(ref) || /0201/i.test(partName)) esl = 0.20e-9;
+      else if (/0402/i.test(pkg) || /0402/i.test(ref) || /0402/i.test(partName)) esl = 0.45e-9;
+      else if (/0603/i.test(pkg) || /0603/i.test(ref) || /0603/i.test(partName)) esl = 0.70e-9;
+      else if (/0805/i.test(pkg) || /0805/i.test(ref) || /0805/i.test(partName)) esl = 0.90e-9;
+      else if (/1206/i.test(pkg) || /1206/i.test(ref) || /1206/i.test(partName)) esl = 1.20e-9;
+      else esl = SIM_ESL_PONT;
+    }
+    if (esr == null) {
+      if (/C0G|NP0/i.test(partName) || /C0G|NP0/i.test(mpn)) {
+        esr = 0.025;
+      } else if (cap && cap >= 10e-6) {
+        esr = 0.008;
+      } else if (cap && cap >= 1e-6) {
+        esr = 0.015;
+      } else if (cap && cap >= 100e-9) {
+        esr = 0.028;
+      } else {
+        esr = SIM_ESR_PONT;
+      }
+    }
+  }
+
+  if (isInduc) {
+    if (dcr == null) {
+      if (/BEAD|BLM/i.test(ref) || /BEAD|BLM/i.test(partName)) dcr = 0.05;
+      else if (/0201/i.test(pkg)) dcr = 0.25;
+      else if (/0402/i.test(pkg)) dcr = 0.12;
+      else dcr = 0.08;
+    }
+    if (isat == null) {
+      if (/BEAD|BLM/i.test(ref) || /BEAD|BLM/i.test(partName)) isat = 0.8;
+      else isat = 0.5;
+    }
+  }
+
+  return {
+    esr: esr != null ? esr : SIM_ESR_PONT,
+    esl: esl != null ? esl : SIM_ESL_PONT,
+    dcr: dcr,
+    isat: isat,
+    l: l,
+    c: cap,
+    provenance: provenance
+  };
+}
+
 /* L'étalement entre DEUX contacts de via dans une paire de plans, en HENRYS.
    MÊME FORMULE QUE `ligne_mom.inductance_etalement_via_via` — équation 13-35
    de Bogatin, 21 pH par mil d'écartement entre plans. `h` et `d` en mm. */
@@ -636,6 +755,14 @@ function simPontsPlans(cuA, cuB, x, y, extraOut){
     const pont = {x: r3(fp.x), y: r3(fp.y), repere: fp.ref || ""};
     const cap = simValeurFarads(fp.value);
     if(cap) pont.capacite_F = cap;
+    if(typeof pcbParasitesComposant === "function"){
+      const par = pcbParasitesComposant(fp);
+      if(par){
+        if(par.esr != null){ pont.esr_ohm = par.esr; pont.esr = par.esr; }
+        if(par.esl != null){ pont.esl_nH = r3(par.esl * 1e9); pont.esl = par.esl; }
+        if(par.c != null && !pont.capacite_F) pont.capacite_F = par.c;
+      }
+    }
     out.push(pont);
   }
   out.sort((p, q) => Math.hypot(p.x - x, p.y - y) -
@@ -1857,9 +1984,9 @@ function simVoisinageVia(v){
     const fEval = (fc < 1e6 && tr > 0) ? Math.max(fc, 0.35 / tr) : fc;
     const branches = ponts.map(p => ({
       l: simEtalementViaVia(hCav, Math.hypot(p.x - v.x, p.y - v.y),
-                            Math.max(v.drill, 1e-3)) + SIM_ESL_PONT,
+                            Math.max(v.drill, 1e-3)) + (p.esl != null ? p.esl : (p.esl_nH != null ? p.esl_nH * 1e-9 : SIM_ESL_PONT)),
       c: p.capacite_F || SIM_C_PONT,
-      esr: SIM_ESR_PONT
+      esr: (p.esr != null ? p.esr : (p.esr_ohm != null ? p.esr_ohm : SIM_ESR_PONT))
     }));
     const r = simPartsPonts(fEval, lCav, cPlans, branches);
     ponts.forEach((p, i) => {p.part = r.parts[i] || 0;});
@@ -3363,6 +3490,14 @@ function pcbSpecsComposant(c){
     prov="defaut";
   }
   
+  const par = typeof pcbParasitesComposant === "function" ? pcbParasitesComposant(c) : null;
+  if (par) {
+    if (par.dcr != null && res == null && (c.type === "inductor" || /^(L|FB|BEAD|SELF)/i.test(c.ref))) {
+      res = par.dcr;
+      if (!prov || prov === "defaut") prov = par.provenance;
+    }
+  }
+
   return {
     ref:c.ref,
     type:c.type,
@@ -3375,6 +3510,12 @@ function pcbSpecsComposant(c){
     courant:courantConsomme,
     courantSortie:estSource?(curr||1.0):null,
     resistance:res,
+    dcr: par ? par.dcr : null,
+    isat: par ? par.isat : null,
+    esr: par ? par.esr : null,
+    esl: par ? par.esl : null,
+    inductance: par ? par.l : null,
+    capacite: par ? par.c : null,
     puissance:power,
     frequence:freq,
     estSource:estSource,

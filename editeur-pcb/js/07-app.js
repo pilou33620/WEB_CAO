@@ -766,11 +766,22 @@ function pcbPlacerEmpreinteDepuisLib(item) {
   // Créer l'empreinte avec le moteur géométrique
   const fp = mkFp(newRef, val, cleanPkg, pins);
 
-  // Si une définition personnalisée existe dans la bibliothèque locale, l'appliquer
-  if (typeof fpLibGet === "function") {
+  // Appliquer la définition réelle depuis la bibliothèque ou le cache
+  if (typeof pcbAppliquerEmpreinteLib === "function") {
+    const res = pcbAppliquerEmpreinteLib(fp, cleanPkg);
+    if (res && typeof res.then === "function") {
+      res.then(() => { touch(); refreshPanels(); draw(); });
+    }
+  } else if (typeof fpLibGet === "function") {
     const def = fpLibGet(cleanPkg) || fpLibGet(pkg);
     if (def) fpApplyDef(fp, def);
   }
+
+  // Stocker les métadonnées de composant réel si disponibles
+  if (item["MPN"] || item["Part Number"]) fp.mpn = item["MPN"] || item["Part Number"];
+  if (item["Description"]) fp.description = item["Description"];
+  if (item["Modèle Simulation"] || item["SPICE"]) fp.spice = item["Modèle Simulation"] || item["SPICE"];
+  if (item["Manufacturer"] || item["Fabricant"]) fp.manufacturer = item["Manufacturer"] || item["Fabricant"];
 
   // Positionner au centre de la vue ou de la carte, ou sous la souris si active
   let posX = snapX(S.mouse && S.mouse.x ? S.mouse.x : 0);
@@ -804,6 +815,45 @@ function pcbPlacerEmpreinteDepuisLib(item) {
   hint("Empreinte " + fp.ref + " (" + (fp.pkg || cleanPkg) + ") posée sur la carte · R pour pivoter, glissez pour déplacer.");
 }
 
+function pcbChangerEmpreinteSelectionnee(fp) {
+  if (!fp && typeof S !== "undefined" && S.sel && S.sel.fps && S.sel.fps.size === 1) {
+    const id = Array.from(S.sel.fps)[0];
+    fp = S.fps.find(f => f.id === id);
+  }
+  if (!fp) {
+    hint("Veuillez d'abord sélectionner une empreinte sur la carte.");
+    return;
+  }
+  const fnOuvrir = (typeof window !== "undefined" && typeof window.explorateurLibOuvrir === "function") ? window.explorateurLibOuvrir : (typeof explorateurLibOuvrir === "function" ? explorateurLibOuvrir : null);
+  if (!fnOuvrir) return;
+  fnOuvrir({
+    mode: "pcb",
+    title: "Réaffecter l'empreinte de " + fp.ref,
+    subtitle: "Sélectionnez une nouvelle empreinte réelle pour " + fp.ref + " (" + (fp.pkg || "") + ")",
+    actionLabel: "✔ Affecter à " + fp.ref,
+    onSelect: async (item) => {
+      const pkg = String(item["Package type"] || item["Empreinte PCB"] || item["Fichier"] || item["Nom"] || "").trim();
+      const cleanPkg = pkg.replace(/\.json$/i, "").trim();
+      if (!cleanPkg) return;
+      push();
+      fp.pkg = cleanPkg;
+      if (item["MPN"] || item["Part Number"]) fp.mpn = item["MPN"] || item["Part Number"];
+      if (item["Description"]) fp.description = item["Description"];
+      if (item["Modèle Simulation"] || item["SPICE"]) fp.spice = item["Modèle Simulation"] || item["SPICE"];
+      if (typeof pcbAppliquerEmpreinteLib === "function") {
+        const res = pcbAppliquerEmpreinteLib(fp, cleanPkg);
+        if (res && typeof res.then === "function") await res;
+      } else {
+        applyPkgGeom(fp);
+      }
+      touch();
+      refreshPanels();
+      draw();
+      hint("Empreinte de " + fp.ref + " mise à jour sur " + cleanPkg + ".");
+    }
+  });
+}
+
 function pcbOuvrirExplorateurLib() {
   if (typeof explorateurLibOuvrir !== "function") return;
   explorateurLibOuvrir({
@@ -812,6 +862,10 @@ function pcbOuvrirExplorateurLib() {
       pcbPlacerEmpreinteDepuisLib(item);
     }
   });
+}
+
+if (typeof window !== "undefined") {
+  window.pcbChangerEmpreinteSelectionnee = pcbChangerEmpreinteSelectionnee;
 }
 
 init();

@@ -181,9 +181,13 @@ function schOuvrirExplorateurLib() {
       else if(cat === "pwr") compType = "vcc";
       else compType = "ic";
 
-      const sym = String(item["Empreinte Schématique"] || item["Empreinte Schematique"] || "").toLowerCase();
-      if(sym && typeof defOf === "function") {
-        try { if(defOf(sym)) compType = sym; } catch(_) {}
+      const symRaw = String(item["Empreinte Schématique"] || item["Empreinte Schematique"] || "").toLowerCase();
+      const sym = symRaw.replace(/\.json$/i, "").trim();
+      if(sym && typeof defOf === "function" && typeof DEF_UNKNOWN !== "undefined") {
+        try {
+          const d = defOf(sym);
+          if(d && d !== DEF_UNKNOWN) compType = sym;
+        } catch(_) {}
       }
 
       setMode("select");

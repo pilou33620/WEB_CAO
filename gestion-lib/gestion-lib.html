@@ -110,26 +110,56 @@
 
     <!-- 2. Vue Empreintes PCB -->
     <div class="view-panel" id="viewPcb" hidden>
-      <div class="toolbar-filter" style="justify-content:space-between;">
-        <span style="font-weight:600; color:#fff;">Bibliothèque d'empreintes PCB (LIB/lib_empreinte_pcb/)</span>
-        <button class="tb primary mini" onclick="creerNouvelleEmpreintePcb()">➕ Nouvelle empreinte PCB</button>
+      <div class="toolbar-filter" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-weight:600; color:#fff;">Bibliothèque d'empreintes PCB</span>
+          <span class="badge-count" id="countPcbBadge">0</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div class="search-box" style="max-width:220px;">
+            <span class="icon">🔍</span>
+            <input type="search" id="searchPcb" placeholder="Filtrer les empreintes..." autocomplete="off">
+          </div>
+          <div id="pcbPaginationBar" class="pagination-bar"></div>
+          <button class="tb primary mini" onclick="creerNouvelleEmpreintePcb()">➕ Nouvelle empreinte</button>
+        </div>
       </div>
       <div class="cards-grid" id="gridPcbCards"></div>
     </div>
 
     <!-- 3. Vue Symboles Schématiques -->
     <div class="view-panel" id="viewSch" hidden>
-      <div class="toolbar-filter" style="justify-content:space-between;">
-        <span style="font-weight:600; color:#fff;">Bibliothèque de symboles schématiques (LIB/lib_empreinte_schematique/)</span>
-        <button class="tb primary mini" onclick="creerNouveauSymboleSch()">➕ Nouveau symbole schématique</button>
+      <div class="toolbar-filter" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-weight:600; color:#fff;">Bibliothèque de symboles schématiques</span>
+          <span class="badge-count" id="countSchBadge">0</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div class="search-box" style="max-width:220px;">
+            <span class="icon">🔍</span>
+            <input type="search" id="searchSch" placeholder="Filtrer les symboles..." autocomplete="off">
+          </div>
+          <div id="schPaginationBar" class="pagination-bar"></div>
+          <button class="tb primary mini" onclick="creerNouveauSymboleSch()">➕ Nouveau symbole</button>
+        </div>
       </div>
       <div class="cards-grid" id="gridSchCards"></div>
     </div>
 
     <!-- 4. Vue Modèles Simulation -->
     <div class="view-panel" id="viewSim" hidden>
-      <div class="toolbar-filter">
-        <span style="font-weight:600; color:#fff;">Modèles de simulation SPICE (LIB/lib_simulation/)</span>
+      <div class="toolbar-filter" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-weight:600; color:#fff;">Modèles de simulation SPICE (LIB/lib_simulation/)</span>
+          <span class="badge-count" id="countSimBadge">0</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div class="search-box" style="max-width:240px;">
+            <span class="icon">🔍</span>
+            <input type="search" id="searchSim" placeholder="Filtrer les modèles .sub..." autocomplete="off">
+          </div>
+          <div id="simPaginationBar" class="pagination-bar"></div>
+        </div>
       </div>
       <div style="padding:16px; overflow-y:auto; flex:1;" id="gridSimCards"></div>
     </div>

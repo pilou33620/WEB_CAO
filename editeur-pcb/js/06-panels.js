@@ -1063,6 +1063,7 @@ function propsFp(box,fp){
         ).join("") : "") +
       '</select>' +
       '<button class="tb" id="pFpApplyLib" style="padding:3px 8px;font-size:11px;" title="Appliquer cette empreinte de la bibliothèque">Appliquer</button>' +
+      '<button class="tb" id="pFpBrowseLib" style="padding:3px 8px;font-size:11px;" title="Parcourir visuellement la bibliothèque d\'empreintes…">🔍</button>' +
     '</div>' +
     ((typeof pcbEmpreinteAlerteLib === "function" && pcbEmpreinteAlerteLib(fp)) ?
       ('<div style="background:rgba(245,158,11,0.15);border:1px solid #f59e0b;border-radius:4px;padding:6px 8px;margin-top:6px;font-size:11px;">' +
@@ -1166,6 +1167,15 @@ function propsFp(box,fp){
       }
       touch();refreshPanels();draw();
       hint("Empreinte "+fp.ref+" mise à jour sur "+selVal+".");
+    };
+  }
+  const bFpBrowseLib=$("pFpBrowseLib");
+  if(bFpBrowseLib){
+    bFpBrowseLib.onclick=(e)=>{
+      e.preventDefault();
+      if(typeof pcbChangerEmpreinteSelectionnee==="function"){
+        pcbChangerEmpreinteSelectionnee(fp);
+      }
     };
   }
   const bFpOpenLib=$("pFpOpenLib");

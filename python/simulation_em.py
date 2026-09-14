@@ -2718,9 +2718,12 @@ def _cavite_de_retour(trans, via, couches, segments, d_percage):
             "etalement_nH": round(l_etal * 1e9, 4),
             "esl_nH": round(_nombre(p.get("esl_nH"), ESL_PONT_REPLI), 3),
             "esl_source": "page" if p.get("esl_nH") is not None else "repli",
+            "esr_ohm": round(_nombre(p.get("esr_ohm") if p.get("esr_ohm") is not None else p.get("esr"), ESR_PONT_REPLI), 4),
+            "esr_source": "page" if (p.get("esr_ohm") is not None or p.get("esr") is not None) else "repli",
             "capacite_F": _nombre(p.get("capacite_F"), C_PONT_REPLI),
             "capacite_source": "page" if p.get("capacite_F") is not None else "repli",
             "_l": l_etal + _nombre(p.get("esl_nH"), ESL_PONT_REPLI) * 1e-9,
+            "_esr": _nombre(p.get("esr_ohm") if p.get("esr_ohm") is not None else p.get("esr"), ESR_PONT_REPLI),
             "_c": _nombre(p.get("capacite_F"), C_PONT_REPLI),
         })
     detail.sort(key=lambda f: f["distance_mm"])
@@ -2745,8 +2748,11 @@ def _cavite_de_retour(trans, via, couches, segments, d_percage):
             "distance_mm": round(rayon, 4), "repere": "",
             "etalement_nH": round(l_etal * 1e9, 4),
             "esl_nH": round(ESL_PONT_REPLI, 3), "esl_source": "repli",
+            "esr_ohm": round(ESR_PONT_REPLI, 4), "esr_source": "repli",
             "capacite_F": C_PONT_REPLI, "capacite_source": "repli",
-            "_l": l_etal + ESL_PONT_REPLI * 1e-9, "_c": C_PONT_REPLI,
+            "_l": l_etal + ESL_PONT_REPLI * 1e-9,
+            "_esr": ESR_PONT_REPLI,
+            "_c": C_PONT_REPLI,
         }]
         borne = True
     else:
@@ -2769,12 +2775,14 @@ def _cavite_de_retour(trans, via, couches, segments, d_percage):
                  "repere": dom["repere"]},
         "ponts_detail": [{k: v for k, v in f.items() if not k.startswith("_")}
                          for f in detail],
-        "ponts_branches": [{"l": f["_l"], "esr": ESR_PONT_REPLI, "c": f["_c"]}
+        "ponts_branches": [{"l": f["_l"], "esr": f.get("_esr", ESR_PONT_REPLI), "c": f["_c"]}
                            for f in detail],
         "inductance_nH": round(dom["_l"] * 1e9, 4),
         "etalement_nH": dom["etalement_nH"],
         "esl_nH": dom["esl_nH"],
         "esl_source": dom["esl_source"],
+        "esr_ohm": dom.get("esr_ohm"),
+        "esr_source": dom.get("esr_source"),
         "capacite_pont_F": dom["capacite_F"],
         "capacite_pont_source": dom["capacite_source"],
     })
