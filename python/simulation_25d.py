@@ -782,12 +782,12 @@ def _eps_plausible(couches: List[Dict], eps_eff: float) -> Tuple[bool, str]:
 # le point chaud qu'on cherche justement a detecter.
 # LES DEUX SEUILS, ET LA MESURE QUI LES JUSTIFIE. Sur une ligne droite de
 # 8 mm maillee a 0,15 mm, la part transverse du courant vaut 0,035 d'un bout a
-# l'autre -- c'est le bruit de la triangulation -- et la part verticale vaut
-# EXACTEMENT zero. Au coude a 90 degres, la transverse monte a 0,590 ; au fut
-# d'un via, la verticale monte a 0,458. Les seuils sont donc places a environ
-# quatre fois le bruit et trois fois sous le signal : il n'y a pas de zone
-# grise a arbitrer.
-SEUIL_PERP = 0.20
+# l'autre en moyenne, mais en triangulation simple (sans pygmsh) a 9 GHz l'onde
+# stationnaire pousse localement la part transverse a 0,201. Au coude a 90 degres,
+# la transverse monte a 0,590 - 0,644 ; au fut d'un via, la verticale monte a 0,458.
+# Le seuil transverse a 0,25 filtre l'onde stationnaire tout en detectant franchement
+# les coudes.
+SEUIL_PERP = 0.25
 SEUIL_VERT = 0.10
 MAX_POINTS_CHAUDS = 12
 
