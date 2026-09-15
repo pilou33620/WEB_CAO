@@ -318,7 +318,78 @@ function sessEcouterLibModif(fn){
       }
     };
   }
-  bc._libListeners.push(fn);
+bc._libListeners.push(fn);
+  return true;
+}
+
+/* ==========================================================================
+   Mises à jour de schéma (Éditeur Schématique ↔ Éditeur PCB)
+   --------------------------------------------------------------------------
+   BroadcastChannel dédié aux modifications enregistrées ou saisies dans l'éditeur
+   schématique. Permet à l'éditeur PCB de détecter automatiquement les disparités
+   de composants, de boîtiers et de netlist, et de mettre à jour son badge ECO.
+   ========================================================================== */
+const SESS_SCHEMA_CANAL = "cao.schema.v1";
+let SESS_SCHEMA_BC;
+
+function sessSchemaCanal(){
+  if(SESS_SCHEMA_BC !== undefined) return SESS_SCHEMA_BC;
+  SESS_SCHEMA_BC = null;
+  try{
+    if(typeof BroadcastChannel === "function")
+      SESS_SCHEMA_BC = new BroadcastChannel(SESS_SCHEMA_CANAL);
+  }catch(_){ SESS_SCHEMA_BC = null; }
+  return SESS_SCHEMA_BC;
+}
+
+function sessDiffuserSchemaModif(detail){
+  const bc = sessSchemaCanal();
+  const d = detail || {};
+  const msg = {
+    v: 1,
+    type: "schema_modif",
+    netlist: d.netlist || null,
+    projet: d.projet || (typeof projNom === "function" ? projNom() : ""),
+    t: d.t || Date.now()
+  };
+  try{
+    if(typeof localStorage !== "undefined"){
+      localStorage.setItem("cao.schema.v1.dernier", JSON.stringify(msg));
+    }
+  }catch(_){}
+  if(!bc) return false;
+  try{
+    bc.postMessage(msg);
+    return true;
+  }catch(_){ return false; }
+}
+
+function sessEcouterSchemaModif(fn){
+  if(typeof fn !== "function") return false;
+  const bc = sessSchemaCanal();
+  if(bc){
+    if(!bc._schemaListeners){
+      bc._schemaListeners = [];
+      bc.onmessage = function(ev){
+        const m = ev && ev.data;
+        if(!m || m.v !== 1 || m.type !== "schema_modif") return;
+        for(const listener of bc._schemaListeners.slice()){
+          try{ listener(m); }catch(e){ console.warn("Erreur écouteur schéma modif:", e); }
+        }
+      };
+    }
+    bc._schemaListeners.push(fn);
+  }
+  if(typeof window !== "undefined" && typeof window.addEventListener === "function"){
+    window.addEventListener("storage", function(ev){
+      if(ev.key === "cao.schema.v1.dernier" && ev.newValue){
+        try{
+          const m = JSON.parse(ev.newValue);
+          if(m && m.v === 1 && m.type === "schema_modif") fn(m);
+        }catch(_){}
+      }
+    });
+  }
   return true;
 }
 

@@ -120,6 +120,16 @@ function buildTabs(){
 }
 
 /* ---------- Blocs hiérarchiques (représentation des sous-feuilles sur la feuille 1) ---------- */
+function isPortBusName(nm){
+  if(!nm) return false;
+  return /(\[|\{|\.\.|BUS|^SPI|^I2C|^UART|^CAN|^USB|^DATA|^ADDR|^GPIO|^PWM)/i.test(nm);
+}
+function isPortPowerName(nm){
+  if(!nm) return false;
+  return /^(VCC|GND|VDD|VSS|VBAT|VBUS|\+?\d+(\.\d+)?V|\-?\d+(\.\d+)?V|VIN|VOUT)$/i.test(nm) ||
+         nm.toUpperCase().includes("GND") || nm.startsWith("+");
+}
+
 function sheetBlocks(){
   if(!S.pages||S.pages.length<=1)return [];
   const blocks=[];
@@ -128,21 +138,106 @@ function sheetBlocks(){
     const comps=(i===S.page)?S.comps:(p.comps||[]);
     const wires=(i===S.page)?S.wires:(p.wires||[]);
     const col=(i-1)%2, row=Math.floor((i-1)/2);
-    const defX=60+col*260, defY=60+row*180;
+    const defX=60+col*300, defY=60+row*220;
     const x=(p.blockPos&&Number.isFinite(p.blockPos.x))?p.blockPos.x:defX;
     const y=(p.blockPos&&Number.isFinite(p.blockPos.y))?p.blockPos.y:defY;
-    const w=220, h=130;
-    const ports=[];
+
+    // Détection des ports et de leur type
+    const portMap=new Map();
     for(const c of comps){
       if(c.type==="gport"||c.type==="port"){
-        const nm=c.value||(c.type==="gport"?"GPORT":"PORT");
-        if(!ports.includes(nm))ports.push(nm);
+        const nm=(c.value||(c.type==="gport"?"GPORT":"PORT")).trim();
+        if(!portMap.has(nm)){
+          // Vérifier si connecté à un bus dans la feuille
+          let connectedToBus = false;
+          if(wires && wires.length){
+            for(const w of wires){
+              if(w.bus && ((Math.hypot(w.x1 - c.x, w.y1 - c.y) < 15) || (Math.hypot(w.x2 - c.x, w.y2 - c.y) < 15))){
+                connectedToBus = true;
+                break;
+              }
+            }
+          }
+          const isBus = connectedToBus || isPortBusName(nm);
+          const isPower = !isBus && isPortPowerName(nm);
+          const type = isBus ? "bus" : (isPower ? "power" : "signal");
+          portMap.set(nm, { name: nm, type, isBus, isPower });
+        }
       }
     }
-    blocks.push({sheetIndex:i,page:p,name:p.name,x,y,w,h,nComps:comps.length,nWires:wires.length,ports});
+
+    const uniquePorts = Array.from(portMap.values());
+    const leftPorts = [];
+    const rightPorts = [];
+
+    // Répartition logique : Alim et entrées à gauche, Bus et sorties à droite
+    for(const port of uniquePorts){
+      if(port.type === "bus"){
+        rightPorts.push(port);
+      } else if(port.type === "power"){
+        leftPorts.push(port);
+      } else {
+        if(leftPorts.length <= rightPorts.length) leftPorts.push(port);
+        else rightPorts.push(port);
+      }
+    }
+
+    const maxPins = Math.max(leftPorts.length, rightPorts.length);
+    const pinPitch = 22;
+    const w = 240;
+    const h = Math.max(130, 48 + maxPins * pinPitch + 22);
+
+    const b = {
+      sheetIndex: i,
+      page: p,
+      name: p.name,
+      x, y, w, h,
+      nComps: comps.length,
+      nWires: wires.length,
+      ports: uniquePorts.map(pt => pt.name),
+      pins: [],
+      leftPins: [],
+      rightPins: []
+    };
+
+    // Calcul des coordonnées géométriques précises des sheet pins
+    leftPorts.forEach((pt, idx) => {
+      const pinObj = {
+        name: pt.name,
+        type: pt.type,
+        isBus: pt.isBus,
+        isPower: pt.isPower,
+        side: "left",
+        x: x,
+        y: y + 44 + idx * pinPitch,
+        block: b,
+        sheetIndex: i
+      };
+      b.leftPins.push(pinObj);
+      b.pins.push(pinObj);
+    });
+
+    rightPorts.forEach((pt, idx) => {
+      const pinObj = {
+        name: pt.name,
+        type: pt.type,
+        isBus: pt.isBus,
+        isPower: pt.isPower,
+        side: "right",
+        x: x + w,
+        y: y + 44 + idx * pinPitch,
+        block: b,
+        sheetIndex: i
+      };
+      b.rightPins.push(pinObj);
+      b.pins.push(pinObj);
+    });
+
+    blocks.push(b);
   }
   return blocks;
 }
+
 function hitSheetBlock(wx,wy){
   if(S.page!==0)return null;
   const blocks=sheetBlocks();
@@ -151,6 +246,49 @@ function hitSheetBlock(wx,wy){
     if(wx>=b.x&&wx<=b.x+b.w&&wy>=b.y&&wy<=b.y+b.h)return b;
   }
   return null;
+}
+
+function hitSheetPin(wx,wy,tolerance=9){
+  if(S.page!==0)return null;
+  const blocks=sheetBlocks();
+  for(const b of blocks){
+    for(const pin of (b.pins||[])){
+      if(Math.hypot(wx - pin.x, wy - pin.y) <= tolerance) return pin;
+    }
+  }
+  return null;
+}
+
+/* Extraction de l'ensemble des interconnexions entre blocs de feuilles */
+function sheetInterconnections(){
+  const blocks = sheetBlocks();
+  if(!blocks || blocks.length < 2) return [];
+  const mapByName = new Map();
+  for(const b of blocks){
+    for(const pin of (b.pins || [])){
+      if(!mapByName.has(pin.name)){
+        mapByName.set(pin.name, []);
+      }
+      mapByName.get(pin.name).push(pin);
+    }
+  }
+  const inters = [];
+  for(const [name, pins] of mapByName.entries()){
+    if(pins.length >= 2){
+      const isBus = pins.some(p => p.type === "bus");
+      const isPower = pins.some(p => p.type === "power");
+      const type = isBus ? "bus" : (isPower ? "power" : "signal");
+      inters.push({
+        name,
+        type,
+        isBus,
+        isPower,
+        pins,
+        blocks: [...new Set(pins.map(p => p.block))]
+      });
+    }
+  }
+  return inters;
 }
 
 /* ---------- historique (document entier) ---------- */

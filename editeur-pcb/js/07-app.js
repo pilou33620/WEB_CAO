@@ -47,7 +47,12 @@ function openFile(f){
     if(/^\s*\{/.test(txt)){
       try{
         const d=JSON.parse(txt);
-        if(d.format==="schemedit-2"){
+        if(d.format==="schemedit-2" || (Array.isArray(d.pages) && !d.fps)){
+          if(typeof pcbOuvrirFenetreEco === "function"){
+            pcbOuvrirFenetreEco(d);
+            hint("Schéma chargé pour synchronisation ECO.");
+            return;
+          }
           hint("Ce fichier est un schéma. Exportez sa netlist (.txt) puis importez-la ici.");
           alert("Ce fichier est un schéma (.json).\n\nDans l'éditeur schématique, cliquez sur « Netlist .txt », puis importez ce fichier ici.");
           return;
@@ -55,6 +60,7 @@ function openFile(f){
         push();loadDoc(d);
         if(typeof profNoterDocument==="function")profNoterDocument("pcb",f.name);
         hint("Carte "+f.name+" chargée.");
+        setTimeout(() => { if (typeof pcbVerifierEtNotifierEco === "function") pcbVerifierEtNotifierEco(true); }, 200);
       }catch(err){alert("Fichier illisible : "+err.message);}
     }else{
       importNetlist(txt,false);
@@ -77,7 +83,10 @@ function importNetlist(txt,dropMissing){
   if(nbConf>0&&typeof openNetlistConflictDialog==="function"){
     openNetlistConflictDialog(res.conflicts);
   }
-  setTimeout(() => { if (typeof pcbVerifierEtNotifierPinout === "function") pcbVerifierEtNotifierPinout(false); }, 150);
+  setTimeout(() => {
+    if (typeof pcbVerifierEtNotifierPinout === "function") pcbVerifierEtNotifierPinout(false);
+    if (typeof pcbVerifierEtNotifierEco === "function") pcbVerifierEtNotifierEco(true);
+  }, 150);
 }
 
 /* Boîte de dialogue interactive pour nettoyer les pistes de cuivre en conflit après mise à jour de la netlist */
@@ -374,7 +383,7 @@ function exportPng(){
 function newDoc(){
   if(S.fps.length&&!confirm("Repartir d'une carte vide ? Le travail en cours sera perdu."))return;
   push();
-  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.drc=[];S.drcRun=false;S.hlNet=null;
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];S.drawings=[];S.drc=[];S.drcRun=false;S.hlNet=null;
   S.dpPairs=[];S.dp=null;   // les règles restent : elles décrivent un métier, pas une carte
   clearSel();zoneCache.clear();touch();
   refreshPanels();draw();
@@ -446,6 +455,7 @@ function openImport(){
 $("mSelect").onclick=()=>setMode("select");
 $("mTrack").onclick=()=>setMode("track");
 $("mVia").onclick=()=>setMode("via");
+if($("mHole")) $("mHole").onclick=()=>setMode("hole");
 $("mDiff").onclick=()=>setMode("dpair");
 if($("mMeander")) $("mMeander").onclick=e=>{
   e.stopPropagation();
@@ -486,6 +496,7 @@ $("bView").onclick=()=>setFlip(!S.flip);
 $("bContrast").onclick=()=>setContrast((S.contrast+1)%3);
 $("bFit").onclick=fit;
 $("bImport").onclick=openImport;
+if($("bEcoSync")) $("bEcoSync").onclick=()=>{ if(typeof pcbOuvrirFenetreEco==="function") pcbOuvrirFenetreEco(); };
 $("bDrc").onclick=()=>{
   const e=runDrc();
   S.listTab="drc";
@@ -651,11 +662,14 @@ function init(){
     if (typeof pcbSyncSchema === "function") {
       pcbSyncSchema().then(() => {
         if (typeof pcbVerifierEtNotifierPinout === "function") pcbVerifierEtNotifierPinout(false);
+        if (typeof pcbVerifierEtNotifierEco === "function") pcbVerifierEtNotifierEco(true);
       }).catch(() => {
         if (typeof pcbVerifierEtNotifierPinout === "function") pcbVerifierEtNotifierPinout(false);
+        if (typeof pcbVerifierEtNotifierEco === "function") pcbVerifierEtNotifierEco(true);
       });
-    } else if (typeof pcbVerifierEtNotifierPinout === "function") {
-      pcbVerifierEtNotifierPinout(false);
+    } else {
+      if (typeof pcbVerifierEtNotifierPinout === "function") pcbVerifierEtNotifierPinout(false);
+      if (typeof pcbVerifierEtNotifierEco === "function") pcbVerifierEtNotifierEco(true);
     }
   }, 350);
 }
@@ -746,7 +760,7 @@ function pcbPlacerEmpreinteDepuisLib(item) {
   const p = String(item["Reference designator Prefix"] || "U").trim().toUpperCase() || "U";
   const val = String(item["Value"] || "").trim();
   const pkg = String(item["Package type"] || item["Empreinte PCB"] || "SOIC-8").trim();
-  const cleanPkg = pkg.replace(/\.json$/i, "").trim() || "SOIC-8";
+  const cleanPkg = pkg.replace(/^.*[\\\/]/, "").replace(/\.json$/i, "").trim() || "SOIC-8";
 
   // Trouver un repère libre U1, U2, etc.
   const used = new Set(S.fps.map(f => f.ref));
@@ -833,7 +847,7 @@ function pcbChangerEmpreinteSelectionnee(fp) {
     actionLabel: "✔ Affecter à " + fp.ref,
     onSelect: async (item) => {
       const pkg = String(item["Package type"] || item["Empreinte PCB"] || item["Fichier"] || item["Nom"] || "").trim();
-      const cleanPkg = pkg.replace(/\.json$/i, "").trim();
+      const cleanPkg = pkg.replace(/^.*[\\\/]/, "").replace(/\.json$/i, "").trim();
       if (!cleanPkg) return;
       push();
       fp.pkg = cleanPkg;

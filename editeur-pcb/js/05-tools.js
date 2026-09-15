@@ -14,6 +14,7 @@ function docObj(){
           dpPairs:S.dpPairs,dpRules:S.dpRules,
           origin:S.origin,fabOrigin:S.fabOrigin,
           fps:S.fps,tracks:S.tracks,vias:S.vias,zones:S.zones,cuts:S.cuts,
+          holes:S.holes||[],
           drawings:S.drawings||[],
           active:S.active,nextId:S.nextId};
 }
@@ -362,10 +363,30 @@ function uniqueIds(list){
 }
 function normDrawingPcb(d,i){
   if(!d||typeof d!=="object")return null;
-  const shape=(d.shape==="rect"||d.type==="rect")?"rect":"line";
+  const isText=(d.shape==="text"||d.type==="text");
+  const shape=isText?"text":((d.shape==="rect"||d.type==="rect")?"rect":"line");
   const layer=d.layer==="silkB"?"silkB":"silkT";
   const x1=dRange(d.x1,0,-COORD,COORD);
   const y1=dRange(d.y1,0,-COORD,COORD);
+  if(shape==="text"){
+    const txt=dStr(d.text!=null?d.text:"TEXT",200);
+    const size=dRange(d.size||d.height,1.5,0.5,25);
+    const rot=dRange(d.rot||0,0,-360,360);
+    const width=dRange(d.width,0.15,0.05,5);
+    return {
+      id:dInt(d.id,i+1,1,Number.MAX_SAFE_INTEGER),
+      shape:"text",
+      type:"text",
+      layer:layer,
+      text:txt,
+      x1:r4(x1),y1:r4(y1),
+      x2:r4(x1),y2:r4(y1),
+      size:r4(size),
+      height:r4(size),
+      rot:r4(rot),
+      width:r4(width)
+    };
+  }
   const x2=dRange(d.x2,0,-COORD,COORD);
   const y2=dRange(d.y2,0,-COORD,COORD);
   if(Math.hypot(x2-x1,y2-y1)<1e-6)return null;
@@ -380,6 +401,20 @@ function normDrawingPcb(d,i){
     x2:r4(x2),y2:r4(y2),
     width:r4(width)
   };
+}
+function normHole(h,i){
+  if(!h||typeof h!=="object")return null;
+  const x=dRange(h.x,0,-COORD,COORD);
+  const y=dRange(h.y,0,-COORD,COORD);
+  const d=dRange(h.d,3.2,0.4,30.0);
+  const out={
+    id:dInt(h.id,i+1,1,Number.MAX_SAFE_INTEGER),
+    x:r4(x),
+    y:r4(y),
+    d:r4(d)
+  };
+  if(h.locked)out.locked=true;
+  return out;
 }
 function normDoc(d){
   const src=(d&&typeof d==="object")?d:{};
@@ -487,11 +522,12 @@ function normDoc(d){
   out.vias=arr(src.vias).map(v=>normVia(v,cu)).filter(Boolean);
   out.zones=arr(src.zones).map((z,i)=>normZone(z,cu,i)).filter(Boolean);
   out.cuts=arr(src.cuts).map((c,i)=>normCut(c,cu,i)).filter(Boolean);
+  out.holes=arr(src.holes).map((h,i)=>normHole(h,i)).filter(Boolean);
   out.drawings=arr(src.drawings).map((d,i)=>normDrawingPcb(d,i)).filter(Boolean);
   if(cu<2)out.vias=[];                    // une seule couche : aucun via ne relie rien
 
   const maxId=Math.max(uniqueIds(out.fps),uniqueIds(out.zones),uniqueIds(out.cuts),
-                       uniqueIds(out.dpPairs),uniqueIds(out.drawings));
+                       uniqueIds(out.holes),uniqueIds(out.dpPairs),uniqueIds(out.drawings));
   out.active=dInt(src.active,0,0,cu-1);
   out.nextId=Math.max(dInt(src.nextId,1,1,Number.MAX_SAFE_INTEGER),maxId+1);
   return out;
@@ -522,7 +558,7 @@ function loadDoc(d,keepView){
   }
   S.dpPairs=d.dpPairs;S.dpRules=d.dpRules;
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
-  S.zones=d.zones;S.cuts=d.cuts;S.drawings=d.drawings||[];
+  S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];
   S.active=d.active;S.pair=[0,S.cu-1];
   S.nextId=d.nextId;
   /* Fichiers de la V1.0 : le rôle « plan » portait sur la couche entière, sans
@@ -566,13 +602,20 @@ function redo(){
    Sélection
    ========================================================================== */
 function clearSel(){S.sel.fps.clear();S.sel.tracks.clear();S.sel.vias.clear();
-  S.sel.zones.clear();S.sel.cuts.clear();if(S.sel.drawings)S.sel.drawings.clear();S.sel.edge=false;}
-function selCount(){return S.sel.fps.size+S.sel.tracks.size+S.sel.vias.size+S.sel.zones.size+S.sel.cuts.size+(S.sel.drawings?S.sel.drawings.size:0);}
+  S.sel.zones.clear();S.sel.cuts.clear();if(S.sel.drawings)S.sel.drawings.clear();if(S.sel.holes)S.sel.holes.clear();S.sel.edge=false;}
+function selCount(){return S.sel.fps.size+S.sel.tracks.size+S.sel.vias.size+S.sel.zones.size+S.sel.cuts.size+(S.sel.drawings?S.sel.drawings.size:0)+(S.sel.holes?S.sel.holes.size:0);}
 function selDrawingsPcb(){return (S.drawings||[]).filter(d=>S.sel.drawings&&S.sel.drawings.has(d.id));}
+function selHolesPcb(){return (S.holes||[]).filter(h=>S.sel.holes&&S.sel.holes.has(h.id));}
 function hitTest(x,y,e){
   const tol=px(3);
   for(const v of S.vias)
     if(layerAlpha(v.a)>0&&dist(x,y,v.x,v.y)<=v.d/2+tol)return {via:v};
+  if(S.holes){
+    for(let i=S.holes.length-1;i>=0;i--){
+      const h=S.holes[i];
+      if(dist(x,y,h.x,h.y)<=h.d/2+tol)return {hole:h};
+    }
+  }
   for(const t of S.tracks)
     if(t.l===S.active&&trkDist(x,y,t)<=t.w/2+tol)return {track:t};
   for(let i=S.fps.length-1;i>=0;i--){
@@ -590,7 +633,7 @@ function hitTest(x,y,e){
   }
   for(const t of S.tracks)
     if(layerAlpha(t.l)>0&&trkDist(x,y,t)<=t.w/2+tol)return {track:t};
-  /* traits de sérigraphie */
+  /* traits et textes de sérigraphie */
   if(S.drawings){
     for(let i=S.drawings.length-1;i>=0;i--){
       const d=S.drawings[i];
@@ -602,6 +645,16 @@ function hitTest(x,y,e){
            segDist(x,y,d.x2,d.y1,d.x2,d.y2)<=tol||
            segDist(x,y,d.x2,d.y2,d.x1,d.y2)<=tol||
            segDist(x,y,d.x1,d.y2,d.x1,d.y1)<=tol) return {drawing:d};
+      }else if(d.shape==="text"){
+        const L=String(d.text!=null?d.text:"TEXT").length;
+        const h=d.size||d.height||1.5;
+        const hw=Math.max(0.5,(L*(5*(h/6)))/2);
+        const hh=Math.max(0.5,h/2);
+        const rad=-(d.rot||0)*Math.PI/180;
+        const c=Math.cos(rad), s=Math.sin(rad);
+        const dx=x-d.x1, dy=y-d.y1;
+        const lx=dx*c-dy*s, ly=dx*s+dy*c;
+        if(Math.abs(lx)<=hw+tol&&Math.abs(ly)<=hh+tol) return {drawing:d};
       }else{
         if(segDist(x,y,d.x1,d.y1,d.x2,d.y2)<=tol)return {drawing:d};
       }
@@ -668,6 +721,7 @@ function selectHit(h,add){
   else if(h.via)S.sel.vias.add(h.via);
   else if(h.zone)S.sel.zones.add(h.zone);
   else if(h.cut)S.sel.cuts.add(h.cut);
+  else if(h.hole){if(!S.sel.holes)S.sel.holes=new Set();S.sel.holes.add(h.hole.id);}
   else if(h.drawing){if(!S.sel.drawings)S.sel.drawings=new Set();S.sel.drawings.add(h.drawing.id);}
   else if(h.edge)S.sel.edge=true;
 }
@@ -682,6 +736,7 @@ function toggleHit(h){
   if(h.via)return t(S.sel.vias,h.via);
   if(h.zone)return t(S.sel.zones,h.zone);
   if(h.cut)return t(S.sel.cuts,h.cut);
+  if(h.hole){if(!S.sel.holes)S.sel.holes=new Set();return t(S.sel.holes,h.hole.id);}
   if(h.drawing){if(!S.sel.drawings)S.sel.drawings=new Set();return t(S.sel.drawings,h.drawing.id);}
   if(h.edge){S.sel.edge=!S.sel.edge;return !S.sel.edge;}
   return false;
@@ -1117,10 +1172,11 @@ function beginMove(){
   // les chanfreins présents AVANT le geste : ce sont eux qu'on rendra s'ils se replient
   drag.diag=diagTracks([...movedTracks()]);
   drag.drw=selDrawingsPcb().map(d=>({d,x1:d.x1,y1:d.y1,x2:d.x2,y2:d.y2}));
+  drag.holes=selHolesPcb().map(h=>({h,x:h.x,y:h.y}));
   // un boîtier emmène ses pastilles, une zone son contour : c'est un autre
   // problème que l'isolation d'une piste, on laisse alors le geste libre — et
   // le retour en arrière ne saurait de toute façon pas replacer le boîtier
-  if(S.sel.fps.size||S.sel.zones.size||S.sel.cuts.size){drag.clear=null;drag.cross=null;}
+  if(S.sel.fps.size||S.sel.zones.size||S.sel.cuts.size||(S.sel.holes&&S.sel.holes.size)){drag.clear=null;drag.cross=null;}
 }
 /* État de départ de l'anti-collision : ce que le geste emmène, et ce qui était
    déjà en faute avant qu'il ne commence. */
@@ -1587,6 +1643,8 @@ function deleteSel(){
   S.cuts=S.cuts.filter(c=>!S.sel.cuts.has(c));
   if(S.drawings&&S.sel.drawings)
     S.drawings=S.drawings.filter(d=>!S.sel.drawings.has(d.id));
+  if(S.holes&&S.sel.holes)
+    S.holes=S.holes.filter(h=>!S.sel.holes.has(h.id));
   clearSel();touch();refreshPanels();draw();
 }
 /* ==========================================================================
@@ -1612,6 +1670,7 @@ function pcbClipContent(){
   const zones=S.zones.filter(z=>S.sel.zones.has(z));
   const cuts=S.cuts.filter(c=>S.sel.cuts.has(c));
   const drawings=selDrawingsPcb();
+  const holes=selHolesPcb();
   let x=1e9,y=1e9;
   for(const f of fps){x=Math.min(x,f.x);y=Math.min(y,f.y);}
   for(const t of tracks){x=Math.min(x,t.x1,t.x2);y=Math.min(y,t.y1,t.y2);}
@@ -1619,6 +1678,7 @@ function pcbClipContent(){
   for(const z of zones.concat(cuts))
     for(const q of z.pts){x=Math.min(x,q.x);y=Math.min(y,q.y);}
   for(const d of drawings){x=Math.min(x,d.x1,d.x2);y=Math.min(y,d.y1,d.y2);}
+  for(const h of holes){x=Math.min(x,h.x);y=Math.min(y,h.y);}
   if(x>1e8)return null;
   const cp=o=>JSON.parse(JSON.stringify(o));
   const poly=o=>{
@@ -1633,8 +1693,15 @@ function pcbClipContent(){
       c.x1=r3(c.x1-x);c.y1=r3(c.y1-y);c.x2=r3(c.x2-x);c.y2=r3(c.y2-y);return c;}),
     vias:vias.map(v=>{const c=cp(v);c.x=r3(c.x-x);c.y=r3(c.y-y);return c;}),
     zones:zones.map(poly), cuts:cuts.map(poly),
+    holes:holes.map(h=>({d:h.d,x:r3(h.x-x),y:r3(h.y-y),locked:h.locked})),
     drawings:drawings.map(d=>({
       layer:d.layer,
+      shape:d.shape,
+      type:d.type,
+      text:d.text,
+      size:d.size,
+      height:d.height,
+      rot:d.rot,
       x1:r3(d.x1-x),y1:r3(d.y1-y),x2:r3(d.x2-x),y2:r3(d.y2-y),
       width:d.width
     }))
@@ -1676,7 +1743,7 @@ function pasteClipPcb(){
   if(!c||typeof c!=="object"){hint("Presse-papier vide : copiez d'abord une sélection (Ctrl+C).");return;}
   const arr=v=>Array.isArray(v)?v:[];
   if(!arr(c.fps).length&&!arr(c.tracks).length&&!arr(c.vias).length&&
-     !arr(c.zones).length&&!arr(c.cuts).length&&!arr(c.drawings).length){hint("Presse-papier vide.");return;}
+     !arr(c.zones).length&&!arr(c.cuts).length&&!arr(c.drawings).length&&!arr(c.holes).length){hint("Presse-papier vide.");return;}
   const bx=snapX(S.mouse.x), by=snapY(S.mouse.y);
   push();
   clearSel();
@@ -1716,6 +1783,15 @@ function pasteClipPcb(){
     ct.pts=ct.pts.map(q=>({x:r3(q.x+bx),y:r3(q.y+by)}));
     S.cuts.push(ct);S.sel.cuts.add(ct);
   }
+  for(const src of arr(c.holes)){
+    const h=normHole(src,0);
+    if(!h){dropped++;continue;}
+    h.id=S.nextId++;
+    h.x=r3(h.x+bx);h.y=r3(h.y+by);
+    S.holes.push(h);
+    if(!S.sel.holes)S.sel.holes=new Set();
+    S.sel.holes.add(h.id);
+  }
   for(const src of arr(c.drawings)){
     const d=normDrawingPcb(src,0);
     if(!d){dropped++;continue;}
@@ -1733,7 +1809,8 @@ function pasteClipPcb(){
 function rotateSel(){
   const list=[...S.sel.fps];
   const drw=selDrawingsPcb();
-  if(!list.length&&!drw.length)return;
+  const hls=selHolesPcb();
+  if(!list.length&&!drw.length&&!hls.length)return;
   push();
   for(const id of list){const f=fpById(id);if(f)f.rot=((f.rot||0)+90)%360;}
   if(drw.length){
@@ -1741,10 +1818,29 @@ function rotateSel(){
     for(const d of drw){cx+=d.x1+d.x2; cy+=d.y1+d.y2;}
     cx/=(drw.length*2); cy/=(drw.length*2);
     for(const d of drw){
-      const rx1=-(d.y1-cy)+cx, ry1=(d.x1-cx)+cy;
-      const rx2=-(d.y2-cy)+cx, ry2=(d.x2-cx)+cy;
-      d.x1=r3(rx1); d.y1=r3(ry1);
-      d.x2=r3(rx2); d.y2=r3(ry2);
+      if(d.shape==="text"){
+        d.rot=((d.rot||0)+90)%360;
+        if(drw.length>1){
+          const rx=-(d.y1-cy)+cx, ry=(d.x1-cx)+cy;
+          d.x1=r3(rx); d.y1=r3(ry);
+          d.x2=d.x1; d.y2=d.y1;
+        }
+      }else{
+        const rx1=-(d.y1-cy)+cx, ry1=(d.x1-cx)+cy;
+        const rx2=-(d.y2-cy)+cx, ry2=(d.x2-cx)+cy;
+        d.x1=r3(rx1); d.y1=r3(ry1);
+        d.x2=r3(rx2); d.y2=r3(ry2);
+      }
+    }
+  }
+  if(hls.length>1){
+    let cx=0, cy=0;
+    for(const h of hls){cx+=h.x; cy+=h.y;}
+    cx/=hls.length; cy/=hls.length;
+    for(const h of hls){
+      if(h.locked)continue;
+      const rx=-(h.y-cy)+cx, ry=(h.x-cx)+cy;
+      h.x=r3(rx); h.y=r3(ry);
     }
   }
   touch();refreshPanels();draw();
@@ -2864,7 +2960,47 @@ cv.addEventListener("pointerdown",e=>{
   if(typeof SIM_DCB!=="undefined"&&SIM_DCB&&SIM_DCB.attente){
     simDCClic(p.x,p.y);draw();return;
   }
+  if(S.mode==="hole"){
+    const sx=snapX(p.x), sy=snapY(p.y);
+    push();
+    const dVal=S.curHoleD||3.2;
+    const h=mkHole(sx,sy,dVal);
+    S.holes.push(h);
+    clearSel();
+    if(!S.sel.holes)S.sel.holes=new Set();
+    S.sel.holes.add(h.id);
+    touch();refreshPanels();draw();
+    hint("Trou NPTH Ø"+h.d+" mm posé en ("+r3(h.x)+", "+r3(h.y)+").");
+    return;
+  }
   if(S.mode==="silk"){
+    if(S.silkShape==="text"){
+      const sx=snapX(p.x), sy=snapY(p.y);
+      const txt=(typeof prompt==="function")?prompt("Texte de sérigraphie :","TEXT"):"TEXT";
+      if(txt){
+        push();
+        const layer=(S.flip||S.active===S.cu-1)?"silkB":"silkT";
+        const d={
+          id:S.nextId++,
+          shape:"text",
+          type:"text",
+          layer:layer,
+          text:txt,
+          x1:sx, y1:sy,
+          x2:sx, y2:sy,
+          size:1.5,
+          height:1.5,
+          rot:0,
+          width:0.15
+        };
+        S.drawings.push(d);
+        clearSel();
+        if(!S.sel.drawings)S.sel.drawings=new Set();
+        S.sel.drawings.add(d.id);
+        touch();refreshPanels();draw();
+      }
+      return;
+    }
     if(!S.silkDraft){
       const sx=snapX(p.x), sy=snapY(p.y);
       S.silkDraft={x1:sx,y1:sy,x2:sx,y2:sy,dragging:true};
@@ -2929,6 +3065,7 @@ cv.addEventListener("pointerdown",e=>{
       else if(h.track)S.tracks=S.tracks.filter(t=>t!==h.track);
       else if(h.via)S.vias=S.vias.filter(v=>v!==h.via);
       else if(h.drawing)S.drawings=S.drawings.filter(d=>d!==h.drawing);
+      else if(h.hole)S.holes=S.holes.filter(hl=>hl!==h.hole);
       else if(h.zone){detachAuto(h.zone);S.zones=S.zones.filter(z=>z!==h.zone);
         buildLayers();buildTabs();}
       else if(h.edge)hint("Le contour de carte ne s'efface pas : redessinez-le (E) ou repassez au rectangle.");
@@ -3050,7 +3187,8 @@ cv.addEventListener("pointerdown",e=>{
   }else{
     const already=(h.fp&&S.sel.fps.has(h.fp.id))||(h.track&&S.sel.tracks.has(h.track))||
                   (h.via&&S.sel.vias.has(h.via))||
-                  (h.drawing&&S.sel.drawings&&S.sel.drawings.has(h.drawing.id));
+                  (h.drawing&&S.sel.drawings&&S.sel.drawings.has(h.drawing.id))||
+                  (h.hole&&S.sel.holes&&S.sel.holes.has(h.hole.id));
     if(!already)selectHit(h,false);
   }
   const pn=(h.pad&&h.pad.net)||null;
@@ -3193,6 +3331,14 @@ cv.addEventListener("pointermove",e=>{
           o.d.x2=r3(o.x2+drag.dx);o.d.y2=r3(o.y2+drag.dy);
         }
       }
+      if(drag.holes){
+        for(const o of drag.holes){
+          if(!o.h.locked){
+            o.h.x=r3(o.x+drag.dx);
+            o.h.y=r3(o.y+drag.dy);
+          }
+        }
+      }
       drag.x+=dx;drag.y+=dy;
       // Alt enfoncé pendant le geste : les voisins restent où ils sont
       applyJoints(drag.joints,drag.dx,drag.dy,e.altKey);
@@ -3209,6 +3355,14 @@ cv.addEventListener("pointermove",e=>{
           for(const o of drag.drw){
             o.d.x1=r3(o.x1+drag.dx);o.d.y1=r3(o.y1+drag.dy);
             o.d.x2=r3(o.x2+drag.dx);o.d.y2=r3(o.y2+drag.dy);
+          }
+        }
+        if(drag.holes){
+          for(const o of drag.holes){
+            if(!o.h.locked){
+              o.h.x=r3(o.x+drag.dx);
+              o.h.y=r3(o.y+drag.dy);
+            }
           }
         }
         applyJoints(drag.joints,drag.dx,drag.dy,e.altKey);
@@ -3396,6 +3550,14 @@ cv.addEventListener("pointerup",e=>{
           }
         }
       }
+      if(S.holes){
+        for(const h of S.holes){
+          if(h.x>=x1&&h.x<=x2&&h.y>=y1&&h.y<=y2){
+            if(!S.sel.holes)S.sel.holes=new Set();
+            S.sel.holes.add(h.id);
+          }
+        }
+      }
     }else if(drag.zone){
       // lasso resté fermé : c'était un clic dans le plein d'une zone
       if(drag.add)toggleHit({zone:drag.zone});
@@ -3526,6 +3688,8 @@ document.addEventListener("keydown",e=>{
     S.zones.forEach(z=>S.sel.zones.add(z));
     S.cuts.forEach(x=>S.sel.cuts.add(x));
     if(S.drawings&&S.sel.drawings)S.drawings.forEach(d=>S.sel.drawings.add(d.id));
+    if(!S.sel.holes)S.sel.holes=new Set();
+    if(S.holes)S.holes.forEach(h=>S.sel.holes.add(h.id));
     refreshPanels();draw();return;
   }
   // Ctrl+C sur du texte sélectionné appartient au navigateur : on ne lui prend
@@ -3557,7 +3721,12 @@ document.addEventListener("keydown",e=>{
   }
   switch(k){
     case "s":
-      if(e.shiftKey){S.silkShape=(S.silkShape==="rect"?"line":"rect");setMode("silk");draw();}
+      if(e.shiftKey){
+        const nextShape=S.silkShape==="line"?"rect":(S.silkShape==="rect"?"text":"line");
+        S.silkShape=nextShape;
+        setMode("silk");
+        draw();
+      }
       else setMode("select");
       break;
     case "t":setMode("track");break;
@@ -3672,14 +3841,14 @@ function setMode(m){
   S.mode=m;S.hover=null;
   if(m!=="zone")zoneMenuClose();
   if(m!=="meander"&&typeof meanderMenuClose==="function")meanderMenuClose();
-  for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],
+  for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],["mHole","hole"],
                         ["mDiff","dpair"],["mMeander","meander"],
                         ["mZone","zone"],["mSilk","silk"],["mEdge","edge"],["mOrigin","origin"],
                         ["mErase","erase"],["mMesure","mesure"]]){
     const b=$(id);
     if(b)b.classList.toggle("on",m===md);
   }
-  $("fMode").textContent={select:"Sélection",track:"Piste",via:"Via",
+  $("fMode").textContent={select:"Sélection",track:"Piste",via:"Via",hole:"Trou NPTH",
                           dpair:"Paire différentielle",meander:"Serpentin (Appariement)",
                           zone:"Zone de cuivre",silk:"Sérigraphie",edge:"Contour de carte",
                           origin:"Origine",erase:"Gomme",
@@ -3692,12 +3861,15 @@ function setMode(m){
            "D passe un angle droit en 45° · U déroute la sélection sans toucher aux empreintes · R pivote · F retourne · Ctrl+C/Ctrl+V copie-colle · Alt+clic insère un point sur une piste sélectionnée.",
     track:"Clic sur une pastille pour partir · V pose un via · 1-8 change de couche · Tab saisit les coordonnées · Échap termine.",
     via:"Clic pour poser un via traversant, accroché à la pastille ou à la piste la plus proche.",
+    hole:"Cliquez pour poser un trou mécanique non métallisé autonome (NPTH) hors empreinte · Échap annule.",
     dpair:"Clic sur une pastille de la paire pour partir — l'autre net est trouvé tout seul · "+
           "V pose les deux vias en éventail · « / » bascule la posture · 1-8 change de couche · "+
           "arrivée sur les pastilles d'en face pour terminer · Échap dépose ce qui est tracé.",
     meander:"Cliquez et étirez une piste droite pour générer un serpentin d'appariement de longueur (accordéon) · Échap annule.",
     zone:"Clic pour chaque sommet, retour sur le premier point pour fermer · Maj contraint à 45° · Entrée ferme, Échap abandonne.",
-    silk:"Cliquez et glissez (ou deux clics) pour tracer un trait de sérigraphie (F.SilkS/B.SilkS) · Maj contraint à l'horizontale/verticale/45° · Échap annule.",
+    silk:S.silkShape==="text"
+      ? "Cliquez sur la carte pour poser un texte de sérigraphie · Échap annule."
+      : "Cliquez et glissez (ou deux clics) pour tracer un trait de sérigraphie (F.SilkS/B.SilkS) · Maj contraint à l'horizontale/verticale/45° · Échap annule.",
     edge:"Dessinez le contour de la carte, sommet par sommet · retour sur le premier point pour fermer · Maj contraint à 45°.",
     origin:"Cliquez le point qui servira d'origine — une pastille proche l'attire.",
     erase:"Clic sur une piste, un via ou une empreinte pour le supprimer.",

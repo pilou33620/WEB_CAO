@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 /* ==========================================================================
    Master Drawing PDF — Manufacturing Data Package
    --------------------------------------------------------------------------
@@ -419,6 +419,7 @@ function masterDrawingPdf(fabFiles){
   /* La portée vient du fichier lui-même (drillFile la pose dessus) et non de
      son nom : celui-ci commence par le nom du projet, chiffres compris. */
   const drillDesc=f=>{
+    if(f.kind==="npth")return "Non-plated through hole (NPTH) Excellon drill file";
     const a=f.a|0, b=(f.b==null?S.cu-1:f.b);
     const kind=f.kind==="blind"?"Blind":f.kind==="buried"?"Buried":"Through hole";
     return kind+" Excellon drill file (plated), copper layer "+(a+1)+" to "+(b+1);

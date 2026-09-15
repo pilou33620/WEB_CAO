@@ -139,7 +139,7 @@ function schAppliquerMajLibComposant(comp, dataFichier) {
     if (entry) {
       if (entry["Empreinte PCB"]) {
         comp.fpPcb = entry["Empreinte PCB"];
-        comp.pkg = entry["Empreinte PCB"];
+        comp.pkg = String(entry["Empreinte PCB"] || "").replace(/^.*[\\\/]/, "").replace(/\.json$/i, "");
       }
       if (entry["Empreinte Schématique"]) comp.symSch = entry["Empreinte Schématique"];
       if (entry["Modèle Simulation"]) comp.simModel = entry["Modèle Simulation"];

@@ -139,6 +139,16 @@ function poser(modele,nom,vue){
   if(vue&&vue.scale>0){ V.vue.scale=vue.scale; V.vue.ox=vue.ox; V.vue.oy=vue.oy;
                         V.vue.flip=!!vue.flip; boutonsEtat(); dessiner(); }
   else fit();
+
+  // Réinitialiser et synchroniser la simulation PDN avec les rails de la carte chargée
+  if(typeof SIM_PDN!=="undefined"){
+    SIM_PDN.rail="";
+    SIM_PDN.condensateurs=null;
+    SIM_PDN.result=null;
+  }
+  if(typeof simRafraichir==="function"){
+    simRafraichir(true);
+  }
 }
 
 /* ==========================================================================

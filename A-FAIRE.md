@@ -13,11 +13,11 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 200 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 660 essais (`editeur-pcb/test/harness.js`) |
-| **Éditeur Schématique** | En service | 108 essais (`editeur-schematique/test/harness.js`) |
-| **Visionneuse IPC-2581** | En service | 123 essais (`harness-sim.js`) + 46 (`banc-essai.py`) |
-| **SI — Impédance & Vias (`ligne_mom`)** | En service (0,3 à 0,4 % vs étalons) | 170 cas (`python/test/banc-ligne-mom.py`) |
-| **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | 170 cas |
+| **Éditeur PCB** | En service | 703 essais (`editeur-pcb/test/harness.js`) |
+| **Éditeur Schématique** | En service | 119 essais (`editeur-schematique/test/harness.js`) |
+| **Visionneuse IPC-2581** | En service | 132 essais (`harness-sim.js`) + 46 (`banc-essai.py`) |
+| **SI — Impédance & Vias (`ligne_mom`)** | En service (0,3 à 0,4 % vs étalons) | 171 cas (`python/test/banc-ligne-mom.py`) |
+| **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | 171 cas |
 | **SI — Crosstalk localisé (`crosstalk`)** | En service (%, dB, volts le long du tracé) | 45 cas (`python/test/banc-crosstalk.py`) |
 | **PI — Chute DC & Échauffement (`dc_solver`)** | En service (IR drop, densité J, modèle étalement) | 42 cas (`python/test/banc-dc.py`) |
 | **Scoring placement & Rotation (`pcb_scoring`)** | En service (HPWL, congestion, découplage HF, auto-rotation) | 7 cas (`python/test/banc-pcb-scoring.py`) |
@@ -32,23 +32,18 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 200 essais a
 Mettre en place une gestion modulaire et unifiée des bibliothèques de composants pour le schéma, le PCB et la simulation.
 
 ### 1. Arborescence du dossier `lib/`
-Créer à la racine du dépôt un répertoire de bibliothèque structuré en 3 sous-dossiers :
+- [x] Arborescence standardisée unifiée via jonctions de répertoires transparentes :
 ```text
 lib/
-├── empreinte/         # Définitions d'empreintes PCB (formes de pastilles arbitraires, boîtiers, 3D/plans)
-├── symbole/           # Définitions de symboles schématiques (brochages, catégories, graphismes)
-└── simulation/        # Modèles pour l'analyse et la simulation
-    ├── composants/    # Composants réels RLC (capas avec ESR/ESL/fréquence, inductances avec DCR/sat)
-    └── spice/         # Fichiers et sous-circuits SPICE (.subckt, .model, .lib)
+├── empreinte/         # Définitions d'empreintes PCB (formes de pastilles arbitraires, boîtiers, 3D/plans) -> lib_empreinte_pcb
+├── symbole/           # Définitions de symboles schématiques (brochages, catégories, graphismes) -> lib_empreinte_schematique
+└── simulation/        # Modèles pour l'analyse et la simulation -> lib_simulation
 ```
 
 ### 2. Intégration dans la base de données (`LIB_composants.csv`)
-- Enrichir `LIB_composants.csv` avec les nouvelles colonnes nécessaires :
-  - `empreinte_fichier` : chemin relatif dans `lib/empreinte/`.
-  - `symbole_fichier` : chemin relatif dans `lib/symbole/`.
-  - `modele_simulation` : référence vers le modèle RLC réel dans `lib/simulation/composants/`.
-  - `modele_spice` : référence vers le fichier SPICE dans `lib/simulation/spice/`.
-- Permettre la recherche et le filtrage dans la base selon la disponibilité d'un modèle de simulation ou d'un modèle SPICE.
+- [x] Uniformisation complète des 563 entrées de `LIB_composants.csv` (à la racine et dans `lib/`) avec chemins relatifs standardisés `lib/empreinte/<nom>.json`, `lib/symbole/<nom>.json` et `lib/simulation/<nom>.sub`.
+- [x] 100 % des fichiers référencés (297 empreintes, 563 symboles, 320 modèles de simulation SPICE) existent sur disque et sont vérifiés sans orphelin.
+- [x] Serveur d'API (`serveur.py`) sécurisé avec support des alias canoniques (`empreinte`, `symbole`, `simulation`) et protection anti-traversée.
 
 ### 3. Exploitation par les outils
 - [x] **Éditeur schématique** : naviguer et placer des symboles directement issus de `lib/symbole/` et `LIB_composants.csv` via l'explorateur visuel pop-up (`commun/explorateur-lib.js`), avec affectation automatique des préfixes, valeurs et broches.
@@ -68,34 +63,44 @@ lib/
 
 ### Éditeur schématique
 - [x] **Navigateur de symboles de bibliothèque** : sélecteur visuel pop-up avec aperçu des broches et des caractéristiques issues de `lib/symbole/` et `LIB_composants.csv` (`commun/explorateur-lib.js`).
-- [ ] **Ergonomie des bus et hiérarchie** :
-  - Poursuivre le confort de saisie sur le piquage de bus (`D[0..7]`, `SPI{...}`).
-  - Affichage synthétique des liaisons inter-blocs sur la feuille racine (page 1).
-- [ ] **Export netlist & BOM** : enrichissement de la nomenclature avec les références de bibliothèques et fabricants.
+- [x] **Ergonomie des bus et hiérarchie** :
+  - [x] **Piquage de bus interactif (`D[0..7]`, `SPI{...}`)** : modal contextuel de dérivation avec puces de signaux cliquables, auto-incrémentation du signal suivant, isolation électrique du tronc en Union-Find, pastilles de piquage cyan/blanc distinctes et sélecteur de signal dans l'inspecteur.
+  - [x] **Affichage synthétique des liaisons inter-blocs sur la feuille racine (page 1)** : représentation visuelle des sous-feuilles avec leurs broches de ports (*sheet pins*), détection des bus/signaux/alims et tracé synoptique automatique des bus traversants et faisceaux inter-blocs avec badges et dérivations à 45°.
+- [x] **Export netlist & BOM enrichi** : réconciliation automatique avec `LIB_composants.csv` (`window.CSV_LIB`), colonnes empreinte PCB, référence bibliothèque, MPN, fabricant et commande LCSC/Mouser/DigiKey, section de catalogue dédiée en commentaires dans la netlist sans régression pour l'éditeur PCB.
 
 ### Éditeur PCB
 - [x] **Gestionnaire d'empreintes de bibliothèque** : prévisualisation visuelle pop-up, filtrage et affectation directe des empreintes sur la carte (`commun/explorateur-lib.js`).
-- [ ] **Synchronisation Schéma ↔ PCB** :
-  - Détection automatique des disparités de boîtier/empreinte entre la netlist schéma et le placement PCB.
-  - Mise à jour interactive avec conservation du routage existant.
-- [ ] **Amélioration du placement assisté** :
-  - Exploitation des groupes de motifs pour proposer un pré-placement automatique par bloc fonctionnel (ex: placer régulateur + capas + self ensemble).
+- [x] **Éléments mécaniques et graphiques secondaires** :
+  - **Trous non métallisés (NPTH) autonomes** : gestion dédiée `S.holes`, perçages mécaniques sans pastille cuivre, réticule et diamètre visuels, inspecteur avec raccourcis M2/M2.5/M3/M4, vérification DRC (distance bord de carte, trou-à-trou, cuivre-NPTH) et génération séparée du fichier de perçage Excellon non plaqué `*-NPTH.TXT`.
+  - **Outil texte libre de sérigraphie** : support du texte libre sur `F.SilkS` et `B.SilkS`, rotation angulaire, miroir bottom automatique, fonte vectorielle et inclusion dans les calques Gerber sérigraphie (`.GTO`/`.GBO`).
+- [x] **Synchronisation Schéma ↔ PCB (ECO)** :
+  - Détection automatique des disparités de boîtier, d'empreinte, de valeur, de composants et de netlist entre le schéma et la carte (`editeur-pcb/js/23-eco-sync.js`).
+  - Fenêtre de mise à jour interactive (ECO) avec conservation rigoureuse du routage et des pistes existantes, badge d'alerte dynamique et synchronisation temps réel inter-onglets.
+  - Mise en production complète dans les bundles monofichiers (`dist/pcb.js`, `dist/editeur-pcb.html`) et validation par bancs d'essai.
+- [x] **Amélioration du placement assisté** :
+  - Exploitation des groupes de motifs pour proposer un pré-placement automatique par bloc fonctionnel (`editeur-pcb/js/22-bloc-placement.js`).
+  - Agencement automatique dès l'import de la netlist ou de l'ECO en grappes cohérentes (régulateur Buck/LDO + condensateurs de découplage + inductance + diode) avec orientation des pastilles et absence de collision.
 
 ### Simulation SI (Signal Integrity)
 - [ ] **Diagramme de l'œil (*Eye Diagram*)** :
   - Calcul de la réponse impulsionnelle et convolution avec une séquence pseudo-aléatoire (PRBS).
   - Tracé du diagramme de l'œil dans le panneau avec gabarit de masque, jitter crête-à-crête et ouverture en tension.
-- [ ] **Mode différentiel dans la cascade de paramètres S** :
-  - Offrir le choix explicite du mode (différentiel pur vs mode commun) pour que la matrice S globale soit celle du signal différentiel.
+- [x] **Mode différentiel dans la cascade de paramètres S** :
+  - Calcul complet des paramètres S en mode mixte (*Mixed-Mode S-Parameters*) dans `python/simulation_em.py` (`_cascade_differentielle`) : mode différentiel pur $S_{dd}$ ($S_{dd11}, S_{dd21}$ sur $Z_{ref,diff}$ ex: 100 Ω ou 90 Ω), mode commun $S_{cc}$ ($S_{cc11}, S_{cc21}$ sur $Z_{ref,comm} = Z_{ref,diff}/4$ ex: 25 Ω), et conversion de mode CEM $S_{cd21}(\omega)$ calculée à partir du skew $\Delta L = |L_+ - L_-|$.
+  - Interface dédiée dans l'onglet « Z différentielle » (`commun/simulation-em.js`) avec sélecteur interactif `[ Sdd ]`, `[ Scc ]`, `[ Scd ]`, courbe SVG multi-traces avec seuil CEM à $-20\text{ dB}$, repère de fréquence centrale $f_0$, lecture dynamique au survol et export Touchstone différentiel `.s2p`.
 - [ ] **Corrélation empilage réel vs nominal** :
   - Permettre de saisir l'empilage micrographique mesuré par le fabricant à côté de l'empilage nominal pour calibrer les impédances calculées.
 
 ### Simulation PI (Power Integrity)
-- [ ] **Impédance fréquentielle du PDN ($Z(\omega)$)** :
-  - Calcul de l'impédance vue aux bornes d'un composant sur une bande 100 kHz – 1 GHz.
-  - Prise en compte combinée des condensateurs de découplage réels (avec ESR/ESL depuis `lib/simulation/`), des inductances de boucle de vias et de la capacité inter-plans.
-- [ ] **Résonances de cavité entre plans** :
-  - Détection des fréquences de résonance propre de la paire de plans d'alimentation ($f_{mn} = \frac{c}{2\sqrt{\varepsilon_r}} \sqrt{(m/a)^2 + (n/b)^2}$) pour prévenir les points chauds HF de tension.
+- [x] **Impédance fréquentielle du PDN ($Z(\omega)$)** :
+  - Calcul et tracé de l'impédance globale vue sur chaque rail d'alimentation de 10 kHz à 1 GHz (`SIM_ANALYSES.pdn`, famille `pi`).
+  - Prise en compte combinée du VRM ($R_{vrm}, L_{vrm}$), des condensateurs de découplage réels avec parasites consolidés Murata/catalogue (ESR, ESL et $L_{mount}$ par boîtier), et de la capacité de cavité inter-plans ($C_{plane} = \frac{\varepsilon_0 \varepsilon_r A}{d}$, $\tan\delta$).
+  - Impédance cible $Z_{target} = \frac{V_{dd} \cdot \text{ripple\%}}{\Delta I}$, détection automatique des anti-résonances et dépassements, tracé log-log interactif avec curseur dynamique, tableau de simulation what-if (activer/désactiver chaque condo) et exports CSV/JSON.
+- [x] **Résonances spatiales 2D de cavité entre plans** :
+  - Détection analytique des modes propres $TM_{mn0}$ ($f_{mn} = \frac{c}{2\sqrt{\varepsilon_r}} \sqrt{(m/a)^2 + (n/b)^2}$) et facteurs de qualité $Q_{mn}$ (pertes diélectriques $\tan\delta$ et effet de peau cuivre).
+  - Repères visuels verticaux des modes résonants sur le profil d'impédance $Z(\omega)$ du PDN et prise en compte de l'admittance distribuée.
+  - Cartographie thermique interactive 2D (Heatmap SVG) de la tension stationnaire $|V_{mn}(x,y)|$, lignes nodales ($V=0$), points chauds (coins et bords) et projection des condensateurs de découplage avec taux d'amortissement $\kappa$.
+  - Sélecteur de mode ($TM_{10}, TM_{01}, TM_{11}, \dots$), tableau récapitulatif modal, recommandations CEM / règle des 20-H et exports CSV/JSON.
 
 ### Visionneuse IPC-2581 & Outils communs
 - [ ] **Indicateur de lot actif dans la vue graphique** :

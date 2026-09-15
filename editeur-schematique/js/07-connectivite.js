@@ -107,6 +107,207 @@ function netColor(net){
   return "hsl("+(((h%360)+360)%360)+",66%,66%)";
 }
 
+/* =============================================================================
+   Analyse syntaxique et expansion des bus et faisceaux (D[0..7], SPI{...}, etc.)
+   ============================================================================= */
+
+/**
+ * Développe l'expression d'un bus ou d'un faisceau en liste ordonnée de signaux individuels.
+ * Exemples supportés :
+ * - D[0..7] ou D[0:7] -> ["D0", "D1", ..., "D7"]
+ * - D[7..0] -> ["D7", "D6", ..., "D0"]
+ * - SPI{MOSI,MISO,SCK,CS} -> ["SPI_MOSI", "SPI_MISO", "SPI_SCK", "SPI_CS"]
+ * - I2C{SDA,SCL} -> ["I2C_SDA", "I2C_SCL"]
+ * - UART{TX,RX} -> ["UART_TX", "UART_RX"]
+ * - {TX,RX,RTS,CTS} -> ["TX", "RX", "RTS", "CTS"]
+ * - CLK,DATA,EN -> ["CLK", "DATA", "EN"]
+ * - Noms protocolaires simples : "SPI", "I2C", "UART", "CAN", "USB"
+ */
+function schDevelopperSignauxBus(nomBus){
+  if(!nomBus) return [];
+  const raw = String(nomBus).trim();
+  if(!raw) return [];
+
+  // 1. Détection des protocoles standards sans suffixe
+  const STANDARDS = {
+    "SPI":  ["SPI_MOSI", "SPI_MISO", "SPI_SCK", "SPI_CS"],
+    "I2C":  ["I2C_SDA", "I2C_SCL"],
+    "UART": ["UART_TX", "UART_RX"],
+    "CAN":  ["CAN_H", "CAN_L"],
+    "USB":  ["USB_DP", "USB_DM", "VBUS", "GND"]
+  };
+  const up = raw.toUpperCase();
+  if(STANDARDS[up]) return STANDARDS[up].slice();
+
+  // 2. Faisceaux avec accolades : PREFIX{SIG1,SIG2,...} ou {SIG1,SIG2}
+  const mBundle = raw.match(/^([A-Za-z_][\w]*)\s*\{\s*([^}]+)\s*\}$/);
+  if(mBundle){
+    const prefix = mBundle[1];
+    const items = mBundle[2].split(",").map(s=>s.trim()).filter(Boolean);
+    return items.map(it => {
+      if(prefix && !it.toUpperCase().startsWith(prefix.toUpperCase()+"_")){
+        return prefix + "_" + it;
+      }
+      return it;
+    });
+  }
+  const mBareBundle = raw.match(/^\{\s*([^}]+)\s*\}$/);
+  if(mBareBundle){
+    return mBareBundle[1].split(",").map(s=>s.trim()).filter(Boolean);
+  }
+
+  // 3. Vecteurs avec crochets : PREFIX[START..END] ou PREFIX[START:END]
+  const mVec = raw.match(/^([A-Za-z_][\w]*)\s*\[\s*(\d+)\s*(?:\.\.|\:)\s*(\d+)\s*\]$/);
+  if(mVec){
+    const prefix = mVec[1];
+    const start = parseInt(mVec[2], 10);
+    const end = parseInt(mVec[3], 10);
+    const signals = [];
+    if(start <= end){
+      for(let i = start; i <= end; i++) signals.push(prefix + i);
+    } else {
+      for(let i = start; i >= end; i--) signals.push(prefix + i);
+    }
+    return signals;
+  }
+
+  // 4. Liste séparée par des virgules : CLK,DATA,EN
+  if(raw.includes(",")){
+    const list = raw.split(",").map(s=>s.trim()).filter(Boolean);
+    if(list.length > 1) return list;
+  }
+
+  // 5. Cas générique : renvoie le nom brut
+  return [raw];
+}
+
+/**
+ * Recherche le segment de bus le plus proche du point (x, y).
+ */
+function schBusDuPoint(x, y, wires, tol){
+  if(!wires) wires = (typeof S !== "undefined" && S.wires) ? S.wires : [];
+  const t = tol != null ? tol : (typeof S !== "undefined" && S.scale ? 10/S.scale : 10);
+  const t2 = t * t;
+  for(let i = wires.length - 1; i >= 0; i--){
+    const w = wires[i];
+    if(!w.bus) continue;
+    const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len2 = dx*dx + dy*dy || 1;
+    let u = ((x - w.x1)*dx + (y - w.y1)*dy) / len2;
+    u = Math.max(0, Math.min(1, u));
+    const px = w.x1 + u*dx, py = w.y1 + u*dy;
+    if((px - x)**2 + (py - y)**2 <= t2){
+      return { bus: w, index: i, px, py };
+    }
+  }
+  return null;
+}
+
+/**
+ * Détecte si un fil ordinaire est un piquage sur un bus (une de ses extrémités touche un bus).
+ */
+function schPiquageSurFil(wire, wires){
+  if(!wire || wire.bus) return null;
+  if(!wires) wires = (typeof S !== "undefined" && S.wires) ? S.wires : [];
+  for(const p of [{x: wire.x1, y: wire.y1, end: 1}, {x: wire.x2, y: wire.y2, end: 2}]){
+    const b = schBusDuPoint(p.x, p.y, wires, 2);
+    if(b && b.bus !== wire){
+      return {
+        wire: wire,
+        bus: b.bus,
+        busName: b.bus.net || "BUS",
+        x: p.x,
+        y: p.y,
+        end: p.end
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Liste tous les points de piquage (raccordements fil ordinaire <-> bus) sur la feuille.
+ */
+function schTousLesPiquages(wires){
+  if(!wires) wires = (typeof S !== "undefined" && S.wires) ? S.wires : [];
+  const res = [];
+  for(const w of wires){
+    if(w.bus) continue;
+    const piq = schPiquageSurFil(w, wires);
+    if(piq) res.push(piq);
+  }
+  return res;
+}
+
+const SCH_PIQUAGE_MEMOIRE = {};
+
+/**
+ * Retourne l'ensemble des noms de signaux actuellement piqués sur le bus.
+ */
+function schSignauxOccupesSurBus(busWire, wires){
+  if(!wires) wires = (typeof S !== "undefined" && S.wires) ? S.wires : [];
+  const occupes = new Set();
+  const piqs = schTousLesPiquages(wires);
+  const busNet = (busWire && busWire.net) ? busWire.net.toUpperCase() : "";
+  for(const p of piqs){
+    if(p.wire && p.wire.net){
+      if(!busNet || (p.bus && p.bus.net && p.bus.net.toUpperCase() === busNet)){
+        occupes.add(p.wire.net);
+      }
+    }
+  }
+  return occupes;
+}
+
+/**
+ * Déduit et suggère automatiquement le prochain signal à dériver lors d'un piquage.
+ * Implémente l'auto-incrémentation : si le dernier piquage était D0, suggère D1, puis D2...
+ */
+function schSuggererProchainSignal(busNom){
+  const signaux = schDevelopperSignauxBus(busNom);
+  if(!signaux.length) return "SIG0";
+  const dernier = SCH_PIQUAGE_MEMOIRE[busNom];
+  if(!dernier) return signaux[0];
+
+  const idx = signaux.indexOf(dernier);
+  if(idx >= 0 && idx + 1 < signaux.length){
+    return signaux[idx + 1];
+  }
+  // Si le dernier se termine par un chiffre (ex: D0, DATA1)
+  const mNum = dernier.match(/^(.*?)(\d+)$/);
+  if(mNum){
+    const prefix = mNum[1];
+    const num = parseInt(mNum[2], 10) + 1;
+    const candidat = prefix + num;
+    if(signaux.includes(candidat)) return candidat;
+  }
+  return signaux[0];
+}
+
+/**
+ * Pique un signal précis sur un fil et enregistre l'historique d'incrémentation.
+ */
+function schPiquerSignal(signalWire, nomSignal, busNom){
+  if(!signalWire) return false;
+  const sig = String(nomSignal || "").trim();
+  if(!sig) return false;
+  if(typeof push === "function") push();
+
+  signalWire.net = sig;
+  if(busNom){
+    SCH_PIQUAGE_MEMOIRE[busNom] = sig;
+  }
+  if(typeof touchWires === "function") touchWires();
+  if(typeof resolveSplits === "function") resolveSplits();
+  if(typeof refreshPanels === "function") refreshPanels();
+  if(typeof draw === "function") draw();
+
+  const hint = (typeof document !== "undefined") ? document.getElementById("fHint") : null;
+  if(hint){
+    hint.textContent = "Signal " + sig + " raccordé au bus " + (busNom || "") + ".";
+  }
+  return true;
+}
+
 function computeNets(comps,wires){
   const parent=new Map();
   function add(k){if(!parent.has(k))parent.set(k,k);return k;}
@@ -119,11 +320,21 @@ function computeNets(comps,wires){
   }
   function uni(a,b){a=find(a);b=find(b);if(a!==b)parent.set(a,b);}
 
-  for(const w of wires) uni(key(w.x1,w.y1),key(w.x2,w.y2));
+  // Séparation stricte : les fils ordinaires s'unissent entre eux via key(x,y),
+  // et les segments de bus s'unissent entre eux via "bus:" + key(x,y).
+  // Ainsi, deux piquages distincts sur le même bus ne se court-circuitent JAMAIS.
+  for(const w of wires){
+    if(w.bus){
+      uni("bus:" + key(w.x1,w.y1), "bus:" + key(w.x2,w.y2));
+    } else {
+      uni(key(w.x1,w.y1), key(w.x2,w.y2));
+    }
+  }
 
-  // index par abscisse / ordonnée : évite de tester chaque broche contre chaque fil
+  // index par abscisse / ordonnée des fils ordinaires pour les broches
   const vert=new Map(), horiz=new Map();
   for(const w of wires){
+    if(w.bus) continue; // les broches de composants ne court-circuitent pas le tronc de bus
     if(w.x1===w.x2){if(!vert.has(w.x1))vert.set(w.x1,[]);vert.get(w.x1).push(w);}
     else if(w.y1===w.y2){if(!horiz.has(w.y1))horiz.set(w.y1,[]);horiz.get(w.y1).push(w);}
   }
@@ -144,15 +355,19 @@ function computeNets(comps,wires){
     const src=NAME_SRC[n.el.type];
     if(!src)continue;
     claims.push({k:n.k,name:String(n.el.value||"").trim()||src.def,
-                 prio:src.prio,global:!!src.global});
+                 prio:src.prio,global:!!src.global,isBus:false});
   }
   for(const w of wires){
     const nm=String(w.net||"").trim();
-    if(nm && !NET_AUTO.test(nm))claims.push({k:key(w.x1,w.y1),name:nm,prio:1});
+    if(nm && !NET_AUTO.test(nm)){
+      const kw = w.bus ? ("bus:" + key(w.x1,w.y1)) : key(w.x1,w.y1);
+      claims.push({k:kw,name:nm,prio:1,isBus:!!w.bus});
+    }
   }
   const first=new Map();
   for(const cl of claims){
-    const kk=cl.name.toUpperCase();
+    // clé isolée entre bus et signaux pour éviter qu'un bus nommé "D" et un fil nommé "D" fusionnent
+    const kk=(cl.isBus ? "BUS:" : "SIG:") + cl.name.toUpperCase();
     if(first.has(kk))uni(cl.k,first.get(kk));
     else first.set(kk,cl.k);
   }
@@ -163,11 +378,13 @@ function computeNets(comps,wires){
     const r=find(k);
     let n=groups.get(r);
     if(!n){n={id:r,name:"",names:[],named:false,src:0,conflict:false,global:false,
+              isBus:String(r).startsWith("bus:"),
               nodes:[],powers:[],wires:[],pts:[]};groups.set(r,n);}
     return n;
   }
   for(const w of wires){
-    const n=net(key(w.x1,w.y1));
+    const kw = w.bus ? ("bus:" + key(w.x1,w.y1)) : key(w.x1,w.y1);
+    const n=net(kw);
     n.wires.push(w);
     n.pts.push({x:w.x1,y:w.y1},{x:w.x2,y:w.y2});
   }
@@ -207,7 +424,7 @@ function computeNets(comps,wires){
   // numérotation stable : de haut en bas, puis de gauche à droite
   list.sort((a,b)=>(a.min.y-b.min.y)||(a.min.x-b.min.x));
   let auto=0;
-  for(const n of list) if(!n.named)n.name="N$"+(++auto);
+  for(const n of list) if(!n.named) n.name = n.isBus ? ("BUS$"+(++auto)) : ("N$"+(++auto));
 
   const byWire=new Map(), byPoint=new Map();
   for(const n of list) for(const w of n.wires) byWire.set(w,n);

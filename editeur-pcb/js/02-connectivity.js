@@ -520,6 +520,63 @@ function runDrc(){
   for(const v of S.vias)
     if(!inBoard(v.x,v.y,S.rule.edge))
       out.push({x:v.x,y:v.y,l:v.a,msg:"Via hors du contour de carte"});
+  if(S.holes){
+    const hcl=S.rule.hole||0.25;
+    for(const h of S.holes){
+      if(!inBoard(h.x,h.y,h.d/2+S.rule.edge))
+        out.push({x:h.x,y:h.y,msg:"Trou NPTH Ø"+fmt(h.d,2)+" hors du contour de carte ou trop près du bord"});
+    }
+    for(let i=0;i<S.holes.length;i++){
+      for(let j=i+1;j<S.holes.length;j++){
+        const h1=S.holes[i], h2=S.holes[j];
+        const e=dist(h1.x,h1.y,h2.x,h2.y)-h1.d/2-h2.d/2;
+        if(e<hcl-1e-6){
+          out.push({x:(h1.x+h2.x)/2,y:(h1.y+h2.y)/2,
+            msg:e<-1e-6
+              ? "Trous NPTH qui se recouvrent ("+fmt(-e,3)+" mm)"
+              : "Trou à trou NPTH de "+fmt(e,3)+" mm : la règle exige "+fmt(hcl,3)+" mm"});
+        }
+      }
+    }
+    for(const h of S.holes){
+      for(const v of S.vias){
+        const e=dist(h.x,h.y,v.x,v.y)-h.d/2-v.drill/2;
+        if(e<hcl-1e-6){
+          out.push({x:(h.x+v.x)/2,y:(h.y+v.y)/2,
+            msg:"Trou NPTH Ø"+fmt(h.d,2)+" trop proche du perçage de via ("+fmt(Math.max(0,e),3)+" mm, min "+fmt(hcl,3)+" mm)"});
+        }
+      }
+    }
+    for(const h of S.holes){
+      for(const p of pads){
+        if(p.q.drill>0){
+          const e=dist(h.x,h.y,p.q.x,p.q.y)-h.d/2-p.q.drill/2;
+          if(e<hcl-1e-6){
+            out.push({x:(h.x+p.q.x)/2,y:(h.y+p.q.y)/2,
+              msg:"Trou NPTH Ø"+fmt(h.d,2)+" trop proche du perçage de "+p.tag+" ("+fmt(Math.max(0,e),3)+" mm, min "+fmt(hcl,3)+" mm)"});
+          }
+        }
+      }
+    }
+    for(const h of S.holes){
+      for(const t of S.tracks){
+        const clr=(classOf(t.net)&&classOf(t.net).clr)||0.25;
+        const e=trkDist(h.x,h.y,t)-t.w/2-h.d/2;
+        if(e<clr-1e-6){
+          out.push({x:h.x,y:h.y,l:t.l,
+            msg:"Cuivre trop proche du trou NPTH Ø"+fmt(h.d,2)+" (piste "+(t.net||"sans net")+" à "+fmt(Math.max(0,e),3)+" mm, min "+fmt(clr,3)+" mm)"});
+        }
+      }
+      for(const p of pads){
+        const clr=(classOf(p.q.net)&&classOf(p.q.net).clr)||0.25;
+        const e=padDist(h.x,h.y,p.q)-h.d/2;
+        if(e<clr-1e-6){
+          out.push({x:h.x,y:h.y,l:p.layers[0],
+            msg:"Pastille "+p.tag+" trop proche du trou NPTH Ø"+fmt(h.d,2)+" ("+fmt(Math.max(0,e),3)+" mm, min "+fmt(clr,3)+" mm)"});
+        }
+      }
+    }
+  }
   for(const e of bPP)out.push(e);
   /* ---------- pastilles d'une même empreinte ----------
      Deux pastilles d'une même empreinte se touchent presque, par construction :
@@ -853,10 +910,15 @@ function pcbNettoyerPistesConflits(conflicts){
   if(typeof draw==="function")draw();
   return toDelete.size;
 }
-/* Rangement en lignes le long du bord droit de la carte : visible, ordonné,
-   et sans recouvrement — le placement fin reste manuel. */
+/* Rangement des nouvelles empreintes : pré-agencement par grappes fonctionnelles
+   (régulateurs, filtres, quartz, découplage) si le moteur BLOC_PLACEMENT est disponible,
+   ou alignement ordonné le long du bord droit. */
 function arrange(list){
   if(!list||!list.length)return;
+  if(typeof BLOC_PLACEMENT !== "undefined" && typeof BLOC_PLACEMENT.agencerListeNouveauxComposants === "function"){
+    BLOC_PLACEMENT.agencerListeNouveauxComposants(list);
+    return;
+  }
   const b=S.board;
   let x=b.x+b.w+6, y=b.y, rowH=0, col=0;
   const maxY=b.y+b.h*1.4;

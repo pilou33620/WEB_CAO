@@ -26,6 +26,19 @@ function drawJunctions(c){
   c.fillStyle=C_RED;
   for(const p of junctions()){c.beginPath();c.arc(p[0],p[1],5,0,Math.PI*2);c.fill();}
   for(const q of pinContactPoints()){c.beginPath();c.arc(q.x,q.y,5,0,Math.PI*2);c.fill();}
+
+  // Rendu visuel distinct des piquages de bus (pastille cyan à centre blanc)
+  if(typeof schTousLesPiquages === "function"){
+    const piqs = schTousLesPiquages(S.wires);
+    for(const pq of piqs){
+      c.save();
+      c.fillStyle = typeof C_BUS !== "undefined" ? C_BUS : "#00c4df";
+      c.beginPath(); c.arc(pq.x, pq.y, 5.5, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#ffffff";
+      c.beginPath(); c.arc(pq.x, pq.y, 2.2, 0, Math.PI * 2); c.fill();
+      c.restore();
+    }
+  }
 }
 /* Halo sur le net survolé : on lit d'un coup d'œil jusqu'où va un fil. */
 function drawNetGlow(c){
@@ -262,66 +275,228 @@ function drawDrawings(c){
     c.restore();
   }
 }
-/* ---------- Rendu des blocs hiérarchiques sur la feuille racine (page 0) ---------- */
+/* ---------- Rendu des blocs hiérarchiques et synoptique d'interconnexions sur la feuille racine (page 0) ---------- */
+function drawRoundRectPath(c, x, y, w, h, r){
+  if(typeof c.roundRect === "function"){
+    c.beginPath(); c.roundRect(x, y, w, h, r);
+  } else {
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.lineTo(x + w - r, y);
+    c.arcTo(x + w, y, x + w, y + r, r);
+    c.lineTo(x + w, y + h - r);
+    c.arcTo(x + w, y + h, x + w - r, y + h, r);
+    c.lineTo(x + r, y + h);
+    c.arcTo(x, y + h, x, y + h - r, r);
+    c.lineTo(x, y + r);
+    c.arcTo(x, y, x + r, y, r);
+    c.closePath();
+  }
+}
+
 function drawSheetBlocks(c){
   if(S.page !== 0) return;
-  const blocks = typeof sheetBlocks==="function"?sheetBlocks():[];
+  const blocks = typeof sheetBlocks === "function" ? sheetBlocks() : [];
   if(!blocks.length){
     c.save();
     c.strokeStyle = "#00c4df"; c.globalAlpha = 0.55; c.lineWidth = 1.5; c.setLineDash([6, 4]);
-    c.strokeRect(60, 60, 380, 110);
+    c.strokeRect(60, 60, 420, 120);
     c.setLineDash([]);
-    TXT(c, "⬡ Feuille hiérarchique racine", 250, 95, 13, "#ffffff", "center");
-    TXT(c, "Aucune sous-feuille. Cliquez sur « + Feuille » pour commencer.", 250, 125, 10, "#8b919c", "center");
+    TXT(c, "⬡ Feuille hiérarchique racine", 270, 100, 13, "#ffffff", "center");
+    TXT(c, "Aucune sous-feuille. Cliquez sur « + Feuille » pour commencer le schéma.", 270, 130, 10, "#8b919c", "center");
     c.restore();
     return;
   }
-  for(const b of blocks){
+
+  c.save();
+
+  // 1. TRACÉ DES INTERCONNEXIONS ET BUS TRAVERSANTS INTER-BLOCS
+  const inters = typeof sheetInterconnections === "function" ? sheetInterconnections() : [];
+  for(const link of inters){
+    const isHover = (S.hoverSheetPort && S.hoverSheetPort.name === link.name);
+    const pins = link.pins;
+    if(!pins || pins.length < 2) continue;
+
     c.save();
-    const isSel = (S.selBlock === b.sheetIndex);
-    if(isSel){
-      c.save();
-      c.strokeStyle = C_SEL; c.globalAlpha = 0.35; c.lineWidth = 10;
-      c.strokeRect(b.x, b.y, b.w, b.h);
-      c.restore();
-    }
-    c.fillStyle = "#16191f";
-    c.fillRect(b.x, b.y, b.w, b.h);
-    c.strokeStyle = isSel ? C_SEL : "#00c4df";
-    c.lineWidth = isSel ? 2.5 : 1.8;
-    c.strokeRect(b.x, b.y, b.w, b.h);
-
-    c.fillStyle = "#132530";
-    c.fillRect(b.x, b.y, b.w, 28);
-    c.strokeStyle = isSel ? C_SEL : "#00c4df";
-    c.lineWidth = 1;
-    c.beginPath(); c.moveTo(b.x, b.y + 28); c.lineTo(b.x + b.w, b.y + 28); c.stroke();
-
-    const title = "⊞ " + (b.name.startsWith("Feuille ") ? b.name : ("Feuille " + b.sheetIndex + " : " + b.name));
-    TXT(c, title, b.x + 10, b.y + 15, 11.5, "#ffffff", "left");
-
-    TXT(c, b.nComps + " composant(s) · " + b.nWires + " fil(s)", b.x + 12, b.y + 48, 10, "#8b919c", "left");
-
-    if(b.ports && b.ports.length){
-      TXT(c, "Ports : " + b.ports.slice(0, 3).join(", ") + (b.ports.length > 3 ? "…" : ""), b.x + 12, b.y + 70, 9.5, "#00c4df", "left");
-      c.fillStyle = "#00c4df";
-      for(let pi = 0; pi < Math.min(b.ports.length, 3); pi++){
-        const py = b.y + 42 + pi * 18;
-        c.fillRect(b.x - 3, py - 3, 6, 6);
-        c.fillRect(b.x + b.w - 3, py - 3, 6, 6);
-      }
+    if(link.isBus){
+      c.strokeStyle = isHover ? "#ffffff" : C_BUS;
+      c.lineWidth = isHover ? 5.5 : 4.0;
+      c.lineCap = "round";
+      c.lineJoin = "round";
+    } else if(link.isPower){
+      const isGnd = link.name.toUpperCase().includes("GND");
+      c.strokeStyle = isHover ? "#ffffff" : (isGnd ? "#22c55e" : "#ef4444");
+      c.lineWidth = isHover ? 3.0 : 2.0;
     } else {
-      TXT(c, "Aucun port déclaré", b.x + 12, b.y + 70, 9.5, "#555b66", "left");
+      c.strokeStyle = isHover ? "#ffffff" : "#60a5fa";
+      c.lineWidth = isHover ? 3.0 : 1.8;
     }
 
-    c.fillStyle = "rgba(0, 196, 223, 0.12)";
-    c.fillRect(b.x + 8, b.y + b.h - 26, b.w - 16, 20);
-    c.strokeStyle = "rgba(0, 196, 223, 0.35)";
-    c.strokeRect(b.x + 8, b.y + b.h - 26, b.w - 16, 20);
-    TXT(c, "Double-clic pour ouvrir ➔", b.x + b.w/2, b.y + b.h - 14, 9.5, "#8af0ff", "center");
+    // Calcul de l'axe de tronc commun (Manhattan corridor)
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    pins.forEach(p => {
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    });
+
+    // Tronc vertical ou horizontal entre les blocs
+    let trunkX = (minX + maxX) / 2;
+    if(Math.abs(maxX - minX) < 60) trunkX = maxX + 40;
+
+    c.beginPath();
+    // Tracé du tronc
+    c.moveTo(trunkX, minY);
+    c.lineTo(trunkX, maxY);
+    c.stroke();
+
+    // Raccordement (taps) de chaque broche au tronc
+    pins.forEach(p => {
+      c.beginPath();
+      const stubX = p.side === "left" ? (p.x - 16) : (p.x + 16);
+      c.moveTo(p.x, p.y);
+      c.lineTo(stubX, p.y);
+      c.lineTo(trunkX, p.y);
+      c.stroke();
+
+      // Puce de jonction sur le tronc
+      c.save();
+      c.fillStyle = isHover ? "#ffffff" : (link.isBus ? C_BUS : (link.isPower ? (link.name.toUpperCase().includes("GND") ? "#22c55e" : "#ef4444") : "#60a5fa"));
+      c.beginPath();
+      c.arc(trunkX, p.y, link.isBus ? 4.5 : 3.2, 0, Math.PI * 2);
+      c.fill();
+      c.restore();
+    });
+
+    // Badge d'étiquette centrale sur le tronc de bus / signal
+    const badgeY = (minY + maxY) / 2;
+    const badgeText = (link.isBus ? "≡ " : "") + link.name;
+    const badgeW = Math.max(40, badgeText.length * 6.5 + 14);
+    const badgeH = link.isBus ? 18 : 16;
+
+    c.save();
+    c.fillStyle = link.isBus ? "#09242b" : "#111827";
+    c.strokeStyle = isHover ? "#ffffff" : (link.isBus ? C_BUS : (link.isPower ? (link.name.toUpperCase().includes("GND") ? "#22c55e" : "#ef4444") : "#60a5fa"));
+    c.lineWidth = link.isBus ? 1.5 : 1.0;
+    drawRoundRectPath(c, trunkX - badgeW/2, badgeY - badgeH/2, badgeW, badgeH, 4);
+    c.fill();
+    c.stroke();
+
+    TXT(c, badgeText, trunkX, badgeY + (link.isBus ? 4.0 : 3.5), link.isBus ? 9.5 : 8.5,
+        isHover ? "#ffffff" : (link.isBus ? "#8af0ff" : (link.isPower ? "#fcd34d" : "#bfdbfe")), "center");
+    c.restore();
 
     c.restore();
   }
+
+  // 2. DESSIN DES CARTES DE BLOCS HIÉRARCHIQUES
+  for(const b of blocks){
+    const isSel = (S.selBlock === b.sheetIndex);
+    const isHoverBlock = (S.hoverSheetBlock === b.sheetIndex);
+
+    c.save();
+    // Halo de sélection
+    if(isSel){
+      c.save();
+      c.strokeStyle = C_SEL; c.globalAlpha = 0.35; c.lineWidth = 10;
+      drawRoundRectPath(c, b.x - 2, b.y - 2, b.w + 4, b.h + 4, 8);
+      c.stroke();
+      c.restore();
+    }
+
+    // Fond du cartouche
+    c.fillStyle = "#141820";
+    drawRoundRectPath(c, b.x, b.y, b.w, b.h, 6);
+    c.fill();
+
+    // Bordure
+    c.strokeStyle = isSel ? C_SEL : (isHoverBlock ? "#00c4df" : "#2a3648");
+    c.lineWidth = isSel ? 2.5 : 1.8;
+    drawRoundRectPath(c, b.x, b.y, b.w, b.h, 6);
+    c.stroke();
+
+    // En-tête de la sous-feuille
+    c.save();
+    c.fillStyle = isSel ? "#1b2836" : "#111f2c";
+    c.beginPath();
+    c.moveTo(b.x + 6, b.y);
+    c.lineTo(b.x + b.w - 6, b.y);
+    c.arcTo(b.x + b.w, b.y, b.x + b.w, b.y + 6, 6);
+    c.lineTo(b.x + b.w, b.y + 30);
+    c.lineTo(b.x, b.y + 30);
+    c.lineTo(b.x, b.y + 6);
+    c.arcTo(b.x, b.y, b.x + 6, b.y, 6);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = isSel ? C_SEL : "#00c4df";
+    c.lineWidth = 1;
+    c.beginPath(); c.moveTo(b.x, b.y + 30); c.lineTo(b.x + b.w, b.y + 30); c.stroke();
+    c.restore();
+
+    // Titre et statistiques
+    const title = "⊞ Feuille " + b.sheetIndex + " : " + (b.name.replace(/^Feuille\s*\d+\s*:\s*/i, ""));
+    TXT(c, title, b.x + 12, b.y + 16, 11, "#ffffff", "left");
+    TXT(c, b.nComps + " composant(s) · " + b.nWires + " fil(s)", b.x + b.w - 12, b.y + 16, 9.5, "#94a3b8", "right");
+
+    // Dessin des Sheet Pins (broches de ports) sur les côtés gauche et droit
+    const dessinerPin = (pin) => {
+      const px = pin.x, py = pin.y;
+      const isBus = pin.isBus;
+      const isPower = pin.isPower;
+      const isHoverPin = (S.hoverSheetPort && S.hoverSheetPort.name === pin.name);
+
+      c.save();
+      // Connecteur sur le bord
+      if(isBus){
+        c.strokeStyle = isHoverPin ? "#ffffff" : C_BUS;
+        c.lineWidth = 2.4;
+        c.beginPath();
+        if(pin.side === "left"){
+          c.moveTo(px - 6, py - 4.5);
+          c.lineTo(px, py);
+          c.lineTo(px - 6, py + 4.5);
+        } else {
+          c.moveTo(px, py - 4.5);
+          c.lineTo(px + 6, py);
+          c.lineTo(px, py + 4.5);
+        }
+        c.stroke();
+      } else {
+        c.fillStyle = isHoverPin ? "#ffffff" : (isPower ? (pin.name.toUpperCase().includes("GND") ? "#22c55e" : "#ef4444") : "#38bdf8");
+        c.beginPath();
+        c.rect(pin.side === "left" ? (px - 4) : (px), py - 3, 4, 6);
+        c.fill();
+      }
+
+      // Étiquette du port
+      const colTxt = isHoverPin ? "#ffffff" : (isBus ? "#00e5ff" : (isPower ? (pin.name.toUpperCase().includes("GND") ? "#4ade80" : "#f87171") : "#cbd5e1"));
+      const align = pin.side === "left" ? "left" : "right";
+      const tx = pin.side === "left" ? (px + 10) : (px - 10);
+      TXT(c, (isBus ? "≡ " : "") + pin.name, tx, py + 3.5, 9.5, colTxt, align);
+      c.restore();
+    };
+
+    (b.leftPins || []).forEach(dessinerPin);
+    (b.rightPins || []).forEach(dessinerPin);
+
+    // Si aucun port déclaré
+    if((!b.leftPins || !b.leftPins.length) && (!b.rightPins || !b.rightPins.length)){
+      TXT(c, "Aucun port ou bus déclaré dans cette feuille", b.x + b.w/2, b.y + 65, 9.5, "#64748b", "center");
+    }
+
+    // Bouton de navigation
+    c.fillStyle = "rgba(0, 196, 223, 0.12)";
+    drawRoundRectPath(c, b.x + 12, b.y + b.h - 26, b.w - 24, 20, 4);
+    c.fill();
+    c.strokeStyle = "rgba(0, 196, 223, 0.35)";
+    c.lineWidth = 1;
+    drawRoundRectPath(c, b.x + 12, b.y + b.h - 26, b.w - 24, 20, 4);
+    c.stroke();
+    TXT(c, "Double-clic pour ouvrir la feuille ➔", b.x + b.w/2, b.y + b.h - 13, 9.5, "#8af0ff", "center");
+
+    c.restore();
+  }
+
+  c.restore();
 }
 function drawSel(c){
   // traits graphiques : halo sous le tracé + poignées carrées aux extrémités

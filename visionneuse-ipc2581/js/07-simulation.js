@@ -910,7 +910,14 @@ function simBornesNetsIpc(comp){
   const nets = new Set();
   for(const src of [comp.pads || [], comp.pins || []]){
     for(const q of src){
-      const nom = mdlNetNom(q.n == null ? -1 : q.n);
+      let nom = "";
+      if(q.net) nom = String(q.net).trim();
+      else if(typeof q.n === "string") nom = q.n.trim();
+      else if(q.n != null && typeof q.n === "number" && q.n >= 0){
+        nom = (typeof mdlNetNom === "function") ? mdlNetNom(q.n) : ((typeof V !== "undefined" && V && V.modele && V.modele.nets && V.modele.nets[q.n]) || "");
+      }else if(q.pad && q.pad.n != null && q.pad.n >= 0){
+        nom = (typeof mdlNetNom === "function") ? mdlNetNom(q.pad.n) : ((typeof V !== "undefined" && V && V.modele && V.modele.nets && V.modele.nets[q.pad.n]) || "");
+      }
       if(nom) nets.add(nom);
     }
   }
@@ -4868,6 +4875,207 @@ const SIM_IPC={
       }
     }
     return [...res].filter(Boolean);
+  },
+
+  /* Rails d'alimentation disponibles pour la simulation PDN */
+  pdnRails:function(){
+    const rails = new Set();
+    const isGnd = n => /^(gnd|0v|vss|ground|earth|mass|masse|[adp]?gnd.*)$/i.test(String(n).trim());
+    const isPwr = n => {
+      if(!n || typeof n !== "string" || isGnd(n)) return false;
+      const s = n.trim();
+      return (
+        /^\+\d/i.test(s) ||
+        /\b\d+(\.\d+)?[vV]\d*\b/i.test(s) ||
+        /\b\d+[vVpP]\d*\b/i.test(s) ||
+        /(^|[_\-\.])(vcc|vdd|vbat|vbus|vin|vsys|vmain|vcore|vio|avdd|dvdd|vdda|vddd|vref|pwr|power|alim|supply|batt|pos|rail)([_\-\.]|$)/i.test(s) ||
+        /^(vcc|vdd|vbat|vbus|vin|vsys|vmain|vcore|vio|avdd|dvdd|pwr|power|alim)/i.test(s) ||
+        /^(p\d+v|p\d+p\d+)/i.test(s)
+      );
+    };
+
+    const aDesNets = (typeof V !== "undefined" && V && Array.isArray(V.parNet) && V.parNet.length > 0);
+
+    if(aDesNets){
+      // 1. Net actuellement sélectionné par l'utilisateur (s'il existe et n'est pas GND)
+      if(V.net != null && V.net >= 0 && V.parNet[V.net] && V.parNet[V.net].nom){
+        const nomSel = V.parNet[V.net].nom;
+        if(!isGnd(nomSel)) rails.add(nomSel);
+      }
+      if(typeof selNets === "function"){
+        try {
+          for(const idx of selNets()){
+            const n = (typeof mdlNetNom === "function") ? mdlNetNom(idx) : (V.parNet[idx] ? V.parNet[idx].nom : "");
+            if(n && !isGnd(n)) rails.add(n);
+          }
+        } catch(_) {}
+      }
+
+      // 2. Détection via les condensateurs de découplage reliés à la masse
+      if(V.modele && Array.isArray(V.modele.composants)){
+        for(const comp of V.modele.composants){
+          const ref = comp.ref || "";
+          const isCapa = /^[cC]/i.test(ref) || /cap/i.test(comp.type || "") || /cap/i.test(comp.part || "") || /[pnum]F/i.test(comp.val || "");
+          if(!isCapa) continue;
+          const bn = (typeof simBornesNetsIpc === "function") ? simBornesNetsIpc(comp) : new Set();
+          let compHasGnd = false;
+          const candNets = [];
+          bn.forEach(n => {
+            if(isGnd(n)) compHasGnd = true;
+            else candNets.push(n);
+          });
+          if(compHasGnd){
+            for(const n of candNets) rails.add(n);
+          }
+        }
+      }
+
+      // 3. Détection par nom (regex étendue)
+      for(const n of V.parNet){
+        if(n && n.nom && isPwr(n.nom)){
+          rails.add(n.nom);
+        }
+      }
+
+      // 4. Plans d'alimentation
+      for(const n of V.parNet){
+        if(n && n.plans && n.plans.length > 0 && n.nom && !isGnd(n.nom)){
+          rails.add(n.nom);
+        }
+      }
+    }
+
+    const arr = [...rails].filter(Boolean);
+    if(arr.length) return arr.sort((a,b) => a.localeCompare(b, "fr", {numeric:true}));
+
+    // Si une carte est chargée mais aucun rail détecté par heuristique,
+    // on renvoie TOUS les nets de la carte (sauf la masse) plutôt que d'inventer des faux nets !
+    if(aDesNets){
+      const tous = V.parNet.map(n => n.nom).filter(n => n && !isGnd(n));
+      if(tous.length) return tous.sort((a,b) => a.localeCompare(b, "fr", {numeric:true}));
+    }
+
+    // Seulement si aucune carte n'est ouverte (banc de test ou accueil)
+    return ["+3V3", "+5V", "VCC", "VDD"];
+  },
+
+  /* Tous les nets de la carte pour permettre à l'utilisateur de simuler n'importe quel rail */
+  pdnTousNets:function(){
+    if(typeof V === "undefined" || !V || !Array.isArray(V.parNet)) return [];
+    const isGnd = n => /^(gnd|0v|vss|ground|earth|mass|masse|[adp]?gnd.*)$/i.test(String(n).trim());
+    return V.parNet.map(n => n.nom).filter(n => n && !isGnd(n)).sort((a,b) => a.localeCompare(b, "fr", {numeric:true}));
+  },
+
+  /* Condensateurs raccordés entre un rail et la masse avec parasites réels Murata/catalogue */
+  pdnCondensateurs:function(net){
+    if(!net || typeof V === "undefined" || !V || !V.modele || !Array.isArray(V.modele.composants)) return [];
+    const isGnd = n => /^(gnd|0v|vss|ground|earth|mass|masse|[adp]?gnd.*)$/i.test(String(n).trim());
+    const isTargetNet = n => n && String(n).trim().toLowerCase() === String(net).trim().toLowerCase();
+
+    const res = [];
+    let idx = 1;
+    const k = (V.unite === "in") ? 25.4 : 1;
+
+    for(const comp of V.modele.composants){
+      const ref = comp.ref || "";
+      const isCapa = /^[cC]/i.test(ref) || /cap/i.test(comp.type || "") || /cap/i.test(comp.part || "") || /[pnum]F/i.test(comp.val || "");
+      if(!isCapa) continue;
+
+      const bn = (typeof simBornesNetsIpc === "function") ? simBornesNetsIpc(comp) : new Set();
+      // En complément, inspection directe des pins/pads
+      if(!bn.size){
+        const pins = (comp.pins && comp.pins.length) ? comp.pins : (comp.pads || []);
+        for(const p of pins){
+          let nom = "";
+          if(p.net) nom = String(p.net).trim();
+          else if(typeof p.n === "string") nom = p.n.trim();
+          else if(p.n != null && typeof p.n === "number" && p.n >= 0){
+            nom = (typeof mdlNetNom === "function") ? mdlNetNom(p.n) : ((V.parNet && V.parNet[p.n] && V.parNet[p.n].nom) || "");
+          }
+          if(nom) bn.add(nom);
+        }
+      }
+
+      let hasNet = false;
+      let hasGnd = false;
+      bn.forEach(n => {
+        if(isTargetNet(n)) hasNet = true;
+        if(isGnd(n)) hasGnd = true;
+      });
+
+      if(hasNet && hasGnd){
+        const pkg = String(comp.package || comp.pkg || "").toUpperCase();
+        let lMount = 0.8e-9;
+        if(/0201/i.test(pkg)) lMount = 0.35e-9;
+        else if(/0402/i.test(pkg)) lMount = 0.50e-9;
+        else if(/0603/i.test(pkg)) lMount = 0.75e-9;
+        else if(/0805/i.test(pkg)) lMount = 1.00e-9;
+        else if(/1206/i.test(pkg)) lMount = 1.30e-9;
+        else if(/radial|elec|tant/i.test(pkg)) lMount = 2.50e-9;
+
+        const rawVal = comp.val || comp.valeur || comp.value || "100nF";
+        const cap = (typeof simValeurFaradsIpc === "function" ? simValeurFaradsIpc(rawVal) : (typeof simValeurFarads === "function" ? simValeurFarads(rawVal) : 100e-9)) || 100e-9;
+        let esr = 0.02, esl = 0.45e-9, prov = "defaut";
+        const dict = typeof SIM_PARASITES_MURATA !== "undefined" ? SIM_PARASITES_MURATA : (typeof window !== "undefined" ? window.SIM_PARASITES_MURATA : null);
+        if(dict){
+          const mpn = String(comp.mpn || comp["Part Number"] || "").toUpperCase();
+          const hit = (mpn ? dict[mpn] : null);
+          if(hit){
+            if(hit.esr != null){ esr = hit.esr; prov = "spice"; }
+            if(hit.esl != null){ esl = hit.esl; prov = "spice"; }
+          }
+        }
+        const f0Mhz = (cap > 0 && (esl + lMount) > 0) ? (1 / (2 * Math.PI * Math.sqrt((esl + lMount) * cap)) * 1e-6) : 0;
+
+        const cx = (typeof comp.x === "number") ? parseFloat((comp.x * k).toFixed(2)) : null;
+        const cy = (typeof comp.y === "number") ? parseFloat((comp.y * k).toFixed(2)) : null;
+
+        res.push({
+          id: idx++,
+          ref: ref,
+          val: rawVal,
+          pkg: comp.package || comp.pkg || "0402",
+          mpn: comp.mpn || "",
+          cap: cap,
+          esr: esr,
+          esl: esl,
+          lMount: lMount,
+          prov: prov,
+          f0: parseFloat(f0Mhz.toFixed(1)),
+          x: cx,
+          y: cy,
+          actif: true
+        });
+      }
+    }
+    return res;
+  },
+
+  /* Propriétés de la cavité de plans pour le rail */
+  pdnCavitePlans:function(net){
+    let surfaceCm2=25.0;
+    let epaisseurUm=100.0;
+    let er=4.3;
+    let dimXmm=50.0;
+    let dimYmm=50.0;
+    const k = (typeof V !== "undefined" && V.unite === "in") ? 25.4 : 1;
+    if(typeof V !== "undefined" && V.bbox){
+      const bw = Math.abs((V.bbox.x2 || 0) - (V.bbox.x1 || 0)) * k;
+      const bh = Math.abs((V.bbox.y2 || 0) - (V.bbox.y1 || 0)) * k;
+      if(bw > 1) dimXmm = parseFloat(bw.toFixed(1));
+      if(bh > 1) dimYmm = parseFloat(bh.toFixed(1));
+      surfaceCm2 = parseFloat(Math.max(1.0, (dimXmm * dimYmm * 0.6) / 100).toFixed(2));
+    }
+    if(typeof LT !== "undefined" && LT.cu && LT.cu.length){
+      for(const cu of LT.cu){
+        if(cu.diType === "core" || cu.diType === "prepreg"){
+          if(cu.diEp) epaisseurUm = parseFloat((cu.diEp * 1000).toFixed(1));
+          if(cu.er) er = parseFloat(cu.er.toFixed(2));
+          break;
+        }
+      }
+    }
+    return {surfaceCm2, epaisseurUm, er, dimXmm, dimYmm};
   },
 
   astuce:function(t){

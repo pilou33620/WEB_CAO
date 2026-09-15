@@ -4662,6 +4662,10 @@ def _section_locale(couches, scene, w_v, w_a, ecart, cote, t_r, cache):
         "z_diff": float(paire["z_diff"]) if paire.get("z_diff") else None,
         "z_commune": (float(paire["z_commune"])
                       if paire.get("z_commune") else None),
+        "eps_eff_impair": (float(paire["eps_eff_impair"])
+                           if paire.get("eps_eff_impair") else None),
+        "eps_eff_pair": (float(paire["eps_eff_pair"])
+                         if paire.get("eps_eff_pair") else None),
         "z0": float(r["lignes"][rangs[0]]["z0"]),
         "ecart": q,
     }
@@ -4753,6 +4757,12 @@ def _chaleur_scene(couches, scene, fiches, t_r, chaleur, cache):
             loc = val["loc"]
             c["z_diff"] = (round(loc["z_diff"], 2)
                            if loc.get("z_diff") else None)
+            c["z_commune"] = (round(loc["z_commune"], 2)
+                              if loc.get("z_commune") else None)
+            c["eps_eff_impair"] = (round(loc["eps_eff_impair"], 4)
+                                   if loc.get("eps_eff_impair") else None)
+            c["eps_eff_pair"] = (round(loc["eps_eff_pair"], 4)
+                                 if loc.get("eps_eff_pair") else None)
             c["z_diff_net"] = net
             c["z_diff_declare"] = declare
 
@@ -5120,6 +5130,149 @@ def _couplage(couches, objets, doc, analyse, avertissements):
                 " droite."
             ),
         ],
+    }
+
+
+def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_diff, doc, analyse, avertissements, topo):
+    """Calcule la cascade de paramètres S en mode mixte pour la paire différentielle :
+    - Sdd : différentiel pur 2x2 (sur z_ref_diff, ex: 100 Ω ou 90 Ω)
+    - Scc : mode commun pur 2x2 (sur z_ref_comm = z_ref_diff / 4.0, ex: 25 Ω)
+    - Scd : conversion différentiel -> commun issue du déséquilibre / skew (ΔL)
+    - touchstone_sdd : chaîne au format Touchstone .s2p différentiel
+    - touchstone_scc : chaîne au format Touchstone .s2p mode commun
+    """
+    if not topo or not topo.get("cascadable") or not len(freqs):
+        return None
+
+    chaleur = (couplage or {}).get("chaleur") or []
+    paires = (couplage or {}).get("paires") or []
+    partenaire = None
+    for p in paires:
+        if p.get("differentielle"):
+            partenaire = p.get("net_voisin")
+            break
+    if partenaire is None and paires:
+        partenaire = paires[0].get("net_voisin")
+    if partenaire is None:
+        for c in chaleur:
+            if c and c.get("z_diff_net"):
+                partenaire = c["z_diff_net"]
+                break
+
+    mode_force = bool(doc.get("mode_diff") or (analyse or {}).get("mode_diff"))
+    if not partenaire and not mode_force:
+        return None
+
+    z_ref_diff = float(z_ref_diff or 100.0)
+    if z_ref_diff <= 0:
+        z_ref_diff = 100.0
+    z_ref_comm = z_ref_diff / 4.0
+
+    long_p = sum(s["longueur"] for s in segments if s.get("z0", 0) > 0)
+    voisinage = doc.get("voisinage") or []
+    def _longueur_v(v):
+        if v.get("length"):
+            return _nombre(v["length"], 0.0)
+        if v.get("longueur"):
+            return _nombre(v["longueur"], 0.0)
+        if v.get("start") and v.get("end"):
+            return math.hypot(v["end"][0] - v["start"][0], v["end"][1] - v["start"][1])
+        if "x1" in v and "y1" in v and "x2" in v and "y2" in v:
+            return math.hypot(v["x2"] - v["x1"], v["y2"] - v["y1"])
+        return 0.0
+
+    long_n = sum(_longueur_v(v) for v in voisinage if v.get("net") == partenaire)
+    delta_l_mm = abs(long_p - long_n) if (long_n > 0 and long_p > 0) else 0.0
+
+    matrices_sdd = []
+    matrices_scc = []
+    matrices_scd = []
+
+    for f in freqs:
+        f_flt = float(f)
+        abcd_diff = np.eye(2, dtype=complex)
+        abcd_comm = np.eye(2, dtype=complex)
+
+        for i, seg in enumerate(segments):
+            if seg.get("z0", 0) <= 0:
+                continue
+            L_m = seg["longueur"] * 1e-3
+            c = chaleur[i] if (i < len(chaleur) and chaleur[i]) else None
+
+            if c and c.get("z_diff"):
+                z_diff_k = float(c["z_diff"])
+                z_comm_k = float(c.get("z_commune") or (z_diff_k / 4.0))
+                eps_odd = float(c.get("eps_eff_impair") or seg.get("eps_eff", 4.0))
+                eps_even = float(c.get("eps_eff_pair") or seg.get("eps_eff", 4.0))
+            else:
+                z_diff_k = 2.0 * float(seg["z0"])
+                z_comm_k = float(seg["z0"]) / 2.0
+                eps_odd = float(seg.get("eps_eff", 4.0))
+                eps_even = float(seg.get("eps_eff", 4.0))
+
+            w_m = float(seg.get("largeur", 0.2)) * 1e-3
+            er = float(seg.get("er", 4.3))
+            tand = float(seg.get("tan_delta", 0.02))
+            ep_m = float(seg.get("cuivre", 0.035)) * 1e-3
+
+            ac_odd, ad_odd = tl.line_losses(z_diff_k / 2.0, eps_odd, w_m, er, tand, f_flt, ep_m)
+            alpha_odd = ac_odd + ad_odd
+            beta_odd = 2.0 * math.pi * f_flt * math.sqrt(max(eps_odd, 1.0)) / tl.C_0
+            gamma_odd = alpha_odd + 1j * beta_odd
+            ch_odd = np.cosh(gamma_odd * L_m)
+            sh_odd = np.sinh(gamma_odd * L_m)
+            m_odd = np.array([[ch_odd, z_diff_k * sh_odd],
+                              [sh_odd / z_diff_k, ch_odd]], dtype=complex)
+            abcd_diff = abcd_diff @ m_odd
+
+            ac_even, ad_even = tl.line_losses(2.0 * z_comm_k, eps_even, w_m, er, tand, f_flt, ep_m)
+            alpha_even = ac_even + ad_even
+            beta_even = 2.0 * math.pi * f_flt * math.sqrt(max(eps_even, 1.0)) / tl.C_0
+            gamma_even = alpha_even + 1j * beta_even
+            ch_even = np.cosh(gamma_even * L_m)
+            sh_even = np.sinh(gamma_even * L_m)
+            m_even = np.array([[ch_even, z_comm_k * sh_even],
+                               [sh_even / z_comm_k, ch_even]], dtype=complex)
+            abcd_comm = abcd_comm @ m_even
+
+        s_dd = tl.cascade_to_s(abcd_diff, z_ref_diff)
+        s_cc = tl.cascade_to_s(abcd_comm, z_ref_comm)
+
+        eps_moy = float(segments[0].get("eps_eff", 4.0)) if segments else 4.0
+        delta_tau = (delta_l_mm * 1e-3 * math.sqrt(max(eps_moy, 1.0))) / tl.C_0
+        phi_skew = math.pi * f_flt * delta_tau
+        scd21_mag = abs(s_dd[1, 0]) * abs(math.sin(phi_skew))
+        scd21_mag = max(1e-7, min(1.0, scd21_mag))
+        s_cd = np.array([[1e-7, 1e-7],
+                         [scd21_mag, 1e-7]], dtype=complex)
+
+        matrices_sdd.append(s_dd)
+        matrices_scc.append(s_cc)
+        matrices_scd.append(s_cd)
+
+    entete_sdd = [
+        "WEB_CAO -- Parametres S differentiels purs (Sdd)",
+        "Paire : %s / %s" % (doc.get("net") or "P", partenaire or "N"),
+        "Impedance de reference differentielle : %.1f ohm" % z_ref_diff,
+        "Skew mesure : %.3f mm" % delta_l_mm
+    ]
+    entete_scc = [
+        "WEB_CAO -- Parametres S de mode commun pur (Scc)",
+        "Paire : %s / %s" % (doc.get("net") or "P", partenaire or "N"),
+        "Impedance de reference mode commun : %.1f ohm" % z_ref_comm,
+        "Skew mesure : %.3f mm" % delta_l_mm
+    ]
+
+    return {
+        "partenaire": partenaire,
+        "delta_l_mm": round(delta_l_mm, 4),
+        "z_ref_diff": z_ref_diff,
+        "z_ref_comm": z_ref_comm,
+        "s_dd": [[[float(v.real), float(v.imag)] for v in m.flatten()] for m in matrices_sdd],
+        "s_cc": [[[float(v.real), float(v.imag)] for v in m.flatten()] for m in matrices_scc],
+        "s_cd": [[[float(v.real), float(v.imag)] for v in m.flatten()] for m in matrices_scd],
+        "touchstone_sdd": touchstone(freqs, matrices_sdd, z_ref_diff, entete_sdd) if matrices_sdd else "",
+        "touchstone_scc": touchstone(freqs, matrices_scc, z_ref_comm, entete_scc) if matrices_scc else "",
     }
 
 
@@ -5523,6 +5676,13 @@ def simuler(doc, journal=None):
     # avertissements se rangent a la suite des autres.
     couplage = _couplage(couches, objets, doc, analyse, avertissements)
 
+    z_ref_diff = float(analyse.get("z_ref_diff") or doc.get("cible_diff") or 100.0)
+    if z_ref_diff <= 0:
+        z_ref_diff = 100.0
+    s_diff = _cascade_differentielle(couches, objets, segments, couplage,
+                                     freqs, z_ref_diff, doc, analyse,
+                                     avertissements, topo)
+
     return {
         "format": FORMAT_RESULTAT,
         "version": VERSION,
@@ -5565,6 +5725,8 @@ def simuler(doc, journal=None):
         # Voir `_couplage`. Ce qu'une voisine PREND est ailleurs, dans
         # `crosstalk.py` : autre route, autre calcul, autre resultat.
         "couplage": couplage,
+        # CASCADE DIFFERENTIELLE : Sdd (differentiel pur), Scc (mode commun), Scd (conversion)
+        "s_diff": s_diff,
         "duree": round(duree, 3),
         "avertissements": avertissements,
     }

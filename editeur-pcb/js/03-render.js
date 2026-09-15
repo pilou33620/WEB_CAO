@@ -489,6 +489,54 @@ function drawSilk(c){
       c.lineCap = "round";
       c.lineJoin = "round";
       const isRect = d.shape === "rect";
+      const isText = d.shape === "text";
+      if(isText){
+        const mirror = (d.layer === "silkB") !== (!!S.flip);
+        const strokes = (typeof textStrokes === "function")
+          ? textStrokes(d.text != null ? d.text : "TEXT", d.x1, d.y1, d.size || d.height || 1.5, mirror, d.rot || 0)
+          : [];
+        if(sel){
+          c.strokeStyle = C_SEL;
+          c.lineWidth = Math.max(d.width || 0.15, px(2)) + px(3);
+          c.globalAlpha = 0.4;
+          for(const poly of strokes){
+            if(poly.length < 2) continue;
+            c.beginPath();
+            c.moveTo(poly[0].x, poly[0].y);
+            for(let k = 1; k < poly.length; k++) c.lineTo(poly[k].x, poly[k].y);
+            c.stroke();
+          }
+        }
+        c.globalAlpha = S.hlNet ? 0.55 : 1;
+        c.strokeStyle = sel ? C_SEL : (top ? C_SILK_T : C_SILK_B);
+        c.lineWidth = Math.max(d.width || 0.15, px(1));
+        for(const poly of strokes){
+          if(poly.length < 2) continue;
+          c.beginPath();
+          c.moveTo(poly[0].x, poly[0].y);
+          for(let k = 1; k < poly.length; k++) c.lineTo(poly[k].x, poly[k].y);
+          c.stroke();
+        }
+        if(sel){
+          c.save();
+          c.strokeStyle = C_SEL;
+          c.lineWidth = px(1);
+          c.setLineDash([px(3), px(2)]);
+          const L = String(d.text != null ? d.text : "TEXT").length;
+          const h = d.size || d.height || 1.5;
+          const hw = Math.max(0.5, (L * (5 * (h / 6))) / 2) + px(2);
+          const hh = Math.max(0.5, h / 2) + px(2);
+          c.translate(d.x1, d.y1);
+          c.rotate((d.rot || 0) * Math.PI / 180);
+          c.strokeRect(-hw, -hh, hw * 2, hh * 2);
+          c.restore();
+          c.fillStyle = C_SEL;
+          const hr = px(3);
+          c.beginPath(); c.arc(d.x1, d.y1, hr, 0, Math.PI * 2); c.fill();
+        }
+        c.restore();
+        continue;
+      }
       if(sel){
         c.strokeStyle = C_SEL;
         c.lineWidth = Math.max(d.width||0.15, px(2)) + px(3);
@@ -818,7 +866,45 @@ function drawHover(c){
   if(S.mode==="select"||!S.hover)return;
   const h=S.hover;
   c.strokeStyle=C_SEL;c.lineWidth=px(1.6);
+  if(S.mode==="hole"){
+    const d=S.curHoleD||3.2;
+    c.beginPath();c.arc(h.x,h.y,d/2,0,Math.PI*2);c.stroke();
+    c.setLineDash([px(3),px(2)]);
+    c.beginPath();c.arc(h.x,h.y,d/2,0,Math.PI*2);c.stroke();
+    c.setLineDash([]);
+    return;
+  }
+  if(S.mode==="silk"&&S.silkShape==="text"){
+    c.save();
+    c.setLineDash([px(3),px(2)]);
+    c.strokeRect(h.x-px(15),h.y-px(6),px(30),px(12));
+    c.restore();
+    return;
+  }
   c.beginPath();c.arc(h.x,h.y,px(7),0,Math.PI*2);c.stroke();
+}
+function drawHoles(c){
+  if(!S.holes)return;
+  for(const h of S.holes){
+    const r=h.d/2;
+    c.fillStyle=C_BG;
+    c.beginPath();c.arc(h.x,h.y,r,0,Math.PI*2);c.fill();
+    c.strokeStyle="#8da2b5";
+    c.lineWidth=px(1.2);
+    c.beginPath();c.arc(h.x,h.y,r,0,Math.PI*2);c.stroke();
+    const cr=Math.min(r,Math.max(px(3),0.8));
+    c.beginPath();
+    c.moveTo(h.x-cr,h.y);c.lineTo(h.x+cr,h.y);
+    c.moveTo(h.x,h.y-cr);c.lineTo(h.x,h.y+cr);
+    c.stroke();
+    if(h.d*S.scale>20&&typeof TXT==="function"){
+      TXT(c,"Ø"+fmt(h.d,2),h.x,h.y+r+px(8),px(9),"#8da2b5");
+    }
+    if(S.sel.holes&&S.sel.holes.has(h.id)){
+      c.strokeStyle=C_SEL;c.lineWidth=px(1.8);
+      c.beginPath();c.arc(h.x,h.y,r+px(2.5),0,Math.PI*2);c.stroke();
+    }
+  }
 }
 function paint(c,dpr,w,h,noGrid){
   c.setTransform(1,0,0,1,0,0);
@@ -850,6 +936,7 @@ function paint(c,dpr,w,h,noGrid){
   }
   drawViaMarks(c);                             // contour et perçage : par-dessus
   drawThruMarks(c);
+  drawHoles(c);
   drawNetPads(c);
   drawRats(c);
   drawSilk(c);

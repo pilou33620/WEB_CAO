@@ -515,7 +515,7 @@ function elibFiltrerEtAfficher() {
 
     const name = it["Part Name"] || "Composant";
     const val = it["Value"] || "";
-    const pkg = it["Package type"] || it["Empreinte PCB"] || "—";
+    const pkg = it["Package type"] || (it["Empreinte PCB"] ? String(it["Empreinte PCB"]).replace(/^.*[\\\/]/, "").replace(/\.json$/i, "") : "") || "—";
     const hasSp = elibHasSpice(it);
     const isS = elibIsSmd(it);
     const isT = elibIsTht(it);
@@ -589,7 +589,7 @@ function elibAfficherDetails(it) {
 
   const name = it["Part Name"] || "Composant";
   const val = it["Value"] || "";
-  const pkg = it["Package type"] || it["Empreinte PCB"] || "Non défini";
+  const pkg = it["Package type"] || (it["Empreinte PCB"] ? String(it["Empreinte PCB"]).replace(/^.*[\\\/]/, "").replace(/\.json$/i, "") : "") || "Non défini";
   const mfr = it["Manufacturer"] || "";
   const mpn = it["Part Number"] || it["Part Number "] || "";
   const desc = it["Description"] || "Aucune description détaillée disponible.";

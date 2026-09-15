@@ -68,8 +68,40 @@ function wireInfo(wires){
   const kind=w.bus?"Bus":"Fil";
   const dir=(w.x1===w.x2)?kind+" vertical":(w.y1===w.y2)?kind+" horizontal":kind+" oblique";
   const pt=(x,y)=>Math.round(x/G)+" , "+Math.round(y/G);
+
+  let extraSection = "";
+  if(w.bus){
+    const signaux = (typeof schDevelopperSignauxBus === "function") ? schDevelopperSignauxBus(w.net) : [];
+    const occupes = (typeof schSignauxOccupesSurBus === "function") ? schSignauxOccupesSurBus(w) : new Set();
+    const chips = signaux.map(s => {
+      const isOcc = occupes.has(s);
+      return '<span style="display:inline-block; font-family:var(--mono); font-size:10px; padding:2px 6px; border-radius:3px; margin:2px; '+
+        (isOcc ? 'background:#09242b; border:1px solid #00c4df; color:#8af0ff;' : 'background:#1f242d; border:1px solid #374151; color:#9ca3af;') +
+        '">' + esc(s) + (isOcc ? ' ✓' : '') + '</span>';
+    }).join("");
+
+    extraSection = '<div class="prop"><label>Faisceau de bus ('+signaux.length+' signaux)</label>' +
+      '<div style="background:var(--bg); border:1px solid var(--border2); border-radius:4px; padding:6px; max-height:80px; overflow-y:auto;">' +
+      (chips || '<span style="color:var(--txt-dim); font-size:11px;">Aucun signal déduit (nommez le bus ex: D[0..7])</span>') +
+      '</div></div>' +
+      '<div class="prop"><div class="row"><button class="tb on" id="pBusTap" style="background:#00c4df; color:#0b0d11; font-weight:bold;">⚡ Piquer un signal</button></div></div>';
+  } else {
+    const piq = (typeof schPiquageSurFil === "function") ? schPiquageSurFil(w) : null;
+    if(piq){
+      const signaux = (typeof schDevelopperSignauxBus === "function") ? schDevelopperSignauxBus(piq.busName) : [];
+      let opts = '<option value="">— personnalisé / autre —</option>';
+      for(const s of signaux){
+        opts += '<option value="'+esc(s)+'"'+(w.net === s ? ' selected' : '')+'>'+esc(s)+'</option>';
+      }
+      extraSection = '<div class="prop"><label>Piquage du bus « '+esc(piq.busName)+' »</label>' +
+        '<select id="pPiqSelect" style="margin-top:4px;">' + opts + '</select>' +
+        '</div>';
+    }
+  }
+
   return '<div class="prop"><label>Sélection</label><input value="'+dir+'" disabled></div>'+
     netHtml+
+    extraSection+
     '<div class="prop"><label>Départ (pas de grille)</label><input value="'+esc(pt(w.x1,w.y1))+'" disabled></div>'+
     '<div class="prop"><label>Arrivée</label><input value="'+esc(pt(w.x2,w.y2))+'" disabled></div>'+
     '<div class="prop"><label>Longueur</label><input value="'+len+'" disabled>'+
@@ -742,6 +774,28 @@ function bindNetBlock(wires){
     setNetName(net,inp.value);
     refreshPanels();draw();
   };
+
+  const bBusTap = document.getElementById("pBusTap");
+  if(bBusTap){
+    bBusTap.onclick = () => {
+      if(wires.length && typeof schOuvrirPiquageModal === "function"){
+        schOuvrirPiquageModal(wires[0], null, {x: wires[0].x1, y: wires[0].y1});
+      }
+    };
+  }
+  const pPiqSelect = document.getElementById("pPiqSelect");
+  if(pPiqSelect && wires.length){
+    pPiqSelect.onchange = e => {
+      const v = e.target.value;
+      if(v){
+        push();
+        wires[0].net = v;
+        touchWires();
+        refreshPanels();
+        draw();
+      }
+    };
+  }
 }
 /* ---------- panneau : nomenclature ou liste des nets ---------- */
 function setListTab(t){

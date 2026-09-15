@@ -649,7 +649,7 @@ const S = {
   show:{silkT:true,silkB:true,edge:true,rats:true,plane:true,drc:true,
         maskT:false,maskB:false,pasteT:false,pasteB:false},
   board:{x:0,y:0,w:100,h:80,pts:null},   // pts = contour libre, sinon rectangle
-  fps:[], tracks:[], vias:[], zones:[], cuts:[], drawings:[],
+  fps:[], tracks:[], vias:[], zones:[], cuts:[], holes:[], drawings:[],
   /* `corner` : l'angle imposé aux pistes tracées — « 45 » par défaut, c'est la
      règle de l'art ; « 90 » pour un tracé orthogonal strict, « free » pour un
      angle quelconque. */
@@ -678,7 +678,7 @@ const S = {
   coord:{open:false,mode:"abs"},       // saisie de coordonnées au clavier
   avoid:true,                          // le tracé se tient à distance des obstacles
   mode:"select",
-  sel:{fps:new Set(),tracks:new Set(),vias:new Set(),zones:new Set(),cuts:new Set(),drawings:new Set(),edge:false},
+  sel:{fps:new Set(),tracks:new Set(),vias:new Set(),zones:new Set(),cuts:new Set(),holes:new Set(),drawings:new Set(),edge:false},
   route:null,                 // tracé de piste en cours
   dp:null,                    // tracé de paire différentielle en cours
   zoneDraft:null,             // zone en cours de saisie
@@ -1193,6 +1193,13 @@ function mkFp(ref,value,pkg,pins){
     fpSyncPins(fp);
   }
   return fp;
+}
+function mkHole(x,y,d){
+  return {id:S.nextId++, x:r3(x||0), y:r3(y||0), d:r3(d||3.2), locked:false};
+}
+function holeBBox(h){
+  const r=(h&&h.d?h.d:3.2)/2;
+  return {x1:h.x-r, y1:h.y-r, x2:h.x+r, y2:h.y+r};
 }
 /* pastilles en coordonnées locales, dans l'ordre des numéros de broche */
 /* --------------------------------------------------------------------------

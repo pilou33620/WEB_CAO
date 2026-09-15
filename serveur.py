@@ -597,12 +597,23 @@ def dossier_lib():
 
 def chemin_lib_fichier(genre, nom_brut):
     """Valide le genre et le nom de fichier pour eviter toute traversee de dossier."""
-    if genre not in LIB_SOUS_DOSSIERS:
+    genre_canon = {
+        "pcb": "pcb",
+        "empreinte": "pcb",
+        "schematique": "schematique",
+        "symbole": "schematique",
+        "simulation": "simulation"
+    }.get(genre)
+    if not genre_canon or genre_canon not in LIB_SOUS_DOSSIERS:
         raise ErreurLib(400, "Genre de bibliotheque invalide (attendu: pcb, schematique, simulation)")
-    nom = os.path.basename(str(nom_brut or "").strip())
-    if not nom or nom in ('.', '..') or '/' in str(nom_brut) or '\\' in str(nom_brut):
+    s = str(nom_brut or "").strip().replace("\\", "/")
+    parts = [p for p in s.split("/") if p]
+    if ".." in parts or s.startswith("/"):
         raise ErreurLib(400, "Nom de fichier invalide")
-    rep = os.path.join(dossier_lib(), LIB_SOUS_DOSSIERS[genre])
+    nom = os.path.basename(s)
+    if not nom or nom in ('.', '..'):
+        raise ErreurLib(400, "Nom de fichier invalide")
+    rep = os.path.join(dossier_lib(), LIB_SOUS_DOSSIERS[genre_canon])
     os.makedirs(rep, exist_ok=True)
     return os.path.join(rep, nom)
 

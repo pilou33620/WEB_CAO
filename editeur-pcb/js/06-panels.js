@@ -579,10 +579,12 @@ function buildProps(){
      empreinte laissait croire que l'empreinte était seule sélectionnée. */
   const ct=[...S.sel.cuts];
   const dr=selDrawingsPcb();
-  const only=n=>fps.length+tr.length+vi.length+zo.length+ct.length+dr.length===n;
+  const hl=selHolesPcb();
+  const only=n=>fps.length+tr.length+vi.length+zo.length+ct.length+dr.length+hl.length===n;
   if(fps.length===1&&only(1))return propsFp(box,fps[0]);
   if(tr.length===1&&only(1))return propsTrack(box,tr[0]);
   if(vi.length===1&&only(1))return propsVia(box,vi[0]);
+  if(hl.length===1&&only(1))return propsHole(box,hl[0]);
   if(S.sel.edge&&only(0))return propsBoard(box);
   if(zo.length===1&&only(1))return propsZone(box,zo[0]);
   if(dr.length===1&&only(1))return propsDrawing(box,dr[0]);
@@ -607,8 +609,133 @@ function buildProps(){
   const b=$("pArr");
   if(b)b.onclick=()=>{push();arrange(S.fps.slice());touch();draw();};
 }
+function propsHole(box, h){
+  box.innerHTML=
+    '<div class="prop"><label>Trou NPTH</label>'+
+    '<div class="cihint" style="color:var(--txt-dim);font-size:11px;margin-bottom:6px;">Trou mécanique non métallisé autonome hors empreinte</div></div>'+
+    '<div class="prop"><label>Diamètre de perçage (mm)</label>'+
+    '<input id="pHoleD" type="number" step="0.1" min="0.4" max="30" value="'+fmt(h.d,2)+'">'+
+    '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">'+
+    '<button class="tb" style="padding:2px 6px;font-size:10px" id="pHoleM2">M2 (2,2 mm)</button>'+
+    '<button class="tb" style="padding:2px 6px;font-size:10px" id="pHoleM25">M2.5 (2,7 mm)</button>'+
+    '<button class="tb" style="padding:2px 6px;font-size:10px" id="pHoleM3">M3 (3,2 mm)</button>'+
+    '<button class="tb" style="padding:2px 6px;font-size:10px" id="pHoleM4">M4 (4,2 mm)</button>'+
+    '</div></div>'+
+    '<div class="prop two"><div><label>X (mm)</label><input id="pHoleX" type="number" step="0.1" value="'+fmt(h.x,3)+'"></div>'+
+    '<div><label>Y (mm)</label><input id="pHoleY" type="number" step="0.1" value="'+fmt(h.y,3)+'"></div></div>'+
+    '<div class="prop"><label><input id="pHoleLock" type="checkbox"'+(h.locked?' checked':'')+'> Verrouiller la position</label></div>'+
+    '<div class="prop"><div class="row"><button class="tb" id="pHoleDel">Supprimer le trou NPTH</button></div></div>'+
+    '<div class="pinnote">Perçage non plaqué sans cuivre, traversant toutes les couches. '+
+    'Exporté dans le fichier d\'outils Excellon *-NPTH.TXT.</div>';
+
+  const inD=$("pHoleD");
+  if(inD)inD.onchange=e=>{
+    const v=+e.target.value.replace(",",".");
+    if(Number.isFinite(v)&&v>=0.4&&v<=30){
+      push();h.d=r4(v);S.curHoleD=h.d;touch();buildProps();draw();
+    }
+  };
+  const setPreset=d=>{push();h.d=d;S.curHoleD=d;touch();buildProps();draw();};
+  if($("pHoleM2"))$("pHoleM2").onclick=()=>setPreset(2.2);
+  if($("pHoleM25"))$("pHoleM25").onclick=()=>setPreset(2.7);
+  if($("pHoleM3"))$("pHoleM3").onclick=()=>setPreset(3.2);
+  if($("pHoleM4"))$("pHoleM4").onclick=()=>setPreset(4.2);
+
+  const inX=$("pHoleX");
+  if(inX)inX.onchange=e=>{
+    const v=+e.target.value.replace(",",".");
+    if(Number.isFinite(v)){push();h.x=r4(v);touch();buildProps();draw();}
+  };
+  const inY=$("pHoleY");
+  if(inY)inY.onchange=e=>{
+    const v=+e.target.value.replace(",",".");
+    if(Number.isFinite(v)){push();h.y=r4(v);touch();buildProps();draw();}
+  };
+  const inLock=$("pHoleLock");
+  if(inLock)inLock.onchange=e=>{
+    push();h.locked=!!e.target.checked;touch();buildProps();draw();
+  };
+  const bDel=$("pHoleDel");
+  if(bDel)bDel.onclick=deleteSel;
+}
 function propsDrawing(box, d){
+  const isText = d.shape === "text";
   const isRect = d.shape === "rect";
+  if(isText){
+    box.innerHTML=
+      '<div class="prop"><label>Forme</label>'+
+      '<select id="pDrwShape">'+
+      '<option value="text" selected>Texte libre</option>'+
+      '<option value="line">Trait (segment)</option>'+
+      '<option value="rect">Rectangle (cadre)</option>'+
+      '</select></div>'+
+      '<div class="prop"><label>Texte de sérigraphie</label>'+
+      '<input id="pDrwTxt" type="text" value="'+esc(d.text||"")+'"></div>'+
+      '<div class="prop"><label>Couche sérigraphie</label>'+
+      '<select id="pDrwLayer">'+
+      '<option value="silkT"'+(d.layer==="silkT"?" selected":"")+'>F.SilkS (Dessus / Composants)</option>'+
+      '<option value="silkB"'+(d.layer==="silkB"?" selected":"")+'>B.SilkS (Dessous / Cuivre)</option>'+
+      '</select></div>'+
+      '<div class="prop"><label>Hauteur de police (mm)</label>'+
+      '<input id="pDrwSize" type="number" step="0.1" min="0.5" max="25" value="'+fmt(d.size||d.height||1.5,2)+'"></div>'+
+      '<div class="prop"><label>Épaisseur de trait (mm)</label>'+
+      '<input id="pDrwWidth" type="number" step="0.05" min="0.05" max="5" value="'+fmt(d.width||0.15,2)+'"></div>'+
+      '<div class="prop"><label>Orientation / Rotation</label>'+
+      '<select id="pDrwRot">'+
+      '<option value="0"'+(((d.rot||0)%360===0)?' selected':'')+'>0° (Horizontal)</option>'+
+      '<option value="90"'+(((d.rot||0)%360===90)?' selected':'')+'>90° (Vertical)</option>'+
+      '<option value="180"'+(((d.rot||0)%360===180)?' selected':'')+'>180°</option>'+
+      '<option value="270"'+(((d.rot||0)%360===270)?' selected':'')+'>270°</option>'+
+      '</select></div>'+
+      '<div class="prop two"><div><label>X (mm)</label><input id="pDrwX" value="'+fmt(d.x1,3)+'"></div>'+
+      '<div><label>Y (mm)</label><input id="pDrwY" value="'+fmt(d.y1,3)+'"></div></div>'+
+      '<div class="prop"><div class="row"><button class="tb" id="pDrwDel">Supprimer le texte</button></div></div>'+
+      '<div class="pinnote">Texte vectoriel tracé sur la sérigraphie. Exporté dans les fichiers Gerber .GTO et .GBO.</div>';
+
+    const inTxt=$("pDrwTxt");
+    if(inTxt)inTxt.oninput=inTxt.onchange=e=>{
+      push();d.text=e.target.value;touch();draw();
+    };
+    const sShape=$("pDrwShape");
+    if(sShape)sShape.onchange=e=>{
+      push();d.shape=e.target.value;d.type=d.shape;touch();buildProps();draw();
+    };
+    const sLayer=$("pDrwLayer");
+    if(sLayer)sLayer.onchange=e=>{
+      push();d.layer=e.target.value;touch();draw();
+    };
+    const inSize=$("pDrwSize");
+    if(inSize)inSize.onchange=e=>{
+      const v=+e.target.value.replace(",",".");
+      if(Number.isFinite(v)&&v>=0.5&&v<=25){
+        push();d.size=r4(v);d.height=d.size;touch();draw();
+      }
+    };
+    const inWidth=$("pDrwWidth");
+    if(inWidth)inWidth.onchange=e=>{
+      const v=+e.target.value.replace(",",".");
+      if(Number.isFinite(v)&&v>=0.05&&v<=5){
+        push();d.width=r4(v);touch();draw();
+      }
+    };
+    const sRot=$("pDrwRot");
+    if(sRot)sRot.onchange=e=>{
+      push();d.rot=+e.target.value;touch();draw();
+    };
+    const inX=$("pDrwX");
+    if(inX)inX.onchange=e=>{
+      const v=+e.target.value.replace(",",".");
+      if(Number.isFinite(v)){push();d.x1=r4(v);d.x2=d.x1;touch();buildProps();draw();}
+    };
+    const inY=$("pDrwY");
+    if(inY)inY.onchange=e=>{
+      const v=+e.target.value.replace(",",".");
+      if(Number.isFinite(v)){push();d.y1=r4(v);d.y2=d.y1;touch();buildProps();draw();}
+    };
+    const bDel=$("pDrwDel");
+    if(bDel)bDel.onclick=deleteSel;
+    return;
+  }
   const dx = Math.abs(d.x2 - d.x1), dy = Math.abs(d.y2 - d.y1);
   const len = Math.round(Math.hypot(d.x2 - d.x1, d.y2 - d.y1) * 1000) / 1000;
   box.innerHTML =
@@ -616,6 +743,7 @@ function propsDrawing(box, d){
     '<select id="pDrwShape">' +
     '<option value="line"' + (!isRect ? " selected" : "") + '>Trait (segment)</option>' +
     '<option value="rect"' + (isRect ? " selected" : "") + '>Rectangle (cadre)</option>' +
+    '<option value="text">Texte libre</option>' +
     '</select></div>' +
     '<div class="prop"><label>Couche sérigraphie</label>' +
     '<select id="pDrwLayer">' +
@@ -666,18 +794,24 @@ function silkMenuBuild(){
     m.id="silkMenu";
     document.body.appendChild(m);
   }
+  const isLine=!S.silkShape||S.silkShape==="line";
   const isRect=S.silkShape==="rect";
+  const isText=S.silkShape==="text";
   m.innerHTML=
     '<div class="mtitle">Sérigraphie</div>'+
     '<div class="prop"><div class="row">'+
-    '<button class="tb'+(!isRect?' sel':'')+'" id="smLine">─ Trait (segment) <kbd>S</kbd></button>'+
+    '<button class="tb'+(isLine?' sel':'')+'" id="smLine">─ Trait (segment) <kbd>S</kbd></button>'+
     '</div><div class="row">'+
     '<button class="tb'+(isRect?' sel':'')+'" id="smRect">▢ Rectangle (cadre) <kbd>Shift+S</kbd></button>'+
+    '</div><div class="row">'+
+    '<button class="tb'+(isText?' sel':'')+'" id="smText">T Texte libre</button>'+
     '</div></div>';
   const bLine=$("smLine");
   if(bLine)bLine.onclick=()=>{S.silkShape="line";setMode("silk");silkMenuClose();};
   const bRect=$("smRect");
   if(bRect)bRect.onclick=()=>{S.silkShape="rect";setMode("silk");silkMenuClose();};
+  const bText=$("smText");
+  if(bText)bText.onclick=()=>{S.silkShape="text";setMode("silk");silkMenuClose();};
   return m;
 }
 function silkMenuOpen(){

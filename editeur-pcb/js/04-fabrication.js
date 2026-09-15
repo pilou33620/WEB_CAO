@@ -114,11 +114,15 @@ function glyph(ch){
   if(c===" ")return "";
   return FONT[c]||"";
 }
-/* renvoie les polylignes d'un texte, à l'échelle demandée, centrées en (x,y) */
-function textStrokes(txt,x,y,h,mirror){
+/* renvoie les polylignes d'un texte, à l'échelle demandée, centrées en (x,y) avec rotation optionnelle */
+function textStrokes(txt,x,y,h,mirror,rot){
   const s=h/6, out=[], str=String(txt);
   const wCh=5*s, total=str.length*wCh-s;
   let ox=x-total/2;
+  const hasRot=!!rot;
+  const rad=hasRot?(rot*Math.PI/180):0;
+  const cos=hasRot?Math.cos(rad):1;
+  const sin=hasRot?Math.sin(rad):0;
   for(const ch of str){
     const g=glyph(ch);
     if(g)for(const poly of g.split(" ")){
@@ -126,8 +130,15 @@ function textStrokes(txt,x,y,h,mirror){
       for(let i=0;i+1<poly.length;i+=2){
         const px_=parseInt(poly[i],10), py_=parseInt(poly[i+1],10);
         if(isNaN(px_)||isNaN(py_))continue;
-        const gx=ox+px_*s;
-        pts.push({x:mirror?(2*x-gx):gx, y:y-h/2+py_*s});
+        let gx=ox+px_*s;
+        let gy=y-h/2+py_*s;
+        if(mirror) gx=2*x-gx;
+        if(hasRot){
+          const dx=gx-x, dy=gy-y;
+          gx=x+dx*cos-dy*sin;
+          gy=y+dx*sin+dy*cos;
+        }
+        pts.push({x:gx, y:gy});
       }
       if(pts.length>1)out.push(pts);
     }
@@ -370,7 +381,14 @@ function gerberSilk(side){
     for(const d of S.drawings){
       if(d.layer !== targetLayer) continue;
       const w = d.width || lw;
-      if(d.shape === "rect"){
+      if(d.shape === "text"){
+        const strokes = textStrokes(d.text || "TEXT", d.x1, d.y1, d.size || 1.5, !!side, d.rot || 0);
+        for(const poly of strokes){
+          for(let k=0; k+1<poly.length; k++){
+            gSeg(body, A, poly[k].x, poly[k].y, poly[k+1].x, poly[k+1].y, w);
+          }
+        }
+      }else if(d.shape === "rect"){
         gSeg(body, A, d.x1, d.y1, d.x2, d.y1, w);
         gSeg(body, A, d.x2, d.y1, d.x2, d.y2, w);
         gSeg(body, A, d.x2, d.y2, d.x1, d.y2, w);
@@ -623,6 +641,18 @@ function drillFile(){
                  ...buildOne("percage "+kind+" - L"+la+"-L"+lb,holes)});
   }
 
+  /* Trous non métallisés (NPTH) autonomes : fichier Excellon séparé sans métallisation */
+  const npthHoles=[];
+  if(S.holes&&S.holes.length){
+    for(const h of S.holes){
+      if(h.d>0)npthHoles.push({drill:h.d,x:h.x,y:h.y});
+    }
+  }
+  if(npthHoles.length){
+    files.push({name:fabBase()+"-NPTH.TXT", a:0, b:S.cu-1, kind:"npth", npth:true,
+                 ...buildOne("percage non metallise (NPTH)", npthHoles)});
+  }
+
   /* Stats agrégées pour le résumé */
   const totalTools=files.reduce((a,f)=>a+f.tools,0);
   const totalHoles=files.reduce((a,f)=>a+f.holes,0);
@@ -749,8 +779,8 @@ function fabReadme(files,dr){
   L.push("Un fichier de percage par portee, couches numerotees a partir de 1 :");
   for(const f of dr.files)
     L.push("  "+f.name+" : percage "+
-           (f.kind==="blind"?"borgne":f.kind==="buried"?"enterre":"traversant")+
-           " L"+(f.a+1)+"-L"+(f.b+1)+", "+f.holes+" trou(s), "+f.tools+" outil(s).");
+           (f.kind==="npth"?"non metallise (NPTH)":(f.kind==="blind"?"borgne":f.kind==="buried"?"enterre":"traversant"))+
+           (f.kind==="npth"?"":" L"+(f.a+1)+"-L"+(f.b+1))+", "+f.holes+" trou(s), "+f.tools+" outil(s).");
   L.push("Board Outline (carte.GM1) : Mechanical Layer 1, PROFIL DE DECOUPE.");
   L.push("C'est ce fichier qui definit le detourage de la carte. Il porte");
   L.push("l'attribut Gerber X2 << Profile,NP >> (bord non metallise).");

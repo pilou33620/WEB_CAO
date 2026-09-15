@@ -2562,6 +2562,7 @@ const SIM={
   maillage:null, voirMaillage:(function(){try{return localStorage.getItem("sim_voir_maillage")==="1";}catch(_){return false;}})(),
   voirJsurf:(function(){try{return localStorage.getItem("sim_voir_jsurf")==="1";}catch(_){return false;}})(),
   res:null, objets:[], doc:null, err:"", portee:"", notes:[],
+  modeDiffS:"sdd",
   /* LES LOTS : une sélection éparse, un résultat par morceau. `res`, `objets`,
      `portee`, `notes`, `couture` et `voisins` ci-dessus ne cessent pas
      d'exister pour autant — ils REFLÈTENT le lot actif (`lotActif`), et c'est
@@ -6944,6 +6945,7 @@ function simCorpsDiff(){
   '<div class="pnl-bar simBarFixe">'+
     '<button class="tb mini on" id="simGo" title="Calculer la sélection">▶ Calculer</button>'+
     '<button class="tb mini" id="simJson" title="Le problème lui-même : il se donne au solveur en ligne de commande">.json</button>'+
+    '<button class="tb mini" id="simDiffExportS2pBar" title="Télécharger le fichier Touchstone .s2p de la paire différentielle">.s2p</button>'+
     '<label class="simSuivre" title="Recalculer à chaque changement de sélection"><input type="checkbox" id="simAuto"> suivre</label>'+
   '</div>';
 }
@@ -7020,6 +7022,7 @@ function simBrancherDiff(){
   const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
   pose("simGo","onclick",simGo);
   pose("simJson","onclick",simExportJson);
+  pose("simDiffExportS2pBar","onclick",simDiffExportS2p);
   const auto=simEl("simAuto");
   if(auto){auto.checked=SIM.suivre;
            auto.onchange=function(){SIM.suivre=this.checked;};}
@@ -7044,6 +7047,261 @@ function simBrancherDiff(){
   simPaireEcrire();
 }
 
+/* ==========================================================================
+   CASCADE DE PARAMÈTRES S EN MODE MIXTE (DIFFÉRENTIEL PUR, COMMUN, CONVERSION)
+   ========================================================================== */
+let SIM_REPERE_DIFF=null;
+
+function simTermeDiff(res,mode,k,i,j){
+  if(!res||!res.s_diff)return [0,0];
+  const list=(mode==="scc")?res.s_diff.s_cc:
+             (mode==="scd")?res.s_diff.s_cd:res.s_diff.s_dd;
+  if(!list||!list[k])return [0,0];
+  const p=i*2+j;
+  return list[k][p]||[0,0];
+}
+
+function simLireDiff(k){
+  const R=SIM_REPERE_DIFF;
+  if(!R||!R.res||!R.res.freqs)return null;
+  const res=R.res, f=res.freqs[k], mode=SIM.modeDiffS||"sdd";
+  if(mode==="scd"){
+    const scd=simTermeDiff(res,"scd",k,1,0);
+    const sdd=simTermeDiff(res,"sdd",k,1,0);
+    return {f:f, mode:mode, scd:simDb(scd), sdd:simDb(sdd)};
+  }
+  const s11=simTermeDiff(res,mode,k,0,0);
+  const s21=simTermeDiff(res,mode,k,1,0);
+  const m=Math.hypot(s11[0],s11[1]);
+  const ros=m<1?(1+m)/(1-m):Infinity;
+  const zr=(mode==="scc")?(res.s_diff.z_ref_comm||25):(res.s_diff.z_ref_diff||100);
+  const ar=1+s11[0], ai=s11[1], br=1-s11[0], bi=-s11[1];
+  const d=br*br+bi*bi;
+  const zre=d>1e-15?zr*(ar*br+ai*bi)/d:Infinity;
+  const zim=d>1e-15?zr*(ai*br-ar*bi)/d:0;
+  return {f:f, mode:mode, s11:simDb(s11), s21:simDb(s21), ros:ros, zre:zre, zim:zim};
+}
+
+function simLectureTexteDiff(k){
+  const v=simLireDiff(k);
+  if(!v)return "";
+  if(v.mode==="scd"){
+    return simFreq(v.f)+"  ·  Scd₂₁ (conversion) "+simNb(v.scd,1)+" dB"+
+      "  ·  Sdd₂₁ "+simNb(v.sdd,1)+" dB"+
+      (v.scd>-20
+        ? '  ·  <span style="color:#ef4444;font-weight:bold">⚠ Dépasse seuil CEM (−20 dB)</span>'
+        : '  ·  <span style="color:#10b981">✓ Conforme CEM (&lt; −20 dB)</span>');
+  }
+  const nom11=v.mode==="scc"?"Scc₁₁":"Sdd₁₁";
+  const nom21=v.mode==="scc"?"Scc₂₁":"Sdd₂₁";
+  const signe=v.zim>=0?"+ j":"− j";
+  return simFreq(v.f)+"  ·  "+nom11+" "+simNb(v.s11,1)+" dB  ·  "+nom21+" "+
+    simNb(v.s21,2)+" dB  ·  ROS "+(isFinite(v.ros)?simNb(v.ros,2):"∞")+
+    "  ·  Z "+simNb(v.zre,1)+" "+signe+simNb(Math.abs(v.zim),1)+" Ω";
+}
+
+function simBrancherCourbeDiff(){
+  const R=SIM_REPERE_DIFF;
+  const zone=simEl("simDiffCurZone"), grp=simEl("simDiffCurseur"),
+        txt=simEl("simDiffLecture");
+  if(!R||!zone||!grp||!txt)return;
+  const svg=zone.ownerSVGElement||zone.closest("svg");
+  if(!svg)return;
+  const pts=grp.querySelectorAll(".simCurPt");
+  const trait=grp.querySelector(".simCurTrait");
+  const repos=txt.innerHTML;
+
+  const bouger=function(ev){
+    const r=svg.getBoundingClientRect();
+    if(!r.width)return;
+    const x=(ev.clientX-r.left)*R.W/r.width;
+    const u=(x-R.mg.g)/(R.W-R.mg.g-R.mg.d);
+    const n=R.res.freqs.length;
+    const k=Math.max(0,Math.min(n-1,Math.round(u*(n-1))));
+    const v=simLireDiff(k);
+    if(!v)return;
+    txt.innerHTML=simLectureTexteDiff(k);
+    grp.style.display="";
+    const xPt=R.X(R.res.freqs[k]);
+    if(trait){trait.setAttribute("x1",xPt.toFixed(1));trait.setAttribute("x2",xPt.toFixed(1));}
+    if(v.mode==="scd"){
+      if(pts[0]){pts[0].setAttribute("cx",xPt.toFixed(1));pts[0].setAttribute("cy",R.Y(v.scd).toFixed(1));}
+    }else{
+      if(pts[0]){pts[0].setAttribute("cx",xPt.toFixed(1));pts[0].setAttribute("cy",R.Y(v.s11).toFixed(1));}
+      if(pts[1]){pts[1].setAttribute("cx",xPt.toFixed(1));pts[1].setAttribute("cy",R.Y(v.s21).toFixed(1));}
+    }
+  };
+  const quitter=function(){
+    grp.style.display="none";
+    txt.innerHTML=repos;
+  };
+  zone.onmousemove=bouger;
+  zone.onmouseleave=quitter;
+}
+
+function simCourbeDiff(res){
+  if(!res||!res.s_diff||!res.freqs||res.freqs.length<2){SIM_REPERE_DIFF=null;return "";}
+  const mode=SIM.modeDiffS||"sdd";
+  const W=simLargeurTrace(), H=170, mg={g:44,d:10,h:12,b:26};
+  let hi=-1e9, lo=1e9;
+
+  let traces=[];
+  if(mode==="scd"){
+    traces=[{mode:"scd", i:1, j:0, nom:"Scd21 (conversion)", couleur:"#ef4444"}];
+  } else if(mode==="scc"){
+    traces=[
+      {mode:"scc", i:0, j:0, nom:"Scc11", couleur:"var(--yellow)"},
+      {mode:"scc", i:1, j:0, nom:"Scc21", couleur:"var(--blue)"}
+    ];
+  } else {
+    traces=[
+      {mode:"sdd", i:0, j:0, nom:"Sdd11", couleur:"var(--yellow)"},
+      {mode:"sdd", i:1, j:0, nom:"Sdd21", couleur:"var(--blue)"}
+    ];
+  }
+
+  for(const t of traces)for(let k=0;k<res.freqs.length;k++){
+    const v=simDb(simTermeDiff(res,t.mode,k,t.i,t.j));
+    if(v>hi)hi=v; if(v<lo)lo=v;
+  }
+  if(mode==="scd"){
+    if(hi<-10)hi=0;
+    if(lo>-60)lo=-60;
+  }
+  if(!isFinite(hi)||!isFinite(lo)){hi=0;lo=-60;}
+  if(hi-lo<6){hi+=3;lo-=3;}
+  if(hi-lo>120)lo=hi-120;
+
+  const f0=res.freqs[0], f1=res.freqs[res.freqs.length-1];
+  const X=f=>mg.g+(W-mg.g-mg.d)*((f1>f0)?(f-f0)/(f1-f0):0.5);
+  const Y=v=>mg.h+(H-mg.h-mg.b)*(1-(Math.max(lo,Math.min(hi,v))-lo)/(hi-lo));
+
+  SIM_REPERE_DIFF={res:res, W:W, H:H, mg:mg, f0:f0, f1:f1, lo:lo, hi:hi, X:X, Y:Y};
+
+  let svg='<svg class="simCourbe simCourbeDiff" viewBox="0 0 '+W+' '+H+'" '+
+          'preserveAspectRatio="xMidYMid meet" role="img" '+
+          'aria-label="Paramètres S en mode mixte">';
+  for(let i=0;i<=3;i++){
+    const v=lo+(hi-lo)*i/3, y=Y(v);
+    svg+='<line class="simGrille" x1="'+mg.g+'" y1="'+y.toFixed(1)+
+         '" x2="'+(W-mg.d)+'" y2="'+y.toFixed(1)+'"/>'+
+         '<text class="simCote" x="'+(mg.g-6)+'" y="'+(y+3.5).toFixed(1)+
+         '" text-anchor="end">'+simNb(v,0)+"</text>";
+  }
+  /* Ligne de seuil CEM -20 dB en mode scd */
+  if(mode==="scd" && -20>=lo && -20<=hi){
+    const y20=Y(-20);
+    svg+='<line class="simSeuilCEM" x1="'+mg.g+'" y1="'+y20.toFixed(1)+
+         '" x2="'+(W-mg.d)+'" y2="'+y20.toFixed(1)+
+         '" stroke="#ef4444" stroke-dasharray="4 3" stroke-width="1.2" opacity="0.8"/>'+
+         '<text class="simCote" x="'+(W-mg.d-4)+'" y="'+(y20-4).toFixed(1)+
+         '" text-anchor="end" fill="#ef4444">Seuil CEM −20 dB</text>';
+  }
+  /* Repère fréquence centrale f0 */
+  if(res.f_centre>=f0&&res.f_centre<=f1){
+    const x=X(res.f_centre);
+    svg+='<line class="simFc" x1="'+x.toFixed(1)+'" y1="'+mg.h+
+         '" x2="'+x.toFixed(1)+'" y2="'+(H-mg.b)+'"/>'+
+         '<text class="simCote simFcTxt" x="'+(x+4).toFixed(1)+'" y="'+
+         (mg.h+9)+'">f₀</text>';
+  }
+  svg+='<text class="simCote" x="'+mg.g+'" y="'+(H-8)+'">'+simFreq(f0)+"</text>"+
+       '<text class="simCote" x="'+(W-mg.d)+'" y="'+(H-8)+
+       '" text-anchor="end">'+simFreq(f1)+"</text>"+
+       '<text class="simCote simUnite" x="4" y="'+(mg.h+4)+'">dB</text>';
+
+  /* Traces */
+  for(const t of traces){
+    let d="";
+    for(let k=0;k<res.freqs.length;k++)
+      d+=(k?"L":"M")+X(res.freqs[k]).toFixed(1)+" "+
+         Y(simDb(simTermeDiff(res,t.mode,k,t.i,t.j))).toFixed(1);
+    svg+='<path class="simTrace" d="'+d+'" stroke="'+t.couleur+'"/>';
+  }
+
+  /* Curseur de lecture */
+  svg+='<g id="simDiffCurseur" style="display:none">'+
+       '<line class="simCurTrait" y1="'+mg.h+'" y2="'+(H-mg.b)+'"/>';
+  for(const t of traces)
+    svg+='<circle class="simCurPt" r="3.2" fill="'+t.couleur+'"/>';
+  svg+="</g>"+
+       '<rect id="simDiffCurZone" x="'+mg.g+'" y="'+mg.h+'" width="'+
+       (W-mg.g-mg.d)+'" height="'+(H-mg.h-mg.b)+'" fill="transparent"/>';
+  svg+="</svg>";
+
+  let leg='<div class="simLeg">';
+  for(const t of traces)
+    leg+='<span><i style="background:'+t.couleur+'"></i>'+t.nom+"</span>";
+  leg+='<span class="simLecture" id="simDiffLecture">'+
+       "survolez la courbe pour lire une fréquence</span>";
+  leg+="</div>";
+
+  return svg+leg;
+}
+
+function simFicheSDiff(res){
+  if(!res||!res.s_diff)return "";
+  const sd=res.s_diff;
+  const mode=SIM.modeDiffS||"sdd";
+  const zRefDiff=sd.z_ref_diff||100;
+  const zRefComm=sd.z_ref_comm||(zRefDiff/4);
+  const deltaL=sd.delta_l_mm!=null?sd.delta_l_mm:0;
+
+  let h='<div class="simSDiffBloc" style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">';
+  h+='<p class="simSection" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'+
+     '<b>Paramètres S en mode mixte ('+(mode==="sdd"?"Différentiel pur Sdd":mode==="scc"?"Mode commun Scc":"Conversion CEM Scd")+')</b>'+
+     '<span style="font-size:11px;font-weight:normal;color:var(--txt-dim)">'+
+     'Skew ΔL = <b>'+simNb(deltaL,3)+' mm</b> · Réf. diff <b>'+simNb(zRefDiff,0)+' Ω</b> · Réf. comm <b>'+simNb(zRefComm,1)+' Ω</b>'+
+     '</span></p>';
+
+  h+='<div class="pnl-bar" style="margin-bottom:6px;gap:6px;flex-wrap:wrap">'+
+     '<span class="pnl-lbl">Mode :</span>'+
+     '<button class="tb mini '+(mode==="sdd"?"on":"")+'" id="simDiffModeSdd" title="Mode différentiel pur (Sdd11 et Sdd21 sur '+simNb(zRefDiff,0)+' Ω)">Sdd (différentiel)</button>'+
+     '<button class="tb mini '+(mode==="scc"?"on":"")+'" id="simDiffModeScc" title="Mode commun pur (Scc11 et Scc21 sur '+simNb(zRefComm,1)+' Ω)">Scc (commun)</button>'+
+     '<button class="tb mini '+(mode==="scd"?"on":"")+'" id="simDiffModeScd" title="Conversion de mode différentiel vers commun induite par le déséquilibre/skew">Scd (conversion CEM)</button>'+
+     '<button class="tb mini" id="simDiffExportS2p" style="margin-left:auto" title="Télécharger le fichier Touchstone .s2p du mode '+mode+'">📥 .s2p ('+(mode==="scc"?"scc":"sdd")+')</button>'+
+     '</div>';
+
+  h+=simCourbeDiff(res);
+
+  if(mode==="sdd"){
+    h+='<p class="simNote">· <b>Mode différentiel pur (Sdd)</b> : normalisé sur Z<sub>ref,diff</sub> = '+simNb(zRefDiff,0)+
+       ' Ω. Sdd₁₁ mesure les pertes de réflexion différentielle et Sdd₂₁ l\'atténuation différentielle de la liaison.</p>';
+  } else if(mode==="scc"){
+    h+='<p class="simNote">· <b>Mode commun pur (Scc)</b> : normalisé sur Z<sub>ref,comm</sub> = Z<sub>ref,diff</sub> / 4 = '+simNb(zRefComm,1)+
+       ' Ω. Les deux conducteurs sont excités en phase : mesure la sensibilité au bruit commun et la réflexion de mode commun.</p>';
+  } else if(mode==="scd"){
+    h+='<p class="simNote">· <b>Conversion de mode CEM (Scd₂₁)</b> : mesure la proportion d\'énergie différentielle convertie en mode commun par le déséquilibre de longueur (skew ΔL = '+
+       simNb(deltaL,3)+' mm). Un niveau supérieur à <b>−20 dB</b> constitue un risque accru de rayonnement électromagnétique parasite.</p>';
+  }
+
+  h+='</div>';
+  return h;
+}
+
+function simDiffExportS2p(){
+  if(!SIM.res||!SIM.res.s_diff){
+    SIM.err="Pas de paramètres S différentiels calculés : vérifiez la sélection de la paire.";
+    simRendre();return;
+  }
+  const mode=SIM.modeDiffS||"sdd";
+  const sd=SIM.res.s_diff;
+  let txt="";
+  let nomExt="";
+  if(mode==="scc"){
+    txt=sd.touchstone_scc;
+    nomExt="-diff-scc.s2p";
+  }else{
+    txt=sd.touchstone_sdd;
+    nomExt="-diff-sdd.s2p";
+  }
+  if(!txt){
+    SIM.err="Fichier Touchstone non disponible pour ce mode.";
+    simRendre();return;
+  }
+  simTelecharger(txt,simNomFichier(nomExt),"text/plain");
+}
+
 function simDiffApres(){
   const btDiff=simEl("simDiffApplyTarget");
   if(btDiff)btDiff.onclick=function(){
@@ -7057,6 +7315,13 @@ function simDiffApres(){
       simRendre();simRepeindre();
     }
   };
+  const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
+  pose("simDiffModeSdd","onclick",function(){ SIM.modeDiffS="sdd"; simRendre(); });
+  pose("simDiffModeScc","onclick",function(){ SIM.modeDiffS="scc"; simRendre(); });
+  pose("simDiffModeScd","onclick",function(){ SIM.modeDiffS="scd"; simRendre(); });
+  pose("simDiffExportS2p","onclick",simDiffExportS2p);
+  pose("simDiffExportS2pBar","onclick",simDiffExportS2p);
+  simBrancherCourbeDiff();
 }
 
 function simRendreDiff(){
@@ -7157,6 +7422,9 @@ function simFicheDiff(){
   h+=tableau(declarees,declarees.length&&autres.length?"Paires reconnues":"");
   if(autres.length)
     h+=tableau(autres,"Autres longements — ce ne sont pas des paires");
+
+  if(SIM.res&&SIM.res.s_diff)
+    h+=simFicheSDiff(SIM.res);
 
   if(!declarees.length)
     h+='<p class="simNote">· Aucun des nets qui se longent ne porte les '+
@@ -12332,6 +12600,1358 @@ function simBusExportJson(){
   simTelecharger(JSON.stringify(obj,null,2), nom, "application/json");
 }
 
+/* ==========================================================================
+   ANALYSE D'INTÉGRITÉ D'ALIMENTATION : IMPÉDANCE DU PDN Z(ω)
+   Calcul et tracé de l'impédance fréquentielle complexe du réseau d'alimentation
+   (10 kHz à 1 GHz) avec injection des modèles réels Murata (ESR/ESL),
+   impédance cible Z_target, régulateur (VRM) et cavité de plans PWR/GND.
+   ========================================================================== */
+
+var SIM_PARASITES_MURATA = (typeof window !== "undefined" && window.SIM_PARASITES_MURATA) || (typeof global !== "undefined" && global.SIM_PARASITES_MURATA) || null;
+if (!SIM_PARASITES_MURATA && typeof require === "function") {
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const cands = [
+      path.join(__dirname, "parasites-murata.json"),
+      path.join(__dirname, "..", "commun", "parasites-murata.json"),
+      path.join(__dirname, "..", "..", "commun", "parasites-murata.json"),
+      path.join(process.cwd(), "commun", "parasites-murata.json")
+    ];
+    for (const c of cands) {
+      if (fs.existsSync(c)) {
+        SIM_PARASITES_MURATA = JSON.parse(fs.readFileSync(c, "utf8"));
+        break;
+      }
+    }
+  } catch (_) {}
+}
+if (typeof window !== "undefined" && SIM_PARASITES_MURATA) {
+  window.SIM_PARASITES_MURATA = SIM_PARASITES_MURATA;
+}
+if (typeof global !== "undefined" && SIM_PARASITES_MURATA) {
+  global.SIM_PARASITES_MURATA = SIM_PARASITES_MURATA;
+}
+
+const SIM_PDN = {
+  rail: "",
+  vdd: 3.3,
+  ripplePct: 5.0,
+  deltaIA: 1.0,
+  zTarget: 0.165,
+  rVrmMOhm: 2.0,
+  fVrmKhz: 100.0,
+  planActif: true,
+  planSurfaceCm2: 25.0,
+  planDimXmm: 50.0,
+  planDimYmm: 50.0,
+  planEpaisseurUm: 100.0,
+  planEr: 4.3,
+  planTanD: 0.02,
+  caviteModesActif: true,
+  caviteModeSel: "TM10",
+  fMin: 1e4,
+  fMax: 1e9,
+  nbPoints: 200,
+  condensateurs: [],
+  result: null,
+  erreur: null,
+  occupe: false
+};
+
+function simPDNFormatFreq(f) {
+  if (f >= 1e9) return (f / 1e9).toFixed(1) + " GHz";
+  if (f >= 1e6) return (f / 1e6).toFixed(1) + " MHz";
+  if (f >= 1e3) return (f / 1e3).toFixed(1) + " kHz";
+  return f.toFixed(0) + " Hz";
+}
+
+function simPDNFormatZ(z) {
+  if (z == null || isNaN(z)) return "—";
+  if (z < 0.001) return (z * 1e6).toFixed(1) + " µΩ";
+  if (z < 1.0) return (z * 1e3).toFixed(1) + " mΩ";
+  if (z < 1e3) return z.toFixed(2) + " Ω";
+  if (z < 1e6) return (z / 1e3).toFixed(2) + " kΩ";
+  return (z / 1e6).toFixed(2) + " MΩ";
+}
+
+function simPDNParseFarads(txt) {
+  if (!txt) return 0;
+  const s = String(txt).trim().replace(",", ".");
+  const m = s.match(/^(\d+(?:\.\d+)?)\s*([pnumkM]?)[Ff]?$/);
+  if (!m) return 0;
+  const val = parseFloat(m[1]);
+  const pfx = m[2];
+  if (pfx === "p") return val * 1e-12;
+  if (pfx === "n") return val * 1e-9;
+  if (pfx === "u" || pfx === "µ") return val * 1e-6;
+  if (pfx === "m") return val * 1e-3;
+  if (pfx === "k") return val * 1e3;
+  if (pfx === "M") return val * 1e6;
+  return val;
+}
+
+function simPDNCalculerModesCavite(aMm, bMm, dUm, er, tanD, fMax) {
+  const c0 = 2.99792458e8; // Vitesse de la lumière en m/s
+  const mu0 = 4 * Math.PI * 1e-7;
+  const sigmaCu = 5.8e7; // Conductivité du cuivre en S/m
+  const a = Math.max(0.005, (parseFloat(aMm) || 50.0) * 1e-3); // mm -> m
+  const b = Math.max(0.005, (parseFloat(bMm) || 50.0) * 1e-3); // mm -> m
+  const d = Math.max(1e-6, (parseFloat(dUm) || 100.0) * 1e-6); // µm -> m
+  const epsR = Math.max(1.0, parseFloat(er) || 4.3);
+  const tD = Math.max(0, parseFloat(tanD) || 0.02);
+  const vPhase = c0 / Math.sqrt(epsR);
+
+  const maxFreq = Math.max(1.5 * (fMax || 1e9), 2.5e9);
+  const modes = [];
+
+  for (let m = 0; m <= 4; m++) {
+    for (let n = 0; n <= 4; n++) {
+      if (m === 0 && n === 0) continue; // (0,0) est la capacité statique
+      const kx = m / a;
+      const ky = n / b;
+      const f_mn = (vPhase / 2) * Math.sqrt(kx * kx + ky * ky);
+
+      if (f_mn <= maxFreq) {
+        // Effet de peau dans les plans de cuivre
+        const deltaS = 1 / Math.sqrt(Math.PI * f_mn * mu0 * sigmaCu);
+        // Facteur de qualité : 1/Q = tanD + deltaS/d
+        const invQ = tD + (deltaS / d);
+        const q_mn = invQ > 0 ? (1 / invQ) : 100;
+        const deltaF = f_mn / q_mn;
+
+        let type = "Mixte 2D";
+        let ventresDesc = "4 coins + damier";
+        if (m === 0) {
+          type = "Transversal Y";
+          ventresDesc = "Bords haut et bas (y=0, y=b)";
+        } else if (n === 0) {
+          type = "Longitudinal X";
+          ventresDesc = "Bords gauche et droite (x=0, x=a)";
+        } else if (m === 1 && n === 1) {
+          type = "Fondamental 2D";
+          ventresDesc = "4 coins (0,0), (a,0), (0,b), (a,b)";
+        }
+
+        const eps0 = 8.854187817e-12;
+        const cPlane = (eps0 * epsR * a * b) / d;
+        const cm = m === 0 ? 1 : Math.SQRT2;
+        const cn = n === 0 ? 1 : Math.SQRT2;
+        const cm2cn2 = (cm * cm) * (cn * cn);
+        const omega_mn = 2 * Math.PI * f_mn;
+        const zPeak = (q_mn * cm2cn2) / (omega_mn * cPlane);
+
+        modes.push({
+          m: m,
+          n: n,
+          modeStr: "TM" + m + n,
+          f: f_mn,
+          q: q_mn,
+          deltaF: deltaF,
+          zPeak: zPeak,
+          type: type,
+          ventres: ventresDesc,
+          cm2cn2: cm2cn2
+        });
+      }
+    }
+  }
+
+  modes.sort((m1, m2) => m1.f - m2.f);
+  return modes;
+}
+
+function simPDNActualiserComposants(force) {
+  if (SIM_ED && typeof SIM_ED.pdnCondensateurs === "function") {
+    const caps = SIM_ED.pdnCondensateurs(SIM_PDN.rail);
+    if (Array.isArray(caps) && caps.length) {
+      SIM_PDN.condensateurs = caps;
+      if (typeof SIM_ED.pdnCavitePlans === "function") {
+        const cp = SIM_ED.pdnCavitePlans(SIM_PDN.rail);
+        if (cp) {
+          if (cp.surfaceCm2) SIM_PDN.planSurfaceCm2 = cp.surfaceCm2;
+          if (cp.epaisseurUm) SIM_PDN.planEpaisseurUm = cp.epaisseurUm;
+          if (cp.er) SIM_PDN.planEr = cp.er;
+          if (cp.dimXmm) SIM_PDN.planDimXmm = cp.dimXmm;
+          if (cp.dimYmm) SIM_PDN.planDimYmm = cp.dimYmm;
+        }
+      }
+      return;
+    }
+  }
+  // Jeu de référence réaliste par défaut avec composants Murata et coordonnées spatiales
+  if (!SIM_PDN.condensateurs || !SIM_PDN.condensateurs.length || force) {
+    SIM_PDN.condensateurs = [
+      { id: 1, ref: "C1", val: "10µF", cap: 10e-6, esr: 0.008, esl: 0.9e-9, lMount: 1.0e-9, pkg: "0805", prov: "catalogue", f0: 3.65, x: 8.0, y: 12.0, actif: true },
+      { id: 2, ref: "C2", val: "1µF", cap: 1e-6, esr: 0.015, esl: 0.45e-9, lMount: 0.75e-9, pkg: "0603", prov: "catalogue", f0: 14.5, x: 18.0, y: 22.0, actif: true },
+      { id: 3, ref: "C3", val: "100nF", cap: 100e-9, esr: 0.0142, esl: 0.201e-9, lMount: 0.50e-9, pkg: "0402", mpn: "GCM155R71C104KA55", prov: "spice", f0: 59.8, x: 25.0, y: 25.0, actif: true },
+      { id: 4, ref: "C4", val: "10nF", cap: 10e-9, esr: 0.0493, esl: 0.192e-9, lMount: 0.50e-9, pkg: "0402", mpn: "GCM155R71H103KA55", prov: "spice", f0: 191.0, x: 38.0, y: 30.0, actif: true },
+      { id: 5, ref: "C5", val: "1nF", cap: 1e-9, esr: 0.245, esl: 0.145e-9, lMount: 0.35e-9, pkg: "0201", mpn: "GCM155R71H102KA37", prov: "spice", f0: 715.0, x: 46.0, y: 44.0, actif: true }
+    ];
+  }
+}
+
+function simCalculerPDN() {
+  SIM_PDN.erreur = null;
+  const vdd = Math.max(0.1, parseFloat(SIM_PDN.vdd) || 3.3);
+  const ripple = Math.max(0.1, parseFloat(SIM_PDN.ripplePct) || 5.0);
+  const deltaI = Math.max(0.01, parseFloat(SIM_PDN.deltaIA) || 1.0);
+  SIM_PDN.zTarget = (vdd * (ripple / 100)) / deltaI;
+
+  const rVrm = (Math.max(0.01, parseFloat(SIM_PDN.rVrmMOhm) || 2.0)) * 1e-3; // Ohm
+  const fVrm = (Math.max(1, parseFloat(SIM_PDN.fVrmKhz) || 100.0)) * 1e3; // Hz
+  const lVrm = rVrm / (2 * Math.PI * fVrm); // L = R / (2*pi*fc)
+
+  const planActif = !!SIM_PDN.planActif;
+  const aMm = Math.max(1, parseFloat(SIM_PDN.planDimXmm) || 50.0);
+  const bMm = Math.max(1, parseFloat(SIM_PDN.planDimYmm) || 50.0);
+  const areaM2 = (aMm * 1e-3) * (bMm * 1e-3);
+  SIM_PDN.planSurfaceCm2 = parseFloat((areaM2 * 1e4).toFixed(2));
+  const distM = (Math.max(1, parseFloat(SIM_PDN.planEpaisseurUm) || 100.0)) * 1e-6; // µm -> m
+  const er = Math.max(1, parseFloat(SIM_PDN.planEr) || 4.3);
+  const tanD = Math.max(0, parseFloat(SIM_PDN.planTanD) || 0.02);
+  const eps0 = 8.854187817e-12;
+  const cPlane = (planActif && distM > 0) ? (eps0 * er * areaM2 / distM) : 0; // F
+
+  const fMin = SIM_PDN.fMin || 1e4;
+  const fMax = SIM_PDN.fMax || 1e9;
+
+  const caviteModes = (planActif && SIM_PDN.caviteModesActif)
+    ? simPDNCalculerModesCavite(aMm, bMm, SIM_PDN.planEpaisseurUm, er, tanD, fMax)
+    : [];
+
+  const capas = (SIM_PDN.condensateurs || []).filter(c => c.actif !== false && c.cap > 0);
+
+  const N = SIM_PDN.nbPoints || 200;
+  const logMin = Math.log10(fMin);
+  const logMax = Math.log10(fMax);
+
+  const freqs = [];
+  const zPdn = [];
+  const zVrmVals = [];
+  const zPlaneVals = [];
+  let zMax = 0;
+  let fZMax = fMin;
+
+  for (let i = 0; i < N; i++) {
+    const logF = logMin + (i / (N - 1)) * (logMax - logMin);
+    const f = Math.pow(10, logF);
+    const omega = 2 * Math.PI * f;
+
+    // 1. Branche VRM : Y_vrm = 1 / (R_vrm + j*omega*L_vrm)
+    const zVrmDenom = rVrm * rVrm + (omega * lVrm) * (omega * lVrm);
+    let gTot = rVrm / zVrmDenom;
+    let bTot = -(omega * lVrm) / zVrmDenom;
+    zVrmVals.push(Math.sqrt(zVrmDenom));
+
+    // 2. Branches condensateurs de découplage
+    for (let k = 0; k < capas.length; k++) {
+      const cp = capas[k];
+      const esr = Math.max(1e-4, cp.esr || 0.02);
+      const lTot = (cp.esl || 0.2e-9) + (cp.lMount || 0.8e-9);
+      const xK = omega * lTot - 1 / (omega * cp.cap);
+      const zK2 = esr * esr + xK * xK;
+      gTot += esr / zK2;
+      bTot -= xK / zK2;
+    }
+
+    // 3. Branche cavité de plans
+    if (cPlane > 0) {
+      let gPlane = omega * cPlane * tanD;
+      let bPlane = omega * cPlane;
+
+      if (SIM_PDN.caviteModesActif && caviteModes.length) {
+        // Modélisation modale 2D distribuée (Hsu / Okoshi / Novak)
+        // Sommation sur les modes propres au point de couplage maximal (coins)
+        for (let km = 0; km < caviteModes.length; km++) {
+          const cm = caviteModes[km];
+          const wMn = 2 * Math.PI * cm.f;
+          const numScale = cm.cm2cn2 / cPlane;
+          const dRe = (wMn * wMn - omega * omega);
+          const dIm = (omega * wMn) / cm.q;
+          const denom2 = dRe * dRe + dIm * dIm;
+          if (denom2 > 1e-18) {
+            const zModRe = (omega * numScale * dIm) / denom2;
+            const zModIm = (omega * numScale * dRe) / denom2;
+            const zModSq = zModRe * zModRe + zModIm * zModIm;
+            if (zModSq > 1e-12) {
+              gPlane += zModRe / zModSq;
+              bPlane -= zModIm / zModSq;
+            }
+          }
+        }
+      }
+
+      gTot += gPlane;
+      bTot += bPlane;
+      const zP = 1 / Math.sqrt(gPlane * gPlane + bPlane * bPlane);
+      zPlaneVals.push(zP);
+    } else {
+      zPlaneVals.push(null);
+    }
+
+    // 4. Impédance globale résultante : |Z| = 1 / sqrt(G_tot^2 + B_tot^2)
+    const yMod2 = gTot * gTot + bTot * bTot;
+    const zMod = 1 / Math.sqrt(yMod2);
+    freqs.push(f);
+    zPdn.push(zMod);
+
+    if (zMod > zMax) {
+      zMax = zMod;
+      fZMax = f;
+    }
+  }
+
+  // Détection des anti-résonances (maxima locaux)
+  const antiresonances = [];
+  for (let i = 1; i < N - 1; i++) {
+    if (zPdn[i] > zPdn[i - 1] && zPdn[i] > zPdn[i + 1]) {
+      antiresonances.push({
+        f: freqs[i],
+        z: zPdn[i],
+        depassement: zPdn[i] > SIM_PDN.zTarget
+      });
+    }
+  }
+
+  const conforme = zMax <= SIM_PDN.zTarget;
+
+  SIM_PDN.result = {
+    freqs: freqs,
+    zPdn: zPdn,
+    zVrm: zVrmVals,
+    zPlane: zPlaneVals,
+    zTarget: SIM_PDN.zTarget,
+    zMax: zMax,
+    fZMax: fZMax,
+    conforme: conforme,
+    antiresonances: antiresonances,
+    capasCount: capas.length,
+    cPlaneTotalPf: cPlane * 1e12,
+    caviteModes: caviteModes,
+    aMm: aMm,
+    bMm: bMm,
+    er: er,
+    tanD: tanD,
+    dUm: Math.max(1, parseFloat(SIM_PDN.planEpaisseurUm) || 100.0)
+  };
+  simRendre();
+}
+
+function simCourbePDN(res, W, H) {
+  if (!res || !res.freqs || !res.freqs.length) return "";
+  W = W || 560;
+  H = H || 250;
+  const mg = { g: 58, d: 24, h: 24, b: 32 };
+
+  const logF0 = 4; // 10 kHz
+  const logF1 = 9; // 1 GHz
+  const X = f => mg.g + (W - mg.g - mg.d) * (Math.log10(Math.max(f, 1e3)) - logF0) / (logF1 - logF0);
+
+  let logZMin = -3; // 1 mΩ
+  let logZMax = 2;  // 100 Ω
+  if (res.zMax > 100) logZMax = Math.ceil(Math.log10(res.zMax));
+  if (res.zTarget > 100) logZMax = Math.max(logZMax, Math.ceil(Math.log10(res.zTarget)));
+  const minZObs = Math.min(...res.zPdn);
+  if (minZObs < 1e-3) logZMin = Math.floor(Math.log10(minZObs));
+
+  const Y = z => mg.h + (H - mg.h - mg.b) * (1 - (Math.log10(Math.max(z, 1e-6)) - logZMin) / (logZMax - logZMin));
+
+  let svg = '<svg class="simCourbe" viewBox="0 0 ' + W + ' ' + H + '" ' +
+            'preserveAspectRatio="xMidYMid meet" role="img" ' +
+            'aria-label="Impédance PDN Z(ω) en fonction de la fréquence">';
+
+  // Grille verticale (décades de fréquence)
+  const decF = [
+    { f: 1e4, l: "10 kHz" },
+    { f: 1e5, l: "100 kHz" },
+    { f: 1e6, l: "1 MHz" },
+    { f: 1e7, l: "10 MHz" },
+    { f: 1e8, l: "100 MHz" },
+    { f: 1e9, l: "1 GHz" }
+  ];
+  for (const d of decF) {
+    const x = X(d.f);
+    svg += '<line class="simGrille" x1="' + x.toFixed(1) + '" y1="' + mg.h + '" x2="' + x.toFixed(1) + '" y2="' + (H - mg.b) + '"/>' +
+           '<text class="simCote" x="' + x.toFixed(1) + '" y="' + (H - 12) + '" text-anchor="middle">' + d.l + '</text>';
+  }
+
+  // Grille horizontale (décades d'impédance)
+  for (let exp = logZMin; exp <= logZMax; exp++) {
+    const val = Math.pow(10, exp);
+    const y = Y(val);
+    let lbl = "";
+    if (exp === -3) lbl = "1 mΩ";
+    else if (exp === -2) lbl = "10 mΩ";
+    else if (exp === -1) lbl = "100 mΩ";
+    else if (exp === 0) lbl = "1 Ω";
+    else if (exp === 1) lbl = "10 Ω";
+    else if (exp === 2) lbl = "100 Ω";
+    else if (exp === 3) lbl = "1 kΩ";
+    else lbl = val >= 1 ? val.toFixed(0) + " Ω" : (val * 1e3).toFixed(0) + " mΩ";
+
+    svg += '<line class="simGrille" x1="' + mg.g + '" y1="' + y.toFixed(1) + '" x2="' + (W - mg.d) + '" y2="' + y.toFixed(1) + '"/>' +
+           '<text class="simCote" x="' + (mg.g - 6) + '" y="' + (y + 3.5).toFixed(1) + '" text-anchor="end">' + lbl + '</text>';
+  }
+
+  // Ligne de seuil Z_target
+  const yTarget = Y(res.zTarget);
+  if (yTarget >= mg.h && yTarget <= H - mg.b) {
+    svg += '<line x1="' + mg.g + '" y1="' + yTarget.toFixed(1) + '" x2="' + (W - mg.d) + '" y2="' + yTarget.toFixed(1) + '" stroke="#ef4444" stroke-width="1.8" stroke-dasharray="5 3"/>' +
+           '<text x="' + (W - mg.d - 4) + '" y="' + (yTarget - 4).toFixed(1) + '" text-anchor="end" fill="#ef4444" font-family="var(--mono)" font-size="9.5px" font-weight="600">Z_target = ' + simPDNFormatZ(res.zTarget) + '</text>';
+  }
+
+  // Repères verticaux des modes de résonance 2D de la cavité
+  if (res.caviteModes && res.caviteModes.length) {
+    for (const cm of res.caviteModes) {
+      if (cm.f >= res.freqs[0] && cm.f <= res.freqs[res.freqs.length - 1]) {
+        const xMode = X(cm.f);
+        if (xMode >= mg.g && xMode <= W - mg.d) {
+          svg += '<line x1="' + xMode.toFixed(1) + '" y1="' + mg.h + '" x2="' + xMode.toFixed(1) + '" y2="' + (H - mg.b) + '" stroke="#a855f7" stroke-width="1.2" stroke-dasharray="3 2" opacity="0.6"/>' +
+                 '<text x="' + xMode.toFixed(1) + '" y="' + (mg.h + 10) + '" text-anchor="middle" fill="#c084fc" font-family="var(--mono)" font-size="8.5px" font-weight="600">' + cm.modeStr + '</text>';
+        }
+      }
+    }
+  }
+
+  // Courbe VRM (pointillés orange)
+  if (res.zVrm && res.zVrm.length) {
+    let dVrm = "";
+    for (let k = 0; k < res.freqs.length; k++) {
+      const yVal = Y(res.zVrm[k]);
+      if (yVal >= mg.h - 10 && yVal <= H - mg.b + 10) {
+        dVrm += (dVrm ? "L" : "M") + X(res.freqs[k]).toFixed(1) + " " + Math.max(mg.h, Math.min(H - mg.b, yVal)).toFixed(1);
+      }
+    }
+    if (dVrm) svg += '<path d="' + dVrm + '" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="3 3" fill="none" opacity="0.6"/>';
+  }
+
+  // Courbe Cavité Plans (pointillés violet)
+  if (res.zPlane && res.zPlane.length) {
+    let dPl = "";
+    for (let k = 0; k < res.freqs.length; k++) {
+      if (res.zPlane[k] != null) {
+        const yVal = Y(res.zPlane[k]);
+        if (yVal >= mg.h - 10 && yVal <= H - mg.b + 10) {
+          dPl += (dPl ? "L" : "M") + X(res.freqs[k]).toFixed(1) + " " + Math.max(mg.h, Math.min(H - mg.b, yVal)).toFixed(1);
+        }
+      }
+    }
+    if (dPl) svg += '<path d="' + dPl + '" stroke="#a855f7" stroke-width="1.2" stroke-dasharray="3 3" fill="none" opacity="0.6"/>';
+  }
+
+  // Courbe principale |Z_pdn(ω)| en cyan électrique
+  let dPdn = "";
+  for (let k = 0; k < res.freqs.length; k++) {
+    const yVal = Y(res.zPdn[k]);
+    dPdn += (k ? "L" : "M") + X(res.freqs[k]).toFixed(1) + " " + Math.max(mg.h, Math.min(H - mg.b, yVal)).toFixed(1);
+  }
+  svg += '<path class="simTrace" d="' + dPdn + '" stroke="#00d2ff" stroke-width="2.4" fill="none"/>';
+
+  // Repère du point pic d'impédance max
+  if (res.fZMax && res.zMax) {
+    const xPic = X(res.fZMax);
+    const yPic = Y(res.zMax);
+    if (xPic >= mg.g && xPic <= W - mg.d && yPic >= mg.h && yPic <= H - mg.b) {
+      svg += '<circle cx="' + xPic.toFixed(1) + '" cy="' + yPic.toFixed(1) + '" r="4.5" fill="' + (res.conforme ? "#22c55e" : "#ef4444") + '" stroke="var(--panel)" stroke-width="1.5"/>';
+    }
+  }
+
+  // Curseur dynamique de mesure au survol
+  svg += '<g id="simPDNCurseur" style="display:none">' +
+         '<line id="simPDNCurTraitX" class="simCurTrait" y1="' + mg.h + '" y2="' + (H - mg.b) + '"/>' +
+         '<circle id="simPDNCurPt" class="simCurPt" r="4.5" fill="#00d2ff" stroke="var(--panel)" stroke-width="1.5"/>' +
+         '</g>' +
+         '<rect id="simPDNCurZone" x="' + mg.g + '" y="' + mg.h + '" width="' + (W - mg.g - mg.d) + '" height="' + (H - mg.h - mg.b) + '" fill="transparent" style="cursor:crosshair"/>' +
+         '</svg>';
+
+  // Légende & Ligne de lecture
+  let leg = '<div class="simLeg">' +
+            '<span><i style="background:#00d2ff;width:12px"></i>|Z_pdn(ω)| Total</span>' +
+            '<span><i style="background:#ef4444;width:12px;height:2px;border-top:1px dashed #ef4444"></i>Z_target (' + simPDNFormatZ(res.zTarget) + ')</span>' +
+            '<span><i style="background:#f59e0b;width:10px"></i>VRM</span>' +
+            '<span><i style="background:#a855f7;width:10px"></i>Plan (' + (res.cPlaneTotalPf ? res.cPlaneTotalPf.toFixed(0) + " pF" : "0 pF") + ')</span>' +
+            '<span><i style="background:#a855f7;width:12px;height:2px;border-top:1px dashed #a855f7"></i>Modes 2D</span>' +
+            '<span class="simLecture" id="simPDNLecture">survolez la courbe pour mesurer f, |Z| et marge vs Z_target</span>' +
+            '</div>';
+
+  return svg + leg;
+}
+
+function simPDNGenererHeatmapCavite(r, modeStr, W, H) {
+  W = W || 560;
+  H = H || 260;
+  const mg = { g: 50, d: 24, h: 22, b: 32 };
+  const modes = (r && r.caviteModes) || [];
+  const activeMode = modes.find(m => m.modeStr === modeStr) || modes[0];
+  if (!activeMode) return '<div class="simEtat">Aucun mode 2D calculé.</div>';
+
+  const m = activeMode.m;
+  const n = activeMode.n;
+  const aMm = Math.max(1, parseFloat((r && r.aMm) || SIM_PDN.planDimXmm) || 50.0);
+  const bMm = Math.max(1, parseFloat((r && r.bMm) || SIM_PDN.planDimYmm) || 50.0);
+
+  const plotW = W - mg.g - mg.d;
+  const plotH = H - mg.h - mg.b;
+
+  let svg = '<svg class="simCourbe" id="simPDNCaviteSvg" viewBox="0 0 ' + W + ' ' + H + '" ' +
+            'preserveAspectRatio="xMidYMid meet" role="img" ' +
+            'aria-label="Distribution spatiale 2D du mode ' + activeMode.modeStr + '">';
+
+  svg += '<defs>' +
+         '<filter id="hotGlow" x="-50%" y="-50%" width="200%" height="200%">' +
+           '<feGaussianBlur stdDeviation="3" result="blur"/>' +
+           '<feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>' +
+         '</filter>' +
+         '</defs>';
+
+  const Nx = 32;
+  const Ny = 20;
+  const cw = plotW / Nx;
+  const ch = plotH / Ny;
+
+  const rgbColor = v => {
+    let rVal = 15, gVal = 23, bVal = 42;
+    if (v < 0.3) {
+      const t = v / 0.3;
+      rVal = Math.round(15 + t * (6 - 15));
+      gVal = Math.round(23 + t * (182 - 23));
+      bVal = Math.round(42 + t * (212 - 42));
+    } else if (v < 0.65) {
+      const t = (v - 0.3) / 0.35;
+      rVal = Math.round(6 + t * (16 - 6));
+      gVal = Math.round(182 + t * (185 - 182));
+      bVal = Math.round(212 + t * (129 - 212));
+    } else if (v < 0.85) {
+      const t = (v - 0.65) / 0.2;
+      rVal = Math.round(16 + t * (245 - 16));
+      gVal = Math.round(185 + t * (158 - 185));
+      bVal = Math.round(129 + t * (11 - 129));
+    } else {
+      const t = (v - 0.85) / 0.15;
+      rVal = Math.round(245 + t * (239 - 245));
+      gVal = Math.round(158 + t * (68 - 158));
+      bVal = Math.round(11 + t * (68 - 11));
+    }
+    return 'rgb(' + rVal + ',' + gVal + ',' + bVal + ')';
+  };
+
+  for (let ix = 0; ix < Nx; ix++) {
+    const xFrac = (ix + 0.5) / Nx;
+    for (let iy = 0; iy < Ny; iy++) {
+      const yFrac = (iy + 0.5) / Ny;
+      const vVal = Math.cos(m * Math.PI * xFrac) * Math.cos(n * Math.PI * yFrac);
+      const vAbs = Math.abs(vVal);
+      const cellX = mg.g + ix * cw;
+      const cellY = mg.h + iy * ch;
+      svg += '<rect x="' + cellX.toFixed(1) + '" y="' + cellY.toFixed(1) + '" width="' + (cw + 0.4).toFixed(1) + '" height="' + (ch + 0.4).toFixed(1) + '" fill="' + rgbColor(vAbs) + '"/>';
+    }
+  }
+
+  // Contour du plan
+  svg += '<rect x="' + mg.g + '" y="' + mg.h + '" width="' + plotW + '" height="' + plotH + '" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>';
+
+  // Lignes nodales (V = 0)
+  if (m > 0) {
+    for (let k = 0; k < m; k++) {
+      const xNodFrac = (2 * k + 1) / (2 * m);
+      const xPix = mg.g + xNodFrac * plotW;
+      svg += '<line x1="' + xPix.toFixed(1) + '" y1="' + mg.h + '" x2="' + xPix.toFixed(1) + '" y2="' + (H - mg.b) + '" stroke="#00f2fe" stroke-width="1.2" stroke-dasharray="3 3" opacity="0.85"/>';
+    }
+  }
+  if (n > 0) {
+    for (let l = 0; l < n; l++) {
+      const yNodFrac = (2 * l + 1) / (2 * n);
+      const yPix = mg.h + yNodFrac * plotH;
+      svg += '<line x1="' + mg.g + '" y1="' + yPix.toFixed(1) + '" x2="' + (W - mg.d) + '" y2="' + yPix.toFixed(1) + '" stroke="#00f2fe" stroke-width="1.2" stroke-dasharray="3 3" opacity="0.85"/>';
+    }
+  }
+
+  // Coins (points chauds)
+  const coins = [
+    { x: mg.g, y: mg.h },
+    { x: W - mg.d, y: mg.h },
+    { x: mg.g, y: H - mg.b },
+    { x: W - mg.d, y: H - mg.b }
+  ];
+  for (const c of coins) {
+    svg += '<circle cx="' + c.x.toFixed(1) + '" cy="' + c.y.toFixed(1) + '" r="5" fill="#ef4444" stroke="#ffffff" stroke-width="1.5" filter="url(#hotGlow)"/>';
+  }
+
+  // Condensateurs réels
+  const capas = (SIM_PDN.condensateurs || []).filter(c => c.actif !== false);
+  for (const cp of capas) {
+    let posX = cp.x != null ? cp.x : (cp.id === 1 ? aMm * 0.15 : (cp.id === 2 ? aMm * 0.4 : (cp.id === 3 ? aMm * 0.5 : (cp.id === 4 ? aMm * 0.75 : aMm * 0.9))));
+    let posY = cp.y != null ? cp.y : (cp.id === 1 ? bMm * 0.2 : (cp.id === 2 ? bMm * 0.45 : (cp.id === 3 ? bMm * 0.5 : (cp.id === 4 ? bMm * 0.6 : bMm * 0.85))));
+    posX = Math.max(0, Math.min(aMm, posX));
+    posY = Math.max(0, Math.min(bMm, posY));
+
+    const xPix = mg.g + (posX / aMm) * plotW;
+    const yPix = mg.h + (posY / bMm) * plotH;
+    const kappa = Math.abs(Math.cos(m * Math.PI * (posX / aMm)) * Math.cos(n * Math.PI * (posY / bMm)));
+
+    const isGood = kappa >= 0.5;
+    const dotCol = isGood ? "#22c55e" : (kappa < 0.2 ? "#f59e0b" : "#38bdf8");
+    const effPct = (kappa * 100).toFixed(0);
+
+    svg += '<g class="simPDNCapMarker" data-ref="' + simEsc(cp.ref) + '" data-eff="' + effPct + '" data-x="' + posX.toFixed(1) + '" data-y="' + posY.toFixed(1) + '" style="cursor:pointer">' +
+           '<circle cx="' + xPix.toFixed(1) + '" cy="' + yPix.toFixed(1) + '" r="5.5" fill="' + dotCol + '" stroke="#0f172a" stroke-width="1.5"/>' +
+           '<text x="' + (xPix + 7).toFixed(1) + '" y="' + (yPix + 3.5).toFixed(1) + '" fill="#ffffff" font-family="var(--mono)" font-size="9px" font-weight="600">' + simEsc(cp.ref) + '</text>' +
+           '</g>';
+  }
+
+  // Graduations
+  svg += '<text class="simCote" x="' + mg.g + '" y="' + (H - 12) + '" text-anchor="middle">0 mm</text>' +
+         '<text class="simCote" x="' + (mg.g + plotW / 2).toFixed(1) + '" y="' + (H - 12) + '" text-anchor="middle">Largeur X = ' + aMm.toFixed(0) + ' mm</text>' +
+         '<text class="simCote" x="' + (W - mg.d) + '" y="' + (H - 12) + '" text-anchor="middle">' + aMm.toFixed(0) + ' mm</text>' +
+         '<text class="simCote" x="' + (mg.g - 6) + '" y="' + (mg.h + 4) + '" text-anchor="end">0</text>' +
+         '<text class="simCote" x="' + (mg.g - 6) + '" y="' + (H - mg.b) + '" text-anchor="end">' + bMm.toFixed(0) + ' mm</text>';
+
+  // Curseur dynamique
+  svg += '<g id="simPDNCaviteCurseur" style="display:none">' +
+         '<line id="simPDNCavTraitX" stroke="rgba(255,255,255,0.7)" stroke-width="1" stroke-dasharray="2 2" y1="' + mg.h + '" y2="' + (H - mg.b) + '"/>' +
+         '<line id="simPDNCavTraitY" stroke="rgba(255,255,255,0.7)" stroke-width="1" stroke-dasharray="2 2" x1="' + mg.g + '" x2="' + (W - mg.d) + '"/>' +
+         '<circle id="simPDNCavPt" r="4.5" fill="#ffffff" stroke="#ef4444" stroke-width="1.5"/>' +
+         '</g>' +
+         '<rect id="simPDNCaviteZone" x="' + mg.g + '" y="' + mg.h + '" width="' + plotW + '" height="' + plotH + '" fill="transparent" style="cursor:crosshair"/>' +
+         '</svg>';
+
+  let leg = '<div class="simLeg">' +
+            '<span><i style="background:#ef4444;width:10px"></i>Points chauds (|V|=1)</span>' +
+            '<span><i style="background:#00f2fe;width:10px;height:2px;border-top:1px dashed #00f2fe"></i>Lignes nodales (V=0)</span>' +
+            '<span><i style="background:#22c55e;width:8px;height:8px;border-radius:50%"></i>Condo efficace (&gt;50%)</span>' +
+            '<span><i style="background:#f59e0b;width:8px;height:8px;border-radius:50%"></i>Condo zone nodale (&lt;20%)</span>' +
+            '<span class="simLecture" id="simPDNCaviteLecture">survolez le plan pour sonder la tension modale V(x,y)</span>' +
+            '</div>';
+
+  return svg + leg;
+}
+
+function simCorpsPDN() {
+  let rails = [];
+  if (SIM_ED && typeof SIM_ED.pdnRails === "function") {
+    rails = SIM_ED.pdnRails() || [];
+  }
+  if (!rails.length) rails = ["+3V3", "+5V", "VCC", "VDD"];
+
+  let tousNets = [];
+  if (SIM_ED && typeof SIM_ED.pdnTousNets === "function") {
+    tousNets = SIM_ED.pdnTousNets() || [];
+  }
+
+  // Net actuellement sélectionné sur la carte (s'il existe et n'est pas GND)
+  if (SIM_ED && typeof SIM_ED.netsSelectionnes === "function") {
+    const sels = SIM_ED.netsSelectionnes();
+    if (sels && sels.length) {
+      const nomSel = sels[0];
+      const isGnd = /^(gnd|0v|vss|ground|earth|mass|masse|[adp]?gnd.*)$/i.test(String(nomSel).trim());
+      if (!isGnd) {
+        if (!rails.includes(nomSel)) rails.unshift(nomSel);
+        if (!SIM_PDN.rail || SIM_PDN.rail === "+3V3" || SIM_PDN.rail === "VCC" || SIM_PDN.rail === "+5V" || SIM_PDN.rail === "VDD") {
+          SIM_PDN.rail = nomSel;
+          simPDNActualiserComposants(true);
+        }
+      }
+    }
+  }
+
+  // Si SIM_PDN.rail était resté sur un faux défaut ("+3V3", etc.) alors que la carte a ses propres rails
+  const estFauxDefaut = (SIM_PDN.rail === "+3V3" || SIM_PDN.rail === "VCC" || SIM_PDN.rail === "+5V" || SIM_PDN.rail === "VDD");
+  if (estFauxDefaut && rails.length > 0 && !rails.includes(SIM_PDN.rail)) {
+    SIM_PDN.rail = rails[0];
+    simPDNActualiserComposants(true);
+  } else if (!SIM_PDN.rail && rails.length > 0) {
+    SIM_PDN.rail = rails[0];
+    simPDNActualiserComposants(true);
+  } else if (SIM_PDN.rail && !rails.includes(SIM_PDN.rail)) {
+    rails.unshift(SIM_PDN.rail);
+  }
+
+  if (!SIM_PDN.result) {
+    simCalculerPDN();
+  }
+
+  let optRails = "";
+  const autresNets = (tousNets || []).filter(n => !rails.includes(n));
+  if (autresNets.length > 0) {
+    optRails += '<optgroup label="⚡ Rails d\'alimentation détectés">';
+    for (const r of rails) {
+      optRails += '<option value="' + simEsc(r) + '"' + (r === SIM_PDN.rail ? " selected" : "") + '>' + simEsc(r) + '</option>';
+    }
+    optRails += '</optgroup>';
+    optRails += '<optgroup label="Tous les autres nets de la carte">';
+    for (const r of autresNets) {
+      optRails += '<option value="' + simEsc(r) + '"' + (r === SIM_PDN.rail ? " selected" : "") + '>' + simEsc(r) + '</option>';
+    }
+    optRails += '</optgroup>';
+  } else {
+    for (const r of rails) {
+      optRails += '<option value="' + simEsc(r) + '"' + (r === SIM_PDN.rail ? " selected" : "") + '>' + simEsc(r) + '</option>';
+    }
+  }
+
+  const zT = SIM_PDN.zTarget || 0.165;
+  const zTBadge = "Z_target = " + simPDNFormatZ(zT);
+
+  return '' +
+    '<div class="pnl-bar">' +
+      '<span class="pnl-lbl">Rail PDN</span>' +
+      '<select id="simPDNRail" class="simChamp" style="min-width:130px;font-family:var(--mono);padding:2px 6px">' + optRails + '</select>' +
+      '<button class="tb mini" id="simPDNActu" title="Rescanner le schéma/carte pour charger tous les condensateurs connectés à ce rail">⚡ Détecter</button>' +
+    '</div>' +
+    '<div class="pnl-bar">' +
+      '<span class="pnl-lbl">Cible Z</span>' +
+      '<span style="font-size:10px;color:var(--txt-dim)">Vdd</span>' +
+      simChamp("simPDNVdd", "Tension d'alimentation nominale du rail (en volts)") +
+      '<span class="simU">V</span>' +
+      '<span style="font-size:10px;color:var(--txt-dim);margin-left:4px">Ondulation</span>' +
+      simChamp("simPDNRipple", "Tolérance d'ondulation de tension admise en % (ex: 5% pour logique standard)") +
+      '<span class="simU">%</span>' +
+      '<span style="font-size:10px;color:var(--txt-dim);margin-left:4px">ΔI</span>' +
+      simChamp("simPDNDeltaI", "Saut de courant transitoire maximal du composant le plus dynamique (en ampères)") +
+      '<span class="simU">A</span>' +
+      '<span class="push" id="simPDNZTargetBadge" style="font-family:var(--mono);font-size:10.5px;color:#38bdf8;font-weight:600">' + zTBadge + '</span>' +
+    '</div>' +
+    '<div class="pnl-bar">' +
+      '<span class="pnl-lbl">VRM & Plan</span>' +
+      '<span style="font-size:10px;color:var(--txt-dim)">R_vrm</span>' +
+      simChamp("simPDNRvrm", "Résistance de régulation DC du VRM en mΩ (typiquement 1 à 10 mΩ)") +
+      '<span class="simU">mΩ</span>' +
+      '<span style="font-size:10px;color:var(--txt-dim);margin-left:4px">f_vrm</span>' +
+      simChamp("simPDNFvrm", "Bande passante de la boucle de régulation du VRM en kHz (typiquement 50 à 200 kHz)") +
+      '<span class="simU">kHz</span>' +
+      '<span style="font-size:10px;color:var(--txt-dim);margin-left:4px">Cavité</span>' +
+      simChamp("simPDNPlaneArea", "Surface du plan de cuivre de la cavité en cm²") +
+      '<span class="simU">cm²</span>' +
+      simChamp("simPDNPlaneD", "Distance diélectrique au plan de référence adjacent en µm") +
+      '<span class="simU">µm</span>' +
+      '<label style="font-size:10px;color:var(--txt-dim);margin-left:4px;cursor:pointer;display:inline-flex;align-items:center;gap:3px">' +
+        '<input type="checkbox" id="simPDNPlaneActif"' + (SIM_PDN.planActif ? " checked" : "") + '/> Plan' +
+      '</label>' +
+    '</div>' +
+    '<div class="pnl-bar">' +
+      '<span class="pnl-lbl">Cavité 2D</span>' +
+      '<span style="font-size:10px;color:var(--txt-dim)">Dim X (a)</span>' +
+      simChamp("simPDNPlaneDimX", "Largeur du plan / carte selon l'axe X (en mm)") +
+      '<span class="simU">mm</span>' +
+      '<span style="font-size:10px;color:var(--txt-dim);margin-left:4px">Dim Y (b)</span>' +
+      simChamp("simPDNPlaneDimY", "Longueur du plan / carte selon l'axe Y (en mm)") +
+      '<span class="simU">mm</span>' +
+      '<span style="font-size:10px;color:var(--txt-dim);margin-left:4px">ε_r</span>' +
+      simChamp("simPDNPlaneEr", "Permittivité diélectrique relative du substrat (ex: 4.3 pour FR4)") +
+      '<span style="font-size:10px;color:var(--txt-dim);margin-left:4px">tanδ</span>' +
+      simChamp("simPDNPlaneTanD", "Facteur de pertes diélectriques (loss tangent, ex: 0.02)") +
+      '<label style="font-size:10px;color:var(--txt-dim);margin-left:6px;cursor:pointer;display:inline-flex;align-items:center;gap:3px" title="Modélisation spatiale 2D des modes stationnaires de cavité">' +
+        '<input type="checkbox" id="simPDNCaviteModesActif"' + (SIM_PDN.caviteModesActif ? " checked" : "") + '/> Modes 2D' +
+      '</label>' +
+    '</div>' +
+    '<div class="pnl-bar simBarFixe">' +
+      '<button class="tb mini on" id="simPDNGo" title="Calculer l\'impédance fréquentielle Z(ω) du PDN">▶ Calculer Z(ω)</button>' +
+      '<button class="tb mini" id="simPDNCsv" title="Exporter les résultats en format CSV">.csv</button>' +
+      '<button class="tb mini" id="simPDNJson" title="Exporter les résultats en format JSON">.json</button>' +
+    '</div>';
+}
+
+function simPDNLireChamps() {
+  const getNum = (id, def) => {
+    const el = simEl(id);
+    if (!el) return def;
+    const v = parseFloat(el.value.replace(",", "."));
+    return isNaN(v) ? def : v;
+  };
+
+  SIM_PDN.vdd = getNum("simPDNVdd", SIM_PDN.vdd || 3.3);
+  SIM_PDN.ripplePct = getNum("simPDNRipple", SIM_PDN.ripplePct || 5.0);
+  SIM_PDN.deltaIA = getNum("simPDNDeltaI", SIM_PDN.deltaIA || 1.0);
+  SIM_PDN.rVrmMOhm = getNum("simPDNRvrm", SIM_PDN.rVrmMOhm || 2.0);
+  SIM_PDN.fVrmKhz = getNum("simPDNFvrm", SIM_PDN.fVrmKhz || 100.0);
+  SIM_PDN.planEpaisseurUm = getNum("simPDNPlaneD", SIM_PDN.planEpaisseurUm || 100.0);
+  SIM_PDN.planEr = getNum("simPDNPlaneEr", SIM_PDN.planEr || 4.3);
+  SIM_PDN.planTanD = getNum("simPDNPlaneTanD", SIM_PDN.planTanD || 0.02);
+
+  const elArea = simEl("simPDNPlaneArea");
+  if (elArea && document.activeElement === elArea) {
+    SIM_PDN.planSurfaceCm2 = getNum("simPDNPlaneArea", SIM_PDN.planSurfaceCm2 || 25.0);
+    const ratio = (SIM_PDN.planDimXmm || 50) / (SIM_PDN.planDimYmm || 50);
+    const newY = Math.sqrt((SIM_PDN.planSurfaceCm2 * 100) / ratio);
+    const newX = newY * ratio;
+    SIM_PDN.planDimXmm = parseFloat(newX.toFixed(1));
+    SIM_PDN.planDimYmm = parseFloat(newY.toFixed(1));
+    const elX = simEl("simPDNPlaneDimX");
+    const elY = simEl("simPDNPlaneDimY");
+    if (elX) elX.value = SIM_PDN.planDimXmm;
+    if (elY) elY.value = SIM_PDN.planDimYmm;
+  } else {
+    SIM_PDN.planDimXmm = getNum("simPDNPlaneDimX", SIM_PDN.planDimXmm || 50.0);
+    SIM_PDN.planDimYmm = getNum("simPDNPlaneDimY", SIM_PDN.planDimYmm || 50.0);
+    SIM_PDN.planSurfaceCm2 = parseFloat(((SIM_PDN.planDimXmm * SIM_PDN.planDimYmm) / 100).toFixed(2));
+    if (elArea) elArea.value = SIM_PDN.planSurfaceCm2.toFixed(1);
+  }
+
+  const chk = simEl("simPDNPlaneActif");
+  if (chk) SIM_PDN.planActif = chk.checked;
+  const chkCav = simEl("simPDNCaviteModesActif");
+  if (chkCav) SIM_PDN.caviteModesActif = chkCav.checked;
+}
+
+function simPDNActualiserBadgeTarget() {
+  const vdd = Math.max(0.1, parseFloat(SIM_PDN.vdd) || 3.3);
+  const ripple = Math.max(0.1, parseFloat(SIM_PDN.ripplePct) || 5.0);
+  const deltaI = Math.max(0.01, parseFloat(SIM_PDN.deltaIA) || 1.0);
+  const zT = (vdd * (ripple / 100)) / deltaI;
+  SIM_PDN.zTarget = zT;
+  const badge = simEl("simPDNZTargetBadge");
+  if (badge) {
+    badge.textContent = "Z_target = " + simPDNFormatZ(zT);
+  }
+}
+
+function simBrancherPDN() {
+  const pose = (id, event, fn) => {
+    const el = simEl(id);
+    if (el) el[event] = fn;
+  };
+
+  // Initialiser les valeurs dans les champs
+  const setVal = (id, val) => {
+    const el = simEl(id);
+    if (el) el.value = val;
+  };
+  setVal("simPDNVdd", SIM_PDN.vdd);
+  setVal("simPDNRipple", SIM_PDN.ripplePct);
+  setVal("simPDNDeltaI", SIM_PDN.deltaIA);
+  setVal("simPDNRvrm", SIM_PDN.rVrmMOhm);
+  setVal("simPDNFvrm", SIM_PDN.fVrmKhz);
+  setVal("simPDNPlaneArea", SIM_PDN.planSurfaceCm2);
+  setVal("simPDNPlaneD", SIM_PDN.planEpaisseurUm);
+  setVal("simPDNPlaneDimX", SIM_PDN.planDimXmm);
+  setVal("simPDNPlaneDimY", SIM_PDN.planDimYmm);
+  setVal("simPDNPlaneEr", SIM_PDN.planEr);
+  setVal("simPDNPlaneTanD", SIM_PDN.planTanD);
+
+  // Sélecteur de rail
+  const selRail = simEl("simPDNRail");
+  if (selRail) {
+    selRail.onchange = function() {
+      SIM_PDN.rail = this.value;
+      simPDNActualiserComposants();
+      simCalculerPDN();
+    };
+  }
+
+  // Bouton Actualiser / Détecter
+  pose("simPDNActu", "onclick", function() {
+    if (SIM_ED && typeof SIM_ED.netsSelectionnes === "function") {
+      const sels = SIM_ED.netsSelectionnes();
+      if (sels && sels.length) {
+        const isGnd = /^(gnd|0v|vss|ground|earth|mass|masse|[adp]?gnd.*)$/i.test(String(sels[0]).trim());
+        if (!isGnd) SIM_PDN.rail = sels[0];
+      }
+    }
+    simPDNActualiserComposants(true);
+    simCalculerPDN();
+    const ctl = simEl("simCtl");
+    if (ctl && simCalculable() && simAnalyse() && simAnalyse().corps) {
+      ctl.innerHTML = simAnalyse().corps();
+      if (simAnalyse().brancher) simAnalyse().brancher();
+    }
+    simRendre();
+  });
+
+  // Calculer
+  pose("simPDNGo", "onclick", function() {
+    simPDNLireChamps();
+    simCalculerPDN();
+  });
+
+  // Exports
+  pose("simPDNCsv", "onclick", simPDNExportCsv);
+  pose("simPDNJson", "onclick", simPDNExportJson);
+
+  // Mises à jour en direct des champs
+  for (const id of ["simPDNVdd", "simPDNRipple", "simPDNDeltaI"]) {
+    pose(id, "oninput", function() {
+      simPDNLireChamps();
+      simPDNActualiserBadgeTarget();
+    });
+  }
+
+  for (const id of ["simPDNRvrm", "simPDNFvrm", "simPDNPlaneArea", "simPDNPlaneD", "simPDNPlaneDimX", "simPDNPlaneDimY", "simPDNPlaneEr", "simPDNPlaneTanD"]) {
+    pose(id, "oninput", function() {
+      simPDNLireChamps();
+    });
+  }
+
+  const chkPlan = simEl("simPDNPlaneActif");
+  if (chkPlan) {
+    chkPlan.onchange = function() {
+      SIM_PDN.planActif = this.checked;
+      simCalculerPDN();
+    };
+  }
+
+  const chkCav = simEl("simPDNCaviteModesActif");
+  if (chkCav) {
+    chkCav.onchange = function() {
+      SIM_PDN.caviteModesActif = this.checked;
+      simCalculerPDN();
+    };
+  }
+}
+
+function simRendrePDN() {
+  if (SIM_PDN.erreur) {
+    return '<p class="simErr">' + simEsc(SIM_PDN.erreur) + '</p>';
+  }
+  const r = SIM_PDN.result;
+  if (!r) {
+    return '<p class="simEtat">Sélectionnez un rail d\'alimentation et cliquez sur <b>▶ Calculer Z(ω)</b> pour générer le profil fréquentiel du PDN.</p>';
+  }
+
+  let html = '';
+
+  // Verdict Banner
+  if (r.conforme) {
+    html += '<div style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);border-radius:5px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px">' +
+      '<span style="font-size:15px;color:#22c55e">✓</span>' +
+      '<div style="font-size:11px;color:var(--txt)">' +
+        '<b style="color:#22c55e">PDN CONFORME</b> : Impédance max <b>' + simPDNFormatZ(r.zMax) + '</b> ≤ Cible <b>' + simPDNFormatZ(r.zTarget) + '</b> de 10 kHz à 1 GHz. ' +
+        'Le réseau de découplage maintient la tension dans le gabarit d\'ondulation de ' + SIM_PDN.ripplePct + '%.' +
+      '</div>' +
+    '</div>';
+  } else {
+    const depassementPct = (((r.zMax - r.zTarget) / r.zTarget) * 100).toFixed(0);
+    html += '<div style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:5px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px">' +
+      '<span style="font-size:15px;color:#ef4444">⚠</span>' +
+      '<div style="font-size:11px;color:var(--txt)">' +
+        '<b style="color:#ef4444">DÉPASSEMENT DE L\'IMPÉDANCE CIBLE (+' + depassementPct + '%)</b> : ' +
+        'Pic d\'anti-résonance culminant à <b>' + simPDNFormatZ(r.zMax) + '</b> (cible ' + simPDNFormatZ(r.zTarget) + ') à <b>' + simPDNFormatFreq(r.fZMax) + '</b>. ' +
+        'Risque d\'ondulation excessive lors des transitoires de courant rapides.' +
+      '</div>' +
+    '</div>';
+  }
+
+  // Summary row
+  html += '<div style="font-size:10.5px;color:var(--txt-dim);display:flex;gap:14px;flex-wrap:wrap;margin-bottom:6px">' +
+    '<span>Rail : <b>' + simEsc(SIM_PDN.rail || "VCC") + '</b></span>' +
+    '<span>Impédance cible : <b style="color:#38bdf8">' + simPDNFormatZ(r.zTarget) + '</b></span>' +
+    '<span>Impédance max : <b style="color:' + (r.conforme ? '#22c55e' : '#ef4444') + '">' + simPDNFormatZ(r.zMax) + '</b></span>' +
+    '<span>Fréquence pic : <b>' + simPDNFormatFreq(r.fZMax) + '</b></span>' +
+    '<span>Condensateurs actifs : <b>' + r.capasCount + '</b></span>' +
+    (r.cPlaneTotalPf ? '<span>Capacité plan : <b>' + r.cPlaneTotalPf.toFixed(0) + ' pF</b></span>' : '') +
+    (r.caviteModes && r.caviteModes.length ? '<span>Mode fond. : <b style="color:#c084fc">' + r.caviteModes[0].modeStr + ' (' + simPDNFormatFreq(r.caviteModes[0].f) + ')</b></span>' : '') +
+  '</div>';
+
+  // SVG Chart
+  html += simCourbePDN(r);
+
+  // Capacitors Table
+  const capas = SIM_PDN.condensateurs || [];
+  html += '<div style="margin-top:12px">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+      '<span style="font-size:11px;font-weight:600;color:var(--txt)">Condensateurs de découplage du rail (' + capas.length + ')</span>' +
+      '<span style="font-size:10px;color:var(--txt-dim)">Cochez/décochez pour simuler l\'effet direct sur Z(ω)</span>' +
+    '</div>' +
+    '<div style="max-height:260px;overflow-y:auto;border:1px solid var(--border2);border-radius:4px">' +
+      '<table class="simTab" style="width:100%">' +
+        '<thead><tr>' +
+          '<th style="width:28px;text-align:center">Actif</th>' +
+          '<th style="text-align:left">Réf</th>' +
+          '<th style="text-align:left">Valeur</th>' +
+          '<th style="text-align:left">Boîtier</th>' +
+          '<th style="text-align:right">ESR</th>' +
+          '<th style="text-align:right">ESL</th>' +
+          '<th style="text-align:right">L_mount</th>' +
+          '<th style="text-align:right">f₀ (SRF)</th>' +
+          '<th style="text-align:center">Modèle / Provenance</th>' +
+        '</tr></thead><tbody>';
+
+  for (const cp of capas) {
+    let provBadge = '<span class="simBadge" style="background:rgba(148,163,184,0.15);color:#94a3b8">Générique</span>';
+    if (cp.prov === "spice") {
+      provBadge = '<span class="simBadge" style="background:rgba(34,197,94,0.18);color:#4ade80;font-weight:600" title="Modèle réel Murata extrait du sous-circuit SPICE .sub / parasites-murata.json">Murata SPICE</span>';
+    } else if (cp.prov === "catalogue") {
+      provBadge = '<span class="simBadge" style="background:rgba(59,130,246,0.18);color:#60a5fa" title="Caractéristiques extraites du catalogue de composants">Catalogue</span>';
+    }
+
+    const esrTxt = cp.esr < 1 ? (cp.esr * 1000).toFixed(1) + " mΩ" : cp.esr.toFixed(2) + " Ω";
+    const eslTxt = ((cp.esl || 0) * 1e9).toFixed(2) + " nH";
+    const lMountTxt = ((cp.lMount || 0) * 1e9).toFixed(2) + " nH";
+    const f0Txt = (cp.f0 >= 1000 ? (cp.f0 / 1000).toFixed(2) + " GHz" : (cp.f0 || 0).toFixed(1) + " MHz");
+
+    html += '<tr style="' + (cp.actif === false ? 'opacity:0.4;background:rgba(0,0,0,0.1)' : '') + '">' +
+      '<td style="text-align:center"><input type="checkbox" class="simPDNCapToggle" data-id="' + cp.id + '"' + (cp.actif !== false ? ' checked' : '') + ' style="cursor:pointer" /></td>' +
+      '<td style="font-weight:600;color:var(--txt)">' + simEsc(cp.ref) + '</td>' +
+      '<td>' + simEsc(cp.val) + '</td>' +
+      '<td style="color:var(--txt-dim)">' + simEsc(cp.pkg) + '</td>' +
+      '<td class="n">' + esrTxt + '</td>' +
+      '<td class="n">' + eslTxt + '</td>' +
+      '<td class="n" style="color:var(--txt-dim)">' + lMountTxt + '</td>' +
+      '<td class="n" style="color:#38bdf8">' + f0Txt + '</td>' +
+      '<td style="text-align:center">' + provBadge + '</td>' +
+    '</tr>';
+  }
+
+  html += '</tbody></table></div>';
+
+  // SECTION : RÉSONANCES SPATIALES 2D DE CAVITÉ
+  if (r.caviteModes && r.caviteModes.length) {
+    const selMode = SIM_PDN.caviteModeSel || (r.caviteModes[0] && r.caviteModes[0].modeStr) || "TM10";
+    const curModeObj = r.caviteModes.find(m => m.modeStr === selMode) || r.caviteModes[0];
+
+    html += '<div style="margin-top:16px;border-top:1px solid var(--border2);padding-top:12px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">' +
+        '<div>' +
+          '<span style="font-size:12px;font-weight:700;color:var(--txt)">Résonances spatiales 2D de cavité (Plans PWR/GND)</span>' +
+          '<span style="font-size:10.5px;color:var(--txt-dim);margin-left:8px">Dimensions : <b>' + r.aMm.toFixed(1) + ' × ' + r.bMm.toFixed(1) + ' mm</b> (ε_r = ' + r.er + ', d = ' + r.dUm + ' µm)</span>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">';
+
+    // Boutons de sélection des modes
+    for (const cm of r.caviteModes.slice(0, 8)) {
+      const isSel = cm.modeStr === selMode;
+      html += '<button class="tb mini simPDNModeBtn' + (isSel ? ' on' : '') + '" data-mode="' + cm.modeStr + '" style="font-family:var(--mono);font-size:10px;padding:2px 6px" title="Mode ' + cm.modeStr + ' à ' + simPDNFormatFreq(cm.f) + ' (Q=' + cm.q.toFixed(1) + ')">' +
+        cm.modeStr + ' (' + simPDNFormatFreq(cm.f) + ')' +
+      '</button>';
+    }
+
+    html += '</div></div>';
+
+    // Fiche résumé du mode sélectionné
+    html += '<div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.25);border-radius:4px;padding:6px 10px;margin-bottom:8px;font-size:10.5px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">' +
+      '<span>Mode actif : <b style="color:#c084fc">' + curModeObj.modeStr + '</b></span>' +
+      '<span>Fréquence propre : <b>' + simPDNFormatFreq(curModeObj.f) + '</b></span>' +
+      '<span>Facteur Q : <b>' + curModeObj.q.toFixed(1) + '</b></span>' +
+      '<span>Bande passante : <b>' + simPDNFormatFreq(curModeObj.deltaF) + '</b></span>' +
+      '<span>Impédance crête : <b>' + simPDNFormatZ(curModeObj.zPeak) + '</b></span>' +
+      '<span>Type : <b>' + simEsc(curModeObj.type) + '</b></span>' +
+      '<span>Ventres : <b>' + simEsc(curModeObj.ventres) + '</b></span>' +
+    '</div>';
+
+    // Cartographie 2D SVG (Heatmap)
+    html += simPDNGenererHeatmapCavite(r, selMode);
+
+    // Tableau synthétique de tous les modes calculés
+    html += '<div style="margin-top:10px;max-height:180px;overflow-y:auto;border:1px solid var(--border2);border-radius:4px">' +
+      '<table class="simTab" style="width:100%">' +
+        '<thead><tr>' +
+          '<th style="text-align:left">Mode</th>' +
+          '<th style="text-align:right">Fréquence f_mn</th>' +
+          '<th style="text-align:right">Facteur Q</th>' +
+          '<th style="text-align:right">Bande Δf</th>' +
+          '<th style="text-align:right">|Z| crête</th>' +
+          '<th style="text-align:left">Nature de l\'onde</th>' +
+          '<th style="text-align:left">Ventres de tension (Points chauds HF)</th>' +
+        '</tr></thead><tbody>';
+
+    for (const cm of r.caviteModes) {
+      const isSel = cm.modeStr === selMode;
+      html += '<tr style="' + (isSel ? 'background:rgba(168,85,247,0.15);font-weight:600' : '') + '">' +
+        '<td style="font-family:var(--mono);color:' + (isSel ? '#c084fc' : 'var(--txt)') + '">' + cm.modeStr + '</td>' +
+        '<td class="n" style="font-family:var(--mono)">' + simPDNFormatFreq(cm.f) + '</td>' +
+        '<td class="n">' + cm.q.toFixed(1) + '</td>' +
+        '<td class="n">' + simPDNFormatFreq(cm.deltaF) + '</td>' +
+        '<td class="n" style="color:#ef4444">' + simPDNFormatZ(cm.zPeak) + '</td>' +
+        '<td>' + simEsc(cm.type) + '</td>' +
+        '<td style="color:var(--txt-dim);font-size:10px">' + simEsc(cm.ventres) + '</td>' +
+      '</tr>';
+    }
+    html += '</tbody></table></div>';
+
+    // Guide de conception CEM & PDN pour cavités de plans
+    html += '<p class="simNote" style="margin-top:8px">' +
+      '· <b>Points chauds aux coins (|V|=100%)</b> : Les modes de cavité possèdent systématiquement des ventres de tension aux 4 coins du plan (cos=1). Pour bloquer le rayonnement électromagnétique de bord de carte (EMI), implanter impérativement des condensateurs HF ou un via stitching périphérique espacé de moins de λ/20.<br>' +
+      '· <b>Lignes nodales (V=0)</b> : Tout condensateur situé exactement sur une ligne nodale présente une efficacité d\'amortissement nulle sur ce mode. Une bonne stratégie de découplage panache les emplacements.<br>' +
+      '· <b>Règle des 20-H</b> : Réduire le plan d\'alimentation de 20 fois l\'épaisseur diélectrique (20·d) par rapport au plan de masse de référence abaisse le couplage de bord et atténue les modes de cavité élevés.' +
+    '</p>';
+
+    html += '</div>';
+  }
+
+  // Educational notes
+  html += '<p class="simNote" style="margin-top:10px">' +
+    '· <b>Impédance cible Z_target</b> : <code>Z_target = (V_dd · Ripple%) / ΔI</code>. En deçà de ce seuil, les appels de courant transitoires ne provoquent pas d\'ondulation hors tolérance.<br>' +
+    '· <b>Modèles Murata réels</b> : Les condensateurs utilisent les grandeurs équivalentes réelles extraites des modèles SPICE Murata (séries GCM/GRM). L\'inductance de montage (vias + pastilles) s\'ajoute en série avec l\'ESL intrinsèque.<br>' +
+    '· <b>Anti-résonances</b> : Les pics d\'impédance résultent de la résonance parallèle entre l\'inductance résiduelle d\'une capacité de forte valeur et la capacité d\'une valeur plus petite voisine. Pour les atténuer, rapprocher les valeurs nominales (ratio ≤ 5) ou réduire l\'inductance des vias de raccordement.' +
+  '</p>';
+
+  html += '</div>';
+  return html;
+}
+
+function simPDNApres() {
+  // 1. Branchement des cases à cocher des condensateurs
+  const box = simEl("simSortie");
+  if (box) {
+    box.querySelectorAll(".simPDNCapToggle").forEach(cb => {
+      cb.onchange = function() {
+        const id = parseInt(this.getAttribute("data-id"));
+        const cap = (SIM_PDN.condensateurs || []).find(it => it.id === id);
+        if (cap) {
+          cap.actif = this.checked;
+          simCalculerPDN();
+        }
+      };
+    });
+  }
+
+  // 2. Curseur dynamique de mesure sur le graphe SVG
+  const zone = simEl("simPDNCurZone");
+  const cur = simEl("simPDNCurseur");
+  const traitX = simEl("simPDNCurTraitX");
+  const pt = simEl("simPDNCurPt");
+  const lect = simEl("simPDNLecture");
+
+  if (zone && cur && SIM_PDN.result && SIM_PDN.result.freqs && SIM_PDN.result.freqs.length) {
+    const freqs = SIM_PDN.result.freqs;
+    const zVals = SIM_PDN.result.zPdn;
+    const W = 560, H = 250;
+    const mg = { g: 58, d: 24, h: 24, b: 32 };
+    const logF0 = 4, logF1 = 9;
+
+    let logZMin = -3, logZMax = 2;
+    if (SIM_PDN.result.zMax > 100) logZMax = Math.ceil(Math.log10(SIM_PDN.result.zMax));
+    if (SIM_PDN.result.zTarget > 100) logZMax = Math.max(logZMax, Math.ceil(Math.log10(SIM_PDN.result.zTarget)));
+    const minZObs = Math.min(...zVals);
+    if (minZObs < 1e-3) logZMin = Math.floor(Math.log10(minZObs));
+
+    const Y = z => mg.h + (H - mg.h - mg.b) * (1 - (Math.log10(Math.max(z, 1e-6)) - logZMin) / (logZMax - logZMin));
+
+    zone.onmousemove = function(e) {
+      const rect = zone.getBoundingClientRect();
+      const xPixel = e.clientX - rect.left;
+      const frac = Math.max(0, Math.min(1, xPixel / rect.width));
+      const logF = logF0 + frac * (logF1 - logF0);
+
+      let idx = 0, bestDist = Infinity;
+      for (let k = 0; k < freqs.length; k++) {
+        const d = Math.abs(Math.log10(freqs[k]) - logF);
+        if (d < bestDist) { bestDist = d; idx = k; }
+      }
+      const fCur = freqs[idx];
+      const zCur = zVals[idx];
+      const xCoord = mg.g + frac * (W - mg.g - mg.d);
+      const yCoord = Y(zCur);
+
+      cur.style.display = "";
+      if (traitX) {
+        traitX.setAttribute("x1", xCoord.toFixed(1));
+        traitX.setAttribute("x2", xCoord.toFixed(1));
+      }
+      if (pt) {
+        pt.setAttribute("cx", xCoord.toFixed(1));
+        pt.setAttribute("cy", yCoord.toFixed(1));
+      }
+      if (lect) {
+        lect.classList.add("on");
+        const ecart = ((zCur - SIM_PDN.result.zTarget) / SIM_PDN.result.zTarget) * 100;
+        const margeHtml = ecart <= 0
+          ? '<span style="color:#4ade80">marge +' + Math.abs(ecart).toFixed(1) + '%</span>'
+          : '<span style="color:#ef4444">dépassement +' + ecart.toFixed(1) + '%</span>';
+        lect.innerHTML = '<b>f = ' + simPDNFormatFreq(fCur) + '</b> · <b>|Z| = ' + simPDNFormatZ(zCur) + '</b> (' + margeHtml + ')';
+      }
+    };
+
+    zone.onmouseleave = function() {
+      cur.style.display = "none";
+      if (lect) {
+        lect.classList.remove("on");
+        lect.textContent = "survolez la courbe pour mesurer f, |Z| et marge vs Z_target";
+      }
+    };
+  }
+
+  // 3. Survol dynamique sur la carte de cavité 2D
+  const cavZone = simEl("simPDNCaviteZone");
+  const cavCur = simEl("simPDNCaviteCurseur");
+  const cavTraitX = simEl("simPDNCavTraitX");
+  const cavTraitY = simEl("simPDNCavTraitY");
+  const cavPt = simEl("simPDNCavPt");
+  const cavLect = simEl("simPDNCaviteLecture");
+
+  if (cavZone && cavCur && SIM_PDN.result && SIM_PDN.result.caviteModes && SIM_PDN.result.caviteModes.length) {
+    const W = 560, H = 260;
+    const mg = { g: 50, d: 24, h: 22, b: 32 };
+    const plotW = W - mg.g - mg.d;
+    const plotH = H - mg.h - mg.b;
+    const aMm = Math.max(1, parseFloat(SIM_PDN.planDimXmm) || 50.0);
+    const bMm = Math.max(1, parseFloat(SIM_PDN.planDimYmm) || 50.0);
+
+    const activeModeStr = SIM_PDN.caviteModeSel || SIM_PDN.result.caviteModes[0].modeStr;
+    const activeMode = SIM_PDN.result.caviteModes.find(m => m.modeStr === activeModeStr) || SIM_PDN.result.caviteModes[0];
+    const m = activeMode ? activeMode.m : 1;
+    const n = activeMode ? activeMode.n : 0;
+
+    cavZone.onmousemove = function(e) {
+      const rect = cavZone.getBoundingClientRect();
+      const xPixel = e.clientX - rect.left;
+      const yPixel = e.clientY - rect.top;
+      const xFrac = Math.max(0, Math.min(1, xPixel / rect.width));
+      const yFrac = Math.max(0, Math.min(1, yPixel / rect.height));
+
+      const xMm = xFrac * aMm;
+      const yMm = yFrac * bMm;
+      const vVal = Math.cos(m * Math.PI * xFrac) * Math.cos(n * Math.PI * yFrac);
+      const vAbs = Math.abs(vVal);
+      const vPct = (vAbs * 100).toFixed(0);
+
+      const xCoord = mg.g + xFrac * plotW;
+      const yCoord = mg.h + yFrac * plotH;
+
+      cavCur.style.display = "";
+      if (cavTraitX) {
+        cavTraitX.setAttribute("x1", xCoord.toFixed(1));
+        cavTraitX.setAttribute("x2", xCoord.toFixed(1));
+      }
+      if (cavTraitY) {
+        cavTraitY.setAttribute("y1", yCoord.toFixed(1));
+        cavTraitY.setAttribute("y2", yCoord.toFixed(1));
+      }
+      if (cavPt) {
+        cavPt.setAttribute("cx", xCoord.toFixed(1));
+        cavPt.setAttribute("cy", yCoord.toFixed(1));
+      }
+      if (cavLect) {
+        cavLect.classList.add("on");
+        let qualif = vAbs >= 0.8 ? '<b style="color:#ef4444">Point chaud HF</b>' : (vAbs <= 0.15 ? '<span style="color:#38bdf8">Ligne nodale (V≈0)</span>' : 'Zone intermédiaire');
+        cavLect.innerHTML = '<b>X = ' + xMm.toFixed(1) + ' mm, Y = ' + yMm.toFixed(1) + ' mm</b> · |V| = <b>' + vPct + '%</b> (' + qualif + ')';
+      }
+    };
+
+    cavZone.onmouseleave = function() {
+      cavCur.style.display = "none";
+      if (cavLect) {
+        cavLect.classList.remove("on");
+        cavLect.textContent = "survolez le plan pour sonder la tension modale V(x,y)";
+      }
+    };
+  }
+
+  // 4. Boutons de sélection de mode pour la cavité
+  if (box) {
+    box.querySelectorAll(".simPDNModeBtn").forEach(btn => {
+      btn.onclick = function() {
+        const mode = this.getAttribute("data-mode");
+        if (mode) {
+          SIM_PDN.caviteModeSel = mode;
+          simRendre();
+        }
+      };
+    });
+  }
+}
+
+function simPDNOublier() {
+  return false;
+}
+
+function simPDNCsvTexte() {
+  if (!SIM_PDN.result) return null;
+  const r = SIM_PDN.result;
+  const n = v => (v != null ? String(v).replace(".", ",") : "");
+  const lines = [
+    "pdn_rail;" + (SIM_PDN.rail || "VCC") + ";vdd_V;" + n(SIM_PDN.vdd) + ";ripple_pct;" + n(SIM_PDN.ripplePct) + ";delta_i_A;" + n(SIM_PDN.deltaIA) + ";z_target_ohm;" + n(r.zTarget) + ";conforme;" + (r.conforme ? "OUI" : "NON"),
+    "frequence_Hz;z_pdn_ohm;z_target_ohm;z_vrm_ohm;z_plane_ohm"
+  ];
+  for (let i = 0; i < r.freqs.length; i++) {
+    lines.push([
+      n(r.freqs[i].toFixed(1)),
+      n(r.zPdn[i].toFixed(6)),
+      n(r.zTarget.toFixed(6)),
+      n(r.zVrm[i] ? r.zVrm[i].toFixed(6) : ""),
+      n(r.zPlane[i] ? r.zPlane[i].toFixed(6) : "")
+    ].join(";"));
+  }
+  lines.push("");
+  lines.push("id;ref;valeur;boitier;capacite_F;esr_ohm;esl_H;l_mount_H;f0_MHz;x_mm;y_mm;provenance;actif");
+  for (const c of SIM_PDN.condensateurs || []) {
+    lines.push([
+      c.id, c.ref, c.val, c.pkg, n(c.cap), n(c.esr), n(c.esl), n(c.lMount), n(c.f0), n(c.x), n(c.y), c.prov, c.actif ? 1 : 0
+    ].join(";"));
+  }
+  if (r.caviteModes && r.caviteModes.length) {
+    lines.push("");
+    lines.push("cavite_dim_x_mm;" + n(SIM_PDN.planDimXmm) + ";cavite_dim_y_mm;" + n(SIM_PDN.planDimYmm) + ";er;" + n(SIM_PDN.planEr) + ";tand;" + n(SIM_PDN.planTanD) + ";d_um;" + n(SIM_PDN.planEpaisseurUm));
+    lines.push("mode_cavite;frequence_MHz;facteur_q;bande_passante_MHz;z_peak_ohm;type_onde;ventres_tension");
+    for (const cm of r.caviteModes) {
+      lines.push([
+        cm.modeStr,
+        n((cm.f * 1e-6).toFixed(2)),
+        n(cm.q.toFixed(1)),
+        n((cm.deltaF * 1e-6).toFixed(2)),
+        n(cm.zPeak.toFixed(3)),
+        cm.type,
+        cm.ventres
+      ].join(";"));
+    }
+  }
+  return lines.join("\r\n");
+}
+
+function simPDNExportCsv() {
+  const t = simPDNCsvTexte();
+  if (!t) {
+    SIM_PDN.erreur = "Aucun calcul à exporter : lancez d'abord le calcul Z(ω).";
+    simRendre();
+    return;
+  }
+  const nom = "pdn-" + (SIM_PDN.rail || "rail").toLowerCase().replace(/[^a-z0-9_-]+/g, "_") + "-z_omega.csv";
+  simTelecharger(t, nom, "text/csv;charset=utf-8");
+}
+
+function simPDNJsonTexte() {
+  if (!SIM_PDN.result) return null;
+  const obj = {
+    rail: SIM_PDN.rail,
+    config: {
+      vdd: SIM_PDN.vdd,
+      ripplePct: SIM_PDN.ripplePct,
+      deltaIA: SIM_PDN.deltaIA,
+      zTarget: SIM_PDN.zTarget,
+      rVrmMOhm: SIM_PDN.rVrmMOhm,
+      fVrmKhz: SIM_PDN.fVrmKhz,
+      planSurfaceCm2: SIM_PDN.planSurfaceCm2,
+      planDimXmm: SIM_PDN.planDimXmm,
+      planDimYmm: SIM_PDN.planDimYmm,
+      planEpaisseurUm: SIM_PDN.planEpaisseurUm,
+      planEr: SIM_PDN.planEr,
+      planTanD: SIM_PDN.planTanD,
+      planActif: SIM_PDN.planActif,
+      caviteModesActif: SIM_PDN.caviteModesActif
+    },
+    condensateurs: SIM_PDN.condensateurs,
+    result: {
+      conforme: SIM_PDN.result.conforme,
+      zTarget: SIM_PDN.result.zTarget,
+      zMax: SIM_PDN.result.zMax,
+      fZMax: SIM_PDN.result.fZMax,
+      antiresonances: SIM_PDN.result.antiresonances,
+      freqs: SIM_PDN.result.freqs,
+      zPdn: SIM_PDN.result.zPdn,
+      zVrm: SIM_PDN.result.zVrm,
+      zPlane: SIM_PDN.result.zPlane,
+      caviteModes: SIM_PDN.result.caviteModes,
+      aMm: SIM_PDN.result.aMm,
+      bMm: SIM_PDN.result.bMm,
+      er: SIM_PDN.result.er,
+      tanD: SIM_PDN.result.tanD,
+      dUm: SIM_PDN.result.dUm
+    }
+  };
+  return JSON.stringify(obj, null, 2);
+}
+
+function simPDNExportJson() {
+  const t = simPDNJsonTexte();
+  if (!t) {
+    SIM_PDN.erreur = "Aucun calcul à exporter : lancez d'abord le calcul Z(ω).";
+    simRendre();
+    return;
+  }
+  const nom = "pdn-" + (SIM_PDN.rail || "rail").toLowerCase().replace(/[^a-z0-9_-]+/g, "_") + "-z_omega.json";
+  simTelecharger(t, nom, "application/json");
+}
+
 const SIM_FAMILLES=[
   {cle:"si", court:"SI", nom:"Intégrité du signal",
    quoi:"Ce qu'un front devient en parcourant le cuivre : impédance, retard, "+
@@ -12340,7 +13960,7 @@ const SIM_FAMILLES=[
   {cle:"pi", court:"PI", nom:"Intégrité de l'alimentation",
    quoi:"Ce que le réseau de distribution laisse passer : chute continue, "+
         "impédance vue par le composant, résonances de plan.",
-   analyses:["dc"]}
+   analyses:["dc","pdn"]}
 ];
 
 /* Le catalogue des analyses. `impedance` est la seule à exister, et tout ce
@@ -12464,6 +14084,18 @@ const SIM_ANALYSES={
     oublier:function(){
       return false;
     }
+  },
+  pdn:{
+    nom:"Z(ω) PDN",
+    titre:"Impédance fréquentielle du réseau de distribution d'énergie (PDN) : calcul et tracé de Z(ω) de 10 kHz à 1 GHz avec injection des modèles réels ESR/ESL Murata, impédance cible Z_target, VRM et cavité de plans.",
+    peint:false,
+    carte:"",
+    corps:simCorpsPDN,
+    brancher:simBrancherPDN,
+    rendre:simRendrePDN,
+    apres:simPDNApres,
+    relancer:simCalculerPDN,
+    oublier:simPDNOublier
   }
 };
 
@@ -13223,6 +14855,8 @@ function simDocFinir(doc){
   const nDiff=String(SIM.saisie.paireN||"");
   if(nDiff&&doc.net&&nDiff!==doc.net)
     doc.paires=[[doc.net,nDiff]].concat(doc.paires||[]);
+  if(SIM.saisie&&SIM.saisie.cibleDiff>0)
+    doc.cible_diff=SIM.saisie.cibleDiff;
   return doc;
 }
 
@@ -13602,6 +15236,39 @@ function simRafraichir(garderCarte){
   if(SIM.analyse==="bus"){
     simBusSuivreSelection();
     simBusRendreNetsBar();
+  }
+  if(SIM.analyse==="pdn"){
+    if(SIM_ED&&typeof SIM_ED.netsSelectionnes==="function"){
+      const sels=SIM_ED.netsSelectionnes();
+      if(sels&&sels.length){
+        const nomSel=sels[0];
+        const isGnd=/^(gnd|0v|vss|ground|earth|mass|masse|[adp]?gnd.*)$/i.test(String(nomSel).trim());
+        if(!isGnd&&nomSel!==SIM_PDN.rail){
+          SIM_PDN.rail=nomSel;
+          simPDNActualiserComposants(true);
+          simCalculerPDN();
+          const selRail=simEl("simPDNRail");
+          if(selRail){
+            let exists=false;
+            for(let i=0;i<selRail.options.length;i++){
+              if(selRail.options[i].value===nomSel){
+                selRail.selectedIndex=i;
+                exists=true;
+                break;
+              }
+            }
+            if(!exists){
+              const opt=document.createElement("option");
+              opt.value=nomSel;
+              opt.textContent=nomSel;
+              opt.selected=true;
+              selRail.insertBefore(opt,selRail.firstChild);
+            }
+          }
+          simRendre();
+        }
+      }
+    }
   }
 
   simRefEcrire();

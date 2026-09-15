@@ -128,7 +128,7 @@ var BLOC_PLACEMENT = (function() {
   }
 
   /* ---------- Résolution des collisions 2D (Relaxation élastique) ---------- */
-  function resoudreCollisions(clusterFps, clearance = 0.6, iterations = 40) {
+  function resoudreCollisions(clusterFps, clearance = 0.6, iterations = 40, anchorId = null) {
     if (clusterFps.length < 2) return;
 
     for (let it = 0; it < iterations; it++) {
@@ -143,17 +143,19 @@ var BLOC_PLACEMENT = (function() {
 
           if (ox > 0 && oy > 0) {
             modif = true;
+            const aIsAnchor = (anchorId !== null && a.id === anchorId);
+            const bIsAnchor = (anchorId !== null && b.id === anchorId);
             // Écarte selon l'axe de plus faible recouvrement
             if (ox < oy) {
               const sign = (b.x >= a.x ? 1 : -1);
               const shift = (ox / 2) * sign;
-              if (!a.isAnchor) a.x -= shift;
-              if (!b.isAnchor) b.x += shift;
+              if (!aIsAnchor) a.x -= shift;
+              if (!bIsAnchor) b.x += shift;
             } else {
               const sign = (b.y >= a.y ? 1 : -1);
               const shift = (oy / 2) * sign;
-              if (!a.isAnchor) a.y -= shift;
-              if (!b.isAnchor) b.y += shift;
+              if (!aIsAnchor) a.y -= shift;
+              if (!bIsAnchor) b.y += shift;
             }
           }
         }
@@ -231,9 +233,7 @@ var BLOC_PLACEMENT = (function() {
       anchor = fps.find(f => /^(U|IC|VR|REG|Y|X)/i.test(f.ref)) || fps[0];
     }
 
-    anchor.isAnchor = true;
     const satellites = fps.filter(f => f.id !== anchor.id);
-    satellites.forEach(f => { f.isAnchor = false; });
 
     const roleMap = motif.role_map || {};
     const tpl = motif.layout_template || "cluster_free";
@@ -364,7 +364,7 @@ var BLOC_PLACEMENT = (function() {
     }
 
     // Résolution des collisions avec marge d'isolation DRC (0.6 mm)
-    resoudreCollisions(fps, 0.6, 50);
+    resoudreCollisions(fps, 0.6, 50, anchor ? anchor.id : null);
 
     // Optimisation automatique des rotations
     satellites.forEach(f => optimiserRotation(f, anchor, satellites));
@@ -474,6 +474,160 @@ var BLOC_PLACEMENT = (function() {
     return null;
   }
 
+  /* ---------- Action 3 : Agencer automatiquement une liste de nouveaux composants par grappes fonctionnelles ---------- */
+  function agencerListeNouveauxComposants(addedFps) {
+    if (!addedFps || !addedFps.length || typeof S === "undefined" || !S || !S.board) return;
+
+    const b = S.board;
+    const addedRefs = new Set(addedFps.map(f => String(f.ref).trim().toUpperCase()));
+    const traites = new Set();
+    const grappes = [];
+
+    // 1. Recherche parmi les motifs existants (patterns issus du schéma ou du serveur)
+    const pat = getPatterns();
+    if (pat && Array.isArray(pat.motifs)) {
+      for (const m of pat.motifs) {
+        const mRefs = (m.components || m.composants || []).map(r => String(r).trim().toUpperCase());
+        const matchRefs = mRefs.filter(r => addedRefs.has(r) && !traites.has(r));
+        if (matchRefs.length >= 2) {
+          const res = calculerAgencement(m);
+          if (res && res.all && res.all.length >= 2) {
+            grappes.push({ motif: m, res, fps: res.all });
+            matchRefs.forEach(r => traites.add(r));
+          }
+        }
+      }
+    }
+
+    // 2. Recherche parmi les zones schématiques (rooms)
+    const zones = getZones();
+    if (zones && zones.length) {
+      for (const z of zones) {
+        const zRefs = (z.composants || z.components || []).map(r => String(r).trim().toUpperCase());
+        const matchRefs = zRefs.filter(r => addedRefs.has(r) && !traites.has(r));
+        if (matchRefs.length >= 2) {
+          const pseudoMotif = {
+            label: z.nom || z.name || "Zone",
+            main_component: matchRefs.find(r => /^(U|IC|VR|REG|Y|X)/i.test(r)) || matchRefs[0],
+            components: matchRefs,
+            layout_template: "cluster_free"
+          };
+          const res = calculerAgencement(pseudoMotif);
+          if (res && res.all && res.all.length >= 2) {
+            grappes.push({ motif: pseudoMotif, res, fps: res.all });
+            matchRefs.forEach(r => traites.add(r));
+          }
+        }
+      }
+    }
+
+    // 3. Détection heuristique locale sur connectivité (fonctionne 100% hors-ligne)
+    const maitres = addedFps.filter(f => !traites.has(String(f.ref).toUpperCase()) && /^(U|IC|VR|REG|Y|X)/i.test(f.ref));
+    for (const mFp of maitres) {
+      const mRef = String(mFp.ref).toUpperCase();
+      if (traites.has(mRef)) continue;
+
+      const mNets = new Set(Object.values(mFp.nets || {}).filter(Boolean));
+      if (!mNets.size) continue;
+
+      const satellites = [];
+      for (const other of addedFps) {
+        const oRef = String(other.ref).toUpperCase();
+        if (oRef === mRef || traites.has(oRef)) continue;
+        if (!/^(C|R|L|D)/i.test(oRef)) continue;
+        const oNets = Object.values(other.nets || {}).filter(Boolean);
+        if (oNets.some(n => mNets.has(n))) {
+          satellites.push(other);
+        }
+      }
+
+      if (satellites.length >= 1) {
+        let tpl = "cluster_free";
+        const hasL = satellites.some(s => /^L/i.test(s.ref));
+        const hasD = satellites.some(s => /^D/i.test(s.ref));
+        if (hasL && hasD) tpl = "buck_compact";
+        else if (/ldo|reg|1117/i.test(mFp.value || "") || (/^VR|^REG/i.test(mFp.ref) && satellites.length >= 2)) tpl = "ldo_inline";
+        else if (/^Y|^X/i.test(mFp.ref)) tpl = "quartz_compact";
+
+        const pseudoMotif = {
+          label: "Grappe " + mRef,
+          main_component: mRef,
+          components: [mRef, ...satellites.map(s => String(s.ref).toUpperCase())],
+          layout_template: tpl
+        };
+        const res = calculerAgencement(pseudoMotif);
+        if (res && res.all && res.all.length >= 2) {
+          grappes.push({ motif: pseudoMotif, res, fps: res.all });
+          traites.add(mRef);
+          satellites.forEach(s => traites.add(String(s.ref).toUpperCase()));
+        }
+      }
+    }
+
+    // 4. Disposition des grappes formées
+    let startX = b.x + b.w + 8;
+    let curY = b.y;
+    let colW = 0;
+    const maxY = b.y + b.h * 1.6;
+
+    for (const g of grappes) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxYCluster = -Infinity;
+      g.fps.forEach(f => {
+        const bb = getBBox(f);
+        minX = Math.min(minX, bb.x1); maxX = Math.max(maxX, bb.x2);
+        minY = Math.min(minY, bb.y1); maxYCluster = Math.max(maxYCluster, bb.y2);
+      });
+      const gw = Math.max(10, maxX - minX);
+      const gh = Math.max(10, maxYCluster - minY);
+
+      if (curY + gh > maxY && colW > 0) {
+        curY = b.y;
+        startX += colW + 6;
+        colW = 0;
+      }
+
+      const targetX = startX + gw / 2;
+      const targetY = curY + gh / 2;
+      const dx = targetX - (minX + gw / 2);
+      const dy = targetY - (minY + gh / 2);
+
+      g.fps.forEach(f => {
+        f.x = (typeof snapX === "function") ? snapX(f.x + dx) : (f.x + dx);
+        f.y = (typeof snapY === "function") ? snapY(f.y + dy) : (f.y + dy);
+      });
+
+      colW = Math.max(colW, gw);
+      curY += gh + 6;
+    }
+
+    // 5. Disposition linéaire des composants isolés restants
+    const orphelins = addedFps.filter(f => !traites.has(String(f.ref).toUpperCase()));
+    if (orphelins.length > 0) {
+      if (colW > 0) {
+        startX += colW + 6;
+        curY = b.y;
+        colW = 0;
+      }
+      for (const fp of orphelins) {
+        const bb = getBBox(fp);
+        const w = bb.w, h = bb.h;
+        if (curY + h > maxY && colW > 0) {
+          curY = b.y;
+          startX += colW + 4;
+          colW = 0;
+        }
+        fp.x = (typeof snapX === "function") ? snapX(startX + w / 2) : (startX + w / 2);
+        fp.y = (typeof snapY === "function") ? snapY(curY + h / 2) : (curY + h / 2);
+        colW = Math.max(colW, w);
+        curY += h + 3;
+      }
+    }
+
+    if (grappes.length > 0) {
+      console.log(`[PCB BLOC] ${grappes.length} grappe(s) fonctionnelle(s) pré-agencée(s) avec succès.`);
+    }
+  }
+
   function finaliserAction(motif, actionNom) {
     // Reconnexion & chevelu
     if (typeof conn === "function") conn();
@@ -514,7 +668,8 @@ var BLOC_PLACEMENT = (function() {
     calculerAgencement,
     compacterSurPlace,
     deposerEnGrappe,
-    chercherZoneLibre
+    chercherZoneLibre,
+    agencerListeNouveauxComposants
   };
 })();
 

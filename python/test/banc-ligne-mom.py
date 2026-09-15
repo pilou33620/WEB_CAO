@@ -4572,10 +4572,61 @@ def bilan_impact_physique_hf_et_zone_de_vigilance():
         raise
 
 
+def la_cascade_differentielle_produit_sdd_scc_scd():
+    """Parametres S en mode mixte pour une paire differentielle :
+    - Sdd : differentiel pur sur Zref,diff (ex: 100 ohm)
+    - Scc : mode commun pur sur Zref,comm = Zref,diff / 4 (ex: 25 ohm)
+    - Scd : conversion differentiel -> commun avec skew
+    - Exports Touchstone .s2p dedies
+    """
+    piste_p = [_pis(0, 0, 30, 0, "SIG_P")]
+    voisinage = [_pis(0, 0.45, 30, 0.45, "SIG_N")]
+    doc = _doc_couplage(piste_p, voisinage, paires=[["SIG_P", "SIG_N"]])
+    doc["net"] = "SIG_P"
+    doc["cible_diff"] = 100.0
+
+    res = _se.simuler(doc)
+    assert "s_diff" in res and res["s_diff"] is not None, "s_diff absent du resultat"
+    sd = res["s_diff"]
+    assert sd["partenaire"] == "SIG_N", "partenaire: %s" % sd["partenaire"]
+    assert sd["z_ref_diff"] == 100.0, "z_ref_diff: %s" % sd["z_ref_diff"]
+    assert sd["z_ref_comm"] == 25.0, "z_ref_comm: %s" % sd["z_ref_comm"]
+    assert len(sd["s_dd"]) == len(res["freqs"]), "nb points s_dd"
+    assert len(sd["s_cc"]) == len(res["freqs"]), "nb points s_cc"
+    assert len(sd["s_cd"]) == len(res["freqs"]), "nb points s_cd"
+
+    # Verifie la structure des matrices 2x2 aplaties (4 elements [re, im])
+    m0_dd = sd["s_dd"][0]
+    assert len(m0_dd) == 4, "format matrice s_dd"
+    m0_cc = sd["s_cc"][0]
+    assert len(m0_cc) == 4, "format matrice s_cc"
+
+    # Touchstone .s2p
+    assert "# HZ S MA R 100" in sd["touchstone_sdd"], "entete touchstone_sdd"
+    assert "# HZ S MA R 25" in sd["touchstone_scc"], "entete touchstone_scc"
+
+    # Verifie que le calcul single-ended est reste intact
+    assert len(res["s"]) == len(res["freqs"]), "res['s'] intact"
+    assert res["touchstone"] != "", "res['touchstone'] intact"
+
+    # Test avec skew de longueur pour declencher la conversion Scd
+    voisinage_skew = [_pis(0, 0.45, 32.5, 0.45, "SIG_N")]
+    doc_skew = _doc_couplage(piste_p, voisinage_skew, paires=[["SIG_P", "SIG_N"]])
+    doc_skew["net"] = "SIG_P"
+    res_skew = _se.simuler(doc_skew)
+    sd_skew = res_skew["s_diff"]
+    assert sd_skew["delta_l_mm"] > 1.9, "delta_l_mm skew detecte: %s" % sd_skew["delta_l_mm"]
+    # Scd21 doit augmenter avec la frequence en presence de skew
+    scd_hf = sd_skew["s_cd"][-1][2]  # element 2 = Scd21 [re, im]
+    assert abs(complex(scd_hf[0], scd_hf[1])) > 1e-4, "conversion Scd21 presente"
+
+
 T("ce que le calcul ne couvre pas est rassemble, et oriente",
   ce_que_le_calcul_ne_couvre_pas_est_rassemble_et_oriente)
 T("bilan d'impact physique HF et zone de vigilance du retour",
   bilan_impact_physique_hf_et_zone_de_vigilance)
+T("cascade differentielle : modes Sdd, Scc, Scd et touchstone mixte",
+  la_cascade_differentielle_produit_sdd_scc_scd)
 
 
 print("\n" + "-" * 62)

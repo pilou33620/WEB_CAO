@@ -26,7 +26,9 @@ function schFile(suffixe, repli){
    aucun accès disque n'est possible. */
 function saveJson(){
   storeCurrent();
-  const doc={format:"schemedit-2",pages:S.pages,page:S.page};
+  const nl=(typeof netlistText==="function")?netlistText():null;
+  const doc={format:"schemedit-2",pages:S.pages,page:S.page,netlist:nl};
+  if(typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:nl});
   if(typeof projdLie==="function" && projdLie()){
     projdDocEcrire("schema",doc).then(function(nom){
       S.dirty=false;
@@ -45,6 +47,9 @@ function saveJson(){
   saveJsonTelecharger(doc);
 }
 function saveJsonTelecharger(doc){
+  const nl=doc.netlist||((typeof netlistText==="function")?netlistText():null);
+  if(nl&&!doc.netlist)doc.netlist=nl;
+  if(typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:nl});
   const blob=new Blob([JSON.stringify(doc,null,1)],{type:"application/json"});
   const nom=schFile(".json","schema.json");
   dl(blob,nom);
@@ -131,8 +136,20 @@ function netlistText(horodatage){
       out.push(("    "+nlCol(r.ref,8)+nlCol(r.value,18)+nlCol(r.pkg,18)+
         (S.pages.length>1?"f"+r.page:"")).replace(/\s+$/,""));
     out.push("");
+
+    // Section de référence catalogue et fabricant enrichie (commentée pour compatibilité ascendante totale)
+    if(rows.some(r => r.csvPartName || r.mpn || r.fpPcb)){
+      out.push("=== Références Fabricants & Bibliothèque ===");
+      out.push(("  ; "+nlCol("repère",8)+nlCol("part name",28)+nlCol("part number",28)+nlCol("fabricant",20)+"empreinte").replace(/\s+$/,""));
+      for(const r of rows){
+        if(r.csvPartName || r.mpn || r.fpPcb){
+          out.push(("  ; "+nlCol(r.ref,8)+nlCol(r.csvPartName||"—",28)+nlCol(r.mpn||"—",28)+nlCol(r.manufacturer||"—",20)+(r.fpPcb||"—")).replace(/\s+$/,""));
+        }
+      }
+      out.push("");
+    }
   }
-  const globals=D.groups.filter(g=>g.global);
+  const globals=D.groups.filter(g=>g.global&&!g.isBus&&!g.members[0].net.isBus);
   const multi=S.pages.length>1;
   if(globals.length){
     out.push("=== Nets globaux (masses, alimentations, étiquettes globales) ===");
@@ -149,7 +166,7 @@ function netlistText(horodatage){
     out.push("");
   }
   for(const sh of D.sheets){
-    const locals=D.groups.filter(g=>!g.global&&g.pages[0]===sh.page);
+    const locals=D.groups.filter(g=>!g.global&&g.pages[0]===sh.page&&!g.isBus&&!g.members[0].net.isBus);
     out.push("=== Feuille "+(sh.page+1)+" — "+sh.name+" ===");
     if(!locals.length)out.push("  (aucun net local)");
     for(const g of locals){
@@ -175,6 +192,7 @@ function netlistText(horodatage){
 }
 function exportNetlist(){
   const txt=netlistText();
+  if(typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:txt});
   const nom=schFile("-netlist.txt","netlist.txt");
   dl(new Blob([txt],{type:"text/plain;charset=utf-8"}),nom);
   document.getElementById("fHint").textContent="Netlist exportée dans "+nom+".";
@@ -189,20 +207,73 @@ function csvCell(v){
 function bomRows(){
   const rows=[];
   storeCurrent();
+  const lib = (typeof window !== "undefined" && Array.isArray(window.CSV_LIB)) ? window.CSV_LIB : [];
   S.pages.forEach((p,i)=>{
     const src=(i===S.page)?S.comps:(p.comps||[]);
     for(const c of src) if(!defOf(c.type).noRef) {
-      const sp = c.specs ? Object.entries(c.specs).map(([k,v])=>k+": "+v).join(", ") : "";
+      // Résolution automatique dans LIB_composants.csv si disponible
+      let entry = null;
+      if(lib.length){
+        const targetPart = (c.csvPartName || "").toLowerCase().trim();
+        const targetMpn = (c.mpn || c.csvMpn || "").toLowerCase().trim();
+        const targetVal = (c.value || "").toLowerCase().trim();
+        const targetPkg = (c.pkg || "").toLowerCase().trim();
+
+        if(targetPart){
+          entry = lib.find(it => (it["Part Name"]||"").toLowerCase().trim() === targetPart);
+        }
+        if(!entry && targetMpn){
+          entry = lib.find(it => {
+            const p1 = (it["Part Number"]||"").toLowerCase().trim();
+            const p2 = (it["manufacturer part Number"]||it["Manufacturer Part Number"]||"").toLowerCase().trim();
+            return p1 === targetMpn || p2 === targetMpn;
+          });
+        }
+        if(!entry && targetVal){
+          entry = lib.find(it => (it["Part Name"]||"").toLowerCase().trim() === targetVal);
+        }
+        if(!entry && targetVal && targetPkg){
+          entry = lib.find(it => {
+            const v = (it["Value"]||"").toLowerCase().trim();
+            const pk = (it["Package type"]||it["Empreinte PCB"]||"").toLowerCase().trim();
+            return v === targetVal && pk.includes(targetPkg);
+          });
+        }
+      }
+
+      const csvPartName = c.csvPartName || (entry ? entry["Part Name"] : "") || "";
+      const mpn = c.mpn || c.csvMpn || (entry ? (entry["manufacturer part Number"] || entry["Part Number"] || entry["Part Name"]) : "") || csvPartName || "";
+      const manufacturer = c.manufacturer || (entry ? entry["Manufacturer"] : "") || "";
+      const fpPcb = c.fpPcb || (entry ? entry["Empreinte PCB"] : "") || "";
+      const pkg = c.pkg || (fpPcb ? String(fpPcb).replace(/^.*[\\\/]/, "").replace(/\.json$/i, "") : "") || (entry ? entry["Package type"] : "") || "";
+      const desc = c.desc || (entry ? entry["Description"] : "") || "";
+      const lcsc = c.lcsc || (entry ? (entry["Code LCSC"] || entry["vendor reference"]) : "") || "";
+      const mouser = c.mouser_part || c.mouser || (entry ? (entry["Réf Mouser"] || entry["Vendor Part Number"]) : "") || "";
+      const digikey = c.digikey_part || c.digikey || (entry ? entry["Réf DigiKey"] : "") || "";
+      const datasheet = c.datasheet_local || c.datasheet_url || c.datasheet_web || "";
+
+      // Spécifications consolidées
+      let sp = c.specs ? Object.entries(c.specs).map(([k,v])=>k+": "+v).join(", ") : "";
+      if(!sp && entry){
+        const spArr = [];
+        if(entry["Voltage Rating"] && entry["Voltage Rating"]!=="xx") spArr.push("Tension: "+entry["Voltage Rating"]);
+        if(entry["current Rating"] && entry["current Rating"]!=="xx") spArr.push("Courant: "+entry["current Rating"]);
+        if(entry["wattage"] && entry["wattage"]!=="xx") spArr.push("Puissance: "+entry["wattage"]);
+        if(entry["tolerance"] && entry["tolerance"]!=="xx") spArr.push("Tolérance: "+entry["tolerance"]);
+        sp = spArr.join(", ");
+      }
+
       rows.push({
-          ref:c.ref||"", type:defOf(c.type).n, value:c.value||"", pkg:c.pkg||"", 
-          page:i+1, csvMpn: c.csvMpn||"", csvPartName: c.csvPartName||"",
-          mpn: c.mpn || c.csvMpn || c.csvPartName || "",
-          manufacturer: c.manufacturer || "",
-          lcsc: c.lcsc || "",
-          mouser: c.mouser_part || "",
-          digikey: c.digikey_part || "",
+          ref:c.ref||"", type:defOf(c.type).n, value:c.value||"", pkg:pkg,
+          fpPcb: fpPcb, csvPartName: csvPartName, desc: desc,
+          page:i+1, csvMpn: c.csvMpn||"",
+          mpn: mpn,
+          manufacturer: manufacturer,
+          lcsc: lcsc,
+          mouser: mouser,
+          digikey: digikey,
           specs: sp,
-          datasheet: c.datasheet_local || c.datasheet_url || c.datasheet_web || ""
+          datasheet: datasheet
       });
     }
   });
@@ -214,19 +285,19 @@ function bomRows(){
 function bomCsvText(){
   const rows=bomRows();
   if(!rows.length)return "";
-  const out=["Repère;Composant;Valeur;Boîtier;Part Number;Fabricant;Code LCSC;Réf Mouser;Réf DigiKey;Spécifications;Datasheet;Feuille"];
+  const out=["Repère;Composant;Valeur;Boîtier;Empreinte PCB;Réf Bibliothèque;Part Number;Fabricant;Code LCSC;Réf Mouser;Réf DigiKey;Spécifications;Datasheet;Feuille"];
   for(const r of rows)
-    out.push([r.ref, r.type, r.value, r.pkg, r.mpn, r.manufacturer, r.lcsc, r.mouser, r.digikey, r.specs, r.datasheet, r.page].map(csvCell).join(";"));
+    out.push([r.ref, r.type, r.value, r.pkg, r.fpPcb, r.csvPartName, r.mpn, r.manufacturer, r.lcsc, r.mouser, r.digikey, r.specs, r.datasheet, r.page].map(csvCell).join(";"));
   // récapitulatif : quantités par référence de commande
   const groups=new Map();
   for(const r of rows){
-    const k=r.type+"|"+r.value+"|"+r.pkg+"|"+r.mpn+"|"+r.manufacturer;
+    const k=r.type+"|"+r.value+"|"+r.pkg+"|"+r.fpPcb+"|"+r.csvPartName+"|"+r.mpn+"|"+r.manufacturer;
     if(!groups.has(k))groups.set(k,{...r,refs:[]});
     groups.get(k).refs.push(r.ref);
   }
-  out.push("","Qté;Composant;Valeur;Boîtier;Part Number;Fabricant;Code LCSC;Repères");
+  out.push("","Qté;Composant;Valeur;Boîtier;Empreinte PCB;Réf Bibliothèque;Part Number;Fabricant;Code LCSC;Repères");
   for(const g of [...groups.values()].sort((a,b)=>b.refs.length-a.refs.length))
-    out.push([g.refs.length, g.type, g.value, g.pkg, g.mpn, g.manufacturer, g.lcsc, g.refs.join(" ")].map(csvCell).join(";"));
+    out.push([g.refs.length, g.type, g.value, g.pkg, g.fpPcb, g.csvPartName, g.mpn, g.manufacturer, g.lcsc, g.refs.join(" ")].map(csvCell).join(";"));
   return out.join("\r\n");
 }
 function exportBomCsv(){

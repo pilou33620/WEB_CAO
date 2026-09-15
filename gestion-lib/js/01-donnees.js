@@ -224,12 +224,13 @@ function parserCsvBrut(csvText) {
 // Lecture d'un fichier d'empreinte ou symbole avec cache
 async function obtenirFichierLib(type, nom) {
   if (!nom) return null;
-  const cle = `${type}:${nom}`;
+  const cleanNom = String(nom || "").replace(/^.*[\\\/]/, "");
+  const cle = `${type}:${cleanNom}`;
   if (LIB_STATE.cacheFichiers.has(cle)) {
     return LIB_STATE.cacheFichiers.get(cle);
   }
   try {
-    const data = await apiGet(`/api/lib/fichier?type=${encodeURIComponent(type)}&nom=${encodeURIComponent(nom)}`);
+    const data = await apiGet(`/api/lib/fichier?type=${encodeURIComponent(type)}&nom=${encodeURIComponent(cleanNom)}`);
     const contenu = data.data !== undefined ? data.data : data.contenu;
     LIB_STATE.cacheFichiers.set(cle, contenu);
     return contenu;

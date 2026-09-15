@@ -54,7 +54,10 @@ const EXPOSE=[
   "addComp","schComposantsDansZone","schToutesLesZones",
   "push","undo","redo","touchWires","buildTabs","draw","fit","resize",
   /* bus et hiérarchie */
-  "C_BUS","BUS_WIDTH","sheetBlocks","hitSheetBlock","newHierPage",
+  "C_BUS","BUS_WIDTH","sheetBlocks","hitSheetBlock","hitSheetPin","sheetInterconnections","newHierPage",
+  "schDevelopperSignauxBus","schBusDuPoint","schPiquageSurFil","schTousLesPiquages",
+  "schSignauxOccupesSurBus","schSuggererProchainSignal","schPiquerSignal","schOuvrirPiquageModal","schFermerPiquageModal",
+  "SCH_PIQUAGE_MEMOIRE",
   /* bibliothèque et géométrie */
   "bbox",
   "defOf","allPins","pinCount","icGeom","key","LIB","pinsOf",
@@ -1570,6 +1573,60 @@ T("feuilles hiérarchiques : ancien projet mono-feuille gagne sa feuille hiérar
   if(S.pages.length!==2)throw new Error("la feuille hiérarchique ne doit pas être dupliquée");
 });
 
+T("synoptique hiérarchique : sheet pins, bus traversants et interconnexions inter-blocs",()=>{
+  S.pages = [
+    newHierPage("Hiérarchie"),
+    newPage("Microcontrôleur"),
+    newPage("Mémoire Flash")
+  ];
+  // Feuille 1 (MCU)
+  S.pages[1].comps = [
+    C("gport", 10, 10, {value: "SPI"}),
+    C("gport", 10, 20, {value: "+3V3"}),
+    C("gport", 10, 30, {value: "GND"}),
+    C("gport", 10, 40, {value: "IRQ_FLASH"})
+  ];
+  // Feuille 2 (Flash)
+  S.pages[2].comps = [
+    C("gport", 20, 10, {value: "SPI"}),
+    C("gport", 20, 20, {value: "+3V3"}),
+    C("gport", 20, 30, {value: "GND"}),
+    C("gport", 20, 40, {value: "HOLD_WP"})
+  ];
+
+  gotoPage(0);
+  const blocks = sheetBlocks();
+  if(blocks.length !== 2) throw new Error("2 blocs attendus sur la feuille racine");
+
+  const bMcu = blocks[0];
+  const bFlash = blocks[1];
+
+  // Vérification de la classification des pins du MCU
+  const pinSpi = bMcu.pins.find(p => p.name === "SPI");
+  if(!pinSpi || pinSpi.type !== "bus" || !pinSpi.isBus) throw new Error("port SPI doit être classé en bus");
+  if(pinSpi.side !== "right") throw new Error("port bus SPI doit être placé sur le côté droit du bloc");
+
+  const pin3v3 = bMcu.pins.find(p => p.name === "+3V3");
+  if(!pin3v3 || pin3v3.type !== "power" || !pin3v3.isPower) throw new Error("port +3V3 doit être classé en power");
+  if(pin3v3.side !== "left") throw new Error("port alim +3V3 doit être placé sur le côté gauche du bloc");
+
+  // Détection des interconnexions
+  const inters = sheetInterconnections();
+  if(!inters || inters.length < 3) throw new Error("au moins 3 interconnexions attendues (SPI, +3V3, GND), trouvé: " + inters.length);
+
+  const linkSpi = inters.find(l => l.name === "SPI");
+  if(!linkSpi || !linkSpi.isBus) throw new Error("liaison SPI doit être un bus traversant");
+  if(linkSpi.pins.length !== 2) throw new Error("liaison SPI doit interconnecter 2 broches");
+  if(linkSpi.blocks.length !== 2) throw new Error("liaison SPI doit interconnecter 2 blocs distincts");
+
+  const linkGnd = inters.find(l => l.name === "GND");
+  if(!linkGnd || !linkGnd.isPower) throw new Error("liaison GND doit être une alimentation");
+
+  // Test de hitSheetPin
+  const hitP = hitSheetPin(pinSpi.x, pinSpi.y, 10);
+  if(!hitP || hitP.name !== "SPI") throw new Error("hitSheetPin n'a pas détecté la broche SPI");
+});
+
 T("édition des broches sur un composant non-IC (connecteur)",()=>{
   const j = C("header", 5, 5, {ref:"J1"});
   sheet([j], []);
@@ -2259,6 +2316,119 @@ T("schémas d'exemples : exemple 1 (Commande 12 V 2 couches) raccordé au PCB", 
   if(!netNames.includes("+5V") || !netNames.includes("12V") || !netNames.includes("GND")){
     throw new Error("Rails d'alimentation manquants dans exemple 1");
   }
+});
+
+T("bus de signaux : expansion syntaxique (D[0..7], SPI{...}, I2C, UART)", function(){
+  const d07 = schDevelopperSignauxBus("D[0..7]");
+  if(d07.length !== 8 || d07[0] !== "D0" || d07[7] !== "D7"){
+    throw new Error("Erreur expansion D[0..7]: " + JSON.stringify(d07));
+  }
+  const dInv = schDevelopperSignauxBus("D[3..0]");
+  if(dInv.length !== 4 || dInv[0] !== "D3" || dInv[3] !== "D0"){
+    throw new Error("Erreur expansion inversée D[3..0]: " + JSON.stringify(dInv));
+  }
+  const spi = schDevelopperSignauxBus("SPI{MOSI,MISO,SCK,CS}");
+  if(!spi.includes("SPI_MOSI") || !spi.includes("SPI_MISO") || !spi.includes("SPI_SCK") || !spi.includes("SPI_CS")){
+    throw new Error("Erreur faisceau SPI: " + JSON.stringify(spi));
+  }
+  const bare = schDevelopperSignauxBus("{TX,RX}");
+  if(bare.length !== 2 || bare[0] !== "TX" || bare[1] !== "RX"){
+    throw new Error("Erreur faisceau bare {TX,RX}: " + JSON.stringify(bare));
+  }
+  const stdSpi = schDevelopperSignauxBus("SPI");
+  if(!stdSpi.includes("SPI_MOSI") || !stdSpi.includes("SPI_SCK")){
+    throw new Error("Erreur protocole standard SPI: " + JSON.stringify(stdSpi));
+  }
+  const stdI2c = schDevelopperSignauxBus("I2C");
+  if(!stdI2c.includes("I2C_SDA") || !stdI2c.includes("I2C_SCL")){
+    throw new Error("Erreur protocole standard I2C: " + JSON.stringify(stdI2c));
+  }
+});
+
+T("bus de signaux : isolation électrique des piquages dans computeNets", function(){
+  const wBus = {x1: 0, y1: 100, x2: 200, y2: 100, bus: true, net: "D[0..7]"};
+  const r1 = C("resistor", 50, 50, {ref: "R1", value: "10k"});
+  const p1 = allPins(r1);
+  const w1 = {x1: p1[0].x, y1: p1[0].y, x2: 50, y2: 100, net: "D0"};
+
+  const r2 = C("resistor", 150, 50, {ref: "R2", value: "10k"});
+  const p2 = allPins(r2);
+  const w2 = {x1: p2[0].x, y1: p2[0].y, x2: 150, y2: 100, net: "D1"};
+
+  const wires = [wBus, w1, w2];
+  splitWireArray(wires);
+  const res = computeNets([r1, r2], wires);
+
+  // R1.1 et R2.1 ne doivent PAS être dans le même net malgré leur raccordement au même bus !
+  const netR1 = res.byWire.get(w1);
+  const netR2 = res.byWire.get(w2);
+  if(!netR1 || !netR2) throw new Error("Nets introuvables pour w1 ou w2");
+  if(netR1 === netR2) throw new Error("Court-circuit anormal via le bus : R1 et R2 partagent le même net !");
+  if(netR1.name !== "D0") throw new Error("Nom de net incorrect pour w1: " + netR1.name);
+  if(netR2.name !== "D1") throw new Error("Nom de net incorrect pour w2: " + netR2.name);
+
+  // Un second piquage D0 ailleurs doit par contre rejoindre le net D0 par nom
+  const r3 = C("resistor", 180, 50, {ref: "R3", value: "1k"});
+  const p3 = allPins(r3);
+  const w3 = {x1: p3[0].x, y1: p3[0].y, x2: 180, y2: 100, net: "D0"};
+  const wires2 = [wBus, w1, w2, w3];
+  splitWireArray(wires2);
+  const res2 = computeNets([r1, r2, r3], wires2);
+  const netR1_b = res2.byWire.get(w1);
+  const netR3_b = res2.byWire.get(w3);
+  if(netR1_b !== netR3_b) throw new Error("Les deux signaux D0 doivent être fusionnés par nom !");
+});
+
+T("bus de signaux : détection de piquage, suggestion auto-incrémentée et application", function(){
+  const wBus = {x1: 0, y1: 100, x2: 200, y2: 100, bus: true, net: "D[0..7]"};
+  const wSig = {x1: 50, y1: 50, x2: 50, y2: 100};
+  const wires = [wBus, wSig];
+  splitWireArray(wires);
+
+  const piq = schPiquageSurFil(wSig, wires);
+  if(!piq) throw new Error("Piquage non détecté sur wSig");
+  if(piq.busName !== "D[0..7]") throw new Error("Nom du bus piqué incorrect: " + piq.busName);
+  if(piq.x !== 50 || piq.y !== 100) throw new Error("Coordonnées de piquage incorrectes: " + piq.x + "," + piq.y);
+
+  // Test suggestion auto-incrémentée
+  delete SCH_PIQUAGE_MEMOIRE["D[0..7]"];
+  const s1 = schSuggererProchainSignal("D[0..7]");
+  if(s1 !== "D0") throw new Error("Premier signal suggéré doit être D0, reçu: " + s1);
+
+  schPiquerSignal(wSig, s1, "D[0..7]");
+  if(wSig.net !== "D0") throw new Error("wSig n'a pas reçu le label D0");
+
+  const s2 = schSuggererProchainSignal("D[0..7]");
+  if(s2 !== "D1") throw new Error("Prochain signal suggéré doit être D1 (auto-incrément), reçu: " + s2);
+
+  const occupes = schSignauxOccupesSurBus(wBus, wires);
+  if(!occupes.has("D0")) throw new Error("D0 doit être relevé comme occupé sur le bus");
+});
+
+T("nomenclature et netlist enrichies : liaison automatique avec LIB_composants.csv", function(){
+  const c1 = C("capacitor", 0, 0, {ref: "C1", value: "100nF", pkg: "0402", csvPartName: "C0402_100NF"});
+  sheet([c1], []);
+
+  const rows = bomRows();
+  if(!rows.length) throw new Error("bomRows vide");
+  const r = rows[0];
+  if(r.mpn !== "GCM155R71A104KA55D") throw new Error("MPN non enrichi depuis LIB: " + r.mpn);
+  if(r.manufacturer !== "Murata") throw new Error("Fabricant non enrichi: " + r.manufacturer);
+  if(r.fpPcb !== "0402.json") throw new Error("Empreinte PCB non enrichie: " + r.fpPcb);
+
+  const csv = bomCsvText();
+  if(csv.indexOf("Empreinte PCB;Réf Bibliothèque;Part Number;Fabricant") < 0){
+    throw new Error("Colonnes enrichies absentes du header CSV: " + csv.split("\r\n")[0]);
+  }
+  if(csv.indexOf("GCM155R71A104KA55D") < 0) throw new Error("MPN fabricant absent du CSV exporté");
+  if(csv.indexOf("Murata") < 0) throw new Error("Fabricant Murata absent du CSV exporté");
+  if(csv.indexOf("0402.json") < 0) throw new Error("Empreinte PCB absente du CSV exporté");
+
+  const nl = netlistText();
+  if(nl.indexOf("=== Références Fabricants & Bibliothèque ===") < 0){
+    throw new Error("Section de références catalogue absente de la netlist: \n" + nl);
+  }
+  if(nl.indexOf("GCM155R71A104KA55D") < 0) throw new Error("MPN absent de la section netlist");
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

@@ -469,8 +469,30 @@ cv.addEventListener("pointerdown",e=>{
     const isBus=(S.mode==="bus");
     const pin=nearestPin(p.x,p.y,(e.pointerType==="mouse"?12:20)/S.scale);
     const pt=pin?{x:pin.x,y:pin.y}:{x:snap(p.x),y:snap(p.y)};
-    if(!S.wireStart){S.wireStart=pt;}
+    if(!S.wireStart){
+      S.wireStart=pt;
+      if(!isBus){
+        const b = (typeof schBusDuPoint === "function") ? schBusDuPoint(pt.x, pt.y, S.wires, 8/S.scale) : null;
+        S.wireBusStart = b ? { bus: b.bus, pt: {x: pt.x, y: pt.y} } : null;
+      } else {
+        S.wireBusStart = null;
+      }
+    }
     else{
+      let busTapped = null;
+      let busTapPt = null;
+      if(!isBus){
+        if(S.wireBusStart){
+          busTapped = S.wireBusStart.bus;
+          busTapPt = S.wireBusStart.pt;
+        } else {
+          const bEnd = (typeof schBusDuPoint === "function") ? schBusDuPoint(pt.x, pt.y, S.wires, 8/S.scale) : null;
+          if(bEnd){
+            busTapped = bEnd.bus;
+            busTapPt = {x: pt.x, y: pt.y};
+          }
+        }
+      }
       const segs=routeL(S.wireStart,pt);
       if(segs.length){
         push();
@@ -478,6 +500,12 @@ cv.addEventListener("pointerdown",e=>{
         touchWires();resolveSplits();
       }
       S.wireStart=pin?null:pt;   // arrivée sur une broche = fin de fil
+      S.wireBusStart=null;
+
+      if(busTapped && segs.length && typeof schOuvrirPiquageModal === "function"){
+        const wireCible = segs[segs.length - 1];
+        schOuvrirPiquageModal(busTapped, wireCible, busTapPt);
+      }
     }
     refreshPanels();draw();return;
   }
@@ -711,14 +739,33 @@ cv.addEventListener("pointermove",e=>{
       ? hn.name+" · "+hn.nodes.length+(hn.nodes.length>1?" nœuds":" nœud")
       : "—";
   }
+
+  // Survol des blocs et broches sur la feuille hiérarchique racine (page 0)
+  let hoverHierChanged = false;
+  if(S.page === 0){
+    const hp = typeof hitSheetPin === "function" ? hitSheetPin(p.x, p.y) : null;
+    const hb = typeof hitSheetBlock === "function" ? hitSheetBlock(p.x, p.y) : null;
+    const hbIdx = hb ? hb.sheetIndex : null;
+    if(hp !== S.hoverSheetPort || hbIdx !== S.hoverSheetBlock){
+      S.hoverSheetPort = hp;
+      S.hoverSheetBlock = hbIdx;
+      hoverHierChanged = true;
+      if(hp){
+        const fNet = document.getElementById("fNet");
+        if(fNet) fNet.textContent = (hp.isBus ? "Bus : " : (hp.isPower ? "Alim : " : "Port : ")) + hp.name + " (Feuille " + hp.sheetIndex + ")";
+      }
+    }
+  }
+
   if(S.mode==="select"){
     // indice de survol : le curseur annonce ce qui est saisissable — libellés
     // compris, sans quoi personne ne devinerait qu'ils se déplacent
-    cv.style.cursor=(hitText(p.x,p.y)||hitNetLabel(p.x,p.y)||hitComp(p.x,p.y)||wi>=0||hitDrawing(p.x,p.y))
-      ? "move" : "crosshair";
+    const isHierTarget = (S.page === 0 && ((typeof hitSheetBlock==="function" && hitSheetBlock(p.x,p.y)) || (typeof hitSheetPin==="function" && hitSheetPin(p.x,p.y))));
+    cv.style.cursor=(hitText(p.x,p.y)||hitNetLabel(p.x,p.y)||hitComp(p.x,p.y)||wi>=0||hitDrawing(p.x,p.y)||isHierTarget)
+      ? "pointer" : "crosshair";
   }
   S.hoverPin = (S.mode==="wire")?nearestPin(p.x,p.y,12/S.scale):null;
-  if(S.mode==="wire"||S.place||(S.mode==="draw"&&S.drawStart)||hoverChanged)draw();
+  if(S.mode==="wire"||S.place||(S.mode==="draw"&&S.drawStart)||hoverChanged||hoverHierChanged)draw();
 });
 
 function endPointer(e){
@@ -794,3 +841,116 @@ cv.addEventListener("wheel",e=>{
   S.ox+=(after.x-before.x)*S.scale;S.oy+=(after.y-before.y)*S.scale;
   draw();
 },{passive:false});
+
+/* =============================================================================
+   Boîte de dialogue contextuelle de piquage de bus
+   ============================================================================= */
+let SCH_PIQUAGE_ACTIVE = null;
+
+function schFermerPiquageModal(){
+  if(typeof document === "undefined") return;
+  const m = document.getElementById("schPiquageModal");
+  if(m) m.remove();
+  SCH_PIQUAGE_ACTIVE = null;
+}
+
+function schOuvrirPiquageModal(busWire, signalWire, tapPt){
+  if(typeof document === "undefined" || !document.body) return;
+  schFermerPiquageModal();
+
+  const busNom = (busWire && busWire.net) ? String(busWire.net).trim() : "BUS";
+  const signaux = (typeof schDevelopperSignauxBus === "function") ? schDevelopperSignauxBus(busNom) : [busNom];
+  const suggere = (typeof schSuggererProchainSignal === "function") ? schSuggererProchainSignal(busNom) : (signaux[0] || "D0");
+  const occupes = (typeof schSignauxOccupesSurBus === "function") ? schSignauxOccupesSurBus(busWire) : new Set();
+
+  const m = document.createElement("div");
+  m.id = "schPiquageModal";
+  m.className = "modal";
+  m.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.65); z-index:9999; display:flex; align-items:center; justify-content:center;";
+
+  let chipsHtml = "";
+  for(const sig of signaux){
+    const isOcc = occupes.has(sig);
+    const isSugg = (sig === suggere);
+    chipsHtml += '<button type="button" class="sch-piq-chip" data-sig="'+esc(sig)+'" style="'+
+      'padding:6px 12px; border-radius:4px; font-family:var(--mono, monospace); font-size:12px; cursor:pointer; font-weight:600; transition:all 0.15s ease; '+
+      (isSugg ? 'background:#0e3a47; border:2px solid #00c4df; color:#8af0ff; box-shadow:0 0 10px rgba(0,196,223,0.4);'
+              : (isOcc ? 'background:#1f242d; border:1px solid #374151; color:#9ca3af;'
+                       : 'background:#1e293b; border:1px solid #475569; color:#f1f5f9;'))+
+      '">'+esc(sig)+(isOcc?' <span style="font-size:10px; opacity:0.6;">(occupé)</span>':'')+'</button>';
+  }
+
+  m.innerHTML =
+    '<div class="modal-box" style="background:#161920; border:1px solid #00c4df; border-radius:8px; width:460px; max-width:92vw; padding:18px; box-shadow:0 12px 36px rgba(0,0,0,0.85); display:flex; flex-direction:column; gap:14px;">'+
+      '<div class="modal-head" style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #283141; padding-bottom:10px;">'+
+        '<div style="font-weight:bold; font-size:14px; color:#00c4df; display:flex; align-items:center; gap:8px;">'+
+          '<span>⚡ Piquage de bus</span>'+
+          '<span style="background:#09242b; color:#8af0ff; padding:2px 8px; border-radius:4px; border:1px solid #00c4df; font-family:var(--mono); font-size:11.5px;">'+esc(busNom)+'</span>'+
+        '</div>'+
+        '<button id="schPiqClose" class="pnl-btn" style="background:none; border:none; color:#94a3b8; font-size:16px; cursor:pointer;">✕</button>'+
+      '</div>'+
+      '<div>'+
+        '<div style="font-size:12px; color:#94a3b8; margin-bottom:8px;">Signaux disponibles (cliquez pour sélectionner) :</div>'+
+        '<div style="display:flex; flex-wrap:wrap; gap:7px; max-height:160px; overflow-y:auto; padding:2px;">'+
+          chipsHtml+
+        '</div>'+
+      '</div>'+
+      '<div style="display:flex; flex-direction:column; gap:6px;">'+
+        '<label style="font-size:11px; font-weight:600; color:#cbd5e1; text-transform:uppercase; letter-spacing:0.05em;">Signal à dériver :</label>'+
+        '<input id="schPiqInput" type="text" value="'+esc(suggere)+'" style="background:#0b0d11; border:1px solid #334155; border-radius:4px; padding:8px 10px; color:#f8fafc; font-family:var(--mono); font-size:13px; outline:none;" autofocus>'+
+        '<div style="font-size:10.5px; color:#64748b;">Astuce : Entrée valide le signal suggéré · Échap ferme sans nommer.</div>'+
+      '</div>'+
+      '<div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px;">'+
+        '<button id="schPiqCancel" class="tb" style="padding:6px 14px; cursor:pointer;">Annuler</button>'+
+        '<button id="schPiqApply" class="tb on" style="padding:6px 16px; background:#00c4df; color:#0b0d11; font-weight:bold; border:none; cursor:pointer;">✓ Valider le piquage</button>'+
+      '</div>'+
+    '</div>';
+
+  document.body.appendChild(m);
+  SCH_PIQUAGE_ACTIVE = { busWire, signalWire, busNom };
+
+  const inp = document.getElementById("schPiqInput");
+  if(inp){
+    inp.focus();
+    inp.select();
+  }
+
+  function valider(nom){
+    const s = String(nom || (inp ? inp.value : "")).trim();
+    if(s && typeof schPiquerSignal === "function"){
+      schPiquerSignal(signalWire, s, busNom);
+    }
+    schFermerPiquageModal();
+  }
+
+  m.querySelectorAll(".sch-piq-chip").forEach(btn => {
+    btn.onclick = () => {
+      valider(btn.dataset.sig);
+    };
+  });
+
+  const bApply = document.getElementById("schPiqApply");
+  if(bApply) bApply.onclick = () => valider();
+
+  const bCancel = document.getElementById("schPiqCancel");
+  if(bCancel) bCancel.onclick = schFermerPiquageModal;
+
+  const bClose = document.getElementById("schPiqClose");
+  if(bClose) bClose.onclick = schFermerPiquageModal;
+
+  m.onclick = e => {
+    if(e.target === m) schFermerPiquageModal();
+  };
+
+  if(inp){
+    inp.onkeydown = e => {
+      if(e.key === "Enter"){
+        e.preventDefault();
+        valider();
+      } else if(e.key === "Escape"){
+        e.preventDefault();
+        schFermerPiquageModal();
+      }
+    };
+  }
+}

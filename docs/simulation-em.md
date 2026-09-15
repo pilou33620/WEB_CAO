@@ -806,10 +806,70 @@ Deux familles d'analyse : **SI**, intégrité du signal — ce qu'un front devie
 en parcourant le cuivre — et **PI**, intégrité de l'alimentation — ce que le
 réseau de distribution laisse passer. SI porte **Impédance**, **Z
 différentielle**, **Crosstalk** et **Current Return Path** ; PI
-porte **Chute DC**. Le découpage avait été posé quand il n'y avait qu'une
+porte **Chute DC** et **Z(ω) PDN**. Le découpage avait été posé quand il n'y avait qu'une
 analyse, parce qu'il coûtait moins cher à poser qu'à retailler ensuite autour
 de six. Ce qu'il resterait à y mettre est listé dans
 [A-FAIRE.md](../A-FAIRE.md).
+
+### PI — Impédance fréquentielle du PDN (Z(ω))
+
+L'onglet **Z(ω) PDN** calcule et trace le profil d'impédance fréquentielle $|Z(f)|$
+du réseau de distribution d'énergie (*Power Distribution Network*) de 10 kHz à 1 GHz
+pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la carte.
+
+1. **Impédance cible ($Z_{target}$)** :
+   $$Z_{target} = \frac{V_{dd} \cdot \text{ripple\%}}{\Delta I_{transient}}$$
+   Elle définit le plafond au-delà duquel les appels de courant transitoires
+   provoquent un dépassement du gabarit de tension admissible.
+
+2. **Branche VRM (Régulateur)** :
+   Modélisée en basse fréquence par sa résistance série équivalente $R_{vrm}$ et son
+   inductance de boucle $L_{vrm} = \frac{R_{vrm}}{2\pi f_{vrm}}$ :
+   $$Y_{vrm}(\omega) = \frac{1}{R_{vrm} + j\omega L_{vrm}}$$
+
+3. **Branches Condensateurs de découplage (Modèles réels Murata / Catalogue)** :
+   Chaque condensateur connecté entre le rail et la masse est détecté automatiquement
+   sur le PCB (`SIM_PCB.pdnCondensateurs(net)`). Les grandeurs parasites réelles
+   (ESR, ESL issues des fichiers SPICE `.sub` consolidés de Murata ou du catalogue)
+   sont injectées conjointement à l'inductance de montage du boîtier ($L_{mount}$ de
+   0,35 nH en 0201 à 1,3 nH en 1206) :
+   $$Z_k(\omega) = \text{ESR}_k + j \left(\omega (\text{ESL}_k + L_{mount,k}) - \frac{1}{\omega C_k}\right)$$
+   $$Y_k(\omega) = \frac{1}{Z_k(\omega)}$$
+
+4. **Branche Capacité inter-plans de la cavité** :
+    Pour les cartes multi-couches avec plans d'alimentation et de masse face-à-face,
+    la capacité répartie et les pertes diélectriques $\tan\delta$ sont intégrées :
+    $$C_{plane} = \frac{\varepsilon_0 \varepsilon_r A_{plane}}{d_{dielectrique}}$$
+    $$Y_{plane}(\omega) = \omega C_{plane}\tan\delta + j\omega C_{plane}$$
+
+5. **Résonances spatiales 2D de cavité entre plans (Modes $TM_{mn0}$)** :
+   Une paire de plans continus (largeur $a$, longueur $b$, espacement $d$) forme une cavité résonante 2D ouverte sur les bords.
+   - **Fréquences propres des modes $TM_{mn0}$** :
+     $$f_{mn} = \frac{c}{2\sqrt{\varepsilon_r}} \sqrt{\left(\frac{m}{a}\right)^2 + \left(\frac{n}{b}\right)^2}$$
+     avec $m, n \ge 0$ et $m + n \ge 1$ (modes longitudinaux $TM_{m0}$, transversaux $TM_{0n}$, et diagonaux $TM_{mn}$).
+   - **Pertes et Facteurs de qualité $Q_{mn}$** :
+     Le facteur $Q$ combine les pertes diélectriques $Q_d = \frac{1}{\tan\delta}$ et l'effet de peau dans le cuivre $Q_c \approx \frac{d}{\delta_s(f_{mn})}$ (où $\delta_s = \frac{1}{\sqrt{\pi f \mu_0 \sigma_{cu}}}$) :
+     $$\frac{1}{Q_{mn}} = \tan\delta + \frac{\delta_s(f_{mn})}{d}, \quad \Delta f_{3\text{dB}} = \frac{f_{mn}}{Q_{mn}}$$
+   - **Distribution spatiale des ondes stationnaires & Points chauds HF** :
+     $$V_{mn}(x, y) = V_0 \cos\left(\frac{m\pi x}{a}\right) \cos\left(\frac{n\pi y}{b}\right)$$
+     Les quatre coins $(0,0), (a,0), (0,b), (a,b)$ et les arêtes présentent systématiquement des ventres d'onde ($|V|=1$, points chauds), sources d'émission et de rayonnement CEM de bord de carte.
+   - **Amortissement par les condensateurs du PCB** :
+     L'efficacité locale d'amortissement de chaque condensateur dépend de sa position : $\kappa = |\cos(m\pi x_i/a)\cos(n\pi y_i/b)|$. Un condensateur placé sur une ligne nodale ($V=0$) n'amortit pas ce mode, tandis qu'un composant placé aux coins ou en bordure l'atténue fortement.
+
+6. **Impédance résultante & Anti-résonances** :
+   $$Y_{tot}(\omega) = G_{tot}(\omega) + j B_{tot}(\omega) = Y_{vrm} + \sum_k Y_k + Y_{plane} + \sum_{mn} Y_{mn}$$
+   $$|Z_{pdn}(\omega)| = \frac{1}{\sqrt{G_{tot}^2 + B_{tot}^2}}$$
+   Le solveur identifie les fréquences d'anti-résonance (pics d'impédance créés par
+   l'interaction inductive/capacitive entre condensateurs et modes de cavité) et
+   vérifie la stricte conformité face à $Z_{target}$.
+
+7. **Interactivité, Cartographie 2D & What-If** :
+   - Tracé SVG logarithmique (décades 10 kHz à 1 GHz vs 1 mΩ à 100 Ω) avec ligne de jauge $Z_{target}$ et repères verticaux des modes 2D ($TM_{10}, TM_{01}, \dots$).
+   - Curseur de mesure interactif au survol de la souris sur la courbe $Z(\omega)$.
+   - Cartographie spatiale 2D (Heatmap SVG) affichant l'onde stationnaire $|V_{mn}(x,y)|$, les lignes nodales ($V=0$), les points chauds aux coins et l'incrustation des condensateurs réels avec leur efficacité locale.
+   - Sélecteur de mode interactif ($TM_{10}, TM_{01}, TM_{11}, TM_{20}, \dots$), sonde de tension spatiale au survol du plan, tableau de synthèse modale et export unifié CSV/JSON.
+   - Tableau interactif des condensateurs avec cases à cocher pour activer/désactiver chaque composant et observer instantanément la déformation du profil $Z(\omega)$.
+
 
 Changer de famille n'efface pas le résultat : la carte de chaleur s'éteint —
 elle appartient à l'analyse d'impédance et n'a rien à dire sous un autre onglet

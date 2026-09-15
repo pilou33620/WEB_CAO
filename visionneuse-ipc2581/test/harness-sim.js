@@ -64,6 +64,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "SIM","SIM_IPC","simRefSet","simRefListe","simRefCandidats","simInit",
   "SIM_BUS","simCorpsBus","simBrancherBus","simRendreBus","simBusCalculer","SIM_BUS_PRESETS",
   "simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNet","simBusChangerRSerieVal","simBusChangerNetAval","simBusResoudreNetAvecPont","SIM_ED",
+  "simTermeDiff","simLireDiff","simLectureTexteDiff","simCourbeDiff","simFicheSDiff","simDiffExportS2p",
   "simRefCandidatsIpc",
   "simRefIdx","simPlagesDe","simMemeEcart","simKUnite","simCumul","simSurPoly",
   "simProjPoly","simSousPoly","simDistSeg","simGrilleCuivre","simEcartsEn",
@@ -4060,6 +4061,137 @@ T("SIM_BUS dans visionneuse IPC-2581 : détection pont série avec comp.pins (sa
   V.parRef = null;
   V.couches = null;
   LT.pret = false;
+});
+
+T("SIM_IPC : détection des rails PDN et extraction des condensateurs avec parasites Murata", () => {
+  V.parNet = [
+    { nom: "+3V3", pistes: [] },
+    { nom: "GND", pistes: [] },
+    { nom: "CLK", pistes: [] },
+    { nom: "VIN", pistes: [] },
+    { nom: "DGND", pistes: [] }
+  ];
+  V.modele = {
+    nets: ["+3V3", "GND", "CLK", "VIN", "DGND"],
+    composants: [
+      {
+        ref: "C10",
+        val: "100nF",
+        package: "0402",
+        mpn: "GCM155R71C104KA55",
+        type: "capacitor",
+        pins: [
+          { p: "1", net: "+3V3" },
+          { p: "2", net: "GND" }
+        ]
+      },
+      {
+        ref: "C11",
+        val: "10uF",
+        package: "0805",
+        type: "capacitor",
+        pins: [
+          { p: "1", net: "+3V3" },
+          { p: "2", net: "GND" }
+        ]
+      },
+      {
+        ref: "C12",
+        val: "10µF",
+        package: "0805",
+        type: "CAPACITOR",
+        pins: [
+          { p: "1", net: "VIN" },
+          { p: "2", net: "DGND" }
+        ]
+      }
+    ]
+  };
+
+  const rails = SIM_IPC.pdnRails();
+  if (!rails.includes("+3V3")) throw new Error("+3V3 doit être dans pdnRails()");
+  if (!rails.includes("VIN")) throw new Error("VIN (connecté à C12 et DGND) doit être détecté dans pdnRails()");
+  if (rails.includes("GND")) throw new Error("GND ne doit pas être un rail");
+  if (rails.includes("DGND")) throw new Error("DGND ne doit pas être un rail");
+
+  const tous = SIM_IPC.pdnTousNets();
+  if (!tous.includes("CLK")) throw new Error("CLK doit figurer dans pdnTousNets()");
+  if (tous.includes("GND") || tous.includes("DGND")) throw new Error("Masse ne doit pas figurer dans pdnTousNets()");
+
+  const caps = SIM_IPC.pdnCondensateurs("+3V3");
+  if (caps.length !== 2) throw new Error("2 condensateurs attendus sur +3V3, trouvé: " + caps.length);
+  const c10 = caps.find(c => c.ref === "C10");
+  if (!c10) throw new Error("C10 introuvable");
+  if (c10.lMount !== 0.50e-9) throw new Error("L_mount 0402 incorrect");
+  if (c10.prov !== "spice") throw new Error("C10 doit utiliser le modèle spice Murata");
+  if (Math.abs(c10.esr - 0.0142) > 1e-4) throw new Error("ESR Murata invalide");
+
+  const capsVin = SIM_IPC.pdnCondensateurs("VIN");
+  if (capsVin.length !== 1) throw new Error("1 condensateur attendu sur VIN, trouvé: " + capsVin.length);
+  if (capsVin[0].ref !== "C12") throw new Error("C12 attendu sur VIN");
+
+  V.parNet = null;
+  V.modele = null;
+});
+
+// ---------------------------------------------------------------------------
+// Paramètres S différentiels en mode mixte (Différentiel pur, mode commun, conversion CEM)
+// ---------------------------------------------------------------------------
+T("SIM_IPC : paramètres S en mode mixte (Sdd, Scc, Scd) et rendu UI différentiel", () => {
+  const freqs = [1e8, 1e9, 2e9];
+  const s_dd = [
+    [[0.05, 0], [0.95, 0], [0.95, 0], [0.05, 0]],
+    [[0.10, 0], [0.90, 0], [0.90, 0], [0.10, 0]],
+    [[0.15, 0], [0.85, 0], [0.85, 0], [0.15, 0]]
+  ];
+  const s_cc = [
+    [[0.40, 0], [0.60, 0], [0.60, 0], [0.40, 0]],
+    [[0.45, 0], [0.55, 0], [0.55, 0], [0.45, 0]],
+    [[0.50, 0], [0.50, 0], [0.50, 0], [0.50, 0]]
+  ];
+  const s_cd = [
+    [[1e-7, 0], [1e-7, 0], [0.005, 0], [1e-7, 0]],
+    [[1e-7, 0], [1e-7, 0], [0.015, 0], [1e-7, 0]],
+    [[1e-7, 0], [1e-7, 0], [0.030, 0], [1e-7, 0]]
+  ];
+
+  const resTest = {
+    net: "DIFF_P",
+    freqs: freqs,
+    f_centre: 1e9,
+    ligne: { z0_moyen: 100, troncons: 1, longueur: 20 },
+    couplage: {
+      paires: [{ net_voisin: "DIFF_N", differentielle: true, z_diff: 100 }]
+    },
+    s_diff: {
+      partenaire: "DIFF_N",
+      delta_l_mm: 0.08,
+      z_ref_diff: 100.0,
+      z_ref_comm: 25.0,
+      s_dd: s_dd,
+      s_cc: s_cc,
+      s_cd: s_cd,
+      touchstone_sdd: "# HZ S MA R 100\n100000000 0.05 0 0.95 0 0.95 0 0.05 0\n",
+      touchstone_scc: "# HZ S MA R 25\n100000000 0.40 0 0.60 0 0.60 0 0.40 0\n"
+    }
+  };
+
+  SIM.res = resTest;
+  SIM.modeDiffS = "sdd";
+
+  const ficheHtml = simFicheSDiff(resTest);
+  if (!ficheHtml.includes("simDiffModeSdd")) throw new Error("simDiffModeSdd absent de la fiche");
+  if (!ficheHtml.includes("simDiffModeScc")) throw new Error("simDiffModeScc absent de la fiche");
+  if (!ficheHtml.includes("simDiffModeScd")) throw new Error("simDiffModeScd absent de la fiche");
+  if (!ficheHtml.includes("simCourbeDiff")) throw new Error("simCourbeDiff absent de la fiche");
+
+  // Mode Scd
+  SIM.modeDiffS = "scd";
+  const svgScd = simCourbeDiff(resTest);
+  if (!svgScd.includes("Scd21")) throw new Error("Scd21 absent du SVG Scd");
+  if (!svgScd.includes("simSeuilCEM")) throw new Error("simSeuilCEM absent du SVG Scd");
+
+  SIM.modeDiffS = "sdd";
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

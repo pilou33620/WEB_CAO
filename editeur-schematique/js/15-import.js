@@ -217,11 +217,16 @@ const BAK="schemedit.autosave";
 function autosave(){
   if(!S.dirty)return;
   try{
+    const d=JSON.parse(serialize());
+    const nl=(typeof netlistText==="function")?netlistText():null;
+    if(nl)d.netlist=nl;
     localStorage.setItem(BAK,JSON.stringify({
       t:Date.now(),
-      doc:JSON.parse(serialize()),
+      doc:d,
+      netlist:nl,
       projet:(typeof projNom==="function"?projNom():"")
     }));
+    if(typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:nl});
   }catch(_){/* mode privé, quota plein, contexte restreint : on continue sans */}
 }
 function clearBackup(){try{localStorage.removeItem(BAK);}catch(_){}}

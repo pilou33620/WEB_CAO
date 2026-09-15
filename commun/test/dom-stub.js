@@ -151,10 +151,10 @@ function install(opts){
   }
 
   function el(tag,id){
+    let _id = String(id || "");
     const e={
       nodeType:1,
       tagName:String(tag||"div").toUpperCase(),
-      id:id||"",
       _html:"",_attrs:{},_cls:new Set(),
       textContent:"",value:"",checked:false,files:[],dataset:{},
       children:[],parentNode:null,
@@ -162,6 +162,15 @@ function install(opts){
       clientWidth:800,clientHeight:600,offsetWidth:220,offsetHeight:200,
       options:[],selectedIndex:-1,disabled:false
     };
+    if(_id) byId.set(_id, e);
+    Object.defineProperty(e, "id", {
+      get(){ return _id; },
+      set(v){
+        if(_id && byId.get(_id) === e) byId.delete(_id);
+        _id = String(v || "");
+        if(_id) byId.set(_id, e);
+      }
+    });
     e.classList={
       add:function(){for(const k of arguments)if(k)e._cls.add(k);},
       remove:function(){for(const k of arguments)e._cls.delete(k);},
@@ -198,7 +207,10 @@ function install(opts){
       if(i>=0){e.children.splice(i,1);c.parentNode=null;}
       return c;
     };
-    e.remove=()=>{if(e.parentNode)e.parentNode.removeChild(e);};
+    e.remove=()=>{
+      if(e.parentNode)e.parentNode.removeChild(e);
+      if(_id && byId.get(_id)===e)byId.delete(_id);
+    };
     e.contains=n=>{for(let p=n;p;p=p.parentNode)if(p===e)return true;return false;};
     e.querySelectorAll=sel=>descendants(e).filter(n=>matches(sel,n,e));
     e.querySelector=sel=>e.querySelectorAll(sel)[0]||null;

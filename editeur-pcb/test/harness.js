@@ -110,7 +110,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "pasteClipPcb","pcbClipContent","pcbSetClip","pcbGetClip","freeFpRef","GRID_STEPS",
   "setGridStep","gridShownStep","gridLabel","fpById",
   /* import défensif (normDoc) et aller-retour de document */
-  "docObj","normDoc","normDrawingPcb","selDrawingsPcb","setNetClass",
+  "docObj","normDoc","normDrawingPcb","selDrawingsPcb","normHole","selHolesPcb","mkHole","holeBBox","setNetClass",
   /* paires différentielles : modèle, règles, tracé couplé, contrôle */
   "DP_SUF","DP_FALLBACK","DP_KEYS","DP_PROFILES","DP_MITER","DP_STEP",
   "dpSplit","dpMateName","dpMatch","dpDetect","dpById","dpByName","dpOfNet",
@@ -215,6 +215,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simDCListeUnite","simChamp","simCorpsImpedance","simCorpsDiff",
   "simCorpsCrosstalk","simCorpsRetour","simCorpsSante",
   "SIM_BUS","simCorpsBus","simBrancherBus","simRendreBus","simBusCalculer","SIM_BUS_PRESETS","SIM_BUS_PROTOCOLES",
+  "SIM_PDN","simCorpsPDN","simBrancherPDN","simRendrePDN","simCalculerPDN","simCourbePDN","simPDNActualiserComposants","simPDNExportCsv","simPDNExportJson","simPDNCsvTexte","simPDNJsonTexte","simPDNFormatFreq","simPDNFormatZ","simPDNCalculerModesCavite","simPDNGenererHeatmapCavite",
   "simInit","simRafraichir","simAllerAnalyse","simBusRendreNetsBar",
   "simBusBasculerRole","simBusChangerNet","simBusChainerNet","simBusDechainerNet","simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNetAval","simBusChangerRSerieVal","simBusResoudreNetAvecPont","simBusLierComposants","simBusClassifierNets","simBusSupprimerSignal",
   "simThermiqueDC","simDCThermique","simDCThermiquePcb",
@@ -233,6 +234,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simChampTexte","SIM_XT","simRendreCrosstalk","simRendreRetour","simRendreSante",
   "simDiagnostiquerSante","simFicheSante",
   "simRendreImpedance","simRendreDiff","simDCCsvTexte","simDCJsonTexte",
+  "simTermeDiff","simLireDiff","simLectureTexteDiff","simCourbeDiff","simFicheSDiff","simDiffExportS2p","simDb",
   "simDCTraceSonde",
   /* liaison schéma & simulations enrichies */
   "pcbParseVolt","pcbParseCourant","pcbParsePuissance","pcbParseResistance",
@@ -240,6 +242,10 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "pcbSpecsComposant","pcbParasitesComposant","SIM_PARASITES_MURATA","pcbNetComposants","simFicheSchemaAdaptation","simDiffApres",
   "applyNetlist","pcbNettoyerPistesConflits",
   "pcbVerifierPinout","pcbVerifierPinoutComposant","pcbVerifierEtNotifierPinout","pcbAfficherToastPinout","pcbOuvrirDialoguePinout",
+  /* synchronisation schéma ↔ PCB & ECO */
+  "PCB_ECO","pcbObtenirDonneesSchema","pcbPistesConnecteesFp","pcbPistesConnecteesPad",
+  "pcbDetecterDisparitesEco","pcbAppliquerEco","pcbOuvrirFenetreEco","pcbVerifierEtNotifierEco",
+  "sessDiffuserSchemaModif","sessEcouterSchemaModif",
   "SIM_DC_NOEUDS_CIBLE","SIM_DC_CARREAUX_MAX","SIM_DC_MARGE_GRILLE",
   "simRefCandidatsPcb","simPlagesDe","simMemeEcart","simZoneEn","simCoteEn",
   "simEcartsA","simPlages","simSegments","simCouturePcb","simEspacement",
@@ -15605,6 +15611,150 @@ T("rectangle de sérigraphie : normalisation, hit-test périmétrique, panneau e
     throw new Error("segments B.SilkS absents du .GBO");
 });
 
+T("texte libre de sérigraphie : normalisation, hit-test, rotation, miroir bottom et export Gerber",()=>{
+  loadDoc({cu:2,drawings:[]},true);
+  clearSel();
+
+  // 1. Normalisation
+  const nt=normDrawingPcb({shape:"text",layer:"silkT",text:"ANTENNA",size:2.0,rot:90,x1:15,y1:25,width:0.2},0);
+  if(!nt||nt.shape!=="text"||nt.text!=="ANTENNA"||nt.size!==2.0||nt.rot!==90||nt.x1!==15||nt.y1!==25)
+    throw new Error("normDrawingPcb n'a pas normalisé correctement le texte");
+
+  // Intégration dans docObj et normDoc (aller-retour)
+  const doc=normDoc({cu:2,drawings:[nt]});
+  if(!doc.drawings||doc.drawings.length!==1||doc.drawings[0].shape!=="text")
+    throw new Error("normDoc n'a pas préservé le texte libre");
+  loadDoc(doc,true);
+  if(S.drawings.length!==1||S.drawings[0].text!=="ANTENNA")
+    throw new Error("loadDoc n'a pas chargé le texte");
+  const obj=docObj();
+  if(!obj.drawings||obj.drawings.length!==1||obj.drawings[0].text!=="ANTENNA")
+    throw new Error("docObj n'a pas exporté le texte");
+
+  // 2. Hit-test au centre et rotation
+  const d=S.drawings[0];
+  const h=hitTest(15,25);
+  if(!h||!h.drawing||h.drawing.id!==d.id)
+    throw new Error("hitTest a manqué le texte");
+  if(!S.sel.drawings)S.sel.drawings=new Set();
+  S.sel.drawings.add(d.id);
+  rotateSel();
+  if(d.rot!==180)throw new Error("rotateSel n'a pas pivoté le texte à 180° : rot="+d.rot);
+
+  // 3. Panneau Propriétés
+  buildProps();
+  const pHtml=document.getElementById("props").innerHTML;
+  if(pHtml.indexOf("pDrwTxt")<0||pHtml.indexOf("Texte de sérigraphie")<0)
+    throw new Error("champ de saisie texte absent du panneau propriétés");
+
+  // 4. Export Gerber F.SilkS (.GTO) avec rotation
+  const gto=gerberSilk(0);
+  const gbo=gerberSilk(1);
+  if(typeof gto!=="string"||typeof gbo!=="string")
+    throw new Error("export Gerber silk texte invalide");
+  // F.SilkS doit contenir des traits D01/D02 générés par textStrokes
+  if(gto.indexOf("D01*")<0||gto.indexOf("D02*")<0)
+    throw new Error("tracés de police vectorielle absents du .GTO");
+
+  // 5. Bascule sur B.SilkS (miroir automatique)
+  flipSel();
+  if(d.layer!=="silkB")throw new Error("flipSel n'a pas basculé le texte sur silkB");
+  const gboAfter=gerberSilk(1);
+  if(gboAfter.indexOf("D01*")<0)
+    throw new Error("tracés vectoriels du texte absents du .GBO après flip");
+});
+
+T("trous non métallisés (NPTH) autonomes hors empreinte : normalisation, hit-test, déplacement, DRC et perçage Excellon",()=>{
+  loadDoc({cu:2,holes:[],tracks:[],vias:[],fps:[]},true);
+  clearSel();
+
+  // 1. Normalisation
+  const nh=normHole({x:25.5,y:30.25,d:3.2,locked:false},0);
+  if(!nh||nh.x!==25.5||nh.y!==30.25||nh.d!==3.2||nh.locked)
+    throw new Error("normHole n'a pas normalisé correctement le trou NPTH");
+  // Diamètres bornés
+  const hMin=normHole({x:10,y:10,d:0.1},0);
+  if(hMin.d<0.4)throw new Error("diamètre min NPTH non respecté");
+  const hMax=normHole({x:10,y:10,d:50},0);
+  if(hMax.d>30.0)throw new Error("diamètre max NPTH non respecté");
+
+  // Aller-retour docObj & normDoc
+  const doc=normDoc({cu:2,holes:[nh]});
+  if(!doc.holes||doc.holes.length!==1||doc.holes[0].d!==3.2)
+    throw new Error("normDoc n'a pas préservé le trou NPTH");
+  loadDoc(doc,true);
+  if(S.holes.length!==1||S.holes[0].d!==3.2)
+    throw new Error("loadDoc n'a pas chargé le trou NPTH");
+  const obj=docObj();
+  if(!obj.holes||obj.holes.length!==1||obj.holes[0].d!==3.2)
+    throw new Error("docObj n'a pas exporté le trou NPTH");
+
+  // 2. Hit-test, sélection et déplacement
+  const h=S.holes[0];
+  const hit=hitTest(25.5,30.25);
+  if(!hit||!hit.hole||hit.hole.id!==h.id)
+    throw new Error("hitTest a manqué le trou NPTH");
+  if(!S.sel.holes)S.sel.holes=new Set();
+  S.sel.holes.add(h.id);
+  if(selHolesPcb().length!==1)throw new Error("selHolesPcb n'a pas retourné le trou sélectionné");
+
+  // Panneau propriétés
+  buildProps();
+  const pHtml=document.getElementById("props").innerHTML;
+  if(pHtml.indexOf("pHoleD")<0||pHtml.indexOf("Trou NPTH")<0)
+    throw new Error("panneau de propriétés pour trou NPTH manquant");
+
+  // Copier / coller
+  if(!copySelPcb())throw new Error("copie du trou NPTH échouée");
+  S.mouse={x:50,y:50};
+  pasteClipPcb();
+  if(S.holes.length!==2)throw new Error("collage du trou NPTH échoué, total="+S.holes.length);
+
+  // Suppression
+  deleteSel();
+  if(S.holes.length!==1)throw new Error("suppression du trou NPTH sélectionné échouée");
+
+  // 3. Contrôle DRC
+  // a) Trou trop près du bord de carte
+  h.x=0.5; h.y=0.5; // Board par défaut 0..100, 0..80, bord=0.4, d=3.2 (r=1.6) -> hors contour
+  let errs=runDrc();
+  if(!errs.some(e=>e.msg&&e.msg.indexOf("Trou NPTH")>=0&&e.msg.indexOf("hors du contour")>=0))
+    throw new Error("DRC n'a pas détecté le trou NPTH trop près du bord");
+
+  // b) Trou à trou trop proche
+  h.x=30; h.y=30; h.d=3.0; // r=1.5
+  const h2=mkHole(32.8,30,3.0); // r=1.5 -> entraxe 2.8, gap = 2.8 - 3.0 = -0.2 < 0.25
+  S.holes.push(h2);
+  errs=runDrc();
+  if(!errs.some(e=>e.msg&&e.msg.indexOf("NPTH")>=0&&e.msg.indexOf("recouvrent")>=0))
+    throw new Error("DRC n'a pas détecté le chevauchement de trous NPTH");
+  S.holes.pop();
+
+  // c) Piste cuivre trop proche du perçage NPTH
+  S.tracks.push({l:0,x1:25,y1:30,x2:35,y2:30,w:0.5,net:"VCC"});
+  errs=runDrc();
+  if(!errs.some(e=>e.msg&&e.msg.indexOf("Cuivre trop proche du trou NPTH")>=0))
+    throw new Error("DRC n'a pas détecté la piste traversant le trou NPTH");
+  S.tracks.pop();
+
+  // 4. Export perçage Excellon *-NPTH.TXT
+  h.x=20; h.y=20; h.d=3.2;
+  const drillRes=drillFile();
+  const drills=drillRes&&drillRes.files;
+  if(!Array.isArray(drills))throw new Error("drillFile n'a pas retourné une liste de fichiers");
+  const npthFile=drills.find(f=>f.kind==="npth"||(f.name&&f.name.indexOf("-NPTH.TXT")>=0));
+  if(!npthFile)throw new Error("Fichier de perçage *-NPTH.TXT non généré par drillFile");
+  if(npthFile.text.indexOf("T1C3.200")<0)
+    throw new Error("Outil T1C3.200 absent du fichier NPTH : "+npthFile.text);
+  if(npthFile.text.indexOf("X20.000Y60.000")<0)
+    throw new Error("Coordonnées de perçage NPTH absentes du fichier : "+npthFile.text);
+
+  // Fab archive buildFabFiles
+  const fab=buildFabFiles().files;
+  if(!fab.some(f=>f.name&&f.name.indexOf("-NPTH.TXT")>=0))
+    throw new Error("Archive de fabrication buildFabFiles ne contient pas le fichier *-NPTH.TXT");
+});
+
 /* =============================================================================
    LIAISON SCHÉMATIQUE → SIMULATIONS (Chute DC & Simulation EM)
    ============================================================================= */
@@ -17542,6 +17692,671 @@ T("Simulation SI/PI : injection des grandeurs parasites réelles (ESR/ESL Murata
   if (parGen.provenance !== "defaut") throw new Error("Provenance attendue 'defaut' pour composant sans modèle");
   if (Math.abs(parGen.esl - 0.45e-9) > 1e-11) throw new Error("ESL 0402 attendu ~0.45 nH, obtenu: " + parGen.esl);
   if (Math.abs(parGen.esr - 0.028) > 1e-3) throw new Error("ESR 100nF attendu ~0.028 ohm, obtenu: " + parGen.esr);
+});
+
+T("Synchronisation Schéma ↔ PCB : extraction des données schéma (session, netlist, JSON)", () => {
+  // 1. Extraction depuis une netlist texte
+  const nlTxt = [
+    "* Netlist — Test",
+    "=== Composants ===",
+    "    U1      NE555             SOIC-8",
+    "    R1      10k               0805",
+    "=== Nets globaux ===",
+    'NET "GND"',
+    "    U1.1",
+    "    R1.1",
+    'NET "VCC"',
+    "    U1.8",
+    "    R1.2"
+  ].join("\n");
+
+  const dataNl = pcbObtenirDonneesSchema(nlTxt);
+  if (!dataNl.disponible) throw new Error("Les données schéma doivent être disponibles depuis la netlist");
+  if (!dataNl.comps.has("U1") || !dataNl.comps.has("R1")) throw new Error("U1 et R1 doivent être présents");
+  if (dataNl.comps.get("U1").pkg !== "SOIC-8") throw new Error("U1 doit avoir le boîtier SOIC-8");
+  if (dataNl.pinNet.get("U1.1") !== "GND") throw new Error("U1.1 doit être sur GND");
+  if (dataNl.pinNet.get("U1.8") !== "VCC") throw new Error("U1.8 doit être sur VCC");
+
+  // 2. Extraction depuis un document schéma JSON avec netlist embarquée
+  const schJson = JSON.stringify({
+    format: "schemedit-2",
+    pages: [{ comps: [{ ref: "C1", value: "100nF", pkg: "0402" }] }],
+    netlist: nlTxt
+  });
+  const dataJson = pcbObtenirDonneesSchema(schJson);
+  if (!dataJson.disponible) throw new Error("Données schéma JSON doivent être disponibles");
+  if (!dataJson.comps.has("U1")) throw new Error("La netlist embarquée doit fournir U1");
+});
+
+T("ECO : détection automatique des disparités de boîtier, empreinte, netlist, ajouts et suppressions", () => {
+  // Préparer une carte PCB
+  loadDoc({
+    fps: [
+      { id: 1, ref: "U1", value: "10k", pkg: "DIP-8", pins: 8, x: 20, y: 20, rot: 0, nets: { 1: "GND", 2: "VCC", 3: "OUT" } },
+      { id: 2, ref: "R1", value: "1k", pkg: "0805", pins: 2, x: 40, y: 20, rot: 0, nets: { 1: "GND", 2: "SIG" } },
+      { id: 3, ref: "C_OLD", value: "10uF", pkg: "0805", pins: 2, x: 60, y: 20, rot: 0, nets: { 1: "GND", 2: "VCC" } }
+    ],
+    tracks: [
+      { x1: 20, y1: 20, x2: 25, y2: 20, layer: 0, w: 0.25, net: "GND" }
+    ],
+    vias: []
+  });
+
+  // Schéma avec :
+  // - U1 : boîtier changé en SOIC-8, valeur changée en NE555, broche 3 passée sur RESET au lieu de OUT
+  // - R1 : inchangé
+  // - C_OLD : absent du schéma (orphelin)
+  // - R2 : nouveau composant (0805, 4.7k, broches 1:VCC, 2:SIG)
+  const schNl = [
+    "=== Composants ===",
+    "    U1      NE555             SOIC-8",
+    "    R1      1k                0805",
+    "    R2      4.7k              0805",
+    "=== Nets globaux ===",
+    'NET "GND"',
+    "    U1.1",
+    "    R1.1",
+    'NET "VCC"',
+    "    U1.2",
+    "    R2.1",
+    'NET "RESET"',
+    "    U1.3",
+    'NET "SIG"',
+    "    R1.2",
+    "    R2.2"
+  ].join("\n");
+
+  const schData = pcbObtenirDonneesSchema(schNl);
+  const diag = pcbDetecterDisparitesEco(schData);
+
+  if (!diag.disponible) throw new Error("Le diagnostic ECO doit être disponible");
+  if (diag.total < 4) throw new Error("Au moins 4 disparités attendues, obtenu: " + diag.total);
+
+  // Vérifier chaque catégorie détectée
+  const ajoutR2 = diag.ajouts.find(x => x.ref === "R2");
+  if (!ajoutR2) throw new Error("R2 doit être détecté comme nouvel ajout");
+  if (!ajoutR2.active) throw new Error("Les ajouts doivent être cochés par défaut");
+
+  const boitierU1 = diag.boitiers.find(x => x.ref === "U1");
+  if (!boitierU1) throw new Error("U1 doit être détecté en changement de boîtier");
+  if (boitierU1.oldPkg !== "DIP-8" || boitierU1.newPkg !== "SOIC-8") {
+    throw new Error("Boîtier U1 attendu DIP-8 -> SOIC-8, obtenu: " + boitierU1.oldPkg + " -> " + boitierU1.newPkg);
+  }
+
+  const valU1 = diag.valeurs.find(x => x.ref === "U1");
+  if (!valU1) throw new Error("U1 doit être détecté en changement de valeur");
+  if (valU1.newValue !== "NE555") throw new Error("Nouvelle valeur U1 attendue NE555, obtenu: " + valU1.newValue);
+
+  const netU1Pin3 = diag.nets.find(x => x.ref === "U1" && x.pin === 3);
+  if (!netU1Pin3) throw new Error("U1.3 doit être détecté en changement de net");
+  if (netU1Pin3.oldNet !== "OUT" || netU1Pin3.newNet !== "RESET") {
+    throw new Error("Net U1.3 attendu OUT -> RESET, obtenu: " + netU1Pin3.oldNet + " -> " + netU1Pin3.newNet);
+  }
+
+  const supprCold = diag.suppressions.find(x => x.ref === "C_OLD");
+  if (!supprCold) throw new Error("C_OLD doit être détecté comme composant absent du schéma");
+  if (supprCold.active !== false) throw new Error("La suppression de composant orphelin doit être DÉCOCHÉE par défaut");
+});
+
+T("ECO : application avec conservation rigoureuse du routage et des pistes existantes", () => {
+  // Carte PCB avec des pistes routées
+  loadDoc({
+    fps: [
+      { id: 1, ref: "U1", value: "10k", pkg: "DIP-8", pins: 8, x: 20, y: 20, rot: 0, nets: { 1: "GND", 2: "VCC", 3: "OUT" } },
+      { id: 2, ref: "R1", value: "1k", pkg: "0805", pins: 2, x: 40, y: 20, rot: 0, nets: { 1: "GND", 2: "SIG" } }
+    ],
+    tracks: [
+      { x1: 20, y1: 20, x2: 25, y2: 20, layer: 0, w: 0.25, net: "GND" },
+      { x1: 25, y1: 20, x2: 30, y2: 20, layer: 0, w: 0.25, net: "GND" },
+      { x1: 40, y1: 20, x2: 45, y2: 20, layer: 0, w: 0.25, net: "SIG" }
+    ],
+    vias: [
+      { x: 30, y: 20, d: 0.8, drill: 0.4, net: "GND", layers: [0, 1] }
+    ]
+  });
+
+  const nbTracksInitial = S.tracks.length;
+  const nbViasInitial = S.vias.length;
+  if (nbTracksInitial !== 3) throw new Error("Attendu 3 pistes initiales");
+
+  const schNl = [
+    "=== Composants ===",
+    "    U1      NE555             SOIC-8",
+    "    R1      1k                0805",
+    "    R2      4.7k              0805",
+    "=== Nets globaux ===",
+    'NET "GND"',
+    "    U1.1",
+    "    R1.1",
+    'NET "RESET"',
+    "    U1.3"
+  ].join("\n");
+
+  const schData = pcbObtenirDonneesSchema(schNl);
+  const diag = pcbDetecterDisparitesEco(schData);
+
+  // Appliquer l'ECO avec conservation rigoureuse du routage (garderRoutage: true)
+  const res = pcbAppliquerEco(diag.items, {
+    garderRoutage: true,
+    nettoyerConflits: false,
+    supprimerPistesOrphelines: false
+  });
+
+  if (!res.succes) throw new Error("Application ECO doit réussir");
+
+  // Vérification de la conservation intégrale du cuivre
+  if (S.tracks.length !== nbTracksInitial) {
+    throw new Error(`Conservation du routage violée ! Attendu ${nbTracksInitial} pistes, obtenu: ${S.tracks.length}`);
+  }
+  if (S.vias.length !== nbViasInitial) {
+    throw new Error(`Conservation des vias violée ! Attendu ${nbViasInitial} vias, obtenu: ${S.vias.length}`);
+  }
+
+  // Vérifier la mise à jour géométrique de U1 (SOIC-8) à sa position intacte
+  const u1 = S.fps.find(f => f.ref === "U1");
+  if (!u1) throw new Error("U1 doit être conservé sur la carte");
+  if (u1.pkg !== "SOIC-8") throw new Error("Le boîtier de U1 doit être mis à jour vers SOIC-8: " + u1.pkg);
+  if (u1.value !== "NE555") throw new Error("La valeur de U1 doit être mise à jour vers NE555: " + u1.value);
+  if (u1.x !== 20 || u1.y !== 20) throw new Error("La position de U1 ne doit pas avoir bougé: x=" + u1.x + ", y=" + u1.y);
+  if (u1.nets[3] !== "RESET") throw new Error("Le net U1.3 doit être RESET: " + u1.nets[3]);
+
+  // Vérifier l'ajout de R2
+  const r2 = S.fps.find(f => f.ref === "R2");
+  if (!r2) throw new Error("R2 doit avoir été créé sur la carte");
+  if (r2.value !== "4.7k" || r2.pkg !== "0805") throw new Error("Propriétés de R2 incorrectes");
+
+  // Test du Undo / Redo
+  undo();
+  const u1ApresUndo = S.fps.find(f => f.ref === "U1");
+  if (u1ApresUndo.pkg !== "DIP-8") throw new Error("Undo doit rétablir DIP-8 pour U1: " + u1ApresUndo.pkg);
+  if (u1ApresUndo.value !== "10k") throw new Error("Undo doit rétablir 10k pour U1: " + u1ApresUndo.value);
+  if (S.fps.some(f => f.ref === "R2")) throw new Error("Undo doit retirer R2");
+  if (S.tracks.length !== nbTracksInitial) throw new Error("Undo doit conserver les pistes: " + S.tracks.length);
+});
+
+T("ECO : interface modale et mise à jour du badge de notification d'entête", () => {
+  // Installer le badge dans le DOM stub
+  let btn = document.getElementById("bEcoSync");
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.id = "bEcoSync";
+    const badge = document.createElement("span");
+    badge.id = "ecoBadge";
+    badge.style.display = "none";
+    btn.appendChild(badge);
+    document.body.appendChild(btn);
+  }
+
+  // Session sans schéma
+  sessEffacer("schema");
+  delete S.schDoc;
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem("schemedit.autosave");
+    localStorage.removeItem("cao_schema_backup");
+    localStorage.removeItem("schema_auto");
+  }
+  const repVide = pcbVerifierEtNotifierEco(true);
+  const badge = document.getElementById("ecoBadge");
+  if (badge.style.display !== "none") throw new Error("Le badge doit être masqué quand aucun schéma n'est disponible");
+
+  // Écrire un schéma en session avec 1 composant manquant sur le PCB
+  loadDoc({
+    fps: [{ id: 1, ref: "R1", value: "1k", pkg: "0805", pins: 2, nets: { 1: "SIG" } }],
+    tracks: [], vias: []
+  });
+
+  sessEcrire("schema", {
+    doc: { pages: [{ comps: [{ ref: "R1", value: "1k", pkg: "0805" }, { ref: "R2", value: "2.2k", pkg: "0805" }] }] },
+    netlist: "=== Composants ===\n    R1      1k      0805\n    R2      2.2k    0805\n=== Nets ===\nNET \"SIG\"\n    R1.1\n    R2.1\n",
+    sale: false
+  });
+
+  const rep = pcbVerifierEtNotifierEco(true);
+  if (!rep || rep.total !== 1) throw new Error("1 disparité attendue (R2 à ajouter), obtenu: " + (rep ? rep.total : 0));
+  if (badge.style.display === "none") throw new Error("Le badge doit être affiché");
+  if (badge.textContent !== "1") throw new Error("Le badge doit afficher '1', obtenu: " + badge.textContent);
+
+  // Ouvrir la modale ECO
+  pcbOuvrirFenetreEco();
+  const modal = document.getElementById("pcbEcoModal");
+  if (!modal) throw new Error("La modale pcbEcoModal doit être créée dans le DOM");
+  if (!modal.innerHTML.includes('id="ecoBtnCount"')) throw new Error("Le contenu ECO doit inclure ecoBtnCount");
+  if (!modal.innerHTML.includes("1 action(s) sélectionnée(s)")) throw new Error("La modale doit afficher 1 action sélectionnée");
+
+  // Fermer la modale
+  modal.remove();
+  if (modal.parentNode) throw new Error("La modale doit être détachée du DOM");
+});
+
+T("Pré-placement automatique par motifs : import netlist avec régulateur Buck en grappe fonctionnelle", () => {
+  loadDoc({
+    fps: [],
+    tracks: [],
+    vias: []
+  });
+
+  const nlBuck = 
+`=== Composants ===
+    U1      MP1584      SOIC-8
+    L1      10uH        IND-0805
+    D1      SS34        SOD-123
+    C1      10uF        0805
+    C2      22uF        0805
+    R1      10k         0603
+
+=== Nets ===
+NET "VIN"
+    U1.1
+    C1.1
+
+NET "SW"
+    U1.2
+    L1.1
+    D1.1
+
+NET "VOUT"
+    L1.2
+    C2.1
+    R1.1
+
+NET "GND"
+    U1.3
+    C1.2
+    C2.2
+    D1.2
+    R1.2
+`;
+
+  applyNetlist(nlBuck);
+
+  if (S.fps.length !== 6) throw new Error("6 composants attendus sur le PCB, trouvé: " + S.fps.length);
+
+  const u1 = S.fps.find(f => f.ref === "U1");
+  const l1 = S.fps.find(f => f.ref === "L1");
+  const c1 = S.fps.find(f => f.ref === "C1");
+  const c2 = S.fps.find(f => f.ref === "C2");
+  const d1 = S.fps.find(f => f.ref === "D1");
+
+  if (!u1 || !l1 || !c1 || !c2 || !d1) throw new Error("Composants du Buck introuvables");
+
+  // Vérifier la proximité en grappe 2D du régulateur et de ses composants clés
+  const distU1_L1 = Math.hypot(u1.x - l1.x, u1.y - l1.y);
+  const distU1_C1 = Math.hypot(u1.x - c1.x, u1.y - c1.y);
+  const distU1_C2 = Math.hypot(u1.x - c2.x, u1.y - c2.y);
+
+  if (distU1_L1 > 35) throw new Error("L1 doit être pré-placé à proximité de U1 (trouvé: " + distU1_L1.toFixed(1) + " mm)");
+  if (distU1_C1 > 30) throw new Error("C1 doit être pré-placé à proximité de U1 (trouvé: " + distU1_C1.toFixed(1) + " mm)");
+  if (distU1_C2 > 45) throw new Error("C2 doit être pré-placé à proximité du convertisseur (trouvé: " + distU1_C2.toFixed(1) + " mm)");
+
+  // Vérification de l'absence de collision entre boîtiers
+  for (let i = 0; i < S.fps.length; i++) {
+    for (let j = i + 1; j < S.fps.length; j++) {
+      const b1 = fpBBox(S.fps[i]);
+      const b2 = fpBBox(S.fps[j]);
+      const chevauchement = !(b1.x2 < b2.x1 || b1.x1 > b2.x2 || b1.y2 < b2.y1 || b1.y1 > b2.y2);
+      if (chevauchement) {
+        throw new Error("Collision détectée entre " + S.fps[i].ref + " et " + S.fps[j].ref);
+      }
+    }
+  }
+});
+
+T("Simulation PI : enregistrement de l'analyse pdn dans SIM_FAMILLES et SIM_ANALYSES", () => {
+  const famPi = SIM_FAMILLES.find(f => f.cle === "pi");
+  if (!famPi) throw new Error("Famille 'pi' introuvable dans SIM_FAMILLES");
+  if (!famPi.analyses.includes("pdn")) {
+    throw new Error("L'analyse 'pdn' doit être déclarée dans les analyses de la famille 'pi'");
+  }
+  const aPdn = SIM_ANALYSES.pdn;
+  if (!aPdn) throw new Error("Entrée 'pdn' introuvable dans SIM_ANALYSES");
+  if (typeof aPdn.corps !== "function") throw new Error("corps() manquant pour SIM_ANALYSES.pdn");
+  if (typeof aPdn.brancher !== "function") throw new Error("brancher() manquant pour SIM_ANALYSES.pdn");
+  if (typeof aPdn.rendre !== "function") throw new Error("rendre() manquant pour SIM_ANALYSES.pdn");
+  if (typeof aPdn.relancer !== "function") throw new Error("relancer() manquant pour SIM_ANALYSES.pdn");
+});
+
+T("Simulation PI : calcul et impédance fréquentielle Z(ω) du PDN avec résonances et impédance cible Z_target", () => {
+  // Configurer des paramètres connus
+  SIM_PDN.vdd = 3.3;
+  SIM_PDN.ripplePct = 5.0; // 5% de 3.3V = 165 mV
+  SIM_PDN.deltaIA = 1.5;   // 1.5 A -> Z_target = 0.165 / 1.5 = 0.11 Ohm = 110 mOhm
+  SIM_PDN.rVrmMOhm = 2.0;  // 2 mOhm DC
+  SIM_PDN.fVrmKhz = 100.0;
+  SIM_PDN.planActif = false; // Isoler l'effet des condensateurs seuls
+  SIM_PDN.fMin = 1e4;
+  SIM_PDN.fMax = 1e9;
+  SIM_PDN.nbPoints = 200;
+
+  // Un condensateur céramique Murata 100 nF (SRF vers 60 MHz)
+  SIM_PDN.condensateurs = [
+    { id: 1, ref: "C1", val: "100nF", cap: 100e-9, esr: 0.015, esl: 0.2e-9, lMount: 0.5e-9, pkg: "0402", prov: "spice", actif: true }
+  ];
+
+  simCalculerPDN();
+
+  const r = SIM_PDN.result;
+  if (!r) throw new Error("Résultat PDN non généré par simCalculerPDN()");
+  if (Math.abs(r.zTarget - 0.11) > 1e-4) {
+    throw new Error("Impédance cible attendue 0.110 Ω, obtenu: " + r.zTarget);
+  }
+
+  // En très basse fréquence (10 kHz), le VRM domine : |Z| ≈ R_vrm = 0.002 Ω
+  const z10k = r.zPdn[0];
+  if (Math.abs(z10k - 0.002) > 0.001) {
+    throw new Error("En basse fréquence (10 kHz), l'impédance doit être proche de R_vrm (2 mΩ), obtenu: " + (z10k * 1e3).toFixed(2) + " mΩ");
+  }
+
+  // Trouver le creux de résonance du condensateur (autour de 60 MHz)
+  const fResTheorique = 1 / (2 * Math.PI * Math.sqrt((0.2e-9 + 0.5e-9) * 100e-9)); // ~60.15 MHz
+  let minDiff = Infinity, idxRes = 0;
+  for (let i = 0; i < r.freqs.length; i++) {
+    const diff = Math.abs(r.freqs[i] - fResTheorique);
+    if (diff < minDiff) { minDiff = diff; idxRes = i; }
+  }
+  const zCreux = r.zPdn[idxRes];
+  if (Math.abs(zCreux - 0.015) > 0.005) {
+    throw new Error("Au creux de résonance de C1 (~60 MHz), l'impédance doit approcher l'ESR (15 mΩ), obtenu: " + (zCreux * 1e3).toFixed(2) + " mΩ");
+  }
+
+  // Ajouter un second condensateur pour créer une anti-résonance
+  SIM_PDN.condensateurs.push(
+    { id: 2, ref: "C2", val: "10µF", cap: 10e-6, esr: 0.008, esl: 0.9e-9, lMount: 1.0e-9, pkg: "0805", prov: "catalogue", actif: true }
+  );
+  simCalculerPDN();
+  const r2 = SIM_PDN.result;
+  if (!r2.antiresonances || !r2.antiresonances.length) {
+    throw new Error("Une anti-résonance au moins devrait être détectée entre 10 µF et 100 nF");
+  }
+});
+
+T("Simulation PI : détection et injection des condensateurs du rail PCB avec modèles Murata réels", () => {
+  S.fps = [];
+  S.tracks = [];
+  S.vias = [];
+  S.zones = [];
+  // Poser un rail +3V3 et un rail GND
+  const fp1 = mkFp("C1", "100nF", "0402", 2);
+  fp1.mpn = "GCM155R71C104KA55"; // Référence Murata réelle du catalogue
+  fp1.type = "capacitor";
+  fp1.nets = { 1: "+3V3", 2: "GND" };
+  S.fps.push(fp1);
+
+  const fp2 = mkFp("C2", "1uF", "0603", 2);
+  fp2.type = "capacitor";
+  fp2.nets = { 1: "+3V3", 2: "GND" };
+  S.fps.push(fp2);
+
+  // Un condensateur sur un autre rail (+5V)
+  const fp3 = mkFp("C3", "10uF", "0805", 2);
+  fp3.type = "capacitor";
+  fp3.nets = { 1: "+5V", 2: "GND" };
+  S.fps.push(fp3);
+
+  // Vérifier pdnRails()
+  const rails = SIM_PCB.pdnRails();
+  if (!rails.includes("+3V3")) throw new Error("+3V3 doit figurer dans pdnRails()");
+  if (!rails.includes("+5V")) throw new Error("+5V doit figurer dans pdnRails()");
+  if (rails.includes("GND")) throw new Error("GND ne doit pas être proposé comme rail d'alimentation");
+
+  // Extraire les condensateurs pour le rail +3V3
+  const caps3v3 = SIM_PCB.pdnCondensateurs("+3V3");
+  if (caps3v3.length !== 2) throw new Error("2 condensateurs attendus sur +3V3, trouvé: " + caps3v3.length);
+
+  const c1 = caps3v3.find(c => c.ref === "C1");
+  if (!c1) throw new Error("C1 introuvable dans pdnCondensateurs(+3V3)");
+  if (c1.prov !== "spice") throw new Error("C1 (GCM155R71C104KA55) doit avoir prov 'spice', trouvé: " + c1.prov);
+  // Vérifier valeurs réelles Murata pour GCM155R71C104KA55 : ESR = 0.0142 Ω, ESL = 0.201 nH
+  if (Math.abs(c1.esr - 0.0142) > 1e-4) throw new Error("ESR Murata attendue 0.0142, trouvé: " + c1.esr);
+  if (Math.abs(c1.esl - 0.201e-9) > 1e-12) throw new Error("ESL Murata attendue 0.201 nH, trouvé: " + c1.esl);
+  if (c1.lMount !== 0.50e-9) throw new Error("L_mount pour boîtier 0402 attendue 0.50 nH, trouvé: " + c1.lMount);
+});
+
+T("Simulation PI : tracé SVG logarithmique, curseur de mesure et export CSV/JSON", () => {
+  SIM_PDN.rail = "+3V3";
+  SIM_PDN.vdd = 3.3;
+  SIM_PDN.ripplePct = 5.0;
+  SIM_PDN.deltaIA = 1.0;
+  SIM_PDN.condensateurs = [
+    { id: 1, ref: "C1", val: "100nF", cap: 100e-9, esr: 0.0142, esl: 0.201e-9, lMount: 0.50e-9, pkg: "0402", mpn: "GCM155R71C104KA55", prov: "spice", f0: 59.8, actif: true },
+    { id: 2, ref: "C2", val: "10µF", cap: 10e-6, esr: 0.008, esl: 0.9e-9, lMount: 1.0e-9, pkg: "0805", prov: "catalogue", f0: 3.65, actif: true }
+  ];
+  simCalculerPDN();
+
+  // Test rendu SVG
+  const svg = simCourbePDN(SIM_PDN.result, 600, 260);
+  if (!svg.includes('<svg class="simCourbe"')) throw new Error("Balise SVG .simCourbe manquante");
+  if (!svg.includes('Z_target =')) throw new Error("Ligne de seuil Z_target manquante dans le SVG");
+  if (!svg.includes('class="simTrace"')) throw new Error("Tracé .simTrace manquant dans le SVG");
+  if (!svg.includes('id="simPDNCurZone"')) throw new Error("Zone de survol simPDNCurZone manquante");
+
+  // Test rendu HTML du panneau
+  const htmlCorps = simCorpsPDN();
+  if (!htmlCorps.includes('id="simPDNRail"')) throw new Error("Sélecteur de rail simPDNRail manquant");
+  if (!htmlCorps.includes('id="simPDNGo"')) throw new Error("Bouton simPDNGo manquant");
+
+  const htmlRendu = simRendrePDN();
+  if (!htmlRendu.includes('Murata SPICE')) throw new Error("Badge 'Murata SPICE' manquant dans le tableau des condensateurs: " + htmlRendu);
+  if (!htmlRendu.includes('simPDNCapToggle')) throw new Error("Cases à cocher simPDNCapToggle manquantes");
+
+  // Test formateurs
+  if (simPDNFormatFreq(1e4) !== "10.0 kHz") throw new Error("Format freq 10 kHz échoué");
+  if (simPDNFormatFreq(50e6) !== "50.0 MHz") throw new Error("Format freq 50 MHz échoué");
+  if (simPDNFormatZ(0.015) !== "15.0 mΩ") throw new Error("Format Z 15 mΩ échoué");
+});
+
+T("Simulation PI : calcul analytique exact des modes de résonance spatiale 2D de cavité", () => {
+  // Cavité de référence rectangulaire : a = 100 mm, b = 80 mm, d = 100 µm, er = 4.3, tanD = 0.02
+  const aMm = 100.0;
+  const bMm = 80.0;
+  const dUm = 100.0;
+  const er = 4.3;
+  const tanD = 0.02;
+
+  const modes = simPDNCalculerModesCavite(aMm, bMm, dUm, er, tanD, 2e9);
+  if (!Array.isArray(modes) || modes.length < 3) {
+    throw new Error("Au moins 3 modes de résonance doivent être trouvés pour 100x80 mm sous 2 GHz");
+  }
+
+  // Vérifier tri croissant par fréquence
+  for (let i = 1; i < modes.length; i++) {
+    if (modes[i].f < modes[i - 1].f) {
+      throw new Error("Les modes de cavité doivent être triés par fréquence croissante");
+    }
+  }
+
+  // 1. Mode fondamental longitudinal TM10 (m=1, n=0)
+  // f_10 = (c / (2 * sqrt(er))) * (1 / a) = (2.99792e8 / (2 * sqrt(4.3))) * 10 = 722.85 MHz
+  const tm10 = modes.find(m => m.modeStr === "TM10");
+  if (!tm10) throw new Error("Mode TM10 introuvable");
+  const f10Theorique = (2.99792458e8 / (2 * Math.sqrt(er))) * (1 / (aMm * 1e-3));
+  if (Math.abs(tm10.f - f10Theorique) > 1e4) {
+    throw new Error("Fréquence TM10 incorrecte : attendu " + (f10Theorique * 1e-6).toFixed(2) + " MHz, obtenu " + (tm10.f * 1e-6).toFixed(2) + " MHz");
+  }
+  if (tm10.type !== "Longitudinal X") throw new Error("Type TM10 attendu 'Longitudinal X', obtenu: " + tm10.type);
+  if (tm10.q < 10 || tm10.q > 50) throw new Error("Facteur Q pour TM10 doit être réaliste (10..50), obtenu: " + tm10.q);
+
+  // 2. Mode transversal TM01 (m=0, n=1)
+  // f_01 = (c / (2 * sqrt(er))) * (1 / b) = (2.99792e8 / (2 * sqrt(4.3))) * 12.5 = 903.56 MHz
+  const tm01 = modes.find(m => m.modeStr === "TM01");
+  if (!tm01) throw new Error("Mode TM01 introuvable");
+  const f01Theorique = (2.99792458e8 / (2 * Math.sqrt(er))) * (1 / (bMm * 1e-3));
+  if (Math.abs(tm01.f - f01Theorique) > 1e4) {
+    throw new Error("Fréquence TM01 incorrecte : attendu " + (f01Theorique * 1e-6).toFixed(2) + " MHz, obtenu " + (tm01.f * 1e-6).toFixed(2) + " MHz");
+  }
+  if (tm01.type !== "Transversal Y") throw new Error("Type TM01 attendu 'Transversal Y', obtenu: " + tm01.type);
+
+  // 3. Mode diagonal 2D TM11 (m=1, n=1)
+  // f_11 = (c / (2 * sqrt(er))) * sqrt( (1/a)^2 + (1/b)^2 ) = 1157.2 MHz
+  const tm11 = modes.find(m => m.modeStr === "TM11");
+  if (!tm11) throw new Error("Mode TM11 introuvable");
+  const f11Theorique = (2.99792458e8 / (2 * Math.sqrt(er))) * Math.sqrt(1 / (aMm * aMm * 1e-6) + 1 / (bMm * bMm * 1e-6));
+  if (Math.abs(tm11.f - f11Theorique) > 1e4) {
+    throw new Error("Fréquence TM11 incorrecte : attendu " + (f11Theorique * 1e-6).toFixed(2) + " MHz, obtenu " + (tm11.f * 1e-6).toFixed(2) + " MHz");
+  }
+  if (tm11.type !== "Fondamental 2D") throw new Error("Type TM11 attendu 'Fondamental 2D', obtenu: " + tm11.type);
+
+  // Impédance crête modale non nulle
+  if (tm10.zPeak <= 0 || tm11.zPeak <= 0) {
+    throw new Error("L'impédance crête des modes doit être strictement positive");
+  }
+});
+
+T("Simulation PI : cartographie spatiale 2D (heatmap SVG), modes stationnaires et repères HF", () => {
+  SIM_PDN.rail = "+3V3";
+  SIM_PDN.planActif = true;
+  SIM_PDN.caviteModesActif = true;
+  SIM_PDN.planDimXmm = 100.0;
+  SIM_PDN.planDimYmm = 80.0;
+  SIM_PDN.planEr = 4.3;
+  SIM_PDN.planTanD = 0.02;
+  SIM_PDN.planEpaisseurUm = 100.0;
+  SIM_PDN.caviteModeSel = "TM11";
+
+  SIM_PDN.condensateurs = [
+    { id: 1, ref: "C1", val: "10µF", cap: 10e-6, esr: 0.008, esl: 0.9e-9, lMount: 1.0e-9, pkg: "0805", prov: "catalogue", f0: 3.65, x: 2.0, y: 2.0, actif: true },
+    { id: 2, ref: "C2", val: "100nF", cap: 100e-9, esr: 0.0142, esl: 0.201e-9, lMount: 0.50e-9, pkg: "0402", mpn: "GCM155R71C104KA55", prov: "spice", f0: 59.8, x: 50.0, y: 40.0, actif: true }
+  ];
+
+  simCalculerPDN();
+  const r = SIM_PDN.result;
+  if (!r) throw new Error("Résultat PDN manquant");
+  if (!r.caviteModes || !r.caviteModes.length) {
+    throw new Error("Modes de cavité non calculés dans SIM_PDN.result");
+  }
+
+  // Vérifier présence des repères modaux dans le SVG Z(ω)
+  const svgZ = simCourbePDN(r, 600, 260);
+  if (!svgZ.includes('Modes 2D')) throw new Error("Légende 'Modes 2D' manquante dans le graphe SVG Z(ω)");
+  if (!svgZ.includes('TM10')) throw new Error("Repère modal 'TM10' manquant sur la courbe SVG Z(ω)");
+
+  // Tester la génération de la heatmap 2D
+  const svgHeatmap = simPDNGenererHeatmapCavite(r, "TM11", 560, 260);
+  if (!svgHeatmap.includes('id="simPDNCaviteSvg"')) throw new Error("Balise SVG #simPDNCaviteSvg manquante dans la heatmap 2D");
+  if (!svgHeatmap.includes('id="hotGlow"')) throw new Error("Filtre hotGlow manquant dans la heatmap");
+  if (!svgHeatmap.includes('simPDNCapMarker')) throw new Error("Marqueurs de condensateurs simPDNCapMarker manquants");
+  if (!svgHeatmap.includes('simPDNCaviteZone')) throw new Error("Zone interactive simPDNCaviteZone manquante");
+
+  // C1 est placé à (2, 2) mm, tout près du coin (0, 0) : son efficacité sur TM11 doit être très élevée (>80%)
+  if (!svgHeatmap.includes('data-ref="C1"')) throw new Error("Marqueur C1 introuvable");
+
+  // Vérifier le rendu complet du panneau simRendrePDN
+  const html = simRendrePDN();
+  if (!html.includes('Résonances spatiales 2D de cavité')) {
+    throw new Error("Titre de la section Résonances spatiales 2D de cavité manquant dans simRendrePDN()");
+  }
+  if (!html.includes('simPDNModeBtn')) {
+    throw new Error("Boutons de sélection de mode .simPDNModeBtn manquants dans simRendrePDN()");
+  }
+  if (!html.includes('Règle des 20-H')) {
+    throw new Error("Conseils de conception CEM / 20-H manquants dans simRendrePDN()");
+  }
+
+  // Vérifier l'intégration dans l'export CSV et JSON
+  const csvContenu = simPDNCsvTexte();
+  if (!csvContenu) throw new Error("Aucun texte CSV produit par simPDNCsvTexte()");
+  if (!csvContenu.includes("cavite_dim_x_mm")) throw new Error("Paramètres de cavité manquants dans l'export CSV");
+  if (!csvContenu.includes("mode_cavite;frequence_MHz")) throw new Error("En-tête de tableau des modes manquant dans l'export CSV");
+  if (!csvContenu.includes("TM10")) throw new Error("Mode TM10 absent de l'export CSV");
+
+  const jsonContenu = simPDNJsonTexte();
+  if (!jsonContenu) throw new Error("Aucun texte JSON produit par simPDNJsonTexte()");
+  const jsonDoc = JSON.parse(jsonContenu);
+  if (!jsonDoc.config || jsonDoc.config.planDimXmm !== 100) throw new Error("planDimXmm manquant ou incorrect dans JSON config");
+  if (!jsonDoc.result || !jsonDoc.result.caviteModes || !jsonDoc.result.caviteModes.length) {
+    throw new Error("caviteModes manquant dans JSON result");
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Cascade de paramètres S en mode mixte (Différentiel pur, mode commun, conversion CEM)
+// ---------------------------------------------------------------------------
+T("simulation EM - Paramètres S différentiels : calcul Sdd, Scc, Scd et modes mixtes", () => {
+  const nFreqs = 11;
+  const freqs = [1e8, 5e8, 1e9, 1.5e9, 2e9, 2.5e9, 3e9, 3.5e9, 4e9, 4.5e9, 5e9];
+  const s_dd = [];
+  const s_cc = [];
+  const s_cd = [];
+  for (let k = 0; k < nFreqs; k++) {
+    s_dd.push([[0.1, 0.0], [0.89, 0.0], [0.89, 0.0], [0.1, 0.0]]);
+    s_cc.push([[0.5, 0.0], [0.5, 0.0], [0.5, 0.0], [0.5, 0.0]]);
+    const scdVal = 0.01 * (k + 1);
+    s_cd.push([[1e-7, 0.0], [1e-7, 0.0], [scdVal, 0.0], [1e-7, 0.0]]);
+  }
+
+  const resTest = {
+    net: "USB_DP",
+    freqs: freqs,
+    f_centre: 1e9,
+    ligne: { z0_min: 98.5, z0_max: 101.2, z0_moyen: 99.8, troncons: 2, longueur: 25.4, retard: 1.5e-10, pertes_db: 0.8 },
+    segments: [
+      { z0: 50.2, longueur: 12.7, largeur: 0.2, couche: "TOP", er: 4.2, eps_eff: 3.1 },
+      { z0: 49.8, longueur: 12.7, largeur: 0.2, couche: "TOP", er: 4.2, eps_eff: 3.1 }
+    ],
+    couplage: {
+      paires: [
+        { net_voisin: "USB_DM", differentielle: true, z_diff: 99.8, z_commune: 25.1, z_impair: 49.9, z_pair: 50.2, eps_eff_impair: 3.05, eps_eff_pair: 3.15, longueur: 25.4 }
+      ],
+      sections: [{ conducteurs: ["USB_DP", "USB_DM"] }]
+    },
+    s_diff: {
+      partenaire: "USB_DM",
+      delta_l_mm: 0.15,
+      z_ref_diff: 100.0,
+      z_ref_comm: 25.0,
+      s_dd: s_dd,
+      s_cc: s_cc,
+      s_cd: s_cd,
+      touchstone_sdd: "# HZ S MA R 100\n100000000 0.1 0 0.89 0 0.89 0 0.1 0\n",
+      touchstone_scc: "# HZ S MA R 25\n100000000 0.5 0 0.5 0 0.5 0 0.5 0\n"
+    }
+  };
+
+  SIM.res = resTest;
+  SIM.modeDiffS = "sdd";
+
+  // Test extraction termes S
+  const t11_dd = simTermeDiff(resTest, "sdd", 0, 0, 0);
+  if (Math.abs(t11_dd[0] - 0.1) > 1e-6) throw new Error("simTermeDiff Sdd11 invalide");
+  const t21_dd = simTermeDiff(resTest, "sdd", 0, 1, 0);
+  if (Math.abs(t21_dd[0] - 0.89) > 1e-6) throw new Error("simTermeDiff Sdd21 invalide");
+
+  // Test tracé courbe Sdd
+  const svgSdd = simCourbeDiff(resTest);
+  if (!svgSdd.includes('class="simCourbe simCourbeDiff"')) throw new Error("SVG simCourbeDiff manquant");
+  if (!svgSdd.includes('Sdd11')) throw new Error("Légende Sdd11 manquante");
+  if (!svgSdd.includes('Sdd21')) throw new Error("Légende Sdd21 manquante");
+  if (!svgSdd.includes('id="simDiffCurZone"')) throw new Error("Zone de survol simDiffCurZone manquante");
+
+  // Test lecture au survol en mode Sdd
+  const lectureSdd = simLireDiff(0);
+  if (!lectureSdd || Math.abs(lectureSdd.s11 - simDb([0.1, 0])) > 0.1) throw new Error("simLireDiff Sdd11 invalide");
+  if (Math.abs(lectureSdd.zre - 122.2) > 2.0) throw new Error("Zin Sdd calculée invalide");
+
+  // Test mode Scc
+  SIM.modeDiffS = "scc";
+  const svgScc = simCourbeDiff(resTest);
+  if (!svgScc.includes('Scc11') || !svgScc.includes('Scc21')) throw new Error("Traces Scc manquantes");
+  const lectureScc = simLireDiff(0);
+  if (!lectureScc || Math.abs(lectureScc.s11 - simDb([0.5, 0])) > 0.1) throw new Error("simLireDiff Scc11 invalide");
+
+  // Test mode Scd (Conversion CEM)
+  SIM.modeDiffS = "scd";
+  const svgScd = simCourbeDiff(resTest);
+  if (!svgScd.includes('Scd21')) throw new Error("Trace Scd21 manquante");
+  if (!svgScd.includes('Seuil CEM −20 dB')) throw new Error("Ligne de seuil CEM -20 dB manquante");
+  const lectureScd = simLireDiff(0);
+  if (!lectureScd || Math.abs(lectureScd.scd - simDb([0.01, 0])) > 0.1) throw new Error("simLireDiff Scd invalide");
+
+  // Test rendu fiche complète
+  const htmlFiche = simFicheSDiff(resTest);
+  if (!htmlFiche.includes('simDiffModeSdd')) throw new Error("Bouton simDiffModeSdd manquant");
+  if (!htmlFiche.includes('simDiffModeScc')) throw new Error("Bouton simDiffModeScc manquant");
+  if (!htmlFiche.includes('simDiffModeScd')) throw new Error("Bouton simDiffModeScd manquant");
+  if (!htmlFiche.includes('simDiffExportS2p')) throw new Error("Bouton simDiffExportS2p manquant");
+  if (!htmlFiche.includes('Skew ΔL =')) throw new Error("Indication du skew manquante");
+
+  // Nettoyage état
+  SIM.modeDiffS = "sdd";
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
