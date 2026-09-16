@@ -418,22 +418,11 @@ except Exception as _exc:                              # noqa: BLE001
     crosstalk = None
     ERREUR_CROSSTALK = _exc
 
-# Solveur MoM 2.5D pleine onde (surfacique, fonctions RWG).
-try:
-    import simulation_25d
-    ERREUR_25D = None
-except Exception as _exc:                              # noqa: BLE001
-    simulation_25d = None
-    ERREUR_25D = _exc
-
 # Un document de simulation ne porte qu'un net et son empilage : il est petit.
 MAX_SIM = getattr(simulation_em, "MAX_CORPS", 4 * 1024 * 1024)
 # Celui du crosstalk porte un parcours et son voisinage : meme ordre de
 # grandeur, et le plafond reste le sien pour pouvoir bouger seul.
 MAX_CROSSTALK = getattr(crosstalk, "MAX_CORPS", 4 * 1024 * 1024)
-# Celui du 2,5D est le meme document que celui du moteur 2D -- une selection --,
-# d'ou le meme plafond, pris chez lui pour qu'il puisse bouger seul.
-MAX_25D = getattr(simulation_25d, "MAX_CORPS", MAX_SIM)
 # ET CELUI DU DC, QUI N'EN AVAIT AUCUN. Les trois autres routes refusaient un
 # corps trop gros ; celle-la lisait ce qui venait, et son document porte les
 # POLYGONES de cuivre d'une ou plusieurs couches entieres -- de loin le plus
@@ -2054,34 +2043,11 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError) as exc:
             raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
 
-    # -- l'appel au solveur 2,5D, ecrit UNE fois ----------------------------
-    # DEUX PORTES, UN SEUL CORPS. /api/simulation-25d et /api/simulation avec
-    # « moteur: 2.5d » menent au meme calcul ; elles en recopiaient l'appel et
-    # la traduction des refus, ce qui est deja une divergence en puissance.
-    def _appeler_25d(self, doc):
-        if simulation_25d is None:
-            raise ErreurIPC(503, "Solveur MoM 2.5D indisponible : %s"
-                                 % ERREUR_25D)
-        try:
-            return simulation_25d.simuler_25d(doc, journal=sys.stderr.write)
-        except simulation_25d.ErreurSimulation25D as exc:
-            detail = exc.message
-            if exc.conseil:
-                detail += "\n" + exc.conseil
-            raise ErreurIPC(422, detail)
-        except MemoryError:
-            raise ErreurIPC(413, "Maillage 2.5D trop lourd pour la memoire"
-                                 " disponible")
-
     def _simulation_lancer(self):
         """Corps de la requete (document JSON) -> parametres S de la ligne."""
         if simulation_em is None:
             raise ErreurIPC(503, "Solveur EM indisponible : %s" % ERREUR_SIM)
         doc = self._lire_document(MAX_SIM)
-
-        moteur = str(doc.get("moteur", "2d")).lower()
-        if moteur in ("2.5d", "mom_solver", "25d"):
-            return self._appeler_25d(doc)
 
         try:
             resultat = simulation_em.simuler(doc, journal=sys.stderr.write)
@@ -2095,26 +2061,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except MemoryError:
             raise ErreurIPC(413, "Maillage trop lourd pour la memoire disponible")
         return resultat
-
-    def _simulation_25d_etat(self):
-        """GET /api/simulation-25d : disponibilite du solveur 2.5D."""
-        if simulation_25d is None:
-            return {"dispo": False,
-                    "moteur": "2.5d",
-                    "detail": "Solveur 2.5D indisponible : %s" % ERREUR_25D,
-                    "conseil": "Le solveur a besoin de numpy, scipy et shapely."}
-        return simulation_25d.etat()
-
-    def _simulation_25d_lancer(self):
-        """POST /api/simulation-25d : calcul 2.5D pleine onde direct.
-
-        ELLE EXISTE POUR CEUX QUI N'ONT PAS LE PANNEAU. La page passe par
-        /api/simulation avec « moteur: 2.5d » -- un seul point d'entree pour
-        les deux moteurs, ce qui lui evite de choisir une URL --, mais un
-        script, un banc d'essai ou un autre outil a besoin d'une adresse qui
-        dise ce qu'elle calcule. Les deux menent au MEME corps, `_appeler_25d`.
-        """
-        return self._appeler_25d(self._lire_document(MAX_25D))
 
     def _dc_lancer(self):
         """POST /api/simulation-dc : calcul DC (IR drop)."""
@@ -2440,7 +2386,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             return
         if route not in ("/api/tools", "/api/tool", "/api/ipc2581",
-                         "/api/simulation", "/api/simulation-25d", "/api/simulation-dc",
+                         "/api/simulation", "/api/simulation-dc",
                          "/api/crosstalk", "/api/datasheet/telecharger",
                          "/api/datasheet/ouvrir",
                          "/api/pcb/score-placement", "/api/schema/patterns"):
@@ -2507,9 +2453,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/simulation":
             self._ipc_api(self._simulation_lancer)
             return
-        if route == "/api/simulation-25d":
-            self._ipc_api(self._simulation_25d_lancer)
-            return
         if route == "/api/simulation-dc":
             self._ipc_api(self._dc_lancer)
             return
@@ -2568,9 +2511,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/simulation":
             self._ipc_api(self._simulation_etat)
-            return
-        if route == "/api/simulation-25d":
-            self._ipc_api(self._simulation_25d_etat)
             return
         if route == "/api/simulation-dc":
             self._ipc_api(self._dc_etat)
@@ -2650,9 +2590,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/simulation":
             self._ipc_api(self._simulation_etat)
-            return
-        if route == "/api/simulation-25d":
-            self._ipc_api(self._simulation_25d_etat)
             return
         if route == "/api/simulation-dc":
             self._ipc_api(self._dc_etat)
@@ -2777,12 +2714,6 @@ def start_server(host, port, navigateur=True):
     else:
         print("  simulation EM : /api/simulation ->"
               " MoM sur la section droite (python/ligne_mom.py)")
-    if simulation_25d is None:
-        print("  simulation 2.5D : /api/simulation-25d -> indisponible (%s)"
-              % ERREUR_25D)
-    else:
-        print("  simulation 2.5D : /api/simulation-25d (ou /api/simulation moteur='2.5d') ->"
-              " MoM pleine onde (python/simulation_25d.py)")
     if crosstalk is None:
         print("  crosstalk     : /api/crosstalk -> indisponible (%s)"
               % ERREUR_CROSSTALK)

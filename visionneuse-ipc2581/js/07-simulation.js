@@ -82,8 +82,8 @@ function simNetDuPlanIpc(coucheIdx, role){
       }
     }
     if(a>aire){aire=a; best=n.nom;}
-    if(/gnd|masse|0v|vss/i.test(n.nom)&&a>aireGnd){aireGnd=a; bestGnd=n.nom;}
-    if(/vcc|vdd|pwr|power|\+|alim/i.test(n.nom)&&a>airePwr){airePwr=a; bestPwr=n.nom;}
+    if((n.classe==="gnd"||/gnd|masse|0v|vss/i.test(n.nom))&&a>aireGnd){aireGnd=a; bestGnd=n.nom;}
+    if((n.classe==="pwr"||/vcc|vdd|pwr|power|\+|alim/i.test(n.nom))&&a>airePwr){airePwr=a; bestPwr=n.nom;}
   }
   if(role==="gnd")return bestGnd||(best&&!/vcc|vdd|pwr|power|\+|alim/i.test(best)?best:"GND");
   if(role==="pwr")return bestPwr||(best&&!/gnd|masse|0v|vss/i.test(best)?best:"PWR");
@@ -454,7 +454,7 @@ function simRefCandidatsIpc(){
     }
     aire=Math.max(0,aire);
     const taux=(LT.aire>0)?aire/LT.aire:0;
-    const gnd=SIM_GND_RE.test(String(n.nom).replace(/[\s_-]/g,""));
+    const gnd=(n.classe==="gnd")||SIM_GND_RE.test(String(n.nom).replace(/[\s_-]/g,""));
     /* Il faut du cuivre PLEIN pour être candidat : un net qui n'a que des
        pistes n'est pas un plan de retour, même nommé « GND ». Un net nommé
        comme une masse est retenu dès qu'il en a un peu. */
@@ -4880,10 +4880,25 @@ const SIM_IPC={
   /* Rails d'alimentation disponibles pour la simulation PDN */
   pdnRails:function(){
     const rails = new Set();
-    const isGnd = n => /^(gnd|0v|vss|ground|earth|mass|masse|[adp]?gnd.*)$/i.test(String(n).trim());
+    const aDesNets = (typeof V !== "undefined" && V && Array.isArray(V.parNet) && V.parNet.length > 0);
+    const isGnd = n => {
+      if(!n) return false;
+      const s = String(n).trim();
+      if(aDesNets){
+        const nObj = V.parNet.find(x => x && x.nom === s);
+        if(nObj && nObj.classe === "gnd") return true;
+        if(nObj && nObj.classe === "pwr") return false;
+      }
+      return /^(gnd|0v|vss|ground|earth|mass|masse|[adp]?gnd.*)$/i.test(s);
+    };
     const isPwr = n => {
       if(!n || typeof n !== "string" || isGnd(n)) return false;
       const s = n.trim();
+      if(aDesNets){
+        const nObj = V.parNet.find(x => x && x.nom === s);
+        if(nObj && nObj.classe === "pwr") return true;
+        if(nObj && nObj.classe === "gnd") return false;
+      }
       return (
         /^\+\d/i.test(s) ||
         /\b\d+(\.\d+)?[vV]\d*\b/i.test(s) ||
@@ -4894,9 +4909,12 @@ const SIM_IPC={
       );
     };
 
-    const aDesNets = (typeof V !== "undefined" && V && Array.isArray(V.parNet) && V.parNet.length > 0);
-
     if(aDesNets){
+      // 0. Tous les nets explicitement classés comme alimentation (PWR)
+      for(const n of V.parNet){
+        if(n && n.nom && n.classe === "pwr") rails.add(n.nom);
+      }
+
       // 1. Net actuellement sélectionné par l'utilisateur (s'il existe et n'est pas GND)
       if(V.net != null && V.net >= 0 && V.parNet[V.net] && V.parNet[V.net].nom){
         const nomSel = V.parNet[V.net].nom;
@@ -5083,6 +5101,80 @@ const SIM_IPC={
     if(el)el.textContent=t;
   }
 };
+
+/* =============================================================================
+   Préréglages automatiques des simulations à partir des classes de nets
+   ============================================================================= */
+function simAppliquerPrereglagesClassesNets(){
+  if(typeof V === "undefined" || !V || !Array.isArray(V.parNet) || !V.parNet.length) return;
+
+  // 1. Réinitialiser le cache des candidats de référence SI pour honorer les nets GND
+  SIM_CAND = null;
+  SIM_CAND_SRC = null;
+  if(typeof simRefInit === "function") {
+    try { simRefInit(); } catch(_) {}
+  }
+
+  // 2. Identifier les rails d'alimentation PWR et les masses GND
+  const pwrNets = V.parNet.filter(n => n && n.classe === "pwr");
+  const gndNets = V.parNet.filter(n => n && n.classe === "gnd");
+
+  // 3. Préréglages PDN (Power Distribution Network)
+  if(typeof SIM_PDN !== "undefined" && pwrNets.length > 0){
+    // Trouver le rail d'alimentation le plus pertinent
+    let bestRail = pwrNets[0];
+    let maxPads = -1;
+    for(const p of pwrNets){
+      const nb = (p.pads ? p.pads.length : 0) + (p.trous ? p.trous.length : 0) + (p.plans ? p.plans.length * 10 : 0);
+      const estUsuel = /3v3|vdd|vcc|5v/i.test(p.nom);
+      const score = nb + (estUsuel ? 100 : 0);
+      if(score > maxPads){
+        bestRail = p;
+        maxPads = score;
+      }
+    }
+
+    SIM_PDN.rail = bestRail.nom;
+    const tension = (bestRail.tensionNominale != null)
+      ? bestRail.tensionNominale
+      : ((typeof mdlDetecterTensionNet === "function") ? mdlDetecterTensionNet(bestRail.nom) : null);
+    if(tension != null && tension > 0){
+      SIM_PDN.vdd = tension;
+    }
+
+    const vdd = Math.max(0.1, parseFloat(SIM_PDN.vdd) || 3.3);
+    const ripple = Math.max(0.1, parseFloat(SIM_PDN.ripplePct) || 5.0);
+    const deltaI = Math.max(0.01, parseFloat(SIM_PDN.deltaIA) || 1.0);
+    SIM_PDN.zTarget = (vdd * (ripple / 100)) / deltaI;
+
+    // Découvrir et charger automatiquement les condensateurs de découplage
+    if(typeof SIM_IPC !== "undefined" && typeof SIM_IPC.pdnCondensateurs === "function"){
+      const caps = SIM_IPC.pdnCondensateurs(SIM_PDN.rail);
+      if(caps && caps.length){
+        SIM_PDN.condensateurs = caps;
+      }
+    }
+
+    // Configurer la cavité de plan d'alimentation
+    if(typeof SIM_IPC !== "undefined" && typeof SIM_IPC.pdnCavitePlans === "function"){
+      const cp = SIM_IPC.pdnCavitePlans(SIM_PDN.rail);
+      if(cp && cp.surfaceCm2 > 0){
+        SIM_PDN.planSurfaceCm2 = cp.surfaceCm2;
+        SIM_PDN.planEpaisseurUm = cp.epaisseurUm;
+        SIM_PDN.planEr = cp.er;
+        SIM_PDN.planDimXmm = cp.dimXmm;
+        SIM_PDN.planDimYmm = cp.dimYmm;
+        SIM_PDN.planActif = true;
+      }
+    }
+  }
+
+  // 4. Rafraîchir les panneaux de simulation si actifs
+  if(typeof simRafraichir === "function"){
+    try { simRafraichir(true); } catch(_) {}
+  }
+}
+
 
 /* Ouvrir le panneau depuis la barre d'outils. Il démarre masqué — voir
    `00-espace-config.js` — et ce bouton est ce qui le rend trouvable sans

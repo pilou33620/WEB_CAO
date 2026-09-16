@@ -6,22 +6,16 @@
 # bibliothèque standard Python, sans aucune dépendance externe obligatoire.
 #
 # Les paquets listés ci-dessous activent l'ensemble des solveurs numériques
-# avancés (SI / PI / 2.5D) ainsi que les bancs d'essai de calcul :
+# avancés (SI / PI) ainsi que les bancs d'essai de calcul :
 #
 #   pip install -r requirements.txt
 #
 # Détail des composants activés :
 #   - numpy   : solveur d'impédance 2D MoM (ligne_mom.py) et diaphonie (crosstalk.py)
 #   - scipy   : solveur de chute DC / échauffement (dc_solver.py), matrices creuses,
-#               fonctions de Green (green_layered.py) et étalons de validation
-#   - shapely : fusion géométrique des polygones et tronçons pour le maillage
-#               du solveur 2,5D pleine onde (mom_solver/, simulation_25d.py)
-#
-# Optionnel (maillage alternatif avancé pour mom_solver, repli interne par défaut) :
-#   # pygmsh
-#   # meshio
+#               intégrales et étalons de validation
 # =============================================================================
 
 numpy>=1.24.0
 scipy>=1.10.0
-shapely>=2.0.0
+

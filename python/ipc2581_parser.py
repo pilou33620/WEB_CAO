@@ -1413,7 +1413,7 @@ class IPC2581Parser:
         self.design.packages[name] = package
 
     def _parse_logical_nets(self, step_elem: ET.Element):
-        """<LogicalNet name="..."><PinRef componentRef="U1" pin="3"/>...
+        """<LogicalNet name="..." netClass="..."><PinRef componentRef="U1" pin="3"/>...
 
         C'est la seule source fiable du net d'une broche : les <Pad> internes
         a un <Pin> qui permettraient de le deduire autrement sont quasiment
@@ -1421,13 +1421,26 @@ class IPC2581Parser:
         de 10 Mo, aucun composant n'en porte). Sans cette lecture, la fiche
         d'un boitier ne peut pas repondre a la question qu'on lui pose le plus
         souvent -- "la broche 3, elle va ou ?".
+        De plus, l'attribut netClass ("GROUND", "POWER", "SIGNAL", etc.) permet
+        d'auto-détecter la nature des équipotentielles pour les simulations.
         """
         index = {c.ref_des: c for c in self.design.components}
         compte = 0
-        for net_elem in step_elem.findall(self._tag("LogicalNet")):
+        elems = list(step_elem.findall(self._tag("LogicalNet")))
+        # Certains outils placent LogicalNet au niveau de CadData
+        ecad = self.root.find(self._tag("Ecad"))
+        if ecad is not None:
+            cad_data = ecad.find(self._tag("CadData"))
+            if cad_data is not None and cad_data is not step_elem:
+                elems.extend(cad_data.findall(self._tag("LogicalNet")))
+
+        for net_elem in elems:
             net_name = net_elem.attrib.get("name")
             if not net_name:
                 continue
+            net_class = (net_elem.attrib.get("netClass") or net_elem.attrib.get("net_class") or "").strip()
+            if net_class:
+                self.design.get_or_create_net(net_name).net_class = net_class
             for ref in net_elem.findall(self._tag("PinRef")):
                 comp = index.get(ref.attrib.get("componentRef", ""))
                 pin = ref.attrib.get("pin")
@@ -1440,7 +1453,7 @@ class IPC2581Parser:
                 compte += 1
         if compte:
             logger.info("%d lien(s) broche -> net indexe(s) depuis %d LogicalNet.",
-                        compte, len(step_elem.findall(self._tag("LogicalNet"))))
+                        compte, len(elems))
 
     def _process_component(self, comp_elem: ET.Element):
         ref_des = comp_elem.attrib.get("refDes")

@@ -1192,48 +1192,6 @@ b.simXtV,.simXtCoche b.simXtV,.simXtLect b.simXtV{
   outline:none;
 }
 
-/* ---------- Sélecteur de moteur 2D / 2.5D & Maillage / Jsurf ---------- */
-.simMoteurBar{
-  display:flex;align-items:center;gap:5px;padding:4px 8px;
-  background:var(--panel2);border-bottom:1px solid var(--border2);
-}
-.simMoteurBar .pnl-lbl{
-  font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;
-  text-transform:uppercase;color:var(--txt-dim);margin-right:2px;
-}
-.simMoteurBar .simOnglet{
-  transition:all .15s ease;
-}
-.simMoteurActions{
-  display:inline-flex;align-items:center;gap:4px;
-}
-.simBadgeMoteur{
-  display:inline-block;padding:1px 6px;border-radius:3px;
-  font-family:var(--mono);font-size:9.5px;font-weight:600;
-  letter-spacing:0.03em;vertical-align:middle;
-}
-.simBadge25d{
-  background:rgba(99,102,241,0.18);color:#a5b4fc;border:1px solid rgba(99,102,241,0.45);
-}
-.simBadge2d{
-  background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.35);
-}
-#simMaille25D{width:36px}
-.simBtnJsurf, .simBtnMaillage{
-  padding:2px 7px;font-weight:500;font-size:10.5px;transition:all .15s ease;
-  border-radius:4px;cursor:pointer;
-  background:var(--panel);border:1px solid var(--border2);color:var(--txt-dim);
-}
-.simBtnJsurf:hover, .simBtnMaillage:hover{
-  color:var(--txt);border-color:var(--border);
-}
-.simBtnJsurf.on{
-  background:rgba(245,158,11,0.15);color:#fbbf24;border-color:rgba(245,158,11,0.6);
-}
-.simBtnMaillage.on{
-  background:rgba(0,220,255,0.15);color:#00dcff;border-color:rgba(0,220,255,0.6);
-}
-
 
 
 /* ==========================================================================

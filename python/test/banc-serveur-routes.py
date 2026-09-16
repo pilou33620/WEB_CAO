@@ -188,16 +188,7 @@ def test_routes():
             assert "interdite" in str(exc)
         print("[PASS] Protection XML Entity Expansion (<!ENTITY rejeté avec succès)")
 
-        # 14. GET /api/simulation-25d
-        conn.request("GET", "/api/simulation-25d")
-        res = conn.getresponse()
-        assert res.status == 200
-        data = json.loads(res.read().decode("utf-8"))
-        assert data.get("dispo") is True
-        assert data.get("moteur") == "2.5d"
-        print("[PASS] GET /api/simulation-25d")
-
-        # 15. POST /api/simulation-25d
+        # 14. POST /api/simulation (moteur 2D standard)
         payload_sim = {
             "format": "cao-sim-em-3",
             "stackup": {
@@ -212,37 +203,15 @@ def test_routes():
                     {"type": "track", "start": [0.0, 0.0], "end": [5.0, 0.0], "width": 1.05, "layer": 0, "net": "SIG"}
                 ]
             },
-            "options": {"mesh_size_mm": 0.40},
             "analyse": {"f_debut": 2e9, "f_fin": 2e9, "f_centrale": 2e9, "points": 1}
         }
-        conn.request("POST", "/api/simulation-25d", body=json.dumps(payload_sim).encode("utf-8"), headers={"Content-Type": "application/json"})
-        res = conn.getresponse()
-        assert res.status == 200
-        data = json.loads(res.read().decode("utf-8"))
-        assert data.get("format") == "cao-sim-em-resultat-5"
-        assert data.get("moteur") == "2.5d"
-        print("[PASS] POST /api/simulation-25d (2.5D MoM solver)")
-
-        # 16. POST /api/simulation (dispatch avec moteur='2.5d')
-        payload_sim_25d = dict(payload_sim)
-        payload_sim_25d["moteur"] = "2.5d"
-        conn.request("POST", "/api/simulation", body=json.dumps(payload_sim_25d).encode("utf-8"), headers={"Content-Type": "application/json"})
-        res = conn.getresponse()
-        assert res.status == 200
-        data = json.loads(res.read().decode("utf-8"))
-        assert data.get("moteur") == "2.5d"
-        print("[PASS] POST /api/simulation avec moteur='2.5d' -> dispatch vers 2.5D")
-
-        # 17. POST /api/simulation (moteur 2D par défaut)
-        payload_sim_2d = dict(payload_sim)
-        payload_sim_2d["moteur"] = "2d"
-        conn.request("POST", "/api/simulation", body=json.dumps(payload_sim_2d).encode("utf-8"), headers={"Content-Type": "application/json"})
+        conn.request("POST", "/api/simulation", body=json.dumps(payload_sim).encode("utf-8"), headers={"Content-Type": "application/json"})
         res = conn.getresponse()
         assert res.status == 200
         data = json.loads(res.read().decode("utf-8"))
         assert data.get("format") == "cao-sim-em-resultat-5"
         assert "ligne" in data
-        print("[PASS] POST /api/simulation avec moteur='2d' -> dispatch vers 2D standard")
+        print("[PASS] POST /api/simulation -> solveur 2D standard")
 
         # ==============================================================
         # 18-22. LES DEUX ROUTES QUI N'ETAIENT PAS COUVERTES
@@ -313,7 +282,7 @@ def test_routes():
         # 22. LES QUATRE ROUTES DE CALCUL REFUSENT UN CORPS VIDE DE LA MEME
         # FACON. C'est le contrat de `_lire_document`, et le seul moyen de
         # verifier qu'elles passent bien toutes les quatre par elle.
-        for route in ("/api/simulation", "/api/simulation-25d",
+        for route in ("/api/simulation",
                       "/api/simulation-dc", "/api/crosstalk"):
             conn.request("POST", route, body=b"",
                          headers={"Content-Type": "application/json"})
@@ -321,7 +290,7 @@ def test_routes():
             corps = res.read()
             assert res.status == 400, "%s : %d au lieu de 400" % (route, res.status)
             assert b"vide" in corps, "%s : %s" % (route, corps[:120])
-        print("[PASS] Les 4 routes de calcul refusent un corps vide (400)")
+        print("[PASS] Les 3 routes de calcul refusent un corps vide (400)")
 
         # 23. ET UN CORPS TROP GROS, de la meme facon. La route DC n'avait
         # aucun plafond : elle lisait ce qui venait, alors que son document
@@ -337,7 +306,6 @@ def test_routes():
         gros = json.dumps({"format": "cao-sim-em-3",
                            "bourrage": "x" * (5 * 1024 * 1024)}).encode("utf-8")
         for route, plafond in (("/api/simulation", _srv.MAX_SIM),
-                               ("/api/simulation-25d", _srv.MAX_25D),
                                ("/api/crosstalk", _srv.MAX_CROSSTALK),
                                ("/api/simulation-dc", _srv.MAX_DC)):
             if len(gros) <= plafond:

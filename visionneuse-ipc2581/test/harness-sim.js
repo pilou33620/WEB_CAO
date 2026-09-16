@@ -143,7 +143,11 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   /* Le choix de la couche peinte : ce que cet outil propose, et ce que la
      fiche en fait. */
   "simDCCouchePeinte","simDCCouchesPeintes","simDCCoucheVoulue",
-  "simDCNomCouche","simDCOublier"];
+  "simDCNomCouche","simDCOublier",
+  /* Classification des nets et préréglages de simulation */
+  "mdlDetecterClasseNet","mdlDetecterTensionNet","mdlAutoDetecterClassesNets",
+  "mdlAppliquerClassesNets","mdlNetClasse","mdlNetPoserClasse",
+  "simAppliquerPrereglagesClassesNets","SIM_PDN"];
 
 /* Un seul `eval`, sur les trois fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -4192,6 +4196,124 @@ T("SIM_IPC : paramètres S en mode mixte (Sdd, Scc, Scd) et rendu UI différenti
   if (!svgScd.includes("simSeuilCEM")) throw new Error("simSeuilCEM absent du SVG Scd");
 
   SIM.modeDiffS = "sdd";
+});
+
+/* =============================================================================
+   Classification des nets (PWR, GND, Signal) et Préréglages Simulation
+   ============================================================================= */
+T("Détection de tension nominale par nom de net (mdlDetecterTensionNet)", function(){
+  if(typeof mdlDetecterTensionNet !== "function") throw new Error("mdlDetecterTensionNet non défini");
+  const cas = [
+    { nom: "+3V3", attendu: 3.3 },
+    { nom: "3V3", attendu: 3.3 },
+    { nom: "1V8", attendu: 1.8 },
+    { nom: "+5V", attendu: 5.0 },
+    { nom: "5V0", attendu: 5.0 },
+    { nom: "12V", attendu: 12.0 },
+    { nom: "VDD_2V5", attendu: 2.5 },
+    { nom: "VCC_0V9", attendu: 0.9 },
+    { nom: "1P2V", attendu: 1.2 },
+    { nom: "CLK_IN", attendu: null },
+    { nom: "GND", attendu: null },
+    { nom: "RESET_N", attendu: null }
+  ];
+  for(const c of cas){
+    const v = mdlDetecterTensionNet(c.nom);
+    if(c.attendu === null){
+      if(v !== null) throw new Error("Attendu null pour "+c.nom+", obtenu : "+v);
+    } else {
+      if(Math.abs((v||0) - c.attendu) > 0.001) throw new Error("Attendu "+c.attendu+" pour "+c.nom+", obtenu : "+v);
+    }
+  }
+});
+
+T("Auto-détection de classe des nets (GND, PWR, Signal)", function(){
+  if(typeof mdlDetecterClasseNet !== "function") throw new Error("mdlDetecterClasseNet non défini");
+
+  // GND
+  const gndNets = ["GND", "0V", "AGND", "VSS", "DGND", "GND_ISO", "masse_puissance"];
+  for(const nom of gndNets){
+    const res = mdlDetecterClasseNet({ nom: nom });
+    if(res.classe !== "gnd") throw new Error(nom + " aurait dû être classé en 'gnd', obtenu: " + res.classe);
+  }
+
+  // PWR
+  const pwrNets = ["+3V3", "3V3", "1V8", "+5V", "12V", "VCC", "VDD", "VDD_IO", "VBAT", "VREF_2V5"];
+  for(const nom of pwrNets){
+    const res = mdlDetecterClasseNet({ nom: nom });
+    if(res.classe !== "pwr") throw new Error(nom + " aurait dû être classé en 'pwr', obtenu: " + res.classe);
+  }
+
+  // Signal
+  const sigNets = ["CLK_100M", "SPI_MOSI", "I2C_SDA", "RESET_N", "TXD", "RXD", "ETH_RX_P"];
+  for(const nom of sigNets){
+    const res = mdlDetecterClasseNet({ nom: nom });
+    if(res.classe !== "signal") throw new Error(nom + " aurait dû être classé en 'signal', obtenu: " + res.classe);
+  }
+
+  // Classe explicite IPC-2581
+  const ipcGnd = mdlDetecterClasseNet({ nom: "NET_INCONNU_1" }, { "NET_INCONNU_1": "GROUND" });
+  if(ipcGnd.classe !== "gnd") throw new Error("IPC-2581 GROUND aurait dû donner gnd, obtenu: " + ipcGnd.classe);
+
+  const ipcPwr = mdlDetecterClasseNet({ nom: "NET_INCONNU_2" }, { "NET_INCONNU_2": "POWER" });
+  if(ipcPwr.classe !== "pwr") throw new Error("IPC-2581 POWER aurait dû donner pwr, obtenu: " + ipcPwr.classe);
+
+  // Détection via condensateurs de découplage vers GND
+  const capSet = new Set(["NET_CUSTOM_ALIM"]);
+  const capPwr = mdlDetecterClasseNet({ nom: "NET_CUSTOM_ALIM" }, null, capSet);
+  if(capPwr.classe !== "pwr") throw new Error("Net relié au découplage aurait dû être classé en pwr");
+});
+
+T("Application des classes et modifications manuelles (mdlAutoDetecterClassesNets & mdlNetPoserClasse)", function(){
+  V.modele = {
+    nets: ["GND", "+3V3", "CLK_OUT", "NET_LIBRE"],
+    pistes: [], arcs: [], plans: [], pads: [], textes: [], composants: [], percages: []
+  };
+  V.parNet = [
+    { i: 0, nom: "GND", pistes: [], arcs: [], plans: [], pads: [], trous: [], longueur: 10, couches: new Set([0]) },
+    { i: 1, nom: "+3V3", pistes: [], arcs: [], plans: [], pads: [], trous: [], longueur: 5, couches: new Set([0]) },
+    { i: 2, nom: "CLK_OUT", pistes: [], arcs: [], plans: [], pads: [], trous: [], longueur: 20, couches: new Set([0]) },
+    { i: 3, nom: "NET_LIBRE", pistes: [], arcs: [], plans: [], pads: [], trous: [], longueur: 2, couches: new Set([0]) }
+  ];
+
+  mdlAutoDetecterClassesNets(null, null);
+
+  if(V.parNet[0].classe !== "gnd") throw new Error("GND aurait dû être détecté gnd");
+  if(V.parNet[1].classe !== "pwr") throw new Error("+3V3 aurait dû être détecté pwr");
+  if(V.parNet[2].classe !== "signal") throw new Error("CLK_OUT aurait dû être détecté signal");
+  if(V.parNet[3].classe !== "signal") throw new Error("NET_LIBRE aurait dû être détecté signal");
+  if(!V.modele.netClasses || V.modele.netClasses["+3V3"] !== "pwr") throw new Error("V.modele.netClasses non synchronisé");
+
+  // Modification manuelle avec mdlNetPoserClasse
+  mdlNetPoserClasse(3, "pwr");
+  if(V.parNet[3].classe !== "pwr") throw new Error("NET_LIBRE aurait dû passer en pwr");
+  if(V.parNet[3].autoDetecte !== false) throw new Error("NET_LIBRE aurait dû avoir autoDetecte = false");
+  if(V.modele.netClasses["NET_LIBRE"] !== "pwr") throw new Error("V.modele.netClasses non mis à jour");
+
+  // mdlAppliquerClassesNets
+  mdlAppliquerClassesNets({ "CLK_OUT": "pwr", "GND": "gnd" });
+  if(V.parNet[2].classe !== "pwr") throw new Error("CLK_OUT aurait dû passer en pwr via dict");
+});
+
+T("Préréglages automatiques des simulations SI / PI (simAppliquerPrereglagesClassesNets)", function(){
+  V.modele = {
+    nets: ["GND", "+3V3", "SIGNAL_50"],
+    pistes: [], arcs: [], plans: [], pads: [], textes: [], composants: [], percages: []
+  };
+  V.parNet = [
+    { i: 0, nom: "GND", classe: "gnd", pistes: [], arcs: [], plans: [], pads: [{}], trous: [{}], longueur: 10, couches: new Set([0]) },
+    { i: 1, nom: "+3V3", classe: "pwr", tensionNominale: 3.3, pistes: [], arcs: [], plans: [], pads: [{}, {}], trous: [], longueur: 5, couches: new Set([0]) },
+    { i: 2, nom: "SIGNAL_50", classe: "signal", pistes: [], arcs: [], plans: [], pads: [{}], trous: [], longueur: 20, couches: new Set([0]) }
+  ];
+
+  if(typeof simAppliquerPrereglagesClassesNets === "function"){
+    simAppliquerPrereglagesClassesNets();
+    if(typeof SIM_PDN !== "undefined"){
+      if(SIM_PDN.rail !== "+3V3") throw new Error("SIM_PDN.rail attendu '+3V3', obtenu: " + SIM_PDN.rail);
+      if(Math.abs(SIM_PDN.vdd - 3.3) > 0.01) throw new Error("SIM_PDN.vdd attendu 3.3, obtenu: " + SIM_PDN.vdd);
+      if(!(SIM_PDN.zTarget > 0)) throw new Error("SIM_PDN.zTarget aurait dû être calculé positivement");
+    }
+  }
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

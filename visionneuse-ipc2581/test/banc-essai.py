@@ -126,6 +126,7 @@ CARTE = u"""<?xml version="1.0" encoding="UTF-8"?>
     <LogicalNet name="SIG_A" netClass="SIGNAL">
      <PinRef componentRef="R1" pin="1"/>
     </LogicalNet>
+    <LogicalNet name="GND" netClass="GROUND"/>
     <LayerFeature layerRef="Conductor-1">
      <Set net="SIG_A">
       <Features>
@@ -627,6 +628,10 @@ T(u"les composants actifs (D, Q, U) et connecteurs (J) sont qualifiés par leur 
 # -- Le modele JSON de la visionneuse ----------------------------------------
 T(u"le modele annonce son format",
   lambda: egal(MODELE["format"], ipc2581_json.FORMAT, u"format du modele"))
+
+T(u"la classe de net (netClass) est lue et exportee dans classes_nets",
+  lambda: (egal(MODELE.get("classes_nets", {}).get("SIG_A"), "SIGNAL", u"SIG_A est SIGNAL"),
+           egal(MODELE.get("classes_nets", {}).get("GND"), "GROUND", u"GND est GROUND")))
 
 T(u"les couches deviennent un index, l'empilage d'abord",
   lambda: egal(MODELE["couches"][:3],

@@ -118,6 +118,9 @@ async function charger(fichier){
         +") : complétez-le dans « La carte » pour l'impédance.";
     hint(dit);
     if(typeof profNoterDocument==="function")profNoterDocument(PREF,fichier.name);
+    if(V.modele&&V.modele.nets&&V.modele.nets.length>0&&typeof ouvrirModalNets==="function"){
+      ouvrirModalNets();
+    }
   }catch(e){
     erreur(e.message||String(e));
     document.getElementById("accueil").hidden=!!V.modele;
@@ -140,11 +143,9 @@ function poser(modele,nom,vue){
                         V.vue.flip=!!vue.flip; boutonsEtat(); dessiner(); }
   else fit();
 
-  // Réinitialiser et synchroniser la simulation PDN avec les rails de la carte chargée
-  if(typeof SIM_PDN!=="undefined"){
-    SIM_PDN.rail="";
-    SIM_PDN.condensateurs=null;
-    SIM_PDN.result=null;
+  // Synchroniser la simulation PDN et les références SI avec les classes de nets de la carte chargée
+  if(typeof simAppliquerPrereglagesClassesNets==="function"){
+    simAppliquerPrereglagesClassesNets();
   }
   if(typeof simRafraichir==="function"){
     simRafraichir(true);
@@ -262,6 +263,66 @@ function exportPng(){
   document.getElementById("filtreNets").addEventListener("input",pnlNets);
   document.getElementById("filtreComps").addEventListener("input",pnlComps);
   document.getElementById("bNetRien").onclick=choisirRien;
+
+  /* Modale et barre d'outils de classification des nets (PWR, GND, Signal) */
+  const bClas=document.getElementById("bClasserNets");
+  if(bClas)bClas.onclick=function(){if(typeof ouvrirModalNets==="function")ouvrirModalNets();};
+  const bNetClas=document.getElementById("bNetClasser");
+  if(bNetClas)bNetClas.onclick=function(){if(typeof ouvrirModalNets==="function")ouvrirModalNets();};
+
+  const bModFerm=document.getElementById("bModaleNetsFermer");
+  if(bModFerm)bModFerm.onclick=function(){if(typeof fermerModalNets==="function")fermerModalNets();};
+  const bModAnn=document.getElementById("bModaleNetsAnnuler");
+  if(bModAnn)bModAnn.onclick=function(){if(typeof fermerModalNets==="function")fermerModalNets();};
+  const bModVal=document.getElementById("bModaleNetsValider");
+  if(bModVal)bModVal.onclick=function(){if(typeof validerModalNets==="function")validerModalNets();};
+
+  const bModAuto=document.getElementById("bModaleAutoDetect");
+  if(bModAuto)bModAuto.onclick=function(){if(typeof reinitialiserAutoDetectionModaleNets==="function")reinitialiserAutoDetectionModaleNets();};
+  const bModSig=document.getElementById("bModaleToutSignal");
+  if(bModSig)bModSig.onclick=function(){if(typeof toutSignalModaleNets==="function")toutSignalModaleNets();};
+
+  const inRechMod=document.getElementById("rechercheModaleNets");
+  if(inRechMod){
+    inRechMod.addEventListener("input",function(){
+      MODALE_NETS_RECHERCHE=inRechMod.value;
+      if(typeof rendreModalNets==="function")rendreModalNets();
+    });
+  }
+
+  const grpF=document.getElementById("grpFiltreModale");
+  if(grpF){
+    grpF.querySelectorAll("[data-filtre]").forEach(function(b){
+      b.onclick=function(){
+        MODALE_NETS_FILTRE=b.dataset.filtre;
+        if(typeof mettreAJourBoutonsFiltreModale==="function")mettreAJourBoutonsFiltreModale();
+        if(typeof rendreModalNets==="function")rendreModalNets();
+      };
+    });
+  }
+
+  const kpiBox=document.getElementById("modaleNetsKpi");
+  if(kpiBox){
+    kpiBox.querySelectorAll(".kpi-chip").forEach(function(c){
+      c.onclick=function(){
+        if(c.dataset.filter){
+          MODALE_NETS_FILTRE=c.dataset.filter;
+          if(typeof mettreAJourBoutonsFiltreModale==="function")mettreAJourBoutonsFiltreModale();
+          if(typeof rendreModalNets==="function")rendreModalNets();
+        }
+      };
+    });
+  }
+
+  const barF=document.getElementById("barFiltreClassesNets");
+  if(barF){
+    barF.querySelectorAll("[data-filtre-classe]").forEach(function(b){
+      b.onclick=function(){
+        PNL_NETS_CLASSE_FILTRE=b.dataset.filtreClasse;
+        if(typeof pnlNets==="function")pnlNets();
+      };
+    });
+  }
 
   window.addEventListener("resize",resize);
 })();

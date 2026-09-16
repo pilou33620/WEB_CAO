@@ -369,6 +369,12 @@ def design_en_dict(design: IPCDesign, fichier: str = "") -> dict:
     metallises = sum(1 for d in design.drills
                      if (d.plating or "").upper().startswith("PLATED"))
 
+    classes_nets = {
+        net.name: net.net_class
+        for net in design.nets.values()
+        if getattr(net, "net_class", "")
+    }
+
     return {
         "format": FORMAT,
         "fichier": os.path.basename(fichier) if fichier else "",
@@ -378,6 +384,7 @@ def design_en_dict(design: IPCDesign, fichier: str = "") -> dict:
         "empilage": empilage,
         "couches": couches.noms,
         "nets": nets.noms,
+        "classes_nets": classes_nets,
         "pistes": pistes,
         "arcs": arcs,
         "plans": plans,

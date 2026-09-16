@@ -22,7 +22,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 200 essais a
 | **PI — Chute DC & Échauffement (`dc_solver`)** | En service (IR drop, densité J, modèle étalement) | 42 cas (`python/test/banc-dc.py`) |
 | **Scoring placement & Rotation (`pcb_scoring`)** | En service (HPWL, congestion, découplage HF, auto-rotation) | 7 cas (`python/test/banc-pcb-scoring.py`) |
 | **Reconnaissance de motifs (`pattern_recognition`)** | En service (LDO/Buck/Boost, I2C, SPI, UART, quartz, RC) | 5 cas (`python/test/banc-patterns.py`) |
-| **Moteur 2,5D pleine onde (`mom_solver`)** | En service (ports verticaux, Green stratifiée 2 niveaux) | 56 essais (`mom_solver/tests/`) |
+| **Moteur 2,5D pleine onde (`mom_solver`)** | Archivé dans branche `archive/mom-solver-25d` (recentrage sur 2D instantané) | Préservé dans l'historique Git |
 | **Passerelle MCP, profils, cross-probing** | En service | `serveur.py`, `commun/session.js` |
 
 ---

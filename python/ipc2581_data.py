@@ -285,6 +285,7 @@ class UserShape:
 @dataclass
 class Net:
     name: str
+    net_class: str = ""
     tracks: List[Track] = field(default_factory=list)
     arcs: List[Arc] = field(default_factory=list)
     copper_planes: List[CopperPlane] = field(default_factory=list)
