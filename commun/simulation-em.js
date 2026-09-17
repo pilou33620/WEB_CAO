@@ -10477,9 +10477,16 @@ function simXtValidation(r){
   h+="<tr><td>passive (σ ≤ 1)</td><td>"+oui(v.passivite&&v.passivite.ok)+
      "</td><td>σ<sub>max</sub> = "+simNb((v.passivite||{}).sigma_max,6)+
      " à "+simFreq((v.passivite||{}).f||0)+"</td></tr>";
-  h+="<tr><td>réciproque (S = Sᵀ)</td><td>"+oui(v.reciprocite&&v.reciprocite.ok)+
-     "</td><td>écart "+simNb((v.reciprocite||{}).ecart,6)+" à "+
-     simFreq((v.reciprocite||{}).f||0)+"</td></tr>";
+  /* LA TOLÉRANCE SE LIT À CÔTÉ DE L'ÉCART, parce qu'elle n'est plus fixe :
+     chaque bloc de la cascade ajoute un produit de matrices, donc un arrondi
+     qui s'accumule, et le seuil suit la racine du nombre de blocs. « écart
+     2e-4 » sans le seuil auquel on le compare ne se vérifie pas. */
+  const rec=v.reciprocite||{};
+  h+="<tr><td>réciproque (S = Sᵀ)</td><td>"+oui(rec.ok)+
+     "</td><td>écart "+simNb(rec.ecart,6)+" à "+simFreq(rec.f||0)+
+     (rec.tolerance?" (tolérance "+simNb(rec.tolerance,6)+
+        (rec.blocs>1?", "+rec.blocs+" blocs en cascade":"")+")":"")+
+     "</td></tr>";
   h+="<tr><td>pas fréquentiel constant</td><td>"+oui(b.constant)+
      "</td><td>"+simFreq(b.pas||0)+" × "+(b.points||0)+" points, jusqu'à "+
      simFreq(b.f_max||0)+"</td></tr>";
@@ -10806,7 +10813,11 @@ function simXtRapportTexte(r){
         nb(v.passivite.f/1e9,3)+" GHz");
     if(v.reciprocite)
       t("Réciprocité  : "+(v.reciprocite.ok?"oui":"NON")+
-        "   écart "+nb(v.reciprocite.ecart,6));
+        "   écart "+nb(v.reciprocite.ecart,6)+
+        (v.reciprocite.tolerance
+           ? "   tolérance "+nb(v.reciprocite.tolerance,6)+
+             (v.reciprocite.blocs>1?" ("+v.reciprocite.blocs+" blocs)":"")
+           : ""));
     t("");
   }
 
@@ -12546,6 +12557,18 @@ const SIM_PDN = {
   planTanD: 0.02,
   caviteModesActif: true,
   caviteModeSel: "TM10",
+  /* Position du port d'observation, c'est-à-dire du composant alimenté dont on
+     regarde l'impédance. Par défaut un coin : c'est un ventre pour TOUS les
+     modes, donc le cas le plus défavorable. Ces coordonnées sont dans le repère
+     de la carte, le même que celui des condensateurs. */
+  portXmm: 0.0,
+  portYmm: 0.0,
+  /* Ouverture effective d'un port, en mm : l'écartement de la paire de vias qui
+     traverse les deux plans, antipads compris. Ce n'est pas un détail cosmétique.
+     L'auto-impédance d'un port PONCTUEL diverge — la somme modale de Z_ii croît
+     sans limite avec l'ordre de troncature — et c'est la taille finie du port qui
+     la fait converger, en filtrant les modes plus courts que le port lui-même. */
+  portTailleMm: 1.5,
   fMin: 1e4,
   fMax: 1e9,
   nbPoints: 200,
@@ -12657,6 +12680,156 @@ function simPDNCalculerModesCavite(aMm, bMm, dUm, er, tanD, fMax) {
   return modes;
 }
 
+/* Coefficient de couplage d'un port à un mode : la forme propre
+   cos(mπx/a)·cos(nπy/b) évaluée là où le port perce les plans. Vaut ±1 aux
+   quatre coins, qui sont des ventres pour tous les modes, et 0 sur une ligne
+   nodale : un condensateur posé là n'amortit pas ce mode. Le signe compte, il
+   porte la phase relative des deux ports. */
+function simPDNCouplagePort(cm, xMm, yMm, aMm, bMm, tailleMm) {
+  let k = Math.cos(cm.m * Math.PI * (xMm / aMm)) * Math.cos(cm.n * Math.PI * (yMm / bMm));
+  if (tailleMm > 0) k *= simPDNSinc(cm.m * Math.PI * tailleMm / (2 * aMm)) *
+                        simPDNSinc(cm.n * Math.PI * tailleMm / (2 * bMm));
+  return k;
+}
+
+function simPDNSinc(u) {
+  return (u === 0) ? 1 : (Math.sin(u) / u);
+}
+
+/* INDUCTANCE D'ÉPANDAGE : la queue de la somme modale.
+
+   Sous sa première résonance, un mode ne résonne plus, il inducte : quand
+   ω ≪ ω_mn, son terme tend vers jω·K_mn/ω²_mn, une inductance pure et
+   indépendante de la fréquence. Or ce sont les modes d'ordre élevé, très
+   au-dessus de la bande tracée, qui portent l'essentiel de l'inductance locale :
+   les tronquer, comme le faisait le solveur, sous-estime l'épandage d'un facteur
+   deux et rend le résultat dépendant de l'ordre de troncature au lieu de la
+   physique. On somme donc analytiquement tout ce que la liste des modes
+   résonants ne couvre pas :
+
+       L_ij = μ₀ d / (π² a b) · Σ  c²_m c²_n · κ_i,mn · κ_j,mn / ((m/a)² + (n/b)²)
+
+   ε_r disparaît, comme il se doit pour une inductance. La somme ne converge que
+   grâce au facteur d'ouverture sinc porté par κ : l'ordre est donc choisi d'après
+   la taille du port, là où ce facteur a éteint les termes. Elle ne dépend pas de
+   la fréquence : on la calcule une fois, pas à chaque point de la courbe. */
+function simPDNInductancesEpandage(ports, modesDyn, aMm, bMm, dUm, tailleMm) {
+  const nP = ports.length;
+  const L = new Float64Array(nP * nP);
+  const a = aMm * 1e-3, b = bMm * 1e-3, d = Math.max(1e-6, dUm * 1e-6);
+  const mu0 = 4 * Math.PI * 1e-7;
+  const w = Math.max(0.05, tailleMm || 1.5);
+
+  // Les modes déjà traités dynamiquement ne doivent pas être comptés deux fois.
+  const dejaVus = new Set();
+  for (let k = 0; k < modesDyn.length; k++) dejaVus.add(modesDyn[k].m + "," + modesDyn[k].n);
+
+  /* Ordre de troncature. Le facteur sinc s'éteint au-delà de m ≈ 2a/(πw) ; il
+     faut environ 2,5 fois cela pour que la somme se stabilise au pourcent. */
+  const ordreX = Math.min(256, Math.max(8, Math.ceil(1.6 * aMm / w)));
+  const ordreY = Math.min(256, Math.max(8, Math.ceil(1.6 * bMm / w)));
+
+  const fx = new Float64Array(nP);
+  for (let m = 0; m <= ordreX; m++) {
+    const sincX = simPDNSinc(m * Math.PI * w / (2 * aMm));
+    for (let n = 0; n <= ordreY; n++) {
+      if (m === 0 && n === 0) continue;
+      if (dejaVus.has(m + "," + n)) continue;
+      const k2 = (m / a) * (m / a) + (n / b) * (n / b);
+      if (!(k2 > 0)) continue;
+      const cm2 = (m === 0) ? 1 : 2;
+      const cn2 = (n === 0) ? 1 : 2;
+      const base = mu0 * d * cm2 * cn2 / (Math.PI * Math.PI * a * b * k2);
+      const sincY = simPDNSinc(n * Math.PI * w / (2 * bMm));
+      const amp = sincX * sincY;
+      if (amp === 0) continue;
+      for (let i = 0; i < nP; i++) {
+        fx[i] = Math.cos(m * Math.PI * (ports[i].x / aMm)) *
+                Math.cos(n * Math.PI * (ports[i].y / bMm)) * amp;
+      }
+      for (let i = 0; i < nP; i++) {
+        const bi = base * fx[i];
+        if (bi === 0) continue;
+        for (let j = i; j < nP; j++) {
+          const v = bi * fx[j];
+          L[i * nP + j] += v;
+          if (j !== i) L[j * nP + i] += v;
+        }
+      }
+    }
+  }
+  return L;
+}
+
+/* Résolution de A·x = b en complexe, pivot partiel sur le module. A est un
+   tableau plat de 2·n² réels (partie réelle et partie imaginaire entrelacées,
+   A[2·(i·n+j)]), b un tableau plat de 2·n. A et b sont consommés sur place.
+   Rend x, ou null si la matrice est numériquement singulière.
+
+   La matrice est mal conditionnée par nature : sous le premier mode, tous les
+   termes de couplage valent 1/(ωC) — des kilo-ohms — tandis que la diagonale
+   porte en plus l'ESR des condensateurs, quelques milliohms. Le rapport atteint
+   10^8, d'où le pivot partiel, indispensable ici. */
+function simPDNResoudreComplexe(A, b, n) {
+  for (let col = 0; col < n; col++) {
+    let meilleur = col;
+    let normeMax = -1;
+    for (let r = col; r < n; r++) {
+      const re = A[2 * (r * n + col)];
+      const im = A[2 * (r * n + col) + 1];
+      const norme = re * re + im * im;
+      if (norme > normeMax) { normeMax = norme; meilleur = r; }
+    }
+    if (!(normeMax > 0) || !isFinite(normeMax)) return null;
+    if (meilleur !== col) {
+      for (let c = 0; c < n; c++) {
+        const i1 = 2 * (col * n + c), i2 = 2 * (meilleur * n + c);
+        let t = A[i1]; A[i1] = A[i2]; A[i2] = t;
+        t = A[i1 + 1]; A[i1 + 1] = A[i2 + 1]; A[i2 + 1] = t;
+      }
+      let t = b[2 * col]; b[2 * col] = b[2 * meilleur]; b[2 * meilleur] = t;
+      t = b[2 * col + 1]; b[2 * col + 1] = b[2 * meilleur + 1]; b[2 * meilleur + 1] = t;
+    }
+    const pRe = A[2 * (col * n + col)];
+    const pIm = A[2 * (col * n + col) + 1];
+    const pNorme = pRe * pRe + pIm * pIm;
+    for (let r = col + 1; r < n; r++) {
+      const aRe = A[2 * (r * n + col)];
+      const aIm = A[2 * (r * n + col) + 1];
+      // facteur = A[r][col] / A[col][col]
+      const fRe = (aRe * pRe + aIm * pIm) / pNorme;
+      const fIm = (aIm * pRe - aRe * pIm) / pNorme;
+      if (fRe === 0 && fIm === 0) continue;
+      for (let c = col; c < n; c++) {
+        const iC = 2 * (col * n + c), iR = 2 * (r * n + c);
+        const cRe = A[iC], cIm = A[iC + 1];
+        A[iR] -= fRe * cRe - fIm * cIm;
+        A[iR + 1] -= fRe * cIm + fIm * cRe;
+      }
+      const bRe = b[2 * col], bIm = b[2 * col + 1];
+      b[2 * r] -= fRe * bRe - fIm * bIm;
+      b[2 * r + 1] -= fRe * bIm + fIm * bRe;
+    }
+  }
+  const x = new Float64Array(2 * n);
+  for (let r = n - 1; r >= 0; r--) {
+    let sRe = b[2 * r], sIm = b[2 * r + 1];
+    for (let c = r + 1; c < n; c++) {
+      const iA = 2 * (r * n + c);
+      sRe -= A[iA] * x[2 * c] - A[iA + 1] * x[2 * c + 1];
+      sIm -= A[iA] * x[2 * c + 1] + A[iA + 1] * x[2 * c];
+    }
+    const dRe = A[2 * (r * n + r)];
+    const dIm = A[2 * (r * n + r) + 1];
+    const dN = dRe * dRe + dIm * dIm;
+    if (!(dN > 0) || !isFinite(dN)) return null;
+    x[2 * r] = (sRe * dRe + sIm * dIm) / dN;
+    x[2 * r + 1] = (sIm * dRe - sRe * dIm) / dN;
+  }
+  for (let i = 0; i < 2 * n; i++) if (!isFinite(x[i])) return null;
+  return x;
+}
+
 function simPDNActualiserComposants(force) {
   if (SIM_ED && typeof SIM_ED.pdnCondensateurs === "function") {
     const caps = SIM_ED.pdnCondensateurs(SIM_PDN.rail);
@@ -12718,9 +12891,80 @@ function simCalculerPDN() {
 
   const capas = (SIM_PDN.condensateurs || []).filter(c => c.actif !== false && c.cap > 0);
 
+  /* LES PORTS DE LA CAVITÉ. Une paire de plans n'est pas un nœud unique : c'est
+     un réseau à (1 + n) ports, le point observé et un port par condensateur, aux
+     positions réelles des composants. Un condensateur ne parle au point observé
+     qu'à travers l'impédance de transfert de la cavité : c'est elle qui porte
+     l'inductance d'épandage, et c'est pour cela que la position compte.
+     Un condensateur dont on ignore les coordonnées est posé SUR le port observé,
+     ce qui le remet exactement en parallèle : on ne lui invente pas de distance. */
+  const portXmm = Math.min(aMm, Math.max(0, parseFloat(SIM_PDN.portXmm) || 0));
+  const portYmm = Math.min(bMm, Math.max(0, parseFloat(SIM_PDN.portYmm) || 0));
+  const portTailleMm = Math.max(0.05, parseFloat(SIM_PDN.portTailleMm) || 1.5);
+  const nMode = caviteModes.length;
+  const nPort = capas.length + 1;              // port 0 = point observé
+  const ports = [{ x: portXmm, y: portYmm }];
+  for (let k = 0; k < capas.length; k++) {
+    const cp = capas[k];
+    ports.push({
+      x: (typeof cp.x === "number" && isFinite(cp.x)) ? Math.min(aMm, Math.max(0, cp.x)) : portXmm,
+      y: (typeof cp.y === "number" && isFinite(cp.y)) ? Math.min(bMm, Math.max(0, cp.y)) : portYmm
+    });
+  }
+  const kap = new Float64Array(nPort * (nMode || 1));
+  for (let i = 0; i < nPort; i++) {
+    for (let km = 0; km < nMode; km++) {
+      kap[i * nMode + km] = simPDNCouplagePort(caviteModes[km], ports[i].x, ports[i].y,
+                                               aMm, bMm, portTailleMm);
+    }
+  }
+  const multiport = planActif && cPlane > 0;
+  /* La case « Modes 2D » commande TOUT le caractere distribue de la cavite : les
+     resonances comme l'epandage. Decochee, il ne reste que la capacite
+     inter-plans, identique entre tous les ports -- la cavite redevient un noeud
+     unique et le solveur retombe exactement sur le modele localise. */
+  const distribue = multiport && SIM_PDN.caviteModesActif;
+  const lEpand = distribue
+    ? simPDNInductancesEpandage(ports, caviteModes, aMm, bMm,
+                                Math.max(1, parseFloat(SIM_PDN.planEpaisseurUm) || 100.0),
+                                portTailleMm)
+    : new Float64Array(nPort * nPort);
+  const modeRe = new Float64Array(nMode || 1);
+  const modeIm = new Float64Array(nMode || 1);
+  const matA = multiport ? new Float64Array(2 * capas.length * capas.length) : null;
+  const vecB = multiport ? new Float64Array(2 * capas.length) : null;
+  const z0LRe = multiport ? new Float64Array(capas.length) : null;
+  const z0LIm = multiport ? new Float64Array(capas.length) : null;
+  let reductionRatee = 0;
+
   const N = SIM_PDN.nbPoints || 200;
   const logMin = Math.log10(fMin);
   const logMax = Math.log10(fMax);
+
+  /* Grille logarithmique, plus un échantillon forcé sur chaque mode et sur ses
+     deux flancs à -3 dB. À Q ≈ 30 un pic modal est plus étroit que le pas de la
+     grille (40 points par décade) : sans ces points, le maximum tombe entre deux
+     échantillons et zMax dépend de la grille au lieu de la physique. */
+  const grille = [];
+  for (let i = 0; i < N; i++) {
+    grille.push(Math.pow(10, logMin + (i / (N - 1)) * (logMax - logMin)));
+  }
+  for (let km = 0; km < caviteModes.length; km++) {
+    const cm = caviteModes[km];
+    if (cm.f > fMin && cm.f < fMax) {
+      grille.push(cm.f);
+      grille.push(cm.f * (1 - 0.5 / cm.q));
+      grille.push(cm.f * (1 + 0.5 / cm.q));
+    }
+  }
+  grille.sort((u, v) => u - v);
+  const echantillons = [];
+  for (let i = 0; i < grille.length; i++) {
+    if (grille[i] >= fMin && grille[i] <= fMax &&
+        (i === 0 || grille[i] > grille[i - 1] * (1 + 1e-9))) {
+      echantillons.push(grille[i]);
+    }
+  }
 
   const freqs = [];
   const zPdn = [];
@@ -12729,9 +12973,8 @@ function simCalculerPDN() {
   let zMax = 0;
   let fZMax = fMin;
 
-  for (let i = 0; i < N; i++) {
-    const logF = logMin + (i / (N - 1)) * (logMax - logMin);
-    const f = Math.pow(10, logF);
+  for (let i = 0; i < echantillons.length; i++) {
+    const f = echantillons[i];
     const omega = 2 * Math.PI * f;
 
     // 1. Branche VRM : Y_vrm = 1 / (R_vrm + j*omega*L_vrm)
@@ -12740,50 +12983,136 @@ function simCalculerPDN() {
     let bTot = -(omega * lVrm) / zVrmDenom;
     zVrmVals.push(Math.sqrt(zVrmDenom));
 
-    // 2. Branches condensateurs de découplage
+    // 2. Impédance série propre de chaque condensateur
+    const zCapRe = [];
+    const zCapIm = [];
     for (let k = 0; k < capas.length; k++) {
       const cp = capas[k];
-      const esr = Math.max(1e-4, cp.esr || 0.02);
-      const lTot = (cp.esl || 0.2e-9) + (cp.lMount || 0.8e-9);
-      const xK = omega * lTot - 1 / (omega * cp.cap);
-      const zK2 = esr * esr + xK * xK;
-      gTot += esr / zK2;
-      bTot -= xK / zK2;
+      zCapRe.push(Math.max(1e-4, cp.esr || 0.02));
+      zCapIm.push(omega * ((cp.esl || 0.2e-9) + (cp.lMount || 0.8e-9)) - 1 / (omega * cp.cap));
     }
 
-    // 3. Branche cavité de plans
-    if (cPlane > 0) {
-      let gPlane = omega * cPlane * tanD;
-      let bPlane = omega * cPlane;
+    if (!multiport) {
+      /* 3a. Pas de paire de plans : rien ne sépare les composants, ils restent
+         tous en parallèle sur le même nœud. C'est le modèle localisé classique. */
+      for (let k = 0; k < capas.length; k++) {
+        const zK2 = zCapRe[k] * zCapRe[k] + zCapIm[k] * zCapIm[k];
+        gTot += zCapRe[k] / zK2;
+        bTot -= zCapIm[k] / zK2;
+      }
+      zPlaneVals.push(null);
+    } else {
+      /* 3b. Cavité multi-port. Le développement modal d'Okoshi / Novak donne
+         l'impédance entre deux ports comme une somme d'IMPÉDANCES :
 
-      if (SIM_PDN.caviteModesActif && caviteModes.length) {
-        // Modélisation modale 2D distribuée (Hsu / Okoshi / Novak)
-        // Sommation sur les modes propres au point de couplage maximal (coins)
-        for (let km = 0; km < caviteModes.length; km++) {
-          const cm = caviteModes[km];
-          const wMn = 2 * Math.PI * cm.f;
-          const numScale = cm.cm2cn2 / cPlane;
-          const dRe = (wMn * wMn - omega * omega);
-          const dIm = (omega * wMn) / cm.q;
-          const denom2 = dRe * dRe + dIm * dIm;
-          if (denom2 > 1e-18) {
-            const zModRe = (omega * numScale * dIm) / denom2;
-            const zModIm = (omega * numScale * dRe) / denom2;
-            const zModSq = zModRe * zModRe + zModIm * zModIm;
-            if (zModSq > 1e-12) {
-              gPlane += zModRe / zModSq;
-              bPlane -= zModIm / zModSq;
+             Z_ij(ω) = 1/(jωC) + Σ_mn  jω·K_mn·κ_i,mn·κ_j,mn
+                                       / (ω²_mn − ω² + jωω_mn/Q_mn)
+
+         Le terme statique 1/(jωC) est le mode (0,0) : il vaut autant pour tous
+         les couples de ports, et c'est lui qui domine sous la première
+         résonance — la cavité y est équipotentielle et le réseau dégénère
+         exactement en la mise en parallèle d'avant. Les modes d'ordre supérieur
+         désappairent ensuite les ports : c'est là que la position se paie. */
+      for (let km = 0; km < nMode; km++) {
+        const cm = caviteModes[km];
+        const wMn = 2 * Math.PI * cm.f;
+        const kMn = cm.cm2cn2 / cPlane;
+        const dRe = (wMn * wMn - omega * omega);
+        const dIm = (omega * wMn) / cm.q;
+        const denom2 = dRe * dRe + dIm * dIm;
+        if (denom2 > 1e-18) {
+          modeRe[km] = (omega * kMn * dIm) / denom2;
+          modeIm[km] = (omega * kMn * dRe) / denom2;
+        } else {
+          modeRe[km] = 0;
+          modeIm[km] = 0;
+        }
+      }
+      const yCg = omega * cPlane * tanD;
+      const yCb = omega * cPlane;
+      const yC2 = yCg * yCg + yCb * yCb;
+      const zcRe = yCg / yC2;
+      const zcIm = -yCb / yC2;
+
+      // Auto-impédance du point observé, cavité nue
+      let z00Re = zcRe, z00Im = zcIm + omega * lEpand[0];
+      for (let km = 0; km < nMode; km++) {
+        const k2 = kap[km] * kap[km];
+        z00Re += modeRe[km] * k2;
+        z00Im += modeIm[km] * k2;
+      }
+      const n = capas.length;
+      let zInRe = z00Re, zInIm = z00Im;
+
+      if (n > 0) {
+        // Impédances de transfert port observé <-> condensateurs
+        for (let i = 0; i < n; i++) {
+          let re = zcRe, im = zcIm + omega * lEpand[i + 1];
+          for (let km = 0; km < nMode; km++) {
+            const kk = kap[km] * kap[(i + 1) * nMode + km];
+            re += modeRe[km] * kk;
+            im += modeIm[km] * kk;
+          }
+          z0LRe[i] = re;
+          z0LIm[i] = im;
+        }
+        /* Les condensateurs terminent leurs ports : on réduit le (1+n)-port à
+           un 1-port par élimination, Z_in = Z_00 − Z_0L·(Z_LL + diag(Z_cap))⁻¹·Z_L0.
+           La cavité est réciproque, donc Z_L0 = Z_0L et un seul vecteur suffit. */
+        for (let i = 0; i < n; i++) {
+          for (let j = 0; j < n; j++) {
+            let re = zcRe, im = zcIm + omega * lEpand[(i + 1) * nPort + (j + 1)];
+            for (let km = 0; km < nMode; km++) {
+              const kk = kap[(i + 1) * nMode + km] * kap[(j + 1) * nMode + km];
+              re += modeRe[km] * kk;
+              im += modeIm[km] * kk;
             }
+            if (i === j) { re += zCapRe[i]; im += zCapIm[i]; }
+            matA[2 * (i * n + j)] = re;
+            matA[2 * (i * n + j) + 1] = im;
+          }
+          vecB[2 * i] = z0LRe[i];
+          vecB[2 * i + 1] = z0LIm[i];
+        }
+        const v = simPDNResoudreComplexe(matA, vecB, n);
+        if (v) {
+          for (let i = 0; i < n; i++) {
+            zInRe -= z0LRe[i] * v[2 * i] - z0LIm[i] * v[2 * i + 1];
+            zInIm -= z0LRe[i] * v[2 * i + 1] + z0LIm[i] * v[2 * i];
+          }
+          /* Garde-fou : un réseau passif ne peut pas rendre une résistance
+             négative. Si l'élimination a perdu trop de chiffres, on retombe sur
+             la mise en parallèle plutôt que de tracer une absurdité. */
+          if (!(zInRe > -1e-9) || !isFinite(zInRe) || !isFinite(zInIm)) {
+            reductionRatee++;
+            zInRe = z00Re; zInIm = z00Im;
+            let yg = 0, yb = 0;
+            const z0N = z00Re * z00Re + z00Im * z00Im;
+            yg = z00Re / z0N; yb = -z00Im / z0N;
+            for (let k = 0; k < n; k++) {
+              const zK2 = zCapRe[k] * zCapRe[k] + zCapIm[k] * zCapIm[k];
+              yg += zCapRe[k] / zK2;
+              yb -= zCapIm[k] / zK2;
+            }
+            const yN = yg * yg + yb * yb;
+            zInRe = yg / yN; zInIm = -yb / yN;
+          }
+        } else {
+          reductionRatee++;
+          for (let k = 0; k < n; k++) {
+            const zK2 = zCapRe[k] * zCapRe[k] + zCapIm[k] * zCapIm[k];
+            gTot += zCapRe[k] / zK2;
+            bTot -= zCapIm[k] / zK2;
           }
         }
       }
 
-      gTot += gPlane;
-      bTot += bPlane;
-      const zP = 1 / Math.sqrt(gPlane * gPlane + bPlane * bPlane);
-      zPlaneVals.push(zP);
-    } else {
-      zPlaneVals.push(null);
+      const zIn2 = zInRe * zInRe + zInIm * zInIm;
+      if (zIn2 > 1e-24) {
+        gTot += zInRe / zIn2;
+        bTot += -zInIm / zIn2;
+      }
+      zPlaneVals.push(Math.sqrt(z00Re * z00Re + z00Im * z00Im));
     }
 
     // 4. Impédance globale résultante : |Z| = 1 / sqrt(G_tot^2 + B_tot^2)
@@ -12800,7 +13129,7 @@ function simCalculerPDN() {
 
   // Détection des anti-résonances (maxima locaux)
   const antiresonances = [];
-  for (let i = 1; i < N - 1; i++) {
+  for (let i = 1; i < freqs.length - 1; i++) {
     if (zPdn[i] > zPdn[i - 1] && zPdn[i] > zPdn[i + 1]) {
       antiresonances.push({
         f: freqs[i],
@@ -12825,6 +13154,12 @@ function simCalculerPDN() {
     capasCount: capas.length,
     cPlaneTotalPf: cPlane * 1e12,
     caviteModes: caviteModes,
+    multiport: multiport,
+    portXmm: portXmm,
+    portYmm: portYmm,
+    portTailleMm: portTailleMm,
+    lEpandPortNh: lEpand ? lEpand[0] * 1e9 : null,
+    reductionRatee: reductionRatee,
     aMm: aMm,
     bMm: bMm,
     er: er,
@@ -13096,6 +13431,22 @@ function simPDNGenererHeatmapCavite(r, modeStr, W, H) {
            '</g>';
   }
 
+  /* Le point observé. C'est lui qui donne son sens à la carte : l'efficacité
+     d'un condensateur ne se lit pas dans l'absolu, mais par rapport au composant
+     qu'il découple. */
+  {
+    const pX = Math.max(0, Math.min(aMm, parseFloat((r && r.portXmm) != null ? r.portXmm : SIM_PDN.portXmm) || 0));
+    const pY = Math.max(0, Math.min(bMm, parseFloat((r && r.portYmm) != null ? r.portYmm : SIM_PDN.portYmm) || 0));
+    const pxPix = mg.g + (pX / aMm) * plotW;
+    const pyPix = mg.h + (pY / bMm) * plotH;
+    svg += '<g id="simPDNPortMarker" data-x="' + pX.toFixed(1) + '" data-y="' + pY.toFixed(1) + '">' +
+           '<circle cx="' + pxPix.toFixed(1) + '" cy="' + pyPix.toFixed(1) + '" r="8" fill="none" stroke="#ffffff" stroke-width="2"/>' +
+           '<line x1="' + (pxPix - 12).toFixed(1) + '" y1="' + pyPix.toFixed(1) + '" x2="' + (pxPix + 12).toFixed(1) + '" y2="' + pyPix.toFixed(1) + '" stroke="#ffffff" stroke-width="1.5"/>' +
+           '<line x1="' + pxPix.toFixed(1) + '" y1="' + (pyPix - 12).toFixed(1) + '" x2="' + pxPix.toFixed(1) + '" y2="' + (pyPix + 12).toFixed(1) + '" stroke="#ffffff" stroke-width="1.5"/>' +
+           '<text x="' + (pxPix + 13).toFixed(1) + '" y="' + (pyPix - 9).toFixed(1) + '" fill="#ffffff" font-family="var(--mono)" font-size="9px" font-weight="700">Z(ω)</text>' +
+           '</g>';
+  }
+
   // Graduations
   svg += '<text class="simCote" x="' + mg.g + '" y="' + (H - 12) + '" text-anchor="middle">0 mm</text>' +
          '<text class="simCote" x="' + (mg.g + plotW / 2).toFixed(1) + '" y="' + (H - 12) + '" text-anchor="middle">Largeur X = ' + aMm.toFixed(0) + ' mm</text>' +
@@ -13117,6 +13468,7 @@ function simPDNGenererHeatmapCavite(r, modeStr, W, H) {
             '<span><i style="background:#00f2fe;width:10px;height:2px;border-top:1px dashed #00f2fe"></i>Lignes nodales (V=0)</span>' +
             '<span><i style="background:#22c55e;width:8px;height:8px;border-radius:50%"></i>Condo efficace (&gt;50%)</span>' +
             '<span><i style="background:#f59e0b;width:8px;height:8px;border-radius:50%"></i>Condo zone nodale (&lt;20%)</span>' +
+            '<span><i style="background:#ffffff;width:9px;height:9px;border-radius:50%"></i>Point observé Z(ω)</span>' +
             '<span class="simLecture" id="simPDNCaviteLecture">survolez le plan pour sonder la tension modale V(x,y)</span>' +
             '</div>';
 
@@ -13241,6 +13593,18 @@ function simCorpsPDN() {
         '<input type="checkbox" id="simPDNCaviteModesActif"' + (SIM_PDN.caviteModesActif ? " checked" : "") + '/> Modes 2D' +
       '</label>' +
     '</div>' +
+    '<div class="pnl-bar">' +
+      '<span class="pnl-lbl">Point observé</span>' +
+      '<span style="font-size:10px;color:var(--txt-dim)">X</span>' +
+      simChamp("simPDNPortX", "Abscisse du composant alimenté dont on mesure Z(ω), en mm, dans le repère de la carte. C'est de ce point que se mesure la distance à chaque condensateur. Un coin est le cas le plus défavorable : il est ventre pour tous les modes.") +
+      '<span class="simU">mm</span>' +
+      '<span style="font-size:10px;color:var(--txt-dim);margin-left:4px">Y</span>' +
+      simChamp("simPDNPortY", "Ordonnée du composant alimenté, en mm, dans le repère de la carte.") +
+      '<span class="simU">mm</span>' +
+      '<span style="font-size:10px;color:var(--txt-dim);margin-left:4px">Ouverture</span>' +
+      simChamp("simPDNPortTaille", "Écartement effectif de la paire de vias qui traverse les deux plans, antipads compris (en mm). Il fixe la convergence de l'inductance d'épandage : un port ponctuel aurait une auto-inductance infinie.") +
+      '<span class="simU">mm</span>' +
+    '</div>' +
     '<div class="pnl-bar simBarFixe">' +
       '<button class="tb mini on" id="simPDNGo" title="Calculer l\'impédance fréquentielle Z(ω) du PDN">▶ Calculer Z(ω)</button>' +
       '<button class="tb mini" id="simPDNCsv" title="Exporter les résultats en format CSV">.csv</button>' +
@@ -13284,6 +13648,10 @@ function simPDNLireChamps() {
     if (elArea) elArea.value = SIM_PDN.planSurfaceCm2.toFixed(1);
   }
 
+  SIM_PDN.portXmm = getNum("simPDNPortX", SIM_PDN.portXmm || 0);
+  SIM_PDN.portYmm = getNum("simPDNPortY", SIM_PDN.portYmm || 0);
+  SIM_PDN.portTailleMm = getNum("simPDNPortTaille", SIM_PDN.portTailleMm || 1.5);
+
   const chk = simEl("simPDNPlaneActif");
   if (chk) SIM_PDN.planActif = chk.checked;
   const chkCav = simEl("simPDNCaviteModesActif");
@@ -13324,6 +13692,9 @@ function simBrancherPDN() {
   setVal("simPDNPlaneDimY", SIM_PDN.planDimYmm);
   setVal("simPDNPlaneEr", SIM_PDN.planEr);
   setVal("simPDNPlaneTanD", SIM_PDN.planTanD);
+  setVal("simPDNPortX", SIM_PDN.portXmm);
+  setVal("simPDNPortY", SIM_PDN.portYmm);
+  setVal("simPDNPortTaille", SIM_PDN.portTailleMm);
 
   // Sélecteur de rail
   const selRail = simEl("simPDNRail");
@@ -13372,7 +13743,7 @@ function simBrancherPDN() {
     });
   }
 
-  for (const id of ["simPDNRvrm", "simPDNFvrm", "simPDNPlaneArea", "simPDNPlaneD", "simPDNPlaneDimX", "simPDNPlaneDimY", "simPDNPlaneEr", "simPDNPlaneTanD"]) {
+  for (const id of ["simPDNRvrm", "simPDNFvrm", "simPDNPlaneArea", "simPDNPlaneD", "simPDNPlaneDimX", "simPDNPlaneDimY", "simPDNPlaneEr", "simPDNPlaneTanD", "simPDNPortX", "simPDNPortY", "simPDNPortTaille"]) {
     pose(id, "oninput", function() {
       simPDNLireChamps();
     });
@@ -13435,6 +13806,8 @@ function simRendrePDN() {
     '<span>Fréquence pic : <b>' + simPDNFormatFreq(r.fZMax) + '</b></span>' +
     '<span>Condensateurs actifs : <b>' + r.capasCount + '</b></span>' +
     (r.cPlaneTotalPf ? '<span>Capacité plan : <b>' + r.cPlaneTotalPf.toFixed(0) + ' pF</b></span>' : '') +
+    (r.multiport ? '<span>Point observé : <b>(' + r.portXmm.toFixed(1) + ', ' + r.portYmm.toFixed(1) + ') mm</b></span>' : '') +
+    (r.lEpandPortNh != null ? '<span title="Inductance d\'épandage propre au point observé, somme des modes hors résonance">Épandage : <b>' + r.lEpandPortNh.toFixed(3) + ' nH</b></span>' : '') +
     (r.caviteModes && r.caviteModes.length ? '<span>Mode fond. : <b style="color:#c084fc">' + r.caviteModes[0].modeStr + ' (' + simPDNFormatFreq(r.caviteModes[0].f) + ')</b></span>' : '') +
   '</div>';
 
@@ -13768,6 +14141,7 @@ function simPDNCsvTexte() {
   if (r.caviteModes && r.caviteModes.length) {
     lines.push("");
     lines.push("cavite_dim_x_mm;" + n(SIM_PDN.planDimXmm) + ";cavite_dim_y_mm;" + n(SIM_PDN.planDimYmm) + ";er;" + n(SIM_PDN.planEr) + ";tand;" + n(SIM_PDN.planTanD) + ";d_um;" + n(SIM_PDN.planEpaisseurUm));
+    lines.push("port_x_mm;" + n(r.portXmm) + ";port_y_mm;" + n(r.portYmm) + ";port_ouverture_mm;" + n(r.portTailleMm) + ";epandage_port_nH;" + n(r.lEpandPortNh != null ? r.lEpandPortNh.toFixed(4) : null));
     lines.push("mode_cavite;frequence_MHz;facteur_q;bande_passante_MHz;z_peak_ohm;type_onde;ventres_tension");
     for (const cm of r.caviteModes) {
       lines.push([
@@ -13809,6 +14183,9 @@ function simPDNJsonTexte() {
       planSurfaceCm2: SIM_PDN.planSurfaceCm2,
       planDimXmm: SIM_PDN.planDimXmm,
       planDimYmm: SIM_PDN.planDimYmm,
+      portXmm: SIM_PDN.portXmm,
+      portYmm: SIM_PDN.portYmm,
+      portTailleMm: SIM_PDN.portTailleMm,
       planEpaisseurUm: SIM_PDN.planEpaisseurUm,
       planEr: SIM_PDN.planEr,
       planTanD: SIM_PDN.planTanD,

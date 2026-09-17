@@ -225,6 +225,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simCorpsCrosstalk","simCorpsRetour","simCorpsSante",
   "SIM_BUS","simCorpsBus","simBrancherBus","simRendreBus","simBusCalculer","SIM_BUS_PRESETS","SIM_BUS_PROTOCOLES",
   "SIM_PDN","simCorpsPDN","simBrancherPDN","simRendrePDN","simCalculerPDN","simCourbePDN","simPDNActualiserComposants","simPDNExportCsv","simPDNExportJson","simPDNCsvTexte","simPDNJsonTexte","simPDNFormatFreq","simPDNFormatZ","simPDNCalculerModesCavite","simPDNGenererHeatmapCavite",
+  /* Le modele multi-port de la cavite : couplage d un port a un mode,
+     inductance d epandage et resolution complexe. */
+  "simPDNCouplagePort","simPDNSinc","simPDNResoudreComplexe","simPDNInductancesEpandage",
   "simInit","simRafraichir","simAllerAnalyse","simBusRendreNetsBar",
   "simBusBasculerRole","simBusChangerNet","simBusChainerNet","simBusDechainerNet","simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNetAval","simBusChangerRSerieVal","simBusResoudreNetAvecPont","simBusLierComposants","simBusClassifierNets","simBusSupprimerSignal",
   "simThermiqueDC","simDCThermique","simDCThermiquePcb",
@@ -18273,6 +18276,362 @@ T("Simulation PI : cartographie spatiale 2D (heatmap SVG), modes stationnaires e
   if (!jsonDoc.config || jsonDoc.config.planDimXmm !== 100) throw new Error("planDimXmm manquant ou incorrect dans JSON config");
   if (!jsonDoc.result || !jsonDoc.result.caviteModes || !jsonDoc.result.caviteModes.length) {
     throw new Error("caviteModes manquant dans JSON result");
+  }
+});
+
+T("Simulation PI : la cavite s'ajoute en SERIE sur l'impedance du plan (pic modal, pas court-circuit)", () => {
+  /* NON-REGRESSION. Le developpement modal d'Okoshi / Novak donne l'impedance
+     au port comme Z_plane = 1/(jwC) + somme(Z_mn) : une somme d'IMPEDANCES.
+     Le solveur accumulait les termes modaux en ADMITTANCE, en parallele avec la
+     capacite inter-plans. Le comportement etait alors inverse : a la resonance,
+     Z_mn est grand donc Y_mn ~ 0 et le pic disparaissait ; hors resonance Z_mn
+     est petit donc Y_mn est enorme et le plan degenerait en court-circuit. Avec
+     ce plan de 100 x 80 mm, |Z_plane| valait 53 uOhm a 1 MHz au lieu de 5 kOhm,
+     et le verdict de conformite tombait en faux negatif.
+     Les trois griefs sont verifies separement ci-dessous. */
+  SIM_PDN.rail = "";
+  SIM_PDN.vdd = 3.3;
+  SIM_PDN.ripplePct = 5.0;
+  SIM_PDN.deltaIA = 1.0;
+  SIM_PDN.rVrmMOhm = 2.0;
+  SIM_PDN.fVrmKhz = 100.0;
+  SIM_PDN.planActif = true;
+  SIM_PDN.planDimXmm = 100.0;   // TM10 tombe a 723 MHz, dans la bande tracee
+  SIM_PDN.planDimYmm = 80.0;
+  SIM_PDN.planEpaisseurUm = 100.0;
+  SIM_PDN.planEr = 4.3;
+  SIM_PDN.planTanD = 0.02;
+  SIM_PDN.fMin = 1e4;
+  SIM_PDN.fMax = 1e9;
+  SIM_PDN.nbPoints = 200;
+
+  const capsRef = [{ id: 1, ref: "C1", val: "100nF", cap: 100e-9, esr: 0.0142,
+                     esl: 0.201e-9, lMount: 0.50e-9, pkg: "0402", x: 10.0, y: 10.0, actif: true }];
+  const lancer = (modes) => {
+    SIM_PDN.condensateurs = JSON.parse(JSON.stringify(capsRef));
+    SIM_PDN.caviteModesActif = modes;
+    simCalculerPDN();
+    return SIM_PDN.result;
+  };
+  const avec = lancer(true);
+  const sans = lancer(false);
+
+  const eps0 = 8.854187817e-12;
+  const cPlane = eps0 * 4.3 * (0.100 * 0.080) / 100e-6; // 3045.8 pF
+  if (Math.abs(avec.cPlaneTotalPf - cPlane * 1e12) / (cPlane * 1e12) > 1e-3) {
+    throw new Error("C_plane incorrect : attendu " + (cPlane * 1e12).toFixed(1) +
+                    " pF, obtenu " + avec.cPlaneTotalPf.toFixed(1) + " pF");
+  }
+
+  // 1. Plancher capacitif : loin sous le premier mode, le plan vaut 1/(wC).
+  const f0 = avec.freqs[0];
+  const zCapF0 = 1 / (2 * Math.PI * f0 * cPlane);
+  if (Math.abs(avec.zPlane[0] - zCapF0) / zCapF0 > 0.05) {
+    throw new Error("A " + (f0 / 1e3).toFixed(1) + " kHz le plan doit valoir 1/(wC) ~ " +
+                    zCapF0.toFixed(1) + " Ohm, obtenu " + avec.zPlane[0].toExponential(3) +
+                    " Ohm (termes modaux mis en parallele au lieu d'etre sommes en serie ?)");
+  }
+
+  // 2. Le maillage force un echantillon exactement sur chaque mode de la bande.
+  const tm10 = avec.caviteModes.find(m => m.modeStr === "TM10");
+  if (!tm10) throw new Error("Mode TM10 absent des modes calcules");
+  let kPic = -1;
+  for (let i = 0; i < avec.freqs.length; i++) {
+    if (Math.abs(avec.freqs[i] - tm10.f) / tm10.f < 1e-9) kPic = i;
+  }
+  if (kPic < 0) {
+    throw new Error("Aucun echantillon a f_TM10 = " + (tm10.f / 1e6).toFixed(1) +
+                    " MHz : un pic a Q ~ " + tm10.q.toFixed(0) + " est plus etroit que le pas de grille");
+  }
+
+  // 3. A la resonance, le plan pique au-dessus du plancher capacitif, pres de zPeak.
+  const zCapPic = 1 / (2 * Math.PI * tm10.f * cPlane);
+  if (!(avec.zPlane[kPic] > 5 * zCapPic)) {
+    throw new Error("A f_TM10 le plan doit piquer bien au-dessus du plancher capacitif (" +
+                    zCapPic.toFixed(3) + " Ohm), obtenu " + avec.zPlane[kPic].toFixed(3) + " Ohm");
+  }
+  if (Math.abs(avec.zPlane[kPic] - tm10.zPeak) / tm10.zPeak > 0.30) {
+    throw new Error("Pic modal a " + avec.zPlane[kPic].toFixed(3) + " Ohm, loin du zPeak annonce " +
+                    tm10.zPeak.toFixed(3) + " Ohm");
+  }
+
+  /* 4. Tout en bas de bande, activer les modes ne doit rien changer : le plan y
+     est une impédance énorme, il ne shunte rien et n'épand rien. La borne
+     s'arrête à 100 kHz à dessein — au-delà, l'anti-résonance entre l'inductance
+     du VRM et le 100 nF (vers 9 MHz ici) amplifie légitimement le moindre écart,
+     et une borne serrée y mesurerait la sensibilité du circuit, pas un bug.
+     C'est cette vérification qui rattrape la topologie modale inversée : elle
+     donnait un facteur 3800 ici, pas quelques pourcents. */
+  for (let i = 0; i < avec.freqs.length && avec.freqs[i] <= 1e5; i++) {
+    let j = -1;
+    for (let u = 0; u < sans.freqs.length; u++) {
+      if (Math.abs(sans.freqs[u] - avec.freqs[i]) / avec.freqs[i] < 1e-9) j = u;
+    }
+    if (j < 0) continue;
+    if (Math.abs(avec.zPdn[i] - sans.zPdn[j]) / sans.zPdn[j] > 1e-6) {
+      throw new Error("A " + (avec.freqs[i] / 1e3).toFixed(1) + " kHz, les modes font varier Z_pdn de " +
+                      (100 * (avec.zPdn[i] / sans.zPdn[j] - 1)).toExponential(2) +
+                      "% alors que le plan est hors d'etat de shunter quoi que ce soit");
+    }
+  }
+
+  // 5. Le verdict doit rester sensible : un seul 100nF sur ce plan ne tient pas 165 mOhm.
+  if (avec.conforme) {
+    throw new Error("Un unique condensateur de 100 nF ne peut pas tenir Z_target sur 10 kHz - 1 GHz : " +
+                    "zMax = " + (avec.zMax * 1e3).toFixed(1) + " mOhm vs cible " + (avec.zTarget * 1e3).toFixed(1) + " mOhm");
+  }
+  if (!avec.antiresonances.some(a => a.depassement)) {
+    throw new Error("Aucune anti-resonance signalee en depassement alors que zMax depasse Z_target");
+  }
+});
+
+T("Simulation PI : inductance d'épandage, invariants physiques de la somme de queue", () => {
+  /* L'auto-impédance d'un port PONCTUEL diverge : la somme modale de Z_ii croît
+     sans fin avec l'ordre de troncature. C'est l'ouverture finie du port qui la
+     fait converger. On éprouve ici les invariants que la formule
+     L_ij = μ₀d/(π²ab) · Σ c²_m c²_n κ_i κ_j / k²_mn doit respecter, quels que
+     soient l'ordre de sommation et la taille du port. */
+  const ports = [{ x: 0, y: 0 }, { x: 50, y: 40 }, { x: 100, y: 80 }, { x: 2, y: 2 }];
+  const nP = ports.length;
+  const L = simPDNInductancesEpandage(ports, [], 100, 80, 100, 1.5);
+  const Ld = simPDNInductancesEpandage(ports, [], 100, 80, 200, 1.5);
+  const g = (M, i, j) => M[i * nP + j];
+
+  for (let i = 0; i < nP; i++) {
+    if (!(g(L, i, i) > 0)) throw new Error("L_" + i + i + " doit être strictement positive");
+    for (let j = 0; j < nP; j++) {
+      if (Math.abs(g(L, i, j) - g(L, j, i)) > 1e-18) {
+        throw new Error("La matrice d'épandage doit être symétrique (cavité réciproque)");
+      }
+      if (Math.abs(g(L, i, j)) > g(L, i, i) + 1e-18) {
+        throw new Error("Le couplage mutuel L_" + i + j + " ne peut pas dépasser l'auto-inductance L_" + i + i);
+      }
+    }
+  }
+
+  // Une inductance ne dépend pas de ε_r et croît linéairement avec l'épaisseur.
+  for (let i = 0; i < nP; i++) {
+    if (Math.abs(g(Ld, i, i) / g(L, i, i) - 2) > 1e-9) {
+      throw new Error("L doit être linéaire en épaisseur de diélectrique, rapport obtenu " +
+                      (g(Ld, i, i) / g(L, i, i)).toFixed(6));
+    }
+  }
+  const Ler = simPDNInductancesEpandage(ports, [], 100, 80, 100, 1.5);
+  if (Math.abs(Ler[0] - L[0]) > 1e-21) throw new Error("La somme de queue doit être reproductible");
+
+  // Un coin confine le champ, le centre non : l'auto-inductance y est bien plus forte.
+  if (!(g(L, 0, 0) > 3 * g(L, 1, 1))) {
+    throw new Error("L'auto-inductance à un coin (" + (g(L, 0, 0) * 1e9).toFixed(3) +
+                    " nH) doit dominer celle du centre (" + (g(L, 1, 1) * 1e9).toFixed(3) + " nH)");
+  }
+  // Deux ports voisins sont fortement couplés, deux ports éloignés ne le sont pas.
+  if (!(Math.abs(g(L, 0, 3)) > 10 * Math.abs(g(L, 0, 1)))) {
+    throw new Error("Le couplage doit décroître avec la distance : L(0→3mm) = " +
+                    (g(L, 0, 3) * 1e9).toFixed(4) + " nH vs L(0→centre) = " + (g(L, 0, 1) * 1e9).toFixed(4) + " nH");
+  }
+});
+
+T("Simulation PI : résolution complexe à pivot partiel", () => {
+  // (1+j)x + 2y = 3 ; 4x + (1-2j)y = -1
+  const A = new Float64Array([1, 1, 2, 0, 4, 0, 1, -2]);
+  const b = new Float64Array([3, 0, -1, 0]);
+  const x = simPDNResoudreComplexe(A, b, 2);
+  if (!x) throw new Error("Le solveur a rendu null sur un système régulier");
+  const mul = (ar, ai, br, bi) => [ar * br - ai * bi, ar * bi + ai * br];
+  const l1 = mul(1, 1, x[0], x[1]), l1b = mul(2, 0, x[2], x[3]);
+  const l2 = mul(4, 0, x[0], x[1]), l2b = mul(1, -2, x[2], x[3]);
+  if (Math.abs(l1[0] + l1b[0] - 3) > 1e-12 || Math.abs(l1[1] + l1b[1]) > 1e-12) {
+    throw new Error("Première équation non satisfaite");
+  }
+  if (Math.abs(l2[0] + l2b[0] + 1) > 1e-12 || Math.abs(l2[1] + l2b[1]) > 1e-12) {
+    throw new Error("Seconde équation non satisfaite");
+  }
+  // Matrice singulière : doit rendre null, pas des NaN
+  const S = new Float64Array([1, 0, 2, 0, 2, 0, 4, 0]);
+  const c = new Float64Array([1, 0, 2, 0]);
+  if (simPDNResoudreComplexe(S, c, 2) !== null) {
+    throw new Error("Une matrice singulière doit rendre null");
+  }
+});
+
+T("Simulation PI : cavité multi-port, la position des condensateurs pèse sur Z(ω)", () => {
+  /* Une paire de plans n'est pas un nœud unique. Chaque condensateur est un port
+     de la cavité à sa position réelle, et ne parle au point observé qu'à travers
+     l'impédance de transfert — c'est elle qui porte l'épandage. Le modèle doit
+     néanmoins dégénérer EXACTEMENT en l'ancienne mise en parallèle partout où la
+     cavité est équipotentielle, faute de quoi la correction serait une régression
+     déguisée en amélioration. */
+  const reglages = () => {
+    SIM_PDN.rail = ""; SIM_PDN.vdd = 3.3; SIM_PDN.ripplePct = 5.0; SIM_PDN.deltaIA = 1.0;
+    SIM_PDN.rVrmMOhm = 2.0; SIM_PDN.fVrmKhz = 100.0;
+    SIM_PDN.planActif = true; SIM_PDN.caviteModesActif = true;
+    SIM_PDN.planDimXmm = 100.0; SIM_PDN.planDimYmm = 80.0;
+    SIM_PDN.planEpaisseurUm = 100.0; SIM_PDN.planEr = 4.3; SIM_PDN.planTanD = 0.02;
+    SIM_PDN.fMin = 1e4; SIM_PDN.fMax = 1e9; SIM_PDN.nbPoints = 200;
+    SIM_PDN.portXmm = 0; SIM_PDN.portYmm = 0; SIM_PDN.portTailleMm = 1.5;
+  };
+  const condo = (id, x, y) => ({ id: id, ref: "C" + id, val: "100nF", cap: 100e-9, esr: 0.0142,
+                                 esl: 0.201e-9, lMount: 0.50e-9, pkg: "0402", x: x, y: y, actif: true });
+  const lancer = (caps, opts) => {
+    reglages();
+    if (opts) for (const k in opts) SIM_PDN[k] = opts[k];
+    SIM_PDN.condensateurs = JSON.parse(JSON.stringify(caps));
+    simCalculerPDN();
+    return SIM_PDN.result;
+  };
+
+  // 1. Cavité équipotentielle (modes coupés) : la position ne doit RIEN changer.
+  const sansModesPres = lancer([condo(1, 0, 0)], { caviteModesActif: false });
+  const sansModesLoin = lancer([condo(1, 95, 75)], { caviteModesActif: false });
+  for (let i = 0; i < sansModesPres.freqs.length; i++) {
+    const d = Math.abs(sansModesPres.zPdn[i] - sansModesLoin.zPdn[i]) / sansModesLoin.zPdn[i];
+    if (d > 1e-9) {
+      throw new Error("Modes coupés, la cavité est un simple condensateur : la position ne peut pas " +
+                      "changer Z. Écart " + d.toExponential(2) + " à " + (sansModesPres.freqs[i] / 1e6).toFixed(2) + " MHz");
+    }
+  }
+
+  // 2. Sous le premier mode, le réseau reste équipotentiel : accord avec le modèle localisé.
+  const avecModes = lancer([condo(1, 95, 75)]);
+  for (let i = 0; i < avecModes.freqs.length && avecModes.freqs[i] <= 1e6; i++) {
+    const d = Math.abs(avecModes.zPdn[i] - sansModesLoin.zPdn[i]) / sansModesLoin.zPdn[i];
+    if (d > 1e-3) {
+      throw new Error("À " + (avecModes.freqs[i] / 1e3).toFixed(1) + " kHz la cavité est équipotentielle, " +
+                      "les modes ne peuvent pas déjà peser (écart " + (100 * d).toFixed(2) + " %)");
+    }
+  }
+
+  // 3. Un condensateur posé sur le point observé est meilleur qu'à l'autre bout de la carte.
+  const auPort = lancer([condo(1, 0, 0)]);
+  const auCentre = lancer([condo(1, 50, 40)]);
+  if (!(auCentre.zMax > 1.5 * auPort.zMax)) {
+    throw new Error("Un 100 nF posé au centre (ligne nodale des premiers modes) doit dégrader Z nettement " +
+                    "plus qu'au pied du composant : zMax " + (auCentre.zMax * 1e3).toFixed(0) +
+                    " mOhm contre " + (auPort.zMax * 1e3).toFixed(0) + " mOhm");
+  }
+  if (!(auPort.multiport) || auPort.portXmm !== 0 || auPort.reductionRatee !== 0) {
+    throw new Error("Le résultat doit porter le modèle multi-port et n'avoir raté aucune réduction");
+  }
+
+  // 4. Des condensateurs groupés près du composant valent mieux que les mêmes dispersés.
+  const groupes = [], disperses = [];
+  for (let i = 0; i < 8; i++) groupes.push(condo(i + 1, 3 + 2 * (i % 4), 3 + 2 * Math.floor(i / 4)));
+  for (let i = 0; i < 8; i++) disperses.push(condo(i + 1, 10 + 11 * (i % 4), 15 + 40 * Math.floor(i / 4)));
+  const rG = lancer(groupes), rD = lancer(disperses);
+  if (!(rD.zMax > rG.zMax)) {
+    throw new Error("Huit condensateurs dispersés ne peuvent pas battre les mêmes groupés au pied du " +
+                    "composant : " + (rD.zMax * 1e3).toFixed(0) + " mOhm contre " + (rG.zMax * 1e3).toFixed(0) + " mOhm");
+  }
+  if (rG.reductionRatee || rD.reductionRatee) {
+    throw new Error("La réduction du (1+n)-port a échoué numériquement sur un cas ordinaire");
+  }
+});
+
+T("Simulation PI : la réduction du (1+n)-port concorde avec une inversion directe", () => {
+  /* La production calcule Z_in par complément de Schur sur un système n×n :
+     Z_in = Z_00 − Z_0L·(Z_LL + diag(Z_cap))⁻¹·Z_L0. On refait ici le même résultat
+     par une tout autre route : monter la matrice complète (1+n)×(1+n), y ajouter
+     les terminaisons, résoudre M·I = e₀ et lire Z_in = 1/I₀. Deux tailles, deux
+     algèbres, un seul résultat possible. */
+  const aMm = 100, bMm = 80, dUm = 100, er = 4.3, tanD = 0.02, wPort = 1.5;
+  const eps0 = 8.854187817e-12;
+  const cPlane = eps0 * er * (aMm * 1e-3) * (bMm * 1e-3) / (dUm * 1e-6);
+  const caps = [
+    { id: 1, ref: "C1", val: "10µF", cap: 10e-6, esr: 0.008, esl: 0.9e-9, lMount: 1.0e-9, pkg: "0805", x: 5, y: 5, actif: true },
+    { id: 2, ref: "C2", val: "100nF", cap: 100e-9, esr: 0.0142, esl: 0.201e-9, lMount: 0.50e-9, pkg: "0402", x: 50, y: 40, actif: true },
+    { id: 3, ref: "C3", val: "10nF", cap: 10e-9, esr: 0.0493, esl: 0.192e-9, lMount: 0.50e-9, pkg: "0402", x: 88, y: 70, actif: true },
+    { id: 4, ref: "C4", val: "1nF", cap: 1e-9, esr: 0.245, esl: 0.145e-9, lMount: 0.35e-9, pkg: "0201", x: 20, y: 62, actif: true }
+  ];
+  SIM_PDN.rail = ""; SIM_PDN.vdd = 3.3; SIM_PDN.ripplePct = 5.0; SIM_PDN.deltaIA = 1.0;
+  SIM_PDN.rVrmMOhm = 2.0; SIM_PDN.fVrmKhz = 100.0;
+  SIM_PDN.planActif = true; SIM_PDN.caviteModesActif = true;
+  SIM_PDN.planDimXmm = aMm; SIM_PDN.planDimYmm = bMm; SIM_PDN.planEpaisseurUm = dUm;
+  SIM_PDN.planEr = er; SIM_PDN.planTanD = tanD;
+  SIM_PDN.fMin = 1e4; SIM_PDN.fMax = 1e9; SIM_PDN.nbPoints = 120;
+  SIM_PDN.portXmm = 12; SIM_PDN.portYmm = 27; SIM_PDN.portTailleMm = wPort;
+  SIM_PDN.condensateurs = JSON.parse(JSON.stringify(caps));
+  simCalculerPDN();
+  const r = SIM_PDN.result;
+  const modes = r.caviteModes;
+  const ports = [{ x: 12, y: 27 }].concat(caps.map(c => ({ x: c.x, y: c.y })));
+  const nP = ports.length;
+  const Lep = simPDNInductancesEpandage(ports, modes, aMm, bMm, dUm, wPort);
+  const kp = (cm, pt) => simPDNCouplagePort(cm, pt.x, pt.y, aMm, bMm, wPort);
+
+  const zinDirect = (f) => {
+    const om = 2 * Math.PI * f;
+    const yg = om * cPlane * tanD, yb = om * cPlane, yn = yg * yg + yb * yb;
+    const zcR = yg / yn, zcI = -yb / yn;
+    const M = [];
+    for (let i = 0; i < nP; i++) {
+      const ligne = [];
+      for (let j = 0; j < nP; j++) {
+        let re = zcR, im = zcI + om * Lep[i * nP + j];
+        for (const cm of modes) {
+          const wm = 2 * Math.PI * cm.f, K = cm.cm2cn2 / cPlane;
+          const dR = wm * wm - om * om, dI = (om * wm) / cm.q, dn = dR * dR + dI * dI;
+          const kk = kp(cm, ports[i]) * kp(cm, ports[j]);
+          re += (om * K * dI) / dn * kk;
+          im += (om * K * dR) / dn * kk;
+        }
+        if (i === j && i > 0) {
+          const c = caps[i - 1];
+          re += c.esr;
+          im += om * (c.esl + c.lMount) - 1 / (om * c.cap);
+        }
+        ligne.push([re, im]);
+      }
+      M.push(ligne);
+    }
+    const b = [];
+    for (let i = 0; i < nP; i++) b.push(i === 0 ? [1, 0] : [0, 0]);
+    for (let c = 0; c < nP; c++) {
+      let piv = c, best = -1;
+      for (let rr = c; rr < nP; rr++) {
+        const n2 = M[rr][c][0] * M[rr][c][0] + M[rr][c][1] * M[rr][c][1];
+        if (n2 > best) { best = n2; piv = rr; }
+      }
+      const tm = M[c]; M[c] = M[piv]; M[piv] = tm;
+      const tb = b[c]; b[c] = b[piv]; b[piv] = tb;
+      const pr = M[c][c][0], pi = M[c][c][1], pn = pr * pr + pi * pi;
+      for (let rr = 0; rr < nP; rr++) {
+        if (rr === c) continue;
+        const ar = M[rr][c][0], ai = M[rr][c][1];
+        const fr = (ar * pr + ai * pi) / pn, fi = (ai * pr - ar * pi) / pn;
+        for (let k = c; k < nP; k++) {
+          const cr = M[c][k][0], ci = M[c][k][1];
+          M[rr][k][0] -= fr * cr - fi * ci;
+          M[rr][k][1] -= fr * ci + fi * cr;
+        }
+        const br = b[c][0], bi = b[c][1];
+        b[rr][0] -= fr * br - fi * bi;
+        b[rr][1] -= fr * bi + fi * br;
+      }
+    }
+    const dr = M[0][0][0], di = M[0][0][1], dn = dr * dr + di * di;
+    const x0r = (b[0][0] * dr + b[0][1] * di) / dn, x0i = (b[0][1] * dr - b[0][0] * di) / dn;
+    const xn = x0r * x0r + x0i * x0i;
+    return [x0r / xn, -x0i / xn];
+  };
+
+  const rV = 2e-3, lV = rV / (2 * Math.PI * 1e5);
+  let pire = 0, pireF = 0;
+  for (let i = 0; i < r.freqs.length; i++) {
+    const f = r.freqs[i], om = 2 * Math.PI * f;
+    const zd = rV * rV + (om * lV) * (om * lV);
+    let g = rV / zd, bb = -(om * lV) / zd;
+    const z = zinDirect(f), zn = z[0] * z[0] + z[1] * z[1];
+    g += z[0] / zn; bb += -z[1] / zn;
+    const zRef = 1 / Math.sqrt(g * g + bb * bb);
+    const d = Math.abs(zRef - r.zPdn[i]) / zRef;
+    if (d > pire) { pire = d; pireF = f; }
+  }
+  if (!(pire < 1e-8)) {
+    throw new Error("Le complément de Schur s'écarte de l'inversion directe de " + pire.toExponential(2) +
+                    " à " + (pireF / 1e6).toFixed(2) + " MHz");
+  }
+  if (!r.zPdn.every(v => v > 0 && isFinite(v))) {
+    throw new Error("Un réseau passif ne peut pas produire d'impédance nulle, négative ou infinie");
   }
 });
 

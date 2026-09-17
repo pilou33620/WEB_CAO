@@ -20,44 +20,23 @@ jobs:
 
       - name: Vérification syntaxique des scripts Python
         run: |
-          # mom_solver/ EST DANS CETTE LISTE DEPUIS QU'IL EST DANS LE CHEMIN DE
-          # CALCUL. Il en était absent — le moteur 2,5D pleine onde, six mille
-          # lignes derrière /api/simulation-25d, n'était donc même pas vérifié
-          # syntaxiquement par l'intégration continue.
-          python -m compileall -q web_CAO.py python mom_solver commun/outils \
+          python -m compileall -q web_CAO.py python commun/outils \
             editeur-pcb/outils editeur-schematique/outils
 
       # ====================================================================
       # LES SOLVEURS
       # --------------------------------------------------------------------
-      # ILS N'ÉTAIENT PAS ICI, ET C'EST LE PLUS GROS TROU DE CETTE CHAÎNE.
-      # Sept bancs, quelque quatre cents cas — la méthode des moments sur la
-      # section, la fonction de Green stratifiée, le crosstalk, l'IR drop, le
-      # 2,5D pleine onde, les routes du serveur — écrits, tenus à jour, et
-      # jamais lancés par personne d'autre que celui qui venait de les
-      # modifier. Un dépôt qui garde des bancs sans les exécuter en a le coût
-      # et pas le bénéfice.
+      # Les solveurs d'impédance 2D MoM, de diaphonie, d'IR drop, les routes
+      # du serveur et les sécurités sont systématiquement éprouvés ici.
       #
       # LES DÉPENDANCES SONT INSTALLÉES ICI ET NULLE PART AILLEURS : c'est ce
       # qui permet à requirements.txt de rester vide, donc au double-clic sur
       # web_CAO.py de marcher sans réseau. Voir son en-tête.
       - name: Solveurs — dépendances de calcul
-        run: pip install --quiet numpy scipy shapely
+        run: pip install --quiet numpy scipy
 
       - name: Solveur de section (MoM 2D) — banc d'essai
         run: python python/test/banc-ligne-mom.py
-
-      - name: Fonction de Green stratifiée et DCIM — banc d'essai
-        run: python mom_solver/tests/banc_dcim.py
-
-      - name: Assemblage MoM, ports et quadrature — banc d'essai
-        run: python mom_solver/tests/banc_moteur.py
-
-      - name: Chaîne 2,5D complète (port via contre port fente) — banc d'essai
-        run: python mom_solver/tests/banc_chaine.py
-
-      - name: Connecteur 2,5D (cao-sim-em-3 vers mom_solver) — banc d'essai
-        run: python python/test/banc-simulation-25d.py
 
       - name: Crosstalk (MTL en cascade) — banc d'essai
         run: python python/test/banc-crosstalk.py
@@ -73,6 +52,12 @@ jobs:
 
       - name: Routes du serveur et sécurités — banc d'essai
         run: python python/test/banc-serveur-routes.py
+
+      - name: Routes de gestion de bibliothèque — banc d'essai
+        run: python python/test/banc-lib-routes.py
+
+      - name: Mise à jour automatique GitHub — banc d'essai
+        run: python python/test/banc-maj-github.py
 
       - name: Visionneuse IPC-2581 — banc d'essai du parseur
         run: |

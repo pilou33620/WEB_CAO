@@ -51,15 +51,6 @@ python web_CAO.py --local --dossier ~/Documents/WEB_CAO
 ```
 - Pyto ouvre l'interface dans son navigateur intégré ou dans Safari en mode *Split View*.
 
-### 4. Sur Android (avec Termux & Raccourci 1-clic)
-`web_CAO.py` fonctionne nativement sous Android avec [Termux](https://f-droid.org/packages/com.termux/) et [Termux:Widget](https://f-droid.org/packages/com.termux.widget/) :
-- Installation automatique en 1 ligne dans Termux :
-```bash
-pkg update -y && pkg install -y git && git clone https://github.com/pilou33620/WEB_CAO.git ~/WEB_CAO && bash ~/WEB_CAO/termux/installer.sh
-```
-- **Raccourci 1-clic** : Ajoutez le widget `WEB_CAO.sh` sur l'écran d'accueil de votre téléphone. Un tap vérifie les mises à jour GitHub, lance le serveur et ouvre votre navigateur Android.
-- Voir le guide complet : [Guide Termux Android](termux/README.md).
-
 ---
 
 ## 🛠️ Les 4 Outils de la suite
@@ -114,7 +105,7 @@ Le bouton **« Simulation EM… »** (disponible dans l'Éditeur PCB et dans la 
 
 ### 1. Organisation des analyses
 - **Onglet Impédance & Z différentielle (SI)** : Résolution par la **Méthode des Moments (MoM 2D)** sur la section droite réelle de chaque tronçon (`ligne_mom.py` v2.5.0 via `simulation_em.py` v4.1.0). Carte de chaleur peinte sur le cuivre (Bleu = conforme, Rouge = trop élevée, Vert = trop faible), calcul des pertes ohmiques/diélectriques et des modes pair/impair.
-- **Onglet Crosstalk spatialisé (SI)** : Moteur dédié (`crosstalk.py` v3.1.0). Réflectométrie temporelle synthétisée à partir de la géométrie du routage (cascade multi-ports $S$, IFFT). Elle indique **où** le couplage se produit le long de la piste (NEXT et FEXT), en pourcentage et **en millivolts réels** face au budget de bruit du récepteur, en regard du profil d'espacement et des défauts de plan (fentes, pas de couture).
+- **Onglet Crosstalk spatialisé (SI)** : Moteur dédié (`crosstalk.py` v3.2.0). Réflectométrie temporelle synthétisée à partir de la géométrie du routage (cascade multi-ports $S$, IFFT). Elle indique **où** le couplage se produit le long de la piste (NEXT et FEXT), en pourcentage et **en millivolts réels** face au budget de bruit du récepteur, en regard du profil d'espacement et des défauts de plan (fentes, pas de couture).
 - **Onglet Current Return Path & PDN (SI/PI)** : Analyse hybride du retour de courant et de l'intégrité de puissance (`ligne_mom.py` + `simulation_em.py`). Inductance de boucle de retour (formules partielles de Grover), impédance de traversée de plans et résonance de cavité PDN (Bogatin), et résonance quart d'onde des moignons de vias (stubs).
 - **Onglet Chute continue DC & Thermique (PI)** : Résolution résistive sans EM par maillage surfacique 2D et gradient conjugué Jacobi (`dc_solver.py` v2.1.0). Cartographie du potentiel et de la densité de courant, détail de résistance via par via, et double modèle thermique : **étalement physique volumique** (conduction stratifié + plans, validé IPC-2152) et **référence normative comparative IPC-2221** (conducteur isolé).
 

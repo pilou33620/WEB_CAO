@@ -312,6 +312,80 @@
 #   couture des gardes), _matrices_bloc (+ `gardes`, + bords rendus),
 #   reseau_synthetise (+ `gardes`, + infos gardes / bords), analyser
 #   (presélection des gardes, `blindage`, deux avertissements), _hypotheses.
+#
+# Version: 3.2.0
+# Date: 2026-09-17
+# Explication: UN NET EST UN CONDUCTEUR -- et il en faisait deux. Revue du
+#   fichier entier ; sept defauts, dont un seul rendait un resultat faux et
+#   credible, et c'est celui-la qui donne son titre a la version.
+#
+#   (1) LE MEME NET SUR DEUX COUCHES POSAIT DEUX CONDUCTEURS. La preselection
+#   range par (net, couche) -- il le faut, une voisine qui longe a plat puis
+#   repasse SOUS l'agresseur est deux situations de dessin --, mais tout ce qui
+#   suit indexe par NET : `par_net` dans `_matrices_bloc`, `_profils`,
+#   `profils_espacement`, `_fiche_candidat`, les lignes de la carte, les noms
+#   de ports. Le dictionnaire ecrasait donc le doublon, et les rangees de [C]
+#   et [L] du longement LATERAL partaient au conducteur VERTICAL : mesure sur
+#   un cas a deux candidats homonymes, la victime qui couple a 0,15 mm
+#   ressortait a -300 dB et « non confirmee », pendant que l'autre ligne --
+#   celle que l'avertissement annonce comme « non modelisee, elle ressortira au
+#   plancher » -- portait les -10,6 dB. `_fiche_candidat` rendant par-dessus le
+#   marche la PREMIERE fiche du nom, les deux lignes s'affichaient avec la meme
+#   distance et la meme couche, dont une au moins etait fausse ; et le doublon
+#   mangeait une des cinq places de `MAX_VICTIMES`. Un net est un NOEUD
+#   ELECTRIQUE : `_fusionner_nets` n'en pose plus qu'un jeu de ports, le
+#   tableau garde ses lignes par couche, et la fiche chiffree porte l'UNION des
+#   longements.
+#
+#   (2) UN PLATEAU COMPTAIT POUR PLUSIEURS PICS. `_pics` comparait au dernier
+#   pic RETENU ; les points ecartes ne s'y inscrivant pas, une crete plate
+#   rendait un point sur DEUX. `PICS_MAX` se remplissait de la meme crete.
+#
+#   (3) LA TOLERANCE DE RECIPROCITE NE SUIVAIT PAS LA CASCADE. L'ecart
+#   d'arrondi vaut 1,6.10^-14 sur quarante blocs et 2,0.10^-4 sur quatre
+#   cents : a un facteur cinq d'un seuil FIXE de 1e-3. Le controle aurait fini
+#   par denoncer l'arithmetique en croyant denoncer le reseau, et sur les
+#   parcours les plus longs. Il suit maintenant la racine du nombre de blocs,
+#   et la tolerance employee est RENDUE -- un seuil qu'on ne peut pas relire ne
+#   se verifie pas.
+#
+#   (4) L'ORDRE DU PARCOURS N'ETAIT PAS VERIFIE. `s` se cumule bout a bout dans
+#   l'ordre ou la page envoie les objets, et rien ne controlait que le bout
+#   d'un troncon TOUCHE le debut du suivant. Une liste mal ordonnee donnait un
+#   axe de position faux sans rien lever : la carte restait lisse et les pics
+#   tombaient a des millimetres qui existent. C'etait le dernier controle
+#   manquant du fichier. Un troncon RETOURNE est dit a part : les bouts se
+#   touchent, l'abscisse reste juste, c'est le signe du cote qui s'inverse.
+#
+#   (5) LA HAUTEUR AU PLAN NE REGARDAIT QUE LE PREMIER TRONCON. Un agresseur
+#   qui change de couche -- ce que `_tan_delta` prend deja en compte pour les
+#   pertes -- posait le seuil de distance, et surtout l'alerte « aucun plan de
+#   reference », sur une couche que la moitie du parcours ne voit jamais. Les
+#   deux usages ne veulent d'ailleurs pas la meme borne : le seuil de DISTANCE
+#   doit majorer, la LONGUEUR MINIMALE de longement doit ecarter le moins
+#   possible. Les couches sans plan sont desormais NOMMEES.
+#
+#   (6) L'ARRONDI DE BANDE ALLAIT TOUJOURS VERS LE HAUT, y compris sur une
+#   bande PLAFONNEE par la validite quasi-TEM : on franchissait de cent
+#   megahertz la seule limite que cette borne existe pour tenir. Et la branche
+#   plafonnee par le nombre de POINTS recalculait `f_max` apres l'arrondi, donc
+#   rendait la seule bande non ronde des trois, dans le champ qu'on relit.
+#
+#   (7) LE HAUT DE BANDE PERDAIT SA PHASE EN RECTANGULAIRE SANS PADDING.
+#   `irfft` jette la partie imaginaire du dernier point sans le dire ; la
+#   troncature est maintenant ECRITE, et le seul reglage qui la subisse le dit.
+#
+#   ET LA CASCADE VA SIX FOIS PLUS VITE, sans qu'un chiffre bouge : `chaine_mtl`
+#   appelait `np.block` UNE FOIS PAR FREQUENCE ET PAR BLOC -- cent soixante
+#   mille fois sur un parcours au plafond, et la moitie du temps de l'analyse.
+#   Les quatre quadrants se remplissent par diffusion et `np.matmul` enchaine
+#   toute la bande : 7,7 s -> 1,3 s au plafond, resultats identiques au bit.
+# Fonctions ajoutees : _fusionner_nets, _verifier_ordre, _arrondir_bande
+#   (+ SAUT_PARCOURS, PAS_BANDE). Fonctions modifiees : chaine_mtl
+#   (vectorisee), valider_matrice (+ `blocs`, + tolerance rendue), _pics,
+#   vers_temporel (Nyquist ecrit), _parcours (+ `notes`), bande_deduite
+#   (arrondi), candidats_geometriques (hauteur sur toutes les couches),
+#   _fiche_candidat, _lire_couples (+ `retenus`), analyser.
 # ==========================================
 """Crosstalk : ou le couplage se fabrique LE LONG des pistes, et non en moyenne.
 
@@ -482,7 +556,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-crosstalk-1"
 FORMAT_RESULTAT = "cao-crosstalk-resultat-1"
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 VERSION_MOTEURS = {
     "crosstalk": VERSION,
     "simulation_em": getattr(se, "VERSION", "4.1.0") if se is not None else "indisponible",
@@ -642,13 +716,23 @@ TOL_PASSIVITE = 1e-6
 TOL_RECIPROCITE = 1e-3
 
 
-def valider_matrice(freqs, s):
+def valider_matrice(freqs, s, blocs=1):
     """Passivite et reciprocite, frequence par frequence.
 
     Rend {passivite:{ok, sigma_max, f}, reciprocite:{ok, ecart, f}} -- avec
     LA FREQUENCE ou le pire se produit, parce que « le fichier n'est pas
     passif » sans dire ou n'aide personne a savoir si c'est le haut de bande
     (extrapolation) ou le bas (calibrage).
+
+    LA TOLERANCE DE RECIPROCITE SUIT LA LONGUEUR DE LA CASCADE, et il a fallu
+    la mesurer pour s'en apercevoir : chaque bloc ajoute un produit de
+    matrices, donc une erreur d'arrondi qui s'accumule en marche aleatoire.
+    Sur le meme reseau, l'ecart releve vaut 1,6.10^-14 sur quarante blocs et
+    2,0.10^-4 sur quatre cents -- a un facteur cinq d'un seuil FIXE de 1e-3.
+    Le controle aurait donc fini par denoncer l'ARITHMETIQUE en croyant
+    denoncer le reseau, et precisement sur les parcours les plus longs, ceux
+    ou l'on a le plus besoin d'y croire. La tolerance rendue est celle qui a
+    servi : un seuil qu'on ne peut pas relire ne se verifie pas.
     """
     sigmas = np.linalg.svd(s, compute_uv=False)
     pire = sigmas.max(axis=1)
@@ -656,12 +740,15 @@ def valider_matrice(freqs, s):
     ecart = np.abs(s - np.transpose(s, (0, 2, 1))).max(axis=(1, 2))
     echelle = max(float(np.abs(s).max()), 1e-12)
     i_r = int(np.argmax(ecart))
+    tol_r = TOL_RECIPROCITE * math.sqrt(max(1, int(blocs)))
     return {
         "passivite": {"ok": bool(pire[i_p] <= 1.0 + TOL_PASSIVITE),
                       "sigma_max": float(pire[i_p]),
+                      "tolerance": TOL_PASSIVITE,
                       "f": float(freqs[i_p])},
-        "reciprocite": {"ok": bool(ecart[i_r] / echelle <= TOL_RECIPROCITE),
+        "reciprocite": {"ok": bool(ecart[i_r] / echelle <= tol_r),
                         "ecart": float(ecart[i_r] / echelle),
+                        "tolerance": tol_r, "blocs": int(blocs),
                         "f": float(freqs[i_r])},
     }
 
@@ -796,6 +883,25 @@ POINTS_DEDUITS_MIN, POINTS_DEDUITS_MAX = 17, 401
 # section droite quasi-TEM cesse de decrire la ligne. Un dixieme est la regle
 # courante, la meme que pour une cage de vias.
 TEM_FRACTION = 10.0
+# Le grain d'une bande qu'on ECRIT dans un champ : « 44,6 GHz » se relit et se
+# corrige, « 44,6441337594 GHz » fait croire a une precision que rien ne porte.
+PAS_BANDE = 1e8                 # Hz
+
+
+def _arrondir_bande(f, vers_le_haut):
+    """La bande, au dixieme de gigahertz, DANS LE SENS QUI NE MENT PAS.
+
+    Vers le HAUT quand c'est la resolution qui borne : cela ne peut
+    qu'affiner la carte. Vers le BAS quand c'est le modele ou le nombre de
+    points : depasser la validite quasi-TEM, fut-ce de cent megahertz, est
+    exactement ce que cette borne-la existe pour interdire, et une version
+    precedente arrondissait vers le haut dans les deux cas.
+    """
+    if not (f > 0):
+        return 0.0
+    if vers_le_haut:
+        return math.ceil(f / PAS_BANDE) * PAS_BANDE
+    return max(PAS_BANDE, math.floor(f / PAS_BANDE) * PAS_BANDE)
 
 
 def bande_deduite(parcours, retenus, couches, reglages, cache):
@@ -849,11 +955,11 @@ def bande_deduite(parcours, retenus, couches, reglages, cache):
     else:
         f_max, borne = f_res, "résolution"
 
-    # UNE BANDE RONDE. Elle s'ecrit dans un champ qu'on relit et qu'on
-    # corrige : « 44,64 GHz » se lit, « 44,6441337594 GHz » fait croire a une
-    # precision que rien ne porte. On arrondit VERS LE HAUT -- au dizieme de
-    # gigahertz --, ce qui ne peut qu'ameliorer la resolution.
-    f_max = math.ceil(f_max / 1e8) * 1e8
+    # UNE BANDE RONDE, ET DANS LE SENS DE LA BORNE QUI A MORDU. Arrondir vers
+    # le haut une bande PLAFONNEE PAR LE MODELE la faisait sortir de la
+    # validite quasi-TEM qu'on venait de calculer -- de cent megahertz, mais
+    # dans la seule direction que cette borne interdit.
+    f_max = _arrondir_bande(f_max, borne != "modèle")
 
     # -- le pas, donc les points : la fenetre doit contenir l'aller-retour
     fenetre_s = MARGE_FENETRE * 2.0 * longueur * 1e-3 / vitesse
@@ -863,8 +969,12 @@ def bande_deduite(parcours, retenus, couches, reglages, cache):
         # ON GARDE LA FENETRE ET L'ON BAISSE LA BANDE, jamais l'inverse. Une
         # carte floue est honnete ; une carte repliee fabrique des pics qui
         # n'existent pas, et rien a l'ecran ne les distingue des vrais.
-        points, borne = POINTS_DEDUITS_MAX, "points"
-        f_max = pas * (POINTS_DEDUITS_MAX - 1)
+        # ELLE SE REARRONDIT, ET VERS LE BAS : cette branche recalculait
+        # `f_max` APRES l'arrondi et rendait donc la seule bande non ronde des
+        # trois, dans le champ meme qu'on relit.
+        borne = "points"
+        f_max = _arrondir_bande(pas * (POINTS_DEDUITS_MAX - 1), False)
+        points = min(POINTS_DEDUITS_MAX, int(math.ceil(f_max / pas)) + 1)
     points = max(POINTS_DEDUITS_MIN, points)
     pas = f_max / (points - 1)
 
@@ -978,6 +1088,13 @@ def vers_temporel(spectre, pas_f, nom_fenetre="kaiser", beta=8.6, zero_pad=1):
     # rectangulaire) ; le premier est impose ici, sans quoi `irfft` le
     # tronquerait en silence.
     plein[0] = plein[0].real
+    # LE HAUT DE BANDE AUSSI, ET IL NE L'ETAIT PAS. `irfft` jette la partie
+    # imaginaire du dernier point sans le dire ; l'ecrire ICI met la troncature
+    # dans le code plutot que dans une note de la documentation de numpy. Elle
+    # ne coute rien des que la fenetre s'annule en haut de bande ou qu'on
+    # padde -- c'est-a-dire partout sauf en rectangulaire sans padding, et
+    # `analyser` le dit alors au lieu de le laisser se produire.
+    plein[k_pad - 1] = plein[k_pad - 1].real
     n_temps = 2 * (k_pad - 1)
     # LE FACTEUR `pad` N'EST PAS UN REGLAGE : c'est ce qui fait que le
     # zero-padding INTERPOLE au lieu de diviser l'amplitude. `irfft` normalise
@@ -1081,25 +1198,38 @@ def chaine_mtl(l_mat, c_mat, longueur, omegas, tan_delta=0.0):
         facteur = np.sqrt(complex(1.0, -float(tan_delta)))
         racines = racines * facteur
         w_mat = w_mat.astype(complex) * facteur
-    q = np.block([[t_mat.astype(complex), t_mat.astype(complex)],
-                  [w_mat, -w_mat]]).astype(complex)
+    t_c, w_c = t_mat.astype(complex), w_mat.astype(complex)
+    q = np.empty((2 * n, 2 * n), dtype=complex)
+    q[:n, :n] = t_c
+    q[:n, n:] = t_c
+    q[n:, :n] = w_c
+    q[n:, n:] = -w_c
     try:
         q_inv = np.linalg.inv(q)
     except np.linalg.LinAlgError:
         raise ErreurCrosstalk(
             "Réseau non physique : matrice modale singulière.",
             "Vérifiez l'espacement entre conducteurs.")
-    t_c, w_c = t_mat.astype(complex), w_mat.astype(complex)
 
-    phi = np.empty((len(omegas), 2 * n, 2 * n), dtype=complex)
-    for k, w in enumerate(omegas):
-        gamma = 1j * w * racines
-        e = np.exp(-gamma * longueur)
-        ei = np.exp(gamma * longueur)
-        p = np.block([[t_c * e[None, :], t_c * ei[None, :]],
-                      [w_c * e[None, :], -w_c * ei[None, :]]])
-        phi[k] = p @ q_inv
-    return phi
+    # TOUTE LA BANDE D'UN SEUL PRODUIT. `e` et `ei` ne ponderent que les
+    # COLONNES de T et de W : les quatre quadrants de P se remplissent donc par
+    # diffusion, et `np.matmul` enchaine les K produits en une fois. Le calcul
+    # est le MEME a l'ordre des operations pres ; ce qui disparait est la
+    # boucle Python qui appelait `np.block` UNE FOIS PAR FREQUENCE ET PAR BLOC
+    # -- cent soixante mille fois sur un parcours au plafond, et la moitie du
+    # temps de l'analyse y passait. Une fonction qui coute cher se fait
+    # appeler moins souvent ; ici elle ne coutait cher que de la facon dont
+    # elle etait ecrite.
+    omegas = np.asarray(omegas, dtype=float).ravel()
+    gamma = 1j * omegas[:, None] * racines[None, :]
+    e = np.exp(-gamma * longueur)
+    ei = np.exp(gamma * longueur)
+    p = np.empty((omegas.size, 2 * n, 2 * n), dtype=complex)
+    p[:, :n, :n] = t_c[None, :, :] * e[:, None, :]
+    p[:, :n, n:] = t_c[None, :, :] * ei[:, None, :]
+    p[:, n:, :n] = w_c[None, :, :] * e[:, None, :]
+    p[:, n:, n:] = -w_c[None, :, :] * ei[:, None, :]
+    return p @ q_inv
 
 
 def s_depuis_chaine(phi, z0):
@@ -1163,7 +1293,68 @@ def s_depuis_chaine(phi, z0):
 # ==========================================================================
 
 
-def _parcours(objets):
+# Au-dela de ce saut entre le bout d'un troncon et le plus proche bout du
+# suivant, les deux ne se touchent pas : la liste n'est pas dans l'ordre du
+# parcours. Un vingtieme de millimetre est en deca de toute tolerance de
+# fabrication, et bien au-dela de l'arrondi d'un export.
+SAUT_PARCOURS = 0.05            # mm
+
+
+def _verifier_ordre(sortie, notes):
+    """L'abscisse curviligne SUPPOSE que les troncons se suivent. On verifie.
+
+    C'EST LE SEUL CONTROLE QUI MANQUAIT, et il porte sur ce dont tout le reste
+    depend : `s` se cumule bout a bout dans l'ordre ou la page envoie les
+    objets, et rien ne verifiait que le bout d'un troncon TOUCHE le debut du
+    suivant. Une liste mal ordonnee -- un tri par couche, un filtre applique
+    apres coup, deux nets concatenes -- donne alors un axe de position FAUX
+    sans que rien ne leve : la carte reste lisse, les pics tombent a des
+    millimetres qui existent, et aucun chiffre ne parait anormal. C'est
+    exactement la classe d'erreur que ce module existe pour empecher, et
+    c'etait la derniere a passer.
+
+    UN TRONCON RETOURNE EST DIT A PART, parce que ce n'est pas le meme defaut
+    ni le meme geste. Les deux bouts se touchent bien -- l'abscisse reste
+    juste --, mais la projection laterale se fait sur une corde parcourue a
+    l'envers : le SIGNE du cote s'inverse, et la voisine de gauche se pose a
+    droite dans la section. Le couplage garde son niveau, la coupe non.
+    """
+    sauts, retournes = [], []
+    for a, b in zip(sortie, sortie[1:]):
+        (xa, ya), (ua, va), la = a["axe"]
+        (xb, yb), (ub, vb), lb = b["axe"]
+        fin = (xa + ua * la, ya + va * la)
+        d_debut = math.hypot(fin[0] - xb, fin[1] - yb)
+        d_fin = math.hypot(fin[0] - (xb + ub * lb), fin[1] - (yb + vb * lb))
+        if min(d_debut, d_fin) > SAUT_PARCOURS:
+            sauts.append((a["s1"], min(d_debut, d_fin)))
+        elif d_fin < d_debut:
+            retournes.append(a["s1"])
+    if sauts:
+        notes.append(
+            "LE CUIVRE ENVOYÉ N'EST PAS CONTIGU : %d rupture(s) entre deux"
+            " tronçons consécutifs (%s). L'abscisse curviligne se cumule dans"
+            " l'ORDRE de la liste reçue, et c'est elle qui porte l'axe de la"
+            " carte : si les tronçons ne se suivent pas, chaque millimètre"
+            " annoncé après la première rupture désigne un autre endroit du"
+            " tracé. Rien d'autre ne le signale — la carte reste lisse et les"
+            " pics tombent à des abscisses qui existent. Vérifiez que la"
+            " sélection est une liaison d'un seul tenant, et qu'elle est"
+            " envoyée dans l'ordre du parcours."
+            % (len(sauts), " ; ".join("%.2f mm de saut à %.2f mm" % (d, s)
+                                      for s, d in sauts[:4])))
+    if retournes:
+        notes.append(
+            "%d tronçon(s) sont parcourus À L'ENVERS (à %s). Les deux bouts se"
+            " touchent, donc l'abscisse reste juste ; c'est le SIGNE du côté"
+            " qui s'inverse sur ces tronçons-là, et une voisine de gauche s'y"
+            " pose à droite dans la section droite. Le niveau de couplage n'en"
+            " dépend pas, la dissymétrie gauche/droite de la coupe, si."
+            % (len(retournes),
+               ", ".join("%.2f mm" % s for s in retournes[:4])))
+
+
+def _parcours(objets, notes=None):
     """Les troncons de l'agresseur, avec leur abscisse curviligne cumulee.
 
     L'ABSCISSE EST CELLE DU CUIVRE, et non celle de la corde. Les projections
@@ -1190,6 +1381,8 @@ def _parcours(objets):
                        "largeur": _nb(obj.get("width")),
                        "epaisseur": _nb(obj.get("copper_thickness"), 0.035)})
         s += cuivre
+    if notes is not None and len(sortie) > 1:
+        _verifier_ordre(sortie, notes)
     return sortie
 
 
@@ -1240,10 +1433,31 @@ def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
     """
     if not parcours:
         return [], {}
-    couche_ref = parcours[0]["couche"]
     largeur_ref = max(p["largeur"] for p in parcours)
-    hauteur = se._hauteur_de_couche(couches, couche_ref, largeur_ref,
-                                    parcours[0]["epaisseur"])
+    # LA HAUTEUR AU PLAN SE PREND SUR TOUTES LES COUCHES DU PARCOURS, et non
+    # sur la seule premiere. Un agresseur qui change de couche change de
+    # stratifie -- `_tan_delta` le fait deja pour les pertes --, et lire la
+    # hauteur du premier troncon posait le seuil de distance, et surtout
+    # l'alerte « aucun plan de reference », sur une couche que la moitie du
+    # parcours ne voit jamais.
+    #
+    # LES DEUX USAGES NE VEULENT PAS LA MEME BORNE, et c'est ce qui rend un
+    # `max` global faux. Le seuil de DISTANCE doit MAJORER -- plus la hauteur
+    # est grande, plus le champ porte loin, et c'est l'etape 0b qui tranche --,
+    # donc il prend la plus grande. La LONGUEUR MINIMALE de longement, elle,
+    # ECARTE : la prendre grande rejetterait des longements reels en
+    # « frolement », et elle prend donc la plus petite. Une couche SANS plan
+    # l'emporte sur tout : elle met les deux a zero -- le seuil s'ouvre au
+    # maximum du voisinage, le minimum de longement tombe a trois ecarts -- et
+    # elle se fait NOMMER, parce que c'est elle qu'il faut corriger.
+    hauteurs = {}
+    for p in parcours:
+        if p["couche"] not in hauteurs:
+            hauteurs[p["couche"]] = se._hauteur_de_couche(
+                couches, p["couche"], largeur_ref, p["epaisseur"])
+    sans_plan = sorted(c for c, h in hauteurs.items() if not (h > 0))
+    hauteur = 0.0 if sans_plan else max(hauteurs.values())
+    hauteur_mini = 0.0 if sans_plan else min(hauteurs.values())
     distance_max, source_d = _seuil_distance(reglages, largeur_ref, hauteur)
     saisi_l = _nb(reglages.get("longueur_min"), 0.0)
     adjacentes = bool(reglages.get("couches_adjacentes", True))
@@ -1402,7 +1616,8 @@ def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
                                 for i in c["intervalles"]) / poids
             c["couture"] = max(i["couture"] for i in c["intervalles"])
         mini = (saisi_l if saisi_l > 0
-                else se.LONGEMENT_TRANSVERSE_MIN * (c["distance"] + hauteur))
+                else se.LONGEMENT_TRANSVERSE_MIN * (c["distance"]
+                                                    + hauteur_mini))
         c["longueur_min"] = round(mini, 3)
         c["retenu"] = True
         c["raison"] = ""
@@ -1454,10 +1669,153 @@ def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
     candidats.sort(key=lambda c: (not c["retenu"], c["distance"]))
     seuils = {"distance_max": round(distance_max, 4), "source": source_d,
               "hauteur": round(hauteur, 4),
+              "hauteur_min": round(hauteur_mini, 4),
+              # LES COUCHES DU PARCOURS QUI N'ONT PAS DE PLAN, NOMMEES. C'est
+              # le renseignement qui manquait : « hauteur = 0 » ne dit pas
+              # laquelle des trois couches parcourues est en cause.
+              "couches_sans_plan": [se._nom_de_couche(couches, c)
+                                    or ("couche %d" % c) for c in sans_plan],
+              "couches_parcourues": len(hauteurs),
               "longueur_min_source": "saisi" if saisi_l > 0 else
-              "déduit (%g × (écart + hauteur))" % se.LONGEMENT_TRANSVERSE_MIN,
+              "déduit (%g × (écart + %.3f mm de hauteur au plan))"
+              % (se.LONGEMENT_TRANSVERSE_MIN, hauteur_mini),
               "couches_adjacentes": adjacentes}
     return candidats, seuils
+
+
+# ==========================================================================
+# ETAPE 0a, SUITE -- UN NET EST UN CONDUCTEUR, MEME QUAND IL LONGE SUR DEUX
+# COUCHES
+# --------------------------------------------------------------------------
+# LA PRESELECTION RANGE PAR (NET, COUCHE), LE RESEAU PAR NET. Chacun a raison
+# de son cote, et c'est leur rencontre qui produisait le pire resultat que ce
+# module puisse rendre.
+#
+# LE TABLEAU doit distinguer les couches : une voisine qui longe a plat sur
+# Top puis repasse SOUS l'agresseur sur In1 est DEUX situations de dessin,
+# mesurees a deux distances, et les fondre effacerait justement ce qu'on veut
+# lire. LE RESEAU, lui, n'a pas ce choix : un net est un NOEUD ELECTRIQUE. Lui
+# donner deux paires de ports revient a poser deux conducteurs distincts la ou
+# il n'y a qu'un fil -- ce qui est faux en soi --, et toute la chaine en aval
+# indexe par le NOM du net : `par_net` dans `_matrices_bloc`, `_profils`,
+# `profils_espacement`, `_fiche_candidat`, les lignes de la carte, les noms de
+# ports, les cases a cocher de la page.
+#
+# CE QUE CELA DONNAIT, MESURE SUR UN CAS A DEUX CANDIDATS HOMONYMES. Le
+# dictionnaire `par_net` ecrasait le doublon ; les rangees de [C] et [L] du
+# longement LATERAL etaient attribuees au conducteur VERTICAL ; la victime qui
+# couple reellement a 0,15 mm ressortait a -300 dB et « non confirmee », tandis
+# que l'autre ligne -- celle que l'avertissement annonce comme « non modelisee,
+# elle ressortira au plancher » -- portait les -10,6 dB. Deux chiffres
+# parfaitement credibles, sur le mauvais cuivre, dans les deux sens, et
+# `_fiche_candidat` rendant la PREMIERE fiche du nom, les deux lignes
+# s'affichaient avec la meme distance et la meme couche -- dont une au moins
+# etait fausse. Le doublon mangeait en plus une des cinq places de `MAX_VICTIMES`.
+#
+# ON FUSIONNE DONC PAR NET AVANT DE CONSTRUIRE LE RESEAU, et le tableau garde
+# ses lignes par couche. La fiche fusionnee porte l'UNION des intervalles --
+# c'est elle qui decoupe la cascade, donc le couplage se fabrique bien aux deux
+# endroits --, et les deux natures restent comptees a part : l'avertissement
+# « longe aussi tant de millimetres en superposition, non modelisee » tombe
+# desormais sur la ligne qui porte le chiffre, au lieu d'un doublon muet.
+# ==========================================================================
+
+
+def _fusionner_nets(candidats, notes, garde=False):
+    """Un candidat par NET, l'union de ce que chaque couche a mesure.
+
+    Rend la liste fusionnee, triee par distance. Chaque fiche porte
+    `_sources`, les candidats d'origine : le plafond `MAX_VICTIMES` doit
+    pouvoir les ecarter DANS LE TABLEAU, qui est la seule chose qu'on lit.
+    Cette clef ne sort jamais du module -- rien de ce qui est serialise ne la
+    traverse.
+    """
+    par_net = {}
+    for c in candidats:
+        par_net.setdefault(c["net"], []).append(c)
+    sortie, fusionnes = [], []
+    for net, groupe in par_net.items():
+        if len(groupe) == 1:
+            c = dict(groupe[0])
+            c["_sources"] = list(groupe)
+            c["couches"] = [c.get("nom_couche") or ("couche %d" % c["couche"])]
+            sortie.append(c)
+            continue
+        # LA COUCHE QUI COMPTE EST CELLE QUE LA SECTION RESOUT : celle du plus
+        # long longement LATERAL. Sans elle, le conducteur serait pose en ligne
+        # seule avec la largeur et l'epaisseur d'une portion que le solveur ne
+        # voit jamais. A defaut de lateral, la plus proche.
+        principal = max(groupe, key=lambda c: (_nb(c.get("longueur_laterale")),
+                                               -_nb(c.get("distance"))))
+        c = dict(principal)
+        c["_sources"] = list(groupe)
+        lat = sum(_nb(s.get("longueur_laterale")) for s in groupe)
+        vert = sum(_nb(s.get("longueur_verticale")) for s in groupe)
+        d_lat = [s["distance_laterale"] for s in groupe
+                 if s.get("distance_laterale") is not None]
+        d_vert = [s["distance_verticale"] for s in groupe
+                  if s.get("distance_verticale") is not None]
+        c["intervalles"] = [it for s in groupe
+                            for it in (s.get("intervalles") or ())]
+        c["longueur_laterale"] = round(lat, 3)
+        c["longueur_verticale"] = round(vert, 3)
+        c["distance_laterale"] = min(d_lat) if d_lat else None
+        c["distance_verticale"] = min(d_vert) if d_vert else None
+        c["type"] = "latéral" if lat > 0 else "vertical"
+        # LA LONGUEUR RENDUE EST CELLE DU LONGEMENT QUI COMPTE, comme pour un
+        # candidat simple : le lateral des qu'il existe, sans quoi
+        # `bande_deduite` prendrait pour « plus court longement » une portion
+        # que le reseau ne couple pas.
+        c["longueur"] = round(lat if lat > 0 else vert, 3)
+        c["distance"] = (c["distance_laterale"] if lat > 0
+                         else (c["distance_verticale"] or 0.0))
+        c["troncons"] = sum(int(s.get("troncons") or 0) for s in groupe)
+        c["blinde"] = bool(lat <= 0 and all(s.get("blinde") for s in groupe))
+        c["blinde_verticalement"] = bool(
+            vert > 0 and all(s.get("blinde_verticalement") for s in groupe
+                             if _nb(s.get("longueur_verticale")) > 0))
+        cotes = sorted(set(x for s in groupe for x in (s.get("cotes") or ())))
+        c["cotes"] = cotes
+        c["deux_cotes"] = len(cotes) > 1
+        c["cote"] = ("les deux" if c["deux_cotes"]
+                     else ("gauche" if (cotes and cotes[0] > 0) else "droite")
+                     if cotes else "")
+        if c["intervalles"]:
+            poids = sum(i["s1"] - i["s0"] for i in c["intervalles"]) or 1.0
+            c["gap_face"] = sum(i["gap_face"] * (i["s1"] - i["s0"])
+                                for i in c["intervalles"]) / poids
+            c["couture"] = max(i["couture"] for i in c["intervalles"])
+        c["longueur_min"] = min(_nb(s.get("longueur_min")) for s in groupe)
+        c["couches"] = [s.get("nom_couche") or ("couche %d" % s["couche"])
+                        for s in groupe]
+        c["retenu"] = True
+        c["raison"] = ""
+        sortie.append(c)
+        fusionnes.append("« %s » (%s)" % (net, ", ".join(c["couches"])))
+    sortie.sort(key=lambda c: _nb(c.get("distance")))
+    if fusionnes:
+        # UNE GARDE N'EST PAS UN CONDUCTEUR DU RESEAU -- elle n'a pas de port --,
+        # et lui appliquer la phrase des victimes ferait chercher une paire de
+        # ports qui n'existe pas. Le geste est le meme, la raison non.
+        notes.append(
+            ("Une garde longe sur plusieurs couches, et reste UN seul cuivre :"
+             " %s. Les lignes du tableau restent séparées par couche ; la"
+             " section droite, elle, ne la pose qu'une fois par côté — une"
+             " garde comptée deux fois blinderait sur le papier ce qu'un seul"
+             " cuivre tient."
+             if garde else
+             "Une victime longe sur plusieurs couches, et n'est qu'UN"
+             " conducteur : %s. Les lignes du tableau « ce qui longe » restent"
+             " SÉPARÉES par couche — ce sont deux situations de dessin,"
+             " mesurées à deux distances —, mais le réseau ne pose qu'un seul"
+             " jeu de ports par net : deux paires sur le même nœud électrique"
+             " poseraient deux conducteurs là où il n'y a qu'un fil, et le"
+             " couplage de l'un des deux longements se lirait sur l'autre. La"
+             " fiche chiffrée porte l'UNION des longements ; ce que la"
+             " superposition ajoute reste hors du calcul, et l'avertissement"
+             " le dit.")
+            % " ; ".join(fusionnes))
+    return sortie
 
 
 # ==========================================================================
@@ -2530,18 +2888,27 @@ def _pics(valeurs, fraction=PIC_FRACTION, maxi=PICS_MAX):
     if not (seuil > 0):
         return []
     trouves = []
+    fin_plateau = -2
     for i in range(v.size):
         if v[i] < seuil:
             continue
         gauche = v[i - 1] if i > 0 else -np.inf
         droite = v[i + 1] if i + 1 < v.size else -np.inf
-        # UN PLATEAU N'EST QU'UN PIC : le premier point d'une suite egale est
-        # retenu, les suivants non, faute de quoi une crete large se compterait
-        # dix fois et noierait les vraies.
-        if v[i] >= gauche and v[i] >= droite and not (
-                trouves and v[i] == v[trouves[-1]]
-                and i - trouves[-1] == 1):
-            trouves.append(i)
+        if not (v[i] >= gauche and v[i] >= droite):
+            continue
+        # UN PLATEAU N'EST QU'UN PIC, ET LE COMPTE SE FAIT SUR LE DERNIER POINT
+        # EXAMINE, PAS SUR LE DERNIER RETENU. La version precedente comparait a
+        # `trouves[-1]` : les points ecartes ne s'y inscrivant pas, la
+        # contiguite se perdait des le deuxieme et une crete plate ressortait
+        # un point sur DEUX -- un plateau de cinq cases donnait trois pics
+        # distincts. `PICS_MAX` se remplissait alors de la meme crete, et
+        # `desaccords` rendait trois fois le meme verdict a trois abscisses qui
+        # n'en font qu'une.
+        if trouves and i - fin_plateau == 1 and v[i] == v[fin_plateau]:
+            fin_plateau = i
+            continue
+        trouves.append(i)
+        fin_plateau = i
     trouves.sort(key=lambda i: -v[i])
     return sorted(trouves[:maxi])
 
@@ -3231,6 +3598,23 @@ def analyser(doc, journal=None):
     paires = doc.get("paires") or []
     avert, notes, graves = [], [], []
 
+    # LA SEULE COMBINAISON QUI PERD DE L'INFORMATION, ET ELLE SE DIT. La
+    # reconstruction hermitienne impose un haut de bande REEL ; `irfft` y jette
+    # la partie imaginaire sans un mot. La fenetre l'annule partout ailleurs,
+    # et le zero-padding met a zero le dernier point des qu'il vaut plus de un :
+    # il ne reste que la rectangulaire sans padding, ou le dernier point de la
+    # bande est amoute de sa phase. C'est petit, et c'etait muet.
+    if reglages["fenetre"] == "rect" and int(reglages["zero_pad"]) <= 1:
+        notes.append(
+            "Fenêtre RECTANGULAIRE sans zero-padding : la partie imaginaire du"
+            " DERNIER point de bande est perdue par la reconstruction"
+            " hermitienne, qui impose un haut de bande réel. L'effet est"
+            " petit — un point sur %d — mais il n'est pas nul, et il"
+            " s'ajoute au ringing de Gibbs que la rectangulaire produit déjà."
+            " Un zero-padding d'au moins 2, ou n'importe quelle autre fenêtre,"
+            " supprime la question."
+            % int(_nb((doc.get("analyse") or {}).get("points"), 201)))
+
     # L'AGRESSEUR DE REFERENCE EST CELUI QUI PORTE LE PLUS DE CUIVRE : c'est
     # son parcours qui donne l'axe de la carte, et le plus long est celui sur
     # lequel il y a le plus a lire. Les AUTRES nets selectionnes ne sont pas
@@ -3252,7 +3636,7 @@ def analyser(doc, journal=None):
                "Voisinage tronqué à %d tronçons : la présélection n'a regardé"
                " que les plus proches." % se.MAX_VOISINAGE)
 
-    parcours = _parcours(objets_ref)
+    parcours = _parcours(objets_ref, notes)
     if not parcours:
         raise ErreurCrosstalk(
             "Le cuivre sélectionné ne porte pas de coordonnées exploitables.",
@@ -3271,10 +3655,11 @@ def analyser(doc, journal=None):
     # comme une carte ordinaire, avec un seuil trois fois plus severe que
     # nécessaire et un couplage qui ressortait au plancher.
     if not (_nb(seuils.get("hauteur"), 0.0) > 0):
+        _sans = seuils.get("couches_sans_plan") or []
         _grave(
             avert, graves,
             "aucun plan de référence sous « %s » dans l'empilage" % principal,
-            "AUCUN PLAN DE RÉFÉRENCE SOUS « %s » : la couche « %s » n'a pas de"
+            "AUCUN PLAN DE RÉFÉRENCE SOUS « %s » : %s n'a pas de"
             " plan dans l'empilage déclaré. Tout ce qui suit le suppose — le"
             " seuil de distance se déduit de la hauteur au plan, et [C] et [L]"
             " sortent d'une section droite qui n'existe pas sans référence."
@@ -3284,20 +3669,32 @@ def analyser(doc, journal=None):
             " concernés : il ressortira au plancher, ce qui n'est PAS une"
             " mesure de découplage. Vérifiez l'empilage, ou le rôle des"
             " couches de plan."
-            % (principal, se._nom_de_couche(couches, parcours[0]["couche"])
-               or ("couche %d" % parcours[0]["couche"])))
+            % (principal,
+               ("la couche « %s »" % _sans[0]) if len(_sans) == 1 else
+               ("les couches %s" % ", ".join("« %s »" % n for n in _sans))
+               if _sans else
+               ("la couche « %s »"
+                % (se._nom_de_couche(couches, parcours[0]["couche"])
+                   or ("couche %d" % parcours[0]["couche"])))))
     # LES GARDES ROUTEES, A COTE DES VICTIMES ET JAMAIS A LEUR PLACE. Elles ne
     # sont pas « retenues » -- elles n'ont pas de port, pas de courbe, pas de
     # ligne dans le tableau --, et elles entrent pourtant dans chaque section
     # qu'elles longent. Sans elles, une piste de masse tracee a la main entre
     # l'agresseur et sa victime ne servait a rien dans le calcul.
-    gardes = [c for c in candidats if c.get("garde_active")]
-    retenus = [c for c in candidats if c["retenu"]]
+    # UN NET EST UN CONDUCTEUR : on fusionne AVANT le plafond, sans quoi un
+    # doublon de couches mangerait une des cinq places chiffrées.
+    gardes = _fusionner_nets([c for c in candidats if c.get("garde_active")],
+                             notes, garde=True)
+    retenus = _fusionner_nets([c for c in candidats if c["retenu"]], notes)
     if len(retenus) > MAX_VICTIMES:
         for c in retenus[MAX_VICTIMES:]:
-            c["retenu"] = False
-            c["raison"] = ("au-delà des %d pistes chiffrées : la présélection"
-                           " garde les plus proches" % MAX_VICTIMES)
+            # LE MOTIF SE POSE SUR LES FICHES D'ORIGINE : c'est le tableau que
+            # l'utilisateur lit, et la fiche fusionnée n'y figure pas.
+            for src in c["_sources"]:
+                src["retenu"] = False
+                src["raison"] = ("au-delà des %d pistes chiffrées : la"
+                                 " présélection garde les plus proches"
+                                 % MAX_VICTIMES)
         retenus = retenus[:MAX_VICTIMES]
     # L'AXE DE LA CARTE SE POSE ICI, ET NON PLUS TROIS FONCTIONS PLUS LOIN :
     # le profil d'espacement doit etre echantillonne SUR LE MEME AXE que la
@@ -3577,17 +3974,25 @@ def analyser(doc, journal=None):
          "Conducteurs, dans l'ordre : "
          + ", ".join(c["net"] for c in infos["conducteurs"])])
     bande = verifier_bande(freqs)
-    base["validation"] = valider_matrice(freqs, s_mat)
+    base["validation"] = valider_matrice(freqs, s_mat,
+                                         len(infos.get("blocs") or ()) or 1)
     base["validation"]["bande"] = bande
     _lire_couples(base, doc, freqs, s_mat, conducteurs, infos, parcours,
                   couches, reglages, cache, masse, seuils, avert, notes,
-                  axe, espacements)
+                  axe, espacements, retenus)
     _journaliser(journal, base)
     return base
 
 
 def _fiche_candidat(candidats, net):
-    """Ce que l'etape 0a a mesure pour ce net, ou des zeros assumes."""
+    """Ce que l'etape 0a a mesure pour ce net, ou des zeros assumes.
+
+    LES FICHES FUSIONNEES PASSENT EN PREMIER, et c'est l'appelant qui les met
+    la. Chercher dans la seule liste brute rendait la PREMIERE fiche du nom :
+    sur un net qui longe sur deux couches, les deux lignes du resultat
+    sortaient avec la distance, la couche et le cote d'une seule d'entre
+    elles -- une geometrie fausse a cote d'un chiffre juste.
+    """
     for c in candidats:
         if c["net"] == net:
             return c
@@ -3597,7 +4002,7 @@ def _fiche_candidat(candidats, net):
 
 def _lire_couples(base, doc, freqs, s_mat, conducteurs, infos, parcours,
                   couches, reglages, cache, masse, seuils, avert, notes,
-                  axe, espacements):
+                  axe, espacements, retenus):
     """Etape 0b, la transformee et la carte : la seconde moitie d'`analyser`.
 
     RIEN NE S'AGREGE PAR DEFAUT, et c'est la regle du domaine : deux victimes
@@ -3617,7 +4022,11 @@ def _lire_couples(base, doc, freqs, s_mat, conducteurs, infos, parcours,
     t_r, source_tr = se._temps_montee(doc.get("analyse") or {})
     f_genou = (0.35 / t_r) if (t_r > 0 and source_tr == "saisi") else 0.0
     base["f_genou"] = round(f_genou, 1)
-    candidats = base["etape0"]["candidats"]
+    # LES FICHES FUSIONNEES D'ABORD, LA LISTE BRUTE ENSUITE : le conducteur du
+    # reseau est le net, et sa geometrie est l'union de ce que les couches ont
+    # mesure. La liste brute reste derriere pour les nets qui n'ont pas ete
+    # retenus -- un agresseur secondaire, par exemple.
+    candidats = list(retenus) + list(base["etape0"]["candidats"])
 
     agresseurs = [c for c in conducteurs if c["role"] == "agresseur"]
     autres = [c for c in conducteurs if c["role"] != "agresseur"]

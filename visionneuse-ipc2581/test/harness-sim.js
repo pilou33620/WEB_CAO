@@ -147,7 +147,12 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   /* Classification des nets et préréglages de simulation */
   "mdlDetecterClasseNet","mdlDetecterTensionNet","mdlAutoDetecterClassesNets",
   "mdlAppliquerClassesNets","mdlNetClasse","mdlNetPoserClasse",
-  "simAppliquerPrereglagesClassesNets","SIM_PDN"];
+  "simAppliquerPrereglagesClassesNets","SIM_PDN",
+  /* Le solveur d'impédance du PDN : le moteur est dans
+     commun/simulation-em.js, partagé avec l'éditeur PCB, mais la
+     visionneuse le pilote par son propre adaptateur SIM_IPC. Le banc le
+     lance donc ici aussi, sur un plan de la visionneuse. */
+  "simCalculerPDN","simPDNCalculerModesCavite","simPDNInductancesEpandage"];
 
 /* Un seul `eval`, sur les trois fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -4313,6 +4318,118 @@ T("Préréglages automatiques des simulations SI / PI (simAppliquerPrereglagesCl
       if(Math.abs(SIM_PDN.vdd - 3.3) > 0.01) throw new Error("SIM_PDN.vdd attendu 3.3, obtenu: " + SIM_PDN.vdd);
       if(!(SIM_PDN.zTarget > 0)) throw new Error("SIM_PDN.zTarget aurait dû être calculé positivement");
     }
+  }
+});
+
+T("Impédance Z(ω) du PDN : le solveur partagé tourne aussi depuis la visionneuse", function(){
+  /* Le moteur vit dans commun/simulation-em.js et sert les DEUX outils. Ce banc
+     vérifie qu'il est joignable depuis la visionneuse et que la branche cavité y
+     donne la même physique que côté éditeur : sous le premier mode le plan est
+     une grosse impédance capacitive 1/(ωC), et à la résonance il pique.
+     La topologie modale a été fautive — admittances mises en parallèle au lieu
+     d'impédances sommées en série. |Z_plan| tombait alors à quelques µΩ sur toute
+     la bande, le plan passait pour un court-circuit parfait et le verdict de
+     conformité devenait un faux négatif. */
+  if(typeof simCalculerPDN !== "function") throw new Error("simCalculerPDN introuvable depuis la visionneuse");
+
+  SIM_PDN.rail = "+3V3";
+  SIM_PDN.vdd = 3.3;
+  SIM_PDN.ripplePct = 5.0;
+  SIM_PDN.deltaIA = 1.0;
+  SIM_PDN.rVrmMOhm = 2.0;
+  SIM_PDN.fVrmKhz = 100.0;
+  SIM_PDN.planActif = true;
+  SIM_PDN.caviteModesActif = true;
+  SIM_PDN.planDimXmm = 100.0;   // TM10 tombe à 723 MHz, dans la bande tracée
+  SIM_PDN.planDimYmm = 80.0;
+  SIM_PDN.planEpaisseurUm = 100.0;
+  SIM_PDN.planEr = 4.3;
+  SIM_PDN.planTanD = 0.02;
+  SIM_PDN.fMin = 1e4;
+  SIM_PDN.fMax = 1e9;
+  SIM_PDN.nbPoints = 200;
+  SIM_PDN.condensateurs = [
+    { id:1, ref:"C1", val:"100nF", cap:100e-9, esr:0.0142, esl:0.201e-9,
+      lMount:0.50e-9, pkg:"0402", x:10.0, y:10.0, actif:true }
+  ];
+
+  simCalculerPDN();
+  const r = SIM_PDN.result;
+  if(!r || !r.freqs || !r.freqs.length) throw new Error("Aucun résultat PDN produit côté visionneuse");
+
+  const eps0 = 8.854187817e-12;
+  const cPlane = eps0 * 4.3 * (0.100 * 0.080) / 100e-6; // 3045,8 pF
+  const zCapF0 = 1 / (2 * Math.PI * r.freqs[0] * cPlane);
+  if(Math.abs(r.zPlane[0] - zCapF0) / zCapF0 > 0.05){
+    throw new Error("À " + (r.freqs[0]/1e3).toFixed(1) + " kHz le plan doit valoir 1/(ωC) ~ " +
+                    zCapF0.toFixed(1) + " Ω, obtenu " + r.zPlane[0].toExponential(3) + " Ω");
+  }
+
+  const tm10 = r.caviteModes.find(function(m){ return m.modeStr === "TM10"; });
+  if(!tm10) throw new Error("Mode TM10 absent des modes de cavité");
+  let kPic = -1;
+  for(let i=0;i<r.freqs.length;i++){
+    if(Math.abs(r.freqs[i] - tm10.f) / tm10.f < 1e-9) kPic = i;
+  }
+  if(kPic < 0) throw new Error("Aucun échantillon à f_TM10 = " + (tm10.f/1e6).toFixed(1) + " MHz");
+  if(!(r.zPlane[kPic] > 5 / (2 * Math.PI * tm10.f * cPlane))){
+    throw new Error("Pas de pic modal à f_TM10 : |Z_plan| = " + r.zPlane[kPic].toFixed(3) + " Ω");
+  }
+});
+
+T("Cavité multi-port : depuis la visionneuse aussi, la position des condensateurs pèse sur Z(ω)", function(){
+  /* Même moteur, même physique : une paire de plans est un réseau à (1+n) ports,
+     pas un nœud unique. On vérifie ici les deux bornes du modèle depuis le
+     chemin IPC-2581 : dégénérescence exacte en mise en parallèle quand la cavité
+     est équipotentielle, et pénalité réelle quand le condensateur s'éloigne. */
+  if(typeof simCalculerPDN !== "function") throw new Error("simCalculerPDN introuvable depuis la visionneuse");
+
+  const reglages = function(){
+    SIM_PDN.rail = "+3V3"; SIM_PDN.vdd = 3.3; SIM_PDN.ripplePct = 5.0; SIM_PDN.deltaIA = 1.0;
+    SIM_PDN.rVrmMOhm = 2.0; SIM_PDN.fVrmKhz = 100.0;
+    SIM_PDN.planActif = true; SIM_PDN.caviteModesActif = true;
+    SIM_PDN.planDimXmm = 100.0; SIM_PDN.planDimYmm = 80.0;
+    SIM_PDN.planEpaisseurUm = 100.0; SIM_PDN.planEr = 4.3; SIM_PDN.planTanD = 0.02;
+    SIM_PDN.fMin = 1e4; SIM_PDN.fMax = 1e9; SIM_PDN.nbPoints = 200;
+    SIM_PDN.portXmm = 0; SIM_PDN.portYmm = 0; SIM_PDN.portTailleMm = 1.5;
+  };
+  const condo = function(x, y){
+    return { id:1, ref:"C1", val:"100nF", cap:100e-9, esr:0.0142, esl:0.201e-9,
+             lMount:0.50e-9, pkg:"0402", x:x, y:y, actif:true };
+  };
+  const lancer = function(x, y, modes){
+    reglages();
+    SIM_PDN.caviteModesActif = modes;
+    SIM_PDN.condensateurs = [condo(x, y)];
+    simCalculerPDN();
+    return SIM_PDN.result;
+  };
+
+  // Cavité équipotentielle : la position ne peut rien changer.
+  const platPres = lancer(0, 0, false);
+  const platLoin = lancer(95, 75, false);
+  for(let i=0;i<platPres.freqs.length;i++){
+    const d = Math.abs(platPres.zPdn[i] - platLoin.zPdn[i]) / platLoin.zPdn[i];
+    if(d > 1e-9){
+      throw new Error("Modes coupés, la cavité est un simple condensateur : écart " +
+                      d.toExponential(2) + " à " + (platPres.freqs[i]/1e6).toFixed(2) + " MHz");
+    }
+  }
+
+  // Cavité distribuée : le centre est sur la ligne nodale des premiers modes.
+  const auPort = lancer(0, 0, true);
+  const auCentre = lancer(50, 40, true);
+  if(!auPort.multiport) throw new Error("Le résultat doit signaler le modèle multi-port");
+  if(auPort.reductionRatee || auCentre.reductionRatee){
+    throw new Error("La réduction du (1+n)-port a échoué numériquement");
+  }
+  if(!(auPort.lEpandPortNh > 0)){
+    throw new Error("L'inductance d'épandage au point observé doit être strictement positive, obtenu " +
+                    auPort.lEpandPortNh);
+  }
+  if(!(auCentre.zMax > 1.5 * auPort.zMax)){
+    throw new Error("Un 100 nF au centre doit dégrader Z nettement plus qu'au pied du composant : " +
+                    (auCentre.zMax*1e3).toFixed(0) + " mΩ contre " + (auPort.zMax*1e3).toFixed(0) + " mΩ");
   }
 });
 

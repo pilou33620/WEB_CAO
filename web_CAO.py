@@ -2,20 +2,6 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
-# Version: 2.17.0
-# Date: 2026-09-17
-# Explication: support natif Android sous Termux.
-#   - Detection automatique de l'environnement Termux (sur_termux).
-#   - Ouverture directe du navigateur Android natif via termux-open-url /
-#     termux-open dans ouvrir_navigateur.
-#   - Dossier dedie termux/ avec script d'installation automatique et lanceur
-#     pour raccourci 1-clic sur l'ecran d'accueil du telephone (Termux:Widget).
-#   - Gestion du wake-lock et rappel a l'ecran au demarrage.
-# Fonctions ajoutees/modifiees :
-# - sur_termux (nouvelle)
-# - ouvrir_navigateur (support termux-open-url, termux-open, xdg-open)
-# - start_server (rappel wake-lock Termux)
-#
 # Version: 2.16.0
 # Date: 2026-09-17
 # Explication: le double-clic sous Windows ouvrait l'outil sur une adresse
@@ -1080,12 +1066,6 @@ def sur_ios():
         return False
 
 
-def sur_termux():
-    """Vrai sous Termux (Android)."""
-    return bool(os.environ.get("TERMUX_VERSION") or
-                (os.environ.get("PREFIX") and "com.termux" in os.environ["PREFIX"]) or
-                os.path.isdir("/data/data/com.termux"))
-
 
 def repertoire_courant():
     """Repertoire courant, ou chaine vide s'il est hors de portee.
@@ -1192,14 +1172,6 @@ def ouvrir_navigateur(url, delai=0.8):
     """Ouvre le navigateur par defaut, une fois le serveur en ecoute."""
     def _ouvrir():
         try:
-            # Sous Termux (Android), appel direct de termux-open-url ou xdg-open pour lancer le navigateur
-            for commande in ("termux-open-url", "termux-open", "xdg-open"):
-                if shutil.which(commande):
-                    try:
-                        subprocess.Popen([commande, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        return
-                    except Exception:
-                        pass
             webbrowser.open(url)
         except Exception as exc:                       # noqa: BLE001
             print("[!] Ouverture du navigateur impossible : %s" % exc)
@@ -2940,12 +2912,6 @@ def start_server(host, port, navigateur=True):
         # quitte Pyto, iOS suspend l'interpreteur -- d'ou le rappel.
         print("  iOS : gardez Pyto au premier plan, le systeme met le serveur")
         print("  en pause des que l'application passe en arriere-plan.")
-        print()
-
-    if sur_termux():
-        print("  Android (Termux) : serveur actif en arriere-plan.")
-        print("  Pour eviter que le systeme ne suspende le processus en veille :")
-        print("  termux-wake-lock")
         print()
 
     if navigateur:

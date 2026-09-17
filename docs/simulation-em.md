@@ -840,7 +840,10 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
     Pour les cartes multi-couches avec plans d'alimentation et de masse face-à-face,
     la capacité répartie et les pertes diélectriques $\tan\delta$ sont intégrées :
     $$C_{plane} = \frac{\varepsilon_0 \varepsilon_r A_{plane}}{d_{dielectrique}}$$
-    $$Y_{plane}(\omega) = \omega C_{plane}\tan\delta + j\omega C_{plane}$$
+    $$Z_{C,plane}(\omega) = \frac{1}{\omega C_{plane}\tan\delta + j\omega C_{plane}}$$
+    C'est le terme $(0,0)$ du développement modal ci-dessous, et le point de départ
+    de la somme : la branche cavité s'accumule en **impédance**, et n'est convertie
+    en admittance qu'une fois complète, pour la mise en parallèle finale.
 
 5. **Résonances spatiales 2D de cavité entre plans (Modes $TM_{mn0}$)** :
    Une paire de plans continus (largeur $a$, longueur $b$, espacement $d$) forme une cavité résonante 2D ouverte sur les bords.
@@ -853,20 +856,102 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
    - **Distribution spatiale des ondes stationnaires & Points chauds HF** :
      $$V_{mn}(x, y) = V_0 \cos\left(\frac{m\pi x}{a}\right) \cos\left(\frac{n\pi y}{b}\right)$$
      Les quatre coins $(0,0), (a,0), (0,b), (a,b)$ et les arêtes présentent systématiquement des ventres d'onde ($|V|=1$, points chauds), sources d'émission et de rayonnement CEM de bord de carte.
+   - **Impédance modale vue au port, sommée en série** :
+     Chaque mode se comporte comme un circuit RLC parallèle, et le développement
+     d'Okoshi / Novak fait s'**additionner ces impédances** à celle de la capacité
+     statique — ce n'est pas une mise en parallèle d'admittances :
+     $$Z_{plane}(\omega) = Z_{C,plane}(\omega) + \sum_{m,n \ne 0,0} \frac{j\omega\, c_m^2 c_n^2 / C_{plane}}{\omega_{mn}^2 - \omega^2 + j\omega\omega_{mn}/Q_{mn}}, \quad c_m = \begin{cases} 1 & m = 0 \\ \sqrt{2} & m \ge 1\end{cases}$$
+     À la résonance le terme vaut $|Z_{mn}| = Q_{mn} c_m^2 c_n^2 / (\omega_{mn} C_{plane})$ : c'est le pic
+     d'anti-résonance du plan. Loin sous le premier mode, tous les termes s'effacent
+     et il ne reste que $1/(\omega C_{plane})$ — le plan redevient un simple condensateur.
+     Sommer les **admittances** modales à la place inverse le comportement : le pic
+     disparaît (à la résonance $Z_{mn}$ est grand, donc $Y_{mn} \approx 0$) et le plan
+     dégénère en court-circuit partout ailleurs.
    - **Amortissement par les condensateurs du PCB** :
      L'efficacité locale d'amortissement de chaque condensateur dépend de sa position : $\kappa = |\cos(m\pi x_i/a)\cos(n\pi y_i/b)|$. Un condensateur placé sur une ligne nodale ($V=0$) n'amortit pas ce mode, tandis qu'un composant placé aux coins ou en bordure l'atténue fortement.
 
-6. **Impédance résultante & Anti-résonances** :
-   $$Y_{tot}(\omega) = G_{tot}(\omega) + j B_{tot}(\omega) = Y_{vrm} + \sum_k Y_k + Y_{plane} + \sum_{mn} Y_{mn}$$
-   $$|Z_{pdn}(\omega)| = \frac{1}{\sqrt{G_{tot}^2 + B_{tot}^2}}$$
-   Le solveur identifie les fréquences d'anti-résonance (pics d'impédance créés par
-   l'interaction inductive/capacitive entre condensateurs et modes de cavité) et
-   vérifie la stricte conformité face à $Z_{target}$.
+6. **La cavité est un réseau à $(1+n)$ ports, pas un nœud** :
+   Une paire de plans ne relie pas les composants entre eux, elle les sépare. Le
+   solveur en fait donc un réseau dont les ports sont le **point observé** — le
+   composant alimenté dont on mesure $Z(\omega)$, aux coordonnées $(x_0, y_0)$ — et
+   un port par condensateur, à sa position réelle sur la carte :
+   $$Z_{ij}(\omega) = \underbrace{\frac{1}{j\omega C_{plane}}}_{\text{mode }(0,0)} + j\omega L_{ij}^{\infty}
+     + \sum_{m,n} \frac{j\omega\, c_m^2 c_n^2 / C_{plane} \cdot \kappa_{i,mn}\kappa_{j,mn}}{\omega_{mn}^2 - \omega^2 + j\omega\omega_{mn}/Q_{mn}}$$
+   $$\kappa_{i,mn} = \cos\frac{m\pi x_i}{a}\cos\frac{n\pi y_i}{b}
+     \cdot \mathrm{sinc}\frac{m\pi w}{2a}\cdot\mathrm{sinc}\frac{n\pi w}{2b}$$
+   Chaque condensateur **termine** son port avec sa propre impédance $Z_k$, et le
+   réseau se réduit à un 1-port par complément de Schur :
+   $$Z_{in}(\omega) = Z_{00} - Z_{0L}\,(Z_{LL} + \mathrm{diag}(Z_k))^{-1}\,Z_{L0}$$
+   La cavité est réciproque, donc $Z_{L0} = Z_{0L}^{T}$ et un seul vecteur suffit.
+   Le VRM reste en parallèle sur le point observé — sa position n'est pas connue du
+   modèle, et là où il pèse, sous le mégahertz, la cavité est de toute façon
+   équipotentielle :
+   $$Y_{tot}(\omega) = G_{tot} + j B_{tot} = Y_{vrm} + \frac{1}{Z_{in}(\omega)},
+     \qquad |Z_{pdn}(\omega)| = \frac{1}{\sqrt{G_{tot}^2 + B_{tot}^2}}$$
+   **Ce modèle dégénère exactement en l'ancien** partout où la cavité est
+   équipotentielle : quand seul le terme $(0,0)$ compte, tous les $Z_{ij}$ valent
+   $1/(j\omega C_{plane})$, le réseau se réduit à un shunt unique et la réduction
+   redonne, au bit près, la mise en parallèle du VRM, des condensateurs et du plan.
+   C'est ce que le banc vérifie en deçà de 100 kHz. Un condensateur dont on ignore
+   les coordonnées est posé sur le port observé : on ne lui invente pas de distance,
+   il redevient simplement parallèle.
+
+   **Inductance d'épandage $L_{ij}^{\infty}$.** Sous sa résonance, un mode n'oscille
+   plus, il inducte : son terme tend vers $j\omega K_{mn}/\omega_{mn}^2$, une
+   inductance pure. Or ce sont les modes d'ordre élevé, très au-dessus de la bande
+   tracée, qui portent l'essentiel de l'inductance locale. Tout ce que la liste des
+   modes résonants ne couvre pas est donc sommé analytiquement, une fois pour
+   toutes, hors de la boucle en fréquence :
+   $$L_{ij}^{\infty} = \frac{\mu_0 d}{\pi^2 a b}\sum_{m,n}
+     \frac{c_m^2 c_n^2\,\kappa_{i,mn}\kappa_{j,mn}}{(m/a)^2 + (n/b)^2}$$
+   $\varepsilon_r$ disparaît, comme il se doit pour une inductance, et la somme est
+   symétrique et linéaire en $d$ — trois invariants que le banc éprouve.
+
+   **Pourquoi l'ouverture du port n'est pas un détail.** L'auto-impédance d'un port
+   *ponctuel* diverge : $\sum 1/((m/a)^2+(n/b)^2)$ croît sans limite, et $Z_{00}$ avec
+   elle. Mesuré sur un plan de 100 × 80 mm, $Z_{00} - Z_{0L}$ passait de 1,07 · 10⁻²
+   Ω à l'ordre 4 à 2,23 · 10⁻² Ω à l'ordre 45, sans se stabiliser : le chiffre
+   mesurait la troncature, pas la carte. C'est la taille finie du port — l'écartement
+   $w$ de la paire de vias qui traverse les plans — qui fait converger la somme, via
+   le facteur $\mathrm{sinc}$ porté par $\kappa$ : il éteint les modes plus courts que
+   le port lui-même. L'ordre de troncature est donc choisi d'après $w$, là où ce
+   facteur a fait son office ($\approx 1{,}6\,a/w$). Avec $w = 1{,}5$ mm par défaut,
+   l'auto-inductance d'un coin vaut 0,34 nH et celle du centre 0,07 nH : un coin est
+   confiné par deux bords, le centre ne l'est pas.
+
+   Le solveur identifie ensuite les fréquences d'anti-résonance (pics d'impédance
+   créés par l'interaction inductive/capacitive entre condensateurs, épandage et
+   modes de cavité) et vérifie la stricte conformité face à $Z_{target}$.
+
+   **Maillage en fréquence.** La grille est logarithmique (200 points par défaut sur
+   les cinq décades, soit 40 par décade), mais un pic modal à $Q \approx 30$ est plus
+   étroit que ce pas : il tomberait entre deux échantillons et $Z_{max}$ dépendrait de
+   la grille au lieu de la physique. Le solveur ajoute donc un point exactement sur
+   chaque $f_{mn}$ de la bande, plus ses deux flancs à $f_{mn}(1 \pm 1/2Q_{mn})$.
+   `freqs` n'est donc pas strictement uniforme en log, et sa longueur dépasse
+   `nbPoints` : tout consommateur doit lire `result.freqs`, jamais reconstruire la grille.
+
+   **Le point observé.** Il se règle dans le panneau (`portXmm`, `portYmm`) et
+   apparaît en réticule blanc sur la cartographie 2D. Par défaut il est placé à un
+   coin, qui est un ventre pour **tous** les modes : c'est le cas le plus
+   défavorable, celui qu'on veut pour une vérification. L'efficacité $\kappa$ d'un
+   condensateur ne se lit pas dans l'absolu mais par rapport à ce point : c'est la
+   différence $Z_{00} - Z_{0L}$ qui le pénalise, pas sa distance en millimètres.
+
+   **Ce que le modèle ne fait pas.** Le VRM n'a pas de position : il reste en
+   parallèle sur le point observé (voir ci-dessus). La liste des modes résonants est
+   bornée à $m, n \le 4$ : au-delà, un mode est traité comme inductance pure, ce qui
+   est exact tant que sa fréquence reste très au-dessus de la bande tracée mais
+   cesserait de l'être si l'on poussait `fMax` bien au-delà du gigahertz. Les pertes
+   ohmiques du cuivre dans le plan (résistance DC d'épandage) ne sont pas modélisées :
+   seules le sont les pertes diélectriques et l'effet de peau, à travers $Q_{mn}$.
+   Enfin le modèle suppose des plans **pleins et rectangulaires** ; une découpe, une
+   fente ou un plan en plusieurs versements ne sont pas vus.
 
 7. **Interactivité, Cartographie 2D & What-If** :
    - Tracé SVG logarithmique (décades 10 kHz à 1 GHz vs 1 mΩ à 100 Ω) avec ligne de jauge $Z_{target}$ et repères verticaux des modes 2D ($TM_{10}, TM_{01}, \dots$).
    - Curseur de mesure interactif au survol de la souris sur la courbe $Z(\omega)$.
-   - Cartographie spatiale 2D (Heatmap SVG) affichant l'onde stationnaire $|V_{mn}(x,y)|$, les lignes nodales ($V=0$), les points chauds aux coins et l'incrustation des condensateurs réels avec leur efficacité locale.
+   - Cartographie spatiale 2D (Heatmap SVG) affichant l'onde stationnaire $|V_{mn}(x,y)|$, les lignes nodales ($V=0$), les points chauds aux coins, le réticule du point observé et l'incrustation des condensateurs réels avec leur efficacité locale.
    - Sélecteur de mode interactif ($TM_{10}, TM_{01}, TM_{11}, TM_{20}, \dots$), sonde de tension spatiale au survol du plan, tableau de synthèse modale et export unifié CSV/JSON.
    - Tableau interactif des condensateurs avec cases à cocher pour activer/désactiver chaque composant et observer instantanément la déformation du profil $Z(\omega)$.
 

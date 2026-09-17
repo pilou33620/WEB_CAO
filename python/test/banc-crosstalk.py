@@ -2043,6 +2043,213 @@ T("un plan de bord non cousu cesse de blinder, et le dit",
   un_plan_de_bord_non_cousu_cesse_de_blinder)
 
 
+def un_net_sur_deux_couches_est_un_seul_conducteur():
+    """Un net est un NOEUD ELECTRIQUE : il n'a qu'une paire de ports.
+
+    LE CAS EST ORDINAIRE SUR UNE VRAIE CARTE : une voisine longe a plat, puis
+    repasse SOUS l'agresseur sur la couche d'en dessous. La preselection range
+    par (net, couche) -- il le faut, ce sont deux situations de dessin -- et le
+    reseau, lui, indexait par NET. Le dictionnaire `par_net` de `_matrices_bloc`
+    ecrasait donc le doublon, et les rangees de [C] et [L] du longement LATERAL
+    partaient au conducteur VERTICAL : la victime qui couple a 0,15 mm sortait
+    a -300 dB et « non confirmee », pendant que l'autre ligne -- celle que
+    l'avertissement annonce comme « non modelisee, elle ressortira au
+    plancher » -- portait les -10,6 dB.
+
+    RIEN NE LEVAIT, ET LES DEUX CHIFFRES ETAIENT CREDIBLES. `_fiche_candidat`
+    rendant par-dessus le marche la PREMIERE fiche du nom, les deux lignes
+    s'affichaient avec la meme distance et la meme couche, dont une au moins
+    etait fausse. C'est le resultat faux et silencieux que tout ce module est
+    ecrit pour ne pas produire, et il ne demandait qu'un net sur deux couches.
+    """
+    stack = {"layers": [
+        {"type": "copper", "name": "Top", "thickness": 0.035,
+         "role": "signal"},
+        {"type": "dielectric", "name": "haut", "thickness": 0.2,
+         "epsilon_r": 4.3, "tan_delta": 0.02},
+        {"type": "copper", "name": "In1", "thickness": 0.035,
+         "role": "signal"},
+        {"type": "dielectric", "name": "bas", "thickness": 0.2,
+         "epsilon_r": 4.3, "tan_delta": 0.02},
+        {"type": "copper", "name": "GND", "thickness": 0.035,
+         "role": "plane", "net": "GND"},
+    ]}
+    doc = doc_essai([pis(0, 0.4, 40, 0.4, "DATA"),
+                     pis(0, 0.0, 40, 0.0, "DATA", couche=2)])
+    doc["stackup"] = stack
+    res = ct.analyser(doc)
+
+    # LE TABLEAU GARDE SES DEUX LIGNES : fondre les couches effacerait
+    # justement ce qu'on veut lire.
+    fiches = [c for c in res["etape0"]["candidats"] if c["net"] == "DATA"]
+    assert len(fiches) == 2, fiches
+    assert sorted(c["type"] for c in fiches) == ["latéral", "vertical"], fiches
+
+    # LE RESEAU, LUI, N'EN POSE QU'UN JEU DE PORTS.
+    assert res["etape0"]["retenus"] == ["DATA"], res["etape0"]["retenus"]
+    noms = [p["nom"] for p in res["mapping"]["ports"]]
+    assert len(noms) == 4 and len(set(noms)) == 4, noms
+    couples = [c for c in res["couples"] if c["victime"] == "DATA"]
+    assert len(couples) == 1, couples
+
+    # ET LA FICHE EST CELLE DU LONGEMENT QUE LA SECTION RESOUT, pas celle du
+    # premier candidat venu : c'est la que l'erreur se lisait.
+    c = couples[0]
+    assert c["type"] == "latéral", c
+    assert abs(c["distance"] - 0.15) < 1e-6, c
+    assert c["nom_couche"] == "Top", c
+    assert c["confirmee"] and c["next_db"] > -60.0, c
+
+    # LA PORTION SUPERPOSEE EST DITE, et comme un PLANCHER -- pas comme un
+    # couplage nul, et pas sur une ligne fantome qui porterait le chiffre.
+    assert any("SUPERPOSÉE" in g["texte"] for g in res["graves"]), res["graves"]
+    assert not any("vertical non modélisé" in g["titre"]
+                   for g in res["graves"]), res["graves"]
+    assert any("qu'UN conducteur" in a for a in res["avertissements"]), \
+        "la fusion par net doit se dire"
+
+
+T("un net qui longe sur deux couches reste UN conducteur",
+  un_net_sur_deux_couches_est_un_seul_conducteur)
+
+
+def un_plateau_ne_compte_que_pour_un_pic():
+    """Une crete plate est UN pic, et elle en rendait un point sur deux.
+
+    La garde comparait a `trouves[-1]` -- le dernier pic RETENU -- alors que
+    les points ecartes ne s'y inscrivent pas : la contiguite se perdait des le
+    deuxieme, et un plateau de cinq cases ressortait en trois pics distincts.
+    `PICS_MAX` se remplissait de la meme crete, et `desaccords` rendait trois
+    fois le meme verdict a trois abscisses qui n'en font qu'une.
+    """
+    plat = [0.0, 0.1, 1.0, 1.0, 1.0, 1.0, 1.0, 0.1, 0.0]
+    assert ct._pics(plat) == [2], ct._pics(plat)
+    # DEUX PLATEAUX SEPARES RESTENT DEUX PICS : la regle ne doit pas fondre ce
+    # qu'un creux separe.
+    deux = [0.0, 1.0, 1.0, 1.0, 0.1, 1.0, 1.0, 0.0]
+    assert ct._pics(deux) == [1, 5], ct._pics(deux)
+    assert ct._pics([0.0, 0.2, 1.0, 0.3, 0.0]) == [2]
+
+
+T("un plateau ne compte que pour un pic", un_plateau_ne_compte_que_pour_un_pic)
+
+
+def un_cuivre_non_contigu_le_dit():
+    """L'abscisse curviligne SUPPOSE que les troncons se suivent.
+
+    `s` se cumule bout a bout dans l'ordre ou la page envoie les objets, et
+    rien ne verifiait que le bout d'un troncon touche le debut du suivant. Une
+    liste mal ordonnee donne alors un axe de position FAUX sans que rien ne
+    leve : la carte reste lisse, les pics tombent a des millimetres qui
+    existent, et aucun chiffre ne parait anormal.
+
+    LE FAUX POSITIF EST LE VRAI RISQUE ICI : une alerte qui se declenche sur
+    une liaison ordinaire ferait ignorer toutes les autres. Le premier cas est
+    donc un parcours normal, et il doit rester MUET.
+    """
+    def ordre(objets):
+        doc = doc_essai([pis(0, 0.4, 40, 0.4, "VIC")])
+        doc["geometry"]["objects"] = objets
+        return [a for a in ct.analyser(doc)["avertissements"]
+                if "CONTIGU" in a or "L'ENVERS" in a]
+
+    assert not ordre([pis(0, 0, 20, 0, "CLK"), pis(20, 0, 40, 0, "CLK")]), \
+        "un parcours contigu ne doit rien dire"
+    casse = ordre([pis(20, 0, 40, 0, "CLK"), pis(0, 0, 20, 0, "CLK")])
+    assert casse and "N'EST PAS CONTIGU" in casse[0], casse
+    # UN TRONCON RETOURNE EST UN AUTRE DEFAUT : les bouts se touchent, donc
+    # l'abscisse reste juste ; c'est le SIGNE du cote qui s'inverse.
+    envers = ordre([pis(0, 0, 20, 0, "CLK"), pis(40, 0, 20, 0, "CLK")])
+    assert envers and "L'ENVERS" in envers[0], envers
+
+
+T("un cuivre envoyé dans le désordre le dit", un_cuivre_non_contigu_le_dit)
+
+
+def la_bande_plafonnee_par_le_modele_y_reste():
+    """Arrondir une bande PLAFONNEE la faisait sortir de sa propre borne.
+
+    L'arrondi au dixieme de gigahertz allait VERS LE HAUT dans tous les cas --
+    « ce qui ne peut qu'ameliorer la resolution ». C'est vrai quand c'est la
+    resolution qui borne ; quand c'est la validite quasi-TEM, cela franchit de
+    cent megahertz la seule limite que cette borne existe pour tenir. Et la
+    branche plafonnee par le NOMBRE DE POINTS recalculait `f_max` APRES
+    l'arrondi : elle rendait donc la seule bande non ronde des trois, dans le
+    champ meme qu'on relit et qu'on corrige.
+    """
+    assert abs(ct._arrondir_bande(44.6441e9, True) - 44.7e9) < 1.0
+    assert abs(ct._arrondir_bande(44.6441e9, False) - 44.6e9) < 1.0
+
+    def couches_de(hauteur):
+        return [{"type": "copper", "name": "Top", "thickness": 0.035,
+                 "role": "signal"},
+                {"type": "dielectric", "name": "d", "thickness": hauteur,
+                 "epsilon_r": 4.3, "tan_delta": 0.02},
+                {"type": "copper", "name": "GND", "thickness": 0.035,
+                 "role": "plane", "net": "GND"}]
+
+    def bande(hauteur, longueur):
+        parcours = ct._parcours([pis(0, 0, longueur, 0, "CLK")])
+        return ct.bande_deduite(parcours, [{"longueur": 10.0}],
+                                couches_de(hauteur), dict(ct.DEFAUTS), {})
+
+    def ronde(f):
+        """Au dixième de gigahertz près : c'est un champ qu'on relit."""
+        return abs(f / 1e8 - round(f / 1e8)) < 1e-6
+
+    # UN STRATIFIE EPAIS : c'est le modele qui borne, et la bande doit RESTER
+    # dessous.
+    b = bande(1.5, 40.0)
+    assert b["borne"] == "modèle", b["borne"]
+    assert b["f_max"] <= b["f_tem"], (b["f_max"], b["f_tem"])
+    assert ronde(b["f_max"]), b["f_max"]
+    # UN PARCOURS TRES LONG : c'est le nombre de points qui borne, et la
+    # fenetre temporelle doit continuer de couvrir l'aller-retour.
+    b = bande(0.2, 1500.0)
+    assert b["borne"] == "points", b["borne"]
+    assert b["points"] <= ct.POINTS_DEDUITS_MAX, b["points"]
+    assert ronde(b["f_max"]), b["f_max"]
+    assert 1.0 / b["pas"] >= 2.0 * 1500.0 * 1e-3 / b["vitesse"], b
+
+
+T("une bande plafonnée reste ronde, et dans sa borne",
+  la_bande_plafonnee_par_le_modele_y_reste)
+
+
+def la_tolerance_de_reciprocite_suit_la_cascade():
+    """Un seuil FIXE finissait par dénoncer l'arithmétique, pas le réseau.
+
+    Chaque bloc ajoute un produit de matrices, donc une erreur d'arrondi qui
+    s'accumule en marche aleatoire : sur le meme reseau, l'ecart releve vaut
+    1,6.10^-14 sur quarante blocs et 2,0.10^-4 sur quatre cents -- a un
+    facteur cinq d'un seuil fixe de 1e-3. Le controle aurait donc fini par se
+    declencher sur les parcours les plus longs, ceux ou l'on a le plus besoin
+    d'y croire.
+
+    ET UN VRAI DEFAUT RESTE DENONCE : une tolerance qui s'ouvre sans borne ne
+    controle plus rien, ce qui serait pire que le seuil qu'on remplace.
+    """
+    freqs = np.array([0.0, 1e9])
+    s = np.zeros((2, 2, 2), dtype=complex)
+    s[:, 0, 1] = s[:, 1, 0] = 0.5
+    un = ct.valider_matrice(freqs, s, 1)
+    quatre_cents = ct.valider_matrice(freqs, s, 400)
+    assert un["reciprocite"]["ok"] and quatre_cents["reciprocite"]["ok"]
+    rapport = (quatre_cents["reciprocite"]["tolerance"]
+               / un["reciprocite"]["tolerance"])
+    assert abs(rapport - 20.0) < 1e-6, rapport      # racine de 400
+    # LE SEUIL RENDU EST CELUI QUI A SERVI : un seuil qu'on ne peut pas relire
+    # ne se verifie pas.
+    assert quatre_cents["reciprocite"]["blocs"] == 400, quatre_cents
+    s[:, 0, 1] = 0.9
+    casse = ct.valider_matrice(freqs, s, 400)
+    assert not casse["reciprocite"]["ok"], casse
+
+
+T("la tolérance de réciprocité suit la longueur de la cascade",
+  la_tolerance_de_reciprocite_suit_la_cascade)
+
+
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko
                         else "%d en echec" % ko))
