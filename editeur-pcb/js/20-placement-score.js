@@ -247,7 +247,7 @@ var PLACEMENT_SCORE = (function() {
         <div style="padding:12px;color:var(--txt-dim);font-size:12px;line-height:1.5;">
           <div style="color:var(--yellow);font-weight:600;margin-bottom:6px;">⚠️ Serveur d'analyse non disponible</div>
           <div>${esc(erreur)}</div>
-          <div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">Lancez <code>python serveur.py</code> en console pour activer le calcul en temps réel.</div>
+          <div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">Lancez <code>python web_CAO.py</code> en console pour activer le calcul en temps réel.</div>
           <button class="tb" id="bPlacementRefresh" style="margin-top:10px;width:100%;justify-content:center;">🔄 Réessayer</button>
         </div>
       `;

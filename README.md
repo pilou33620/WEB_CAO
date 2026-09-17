@@ -34,21 +34,31 @@ Double-cliquez sur `index.html` (ou directement sur `editeur-pcb/editeur-pcb.htm
 Le serveur Python standard fournit les services complémentaires (recherche de composants en ligne, parseur IPC-2581 et solveurs de simulation électromagnétique) :
 
 ```bash
-python serveur.py
+python web_CAO.py
 ```
 
 > [!TIP]
-> **Sous Windows** : Un double-clic sur `serveur.py` ouvre la console et lance automatiquement votre navigateur à la bonne adresse.  
-> **Sur réseau local / tablette** : Le serveur affiche l'adresse IP à ouvrir sur un autre appareil connecté au même réseau WiFi.
+> **Sous Windows** : un double-clic sur `web_CAO.py` ouvre la console et lance automatiquement votre navigateur à la bonne adresse. Le double-clic démarre **en mode local**, dossiers de projet compris : c'est le seul mode où l'outil est entier, et personne n'est là pour taper `--local` quand la fenêtre s'ouvre toute seule.
+> **Sur réseau local / tablette** : lancez le script **depuis un terminal** (`python web_CAO.py`) — l'écoute s'ouvre alors à tout le réseau et le serveur affiche l'adresse IP à ouvrir sur l'iPad. Les dossiers de projet restent refusés dans ce mode : un accès disque sans mot de passe ne s'ouvre pas à un réseau.
+> **Si le port est refusé** : sur certains postes d'entreprise, le port 8000 est réservé par le système (`WinError 10013`). Le serveur prend alors le premier port libre de 8001 à 8020 et l'annonce. L'adresse reste la même d'un lancement à l'autre — le navigateur rangeant réglages, profils et projets récents par origine (donc par port), un port tiré au hasard rouvrait l'outil sur un espace de travail vide.
 
 ### 3. Sur iPad (avec Pyto)
-`serveur.py` s'exécute nativement sous iOS avec l'application [Pyto](https://pyto.app/) (bibliothèque standard Python uniquement) :
+`web_CAO.py` s'exécute nativement sous iOS avec l'application [Pyto](https://pyto.app/) (bibliothèque standard Python uniquement) :
 - Ouvrez le dossier du dépôt dans Pyto (*Ouvrir dossier* pour autoriser l'accès au conteneur).
 - Lancez :
 ```bash
-python serveur.py --local --dossier ~/Documents/WEB_CAO
+python web_CAO.py --local --dossier ~/Documents/WEB_CAO
 ```
 - Pyto ouvre l'interface dans son navigateur intégré ou dans Safari en mode *Split View*.
+
+### 4. Sur Android (avec Termux & Raccourci 1-clic)
+`web_CAO.py` fonctionne nativement sous Android avec [Termux](https://f-droid.org/packages/com.termux/) et [Termux:Widget](https://f-droid.org/packages/com.termux.widget/) :
+- Installation automatique en 1 ligne dans Termux :
+```bash
+pkg update -y && pkg install -y git && git clone https://github.com/pilou33620/WEB_CAO.git ~/WEB_CAO && bash ~/WEB_CAO/termux/installer.sh
+```
+- **Raccourci 1-clic** : Ajoutez le widget `WEB_CAO.sh` sur l'écran d'accueil de votre téléphone. Un tap vérifie les mises à jour GitHub, lance le serveur et ouvre votre navigateur Android.
+- Voir le guide complet : [Guide Termux Android](termux/README.md).
 
 ---
 
@@ -60,8 +70,8 @@ Chaque outil dispose de son propre `README.md` détaillant ses modules internes 
 | :--- | :--- | :---: | :--- |
 | **Éditeur Schématique** | • Multi-feuilles et étiquettes globales<br>• Extraction de netlist automatique<br>• Boîtiers et nomenclature BOM (`.csv`)<br>• Recherche de références (`LIB_composants.csv`) | *Aucune* (navigateur seul) | [Guide Schématique](editeur-schematique/README.md) |
 | **Éditeur PCB** | • Routage interactif avec poussée de cuivre (*Push & Shove*)<br>• Paires différentielles avec impédance ciblée<br>• Contrôle DRC temps réel avec figures cotées<br>• Exports Gerber RS-274X et Excellon par portée | *Aucune* (navigateur seul) | [Guide PCB](editeur-pcb/README.md) |
-| **Recherche de Composants** | • Stocks et prix réels JLCPCB via [pcbparts.dev](https://pcbparts.dev/)<br>• Équivalences, brochages et cartes de référence<br>• Empreintes et symboles KiCad téléchargeables | `serveur.py` (passerelle MCP) | [Guide Composants](recherche-composants/README.md) |
-| **Visionneuse IPC-2581** | • Import XML, ZIP ou CVG de fabrication<br>• Affichage couche par couche, netlist et composants<br>• Retournement de carte (`B`) et inspection électrique<br>• Export/réouverture en JSON autonome sans serveur | `serveur.py` (parseur Python) | [Guide IPC-2581](visionneuse-ipc2581/README.md) |
+| **Recherche de Composants** | • Stocks et prix réels JLCPCB via [pcbparts.dev](https://pcbparts.dev/)<br>• Équivalences, brochages et cartes de référence<br>• Empreintes et symboles KiCad téléchargeables | `web_CAO.py` (passerelle MCP) | [Guide Composants](recherche-composants/README.md) |
+| **Visionneuse IPC-2581** | • Import XML, ZIP ou CVG de fabrication<br>• Affichage couche par couche, netlist et composants<br>• Retournement de carte (`B`) et inspection électrique<br>• Export/réouverture en JSON autonome sans serveur | `web_CAO.py` (parseur Python) | [Guide IPC-2581](visionneuse-ipc2581/README.md) |
 
 ### Aperçu visuel
 
@@ -119,7 +129,7 @@ Le bouton **« Simulation EM… »** (disponible dans l'Éditeur PCB et dans la 
 ```
 WEB_CAO/
 ├── index.html                     Page d'accueil : sélection de l'outil et profil
-├── serveur.py                     Serveur local HTTP & passerelle API (bibliothèque standard)
+├── web_CAO.py                     Serveur local HTTP & passerelle API (bibliothèque standard)
 │
 ├── editeur-schematique/           Saisie schématique, multi-feuilles, extraction netlist
 ├── editeur-pcb/                   Routage PCB, moteur PNS, empilage, DRC, export Gerber
@@ -160,7 +170,7 @@ WEB_CAO/
 Le projet est conçu selon une règle stricte : **zéro dépendance externe obligatoire**.
 
 - **Navigateur** : JavaScript standard (ES6), aucun transpilateur, aucun bundler obligatoire, aucun paquet npm requis pour l'exécution.
-- **Serveur Python (`serveur.py`)** : Fonctionne avec la bibliothèque standard Python (testé sur Python 3.10 à 3.12).
+- **Serveur Python (`web_CAO.py`)** : Fonctionne avec la bibliothèque standard Python (testé sur Python 3.10 à 3.12).
 
 ### Dépendances facultatives (Solveurs avancés)
 Seuls les calculs de simulation électromagnétique et de chute continue utilisent des bibliothèques scientifiques :

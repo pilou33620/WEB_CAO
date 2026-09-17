@@ -13,7 +13,7 @@ touche le fichier.
 Comme la recherche de composants, **cette page a besoin d'un serveur**, et pour
 une raison précise : le parseur IPC-2581 est en Python (`../python/ipc2581_parser.py`),
 un navigateur ne peut pas l'exécuter. La page envoie le fichier à
-`../serveur.py`, qui renvoie le modèle traduit en JSON — et à partir de là, tout
+`../web_CAO.py`, qui renvoie le modèle traduit en JSON — et à partir de là, tout
 se passe dans le navigateur.
 
 Ce modèle JSON s'exporte (« Exporter .json ») et se rouvre ici **sans serveur**,
@@ -73,7 +73,7 @@ et ceux du dossier partagé, identiques aux autres outils :
 ## Démarrage
 
 ```bash
-python serveur.py
+python web_CAO.py
 ```
 
 puis, depuis la page d'accueil, « Visionneuse IPC-2581 ». Le fichier se choisit
@@ -228,7 +228,7 @@ une carte routée.
 
 ```bash
 pip install numpy scipy
-python serveur.py
+python web_CAO.py
 ```
 
 **L'empilage envoyé est celui du calcul**, `LT` — le même que celui de la fiche
@@ -649,7 +649,7 @@ du projet s'il y en a un (« carte PIR-IPC.json »), sous celui du fichier lu
 sinon.
 
 Un modèle traduit pèse lourd — 8 Mo pour une 4 couches de taille moyenne. La
-voie serveur plafonne à 16 Mo (`MAX_PROJET`, `serveur.py`) : au-delà,
+voie serveur plafonne à 16 Mo (`MAX_PROJET`, `web_CAO.py`) : au-delà,
 l'écriture est refusée et le téléchargement prend le relais, en le disant.
 
 ## Banc d'essai

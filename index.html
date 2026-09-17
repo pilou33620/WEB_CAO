@@ -647,7 +647,7 @@
         Une fois un outil ouvert, les boutons de son entête mènent aux deux autres sans perdre le travail en cours, tant que l'onglet reste ouvert.
       </div>
       <div>
-        La recherche de composants et la visionneuse IPC-2581 ont besoin du serveur du dépôt : <code>python serveur.py</code><br>
+        La recherche de composants et la visionneuse IPC-2581 ont besoin du serveur du dépôt : <code>python web_CAO.py</code><br>
         Le parseur IPC-2581 est en Python — d'où le serveur ; une fois la carte traduite, son <code>.json</code> se rouvre en double-clic.
       </div>
     </footer>
@@ -694,7 +694,7 @@ function uRendreInfo(){
     txt += "en attente du serveur ; pour l'instant dans ce navigateur seulement.";
   else
     txt += "gardés dans ce navigateur : ouverte en double-clic, une page ne peut " +
-           "rien écrire sur le disque. Lancez <code>python serveur.py</code> " +
+           "rien écrire sur le disque. Lancez <code>python web_CAO.py</code> " +
            "pour que le fichier suive.";
   document.getElementById("uInfo").innerHTML = txt;
 }
@@ -1228,7 +1228,7 @@ function libRendreEtat(cfg){
   if(!elCur) return;
 
   if(!cfg){
-    elCur.innerHTML = "<i>Serveur non connecté. Lancez <code>python serveur.py</code> pour gérer la bibliothèque centrale.</i>";
+    elCur.innerHTML = "<i>Serveur non connecté. Lancez <code>python web_CAO.py</code> pour gérer la bibliothèque centrale.</i>";
     if(elBadge) elBadge.innerHTML = '<span class="badge-lib" style="background:#3a2020;color:#f87171;border:1px solid #7f1d1d;">Déconnecté</span>';
     return;
   }

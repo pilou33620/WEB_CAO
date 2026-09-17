@@ -183,7 +183,7 @@ function modeleTexte(){
    disque n'est possible.
 
    Un modèle traduit pèse lourd — 8 Mo pour une 4 couches de taille moyenne —
-   et la voie serveur plafonne à 16 Mo (MAX_PROJET, serveur.py). Au-delà,
+   et la voie serveur plafonne à 16 Mo (MAX_PROJET, web_CAO.py). Au-delà,
    l'écriture est refusée et le téléchargement prend le relais, en le disant. */
 function exportJson(){
   if(!V.modele)return;

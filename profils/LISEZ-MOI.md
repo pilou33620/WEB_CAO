@@ -5,7 +5,7 @@ façon dont cette personne se sert de la suite — panneaux, réglages
 d'affichage, derniers documents — et rien du contenu des cartes ni des
 schémas, qui vivent dans leurs propres fichiers.
 
-Le fichier est écrit par `serveur.py` (routes `/api/profils` et `/api/profil`)
+Le fichier est écrit par `web_CAO.py` (routes `/api/profils` et `/api/profil`)
 quand les pages sont ouvertes depuis le serveur. En double-clic (`file://`),
 le navigateur ne peut rien écrire sur le disque : les préférences sont alors
 gardées dans son stockage local, et le fichier se met à jour au prochain

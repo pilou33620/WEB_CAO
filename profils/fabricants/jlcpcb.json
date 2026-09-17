@@ -1,0 +1,289 @@
+{
+  "id": "jlcpcb",
+  "name": "JLCPCB",
+  "version": "2026.1",
+  "description": "Capabilités complètes JLCPCB (FR-4, Aluminium, Cuivre, Rogers/PTFE, 1-32 couches)",
+  "vendorUrl": "https://jlcpcb.com/capabilities/pcb-capabilities",
+  "general": {
+    "layerCount": { "min": 1, "max": 32, "description": "1 à 32 couches cuivre" },
+    "controlledImpedance": {
+      "supported": true,
+      "layers": [4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32],
+      "tolerancePercent": 10,
+      "userGuideUrl": "https://jlcpcb.com/help/article/User-Guide-to-the-JLCPCB-Impedance-Calculator",
+      "calculatorUrl": "https://jlcpcb.com/pcb-impedance-calculator"
+    },
+    "materials": [
+      {
+        "type": "FR-4",
+        "description": "Grade A laminates from Nan Ya, KB, Shengyi, etc.",
+        "er": 4.5,
+        "prepregs": { "7628": 4.4, "3313": 4.1, "2116": 4.16 }
+      },
+      {
+        "type": "Aluminum-Core",
+        "layers": 1,
+        "minDrill": 0.65,
+        "minDim": 5,
+        "link": "https://jlcpcb.com/news/new-arrival-aluminum-pcb-boards"
+      },
+      {
+        "type": "Copper-Core",
+        "layers": 1,
+        "minDrill": 1.0,
+        "minDim": 5,
+        "heatsinkContactMin": "1x1 mm",
+        "link": "https://jlcpcb.com/news/direct-heatsink-copper-core-pcbs-available"
+      },
+      {
+        "type": "RF PCB",
+        "cores": "Rogers and PTFE",
+        "layers": 2,
+        "copper": "1 oz",
+        "link": "https://jlcpcb.com/news/rogers-ptfe-high-frequency-pcb-available"
+      }
+    ],
+    "surfaceFinishes": [
+      { "name": "HASL avec plomb", "note": "Standard économique (non dispo sur alu, >6 couches, épaisseur <=0.4mm)" },
+      { "name": "HASL sans plomb (Lead-Free)", "note": "Conforme RoHS" },
+      { "name": "ENIG", "note": "Recommandé pour BGA, pas fins et demi-trous" },
+      { "name": "OSP", "note": "Préservation organique de soudabilité (non supporté sur FR4 1 couche, FPC, alu)" }
+    ],
+    "solderMask": {
+      "type": "LPI (Liquid Photo Imageable)",
+      "colors": ["Green", "Purple", "Red", "Yellow", "Blue", "White", "Black"],
+      "er": 3.8,
+      "thicknessUm": 10,
+      "expansionRatio": "1:1",
+      "clearanceToTraceMin": 0.09,
+      "bridgeMin": {
+        "1oz_colors": 0.10,
+        "1oz_black_white": 0.13,
+        "2oz_all": 0.20
+      },
+      "pluggedVias": {
+        "type": "Filled with soldermask",
+        "maxViaDia": 0.50,
+        "clearanceToMaskOpenings": 0.35,
+        "note": "Filled vias must not have soldermask openings on either side"
+      },
+      "viaInPad": {
+        "type": "Epoxy or Copper paste Filled & Capped",
+        "defaultOnLayersGte": 6,
+        "compatibleViaDiaMin": 0.15,
+        "compatibleViaDiaMax": 0.55,
+        "note": "Vias are filled and plated over (copper paste for high thermal conductivity)"
+      }
+    }
+  },
+  "dimensions": {
+    "max": {
+      "fr4_1layer": { "w": 606, "h": 510 },
+      "fr4_2layer": { "w": 670, "h": 600, "oversizeW": 1020, "oversizeH": 600 },
+      "fr4_4layer": { "w": 663, "h": 593, "oversizeW": 1016, "oversizeH": 596 },
+      "fr4_multilayer": { "w": 656, "h": 586 },
+      "rogers_ptfe": { "w": 590, "h": 438 },
+      "aluminum": { "w": 602, "h": 506 },
+      "copper": { "w": 480, "h": 286 },
+      "thinFr4Lt08": { "w": 599, "h": 497 }
+    },
+    "min": {
+      "fr4_rogers_ptfe": { "w": 3, "h": 3 },
+      "castellated_plated_edges": { "w": 10, "h": 10 },
+      "aluminum_copper": { "w": 5, "h": 5 },
+      "roundBoardSingle": { "w": 20, "h": 20 },
+      "note": "Limits apply to PCBs with thickness >= 0.6 mm. Manual review for thinner PCBs."
+    },
+    "tolerance": {
+      "cncRegular": 0.2,
+      "cncPrecision": 0.1,
+      "vScoring": 0.4
+    },
+    "thickness": {
+      "fr4Available": [0.4, 0.6, 0.8, 1.0, 1.2, 1.6, 2.0],
+      "fr4HighLayerAvailable": [2.5, 3.0, 3.5, 4.0, 4.5],
+      "min": 0.4,
+      "max": 4.5,
+      "toleranceGte1mmPercent": 10,
+      "toleranceLt1mmMm": 0.1
+    }
+  },
+  "copper": {
+    "weights": [
+      {
+        "oz": 1,
+        "layers": "1-2",
+        "minTrackWidth": 0.10,
+        "minTrackSpacing": 0.10,
+        "pthAnnularRingMin": 0.18,
+        "pthAnnularRingRec": 0.25
+      },
+      {
+        "oz": 1,
+        "layers": "multilayer",
+        "minTrackWidth": 0.09,
+        "minTrackSpacing": 0.09,
+        "bgaFanoutMin": 0.076,
+        "pthAnnularRingMin": 0.15,
+        "pthAnnularRingRec": 0.20
+      },
+      {
+        "oz": 2,
+        "layers": "2",
+        "minTrackWidth": 0.16,
+        "minTrackSpacing": 0.16,
+        "pthAnnularRingMin": 0.254,
+        "pthAnnularRingRec": 0.254
+      },
+      {
+        "oz": 2,
+        "layers": "multilayer",
+        "minTrackWidth": 0.15,
+        "minTrackSpacing": 0.15,
+        "pthAnnularRingMin": 0.254,
+        "pthAnnularRingRec": 0.254
+      },
+      { "oz": 2.5, "layers": "2", "minTrackWidth": 0.20, "minTrackSpacing": 0.20 },
+      { "oz": 3.5, "layers": "2", "minTrackWidth": 0.25, "minTrackSpacing": 0.25 },
+      { "oz": 4.5, "layers": "2", "minTrackWidth": 0.30, "minTrackSpacing": 0.30 }
+    ],
+    "innerCopperDefaults": [0.5, 1.0, 2.0],
+    "innerCopperDefault": 0.5,
+    "widthTolerancePercent": 20,
+    "pthAnnularRingMinOverall": 0.20,
+    "npthPadAnnularRingMin": 0.45,
+    "sameNetSpacing": 0.25,
+    "hatchedGridSpacing": 0.25,
+    "traceCoils": { "maskedMin": 0.15, "unmaskedMin": 0.25 },
+    "padToTrackClearance": 0.10,
+    "padToTrackClearanceBga": 0.09,
+    "smdPadToPadClearance": 0.15,
+    "smdPadMin": { "w": 0.25, "h": 0.25 },
+    "viaHoleToTrack": 0.20,
+    "pthToTrack": 0.28,
+    "pthToTrackRec": 0.35,
+    "npthToTrack": 0.20,
+    "innerLayerViaHoleToCopper": 0.20,
+    "innerLayerPthPadHoleToCopper": 0.30,
+    "bga": {
+      "minPadDia": 0.20,
+      "enigRequiredUnderDia": 0.25,
+      "padToTraceMin": 0.10,
+      "padToTraceMultilayerMin": 0.09,
+      "viaInPadAllowed": true
+    }
+  },
+  "drilling": {
+    "drillDiameterMin": {
+      "layer1": 0.30,
+      "layer2Plus": 0.15,
+      "aluminum": 0.65,
+      "copperCore": 1.0
+    },
+    "drillDiameterMax": 6.30,
+    "holeSizeTolerance": {
+      "pthPlus": 0.13,
+      "pthMinus": 0.08,
+      "pressFit": 0.05,
+      "position": 0.05
+    },
+    "holePlatingThicknessUm": 18,
+    "blindBuriedViasSupported": false,
+    "vias": {
+      "minHoleSize": 0.15,
+      "minViaDiameter": 0.25,
+      "recMinHoleSize": 0.20,
+      "viaDiaOverHoleMin": 0.10,
+      "viaDiaOverHoleRec": 0.15,
+      "layer1NPTH": { "minHole": 0.30, "minViaDia": 0.50 }
+    },
+    "minNpthHole": 0.50,
+    "spacing": {
+      "viaHoleToHole": 0.20,
+      "padHoleToHole": 0.45
+    },
+    "slots": {
+      "platedMinW_2layer": 0.50,
+      "platedMinW_multilayer": 0.35,
+      "platedLengthOverWidthMin": 2.0,
+      "nonPlatedMinW": 1.0,
+      "tolPlated": { "plus": 0.13, "minus": 0.08 },
+      "tolNonPlated": 0.20
+    },
+    "castellatedHoles": {
+      "minHoleDia": 0.50,
+      "holeToEdgeMin": 1.0,
+      "holeToHoleMin": 0.50,
+      "minPcbSize": 10,
+      "minPcbThickness": 0.60
+    },
+    "platedEdges": {
+      "minPcbSize": 10,
+      "minPcbThickness": 0.60,
+      "finishRequired": "ENIG",
+      "minBreaks": 3
+    },
+    "blindSlot": {
+      "widthMin": 1.0,
+      "depthMin": 0.2,
+      "annularWidthMin": 0.3,
+      "safetyDistanceMin": 0.2,
+      "remainingThicknessMin": 0.2,
+      "supportedLayers": "2-32",
+      "thicknessMin": 0.8
+    },
+    "backdrill": {
+      "supportedLayers": "4-32",
+      "thicknessMin": 0.8,
+      "throughHoleDiaMin": 0.2,
+      "throughHoleDiaMax": 0.5,
+      "backdrillDiaDelta": 0.2,
+      "dielectricThicknessMin": 0.15,
+      "safetyDistanceMin": 0.2
+    },
+    "rectangularHolesSupported": false
+  },
+  "silkscreen": {
+    "minLineWidth": 0.15,
+    "minTextHeight": 1.0,
+    "preferredWidthToHeightRatio": "1:6",
+    "hollowCarvedRatio": "1:6",
+    "padToSilkscreenClearance": 0.15
+  },
+  "outline": {
+    "routed": {
+      "copperClearance": 0.20,
+      "slotClearance": 0.20,
+      "dimensionTolRegular": 0.20,
+      "dimensionTolPrecision": 0.10,
+      "minDimensionPrecision": 50,
+      "minSlotAluCopper": 1.6
+    },
+    "vCut": {
+      "copperClearance": 0.40,
+      "dimensionTol": 0.40,
+      "minPcbThickness": 0.60,
+      "minPanelDim": 70,
+      "maxPanelDim": 475,
+      "vCutAngle": 25,
+      "spacingBetweenVCutsMin": 2.0,
+      "spacingBetweenVCutsRec": 3.0
+    },
+    "mouseBites": {
+      "copperClearance": 0.20,
+      "dimensionTolRegular": 0.20,
+      "dimensionTolPrecision": 0.10,
+      "panelSpacing": 1.6,
+      "holeDiaMin": 0.5,
+      "holeDiaMax": 0.8,
+      "holeSpacingMin": 0.2,
+      "holeSpacingMax": 0.3,
+      "tabWidthMin": 4.0,
+      "tabWithBitesWidthMin": 5.0,
+      "toolingEdgeMin": 3.0,
+      "smtToolingEdge": 5.0
+    },
+    "panelizationSpacingMin": 2.0,
+    "roundBoardMin": 20
+  }
+}

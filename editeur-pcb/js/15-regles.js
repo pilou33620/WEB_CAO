@@ -40,7 +40,7 @@
    hoistée — un `const RE` serait alors dans sa zone morte et l'appel
    planterait. Hoistée, la variable vaut `undefined`, ce qui est exactement la
    bonne réponse : la fenêtre n'est pas ouverte, elle n'existe pas encore. */
-var RE={open:false,page:"clr",mx:{a:"trk",b:"trk"},cls:0};
+var RE={open:false,tab:"rules",page:"clr",mx:{a:"trk",b:"trk"},cls:0};
 /* Totale à dessein : elle répond à tout moment de la vie de la page. */
 function reIsOpen(){return !!(RE&&RE.open);}
 
@@ -71,8 +71,10 @@ const RE_TREE=[
   {cat:"Paires différentielles",n:[
     ["dp",    "Règle et paires"]]},
   {cat:"Fabrication",n:[
-    ["mask",  "Masque et pâte"],
-    ["edge",  "Marge au bord"]]},
+    ["mfg",       "Profil fabricant & Capabilités"],
+    ["mfg_rules", "Règles du Projet (Min / Typique / Max)"],
+    ["mask",      "Masque et pâte"],
+    ["edge",      "Marge au bord"]]},
   {cat:"Carte et repères",n:[
     ["board", "Dimensions et origine"]]}
 ];
@@ -89,18 +91,20 @@ const RE_TREE=[
    contrôle ne peut pas juger sur le dessin, ou un jeu de cotes que d'autres
    règles appliquent. La page le dit alors en clair. */
 const RE_MATCH={
-  clr:   /^Isolation |Pastilles trop proches/,
-  short: /Pastilles superposées/,
-  open:  /liaison\(s\) non routée/,
-  width: /sous les .+ de la classe|Piste sans net/,
-  angle: /hors des huit sens/,
-  sliver:/écharde/,
-  via:   /^Via .+ → /,
-  hole:  /Trou à trou|erçages? (qui se recouvrent|au même point)/,
-  aspect:/Rapport d'aspect/,
-  zone:  /^Zone de cuivre sans net|cuivre coupé en/,
-  edge:  /hors du contour|débordant du contour/,
-  dp:    /^Paire /
+  clr:       /^Isolation |Pastilles trop proches/,
+  short:     /Pastilles superposées/,
+  open:      /liaison\(s\) non routée/,
+  width:     /sous les .+ de la classe|Piste sans net/,
+  angle:     /hors des huit sens/,
+  sliver:    /écharde/,
+  via:       /^Via .+ → /,
+  hole:      /Trou à trou|erçages? (qui se recouvrent|au même point)/,
+  aspect:    /Rapport d'aspect/,
+  zone:      /^Zone de cuivre sans net|cuivre coupé en/,
+  edge:      /hors du contour|débordant du contour/,
+  dp:        /^Paire /,
+  mfg:       /non-conformité fabricant|capabilités fabricant/,
+  mfg_rules: /non-conformité fabricant|règles de conception|min \/ typique \/ max/
 };
 /* Le titre complet d'une règle, tel que l'arbre le nomme. */
 function reTitle(id){
@@ -115,6 +119,20 @@ function reCat(id){
 }
 /* Les défauts du dernier contrôle qui relèvent de cette règle. */
 function reFindings(id){
+  if(id==="mfg"){
+    if(typeof pcbAuditBoardAgainstMfg==="function"){
+      const aud = pcbAuditBoardAgainstMfg();
+      return aud ? aud.filter(item => !item.ok) : null;
+    }
+    return null;
+  }
+  if(id==="mfg_rules"){
+    if(typeof pcbAuditRulesAgainstMfg==="function"){
+      const aud = pcbAuditRulesAgainstMfg();
+      return aud ? aud.filter(item => !item.ok) : null;
+    }
+    return null;
+  }
   const rx=RE_MATCH[id];
   if(!rx||!S.drcRun)return null;
   return S.drc.filter(e=>rx.test(e.msg||""));
@@ -604,6 +622,168 @@ function figBoard(){
     fmt(S.origin.x,2)+" ; "+fmt(S.origin.y,2)+" mm");
 }
 
+/* Profil fabricant & capabilités : schéma coté des limites d'usinage et de gravure. */
+function figMfg(){
+  const prof = typeof pcbGetMfgProfile === "function" ? pcbGetMfgProfile() : { name: "JLCPCB" };
+  const cu = (typeof S !== "undefined" && S.cu) || 2;
+  const isMulti = cu > 2;
+  const wIdx = isMulti && prof.copper && prof.copper.weights && prof.copper.weights[1] ? 1 : 0;
+  const mW = (prof.copper && prof.copper.weights && prof.copper.weights[wIdx]?.minTrackWidth) || 0.10;
+  const mClr = (prof.copper && prof.copper.weights && prof.copper.weights[wIdx]?.minTrackSpacing) || 0.10;
+  const mDrill = cu === 1 ? (prof.drilling?.drillDiameterMin?.layer1 || 0.3) : (prof.drilling?.drillDiameterMin?.layer2Plus || 0.15);
+  const mVia = (prof.drilling?.vias?.minViaDiameter) || 0.25;
+  const mEdge = (prof.outline?.routed?.copperClearance) || 0.20;
+  const col = typeof activeColor === "function" ? activeColor() : "#2ecc71";
+
+  const inner =
+    '<rect x="24" y="20" width="312" height="110" rx="3" fill="'+C_SUB+'" stroke="'+C_EDGE+'" stroke-width="1.8"/>'+
+    '<rect x="24" y="20" width="46" height="110" fill="'+C_ERR+'" opacity=".16"/>'+
+    '<line x1="70" y1="20" x2="70" y2="130" stroke="'+C_EDGE+'" stroke-dasharray="4 2" stroke-width="1.2"/>'+
+    rePath("M86 52 H172", 12, col)+
+    rePath("M86 76 H172", 12, col)+
+    reVia(242, 75, 1.2, 0.6, 26)+
+    reDimH(24, 70, 142, "Bord: "+fmt(mEdge,2)+" mm")+
+    reDimV(180, 46, 58, "w: "+fmt(mW,2)+" mm")+
+    reDimV(180, 58, 70, "clr: "+fmt(mClr,2)+" mm")+
+    reNote(242, 30, "Via Ø"+fmt(mVia,2)+" (foret "+fmt(mDrill,2)+")", "middle")+
+    reNote(326, 122, esc(prof.name)+" · "+cu+" couches", "end");
+
+  return reFig(inner, "Gabarit des capabilités d'usinage ("+prof.name+")",
+    prof.name+" · Piste min "+fmt(mW,2)+" mm · Isolement min "+fmt(mClr,2)+" mm · Perçage min "+fmt(mDrill,2)+" mm · Bord "+fmt(mEdge,2)+" mm");
+}
+
+/* Règles de conception du projet : schéma coté des tolérances Min / Typique / Max. */
+function figMfgRules(){
+  const rules = typeof pcbGetProjectDesignRules === "function" ? pcbGetProjectDesignRules() : {
+    trackWidth: { min: 0.10, typ: 0.21, max: 5.0 },
+    clearance: { min: 0.10, typ: 0.20, max: 3.0 }
+  };
+  const tw = rules.trackWidth || { min: 0.10, typ: 0.21, max: 5.0 };
+  const clr = rules.clearance || { min: 0.10, typ: 0.20, max: 3.0 };
+  const col = typeof activeColor === "function" ? activeColor() : "#2ecc71";
+  const viaDia = (rules.viaDia && rules.viaDia.typ) || 0.60;
+  const viaDrill = (rules.drill && rules.drill.typ) || 0.30;
+
+  const inner =
+    '<rect x="18" y="14" width="324" height="122" rx="4" fill="'+C_SUB+'" stroke="'+C_EDGE+'" stroke-width="1.6"/>'+
+    rePath("M36 38 H150", 4, col)+
+    reDimV(158, 35, 41, "Min: "+fmt(tw.min,2)+" mm")+
+    rePath("M36 68 H236", 9, col)+
+    reDimV(158, 63, 73, "Typ: "+fmt(tw.typ,2)+" mm")+
+    rePath("M36 106 H150", 20, col)+
+    reDimV(158, 96, 116, "Max: "+fmt(tw.max,2)+" mm")+
+    reDimV(68, 41, 63, "clr "+fmt(clr.typ,2), true)+
+    reDisc(252, 68, 12, col)+
+    reDisc(252, 68, 5.5, C_DRILL)+
+    '<circle cx="252" cy="68" r="5.5" fill="none" stroke="var(--txt-dim)" stroke-width="0.8" stroke-dasharray="2 2"/>'+
+    reDimH(240, 264, 98, "Ø "+fmt(viaDia,2)+" mm")+
+    reNote(252, 28, "Via typ. (foret "+fmt(viaDrill,2)+")", "middle")+
+    reNote(330, 126, "Règles Projet", "end");
+
+  return reFig(inner, "Règles de tracé du projet : Min, Typique, Max",
+    "Piste : Min "+fmt(tw.min,2)+" mm · Typique "+fmt(tw.typ,2)+" mm · Max "+fmt(tw.max,2)+" mm · Isolement "+fmt(clr.typ,2)+" mm");
+}
+
+/* Barre de navigation commune entre Capabilités Fabricant et Règles de Conception */
+function reMfgTabs(activeTab){
+  return '<div class="mfg-tabs-nav">' +
+    '<button type="button" class="mfg-tab-btn' + (activeTab === "caps" ? ' active' : '') + '" id="mfgTabCaps">🏭 Capabilités Fabricant (Limites usine)</button>' +
+    '<button type="button" class="mfg-tab-btn' + (activeTab === "rules" ? ' active' : '') + '" id="mfgTabRules">🎯 Règles de Conception (Min / Typique / Max)</button>' +
+  '</div>';
+}
+
+/* Rendu HTML structuré des spécifications détaillées d'un fabricant */
+function reMfgSpecsHtml(p){
+  if(!p) return "";
+  const gen = p.general || {};
+  const dim = p.dimensions || {};
+  const cop = p.copper || {};
+  const drl = p.drilling || {};
+  const sm = gen.solderMask || {};
+  const silk = p.silkscreen || {};
+  const out = p.outline || {};
+
+  // Tableau du cuivre selon l'épaisseur
+  let copRows = "";
+  if(Array.isArray(cop.weights)){
+    cop.weights.forEach(w => {
+      copRows += '<tr>' +
+        '<td><strong>' + w.oz + ' oz</strong> (' + esc(w.layers || "toutes") + ')</td>' +
+        '<td class="mono">' + fmt(w.minTrackWidth,2) + ' / ' + fmt(w.minTrackSpacing,2) + ' mm</td>' +
+        '<td class="mono">' + (w.pthAnnularRingMin ? fmt(w.pthAnnularRingMin,2) + ' mm' : '—') + '</td>' +
+        '<td class="mono">' + (w.pthAnnularRingRec ? fmt(w.pthAnnularRingRec,2) + ' mm' : '—') + '</td>' +
+      '</tr>';
+    });
+  }
+
+  return '<div class="mfg-grid">' +
+    // Carte 1 : Général & Matières
+    '<div class="mfg-card">' +
+      '<h4>🌐 Général & Matières</h4>' +
+      '<div class="mfg-spec-row"><span>Couches cuivre</span><span class="mfg-spec-val">' + (gen.layerCount ? gen.layerCount.min + ' à ' + gen.layerCount.max + ' couches' : '1-32') + '</span></div>' +
+      '<div class="mfg-spec-row"><span>Impédance contrôlée</span><span class="mfg-spec-val">' + (gen.controlledImpedance?.supported ? 'Oui (±' + gen.controlledImpedance.tolerancePercent + '%)' : 'Non') + '</span></div>' +
+      '<div class="mfg-spec-row"><span>Stratifiés</span><span class="mfg-spec-val">FR-4 (Er 4.5), Alu, Cuivre, Rogers</span></div>' +
+      '<div class="mfg-spec-row"><span>Finitions de surface</span><span class="mfg-spec-val">' + (gen.surfaceFinishes ? gen.surfaceFinishes.map(f=>f.name||f).join(', ') : 'HASL, ENIG, OSP') + '</span></div>' +
+      '<div class="mfg-spec-row"><span>Épaisseurs FR4</span><span class="mfg-spec-val">' + (dim.thickness?.fr4Available ? dim.thickness.fr4Available.join(', ') + ' mm' : '0.4 à 4.5 mm') + '</span></div>' +
+      '<div class="mfg-spec-row"><span>Tolérance épaisseur</span><span class="mfg-spec-val">±10% (≥1mm), ±0.1mm (<1mm)</span></div>' +
+    '</div>' +
+
+    // Carte 2 : Cuivre & Pistes
+    '<div class="mfg-card">' +
+      '<h4>⚡ Cuivre & Pistes</h4>' +
+      '<table class="mfg-mini-table">' +
+        '<thead><tr><th>Poids Cu</th><th>Piste/Isolem.</th><th>Anneau min</th><th>Anneau rec.</th></tr></thead>' +
+        '<tbody>' + copRows + '</tbody>' +
+      '</table>' +
+      '<div class="mfg-spec-row" style="margin-top:6px"><span>Tolérance largeur</span><span class="mfg-spec-val">±' + (cop.widthTolerancePercent || 20) + '%</span></div>' +
+      '<div class="mfg-spec-row"><span>Anneau annulaire NPTH</span><span class="mfg-spec-val">≥ ' + (cop.npthPadAnnularRingMin || 0.45) + ' mm</span></div>' +
+      '<div class="mfg-spec-row"><span>Pad BGA</span><span class="mfg-spec-val">≥ ' + (cop.bga?.minPadDia || 0.20) + ' mm (ENIG si ≤0.25mm)</span></div>' +
+      '<div class="mfg-spec-row"><span>Serpentins (1 oz)</span><span class="mfg-spec-val">' + (cop.traceCoils?.maskedMin || 0.15) + ' / ' + (cop.traceCoils?.maskedMin || 0.15) + ' mm</span></div>' +
+      '<div class="mfg-spec-row"><span>Dégagement Pad ↔ Piste</span><span class="mfg-spec-val">≥ ' + (cop.padToTrackClearance || 0.10) + ' mm</span></div>' +
+    '</div>' +
+
+    // Carte 3 : Perçage & Vias
+    '<div class="mfg-card">' +
+      '<h4>🔘 Perçage & Vias</h4>' +
+      '<div class="mfg-spec-row"><span>Foret mécanique min</span><span class="mfg-spec-val">' + (drl.drillDiameterMin?.layer2Plus || 0.15) + ' mm (2L+) / ' + (drl.drillDiameterMin?.layer1 || 0.3) + ' mm (1L)</span></div>' +
+      '<div class="mfg-spec-row"><span>Forets spéciaux</span><span class="mfg-spec-val">Alu: ' + (drl.drillDiameterMin?.aluminum || 0.65) + ' mm · Cu: ' + (drl.drillDiameterMin?.copperCore || 1.0) + ' mm</span></div>' +
+      '<div class="mfg-spec-row"><span>Tolérance perçage</span><span class="mfg-spec-val">PTH: +' + (drl.holeSizeTolerance?.pthPlus || 0.13) + '/-' + (drl.holeSizeTolerance?.pthMinus || 0.08) + ' mm · Press-fit: ±0.05 mm</span></div>' +
+      '<div class="mfg-spec-row"><span>Vias traversants</span><span class="mfg-spec-val">Trou min ' + (drl.vias?.minHoleSize || 0.15) + ' mm (rec ' + (drl.vias?.recMinHoleSize || 0.20) + ') · Dia min ' + (drl.vias?.minViaDiameter || 0.25) + ' mm</span></div>' +
+      '<div class="mfg-spec-row"><span>Fentes métallisées</span><span class="mfg-spec-val">≥ ' + (drl.slots?.platedMinW_2layer || 0.50) + ' mm (2L) / ' + (drl.slots?.platedMinW_multilayer || 0.35) + ' mm (multi)</span></div>' +
+      '<div class="mfg-spec-row"><span>Vias bouchés vernis</span><span class="mfg-spec-val">' + (sm.pluggedVias ? 'Remplis vernis (dia ≤ ' + sm.pluggedVias.maxViaDia + ' mm)' : 'Non supporté') + '</span></div>' +
+      '<div class="mfg-spec-row"><span>Process Via-in-Pad</span><span class="mfg-spec-val">' + (sm.viaInPad ? 'Époxy/Cuivre plaqué (≥6 couches, 0.15-0.55mm)' : 'Sur demande') + '</span></div>' +
+      '<div class="mfg-spec-row"><span>Trous borgnes/enterrés</span><span class="mfg-spec-val">' + (drl.blindBuriedViasSupported ? 'Supportés' : 'Non supportés (traversants uniquement)') + '</span></div>' +
+      '<div class="mfg-spec-row"><span>Trous rectangulaires</span><span class="mfg-spec-val">' + (drl.rectangularHolesSupported ? 'Supportés' : 'Non supportés sans coins arrondis') + '</span></div>' +
+      '<div class="mfg-spec-row"><span>Demi-trous / Plated Edge</span><span class="mfg-spec-val">Castellations: ≥0.5mm · Bords ENIG: ≥10x10mm</span></div>' +
+      '<div class="mfg-spec-row"><span>Backdrill / Rainure</span><span class="mfg-spec-val">Backdrill: 4-32L FR4 ≥0.8mm · Rainure: L≥1.0, P≥0.2mm</span></div>' +
+    '</div>' +
+
+    // Carte 4 : Masque & Sérigraphie
+    '<div class="mfg-card">' +
+      '<h4>🛡 Masque & Sérigraphie</h4>' +
+      '<div class="mfg-spec-row"><span>Type de vernis</span><span class="mfg-spec-val">' + (sm.type || 'LPI') + ' · Expansion 1:1 (LDI 2025)</span></div>' +
+      '<div class="mfg-spec-row"><span>Couleurs vernis</span><span class="mfg-spec-val">' + (sm.colors ? sm.colors.join(', ') : 'Vert, Noir, Blanc, Bleu, Rouge') + '</span></div>' +
+      '<div class="mfg-spec-row"><span>Pont de vernis (1 oz)</span><span class="mfg-spec-val">Couleurs: ' + (sm.bridgeMin?.['1oz_colors'] || 0.10) + ' mm · N&B: ' + (sm.bridgeMin?.['1oz_black_white'] || 0.13) + ' mm</span></div>' +
+      '<div class="mfg-spec-row"><span>Pont de vernis (2 oz)</span><span class="mfg-spec-val">' + (sm.bridgeMin?.['2oz_all'] || 0.20) + ' mm</span></div>' +
+      '<div class="mfg-spec-row"><span>Trait sérigraphie min</span><span class="mfg-spec-val">≥ ' + (silk.minLineWidth || 0.15) + ' mm</span></div>' +
+      '<div class="mfg-spec-row"><span>Hauteur texte min</span><span class="mfg-spec-val">≥ ' + (silk.minTextHeight || 1.0) + ' mm (40 mil)</span></div>' +
+      '<div class="mfg-spec-row"><span>Ratio L/H texte</span><span class="mfg-spec-val">1:6 (texte plein et évidé)</span></div>' +
+      '<div class="mfg-spec-row"><span>Dégagement Pastille ↔ Sérigraphie</span><span class="mfg-spec-val">≥ ' + (silk.padToSilkscreenClearance || 0.15) + ' mm</span></div>' +
+    '</div>' +
+
+    // Carte 5 : Usinage & Panélisation
+    '<div class="mfg-card">' +
+      '<h4>📐 Découpe & Panélisation</h4>' +
+      '<div class="mfg-spec-row"><span>Détourage CNC</span><span class="mfg-spec-val">Dégagement cuivre ≥ ' + (out.routed?.copperClearance || 0.20) + ' mm · Tol. ±' + (out.routed?.dimensionTolRegular || 0.20) + ' mm</span></div>' +
+      '<div class="mfg-spec-row"><span>V-Cut rainurage</span><span class="mfg-spec-val">Dégagement cuivre ≥ ' + (out.vCut?.copperClearance || 0.40) + ' mm · Angle 25°</span></div>' +
+      '<div class="mfg-spec-row"><span>Dimensions V-Cut</span><span class="mfg-spec-val">Panneau: 70×70 à 475×475 mm · Pas V-cut ≥ 2.0 mm</span></div>' +
+      '<div class="mfg-spec-row"><span>Attaches Mouse-bites</span><span class="mfg-spec-val">Trous Ø0.5-0.8 mm (pas 0.2-0.3 mm) · Patte ≥ 4 mm (5 mm perforée)</span></div>' +
+      '<div class="mfg-spec-row"><span>Bords techniques usine</span><span class="mfg-spec-val">≥ 3 mm (5 mm pour assemblage SMT)</span></div>' +
+      '<div class="mfg-spec-row"><span>Espacement panélisation</span><span class="mfg-spec-val">≥ ' + (out.panelizationSpacingMin || 2.0) + ' mm · Cartes rondes ≥ 20×20 mm</span></div>' +
+    '</div>' +
+  '</div>';
+}
+
 /* ==========================================================================
    L'entête d'une règle, ses objets visés, ses valeurs lues
    La disposition est celle d'un éditeur de règles du métier : le nom, la
@@ -1006,6 +1186,189 @@ dp(){
     reScope("dp","Paire différentielle","Les deux nets de la paire")+
     '<div id="dpair"></div>';
 },
+mfg(){
+  const prof = typeof pcbGetMfgProfile === "function" ? pcbGetMfgProfile() : (typeof PCB_DEFAULT_MFG_PROFILES !== "undefined" ? PCB_DEFAULT_MFG_PROFILES.jlcpcb : { id: "jlcpcb", name: "JLCPCB" });
+  const allProfs = typeof PCB_MFG_PROFILES !== "undefined" ? PCB_MFG_PROFILES : {};
+  const audit = typeof pcbAuditBoardAgainstMfg === "function" ? pcbAuditBoardAgainstMfg(prof) : [];
+  const badCount = audit.filter(a => !a.ok).length;
+
+  let optHtml = "";
+  for(const k in allProfs){
+    const p = allProfs[k];
+    const isSel = (p.id === prof.id);
+    const layersTxt = (p.general && p.general.layerCount) ? (p.general.layerCount.min + "-" + p.general.layerCount.max + " couches") : "";
+    optHtml += '<option value="' + esc(p.id) + '"' + (isSel ? ' selected' : '') + '>' + esc(p.name) + (layersTxt ? ' (' + layersTxt + ')' : '') + '</option>';
+  }
+
+  let auditRows = "";
+  audit.forEach(item => {
+    const badge = item.ok 
+      ? '<span class="mfg-badge ok">✔ Conforme</span>' 
+      : '<span class="mfg-badge err">❌ Hors limite</span>';
+    auditRows += '<tr>' +
+      '<td class="dim">' + esc(item.cat) + '</td>' +
+      '<td><strong>' + esc(item.label) + '</strong></td>' +
+      '<td class="mono">' + esc(item.val) + '</td>' +
+      '<td class="mono dim">' + esc(item.limit) + '</td>' +
+      '<td>' + badge + ' <span class="dim" style="font-size:10.5px;margin-left:5px">' + esc(item.msg) + '</span></td>' +
+      '</tr>';
+  });
+
+  const curRules = typeof pcbGetProjectDesignRules === "function" ? pcbGetProjectDesignRules() : {};
+  const mfgLimits = typeof pcbGetMfgLimits === "function" ? pcbGetMfgLimits(prof) : {};
+  const metas = typeof PCB_RULE_METAS !== "undefined" ? PCB_RULE_METAS : {};
+
+  let compRows = "";
+  for(const k in metas){
+    const meta = metas[k];
+    const r = curRules[k] || { min: 0, typ: 0, max: 0 };
+    const lim = mfgLimits[k] || { min: 0, max: 10 };
+    const isUnderMin = r.typ < lim.min || r.min < lim.min;
+    const isOverMax = r.typ > lim.max || r.max > lim.max;
+    const ok = !isUnderMin && !isOverMax;
+    const badge = ok
+      ? '<span class="mfg-badge ok">✔ Conforme</span>'
+      : '<span class="mfg-badge err">❌ Hors limite usine</span>';
+
+    compRows += '<tr>' +
+      '<td><strong>' + esc(meta.label) + '</strong><div class="dim" style="font-size:10px">' + esc(meta.desc) + '</div></td>' +
+      '<td class="mono dim"><span class="mfg-factory-limit">[' + fmt(lim.min, 2) + ' ' + esc(meta.unit) + ']</span></td>' +
+      '<td class="mono" style="color:var(--yellow);font-weight:bold">' + fmt(r.typ, 2) + ' ' + esc(meta.unit) + '</td>' +
+      '<td class="mono dim"><span class="mfg-factory-limit">[' + fmt(lim.max, 2) + ' ' + esc(meta.unit) + ']</span></td>' +
+      '<td>' + badge + '</td>' +
+    '</tr>';
+  }
+
+  const statusBanner = badCount === 0
+    ? '<div class="mfg-banner ok">✔ Carte 100% conforme aux capabilités technologiques de ' + esc(prof.name) + '</div>'
+    : '<div class="mfg-banner warn">⚠ ' + badCount + ' non-conformité(s) détectée(s) pour la fabrication chez ' + esc(prof.name) + ' — le tracé ou les règles dépassent les limites physiques de l\'usine.</div>';
+
+  return reHead("mfg", "Profil fabricant & Capabilités machine (" + esc(prof.name) + ")") +
+    reScope("mfg", "Projet & Fabricant", esc(prof.name)) +
+    reMfgTabs("caps") +
+    '<div class="mfg-rules-banner" style="margin:6px 14px 10px 14px">' +
+      '<span>🏭 <b>Rôle des capabilités fabricant :</b> Les capabilités industrielles imposent les <strong>bornes technologiques infranchissables [Min .. Max]</strong> de l\'usine <strong>' + esc(prof.name) + '</strong>. Elles <strong>ne modifient pas vos règles par défaut</strong> de conception (qui définissent votre tracé nominal de travail), mais garantissent que votre PCB ne descendra jamais sous les limites réelles de la machine.</span>' +
+    '</div>' +
+    '<div class="cat">Sélection du Fabricant</div>' +
+    '<div class="prop two">' +
+      '<div>' +
+        '<label>Profil de fabrication actif</label>' +
+        '<select id="reMfgSelect">' + optHtml + '</select>' +
+      '</div>' +
+      reFact("Version & Description", (prof.version || "1.0") + " — " + (prof.description || "Profil fabricant")) +
+    '</div>' +
+    '<div class="prop">' +
+      '<label>Actions sur les règles et profils</label>' +
+      '<div class="row" style="margin-top:4px">' +
+        '<button class="tb tb-primary" id="reMfgApply" title="Ajuster les classes, dégagements, masque 1:1 et perçages aux minima ' + esc(prof.name) + '">⚡ Aligner règles du projet aux minima ' + esc(prof.name) + '</button>' +
+        '<button class="tb" id="reMfgImportBtn" title="Importer un fichier de profil JSON">📁 Importer JSON</button>' +
+        '<button class="tb" id="reMfgExportBtn" title="Exporter le profil courant au format JSON">💾 Exporter</button>' +
+        '<button class="tb" id="reMfgNewBtn" title="Créer un nouveau profil personnalisé dérivé de celui-ci">➕ Nouveau</button>' +
+        (prof._custom ? '<button class="tb" id="reMfgDelBtn" title="Supprimer ce profil personnalisé">🗑 Supprimer</button>' : '') +
+      '</div>' +
+    '</div>' +
+    '<input type="file" id="reMfgFileInput" accept=".json" style="display:none">' +
+    (prof.vendorUrl ? '<div class="prop">' + reFact("Documentation usine", '<a href="' + esc(prof.vendorUrl) + '" target="_blank" style="color:var(--yellow);text-decoration:underline">' + esc(prof.vendorUrl) + '</a>') + '</div>' : '') +
+    '<div class="cat">Comparatif : Bornes Usine vs Règles par Défaut du Projet</div>' +
+    '<div class="mxwrap" style="max-height:220px;overflow-y:auto;margin:6px 0 10px 0">' +
+      '<table class="mfg-table">' +
+        '<thead><tr><th>Règle de conception</th><th>Borne Usine Min</th><th>Règle par Défaut (Typique)</th><th>Borne Usine Max</th><th>Statut</th></tr></thead>' +
+        '<tbody>' + compRows + '</tbody>' +
+      '</table>' +
+    '</div>' +
+    '<div class="cat">Contraintes & Limites machine</div>' +
+    figMfg() +
+    '<div class="cat">Audit de conformité en direct (' + esc(prof.name) + ')</div>' +
+    statusBanner +
+    '<div class="mxwrap" style="max-height:220px;overflow-y:auto;margin:6px 0 10px 0">' +
+      '<table class="mfg-table">' +
+        '<thead><tr><th>Catégorie</th><th>Contrôle</th><th>Carte actuelle</th><th>Spécification Fabricant</th><th>Statut</th></tr></thead>' +
+        '<tbody>' + auditRows + '</tbody>' +
+      '</table>' +
+    '</div>' +
+    '<div class="cat">Détail des Spécifications Techniques (' + esc(prof.name) + ')</div>' +
+    reMfgSpecsHtml(prof) +
+    '<div class="restate pad">L\'application automatique synchronise <i>Marge au bord</i>, <i>Trou à trou</i>, <i>Expansion de masque</i> (1:1), <i>Classes de net</i> et <i>Matrice d\'isolation</i> avec les tolérances du profil sans écraser les cotes supérieures déjà personnalisées. Si les règles de conception n\'existent pas encore, elles sont créées immédiatement. Les fichiers de profil (.json) peuvent être importés ou exportés pour partager les règles d\'usinage entre postes.</div>';
+},
+mfg_rules(){
+  const prof = typeof pcbGetMfgProfile === "function" ? pcbGetMfgProfile() : { id: "jlcpcb", name: "JLCPCB" };
+  const rules = typeof pcbGetProjectDesignRules === "function" ? pcbGetProjectDesignRules() : {};
+  const limits = typeof pcbGetMfgLimits === "function" ? pcbGetMfgLimits(prof) : {};
+  const audit = typeof pcbAuditRulesAgainstMfg === "function" ? pcbAuditRulesAgainstMfg(rules, prof) : [];
+  const metas = typeof PCB_RULE_METAS !== "undefined" ? PCB_RULE_METAS : {};
+
+  let rowsHtml = "";
+  for(const k in metas){
+    const meta = metas[k];
+    const r = rules[k] || { min: 0, typ: 0, max: 0 };
+    const lim = limits[k] || { min: 0, max: 10 };
+    const audItem = audit.find(a => a.key === k);
+    const ok = audItem ? audItem.ok : true;
+    const badge = ok
+      ? '<span class="mfg-badge ok">✔ Conforme</span>'
+      : '<span class="mfg-badge err" title="' + esc(audItem ? audItem.msg : "Hors limites") + '">❌ Hors limite</span>';
+
+    rowsHtml += '<tr>' +
+      '<td>' +
+        '<strong>' + esc(meta.label) + '</strong>' +
+        '<div class="dim" style="font-size:10px">' + esc(meta.desc) + '</div>' +
+      '</td>' +
+      '<td>' +
+        '<span class="mfg-factory-limit" title="Borne technologique infranchissable">' +
+          '[' + fmt(lim.min, 2) + ' .. ' + fmt(lim.max, 2) + '] ' + esc(meta.unit) +
+        '</span>' +
+      '</td>' +
+      '<td>' +
+        '<input type="number" id="mfgRule_min_' + esc(k) + '" class="mfg-num-inp" step="' + meta.step + '" value="' + r.min + '" title="Valeur minimale admissible pour DRC (>= usine min)">' +
+      '</td>' +
+      '<td>' +
+        '<input type="number" id="mfgRule_typ_' + esc(k) + '" class="mfg-num-inp typ-inp" step="' + meta.step + '" value="' + r.typ + '" title="Valeur nominale / de travail utilisée pour le tracé">' +
+      '</td>' +
+      '<td>' +
+        '<input type="number" id="mfgRule_max_' + esc(k) + '" class="mfg-num-inp" step="' + meta.step + '" value="' + r.max + '" title="Valeur maximale admissible (<= usine max)">' +
+      '</td>' +
+      '<td>' + badge + '</td>' +
+    '</tr>';
+  }
+
+  return reHead("mfg_rules", "Règles cibles du projet (Min / Typique / Max) bornées par les capabilités machine") +
+    reScope("mfg_rules", "Règles DRC du Projet", esc(prof.name)) +
+    reMfgTabs("rules") +
+    '<div class="mfg-rules-banner">' +
+      '<span>Fabricant de référence : <strong>' + esc(prof.name) + '</strong> · Les capabilités de l\'usine imposent les <strong>bornes infranchissables Min et Max</strong>. Les règles de conception ci-dessous définissent vos objectifs cibles pour le projet. La valeur <strong>Typique</strong> est la cote nominale utilisée par le routeur.</span>' +
+    '</div>' +
+    '<div class="prop two">' +
+      reFact("Fabricant actif", esc(prof.name), "Défini dans l'onglet Capabilités Fabricant") +
+      reFact("Statut des règles", "Min / Typique / Max bornés par " + esc(prof.name)) +
+    '</div>' +
+    '<div class="prop">' +
+      '<label>Actions sur les règles du projet</label>' +
+      '<div class="row" style="margin-top:4px">' +
+        '<button class="tb tb-primary" id="reMfgRulesApply" title="Appliquer les valeurs typiques et minima au routage">⚡ Appliquer au routage &amp; classes</button>' +
+        '<button class="tb" id="reMfgRulesReset" title="Réinitialiser aux valeurs recommandées par ' + esc(prof.name) + '">↺ Recharger recommandations (' + esc(prof.name) + ')</button>' +
+        '<button class="tb" id="reMfgRulesToCaps" title="Consulter la fiche technique et les capabilités usine">🏭 Voir Capabilités Usine</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="cat">Tolérances de tracé : Min, Typique, Max</div>' +
+    figMfgRules() +
+    '<div class="cat">Tableau des Règles de Conception (Cotes du projet)</div>' +
+    '<div class="mxwrap" style="max-height:300px;overflow-y:auto;margin:6px 0 10px 0">' +
+      '<table class="mfg-rules-table">' +
+        '<thead>' +
+          '<tr>' +
+            '<th>Règle de conception</th>' +
+            '<th>Borne Usine [Min..Max]</th>' +
+            '<th>Min (mm)</th>' +
+            '<th>Typique (mm)</th>' +
+            '<th>Max (mm)</th>' +
+            '<th>Statut</th>' +
+          '</tr>' +
+        '</thead>' +
+        '<tbody>' + rowsHtml + '</tbody>' +
+      '</table>' +
+    '</div>' +
+    '<div class="restate pad"><b>Principe de conception :</b> les capabilités imposent les limites de l\'outil industriel (gravure chimique/laser, forets mécaniques, repérage optique). Les règles ci-dessus sont les vôtres : la cote <i>Typique</i> est celle posée par défaut lors du tracé (ex: piste de 0,21 mm), la cote <i>Min</i> est le seuil d\'alerte DRC sous lequel aucune piste ne doit descendre, et la cote <i>Max</i> borne les conducteurs larges. Toute valeur saisie hors des limites machine est automatiquement verrouillée à la capacité du fabricant.</div>';
+},
 mask(){
   return reHead("mask","Ouverture du masque et empreinte de pâte")+
     reScope("mask","Pastille","Masque et pâte")+
@@ -1076,11 +1439,23 @@ function reBuild(){
   const d=document.createElement("div");
   d.id="drcEd";d.className="modal";d.hidden=true;
   d.innerHTML=
-    '<div class="modal-box">'+
-      '<header class="modal-head">'+
-        '<span class="modal-title">Règles et contraintes de conception</span>'+
-        '<span class="modal-zoom" id="reUnit">mm</span>'+
-        '<button class="pnl-btn" id="reClose" title="Fermer">&#10005;</button>'+
+    '<div class="modal-box re-modal-box">'+
+      '<header class="modal-head re-modal-head">'+
+        '<div class="re-head-left">'+
+          '<span class="modal-title">Règles &amp; Fabrication</span>'+
+          '<div class="re-main-tabs" role="tablist">'+
+            '<button type="button" class="re-main-tab on" id="reTabRules" role="tab" title="Règles de conception par défaut du projet (largeurs de pistes, isolements, vias...)">'+
+              '<span class="tab-icon">📐</span> Règles de conception'+
+            '</button>'+
+            '<button type="button" class="re-main-tab" id="reTabMfg" role="tab" title="Capabilités industrielles et limites d\'usinage machine (JLCPCB, Eurocircuits...)">'+
+              '<span class="tab-icon">🏭</span> Capabilités Fabricant'+
+            '</button>'+
+          '</div>'+
+        '</div>'+
+        '<div class="re-head-right">'+
+          '<span class="modal-zoom" id="reUnit">mm</span>'+
+          '<button class="pnl-btn" id="reClose" title="Fermer">&#10005;</button>'+
+        '</div>'+
       '</header>'+
       '<div class="modal-body">'+
         '<div class="re-tree scroll" id="reTree"></div>'+
@@ -1095,7 +1470,18 @@ function reBuild(){
 function reOpen(page){
   reBuild();
   RE.open=true;
-  if(page&&RE_PAGE[page])RE.page=page;
+  if(page==="mfg"||page==="mfg_rules"){
+    RE.tab="mfg";
+    RE.page=page;
+  } else if(page&&RE_PAGE[page]){
+    RE.tab="rules";
+    RE.page=page;
+  } else {
+    RE.tab="rules";
+    if(RE.page==="mfg"||RE.page==="mfg_rules"){
+      RE.page="clr";
+    }
+  }
   const d=$("drcEd");
   if(d)d.hidden=false;
   reSync();
@@ -1109,6 +1495,8 @@ function reClose(){
 }
 function reGo(page){
   if(!RE_PAGE[page])return;
+  if(page==="mfg") RE.tab="mfg";
+  else if(page!=="mfg_rules") RE.tab="rules";
   RE.page=page;reSync();
 }
 /* Un changement de cote : instantané, écriture, et tout ce qui en dépend se
@@ -1123,20 +1511,75 @@ function reTree(){
   const box=$("reTree");
   if(!box)return;
   let h="";
-  for(const g of RE_TREE){
-    h+='<div class="re-cat">'+esc(g.cat)+'</div>';
-    for(const [id,t] of g.n){
-      const f=reFindings(id);
-      const n=f?f.filter(e=>!e.info).length:0;
-      h+='<div class="re-node'+(id===RE.page?" on":"")+'" data-page="'+id+'">'+
-         '<span class="nm">'+esc(t)+'</span>'+
-         (n?'<span class="ct">'+n+'</span>':"")+'</div>';
+  if(RE.tab==="mfg"){
+    // En mode Capabilités Fabricant : navigation dédiée usine & profils
+    h+='<div class="re-cat">Capabilités Fabricant</div>';
+    const mfgFindings=reFindings("mfg");
+    const nMfg=mfgFindings?mfgFindings.filter(e=>!e.info).length:0;
+    h+='<div class="re-node'+(RE.page==="mfg"?" on":"")+'" data-page="mfg">'+
+       '<span class="nm">🏭 Fiche &amp; Limites Usine</span>'+
+       (nMfg?'<span class="ct">'+nMfg+'</span>':"")+'</div>';
+
+    const rulesFindings=reFindings("mfg_rules");
+    const nRules=rulesFindings?rulesFindings.filter(e=>!e.info).length:0;
+    h+='<div class="re-node'+(RE.page==="mfg_rules"?" on":"")+'" data-page="mfg_rules">'+
+       '<span class="nm">🎯 Bornes vs Règles Projet</span>'+
+       (nRules?'<span class="ct">'+nRules+'</span>':"")+'</div>';
+
+    const allProfs=typeof PCB_MFG_PROFILES!=="undefined"?PCB_MFG_PROFILES:{};
+    const curProf=typeof pcbGetMfgProfile==="function"?pcbGetMfgProfile():{id:"jlcpcb"};
+    h+='<div class="re-cat" style="margin-top:12px">Profils d\'usine</div>';
+    for(const k in allProfs){
+      const p=allProfs[k];
+      const isAct=(p.id===curProf.id);
+      h+='<div class="re-node re-mfg-prof-node'+(isAct?" on":"")+'" data-prof="'+esc(p.id)+'" title="Sélectionner '+esc(p.name)+'">'+
+         '<span class="nm">'+(isAct?"✔ ":"")+esc(p.name)+'</span>'+
+         (p._custom?'<span class="dim" style="font-size:9px">perso</span>':'')+
+         '</div>';
+    }
+    h+='<div class="re-cat" style="margin-top:12px">Actions Profils</div>';
+    h+='<div class="re-node" id="reTreeImportBtn" title="Importer un profil JSON">'+
+       '<span class="nm">📁 Importer JSON...</span></div>';
+    h+='<div class="re-node" id="reTreeNewBtn" title="Nouveau profil personnalisé">'+
+       '<span class="nm">➕ Nouveau profil...</span></div>';
+  } else {
+    // En mode Règles de conception : afficher l'arbre complet des règles de tracé
+    for(const g of RE_TREE){
+      h+='<div class="re-cat">'+esc(g.cat)+'</div>';
+      for(const [id,t] of g.n){
+        const f=reFindings(id);
+        const n=f?f.filter(e=>!e.info).length:0;
+        h+='<div class="re-node'+(id===RE.page?" on":"")+'" data-page="'+id+'">'+
+           '<span class="nm">'+esc(t)+'</span>'+
+           (n?'<span class="ct">'+n+'</span>':"")+'</div>';
+      }
     }
   }
   box.innerHTML=h;
-  box.querySelectorAll(".re-node").forEach(el=>{
+  box.querySelectorAll(".re-node[data-page]").forEach(el=>{
     el.onclick=()=>reGo(el.dataset.page);
   });
+  box.querySelectorAll(".re-mfg-prof-node[data-prof]").forEach(el=>{
+    el.onclick=()=>{
+      if(typeof pcbSetActiveMfgProfile==="function")pcbSetActiveMfgProfile(el.dataset.prof);
+      reSync();
+    };
+  });
+  const trImp=$("reTreeImportBtn");
+  if(trImp)trImp.onclick=()=>{
+    const inp=$("reMfgFileInput");
+    if(inp){inp.value="";inp.click();}
+  };
+  const trNew=$("reTreeNewBtn");
+  if(trNew)trNew.onclick=()=>{
+    const curProf=typeof pcbGetMfgProfile==="function"?pcbGetMfgProfile():{id:"jlcpcb"};
+    const nom=(prompt("Nom du nouveau profil personnalisé :","Mon Usine")||"").trim();
+    if(!nom)return;
+    if(typeof pcbCreateCustomMfgProfile==="function"){
+      pcbCreateCustomMfgProfile(curProf?curProf.id:"jlcpcb",null,nom);
+      reSync();
+    }
+  };
 }
 /* Redessiner la fenêtre entière. C'est volontairement grossier : une page de
    règles n'a pas de coût, et tout y dépend de tout — la figure des valeurs,
@@ -1144,6 +1587,12 @@ function reTree(){
 function reSync(){
   if(!reIsOpen())return;
   RE.cls=clamp(RE.cls,0,S.classes.length-1);
+  if(!RE.tab) RE.tab="rules";
+
+  const tabR=$("reTabRules"), tabM=$("reTabMfg");
+  if(tabR) tabR.classList.toggle("on", RE.tab==="rules");
+  if(tabM) tabM.classList.toggle("on", RE.tab==="mfg");
+
   reTree();
   const box=$("rePage");
   if(!box)return;
@@ -1235,6 +1684,131 @@ function reBind(){
     RE.cls=0;touch();zoneCache.clear();refreshPanels();draw();reSync();
     hint("Classe supprimée : ses nets repassent à « "+defClass().name+" ».");
   });
+
+  /* --- profil fabricant & capabilités --- */
+  sel("reMfgSelect", v => {
+    if(typeof pcbSetActiveMfgProfile === "function") pcbSetActiveMfgProfile(v);
+    reSync();
+  });
+  clk("reMfgApply", () => {
+    if(typeof pcbApplyMfgProfileToProject === "function"){
+      const profId = typeof pcbGetActiveMfgProfileId === "function" ? pcbGetActiveMfgProfileId() : "jlcpcb";
+      const r = pcbApplyMfgProfileToProject(profId, { createDedicatedClass: true });
+      reSync();
+      if(r && r.changes){
+        const msg = r.changes.length
+          ? "Règles PCB mises à jour avec succès :\n\n• " + r.changes.join("\n• ")
+          : "Toutes les règles du projet sont déjà conformes aux capabilités de " + (r.profile ? r.profile.name : "ce fabricant") + ".";
+        if(typeof toast === "function") toast("Règles PCB appliquées (" + (r.profile ? r.profile.name : "") + ")");
+        else if(typeof hint === "function") hint(msg);
+        else alert(msg);
+      }
+    }
+  });
+  clk("reMfgImportBtn", () => {
+    const inp = $("reMfgFileInput");
+    if(inp){ inp.value = ""; inp.click(); }
+  });
+  const mfgInp = $("reMfgFileInput");
+  if(mfgInp){
+    mfgInp.onchange = async () => {
+      if(mfgInp.files && mfgInp.files[0]){
+        const r = await pcbImportMfgProfileFromFile(mfgInp.files[0]);
+        if(r && r.ok){
+          reSync();
+          if(typeof toast === "function") toast("Profil « " + r.profile.name + " » importé et activé !");
+          else if(typeof hint === "function") hint("Profil « " + r.profile.name + " » importé !");
+          else alert("Profil « " + r.profile.name + " » importé avec succès !");
+        } else {
+          alert("Erreur d'import : " + ((r && r.error) || "fichier invalide"));
+        }
+      }
+    };
+  }
+  clk("reMfgExportBtn", () => {
+    if(typeof pcbExportMfgProfileToJson === "function" && typeof pcbGetMfgProfile === "function"){
+      const p = pcbGetMfgProfile();
+      const txt = pcbExportMfgProfileToJson(p.id);
+      if(typeof Blob !== "undefined" && typeof URL !== "undefined" && typeof document !== "undefined"){
+        const blob = new Blob([txt], { type: "application/json;charset=utf-8" });
+        const u = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = u;
+        a.download = (p.id || "profil_pcb") + ".json";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(u);
+      }
+    }
+  });
+  clk("reMfgNewBtn", () => {
+    const baseId = typeof pcbGetActiveMfgProfileId === "function" ? pcbGetActiveMfgProfileId() : "jlcpcb";
+    const nom = (prompt("Nom du nouveau profil personnalisé :", "Mon Fabricant") || "").trim();
+    if(!nom) return;
+    if(typeof pcbCreateCustomMfgProfile === "function"){
+      const p = pcbCreateCustomMfgProfile(baseId, null, nom);
+      reSync();
+      if(typeof toast === "function") toast("Profil « " + p.name + " » créé !");
+      else if(typeof hint === "function") hint("Profil « " + p.name + " » créé !");
+    }
+  });
+  clk("reMfgDelBtn", () => {
+    if(typeof pcbGetMfgProfile === "function" && typeof pcbDeleteCustomMfgProfile === "function"){
+      const p = pcbGetMfgProfile();
+      if(confirm("Supprimer le profil personnalisé « " + p.name + " » ?")){
+        pcbDeleteCustomMfgProfile(p.id);
+        reSync();
+      }
+    }
+  });
+
+  /* --- onglets principaux d'en-tête (Règles vs Capabilités) --- */
+  clk("reTabRules", () => {
+    RE.tab = "rules";
+    if(RE.page === "mfg" || RE.page === "mfg_rules") RE.page = "clr";
+    reSync();
+  });
+  clk("reTabMfg", () => {
+    RE.tab = "mfg";
+    if(RE.page !== "mfg" && RE.page !== "mfg_rules") RE.page = "mfg";
+    reSync();
+  });
+
+  /* --- navigation par onglets capabilités / règles --- */
+  clk("mfgTabCaps", () => { RE.tab = "mfg"; reGo("mfg"); });
+  clk("mfgTabRules", () => reGo("mfg_rules"));
+  clk("reMfgRulesToCaps", () => { RE.tab = "mfg"; reGo("mfg"); });
+  clk("reMfgRulesApply", () => {
+    if(typeof pcbApplyProjectDesignRules === "function"){
+      pcbApplyProjectDesignRules();
+      reSync();
+      if(typeof toast === "function") toast("Règles du projet appliquées aux classes et au tracé");
+      else if(typeof hint === "function") hint("Règles du projet appliquées avec succès");
+      else alert("Règles du projet appliquées avec succès aux classes et au tracé.");
+    }
+  });
+  clk("reMfgRulesReset", () => {
+    if(typeof pcbResetRulesToMfgRecommendations === "function"){
+      pcbResetRulesToMfgRecommendations();
+      reSync();
+      if(typeof toast === "function") toast("Règles réinitialisées aux valeurs recommandées");
+      else if(typeof hint === "function") hint("Règles réinitialisées aux recommandations");
+    }
+  });
+  if(typeof PCB_RULE_METAS !== "undefined"){
+    for(const k in PCB_RULE_METAS){
+      num("mfgRule_min_" + k, v => {
+        if(typeof pcbSetProjectDesignRule === "function") pcbSetProjectDesignRule(k, "min", v);
+      });
+      num("mfgRule_typ_" + k, v => {
+        if(typeof pcbSetProjectDesignRule === "function") pcbSetProjectDesignRule(k, "typ", v);
+      });
+      num("mfgRule_max_" + k, v => {
+        if(typeof pcbSetProjectDesignRule === "function") pcbSetProjectDesignRule(k, "max", v);
+      });
+    }
+  }
 
   /* --- règles générales --- */
   num("reHole",v=>S.rule.hole=Math.max(0,v));

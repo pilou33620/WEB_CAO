@@ -467,7 +467,13 @@ function normDoc(d){
                d'usine — celles qu'ils appliquaient déjà */
             short:!!r.short,
             aspWarn:dRange(r.aspWarn,ASPECT_WARN,1,100),
-            aspMax:dRange(r.aspMax,ASPECT_MAX,1,100)};
+            aspMax:dRange(r.aspMax,ASPECT_MAX,1,100),
+            mfgProfile:dStr(r.mfgProfile,32)||"jlcpcb"};
+  if(r.designRules!==undefined){
+    out.rule.designRules=(r.designRules&&typeof r.designRules==="object")
+      ? JSON.parse(JSON.stringify(r.designRules))
+      : r.designRules;
+  }
   /* largeurs de la V1.0 : loadDoc() en tire deux classes quand `classes`
      manque, on les laisse donc passer */
   for(const k of ["w","clr","via","drill","wPwr"])
@@ -545,7 +551,13 @@ function loadDoc(d,keepView){
   const r=d.rule;
   S.rule={edge:r.edge, thermal:r.thermal, mask:r.mask, paste:r.paste,
           viaFinish:r.viaFinish, corner:r.corner, route:r.route, hole:r.hole,
-          mat:r.mat, short:r.short, aspWarn:r.aspWarn, aspMax:r.aspMax};
+          mat:r.mat, short:r.short, aspWarn:r.aspWarn, aspMax:r.aspMax,
+          mfgProfile:r.mfgProfile||"jlcpcb"};
+  if(r.designRules!==undefined){
+    S.rule.designRules=(r.designRules&&typeof r.designRules==="object")
+      ? JSON.parse(JSON.stringify(r.designRules))
+      : r.designRules;
+  }
   if(d.classes){
     S.classes=d.classes;S.netClass=d.netClass;
   }else{

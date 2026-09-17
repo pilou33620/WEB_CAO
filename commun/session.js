@@ -192,7 +192,7 @@ function sessCiblePrendre(outil){
      - un navigateur sans BroadcastChannel ne partage rien (sessCanalDispo) ;
      - en double-clic sur les fichiers (file://), deux onglets n'ont pas la
        meme origine au sens du navigateur : le message ne passe pas. Il faut
-       alors servir le depot (python serveur.py), comme pour la recherche de
+       alors servir le depot (python web_CAO.py), comme pour la recherche de
        composants.
    ========================================================================== */
 const SESS_CANAL = "cao.probe.v1";

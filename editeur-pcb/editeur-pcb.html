@@ -24,7 +24,7 @@
     <button class="tb" data-cao-nav="lib" title="Gestion des bibliothèques (catalogue, empreintes, symboles)">📚 Gestion LIB</button>
     <button class="tb" data-cao-nav="accueil" title="Page d'accueil">⌂ Accueil</button>
     <button class="tb" id="bProfil" data-cao-profil title="Utilisateur : panneaux, réglages et derniers documents lui appartiennent">👤 …</button>
-    <button class="tb tb-ia" id="bIaAssistant" title="Assistant IA technique — Gemma 4 31B (Google AI Studio)"><span class="ia-sparkle">✨</span> IA</button>
+    <button class="tb tb-ia" id="bIaAssistant" title="Assistant IA technique — Gemma 4 31B &amp; Gemini 3.8 Flash (Google AI Studio)"><span class="ia-sparkle">✨</span> IA</button>
     <button class="tb tb-tactile-indicator" id="bTactileToggle" title="Mode tactile (iPad / tablette)"><span class="tactile-dot"></span> 📱 Tactile</button>
     <div class="sep"></div>
     <button class="tb" id="bAddFp" title="Ajouter une empreinte depuis la bibliothèque (A)">➕ Empreinte <kbd>A</kbd></button>
@@ -68,7 +68,8 @@
     <button class="tb" id="bPlacementScore" title="Qualité de placement : chevelu minimal HPWL, découplage et congestion">Score Placement</button>
     <button class="tb" id="bCheckPinout" title="Vérifier la conformité du pinout, de la taille du boîtier et de la distance entre pins (schéma ➔ PCB)">⚡ Pinout : Vérifier</button>
     <button class="tb" id="bRules" title="Règles et contraintes de conception : classes de net, isolations, largeurs, vias, perçages, paires différentielles, fabrication — chaque règle avec sa figure cotée">Règles…</button>
-    <button class="tb" id="bSim" title="Simulation électromagnétique d'un net : paramètres S par la méthode des moments quasi-statique sur la section droite de la piste, puis mise en cascade. Le calcul a lieu sur le serveur (python serveur.py).">Simulation EM…</button>
+    <button class="tb" id="bMfgCaps" title="Capabilités Fabricant (JLCPCB...) et Règles de conception (Min / Typique / Max)">🏭 Capabilités & Règles…</button>
+    <button class="tb" id="bSim" title="Simulation électromagnétique d'un net : paramètres S par la méthode des moments quasi-statique sur la section droite de la piste, puis mise en cascade. Le calcul a lieu sur le serveur (python web_CAO.py).">Simulation EM…</button>
     <button class="tb" id="bSave">Enregistrer .json</button>
     <button class="tb" id="bOpen">Ouvrir</button>
     <button class="tb" id="bPng">Exporter .png</button>
@@ -287,6 +288,7 @@
 <script src="js/12-pns-walk.js"></script>
 <script src="js/13-pns-shove.js"></script>
 <script src="js/14-pns-placer.js"></script>
+<script src="js/24-pcb-capabilities.js"></script>
 <script src="js/15-regles.js"></script>
 <script src="js/16-profil.js"></script>
 <script src="js/17-exemples.js"></script>

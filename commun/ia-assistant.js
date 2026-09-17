@@ -1,6 +1,6 @@
 /* =============================================================================
    commun/ia-assistant.js
-   Assistant IA Technique — Gemma 4 31B (Google AI Studio)
+   Assistant IA Technique — Gemma 4 31B & Gemini 3.8 Flash (High) (Google AI Studio)
    Composant partagé : Schématique, PCB, Visionneuse IPC-2581
    
    GESTION STRICTE DE LA CLÉ API :
@@ -14,7 +14,13 @@
 (function() {
   /* ---------- État privé éphémère ---------- */
   let _cleApi = "";             // Variable en mémoire vive uniquement, JAMAIS persistée
-  let _modele = "gemini-2.5-flash"; // Modèle Google AI Studio (Gemini 2.5 Flash, Gemini 2.5 Pro ou Gemma 4)
+  let _modele = "gemma-4-31b-it"; // Modèle Google AI Studio : "gemma-4-31b-it" ou "gemini-3.8-flash"
+
+  function getNomModele(modele) {
+    if (modele === "gemini-3.8-flash") return "Gemini 3.8 Flash (High)";
+    if (modele === "gemma-4-31b-it") return "Gemma 4 31B";
+    return modele || "Assistant IA";
+  }
   let _historique = [];         // Messages de la session en cours
   let _enAttente = false;       // Requête en cours
   let _inclureContexte = true;  // Transmettre l'état CAO courant
@@ -474,7 +480,7 @@
     }
 
     const donnees = extraireDonneesSelectionDetaillees();
-    let html = '<div class="ia-menu-head"><span>Assistant IA (Gemma 4 31B)</span></div>';
+    let html = '<div class="ia-menu-head"><span>Assistant IA (' + getNomModele(_modele) + ')</span></div>';
 
     if (donnees) {
       let actionTitre = "📐 Analyser avec l'IA ✨";
@@ -588,9 +594,8 @@
           '<div class="ia-status-left">' +
             '<span class="ia-status-dot"></span>' +
             '<select id="iaModelSelect" class="ia-model-select" title="Modèle d\'IA Google AI Studio">' +
-              '<option value="gemini-2.5-flash">Gemini 2.5 Flash</option>' +
-              '<option value="gemini-2.5-pro">Gemini 2.5 Pro</option>' +
               '<option value="gemma-4-31b-it">Gemma 4 31B</option>' +
+              '<option value="gemini-3.8-flash">Gemini 3.8 Flash (High)</option>' +
             '</select>' +
             '<span class="ia-status-ctx" id="iaContextText">Prêt</span>' +
           '</div>' +
@@ -634,6 +639,7 @@
         _modele = this.value;
         const lbl = document.getElementById("iaFooterModelLabel");
         if (lbl) lbl.textContent = this.options[this.selectedIndex].text + " · Session active";
+        if (_historique.length === 0) rendreMessages();
       });
     }
 
@@ -1181,7 +1187,7 @@
       const welcome = document.createElement("div");
       welcome.className = "ia-msg model";
       welcome.innerHTML = 
-        '<span class="ia-msg-role">Gemma 4 31B</span>' +
+        '<span class="ia-msg-role">' + getNomModele(_modele) + '</span>' +
         '<div class="ia-msg-bubble">' +
           '<p>Bonjour ! Je suis votre assistant technique spécialisé en CAO électronique, dimensionnement, schématique, routage PCB et formats de fabrication.</p>' +
           '<p>Que souhaitez-vous concevoir ou vérifier aujourd\'hui ?</p>' +
@@ -1201,7 +1207,7 @@
     _historique.forEach(m => {
       const d = document.createElement("div");
       d.className = "ia-msg " + m.role + (m.localManual ? " local-tool" : "");
-      let roleLabel = m.role === "user" ? "Vous" : "Gemma 4 31B";
+      let roleLabel = m.role === "user" ? "Vous" : (m.nomModele || getNomModele(_modele));
       if (m.localManual) {
         roleLabel = "🛠️ Guide du Système CAO (Réponse locale de l'outil)";
       }
@@ -1215,9 +1221,12 @@
     if (_enAttente) {
       const loading = document.createElement("div");
       loading.className = "ia-loading-bubble";
+      const txtAttente = (_modele === "gemini-3.8-flash")
+        ? "Gemini 3.8 Flash (High) réfléchit et analyse votre question technique..."
+        : "Gemma 4 analyse votre question technique...";
       loading.innerHTML = 
         '<div class="ia-dots"><span class="ia-dot"></span><span class="ia-dot"></span><span class="ia-dot"></span></div>' +
-        '<span>Gemma 4 analyse votre question technique...</span>';
+        '<span>' + txtAttente + '</span>';
       cont.appendChild(loading);
     }
 
@@ -1405,6 +1414,7 @@
     const url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(_modele) + ":generateContent?key=" + encodeURIComponent(_cleApi);
 
     const estGemma = _modele.includes("gemma");
+    const isGemini38 = _modele === "gemini-3.8-flash" || _modele.includes("gemini-3");
     const contents = [];
 
     if (estGemma) {
@@ -1445,9 +1455,15 @@
       contents: contents,
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 4096
+        maxOutputTokens: isGemini38 ? 8192 : 4096
       }
     };
+
+    if (isGemini38) {
+      corps.generationConfig.thinkingConfig = {
+        thinkingLevel: "high"
+      };
+    }
 
     if (!estGemma) {
       corps.systemInstruction = {
@@ -1468,12 +1484,21 @@
         if (altContents.length > 0 && altContents[0].role === "user") {
           altContents[0].parts[0].text = promptSysteme + "\n\n" + altContents[0].parts[0].text;
         }
+        const altGenConfig = {
+          temperature: 0.2,
+          maxOutputTokens: isGemini38 ? 8192 : 4096
+        };
+        if (isGemini38) {
+          altGenConfig.thinkingConfig = {
+            thinkingLevel: "high"
+          };
+        }
         rep = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: altContents,
-            generationConfig: { temperature: 0.2, maxOutputTokens: 4096 }
+            generationConfig: altGenConfig
           })
         });
       }
@@ -1498,11 +1523,14 @@
         texteReponse = "*(Aucune réponse textuelle reçue du modèle)*";
       }
 
-      // Nettoyage rigoureux : suppression de toute réflexion préliminaire ou monologue en anglais
-      texteReponse = nettoyerReponseGemma(texteReponse);
+      // Nettoyage rigoureux : suppression de toute réflexion préliminaire ou monologue en anglais pour Gemma
+      if (estGemma) {
+        texteReponse = nettoyerReponseGemma(texteReponse);
+      }
 
       _historique.push({
         role: "model",
+        nomModele: getNomModele(_modele),
         parts: [{ text: texteReponse }]
       });
 
@@ -1511,7 +1539,7 @@
       if (_historique.length > 0 && _historique[_historique.length - 1].role === "user") {
         _historique.pop();
       }
-      console.error("Erreur appel Gemma 4 / Google AI Studio :", e);
+      console.error("Erreur appel IA / Google AI Studio :", e);
       if (errBanner) {
         const errTxt = document.getElementById("iaErrorText");
         if (errTxt) {

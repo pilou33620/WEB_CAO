@@ -35,7 +35,7 @@ cascade. La page peint le résultat **sur la piste** et y écrit la valeur.
 
 ```bash
 pip install numpy scipy      # les deux seules dépendances du dépôt, facultatives
-python serveur.py
+python web_CAO.py
 ```
 
 ### La carte de chaleur

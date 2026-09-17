@@ -182,7 +182,16 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "reSync","reTree","reBind","reTitle","reCat","reFindings","reMatrix","reObj",
   "figClr","figWidth","figVia","figHole","figAspect","figTherm","figEdge","figMask",
   "figShort","figClass","figBoard","reHoleCase","reDimHSoft","reFact","reClassTable",
-  "reClassSel","reFinishSel","aspWarn","aspMax","ASPECT_WARN","ASPECT_MAX",
+  "reClassSel","reCls","reFinishSel","aspWarn","aspMax","ASPECT_WARN","ASPECT_MAX",
+  "PCB_DEFAULT_MFG_PROFILES","PCB_MFG_PROFILES","pcbLoadMfgProfiles","pcbSaveMfgProfiles",
+  "pcbGetMfgProfile","pcbGetActiveMfgProfileId","pcbSetActiveMfgProfile","pcbEnsureDefaultProjectRules",
+  "pcbImportMfgProfileFromJson","pcbImportMfgProfileFromFile","pcbExportMfgProfileToJson",
+  "pcbCreateCustomMfgProfile","pcbDeleteCustomMfgProfile","pcbApplyMfgProfileToProject",
+  "pcbAuditBoardAgainstMfg","figMfg","reMfgSpecsHtml",
+  "pcbGetMfgLimits","pcbGetDefaultDesignRules","pcbGetProjectDesignRules",
+  "pcbSetProjectDesignRule","pcbPropagateTypiqueToProject","pcbApplyProjectDesignRules",
+  "pcbResetRulesToMfgRecommendations","pcbAuditRulesAgainstMfg","PCB_RULE_METAS",
+  "figMfgRules","reMfgTabs",
   /* pistes circulaires : l'arc rangé comme une piste de plus */
   "ARC_MIN","ARC_MAX","ARC_SAG","isArc","arcOf","arcSweep","arcOn",
   "trkLen","trkAt","trkMid","trkDist","trkBBox","trkSegs","trkPath",
@@ -7691,7 +7700,7 @@ T("règles : le panneau des paires vit dans la page qui le porte",()=>{
    Ce qui est vérifié ici : un nom devient un nom de fichier, deux personnes
    ne se marchent pas dessus, et changer d'utilisateur replace vraiment les
    panneaux et les réglages. Le fichier profils/<nom>.json, lui, est du
-   ressort de serveur.py — le banc d'essai n'a pas de serveur, et le module
+   ressort de web_CAO.py — le banc d'essai n'a pas de serveur, et le module
    doit s'en passer sans broncher : c'est le cas du double-clic (file://).
    ========================================================================== */
 T("premier utilisateur : Pilou",()=>{
@@ -18359,8 +18368,412 @@ T("simulation EM - Paramètres S différentiels : calcul Sdd, Scc, Scd et modes 
   SIM.modeDiffS = "sdd";
 });
 
+/* =============================================================================
+   Banc d'essai : Capabilités PCB, Profils Fabricants (JLCPCB) & Règles
+   ============================================================================= */
+T("Capabilités PCB : vérification exhaustive du profil JLCPCB", () => {
+  const p = PCB_DEFAULT_MFG_PROFILES.jlcpcb;
+  if(!p) throw new Error("Profil JLCPCB absent");
+  if(p.id !== "jlcpcb" || p.name !== "JLCPCB") throw new Error("Identifiant ou nom JLCPCB invalide");
+
+  // 1. Couches & Impédance
+  if(p.general.layerCount.min !== 1 || p.general.layerCount.max !== 32)
+    throw new Error("Nombre de couches JLCPCB invalide (1-32 attendu)");
+  if(!p.general.controlledImpedance.supported || p.general.controlledImpedance.tolerancePercent !== 10)
+    throw new Error("Impédance contrôlée JLCPCB invalide");
+  if(!Array.isArray(p.general.controlledImpedance.layers) || p.general.controlledImpedance.layers.length < 10)
+    throw new Error("Liste des couches d'impédance contrôlée incomplète");
+
+  // 2. Matériaux
+  const mats = p.general.materials;
+  if(!mats || !mats.some(m => m.type === "FR-4" && m.er === 4.5 && m.prepregs && m.prepregs["7628"] === 4.4))
+    throw new Error("Matériau FR-4 ou préimprégnés manquants");
+  if(!mats.some(m => m.type === "Aluminum-Core" && m.minDrill === 0.65))
+    throw new Error("Spécification Aluminium JLCPCB manquante");
+  if(!mats.some(m => m.type === "Copper-Core" && m.minDrill === 1.0))
+    throw new Error("Spécification Cuivre dissipateur JLCPCB manquante");
+  if(!mats.some(m => m.type === "RF PCB" && m.layers === 2))
+    throw new Error("Spécification RF Rogers/PTFE JLCPCB manquante");
+
+  // 3. Dimensions & Tolérances
+  if(p.dimensions.max.fr4_1layer.w !== 606 || p.dimensions.max.fr4_2layer.w !== 670)
+    throw new Error("Dimensions max FR4 1L/2L invalides");
+  if(p.dimensions.max.fr4_2layer.oversizeW !== 1020 || p.dimensions.max.fr4_4layer.oversizeW !== 1016)
+    throw new Error("Dimensions oversize JLCPCB manquantes");
+  if(p.dimensions.min.fr4_rogers_ptfe.w !== 3 || p.dimensions.min.roundBoardSingle.w !== 20)
+    throw new Error("Dimensions min JLCPCB invalides");
+  if(p.dimensions.tolerance.cncRegular !== 0.2 || p.dimensions.tolerance.cncPrecision !== 0.1 || p.dimensions.tolerance.vScoring !== 0.4)
+    throw new Error("Tolérances dimensionnelles CNC/V-scoring invalides");
+
+  // 4. Épaisseur
+  if(p.dimensions.thickness.min !== 0.4 || p.dimensions.thickness.max !== 4.5)
+    throw new Error("Plage d'épaisseur 0.4-4.5 mm invalide");
+  if(p.dimensions.thickness.toleranceGte1mmPercent !== 10 || p.dimensions.thickness.toleranceLt1mmMm !== 0.1)
+    throw new Error("Tolérance d'épaisseur JLCPCB invalide");
+
+  // 5. Cuivre (traces, espacements, anneaux)
+  if(!Array.isArray(p.copper.weights) || p.copper.weights.length < 5)
+    throw new Error("Poids de cuivre incomplets (1, 2, 2.5, 3.5, 4.5 oz attendus)");
+  const w1oz = p.copper.weights[0];
+  if(w1oz.minTrackWidth !== 0.10 || w1oz.minTrackSpacing !== 0.10)
+    throw new Error("Minima de piste 1 oz (0.10 mm) invalides");
+  const w2oz = p.copper.weights[2];
+  if(w2oz.minTrackWidth !== 0.16 || w2oz.minTrackSpacing !== 0.16)
+    throw new Error("Minima de piste 2 oz (0.16 mm) invalides");
+  if(p.copper.pthAnnularRingMinOverall !== 0.20 || p.copper.npthPadAnnularRingMin !== 0.45)
+    throw new Error("Couronnes annulaires PTH / NPTH invalides");
+  if(p.copper.bga.minPadDia !== 0.20 || p.copper.bga.enigRequiredUnderDia !== 0.25)
+    throw new Error("Règles BGA JLCPCB invalides");
+  if(p.copper.traceCoils.maskedMin !== 0.15)
+    throw new Error("Règle serpentins bobines invalide");
+
+  // 6. Perçage & Vias
+  if(p.drilling.drillDiameterMin.layer2Plus !== 0.15 || p.drilling.drillDiameterMin.layer1 !== 0.30)
+    throw new Error("Diamètres de forets minimaux invalides");
+  if(p.drilling.drillDiameterMin.aluminum !== 0.65 || p.drilling.drillDiameterMin.copperCore !== 1.0)
+    throw new Error("Forets alu / cuivre invalides");
+  if(p.drilling.holeSizeTolerance.pthPlus !== 0.13 || p.drilling.holeSizeTolerance.pthMinus !== 0.08)
+    throw new Error("Tolérance de trou traversant invalide");
+  if(p.drilling.holeSizeTolerance.pressFit !== 0.05)
+    throw new Error("Tolérance press-fit invalide");
+  if(p.drilling.blindBuriedViasSupported !== false)
+    throw new Error("Trous borgnes doivent être false chez JLCPCB");
+  if(p.drilling.vias.minHoleSize !== 0.15 || p.drilling.vias.minViaDiameter !== 0.25)
+    throw new Error("Vias minimaux (0.15 / 0.25 mm) invalides");
+  if(p.drilling.slots.platedMinW_2layer !== 0.50 || p.drilling.slots.nonPlatedMinW !== 1.0)
+    throw new Error("Fentes fraisées invalides");
+  if(p.drilling.castellatedHoles.minHoleDia !== 0.50 || p.drilling.castellatedHoles.holeToEdgeMin !== 1.0)
+    throw new Error("Demi-trous métallisés (castellations) invalides");
+  if(p.drilling.platedEdges.minPcbSize !== 10 || p.drilling.platedEdges.finishRequired !== "ENIG")
+    throw new Error("Bords métallisés invalides");
+  if(p.drilling.rectangularHolesSupported !== false)
+    throw new Error("Trous rectangulaires sans arrondis doivent être non supportés");
+
+  // 7. Masque & Sérigraphie
+  if(p.general.solderMask.expansionRatio !== "1:1" || p.general.solderMask.clearanceToTraceMin !== 0.09)
+    throw new Error("Masque LDI 1:1 ou dégagement trace invalide");
+  if(p.general.solderMask.bridgeMin["1oz_colors"] !== 0.10)
+    throw new Error("Pont de vernis 1 oz invalide");
+  if(p.general.solderMask.pluggedVias.maxViaDia !== 0.50)
+    throw new Error("Vias bouchés vernis max 0.5 mm invalide");
+  if(p.silkscreen.minLineWidth !== 0.15 || p.silkscreen.minTextHeight !== 1.0 || p.silkscreen.preferredWidthToHeightRatio !== "1:6")
+    throw new Error("Spécifications de sérigraphie invalides");
+
+  // 8. Découpe & Panélisation
+  if(p.outline.routed.copperClearance !== 0.20 || p.outline.vCut.copperClearance !== 0.40)
+    throw new Error("Dégagement cuivre découpe CNC / V-cut invalide");
+  if(p.outline.vCut.vCutAngle !== 25 || p.outline.panelizationSpacingMin !== 2.0)
+    throw new Error("Angle V-cut 25° ou espacement panélisation 2 mm invalide");
+  if(p.outline.mouseBites.copperClearance !== 0.20 || p.outline.mouseBites.tabWidthMin !== 4.0)
+    throw new Error("Règles attaches mouse-bites invalides");
+});
+
+T("Capabilités PCB : gestion multi-profils, création personnalisée et import/export JSON", () => {
+  // Profils par défaut
+  if(!PCB_DEFAULT_MFG_PROFILES.jlcpcb || !PCB_DEFAULT_MFG_PROFILES.generique ||
+     !PCB_DEFAULT_MFG_PROFILES.eurocircuits || !PCB_DEFAULT_MFG_PROFILES.pcbway)
+    throw new Error("Au moins 4 profils par défaut doivent être présents");
+
+  // Bascule de profil
+  carteRegles();
+  const okAct = pcbSetActiveMfgProfile("eurocircuits");
+  if(!okAct || pcbGetActiveMfgProfileId() !== "eurocircuits")
+    throw new Error("Échec d'activation du profil Eurocircuits");
+
+  // Création profil personnalisé
+  const customP = pcbCreateCustomMfgProfile("jlcpcb", "test_mfg_fab", "Test Fabricant Spécial");
+  if(!customP || customP.id !== "test_mfg_fab" || customP.name !== "Test Fabricant Spécial")
+    throw new Error("Échec de création du profil personnalisé");
+  if(pcbGetActiveMfgProfileId() !== "test_mfg_fab")
+    throw new Error("Le profil personnalisé devait devenir le profil actif");
+
+  // Export JSON
+  const jsonStr = pcbExportMfgProfileToJson("test_mfg_fab");
+  const parsed = JSON.parse(jsonStr);
+  if(parsed.name !== "Test Fabricant Spécial" || parsed.id !== "test_mfg_fab")
+    throw new Error("Export JSON invalide");
+
+  // Import JSON
+  parsed.id = "imported_fab";
+  parsed.name = "Fabricant Importé Direct";
+  const resImp = pcbImportMfgProfileFromJson(JSON.stringify(parsed));
+  if(!resImp.ok || !resImp.profile || resImp.profile.id !== "imported_fab")
+    throw new Error("Import JSON a échoué : " + (resImp.error || ""));
+  if(pcbGetActiveMfgProfileId() !== "imported_fab")
+    throw new Error("Le profil importé devait être activé");
+
+  // Suppression profil personnalisé
+  const delOk = pcbDeleteCustomMfgProfile("imported_fab");
+  if(!delOk || PCB_MFG_PROFILES["imported_fab"])
+    throw new Error("Suppression du profil personnalisé a échoué");
+
+  pcbDeleteCustomMfgProfile("test_mfg_fab");
+  pcbSetActiveMfgProfile("jlcpcb");
+  if(pcbGetActiveMfgProfileId() !== "jlcpcb")
+    throw new Error("Retour au profil JLCPCB a échoué");
+});
+
+T("Capabilités PCB : application automatique et création des règles de conception", () => {
+  carteRegles();
+  // Simuler une situation où S.rule et S.classes sont totalement absentes
+  delete S.rule;
+  delete S.classes;
+  delete S.netClass;
+
+  // L'application doit tout recréer automatiquement
+  const res = pcbApplyMfgProfileToProject("jlcpcb", { createDedicatedClass: true });
+  if(!res || !res.ok) throw new Error("pcbApplyMfgProfileToProject a échoué");
+
+  if(!S.rule) throw new Error("S.rule devait être créé automatiquement");
+  if(S.rule.mfgProfile !== "jlcpcb") throw new Error("mfgProfile devait être 'jlcpcb'");
+  if(S.rule.edge < 0.20) throw new Error("Marge au bord devait être au moins 0.20 mm");
+  if(S.rule.hole < 0.20) throw new Error("Trou à trou devait être au moins 0.20 mm");
+  if(S.rule.mask !== 0.0) throw new Error("Masque devait passer à 0.00 mm (1:1 LDI)");
+
+  if(!Array.isArray(S.classes) || S.classes.length < 2)
+    throw new Error("S.classes devait être créé et contenir la classe dédiée");
+  const defCl = S.classes.find(c => c.name === "Défaut");
+  if(!defCl || defCl.w < 0.10 || defCl.clr < 0.10 || defCl.drill < 0.15 || defCl.via < 0.25)
+    throw new Error("La classe Défaut ne respecte pas les minima JLCPCB");
+
+  const jlcCl = S.classes.find(c => c.name === "JLCPCB Standard");
+  if(!jlcCl) throw new Error("La classe 'JLCPCB Standard' devait être créée");
+
+  if(matGet("via", "via") < 0.20)
+    throw new Error("Matrice Via ↔ Via devait être relevée à 0.20 mm");
+  if(matGet("cu", "trk") < 0.10)
+    throw new Error("Matrice Cuivre ↔ Piste devait être relevée à 0.10 mm");
+});
+
+T("Capabilités PCB : audit de conformité de la carte en temps réel", () => {
+  carteRegles();
+  pcbSetActiveMfgProfile("jlcpcb");
+
+  // 1. Carte normale conforme
+  S.board.w = 100; S.board.h = 80;
+  S.cu = 2;
+  S.tracks = [{ w: 0.25, net: "VCC", l: 0, pts: [{ x: 10, y: 10 }, { x: 30, y: 10 }] }];
+  S.vias = [{ x: 20, y: 20, d: 0.8, drill: 0.3, a: 0, b: 1, net: "VCC" }];
+  S.holes = [{ x: 50, y: 50, d: 3.0 }];
+  S.rule.edge = 0.4;
+  touch();
+
+  const audit1 = pcbAuditBoardAgainstMfg(pcbGetMfgProfile("jlcpcb"));
+  if(!Array.isArray(audit1) || audit1.length < 5)
+    throw new Error("Audit incomplet");
+  const echecs1 = audit1.filter(item => !item.ok);
+  if(echecs1.length > 0)
+    throw new Error("La carte conforme a produit des non-conformités : " + JSON.stringify(echecs1));
+
+  // 2. Carte non-conforme (piste trop fine, trou trop petit, carte trop grande)
+  S.tracks[0].w = 0.05; // 0.05 mm < 0.10 mm
+  S.vias[0].drill = 0.08; // 0.08 mm < 0.15 mm
+  S.board.w = 800; // 800 mm > 670 mm
+  touch();
+
+  const audit2 = pcbAuditBoardAgainstMfg(pcbGetMfgProfile("jlcpcb"));
+  const badPiste = audit2.find(item => item.label === "Largeur de piste min");
+  if(!badPiste || badPiste.ok) throw new Error("L'audit devait détecter la piste de 0.05 mm trop fine");
+
+  const badDrill = audit2.find(item => item.label === "Diamètre de perçage min");
+  if(!badDrill || badDrill.ok) throw new Error("L'audit devait détecter le foret de 0.08 mm trop fin");
+
+  const badDim = audit2.find(item => item.label === "Format de la carte");
+  if(!badDim || badDim.ok) throw new Error("L'audit devait détecter la carte hors gabarit (800 mm)");
+});
+
+T("Règles & contraintes : intégration complète de la page mfg dans RE_TREE et RE_PAGE", () => {
+  carteRegles();
+  // Vérifier la présence dans l'arbre
+  const treeEntry = RE_TREE.find(c => c.cat === "Fabrication");
+  if(!treeEntry || !treeEntry.n.some(item => item[0] === "mfg"))
+    throw new Error("Entrée 'mfg' absente de RE_TREE sous Fabrication");
+  if(reTitle("mfg") !== "Profil fabricant & Capabilités")
+    throw new Error("Titre reTitle('mfg') incorrect : " + reTitle("mfg"));
+  if(reCat("mfg") !== "Fabrication")
+    throw new Error("Catégorie reCat('mfg') incorrecte : " + reCat("mfg"));
+
+  // Ouverture de la page
+  reOpen("mfg");
+  if(!reIsOpen()) throw new Error("reOpen('mfg') devait ouvrir la fenêtre");
+  const html = $("rePage").innerHTML;
+
+  if(!html.includes("DRC-MFG")) throw new Error("Identifiant DRC-MFG absent");
+  if(!html.includes("<svg")) throw new Error("Figure SVG manquante sur la page mfg");
+  if(!html.includes("reMfgSelect")) throw new Error("Sélecteur reMfgSelect absent");
+  if(!html.includes("reMfgApply")) throw new Error("Bouton d'application absent");
+  if(!html.includes("mfg-table")) throw new Error("Tableau d'audit absent");
+  if(!html.includes("JLCPCB")) throw new Error("Profil JLCPCB absent de la page");
+  if(!html.includes("Général &amp; Matières") && !html.includes("Général & Matières"))
+    throw new Error("Section des matières absente");
+
+  // reFindings
+  const findings = reFindings("mfg");
+  if(!Array.isArray(findings)) throw new Error("reFindings('mfg') devait retourner une liste");
+
+  reClose();
+  if(reIsOpen()) throw new Error("reClose() devait fermer la fenêtre");
+});
+
+T("Règles de conception : validation Min / Typique / Max et bornage par les capabilités fabricant", () => {
+  carteRegles();
+  pcbSetActiveMfgProfile("jlcpcb");
+
+  // 1. Initialisation des règles
+  const rules = pcbGetProjectDesignRules();
+  if(!rules || !rules.trackWidth)
+    throw new Error("pcbGetProjectDesignRules devait initialiser les règles");
+
+  // Vérification de l'exemple utilisateur : largeur min 0.10 mm, typique 0.21 mm, max 5.0 mm
+  if(rules.trackWidth.min !== 0.10)
+    throw new Error("Largeur min par défaut devait être 0.10 mm, trouvé : " + rules.trackWidth.min);
+  if(rules.trackWidth.typ !== 0.21)
+    throw new Error("Largeur typique devait être 0.21 mm, trouvé : " + rules.trackWidth.typ);
+  if(rules.trackWidth.max !== 5.00)
+    throw new Error("Largeur max par défaut devait être 5.00 mm, trouvé : " + rules.trackWidth.max);
+
+  // 2. Bornage strict par les capabilités fabricant (impossibilité d'enfreindre la limite machine)
+  // Essai de descendre la largeur min sous la borne usine de 0.10 mm
+  pcbSetProjectDesignRule("trackWidth", "min", 0.05);
+  if(rules.trackWidth.min < 0.10)
+    throw new Error("La capabilité fabricant devait bloquer la largeur min à 0.10 mm (obtenu: " + rules.trackWidth.min + ")");
+
+  // Essai de dépasser le plafond usine de 5.0 mm
+  pcbSetProjectDesignRule("trackWidth", "max", 12.0);
+  if(rules.trackWidth.max > 5.00)
+    throw new Error("La capabilité fabricant devait bloquer la largeur max à 5.00 mm (obtenu: " + rules.trackWidth.max + ")");
+
+  // Cohérence interne : typique entre min et max
+  pcbSetProjectDesignRule("trackWidth", "typ", 0.35);
+  if(rules.trackWidth.typ !== 0.35)
+    throw new Error("Typique devait être mis à jour à 0.35 mm");
+  // Propagation à la classe active
+  const curW = typeof reCls === "function" ? reCls().w : (S.classes && S.classes[0] && S.classes[0].w);
+  if(curW !== 0.35)
+    throw new Error("La valeur typique devait être propagée à la classe courante (w=0.35)");
+
+  // Perçage : JLCPCB autorise 0.15 mm min en 2 couches
+  pcbSetProjectDesignRule("drill", "min", 0.05);
+  if(rules.drill.min < 0.15)
+    throw new Error("La capabilité fabricant devait bloquer le perçage min à 0.15 mm");
+
+  // 3. Audit de conformité des règles
+  const audit = pcbAuditRulesAgainstMfg(rules, pcbGetMfgProfile("jlcpcb"));
+  if(!Array.isArray(audit) || audit.length < 5)
+    throw new Error("Audit des règles incomplet");
+  const badItems = audit.filter(item => !item.ok);
+  if(badItems.length > 0)
+    throw new Error("Les règles bornées ont produit des non-conformités : " + JSON.stringify(badItems));
+
+  // 4. Réinitialisation aux valeurs recommandées
+  const resetRules = pcbResetRulesToMfgRecommendations("jlcpcb");
+  if(resetRules.trackWidth.typ !== 0.21)
+    throw new Error("Reset devait restaurer la largeur typique de 0.21 mm");
+});
+
+T("Règles & contraintes : intégration de l'onglet mfg_rules et bascule avec mfg", () => {
+  carteRegles();
+  // 1. Présence dans l'arbre RE_TREE
+  const treeEntry = RE_TREE.find(c => c.cat === "Fabrication");
+  if(!treeEntry || !treeEntry.n.some(item => item[0] === "mfg_rules"))
+    throw new Error("Entrée 'mfg_rules' absente de RE_TREE sous Fabrication");
+  if(reTitle("mfg_rules") !== "Règles du Projet (Min / Typique / Max)")
+    throw new Error("Titre reTitle('mfg_rules') incorrect : " + reTitle("mfg_rules"));
+  if(reCat("mfg_rules") !== "Fabrication")
+    throw new Error("Catégorie reCat('mfg_rules') incorrecte : " + reCat("mfg_rules"));
+
+  // 2. Ouverture de la page mfg_rules
+  reOpen("mfg_rules");
+  if(!reIsOpen()) throw new Error("reOpen('mfg_rules') devait ouvrir la fenêtre");
+  const html = $("rePage").innerHTML;
+
+  if(!html.includes("DRC-MFG_RULES")) throw new Error("Identifiant DRC-MFG_RULES absent");
+  if(!html.includes("<svg")) throw new Error("Figure SVG manquante sur la page mfg_rules");
+  if(!html.includes("mfgTabCaps") || !html.includes("mfgTabRules"))
+    throw new Error("Onglets de bascule mfgTabCaps / mfgTabRules absents");
+  if(!html.includes("mfgRule_min_trackWidth"))
+    throw new Error("Champ mfgRule_min_trackWidth absent");
+  if(!html.includes("mfgRule_typ_trackWidth"))
+    throw new Error("Champ mfgRule_typ_trackWidth absent");
+  if(!html.includes("mfgRule_max_trackWidth"))
+    throw new Error("Champ mfgRule_max_trackWidth absent");
+  if(!html.includes("mfg-rules-table"))
+    throw new Error("Tableau mfg-rules-table absent");
+  if(!html.includes("reMfgRulesApply"))
+    throw new Error("Bouton d'application reMfgRulesApply absent");
+
+  // 3. Navigation par onglets croisés
+  const tabCaps = $("mfgTabCaps");
+  if(tabCaps){
+    tabCaps.onclick();
+    if(RE.page !== "mfg") throw new Error("Clic sur mfgTabCaps devait basculer à la page 'mfg'");
+  }
+  const tabRules = $("mfgTabRules");
+  if(tabRules){
+    tabRules.onclick();
+    if(RE.page !== "mfg_rules") throw new Error("Clic sur mfgTabRules devait basculer à la page 'mfg_rules'");
+  }
+
+  // 4. reFindings
+  const findings = reFindings("mfg_rules");
+  if(!Array.isArray(findings)) throw new Error("reFindings('mfg_rules') devait retourner une liste");
+
+  reClose();
+  if(reIsOpen()) throw new Error("reClose() devait fermer la fenêtre");
+});
+
+T("Règles & contraintes : 2 onglets principaux d'en-tête (Règles vs Capabilités Fabricant)", () => {
+  carteRegles();
+  reOpen();
+  if(!reIsOpen()) throw new Error("reOpen() devait ouvrir la fenêtre");
+
+  // 1. Présence des 2 onglets d'en-tête
+  const tabRules = $("reTabRules");
+  const tabMfg = $("reTabMfg");
+  if(!tabRules) throw new Error("Onglet #reTabRules absent de l'en-tête");
+  if(!tabMfg) throw new Error("Onglet #reTabMfg absent de l'en-tête");
+
+  // Par défaut, l'onglet Règles est actif
+  if(RE.tab !== "rules") throw new Error("RE.tab devait valoir 'rules'");
+  if(!tabRules.classList.contains("on")) throw new Error("#reTabRules devait avoir la classe 'on'");
+  if(tabMfg.classList.contains("on")) throw new Error("#reTabMfg ne devait pas avoir la classe 'on'");
+
+  // 2. Bascule vers l'onglet Capabilités Fabricant
+  tabMfg.onclick();
+  if(RE.tab !== "mfg") throw new Error("Clic sur tabMfg devait basculer RE.tab à 'mfg'");
+  if(!tabMfg.classList.contains("on")) throw new Error("#reTabMfg devait devenir 'on'");
+  if(tabRules.classList.contains("on")) throw new Error("#reTabRules ne devait plus être 'on'");
+
+  // Vérifier la présence du tableau comparatif dans mfg
+  const mfgHtml = $("rePage").innerHTML;
+  if(!mfgHtml.includes("Comparatif : Bornes Usine vs Règles par Défaut du Projet"))
+    throw new Error("Tableau comparatif des bornes usine absent de RE_PAGE.mfg");
+  if(!mfgHtml.includes("Rôle des capabilités fabricant"))
+    throw new Error("Bandeau d'explication du rôle des capabilités absent");
+
+  // Vérifier que le changement de profil ne modifie pas les règles par défaut
+  const rulesAvant = JSON.parse(JSON.stringify(pcbGetProjectDesignRules()));
+  pcbSetActiveMfgProfile("eurocircuits");
+  const rulesApres = pcbGetProjectDesignRules();
+  if(rulesApres.trackWidth.typ !== rulesAvant.trackWidth.typ)
+    throw new Error("Les capabilités fabricant ont modifié la règle typique de largeur de piste !");
+  if(rulesApres.trackWidth.typ !== 0.21)
+    throw new Error("La règle par défaut typique de 0.21 mm a été altérée");
+
+  // 3. Bascule vers l'onglet Règles de conception
+  tabRules.onclick();
+  if(RE.tab !== "rules") throw new Error("Clic sur tabRules devait basculer RE.tab à 'rules'");
+  if(!tabRules.classList.contains("on")) throw new Error("#reTabRules devait redevenir 'on'");
+  if(tabMfg.classList.contains("on")) throw new Error("#reTabMfg ne devait plus être 'on'");
+
+  reClose();
+  if(reIsOpen()) throw new Error("reClose() devait fermer la fenêtre");
+});
+
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
 process.exit(ko?1:0);
+
+
 
 
 

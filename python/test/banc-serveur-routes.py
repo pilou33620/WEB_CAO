@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
-Banc d'essai pour tester les routes HTTP de serveur.py :
+Banc d'essai pour tester les routes HTTP de web_CAO.py :
 - GET /api/pcb/score-placement
 - POST /api/pcb/score-placement
 - GET /api/schema/patterns
@@ -19,11 +19,11 @@ DOSSIER_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 if DOSSIER_ROOT not in sys.path:
     sys.path.insert(0, DOSSIER_ROOT)
 
-import serveur
+import web_CAO
 
 def test_routes():
     # Démarre le serveur sur un port aléatoire libre
-    httpd, _ = serveur.make_server("127.0.0.1", 0)
+    httpd, _ = web_CAO.make_server("127.0.0.1", 0)
     assert httpd is not None, "Impossible d'ouvrir le serveur de test"
     port = httpd.server_address[1]
 
@@ -90,7 +90,7 @@ def test_routes():
         payload_ds_inv = json.dumps({"url": "ftp://invalide", "mpn": "TEST"}).encode("utf-8")
         
         # 5a. PROJETS_OUVERT = False -> Rejet 403 propre
-        serveur.PROJETS_OUVERT = False
+        web_CAO.PROJETS_OUVERT = False
         conn.request("POST", "/api/datasheet/telecharger", body=payload_ds_inv, headers={"Content-Type": "application/json"})
         res = conn.getresponse()
         assert res.status == 403, "Attendu 403, reçu %d" % res.status
@@ -99,7 +99,7 @@ def test_routes():
         print("[PASS] POST /api/datasheet/telecharger (rejet 403 en écoute réseau)")
 
         # 5b. PROJETS_OUVERT = True -> Traitement et rejet URL invalide 400
-        serveur.PROJETS_OUVERT = True
+        web_CAO.PROJETS_OUVERT = True
         conn.request("POST", "/api/datasheet/telecharger", body=payload_ds_inv, headers={"Content-Type": "application/json"})
         res = conn.getresponse()
         assert res.status == 400, "Attendu 400, reçu %d" % res.status
@@ -118,7 +118,7 @@ def test_routes():
         conn.request("GET", "/api/datasheet/ouvrir?fichier=non_existant_test_12345.pdf")
         res = conn.getresponse()
         # 8. Protection SSRF sur /api/datasheet/telecharger
-        serveur.PROJETS_OUVERT = True
+        web_CAO.PROJETS_OUVERT = True
         for ssrf_url in [
             "http://127.0.0.1/secret.pdf",
             "http://localhost/secret.pdf",
@@ -135,7 +135,7 @@ def test_routes():
         print("[PASS] POST /api/datasheet/telecharger (protection SSRF active sur IPs privées/locales)")
 
         # 9. Protection contre la fuite de fichiers sensibles
-        for secret_file in ["/LIB_composants.csv", "/mom_solver.log", "/serveur.py", "/python/ipc2581_parser.py"]:
+        for secret_file in ["/LIB_composants.csv", "/mom_solver.log", "/web_CAO.py", "/python/ipc2581_parser.py"]:
             conn.request("GET", secret_file)
             res = conn.getresponse()
             assert res.status == 404, "Fichier sensible non masqué : %s -> %d" % (secret_file, res.status)
@@ -302,7 +302,7 @@ def test_routes():
         # Mais les octets non lus restent alors dans le tuyau, et la connexion
         # persistante devient inutilisable : la reutiliser leve un
         # ConnectionAbortedError qu'on lirait comme une panne du serveur.
-        import serveur as _srv
+        import web_CAO as _srv
         gros = json.dumps({"format": "cao-sim-em-3",
                            "bourrage": "x" * (5 * 1024 * 1024)}).encode("utf-8")
         for route, plafond in (("/api/simulation", _srv.MAX_SIM),

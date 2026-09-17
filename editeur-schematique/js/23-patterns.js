@@ -94,7 +94,7 @@ var SCHEMA_PATTERNS = (function() {
         <div style="padding:12px;color:var(--txt-dim);font-size:12px;line-height:1.5;">
           <div style="color:var(--yellow);font-weight:600;margin-bottom:6px;">⚠️ Serveur non disponible</div>
           <div>${esc(erreur)}</div>
-          <div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">Lancez <code>python serveur.py</code> pour activer la reconnaissance de motifs.</div>
+          <div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">Lancez <code>python web_CAO.py</code> pour activer la reconnaissance de motifs.</div>
           <button class="tb" id="bPatternsRefresh" style="margin-top:10px;width:100%;justify-content:center;">🔄 Réessayer</button>
         </div>
       `;

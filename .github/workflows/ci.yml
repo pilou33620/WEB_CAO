@@ -24,7 +24,7 @@ jobs:
           # CALCUL. Il en était absent — le moteur 2,5D pleine onde, six mille
           # lignes derrière /api/simulation-25d, n'était donc même pas vérifié
           # syntaxiquement par l'intégration continue.
-          python -m compileall -q serveur.py python mom_solver commun/outils \
+          python -m compileall -q web_CAO.py python mom_solver commun/outils \
             editeur-pcb/outils editeur-schematique/outils
 
       # ====================================================================
@@ -40,7 +40,7 @@ jobs:
       #
       # LES DÉPENDANCES SONT INSTALLÉES ICI ET NULLE PART AILLEURS : c'est ce
       # qui permet à requirements.txt de rester vide, donc au double-clic sur
-      # serveur.py de marcher sans réseau. Voir son en-tête.
+      # web_CAO.py de marcher sans réseau. Voir son en-tête.
       - name: Solveurs — dépendances de calcul
         run: pip install --quiet numpy scipy shapely
 

@@ -511,6 +511,7 @@ $("bDrc").onclick=()=>{
    « Paires différentielles » du dock : c'est désormais le seul endroit où une
    règle de conception s'écrit, et ce bouton est sa porte. */
 $("bRules").onclick=()=>reOpen();
+if($("bMfgCaps")) $("bMfgCaps").onclick=()=>reOpen("mfg");
 $("bSave").onclick=saveJson;
 $("bOpen").onclick=()=>$("fileIn").click();
 $("fileIn").onchange=()=>{const f=$("fileIn").files[0];if(f)openFile(f);$("fileIn").value="";};

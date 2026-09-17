@@ -7,17 +7,17 @@
 
    L'adresse de la passerelle est cherchée dans cet ordre :
      1. celle mémorisée par l'utilisateur (bouton « Serveur… ») ;
-     2. l'origine qui sert la page (cas normal : serveur.py relaie lui-même) ;
-     3. le même hôte sur le port par défaut de serveur.py ;
+     2. l'origine qui sert la page (cas normal : web_CAO.py relaie lui-même) ;
+     3. le même hôte sur le port par défaut de web_CAO.py ;
      4. http://127.0.0.1:8000 (page ouverte en file://).
-   Les deux derniers ne sont que des secours : servie par serveur.py, la page
-   trouve sa passerelle dès l'étape 2. Si serveur.py a dû prendre un autre port
+   Les deux derniers ne sont que des secours : servie par web_CAO.py, la page
+   trouve sa passerelle dès l'étape 2. Si web_CAO.py a dû prendre un autre port
    (8000 peut être réservé par le système), ouvrez l'adresse qu'il affiche au
    démarrage, ou saisissez-la dans « Serveur… ».
    ============================================================================= */
 
 const API_CLE="recherche.api.v1";      // clé de stockage local
-const API_PORT=8000;                   // DEFAULT_PORT de serveur.py
+const API_PORT=8000;                   // DEFAULT_PORT de web_CAO.py
 
 let API_BASE=null;                     // racine retenue, "" = même origine
 let API_SCHEMAS={};                    // nom d'outil -> inputSchema du serveur

@@ -12,10 +12,10 @@ import urllib.error
 import threading
 import time
 
-# Assurer l'import de serveur
+# Assurer l'import de web_CAO
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
-import serveur
+import web_CAO
 
 PORT = 8991
 BASE_URL = f"http://127.0.0.1:{PORT}"
@@ -23,8 +23,8 @@ BASE_URL = f"http://127.0.0.1:{PORT}"
 class TestLibRoutes(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        serveur.ROOT = ROOT
-        cls.httpd = serveur.ThreadedServer(("127.0.0.1", PORT), serveur.CustomHandler)
+        web_CAO.ROOT = ROOT
+        cls.httpd = web_CAO.ThreadedServer(("127.0.0.1", PORT), web_CAO.CustomHandler)
         cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
         cls.thread.start()
         time.sleep(0.3)
@@ -92,7 +92,7 @@ class TestLibRoutes(unittest.TestCase):
 
     def test_06_traversal_rejet(self):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
-            urllib.request.urlopen(f"{BASE_URL}/api/lib/fichier?type=pcb&nom=../../serveur.py")
+            urllib.request.urlopen(f"{BASE_URL}/api/lib/fichier?type=pcb&nom=../../web_CAO.py")
         self.assertEqual(ctx.exception.code, 400)
 
     def test_07_ia_cle(self):

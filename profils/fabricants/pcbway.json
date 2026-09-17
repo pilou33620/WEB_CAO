@@ -1,0 +1,105 @@
+{
+  "id": "pcbway",
+  "name": "PCBWay",
+  "version": "2026.1",
+  "description": "Standard PCB Capabilities PCBWay (FR-4, Aluminium, Rogers, 1-14 couches standard)",
+  "vendorUrl": "https://www.pcbway.com/capabilities.html",
+  "general": {
+    "layerCount": { "min": 1, "max": 14, "description": "1 à 14 couches cuivre standard" },
+    "controlledImpedance": {
+      "supported": true,
+      "layers": [4, 6, 8, 10, 12, 14],
+      "tolerancePercent": 10
+    },
+    "materials": [
+      { "type": "FR-4", "er": 4.5, "description": "Tg 130-140, Tg 150-160, High Tg 170" },
+      { "type": "Aluminum", "layers": 1, "minDrill": 0.60 },
+      { "type": "Rogers", "layers": 2, "description": "RO4350B, RO4003C" }
+    ],
+    "surfaceFinishes": [
+      { "name": "HASL avec plomb" },
+      { "name": "HASL sans plomb" },
+      { "name": "ENIG" },
+      { "name": "OSP" }
+    ],
+    "solderMask": {
+      "type": "LPI",
+      "colors": ["Green", "Red", "Yellow", "Blue", "White", "Black", "Purple", "Matt Black", "Matt Green"],
+      "er": 3.8,
+      "thicknessUm": 12,
+      "expansionRatio": "1:1",
+      "clearanceToTraceMin": 0.10,
+      "bridgeMin": { "1oz_colors": 0.10, "1oz_black_white": 0.13, "2oz_all": 0.20 }
+    }
+  },
+  "dimensions": {
+    "max": {
+      "standard": { "w": 500, "h": 500 }
+    },
+    "min": {
+      "standard": { "w": 6, "h": 6 },
+      "roundBoardSingle": { "w": 20, "h": 20 }
+    },
+    "tolerance": {
+      "cncRegular": 0.2,
+      "cncPrecision": 0.15,
+      "vScoring": 0.4
+    },
+    "thickness": {
+      "fr4Available": [0.4, 0.6, 0.8, 1.0, 1.2, 1.6, 2.0, 2.4],
+      "min": 0.4,
+      "max": 3.2,
+      "toleranceGte1mmPercent": 10,
+      "toleranceLt1mmMm": 0.1
+    }
+  },
+  "copper": {
+    "weights": [
+      { "oz": 1, "layers": "1-2", "minTrackWidth": 0.10, "minTrackSpacing": 0.10, "pthAnnularRingMin": 0.15, "pthAnnularRingRec": 0.20 },
+      { "oz": 1, "layers": "multilayer", "minTrackWidth": 0.09, "minTrackSpacing": 0.09, "pthAnnularRingMin": 0.15, "pthAnnularRingRec": 0.20 },
+      { "oz": 2, "layers": "all", "minTrackWidth": 0.15, "minTrackSpacing": 0.15, "pthAnnularRingMin": 0.20, "pthAnnularRingRec": 0.25 }
+    ],
+    "innerCopperDefaults": [0.5, 1.0],
+    "innerCopperDefault": 0.5,
+    "widthTolerancePercent": 20,
+    "pthAnnularRingMinOverall": 0.15,
+    "npthPadAnnularRingMin": 0.40,
+    "sameNetSpacing": 0.25,
+    "hatchedGridSpacing": 0.25,
+    "traceCoils": { "maskedMin": 0.15, "unmaskedMin": 0.25 },
+    "padToTrackClearance": 0.10,
+    "padToTrackClearanceBga": 0.09,
+    "smdPadToPadClearance": 0.15,
+    "smdPadMin": { "w": 0.25, "h": 0.25 },
+    "viaHoleToTrack": 0.20,
+    "pthToTrack": 0.25,
+    "pthToTrackRec": 0.30,
+    "npthToTrack": 0.20,
+    "innerLayerViaHoleToCopper": 0.20,
+    "innerLayerPthPadHoleToCopper": 0.30,
+    "bga": { "minPadDia": 0.20, "enigRequiredUnderDia": 0.25, "padToTraceMin": 0.10 }
+  },
+  "drilling": {
+    "drillDiameterMin": { "layer1": 0.30, "layer2Plus": 0.20, "aluminum": 0.60 },
+    "drillDiameterMax": 6.30,
+    "holeSizeTolerance": { "pthPlus": 0.13, "pthMinus": 0.08, "pressFit": 0.05, "position": 0.05 },
+    "holePlatingThicknessUm": 18,
+    "blindBuriedViasSupported": true,
+    "vias": { "minHoleSize": 0.20, "minViaDiameter": 0.30, "recMinHoleSize": 0.25 },
+    "minNpthHole": 0.50,
+    "spacing": { "viaHoleToHole": 0.25, "padHoleToHole": 0.45 },
+    "slots": { "platedMinW_2layer": 0.50, "nonPlatedMinW": 1.0 },
+    "castellatedHoles": { "minHoleDia": 0.60, "holeToEdgeMin": 1.0, "holeToHoleMin": 0.60 }
+  },
+  "silkscreen": {
+    "minLineWidth": 0.15,
+    "minTextHeight": 1.0,
+    "padToSilkscreenClearance": 0.15
+  },
+  "outline": {
+    "routed": { "copperClearance": 0.20, "slotClearance": 0.20, "dimensionTolRegular": 0.20 },
+    "vCut": { "copperClearance": 0.40, "dimensionTol": 0.40, "minPcbThickness": 0.60 },
+    "mouseBites": { "copperClearance": 0.20, "panelSpacing": 1.6, "holeDiaMin": 0.5, "holeDiaMax": 0.8 },
+    "panelizationSpacingMin": 2.0
+  }
+}

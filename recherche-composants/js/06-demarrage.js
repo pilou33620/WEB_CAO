@@ -112,10 +112,10 @@ function fenetreServeur(){
         '<div class="modal-head">Adresse de la passerelle</div>'+
         '<div class="modal-corps">'+
           "<p>La recherche passe par un serveur local, qui relaie les requêtes "+
-          "vers pcbparts.dev. <code>serveur.py</code> le fait lui-même : laissez "+
+          "vers pcbparts.dev. <code>web_CAO.py</code> le fait lui-même : laissez "+
           "le champ vide pour la détection automatique, ou indiquez l'adresse "+
           "d'un autre serveur.</p>"+
-          '<p><code>python serveur.py</code></p>'+
+          '<p><code>python web_CAO.py</code></p>'+
           '<div class="champ"><label for="mdBase">Racine</label>'+
           '<input type="text" id="mdBase" placeholder="laisser vide = détection automatique" spellcheck="false"></div>'+
         "</div>"+
@@ -164,9 +164,9 @@ async function connecter(){
       '<div class="vide"><b>Passerelle introuvable.</b><br>'+
       "Cette page a besoin d'un serveur local pour relayer les requêtes vers "+
       "pcbparts.dev (le navigateur ne peut pas l'appeler directement). "+
-      "<b>serveur.py</b> s'en charge, sans dépendance à installer.<br><br>"+
+      "<b>web_CAO.py</b> s'en charge, sans dépendance à installer.<br><br>"+
       "Dans le dossier du dépôt :<br>"+
-      "<code>python serveur.py</code><br><br>"+
+      "<code>python web_CAO.py</code><br><br>"+
       "puis ouvrez la page depuis l'adresse affichée au démarrage. Si le serveur "+
       "tourne ailleurs, indiquez son adresse avec le bouton « Serveur… ».<br><br>"+
       '<span class="err">'+esc((e&&e.message)||String(e))+"</span></div>";

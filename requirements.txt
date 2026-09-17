@@ -1,7 +1,7 @@
 # =============================================================================
 # WEB_CAO -- Dépendances Python
 #
-# Le cœur de l'application (les éditeurs PCB et Schématique, serveur.py, la
+# Le cœur de l'application (les éditeurs PCB et Schématique, web_CAO.py, la
 # passerelle MCP et le lecteur IPC-2581) fonctionne exclusivement avec la
 # bibliothèque standard Python, sans aucune dépendance externe obligatoire.
 #

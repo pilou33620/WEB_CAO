@@ -16,7 +16,7 @@
 
    Deux voies vers le disque, parce qu'un navigateur ne peut pas ouvrir un
    chemin qu'on lui tape :
-     - « serveur »  : serveur.py tient le disque (routes /api/projet*). C'est la
+     - « serveur »  : web_CAO.py tient le disque (routes /api/projet*). C'est la
                       seule voie qui accepte un chemin ecrit a la main, et elle
                       marche dans tous les navigateurs.
      - « dossier »  : le selecteur de dossier du navigateur (File System Access).
@@ -375,7 +375,7 @@ function projdCreerDansParent(parentHandle, nom){
 function projdChoisirDossier(creer, nomImpose){
   if(!projdSelecteurDispo())
     return Promise.reject(new Error("Ce navigateur n'a pas de selecteur de"
-      + " dossier. Lancez serveur.py --local, ou utilisez Chrome ou Edge."));
+      + " dossier. Lancez web_CAO.py --local, ou utilisez Chrome ou Edge."));
   /* `id` fait revenir la boite de dialogue la ou on l'a laissee la derniere
      fois : on range en general ses projets au meme endroit. */
   return window.showDirectoryPicker({mode:"readwrite", id:"cao-projet"})

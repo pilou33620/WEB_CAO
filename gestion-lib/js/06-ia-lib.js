@@ -2,13 +2,13 @@
 /* =============================================================================
    Gestion LIB — 06-ia-lib.js
    Mode Assistant IA pour la bibliothèque CAO (Empreintes, Symboles, Catalogue)
-   Support des modèles Google AI Studio (Gemini 2.5 Flash, Pro, Gemma 4)
+   Support des modèles Google AI Studio (Gemma 4 31B, Gemini 3.8 Flash)
    ============================================================================= */
 
 const IA_LIB = {
   ouvert: false,
   cleApi: "",
-  modele: "gemini-2.5-flash",
+  modele: "gemma-4-31b-it",
   onglet: "chat", // "chat" | "pcb" | "sch" | "cat"
   historique: [],
   enAttente: false
@@ -225,13 +225,21 @@ DIRECTIVES STRICTES :
       }
     ];
 
+    const isGemini38 = IA_LIB.modele === "gemini-3.8-flash" || IA_LIB.modele.includes("gemini-3");
+
     const bodyPayload = {
       contents,
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 4096
+        maxOutputTokens: isGemini38 ? 8192 : 4096
       }
     };
+
+    if (isGemini38) {
+      bodyPayload.generationConfig.thinkingConfig = {
+        thinkingLevel: "high"
+      };
+    }
 
     const resp = await fetch(url, {
       method: "POST",
@@ -251,7 +259,9 @@ DIRECTIVES STRICTES :
     const donnees = await resp.json();
     let reponse = "";
     if (donnees.candidates && donnees.candidates[0] && donnees.candidates[0].content && donnees.candidates[0].content.parts) {
-      reponse = donnees.candidates[0].content.parts.map(p => p.text || "").join("");
+      let partsUtiles = donnees.candidates[0].content.parts.filter(p => !p.thought);
+      if (partsUtiles.length === 0) partsUtiles = donnees.candidates[0].content.parts;
+      reponse = partsUtiles.map(p => p.text || "").join("");
     }
 
     if (!reponse) reponse = "(Aucune réponse textuelle reçue du modèle)";

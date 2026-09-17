@@ -2,6 +2,45 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.17.0
+# Date: 2026-09-17
+# Explication: support natif Android sous Termux.
+#   - Detection automatique de l'environnement Termux (sur_termux).
+#   - Ouverture directe du navigateur Android natif via termux-open-url /
+#     termux-open dans ouvrir_navigateur.
+#   - Dossier dedie termux/ avec script d'installation automatique et lanceur
+#     pour raccourci 1-clic sur l'ecran d'accueil du telephone (Termux:Widget).
+#   - Gestion du wake-lock et rappel a l'ecran au demarrage.
+# Fonctions ajoutees/modifiees :
+# - sur_termux (nouvelle)
+# - ouvrir_navigateur (support termux-open-url, termux-open, xdg-open)
+# - start_server (rappel wake-lock Termux)
+#
+# Version: 2.16.0
+# Date: 2026-09-17
+# Explication: le double-clic sous Windows ouvrait l'outil sur une adresse
+#   differente a chaque fois. Le port 8000 est refuse sur ce poste (WinError
+#   10013, plage exclue par le systeme) et le repli demandait un port au
+#   hasard au systeme -- 53258, puis un autre le lendemain. Le navigateur
+#   rangeant localStorage par origine, chaque lancement presentait un espace
+#   de travail vide : ni profil, ni projets recents, ni reglages. Le repli
+#   parcourt maintenant une suite fixe de ports voisins et ne demande un port
+#   au hasard qu'en dernier recours, en disant ce que cela coute. Au passage,
+#   SO_REUSEADDR n'est plus pose sous Windows, ou il laissait deux serveurs se
+#   lier au meme port et se partager les requetes en silence.
+#   Trois autres defauts du meme lancement : le double-clic ouvrait l'ecoute
+#   sur tout le reseau, mode dans lequel le serveur refuse les dossiers de
+#   projet -- l'outil demarrait donc amoindri sans le dire ; la fenetre ne
+#   s'arretait qu'a la condition que sys.stdin se declare interactif, de sorte
+#   qu'un echec precoce la faisait disparaitre sans laisser lire la cause ; et
+#   le fichier s'appelait web_CAO.py, renomme web_CAO.py comme web_3D.py.
+# Fonctions ajoutees/modifiees :
+# - NB_PORTS_VOISINS, ports_voisins (nouveaux)
+# - lance_par_double_clic (nouvelle)
+# - ThreadedServer.allow_reuse_address (faux sous Windows)
+# - start_server (echelle de ports, message de dernier recours)
+# - main (mode local au double-clic), lancer (pause sans dependre de isatty)
+#
 # Version: 2.15.0
 # Date: 2026-09-13
 # Explication: recherche et application automatique des mises a jour GitHub au
@@ -86,7 +125,7 @@
 # Date: 2026-08-27
 # Explication: les modules Python autres que ce serveur rangent desormais dans
 #   python/ -- ipc2581_data.py, ipc2581_parser.py, ipc2581_json.py et
-#   passerelle_mcp.py. Seul serveur.py reste a la racine : c'est lui qu'on
+#   passerelle_mcp.py. Seul web_CAO.py reste a la racine : c'est lui qu'on
 #   double-clique sous Windows, et c'est le seul module dont le chemin est
 #   ecrit en dur ailleurs (.claude/launch.json). Les imports restent des
 #   imports de module ordinaires (« import passerelle_mcp », pas
@@ -299,16 +338,21 @@
 # ==========================================
 """Petit serveur HTTP pour ouvrir les editeurs depuis un autre appareil.
 
-    python serveur.py                 # ecoute sur le reseau local, port 8000
-    python serveur.py --local         # localhost uniquement
-    python serveur.py --port 9000
-    python serveur.py --host 192.168.1.20
-    python serveur.py --sans-navigateur   # ne pas ouvrir le navigateur
+    python web_CAO.py                 # ecoute sur le reseau local, port 8000
+    python web_CAO.py --local         # localhost uniquement
+    python web_CAO.py --port 9000
+    python web_CAO.py --host 192.168.1.20
+    python web_CAO.py --sans-navigateur   # ne pas ouvrir le navigateur
 
 Un double-clic sur le fichier suffit sous Windows : le navigateur s'ouvre sur
 la bonne adresse et la console reste ouverte -- le journal des requetes y
 defile, et rien ne disparait si le demarrage echoue. --sans-pause rend la main
 tout de suite (scripts, service).
+
+Le double-clic demarre en mode local, dossiers de projet compris : c'est le
+seul mode ou l'outil est entier, et il n'y a personne pour taper --local
+quand la fenetre s'ouvre toute seule. L'ecoute reseau, pour l'iPad, s'obtient
+en lancant le script depuis un terminal.
 
 Sert le dossier du depot en lecture seule, et relaie la recherche de
 composants vers pcbparts.dev (/api/tools et /api/tool). Par defaut l'ecoute se
@@ -344,7 +388,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 DOSSIER_IMPOSE = False
 
 # La passerelle et le parseur IPC-2581 vivent dans python/, a cote de ce
-# fichier : serveur.py reste seul a la racine, double-cliquable, pendant que
+# fichier : web_CAO.py reste seul a la racine, double-cliquable, pendant que
 # le reste des modules Python range dans un dossier qui dit ce qu'il est.
 # La ligne suivante est ce qui rend « import passerelle_mcp » et
 # « import ipc2581_json » possibles sans les faire bouger de la : ce sont des
@@ -1036,6 +1080,13 @@ def sur_ios():
         return False
 
 
+def sur_termux():
+    """Vrai sous Termux (Android)."""
+    return bool(os.environ.get("TERMUX_VERSION") or
+                (os.environ.get("PREFIX") and "com.termux" in os.environ["PREFIX"]) or
+                os.path.isdir("/data/data/com.termux"))
+
+
 def repertoire_courant():
     """Repertoire courant, ou chaine vide s'il est hors de portee.
 
@@ -1141,6 +1192,14 @@ def ouvrir_navigateur(url, delai=0.8):
     """Ouvre le navigateur par defaut, une fois le serveur en ecoute."""
     def _ouvrir():
         try:
+            # Sous Termux (Android), appel direct de termux-open-url ou xdg-open pour lancer le navigateur
+            for commande in ("termux-open-url", "termux-open", "xdg-open"):
+                if shutil.which(commande):
+                    try:
+                        subprocess.Popen([commande, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        return
+                    except Exception:
+                        pass
             webbrowser.open(url)
         except Exception as exc:                       # noqa: BLE001
             print("[!] Ouverture du navigateur impossible : %s" % exc)
@@ -1148,6 +1207,82 @@ def ouvrir_navigateur(url, delai=0.8):
     minuteur = threading.Timer(delai, _ouvrir)
     minuteur.daemon = True
     minuteur.start()
+
+
+# Les executables qui peuvent se trouver sur la console d'un double-clic sans
+# que personne n'ait rien tape : l'association Windows des .py passe par
+# py.exe, qui lance python.exe et attend -- les deux sont donc attaches.
+LANCEURS_PYTHON = ("py.exe", "pyw.exe", "python.exe", "pythonw.exe",
+                   "python3.exe", "python3w.exe")
+
+
+def processus_de_la_console():
+    """Noms des executables attaches a la console, le notre compris.
+
+    Renvoie () quand la question n'a pas de reponse sure -- pas de console, ou
+    un processus qu'on n'a pas le droit de nommer. L'appelant doit alors s'en
+    tenir au comportement par defaut plutot que de deviner.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.GetConsoleProcessList.argtypes = [ctypes.POINTER(wintypes.DWORD),
+                                          wintypes.DWORD]
+    k32.GetConsoleProcessList.restype = wintypes.DWORD
+    taille = 16
+    tampon = (wintypes.DWORD * taille)()
+    combien = k32.GetConsoleProcessList(tampon, taille)
+    if not combien or combien > taille:
+        return ()
+
+    k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.QueryFullProcessImageNameW.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD)]
+    k32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    noms = []
+    for pid in tampon[:combien]:
+        handle = k32.OpenProcess(0x1000, False, pid)   # QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ()
+        try:
+            longueur = wintypes.DWORD(32768)
+            chemin = ctypes.create_unicode_buffer(longueur.value)
+            if not k32.QueryFullProcessImageNameW(handle, 0, chemin,
+                                                  ctypes.byref(longueur)):
+                return ()
+            noms.append(os.path.basename(chemin.value).lower())
+        finally:
+            k32.CloseHandle(handle)
+    return tuple(noms)
+
+
+def lance_par_double_clic():
+    """Vrai quand Windows a cree la console POUR ce script -- c'est-a-dire
+    quand il a ete lance depuis l'Explorateur.
+
+    La distinction sert deux fois : choisir le mode local par defaut, et
+    retenir la fenetre meme quand sys.stdin ne se declare pas interactif --
+    sans quoi une erreur de demarrage disparait avec la fenetre, et l'outil a
+    « juste rien fait ».
+
+    COMMENT ON LE SAIT. Un terminal laisse son shell attache a la console :
+    cmd.exe, powershell.exe, bash.exe y figurent a cote de nous. Un
+    double-clic, lui, ne fait venir que Python -- et pas un seul processus,
+    car l'association des .py passe par py.exe, qui lance python.exe et
+    attend. Compter les processus ne suffisait donc pas : on les nomme.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        noms = processus_de_la_console()
+    except Exception:                                  # noqa: BLE001
+        return False
+    return bool(noms) and all(n in LANCEURS_PYTHON for n in noms)
 
 
 def console_interactive():
@@ -2614,7 +2749,11 @@ class ThreadedServer(socketserver.ThreadingTCPServer):
     """Une requete par thread : un appel a pcbparts.dev (jusqu'a 30 s) ne doit
     pas geler le service des fichiers."""
 
-    allow_reuse_address = True
+    # SO_REUSEADDR evite le TIME_WAIT sous Unix. Sous Windows il autorise DEUX
+    # serveurs a se lier au meme port : le second vole une partie des requetes
+    # sans que rien ne le signale. La-bas on prefere l'echec franc, qui fait
+    # changer de port (voir ports_voisins).
+    allow_reuse_address = os.name != "nt"
     daemon_threads = True
 
 
@@ -2629,6 +2768,21 @@ class DualStackServer(ThreadedServer):
         except (AttributeError, OSError):
             pass
         super().server_bind()
+
+
+NB_PORTS_VOISINS = 20
+
+
+def ports_voisins(port, combien=NB_PORTS_VOISINS):
+    """Les ports a essayer quand celui demande est refuse, dans un ordre fixe.
+
+    POURQUOI PAS LE PORT 0. Laisser le systeme choisir marche du premier coup,
+    mais donne un port different a chaque lancement -- et le navigateur range
+    localStorage par origine, donc par port : reglages, profils et liste des
+    projets recents disparaissent a chaque demarrage. Une suite fixe garde la
+    meme adresse d'un jour a l'autre tant que la machine refuse le meme port.
+    """
+    return [port + n for n in range(1, combien + 1)]
 
 
 def make_server(host, port):
@@ -2675,7 +2829,20 @@ def start_server(host, port, navigateur=True):
         print("[!] Le port %d est refuse (securite entreprise, ou deja"
               " utilise) :" % port)
         detailler(echecs)
-        print("[*] Recherche automatique d'un port alternatif autorise...")
+        print("[*] Recherche du premier port voisin libre (%d a %d)..."
+              % (port + 1, port + NB_PORTS_VOISINS))
+        for voisin in ports_voisins(port):
+            httpd, autres = make_server(host, voisin)
+            if httpd is not None:
+                break
+            echecs.extend(autres)
+    if httpd is None and port != 0:
+        print("[!] Aucun port voisin libre : le systeme en choisira un au"
+              " hasard.")
+        print("    L'adresse changera d'un lancement a l'autre, et le"
+              " navigateur")
+        print("    rangeant reglages, profils et projets recents par origine,")
+        print("    l'outil s'ouvrira sur un espace de travail vide.")
         httpd, echecs = make_server(host, 0)
     if httpd is None and host != "127.0.0.1":
         print("[!] Aucune interface reseau n'accepte l'ecoute :")
@@ -2773,6 +2940,12 @@ def start_server(host, port, navigateur=True):
         # quitte Pyto, iOS suspend l'interpreteur -- d'ou le rappel.
         print("  iOS : gardez Pyto au premier plan, le systeme met le serveur")
         print("  en pause des que l'application passe en arriere-plan.")
+        print()
+
+    if sur_termux():
+        print("  Android (Termux) : serveur actif en arriere-plan.")
+        print("  Pour eviter que le systeme ne suspende le processus en veille :")
+        print("  termux-wake-lock")
         print()
 
     if navigateur:
@@ -2965,6 +3138,11 @@ def main(argv=None):
                     help="chemin d'acces au dossier de la bibliotheque LIB (defaut :"
                          " LIB/ a cote d'index.html ou config_lib.json)")
     args = ap.parse_args(argv)
+    # Un double-clic n'a pas d'argument a donner : c'est a lui de choisir le
+    # mode le plus utile. Le mode reseau, lui, reste ce qu'on obtient en
+    # lancant le script a la main -- il ne s'obtient donc pas par accident.
+    argv_recu = sys.argv[1:] if argv is None else list(argv)
+    double_clic = not argv_recu and lance_par_double_clic()
     if args.dossier:
         global ROOT, DOSSIER_IMPOSE
         ROOT = os.path.abspath(os.path.expanduser(args.dossier))
@@ -2991,6 +3169,17 @@ def main(argv=None):
                     vues.append(chemin)
         RACINES_PROJETS = vues
     host = "127.0.0.1" if args.local else args.host
+    if double_clic and not args.local and not args.host:
+        # Sans cela, le double-clic ouvrait l'ecoute sur tout le reseau -- et
+        # dans ce mode le serveur refuse les dossiers de projet (lire et
+        # ecrire sur le disque sans mot de passe). L'outil demarrait donc
+        # amoindri, sans que rien ne relie la cause a l'effet.
+        host = "127.0.0.1"
+        print("[*] Lance par double-clic : mode local (les dossiers de projet")
+        print("    sont accessibles, le serveur n'est visible que de ce PC).")
+        print("    Pour l'ouvrir a l'iPad, lancez-le depuis un terminal :")
+        print("    python %s" % os.path.basename(os.path.abspath(__file__)))
+        print()
     return start_server(host, args.port, args.navigateur)
 
 
@@ -3011,7 +3200,8 @@ def lancer(argv=None):
     # dernier message d'arret n'ont le temps d'etre lus. Ailleurs, le terminal
     # survit au script : ne rien attendre.
     muet = {"--sans-pause", "--help", "-h"}.intersection(argv)
-    if os.name == "nt" and not muet and console_interactive():
+    if os.name == "nt" and not muet and (console_interactive()
+                                         or lance_par_double_clic()):
         attendre_touche()
     return code
 

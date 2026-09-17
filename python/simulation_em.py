@@ -604,7 +604,7 @@ import os
 import sys
 import time
 
-# ligne_mom.py est dans le meme dossier que ce fichier. serveur.py met deja
+# ligne_mom.py est dans le meme dossier que ce fichier. web_CAO.py met deja
 # python/ dans sys.path ; ce module se debrouille seul quand on l'importe
 # depuis ailleurs (un banc d'essai, un shell).
 _ICI = os.path.dirname(os.path.abspath(__file__))

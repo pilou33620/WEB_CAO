@@ -1,0 +1,191 @@
+{
+  "id": "generique",
+  "name": "Standard Industriel (Générique)",
+  "version": "2026.1",
+  "description": "Profil de fabrication PCB standard de l'industrie (tolérances courantes, classe 2 IPC)",
+  "vendorUrl": "",
+  "general": {
+    "layerCount": { "min": 1, "max": 16, "description": "1 à 16 couches cuivre" },
+    "controlledImpedance": {
+      "supported": true,
+      "layers": [4, 6, 8, 10, 12, 14, 16],
+      "tolerancePercent": 10
+    },
+    "materials": [
+      { "type": "FR-4", "er": 4.5 }
+    ],
+    "surfaceFinishes": [
+      { "name": "HASL sans plomb" },
+      { "name": "ENIG" }
+    ],
+    "solderMask": {
+      "type": "LPI",
+      "colors": ["Green", "Blue", "Red", "Black", "White"],
+      "er": 4.0,
+      "thicknessUm": 15,
+      "expansionRatio": "1:1",
+      "clearanceToTraceMin": 0.10,
+      "bridgeMin": {
+        "1oz_colors": 0.12,
+        "1oz_black_white": 0.15,
+        "2oz_all": 0.20
+      },
+      "pluggedVias": {
+        "type": "Tented / Plugged",
+        "maxViaDia": 0.60,
+        "clearanceToMaskOpenings": 0.35
+      }
+    }
+  },
+  "dimensions": {
+    "max": {
+      "fr4_standard": { "w": 500, "h": 500 }
+    },
+    "min": {
+      "fr4_standard": { "w": 10, "h": 10 },
+      "roundBoardSingle": { "w": 25, "h": 25 }
+    },
+    "tolerance": {
+      "cncRegular": 0.2,
+      "cncPrecision": 0.15,
+      "vScoring": 0.4
+    },
+    "thickness": {
+      "fr4Available": [0.8, 1.0, 1.2, 1.6, 2.0],
+      "min": 0.8,
+      "max": 3.2,
+      "toleranceGte1mmPercent": 10,
+      "toleranceLt1mmMm": 0.1
+    }
+  },
+  "copper": {
+    "weights": [
+      {
+        "oz": 1,
+        "layers": "1-2",
+        "minTrackWidth": 0.15,
+        "minTrackSpacing": 0.15,
+        "pthAnnularRingMin": 0.20,
+        "pthAnnularRingRec": 0.25
+      },
+      {
+        "oz": 1,
+        "layers": "multilayer",
+        "minTrackWidth": 0.125,
+        "minTrackSpacing": 0.125,
+        "pthAnnularRingMin": 0.18,
+        "pthAnnularRingRec": 0.20
+      },
+      {
+        "oz": 2,
+        "layers": "all",
+        "minTrackWidth": 0.20,
+        "minTrackSpacing": 0.20,
+        "pthAnnularRingMin": 0.254,
+        "pthAnnularRingRec": 0.254
+      }
+    ],
+    "innerCopperDefaults": [0.5, 1.0],
+    "innerCopperDefault": 0.5,
+    "widthTolerancePercent": 20,
+    "npthPadAnnularRingMin": 0.50,
+    "sameNetSpacing": 0.25,
+    "hatchedGridSpacing": 0.30,
+    "traceCoils": { "maskedMin": 0.20, "unmaskedMin": 0.30 },
+    "padToTrackClearance": 0.15,
+    "padToTrackClearanceBga": 0.12,
+    "smdPadToPadClearance": 0.20,
+    "smdPadMin": { "w": 0.30, "h": 0.30 },
+    "viaHoleToTrack": 0.25,
+    "pthToTrack": 0.30,
+    "pthToTrackRec": 0.40,
+    "npthToTrack": 0.25,
+    "innerLayerViaHoleToCopper": 0.25,
+    "innerLayerPthPadHoleToCopper": 0.35,
+    "bga": {
+      "minPadDia": 0.25,
+      "enigRequiredUnderDia": 0.30,
+      "padToTraceMin": 0.12,
+      "padToTraceMultilayerMin": 0.10
+    }
+  },
+  "drilling": {
+    "drillDiameterMin": {
+      "layer1": 0.40,
+      "layer2Plus": 0.30
+    },
+    "drillDiameterMax": 6.0,
+    "holeSizeTolerance": {
+      "pthPlus": 0.15,
+      "pthMinus": 0.10,
+      "pressFit": 0.05,
+      "position": 0.08
+    },
+    "holePlatingThicknessUm": 20,
+    "blindBuriedViasSupported": false,
+    "vias": {
+      "minHoleSize": 0.30,
+      "minViaDiameter": 0.60,
+      "recMinHoleSize": 0.30,
+      "viaDiaOverHoleMin": 0.20,
+      "viaDiaOverHoleRec": 0.30
+    },
+    "minNpthHole": 0.60,
+    "spacing": {
+      "viaHoleToHole": 0.25,
+      "padHoleToHole": 0.50
+    },
+    "slots": {
+      "platedMinW_2layer": 0.60,
+      "platedMinW_multilayer": 0.50,
+      "platedLengthOverWidthMin": 2.0,
+      "nonPlatedMinW": 1.2,
+      "tolPlated": { "plus": 0.15, "minus": 0.10 },
+      "tolNonPlated": 0.25
+    },
+    "castellatedHoles": {
+      "minHoleDia": 0.60,
+      "holeToEdgeMin": 1.2,
+      "holeToHoleMin": 0.60,
+      "minPcbSize": 15,
+      "minPcbThickness": 0.80
+    },
+    "platedEdges": {
+      "minPcbSize": 15,
+      "minPcbThickness": 0.80
+    }
+  },
+  "silkscreen": {
+    "minLineWidth": 0.18,
+    "minTextHeight": 1.20,
+    "preferredWidthToHeightRatio": "1:6",
+    "padToSilkscreenClearance": 0.20
+  },
+  "outline": {
+    "routed": {
+      "copperClearance": 0.30,
+      "slotClearance": 0.30,
+      "dimensionTolRegular": 0.25,
+      "dimensionTolPrecision": 0.15
+    },
+    "vCut": {
+      "copperClearance": 0.45,
+      "dimensionTol": 0.40,
+      "minPcbThickness": 0.80,
+      "minPanelDim": 80,
+      "maxPanelDim": 450,
+      "vCutAngle": 30,
+      "spacingBetweenVCutsMin": 3.0,
+      "spacingBetweenVCutsRec": 4.0
+    },
+    "mouseBites": {
+      "copperClearance": 0.30,
+      "dimensionTolRegular": 0.25,
+      "panelSpacing": 2.0,
+      "holeDiaMin": 0.6,
+      "holeDiaMax": 0.8,
+      "tabWidthMin": 4.5
+    },
+    "panelizationSpacingMin": 2.5
+  }
+}

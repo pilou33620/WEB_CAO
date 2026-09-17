@@ -1,0 +1,102 @@
+{
+  "id": "eurocircuits",
+  "name": "Eurocircuits",
+  "version": "2026.1",
+  "description": "Standard Pool Eurocircuits (FR-4 standard européen, classe IPC-A-600 classe 2)",
+  "vendorUrl": "https://www.eurocircuits.com/pcb-capabilities/",
+  "general": {
+    "layerCount": { "min": 1, "max": 16, "description": "1 à 16 couches cuivre" },
+    "controlledImpedance": {
+      "supported": true,
+      "layers": [4, 6, 8, 10, 12, 14, 16],
+      "tolerancePercent": 10
+    },
+    "materials": [
+      { "type": "FR-4", "er": 4.5, "description": "Isola / Nan Ya / Shengyi High Tg FR4" }
+    ],
+    "surfaceFinishes": [
+      { "name": "HASL sans plomb", "note": "Standard RoHS" },
+      { "name": "ENIG (Chem Ni/Au)", "note": "Recommandé pas fins & BGA" }
+    ],
+    "solderMask": {
+      "type": "LPI",
+      "colors": ["Green", "Black", "Red", "Blue", "White"],
+      "er": 3.9,
+      "thicknessUm": 15,
+      "expansionRatio": "1:1",
+      "clearanceToTraceMin": 0.10,
+      "bridgeMin": { "1oz_colors": 0.10, "1oz_black_white": 0.12, "2oz_all": 0.18 },
+      "pluggedVias": { "maxViaDia": 0.50, "clearanceToMaskOpenings": 0.35 }
+    }
+  },
+  "dimensions": {
+    "max": {
+      "standard": { "w": 580, "h": 425 }
+    },
+    "min": {
+      "standard": { "w": 5, "h": 5 },
+      "roundBoardSingle": { "w": 15, "h": 15 }
+    },
+    "tolerance": {
+      "cncRegular": 0.2,
+      "cncPrecision": 0.1,
+      "vScoring": 0.3
+    },
+    "thickness": {
+      "fr4Available": [0.8, 1.0, 1.2, 1.55, 2.0, 2.4, 3.2],
+      "min": 0.5,
+      "max": 3.2,
+      "toleranceGte1mmPercent": 10,
+      "toleranceLt1mmMm": 0.1
+    }
+  },
+  "copper": {
+    "weights": [
+      { "oz": 1, "layers": "1-2", "minTrackWidth": 0.10, "minTrackSpacing": 0.10, "pthAnnularRingMin": 0.125, "pthAnnularRingRec": 0.175 },
+      { "oz": 1, "layers": "multilayer", "minTrackWidth": 0.09, "minTrackSpacing": 0.09, "pthAnnularRingMin": 0.125, "pthAnnularRingRec": 0.15 },
+      { "oz": 2, "layers": "all", "minTrackWidth": 0.15, "minTrackSpacing": 0.15, "pthAnnularRingMin": 0.20, "pthAnnularRingRec": 0.25 }
+    ],
+    "innerCopperDefaults": [0.5, 1.0],
+    "innerCopperDefault": 0.5,
+    "widthTolerancePercent": 15,
+    "pthAnnularRingMinOverall": 0.125,
+    "npthPadAnnularRingMin": 0.35,
+    "sameNetSpacing": 0.20,
+    "hatchedGridSpacing": 0.25,
+    "traceCoils": { "maskedMin": 0.15, "unmaskedMin": 0.25 },
+    "padToTrackClearance": 0.10,
+    "padToTrackClearanceBga": 0.09,
+    "smdPadToPadClearance": 0.125,
+    "smdPadMin": { "w": 0.20, "h": 0.20 },
+    "viaHoleToTrack": 0.20,
+    "pthToTrack": 0.25,
+    "pthToTrackRec": 0.30,
+    "npthToTrack": 0.25,
+    "innerLayerViaHoleToCopper": 0.25,
+    "innerLayerPthPadHoleToCopper": 0.30,
+    "bga": { "minPadDia": 0.20, "enigRequiredUnderDia": 0.25, "padToTraceMin": 0.09 }
+  },
+  "drilling": {
+    "drillDiameterMin": { "layer1": 0.25, "layer2Plus": 0.15 },
+    "drillDiameterMax": 6.0,
+    "holeSizeTolerance": { "pthPlus": 0.10, "pthMinus": 0.10, "pressFit": 0.05, "position": 0.05 },
+    "holePlatingThicknessUm": 20,
+    "blindBuriedViasSupported": true,
+    "vias": { "minHoleSize": 0.15, "minViaDiameter": 0.40, "recMinHoleSize": 0.25 },
+    "minNpthHole": 0.50,
+    "spacing": { "viaHoleToHole": 0.25, "padHoleToHole": 0.40 },
+    "slots": { "platedMinW_2layer": 0.50, "nonPlatedMinW": 1.0 },
+    "castellatedHoles": { "minHoleDia": 0.50, "holeToEdgeMin": 1.0, "holeToHoleMin": 0.50 }
+  },
+  "silkscreen": {
+    "minLineWidth": 0.15,
+    "minTextHeight": 1.0,
+    "padToSilkscreenClearance": 0.15
+  },
+  "outline": {
+    "routed": { "copperClearance": 0.25, "slotClearance": 0.25, "dimensionTolRegular": 0.20 },
+    "vCut": { "copperClearance": 0.45, "dimensionTol": 0.30, "minPcbThickness": 0.80 },
+    "mouseBites": { "copperClearance": 0.25, "panelSpacing": 2.0, "holeDiaMin": 0.5, "holeDiaMax": 0.8 },
+    "panelizationSpacingMin": 2.0
+  }
+}

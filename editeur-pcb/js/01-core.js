@@ -666,7 +666,7 @@ const S = {
      annonce et qui ne sont donc pas les mêmes partout. */
   rule:{edge:0.4,thermal:0.5,mask:0.05,paste:0.0,viaFinish:"tented",corner:"45",
         route:"shove",hole:0.25,mat:{},short:false,
-        aspWarn:ASPECT_WARN,aspMax:ASPECT_MAX},
+        aspWarn:ASPECT_WARN,aspMax:ASPECT_MAX,mfgProfile:"jlcpcb"},
   classes:[{name:"Défaut",      w:0.3, clr:0.25, via:0.8, drill:0.4},
            {name:"Alimentation",w:0.6, clr:0.25, via:0.9, drill:0.45}],
   netClass:{},                // net → nom de classe ; absent = classe par défaut

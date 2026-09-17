@@ -15,7 +15,7 @@ le .mod correspondant, le recopie a plat dans LIB/lib_simulation/ sous le nom
 de la reference, et remplace le modele generique dans le CSV.
 
 A plat, et pas en place : la route /api/lib/fichier refuse tout nom qui
-contient un separateur de dossier (serveur.py, chemin_lib_fichier). Un modele
+contient un separateur de dossier (web_CAO.py, chemin_lib_fichier). Un modele
 laisse au fond de « CAPA GCM/gcm-n-v68/... » serait donc illisible depuis le
 navigateur. L'extension devient .sub, comme les modeles deja presents -- le
 contenu, lui, est recopie mot pour mot, en-tete et copyright Murata compris.

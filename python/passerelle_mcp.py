@@ -5,7 +5,7 @@
 # Version: 1.1.0
 # Date: 2026-08-21
 # Explication: serveur-composants.py (FastAPI/uvicorn) est supprime. Depuis que
-#   ce module existe, serveur.py expose exactement les memes routes en
+#   ce module existe, web_CAO.py expose exactement les memes routes en
 #   bibliotheque standard, et la page interroge d'abord l'origine qui la sert :
 #   le second serveur ne dupliquait plus que deux routes, au prix de fastapi +
 #   uvicorn + pydantic. Ce module reste le seul detenteur de la logique de
@@ -16,7 +16,7 @@
 # Date: 2026-08-21
 # Explication: Le client MCP vers pcbparts.dev vivait dans
 #   serveur-composants.py et dependait de httpx, donc de fastapi/uvicorn.
-#   Resultat : la page recherche-composants servie par serveur.py (stdlib,
+#   Resultat : la page recherche-composants servie par web_CAO.py (stdlib,
 #   sans dependance) ne trouvait aucune passerelle et repondait « HTTP 404 »
 #   sur /api/tools. Le client est deplace ici, reecrit en bibliotheque
 #   standard uniquement, pour que les deux serveurs exposent la meme API.
@@ -30,7 +30,7 @@
 
 Le navigateur ne peut pas appeler pcbparts.dev directement (CORS + protocole
 MCP), il faut donc un relais local. Ce module en contient toute la logique ;
-serveur.py ne fait que l'exposer en HTTP.
+web_CAO.py ne fait que l'exposer en HTTP.
 """
 
 import json

@@ -190,7 +190,7 @@
    ============================================================================= */
 "use strict";
 
-const SIM_PORT=8000;                   // DEFAULT_PORT de serveur.py
+const SIM_PORT=8000;                   // DEFAULT_PORT de web_CAO.py
 const SIM_ROUTE="/api/simulation";
 const SIM_DC_ROUTE="/api/simulation-dc";
 const SIM_DC_FORMAT="cao-sim-dc-1";   // FORMAT de python/dc_solver.py
@@ -3063,7 +3063,7 @@ function simCarteRetenir(parValeur){
 /* ==========================================================================
    Trouver le serveur
    Même ordre que la visionneuse (01-api.js) : l'origine qui sert la page, puis
-   le même hôte sur le port de serveur.py, puis 127.0.0.1 pour une page ouverte
+   le même hôte sur le port de web_CAO.py, puis 127.0.0.1 pour une page ouverte
    en file://. La sonde ne se fait qu'une fois par session.
    ========================================================================== */
 function simCandidats(){
@@ -3124,7 +3124,7 @@ async function simConnecter(){
     }
   }
   throw new Error("Aucun serveur pour calculer.\n\n"+
-    "Le solveur est en Python : lancez « python serveur.py » depuis le dossier "+
+    "Le solveur est en Python : lancez « python web_CAO.py » depuis le dossier "+
     "du dépôt, puis ouvrez cette page par l'adresse qu'il affiche. Il lui faut "+
     "numpy — « pip install numpy ».\n\n"+
     "Tentatives :\n  "+essais.join("\n  "));
@@ -6532,7 +6532,7 @@ function simCouplageVide(quoi){
     return '<p class="simEtat">Ce serveur ne rend pas de couplage.<br>'+
       "<small>La réponse ne porte pas de section « couplage » : le solveur "+
       "est d'une version antérieure à celle qui résout N conducteurs. "+
-      "Relancez <code>python serveur.py</code> depuis ce dépôt.</small></p>";
+      "Relancez <code>python web_CAO.py</code> depuis ce dépôt.</small></p>";
   if(!c.voisinage)
     return '<p class="simEtat">Aucun cuivre voisin n’a été envoyé.<br>'+
       "<small>Le couplage se calcule entre la sélection et ce qui la longe ; "+
@@ -14447,7 +14447,7 @@ function simProgres(detail,faits,total){
   /* OÙ REGARDER QUAND C'EST LONG. Le terminal du serveur porte une ligne par
      étape, avec sa durée : c'est le seul endroit qui dise LAQUELLE coince. */
   h+='<p class="simNote">· Le terminal du serveur (<code>python '+
-     "serveur.py</code>) écrit une ligne par étape, avec sa durée : c'est là "+
+     "web_CAO.py</code>) écrit une ligne par étape, avec sa durée : c'est là "+
      "que se lit ce qui prend du temps.</p>";
   return h+"</div>";
 }
@@ -14513,7 +14513,7 @@ function simRendreImpedance(){
     "<b>Ctrl+clic</b> : ajouter un morceau à la sélection — chaque parcours "+
     "continu est alors calculé SÉPARÉMENT, ce qu'il faut pour vérifier une "+
     "ligne RF coupée par des composants.<br>"+
-    "Le calcul a lieu sur le serveur (<code>python serveur.py</code>) : le "+
+    "Le calcul a lieu sur le serveur (<code>python web_CAO.py</code>) : le "+
     "solveur est en Python.</small></p>";
 }
 
