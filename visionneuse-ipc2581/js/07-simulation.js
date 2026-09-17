@@ -4993,6 +4993,14 @@ const SIM_IPC={
     const res = [];
     let idx = 1;
     const k = (V.unite === "in") ? 25.4 : 1;
+    /* LE REPÈRE DE LA CAVITÉ, pas celui du fichier. `pdnCavitePlans` rend une
+       TAILLE (bbox.x2 - bbox.x1) et le solveur travaille sur [0,a]×[0,b], alors
+       qu'un IPC-2581 place volontiers son contour loin de l'origine — décalage
+       de panneau, datum de fabrication. On ramène donc chaque composant au coin
+       du plan. Depuis que la position pèse sur Z(ω), l'oublier ne décale plus un
+       dessin : ça plaque tous les condensateurs contre un bord de la cavité. */
+    const ox = (V.bbox && typeof V.bbox.x1 === "number") ? V.bbox.x1 : 0;
+    const oy = (V.bbox && typeof V.bbox.y1 === "number") ? V.bbox.y1 : 0;
 
     for(const comp of V.modele.composants){
       const ref = comp.ref || "";
@@ -5045,8 +5053,8 @@ const SIM_IPC={
         }
         const f0Mhz = (cap > 0 && (esl + lMount) > 0) ? (1 / (2 * Math.PI * Math.sqrt((esl + lMount) * cap)) * 1e-6) : 0;
 
-        const cx = (typeof comp.x === "number") ? parseFloat((comp.x * k).toFixed(2)) : null;
-        const cy = (typeof comp.y === "number") ? parseFloat((comp.y * k).toFixed(2)) : null;
+        const cx = (typeof comp.x === "number") ? parseFloat(((comp.x - ox) * k).toFixed(2)) : null;
+        const cy = (typeof comp.y === "number") ? parseFloat(((comp.y - oy) * k).toFixed(2)) : null;
 
         res.push({
           id: idx++,

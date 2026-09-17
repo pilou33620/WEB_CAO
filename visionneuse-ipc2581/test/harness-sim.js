@@ -4433,6 +4433,57 @@ T("Cavité multi-port : depuis la visionneuse aussi, la position des condensateu
   }
 });
 
+T("PDN : les condensateurs sont rendus dans le repère de la cavité, pas du fichier IPC", function(){
+  /* Un IPC-2581 place volontiers son contour loin de l'origine — décalage de
+     panneau, datum de fabrication. `pdnCavitePlans` rend une TAILLE
+     (bbox.x2 - bbox.x1) et le solveur travaille sur [0,a]×[0,b] : l'adaptateur
+     doit donc ramener chaque composant au coin du plan. Sans cela, tous les
+     condensateurs seraient plaqués contre un bord de la cavité et Z(ω) serait
+     faux tout en restant plausible. */
+  const memeUnite = V.unite;
+  const memeBbox = V.bbox;
+  const memeModele = V.modele;
+
+  V.unite = "mm";
+  V.bbox = { x1: 50, y1: 40, x2: 150, y2: 120 };   // carte 100 × 80, coin à (50, 40)
+  V.modele = {
+    nets: ["GND", "+3V3"], pistes: [], arcs: [], plans: [], pads: [], textes: [], percages: [],
+    composants: [
+      { ref: "C1", val: "100nF", package: "0402", x: 75, y: 60,
+        pins: [{ net: "+3V3" }, { net: "GND" }] }
+    ]
+  };
+
+  const caps = SIM_IPC.pdnCondensateurs("+3V3");
+  if (caps.length !== 1) throw new Error("1 condensateur attendu, trouvé " + caps.length);
+  if (Math.abs(caps[0].x - 25) > 1e-6 || Math.abs(caps[0].y - 20) > 1e-6) {
+    throw new Error("C1 est à (75, 60) absolu sur une carte dont le coin est à (50, 40) : " +
+                    "l'adaptateur doit rendre (25, 20), obtenu (" + caps[0].x + ", " + caps[0].y + ")");
+  }
+
+  const plans = SIM_IPC.pdnCavitePlans("+3V3");
+  if (Math.abs(plans.dimXmm - 100) > 0.05 || Math.abs(plans.dimYmm - 80) > 0.05) {
+    throw new Error("pdnCavitePlans doit rendre la TAILLE du plan (100 × 80), obtenu " +
+                    plans.dimXmm + " × " + plans.dimYmm);
+  }
+  // Le condensateur doit tomber DANS la cavité, jamais borné contre un bord.
+  if (!(caps[0].x > 0 && caps[0].x < plans.dimXmm && caps[0].y > 0 && caps[0].y < plans.dimYmm)) {
+    throw new Error("Le condensateur doit tomber à l'intérieur de la cavité");
+  }
+
+  // En pouces, la conversion s'applique APRÈS le recalage d'origine.
+  V.unite = "in";
+  V.bbox = { x1: 2, y1: 1, x2: 6, y2: 4 };          // 101,6 × 76,2 mm
+  V.modele.composants[0].x = 3; V.modele.composants[0].y = 2;
+  const capsIn = SIM_IPC.pdnCondensateurs("+3V3");
+  if (Math.abs(capsIn[0].x - 25.4) > 0.01 || Math.abs(capsIn[0].y - 25.4) > 0.01) {
+    throw new Error("1 pouce depuis le coin doit donner 25,4 mm, obtenu (" +
+                    capsIn[0].x + ", " + capsIn[0].y + ")");
+  }
+
+  V.unite = memeUnite; V.bbox = memeBbox; V.modele = memeModele;
+});
+
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
 process.exit(ko?1:0);
 

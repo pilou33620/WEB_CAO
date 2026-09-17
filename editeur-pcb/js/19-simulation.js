@@ -4218,6 +4218,14 @@ const SIM_PCB={
   /* Condensateurs raccordés entre un rail et la masse avec parasites réels Murata/catalogue */
   pdnCondensateurs:function(net){
     if(!net||typeof S==="undefined"||!Array.isArray(S.fps)) return [];
+    /* LE REPÈRE DE LA CAVITÉ, pas celui du document. `pdnCavitePlans` rend une
+       TAILLE (S.board.w × S.board.h) et le solveur travaille donc sur [0,a]×[0,b].
+       Or S.board.x / .y ne valent zéro que sur une carte dessinée de zéro : un
+       import les recale sur le contour lu. Sans cette soustraction, tous les
+       condensateurs se retrouvent décalés — et depuis que leur position pèse sur
+       Z(ω), c'est une réponse fausse, pas un dessin de travers. */
+    const bx=(S.board&&typeof S.board.x==="number")?S.board.x:0;
+    const by=(S.board&&typeof S.board.y==="number")?S.board.y:0;
     const isGnd=n=>/^(gnd|0v|vss|ground|earth|mass|masse|[adp]?gnd.*)$/i.test(String(n).trim());
     const isTargetNet=n=>n&&String(n).trim().toLowerCase()===String(net).trim().toLowerCase();
     const schMap=typeof pcbComposantsSchema==="function"?pcbComposantsSchema():new Map();
@@ -4263,8 +4271,8 @@ const SIM_PCB={
           lMount:lMount,
           prov:prov,
           f0:parseFloat(f0Mhz.toFixed(1)),
-          x:typeof fp.x==="number"?fp.x:null,
-          y:typeof fp.y==="number"?fp.y:null,
+          x:typeof fp.x==="number"?parseFloat((fp.x-bx).toFixed(3)):null,
+          y:typeof fp.y==="number"?parseFloat((fp.y-by).toFixed(3)):null,
           actif:true
         });
       }

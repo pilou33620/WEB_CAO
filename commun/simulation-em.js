@@ -12903,6 +12903,10 @@ function simCalculerPDN() {
   const portTailleMm = Math.max(0.05, parseFloat(SIM_PDN.portTailleMm) || 1.5);
   const nMode = caviteModes.length;
   const nPort = capas.length + 1;              // port 0 = point observé
+  /* CONVENTION : `cp.x` / `cp.y` sont attendus dans le repère de la CAVITÉ,
+     origine au coin du plan, bornés par aMm × bMm. C'est à l'adaptateur de
+     chaque outil (`SIM_ED.pdnCondensateurs`) de retrancher l'origine du
+     document, qui n'a aucune raison d'être zéro. */
   const ports = [{ x: portXmm, y: portYmm }];
   for (let k = 0; k < capas.length; k++) {
     const cp = capas[k];

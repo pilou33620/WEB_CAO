@@ -18123,6 +18123,44 @@ T("Simulation PI : détection et injection des condensateurs du rail PCB avec mo
   if (c1.lMount !== 0.50e-9) throw new Error("L_mount pour boîtier 0402 attendue 0.50 nH, trouvé: " + c1.lMount);
 });
 
+T("Simulation PI : les condensateurs sont rendus dans le repère de la cavité, pas du document", () => {
+  /* `pdnCavitePlans` rend une TAILLE, et le solveur travaille sur [0,a]×[0,b].
+     Mais S.board.x / .y ne valent zéro que sur une carte dessinée de zéro : un
+     import les recale sur le contour lu. Si l'adaptateur rendait les positions
+     absolues, tous les condensateurs seraient décalés de l'origine, puis bornés
+     par le solveur contre un bord de la cavité — une réponse fausse et
+     plausible, la pire espèce. */
+  S.fps = [];
+  S.board = { x: 30, y: 20, w: 100, h: 80, pts: null };
+
+  const fp = mkFp("C1", "100nF", "0402", 2);
+  fp.type = "capacitor";
+  fp.nets = { 1: "+3V3", 2: "GND" };
+  fp.x = 45; fp.y = 35;          // absolu : 15 mm / 15 mm dans la carte
+  S.fps.push(fp);
+
+  const caps = SIM_PCB.pdnCondensateurs("+3V3");
+  if (caps.length !== 1) throw new Error("1 condensateur attendu, trouvé " + caps.length);
+  if (Math.abs(caps[0].x - 15) > 1e-6 || Math.abs(caps[0].y - 15) > 1e-6) {
+    throw new Error("C1 est à (45, 35) absolu sur une carte dont le coin est à (30, 20) : " +
+                    "l'adaptateur doit rendre (15, 15), obtenu (" + caps[0].x + ", " + caps[0].y + ")");
+  }
+
+  // Le plan rend bien une taille, cohérente avec ce repère.
+  const plans = SIM_PCB.pdnCavitePlans("+3V3");
+  if (Math.abs(plans.dimXmm - 100) > 1e-6 || Math.abs(plans.dimYmm - 80) > 1e-6) {
+    throw new Error("pdnCavitePlans doit rendre la TAILLE du plan (100 × 80), obtenu " +
+                    plans.dimXmm + " × " + plans.dimYmm);
+  }
+
+  // Origine à zéro : rien ne bouge, l'ancien comportement est préservé.
+  S.board.x = 0; S.board.y = 0;
+  const caps0 = SIM_PCB.pdnCondensateurs("+3V3");
+  if (Math.abs(caps0[0].x - 45) > 1e-6 || Math.abs(caps0[0].y - 35) > 1e-6) {
+    throw new Error("Origine à zéro, les coordonnées doivent être rendues telles quelles");
+  }
+});
+
 T("Simulation PI : tracé SVG logarithmique, curseur de mesure et export CSV/JSON", () => {
   SIM_PDN.rail = "+3V3";
   SIM_PDN.vdd = 3.3;
