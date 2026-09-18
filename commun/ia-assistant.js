@@ -1,6 +1,7 @@
 /* =============================================================================
    commun/ia-assistant.js
-   Assistant IA Technique — Gemma 4 31B & Gemini 3.8 Flash (High) (Google AI Studio)
+   Assistant IA Technique — Google AI Studio
+   Modèles : Gemma 4 31B (défaut), Gemini 3.8 Flash, Gemini 3.8 Flash (Thinking)
    Composant partagé : Schématique, PCB, Visionneuse IPC-2581
    
    GESTION STRICTE DE LA CLÉ API :
@@ -14,12 +15,52 @@
 (function() {
   /* ---------- État privé éphémère ---------- */
   let _cleApi = "";             // Variable en mémoire vive uniquement, JAMAIS persistée
-  let _modele = "gemma-4-31b-it"; // Modèle Google AI Studio : "gemma-4-31b-it" ou "gemini-3.8-flash"
+  let _modele = "gemma-4-31b-it"; // Choix du sélecteur : voir MODELES ci-dessous.
+
+  /* ---------------------------------------------------------------------------
+     Les trois entrées du sélecteur, et ce qu'elles valent réellement à l'appel.
+
+     « Gemini 3.8 Flash » et « Gemini 3.8 Flash (Thinking) » visent le MÊME
+     modèle côté Google : ce qui les sépare est le budget de réflexion interne.
+     Le premier répond vite (thinkingLevel « low »), le second prend le temps de
+     raisonner (« high ») — d'où deux entrées de menu pour un seul endpoint.
+
+     La température n'est pas la même partout : 0,2 convient aux Gemini, qui
+     doivent rester factuels, mais Gemma 4 31B est calibré pour 0,7 et devient
+     laconique — voire répétitif — en dessous.
+     --------------------------------------------------------------------------- */
+  const MODELES = {
+    "gemma-4-31b-it": {
+      nom: "Gemma 4 31B",
+      endpoint: "gemma-4-31b-it",
+      thinkingLevel: null,
+      temperature: 0.7
+    },
+    "gemini-3.8-flash": {
+      nom: "Gemini 3.8 Flash",
+      endpoint: "gemini-3.8-flash",
+      thinkingLevel: "low",
+      temperature: 0.2
+    },
+    "gemini-3.8-flash-thinking": {
+      nom: "Gemini 3.8 Flash (Thinking)",
+      endpoint: "gemini-3.8-flash",
+      thinkingLevel: "high",
+      temperature: 0.2
+    }
+  };
+
+  function confModele(modele) {
+    return MODELES[modele] || {
+      nom: modele || "Assistant IA",
+      endpoint: modele,
+      thinkingLevel: null,
+      temperature: 0.2
+    };
+  }
 
   function getNomModele(modele) {
-    if (modele === "gemini-3.8-flash") return "Gemini 3.8 Flash (High)";
-    if (modele === "gemma-4-31b-it") return "Gemma 4 31B";
-    return modele || "Assistant IA";
+    return confModele(modele).nom;
   }
   let _historique = [];         // Messages de la session en cours
   let _enAttente = false;       // Requête en cours
@@ -595,7 +636,8 @@
             '<span class="ia-status-dot"></span>' +
             '<select id="iaModelSelect" class="ia-model-select" title="Modèle d\'IA Google AI Studio">' +
               '<option value="gemma-4-31b-it">Gemma 4 31B</option>' +
-              '<option value="gemini-3.8-flash">Gemini 3.8 Flash (High)</option>' +
+              '<option value="gemini-3.8-flash">Gemini 3.8 Flash</option>' +
+              '<option value="gemini-3.8-flash-thinking">Gemini 3.8 Flash (Thinking)</option>' +
             '</select>' +
             '<span class="ia-status-ctx" id="iaContextText">Prêt</span>' +
           '</div>' +
@@ -635,10 +677,11 @@
     const selModel = document.getElementById("iaModelSelect");
     if (selModel) {
       selModel.value = _modele;
+      const lblModele = document.getElementById("iaFooterModelLabel");
+      if (lblModele) lblModele.textContent = getNomModele(_modele) + " · Session active";
       selModel.addEventListener("change", function() {
         _modele = this.value;
-        const lbl = document.getElementById("iaFooterModelLabel");
-        if (lbl) lbl.textContent = this.options[this.selectedIndex].text + " · Session active";
+        if (lblModele) lblModele.textContent = this.options[this.selectedIndex].text + " · Session active";
         if (_historique.length === 0) rendreMessages();
       });
     }
@@ -1221,9 +1264,10 @@
     if (_enAttente) {
       const loading = document.createElement("div");
       loading.className = "ia-loading-bubble";
-      const txtAttente = (_modele === "gemini-3.8-flash")
-        ? "Gemini 3.8 Flash (High) réfléchit et analyse votre question technique..."
-        : "Gemma 4 analyse votre question technique...";
+      const txtAttente = getNomModele(_modele) +
+        (confModele(_modele).thinkingLevel === "high"
+          ? " réfléchit et analyse votre question technique..."
+          : " analyse votre question technique...");
       loading.innerHTML = 
         '<div class="ia-dots"><span class="ia-dot"></span><span class="ia-dot"></span><span class="ia-dot"></span></div>' +
         '<span>' + txtAttente + '</span>';
@@ -1410,33 +1454,28 @@
       contexteProjetTexte = "DONNÉES DU PROJET EN COURS DANS L'ÉDITEUR :\n" + ctx;
     }
 
-    // Préparation de la requête Google AI Studio
-    const url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(_modele) + ":generateContent?key=" + encodeURIComponent(_cleApi);
+    /* -------------------------------------------------------------------------
+       Préparation de la requête Google AI Studio.
 
-    const estGemma = _modele.includes("gemma");
-    const isGemini38 = _modele === "gemini-3.8-flash" || _modele.includes("gemini-3");
+       GEMMA 4 GÈRE NATIVEMENT `systemInstruction`, et c'est ce qui corrige les
+       erreurs 500 (« Internal error encountered. ») rencontrées sur ce modèle.
+       Le montage précédent injectait de faux tours de dialogue — une directive
+       « [DIRECTIVE ABSOLUE DU SYSTÈME CAO] » attribuée à l'utilisateur, un
+       « Bien reçu » attribué au modèle — pour contourner une limitation qui
+       n'existe plus. En présence du mode de réflexion interne, ce dialogue
+       fabriqué faisait planter le serveur de Google. La directive part donc là
+       où elle va : dans `systemInstruction`, pour tous les modèles.
+
+       L'ENDPOINT N'EST PAS L'ENTRÉE DU MENU : « Gemini 3.8 Flash (Thinking) »
+       appelle `gemini-3.8-flash` avec un budget de réflexion élevé, et non un
+       modèle qui porterait ce nom — il n'en existe pas.
+       ------------------------------------------------------------------------- */
+    const conf = confModele(_modele);
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/" +
+                encodeURIComponent(conf.endpoint) +
+                ":generateContent?key=" + encodeURIComponent(_cleApi);
+
     const contents = [];
-
-    if (estGemma) {
-      // Pour Gemma (qui ne supporte pas systemInstruction en API), on amorce la session avec un tour de rôle explicite en français
-      contents.push({
-        role: "user",
-        parts: [{
-          text: 
-            "[DIRECTIVE ABSOLUE DU SYSTÈME CAO]\n" +
-            "Tu es l'ingénieur électronicien d'élite de la suite Web CAO (Schématique, PCB, IPC-2581).\n" +
-            "RÈGLE IMPÉRATIVE NON NÉGOCIABLE : Tu t'exprimes et réponds EXCLUSIVEMENT EN FRANÇAIS. Il est strictement interdit d'écrire le moindre mot, résumé, plan ou raisonnement en anglais. Ne génère aucun en-tête en anglais (aucun 'Role:', 'Constraint:', 'Task:', 'Components:', 'Netlist:'). Démarre immédiatement par ton explication technique en français.\n\n" +
-            "ACTIONS INTERACTIVES :\n" +
-            "Pour tout calcul de composants ou piste, termine par un bloc JSON balisé ```action (ex: schema_values ou pcb_track_width)."
-        }]
-      });
-      contents.push({
-        role: "model",
-        parts: [{
-          text: "Bien reçu. Je réponds exclusivement en langue française, avec rigueur et clarté technique, directement et sans aucun préambule ou méta-commentaire en anglais. Je suis prêt à analyser vos schémas et projets CAO."
-        }]
-      });
-    }
 
     const messagesPourApi = _historique.filter(m => !m.localManual);
     messagesPourApi.forEach((m, idx) => {
@@ -1451,55 +1490,54 @@
       });
     });
 
+    /* GÉNÉRATION : 8 192 jetons de sortie pour tous les modèles, et non 4 096.
+       Le raisonnement interne se paie sur ce même budget ; à 4 096, Gemma 4
+       épuisait ses jetons en réfléchissant et rendait une réponse tronquée —
+       ou vide. La température, elle, suit le modèle : 0,7 pour Gemma 4 31B,
+       0,2 pour les Gemini. */
+    const genConfig = {
+      temperature: conf.temperature,
+      maxOutputTokens: 8192
+    };
+    if (conf.thinkingLevel) {
+      genConfig.thinkingConfig = { thinkingLevel: conf.thinkingLevel };
+    }
+
     const corps = {
       contents: contents,
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: isGemini38 ? 8192 : 4096
-      }
+      systemInstruction: { parts: [{ text: promptSysteme }] },
+      generationConfig: genConfig
     };
 
-    if (isGemini38) {
-      corps.generationConfig.thinkingConfig = {
-        thinkingLevel: "high"
-      };
-    }
-
-    if (!estGemma) {
-      corps.systemInstruction = {
-        parts: [{ text: promptSysteme }]
-      };
-    }
-
-    try {
-      let rep = await fetch(url, {
+    const appelerApi = async (body) => {
+      return await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(corps)
+        body: JSON.stringify(body)
       });
+    };
 
-      // Secours de repli si refusé (anciens modèles sans systemInstruction)
-      if (rep.status === 400 && !estGemma) {
+    try {
+      let rep = await appelerApi(corps);
+
+      /* RÉESSAI UNIQUE SUR 500 / 503. Ces codes sont transitoires côté Google —
+         ils tombent aux pics de charge et repassent seuls. Une seconde tentative
+         après 1,5 s évite de renvoyer à l'utilisateur une panne qui n'en est
+         pas une. Au-delà, on abandonne : insister ne ferait qu'aggraver la file. */
+      if (rep.status >= 500) {
+        await new Promise(r => setTimeout(r, 1500));
+        rep = await appelerApi(corps);
+      }
+
+      // Secours de repli si le modèle refuse `systemInstruction` (HTTP 400)
+      if (rep.status === 400 && corps.systemInstruction) {
         const altContents = JSON.parse(JSON.stringify(contents));
         if (altContents.length > 0 && altContents[0].role === "user") {
           altContents[0].parts[0].text = promptSysteme + "\n\n" + altContents[0].parts[0].text;
         }
-        const altGenConfig = {
-          temperature: 0.2,
-          maxOutputTokens: isGemini38 ? 8192 : 4096
-        };
-        if (isGemini38) {
-          altGenConfig.thinkingConfig = {
-            thinkingLevel: "high"
-          };
-        }
-        rep = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: altContents,
-            generationConfig: altGenConfig
-          })
+        rep = await appelerApi({
+          contents: altContents,
+          generationConfig: genConfig
         });
       }
 
@@ -1523,10 +1561,11 @@
         texteReponse = "*(Aucune réponse textuelle reçue du modèle)*";
       }
 
-      // Nettoyage rigoureux : suppression de toute réflexion préliminaire ou monologue en anglais pour Gemma
-      if (estGemma) {
-        texteReponse = nettoyerReponseGemma(texteReponse);
-      }
+      /* Nettoyage : suppression d'une éventuelle réflexion préliminaire ou d'un
+         monologue en anglais. Appliqué à tous les modèles — la fonction rend le
+         texte inchangé dès que le premier paragraphe est déjà du français
+         légitime, donc elle ne coûte rien quand il n'y a rien à retirer. */
+      texteReponse = nettoyerReponseGemma(texteReponse);
 
       _historique.push({
         role: "model",
@@ -1535,21 +1574,39 @@
       });
 
     } catch (e) {
-      // Retirer le message utilisateur non acquitté en cas d'échec pour préserver l'alternance stricte user/model
+      /* Le message de l'utilisateur est retiré de l'historique : l'API exige
+         une alternance stricte question / réponse, et une question restée sans
+         réponse ferait refuser tous les échanges suivants de la session. */
       if (_historique.length > 0 && _historique[_historique.length - 1].role === "user") {
         _historique.pop();
       }
       console.error("Erreur appel IA / Google AI Studio :", e);
+      const msgErr = String((e && e.message) ? e.message : e);
       if (errBanner) {
         const errTxt = document.getElementById("iaErrorText");
         if (errTxt) {
-          if (String(e.message).includes("API_KEY_INVALID") || String(e.message).includes("API key not valid")) {
+          if (msgErr.includes("API_KEY_INVALID") || msgErr.includes("API key not valid")) {
             errTxt.textContent = "Clé API Google AI Studio invalide. Vérifiez votre clé ou générez-en une nouvelle.";
+          } else if (msgErr.includes("Failed to fetch")) {
+            errTxt.textContent = "Pas de réponse de Google AI Studio : ce poste a-t-il un accès réseau ?";
           } else {
-            errTxt.textContent = "Erreur IA : " + e.message;
+            errTxt.textContent = "Erreur IA : " + msgErr;
           }
         }
         errBanner.hidden = false;
+      }
+
+      /* LA QUESTION EST RENDUE À SON AUTEUR. La zone de saisie a été vidée au
+         départ de l'envoi ; sans ce retour, une coupure réseau, un quota
+         dépassé ou une clé refusée feraient perdre le texte tapé. On le
+         réinjecte et on replace le curseur : l'utilisateur renvoie d'un clic,
+         ou change de modèle, sans rien retaper. */
+      _questionEnAttente = q;
+      const inputEl = document.getElementById("iaInput");
+      if (inputEl) {
+        inputEl.value = q;
+        inputEl.style.height = "auto";
+        inputEl.focus();
       }
     } finally {
       _enAttente = false;

@@ -2,8 +2,47 @@
 /* =============================================================================
    Gestion LIB — 06-ia-lib.js
    Mode Assistant IA pour la bibliothèque CAO (Empreintes, Symboles, Catalogue)
-   Support des modèles Google AI Studio (Gemma 4 31B, Gemini 3.8 Flash)
+   Modèles Google AI Studio : Gemma 4 31B (défaut), Gemini 3.8 Flash,
+   Gemini 3.8 Flash (Thinking)
    ============================================================================= */
+
+/* -----------------------------------------------------------------------------
+   Les trois entrées du sélecteur de modèle, comme dans `commun/ia-assistant.js`.
+
+   « Gemini 3.8 Flash » et « Gemini 3.8 Flash (Thinking) » visent le MÊME modèle
+   côté Google : seul le budget de réflexion interne les sépare — « low » pour
+   répondre vite, « high » pour raisonner. La température suit le modèle : 0,7
+   pour Gemma 4 31B, qui est calibré ainsi, 0,2 pour les Gemini.
+   ----------------------------------------------------------------------------- */
+const IA_LIB_MODELES = {
+  "gemma-4-31b-it": {
+    nom: "Gemma 4 31B",
+    endpoint: "gemma-4-31b-it",
+    thinkingLevel: null,
+    temperature: 0.7
+  },
+  "gemini-3.8-flash": {
+    nom: "Gemini 3.8 Flash",
+    endpoint: "gemini-3.8-flash",
+    thinkingLevel: "low",
+    temperature: 0.2
+  },
+  "gemini-3.8-flash-thinking": {
+    nom: "Gemini 3.8 Flash (Thinking)",
+    endpoint: "gemini-3.8-flash",
+    thinkingLevel: "high",
+    temperature: 0.2
+  }
+};
+
+function iaLibConfModele(modele) {
+  return IA_LIB_MODELES[modele] || {
+    nom: modele || "Assistant IA",
+    endpoint: modele,
+    thinkingLevel: null,
+    temperature: 0.2
+  };
+}
 
 const IA_LIB = {
   ouvert: false,
@@ -216,36 +255,62 @@ DIRECTIVES STRICTES :
 5. Sois direct, pas de blabla inutile, explique brièvement les choix de dimensions en millimètres (pitch, pads).`;
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(IA_LIB.modele)}:generateContent?key=${encodeURIComponent(IA_LIB.cleApi)}`;
+    /* L'ENDPOINT N'EST PAS L'ENTRÉE DU MENU : « Gemini 3.8 Flash (Thinking) »
+       appelle `gemini-3.8-flash` avec un budget de réflexion élevé, et non un
+       modèle qui porterait ce nom — il n'en existe pas. */
+    const conf = iaLibConfModele(IA_LIB.modele);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(conf.endpoint)}:generateContent?key=${encodeURIComponent(IA_LIB.cleApi)}`;
 
+    /* GEMMA 4 GÈRE NATIVEMENT `systemInstruction` : la directive part donc dans
+       le champ prévu pour elle, et non noyée en tête du tour utilisateur. C'est
+       ce qui corrige les erreurs 500 (« Internal error encountered. ») que le
+       modèle renvoyait quand sa réflexion interne butait sur un tour fabriqué. */
     const contents = [
       {
         role: "user",
-        parts: [{ text: promptSysteme + "\n\n" + ctxLib + "\n\nDemande utilisateur :\n" + texte }]
+        parts: [{ text: ctxLib + "\n\nDemande utilisateur :\n" + texte }]
       }
     ];
 
-    const isGemini38 = IA_LIB.modele === "gemini-3.8-flash" || IA_LIB.modele.includes("gemini-3");
+    /* 8 192 jetons de sortie pour tous les modèles, et non 4 096 : le
+       raisonnement interne se paie sur ce même budget, et à 4 096 Gemma 4
+       épuisait ses jetons avant d'écrire sa réponse. */
+    const genConfig = {
+      temperature: conf.temperature,
+      maxOutputTokens: 8192
+    };
+    if (conf.thinkingLevel) {
+      genConfig.thinkingConfig = { thinkingLevel: conf.thinkingLevel };
+    }
 
     const bodyPayload = {
       contents,
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: isGemini38 ? 8192 : 4096
-      }
+      systemInstruction: { parts: [{ text: promptSysteme }] },
+      generationConfig: genConfig
     };
 
-    if (isGemini38) {
-      bodyPayload.generationConfig.thinkingConfig = {
-        thinkingLevel: "high"
-      };
-    }
-
-    const resp = await fetch(url, {
+    const appelerApi = async (body) => fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(bodyPayload)
+      body: JSON.stringify(body)
     });
+
+    let resp = await appelerApi(bodyPayload);
+
+    /* RÉESSAI UNIQUE SUR 500 / 503 : ces codes sont transitoires côté Google —
+       ils tombent aux pics de charge et repassent seuls. Une seconde tentative
+       après 1,5 s évite d'annoncer une panne qui n'en est pas une. */
+    if (resp.status >= 500) {
+      await new Promise(r => setTimeout(r, 1500));
+      resp = await appelerApi(bodyPayload);
+    }
+
+    // Repli si le modèle refuse `systemInstruction` (HTTP 400)
+    if (resp.status === 400) {
+      const altContents = JSON.parse(JSON.stringify(contents));
+      altContents[0].parts[0].text = promptSysteme + "\n\n" + altContents[0].parts[0].text;
+      resp = await appelerApi({ contents: altContents, generationConfig: genConfig });
+    }
 
     if (!resp.ok) {
       let errTxt = "Erreur HTTP " + resp.status;
@@ -268,10 +333,25 @@ DIRECTIVES STRICTES :
 
     IA_LIB.historique.push({ role: "assistant", texte: reponse });
   } catch (err) {
+    const msgErr = String((err && err.message) ? err.message : err);
     IA_LIB.historique.push({
       role: "assistant",
-      texte: `⚠️ **Erreur lors de l'appel IA** : ${err.message}\n\n*Vérifiez votre clé API Google AI Studio ou choisissez un autre modèle.*`
+      texte: `⚠️ **Erreur lors de l'appel IA** : ${msgErr}\n\n*Vérifiez votre clé API Google AI Studio, votre quota, ou choisissez un autre modèle.*`
     });
+
+    /* LA QUESTION EST RENDUE À SON AUTEUR. La zone de saisie a été vidée au
+       départ de l'envoi ; sans ce retour, une coupure réseau ou un quota
+       dépassé feraient perdre le texte tapé. On le réinjecte et on replace le
+       curseur : l'utilisateur renvoie d'un clic, ou change de modèle, sans
+       rien retaper. Rien n'est réinjecté quand l'envoi vient d'un raccourci :
+       la saisie n'avait pas été vidée, et l'écraser détruirait un autre texte. */
+    if (textePrompt === null) {
+      const inpErr = document.getElementById("iaPromptInput");
+      if (inpErr) {
+        inpErr.value = texte;
+        inpErr.focus();
+      }
+    }
   } finally {
     IA_LIB.enAttente = false;
     rendreMessagesIa();

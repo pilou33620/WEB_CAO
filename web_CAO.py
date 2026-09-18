@@ -328,7 +328,8 @@
     python web_CAO.py --local         # localhost uniquement
     python web_CAO.py --port 9000
     python web_CAO.py --host 192.168.1.20
-    python web_CAO.py --sans-navigateur   # ne pas ouvrir le navigateur
+    python web_CAO.py --navigateur        # forcer l'ouverture du navigateur
+    python web_CAO.py --sans-navigateur   # ne pas ouvrir le navigateur (defaut sur Raspberry Pi)
 
 Un double-clic sur le fichier suffit sous Windows : le navigateur s'ouvre sur
 la bonne adresse et la console reste ouverte -- le journal des requetes y
@@ -1065,6 +1066,46 @@ def sur_ios():
     except Exception:                                  # noqa: BLE001
         return False
 
+
+def sur_raspberry_pi():
+    """Vrai si la machine hote est un Raspberry Pi."""
+    if os.name == "nt":
+        return False
+    try:
+        for chemin in ("/proc/device-tree/model", "/sys/firmware/devicetree/base/model"):
+            if os.path.exists(chemin):
+                with open(chemin, "r", encoding="utf-8", errors="ignore") as f:
+                    if "raspberry pi" in f.read().lower():
+                        return True
+        if os.path.exists("/etc/rpi-issue"):
+            return True
+        if os.path.exists("/etc/os-release"):
+            with open("/etc/os-release", "r", encoding="utf-8", errors="ignore") as f:
+                contenu = f.read().lower()
+                if "raspbian" in contenu or "raspberry pi" in contenu:
+                    return True
+    except Exception:                                  # noqa: BLE001
+        pass
+    return False
+
+
+def doit_ouvrir_navigateur_par_defaut():
+    """Determine si le navigateur doit s'ouvrir automatiquement au demarrage.
+
+    - Windows : True par defaut (bureau interactif).
+    - Raspberry Pi : False par defaut (usage serveur headless / terminal).
+    - Linux sans session graphique (pas de DISPLAY ni WAYLAND_DISPLAY) : False (terminal/SSH).
+    - Linux avec session graphique ou macOS : True.
+    """
+    if os.name == "nt":
+        return True
+    if sur_raspberry_pi():
+        return False
+    if sys.platform.startswith("linux"):
+        # En terminal SSH ou console pure, aucune interface graphique n'est connectee
+        if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+            return False
+    return True
 
 
 def repertoire_courant():
@@ -2917,6 +2958,16 @@ def start_server(host, port, navigateur=True):
     if navigateur:
         print("  Ouverture du navigateur sur %s" % url)
         ouvrir_navigateur(url)
+    elif sur_raspberry_pi():
+        print("  Raspberry Pi detecte (mode serveur/terminal) :")
+        print("  Le navigateur local n'est pas ouvert.")
+        print("  Connectez-vous depuis votre PC ou tablette a l'adresse ci-dessus.")
+        print()
+    elif sys.platform.startswith("linux") and not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        print("  Session terminal sans affichage graphique :")
+        print("  Le navigateur local n'est pas ouvert.")
+        print("  Connectez-vous depuis un navigateur a l'adresse ci-dessus.")
+        print()
 
     try:
         httpd.serve_forever()
@@ -3085,8 +3136,10 @@ def main(argv=None):
                     help="adresse d'ecoute (defaut : toutes les interfaces)")
     ap.add_argument("--local", action="store_true",
                     help="n'ecouter que sur 127.0.0.1 : aucun acces reseau")
-    ap.add_argument("--sans-navigateur", dest="navigateur", action="store_false",
-                    help="ne pas ouvrir le navigateur au demarrage")
+    ap.add_argument("--navigateur", dest="navigateur", action="store_true", default=None,
+                    help="ouvrir le navigateur au demarrage (defaut sous Windows/bureau)")
+    ap.add_argument("--sans-navigateur", dest="navigateur", action="store_false", default=None,
+                    help="ne pas ouvrir le navigateur au demarrage (defaut sur Raspberry Pi / terminal)")
     ap.add_argument("--sans-pause", action="store_true",
                     help="rendre la main sans attendre Entree a la fermeture"
                          " (Windows)")
@@ -3146,7 +3199,10 @@ def main(argv=None):
         print("    Pour l'ouvrir a l'iPad, lancez-le depuis un terminal :")
         print("    python %s" % os.path.basename(os.path.abspath(__file__)))
         print()
-    return start_server(host, args.port, args.navigateur)
+    ouvrir_nav = args.navigateur
+    if ouvrir_nav is None:
+        ouvrir_nav = doit_ouvrir_navigateur_par_defaut()
+    return start_server(host, args.port, ouvrir_nav)
 
 
 def lancer(argv=None):
