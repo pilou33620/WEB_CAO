@@ -2,6 +2,28 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.5.1
+# Date: 2026-09-23
+# Explication: LA TRIPLAQUE NE DEBORDE PLUS. `green_spectral_strip` calculait
+#   sinh(b1).sinh(b2) sur toute la grille spectrale puis le remplacait par sa
+#   limite au-dela de beta.b = 350 -- mais `np.where` evalue ses deux branches,
+#   et le produit passait par inf avant d'etre jete : un RuntimeWarning a
+#   chaque section triplaque, sans effet sur le resultat, mais du bruit qui
+#   finit par cacher un vrai avertissement. Le rapport s'ecrit desormais en
+#   e^-2x seulement, identique a 3e-14 pres la ou l'ancien ne debordait pas.
+#
+#   LE eps_eff PAR CONDUCTEUR DE `solve_multiline` ETAIT FAUX DES QU'IL Y
+#   AVAIT COUPLAGE. Il valait c^2.L_ii.C_ii, produit des diagonales de deux
+#   matrices inverses l'une de l'autre, donc TOUJOURS au-dessus de la vraie
+#   valeur : 4,53 en triplaque a 0,1 mm d'ecart, la ou le milieu homogene
+#   impose 4,30 a tout ecart. Il vaut desormais C_ii/C0_ii, la definition de
+#   `solve_line`. Seul le crosstalk le lisait, pour son profil de retard.
+#
+#   ET LES LIGNES COUPLEES ONT ENFIN UNE REFERENCE EXTERIEURE dans le banc :
+#   Cohn (exacte) en triplaque, Garg-Bahl en microruban -- voir
+#   python/test/banc-ligne-mom.py.
+# Fonctions ajoutees/modifiees : green_spectral_strip, solve_multiline.
+#
 # Version: 2.5.0
 # Date: 2026-09-02
 # Explication: LES COEFFICIENTS DE DIAPHONIE SORTENT DU SOLVEUR. Plus rien ne
@@ -480,19 +502,21 @@ def green_spectral_strip(beta, y0, b, epsilon_r):
     dénominateur plutôt qu'un jeu d'interfaces. En β grand elle tend vers
     1/(2 ε₀ εr β), la même singularité que le microruban avec ε = ε₀εr.
     """
-    bb = np.clip(beta * b, 0.0, 700.0)
-    b1 = np.clip(beta * y0, 0.0, 700.0)
-    b2 = np.clip(beta * (b - y0), 0.0, 700.0)
-    # sinh(b1) sinh(b2) / sinh(bb), écrit de façon à ne pas déborder : on passe
-    # par les exponentielles décalées dès que l'argument est grand.
-    num = np.sinh(b1) * np.sinh(b2)
-    den = np.sinh(bb)
-    grand = bb > 350.0
-    if np.any(grand):
-        # sinh(a)sinh(c)/sinh(a+c) -> (e^a/2)(e^c/2)/(e^(a+c)/2) = 1/2
-        num = np.where(grand, 0.5, num)
-        den = np.where(grand, 1.0, den)
-    return num / (EPSILON_0 * epsilon_r * beta * den)
+    b1 = beta * y0
+    b2 = beta * (b - y0)
+    # sinh(b1) sinh(b2) / sinh(b1+b2), ÉCRIT SANS AUCUNE EXPONENTIELLE
+    # CROISSANTE. Avec sinh(a) = e^a (1 - e^-2a) / 2, les e^(b1+b2) du
+    # numérateur et du dénominateur s'annulent EXACTEMENT :
+    #     rapport = (1 - e^-2b1)(1 - e^-2b2) / (2 (1 - e^-2(b1+b2)))
+    # Tous les termes sont dans [0, 1] : rien ne peut déborder, à aucun β, et
+    # `expm1` garde la précision quand l'argument est petit. L'ancienne
+    # écriture calculait sinh(b1) sinh(b2) PARTOUT puis remplaçait par 1/2 au-
+    # delà de βb = 350 -- mais `np.where` évalue ses deux branches, et le
+    # produit débordait en inf avant d'être jeté, avec un RuntimeWarning à
+    # chaque section triplaque.
+    rapport = (np.expm1(-2.0 * b1) * np.expm1(-2.0 * b2)
+               / (-2.0 * np.expm1(-2.0 * (b1 + b2))))
+    return rapport / (EPSILON_0 * epsilon_r * beta)
 
 
 # ==========================================================================
@@ -1327,10 +1351,21 @@ def solve_multiline(geometry, n=N_PANNEAUX, n_quadrature=N_QUADRATURE):
         # une voisine tenue a la masse lui prend du champ. Les deux chiffres
         # sont utiles, celui-ci pour lire la matrice, `solve_line` pour la
         # piste isolee.
+        #
+        # eps_eff EST C/C0 SUR LA DIAGONALE, comme dans `solve_line`, et pas
+        # c^2.L_ii.C_ii. Le second melange les diagonales de deux matrices
+        # INVERSES l'une de l'autre -- [L] vient de [C0]^-1 --, et pour une
+        # matrice definie positive (A^-1)_ii.A_ii >= 1, avec egalite seulement
+        # sans couplage. Il gonflait donc eps_eff d'autant plus que la voisine
+        # etait proche : 4,53 au lieu de 4,30 en triplaque a 0,1 mm d'ecart,
+        # ou le milieu homogene impose 4,30 EXACTEMENT a tout ecart. Le
+        # crosstalk en tire son profil de retard -- l'axe de position de la
+        # carte, T_d et Kf.T_d --, qui s'allongeait de 2 a 3 % sur les blocs
+        # serres.
         lignes.append({
             "w": place["w_nue"], "x": place["x"],
             "z0": float(math.sqrt(l_mat[i, i] / c[i, i])),
-            "eps_eff": float(C_0 * C_0 * l_mat[i, i] * c[i, i]),
+            "eps_eff": float(c[i, i] / c0[i, i]),
             "c": float(c[i, i]), "l": float(l_mat[i, i]),
         })
 

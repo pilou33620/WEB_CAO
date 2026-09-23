@@ -650,14 +650,47 @@ function mdlCharger(modele,nomFichier){
     comp.boite=mdlBoiteComp(comp);
     for(const pad of (comp.pads||[]))mdlPadPlace(pad,comp,V.couches,poses);
   }
+  const netParXY = new Map();
   for(const q of poses){
     const c=V.couches[q.c]; if(!c)continue;
     c.pads.push(q); c.cpt++;
-    const n=net(q.pad.n==null?-1:q.pad.n);
-    if(n){n.pads.push(q);n.couches.add(q.c);}
+    const netId = q.pad.n==null?-1:q.pad.n;
+    const n=net(netId);
+    if(n){
+      n.pads.push(q);
+      n.couches.add(q.c);
+      if(netId >= 0){
+        netParXY.set(mdlCleXY(q.x, q.y), netId);
+      }
+    }
+  }
+  for(const p of (modele.pistes || [])){
+    if(p.n >= 0 && p.p && p.p.length >= 4){
+      const k1 = mdlCleXY(p.p[0], p.p[1]);
+      if(!netParXY.has(k1)) netParXY.set(k1, p.n);
+      const k2 = mdlCleXY(p.p[p.p.length-2], p.p[p.p.length-1]);
+      if(!netParXY.has(k2)) netParXY.set(k2, p.n);
+    }
   }
   V.parXY=new Map();
   for(const t of modele.percages){
+    if(t.n == null || t.n < 0){
+      const k = mdlCleXY(t.x, t.y);
+      if(netParXY.has(k)){
+        t.n = netParXY.get(k);
+      } else {
+        const ix = Math.round(t.x * 1000), iy = Math.round(t.y * 1000);
+        for(let dx = -1; dx <= 1 && (t.n == null || t.n < 0); dx++){
+          for(let dy = -1; dy <= 1; dy++){
+            const nk = (ix + dx) + "," + (iy + dy);
+            if(netParXY.has(nk)){
+              t.n = netParXY.get(nk);
+              break;
+            }
+          }
+        }
+      }
+    }
     const n=net(t.n==null?-1:t.n); if(n)n.trous.push(t);
     V.parXY.set(mdlCleXY(t.x,t.y),t);
   }
@@ -1068,18 +1101,26 @@ function ltAutoRole(cu){
      ON LIT DONC LE CUIVRE : le net du plus grand versement de la couche dit ce
      qu'elle est, bien mieux que son type. Le nom de net l'emporte sur le type
      déclaré, jamais l'inverse. */
-  const netPlan=(typeof simNetDuPlanIpc==="function")?simNetDuPlanIpc(cu.couche):"";
+  /* MAIS IL FAUT ASSEZ DE CUIVRE POUR QUE CE NET VEUILLE DIRE QUELQUE CHOSE,
+     et c'est la seconde moitié du correctif. Lire « le net du plus grand
+     versement » SANS regarder combien il en couvre fait passer pour un plan de
+     masse toute couche de signal qui porte trois thermals GND : sur Design1,
+     Conductor-1 — la couche des pistes, 6,8 % de cuivre plein — partait au
+     serveur en `role:"plane"`. Une couche de signal annoncée comme plan de
+     référence fausse la recherche du plan le plus proche, donc la hauteur,
+     donc [C] et [L] — en silence, et avec un chiffre crédible. Le net dit
+     LEQUEL des rôles, la surface dit S'IL Y EN A UN : les deux, jamais l'un
+     sans l'autre. Le type déclaré par le fichier, lui, reste souverain — c'est
+     le test `/PLANE/` juste en dessous, qui n'a pas besoin de cuivre pour
+     valoir. */
+  const c=V.couches[cu.couche];
+  const assez=!!(c&&c.tauxPlan>=LT_SEUIL_PLAN);
+  const netPlan=(assez&&typeof simNetDuPlanIpc==="function")
+                  ?simNetDuPlanIpc(cu.couche):"";
   if(/GND|MASSE|0V|VSS/i.test(netPlan))return "gnd";
   if(/VCC|VDD|\+|PWR|POWER|ALIM/i.test(netPlan))return "pwr";
   if(/PLANE/.test(typeStr))return "gnd";
-  const c=V.couches[cu.couche];
-  if(c&&c.tauxPlan>=LT_SEUIL_PLAN){
-    if(typeof simNetDuPlanIpc==="function"){
-      const net=simNetDuPlanIpc(cu.couche);
-      if(/VCC|VDD|\+|PWR|POWER|ALIM/i.test(net))return "pwr";
-    }
-    return "gnd";
-  }
+  if(assez)return "gnd";
   return "signal";
 }
 

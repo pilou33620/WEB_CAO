@@ -46,6 +46,29 @@
    vit que dans une rangée repliée. */
 #simCtl.simPlie>.pnl-bar:not(.simBarFixe){display:none}
 #simCtl.simPlie>#simDCListe{display:none}
+/* LE GROUPE DES AVANCÉS EST UN ENFANT DIRECT, ET IL FALLAIT LE NOMMER : la
+   règle ci-dessus vise `>.pnl-bar`, et les rangées qu'il enveloppe ont cessé
+   d'en être. Sans cette ligne, replier les réglages les aurait laissées à
+   l'écran — précisément les cinq qu'on cherchait à faire disparaître. */
+#simCtl.simPlie>#simXtAvance{display:none}
+
+/* LE REPLI DES RÉGLAGES AVANCÉS, indépendant du précédent : celui-ci fait de
+   la place une fois le calcul lancé, celui-là sépare ce qu'on règle de ce
+   qu'on ne règle qu'en sachant pourquoi. Les deux se cumulent sans se gêner. */
+#simXtAvance.simXtPlie{display:none}
+/* MODIFIÉ, LE BOUTON SE VOIT — c'est lui qui porte alors la seule trace à
+   l'écran d'un réglage qui pilote le résultat. Même teinte que les alertes
+   douces du panneau, pas celle des erreurs : rien n'est cassé, quelque chose
+   est simplement posé à la main. */
+.simXtAvanceBtn{font-family:var(--mono);font-size:10px}
+/* `button.tb.on` pese un element et deux classes : une regle en `.x.on`
+   perdait, et le bouton prenait le bleu « actif » de tous les autres — il
+   disait alors « je suis enclenche » la ou il doit dire « quelque chose est
+   pose a la main ». On repasse donc par le meme poids. */
+button.tb.simXtAvanceBtn.on{
+  border-color:rgba(234,179,8,.55);color:#eab308;
+  background:rgba(234,179,8,.10);
+}
 .simAnaVide{
   font-family:var(--mono);font-size:10px;color:var(--txt-dim);opacity:.8;
 }
@@ -384,6 +407,9 @@ input.simChamp.large{width:88px}
 #simCtl{
   flex:0 1 auto;min-height:0;max-height:62%;overflow-y:auto;
 }
+/* SEUL DANS SON PANNEAU : la sortie vit dans la section « Résultats », les
+   réglages ont toute la hauteur et défilent s'ils la dépassent. */
+#simCtl.simSeul{flex:1 1 auto;max-height:none}
 #simCtl::-webkit-scrollbar{width:8px}
 #simCtl::-webkit-scrollbar-thumb{background:#31343a;border-radius:4px}
 
@@ -567,6 +593,22 @@ input.simChamp.large{width:88px}
 }
 .simNoteBas{margin-top:-4px}
 
+/* ---------- le profil le long du parcours (Impédance, Z diff) ----------
+   La bande de tolérance en fond, les paliers par-dessus : c'est la bande qu'on
+   regarde d'abord, et la courbe se juge à ce qu'elle en sort. */
+.simZpBloc{margin:6px 0 8px}
+.simCourbe.simZp{margin-bottom:0}
+.simZp .simZpBande{fill:rgb(92,158,255);opacity:.12}
+.simZp .simZpCible{stroke:var(--txt-dim);stroke-width:1;stroke-dasharray:3 3;opacity:.7}
+.simZp .simZpPalier{stroke-width:2.4;stroke-linecap:round}
+.simZp .simZpLien{stroke:var(--txt-dim);stroke-width:1;opacity:.5}
+.simZp .simZpTitre{fill:var(--txt);opacity:.8}
+.simZp .simZpCur{stroke:var(--txt);stroke-width:1;opacity:.6}
+.simZpBloc .z0ok{color:var(--blue)}
+.simZpBloc .z0ko{color:var(--red)}
+.simZpBloc .z0haut{color:#e8443a}
+.simZpBloc .z0bas{color:#4cc38a}
+
 /* ---------- le tableau ---------- */
 .simTab{width:100%;border-collapse:collapse;font-size:11px}
 .simTab th{
@@ -669,6 +711,27 @@ input.simChamp.large{width:88px}
    le violet ne dit rien d'autre que « ce n'est pas une reponse ». */
 .simXtN-indecis{border-left-color:var(--violet,#b3a1ff);background:#1e1b2b}
 .simXtN-indecis .simXtVerdict{color:var(--violet,#b3a1ff)}
+
+/* LE MEME VIOLET POUR LA MEME RAISON. « Bande reglee pour la carte » n'est pas
+   un degre de gravite entre le vert et le rouge : c'est la MEME chose que
+   l'indecis -- un trou dans la mesure. Lui donner l'ambre du « a surveiller »
+   le ferait lire comme un niveau limite, alors qu'il n'y a pas de niveau du
+   tout ; lui donner le vert ou le gris le ferait lire comme une bonne
+   nouvelle, et c'est celui des deux malentendus qui coute le plus cher. */
+.simXtN-bande{border-left-color:var(--violet,#b3a1ff);background:#1e1b2b}
+.simXtN-bande .simXtVerdict{color:var(--violet,#b3a1ff)}
+
+/* LE MODE SIMPLE N'EST NI UNE ALERTE NI UNE BONNE NOUVELLE : c'est un
+   CLASSEMENT, et il ne prononce aucun verdict. Le bleu le dit sans emprunter
+   a l'echelle des budgets -- lui donner le vert du « sous le budget » ferait
+   lire « ca passe » sous un chiffre qui ne compare rien, et le rouge ferait
+   l'inverse. */
+.simXtN-geo{border-left-color:var(--blue,#6cb6ff);background:#161e2b}
+.simXtN-geo .simXtVerdict{color:var(--blue,#6cb6ff)}
+/* LE CLASSEMENT SE LIT COMME UNE LISTE ORDONNEE, parce que c'en est une : le
+   rang est le resultat, pas une decoration. */
+.simXtRang{margin:6px 0 2px 0;padding-left:22px}
+.simXtRang li{margin:2px 0;line-height:1.45}
 
 /* ==========================================================================
    CE QU'IL Y A À FAIRE, ET LES RÉSERVES
@@ -1228,3 +1291,43 @@ b.simXtV,.simXtCoche b.simXtV,.simXtLect b.simXtV{
 .simPCCourbe .simPCAxe{
   fill:#94a3b8;font:500 9px "JetBrains Mono","SF Mono",Consolas,monospace;
 }
+
+/* ---------- LES ENCARTS PISTE 1 ET PISTE 2 (PAIRE DIFFÉRENTIELLE) ---------- */
+.simDiffPistesCadre{
+  display:flex;flex-direction:column;gap:5px;margin:5px 0;padding:6px 8px;
+  background:rgba(255,255,255,0.025);border:1px solid var(--border2);border-radius:4px;
+}
+.simDiffPisteLigne{
+  display:flex;align-items:center;gap:6px;width:100%;
+}
+.simDiffLbl{
+  min-width:52px;font-weight:600;font-size:11px;color:var(--txt);
+}
+.simDiffEncart{
+  display:flex;align-items:center;gap:4px;flex:1 1 auto;
+}
+.simDiffEncart .simInputTxt{
+  flex:1 1 auto;min-width:100px;background:#101216;border:1px solid var(--border2);
+  color:var(--txt);border-radius:3px;padding:3px 6px;
+  font-family:var(--mono);font-size:11.5px;
+}
+.simDiffEncart .simInputTxt:focus{
+  outline:none;border-color:var(--blue);
+}
+.simBtnPick{
+  padding:2px 6px;font-size:11px;cursor:pointer;
+  background:var(--bg-hover,#21262d);border:1px solid var(--border2);
+  color:var(--txt);border-radius:3px;
+}
+.simBtnPick:hover{
+  background:var(--blue);color:#fff;border-color:var(--blue);
+}
+.simBtnClear{
+  padding:2px 5px;font-size:10.5px;cursor:pointer;
+  color:var(--txt-dim);background:transparent;border:1px solid transparent;
+  border-radius:3px;
+}
+.simBtnClear:hover{
+  color:var(--red,#ef4444);background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.3);
+}
+

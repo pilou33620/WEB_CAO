@@ -222,6 +222,23 @@
     <div class="pnl-body" id="simPanneau"></div>
   </section>
 
+  <!-- La sortie de la simulation EM, dans sa propre section : on la place, on
+       l'agrandit ou on la met en plein écran comme les autres, et le panneau
+       « Simulation EM » ne garde que les réglages. Elle démarre masquée et
+       reparaît d'elle-même à la fin du premier calcul (simSortieReveler). -->
+  <section class="pnl" data-pnl="resultats" data-title="Résultats">
+    <header class="pnl-head">
+      <span class="pnl-grip">⠿</span><span class="pnl-title">Résultats</span>
+      <span class="pnl-acts">
+        <button class="pnl-btn" data-act="collapse" title="Replier">▾</button>
+        <button class="pnl-btn" data-act="maximize" title="Plein écran">□</button>
+        <button class="pnl-btn" data-act="float" title="Détacher / rattacher">⬒</button>
+        <button class="pnl-btn" data-act="close" title="Fermer">✕</button>
+      </span>
+    </header>
+    <div class="pnl-body" id="simResultats"></div>
+  </section>
+
   <section class="pnl" data-pnl="ia" data-title="Assistant IA">
     <header class="pnl-head">
       <span class="pnl-grip">⠿</span><span class="pnl-title">Assistant IA</span>

@@ -9,7 +9,7 @@
 const WS_CONFIG={
   key:"pcb.espace-travail.v1",
   layout:{
-    docks:{dockL:212,dockR:330,dockB:200},
+    docks:{dockL:212,dockR:330,dockB:260},
     /* Les règles de conception et les paires différentielles n'ont plus de
        panneau : elles vivent dans la fenêtre « Règles et contraintes », que le
        bouton « Règles… » de la barre d'outils ouvre. Le dock ne garde que ce
@@ -21,7 +21,7 @@ const WS_CONFIG={
        le liste comme les autres. Un panneau déclaré ici sans figurer dans
        `order` démarre masqué : c'est `last` qui dit où il ira. */
     order:{dockL:["stack"],dockR:["props","list","stackup"],dockB:[]},
-    hidden:["sim","ia","placement"],
+    hidden:["sim","resultats","ia","placement"],
     panels:{
       stack:{grow:1  ,collapsed:false,x:90 ,y:150,w:250,h:300,last:"dockL"},
       props:{grow:1.2,collapsed:false,x:150,y:150,w:300,h:400,last:"dockR"},
@@ -29,6 +29,10 @@ const WS_CONFIG={
       placement:{grow:1.2,collapsed:false,x:200,y:160,w:330,h:420,last:"dockR"},
       stackup:{grow:1.4,collapsed:false,x:220,y:120,w:560,h:560,last:"dockR"},
       sim  :{grow:1.3,collapsed:true ,x:250,y:180,w:560,h:520,last:"dockR"},
+      /* Les résultats de la simulation EM ont leur section, en bas : une
+         courbe « le long du parcours » ou « en fréquence » se lit en largeur.
+         Masquée d'usine, elle reparaît d'elle-même à la fin d'un calcul. */
+      resultats:{grow:1,collapsed:false,x:220,y:160,w:900,h:560,last:"dockB"},
       ia   :{grow:1.5,collapsed:false,x:250,y:140,w:440,h:580,last:"dockR"}
     }
   }

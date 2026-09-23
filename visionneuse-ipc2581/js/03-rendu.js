@@ -216,6 +216,9 @@ function peindre(c,dpr,W,H){
   if(typeof simXtRisqueTraceIpc==="function")simXtRisqueTraceIpc(c,dpr);
   if(V.aff.composants)peindreComposants(c,dpr);
   peindreTextes(c,dpr);
+  /* LE VISEUR DU PROFIL D'IMPÉDANCE, par-dessus les composants et les textes :
+     il désigne un point de piste, et un boîtier ne doit pas le cacher. */
+  if(typeof simZCurseurTraceIpc==="function")simZCurseurTraceIpc(c,dpr);
   /* Les boîtiers retenus — plusieurs quand on les a pris à Ctrl+clic. Le reflet
      `V.comp` sert de repli : un banc d'essai peut le poser sans passer par la
      liste de sélection. */
@@ -301,8 +304,9 @@ function peindreNet(c,dpr,net,mev){
   if(!g)return;
   poserMonde(c,dpr);
   const min=1/V.vue.scale;
+  const xtSurCuivre=typeof simXtSurCuivre==="function"&&simXtSurCuivre();
   c.strokeStyle="#ffffff"; c.fillStyle="#ffffff";
-  c.globalAlpha=0.85; c.lineCap="round"; c.lineJoin="round";
+  c.globalAlpha=xtSurCuivre?0.35:0.85; c.lineCap="round"; c.lineJoin="round";
   if(g.plans)for(const p of g.plans)c.fill(p,"evenodd");
   if(g.pads)c.fill(g.pads,"nonzero");
   for(const [w,chemin] of g.traits){

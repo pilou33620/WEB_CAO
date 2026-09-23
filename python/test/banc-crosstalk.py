@@ -244,30 +244,41 @@ print("\nL'axe de position : le seul cas qui verifie la carte elle-meme")
 # ==========================================================================
 
 def le_pic_de_next_tombe_ou_le_longement_commence():
-    """Une victime qui ne longe que de 25 a 40 mm y met son pic, et pas ailleurs.
+    """Une victime qui ne longe que de 25 a 40 mm : la carte monte a 25 mm.
 
     C'EST LE CAS QUI JUSTIFIE TOUTE LA SECTION. Le NEXT remonte vers le bout
     proche de la victime : ce qui se couple a l'abscisse x y arrive au bout
     d'un aller-retour, et c'est cette conversion-la que la carte fait. Un
     facteur deux oublie sur l'axe -- l'erreur la plus facile a commettre et la
-    plus difficile a voir -- mettrait le pic a 12,5 mm, ce qui reste une carte
-    parfaitement lisible.
+    plus difficile a voir -- ferait monter la carte a 12,5 mm, ce qui reste une
+    carte parfaitement lisible.
+
+    LA CARTE EST Kb(x), LA REPONSE A UN ECHELON : elle est haute sur TOUT le
+    longement et basse avant. On verifie donc ou elle MONTE -- le premier point
+    a mi-hauteur -- et qu'elle reste basse en amont. (La version precedente
+    tracait la reponse impulsionnelle, qui ne marque que les bords ; ce test
+    en cherchait alors le pic.)
 
     LA TOLERANCE EST LA RESOLUTION ANNONCEE, et non un nombre choisi : la carte
-    ne peut pas placer un pic plus finement que la bande ne le permet, et
-    exiger mieux serait exiger ce que la physique ne donne pas.
+    ne peut pas placer un bord plus finement que la bande ne le permet.
     """
     for debut in (0.0, 12.0, 25.0):
         res = ct.analyser(doc_essai([pis(debut, 0.45, 40, 0.45, "VIC")]))
-        x, valeur = pic(res, "VIC", "next")
-        tol = ligne_de(res, "VIC", "next")["resolution"]
-        assert valeur > 0, "aucun couplage a %g mm" % debut
-        assert abs(x - debut) <= tol, \
-            ("longement de %g a 40 mm : pic a %.2f mm, tolerance %.2f mm"
-             % (debut, x, tol))
+        ligne = ligne_de(res, "VIC", "next")
+        axe = res["carte_chaleur"]["axe"]
+        vals = ligne["valeurs"]
+        tol = ligne["resolution"]
+        haut = max(vals)
+        assert haut > 0, "aucun couplage a %g mm" % debut
+        monte = next(x for x, v in zip(axe, vals) if v >= 0.5 * haut)
+        assert abs(monte - debut) <= tol,             ("longement de %g a 40 mm : la carte monte a %.2f mm, tolerance"
+             " %.2f mm" % (debut, monte, tol))
+        amont = [v for x, v in zip(axe, vals) if x < debut - 1.5 * tol]
+        assert not amont or max(amont) < 0.2 * haut,             ("longement de %g a 40 mm : %.3f en amont pour %.3f au plus haut"
+             % (debut, max(amont), haut))
 
 
-T("le pic de NEXT tombe la ou le longement commence",
+T("la carte de NEXT monte la ou le longement commence",
   le_pic_de_next_tombe_ou_le_longement_commence)
 
 
@@ -801,26 +812,26 @@ def les_plages_a_risque_tombent_sur_le_longement():
     C'EST LA SORTIE QUI SE POSE SUR LE DESSIN, donc celle dont une erreur coute
     le plus : une plage peinte au mauvais millimetre est visiblement precise et
     entierement fausse, et rien a l'ecran ne la contredit. Le cas est construit
-    pour qu'on sache ou elles doivent tomber : la victime ne longe QUE de 12 a
-    28 mm, et le NEXT d'un longement borne culmine a ses DEUX transitions --
-    c'est la ou le couplage par unite de longueur change, et nulle part
-    ailleurs.
+    pour qu'on sache ou elle doit tomber : la victime ne longe QUE de 12 a
+    28 mm, avec un ecart constant -- le couplage s'y fabrique PARTOUT, et la
+    plage a ecarter est le longement entier.
+
+    CE N'ETAIT PAS LE CAS. La carte tracait la reponse IMPULSIONNELLE, qui ne
+    marque que les deux transitions -- la derivee du couplage le long du
+    parcours --, et ce test attendait alors deux plages, centrees sur 12 et
+    28 mm : « ecarter de 9,5 a 14,2 mm », puis de 25,5 a 30,2 mm, pour un
+    couplage qui se fabrique de 12 a 28.
     """
     res = ct.analyser(doc_essai([pis(12, 0.45, 28, 0.45, "VIC")]))
     plages = res["risques"]
     assert plages, "aucune plage rendue sur un longement franc"
     assert all(p["victime"] == "VIC" for p in plages), plages
-    # LES DEUX TRANSITIONS, ET DANS L'ORDRE. On tolere la resolution spatiale :
-    # une plage est large de ce que la bande permet de distinguer, pas plus.
+    # UNE PLAGE, QUI COUVRE LE LONGEMENT. On tolere la resolution spatiale sur
+    # chaque bord : la bande ne distingue pas mieux.
     res_next = ligne_de(res, "VIC", "next")["resolution"]
-    centres = sorted(0.5 * (p["s0"] + p["s1"]) for p in plages)
-    assert len(centres) == 2, \
-        "deux transitions attendues, %d plage(s) : %s" % (len(centres),
-                                                          centres)
-    for attendu, obtenu in zip((12.0, 28.0), centres):
-        assert abs(obtenu - attendu) <= res_next, \
-            "plage centree en %.2f mm au lieu de %.2f (resolution %.2f)" \
-            % (obtenu, attendu, res_next)
+    assert len(plages) == 1,         "une seule plage attendue, %d : %s" % (len(plages), plages)
+    assert abs(plages[0]["s0"] - 12.0) <= res_next, (plages[0], res_next)
+    assert abs(plages[0]["s1"] - 28.0) <= res_next, (plages[0], res_next)
     for p in plages:
         assert 0.0 <= p["s0"] < p["s1"] <= res["longueur"] + 1e-6, p
         assert 0 < p["niveau"] <= 1.0, p
@@ -846,7 +857,7 @@ def les_plages_a_risque_tombent_sur_le_longement():
             raise AssertionError("un seuil de %g a ete accepte" % mauvais)
 
 
-T("les plages a risque tombent sur les transitions du longement",
+T("les plages a risque couvrent le longement, pas ses seules transitions",
   les_plages_a_risque_tombent_sur_le_longement)
 
 # ==========================================================================
@@ -1097,26 +1108,32 @@ T("une coincidence certaine d'avance n'explique rien, et le dit",
 
 
 def le_seuil_de_couture_dit_de_quelle_regle_il_sort():
-    """Deux regles, la plus severe gagne -- et l'autre s'ecrit quand meme.
+    """Le signal d'abord, la bande en repli -- et l'autre regle s'ecrit.
 
-    LE HAUT DE BANDE EST UN REGLAGE, et c'est lui qui fixe le seuil des que la
-    bande monte : un front de 9 ns tolere des centimetres la ou 100 GHz exige
-    un dixieme de millimetre. Quatorze alarmes de couture apparaissent alors
-    sans que le cuivre ait bouge, et sans cette ligne on va les chercher dans
-    le dessin au lieu du champ « bande ».
+    LE HAUT DE BANDE EST UN REGLAGE, monte pour affiner la carte. Il fixait
+    le seuil des que la bande montait -- 100 GHz exige un dixieme de
+    millimetre, la ou un front de 9 ns tolere des centimetres --, et chaque
+    trou entre deux vias devenait une alarme sans que le cuivre ait bouge.
+    Le modele, lui, jugeait deja une garde flottante sur le seul front : la
+    fiche demandait de coudre ce que la matrice S tenait pour cousu.
     """
+    # UN FRONT DECRIT : sa regle tranche, meme quand la bande est haute.
     lent = {"temps_montee": 9e-9, "f_fin": 100e9}
     seuil, source, ecarte = ct._seuil_couture(lent)
-    assert seuil < 0.2, "a 100 GHz, lambda/10 gagne : %s" % seuil
-    assert "λ/10" in source, source
-    assert "front" in ecarte and "mm" in ecarte, \
-        "la regle ecartee doit etre chiffree : %r" % ecarte
+    assert "front" in source, source
+    assert seuil > 100.0, "un front de 9 ns tolere des centimetres : %s" % seuil
+    # LA REGLE DE LA BANDE S'ECRIT QUAND MEME, chiffree, avec sa raison.
+    assert "λ/10" in ecarte and "mm" in ecarte and "carte" in ecarte, ecarte
 
-    # ET DANS L'AUTRE SENS : une bande raisonnable rend la main au front.
-    seuil2, source2, ecarte2 = ct._seuil_couture({"temps_montee": 50e-12,
-                                                  "f_fin": 5e9})
-    assert seuil2 < seuil * 100 and "front" in source2, (seuil2, source2)
-    assert "λ/10" in ecarte2, ecarte2
+    # UN FRONT RAPIDE ET UNE BANDE RAISONNABLE : toujours le front.
+    seuil2, source2, _e2 = ct._seuil_couture({"temps_montee": 50e-12,
+                                              "f_fin": 5e9})
+    assert "front" in source2 and seuil2 < 5.0, (seuil2, source2)
+
+    # RIEN NE DECRIT LE SIGNAL : la bande est le seul repere, elle tranche.
+    seuil4, source4, _e4 = ct._seuil_couture({"f_fin": 100e9})
+    assert "λ/10" in source4 or seuil4 < 0.5, (seuil4, source4)
+
     # SANS BANDE, UNE SEULE REGLE S'APPLIQUE : on n'ecrit alors rien de plus.
     # Une parenthese « l'autre regle donnerait » sur une regle qui n'a pas
     # tourne serait une valeur inventee.
@@ -1125,10 +1142,7 @@ def le_seuil_de_couture_dit_de_quelle_regle_il_sort():
     assert seuil3 > 0 and "repli" in source3, (seuil3, source3)
     assert ecarte3 == "", "une seule regle : rien a comparer (%r)" % ecarte3
 
-    # ET QUAND LES DEUX REGLES TOMBENT SUR LE MEME MILLIMETRE, ON SE TAIT. Un
-    # temps de montee deduit vaut 0,35/f_max, et les deux regles coincident
-    # alors par construction : « l'autre regle donnerait 0.75 mm » a cote d'un
-    # seuil de 0,75 mm ne renseigne pas, il fait relire deux fois.
+    # ET QUAND LES DEUX REGLES TOMBENT SUR LE MEME MILLIMETRE, ON SE TAIT.
     assert ct._seuil_couture({"f_fin": 20e9})[2] == "",         "deux regles qui disent la meme chose ne s'ecrivent pas deux fois"
 
 
@@ -1185,37 +1199,40 @@ def les_decibels_disent_de_quelle_bande_ils_parlent():
     c = [x for x in res["couples"] if x["victime"] == "VIC"][0]
     assert c["f_pire"] > 1.5 * res["f_genou"], \
         "sur un front lent, le pire point est haut : %s" % c["f_pire"]
-    dit = [x for x in res["avertissements"] if "genou du front" in x]
-    assert dit, "l'ecart entre la bande et le signal doit se dire : %s" \
-        % res["avertissements"]
-    assert "RÉSOLUTION SPATIALE" in dit[0], \
-        "le message ne doit pas faire croire que monter la bande est une" \
-        " erreur : %s" % dit[0]
+    # LE NIVEAU RETENU EST LA CRETE TEMPORELLE : le front lui-meme envoye
+    # dans le reseau. Elle parle du signal par construction -- ou que soit le
+    # pire point de la bande --, et la reserve « hors de la bande du signal »
+    # n'a donc plus lieu d'etre pour ce couple.
+    assert res.get("bande_signal"), "la passe temporelle doit se dire"
+    assert "Passe temporelle" in res["bande_signal"]["detail"],         res["bande_signal"]
+    assert c.get("crete") is not None, c
+    assert c["crete_db"] < c["pire_db"] - 10.0,         "sur un front lent, la crete doit etre tres inferieure au maximum"         " pris sur toute la bande : %s" % c
+    assert not [x for x in res["avertissements"]
+                if "genou du front" in x and "« VIC »" in x],         res["avertissements"]
+    assert c["hors_bande_signal"] is False, c
 
-    # LA GRILLE NE DESCEND PAS SOUS LE GENOU, ET C'EST LE CAS ORDINAIRE quand
-    # on monte la bande : a 100 GHz sur 201 points, le pas vaut 0,5 GHz et le
-    # genou 39 MHz -- SEUL LE CONTINU est en dessous, ou le couplage vaut zero
-    # par construction. Repondre « -300 dB » serait lire le zero de la grille
-    # et l'annoncer comme une mesure.
-    assert "pire_db_genou" not in c, \
-        "aucun point utile sous le genou : la fiche ne doit pas chiffrer"
-    assert "ne peut même pas dire" in dit[0], dit[0]
+    # LE MODULE DE S AU GENOU RESTE RENDU, a titre de repere -- et il MAJORE
+    # la crete : c'est tout le motif de la passe temporelle.
+    assert "pire_db_genou" in c, c
+    assert c["crete_db"] < c["pire_db_genou"], c
 
-    # AVEC DES POINTS SOUS LE GENOU, LE CHIFFRE EXISTE ET IL EST BORNE.
     fin = doc_essai(voisine, distance_max=1.0)
     fin["analyse"] = {"f_debut": 0.0, "f_fin": 100e9, "points": 201,
                       "temps_montee": 500e-12}
     autre = ct.analyser(fin)
     c2 = [x for x in autre["couples"] if x["victime"] == "VIC"][0]
     assert "pire_db_genou" in c2, c2
-    assert c2["pire_db_genou"] <= c2["pire_db"] + 1e-9, \
-        "le pire sous le genou ne peut pas depasser le pire sur la bande"
+    assert c2["pire_db_genou"] <= c2["pire_db"] + 1e-9,         "le pire sous le genou ne peut pas depasser le pire sur la bande"
+    assert c2.get("crete") is not None and c2["crete_db"] <= c2["pire_db"], c2
 
-    # ET SUR UN FRONT COHERENT AVEC LA BANDE, RIEN NE SE DIT. Une mise en garde
-    # qui s'affiche a chaque analyse cesse d'etre lue.
     net = ct.analyser(doc_essai(voisine, distance_max=1.0))
     assert not [x for x in net["avertissements"] if "genou du front" in x], \
         net["avertissements"]
+    # LE DRAPEAU EXISTE PARTOUT ET VAUT FAUX ICI. Un champ absent finirait
+    # par se lire comme un champ a faux, et une fiche saine doit dire « non »
+    # tout aussi explicitement qu'une fiche douteuse dit « oui ».
+    for x in net["couples"]:
+        assert x["hors_bande_signal"] is False, x
 
     # SANS TEMPS DE MONTEE SAISI, PAS DE COMPARAISON : le genou se deduirait
     # de la bande et vaudrait la bande -- une colonne qui recopie sa voisine.
@@ -1500,11 +1517,55 @@ def la_fiche_dit_ce_qu_il_y_a_a_faire():
     voir = [a for a in faire if a["quoi"] == "aller voir"][0]
     assert "écarter ne servira à rien" in voir["pourquoi"], voir
 
+    # LE CUIVRE DE MASSE DEJA ROUTE ET NON COUSU DONNE UN GESTE, ET IL PASSE
+    # AVANT LES ZONES DU PLAN. C'est le seul geste de la liste dont on
+    # connaisse le sens de l'effet a coup sur : une garde flottante ne blinde
+    # pas, elle TRANSFERE. Ces deux mesures levaient un avertissement -- donc
+    # une phrase a lire -- et ne produisaient aucun geste.
+    blindage = {"gardes": [{"net": "GND_GUARD", "longueur": 30.0,
+                            "longueur_flottante": 12.0, "couture": 4.8},
+                           {"net": "GND_OK", "longueur": 8.0,
+                            "longueur_flottante": 0.0, "couture": 0.9}],
+                "bords_non_cousus": [{"cote": "gauche", "longueur": 15.0,
+                                      "couture": 6.2}]}
+    avec = ct.actions(risques, masse, [], [], 0.5, blindage)
+    quoi2 = [a["quoi"] for a in avec]
+    assert "coudre la garde" in quoi2, quoi2
+    assert "coudre le plan arrosé" in quoi2, quoi2
+    assert quoi2.index("coudre la garde") < quoi2.index("coudre le plan"), quoi2
+    garde = [a for a in avec if a["quoi"] == "coudre la garde"][0]
+    # LA GARDE COUSUE N'EN PRODUIT PAS : un geste sur un cuivre deja correct
+    # ferait percer pour rien, et decredibiliserait les autres lignes.
+    assert garde["cible"] == "GND_GUARD", garde
+    assert len([a for a in avec if a["quoi"] == "coudre la garde"]) == 1, avec
+    assert "12.00 mm" in garde["ou"] and "30.00 mm" in garde["ou"], garde
+    assert "TRANSFÈRE" in garde["pourquoi"], garde
+    assert "4.80 mm" in garde["pourquoi"], garde
+    bord = [a for a in avec if a["quoi"] == "coudre le plan arrosé"][0]
+    assert "gauche" in bord["cible"] and "6.20 mm" in bord["pourquoi"], bord
+    # SANS RENSEIGNEMENT DE BLINDAGE, RIEN NE CHANGE : une page qui n'envoie
+    # pas la mesure garde exactement le comportement d'avant.
+    assert [a["quoi"] for a in ct.actions(risques, masse, [], [], 0.5)] == quoi
+
     # LA LISTE EST BORNEE : au-dela, on la lit comme un audit et l'on n'en
     # fait aucun.
     beaucoup = [dict(risques[0], s0=float(i), s1=float(i) + 1.0)
                 for i in range(20)]
     assert len(ct.actions(beaucoup, masse, [], [], 0.5)) <= ct.ACTIONS_MAX
+    # ET LA COUPE SE DIT. Elle coupait EN SILENCE : un dessin a huit gestes en
+    # montrait six, et les deux autres n'existaient nulle part -- ni a l'ecran,
+    # ni dans le rapport exporte, qui est le fichier qu'on emporte.
+    omises = []
+    coupe = ct.actions(beaucoup, masse, [], [], 0.5, None, omises)
+    assert len(coupe) == ct.ACTIONS_MAX, len(coupe)
+    assert len(omises) == 1, omises
+    assert omises[0]["nombre"] == 20 + 3 - ct.ACTIONS_MAX, omises
+    assert omises[0]["natures"], omises
+    assert str(omises[0]["nombre"]) in omises[0]["detail"], omises
+    # UNE LISTE QUI TIENT N'INVENTE PAS D'OMISSION.
+    courte = []
+    ct.actions(risques, masse, [], [], 0.5, None, courte)
+    assert courte == [], courte
 
     # RIEN A FAIRE EST UNE REPONSE, et elle se distingue d'un calcul absent.
     assert ct.actions([], {"zones": []}, [], [], 0.5) == []
@@ -2248,6 +2309,934 @@ def la_tolerance_de_reciprocite_suit_la_cascade():
 
 T("la tolérance de réciprocité suit la longueur de la cascade",
   la_tolerance_de_reciprocite_suit_la_cascade)
+
+
+def un_front_suppose_ne_se_presente_pas_comme_annonce():
+    """Le genou deduit de l'amplitude est une SUPPOSITION, et la fiche le dit.
+
+    UNE ALARME QUI DEMANDE DE CHANGER UN REGLAGE doit dire d'ou sort le chiffre
+    qui la declenche. Le genou peut venir du temps de montee SAISI, ou -- a
+    defaut -- de l'amplitude, qui designe une famille logique et son front
+    typique. Dans le second cas, aller chercher dans le cuivre la cause d'une
+    alarme qui vient d'une valeur par defaut est une perte de temps pure.
+
+    ET UN SEUL TEMPS DE MONTEE POUR TOUTE LA FICHE : le seuil de couture se
+    lisait du tr deduit de la BANDE pendant que le genou se lisait de
+    l'amplitude -- deux chiffres compares dans une meme fiche, sortis de deux
+    hypotheses differentes.
+    """
+    voisine = [pis(0, 0.3, 40, 0.3, "VIC")]
+
+    # 3,3 V SANS TEMPS DE MONTEE : la famille donne 1 ns, le genou 350 MHz.
+    suppose = doc_essai(voisine, distance_max=1.0)
+    suppose["analyse"] = {"f_debut": 0.0, "f_fin": 100e9, "points": 201,
+                          "amplitude_v": 3.3}
+    res = ct.analyser(suppose)
+    assert abs(res["f_genou"] - 0.35 / 1.0e-9) < 1.0, res["f_genou"]
+    assert res["f_genou_source"].startswith("supposé"), res["f_genou_source"]
+    assert "3.3 V" in res["f_genou_source"], res["f_genou_source"]
+    assert abs(res["f_genou_tr"] - 1.0e-9) < 1e-15, res["f_genou_tr"]
+
+    # LE MOT « ANNONCE » NE DOIT PLUS APPARAITRE, et « suppose » doit.
+    # LA CRETE EST CALCULEE SOUS CE FRONT-LA, et la passe temporelle dit
+    # qu'il est suppose -- c'est elle, desormais, qui fait le verdict.
+    assert res["bande_signal"]["source"].startswith("supposé"),         res["bande_signal"]
+    assert "supposé" in res["bande_signal"]["detail"], res["bande_signal"]
+
+    # ET L'HYPOTHESE EST RENDUE AVEC LES AUTRES, pas seulement dans l'alarme :
+    # le bloc de cloture est ce qu'on relit, l'alarme est ce qu'on survole.
+    hyp = [h for h in res["hypotheses"] if "TEMPS DE MONTÉE N" in h]
+    assert len(hyp) == 1, res["hypotheses"]
+    assert "SUPPOSITION DE CET OUTIL" in hyp[0], hyp[0]
+
+    # LES TROIS FAMILLES SE DISTINGUENT, et le seuil est bien un « au moins ».
+    for volts, tr_attendu in ((3.3, 1.0e-9), (2.5, 1.0e-9),
+                              (1.8, 0.5e-9), (1.2, 0.5e-9),
+                              (0.8, 0.2e-9)):
+        d = doc_essai(voisine, distance_max=1.0)
+        d["analyse"] = {"f_debut": 0.0, "f_fin": 100e9, "points": 201,
+                        "amplitude_v": volts}
+        r = ct.analyser(d)
+        assert abs(r["f_genou"] - 0.35 / tr_attendu) < 1.0, (volts, r["f_genou"])
+
+    # LE TEMPS DE MONTEE SAISI GAGNE SUR L'AMPLITUDE, et redevient « annonce ».
+    saisi = doc_essai(voisine, distance_max=1.0)
+    saisi["analyse"] = {"f_debut": 0.0, "f_fin": 100e9, "points": 201,
+                        "temps_montee": 9e-9, "amplitude_v": 3.3}
+    r = ct.analyser(saisi)
+    assert abs(r["f_genou"] - 0.35 / 9e-9) < 1.0, r["f_genou"]
+    assert r["f_genou_source"] == "saisi", r["f_genou_source"]
+    assert r["bande_signal"]["source"] == "saisi", r["bande_signal"]
+
+    # SANS RIEN QUI DECRIVE LE SIGNAL, PAS DE GENOU -- et l'absence est DITE.
+    muet = doc_essai(voisine, distance_max=1.0)
+    muet["analyse"] = {"f_debut": 0.0, "f_fin": 100e9, "points": 201}
+    m = ct.analyser(muet)
+    assert m["f_genou"] == 0.0, m["f_genou"]
+    assert m["f_genou_source"] == "", m["f_genou_source"]
+    assert not [x for x in m["avertissements"] if "genou du front" in x]
+    # SANS FRONT, PAS DE PASSE TEMPORELLE : il n'y a rien a envoyer.
+    assert "bande_signal" not in m, m.get("bande_signal")
+    assert [h for h in m["hypotheses"] if "AUCUN TEMPS DE MONTÉE" in h], \
+        m["hypotheses"]
+
+    # UN SEUL TEMPS DE MONTEE DANS LA FICHE : le seuil de couture tire son
+    # front de la MEME source que le genou.
+    analyse = {"f_debut": 0.0, "f_fin": 100e9, "points": 201,
+               "amplitude_v": 3.3}
+    t_r, source, du_signal = ct._tr_signal(analyse)
+    assert (t_r, du_signal) == (1.0e-9, True), (t_r, du_signal)
+    _valeur, quoi, _ecarte = ct._seuil_couture(analyse)
+    if quoi.startswith("front"):
+        assert source in quoi, (quoi, source)
+    # Sans signal decrit, il retombe sur la bande -- et le genou reste muet.
+    t_r2, _s2, du_signal2 = ct._tr_signal({"f_fin": 100e9})
+    assert not du_signal2 and abs(t_r2 - 0.35 / 100e9) < 1e-18, (t_r2, du_signal2)
+    assert ct._genou_du_front({"f_fin": 100e9})[0] == 0.0
+
+
+T("un front supposé ne se présente pas comme un front annoncé",
+  un_front_suppose_ne_se_presente_pas_comme_annonce)
+
+
+def la_grille_deduite_echantillonne_aussi_le_signal():
+    """Le pas ne sert pas qu'a eviter le repliement : il doit atteindre le genou.
+
+    LE CAS REEL QUI L'A FAIT ECRIRE. Un front de 555 ps (genou 630 MHz) analyse
+    jusqu'a 44,7 GHz : l'anti-repliement se contente de 17 points, soit un pas
+    de 2,8 GHz, et le PREMIER point utile tombe quatre fois au-dessus du genou.
+    La fiche annoncait alors « 23 % du budget » -- un maximum pris sur toute la
+    bande -- en disant a cote qu'elle ne pouvait pas dire ce que le couplage
+    vaut la ou le signal porte. Le chiffre qui decide du verdict manquait.
+
+    DESCENDRE LE PAS NE PEUT PAS REPLIER : une fenetre plus longue est toujours
+    plus sure. Et cela ne coute rien, la cascade etant vectorisee sur la
+    frequence. La contrainte porte sur le PAS, jamais sur la BANDE.
+    """
+    parcours = ct._parcours([pis(0, 0, 18.06, 0, "CLK")])
+    couches = STACK["layers"]
+
+    def bande(f_genou):
+        return ct.bande_deduite(parcours, [{"longueur": 6.0}], couches,
+                                dict(ct.DEFAUTS), {}, f_genou)
+
+    # SANS SIGNAL DECRIT, RIEN NE BOUGE : la deduction est celle d'avant.
+    muet = bande(0.0)
+    assert muet["source_points"] == "fenêtre temporelle", muet["source_points"]
+    assert muet["sous_genou"] == 0, muet
+
+    # AVEC LE FRONT DE LA CAPTURE, LE GENOU PREND LA MAIN sur le nombre de
+    # points -- et sur LUI SEUL : la bande, elle, ne bouge pas d'un hertz.
+    genou = 0.35 / 555e-12
+    avec = bande(genou)
+    assert avec["f_max"] == muet["f_max"], \
+        "le genou borne le PAS, pas la BANDE : %s vs %s" \
+        % (avec["f_max"], muet["f_max"])
+    assert avec["points"] > muet["points"], (avec["points"], muet["points"])
+    assert avec["source_points"] == "genou du front", avec["source_points"]
+    assert avec["sous_genou"] >= 3, avec
+    assert avec["pas"] * 3 <= genou * 1.001, (avec["pas"], genou)
+
+    # ET L'ANTI-REPLIEMENT TIENT TOUJOURS : c'est la contrainte qu'on n'a pas
+    # le droit de relacher, et un pas plus fin ne peut que l'ameliorer.
+    aller_retour = 2.0 * 18.06e-3 / avec["vitesse"]
+    assert (avec["points"] - 1) / avec["f_max"] >= aller_retour, avec
+
+    # LA PHRASE LE DIT, et nomme la borne qui a mordu sur les points.
+    assert "sous le genou du front" in avec["detail"], avec["detail"]
+    assert "fixé le nombre de points" in avec["detail"], avec["detail"]
+
+    # AU PLAFOND, ON NE FAIT PAS SEMBLANT. Un front tres lent demanderait des
+    # milliers de points ; on s'arrete a POINTS_DEDUITS_MAX et l'on DIT que la
+    # lecture du signal n'a pas eu lieu -- au lieu de la laisser croire.
+    lent = bande(0.35 / 9e-9)
+    assert lent["points"] == ct.POINTS_DEDUITS_MAX, lent["points"]
+    assert lent["sous_genou"] == 0, lent
+    assert "ATTENTION" in lent["detail"], lent["detail"]
+
+    # DE BOUT EN BOUT : le chiffre qui manquait est la.
+    def fiche(tr):
+        d = doc_essai([pis(0, 0.3, 18.06, 0.3, "VIC")],
+                      distance_max=1.0, bande_auto=True)
+        d["geometry"]["objects"] = [pis(0, 0, 18.06, 0, "CLK")]
+        d["analyse"] = {"f_debut": 0.0, "f_fin": 44.7e9, "points": 17,
+                        "temps_montee": tr}
+        return ct.analyser(d)
+
+    r = fiche(555e-12)
+    c = [x for x in r["couples"] if x["victime"] == "VIC"][0]
+    assert c.get("pire_db_genou") is not None, \
+        "le couplage sous le genou doit etre chiffre : %s" % c
+    assert c["pire_db_genou"] <= c["pire_db"] + 1e-9, c
+    assert r["bande_deduite"]["sous_genou"] >= 3, r["bande_deduite"]
+
+
+T("la grille déduite échantillonne aussi le signal, pas seulement le dessin",
+  la_grille_deduite_echantillonne_aussi_le_signal)
+
+
+def le_bloc_analyse_complet_de_la_page_passe_entier():
+    """Ce que la PAGE envoie, et non ce que le banc trouvait pratique d'envoyer.
+
+    CE CAS EXISTE PARCE QU'UN BUG EST PASSE. `doc_essai` n'a jamais mis
+    `f_centre` dans le bloc `analyse` ; la page, elle, l'y met toujours. Une
+    alerte gardee par « fc > 0 » n'etait donc JAMAIS evaluee au banc -- ni sa
+    condition, ni les noms qu'elle lit --, et cinquante cas verts ont laissé
+    passer un « name 't_r' is not defined » que le premier clic a trouve.
+
+    LA LECON EST DANS LE COURT-CIRCUIT : `fc > 0 and t_r > 0` ne leve rien
+    quand `fc` vaut zero. Un banc qui n'envoie pas un champ ne teste pas « le
+    cas ou il est absent », il ne teste RIEN de ce qui en depend.
+    """
+    voisine = [pis(0, 0.3, 40, 0.3, "VIC")]
+
+    def page(**analyse):
+        """Le bloc `analyse` tel que le panneau le remplit, au complet."""
+        d = doc_essai(voisine, distance_max=1.0)
+        d["analyse"] = dict({"f_debut": 0.0, "f_fin": 20e9, "points": 201,
+                             "f_centre": 1e8, "temps_montee": 0.0,
+                             "amplitude_v": 0.0}, **analyse)
+        return ct.analyser(d)
+
+    # (1) LE CAS QUI PLANTAIT : un front lent, et la frequence de travail
+    # presente. Il ne doit rien lever, et l'alerte doit sortir.
+    r = page(temps_montee=8e-9)
+    dit = [x for x in r["avertissements"] if "demi-période" in x]
+    assert dit, "un front de 8 ns sur un signal a 100 MHz doit etre releve"
+    # ELLE DIT D'OU SORT LE FRONT, comme les deux autres alertes qui le lisent.
+    assert "saisi" in dit[0], dit[0]
+    assert "8 ns" in dit[0], dit[0]
+
+    # (2) UN FRONT RAPIDE NE DECLENCHE RIEN.
+    assert not [x for x in page(temps_montee=100e-12)["avertissements"]
+                if "demi-période" in x]
+
+    # (3) ET SURTOUT : UN FRONT DEDUIT DE LA BANDE NE DECLENCHE RIEN NON PLUS.
+    # Sans tr ni amplitude, le repli vaut 0,35/f_fin ; baisser la bande pour
+    # degrossir aurait alors fabrique l'alerte sans que le dessin ait bouge.
+    # C'est un REGLAGE qu'on aurait pris pour un fait du signal.
+    lente = page(f_fin=20e6, points=21, f_centre=1e6)
+    assert not [x for x in lente["avertissements"] if "demi-période" in x], \
+        "un front deduit de la bande ne decrit pas le signal : %s" \
+        % [x for x in lente["avertissements"] if "demi-période" in x]
+
+    # (4) L'AMPLITUDE SEULE SUFFIT A LE DECRIRE, elle : 3,3 V vaut 1 ns de
+    # front suppose, et a 1 GHz la demi-periode ne vaut que 0,5 ns. L'alerte
+    # sort donc, et elle dit que le front est SUPPOSE -- une alerte qui demande
+    # de ralentir un signal a cause d'un front devine doit le dire.
+    suppose = page(f_centre=1e9, amplitude_v=3.3)
+    d2 = [x for x in suppose["avertissements"] if "demi-période" in x]
+    assert d2 and "supposé" in d2[0], d2
+
+    # (5) LE BLOC COMPLET PASSE ENTIER, quelles que soient les combinaisons :
+    # aucune ne doit lever. C'est la garde qui manquait.
+    for a in ({}, {"temps_montee": 1e-9}, {"amplitude_v": 1.8},
+              {"temps_montee": 1e-9, "amplitude_v": 3.3},
+              {"f_centre": 0.0}, {"f_fondamentale": 5e7, "f_centre": 0.0}):
+        page(**a)
+
+
+T("le bloc « analyse » complet de la page passe entier",
+  le_bloc_analyse_complet_de_la_page_passe_entier)
+
+
+def une_fente_change_le_couplage_et_ne_le_laisse_pas_identique():
+    """La GEOMETRIE du plan entre dans [C] et [L], pas seulement l'empilage.
+
+    C'EST LE FAUX LE PLUS COUTEUX QUE CE MODULE AIT PORTE, et il ne se voyait
+    sur aucune carte : l'empilage est GLOBAL -- il declare qu'une couche est un
+    plan --, alors que la presence de cuivre est LOCALE. Deux longements de
+    meme dessin, l'un sur plan plein et l'autre survolant une decoupe, se
+    resolvaient BIT POUR BIT pareil. Sur une carte d'essai portant expres les
+    deux configurations cote a cote, les deux NEXT sortaient au centieme de dB
+    identiques, et rien dans le resultat ne s'en etonnait.
+
+    TROIS CHOSES SE VERIFIENT ICI, et elles sont independantes :
+      · la fente CHANGE le resultat -- sans quoi le champ ne sert a rien ;
+      · quand un SECOND plan existe derriere, le bloc retombe dessus : plus
+        loin, donc plus couple, et non pas « non calculable » ;
+      · quand il n'y en a pas d'autre, le bloc est declare NON CALCULE et le
+        dit dans les defauts graves -- le plancher ne doit jamais se lire
+        comme un decouplage.
+    """
+    # Un empilage a DEUX plans sous la piste : le proche a 0,2 mm, le lointain
+    # a 1,2 mm. Une fente dans le proche doit faire descendre la reference.
+    deux = {"layers": [
+        {"type": "copper", "name": "Top", "thickness": 0.035,
+         "role": "signal"},
+        {"type": "dielectric", "name": "prepreg", "thickness": 0.2,
+         "epsilon_r": 4.3, "tan_delta": 0.02},
+        {"type": "copper", "name": "GND1", "thickness": 0.035,
+         "role": "plane", "net": "GND"},
+        {"type": "dielectric", "name": "coeur", "thickness": 1.0,
+         "epsilon_r": 4.3, "tan_delta": 0.02},
+        {"type": "copper", "name": "GND2", "thickness": 0.035,
+         "role": "plane", "net": "GND"},
+    ]}
+
+    def lancer(stack, fentes):
+        d = doc_essai([pis(0, 0.5, 40, 0.5, "VICT")])
+        d["stackup"] = stack
+        if fentes is not None:
+            d["fentes"] = fentes
+        return ct.analyser(d)
+
+    def next_db(res):
+        for c in res["couples"]:
+            if c["victime"] == "VICT":
+                return c["next_db"]
+        raise AssertionError("pas de couple VICT dans le resultat")
+
+    fente = [{"s": 0.0, "longueur": 40.0, "plans": ["GND1"],
+              "quoi": "le plan GND1 n'a pas de cuivre de retour"}]
+
+    # (1) DEUX PLANS : la fente fait descendre la reference d'un etage.
+    plein = next_db(lancer(deux, []))
+    perce = next_db(lancer(deux, fente))
+    assert abs(plein - perce) > 0.5, (
+        "une fente sur le plan proche ne change RIEN au couplage : %.2f dB"
+        " contre %.2f dB. C'est exactement le defaut que ce cas garde."
+        % (plein, perce))
+    # Plus loin du plan, c'est plus couple : le signe n'est pas libre.
+    assert perce > plein, (
+        "la reference descendue d'un etage doit COUPLER PLUS : %.2f dB au lieu"
+        " de %.2f dB" % (perce, plein))
+
+    # (2) UN SEUL PLAN, PERCE : il ne reste aucune reference. Le bloc n'est pas
+    # calculable, et cela se dit -- ce n'est pas un couplage nul.
+    nu = lancer(STACK, [{"s": 0.0, "longueur": 40.0, "plans": ["GND"],
+                         "quoi": "le plan GND n'a pas de cuivre de retour"}])
+    assert next_db(nu) < -100.0, (
+        "sans aucune reference, le couplage ne peut pas etre calcule : %.2f dB"
+        % next_db(nu))
+    titres = " ".join(g["titre"] for g in (nu.get("graves") or []))
+    assert "NON CALCUL" in titres.upper(), (
+        "le plancher sort sans etre annonce comme non calcule : %s" % titres)
+
+    # (3) UNE FENTE SANS NOM DE PLAN NE FAIT RIEN. Les pages anterieures au
+    # champ `plans` n'envoient que la prose ; elles doivent continuer de rendre
+    # ce qu'elles rendaient, et non un plancher surgi de nulle part.
+    muette = next_db(lancer(STACK, [{"s": 0.0, "longueur": 40.0,
+                                     "quoi": "fente sans nom de plan"}]))
+    temoin = next_db(lancer(STACK, []))
+    assert abs(muette - temoin) < 1e-9, (
+        "une fente sans champ `plans` a change le calcul : %.4f contre %.4f"
+        % (muette, temoin))
+
+
+T("une fente sous le longement change le couplage, et le dit quand elle"
+  " l'empeche",
+  une_fente_change_le_couplage_et_ne_le_laisse_pas_identique)
+
+
+def les_deux_coefficients_ne_dependent_que_de_la_geometrie():
+    """Kb et Kf sortent de [C] et [L] seules -- et le milieu homogene le prouve.
+
+    LE CONTROLE EST CELUI DU MANUEL : en triplaque, le dielectrique remplit
+    tout l'espace, Lm/L0 vaut Cm/C0 exactement, et le FEXT s'annule. En
+    microruban, une partie du champ passe par l'air, les deux rapports
+    divergent, et le FEXT existe. Si ces deux lignes de calcul se trompaient de
+    convention -- la mutuelle de Maxwell est NEGATIVE hors diagonale --, ce
+    controle-la tomberait le premier.
+    """
+    def paire(kind, ecart, **plus):
+        geo = dict({"t": 35e-6, "epsilon_r": 4.3}, **plus)
+        geo["kind"] = kind
+        geo["conducteurs"] = [{"w": 0.2e-3, "x": -(0.2e-3 + ecart) / 2.0},
+                              {"w": 0.2e-3, "x": (0.2e-3 + ecart) / 2.0}]
+        r = tl.solve_multiline(geo)
+        return ct.coefficients_couple(r["c"], r["l"], 0, 1)
+
+    kb_m, kf_m = paire("micro", 0.3e-3, h=0.2e-3)
+    kb_s, kf_s = paire("strip", 0.3e-3, b=0.4e-3, y0=0.2e-3)
+    assert kb_m > 0 and kb_s > 0, (kb_m, kb_s)
+    # LE FEXT DU MICRORUBAN EXISTE, celui de la triplaque est nul. On ne compare
+    # pas a zero exactement : le cuivre a une epaisseur, elle perturbe un peu
+    # l'homogeneite, et c'est physique. Deux ordres de grandeur suffisent a dire
+    # que les deux cas ne sont pas le meme.
+    assert abs(kf_s) < 0.05 * abs(kf_m), (kf_m, kf_s)
+    assert kf_m > 0.01, kf_m
+
+    # ET A ECART SERRE, OU LES DEFINITIONS SE SEPARENT. En milieu homogene,
+    # [L] = mu*eps*[C]^-1 impose Lm/L0 = Cm/c[i][i] EXACTEMENT, donc Kf = 0 a
+    # tout ecart. A 0,3 mm le couplage est trop faible pour trancher : une
+    # premiere version prenait pour C0 la capacite ligne-a-masse, passait
+    # ce controle-la, et rendait Kf = -0,026 a 0,1 mm -- un FEXT invente, et
+    # un Kb surestime d'autant.
+    for ecart in (0.1e-3, 0.05e-3):
+        kb_t, kf_t = paire("strip", ecart, b=0.4e-3, y0=0.2e-3)
+        assert kb_t > 0.05, (ecart, kb_t)
+        assert abs(kf_t) < 1e-4, ("Kf doit etre nul en triplaque", ecart, kf_t)
+
+    # PLUS SERRE, PLUS COUPLE. Une monotonie, c'est peu -- et c'est ce qui
+    # attrape une inversion de signe ou un indice permute.
+    serre = paire("micro", 0.15e-3, h=0.2e-3)[0]
+    large = paire("micro", 1.2e-3, h=0.2e-3)[0]
+    assert serre > 3 * large, (serre, large)
+
+    # UNE MATRICE DIAGONALE -- section non resolue -- REND ZERO, et ce zero est
+    # celui de l'appelant a distinguer : voir `mesure` sur chaque bloc.
+    diag_c = [[1e-10, 0.0], [0.0, 1e-10]]
+    diag_l = [[4e-7, 0.0], [0.0, 4e-7]]
+    assert ct.coefficients_couple(diag_c, diag_l, 0, 1) == (0.0, 0.0)
+    # ET UNE MATRICE VIDE DE SENS NE LEVE PAS : elle rend zero, parce qu'un
+    # solveur en echec ne doit pas faire tomber toute la fiche.
+    assert ct.coefficients_couple([[0.0, 0.0], [0.0, 0.0]],
+                                  [[0.0, 0.0], [0.0, 0.0]], 0, 1) == (0.0, 0.0)
+
+
+T("les deux coefficients ne dependent que de la geometrie",
+  les_deux_coefficients_ne_dependent_que_de_la_geometrie)
+
+
+def le_mode_simple_repond_ou_sans_rien_savoir_du_signal():
+    """Ni front, ni amplitude, ni bande -- et pourtant une carte qui designe.
+
+    C'EST LA QUESTION « OU », ET ELLE N'A PAS BESOIN DU SIGNAL. Kb est le NEXT
+    SATURE : une fraction de l'amplitude de l'agresseur que la geometrie fixe
+    entierement. Le classement de deux zones par leur Kb est donc vrai pour
+    n'importe quel front -- c'est ce qui rend ce mode legitime sans la moindre
+    donnee electrique.
+
+    ET IL NE PEUT PAS TOMBER DANS LE PIEGE DE L'AUTRE : sans transformee, il
+    n'y a ni fenetre, ni repliement, ni bande a arbitrer entre la resolution
+    spatiale et le front. L'abscisse sort du DECOUPAGE, qui est de la
+    geometrie.
+    """
+    # UNE VOISINE QUI SE RAPPROCHE AU MILIEU, ET S'ELOIGNE ENSUITE.
+    vois = [pis(0, 0.95, 12, 0.95, "VIC"),
+            pis(12, 0.35, 22, 0.35, "VIC"),
+            pis(22, 0.95, 40, 0.95, "VIC")]
+    doc = doc_essai(vois, distance_max=1.5)
+    doc["mode"] = "simple"
+    # AUCUNE DONNEE ELECTRIQUE : c'est tout l'enjeu. Pas de temps de montee,
+    # pas d'amplitude, pas de bande.
+    doc["analyse"] = {}
+    res = ct.analyser(doc)
+    assert res["mode"] == "simple", res["mode"]
+
+    # RIEN DE CE QUI DEMANDE UNE MATRICE S N'EST RENDU, et c'est une garantie
+    # plutot qu'un manque : une fiche qui porterait une bande deduite sans
+    # avoir fait de transformee ferait croire a un reglage qui n'a pas servi.
+    assert res["bande_deduite"] is None, res["bande_deduite"]
+    assert "touchstone" not in res
+    assert "validation" not in res
+
+    c = res["couples"][0]
+    assert c["victime"] == "VIC"
+    assert c["rang"] == 1
+    # LE NIVEAU N'EST PAS RENDU EN DECIBELS CONTRE UN BUDGET : il n'y a pas de
+    # budget sans amplitude. Ce qui est rendu est la BORNE et le CLASSEMENT.
+    assert "pire_db" not in c
+    assert c["kb_max"] > 0, c
+    assert 0.0 < c["kb_max"] < 1.0, "Kb est une fraction, jamais un pourcentage"
+    assert abs(c["kb_max_pc"] - 100.0 * c["kb_max"]) < 1e-3
+
+    # LA CARTE DESIGNE LA SECTION SERREE, ET ELLE SEULE.
+    ligne = [x for x in res["carte_chaleur"]["lignes"]
+             if x["sens"] == "next"][0]
+    axe = res["carte_chaleur"]["axe"]
+    vals = ligne["valeurs"]
+    dedans = [v for x, v in zip(axe, vals) if 13.0 <= x <= 21.0]
+    dehors = [v for x, v in zip(axe, vals) if x <= 10.0 or x >= 24.0]
+    assert min(dedans) > 3.0 * max(dehors), (max(dehors), min(dedans))
+
+    # ET LA PLAGE A RISQUE TOMBE SUR LE BON MILLIMETRE. C'est le resultat que
+    # l'utilisateur regarde ; tout le reste n'est que ce qui l'appuie.
+    zones = res["risques"]
+    assert len(zones) == 1, zones
+    assert abs(zones[0]["s0"] - 12.0) < 1.5, zones[0]
+    assert abs(zones[0]["s1"] - 22.0) < 1.5, zones[0]
+
+    # LA RESOLUTION EST CELLE DE L'AXE, PAS CELLE DU DECOUPAGE. Rendre la
+    # longueur du plus long bloc ferait refuser toute plage par `zones_risque`,
+    # qui la compare au quart du parcours -- alors qu'un bloc uniforme de
+    # 18 mm n'est pas un flou de 18 mm, c'est une section uniforme.
+    assert c["resolution_next"] < 1.0, c["resolution_next"]
+    assert c["bloc_max"] > 5.0, c["bloc_max"]
+
+    # CE QUE CE MODE NE SAIT PAS FAIRE, IL LE DIT LUI-MEME.
+    dit = [x for x in res["avertissements"] if "ANALYSE GÉOMÉTRIQUE" in x]
+    assert dit, res["avertissements"]
+    assert "BORNES" in dit[0] and "SATUR" in dit[0], dit[0]
+    assert "millivolts" in dit[0], dit[0]
+
+    # LE FEXT SE REND EN DUREE, JAMAIS EN NIVEAU : il varie comme 1/t_r, donc
+    # aucune borne finie ne s'en deduit sans front.
+    assert c["kf_td_ps"] >= 0.0
+    assert "kf_db" not in c
+
+    # LE MEME DESSIN EN MODE PRECIS RESTE LE MODE PRECIS : les deux ne se
+    # marchent pas dessus, et un document sans `mode` continue de valoir
+    # « precis » -- c'est celui qui refuse le plus de choses.
+    net = ct.analyser(doc_essai(vois, distance_max=1.5))
+    assert net["mode"] == "precis", net["mode"]
+    assert net["couples"] and "pire_db" in net["couples"][0]
+
+
+T("le mode simple repond OU sans rien savoir du signal",
+  le_mode_simple_repond_ou_sans_rien_savoir_du_signal)
+
+
+def le_mode_simple_ne_prend_pas_un_zero_non_calcule_pour_un_decouplage():
+    """Une section non resolue rend Kb = 0, et ce zero n'est pas une mesure.
+
+    C'EST LE FAUX NEGATIF LE PLUS GRAVE QUE CE MODE PUISSE PRODUIRE, et il
+    serait parfaitement muet : la carte se dessine, la zone reste bleue, et
+    l'on conclut « ca ne couple pas ici » la ou l'on n'a pas su calculer. Or
+    c'est precisement la ou le plan de reference manque que le couplage reel
+    est le plus fort, faute de chemin de retour court.
+    """
+    # 0,01 mm DE JOUR AU MILIEU : la section n'y est pas resoluble, et le
+    # solveur le refuse -- a raison. (Un cuivre qui CHEVAUCHE, comme ce cas
+    # l'employait d'abord, est ecarte des la preselection : il ne longe pas,
+    # et le test ne passait que parce que « absente » se lisait « non
+    # mesuree ».)
+    vois = [pis(0, 0.95, 12, 0.95, "VIC"),
+            pis(12, 0.26, 22, 0.26, "VIC"),
+            pis(22, 0.95, 40, 0.95, "VIC")]
+    doc = doc_essai(vois, distance_max=1.5)
+    doc["mode"] = "simple"
+    res = ct.analyser(doc)
+    c = res["couples"][0]
+    assert c["mesure_partielle"] is True, c
+    titres = [g["titre"] for g in res["graves"]]
+    assert any("n'y sont pas des mesures" in t for t in titres), titres
+    dit = [x for x in res["avertissements"] if "NON RÉSOLUE" in x]
+    assert dit, res["avertissements"]
+    assert "absence de mesure" in dit[0], dit[0]
+
+    # EN PARTIE SEULEMENT : ce n'est pas « non calcule », il y a un Kb.
+    assert c["non_calcule"] is False and c["kb_max"] > 0, c
+
+    # SUR TOUT LE LONGEMENT, AUCUN CHIFFRE -- et la fiche doit le dire par
+    # couple, pas seulement dans une reserve : sans quoi la page la classait
+    # hors du classement, ce qui se lisait « elle ne couple pas ».
+    # 0,01 mm DE JOUR : le solveur ne resout pas la section, sur toute la
+    # longueur. (Un cuivre qui CHEVAUCHE, lui, est ecarte des la
+    # preselection -- ce n'est pas une voisine.)
+    tout = doc_essai([pis(0, 0.26, 40, 0.26, "VIC")], distance_max=1.5)
+    tout["mode"] = "simple"
+    nul = ct.analyser(tout)["couples"][0]
+    assert nul["non_calcule"] is True, nul
+    assert nul["kb_max"] == 0.0 and nul["confirmee"] is False, nul
+    assert "pas un couplage nul" in nul["raison"], nul
+
+    # ET UN DESSIN SAIN NE LEVE RIEN : une reserve qui s'affiche a chaque
+    # analyse cesse d'etre lue, et emporte les vraies avec elle.
+    sain = doc_essai([pis(0, 0.95, 40, 0.95, "VIC")], distance_max=1.5)
+    sain["mode"] = "simple"
+    bon = ct.analyser(sain)
+    assert bon["couples"][0]["mesure_partielle"] is False, bon["couples"][0]
+    assert not [x for x in bon["avertissements"] if "NON RÉSOLUE" in x]
+
+
+T("le mode simple ne prend pas un zero non calcule pour un decouplage",
+  le_mode_simple_ne_prend_pas_un_zero_non_calcule_pour_un_decouplage)
+
+
+def le_mode_simple_trie_par_le_plafond_et_ne_trace_pas_kf_en_niveau():
+    """Le seuil s'applique a Kb, et |Kf| ne se trace pas en « % ».
+
+    Kb EST LE PLAFOND DU NEXT : une voisine dont le Kb est sous le seuil de
+    confirmation y reste pour TOUT front. C'est la seule conclusion definitive
+    de ce mode, et elle doit trier -- sans quoi une voisine a 0,6 % recevait
+    sa plage « a ecarter » au meme rang qu'une a 16 %.
+
+    Kf N'EST PAS UNE FRACTION DE L'AMPLITUDE : le FEXT vaut Kf*T_d/t_r. Une
+    courbe de |Kf| sur l'echelle « % de l'agresseur » affichait 3,9 % la ou un
+    front de 10 ns donne quelques milliemes.
+    """
+    vois = [pis(0, 0.95, 12, 0.95, "VIC"),
+            pis(12, 0.35, 22, 0.35, "VIC"),
+            pis(22, 0.95, 40, 0.95, "VIC"),
+            pis(0, -1.3, 40, -1.3, "LOIN")]
+    doc = doc_essai(vois, distance_max=1.5)
+    doc["mode"] = "simple"
+    doc["analyse"] = {}
+    res = ct.analyser(doc)
+    par = dict((c["victime"], c) for c in res["couples"])
+    assert set(par) == {"VIC", "LOIN"}, list(par)
+
+    # LOIN EST SOUS LE SEUIL DE -40 dB, ET LE DIT AVEC LE MOT QUI COMPTE.
+    assert par["VIC"]["confirmee"] is True, par["VIC"]
+    assert par["LOIN"]["confirmee"] is False, par["LOIN"]
+    assert "quel que soit le front" in par["LOIN"]["raison"], par["LOIN"]
+    assert res["victimes"] == ["VIC"], res["victimes"]
+    # ELLE RESTE CLASSEE -- ecartee du verdict, pas du resultat.
+    assert par["LOIN"]["rang"] == 2 and par["LOIN"]["kb_max"] > 0
+
+    # AUCUNE PLAGE NI AUCUN GESTE POUR ELLE.
+    assert all(z["victime"] == "VIC" for z in res["risques"]), res["risques"]
+    # PAS DE RECOUPEMENT : Kb sort de la section, le comparer a l'espacement
+    # comparerait la geometrie a elle-meme. Toute plage est donc « expliquee »,
+    # et aucune ne part en « aller voir -- ecarter ne servira a rien ».
+    assert res["desaccords"] == [], res["desaccords"]
+    assert all(z["justifie"] for z in res["risques"]), res["risques"]
+    assert all(a["cible"] != "LOIN" for a in res["actions"]), res["actions"]
+    # ET LE GESTE QUI RESTE PARLE DE BORNE, PAS DE NIVEAU.
+    ecarter = [a for a in res["actions"] if a["quoi"] == "écarter"]
+    assert ecarter and "borne" in ecarter[0]["pourquoi"], res["actions"]
+    assert "dB" not in ecarter[0]["pourquoi"], ecarter[0]
+
+    # UNE SEULE COURBE PAR VICTIME, CELLE DE Kb ; le FEXT dit pourquoi.
+    sens = set(x["sens"] for x in res["carte_chaleur"]["lignes"])
+    assert sens == {"next"}, sens
+    assert res["axes"]["fext"]["lignes"] == 0
+    assert "t_r" in res["axes"]["fext"]["raison"], res["axes"]
+    # Kf RESTE AU TABLEAU, sous la forme que la geometrie fixe : une duree.
+    assert par["VIC"]["kf_td_ps"] > 0, par["VIC"]
+
+    # Kf*T_d EST UNE INTEGRALE SUR LE LONGEMENT, pas Kf maximal fois le
+    # retard de tout le parcours. Une voisine a la meme distance qui ne longe
+    # que le quart du parcours en prend le quart.
+    def kf_td(vois):
+        d = doc_essai(vois, distance_max=1.5)
+        d["mode"] = "simple"
+        return ct.analyser(d)["couples"][0]["kf_td_ps"]
+    entier = kf_td([pis(0, 0.95, 40, 0.95, "VIC")])
+    quart = kf_td([pis(15, 0.95, 25, 0.95, "VIC")])
+    assert entier > 0, entier
+    assert abs(quart / entier - 0.25) < 0.05, (entier, quart)
+
+    # UN SEUIL PLUS BAS REPECHE LOIN : le tri suit bien le reglage.
+    doc["reglages"]["seuil_db"] = -60.0
+    bas = ct.analyser(doc)
+    assert all(c["confirmee"] for c in bas["couples"]), bas["couples"]
+
+
+T("le mode simple trie par le plafond et ne trace pas Kf en niveau",
+  le_mode_simple_trie_par_le_plafond_et_ne_trace_pas_kf_en_niveau)
+
+
+def un_couplage_non_calcule_ne_sort_pas_a_moins_300_db():
+    """Les deux modes disent « non calcule » au lieu d'un plancher.
+
+    EN MODE PRECIS, une voisine sans section resolue sortait a -300 dB,
+    « couplage a -300.0 dB, sous le seuil » -- rangee avec celles qu'on ecarte
+    parce qu'elles sont LOIN. Sur une vraie carte, c'etait celle a 0,2 mm sur
+    18 mm, la ou le plan manque.
+
+    ET « NON MESURE » N'EST PAS « ABSENT » : une voisine qui ne longe qu'une
+    partie du parcours n'est pas « section non resolue » sur le reste. Le
+    drapeau de bloc confondait les deux, et toute voisine courte etait dite
+    partiellement calculee.
+    """
+    # 0,01 mm DE JOUR : aucune section resolue, sur toute la longueur.
+    muet = [pis(0, 0.26, 40, 0.26, "VIC")]
+    # UNE VOISINE SAINE QUI NE LONGE QUE DE 20 A 30 mm.
+    court = [pis(20, 0.6, 30, 0.6, "VIC")]
+    for mode in ("precis", "simple"):
+        d = doc_essai(muet, distance_max=1.5)
+        d["mode"] = mode
+        c = ct.analyser(d)["couples"][0]
+        assert c["non_calcule"] is True, (mode, c)
+        assert c["confirmee"] is False, (mode, c)
+        assert "NON CALCUL" in c["raison"], (mode, c["raison"])
+        assert "sous le seuil" not in c["raison"], (mode, c["raison"])
+        assert c["longueur_non_calculee"] > 35.0, (mode, c)
+
+        d = doc_essai(court, distance_max=1.5)
+        d["mode"] = mode
+        c = ct.analyser(d)["couples"][0]
+        assert c["non_calcule"] is False, (mode, c)
+        assert c["mesure_partielle"] is False, (mode, c)
+        assert c["longueur_non_calculee"] == 0.0, (mode, c)
+        assert c["confirmee"] is True, (mode, c)
+
+
+T("un couplage non calcule ne sort pas a -300 dB",
+  un_couplage_non_calcule_ne_sort_pas_a_moins_300_db)
+
+
+def la_crete_temporelle_retrouve_les_limites_du_manuel():
+    """Le mode precis rend le PIC de la forme d'onde, et ce pic est connu.
+
+    LE MODULE DE S AU GENOU MAJORAIT LE PIC d'environ 2,2 : les millivolts
+    etaient ceux d'un calcul prudent, affiches comme ceux de la broche. La
+    crete sort desormais du front lui-meme envoye dans le reseau, et elle doit
+    retrouver les deux limites que tout manuel donne -- avec les coefficients
+    que le MODE SIMPLE calcule, par un tout autre chemin :
+
+      front rapide, longement long  -> NEXT = Kb (saturation) ;
+      front lent                    -> NEXT = Kb * 2 T_d / t_r,
+                                       FEXT = Kf * T_d / t_r.
+
+    LES PORTS SONT FERMES SUR L'IMPEDANCE DE LA LIGNE. Le FEXT est une
+    DIFFERENCE de deux termes presque egaux, dont les poids suivent les
+    terminaisons : sur 50 ohms, cette ligne de 59 ohms en prend 1,4 fois plus
+    que la formule -- c'est de la physique, pas une erreur, et c'est pourquoi
+    la formule ne se verifie qu'adaptee.
+    """
+    geo = {"kind": "micro", "t": 35e-6, "epsilon_r": 4.3, "h": 0.2e-3,
+           "conducteurs": [{"w": 0.25e-3, "x": 0.0},
+                           {"w": 0.25e-3, "x": 0.6e-3}]}
+    sec = tl.solve_multiline(geo)
+    z_ligne = math.sqrt(sec["l"][0][0] / sec["c"][0][0])
+    vois = [pis(0, 0.6, 40, 0.6, "VIC")]
+    d = doc_essai(vois, distance_max=1.5)
+    d["mode"] = "simple"
+    s = ct.analyser(d)["couples"][0]
+    kb, kf_td, td = s["kb_max"], 1e-12 * s["kf_td_ps"], s["td_s"]
+    pente = 1.0225   # pente maximale d'un front gaussien, en 1/t_r
+
+    def crete(t_r):
+        d = doc_essai(vois, distance_max=1.5, z0=round(z_ligne, 2))
+        d["analyse"]["temps_montee"] = t_r
+        return ct.analyser(d)["couples"][0]
+
+    rapide = crete(20e-12)          # 2 T_d = 490 ps >> t_r
+    assert 0.9 < rapide["crete_next"] / kb < 1.2, (rapide["crete_next"], kb)
+
+    lent = crete(5e-9)              # 2 T_d << t_r
+    att_n = kb * 2.0 * td / 5e-9 * pente
+    att_f = kf_td / 5e-9 * pente
+    assert 0.85 < lent["crete_next"] / att_n < 1.15, (lent["crete_next"], att_n)
+    assert 0.8 < lent["crete_fext"] / att_f < 1.15, (lent["crete_fext"], att_f)
+
+    # ET LE NIVEAU RETENU EST BIEN SOUS LE MODULE DE S AU GENOU, qui le
+    # majore : c'est tout le motif du changement.
+    assert lent["crete_db"] < lent["pire_db_genou"] - 3.0, lent
+
+
+T("la crete temporelle retrouve les limites du manuel",
+  la_crete_temporelle_retrouve_les_limites_du_manuel)
+
+
+def la_coupe_des_gestes_garde_chaque_nature():
+    """Sept « ecarter » ne font pas disparaitre « coudre le plan ».
+
+    LA COUPE A SIX GESTES gardait les six premiers, et sur une vraie carte les
+    six etaient des « ecarter » : le seul geste sur le plan de masse passait
+    dans « 2 gestes de plus ». Un geste d'une autre nature apprend plus que le
+    septieme du meme genre.
+    """
+    risques = [{"victime": "V%d" % k, "agresseur": "A", "s0": float(k),
+                "s1": float(k) + 1.0, "niveau": 1.0, "niveau_db": -10.0 - k,
+                "justifie": True, "zone": ""} for k in range(7)]
+    masse = {"zones": [{"type": "couture", "s0": 2.0, "s1": 14.0,
+                        "pas": 12.0}], "seuil": 4.0, "vain": False}
+    omises = []
+    g = ct.actions(risques, masse, [], [], 0.5, None, omises)
+    assert len(g) == ct.ACTIONS_MAX, g
+    assert any(x["quoi"] == "coudre le plan" for x in g), \
+        [x["quoi"] for x in g]
+    # L'ORDRE RESTE CELUI DE L'EFFET : les « ecarter » d'abord.
+    assert g[0]["quoi"] == "écarter" and g[-1]["quoi"] == "coudre le plan", \
+        [x["quoi"] for x in g]
+    # ET CE QUI EST COUPE SE DIT, AVEC SA NATURE.
+    assert omises and omises[0]["nombre"] == 2, omises
+    assert omises[0]["natures"] == ["écarter"], omises
+
+
+T("la coupe des gestes garde chaque nature",
+  la_coupe_des_gestes_garde_chaque_nature)
+
+
+def les_deux_analyses_designent_la_meme_zone():
+    """Une section serree de 12 a 22 mm : une plage, au meme endroit, deux fois.
+
+    LES DEUX CARTES SORTENT DE DEUX CALCULS INDEPENDANTS -- Kb bloc par bloc
+    d'un cote, une matrice S cascadee puis ramenee au temps de l'autre --, et
+    elles doivent se superposer : meme plage, meme hauteur. C'est ce cas qui a
+    montre que la carte electrique tracait la reponse IMPULSIONNELLE : elle y
+    marquait deux taches, 9,5-14,2 et 19,1-23,7 mm, autour des BORDS de la
+    section, avec un creux au milieu -- la ou le couplage est le plus fort.
+    """
+    vois = [pis(0, 0.95, 12, 0.95, "VIC"), pis(12, 0.35, 22, 0.35, "VIC"),
+            pis(22, 0.95, 40, 0.95, "VIC")]
+    precis = ct.analyser(doc_essai(vois, distance_max=1.5))
+    d = doc_essai(vois, distance_max=1.5)
+    d["mode"] = "simple"
+    geo = ct.analyser(d)
+
+    res_next = ligne_de(precis, "VIC", "next")["resolution"]
+    plages = precis["risques"]
+    assert len(plages) == 1, plages
+    assert abs(plages[0]["s0"] - 12.0) <= res_next, (plages[0], res_next)
+    assert abs(plages[0]["s1"] - 22.0) <= res_next, (plages[0], res_next)
+
+    # LA HAUTEUR DU PLATEAU EST Kb : la reponse a un echelon ideal SATURE, et
+    # la bande de la carte est assez haute pour que la section de 10 mm
+    # sature -- la ou la geometrie seule donne la meme borne.
+    haut = max(ligne_de(precis, "VIC", "next")["valeurs"])
+    kb = geo["couples"][0]["kb_max"]
+    assert abs(haut / kb - 1.0) < 0.1, (haut, kb)
+
+
+T("les deux analyses designent la meme zone, a la meme hauteur",
+  les_deux_analyses_designent_la_meme_zone)
+
+
+# ==========================================================================
+print("\nLes deux modes, de bout en bout, contre une solution EXACTE")
+# --------------------------------------------------------------------------
+# LES CAS PRECEDENTS VERIFIENT QUE LES DEUX MODES S'ACCORDENT ENTRE EUX. Ils
+# ne disent pas s'ils ont raison ensemble : une erreur commune -- dans la
+# section, le placement des rubans, l'ordre des ports -- passerait les deux.
+#
+# LA TRIPLAQUE A UNE SOLUTION EXACTE (Cohn, ruban mince), et elle fixe trois
+# chiffres sans rien emprunter au code teste :
+#   · Kb = (Ze - Zo) / 2(Ze + Zo), exactement, en milieu homogene ;
+#   · Kf = 0 : une seule vitesse, donc pas de FEXT ;
+#   · T_d = L.sqrt(er)/c, quel que soit l'ecart a la voisine.
+# Le troisieme a trouve un defaut : le eps_eff par conducteur de
+# `solve_multiline` grossissait avec le couplage, et T_d sortait a 284 ps au
+# lieu de 276,7 sur 40 mm a 0,1 mm d'ecart -- l'axe de la carte avec lui.
+# ==========================================================================
+
+STRIP = {"layers": [
+    {"type": "copper", "name": "GND1", "thickness": 0.035, "role": "plane",
+     "net": "GND"},
+    {"type": "dielectric", "name": "p1", "thickness": 0.25, "epsilon_r": 4.3,
+     "tan_delta": 0.0},
+    {"type": "copper", "name": "In1", "thickness": 0.001, "role": "signal"},
+    {"type": "dielectric", "name": "p2", "thickness": 0.25, "epsilon_r": 4.3,
+     "tan_delta": 0.0},
+    {"type": "copper", "name": "GND2", "thickness": 0.035, "role": "plane",
+     "net": "GND"},
+]}
+
+
+def kb_cohn(w, s, b):
+    """Kb exact d'une paire triplaque centree, ruban mince (Cohn, 1955)."""
+    from scipy.special import ellipk
+
+    def z(k):
+        return ellipk(1.0 - k * k) / ellipk(k * k)
+    t1 = math.tanh(math.pi * w / (2 * b))
+    t2 = math.tanh(math.pi * (w + s) / (2 * b))
+    ze, zo = z(t1 * t2), z(t1 / t2)
+    return (ze - zo) / (ze + zo) / 2.0
+
+
+def doc_triplaque(w, s, mode, t_r=None, z0=None):
+    """Deux pistes paralleles de 40 mm sur In1, sans masse coplanaire.
+
+    CUIVRE D'UN MICRON : la reference est a ruban mince, et 35 um sur 0,5 mm
+    de dielectrique deplacent deja Kb de quelques pour cent.
+    """
+    def piste(y, net):
+        p = pis(0, y, 40, y, net, couche=2, w=w)
+        p.update(copper_thickness=0.001, gap_left=0.0, gap_right=0.0)
+        return p
+    reglages = {"distance_max": 2.0}
+    if z0:
+        reglages["z0"] = z0
+    doc = {"format": "cao-crosstalk-1", "carte": "banc",
+           "agresseurs": ["CLK"], "stackup": STRIP,
+           "geometry": {"objects": [piste(0.0, "CLK")]},
+           "voisinage": [piste(w + s, "VIC")],
+           "reference_nets": ["GND"], "reglages": reglages, "mode": mode,
+           "analyse": {}}
+    if t_r:
+        doc["analyse"] = {"f_debut": 0.0, "f_fin": 20e9, "points": 201,
+                          "temps_montee": t_r}
+    return doc
+
+
+def le_mode_simple_retrouve_la_triplaque_exacte():
+    """Kb, Kf.T_d et T_d du mode SIMPLE, contre Cohn -- trois ecarts."""
+    td_exact = 40e-3 * math.sqrt(4.3) / tl.C_0
+    for w, s in ((0.15, 0.1), (0.15, 0.3), (0.25, 0.5)):
+        c = ct.analyser(doc_triplaque(w, s, "simple"))["couples"][0]
+        ref = kb_cohn(w, s, 0.5)
+        # 1 A 1,3 % MESURES, du serre au lache. La tolerance couvre le cuivre
+        # d'un micron et la section posee par la page ; une permutation de
+        # ports ou une mutuelle de mauvais signe la depasse de tres loin.
+        assert abs(c["kb_max"] / ref - 1.0) < 0.03, (w, s, c["kb_max"], ref)
+        assert abs(c["kf_td_ps"]) < 1e-3, ("Kf.T_d nul en triplaque", w, s,
+                                           c["kf_td_ps"])
+        assert abs(c["td_s"] / td_exact - 1.0) < 1e-4, (
+            "T_d de %.1f ps au lieu de %.1f -- a %.2f mm d'ecart"
+            % (1e12 * c["td_s"], 1e12 * td_exact, s))
+
+
+T("le mode simple retrouve la triplaque exacte : Kb, Kf, T_d",
+  le_mode_simple_retrouve_la_triplaque_exacte)
+
+
+def le_mode_precis_retrouve_la_triplaque_exacte():
+    """La crete de NEXT saturee du mode PRECIS, contre le meme Kb exact.
+
+    FRONT DE 20 ps sur 2 T_d = 553 ps : le NEXT sature, et sa crete vaut Kb.
+    Ports fermes sur l'impedance de la ligne, comme dans le cas « limites du
+    manuel » -- c'est la condition de la formule. 2,4 % mesures.
+    """
+    w, s = 0.15, 0.1
+    z = tl.solve_line({"kind": "strip", "t": 1e-6, "epsilon_r": 4.3,
+                       "b": 0.5e-3, "y0": 0.25e-3, "w": w * 1e-3})["z0"]
+    c = ct.analyser(doc_triplaque(w, s, "precis", 20e-12,
+                                  round(z, 2)))["couples"][0]
+    ref = kb_cohn(w, s, 0.5)
+    assert abs(c["crete_next"] / ref - 1.0) < 0.05, (c["crete_next"], ref)
+    # PAS DE FEXT EN MILIEU HOMOGENE : ce qui reste vient des terminaisons,
+    # fermees sur la ligne SEULE et non sur ses deux modes.
+    assert c["crete_fext"] < 0.1 * c["crete_next"], c
+
+
+T("le mode precis retrouve la triplaque exacte : crete de NEXT",
+  le_mode_precis_retrouve_la_triplaque_exacte)
+
+
+def le_mode_simple_classe_par_la_longueur_et_pas_par_le_plafond():
+    """3 mm serres contre 36 mm moderes : qui prend le plus depend du front.
+
+    Kb SEUL CLASSAIT LE COURT EN TETE (14 % contre 4,4 %), et la fiche disait
+    ce classement « vrai pour n'importe quel front ». Sous 1 ns, le LONG prend
+    pourtant 3,6 fois plus : aucun des deux longements n'y sature, et sous la
+    saturation le NEXT vaut Kb.2T_d/t_r -- il porte la LONGUEUR.
+
+    C'EST LE MODE PRECIS QUI ARBITRE, pas une formule : il envoie le front
+    dans le reseau et lit la crete. Le mode simple doit alors
+      · classer comme lui sous un front lent (`rang`, par Kb.2T_d) ;
+      · classer comme lui sous un front plus rapide que la saturation du
+        court (`rang_kb`, par Kb) ;
+      · et retrouver sa crete par min(Kb, Kb.2T_d/t_r), sans aucun signal.
+    """
+    vois = [pis(20, 0.35, 23, 0.35, "COURT"),     # bord a bord 0,10 mm
+            pis(2, -0.60, 38, -0.60, "LONG")]     # bord a bord 0,35 mm
+    d = doc_essai(vois, distance_max=1.5)
+    d["mode"] = "simple"
+    d["analyse"] = {}
+    simple = dict((c["victime"], c) for c in ct.analyser(d)["couples"])
+    court, long_ = simple["COURT"], simple["LONG"]
+
+    # LES DEUX RANGS, ET LEUR DESACCORD : c'est tout le cas.
+    assert long_["rang"] == 1 and court["rang"] == 2, (long_, court)
+    assert court["rang_kb"] == 1 and long_["rang_kb"] == 2, (long_, court)
+    assert court["kb_max"] > 3 * long_["kb_max"], (court, long_)
+    assert long_["kb_2td_ps"] > 3 * court["kb_2td_ps"], (court, long_)
+    # LE FRONT DE SATURATION EST Kb.2T_d / Kb, et le court sature bien avant.
+    for c in (court, long_):
+        assert abs(c["t_sature_ps"] - c["kb_2td_ps"] / c["kb_max"]) < 0.01, c
+    assert court["t_sature_ps"] < 60 < 300 < long_["t_sature_ps"], (court,
+                                                                   long_)
+
+    pente = 1.0225   # pente maximale d'un front gaussien, en 1/t_r
+
+    def estime(c, t_r):
+        return min(c["kb_max"], 1e-12 * c["kb_2td_ps"] * pente / t_r)
+
+    for t_r, premier in ((1e-9, "LONG"), (30e-12, "COURT")):
+        d = doc_essai(vois, distance_max=1.5)
+        d["analyse"]["temps_montee"] = t_r
+        precis = dict((c["victime"], c["crete_next"])
+                      for c in ct.analyser(d)["couples"])
+        # LE MODE PRECIS DESIGNE LE MEME PREMIER que le rang qui s'applique.
+        assert max(precis, key=precis.get) == premier, (t_r, precis)
+        for net, c in simple.items():
+            e = estime(c, t_r)
+            # 6 % PRES MESURES, SAUF PRES DE LA SATURATION ou l'estimation
+            # MAJORE (0,14 contre 0,11 a 30 ps sur le court) : elle ne doit
+            # jamais minorer de plus que les terminaisons ne l'expliquent.
+            assert precis[net] < 1.1 * e, (t_r, net, precis[net], e)
+            if t_r > 3 * c["t_sature_ps"] * 1e-12:
+                assert precis[net] > 0.9 * e, (t_r, net, precis[net], e)
+
+
+T("le mode simple classe par la longueur, et pas par le plafond",
+  le_mode_simple_classe_par_la_longueur_et_pas_par_le_plafond)
 
 
 print("\n" + "-" * 62)

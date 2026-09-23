@@ -352,6 +352,7 @@ footer .hint{color:var(--yellow);opacity:.9}
 .badge-net.badge-gnd{background:rgba(76,195,138,.16);color:var(--green);border:1px solid rgba(76,195,138,.4)}
 .badge-net.badge-pwr{background:rgba(242,199,68,.16);color:var(--yellow);border:1px solid rgba(242,199,68,.4)}
 .badge-net.badge-sig{background:rgba(63,160,234,.14);color:var(--blue);border:1px solid rgba(63,160,234,.35)}
+.badge-net.badge-signal{background:rgba(63,160,234,.14);color:var(--blue);border:1px solid rgba(63,160,234,.35)}
 
 /* Sélecteur de classe dans pnlDetail */
 .pnl-classe-sel{

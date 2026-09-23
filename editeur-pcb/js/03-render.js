@@ -998,6 +998,9 @@ function paint(c,dpr,w,h,noGrid){
      la même raison — elles désignent des portions de cuivre, elles ne décrivent
      pas le cuivre —, donc absentes du .png exporté comme lui. */
   if(!noGrid&&typeof simXtRisqueTrace==="function")simXtRisqueTrace(c,dpr);
+  /* LE VISEUR DU PROFIL D'IMPÉDANCE : il désigne un point de la piste, comme
+     celui du crosstalk, et passe donc au-dessus des cartes. */
+  if(!noGrid&&typeof simZCurseurTrace==="function")simZCurseurTrace(c,dpr);
   /* L'étiquette de la sonde, tout au-dessus de la carte de chaleur : elle
      désigne un point, elle ne décrit pas le cuivre. Comme la cote, elle est
      absente du .png exporté. */

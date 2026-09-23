@@ -626,7 +626,24 @@ function simViaAuRaccordIpc(N, x, y, cuA, cuB){
     return fiche;
   }
 
-  /* 2. Pas de trou déclaré : deux pastilles au même endroit valent un tube.
+  /* 2. Un via déclaré comme pastille traversante (padstack avec perçage) */
+  for(const q of (N.pads || [])){
+    if(pres(q.x * k, x) && pres(q.y * k, y)){
+      const ps = (V.modele && V.modele.padstacks) ? V.modele.padstacks[q.pad && q.pad.ps] : null;
+      if(ps && ps.trou > 0){
+        const trouD = ps.trou * k;
+        const padD = (q.d || (ps && ps.pad) || 0) * k;
+        const fiche = {drill_diameter: Math.max(trouD, 0.05)};
+        if(padD > 0){
+          fiche.pad_diameter = padD;
+          if(ps.pad_sup) fiche.pad_diameter_supposee = true;
+        }
+        return fiche;
+      }
+    }
+  }
+
+  /* 3. Pas de trou déclaré : deux pastilles au même endroit valent un tube.
         Le perçage se déduit, et c'est un repli — la pastille, elle, est lue. */
   let pastille = 0, combien = 0;
   for(const q of (N.pads || []))
@@ -709,10 +726,15 @@ function simJonctionsIpc(N){
     if(!j){ j = {x: x, y: y, percage: 0, pastille: 0, pastilleSup: false,
                  perce: false};
             vus.set(c, j); out.push(j); }
+    const ps = (V.modele && V.modele.padstacks) ? V.modele.padstacks[(q.pad && q.pad.ps) || q.ps] : null;
+    if(ps && ps.trou > 0){
+      j.perce = true;
+      if(!(j.percage > 0)) j.percage = Math.max(ps.trou * k, 0.05);
+    }
     /* UNE PASTILLE DE COMPOSANT EST LUE DANS LE FICHIER : elle l'emporte sur
        une pastille de via devinée, et pas seulement parce qu'elle est plus
        grande. */
-    const d = (q.d || 0) * k;
+    const d = (q.d || (ps && ps.pad) || 0) * k;
     if(j.pastilleSup && d > 0){
       /* UNE COTE LUE REMPLACE UNE COTE DEVINÉE, elle ne se compare pas à elle.
          Prendre « la plus grande des deux » gardait le 0,90 mm que le lecteur
@@ -731,13 +753,24 @@ function simJonctionsIpc(N){
 /* LA JONCTION COMMUNE À DEUX BOUTS. On prend celle qui minimise la distance au
    PLUS ÉLOIGNÉ des deux — un via au milieu de deux bouts symétriques gagne
    contre une pastille collée à l'un et loin de l'autre, ce qui est bien ce
-   qu'on veut : la jonction cherchée est celle qui les joint TOUS LES DEUX. */
+   qu'on veut : la jonction cherchée est celle qui les joint TOUS LES DEUX.
+   p et q peuvent être des points individuels [x, y] ou des listes de points
+   candidats [[x, y], ...], ce qui permet de tester les deux bouts d'un tronçon
+   quand le parcours n'est pas strictement orienté (dérivation, stub...). */
 function simJoncCommuneIpc(jonctions, p, q){
   let mieux = null, md = Infinity;
+  const ptsA = (Array.isArray(p) && p.length && Array.isArray(p[0])) ? p : [p];
+  const ptsB = (Array.isArray(q) && q.length && Array.isArray(q[0])) ? q : [q];
   for(const j of jonctions){
-    const d = Math.max(Math.hypot(j.x - p[0], j.y - p[1]),
-                       Math.hypot(j.x - q[0], j.y - q[1]));
-    if(d < md){ md = d; mieux = j; }
+    for(const ptA of ptsA){
+      if(!ptA) continue;
+      for(const ptB of ptsB){
+        if(!ptB) continue;
+        const d = Math.max(Math.hypot(j.x - ptA[0], j.y - ptA[1]),
+                           Math.hypot(j.x - ptB[0], j.y - ptB[1]));
+        if(d < md){ md = d; mieux = j; }
+      }
+    }
   }
   return (mieux && md <= SIM_RAYON_JONCTION_IPC) ? mieux : null;
 }
@@ -746,10 +779,20 @@ function simJoncCommuneIpc(jonctions, p, q){
    n'est pas le cas d'un fichier exporté — voir plus haut —, mais c'est celui
    d'un document écrit à la main, et le raccord doit partir quand même. */
 function simJoncDeBoutsIpc(p, q){
-  if(Math.abs(p[0] - q[0]) > SIM_TOL_VIA_IPC ||
-     Math.abs(p[1] - q[1]) > SIM_TOL_VIA_IPC) return null;
-  return {x: (p[0] + q[0]) / 2, y: (p[1] + q[1]) / 2,
-          percage: 0, pastille: 0, perce: false};
+  const ptsA = (Array.isArray(p) && p.length && Array.isArray(p[0])) ? p : [p];
+  const ptsB = (Array.isArray(q) && q.length && Array.isArray(q[0])) ? q : [q];
+  for(const ptA of ptsA){
+    if(!ptA) continue;
+    for(const ptB of ptsB){
+      if(!ptB) continue;
+      if(Math.abs(ptA[0] - ptB[0]) <= SIM_TOL_VIA_IPC &&
+         Math.abs(ptA[1] - ptB[1]) <= SIM_TOL_VIA_IPC){
+        return {x: (ptA[0] + ptB[0]) / 2, y: (ptA[1] + ptB[1]) / 2,
+                percage: 0, pastille: 0, perce: false};
+      }
+    }
+  }
+  return null;
 }
 
 /* Le rayon de recherche d'un via de masse, en millimètres — le même que côté
@@ -1134,8 +1177,9 @@ function simAccrocherViasIpc(envoi,N){
   for(let i = 1; i < envoi.length; i++){
     const a = envoi[i - 1], b = envoi[i];
     if(a.layer === b.layer) continue;
-    const p = a.end, q = b.start;
-    if(!p || !q) continue;
+    const p = [a.end, a.start].filter(Boolean);
+    const q = [b.start, b.end].filter(Boolean);
+    if(!p.length || !q.length) continue;
     /* LE VIA SE CHERCHE À LA JONCTION, PAS LÀ OÙ DEUX BOUTS COÏNCIDENT — et
        c'était le défaut. Exiger que la fin d'un tronçon rejoigne le début du
        suivant à 20 µm suppose que l'exportateur fasse toucher les deux, ce
@@ -1319,8 +1363,11 @@ function simZPistesDe(s,mev,out,vus){
     if(vus.has(src))return;
     vus.add(src); out.push(e);
   };
-  /* Une piste désignée, sans Maj : toute la chaîne continue de cette piste sur sa couche. */
-  if(s.type==="piste"&&mev.couche>=0){
+  const estMultiCouches = (typeof SIM !== "undefined" && (SIM.analyse === "retour" || SIM.analyse === "crosstalk"));
+  /* Une piste désignée, sans Maj : toute la chaîne continue de cette piste sur sa couche.
+     En analyse de retour de courant ou crosstalk, on ne restreint pas la portée à une seule couche :
+     le but de l'analyse est de chiffrer les traversées de couches et vias du net. */
+  if(s.type==="piste" && mev.couche>=0 && !estMultiCouches){
     const chaine=simPistesChaineMemeCouche(s.piste);
     for(const p of chaine){
       if(p.p)pousser(p,{piste:p, couche:s.couche});
@@ -1331,22 +1378,23 @@ function simZPistesDe(s,mev,out,vus){
     }
     return out;
   }
-  /* Sinon le net entier. Les perçages n'ont pas d'impédance de ligne. */
+  /* Sinon le net entier. Les perçages n'ont pas d'impédance de ligne, sauf en analyse de retour
+     où le perçage est précisément l'objet de l'étude (et emporte le net). */
   const net=(s.net!=null&&s.net>=0)?s.net:-1;
-  if(net<0||mev.quoi==="trous"||mev.seul)return out;
+  if(net<0 || (!estMultiCouches && (mev.quoi==="trous"||mev.seul))) return out;
   const n=V.parNet[net];
   if(!n)return out;
   for(const p of n.pistes)
-    if(mev.couche<0||p.c===mev.couche)pousser(p,{piste:p, couche:p.c});
+    if(mev.couche<0 || estMultiCouches || p.c===mev.couche) pousser(p,{piste:p, couche:p.c});
   /* LES ARCS SONT DU CUIVRE COMME LE RESTE. Les laisser dehors coupait la
      liaison en morceaux qui ne se touchent pas — voir `simArcEnPolyligne`.
      On les plie en polylignes et on les traite comme des pistes ; le chaînage
      (`simChainePistes`) les remet ensuite à leur place dans le parcours, ce
      qu'aucune des deux collections ne dit à elle seule. */
   for(const a of (n.arcs||[])){
-    if(!(mev.couche<0||a.c===mev.couche))continue;
+    if(!(mev.couche<0 || estMultiCouches || a.c===mev.couche)) continue;
     const pts=simArcEnPolyligne(a);
-    if(!pts)continue;
+    if(!pts) continue;
     pousser(a,{piste:{c:a.c, n:a.n, w:a.w, p:pts, arc:a}, couche:a.c});
   }
   return out;
@@ -1570,6 +1618,7 @@ function simChainePistes(liste){
     const q = bouts[i][b];
     for(let u = 0; u < n; u++){
       if(u === i || !bouts[u]) continue;
+      if(liste[u].couche !== liste[i].couche) continue;
       for(let v = 0; v < 2; v++)
         if(Math.abs(bouts[u][v].x - q.x) <= SIM_TOL_CHAINE_IPC &&
            Math.abs(bouts[u][v].y - q.y) <= SIM_TOL_CHAINE_IPC) return true;
@@ -1683,6 +1732,26 @@ function simChainePistes(liste){
                               pastilleSup: !!jonctions[j].pastilleSup,
                               couches: [...cs].sort((u, v) => u - v)});
   }
+  for(let j = fixes; j < centres.length; j++){
+    const cs = new Set();
+    for(const e of noeuds[j]) cs.add(liste[e.i].couche);
+    if(cs.size < 2) continue;
+    const pt = centres[j];
+    let jMatch = null, md = Infinity;
+    for(const jnc of jonctions){
+      const d = Math.hypot(jnc.x - pt.x, jnc.y - pt.y);
+      if(d < md && d <= SIM_RAYON_JONCTION_IPC){ md = d; jMatch = jnc; }
+    }
+    SIM_CHAINE_IPC.vias.push({
+      x: jMatch ? jMatch.x : pt.x,
+      y: jMatch ? jMatch.y : pt.y,
+      perce: jMatch ? !!jMatch.perce : false,
+      percage: jMatch ? jMatch.percage : 0,
+      pastille: jMatch ? jMatch.pastille : 0,
+      pastilleSup: jMatch ? !!jMatch.pastilleSup : false,
+      couches: [...cs].sort((u, v) => u - v)
+    });
+  }
   return suite;
 }
 
@@ -1735,27 +1804,44 @@ function simSegments(liste,N){
        `u1`/`u2` ne bougent PAS : ils repèrent la plage sur la POLYLIGNE, dont
        le sens n'a pas changé — c'est le parcours qu'on retourne, pas le
        cuivre, et la carte de chaleur se peint sur le cuivre. */
-    const suite=e.retourne?r.plages.slice().reverse():r.plages;
+    const totalBrut = cum[cum.length - 1] || 0;
+    const fracVertices = totalBrut > 0 ? cum.map(s => s / totalBrut) : [0, 1];
+
+    const suite = e.retourne ? r.plages.slice().reverse() : r.plages;
     for(const pl of suite){
-      const q1=simSurPoly(p.p,cum,pl.u1), q2=simSurPoly(p.p,cum,pl.u2);
-      const a=e.retourne?q2:q1, b=e.retourne?q1:q2;
-      envoi.push({
-        type:"track",
-        start:[a.x*k, a.y*k], end:[b.x*k, b.y*k],
-        length:pl.longueur, width:(p.w||0)*k, layer:simRangCu(cu),
-        net:(p.n>=0)?mdlNetNom(p.n):"", copper_thickness:LT.cu[cu].ep,
-        gap_left:e.retourne?pl.d:pl.g, gap_right:e.retourne?pl.g:pl.d
-      });
-      /* `retourne` VOYAGE AVEC L'OBJET, et il faut qu'il voyage : la
-         polyligne ne change pas de sens, c'est le PARCOURS qui la remonte.
-         Sans ce drapeau, une abscisse curviligne calculée plus tard sur cette
-         plage — celle d'un via de couture, par exemple — tomberait à l'envers
-         dans le tronçon, et la carte de crosstalk poserait la zone de
-         vigilance à l'autre bout. Le côté gauche/droite s'inverse avec lui,
-         pour la même raison. */
-      objets.push({piste:p, cum:cum, u1:pl.u1, u2:pl.u2,
-                   retourne:!!e.retourne,
-                   couche:(c?c.nom:"?"), coucheIdx:e.couche});
+      const uStart = e.retourne ? pl.u2 : pl.u1;
+      const uEnd = e.retourne ? pl.u1 : pl.u2;
+      const ua = Math.min(uStart, uEnd), ub = Math.max(uStart, uEnd);
+
+      /* Sommets intermédiaires de la polyligne strictement compris entre ua et ub.
+         Un arc replié en polyligne (p.arc) reste un tronçon courbe unique et ne
+         doit pas être haché en dizaines de facettes de discrétisation. */
+      const intermed = p.arc ? [] : fracVertices.filter(v => v > ua + 1e-7 && v < ub - 1e-7);
+      const cuts = [ua, ...intermed, ub];
+      if(e.retourne) cuts.reverse();
+
+      for(let step = 0; step + 1 < cuts.length; step++){
+        const t0 = cuts[step], t1 = cuts[step + 1];
+        const q1 = simSurPoly(p.p, cum, t0), q2 = simSurPoly(p.p, cum, t1);
+        const subLen = Math.abs(t1 - t0) * total;
+        envoi.push({
+          type: "track",
+          start: [q1.x * k, q1.y * k], end: [q2.x * k, q2.y * k],
+          length: subLen, width: (p.w || 0) * k, layer: simRangCu(cu),
+          net: (p.n >= 0) ? mdlNetNom(p.n) : "", copper_thickness: LT.cu[cu].ep,
+          gap_left: e.retourne ? pl.d : pl.g, gap_right: e.retourne ? pl.g : pl.d
+        });
+        /* `retourne` VOYAGE AVEC L'OBJET, et il faut qu'il voyage : la
+           polyligne ne change pas de sens, c'est le PARCOURS qui la remonte.
+           Sans ce drapeau, une abscisse curviligne calculée plus tard sur cette
+           plage — celle d'un via de couture, par exemple — tomberait à l'envers
+           dans le tronçon, et la carte de crosstalk poserait la zone de
+           vigilance à l'autre bout. Le côté gauche/droite s'inverse avec lui,
+           pour la même raison. */
+        objets.push({piste: p, cum: cum, u1: Math.min(t0, t1), u2: Math.max(t0, t1),
+                     retourne: !!e.retourne,
+                     couche: (c ? c.nom : "?"), coucheIdx: e.couche});
+      }
     }
   }
   simAccrocherViasIpc(envoi,N);
@@ -1904,13 +1990,36 @@ function simVoile(c,W,H){
    qu'il peint, il sait seulement où. */
 var simZDrawnLabelsIpc=new Set();
 
+/* Liste de tous les tronçons et arcs du net partenaire sur une couche donnée. */
+function simCandidatsPartenaireIpc(netVoisinNom, couche){
+  if(!netVoisinNom||typeof V==="undefined"||!V.parNet)return [];
+  const sNom=String(netVoisinNom).trim().toLowerCase();
+  const n=V.parNet.find(x=>x&&(x.nom===netVoisinNom||(x.nom&&x.nom.trim().toLowerCase()===sNom)));
+  if(!n)return [];
+  const res=[];
+  for(const p of (n.pistes||[])){
+    if((couche<0||p.c===couche)&&p.p&&p.p.length>=4){
+      res.push(p);
+    }
+  }
+  for(const a of (n.arcs||[])){
+    if(couche<0||a.c===couche){
+      if(!a._poly&&typeof simArcEnPolyligne==="function"){
+        a._poly=simArcEnPolyligne(a);
+      }
+      if(a._poly&&a._poly.length>=4){
+        res.push({c:a.c, n:a.n, w:a.w, p:a._poly, arc:a});
+      }
+    }
+  }
+  return res;
+}
+
 /* Recherche de la piste partenaire de la paire différentielle sur la même couche. */
 function simPistePartenaireIpc(pisteSource, netVoisinNom){
   if(!pisteSource||!netVoisinNom||typeof V==="undefined"||!V.parNet)return null;
-  const n=V.parNet.find(x=>x&&x.nom===netVoisinNom);
-  if(!n||!n.pistes||!n.pistes.length)return null;
   const couche=(pisteSource.c!=null)?pisteSource.c:(pisteSource.coucheIdx!=null?pisteSource.coucheIdx:-1);
-  const cands=n.pistes.filter(p=>(couche<0||p.c===couche)&&p.p&&p.p.length>=4&&p!==pisteSource);
+  const cands=simCandidatsPartenaireIpc(netVoisinNom, couche).filter(p=>p!==pisteSource);
   if(!cands.length)return null;
   if(cands.length===1)return cands[0];
   const cumSource=pisteSource._cum||(pisteSource._cum=simCumul(pisteSource.p));
@@ -1936,7 +2045,9 @@ function simProjSegmentSurPisteIpc(pSource, cumSource, u1, u2, pCible, cumCible)
   const pr2=simProjPoly(pCible.p,cumCible,q2.x,q2.y);
   if(!pr1||!pr2)return null;
   const k=typeof simKUnite==="function"?simKUnite():1;
-  if(pr1.d*k>4.0&&pr2.d*k>4.0)return null;
+  const qMid=simSurPoly(pSource.p,cumSource,(u1+u2)/2);
+  const prMid=simProjPoly(pCible.p,cumCible,qMid.x,qMid.y);
+  if(pr1.d*k>4.0&&pr2.d*k>4.0&&(!prMid||prMid.d*k>4.0))return null;
   const minU=Math.max(0,Math.min(pr1.u,pr2.u));
   const maxU=Math.min(1,Math.max(pr1.u,pr2.u));
   if(maxU-minU<1e-4)return null;
@@ -1981,8 +2092,10 @@ function simZTraceLot(c,dpr,lot){
       }
       if(!netVoisin)netVoisin=netGlobal;
       if(!netVoisin)continue;
-      const vt=simPistePartenaireIpc(s.obj.piste, netVoisin);
-      if(vt){
+      const couche=(s.obj.piste.c!=null)?s.obj.piste.c:(s.obj.coucheIdx!=null?s.obj.coucheIdx:-1);
+      const cands=simCandidatsPartenaireIpc(netVoisin, couche);
+      for(const vt of cands){
+        if(vt===s.obj.piste)continue;
         const vtCum=vt._cum||(vt._cum=simCumul(vt.p));
         const proj=simProjSegmentSurPisteIpc(s.obj.piste, s.obj.cum, s.obj.u1, s.obj.u2, vt, vtCum);
         if(proj){
@@ -2845,13 +2958,99 @@ function simDCClic(x,y){
 const SIM_VOISINAGE_MAX_IPC=600;   /* tronçons envoyés ; au-delà, on écrête */
 const SIM_ECART_COUPLAGE_IPC=3.0;  /* mm ; ECART_COUPLAGE_MAX de simulation_em.py */
 
+/* ==========================================================================
+   UNE PISTE N'EST PAS TOUJOURS UNE PISTE DANS LE FICHIER
+   --------------------------------------------------------------------------
+   Certains exporteurs rendent un conducteur routé en VERSEMENT DE CUIVRE — un
+   `<Contour><Polygon>` — et non en `<Line>`. Rien ne le distingue à l'écran, et
+   le modèle le range en `plans` et non en `pistes`. Le voisinage ne parcourait
+   que `pistes` et `arcs` : une telle victime était purement INVISIBLE au
+   crosstalk, et l'analyse rendait « aucune victime retenue » sur une carte où
+   la victime est là, à un millimètre. C'est le silence le plus cher de tout ce
+   panneau — il ne ressemble pas à une erreur, il ressemble à un bon résultat.
+
+   CE QU'ON ACCEPTE, ET POURQUOI SI PEU. On ne cherche pas à router à rebours
+   une forme quelconque : on reconnaît la seule qu'on sache décrire sans
+   inventer, LA BANDE DROITE. Un rectangle de longueur L et de largeur w a pour
+   aire L·w et pour périmètre 2(L+w) ; L et w sont donc les deux racines de
+   t² − (P/2)·t + A, et se lisent EXACTEMENT sur le contour, sans hypothèse. On
+   vérifie ensuite que la forme est bien cette bande-là : axe principal pondéré
+   par la longueur des arêtes — la tessellation des arrondis ne le déplace pas
+   —, puis écart transversal maximal comparé à w/2. Un coude, un serpentin, une
+   flaque : la vérification tombe, et la forme est REFUSÉE.
+
+   UN REFUS SE DIT. `refus` recueille les contours qui ressemblaient à du
+   cuivre routé sans se laisser décrire : sans cela on remplacerait un silence
+   par un autre, ce qui ne vaut pas mieux.
+   ========================================================================== */
+const SIM_REGION_W_MAX=2.0;      /* mm ; au-delà, ce n'est plus un conducteur routé */
+const SIM_REGION_ELANCEMENT=4;   /* L/w minimal pour qu'une forme soit une bande */
+const SIM_REGION_DROITURE=1.35;  /* 2·écart transversal max, en parts de w */
+
+function simRegionEnBande(o){
+  if(!o||o.length<8)return null;
+  const n=o.length;
+  let a2=0, per=0;
+  for(let i=0;i+1<n;i+=2){
+    const j=(i+2)%n;
+    a2+=o[i]*o[j+1]-o[j]*o[i+1];
+    per+=Math.hypot(o[j]-o[i],o[j+1]-o[i+1]);
+  }
+  const A=Math.abs(a2)/2;
+  if(!(A>0)||!(per>0))return null;
+  const demi=per/2, disc=demi*demi-4*A;
+  if(disc<0)return null;                       // aucun rectangle n'a ce couple
+  const r=Math.sqrt(disc), L=(demi+r)/2, w=(demi-r)/2;
+  if(!(w>0)||!(L>=SIM_REGION_ELANCEMENT*w))return null;
+
+  /* L'axe : barycentre et covariance des MILIEUX D'ARÊTES, pondérés par leur
+     longueur. Les sommets bruts donneraient le poids aux bouts arrondis, où la
+     tessellation en sème le plus. */
+  let cx=0, cy=0, tot=0;
+  for(let i=0;i+1<n;i+=2){
+    const j=(i+2)%n, l=Math.hypot(o[j]-o[i],o[j+1]-o[i+1]);
+    cx+=l*(o[i]+o[j])/2; cy+=l*(o[i+1]+o[j+1])/2; tot+=l;
+  }
+  if(!(tot>0))return null;
+  cx/=tot; cy/=tot;
+  let sxx=0, sxy=0, syy=0;
+  for(let i=0;i+1<n;i+=2){
+    const j=(i+2)%n, l=Math.hypot(o[j]-o[i],o[j+1]-o[i+1]);
+    const mx=(o[i]+o[j])/2-cx, my=(o[i+1]+o[j+1])/2-cy;
+    sxx+=l*mx*mx; sxy+=l*mx*my; syy+=l*my*my;
+  }
+  const tr=sxx+syy, det=sxx*syy-sxy*sxy;
+  const lam=tr/2+Math.sqrt(Math.max(0,tr*tr/4-det));
+  let ux, uy;
+  if(Math.abs(sxy)>1e-12){ux=lam-syy; uy=sxy;}
+  else{ux=(sxx>=syy)?1:0; uy=(sxx>=syy)?0:1;}
+  const nu=Math.hypot(ux,uy);
+  if(!(nu>0))return null;
+  ux/=nu; uy/=nu;
+
+  let smin=Infinity, smax=-Infinity, dmax=0;
+  for(let i=0;i+1<n;i+=2){
+    const px=o[i]-cx, py=o[i+1]-cy;
+    const s=px*ux+py*uy, d=Math.abs(-px*uy+py*ux);
+    if(s<smin)smin=s;
+    if(s>smax)smax=s;
+    if(d>dmax)dmax=d;
+  }
+  /* Les deux vérifications, et elles sont indépendantes : la forme ne déborde
+     pas latéralement de sa largeur, et elle est aussi longue que le couple
+     (A, P) l'annonce. Un L passe la première et échoue la seconde. */
+  if(!(2*dmax<=SIM_REGION_DROITURE*w))return null;
+  if(!(smax-smin>0)||Math.abs((smax-smin)-L)>0.25*L)return null;
+  return {a:[cx+ux*smin,cy+uy*smin], b:[cx+ux*smax,cy+uy*smax], w:w};
+}
+
 /* `adjacentes` OUVRE LE VOISINAGE AUX COUCHES VOISINES, et c'est la seule
    différence entre le document d'impédance et celui de crosstalk. Deux pistes
    SUPERPOSÉES couplent souvent PLUS que les mêmes côte à côte : les écarter
    d'office ferait lire un couplage nul là où il est maximal. Un conducteur
    occupe le rang 2k dans l'empilage envoyé, donc le conducteur voisin est à
    ±2 — c'est la convention de `simRangCu`, et elle n'a pas d'autre lecture. */
-function simVoisinageIpc(envoi,objets,adjacentes){
+function simVoisinageIpc(envoi,objets,adjacentes,refus){
   if(!V.modele||!LT.pret||!envoi||!envoi.length)return [];
   const k=simKUnite();
   const couches=new Set(envoi.map(e=>e.layer));
@@ -2926,6 +3125,28 @@ function simVoisinageIpc(envoi,objets,adjacentes){
     return true;
   };
 
+  /* Un contour tombe-t-il dans la boîte ? Sert deux fois : à ne pas dépenser
+     la reconnaissance de bande sur le cuivre lointain, et à ne signaler un
+     refus que là où il aurait changé quelque chose. */
+  const dansLaBoite=function(o){
+    for(let i=0;i+1<o.length;i+=2){
+      const x=o[i]*k, y=o[i+1]*k;
+      if(x>=x1&&x<=x2&&y>=y1&&y<=y2)return true;
+    }
+    return false;
+  };
+  /* Le plus petit côté de la boîte englobante : ce qui distingue du CUIVRE
+     ROUTÉ, qu'on devait savoir décrire, d'une FLAQUE, qu'on écarte sans avoir
+     rien à dire. Une flaque refusée n'est pas une nouvelle. */
+  const etroit=function(o){
+    let ax=Infinity,ay=Infinity,bx=-Infinity,by=-Infinity;
+    for(let i=0;i+1<o.length;i+=2){
+      ax=Math.min(ax,o[i]); bx=Math.max(bx,o[i]);
+      ay=Math.min(ay,o[i+1]); by=Math.max(by,o[i+1]);
+    }
+    return Math.min((bx-ax)*k,(by-ay)*k)<=SIM_REGION_W_MAX;
+  };
+
   for(const n of (V.parNet||[])){
     if(!n)continue;
     const nom=mdlNetNom(n.i);
@@ -2937,6 +3158,24 @@ function simVoisinageIpc(envoi,objets,adjacentes){
       const pts=simArcEnPolyligne(a);
       if(!pts||pts.length<4)continue;
       if(!pousser(pts,a.c,(a.w||0)*k,nom))return out;
+    }
+    /* LES VERSEMENTS, et c'est le correctif : un conducteur routé exporté en
+       polygone doit longer comme les autres. Voir `simRegionEnBande`. Un
+       contour PERCÉ n'est jamais une bande — un trou est le signe d'une
+       flaque, qui épargne ce qu'elle entoure. */
+    for(const g of (n.plans||[])){
+      for(const ct of (g.g||[])){
+        const o=ct.o;
+        if(!o||o.length<8||!dansLaBoite(o))continue;
+        const bande=((ct.t||[]).length===0)?simRegionEnBande(o):null;
+        if(!bande){
+          if(refus&&etroit(o))
+            refus.push({net:nom, couche:g.c});
+          continue;
+        }
+        if(!pousser([bande.a[0],bande.a[1],bande.b[0],bande.b[1]],
+                    g.c,bande.w*k,nom))return out;
+      }
     }
   }
   return out;
@@ -3086,7 +3325,7 @@ function simDocIpc(liste,netIdx,opts,seul){
        couvre — le geste, lui, est le même pour tous, et le répéter quatre fois
        n'apprendrait rien. */
     portee:(net?net+" — ":"")+
-           (seul&&typeof pnlPortee==="function"
+           (seul&&typeof pnlPortee==="function"&&!(typeof SIM!=="undefined"&&SIM.analyse==="retour")
               ? pnlPortee()
               : g.objets.length+" tronçon"+(g.objets.length>1?"s":"")+
                 " sur "+couches.join(", ")),
@@ -3098,6 +3337,123 @@ function simDocIpc(liste,netIdx,opts,seul){
     notes:notes,
     couture:g.couture,
     voisins:g.voisins
+  };
+}
+
+/* ==========================================================================
+   SIMULATION DE PAIRE DIFFÉRENTIELLE (PISTE 1 / PISTE 2) POUR IPC-2581
+   ========================================================================== */
+function simPistesDuNetIpc(netNomOuIdx){
+  if(typeof V==="undefined"||!V||!V.parNet)return [];
+  let n=null;
+  if(typeof netNomOuIdx==="number"&&netNomOuIdx>=0){
+    n=V.parNet[netNomOuIdx];
+  }else if(netNomOuIdx){
+    const s=String(netNomOuIdx).trim().toLowerCase();
+    n=V.parNet.find(x=>x.nom===netNomOuIdx)||V.parNet.find(x=>(x.nom||"").trim().toLowerCase()===s);
+  }
+  if(!n)return [];
+  const out=[];
+  for(const p of (n.pistes||[])){
+    out.push({piste:p, couche:p.c});
+  }
+  for(const a of (n.arcs||[])){
+    const pts=simArcEnPolyligne(a);
+    if(pts)out.push({piste:{c:a.c, n:a.n, w:a.w, p:pts, arc:a}, couche:a.c});
+  }
+  return out;
+}
+
+function simDocDiffIpc(piste1, piste2, opts){
+  opts=opts||(typeof simSaisie==="function"?simSaisie():{});
+  if(!V.modele)return {erreur:"Aucune carte ouverte.", conseil:"Ouvrez un fichier IPC-2581."};
+  if(!LT.pret)return {erreur:"L'empilage de calcul n'est pas prêt.", conseil:"Complétez-le dans le panneau « La carte », sous « Empilage du calcul »."};
+
+  let list1=[], list2=[];
+  if(piste1)list1=simPistesDuNetIpc(piste1);
+  if(piste2)list2=simPistesDuNetIpc(piste2);
+
+  // Si non trouvées par nom, inspecter les pistes sélectionnées :
+  if((!list1.length||!list2.length)&&typeof simZPistes==="function"){
+    const selPistes=simZPistes();
+    if(selPistes.length>=2){
+      const parNet=new Map();
+      for(const e of selPistes){
+        const netNom=(e.piste&&e.piste.n>=0)?mdlNetNom(e.piste.n):"piste";
+        if(!parNet.has(netNom))parNet.set(netNom,[]);
+        parNet.get(netNom).push(e);
+      }
+      const entries=[...parNet.entries()];
+      if(entries.length>=2){
+        if(!list1.length){list1=entries[0][1]; piste1=entries[0][0];}
+        if(!list2.length){list2=entries[1][1]; piste2=entries[1][0];}
+      } else if(selPistes.length===2){
+        if(!list1.length){list1=[selPistes[0]]; piste1=(selPistes[0].piste&&selPistes[0].piste.n>=0)?mdlNetNom(selPistes[0].piste.n):"Piste_1";}
+        if(!list2.length){list2=[selPistes[1]]; piste2=(selPistes[1].piste&&selPistes[1].piste.n>=0)?mdlNetNom(selPistes[1].piste.n):"Piste_2";}
+      }
+    }
+  }
+
+  if(!list1.length)return {erreur:"Piste 1 introuvable ou ne contient aucun cuivre.", conseil:"Spécifiez le nom du net ou sélectionnez la piste 1 sur la carte."};
+  if(!list2.length)return {erreur:"Piste 2 introuvable ou ne contient aucun cuivre.", conseil:"Spécifiez le nom du net ou sélectionnez la piste 2 sur la carte."};
+
+  const netIdx1=(list1[0].piste&&list1[0].piste.n>=0)?list1[0].piste.n:-1;
+  const netIdx2=(list2[0].piste&&list2[0].piste.n>=0)?list2[0].piste.n:-1;
+  const N1=netIdx1>=0?V.parNet[netIdx1]:null;
+  const N2=netIdx2>=0?V.parNet[netIdx2]:null;
+
+  const g1=simSegments(list1,N1);
+  const g2=simSegments(list2,N2);
+  if(!g1.envoi.length)return {erreur:"La Piste 1 ne porte aucun tronçon exploitable."};
+  if(!g2.envoi.length)return {erreur:"La Piste 2 ne porte aucun tronçon exploitable."};
+
+  const nom1=piste1||(N1?N1.nom:"Piste_1");
+  const nom2=piste2||(N2?N2.nom:"Piste_2");
+
+  if(String(nom1).trim().toLowerCase()===String(nom2).trim().toLowerCase()){
+    const part=(typeof simDiffPartenaireNom==="function")?simDiffPartenaireNom(nom1):"";
+    return {
+      erreur:"Piste 1 et Piste 2 ont le même net (« "+nom1+" »).",
+      conseil:"Une paire différentielle nécessite 2 pistes distinctes."+(part?" Partenaire suggéré : « "+part+" ».":"")
+    };
+  }
+
+  const voisinage=g2.envoi.slice();
+  const refs=simRefIdx();
+  if(refs.size){
+    const voisins1=simVoisinageIpc(g1.envoi,g1.objets);
+    for(const v of voisins1){
+      if(v.net&&v.net!==nom2){
+        const nIdx=V.parNet?V.parNet.findIndex(x=>x.nom===v.net):-1;
+        if(nIdx>=0&&refs.has(nIdx)){
+          voisinage.push(v);
+        }
+      }
+    }
+  }
+
+  return {
+    doc:{
+      carte:(V.modele&&V.modele.nom)||"ipc2581",
+      net:nom1,
+      stackup:simStackupIpc(),
+      geometry:{objects:g1.envoi},
+      vias:((g1.chaine||{}).vias)||[],
+      ports:[{id:1,impedance:opts.z0||50},{id:2,impedance:opts.z0||50}],
+      voisinage:voisinage,
+      paires:[[nom1,nom2]],
+      cible_diff:opts.cibleDiff||(typeof SIM!=="undefined"&&SIM.saisie&&SIM.saisie.cibleDiff)||100,
+      analyse:{
+        f_debut:opts.f1, f_fin:opts.f2, points:opts.points,
+        f_centre:opts.fc, temps_montee:opts.tr||0,
+        amplitude_v:(typeof SIM!=="undefined"&&SIM.saisie&&SIM.saisie.swing)||0,
+        z_ref_diff:opts.cibleDiff||(typeof SIM!=="undefined"&&SIM.saisie&&SIM.saisie.cibleDiff)||100
+      }
+    },
+    objets:g1.objets,
+    portee:nom1+" / "+nom2+" (Paire diff)",
+    titre:nom1+" / "+nom2+" · Paire différentielle",
+    notes:[]
   };
 }
 
@@ -3199,12 +3555,15 @@ function simXtCoutureIpc(par,idx){
   const out=[];
   if(!idx||!idx.size||!V.parNet)return out;
   const k=simKUnite();
+  const vusLoc=new Set();
+  const cle=(vx,vy)=>Math.round(vx*100)+"/"+Math.round(vy*100);
   for(const n of V.parNet){
     if(!n||!n.nom||!idx.has(n.i))continue;
     for(const t of (n.trous||[])){
       /* Un trou NON métallisé ne coud rien : même règle que le via de
          signal, et que le chemin du courant continu. */
       if(/NON/i.test(t.p||""))continue;
+      vusLoc.add(cle(t.x*k, t.y*k));
       const s=simXtAbscisseIpc(par,t.x,t.y);
       if(s<0)continue;
       let cote=0, dist=Infinity;
@@ -3213,6 +3572,27 @@ function simXtCoutureIpc(par,idx){
         const pr=simProjPoly(o.piste.p,o.cum,t.x,t.y);
         if(!pr)continue;
         const d=(pr.d-(o.piste.w||0)/2-(t.d||0)/2)*k;
+        if(d>=dist)continue;
+        dist=d;
+        cote=((pr.cote>=0)?1:-1)*(o.retourne?-1:1);
+      }
+      if(!(dist<=SIM_COULOIR))continue;
+      out.push({s:Math.round(s*1000)/1000, cote:cote});
+    }
+    for(const q of (n.pads||[])){
+      const c=cle(q.x*k, q.y*k);
+      if(vusLoc.has(c))continue;
+      vusLoc.add(c);
+      const ps=(V.modele&&V.modele.padstacks)?V.modele.padstacks[(q.pad&&q.pad.ps)||q.ps]:null;
+      if(!(ps&&ps.trou>0))continue;
+      const s=simXtAbscisseIpc(par,q.x,q.y);
+      if(s<0)continue;
+      let cote=0, dist=Infinity;
+      for(const e of par.liste){
+        const o=e.o;
+        const pr=simProjPoly(o.piste.p,o.cum,q.x,q.y);
+        if(!pr)continue;
+        const d=(pr.d-(o.piste.w||0)/2-ps.trou/2)*k;
         if(d>=dist)continue;
         dist=d;
         cote=((pr.cote>=0)?1:-1)*(o.retourne?-1:1);
@@ -3583,8 +3963,15 @@ function simXtFentesIpc(par,idx){
      tombe dans un dégagement d'antipad. On garde ce qui dure au moins deux
      pas — en deçà, on inonderait la carte de marques que rien ne justifie. */
   const r3=x=>Math.round(x*1000)/1000;
+  /* `plans` PART À CÔTÉ DE `quoi`, et ce n'est pas un doublon : `quoi` est une
+     phrase, faite pour être lue, et le serveur ne doit pas avoir à l'analyser
+     pour savoir DE QUEL PLAN on parle. Il en a besoin — c'est le nom de couche
+     qu'il retire de l'empilage sur les blocs concernés, pour que la section y
+     soit résolue sans une référence qui n'y est pas. Un nom lu dans une phrase
+     se serait décollé de la phrase au premier remaniement. */
   return trous.filter(t=>t.fin-t.debut>=pas*1.5)
     .map(t=>({s:r3(t.debut), longueur:r3(t.fin-t.debut),
+              plans:t.plans.map(simXtNomCoucheIpc).filter(Boolean),
               quoi:(t.plans.length>1
                       ? "les plans de référence "+
                         t.plans.map(simXtNomCoucheIpc).join(" / ")+
@@ -3622,10 +4009,13 @@ function simXtViasMasseIpc(par,idx){
   const k=simKUnite();
   const R=SIM_RAYON_RETOUR_IPC;
   const r3=x=>Math.round(x*1000)/1000;
+  const vusLoc=new Set();
+  const cle=(vx,vy)=>Math.round(vx*100)+"/"+Math.round(vy*100);
   for(const n of V.parNet){
     if(!n||!n.nom||!idx.has(n.i))continue;
     for(const t of (n.trous||[])){
       if(/NON/i.test(t.p||""))continue;
+      vusLoc.add(cle(t.x*k, t.y*k));
       let proche=false;
       for(const e of par.liste){
         const o=e.o;
@@ -3638,6 +4028,23 @@ function simXtViasMasseIpc(par,idx){
                 /* LE DOCUMENT PORTE L'AVEU AVEC LA COTE. Le serveur n'a pas à
                    s'en servir ; c'est la fiche qui doit pouvoir dire lesquels
                    de ces vias ont une portée lue et lesquels sont supposés. */
+                portee_declaree:p.declaree});
+    }
+    for(const q of (n.pads||[])){
+      const c=cle(q.x*k, q.y*k);
+      if(vusLoc.has(c))continue;
+      vusLoc.add(c);
+      const ps=(V.modele&&V.modele.padstacks)?V.modele.padstacks[(q.pad&&q.pad.ps)||q.ps]:null;
+      if(!(ps&&ps.trou>0))continue;
+      let proche=false;
+      for(const e of par.liste){
+        const o=e.o;
+        const pr=simProjPoly(o.piste.p,o.cum,q.x,q.y);
+        if(pr&&(pr.d-(o.piste.w||0)/2)*k<=R){proche=true;break;}
+      }
+      if(!proche)continue;
+      const p=simXtPortee(q);
+      out.push({x:r3(q.x*k), y:r3(q.y*k), a:p.a, b:p.b,
                 portee_declaree:p.declaree});
     }
   }
@@ -3725,7 +4132,15 @@ function simXtRisqueTraceIpc(c,dpr){
      que ce qui est à reprendre et portent un verdict, et le point désigne un
      millimètre. Les unités sont celles du monde, comme le cuivre recouvert. */
   const conv=(x,y)=>[x/k,y/k];
-  simXtPeindreChaleur(c,conv,0.38/k);
+  let wRef=0;
+  if(V.net!=null&&V.net>=0&&V.parNet&&V.parNet[V.net]){
+    for(const pi of (V.parNet[V.net].pistes||[])){
+      if(pi.w>0){wRef=pi.w; break;}
+    }
+  }
+  const epChaleur=wRef>0?Math.max(wRef*1.15,0.20/k):(0.22/k);
+  const epRisque=wRef>0?Math.max(wRef*1.30,0.25/k):(0.28/k);
+  simXtPeindreChaleur(c,conv,epChaleur);
   const zones=simXtRisqueGeom();
   /* LE RAYON DU VISEUR EST EN PIXELS D'ÉCRAN, et non en unités du monde comme
      la chaleur : un repère qui grossit avec le zoom finit par cacher le
@@ -3739,7 +4154,7 @@ function simXtRisqueTraceIpc(c,dpr){
     c.strokeStyle=simXtRisqueCouleur(z);
     /* L'épaisseur est en unités monde, comme le cuivre qu'elle recouvre : on
        veut continuer de reconnaître le tracé dessous. */
-    c.lineWidth=0.45/k;
+    c.lineWidth=epRisque;
     for(const m of z.traits){
       c.beginPath();
       c.moveTo(m[0]/k,m[1]/k);
@@ -3749,6 +4164,14 @@ function simXtRisqueTraceIpc(c,dpr){
   }
   c.restore();
   simXtPeindreCurseur(c,conv,vis);
+}
+
+/* Le viseur du profil d'impédance, posé sur le cuivre à l'abscisse de la
+   réglette. Le dessin est commun (`simZPeindreCurseur`) ; ce fichier ne donne
+   que le passage du monde aux pixels de l'écran. */
+function simZCurseurTraceIpc(c,dpr){
+  if(typeof simZPeindreCurseur!=="function")return;
+  simZPeindreCurseur(c,dpr,(x,y)=>{const e=w2s(x,y);return [e.x,e.y];});
 }
 
 function simParseResistance(val){
@@ -4426,6 +4849,10 @@ const SIM_IPC={
     return simDocIpc(null,V.net,opts,true);
   },
 
+  problemeDiff:function(p1,p2,opts){
+    return simDocDiffIpc(p1,p2,opts);
+  },
+
   /* LES LOTS : un document par parcours continu de la sélection.
 
      UN SEUL MORCEAU DÉSIGNÉ REND UN SEUL LOT, par le chemin exact d'avant : un
@@ -4433,6 +4860,14 @@ const SIM_IPC={
      partir en plusieurs requêtes parce que leur cuivre est en îlots. Ce sont
      les morceaux pris à Ctrl+clic — et eux seuls — qu'on découpe. */
   problemes:function(opts){
+    opts=opts||(typeof simSaisie==="function"?simSaisie():{});
+    const estDiff=(typeof SIM!=="undefined"&&(SIM.analyse==="diff"||SIM.analyse==="zdiff"));
+    const p1=opts.diffPiste1||(typeof SIM!=="undefined"&&SIM.saisie&&SIM.saisie.diffPiste1)||"";
+    const p2=opts.diffPiste2||(typeof SIM!=="undefined"&&SIM.saisie&&SIM.saisie.diffPiste2)||"";
+    if(estDiff&&(p1||p2||(V.sel&&V.sel.length>=2))){
+      const p=simDocDiffIpc(p1,p2,opts);
+      return p.erreur?p:{lots:[p]};
+    }
     if(!V.sel||V.sel.length<2){
       const p=simDocIpc(null,V.net,opts,true);
       return p.erreur?p:{lots:[p]};
@@ -4530,7 +4965,8 @@ const SIM_IPC={
        différence de géométrie avec le document de simulation, et elle compte —
        deux pistes superposées sont le cas que la section droite ne sait pas
        décrire, donc celui qu'on écartait sans un mot. */
-    doc.voisinage=simVoisinageIpc(g.envoi,g.objets,true);
+    const refusCuivre=[];
+    doc.voisinage=simVoisinageIpc(g.envoi,g.objets,true,refusCuivre);
 
     /* DES INDICES PARTOUT ICI, et un seul nom pour tout le bloc : les trois
        mesures interrogent la géométrie, qui range ses nets par indice. Garder
@@ -4547,6 +4983,20 @@ const SIM_IPC={
     doc.vias_masse=simXtViasMasseIpc(par,idx);
 
     const notes=(base.notes||[]).slice();
+    /* DU CUIVRE ÉTROIT QU'ON N'A PAS SU DÉCRIRE reste du cuivre qui couple.
+       Le taire rendrait « aucune victime » exactement comme avant le
+       correctif — le même silence, à un détour près. */
+    if(refusCuivre.length){
+      const nets=[...new Set(refusCuivre.map(r=>r.net).filter(Boolean))];
+      notes.push(refusCuivre.length+" versement(s) de cuivre étroit longent "+
+                 "la sélection sans avoir pu être ramenés à une bande droite"+
+                 (nets.length?" ("+nets.slice(0,6).join(", ")+
+                  (nets.length>6?", …":"")+")":"")+
+                 " : ils ne sont PAS dans le voisinage envoyé, et le couplage "+
+                 "qu'ils portent n'est donc pas compté. Un conducteur routé en "+
+                 "versement coudé ou en serpentin est le cas courant — "+
+                 "redessinez-le en piste pour qu'il soit analysé.");
+    }
     if(!idx.size)
       notes.push("Aucun net de masse retenu : ni la couture, ni les "+
                  "discontinuités du plan, ni les vias de retour ne peuvent "+
@@ -4588,6 +5038,17 @@ const SIM_IPC={
   /* Les deux formes dont la surimpression des zones à risque a besoin. Voir
      « LES ZONES À RISQUE SUR LE CUIVRE », plus haut. */
   xtGeometrie:simXtGeometrieIpc,
+
+  /* LE POINT DU CUIVRE à la fraction t d'un tronçon, dans le sens du
+     PARCOURS : une plage `retourne` se remonte de `u2` vers `u1`, la polyligne
+     n'ayant pas changé de sens. C'est là que la réglette du profil
+     d'impédance pose son viseur. Voir « LE PROFIL LE LONG DU PARCOURS ». */
+  zPoint:function(o,t){
+    if(!o||!o.piste||!o.piste.p||!o.cum)return null;
+    const u=o.retourne?o.u2-(o.u2-o.u1)*t:o.u1+(o.u2-o.u1)*t;
+    const m=simSurPoly(o.piste.p,o.cum,u);
+    return [m.x,m.y];
+  },
 
   redessiner:function(){
     if(typeof dessiner==="function")dessiner();
@@ -4851,29 +5312,31 @@ const SIM_IPC={
 
   netsSelectionnes:function(){
     if(typeof V==="undefined"||!V) return [];
-    const res = new Set();
-    if(typeof selNets === "function"){
-      try {
-        for(const idx of selNets()){
-          const n = (typeof mdlNetNom === "function") ? mdlNetNom(idx) : (V.parNet && V.parNet[idx] ? V.parNet[idx].nom : "");
-          if(n) res.add(n);
-        }
-      } catch(e) {}
-    }
-    if(V.net != null && V.net >= 0){
-      const n = (typeof mdlNetNom === "function") ? mdlNetNom(V.net) : (V.parNet && V.parNet[V.net] ? V.parNet[V.net].nom : "");
-      if(n) res.add(n);
-    }
+    const directes = new Set();
+    const secondaires = new Set();
     if(V.sel && Array.isArray(V.sel)){
       for(const e of V.sel){
         if(!e || !e.s) continue;
         const netIdx = e.s.net != null ? e.s.net : (e.s.n != null ? e.s.n : (e.s.piste && e.s.piste.n));
         if(netIdx != null && netIdx >= 0){
           const n = (typeof mdlNetNom === "function") ? mdlNetNom(netIdx) : (V.parNet && V.parNet[netIdx] ? V.parNet[netIdx].nom : "");
-          if(n) res.add(n);
+          if(n) directes.add(n);
         }
       }
     }
+    if(typeof selNets === "function"){
+      try {
+        for(const idx of selNets()){
+          const n = (typeof mdlNetNom === "function") ? mdlNetNom(idx) : (V.parNet && V.parNet[idx] ? V.parNet[idx].nom : "");
+          if(n) secondaires.add(n);
+        }
+      } catch(e) {}
+    }
+    if(V.net != null && V.net >= 0){
+      const n = (typeof mdlNetNom === "function") ? mdlNetNom(V.net) : (V.parNet && V.parNet[V.net] ? V.parNet[V.net].nom : "");
+      if(n) secondaires.add(n);
+    }
+    const res = new Set([...directes, ...secondaires]);
     return [...res].filter(Boolean);
   },
 
@@ -5197,7 +5660,7 @@ function simOuvrir(){
 
 /* Branché au chargement, comme le reste des panneaux. */
 if(typeof simInit==="function"){
-  simInit(SIM_IPC,"simPanneau");
+  simInit(SIM_IPC,"simPanneau",{sortie:"simResultats",panneau:"resultats"});
   const b=document.getElementById("bSim");
   if(b)b.onclick=simOuvrir;
 }

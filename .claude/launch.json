@@ -12,6 +12,18 @@
         "--sans-pause"
       ],
       "port": 8137
+    },
+    {
+      "name": "serveur CAO Web 8138",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "web_CAO.py",
+        "--port",
+        "8138",
+        "--sans-navigateur",
+        "--sans-pause"
+      ],
+      "port": 8138
     }
   ]
 }

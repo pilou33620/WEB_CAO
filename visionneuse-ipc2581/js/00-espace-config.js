@@ -8,7 +8,7 @@
 const WS_CONFIG={
   key:"ipc2581.espace-travail.v1",
   layout:{
-    docks:{dockL:230,dockR:330,dockB:180},
+    docks:{dockL:230,dockR:330,dockB:260},
     /* Les couches à gauche : c'est le réglage qu'on touche le plus souvent, et
        il commande tout le reste de l'image. À droite, ce qu'on consulte : la
        carte elle-même, puis la sélection. Nets et composants au même endroit,
@@ -19,7 +19,7 @@ const WS_CONFIG={
        « Espace de travail » la liste comme les autres. Déclarée ici sans
        figurer dans `order`, elle démarre masquée ; `last` dit où elle ira. */
     order:{dockL:["couches"],dockR:["carte","detail"],dockB:["composants","nets"]},
-    hidden:["sim","ia"],
+    hidden:["sim","resultats","ia"],
     panels:{
       couches   :{grow:1,collapsed:false,x:80 ,y:140,w:250,h:520,last:"dockL"},
       carte     :{grow:1,collapsed:false,x:150,y:140,w:340,h:420,last:"dockR"},
@@ -27,6 +27,10 @@ const WS_CONFIG={
       composants:{grow:1,collapsed:false,x:220,y:260,w:520,h:320,last:"dockB"},
       nets      :{grow:1,collapsed:true ,x:260,y:300,w:520,h:320,last:"dockB"},
       sim       :{grow:1.3,collapsed:true,x:250,y:180,w:560,h:520,last:"dockR"},
+      /* Les résultats de la simulation EM ont leur section, en bas : une
+         courbe « le long du parcours » ou « en fréquence » se lit en largeur.
+         Masquée d'usine, elle reparaît d'elle-même à la fin d'un calcul. */
+      resultats :{grow:2.5,collapsed:false,x:220,y:160,w:900,h:560,last:"dockB"},
       ia        :{grow:1.5,collapsed:false,x:250,y:140,w:440,h:580,last:"dockR"}
     }
   }

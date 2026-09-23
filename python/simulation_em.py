@@ -2,6 +2,29 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 4.2.0
+# Date: 2026-09-22
+# Explication: UN PLAN PEUT MANQUER LA OU ON EST, MEME S'IL EST DANS
+#   L'EMPILAGE. `section_de_couche` cherchait le plan de reference le plus
+#   proche en balayant l'empilage, et l'empilage est GLOBAL : il dit qu'une
+#   couche EST un plan, jamais qu'elle porte du cuivre a tel endroit. Une piste
+#   survolant une decoupe rendait donc exactement le meme Z0, le meme retard et
+#   le meme couplage qu'une piste sur plan plein -- en silence.
+#
+#   `plans_ignores` LAISSE L'APPELANT DIRE CE QU'IL EST LE SEUL A SAVOIR : les
+#   plans qui n'ont pas de cuivre SOUS CE TRONCON-LA. La recherche passe alors
+#   au suivant, exactement comme si la couche etait du signal a cet endroit, et
+#   quand il n'en reste aucun la fonction refuse -- avec une raison qui dit que
+#   c'est LOCAL, et non un empilage sans plan. `_hauteur_de_couche` le prend
+#   aussi, et il le faut : la hauteur et la section doivent designer LE MEME
+#   plan, sans quoi les conducteurs sont poses a une hauteur et resolus a une
+#   autre.
+#
+#   RIEN NE CHANGE POUR QUI NE LE PASSE PAS : le parametre est facultatif et
+#   vide par defaut.
+# Fonctions modifiees : section_de_couche (+ `plans_ignores`),
+#   _hauteur_de_couche (+ `plans_ignores`)
+#
 # Version: 4.1.0
 # Date: 2026-09-03
 # Explication: LE PLAN ARROSE QUI BORDE N'EST A ZERO VOLT QUE S'IL EST COUSU.
@@ -631,7 +654,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
-VERSION = "4.1.0"
+VERSION = "4.2.0"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
     "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
@@ -768,8 +791,19 @@ def _couverture(couches, indice, vers_le_bas):
 
 
 def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
-                      ecart_g_mm=0.0, ecart_d_mm=None):
+                      ecart_g_mm=0.0, ecart_d_mm=None, plans_ignores=()):
     """La section droite d'une piste, en METRES, pour `solve_line`.
+
+    `plans_ignores` PORTE LES PLANS QUI N'EN SONT PAS ICI. L'empilage est
+    GLOBAL : il dit qu'une couche est un plan de reference, jamais qu'elle
+    porte du cuivre a tel endroit. Une decoupe, une fente, un plan qui ne
+    descend pas sous la paire -- tout cela est LOCAL, et l'appelant est le seul
+    a le savoir. Il nomme alors les plans absents, et la recherche du plan le
+    plus proche passe au suivant, exactement comme si la couche etait du
+    signal a cet endroit-la. Sans ce parametre, deux troncons identiques dont
+    l'un est reference et l'autre non se resolvent BIT POUR BIT pareil : une
+    piste survolant une decoupe rendait le meme Z0, le meme retard et le meme
+    couplage qu'une piste sur plan plein, et rien ne le disait.
 
     `ecart_g_mm` et `ecart_d_mm` sont les distances de cuivre a cuivre entre la
     piste et le plan de masse qui la borde SUR SA PROPRE COUCHE, un par cote --
@@ -795,15 +829,19 @@ def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
     if couches[indice].get("type") != "copper":
         return None, "cette couche n'est pas du cuivre"
 
+    nus = set(n for n in (plans_ignores or ()) if n)
+
+    def _est_plan(c):
+        return (c.get("type") == "copper" and c.get("role") == "plane"
+                and (c.get("name") or "") not in nus)
+
     haut = bas = -1
     for k in range(indice - 1, -1, -1):
-        c = couches[k]
-        if c.get("type") == "copper" and c.get("role") == "plane":
+        if _est_plan(couches[k]):
             haut = k
             break
     for k in range(indice + 1, len(couches)):
-        c = couches[k]
-        if c.get("type") == "copper" and c.get("role") == "plane":
+        if _est_plan(couches[k]):
             bas = k
             break
 
@@ -843,6 +881,13 @@ def section_de_couche(couches, indice, largeur_mm, epaisseur_mm,
 
     proche = haut if haut >= 0 else bas
     if proche < 0:
+        if nus:
+            return None, ("aucun plan de reference EN FACE DE CE TRONCON : le"
+                          " ou les plans de l'empilage (%s) n'ont pas de"
+                          " cuivre de retour ici, et il n'y en a pas d'autre"
+                          " derriere. Sans conducteur de reference il n'y a"
+                          " pas de ligne quasi-TEM, donc rien a calculer"
+                          % ", ".join(sorted(nus)))
         return None, ("aucun plan de reference dans l'empilage : sans plan en"
                       " face de la piste, il n'y a pas de ligne")
     h_mm, er, df = _entre(couches, proche, indice)
@@ -3459,32 +3504,66 @@ def _noeuds(objets):
     des pages : deux bouts distants de trois microns sont le meme point du
     cuivre, et un casier de coordonnees arrondies les separerait.
 
-    ON NE REGARDE PAS LA COUCHE. Deux troncons au meme XY sur deux couches
-    differentes sont joints par un via -- c'est ce que dit deja `_ruptures`, et
-    la topologie doit dire la meme chose, sans quoi toute liaison changeant de
-    couche paraitrait coupee en deux morceaux.
+    LA COUCHE COMPTE, SAUF AU DROIT D'UN VIA. Deux troncons au meme XY sur
+    deux couches differentes sont joints par un via -- c'est ce que dit deja
+    `_ruptures` --, mais seulement LA OU IL Y A UN VIA. Ne pas regarder la
+    couche du tout faisait d'un simple chevauchement vu de dessus un noeud :
+    une paire qui se croise par la couche d'en face repasse, sur l'autre
+    couche, exactement sous le moignon qui mene a son via, et ce point-la
+    paraissait rejoindre QUATRE bouts -- une derivation inventee, et la
+    cascade refusee. Un via se reconnait a ce que la page accroche au troncon
+    qui en part (`via`), ou a deux troncons CONSECUTIFS de couches differentes
+    qui se touchent -- la regle meme de `_ruptures`.
+
+    UN TRONCON PLUS COURT QUE LA TOLERANCE EST UN POINT, pas une branche : ses
+    deux bouts tombent dans le meme noeud et y compteraient deux fois. Il
+    n'est pas juge -- les pages en produisent en coupant une piste au droit
+    d'un changement d'ecart a la masse.
 
     Rend (centres, membres, rangs) : les points, les indices de troncons a
     chaque point, et pour chaque troncon le couple de ses deux noeuds -- None
     quand il ne porte pas ses coordonnees, auquel cas on ne le juge pas.
     """
-    centres, membres, rangs = [], [], []
-    for obj in objets:
-        e = _extremites(obj)
+    proche = (lambda p, q:
+              math.hypot(q[0] - p[0], q[1] - p[1]) <= TOLERANCE_RACCORD)
+    bouts = [_extremites(obj) for obj in objets]
+    couches = [int(_nombre(obj.get("layer"), -1)) for obj in objets]
+    vias = []
+    for i, e in enumerate(bouts):
         if e is None:
+            continue
+        if objets[i].get("via"):
+            vias.append(e[0])
+        # UN SEUL POINT DE RACCORD PAR CHANGEMENT DE COUCHE, et d'abord la fin
+        # du precedent contre le debut du suivant -- l'ordre du parcours. Un
+        # moignon dessine a l'identique sur les deux couches se touche aussi
+        # par ses deux AUTRES bouts, qui ne sont pas un via.
+        if i and bouts[i - 1] is not None and couches[i - 1] != couches[i]:
+            a = bouts[i - 1]
+            for p, q in ((a[1], e[0]), (a[1], e[1]), (a[0], e[0]),
+                         (a[0], e[1])):
+                if proche(p, q):
+                    vias.append(q)
+                    break
+    au_via = lambda p: any(proche(p, v) for v in vias)
+
+    centres, membres, rangs, couche_de = [], [], [], []
+    for i, e in enumerate(bouts):
+        if e is None or proche(e[0], e[1]):
             rangs.append(None)
             continue
         r = []
         for p in e:
             c = -1
             for k, q in enumerate(centres):
-                if math.hypot(q[0] - p[0], q[1] - p[1]) <= TOLERANCE_RACCORD:
+                if proche(p, q) and (couche_de[k] == couches[i] or au_via(p)):
                     c = k
                     break
             if c < 0:
                 c = len(centres)
                 centres.append(p)
                 membres.append([])
+                couche_de.append(couches[i])
             membres[c].append(len(rangs))
             r.append(c)
         rangs.append(r)
@@ -4028,7 +4107,7 @@ def _superposes(objets, voisinage, couches):
     return trouves, blindes
 
 
-def _scenes_paralleles(objets, voisinage, refs=()):
+def _scenes_paralleles(objets, voisinage, refs=(), declarees=()):
     """Ce qui longe la selection, rassemble en SECTIONS a resoudre.
 
     UNE SECTION, PAS UNE SUITE DE PAIRES. Une piste avec deux voisines n'est
@@ -4057,9 +4136,23 @@ def _scenes_paralleles(objets, voisinage, refs=()):
     et elle n'a pas d'impedance differentielle a elle. La prendre pour une
     voisine ferait afficher une Z differentielle entre un signal et la masse.
 
+    UNE PAIRE QUI SE CROISE EST PRISE EN MIROIR. Deux moities d'une paire
+    echangent souvent leurs cotes en passant par une autre couche, pour suivre
+    le brochage d'un connecteur : P longe N a gauche avant le croisement, a
+    droite apres. Moyennee avec son signe, la position de la partenaire tombait
+    alors sur la selection elle-meme, `_poser_section` l'ecartait comme
+    « chevauchant » -- et la paire la mieux dessinee de la carte ressortait
+    sans aucun couplage. Une section et son miroir ont EXACTEMENT les memes
+    impedances : on retourne donc gauche et droite de chaque troncon ou la
+    partenaire declaree -- ou nommee par ses suffixes, voir `_paire_nommee` --
+    est du cote oppose a celui ou la scene l'a vue d'abord. Ecarts a la masse
+    et couture sont echanges avec elle, sinon le miroir mentirait sur ce qui
+    borde. `croisements` compte les troncons ainsi retournes.
+
     Rend une liste de scenes, la plus longue d'abord.
     """
     refs = set(str(x) for x in (refs or ()))
+    declarees = list(declarees or ())
     scenes = {}
     for i_obj, victime in enumerate(objets):
         couche = int(_nombre(victime.get("layer"), 0))
@@ -4126,8 +4219,27 @@ def _scenes_paralleles(objets, voisinage, refs=()):
                   "net_masse": (sorted(refs)[0] if len(refs) == 1
                                 else "masse"),
                   "couture_g": 0.0, "couture_d": 0.0,
+                  # Le cote ou la partenaire a ete vue en premier, et combien
+                  # de troncons ont du etre retournes pour l'y ramener.
+                  "_cote_paire": 0, "croisements": 0,
                   "epaisseur": _nombre(victime.get("copper_thickness"), 0.035)}
             scenes[cle] = sc
+        # LE MIROIR D'UNE PAIRE QUI SE CROISE -- voir la docstring. La
+        # partenaire qui longe le plus ce troncon decide ; la scene retient le
+        # premier cote ou elle l'a vue, et tout troncon qui la voit de l'autre
+        # cote est retourne, voisines, ecarts et couture compris. `gap_face` ne
+        # bouge pas : c'est un ecart propre a la voisine, mesure sur SA face.
+        partenaires = [t for t in trouves if not t[7]
+                       and _paire_nommee(net_v, t[1], declarees)]
+        if partenaires:
+            cote_p = max(partenaires, key=lambda t: t[3])[6]
+            if not sc["_cote_paire"]:
+                sc["_cote_paire"] = cote_p
+            elif cote_p != sc["_cote_paire"]:
+                sc["croisements"] += 1
+                trouves = [t[:6] + (-t[6],) + t[7:] for t in trouves]
+                gap_g, gap_d = gap_d, gap_g
+                cout_g, cout_d = cout_d, cout_g
         # LES COTES DE LA SELECTION SONT PONDEREES PAR LA LONGUEUR DES TRONCONS
         # QUI LONGENT, et non par toute la selection : une liaison de cent
         # millimetres dont dix longent une voisine a une section de couplage,
@@ -4213,7 +4325,7 @@ def _scenes_paralleles(objets, voisinage, refs=()):
         # garde quand la section est pleine.
         voisins.sort(key=lambda v: abs(v["x"]))
         sc["voisins"] = voisins
-        for k in ("_w", "_g", "_d"):
+        for k in ("_w", "_g", "_d", "_cote_paire"):
             sc.pop(k)
         sortie.append(sc)
     sortie.sort(key=lambda sc: -sc["longueur_victime"])
@@ -4586,7 +4698,7 @@ def _fiche_longement(scene, poses, pose, rangs, r, declarees):
 MAX_SECTIONS_LOCALES = 24       # resolutions de section locales par calcul
 PAS_ECART_LOCAL = 0.005         # mm ; le pas auquel les ecarts se regroupent
 
-def _hauteur_de_couche(couches, indice, largeur, epaisseur):
+def _hauteur_de_couche(couches, indice, largeur, epaisseur, plans_ignores=()):
     """La hauteur au plan de reference d'une couche, en mm ; 0 si elle n'en a
     pas.
 
@@ -4594,8 +4706,14 @@ def _hauteur_de_couche(couches, indice, largeur, epaisseur):
     l'empilage --, on les passe donc a zero. C'est `_poser_section` qui en a
     besoin, AVANT de savoir quels conducteurs il posera : sans elle, il ne peut
     pas prevoir de combien le cuivre epais va les elargir.
+
+    `plans_ignores` SUIT `section_de_couche`, et il doit le suivre : la hauteur
+    et la section doivent designer LE MEME plan. Les donner a lire a deux plans
+    differents ferait poser les conducteurs a une hauteur, et les resoudre a
+    une autre.
     """
-    geo, info = section_de_couche(couches, indice, largeur, epaisseur, 0.0, 0.0)
+    geo, info = section_de_couche(couches, indice, largeur, epaisseur, 0.0, 0.0,
+                                  plans_ignores)
     # `section_de_couche` decrit une section en METRES, et son `h` aussi :
     # c'est le seul chiffre de cette page qui ne soit pas en millimetres, et le
     # melanger a des largeurs en millimetres donne un logarithme negatif, donc
@@ -4767,6 +4885,60 @@ def _chaleur_scene(couches, scene, fiches, t_r, chaleur, cache):
             c["z_diff_declare"] = declare
 
 
+def _partager_paire(doc, objets):
+    """La selection porte deux nets : on met le premier en ligne, l'autre en voisin.
+
+    UNE PAIRE ENVOYEE ENTIERE N'EST PAS UNE LIGNE A DEUX MORCEAUX. La page
+    laisse designer les deux moities d'une paire differentielle d'un seul
+    geste, et tout arrive alors dans `geometry.objects`. Mis en cascade tel
+    quel, cela decrit une ligne unique qui sauterait d'un net a l'autre --
+    une Z de mode commun deguisee en Z de ligne, et AUCUN couplage, puisque la
+    partenaire n'est pas dans le voisinage ou le couplage se lit.
+
+    LE PARTAGE EST DONC FAIT ICI, UNE FOIS, ET AVANT TOUT LE RESTE : la
+    principale reste dans `objets`, l'autre passe en tete de `voisinage`, et la
+    paire est declaree pour que `_couplage` la retrouve. `_couplage` ne le
+    refait pas -- voir son premier commentaire.
+
+    QUI EST LA PRINCIPALE : une paire deja declaree dans `doc["paires"]` decide
+    seule ; sinon le net nomme par `doc["net"]` ; sinon le premier dans l'ordre
+    alphabetique, qui est arbitraire mais stable -- deux analyses du meme
+    dessin ne doivent pas rendre deux fiches differentes.
+
+    Rend la liste des objets retenus, et modifie `doc` sur place.
+    """
+    declarees = list(doc.get("paires") or [])
+    nets = set(str(o.get("net") or "") for o in objets if str(o.get("net") or ""))
+    if len(nets) < 2:
+        return objets
+
+    paire = None
+    for p in declarees:
+        if len(p) >= 2 and str(p[0]) in nets and str(p[1]) in nets:
+            paire = (str(p[0]), str(p[1]))
+            break
+    if not paire:
+        principal = str(doc.get("net") or "")
+        if principal in nets:
+            paire = (principal, sorted(n for n in nets if n != principal)[0])
+        else:
+            ordonnes = sorted(nets)
+            paire = (ordonnes[0], ordonnes[1])
+
+    net_prim, net_part = paire
+    retenus = [o for o in objets if str(o.get("net") or "") == net_prim]
+    verses = [o for o in objets if str(o.get("net") or "") != net_prim]
+    if not (retenus and verses):
+        return objets
+
+    doc["voisinage"] = verses + list(doc.get("voisinage") or [])
+    if not declarees:
+        doc["paires"] = [[net_prim, net_part]]
+    if not doc.get("net"):
+        doc["net"] = net_prim
+    return retenus
+
+
 def _couplage(couches, objets, doc, analyse, avertissements):
     """Z differentielle de tout ce qui longe la selection.
 
@@ -4785,21 +4957,27 @@ def _couplage(couches, objets, doc, analyse, avertissements):
     les PLANS sans voir les pistes. Un plan a portee reduit le couplage, et le
     calcul le rend maintenant au lieu de le majorer.
     """
-    voisinage = doc.get("voisinage") or []
+    # LA SELECTION EST DEJA PARTAGEE QUAND ELLE ARRIVE ICI. `simuler` separe la
+    # piste principale de sa partenaire AVANT d'appeler cette fonction -- voir
+    # `_partager_paire` --, si bien que `objets` ne porte plus qu'un seul net et
+    # que `voisinage` a recu l'autre moitie. Refaire le partage ici ne trouverait
+    # donc jamais rien, et le faire DEUX FOIS a deux endroits est le genre de
+    # doublon qui finit par diverger en silence.
+    voisinage = list(doc.get("voisinage") or [])
+    declarees = doc.get("paires") or []
     if len(voisinage) > MAX_VOISINAGE:
         voisinage = voisinage[:MAX_VOISINAGE]
         avertissements.append(
             "Voisinage tronqué à %d tronçons : le couplage n'est chiffré que"
             " sur les plus proches." % MAX_VOISINAGE)
     refs = [str(x) for x in (doc.get("reference_nets") or []) if str(x).strip()]
-    scenes = _scenes_paralleles(objets, voisinage, refs)
+    scenes = _scenes_paralleles(objets, voisinage, refs, declarees)
     # CE QUI PASSE AU-DESSUS, VU MAIS NON CHIFFRE. `_scenes_paralleles` ecarte
     # les autres couches des sa premiere ligne, parce que la section droite ne
     # sait pas les decrire ; ici on les REGARDE quand meme, pour que le silence
     # ne se lise pas comme un couplage nul.
     superposes, superposes_blindes = _superposes(objets, voisinage, couches)
     t_r, source_tr = _temps_montee(analyse)
-    declarees = doc.get("paires") or []
 
     paires, sections, cache = [], [], {}
     # LA CARTE DE CHALEUR EST ALIGNEE SUR `geometry.objects`, comme les
@@ -4879,6 +5057,9 @@ def _couplage(couches, objets, doc, analyse, avertissements):
             "masse_non_cousue": nus,
             "couture_g": round(_nombre(scene.get("couture_g"), 0.0), 2),
             "couture_d": round(_nombre(scene.get("couture_d"), 0.0), 2),
+            # LES TRONCONS PRIS EN MIROIR, parce que la paire s'y croise : voir
+            # `_scenes_paralleles`. Zero pour une paire qui garde ses cotes.
+            "croisements": scene.get("croisements", 0),
             "ecartes": ecartes,
             "raison": c.get("raison", ""),
         }
@@ -5284,6 +5465,9 @@ def simuler(doc, journal=None):
                                " « pip install numpy ».")
 
     couches, objets, analyse = doc_valide(doc)
+
+    objets = _partager_paire(doc, objets)
+
     fc = analyse["f_centre"]
     t_r, source_tr = _temps_montee(analyse)
     z_ref = _nombre(((doc.get("ports") or [{}])[0]).get("impedance"), 50.0) or 50.0

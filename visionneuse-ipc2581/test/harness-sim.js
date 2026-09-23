@@ -97,6 +97,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
      differentielle ni diaphonie -- l'agresseur n'est jamais dans la
      selection. */
   "simVoisinageIpc","simPairesIpc","SIM_ECART_COUPLAGE_IPC",
+  "simRegionEnBande","SIM_REGION_W_MAX","ltAutoRole",
   "SIM_VOISINAGE_MAX_IPC",
   /* CROSSTALK : les trois mesures que seule la page peut faire — l'abscisse
      du parcours, les vias de couture qui s'y projettent, les fentes du plan
@@ -109,6 +110,14 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
      l'outil ne fournit que les deux formes neutres, en MILLIMETRES. */
   "simXtGeometrieIpc","simXtRisqueGeom","simXtRisqueTraits","simXtRisques",
   "simXtProjParcours","simXtRisqueCouleur","SIM_XT_PAS_TRAIT","SIM_XT",
+  /* Le panneau lui-meme, et le repli de ses reglages avances : ce qui se
+     cache et ce qui refuse de se cacher. */
+  "simCorpsCrosstalk","simXtAvanceEcarts","simXtAvanceOuvert",
+  "simXtAvanceBouton","SIM_XT_AVANCE_DEFAUTS","SIM_XT_AVANCE_NOMS",
+  /* Les deux questions, et ce que la fiche de la première s'interdit. */
+  "simXtModeAppliquer","simXtGeoOu","simXtResume","simXtCarte",
+  "simXtTableauCouples","simXtNiveau","simXtGeoRang","simXtGeoTableau",
+  "simXtRapportTexte",
 
   /* L'onglet de Z differentielle (commun/simulation-em.js). */
   "simCouplage","simCouplagePaires","simFicheDiff",
@@ -4484,6 +4493,772 @@ T("PDN : les condensateurs sont rendus dans le repère de la cavité, pas du fic
   V.unite = memeUnite; V.bbox = memeBbox; V.modele = memeModele;
 });
 
+T("perçages sans attribut net explicite : héritent du net de leur pastille ou piste",()=>{
+  const c=carte({
+    nets:["ENETB_TX_N","GND"],
+    plans:[plan(1, rect(2,2,58,38), [])],
+    percages:[
+      {x:10.0, y:20.0, d:0.25, n:null, p:"PLATED"},
+      {x:12.0, y:20.0, d:0.30, n:null, p:"PLATED"}
+    ],
+    padstacks:{
+      V55:{pad:0.55, pads:[{c:"Top", d:0.55},{c:"Bottom", d:0.55}]}
+    },
+    pads:[
+      {x:10.0, y:20.0, ps:"V55", n:0},
+      {x:12.0, y:20.0, ps:"V55", n:1}
+    ]
+  });
+  mdlCharger(c.modele);
+  const n0 = V.parNet[0], n1 = V.parNet[1];
+  if(!n0.trous || n0.trous.length !== 1)
+    throw new Error("le trou de ENETB_TX_N n'a pas hérité du net : "+JSON.stringify(n0.trous));
+  if(!n1.trous || n1.trous.length !== 1)
+    throw new Error("le trou de GND n'a pas hérité du net : "+JSON.stringify(n1.trous));
+  if(n0.trous[0].n !== 0)
+    throw new Error("net attendu 0 pour n0.trous[0], obtenu "+n0.trous[0].n);
+  if(n1.trous[0].n !== 1)
+    throw new Error("net attendu 1 pour n1.trous[0], obtenu "+n1.trous[0].n);
+});
+
+T("simulation retour : détection de vias de masse quand les perçages ont t.n == null",()=>{
+  /* Même géométrie que carteJonctions mais avec t.n null pour simuler l'export IPC-2581 brut */
+  const c=carte({
+    nets:["SIG","GND"],
+    plans:[plan(1, rect(2,2,58,38), [])],
+    percages:[
+      {x:13.5, y:32.2, d:0.25, n:null, p:"PLATED"},
+      {x:13.5, y:34.0, d:0.30, n:null, p:"PLATED"}
+    ],
+    padstacks:{
+      V55:{pad:0.55, pads:[{c:"Top", d:0.55},{c:"Bottom", d:0.55}]}
+    },
+    pads:[
+      {x:13.5, y:32.2, ps:"V55", n:0},
+      {x:13.5, y:34.0, ps:"V55", n:1},
+      {x:10.0, y:32.2, ps:"V55", n:0},
+      {x:20.0, y:32.2, ps:"V55", n:0}
+    ]
+  });
+  c.modele.pistes=[
+    {c:0, n:0, w:0.21, p:[10.0,32.2, 13.5,32.2]},
+    {c:1, n:0, w:0.21, p:[13.5,32.2, 20.0,32.2]}
+  ];
+  mdlCharger(c.modele);
+  V.net=0;
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  const g=simSegments();
+  const o=g.envoi.find(e=>e.via&&Math.abs(e.via.x-13.5)<1e-6);
+  if(!o)throw new Error("le via de SIG n'a pas été accroché");
+  if(!o.via.retours || o.via.retours.length !== 1)
+    throw new Error("le via de masse GND à 1.8mm n'a pas été trouvé dans les retours: "+JSON.stringify(o.via.retours));
+  if(Math.abs(o.via.retours[0].y - 34.0) > 1e-6)
+    throw new Error("le retour trouvé n'est pas en y=34.0: "+JSON.stringify(o.via.retours[0]));
+});
+
+T("simulation retour : accrochage de via avec bifurcation/stub vers pastille CMS (C339/C341)",()=>{
+  /* Topologie C339: la piste Top a a.end au pad C339 (11.5, 32.2) et a.start au via (13.5, 32.2).
+     La piste Inner part du via (13.5, 32.2) vers (20.0, 32.2). */
+  const envoi=[
+    {
+      type:"track",
+      start:[13.5, 32.2], end:[11.5, 32.2],
+      length:2.0, width:0.2, layer:0,
+      net:"SIG", copper_thickness:0.035, gap_left:1, gap_right:1
+    },
+    {
+      type:"track",
+      start:[13.5, 32.2], end:[20.0, 32.2],
+      length:6.5, width:0.2, layer:2,
+      net:"SIG", copper_thickness:0.035, gap_left:1, gap_right:1
+    }
+  ];
+  const c=carte({
+    nets:["SIG","GND"],
+    plans:[plan(1, rect(2,2,58,38), [])],
+    percages:[
+      {x:13.5, y:32.2, d:0.25, n:0, p:"PLATED"},
+      {x:13.5, y:34.0, d:0.30, n:1, p:"PLATED"}
+    ],
+    padstacks:{
+      V55:{pad:0.55, pads:[{c:"Top", d:0.55},{c:"Bottom", d:0.55}]}
+    },
+    pads:[
+      {x:13.5, y:32.2, ps:"V55", n:0},
+      {x:11.5, y:32.2, ps:"V55", n:0},
+      {x:13.5, y:34.0, ps:"V55", n:1}
+    ]
+  });
+  mdlCharger(c.modele);
+  V.net=0;
+  SIM.refCle=null; SIM.refAuto=true; SIM.ref=null;
+  const poses = simAccrocherViasIpc(envoi, V.parNet[0]);
+  if(poses !== 1)
+    throw new Error("le via n'a pas été posé (poses="+poses+")");
+  if(!envoi[1].via)
+    throw new Error("envoi[1].via non défini");
+  if(Math.abs(envoi[1].via.x - 13.5) > 1e-6 || Math.abs(envoi[1].via.y - 32.2) > 1e-6)
+    throw new Error("coordonnées du via erronées: "+envoi[1].via.x+", "+envoi[1].via.y);
+  if(!envoi[1].via.retours || envoi[1].via.retours.length !== 1)
+    throw new Error("retours de masse manquants sur le via avec stub: "+JSON.stringify(envoi[1].via.retours));
+});
+
+T("simulation retour : clic simple sur piste inclut le net et ses vias sans exiger Maj+clic",()=>{
+  const c=carte({
+    nets:["SIG","GND"],
+    plans:[plan(1, rect(2,2,58,38), [])],
+    percages:[
+      {x:13.5, y:32.2, d:0.25, n:0, p:"PLATED"},
+      {x:13.5, y:34.0, d:0.30, n:1, p:"PLATED"}
+    ],
+    padstacks:{
+      V55:{pad:0.55, pads:[{c:"Top", d:0.55},{c:"Bottom", d:0.55}]}
+    },
+    pads:[
+      {x:13.5, y:32.2, ps:"V55", n:0},
+      {x:13.5, y:34.0, ps:"V55", n:1}
+    ]
+  });
+  const pTop = {c:0, n:0, w:0.21, p:[10.0,32.2, 13.5,32.2]};
+  const pInt = {c:1, n:0, w:0.21, p:[13.5,32.2, 20.0,32.2]};
+  c.modele.pistes=[pTop, pInt];
+  mdlCharger(c.modele);
+  V.sel=[{s:{type:"piste", piste:pTop, couche:0, net:0}, mev:{couche:0}}];
+  V.net=0;
+  SIM.ouvert=true; SIM.analyse="retour";
+  try{
+    const pistes=simZPistes();
+    if(pistes.length < 2)
+      throw new Error("simZPistes en analyse retour devait inclure les 2 pistes, obtenu: "+pistes.length);
+    const g=simSegments();
+    if(!g.envoi.some(e=>e.via))
+      throw new Error("le via doit être accroché même sur un clic simple sans Maj en analyse retour");
+  }finally{
+    SIM.ouvert=false; SIM.analyse="impedance";
+  }
+});
+
+T("crosstalk : découpage d'une polyligne multipoints aux sommets intermédiaires dans simSegments",()=>{
+  const c=carte({
+    nets:["AGR","VIC","GND"],
+    plans:[plan(1, rect(0,0,50,50), [])]
+  });
+  /* Piste agresseur en L avec 3 sommets (2 segments rectilignes) */
+  const pAgr={c:0, n:0, w:0.35, p:[10,20, 20,20, 20,30]};
+  c.modele.pistes=[pAgr];
+  mdlCharger(c.modele);
+  V.net=0;
+  V.sel=[{s:{type:"net", net:0}, mev:mdlMevTout()}];
+  const g=simSegments();
+  if(g.envoi.length!==2)
+    throw new Error("la polyligne à 2 segments devait être découpée en 2 tronçons, obtenu: "+g.envoi.length);
+  if(Math.abs(g.envoi[0].start[0]-10)>1e-6 || Math.abs(g.envoi[0].end[0]-20)>1e-6 || Math.abs(g.envoi[0].end[1]-20)>1e-6)
+    throw new Error("coordonnées tronçon 1 erronées: "+JSON.stringify(g.envoi[0]));
+  if(Math.abs(g.envoi[1].start[0]-20)>1e-6 || Math.abs(g.envoi[1].start[1]-20)>1e-6 || Math.abs(g.envoi[1].end[1]-30)>1e-6)
+    throw new Error("coordonnées tronçon 2 erronées: "+JSON.stringify(g.envoi[1]));
+  if(Math.abs(g.envoi[0].length-10)>1e-4 || Math.abs(g.envoi[1].length-10)>1e-4)
+    throw new Error("longueurs erronées: "+g.envoi[0].length+", "+g.envoi[1].length);
+});
+
+T("crosstalk : détection des vias de couture et vias de masse issus de padstacks sans percages explicites",()=>{
+  const c=carte({
+    nets:["AGR","GND"],
+    plans:[plan(1, rect(0,0,50,50), [])],
+    padstacks:{
+      VIA_TH:{pad:0.6, trou:0.3, pads:[{c:"Top", d:0.6},{c:"Bottom", d:0.6}]}
+    },
+    pads:[
+      /* Via GND à côté de la piste à x=15, y=21 (distance 1.0 mm, couloir <= 1.5 mm) */
+      {x:15, y:21, ps:"VIA_TH", n:1}
+    ]
+  });
+  const pAgr={c:0, n:0, w:0.35, p:[10,20, 20,20]};
+  c.modele.pistes=[pAgr];
+  mdlCharger(c.modele);
+  V.net=0;
+  V.sel=[{s:{type:"net", net:0}, mev:mdlMevTout()}];
+  SIM.ouvert=true; SIM.analyse="crosstalk";
+  try{
+    const saisie=simSaisie();
+    const res=SIM_IPC.problemeCrosstalk(saisie);
+    if(!res.doc)
+      throw new Error("aucun doc crosstalk généré: "+JSON.stringify(res));
+    if(!res.doc.vias_masse || res.doc.vias_masse.length!==1)
+      throw new Error("via de masse non détecté depuis padstack: "+JSON.stringify(res.doc.vias_masse));
+    if(!res.doc.couture || !res.doc.couture.positions || res.doc.couture.positions.length!==1)
+      throw new Error("via de couture non détecté depuis padstack: "+JSON.stringify(res.doc.couture));
+    if(Math.abs(res.doc.vias_masse[0].x-15)>1e-6 || Math.abs(res.doc.vias_masse[0].y-21)>1e-6)
+      throw new Error("coordonnées du via de masse erronées: "+JSON.stringify(res.doc.vias_masse[0]));
+  }finally{
+    SIM.ouvert=false; SIM.analyse="impedance";
+  }
+});
+
+T("paire différentielle : la Piste 2 part en voisinage, jamais dans la ligne",()=>{
+  /* CE QUE LE DOCUMENT DOIT DIRE. Les deux moitiés d'une paire désignées d'un
+     seul geste ne sont PAS une ligne à deux morceaux : mises en cascade telles
+     quelles, elles décriraient une ligne qui saute d'un net à l'autre, et le
+     couplage ne serait mesuré nulle part — la partenaire n'étant pas là où il
+     se lit. `geometry.objects` ne porte donc QU'UN net, et l'autre est en tête
+     du voisinage, avec la paire déclarée pour que le serveur la retrouve. */
+  const c=carte({
+    nets:["DIFF_P","DIFF_N","GND"],
+    plans:[plan(1, rect(0,0,50,50), [])]
+  });
+  c.modele.pistes=[
+    {c:0, n:0, w:0.2, p:[10,20, 30,20]},
+    {c:0, n:1, w:0.2, p:[10,20.45, 30,20.45]}
+  ];
+  mdlCharger(c.modele);
+  V.net=0;
+  SIM.ouvert=true; SIM.analyse="diff";
+  try{
+    const saisie=simSaisie();
+    const r=SIM_IPC.problemeDiff("DIFF_P","DIFF_N",saisie);
+    if(r.erreur)throw new Error("aucun document rendu : "+r.erreur);
+
+    const nets=new Set(r.doc.geometry.objects.map(o=>o.net));
+    if(nets.size!==1||!nets.has("DIFF_P"))
+      throw new Error("la ligne doit ne porter QUE la Piste 1 : "+JSON.stringify([...nets]));
+    if(r.doc.net!=="DIFF_P")
+      throw new Error("doc.net doit nommer la Piste 1, obtenu : "+r.doc.net);
+    if(!r.doc.voisinage.some(o=>o.net==="DIFF_N"))
+      throw new Error("la Piste 2 doit être dans le voisinage : "+JSON.stringify(r.doc.voisinage.map(o=>o.net)));
+    if(r.doc.voisinage.some(o=>o.net==="DIFF_P"))
+      throw new Error("la Piste 1 ne doit pas être aussi dans le voisinage");
+    if(JSON.stringify(r.doc.paires)!==JSON.stringify([["DIFF_P","DIFF_N"]]))
+      throw new Error("la paire doit être déclarée : "+JSON.stringify(r.doc.paires));
+
+    /* LA PISTE 2 PASSE DEVANT le reste du voisinage : le serveur écrête à
+       MAX_VOISINAGE, et la partenaire est précisément celle qui ne doit jamais
+       tomber de la liste. */
+    if(r.doc.voisinage.length&&r.doc.voisinage[0].net!=="DIFF_N")
+      throw new Error("la partenaire doit être en tête du voisinage : "+r.doc.voisinage[0].net);
+
+    /* L'INVERSION DES DEUX RÔLES EST UN AUTRE PROBLÈME, et elle doit le dire. */
+    const inv=SIM_IPC.problemeDiff("DIFF_N","DIFF_P",saisie);
+    if(inv.erreur)throw new Error("le sens inverse doit marcher aussi : "+inv.erreur);
+    if(inv.doc.net!=="DIFF_N")
+      throw new Error("doc.net doit suivre la Piste 1 désignée, obtenu : "+inv.doc.net);
+
+    /* LE VISEUR DU PROFIL SE POSE SUR LE CUIVRE, DANS LE SENS DU PARCOURS :
+       à t = 0 le début du tronçon envoyé, à t = 1 sa fin — c'est l'abscisse
+       du document qui le commande, et une plage remontée à l'envers poserait
+       le viseur à l'autre bout de la piste. */
+    const k=simKUnite();
+    for(const pb of [r,inv])
+      pb.objets.forEach(function(o,i){
+        const g=pb.doc.geometry.objects[i];
+        for(const [t,bout] of [[0,g.start],[1,g.end]]){
+          const p=SIM_IPC.zPoint(o,t);
+          if(!p||Math.hypot(p[0]*k-bout[0],p[1]*k-bout[1])>1e-6)
+            throw new Error("zPoint("+t+") hors du bout envoyé : "+
+                            JSON.stringify(p)+" / "+JSON.stringify(bout));
+        }
+      });
+  }finally{
+    SIM.ouvert=false; SIM.analyse="impedance";
+  }
+});
+
+T("paire différentielle : deux fois le même net, ou un net inconnu, est refusé et dit pourquoi",()=>{
+  /* UN REFUS QUI NE DIT PAS QUOI FAIRE fait rouvrir le fichier pour rien. Les
+     deux cas sont des erreurs de DÉSIGNATION, pas de dessin, et c'est la seule
+     chose que le message a besoin de dire. */
+  const c=carte({
+    nets:["DIFF_P","DIFF_N","GND"],
+    plans:[plan(1, rect(0,0,50,50), [])]
+  });
+  c.modele.pistes=[
+    {c:0, n:0, w:0.2, p:[10,20, 30,20]},
+    {c:0, n:1, w:0.2, p:[10,20.45, 30,20.45]}
+  ];
+  mdlCharger(c.modele);
+  V.net=0; V.sel=[];
+  SIM.ouvert=true; SIM.analyse="diff";
+  try{
+    const saisie=simSaisie();
+
+    const memeNet=SIM_IPC.problemeDiff("DIFF_P","DIFF_P",saisie);
+    if(!memeNet.erreur||memeNet.erreur.indexOf("même net")<0)
+      throw new Error("deux fois le même net doit être refusé : "+JSON.stringify(memeNet.erreur||memeNet.doc&&"doc rendu"));
+    if(!memeNet.conseil)
+      throw new Error("le refus doit dire quoi faire");
+
+    const inconnu=SIM_IPC.problemeDiff("PAS_LA","DIFF_N",saisie);
+    if(!inconnu.erreur||inconnu.erreur.indexOf("Piste 1")<0)
+      throw new Error("un net inconnu en Piste 1 doit être nommé comme tel : "+JSON.stringify(inconnu));
+
+    const inconnu2=SIM_IPC.problemeDiff("DIFF_P","PAS_LA",saisie);
+    if(!inconnu2.erreur||inconnu2.erreur.indexOf("Piste 2")<0)
+      throw new Error("un net inconnu en Piste 2 doit être nommé comme tel : "+JSON.stringify(inconnu2));
+  }finally{
+    SIM.ouvert=false; SIM.analyse="impedance";
+  }
+});
+
+T("crosstalk : le repli des réglages avancés ne cache jamais un réglage modifié",()=>{
+  /* LE REPLI FAIT DE LA PLACE, IL NE FAIT PAS DISPARAÎTRE UNE HYPOTHÈSE.
+     Quatorze des dix-neuf commandes de ce panneau ont un défaut qui marche ;
+     les replier est un gain net TANT QU'ELLES Y SONT RESTÉES. Un réglage posé
+     à la main puis replié piloterait le chiffre sans être lisible nulle part —
+     c'est le résultat juste et muet que tout ce fichier refuse. */
+  const memeSaisie=Object.assign({},SIM_XT.saisie);
+  const memeAvance=SIM_XT.avance;
+  try{
+    SIM_XT.avance=false;
+
+    /* TOUT AU DÉFAUT : rien de modifié, et le repli est licite. */
+    Object.assign(SIM_XT.saisie,SIM_XT_AVANCE_DEFAUTS);
+    if(simXtAvanceEcarts().length!==0)
+      throw new Error("aucun écart attendu au défaut : "+simXtAvanceEcarts().join(", "));
+    if(simXtAvanceOuvert())
+      throw new Error("au défaut et non demandé, le groupe doit être replié");
+    if(simXtAvanceBouton().indexOf("modifié")>=0)
+      throw new Error("le bouton ne doit pas annoncer de modification");
+
+    /* UN NOMBRE CHANGÉ : le groupe s'ouvre de lui-même et le bouton le dit. */
+    SIM_XT.saisie.z0=75;
+    const e=simXtAvanceEcarts();
+    if(e.length!==1||e[0].indexOf("référence")<0)
+      throw new Error("l'impédance de référence doit être signalée : "+e.join(", "));
+    if(!simXtAvanceOuvert())
+      throw new Error("un réglage modifié doit rouvrir le groupe, même replié");
+    if(simXtAvanceBouton().indexOf("1 modifié")<0)
+      throw new Error("le bouton doit compter les écarts : "+simXtAvanceBouton());
+
+    /* LE SEUIL DE CONFIRMATION, LUI, NE COMPTE PLUS — et c'est voulu. Il est
+       passé EN FAÇADE (voir l'essai des rangées), et un réglage qu'on a sous
+       les yeux n'a pas besoin qu'on signale qu'il est modifié. L'y laisser
+       aurait rouvert la bande et la fenêtre au geste le plus ordinaire de ce
+       panneau : descendre le seuil de quelques décibels pour voir ce qui
+       tombait juste dessous. */
+    SIM_XT.saisie.z0=50;
+    SIM_XT.saisie.seuil=-25;
+    if(simXtAvanceEcarts().length!==0||simXtAvanceOuvert())
+      throw new Error("le seuil est en façade : il ne doit plus rouvrir le repli");
+    SIM_XT.saisie.seuil=-40;
+
+    /* UNE CASE DÉCOCHÉE COMPTE AUSSI — c'est le réglage qui retire des
+       voisines de l'analyse, et son silence se lirait « couplage nul ». */
+    SIM_XT.saisie.adjacentes=false;
+    const c=simXtAvanceEcarts();
+    if(c.length!==1||c[0].indexOf("adjacentes")<0)
+      throw new Error("une case décochée doit compter : "+c.join(", "));
+
+    /* UN CHAMP TEXTE REMPLI AUSSI (les vitesses forcées). */
+    SIM_XT.saisie.adjacentes=true;
+    SIM_XT.saisie.vitesses="CLK=1.5e8";
+    const v=simXtAvanceEcarts();
+    if(v.length!==1||v[0].indexOf("itesses")<0)
+      throw new Error("une vitesse forcée doit compter : "+v.join(", "));
+
+    /* PLUSIEURS À LA FOIS : le pluriel, et les deux noms dans l'infobulle. */
+    SIM_XT.saisie.beta=5;
+    if(simXtAvanceBouton().indexOf("2 modifiés")<0)
+      throw new Error("le pluriel doit être accordé : "+simXtAvanceBouton());
+
+    /* ET REVENIR AU DÉFAUT REFERME LA PORTE : l'alerte ne survit pas à sa
+       cause, sinon elle cesse d'être lue. */
+    Object.assign(SIM_XT.saisie,SIM_XT_AVANCE_DEFAUTS);
+    if(simXtAvanceEcarts().length!==0||simXtAvanceOuvert())
+      throw new Error("retour au défaut : le groupe doit se replier à nouveau");
+
+    /* LE REPLI RESTE DEMANDABLE À LA MAIN quand rien n'est modifié. */
+    SIM_XT.avance=true;
+    if(!simXtAvanceOuvert())
+      throw new Error("déplier à la main doit marcher");
+  }finally{
+    Object.assign(SIM_XT.saisie,memeSaisie);
+    SIM_XT.avance=memeAvance;
+  }
+});
+
+T("crosstalk : les rangées expertes sont bien dans le groupe repliable, et les autres dehors",()=>{
+  /* CE QUI EST EN FAÇADE EST CE QUE LE DESSIN NE CONTIENT PAS : la masse, le
+     front, l'amplitude, le budget — le SIGNAL —, plus le seuil de
+     confirmation, qui décide de ce qui entre dans le tableau. Tout ce qui
+     décrit la MÉTHODE est derrière le repli, bande et points compris : ils se
+     déduisent du dessin (« déduite de la carte » est cochée d'office) et le
+     serveur les recalcule alors, si bien qu'y taper quoi que ce soit ne
+     servait à rien. Un déplacement d'une rangée d'un côté à l'autre est un
+     choix d'ergonomie, et il doit se voir dans un essai plutôt que se
+     découvrir à l'usage. */
+  const h=simCorpsCrosstalk();
+  const i=h.indexOf('id="simXtAvance"');
+  if(i<0)throw new Error("le groupe des avancés est absent du panneau");
+
+  const facade=h.slice(0,i), replie=h.slice(i);
+  for(const id of ["simTr","simSwing","simBruit","simMarge","simXtSeuil"])
+    if(facade.indexOf('"'+id+'"')<0)
+      throw new Error(id+" doit rester en façade");
+  for(const id of ["simF2","simN","simXtBandeAuto",
+                   "simXtDist","simXtLong","simXtZ0","simXtFen",
+                   "simXtBeta","simXtPad","simXtRes","simXtEcartV","simXtAsym",
+                   "simXtDesac","simXtRisque","simXtVit","simXtAdj",
+                   "simXtAgreger"])
+    if(replie.indexOf('"'+id+'"')<0)
+      throw new Error(id+" doit être dans le groupe repliable");
+  /* ET LA FAÇADE TIENT SUR UNE SEULE RANGÉE. C'est la mesure de tout ce
+     changement : un panneau qui en portait trois faisait chercher lesquels
+     des dix-neuf réglages comptaient. */
+  /* LE NOM DE CLASSE EXACT : `simBarF` est aussi le début de `simBarFixe`,
+     celle des rangées qui ne sont pas des réglages — la question posée, les
+     boutons —, et les compter ici mesurait autre chose que la façade. */
+  const rangees=facade.match(/pnl-bar simBarF(?![\w-])/g)||[];
+  if(rangees.length!==1)
+    throw new Error("la façade doit tenir en une rangée de réglages : "+
+                    rangees.length);
+
+  /* LA RANGÉE DES BOUTONS RESTE DEHORS, sans quoi replier les avancés
+     emporterait « Analyser ». */
+  if(replie.indexOf('id="simXtGo"')<0||facade.indexOf('id="simXtGo"')>=0)
+    throw new Error("Analyser doit être APRÈS le groupe, hors de lui");
+  const fin=h.indexOf("</div>",h.indexOf('id="simXtVit"'));
+  if(h.indexOf('id="simXtGo"')<fin)
+    throw new Error("Analyser doit venir après la fermeture du groupe");
+});
+
+T("crosstalk : l'analyse géométrique n'écrit ni volts ni budget, et désigne une plage",()=>{
+  /* LE MODE SIMPLE REND K_b, LE NEXT SATURÉ — une BORNE. Toute la page
+     savait convertir une fraction de l'agresseur en volts et la comparer au
+     budget : appliqué à K_b, ce réflexe écrivait « 544 mV » et « au-dessus du
+     budget » sur une victime qui, sous un front de 10 ns, en prend cinquante
+     fois moins. On vérifie ici chaque endroit qui le faisait : la fiche, la
+     carte et le rapport exporté. */
+  const axe=[], vic=[], loin=[];
+  for(let x=0;x<=40;x++){
+    axe.push(x);
+    vic.push(x>=12&&x<=22?0.16:0.016);
+    loin.push(0.0065);
+  }
+  const ligne=(net,v,conf)=>({agresseur:"CLK", victime:net, sens:"next",
+    confirmee:conf, valeurs:v, max:Math.max(...v), max_db:-16,
+    resolution:1, localise:true});
+  const R={mode:"simple", principal:"CLK", longueur:40, carte:"banc",
+    couples:[
+      {agresseur:"CLK", victime:"VIC", rang:1, confirmee:true, kb_max:0.16,
+       kb_max_pc:16, kb_median:0.016, kf_td_ps:9.6, longement:40,
+       distance:0.1, bloc_max:18, resolution_next:1, cote:"gauche"},
+      {agresseur:"CLK", victime:"LOIN", rang:2, confirmee:false,
+       kb_max:0.0065, kb_max_pc:0.65, kb_median:0.0065, kf_td_ps:1.9,
+       longement:40, distance:1.05, bloc_max:18, resolution_next:1,
+       cote:"droite", raison:"sous le seuil quel que soit le front"}],
+    carte_chaleur:{axe:axe, lignes:[ligne("VIC",vic,true),
+                                    ligne("LOIN",loin,false)],
+                   max:0.16, zones:[], espacements:{}},
+    axes:{next:{lignes:2, raison:""},
+          fext:{lignes:0, raison:"sans temps de montée, pas de niveau"}},
+    risques:[], actions:[], graves:[], avertissements:[], desaccords:[],
+    etape0:{candidats:[]}, reglages:{seuil_db:-40}};
+  const memeRes=SIM_XT.res, memeMode=SIM_XT.mode, memeSens=SIM_XT.sens;
+  try{
+    SIM_XT.res=R; SIM_XT.mode="simple"; SIM_XT.sens="next";
+
+    /* UNE PLAGE, PAS LE PREMIER ÉCHANTILLON DU PLATEAU ; « uniforme » quand
+       le plateau couvre tout. */
+    if(simXtGeoOu(R,"VIC")!=="de 12,0 à 22,0 mm")
+      throw new Error("la section serrée doit se dire en plage : "+
+                      simXtGeoOu(R,"VIC"));
+    if(simXtGeoOu(R,"LOIN")!=="de 0,0 à 40,0 mm, uniforme sur tout son "+
+                              "longement")
+      throw new Error("un profil plat n'a pas de point chaud : "+
+                      simXtGeoOu(R,"LOIN"));
+
+    const tension=/\d\s*(mV|µV)\b|\d,\d+\s*V\b/;
+    const verdict=/(SOUS|AU-DESSUS D)U BUDGET/i;
+    const vues={fiche:simXtResume(R), carte:simXtCarte(R),
+                rapport:simXtRapportTexte(R)};
+    for(const k in vues){
+      const m=vues[k].match(tension);
+      if(m)throw new Error("le mode simple écrit une tension dans la "+k+
+                           " : « "+m[0]+" »");
+      if(verdict.test(vues[k]))
+        throw new Error("le mode simple juge contre un budget dans la "+k);
+    }
+    /* CE QU'IL ÉCRIT À LA PLACE, ET POURQUOI LE FEXT N'A PAS DE COURBE. */
+    if(vues.carte.indexOf("borne")<0)
+      throw new Error("la carte doit dire que K_b est une borne");
+    if(vues.carte.indexOf("sans temps de montée")<0)
+      throw new Error("la carte doit dire pourquoi le FEXT n'a pas de courbe");
+    if(vues.rapport.indexOf("ANALYSE GÉOMÉTRIQUE")<0||
+       vues.rapport.indexOf("Aucune transformée")<0)
+      throw new Error("le rapport doit décrire le calcul qui a eu lieu");
+
+    /* UNE VOISINE NON CALCULÉE NE DISPARAÎT PAS DU CLASSEMENT. Sur une vraie
+       carte, c'était celle à 0,2 mm sur 18 mm, là où le plan manque : K_b
+       nul faute de section résolue, et filtrée comme « ne couple pas ». */
+    R.couples.push({agresseur:"CLK", victime:"PRES", rang:3,
+      confirmee:false, non_calcule:true, mesure_partielle:true, kb_max:0,
+      kb_max_pc:0, kb_median:0, kf_td_ps:0, longement:18, distance:0.21,
+      bloc_max:18, cote:"gauche"});
+    const fiche=simXtResume(R), rap=simXtRapportTexte(R);
+    if(fiche.indexOf("PRES")<0||fiche.indexOf("NON CALCULÉE")<0)
+      throw new Error("la fiche doit nommer la voisine non calculée");
+    if(rap.indexOf("« PRES »")<0||rap.indexOf("NON CALCULÉES")<0)
+      throw new Error("le rapport doit nommer la voisine non calculée");
+
+    /* DES NOMS DE COMMANDE, ET LA QUESTION DANS L'INFOBULLE. */
+    const corps=simCorpsCrosstalk();
+    if(corps.indexOf(">Analyse géométrique</button>")<0||
+       corps.indexOf(">Analyse électrique</button>")<0)
+      throw new Error("les deux modes doivent s'appeler « Analyse géométrique »"+
+                      " et « Analyse électrique »");
+    if(corps.indexOf("ça couple</button>")>=0)
+      throw new Error("« … ça couple » n'est plus un nom de bouton");
+    if(corps.indexOf("OÙ ÇA COUPLE")<0||corps.indexOf("COMBIEN ÇA COUPLE")<0)
+      throw new Error("la question doit rester dans l'infobulle");
+
+    /* LES CHAMPS DU SIGNAL PARTENT, LE SEUIL ET LES AVANCÉS RESTENT : le
+       seuil trie par K_b, la présélection sert aux deux modes. */
+    simXtModeAppliquer();
+    const vu=id=>document.getElementById(id).style.display!=="none";
+    for(const id of ["simGrTr","simGrSwing","simGrBruit","simGrMarge",
+                     "simXtImportSch","simBarBande","simBarPorts",
+                     "simBarFenetre"])
+      if(vu(id))throw new Error(id+" doit disparaître en mode simple");
+    if(!vu("simBarSignal"))
+      throw new Error("la rangée du seuil doit rester en mode simple");
+    SIM_XT.mode="precis";
+    simXtModeAppliquer();
+    for(const id of ["simGrTr","simGrSwing","simBarBande"])
+      if(!vu(id))throw new Error(id+" doit revenir en mode précis");
+  }finally{
+    SIM_XT.res=memeRes; SIM_XT.mode=memeMode; SIM_XT.sens=memeSens;
+  }
+});
+
+T("crosstalk : en mode précis, un couplage non calculé ne s'affiche pas à −300 dB",()=>{
+  /* SUR UNE VRAIE CARTE, la voisine à 0,2 mm sur 18 mm, là où le plan
+     manque, sortait « −300,0 dB · 0 mV · couplage à −300.0 dB, sous le
+     seuil » : la mieux découplée de la carte, en apparence, alors que c'est
+     souvent la plus couplée. */
+  const R={mode:"precis", principal:"CLK", longueur:40, carte:"banc",
+    couples:[
+      {agresseur:"CLK", victime:"PROCHE", role:"victime", confirmee:false,
+       non_calcule:true, mesure_partielle:false, longueur_non_calculee:18,
+       next_db:-300, fext_db:-300, pire_db:-300, longement:18, distance:0.21,
+       raison:"couplage NON CALCULÉ — aucune section droite résolue"},
+      {agresseur:"CLK", victime:"LOIN", role:"victime", confirmee:true,
+       non_calcule:false, mesure_partielle:true, longueur_non_calculee:4,
+       next_db:-30, fext_db:-35, pire_db:-30, longement:40, distance:0.5,
+       raison:""}],
+    risques:[], actions:[], graves:[], avertissements:[], desaccords:[],
+    asymetries:[], etape0:{candidats:[]}, reglages:{seuil_db:-40},
+    validation:{}, carte_chaleur:null};
+  const memeRes=SIM_XT.res, memeMode=SIM_XT.mode;
+  try{
+    SIM_XT.res=R; SIM_XT.mode="precis";
+    const tab=simXtTableauCouples(R), fiche=simXtResume(R),
+          rap=simXtRapportTexte(R);
+    for(const [nom,h] of [["tableau",tab],["fiche",fiche],["rapport",rap]])
+      if(/-300|−300/.test(h))
+        throw new Error("le "+nom+" affiche encore le plancher de −300 dB");
+    if(tab.indexOf("non calculé")<0)
+      throw new Error("le tableau doit écrire « non calculé »");
+    if(fiche.indexOf("PROCHE")<0||fiche.indexOf("NON CALCULÉE")<0)
+      throw new Error("la fiche doit nommer la voisine non calculée");
+    if(rap.indexOf("[NON CALCULÉ] CLK → PROCHE")<0)
+      throw new Error("le rapport doit dire « non calculé » à l'étape 0b");
+    /* CALCULÉE EN PARTIE : le niveau est un plancher, et « ≥ » le dit. */
+    if(tab.indexOf("≥ -30,0 dB")<0&&tab.indexOf("≥ −30,0 dB")<0)
+      throw new Error("un niveau partiel doit se lire « ≥ » : "+
+                      tab.replace(/<[^>]+>/g," ").slice(0,300));
+    if(tab.indexOf("plancher")<0)
+      throw new Error("un niveau partiel doit porter l'étiquette « plancher »");
+    /* ET UNE VOISINE PARTIELLE N'EST PAS UNE NON-CALCULÉE. */
+    if(fiche.indexOf("LOIN (")>=0)
+      throw new Error("une voisine calculée en partie n'est pas non calculée");
+  }finally{
+    SIM_XT.res=memeRes; SIM_XT.mode=memeMode;
+  }
+});
+
+T("crosstalk : l'analyse géométrique classe par K_b·2T_d, et dit quand un front rapide change le premier",()=>{
+  /* K_b SEUL IGNORAIT LA LONGUEUR. Le serveur classe par K_b·2T_d — le NEXT
+     sous la saturation — et la page retriait par K_b : trois millimètres
+     serrés repassaient devant trente-six millimètres modérés qui, sous 1 ns,
+     prennent 3,6 fois plus. Elle écrivait aussi ce classement « vrai pour
+     n'importe quel front ». Chiffres tirés de python/test/banc-crosstalk.py. */
+  const R={mode:"simple", principal:"CLK", longueur:40, carte:"banc",
+    couples:[
+      {agresseur:"CLK", victime:"LONG", rang:1, rang_kb:2, confirmee:true,
+       kb_max:0.0442, kb_max_pc:4.42, kb_median:0.0442, kf_td_ps:5,
+       kb_2td_ps:19.39, t_sature_ps:438.7, longement:36, distance:0.35,
+       bloc_max:36, resolution_next:1, cote:"droite"},
+      {agresseur:"CLK", victime:"COURT", rang:2, rang_kb:1, confirmee:true,
+       kb_max:0.1397, kb_max_pc:13.97, kb_median:0.1397, kf_td_ps:1,
+       kb_2td_ps:5.06, t_sature_ps:36.2, longement:3, distance:0.10,
+       bloc_max:3, resolution_next:1, cote:"gauche"}],
+    carte_chaleur:null, axes:{next:{lignes:0, raison:""},
+                              fext:{lignes:0, raison:""}},
+    risques:[], actions:[], graves:[], avertissements:[], desaccords:[],
+    etape0:{candidats:[]}, reglages:{seuil_db:-40}};
+
+  const rang=simXtGeoRang(R).map(c=>c.victime).join(",");
+  if(rang!=="LONG,COURT")
+    throw new Error("le classement doit suivre K_b·2T_d, pas K_b : "+rang);
+  /* UN RÉSULTAT D'AVANT `kb_2td_ps` SE CLASSE ENCORE, par K_b. */
+  const ancien=JSON.parse(JSON.stringify(R));
+  for(const c of ancien.couples){ delete c.kb_2td_ps; delete c.t_sature_ps; }
+  if(simXtGeoRang(ancien).map(c=>c.victime).join(",")!=="COURT,LONG")
+    throw new Error("sans kb_2td_ps, le repli doit être K_b");
+
+  const fiche=simXtResume(R), tab=simXtGeoTableau(R),
+        rap=simXtRapportTexte(R);
+  if(fiche.indexOf("Le plus couplé est <b>LONG</b>")<0)
+    throw new Error("la fiche doit désigner LONG en tête");
+  if(!/front plus rapide que 439 ps, c’est <b>COURT<\/b>/.test(fiche))
+    throw new Error("la fiche doit dire qu'un front rapide met COURT en tête");
+  if(/classement-ci est vrai pour n’importe quel front/.test(fiche))
+    throw new Error("la fiche promet encore un classement universel");
+  if(fiche.indexOf("min(K<sub>b</sub>")<0)
+    throw new Error("la fiche doit donner la règle min(K_b, K_b·2T_d/t_r)");
+  if(tab.indexOf("K<sub>b</sub>·2T<sub>d</sub></th>")<0||
+     tab.indexOf("19,4 ps")<0)
+    throw new Error("le tableau doit porter la colonne K_b·2T_d");
+  if(rap.indexOf("1. « LONG »  Kb·2Td 19,4 ps")<0||
+     rap.indexOf("saturé sous 36 ps")<0)
+    throw new Error("le rapport doit classer par Kb·2Td et dire la saturation");
+  if(rap.indexOf("Ce classement vaut pour tout")>=0)
+    throw new Error("le rapport promet encore un classement universel");
+});
+
+T("crosstalk : le verdict se lit sur la crête temporelle, pas sur le module au genou",()=>{
+  /* LE MODULE DE S AU GENOU MAJORE LE PIC D'ENVIRON DEUX FOIS. Sur une vraie
+     carte : −32,6 dB au genou, −41,6 dB de crête — 27 mV contre 77 mV. Le
+     verdict et les volts doivent sortir de la crête. */
+  const R={mode:"precis", principal:"CLK", longueur:18, carte:"banc",
+    z_reference:50, f_genou:3.5e8, f_genou_source:"saisi",
+    couples:[{agresseur:"CLK", victime:"VIC", role:"victime",
+      confirmee:true, non_calcule:false, mesure_partielle:false,
+      next_db:-12.7, fext_db:-12.6, pire_db:-12.7, pire_db_genou:-32.6,
+      crete:0.0083, crete_db:-41.6, crete_next:0.0083, crete_fext:0.004,
+      crete_t_r:1e-9, f_pire:3e10, longement:7, distance:0.21, raison:""}],
+    risques:[], actions:[], graves:[], avertissements:[], desaccords:[],
+    asymetries:[], etape0:{candidats:[]}, reglages:{seuil_db:-40},
+    validation:{}, carte_chaleur:null};
+  const memeRes=SIM_XT.res, memeMode=SIM_XT.mode;
+  try{
+    SIM_XT.res=R; SIM_XT.mode="precis";
+    const n=simXtNiveau(R);
+    if(Math.abs(n.db_retenu-(-41.6))>1e-9)
+      throw new Error("le niveau retenu doit être la crête : "+n.db_retenu);
+    if(!n.en_crete)throw new Error("le verdict doit se savoir « en crête »");
+    const fiche=simXtResume(R);
+    if(fiche.indexOf("crête de la forme d’onde au bout proche")<0)
+      throw new Error("la phrase du verdict doit dire qu'elle lit la crête");
+    if(fiche.indexOf("chargée sur 50 Ω")<0)
+      throw new Error("la crête doit dire sur quelle charge elle est calculée");
+    const tab=simXtTableauCouples(R);
+    if(tab.indexOf("bout proche")<0)
+      throw new Error("le tableau doit dire à quel bout tombe la crête");
+  }finally{
+    SIM_XT.res=memeRes; SIM_XT.mode=memeMode;
+  }
+});
+
+T("crosstalk : un conducteur routé en VERSEMENT de cuivre longe comme une piste",()=>{
+  /* CE QUI ÉTAIT FAUX, ET QUI NE SE VOYAIT PAS. Certains exporteurs rendent
+     une piste en `<Contour><Polygon>` et non en `<Line>` : le modèle la range
+     alors en `plans`. `simVoisinageIpc` ne parcourait que `pistes` et `arcs`,
+     si bien qu'une victime ainsi dessinée était PUREMENT INVISIBLE au
+     crosstalk — l'analyse rendait « aucune victime retenue » sur une carte où
+     la victime est à un demi-millimètre. Sur Design1.xml, c'était le cas de
+     `victim3`, et la configuration « plan + piste de garde » ne rendait
+     simplement rien. */
+  const bande=(x1,y1,x2,y2)=>[x1,y1, x2,y1, x2,y2, x1,y2];
+
+  /* La victime : un versement long et étroit, à 0,65 mm de l'axe de la piste
+     sélectionnée — donc 0,25 mm de cuivre à cuivre. */
+  carte({nets:["N$1","GND","VIC"],
+         plans:[{c:0, n:2, g:[{o:bande(X1,Y+0.45,X2,Y+0.85), t:[]}]}]});
+  V.net=0;
+  let g=simSegments();
+  let refus=[];
+  let v=simVoisinageIpc(g.envoi,g.objets,false,refus);
+  if(v.length!==1)
+    throw new Error(v.length+" tronçon(s) de voisinage au lieu de 1 : un "+
+                    "versement routé doit longer comme une piste");
+  if(v[0].net!=="VIC")throw new Error("net « "+v[0].net+" »");
+  if(Math.abs(v[0].width-0.4)>1e-6)
+    throw new Error("largeur rendue "+v[0].width+" au lieu de 0.4");
+  /* L'AXE EST AU MILIEU DE LA BANDE, pas sur un de ses bords : c'est lui qui
+     fixe l'écart, donc le couplage. */
+  if(Math.abs(v[0].start[1]-(Y+0.65))>1e-6||
+     Math.abs(v[0].end[1]-(Y+0.65))>1e-6)
+    throw new Error("axe en y = "+v[0].start[1]+" au lieu de "+(Y+0.65));
+  if(Math.abs(Math.abs(v[0].end[0]-v[0].start[0])-(X2-X1))>1e-6)
+    throw new Error("longueur "+Math.abs(v[0].end[0]-v[0].start[0]));
+  if(refus.length)
+    throw new Error("une bande reconnue ne doit pas être signalée comme refus");
+
+  /* UNE FLAQUE N'EST PAS UNE PISTE, et son refus n'est pas une nouvelle : on
+     ne l'envoie pas, et on n'en parle pas. Signaler chaque versement d'une
+     carte arrosée noierait les refus qui, eux, comptent. */
+  carte({nets:["N$1","GND","VIC"],
+         plans:[{c:0, n:2, g:[{o:bande(25,25,35,35), t:[]}]}]});
+  V.net=0;
+  g=simSegments(); refus=[];
+  v=simVoisinageIpc(g.envoi,g.objets,false,refus);
+  if(v.length)throw new Error("une flaque de 10 × 10 mm n'est pas un conducteur");
+  if(refus.length)throw new Error("une flaque refusée n'a pas à être signalée");
+
+  /* DU CUIVRE ÉTROIT QU'ON N'A PAS SU DÉCRIRE SE DIT. Un coude ne se ramène
+     pas à une bande droite sans inventer son tracé : on le refuse — mais le
+     taire rendrait « aucune victime » exactement comme avant le correctif. */
+  carte({nets:["N$1","GND","VIC"],
+         plans:[{c:0, n:2, g:[{o:[20,Y+0.45, 21.5,Y+0.45, 21.5,Y+1.95,
+                                  21.1,Y+1.95, 21.1,Y+0.85, 20,Y+0.85],
+                               t:[]}]}]});
+  V.net=0;
+  g=simSegments(); refus=[];
+  v=simVoisinageIpc(g.envoi,g.objets,false,refus);
+  if(v.length)throw new Error("un coude ne doit pas partir comme bande droite");
+  if(refus.length!==1||refus[0].net!=="VIC")
+    throw new Error("le cuivre étroit refusé doit être signalé : "+
+                    JSON.stringify(refus));
+
+  /* Les deux bornes de la reconnaissance, prises à part. */
+  if(simRegionEnBande(bande(0,0,20,0.4))===null)
+    throw new Error("un rectangle long et mince EST une bande");
+  if(simRegionEnBande(bande(0,0,2,1.6))!==null)
+    throw new Error("un rectangle trapu n'est pas une bande");
+});
+
+T("une couche de signal qui porte deux îlots de masse n'est pas un plan",()=>{
+  /* CE QUI ÉTAIT FAUX. `ltAutoRole` lisait le net du plus grand versement de
+     la couche SANS regarder combien il en couvrait : quelques thermals GND
+     suffisaient à faire passer une couche de signal pour une masse. Sur
+     Design1.xml, Conductor-1 — la couche des pistes analysées, 6,8 % de cuivre
+     plein — partait au serveur en `role:"plane"`. Une couche de signal
+     annoncée comme plan de référence fausse la recherche du plan le plus
+     proche, donc la hauteur, donc [C] et [L]. */
+  const bande=(x1,y1,x2,y2)=>[x1,y1, x2,y1, x2,y2, x1,y2];
+  carte({nets:["N$1","GND"],
+         plans:[{c:0, n:1, g:[{o:bande(2,2,8,8), t:[]}]},
+                {c:0, n:1, g:[{o:bande(52,2,58,8), t:[]}]}]});
+  ltPreparer();
+  const c0=LT.cu[0];
+  if(c0.plan)
+    throw new Error("3 % de cuivre de masse ne font pas un plan de référence");
+  if(ltAutoRole(c0)!=="signal")
+    throw new Error("rôle « "+ltAutoRole(c0)+" » au lieu de « signal »");
+  const st=simStackupIpc().layers.find(l=>l.name===c0.nom);
+  if(st.role!=="signal")
+    throw new Error("l'empilage envoyé annonce « "+st.role+" » pour la couche "+
+                    "des pistes");
+
+  /* LE SEUIL JOUE DANS L'AUTRE SENS AUSSI : arrosée, la même couche EST un
+     plan, et son net dit lequel. Sans quoi on aurait remplacé un faux par un
+     autre. */
+  carte({nets:["N$1","GND"], plans:[{c:0, n:1, g:[{o:bande(2,2,58,38), t:[]}]}]});
+  ltPreparer();
+  if(!LT.cu[0].plan||ltAutoRole(LT.cu[0])!=="gnd")
+    throw new Error("une couche arrosée de masse reste un plan de masse");
+});
+
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
 process.exit(ko?1:0);
+
 

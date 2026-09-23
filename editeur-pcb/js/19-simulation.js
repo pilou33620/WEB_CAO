@@ -1328,7 +1328,10 @@ function simProjSegmentSurPiste(tSource, u1, u2, tCible){
   const q2=projOnSeg(p2.x, p2.y, tCible);
   const d1=dist(p1.x, p1.y, q1.x, q1.y);
   const d2=dist(p2.x, p2.y, q2.x, q2.y);
-  if(d1>4.0||d2>4.0)return null;
+  const pMid=trkAt(tSource, (u1+u2)/2);
+  const qMid=projOnSeg(pMid.x, pMid.y, tCible);
+  const dMid=dist(pMid.x, pMid.y, qMid.x, qMid.y);
+  if(d1>4.0&&d2>4.0&&dMid>4.0)return null;
   const v1=simTrackU(tCible, q1);
   const v2=simTrackU(tCible, q2);
   const minU=Math.max(0, Math.min(v1, v2));
@@ -1381,8 +1384,8 @@ function simZTraceLot(c,lot){
       }
       if(!netVoisin)netVoisin=netGlobal;
       if(!netVoisin)continue;
-      const vt=simPistePartenaire(s.obj.trk, netVoisin);
-      if(vt){
+      const cands=(S.tracks||[]).filter(t=>t.l===s.obj.trk.l&&t.net===netVoisin&&t!==s.obj.trk);
+      for(const vt of cands){
         const proj=simProjSegmentSurPiste(s.obj.trk, s.obj.u1, s.obj.u2, vt);
         if(proj){
           passesDiff.push({s, vt, u1:proj.u1, u2:proj.u2});
@@ -2889,6 +2892,119 @@ function simDocPcb(liste,opts){
 }
 
 /* ==========================================================================
+   SIMULATION DE PAIRE DIFFÉRENTIELLE (PISTE 1 / PISTE 2)
+   ========================================================================== */
+function simDocDiffPcb(piste1, piste2, opts){
+  opts = opts || (typeof simSaisie === "function" ? simSaisie() : {});
+  let tracks1 = [], tracks2 = [];
+  const sel = [...S.sel.tracks].filter(t => trkLen(t) > 0);
+
+  if (piste1) {
+    const s1 = String(piste1).trim().toLowerCase();
+    tracks1 = S.tracks.filter(t => (t.net === piste1 || (t.net && t.net.trim().toLowerCase() === s1)) && trkLen(t) > 0);
+  }
+  if (piste2) {
+    const s2 = String(piste2).trim().toLowerCase();
+    tracks2 = S.tracks.filter(t => (t.net === piste2 || (t.net && t.net.trim().toLowerCase() === s2)) && trkLen(t) > 0);
+  }
+
+  // Si non trouvées par nom exact mais qu'on a des pistes sélectionnées sur le PCB :
+  if ((!tracks1.length || !tracks2.length) && sel.length >= 2) {
+    const parNet = new Map();
+    for (const t of sel) {
+      const n = t.net || ("anonyme_" + (t.id || 0));
+      if (!parNet.has(n)) parNet.set(n, []);
+      parNet.get(n).push(t);
+    }
+    const entries = [...parNet.entries()];
+    if (entries.length >= 2) {
+      if (!tracks1.length) { tracks1 = entries[0][1]; piste1 = entries[0][0]; }
+      if (!tracks2.length) { tracks2 = entries[1][1]; piste2 = entries[1][0]; }
+    } else if (sel.length === 2) {
+      if (!tracks1.length) { tracks1 = [sel[0]]; piste1 = sel[0].net || "Piste_1"; }
+      if (!tracks2.length) { tracks2 = [sel[1]]; piste2 = sel[1].net || "Piste_2"; }
+    }
+  }
+
+  if (!tracks1.length) {
+    return {
+      erreur: "Piste 1 introuvable ou ne contient aucun cuivre.",
+      conseil: "Sélectionnez la piste sur le circuit et cliquez sur 🎯 Piste 1, ou saisissez son nom de net."
+    };
+  }
+  if (!tracks2.length) {
+    return {
+      erreur: "Piste 2 introuvable ou ne contient aucun cuivre.",
+      conseil: "Sélectionnez la 2ème piste sur le circuit et cliquez sur 🎯 Piste 2, ou saisissez son nom de net."
+    };
+  }
+
+  const g1 = simSegments(tracks1);
+  if (!g1.envoi.length) {
+    return { erreur: "La Piste 1 ne porte aucun tronçon exploitable." };
+  }
+  const g2 = simSegments(tracks2);
+  if (!g2.envoi.length) {
+    return { erreur: "La Piste 2 ne porte aucun tronçon exploitable." };
+  }
+
+  const nom1 = piste1 || tracks1[0].net || "Piste_1";
+  const nom2 = piste2 || tracks2[0].net || "Piste_2";
+
+  if (String(nom1).trim().toLowerCase() === String(nom2).trim().toLowerCase()) {
+    const part = (typeof simDiffPartenaireNom === "function") ? simDiffPartenaireNom(nom1) : "";
+    return {
+      erreur: "Piste 1 et Piste 2 ont le même net (« " + nom1 + " »).",
+      conseil: "Une paire différentielle nécessite 2 pistes distinctes." + (part ? " Partenaire suggéré : « " + part + " »." : "")
+    };
+  }
+
+  // Voisinage ciblé : les segments de la Piste 2
+  const voisinage = g2.envoi.slice();
+
+  // Y adjoindre la masse coplanaire si déclarée pour tenir compte des blindages
+  const refs = simRefSet();
+  if (refs.size) {
+    const voisins1 = simVoisinagePcb(tracks1);
+    for (const v of voisins1) {
+      if (refs.has(v.net) && v.net !== nom2) {
+        voisinage.push(v);
+      }
+    }
+  }
+
+  const notes = [];
+  if (!refs.size) {
+    notes.push("Aucun net de masse retenu : le cuivre qui borde la piste sur sa propre couche n'est pas compté. Choisissez la masse dans la barre du panneau.");
+  }
+
+  return {
+    doc: {
+      carte: SIM_PCB.carte(), net: nom1,
+      stackup: simStackup(),
+      geometry: { objects: g1.envoi },
+      vias: g1.vias || [],
+      ports: [{id: 1, impedance: opts.z0 || 50}, {id: 2, impedance: opts.z0 || 50}],
+      voisinage: voisinage,
+      paires: [[nom1, nom2]],
+      cible_diff: opts.cibleDiff || (typeof SIM !== "undefined" && SIM.saisie && SIM.saisie.cibleDiff) || 100,
+      analyse: {
+        f_debut: opts.f1, f_fin: opts.f2, points: opts.points,
+        f_centre: opts.fc, temps_montee: opts.tr || 0,
+        amplitude_v: (typeof SIM !== "undefined" && SIM.saisie && SIM.saisie.swing) || 0,
+        z_ref_diff: opts.cibleDiff || (typeof SIM !== "undefined" && SIM.saisie && SIM.saisie.cibleDiff) || 100
+      }
+    },
+    objets: g1.objets,
+    portee: nom1 + " / " + nom2 + " (Paire diff)",
+    titre: nom1 + " / " + nom2 + " · Paire différentielle",
+    notes: notes,
+    couture: g1.couture,
+    voisins: g1.voisins
+  };
+}
+
+/* ==========================================================================
    CROSSTALK — CE QUE SEULE LA PAGE PEUT MESURER
    --------------------------------------------------------------------------
    LE SERVEUR NE VOIT QUE CE QU'ON LUI ENVOIE, et la section Crosstalk demande
@@ -3052,8 +3168,14 @@ function simXtFentes(par,refs){
   /* UN SEUL POINT SANS CUIVRE N'EST PAS UNE FENTE : c'est le pas de sonde qui
      tombe dans un dégagement d'antipad. On garde ce qui dure au moins deux
      pas — en deçà, on inonderait la carte de marques que rien ne justifie. */
+  /* `plans` PART À CÔTÉ DE `quoi` : le serveur retire ces couches-là de
+     l'empilage sur les blocs concernés, pour que la section y soit résolue
+     sans une référence qui n'y est pas. Il ne doit pas avoir à extraire un nom
+     de couche d'une phrase pour cela — et `cuLabel` est déjà le nom que
+     l'empilage envoie, donc celui que `section_de_couche` compare. */
   return trous.filter(t=>t.fin-t.debut>=pas*1.5)
     .map(t=>({s:r3(t.debut), longueur:r3(t.fin-t.debut),
+              plans:t.plans.map(i=>cuLabel(i,S.cu)).filter(Boolean),
               quoi:(t.plans.length>1
                       ? "les plans de référence "+t.plans.map(i=>cuLabel(i,S.cu)).join(" / ")+
                         " n'ont pas de cuivre de retour"
@@ -3151,13 +3273,38 @@ function simXtGeometriePcb(){
 /* La surimpression elle-même. Elle passe APRÈS les cartes de chaleur et avant
    les étiquettes, comme le chevelu du retour : elle désigne des portions de
    cuivre, elle ne décrit pas le cuivre. */
+/* LA LARGEUR DU CUIVRE QU'ON RECOUVRE, en millimètres. C'est celle des
+   VICTIMES : c'est sur leur cuivre que la chaleur se peint, et non sur celui de
+   l'agresseur, qui peut être deux fois plus large sans que cela change rien à
+   ce qu'on montre. À défaut, celle de la sélection ; à défaut encore, zéro, et
+   l'appelant retombe alors sur sa part fixe. */
+function simXtLargeurCuivre(){
+  let w=0;
+  const nets=(typeof simXtVictimesVues==="function")?simXtVictimesVues():[];
+  for(const t of (S.tracks||[]))
+    if(t.w>w&&nets.indexOf(t.net)>=0)w=t.w;
+  if(w>0)return w;
+  for(const t of (S.sel&&S.sel.tracks?S.sel.tracks:[]))
+    if(t.w>w)w=t.w;
+  return w;
+}
+
+/* La surimpression elle-même. Elle passe APRÈS les cartes de chaleur et avant
+   les étiquettes, comme le chevelu du retour : elle désigne des portions de
+   cuivre, elle ne décrit pas le cuivre. */
 function simXtRisqueTrace(c,dpr){
   if(typeof simXtRisqueGeom!=="function")return;
-  /* LA CHALEUR PASSE D'ABORD, LES PLAGES PAR-DESSUS. La chaleur décrit TOUT le
-     longement, du bleu au rouge ; les plages ne désignent que les portions à
-     reprendre et portent un verdict. Peindre la chaleur au-dessus effacerait
-     le verdict sous une couleur qui n'en porte pas. */
-  simXtPeindreChaleur(c,(x,y)=>[x,y],px(2.5)+0.10);
+  /* L'ÉPAISSEUR SUIT LE CUIVRE, PAS LE ZOOM. Elle valait `px(2.5) + 0,10 mm`,
+     c'est-à-dire une part qui RÉTRÉCIT quand on s'approche : sur une piste de
+     0,8 mm, la chaleur faisait un filet de 0,5 mm en vue large et tombait vers
+     0,10 mm dès qu'on zoomait pour la regarder — plus on cherchait à voir, moins
+     il y avait à voir, et sur une piste large elle passait pour absente. La
+     visionneuse, elle, a toujours pris 1,15 fois la largeur du cuivre ; c'est la
+     même carte, et il n'y a pas de raison qu'elle se peigne de deux façons.
+     LE PLANCHER RESTE EN PIXELS, pour qu'un cuivre très fin reste désignable. */
+  const wCu=simXtLargeurCuivre();
+  const epChaleur=wCu>0?Math.max(wCu*1.15,px(2.5)):px(2.5)+0.10;
+  simXtPeindreChaleur(c,(x,y)=>[x,y],epChaleur);
   const zones=simXtRisqueGeom();
   if(!zones.length){
     /* LE POINT DE LA RÉGLETTE NE DÉPEND D'AUCUNE PLAGE : il se pose dès qu'il
@@ -3175,8 +3322,10 @@ function simXtRisqueTrace(c,dpr){
     c.strokeStyle=simXtRisqueCouleur(z);
     /* L'ÉPAISSEUR EST CELLE DU CUIVRE, débordée d'un peu : la surimpression
        doit se voir SUR la piste, pas à côté, et surtout pas la remplacer — on
-       veut continuer de reconnaître le tracé dessous. */
-    c.lineWidth=px(2.5)+0.18;
+       veut continuer de reconnaître le tracé dessous. C'est ce que le
+       commentaire disait déjà ; le code, lui, prenait une part d'écran qui ne
+       regardait aucune piste. */
+    c.lineWidth=wCu>0?Math.max(wCu*1.30,px(2.5)):px(2.5)+0.18;
     for(const m of z.traits){
       c.beginPath();
       c.moveTo(m[0],m[1]);
@@ -3186,6 +3335,14 @@ function simXtRisqueTrace(c,dpr){
   }
   c.restore();
   simXtPeindreCurseur(c,(x,y)=>[x,y],px(4.5));
+}
+
+/* Le viseur du profil d'impédance, posé sur le cuivre à l'abscisse de la
+   réglette. Le dessin est commun (`simZPeindreCurseur`) ; ce fichier ne donne
+   que le passage du monde aux pixels de l'écran. */
+function simZCurseurTrace(c,dpr){
+  if(typeof simZPeindreCurseur!=="function")return;
+  simZPeindreCurseur(c,dpr,(x,y)=>{const e=w2s(x,y);return [e.x,e.y];});
 }
 
 /* ==========================================================================
@@ -4316,6 +4473,10 @@ const SIM_PCB={
     return simDocPcb(null,opts);
   },
 
+  problemeDiff:function(p1,p2,opts){
+    return simDocDiffPcb(p1,p2,opts);
+  },
+
   /* LES LOTS : un document par parcours continu de la sélection.
 
      UN SEUL PARCOURS REND UN SEUL LOT, par le chemin exact d'avant — c'est le
@@ -4324,6 +4485,14 @@ const SIM_PCB={
      morceaux QUI NE SE TOUCHENT PAS qu'on sépare, et jusqu'ici ils partaient
      ensemble pour se faire refuser la cascade. */
   problemes:function(opts){
+    opts = opts || (typeof simSaisie === "function" ? simSaisie() : {});
+    const estDiff = (typeof SIM !== "undefined" && (SIM.analyse === "diff" || SIM.analyse === "zdiff"));
+    const p1 = opts.diffPiste1 || (typeof SIM !== "undefined" && SIM.saisie && SIM.saisie.diffPiste1) || "";
+    const p2 = opts.diffPiste2 || (typeof SIM !== "undefined" && SIM.saisie && SIM.saisie.diffPiste2) || "";
+    if (estDiff && (p1 || p2 || S.sel.tracks.size >= 2)) {
+      const p = simDocDiffPcb(p1, p2, opts);
+      return p.erreur ? p : { lots: [p] };
+    }
     if(!S.sel.tracks.size)
       return {erreur:"Aucune piste sélectionnée.",
               conseil:S.tracks.length
@@ -4448,6 +4617,17 @@ const SIM_PCB={
   /* Les deux formes dont la surimpression des zones à risque a besoin. Voir
      « LES ZONES À RISQUE SUR LE CUIVRE », plus haut. */
   xtGeometrie:simXtGeometriePcb,
+
+  /* LE POINT DU CUIVRE à la fraction t d'un tronçon, DANS LE SENS DU
+     PARCOURS (`ua` → `ub`) : c'est là que la réglette du profil d'impédance
+     pose son viseur. Pris sur la piste elle-même, arcs compris — le document
+     n'en porte que la corde. Voir « LE PROFIL LE LONG DU PARCOURS ». */
+  zPoint:function(o,t){
+    if(!o||!o.trk)return null;
+    const ua=o.ua!=null?o.ua:o.u1, ub=o.ub!=null?o.ub:o.u2;
+    const p=trkAt(o.trk,ua+(ub-ua)*t);
+    return [p.x,p.y];
+  },
 
 
   /* ---------------------------------------------------------------------
@@ -5067,31 +5247,33 @@ const SIM_PCB={
   },
 
   netsSelectionnes:function(){
-    const res = new Set();
+    const directes = new Set();
+    const secondaires = new Set();
     if(typeof S!=="undefined"){
-      if(S.hlNet) res.add(S.hlNet);
-      if(typeof focusNet==="function"){
-        const fn = focusNet();
-        if(fn) res.add(fn);
-      }
       if(S.sel){
         if(S.sel.tracks&&S.sel.tracks.size){
-          for(const t of S.sel.tracks) if(t&&t.net) res.add(t.net);
+          for(const t of S.sel.tracks) if(t&&t.net) directes.add(t.net);
         }
         if(S.sel.vias&&S.sel.vias.size){
-          for(const v of S.sel.vias) if(v&&v.net) res.add(v.net);
+          for(const v of S.sel.vias) if(v&&v.net) directes.add(v.net);
         }
         if(S.sel.fps&&S.sel.fps.size&&Array.isArray(S.fps)){
           for(const fid of S.sel.fps){
             const fp = S.fps.find(f=>f.id===fid);
             if(fp&&typeof simFpPadsNets==="function"){
               const pn = simFpPadsNets(fp);
-              for(const p of pn) if(p&&p.net) res.add(p.net);
+              for(const p of pn) if(p&&p.net) directes.add(p.net);
             }
           }
         }
       }
+      if(S.hlNet) secondaires.add(S.hlNet);
+      if(typeof focusNet==="function"){
+        const fn = focusNet();
+        if(fn) secondaires.add(fn);
+      }
     }
+    const res = new Set([...directes, ...secondaires]);
     return [...res].filter(Boolean);
   },
 
@@ -5124,7 +5306,7 @@ function simOuvrir(){
    si le conteneur n'est pas là — page en construction, banc d'essai —, et
    personne n'a à s'en soucier. */
 if(typeof simInit==="function"){
-  simInit(SIM_PCB,"simPanneau");
+  simInit(SIM_PCB,"simPanneau",{sortie:"simResultats",panneau:"resultats"});
   const b=document.getElementById("bSim");
   if(b)b.onclick=simOuvrir;
 }

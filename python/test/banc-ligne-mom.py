@@ -142,6 +142,172 @@ for er in (3.5, 4.5):
         T("er=%4.1f  w/b=%3.1f" % (er, u), essai)
 
 
+# ==========================================================================
+# Les lignes COUPLEES, contre deux etalons exterieurs
+# --------------------------------------------------------------------------
+# JUSQU'ICI, [C] ET [L] MULTI-CONDUCTEURS N'AVAIENT AUCUNE REFERENCE
+# EXTERIEURE. Tout le crosstalk en depend -- Kb, Kf, la matrice S cascadee --
+# et le banc ne verifiait que leur coherence interne : une erreur commune aux
+# deux lignes de calcul ne s'y serait pas vue.
+#
+# LA TRIPLAQUE A UNE SOLUTION EXACTE (Cohn, 1955, ruban mince) : Z pair et
+# Z impair en integrales elliptiques. Le milieu y est homogene, donc
+# k = (Ze - Zo)/(Ze + Zo) vaut EXACTEMENT Cm/C0 = Lm/L0, et Kb = k/2 -- c'est
+# l'etalon de Kb, a tout ecart.
+#
+# LE MICRORUBAN N'EN A PAS. Garg-Bahl (1979) annonce 3 % sur Ze et Zo, et
+# c'est a ce titre seulement qu'il sert ici. PAS POUR Kb NI Kf : ce sont des
+# DIFFERENCES de deux grandeurs presque egales, et les 3 % de la formule sur
+# chaque capacite y deviennent 10 a 20 % en couplage faible. Le banc l'a
+# mesure avant de s'en abstenir ; la triplaque, exacte, montre que ces 20 %
+# sont ceux de la formule et non du solveur.
+# ==========================================================================
+
+def cohn_couplee(w, s, b, er):
+    """(Ze, Zo) d'une paire triplaque centree, ruban mince -- Cohn, exacte."""
+    from scipy.special import ellipk
+
+    def z(k):
+        return (30 * np.pi / np.sqrt(er)) * ellipk(1.0 - k * k) / ellipk(k * k)
+    t1 = np.tanh(np.pi * w / (2 * b))
+    t2 = np.tanh(np.pi * (w + s) / (2 * b))
+    return z(t1 * t2), z(t1 / t2)
+
+
+def garg_bahl_couplee(w, s, h, er):
+    """(Ze, Zo) d'une paire microruban, ruban mince -- Garg et Bahl, 1979.
+
+    Capacites paire et impaire decomposees en plaque, franges, et couplage
+    par l'air et par le dielectrique ; Z = 1/(c.sqrt(C.Ca)), Ca etant la meme
+    capacite a er = 1. La ligne seule dont partent les franges est celle de
+    Hammerstad-Jensen 1980 (celle que Garg-Bahl ont calee), pas la version
+    simplifiee de `hammerstad_jensen` plus haut.
+    """
+    from scipy.special import ellipk
+    u, g = w / h, s / h
+
+    def ligne_seule(er_):
+        a = (1 + np.log((u ** 4 + (u / 52) ** 2) / (u ** 4 + 0.432)) / 49
+             + np.log(1 + (u / 18.1) ** 3) / 18.7)
+        bb = 0.564 * ((er_ - 0.9) / (er_ + 3)) ** 0.053
+        ee = (er_ + 1) / 2 + (er_ - 1) / 2 * (1 + 10 / u) ** (-a * bb)
+        f = 6 + (2 * np.pi - 6) * np.exp(-(30.666 / u) ** 0.7528)
+        z1 = 60 * np.log(f / u + np.sqrt(1 + (2 / u) ** 2))
+        return z1 / np.sqrt(ee), ee
+
+    def capacites(er_):
+        z, ee = ligne_seule(er_)
+        cp = EPSILON_0 * er_ * u
+        cf = 0.5 * (np.sqrt(ee) / (_tl.C_0 * z) - cp)
+        a = np.exp(-0.1 * np.exp(2.33 - 2.53 * u))
+        cf2 = cf / (1 + a / g * np.tanh(8 * g)) * np.sqrt(er_ / ee)
+        k = g / (g + 2 * u)
+        cga = EPSILON_0 * ellipk(1.0 - k * k) / ellipk(k * k)
+        cgd = (EPSILON_0 * er_ / np.pi * np.log(1 / np.tanh(np.pi * g / 4))
+               + 0.65 * cf * (0.02 / g * np.sqrt(er_) + 1 - er_ ** -2))
+        return cp + cf + cf2, cp + cf + cga + cgd
+
+    ce, co = capacites(er)
+    cea, coa = capacites(1.0)
+    return (1 / (_tl.C_0 * np.sqrt(ce * cea)),
+            1 / (_tl.C_0 * np.sqrt(co * coa)))
+
+
+def _paire(kind, w, s, er, **milieu):
+    """Ze, Zo, Kb, Kf et eps_eff d'une paire symetrique, par `solve_multiline`."""
+    geo = dict({"kind": kind, "t": 0.0, "epsilon_r": er}, **milieu)
+    geo["conducteurs"] = [{"w": w, "x": -(w + s) / 2},
+                          {"w": w, "x": (w + s) / 2}]
+    r = solve_multiline(geo)
+    c, l = np.array(r["c"]), np.array(r["l"])
+    ze = np.sqrt((l[0, 0] + l[0, 1]) / (c[0, 0] + c[0, 1]))
+    zo = np.sqrt((l[0, 0] - l[0, 1]) / (c[0, 0] - c[0, 1]))
+    # Maxwell : la mutuelle capacitive est -c[0][1] -- meme convention que
+    # crosstalk.coefficients_couple, recalculee ici pour ne pas en dependre.
+    kb = 0.25 * (-c[0, 1] / c[0, 0] + l[0, 1] / l[0, 0])
+    kf = 0.5 * (l[0, 1] / l[0, 0] + c[0, 1] / c[0, 0])
+    return ze, zo, kb, kf, r["lignes"][0]["eps_eff"]
+
+
+def _modes_de(w, s):
+    """Les deux modes d'une paire microruban sur H, er = 4,3."""
+    return solve_multiline({"kind": "micro", "t": 0.0, "epsilon_r": 4.3,
+                            "h": H, "conducteurs": [
+                                {"w": w, "x": -(w + s) / 2},
+                                {"w": w, "x": (w + s) / 2}]})["modes"]
+
+
+print("\nPaire triplaque contre Cohn (exacte) : Ze, Zo, Kb, eps_eff")
+for u in (0.2, 0.5, 1.0):
+    for g in (0.05, 0.1, 0.3, 1.0):
+        def essai(u=u, g=g):
+            b, er = 1e-3, 4.3
+            ze, zo, kb, kf, ee = _paire("strip", u * b, g * b, er,
+                                        b=b, y0=b / 2)
+            ze_r, zo_r = cohn_couplee(u * b, g * b, b, er)
+            proche(ze, ze_r, 0.005, "Ze")
+            # LE MODE IMPAIR EST LE PLUS DUR : le champ se concentre dans
+            # l'intervalle, aux aretes -- 1,3 % au plus serre mesure.
+            proche(zo, zo_r, 0.015 if g < 0.1 else 0.01, "Zo")
+            proche(kb, (ze_r - zo_r) / (ze_r + zo_r) / 2, 0.03, "Kb")
+            # MILIEU HOMOGENE : pas de FEXT, et une seule vitesse, celle du
+            # stratifie. Le eps_eff par conducteur a vaut 4,53 ici a 0,1 mm
+            # d'ecart -- c^2.L_ii.C_ii au lieu de C_ii/C0_ii.
+            assert abs(kf) < 1e-6, ("Kf doit etre nul en triplaque", kf)
+            assert abs(ee - er) < 1e-6, ("eps_eff d'une piste couplee en"
+                                         " triplaque : %.4f au lieu de %.2f"
+                                         % (ee, er))
+        T("w/b=%3.1f  s/b=%4.2f" % (u, g), essai)
+
+print("\nPaire microruban contre Garg-Bahl (+-3 %, la precision de la formule)")
+for u in (0.5, 1.0, 2.0):
+    for g in (0.25, 0.5, 1.0, 2.0):
+        def essai(u=u, g=g):
+            ze, zo, kb, kf, ee = _paire("micro", u * H, g * H, 4.3, h=H)
+            ze_r, zo_r = garg_bahl_couplee(u * H, g * H, H, 4.3)
+            proche(ze, ze_r, 0.03, "Ze")
+            proche(zo, zo_r, 0.03, "Zo")
+            # En milieu NON homogene, le champ du mode impair passe davantage
+            # dans l'air : Kf > 0, et eps_eff tombe ENTRE les deux modes.
+            assert kf > 0, kf
+            modes = sorted(m["eps_eff"] for m in _modes_de(u * H, g * H))
+            assert modes[0] < ee < modes[1], (modes, ee)
+        T("w/h=%3.1f  s/h=%4.2f" % (u, g), essai)
+
+
+def la_triplaque_ne_deborde_plus():
+    """Le noyau spectral triplaque reste fini, et SANS avertissement.
+
+    L'ancienne ecriture calculait sinh(b1).sinh(b2) sur toute la grille puis
+    le jetait au-dela de beta.b = 350 -- mais `np.where` evalue ses deux
+    branches, et le produit passait par inf : un RuntimeWarning a chaque
+    section triplaque. Un avertissement qui sort a chaque calcul finit par ne
+    plus etre lu, et c'est le suivant, le vrai, qu'on rate.
+    """
+    import warnings
+    beta = np.logspace(-2, 7, 400)
+    y0, b, er = 0.3e-3, 1e-3, 4.3
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        g = _tl.green_spectral_strip(beta, y0, b, er)
+        solve_multiline({"kind": "strip", "t": 35e-6, "epsilon_r": er,
+                         "b": b, "y0": b / 2,
+                         "conducteurs": [{"w": 0.2e-3, "x": -0.2e-3},
+                                         {"w": 0.2e-3, "x": 0.2e-3}]})
+    assert np.all(np.isfinite(g)), "noyau non fini"
+    # LA MEME FONCTION QU'AVANT la ou l'ancienne ne debordait pas...
+    m = beta * b < 300
+    bm = beta[m]
+    ancien = (np.sinh(bm * y0) * np.sinh(bm * (b - y0)) / np.sinh(bm * b)
+              / (EPSILON_0 * er * bm))
+    assert np.max(np.abs(g[m] / ancien - 1)) < 1e-12
+    # ...ET SA LIMITE EXACTE au-dela : 1/(2 eps beta).
+    proche(g[-1] * 2 * EPSILON_0 * er * beta[-1], 1.0, 1e-12, "asymptote")
+
+
+T("le noyau triplaque ne deborde plus", la_triplaque_ne_deborde_plus)
+
+
 print("\nCe que la physique impose")
 
 
@@ -4627,6 +4793,152 @@ T("bilan d'impact physique HF et zone de vigilance du retour",
   bilan_impact_physique_hf_et_zone_de_vigilance)
 T("cascade differentielle : modes Sdd, Scc, Scd et touchstone mixte",
   la_cascade_differentielle_produit_sdd_scc_scd)
+
+
+def une_paire_envoyee_entiere_est_partagee_avant_la_cascade():
+    """Les deux moities d'une paire arrivent ensemble : on les separe ICI.
+
+    UNE PAIRE ENVOYEE ENTIERE N'EST PAS UNE LIGNE A DEUX MORCEAUX. La page
+    laisse designer les deux pistes d'un seul geste, et tout tombe alors dans
+    `geometry.objects`. Mise en cascade telle quelle, la fiche decrirait une
+    ligne unique qui saute d'un net a l'autre -- et ne trouverait AUCUN
+    couplage, la partenaire n'etant pas la ou le couplage se lit.
+
+    LE PARTAGE SE FAIT UNE FOIS, DANS `_partager_paire`, ET AVANT TOUT LE
+    RESTE. `_couplage` ne le refait pas : il recoit `objets` deja partage.
+    """
+    p_plus = _pis(0, 0, 30, 0, "SIG_P")
+    p_moins = _pis(0, 0.45, 30, 0.45, "SIG_N")
+
+    # (1) UNE PAIRE DECLAREE DECIDE SEULE de qui est la principale.
+    doc = _doc_couplage([p_plus, p_moins], [], paires=[["SIG_N", "SIG_P"]])
+    doc["net"] = ""
+    retenus = _se._partager_paire(doc, [p_plus, p_moins])
+    assert [o["net"] for o in retenus] == ["SIG_N"], retenus
+    assert [o["net"] for o in doc["voisinage"]] == ["SIG_P"], doc["voisinage"]
+    assert doc["net"] == "SIG_N", doc["net"]
+
+    # (2) SANS PAIRE DECLAREE, LE NET NOMME PAR LE DOCUMENT l'emporte, et la
+    # paire est declaree pour que `_couplage` la retrouve.
+    doc = _doc_couplage([p_plus, p_moins], [])
+    doc["net"] = "SIG_N"
+    retenus = _se._partager_paire(doc, [p_plus, p_moins])
+    assert [o["net"] for o in retenus] == ["SIG_N"], retenus
+    assert doc["paires"] == [["SIG_N", "SIG_P"]], doc["paires"]
+
+    # (3) SANS RIEN DU TOUT, L'ORDRE ALPHABETIQUE -- arbitraire, mais STABLE :
+    # deux analyses du meme dessin ne doivent pas rendre deux fiches.
+    for _ in range(5):
+        doc = _doc_couplage([p_moins, p_plus], [])
+        doc["net"] = ""
+        retenus = _se._partager_paire(doc, [p_moins, p_plus])
+        assert [o["net"] for o in retenus] == ["SIG_N"], retenus
+        assert doc["paires"] == [["SIG_N", "SIG_P"]], doc["paires"]
+
+    # (4) LE VOISINAGE DEJA FOURNI N'EST PAS JETE : la moitie versee passe
+    # DEVANT, pour survivre a l'ecretage a MAX_VOISINAGE.
+    autre = _pis(0, 1.2, 30, 1.2, "BRUIT")
+    doc = _doc_couplage([p_plus, p_moins], [autre])
+    doc["net"] = "SIG_P"
+    _se._partager_paire(doc, [p_plus, p_moins])
+    assert [o["net"] for o in doc["voisinage"]] == ["SIG_N", "BRUIT"], \
+        doc["voisinage"]
+
+    # (5) UN SEUL NET : ON NE TOUCHE A RIEN. C'est le cas ordinaire, et une
+    # ligne coupee en deux n'est pas une paire.
+    doc = _doc_couplage([p_plus, _pis(30, 0, 60, 0, "SIG_P")], [])
+    avant = list(doc["voisinage"])
+    retenus = _se._partager_paire(doc, doc["geometry"]["objects"])
+    assert len(retenus) == 2, retenus
+    assert doc["voisinage"] == avant and "paires" not in doc, doc
+
+    # (6) ET LE PARTAGE ARRIVE BIEN JUSQU'A LA CASCADE : une paire envoyee
+    # entiere, sans voisinage, rend les memes modes mixtes qu'une paire
+    # correctement separee a la main.
+    ensemble = _doc_couplage([p_plus, p_moins], [])
+    ensemble["net"] = "SIG_P"
+    ensemble["cible_diff"] = 100.0
+    res = _se.simuler(ensemble)
+    assert res["s_diff"] is not None, "la partenaire doit etre vue"
+    assert res["s_diff"]["partenaire"] == "SIG_N", res["s_diff"]["partenaire"]
+
+    separe = _doc_couplage([p_plus], [p_moins], paires=[["SIG_P", "SIG_N"]])
+    separe["net"] = "SIG_P"
+    separe["cible_diff"] = 100.0
+    ref = _se.simuler(separe)
+    assert abs(res["ligne"]["z0_moyen"] - ref["ligne"]["z0_moyen"]) < 1e-9, \
+        (res["ligne"]["z0_moyen"], ref["ligne"]["z0_moyen"])
+
+
+T("une paire envoyee entiere est partagee avant la cascade",
+  une_paire_envoyee_entiere_est_partagee_avant_la_cascade)
+
+
+def une_paire_qui_se_croise_reste_une_paire():
+    """P ET N ECHANGENT LEURS COTES, LA PAIRE NE DISPARAIT PAS.
+
+    Le cas qui l'a demande : HD2_P / HD2_N sur une carte livree, croises par
+    la couche d'en face pour suivre le brochage d'un connecteur. La partenaire
+    etait a gauche sur la premiere moitie, a droite sur la seconde ; moyennee
+    avec son signe, elle tombait sur la selection et etait ecartee comme
+    « chevauchant » -- « aucun couplage trouve » sur la paire la plus serree
+    de la carte. Le miroir rend la MEME Z differentielle qu'une paire qui ne
+    se croise pas : une section et son image ont les memes impedances.
+    """
+    n = [_pis(0, 0, 10, 0, "SIG_N"), _pis(15, 0, 25, 0, "SIG_N")]
+    croisee = _doc_couplage(n, [_pis(0, 0.5, 10, 0.5, "SIG_P"),
+                                _pis(15, -0.5, 25, -0.5, "SIG_P")],
+                            paires=[["SIG_N", "SIG_P"]])
+    droite = _doc_couplage(n, [_pis(0, 0.5, 10, 0.5, "SIG_P"),
+                               _pis(15, 0.5, 25, 0.5, "SIG_P")],
+                           paires=[["SIG_N", "SIG_P"]])
+    for d in (croisee, droite):
+        d["net"] = "SIG_N"
+    c = _se.simuler(croisee)["couplage"]
+    ref = _se.simuler(droite)["couplage"]
+    assert len(c["paires"]) == 1, ("la partenaire croisee est perdue : %s"
+                                   % [s.get("ecartes") for s in c["sections"]])
+    assert c["paires"][0]["net_voisin"] == "SIG_P", c["paires"][0]
+    assert c["sections"][0]["croisements"] == 1, c["sections"][0]
+    assert ref["sections"][0]["croisements"] == 0, ref["sections"][0]
+    proche(c["paires"][0]["z_diff"], ref["paires"][0]["z_diff"], 1e-9,
+           "Z diff d'une paire croisee contre la meme sans croisement")
+    # LA CARTE DE CHALEUR AUSSI : les deux moities sont peintes.
+    assert all(x and x.get("z_diff") for x in c["chaleur"]), c["chaleur"]
+
+
+T("une paire qui se croise reste une paire",
+  une_paire_qui_se_croise_reste_une_paire)
+
+
+def un_moignon_double_sur_deux_couches_n_est_pas_une_derivation():
+    """LA COUCHE COMPTE, SAUF AU DROIT D'UN VIA.
+
+    La piste monte au via par un moignon, et repart de l'autre cote en
+    repassant EXACTEMENT sous ce moignon avant de s'en aller. Vu de dessus,
+    le pied du moignon rejoint quatre bouts : le topologue qui ne regardait
+    pas la couche y voyait une derivation, et refusait la cascade -- donc les
+    parametres S en mode mixte de toute la paire. S'y ajoute un troncon de
+    six microns, que les pages produisent en coupant une piste : ses deux
+    bouts tombaient dans le meme noeud et y comptaient deux fois.
+    """
+    objets = [_piste(0, 0, 10, 0, 0), _piste(10, 0, 11, 1, 0),
+              _piste(11, 1, 10, 0, 6), _piste(10, 0, 10, -10, 6),
+              _piste(10, -10, 10.006, -10, 6), _piste(10.006, -10, 20, -10, 6)]
+    t = _se.simuler(_doc_via(objets))["topologie"]
+    assert t["genre"] == "chaine", ("un parcours qui repasse sous son moignon"
+                                    " est classe « %s » : %s"
+                                    % (t["genre"], t["derivations"]))
+    # LE MEME XY SANS VIA, SUR DEUX COUCHES, NE RELIE RIEN : deux morceaux.
+    t = _se.simuler(_doc_via([_piste(0, 0, 10, 0, 0),
+                              _piste(20, 0, 30, 0, 6),
+                              _piste(10, 0, 20, 0, 6)]))["topologie"]
+    assert t["morceaux"] == 2, ("deux couches jointes hors via : %d morceau(x)"
+                                % t["morceaux"])
+
+
+T("un moignon double sur deux couches n'est pas une derivation",
+  un_moignon_double_sur_deux_couches_n_est_pas_une_derivation)
 
 
 print("\n" + "-" * 62)
