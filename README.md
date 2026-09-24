@@ -104,8 +104,8 @@ Les 4 outils partagent une ergonomie cohérente et communiquent en temps réel s
 Le bouton **« Simulation EM… »** (disponible dans l'Éditeur PCB et dans la Visionneuse IPC-2581) ouvre un panneau d'analyse intégré articulé autour de **4 onglets d'interface utilisateur** reposant sur **4 moteurs Python spécialisés** et **5 chaînes de calcul physiques** :
 
 ### 1. Organisation des analyses
-- **Onglet Impédance & Z différentielle (SI)** : Résolution par la **Méthode des Moments (MoM 2D)** sur la section droite réelle de chaque tronçon (`ligne_mom.py` v2.5.0 via `simulation_em.py` v4.1.0). Carte de chaleur peinte sur le cuivre (Bleu = conforme, Rouge = trop élevée, Vert = trop faible), calcul des pertes ohmiques/diélectriques et des modes pair/impair.
-- **Onglet Crosstalk spatialisé (SI)** : Moteur dédié (`crosstalk.py` v3.2.0). Réflectométrie temporelle synthétisée à partir de la géométrie du routage (cascade multi-ports $S$, IFFT). Elle indique **où** le couplage se produit le long de la piste (NEXT et FEXT), en pourcentage et **en millivolts réels** face au budget de bruit du récepteur, en regard du profil d'espacement et des défauts de plan (fentes, pas de couture).
+- **Onglet Impédance & Z différentielle (SI)** : Résolution par la **Méthode des Moments (MoM 2D)** sur la section droite réelle de chaque tronçon (`ligne_mom.py` v2.5.0 via `simulation_em.py` v4.2.0). Carte de chaleur peinte sur le cuivre (Bleu = conforme, Rouge = trop élevée, Vert = trop faible), calcul des pertes ohmiques/diélectriques et des modes pair/impair.
+- **Onglet Crosstalk spatialisé (SI)** : Moteur dédié (`crosstalk.py` v3.6.0). Réflectométrie temporelle synthétisée à partir de la géométrie du routage (cascade multi-ports $S$, IFFT). Elle indique **où** le couplage se produit le long de la piste (NEXT et FEXT), en pourcentage et **en millivolts réels** face au budget de bruit du récepteur, en regard du profil d'espacement et des défauts de plan (fentes, pas de couture).
 - **Onglet Current Return Path & PDN (SI/PI)** : Analyse hybride du retour de courant et de l'intégrité de puissance (`ligne_mom.py` + `simulation_em.py`). Inductance de boucle de retour (formules partielles de Grover), impédance de traversée de plans et résonance de cavité PDN (Bogatin), et résonance quart d'onde des moignons de vias (stubs).
 - **Onglet Chute continue DC & Thermique (PI)** : Résolution résistive sans EM par maillage surfacique 2D et gradient conjugué Jacobi (`dc_solver.py` v2.1.0). Cartographie du potentiel et de la densité de courant, détail de résistance via par via, et double modèle thermique : **étalement physique volumique** (conduction stratifié + plans, validé IPC-2152) et **référence normative comparative IPC-2221** (conducteur isolé).
 
@@ -185,9 +185,11 @@ Les bancs d'essai s'exécutent en ligne de commande (Node.js et Python suffisent
 | **Éditeur PCB** | `python editeur-pcb/outils/build-monofichier.py && node editeur-pcb/test/harness.js` | DRC, netlist, tracé, paires diff, Gerber, Excellon, PNS |
 | **Éditeur Schématique** | `python editeur-schematique/outils/build-monofichier.py && node editeur-schematique/test/harness.js` | Connectivité, extraction des nets, multi-feuilles, nomenclature |
 | **Visionneuse IPC-2581** | `python visionneuse-ipc2581/test/banc-essai.py`<br>`node visionneuse-ipc2581/test/harness-sim.js` | Parseur XML, conformité du modèle JSON, mesure de blindage |
-| **Solveur MoM ($Z_0$)** | `python python/test/banc-ligne-mom.py` | 170 cas validés contre étalons analytiques (Hammerstad-Jensen, Wen...) |
-| **Solveur Crosstalk** | `python python/test/banc-crosstalk.py` | 45 cas : conservation de l'énergie, cascade, localisation spatiale |
+| **Solveur MoM ($Z_0$)** | `python python/test/banc-ligne-mom.py` | 199 cas validés contre étalons analytiques (Hammerstad-Jensen, Wen...) |
+| **Solveur Crosstalk** | `python python/test/banc-crosstalk.py` | 65 cas : conservation de l'énergie, cascade, localisation spatiale, références exactes (triplaque, Cohn, Garg-Bahl) |
 | **Solveur Chute DC** | `python python/test/banc-dc.py` | 42 cas validés contre résistivité théorique, vias et double modèle thermique |
+| **Scoring de placement** | `python python/test/banc-pcb-scoring.py` | 18 cas : HPWL, congestion, découplage, tiers de placement, auto-rotation |
+| **Reconnaissance de motifs** | `python python/test/banc-patterns.py` | 22 cas : régulateurs (LDO, 78xx/79xx, buck), bus I2C/SPI/UART, quartz, filtres RC, courants DC |
 
 ---
 

@@ -769,7 +769,7 @@ n'additionne pas ses victimes. La seule somme offerte est celle de plusieurs
 agresseurs **en phase** vers une victime — le cas d'un bus qui commute d'un
 bloc — et elle ne se fait que sur demande explicite.
 
-43 cas au banc Python ([python/test/banc-crosstalk.py](../python/test/banc-crosstalk.py)),
+65 cas au banc Python ([python/test/banc-crosstalk.py](../python/test/banc-crosstalk.py)),
 49 au banc de l'éditeur : la ligne adaptée contre `S₁₁ = 0` et
 `S₂₁ = exp(−jβL)` à la précision machine, la cascade contre la ligne entière,
 **le pic de NEXT qui tombe là où le longement commence** — c'est le seul cas qui

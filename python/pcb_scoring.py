@@ -20,14 +20,18 @@ from typing import Any, Dict, List, Optional, Tuple
 _RE_POWER_NET = re.compile(
     r"VCC|VDD|VEE|VBAT|3V3|3\.3V|5V|12V|\bPWR\b|AVCC|DVCC|\+V", re.IGNORECASE
 )
+# « 0V » seul, pas le 0V de 10V / 20V : ces rails ne sont pas des masses
 _RE_GROUND_NET = re.compile(
-    r"GND|AGND|DGND|VSS|0V", re.IGNORECASE
+    r"GND|VSS|(?<![\d.])0V(?!\d)", re.IGNORECASE
 )
 
-# Préfixes de repères pour la classification par tiers
-_RE_TIER_ANCHOR = re.compile(r"^(J|P|CONN|USB|SMA|HEADER|H|MH|TP)\d*", re.IGNORECASE)
-_RE_TIER_SEMI_FIXED = re.compile(r"^(U|IC|VR|REG|Q|T)\d*", re.IGNORECASE)
-_RE_TIER_FLEXIBLE = re.compile(r"^(Y|X|OSC|K|RLY|L|TRANS)\d*", re.IGNORECASE)
+# Préfixes de repères pour la classification par tiers. Le préfixe doit être
+# suivi d'un chiffre (ou finir le repère) : LED1 n'est pas une inductance L,
+# TRANS1 n'est pas un transistor T.
+_RE_TIER_ANCHOR = re.compile(r"^(J|P|CONN|USB|SMA|HEADER|H|MH|TP)(?=\d|$)", re.IGNORECASE)
+_RE_TIER_SEMI_FIXED = re.compile(r"^(U|IC|VR|REG|Q|T)(?=\d|$)", re.IGNORECASE)
+_RE_TIER_FLEXIBLE = re.compile(r"^(Y|X|OSC|K|RLY|L|TRANS)(?=\d|$)", re.IGNORECASE)
+_RE_REF_CAPA = re.compile(r"^C\d", re.IGNORECASE)
 
 
 def calculer_hpwl(footprints: List[Dict[str, Any]]) -> Tuple[float, Dict[str, float]]:
@@ -211,7 +215,7 @@ def analyser_decouplage(
         nb_pads = len(pads)
 
         is_ic = bool(_RE_TIER_SEMI_FIXED.match(ref) or nb_pads >= 8)
-        is_cap = bool(ref.upper().startswith("C") and nb_pads <= 3)
+        is_cap = bool(_RE_REF_CAPA.match(ref) and nb_pads <= 3)
 
         for pad in pads:
             net = pad.get("net", "")
@@ -398,6 +402,10 @@ def evaluer_rotation_composant(
                 ext_pads_by_net[net].append((float(p.get("x", 0.0)), float(p.get("y", 0.0))))
 
     angles_eval = [0, 90, 180, 270]
+    # Une rotation hors quart de tour s'évalue telle quelle : la comparer à 0°
+    # annoncerait un gain qui n'existe pas
+    if int(round(frot)) not in angles_eval:
+        angles_eval.append(int(round(frot)))
     resultats_angles = []
 
     for angle in angles_eval:

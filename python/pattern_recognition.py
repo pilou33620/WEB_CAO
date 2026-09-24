@@ -29,7 +29,20 @@ _RE_OPAMP = re.compile(r"(?:TL07[124]|TL08[124]|NE5532|LM358|LM324|OP07|MCP600[1
 _RE_AUDIO_AMP = re.compile(r"(?:LM386|TDA2822|TDA7297|PAM8403|TPA3116)", re.IGNORECASE)
 
 _RE_POWER_NET = re.compile(r"VCC|VDD|VBAT|3V3|3\.3V|5V|12V|\bPWR\b|AVCC|DVCC|\+V", re.IGNORECASE)
-_RE_GROUND_NET = re.compile(r"GND|AGND|DGND|VSS|0V", re.IGNORECASE)
+# « 0V » seul, pas le 0V de 10V / 20V : ces rails ne sont pas des masses
+_RE_GROUND_NET = re.compile(r"GND|VSS|(?<![\d.])0V(?!\d)", re.IGNORECASE)
+_RE_I2C_NET = re.compile(r"I2C|(?<![A-Z])(?:SDA|SCL)(?![A-Z])", re.IGNORECASE)
+# Passifs dont la valeur peut porter une fréquence (ferrite 600R@100MHz...)
+_RE_REF_PASSIF = re.compile(r"^(?:R|C|L|FB|D|TP)\d", re.IGNORECASE)
+
+
+def _nets_masse(nets: Dict[str, List[Any]]) -> List[str]:
+    """Noms des nets de masse présents dans le schéma."""
+    return [n for n in nets if _RE_GROUND_NET.search(n)]
+
+
+def _relie(pins: List[Any], ref: str) -> bool:
+    return any(p.get("ref") == ref or p.get("component") == ref for p in pins)
 
 
 def _valeur_en_ohms(val_str: str) -> Optional[float]:
@@ -53,20 +66,24 @@ def _valeur_en_ohms(val_str: str) -> Optional[float]:
 
 
 def _extraire_tension_ldo(val_str: str) -> Optional[float]:
-    """Déduit la tension de sortie d'après la référence (ex: AMS1117-3.3 -> 3.3)."""
-    m = re.search(r"[-_ ]?(1\.8|2\.5|3\.3|5\.0|5|12|15)\b", val_str)
+    """Déduit la tension de sortie d'après la valeur (ex: AMS1117-3.3 -> 3.3).
+
+    Ne lit que la VALEUR, jamais le repère : U5 ou U12 ne sont pas des tensions.
+    """
+    m = re.search(r"[-_ ](1\.8|2\.5|3\.3|5\.0|5|12|15)\b", val_str)
     if m:
-        try:
-            return float(m.group(1))
-        except ValueError:
-            pass
-    if "7805" in val_str:
-        return 5.0
-    if "7812" in val_str:
-        return 12.0
-    if "7833" in val_str:
-        return 3.3
+        return float(m.group(1))
     return None
+
+
+def _tension_78xx(val_str: str) -> Optional[float]:
+    """Tension d'un 78xx / 79xx d'après ses deux derniers chiffres (7809 -> 9, 7912 -> -12)."""
+    m = re.search(r"7([89])L?(\d{2})", val_str.upper())
+    if not m:
+        return None
+    code = int(m.group(2))
+    v = 3.3 if code == 33 else float(code)
+    return -v if m.group(1) == "9" else v
 
 
 def identifier_alimentations(
@@ -86,13 +103,13 @@ def identifier_alimentations(
 
         if _RE_REG_78XX.search(nom):
             type_reg = "linear_fixed_positive"
-            v_out = _extraire_tension_ldo(nom) or 5.0
+            v_out = _tension_78xx(val) or 5.0
         elif _RE_REG_79XX.search(nom):
             type_reg = "linear_fixed_negative"
-            v_out = -5.0
+            v_out = _tension_78xx(val) or -5.0
         elif _RE_REG_LDO.search(nom):
             type_reg = "ldo"
-            v_out = _extraire_tension_ldo(nom) or 3.3
+            v_out = _extraire_tension_ldo(val) or 3.3
         elif _RE_REG_ADJ.search(nom):
             type_reg = "linear_adjustable"
             v_out = None
@@ -121,6 +138,9 @@ def identifier_alimentations(
                                 cin_list.append(c_ref)
                             elif is_out_net and c_ref not in cout_list:
                                 cout_list.append(c_ref)
+                            elif c_ref in cin_list or c_ref in cout_list:
+                                # Revu sur un net neutre (la masse) : déjà rangé
+                                pass
                             elif not cin_list:
                                 cin_list.append(c_ref)
                             elif c_ref not in cout_list:
@@ -240,9 +260,9 @@ def identifier_bus_numeriques(
     i2c_nets = []
     pullup_resistors = []
 
-    for net_name, pins in nets.items():
-        n_upper = net_name.upper()
-        if "SDA" in n_upper or "SCL" in n_upper or "I2C" in n_upper:
+    for net_name in nets:
+        # SCL mais pas SCLK : l'horloge SPI n'est pas un bus I2C
+        if _RE_I2C_NET.search(net_name):
             i2c_nets.append(net_name)
 
     # Vérification des pull-up : résistance dont une patte est sur le net et l'autre sur VCC
@@ -258,10 +278,10 @@ def identifier_bus_numeriques(
         if len(r_nets) == 2:
             a, b = r_nets[0], r_nets[1]
             if _RE_POWER_NET.search(a) and not _RE_GROUND_NET.search(b):
-                if b in i2c_nets or "SDA" in b.upper() or "SCL" in b.upper():
+                if b in i2c_nets:
                     pullup_resistors.append(r_ref)
             elif _RE_POWER_NET.search(b) and not _RE_GROUND_NET.search(a):
-                if a in i2c_nets or "SDA" in a.upper() or "SCL" in a.upper():
+                if a in i2c_nets:
                     pullup_resistors.append(r_ref)
 
     if i2c_nets:
@@ -323,12 +343,14 @@ def identifier_oscillateurs(
 ) -> List[Dict[str, Any]]:
     """Détecte les quartz / résonateurs avec leurs deux condensateurs de charge."""
     resultats = []
+    masses = _nets_masse(nets)
 
     for ref, comp in components.items():
         val = str(comp.get("val") or comp.get("value") or "").upper()
         type_c = str(comp.get("type") or "").lower()
 
-        is_crystal = ref.startswith("Y") or ref.startswith("X") or "MHZ" in val or "KHZ" in val or "crystal" in type_c
+        freq_dans_valeur = ("MHZ" in val or "KHZ" in val) and not _RE_REF_PASSIF.match(ref)
+        is_crystal = ref.startswith("Y") or ref.startswith("X") or freq_dans_valeur or "crystal" in type_c
         if not is_crystal:
             continue
 
@@ -344,8 +366,8 @@ def identifier_oscillateurs(
                 c_ref = p.get("ref") or p.get("component") or ""
                 if c_ref.startswith("C"):
                     # Vérifie si l'autre côté va à la masse
-                    for gnd_name in ["GND", "0V", "AGND", "VSS"]:
-                        if any(gp.get("ref") == c_ref or gp.get("component") == c_ref for gp in nets.get(gnd_name, [])):
+                    for gnd_name in masses:
+                        if _relie(nets.get(gnd_name, []), c_ref):
                             if c_ref not in caps:
                                 caps.append(c_ref)
 
@@ -378,6 +400,7 @@ def identifier_filtres(
 ) -> List[Dict[str, Any]]:
     """Détecte les filtres RC passe-bas (R série + C à la masse)."""
     resultats = []
+    masses = _nets_masse(nets)
 
     for r_ref in [r for r in components if r.startswith("R")]:
         r_nets = []
@@ -396,8 +419,8 @@ def identifier_filtres(
                 if c_ref.startswith("C"):
                     # Capa reliée à GND ?
                     has_gnd = False
-                    for gnd_net in ["GND", "0V", "AGND", "VSS"]:
-                        if any(gp.get("ref") == c_ref or gp.get("component") == c_ref for gp in nets.get(gnd_net, [])):
+                    for gnd_net in masses:
+                        if _relie(nets.get(gnd_net, []), c_ref):
                             has_gnd = True
                             break
                     if has_gnd:
@@ -420,12 +443,25 @@ def identifier_filtres(
     return resultats
 
 
+def _est_led(ref: str, comp: Dict[str, Any]) -> bool:
+    val = str(comp.get("val") or comp.get("value") or "").upper()
+    type_c = str(comp.get("type") or "").lower()
+    return "led" in type_c or ref.upper().startswith("LED") or "LED" in val
+
+
 def estimer_courants_dc(
     patterns: List[Dict[str, Any]],
-    components: Dict[str, Any]
+    components: Dict[str, Any],
+    nets: Optional[Dict[str, List[Any]]] = None
 ) -> List[Dict[str, Any]]:
-    """Estime les courants DC consommés pour alimenter le solveur DC (A-FAIRE.md)."""
+    """Estime les courants DC consommés pour alimenter le solveur DC (A-FAIRE.md).
+
+    Avec `nets`, une résistance n'est comptée comme limitation de LED que si
+    elle partage un net avec une LED : un filtre RC de 1 kΩ n'en est pas une.
+    Sans `nets`, l'heuristique d'origine (toute R de 100 Ω à 4,7 kΩ) s'applique.
+    """
     courants = []
+    refs_led = {r for r, c in components.items() if _est_led(r, c)}
 
     # 1. Courants déduits des régulateurs
     for pat in patterns:
@@ -450,6 +486,14 @@ def estimer_courants_dc(
             continue
         val = str(r_comp.get("val") or r_comp.get("value") or "")
         ohms = _valeur_en_ohms(val)
+        if nets is not None:
+            voisins = {
+                p.get("ref") or p.get("component")
+                for pins in nets.values() if _relie(pins, r_ref)
+                for p in pins
+            }
+            if not voisins & refs_led:
+                continue
         if ohms and 100 <= ohms <= 4700:
             # Courant LED typique pour V_rail = 3.3V ou 5V
             i_led_ma = round(((3.3 - 2.0) / ohms) * 1000, 1)
@@ -502,7 +546,7 @@ def analyser_motifs_schema(data: Dict[str, Any]) -> Dict[str, Any]:
     filtres = identifier_filtres(components, nets)
 
     motifs_auto = alims + bus + oscs + filtres
-    courants = estimer_courants_dc(alims, components)
+    courants = estimer_courants_dc(alims, components, nets)
 
     # Intégration des zones schématiques définies par l'utilisateur
     zones_motifs = []

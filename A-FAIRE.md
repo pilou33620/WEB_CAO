@@ -9,25 +9,41 @@ Pour les détails techniques approfondis, les dérivations physiques et l'histor
 
 ## État des lieux (septembre 2026)
 
-L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 200 essais automatisés, tous passés** :
+L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 400 essais automatisés, tous passés** (relevé du 24/09/2026) :
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 703 essais (`editeur-pcb/test/harness.js`) |
+| **Éditeur PCB** | En service | 731 essais (`editeur-pcb/test/harness.js`) |
 | **Éditeur Schématique** | En service | 119 essais (`editeur-schematique/test/harness.js`) |
-| **Visionneuse IPC-2581** | En service | 132 essais (`harness-sim.js`) + 46 (`banc-essai.py`) |
-| **SI — Impédance & Vias (`ligne_mom`)** | En service (0,3 à 0,4 % vs étalons) | 171 cas (`python/test/banc-ligne-mom.py`) |
-| **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | 171 cas |
-| **SI — Crosstalk localisé (`crosstalk`)** | En service (%, dB, volts le long du tracé) | 45 cas (`python/test/banc-crosstalk.py`) |
-| **PI — Chute DC & Échauffement (`dc_solver`)** | En service (IR drop, densité J, modèle étalement) | 42 cas (`python/test/banc-dc.py`) |
-| **Scoring placement & Rotation (`pcb_scoring`)** | En service (HPWL, congestion, découplage HF, auto-rotation) | 7 cas (`python/test/banc-pcb-scoring.py`) |
-| **Reconnaissance de motifs (`pattern_recognition`)** | En service (LDO/Buck/Boost, I2C, SPI, UART, quartz, RC) | 5 cas (`python/test/banc-patterns.py`) |
+| **Visionneuse IPC-2581** | En service | 155 essais (`harness-sim.js`) + 55 (`banc-essai.py`) |
+| **SI — Impédance & Vias (`ligne_mom` v2.5.0)** | En service (0,3 à 0,4 % vs étalons) | 199 cas (`python/test/banc-ligne-mom.py`) |
+| **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | inclus dans les 199 cas |
+| **SI — Crosstalk localisé (`crosstalk` v3.6.0)** | En service (%, dB, volts le long du tracé ; mode simple classé par Kb·2Td) | 65 cas (`python/test/banc-crosstalk.py`), dont validation de bout en bout contre la triplaque exacte, Cohn et Garg-Bahl |
+| **Cascade SI / PDN (`simulation_em` v4.2.0)** | En service | couvert par les bancs `ligne_mom`, crosstalk et éditeur |
+| **PI — Chute DC & Échauffement (`dc_solver` v2.1.0)** | En service (IR drop, densité J, modèle étalement) | 42 cas (`python/test/banc-dc.py`) |
+| **Scoring placement & Rotation (`pcb_scoring`)** | En service (HPWL, congestion, découplage HF, auto-rotation) | 18 cas (`python/test/banc-pcb-scoring.py`) |
+| **Reconnaissance de motifs (`pattern_recognition`)** | En service (LDO/78xx/79xx/Buck, I2C, SPI, UART, quartz, RC, courants DC) | 22 cas (`python/test/banc-patterns.py`) |
+| **Assistant IA (schéma, PCB, visionneuse, Gestion LIB)** | En service (Google AI Studio : Gemma 4 31B par défaut, Gemini 3.8 Flash / Flash Thinking ; clé API en mémoire vive uniquement) | `commun/ia-assistant.js`, `gestion-lib/js/06-ia-lib.js` |
+| **Serveur `web_CAO.py`** | En service (détection Raspberry Pi / terminal sans affichage : navigateur non ouvert par défaut, `--navigateur` / `--sans-navigateur`) | `banc-serveur-routes.py`, `banc-lib-routes.py`, `banc-maj-github.py`, `banc-detection-plateforme.py` |
 | **Moteur 2,5D pleine onde (`mom_solver`)** | Archivé dans branche `archive/mom-solver-25d` (recentrage sur 2D instantané) | Préservé dans l'historique Git |
+| **Support Android / Termux** | Abandonné volontairement (ajouté le 17/09, retiré au commit suivant) | — |
 | **Passerelle MCP, profils, cross-probing** | En service | `web_CAO.py`, `commun/session.js` |
+
+### Corrections du 24/09/2026 (révélées par l'extension des bancs scoring et motifs)
+- [x] **Motifs** : la tension d'un LDO se lisait aussi dans le repère (`U5` + `AMS1117-3.3` → 5 V, `U12` → 12 V) ; elle ne se lit plus que dans la valeur.
+- [x] **Motifs** : `7808`, `7809`, `7824` annoncés à 5 V et tous les `79xx` à −5 V ; la tension vient désormais des deux derniers chiffres.
+- [x] **Motifs** : le net d'horloge SPI `SCLK` créait un faux bus I2C (`SCL` ⊂ `SCLK`).
+- [x] **Motifs** : une ferrite `600R@100MHz` était prise pour un oscillateur.
+- [x] **Motifs** : le condensateur d'entrée d'un LDO apparaissait aussi en sortie (revu sur la masse).
+- [x] **Motifs** : toute résistance de 100 Ω à 4,7 kΩ comptait comme une LED dans les courants DC ; il faut maintenant une LED sur l'un de ses nets.
+- [x] **Motifs** : la masse des quartz et filtres n'était reconnue que sous `GND`/`0V`/`AGND`/`VSS` ; `DGND`, `GNDA`… sont maintenant acceptées.
+- [x] **Scoring et motifs** : un rail `10V` / `20V` était traité comme une masse (`0V` ⊂ `10V`) et exclu du HPWL et du découplage.
+- [x] **Scoring** : `CONN1` était compté comme condensateur de découplage, `LED1` classé comme inductance, `TP1` vu comme CI.
+- [x] **Scoring** : une rotation hors quart de tour (45°) était comparée à 0° et annonçait un gain inexistant.
 
 ---
 
-## 🎯 Priorité 1 (Sprint en cours) : Gestion des bibliothèques
+## ✅ Priorité 1 (sprint terminé) : Gestion des bibliothèques
 
 Mettre en place une gestion modulaire et unifiée des bibliothèques de composants pour le schéma, le PCB et la simulation.
 
