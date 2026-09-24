@@ -523,18 +523,9 @@ const SIM_ESL_PONT = 1.0e-9;      /* H — un 0402 sur deux vias courts */
 const SIM_C_PONT   = 100e-9;      /* F — la valeur universelle du découplage */
 const SIM_ESR_PONT = 0.03;        /* Ω — un MLCC 0402 X7R */
 
-/* Base des parasites réels des composants Murata (extraits des sous-circuits SPICE .sub/.mod) */
-const SIM_PARASITES_MURATA_DEFAUT = {"GCM0335C1E120FA16":{"c":1.2e-11,"esl":1.97e-10,"esr":0.188},"GCM0335C1E1R8CA16":{"c":1.8e-12,"esl":1.7e-10,"esr":0.28},"GCM0335C1E3R3CA16":{"c":3.3e-12,"esl":1.3e-10,"esr":0.248},"GCM0335C1E470FA16":{"c":4.7e-11,"esl":1.66e-10,"esr":0.126},"GCM0335C1E6R8CA16":{"c":6.8e-12,"esl":1.04e-10,"esr":0.195},"GCM0335C1ER70BA16":{"c":7e-13,"esl":2.02e-10,"esr":0.837},"GCM0335C1H7R5DA16":{"c":7.5e-12,"esl":7.19e-11,"esr":0.195},"GCM033R71E102KA03":{"c":1e-09,"esl":1.38e-10,"esr":0.228},"GCM1555C1H100JA16":{"c":1e-11,"esl":2.67e-10,"esr":0.211},"GCM1555C1H101JA16":{"c":1e-10,"esl":2.65e-10,"esr":0.0787},"GCM1555C1H120JA16":{"c":1.2e-11,"esl":2.25e-10,"esr":0.108},"GCM1555C1H121JA16":{"c":1.2e-10,"esl":1.45e-10,"esr":0.12},"GCM1555C1H150JA16":{"c":1.5e-11,"esl":2.37e-10,"esr":0.106},"GCM1555C1H181JA16":{"c":1.8e-10,"esl":1.15e-10,"esr":0.1},"GCM1555C1H1R5BA16":{"c":1.5e-12,"esl":3.66e-10,"esr":0.389},"GCM1555C1H1R8CA16":{"c":1.8e-12,"esl":3.44e-10,"esr":0.35},"GCM1555C1H220JA16":{"c":2.2e-11,"esl":1.7e-10,"esr":0.101},"GCM1555C1H221JA16":{"c":2.2e-10,"esl":2.06e-10,"esr":0.095},"GCM1555C1H2R0CA16":{"c":2e-12,"esl":3.35e-10,"esr":0.318},"GCM1555C1H330JA16":{"c":3.3e-11,"esl":2.32e-10,"esr":0.0805},"GCM1555C1H331JA16":{"c":3.3e-10,"esl":1.98e-10,"esr":0.0751},"GCM1555C1H390JA16":{"c":3.9e-11,"esl":1.54e-10,"esr":0.0755},"GCM1555C1H3R0BA16":{"c":3e-12,"esl":3.17e-10,"esr":0.274},"GCM1555C1H3R3CA16":{"c":3.3e-12,"esl":2.95e-10,"esr":0.272},"GCM1555C1H3R9BA16":{"c":3.9e-12,"esl":2.6e-10,"esr":0.254},"GCM1555C1H470JA16":{"c":4.7e-11,"esl":1e-10,"esr":0.0744},"GCM1555C1H471JA16":{"c":4.7e-10,"esl":1.3e-10,"esr":0.0529},"GCM1555C1H4R0BA16":{"c":4e-12,"esl":1.31e-10,"esr":0.25},"GCM1555C1H4R7CA16":{"c":4.7e-12,"esl":2.83e-10,"esr":0.247},"GCM1555C1H560JA16":{"c":5.6e-11,"esl":2.48e-10,"esr":0.0686},"GCM1555C1H5R0CA16":{"c":5e-12,"esl":2.99e-10,"esr":0.239},"GCM1555C1H5R6DA16":{"c":5.6e-12,"esl":2.93e-10,"esr":0.232},"GCM1555C1H680JA16":{"c":6.8e-11,"esl":2.48e-10,"esr":0.127},"GCM1555C1H6R0DA16":{"c":6e-12,"esl":2.7e-10,"esr":0.23},"GCM1555C1H6R8BA16":{"c":6.8e-12,"esl":2.77e-10,"esr":0.227},"GCM1555C1H6R8DA16":{"c":6.8e-12,"esl":2.77e-10,"esr":0.227},"GCM1555C1H8R2DA16":{"c":8.2e-12,"esl":2.94e-10,"esr":0.219},"GCM1555C1H9R0DA16":{"c":9e-12,"esl":2.95e-10,"esr":0.216},"GCM155R71C104KA55":{"c":1.02e-07,"esl":2.01e-10,"esr":0.0142},"GCM155R71H102KA37":{"c":1.01e-09,"esl":1.45e-10,"esr":0.245},"GCM155R71H103KA55":{"c":9.97e-09,"esl":1.92e-10,"esr":0.0493},"GCM155R71H104KE02":{"c":9.43e-08,"esl":1.53e-10,"esr":0.0167},"GCM155R71H152KA37":{"c":1.51e-09,"esl":1.43e-10,"esr":0.21},"GCM155R71H222KA37":{"c":2.2e-09,"esl":1.96e-10,"esr":0.165},"GCM155R71H223KA55":{"c":2.13e-08,"esl":1.85e-10,"esr":0.0345},"GCM1885C1H2R4BA16":{"c":2.4e-12,"esl":4.4e-10,"esr":0.322},"GCM1885C1H331JA16":{"c":3.3e-10,"esl":9e-11,"esr":0.0768},"GCM1885C1H332JA16":{"c":3.31e-09,"esl":5.56e-12,"esr":0.0144},"GCM1885C1H3R6BA16":{"c":3.6e-12,"esl":4.12e-10,"esr":0.257},"GCM188R71E105KA64":{"c":6.98e-07,"esl":1.99e-10,"esr":0.00775},"GCM188R71E474KA49":{"c":3.76e-07,"esl":1.53e-10,"esr":0.00878},"GCM188R71H102KA37":{"c":1.05e-09,"esl":1.6e-10,"esr":0.256},"GCM188R71H224KA64":{"c":2.18e-07,"esl":1.7e-10,"esr":0.00821},"GCM188R71H682KA37":{"c":6.82e-09,"esl":9e-11,"esr":0.0984},"GCM21BR71C475KA73":{"c":2.95e-06,"esl":1.74e-10,"esr":0.00442},"GCM21BR71E105KA56":{"c":9.89e-07,"esl":1.54e-10,"esr":0.00523},"GRM0115C1C240GE01":{"c":2.4e-11,"esl":8.87e-11,"esr":0.102},"GRM0115C1E221GE01":{"c":2.2e-10,"esl":7.9e-11,"esr":0.0664},"GRM011R60G104ME01":{"c":8.39e-08,"esl":8.02e-11,"esr":0.0296},"GRM022R60G105ME01":{"c":6.18e-07,"esl":1.03e-10,"esr":0.00902},"GRM0335C1H1R5CA01":{"c":1.5e-12,"esl":2.46e-10,"esr":0.29},"GRM0335C1H1R6CA01":{"c":1.6e-12,"esl":2.46e-10,"esr":0.29},"GRM0335C1H2R9CA01":{"c":2.9e-12,"esl":2.27e-10,"esr":0.25},"GRM1555C1H180GA01":{"c":1.8e-11,"esl":1.19e-10,"esr":0.12},"GRM155R61A474KE15":{"c":4.44e-07,"esl":2.01e-10,"esr":0.0112},"GRM155R61E225KE11":{"c":1.73e-06,"esl":1.79e-10,"esr":0.00635},"GRM155R71E473KA88":{"c":4.64e-08,"esl":1.46e-10,"esr":0.0219},"GRM188R61A106MAAL":{"c":7.91e-06,"esl":1.61e-10,"esr":0.00319},"GRM188R61C105KA12":{"c":9.32e-07,"esl":1.82e-11,"esr":0.00515},"GRM188R61C475KE11":{"c":3.68e-06,"esl":1.78e-10,"esr":0.00374},"GRM2165C1H471JA01":{"c":4.7e-10,"esl":1.82e-11,"esr":0.06},"GRM21BR61A226ME44":{"c":1.7e-05,"esl":1.6e-10,"esr":0.00211},"GRM21BR61A476ME15":{"c":3.8e-05,"esl":1.67e-10,"esr":0.00237},"GRM21BR71H474KA88":{"c":4.74e-07,"esl":1.57e-10,"esr":0.00695},"LQW15AN10NG00":{"l":1.2e-08,"dcr":0.12},"LQW15AN11NG00":{"l":1.26e-08,"dcr":0.1},"LQW15AN12NG00":{"l":1.4e-08,"dcr":0.1},"LQW15AN15NH00":{"l":1.72e-08,"dcr":0.11},"LQW15AN16NG80":{"l":1.69e-08,"dcr":0.105},"LQW15AN18NG80":{"l":1.94e-08,"dcr":0.108},"LQW15AN2N4B00":{"l":2.49e-09,"dcr":0.03},"LQW15AN2N5C00":{"l":3.12e-09,"dcr":0.03},"LQW15AN2N7B00":{"l":3.08e-09,"dcr":0.03},"LQW15AN2N7C00":{"l":3.08e-09,"dcr":0.03},"LQW15AN33NG00":{"l":3.87e-08,"dcr":0.45},"LQW15AN39NH00":{"l":4.5e-08,"dcr":0.5},"LQW15AN3N0B00":{"l":2.77e-09,"dcr":0.05},"LQW15AN3N3C10":{"l":3.37e-09,"dcr":0.028},"LQW15AN3N6C80":{"l":3.5e-09,"dcr":0.025},"LQW15AN3N9B00":{"l":4.39e-09,"dcr":0.05},"LQW15AN47NH00":{"l":5.51e-08,"dcr":0.77},"LQW15AN4N2B80":{"l":4.11e-09,"dcr":0.036},"LQW15AN4N7C00":{"l":5.58e-09,"dcr":0.05},"LQW15AN5N6C10":{"l":5.72e-09,"dcr":0.0368},"LQW15AN7N5G00":{"l":8.73e-09,"dcr":0.09},"LQW15AN8N2G00":{"l":8.91e-09,"dcr":0.1},"LQW15AN9N1H00":{"l":9.53e-09,"dcr":0.1},"LQW15AN9N5J80":{"l":9.93e-09,"dcr":0.067}};
-var SIM_PARASITES_MURATA = (typeof SIM_PARASITES_MURATA !== "undefined" && SIM_PARASITES_MURATA) || SIM_PARASITES_MURATA_DEFAUT;
-if (typeof require === "function") {
-  try {
-    const p = require("../../commun/parasites-murata.json");
-    if (p && typeof p === "object") SIM_PARASITES_MURATA = p;
-  } catch (_) {}
-}
-if (typeof window !== "undefined") {
-  window.SIM_PARASITES_MURATA = SIM_PARASITES_MURATA;
-}
+/* La base des parasites Murata (SIM_PARASITES_MURATA) vit dans
+   commun/simulation-em.js : la visionneuse en a besoin autant que l'éditeur,
+   et elle n'en avait jusqu'ici aucune copie dans le navigateur. */
 
 function pcbParasitesComposant(c) {
   if (!c) return null;
@@ -595,27 +586,11 @@ function pcbParasitesComposant(c) {
 
   if (isCapa) {
     if (cap == null) cap = simValeurFarads(val);
-    if (esl == null) {
-      if (/0201/i.test(pkg) || /0201/i.test(ref) || /0201/i.test(partName)) esl = 0.20e-9;
-      else if (/0402/i.test(pkg) || /0402/i.test(ref) || /0402/i.test(partName)) esl = 0.45e-9;
-      else if (/0603/i.test(pkg) || /0603/i.test(ref) || /0603/i.test(partName)) esl = 0.70e-9;
-      else if (/0805/i.test(pkg) || /0805/i.test(ref) || /0805/i.test(partName)) esl = 0.90e-9;
-      else if (/1206/i.test(pkg) || /1206/i.test(ref) || /1206/i.test(partName)) esl = 1.20e-9;
-      else esl = SIM_ESL_PONT;
-    }
-    if (esr == null) {
-      if (/C0G|NP0/i.test(partName) || /C0G|NP0/i.test(mpn)) {
-        esr = 0.025;
-      } else if (cap && cap >= 10e-6) {
-        esr = 0.008;
-      } else if (cap && cap >= 1e-6) {
-        esr = 0.015;
-      } else if (cap && cap >= 100e-9) {
-        esr = 0.028;
-      } else {
-        esr = SIM_ESR_PONT;
-      }
-    }
+    /* Les valeurs typiques par boîtier et par capacité sont partagées avec la
+       visionneuse (commun/simulation-em.js). */
+    const d = simPDNParasitesDefaut([pkg, ref, partName].join(" "), cap || 0, partName + " " + mpn);
+    if (esl == null) esl = d.esl;
+    if (esr == null) esr = d.esr;
   }
 
   if (isInduc) {
@@ -3118,6 +3093,53 @@ function simXtPlansDe(l){
   return simPlansRef(l);
 }
 
+/* LES PLANS DE CHAQUE CÔTÉ D'UNE COUCHE, du plus proche au plus lointain, avec
+   la règle de `simPlansRef` — dont c'est la version complète : le premier de
+   chaque liste est celui qu'elle rend. */
+function simXtCotes(l){
+  const estRef = i => rolePlane(layerRole(i)) ||
+    S.zones.some(z => z.l === i && z.pts && z.pts.length >= 3);
+  const haut=[], bas=[];
+  for(let i=l-1;i>=0;i--)if(estRef(i))haut.push(i);
+  for(let i=l+1;i<S.cu;i++)if(estRef(i))bas.push(i);
+  return [haut,bas];
+}
+
+/* LES PLANS SANS CUIVRE DE RETOUR EN CE POINT — ET CEUX QUI LES REMPLACENT.
+
+   POURQUOI ON NE S'ARRÊTE PLUS AU PLAN LE PLUS PROCHE. Le serveur retire de
+   l'empilage les plans que `fentes` nomme, et la section RETOMBE SUR LE PLAN
+   SUIVANT. Celui-là, personne ne le sondait : il était cru sur parole. Un
+   longement posé sur une découpe se calculait donc sur le plan d'en dessous
+   même quand celui-ci n'avait pas de cuivre non plus — et, l'épaisseur entre
+   les deux plans restée à zéro, exactement comme son jumeau sur plan plein.
+   Même correctif que `simXtNusIpc` dans la visionneuse.
+
+   On descend tant que le plan manque. Le plus proche garde sa règle (seul le
+   cuivre de masse compte, une couche sans zone n'est pas sondée) ; au-delà,
+   la masse est cherchée d'abord, puis n'importe quel cuivre sur une couche
+   qui ne porte pas de masse — un plan d'alimentation fait référence —, et une
+   couche sans cuivre ici n'en est pas une. */
+function simXtNus(cotes,x,y,refs){
+  const nus=[];
+  for(const cote of cotes){
+    for(let k=0;k<cote.length;k++){
+      const i=cote[k];
+      const zones=S.zones.filter(z=>z.l===i&&z.pts&&z.pts.length>=3);
+      if(k===0&&!zones.length)break;
+      const masse=zones.some(z=>!refs||!refs.size||refs.has(z.net));
+      if(masse||k===0){
+        if(simXtZoneMasse(i,x,y,refs))break;
+        nus.push(i);
+        continue;
+      }
+      if(simZoneEn(i,x,y))break;
+      nus.push(i);
+    }
+  }
+  return nus;
+}
+
 /* Les discontinuités du plan sous le parcours, en intervalles d'abscisse.
 
    REND `null` QUAND ON N'A PAS SU SONDER, et c'est la moitié de l'intérêt : un
@@ -3142,6 +3164,7 @@ function simXtFentes(par,refs){
        compter ce tronçon comme sondé. */
     if(!plans.length)continue;
     sondable=true;
+    const cotes=simXtCotes(e.o.l);
     const n=Math.max(1,Math.round(e.longueur/pas));
     for(let k=0;k<=n;k++){
       const f=k/n;
@@ -3150,7 +3173,7 @@ function simXtFentes(par,refs){
       /* UN SEUL PLAN PERCÉ SUFFIT À OUVRIR LA BOUCLE. On note lequel : « le
          plan du dessus » et « le plan du dessous » ne demandent pas le même
          geste, et sur une triplaque la fiche doit pouvoir le dire. */
-      const nus=plans.filter(i=>!simXtZoneMasse(i,p.x,p.y,refs));
+      const nus=simXtNus(cotes,p.x,p.y,refs);
       const s=e.s0+f*e.longueur;
       if(!nus.length){
         if(courant){trous.push(courant);courant=null;}
@@ -4376,92 +4399,176 @@ const SIM_PCB={
   pdnCondensateurs:function(net){
     if(!net||typeof S==="undefined"||!Array.isArray(S.fps)) return [];
     /* LE REPÈRE DE LA CAVITÉ, pas celui du document. `pdnCavitePlans` rend une
-       TAILLE (S.board.w × S.board.h) et le solveur travaille donc sur [0,a]×[0,b].
-       Or S.board.x / .y ne valent zéro que sur une carte dessinée de zéro : un
-       import les recale sur le contour lu. Sans cette soustraction, tous les
+       TAILLE et l'ORIGINE de la paire de plans retenue (le contour de la carte
+       quand il n'y en a pas) : le solveur travaille sur [0,a]×[0,b]. Or S.board.x
+       / .y ne valent zéro que sur une carte dessinée de zéro, et un plan partiel
+       ne commence pas au coin de la carte. Sans cette soustraction, tous les
        condensateurs se retrouvent décalés — et depuis que leur position pèse sur
        Z(ω), c'est une réponse fausse, pas un dessin de travers. */
-    const bx=(S.board&&typeof S.board.x==="number")?S.board.x:0;
-    const by=(S.board&&typeof S.board.y==="number")?S.board.y:0;
-    const isGnd=n=>/^(gnd|0v|vss|ground|earth|mass|masse|[adp]?gnd.*)$/i.test(String(n).trim());
+    const cav=this.pdnCavitePlans(net);
+    const bx=cav.x0Mm, by=cav.y0Mm;
     const isTargetNet=n=>n&&String(n).trim().toLowerCase()===String(net).trim().toLowerCase();
+    /* Les pastilles d'un composant qui sont sur le rail : c'est entre elles que
+       court la piste qui compte. */
+    const padsRail=fp=>padsWorld(fp)
+      .filter(q=>isTargetNet(q.net||(fp.nets&&fp.nets[q.n])))
+      .map(q=>({x:q.x,y:q.y,r:Math.max(q.w||0,q.h||0)/2}));
+    const charge=this.pdnPointObserve(net);
+    const fpCharge=charge?S.fps.find(f=>f.ref===charge.ref):null;
+    const cibles=new Map();
     const schMap=typeof pcbComposantsSchema==="function"?pcbComposantsSchema():new Map();
     const res=[];
     let idx=1;
     for(const fp of S.fps){
-      const c=Object.assign({type:"capacitor"}, fp, schMap.get(fp.ref)||{});
-      const isCapa=fp.type==="capacitor"||c.type==="capacitor"||/^[cC]/i.test(fp.ref)||/[pnum]F/i.test(fp.value);
-      if(!isCapa) continue;
-
+      const sch=schMap.get(fp.ref)||{};
       const pads=padsWorld(fp);
+      /* Pas de type par défaut : `{type:"capacitor"}` en tête de l'assemblage
+         faisait de tout circuit intégré alimenté un condensateur de 100 nF. */
+      if(!simPDNEstCondensateur({ref:fp.ref,type:fp.type||sch.type,val:fp.value,nbBroches:pads.length})) continue;
+
       const nets=pads.map(q=>q.net||(fp.nets&&fp.nets[q.n])).filter(Boolean);
-      const hasNet=nets.some(isTargetNet);
-      const hasGnd=nets.some(isGnd);
+      if(!nets.some(isTargetNet)||!nets.some(simPDNEstMasse)) continue;
 
-      if(hasNet&&hasGnd){
-        const par=pcbParasitesComposant(c)||pcbParasitesComposant(fp);
-        const pkg=String(fp.pkg||c.pkg||"").toUpperCase();
-        let lMount=0.8e-9;
-        if(/0201/i.test(pkg)) lMount=0.35e-9;
-        else if(/0402/i.test(pkg)) lMount=0.50e-9;
-        else if(/0603/i.test(pkg)) lMount=0.75e-9;
-        else if(/0805/i.test(pkg)) lMount=1.00e-9;
-        else if(/1206/i.test(pkg)) lMount=1.30e-9;
-        else if(/radial|elec|tant/i.test(pkg)) lMount=2.50e-9;
+      const c=Object.assign({type:"capacitor"}, fp, sch);
+      const par=pcbParasitesComposant(c);
+      /* La paire de vias descend de la face du composant jusqu'au premier plan
+         de la cavité : c'est cette longueur qui corrige la table par boîtier. */
+      const hMm=cav.trouve?(fp.side?cav.hBasMm:cav.hHautMm):undefined;
+      const lMount=simPDNInductanceMontage(fp.pkg||c.pkg,hMm);
 
-        const cap=(par&&par.cap)||simValeurFarads(fp.value)||100e-9;
-        const esr=(par&&par.esr)||0.02;
-        const esl=(par&&par.esl)||0.45e-9;
-        const prov=(par&&par.provenance)||"defaut";
-        const mpn=(c&&c.mpn)||(fp&&fp.mpn)||"";
-        const f0Mhz=(cap>0&&(esl+lMount)>0)?(1/(2*Math.PI*Math.sqrt((esl+lMount)*cap))*1e-6):0;
+      const cap=(par&&par.c)||simValeurFarads(fp.value)||100e-9;
+      const esr=(par&&par.esr)||0.02;
+      const esl=(par&&par.esl)||0.45e-9;
+      const prov=(par&&par.provenance)||"defaut";
+      const mpn=(c&&c.mpn)||(fp&&fp.mpn)||"";
+      const f0Mhz=(cap>0&&(esl+lMount)>0)?(1/(2*Math.PI*Math.sqrt((esl+lMount)*cap))*1e-6):0;
 
-        res.push({
-          id:idx++,
-          ref:fp.ref,
-          val:fp.value||"100nF",
-          pkg:fp.pkg||"0402",
-          mpn:mpn,
-          cap:cap,
-          esr:esr,
-          esl:esl,
-          lMount:lMount,
-          prov:prov,
-          f0:parseFloat(f0Mhz.toFixed(1)),
-          x:typeof fp.x==="number"?parseFloat((fp.x-bx).toFixed(3)):null,
-          y:typeof fp.y==="number"?parseFloat((fp.y-by).toFixed(3)):null,
-          actif:true
-        });
+      cibles.set(fp.ref,padsRail(fp));
+      res.push({
+        id:idx++,
+        ref:fp.ref,
+        val:fp.value||"100nF",
+        pkg:fp.pkg||"0402",
+        mpn:mpn,
+        cap:cap,
+        esr:esr,
+        esl:esl,
+        lMount:lMount,
+        prov:prov,
+        f0:parseFloat(f0Mhz.toFixed(1)),
+        x:typeof fp.x==="number"?parseFloat((fp.x-bx).toFixed(3)):null,
+        y:typeof fp.y==="number"?parseFloat((fp.y-by).toFixed(3)):null,
+        actif:true
+      });
+    }
+    /* LA PISTE DE CHAQUE CONDENSATEUR JUSQU'À LA CHARGE, par le cuivre du rail.
+       Le solveur ne s'en sert que sans cavité. Sans charge détectée, rien : on
+       ne sait pas d'où compter. */
+    if(fpCharge){
+      const h=cav.hRetour||[];
+      const segs=[];
+      for(const t of (S.tracks||[])){
+        if(!t||!isTargetNet(t.net)) continue;
+        for(const g of trkSegs(t))
+          segs.push({x1:g.x1,y1:g.y1,x2:g.x2,y2:g.y2,w:t.w||0.25,h:h[t.l]||1.5,t:cuT(t.l)});
+      }
+      const chemins=simPDNCheminsPiste({segs},padsRail(fpCharge),cibles);
+      for(const c of res){
+        const ch=chemins.get(c.ref);
+        if(!ch) continue;
+        c.longueurPisteMm=parseFloat(ch.longueurMm.toFixed(2));
+        c.lPiste=ch.lH; c.rPiste=ch.rOhm; c.pisteSource=ch.source;
       }
     }
     return res;
   },
 
-  /* Propriétés de la cavité de plans pour le rail */
-  pdnCavitePlans:function(net){
-    let surfaceCm2=25.0;
-    let epaisseurUm=100.0;
-    let er=4.3;
-    let dimXmm=50.0;
-    let dimYmm=50.0;
+  /* CE QUE LA FICHE DE LA CHARGE DIT de son courant et de son horloge, pour
+     préremplir l'assistant ΔI. Un courant « par défaut » (inventé faute de
+     fiche) n'est pas rendu : l'assistant le marquera « à vérifier ». */
+  pdnInfosCharge:function(net){
+    const po=this.pdnPointObserve(net);
+    if(!po) return null;
+    const fp=(S.fps||[]).find(f=>f.ref===po.ref);
+    if(!fp) return {ref:po.ref};
+    const sch=(typeof pcbComposantsSchema==="function"?pcbComposantsSchema():new Map()).get(fp.ref)||{};
+    /* La clé de la fiche : la pièce, pas son repère — une fiche remplie pour
+       un RL78 sert à toutes les cartes qui le portent. */
+    const cle=sch.mpn||fp.mpn||fp.csvMpn||fp.csvPartName||fp.value||fp.ref;
+    if(typeof pcbSpecsComposant!=="function") return {ref:po.ref,cle:cle};
+    const sp=pcbSpecsComposant(Object.assign({},fp,sch))||{};
+    const fiable=sp.provenance&&sp.provenance!=="defaut";
+    return {ref:po.ref,cle:cle,
+            courantA:(fiable&&sp.courant>0)?sp.courant:null,
+            freqHz:(sp.frequence>0)?sp.frequence:null};
+  },
 
-    if(typeof S!=="undefined"){
-      if(S.board&&S.board.w&&S.board.h){
-        dimXmm=Math.max(5.0,parseFloat(S.board.w)||50.0);
-        dimYmm=Math.max(5.0,parseFloat(S.board.h)||50.0);
-        surfaceCm2=Math.max(1.0,(dimXmm*dimYmm*0.6)/100);
-      }
-      if(Array.isArray(S.stackup)){
-        for(const st of S.stackup){
-          if(st.type==="core"||st.type==="prepreg"){
-            if(st.thickness) epaisseurUm=st.thickness*1000;
-            if(st.er) er=st.er;
-            break;
-          }
-        }
-      }
+  /* Le composant que le rail alimente, dans le repère de la cavité : c'est là
+     que se mesure Z(ω) par défaut. */
+  pdnPointObserve:function(net){
+    if(!net||typeof S==="undefined"||!Array.isArray(S.fps)) return null;
+    const cav=this.pdnCavitePlans(net);
+    const cible=String(net).trim().toLowerCase();
+    const comps=[];
+    for(const fp of S.fps){
+      const pads=padsWorld(fp);
+      const nets=pads.map(q=>q.net||(fp.nets&&fp.nets[q.n])).filter(Boolean);
+      if(!nets.some(n=>String(n).trim().toLowerCase()===cible)||!nets.some(simPDNEstMasse)) continue;
+      comps.push({ref:fp.ref, nbBroches:pads.length,
+                  xCarte:typeof fp.x==="number"?parseFloat((fp.x-((S.origin&&S.origin.x)||0)).toFixed(3)):null,
+                  yCarte:typeof fp.y==="number"?parseFloat((fp.y-((S.origin&&S.origin.y)||0)).toFixed(3)):null,
+                  estCapa:simPDNEstCondensateur({ref:fp.ref,type:fp.type,val:fp.value,nbBroches:pads.length}),
+                  x:typeof fp.x==="number"?parseFloat((fp.x-cav.x0Mm).toFixed(3)):null,
+                  y:typeof fp.y==="number"?parseFloat((fp.y-cav.y0Mm).toFixed(3)):null});
     }
-    return {surfaceCm2, epaisseurUm, er, dimXmm, dimYmm};
+    return simPDNChoisirCharge(comps);
+  },
+
+  /* LA CAVITÉ DU RAIL : la paire (plan du rail, plan de masse) la plus
+     rapprochée, lue sur les zones de cuivre — un rôle « plan » de couche n'est
+     qu'une zone pleine carte marquée auto. Épaisseur, εr et tan δ sont ceux des
+     diélectriques qui séparent CES DEUX couches, pas du premier de l'empilage.
+     (L'adaptateur lisait `S.stackup`, qui n'existe pas : l'épaisseur valait
+     toujours 100 µm.) Sans paire, `trouve:false` et la raison ; la taille et
+     l'origine retombent sur le contour de la carte. */
+  pdnCavitePlans:function(net){
+    const b=(typeof S!=="undefined"&&S.board)||{};
+    const bw=Math.max(5.0,parseFloat(b.w)||50.0), bh=Math.max(5.0,parseFloat(b.h)||50.0);
+    const repli={surfaceCm2:parseFloat((bw*bh/100).toFixed(2)),epaisseurUm:100.0,er:4.3,tanD:0.02,
+                 dimXmm:bw,dimYmm:bh,
+                 x0Mm:typeof b.x==="number"?b.x:0,y0Mm:typeof b.y==="number"?b.y:0};
+    const org=(typeof S!=="undefined"&&S.origin)||{x:0,y:0};
+    /* L'origine de la cavité dans le repère AFFICHÉ (origine utilisateur) :
+       c'est là que l'on saisit le point observé. */
+    const versCarte=c=>Object.assign(c,{x0Carte:c.x0Mm-(org.x||0),y0Carte:c.y0Mm-(org.y||0)});
+    if(typeof S==="undefined"||!Array.isArray(S.zones)||!(S.cu>0))
+      return versCarte(Object.assign(repli,{trouve:false,raison:"Carte vide : pas de cavité.",hRetour:[]}));
+    const d0=diAt(0);
+    if(d0&&d0.t>0){repli.epaisseurUm=parseFloat((d0.t*1000).toFixed(1));repli.er=d0.er||4.3;repli.tanD=d0.df||0.02;}
+
+    const epCu=[],gaps=[],noms=[];
+    for(let i=0;i<S.cu;i++){
+      epCu.push(cuT(i));
+      noms.push(cuLabel(i,S.cu));
+      if(i<S.cu-1){const d=diAt(i);gaps.push({t:d.t,er:d.er,df:d.df});}
+    }
+    const zones=[];
+    for(const z of S.zones){
+      if(!z||!z.net||!Array.isArray(z.pts)||z.pts.length<3) continue;
+      let aire=Math.abs(signedArea(z.pts));
+      // Les découpes posées dans la zone retirent du cuivre.
+      for(const c of (S.cuts||[])){
+        if(c&&c.l===z.l&&Array.isArray(c.pts)&&c.pts.length>=3&&inPoly(c.pts[0].x,c.pts[0].y,z.pts))
+          aire-=Math.abs(signedArea(c.pts));
+      }
+      const bb=polyBBox(z.pts);
+      zones.push({rang:z.l,net:z.net,aireMm2:Math.max(0,aire),x1:bb.x1,y1:bb.y1,x2:bb.x2,y2:bb.y2});
+    }
+    const desc={rail:net,epCu,gaps,zones,noms};
+    const cav=simPDNChoisirCavite(desc);
+    const ret=simPDNHauteursRetour(desc);
+    return versCarte(Object.assign(cav.trouve?cav:Object.assign(repli,cav),
+                                   {hRetour:ret.h,hRetourSupposee:ret.supposee}));
   },
 
   /* Le problème complet, tiré de la sélection. Les refus sont explicites et

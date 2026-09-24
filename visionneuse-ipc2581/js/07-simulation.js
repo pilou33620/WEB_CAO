@@ -971,6 +971,73 @@ function simBornesNetsIpc(comp){
    boîtier peut lister ses pastilles, son brochage, ou les deux. Prendre le plus
    grand des deux évite de compter un régulateur pour un condensateur au motif
    que ses pads ne sont pas exportés. */
+/* LA MASSE, au sens de la visionneuse : la classe du net quand elle est
+   connue (détectée ou saisie), le nom sinon. */
+function simPDNEstMasseIpc(n){
+  if(!n) return false;
+  const nom = String(n).trim();
+  if(typeof V !== "undefined" && V && Array.isArray(V.parNet)){
+    const o = V.parNet.find(x => x && x.nom === nom);
+    if(o && o.classe === "gnd") return true;
+    if(o && o.classe === "pwr") return false;
+  }
+  return simPDNEstMasse(nom);
+}
+
+/* UN COMPOSANT EST-IL POSÉ DESSOUS ? Sa couche le dit quand elle est le dernier
+   conducteur de l'empilage ; à défaut, le miroir. */
+function simFaceDessousIpc(comp){
+  if(!comp) return false;
+  if(typeof LT !== "undefined" && LT.pret && LT.cu.length > 1 && comp.c != null){
+    const r = LT.cu.findIndex(e => e.couche === comp.c);
+    if(r >= 0) return r === LT.cu.length - 1;
+  }
+  return !!comp.m;
+}
+
+/* LA PISTE DE CHAQUE CONDENSATEUR JUSQU'À LA CHARGE, par le cuivre du rail :
+   pistes et arcs du net (un arc compte pour sa corde), pastilles regroupées
+   par composant. Écrit sur chaque entrée de `caps` sa longueur, son
+   inductance et sa résistance ; le solveur ne s'en sert que sans cavité. */
+function simPDNPistesIpc(net, refCharge, caps, cav, k){
+  const cible = String(net).trim().toLowerCase();
+  const n = (V.parNet || []).find(o => o && String(o.nom).trim().toLowerCase() === cible);
+  if(!n) return;
+  const h = cav.hRetour || [];
+  const rangDe = c => LT.pret ? LT.cu.findIndex(e => e.couche === c) : -1;
+  const segs = [];
+  const pousse = (x1, y1, x2, y2, w, c) => {
+    const r = rangDe(c);
+    segs.push({x1: x1 * k, y1: y1 * k, x2: x2 * k, y2: y2 * k, w: (w || 0.25) * k,
+               h: (r >= 0 && h[r]) || 1.5, t: (r >= 0 && LT.cu[r].ep) || 0.035});
+  };
+  for(const p of (n.pistes || [])){
+    const q = p.p || [];
+    for(let i = 0; i + 3 < q.length; i += 2) pousse(q[i], q[i + 1], q[i + 2], q[i + 3], p.w, p.c);
+  }
+  for(const a of (n.arcs || [])){
+    if(a && a.s && a.e) pousse(a.s[0], a.s[1], a.e[0], a.e[1], a.w, a.c);
+  }
+  const parRef = new Map();
+  for(const q of (n.pads || [])){
+    const ref = q && q.hote && q.hote.ref;
+    if(!ref) continue;
+    if(!parRef.has(ref)) parRef.set(ref, []);
+    parRef.get(ref).push({x: q.x * k, y: q.y * k, r: Math.max(0.1, (q.d || 0.6) * k / 2)});
+  }
+  const depart = parRef.get(refCharge) || [];
+  if(!depart.length) return;
+  const cibles = new Map();
+  for(const c of caps) cibles.set(c.ref, parRef.get(c.ref) || []);
+  const chemins = simPDNCheminsPiste({segs: segs}, depart, cibles);
+  for(const c of caps){
+    const ch = chemins.get(c.ref);
+    if(!ch) continue;
+    c.longueurPisteMm = parseFloat(ch.longueurMm.toFixed(2));
+    c.lPiste = ch.lH; c.rPiste = ch.rOhm; c.pisteSource = ch.source;
+  }
+}
+
 function simNbBornesIpc(comp){
   return Math.max((comp.pads || []).length, (comp.pins || []).length);
 }
@@ -3914,6 +3981,58 @@ function simXtZoneMasseIpc(coucheIdx,x,y,idx){
   return null;
 }
 
+/* LES PLANS DE L'EMPILAGE DE CHAQUE CÔTÉ D'UN CONDUCTEUR, du plus proche au
+   plus lointain — en index de COUCHE DU MODÈLE, comme `simXtPlansDeIpc`, dont
+   c'est la version complète : le premier de chaque liste est celui qu'elle
+   rend. */
+function simXtCotesIpc(cu){
+  if(!LT.pret)return [[],[]];
+  const haut=[], bas=[];
+  for(let i=cu-1;i>=0;i--)if(LT.cu[i].plan)haut.push(LT.cu[i].couche);
+  for(let i=cu+1;i<LT.cu.length;i++)if(LT.cu[i].plan)bas.push(LT.cu[i].couche);
+  return [haut,bas];
+}
+
+/* LES PLANS SANS CUIVRE DE RETOUR EN CE POINT — ET CEUX QUI LES REMPLACENT.
+
+   POURQUOI ON NE S'ARRÊTE PLUS AU PLAN LE PLUS PROCHE. Le serveur retire de
+   l'empilage les plans que `fentes` nomme, et la section RETOMBE SUR LE PLAN
+   SUIVANT de l'empilage. Celui-là, personne ne le sondait : il était cru sur
+   parole. Sur Design1, agressor1 survole une découpe de Conductor-2 ; le calcul
+   retombait sur Conductor-3 — un plan déclaré qui ne porte AUCUN cuivre — et,
+   l'épaisseur Conductor-2 ↔ Conductor-3 n'étant pas saisie, à la même hauteur
+   exactement. Le longement sans plan sortait au centième près comme son jumeau
+   posé sur un plan plein, sans un mot.
+
+   ON DESCEND DONC TANT QUE LE PLAN MANQUE, et on s'arrête au premier qui porte
+   du cuivre ici. Le plus proche garde sa règle — seul le cuivre de masse y
+   compte, et une couche qui n'en porte pas n'est pas sondée, voir plus bas.
+   Au-delà, on sait déjà que le retour est ouvert au-dessus : un plan qu'on ne
+   voit pas ne le referme pas. Le cuivre de masse y est cherché d'abord ; sur
+   une couche qui n'en porte pas, n'importe quel cuivre fait référence (un
+   plan d'alimentation en est une), et une couche vide n'en est pas une.
+
+   `x`/`y` dans l'unité du FICHIER. */
+function simXtNusIpc(cotes,x,y,idx){
+  const nus=[];
+  for(const cote of cotes){
+    for(let k=0;k<cote.length;k++){
+      const c=cote[k];
+      if(simXtContoursIpc(c,idx).length){
+        if(simXtZoneMasseIpc(c,x,y,idx))break;
+        nus.push(c);
+        continue;
+      }
+      /* Le plus proche sans cuivre de masse : on ne sait pas le sonder, et
+         `simXtFentesIpc` ne compte pas ce côté comme sondé. */
+      if(k===0)break;
+      if(simNetPlanEnIpc(c,x,y))break;
+      nus.push(c);
+    }
+  }
+  return nus;
+}
+
 /* Les discontinuités du plan sous le parcours, en intervalles d'abscisse.
 
    REND `null` QUAND ON N'A PAS SU SONDER, et c'est la moitié de l'intérêt : un
@@ -3939,13 +4058,14 @@ function simXtFentesIpc(par,idx){
     sondable=true;
     const n=Math.max(1,Math.round(e.longueur/pas));
     const a=Math.min(o.u1,o.u2), b=Math.max(o.u1,o.u2);
+    const cotes=simXtCotesIpc(cu);
     for(let j=0;j<=n;j++){
       const f=j/n;
       const u=o.retourne?(b-(b-a)*f):(a+(b-a)*f);
       const p=simSurPoly(o.piste.p,o.cum,u);
       const s=e.s0+f*e.longueur;
       /* UN SEUL PLAN PERCÉ SUFFIT À OUVRIR LA BOUCLE, et on note lequel. */
-      const nus=plans.filter(c=>!simXtZoneMasseIpc(c,p.x,p.y,idx));
+      const nus=simXtNusIpc(cotes,p.x,p.y,idx);
       if(!nus.length){
         if(courant){trous.push(courant);courant=null;}
       }else if(courant&&s-courant.fin<=pas*1.5){
@@ -5450,121 +5570,166 @@ const SIM_IPC={
   /* Condensateurs raccordés entre un rail et la masse avec parasites réels Murata/catalogue */
   pdnCondensateurs:function(net){
     if(!net || typeof V === "undefined" || !V || !V.modele || !Array.isArray(V.modele.composants)) return [];
-    const isGnd = n => /^(gnd|0v|vss|ground|earth|mass|masse|[adp]?gnd.*)$/i.test(String(n).trim());
     const isTargetNet = n => n && String(n).trim().toLowerCase() === String(net).trim().toLowerCase();
+    const k = (V.unite === "in") ? 25.4 : 1;
+    /* LE REPÈRE DE LA CAVITÉ, pas celui du fichier. `pdnCavitePlans` rend une
+       TAILLE et l'ORIGINE, en mm, de la paire de plans retenue — le contour de
+       la carte quand il n'y en a pas —, alors qu'un IPC-2581 place volontiers
+       son contour loin de l'origine : décalage de panneau, datum de
+       fabrication. Depuis que la position pèse sur Z(ω), l'oublier ne décale
+       plus un dessin : ça plaque tous les condensateurs contre un bord. */
+    const cav = this.pdnCavitePlans(net);
+    const charge = this.pdnPointObserve(net);
 
     const res = [];
     let idx = 1;
-    const k = (V.unite === "in") ? 25.4 : 1;
-    /* LE REPÈRE DE LA CAVITÉ, pas celui du fichier. `pdnCavitePlans` rend une
-       TAILLE (bbox.x2 - bbox.x1) et le solveur travaille sur [0,a]×[0,b], alors
-       qu'un IPC-2581 place volontiers son contour loin de l'origine — décalage
-       de panneau, datum de fabrication. On ramène donc chaque composant au coin
-       du plan. Depuis que la position pèse sur Z(ω), l'oublier ne décale plus un
-       dessin : ça plaque tous les condensateurs contre un bord de la cavité. */
-    const ox = (V.bbox && typeof V.bbox.x1 === "number") ? V.bbox.x1 : 0;
-    const oy = (V.bbox && typeof V.bbox.y1 === "number") ? V.bbox.y1 : 0;
-
     for(const comp of V.modele.composants){
       const ref = comp.ref || "";
-      const isCapa = /^[cC]/i.test(ref) || /cap/i.test(comp.type || "") || /cap/i.test(comp.part || "") || /[pnum]F/i.test(comp.val || "");
-      if(!isCapa) continue;
+      const nbBroches = simNbBornesIpc(comp);
+      const val = comp.val || comp.valeur || comp.value || "";
+      if(!simPDNEstCondensateur({ref: ref, type: comp.type, val: val, nbBroches: nbBroches || undefined})) continue;
 
-      const bn = (typeof simBornesNetsIpc === "function") ? simBornesNetsIpc(comp) : new Set();
-      // En complément, inspection directe des pins/pads
-      if(!bn.size){
-        const pins = (comp.pins && comp.pins.length) ? comp.pins : (comp.pads || []);
-        for(const p of pins){
-          let nom = "";
-          if(p.net) nom = String(p.net).trim();
-          else if(typeof p.n === "string") nom = p.n.trim();
-          else if(p.n != null && typeof p.n === "number" && p.n >= 0){
-            nom = (typeof mdlNetNom === "function") ? mdlNetNom(p.n) : ((V.parNet && V.parNet[p.n] && V.parNet[p.n].nom) || "");
-          }
-          if(nom) bn.add(nom);
-        }
-      }
-
-      let hasNet = false;
-      let hasGnd = false;
+      const bn = simBornesNetsIpc(comp);
+      let hasNet = false, hasGnd = false;
       bn.forEach(n => {
         if(isTargetNet(n)) hasNet = true;
-        if(isGnd(n)) hasGnd = true;
+        if(simPDNEstMasseIpc(n)) hasGnd = true;
       });
+      if(!hasNet || !hasGnd) continue;
 
-      if(hasNet && hasGnd){
-        const pkg = String(comp.package || comp.pkg || "").toUpperCase();
-        let lMount = 0.8e-9;
-        if(/0201/i.test(pkg)) lMount = 0.35e-9;
-        else if(/0402/i.test(pkg)) lMount = 0.50e-9;
-        else if(/0603/i.test(pkg)) lMount = 0.75e-9;
-        else if(/0805/i.test(pkg)) lMount = 1.00e-9;
-        else if(/1206/i.test(pkg)) lMount = 1.30e-9;
-        else if(/radial|elec|tant/i.test(pkg)) lMount = 2.50e-9;
+      const pkg = comp.package || comp.pkg || "";
+      const rawVal = val || "100nF";
+      /* MÊMES PARASITES QUE L'ÉDITEUR : base Murata par MPN (le parseur l'écrit
+         dans `part`), puis valeurs typiques par boîtier et capacité. */
+      const props = comp.props || {};
+      const par = simPDNParasitesCapa({
+        ref: ref, val: rawVal, pkg: pkg,
+        mpn: comp.mpn || comp.part || comp["Part Number"] || props["Part Number"] || props.MPN || "",
+        partName: props["Part Name"] || "",
+        cap: simValeurFaradsIpc(rawVal) || 0
+      });
+      const hMm = cav.trouve ? (simFaceDessousIpc(comp) ? cav.hBasMm : cav.hHautMm) : undefined;
+      const lMount = simPDNInductanceMontage(pkg, hMm);
+      const cap = par.cap || 100e-9;
+      const f0Mhz = (cap > 0 && (par.esl + lMount) > 0) ? (1 / (2 * Math.PI * Math.sqrt((par.esl + lMount) * cap)) * 1e-6) : 0;
 
-        const rawVal = comp.val || comp.valeur || comp.value || "100nF";
-        const cap = (typeof simValeurFaradsIpc === "function" ? simValeurFaradsIpc(rawVal) : (typeof simValeurFarads === "function" ? simValeurFarads(rawVal) : 100e-9)) || 100e-9;
-        let esr = 0.02, esl = 0.45e-9, prov = "defaut";
-        const dict = typeof SIM_PARASITES_MURATA !== "undefined" ? SIM_PARASITES_MURATA : (typeof window !== "undefined" ? window.SIM_PARASITES_MURATA : null);
-        if(dict){
-          const mpn = String(comp.mpn || comp["Part Number"] || "").toUpperCase();
-          const hit = (mpn ? dict[mpn] : null);
-          if(hit){
-            if(hit.esr != null){ esr = hit.esr; prov = "spice"; }
-            if(hit.esl != null){ esl = hit.esl; prov = "spice"; }
-          }
-        }
-        const f0Mhz = (cap > 0 && (esl + lMount) > 0) ? (1 / (2 * Math.PI * Math.sqrt((esl + lMount) * cap)) * 1e-6) : 0;
-
-        const cx = (typeof comp.x === "number") ? parseFloat(((comp.x - ox) * k).toFixed(2)) : null;
-        const cy = (typeof comp.y === "number") ? parseFloat(((comp.y - oy) * k).toFixed(2)) : null;
-
-        res.push({
-          id: idx++,
-          ref: ref,
-          val: rawVal,
-          pkg: comp.package || comp.pkg || "0402",
-          mpn: comp.mpn || "",
-          cap: cap,
-          esr: esr,
-          esl: esl,
-          lMount: lMount,
-          prov: prov,
-          f0: parseFloat(f0Mhz.toFixed(1)),
-          x: cx,
-          y: cy,
-          actif: true
-        });
-      }
+      res.push({
+        id: idx++,
+        ref: ref,
+        val: rawVal,
+        pkg: pkg || "0402",
+        mpn: comp.mpn || comp.part || "",
+        cap: cap,
+        esr: par.esr,
+        esl: par.esl,
+        lMount: lMount,
+        prov: par.prov,
+        f0: parseFloat(f0Mhz.toFixed(1)),
+        x: (typeof comp.x === "number") ? parseFloat((comp.x * k - cav.x0Mm).toFixed(2)) : null,
+        y: (typeof comp.y === "number") ? parseFloat((comp.y * k - cav.y0Mm).toFixed(2)) : null,
+        actif: true
+      });
     }
+    if(charge && res.length) simPDNPistesIpc(net, charge.ref, res, cav, k);
     return res;
   },
 
-  /* Propriétés de la cavité de plans pour le rail */
+  /* La charge et la clé de sa fiche : la pièce (`part`), à défaut sa valeur.
+     Le fichier IPC-2581 ne porte pas de consommation : la fiche se remplit à
+     la main, puis se retrouve pour toutes les cartes qui portent la pièce. */
+  pdnInfosCharge:function(net){
+    const po = this.pdnPointObserve(net);
+    if(!po) return null;
+    const comp = (V.modele.composants || []).find(c => c.ref === po.ref) || {};
+    return {ref: po.ref, cle: comp.part || comp.mpn || comp.val || po.ref};
+  },
+
+  /* Le composant que le rail alimente, dans le repère de la cavité : c'est là
+     que se mesure Z(ω) par défaut. */
+  pdnPointObserve:function(net){
+    if(!net || typeof V === "undefined" || !V || !V.modele || !Array.isArray(V.modele.composants)) return null;
+    const cible = String(net).trim().toLowerCase();
+    const k = (V.unite === "in") ? 25.4 : 1;
+    const cav = this.pdnCavitePlans(net);
+    const comps = [];
+    for(const comp of V.modele.composants){
+      const bn = simBornesNetsIpc(comp);
+      let hasNet = false, hasGnd = false;
+      bn.forEach(n => {
+        if(String(n).trim().toLowerCase() === cible) hasNet = true;
+        if(simPDNEstMasseIpc(n)) hasGnd = true;
+      });
+      if(!hasNet || !hasGnd) continue;
+      const nb = simNbBornesIpc(comp);
+      comps.push({ref: comp.ref || "", nbBroches: nb,
+                  xCarte: (typeof comp.x === "number") ? parseFloat((comp.x * k).toFixed(2)) : null,
+                  yCarte: (typeof comp.y === "number") ? parseFloat((comp.y * k).toFixed(2)) : null,
+                  estCapa: simPDNEstCondensateur({ref: comp.ref, type: comp.type, val: comp.val, nbBroches: nb || undefined}),
+                  x: (typeof comp.x === "number") ? parseFloat((comp.x * k - cav.x0Mm).toFixed(2)) : null,
+                  y: (typeof comp.y === "number") ? parseFloat((comp.y * k - cav.y0Mm).toFixed(2)) : null});
+    }
+    return simPDNChoisirCharge(comps);
+  },
+
+  /* LA CAVITÉ DU RAIL : la paire (versement du rail, versement de masse) la
+     plus rapprochée dans l'empilage, lue sur les versements du fichier.
+     Épaisseur, εr et tan δ sont ceux des intervalles de `LT.gap` qui séparent
+     CES DEUX conducteurs, et non du premier diélectrique rencontré. Sans paire,
+     `trouve:false` et la raison ; la taille et l'origine retombent sur la boîte
+     de la carte. Tout est rendu en millimètres. */
   pdnCavitePlans:function(net){
-    let surfaceCm2=25.0;
-    let epaisseurUm=100.0;
-    let er=4.3;
-    let dimXmm=50.0;
-    let dimYmm=50.0;
     const k = (typeof V !== "undefined" && V.unite === "in") ? 25.4 : 1;
+    const repli = {surfaceCm2: 25.0, epaisseurUm: 100.0, er: 4.3, tanD: 0.02,
+                   dimXmm: 50.0, dimYmm: 50.0, x0Mm: 0, y0Mm: 0};
     if(typeof V !== "undefined" && V.bbox){
       const bw = Math.abs((V.bbox.x2 || 0) - (V.bbox.x1 || 0)) * k;
       const bh = Math.abs((V.bbox.y2 || 0) - (V.bbox.y1 || 0)) * k;
-      if(bw > 1) dimXmm = parseFloat(bw.toFixed(1));
-      if(bh > 1) dimYmm = parseFloat(bh.toFixed(1));
-      surfaceCm2 = parseFloat(Math.max(1.0, (dimXmm * dimYmm * 0.6) / 100).toFixed(2));
+      if(bw > 1) repli.dimXmm = parseFloat(bw.toFixed(1));
+      if(bh > 1) repli.dimYmm = parseFloat(bh.toFixed(1));
+      repli.surfaceCm2 = parseFloat((repli.dimXmm * repli.dimYmm / 100).toFixed(2));
+      repli.x0Mm = Math.min(V.bbox.x1 || 0, V.bbox.x2 || 0) * k;
+      repli.y0Mm = Math.min(V.bbox.y1 || 0, V.bbox.y2 || 0) * k;
     }
-    if(typeof LT !== "undefined" && LT.cu && LT.cu.length){
-      for(const cu of LT.cu){
-        if(cu.diType === "core" || cu.diType === "prepreg"){
-          if(cu.diEp) epaisseurUm = parseFloat((cu.diEp * 1000).toFixed(1));
-          if(cu.er) er = parseFloat(cu.er.toFixed(2));
-          break;
+    /* La visionneuse affiche les coordonnées du fichier : l'origine de la
+       cavité dans ce repère est donc x0Mm lui-même (converti en mm). */
+    const versCarte = c => Object.assign(c, {x0Carte: c.x0Mm, y0Carte: c.y0Mm});
+    if(typeof LT === "undefined" || !LT.pret || !LT.cu.length || typeof V === "undefined" || !V.modele)
+      return versCarte(Object.assign(repli, {trouve: false, raison: "Empilage inconnu : pas de cavité détectable.", hRetour: []}));
+    const g0 = LT.gap[0];
+    if(g0 && g0.t > 0){ repli.epaisseurUm = parseFloat((g0.t * 1000).toFixed(1)); repli.er = g0.er || 4.3; repli.tanD = g0.df || 0.02; }
+
+    const zones = [];
+    for(const g of (V.modele.plans || [])){
+      const rang = LT.cu.findIndex(e => e.couche === g.c);
+      if(rang < 0 || g.n == null || g.n < 0) continue;
+      const nom = (typeof mdlNetNom === "function") ? mdlNetNom(g.n) : (V.modele.nets || [])[g.n];
+      if(!nom) continue;
+      /* Chaque îlot compte à part : deux versements disjoints du même rail ne
+         forment pas une cavité d'un seul tenant. */
+      for(const ct of (g.g || [])){
+        if(!ct || !ct.o || ct.o.length < 6) continue;
+        let a = ltAire(ct.o);
+        for(const t of (ct.t || [])) a -= ltAire(t);
+        let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+        for(let i = 0; i + 1 < ct.o.length; i += 2){
+          x1 = Math.min(x1, ct.o[i]); x2 = Math.max(x2, ct.o[i]);
+          y1 = Math.min(y1, ct.o[i + 1]); y2 = Math.max(y2, ct.o[i + 1]);
         }
+        zones.push({rang: rang, net: nom, aireMm2: Math.max(0, a) * k * k,
+                    x1: x1 * k, y1: y1 * k, x2: x2 * k, y2: y2 * k});
       }
     }
-    return {surfaceCm2, epaisseurUm, er, dimXmm, dimYmm};
+    const desc = {
+      rail: net, zones: zones,
+      epCu: LT.cu.map(e => e.ep),
+      gaps: LT.gap.map(g => ({t: g.t, er: g.er, df: g.df})),
+      noms: LT.cu.map(e => e.nom),
+      estMasse: simPDNEstMasseIpc
+    };
+    const cav = simPDNChoisirCavite(desc);
+    const ret = simPDNHauteursRetour(desc);
+    return versCarte(Object.assign(cav.trouve ? cav : Object.assign(repli, cav),
+                                   {hRetour: ret.h, hRetourSupposee: ret.supposee}));
   },
 
   astuce:function(t){
@@ -5626,18 +5791,20 @@ function simAppliquerPrereglagesClassesNets(){
       }
     }
 
-    // Configurer la cavité de plan d'alimentation
+    // Configurer la cavité de plan d'alimentation : celle du rail, s'il en a une.
     if(typeof SIM_IPC !== "undefined" && typeof SIM_IPC.pdnCavitePlans === "function"){
-      const cp = SIM_IPC.pdnCavitePlans(SIM_PDN.rail);
-      if(cp && cp.surfaceCm2 > 0){
-        SIM_PDN.planSurfaceCm2 = cp.surfaceCm2;
-        SIM_PDN.planEpaisseurUm = cp.epaisseurUm;
-        SIM_PDN.planEr = cp.er;
-        SIM_PDN.planDimXmm = cp.dimXmm;
-        SIM_PDN.planDimYmm = cp.dimYmm;
-        SIM_PDN.planActif = true;
-      }
+      simPDNAppliquerCavite(SIM_IPC.pdnCavitePlans(SIM_PDN.rail));
     }
+    // Le point observé : le composant que le rail alimente, le coin à défaut.
+    if(typeof SIM_IPC !== "undefined" && typeof SIM_IPC.pdnPointObserve === "function"){
+      const po = SIM_IPC.pdnPointObserve(SIM_PDN.rail);
+      SIM_PDN.portXmm = po ? po.xCarte : SIM_PDN.caviteX0Carte;
+      SIM_PDN.portYmm = po ? po.yCarte : SIM_PDN.caviteY0Carte;
+      SIM_PDN.portRef = po ? (po.ref || "") : "";
+    }
+    // L'assistant ΔI repart de la charge détectée (la visionneuse n'a pas de fiche de courant).
+    if(typeof simPDNPreparerEvenements === "function")
+      simPDNPreparerEvenements((SIM_IPC.pdnInfosCharge && SIM_IPC.pdnInfosCharge(SIM_PDN.rail)) || {ref: SIM_PDN.portRef});
   }
 
   // 4. Rafraîchir les panneaux de simulation si actifs

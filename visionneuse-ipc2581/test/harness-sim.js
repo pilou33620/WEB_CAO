@@ -161,7 +161,9 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
      commun/simulation-em.js, partagé avec l'éditeur PCB, mais la
      visionneuse le pilote par son propre adaptateur SIM_IPC. Le banc le
      lance donc ici aussi, sur un plan de la visionneuse. */
-  "simCalculerPDN","simPDNCalculerModesCavite","simPDNInductancesEpandage"];
+  "simCalculerPDN","simPDNCalculerModesCavite","simPDNInductancesEpandage",
+  "simPDNEstMasse","simPDNEstCondensateur","simPDNParasitesCapa","simPDNParasitesDefaut","simPDNInductanceMontage","simPDNChoisirCavite","simPDNAppliquerCavite","simPDNChoisirCharge","SIM_PARASITES_MURATA_DEFAUT",
+  "simPDNEstMasseIpc","simFaceDessousIpc","simRendrePDN","simPDNCheminsPiste","simPDNInductanceLineique","simPDNHauteursRetour","simPDNPistesIpc"];
 
 /* Un seul `eval`, sur les trois fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -3102,6 +3104,35 @@ T("une fente du plan sous le parcours est trouvée et localisée",()=>{
                     JSON.stringify(rien));
 });
 
+T("sous une découpe, le plan de repli est sondé lui aussi",()=>{
+  /* LE CAS DE DESIGN1 : le plan le plus proche est découpé sous la piste, et
+     le serveur retombe sur le plan SUIVANT de l'empilage. Si celui-ci n'a pas
+     de cuivre non plus, il doit être nommé : sinon la section se résout sur
+     une référence qui n'existe pas — à la même hauteur quand l'épaisseur
+     entre les deux plans manque — et le longement sans plan sort identique à
+     son jumeau sur plan plein. */
+  const empilage=[
+    {nom:"Top",  seq:1, ep:0.035, type:"CONDUCTOR"},
+    {nom:"D1",   seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Gnd",  seq:3, ep:0.035, type:"PLANE"},
+    {nom:"D2",   seq:4, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Pwr",  seq:5, ep:0.035, type:"PLANE"}
+  ];
+  const decoupe=[planDessous(rect(2,2,58,38),[rect(X1-2,Y-3,X2+2,Y+3)])];
+  /* Pwr SANS CUIVRE : les deux plans manquent. */
+  carte({empilage:empilage, couches:["Top","Gnd","Pwr"], plans:decoupe});
+  let f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!f||!f.length)throw new Error("la découpe doit être trouvée");
+  if(f[0].plans.join()!=="Gnd,Pwr")
+    throw new Error("les deux plans manquent : "+JSON.stringify(f[0].plans));
+  /* Pwr PLEIN : il referme le retour, seul Gnd est nommé. */
+  carte({empilage:empilage, couches:["Top","Gnd","Pwr"],
+         plans:decoupe.concat([{c:2, n:2, g:[{o:rect(2,2,58,38), t:[]}]}])});
+  f=simXtFentesIpc(simXtParcoursIpc(simSegments()),simRefIdx());
+  if(!f||!f.length||f[0].plans.join()!=="Gnd")
+    throw new Error("seul Gnd manque : "+JSON.stringify(f&&f[0]&&f[0].plans));
+});
+
 T("le cuivre d'un autre net sur la couche de plan est un trou du retour",()=>{
   /* LE COURANT NE PASSE PAS DANS LE CUIVRE D'UN AUTRE NET : une flaque
      d'alimentation posée sur la couche de plan est une fente du retour tout
@@ -4349,6 +4380,7 @@ T("Impédance Z(ω) du PDN : le solveur partagé tourne aussi depuis la visionne
   SIM_PDN.fVrmKhz = 100.0;
   SIM_PDN.planActif = true;
   SIM_PDN.caviteModesActif = true;
+  SIM_PDN.planSurfaceCm2 = null; // plan plein : toute la boîte a × b
   SIM_PDN.planDimXmm = 100.0;   // TM10 tombe à 723 MHz, dans la bande tracée
   SIM_PDN.planDimYmm = 80.0;
   SIM_PDN.planEpaisseurUm = 100.0;
@@ -4398,6 +4430,7 @@ T("Cavité multi-port : depuis la visionneuse aussi, la position des condensateu
     SIM_PDN.rVrmMOhm = 2.0; SIM_PDN.fVrmKhz = 100.0;
     SIM_PDN.planActif = true; SIM_PDN.caviteModesActif = true;
     SIM_PDN.planDimXmm = 100.0; SIM_PDN.planDimYmm = 80.0;
+    SIM_PDN.planSurfaceCm2 = null;
     SIM_PDN.planEpaisseurUm = 100.0; SIM_PDN.planEr = 4.3; SIM_PDN.planTanD = 0.02;
     SIM_PDN.fMin = 1e4; SIM_PDN.fMax = 1e9; SIM_PDN.nbPoints = 200;
     SIM_PDN.portXmm = 0; SIM_PDN.portYmm = 0; SIM_PDN.portTailleMm = 1.5;
@@ -5256,6 +5289,252 @@ T("une couche de signal qui porte deux îlots de masse n'est pas un plan",()=>{
   ltPreparer();
   if(!LT.cu[0].plan||ltAutoRole(LT.cu[0])!=="gnd")
     throw new Error("une couche arrosée de masse reste un plan de masse");
+});
+
+// ---------------------------------------------------------------------------
+// PDN : la cavité du rail, lue sur la carte (révision PI)
+// ---------------------------------------------------------------------------
+/* UNE CARTE QUATRE COUCHES QUI DÉPARTAGE LES DEUX PAIRES POSSIBLES.
+     Top  (signal)
+     PP1  0,1 mm
+     In1  masse pleine
+     Core 1,2 mm
+     In2  +3V3 PARTIEL, rect (10,5)-(50,35) : 40 × 30 mm
+     PP2  0,2 mm, εr 3,8, tan δ 0,01
+     Bot  masse pleine
+   Le +3V3 a deux masses en regard : In1 à 1,2 mm, Bottom à 0,2 mm. La cavité
+   est la plus rapprochée, In2 ↔ Bottom. L'ancien adaptateur prenait le
+   PREMIER diélectrique de l'empilage (PP1, 100 µm) et toute la carte. */
+function cartePdn4c(opts){
+  opts = opts || {};
+  const pins = (a, b) => [{num:"1", n:a}, {num:"2", n:b}];
+  const composants = opts.composants || [
+    {ref:"C1", pkg:"0402", c:0, x:20, y:15, m:0, val:"100nF", type:"", part:"GCM155R71C104KA55", pins:pins(0, 1)},
+    {ref:"C2", pkg:"0805", c:3, x:30, y:20, m:1, val:"10uF", type:"", part:"", pins:pins(0, 1)},
+    // Un connecteur relié au rail et à la masse n'est pas un condensateur.
+    {ref:"CN1", pkg:"HDR-2", c:0, x:5, y:5, m:0, val:"", type:"", part:"", pins:pins(0, 1)},
+    // Le circuit alimenté : huit broches, point observé attendu.
+    {ref:"U1", pkg:"SOIC-8", c:0, x:40, y:25, m:0, val:"MCU", type:"", part:"",
+     pins:[{num:"1",n:0},{num:"2",n:2},{num:"3",n:2},{num:"4",n:1},
+           {num:"5",n:2},{num:"6",n:2},{num:"7",n:2},{num:"8",n:0}]}
+  ];
+  return carte({
+    nets:["+3V3","GND","SIG"],
+    piste:{c:0, n:2},
+    empilage:[
+      {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR"},
+      {nom:"PP1",    seq:2, ep:0.1,   type:"DIELECTRIC", dk:"4.0", df:"0.02"},
+      {nom:"In1",    seq:3, ep:0.035, type:"PLANE"},
+      {nom:"Core",   seq:4, ep:1.2,   type:"DIELECTRIC", dk:"4.5", df:"0.02"},
+      {nom:"In2",    seq:5, ep:0.035, type:"PLANE"},
+      {nom:"PP2",    seq:6, ep:0.2,   type:"DIELECTRIC", dk:"3.8", df:"0.01"},
+      {nom:"Bottom", seq:7, ep:0.035, type:"PLANE"}
+    ],
+    couches:["Top","In1","In2","Bottom"],
+    plans: opts.plans || [
+      {c:1, n:1, g:[{o:CONTOUR, t:[]}]},
+      {c:2, n:0, g:[{o:rect(10,5,50,35), t:[]}]},
+      {c:3, n:1, g:[{o:CONTOUR, t:[]}]}
+    ],
+    composants: composants
+  });
+}
+
+T("PDN (A1/A2) : la cavité est la paire rail ↔ masse la plus rapprochée, avec SON diélectrique", function(){
+  cartePdn4c();
+  const cav = SIM_IPC.pdnCavitePlans("+3V3");
+  if(!cav.trouve) throw new Error("une cavité In2 ↔ Bottom était attendue : " + cav.raison);
+  if(Math.abs(cav.epaisseurUm - 200) > 0.5)
+    throw new Error("épaisseur attendue 200 µm (PP2, entre In2 et Bottom), obtenue " + cav.epaisseurUm);
+  if(Math.abs(cav.er - 3.8) > 1e-6) throw new Error("εr attendu 3,8, obtenu " + cav.er);
+  if(Math.abs(cav.tanD - 0.01) > 1e-6) throw new Error("tan δ attendu 0,01, obtenu " + cav.tanD);
+  // B5 : la surface est celle du cuivre en regard, pas celle de la carte.
+  if(Math.abs(cav.surfaceCm2 - 12) > 0.01) throw new Error("surface attendue 12 cm², obtenue " + cav.surfaceCm2);
+  if(Math.abs(cav.dimXmm - 40) > 1e-6 || Math.abs(cav.dimYmm - 30) > 1e-6)
+    throw new Error("emprise attendue 40 × 30, obtenue " + cav.dimXmm + " × " + cav.dimYmm);
+  if(cav.x0Mm !== 10 || cav.y0Mm !== 5) throw new Error("origine attendue (10, 5), obtenue (" + cav.x0Mm + ", " + cav.y0Mm + ")");
+  if(!/In2/.test(cav.raison) || !/Bottom/.test(cav.raison)) throw new Error("la note doit nommer la paire : " + cav.raison);
+});
+
+T("PDN (A1) : sans plan du rail, pas de cavité — et le préréglage ne la force plus", function(){
+  // La carte deux couches par défaut : aucun versement +3V3.
+  carte({nets:["+3V3","GND"], piste:{c:0, n:0},
+         plans:[{c:1, n:1, g:[{o:CONTOUR, t:[]}]}],
+         composants:[{ref:"C1", pkg:"0402", c:0, x:20, y:15, m:0, val:"100nF", type:"", part:"",
+                      pins:[{num:"1", n:0}, {num:"2", n:1}]}]});
+  const cav = SIM_IPC.pdnCavitePlans("+3V3");
+  if(cav.trouve !== false) throw new Error("pas de versement +3V3 : trouve doit valoir false");
+  if(!/\+3V3/.test(cav.raison)) throw new Error("la raison doit nommer le rail : " + cav.raison);
+  // Le repli garde une taille exploitable si l'on recoche le plan à la main.
+  if(!(cav.dimXmm > 0 && cav.dimYmm > 0)) throw new Error("le repli doit garder une taille");
+
+  const memo = {planActif: SIM_PDN.planActif, note: SIM_PDN.caviteNote, t: SIM_PDN.caviteTrouvee};
+  SIM_PDN.planActif = true;
+  simPDNAppliquerCavite(cav);
+  if(SIM_PDN.planActif !== false) throw new Error("sans cavité, le plan doit être décoché");
+  if(SIM_PDN.caviteTrouvee !== false || !SIM_PDN.caviteNote) throw new Error("la raison doit être gardée pour le panneau");
+  // Et le panneau la montre.
+  SIM_PDN.condensateurs = [{id:1, ref:"C1", val:"100nF", pkg:"0402", cap:100e-9, esr:0.03, esl:0.45e-9, lMount:0.5e-9, actif:true}];
+  simCalculerPDN();
+  if(SIM_PDN.result.multiport) throw new Error("sans cavité, le solveur doit rester localisé");
+  const html = simRendrePDN();
+  if(!/simPDNCaviteNote/.test(html) || !/simAlerte/.test(html)) throw new Error("le panneau doit afficher la raison en alerte");
+  SIM_PDN.planActif = memo.planActif; SIM_PDN.caviteNote = memo.note; SIM_PDN.caviteTrouvee = memo.t;
+});
+
+T("PDN (A3) : un connecteur ou un circuit intégré n'entre pas dans la liste de découplage", function(){
+  cartePdn4c();
+  const caps = SIM_IPC.pdnCondensateurs("+3V3").map(c => c.ref).sort();
+  if(caps.join(",") !== "C1,C2") throw new Error("C1 et C2 attendus seuls, obtenu " + caps.join(","));
+  // Le filtre lui-même, sur les cas qui trompaient l'ancien `/^[cC]/`.
+  const cas = [
+    [{ref:"C12"}, true], [{ref:"C_3"}, true], [{ref:"CN1"}, false], [{ref:"CONN2"}, false],
+    [{ref:"CR1"}, false], [{ref:"U1", val:"100nF"}, false], [{ref:"X1", type:"capacitor"}, true],
+    [{ref:"C5", nbBroches:8}, false], [{ref:"E1", val:"4.7uF"}, true], [{ref:"R1", val:"10k"}, false],
+    [{ref:"C9", type:"RESISTOR"}, false]
+  ];
+  for(const [o, attendu] of cas)
+    if(simPDNEstCondensateur(o) !== attendu)
+      throw new Error(JSON.stringify(o) + " : attendu " + attendu);
+});
+
+T("PDN (A4) : les modes de cavité ne sont plus bornés à m, n ≤ 4", function(){
+  /* 400 × 300 mm, εr 4,3 : TM50 résonne vers 903 MHz. L'ancienne borne le
+     traitait en inductance pure et son pic disparaissait. */
+  const modes = simPDNCalculerModesCavite(400, 300, 100, 4.3, 0.02, 1e9);
+  const tm50 = modes.find(m => m.m === 5 && m.n === 0);
+  if(!tm50) throw new Error("TM50 manquant");
+  if(Math.abs(tm50.f - 903e6) > 5e6) throw new Error("TM50 attendu ≈ 903 MHz, obtenu " + tm50.f);
+  // Tous les modes sous la fréquence limite, ni plus ni moins.
+  const v = 2.99792458e8 / Math.sqrt(4.3), fLim = 2.5e9;
+  let n = 0;
+  for(let m = 0; m < 80; m++) for(let k = 0; k < 80; k++){
+    if(!m && !k) continue;
+    if((v / 2) * Math.hypot(m / 0.4, k / 0.3) <= fLim) n++;
+  }
+  if(modes.length !== n) throw new Error(n + " modes attendus sous 2,5 GHz, obtenu " + modes.length);
+  // Les étiquettes restent lisibles au-delà de 9.
+  const grand = simPDNCalculerModesCavite(2000, 50, 100, 4.3, 0.02, 1e9).find(m => m.m === 11 && m.n === 0);
+  if(!grand || grand.modeStr !== "TM11,0") throw new Error("TM(11,0) doit s'écrire « TM11,0 »");
+});
+
+T("PDN (B6/B7) : point observé sur le circuit alimenté, montage selon la profondeur de la cavité", function(){
+  cartePdn4c();
+  const po = SIM_IPC.pdnPointObserve("+3V3");
+  if(!po || po.ref !== "U1") throw new Error("U1 attendu comme point observé, obtenu " + JSON.stringify(po));
+  // Repère de la cavité : (40, 25) absolu, origine (10, 5).
+  if(Math.abs(po.x - 30) > 1e-6 || Math.abs(po.y - 20) > 1e-6)
+    throw new Error("U1 attendu en (30, 20) dans la cavité, obtenu (" + po.x + ", " + po.y + ")");
+
+  const caps = SIM_IPC.pdnCondensateurs("+3V3");
+  const c1 = caps.find(c => c.ref === "C1"), c2 = caps.find(c => c.ref === "C2");
+  if(Math.abs(c1.x - 10) > 1e-6 || Math.abs(c1.y - 10) > 1e-6) throw new Error("C1 attendu en (10, 10) dans la cavité");
+  /* C1 dessus : la paire de vias descend de Top jusqu'à In2, 1,37 mm.
+     C2 dessous : sa face EST le plan inférieur de la cavité (Bottom) — la
+     paire de vias ne traverse rien avant d'y entrer, h = 0. */
+  const l1 = 0.50e-9 + 0.76e-9 * (0.035 + 0.1 + 0.035 + 1.2 - 0.2);
+  const l2 = 1.00e-9 + 0.76e-9 * (0 - 0.2);
+  if(Math.abs(c1.lMount - l1) > 1e-13) throw new Error("L_mount C1 attendue " + l1 + ", obtenue " + c1.lMount);
+  if(Math.abs(c2.lMount - l2) > 1e-13) throw new Error("L_mount C2 attendue " + l2 + ", obtenue " + c2.lMount);
+  if(!(c1.lMount > c2.lMount)) throw new Error("un condensateur loin de la cavité doit voir plus d'inductance");
+});
+
+T("PDN (B8) : la visionneuse trouve la base Murata par `part`, et chiffre comme l'éditeur", function(){
+  cartePdn4c();
+  if(!SIM_PARASITES_MURATA_DEFAUT || !SIM_PARASITES_MURATA_DEFAUT.GCM155R71C104KA55)
+    throw new Error("la copie embarquée de la base Murata doit vivre dans commun/");
+  const caps = SIM_IPC.pdnCondensateurs("+3V3");
+  const c1 = caps.find(c => c.ref === "C1"), c2 = caps.find(c => c.ref === "C2");
+  if(c1.prov !== "spice") throw new Error("C1 porte un MPN Murata dans `part` : prov « spice » attendue, obtenue " + c1.prov);
+  if(Math.abs(c1.esr - 0.0142) > 1e-6 || Math.abs(c1.esl - 0.201e-9) > 1e-15)
+    throw new Error("ESR/ESL Murata attendues pour C1");
+  // Sans MPN : les valeurs typiques partagées (0805, 10 µF).
+  const d = simPDNParasitesDefaut("0805", 10e-6, "");
+  if(d.esr !== 0.008) throw new Error("un 10 µF est dans la tranche 10 µF (8 mΩ), pas 1 µF : " + d.esr);
+  if(c2.esl !== d.esl || c2.esr !== d.esr)
+    throw new Error("C2 doit prendre les valeurs typiques partagées : ESL " + c2.esl + " / " + d.esl);
+});
+
+T("PDN (B5) : la capacité du plan suit la surface en regard, pas la boîte", function(){
+  const memo = JSON.parse(JSON.stringify({a:SIM_PDN.planDimXmm, b:SIM_PDN.planDimYmm, s:SIM_PDN.planSurfaceCm2,
+                                          p:SIM_PDN.planActif, m:SIM_PDN.caviteModesActif, d:SIM_PDN.planEpaisseurUm, e:SIM_PDN.planEr}));
+  const memoCaps = SIM_PDN.condensateurs;
+  SIM_PDN.planActif = true; SIM_PDN.caviteModesActif = false;
+  SIM_PDN.planDimXmm = 100; SIM_PDN.planDimYmm = 80; SIM_PDN.planEpaisseurUm = 100; SIM_PDN.planEr = 4.3;
+  SIM_PDN.condensateurs = [];
+  SIM_PDN.planSurfaceCm2 = null; simCalculerPDN();
+  const plein = SIM_PDN.result.cPlaneTotalPf;
+  SIM_PDN.planSurfaceCm2 = 40; simCalculerPDN();
+  const moitie = SIM_PDN.result.cPlaneTotalPf;
+  if(Math.abs(moitie / plein - 0.5) > 1e-9) throw new Error("40 cm² sur 80 : la capacité doit être divisée par deux");
+  SIM_PDN.planSurfaceCm2 = 500; simCalculerPDN();
+  if(Math.abs(SIM_PDN.result.cPlaneTotalPf - plein) > 1e-9) throw new Error("une surface plus grande que la boîte est bornée par la boîte");
+  SIM_PDN.planDimXmm = memo.a; SIM_PDN.planDimYmm = memo.b; SIM_PDN.planSurfaceCm2 = memo.s;
+  SIM_PDN.planActif = memo.p; SIM_PDN.caviteModesActif = memo.m; SIM_PDN.planEpaisseurUm = memo.d; SIM_PDN.planEr = memo.e;
+  SIM_PDN.condensateurs = memoCaps;
+});
+
+T("PDN piste (visionneuse) : longueur et inductance par le cuivre du rail, depuis la charge", function(){
+  /* Deux couches : masse pleine dessous (0,2 mm de cœur), rail « +2V8 » en
+     pistes sur le dessus. U1 en (10, 20), C0 au bout d'un L de 30 + 15 mm.
+     Les pastilles sont posées à la main sur le net : ce banc n'a pas de
+     padstacks, et c'est le chemin qu'il éprouve, pas le placement. */
+  carte({nets:["+2V8","GND"], piste:{c:0, n:0, w:0.5, p:[10,20, 40,20]},
+         pistes:[{c:0, n:0, w:0.5, p:[10,20, 40,20, 40,5]}],
+         plans:[{c:1, n:1, g:[{o:CONTOUR, t:[]}]}],
+         composants:[
+           {ref:"U1", pkg:"SOIC-8", c:0, x:10, y:20, m:0, val:"MCU", type:"", part:"",
+            pins:[{num:"1",n:0},{num:"2",n:1},{num:"3",n:1},{num:"4",n:1},{num:"5",n:1},{num:"6",n:1},{num:"7",n:1},{num:"8",n:0}]},
+           {ref:"C0", pkg:"0603", c:0, x:40, y:5, m:0, val:"1uF", type:"", part:"", pins:[{num:"1",n:0},{num:"2",n:1}]}
+         ]});
+  const net = V.parNet.find(o => o.nom === "+2V8");
+  net.pads.push({x:10, y:20, d:0.6, hote:{ref:"U1"}}, {x:40, y:5, d:0.6, hote:{ref:"C0"}});
+  const caps = SIM_IPC.pdnCondensateurs("+2V8");
+  const c0 = caps.find(c => c.ref === "C0");
+  if(!c0) throw new Error("C0 attendu");
+  if(c0.pisteSource !== "piste" || Math.abs(c0.longueurPisteMm - 45) > 0.01)
+    throw new Error("45 mm de cuivre attendus, obtenu " + c0.longueurPisteMm + " (" + c0.pisteSource + ")");
+  const lp = simPDNInductanceLineique(0.5, 0.2);
+  if(Math.abs(c0.lPiste - 45 * lp) > 1e-13)
+    throw new Error("L attendue " + (45 * lp * 1e9).toFixed(2) + " nH (retour à 0,2 mm), obtenue " + (c0.lPiste * 1e9).toFixed(2));
+
+  // Le point observé, lui, est rendu dans le repère affiché (celui du fichier).
+  const po = SIM_IPC.pdnPointObserve("+2V8");
+  if(!po || po.ref !== "U1" || po.xCarte !== 10 || po.yCarte !== 20)
+    throw new Error("U1 attendu en (10, 20) dans le repère du fichier, obtenu " + JSON.stringify(po));
+});
+
+T("PDN hauteurs de retour : couche par couche, jusqu'au plan de masse le plus proche", function(){
+  const r = simPDNHauteursRetour({
+    epCu:[0.035,0.035,0.035,0.035],
+    gaps:[{t:0.1},{t:1.2},{t:0.2}],
+    zones:[{rang:1, net:"GND", aireMm2:5000}]
+  });
+  const att = [0.1, 1.3, 1.2, 1.4];     // In1 est la seule masse ; elle-même regarde la plus proche… qui n'existe pas
+  if(Math.abs(r.h[0] - 0.1) > 1e-9 || Math.abs(r.h[2] - 1.2) > 1e-9 || Math.abs(r.h[3] - 1.4) > 1e-9)
+    throw new Error("hauteurs attendues " + att + ", obtenues " + r.h);
+  if(!r.supposee[1] || r.supposee[0]) throw new Error("seule la couche de masse elle-même n'a pas d'autre masse en regard");
+});
+
+T("Assistant ΔI (visionneuse) : les préréglages partent de la charge détectée", function(){
+  cartePdn4c();
+  const memo = {e: SIM_PDN.evenements, c: SIM_PDN.chargeInfo, r: SIM_PDN.rail};
+  try{
+    SIM_PDN.evenements = null; SIM_PDN.chargeInfo = null;
+    simAppliquerPrereglagesClassesNets();
+    if(SIM_PDN.rail !== "+3V3") throw new Error("rail +3V3 attendu, obtenu " + SIM_PDN.rail);
+    const evs = SIM_PDN.evenements || [];
+    if(evs.length !== 3 || !/U1/.test(evs[0].nom)) throw new Error("trois événements partant de U1 attendus, obtenu " + JSON.stringify(evs.map(e => e.nom)));
+    if(!evs[0].iSuppose) throw new Error("sans fiche de courant, la valeur doit être « à vérifier »");
+  } finally { SIM_PDN.evenements = memo.e; SIM_PDN.chargeInfo = memo.c; SIM_PDN.rail = memo.r; }
+});
+
+T("Fiche de la charge (visionneuse) : la clé est la référence de pièce du fichier", function(){
+  cartePdn4c();
+  V.modele.composants.find(c => c.ref === "U1").part = "R7F100GGG2DFB";
+  const info = SIM_IPC.pdnInfosCharge("+3V3");
+  if(!info || info.ref !== "U1" || info.cle !== "R7F100GGG2DFB")
+    throw new Error("U1 / R7F100GGG2DFB attendus, obtenu " + JSON.stringify(info));
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

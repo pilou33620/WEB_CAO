@@ -822,6 +822,54 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
    Elle définit le plafond au-delà duquel les appels de courant transitoires
    provoquent un dépassement du gabarit de tension admissible.
 
+   **L'assistant ΔI.** « Combien de courant d'un coup ? » est la question que
+   personne ne sait remplir, et un ΔI unique appliqué à toutes les fréquences
+   est à la fois trop sévère et muet. L'assistant décrit donc les appels de
+   courant comme des **événements**, chacun défini par deux grandeurs faciles à
+   trouver : combien de courant, et en combien de temps.
+
+   | Événement | ΔI | Fréquence |
+   |---|---|---|
+   | Réveil (veille → actif) | courant actif de la charge (datasheet, IDD) | $0{,}35 / t$, $t \approx 1$ µs |
+   | Horloge | courant actif | fréquence d'horloge |
+   | Sorties qui basculent ensemble | $N \cdot C \cdot V_{dd} / t$ | $0{,}35 / t$, $t$ = front (≈ 5 ns) |
+   | Charge commutée (LED, relais…) | son courant | $0{,}35 / t$ |
+
+   $0{,}35/t$ est la bande d'un front de durée $t$ : c'est là que l'événement
+   tombe sur la courbe. Chacun est vérifié **à sa fréquence** :
+   $\Delta V = \Delta I \times |Z(f)|$ doit rester sous $V_{dd}\cdot$ondulation.
+   Les événements sont reportés sur la courbe par un repère numéroté, placé à
+   la hauteur de leur propre cible (vert s'il tient, orange sinon). Le bouton
+   « ΔI max → cible » reporte le plus gros ΔI dans le champ du haut, pour la
+   vérification unique la plus sévère.
+
+   **La fiche de la charge.** L'utilisateur ne décrit pas les événements : il
+   recopie des valeurs de datasheet dans la fiche de la charge
+   (`SIM_PDN_FICHE`), et chaque champ dit où les trouver :
+
+   | Champ | Sert à | Défaut |
+   |---|---|---|
+   | Fréquence d'horloge (MHz) | fréquence de l'événement « horloge » | 16, à vérifier |
+   | Consommation max en fonctionnement (mA) | ΔI du réveil et de l'horloge | 10, à vérifier |
+   | Consommation en veille (µA) | retranchée du réveil | 0 |
+   | Montée du courant au réveil (µs) | fréquence du réveil | 1 |
+   | Sorties qui basculent ensemble | $N$ des sorties | 8, à vérifier |
+   | Temps de montée des sorties (ns) | $t$ des sorties | 5 |
+   | Charge par sortie (pF) | $C$ des sorties | 20 |
+   | Courant max par sortie (mA) | borne $C\cdot V/t$ par broche | 0 (pas de borne) |
+   | Tension min de fonctionnement (V) | situe la marge d'ondulation | 0 (non renseignée) |
+
+   L'outil en déduit le réveil, l'horloge et les sorties
+   (`simPDNEvenementsDepuisFiche`) ; seules les charges ajoutées à la main (LED,
+   relais) se renseignent ligne par ligne. La fiche est enregistrée dans le
+   **profil utilisateur** (section `pdnFiches`), sous la **référence de la
+   pièce** (MPN, valeur, à défaut repère). Remplie une fois pour un
+   microcontrôleur, elle resert sur toutes les cartes qui le portent, dans
+   l'éditeur comme dans la visionneuse. Dans l'éditeur, le courant et l'horloge
+   sont d'abord repris de la fiche bibliothèque du composant quand elle les
+   donne (`pdnInfosCharge`). Le fichier IPC-2581 ne porte pas de consommation :
+   dans la visionneuse, la fiche se remplit à la main la première fois.
+
 2. **Branche VRM (Régulateur)** :
    Modélisée en basse fréquence par sa résistance série équivalente $R_{vrm}$ et son
    inductance de boucle $L_{vrm} = \frac{R_{vrm}}{2\pi f_{vrm}}$ :
@@ -829,16 +877,62 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
 
 3. **Branches Condensateurs de découplage (Modèles réels Murata / Catalogue)** :
    Chaque condensateur connecté entre le rail et la masse est détecté automatiquement
-   sur le PCB (`SIM_PCB.pdnCondensateurs(net)`). Les grandeurs parasites réelles
-   (ESR, ESL issues des fichiers SPICE `.sub` consolidés de Murata ou du catalogue)
-   sont injectées conjointement à l'inductance de montage du boîtier ($L_{mount}$ de
-   0,35 nH en 0201 à 1,3 nH en 1206) :
+   sur le PCB (`SIM_PCB.pdnCondensateurs(net)`, `SIM_IPC.pdnCondensateurs(net)`).
+   Les deux outils appliquent les mêmes règles, qui vivent dans
+   `commun/simulation-em.js` :
+   - **ce qui est un condensateur** (`simPDNEstCondensateur`) : le type déclaré
+     s'il dit quelque chose, puis une référence `C` suivie d'un chiffre, puis une
+     valeur en farads si la référence ne désigne pas une autre famille ; au-delà de
+     quatre broches, ce n'en est pas un. Le test historique `/^[cC]/` prenait `CN1`
+     ou `CR1` pour des condensateurs, et l'éditeur typait « capacitor » toute
+     empreinte sans type : un circuit intégré alimenté entrait dans la liste comme
+     un 100 nF ;
+   - **ses parasites** (`simPDNParasitesCapa`) : la base Murata par modèle SPICE,
+     MPN (le champ `part` d'un IPC-2581) ou nom de pièce, puis des valeurs typiques
+     par boîtier et par capacité. La copie embarquée de la base est dans `commun/` :
+     la visionneuse n'en avait aucune dans le navigateur ;
+   - **son inductance de montage** (`simPDNInductanceMontage`) : la table par
+     boîtier (0,35 nH en 0201 à 1,3 nH en 1206) suppose le plan à 0,2 mm sous la
+     face. Quand la cavité est connue, elle est corrigée par la longueur $h$ de la
+     paire de vias entre la face du composant et le premier plan de la cavité :
+     $L_{mount} = L_{table} + 0{,}76\ \text{nH/mm}\cdot(h - 0{,}2\ \text{mm})$,
+     soit $(\mu_0/\pi)\ln(s/r)$ pour $s = 1$ mm et $r = 0{,}15$ mm. Un
+     condensateur posé sur la face qui porte elle-même un plan de la cavité a
+     $h = 0$ ;
+   - **sa piste jusqu'à la charge** (`simPDNCheminsPiste`), comptée **seulement
+     sans cavité**. Le plus court chemin dans le cuivre du rail (pistes, arcs,
+     jonctions en T) relie les pastilles du condensateur à celles de la charge
+     détectée. Le long de ce chemin, on cumule l'inductance
+     $L' = Z_0^{air}/c$ (Hammerstad, hauteur jusqu'au plan de masse le plus
+     proche) et la résistance DC du cuivre. Les deux s'ajoutent en série à $Z_k$.
+     Une piste de 0,5 mm à 1,5 mm de la masse vaut 0,64 nH/mm : un 1 µF au bout
+     de 30 mm porte une vingtaine de nH, et sa résonance série (0603) descend
+     d'environ 4 MHz à environ 1 MHz. Sans ce terme, le modèle localisé posait chaque
+     condensateur au pied de la charge. Un condensateur que le cuivre ne relie
+     pas reçoit une distance à vol d'oiseau, signalée « ≈ » dans le tableau.
+     Avec une cavité, c'est l'épandage qui porte ce trajet : la piste n'est pas
+     comptée une seconde fois.
+
+   L'impédance de chaque branche :
    $$Z_k(\omega) = \text{ESR}_k + j \left(\omega (\text{ESL}_k + L_{mount,k}) - \frac{1}{\omega C_k}\right)$$
    $$Y_k(\omega) = \frac{1}{Z_k(\omega)}$$
 
 4. **Branche Capacité inter-plans de la cavité** :
-    Pour les cartes multi-couches avec plans d'alimentation et de masse face-à-face,
-    la capacité répartie et les pertes diélectriques $\tan\delta$ sont intégrées :
+    **La cavité est détectée, elle n'est plus supposée** (`simPDNChoisirCavite`).
+    Pour chaque couche, on retient le plus grand versement du rail et le plus grand
+    versement de masse (au moins 1 cm²). Parmi les couples qui se font face, la
+    cavité est le plus rapproché. $d$, $\varepsilon_r$ et $\tan\delta$ sont ceux des
+    diélectriques qui séparent **ces deux couches**, moyennés à l'épaisseur.
+    $A_{plane}$ est la surface en regard, approchée par la plus petite de ces trois
+    valeurs : aire du rail, aire de la masse, recouvrement de leurs boîtes.
+    L'emprise $a \times b$ et l'origine sont celles de ce recouvrement, et les
+    positions des composants sont ramenées à ce coin. Sans paire (carte deux
+    couches, rail routé en pistes), le plan est décoché, le solveur reste localisé
+    et le panneau dit pourquoi. Avant, l'éditeur lisait `S.stackup`, qui n'existe
+    pas (100 µm sur toutes les cartes), la visionneuse prenait le premier
+    diélectrique de l'empilage, et les deux supposaient partout une cavité
+    pleine carte.
+    La capacité répartie et les pertes diélectriques $\tan\delta$ sont intégrées :
     $$C_{plane} = \frac{\varepsilon_0 \varepsilon_r A_{plane}}{d_{dielectrique}}$$
     $$Z_{C,plane}(\omega) = \frac{1}{\omega C_{plane}\tan\delta + j\omega C_{plane}}$$
     C'est le terme $(0,0)$ du développement modal ci-dessous, et le point de départ
@@ -932,21 +1026,33 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
    `nbPoints` : tout consommateur doit lire `result.freqs`, jamais reconstruire la grille.
 
    **Le point observé.** Il se règle dans le panneau (`portXmm`, `portYmm`) et
-   apparaît en réticule blanc sur la cartographie 2D. Par défaut il est placé à un
-   coin, qui est un ventre pour **tous** les modes : c'est le cas le plus
-   défavorable, celui qu'on veut pour une vérification. L'efficacité $\kappa$ d'un
+   apparaît en réticule blanc sur la cartographie 2D. Il se saisit **dans le
+   repère affiché par l'outil** : origine utilisateur dans l'éditeur,
+   coordonnées du fichier dans la visionneuse. Le solveur le ramène à la cavité
+   en retranchant l'origine de celle-ci (`caviteX0Carte`, `caviteY0Carte`). Il le
+   lisait auparavant dans le repère de la cavité, dont l'origine est un coin du
+   versement retenu : sur un plan partiel, une coordonnée recopiée de l'écran
+   tombait ailleurs. La détection le pose sur le
+   composant que le rail alimente (`simPDNChoisirCharge`) : parmi ceux qui touchent
+   le rail et la masse, passifs et connecteurs écartés, celui qui a le plus de
+   broches. Un microcontrôleur l'emporte ainsi sur son régulateur. Sans candidat,
+   il reste à un coin, qui est un ventre pour **tous** les modes : c'est le cas le
+   plus défavorable. L'efficacité $\kappa$ d'un
    condensateur ne se lit pas dans l'absolu mais par rapport à ce point : c'est la
    différence $Z_{00} - Z_{0L}$ qui le pénalise, pas sa distance en millimètres.
 
    **Ce que le modèle ne fait pas.** Le VRM n'a pas de position : il reste en
-   parallèle sur le point observé (voir ci-dessus). La liste des modes résonants est
-   bornée à $m, n \le 4$ : au-delà, un mode est traité comme inductance pure, ce qui
-   est exact tant que sa fréquence reste très au-dessus de la bande tracée mais
-   cesserait de l'être si l'on poussait `fMax` bien au-delà du gigahertz. Les pertes
-   ohmiques du cuivre dans le plan (résistance DC d'épandage) ne sont pas modélisées :
-   seules le sont les pertes diélectriques et l'effet de peau, à travers $Q_{mn}$.
-   Enfin le modèle suppose des plans **pleins et rectangulaires** ; une découpe, une
-   fente ou un plan en plusieurs versements ne sont pas vus.
+   parallèle sur le point observé (voir ci-dessus). Les modes résonants sont tous
+   ceux dont la fréquence tombe sous $\max(1{,}5\,f_{max},\ 2{,}5\ \text{GHz})$, et
+   leur ordre suit donc la taille de la carte. La liste était bornée à
+   $m, n \le 4$ : sur une carte de 400 mm, TM₅₀ (≈ 903 MHz) passait pour une
+   inductance pure. Les pertes ohmiques du cuivre dans le plan (résistance DC
+   d'épandage) ne sont pas modélisées : seules le sont les pertes diélectriques et
+   l'effet de peau, à travers $Q_{mn}$. Enfin le développement modal suppose un
+   rectangle **plein**. Un plan partiel ou découpé est traité comme le rectangle
+   de même emprise, avec la capacité de sa surface réelle ; les fréquences des
+   modes restent celles de l'emprise. Un condensateur hors de l'emprise est ramené
+   sur son bord.
 
 7. **Interactivité, Cartographie 2D & What-If** :
    - Tracé SVG logarithmique (décades 10 kHz à 1 GHz vs 1 mΩ à 100 Ω) avec ligne de jauge $Z_{target}$ et repères verticaux des modes 2D ($TM_{10}, TM_{01}, \dots$).
