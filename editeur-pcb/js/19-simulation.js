@@ -4472,7 +4472,15 @@ const SIM_PCB={
         for(const g of trkSegs(t))
           segs.push({x1:g.x1,y1:g.y1,x2:g.x2,y2:g.y2,w:t.w||0.25,h:h[t.l]||1.5,t:cuT(t.l)});
       }
-      const chemins=simPDNCheminsPiste({segs},padsRail(fpCharge),cibles);
+      // Les zones de cuivre du rail conduisent aussi ; une découpe y fait un trou.
+      const zones=[];
+      for(const z of (S.zones||[])){
+        if(!z||!isTargetNet(z.net)||!Array.isArray(z.pts)||z.pts.length<3) continue;
+        const trous=(S.cuts||[]).filter(c=>c&&c.l===z.l&&Array.isArray(c.pts)&&c.pts.length>=3&&
+                                         inPoly(c.pts[0].x,c.pts[0].y,z.pts)).map(c=>c.pts);
+        zones.push({pts:z.pts,trous,h:h[z.l]||1.5,t:cuT(z.l)});
+      }
+      const chemins=simPDNCheminsPiste({segs,zones},padsRail(fpCharge),cibles);
       for(const c of res){
         const ch=chemins.get(c.ref);
         if(!ch) continue;

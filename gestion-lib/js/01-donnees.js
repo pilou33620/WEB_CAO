@@ -332,6 +332,17 @@ async function enregistrerCatalogue() {
 }
 
 // Filtrage et tri de la liste de composants
+/* Les colonnes où cherche la barre de recherche. Les références fabricant y
+   sont toutes : « Part Number » (la référence Murata, par exemple), le MPN et
+   les secondes sources. Les noms sont ceux, exacts, de l'en-tête du CSV —
+   une espace de trop après « Part Number » suffisait à ne jamais rien y
+   trouver. */
+const COLONNES_RECHERCHE = [
+  "Part Name", "Description", "Value", "Package type", "Manufacturer",
+  "Part Number", "manufacturer part Number", "vendor reference",
+  "Source alternative", "2nd source P/N", "3nd source P/N", "4nd source P/N"
+];
+
 function obtenirComposantsFiltres() {
   const q = LIB_STATE.filtres.recherche.toLowerCase().trim();
   const pref = LIB_STATE.filtres.prefix;
@@ -363,14 +374,8 @@ function obtenirComposantsFiltres() {
 
     // 3. Filtre recherche texte
     if (q) {
-      const match = (c["Part Name"] || "").toLowerCase().includes(q) ||
-                    (c["Description"] || "").toLowerCase().includes(q) ||
-                    (c["Value"] || "").toLowerCase().includes(q) ||
-                    (c["Package type"] || "").toLowerCase().includes(q) ||
-                    (c["Manufacturer"] || "").toLowerCase().includes(q) ||
-                    (c["Part Number "] || "").toLowerCase().includes(q) ||
-                    (c[colPcb] || "").toLowerCase().includes(q) ||
-                    (c[colSch] || "").toLowerCase().includes(q);
+      const match = COLONNES_RECHERCHE.concat([colPcb, colSch])
+        .some(col => String(c[col] || "").toLowerCase().includes(q));
       if (!match) return false;
     }
     return true;

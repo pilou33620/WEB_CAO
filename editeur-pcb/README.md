@@ -865,6 +865,61 @@ ses **articulations** — les points où ce qui bouge touche ce qui reste
 C'est le geste des fils de l'éditeur schématique, transposé au cuivre, avec en
 plus la contrainte d'angle que le schématique n'a pas besoin de tenir.
 
+### Déplacer un boîtier ou un via déjà routé
+
+Déplacer un boîtier laissait ses pistes derrière lui, et déplacer un via
+étirait son dernier segment d'un seul trait, à un angle quelconque — un « V »
+qu'on ne trace jamais à la main. Le cuivre accroché **suit** désormais, en
+gardant ses 45°, comme le glissement d'Altium ou de KiCad (`followMoved`,
+`followPath`, `applyFollow`) :
+
+- chaque piste qui arrive sur une pastille ou un via déplacé est suivie de
+  coude en coude jusqu'à ce qui la tient (pastille, via, embranchement) ;
+- si ce bout-là bouge lui aussi (deux pastilles du même boîtier, un via et son
+  boîtier), la piste part **en bloc** ;
+- sinon la piste est gardée telle quelle jusqu'à un sommet, et repart de là
+  vers le point déplacé par un coude à 45° (ou 90° selon la règle) dont la
+  première jambe **prolonge** le segment d'origine : le coude glisse le long de
+  son voisin. C'est le `dragCornerInternal` du routeur PNS de KiCad : on part du
+  sommet le plus proche, et on recule d'un sommet quand le coude tournerait à
+  rebrousse-poil, recroiserait la piste ou passerait sous l'isolation ;
+- quand **aucun coude direct ne passe** l'isolation, la piste **contourne**
+  l'obstacle comme au routage interactif (`pnsWalkaround`), puis le détour est
+  retendu : l'optimiseur du routeur raccourcit, et `followSmooth` retire les
+  marches qui ne rallongent pas — tous les chemins à 45° sans retour en arrière
+  ayant la même longueur, l'optimiseur seul laissait un crochet au ras de la
+  pastille. Les obstacles sont jugés dans le monde **à l'instant du geste**
+  (`followBase` / `followWorld`, une branche du modèle PNS) : les pastilles du
+  boîtier qu'on tire y sont à leur nouvelle place, et la broche voisine compte
+  comme n'importe quel obstacle. Ce qui tient les deux bouts de la piste n'en
+  est jamais un. Sans passage d'aucun côté, on garde le coude direct : le
+  glissement d'un via bute alors comme avant, et le DRC le signale pour un
+  boîtier ;
+- en règle de routage **« pousser »** (le défaut), tirer un **boîtier** fait
+  le **shove** comme le routage interactif (`followShove`) : les pistes qui
+  suivent ne contournent que les pastilles, et tout ce qui bouge devient une
+  tête de `pnsShoveHeads` — les pistes qui suivent, le cuivre sélectionné, les
+  vias emmenés, et les pastilles du boîtier, en **une seule tête-objet** dont
+  l'enveloppe est l'octogone qui les entoure toutes (`pnsHullGroup`) : le
+  cuivre poussé fait le tour du boîtier d'un geste au lieu de serpenter entre
+  ses broches. Chaque ligne écartée est **retendue avant de pousser ses
+  voisines** (`pnsTendre`, option `tendre`) : retendues après coup, deux
+  lignes poussées l'une contre l'autre se bloqueraient mutuellement. Les
+  sommets sont reposés au micron le long de leur direction
+  (`followRound45`), sinon l'arrondi coordonnée par coordonnée casse le 45°
+  d'un pan court. L'aperçu se dessine en pointillé pendant le geste
+  (`S.dragShove`) et le relâchement le verse (`pnsApply`), d'un seul Ctrl+Z.
+  Garde-fous : une paire différentielle ne se pousse pas brin par brin, et le
+  cuivre qui tient une piste qui suit ne doit pas partir — sinon on se rabat
+  sur le contournement. Un **via tiré seul** ne pousse pas : il bute, comme
+  avant. En règle « contourner », rien n'est poussé ; en règle « signaler »,
+  rien n'est contourné non plus ;
+- le point tenu par une pastille ou un via déplacé ne glisse jamais : il suit
+  son support en bloc (clé « rigide » de `moveJoints`) ;
+- le tracé se recalcule à chaque mouvement depuis la forme de départ : revenir
+  en arrière rend la piste intacte. `Alt` laisse le cuivre où il est. En règle
+  d'angle « libre », le bout s'étire simplement, comme avant.
+
 ### L'aimant angulaire du sommet tiré
 
 Tout cela vaut pour la portion tirée par son **milieu**. Tirer un **sommet** par
@@ -2026,7 +2081,7 @@ perdu tout son terme de potentiel scalaire, celui qui porte les charges. C'est
 L'éditeur ouvre sur un pas de **0,1 mm** : assez fin pour tomber sur le centre
 d'une pastille sans se battre avec l'accrochage, assez rond pour que les
 coordonnées restent lisibles. Il se règle ensuite à deux endroits, qui restent
-d'accord : le menu de la barre d'outils, à côté du bouton *Grille*, et le
+d'accord : *Pas de grille* dans le menu *Affichage*, sous *Grille*, et le
 panneau *Règles*. Les deux passent par `setGridStep()`, dans `js/05-tools.js`. Des millimètres ronds
 d'abord — 0,05 · 0,1 · 0,25 · 0,5 · 1 · 2 · 5 mm — plus les deux pas impériaux
 dont on ne peut pas se passer : 1,27 et 2,54 mm (0,05 et 0,1 pouce),

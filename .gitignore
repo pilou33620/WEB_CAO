@@ -39,6 +39,9 @@ exports/
 # aussi les jeux d'essai. Retirer la ligne ci-dessous pour suivre le fichier.
 /LIB/
 /LIB_composants.csv
+# Chemin de la bibliotheque choisi sur ce poste (page d'accueil) : un chemin
+# local, propre a chaque machine.
+/config_lib.json
 
 # Doublons crees par l'explorateur Windows (« serveur - Copie.py »)
 * - Copie.*

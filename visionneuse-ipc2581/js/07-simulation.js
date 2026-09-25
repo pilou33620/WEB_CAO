@@ -1025,11 +1025,44 @@ function simPDNPistesIpc(net, refCharge, caps, cav, k){
     if(!parRef.has(ref)) parRef.set(ref, []);
     parRef.get(ref).push({x: q.x * k, y: q.y * k, r: Math.max(0.1, (q.d || 0.6) * k / 2)});
   }
+  /* PAR LES BROCHES quand les pastilles ne disent pas à qui elles sont. Un
+     export réel porte souvent ses pastilles de cuivre à part, sans hôte, et
+     rattache les composants au net par leurs broches (`pins`, via
+     <LogicalNet>) : sans ce repli, aucun composant n'avait de pastille sur le
+     rail et aucune piste n'était calculée. La broche est placée comme une
+     pastille (mdlPlacer) ; son rayon est celui de la pastille du net qui la
+     recouvre, 0,4 mm à défaut. */
+  const iNet = V.parNet.indexOf(n);
+  for(const comp of (V.modele.composants || [])){
+    if(!comp.ref || parRef.has(comp.ref)) continue;
+    const pts = [];
+    for(const p of (comp.pins || [])){
+      if(p.n !== iNet || typeof p.x !== "number" || typeof p.y !== "number") continue;
+      const w = mdlPlacer(p.x, p.y, comp.x || 0, comp.y || 0, comp.r || 0, !!comp.m);
+      let r = 0.4;
+      for(const q of (n.pads || [])){
+        if(Math.hypot(q.x - w.x, q.y - w.y) * k <= 0.2) { r = Math.max(0.1, (q.d || 0.8) * k / 2); break; }
+      }
+      pts.push({x: w.x * k, y: w.y * k, r: r});
+    }
+    if(pts.length) parRef.set(comp.ref, pts);
+  }
   const depart = parRef.get(refCharge) || [];
   if(!depart.length) return;
   const cibles = new Map();
   for(const c of caps) cibles.set(c.ref, parRef.get(c.ref) || []);
-  const chemins = simPDNCheminsPiste({segs: segs}, depart, cibles);
+  // Les versements du rail : une piste épaisse s'exporte souvent en polygone.
+  const anneau = o => { const r = []; for(let i = 0; i + 1 < o.length; i += 2) r.push({x: o[i] * k, y: o[i + 1] * k}); return r; };
+  const zones = [];
+  for(const g of (n.plans || [])){
+    const rg = rangDe(g.c);
+    for(const ct of (g.g || [])){
+      if(!ct || !ct.o || ct.o.length < 6) continue;
+      zones.push({pts: anneau(ct.o), trous: (ct.t || []).map(anneau),
+                  h: (rg >= 0 && h[rg]) || 1.5, t: (rg >= 0 && LT.cu[rg].ep) || 0.035});
+    }
+  }
+  const chemins = simPDNCheminsPiste({segs: segs, zones: zones}, depart, cibles);
   for(const c of caps){
     const ch = chemins.get(c.ref);
     if(!ch) continue;

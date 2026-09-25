@@ -942,6 +942,7 @@ function paint(c,dpr,w,h,noGrid){
   drawSilk(c);
   drawTech(c);
   drawRoute(c);
+  if(S.dragShove)drawShove(c,S.dragShove);     // le cuivre qu'écarte le boîtier tiré
   if(typeof drawDp==="function")drawDp(c);
   drawZoneDraft(c);
   drawCutDraft(c);

@@ -270,6 +270,10 @@ var PLACEMENT_SCORE = (function() {
     }
 
     const cong = data.congestion || {};
+    /* le serveur nomme le pic « peak_density » : des pastilles par case de
+       grille (5 mm), pas des nets */
+    const pic = cong.peak_density || 0;
+    const caseMm = cong.cell_size_mm || 5;
     const dec = data.decouplage || {};
     const worst = data.top_contributeurs || [];
     const tiers = (data.ordonnancement && data.ordonnancement.tiers) ? data.ordonnancement.tiers : {};
@@ -318,12 +322,12 @@ var PLACEMENT_SCORE = (function() {
           <div style="background:var(--panel2);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <span style="font-weight:600;text-transform:uppercase;font-size:10px;color:var(--txt-dim);letter-spacing:0.08em;">Congestion max</span>
-              ${cong.hotspot_valeur >= 4 ? `
+              ${pic >= 4 ? `
                 <button class="tb" id="bCiblerHotspot" style="padding:2px 5px;font-size:10px;color:var(--red);" title="Centrer la vue sur le point chaud">📍</button>
               ` : ''}
             </div>
-            <div style="font-size:16px;font-weight:700;color:${(cong.hotspot_valeur >= 6) ? 'var(--red)' : ((cong.hotspot_valeur >= 4) ? 'var(--yellow)' : '#4cd964')};margin-top:4px;font-family:var(--mono);">
-              ${cong.hotspot_valeur || 0} <span style="font-size:11px;font-weight:400;color:var(--txt-dim);">nets / cell</span>
+            <div style="font-size:16px;font-weight:700;color:${(pic >= 6) ? 'var(--red)' : ((pic >= 4) ? 'var(--yellow)' : '#4cd964')};margin-top:4px;font-family:var(--mono);">
+              ${pic} <span style="font-size:11px;font-weight:400;color:var(--txt-dim);">pastilles / case ${caseMm}×${caseMm} mm</span>
             </div>
           </div>
         </div>

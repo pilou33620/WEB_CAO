@@ -24,6 +24,16 @@
         "--sans-pause"
       ],
       "port": 8138
+    },
+    {
+      "name": "statique 8140",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8140"
+      ],
+      "port": 8140
     }
   ]
 }

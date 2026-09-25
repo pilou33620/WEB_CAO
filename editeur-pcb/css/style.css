@@ -290,6 +290,12 @@
   #props{overflow-y:auto;max-height:52vh}
   #props::-webkit-scrollbar{width:8px}
   #props::-webkit-scrollbar-thumb{background:#31343a;border-radius:4px}
+  /* Qualité de placement : .pnl-body coupe ce qui dépasse (overflow:hidden),
+     et le contenu — blocs, découplage, tiers dépliés — dépasse vite. */
+  #pnlPlacementBody{overflow-y:auto}
+  #pnlPlacementBody > div{flex:none}
+  #pnlPlacementBody::-webkit-scrollbar{width:8px}
+  #pnlPlacementBody::-webkit-scrollbar-thumb{background:#31343a;border-radius:4px}
   .panel-head.split{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .panel-head label{display:inline-flex;align-items:center;gap:5px;cursor:pointer;letter-spacing:.08em}
   .panel-head input[type=checkbox]{accent-color:var(--blue);margin:0}

@@ -2,6 +2,29 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.17.0
+# Date: 2026-09-25
+# Explication: quatre defauts de la bibliotheque LIB.
+#   - « Enregistrer » le catalogue echouait toujours : le POST (~300 Ko pour
+#     560 composants) butait sur MAX_CORPS (64 Ko), et le refus sortait en
+#     500. Les routes LIB lisent leur corps avec leur propre plafond, MAX_LIB.
+#   - Le catalogue s'enregistrait en \r\r\n sous Windows (csv.writer pose
+#     \r\n, le mode texte en rajoutait un) : une ligne vide sur deux pour
+#     Excel, le fichier entier modifie pour Git. Ecriture et lecture passent
+#     en newline="" ; la lecture ne decoupe plus par splitlines(), qui coupait
+#     un champ entre guillemets contenant un retour a la ligne.
+#   - --lib s'ecrivait dans config_lib.json : les lancements suivants, sans
+#     --lib, rouvraient ce dossier. Il ne vaut plus que pour le lancement.
+#   - translate_path etait definie deux fois ; la seconde masquait la
+#     premiere, et /LIB/ servait toujours le LIB/ du depot. Une seule
+#     methode, et une bibliotheque hors du depot n'est servie qu'en local.
+# Fonctions ajoutees/modifiees :
+# - definir_dossier_lib (persister), main (--lib sans persistance)
+# - CustomHandler._chemin_lib (nouvelle), translate_path (fusion), _hidden
+# - CustomHandler._lib_composants_lire, _lib_composants_ecrire
+# - MAX_LIB, CustomHandler._lire_json_lib (nouveaux), _lib_fichier_ecrire,
+#   _lib_config_ecrire
+#
 # Version: 2.16.0
 # Date: 2026-09-17
 # Explication: le double-clic sous Windows ouvrait l'outil sur une adresse
@@ -540,6 +563,12 @@ def nom_profil(brut):
 
 # -- bibliotheques CAO (LIB) ------------------------------------------------
 LIB_DIR_NAME = "LIB"
+# Le catalogue entier part dans un seul POST : ~560 composants a 39 colonnes
+# pesent deja 300 Ko en JSON, cinq fois le plafond commun (MAX_CORPS, 64 Ko,
+# taille pour les arguments d'outil). Sous ce plafond-la, « Enregistrer »
+# echouait a chaque fois. Un BGA-256 ou un modele SPICE depassent eux aussi
+# les 64 Ko des qu'ils grossissent un peu.
+MAX_LIB = 16 * 1024 * 1024
 LIB_CONFIG_FICHIER = "config_lib.json"
 LIB_SOUS_DOSSIERS = {
     "pcb": "lib_empreinte_pcb",
@@ -759,15 +788,22 @@ def statistiques_lib(dossier):
     }
 
 
-def definir_dossier_lib(chemin_brut, initialiser=True):
-    """Change le dossier actif de la LIB, initialise si vide si demande, et persiste."""
+def definir_dossier_lib(chemin_brut, initialiser=True, persister=True):
+    """Change le dossier actif de la LIB, initialise si vide si demande, et persiste.
+
+    persister=False : le choix vaut pour ce lancement seulement. C'est le cas
+    de --lib, argument de ligne de commande : il ne doit pas survivre au
+    processus en s'ecrivant dans config_lib.json, sans quoi le lancement
+    suivant, sans --lib, continuait d'ouvrir ce dossier-la.
+    """
     global DOSSIER_LIB_ACTIF
     defaut = os.path.join(ROOT, LIB_DIR_NAME)
     chemin = str(chemin_brut or "").strip().strip('"')
 
     if not chemin or chemin.lower() in ("defaut", "default", "standard"):
         DOSSIER_LIB_ACTIF = os.path.abspath(defaut)
-        enregistrer_config_lib(None)
+        if persister:
+            enregistrer_config_lib(None)
         return {
             "ok": True,
             "chemin": DOSSIER_LIB_ACTIF,
@@ -800,7 +836,8 @@ def definir_dossier_lib(chemin_brut, initialiser=True):
             copies = initialiser_lib_dans_dossier(cible)
 
     DOSSIER_LIB_ACTIF = cible
-    enregistrer_config_lib(cible)
+    if persister:
+        enregistrer_config_lib(cible)
 
     est_defaut = os.path.realpath(cible) == os.path.realpath(defaut)
     msg = "Bibliotheque configuree sur %s" % cible
@@ -1356,20 +1393,31 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Expires", "0")
         super().end_headers()
 
-    def translate_path(self, path):
-        """Traduit le chemin URL. Redirige /LIB/... vers dossier_lib()."""
+    def _chemin_lib(self, path):
+        """/LIB/... -> fichier du dossier de bibliotheque actif, ou None.
+
+        Le dossier actif peut vivre hors du depot (--lib, Google Drive) : sans
+        ce detour, /LIB/ servait toujours le LIB/ du depot. Hors du depot, il
+        n'est servi qu'en ecoute locale -- meme regle que les dossiers de
+        projet : un chemin choisi par /api/lib/config ne s'ouvre pas au reseau.
+        """
         clean = urllib.parse.unquote(urllib.parse.urlsplit(path).path)
-        if clean == "/LIB" or clean == "/LIB/" or clean.startswith("/LIB/"):
-            rel = clean[5:].lstrip("/\\") if clean.startswith("/LIB/") else ""
-            cible = os.path.abspath(os.path.join(dossier_lib(), rel))
-            try:
-                real_lib = os.path.realpath(dossier_lib())
-                real_cible = os.path.realpath(cible)
-                if real_cible == real_lib or real_cible.startswith(real_lib + os.sep):
-                    return cible
-            except OSError:
-                pass
-        return super().translate_path(path)
+        if not (clean in ("/LIB", "/LIB/") or clean.startswith("/LIB/")):
+            return None
+        try:
+            real_lib = os.path.realpath(dossier_lib())
+        except OSError:
+            return None
+        root = os.path.realpath(ROOT)
+        hors_depot = real_lib != root and not real_lib.startswith(root + os.sep)
+        if hors_depot and not PROJETS_OUVERT:
+            return None
+        rel = clean[5:].lstrip("/\\") if clean.startswith("/LIB/") else ""
+        cible = os.path.abspath(os.path.join(real_lib, rel))
+        real_cible = os.path.realpath(cible)
+        if real_cible == real_lib or real_cible.startswith(real_lib + os.sep):
+            return cible
+        return None
 
     def _hidden(self, path):
         """Vrai si le chemin sort de ROOT ou touche un fichier de travail."""
@@ -1378,9 +1426,19 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except OSError:
             return True
         root = os.path.realpath(ROOT)
+        base = root
         if real != root and not real.startswith(root + os.sep):
-            return True            # remontee hors du depot
-        rel = os.path.relpath(real, root)
+            # hors du depot, seule la bibliotheque active peut etre servie
+            # (_chemin_lib a deja verifie qu'elle en a le droit)
+            try:
+                lib = os.path.realpath(dossier_lib())
+            except OSError:
+                return True
+            dans_lib = real == lib or real.startswith(lib + os.sep)
+            if not PROJETS_OUVERT or not dans_lib:
+                return True        # remontee hors du depot
+            base = lib
+        rel = os.path.relpath(real, base)
         parts = [p for p in rel.split(os.sep) if p not in ('.', '..')]
         # Si l'ecoute n'est pas locale, le dossier des projets n'est pas servi statiquement
         if not PROJETS_OUVERT and parts and parts[0] == PROJETS:
@@ -1392,6 +1450,11 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                    for part in parts)
 
     def translate_path(self, path):
+        """Chemin URL -> fichier : /LIB/ vers la bibliotheque active, le reste
+        sous ROOT, avec <dossier>/<dossier>.html pour un dossier sans index."""
+        cible_lib = self._chemin_lib(path)
+        if cible_lib is not None:
+            return cible_lib
         filepath = super().translate_path(path)
 
         # dossier sans index.html : on cherche <dossier>/<dossier>.html
@@ -1826,6 +1889,26 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         return {"ok": True, "fichier": os.path.basename(chemin)}
 
     # -- bibliotheques CAO (LIB) -------------------------------------------
+    def _lire_json_lib(self):
+        """Corps JSON d'une route de bibliotheque, ou leve ErreurLib.
+
+        Son plafond est MAX_LIB et non MAX_CORPS, et ses refus sont des
+        ErreurLib : via _lire_json, un catalogue trop gros ressortait en
+        « Erreur interne » 500, et la route dependait de passerelle_mcp pour
+        pouvoir dire non.
+        """
+        try:
+            taille = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise ErreurLib(400, "Content-Length invalide")
+        if taille > MAX_LIB:
+            raise ErreurLib(413, "Requete trop grande (%d Mo au plus)"
+                            % (MAX_LIB // (1024 * 1024)))
+        try:
+            return json.loads(self.rfile.read(taille) or b"{}")
+        except (ValueError, UnicodeDecodeError):
+            raise ErreurLib(400, "Corps JSON illisible")
+
     def _lib_api(self, action):
         """Execute action() et traduit les erreurs en JSON {"detail": ...}."""
         try:
@@ -1846,9 +1929,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurLib(404, "Fichier LIB_composants.csv introuvable")
 
         contenu = None
-        for enc in ("utf-8", "latin1", "cp1252"):
+        for enc in ("utf-8-sig", "latin1", "cp1252"):
             try:
-                with open(chemin, "r", encoding=enc) as f:
+                # newline="" : le module csv lit lui-meme les fins de ligne,
+                # y compris celles qui vivent a l'interieur d'un champ entre
+                # guillemets (une description sur deux lignes).
+                with open(chemin, "r", encoding=enc, newline="") as f:
                     contenu = f.read()
                 break
             except UnicodeDecodeError:
@@ -1857,12 +1943,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if contenu is None:
             raise ErreurLib(500, "Impossible de decoder LIB_composants.csv")
 
-        lignes = [l for l in contenu.splitlines() if l.strip()]
-        if not lignes:
-            return {"colonnes": [], "composants": [], "total": 0}
-
         import csv
-        lecteur = csv.reader(lignes, delimiter=';')
+        import io
+        # Pas de decoupage par splitlines() : il coupait en deux une ligne dont
+        # un champ entre guillemets contient un retour a la ligne, et tout ce
+        # qui suivait changeait de colonne. Les lignes vides (dont celles
+        # qu'ecrivait l'ancien enregistrement, en \r\r\n) sont ecartees
+        # apres lecture.
+        lecteur = (r for r in csv.reader(io.StringIO(contenu), delimiter=';')
+                   if any(c.strip() for c in r))
         try:
             colonnes = [c.strip() for c in next(lecteur)]
         except StopIteration:
@@ -1880,7 +1969,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _lib_composants_ecrire(self):
         """Ecrit la liste des composants dans LIB/LIB_composants.csv."""
-        charge = self._lire_json()
+        charge = self._lire_json_lib()
         if not isinstance(charge, dict):
             raise ErreurLib(400, "Corps JSON invalide (objet attendu)")
 
@@ -1910,14 +1999,18 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         os.makedirs(dossier, exist_ok=True)
         cible = os.path.join(dossier, "LIB_composants.csv")
         try:
-            with open(cible, "w", encoding="utf-8") as f:
+            # newline="" : csv.writer pose deja \r\n. En mode texte sous
+            # Windows, chaque \n devenait \r\n une seconde fois -- \r\r\n,
+            # une ligne vide sur deux pour Excel et le fichier entier modifie
+            # pour Git a chaque enregistrement.
+            with open(cible, "w", encoding="utf-8", newline="") as f:
                 f.write(texte)
         except OSError as exc:
             raise ErreurLib(500, "Impossible d'ecrire %s : %s" % (cible, exc))
 
         racine_csv = os.path.join(ROOT, "LIB_composants.csv")
         try:
-            with open(racine_csv, "w", encoding="utf-8") as f:
+            with open(racine_csv, "w", encoding="utf-8", newline="") as f:
                 f.write(texte)
         except OSError:
             pass
@@ -1964,7 +2057,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _lib_fichier_ecrire(self):
         """Ecrit un fichier individuel d'empreinte ou de modele."""
-        charge = self._lire_json()
+        charge = self._lire_json_lib()
         if not isinstance(charge, dict):
             raise ErreurLib(400, "Corps JSON invalide")
         genre = charge.get("type")
@@ -2022,7 +2115,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _lib_config_ecrire(self):
         """POST /api/lib/config : definir le chemin de la LIB."""
-        charge = self._lire_json()
+        charge = self._lire_json_lib()
         if not isinstance(charge, dict):
             raise ErreurLib(400, "Corps JSON invalide (objet attendu)")
         chemin = charge.get("chemin")
@@ -3171,7 +3264,7 @@ def main(argv=None):
             redemarrer_application(argv)
     if args.lib:
         global DOSSIER_LIB_IMPOSE
-        definir_dossier_lib(args.lib, initialiser=False)
+        definir_dossier_lib(args.lib, initialiser=False, persister=False)
         DOSSIER_LIB_IMPOSE = True
     if args.projets:
         global RACINES_PROJETS

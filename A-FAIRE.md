@@ -9,13 +9,13 @@ Pour les détails techniques approfondis, les dérivations physiques et l'histor
 
 ## État des lieux (septembre 2026)
 
-L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 400 essais automatisés, tous passés** (relevé du 24/09/2026) :
+L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 500 essais automatisés, tous passés** (relevé du 25/09/2026) :
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 731 essais (`editeur-pcb/test/harness.js`) |
+| **Éditeur PCB** | En service | 756 essais (`editeur-pcb/test/harness.js`) |
 | **Éditeur Schématique** | En service | 119 essais (`editeur-schematique/test/harness.js`) |
-| **Visionneuse IPC-2581** | En service | 155 essais (`harness-sim.js`) + 55 (`banc-essai.py`) |
+| **Visionneuse IPC-2581** | En service | 178 essais (`harness-sim.js`) + 55 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.5.0)** | En service (0,3 à 0,4 % vs étalons) | 199 cas (`python/test/banc-ligne-mom.py`) |
 | **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | inclus dans les 199 cas |
 | **SI — Crosstalk localisé (`crosstalk` v3.6.0)** | En service (%, dB, volts le long du tracé ; mode simple classé par Kb·2Td) | 65 cas (`python/test/banc-crosstalk.py`), dont validation de bout en bout contre la triplaque exacte, Cohn et Garg-Bahl |
@@ -23,11 +23,12 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 400 essais a
 | **PI — Chute DC & Échauffement (`dc_solver` v2.1.0)** | En service (IR drop, densité J, modèle étalement) | 42 cas (`python/test/banc-dc.py`) |
 | **Scoring placement & Rotation (`pcb_scoring`)** | En service (HPWL, congestion, découplage HF, auto-rotation) | 18 cas (`python/test/banc-pcb-scoring.py`) |
 | **Reconnaissance de motifs (`pattern_recognition`)** | En service (LDO/78xx/79xx/Buck, I2C, SPI, UART, quartz, RC, courants DC) | 22 cas (`python/test/banc-patterns.py`) |
-| **Assistant IA (schéma, PCB, visionneuse, Gestion LIB)** | En service (Google AI Studio : Gemma 4 31B par défaut, Gemini 3.8 Flash / Flash Thinking ; clé API en mémoire vive uniquement) | `commun/ia-assistant.js`, `gestion-lib/js/06-ia-lib.js` |
+| **Assistant IA (schéma, PCB, visionneuse, Gestion LIB)** | En service (Google AI Studio : Gemma 4 31B par défaut, Gemini 3.8 Flash / Flash Thinking ; clé API en mémoire vive uniquement ; datasheets PDF jointes → réglages de simulation vérifiés et cochés un à un) | `commun/ia-assistant.js`, `gestion-lib/js/06-ia-lib.js` |
 | **Serveur `web_CAO.py`** | En service (détection Raspberry Pi / terminal sans affichage : navigateur non ouvert par défaut, `--navigateur` / `--sans-navigateur`) | `banc-serveur-routes.py`, `banc-lib-routes.py`, `banc-maj-github.py`, `banc-detection-plateforme.py` |
 | **Moteur 2,5D pleine onde (`mom_solver`)** | Archivé dans branche `archive/mom-solver-25d` (recentrage sur 2D instantané) | Préservé dans l'historique Git |
 | **Support Android / Termux** | Abandonné volontairement (ajouté le 17/09, retiré au commit suivant) | — |
 | **Passerelle MCP, profils, cross-probing** | En service | `web_CAO.py`, `commun/session.js` |
+| **Gestion LIB — catalogue, recherche, import JLCPCB / LCSC** | En service | 11 + 65 essais (`gestion-lib/test/banc-catalogue.js`, `banc-import-jlc.js`) ; routes LIB : 16 cas (`banc-lib-routes.py`) |
 
 ### Corrections du 24/09/2026 (révélées par l'extension des bancs scoring et motifs)
 - [x] **Motifs** : la tension d'un LDO se lisait aussi dans le repère (`U5` + `AMS1117-3.3` → 5 V, `U12` → 12 V) ; elle ne se lit plus que dans la valeur.
@@ -98,14 +99,9 @@ lib/
   - Agencement automatique dès l'import de la netlist ou de l'ECO en grappes cohérentes (régulateur Buck/LDO + condensateurs de découplage + inductance + diode) avec orientation des pastilles et absence de collision.
 
 ### Simulation SI (Signal Integrity)
-- [ ] **Diagramme de l'œil (*Eye Diagram*)** :
-  - Calcul de la réponse impulsionnelle et convolution avec une séquence pseudo-aléatoire (PRBS).
-  - Tracé du diagramme de l'œil dans le panneau avec gabarit de masque, jitter crête-à-crête et ouverture en tension.
 - [x] **Mode différentiel dans la cascade de paramètres S** :
   - Calcul complet des paramètres S en mode mixte (*Mixed-Mode S-Parameters*) dans `python/simulation_em.py` (`_cascade_differentielle`) : mode différentiel pur $S_{dd}$ ($S_{dd11}, S_{dd21}$ sur $Z_{ref,diff}$ ex: 100 Ω ou 90 Ω), mode commun $S_{cc}$ ($S_{cc11}, S_{cc21}$ sur $Z_{ref,comm} = Z_{ref,diff}/4$ ex: 25 Ω), et conversion de mode CEM $S_{cd21}(\omega)$ calculée à partir du skew $\Delta L = |L_+ - L_-|$.
   - Interface dédiée dans l'onglet « Z différentielle » (`commun/simulation-em.js`) avec sélecteur interactif `[ Sdd ]`, `[ Scc ]`, `[ Scd ]`, courbe SVG multi-traces avec seuil CEM à $-20\text{ dB}$, repère de fréquence centrale $f_0$, lecture dynamique au survol et export Touchstone différentiel `.s2p`.
-- [ ] **Corrélation empilage réel vs nominal** :
-  - Permettre de saisir l'empilage micrographique mesuré par le fabricant à côté de l'empilage nominal pour calibrer les impédances calculées.
 
 ### Simulation PI (Power Integrity)
 - [x] **Impédance fréquentielle du PDN ($Z(\omega)$)** :
@@ -117,12 +113,6 @@ lib/
   - Repères visuels verticaux des modes résonants sur le profil d'impédance $Z(\omega)$ du PDN et prise en compte de l'admittance distribuée.
   - Cartographie thermique interactive 2D (Heatmap SVG) de la tension stationnaire $|V_{mn}(x,y)|$, lignes nodales ($V=0$), points chauds (coins et bords) et projection des condensateurs de découplage avec taux d'amortissement $\kappa$.
   - Sélecteur de mode ($TM_{10}, TM_{01}, TM_{11}, \dots$), tableau récapitulatif modal, recommandations CEM / règle des 20-H et exports CSV/JSON.
-
-### Visionneuse IPC-2581 & Outils communs
-- [ ] **Indicateur de lot actif dans la vue graphique** :
-  - Lors d'une sélection multi-morceaux en chute DC ou retour de courant, expliciter visuellement sur le canevas le lot actuellement déplié et peint.
-- [ ] **Export des rapports consolidés** :
-  - Export PDF ou Markdown unifié regroupant le rapport de santé de liaison, les discontinuités, le profil de chute DC et le scoring de placement.
 
 ---
 

@@ -216,6 +216,150 @@ class TestLibRoutes(unittest.TestCase):
                 shutil.rmtree(dossier_tmp, ignore_errors=True)
 
 
+class TestLibDossierTemporaire(unittest.TestCase):
+    """Les essais qui ECRIVENT : une bibliotheque jetable hors du depot.
+
+    L'enregistrement du catalogue recopie aussi le CSV a la racine du depot :
+    celui-ci est sauve avant chaque essai et remis tel quel apres, de meme que
+    config_lib.json et l'etat global du serveur.
+    """
+    PORT = PORT + 1
+
+    @classmethod
+    def setUpClass(cls):
+        web_CAO.ROOT = ROOT
+        cls.httpd = web_CAO.ThreadedServer(("127.0.0.1", cls.PORT), web_CAO.CustomHandler)
+        cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
+        cls.thread.start()
+        time.sleep(0.3)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        self.base = f"http://127.0.0.1:{self.PORT}"
+        self.tmp = tempfile.mkdtemp(prefix="webcao_lib_")
+        shutil.copy2(os.path.join(ROOT, "LIB", "LIB_composants.csv"), self.tmp)
+        os.makedirs(os.path.join(self.tmp, "lib_empreinte_pcb"))
+        self.sauvegardes = {}
+        for nom in ("LIB_composants.csv", "config_lib.json"):
+            chemin = os.path.join(ROOT, nom)
+            self.sauvegardes[chemin] = (open(chemin, "rb").read()
+                                        if os.path.exists(chemin) else None)
+        self.etat = (web_CAO.DOSSIER_LIB_ACTIF, web_CAO.DOSSIER_LIB_IMPOSE,
+                     web_CAO.PROJETS_OUVERT)
+
+    def tearDown(self):
+        import shutil
+        (web_CAO.DOSSIER_LIB_ACTIF, web_CAO.DOSSIER_LIB_IMPOSE,
+         web_CAO.PROJETS_OUVERT) = self.etat
+        for chemin, contenu in self.sauvegardes.items():
+            if contenu is None:
+                if os.path.exists(chemin):
+                    os.remove(chemin)
+            else:
+                with open(chemin, "wb") as f:
+                    f.write(contenu)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _json(self, url, corps=None):
+        req = urllib.request.Request(
+            self.base + url,
+            data=None if corps is None else json.dumps(corps).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="GET" if corps is None else "POST")
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def test_12_catalogue_enregistre_sans_ligne_vide_et_relu_a_l_identique(self):
+        web_CAO.definir_dossier_lib(self.tmp, initialiser=False, persister=False)
+        cat = self._json("/api/lib/composants")
+        total = cat["total"]
+        # le cas qui cassait la relecture : un champ sur deux lignes, avec
+        # le separateur et des guillemets dedans
+        piege = 'ligne 1\nligne 2 ; "cite"'
+        cat["composants"][3]["Description"] = piege
+        self._json("/api/lib/composants", {"colonnes": cat["colonnes"],
+                                           "composants": cat["composants"]})
+
+        brut = open(os.path.join(self.tmp, "LIB_composants.csv"), "rb").read()
+        self.assertNotIn(b"\r\r\n", brut, "fins de ligne doublees a l'ecriture")
+        self.assertNotIn(b"\r\n\r\n", brut, "ligne vide dans le CSV enregistre")
+
+        relu = self._json("/api/lib/composants")
+        self.assertEqual(relu["total"], total)
+        self.assertEqual(relu["colonnes"], cat["colonnes"])
+        self.assertEqual(relu["composants"][3]["Description"], piege)
+        self.assertEqual(relu["composants"][4]["Part Name"],
+                         cat["composants"][4]["Part Name"])
+
+    def test_12b_corps_trop_gros_refuse_en_413_et_non_en_500(self):
+        web_CAO.definir_dossier_lib(self.tmp, initialiser=False, persister=False)
+        ancien = web_CAO.MAX_LIB
+        web_CAO.MAX_LIB = 1024
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                self._json("/api/lib/composants",
+                           {"colonnes": ["Part Name"],
+                            "composants": [{"Part Name": "x" * 4096}]})
+            self.assertEqual(ctx.exception.code, 413)
+        finally:
+            web_CAO.MAX_LIB = ancien
+
+    def test_13_catalogue_ancien_format_crcrlf_toujours_lisible(self):
+        chemin = os.path.join(self.tmp, "LIB_composants.csv")
+        propre = open(chemin, "rb").read()
+        with open(chemin, "wb") as f:
+            f.write(propre.replace(b"\r\n", b"\r\r\n"))
+        web_CAO.definir_dossier_lib(self.tmp, initialiser=False, persister=False)
+        cat = self._json("/api/lib/composants")
+        self.assertGreater(cat["total"], 500)
+        self.assertTrue(all(c.get("Part Name") for c in cat["composants"]),
+                        "une ligne vide est devenue un composant")
+
+    def test_14_lib_en_ligne_de_commande_non_persistee(self):
+        cfg = os.path.join(ROOT, "config_lib.json")
+        if os.path.exists(cfg):
+            os.remove(cfg)
+        web_CAO.DOSSIER_LIB_ACTIF = None
+        web_CAO.definir_dossier_lib(self.tmp, initialiser=False, persister=False)
+        self.assertEqual(os.path.realpath(web_CAO.dossier_lib()),
+                         os.path.realpath(self.tmp))
+        self.assertFalse(os.path.exists(cfg),
+                         "--lib ne doit pas s'ecrire dans config_lib.json")
+        # le choix fait depuis la page d'accueil, lui, se retient
+        web_CAO.definir_dossier_lib(self.tmp, initialiser=False)
+        self.assertTrue(os.path.exists(cfg))
+
+    def test_15_lib_statique_suit_le_dossier_actif(self):
+        with open(os.path.join(self.tmp, "lib_empreinte_pcb", "_marqueur.json"),
+                  "w", encoding="utf-8") as f:
+            f.write('{"marqueur": "dossier actif"}')
+        web_CAO.definir_dossier_lib(self.tmp, initialiser=False, persister=False)
+        url = self.base + "/LIB/lib_empreinte_pcb/_marqueur.json"
+
+        # ecoute locale : la bibliotheque hors du depot est servie
+        web_CAO.PROJETS_OUVERT = True
+        with urllib.request.urlopen(url) as resp:
+            self.assertIn(b"dossier actif", resp.read())
+
+        # ecoute reseau : un dossier hors du depot ne s'ouvre pas
+        web_CAO.PROJETS_OUVERT = False
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(url)
+        self.assertEqual(ctx.exception.code, 404)
+
+        # et la remontee hors de la bibliotheque reste refusee
+        web_CAO.PROJETS_OUVERT = True
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(self.base + "/LIB/..%2F..%2Fweb_CAO.py")
+        self.assertIn(ctx.exception.code, (400, 403, 404))
+
+
 if __name__ == "__main__":
     unittest.main()
 

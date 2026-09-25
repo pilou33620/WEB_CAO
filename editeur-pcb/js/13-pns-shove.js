@@ -112,7 +112,7 @@ function pnsBoutsLibres(B,l,pts){
    Le tour s'essaie dans les deux sens ; on garde le plus court qui aboutisse,
    reste à 45°, et ne sort pas de la carte. */
 function pnsShoveAside(B,line,gene){
-  const genes=pnsLineItems(gene);
+  const genes=gene.hitems||pnsLineItems(gene);
   const conflit=pts=>{
     for(const g of genes)
       for(const s of pnsSegs(pts))
@@ -127,7 +127,7 @@ function pnsShoveAside(B,line,gene){
       const g=conflit(pts);
       if(!g)break;
       if(k===PNS_WALK_MAX){bon=false;break;}   // on tourne en rond
-      const H=pnsHullOct(g,line.net,line.w);
+      const H=g.grp?pnsHullGroup(g.grp,line.net,line.w):pnsHullOct(g,line.net,line.w);
       const suite=pnsPushOut(pts,H,side)||(libre?pnsSlideOut(pts,H):null);
       if(!suite||!pnsIs45(suite)||!pnsSurCarte(suite)){bon=false;break;}
       pts=suite;
@@ -139,6 +139,71 @@ function pnsShoveAside(B,line,gene){
   return cand[0];
 }
 
+/* L'enveloppe d'un GROUPE d'objets — les pastilles d'un boîtier qu'on
+   déplace : l'octogone qui les entoure toutes, gonflé de la plus large de leurs
+   isolations. Le cuivre poussé fait le tour du boîtier d'un seul geste, au lieu
+   de longer chaque pastille et de venir serpenter entre les broches. */
+function pnsHullGroup(grp,net,w,mode){
+  let infl=0;
+  for(const it of grp)infl=Math.max(infl,pnsClr(it,net)+w/2+PNS_MARGIN);
+  const sup=(dx,dy)=>{
+    let m=-Infinity;
+    for(const it of grp){
+      const v=it.k==="P"?pnsSupPad(it.q,dx,dy):it.k==="V"?pnsSupVia(it.v,dx,dy)
+             :pnsSupSeg(Object.assign({w:it.w},it.seg),dx,dy);
+      if(v>m)m=v;
+    }
+    return m;
+  };
+  return pnsOct(sup,infl,mode);
+}
+/* Retendre une ligne qu'on vient d'écarter, AVANT qu'elle ne pousse ses
+   voisines. Le tour d'enveloppe colle au bord, marches comprises ; retendu
+   après coup, deux lignes poussées l'une contre l'autre se bloqueraient
+   mutuellement — aucune ne peut couper son coin tant que l'autre n'a pas
+   bougé. Retendue ici, la première prend sa forme propre, et celles qu'elle
+   pousse ensuite s'alignent dessus.
+   On ne regarde que ce qui ne bougera plus : les têtes, la ligne qui pousse
+   (`genes`) et les pastilles. Le reste du cuivre sera poussé à son tour.
+   Un raccourci est gardé s'il est plus court, ou aussi long avec moins de
+   coudes — entre deux points, tous les chemins à 45° sans retour en arrière
+   ont la même longueur. */
+function pnsTendre(B,line,pts,genes,hors){
+  const mode=cornerMode();
+  const bad=q=>{
+    if(!pnsIs45(q,mode)||!pnsSurCarte(q))return true;
+    for(const s of pnsSegs(q))
+      for(const g of genes)
+        if(pnsGap(g,s,line.w)<pnsClr(g,line.net)-PNS_EPS)return true;
+    return !!B.firstObstacle({l:line.l,net:line.net,w:line.w,nets:line.nets,pts:q},hors,"P");
+  };
+  pts=pnsSimplify(pts);
+  for(let r=0;r<PNS_OPT_ROUNDS*2&&pts.length>2;r++){
+    const anc=pnsAnchors(B,line.l,pts,hors);
+    const L0=pnsLen(pts);
+    let gagne=null;
+    for(let n=pts.length-1;n>=2&&!gagne;n--)
+      for(let i=0;i+n<pts.length&&!gagne;i++){
+        let libre=true;
+        for(let k=i+1;k<i+n;k++)if(anc.has(k)){libre=false;break;}
+        if(!libre)continue;
+        for(const post of [false,true]){
+          const legs=routeCorner(pts[i],pts[i+n],post,mode,0);
+          if(!legs.length)continue;
+          const cand=pnsSimplify(pts.slice(0,i+1)
+                                    .concat(legs.map(s=>({x:s.x2,y:s.y2})),pts.slice(i+n+1)));
+          const L=pnsLen(cand);
+          if(L>L0+1e-6)continue;
+          if(L>=L0-1e-6&&cand.length>=pts.length)continue;
+          if(bad(cand))continue;
+          gagne=cand;break;
+        }
+      }
+    if(!gagne)break;
+    pts=gagne;
+  }
+  return pts;
+}
 /* ==========================================================================
    La pile
    ========================================================================== */
@@ -159,6 +224,7 @@ function pnsRelink(B,ligne,pts){
    ligne — le cas le plus courant, un via qu'on vise en plein.
    `sens` choisit le côté ; l'appelant essaie les deux. */
 function pnsViaEscape(it,gene,sens){
+  if(gene.hitems)return pnsViaEscapeItems(it,gene.hitems,sens);
   let p={x:it.v.x,y:it.v.y};
   for(let k=0;k<8;k++){
     let pire=null;
@@ -170,6 +236,32 @@ function pnsViaEscape(it,gene,sens){
         const dx=s.x2-s.x1, dy=s.y2-s.y1, ln=Math.hypot(dx,dy)||1;
         pire={def,nx:-dy/ln*sens,ny:dx/ln*sens};
       }
+    }
+    if(!pire)return p;
+    p={x:r3(p.x+pire.nx*(pire.def+PNS_MARGIN)),y:r3(p.y+pire.ny*(pire.def+PNS_MARGIN))};
+  }
+  return null;
+}
+/* La même fuite devant des OBJETS — les pastilles d'un boîtier qu'on déplace,
+   un via tiré à la main. Un objet n'a pas de normale : le via s'en éloigne
+   depuis son centre, qui est le plus court chemin dehors pour un rond et une
+   bonne approximation pour une pastille — on itère jusqu'à l'isolation. Un
+   seul sens a un sens ici ; l'autre est refusé. */
+function pnsViaEscapeItems(it,genes,sens){
+  if(sens<0)return null;
+  let p={x:it.v.x,y:it.v.y};
+  for(let k=0;k<8;k++){
+    const probe=pnsItemVia(Object.assign({},it.v,{x:p.x,y:p.y}));
+    let pire=null;
+    for(const g of genes){
+      const def=pnsClrPair(probe,g)+PNS_MARGIN-pnsPairGap(probe,g);
+      if(def<=1e-6||(pire&&def<=pire.def))continue;
+      let cx,cy;
+      if(g.k==="P"){cx=g.q.x;cy=g.q.y;}
+      else if(g.k==="V"){cx=g.v.x;cy=g.v.y;}
+      else{const c=projOnSeg(p.x,p.y,g.seg);cx=c.x;cy=c.y;}
+      const dx=p.x-cx, dy=p.y-cy, ln=Math.hypot(dx,dy);
+      pire={def,nx:ln>1e-9?dx/ln:1,ny:ln>1e-9?dy/ln:0};
     }
     if(!pire)return p;
     p={x:r3(p.x+pire.nx*(pire.def+PNS_MARGIN)),y:r3(p.y+pire.ny*(pire.def+PNS_MARGIN))};
@@ -234,10 +326,10 @@ function pnsShoveVia(B,via,gene,pile,rang,lignes){
   for(const s of choix.suites){
     const orig=s.ligne.items.map(o=>o.src).filter(Boolean);
     const neufs=pnsRelink(B,s.ligne,s.pts);
-    const rec={l:s.ligne.l,net:s.ligne.net,w:s.ligne.w,pts:s.pts,orig};
+    const rec={l:s.ligne.l,net:s.ligne.net,w:s.ligne.w,pts:s.pts,orig,items:neufs};
     if(lignes)lignes.push(rec);
     pile.push({items:neufs,pts:s.pts,l:s.ligne.l,net:s.ligne.net,w:s.ligne.w,
-               rang:rang+1,reprises:0});
+               rang:rang+1,reprises:0,rec:lignes?rec:null});
   }
   return true;
 }
@@ -278,12 +370,26 @@ function pnsShove(node,head,skip,t0){
    `node` peut être une branche : `pnsShove` s'en sert après avoir contourné
    les pastilles.
    ========================================================================== */
-function pnsShoveHeads(node,heads,skip,t0){
+function pnsShoveHeads(node,heads,skip,t0,opts){
+  const tendre=!!(opts&&opts.tendre);
   const debut=t0==null?null:t0;
   const B=node.branch();
   const sauf=new Set(skip||[]);
   const pile=[], teteItems=[];
   for(const h of heads){
+    /* Une tête peut être un OBJET — pastille d'un boîtier qu'on déplace, via
+       tiré : il ne se pousse pas, il pousse. Sa gêne se mesure alors objet
+       contre objet, et non le long d'une ligne. */
+    if(h.item||h.items){
+      const its=(h.items||[h.item]).map(x=>B.add(x));
+      if(!its.length)continue;
+      // `group` : un seul bloc, dont le cuivre poussé fait le tour entier
+      if(h.group&&its.length>1)for(const it of its)it.grp=its;
+      for(const it of its)teteItems.push(it);
+      pile.push({items:its,hitems:its,pts:null,l:its[0].l0,net:its[0].net,w:0,
+                 fixe:true,rang:0,reprises:0});
+      continue;
+    }
     if(!h.pts||h.pts.length<2)continue;
     const items=[];
     for(const s of pnsSegs(h.pts)){
@@ -297,6 +403,10 @@ function pnsShoveHeads(node,heads,skip,t0){
   }
   if(!pile.length)return {ok:true,node:B,lignes:[],vias:[],tete:[]};
   const tetes=new Set(teteItems);
+  /* Toutes les têtes réunies : c'est d'elles, ensemble, que le cuivre poussé
+     doit s'écarter. Écarté d'une seule, il retomberait sur la voisine — la
+     pastille d'à côté du même boîtier, l'autre brin d'une paire. */
+  const toutes={hitems:teteItems};
   const lignes=[];                 // ce qui a bougé, prêt pour le dépôt
   const vias=[];
   const compte=new Map();          // items d'origine → nombre de reprises
@@ -310,8 +420,22 @@ function pnsShoveHeads(node,heads,skip,t0){
        cuivre poussé, lui, les voit toutes — sans quoi il reviendrait dedans. */
     const moi=new Set([...sauf,...cur.items]);
     if(cur.fixe)for(const it of tetes)moi.add(it);
-    const ob=B.firstObstacle({l:cur.l,net:cur.net,w:cur.w,nets:cur.nets,pts:cur.pts},moi);
+    const ob=cur.hitems?pnsItemsObstacle(B,cur.hitems,moi)
+                       :B.firstObstacle({l:cur.l,net:cur.net,w:cur.w,nets:cur.nets,pts:cur.pts},moi);
     if(!ob){pile.pop();continue;}
+    /* Une tête ne se pousse pas, pas même par le cuivre qu'elle a écarté : ce
+       serait défaire ce qu'on essaie de poser. */
+    if(!cur.fixe&&tetes.has(ob.it)){
+      /* ... mais le cuivre poussé peut s'en écarter à nouveau : c'est lui qui
+         bouge, de toutes les têtes à la fois cette fois-ci. */
+      if(!cur.rec||cur.reprises>=PNS_SHOVE_REPRISE)return {ok:false,cause:"tête"};
+      let neuf=pnsShoveAside(B,{l:cur.l,net:cur.net,w:cur.w,nets:cur.nets,pts:cur.pts},toutes);
+      if(!neuf)return {ok:false,cause:"tête"};
+      if(tendre)neuf=pnsTendre(B,cur,neuf,teteItems,new Set(cur.items));
+      cur.items=pnsRelink(B,cur,neuf);
+      cur.pts=neuf;cur.rec.pts=neuf;cur.rec.items=cur.items;cur.reprises++;
+      continue;
+    }
     if(ob.it.k==="P")return {ok:false,cause:"pastille"};
     /* Une piste circulaire ne se pousse pas : la pousser voudrait dire la
        rendre en segments droits, et l'arc serait perdu. Le tracé la contourne,
@@ -332,17 +456,28 @@ function pnsShoveHeads(node,heads,skip,t0){
     const vu=(compte.get(ob.it)||0)+1;
     if(vu>PNS_SHOVE_REPRISE)return {ok:false,cause:"reprises"};
     for(const o of L.items)compte.set(o,vu);
-    const neufPts=pnsShoveAside(B,L,cur);
+    let neufPts=pnsShoveAside(B,L,cur.fixe?toutes:cur);
     if(!neufPts)return {ok:false,cause:"coincé"};
+    if(tendre)neufPts=pnsTendre(B,L,neufPts,cur.fixe?teteItems:cur.items.concat(teteItems),
+                                new Set(L.items));
     const orig=L.items.map(o=>o.src).filter(Boolean);
     const neufs=pnsRelink(B,L,neufPts);
-    lignes.push({l:L.l,net:L.net,w:L.w,pts:neufPts,orig});
+    const rec={l:L.l,net:L.net,w:L.w,pts:neufPts,orig,items:neufs};
+    lignes.push(rec);
     pile.push({items:neufs,pts:neufPts,l:L.l,net:L.net,w:L.w,
-               rang:cur.rang+1,reprises:vu});
+               rang:cur.rang+1,reprises:vu,rec});
   }
   return {ok:false,cause:"itérations"};
 }
 
+/* Le premier objet qui serre l'un des objets de tête de trop près. */
+function pnsItemsObstacle(B,items,skip){
+  for(const it of items){
+    const hits=B.colliding(it,skip);
+    if(hits.length)return {it:hits[0]};
+  }
+  return null;
+}
 /* ==========================================================================
    Le dépôt
    --------------------------------------------------------------------------

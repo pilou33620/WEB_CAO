@@ -67,6 +67,16 @@
   let _inclureContexte = true;  // Transmettre l'état CAO courant
   let _domConstruit = false;
   let _questionEnAttente = "";  // Question préparée depuis le menu contextuel
+  /* Les pièces jointes du PROCHAIN message ({nom, mime, data (base64), taille}).
+     Une fois envoyées, elles vivent dans le message de l'historique qui les
+     porte : l'API n'a pas de mémoire, une question de suivi sur la même
+     datasheet doit la renvoyer. */
+  let _pieces = [];
+
+  /* La limite d'une requête Google AI Studio est de 20 Mo, base64 compris
+     (+33 %) : 14 Mo de fichier laissent la place au texte et à l'historique. */
+  const PIECE_TAILLE_MAX = 14 * 1024 * 1024;
+  const PIECE_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp"];
 
   /* ---------- Détection de l'outil courant ---------- */
   function detecterOutil() {
@@ -658,7 +668,10 @@
 
         /* 5. Pied de panneau : Saisie de message et envoi */
         '<div class="ia-footer">' +
+          '<div class="ia-pieces" id="iaPieces" hidden></div>' +
           '<div class="ia-input-row">' +
+            '<input type="file" id="iaFichier" accept="' + PIECE_TYPES.join(",") + '" multiple hidden>' +
+            '<button type="button" class="ia-btn-joindre" id="iaBtnJoindre" title="Joindre une datasheet (PDF) ou une capture de tableau — ou glissez-la sur le volet">📎</button>' +
             '<textarea id="iaInput" class="ia-textarea" rows="2" placeholder="Posez votre question technique à l\'Assistant IA... (Entrée pour envoyer, Maj+Entrée pour nouvelle ligne)"></textarea>' +
             '<button type="button" class="ia-btn-send" id="iaBtnSend" title="Envoyer le message (Entrée)">' +
               '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>' +
@@ -721,6 +734,8 @@
     /* Actions discussion */
     document.getElementById("iaBtnClear").addEventListener("click", function() {
       _historique = [];
+      _pieces = [];
+      rendrePieces();
       rendreMessages();
     });
 
@@ -742,6 +757,30 @@
     });
 
     document.getElementById("iaBtnSend").addEventListener("click", envoyerMessage);
+
+    /* Pièces jointes : le trombone, ou un fichier glissé sur le volet. */
+    const inFichier = document.getElementById("iaFichier");
+    document.getElementById("iaBtnJoindre").addEventListener("click", function() { inFichier.click(); });
+    inFichier.addEventListener("change", function() {
+      ajouterPieces(this.files);
+      this.value = "";
+    });
+    panneau.addEventListener("dragover", function(e) {
+      if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) {
+        e.preventDefault();
+        panneau.classList.add("ia-depot");
+      }
+    });
+    panneau.addEventListener("dragleave", function(e) {
+      if (!panneau.contains(e.relatedTarget)) panneau.classList.remove("ia-depot");
+    });
+    panneau.addEventListener("drop", function(e) {
+      panneau.classList.remove("ia-depot");
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+        e.preventDefault();
+        ajouterPieces(e.dataTransfer.files);
+      }
+    });
 
     document.getElementById("iaChkContext").addEventListener("change", function() {
       _inclureContexte = this.checked;
@@ -846,6 +885,8 @@
     try { sessionStorage.removeItem("cao_ia_cle"); } catch (_) {}
     _historique = [];
     _questionEnAttente = "";
+    _pieces = [];
+    rendrePieces();
     iaCacherMenuContextuel();
 
     const inputKey = document.getElementById("iaKeyInput");
@@ -886,7 +927,12 @@
       "  - *Sécurité annulation* : Chaque modification appliquée s'enregistre dans l'historique d'annulation (**Ctrl+Z** pris en charge).\n" +
       "- **Éditeur PCB — Largeurs de pistes selon IPC-2152** :\n" +
       "  - Calcul de la largeur de cuivre requise pour un courant donné (A), un échauffement ($\Delta T$ en °C) et une épaisseur de cuivre (35 µm / 70 µm).\n" +
-      "  - Propose un bouton `[⚡ Appliquer au PCB]` qui modifie instantanément la largeur des pistes sélectionnées ou du net actif.\n\n" +
+      "  - Propose un bouton `[⚡ Appliquer au PCB]` qui modifie instantanément la largeur des pistes sélectionnées ou du net actif.\n" +
+      "- **Éditeur PCB & Visionneuse — Simulations réglées depuis une datasheet** :\n" +
+      "  - Joignez la datasheet avec **📎** (ou glissez le PDF sur le volet), puis cliquez **« ⚙️ Paramétrer les simulations avec cette datasheet »**.\n" +
+      "  - L'IA relève ce qui règle **toutes** les simulations : fiche de la charge PDN (IDD, horloge, fronts), régulateur (R_vrm, f_vrm), stratifié (εr, tanδ, conductivité), ESR / ESL des condensateurs, timings de bus (tsu, th, tco), fronts et niveaux SI, courants des bornes de chute DC.\n" +
+      "  - Le bouton `[🔍 Vérifier et appliquer…]` affiche chaque valeur avec **sa page et sa citation** : cochez celles à garder. Les valeurs hors bornes physiques ou sans composant correspondant sont refusées d'office.\n" +
+      "  - Les trois modèles lisent les PDF ; le fichier part chez Google AI Studio avec le message.\n\n" +
       "---\n\n" +
       "### 2. 🖱️ Inspection Contextuelle par Clic Droit\n" +
       "Faites un **clic droit** sur l'espace de travail pour lancer un diagnostic assisté par l'IA :\n" +
@@ -916,6 +962,81 @@
     );
   }
 
+  /* ---------- Pièces jointes : datasheets PDF et captures ---------- */
+  function tailleLisible(o) {
+    return o >= 1048576 ? (o / 1048576).toFixed(1).replace(".", ",") + " Mo" : Math.max(1, Math.round(o / 1024)) + " ko";
+  }
+
+  function lireEnBase64(fichier) {
+    return new Promise(function(ok, ko) {
+      const lecteur = new FileReader();
+      lecteur.onload = function() { ok(String(lecteur.result).replace(/^data:[^,]*,/, "")); };
+      lecteur.onerror = function() { ko(lecteur.error); };
+      lecteur.readAsDataURL(fichier);
+    });
+  }
+
+  /* Les trois modèles du sélecteur lisent les PDF, Gemma 4 compris : joindre
+     un document ne change pas de modèle. */
+  async function ajouterPieces(fichiers) {
+    const refus = [];
+    for (const f of Array.from(fichiers || [])) {
+      const mime = f.type || (/\.pdf$/i.test(f.name) ? "application/pdf" : "");
+      if (!PIECE_TYPES.includes(mime)) { refus.push(f.name + " : format non pris en charge (PDF, PNG, JPEG, WebP)"); continue; }
+      const deja = _pieces.reduce((s, p) => s + p.taille, 0);
+      if (f.size + deja > PIECE_TAILLE_MAX) { refus.push(f.name + " : trop lourd (" + tailleLisible(f.size) + ", " + tailleLisible(PIECE_TAILLE_MAX) + " max. par message)"); continue; }
+      try {
+        _pieces.push({ nom: f.name, mime: mime, taille: f.size, data: await lireEnBase64(f) });
+      } catch (e) {
+        refus.push(f.name + " : lecture impossible");
+      }
+    }
+    if (refus.length) {
+      const banner = document.getElementById("iaErrorBanner"), txt = document.getElementById("iaErrorText");
+      if (banner && txt) { txt.textContent = refus.join(" · "); banner.hidden = false; }
+    }
+    rendrePieces();
+  }
+
+  function simulationsDisponibles() {
+    return typeof window.simDsCatalogue === "function";
+  }
+
+  function rendrePieces() {
+    const bar = document.getElementById("iaPieces");
+    if (!bar) return;
+    if (!_pieces.length) { bar.hidden = true; bar.innerHTML = ""; return; }
+    const aPdf = _pieces.some(p => p.mime === "application/pdf");
+    bar.hidden = false;
+    bar.innerHTML =
+      '<div class="ia-pieces-liste">' +
+        _pieces.map((p, i) =>
+          '<span class="ia-piece" title="' + echapperHtml(p.nom) + '">' +
+            (p.mime === "application/pdf" ? "📄 " : "🖼 ") + echapperHtml(p.nom) +
+            ' <small>' + tailleLisible(p.taille) + '</small>' +
+            '<button type="button" data-i="' + i + '" title="Retirer">✕</button>' +
+          '</span>').join("") +
+      '</div>' +
+      (aPdf && simulationsDisponibles()
+        ? '<button type="button" class="ia-chip ia-chip-ds" id="iaBtnDsSim" title="Demande à l\'IA de relever dans la datasheet tout ce qui règle les simulations SI / PI ; vous validez chaque valeur avant qu\'elle soit appliquée">⚙️ Paramétrer les simulations avec cette datasheet</button>'
+        : '') +
+      '<div class="ia-pieces-note">Le fichier est envoyé à Google AI Studio avec le message.</div>';
+    bar.querySelectorAll(".ia-piece button").forEach(function(b) {
+      b.onclick = function() { _pieces.splice(parseInt(this.getAttribute("data-i"), 10), 1); rendrePieces(); };
+    });
+    const ds = document.getElementById("iaBtnDsSim");
+    if (ds) ds.onclick = function() {
+      const input = document.getElementById("iaInput");
+      if (input) input.value = QUESTION_DATASHEET;
+      envoyerMessage();
+    };
+  }
+
+  const QUESTION_DATASHEET =
+    "Relève dans cette datasheet toutes les valeurs qui règlent les simulations du catalogue " +
+    "(fiche de la charge PDN, régulateur, stratifié, condensateurs, timings de bus, fronts et niveaux SI, courants DC), " +
+    "dis pour chacune d'où elle vient, puis donne le bloc d'action sim_params.";
+
   /* ---------- Encodage / Décodage Base64 UTF-8 Sécurisé ---------- */
   function encoderBase64Utf8(str) {
     try {
@@ -940,6 +1061,12 @@
       if (!jsonStr) throw new Error("Données d'action corrompues.");
       const act = JSON.parse(jsonStr);
       const outil = detecterOutil();
+
+      // 0. Simulations : rien ne s'applique avant d'avoir été vu et coché.
+      if (act.type === "sim_params") {
+        afficherValidationSim(btn, act);
+        return;
+      }
 
       // 1. Schématique : mise à jour des valeurs de composants
       if (act.type === "schema_values" || act.values) {
@@ -1060,6 +1187,100 @@
     }
   };
 
+  /* ---------- Validation des paramètres de simulation (datasheet) ----------
+     Un tableau à cocher sous la carte d'action : valeur actuelle → valeur
+     proposée, et la page et la citation qui la justifient. Les lignes que le
+     registre refuse (clé inconnue, hors bornes, aucun composant visé) restent
+     visibles, grisées, avec leur motif. La vérification et l'application sont
+     dans commun/simulation-datasheet.js ; ici, seulement l'affichage. */
+  function afficherValidationSim(btn, act) {
+    if (!simulationsDisponibles() || typeof window.simDsPreparer !== "function") {
+      if (typeof alert === "function") alert("Les simulations SI / PI ne sont chargées que dans l'éditeur PCB et la visionneuse IPC-2581.");
+      return;
+    }
+    const carte = btn ? btn.closest(".ia-action-card") : null;
+    if (!carte) return;
+    const ancien = carte.querySelector(".ia-ds-valid");
+    if (ancien) { ancien.remove(); if (btn) btn.hidden = false; return; }
+
+    const prep = window.simDsPreparer(act);
+    const cadre = document.createElement("div");
+    cadre.className = "ia-ds-valid";
+    const txt = v => {
+      if (v == null || v === "") return "—";
+      if (typeof v !== "number") return String(v);
+      return isFinite(v) ? String(Number(v.toPrecision(6))).replace(".", ",") : "—";
+    };
+
+    let h = "";
+    for (const a of prep.avertissements) h += '<div class="ia-ds-avert">⚠ ' + echapperHtml(a) + '</div>';
+    if (!prep.lignes.length) h += '<div class="ia-ds-avert">La réponse ne contient aucune valeur exploitable.</div>';
+
+    h += '<table class="ia-ds-tab"><thead><tr><th></th><th>Paramètre</th><th>Actuel</th><th>Proposé</th><th>Source</th></tr></thead><tbody>';
+    let groupe = null;
+    for (const l of prep.lignes) {
+      if (l.groupe !== groupe) {
+        groupe = l.groupe;
+        h += '<tr class="ia-ds-grp"><td colspan="5">' + echapperHtml(groupe) + '</td></tr>';
+      }
+      const basse = /basse|faible|low/i.test(l.confiance);
+      h += '<tr class="' + (l.ok ? "" : "ia-ds-ko") + '">' +
+        '<td><input type="checkbox" data-id="' + l.id + '"' + (l.ok ? (basse ? "" : " checked") : " disabled") + '></td>' +
+        '<td>' + echapperHtml(l.lib) +
+          (l.motif ? '<div class="ia-ds-motif">' + echapperHtml(l.motif) + '</div>' : '') +
+          (l.note ? '<div class="ia-ds-note">' + echapperHtml(l.note) + '</div>' : '') +
+          (basse && l.ok ? '<div class="ia-ds-note">confiance basse : décochée d\'office</div>' : '') + '</td>' +
+        '<td class="n">' + echapperHtml(txt(l.actuel)) + '</td>' +
+        '<td class="n"><b>' + echapperHtml(txt(l.nouveau)) + '</b> ' + echapperHtml(l.unite || "") + '</td>' +
+        '<td class="ia-ds-src">' + (l.page ? "p. " + echapperHtml(l.page) : "") +
+          (l.citation ? '<div>« ' + echapperHtml(l.citation) + ' »</div>' : (l.page ? "" : '<span class="ia-ds-motif">sans citation</span>')) + '</td>' +
+      '</tr>';
+    }
+    h += '</tbody></table>' +
+      '<div class="ia-ds-pied">' +
+        '<label><input type="checkbox" class="ia-ds-tout" checked> tout</label>' +
+        '<button type="button" class="ia-btn-action ia-ds-go">Appliquer la sélection</button>' +
+      '</div>' +
+      '<div class="ia-ds-bilan" hidden></div>';
+    cadre.innerHTML = h;
+    carte.appendChild(cadre);
+    if (btn) btn.hidden = true;
+
+    const cases = () => Array.from(cadre.querySelectorAll('tbody input[type="checkbox"]:not(:disabled)'));
+    const go = cadre.querySelector(".ia-ds-go");
+    const compter = () => {
+      const n = cases().filter(c => c.checked).length;
+      go.textContent = "Appliquer la sélection (" + n + ")";
+      go.disabled = n === 0;
+    };
+    cases().forEach(c => { c.onchange = compter; });
+    cadre.querySelector(".ia-ds-tout").onchange = function() {
+      const on = this.checked;
+      cases().forEach(c => { c.checked = on; });
+      compter();
+    };
+    compter();
+
+    go.onclick = function() {
+      const ids = cases().filter(c => c.checked).map(c => parseInt(c.getAttribute("data-id"), 10));
+      let r;
+      try { r = window.simDsAppliquer(prep, ids); }
+      catch (e) {
+        console.error("Application des paramètres de simulation :", e);
+        if (typeof alert === "function") alert("Erreur d'application : " + e.message);
+        return;
+      }
+      cadre.querySelectorAll("input").forEach(c => { c.disabled = true; });
+      go.disabled = true;
+      go.classList.add("done");
+      go.textContent = "✓ " + r.n + " valeur" + (r.n > 1 ? "s" : "") + " appliquée" + (r.n > 1 ? "s" : "");
+      const bilan = cadre.querySelector(".ia-ds-bilan");
+      bilan.hidden = false;
+      bilan.innerHTML = (r.messages || []).map(m => '<div>' + echapperHtml(m) + '</div>').join("") +
+        (r.n ? '<div>Onglet Simulation mis à jour. Les valeurs restent modifiables dans le panneau.</div>' : '');
+    };
+  }
+
   /* ---------- Markdown Parser Léger et Sécurisé ---------- */
   function echapperHtml(s) {
     return String(s).replace(/[&<>"']/g, ch => ({
@@ -1095,6 +1316,11 @@
             titre = "⚡ Largeur de piste PCB calculée";
             if (!sousTitre) sousTitre = "Largeur : " + act.width + " mm";
             btnLabel = "⚡ Appliquer au PCB";
+          } else if (act.type === "sim_params") {
+            titre = "⚙️ Paramètres de simulation relevés dans la datasheet";
+            const n = (act.valeurs || []).length + (act.condensateurs || []).length + (act.bornes_dc || []).length;
+            sousTitre = (act.source ? act.source + " · " : "") + n + " valeur" + (n > 1 ? "s" : "") + " proposée" + (n > 1 ? "s" : "");
+            btnLabel = "🔍 Vérifier et appliquer…";
           }
 
           const card = 
@@ -1255,9 +1481,14 @@
         roleLabel = "🛠️ Guide du Système CAO (Réponse locale de l'outil)";
       }
       const texte = (m.parts && m.parts[0] && m.parts[0].text) ? m.parts[0].text : "";
-      d.innerHTML = 
+      const joints = (m.pieces || []).map(p =>
+        '<span class="ia-piece">' + (p.mime === "application/pdf" ? "📄 " : "🖼 ") + echapperHtml(p.nom) +
+        ' <small>' + tailleLisible(p.taille) + '</small></span>').join("");
+      d.innerHTML =
         '<span class="ia-msg-role' + (m.localManual ? " local-tool" : "") + '">' + roleLabel + '</span>' +
-        '<div class="ia-msg-bubble' + (m.localManual ? " ia-manual-bubble" : "") + '">' + formaterMarkdown(texte) + '</div>';
+        '<div class="ia-msg-bubble' + (m.localManual ? " ia-manual-bubble" : "") + '">' +
+          (joints ? '<div class="ia-pieces-liste">' + joints + '</div>' : '') +
+          formaterMarkdown(texte) + '</div>';
       cont.appendChild(d);
     });
 
@@ -1378,8 +1609,11 @@
   async function envoyerMessage() {
     if (_enAttente) return;
     const input = document.getElementById("iaInput");
-    const q = (input ? input.value : "").trim();
-    if (!q) return;
+    let q = (input ? input.value : "").trim();
+    if (!q && !_pieces.length) return;
+    // Une pièce jointe sans question : on dit ce qu'on en attend.
+    if (!q) q = (simulationsDisponibles() && _pieces.some(p => p.mime === "application/pdf"))
+      ? QUESTION_DATASHEET : "Analyse ce document.";
 
     // 1. Interception de la commande locale help / aide (100% exécutée par l'outil, sans appel IA, sans clé requise)
     if (estCommandeAide(q)) {
@@ -1423,10 +1657,14 @@
     input.value = "";
     input.style.height = "";
 
-    // Ajout du message utilisateur
+    // Ajout du message utilisateur, avec ses pièces jointes
+    const piecesEnvoyees = _pieces;
+    _pieces = [];
+    rendrePieces();
     _historique.push({
       role: "user",
-      parts: [{ text: q }]
+      parts: [{ text: q }],
+      pieces: piecesEnvoyees.length ? piecesEnvoyees : undefined
     });
 
     _enAttente = true;
@@ -1447,6 +1685,36 @@
       "Pour le PCB :\n" +
       "```action\n{\"type\":\"pcb_track_width\",\"label\":\"Appliquer la largeur de piste (0.65 mm)\",\"width\":0.65}\n```\n" +
       "L'outil Web CAO transformera ce bloc en un bouton interactif cliquable permettant à l'utilisateur d'appliquer directement tes calculs dans son projet.";
+
+    /* LE PARAMÉTRAGE DES SIMULATIONS DEPUIS UNE DATASHEET. Le catalogue n'existe
+       que là où les simulations sont chargées (éditeur PCB, visionneuse), et
+       il ne part que lorsqu'il sert : un document joint dans la conversation,
+       ou une question qui parle de simulation. Il décrit CE QUI PEUT être
+       réglé, dans quelle unité — c'est la seule façon d'éviter qu'un courant
+       lu en mA arrive dans un champ en ampères. */
+    const aDocument = _historique.some(m => m.pieces && m.pieces.length);
+    if (simulationsDisponibles() &&
+        (aDocument || /datasheet|fiche technique|simul|pdn|\bpi\b|\bsi\b|crosstalk|diaphonie|setup|hold|chute dc|ir drop|imp[ée]dance|d[ée]couplage/i.test(q))) {
+      let catalogue = "";
+      try { catalogue = window.simDsCatalogue(); } catch (e) { console.warn("Catalogue simulation indisponible :", e); }
+      if (catalogue) promptSysteme +=
+        "\n\nPARAMÉTRAGE DES SIMULATIONS DEPUIS UNE DATASHEET :\n" +
+        "Quand une datasheet est jointe et qu'on te demande de régler les simulations, relève UNIQUEMENT des valeurs ÉCRITES dans le document :\n" +
+        "- Pire cas : courants et temps de propagation (tco max, IDD) à leur valeur MAX ; temps de montée à leur valeur MIN (le front le plus raide) ; tsu/th : la valeur MIN exigée par le récepteur. Conditions les plus proches du projet (tension, fréquence d'horloge, température).\n" +
+        "- Pour chaque valeur : le numéro de page et une citation courte et exacte du tableau ou de la phrase.\n" +
+        "- Une valeur absente du document ne s'invente pas et ne se déduit pas d'une « valeur usuelle » : omets-la et dis qu'elle manque (ex. nombre de sorties qui basculent ensemble = firmware).\n" +
+        "- Convertis dans l'unité EXACTE du catalogue (ex. 12,5 mA pour pdn_fiche.iActifMa ; 0,002 A resterait faux).\n" +
+        "- Choisis la bonne cible : la fiche pdn_fiche décrit la charge du rail indiquée plus bas ; une datasheet de régulateur règle pdn.rVrmMOhm / pdn.fVrmKhz, pas la fiche.\n" +
+        "Réponds d'abord par un tableau court (paramètre, valeur, page, citation), puis termine par UN bloc exécutable :\n" +
+        "```action\n" +
+        "{\"type\":\"sim_params\",\"label\":\"Paramètres relevés dans la datasheet STM32G0B1\",\"source\":\"STM32G0B1 DS13560 rév. 4\",\"composant\":\"U3\"," +
+        "\"valeurs\":[{\"sim\":\"pdn_fiche\",\"cle\":\"iActifMa\",\"valeur\":12.5,\"page\":84,\"citation\":\"IDD Run, fHCLK = 64 MHz, max 12.5 mA\",\"confiance\":\"haute\"}]," +
+        "\"condensateurs\":[{\"refs\":[\"C12\",\"C13\"],\"esr_mohm\":8,\"esl_nh\":0.35,\"page\":3,\"citation\":\"...\"}]," +
+        "\"bornes_dc\":[{\"composant\":\"U3\",\"courant_ma\":45,\"page\":84,\"citation\":\"...\"}]}\n" +
+        "```\n" +
+        "`sim` et `cle` sont ceux du catalogue ; `condensateurs` et `bornes_dc` sont facultatifs. L'utilisateur verra chaque valeur avec sa citation et cochera celles qu'il applique.\n\n" +
+        catalogue;
+    }
 
     let contexteProjetTexte = "";
     if (_inclureContexte) {
@@ -1484,9 +1752,14 @@
       if (idx === messagesPourApi.length - 1 && m.role === "user" && contexteProjetTexte) {
         txtMsg = contexteProjetTexte + "\n\n" + txtMsg;
       }
+      /* Les pièces jointes passent AVANT le texte, en `inlineData` : c'est
+         l'ordre que Google recommande pour qu'une question porte sur le
+         document qui la précède. */
+      const parts = (m.pieces || []).map(p => ({ inlineData: { mimeType: p.mime, data: p.data } }));
+      parts.push({ text: txtMsg });
       contents.push({
         role: m.role,
-        parts: [{ text: txtMsg }]
+        parts: parts
       });
     });
 
@@ -1533,7 +1806,8 @@
       if (rep.status === 400 && corps.systemInstruction) {
         const altContents = JSON.parse(JSON.stringify(contents));
         if (altContents.length > 0 && altContents[0].role === "user") {
-          altContents[0].parts[0].text = promptSysteme + "\n\n" + altContents[0].parts[0].text;
+          const partTexte = altContents[0].parts.find(p => typeof p.text === "string");
+          if (partTexte) partTexte.text = promptSysteme + "\n\n" + partTexte.text;
         }
         rep = await appelerApi({
           contents: altContents,
@@ -1578,7 +1852,9 @@
          une alternance stricte question / réponse, et une question restée sans
          réponse ferait refuser tous les échanges suivants de la session. */
       if (_historique.length > 0 && _historique[_historique.length - 1].role === "user") {
-        _historique.pop();
+        const perdu = _historique.pop();
+        // Les pièces jointes reviennent avec la question : on renvoie d'un clic.
+        if (perdu.pieces && perdu.pieces.length) { _pieces = perdu.pieces.concat(_pieces); rendrePieces(); }
       }
       console.error("Erreur appel IA / Google AI Studio :", e);
       const msgErr = String((e && e.message) ? e.message : e);

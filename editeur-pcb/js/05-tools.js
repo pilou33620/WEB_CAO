@@ -1020,7 +1020,7 @@ function wallChain(f){
 /* Relevé des articulations de la sélection courante, avec les positions de
    départ : le déplacement s'applique ensuite en absolu, ce qui permet de le
    suspendre (Alt) puis de le reprendre sans décalage. */
-function moveJoints(){
+function moveJoints(rigid){
   const anchors=new Set();
   for(const t of S.sel.tracks){
     anchors.add(anchorKey(t.l,t.x1,t.y1));
@@ -1048,8 +1048,11 @@ function moveJoints(){
   /* Le coude glisse le long du voisin resté en place jusqu'à retomber sur la
      ligne du segment tiré : chacun garde sa direction, donc son angle. Deux
      directions parallèles n'ont pas d'intersection — le point suit alors
-     simplement le déplacement, comme avant. */
-  for(const j of J.values()){
+     simplement le déplacement, comme avant.
+     Un point tenu par une pastille ou un via qu'on déplace ne glisse pas : il
+     suit son support, en bloc (`followMoved`). */
+  for(const [k,j] of J){
+    if(rigid&&rigid.has(k))continue;
     const fix=j.ends.filter(o=>!o.sel), sel=j.ends.filter(o=>o.sel);
     if(!fix.length||!sel.length)continue;
     for(const f of fix){
@@ -1172,17 +1175,477 @@ function applyJoints(J,dx,dy,detach){
     if(stable)break;
   }
 }
+/* ==========================================================================
+   Le cuivre accroché à ce qu'on déplace
+   --------------------------------------------------------------------------
+   Déplacer un boîtier laissait ses pistes derrière lui, et déplacer un via
+   étirait son dernier segment d'un seul trait, à l'angle que donnait le hasard
+   — ce « V » qu'on ne dessine jamais à la main. Le cuivre suit désormais comme
+   dans le glissement d'Altium ou de KiCad (`dragCornerInternal` du routeur
+   PNS), en gardant ses 45° :
+   - chaque piste qui arrive sur une pastille ou un via déplacé est suivie, de
+     coude en coude, jusqu'à ce qui la tient : une pastille, un via, un
+     embranchement ;
+   - si ce bout-là bouge lui aussi (deux pastilles du même boîtier, le via et
+     son boîtier), la piste part en bloc ;
+   - sinon on garde la piste telle quelle jusqu'à un sommet, et de là on
+     repart vers le point déplacé par un coude à 45° (ou 90°, selon la règle)
+     dont la première jambe PROLONGE le segment d'origine : le coude glisse le
+     long de son voisin. On prend le sommet le plus proche du point tiré qui
+     s'y prête, et on recule d'un sommet quand le coude tournerait à
+     rebrousse-poil, recroiserait la piste ou passerait sous l'isolation.
+   Le tracé se recalcule à chaque mouvement depuis la forme de départ :
+   revenir en arrière rend la piste intacte. En règle « libre », le bout
+   s'étire simplement, comme avant.
+   ========================================================================== */
+const FOLLOW_MAX=64;
+function followMoved(){
+  const fps=[...S.sel.fps].map(fpById).filter(Boolean), vias=[...S.sel.vias];
+  const out={chains:[],rubber:[],rigid:new Set(),keys:new Set(),own:new Set(),skip:null,
+             fps,vias,mobile:[],base:null};
+  if(!fps.length&&!vias.length)return out;
+  const pads=[];
+  for(const fp of fps)for(const q of padsWorld(fp))pads.push({q,L:padLayers(fp,q)});
+  const user=S.sel.tracks;
+  // l'emprise de ce qu'on déplace : sur une carte chargée, on n'examine pas
+  // chaque bout de piste contre chaque pastille
+  let bx1=1e9,by1=1e9,bx2=-1e9,by2=-1e9;
+  for(const p of pads){
+    const r=Math.hypot(p.q.w,p.q.h)/2;
+    bx1=Math.min(bx1,p.q.x-r);bx2=Math.max(bx2,p.q.x+r);
+    by1=Math.min(by1,p.q.y-r);by2=Math.max(by2,p.q.y+r);
+  }
+  for(const v of vias){
+    bx1=Math.min(bx1,v.x);bx2=Math.max(bx2,v.x);by1=Math.min(by1,v.y);by2=Math.max(by2,v.y);
+  }
+  // un point porté par ce qu'on déplace : pastille d'un boîtier tiré, via tiré
+  const held=(l,x,y)=>{
+    if(x<bx1-EPS_J||x>bx2+EPS_J||y<by1-EPS_J||y>by2+EPS_J)return false;
+    for(const v of vias)
+      if(l>=v.a&&l<=v.b&&Math.abs(v.x-x)<EPS_J&&Math.abs(v.y-y)<EPS_J)return true;
+    for(const p of pads)if(p.L.includes(l)&&padDist(x,y,p.q)<=EPS_J)return true;
+    return false;
+  };
+  for(const v of vias)out.keys.add(anchorKey(v.a,v.x,v.y));
+  const mode=cornerMode(), seen=new Set();
+  for(const t of [...S.tracks]){
+    for(const en of [1,2]){
+      const x=en===1?t.x1:t.x2, y=en===1?t.y1:t.y2;
+      if(!held(t.l,x,y))continue;
+      out.keys.add(anchorKey(t.l,x,y));
+      if(user.has(t)||seen.has(t))continue;
+      seen.add(t);
+      const P0={x,y};
+      if(isArc(t)||mode==="free"){out.rubber.push({t,e:en,P0});out.own.add(t);continue;}
+      // de coude en coude jusqu'à ce qui tient la piste
+      const list=[t];
+      let cur=t, ce=en, end="fixe";
+      for(let k=0;k<FOLLOW_MAX;k++){
+        const F=endFar(cur,ce);
+        if(held(cur.l,F.x,F.y)){end="bouge";break;}
+        if(padAt(cur.l,F.x,F.y)||viaAt(cur.l,F.x,F.y))break;
+        const j=jointAt(F.x,F.y,cur.l);
+        if(j.ends.length!==2||j.vias.length)break;
+        const nx=j.ends.find(o=>o.t!==cur);
+        if(!nx||nx.t.net!==cur.net)break;
+        // un morceau sélectionné bouge avec sa propre articulation : on s'arrête
+        // avant lui, et seul le bout accroché s'étire
+        if(user.has(nx.t)){end="sel";break;}
+        if(isArc(nx.t)||nx.t.w!==cur.w||seen.has(nx.t))break;
+        list.push(nx.t);seen.add(nx.t);
+        cur=nx.t;ce=nx.e;
+      }
+      if(end==="bouge"){for(const o of list){out.rigid.add(o);out.own.add(o);}continue;}
+      if(end==="sel"){
+        for(let k=1;k<list.length;k++)seen.delete(list[k]);
+        out.rubber.push({t,e:en,P0});out.own.add(t);continue;
+      }
+      // les sommets du bout tenu (V0) jusqu'au point tiré (Vn)
+      const V=[{x:x,y:y}];
+      for(const o of list){
+        const e=o===t?en:(Math.abs(o.x1-V[V.length-1].x)<EPS_J&&Math.abs(o.y1-V[V.length-1].y)<EPS_J?1:2);
+        const F=endFar(o,e);
+        V.push({x:F.x,y:F.y});
+      }
+      V.reverse();
+      const trk=list.slice().reverse();
+      trk.forEach(o=>out.own.add(o));
+      /* Une jambe de plus que la piste n'a de segments : c'est ce qu'il faut au
+         pire pour plier le dernier en deux. Elle naît repliée sur le point tiré
+         et disparaît au relâchement si le tracé n'en a pas eu besoin. */
+      const spare=Object.assign({},t,{x1:x,y1:y,x2:x,y2:y});
+      delete spare.ca;
+      S.tracks.push(spare);
+      trk.push(spare);out.own.add(spare);
+      out.chains.push({V,trk,orig:trk.map(o=>({x1:o.x1,y1:o.y1,x2:o.x2,y2:o.y2})),
+                       P0,l:t.l,net:t.net,w:t.w,mode});
+    }
+  }
+  return out;
+}
+/* Sens d'un segment rangé parmi les huit du tracé : 0 = est, puis par
+   quarts de tour de 45°. */
+function dirIdx(a,b){
+  return ((Math.round(Math.atan2(b.y-a.y,b.x-a.x)/(Math.PI/4))%8)+8)%8;
+}
+/* Écart entre deux des huit sens, en huitièmes de tour (0 à 4). */
+function dirGap(a,b){const d=Math.abs(a-b)%8;return Math.min(d,8-d);}
+/* Les deux coudes possibles de a vers b, en suites de sommets. */
+function followLegs(a,b,mode){
+  const out=[];
+  for(const post of [false,true]){
+    const segs=routeCorner(a,b,post,mode,0);
+    const pts=[{x:a.x,y:a.y}];
+    for(const s of segs)pts.push({x:r3(s.x2),y:r3(s.y2)});
+    pts[pts.length-1]={x:b.x,y:b.y};
+    if(!out.some(q=>q.length===pts.length&&q.every((p,i)=>p.x===pts[i].x&&p.y===pts[i].y)))
+      out.push(pts);
+  }
+  return out;
+}
+function segsCross(a,b,c,d){
+  const d1=b.x-a.x, d2=b.y-a.y, d3=d.x-c.x, d4=d.y-c.y;
+  const den=d1*d4-d2*d3;
+  if(Math.abs(den)<1e-12)return false;
+  const ex=c.x-a.x, ey=c.y-a.y;
+  const t=(ex*d4-ey*d3)/den, u=(ex*d2-ey*d1)/den;
+  return t>1e-9&&t<1-1e-9&&u>1e-9&&u<1-1e-9;
+}
+/* Le nouveau tracé d'une piste qui suit : les sommets V0..Vi gardés, puis un
+   coude jusqu'au point tiré P. Renvoie la suite complète des sommets.
+   `N` est le monde tel qu'il est À CET INSTANT du geste (`followWorld`) : nul,
+   l'isolation n'est pas jugée (anti-collision coupée, piste sans net).
+   Quand aucun coude direct ne passe, la piste CONTOURNE l'obstacle comme au
+   routage interactif (`pnsWalkaround`), puis l'optimiseur retend le détour. */
+const FOLLOW_WALK=4;          // coudes candidats qu'on essaie de faire contourner
+function followPath(c,P,N,only,walk){
+  const V=c.V, n=V.length-1, mode=c.mode, cands=[];
+  const turn=mode==="90"?2:1;
+  for(let i=n-(n>1?2:1);i>=0;i--){
+    const ds=dirIdx(V[i],V[i+1]);
+    const dp=i>0?dirIdx(V[i-1],V[i]):null;
+    const legs=followLegs(V[i],P,mode);
+    // 1. la première jambe prolonge le segment d'origine : le coude glisse
+    for(const pts of legs)
+      if(pts.length<2||dirIdx(pts[0],pts[1])===ds)cands.push({i,pts});
+    // 2. sinon, elle tourne franchement depuis le segment d'avant
+    if(dp!=null)
+      for(const pts of legs){
+        if(pts.length<2)continue;
+        const d0=dirIdx(pts[0],pts[1]), g=dirGap(dp,d0);
+        if(d0!==ds&&(g===0||g===turn))cands.push({i,pts});
+      }
+  }
+  // 3. en dernier recours, tout repart du bout tenu — le sens de la dernière
+  //    jambe d'origine d'abord, comme KiCad
+  const last=dirIdx(V[n-1],V[n]), legs0=followLegs(V[0],P,mode);
+  if(mode!=="90"&&last%2===0)legs0.reverse();
+  for(const pts of legs0)cands.push({i:0,pts,last:true});
+  const poly=(i,pts)=>V.slice(0,i).concat(pts);
+  // la piste ne doit pas se recroiser, ni repartir à rebrousse-poil au sommet gardé
+  const ok=(i,pts)=>{
+    const Q=poly(i,pts);
+    for(let a=i;a<Q.length-1;a++)
+      for(let b=0;b<a-1;b++)
+        if(segsCross(Q[a],Q[a+1],Q[b],Q[b+1]))return false;
+    if(i>0&&pts.length>1&&dirGap(dirIdx(V[i-1],V[i]),dirIdx(pts[0],pts[1]))>2)return false;
+    return true;
+  };
+  const line=pts=>({l:c.l,net:c.net,w:c.w,pts});
+  /* Ce qui tient les deux bouts n'est pas un obstacle : c'est là que la piste
+     doit arriver, même quand la pastille n'a pas (encore) de net. */
+  let skip=null;
+  if(N){
+    skip=new Set();
+    for(const p of [V[0],P]){
+      const j=N.jointAt(c.l,p.x,p.y);
+      for(const it of j.pads)skip.add(it);
+      for(const it of j.vias)skip.add(it);
+    }
+  }
+  const clean=pts=>{
+    if(!N)return true;
+    const q=pnsSimplify(pts);
+    return q.length<2||!N.firstObstacle(line(q),skip,only);
+  };
+  const valid=[];
+  for(const k of cands){
+    if(!k.last&&!ok(k.i,k.pts))continue;
+    if(clean(k.pts))return poly(k.i,k.pts);
+    valid.push(k);
+  }
+  /* Aucun coude direct ne passe : on contourne. Chaque candidat retenu part de
+     son sommet gardé ; on garde le détour abouti le plus court. */
+  if(N&&walk){
+    let best=null;
+    const vus=new Set();
+    for(const k of valid){
+      if(vus.size>=FOLLOW_WALK)break;
+      const cle=k.i+"|"+k.pts.map(p=>p.x+","+p.y).join(";");
+      if(vus.has(cle))continue;
+      vus.add(cle);
+      const w=pnsWalkaround(N,line(k.pts),skip,null,only);
+      if(!w.ok||w.pts.length<2)continue;
+      let pts=only?w.pts:pnsOptimize(N,line(w.pts),skip);
+      if(pts.length<2||N.firstObstacle(line(pts),skip,only))pts=w.pts;
+      pts=followSmooth(N,line(pts),skip,mode,only);
+      // les deux bouts exacts : le sommet gardé et le point tiré
+      pts=pts.map(p=>({x:p.x,y:p.y}));
+      pts[0]={x:V[k.i].x,y:V[k.i].y};
+      pts[pts.length-1]={x:P.x,y:P.y};
+      if(!ok(k.i,pts))continue;
+      const Q=poly(k.i,pts), L=pnsLen(Q);
+      if(!best||L<best.L-1e-9)best={Q,L};
+    }
+    if(best)return best.Q;
+  }
+  const k=valid[0]||cands[cands.length-1];
+  return poly(k.i,k.pts);
+}
+/* Retendre un détour sans le rallonger. L'optimiseur du routeur ne garde un
+   raccourci que s'il est PLUS COURT ; or entre deux points, tous les chemins à
+   45° qui ne reviennent pas en arrière ont la même longueur. Le tour d'une
+   enveloppe laisse donc des marches — un crochet de quelques dixièmes au ras
+   de la pastille — que rien ne retire. Ici, un coude direct qui remplace
+   plusieurs sommets est gardé dès qu'il ne rallonge pas : moins de coudes, à
+   longueur égale, c'est le tracé qu'on aurait posé à la main. */
+function followSmooth(N,line,skip,mode,only){
+  let pts=pnsSimplify(line.pts);
+  for(let r=0;r<PNS_OPT_ROUNDS*2&&pts.length>2;r++){
+    let gagne=null;
+    const L0=pnsLen(pts);
+    for(let n=pts.length-1;n>=2&&!gagne;n--)
+      for(let i=0;i+n<pts.length&&!gagne;i++)
+        for(const post of [false,true]){
+          const legs=routeCorner(pts[i],pts[i+n],post,mode,0);
+          if(!legs.length)continue;
+          const cand=pnsSimplify(pts.slice(0,i+1)
+                                    .concat(legs.map(s=>({x:s.x2,y:s.y2})),pts.slice(i+n+1)));
+          if(cand.length>=pts.length||pnsLen(cand)>L0+1e-6)continue;
+          if(!pnsIs45(cand,mode)||!pnsSurCarte(cand))continue;
+          if(N.firstObstacle(Object.assign({},line,{pts:cand}),skip,only))continue;
+          gagne=cand;break;
+        }
+    if(!gagne)break;
+    pts=gagne;                     // un sommet de moins à chaque tour : ça termine
+  }
+  return pts;
+}
+/* Le monde de départ du geste : celui du document, moins tout ce que le geste
+   emmène — pastilles des boîtiers tirés, vias tirés, cuivre qui bouge. Ils y
+   reviendront à chaque mouvement, à leur place du moment (`followWorld`). */
+function followBase(F){
+  const W=pnsWorld(), B=W.branch();
+  const fset=new Set(F.fps), vset=new Set(F.vias), mob=new Set(F.mobile);
+  for(const it of W.all())
+    if((it.fp&&fset.has(it.fp))||(it.v&&vset.has(it.v))||(it.src&&mob.has(it.src)))B.remove(it);
+  return B;
+}
+/* Le monde à cet instant du geste. Les pastilles du boîtier tiré y sont des
+   obstacles comme les autres : la piste d'une broche ne doit pas frôler la
+   broche voisine, qui a bougé avec elle. */
+function followWorld(F){
+  const N=F.base.branch(), chain=new Set();
+  for(const c of F.chains)for(const t of c.trk)chain.add(t);
+  for(const fp of F.fps)for(const q of padsWorld(fp))N.add(pnsItemPad(fp,q));
+  for(const v of F.vias)N.add(pnsItemVia(v));
+  for(const t of F.mobile)
+    if(!chain.has(t)&&dist(t.x1,t.y1,t.x2,t.y2)>1e-9)
+      for(const it of pnsItemsTrack(t))N.add(it);
+  return N;
+}
+/* Une jambe de plus pour une piste qui suit : le détour en demande parfois
+   davantage que la piste n'avait de segments. Elle naît repliée sur le point
+   tiré, entre dans tout ce que le geste surveille, et part au relâchement si
+   elle n'a plus servi. */
+function followGrow(F,c,P0){
+  const t=Object.assign({},c.trk[c.trk.length-1],{x1:P0.x,y1:P0.y,x2:P0.x,y2:P0.y});
+  delete t.ca;
+  S.tracks.push(t);
+  c.trk.push(t);c.orig.push({x1:P0.x,y1:P0.y,x2:P0.x,y2:P0.y});
+  F.own.add(t);
+  if(F.skip)F.skip.add(t);
+  if(drag&&drag.clear){drag.clear.list.push(t);drag.clear.skip.add(t);}
+  if(drag&&drag.cross)drag.cross.list.push(t);
+  return t;
+}
+/* Posé à chaque mouvement, après les articulations. `alt` : les voisins
+   restent où ils sont — le cuivre qui suivait reprend sa forme de départ.
+   La conduite face à l'obstacle est celle du routage (`S.rule.route`) :
+     « shove » quand on tire un BOÎTIER, les pistes qui suivent ne contournent
+               que les pastilles, et tout ce qui bouge — elles, les pastilles
+               du boîtier, les vias tirés avec lui — POUSSE le cuivre voisin
+               (`followShove`). Sans issue, on se rabat sur le contournement.
+               Un via tiré seul, lui, bute toujours sur l'obstacle ;
+     « walk »  elles contournent tout obstacle ;
+     « mark »  elles prennent le coude direct le plus propre, sans détour. */
+function applyFollow(F,dx,dy,alt){
+  if(!F)return;
+  const at=P0=>alt?{x:P0.x,y:P0.y}:{x:r3(P0.x+dx),y:r3(P0.y+dy)};
+  for(const r of F.rubber){
+    const P=at(r.P0);
+    if(r.e===1){r.t.x1=P.x;r.t.y1=P.y;}else{r.t.x2=P.x;r.t.y2=P.y;}
+  }
+  const mode=F.base?routeMode():"mark";
+  F.shove=null;
+  // un via tiré seul bute, comme avant : seul un boîtier pousse le cuivre
+  if(!alt&&F.base&&mode==="shove"&&F.fps.length){
+    followChains(F,at,followWorld(F),"P",true);
+    const r=followShove(F);
+    if(r){F.shove=r;S.dragShove=r;return;}
+  }
+  S.dragShove=null;
+  followChains(F,at,!alt&&F.base?followWorld(F):null,null,mode!=="mark");
+}
+function followChains(F,at,N,only,walk){
+  for(const c of F.chains){
+    const P=at(c.P0);
+    // sur place (ou Alt) : la forme de départ, telle quelle
+    const Q=(P.x===c.P0.x&&P.y===c.P0.y)?null:followPath(c,P,c.net?N:null,only,walk);
+    c.cur=Q||c.V;
+    if(!Q){
+      c.trk.forEach((t,k)=>Object.assign(t,c.orig[k]));
+    }else{
+      while(c.trk.length<Q.length-1)followGrow(F,c,c.P0);
+      // les segments gardés reprennent leur forme exacte, les autres portent le coude
+      let k=0;
+      for(;k<Q.length-1;k++){
+        const t=c.trk[k], o=c.orig[k];
+        const same=o&&k<c.V.length-1&&Q[k].x===c.V[k].x&&Q[k].y===c.V[k].y&&
+                   Q[k+1].x===c.V[k+1].x&&Q[k+1].y===c.V[k+1].y;
+        if(same){Object.assign(t,o);continue;}
+        t.x1=Q[k].x;t.y1=Q[k].y;t.x2=Q[k+1].x;t.y2=Q[k+1].y;
+      }
+      for(;k<c.trk.length;k++){
+        const t=c.trk[k];
+        t.x1=P.x;t.y1=P.y;t.x2=P.x;t.y2=P.y;             // replié : parti au relâchement
+      }
+    }
+    // la piste posée devient un obstacle pour celles des autres nets qui suivent
+    if(N)for(const t of c.trk)
+      if(dist(t.x1,t.y1,t.x2,t.y2)>1e-9)N.add(pnsItemTrack(t));
+  }
+}
+/* ==========================================================================
+   Le shove d'un boîtier qu'on déplace
+   --------------------------------------------------------------------------
+   Tout ce que le geste emmène devient une TÊTE du shove (`pnsShoveHeads`) :
+   les pistes qui suivent, le cuivre sélectionné, et aussi les pastilles du
+   boîtier et les vias tirés — des têtes-objets, qui poussent sans jamais se
+   laisser pousser. Le reste du cuivre s'écarte de proche en proche, dans le
+   monde de départ privé de ce qui bouge (`followBase`).
+   Rien n'est écrit dans la carte pendant le geste : le résultat voyage dans
+   `F.shove`, le rendu le montre en pointillé, et le relâchement le verse
+   (`pnsApply`).
+   Une garde : ce qui tient le cuivre qui bouge ne doit pas partir. Une piste
+   poussée qui partait d'un point où arrive une piste qui suit doit y arriver
+   encore, et un via poussé ne doit pas être celui où l'une d'elles s'accroche.
+   Sinon on renonce, et le geste se rabat sur le contournement. */
+/* Poser une ligne poussée au micron SANS casser ses 45°. Les sommets d'un tour
+   d'enveloppe ne tombent pas sur la grille du micron ; arrondir chaque
+   coordonnée à part décale un bout d'un micron et pas l'autre — sur un pan de
+   deux dixièmes, c'est 0,12° : un angle bâtard. On repose donc chaque sommet
+   le long de SA direction, d'une longueur ronde, puis le dernier coude à
+   l'intersection des deux dernières directions, pour retomber pile sur le bout
+   tenu. */
+const DIR8V=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+function followRound45(pts){
+  const q=pts.map(p=>({x:r3(p.x),y:r3(p.y)}));
+  const n=pts.length;
+  if(n<3||cornerMode()==="free")return q;
+  const d=[];
+  for(let i=0;i+1<n;i++)d.push(DIR8V[dirIdx(pts[i],pts[i+1])]);
+  for(let i=1;i<n-1;i++){
+    const a=q[i-1], v=d[i-1], L=r3(((pts[i].x-a.x)*v[0]+(pts[i].y-a.y)*v[1])/(v[0]*v[0]+v[1]*v[1]));
+    q[i]={x:r3(a.x+v[0]*L),y:r3(a.y+v[1]*L)};
+  }
+  // le dernier coude : sur la direction d'avant, et sur celle qui mène au bout tenu
+  const A=q[n-3], u=d[n-3], w=d[n-2], E=q[n-1];
+  const den=u[0]*w[1]-u[1]*w[0];
+  if(Math.abs(den)>1e-12){
+    const s=((E.x-A.x)*w[1]-(E.y-A.y)*w[0])/den;
+    q[n-2]={x:r3(A.x+u[0]*s),y:r3(A.y+u[1]*s)};
+  }
+  return q;
+}
+function followShove(F){
+  const heads=[], own=new Set();
+  for(const c of F.chains){
+    for(const t of c.trk)own.add(t);
+    const pts=pnsSimplify(c.cur||c.V);
+    if(pts.length>=2)heads.push({l:c.l,net:c.net,w:c.w,pts});
+  }
+  for(const t of F.mobile){
+    if(own.has(t)||dist(t.x1,t.y1,t.x2,t.y2)<1e-9)continue;
+    for(const s of trkSegs(t))
+      heads.push({l:t.l,net:t.net,w:t.w,pts:[{x:s.x1,y:s.y1},{x:s.x2,y:s.y2}]});
+  }
+  // un boîtier est UNE tête : ses pastilles poussent ensemble
+  for(const fp of F.fps)heads.push({items:padsWorld(fp).map(q=>pnsItemPad(fp,q)),group:true});
+  for(const v of F.vias)heads.push({item:pnsItemVia(v)});
+  const r=pnsShoveHeads(F.base,heads,null,Date.now(),{tendre:true});
+  if(!r||!r.ok)return null;
+  if(!(r.lignes&&r.lignes.length)&&!(r.vias&&r.vias.length))return null;   // rien à pousser
+  /* Une paire différentielle ne se pousse pas brin par brin : l'écart de la
+     paire et la règle propre à ses vias y seraient perdus. On la contourne. */
+  for(const L of (r.lignes||[]))if(dpOfNet(L.net))return null;
+  /* Le cuivre poussé longe l'enveloppe au plus près, marches comprises. On le
+     retend, une ligne après l'autre, dans le monde que le shove a laissé — les
+     têtes à leur place, les lignes déjà retendues à la leur. */
+  const B=r.node;
+  for(const L of (r.lignes||[])){
+    const line=pts=>({l:L.l,net:L.net,w:L.w,pts});
+    const cands=[];
+    if(B)cands.push(followSmooth(B,line(pnsOptimize(B,line(L.pts),null)),null,cornerMode()));
+    cands.push(L.pts);
+    for(const c of cands){
+      const q=followRound45(c);
+      if(!pnsIs45(q))continue;
+      if(B&&B.firstObstacle(line(q),null))continue;
+      if(B&&L.items)L.items=pnsRelink(B,L,q);
+      L.pts=q;
+      break;
+    }
+  }
+  for(const v of (r.vias||[]))if(v&&dpOfNet(v.orig.net))return null;
+  // les points qui tiennent ce qui bouge
+  const key=(l,x,y)=>l+"|"+r3(x)+"|"+r3(y), tient=new Set(), pts=new Set();
+  const suit=[...F.mobile,...own];
+  for(const t of suit){
+    if(dist(t.x1,t.y1,t.x2,t.y2)<1e-9)continue;
+    tient.add(key(t.l,t.x1,t.y1));tient.add(key(t.l,t.x2,t.y2));
+    pts.add(r3(t.x1)+"|"+r3(t.y1));pts.add(r3(t.x2)+"|"+r3(t.y2));
+  }
+  for(const v of (r.vias||[]))
+    if(v&&pts.has(r3(v.orig.x)+"|"+r3(v.orig.y)))return null;
+  for(const L of (r.lignes||[]))
+    for(const t of L.orig)
+      for(const e of [[t.x1,t.y1],[t.x2,t.y2]]){
+        if(!tient.has(key(t.l,e[0],e[1])))continue;
+        if(!L.pts.some(p=>Math.abs(p.x-e[0])<5e-4&&Math.abs(p.y-e[1])<5e-4))return null;
+      }
+  return r;
+}
 /* Premier déplacement réel : la sélection s'étend aux portions droites, et on
    relève l'état de départ de tout ce qui va bouger. */
 function beginMove(){
   for(const t of [...S.sel.tracks])
     for(const o of collinearRun(t))S.sel.tracks.add(o);
+  const fol=followMoved();
+  drag.follow=fol;
   drag.trk=[...S.sel.tracks].map(t=>({t,x1:t.x1,y1:t.y1,x2:t.x2,y2:t.y2}));
+  // une piste tendue entre deux points qui bougent part en bloc, comme la sélection
+  for(const t of fol.rigid)drag.trk.push({t,x1:t.x1,y1:t.y1,x2:t.x2,y2:t.y2});
   drag.via=[...S.sel.vias].map(v=>({v,x:v.x,y:v.y}));
-  drag.joints=moveJoints();
-  armClear([...movedTracks()],[...S.sel.vias],[...S.sel.fps].map(fpById).filter(Boolean));
-  // les chanfreins présents AVANT le geste : ce sont eux qu'on rendra s'ils se replient
-  drag.diag=diagTracks([...movedTracks()]);
+  drag.joints=moveJoints(fol.keys);
+  const fps=[...S.sel.fps].map(fpById).filter(Boolean);
+  fol.skip=new Set([...movedTracks(),...S.sel.vias,...fps]);
+  armClear([...movedTracks()],[...S.sel.vias],fps);
+  // le monde que les pistes qui suivent doivent éviter, sans ce qui bouge
+  if(S.avoid&&(fol.fps.length||fol.vias.length)){fol.mobile=[...movedTracks()];fol.base=followBase(fol);}
+  // les chanfreins présents AVANT le geste : ce sont eux qu'on rendra s'ils se replient.
+  // Ceux d'une piste qui suit sont redessinés par elle : ils ne se « perdent » pas
+  drag.diag=diagTracks([...movedTracks()].filter(t=>!fol.own.has(t)));
   drag.drw=selDrawingsPcb().map(d=>({d,x1:d.x1,y1:d.y1,x2:d.x2,y2:d.y2}));
   drag.holes=selHolesPcb().map(h=>({h,x:h.x,y:h.y}));
   // un boîtier emmène ses pastilles, une zone son contour : c'est un autre
@@ -1244,6 +1707,8 @@ function crossStop(){
 function clearStop(){
   const c=drag&&drag.clear;
   if(!c)return false;
+  // le cuivre gênant s'écarte : ce qu'on emmène ne bute plus dessus
+  if(drag.follow&&drag.follow.shove)return false;
   const bad=moveClearBad(c.list,c.was,c.skip);
   const badV=moveViaBad(c.vias||[],c.wasV,c.skip);
   if(!bad.size&&!badV.size)return false;
@@ -2172,6 +2637,7 @@ function moveViaBad(list,was,skip){
 function movedTracks(){
   const set=new Set();
   for(const o of drag.trk||[])set.add(o.t);
+  if(drag.follow)for(const t of drag.follow.own)set.add(t);
   for(const j of drag.joints||[]){
     for(const o of j.ends)set.add(o.t);
     for(const w of (j.slide?j.slide.walls:[]))
@@ -3354,6 +3820,7 @@ cv.addEventListener("pointermove",e=>{
       drag.x+=dx;drag.y+=dy;
       // Alt enfoncé pendant le geste : les voisins restent où ils sont
       applyJoints(drag.joints,drag.dx,drag.dy,e.altKey);
+      applyFollow(drag.follow,drag.dx,drag.dy,e.altKey);
       /* Le déplacement s'applique en absolu : revenir au décalage précédent
          suffit à replacer tout ce que le geste avait touché, coudes compris. */
       if(clearStop()||crossStop()){
@@ -3378,6 +3845,7 @@ cv.addEventListener("pointermove",e=>{
           }
         }
         applyJoints(drag.joints,drag.dx,drag.dy,e.altKey);
+        applyFollow(drag.follow,drag.dx,drag.dy,e.altKey);
       }
       touch();draw();
     }
@@ -3515,6 +3983,12 @@ cv.addEventListener("pointerup",e=>{
     S.hover=null;drag=null;refreshPanels();draw();return;
   }
   if(drag&&drag.move&&drag.moved){
+    const sh=drag.follow&&drag.follow.shove;
+    S.dragShove=null;
+    if(sh&&pnsApply(sh)){
+      const n=(sh.lignes||[]).length, v=(sh.vias||[]).length;
+      hint("Le cuivre voisin s'est écarté : "+n+" piste(s)"+(v?", "+v+" via(s)":"")+" poussée(s).");
+    }
     const bouge=[...movedTracks()], avant=drag.diag;
     pruneAfterDrag(bouge);
     if(mitreAfterDrag(bouge,avant))
@@ -3584,6 +4058,7 @@ cv.addEventListener("pointercancel",e=>{
   cancelLongpress();
   PTR_PCB.delete(e.pointerId);
   if(PTR_PCB.size<2)PINCH_PCB=null;
+  if(drag&&drag.follow){pruneDeadTracks();S.dragShove=null;}   // jambes de réserve repliées
   drag=null;
 });
 cv.addEventListener("contextmenu",e=>{

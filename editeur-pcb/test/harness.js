@@ -160,7 +160,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "PCB_LIB_CACHE","PCB_LIB_LIST","pcbChargerCatalogueEmpreintes","pcbObtenirEmpreinteLib","pcbAppliquerEmpreinteLib",
   "PCB_LIB_ALERTE","pcbTrouverEmpreintesAmettreAJour","pcbEmpreinteAlerteLib","pcbAppliquerMajLib",
   "sessDiffuserLibModif","sessEcouterLibModif",
-  "ELIB","explorateurLibOuvrir","explorateurLibFermer","elibFiltrerEtAfficher","pcbOuvrirExplorateurLib","pcbPlacerEmpreinteDepuisLib","pcbChangerEmpreinteSelectionnee",
+  "ELIB","explorateurLibOuvrir","explorateurLibFermer","elibFiltrerEtAfficher","pcbOuvrirExplorateurLib","pcbPlacerEmpreinteDepuisLib","pcbChangerEmpreinteSelectionnee","pcbPkgDepuisCatalogue",
   "parseNetlist","parseCompLine","applyNetlist","STYLES","bodyOf",
   /* empreintes dessinees a la main et bibliotheque personnelle */
   "fpFree","padClone","fpAutoBody","fpFreeze","fpGeneric","fpSyncPins",
@@ -230,7 +230,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
      inductance d epandage et resolution complexe. */
   "simPDNCouplagePort","simPDNSinc","simPDNResoudreComplexe","simPDNInductancesEpandage",
   /* Ce que les deux adaptateurs partagent : filtre, parasites, montage, cavite. */
-  "simPDNEstMasse","simPDNEstCondensateur","simPDNParasitesCapa","simPDNParasitesDefaut","simPDNInductanceMontage","simPDNChoisirCavite","simPDNAppliquerCavite","simPDNChoisirCharge","SIM_PARASITES_MURATA_DEFAUT","simPDNLireChamps","simPDNCheminsPiste","simPDNInductanceLineique","simPDNHauteursRetour","simPDNEvaluerEvenement","simPDNZa","simPDNBilanEvenements","simPDNRendreEvenements","simPDNPreparerEvenements","simPDNEvenementsDefaut","simPDNEvLireChamp","simPDNFicheDefaut","simPDNFicheCharger","simPDNFicheSauver","simPDNFicheModifier","simPDNEvenementsDepuisFiche","SIM_PDN_FICHE",
+  "simPDNEstMasse","simPDNEstCondensateur","simPDNParasitesCapa","simPDNParasitesDefaut","simPDNInductanceMontage","simPDNChoisirCavite","simPDNAppliquerCavite","simPDNChoisirCharge","SIM_PARASITES_MURATA_DEFAUT","simPDNLireChamps","simPDNCheminsPiste","simPDNInductanceLineique","simPDNHauteursRetour","simPDNEvaluerEvenement","simPDNZa","simPDNBilanEvenements","simPDNRendreEvenements","simPDNPreparerEvenements","simPDNEvenementsDefaut","simPDNEvLireChamp","simPDNFicheDefaut","simPDNFicheCharger","simPDNFicheSauver","simPDNFicheModifier","simPDNEvenementsDepuisFiche","SIM_PDN_FICHE","simPDNSynchroDeltaI","simPDNAssistantActif","simPDNBasculerAssistant",
   "simInit","simRafraichir","simAllerAnalyse","simBusRendreNetsBar",
   "simBusBasculerRole","simBusChangerNet","simBusChainerNet","simBusDechainerNet","simBusActiverRSerie","simBusDesactiverRSerie","simBusChangerNetAval","simBusChangerRSerieVal","simBusResoudreNetAvecPont","simBusLierComposants","simBusClassifierNets","simBusSupprimerSignal",
   "simThermiqueDC","simDCThermique","simDCThermiquePcb",
@@ -1252,6 +1252,247 @@ T("le coude se retourne au lieu de partir en crochet",()=>{
   if(Math.abs(v.x1-d.x2)>1e-9||Math.abs(v.y1-d.y2)>1e-9)throw new Error("la piste s'est ouverte");
   if(Math.abs(d.x1)>1e-9||Math.abs(d.y1)>1e-9)throw new Error("le départ ne devait pas bouger");
   undo();
+});
+/* Déplacer un via ou un boîtier déjà routé : le cuivre suit en gardant ses 45°
+   (le glissement de KiCad / Altium), au lieu d'étirer le dernier segment d'un
+   seul trait — le « V » de la capture. */
+function suiviDecor(){
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  const reg={grid:S.grid,avoid:S.avoid,corner:S.rule.corner};
+  S.grid=0.5;S.avoid=false;S.rule.corner="45";
+  setMode("select");S.active=0;clearSel();
+  return reg;
+}
+function suiviFin(reg){S.grid=reg.grid;S.avoid=reg.avoid;S.rule.corner=reg.corner;}
+function tout45(){
+  for(const t of S.tracks){
+    const dx=Math.abs(t.x2-t.x1), dy=Math.abs(t.y2-t.y1);
+    if(dx<1e-9&&dy<1e-9)throw new Error("un segment replié est resté après le relâchement");
+    // la tolérance de l'éditeur et du DRC : l'arrondi au micron d'un coude poussé
+    if(!angleOk(t.x2-t.x1,t.y2-t.y1))
+      throw new Error("angle bâtard : "+[t.x1,t.y1,t.x2,t.y2].join(","));
+  }
+}
+function chemin(net,a,b){
+  // les segments du net doivent former une ligne d'un seul tenant de a à b
+  const L=S.tracks.filter(t=>t.net===net);
+  let p={x:a.x,y:a.y}, n=0;
+  const used=new Set();
+  while(Math.abs(p.x-b.x)>1e-6||Math.abs(p.y-b.y)>1e-6){
+    const t=L.find(t=>!used.has(t)&&((Math.abs(t.x1-p.x)<1e-6&&Math.abs(t.y1-p.y)<1e-6)||
+                                     (Math.abs(t.x2-p.x)<1e-6&&Math.abs(t.y2-p.y)<1e-6)));
+    if(!t)throw new Error("la piste s'est ouverte en "+p.x+","+p.y);
+    used.add(t);n++;
+    p=Math.abs(t.x1-p.x)<1e-6&&Math.abs(t.y1-p.y)<1e-6?{x:t.x2,y:t.y2}:{x:t.x1,y:t.y1};
+    if(n>50)throw new Error("boucle");
+  }
+  return n;
+}
+function viaSuivi(){
+  const reg=suiviDecor();
+  const v0={x:0,y:0,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"S"};
+  const v ={x:14,y:4,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"S"};
+  const h={l:0,net:"S",w:0.3,x1:0,y1:0,x2:10,y2:0};
+  const d={l:0,net:"S",w:0.3,x1:10,y1:0,x2:14,y2:4};
+  S.vias.push(v0,v);S.tracks.push(h,d);touch();
+  S.sel.vias.add(v);
+  return {reg,v,h,d};
+}
+T("déplacer un via : le coude glisse, la piste garde ses 45°",()=>{
+  const {reg,v}=viaSuivi();
+  fire("pointerdown",sc(14,4));
+  fire("pointermove",sc(14,6));
+  fire("pointermove",sc(14,8));
+  fire("pointerup",sc(14,8));
+  try{
+    if(Math.abs(v.x-14)>1e-6||Math.abs(v.y-8)>1e-6)throw new Error("le via devait aller en 14,8 : "+v.x+","+v.y);
+    tout45();
+    const n=chemin("S",{x:0,y:0},{x:14,y:8});
+    if(n!==2)throw new Error("deux segments attendus (droit puis 45°), "+n);
+    if(!S.tracks.some(t=>t.y1===0&&t.y2===0&&Math.max(t.x1,t.x2)===6))
+      throw new Error("le coude devait glisser sur l'horizontale jusqu'en 6,0");
+  }finally{undo();suiviFin(reg);}
+});
+T("déplacer un via en arrière : pas de crochet, une diagonale franche",()=>{
+  const {reg,v}=viaSuivi();
+  fire("pointerdown",sc(14,4));
+  for(let i=1;i<=8;i++)fire("pointermove",sc(14-i,4-i*1.25));
+  fire("pointerup",sc(6,-6));
+  try{
+    if(Math.abs(v.x-6)>1e-6||Math.abs(v.y+6)>1e-6)throw new Error("le via devait aller en 6,-6 : "+v.x+","+v.y);
+    tout45();
+    const n=chemin("S",{x:0,y:0},{x:6,y:-6});
+    if(n!==1)throw new Error("une seule diagonale attendue, "+n+" segment(s)");
+  }finally{undo();suiviFin(reg);}
+});
+T("déplacer un via puis le ramener : la piste revient intacte",()=>{
+  const {reg,v,h,d}=viaSuivi();
+  fire("pointerdown",sc(14,4));
+  fire("pointermove",sc(20,10));
+  fire("pointermove",sc(14,4));
+  fire("pointerup",sc(14,4));
+  try{
+    if(S.tracks.length!==2)throw new Error("2 segments attendus, "+S.tracks.length);
+    if(h.x2!==10||h.y2!==0||d.x2!==14||d.y2!==4)throw new Error("la piste devait retrouver sa forme");
+  }finally{undo();suiviFin(reg);}
+});
+T("déplacer un boîtier : ses pistes le suivent, à 45°",()=>{
+  const reg=suiviDecor();
+  const f=mkFp("C1","100n","0603",2);f.x=20;f.y=20;S.fps.push(f);touch();
+  const q=padsWorld(f);
+  const p1=q[0], p2=q[1];
+  const v1={x:p1.x-10,y:p1.y,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"A"};
+  const v2={x:p2.x+10,y:p2.y,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"B"};
+  const a={l:0,net:"A",w:0.3,x1:v1.x,y1:v1.y,x2:p1.x,y2:p1.y};
+  const b={l:0,net:"B",w:0.3,x1:p2.x,y1:p2.y,x2:v2.x,y2:v2.y};
+  S.vias.push(v1,v2);S.tracks.push(a,b);touch();
+  S.sel.fps.add(f.id);
+  fire("pointerdown",sc(f.x,f.y));
+  fire("pointermove",sc(f.x,f.y+1));
+  fire("pointermove",sc(f.x,f.y+2));
+  fire("pointerup",sc(f.x,f.y+2));
+  try{
+    if(f.y<=20)throw new Error("le boîtier devait descendre : "+f.y);
+    const r=padsWorld(f);
+    tout45();
+    chemin("A",{x:v1.x,y:v1.y},{x:r[0].x,y:r[0].y});
+    chemin("B",{x:r[1].x,y:r[1].y},{x:v2.x,y:v2.y});
+  }finally{undo();suiviFin(reg);}
+});
+T("déplacer un boîtier : la piste entre deux de ses pastilles part en bloc",()=>{
+  const reg=suiviDecor();
+  const f=mkFp("C1","100n","0603",2);f.x=20;f.y=20;S.fps.push(f);touch();
+  const q=padsWorld(f);
+  // un pont par-dessus le boîtier : le centre reste libre pour le saisir
+  const t ={l:0,net:"A",w:0.3,x1:q[0].x,y1:q[0].y,x2:q[0].x,y2:q[0].y-3};
+  const t2={l:0,net:"A",w:0.3,x1:q[0].x,y1:q[0].y-3,x2:q[1].x,y2:q[1].y-3};
+  const t3={l:0,net:"A",w:0.3,x1:q[1].x,y1:q[1].y-3,x2:q[1].x,y2:q[1].y};
+  S.tracks.push(t,t2,t3);touch();
+  S.sel.fps.add(f.id);
+  fire("pointerdown",sc(f.x,f.y));
+  fire("pointermove",sc(f.x+3,f.y+2));
+  fire("pointerup",sc(f.x+3,f.y+2));
+  try{
+    const r=padsWorld(f);
+    if(S.tracks.length!==3)throw new Error("trois segments attendus, "+S.tracks.length);
+    if(r[0].x===q[0].x&&r[0].y===q[0].y)throw new Error("le boîtier devait bouger");
+    const ddx=r[0].x-q[0].x, ddy=r[0].y-q[0].y;
+    if(Math.abs(t2.y1-(q[0].y-3+ddy))>1e-6||Math.abs(t2.x2-(q[1].x+ddx))>1e-6)
+      throw new Error("le pont devait se déplacer en bloc, sans se déformer");
+    chemin("A",{x:r[0].x,y:r[0].y},{x:r[1].x,y:r[1].y});
+  }finally{undo();suiviFin(reg);}
+});
+/* Aucun coude direct ne passe : la piste qui suit contourne l'obstacle, comme
+   au routage interactif, au lieu de buter ou de passer dessous. */
+function isolee(net){
+  const clr=classOf(net).clr;
+  const d=(px,py,t)=>{
+    const dx=t.x2-t.x1, dy=t.y2-t.y1, l2=dx*dx+dy*dy;
+    const u=l2<1e-12?0:Math.max(0,Math.min(1,((px-t.x1)*dx+(py-t.y1)*dy)/l2));
+    return Math.hypot(px-(t.x1+dx*u),py-(t.y1+dy*u));
+  };
+  for(const t of S.tracks.filter(t=>t.net===net))
+    for(const v of S.vias.filter(v=>v.net!==net))
+      if(d(v.x,v.y,t)-v.d/2-t.w/2<clr-1e-6)
+        throw new Error("la piste passe sous l'isolation du via "+v.net+" en "+v.x+","+v.y);
+}
+T("via déplacé : la piste contourne l'obstacle qu'aucun coude direct n'évite",()=>{
+  const {reg,v}=viaSuivi();
+  S.avoid=true;
+  S.vias.push({x:15,y:0,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"X"},
+              {x:15,y:4,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"Y"});
+  touch();
+  fire("pointerdown",sc(14,4));
+  for(let i=1;i<=10;i++)fire("pointermove",sc(14+i,4));
+  fire("pointerup",sc(24,4));
+  try{
+    if(Math.abs(v.x-24)>1e-6||Math.abs(v.y-4)>1e-6)
+      throw new Error("le geste ne devait pas buter : via en "+v.x+","+v.y);
+    tout45();
+    chemin("S",{x:0,y:0},{x:24,y:4});
+    isolee("S");
+  }finally{undo();suiviFin(reg);}
+});
+T("boîtier déplacé : sa piste contourne l'obstacle au lieu de passer dessous",()=>{
+  const reg=suiviDecor();
+  S.avoid=true;
+  const f=mkFp("C1","100n","0603",2);f.x=20;f.y=20;S.fps.push(f);touch();
+  const p1=padsWorld(f)[0];
+  const x0=p1.x-10;
+  S.vias.push({x:x0,y:p1.y,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"A"},
+              {x:x0+3,y:p1.y,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"X"},
+              {x:x0+7,y:p1.y+4,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"Y"});
+  S.tracks.push({l:0,net:"A",w:0.3,x1:x0,y1:p1.y,x2:p1.x,y2:p1.y});
+  touch();
+  S.sel.fps.add(f.id);
+  const fx=f.x, fy=f.y;
+  fire("pointerdown",sc(fx,fy));
+  for(let i=1;i<=8;i++)fire("pointermove",sc(fx,fy+i*0.5));
+  fire("pointerup",sc(fx,fy+4));
+  try{
+    const r=padsWorld(f)[0];
+    if(Math.abs(r.y-p1.y-4)>1e-6)throw new Error("le boîtier devait descendre de 4 mm : "+(r.y-p1.y));
+    tout45();
+    chemin("A",{x:x0,y:p1.y},{x:r.x,y:r.y});
+    isolee("A");
+  }finally{undo();suiviFin(reg);}
+});
+/* Shove au déplacement d'un boîtier : ses pastilles poussent le cuivre voisin,
+   comme la tête du routage interactif. */
+function boitierSurPiste(route){
+  const reg=suiviDecor();
+  reg.route=S.rule.route;
+  S.avoid=true;S.rule.route=route;
+  const f=mkFp("C1","100n","0603",2);f.x=20;f.y=20;S.fps.push(f);
+  const a={x:10,y:25,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"X"};
+  const b={x:30,y:25,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"X"};
+  const t={l:0,net:"X",w:0.3,x1:10,y1:25,x2:30,y2:25};
+  S.vias.push(a,b);S.tracks.push(t);touch();
+  S.sel.fps.add(f.id);
+  const fx=f.x, fy=f.y;
+  fire("pointerdown",sc(fx,fy));
+  for(let i=1;i<=10;i++)fire("pointermove",sc(fx,fy+i*0.5));
+  fire("pointerup",sc(fx,fy+5));
+  return {reg,f,t};
+}
+function boitierFin(reg){S.rule.route=reg.route;suiviFin(reg);}
+T("boîtier déplacé sur une piste : ses pastilles la poussent (shove)",()=>{
+  const {reg,f}=boitierSurPiste("shove");
+  try{
+    if(Math.abs(f.y-25)>1e-6)throw new Error("le boîtier devait aller en y=25 : "+f.y);
+    tout45();
+    chemin("X",{x:10,y:25},{x:30,y:25});
+    const d=runDrc().filter(x=>!x.info);
+    if(d.length)throw new Error("la poussée a laissé une faute : "+d[0].msg);
+    if(!S.tracks.some(t=>t.net==="X"&&(t.y1!==25||t.y2!==25)))
+      throw new Error("la piste devait s'écarter des pastilles");
+    // retendue : elle fait le tour du boîtier entier, sans serpenter entre ses broches
+    const nx=S.tracks.filter(t=>t.net==="X").length;
+    if(nx>5)throw new Error("la piste poussée serpente : "+nx+" segments");
+    undo();
+    const x=S.tracks.filter(t=>t.net==="X");
+    if(x.length!==1||x[0].y1!==25||x[0].y2!==25||x[0].x1!==10||x[0].x2!==30)
+      throw new Error("Ctrl+Z devait rendre la piste d'origine");
+    if(Math.abs(S.fps[0].y-20)>1e-6)throw new Error("Ctrl+Z devait rendre le boîtier");
+  }finally{boitierFin(reg);}
+});
+T("boîtier déplacé en règle « contourner » : le cuivre voisin ne bouge pas",()=>{
+  const {reg,t}=boitierSurPiste("walk");
+  try{
+    if(t.y1!==25||t.y2!==25||S.tracks.filter(x=>x.net==="X").length!==1)
+      throw new Error("sans shove, la piste étrangère devait rester où elle était");
+  }finally{undo();boitierFin(reg);}
+});
+T("règle libre : le bout du via s'étire, sans coude ajouté",()=>{
+  const {reg,v}=viaSuivi();
+  S.rule.corner="free";
+  fire("pointerdown",sc(14,4));
+  fire("pointermove",sc(14,8));
+  fire("pointerup",sc(14,8));
+  try{
+    if(S.tracks.length!==2)throw new Error("2 segments attendus, "+S.tracks.length);
+    chemin("S",{x:0,y:0},{x:14,y:8});
+  }finally{undo();suiviFin(reg);}
 });
 /* Le décor de la capture : une pastille tenue par une horizontale, un 45°, une
    verticale. Tirer la verticale au-delà du 45° doit replier celui-ci et laisser
@@ -17847,6 +18088,45 @@ T("Explorateur visuel pop-up PCB : réaffectation dynamique d'une empreinte exis
   if (!p4 || p4.net !== "GND") throw new Error("Le net GND de la broche 4 doit être conservé après réaffectation");
 });
 
+T("Catalogue → PCB : l'empreinte associée l'emporte sur le « Package type » du catalogue", () => {
+  /* Le cas réel : 281 lignes du catalogue ont un « Package type » de variante
+     (« 0402C », « SOT23-3 ») qui ne désigne aucun fichier, et une empreinte
+     associée juste. Lu par le premier, un 0402 devenait une puce générique au
+     pas de 2,4 mm. */
+  if (!PCB_LIB_CACHE) PCB_LIB_CACHE = {};
+  PCB_LIB_CACHE["0402"] = {
+    name: "0402", style: "chip", pitch: 0.95, span: 0.95, pins: 2,
+    pads: [
+      { n: 1, x: -0.475, y: 0, w: 0.5225, h: 0.589, shape: "rect" },
+      { n: 2, x: 0.475, y: 0, w: 0.5225, h: 0.589, shape: "rect" }
+    ]
+  };
+  const ligne = {
+    "Part Name": "C0402_0.7pF_COG_50V_AUTO_MU", "Reference designator Prefix": "C",
+    "Value": "0.7pF", "Package type": "0402C", "Empreinte PCB": "lib/empreinte/0402.json"
+  };
+  if (pcbPkgDepuisCatalogue(ligne) !== "0402")
+    throw new Error("Boîtier lu : " + pcbPkgDepuisCatalogue(ligne) + ", attendu 0402");
+
+  S.fps = [];
+  pcbPlacerEmpreinteDepuisLib(ligne);
+  const fp = S.fps[0];
+  if (fp.pkg !== "0402") throw new Error("Empreinte posée : " + fp.pkg + ", attendu 0402");
+  if (fp.pitch !== 0.95) throw new Error("Pas attendu 0,95 mm (vrai 0402), obtenu : " + fp.pitch);
+  const pads = padsOf(fp);
+  if (pads.length !== 2) throw new Error("2 pastilles attendues, obtenu : " + pads.length);
+
+  // Sans empreinte associée, le « Package type » sert de repli...
+  if (pcbPkgDepuisCatalogue({ "Package type": "SOT-23", "Empreinte PCB": "" }) !== "SOT-23")
+    throw new Error("Le Package type doit servir quand aucune empreinte n'est associée");
+  // ... sauf s'il ne dit rien : « None » n'est pas un boîtier
+  if (pcbPkgDepuisCatalogue({ "Package type": "None" }) !== "")
+    throw new Error("« None » ne doit pas être pris pour un nom de boîtier");
+  // Un élément de l'explorateur d'empreintes (sans colonne catalogue)
+  if (pcbPkgDepuisCatalogue({ "Fichier": "TSSOP-8.json" }) !== "TSSOP-8")
+    throw new Error("Un fichier d'empreinte doit donner son nom de boîtier");
+});
+
 T("Simulation SI/PI : injection des grandeurs parasites réelles (ESR/ESL Murata et DCR inductances)", () => {
   if (typeof pcbParasitesComposant !== "function") {
     throw new Error("pcbParasitesComposant non disponible");
@@ -20037,8 +20317,9 @@ T("Assistant ΔI : la fiche de la charge préremplit courant et horloge", ()=>{
 });
 
 T("Assistant ΔI : chaque événement est reporté sur la courbe, à sa fréquence et à sa cible", ()=>{
-  const memo={v:SIM_PDN.vdd,o:SIM_PDN.ripplePct,e:SIM_PDN.evenements};
+  const memo={v:SIM_PDN.vdd,o:SIM_PDN.ripplePct,e:SIM_PDN.evenements,a:SIM_PDN.assistantActif};
   try{
+    SIM_PDN.assistantActif=true;
     SIM_PDN.vdd=2.8; SIM_PDN.ripplePct=5;
     SIM_PDN.evenements=[{id:1,type:"reveil",iA:0.005,frontNs:1000,actif:true},
                         {id:2,type:"gpio",n:8,cPf:20,frontNs:5,actif:true}];
@@ -20047,7 +20328,7 @@ T("Assistant ΔI : chaque événement est reporté sur la courbe, à sa fréquen
     const n=(svg.match(/<circle [^>]*r="6.5"/g)||[]).length;
     if(n!==2) throw new Error("2 repères d'événements attendus sur la courbe, obtenu "+n);
     if(!/#22c55e/.test(svg)||!/#f97316/.test(svg)) throw new Error("un repère vert (tient) et un orange (ne tient pas) attendus");
-  } finally { SIM_PDN.vdd=memo.v; SIM_PDN.ripplePct=memo.o; SIM_PDN.evenements=memo.e; }
+  } finally { SIM_PDN.vdd=memo.v; SIM_PDN.ripplePct=memo.o; SIM_PDN.evenements=memo.e; SIM_PDN.assistantActif=memo.a; }
 });
 
 T("Fiche de la charge : les valeurs de datasheet donnent les trois appels de courant", ()=>{
@@ -20111,6 +20392,87 @@ T("Fiche de la charge : la clé est la pièce de la charge (éditeur)", ()=>{
     const info=SIM_PCB.pdnInfosCharge("+2V8");
     if(info.cle!=="R7F100GGG2DFB") throw new Error("clé attendue : le MPN, obtenue "+info.cle);
   } finally { delete u1.mpn; }
+});
+
+T("PDN piste : un polygone de cuivre du rail conduit, et le chemin reste DANS le cuivre", ()=>{
+  // Une piste épaisse de 20 × 2 mm dessinée en polygone : 18 mm entre les pastilles.
+  const droite=simPDNCheminsPiste({segs:[],zones:[{pts:[{x:0,y:0},{x:20,y:0},{x:20,y:2},{x:0,y:2}],h:0.37,t:0.035}]},
+    [{x:1,y:1,r:0.4}], new Map([["C1",[{x:19,y:1,r:0.4}]]])).get("C1");
+  if(droite.source!=="piste"||Math.abs(droite.longueurMm-18)>0.5) throw new Error("18 mm attendus dans le polygone, obtenu "+droite.longueurMm+" ("+droite.source+")");
+  const wEq=40/droite.longueurMm;
+  if(Math.abs(droite.lH-droite.longueurMm*simPDNInductanceLineique(wEq,0.37))>1e-12) throw new Error("L = longueur × L'(aire / longueur, h)");
+  // Un L : le chemin contourne le coude au lieu de couper à vol d'oiseau.
+  const L=simPDNCheminsPiste({zones:[{pts:[{x:0,y:0},{x:20,y:0},{x:20,y:20},{x:18,y:20},{x:18,y:2},{x:0,y:2}],h:1,t:0.035}]},
+    [{x:1,y:1,r:0.4}], new Map([["C1",[{x:19,y:19,r:0.4}]]])).get("C1");
+  if(L.source!=="piste"||!(L.longueurMm>33&&L.longueurMm<39)) throw new Error("≈ 36 mm par le coude attendus (25 à vol d'oiseau), obtenu "+L.longueurMm);
+  // Un trou coupe le passage : plus de chemin, repli annoncé.
+  const coupe=simPDNCheminsPiste({zones:[{pts:[{x:0,y:0},{x:20,y:0},{x:20,y:2},{x:0,y:2}],
+    trous:[[{x:9,y:-1},{x:11,y:-1},{x:11,y:3},{x:9,y:3}]],h:1,t:0.035}]},
+    [{x:1,y:1,r:0.4}], new Map([["C1",[{x:19,y:1,r:0.4}]]])).get("C1");
+  if(coupe.source!=="estimee") throw new Error("un trou qui coupe le polygone doit couper le chemin");
+});
+
+T("Assistant ΔI : ΔI du haut suit le plus gros appel de courant, sauf saisie à la main", ()=>{
+  const memo={f:SIM_PDN.fiche,e:SIM_PDN.evenements,c:SIM_PDN.chargeInfo,d:SIM_PDN.deltaIA,m:SIM_PDN.deltaIManuel,v:SIM_PDN.vdd,o:SIM_PDN.ripplePct,a:SIM_PDN.assistantActif};
+  try{
+    SIM_PDN.assistantActif=true;
+    SIM_PDN.vdd=2.8; SIM_PDN.ripplePct=5; SIM_PDN.deltaIManuel=false; SIM_PDN.deltaIA=1;
+    SIM_PDN.fiche=null; SIM_PDN.evenements=null; SIM_PDN.chargeInfo=null;
+    simPDNPreparerEvenements({ref:"U1",cle:"TEST-DI"});
+    // Défauts : 8 sorties × 20 pF × 2,8 V / 5 ns = 89,6 mA, le plus gros.
+    if(Math.abs(SIM_PDN.deltaIA-0.0896)>1e-9) throw new Error("ΔI = 89,6 mA attendu (le plus gros appel), obtenu "+SIM_PDN.deltaIA);
+    if(Math.abs(SIM_PDN.zTarget-0.14/0.0896)>1e-6) throw new Error("Z_target doit suivre");
+    simPDNFicheModifier("nSorties","2");
+    if(Math.abs(SIM_PDN.deltaIA-0.0224)>1e-9) throw new Error("2 sorties → 22,4 mA attendus, obtenu "+SIM_PDN.deltaIA);
+    // Tapé à la main : il ne bouge plus.
+    SIM_PDN.deltaIManuel=true; SIM_PDN.deltaIA=0.5;
+    simPDNFicheModifier("nSorties","8");
+    if(SIM_PDN.deltaIA!==0.5) throw new Error("un ΔI saisi à la main ne doit pas être écrasé");
+  } finally { Object.assign(SIM_PDN,{fiche:memo.f,evenements:memo.e,chargeInfo:memo.c,deltaIA:memo.d,deltaIManuel:memo.m,vdd:memo.v,ripplePct:memo.o,assistantActif:memo.a}); }
+});
+
+T("PDN verdict : l'ondulation estimée (plus gros ΔV) face à l'ondulation admise", ()=>{
+  const memo={f:SIM_PDN.fiche,e:SIM_PDN.evenements,r:SIM_PDN.result,v:SIM_PDN.vdd,o:SIM_PDN.ripplePct,c:SIM_PDN.condensateurs,a:SIM_PDN.assistantActif};
+  try{
+    SIM_PDN.assistantActif=true;
+    SIM_PDN.vdd=2.8; SIM_PDN.ripplePct=5;
+    SIM_PDN.evenements=[{id:1,type:"reveil",nom:"Réveil de U1",iA:0.005,frontNs:1000,actif:true},
+                        {id:3,type:"gpio",nom:"Sorties qui basculent ensemble",n:8,cPf:20,frontNs:5,actif:true}];
+    SIM_PDN.fiche=simPDNFicheDefaut({});
+    SIM_PDN.condensateurs=[];
+    SIM_PDN.result={freqs:[1e4,1e9],zPdn:[0.1,5],zMax:5,fZMax:1e9,zTarget:1.56,conforme:false,capasCount:0,caviteModes:[],zVrm:[],zPlane:[],antiresonances:[]};
+    const html=simRendrePDN();
+    if(!/ONDULATION ESTIMÉE/.test(html)) throw new Error("le verdict principal doit donner l'ondulation estimée");
+    if(!/Sorties qui basculent ensemble/.test(html)||!/Dépassement par/.test(html)) throw new Error("le verdict doit nommer l'appel fautif");
+    if(!/Vérification la plus sévère/.test(html)) throw new Error("la cible unique reste affichée en second");
+  } finally { Object.assign(SIM_PDN,{fiche:memo.f,evenements:memo.e,result:memo.r,vdd:memo.v,ripplePct:memo.o,condensateurs:memo.c,assistantActif:memo.a}); }
+});
+
+T("Assistant ΔI : décoché par défaut, le panneau reste simple (ΔI saisi, une seule cible)", ()=>{
+  const memo={a:SIM_PDN.assistantActif,e:SIM_PDN.evenements,f:SIM_PDN.fiche,r:SIM_PDN.result,d:SIM_PDN.deltaIA,m:SIM_PDN.deltaIManuel,c:SIM_PDN.condensateurs,ch:SIM_PDN.chargeInfo,v:SIM_PDN.vdd,o:SIM_PDN.ripplePct};
+  try{
+    SIM_PDN.vdd=2.8; SIM_PDN.ripplePct=5;
+    SIM_PDN.assistantActif=null;                 // rien dans le profil du banc
+    if(simPDNAssistantActif()!==false) throw new Error("l'assistant doit être décoché par défaut");
+    // Décoché : ΔI reste la saisie, même quand la charge est détectée.
+    SIM_PDN.deltaIA=0.25; SIM_PDN.deltaIManuel=false; SIM_PDN.fiche=null; SIM_PDN.evenements=null; SIM_PDN.chargeInfo=null;
+    simPDNPreparerEvenements({ref:"U1",cle:"TEST-SIMPLE"});
+    if(SIM_PDN.deltaIA!==0.25) throw new Error("décoché, ΔI saisi ne doit pas être remplacé, obtenu "+SIM_PDN.deltaIA);
+    SIM_PDN.condensateurs=[];
+    SIM_PDN.result={freqs:[1e4,1e9],zPdn:[0.1,5],zMax:5,fZMax:1e9,zTarget:0.56,conforme:false,capasCount:0,caviteModes:[],zVrm:[],zPlane:[],antiresonances:[]};
+    const html=simRendrePDN();
+    if(/ONDULATION ESTIMÉE/.test(html)) throw new Error("décoché, pas d'ondulation estimée");
+    if(!/DÉPASSEMENT DE L'IMPÉDANCE CIBLE/.test(html)) throw new Error("décoché, le verdict est celui de la cible unique");
+    if(!/Assistant ΔI<\/b> \(désactivé\)/.test(html)||/Fiche de la charge/.test(html)) throw new Error("décoché, l'assistant n'est qu'une ligne grisée");
+    if((simCourbePDN(SIM_PDN.result).match(/<circle [^>]*r="6.5"/g)||[]).length) throw new Error("décoché, pas de repères sur la courbe");
+    // Coché : ΔI repart de l'assistant (89,6 mA par défaut), même après une saisie.
+    SIM_PDN.deltaIManuel=true;
+    simPDNBasculerAssistant(true);
+    if(SIM_PDN.deltaIManuel||Math.abs(SIM_PDN.deltaIA-0.0896)>1e-9) throw new Error("coché : ΔI = plus gros appel de l'assistant attendu, obtenu "+SIM_PDN.deltaIA);
+    if(!/ONDULATION ESTIMÉE/.test(simRendrePDN())) throw new Error("coché, l'ondulation estimée revient");
+    simPDNBasculerAssistant(false);
+    if(simPDNAssistantActif()) throw new Error("décochage");
+  } finally { Object.assign(SIM_PDN,{assistantActif:memo.a,evenements:memo.e,fiche:memo.f,result:memo.r,deltaIA:memo.d,deltaIManuel:memo.m,condensateurs:memo.c,chargeInfo:memo.ch,vdd:memo.v,ripplePct:memo.o}); }
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

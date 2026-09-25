@@ -54,6 +54,7 @@ const RACINE=path.join(__dirname,"..");
 const FICHIERS=[
   path.join(RACINE,"js","02-modele.js"),
   path.join(RACINE,"..","commun","simulation-em.js"),
+  path.join(RACINE,"..","commun","simulation-datasheet.js"),
   path.join(RACINE,"js","07-simulation.js")
 ];
 const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
@@ -163,7 +164,10 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
      lance donc ici aussi, sur un plan de la visionneuse. */
   "simCalculerPDN","simPDNCalculerModesCavite","simPDNInductancesEpandage",
   "simPDNEstMasse","simPDNEstCondensateur","simPDNParasitesCapa","simPDNParasitesDefaut","simPDNInductanceMontage","simPDNChoisirCavite","simPDNAppliquerCavite","simPDNChoisirCharge","SIM_PARASITES_MURATA_DEFAUT",
-  "simPDNEstMasseIpc","simFaceDessousIpc","simRendrePDN","simPDNCheminsPiste","simPDNInductanceLineique","simPDNHauteursRetour","simPDNPistesIpc"];
+  "simPDNEstMasseIpc","simFaceDessousIpc","simRendrePDN","simPDNCheminsPiste","simPDNInductanceLineique","simPDNHauteursRetour","simPDNPistesIpc",
+  /* De la datasheet aux réglages : commun/simulation-datasheet.js. */
+  "simDsCatalogue","simDsPreparer","simDsAppliquer","simDsGroupes","simDsNb",
+  "simDsBorneDe","simDsReappliquerCapas","SIM_DS","simPDNAssistantActif"];
 
 /* Un seul `eval`, sur les trois fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -5535,6 +5539,173 @@ T("Fiche de la charge (visionneuse) : la clé est la référence de pièce du fi
   const info = SIM_IPC.pdnInfosCharge("+3V3");
   if(!info || info.ref !== "U1" || info.cle !== "R7F100GGG2DFB")
     throw new Error("U1 / R7F100GGG2DFB attendus, obtenu " + JSON.stringify(info));
+});
+
+T("PDN piste (visionneuse) : sans pastille rattachée, par les broches et le polygone du rail", function(){
+  /* Comme un export réel (Design_full) : les pastilles du rail sont LIBRES,
+     les composants ne sont reliés au net que par leurs broches, et le rail
+     est un polygone — une piste épaisse de 20 × 1 mm. */
+  carte({nets:["+2V8","GND","SIG"], piste:{c:0, n:2, w:0.2, p:[1,39, 5,39]},
+         plans:[{c:0, n:0, g:[{o:rect(10,19.5,30,20.5), t:[]}]}, {c:1, n:1, g:[{o:CONTOUR, t:[]}]}],
+         composants:[
+           {ref:"U1", pkg:"SOIC-8", c:0, x:10, y:20, r:0, m:0, val:"MCU", type:"", part:"",
+            pins:[{num:"1",n:0,x:0.5,y:0},{num:"2",n:1,x:0,y:-3},{num:"3",n:1,x:1,y:-3},{num:"4",n:1,x:2,y:-3},
+                  {num:"5",n:1,x:3,y:-3},{num:"6",n:1,x:4,y:-3},{num:"7",n:1,x:5,y:-3},{num:"8",n:1,x:6,y:-3}]},
+           {ref:"C0", pkg:"0402", c:0, x:29.5, y:20, r:90, m:0, val:"1uF", type:"", part:"",
+            pins:[{num:"1",n:0,x:0,y:0},{num:"2",n:1,x:0,y:1}]}
+         ]});
+  const c0 = SIM_IPC.pdnCondensateurs("+2V8").find(c => c.ref === "C0");
+  if(!c0) throw new Error("C0 attendu");
+  if(c0.pisteSource !== "piste" || Math.abs(c0.longueurPisteMm - 19) > 0.6)
+    throw new Error("≈ 19 mm dans le polygone attendus (U1.1 en 10,5 → C0.1 en 29,5), obtenu " + c0.longueurPisteMm + " (" + c0.pisteSource + ")");
+});
+
+/* ==========================================================================
+   De la datasheet aux réglages (commun/simulation-datasheet.js)
+   --------------------------------------------------------------------------
+   L'IA propose ; ce registre décide de ce qui passe. On vérifie les trois
+   choses qui feraient un faux résultat silencieux : une unité mal convertie,
+   une valeur hors bornes acceptée, et une fiche remplie sans que ΔI suive.
+   ========================================================================== */
+function pdnDeLabo(){
+  // Pas « +3V3 » : c'est un des rails par défaut, que le panneau remplace en redétectant.
+  SIM_PDN.rail = "VDD_MCU"; SIM_PDN.vdd = 3.3; SIM_PDN.ripplePct = 5; SIM_PDN.deltaIA = 1;
+  SIM_PDN.deltaIManuel = false; SIM_PDN.assistantActif = false;
+  SIM_PDN.chargeInfo = { ref: "U1", cle: "R7F100GGG2DFB" }; SIM_PDN.portRef = "U1";
+  SIM_PDN.fiche = null; SIM_PDN.evenements = null; SIM_PDN.result = null;
+  SIM_PDN.condensateurs = [
+    { id:1, ref:"C1", val:"100nF", cap:100e-9, esr:0.028, esl:0.45e-9, lMount:0.5e-9, pkg:"0402", mpn:"", x:1, y:1, actif:true, prov:"defaut" },
+    { id:2, ref:"C2", val:"10uF", cap:10e-6, esr:0.008, esl:0.7e-9, lMount:0.6e-9, pkg:"0603", mpn:"GRM188R61A106MAAL", x:2, y:2, actif:true, prov:"defaut" }
+  ];
+}
+
+T("Datasheet : le catalogue nomme chaque simulation, ses clés et leurs unités", function(){
+  pdnDeLabo();
+  const c = simDsCatalogue();
+  for (const k of ["[pdn_fiche]", "[pdn]", "[si]", "[bus]", "[dc]", "[condensateurs]", "[bornes_dc]",
+                   "pdn_fiche.iActifMa (mA)", "si.tr (ns)", "bus.tsu (ns)", "pdn.fVrmKhz (kHz)", "C2 10uF 0603 MPN GRM188R61A106MAAL"])
+    if (c.indexOf(k) < 0) throw new Error("« " + k + " » absent du catalogue");
+  if (c.indexOf("Charge du rail PDN (la fiche pdn_fiche la décrit) : U1") < 0) throw new Error("la charge du rail n'est pas nommée");
+});
+
+T("Datasheet : ce qui est hors bornes, inconnu ou sans cible est refusé, avec son motif", function(){
+  pdnDeLabo();
+  const p = simDsPreparer({ type: "sim_params", composant: "U1", valeurs: [
+    { sim: "pdn_fiche", cle: "iActifMa", valeur: "12,5", page: 84, citation: "IDD Run max 12.5 mA" },
+    { sim: "pdn", cle: "planEr", valeur: 43 },                 // 4,3 tapé ×10
+    { sim: "pdn", cle: "inventee", valeur: 1 },
+    { sim: "bus", cle: "protocole", valeur: "can" },
+    { sim: "si", cle: "tr", valeur: "abc" }
+  ], condensateurs: [{ refs: ["C9"], esl_nh: 0.3 }], bornes_dc: [{ composant: "U1", courant_ma: 40 }] });
+  const par = k => p.lignes.find(l => l.cle === k);
+  if (!par("iActifMa").ok || par("iActifMa").nouveau !== 12.5) throw new Error("12,5 mA aurait dû passer : " + JSON.stringify(par("iActifMa")));
+  if (par("planEr").ok || par("planEr").motif.indexOf("bornes") < 0) throw new Error("εr = 43 aurait dû être refusé");
+  if (par("inventee").ok) throw new Error("une clé hors catalogue a été acceptée");
+  if (par("protocole").ok) throw new Error("un protocole hors liste a été accepté");
+  if (par("tr").ok) throw new Error("une valeur illisible a été acceptée");
+  if (par("esl_nh").ok || par("esl_nh").motif.indexOf("aucun condensateur") < 0) throw new Error("C9 n'existe pas : ligne attendue refusée");
+  if (par("charge").ok) throw new Error("sans borne DC posée, le courant ne peut pas s'appliquer");
+  if (p.avertissements.length) throw new Error("aucun avertissement attendu : " + p.avertissements.join(" / "));
+});
+
+T("Datasheet : une fiche remplie pour un autre composant que la charge est signalée", function(){
+  pdnDeLabo();
+  const p = simDsPreparer({ type: "sim_params", composant: "U5", valeurs: [{ sim: "pdn_fiche", cle: "fClkMHz", valeur: 32 }] });
+  if (!p.avertissements.some(a => a.indexOf("U5") >= 0 && a.indexOf("U1") >= 0)) throw new Error("avertissement U5 ≠ U1 attendu");
+});
+
+T("Datasheet : appliquer la fiche allume l'assistant ΔI et ΔI suit la datasheet", function(){
+  pdnDeLabo();
+  const p = simDsPreparer({ type: "sim_params", composant: "U1", valeurs: [
+    { sim: "pdn_fiche", cle: "iActifMa", valeur: 40 },
+    { sim: "pdn_fiche", cle: "iVeilleUa", valeur: 2 },
+    { sim: "pdn_fiche", cle: "nSorties", valeur: 0 },
+    { sim: "pdn", cle: "rVrmMOhm", valeur: 12 }
+  ] });
+  const r = simDsAppliquer(p, p.lignes.map(l => l.id));
+  if (r.n !== 4) throw new Error("4 valeurs attendues, " + r.n + " appliquées");
+  if (!simPDNAssistantActif()) throw new Error("l'assistant ΔI aurait dû s'allumer");
+  if (SIM_PDN.fiche.iActifMa !== 40 || SIM_PDN.fiche.suppose.iActifMa) throw new Error("la fiche n'a pas pris 40 mA, ou reste « supposée »");
+  if (SIM_PDN.rVrmMOhm !== 12) throw new Error("R_vrm non appliquée");
+  // Réveil : 40 mA − 2 µA ; horloge : 40 mA ; sorties : 0. Le plus gros appel l'emporte.
+  if (Math.abs(SIM_PDN.deltaIA - 0.04) > 1e-6) throw new Error("ΔI attendu 0,04 A, obtenu " + SIM_PDN.deltaIA);
+  if (!SIM_PDN.result) throw new Error("Z(ω) aurait dû être recalculée");
+  if (SIM_DS.journal.length < 4) throw new Error("le journal ne garde pas la trace de ce qui a été appliqué");
+});
+
+T("Datasheet : un ΔI coché avec la fiche reste celui de la datasheet", function(){
+  pdnDeLabo();
+  const p = simDsPreparer({ type: "sim_params", valeurs: [
+    { sim: "pdn_fiche", cle: "iActifMa", valeur: 40 },
+    { sim: "pdn", cle: "deltaIA", valeur: 0.25 }
+  ] });
+  simDsAppliquer(p, p.lignes.map(l => l.id));
+  if (SIM_PDN.deltaIA !== 0.25 || !SIM_PDN.deltaIManuel) throw new Error("ΔI = 0,25 A fixé à la main attendu, obtenu " + SIM_PDN.deltaIA);
+});
+
+T("Datasheet : seules les lignes cochées s'appliquent", function(){
+  pdnDeLabo();
+  SIM_PDN.fVrmKhz = 100;
+  const p = simDsPreparer({ type: "sim_params", valeurs: [
+    { sim: "pdn", cle: "vdd", valeur: 1.8 }, { sim: "pdn", cle: "fVrmKhz", valeur: 50 }
+  ] });
+  simDsAppliquer(p, [p.lignes[0].id]);
+  if (SIM_PDN.vdd !== 1.8 || SIM_PDN.fVrmKhz !== 100) throw new Error("vdd seul attendu, obtenu vdd=" + SIM_PDN.vdd + " f_vrm=" + SIM_PDN.fVrmKhz);
+});
+
+T("Datasheet : les unités du catalogue sont converties (ns → s, mV → V, MHz → Hz)", function(){
+  const s = SIM.saisie, avant = { tr: s.tr, marge: s.marge, fc: s.fc, swing: s.swing };
+  const p = simDsPreparer({ type: "sim_params", valeurs: [
+    { sim: "si", cle: "tr", valeur: 1.2 }, { sim: "si", cle: "marge", valeur: 400 },
+    { sim: "si", cle: "fc", valeur: 240 }, { sim: "si", cle: "swing", valeur: 1.8 }
+  ] });
+  const r = simDsAppliquer(p, p.lignes.map(l => l.id));
+  try {
+    if (Math.abs(s.tr - 1.2e-9) > 1e-15) throw new Error("tr : 1,2e-9 s attendu, obtenu " + s.tr);
+    if (Math.abs(s.marge - 0.4) > 1e-12) throw new Error("marge : 0,4 V attendu, obtenu " + s.marge);
+    if (Math.abs(s.fc - 240e6) > 1e-3) throw new Error("f₀ : 240 MHz attendus, obtenu " + s.fc);
+    if (s.swing !== 1.8) throw new Error("amplitude : 1,8 V attendu");
+    if (!r.messages.some(m => m.indexOf("relancez") >= 0)) throw new Error("f₀ et tr changés : il faut dire de relancer");
+  } finally { Object.assign(s, avant); }
+});
+
+T("Datasheet : timings de bus, et un tco négatif (RGMII) reste permis", function(){
+  const avant = Object.assign({}, SIM_BUS);
+  const p = simDsPreparer({ type: "sim_params", valeurs: [
+    { sim: "bus", cle: "protocole", valeur: "rgmii" }, { sim: "bus", cle: "tsu", valeur: 1 },
+    { sim: "bus", cle: "tcoMin", valeur: -0.5 }, { sim: "bus", cle: "tcoMax", valeur: 0.5 }
+  ] });
+  if (!p.lignes.every(l => l.ok || l.motif === "déjà à cette valeur")) throw new Error(JSON.stringify(p.lignes.filter(l => !l.ok)));
+  simDsAppliquer(p, p.lignes.map(l => l.id));
+  try {
+    if (SIM_BUS.protocole !== "rgmii" || SIM_BUS.tcoMin !== -0.5 || SIM_BUS.tcoMax !== 0.5) throw new Error("bus non réglé : " + JSON.stringify(SIM_BUS));
+  } finally { for (const k of ["protocole", "freqMhz", "tsu", "th", "tcoMin", "tcoMax", "result", "erreur"]) SIM_BUS[k] = avant[k]; }
+});
+
+T("Datasheet : parasites de condensateurs par repère ou par valeur, f₀ recalculée", function(){
+  pdnDeLabo();
+  const p = simDsPreparer({ type: "sim_params", condensateurs: [
+    { refs: ["C1"], esr_mohm: 15, esl_nh: 0.3 },
+    { valeur: "10µF", boitier: "0603", esl_nh: 0.5 }
+  ] });
+  const lignes = p.lignes.filter(l => l.ok);
+  if (lignes.length !== 3) throw new Error("3 lignes valides attendues, " + lignes.length + " : " + JSON.stringify(p.lignes.map(l => l.motif)));
+  if (!p.lignes.find(l => l.cle === "esl_nh" && l.cible.refs).note) throw new Error("C1 sans MPN : la note « session seulement » manque");
+  simDsAppliquer(p, lignes.map(l => l.id));
+  const c1 = SIM_PDN.condensateurs[0], c2 = SIM_PDN.condensateurs[1];
+  if (Math.abs(c1.esr - 0.015) > 1e-12 || Math.abs(c1.esl - 0.3e-9) > 1e-18) throw new Error("C1 : ESR 15 mΩ / ESL 0,3 nH attendues");
+  if (Math.abs(c2.esl - 0.5e-9) > 1e-18) throw new Error("C2 (10 µF 0603) : ESL 0,5 nH attendue");
+  if (c1.prov !== "datasheet" || c2.prov !== "datasheet") throw new Error("provenance « datasheet » attendue");
+  const f0 = 1 / (2 * Math.PI * Math.sqrt((0.3e-9 + 0.5e-9) * 100e-9)) * 1e-6;
+  if (Math.abs(c1.f0 - f0) > 0.1) throw new Error("f₀ de C1 : " + f0.toFixed(1) + " MHz attendus, obtenu " + c1.f0);
+});
+
+T("Datasheet : une borne DC se reconnaît à son composant, par compRef ou par son nom", function(){
+  if (!simDsBorneDe({ compRef: "U7" }, "u7")) throw new Error("compRef U7");
+  if (!simDsBorneDe({ nom: "U7 VDD" }, "U7")) throw new Error("nom « U7 VDD »");
+  if (!simDsBorneDe({ nom: "U7.12" }, "U7")) throw new Error("nom « U7.12 »");
+  if (simDsBorneDe({ nom: "U70 VDD" }, "U7")) throw new Error("U70 n'est pas U7");
+  if (simDsBorneDe({ compRef: "U70", nom: "U7 VDD" }, "U7")) throw new Error("le compRef prime sur le nom");
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

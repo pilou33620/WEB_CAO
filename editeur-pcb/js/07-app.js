@@ -756,12 +756,28 @@ try {
   }
 } catch (_) {}
 
+/* Le boîtier d'une ligne du catalogue, sous le nom de son fichier d'empreinte.
+   L'EMPREINTE ASSOCIÉE D'ABORD (« lib/empreinte/0402.json » → « 0402 ») :
+   c'est elle que Gestion LIB a choisie. Le « Package type » ne vient qu'à
+   défaut — il porte des variantes de catalogue (« 0402C », « SOT23-3 ») qui ne
+   désignent aucun fichier, et un 0402 lu par lui devenait une puce générique
+   au pas de 2,4 mm. « None », « xx » ou « - » ne désignent rien non plus. */
+function pcbPkgDepuisCatalogue(item) {
+  if (!item) return "";
+  for (const col of ["Empreinte PCB", "Fichier", "Nom", "Package type"]) {
+    const nom = String(item[col] || "").trim()
+      .replace(/^.*[\\\/]/, "").replace(/\.json$/i, "").trim();
+    if (nom && !/^(none|xx|n\/?a|-+)$/i.test(nom)) return nom;
+  }
+  return "";
+}
+
 function pcbPlacerEmpreinteDepuisLib(item) {
   if (!item) return;
   const p = String(item["Reference designator Prefix"] || "U").trim().toUpperCase() || "U";
   const val = String(item["Value"] || "").trim();
-  const pkg = String(item["Package type"] || item["Empreinte PCB"] || "SOIC-8").trim();
-  const cleanPkg = pkg.replace(/^.*[\\\/]/, "").replace(/\.json$/i, "").trim() || "SOIC-8";
+  const cleanPkg = pcbPkgDepuisCatalogue(item) || "SOIC-8";
+  const pkg = cleanPkg;
 
   // Trouver un repère libre U1, U2, etc.
   const used = new Set(S.fps.map(f => f.ref));
@@ -847,8 +863,7 @@ function pcbChangerEmpreinteSelectionnee(fp) {
     subtitle: "Sélectionnez une nouvelle empreinte réelle pour " + fp.ref + " (" + (fp.pkg || "") + ")",
     actionLabel: "✔ Affecter à " + fp.ref,
     onSelect: async (item) => {
-      const pkg = String(item["Package type"] || item["Empreinte PCB"] || item["Fichier"] || item["Nom"] || "").trim();
-      const cleanPkg = pkg.replace(/^.*[\\\/]/, "").replace(/\.json$/i, "").trim();
+      const cleanPkg = pcbPkgDepuisCatalogue(item);
       if (!cleanPkg) return;
       push();
       fp.pkg = cleanPkg;

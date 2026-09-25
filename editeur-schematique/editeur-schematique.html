@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="../commun/reperage.css">
 <link rel="stylesheet" href="../commun/ia-assistant.css">
 <link rel="stylesheet" href="../commun/tactile.css">
+<link rel="stylesheet" href="../commun/menus.css">
 <link rel="stylesheet" href="../commun/explorateur-lib.css">
 </head>
 <body>
@@ -18,50 +19,90 @@
 <header>
   <div class="brand"><i></i><b>Éditeur schématique</b><span>V1.7 · BOÎTIERS</span><span class="proj" data-cao-projet="schema" hidden></span></div>
   <div class="tools">
-    <button class="tb" data-cao-nav="pcb" title="Passer au routage — le schéma en cours reste dans l'onglet">➔ Éditeur PCB</button>
-    <button class="tb" data-cao-nav="composants" title="Chercher une référence — le schéma reste dans l'onglet">⌕ Composants</button>
-    <button class="tb" data-cao-nav="lib" title="Gestion des bibliothèques (catalogue, empreintes, symboles)">📚 Gestion LIB</button>
-    <button class="tb" data-cao-nav="accueil" title="Page d'accueil">⌂ Accueil</button>
+    <nav class="menubar">
+      <div class="mnu" data-mnu="fichier">
+        <button class="mnu-t" type="button">Fichier <span class="car">▾</span></button>
+        <div class="mnu-pop">
+          <button data-ic="＋" class="tb" id="bNew">Nouveau</button>
+          <button data-ic="📂" class="tb" id="bOpen">Ouvrir</button>
+          <button data-ic="💾" class="tb" id="bSave">Enregistrer .json <kbd>Ctrl+S</kbd></button>
+          <button data-ic="★" class="tb" id="bExemples" title="Deux schémas complets à ouvrir : Interface IoT 4 couches (paire diff, bus SPI, RF 50 Ω) ou Commande 12 V 2 couches">Exemples…</button>
+          <div class="mnu-h">Exporter</div>
+          <button data-ic="🖼" class="tb" id="bPng">Exporter .png</button>
+          <button data-ic="≣" class="tb" id="bNetlist">Netlist .txt</button>
+          <button data-ic="▦" class="tb" id="bCsv">Nomenclature .csv</button>
+        </div>
+      </div>
+      <div class="mnu" data-mnu="edition">
+        <button class="mnu-t" type="button">Édition <span class="car">▾</span></button>
+        <div class="mnu-pop">
+          <button data-ic="↶" class="tb" id="bUndo">Annuler <kbd>Ctrl+Z</kbd></button>
+          <button data-ic="↷" class="tb" id="bRedo">Rétablir <kbd>Ctrl+Y</kbd></button>
+          <div class="mnu-s"></div>
+          <button data-ic="⧉" class="tb" id="bCopy">Copier <kbd>Ctrl+C</kbd></button>
+          <button data-ic="📋" class="tb" id="bPaste">Coller <kbd>Ctrl+V</kbd></button>
+          <button data-ic="❐" class="tb" id="bDup">Dupliquer <kbd>D</kbd></button>
+          <div class="mnu-s"></div>
+          <button data-ic="⟳" class="tb" id="bRot">Pivoter <kbd>R</kbd></button>
+          <button data-ic="⇋" class="tb" id="bMir">Miroir <kbd>M</kbd></button>
+          <div class="mnu-s"></div>
+          <button data-ic="✂" class="tb" id="bDelW" title="Supprimer les fils de la sélection, sans toucher aux composants">Supprimer les fils <kbd>U</kbd></button>
+          <button data-ic="🗑" class="tb" id="bDel">Supprimer <kbd>Suppr</kbd></button>
+        </div>
+      </div>
+      <div class="mnu" data-mnu="placer">
+        <button class="mnu-t" type="button">Placer <span class="car">▾</span></button>
+        <div class="mnu-pop">
+          <button data-ic="↖" class="tb on" id="mSelect">Sélection <kbd>V</kbd></button>
+          <div class="mnu-h">Composants</div>
+          <button data-ic="➕" class="tb" id="bAddComp" title="Ajouter un composant depuis la bibliothèque (A)">Composant… <kbd>A</kbd></button>
+          <div class="mnu-h">Liaisons</div>
+          <button data-ic="╱" class="tb" id="mWire">Fil <kbd>W</kbd></button>
+          <button data-ic="═" class="tb" id="mBus" title="Tracer un bus de signaux (trait épais)">Bus <kbd>B</kbd></button>
+          <div class="mnu-h">Dessin</div>
+          <button data-ic="✎" class="tb" id="mDraw" title="Dessiner un trait ou un rectangle de délimitation">Trait <kbd>T</kbd> <span class="car">▾</span></button>
+          <button data-ic="✕" class="tb" id="mErase">Gomme <kbd>X</kbd></button>
+          <div class="mnu-h">Repères</div>
+          <button data-ic="📏" class="tb" id="mMesure" title="Mesurer une distance : deux points, la cote et les deltas X/Y">Mesure <kbd>K</kbd></button>
+        </div>
+      </div>
+      <div class="mnu" data-mnu="affichage">
+        <button class="mnu-t" type="button">Affichage <span class="car">▾</span></button>
+        <div class="mnu-pop">
+          <button data-ic="#" data-bascule class="tb" id="bGrid">Grille</button>
+          <label class="mnu-row" data-ic="⋯">Pas de grille <select class="tbsel" id="selGrid" title="Pas d'accrochage de la grille"></select></label>
+          <div class="mnu-s"></div>
+          <button data-ic="⋰" data-bascule class="tb on" id="bNets">Nets : tous <kbd>N</kbd></button>
+          <div class="mnu-s"></div>
+          <button data-ic="⤢" class="tb" id="bFit">Recadrer</button>
+          <button data-ic="▤" class="tb" id="bWs">Espace de travail ▾</button>
+        </div>
+      </div>
+      <div class="mnu" data-mnu="outils">
+        <button class="mnu-t" type="button">Outils <span class="car">▾</span></button>
+        <div class="mnu-pop">
+          <div class="mnu-h">Chercher</div>
+          <button data-ic="⌕" class="tb" id="bFind" title="Chercher un composant par son repère (toutes feuilles), ou un net par son nom">Rechercher <kbd>Ctrl+F</kbd></button>
+          <button data-ic="⇱" class="tb" id="bProbe" title="Montrer la sélection sur le PCB resté ouvert dans un autre onglet — il saute dessus sans que celui-ci bouge">Montrer au PCB <kbd>L</kbd></button>
+          <div class="mnu-h">Analyser</div>
+          <button data-ic="⚡" class="tb" id="bPatterns" title="Détecter les blocs fonctionnels (alimentations, bus rapides, filtres...) et qualifier les nets">Motifs & Blocs</button>
+        </div>
+      </div>
+      <div class="mnu" data-mnu="aller">
+        <button class="mnu-t" type="button">Aller à <span class="car">▾</span></button>
+        <div class="mnu-pop">
+          <button data-ic="➔" class="tb" data-cao-nav="pcb" title="Passer au routage — le schéma en cours reste dans l'onglet">Éditeur PCB</button>
+          <button data-ic="⌕" class="tb" data-cao-nav="composants" title="Chercher une référence — le schéma reste dans l'onglet">Composants</button>
+          <button data-ic="📚" class="tb" data-cao-nav="lib" title="Gestion des bibliothèques (catalogue, empreintes, symboles)">Gestion LIB</button>
+          <button data-ic="⌂" class="tb" data-cao-nav="accueil" title="Page d'accueil">Accueil</button>
+        </div>
+      </div>
+    </nav>
+    <button class="mnu-chip" id="mnuChip" type="button" title="Outil actif — un clic ouvre le menu Placer"></button>
+    <span class="push"></span>
     <button class="tb" id="bProfil" data-cao-profil title="Utilisateur : panneaux, réglages et derniers documents lui appartiennent">👤 …</button>
     <button class="tb tb-ia" id="bIaAssistant" title="Assistant IA technique — Gemma 4 31B &amp; Gemini 3.8 Flash (Google AI Studio)"><span class="ia-sparkle">✨</span> IA</button>
     <button class="tb tb-tactile-indicator" id="bTactileToggle" title="Mode tactile (iPad / tablette)"><span class="tactile-dot"></span> 📱 Tactile</button>
-    <div class="sep"></div>
-    <button class="tb" id="bAddComp" title="Ajouter un composant depuis la bibliothèque (A)">➕ Composant <kbd>A</kbd></button>
-    <button class="tb on" id="mSelect">Sélection <kbd>V</kbd></button>
-    <button class="tb" id="mWire">Fil <kbd>W</kbd></button>
-    <button class="tb" id="mBus" title="Tracer un bus de signaux (trait épais)">Bus <kbd>B</kbd></button>
-    <button class="tb" id="mErase">Gomme <kbd>X</kbd></button>
-    <button class="tb" id="mMesure" title="Mesurer une distance : deux points, la cote et les deltas X/Y">Mesure <kbd>K</kbd></button>
-    <button class="tb" id="mDraw" title="Dessiner un trait ou un rectangle de délimitation">Trait <span class="car">▾</span> <kbd>T</kbd></button>
-    <div class="sep"></div>
-    <button class="tb" id="bRot">Pivoter <kbd>R</kbd></button>
-    <button class="tb" id="bMir">Miroir <kbd>M</kbd></button>
-    <button class="tb" id="bDup">Dupliquer <kbd>D</kbd></button>
-    <button class="tb" id="bCopy">Copier <kbd>Ctrl+C</kbd></button>
-    <button class="tb" id="bPaste">Coller <kbd>Ctrl+V</kbd></button>
-    <button class="tb" id="bDel">Supprimer <kbd>Suppr</kbd></button>
-    <button class="tb" id="bDelW" title="Supprimer les fils de la sélection, sans toucher aux composants">Supprimer les fils <kbd>U</kbd></button>
-    <div class="sep"></div>
-    <button class="tb" id="bUndo">↶ Annuler</button>
-    <button class="tb" id="bRedo">↷ Rétablir</button>
-    <div class="sep"></div>
-    <button class="tb" id="bGrid">Grille</button>
-    <select class="tbsel" id="selGrid" title="Pas d'accrochage de la grille"></select>
-    <button class="tb on" id="bNets">Nets : tous <kbd>N</kbd></button>
-    <button class="tb" id="bFind" title="Chercher un composant par son repère (toutes feuilles), ou un net par son nom">⌕ Rechercher <kbd>Ctrl+F</kbd></button>
-    <button class="tb" id="bProbe" title="Montrer la sélection sur le PCB resté ouvert dans un autre onglet — il saute dessus sans que celui-ci bouge">⇱ Montrer au PCB <kbd>L</kbd></button>
-    <button class="tb" id="bPatterns" title="Détecter les blocs fonctionnels (alimentations, bus rapides, filtres...) et qualifier les nets">⚡ Motifs & Blocs</button>
-    <button class="tb" id="bFit">Recadrer</button>
-    <div class="sep"></div>
-    <button class="tb" id="bWs">Espace de travail ▾</button>
-    <div class="sep"></div>
-    <button class="tb" id="bSave">Enregistrer .json</button>
-    <button class="tb" id="bOpen">Ouvrir</button>
-    <button class="tb" id="bPng">Exporter .png</button>
-    <button class="tb" id="bNetlist">Netlist .txt</button>
-    <button class="tb" id="bCsv">Nomenclature .csv</button>
-    <button class="tb" id="bNew">Nouveau</button>
-    <button class="tb" id="bExemples" title="Deux schémas complets à ouvrir : Interface IoT 4 couches (paire diff, bus SPI, RF 50 Ω) ou Commande 12 V 2 couches">Exemples…</button>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" style="display:none">
 </header>
@@ -229,6 +270,7 @@
 <script src="../commun/workspace.js"></script>
 <script src="../commun/ia-assistant.js"></script>
 <script src="../commun/tactile.js"></script>
+<script src="../commun/menus.js"></script>
 <script>if(typeof tactileInitialiser==="function")tactileInitialiser({outil:"schema",hud:true});</script>
 </body>
 </html>

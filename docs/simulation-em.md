@@ -822,6 +822,13 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
    Elle définit le plafond au-delà duquel les appels de courant transitoires
    provoquent un dépassement du gabarit de tension admissible.
 
+   **L'assistant ΔI est une option**, activée par la case « Calculer ΔI
+   (assistant) » à côté du champ ΔI. Elle est décochée par défaut, et le choix
+   est gardé dans le profil (`pdnOptions`). Décochée, le panneau reste simple :
+   ΔI se saisit, le verdict compare Z à une cible unique, la courbe ne porte
+   pas de repères, et l'assistant n'est qu'une ligne grisée qui dit comment
+   l'activer. Cochée, ΔI est repris de l'assistant, comme décrit ci-dessous.
+
    **L'assistant ΔI.** « Combien de courant d'un coup ? » est la question que
    personne ne sait remplir, et un ΔI unique appliqué à toutes les fréquences
    est à la fois trop sévère et muet. L'assistant décrit donc les appels de
@@ -839,9 +846,18 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
    tombe sur la courbe. Chacun est vérifié **à sa fréquence** :
    $\Delta V = \Delta I \times |Z(f)|$ doit rester sous $V_{dd}\cdot$ondulation.
    Les événements sont reportés sur la courbe par un repère numéroté, placé à
-   la hauteur de leur propre cible (vert s'il tient, orange sinon). Le bouton
-   « ΔI max → cible » reporte le plus gros ΔI dans le champ du haut, pour la
-   vérification unique la plus sévère.
+   la hauteur de leur propre cible (vert s'il tient, orange sinon).
+
+   **Ondulation admise, ondulation estimée, ΔI.** Le champ « Ondulation
+   admise » est une tolérance : ce que la tension a le *droit* de faire. Ce
+   qu'elle *fait* est l'**ondulation estimée**, le plus gros
+   $\Delta V = \Delta I \times |Z(f)|$ des appels de courant. C'est elle qui
+   donne le verdict principal, et le verdict nomme l'appel fautif et sa
+   fréquence. Le champ ΔI du haut n'est plus une saisie de plus : il **reprend
+   automatiquement le plus gros appel de courant** de l'assistant
+   (`simPDNSynchroDeltaI`), et sert à la vérification unique la plus sévère
+   (ΔI max à toutes les fréquences), affichée en second. Le taper à la main le
+   fixe (« manuel · ↺ assistant » pour revenir).
 
    **La fiche de la charge.** L'utilisateur ne décrit pas les événements : il
    recopie des valeurs de datasheet dans la fiche de la charge
@@ -910,6 +926,13 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
      d'environ 4 MHz à environ 1 MHz. Sans ce terme, le modèle localisé posait chaque
      condensateur au pied de la charge. Un condensateur que le cuivre ne relie
      pas reçoit une distance à vol d'oiseau, signalée « ≈ » dans le tableau.
+     Les **polygones de cuivre** du rail conduisent aussi : un export réel
+     dessine volontiers une piste épaisse comme un polygone. Chaque polygone
+     est tramé (trous compris), les nœuds qui tombent dedans sont reliés par le
+     plus court chemin *dans* le cuivre, et la largeur équivalente vaut
+     aire / plus longue traversée. Dans la visionneuse, un composant dont les
+     pastilles ne sont rattachées à personne (pastilles libres de l'export) est
+     relié au net par ses **broches** (`pins`), placées comme des pastilles.
      Avec une cavité, c'est l'épandage qui porte ce trajet : la piste n'est pas
      comptée une seconde fois.
 
@@ -1065,6 +1088,40 @@ pour n'importe quel rail d'alimentation (+3V3, +5V, VDD...) présent sur la cart
 Changer de famille n'efface pas le résultat : la carte de chaleur s'éteint —
 elle appartient à l'analyse d'impédance et n'a rien à dire sous un autre onglet
 — et revenir la rallume telle quelle, sans recalcul.
+
+### Régler les simulations depuis une datasheet
+
+Dans l'éditeur PCB et la visionneuse, l'assistant IA lit une datasheet jointe
+(📎, ou PDF glissé sur le volet) et propose des valeurs pour **toutes** les
+simulations. Le bouton « ⚙️ Paramétrer les simulations avec cette datasheet »
+pose la question pour vous.
+
+| Simulation | Ce que la datasheet règle |
+|---|---|
+| PDN, fiche de la charge | fréquence d'horloge, IDD actif / veille, temps de réveil, front et courant des sorties, VDD min |
+| PDN, cible et régulateur | Vdd, ondulation admise, R_vrm (load regulation), f_vrm (bande passante de boucle), ΔI s'il est donné tel quel |
+| PDN, stratifié et condensateurs | εr, tanδ ; ESR, ESL et capacité effective, par repère, MPN ou valeur |
+| SI (impédance, Z diff, crosstalk, retour, santé) | temps de montée, amplitude, marge de bruit, impédances visées et tolérances, f₀ |
+| Bus synchrone | protocole, fréquence, tsu / th du récepteur, tco min / max de l'émetteur, pull-up I2C, débit UART |
+| Chute DC | courant total par composant (réparti sur ses broches), tension des sources, budgets, ambiante, conductivité du stratifié |
+
+**La liste est fermée** (`commun/simulation-datasheet.js`) : chaque clé a son
+unité et ses bornes physiques, et l'IA reçoit ce catalogue avec les valeurs en
+cours. **Rien ne s'applique sans être vu** : « 🔍 Vérifier et appliquer… »
+affiche chaque valeur à côté de la valeur actuelle, avec la page et la citation
+de la datasheet. On coche ce qu'on garde. Une valeur hors bornes, une clé
+inconnue ou un composant absent de la carte est refusé, motif affiché. Une
+valeur donnée en confiance basse arrive décochée.
+
+Après application, ce qu'un réglage invalide est oublié (f₀ ou front changé →
+résultat SI à relancer), Z(ω) se recalcule, et l'assistant ΔI s'allume si la
+fiche de la charge a été remplie. Les condensateurs réglés portent le badge
+« Datasheet », les bornes DC le badge « DS ». Les parasites relevés sont gardés
+dans le profil **par MPN** et survivent à « ⚡ Détecter » ; sans MPN, ils ne
+valent que pour la session.
+
+Les trois modèles du sélecteur lisent le PDF, Gemma 4 compris. Il part chez
+Google AI Studio avec le message : à éviter pour un document sous NDA.
 
 ### Deux modes, et ils ne répondent pas à la même question
 

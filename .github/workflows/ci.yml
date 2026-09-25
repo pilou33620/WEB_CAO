@@ -56,6 +56,11 @@ jobs:
       - name: Routes de gestion de bibliothèque — banc d'essai
         run: python python/test/banc-lib-routes.py
 
+      - name: Gestion LIB — catalogue et import JLCPCB
+        run: |
+          node gestion-lib/test/banc-catalogue.js
+          node gestion-lib/test/banc-import-jlc.js
+
       - name: Mise à jour automatique GitHub — banc d'essai
         run: python python/test/banc-maj-github.py
 

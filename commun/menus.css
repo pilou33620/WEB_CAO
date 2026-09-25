@@ -1,0 +1,57 @@
+/* =============================================================================
+   commun/menus.css
+   Barre de menus des deux éditeurs : Fichier · Édition · Placer · Affichage ·
+   Outils · Aller à. Les entrées sont les boutons .tb d'origine (mêmes id, mêmes
+   handlers), simplement présentés en lignes de menu déroulant.
+   ============================================================================= */
+
+/* l'en-tête passe au-dessus des panneaux flottants (70) et sous les petits
+   menus d'options des outils (80) */
+header{position:relative;z-index:75}
+
+.menubar{display:flex;flex-wrap:wrap;gap:2px;background:var(--panel2);
+  border:1px solid var(--border2);border-radius:6px;padding:2px}
+.mnu{position:relative}
+.mnu-t{background:none;border:0;color:var(--txt);padding:5px 11px;border-radius:4px;cursor:pointer;
+  font:12px var(--ui);display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.mnu-t:hover,.mnu.open .mnu-t{background:#262a31;color:#fff}
+.mnu.open .mnu-t{box-shadow:inset 0 -2px 0 var(--blue)}
+.mnu-t .car{font-size:9px;color:var(--txt-dim)}
+.mnu-dot{min-width:15px;height:15px;border-radius:8px;background:#f59e0b;color:#111;font-size:9.5px;
+  font-weight:700;display:inline-flex;align-items:center;justify-content:center;padding:0 4px}
+.mnu-dot[hidden]{display:none}
+
+.mnu-pop{position:absolute;top:calc(100% + 6px);left:0;min-width:260px;display:none;flex-direction:column;
+  background:var(--panel);border:1px solid var(--border2);border-radius:7px;padding:5px;
+  box-shadow:0 12px 32px rgba(0,0,0,.55);max-height:calc(100vh - 80px);overflow-y:auto}
+.mnu.open .mnu-pop{display:flex}
+.mnu-h{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--yellow);opacity:.85;padding:8px 10px 3px}
+.mnu-h:first-child{padding-top:4px}
+.mnu-s{height:1px;background:var(--border);margin:5px 4px;flex:none}
+
+/* les boutons d'origine, en lignes */
+.mnu-pop button.tb{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;
+  border-radius:4px;padding:6px 10px;font-size:12.5px;text-align:left;color:var(--txt)}
+.mnu-pop button.tb:hover{background:#262a31;color:#fff}
+.mnu-pop button.tb.on{background:rgba(63,160,234,.16);color:#fff}
+.mnu-pop button.tb::before{content:attr(data-ic);width:16px;flex:none;text-align:center;color:var(--txt-dim)}
+.mnu-pop button.tb.on::before{color:var(--blue)}
+.mnu-pop button.tb[data-bascule].on::before{content:"✓";color:var(--blue)}
+.mnu-pop button.tb kbd{margin-left:auto}
+.mnu-pop button.tb .car{margin-left:auto;font-size:10px;color:var(--txt-dim)}
+.mnu-pop button.tb kbd+.car{margin-left:0}
+.mnu-pop button.tb.on kbd{color:#dff0ff;border-color:#5cb4f0}
+.mnu-row{display:flex;align-items:center;gap:8px;padding:4px 10px;font-size:12.5px;color:var(--txt)}
+.mnu-row::before{content:attr(data-ic);width:16px;flex:none;text-align:center;color:var(--txt-dim)}
+.mnu-row .tbsel{margin-left:auto}
+
+/* outil actif, à droite des menus : un clic ouvre « Placer » */
+.mnu-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:5px;cursor:pointer;
+  background:var(--blue-deep);border:1px solid var(--blue);color:#fff;font:12px var(--ui);white-space:nowrap}
+.mnu-chip small{font-family:var(--mono);font-size:9px;letter-spacing:.14em;opacity:.75}
+.mnu-chip kbd{font-family:var(--mono);font-size:9px;color:#dff0ff;border:1px solid #5cb4f0;border-radius:3px;padding:0 3px}
+header .tools{flex:1}
+.tools .push{margin-left:auto}
+
+body.mode-tactile .mnu-t{min-height:38px;font-size:13px}

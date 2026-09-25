@@ -580,6 +580,9 @@ function simRendreBornes(){
     } else if(prov === "manuel"){
       bTxt = "Manuel";
       bSty = "background:rgba(251,191,36,0.15); color:#fbbf24; border:1px solid #d97706;";
+    } else if(prov === "datasheet"){
+      bTxt = "DS";
+      bSty = "background:rgba(236,72,153,0.15); color:#f472b6; border:1px solid #db2777;";
     }
     const bTip = "Origine : " + prov + (b.nbBroches > 1 ? (" (Partagé sur " + b.nbBroches + " broches)") : "");
 
@@ -14234,6 +14237,12 @@ const SIM_PDN = {
   chargeInfo: null,
   // La fiche de la charge (valeurs de datasheet), relue du profil par pièce.
   fiche: null,
+  /* ΔI est celui de l'assistant (le plus gros appel de courant) tant que
+     l'utilisateur ne le saisit pas lui-même. */
+  deltaIManuel: false,
+  /* L'assistant ΔI est une OPTION : décoché, le panneau reste simple (ΔI
+     saisi, une cible). null : pas encore lu dans le profil. */
+  assistantActif: null,
   /* Ce que la détection a conclu de la cavité : la paire de plans retenue, ou
      pourquoi il n'y en a pas. Affiché tel quel dans le panneau. */
   caviteNote: "",
@@ -14559,8 +14568,9 @@ function simPDNInductanceLineique(wMm, hMm) {
    longueur) donne la longueur, et on cumule le long de ce chemin l'inductance
    (Hammerstad, hauteur de retour de la couche) et la résistance DC du cuivre.
 
-     reseau  : { segs: [{x1, y1, x2, y2, w, h, t}] } — mm ; h hauteur de retour,
-               t épaisseur de cuivre
+     reseau  : { segs: [{x1, y1, x2, y2, w, h, t}],
+                 zones: [{pts: [{x, y}], trous: [[{x, y}]], h, t}] } — mm ;
+               h hauteur de retour, t épaisseur de cuivre
      depart  : [{x, y, r}] — les pastilles de la charge sur le rail
      cibles  : Map clé → [{x, y, r}] — les pastilles de chaque condensateur
    Rend Map clé → {longueurMm, lH, rOhm, source: "piste" | "estimee"}. Une cible
@@ -14573,13 +14583,14 @@ function simPDNCheminsPiste(reseau, depart, cibles) {
   depart = (depart || []).filter(p => p && isFinite(p.x) && isFinite(p.y));
 
   // Nœuds : les extrémités, puis les coupures en T.
-  const nx = [], ny = [], adj = [];
-  const noeud = (x, y) => { nx.push(x); ny.push(y); adj.push([]); return nx.length - 1; };
+  const nx = [], ny = [], nr = [], adj = [];
+  // nr : le rayon de cuivre du nœud (demi-largeur de piste, rayon de pastille).
+  const noeud = (x, y, r) => { nx.push(x); ny.push(y); nr.push(r || 0); adj.push([]); return nx.length - 1; };
   const lien = (a, b, len, lH, rOhm) => { adj[a].push([b, len, lH, rOhm]); adj[b].push([a, len, lH, rOhm]); };
   const bouts = [];                                   // [nœud, segment]
   const coupures = segs.map(() => []);                // [u, nœud] par segment
   segs.forEach((s, k) => {
-    const a = noeud(s.x1, s.y1), b = noeud(s.x2, s.y2);
+    const a = noeud(s.x1, s.y1, s.w / 2), b = noeud(s.x2, s.y2, s.w / 2);
     s._a = a; s._b = b;
     bouts.push([a, k], [b, k]);
   });
@@ -14602,7 +14613,7 @@ function simPDNCheminsPiste(reseau, depart, cibles) {
       if (u <= 1e-6 || u >= 1 - 1e-6) continue;
       const px = s.x1 + u * dx, py = s.y1 + u * dy;
       if (Math.hypot(nx[a] - px, ny[a] - py) <= Math.max(0.005, s.w / 2)) {
-        const m = noeud(px, py);
+        const m = noeud(px, py, s.w / 2);
         coupures[k].push([u, m]);
         lien(a, m, 0, 0, 0);
       }
@@ -14622,8 +14633,8 @@ function simPDNCheminsPiste(reseau, depart, cibles) {
   // Les pastilles : un nœud chacune, relié à tout ce qui tombe dessus.
   const nBase = nx.length;
   const poser = p => {
-    const m = noeud(p.x, p.y);
     const r = Math.max(0.05, p.r || 0.3);
+    const m = noeud(p.x, p.y, r);
     for (let i = 0; i < nBase; i++) if (Math.hypot(nx[i] - p.x, ny[i] - p.y) <= r) lien(m, i, 0, 0, 0);
     return m;
   };
@@ -14638,6 +14649,109 @@ function simPDNCheminsPiste(reseau, depart, cibles) {
         for (const m of ms) for (const s of sources) lien(m, s, 0, 0, 0);
       }
     }
+  }
+
+  /* LES VERSEMENTS DU RAIL : un polygone de cuivre est un conducteur comme
+     une piste. Un export réel dessine volontiers une piste épaisse comme un
+     polygone (son contour), et sans ce passage le chemin s'arrêtait à son
+     bord. Chaque polygone est tramé ; les nœuds qui tombent dedans sont reliés
+     deux à deux par le plus court chemin DANS le cuivre (Dijkstra sur la
+     trame, 8 voisins), avec une largeur équivalente aire / plus longue
+     traversée : une piste épaisse garde sa largeur, un grand plan devient
+     très large, donc peu inductif. */
+  for (const z of ((reseau && reseau.zones) || [])) {
+    const P = (z && z.pts) || [];
+    if (P.length < 3) continue;
+    const anneaux = [P].concat(((z && z.trous) || []).filter(t => t && t.length >= 3));
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity, aire = 0;
+    for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+      x1 = Math.min(x1, P[i].x); x2 = Math.max(x2, P[i].x);
+      y1 = Math.min(y1, P[i].y); y2 = Math.max(y2, P[i].y);
+      aire += P[j].x * P[i].y - P[i].x * P[j].y;
+    }
+    aire = Math.abs(aire) / 2;
+    for (const t of anneaux.slice(1)) {
+      let at = 0;
+      for (let i = 0, j = t.length - 1; i < t.length; j = i++) at += t[j].x * t[i].y - t[i].x * t[j].y;
+      aire -= Math.abs(at) / 2;
+    }
+    if (!(aire > 0)) continue;
+    const pas = Math.max(0.05, Math.sqrt((x2 - x1) * (y2 - y1) / 60000));
+    const NX = Math.max(1, Math.ceil((x2 - x1) / pas)), NY = Math.max(1, Math.ceil((y2 - y1) / pas));
+    const plein = new Uint8Array(NX * NY);
+    for (let j = 0; j < NY; j++) {
+      const y = y1 + (j + 0.5) * pas;
+      // Intersections de la ligne avec les arêtes : remplissage pair-impair.
+      const xs = [];
+      for (const A of anneaux) for (let a = 0, b = A.length - 1; a < A.length; b = a++) {
+        const ya = A[a].y, yb = A[b].y;
+        if ((ya > y) !== (yb > y)) xs.push(A[a].x + (y - ya) * (A[b].x - A[a].x) / (yb - ya));
+      }
+      xs.sort((u, v) => u - v);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        const i0 = Math.max(0, Math.ceil((xs[k] - x1) / pas - 0.5));
+        const i1 = Math.min(NX - 1, Math.floor((xs[k + 1] - x1) / pas - 0.5));
+        for (let i = i0; i <= i1; i++) plein[j * NX + i] = 1;
+      }
+    }
+    // Les nœuds posés dans le versement : la case pleine la plus proche, dans leur rayon.
+    const dedans = [];
+    for (let n = 0; n < nx.length; n++) {
+      const r = Math.max(pas, nr[n]);
+      if (nx[n] < x1 - r || nx[n] > x2 + r || ny[n] < y1 - r || ny[n] > y2 + r) continue;
+      const ci = Math.floor((nx[n] - x1) / pas), cj = Math.floor((ny[n] - y1) / pas);
+      const rc = Math.ceil(r / pas);
+      let best = -1, bd = Infinity;
+      for (let dj = -rc; dj <= rc; dj++) for (let di = -rc; di <= rc; di++) {
+        const i = ci + di, j = cj + dj;
+        if (i < 0 || j < 0 || i >= NX || j >= NY || !plein[j * NX + i]) continue;
+        const d = Math.hypot(x1 + (i + 0.5) * pas - nx[n], y1 + (j + 0.5) * pas - ny[n]);
+        if (d <= r + pas && d < bd) { bd = d; best = j * NX + i; }
+      }
+      if (best >= 0) dedans.push([n, best]);
+    }
+    if (dedans.length < 2) continue;
+    // Plus courts chemins sur la trame, depuis chaque nœud du versement.
+    const D = new Float64Array(NX * NY);
+    const tas = [];
+    const pousse = (d, c) => { tas.push([d, c]); let i = tas.length - 1;
+      while (i > 0) { const p = (i - 1) >> 1; if (tas[p][0] <= tas[i][0]) break; [tas[p], tas[i]] = [tas[i], tas[p]]; i = p; } };
+    const tire = () => { const t = tas[0], der = tas.pop(); if (tas.length) { tas[0] = der; let i = 0;
+      for (;;) { const a = 2 * i + 1, b = a + 1; let m = i;
+        if (a < tas.length && tas[a][0] < tas[m][0]) m = a; if (b < tas.length && tas[b][0] < tas[m][0]) m = b;
+        if (m === i) break; [tas[m], tas[i]] = [tas[i], tas[m]]; i = m; } } return t; };
+    const VOIS = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
+    const geo = [];
+    let maxGeo = 0;
+    for (let s = 0; s < dedans.length; s++) {
+      D.fill(Infinity); tas.length = 0;
+      D[dedans[s][1]] = 0; pousse(0, dedans[s][1]);
+      while (tas.length) {
+        const [d, c] = tire();
+        if (d > D[c]) continue;
+        const ci = c % NX, cj = (c - ci) / NX;
+        for (const [di, dj, w] of VOIS) {
+          const i = ci + di, j = cj + dj;
+          if (i < 0 || j < 0 || i >= NX || j >= NY) continue;
+          const v = j * NX + i;
+          if (!plein[v]) continue;
+          const nd = d + w * pas;
+          if (nd < D[v]) { D[v] = nd; pousse(nd, v); }
+        }
+      }
+      for (let t = s + 1; t < dedans.length; t++) {
+        const g = D[dedans[t][1]];
+        if (!isFinite(g)) continue;
+        // La trame à 8 voisins surestime un peu ; jamais moins que la ligne droite.
+        const e = Math.hypot(nx[dedans[s][0]] - nx[dedans[t][0]], ny[dedans[s][0]] - ny[dedans[t][0]]);
+        const len = Math.max(e, g);
+        geo.push([dedans[s][0], dedans[t][0], len]);
+        if (len > maxGeo) maxGeo = len;
+      }
+    }
+    const wEq = Math.min(1e4, Math.max(0.1, maxGeo > 0 ? aire / maxGeo : 1));
+    const lp = simPDNInductanceLineique(wEq, z.h), rp = SIM_PDN_RHO_CU * 1e3 / (wEq * Math.max(0.005, z.t || 0.035));
+    for (const [a, b, len] of geo) lien(a, b, len, len * lp, len * rp);
   }
 
   // Dijkstra multi-source sur la longueur, avec l'inductance et la résistance
@@ -15089,6 +15203,9 @@ function simPDNActualiserComposants(force) {
     const caps = SIM_ED.pdnCondensateurs(SIM_PDN.rail);
     if (Array.isArray(caps) && caps.length) {
       SIM_PDN.condensateurs = caps;
+      /* Les parasites relevés dans une datasheet (par MPN, dans le profil)
+         reprennent le pas sur les valeurs typiques du boîtier. */
+      if (typeof simDsReappliquerCapas === "function") simDsReappliquerCapas(caps);
       if (typeof SIM_ED.pdnCavitePlans === "function") {
         simPDNAppliquerCavite(SIM_ED.pdnCavitePlans(SIM_PDN.rail));
       }
@@ -15528,7 +15645,7 @@ function simCourbePDN(res, W, H) {
   /* Les appels de courant de l'assistant : un repère par événement actif, à
      sa fréquence et à la hauteur de SA cible (marge / ΔI). La courbe doit
      passer sous chaque repère. */
-  if (SIM_PDN.evenements && SIM_PDN.evenements.length) {
+  if (simPDNAssistantActif() && SIM_PDN.evenements && SIM_PDN.evenements.length) {
     const bil = simPDNBilanEvenements(res);
     bil.lignes.forEach((l, k) => {
       if (l.ev.actif === false || !(l.dI > 0) || l.horsBande) return;
@@ -15868,12 +15985,16 @@ function simCorpsPDN() {
       '<span style="font-size:10px;color:var(--txt-dim)">Vdd</span>' +
       simChamp("simPDNVdd", "Tension d'alimentation nominale du rail (en volts)") +
       '<span class="simU">V</span>' +
-      '<span style="font-size:10px;color:var(--txt-dim);margin-left:4px">Ondulation</span>' +
-      simChamp("simPDNRipple", "Tolérance d'ondulation de tension admise en % (ex: 5% pour logique standard)") +
+      '<span style="font-size:10px;color:var(--txt-dim);margin-left:4px">Ondulation admise</span>' +
+      simChamp("simPDNRipple", "Ce que la tension a le DROIT de faire, en % de Vdd : une tolérance que tu fixes (5 % en logique courante, moins pour un ADC ou une référence). L'ondulation que la carte FAIT réellement est calculée par l'assistant ΔI, sous la courbe.") +
       '<span class="simU">%</span>' +
       '<span style="font-size:10px;color:var(--txt-dim);margin-left:4px">ΔI</span>' +
-      simChamp("simPDNDeltaI", "Saut de courant transitoire maximal du composant le plus dynamique (en ampères)") +
+      simChamp("simPDNDeltaI", "Saut de courant transitoire maximal, en ampères. Repris automatiquement du plus gros appel de courant de l'assistant ΔI ; le taper ici le fixe à la main.") +
       '<span class="simU">A</span>' +
+      '<label style="font-size:10px;color:var(--txt-dim);margin-left:6px;cursor:pointer;display:inline-flex;align-items:center;gap:3px" ' +
+        'title="Calculer ΔI à partir de la fiche de la charge (valeurs de datasheet) et vérifier chaque appel de courant à sa fréquence. Décoché : ΔI se saisit à la main, une seule cible.">' +
+        '<input type="checkbox" id="simPDNAssistantActif"' + (simPDNAssistantActif() ? ' checked' : '') + '/> Calculer ΔI (assistant)</label>' +
+      '<span id="simPDNDeltaIMode" style="font-size:9.5px;margin-left:4px"></span>' +
       '<span class="push" id="simPDNZTargetBadge" style="font-family:var(--mono);font-size:10.5px;color:#38bdf8;font-weight:600">' + zTBadge + '</span>' +
     '</div>' +
     '<div class="pnl-bar">' +
@@ -16067,10 +16188,15 @@ function simBrancherPDN() {
   // Mises à jour en direct des champs
   for (const id of ["simPDNVdd", "simPDNRipple", "simPDNDeltaI"]) {
     pose(id, "oninput", function() {
+      // Taper ΔI le fixe à la main : il ne suit plus l'assistant.
+      if (id === "simPDNDeltaI") { SIM_PDN.deltaIManuel = true; simPDNModeDeltaI(); }
       simPDNLireChamps();
       simPDNActualiserBadgeTarget();
     });
   }
+  simPDNModeDeltaI();
+  const cbAssist = simEl("simPDNAssistantActif");
+  if (cbAssist) cbAssist.onchange = function() { simPDNBasculerAssistant(this.checked); simCalculerPDN(); };
 
   for (const id of ["simPDNRvrm", "simPDNFvrm", "simPDNPlaneArea", "simPDNPlaneD", "simPDNPlaneDimX", "simPDNPlaneDimY", "simPDNPlaneEr", "simPDNPlaneTanD", "simPDNPortX", "simPDNPortY", "simPDNPortTaille"]) {
     pose(id, "oninput", function() {
@@ -16106,8 +16232,38 @@ function simRendrePDN() {
 
   let html = '';
 
-  // Verdict Banner
-  if (r.conforme) {
+  /* LE VERDICT PRINCIPAL : L'ONDULATION ESTIMÉE. Chaque appel de courant donne
+     ΔV = ΔI × Z(f) ; le plus gros, c'est ce que la tension fera, à comparer à
+     ce qu'elle a le droit de faire. La cible unique (ΔI max partout) vient
+     ensuite, comme la vérification la plus sévère. */
+  const assistant = simPDNAssistantActif();
+  if (assistant && !SIM_PDN.evenements) {
+    const info = SIM_PDN.chargeInfo || { ref: SIM_PDN.portRef };
+    if (!SIM_PDN.fiche) SIM_PDN.fiche = simPDNFicheCharger(info);
+    SIM_PDN.evenements = simPDNEvenementsDepuisFiche(SIM_PDN.fiche, info.ref, null);
+  }
+  const bil = assistant ? simPDNBilanEvenements(r) : { lignes: [] };
+  const actives = bil.lignes.filter(l => l.ev.actif !== false && l.dV != null);
+  if (actives.length) {
+    const pire = actives.reduce((a, l) => (l.dV > a.dV ? l : a), actives[0]);
+    const vddE = Math.max(0.1, parseFloat(SIM_PDN.vdd) || 3.3);
+    const mV = v => (v * 1e3).toFixed(v < 0.01 ? 1 : 0) + " mV";
+    const pct = v => (v / vddE * 100).toFixed(v / vddE < 0.01 ? 2 : 1) + " %";
+    const ok = bil.nbOk === bil.nbActifs;
+    const fautifs = actives.filter(l => !l.ok).map(l => "« " + l.ev.nom + " » (" + simPDNFormatFreq(l.f) + ")");
+    html += '<div style="background:' + (ok ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)') + ';border:1px solid ' + (ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)') + ';border-radius:5px;padding:8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:8px" id="simPDNVerdictOndulation">' +
+      '<span style="font-size:15px;color:' + (ok ? '#22c55e' : '#ef4444') + '">' + (ok ? '✓' : '⚠') + '</span>' +
+      '<div style="font-size:11px;color:var(--txt)">' +
+        '<b style="color:' + (ok ? '#22c55e' : '#ef4444') + '">ONDULATION ESTIMÉE : ' + mV(pire.dV) + ' (' + pct(pire.dV) + ')</b> pour ' +
+        mV(bil.tolV) + ' admis (' + SIM_PDN.ripplePct + ' %). ' +
+        (ok ? 'Les ' + bil.nbActifs + ' appels de courant de l\'assistant tiennent ; le plus exigeant est « ' + simEsc(pire.ev.nom) + ' » à ' + simPDNFormatFreq(pire.f) + '.'
+            : 'Dépassement par ' + simEsc(fautifs.join(", ")) + ' : c\'est à cette fréquence qu\'il faut renforcer le découplage.') +
+      '</div>' +
+    '</div>';
+    html += '<p class="simNote" style="margin:0 0 8px">· Vérification la plus sévère (ΔI max ' + (SIM_PDN.deltaIA * 1e3).toPrecision(3) +
+      ' mA à toutes les fréquences, Z_target = ' + simPDNFormatZ(r.zTarget) + ') : ' +
+      (r.conforme ? 'tenue' : 'Z culmine à ' + simPDNFormatZ(r.zMax) + ' à ' + simPDNFormatFreq(r.fZMax)) + '.</p>';
+  } else if (r.conforme) {
     html += '<div style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);border-radius:5px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px">' +
       '<span style="font-size:15px;color:#22c55e">✓</span>' +
       '<div style="font-size:11px;color:var(--txt)">' +
@@ -16157,7 +16313,11 @@ function simRendrePDN() {
   html += simCourbePDN(r);
 
   // L'assistant ΔI : les appels de courant, chacun vérifié à sa fréquence
-  html += simPDNRendreEvenements(r);
+  html += assistant ? simPDNRendreEvenements(r)
+    : '<div id="simPDNEvBloc" style="margin-top:10px;opacity:0.55;border:1px dashed var(--border2);border-radius:4px;padding:6px 10px;font-size:10.5px;color:var(--txt-dim)">' +
+        '<b>Assistant ΔI</b> (désactivé) — ΔI est la valeur saisie en haut. Coche <b>« Calculer ΔI (assistant) »</b> pour le ' +
+        'déduire de la datasheet de la charge (horloge, consommation, sorties) et vérifier chaque appel de courant à sa fréquence.' +
+      '</div>';
 
   // Capacitors Table
   const capas = SIM_PDN.condensateurs || [];
@@ -16187,6 +16347,8 @@ function simRendrePDN() {
       provBadge = '<span class="simBadge" style="background:rgba(34,197,94,0.18);color:#4ade80;font-weight:600" title="Modèle réel Murata extrait du sous-circuit SPICE .sub / parasites-murata.json">Murata SPICE</span>';
     } else if (cp.prov === "catalogue") {
       provBadge = '<span class="simBadge" style="background:rgba(59,130,246,0.18);color:#60a5fa" title="Caractéristiques extraites du catalogue de composants">Catalogue</span>';
+    } else if (cp.prov === "datasheet") {
+      provBadge = '<span class="simBadge" style="background:rgba(236,72,153,0.16);color:#f472b6" title="Parasites relevés dans la datasheet par l\'assistant IA, validés à la main (commun/simulation-datasheet.js)">Datasheet</span>';
     }
 
     const esrTxt = cp.esr < 1 ? (cp.esr * 1000).toFixed(1) + " mΩ" : cp.esr.toFixed(2) + " Ω";
@@ -16354,7 +16516,9 @@ function simPDNRendreEvenements(r) {
           b.nbOk + ' / ' + b.nbActifs + ' tenus, marge ' + fmtV(b.tolV) + ')</span>' : '') + '</span>' +
       '<span style="display:flex;gap:4px">' +
         '<button class="tb mini" id="simPDNEvAjout" title="Ajouter une charge qui s\'allume d\'un coup : LED, relais, module radio…">+ Charge</button>' +
-        '<button class="tb mini" id="simPDNEvDeltaI" title="Reporter le plus gros ΔI dans le champ ΔI du haut (cible unique, la plus sévère)">ΔI max → cible (' + fmtI(b.dImax) + ')</button>' +
+        (SIM_PDN.deltaIManuel
+          ? '<button class="tb mini" id="simPDNEvDeltaI" title="ΔI a été tapé à la main en haut : le remplacer par le plus gros appel de courant calculé ici">ΔI du haut ← ' + fmtI(b.dImax) + '</button>'
+          : '<span style="font-size:10px;color:var(--txt-dim)" title="Le champ ΔI du haut reprend automatiquement le plus gros appel de courant">ΔI max ' + fmtI(b.dImax) + ' → reporté en haut</span>') +
       '</span>' +
     '</div>' +
     '<div style="overflow-x:auto;border:1px solid var(--border2);border-radius:4px">' +
@@ -16436,7 +16600,64 @@ function simPDNFicheModifier(cle, texte) {
   simPDNFicheSauver(f);
   const info = SIM_PDN.chargeInfo || { ref: SIM_PDN.portRef };
   SIM_PDN.evenements = simPDNEvenementsDepuisFiche(f, info.ref, SIM_PDN.evenements);
+  simPDNSynchroDeltaI();
   return true;
+}
+
+/* ΔI DU HAUT = LE PLUS GROS APPEL DE COURANT DE L'ASSISTANT. Deux saisies du
+   même ΔI — une en haut, une dans l'assistant — se contredisaient : celle du
+   haut n'est plus qu'un reflet, sauf si l'utilisateur la tape lui-même. */
+/* L'assistant est-il en service ? Le choix est gardé dans le profil
+   (section « pdnOptions »), décoché tant que l'utilisateur ne l'a pas coché. */
+function simPDNAssistantActif() {
+  if (SIM_PDN.assistantActif == null) {
+    const o = (typeof profLire === "function") ? profLire("pdnOptions") : null;
+    SIM_PDN.assistantActif = !!(o && o.assistant);
+  }
+  return SIM_PDN.assistantActif;
+}
+function simPDNBasculerAssistant(actif) {
+  SIM_PDN.assistantActif = !!actif;
+  if (typeof profEcrire === "function") {
+    const o = (typeof profLire === "function" ? profLire("pdnOptions") : null) || {};
+    o.assistant = SIM_PDN.assistantActif;
+    profEcrire("pdnOptions", o);
+  }
+  // En le cochant, ΔI repart de l'assistant ; décoché, ΔI redevient une saisie.
+  if (SIM_PDN.assistantActif) { SIM_PDN.deltaIManuel = false; simPDNSynchroDeltaI(); }
+  simPDNModeDeltaI();
+  const cb = (typeof document !== "undefined") ? simEl("simPDNAssistantActif") : null;
+  if (cb) cb.checked = SIM_PDN.assistantActif;
+}
+
+function simPDNSynchroDeltaI() {
+  if (!simPDNAssistantActif() || SIM_PDN.deltaIManuel || !SIM_PDN.evenements) return false;
+  const b = simPDNBilanEvenements(null);
+  if (!(b.dImax > 0)) return false;
+  SIM_PDN.deltaIA = parseFloat(b.dImax.toPrecision(3));
+  const vdd = Math.max(0.1, parseFloat(SIM_PDN.vdd) || 3.3);
+  const ripple = Math.max(0.1, parseFloat(SIM_PDN.ripplePct) || 5.0);
+  SIM_PDN.zTarget = (vdd * (ripple / 100)) / Math.max(0.001, SIM_PDN.deltaIA);
+  if (typeof document !== "undefined") {
+    const el = simEl("simPDNDeltaI");
+    if (el && document.activeElement !== el) el.value = SIM_PDN.deltaIA;
+    const badge = simEl("simPDNZTargetBadge");
+    if (badge) badge.textContent = "Z_target = " + simPDNFormatZ(SIM_PDN.zTarget);
+  }
+  simPDNModeDeltaI();
+  return true;
+}
+// L'étiquette qui dit d'où vient ΔI, à côté du champ.
+function simPDNModeDeltaI() {
+  if (typeof document === "undefined") return;
+  const m = simEl("simPDNDeltaIMode");
+  if (!m) return;
+  if (!simPDNAssistantActif()) { m.innerHTML = ""; return; }
+  m.innerHTML = SIM_PDN.deltaIManuel
+    ? '<a href="#" id="simPDNDeltaIAuto" style="color:#facc15" title="Reprendre le plus gros appel de courant calculé par l\'assistant">manuel · ↺ assistant</a>'
+    : '<span style="color:#22c55e" title="Le plus gros appel de courant de l\'assistant ΔI (sous la courbe)">assistant</span>';
+  const a = simEl("simPDNDeltaIAuto");
+  if (a) a.onclick = function(e) { e.preventDefault(); SIM_PDN.deltaIManuel = false; simPDNSynchroDeltaI(); simCalculerPDN(); };
 }
 
 /* Quand la charge change (autre rail, autre composant), la fiche est relue
@@ -16450,6 +16671,7 @@ function simPDNPreparerEvenements(info) {
     SIM_PDN.fiche = simPDNFicheCharger(info);
     SIM_PDN.evenements = simPDNEvenementsDepuisFiche(SIM_PDN.fiche, info.ref, null);
   }
+  simPDNSynchroDeltaI();
 }
 
 function simPDNApres() {
@@ -16461,22 +16683,22 @@ function simPDNApres() {
     box.querySelectorAll(".simPDNEv").forEach(inp => {
       inp.onchange = function() {
         const ev = evDe(this);
-        if (ev) { simPDNEvLireChamp(ev, this.getAttribute("data-champ"), this.value); simRendre(); }
+        if (ev) { simPDNEvLireChamp(ev, this.getAttribute("data-champ"), this.value); simPDNSynchroDeltaI(); simCalculerPDN(); }
       };
     });
     box.querySelectorAll(".simPDNFiche").forEach(inp => {
       inp.onchange = function() {
-        if (simPDNFicheModifier(this.getAttribute("data-cle"), this.value)) simRendre();
+        if (simPDNFicheModifier(this.getAttribute("data-cle"), this.value)) simCalculerPDN();
       };
     });
     box.querySelectorAll(".simPDNEvActif").forEach(cb => {
-      cb.onchange = function() { const ev = evDe(this); if (ev) { ev.actif = this.checked; simRendre(); } };
+      cb.onchange = function() { const ev = evDe(this); if (ev) { ev.actif = this.checked; simPDNSynchroDeltaI(); simCalculerPDN(); } };
     });
     box.querySelectorAll(".simPDNEvSuppr").forEach(bt => {
       bt.onclick = function() {
         const id = parseInt(this.getAttribute("data-id"));
         SIM_PDN.evenements = (SIM_PDN.evenements || []).filter(e => e.id !== id);
-        simRendre();
+        simPDNSynchroDeltaI(); simCalculerPDN();
       };
     });
     const ajout = simEl("simPDNEvAjout");
@@ -16484,16 +16706,12 @@ function simPDNApres() {
       const evs = SIM_PDN.evenements || (SIM_PDN.evenements = []);
       const id = evs.reduce((m, e) => Math.max(m, e.id), 0) + 1;
       evs.push({ id: id, type: "charge", nom: "LED", actif: true, iA: 0.01, frontNs: 10 });
-      simRendre();
+      simPDNSynchroDeltaI(); simCalculerPDN();
     };
     const report = simEl("simPDNEvDeltaI");
     if (report) report.onclick = function() {
-      const b = simPDNBilanEvenements(SIM_PDN.result);
-      if (!(b.dImax > 0)) return;
-      SIM_PDN.deltaIA = parseFloat(b.dImax.toPrecision(3));
-      const el = simEl("simPDNDeltaI");
-      if (el) el.value = SIM_PDN.deltaIA;
-      simPDNActualiserBadgeTarget();
+      SIM_PDN.deltaIManuel = false;
+      simPDNSynchroDeltaI();
       simCalculerPDN();
     };
     box.querySelectorAll(".simPDNCapToggle").forEach(cb => {
