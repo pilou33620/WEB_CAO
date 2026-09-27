@@ -36,6 +36,16 @@
         "8140"
       ],
       "port": 8140
+    },
+    {
+      "name": "statique 8141",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8141"
+      ],
+      "port": 8141
     }
   ]
 }

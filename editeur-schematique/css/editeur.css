@@ -150,9 +150,14 @@
   footer{
     display:flex;align-items:center;gap:16px;padding:5px 14px;background:var(--panel);
     border-top:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--txt-dim);
+    /* Hauteur fixe d'une ligne : sans flex:none, main (flex:1) écrasait le pied
+       et les libellés passaient sur deux lignes, rognées par le haut. */
+    flex:none;min-width:0;white-space:nowrap;overflow:hidden;
   }
+  footer>span{flex:none}
   footer b{color:var(--yellow);font-weight:600}
   footer .push{margin-left:auto}
+  footer .push.hint{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:right}
   .hint{color:var(--txt-dim)}
   .seg{display:inline-flex;border:1px solid var(--border2);border-radius:5px;overflow:hidden}
   .segb{

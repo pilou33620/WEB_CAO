@@ -20,6 +20,17 @@
 <header>
   <div class="brand"><i></i><b>Éditeur PCB</b><span>V1.0 · MULTICOUCHE</span><span class="proj" data-cao-projet="pcb" hidden></span></div>
   <div class="tools">
+    <div class="nav-gauche">
+      <nav class="nav-rapide" aria-label="Aller à">
+        <button type="button" data-cao-nav="schema" title="Éditeur schématique — le routage en cours reste dans l'onglet">⬅</button>
+        <button type="button" data-cao-nav="composants" title="Composants — la carte reste dans l'onglet">⌕</button>
+        <button type="button" data-cao-nav="lib" title="Gestion LIB (catalogue, empreintes, symboles)">📚</button>
+        <button type="button" data-cao-nav="accueil" title="Accueil">⌂</button>
+      </nav>
+      <button class="tb" id="bProfil" data-cao-profil title="Utilisateur : panneaux, réglages et derniers documents lui appartiennent">👤 …</button>
+      <button class="tb tb-ia" id="bIaAssistant" title="Assistant IA technique — Gemma 4 31B &amp; Gemini 3.8 Flash (Google AI Studio)"><span class="ia-sparkle">✨</span> IA</button>
+      <button class="tb tb-tactile-indicator" id="bTactileToggle" title="Mode tactile (iPad / tablette)"><span class="tactile-dot"></span> 📱 Tactile</button>
+    </div>
     <nav class="menubar">
       <div class="mnu" data-mnu="fichier">
         <button class="mnu-t" type="button">Fichier <span class="car">▾</span></button>
@@ -106,21 +117,8 @@
           <button data-ic="〰" class="tb" id="bSim" title="Simulation électromagnétique d'un net : paramètres S par la méthode des moments quasi-statique sur la section droite de la piste, puis mise en cascade. Le calcul a lieu sur le serveur (python web_CAO.py).">Simulation EM…</button>
         </div>
       </div>
-      <div class="mnu" data-mnu="aller">
-        <button class="mnu-t" type="button">Aller à <span class="car">▾</span></button>
-        <div class="mnu-pop">
-          <button data-ic="⬅" class="tb" data-cao-nav="schema" title="Aller au schéma — le routage en cours reste dans l'onglet">Éditeur schématique</button>
-          <button data-ic="⌕" class="tb" data-cao-nav="composants" title="Chercher une référence — la carte reste dans l'onglet">Composants</button>
-          <button data-ic="📚" class="tb" data-cao-nav="lib" title="Gestion des bibliothèques (catalogue, empreintes, symboles)">Gestion LIB</button>
-          <button data-ic="⌂" class="tb" data-cao-nav="accueil" title="Page d'accueil">Accueil</button>
-        </div>
-      </div>
     </nav>
     <button class="mnu-chip" id="mnuChip" type="button" title="Outil actif — un clic ouvre le menu Placer"></button>
-    <span class="push"></span>
-    <button class="tb" id="bProfil" data-cao-profil title="Utilisateur : panneaux, réglages et derniers documents lui appartiennent">👤 …</button>
-    <button class="tb tb-ia" id="bIaAssistant" title="Assistant IA technique — Gemma 4 31B &amp; Gemini 3.8 Flash (Google AI Studio)"><span class="ia-sparkle">✨</span> IA</button>
-    <button class="tb tb-tactile-indicator" id="bTactileToggle" title="Mode tactile (iPad / tablette)"><span class="tactile-dot"></span> 📱 Tactile</button>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" style="display:none">
   <input type="file" id="netIn" accept=".txt,.net,text/plain" style="display:none">

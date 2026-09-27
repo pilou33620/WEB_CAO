@@ -1,7 +1,8 @@
 /* =============================================================================
    commun/menus.css
    Barre de menus des deux éditeurs : Fichier · Édition · Placer · Affichage ·
-   Outils · Aller à. Les entrées sont les boutons .tb d'origine (mêmes id, mêmes
+   Outils. La navigation entre outils (schéma/PCB, composants, LIB, accueil)
+   est en icônes à gauche, avec le profil, l'IA et le mode tactile. Les entrées sont les boutons .tb d'origine (mêmes id, mêmes
    handlers), simplement présentés en lignes de menu déroulant.
    ============================================================================= */
 
@@ -51,7 +52,16 @@ header{position:relative;z-index:75}
   background:var(--blue-deep);border:1px solid var(--blue);color:#fff;font:12px var(--ui);white-space:nowrap}
 .mnu-chip small{font-family:var(--mono);font-size:9px;letter-spacing:.14em;opacity:.75}
 .mnu-chip kbd{font-family:var(--mono);font-size:9px;color:#dff0ff;border:1px solid #5cb4f0;border-radius:3px;padding:0 3px}
+/* groupe de gauche : navigation en icônes, profil, IA, tactile */
+.nav-gauche{display:inline-flex;align-items:center;gap:6px}
+.nav-rapide{display:inline-flex;gap:2px;background:var(--panel2);border:1px solid var(--border2);
+  border-radius:6px;padding:2px}
+.nav-rapide:not(:has(button:not([hidden]))){display:none}
+.nav-rapide button{background:none;border:0;color:var(--txt-dim);width:30px;height:26px;border-radius:4px;
+  cursor:pointer;font:14px var(--ui);display:inline-flex;align-items:center;justify-content:center}
+.nav-rapide button[hidden]{display:none}
+.nav-rapide button:hover{background:#262a31;color:#fff}
+body.mode-tactile .nav-rapide button{width:38px;height:38px;font-size:16px}
 header .tools{flex:1}
-.tools .push{margin-left:auto}
 
 body.mode-tactile .mnu-t{min-height:38px;font-size:13px}
