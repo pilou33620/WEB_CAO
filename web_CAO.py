@@ -373,6 +373,7 @@ cet acces.
 """
 import argparse
 import datetime
+import http.client
 import http.server
 import ipaddress
 import json
@@ -389,6 +390,12 @@ import traceback
 import urllib.parse
 import urllib.request
 import webbrowser
+try:
+    # Sous Pyto (iPad), ssl peut manquer : le serveur doit demarrer quand
+    # meme, seuls les telechargements https s'en passeront.
+    import ssl
+except ImportError:                                    # pragma: no cover
+    ssl = None
 
 DEFAULT_PORT = 8000
 # Le chemin evident, dont depend l'import de la passerelle. start_server peut
@@ -1079,15 +1086,98 @@ def _valider_url_telechargement(url):
         raise ValueError("Impossible de resoudre l'hote : %s" % hostname)
 
     for info in infos:
-        ip_str = info[4][0]
-        try:
-            ip = ipaddress.ip_address(ip_str)
-        except ValueError:
-            raise ValueError("Adresse IP invalide : %s" % ip_str)
-        if (ip.is_loopback or ip.is_private or ip.is_link_local or
-                ip.is_reserved or ip.is_multicast or ip.is_unspecified):
-            raise ValueError("Acces refuse a l'adresse privee ou locale (%s)" % ip_str)
+        _verifier_ip_publique(info[4][0])
     return url
+
+
+def _verifier_ip_publique(ip_str):
+    """Leve ValueError si l'adresse est locale, privee ou reservee (anti-SSRF)."""
+    try:
+        ip = ipaddress.ip_address(str(ip_str).split("%")[0])
+    except ValueError:
+        raise ValueError("Adresse IP invalide : %s" % ip_str)
+    # « ::ffff:127.0.0.1 » est 127.0.0.1 : on juge l'adresse IPv4 qu'elle porte
+    mappee = getattr(ip, "ipv4_mapped", None)
+    if mappee is not None:
+        ip = mappee
+    if (ip.is_loopback or ip.is_private or ip.is_link_local or
+            ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+        raise ValueError("Acces refuse a l'adresse privee ou locale (%s)" % ip_str)
+
+
+def _socket_verifiee(hote, port, timeout):
+    """Resout `hote`, verifie CHAQUE adresse, puis se connecte a l'une d'elles.
+
+    C'est la parade au « DNS rebinding » : valider une URL puis laisser
+    urllib la resoudre a nouveau laissait un serveur DNS malveillant repondre
+    une adresse publique au controle et 127.0.0.1 a la connexion. Ici,
+    l'adresse verifiee EST celle a laquelle on se connecte.
+    """
+    try:
+        infos = socket.getaddrinfo(hote, port, 0, socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise OSError("Nom d'hote introuvable : %s" % hote) from exc
+    if not infos:
+        raise OSError("Impossible de resoudre l'hote : %s" % hote)
+    for info in infos:
+        try:
+            _verifier_ip_publique(info[4][0])
+        except ValueError as exc:
+            raise OSError(str(exc)) from exc
+    derniere = None
+    for famille, genre, proto, _nom, adresse in infos:
+        sock = socket.socket(famille, genre, proto)
+        try:
+            if timeout is not None and timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                sock.settimeout(timeout)
+            sock.connect(adresse)
+            return sock
+        except OSError as exc:
+            derniere = exc
+            sock.close()
+    raise derniere or OSError("Connexion impossible a %s" % hote)
+
+
+class _ConnexionVerifiee(http.client.HTTPConnection):
+    def connect(self):
+        self.sock = _socket_verifiee(self.host, self.port, self.timeout)
+
+
+class _ConnexionVerifieeTLS(http.client.HTTPSConnection):
+    def connect(self):
+        sock = _socket_verifiee(self.host, self.port, self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+class _HTTPVerifie(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_ConnexionVerifiee, req)
+
+
+class _HTTPSVerifie(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_ConnexionVerifieeTLS, req,
+                            context=ssl.create_default_context())
+
+
+def ouvreur_telechargement(url):
+    """L'ouvreur urllib d'un telechargement de datasheet.
+
+    Sans proxy : connexions verifiees a l'IP pres (_socket_verifiee), et les
+    redirections y passent aussi. Derriere un proxy d'entreprise, c'est lui
+    qui resout les noms et l'on ne peut rien epingler : on garde le controle
+    prealable de l'URL et de chaque redirection (_SecRedirectHandler).
+    """
+    hote = urllib.parse.urlsplit(url).hostname or ""
+    schema = urllib.parse.urlsplit(url).scheme
+    proxies = urllib.request.getproxies()
+    if proxies.get(schema) and not urllib.request.proxy_bypass(hote):
+        return urllib.request.build_opener(_SecRedirectHandler())
+    gestionnaires = [urllib.request.ProxyHandler({}), _HTTPVerifie(),
+                     _SecRedirectHandler()]
+    if ssl is not None:
+        gestionnaires.append(_HTTPSVerifie())
+    return urllib.request.build_opener(*gestionnaires)
 
 
 class _SecRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -2583,7 +2673,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             "Accept": "application/pdf,*/*"
         }
         max_datasheet = 50 * 1024 * 1024  # 50 Mo max
-        opener = urllib.request.build_opener(_SecRedirectHandler())
+        opener = ouvreur_telechargement(url)
         try:
             req = urllib.request.Request(url, headers=headers)
             with opener.open(req, timeout=25) as resp:

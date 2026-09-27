@@ -1259,6 +1259,20 @@ function libRendreEtat(cfg){
 
   elCur.innerHTML = detailChemin + "<br><div style='margin-top:6px; display:flex; flex-wrap:wrap; gap:6px;'>" + statsHtml + "</div>";
 
+  /* Écoute réseau : le serveur refuse de déplacer ou de modifier la
+     bibliothèque (voir _lib_garde dans web_CAO.py). On le dit d'avance plutôt
+     que de laisser l'utilisateur buter sur un 403 après avoir tapé un chemin.
+     `modifiable` absent (ancien serveur) : on laisse faire, comme avant. */
+  const verrou = cfg.modifiable === false;
+  ["libChem", "libAppliquer", "libParcourir", "libDefaut", "libInitVide"].forEach(function(id){
+    const el = document.getElementById(id);
+    if(el) el.disabled = verrou;
+  });
+  if(verrou){
+    libMsg("🔒 Bibliothèque en lecture seule : ce serveur écoute sur le réseau. " +
+           "Relancez-le avec <code>--local</code> (ou par double-clic) pour changer de dossier ou modifier la bibliothèque.");
+  }
+
   // Remplir le champ si vide et chemin personnalisé
   const champ = document.getElementById("libChem");
   if(champ && !champ.value.trim() && !cfg.est_defaut){

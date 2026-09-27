@@ -242,6 +242,18 @@ function pcbPistesConnecteesPad(fp, pinNumber) {
    3. MOTEUR DE COMPARAISON & DÉTECTION DES DISPARITÉS ECO
    ============================================================================= */
 
+/* Forme de comparaison d'une valeur : « 10k », « 10K » et « 10 k » sont la
+   même résistance, « 10uF » et « 10µF » le même condensateur -- l'ECO les
+   signalait comme des changements. La casse du « m » est GARDÉE : 1m (milli)
+   et 1M (méga) ne sont pas la même valeur. */
+function pcbEcoValeurNorm(v) {
+  return String(v || "")
+    .replace(/\s+/g, "")
+    .replace(/[µμ]/g, "u")
+    .replace(/Ω|ohms?/gi, "")
+    .replace(/[^mM]/g, ch => ch.toUpperCase());
+}
+
 /**
  * Compare l'état courant du PCB (S.fps, S.tracks) avec les données du schéma.
  * Détecte les ajouts, suppressions, changements de boîtiers, de valeurs et de nets.
@@ -331,7 +343,7 @@ function pcbDetecterDisparitesEco(schData) {
       // B. Changement de valeur
       const oldVal = String(fp.value || "").trim();
       const newVal = String(comp.value || "").trim();
-      if (newVal && oldVal !== newVal) {
+      if (newVal && pcbEcoValeurNorm(oldVal) !== pcbEcoValeurNorm(newVal)) {
         const item = {
           id: "val_" + ref,
           type: "VALEUR",

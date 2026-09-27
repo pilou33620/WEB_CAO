@@ -46,7 +46,7 @@ python web_CAO.py
 
 > [!TIP]
 > **Sous Windows** : un double-clic sur `web_CAO.py` (ou sur `demarrer_WEB_CAO.cmd`, qui garde la fenêtre ouverte si Python échoue à démarrer) ouvre la console et le navigateur à la bonne adresse. Le double-clic démarre **en mode local**, dossiers de projet compris : c'est le seul mode où l'outil est entier.
-> **Sur réseau local / tablette** : lancé **depuis un terminal**, le serveur écoute sur tout le réseau et affiche l'adresse IP à ouvrir sur la tablette. Les dossiers de projet restent refusés dans ce mode : un accès disque sans mot de passe ne s'ouvre pas à un réseau.
+> **Sur réseau local / tablette** : lancé **depuis un terminal**, le serveur écoute sur tout le réseau et affiche l'adresse IP à ouvrir sur la tablette. Les dossiers de projet restent refusés dans ce mode, la bibliothèque centrale passe en **lecture seule** (catalogue, empreintes et symboles se lisent, rien ne s'écrit ni ne se déplace) et la clé IA locale n'est pas partagée : un accès disque sans mot de passe ne s'ouvre pas à un réseau.
 > **Si le port est refusé** (`WinError 10013` sur certains postes d'entreprise) : le serveur prend le premier port libre de 8001 à 8020. L'adresse reste stable d'un lancement à l'autre, ce qui préserve réglages, profils et projets récents (rangés par origine dans le navigateur).
 > **Mises à jour** : au démarrage, le serveur vérifie le dépôt GitHub, applique la mise à jour et redémarre de lui-même (`--sans-maj` pour s'en passer).
 
@@ -190,14 +190,14 @@ Un seul fichier, bibliothèque standard Python. Chaque module de calcul est impo
 | Option | Effet |
 | :--- | :--- |
 | `--port N` | Port d'écoute (défaut 8000, repli 8001–8020) |
-| `--local` | Écoute sur 127.0.0.1 uniquement (dossiers de projet autorisés) |
+| `--local` | Écoute sur 127.0.0.1 uniquement : dossiers de projet, écriture de la bibliothèque et clé IA locale autorisés |
 | `--host ADR` | Adresse d'écoute explicite |
 | `--navigateur` / `--sans-navigateur` | Force l'ouverture ou non du navigateur |
 | `--sans-pause` | Rend la main sans attendre Entrée (Windows) |
 | `--sans-maj` | Pas de vérification des mises à jour GitHub |
 | `--dossier DIR` | Dossier servi (utile sous Pyto) |
-| `--projets DIR` | Racine(s) des dossiers de projet, répétable ; rien n'est lu ni écrit hors de ces racines |
-| `--lib DIR` | Dossier de la bibliothèque centrale |
+| `--projets DIR` | Racine(s) des dossiers de projet, répétable. Un chemin **complet** tapé hors de ces racines n'est accepté qu'en écoute locale, pour ce projet seulement : la liste des racines ne s'étend jamais depuis le navigateur |
+| `--lib DIR` | Dossier de la bibliothèque centrale (en lecture seule si le serveur écoute sur le réseau) |
 
 **Routes** : `/api/tools`, `/api/tool` (passerelle MCP) · `/api/ipc2581` · `/api/simulation`, `/api/simulation-dc`, `/api/crosstalk` · `/api/pcb/score-placement`, `/api/schema/patterns` · `/api/projets`, `/api/projet`, `/api/projet/doc` · `/api/profils`, `/api/profil` · `/api/lib/config`, `/api/lib/composants`, `/api/lib/fichiers`, `/api/lib/fichier` · `/api/datasheet/telecharger`, `/api/datasheet/ouvrir` · `/api/ia/cle`. Protection anti-traversée de chemins sur toutes les routes disque.
 
@@ -286,16 +286,16 @@ Tous les bancs tournent en intégration continue (GitHub Actions, `.github/workf
 
 | Composant testé | Commande | Couverture |
 | :--- | :--- | :--- |
-| **Éditeur PCB** | `node editeur-pcb/test/harness.js` | 756 essais : DRC, netlist, tracé, paires diff, Gerber, Excellon, PNS, simulation, PDN |
+| **Éditeur PCB** | `node editeur-pcb/test/harness.js`<br>`node editeur-pcb/test/banc-trois-ponts.js` | 766 essais : DRC, netlist, tracé, paires diff, Gerber, Excellon, PNS, simulation, PDN |
 | **Éditeur Schématique** | `node editeur-schematique/test/harness.js` | 119 essais : connectivité, nets, multi-feuilles, bus, nomenclature |
 | **Visionneuse IPC-2581** | `node visionneuse-ipc2581/test/harness-sim.js`<br>`python visionneuse-ipc2581/test/banc-essai.py` | 178 essais (géométrie de masse, simulation, datasheet) + 55 (parseur XML) |
-| **Gestion LIB** | `node gestion-lib/test/banc-catalogue.js`<br>`node gestion-lib/test/banc-import-jlc.js` | 11 essais (lecture du catalogue, recherche par référence fabricant) + 65 (import JLCPCB, 39 colonnes) |
+| **Gestion LIB** | `node gestion-lib/test/banc-catalogue.js`<br>`node gestion-lib/test/banc-import-jlc.js` | 27 essais (lecture du catalogue, recherche par référence fabricant, auto-association des boîtiers) + 65 (import JLCPCB, 39 colonnes) |
 | **Solveur MoM (Z₀)** | `python python/test/banc-ligne-mom.py` | 199 cas contre étalons analytiques (Hammerstad-Jensen, Wen, Garg-Bahl…) |
 | **Crosstalk** | `python python/test/banc-crosstalk.py` | 65 cas : conservation de l'énergie, cascade, localisation, références exactes (triplaque, Cohn, Garg-Bahl) |
 | **Chute DC** | `python python/test/banc-dc.py` | 42 cas : résistivité théorique, vias, double modèle thermique |
 | **Scoring de placement** | `python python/test/banc-pcb-scoring.py` | 18 cas : HPWL, congestion, découplage, auto-rotation |
 | **Reconnaissance de motifs** | `python python/test/banc-patterns.py` | 22 cas : LDO, 78xx/79xx, buck, I2C/SPI/UART, quartz, RC, courants DC |
-| **Serveur** | `python python/test/banc-serveur-routes.py`, `banc-lib-routes.py`, `banc-maj-github.py`, `banc-detection-plateforme.py` | Routes, sécurité anti-traversée, bibliothèque, mise à jour, détection de plateforme |
+| **Serveur** | `python python/test/banc-serveur-routes.py`, `banc-lib-routes.py`, `banc-maj-github.py`, `banc-detection-plateforme.py` | Routes, sécurité anti-traversée, Host/CSRF, lecture seule en écoute réseau, bibliothèque, mise à jour, détection de plateforme |
 
 > [!IMPORTANT]
 > Le dossier `dist/` n'est pas versionné. Après toute modification de `js/`, relancez `build-monofichier.py` : c'est le monofichier qu'on ouvre en double-clic.

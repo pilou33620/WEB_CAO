@@ -3433,10 +3433,13 @@ function pcbParseResistance(val){
   //     10 kohm, 4.7 Ω, 47R. Testé AVANT les codes 4K7 / 22R ci-dessous : leur
   //     \b accrochait après la virgule décimale, et « 4.7k » devenait « 7k »
   //     (7000 Ω), « 2.2M » 2 MΩ, « 10 kohm » 10 Ω.
-  const mDec = s.match(/^(\d+(?:[.,]\d+)?)\s*(k|K|M|MEG|Meg|meg)?\s*(?:ohms?|Ohms?|OHMS?|Ω|R)?$/);
+  //     « m » minuscule vaut milli, comme en SPICE : un shunt « 10m » ou
+  //     « 10 mΩ » fait 0,01 Ω ; le méga s'écrit « M » ou « meg ».
+  const mDec = s.match(/^(\d+(?:[.,]\d+)?)\s*(k|K|MEG|Meg|meg|M|m)?\s*(?:ohms?|Ohms?|OHMS?|Ω|R)?$/);
   if(mDec){
-    const u = (mDec[2] || "").toLowerCase();
-    return parseFloat(mDec[1].replace(",", ".")) * (u === "k" ? 1e3 : (u ? 1e6 : 1));
+    const u = mDec[2] || "";
+    const mult = (u === "k" || u === "K") ? 1e3 : (u === "m" ? 1e-3 : (u ? 1e6 : 1));
+    return parseFloat(mDec[1].replace(",", ".")) * mult;
   }
 
   // 2. Format R standard : 4R7 -> 4.7, 22R -> 22, 0R5 -> 0.5, 22R0 -> 22.0
@@ -3453,11 +3456,12 @@ function pcbParseResistance(val){
     return parseFloat(mCodeK[1] + dec) * 1000;
   }
 
-  // 4. Format M standard : 1M -> 1e6, 2M2 -> 2.2e6
-  const mCodeM = s.match(/\b(\d+)[mM](\d*)\b/);
+  // 4. Format M standard : 1M -> 1e6, 2M2 -> 2.2e6 ; « m » minuscule =
+  //    milli (4m7 -> 0,0047 Ω), comme en SPICE
+  const mCodeM = s.match(/\b(\d+)([mM])(\d*)\b/);
   if(mCodeM && !/ohm/i.test(s)){
-    const dec = mCodeM[2] ? ("." + mCodeM[2]) : "";
-    return parseFloat(mCodeM[1] + dec) * 1e6;
+    const dec = mCodeM[3] ? ("." + mCodeM[3]) : "";
+    return parseFloat(mCodeM[1] + dec) * (mCodeM[2] === "m" ? 1e-3 : 1e6);
   }
 
   // 5. Format R préfixe : R10 -> 0.10, R050 -> 0.050
@@ -3467,12 +3471,13 @@ function pcbParseResistance(val){
   }
 
   // 6. Format avec unité explicite : "560 ohm", "22 Ω", "4.7 kohm", "10k"
-  const mUnit = s.match(/(\d+(?:[.,]\d+)?)\s*(k|m|r|ohm|Ω)\b/i);
+  const mUnit = s.match(/(\d+(?:[.,]\d+)?)\s*(k|meg|m|r|ohm|Ω)/i);
   if(mUnit){
     const n = parseFloat(mUnit[1].replace(",", "."));
-    const u = mUnit[2].toLowerCase();
-    if(u.includes("k")) return n * 1000;
-    if(u.includes("m") && !u.includes("ohm")) return n * 1e6;
+    const u = mUnit[2];
+    if(u === "k" || u === "K") return n * 1000;
+    if(/^meg$/i.test(u) || u === "M") return n * 1e6;
+    if(u === "m") return n * 1e-3;             // mΩ, mohm : milli
     return n;
   }
 

@@ -9,7 +9,8 @@
         "--port",
         "8137",
         "--sans-navigateur",
-        "--sans-pause"
+        "--sans-pause",
+        "--sans-maj"
       ],
       "port": 8137
     },
@@ -21,7 +22,8 @@
         "--port",
         "8138",
         "--sans-navigateur",
-        "--sans-pause"
+        "--sans-pause",
+        "--sans-maj"
       ],
       "port": 8138
     },

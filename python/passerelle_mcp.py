@@ -142,7 +142,13 @@ class ClientMCP:
                 corps = rep.read()
                 if not attendre_reponse:
                     return None
-                return self._lire(corps, rep.headers.get("Content-Type"))
+                try:
+                    return self._lire(corps, rep.headers.get("Content-Type"))
+                except ValueError:
+                    # JSON tronque ou page HTML d'un proxy : dire d'ou vient
+                    # la panne plutot qu'une « Erreur interne » du serveur local
+                    raise ErreurPasserelle(502, "Reponse illisible de pcbparts.dev : %s"
+                                           % corps[:120].decode("utf-8", "replace"))
         except urllib.error.HTTPError as exc:
             # remontee brute : rpc() decide s'il faut rouvrir la session
             exc.corps = exc.read()[:300].decode("utf-8", "replace")
@@ -170,11 +176,14 @@ class ClientMCP:
     def rpc(self, methode, params=None):
         """Un appel JSON-RPC, session ouverte si besoin."""
         with self._verrou:
-            self._initialiser()
             charge = {"jsonrpc": "2.0", "id": 1, "method": methode}
             if params is not None:
                 charge["params"] = params
             try:
+                # L'ouverture de session est DANS le try : un refus des la
+                # toute premiere requete (initialize) remontait en HTTPError
+                # brute, et la page n'affichait qu'« Erreur interne ».
+                self._initialiser()
                 return self._envoyer(charge)
             except urllib.error.HTTPError as exc:
                 # Session perimee : on repart de zero une fois.
@@ -194,6 +203,10 @@ class ClientMCP:
         with self._verrou:
             if self._outils is None:
                 enveloppe = self.rpc("tools/list")
+                if not isinstance(enveloppe, dict):
+                    raise ErreurPasserelle(502, "Liste d'outils illisible")
+                if enveloppe.get("error"):
+                    deballer(enveloppe)               # leve avec le message MCP
                 self._outils = (enveloppe.get("result", {}) or {}).get("tools", [])
             return self._outils
 
@@ -201,6 +214,8 @@ class ClientMCP:
         """Appel d'un outil de la liste blanche."""
         if nom not in ALLOWED_TOOLS:
             raise ErreurPasserelle(400, "Outil inconnu : %s" % nom)
+        if arguments is not None and not isinstance(arguments, dict):
+            raise ErreurPasserelle(400, "Arguments d'outil : objet JSON attendu")
         # On retire les valeurs vides pour laisser jouer les defauts du serveur.
         args = {k: v for k, v in (arguments or {}).items()
                 if v not in (None, "", [])}

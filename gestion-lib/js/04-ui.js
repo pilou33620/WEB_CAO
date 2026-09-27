@@ -291,9 +291,13 @@ function rafraichirTable() {
       } else if (col === "Description") {
         styleCol += " min-width:220px;";
       }
-      thsHtml += `<th style="${styleCol}" onclick="trierParColonne('${escapeHtml(col)}')" title="Cliquer pour trier par ${escapeHtml(col)}">${escapeHtml(col)}${fleche}</th>`;
+      thsHtml += `<th style="${styleCol}" data-col="${escapeHtml(col)}" title="Cliquer pour trier par ${escapeHtml(col)}">${escapeHtml(col)}${fleche}</th>`;
     });
     thead.innerHTML = `<tr>${thsHtml}</tr>`;
+    // tri branché ici : un nom de colonne à apostrophe cassait l'onclick en ligne
+    thead.querySelectorAll("th[data-col]").forEach(th => {
+      th.addEventListener("click", () => trierParColonne(th.getAttribute("data-col")));
+    });
   }
 
   const liste = obtenirComposantsFiltres();
@@ -558,7 +562,7 @@ function rafraichirGaleriePcb() {
         <div class="lib-card-info">
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <span class="lib-card-title">${escapeHtml(base)}</span>
-            <button class="tb mini" style="padding:1px 6px; font-size:10px;" onclick="event.stopPropagation(); ouvrirEditeurPcb('${escapeHtml(f)}');" title="Éditer">✏️</button>
+            <button class="tb mini" style="padding:1px 6px; font-size:10px;" data-editer="1" title="Éditer">✏️</button>
           </div>
           <div class="lib-card-sub">
             <span>JSON</span>
@@ -586,6 +590,13 @@ function rafraichirGaleriePcb() {
       if (typeof ouvrirEditeurPcb === "function") {
         ouvrirEditeurPcb(f);
       }
+    });
+    /* Bouton ✏️ branché ici et non en onclick="…('nom')" : une apostrophe
+       dans le nom du fichier cassait le JavaScript de l'attribut. */
+    const bEdit = card.querySelector("[data-editer]");
+    if (bEdit) bEdit.addEventListener("click", e => {
+      e.stopPropagation();
+      if (typeof ouvrirEditeurPcb === "function") ouvrirEditeurPcb(f);
     });
   });
 }
@@ -627,7 +638,7 @@ function rafraichirGalerieSch() {
         <div class="lib-card-info">
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <span class="lib-card-title">${escapeHtml(base)}</span>
-            <button class="tb mini" style="padding:1px 6px; font-size:10px;" onclick="event.stopPropagation(); ouvrirEditeurSch('${escapeHtml(f)}');" title="Éditer">✏️</button>
+            <button class="tb mini" style="padding:1px 6px; font-size:10px;" data-editer="1" title="Éditer">✏️</button>
           </div>
           <div class="lib-card-sub">
             <span>JSON</span>
@@ -655,6 +666,12 @@ function rafraichirGalerieSch() {
       if (typeof ouvrirEditeurSch === "function") {
         ouvrirEditeurSch(f);
       }
+    });
+    // même raison que pour la galerie PCB : pas de nom de fichier dans du JS en ligne
+    const bEdit = card.querySelector("[data-editer]");
+    if (bEdit) bEdit.addEventListener("click", e => {
+      e.stopPropagation();
+      if (typeof ouvrirEditeurSch === "function") ouvrirEditeurSch(f);
     });
   });
 }

@@ -412,6 +412,70 @@ def test_routes():
             web_CAO.PROJETS_OUVERT = True
         print("[PASS] chemin_projet : les racines declarees ne bougent plus")
 
+        # 28. DNS rebinding : un DNS qui repond une IP publique au controle
+        # de l'URL puis 127.0.0.1 a la connexion. La connexion verifiee juge
+        # l'adresse A LAQUELLE elle se connecte, et refuse.
+        import socket as _s
+        vrai_gai = _s.getaddrinfo
+        appels = []
+        def dns_changeant(hote, port, *a, **k):
+            appels.append(hote)
+            ip = "93.184.216.34" if len(appels) == 1 else "127.0.0.1"
+            return [(_s.AF_INET, _s.SOCK_STREAM, 6, "", (ip, port or 80))]
+        _s.getaddrinfo = dns_changeant
+        try:
+            url = web_CAO._valider_url_telechargement("http://rebind.example/fiche.pdf")
+            ouvreur = web_CAO.ouvreur_telechargement(url)
+            try:
+                ouvreur.open(url, timeout=5)
+                assert False, "rebinding vers 127.0.0.1 non bloque"
+            except OSError as exc:
+                assert "privee ou locale" in str(exc), exc
+        finally:
+            _s.getaddrinfo = vrai_gai
+        assert len(appels) == 2, appels
+        for ip in ("127.0.0.1", "::1", "::ffff:127.0.0.1", "10.1.2.3", "169.254.1.1"):
+            try:
+                web_CAO._verifier_ip_publique(ip)
+                assert False, "%s acceptee" % ip
+            except ValueError:
+                pass
+        web_CAO._verifier_ip_publique("93.184.216.34")
+        print("[PASS] Datasheets : IP verifiee a la connexion (DNS rebinding bloque)")
+
+        # 29. Passerelle MCP : un refus des la premiere requete (initialize)
+        # doit remonter avec son code et son message, pas en « Erreur interne ».
+        import http.server as _hs
+        class Refus(_hs.BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get("Content-Length") or 0))
+                corps = b"quota depasse"
+                self.send_response(429)
+                self.send_header("Content-Length", str(len(corps)))
+                self.end_headers()
+                self.wfile.write(corps)
+            def log_message(self, *a):
+                pass
+        faux = _hs.HTTPServer(("127.0.0.1", 0), Refus)
+        threading.Thread(target=faux.serve_forever, daemon=True).start()
+        try:
+            import passerelle_mcp
+            client = passerelle_mcp.ClientMCP(url="http://127.0.0.1:%d/mcp" % faux.server_address[1], timeout=5)
+            try:
+                client.appeler("jlc_search", {"query": "10k"})
+                assert False, "le refus aurait du remonter"
+            except passerelle_mcp.ErreurPasserelle as exc:
+                assert exc.code == 429 and "quota" in exc.message, (exc.code, exc.message)
+            try:
+                client.appeler("jlc_search", ["pas", "un", "objet"])
+                assert False, "arguments non objet acceptes"
+            except passerelle_mcp.ErreurPasserelle as exc:
+                assert exc.code == 400
+        finally:
+            faux.shutdown()
+            faux.server_close()
+        print("[PASS] Passerelle MCP : refus a l'ouverture de session remonte tel quel")
+
     finally:
         conn.close()
         httpd.shutdown()
