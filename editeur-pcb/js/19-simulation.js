@@ -544,7 +544,10 @@ function pcbParasitesComposant(c) {
   let cap = c.c != null ? c.c : (c.capacite_F != null ? c.capacite_F : null);
   let provenance = "defaut";
 
-  const dict = SIM_PARASITES_MURATA || (typeof window !== "undefined" && window.SIM_PARASITES_MURATA) || null;
+  /* typeof d'abord : un identifiant nu jamais déclaré lève une ReferenceError
+     avant que le repli sur window ait la moindre chance de servir */
+  const dict = (typeof SIM_PARASITES_MURATA !== "undefined" && SIM_PARASITES_MURATA) ||
+               (typeof window !== "undefined" && window.SIM_PARASITES_MURATA) || null;
   if (dict) {
     const cle = spiceMod || mpn || partName;
     const hit = dict[cle] || (mpn ? dict[mpn] : null) || (spiceMod ? dict[spiceMod] : null) || (partName ? dict[partName] : null);
@@ -3426,6 +3429,16 @@ function pcbParseResistance(val){
     return parseFloat(s.replace(",", "."));
   }
 
+  // 1b. Nombre décimal, multiplicateur et unité facultatifs : 4.7k, 2,2M,
+  //     10 kohm, 4.7 Ω, 47R. Testé AVANT les codes 4K7 / 22R ci-dessous : leur
+  //     \b accrochait après la virgule décimale, et « 4.7k » devenait « 7k »
+  //     (7000 Ω), « 2.2M » 2 MΩ, « 10 kohm » 10 Ω.
+  const mDec = s.match(/^(\d+(?:[.,]\d+)?)\s*(k|K|M|MEG|Meg|meg)?\s*(?:ohms?|Ohms?|OHMS?|Ω|R)?$/);
+  if(mDec){
+    const u = (mDec[2] || "").toLowerCase();
+    return parseFloat(mDec[1].replace(",", ".")) * (u === "k" ? 1e3 : (u ? 1e6 : 1));
+  }
+
   // 2. Format R standard : 4R7 -> 4.7, 22R -> 22, 0R5 -> 0.5, 22R0 -> 22.0
   const mCode = s.match(/\b(\d+)[rR](\d*)\b/);
   if(mCode){
@@ -3717,6 +3730,28 @@ function pcbSpecsComposant(c){
      4. Raccordement et absence de court-circuit alimentation / masse.
    ========================================================================== */
 
+/* Nom d'alimentation ou de masse, reconnu JETON PAR JETON. L'ancienne
+   expression cherchait « 5 », « 12 », « 18 »… n'importe où dans le nom :
+   PA5, PB12 ou ADC_IN15 passaient pour des rails, et une broche de port
+   reliée à la masse devenait un « court-circuit » critique. Même logique que
+   crIsPower / crIsGround (editeur-schematique/js/22-recherche-composants.js),
+   réécrite ici parce que la page PCB ne charge pas le code du schéma. */
+function pcbJetonsNom(s){
+  return String(s || "").toUpperCase().split(/[^A-Z0-9.,+]+/).filter(Boolean);
+}
+function pcbNomEstAlim(s){
+  return pcbJetonsNom(s).some(j => {
+    const t = j.replace(/^\+/, "");
+    return /^(A|D|P)?V(CC|DD|EE|IN|OUT|BUS|BAT|SYS|REG|PP|CORE|IO|DDIO|DDA|DDQ|CCA|CCIO)[A-Z0-9]*$/.test(t) ||
+           /^\d+V\d*$/.test(t) || /^\d+[.,]\d+V$/.test(t) ||
+           j === "V+" || j === "+V" || t === "PWR" || t === "VSUPPLY";
+  });
+}
+function pcbNomEstMasse(s){
+  const j = pcbJetonsNom(s)[0] || "";
+  return j === "0V" || /^(GND|VSS|AGND|DGND|PGND|SGND|CGND|MASSE|EARTH)[A-Z0-9]*$/.test(j);
+}
+
 function pcbVerifierPinoutComposant(c, fp) {
   if (!c) return null;
   const ref = c.ref;
@@ -3800,8 +3835,8 @@ function pcbVerifierPinoutComposant(c, fp) {
   const maxP = Math.max(nSch, nPcb);
   let hasCriticalNetConflict = false;
 
-  const isPowerName = s => (typeof crIsPower === "function" ? crIsPower(s) : /(\+?3[V\.]?3V?|\+?5V?0?|\+?12V?|\+?1[V\.]?8V?|\+?2[V\.]?5V?|VCC|VDD|VIN|VOUT|VBUS|VBAT|\+V)/i.test(String(s || "")));
-  const isGroundName = s => (typeof crIsGround === "function" ? crIsGround(s) : /^(GND|VSS|0V|AGND|DGND|PGND|VSSA|VSSD|MASSE)/i.test(String(s || "").trim()));
+  const isPowerName = pcbNomEstAlim;
+  const isGroundName = pcbNomEstMasse;
 
   for (let p = 1; p <= maxP; p++) {
     const pStr = String(p);
@@ -5078,12 +5113,11 @@ const SIM_PCB={
   redessiner:function(){
     if(typeof draw==="function")draw();
   },
+  /* center() (06-panels.js) cadre sur un point en tenant compte du miroir.
+     L'ancien corps testait des globales W et H qui n'existent pas dans
+     l'éditeur PCB (ce sont des locales de fit()) : il ne faisait rien. */
   centrerSurVia:function(x_mm,y_mm){
-    if(typeof S!=="undefined"&&typeof W!=="undefined"&&typeof H!=="undefined"){
-      S.ox=W/2-(typeof mirX==="function"?mirX(x_mm):x_mm)*S.scale;
-      S.oy=H/2-y_mm*S.scale;
-      if(typeof draw==="function")draw();
-    }
+    if(typeof center==="function") center(x_mm,y_mm);
   },
   /* Extraction physique du temps de vol pour l'analyse de bus synchrone (supporte les XNets / nets composés "NET1 + NET2") */
   busNetFlight:function(netName){

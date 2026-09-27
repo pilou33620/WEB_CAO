@@ -26,12 +26,27 @@ const CR_ETAT = {
 };
 
 /* ---------- Détection de conflits & réalignement assisté ---------- */
+/* Nom d'alimentation ou de masse, jeton par jeton. L'ancienne expression
+   cherchait « 5 », « 12 », « 18 »… N'IMPORTE OÙ dans le nom : PA5, PB12,
+   ADC_IN15 ou D25 passaient pour des rails, et la vérification de brochage
+   criait au court-circuit sur une simple broche de port. Un rail se reconnaît
+   à un jeton entier : VCC, VDD_IO, +3V3, 5V, 3.3V, V+… (même logique que
+   pcbNomEstAlim dans editeur-pcb/js/19-simulation.js). */
+function crJetonsNom(s) {
+  return String(s || "").toUpperCase().split(/[^A-Z0-9.,+]+/).filter(Boolean);
+}
 function crIsPower(s) {
-  return /(\+?3[V\.]?3V?|\+?5V?0?|\+?12V?|\+?1[V\.]?8V?|\+?2[V\.]?5V?|VCC|VDD|VIN|VOUT|VBUS|VBAT|\+V)/i.test(String(s || ""));
+  return crJetonsNom(s).some(j => {
+    const t = j.replace(/^\+/, "");
+    return /^(A|D|P)?V(CC|DD|EE|IN|OUT|BUS|BAT|SYS|REG|PP|CORE|IO|DDIO|DDA|DDQ|CCA|CCIO)[A-Z0-9]*$/.test(t) ||
+           /^\d+V\d*$/.test(t) || /^\d+[.,]\d+V$/.test(t) ||
+           j === "V+" || j === "+V" || t === "PWR" || t === "VSUPPLY";
+  });
 }
 
 function crIsGround(s) {
-  return /^(GND|VSS|0V|AGND|DGND|PGND|VSSA|VSSD|MASSE)/i.test(String(s || "").trim());
+  const j = crJetonsNom(s)[0] || "";
+  return j === "0V" || /^(GND|VSS|AGND|DGND|PGND|SGND|CGND|MASSE|EARTH)[A-Z0-9]*$/.test(j);
 }
 
 function crNormSig(s) {
@@ -150,7 +165,11 @@ function crDetecterConflitsCablage(el, pinoutData) {
     if (!pi.hasWire || pi.isAuto || !pi.newPinName) continue;
 
     if (pi.normNet !== pi.normNewPin) {
-      const matchIdx = pinInfos.findIndex((pj, idx) => idx !== i && !handled.has(idx) && pj.normNewPin === pi.normNet);
+      /* La broche d'arrivée doit être LIBRE (ou déjà sur ce même net) : y
+         amener le fil alors qu'elle porte un autre net reliait les deux nets
+         -- un court-circuit posé par l'assistant, action cochée par défaut. */
+      const matchIdx = pinInfos.findIndex((pj, idx) => idx !== i && !handled.has(idx) &&
+        pj.normNewPin === pi.normNet && (!pj.hasWire || pj.normNet === pi.normNet));
       if (matchIdx >= 0) {
         const pj = pinInfos[matchIdx];
         handled.add(i);
@@ -190,9 +209,12 @@ function crRealignerFilsBroches(el, actions) {
     const pB = pins[act.pinB];
     if (!pA || !pB) continue;
 
+    const touche = (w, p) => (w.x1 === p.x && w.y1 === p.y) || (w.x2 === p.x && w.y2 === p.y);
     if (act.type === "swap") {
-      const wiresA = S.wires.filter(w => (w.x1 === pA.x && w.y1 === pA.y) || (w.x2 === pA.x && w.y2 === pA.y));
-      const wiresB = S.wires.filter(w => (w.x1 === pB.x && w.y1 === pB.y) || (w.x2 === pB.x && w.y2 === pB.y));
+      /* Un fil qui relie directement A à B reste tel quel : le traiter dans
+         les deux boucles le faisait revenir sur lui-même (A-A ou B-B). */
+      const wiresA = S.wires.filter(w => touche(w, pA) && !touche(w, pB));
+      const wiresB = S.wires.filter(w => touche(w, pB) && !touche(w, pA));
 
       for (const w of wiresA) {
         if (w.x1 === pA.x && w.y1 === pA.y) { w.x1 = pB.x; w.y1 = pB.y; }
@@ -202,14 +224,16 @@ function crRealignerFilsBroches(el, actions) {
         if (w.x1 === pB.x && w.y1 === pB.y) { w.x1 = pA.x; w.y1 = pA.y; }
         else if (w.x2 === pB.x && w.y2 === pB.y) { w.x2 = pA.x; w.y2 = pA.y; }
       }
-      count++;
+      if (wiresA.length || wiresB.length) count++;
     } else if (act.type === "move") {
-      const wiresA = S.wires.filter(w => (w.x1 === pA.x && w.y1 === pA.y) || (w.x2 === pA.x && w.y2 === pA.y));
+      const wiresA = S.wires.filter(w => touche(w, pA));
       for (const w of wiresA) {
         if (w.x1 === pA.x && w.y1 === pA.y) { w.x1 = pB.x; w.y1 = pB.y; }
         else if (w.x2 === pA.x && w.y2 === pA.y) { w.x2 = pB.x; w.y2 = pB.y; }
       }
-      count++;
+      // un fil qui ne fait que traverser la broche n'a pas d'extrémité à
+      // déplacer : ne pas annoncer une correction qui n'a pas eu lieu
+      if (wiresA.length) count++;
     }
   }
 

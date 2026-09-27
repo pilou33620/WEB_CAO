@@ -366,6 +366,16 @@ function sessDiffuserSchemaModif(detail){
 
 function sessEcouterSchemaModif(fn){
   if(typeof fn !== "function") return false;
+  /* Le même message arrive par DEUX voies -- BroadcastChannel et l'événement
+     « storage » du localStorage (le repli des navigateurs sans canal) --, et
+     l'écouteur relançait tout son travail deux fois. On ne le sert qu'une
+     fois par émission, reconnue à son horodatage. */
+  let dernierT = null;
+  const servir = function(m){
+    if(m.t != null && m.t === dernierT) return;
+    dernierT = m.t;
+    try{ fn(m); }catch(e){ console.warn("Erreur écouteur schéma modif:", e); }
+  };
   const bc = sessSchemaCanal();
   if(bc){
     if(!bc._schemaListeners){
@@ -373,19 +383,17 @@ function sessEcouterSchemaModif(fn){
       bc.onmessage = function(ev){
         const m = ev && ev.data;
         if(!m || m.v !== 1 || m.type !== "schema_modif") return;
-        for(const listener of bc._schemaListeners.slice()){
-          try{ listener(m); }catch(e){ console.warn("Erreur écouteur schéma modif:", e); }
-        }
+        for(const listener of bc._schemaListeners.slice()) listener(m);
       };
     }
-    bc._schemaListeners.push(fn);
+    bc._schemaListeners.push(servir);
   }
   if(typeof window !== "undefined" && typeof window.addEventListener === "function"){
     window.addEventListener("storage", function(ev){
       if(ev.key === "cao.schema.v1.dernier" && ev.newValue){
         try{
           const m = JSON.parse(ev.newValue);
-          if(m && m.v === 1 && m.type === "schema_modif") fn(m);
+          if(m && m.v === 1 && m.type === "schema_modif") servir(m);
         }catch(_){}
       }
     });

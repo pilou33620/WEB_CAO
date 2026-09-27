@@ -217,9 +217,14 @@ function remplirFiltresPrefixes() {
   for (const p of tries) {
     const opt = document.createElement("option");
     opt.value = p;
-    opt.textContent = `${p} (${LIB_STATE.composants.filter(c => (c["Reference designator Prefix"]||"").toUpperCase() === p).length})`;
+    opt.textContent = `${p} (${LIB_STATE.composants.filter(c => (c["Reference designator Prefix"]||"").trim().toUpperCase() === p).length})`;
     sel.appendChild(opt);
   }
+  // Reconstruire la liste ne doit pas faire oublier le filtre en cours : sans
+  // cela, l'affichage revenait à « Tous » alors que la table restait filtrée.
+  const actuel = LIB_STATE.filtres.prefix;
+  if (actuel !== "TOUS" && !tries.includes(actuel)) LIB_STATE.filtres.prefix = "TOUS";
+  sel.value = LIB_STATE.filtres.prefix;
 }
 
 function rafraichirStats() {
@@ -296,11 +301,11 @@ function rafraichirTable() {
 
   // Options pour les sélecteurs
   const pcbOptions = ['<option value="">-- Aucune --</option>']
-    .concat(LIB_STATE.fichiers.pcb.map(f => `<option value="${f}">${f}</option>`)).join("");
+    .concat(LIB_STATE.fichiers.pcb.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`)).join("");
   const schOptions = ['<option value="">-- Aucun --</option>']
-    .concat(LIB_STATE.fichiers.schematique.map(f => `<option value="${f}">${f}</option>`)).join("");
+    .concat(LIB_STATE.fichiers.schematique.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`)).join("");
   const simOptions = ['<option value="">-- Aucun --</option>']
-    .concat(LIB_STATE.fichiers.simulation.map(f => `<option value="${f}">${f}</option>`)).join("");
+    .concat(LIB_STATE.fichiers.simulation.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`)).join("");
 
   let html = "";
   const maxRows = Math.min(250, liste.length);
@@ -311,7 +316,7 @@ function rafraichirTable() {
     const schVal = c[colSch] || "";
     const simVal = c[colSim] || "";
 
-    html += `<tr data-id="${c._id}" class="${isSelected ? 'selected' : ''}">`;
+    html += `<tr data-id="${escapeHtml(c._id)}" class="${isSelected ? 'selected' : ''}">`;
 
     LIB_STATE.colonnesVisibles.forEach(col => {
       const val = c[col] !== undefined ? c[col] : "";
@@ -320,7 +325,7 @@ function rafraichirTable() {
         html += `
           <td>
             <select class="sel-assoc ${pcbVal ? 'has-val' : 'empty'}" data-field="${colPcb}" data-id="${c._id}">
-              ${pcbOptions.replace(`value="${pcbVal}"`, `value="${pcbVal}" selected`)}
+              ${pcbOptions.replace(`value="${escapeHtml(pcbVal)}"`, `value="${escapeHtml(pcbVal)}" selected`)}
             </select>
           </td>
         `;
@@ -328,7 +333,7 @@ function rafraichirTable() {
         html += `
           <td>
             <select class="sel-assoc ${schVal ? 'has-val' : 'empty'}" data-field="${colSch}" data-id="${c._id}">
-              ${schOptions.replace(`value="${schVal}"`, `value="${schVal}" selected`)}
+              ${schOptions.replace(`value="${escapeHtml(schVal)}"`, `value="${escapeHtml(schVal)}" selected`)}
             </select>
           </td>
         `;
@@ -336,7 +341,7 @@ function rafraichirTable() {
         html += `
           <td>
             <select class="sel-assoc ${simVal ? 'has-val' : 'empty'}" data-field="${colSim}" data-id="${c._id}">
-              ${simOptions.replace(`value="${simVal}"`, `value="${simVal}" selected`)}
+              ${simOptions.replace(`value="${escapeHtml(simVal)}"`, `value="${escapeHtml(simVal)}" selected`)}
             </select>
           </td>
         `;
@@ -548,7 +553,7 @@ function rafraichirGaleriePcb() {
   for (const f of slice) {
     const base = f.replace(/\.json$/i, "");
     html += `
-      <div class="lib-card" data-nom="${f}" data-type="pcb" title="Double-cliquez pour éditer l'empreinte">
+      <div class="lib-card" data-nom="${escapeHtml(f)}" data-type="pcb" title="Double-cliquez pour éditer l'empreinte">
         <canvas class="lib-card-canvas" id="cv_pcb_${escapeHtml(base)}"></canvas>
         <div class="lib-card-info">
           <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -617,7 +622,7 @@ function rafraichirGalerieSch() {
   for (const f of slice) {
     const base = f.replace(/\.json$/i, "");
     html += `
-      <div class="lib-card" data-nom="${f}" data-type="schematique" title="Double-cliquez pour éditer le symbole">
+      <div class="lib-card" data-nom="${escapeHtml(f)}" data-type="schematique" title="Double-cliquez pour éditer le symbole">
         <canvas class="lib-card-canvas" id="cv_sch_${escapeHtml(base)}"></canvas>
         <div class="lib-card-info">
           <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -778,7 +783,10 @@ function creerNouveauComposant() {
   LIB_STATE.composants.unshift(newComp);
   LIB_STATE.sale = true;
   fermerModaleNouveauComposant();
-  autoAssocierCatalogue();
+  // Le nouveau composant seulement : l'appel sans argument réassociait tout le
+  // catalogue en silence (et posait ic.json sur chaque ligne sans symbole).
+  autoAssocierCatalogue([newComp]);
+  remplirFiltresPrefixes();
   rafraichirTout();
   selectionnerComposant(newComp._id);
   afficherToast(`Composant ${partName} créé avec succès`, "success");

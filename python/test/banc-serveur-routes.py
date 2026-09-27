@@ -117,6 +117,9 @@ def test_routes():
         # 7. GET /api/datasheet/ouvrir (fichier inexistant -> 404)
         conn.request("GET", "/api/datasheet/ouvrir?fichier=non_existant_test_12345.pdf")
         res = conn.getresponse()
+        res.read()
+        assert res.status == 404, "Attendu 404, reçu %d" % res.status
+        print("[PASS] GET /api/datasheet/ouvrir (fichier inexistant -> 404)")
         # 8. Protection SSRF sur /api/datasheet/telecharger
         web_CAO.PROJETS_OUVERT = True
         for ssrf_url in [
@@ -323,6 +326,91 @@ def test_routes():
         assert _srv.MAX_DC > 0, "la route DC doit avoir un plafond"
         print("[PASS] Plafond de taille sur les routes de calcul (413), DC compris"
               " (%d Mo)" % (_srv.MAX_DC // 1048576))
+
+        # 24. Host IPv6 : « [::1]:port » est accepte, un Host entre crochets
+        # quelconque ne contourne plus le controle (il etait coupe a « [ »).
+        assert web_CAO.hote_sans_port("[::1]:8000") == "::1"
+        assert web_CAO.hote_sans_port("127.0.0.1:8000") == "127.0.0.1"
+        assert web_CAO.hote_sans_port("LocalHost") == "localhost"
+        for hote, attendu in (("[::1]:%d" % port, 200), ("[evil]:80", 403),
+                              ("[", 403)):
+            c6 = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            try:
+                c6.request("GET", "/api/pcb/score-placement", headers={"Host": hote})
+                res = c6.getresponse()
+                res.read()
+                assert res.status == attendu, "Host %s : %d au lieu de %d" % (hote, res.status, attendu)
+            finally:
+                c6.close()
+        print("[PASS] Host IPv6 analyse correctement (plus de contournement par « [ »)")
+
+        # 25. Ecoute reseau : la bibliotheque est en lecture seule, et la cle
+        # IA n'est pas donnee.
+        web_CAO.PROJETS_OUVERT = False
+        try:
+            for methode, route, corps in (
+                    ("POST", "/api/lib/config", {"chemin": "C:/nulle-part"}),
+                    ("POST", "/api/lib/fichier", {"type": "pcb", "nom": "x.json", "data": {}}),
+                    ("POST", "/api/lib/composants", {"colonnes": ["a"], "composants": []}),
+                    ("DELETE", "/api/lib/fichier?type=pcb&nom=0603.json", None)):
+                cl = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                try:
+                    cl.request(methode, route,
+                               body=None if corps is None else json.dumps(corps).encode("utf-8"),
+                               headers={"Content-Type": "application/json"})
+                    res = cl.getresponse()
+                    detail = json.loads(res.read().decode("utf-8")).get("detail", "")
+                    assert res.status == 403, "%s %s : %d au lieu de 403" % (methode, route, res.status)
+                    assert "lecture seule" in detail, detail
+                finally:
+                    cl.close()
+            assert os.path.exists(os.path.join(DOSSIER_ROOT, "LIB", "lib_empreinte_pcb", "0603.json"))
+            conn.request("GET", "/api/lib/fichiers")
+            res = conn.getresponse()
+            res.read()
+            assert res.status == 200, "la lecture de la LIB doit rester ouverte"
+            conn.request("GET", "/api/ia/cle")
+            res = conn.getresponse()
+            data = json.loads(res.read().decode("utf-8"))
+            assert res.status == 200 and data.get("dispo") is False and data.get("cle") == "", data
+        finally:
+            web_CAO.PROJETS_OUVERT = True
+        print("[PASS] Ecoute reseau : LIB en lecture seule (403) et cle IA non partagee")
+
+        # 26. profils/fabricants/ est servi, les profils d'utilisateur non.
+        conn.request("GET", "/profils/fabricants/jlcpcb.json")
+        res = conn.getresponse()
+        corps = res.read()
+        assert res.status == 200 and b"jlcpcb" in corps.lower(), res.status
+        for cache in ("/profils/LISEZ-MOI.md", "/profils/Pilou.json",
+                      "/profils/fabricants/../Pilou.json"):
+            conn.request("GET", cache)
+            res = conn.getresponse()
+            res.read()
+            assert res.status == 404, "%s -> %d" % (cache, res.status)
+        print("[PASS] profils/fabricants/ servi, profils utilisateur masques")
+
+        # 27. Un chemin complet tape hors des racines n'elargit PLUS la liste
+        # des racines : la racine par defaut reste celle ou l'on cree.
+        avant = web_CAO.racines_projets()
+        hors = os.path.join(os.path.dirname(DOSSIER_ROOT), "_hors_racine_test", "carte")
+        assert web_CAO.chemin_projet(hors) == os.path.abspath(hors)
+        assert web_CAO.racines_projets() == avant, web_CAO.racines_projets()
+        assert web_CAO.chemin_projet("carte PIR").startswith(avant[0])
+        try:
+            web_CAO.chemin_projet(os.path.abspath(os.sep))
+            assert False, "la racine d'un disque ne doit pas etre un projet"
+        except web_CAO.ErreurProjet as exc:
+            assert exc.code == 400
+        web_CAO.PROJETS_OUVERT = False
+        try:
+            web_CAO.chemin_projet(hors)
+            assert False, "hors racine en ecoute reseau : doit etre refuse"
+        except web_CAO.ErreurProjet as exc:
+            assert exc.code == 403
+        finally:
+            web_CAO.PROJETS_OUVERT = True
+        print("[PASS] chemin_projet : les racines declarees ne bougent plus")
 
     finally:
         conn.close()

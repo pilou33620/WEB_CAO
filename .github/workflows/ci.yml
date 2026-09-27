@@ -92,6 +92,8 @@ jobs:
           python editeur-pcb/outils/build-monofichier.py
           node --check editeur-pcb/dist/pcb.js
           node editeur-pcb/test/harness.js
+          # hors CI jusqu'ici, il s'etait casse sans que rien ne le signale
+          node editeur-pcb/test/banc-trois-ponts.js
 
       - name: Éditeur schématique — assemblage puis banc d'essai
         run: |

@@ -378,14 +378,19 @@ async function profServeurEcrire(){
   if(!PROF_DATA || !PROF_NOM || !profEnLigne()) return false;
   let corps;
   try{ corps = JSON.stringify(PROF_DATA); }catch(_){ return false; }
+  /* keepalive : l'écriture part même si la page s'en va dans la seconde —
+     c'est exactement le cas du bouton « Éditeur PCB », qui quitte la page
+     aussitôt après avoir replacé un panneau. MAIS le navigateur plafonne un
+     corps keepalive à 64 Ko : au-delà, fetch échoue d'emblée, le serveur était
+     déclaré absent et le fichier cessait d'être mis à jour sans un mot. Un
+     profil plus gros (jusqu'à PROF_MAX) part donc en requête ordinaire. */
+  let octets = corps.length * 3;                  // majorant UTF-8
+  try{ octets = new TextEncoder().encode(corps).length; }catch(_){}
   const j = await profJson("/api/profil?nom=" + encodeURIComponent(PROF_NOM), {
     method:"PUT",
     headers:{"Content-Type":"application/json"},
     body:corps,
-    /* keepalive : l'écriture part même si la page s'en va dans la seconde —
-       c'est exactement le cas du bouton « Éditeur PCB », qui quitte la page
-       aussitôt après avoir replacé un panneau. */
-    keepalive:true
+    keepalive:octets < 60 * 1024
   });
   return !!j;
 }

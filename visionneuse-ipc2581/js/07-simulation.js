@@ -4340,6 +4340,16 @@ function simParseResistance(val){
     return parseFloat(s.replace(",", "."));
   }
 
+  // 1b. Nombre décimal, multiplicateur et unité facultatifs : 4.7k, 2,2M,
+  //     10 kohm, 4.7 Ω, 47R. Testé AVANT les codes 4K7 / 22R ci-dessous : leur
+  //     \b accrochait après la virgule décimale, et « 4.7k » devenait « 7k »
+  //     (7000 Ω), « 2.2M » 2 MΩ, « 10 kohm » 10 Ω.
+  const mDec = s.match(/^(\d+(?:[.,]\d+)?)\s*(k|K|M|MEG|Meg|meg)?\s*(?:ohms?|Ohms?|OHMS?|Ω|R)?$/);
+  if(mDec){
+    const u = (mDec[2] || "").toLowerCase();
+    return parseFloat(mDec[1].replace(",", ".")) * (u === "k" ? 1e3 : (u ? 1e6 : 1));
+  }
+
   // 2. Format R standard : 4R7 -> 4.7, 22R -> 22, 0R5 -> 0.5, 22R0 -> 22.0
   const mCode = s.match(/\b(\d+)[rR](\d*)\b/);
   if(mCode){
@@ -5248,29 +5258,37 @@ const SIM_IPC={
     if(rMatch){
       const raw = rMatch[1].trim();
       const tokens = raw.split(/\s+/);
+      /* La valeur passe par simParseResistance : « 4k7 », « 4.7k », « 1M »,
+         « 22R ». L'ancienne lecture prenait le premier nombre et ne
+         connaissait que « k » : 4k7 donnait 4000 Ω et 1M, 1 Ω. */
       if(tokens.length > 1){
         rComp = tokens[0] || "";
         const valStr = tokens.slice(1).join(" ");
-        const valMatch = valStr.match(/([0-9]+(?:\.[0-9]+)?)/);
-        if(valMatch){
-          let valNum = parseFloat(valMatch[1]);
-          if(/k/i.test(valStr)) valNum *= 1000;
-          rOhms = valNum;
-        }
+        const v = simParseResistance(valStr);
+        if(v != null && v > 0) rOhms = v;
       }else if(tokens.length === 1){
-        const vMatch = tokens[0].match(/([0-9]+(?:\.[0-9]+)?)/);
-        if(/^[A-Za-z]+/.test(tokens[0]) && !/[ΩR]/i.test(tokens[0])){
+        /* Un seul jeton : une valeur commence par un chiffre (22R, 4k7, 33Ω),
+           un repère par une lettre (R5, RS3) -- l'ancien test lisait « R12 »
+           comme 12 Ω. Un repère seul garde la valeur type de 22 Ω. */
+        if(!/^\d/.test(tokens[0])){
           rComp = tokens[0];
           rOhms = 22;
-        }else if(vMatch){
-          rOhms = parseFloat(vMatch[1]);
+        }else{
+          const v = simParseResistance(tokens[0]);
+          if(v != null && v > 0) rOhms = v;
         }
       }
       if(rOhms > 0 && parts.length > 1){
+        /* La capacité EN AVAL de la résistance : celle des nets qui suivent
+           le premier. Elle se lit comme pour le net lui-même (ltNet) -- la
+           fonction appelée jusqu'ici, mdlNetExtraire, n'existait pas, et le
+           retard RC ne voyait que les 2,5 pF de charge forfaitaire. */
         let capAvalPf = 2.5;
         for(let pi = 1; pi < parts.length; pi++){
-          const lt = (typeof mdlNetExtraire === "function") ? mdlNetExtraire(parts[pi]) : {c:0};
-          capAvalPf += (lt.c||0)*1e12;
+          const nomAval = parts[pi].toUpperCase();
+          const iAval = V.parNet.findIndex(n => n && n.nom && n.nom.toUpperCase() === nomAval);
+          const lt = (iAval >= 0 && typeof ltNet === "function") ? ltNet(iAval) : null;
+          capAvalPf += ((lt && lt.c) || 0) * 1e12;
         }
         rcDelayPs = Math.round(0.693 * rOhms * capAvalPf * 10) / 10;
       }

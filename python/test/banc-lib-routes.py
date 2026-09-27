@@ -24,6 +24,10 @@ class TestLibRoutes(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         web_CAO.ROOT = ROOT
+        # Ecoute locale (127.0.0.1) : c'est elle qui ouvre l'ecriture de la
+        # bibliotheque -- en ecoute reseau, les routes d'ecriture repondent 403.
+        cls.ouvert = web_CAO.PROJETS_OUVERT
+        web_CAO.PROJETS_OUVERT = True
         cls.httpd = web_CAO.ThreadedServer(("127.0.0.1", PORT), web_CAO.CustomHandler)
         cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
         cls.thread.start()
@@ -33,6 +37,7 @@ class TestLibRoutes(unittest.TestCase):
     def tearDownClass(cls):
         cls.httpd.shutdown()
         cls.httpd.server_close()
+        web_CAO.PROJETS_OUVERT = cls.ouvert
 
     def test_01_lib_fichiers(self):
         req = urllib.request.Request(f"{BASE_URL}/api/lib/fichiers")
@@ -228,6 +233,7 @@ class TestLibDossierTemporaire(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         web_CAO.ROOT = ROOT
+        cls.ouvert = web_CAO.PROJETS_OUVERT
         cls.httpd = web_CAO.ThreadedServer(("127.0.0.1", cls.PORT), web_CAO.CustomHandler)
         cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
         cls.thread.start()
@@ -237,6 +243,7 @@ class TestLibDossierTemporaire(unittest.TestCase):
     def tearDownClass(cls):
         cls.httpd.shutdown()
         cls.httpd.server_close()
+        web_CAO.PROJETS_OUVERT = cls.ouvert
 
     def setUp(self):
         import shutil
@@ -252,6 +259,7 @@ class TestLibDossierTemporaire(unittest.TestCase):
                                         if os.path.exists(chemin) else None)
         self.etat = (web_CAO.DOSSIER_LIB_ACTIF, web_CAO.DOSSIER_LIB_IMPOSE,
                      web_CAO.PROJETS_OUVERT)
+        web_CAO.PROJETS_OUVERT = True       # ecoute locale : ecriture permise
 
     def tearDown(self):
         import shutil

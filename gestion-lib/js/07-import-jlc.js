@@ -823,13 +823,17 @@ async function validerEtEnregistrerJlc() {
 
     // Mettre à jour la recherche du catalogue sur le nouveau composant
     LIB_STATE.filtres.recherche = partName;
-    const inpSearch = document.getElementById("searchComps");
+    const inpSearch = document.getElementById("searchComp");
     if (inpSearch) inpSearch.value = partName;
 
-    if (typeof rafraichirVueComposants === "function") rafraichirVueComposants();
-    if (typeof mettreAJourStats === "function") mettreAJourStats();
+    // Le nouveau préfixe peut manquer au filtre, et la table doit montrer
+    // la ligne ajoutée : rafraichirTable() recalcule aussi les statistiques.
+    if (typeof remplirFiltresPrefixes === "function") remplirFiltresPrefixes();
+    if (typeof basculerOnglet === "function") basculerOnglet("composants");
+    else if (typeof rafraichirTable === "function") rafraichirTable();
+    if (typeof selectionnerComposant === "function") selectionnerComposant(composantFinal._id);
 
-    afficherToast(`✅ Composant "${partName}" (${composantFinal["vendor reference"] || "JLCPCB"}) importé avec succès (39 colonnes validées)`, true);
+    afficherToast(`✅ Composant "${partName}" (${composantFinal["vendor reference"] || "JLCPCB"}) importé avec succès (39 colonnes validées)`, "success");
 
   } catch (err) {
     alert("Erreur lors de l'enregistrement du composant : " + err.message);

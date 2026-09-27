@@ -697,7 +697,10 @@ function refreshPanels(){
       if (el.datasheet_url && (el.datasheet_url.startsWith("/api/datasheet/ouvrir") || el.datasheet_url.startsWith("http://") || el.datasheet_url.startsWith("https://"))) {
         window.open(el.datasheet_url, "_blank");
       } else if (el.datasheet_local) {
-        const nomP = (typeof projNom === "function" ? projNom() : "") || "";
+        /* le chemin du dossier d'abord : un projet rangé en sous-dossier ou
+           sous une autre racine n'est pas retrouvé par son seul nom */
+        const nomP = (typeof projdChemin === "function" ? projdChemin() : "") ||
+                     (typeof projNom === "function" ? projNom() : "") || "";
         window.open("/api/datasheet/ouvrir?projet=" + encodeURIComponent(nomP) + "&fichier=" + encodeURIComponent(el.datasheet_local), "_blank");
       } else if (el.datasheet_web && (el.datasheet_web.startsWith("http://") || el.datasheet_web.startsWith("https://"))) {
         window.open(el.datasheet_web, "_blank");

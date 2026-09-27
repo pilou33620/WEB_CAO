@@ -644,8 +644,33 @@ def dossier_lib():
     return os.path.join(ROOT, LIB_DIR_NAME)
 
 
-def chemin_lib_fichier(genre, nom_brut):
-    """Valide le genre et le nom de fichier pour eviter toute traversee de dossier."""
+def ecrire_texte_atomique(chemin, texte):
+    """Ecrit `texte` en UTF-8 via un fichier temporaire puis os.replace.
+
+    Meme precaution que pour les profils et les projets : une coupure au
+    mauvais moment laisse l'ancien fichier entier plutot qu'un catalogue
+    tronque. newline="" : l'appelant pose lui-meme ses fins de ligne (csv
+    ecrit deja \\r\\n ; en mode texte Windows elles devenaient \\r\\r\\n).
+    """
+    temp = chemin + ".tmp"
+    try:
+        with open(temp, "w", encoding="utf-8", newline="") as f:
+            f.write(texte)
+        os.replace(temp, chemin)
+    except OSError:
+        try:
+            os.remove(temp)
+        except OSError:
+            pass
+        raise
+
+
+def chemin_lib_fichier(genre, nom_brut, creer=False):
+    """Valide le genre et le nom de fichier pour eviter toute traversee de dossier.
+
+    `creer` fabrique le sous-dossier s'il manque : utile a l'ecriture, pas a
+    la lecture -- un GET n'a pas a creer de dossier.
+    """
     genre_canon = {
         "pcb": "pcb",
         "empreinte": "pcb",
@@ -663,7 +688,8 @@ def chemin_lib_fichier(genre, nom_brut):
     if not nom or nom in ('.', '..'):
         raise ErreurLib(400, "Nom de fichier invalide")
     rep = os.path.join(dossier_lib(), LIB_SOUS_DOSSIERS[genre_canon])
-    os.makedirs(rep, exist_ok=True)
+    if creer:
+        os.makedirs(rep, exist_ok=True)
     return os.path.join(rep, nom)
 
 
@@ -975,9 +1001,16 @@ def chemin_projet(brut, base=None):
         dossier = os.path.abspath(os.path.join(depart, os.path.expanduser(brut)))
     racine = sous_racine(dossier)
     if not racine and PROJETS_OUVERT and os.path.isabs(os.path.expanduser(brut)):
-        parent_dir = os.path.dirname(dossier) or dossier
-        if parent_dir not in RACINES_PROJETS:
-            RACINES_PROJETS.append(parent_dir)
+        # Un chemin complet TAPE hors des racines (« D:\clients\carte PIR ») est
+        # accepte en ecoute locale, pour CET appel seulement : son dossier
+        # parent sert de racine le temps de la verification. On n'ajoute RIEN
+        # a RACINES_PROJETS -- sinon la premiere racine ajoutee remplacait la
+        # racine par defaut (liste vide jusque-la), et chaque chemin tape
+        # elargissait durablement la frontiere (jusqu'a « C:\ »).
+        parent_dir = os.path.dirname(dossier)
+        if not parent_dir or parent_dir == dossier:
+            raise ErreurProjet(400, "Un projet ne peut pas etre la racine d'un"
+                                    " disque : « %s »" % dossier)
         racine = parent_dir
     if not racine:
         raise ErreurProjet(403, "Hors des racines declarees : refuse. Racines :"
@@ -1064,6 +1097,23 @@ class _SecRedirectHandler(urllib.request.HTTPRedirectHandler):
         _valider_url_telechargement(newurl)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
+
+
+def hote_sans_port(entete):
+    """En-tete Host -> nom d'hote seul, en minuscules.
+
+    « [::1]:8000 » -> « ::1 », « 127.0.0.1:8000 » -> « 127.0.0.1 ». Un simple
+    split(":") coupait une adresse IPv6 a son premier deux-points : il restait
+    « [ », vide une fois les crochets otes, et le controle anti-rebinding
+    etait saute pour tout Host commencant par un crochet.
+    """
+    h = str(entete or "").strip()
+    if h.startswith("["):
+        fin = h.find("]")
+        return h[1:fin].lower() if fin > 0 else ""
+    if h.count(":") == 1:
+        h = h.split(":", 1)[0]
+    return h.lower()
 
 
 def get_local_ip():
@@ -1370,8 +1420,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if not super().parse_request():
             return False
         # Protection DNS Rebinding : validation de l'en-tete Host
-        hote_brut = (self.headers.get("Host") or "").split(":")[0].strip("[]")
-        if hote_brut:
+        entete_host = (self.headers.get("Host") or "").strip()
+        hote_brut = hote_sans_port(entete_host)
+        if entete_host:
             hotes_permis = {"localhost", "127.0.0.1", "::1"}
             try:
                 srv_ip = self.server.server_address[0]
@@ -1443,6 +1494,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         # Si l'ecoute n'est pas locale, le dossier des projets n'est pas servi statiquement
         if not PROJETS_OUVERT and parts and parts[0] == PROJETS:
             return True
+        # profils/fabricants/ n'est pas un profil d'utilisateur : ce sont les
+        # regles des fabricants, versionnees, que l'editeur PCB lit en statique
+        # (24-pcb-capabilities.js). Le reste de profils/ reste cache.
+        if base == root and len(parts) >= 3 and \
+                parts[0] == PROFILS and parts[1] == "fabricants":
+            parts = parts[2:]
         return any(part in self.HIDDEN or part.startswith('.') or
                    part.startswith('api_key') or part.endswith('.key') or
                    part.endswith('.py') or part.endswith('.pyc') or
@@ -1909,6 +1966,21 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError):
             raise ErreurLib(400, "Corps JSON illisible")
 
+    def _lib_garde(self):
+        """Ecrire dans la bibliotheque n'existe que sur une ecoute locale.
+
+        Meme regle que les dossiers de projet : lire le catalogue et les
+        empreintes reste ouvert (les editeurs d'un iPad en ont besoin), mais
+        ecrire, effacer ou deplacer la bibliotheque -- /api/lib/config accepte
+        un chemin quelconque du disque -- ne s'offre pas a un reseau sans mot
+        de passe.
+        """
+        if not PROJETS_OUVERT:
+            raise ErreurLib(403, "Bibliotheque en lecture seule : ce serveur"
+                                 " ecoute sur le reseau. Relancez-le avec"
+                                 " --local pour la modifier.")
+        return True
+
     def _lib_api(self, action):
         """Execute action() et traduit les erreurs en JSON {"detail": ...}."""
         try:
@@ -1970,6 +2042,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def _lib_composants_ecrire(self):
         """Ecrit la liste des composants dans LIB/LIB_composants.csv."""
         charge = self._lire_json_lib()
+        self._lib_garde()
         if not isinstance(charge, dict):
             raise ErreurLib(400, "Corps JSON invalide (objet attendu)")
 
@@ -1999,19 +2072,13 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         os.makedirs(dossier, exist_ok=True)
         cible = os.path.join(dossier, "LIB_composants.csv")
         try:
-            # newline="" : csv.writer pose deja \r\n. En mode texte sous
-            # Windows, chaque \n devenait \r\n une seconde fois -- \r\r\n,
-            # une ligne vide sur deux pour Excel et le fichier entier modifie
-            # pour Git a chaque enregistrement.
-            with open(cible, "w", encoding="utf-8", newline="") as f:
-                f.write(texte)
+            ecrire_texte_atomique(cible, texte)
         except OSError as exc:
             raise ErreurLib(500, "Impossible d'ecrire %s : %s" % (cible, exc))
 
         racine_csv = os.path.join(ROOT, "LIB_composants.csv")
         try:
-            with open(racine_csv, "w", encoding="utf-8", newline="") as f:
-                f.write(texte)
+            ecrire_texte_atomique(racine_csv, texte)
         except OSError:
             pass
 
@@ -2058,13 +2125,14 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def _lib_fichier_ecrire(self):
         """Ecrit un fichier individuel d'empreinte ou de modele."""
         charge = self._lire_json_lib()
+        self._lib_garde()
         if not isinstance(charge, dict):
             raise ErreurLib(400, "Corps JSON invalide")
         genre = charge.get("type")
         nom = charge.get("nom")
         if not genre or not nom:
             raise ErreurLib(400, "Champs 'type' et 'nom' requis")
-        chemin = chemin_lib_fichier(genre, nom)
+        chemin = chemin_lib_fichier(genre, nom, creer=True)
 
         if "data" in charge and isinstance(charge["data"], (dict, list)):
             contenu = json.dumps(charge["data"], indent=2, ensure_ascii=False)
@@ -2074,8 +2142,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurLib(400, "Champ 'data' ou 'contenu' requis")
 
         try:
-            with open(chemin, "w", encoding="utf-8") as f:
-                f.write(contenu)
+            ecrire_texte_atomique(chemin, contenu)
         except OSError as exc:
             raise ErreurLib(500, "Erreur d'ecriture : %s" % exc)
 
@@ -2083,7 +2150,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     def _lib_fichier_effacer(self):
         """Supprime un fichier individuel d'empreinte ou de modele."""
-        params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        self._lib_garde()
+        params =urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         genre = (params.get("type") or [""])[0]
         nom = (params.get("nom") or [""])[0]
         if not genre or not nom:
@@ -2110,12 +2178,16 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             "existe": info["existe"],
             "google_drive": info["google_drive"],
             "statistiques": info["statistiques"],
-            "suggestions_cloud": detecter_dossiers_cloud()
+            # les dossiers du poste ne se decrivent pas au reseau, et le choix
+            # d'un autre dossier y est de toute facon refuse (_lib_garde)
+            "suggestions_cloud": detecter_dossiers_cloud() if PROJETS_OUVERT else [],
+            "modifiable": PROJETS_OUVERT
         }
 
     def _lib_config_ecrire(self):
         """POST /api/lib/config : definir le chemin de la LIB."""
         charge = self._lire_json_lib()
+        self._lib_garde()
         if not isinstance(charge, dict):
             raise ErreurLib(400, "Corps JSON invalide (objet attendu)")
         chemin = charge.get("chemin")
@@ -2423,8 +2495,18 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
     # -- cle IA locale ----------------------------------------------------
     def _ia_cle_api(self):
-        """GET /api/ia/cle : renvoie la cle API Google AI Studio si presente localement."""
-        cle = (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
+        """GET /api/ia/cle : renvoie la cle API Google AI Studio si presente localement.
+
+        Sur une ecoute reseau, la cle n'est PAS donnee : n'importe quel appareil
+        du reseau la recevrait. La reponse garde sa forme (dispo=False) et les
+        pages demandent alors la cle a l'utilisateur, comme sans fichier.
+        """
+        if not PROJETS_OUVERT:
+            self._envoyer_json({"dispo": False, "cle": "",
+                                "detail": "Cle non partagee : ce serveur ecoute"
+                                          " sur le reseau (relancez avec --local)."})
+            return
+        cle =(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
         if not cle:
             chemin = os.path.join(ROOT, "api_key_free_ia_studio.txt")
             if os.path.isfile(chemin):
@@ -2538,6 +2620,13 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if not contenu:
             self._envoyer_json({"detail": "Fichier telecharge vide"}, 502)
             return
+        # Une page HTML sans lien PDF exploitable (ou une page d'erreur)
+        # finissait enregistree sous « .pdf », illisible a l'ouverture. Un PDF
+        # commence par « %PDF » ; on tolere quelques octets parasites avant.
+        if b"%PDF" not in contenu[:1024]:
+            self._envoyer_json({"detail": "Le document telecharge n'est pas un PDF"
+                                          " (page web sans lien vers la fiche ?)."}, 422)
+            return
 
         try:
             with open(chemin_cible, "wb") as f:
@@ -2546,8 +2635,20 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self._envoyer_json({"detail": "Ecriture disque impossible : %s" % exc}, 500)
             return
 
-        rel_nom = os.path.basename(dossier_parent) if dossier_parent else ""
-        url_locale = "/api/datasheet/ouvrir?projet=%s&fichier=%s" % (
+        # Le lien doit redesigner CE dossier : le seul nom du dernier dossier
+        # (basename) renvoyait « clients/acme/carte » vers <racine>/carte, et un
+        # projet d'une autre racine vers la premiere -- 404 a l'ouverture.
+        # Relatif a la premiere racine quand il y est (le lien reste valable
+        # sur un autre poste), complet sinon.
+        rel_nom = dossier_parent
+        try:
+            premiere = os.path.realpath(racine_projets())
+            vrai = os.path.realpath(dossier_parent)
+            if vrai.startswith(premiere + os.sep):
+                rel_nom = os.path.relpath(vrai, premiere).replace(os.sep, "/")
+        except (OSError, ValueError):
+            pass
+        url_locale ="/api/datasheet/ouvrir?projet=%s&fichier=%s" % (
             urllib.parse.quote(rel_nom), urllib.parse.quote(nom_base)
         )
         self._envoyer_json({
@@ -3178,10 +3279,21 @@ def verifier_et_appliquer_maj(dossier_racine=None):
 
     if stashed:
         print("  Restauration des modifications locales...")
-        subprocess.run(
+        pop = subprocess.run(
             ["git", "stash", "pop"],
             cwd=racine, capture_output=True, text=True, timeout=10, env=env_git
         )
+        # Un « pop » en conflit laisse les modifications dans la reserve (et
+        # des marqueurs de conflit dans les fichiers) : le taire, c'etait
+        # laisser croire qu'elles etaient perdues.
+        if pop.returncode != 0:
+            err = pop.stderr.strip() or pop.stdout.strip()
+            print("[!] Vos modifications locales n'ont pas pu etre reappliquees"
+                  " automatiquement :")
+            print("    %s" % err)
+            print("    Elles sont conservees dans la reserve Git : voir"
+                  " « git stash list », puis « git stash pop » une fois le"
+                  " conflit resolu.")
 
     if pull.returncode != 0:
         err = pull.stderr.strip() or pull.stdout.strip()

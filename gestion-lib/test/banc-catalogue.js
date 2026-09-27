@@ -89,4 +89,34 @@ assert(chercher("0402").length > 0, "Recherche par boîtier (0402)");
 assert(chercher("murata").length > 0, "Recherche par fabricant (Murata)");
 assert(chercher("zzzz_introuvable").length === 0, "Une recherche sans réponse ne rend rien");
 
+/* Auto-association : l'ordre des tests de boîtier. « TSSOP8 » et « MSOP8 »
+   contiennent « SOP8 » et recevaient l'empreinte SOIC-8. */
+const candidate = vm.runInContext("empreinteCandidate", sandbox);
+const norm = s => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+for (const [boitier, attendu] of [["TSSOP-8", "TSSOP-8.json"], ["MSOP-8", "MSOP-8.json"],
+                                  ["TSSOP-14", "TSSOP-14.json"], ["TSSOP-16", "TSSOP-16.json"],
+                                  ["SOIC-8", "SOIC-8.json"], ["SOP-8", "SOIC-8.json"],
+                                  ["SOT-223", "SOT-223.json"], ["SOT-23-5", "SOT-23-5.json"],
+                                  ["SOT-23", "SOT-23.json"], ["D2PAK", "TO-263.json"],
+                                  ["DPAK", "TO-252.json"], ["0603", "0603.json"]]) {
+  assert(candidate(norm(boitier), "U") === attendu, "Boîtier " + boitier + " -> " + attendu);
+}
+
+/* Créer un composant n'auto-associe que lui : l'appel avec une liste ne doit
+   rien écrire sur les autres lignes du catalogue. */
+etat.fichiers.pcb = ["TSSOP-8.json", "0603.json"];
+etat.fichiers.simulation = ["resistor.sub"];
+const autre = { "Part Name": "AUTRE", "Reference designator Prefix": "U", "Package type": "TSSOP-8" };
+const neuf = { "Part Name": "NEUF", "Reference designator Prefix": "R", "Package type": "0603" };
+etat.composants.push(autre, neuf);
+vm.runInContext("autoAssocierCatalogue", sandbox)([neuf]);
+assert(neuf["Empreinte PCB"] === "0603.json", "Le nouveau composant reçoit son empreinte");
+assert(neuf["Modèle Simulation"] === "resistor.sub", "…et son modèle de simulation existant");
+assert(!autre["Empreinte PCB"] && !autre["Empreinte Schématique"],
+  "Les autres composants du catalogue ne sont pas touchés");
+etat.fichiers.simulation = ["autre.sub"];
+const sansModele = { "Part Name": "C?", "Reference designator Prefix": "C", "Package type": "0603" };
+vm.runInContext("autoAssocierCatalogue", sandbox)([sansModele]);
+assert(!sansModele["Modèle Simulation"], "Pas de modèle de simulation inexistant associé");
+
 console.log("\nRésultat : " + reussis + "/" + total + " tests réussis.");

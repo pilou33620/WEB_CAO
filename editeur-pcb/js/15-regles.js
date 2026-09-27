@@ -1655,7 +1655,11 @@ function reBind(){
     if(typeof pcbAppliquerClassesSuggerees==="function"){
       pcbAppliquerClassesSuggerees();
       reSync();
+      /* toast() n'existe pas dans l'éditeur PCB : sans repli, ce message était
+         le seul de la fenêtre des règles à se perdre (les autres retombent
+         sur hint()). */
       if(typeof toast==="function")toast("Classes synchronisées depuis le schéma");
+      else if(typeof hint==="function")hint("Classes synchronisées depuis le schéma");
     }
   });
   clk("clsNew",()=>{

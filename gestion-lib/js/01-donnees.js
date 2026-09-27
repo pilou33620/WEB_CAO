@@ -433,16 +433,52 @@ function modifierComposant(id, champ, valeur) {
   return false;
 }
 
-// Auto-association automatique basée sur préfixe et boîtier
-function autoAssocierCatalogue() {
+/* Boîtier normalisé (lettres et chiffres seuls) -> empreinte candidate.
+   L'ORDRE COMPTE : on teste du plus spécifique au plus général, parce que les
+   tests sont des « contient ». « TSSOP8 » et « MSOP8 » contiennent « SOP8 » :
+   testés après SOIC/SOP, ils recevaient l'empreinte SOIC-8 (pas 1,27 mm au
+   lieu de 0,65). Même piège pour SOT-223 / SOT-23 et SOT-23-5/6 / SOT-23. */
+const AUTO_PCB_BOITIERS = [
+  [["0603"], "0603.json"], [["0805"], "0805.json"], [["0402"], "0402.json"],
+  [["0201"], "0201.json"], [["1206"], "1206.json"], [["1210"], "1210.json"],
+  [["1812"], "1812.json"], [["2512"], "2512.json"],
+  [["SOD123"], "SOD-123.json"], [["SOD323"], "SOD-323.json"], [["SOD523"], "SOD-523.json"],
+  [["SOT236"], "SOT-23-6.json"], [["SOT235"], "SOT-23-5.json"],
+  [["SOT223"], "SOT-223.json"], [["SOT89"], "SOT-89.json"], [["SOT23"], "SOT-23.json"],
+  [["TO252", "DPAK"], "TO-252.json"], [["TO263", "D2PAK"], "TO-263.json"],
+  [["TO92"], "TO-92.json"], [["TO220"], "TO-220.json"], [["TO247"], "TO-247.json"],
+  [["TSSOP8"], "TSSOP-8.json"], [["TSSOP14"], "TSSOP-14.json"], [["TSSOP16"], "TSSOP-16.json"],
+  [["MSOP8"], "MSOP-8.json"],
+  [["SOIC8", "SO8", "SOP8"], "SOIC-8.json"], [["SOIC14", "SOP14"], "SOIC-14.json"],
+  [["SOIC16", "SOP16"], "SOIC-16.json"],
+  [["DIP8"], "DIP-8.json"], [["DIP14"], "DIP-14.json"], [["DIP16"], "DIP-16.json"],
+  [["DIP28"], "DIP-28.json"],
+  [["QFN24"], "QFN-24.json"], [["QFN16"], "QFN-16.json"], [["QFN32"], "QFN-32.json"],
+  [["QFN48"], "QFN-48.json"], [["LQFP48"], "LQFP-48.json"],
+  [["SMA"], "SMA.json"], [["SMB"], "SMB.json"], [["SMC"], "SMC.json"]
+];
+
+function empreinteCandidate(pkg, pref) {
+  for (const [motifs, fichier] of AUTO_PCB_BOITIERS) {
+    if (motifs.some(m => pkg.includes(m))) return fichier;
+  }
+  if (!pkg && (pref === "R" || pref === "C")) return "0603.json";
+  return "";
+}
+
+// Auto-association automatique basée sur préfixe et boîtier. Sans argument,
+// tout le catalogue ; avec une liste, ces composants-là seulement (un
+// composant qu'on vient de créer ne doit pas réécrire les autres).
+function autoAssocierCatalogue(liste) {
   const colPcb = "Empreinte PCB";
   const colSch = LIB_STATE.colonnes.includes("Empreinte Schématique") ? "Empreinte Schématique" : "Empreinte Schematique";
   const colSim = LIB_STATE.colonnes.includes("Modèle Simulation") ? "Modèle Simulation" : "Modele Simulation";
 
   let modifs = 0;
   const pcbFiles = LIB_STATE.fichiers.pcb;
+  const simFiles = LIB_STATE.fichiers.simulation || [];
 
-  for (const c of LIB_STATE.composants) {
+  for (const c of (Array.isArray(liste) ? liste : LIB_STATE.composants)) {
     const pkg = (c["Package type"] || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const pref = (c["Reference designator Prefix"] || "").toUpperCase().trim();
     const desc = (c["Description"] || "").toUpperCase();
@@ -485,48 +521,7 @@ function autoAssocierCatalogue() {
 
     // 2. PCB
     if (!c[colPcb]) {
-      let pcbCandidate = "";
-      if (pkg.includes("0603")) pcbCandidate = "0603.json";
-      else if (pkg.includes("0805")) pcbCandidate = "0805.json";
-      else if (pkg.includes("0402")) pcbCandidate = "0402.json";
-      else if (pkg.includes("0201")) pcbCandidate = "0201.json";
-      else if (pkg.includes("1206")) pcbCandidate = "1206.json";
-      else if (pkg.includes("1210")) pcbCandidate = "1210.json";
-      else if (pkg.includes("1812")) pcbCandidate = "1812.json";
-      else if (pkg.includes("2512")) pcbCandidate = "2512.json";
-      else if (pkg.includes("SOD123")) pcbCandidate = "SOD-123.json";
-      else if (pkg.includes("SOD323")) pcbCandidate = "SOD-323.json";
-      else if (pkg.includes("SOD523")) pcbCandidate = "SOD-523.json";
-      else if (pkg.includes("SOT236")) pcbCandidate = "SOT-23-6.json";
-      else if (pkg.includes("SOT235")) pcbCandidate = "SOT-23-5.json";
-      else if (pkg.includes("SOT23")) pcbCandidate = "SOT-23.json";
-      else if (pkg.includes("SOT89")) pcbCandidate = "SOT-89.json";
-      else if (pkg.includes("SOT223")) pcbCandidate = "SOT-223.json";
-      else if (pkg.includes("TO252") || pkg.includes("DPAK")) pcbCandidate = "TO-252.json";
-      else if (pkg.includes("TO263") || pkg.includes("D2PAK")) pcbCandidate = "TO-263.json";
-      else if (pkg.includes("TO92")) pcbCandidate = "TO-92.json";
-      else if (pkg.includes("TO220")) pcbCandidate = "TO-220.json";
-      else if (pkg.includes("TO247")) pcbCandidate = "TO-247.json";
-      else if (pkg.includes("SOIC8") || pkg.includes("SO8") || pkg.includes("SOP8")) pcbCandidate = "SOIC-8.json";
-      else if (pkg.includes("SOIC14") || pkg.includes("SOP14")) pcbCandidate = "SOIC-14.json";
-      else if (pkg.includes("SOIC16") || pkg.includes("SOP16")) pcbCandidate = "SOIC-16.json";
-      else if (pkg.includes("TSSOP8")) pcbCandidate = "TSSOP-8.json";
-      else if (pkg.includes("TSSOP14")) pcbCandidate = "TSSOP-14.json";
-      else if (pkg.includes("TSSOP16")) pcbCandidate = "TSSOP-16.json";
-      else if (pkg.includes("MSOP8")) pcbCandidate = "MSOP-8.json";
-      else if (pkg.includes("DIP8")) pcbCandidate = "DIP-8.json";
-      else if (pkg.includes("DIP14")) pcbCandidate = "DIP-14.json";
-      else if (pkg.includes("DIP16")) pcbCandidate = "DIP-16.json";
-      else if (pkg.includes("DIP28")) pcbCandidate = "DIP-28.json";
-      else if (pkg.includes("QFN24")) pcbCandidate = "QFN-24.json";
-      else if (pkg.includes("QFN16")) pcbCandidate = "QFN-16.json";
-      else if (pkg.includes("QFN32")) pcbCandidate = "QFN-32.json";
-      else if (pkg.includes("QFN48")) pcbCandidate = "QFN-48.json";
-      else if (pkg.includes("LQFP48")) pcbCandidate = "LQFP-48.json";
-      else if (pkg.includes("SMA")) pcbCandidate = "SMA.json";
-      else if (pkg.includes("SMB")) pcbCandidate = "SMB.json";
-      else if (pkg.includes("SMC")) pcbCandidate = "SMC.json";
-      else if (!pkg && (pref === "R" || pref === "C")) pcbCandidate = "0603.json";
+      const pcbCandidate = empreinteCandidate(pkg, pref);
 
       if (pcbCandidate && pcbFiles.includes(pcbCandidate)) {
         c[colPcb] = pcbCandidate;
@@ -546,6 +541,8 @@ function autoAssocierCatalogue() {
       else if (symBase === "nmos") c[colSim] = "mosfet_n.sub";
       else if (symBase === "pmos") c[colSim] = "mosfet_p.sub";
       else if (symBase === "opamp") c[colSim] = "opamp_ideal.sub";
+      // comme pour le PCB : n'associer qu'un modèle qui existe vraiment
+      if (c[colSim] && simFiles.length && !simFiles.includes(c[colSim])) c[colSim] = "";
       if (c[colSim]) modifs++;
     }
   }

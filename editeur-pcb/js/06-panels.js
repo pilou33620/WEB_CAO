@@ -1277,7 +1277,9 @@ function propsFp(box,fp){
       if(schComp.datasheet_url&&(schComp.datasheet_url.startsWith("/api/datasheet/ouvrir")||schComp.datasheet_url.startsWith("http://")||schComp.datasheet_url.startsWith("https://"))){
         window.open(schComp.datasheet_url,"_blank");
       }else if(schComp.datasheet_local){
-        const nomP=(typeof projNom==="function"?projNom():"")||(typeof pcbProjNom==="function"?pcbProjNom():"")||"";
+        /* le chemin du dossier d'abord : un projet rangé en sous-dossier ou
+           sous une autre racine n'est pas retrouvé par son seul nom */
+        const nomP=(typeof projdChemin==="function"?projdChemin():"")||(typeof projNom==="function"?projNom():"")||(typeof pcbProjNom==="function"?pcbProjNom():"")||"";
         window.open("/api/datasheet/ouvrir?projet="+encodeURIComponent(nomP)+"&fichier="+encodeURIComponent(schComp.datasheet_local),"_blank");
       }else if(schComp.datasheet_web&&(schComp.datasheet_web.startsWith("http://")||schComp.datasheet_web.startsWith("https://"))){
         window.open(schComp.datasheet_web,"_blank");

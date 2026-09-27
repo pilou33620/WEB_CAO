@@ -642,6 +642,7 @@ table.lib-table tr.selected td {
 .toast.success { border-left: 4px solid var(--green); }
 .toast.error { border-left: 4px solid var(--red); }
 .toast.info { border-left: 4px solid var(--blue); }
+.toast.warn { border-left: 4px solid var(--orange); }
 
 @keyframes slideIn {
   from { transform: translateX(100%); opacity: 0; }

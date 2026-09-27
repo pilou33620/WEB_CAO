@@ -214,6 +214,10 @@ document.getElementById("fileIn").onchange=e=>{
    Filet de sécurité : sauvegarde automatique locale + confirmation de sortie
    -------------------------------------------------------------------------- */
 const BAK="schemedit.autosave";
+/* dernière netlist annoncée aux autres onglets : tant que le schéma reste
+   « modifié », autosave() passe toutes les 4 s, et chaque annonce fait
+   recalculer l'ECO complet côté PCB -- on n'annonce que ce qui a changé */
+let AUTOSAVE_NL_DIFFUSEE=null;
 function autosave(){
   if(!S.dirty)return;
   try{
@@ -226,7 +230,12 @@ function autosave(){
       netlist:nl,
       projet:(typeof projNom==="function"?projNom():"")
     }));
-    if(typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:nl});
+    // comparée sans son en-tête : la 2e ligne porte l'heure, toujours neuve
+    const cle=nl?nl.split("\n").slice(2).join("\n"):nl;
+    if(cle!==AUTOSAVE_NL_DIFFUSEE&&typeof sessDiffuserSchemaModif==="function"){
+      sessDiffuserSchemaModif({netlist:nl});
+      AUTOSAVE_NL_DIFFUSEE=cle;
+    }
   }catch(_){/* mode privé, quota plein, contexte restreint : on continue sans */}
 }
 function clearBackup(){try{localStorage.removeItem(BAK);}catch(_){}}

@@ -171,8 +171,8 @@ function pcbInitialiserLibSync() {
       if (typeof pcbChargerCatalogueEmpreintes === "function") {
         pcbChargerCatalogueEmpreintes();
       }
-      if (typeof pcbChargerCsvLib === "function") {
-        pcbChargerCsvLib();
+      if (typeof pcbChargerCsvLib === "function" && detail.genre === "catalogue") {
+        pcbChargerCsvLib(true);
       }
 
       if (!nom) return;
@@ -199,8 +199,11 @@ function pcbInitialiserLibSync() {
   });
 }
 
-async function pcbChargerCsvLib() {
-  if (typeof window !== "undefined" && window.CSV_LIB && window.CSV_LIB.length > 0) return window.CSV_LIB;
+/* `forcer` relit le serveur même si un catalogue est déjà en mémoire : c'est
+   ce que demande une annonce « catalogue modifié » de Gestion LIB. Sans lui,
+   le cache était renvoyé tel quel et le PCB ne voyait jamais la mise à jour. */
+async function pcbChargerCsvLib(forcer) {
+  if (!forcer && typeof window !== "undefined" && window.CSV_LIB && window.CSV_LIB.length > 0) return window.CSV_LIB;
   if (typeof fetch === "function") {
     try {
       const res = await fetch("/api/lib/composants");

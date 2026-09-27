@@ -15,7 +15,8 @@ const PCB_ECO = {
   dernierRapport: null,
   nbDisparites: 0,
   sourceNom: "",
-  horodatage: 0
+  horodatage: 0,
+  netlistRecue: null   // {txt, projet, t} : dernière netlist annoncée par un autre onglet
 };
 
 /* =============================================================================
@@ -48,7 +49,28 @@ function pcbObtenirDonneesSchema(source) {
     sourceNom = "Document schéma";
   }
 
-  // Si aucune source explicite, consulter la session
+  /* Si aucune source explicite : la netlist annoncée par l'éditeur schématique
+     d'un AUTRE onglet (BroadcastChannel) passe en premier. C'est la plus
+     récente : la session de cet onglet date du dernier passage par le schéma,
+     et la sauvegarde automatique est effacée dès que le schéma est enregistré.
+     Le document complet ne l'accompagne que si la sauvegarde automatique porte
+     exactement cette netlist -- un document plus ancien ferait renaître en
+     « ajout » un composant supprimé depuis. */
+  const recue = PCB_ECO.netlistRecue;
+  if (!schDoc && !netlistTxt && recue && recue.txt &&
+      (!recue.projet || typeof projNom !== "function" || !projNom() ||
+       String(recue.projet).toLowerCase() === String(projNom()).toLowerCase())) {
+    netlistTxt = recue.txt;
+    sourceNom = "Schéma ouvert dans un autre onglet";
+    try {
+      const b = JSON.parse(localStorage.getItem("schemedit.autosave") || "null");
+      // comparées sans leur en-tête : la 2e ligne porte l'heure d'écriture
+      const corps = t => String(t || "").split("\n").slice(2).join("\n");
+      if (b && b.doc && corps(b.netlist) === corps(recue.txt)) schDoc = b.doc;
+    } catch (_) {}
+  }
+
+  // Sinon, consulter la session
   if (!schDoc && !netlistTxt) {
     if (typeof sessLire === "function") {
       try {
@@ -612,7 +634,7 @@ function pcbOuvrirFenetreEco(source) {
         '<h3 style="color:#22c55e; display:flex; align-items:center; gap:8px;">' +
           '✅ Schéma ↔ PCB 100% Synchronisés</h3>' +
         '<p style="color:var(--txt); font-size:12.5px; margin:10px 0 6px;">' +
-          'Source : <b>' + (typeof esc === "function" ? esc(rapport.schSource) : rapport.schSource) + '</b></p>' +
+          'Source : <b>' + esc(rapport.schSource) + '</b></p>' +
         '<p style="color:var(--txt-dim); font-size:12px; line-height:1.45; margin-bottom:18px;">' +
           'Aucune disparité de boîtier, d\'empreinte, de valeur ou de netlist n\'a été détectée. ' +
           'La carte est parfaitement alignée avec le schéma électrique.</p>' +
@@ -644,17 +666,20 @@ function pcbOuvrirFenetreEco(source) {
     else if (it.type === "VALEUR") { badgeColor = "#a855f7"; badgeText = "✏️ VALEUR"; }
     else if (it.type === "SUPPRESSION") { badgeColor = "#ef4444"; badgeText = "🗑️ ABSENT"; }
 
+    /* Tout ce qui vient du schéma importé (repère, valeur, boîtier, nets)
+       passe par e() : un fichier reçu ne doit pas pouvoir injecter de HTML. */
+    const e = v => esc(v == null ? "" : String(v));
     let detailDesc = "";
     if (it.type === "AJOUT") {
-      detailDesc = `Nouveau composant <b>${it.ref}</b> : valeur <i>${it.value || "—"}</i>, boîtier <b>${it.pkg || "générique"}</b> (${it.pins} broches)`;
+      detailDesc = `Nouveau composant <b>${e(it.ref)}</b> : valeur <i>${e(it.value || "—")}</i>, boîtier <b>${e(it.pkg || "générique")}</b> (${e(it.pins)} broches)`;
     } else if (it.type === "BOITIER") {
-      detailDesc = `Boîtier <b>${it.ref}</b> : <span style="text-decoration:line-through;color:#94a3b8">${it.oldPkg}</span> ➔ <b style="color:#38bdf8">${it.newPkg}</b> (${it.newPins} broches)`;
+      detailDesc = `Boîtier <b>${e(it.ref)}</b> : <span style="text-decoration:line-through;color:#94a3b8">${e(it.oldPkg)}</span> ➔ <b style="color:#38bdf8">${e(it.newPkg)}</b> (${e(it.newPins)} broches)`;
     } else if (it.type === "VALEUR") {
-      detailDesc = `Valeur <b>${it.ref}</b> : <span style="text-decoration:line-through;color:#94a3b8">${it.oldValue || "—"}</span> ➔ <b style="color:#a855f7">${it.newValue}</b>`;
+      detailDesc = `Valeur <b>${e(it.ref)}</b> : <span style="text-decoration:line-through;color:#94a3b8">${e(it.oldValue || "—")}</span> ➔ <b style="color:#a855f7">${e(it.newValue)}</b>`;
     } else if (it.type === "NET") {
-      detailDesc = `Broche <b>${it.ref}.${it.pin}</b> : net <span style="color:#f87171">${it.oldNet || "(non câblé)"}</span> ➔ <b style="color:#4ade80">${it.newNet || "(en l'air)"}</b>`;
+      detailDesc = `Broche <b>${e(it.ref)}.${e(it.pin)}</b> : net <span style="color:#f87171">${e(it.oldNet || "(non câblé)")}</span> ➔ <b style="color:#4ade80">${e(it.newNet || "(en l'air)")}</b>`;
     } else if (it.type === "SUPPRESSION") {
-      detailDesc = `Composant <b>${it.ref}</b> (${it.value || it.pkg}) présent sur le PCB mais retiré du schéma`;
+      detailDesc = `Composant <b>${e(it.ref)}</b> (${e(it.value || it.pkg)}) présent sur le PCB mais retiré du schéma`;
     }
 
     let routingBadge = "";
@@ -681,7 +706,7 @@ function pcbOuvrirFenetreEco(source) {
           '<h3 style="color:#38bdf8; display:flex; align-items:center; gap:8px; margin:0 0 2px;">' +
             '🔄 Mise à jour interactive (ECO) · Schéma ↔ PCB</h3>' +
           '<div style="font-size:11.5px; color:var(--txt-dim);">' +
-            'Source : <b>' + (typeof esc === "function" ? esc(rapport.schSource) : rapport.schSource) + '</b> ' +
+            'Source : <b>' + esc(rapport.schSource) + '</b> ' +
             '· <span id="ecoCountSelection">' + rapport.items.filter(x => x.active).length + '</span> / ' + rapport.total + ' action(s) sélectionnée(s)' +
           '</div>' +
         '</div>' +
@@ -928,6 +953,14 @@ function pcbInitialiserEcoSync() {
   // Câblage du canal BroadcastChannel
   if (typeof sessEcouterSchemaModif === "function") {
     sessEcouterSchemaModif(function(detail) {
+      /* Le message PORTE la netlist à jour : la relire ici au lieu de la
+         jeter. Avant, l'écouteur relisait l'état local de cet onglet -- la
+         session ou une sauvegarde souvent périmée -- et le badge ne suivait
+         pas le schéma ouvert à côté. */
+      if (detail && typeof detail.netlist === "string" && detail.netlist) {
+        PCB_ECO.netlistRecue = {txt: detail.netlist, projet: detail.projet || "",
+                                t: detail.t || Date.now()};
+      }
       if (typeof pcbVerifierEtNotifierEco === "function") {
         pcbVerifierEtNotifierEco(false);
       }

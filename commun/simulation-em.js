@@ -13025,6 +13025,12 @@ function simBusRendreNetsBar(){
               rValNum = valNum;
             }
           }
+        }else if(!/^\d/.test(parts[0])){
+          /* Un jeton seul qui commence par une lettre est un REPÈRE (R5,
+             RS3) : le parseur le lisait comme une valeur préfixée « R »
+             (R5 -> 0,5 Ω). La valeur type reste 22 Ω. */
+          rComp = parts[0];
+          rValNum = 22;
         }else{
           let parsed = null;
           if(typeof simParseResistance === "function"){
@@ -13036,12 +13042,7 @@ function simBusRendreNetsBar(){
             rValNum = parsed;
           }else{
             const vMatch = parts[0].match(/([0-9]+(?:\.[0-9]+)?)/);
-            if(/^[A-Za-z]+/.test(parts[0]) && !/[ΩR]/i.test(parts[0])){
-              rComp = parts[0];
-              rValNum = 22;
-            }else if(vMatch){
-              rValNum = parseFloat(vMatch[1]);
-            }
+            if(vMatch) rValNum = parseFloat(vMatch[1]);
           }
         }
       }
