@@ -677,6 +677,17 @@ function runDrc(){
             "° du plus proche"});
     }
 
+  /* ---------- angles aigus ----------
+     Deux segments du même net qui se rejoignent à moins de 80° : le V refermé
+     qu'un glissement mal tenu laisse derrière lui. Le fond du V retient le
+     bain de gravure (*acid trap*) et le cuivre y est en double. L'éditeur ne
+     les produit plus en déplaçant ; ceux d'une carte importée ou d'un geste
+     forcé ne se voient que d'ici. */
+  for(const a of acutePairs(S.tracks).values())
+    out.push({info:true,x:a.x,y:a.y,l:a.l,
+      msg:"Angle aigu de "+fmt(a.deg,0)+"° sur "+(a.net||"?")+
+          " : le fond du V piège le bain de gravure, reprenez le coude"});
+
   for(const z of S.zones){
     const b=polyBBox(z.pts);
     if(!z.net)out.push({x:(b.x1+b.x2)/2,y:(b.y1+b.y2)/2,l:z.l,

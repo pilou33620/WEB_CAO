@@ -1467,6 +1467,7 @@ function followGrow(F,c,P0){
   if(F.skip)F.skip.add(t);
   if(drag&&drag.clear){drag.clear.list.push(t);drag.clear.skip.add(t);}
   if(drag&&drag.cross)drag.cross.list.push(t);
+  if(drag&&drag.acute)drag.acute.list.push(t);
   return t;
 }
 /* Posé à chaque mouvement, après les articulations. `alt` : les voisins
@@ -1649,8 +1650,9 @@ function beginMove(){
   drag.drw=selDrawingsPcb().map(d=>({d,x1:d.x1,y1:d.y1,x2:d.x2,y2:d.y2}));
   drag.holes=selHolesPcb().map(h=>({h,x:h.x,y:h.y}));
   // un boîtier emmène ses pastilles, une zone son contour : c'est un autre
-  // problème que l'isolation d'une piste, on laisse alors le geste libre — et
-  // le retour en arrière ne saurait de toute façon pas replacer le boîtier
+  // problème que l'isolation d'une piste, on laisse alors le geste libre. Seul
+  // l'angle aigu reste surveillé : la piste qui suit en règle « libre » s'étire
+  // d'un trait, et passé le coude précédent elle repartirait en V.
   if(S.sel.fps.size||S.sel.zones.size||S.sel.cuts.size||(S.sel.holes&&S.sel.holes.size)){drag.clear=null;drag.cross=null;}
 }
 /* État de départ de l'anti-collision : ce que le geste emmène, et ce qui était
@@ -1661,6 +1663,95 @@ function armClear(tracks,vias,fps){
               was:moveClearBad(tracks,null,skip),
               wasV:moveViaBad(vias,null,skip),warned:false};
   drag.cross={list:tracks,was:crossPairs(tracks),warned:false};
+  drag.acute={list:tracks,was:acutePairs(tracks),warned:false};
+}
+/* Les articulations libres où deux segments du même net forment un angle
+   aigu : le V refermé qu'un glissement laisse quand une portion ne trouve plus
+   d'appui tenable et que son coude repart en arrière. Le repli complet (même
+   direction) n'en est pas un : c'est un crochet, que `pruneHooks` défait au
+   dépôt — mais le segment fusionné repart alors de l'autre bout, et c'est
+   l'angle qu'il y fera qu'on juge.
+   Rend, par paire de segments, le point et l'angle — le DRC les affiche.
+   Le seuil laisse passer l'équerre un peu de biais qu'un bout tiré au centre
+   d'une pastille hors grille dessine le temps du geste, avant que le
+   relâchement ne la redresse. */
+// ponytail: seuil fixe à 80°, en faire une règle réglable si un fabricant l'exige plus ouvert
+const ACUTE_MAX=80;
+const ACUTE_COS=Math.cos(ACUTE_MAX*Math.PI/180);
+function acutePairs(list){
+  const idx=new Map(S.tracks.map((t,i)=>[t,i])), set=new Map();
+  // a, b : directions vers l'articulation (x, y), vues de l'autre bout de t et de o
+  const juge=(t,o,x,y,a,b)=>{
+    const la=Math.hypot(a.x,a.y), lb=Math.hypot(b.x,b.y);
+    if(la<1e-6||lb<1e-6)return;                        // segment replié : disparaît au dépôt
+    const cos=(a.x*b.x+a.y*b.y)/(la*lb);
+    if(cos<=ACUTE_COS)return;                          // 80° et plus : rien à dire
+    const i=idx.get(t), j=idx.get(o);
+    set.set(Math.min(i,j)+"|"+Math.max(i,j),
+            {x,y,l:t.l,net:t.net,deg:Math.acos(Math.min(1,cos))*180/Math.PI});
+  };
+  for(const t of list){
+    if(isArc(t))continue;
+    for(const e of [1,2]){
+      const x=e===1?t.x1:t.x2, y=e===1?t.y1:t.y2;
+      const ends=jointAt(x,y,t.l).ends;
+      if(ends.length!==2)continue;
+      const o=ends[0].t===t?ends[1]:ends[0];
+      if(o.t===t||o.t.net!==t.net||isArc(o.t))continue;
+      const a=endDir(t,e), b=endDir(o.t,o.e);
+      if(Math.abs(crossN(a,b))>=1e-6){juge(t,o.t,x,y,a,b);continue;}
+      // crochet : A gardera son autre bout P et rejoindra F, le bout lointain de
+      // B. Le plus court des deux se retourne : l'angle change à ses deux bouts
+      const h=hookAt(t,e);
+      if(!h)continue;
+      const P=endFar(h.A.t,h.A.e), F=endFar(h.B.t,h.B.e);
+      for(const [Q,R,sans] of [[F,P,h.B.t],[P,F,h.A.t]]){
+        const n=jointAt(Q.x,Q.y,t.l).ends.filter(q=>q.t!==sans);
+        if(n.length!==1||n[0].t===h.A.t||n[0].t===h.B.t||n[0].t.net!==t.net||isArc(n[0].t))continue;
+        juge(h.A.t,n[0].t,Q.x,Q.y,{x:Q.x-R.x,y:Q.y-R.y},endDir(n[0].t,n[0].e));
+      }
+    }
+  }
+  return set;
+}
+/* Un angle aigu que le geste vient de créer : on bute, comme pour le papillon.
+   Un angle aigu déjà présent au départ ne bloque rien. */
+function acuteStop(){
+  const c=drag&&drag.acute;
+  if(!c)return false;
+  let neuf=false;
+  for(const k of acutePairs(c.list).keys())if(!c.was.has(k)){neuf=true;break;}
+  if(!neuf)return false;
+  if(!c.warned){
+    c.warned=true;
+    hint("La piste repartirait en arrière en angle aigu : le geste bute. "+
+         "Tirez moins loin, ou reprenez le coude voisin.");
+  }
+  return true;
+}
+/* En 45° ou 90°, un sommet tiré ne pose que des jambes d'aplomb : l'aimant
+   angulaire l'y amène, et là où il n'y a pas de place (embranchement, deux bouts
+   fixes sans intersection), le geste bute. Une arrivée accrochée à une pastille
+   hors grille passe si le relâchement la redressera (`straightenTend`). En
+   angle libre, rien n'est imposé : c'est un choix. */
+function legOk(t){return isArc(t)||angleOk(t.x2-t.x1,t.y2-t.y1);}
+function offAngleStop(g,landed){
+  if(cornerMode()==="free")return false;
+  const tol=S.grid>0?S.grid/2-1e-9:0;
+  for(const o of g.ends){
+    if(legOk(o.t)||(g.off0&&g.off0.has(o.t)))continue;
+    if(landed){
+      const f=endFar(o.t,o.e), dx=Math.abs(f.x-landed.x), dy=Math.abs(f.y-landed.y);
+      if((dx<tol&&dy>=dx)||(dy<tol&&dx>=dy))continue;   // redressé au relâchement
+    }
+    if(!drag.offWarned){
+      drag.offWarned=true;
+      hint("Angle imposé "+cornerMode()+"° : le sommet ne se pose que là où ses segments "+
+           "restent d'aplomb. Ajoutez un coude (touche D), ou passez en angle libre.");
+    }
+    return true;
+  }
+  return false;
 }
 /* Les paires de segments qui se croisent vraiment : bout à bout ne compte pas,
    un embranchement en T non plus — seul un croisement franc, chacun au travers
@@ -1932,9 +2023,10 @@ function pruneDeadTracks(){
    On tirait un coude de quelques dixièmes et les deux jambes partaient de
    biais — 32°, ni droit ni 45° : l'**angle bâtard** que les fabricants
    refusent parfois au contrôle d'entrée.
-   Le geste reste libre — il faut bien pouvoir sortir d'une pastille de
-   travers — mais les positions où les jambes retombent d'aplomb deviennent
-   **magnétiques**, à quelques pixels près, comme les pastilles le sont déjà.
+   En 45° ou 90°, l'appelant donne une portée infinie : le sommet ne se pose
+   que là où ses jambes retombent d'aplomb, et `offAngleStop` fait buter le
+   geste là où il n'y a aucune place. Une arrivée accrochée à une pastille
+   passe devant l'aimant — le relâchement la redresse.
    Deux cas, selon ce que le sommet tiré a en face de lui :
      un seul point d'appui — un bout libre, une extrémité détachée — et le
        curseur se projette sur le rail le plus proche des huit ;
@@ -3730,13 +3822,17 @@ cv.addEventListener("pointermove",e=>{
     if(!drag.moved){
       push();drag.moved=true;
       armClear(drag.tend.ends.map(o=>o.t),drag.tend.vias,[]);
+      // les jambes déjà de biais au départ : une carte en faute reste réparable
+      drag.tend.off0=new Set(drag.tend.ends.filter(o=>!legOk(o.t)).map(o=>o.t));
     }
     const skip=new Set(drag.tend.ends.map(o=>o.t));
     const m=magnet(p.x,p.y,drag.l,skip);
     const an=tendAnchor(drag.tend,p.x,p.y);
     let nx=m?m.x:snapXn(p.x,an.x), ny=m?m.y:snapYn(p.y,an.y);
     if(!m){                                   // l'aimant angulaire, à défaut de cuivre
-      const g8=tendMagnet(drag.tend,p.x,p.y,nx,ny,px(6));
+      // en 45° ou 90°, l'aimant a une portée infinie : le sommet ne se pose
+      // que là où ses jambes retombent d'aplomb
+      const g8=tendMagnet(drag.tend,p.x,p.y,nx,ny,Infinity);
       if(g8){nx=g8.x;ny=g8.y;}
     }
     const put=(x,y)=>{
@@ -3749,7 +3845,7 @@ cv.addEventListener("pointermove",e=>{
     const landed=m?{x:nx,y:ny}:null;     // arrivée accrochée : à redresser au relâchement
     put(nx,ny);
     // le bout bute sur l'obstacle : il reste où il était, l'accroche avec lui
-    if((clearStop()||crossStop())&&drag.at){put(drag.at.x,drag.at.y);}
+    if((clearStop()||crossStop()||acuteStop()||offAngleStop(drag.tend,landed))&&drag.at){put(drag.at.x,drag.at.y);}
     else{drag.at={x:nx,y:ny};drag.landed=landed;S.hover=m?{x:m.x,y:m.y}:null;}
     touch();draw();return;
   }
@@ -3823,8 +3919,12 @@ cv.addEventListener("pointermove",e=>{
       applyFollow(drag.follow,drag.dx,drag.dy,e.altKey);
       /* Le déplacement s'applique en absolu : revenir au décalage précédent
          suffit à replacer tout ce que le geste avait touché, coudes compris. */
-      if(clearStop()||crossStop()){
+      if(clearStop()||crossStop()||acuteStop()){
         drag.dx=kx;drag.dy=ky;drag.x-=dx;drag.y-=dy;
+        // boîtiers, zones et découpes bougent en relatif : on défait ce pas
+        for(const id of S.sel.fps){const f=fpById(id);if(f){f.x=r3(f.x-dx);f.y=r3(f.y-dy);}}
+        for(const z of S.sel.zones)for(const q of z.pts){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
+        for(const ct of S.sel.cuts)for(const q of ct.pts){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
         for(const o of drag.trk){
           o.t.x1=r3(o.x1+drag.dx);o.t.y1=r3(o.y1+drag.dy);
           o.t.x2=r3(o.x2+drag.dx);o.t.y2=r3(o.y2+drag.dy);

@@ -95,7 +95,7 @@ const RE_MATCH={
   short:     /Pastilles superposées/,
   open:      /liaison\(s\) non routée/,
   width:     /sous les .+ de la classe|Piste sans net/,
-  angle:     /hors des huit sens/,
+  angle:     /hors des huit sens|^Angle aigu/,
   sliver:    /écharde/,
   via:       /^Via .+ → /,
   hole:      /Trou à trou|erçages? (qui se recouvrent|au même point)/,
@@ -1033,7 +1033,11 @@ angle(){
     '<div class="restate pad">Un segment qui ne tombe sur aucun des huit sens est '+
     'un <i>off-angle track</i> : le rendu Gerber ne l\'optimise plus, et certains '+
     'fabricants le refusent au contrôle d\'entrée. En angle libre, la règle se '+
-    'tait — c\'est alors un choix.</div>';
+    'tait — c\'est alors un choix.</div>'+
+    '<div class="restate pad">Deux segments du même net qui se rejoignent à moins '+
+    'de 80° forment un <i>angle aigu</i> : le fond du V piège le bain de gravure '+
+    '(<i>acid trap</i>). Le contrôle le signale dans tous les modes, et un '+
+    'déplacement de piste, de coude ou de boîtier bute plutôt que d\'en créer un.</div>';
 },
 obst(){
   return reHead("obst","Ce que le tracé fait du cuivre qui gêne")+

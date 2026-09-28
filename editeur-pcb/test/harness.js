@@ -141,7 +141,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "angleOff","angleOk","angleDeg","ANG_TOL","DIR8","tendMagnet",
   "cornerMode","setCornerMode","CORNER_MODES","MITRE_AUTO",
   /* anti-collision et ménage du dépôt */
-  "moveClearBad","pruneHooks","pruneDeadTracks","hookAt","endFar","endDir",
+  "moveClearBad","acutePairs","pruneHooks","pruneDeadTracks","hookAt","endFar","endDir",
   "diagTracks","mitreAfterDrag","chamferPosed","pruneAfterDrag",
   /* moteur de routage : géométrie (10-pns-geom) et modèle du monde (11-pns-node) */
   "pnsOnEdge","pnsInHull","pnsSegPolyHits","pnsSegs","pnsPts","pnsLen",
@@ -987,10 +987,12 @@ T("édition des extrémités de piste",()=>{
   if(j.ends.length!==2)throw new Error("le coude réunit deux extrémités, "+j.ends.length);
   setMode("select");S.active=0;
   clearSel();S.sel.tracks.add(a);S.sel.tracks.add(b);
+  // entre deux bouts fixes, l'équerre n'a que deux places d'aplomb : (20,10),
+  // d'où elle part, et (10,20), où l'aimant l'amène
   fire("pointerdown",sc(20,10));
-  fire("pointermove",sc(24,14));
-  fire("pointerup",sc(24,14));
-  if(Math.abs(a.x2-24)>0.6||Math.abs(b.x1-24)>0.6)
+  fire("pointermove",sc(11,19));
+  fire("pointerup",sc(11,19));
+  if(Math.abs(a.x2-10)>1e-9||Math.abs(a.y2-20)>1e-9||Math.abs(b.x1-10)>1e-9)
     throw new Error("les deux extrémités devaient suivre : "+a.x2+" / "+b.x1);
   if(Math.abs(a.x1-10)>1e-9)throw new Error("l'autre bout ne devait pas bouger");
 });
@@ -1719,6 +1721,71 @@ T("le crochet se défait au dépôt",()=>{
     throw new Error("le cuivre en double devait partir, pas la liaison : "+x1+" → "+x2);
   undo();
 });
+/* Tirer une horizontale dont l'autre bout est tenu par un via : passé le point
+   où le 45° voisin croise la ligne du via, la portion se renversait et le coude
+   repartait en arrière — le V à 45° qui dépasse la pastille, comme sur la
+   capture eCADSTAR. Le geste bute désormais. */
+T("le glissement ne laisse pas d'angle aigu",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  const reg={grid:S.grid,avoid:S.avoid};
+  S.grid=0.5;S.avoid=false;
+  const V=(x,y)=>({x,y,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"A"});
+  const h2={l:0,net:"A",w:0.3,x1:14,y1:-6,x2:20,y2:-6};
+  S.vias.push(V(0,0),V(20,-6));
+  S.tracks.push({l:0,net:"A",w:0.3,x1:0,y1:0,x2:8,y2:0},
+                {l:0,net:"A",w:0.3,x1:8,y1:0,x2:14,y2:-6},h2);touch();
+  setMode("select");S.active=0;clearSel();S.sel.tracks.add(h2);
+  fire("pointerdown",sc(17,-6));
+  for(let i=1;i<=8;i++)fire("pointermove",sc(17+1.5*i/8,-6-8*i/8));
+  fire("pointerup",sc(18.5,-14));
+  try{
+    const bad=acutePairs(S.tracks);
+    if(bad.size)throw new Error("angle aigu resté : "+JSON.stringify(S.tracks.map(t=>[t.x1,t.y1,t.x2,t.y2])));
+  }finally{undo();S.grid=reg.grid;S.avoid=reg.avoid;}
+});
+/* Tirer un coude par-delà l'un de ses bouts refermait l'équerre en V. */
+T("tirer un coude ne laisse pas d'angle aigu",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  const reg={grid:S.grid,avoid:S.avoid};
+  S.grid=0.5;S.avoid=false;
+  const V=(x,y)=>({x,y,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"A"});
+  const a={l:0,net:"A",w:0.3,x1:0,y1:0,x2:8,y2:0};
+  const b={l:0,net:"A",w:0.3,x1:8,y1:0,x2:8,y2:-8};
+  S.vias.push(V(0,0),V(8,-8));S.tracks.push(a,b);touch();
+  setMode("select");S.active=0;clearSel();S.sel.tracks.add(a);
+  fire("pointerdown",sc(8,0));
+  for(let i=1;i<=12;i++)fire("pointermove",sc(8-12*i/12,-4*i/12));
+  fire("pointerup",sc(-4,-4));
+  try{
+    if(acutePairs(S.tracks).size)
+      throw new Error("angle aigu resté : "+JSON.stringify(S.tracks.map(t=>[t.x1,t.y1,t.x2,t.y2])));
+    if(a.x2===8&&a.y2===0)throw new Error("le coude devait tout de même avancer jusqu'à la butée");
+  }finally{undo();S.grid=reg.grid;S.avoid=reg.avoid;}
+});
+/* En angle libre, la piste d'un boîtier déplacé s'étire d'un trait : passé le
+   coude précédent, elle repartait en V. Le boîtier bute. */
+T("déplacer un boîtier en angle libre ne laisse pas d'angle aigu",()=>{
+  const reg=suiviDecor();
+  S.rule.corner="free";
+  const f=mkFp("C1","100n","0603",2);f.x=20;f.y=20;f.nets={1:"A",2:"B"};S.fps.push(f);touch();
+  const [p]=padsWorld(f);
+  S.vias.push({x:p.x-8,y:p.y-6,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"A"});
+  S.tracks.push({l:0,net:"A",w:0.3,x1:p.x-8,y1:p.y-6,x2:p.x-4,y2:p.y-6},
+                {l:0,net:"A",w:0.3,x1:p.x-4,y1:p.y-6,x2:p.x,y2:p.y-2},
+                {l:0,net:"A",w:0.3,x1:p.x,y1:p.y-2,x2:p.x,y2:p.y});
+  touch();
+  S.sel.fps.add(f.id);
+  fire("pointerdown",sc(f.x,f.y+0.4));
+  for(let i=1;i<=8;i++)fire("pointermove",sc(f.x+6*i/8,f.y+0.4-3*i/8));
+  fire("pointerup",sc(f.x+6,f.y-2.6));
+  try{
+    if(acutePairs(S.tracks).size)
+      throw new Error("angle aigu resté : "+JSON.stringify(S.tracks.map(t=>[t.x1,t.y1,t.x2,t.y2])));
+    if(f.x===20&&f.y===20)throw new Error("le boîtier devait tout de même avancer jusqu'à la butée");
+    const q=padsWorld(f)[0];
+    chemin("A",{x:p.x-8,y:p.y-6},{x:q.x,y:q.y});
+  }finally{undo();suiviFin(reg);}
+});
 /* Le routeur refuse d'avancer sous l'isolation ; le glissement, lui, ne
    regardait rien : on traversait un boîtier entier sans un mot, et seul le DRC,
    après coup, le disait. */
@@ -2028,13 +2095,38 @@ T("l'aimant angulaire redresse le sommet tiré",()=>{
   fire("pointerup",sc(14.2,0.2));
   if(Math.abs(t.y2)>1e-9||Math.abs(t.x2-14.2)>1e-9)
     throw new Error("le bout devait revenir sur l'axe : "+t.x2+","+t.y2);
-  // loin de toute place d'aplomb, le geste reste libre
+  // loin de toute place d'aplomb aussi : en 45°, l'aimant n'a pas de portée
   fire("pointerdown",sc(t.x2,t.y2));
   fire("pointermove",sc(18,5));
   fire("pointerup",sc(18,5));
-  if(Math.abs(t.x2-18)>1e-9||Math.abs(t.y2-5)>1e-9)
-    throw new Error("hors de portée de l'aimant, le point suit la souris : "+
+  if(Math.abs(t.x2-18)>1e-9||Math.abs(t.y2)>1e-9)
+    throw new Error("même loin, le bout devait retomber sur le rail le plus proche : "+
                     t.x2+","+t.y2);
+  // en angle libre, le geste reste libre : c'est un choix
+  setCornerMode("free");
+  fire("pointerdown",sc(t.x2,t.y2));
+  fire("pointermove",sc(22,5));
+  fire("pointerup",sc(22,5));
+  setCornerMode("45");
+  if(Math.abs(t.x2-22)>1e-9||Math.abs(t.y2-5)>1e-9)
+    throw new Error("en angle libre, le point suit la souris : "+t.x2+","+t.y2);
+});
+/* Un embranchement n'a pas de place d'aplomb où que l'on tire : en 45°, le
+   geste bute plutôt que de poser trois jambes de biais. */
+T("en 45°, un sommet sans place d'aplomb bute",()=>{
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];touch();
+  S.avoid=false;setMode("select");S.active=0;S.grid=0.5;setCornerMode("45");
+  const a={l:0,net:"T",w:0.3,x1:0, y1:0, x2:10,y2:0};
+  const b={l:0,net:"T",w:0.3,x1:10,y1:0, x2:20,y2:0};
+  const c={l:0,net:"T",w:0.3,x1:10,y1:0, x2:10,y2:10};
+  S.tracks.push(a,b,c);touch();clearSel();S.sel.tracks.add(a);
+  fire("pointerdown",sc(10,0));
+  fire("pointermove",sc(13,-4));
+  fire("pointerup",sc(13,-4));
+  try{
+    for(const t of S.tracks)
+      if(!angleOk(t.x2-t.x1,t.y2-t.y1))throw new Error("jambe de biais posée : "+JSON.stringify(t));
+  }finally{undo();}
 });
 /* Ce que l'aimant ne peut pas empêcher — deux bouts fixes ne laissent pas
    toujours de place d'aplomb — le contrôle le dit avant l'export. */
@@ -2052,6 +2144,24 @@ T("le DRC signale l'angle bâtard",()=>{
     throw new Error("en angle libre, c'est un choix : le contrôle se tait");
   setCornerMode("45");
   loadDoc(JSON.parse(keep),true);
+});
+/* Le V refermé d'une carte importée — la capture eCADSTAR : la diagonale
+   retombe sur le bout de l'horizontale, à 45°. */
+T("le DRC signale l'angle aigu",()=>{
+  const keep=serialize();
+  S.fps=[];S.vias=[];S.zones=[];
+  S.tracks=[{l:0,net:"A",w:0.3,x1:0, y1:0,x2:10,y2:0},
+            {l:0,net:"A",w:0.3,x1:10,y1:0,x2:4, y2:-6},      // 45° qui repart en arrière
+            {l:0,net:"A",w:0.3,x1:4, y1:-6,x2:4, y2:-10}];   // 45° ouvert : 135°, rien à dire
+  touch();
+  try{
+    const e=runDrc().filter(x=>/^Angle aigu/.test(x.msg));
+    if(e.length!==1)throw new Error("un seul angle aigu attendu : "+e.length);
+    if(!/45°/.test(e[0].msg)||e[0].x!==10||e[0].y!==0)
+      throw new Error("l'angle et le point devaient être dits : "+JSON.stringify(e[0]));
+    if(!reFindings("angle").some(x=>/^Angle aigu/.test(x.msg)))
+      throw new Error("la page « Angle des pistes » devait compter l'angle aigu");
+  }finally{loadDoc(JSON.parse(keep),true);}
 });
 T("découpe d'un segment (Alt+clic)",()=>{
   S.tracks=[{l:0,net:"T",w:0.3,x1:10,y1:10,x2:20,y2:10},

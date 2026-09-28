@@ -850,6 +850,13 @@ ses **articulations** — les points où ce qui bouge touche ce qui reste
   eux-mêmes se croisent, passé le point où leurs lignes se rencontrent. Là,
   aucun arrangement de coudes ne rattrape la figure et le geste **bute**
   (`crossStop`), comme sur un obstacle d'isolation.
+- Quand aucune place ne tient, le coude repartait en arrière et laissait un
+  **angle aigu** — le V à 45° qui dépasse la pastille, avec son cuivre en
+  double. Le geste bute désormais sur tout angle de moins de 80° qu'il créerait
+  (`acutePairs`, `acuteStop`), qu'on tire une portion, un coude, un via ou un
+  boîtier ; un crochet est jugé sur l'angle qu'il fera une fois défait. Un
+  angle aigu déjà présent au départ ne bloque rien, et le DRC signale ceux qui
+  restent (page « Angle des pistes »).
 - Un **embranchement** au bord de la portion est un voisin comme un autre : il
   garde sa direction et se raccourcit ou s'allonge. C'est ce qui permet de
   déplacer une ligne qui porte une dérivation sans rien mettre de travers.
@@ -929,10 +936,14 @@ dixièmes et il en sortait du 32° — l'**angle bâtard** (*off-angle track*), 
 le rendu Gerber n'optimise plus et que certains fabricants refusent au contrôle
 d'entrée.
 
-Le geste **reste libre** — il faut bien pouvoir sortir d'une pastille de
-travers — mais les places où les jambes retombent d'aplomb sont désormais
-**magnétiques**, à quelques pixels près, comme les pastilles le sont déjà
-(`tendMagnet`). Deux cas, selon ce que le sommet a en face de lui :
+En angle imposé (45° ou 90°), le sommet ne se pose **que** là où ses jambes
+retombent d'aplomb : l'aimant (`tendMagnet`) n'a plus de portée limitée, et
+là où il n'y a aucune place (embranchement, deux bouts fixes sans
+intersection), le geste **bute** (`offAngleStop`). Seule exception, l'arrivée
+accrochée au centre d'une pastille hors grille, que le relâchement redresse.
+Une jambe déjà de biais au départ ne bloque rien. En angle libre, le geste
+reste libre : c'est un choix. Deux cas, selon ce que le sommet a en face de
+lui :
 
 - **un seul point d'appui** — un bout libre, une extrémité détachée à l'Alt : le
   curseur se projette sur le plus proche des huit rails partant de ce point ;
