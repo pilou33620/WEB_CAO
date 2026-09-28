@@ -2,6 +2,26 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.18.0
+# Date: 2026-09-28
+# Explication: revue de securite.
+#   - CORS / CSRF : une origine doit etre ce serveur-ci, plus seulement un
+#     reseau prive -- une page d'un autre appareil du LAN lisait la cle IA et
+#     ecrivait sur le disque.
+#   - LIB : ecriture limitee aux extensions de donnees (LIB_EXTENSIONS), pas de
+#     racine de disque comme bibliotheque, nosniff sur toutes les reponses.
+#   - Projets : le nom de document declare dans projet.cao.json doit porter le
+#     suffixe de l'outil (-SCH.json...), sinon n'importe quel .json du disque.
+#   - _hidden refuse « : » (flux NTFS ::$DATA qui contournait la liste).
+#   - Deux calculs lourds a la fois au plus (CALCULS).
+#   - Erreurs internes generiques sur le reseau (_detail_interne).
+#   - Mise a jour automatique en --ff-only.
+# Fonctions ajoutees/modifiees :
+# - LIB_EXTENSIONS, CALCULS (nouveaux), chemin_lib_fichier, definir_dossier_lib
+# - CustomHandler._origine_permise, _detail_interne (nouvelles), _cors,
+#   _valider_csrf, end_headers, _hidden, _projet_doc_chemin, do_POST
+# - verifier_et_appliquer_maj
+#
 # Version: 2.17.0
 # Date: 2026-09-25
 # Explication: quatre defauts de la bibliotheque LIB.
@@ -676,7 +696,8 @@ def chemin_lib_fichier(genre, nom_brut, creer=False):
     """Valide le genre et le nom de fichier pour eviter toute traversee de dossier.
 
     `creer` fabrique le sous-dossier s'il manque : utile a l'ecriture, pas a
-    la lecture -- un GET n'a pas a creer de dossier.
+    la lecture -- un GET n'a pas a creer de dossier. C'est aussi l'ecriture,
+    et elle seule, qui est limitee a LIB_EXTENSIONS.
     """
     genre_canon = {
         "pcb": "pcb",
@@ -692,8 +713,12 @@ def chemin_lib_fichier(genre, nom_brut, creer=False):
     if ".." in parts or s.startswith("/"):
         raise ErreurLib(400, "Nom de fichier invalide")
     nom = os.path.basename(s)
-    if not nom or nom in ('.', '..'):
+    if not nom or nom in ('.', '..') or NOM_INTERDIT.search(nom):
         raise ErreurLib(400, "Nom de fichier invalide")
+    if creer and not LIB_EXTENSIONS.search(nom):
+        raise ErreurLib(400, "Extension refusee : « %s » (bibliotheque = fichiers"
+                             " de donnees : .json, .mod, .sub, .lib, .cir,"
+                             " .sp, .txt...)" % nom)
     rep = os.path.join(dossier_lib(), LIB_SOUS_DOSSIERS[genre_canon])
     if creer:
         os.makedirs(rep, exist_ok=True)
@@ -851,6 +876,11 @@ def definir_dossier_lib(chemin_brut, initialiser=True, persister=True):
                              "« Google Drive pour ordinateur » (ex: G:\\Mon Drive\\...).")
 
     cible = os.path.abspath(os.path.expanduser(chemin))
+    # /LIB/ sert ce dossier en statique : la racine d'un disque, ce serait
+    # servir le disque entier
+    if os.path.dirname(cible) == cible:
+        raise ErreurLib(400, "La bibliotheque ne peut pas etre la racine d'un"
+                             " disque : « %s »" % cible)
     copies = 0
     if not os.path.exists(cible):
         if initialiser:
@@ -1058,6 +1088,17 @@ ORIGINES = re.compile(
     r"|192\.168\.\d{1,3}\.\d{1,3}"
     r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
     r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$")
+
+# Extensions qu'une route LIB accepte d'ecrire : des donnees, jamais une page
+# (.html servie sur l'origine de l'outil = script avec tous ses droits) ni un
+# executable.
+LIB_EXTENSIONS = re.compile(
+    r"\.(json|mod|sub|lib|cir|sp|spi|spice|txt|ibs|s\dp|kicad_mod|kicad_sym)$",
+    re.I)
+
+# Calculs lourds simultanes (corps jusqu'a 192 Mo) : au-dela, on attend son
+# tour plutot que de laisser le reseau remplir la memoire.
+CALCULS = threading.BoundedSemaphore(2)
 
 
 def _valider_url_telechargement(url):
@@ -1532,6 +1573,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
+        # un .txt ou un .json de la LIB ne doit jamais etre interprete en page
+        self.send_header("X-Content-Type-Options", "nosniff")
         super().end_headers()
 
     def _chemin_lib(self, path):
@@ -1590,7 +1633,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if base == root and len(parts) >= 3 and \
                 parts[0] == PROFILS and parts[1] == "fabricants":
             parts = parts[2:]
-        return any(part in self.HIDDEN or part.startswith('.') or
+        # « : » : un flux NTFS (config_lib.json::$DATA) designe le meme
+        # fichier sous un nom qui echappait a toutes les regles ci-dessous
+        return any(part in self.HIDDEN or part.startswith('.') or ':' in part or
                    part.startswith('api_key') or part.endswith('.key') or
                    part.endswith('.py') or part.endswith('.pyc') or
                    part.endswith('.log')
@@ -1642,17 +1687,29 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def _route(self):
         return urllib.parse.urlsplit(self.path).path.rstrip('/') or '/'
 
+    def _origine_permise(self, origine):
+        """Vrai si `origine` est un reseau prive ET ce serveur-ci.
+
+        Etre sur le reseau prive ne suffit plus : une box, une imprimante ou
+        un autre serveur de dev du LAN lisait la cle IA (/api/ia/cle) et
+        ecrivait sur le disque. Toutes les pages sont servies par ce serveur :
+        leur origine est « http://<Host> », rien d'autre n'en a besoin.
+        """
+        hote = (self.headers.get("Host") or "").strip().lower()
+        return bool(origine and hote and ORIGINES.match(origine)
+                    and origine.lower() in ("http://" + hote, "https://" + hote))
+
     def _cors(self):
-        """Autorise la page si elle vient d'une origine du reseau prive."""
+        """Autorise la page si elle vient de ce serveur."""
         origine = self.headers.get("Origin")
-        if origine and ORIGINES.match(origine):
+        if self._origine_permise(origine):
             self.send_header("Access-Control-Allow-Origin", origine)
             self.send_header("Vary", "Origin")
 
     def _valider_csrf(self):
         """Rejette les requetes modificatrices provenant d'une origine non autorisee."""
         origine = self.headers.get("Origin")
-        if origine and not ORIGINES.match(origine):
+        if origine and not self._origine_permise(origine):
             self._envoyer_json({"detail": "Origine inter-site refusee (protection CSRF)"}, 403)
             return False
         return True
@@ -1667,6 +1724,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(corps)
 
+    def _detail_interne(self, exc):
+        """Le texte d'une erreur imprevue : entier en local, generique sur le
+        reseau (il porte des chemins absolus du poste). La trace complete
+        part toujours dans le terminal."""
+        traceback.print_exc()
+        if PROJETS_OUVERT:
+            return "Erreur interne : %s" % exc
+        return "Erreur interne (details dans le terminal du serveur)"
+
     def _api(self, action):
         """Execute action() et traduit les erreurs en JSON {"detail": ...}."""
         if passerelle_mcp is None:
@@ -1678,7 +1744,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except passerelle_mcp.ErreurPasserelle as exc:
             self._envoyer_json({"detail": exc.message}, exc.code)
         except Exception as exc:                       # noqa: BLE001
-            self._envoyer_json({"detail": "Erreur interne : %s" % exc}, 500)
+            self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
 
     def _lire_json(self):
         """Corps de la requete, ou leve ErreurPasserelle."""
@@ -1711,7 +1777,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self._envoyer_json({"detail": exc.message}, exc.code)
         except Exception as exc:                       # noqa: BLE001
             self.close_connection = True
-            self._envoyer_json({"detail": "Erreur interne : %s" % exc}, 500)
+            self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
 
     def _profil_nom(self):
         params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -1819,7 +1885,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self._envoyer_json({"detail": exc.message}, exc.code)
         except Exception as exc:                       # noqa: BLE001
             self.close_connection = True
-            self._envoyer_json({"detail": "Erreur interne : %s" % exc}, 500)
+            self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
 
     def _projet_garde(self):
         """Ces routes n'existent que sur une ecoute locale.
@@ -1921,6 +1987,11 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             fichiers = charge.get("fichiers")
             if isinstance(fichiers, dict):
                 nom = nom_fichier_doc(fichiers.get(outil))
+        # Le nom declare doit porter le suffixe de l'outil : sans cela, un
+        # projet.cao.json pose dans n'importe quel dossier designait n'importe
+        # quel .json (settings.json d'un editeur...) en lecture et en ecriture.
+        if nom and not nom.lower().endswith(PROJET_SUFFIXE[outil].lower()):
+            nom = None
         if not nom:
             base = nom_projet(charge.get("nom")) if isinstance(charge, dict) else None
             base = base or os.path.basename(dossier.rstrip(os.sep + (os.altsep or ""))) 
@@ -2080,7 +2151,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self._envoyer_json({"detail": exc.message}, exc.code)
         except Exception as exc:                       # noqa: BLE001
             self.close_connection = True
-            self._envoyer_json({"detail": "Erreur interne : %s" % exc}, 500)
+            self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
 
     def _lib_composants_lire(self):
         """Lit LIB/LIB_composants.csv et renvoie colonnes + liste de composants en JSON."""
@@ -2581,7 +2652,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self._envoyer_json({"detail": exc.message}, exc.code)
         except Exception as exc:                       # noqa: BLE001
             self.close_connection = True
-            self._envoyer_json({"detail": "Erreur interne : %s" % exc}, 500)
+            self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
 
     # -- cle IA locale ----------------------------------------------------
     def _ia_cle_api(self):
@@ -2619,7 +2690,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self._envoyer_json({"detail": exc.message}, exc.code)
         except Exception as exc:                       # noqa: BLE001
             self.close_connection = True
-            self._envoyer_json({"detail": "Erreur datasheet : %s" % exc}, 500)
+            self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
 
     def _datasheet_telecharger(self):
         self._projet_garde()
@@ -2879,23 +2950,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/lib/config":
             self._lib_api(self._lib_config_ecrire)
             return
-        if route == "/api/ipc2581":
-            self._ipc_api(self._ipc2581_importer)
-            return
-        if route == "/api/simulation":
-            self._ipc_api(self._simulation_lancer)
-            return
-        if route == "/api/simulation-dc":
-            self._ipc_api(self._dc_lancer)
-            return
-        if route == "/api/crosstalk":
-            self._ipc_api(self._crosstalk_lancer)
-            return
-        if route == "/api/pcb/score-placement":
-            self._ipc_api(self._scoring_lancer)
-            return
-        if route == "/api/schema/patterns":
-            self._ipc_api(self._patterns_lancer)
+        calcul = {"/api/ipc2581": self._ipc2581_importer,
+                  "/api/simulation": self._simulation_lancer,
+                  "/api/simulation-dc": self._dc_lancer,
+                  "/api/crosstalk": self._crosstalk_lancer,
+                  "/api/pcb/score-placement": self._scoring_lancer,
+                  "/api/schema/patterns": self._patterns_lancer}.get(route)
+        if calcul:
+            with CALCULS:
+                self._ipc_api(calcul)
             return
         if route == "/api/datasheet/telecharger":
             self._datasheet_api(self._datasheet_telecharger)
@@ -3362,8 +3425,11 @@ def verifier_et_appliquer_maj(dossier_racine=None):
         )
         stashed = (stash_res.returncode == 0)
 
+    # --ff-only : on n'applique que la suite exacte de ce qu'on a. Un historique
+    # distant reecrit (force-push) ou divergent est refuse, jamais fusionne en
+    # silence dans le code qu'on va executer.
     pull = subprocess.run(
-        ["git", "pull"],
+        ["git", "pull", "--ff-only"],
         cwd=racine, capture_output=True, text=True, timeout=30, env=env_git
     )
 

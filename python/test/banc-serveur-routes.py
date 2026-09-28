@@ -476,6 +476,63 @@ def test_routes():
             faux.server_close()
         print("[PASS] Passerelle MCP : refus a l'ouverture de session remonte tel quel")
 
+        # 30. Origine : ce serveur-ci seulement, plus tout le reseau prive.
+        web_CAO.PROJETS_OUVERT = True
+        for origine, attendu in (("http://127.0.0.1:%d" % port, 200),
+                                 ("http://192.168.1.50:8000", 403),
+                                 ("http://127.0.0.1:1", 403),
+                                 ("null", 403)):
+            conn.request("POST", "/api/pcb/score-placement", body=payload_pcb,
+                         headers={"Content-Type": "application/json", "Origin": origine})
+            res = conn.getresponse()
+            res.read()
+            assert res.status == attendu, "Origin %s : %d au lieu de %d" % (origine, res.status, attendu)
+        conn.request("GET", "/api/ia/cle", headers={"Origin": "http://192.168.1.50:8000"})
+        res = conn.getresponse()
+        res.read()
+        assert res.getheader("Access-Control-Allow-Origin") is None, "cle IA lisible par un autre appareil du LAN"
+        assert res.getheader("X-Content-Type-Options") == "nosniff"
+        print("[PASS] CORS/CSRF : seule l'origine du serveur est admise, nosniff pose")
+
+        # 31. LIB : pas de page ni d'executable, pas de racine de disque.
+        for nom in ("x.html", "x.bat", "x.svg", "x.json::$DATA"):
+            conn.request("POST", "/api/lib/fichier",
+                         body=json.dumps({"type": "pcb", "nom": nom, "contenu": "<script>"}).encode("utf-8"),
+                         headers={"Content-Type": "application/json"})
+            res = conn.getresponse()
+            res.read()
+            assert res.status == 400, "%s : %d au lieu de 400" % (nom, res.status)
+        web_CAO.chemin_lib_fichier("simulation", "modele.sub")     # lecture : admis
+        try:
+            web_CAO.definir_dossier_lib(os.path.abspath(os.sep), persister=False)
+            assert False, "racine de disque acceptee comme LIB"
+        except web_CAO.ErreurLib as exc:
+            assert exc.code == 400
+        print("[PASS] LIB : extensions de donnees seulement, racine de disque refusee")
+
+        # 32. Flux NTFS : « ::$DATA » ne contourne plus la liste des caches.
+        for chemin in ("/LIB_composants.csv::$DATA", "/config_lib.json::$DATA"):
+            conn.request("GET", chemin)
+            res = conn.getresponse()
+            res.read()
+            assert res.status == 404, "%s -> %d" % (chemin, res.status)
+        print("[PASS] Flux NTFS ::$DATA masques (404)")
+
+        # 33. Un projet.cao.json ne designe plus n'importe quel .json.
+        import tempfile, urllib.parse as _up
+        dossier = os.path.join(tempfile.mkdtemp(), "carte")
+        os.makedirs(dossier)
+        with open(os.path.join(dossier, "projet.cao.json"), "w", encoding="utf-8") as f:
+            json.dump({"format": "cao-projet-1", "nom": "carte",
+                       "fichiers": {"schema": "settings.json"}}, f)
+        conn.request("PUT", "/api/projet/doc?doc=schema&chemin=" + _up.quote(dossier),
+                     body=b'{"a": 1}', headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        data = json.loads(res.read().decode("utf-8"))
+        assert res.status == 200 and data["fichier"] == "carte-SCH.json", data
+        assert not os.path.exists(os.path.join(dossier, "settings.json"))
+        print("[PASS] Projet : nom de document limite au suffixe de l'outil")
+
     finally:
         conn.close()
         httpd.shutdown()

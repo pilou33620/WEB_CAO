@@ -423,9 +423,14 @@ function formaterMessageIa(texte, msgIdx) {
     return `%%%ACTION_COMP_${msgIdx}_${actIdx}%%%`;
   });
 
-  // Code Markdown standard
+  // Le texte du modele est echappe AVANT toute mise en forme : il peut
+  // porter du HTML (injection de prompt via une datasheet collee). Les
+  // marqueurs %%%ACTION_...%%% n'ont rien a echapper et survivent.
+  formatted = escapeHtml(formatted);
+
+  // Code Markdown standard (deja echappe ci-dessus)
   formatted = formatted.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    return `<pre><code>${escapeHtml(code.trim())}</code></pre>`;
+    return `<pre><code>${code.trim()}</code></pre>`;
   });
 
   // Markdown simple (titres, puces, gras)
@@ -450,14 +455,14 @@ function formaterMessageIa(texte, msgIdx) {
       <div class="ia-action-card">
         <div class="ia-action-head">
           <span>📐 Empreinte PCB générée : ${escapeHtml(nomSugg)}</span>
-          <span style="font-family:var(--mono); font-size:10px; color:var(--txt-dim);">${parsedData ? (parsedData.pins || (parsedData.pads ? parsedData.pads.length : 0)) : 0} pastilles</span>
+          <span style="font-family:var(--mono); font-size:10px; color:var(--txt-dim);">${parsedData ? (Number(parsedData.pins) || (Array.isArray(parsedData.pads) ? parsedData.pads.length : 0)) : 0} pastilles</span>
         </div>
         <div class="ia-mini-canvas-wrap">
           <canvas id="${cardId}"></canvas>
         </div>
         <div class="ia-action-btns">
-          <button class="tb mini" onclick="iaOuvrirDansEditeurPcb('${dataB64}', '${escapeHtml(nomSugg)}')">👁 Ouvrir dans l'éditeur</button>
-          <button class="tb mini success" onclick="iaEnregistrerDirectPcb('${dataB64}', '${escapeHtml(nomSugg)}')">💾 Enregistrer dans la LIB</button>
+          <button class="tb mini" onclick="iaOuvrirDansEditeurPcb('${dataB64}', ${escapeHtml(JSON.stringify(nomSugg))})">👁 Ouvrir dans l'éditeur</button>
+          <button class="tb mini success" onclick="iaEnregistrerDirectPcb('${dataB64}', ${escapeHtml(JSON.stringify(nomSugg))})">💾 Enregistrer dans la LIB</button>
         </div>
       </div>
     `;
@@ -476,14 +481,14 @@ function formaterMessageIa(texte, msgIdx) {
       <div class="ia-action-card">
         <div class="ia-action-head">
           <span>⚡ Symbole Schématique généré : ${escapeHtml(nomSugg)}</span>
-          <span style="font-family:var(--mono); font-size:10px; color:var(--txt-dim);">${parsedData ? (parsedData.pinCount || (parsedData.pins ? parsedData.pins.length : 0)) : 0} broches</span>
+          <span style="font-family:var(--mono); font-size:10px; color:var(--txt-dim);">${parsedData ? (Number(parsedData.pinCount) || (Array.isArray(parsedData.pins) ? parsedData.pins.length : 0)) : 0} broches</span>
         </div>
         <div class="ia-mini-canvas-wrap">
           <canvas id="${cardId}"></canvas>
         </div>
         <div class="ia-action-btns">
-          <button class="tb mini" onclick="iaOuvrirDansEditeurSch('${dataB64}', '${escapeHtml(nomSugg)}')">👁 Ouvrir dans l'éditeur</button>
-          <button class="tb mini success" onclick="iaEnregistrerDirectSch('${dataB64}', '${escapeHtml(nomSugg)}')">💾 Enregistrer dans la LIB</button>
+          <button class="tb mini" onclick="iaOuvrirDansEditeurSch('${dataB64}', ${escapeHtml(JSON.stringify(nomSugg))})">👁 Ouvrir dans l'éditeur</button>
+          <button class="tb mini success" onclick="iaEnregistrerDirectSch('${dataB64}', ${escapeHtml(JSON.stringify(nomSugg))})">💾 Enregistrer dans la LIB</button>
         </div>
       </div>
     `;
