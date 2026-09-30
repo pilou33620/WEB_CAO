@@ -499,11 +499,23 @@ except Exception as _exc:                              # noqa: BLE001
     crosstalk = None
     ERREUR_CROSSTALK = _exc
 
+# Simulation RF (famille RF du panneau) : le S21 d'un reseau pistes +
+# composants entre deux ports d'impedance complexe. Meme motif ; ses pistes
+# passent par simulation_em, ses composants par leurs modeles SPICE ou .sNp.
+try:
+    import rf_reseau
+    ERREUR_RF = rf_reseau.ERREUR_RF
+except Exception as _exc:                              # noqa: BLE001
+    rf_reseau = None
+    ERREUR_RF = _exc
+
 # Un document de simulation ne porte qu'un net et son empilage : il est petit.
 MAX_SIM = getattr(simulation_em, "MAX_CORPS", 4 * 1024 * 1024)
 # Celui du crosstalk porte un parcours et son voisinage : meme ordre de
 # grandeur, et le plafond reste le sien pour pouvoir bouger seul.
 MAX_CROSSTALK = getattr(crosstalk, "MAX_CORPS", 4 * 1024 * 1024)
+# Celui du RF porte le TEXTE des modeles .sNp, qui pesent vite des megaoctets.
+MAX_RF = getattr(rf_reseau, "MAX_CORPS", 8 * 1024 * 1024)
 # ET CELUI DU DC, QUI N'EN AVAIT AUCUN. Les trois autres routes refusaient un
 # corps trop gros ; celle-la lisait ce qui venait, et son document porte les
 # POLYGONES de cuivre d'une ou plusieurs couches entieres -- de loin le plus
@@ -2471,6 +2483,36 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurIPC(413, "Reseau trop lourd pour la memoire"
                                  " disponible")
 
+    def _rf_etat(self):
+        """GET /api/simulation-rf : ce que la simulation RF sait faire."""
+        if rf_reseau is None or ERREUR_RF is not None:
+            return {"dispo": False,
+                    "detail": "Simulation RF indisponible : %s" % ERREUR_RF,
+                    "conseil": "Elle a besoin de numpy :"
+                               " « pip install numpy »."}
+        return rf_reseau.etat()
+
+    def _rf_lancer(self):
+        """POST /api/simulation-rf : S21 entre deux ports.
+
+        LES MODELES ARRIVENT DANS LE DOCUMENT, en texte. Le serveur ne lit
+        aucun chemin fourni par la page : un .sNp importe dans un projet et un
+        .sub de la bibliotheque passent par le meme champ.
+        """
+        if rf_reseau is None or ERREUR_RF is not None:
+            raise ErreurIPC(503, "Simulation RF indisponible : %s" % ERREUR_RF)
+        doc = self._lire_document(MAX_RF)
+        try:
+            return rf_reseau.analyser(doc, journal=sys.stderr.write)
+        except rf_reseau.ErreurRF as exc:
+            detail = exc.message
+            if exc.conseil:
+                detail += "\n" + exc.conseil
+            raise ErreurIPC(422, detail)
+        except MemoryError:
+            raise ErreurIPC(413, "Reseau trop lourd pour la memoire"
+                                 " disponible")
+
     # -- la lecture d'un document, ecrite UNE fois ---------------------------
     # Les quatre routes de calcul lisaient toutes les memes six lignes :
     # Content-Length, le plafond, la lecture, le decodage JSON. Une seule les
@@ -2890,7 +2932,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route not in ("/api/tools", "/api/tool", "/api/ipc2581",
                          "/api/simulation", "/api/simulation-dc",
-                         "/api/crosstalk", "/api/datasheet/telecharger",
+                         "/api/crosstalk", "/api/simulation-rf",
+                         "/api/datasheet/telecharger",
                          "/api/datasheet/ouvrir",
                          "/api/pcb/score-placement", "/api/schema/patterns"):
             self.send_error(405, "Unsupported method (OPTIONS)")
@@ -2954,6 +2997,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                   "/api/simulation": self._simulation_lancer,
                   "/api/simulation-dc": self._dc_lancer,
                   "/api/crosstalk": self._crosstalk_lancer,
+                  "/api/simulation-rf": self._rf_lancer,
                   "/api/pcb/score-placement": self._scoring_lancer,
                   "/api/schema/patterns": self._patterns_lancer}.get(route)
         if calcul:
@@ -3012,6 +3056,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/crosstalk":
             self._ipc_api(self._crosstalk_etat)
+            return
+        if route == "/api/simulation-rf":
+            self._ipc_api(self._rf_etat)
             return
         if route == "/api/pcb/score-placement":
             self._ipc_api(self._scoring_etat)
@@ -3091,6 +3138,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/crosstalk":
             self._ipc_api(self._crosstalk_etat)
+            return
+        if route == "/api/simulation-rf":
+            self._ipc_api(self._rf_etat)
             return
         super().do_HEAD()
 
@@ -3248,6 +3298,12 @@ def start_server(host, port, navigateur=True):
         print("  crosstalk     : /api/crosstalk ->"
               " matrice S synthetisee depuis le design + IFFT"
               " (python/crosstalk.py)")
+    if rf_reseau is None or ERREUR_RF is not None:
+        print("  simulation RF : /api/simulation-rf -> indisponible (%s)"
+              % ERREUR_RF)
+    else:
+        print("  simulation RF : /api/simulation-rf ->"
+              " S21 port a port, pistes + composants (python/rf_reseau.py)")
     if pcb_scoring is None:
         print("  scoring PCB   : /api/pcb/score-placement -> indisponible (%s)"
               % ERREUR_SCORING)

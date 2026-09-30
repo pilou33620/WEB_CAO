@@ -16,9 +16,19 @@ function docObj(){
           fps:S.fps,tracks:S.tracks,vias:S.vias,zones:S.zones,cuts:S.cuts,
           holes:S.holes||[],
           drawings:S.drawings||[],
+          rf:normRf(S.rf),
           active:S.active,nextId:S.nextId};
 }
-function serialize(){return JSON.stringify(docObj());}
+/* L'HISTORIQUE N'EMPORTE PAS LE TEXTE DES MODÈLES RF : un .s2p importé pèse
+   des centaines de kilo-octets, et l'historique garde quatre-vingts
+   instantanés. Chaque texte est rangé une fois dans `RF_TEXTES` et
+   l'instantané n'en garde que la clé — un Ctrl+Z rend donc exactement les
+   modèles de l'instantané, sans les recopier. */
+function serialize(){
+  const d=docObj();
+  for(const m of Object.values(d.rf.modeles)){m.cle=rfTexteId(m.texte);delete m.texte;}
+  return JSON.stringify(d);
+}
 function push(){pushSnap(null);}
 /* Un instantané choisi plutôt que l'instant présent. Le tracé s'en sert : le
    shove écarte du cuivre dès le premier clic, bien avant le dépôt, si bien que
@@ -45,6 +55,40 @@ function pushSnap(snap){
    l'éditeur a lui-même produit, parce que loadDoc() sert aussi à annuler et
    rétablir. Un essai du banc vérifie qu'un aller-retour ne change rien.
    ========================================================================== */
+/* La simulation RF : deux ports, les modèles importés, les exclus. Un modèle
+   porte son texte, ou — dans un instantané d'historique — la clé de ce texte
+   dans `RF_TEXTES` (voir `serialize`). */
+const RF_TEXTES=new Map(), RF_IDS=new Map();
+function rfTexteId(t){
+  let id=RF_IDS.get(t);
+  if(!id){id="t"+(RF_IDS.size+1);RF_IDS.set(t,id);RF_TEXTES.set(id,t);}
+  return id;
+}
+function normRf(src){
+  if(!src||typeof src!=="object")return {ports:[null,null],modeles:{},exclus:[],broches:{}};
+  const port=p=>(p&&typeof p==="object"&&p.ref!=null&&p.pin!=null)
+    ? {ref:dStr(p.ref,64), pin:dStr(p.pin,16),
+       re:dRange(p.re,50,1e-6,1e6), im:dRange(p.im,0,-1e6,1e6)}
+    : null;
+  const ports=Array.isArray(src.ports)?src.ports:[];
+  const modeles={};
+  if(src.modeles&&typeof src.modeles==="object")
+    for(const [ref,m] of Object.entries(src.modeles)){
+      const t=m&&(typeof m.texte==="string"?m.texte:RF_TEXTES.get(m.cle));
+      if(typeof t==="string"&&t.length<=16e6)
+        modeles[dStr(ref,64)]={nom:dStr(m.nom,128), texte:t};
+    }
+  const broches={};
+  if(src.broches&&typeof src.broches==="object")
+    for(const [cle,z] of Object.entries(src.broches))
+      if(z&&typeof z==="object")
+        broches[dStr(cle,80)]={re:dRange(z.re,0,-1e9,1e9),
+                               im:dRange(z.im,0,-1e9,1e9)};
+  return {ports:[port(ports[0]),port(ports[1])], modeles:modeles,
+          exclus:(Array.isArray(src.exclus)?src.exclus:[])
+                   .slice(0,500).map(r=>dStr(r,64)),
+          broches:broches};
+}
 function dNum(v,def){const n=+v;return Number.isFinite(n)?n:def;}
 function dRange(v,def,min,max){return clamp(dNum(v,def),min,max);}
 function dInt(v,def,min,max){return Math.round(dRange(v,def,min,max));}
@@ -536,11 +580,13 @@ function normDoc(d){
                        uniqueIds(out.holes),uniqueIds(out.dpPairs),uniqueIds(out.drawings));
   out.active=dInt(src.active,0,0,cu-1);
   out.nextId=Math.max(dInt(src.nextId,1,1,Number.MAX_SAFE_INTEGER),maxId+1);
+  out.rf=normRf(src.rf);
   return out;
 }
 
 function loadDoc(d,keepView){
   d=normDoc(d);                     // au-delà d'ici, chaque champ est exploitable
+  S.rf=d.rf;
   S.cu=d.cu;
   S.cuL=d.cuL;
   S.stack=d.stack;
@@ -3529,6 +3575,10 @@ cv.addEventListener("pointerdown",e=>{
      charger du tout. */
   if(typeof SIM_DCB!=="undefined"&&SIM_DCB&&SIM_DCB.attente){
     simDCClic(p.x,p.y);draw();return;
+  }
+  /* DÉSIGNER UN PORT RF : même mécanisme, attente armée par le panneau. */
+  if(typeof SIM_RF_ATTENTE!=="undefined"&&SIM_RF_ATTENTE.port!=null){
+    simRfClic(p.x,p.y);draw();return;
   }
   if(S.mode==="hole"){
     const sx=snapX(p.x), sy=snapY(p.y);

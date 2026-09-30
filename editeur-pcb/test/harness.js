@@ -369,7 +369,11 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "SIM_ECART_MAX","SIM_COULOIR","SIM_PLAGE_MIN","SIM_PAS",
   /* Le profil d'impédance le long du parcours, et sa réglette. */
   "SIM_ZP","simZProfil","simZCurseurMarques","simZProfilFiche",
-  "simZPeindreCurseur","simProblemes","simLotMirroir","simSegments"];
+  "simZPeindreCurseur","simProblemes","simLotMirroir","simSegments",
+  /* La simulation RF : le réseau entre deux ports, et sa persistance. */
+  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfEtat","normRf",
+  "simRfZ","simRfExclure","simRfImporter","simRfOublierModele","simRfBroche",
+  "simRfValeurSI","trkAt","simRfMasque"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -472,6 +476,11 @@ function T(name,fn){
   try{fn();console.log("  ok  "+name);ok++;}
   catch(e){console.log("  KO  "+name+" → "+e.message+"\n"+(e.stack||"").split("\n")[1]);ko++;}
 }
+/* LES ESSAIS ASYNCHRONES ATTENDENT LEUR TOUR, à la fin : `T` n'attend pas une
+   promesse, et un essai `async` qui lui est confié passe au vert quoi qu'il
+   arrive. */
+const T_ASYNC=[];
+function TA(name,fn){T_ASYNC.push([name,fn]);}
 console.log("— banc d'essai éditeur PCB —");
 T("import netlist",()=>{
   importNetlist(NET,false);
@@ -20585,8 +20594,249 @@ T("Assistant ΔI : décoché par défaut, le panneau reste simple (ΔI saisi, un
   } finally { Object.assign(SIM_PDN,{assistantActif:memo.a,evenements:memo.e,fiche:memo.f,result:memo.r,deltaIA:memo.d,deltaIManuel:memo.m,condensateurs:memo.c,chargeInfo:memo.ch,vdd:memo.v,ripplePct:memo.o}); }
 });
 
-console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
-process.exit(ko?1:0);
+/* ==========================================================================
+   Simulation RF : le réseau entre deux ports (simRfProblemePcb)
+   Une puce, une self série, une capacité à la masse au bout d'un T, un
+   connecteur : ce que la page envoie au serveur doit suivre le cuivre.
+   ========================================================================== */
+function carteRf(){
+  carteVide();
+  setCuCount(2,true);
+  setLayerRole(1,"gnd","GND");
+  const pose=(ref,val,x,y,nets)=>{
+    const f=mkFp(ref,val,"0603",2);f.x=x;f.y=y;f.nets=nets;S.fps.push(f);return f;};
+  const u1=pose("U1","RADIO",10,20,{1:"GND",2:"RF_OUT"});
+  const l1=pose("L1","3.3nH",20,20,{1:"RF_OUT",2:"RF_MID"});
+  const c1=pose("C1","1.5pF",28,26,{1:"RF_MID",2:"GND"});
+  const j1=pose("J1","UFL",38,20,{1:"RF_MID",2:"GND"});
+  touch();
+  const P=(f,n)=>padsWorld(f).find(q=>String(q.n)===String(n));
+  const piste=(a,b,net)=>S.tracks.push({l:0,net:net,w:0.3,x1:a.x,y1:a.y,x2:b.x,y2:b.y});
+  const t0={x:28,y:20};
+  piste(P(u1,2),P(l1,1),"RF_OUT");
+  piste(P(l1,2),t0,"RF_MID");
+  piste(t0,P(j1,1),"RF_MID");
+  piste(t0,P(c1,1),"RF_MID");
+  const g=P(c1,2);
+  S.vias.push({x:g.x,y:g.y,d:0.6,drill:0.3,a:0,b:1,net:"GND"});
+  S.rf={};
+  touch();
+  SIM_RF_ATTENTE.port=0; simRfClic(P(u1,2).x,P(u1,2).y);
+  SIM_RF_ATTENTE.port=1; simRfClic(P(j1,1).x,P(j1,1).y);
+  simRfZ(0,14,8);
+  return {u1,l1,c1,j1,P};
+}
+const RF_ANALYSE={f_debut:2e9,f_fin:3e9,points:11,f_centre:2.44e9};
+TA("simulation RF : le réseau suit le cuivre, de la puce au connecteur",async ()=>{
+  carteRf();
+  const r=await simRfProbleme({analyse:RF_ANALYSE});
+  if(r.erreur)throw new Error("refus : "+r.erreur);
+  const d=r.doc;
+  if(d.ports[0].noeud!=="P:U1.2"||d.ports[1].noeud!=="P:J1.1")
+    throw new Error("ports : "+JSON.stringify(d.ports));
+  if(d.ports[0].z[0]!==14||d.ports[0].z[1]!==8)throw new Error("Z du port 1 perdue");
+  const refs=d.composants.map(c=>c.ref).sort().join(",");
+  if(refs!=="C1,L1")throw new Error("composants : "+refs+" (les ports n'en sont pas)");
+  const L1=d.composants.find(c=>c.ref==="L1"), C1=d.composants.find(c=>c.ref==="C1");
+  if(L1.modele.genre!=="L"||Math.abs(L1.modele.valeur-3.3e-9)>1e-15)
+    throw new Error("L1 : "+JSON.stringify(L1.modele));
+  if(C1.modele.genre!=="C"||Math.abs(C1.modele.valeur-1.5e-12)>1e-18)
+    throw new Error("C1 : "+JSON.stringify(C1.modele));
+  if(C1.noeuds[0]!=="P:C1.1"||C1.noeuds[1]!=="G:C1.2")
+    throw new Error("C1 doit aller de sa pastille à sa masse : "+C1.noeuds);
+  if(d.masses.length!==1||d.masses[0].vias.length!==1||d.masses[0].vias[0].couche_plan!==2)
+    throw new Error("le via de masse de C1 : "+JSON.stringify(d.masses));
+  /* Un T : quatre branches, dont trois partagent le nœud de dérivation. */
+  if(d.branches.length!==4)throw new Error(d.branches.length+" branches au lieu de 4");
+  const compte={};
+  for(const b of d.branches)for(const n of [b.a,b.b])compte[n]=(compte[n]||0)+1;
+  const t=Object.keys(compte).filter(n=>/^N:RF_MID/.test(n));
+  if(t.length!==1||compte[t[0]]!==3)throw new Error("dérivation : "+JSON.stringify(compte));
+  /* Chaque branche part de son nœud `a` : son premier tronçon commence là. */
+  const {P}={P:(f,n)=>padsWorld(S.fps.find(x=>x.ref===f)).find(q=>String(q.n)===n)};
+  for(const b of d.branches){
+    const m=/^P:(\w+)\.(\w+)$/.exec(b.a);
+    if(!m)continue;
+    const q=P(m[1],m[2]), s0=b.objets[0].start;
+    if(Math.hypot(s0[0]-q.x,s0[1]-q.y)>0.05)
+      throw new Error("la branche "+b.a+" → "+b.b+" ne part pas de "+b.a);
+  }
+});
+TA("simulation RF : exclure, et un composant sans modèle est refusé avec la liste",async ()=>{
+  carteRf();
+  simRfExclure("C1",true);
+  let r=await simRfProbleme({analyse:RF_ANALYSE});
+  if(r.erreur||r.doc.composants.some(c=>c.ref==="C1"))throw new Error("C1 exclu reste");
+  if(!r.composants.some(c=>c.ref==="C1"&&c.exclu))throw new Error("l'exclu doit rester listé");
+  simRfExclure("C1",false);
+  const u2=mkFp("U2","LNA","SOIC-8",8);u2.x=30;u2.y=40;u2.nets={1:"RF_MID"};
+  S.fps.push(u2);
+  const q2=padsWorld(u2).find(q=>String(q.n)==="1");
+  S.tracks.push({l:0,net:"RF_MID",w:0.3,x1:28,y1:20,x2:q2.x,y2:q2.y});touch();
+  r=await simRfProbleme({analyse:RF_ANALYSE});
+  if(!r.erreur||!/U2/.test(r.erreur))throw new Error("U2 sans modèle doit être refusé : "+r.erreur);
+  if(!r.composants.some(c=>c.ref==="U2"&&c.erreur))throw new Error("U2 doit être listé avec son manque");
+  S.fps.pop();S.tracks.pop();touch();
+  r=await simRfProbleme({analyse:RF_ANALYSE,surcharges:{L1:4.7e-9}});
+  const L1=r.doc.composants.find(c=>c.ref==="L1");
+  if(L1.modele.valeur!==4.7e-9)throw new Error("la valeur « et si » n'est pas prise");
+});
+TA("simulation RF : ports et modèles importés suivent le document, pas l'historique",async ()=>{
+  carteRf();
+  const texte="# GHZ S RI R 50\n1 0 0 1 0 1 0 0 0\n9 0 0 1 0 1 0 0 0\n";
+  simRfImporter("C1","c1.s2p",texte);
+  const r=await simRfProbleme({analyse:RF_ANALYSE});
+  const C1=r.doc.composants.find(c=>c.ref==="C1");
+  if(C1.modele.type!=="snp"||C1.modele.texte!==texte)throw new Error("modèle importé non envoyé");
+  const inst=JSON.parse(serialize());
+  if(inst.rf.modeles.C1.texte!==undefined||!inst.rf.modeles.C1.cle)
+    throw new Error("l'instantané d'historique recopie le texte du modèle");
+  const fichier=JSON.parse(JSON.stringify(docObj()));
+  if(fichier.rf.modeles.C1.texte!==texte)throw new Error("le fichier doit porter le texte");
+  simRfOublierModele("C1");
+  loadDoc(inst,true);                          // un Ctrl+Z
+  if(!S.rf.modeles.C1||S.rf.modeles.C1.texte!==texte)
+    throw new Error("l'annulation doit rendre le modèle de l'instantané");
+  if(S.rf.ports[0].re!==14||S.rf.ports[1].ref!=="J1")throw new Error("ports perdus");
+  loadDoc({format:"pcbedit-1",cu:2},true);    // une autre carte
+  if(Object.keys(S.rf.modeles).length||S.rf.ports[0])
+    throw new Error("une autre carte hérite des modèles de la précédente");
+  carteVide();S.rf={};
+});
+
+TA("simulation RF : une dérivation au milieu d'une piste est coupée, pas refusée",async ()=>{
+  const {c1,P}=carteRf();
+  /* La branche vers C1 part maintenant du MILIEU de la piste L1 → J1 : plus
+     de nœud en bout de piste au point de dérivation. */
+  S.tracks=S.tracks.filter(t=>!(t.net==="RF_MID"));
+  const l2=P(S.fps.find(f=>f.ref==="L1"),2), j=P(S.fps.find(f=>f.ref==="J1"),1);
+  S.tracks.push({l:0,net:"RF_MID",w:0.3,x1:l2.x,y1:l2.y,x2:j.x,y2:j.y});
+  S.tracks.push({l:0,net:"RF_MID",w:0.3,x1:28,y1:20,x2:P(c1,1).x,y2:P(c1,1).y});
+  touch();
+  const r=await simRfProbleme({analyse:RF_ANALYSE});
+  if(r.erreur)throw new Error("refus : "+r.erreur);
+  const mid=r.doc.branches.filter(b=>b.net==="RF_MID");
+  if(mid.length!==3)throw new Error(mid.length+" branches RF_MID au lieu de 3");
+  if(S.tracks.length!==3)throw new Error("la carte ne doit pas être touchée");
+});
+TA("simulation RF : pastilles comptées, zone du net en nœud, broche annexe saisie",async ()=>{
+  const {u1,P}=carteRf();
+  let r=await simRfProbleme({analyse:RF_ANALYSE});
+  const pc=r.doc.pastilles.find(p=>p.noeud==="P:L1.1");
+  if(!pc||!(pc.largeur>0)||!pc.recouvrements.length)
+    throw new Error("pastille de L1 : "+JSON.stringify(pc));
+  if(!r.doc.pastilles.some(p=>p.noeud==="P:U1.2"))
+    throw new Error("la pastille du port compte aussi");
+  /* U1.1 passe sur RF_MID par une piste : c'est une broche annexe. */
+  u1.nets[1]="RF_MID";
+  S.tracks.push({l:0,net:"RF_MID",w:0.3,x1:P(u1,1).x,y1:P(u1,1).y,x2:P(u1,1).x,y2:P(u1,1).y+4});
+  touch();
+  r=await simRfProbleme({analyse:RF_ANALYSE});
+  if(r.erreur)throw new Error("refus : "+r.erreur);
+  const an=r.composants.find(c=>c.broche&&c.ref==="U1.1");
+  if(!an||an.z)throw new Error("U1.1 doit être listée, ouverte : "+JSON.stringify(an));
+  if(r.doc.composants.some(c=>c.ref==="U1.1"))throw new Error("ouverte : pas d'élément");
+  simRfBroche("U1.1",{re:50,im:-10});
+  r=await simRfProbleme({analyse:RF_ANALYSE});
+  const el=r.doc.composants.find(c=>c.ref==="U1.1");
+  if(!el||el.modele.type!=="z"||el.modele.im!==-10)throw new Error("Z de U1.1 : "+JSON.stringify(el));
+  /* Une zone de cuivre RF_MID sous le point de dérivation : un nœud. */
+  S.zones.push({id:S.nextId++,l:0,net:"RF_MID",pts:[{x:27,y:19},{x:29,y:19},{x:29,y:21},{x:27,y:21}]});
+  touch();
+  r=await simRfProbleme({analyse:RF_ANALYSE});
+  if(r.erreur)throw new Error("refus avec zone : "+r.erreur);
+  const z=r.doc.zones[0];
+  if(!z||Math.abs(z.aire-4)>1e-9||z.pts.length!==8||
+     !r.doc.branches.some(b=>z.acces.some(a=>a.noeud===b.a||a.noeud===b.b)))
+    throw new Error("zone : "+JSON.stringify(z));
+  if(simRfValeurSI("4k7","R")!==4700||Math.abs(simRfValeurSI("1,5pF","C")-1.5e-12)>1e-24||
+     Math.abs(simRfValeurSI("2n2","L")-2.2e-9)>1e-21||simRfValeurSI("100","C")!==0)
+    throw new Error("lecture des valeurs");
+  carteVide();S.rf={};
+});
+
+TA("simulation RF : un T sur un arc est coupé ; la masse passe par sa piste",async ()=>{
+  const {c1,P}=carteRf();
+  /* RF_MID devient UN arc de L1.2 à J1.1, et la branche de C1 part de son
+     milieu. */
+  S.tracks=S.tracks.filter(t=>t.net!=="RF_MID");
+  const l2=P(S.fps.find(f=>f.ref==="L1"),2), j=P(S.fps.find(f=>f.ref==="J1"),1);
+  const arc={l:0,net:"RF_MID",w:0.3,x1:l2.x,y1:l2.y,x2:j.x,y2:j.y,ca:0.6};
+  S.tracks.push(arc);
+  const m=trkAt(arc,0.5);
+  S.tracks.push({l:0,net:"RF_MID",w:0.3,x1:m.x,y1:m.y,x2:P(c1,1).x,y2:P(c1,1).y});
+  /* Le via de masse de C1 n'est plus sous la pastille : 2 mm de piste. */
+  const g=P(c1,2);
+  S.vias=[{x:g.x+2,y:g.y,d:0.6,drill:0.3,a:0,b:1,net:"GND"}];
+  S.tracks.push({l:0,net:"GND",w:0.4,x1:g.x,y1:g.y,x2:g.x+1,y2:g.y});
+  S.tracks.push({l:0,net:"GND",w:0.4,x1:g.x+1,y1:g.y,x2:g.x+2,y2:g.y});
+  touch();
+  const r=await simRfProbleme({analyse:RF_ANALYSE});
+  if(r.erreur)throw new Error("refus : "+r.erreur);
+  if(r.doc.branches.filter(b=>b.net==="RF_MID").length!==3)
+    throw new Error("l'arc devait être coupé en deux");
+  const v=r.doc.masses[0]&&r.doc.masses[0].vias[0];
+  if(!v||!v.piste||Math.abs(v.piste.longueur-2)>1e-6||v.piste.largeur!==0.4)
+    throw new Error("chemin de masse : "+JSON.stringify(r.doc.masses));
+  carteVide();S.rf={};
+});
+
+TA("simulation RF : masque de remplissage encodé, coulée de masse décrite",async ()=>{
+  /* Le masque : 4 x 2 pixels, plages alternées vide / cuivre. */
+  const m=simRfMasque({x:1,y:2,res:10,W:4,H:2,lab:[1,1,0,0, 0,1,1,0]});
+  if(JSON.stringify(m.plages)!=="[0,2,3,2,1]"||m.pas!==0.1||m.nx!==4||m.ny!==2)
+    throw new Error("masque : "+JSON.stringify(m));
+  /* C1 dans une coulée de masse sur Top, son via à 1,5 mm dans la coulée. */
+  const {c1,P}=carteRf();
+  const g=P(c1,2);
+  S.vias=[{x:g.x+1.5,y:g.y,d:0.6,drill:0.3,a:0,b:1,net:"GND"}];
+  S.zones.push({id:S.nextId++,l:0,net:"GND",pts:[{x:g.x-3,y:g.y-3},
+    {x:g.x+3,y:g.y-3},{x:g.x+3,y:g.y+3},{x:g.x-3,y:g.y+3}]});
+  touch();
+  const r=await simRfProbleme({analyse:RF_ANALYSE});
+  if(r.erreur)throw new Error("refus : "+r.erreur);
+  const ms=r.doc.masses[0];
+  if(!ms||!ms.coulee||ms.coulee.vias.length!==1||!/^C:GND:0:/.test(ms.coulee.id)||
+     ms.coulee.pts.length!==8)
+    throw new Error("coulée : "+JSON.stringify(ms&&Object.assign({},ms.coulee,{masque:"…"})));
+  carteVide();S.rf={};
+});
+
+TA("simulation RF : piste voisine d'un autre net, self géométrique, fente du plan",async ()=>{
+  const {P,l1}=carteRf();
+  /* Un plan GND sur la couche 1, fendu en travers de RF_OUT (x = 15) sur
+     ±3 mm ; une piste DATA le long de RF_OUT, une autre loin. */
+  S.zones.push({id:S.nextId++,l:1,net:"GND",pts:[{x:0,y:0},{x:50,y:0},{x:50,y:50},{x:0,y:50}]});
+  S.cuts.push({l:1,pts:[{x:14.8,y:17},{x:15.2,y:17},{x:15.2,y:23},{x:14.8,y:23}]});
+  S.tracks.push({l:0,net:"DATA",w:0.2,x1:12,y1:20.6,x2:18,y2:20.6});
+  S.tracks.push({l:0,net:"DATA2",w:0.2,x1:12,y1:35,x2:18,y2:35});
+  touch();
+  const r=await simRfProbleme({analyse:RF_ANALYSE});
+  if(r.erreur)throw new Error("refus : "+r.erreur);
+  const d=r.doc;
+  if(d.voisines.length!==1||d.voisines[0].net!=="DATA"||!d.voisines[0].objets.length)
+    throw new Error("voisines : "+JSON.stringify(d.voisines.map(v=>v.net)));
+  const L1=d.composants.find(c=>c.ref==="L1"), q1=P(l1,1);
+  if(L1.genre!=="L"||!L1.geo||Math.abs(L1.geo.x0-q1.x)>1e-9||L1.geo.couche!==0||!(L1.geo.largeur>0))
+    throw new Error("géométrie de L1 : "+JSON.stringify(L1.geo));
+  const out=d.branches.find(b=>b.net==="RF_OUT");
+  const f=out&&out.fentes&&out.fentes[0];
+  if(!f||Math.abs(f.x-15)>0.1||Math.abs(f.d1-3)>0.15||Math.abs(f.d2-3)>0.15||
+     Math.abs(f.g-0.4)>0.11||f.borne||!(f.plan>0))
+    throw new Error("fente : "+JSON.stringify(out&&out.fentes));
+  if(d.branches.some(b=>b.net!=="RF_OUT"&&b.fentes))
+    throw new Error("une seule branche franchit la fente");
+  carteVide();S.rf={};
+});
+
+(async()=>{
+  for(const [name,fn] of T_ASYNC){
+    try{await fn();console.log("  ok  "+name);ok++;}
+    catch(e){console.log("  KO  "+name+" → "+e.message+"\n"+(e.stack||"").split("\n")[1]);ko++;}
+  }
+  console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
+  process.exit(ko?1:0);
+})();
 
 
 

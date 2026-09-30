@@ -10,6 +10,7 @@ Banc d'essai pour tester les routes HTTP de web_CAO.py :
 
 import http.client
 import json
+import math
 import os
 import sys
 import threading
@@ -282,18 +283,57 @@ def test_routes():
         assert "format" in detail.lower(), detail
         print("[PASS] POST /api/crosstalk (document hors format -> 422 motive)")
 
+        # 21b. /api/simulation-rf : l'etat, puis un vrai calcul -- un fil
+        # entre la sortie d'une puce a 14+8j et 50 ohms, dont le S21 est le
+        # gain de desadaptation 4 R1 R2 / |Z1+Z2|^2 --, puis un refus motive.
+        conn.request("GET", "/api/simulation-rf")
+        res = conn.getresponse()
+        assert res.status == 200
+        data = json.loads(res.read().decode("utf-8"))
+        assert data.get("dispo") is True, data
+        doc_rf = {"format": "cao-sim-rf-1",
+                  "stackup": {"layers": [
+                      {"name": "TOP", "type": "copper", "thickness": 0.035,
+                       "role": "signal"},
+                      {"name": "PP", "type": "dielectric", "thickness": 0.2,
+                       "epsilon_r": 4.2, "tan_delta": 0.02},
+                      {"name": "GND", "type": "copper", "thickness": 0.035,
+                       "role": "plane"}]},
+                  "ports": [{"noeud": "a", "z": [14, 8]},
+                            {"noeud": "b", "z": [50, 0]}],
+                  "composants": [{"ref": "R0", "noeuds": ["a", "b"],
+                                  "modele": {"type": "ideal", "genre": "R",
+                                             "valeur": 0}}],
+                  "analyse": {"f_debut": 2e9, "f_fin": 3e9, "points": 3,
+                              "f_centre": 2.44e9}}
+        conn.request("POST", "/api/simulation-rf",
+                     body=json.dumps(doc_rf).encode("utf-8"),
+                     headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 200, res.read()[:300]
+        data = json.loads(res.read().decode("utf-8"))
+        attendu = 10 * math.log10(4 * 14 * 50 / abs(64 + 8j) ** 2)
+        assert abs(data["bilan"]["s21_db"] - attendu) < 1e-3, data["bilan"]
+        conn.request("POST", "/api/simulation-rf",
+                     body=json.dumps({"format": "?"}).encode("utf-8"),
+                     headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 422, "%d au lieu de 422" % res.status
+        res.read()
+        print("[PASS] /api/simulation-rf (etat, fil 14+8j -> 50 ohms, refus 422)")
+
         # 22. LES QUATRE ROUTES DE CALCUL REFUSENT UN CORPS VIDE DE LA MEME
         # FACON. C'est le contrat de `_lire_document`, et le seul moyen de
         # verifier qu'elles passent bien toutes les quatre par elle.
-        for route in ("/api/simulation",
-                      "/api/simulation-dc", "/api/crosstalk"):
+        for route in ("/api/simulation", "/api/simulation-dc",
+                      "/api/crosstalk", "/api/simulation-rf"):
             conn.request("POST", route, body=b"",
                          headers={"Content-Type": "application/json"})
             res = conn.getresponse()
             corps = res.read()
             assert res.status == 400, "%s : %d au lieu de 400" % (route, res.status)
             assert b"vide" in corps, "%s : %s" % (route, corps[:120])
-        print("[PASS] Les 3 routes de calcul refusent un corps vide (400)")
+        print("[PASS] Les 4 routes de calcul refusent un corps vide (400)")
 
         # 23. ET UN CORPS TROP GROS, de la meme facon. La route DC n'avait
         # aucun plafond : elle lisait ce qui venait, alors que son document

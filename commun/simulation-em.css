@@ -570,6 +570,10 @@ input.simChamp.large{width:88px}
 }
 .simCourbe .simUnite{fill:var(--txt-dim);opacity:.7}
 .simCourbe .simTrace{fill:none;stroke-width:1.6;stroke-linejoin:round}
+/* L'abaque de Smith de l'onglet RF : même grille, même trait que la courbe. */
+.simSmith{display:block;margin:4px auto;max-width:100%;height:auto}
+.simSmith .simGrille{stroke:var(--border);stroke-width:1}
+.simSmith .simTrace{fill:none;stroke-width:1.6;stroke-linejoin:round}
 /* Le curseur de lecture. Le rectangle de survol couvre l'aire tracée et rien
    d'autre : sortir de la courbe rend la ligne de lecture à son texte de repos
    plutôt que de laisser un chiffre figé qui n'est plus pointé par rien. */

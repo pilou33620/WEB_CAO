@@ -5457,8 +5457,22 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
     }
 
 
-def simuler(doc, journal=None):
-    """Document -> impedance par troncon et parametres S. Leve ErreurSimulation."""
+def frequences(analyse):
+    """La grille de la bande S, frequence centrale comprise. Voir `simuler`."""
+    freqs = np.linspace(analyse["f_debut"], analyse["f_fin"], analyse["points"])
+    fc = analyse["f_centre"]
+    if freqs.size and np.min(np.abs(freqs - fc)) > 1e-6 * max(fc, 1.0):
+        freqs = np.sort(np.append(freqs, fc))
+    return freqs
+
+
+def simuler(doc, journal=None, garder_abcd=False):
+    """Document -> impedance par troncon et parametres S. Leve ErreurSimulation.
+
+    `garder_abcd` ajoute au resultat la matrice ABCD de la liaison a chaque
+    frequence (tableaux numpy, donc hors JSON) : c'est ce que python/rf_reseau.py
+    assemble avec les composants. La route HTTP ne le demande jamais.
+    """
     if ERREUR_SOLVEUR is not None:
         raise ErreurSimulation("Solveur EM indisponible : %s" % ERREUR_SOLVEUR,
                                "Le solveur a besoin de numpy :"
@@ -5720,10 +5734,9 @@ def simuler(doc, journal=None):
     coudes_par_troncon = {c["troncon"]: c for c in coudes}
     transitions_par_troncon = {t["troncon"]: t for t in transitions}
 
-    freqs = np.linspace(analyse["f_debut"], analyse["f_fin"], analyse["points"])
-    if freqs.size and np.min(np.abs(freqs - fc)) > 1e-6 * max(fc, 1.0):
-        freqs = np.sort(np.append(freqs, fc))
+    freqs = frequences(analyse)
     matrices = []
+    abcds = []
     # PAS DE CASCADE SUR CE QUI N'EST PAS UNE CHAINE. `freqs` reste rendu :
     # l'axe de l'analyse est ce qui a ete demande, il ne depend pas de la
     # topologie et le panneau s'en sert pour dire sur quelle bande il
@@ -5801,6 +5814,7 @@ def simuler(doc, journal=None):
                                        seg["longueur"] * 1e-3)
 
         matrices.append(tl.cascade_to_s(abcd, z_ref))
+        abcds.append(abcd)
 
     duree = time.time() - debut
     if journal:
@@ -5867,7 +5881,7 @@ def simuler(doc, journal=None):
                                      freqs, z_ref_diff, doc, analyse,
                                      avertissements, topo)
 
-    return {
+    resultat = {
         "format": FORMAT_RESULTAT,
         "version": VERSION,
         "moteurs": VERSION_MOTEURS,
@@ -5914,6 +5928,9 @@ def simuler(doc, journal=None):
         "duree": round(duree, 3),
         "avertissements": avertissements,
     }
+    if garder_abcd:
+        resultat["abcd"] = abcds
+    return resultat
 
 
 # ==========================================================================

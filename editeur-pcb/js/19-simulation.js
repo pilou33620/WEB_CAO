@@ -5442,6 +5442,125 @@ const SIM_PCB={
   }
 };
 
+/* ==========================================================================
+   SIMULATION RF — LA CARTE DE L'ÉDITEUR, DÉCRITE POUR LE PANNEAU
+   --------------------------------------------------------------------------
+   Tout le réseau — la marche de net en net, les branches, les pastilles, les
+   zones, les modèles — se construit dans `commun/simulation-em.js` (« RF »),
+   pour l'éditeur comme pour la visionneuse. Ce qui reste ici, c'est ce que
+   seul l'éditeur sait : ses pastilles, ses pistes, ses vias, ses zones, SON
+   empilage (celui saisi dans « Empilage physique »), et le découpage des
+   pistes de l'onglet Impédance (`simSegments`), qui porte les écarts à la
+   masse et les vias.
+
+   L'état RF (ports, modèles importés, exclus, broches annexes) vit dans
+   `S.rf` et part avec la carte ; voir `docObj` et `serialize`.
+   ========================================================================== */
+function simRfNet(fp,q){return q.net||(fp.nets&&fp.nets[q.n])||"";}
+function simRfEstMasse(n){
+  return !!n&&(pcbNomEstMasse(n)||simPDNEstMasse(n));
+}
+
+function simRfPlateauPcb(){
+  const sch=(typeof pcbComposantsSchema==="function")?pcbComposantsSchema()
+                                                     :new Map();
+  const composants=S.fps.map(fp=>{
+    const c=sch.get(fp.ref)||{};
+    return {ref:fp.ref, valeur:fp.value||c.value||"",
+            type:String(c.type||fp.type||""),
+            spice:fp.spice||c.simModel||"", mpn:fp.mpn||c.mpn||"",
+            pads:padsWorld(fp).map(q=>({
+              pin:String(q.n), net:simRfNet(fp,q), x:q.x, y:q.y,
+              cu:padLayers(fp,q), w:q.w, h:q.h,
+              forme:/circ|round/i.test(q.shape||"")?"rond":"rect",
+              dist:(x,y)=>padDist(x,y,q)}))};
+  });
+  const piste=t=>({net:t.net, cu:t.l, a:trkAt(t,0), b:trkAt(t,1), w:t.w,
+                   lg:trkLen(t), dist:(x,y)=>trkDist(x,y,t), natif:t});
+  const poly=pts=>{const o=[];for(const p of pts)o.push(p.x,p.y);return o;};
+  /* Le cuivre réellement rempli, par couche et par net : c'est `zoneMask`,
+     le même qui sert à la connectivité exacte. */
+  const masques=new Map();
+  const masqueDe=(l,n)=>{
+    const k=l+"|"+n;
+    if(!masques.has(k))masques.set(k,simRfMasque(zoneMask(l,n)));
+    return masques.get(k);
+  };
+  return {
+    composants:composants,
+    nets:()=>[...new Set(S.tracks.map(t=>t.net).concat((S.zones||[]).map(z=>z.net))
+                         .filter(Boolean))],
+    pistesDu:n=>S.tracks.filter(t=>t.net===n&&trkLen(t)>0).map(piste),
+    /* Une piste se coupe en deux copies, un arc en deux arcs qui se
+       partagent son angle. Les copies ne vont pas sur la carte : elles ne
+       servent qu'au calcul. */
+    couper:(p,x,y)=>{
+      const t=p.natif, A=arcOf(t);
+      if(A){
+        const u=arcSweep(A,Math.atan2(y-A.cy,x-A.cx))/Math.abs(A.ca);
+        if(!(u>1e-4&&u<1-1e-4))return null;
+        const q=trkAt(t,u), px=r3(q.x), py=r3(q.y);
+        return [piste(Object.assign({},t,{x2:px,y2:py,ca:t.ca*u})),
+                piste(Object.assign({},t,{x1:px,y1:py,ca:t.ca*(1-u)}))];
+      }
+      const dx=t.x2-t.x1, dy=t.y2-t.y1, l2=dx*dx+dy*dy;
+      const u=l2>0?((x-t.x1)*dx+(y-t.y1)*dy)/l2:0;
+      if(u<=1e-4||u>=1-1e-4)return null;
+      const px=r3(t.x1+u*dx), py=r3(t.y1+u*dy);
+      return [piste(Object.assign({},t,{x2:px,y2:py})),
+              piste(Object.assign({},t,{x1:px,y1:py}))];
+    },
+    viasDu:n=>S.vias.filter(v=>!v.net||v.net===n).map(v=>({
+      x:v.x, y:v.y, cuA:Math.min(v.a,v.b), cuB:Math.max(v.a,v.b),
+      d:v.d||0, drill:v.drill||0.3, net:v.net||""})),
+    zonesDu:n=>(S.zones||[])
+      .filter(z=>z&&z.net===n&&Array.isArray(z.pts)&&z.pts.length>=3)
+      .map(z=>{
+        const pts=poly(z.pts);
+        const trous=(S.cuts||[])
+          .filter(c=>c&&c.l===z.l&&Array.isArray(c.pts)&&c.pts.length>=3&&
+                     inPoly(c.pts[0].x,c.pts[0].y,z.pts))
+          .map(c=>poly(c.pts));
+        const xs=z.pts.map(p=>p.x), ys=z.pts.map(p=>p.y);
+        /* Le masque ne se peint qu'à la demande : chercher les fentes d'un
+           plan lit les zones de tous les nets. */
+        return {net:n, cu:z.l, pts:pts, trous:trous,
+                get masque(){return masqueDe(z.l,n);},
+                aire:simRfAire(pts)-trous.reduce((a,t)=>a+simRfAire(t),0),
+                dimMax:Math.hypot(Math.max(...xs)-Math.min(...xs),
+                                  Math.max(...ys)-Math.min(...ys)),
+                dans:(x,y)=>simRfDansPoly(x,y,pts)&&
+                            !trous.some(t=>simRfDansPoly(x,y,t))};
+      }),
+    segments:natifs=>simSegments(natifs),
+    cuIndex:simCuIndex, cuivre:cuT,
+    /* Le plan le plus proche que le via atteint depuis la couche de la
+       pastille : c'est jusque-là que court le courant de masse. Les plans de
+       masse d'abord. */
+    planDuVia:(v,l)=>{
+      let best=-1, bd=1e9;
+      for(let i=v.cuA;i<=v.cuB;i++){
+        if(i===l||!rolePlane(layerRole(i)))continue;
+        const d=Math.abs(i-l)+(layerRole(i)==="gnd"?0:0.5);
+        if(d<bd){bd=d; best=i;}
+      }
+      return best;
+    },
+    estMasse:simRfEstMasse, estAlim:n=>pcbNomEstAlim(n),
+    stackup:simStackup, carte:()=>SIM_PCB.carte()
+  };
+}
+
+Object.assign(SIM_PCB,{
+  rfPlateau:simRfPlateauPcb,
+  rfEtat:function(){
+    if(!S.rf||typeof S.rf!=="object")S.rf={};
+    return S.rf;
+  },
+  rfModifie:function(){S.dirty=true;},
+  rfArmer:function(){if(typeof setMode==="function")setMode("select");}
+});
+
 /* Ouvrir le panneau depuis la barre d'outils. Il démarre masqué — le dock ne
    garde que ce qu'on regarde en routant (voir `00-espace-config.js`) — et ce
    bouton est ce qui le rend trouvable sans passer par le menu de l'espace de

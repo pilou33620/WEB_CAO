@@ -800,16 +800,241 @@ période de résonance —, le panneau le dit et propose un nombre. Ce n'est pas
 cosmétique : sur une piste de 28,7 mm, 21 points **ratent** le creux de S₁₁ et
 l'annoncent à −33 dB au lieu de −39,5.
 
-### Le panneau se range en SI et PI
+### Le panneau se range en SI, PI et RF
 
-Deux familles d'analyse : **SI**, intégrité du signal — ce qu'un front devient
-en parcourant le cuivre — et **PI**, intégrité de l'alimentation — ce que le
-réseau de distribution laisse passer. SI porte **Impédance**, **Z
+Trois familles d'analyse : **SI**, intégrité du signal — ce qu'un front devient
+en parcourant le cuivre —, **PI**, intégrité de l'alimentation — ce que le
+réseau de distribution laisse passer — et **RF**, le S₂₁ d'une chaîne
+d'adaptation entre deux ports (voir plus bas). SI porte **Impédance**, **Z
 différentielle**, **Crosstalk** et **Current Return Path** ; PI
 porte **Chute DC** et **Z(ω) PDN**. Le découpage avait été posé quand il n'y avait qu'une
 analyse, parce qu'il coûtait moins cher à poser qu'à retailler ensuite autour
 de six. Ce qu'il resterait à y mettre est listé dans
 [A-FAIRE.md](../A-FAIRE.md).
+
+### RF — le S₂₁ d'un réseau entre deux ports
+
+La famille **RF** porte un onglet, **S21**, et une question : on sort d'une
+puce radio dont la sortie vaut 14 + 8j Ω, on traverse un réseau d'adaptation,
+on arrive sur un connecteur U.FL ou une antenne — quelle part de la puissance
+disponible arrive au bout, et que faut-il retoucher ?
+
+**Les deux outils, chacun son empilage.** L'onglet existe dans l'éditeur PCB
+et dans la visionneuse IPC-2581. Le réseau se construit dans le panneau
+commun ; chaque outil ne fait que décrire sa carte (`rfPlateau`), et surtout
+SON EMPILAGE : celui saisi dans « Empilage physique » pour l'éditeur, celui
+lu dans le fichier et complété dans « La carte » pour la visionneuse. C'est lui
+qui fait qu'une piste de 0,35 mm vaut 114 Ω sur un deux couches de 1,6 mm et
+50 Ω à 0,21 mm de son plan — la fiche montre, piste par piste, la couche, la
+hauteur au plan et l'εr qui ont servi. Dans la visionneuse, l'état RF (ports,
+modèles importés, broches annexes) est gardé dans le navigateur, sous le nom du
+fichier : le fichier lu n'est pas modifié, et rouvrir la carte le retrouve.
+
+**Les ports.** 🎯 puis un clic sur une pastille, et l'impédance en R + jX. Au
+port 1, l'impédance de **sortie** de la puce ; au port 2, celle de la charge.
+
+**Le réseau, trouvé par la page.** Depuis le net du port 1, la marche traverse
+chaque composant qui y touche, puis les nets de ses autres broches ; la masse
+et les alimentations l'arrêtent (une alimentation découplée est une masse RF,
+et la fiche le dit). Chaque net est découpé en **branches** de piste d'une
+pastille ou d'une dérivation à la suivante. Une piste sur laquelle aboutit une
+autre en T, ou qui traverse une pastille, est **coupée** au point d'accroche
+— un arc en deux arcs qui se partagent son angle — (une copie pour le calcul,
+la carte n'est pas touchée). Le contact se juge au
+CUIVRE et non aux coordonnées, parce que c'est ainsi que les exports réels
+sont faits : un bout de piste touche une pastille, une zone ou un autre bout
+dès que sa demi-largeur le recouvre. Une pastille qui n'est reliée ni par une
+piste ni par une zone est refusée, avec son nom.
+
+**Les zones de cuivre du net** — un raccord de broche en polygone, une plage
+RF — sont **maillées** au serveur, sur le CUIVRE RÉELLEMENT REMPLI : dans
+l'éditeur, le masque de remplissage que l'outil calcule déjà (`zoneMask`,
+dégagements et liaisons thermiques compris) part avec la zone et écarte les
+cellules sans cuivre ; dans la visionneuse, les plans IPC-2581 sont déjà le
+cuivre posé, trous compris. Le maillage est **adaptatif**, en arbre
+quaternaire : fin près des accès (la moitié de la hauteur au plan), il grossit
+avec la distance jusqu'à λ/40 à la fréquence haute ; le bord du cuivre est
+raffiné à la moitié de la taille visée localement, et une cellule à cheval
+garde sa fraction de cuivre. Un carré que traverse un bord est toujours
+subdivisé, si bien qu'un cuivre plus étroit que l'échantillonnage n'est pas
+perdu. Ce sont des volumes finis : chaque cellule porte sa capacité au plan —
+une part de SURFACE et une part de BORD libre, tirées de deux résolutions MoM
+(C′(W) = c_s W + 2 c_b) — ; chaque lien entre voisines, de tailles
+quelconques, sa résistance de peau et sa self PAR DUALITÉ QUASI-TEM,
+L′ = μ₀ε₀ / C′_vide : la « rangée » de cuivre que porte le lien a pour
+capacité dans le vide sa surface plus la frange de ses bords libres
+parallèles au courant — c'est ce qui donne à un cuivre étroit sa vraie self,
+qu'une plaque surestimerait d'un facteur trois. La matrice est creuse et
+factorisée en LU creuse (scipy) : une coulée de 60 × 60 mm, 6 500 cellules et
+36 vias, se résout en moins d'une seconde ; le plafond est à 30 000 cellules,
+et la fiche dit s'il a fallu desserrer. Chaque contact — un bout de piste, une
+pastille — est un accès accroché à la cellule qui le contient. Étalonné : une
+zone de 0,3, 1 et 3 mm de large sur 5 mm rend la phase de S₂₁ de la ligne MoM
+de même largeur à 3° près et sa Z d'entrée à 15 % près ; une plage de 3 × 20 mm
+rend son |S₂₁| à 1 % près jusqu'à 1,5 GHz.
+
+**Les pastilles** portent leur capacité au plan, en dérivation à leur nœud,
+**résolue en 3D** : méthode des moments sur la plaque (panneaux serrés vers les
+bords et sous la moitié de la hauteur au plan, interactions exactes par la
+primitive de 1/r sur un rectangle), avec la fonction de Green quasi-statique
+EXACTE d'une charge posée sur un stratifié au-dessus de son plan — une série
+d'images de raison K = (εr − 1)/(εr + 1) —, ou les images de deux plans en
+triplaque. Bouts, coins et bords : tout y est. Ce modèle 3D ne connaît qu'un
+stratifié homogène et un cuivre mince ; il est donc ÉTALONNÉ sur l'empilage
+réel par la ligne infinie — C = C₃D(pastille) × C′₂D / C′₃D —, ce qui y ramène
+le vernis épargne, l'épaisseur du cuivre et les diélectriques empilés. Le
+morceau de piste qui entre dans la pastille est ôté. Étalonné : le carré
+isolé (0,36679 × 4πε₀a, Read 1997) à 0,5 % près ; la capacité par mètre du
+microruban contre Hammerstad-Jensen à 1 % près, dans le vide comme sur FR-4 ;
+l'allongement de bout ouvert entre Hammerstad-Bekkadal et Kirschning-Jansen,
+qui diffèrent déjà entre eux.
+
+**Le couplage entre pistes du réseau.** Les tronçons droits sur la même
+couche, parallèles à 15° près, à moins de trois hauteurs au plan de cuivre à
+cuivre (la règle des 3H), forment des **groupes**. Deux pistes presque
+parallèles n'ont pas un écart mais un écart par abscisse : chaque intervalle
+est recoupé tant que l'écart y varie de plus de 5 % (ou de 10 µm), et chaque
+morceau est une section droite à son propre écart. Les groupes — trois pistes côte à côte en
+font un. Chaque groupe est découpé le long de son axe, et chaque intervalle où
+plusieurs conducteurs sont présents devient une ligne couplée à 2N ports : [L]
+et [C] par `ligne_mom.solve_multiline` (masse coplanaire du groupe comprise,
+côté par côté), les pertes du cuivre par effet de peau et celles du
+diélectrique, la **dispersion** du microruban appliquée MODE PAR MODE — la base
+modale symétrique diagonalise [L] et [C] ensemble, chaque mode reçoit
+l'ε_eff(f) et le Z(f) de Getsinger comme une ligne seule —, et la matrice de
+chaîne par l'exponentielle des équations des
+télégraphistes (Padé, stable même quand tous les modes vont à la même
+vitesse ; sans pertes, elle redonne `crosstalk.chaine_mtl` à 1e-7 près). Aux
+bords de chaque morceau couplé, un raccord d'un micron rend le coude ou le via
+qui s'y trouve à la chaîne voisine, où `simuler` le compte. La fiche liste
+chaque longement, ses conducteurs, sa longueur, son écart et son NEXT
+saturé ; une case permet de le couper pour voir ce qu'il coûte au S₂₁.
+
+**Les pistes des autres nets.** Une piste d'un autre net — ni masse, ni du
+réseau — qui passe à moins de 2 mm du réseau part avec lui (60 au plus). Si la
+règle des 3H la range dans un groupe, elle y entre comme un conducteur à part
+entière : elle change l'impédance des lignes qu'elle longe, et ce qu'elle
+reçoit s'en va, parce que ses deux bouts sont fermés sur sa propre impédance
+caractéristique (ce qu'il y a au bout est hors du réseau ; la fermer adaptée,
+c'est compter que l'énergie couplée ne revient pas). La fiche donne, par net,
+la part de la puissance disponible de la puce qui y part. Le banc vérifie
+qu'une voisine rend exactement la même piste posée en branche et fermée sur
+son Z₀. Une voisine en arc n'entre pas dans les groupes.
+
+**Le couplage magnétique des selfs.** Chaque self à deux broches devient un
+**solénoïde** d'axe horizontal, d'une pastille à l'autre — la géométrie d'une
+self bobinée CMS (LQW) : diamètre 70 % de la largeur du boîtier, longueur 60 %
+de l'entraxe, centre à mi-hauteur du boîtier. Son nombre de tours se tire de
+sa self par Wheeler : la mutuelle ne dépend que de la géométrie et des
+valeurs. Les mutuelles se calculent par **Neumann** sur des segments, avec
+l'**image** dans le plan de référence (le banc rend la formule exacte de
+Maxwell pour deux spires coaxiales à 0,2 % près) : entre deux selfs à moins de
+6 mm d'entraxe, et entre une self et chaque branche du réseau qui passe à
+moins de 3 mm sur sa couche — la tension induite se pose au départ de la
+branche, qui est courte devant la longueur d'onde. Tout se pose en impédance,
+propres et mutuelles dans une même matrice. Deux 0402 côte à côte à 1 mm
+d'axe à axe : k ≈ −0,5 % ; bout à bout à 0,6 mm : +0,4 %. Deux limites : le
+sens d'enroulement n'est pas sur le dessin — il ne change rien entre deux
+selfs d'une même série, mais fixe le signe de la mutuelle avec une piste ; il
+est pris droit, et c'est dit —, et une self multicouche à axe vertical est
+traitée comme une bobinée. Les capacités ne se couplent pas : leur champ
+électrique reste entre leurs électrodes.
+
+**Les fentes du plan de référence.** Sous chaque branche, la page suit le
+plan qui lui sert de retour — le plus proche au-dessus et au-dessous — et
+cherche où son cuivre manque. Un manque au milieu de la branche est une
+**fente franchie** : on mesure de chaque côté la distance jusqu'où le plan se
+referme sur la ligne de la piste, c'est-à-dire le détour du courant de retour.
+Chaque détour d est une self par la formule de Ott (EMC Engineering, 2009),
+L = (μ₀/π)·2d·ln(2d/W), les deux en parallèle ; en fréquence, chacun est un
+tronçon de fente court-circuité, Z = jωL·tan(βd)/(βd), dans la permittivité
+moyenne des deux faces du plan, avec une perte (Q ≈ 50) qui tient lieu de son
+rayonnement. C'est une estimation d'ingénieur : une fente vraie rayonne. Un
+plan coupé de bord à bord plafonne le détour à 30 mm et le dit — le retour y
+passe par des condensateurs ou des coutures que le calcul ne voit pas. Un
+trou plus petit que deux largeurs de piste (un antipad) est ignoré ; un manque
+au BOUT d'une branche — la découpe d'usage sous une pastille RF — est signalé,
+pas chiffré. Un changement de plan sous la piste par un via relève déjà du
+modèle de via (retour par les vias de masse voisins, référence qui change de
+net nommée). Un plan sans aucune zone dessinée est tenu pour plein.
+
+**Les broches annexes.** Une autre broche de la puce (ou du connecteur) qui
+touche le réseau — l'entrée RX d'un émetteur-récepteur dont la sortie TX est
+le port, par exemple — y entre avec sa piste, comme un moignon. Elle est
+ouverte par défaut, et la fiche accepte l'impédance R + jX qu'elle présente.
+
+**Les pistes, par le solveur de l'onglet Impédance.** Chaque branche part dans
+`simulation_em.simuler` exactement comme une sélection : section par MoM,
+dispersion, pertes, coudes, vias et moignons. On lui demande sa matrice ABCD à
+chaque fréquence (`garder_abcd`) et l'on n'y retouche pas — une piste a donc ici
+le même Z₀ qu'à l'onglet Impédance, au chiffre près ; le banc le vérifie.
+
+**Les composants.** Dans l'ordre : un modèle importé pour ce composant dans le
+projet (📂, gardé avec la carte) ; sinon celui de la colonne « Modèle
+Simulation », lu dans `LIB/lib_simulation` — celle que porte l'empreinte
+posée depuis la bibliothèque, à défaut celle de la **ligne du catalogue**
+(`LIB_composants.csv`) retrouvée par la référence fabricant ou le nom de
+pièce : c'est ainsi que la visionneuse, dont le fichier IPC-2581 ne porte que
+le nom de pièce, trouve les vrais modèles ; sinon le modèle rangé sous la
+référence fabricant ; sinon un R, L ou C idéal tiré de la valeur. Un modèle
+générique (`capacitor.sub`…) n'est qu'un gabarit à paramètres : c'est l'idéal
+tiré de la valeur qui le remplace. Les sous-circuits SPICE sont lus **en linéaire**
+(R, L, C, sous-circuits imbriqués, `PARAMS:`) : un transistor ou une diode
+SPICE est refusé — il lui faudrait un point de polarisation — et la fiche
+demande son `.sNp`. Les Touchstone v1 et v2 sont lus en S, Y ou Z, en MA, DB
+ou RI, sans extrapolation hors de leur bande. Sous un composant en dérivation,
+les vias qui descendent sa pastille de masse au plan comptent pour leur self
+partielle (mutuelles comprises). Un via atteint par une **piste de masse** —
+bout à bout sur quatre tronçons au plus — ajoute ce chemin : la self et la
+résistance de peau de la piste au-dessus de son plan, en parallèle avec les
+autres. Une pastille posée dans une **coulée de masse** voit la coulée
+**maillée entière**, sur son cuivre réellement rempli, une seule fois pour
+toutes les pastilles qui s'y posent, et chacun de ses vias la descend au
+plan. Sans aucun via, la masse est idéale et
+c'est dit.
+
+**Le calcul.** Une analyse nodale : chaque branche devient un quadripôle Y,
+chaque composant son admittance ; un bloc Touchstone se pose directement en S,
+ses courants de broche en inconnues — un « thru » mesuré n'a pas de matrice Y.
+Un 0 Ω fusionne ses deux nœuds. Chaque port est fermé sur sa référence et
+attaqué à son tour, ce qui donne les paramètres S **généralisés** (ondes de
+puissance) :
+
+$$a = \frac{V + Z I}{2\sqrt{\Re Z}}, \qquad b = \frac{V - Z^* I}{2\sqrt{\Re Z}}$$
+
+|S₂₁|² est alors le **gain transducique** — la part de la puissance disponible
+de la puce qui arrive dans la charge —, et S₁₁ = 0 veut dire que la puce voit
+le conjugué de sa sortie. Avec deux références réelles égales, on retombe sur
+les S ordinaires.
+
+**La fiche.** S₂₁ à f₀ et en pour-cent de la puissance disponible ; la Z vue
+par la puce face à sa **cible** (le conjugué de sa sortie) ; la perte
+d'insertion partagée entre **désadaptation** et **dissipation** — les confondre,
+c'est retoucher une self quand c'est la piste qui chauffe. Les courbes S₂₁,
+S₁₁, S₂₂ sur la bande, l'abaque de Smith de la Z vue par la puce, le tableau
+des pistes (Z₀, pertes) et des vias de masse. Le `.s2p` exporté est
+**renormalisé à 50 Ω** — Touchstone n'accepte pas de référence complexe — et
+son en-tête porte les impédances réelles du calcul.
+
+**« Et si ».** Chaque composant du chemin accepte une autre valeur (pF, nH,
+Ω) : il devient un idéal de cette valeur le temps du calcul, la carte ne change
+pas. On peut aussi exclure un composant (une diode ESD, un point de test).
+
+**Le domaine de validité.** Ce simulateur est quasi-statique — sections en
+2D, pastilles en 3D — avec la dispersion de Getsinger par-dessus : il ne voit
+ni les modes supérieurs, ni les ondes de surface, ni le rayonnement, qui
+demandent un solveur pleine onde (voir « Pourquoi pas l'onde complète »,
+plus bas). Il calcule en revanche, sur la géométrie qu'il résout, OÙ il cesse
+de valoir, et le dit : la coupure du premier mode supérieur de chaque piste,
+c₀ / (2 W_eff √εr), W_eff étant la largeur équivalente tirée de la capacité
+MoM ; la résonance propre de chaque pastille, au-delà de laquelle ce n'est
+plus une capacité ; le couplage fort aux ondes de surface de chaque stratifié
+en microruban (Bahl et Trivedi) et la coupure de son mode TE₁ ; et la
+fréquence où (k₀h)², dont croissent les pertes par rayonnement des
+discontinuités, atteint 1 %. La fiche porte la plus basse (« Validité :
+quasi-statique jusqu'à … ») et un avertissement sort dès que la bande la
+dépasse. Pour une piste de 0,35 mm sur 0,2 mm de FR-4, c'est 23,9 GHz ; pour
+le réseau du SX1261 de la carte d'exemple, 12,9 GHz.
 
 ### PI — Impédance fréquentielle du PDN (Z(ω))
 

@@ -5797,6 +5797,234 @@ const SIM_IPC={
 /* =============================================================================
    Préréglages automatiques des simulations à partir des classes de nets
    ============================================================================= */
+/* ==========================================================================
+   SIMULATION RF — LA CARTE LUE, DÉCRITE POUR LE PANNEAU
+   --------------------------------------------------------------------------
+   Le réseau se construit dans `commun/simulation-em.js` (« RF »), comme pour
+   l'éditeur. Ce qui est propre à la visionneuse, c'est ce qu'elle lit : les
+   pastilles posées par `mdlPadPlace`, les polylignes et les arcs des nets, les
+   perçages, les plans — ramenés en millimètres —, et SURTOUT L'EMPILAGE DE
+   CALCUL `LT`, celui du fichier complété dans « La carte ». C'est lui qui
+   décide du Z₀ de chaque piste, exactement comme sous l'onglet Impédance.
+
+   L'ÉTAT RF (ports, modèles importés, exclus, broches annexes) est gardé
+   dans le navigateur, sous le nom du fichier : le fichier lu n'est pas modifié.
+   ========================================================================== */
+const SIM_RF_IPC={modele:null, etat:{}};
+const SIM_RF_IPC_CLE="webcao-rf:";
+
+/* La forme d'une pastille, en mm, et sa distance SIGNÉE au bord (négative
+   dedans). Un rectangle tourne avec la pastille ; le reste est pris rond. */
+function simRfFormeIpc(q,k){
+  const f=(V.modele.formes||{})[q.forme]||null;
+  const rot=-(q.rot||0)*Math.PI/180, co=Math.cos(rot), si=Math.sin(rot);
+  const x0=q.x*k, y0=q.y*k;
+  if(f&&/RECT|OVAL/.test(f.t||"")&&f.w>0&&f.h>0){
+    const w=f.w*k, h=f.h*k;
+    return {w:w, h:h, forme:"rect", dist:(x,y)=>{
+      const dx=x-x0, dy=y-y0;
+      const lx=dx*co-dy*si, ly=dx*si+dy*co;
+      return Math.max(Math.abs(lx)-w/2, Math.abs(ly)-h/2);
+    }};
+  }
+  const d=Math.max(((f&&f.d)||q.d||0)*k,0.1);
+  return {w:d, h:d, forme:"rond",
+          dist:(x,y)=>Math.hypot(x-x0,y-y0)-d/2};
+}
+
+function simRfNetIpc(n){
+  return (V.parNet||[]).find(o=>o&&o.nom===n)||null;
+}
+
+function simRfPlateauIpc(){
+  if(!V.modele)return {erreur:"Aucune carte ouverte.",
+                       conseil:"Ouvrez un fichier IPC-2581."};
+  if(!LT.pret)
+    return {erreur:"L'empilage de calcul n'est pas prêt.",
+            conseil:"Complétez-le dans le panneau « La carte », sous "+
+                    "« Empilage du calcul »."};
+  const k=simKUnite();
+  const parComp=new Map(), composants=[];
+  for(const comp of (V.modele.composants||[])){
+    const props=comp.props||{};
+    const c={ref:comp.ref, valeur:simIpcValeurComp(comp).rawVal,
+             type:String(comp.type||""),
+             spice:props["Modèle Simulation"]||props.SPICE||"",
+             mpn:comp.mpn||comp.part||props.MPN||props["Part Number"]||"",
+             pads:[]};
+    parComp.set(comp,c); composants.push(c);
+  }
+  /* BEAUCOUP D'EXPORTS POSENT LES PASTILLES « LIBRES », sans hôte, la broche
+     nommée « C420.2 » : le repère et la broche dans un seul nom. On les
+     rattache à leur composant par ce nom, en le créant s'il n'est pas dans la
+     liste. */
+  const parNom=new Map(composants.map(c=>[c.ref,c]));
+  const hoteDe=q=>{
+    if(q.hote)return {c:parComp.get(q.hote),
+                      pin:String(q.pad&&q.pad.pin!=null?q.pad.pin:"?")};
+    const m=/^(.+)\.([^.]+)$/.exec(String((q.pad&&q.pad.pin)||""));
+    if(!m)return null;
+    let c=parNom.get(m[1]);
+    if(!c){c={ref:m[1], valeur:"", type:"", spice:"", mpn:"", pads:[]};
+           parNom.set(m[1],c); composants.push(c);}
+    return {c:c, pin:m[2]};
+  };
+  for(const e of LT.cu){
+    const couche=V.couches[e.couche], cu=simCuDe(e.couche);
+    if(!couche||cu<0)continue;
+    for(const q of (couche.pads||[])){
+      const h=hoteDe(q);
+      if(!h||!h.c)continue;
+      const c=h.c, pin=h.pin;
+      const x=q.x*k, y=q.y*k;
+      const deja=c.pads.find(p=>p.pin===pin&&Math.abs(p.x-x)<1e-6&&
+                                Math.abs(p.y-y)<1e-6);
+      if(deja){deja.cu.push(cu);continue;}
+      const f=simRfFormeIpc(q,k);
+      c.pads.push({pin:pin, net:(q.pad&&q.pad.n>=0)?mdlNetNom(q.pad.n):"",
+                   x:x, y:y, cu:[cu], w:f.w, h:f.h, forme:f.forme,
+                   dist:f.dist});
+    }
+  }
+  const piste=(p,couche)=>{
+    const t=p.p, n=t.length;
+    const pts=[];
+    for(let i=0;i<n;i++)pts.push(t[i]*k);
+    let lg=0;
+    for(let i=0;i+3<n;i+=2)lg+=Math.hypot(pts[i+2]-pts[i],pts[i+3]-pts[i+1]);
+    return {net:(p.n>=0)?mdlNetNom(p.n):"", cu:simCuDe(couche),
+            a:{x:pts[0],y:pts[1]}, b:{x:pts[n-2],y:pts[n-1]}, w:(p.w||0)*k,
+            lg:lg,
+            dist:(x,y)=>{
+              let d=Infinity;
+              for(let i=0;i+3<n;i+=2)
+                d=Math.min(d,simDistSeg(x,y,pts[i],pts[i+1],pts[i+2],pts[i+3]));
+              return d;
+            },
+            natif:{piste:p, couche:couche}};
+  };
+  const cuPlan=(simStackupIpc().layers||[]).filter(c=>c.type==="copper")
+                 .map(c=>c.role==="plane");
+  return {
+    composants:composants,
+    nets:()=>(V.parNet||[]).map(o=>o&&o.nom).filter(Boolean),
+    pistesDu:n=>{
+      const N=simRfNetIpc(n);
+      if(!N)return [];
+      const out=[];
+      for(const p of (N.pistes||[]))
+        if(p.p&&p.p.length>=4&&simCuDe(p.c)>=0)out.push(piste(p,p.c));
+      for(const a of (N.arcs||[])){
+        const pts=simArcEnPolyligne(a);
+        if(pts&&simCuDe(a.c)>=0)
+          out.push(piste({c:a.c, n:a.n, w:a.w, p:pts, arc:a},a.c));
+      }
+      return out;
+    },
+    /* Une polyligne se coupe au point projeté. Un arc est déjà une polyligne
+       ici (`simArcEnPolyligne`) : ses deux morceaux perdent le drapeau `arc`
+       et partent en facettes, dont la somme reste sa longueur. */
+    couper:(pw,x,y)=>{
+      const p=Object.assign({},pw.natif.piste);
+      delete p.arc;
+      const t=p.p, xf=x/k, yf=y/k;
+      let best=-1, bd=Infinity;
+      const pr={};
+      for(let i=0;i+3<t.length;i+=2){
+        const d=simDistSeg(xf,yf,t[i],t[i+1],t[i+2],t[i+3],pr);
+        if(d<bd){bd=d; best=i;}
+      }
+      if(best<0)return null;
+      simDistSeg(xf,yf,t[best],t[best+1],t[best+2],t[best+3],pr);
+      const un=t.slice(0,best+2).concat([pr.x,pr.y]);
+      const deux=[pr.x,pr.y].concat(t.slice(best+2));
+      const court=q=>q.length<4||Math.hypot(q[q.length-2]-q[0],
+                                           q[q.length-1]-q[1])*k<1e-4;
+      if(court(un)||court(deux))return null;
+      const cp=q=>piste(Object.assign({},p,{p:q}),pw.natif.couche);
+      return [cp(un),cp(deux)];
+    },
+    viasDu:n=>{
+      const N=simRfNetIpc(n);
+      if(!N)return [];
+      const der=LT.cu.length-1;
+      return (N.trous||[]).filter(t=>!/NON/i.test(t.p||"")).map(t=>{
+        const a=t.sa!=null?simCuDe(t.sa):0, b=t.sb!=null?simCuDe(t.sb):der;
+        const ps=(V.modele.padstacks||{})[t.ps];
+        return {x:t.x*k, y:t.y*k, cuA:Math.min(a<0?0:a,b<0?der:b),
+                cuB:Math.max(a<0?0:a,b<0?der:b),
+                d:((ps&&ps.pad)||t.d||0)*k, drill:(t.d||0.3)*k, net:n};
+      });
+    },
+    zonesDu:n=>{
+      const N=simRfNetIpc(n), out=[];
+      for(const pl of ((N&&N.plans)||[])){
+        const cu=simCuDe(pl.c);
+        if(cu<0)continue;
+        for(const ct of (pl.g||[])){
+          if(!ct.o||ct.o.length<6)continue;
+          const pts=ct.o.map(v=>v*k);
+          const trous=(ct.t||[]).filter(t=>t&&t.length>=6).map(t=>t.map(v=>v*k));
+          const xs=pts.filter((_,i)=>i%2===0), ys=pts.filter((_,i)=>i%2===1);
+          out.push({net:n, cu:cu, pts:pts, trous:trous,
+                    aire:simRfAire(pts)-trous.reduce((s,t)=>s+simRfAire(t),0),
+                    dimMax:Math.hypot(Math.max(...xs)-Math.min(...xs),
+                                      Math.max(...ys)-Math.min(...ys)),
+                    dans:(x,y)=>simRfDansPoly(x,y,pts)&&
+                                !trous.some(t=>simRfDansPoly(x,y,t))});
+        }
+      }
+      return out;
+    },
+    segments:(natifs,n)=>simSegments(natifs,simRfNetIpc(n)),
+    cuIndex:simRangCu,
+    cuivre:cu=>(LT.cu[cu]&&LT.cu[cu].ep)||0.035,
+    planDuVia:(v,l)=>{
+      let best=-1, bd=1e9;
+      for(let i=v.cuA;i<=v.cuB;i++){
+        if(i===l||!cuPlan[i])continue;
+        if(Math.abs(i-l)<bd){bd=Math.abs(i-l); best=i;}
+      }
+      return best;
+    },
+    estMasse:simPDNEstMasseIpc,
+    estAlim:n=>{
+      const o=simRfNetIpc(n);
+      if(o&&o.classe==="pwr")return true;
+      if(o&&o.classe==="gnd")return false;
+      return /^(\+?\d+V\d*|\+?\d+V\d+|[AD]?V(CC|DD|EE|IN|BAT|BUS|SYS|REG|IO)\w*)$/i
+               .test(String(n||"").trim());
+    },
+    stackup:simStackupIpc, carte:()=>SIM_IPC.carte()
+  };
+}
+
+Object.assign(SIM_IPC,{
+  rfPlateau:simRfPlateauIpc,
+  /* L'ÉTAT RF SE GARDE DANS LE NAVIGATEUR, sous le nom du fichier : le
+     fichier lu n'est pas touché, et rouvrir la même carte retrouve ses ports
+     et ses modèles. Un modèle trop lourd pour ce stockage reste en mémoire,
+     le reste est gardé. */
+  rfEtat:function(){
+    if(SIM_RF_IPC.modele!==V.modele){
+      SIM_RF_IPC.modele=V.modele; SIM_RF_IPC.etat={};
+      try{
+        const t=localStorage.getItem(SIM_RF_IPC_CLE+(V.fichier||""));
+        if(t)SIM_RF_IPC.etat=JSON.parse(t)||{};
+      }catch(e){SIM_RF_IPC.etat={};}
+    }
+    return SIM_RF_IPC.etat;
+  },
+  rfModifie:function(){
+    try{
+      const e=SIM_RF_IPC.etat;
+      let t=JSON.stringify(e);
+      if(t.length>2e6)t=JSON.stringify(Object.assign({},e,{modeles:{}}));
+      localStorage.setItem(SIM_RF_IPC_CLE+(V.fichier||""),t);
+    }catch(e){/* stockage plein ou interdit : l'état reste en mémoire */}
+  }
+});
+
 function simAppliquerPrereglagesClassesNets(){
   if(typeof V === "undefined" || !V || !Array.isArray(V.parNet) || !V.parNet.length) return;
 

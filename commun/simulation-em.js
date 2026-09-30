@@ -2,9 +2,10 @@
    commun/simulation-em.js
    Simulation électromagnétique : le panneau, le transport, la carte de chaleur.
 
-   DEUX FAMILLES, CINQ ANALYSES. Le panneau se range en **SI** — intégrité du
-   signal, ce qu'un front devient en parcourant le cuivre — et **PI** —
-   intégrité de l'alimentation, ce que le réseau de distribution laisse passer.
+   TROIS FAMILLES. Le panneau se range en **SI** — intégrité du
+   signal, ce qu'un front devient en parcourant le cuivre —, **PI** —
+   intégrité de l'alimentation, ce que le réseau de distribution laisse passer
+   — et **RF** — le S₂₁ d'une chaîne d'adaptation entre deux ports.
    SI porte « Impédance », « Z différentielle », « Crosstalk » et
    « Current Return Path » ; PI porte « Chute DC ».
 
@@ -16990,6 +16991,1319 @@ function simPDNExportJson() {
   simTelecharger(t, nom, "application/json");
 }
 
+/* ==========================================================================
+   RF — LE S₂₁ D'UN RÉSEAU ENTRE DEUX PORTS
+   --------------------------------------------------------------------------
+   LA QUESTION : on sort d'une puce radio dont la sortie vaut, disons,
+   14 + 8j Ω, on traverse un réseau d'adaptation, et l'on arrive sur un
+   connecteur ou une antenne. Quelle part de la puissance disponible arrive au
+   bout, et qu'est-ce qu'il faut retoucher ?
+
+   LA PAGE TROUVE LE RÉSEAU (`simRfProbleme`), LE SERVEUR LE CALCULE
+   (`/api/simulation-rf`, `python/rf_reseau.py`) : les pistes par le solveur
+   de l'onglet Impédance, les composants par leurs modèles, le tout en
+   paramètres S GÉNÉRALISÉS sur les deux impédances complexes des ports.
+
+   LES DEUX OUTILS, UN SEUL RÉSEAU. L'éditeur PCB et la visionneuse IPC-2581
+   décrivent leur carte par `rfPlateau()`, en millimètres, chacun avec SON
+   empilage — celui saisi dans l'éditeur, celui lu (et complété) dans la
+   visionneuse. Tout le reste est ici :
+
+     composants [{ref, valeur, type, spice, mpn,
+                  pads:[{pin, net, x, y, cu:[…], w, h, forme, dist(x,y)}]}]
+     pistesDu(net)  [{net, cu, a:{x,y}, b:{x,y}, w, dist(x,y), natif}]
+     couper(piste, x, y)  -> [piste, piste] coupée au point, ou null
+     viasDu(net)    [{x, y, cuA, cuB, drill, net}]
+     zonesDu(net)   [{net, cu, pts:[x,y,…], aire, dimMax, dans(x,y)}]
+     segments(natifs, net) -> {envoi, vias, objets}  (le découpage de
+                    l'onglet Impédance, écarts à la masse et vias compris)
+     cuIndex(cu), cuivre(cu), planDuVia(via, cu), estMasse(n), estAlim(n),
+     stackup(), carte(), erreur?, conseil?
+
+   L'ÉTAT — les deux ports, les modèles importés, les exclus, les impédances
+   des broches annexes — est gardé par l'outil (`rfEtat()`), qui le range
+   avec la carte quand il le peut (`rfModifie()`).
+
+   « ET SI » : chaque composant du chemin peut recevoir une autre valeur, qui
+   le remplace par un idéal de cette valeur le temps d'un calcul.
+   ========================================================================== */
+const SIM_RF_ROUTE="/api/simulation-rf";
+const SIM_RF={res:null, err:"", occupe:false, composants:[], notes:[],
+              surcharges:{}, cible:null, couplage:true};
+const SIM_RF_UNITES={C:{f:1e-12,u:"pF"}, L:{f:1e-9,u:"nH"}, R:{f:1,u:"Ω"}};
+const SIM_RF_ATTENTE={port:null};
+const SIM_RF_MAX_NETS=40, SIM_RF_TOL=0.02;
+/* Pistes d'autres nets : jusqu'à 2 mm du réseau, 60 au plus. Fentes : un
+   échantillon tous les 50 µm, un détour plafonné à 30 mm. */
+const SIM_RF_VOISINAGE=2.0, SIM_RF_MAX_VOISINES=60;
+const SIM_RF_PAS_FENTE=0.05, SIM_RF_FENTE_MAX=30;
+const SIM_RF_GENERIQUES=/^(capacitor|inductor|resistor)\.(sub|mod)$/i;
+const SIM_RF_CACHE_LIB=new Map();
+
+function simRfDispo(){return !!(SIM_ED&&SIM_ED.rfPlateau);}
+
+/* --------------------------------------------------------------------------
+   L'état gardé par l'outil
+   -------------------------------------------------------------------------- */
+function simRfEtat(){
+  const rf=(SIM_ED&&SIM_ED.rfEtat)?SIM_ED.rfEtat():{};
+  if(!Array.isArray(rf.ports))rf.ports=[null,null];
+  if(!rf.modeles||typeof rf.modeles!=="object")rf.modeles={};
+  if(!Array.isArray(rf.exclus))rf.exclus=[];
+  if(!rf.broches||typeof rf.broches!=="object")rf.broches={};
+  return rf;
+}
+function simRfModifie(){if(SIM_ED&&SIM_ED.rfModifie)SIM_ED.rfModifie();}
+function simRfAstuce(t){if(SIM_ED&&SIM_ED.astuce)SIM_ED.astuce(t);}
+
+function simRfPad(P,port){
+  if(!port)return null;
+  const c=P.composants.find(x=>x.ref===port.ref);
+  const q=c&&c.pads.find(p=>String(p.pin)===String(port.pin));
+  return q?{c:c, q:q, net:q.net}:null;
+}
+
+function simRfPorts(){
+  const rf=simRfEtat(), P=SIM_ED.rfPlateau();
+  return [0,1].map(k=>{
+    const p=rf.ports[k];
+    if(!p)return null;
+    const pad=P.composants?simRfPad(P,p):null;
+    return {ref:p.ref, pin:p.pin, re:p.re, im:p.im,
+            net:pad?pad.net:"", perdu:!pad};
+  });
+}
+
+function simRfDesigner(k){
+  SIM_RF_ATTENTE.port=k;
+  if(SIM_ED.rfArmer)SIM_ED.rfArmer(k);
+  simRfAstuce(k===0?"Cliquez la pastille du PORT 1 — la sortie de la puce."
+                   :"Cliquez la pastille du PORT 2 — le connecteur ou l'antenne.");
+}
+
+/* Le clic qui pose un port, EN MILLIMÈTRES : l'outil convertit avant. */
+function simRfClic(x,y){
+  const k=SIM_RF_ATTENTE.port;
+  SIM_RF_ATTENTE.port=null;
+  const P=SIM_ED.rfPlateau();
+  let best=null, bd=0.5;
+  for(const c of (P.composants||[]))
+    for(const q of c.pads){
+      const d=q.dist(x,y);
+      if(d<bd){bd=d; best={c:c, q:q};}
+    }
+  if(!best)simRfAstuce("Aucune pastille sous le clic : visez le cuivre d'une "+
+                       "pastille.");
+  else if(k===0||k===1){
+    const rf=simRfEtat(), av=rf.ports[k]||{};
+    rf.ports[k]={ref:best.c.ref, pin:String(best.q.pin),
+                 re:av.re!=null?av.re:50, im:av.im||0};
+    simRfModifie();
+    simRfAstuce("Port "+(k+1)+" : "+best.c.ref+"."+best.q.pin+
+                (best.q.net?" (net "+best.q.net+")"
+                           :" — cette pastille n'a pas de net"));
+  }
+  simRfPortChoisi();
+}
+
+function simRfZ(k,re,im){
+  const p=simRfEtat().ports[k];
+  if(!p)return;
+  p.re=re; p.im=im; simRfModifie();
+}
+function simRfImporter(ref,nom,texte){
+  simRfEtat().modeles[ref]={nom:String(nom), texte:String(texte)};
+  simRfModifie();
+}
+function simRfOublierModele(ref){delete simRfEtat().modeles[ref];simRfModifie();}
+function simRfModeleImporte(ref){
+  const m=simRfEtat().modeles[ref];
+  return m?m.nom:"";
+}
+function simRfExclure(ref,oui){
+  const rf=simRfEtat();
+  rf.exclus=rf.exclus.filter(r=>r!==ref);
+  if(oui)rf.exclus.push(ref);
+  simRfModifie();
+}
+/* L'impédance d'une broche annexe de la puce ; `null` la laisse ouverte. */
+function simRfBroche(cle,z){
+  const rf=simRfEtat();
+  if(z)rf.broches[cle]={re:z.re, im:z.im}; else delete rf.broches[cle];
+  simRfModifie();
+}
+
+/* --------------------------------------------------------------------------
+   Les valeurs et les modèles
+   -------------------------------------------------------------------------- */
+const SIM_RF_MULT={p:1e-12,n:1e-9,u:1e-6,"µ":1e-6,k:1e3,K:1e3,G:1e9,R:1,r:1};
+/* « 3.3nH », « 1,5 pF », « 4k7 », « 2R2 », « 10 kΩ » -> unités SI. Pour un
+   condensateur ou une self, un nombre nu n'est pas une valeur qu'on sache
+   lire : 0 plutôt qu'un farad inventé. */
+function simRfValeurSI(txt,genre){
+  const s=String(txt||"").trim().replace(",",".").replace(/\s+/g,"");
+  const mult=l=>l==="m"?1e-3:l==="M"?1e6:
+                (SIM_RF_MULT[l]!=null?SIM_RF_MULT[l]:null);
+  let m=s.match(/^(\d+)([pnuµmkKMGRr])(\d+)/);
+  if(m&&mult(m[2])!=null)return parseFloat(m[1]+"."+m[3])*mult(m[2]);
+  m=s.match(/^(\d*\.?\d+)([pnuµmkKMGRr]?)/);
+  if(!m)return genre==="R"?-1:0;
+  const v=parseFloat(m[1]);
+  if(!m[2])return genre==="R"?v:0;
+  return mult(m[2])!=null?v*mult(m[2]):0;
+}
+
+function simRfIdeal(c){
+  const t=String(c.type||"").toLowerCase(), ref=String(c.ref||"");
+  const g=/capa/.test(t)?"C":/induc/.test(t)?"L":/resis/.test(t)?"R":
+          (!t&&/^C\d/i.test(ref))?"C":(!t&&/^L\d/i.test(ref))?"L":
+          (!t&&/^R\d/i.test(ref))?"R":"";
+  return g?{genre:g, valeur:simRfValeurSI(c.valeur,g)}:null;
+}
+
+async function simRfLireLib(nom){
+  if(SIM_RF_CACHE_LIB.has(nom))return SIM_RF_CACHE_LIB.get(nom);
+  let texte=null;
+  try{
+    const r=await fetch((SIM_BASE||"")+"/api/lib/fichier?type=simulation&nom="+
+                        encodeURIComponent(nom));
+    if(r.ok){
+      const j=await r.json();
+      texte=j&&typeof j.contenu==="string"?j.contenu:null;
+    }
+  }catch(e){texte=null;}
+  SIM_RF_CACHE_LIB.set(nom,texte);
+  return texte;
+}
+
+/* LA LIGNE DU CATALOGUE (LIB_composants.csv) d'une pièce, par sa référence
+   fabricant ou son nom de pièce : c'est elle qui porte la colonne « Modèle
+   Simulation » quand la carte ne l'a pas — toujours pour un fichier IPC-2581,
+   et pour une empreinte qui n'a pas été posée depuis la bibliothèque. Le
+   fichier de modèle ne porte pas la référence (GRM0335C1H1R5CA01D a pour
+   modèle GRM0335C1H1R5CA01.sub) : chercher `<MPN>.sub` ne suffit pas.
+   Lue une fois PAR CALCUL (`simRfProbleme` remet `null`) : une LIB modifiée
+   est vue au lancement suivant, sans recharger la page. */
+let SIM_RF_CSV=null;
+async function simRfLigneLib(mpn){
+  const k=String(mpn||"").trim().toUpperCase();
+  if(!k)return null;
+  if(SIM_RF_CSV===null){
+    SIM_RF_CSV=[];                     // un échec ne se retente pas composant par composant
+    try{
+      const r=await fetch((SIM_BASE||"")+"/api/lib/composants");
+      const j=r.ok?await r.json():null;
+      if(j&&Array.isArray(j.composants))SIM_RF_CSV=j.composants;
+    }catch(e){}
+  }
+  return (SIM_RF_CSV||[]).find(it=>
+    ["Part Number","manufacturer part Number","MPN","Part Name"].some(col=>
+      String(it[col]||"").trim().toUpperCase()===k))||null;
+}
+
+/* Le modèle d'un composant, et d'où il vient : importé dans le projet, puis
+   la colonne « Modèle Simulation » de la carte, puis celle de sa ligne du
+   catalogue, puis `<MPN>.sub`, et enfin un idéal tiré de la valeur. Un modèle
+   GÉNÉRIQUE (capacitor.sub…) n'est qu'un gabarit à paramètres : l'idéal tiré
+   de la valeur le vaut mieux que ses valeurs par défaut. `surcharge` est la
+   valeur « et si ». */
+async function simRfModele(c,surcharge){
+  const rf=simRfEtat(), ideal=simRfIdeal(c);
+  const avec=o=>Object.assign({genre:ideal&&ideal.genre,
+                               valeur:ideal&&ideal.valeur},o);
+  if(surcharge>=0&&ideal)
+    return {spec:{type:"ideal", genre:ideal.genre, valeur:surcharge},
+            source:"et si", nom:"idéal", genre:ideal.genre, valeur:surcharge};
+  const imp=rf.modeles[c.ref];
+  const genre=nom=>/\.s\d+p$/i.test(nom)?"snp":"spice";
+  if(imp&&imp.texte)
+    return avec({spec:{type:genre(imp.nom), texte:imp.texte, nom:imp.nom},
+                 source:"projet", nom:imp.nom});
+  const vide=s=>!s||s==="-"||s==="xx";
+  let lib=String(c.spice||"").trim();
+  if(vide(lib)){
+    const it=await simRfLigneLib(c.mpn);
+    if(it)lib=String(it["Modèle Simulation"]||it["Modele Simulation"]||"").trim();
+  }
+  let note="";
+  const noms=[];
+  if(!vide(lib)&&!SIM_RF_GENERIQUES.test(lib.replace(/\\/g,"/").split("/").pop()))
+    noms.push(lib);
+  const mpn=String(c.mpn||"").trim().toUpperCase();
+  if(!noms.length&&/^[A-Z0-9][A-Z0-9-]{5,}$/.test(mpn))noms.push(mpn+".sub");
+  for(const nom of noms){
+    const texte=await simRfLireLib(nom);
+    if(texte)
+      return avec({spec:{type:genre(nom), texte:texte, nom:nom},
+                   source:"bibliothèque", nom:nom});
+    if(nom===lib)note="modèle « "+lib+" » introuvable dans la bibliothèque";
+  }
+  if(ideal&&ideal.valeur>=0&&(ideal.valeur>0||ideal.genre!=="C"))
+    return avec({spec:{type:"ideal", genre:ideal.genre, valeur:ideal.valeur},
+                 source:"idéal", nom:"idéal", note:note});
+  return {erreur:c.ref+" : aucun modèle RF"+(note?" ("+note+")":"")+
+                 ". Importez son .sNp, ou excluez-le."};
+}
+
+/* --------------------------------------------------------------------------
+   La géométrie : polygones, et la longueur de piste noyée dans une pastille
+   -------------------------------------------------------------------------- */
+function simRfDansPoly(x,y,p){
+  let dedans=false;
+  for(let i=0,j=p.length-2;i<p.length;j=i,i+=2){
+    const xi=p[i], yi=p[i+1], xj=p[j], yj=p[j+1];
+    if(((yi>y)!==(yj>y))&&x<(xj-xi)*(y-yi)/((yj-yi)||1e-300)+xi)dedans=!dedans;
+  }
+  return dedans;
+}
+/* LE CUIVRE RÉELLEMENT REMPLI d'une zone — dégagements et liaisons
+   thermiques compris —, tel que l'outil le peint (`zoneMask` de l'éditeur),
+   en plages alternées vide / cuivre, rangée par rangée. Au plus deux cent
+   mille échantillons. */
+function simRfMasque(M){
+  if(!M||!M.lab||!(M.W>0)||!(M.H>0))return null;
+  const s=Math.max(1,Math.ceil(Math.sqrt(M.W*M.H/200000)));
+  const nx=Math.ceil(M.W/s), ny=Math.ceil(M.H/s), plages=[];
+  let cour=false, n=0;
+  for(let j=0;j<ny;j++)
+    for(let i=0;i<nx;i++){
+      const v=M.lab[Math.min(M.H-1,j*s)*M.W+Math.min(M.W-1,i*s)]>0;
+      if(v===cour)n++;
+      else{plages.push(n); cour=v; n=1;}
+    }
+  plages.push(n);
+  return {x0:M.x, y0:M.y, pas:s/M.res, nx:nx, ny:ny, plages:plages};
+}
+
+/* La distance d'un point au bord d'un polygone à plat. */
+function simRfDistPoly(x,y,p){
+  let d=Infinity;
+  for(let i=0,j=p.length-2;i<p.length;j=i,i+=2){
+    const ax=p[j], ay=p[j+1], dx=p[i]-ax, dy=p[i+1]-ay, l2=dx*dx+dy*dy;
+    const u=l2>0?Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/l2)):0;
+    d=Math.min(d,Math.hypot(x-ax-u*dx,y-ay-u*dy));
+  }
+  return d;
+}
+function simRfAire(p){
+  let a=0;
+  for(let i=0,j=p.length-2;i<p.length;j=i,i+=2)a+=p[j]*p[i+1]-p[i]*p[j+1];
+  return Math.abs(a)/2;
+}
+/* La longueur de piste DANS la pastille, depuis le bout `bout` : elle est déjà
+   comptée par la branche, et le serveur l'ôte de la capacité de la pastille. */
+function simRfDansPastille(t,bout,q){
+  const e=bout?t.b:t.a, o=bout?t.a:t.b;
+  const L=Math.hypot(o.x-e.x,o.y-e.y);
+  if(!(L>0))return 0;
+  const at=s=>q.dist(e.x+(o.x-e.x)*s/L, e.y+(o.y-e.y)*s/L);
+  if(at(L)<=0)return L;
+  let lo=0, hi=L;
+  for(let i=0;i<30;i++){const m=(lo+hi)/2; if(at(m)<=0)lo=m; else hi=m;}
+  return lo;
+}
+
+/* --------------------------------------------------------------------------
+   LE PROBLÈME : le document « cao-sim-rf-1 », et la liste des composants
+   traversés — rendue même quand le problème est refusé, pour que le panneau
+   puisse proposer d'importer le modèle qui manque.
+   -------------------------------------------------------------------------- */
+async function simRfProbleme(opts){
+  opts=opts||{};
+  /* La bibliothèque se relit à chaque calcul : catalogue et fichiers de
+     modèle modifiés entre deux lancements sont pris tels qu'ils sont. */
+  SIM_RF_CSV=null; SIM_RF_CACHE_LIB.clear();
+  const rf=simRfEtat(), P=SIM_ED.rfPlateau();
+  const refus=(erreur,conseil,composants)=>
+    ({erreur:erreur, conseil:conseil||"", composants:composants||[]});
+  if(P.erreur)return refus(P.erreur,P.conseil);
+  const PP=[simRfPad(P,rf.ports[0]), simRfPad(P,rf.ports[1])];
+  if(!PP[0]||!PP[1])
+    return refus("Posez les deux ports.",
+                 "Port 1 : la broche de sortie de la puce. Port 2 : le "+
+                 "connecteur ou l'antenne.");
+  if(PP[0].q===PP[1].q)return refus("Les deux ports sont sur la même pastille.");
+  for(const k of [0,1])
+    if(!PP[k].net||P.estMasse(PP[k].net))
+      return refus("Port "+(k+1)+" : la pastille "+PP[k].c.ref+"."+PP[k].q.pin+
+                   " n'a pas de net de signal.");
+
+  /* La marche de net en net, à travers les composants. */
+  const exclus=new Set(rf.exclus);
+  const portComps=new Set([PP[0].c, PP[1].c]);
+  const nets=new Set(), file=[], comps=[], notes=[], vus=new Set();
+  const alims=new Set();
+  const ajouter=n=>{
+    if(!n||P.estMasse(n)||nets.has(n))return;
+    if(P.estAlim(n)){alims.add(n);return;}
+    nets.add(n); file.push(n);
+  };
+  ajouter(PP[0].net);
+  while(file.length){
+    const n=file.shift();
+    if(nets.size>SIM_RF_MAX_NETS)
+      return refus("Le réseau RF s'étend sur plus de "+SIM_RF_MAX_NETS+
+                   " nets : la marche est sortie du chemin RF.",
+                   "Excluez le composant par lequel elle s'échappe.",
+                   comps.map(c=>({ref:c.ref, valeur:c.valeur})));
+    for(const c of P.composants){
+      if(vus.has(c)||portComps.has(c)||!c.pads.some(q=>q.net===n))continue;
+      vus.add(c);
+      if(exclus.has(c.ref))continue;
+      comps.push(c);
+      for(const q of c.pads)ajouter(q.net);
+    }
+  }
+  const liste=comps.map(c=>({ref:c.ref, valeur:c.valeur||"", exclu:false}));
+  for(const c of vus)if(exclus.has(c.ref))liste.push({ref:c.ref, exclu:true});
+  if(!nets.has(PP[1].net))
+    return refus("Aucun chemin entre les deux ports : le net du port 2 ("+
+                 PP[1].net+") n'est pas atteint depuis celui du port 1.",
+                 "Vérifiez les nets, ou ré-incluez un composant exclu.",liste);
+  if(alims.size)
+    notes.push("Nets d'alimentation tenus pour une masse RF (découplés) : "+
+               [...alims].join(", ")+".");
+  /* LES BROCHES ANNEXES DE LA PUCE (ou du connecteur) qui touchent le réseau :
+     leur piste est un moignon du réseau, et leur impédance se saisit. */
+  const annexes=[];
+  for(const k of [0,1])
+    for(const q of PP[k].c.pads)
+      if(q!==PP[k].q&&nets.has(q.net))
+        annexes.push({c:PP[k].c, q:q, cle:PP[k].c.ref+"."+q.pin});
+
+  const noeudPad=(c,q)=>"P:"+c.ref+"."+q.pin;
+  const masses=[], vusMasse=new Map();
+  /* Le nœud d'une broche à la masse : ses vias jusqu'au plan, ou la masse
+     idéale quand on n'en trouve pas — et cela se dit. */
+  const noeudBroche=(c,q)=>{
+    const n=q.net;
+    if(P.estMasse(n)){
+      const cle=c.ref+"."+q.pin;
+      if(!vusMasse.has(cle)){
+        const cu=q.cu[0], pris=new Set(), vias=[];
+        /* `chemin` : la piste (ou la coulée) de masse qui mène de la pastille
+           au via — sa self et sa résistance s'ajoutent à celles du via. */
+        const prendre=(v,chemin)=>{
+          if(pris.has(v))return;
+          const pl=P.planDuVia(v,cu);
+          if(pl<0)return;
+          pris.add(v);
+          const e={x:v.x, y:v.y, percage:v.drill||0.3,
+                   couche_plan:P.cuIndex(pl)};
+          if(chemin)e.piste={longueur:chemin.l, largeur:chemin.w,
+                             couche:P.cuIndex(cu), cuivre:P.cuivre(cu)};
+          vias.push(e);
+        };
+        const vs=P.viasDu(n).filter(v=>cu>=v.cuA&&cu<=v.cuB);
+        for(const v of vs)if(q.dist(v.x,v.y)<=0)prendre(v);
+        /* LES PISTES DE MASSE, bout à bout, jusqu'au premier via : quatre
+           tronçons au plus, la longueur et la largeur la plus fine cumulées. */
+        const pistesG=P.pistesDu(n).filter(t=>t.cu===cu);
+        const long=t=>t.lg||Math.hypot(t.b.x-t.a.x,t.b.y-t.a.y);
+        let front=[];
+        for(const t of pistesG)
+          for(const [a,b] of [[t.a,t.b],[t.b,t.a]])
+            if(q.dist(a.x,a.y)<=Math.max(SIM_RF_TOL,t.w/2))
+              front.push({p:b, l:long(t), w:t.w, vus:new Set([t])});
+        for(let pas=0;pas<4&&front.length;pas++){
+          const suite=[];
+          for(const f of front){
+            const v=vs.find(v=>Math.hypot(v.x-f.p.x,v.y-f.p.y)<=
+                               Math.max(SIM_RF_TOL,(v.d||0)/2));
+            if(v){prendre(v,f);continue;}
+            for(const t of pistesG){
+              if(f.vus.has(t))continue;
+              for(const [a,b] of [[t.a,t.b],[t.b,t.a]])
+                if(Math.hypot(a.x-f.p.x,a.y-f.p.y)<=Math.max(SIM_RF_TOL,t.w/2))
+                  suite.push({p:b, l:f.l+long(t), w:Math.min(f.w,t.w),
+                              vus:new Set([...f.vus,t])});
+            }
+          }
+          front=suite;
+        }
+        /* LA COULÉE DE MASSE sur la couche de la pastille : elle est MAILLÉE
+           ENTIÈRE au serveur, une fois pour toutes les pastilles qui s'y
+           posent (même `id`), et chacun de ses vias la descend au plan. */
+        let coulee=null;
+        const zs=P.zonesDu(n);
+        const iz=zs.findIndex(z=>z.cu===cu&&(z.dans(q.x,q.y)||
+                   simRfDistPoly(q.x,q.y,z.pts)<=Math.min(q.w,q.h)/2));
+        if(iz>=0){
+          const zm=zs[iz], vc=[];
+          for(const v of vs){
+            if(pris.has(v)||!zm.dans(v.x,v.y))continue;
+            const pl=P.planDuVia(v,cu);
+            if(pl>=0)vc.push({x:v.x, y:v.y, percage:v.drill||0.3,
+                              couche_plan:P.cuIndex(pl)});
+          }
+          if(vc.length)
+            coulee={id:"C:"+n+":"+cu+":"+iz, pts:zm.pts, trous:zm.trous||[],
+                    masque:zm.masque||null, couche:P.cuIndex(cu),
+                    cuivre:P.cuivre(cu), centre:[q.x,q.y], vias:vc};
+        }
+        if(!vias.length&&!coulee){
+          notes.push(cle+" : aucun via de masse trouvé, masse idéale.");
+          vusMasse.set(cle,"0");
+        }else{
+          vusMasse.set(cle,"G:"+cle);
+          masses.push({noeud:"G:"+cle, couche:P.cuIndex(cu), vias:vias,
+                       coulee:coulee});
+        }
+      }
+      return vusMasse.get(cle);
+    }
+    if(alims.has(n))return "0";
+    return n?noeudPad(c,q):null;
+  };
+
+  /* Les pastilles de chaque net du réseau : composants, ports, annexes. */
+  const padsDuNet=new Map();
+  for(const n of nets)padsDuNet.set(n,[]);
+  for(const c of comps)
+    for(const q of c.pads)if(nets.has(q.net))padsDuNet.get(q.net).push({c:c,q:q});
+  for(const k of [0,1])padsDuNet.get(PP[k].net).push({c:PP[k].c, q:PP[k].q});
+  for(const a of annexes)padsDuNet.get(a.q.net).push({c:a.c, q:a.q});
+
+  const branches=[], objetsPeints=[], pastilles=[], zonesDoc=[];
+  for(const n of nets){
+    const pads=padsDuNet.get(n);
+    let pistes=P.pistesDu(n);
+    /* LES ZONES DU NET SONT DES NŒUDS : tout ce qui y aboutit s'y rejoint, et
+       leur capacité au plan se chiffre au serveur. Une piste noyée dans une
+       zone de bout en bout n'est plus une ligne. */
+    const zones=P.zonesDu(n).map((z,i)=>Object.assign({id:"Z:"+n+":"+i,
+                                                        acces:[]},z));
+    /* Un bout de piste touche une zone s'il y est, ou si sa largeur de
+       cuivre en recouvre le bord — le raccord d'une broche est souvent un
+       petit polygone, et la piste s'arrête à sa lisière. */
+    const zoneEn=(cu,x,y,w)=>zones.find(z=>z.cu===cu&&
+      (z.dans(x,y)||(w>0&&simRfDistPoly(x,y,z.pts)<=w/2)));
+    pistes=pistes.filter(t=>{
+      const za=zoneEn(t.cu,t.a.x,t.a.y);
+      return !(za&&za===zoneEn(t.cu,t.b.x,t.b.y));
+    });
+    for(const z of zones)
+      zonesDoc.push({noeud:z.id, net:n, couche:P.cuIndex(z.cu), aire:z.aire,
+                     dim_max:z.dimMax, cuivre:P.cuivre(z.cu), pts:z.pts,
+                     trous:z.trous||[], masque:z.masque||null,
+                     acces:z.acces});
+    /* LES POINTS D'ACCROCHE AU MILIEU D'UNE PISTE : le bout d'une autre piste
+       (une dérivation en T) ou une pastille que la piste traverse. On coupe
+       la piste là, pour que ce point soit un nœud. */
+    /* UN BOUT POSÉ DANS UNE PASTILLE N'ACCROCHE RIEN : la pastille est déjà un
+       nœud, et tout ce qui y aboutit s'y rejoint. */
+    const dansUnePad=(t,x,y)=>pads.some(e=>e.q.cu.indexOf(t.cu)>=0&&
+                          e.q.dist(x,y)<=Math.max(SIM_RF_TOL,t.w/2));
+    const accroches=[];
+    for(const t of pistes)
+      for(const e of [t.a,t.b])
+        if(!dansUnePad(t,e.x,e.y))accroches.push({x:e.x,y:e.y,cu:t.cu});
+    for(const e of pads)
+      for(const cu of e.q.cu)accroches.push({x:e.q.x, y:e.q.y, cu:cu, pad:e.q});
+    for(let passe=0;passe<4;passe++){
+      let coupe=false;
+      for(const pt of accroches){
+        for(let i=0;i<pistes.length;i++){
+          const t=pistes[i];
+          if(t.cu!==pt.cu)continue;
+          const bout=Math.min(Math.hypot(t.a.x-pt.x,t.a.y-pt.y),
+                              Math.hypot(t.b.x-pt.x,t.b.y-pt.y));
+          /* Près d'un bout, ce n'est pas une dérivation : les deux bouts se
+             recouvrent, et `noeudDe` les réunit. */
+          const tolT=Math.max(SIM_RF_TOL,t.w/2);
+          const pres=pt.pad?(pt.pad.dist(t.a.x,t.a.y)<=tolT||
+                             pt.pad.dist(t.b.x,t.b.y)<=tolT)
+                           :bout<=tolT;
+          if(pres||t.dist(pt.x,pt.y)>t.w/2)continue;
+          const deux=P.couper(t,pt.x,pt.y);
+          if(!deux&&bout<=t.w)continue;        // trop près d'un bout : rien à couper
+          if(!deux)
+            return refus("Net "+n+" : une dérivation tombe au milieu d'un arc "+
+                         "en ("+simNb(pt.x,3)+" ; "+simNb(pt.y,3)+").",
+                         "Un arc ne se coupe pas : raccordez sur une piste "+
+                         "droite.",liste);
+          pistes.splice(i,1,deux[0],deux[1]);
+          coupe=true;
+          break;
+        }
+      }
+      if(!coupe)break;
+    }
+    /* Les bouts de piste, rangés en nœuds. */
+    const noeuds=[];
+    /* UNE PISTE TOUCHE UNE PASTILLE DÈS QUE SON CUIVRE LA RECOUVRE : son bout
+       peut tomber à quelques dizaines de microns du bord, sa largeur fait le
+       contact. */
+    const noeudDe=(t,p)=>{
+      for(const e of pads)
+        if(e.q.cu.indexOf(t.cu)>=0&&
+           e.q.dist(p.x,p.y)<=Math.max(SIM_RF_TOL,t.w/2)){
+          const id=noeudPad(e.c,e.q);
+          let nd=noeuds.find(o=>o.id===id);
+          if(!nd){nd={id:id, x:e.q.x, y:e.q.y, pad:e, bouts:[]};noeuds.push(nd);}
+          return nd;
+        }
+      /* UN CONTACT AVEC UNE ZONE EST UN ACCÈS : la zone est maillée au
+         serveur, et chaque contact s'accroche à la cellule la plus proche. */
+      const z=zoneEn(t.cu,p.x,p.y,t.w);
+      if(z){
+        const id=z.id+"@"+z.acces.length;
+        z.acces.push({noeud:id, x:p.x, y:p.y});
+        const nd={id:id, zone:z, bouts:[]};
+        noeuds.push(nd);
+        return nd;
+      }
+      const via=P.viasDu(n).find(v=>t.cu>=v.cuA&&t.cu<=v.cuB&&
+                  Math.hypot(v.x-p.x,v.y-p.y)<=Math.max((v.d||0)/2,SIM_RF_TOL));
+      /* DEUX BOUTS QUI SE RECOUVRENT SONT UN NŒUD : un export pose volontiers
+         deux pistes à quelques dizaines de microns l'une de l'autre, et c'est
+         le cuivre de leur largeur qui les joint, pas l'égalité des
+         coordonnées. */
+      for(const o of noeuds){
+        if(o.pad||o.zone)continue;
+        const tol=Math.max(SIM_RF_TOL,Math.min(o.w,t.w)/2);
+        const ecart=Math.hypot(o.x-p.x,o.y-p.y);
+        if(via?o.via===via:(o.via==null&&o.cu===t.cu&&ecart<=tol)){
+          /* Réunis par le cuivre et non par les coordonnées : ces deux pistes
+             ne se suivent pas bout à bout pour la cascade, le nœud les borne
+             chacune. */
+          if(ecart>SIM_RF_TOL)o.recouvre=true;
+          return o;
+        }
+      }
+      const o={id:"N:"+n+":"+noeuds.length, x:p.x, y:p.y, cu:t.cu, w:t.w,
+               via:via||null, bouts:[]};
+      noeuds.push(o);
+      return o;
+    };
+    const bouts=new Map();
+    for(const t of pistes){
+      const a=noeudDe(t,t.a), b=noeudDe(t,t.b);
+      a.bouts.push({t:t,u:0}); b.bouts.push({t:t,u:1});
+      bouts.set(t,[a,b]);
+    }
+    /* UNE PASTILLE QUI RECOUVRE UNE ZONE DU NET S'Y RELIE, qu'elle ait des
+       pistes ou non : le raccord d'une broche est souvent un polygone qui la
+       joint à la pastille voisine. Sans zone ni piste, elle est en l'air. */
+    for(const e of pads){
+      const id=noeudPad(e.c,e.q);
+      const z=e.q.cu.map(cu=>zoneEn(cu,e.q.x,e.q.y,Math.min(e.q.w,e.q.h))).find(Boolean);
+      if(z){
+        z.acces.push({noeud:id, x:e.q.x, y:e.q.y});
+        continue;
+      }
+      if(noeuds.some(o=>o.id===id))continue;
+      return refus("La pastille "+e.c.ref+"."+e.q.pin+" (net "+n+") n'est "+
+                   "reliée par aucune piste.",
+                   "Routez-la : le calcul ne suit que les pistes et les zones "+
+                   "du net.",liste);
+    }
+    /* Les branches : d'un nœud frontière au suivant. */
+    const frontiere=o=>o.pad||o.zone||o.recouvre||o.bouts.length!==2;
+    const prises=new Set(), dansPad=new Map();
+    const noterPad=(o,t,u)=>{
+      if(!o.pad)return;
+      const l=simRfDansPastille(t,u,o.pad.q);
+      if(!(l>0))return;
+      if(!dansPad.has(o.id))dansPad.set(o.id,[]);
+      dansPad.get(o.id).push({largeur:t.w, longueur:l});
+    };
+    for(const o of noeuds){
+      if(!frontiere(o))continue;
+      for(const b0 of o.bouts){
+        if(prises.has(b0.t))continue;
+        const suite=[b0.t]; prises.add(b0.t);
+        noterPad(o,b0.t,b0.u);
+        let cour=bouts.get(b0.t)[1-b0.u], der={t:b0.t,u:1-b0.u};
+        while(!frontiere(cour)){
+          const s=cour.bouts.find(b=>!prises.has(b.t));
+          if(!s)break;
+          suite.push(s.t); prises.add(s.t);
+          der={t:s.t, u:1-s.u};
+          cour=bouts.get(s.t)[1-s.u];
+        }
+        noterPad(cour,der.t,der.u);
+        const g=P.segments(suite.map(t=>t.natif),n);
+        if(!g.envoi.length)continue;
+        const p0=b0.u?b0.t.b:b0.t.a, s0=g.envoi[0].start;
+        const endroit=Math.hypot(s0[0]-p0.x,s0[1]-p0.y)<=SIM_RF_TOL*2;
+        branches.push({a:endroit?o.id:cour.id, b:endroit?cour.id:o.id,
+                       net:n, objets:g.envoi, vias:g.vias});
+        objetsPeints.push(...g.objets);
+      }
+    }
+    if(pistes.some(t=>!prises.has(t)))
+      notes.push("Net "+n+" : une boucle de piste sans extrémité est ignorée.");
+    /* La capacité de chaque pastille du réseau, sur la couche où l'on y
+       arrive. */
+    for(const e of pads){
+      const o=noeuds.find(x=>x.id===noeudPad(e.c,e.q));
+      const cu=(o&&o.bouts.length)?o.bouts[0].t.cu:e.q.cu[0];
+      pastilles.push({noeud:noeudPad(e.c,e.q), couche:P.cuIndex(cu),
+                      largeur:e.q.w, longueur:e.q.h, forme:e.q.forme,
+                      cuivre:P.cuivre(cu),
+                      recouvrements:dansPad.get(noeudPad(e.c,e.q))||[]});
+    }
+  }
+
+  const cuDe=new Map(), pistesReseau=[];
+  for(const n of nets)
+    for(const t of P.pistesDu(n)){cuDe.set(P.cuIndex(t.cu),t.cu); pistesReseau.push(t);}
+  const tousNets=P.nets?P.nets():[];
+
+  /* LES FENTES DU PLAN DE RÉFÉRENCE. Sous chaque branche, on suit le plan qui
+     lui sert de retour — le plus proche au-dessus et au-dessous, comme la
+     section — et l'on cherche où son cuivre manque. Un manque AU MILIEU de la
+     branche est une fente franchie : on mesure, de part et d'autre, jusqu'où
+     il faut aller pour que le plan se referme sur la ligne de la piste — le
+     détour du courant de retour. Un manque à un BOUT de branche est la
+     découpe d'usage sous une pastille : elle se signale, elle ne se chiffre
+     pas. Un plan sans aucune zone est tenu pour plein. */
+  const cuivrePlan=new Map();
+  const cuivreDe=pl=>{
+    if(!cuivrePlan.has(pl)){
+      const zs=[];
+      for(const n of tousNets)for(const z of P.zonesDu(n))if(z.cu===pl)zs.push(z);
+      cuivrePlan.set(pl,zs.length?((x,y)=>zs.some(z=>z.dans(x,y))):null);
+    }
+    return cuivrePlan.get(pl);
+  };
+  const plansDe=cu=>[P.planDuVia({cuA:0,cuB:cu},cu),
+                     P.planDuVia({cuA:cu,cuB:cu+64},cu)].filter(pl=>pl>=0);
+  for(const br of branches){
+    const ech=[];
+    for(const o of br.objets){
+      const cu=cuDe.get(o.layer);
+      if(cu==null||!o.start||!o.end)continue;
+      const dx=o.end[0]-o.start[0], dy=o.end[1]-o.start[1], L=Math.hypot(dx,dy);
+      if(!(L>0))continue;
+      const k=Math.max(1,Math.ceil(L/SIM_RF_PAS_FENTE));
+      for(let i=0;i<=k;i++)
+        ech.push({x:o.start[0]+dx*i/k, y:o.start[1]+dy*i/k, ux:dx/L, uy:dy/L,
+                  w:o.width||0.2, pls:plansDe(cu)});
+    }
+    const fentes=[];
+    for(const pl of new Set(ech.flatMap(e=>e.pls))){
+      const cop=cuivreDe(pl);
+      if(!cop)continue;
+      const vide=ech.map(e=>e.pls.indexOf(pl)>=0&&!cop(e.x,e.y));
+      for(let i=0;i<vide.length;i++){
+        if(!vide[i])continue;
+        let j=i;
+        while(j+1<vide.length&&vide[j+1])j++;
+        const e=ech[(i+j)>>1];
+        if(i===0||j===vide.length-1){
+          notes.push("Net "+br.net+" : la piste arrive au-dessus d'une découpe du "+
+                     "plan de référence (vers "+simNb(e.x,2)+" ; "+simNb(e.y,2)+
+                     ") ; la piste et la pastille y sont calculées comme sur plan "+
+                     "plein.");
+          i=j; continue;
+        }
+        const g=Math.hypot(ech[j].x-ech[i].x,ech[j].y-ech[i].y)+SIM_RF_PAS_FENTE;
+        const demi=g/2+e.w/2, nq=Math.max(2,Math.ceil(2*demi/SIM_RF_PAS_FENTE));
+        const ouvert=(cx,cy)=>{
+          for(let q=0;q<=nq;q++){
+            const t=-demi+2*demi*q/nq;
+            if(!cop(cx+t*e.ux,cy+t*e.uy))return true;
+          }
+          return false;
+        };
+        const detour=sg=>{
+          for(let d=SIM_RF_PAS_FENTE;d<=SIM_RF_FENTE_MAX;d+=SIM_RF_PAS_FENTE)
+            if(!ouvert(e.x-sg*d*e.uy,e.y+sg*d*e.ux))return {d:d,borne:false};
+          return {d:SIM_RF_FENTE_MAX,borne:true};
+        };
+        const a=detour(1), b=detour(-1);
+        /* Un trou plus petit que deux largeurs de piste — un antipad — ne
+           détourne rien qui compte. */
+        if(Math.max(a.d,b.d)>=2*e.w)
+          fentes.push({x:+e.x.toFixed(3), y:+e.y.toFixed(3), d1:+a.d.toFixed(3),
+                       d2:+b.d.toFixed(3), g:+g.toFixed(3), largeur:e.w,
+                       plan:P.cuIndex(pl), borne:a.borne&&b.borne});
+        i=j;
+      }
+    }
+    if(fentes.length)br.fentes=fentes;
+  }
+
+  /* LES PISTES DES AUTRES NETS qui passent à moins de 2 mm du réseau : le
+     serveur les prend dans les lignes couplées, fermées sur leur Z₀. */
+  const voisines=[];
+  if(opts.couplage!==false){
+    const pres=(r,t)=>r.cu===t.cu&&
+      Math.min(r.dist(t.a.x,t.a.y),r.dist(t.b.x,t.b.y),
+               t.dist(r.a.x,r.a.y),t.dist(r.b.x,r.b.y))<=SIM_RF_VOISINAGE+(r.w+t.w)/2;
+    for(const n of tousNets){
+      if(nets.has(n)||P.estMasse(n)||voisines.length>=SIM_RF_MAX_VOISINES)continue;
+      for(const t of P.pistesDu(n)){
+        if(voisines.length>=SIM_RF_MAX_VOISINES)break;
+        if(!pistesReseau.some(r=>pres(r,t)))continue;
+        const g=P.segments([t.natif],n);
+        if(g.envoi.length)voisines.push({net:n, objets:g.envoi});
+      }
+    }
+    if(voisines.length>=SIM_RF_MAX_VOISINES)
+      notes.push("Plus de "+SIM_RF_MAX_VOISINES+" pistes d'autres nets longent "+
+                 "le réseau : seules les premières sont comptées.");
+  }
+
+  /* Les composants et leurs modèles. */
+  const composants=[];
+  let erreur=null;
+  for(let i=0;i<comps.length;i++){
+    const c=comps[i];
+    const pads=c.pads.slice()
+      .sort((a,b)=>String(a.pin).localeCompare(String(b.pin),"fr",{numeric:true}));
+    const noeuds=pads.map(q=>noeudBroche(c,q));
+    const surch=opts.surcharges&&opts.surcharges[c.ref];
+    const m=await simRfModele(c,surch!=null?surch:-1);
+    Object.assign(liste[i],{source:m.source||"", nom:m.nom||"",
+                            genre:m.genre||"", valeurSI:m.valeur,
+                            note:m.note||"", erreur:m.erreur||""});
+    if(m.erreur){erreur=erreur||m.erreur;continue;}
+    if(noeuds.some(x=>x==null)){
+      erreur=erreur||(c.ref+" : une broche n'a pas de net.");
+      continue;
+    }
+    if(m.note)notes.push(c.ref+" : "+m.note+", modèle idéal.");
+    const d={ref:c.ref, noeuds:noeuds, modele:m.spec};
+    /* UNE SELF porte sa géométrie : le serveur en fait un solénoïde, d'une
+       pastille à l'autre, pour ses mutuelles. */
+    if(m.genre==="L"&&pads.length===2){
+      d.genre="L";
+      d.geo={x0:pads[0].x, y0:pads[0].y, x1:pads[1].x, y1:pads[1].y,
+             largeur:Math.min(pads[0].w,pads[0].h), couche:P.cuIndex(pads[0].cu[0])};
+    }
+    composants.push(d);
+  }
+  for(const a of annexes){
+    const z=rf.broches[a.cle];
+    liste.push({ref:a.cle, broche:true, valeur:"broche de "+a.c.ref+
+                (a.q.net?" · "+a.q.net:""), z:z||null});
+    if(z)composants.push({ref:a.cle, noeuds:[noeudPad(a.c,a.q)],
+                          modele:{type:"z", re:z.re, im:z.im}});
+  }
+  if(erreur)
+    return refus(erreur,"Chaque composant du chemin RF a besoin d'un modèle.",
+                 liste);
+
+  return {
+    doc:{format:"cao-sim-rf-1", source:(SIM_ED.outil||""), carte:P.carte(),
+         stackup:P.stackup(), reference_nets:[...simRefSet()],
+         ports:[0,1].map(k=>({noeud:noeudPad(PP[k].c,PP[k].q),
+                              z:[+rf.ports[k].re||0, +rf.ports[k].im||0]})),
+         branches:branches, composants:composants, masses:masses,
+         pastilles:pastilles, zones:zonesDoc, voisines:voisines,
+         couplage:opts.couplage!==false,
+         analyse:opts.analyse||{}},
+    composants:liste, notes:notes, objets:objetsPeints
+  };
+}
+
+/* --------------------------------------------------------------------------
+   LE PANNEAU
+   -------------------------------------------------------------------------- */
+function simCorpsRf(){
+  if(!simRfDispo())
+    return '<p class="simEtat">Cet outil ne sait pas encore décrire sa carte '+
+      "pour la simulation RF.</p>";
+  const port=k=>'<div class="pnl-bar">'+
+    '<span class="pnl-lbl">Port '+(k+1)+"</span>"+
+    '<button class="tb mini" id="simRfP'+k+'" title="'+
+      (k===0?"Désigner la broche de SORTIE de la puce : cliquez ici, puis "+
+             "la pastille sur la carte."
+            :"Désigner le connecteur ou l'antenne : cliquez ici, puis la "+
+             "pastille sur la carte.")+'">🎯</button>'+
+    '<span class="simU" id="simRfNom'+k+'">—</span>'+
+    simChamp("simRfR"+k,"Partie réelle de l'impédance, en ohms")+
+    '<select class="simU simUSel" id="simRfS'+k+'" title="Signe de la partie '+
+      'imaginaire : + j inductif, − j capacitif">'+
+      '<option value="+">+ j</option><option value="-">− j</option></select>'+
+    simChamp("simRfX"+k,"Partie imaginaire de l'impédance, en ohms (sa valeur "+
+                        "absolue : le signe se choisit à gauche)")+
+    '<span class="simU">Ω</span></div>';
+  return '<div class="pnl-bar simRefBar" id="simRefBar"></div>'+
+    port(0)+port(1)+
+    '<p class="simNote">· Port 1 : l\'impédance de <b>sortie</b> de la puce. '+
+    "Port 2 : celle de la charge — connecteur, antenne.</p>"+
+    '<div class="pnl-bar simBarF">'+
+      '<span class="pnl-lbl">Fréquence</span>'+
+      simChamp("simFc","Fréquence de travail : c'est à elle que le bilan est "+
+                       "donné")+
+      simChampUnite("simFUnite","la fréquence de travail")+
+    "</div>"+
+    '<div class="pnl-bar simBarF">'+
+      '<span class="pnl-lbl">Bande</span>'+
+      simChamp("simF1","Début de bande, dans l'unité choisie à droite")+
+      simChampUnite("simFUniteBande1","le début de la bande")+
+      '<span class="simSep">→</span>'+
+      simChamp("simF2","Fin de bande, dans l'unité choisie à droite")+
+      simChampUnite("simFUniteBande2","la fin de la bande")+
+      '<span class="simGr"><span class="pnl-lbl">Points</span>'+
+      simChamp("simN","Nombre de points de la courbe")+"</span>"+
+    "</div>"+
+    '<div class="pnl-bar simBarFixe">'+
+      '<button class="tb mini on" id="simRfGo" title="Calculer le S21 entre '+
+        'les deux ports">▶ Calculer</button>'+
+      '<button class="tb mini" id="simRfS2p" title="Le réseau entre les deux '+
+        'ports, RENORMALISÉ À 50 Ω — Touchstone n\'accepte pas de référence '+
+        'complexe. L\'en-tête porte les impédances réelles du calcul.">'+
+        ".s2p</button>"+
+      simXtCase("simRfCouplage","couplage entre pistes",
+        "Deux pistes du réseau qui se longent à moins de trois hauteurs au "+
+        "plan sont calculées en lignes couplées. Décochez pour voir ce que "+
+        "ce couplage coûte au S21.")+
+    "</div>"+
+    '<input type="file" id="simRfFichier" style="display:none" '+
+      'accept=".s1p,.s2p,.s3p,.s4p,.sub,.mod,.cir,.sp,.lib">';
+}
+
+function simRfNb(el){
+  const v=parseFloat(String((el&&el.value)||"").replace(",","."));
+  return isFinite(v)?v:NaN;
+}
+
+function simRfPortsEcrire(){
+  if(!simRfDispo())return;
+  const ports=simRfPorts();
+  for(const k of [0,1]){
+    const p=ports[k], nom=simEl("simRfNom"+k);
+    if(nom)nom.textContent=p?(p.ref+"."+p.pin+(p.perdu?" (introuvable)":
+                                              (p.net?" · "+p.net:""))):"—";
+    /* La partie imaginaire s'écrit en valeur absolue, son signe au sélecteur. */
+    for(const [id,v] of [["simRfR"+k,p?p.re:""],
+                         ["simRfX"+k,p&&p.im!=null?Math.abs(p.im):""]]){
+      const e=simEl(id);
+      if(!e)continue;
+      e.value=(v===""||v==null)?"":String(v).replace(".",",");
+      e.disabled=!p;
+    }
+    const sg=simEl("simRfS"+k);
+    if(sg){sg.value=p&&p.im<0?"-":"+"; sg.disabled=!p;}
+  }
+}
+
+/* Rappelée quand un port vient d'être posé. */
+function simRfPortChoisi(){
+  simRfPortsEcrire();
+  simRfOublier("");
+}
+
+function simRfOublier(pourquoi){
+  const eu=!!SIM_RF.res;
+  SIM_RF.res=null;
+  SIM_RF.err=eu&&pourquoi?pourquoi:SIM_RF.err;
+  if(SIM.analyse==="s21")simRendre();
+}
+
+function simBrancherRf(){
+  if(!simRfDispo())return;
+  simSaisieEcrire();
+  simRefEcrire();
+  simRfPortsEcrire();
+  const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
+  for(const k of [0,1]){
+    pose("simRfP"+k,"onclick",()=>simRfDesigner(k));
+    const lire=()=>{
+      const re=simRfNb(simEl("simRfR"+k)), x=simRfNb(simEl("simRfX"+k));
+      const sg=simEl("simRfS"+k);
+      /* Un « -7 » tapé dans le champ vaut − j7, quel que soit le sélecteur. */
+      const im=x<0?x:(sg&&sg.value==="-"?-x:x);
+      if(!(re>0)||!isFinite(im)){simRfPortsEcrire();return;}
+      simRfZ(k,re,im);
+      simRfPortsEcrire();                // le champ reprend la valeur absolue
+      simRfOublier("L'impédance d'un port a changé : relancez le calcul.");
+    };
+    pose("simRfR"+k,"onchange",lire);
+    pose("simRfX"+k,"onchange",lire);
+    pose("simRfS"+k,"onchange",lire);
+  }
+  for(const id of ["simFc","simF1","simF2","simN"])
+    pose(id,"oninput",()=>{
+      simSaisie();
+      if(id==="simFc")simAjusterBandePourFc();
+    });
+  pose("simFUnite","onchange",function(){simUniteChanger(this.value,"fc");});
+  pose("simFUniteBande1","onchange",
+       function(){simUniteChanger(this.value,"bande1");});
+  pose("simFUniteBande2","onchange",
+       function(){simUniteChanger(this.value,"bande2");});
+  pose("simRfGo","onclick",simRfGo);
+  const cp=simEl("simRfCouplage");
+  if(cp){cp.checked=SIM_RF.couplage;
+         cp.onchange=function(){SIM_RF.couplage=this.checked;simRfGo();};}
+  pose("simRfS2p","onclick",()=>{
+    if(!SIM_RF.res){SIM_RF.err="Rien à enregistrer : calculez d'abord.";
+                    simRendre();return;}
+    simTelecharger(SIM_RF.res.touchstone,
+                   "rf-"+String(SIM_RF.res.carte||"carte")
+                          .replace(/[^\w.-]+/g,"_")+".s2p","text/plain");
+  });
+  pose("simRfFichier","onchange",function(){
+    const f=this.files&&this.files[0], ref=SIM_RF.cible;
+    this.value="";
+    if(!f||!ref)return;
+    const lr=new FileReader();
+    lr.onload=()=>{simRfImporter(ref,f.name,String(lr.result||""));simRfGo();};
+    lr.readAsText(f);
+  });
+}
+
+async function simRfGo(){
+  if(SIM_RF.occupe||!simRfDispo())return;
+  simSaisie();
+  const s=SIM.saisie;
+  SIM_RF.occupe=true; SIM_RF.err="";
+  simProgresDemarrer();
+  simRendre();
+  try{
+    const p=await simRfProbleme({
+      surcharges:SIM_RF.surcharges, couplage:SIM_RF.couplage,
+      analyse:{f_debut:s.f1, f_fin:s.f2, points:s.points, f_centre:s.fc}});
+    SIM_RF.composants=p.composants||[];
+    SIM_RF.notes=p.notes||[];
+    if(p.erreur){
+      SIM_RF.res=null;
+      SIM_RF.err=p.erreur+(p.conseil?"\n"+p.conseil:"");
+      return;
+    }
+    const rep=await fetch((SIM_BASE||"")+SIM_RF_ROUTE,{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(p.doc)});
+    let corps=null;
+    try{corps=await rep.json();}catch(e){corps=null;}
+    if(!rep.ok)
+      throw new Error((corps&&corps.detail)||
+                      ("Le serveur a refusé le calcul ("+rep.status+")."));
+    SIM_RF.res=corps;
+  }catch(e){
+    SIM_RF.res=null;
+    SIM_RF.err=(e&&e.message)||String(e);
+  }finally{
+    SIM_RF.occupe=false;
+    simProgresFini();
+    simRendre();
+  }
+}
+
+function simRfZTxt(z){
+  const im=z[1];
+  return simNb(z[0],2)+(im<0?" − j":" + j")+simNb(Math.abs(im),2)+" Ω";
+}
+
+function simRfBilan(r){
+  const b=r.bilan;
+  const part=Math.pow(10,b.s21_db/10)*100;
+  let verdict, cls;
+  if(b.s11_db>-10){
+    cls="simErr";
+    verdict="Désadapté à "+simFreq(b.f)+" : la puce voit "+simRfZTxt(b.zin)+
+            " au lieu de "+simRfZTxt(b.zin_cible)+". Retouchez le réseau "+
+            "d'adaptation — le « et si » ci-dessous le permet sans toucher à "+
+            "la carte.";
+  }else if(b.perte_dissipee_db!=null&&b.perte_dissipee_db>1){
+    cls="simNote";
+    verdict="Bien adapté, mais le réseau DISSIPE "+simNb(b.perte_dissipee_db,2)+
+            " dB : ce sont les pertes des pistes et des composants, pas "+
+            "l'adaptation, qu'il faut regarder.";
+  }else{
+    cls="simNote";
+    verdict="Bien adapté à "+simFreq(b.f)+".";
+  }
+  return '<table class="simTab"><tbody>'+
+    "<tr><td>S₂₁ à "+simFreq(b.f)+"</td><td><b>"+simNb(b.s21_db,2)+
+      " dB</b> — "+simNb(part,1)+" % de la puissance disponible</td></tr>"+
+    "<tr><td>S₁₁ / S₂₂</td><td>"+simNb(b.s11_db,1)+" dB / "+
+      simNb(b.s22_db,1)+" dB</td></tr>"+
+    "<tr><td>Z vue par la puce</td><td>"+simRfZTxt(b.zin)+" (cible : "+
+      simRfZTxt(b.zin_cible)+")</td></tr>"+
+    "<tr><td>Z vue par la charge</td><td>"+simRfZTxt(b.zout)+"</td></tr>"+
+    (r.validite&&isFinite(r.validite.f_max)
+      ? "<tr><td>Validité</td><td>quasi-statique jusqu'à "+
+        simFreq(r.validite.f_max)+" — "+simEsc(r.validite.limites[0].cause+
+        " ("+r.validite.limites[0].detail+")")+"</td></tr>"
+      : "")+
+    "<tr><td>Pertes</td><td>désadaptation "+
+      simNb(b.perte_desadaptation_db,2)+" dB · dissipées "+
+      (b.perte_dissipee_db==null?"—":simNb(b.perte_dissipee_db,2)+" dB")+
+      (b.voisines_pct>0?" · dont "+simNb(b.voisines_pct,2)+
+        " % partis dans les pistes voisines":"")+
+      "</td></tr>"+
+    "</tbody></table>"+
+    '<p class="'+cls+'">'+simEsc(verdict)+"</p>";
+}
+
+/* Les trois modules en dB sur la bande, et le repère de f₀. */
+function simRfCourbe(r){
+  const n=r.freqs.length;
+  if(n<2)return "";
+  const W=simLargeurTrace(), H=170, mg={g:44,d:10,h:12,b:26};
+  const traces=[{i:1,j:0,nom:"S21",c:"var(--blue)"},
+                {i:0,j:0,nom:"S11",c:"var(--yellow)"},
+                {i:1,j:1,nom:"S22",c:"var(--green)"}];
+  const db=(k,t)=>simDb(r.s[k][2*t.i+t.j]);
+  let hi=-1e9, lo=1e9;
+  for(const t of traces)for(let k=0;k<n;k++){
+    const v=db(k,t); if(v>hi)hi=v; if(v<lo)lo=v;
+  }
+  hi=Math.ceil(Math.max(hi,0)); lo=Math.max(Math.floor(lo),hi-60);
+  if(hi-lo<6)lo=hi-6;
+  const f0=r.freqs[0], f1=r.freqs[n-1];
+  const X=f=>mg.g+(W-mg.g-mg.d)*((f-f0)/(f1-f0));
+  const Y=v=>mg.h+(H-mg.h-mg.b)*(1-(Math.max(lo,Math.min(hi,v))-lo)/(hi-lo));
+  let svg='<svg class="simCourbe" viewBox="0 0 '+W+" "+H+'" role="img" '+
+          'aria-label="S21, S11 et S22 en fonction de la fréquence">';
+  for(let i=0;i<=3;i++){
+    const v=lo+(hi-lo)*i/3, y=Y(v).toFixed(1);
+    svg+='<line class="simGrille" x1="'+mg.g+'" y1="'+y+'" x2="'+(W-mg.d)+
+         '" y2="'+y+'"/><text class="simCote" x="'+(mg.g-6)+'" y="'+
+         (+y+3.5)+'" text-anchor="end">'+simNb(v,0)+"</text>";
+  }
+  if(r.f_centre>=f0&&r.f_centre<=f1){
+    const x=X(r.f_centre).toFixed(1);
+    svg+='<line class="simFc" x1="'+x+'" y1="'+mg.h+'" x2="'+x+'" y2="'+
+         (H-mg.b)+'"/><text class="simCote simFcTxt" x="'+(+x+4)+'" y="'+
+         (mg.h+9)+'">f₀</text>';
+  }
+  svg+='<text class="simCote" x="'+mg.g+'" y="'+(H-8)+'">'+simFreq(f0)+
+       '</text><text class="simCote" x="'+(W-mg.d)+'" y="'+(H-8)+
+       '" text-anchor="end">'+simFreq(f1)+'</text><text class="simCote '+
+       'simUnite" x="4" y="'+(mg.h+4)+'">dB</text>';
+  for(const t of traces){
+    let d="";
+    for(let k=0;k<n;k++)
+      d+=(k?"L":"M")+X(r.freqs[k]).toFixed(1)+" "+Y(db(k,t)).toFixed(1);
+    svg+='<path class="simTrace" d="'+d+'" stroke="'+t.c+'"/>';
+  }
+  svg+="</svg>";
+  let leg='<div class="simLeg">';
+  for(const t of traces)
+    leg+='<span><i style="background:'+t.c+'"></i>'+t.nom+"</span>";
+  return svg+leg+"</div>";
+}
+
+/* L'abaque de Smith, normalisé à 50 Ω : la Z vue par la puce sur la bande, un
+   point plein à f₀, et la CIBLE — le conjugué de la sortie de la puce —
+   entourée. Ce que la retouche doit faire, c'est amener l'un sur l'autre. */
+function simRfSmith(r){
+  const R=90, c=R+10, T=2*c;
+  const g=z=>{
+    const a=z[0]-50, b=z[1], d=(z[0]+50)*(z[0]+50)+z[1]*z[1];
+    return [c+R*((a*(z[0]+50)+b*z[1])/d), c-R*((b*(z[0]+50)-a*z[1])/d)];
+  };
+  let svg='<svg class="simSmith" viewBox="0 0 '+T+" "+T+'" width="'+T+
+          '" height="'+T+'" role="img" aria-label="Abaque de Smith">'+
+          '<defs><clipPath id="simRfClip"><circle cx="'+c+'" cy="'+c+'" r="'+
+          R+'"/></clipPath></defs>'+
+          '<circle class="simGrille" cx="'+c+'" cy="'+c+'" r="'+R+
+          '" fill="none"/><line class="simGrille" x1="'+(c-R)+'" y1="'+c+
+          '" x2="'+(c+R)+'" y2="'+c+'"/><g clip-path="url(#simRfClip)">';
+  for(const rr of [0.2,0.5,1,2])
+    svg+='<circle class="simGrille" fill="none" cx="'+
+         (c+R*rr/(1+rr)).toFixed(1)+'" cy="'+c+'" r="'+(R/(1+rr)).toFixed(1)+
+         '"/>';
+  for(const x of [0.5,1,2])
+    for(const s of [1,-1])
+      svg+='<circle class="simGrille" fill="none" cx="'+(c+R)+'" cy="'+
+           (c-s*R/x).toFixed(1)+'" r="'+(R/x).toFixed(1)+'"/>';
+  svg+="</g>";
+  let d="";
+  r.zin.forEach((z,k)=>{
+    const p=g(z);
+    d+=(k?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1);
+  });
+  svg+='<path class="simTrace" d="'+d+'" stroke="var(--yellow)"/>';
+  const b=r.bilan, p0=g(b.zin), pc=g(b.zin_cible);
+  svg+='<circle cx="'+pc[0].toFixed(1)+'" cy="'+pc[1].toFixed(1)+
+       '" r="6" fill="none" stroke="var(--green)" stroke-width="2"><title>'+
+       "Cible : "+simEsc(simRfZTxt(b.zin_cible))+"</title></circle>"+
+       '<circle cx="'+p0[0].toFixed(1)+'" cy="'+p0[1].toFixed(1)+
+       '" r="3.5" fill="var(--yellow)"><title>Z vue par la puce à f₀ : '+
+       simEsc(simRfZTxt(b.zin))+"</title></circle></svg>";
+  return '<div class="simLeg"><span><i style="background:var(--yellow)"></i>'+
+    "Z vue par la puce (point : f₀)</span><span><i style=\"background:"+
+    'var(--green)"></i>cible (conjugué de la sortie)</span></div>'+svg;
+}
+
+function simRfTableComposants(){
+  const L=SIM_RF.composants;
+  if(!L.length)return "";
+  const nb=v=>String(+v.toPrecision(4)).replace(".",",");
+  let h='<table class="simTab"><thead><tr><th>Réf.</th><th>Valeur</th>'+
+        "<th>Modèle</th><th>Et si</th><th></th></tr></thead><tbody>";
+  L.forEach((c,i)=>{
+    if(c.broche){
+      /* UNE BROCHE ANNEXE DE LA PUCE : ouverte par défaut, ou l'impédance
+         qu'on sait qu'elle présente. */
+      h+="<tr><td>"+simEsc(c.ref)+"</td><td>"+simEsc(c.valeur)+"</td><td>"+
+         (c.z?"impédance":"ouverte")+"</td><td>"+
+         '<input class="simChamp" data-rfbr="'+i+'" data-p="re" value="'+
+         (c.z?nb(c.z.re):"")+'" title="Partie réelle, en ohms. Vide : '+
+         'broche ouverte.">'+'<span class="simU">+ j</span>'+
+         '<input class="simChamp" data-rfbr="'+i+'" data-p="im" value="'+
+         (c.z?nb(c.z.im):"")+'" title="Partie imaginaire, en ohms.">'+
+         '<span class="simU">Ω</span></td><td></td></tr>';
+      return;
+    }
+    const u=SIM_RF_UNITES[c.genre];
+    const s=SIM_RF.surcharges[c.ref];
+    const imp=simRfModeleImporte(c.ref);
+    const modele=c.exclu?"exclu":c.erreur?"aucun":
+      (c.source+(c.nom&&c.nom!=="idéal"?" · "+c.nom:""));
+    h+="<tr><td>"+simEsc(c.ref)+"</td><td>"+simEsc(c.valeur||"")+"</td>"+
+       '<td class="'+(c.erreur?"simErr":"")+'">'+simEsc(modele)+"</td><td>"+
+       (u&&!c.exclu
+         ? '<input class="simChamp" data-rfsi="'+i+'" value="'+
+           (s!=null?nb(s/u.f):"")+'" placeholder="'+
+           (c.valeurSI>0?nb(c.valeurSI/u.f):"")+'" title="Une autre '+
+           'valeur, en '+u.u+' : le composant devient un idéal de cette '+
+           'valeur le temps du calcul. Vide : le modèle d\'origine.">'+
+           '<span class="simU">'+u.u+"</span>"
+         : "")+"</td><td>"+
+       (c.exclu?"":'<button class="tb mini" data-rfimp="'+i+'" title="'+
+         'Importer un modèle pour ce composant : .sNp (paramètres S '+
+         'mesurés, composants actifs compris) ou sous-circuit SPICE '+
+         'linéaire.">📂</button>')+
+       (imp?'<button class="tb mini" data-rfoub="'+i+'" title="Oublier le '+
+         "modèle importé « "+simEsc(imp)+' »">✕</button>':"")+
+       '<label title="Exclure ce composant du réseau RF"><input '+
+         'type="checkbox" data-rfexc="'+i+'"'+(c.exclu?" checked":"")+
+         "> exclu</label></td></tr>";
+  });
+  return h+"</tbody></table>";
+}
+
+/* Les pistes, avec la SECTION RÉSOLUE : couche, hauteur au plan, εr. C'est
+   l'empilage de l'outil — saisi dans l'éditeur, lu dans la visionneuse — et
+   c'est lui qui fait qu'une piste de 0,35 mm vaut 50 Ω ou 114. */
+function simRfTableBranches(r){
+  if(!r.branches.length)return "";
+  let h='<table class="simTab"><thead><tr><th>Piste</th><th>Longueur</th>'+
+        "<th>Z₀</th><th>Section</th><th>Pertes</th></tr></thead><tbody>";
+  for(const b of r.branches){
+    const sec=(b.sections||[]).map(s=>simEsc(String(s.couche))+" · h "+
+      simNb(s.h,3)+" mm · εr "+simNb(s.er,2)).join("<br>");
+    h+="<tr><td>"+simEsc(b.net)+"</td><td>"+simNb(b.longueur,2)+" mm"+
+       (b.couplee>0?" (dont "+simNb(b.couplee,2)+" couplés)":"")+"</td><td>"+
+       (b.z0_min==null?"—":simNb(b.z0_min,1)+(b.z0_max-b.z0_min>0.5?"–"+
+        simNb(b.z0_max,1):"")+" Ω")+"</td><td>"+(sec||"—")+"</td><td>"+
+       simNb(b.pertes_db,3)+" dB</td></tr>";
+  }
+  for(const m of r.masses)
+    h+="<tr><td>"+simEsc(/~v\d+$/.test(m.noeud)
+         ? "via de la coulée de masse de "+m.noeud.replace(/^G:/,"").replace(/~v\d+$/,"")
+         : "vias de masse "+m.noeud.replace(/^G:/,""))+
+       "</td><td></td><td>"+simNb(m.l_nH,3)+" nH</td><td></td><td></td></tr>";
+  h+="</tbody></table>";
+  if((r.couplages||[]).length){
+    h+='<table class="simTab"><thead><tr><th>Longement</th><th>Longueur</th>'+
+       "<th>Écart</th><th>NEXT saturé</th></tr></thead><tbody>";
+    for(const c of r.couplages)
+      h+="<tr><td>"+simEsc(c.nets.join(" ↔ "))+"</td><td>"+
+         simNb(c.longueur,2)+" mm</td><td>"+simNb(c.ecart,3)+" mm</td><td>"+
+         simNb(c.next_pct,2)+" %</td></tr>";
+    h+="</tbody></table>";
+  }
+  const vois=(r.voisines||[]).filter(v=>v.pct>=0.001);
+  if(vois.length)
+    h+='<p class="simNote">· Énergie partie dans les pistes d\'autres nets, '+
+       "fermées sur leur Z₀ : "+vois.map(v=>simEsc(v.net)+" "+
+       simNb(v.pct,3)+" %").join(", ")+".</p>";
+  if((r.mutuelles||[]).length){
+    /* Les plus fortes seulement : une carte réelle en compte des dizaines,
+       presque toutes de quelques picohenrys. */
+    const tri=r.mutuelles.slice().sort((a,b)=>Math.abs(b.m_nH)-Math.abs(a.m_nH));
+    h+='<table class="simTab"><thead><tr><th>Couplage magnétique</th>'+
+       "<th>Mutuelle</th><th>k</th></tr></thead><tbody>";
+    for(const m of tri.slice(0,8))
+      h+="<tr><td>"+simEsc(m.entre.join(" ↔ "))+"</td><td>"+
+         simNb(m.m_nH,4)+" nH</td><td>"+(m.k==null?"—":simNb(m.k,4))+
+         "</td></tr>";
+    h+="</tbody></table>";
+    if(tri.length>8)
+      h+='<p class="simNote">· Et '+(tri.length-8)+" mutuelles plus faibles, "+
+         "toutes comptées.</p>";
+  }
+  const fentes=r.branches.flatMap(b=>(b.fentes||[]).map(f=>Object.assign({net:b.net},f)));
+  if(fentes.length){
+    h+='<table class="simTab"><thead><tr><th>Fente du plan sous</th>'+
+       "<th>Largeur</th><th>Détours</th></tr></thead><tbody>";
+    for(const f of fentes)
+      h+="<tr><td>"+simEsc(f.net)+"</td><td>"+simNb(f.largeur_fente,2)+
+         " mm</td><td>"+simNb(f.d1,2)+" / "+simNb(f.d2,2)+" mm"+
+         (f.borne?" (coupé de bord à bord)":"")+"</td></tr>";
+    h+="</tbody></table>";
+  }
+  const surf=r.surfaces||[];
+  if(surf.length){
+    const tot=g=>surf.filter(s=>s.genre===g).reduce((a,s)=>a+s.c_pF,0);
+    h+='<p class="simNote">· Capacité au plan comptée : pastilles '+
+       simNb(tot("pastilles"),3)+" pF"+
+       (tot("zones")>0?", zones de cuivre "+simNb(tot("zones"),3)+" pF":"")+
+       ".</p>";
+  }
+  return h;
+}
+
+function simRendreRf(){
+  if(!simRfDispo())return "";
+  if(SIM_RF.occupe)
+    return simProgres("Les pistes par le solveur de section, puis "+
+                      "l'assemblage nodal des composants.",-1,0);
+  const r=SIM_RF.res;
+  let h="";
+  if(!r&&!SIM_RF.err)
+    h+='<p class="simEtat">Posez le port 1 sur la broche de sortie de la '+
+       "puce, le port 2 sur le connecteur ou l'antenne, puis calculez.</p>";
+  if(SIM_RF.err)h+='<p class="simErr">'+simEsc(SIM_RF.err)+"</p>";
+  if(r)h+=simRfBilan(r)+simRfCourbe(r)+simRfSmith(r);
+  h+=simRfTableComposants();
+  if(r)h+=simRfTableBranches(r);
+  const notes=SIM_RF.notes.concat(r?r.avertissements:[]);
+  for(const n of notes)h+='<p class="simNote">· '+simEsc(n)+"</p>";
+  return h;
+}
+
+/* Les commandes de la table des composants naissent avec chaque rendu. */
+function simRfApres(){
+  const L=SIM_RF.composants;
+  const tous=sel=>document.querySelectorAll?
+    [...document.querySelectorAll(sel)]:[];
+  for(const e of tous("[data-rfsi]"))
+    e.onchange=function(){
+      const c=L[+this.dataset.rfsi], u=SIM_RF_UNITES[c.genre];
+      const v=simRfNb(this);
+      if(String(this.value).trim()===""||!(v>=0))delete SIM_RF.surcharges[c.ref];
+      else SIM_RF.surcharges[c.ref]=v*u.f;
+      simRfGo();
+    };
+  for(const e of tous("[data-rfbr]"))
+    e.onchange=function(){
+      const i=+this.dataset.rfbr, c=L[i];
+      const lu=p=>simRfNb(tous('[data-rfbr="'+i+'"][data-p="'+p+'"]')[0]);
+      const re=lu("re"), im=lu("im");
+      simRfBroche(c.ref,(isFinite(re)&&(re!==0||isFinite(im)&&im!==0))
+                          ?{re:re, im:isFinite(im)?im:0}:null);
+      simRfGo();
+    };
+  for(const e of tous("[data-rfimp]"))
+    e.onclick=function(){
+      SIM_RF.cible=L[+this.dataset.rfimp].ref;
+      const f=simEl("simRfFichier");
+      if(f)f.click();
+    };
+  for(const e of tous("[data-rfoub]"))
+    e.onclick=function(){
+      simRfOublierModele(L[+this.dataset.rfoub].ref);
+      simRfGo();
+    };
+  for(const e of tous("[data-rfexc]"))
+    e.onchange=function(){
+      simRfExclure(L[+this.dataset.rfexc].ref,this.checked);
+      simRfGo();
+    };
+}
+
 const SIM_FAMILLES=[
   {cle:"si", court:"SI", nom:"Intégrité du signal",
    quoi:"Ce qu'un front devient en parcourant le cuivre : impédance, retard, "+
@@ -16998,7 +18312,11 @@ const SIM_FAMILLES=[
   {cle:"pi", court:"PI", nom:"Intégrité de l'alimentation",
    quoi:"Ce que le réseau de distribution laisse passer : chute continue, "+
         "impédance vue par le composant, résonances de plan.",
-   analyses:["dc","pdn"]}
+   analyses:["dc","pdn"]},
+  {cle:"rf", court:"RF", nom:"Radiofréquence",
+   quoi:"Ce qu'une chaîne RF laisse passer d'un port à l'autre : pistes, "+
+        "composants et adaptation, entre deux impédances complexes.",
+   analyses:["s21"]}
 ];
 
 /* Le catalogue des analyses. `impedance` est la seule à exister, et tout ce
@@ -17122,6 +18440,22 @@ const SIM_ANALYSES={
     oublier:function(){
       return false;
     }
+  },
+  s21:{
+    nom:"S21",
+    titre:"Le S21 entre deux ports d'impédance complexe — la sortie d'une "+
+          "puce et un connecteur ou une antenne — à travers les pistes, "+
+          "calculées par le solveur de section, et les composants, par leurs "+
+          "modèles SPICE ou Touchstone.",
+    peint:false,
+    carte:"",
+    corps:simCorpsRf,
+    brancher:simBrancherRf,
+    rendre:simRendreRf,
+    apres:simRfApres,
+    /* LE RÉSEAU NE DÉPEND PAS DE LA SÉLECTION : cliquer une piste pour lire sa
+       longueur ne doit ni effacer le résultat, ni le relancer. */
+    oublier:function(){return false;}
   },
   pdn:{
     nom:"Z(ω) PDN",
@@ -17625,7 +18959,7 @@ function simProgres(detail,faits,total){
    dès que plus rien ne tourne, sans que personne ait à penser à l'éteindre. */
 let SIM_TIC=null;
 function simOccupeQuelconque(){
-  return !!(SIM.occupe||SIM.occupeDC||
+  return !!(SIM.occupe||SIM.occupeDC||SIM_RF.occupe||
             (typeof SIM_XT!=="undefined"&&SIM_XT&&SIM_XT.occupe));
 }
 function simProgresDemarrer(taille){

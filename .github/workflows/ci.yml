@@ -41,6 +41,9 @@ jobs:
       - name: Crosstalk (MTL en cascade) — banc d'essai
         run: python python/test/banc-crosstalk.py
 
+      - name: Simulation RF (S21 port à port) — banc d'essai
+        run: python python/test/banc-rf.py
+
       - name: Chute de tension continue (IR drop) — banc d'essai
         run: python python/test/banc-dc.py
 

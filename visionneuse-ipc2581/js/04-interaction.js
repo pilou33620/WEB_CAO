@@ -317,6 +317,12 @@ function fin(e){
   if(typeof SIM_DCB!=="undefined"&&SIM_DCB&&SIM_DCB.attente){
     simDCClic(w.x,w.y);dessiner();return;
   }
+  /* DÉSIGNER UN PORT RF : même attente, armée par le panneau. Le panneau
+     compte en millimètres, le fichier peut être en pouces. */
+  if(typeof SIM_RF_ATTENTE!=="undefined"&&SIM_RF_ATTENTE.port!=null){
+    const k=simKUnite();
+    simRfClic(w.x*k,w.y*k);dessiner();return;
+  }
   /* Clic sur un via ou chevelu de retour sous l'onglet Current Return Path */
   if(typeof simRetourClicIpc==="function"&&simRetourClicIpc(w.x,w.y)){
     dessiner();return;

@@ -167,7 +167,9 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simPDNEstMasseIpc","simFaceDessousIpc","simRendrePDN","simPDNCheminsPiste","simPDNInductanceLineique","simPDNHauteursRetour","simPDNPistesIpc",
   /* De la datasheet aux réglages : commun/simulation-datasheet.js. */
   "simDsCatalogue","simDsPreparer","simDsAppliquer","simDsGroupes","simDsNb",
-  "simDsBorneDe","simDsReappliquerCapas","SIM_DS","simPDNAssistantActif"];
+  "simDsBorneDe","simDsReappliquerCapas","SIM_DS","simPDNAssistantActif",
+  /* La simulation RF : la carte lue, décrite pour le panneau commun. */
+  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfPlateauIpc","simRfZ","simRfModele"];
 
 /* Un seul `eval`, sur les trois fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -5708,7 +5710,157 @@ T("Datasheet : une borne DC se reconnaît à son composant, par compRef ou par s
   if (simDsBorneDe({ compRef: "U70", nom: "U7 VDD" }, "U7")) throw new Error("le compRef prime sur le nom");
 });
 
-console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
-process.exit(ko?1:0);
+/* ==========================================================================
+   Simulation RF : la carte lue, jusqu'au document envoyé au serveur
+   Une puce, une self série, une capacité à la masse sur un T, un connecteur.
+   La branche vers C1 part d'un SOMMET INTÉRIEUR de la polyligne RF_MID : la
+   visionneuse doit la couper là, sans toucher au modèle lu.
+   ========================================================================== */
+const T_ASYNC=[];
+function TA(nom,fn){T_ASYNC.push([nom,fn]);}
+TA("simulation RF : la carte IPC-2581 donne le réseau, T sur un sommet compris",async ()=>{
+  const pad=(x,pin,n)=>({x:x,y:0,ps:"SMD",pin:pin,n:n});
+  const comp=(ref,val,x,y,a,b)=>({ref:ref,pkg:"0603",c:0,x:x,y:y,r:0,m:0,
+                                  val:val,pads:[pad(-0.8,"1",a),pad(0.8,"2",b)]});
+  carte({
+    nets:["RF_OUT","GND","RF_MID"],
+    padstacks:{SMD:{pad:0.6,pads:[{c:"Top",d:0.6,f:"R"}]}},
+    formes:{R:{t:"RECTCENTER",w:0.6,h:0.5}},
+    composants:[comp("U1","RADIO",10,20,1,0), comp("L1","3.3nH",20,20,0,2),
+                comp("C1","1.5pF",28,26,2,1), comp("J1","UFL",38,20,2,1)],
+    pistes:[{c:0,n:0,w:0.35,p:[10.8,20, 19.2,20]},
+            {c:0,n:2,w:0.35,p:[20.8,20, 28,20, 37.2,20]},
+            {c:0,n:2,w:0.35,p:[28,20, 27.2,26]}],
+    percages:[{x:28.8,y:26,d:0.3,p:"PLATED",n:1}]
+  });
+  const P=simRfPlateauIpc();
+  if(P.erreur)throw new Error("plateau : "+P.erreur);
+  const u1=P.composants.find(c=>c.ref==="U1");
+  if(!u1||u1.pads.length!==2||Math.abs(u1.pads[1].w-0.6)>1e-9)
+    throw new Error("pastilles de U1 : "+JSON.stringify(u1&&u1.pads.map(q=>[q.pin,q.net,q.w])));
+  SIM_RF_ATTENTE.port=0; simRfClic(10.8,20);
+  SIM_RF_ATTENTE.port=1; simRfClic(37.2,20);
+  simRfZ(0,14,8);
+  const r=await simRfProbleme({analyse:{f_debut:2e9,f_fin:3e9,points:11,f_centre:2.44e9}});
+  if(r.erreur)throw new Error("refus : "+r.erreur+" / "+r.conseil);
+  const d=r.doc;
+  if(d.ports[0].noeud!=="P:U1.2"||d.ports[1].noeud!=="P:J1.1"||d.ports[0].z[1]!==8)
+    throw new Error("ports : "+JSON.stringify(d.ports));
+  const mid=d.branches.filter(b=>b.net==="RF_MID");
+  if(mid.length!==3)throw new Error(mid.length+" branches RF_MID au lieu de 3");
+  if(V.parNet[2].pistes[0].p.length!==6)throw new Error("le modèle lu a été modifié");
+  const refs=d.composants.map(c=>c.ref).sort().join(",");
+  if(refs!=="C1,L1")throw new Error("composants : "+refs);
+  if(d.masses.length!==1||d.masses[0].vias[0].couche_plan!==2)
+    throw new Error("via de masse de C1 : "+JSON.stringify(d.masses));
+  /* L'EMPILAGE EST CELUI DE LA VISIONNEUSE : 0,2 mm de cœur, εr 4,3. */
+  const di=d.stackup.layers.find(c=>c.type==="dielectric");
+  if(!di||Math.abs(di.thickness-0.2)>1e-9)throw new Error("empilage : "+JSON.stringify(d.stackup));
+  if(!d.pastilles.some(p=>p.noeud==="P:L1.1"&&p.largeur===0.6))
+    throw new Error("pastilles : "+JSON.stringify(d.pastilles.slice(0,2)));
+});
+
+TA("simulation RF : raccords d'un vrai fichier — lisière de polygone, bouts décalés",async ()=>{
+  /* Ce qu'un export réel (SX1261) a montré : la broche de la puce rejoint sa
+     piste par un petit POLYGONE du net, la piste s'arrête à 0,1 mm de sa
+     lisière (sa largeur la recouvre), et deux pistes se raccordent avec
+     50 µm d'écart. Rien de tout cela n'est une coupure. */
+  const pad=(x,pin,n)=>({x:x,y:0,ps:"SMD",pin:pin,n:n});
+  const comp=(ref,val,x,y,a,b)=>({ref:ref,pkg:"0603",c:0,x:x,y:y,r:0,m:0,
+                                  val:val,pads:[pad(-0.8,"1",a),pad(0.8,"2",b)]});
+  carte({
+    nets:["RF_OUT","GND","RF_MID"],
+    padstacks:{SMD:{pad:0.6,pads:[{c:"Top",d:0.6,f:"R"}]}},
+    formes:{R:{t:"RECTCENTER",w:0.6,h:0.5}},
+    composants:[comp("U1","RADIO",10,20,1,0), comp("L1","3.3nH",20,20,0,2),
+                comp("J1","UFL",38,20,2,1)],
+    plans:[{c:0,n:0,g:[{o:rect(10.6,19.8,13,20.2),t:[]}]}],
+    pistes:[{c:0,n:0,w:0.35,p:[13.1,20, 19.2,20]},
+            {c:0,n:2,w:0.35,p:[20.8,20, 28,20]},
+            {c:0,n:2,w:0.35,p:[28.05,20.03, 37.2,20]}]
+  });
+  SIM_RF_ATTENTE.port=0; simRfClic(10.8,20);
+  SIM_RF_ATTENTE.port=1; simRfClic(37.2,20);
+  const r=await simRfProbleme({analyse:{f_debut:2e9,f_fin:3e9,points:5,f_centre:2.44e9}});
+  if(r.erreur)throw new Error("refus : "+r.erreur);
+  const d=r.doc, par={};
+  const rac=x=>{while(par[x]&&par[x]!==x)x=par[x];return x;};
+  const uni=(a,b)=>{a=rac(a);b=rac(b);if(a!==b)par[a]=b;};
+  for(const b of d.branches)uni(b.a,b.b);
+  /* Une zone est maillée au serveur : tous ses accès se rejoignent. */
+  for(const z of d.zones)for(const a of z.acces)uni(a.noeud,z.noeud);
+  for(const c of d.composants)
+    if(c.noeuds.length===2&&c.noeuds.indexOf("0")<0)uni(c.noeuds[0],c.noeuds[1]);
+  if(rac(d.ports[0].noeud)!==rac(d.ports[1].noeud))
+    throw new Error("les deux ports ne sont pas reliés : "+
+                    JSON.stringify(d.branches.map(b=>b.a+">"+b.b)));
+  if(d.zones.length!==1||!(d.zones[0].aire>0.9))
+    throw new Error("zone de raccord : "+JSON.stringify(d.zones));
+  if(d.branches.filter(b=>b.net==="RF_MID").length!==2)
+    throw new Error("les bouts décalés doivent faire un seul nœud");
+});
+
+TA("simulation RF : le modèle vient de la ligne du catalogue, par le nom de pièce",async ()=>{
+  /* Un fichier IPC-2581 ne porte que `part` (le nom de pièce du catalogue) :
+     la colonne « Modèle Simulation » se lit dans LIB_composants.csv, et le
+     fichier de modèle n'a pas le nom de la référence. Un générique rangé
+     sous un chemin reste un générique : l'idéal tiré de la valeur. */
+  const avant=globalThis.fetch;
+  globalThis.fetch=async url=>({ok:true, json:async()=>
+    /composants/.test(url)?{composants:[
+      {"Part Name":"C0402_3.3pF_MU","Part Number":"GCM1555C1H3R3CA16D",
+       "Modèle Simulation":"lib/simulation/GCM1555C1H3R3CA16.sub"},
+      {"Part Name":"C0402_1pF_MU","Part Number":"GJM1555C1H1R0",
+       "Modèle Simulation":"lib/simulation/capacitor.sub"}]}
+    :{contenu:"* "+decodeURIComponent(url.split("nom=")[1])}});
+  try{
+    const m=await simRfModele({ref:"C9",valeur:"3.3pF",type:"",spice:"",
+                               mpn:"c0402_3.3pF_MU",pads:[]},-1);
+    if(m.source!=="bibliothèque"||m.spec.type!=="spice"||
+       m.spec.texte!=="* lib/simulation/GCM1555C1H3R3CA16.sub")
+      throw new Error("modèle du catalogue : "+JSON.stringify(m));
+    const g=await simRfModele({ref:"C8",valeur:"1pF",type:"",spice:"",
+                               mpn:"C0402_1pF_MU",pads:[]},-1);
+    if(g.source!=="idéal"||g.spec.valeur!==1e-12)
+      throw new Error("générique : "+JSON.stringify(g));
+    /* UNE LIB MODIFIÉE ENTRE DEUX CALCULS est vue au second, sans recharger :
+       le catalogue et le fichier de modèle se relisent à chaque lancement. */
+    const pad=(x,pin,n)=>({x:x,y:0,ps:"SMD",pin:pin,n:n});
+    const comp=(ref,val,x,part,a,b)=>({ref:ref,pkg:"0603",c:0,x:x,y:20,r:0,m:0,
+                        val:val,part:part,pads:[pad(-0.8,"1",a),pad(0.8,"2",b)]});
+    carte({nets:["RF_OUT","GND","RF_MID"],
+           padstacks:{SMD:{pad:0.6,pads:[{c:"Top",d:0.6,f:"R"}]}},
+           formes:{R:{t:"RECTCENTER",w:0.6,h:0.5}},
+           composants:[comp("U1","RADIO",10,"",1,0),
+                       comp("C9","3.3pF",20,"C0402_3.3pF_MU",0,2),
+                       comp("J1","UFL",38,"",2,1)],
+           pistes:[{c:0,n:0,w:0.35,p:[10.8,20, 19.2,20]},
+                   {c:0,n:2,w:0.35,p:[20.8,20, 37.2,20]}]});
+    SIM_RF_ATTENTE.port=0; simRfClic(10.8,20);
+    SIM_RF_ATTENTE.port=1; simRfClic(37.2,20);
+    const texte=async()=>{
+      const r=await simRfProbleme({analyse:{f_debut:1e9,f_fin:2e9,points:3,f_centre:1.5e9}});
+      if(r.erreur)throw new Error("refus : "+r.erreur);
+      return r.doc.composants.find(c=>c.ref==="C9").modele.texte;
+    };
+    const t1=await texte();
+    const fetch1=globalThis.fetch;
+    globalThis.fetch=async url=>/fichier/.test(url)
+      ?{ok:true, json:async()=>({contenu:"* modifié"})}:fetch1(url);
+    const t2=await texte();
+    if(t1!=="* lib/simulation/GCM1555C1H3R3CA16.sub"||t2!=="* modifié")
+      throw new Error("relecture de la LIB : "+t1+" puis "+t2);
+  }finally{globalThis.fetch=avant;}
+});
+
+(async()=>{
+  for(const [nom,fn] of T_ASYNC){
+    try{await fn();console.log("  ok  "+nom);ok++;}
+    catch(e){console.log("  KO  "+nom+" \u2192 "+e.message+"\n      "+
+                         (e.stack||"").split("\n")[1]);ko++;}
+  }
+  console.log("\n"+ok+" essais r\u00e9ussis, "+ko+" en \u00e9chec.");
+  process.exit(ko?1:0);
+})();
 
 

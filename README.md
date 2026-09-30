@@ -148,6 +148,12 @@ Le bouton **« Simulation EM… »** (Éditeur PCB et Visionneuse IPC-2581) ouvr
 | **Chute DC** | IR drop par maillage surfacique 2D : potentiel, densité de courant, résistance via par via, culs-de-sac ; échauffement par étalement (validé IPC-2152) et référence IPC-2221 | `dc_solver.py` v2.1.0 |
 | **Z(ω) PDN** | Impédance vue par le composant de 10 kHz à 1 GHz : VRM, condensateurs réels (ESR/ESL Murata + montage), cavité de plans ; Z<sub>target</sub> depuis une **fiche de charge** (horloge, courants, fronts, sorties simultanées) ou un **assistant ΔI** ; anti-résonances, what-if par condensateur, **résonances de cavité TM<sub>mn</sub>** avec carte 2D, exports CSV/JSON | navigateur + `simulation_em.py` |
 
+### Radiofréquence (RF)
+
+| Analyse | Ce qu'elle répond | Moteur |
+| :--- | :--- | :--- |
+| **S21** | Le S<sub>21</sub> entre deux ports d'impédance **complexe** — la sortie d'une puce radio (ex. 14 + 8j Ω) et un connecteur U.FL ou une antenne — à travers tout le réseau qui les relie, dans l'**éditeur PCB comme dans la visionneuse**, chacun avec son empilage : pistes calculées par le solveur de l'onglet Impédance (MoM, coudes, vias), **couplage** entre pistes du réseau en lignes couplées à N conducteurs avec pertes, capacité des **pastilles** résolue en 3D, **zones** et **coulées de masse** entières en maillage adaptatif creux sur leur cuivre rempli, dispersion des lignes couplées recoupées à leur écart local, pistes des **autres nets** dans les lignes couplées (l'énergie qui y part est comptée), **mutuelles des selfs** entre elles et avec les pistes (Neumann avec image dans le plan), **fentes du plan** de référence franchies (détour du retour, Ott), **domaine de validité** quasi-statique calculé (modes supérieurs, ondes de surface, rayonnement), broches annexes de la puce, composants par leur modèle **SPICE** Murata, un **.sNp** (actifs compris) ou un idéal. Bilan à f₀ (gain transducique, Z vue par la puce face à sa cible, pertes de désadaptation et dissipées), abaque de Smith, et **« et si »** par composant pour retoucher l'adaptation | `rf_reseau.py` v1.5.0 (analyse nodale, S généralisés) |
+
 > [!NOTE]
 > 📖 Fondements physiques, équations, étalons de validation et choix algorithmiques : [Guide Simulation EM & Crosstalk](docs/simulation-em.md) et [simulations-si-pi.json](simulations-si-pi.json).
 
@@ -286,12 +292,13 @@ Tous les bancs tournent en intégration continue (GitHub Actions, `.github/workf
 
 | Composant testé | Commande | Couverture |
 | :--- | :--- | :--- |
-| **Éditeur PCB** | `node editeur-pcb/test/harness.js`<br>`node editeur-pcb/test/banc-trois-ponts.js` | 766 essais : DRC, netlist, tracé, paires diff, Gerber, Excellon, PNS, simulation, PDN |
+| **Éditeur PCB** | `node editeur-pcb/test/harness.js`<br>`node editeur-pcb/test/banc-trois-ponts.js` | 779 essais : DRC, netlist, tracé, paires diff, Gerber, Excellon, PNS, simulation, PDN, RF |
 | **Éditeur Schématique** | `node editeur-schematique/test/harness.js` | 119 essais : connectivité, nets, multi-feuilles, bus, nomenclature |
-| **Visionneuse IPC-2581** | `node visionneuse-ipc2581/test/harness-sim.js`<br>`python visionneuse-ipc2581/test/banc-essai.py` | 178 essais (géométrie de masse, simulation, datasheet) + 55 (parseur XML) |
+| **Visionneuse IPC-2581** | `node visionneuse-ipc2581/test/harness-sim.js`<br>`python visionneuse-ipc2581/test/banc-essai.py` | 181 essais (géométrie de masse, simulation, datasheet, RF) + 55 (parseur XML) |
 | **Gestion LIB** | `node gestion-lib/test/banc-catalogue.js`<br>`node gestion-lib/test/banc-import-jlc.js` | 27 essais (lecture du catalogue, recherche par référence fabricant, auto-association des boîtiers) + 65 (import JLCPCB, 39 colonnes) |
 | **Solveur MoM (Z₀)** | `python python/test/banc-ligne-mom.py` | 199 cas contre étalons analytiques (Hammerstad-Jensen, Wen, Garg-Bahl…) |
 | **Crosstalk** | `python python/test/banc-crosstalk.py` | 65 cas : conservation de l'énergie, cascade, localisation, références exactes (triplaque, Cohn, Garg-Bahl) |
+| **Simulation RF** | `python python/test/banc-rf.py` | 47 cas : réseau en L calculé à la main (14 + 8j → 50 Ω), self et capa en parallèle (idéales et SPICE), piste voisine fermée sur son Z₀, mutuelle de Neumann contre Maxwell, selfs couplées en série, self → piste, fente contre Ott, gain de désadaptation, identité avec la cascade de `simulation_em`, Touchstone v1/v2, modèles Murata, SnP actif, vias et pistes de masse, coulée maillée, pastille 3D contre le carré isolé et Hammerstad-Jensen, dispersion modale contre Getsinger, masque de remplissage, zone maillée étroite et large contre la ligne MoM, coulée de 6 500 cellules, creux contre plein, pistes divergentes, domaine de validité, lignes couplées à N conducteurs contre `chaine_mtl`, atténuation du cuivre, zone maillée contre la ligne MoM, broches annexes |
 | **Chute DC** | `python python/test/banc-dc.py` | 42 cas : résistivité théorique, vias, double modèle thermique |
 | **Scoring de placement** | `python python/test/banc-pcb-scoring.py` | 18 cas : HPWL, congestion, découplage, auto-rotation |
 | **Reconnaissance de motifs** | `python python/test/banc-patterns.py` | 22 cas : LDO, 78xx/79xx, buck, I2C/SPI/UART, quartz, RC, courants DC |
