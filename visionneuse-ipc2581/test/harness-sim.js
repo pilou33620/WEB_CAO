@@ -157,6 +157,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   /* Classification des nets et préréglages de simulation */
   "mdlDetecterClasseNet","mdlDetecterTensionNet","mdlAutoDetecterClassesNets",
   "mdlAppliquerClassesNets","mdlNetClasse","mdlNetPoserClasse",
+  "mdlNetPoserNature","MDL_NATURES_SIGNAL",
   "simAppliquerPrereglagesClassesNets","SIM_PDN",
   /* Le solveur d'impédance du PDN : le moteur est dans
      commun/simulation-em.js, partagé avec l'éditeur PCB, mais la
@@ -4344,6 +4345,33 @@ T("Application des classes et modifications manuelles (mdlAutoDetecterClassesNet
   // mdlAppliquerClassesNets
   mdlAppliquerClassesNets({ "CLK_OUT": "pwr", "GND": "gnd" });
   if(V.parNet[2].classe !== "pwr") throw new Error("CLK_OUT aurait dû passer en pwr via dict");
+});
+
+T("Nature des nets : suggestion du serveur, choix manuel, famille qui suit", function(){
+  V.modele = {
+    nets: ["GND", "XIN", "USB_DP", "NET_LIBRE"],
+    natures_nets: { classes: { GND: "Masse", XIN: "Horloge", USB_DP: "Rapide" },
+                    raisons: { XIN: "Motif : Oscillateur 16MHZ" } },
+    pistes: [], arcs: [], plans: [], pads: [], textes: [], composants: [], percages: []
+  };
+  V.parNet = V.modele.nets.map((nom, i) =>
+    ({ i, nom, pistes: [], arcs: [], plans: [], pads: [], trous: [], longueur: 1, couches: new Set([0]) }));
+  mdlAutoDetecterClassesNets(null, null);
+  const nat = V.parNet.map(n => n.nature).join(",");
+  if(nat !== "Masse,Horloge,Rapide,Lent") throw new Error("natures : " + nat);
+  if(V.parNet[1].natureRaison !== "Motif : Oscillateur 16MHZ") throw new Error("raison perdue");
+  // choix manuel, gardé à part et repris à la détection suivante
+  mdlNetPoserNature(3, "RF");
+  mdlAutoDetecterClassesNets(null, V.modele.netClasses);
+  if(V.parNet[3].nature !== "RF" || !V.parNet[3].natureManuelle) throw new Error("choix manuel perdu");
+  // Masse change la famille, et un retour en signal retrouve la nature
+  mdlNetPoserNature(3, "Masse");
+  if(V.parNet[3].classe !== "gnd" || V.parNet[3].nature !== "Masse") throw new Error("Masse -> gnd attendu");
+  mdlNetPoserClasse(3, "signal");
+  if(V.parNet[3].nature !== "RF") throw new Error("nature du signal oubliée : " + V.parNet[3].nature);
+  // une nature inconnue ne change rien
+  mdlNetPoserNature(2, "Turbo");
+  if(V.parNet[2].nature !== "Rapide") throw new Error("nature inconnue acceptée");
 });
 
 T("Préréglages automatiques des simulations SI / PI (simAppliquerPrereglagesClassesNets)", function(){

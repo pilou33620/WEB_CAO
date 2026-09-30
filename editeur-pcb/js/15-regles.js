@@ -1681,6 +1681,7 @@ function reBind(){
     if(S.classes.some(x=>x.name===n)){alert("Ce nom est déjà pris.");return;}
     push();
     for(const k in S.netClass)if(S.netClass[k]===c.name)S.netClass[k]=n;
+    for(const k in S.netClassAuto)if(S.netClassAuto[k]===c.name)S.netClassAuto[k]=n;
     c.name=n;
     touch();refreshPanels();reSync();
   });

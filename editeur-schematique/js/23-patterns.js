@@ -13,6 +13,8 @@ var SCHEMA_PATTERNS = (function() {
   let _timer = 0;
   let _derniersMotifs = null;
   let _chargementEnCours = false;
+  let _derniersNets = {};
+  let _netsOuverts = false;
 
   /* ---------- Extraction des composants et de la netlist globale ---------- */
   function extraireDonneesSchema() {
@@ -54,7 +56,8 @@ var SCHEMA_PATTERNS = (function() {
           if (compRef) {
             netsMap[nName].push({
               ref: compRef,
-              pin: nd.pin || nd.pinName || 1
+              pin: nd.pin || nd.pinName || 1,
+              name: nd.label || ""
             });
           }
         });
@@ -84,6 +87,82 @@ var SCHEMA_PATTERNS = (function() {
     return String(s || "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
   }
 
+  /* ---------- Classes de nets : suggestion de l'analyse + corrections ---------- */
+  function classesFinales(data) {
+    const res = Object.assign({}, (data && data.classes_suggerees) || {});
+    const man = (typeof S !== "undefined" && S && S.netClasses) || {};
+    for (const n in man) res[n] = man[n];
+    return res;
+  }
+
+  // l'éditeur PCB, ouvert dans un autre onglet, applique ces classes en direct
+  function publierClasses(data) {
+    const classes = classesFinales(data);
+    try {
+      const paires = (data && data.paires_diff) || [];
+      sessionStorage.setItem("web_cao_netclasses", JSON.stringify(classes));
+      sessionStorage.setItem("web_cao_paires_diff", JSON.stringify(paires));
+      if (typeof BroadcastChannel !== "undefined") {
+        const bc = new BroadcastChannel("web_cao_patterns_sync");
+        bc.postMessage({ type: "netclasses_updated", classes: classes, paires: paires });
+        bc.close();
+      }
+    } catch (_) {}
+  }
+
+  function htmlClassesNets(data) {
+    const noms = Object.keys(_derniersNets).filter(n => n && _derniersNets[n].length)
+      .sort((a, b) => a.localeCompare(b, "fr", { numeric: true }));
+    if (!noms.length) return "";
+    const sug = (data && data.classes_suggerees) || {};
+    const why = (data && data.raisons_classes) || {};
+    const man = S.netClasses || {};
+    const partenaire = {};
+    ((data && data.paires_diff) || []).forEach(p => { partenaire[p[0]] = p[1]; partenaire[p[1]] = p[0]; });
+    const nbMan = noms.filter(n => man[n]).length;
+    return `
+      <details id="patNets" ${_netsOuverts ? "open" : ""} style="background:var(--panel2);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;">
+        <summary style="cursor:pointer;font-weight:600;font-size:10px;color:var(--txt-dim);text-transform:uppercase;letter-spacing:0.08em;">
+          Classes de nets (${noms.length}${nbMan ? " · " + nbMan + " corrigée(s)" : ""})
+        </summary>
+        <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px;">
+          ${noms.map(n => {
+            const auto = sug[n] || "Lent";
+            const raison = man[n] ? "Corrigé à la main (auto : " + auto + ")"
+              : (why[n] || "Aucun indice : lent par défaut");
+            return `
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                <div style="min-width:0;">
+                  <div style="font-family:var(--mono);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                    ${esc(n)}${partenaire[n] ? ` <span style="color:var(--blue);" title="Paire différentielle">⇄ ${esc(partenaire[n])}</span>` : ""}
+                  </div>
+                  <div style="font-size:10px;color:${man[n] ? "var(--yellow)" : "var(--txt-dim)"};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(raison)}">${esc(raison)}</div>
+                </div>
+                <select data-net="${esc(n)}" aria-label="Classe du net ${esc(n)}" style="font-size:11px;flex:none;">
+                  <option value="">Auto (${esc(auto)})</option>
+                  ${NET_CLASSES.map(c => `<option${man[n] === c ? " selected" : ""}>${c}</option>`).join("")}
+                </select>
+              </div>`;
+          }).join("")}
+        </div>
+      </details>`;
+  }
+
+  function cablerClassesNets(el) {
+    const det = el.querySelector("#patNets");
+    if (det) det.ontoggle = () => { _netsOuverts = det.open; };
+    el.querySelectorAll("select[data-net]").forEach(sel => {
+      sel.onchange = () => {
+        const n = sel.dataset.net;
+        if (typeof push === "function") push();
+        if (sel.value) S.netClasses[n] = sel.value;
+        else delete S.netClasses[n];
+        publierClasses(_derniersMotifs);
+        rendrePanneau(_derniersMotifs, null);
+      };
+    });
+  }
+
   /* ---------- Rendu du panneau dans l'interface ---------- */
   function rendrePanneau(data, erreur) {
     const el = document.getElementById("pnlPatternsBody");
@@ -103,7 +182,8 @@ var SCHEMA_PATTERNS = (function() {
       return;
     }
 
-    if (!data || !Array.isArray(data.motifs) || data.motifs.length === 0) {
+    const classesHtml = htmlClassesNets(data);
+    if (!data || !Array.isArray(data.motifs) || (data.motifs.length === 0 && !classesHtml)) {
       el.innerHTML = `
         <div style="padding:14px;color:var(--txt-dim);font-size:12px;text-align:center;">
           <div>Aucun motif standard reconnu pour l'instant.</div>
@@ -164,6 +244,8 @@ var SCHEMA_PATTERNS = (function() {
           `).join("")}
         </div>
 
+        ${classesHtml}
+
         <!-- Section Courants DC pour la simulation -->
         ${courants.length > 0 ? `
           <div style="background:var(--panel2);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;margin-top:4px;">
@@ -190,6 +272,7 @@ var SCHEMA_PATTERNS = (function() {
     `;
 
     el.innerHTML = html;
+    cablerClassesNets(el);
 
     const btnRef = document.getElementById("bPatternsRefresh");
     if (btnRef) btnRef.onclick = () => analyser(0);
@@ -227,6 +310,7 @@ var SCHEMA_PATTERNS = (function() {
       }
 
       if (_chargementEnCours) return;
+      _derniersNets = doc.nets;
       _chargementEnCours = true;
 
       try {
@@ -255,9 +339,7 @@ var SCHEMA_PATTERNS = (function() {
             }
             const cDc = data.courants_dc_estimes || data.courants_dc || [];
             sessionStorage.setItem("web_cao_courants_dc", JSON.stringify(cDc));
-            if (data.classes_suggerees) {
-              sessionStorage.setItem("web_cao_netclasses", JSON.stringify(data.classes_suggerees));
-            }
+            publierClasses(data);
             if (typeof BroadcastChannel !== "undefined") {
               const bc = new BroadcastChannel("web_cao_patterns_sync");
               bc.postMessage({ type: "patterns_updated", data: data, zones: data.zones || doc.zones || [] });

@@ -3073,6 +3073,58 @@ T("import : rattachement de classe orphelin écarté",()=>{
   if(S.netClass["SIG"])throw new Error("le rattachement par défaut ne se stocke pas");
   if(classOf("+5V").name!=="Défaut")throw new Error("classe de repli inattendue");
 });
+T("classes du schéma : une correction faite après coup atteint la carte",()=>{
+  S.classes=[{name:"Défaut",w:0.3,clr:0.25,via:0.8,drill:0.4},
+             {name:"Alimentation",w:0.6,clr:0.25,via:0.9,drill:0.45}];
+  S.netClass={};S.netClassAuto={};
+  sessionStorage.setItem("web_cao_netclasses",JSON.stringify({GND:"Masse","N$1":"Horloge","+5V":"Alimentation"}));
+  importNetlist(NET,true);
+  if(S.netClass["GND"]!=="Masse")throw new Error("GND : "+S.netClass["GND"]);
+  if(S.netClass["N$1"]!=="Horloge")throw new Error("N$1 : "+S.netClass["N$1"]);
+  const h=S.classes.find(c=>c.name==="Horloge");
+  if(!h||h.clr<2*h.w-1e-9)throw new Error("Horloge : isolation 3W attendue");
+  // un choix fait dans le PCB
+  setNetClass("+5V","Horloge");
+  // la correction arrive du schéma, dans un autre onglet
+  const bc=new BroadcastChannel("web_cao_patterns_sync");
+  bc.postMessage({type:"netclasses_updated",classes:{GND:"Masse","N$1":"Lent","+5V":"Masse","N$2":"RF"}});
+  bc.close();
+  if(S.netClass["N$1"])throw new Error("Lent = classe par défaut, pas "+S.netClass["N$1"]);
+  if(S.netClass["+5V"]!=="Horloge")throw new Error("le choix fait dans le PCB doit rester");
+  const rf=classOf("N$2");
+  if(rf.name!=="RF"||!(rf.w>0.05&&rf.w<3))throw new Error("RF : "+JSON.stringify(rf));
+  // onglet sans schéma : on complète, on ne défait rien
+  sessionStorage.removeItem("web_cao_netclasses");
+  autoClass();
+  if(S.netClass["N$2"]!=="RF")throw new Error("classe du schéma défaite sans schéma");
+  // relu depuis un fichier, la provenance tient
+  const doc=JSON.parse(serialize());loadDoc(doc,true);
+  if(S.netClassAuto["N$2"]!=="RF"||S.netClassAuto["+5V"]===S.netClass["+5V"])
+    throw new Error("provenance perdue : "+JSON.stringify(S.netClassAuto));
+  // fichier antérieur : tout ce qui est rattaché est réputé venir du schéma
+  delete doc.netClassAuto;loadDoc(doc,true);
+  if(S.netClassAuto["+5V"]!=="Horloge")throw new Error("migration : "+JSON.stringify(S.netClassAuto));
+  S.netClassAuto={};
+});
+T("paires du schéma : créées entre nets rapides, une seule fois",()=>{
+  S.dpPairs=[];S.dpSchema=[];S.netClass={};S.netClassAuto={};
+  importNetlist(NET,true);
+  const bc=new BroadcastChannel("web_cao_patterns_sync");
+  const envoyer=cl=>bc.postMessage({type:"netclasses_updated",classes:cl,paires:[["N$1","N$2"]]});
+  envoyer({"N$1":"Analogique","N$2":"Analogique"});
+  if(S.dpPairs.length)throw new Error("paire créée entre nets analogiques");
+  envoyer({"N$1":"Rapide","N$2":"Rapide"});
+  if(S.dpPairs.length!==1||S.dpPairs[0].p!=="N$1"||S.dpPairs[0].n!=="N$2")
+    throw new Error("paire attendue : "+JSON.stringify(S.dpPairs));
+  S.dpPairs=[];                                  // supprimée à la main
+  envoyer({"N$1":"Horloge","N$2":"Horloge"});
+  if(S.dpPairs.length)throw new Error("paire supprimée recréée");
+  loadDoc(JSON.parse(serialize()),true);
+  if(S.dpSchema.join()!=="N$1|N$2")throw new Error("dpSchema perdu : "+S.dpSchema);
+  bc.close();
+  sessionStorage.removeItem("web_cao_netclasses");sessionStorage.removeItem("web_cao_paires_diff");
+  S.netClassAuto={};S.dpSchema=[];S.netClass={};
+});
 T("import : deux classes de même nom sont distinguées",()=>{
   const doc=JSON.parse(serialize());
   doc.classes=[{name:"Défaut",w:0.3,clr:0.25,via:0.8,drill:0.4},

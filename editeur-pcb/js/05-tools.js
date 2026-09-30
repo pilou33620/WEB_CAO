@@ -10,8 +10,8 @@
 function docObj(){
   return {format:"pcbedit-1",cu:S.cu,cuL:S.cuL,stack:S.stack,show:S.show,
           board:S.board,rule:S.rule,
-          classes:S.classes,netClass:S.netClass,
-          dpPairs:S.dpPairs,dpRules:S.dpRules,
+          classes:S.classes,netClass:S.netClass,netClassAuto:S.netClassAuto,
+          dpPairs:S.dpPairs,dpRules:S.dpRules,dpSchema:S.dpSchema,
           origin:S.origin,fabOrigin:S.fabOrigin,
           fps:S.fps,tracks:S.tracks,vias:S.vias,zones:S.zones,cuts:S.cuts,
           holes:S.holes||[],
@@ -542,6 +542,17 @@ function normDoc(d){
       // un rattachement orphelin ou vers la classe par défaut ne se stocke pas
       if(names.has(name)&&name!==def)out.netClass[dNet(net)]=name;
     }
+    /* Classes posées d'après le schéma. Fichier qui ne le dit pas : tout ce
+       qui est rattaché est réputé en venir, le schéma reste la référence.
+       Une entrée vers une classe disparue est gardée : elle ne correspond
+       plus au rattachement, donc ne compte pas, et la relecture reste neutre. */
+    const na=(src.netClassAuto&&typeof src.netClassAuto==="object")?src.netClassAuto:null;
+    out.netClassAuto={};
+    if(!na)Object.assign(out.netClassAuto,out.netClass);
+    else for(const net in na){
+      const name=dStr(na[net],40);
+      if(name)out.netClassAuto[dNet(net)]=name;
+    }
   }
 
   /* --- paires différentielles ---
@@ -563,6 +574,9 @@ function normDoc(d){
     out.dpRules=(Array.isArray(src.dpRules)?src.dpRules:[]).map((d,i)=>normDpRule(d,i,cu));
     // une règle qui vise une paire disparue ne vise plus rien : elle redevient générale
     for(const r of out.dpRules)if(r.scope&&!names.has(r.scope))r.scope="";
+    // paires déjà proposées par le schéma (voir autoPairs) : de simples clés « p|n »
+    out.dpSchema=(Array.isArray(src.dpSchema)?src.dpSchema:[])
+      .filter(k=>typeof k==="string").map(k=>k.slice(0,200)).slice(0,5000);
   }
 
   /* --- contenu de la carte --- */
@@ -614,7 +628,8 @@ function loadDoc(d,keepView){
                 via:r.via||0.8,drill:r.drill||0.4}];
     S.netClass={};
   }
-  S.dpPairs=d.dpPairs;S.dpRules=d.dpRules;
+  S.netClassAuto=d.netClassAuto||{};
+  S.dpPairs=d.dpPairs;S.dpRules=d.dpRules;S.dpSchema=d.dpSchema;
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
   S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];
   S.active=d.active;S.pair=[0,S.cu-1];

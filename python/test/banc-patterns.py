@@ -408,9 +408,69 @@ def test_analyse_vide_et_classes():
     nets = {"XIN": [{"ref": "Y1", "pin": 1}], "XOUT": [{"ref": "Y1", "pin": 2}],
             "SDA": [], "SCL": []}
     classes = analyser_motifs_schema({"components": comps, "nets": nets})["classes_suggerees"]
-    assert classes["XIN"] == "Rapide" and classes["XOUT"] == "Rapide"
-    assert classes["SDA"] == "Rapide" and classes["SCL"] == "Rapide"
+    assert classes["XIN"] == "Horloge" and classes["XOUT"] == "Horloge"
+    assert classes["SDA"] == "Lent" and classes["SCL"] == "Lent"
     print("[PASS] test_analyse_vide_et_classes")
+
+
+def test_classement_nets():
+    comps = {
+        "U1": {"val": "STM32F407", "type": "ic"},
+        "Y1": {"val": "8MHz"}, "C1": {"val": "22pF"},
+        "U2": {"val": "LM358"},
+        "J1": {"val": "SMA"},
+        "J2": {"val": "USB-C"},
+        "C9": {"val": "100uF"},
+        "U3": {"val": "AMS1117-3.3"}, "C4": {"val": "10uF"},
+    }
+    b = lambda ref, pin, name="": {"ref": ref, "pin": pin, "name": name}
+    nets = {
+        "GND": [b("C1", 2), b("C9", 2), b("U3", 1)],
+        "+3V3": [b("U1", 1, "VDD")],
+        # nets à nom automatique : seuls les noms de broches parlent
+        "$BN1": [b("U1", 5, "PH0-OSC_IN"), b("Y1", 1), b("C1", 1)],
+        "$BN2": [b("U1", 20, "USB_DP"), b("J2", 2, "D+")],
+        "$BN3": [b("U1", 21, "USB_DM"), b("J2", 3, "D-")],
+        "$BN4": [b("U2", 3, "IN+")],
+        "$BN5": [b("U2", 2, "IN-")],
+        "$BN6": [b("U1", 30, "PA5/SPI1_SCK/ADC5")],     # multifonction : ignorée
+        "$BN7": [b("J1", 1), b("U1", 40, "PB1")],
+        "$BN8": [b("C9", 1, "+")],                      # capa polarisée : pas une paire
+        "$BN9": [b("C9", 3, "-")],
+        "VOUT": [b("U3", 2, "VOUT"), b("C4", 1)],
+        # paire par nom de net ; RESET_N seul reste un signal actif bas
+        "LVDS_CLK_P": [], "LVDS_CLK_N": [], "RESET_N": [], "DATA_P": [], "DATA_N": [],
+        "ADC_IN0": [],
+    }
+    res = analyser_motifs_schema({"components": comps, "nets": nets})
+    cl, why = res["classes_suggerees"], res["raisons_classes"]
+    assert cl["GND"] == "Masse" and cl["+3V3"] == "Alimentation"
+    assert cl["$BN1"] == "Horloge", (cl.get("$BN1"), why.get("$BN1"))
+    assert cl["$BN2"] == cl["$BN3"] == "Rapide"
+    assert cl["$BN4"] == cl["$BN5"] == "Analogique"     # entrée d'AOP, pas LVDS
+    assert "$BN6" not in cl
+    assert cl["$BN7"] == "RF" and "J1" in why["$BN7"]
+    assert "$BN8" not in cl and "$BN9" not in cl
+    assert cl["VOUT"] == "Alimentation", why.get("VOUT")
+    assert cl["LVDS_CLK_P"] == "Horloge"                # l'horloge prime sur la paire
+    assert cl["DATA_P"] == "Rapide" and why["DATA_P"] == "Paire différentielle"
+    assert cl["RESET_N"] == "Lent"                      # actif bas, pas une paire
+    assert cl["ADC_IN0"] == "Analogique"
+    # RGMII : « TXD » ressemble à une UART, mais ENET dit Ethernet
+    res2 = analyser_motifs_schema({"components": {}, "nets": {
+        "ENET_HPS_TXD0": [], "ENET_HPS_RXD0": [], "SGMII_TX": []}})
+    assert set(res2["classes_suggerees"].values()) == {"Rapide"}, res2["classes_suggerees"]
+    # un indice sûr de lenteur l'emporte sur CLK ou ENET qui l'entourent
+    res3 = analyser_motifs_schema({"components": {}, "nets": {
+        "MINI_PCIE_SMB_CLK": [], "ENETA_LED_TX": [], "ENET_MDIO": [], "ENET_RESET_N": [],
+        "CLK_IN": [], "LED_P": [], "LED_N": []}})["classes_suggerees"]
+    assert res3 == {"MINI_PCIE_SMB_CLK": "Lent", "ENETA_LED_TX": "Lent", "ENET_MDIO": "Lent",
+                    "ENET_RESET_N": "Lent", "CLK_IN": "Horloge", "LED_P": "Lent",
+                    "LED_N": "Lent"}, res3
+    paires = sorted(sorted(p) for p in res["paires_diff"])
+    assert paires == [["$BN2", "$BN3"], ["$BN4", "$BN5"], ["DATA_N", "DATA_P"],
+                      ["LVDS_CLK_N", "LVDS_CLK_P"]], paires
+    print("[PASS] test_classement_nets")
 
 
 def test_nets_de_masse():
@@ -443,5 +503,6 @@ if __name__ == "__main__":
     test_zones_gabarits_et_alias()
     test_analyse_vide_et_classes()
     test_nets_de_masse()
+    test_classement_nets()
     print("\n TOUS LES TESTS DE PATTERN_RECOGNITION SONT VALIDÉS AVEC SUCCÈS.")
 

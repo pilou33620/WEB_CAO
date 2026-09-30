@@ -1499,6 +1499,7 @@ function mdlAutoDetecterClassesNets(classesIpc, classesPersist){
       n.autoRaison=det.autoRaison;
       n.tensionNominale=det.tensionNominale;
     }
+    mdlPoserNature(n);
     mapClasses[n.nom]=n.classe;
   }
   if(V.modele){
@@ -1519,6 +1520,7 @@ function mdlAppliquerClassesNets(dictClasses){
       n.classe=(cl==="pwr"||cl==="gnd")?cl:"signal";
       n.autoDetecte=false;
       n.tensionNominale=(n.classe==="pwr")?mdlDetecterTensionNet(n.nom):null;
+      mdlPoserNature(n);
       V.modele.netClasses[n.nom]=n.classe;
     }
   }
@@ -1544,4 +1546,46 @@ function mdlNetPoserClasse(i,classe){
   V.modele.netClasses[n.nom]=cl;
   if(!V.netClasses)V.netClasses={};
   V.netClasses[n.nom]=cl;
+  mdlPoserNature(n);
+}
+
+/* ==========================================================================
+   Nature d'un net : celle de l'éditeur PCB, plus fine que la famille
+   GND / PWR / Signal qui règle les préréglages de simulation. Masse et
+   Alimentation suivent la famille ; un signal est Horloge, Rapide, RF,
+   Analogique ou Lent (défaut). La suggestion vient du serveur (natures_nets,
+   même moteur que la schématique) ; un choix manuel est gardé à part, dans
+   V.modele.netNatures, et part avec l'export .json.
+   ========================================================================== */
+const MDL_NATURES_SIGNAL=["Horloge","Rapide","RF","Analogique","Lent"];
+
+function mdlPoserNature(n){
+  if(n.classe==="gnd"){n.nature="Masse";n.natureRaison="";n.natureManuelle=false;return;}
+  if(n.classe==="pwr"){n.nature="Alimentation";n.natureRaison="";n.natureManuelle=false;return;}
+  const man=V.modele&&V.modele.netNatures&&V.modele.netNatures[n.nom];
+  if(MDL_NATURES_SIGNAL.indexOf(man)>=0){
+    n.nature=man;n.natureRaison="Choix manuel";n.natureManuelle=true;return;
+  }
+  const nat=(V.modele&&V.modele.natures_nets)||{};
+  const c=(nat.classes||{})[n.nom];
+  n.natureManuelle=false;
+  if(MDL_NATURES_SIGNAL.indexOf(c)>=0){
+    n.nature=c;n.natureRaison=(nat.raisons||{})[n.nom]||"";
+  }else{
+    n.nature="Lent";n.natureRaison="Aucun indice : lent par défaut";
+  }
+}
+
+/* Pose la nature d'un net ; Masse / Alimentation changent sa famille. */
+function mdlNetPoserNature(i,nature){
+  const n=(i>=0&&V.parNet&&i<V.parNet.length)?V.parNet[i]:null;
+  if(!n||!n.nom)return;
+  if(nature==="Masse"){mdlNetPoserClasse(i,"gnd");return;}
+  if(nature==="Alimentation"){mdlNetPoserClasse(i,"pwr");return;}
+  if(MDL_NATURES_SIGNAL.indexOf(nature)<0)return;
+  if(n.classe!=="signal")mdlNetPoserClasse(i,"signal");
+  if(!V.modele)V.modele={};
+  if(!V.modele.netNatures)V.modele.netNatures={};
+  V.modele.netNatures[n.nom]=nature;
+  mdlPoserNature(n);
 }

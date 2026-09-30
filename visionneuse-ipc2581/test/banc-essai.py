@@ -633,6 +633,14 @@ T(u"la classe de net (netClass) est lue et exportee dans classes_nets",
   lambda: (egal(MODELE.get("classes_nets", {}).get("SIG_A"), "SIGNAL", u"SIG_A est SIGNAL"),
            egal(MODELE.get("classes_nets", {}).get("GND"), "GROUND", u"GND est GROUND")))
 
+T(u"la nature des nets vient du meme moteur que la schematique",
+  lambda: (egal(MODELE.get("natures_nets", {}).get("classes", {}).get("GND"), "Masse", u"GND est Masse"),
+           egal(MODELE.get("natures_nets", {}).get("classes", {}).get("SIG_A"), None, u"SIG_A sans indice"),
+           egal(ipc2581_json._natures_nets(
+                [{"ref": "Y1", "val": "16MHz", "type": "", "pads": [{"n": 0}], "pins": []}],
+                ["XIN", "USB_DP", "USB_DM"])["classes"],
+                {"XIN": "Horloge", "USB_DP": "Rapide", "USB_DM": "Rapide"}, u"quartz et USB")))
+
 T(u"les couches deviennent un index, l'empilage d'abord",
   lambda: egal(MODELE["couches"][:3],
                ["Conductor-1", "DielectricLayer-1-2", "Conductor-2"],

@@ -179,6 +179,9 @@ function loadDoc(o, keepPage){
     n+((Array.isArray(p&&p.comps)?p.comps.length:0)-(pages[addedHier?i+1:i]?pages[addedHier?i+1:i].comps.length:0)),0);
   push();
   S.pages=pages;
+  S.netClasses={};
+  const nc=(o.netClasses&&typeof o.netClasses==="object")?o.netClasses:{};
+  for(const k in nc)if(NET_CLASSES.includes(nc[k]))S.netClasses[k]=nc[k];
   if(keepPage && o.page!==undefined){
     const reqP = Math.round(num(o.page, 0));
     const targetP = addedHier ? (reqP + 1) : reqP;

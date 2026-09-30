@@ -519,6 +519,8 @@ function pcbEnsureDefaultProjectRules(){
     ];
   }
   if(!S.netClass) S.netClass = {};
+  if(!S.netClassAuto) S.netClassAuto = {};
+  if(!Array.isArray(S.dpSchema)) S.dpSchema = [];
   if(!S.rule.designRules){
     S.rule.designRules = pcbGetDefaultDesignRules();
   }

@@ -292,7 +292,7 @@ def identifier_bus_numeriques(
             "label": "Bus I2C",
             "nets": list(set(i2c_nets)),
             "components": list(set(pullup_resistors)),
-            "suggested_netclass": "Rapide",
+            "suggested_netclass": "Lent",
             "sim_recommendation": "CROSSTALK"
         })
 
@@ -330,7 +330,7 @@ def identifier_bus_numeriques(
             "label": "Liaison UART (TX/RX)",
             "nets": uart_nets,
             "components": [],
-            "suggested_netclass": "Signal",
+            "suggested_netclass": "Lent",
             "sim_recommendation": None
         })
 
@@ -387,7 +387,7 @@ def identifier_oscillateurs(
             },
             "layout_template": "crystal_symmetric",
             "nets": q_nets,
-            "suggested_netclass": "Rapide",
+            "suggested_netclass": "Horloge",
             "sim_recommendation": "CROSSTALK_AND_LENGTH"
         })
 
@@ -441,6 +441,132 @@ def identifier_filtres(
                         })
 
     return resultats
+
+
+# Classes de nets. Quand plusieurs indices se contredisent sur un net, la
+# première de cette liste l'emporte ; Masse et Alimentation par le nom priment
+# sur tout. Un net sans indice n'a pas de classe (= classe par défaut, lente).
+# « Lent! » est un indice sûr de lenteur (SMB_CLK, ENET_LED) : il passe avant
+# Horloge et Rapide, que le reste du nom suggère à tort ; il sort en « Lent ».
+PRIORITE_CLASSES = ("Alimentation", "RF", "Lent!", "Horloge", "Rapide", "Analogique", "Lent")
+
+# Indices lus dans les jetons d'un nom de net ou de broche (USB_DP -> USB, DP)
+_REGLES_JETON = (
+    ("RF", re.compile(r"RF(?:IN|OUT|IO|\d)?|ANT(?:ENNA)?\d*|LNA\w*")),
+    ("Lent!", re.compile(r"(?:SMB|I2C|LED|RESET|IRQ)\w*|SCL|SDA|MDIO|MDC|N?RST\w*|INTN?")),
+    ("Horloge", re.compile(r"\w*CLK\w*|XTAL\w*|X(?:IN|OUT)|OSC\w*|MCO\d*")),
+    ("Rapide", re.compile(r"(?:USB|ETH|ENET|[RS]?G?MII|HDMI|LVDS|DDR|QSPI|SDIO|MIPI|PCIE|SATA)\w*|D[PM+-]")),
+    ("Analogique", re.compile(r"(?:AIN|ADC|DAC|VREF|SENSE|AUDIO|MIC)\w*|AN\d+")),
+)
+# Connecteurs et composants qui imposent une ligne RF
+_RE_COMP_RF = re.compile(r"\bSMA\b|U\.FL|IPEX|MHF|ANTEN|BALUN", re.IGNORECASE)
+# Suffixes de paire différentielle : les DEUX noms doivent exister (RESET_N seul
+# est un signal actif bas, pas une paire). Base vide admise pour DP/DM seulement :
+# les broches « + » / « - » d'un condensateur polarisé ne sont pas une paire.
+_SUFFIXES_PAIRE = (("P", "N"), ("+", "-"), ("DP", "DM"))
+
+
+def _jetons(nom: str) -> List[str]:
+    return [t for t in re.split(r"[^A-Z0-9+-]+", nom.upper()) if t]
+
+
+def _paires_diff(nets: Dict[str, List[Any]]) -> List[List[str]]:
+    """Paires différentielles, par nom de net ou par nom de broche d'un même composant."""
+    par_nom = {n.upper(): n for n in nets}
+    par_broche = defaultdict(dict)  # ref -> nom de broche -> net
+    for n, pins in nets.items():
+        for p in pins:
+            nom = str(p.get("name") or "").upper()
+            if nom and "/" not in nom:
+                par_broche[p.get("ref") or p.get("component") or ""][nom] = n
+
+    paires = []
+    vus = set()
+
+    def chercher(nom: str, table: Dict[str, str]):
+        for pos, neg in _SUFFIXES_PAIRE:
+            base = nom[:-len(pos)]
+            if nom.endswith(pos) and (base or pos == "DP") and base + neg in table:
+                a, b = table[nom], table[base + neg]
+                if a != b and a not in vus and b not in vus:
+                    vus.update((a, b))
+                    paires.append([a, b])
+                return
+
+    for nom in par_nom:
+        chercher(nom, par_nom)
+    for table in par_broche.values():
+        for nom in list(table):
+            chercher(nom, table)
+    return paires
+
+
+def classer_nets(
+    components: Dict[str, Any],
+    nets: Dict[str, List[Any]],
+    motifs: List[Dict[str, Any]]
+) -> Tuple[Dict[str, str], Dict[str, str], List[List[str]]]:
+    """Propose une classe par net et dit pourquoi.
+
+    Indices, du plus sûr au moins sûr : nom de masse / d'alimentation, motifs
+    reconnus (quartz, régulateur, bus...), composants reliés (AOP, connecteur
+    RF), noms des broches, nom du net, puis paire différentielle.
+    Les broches multifonctions (PA5/SPI1_SCK/ADC5) sont ignorées : elles ne
+    disent pas laquelle des fonctions est utilisée.
+    """
+    candidats: Dict[str, Dict[str, str]] = defaultdict(dict)
+
+    def proposer(net: str, classe: str, raison: str) -> None:
+        candidats[net].setdefault(classe, raison)
+
+    for pat in motifs:
+        c = pat.get("suggested_netclass")
+        if c:
+            for n in pat.get("nets", []):
+                proposer(n, c, "Motif : " + str(pat.get("label") or pat.get("type")))
+
+    for net, pins in nets.items():
+        noms = [("net", net)]
+        for p in pins:
+            ref = p.get("ref") or p.get("component") or ""
+            nom_b = str(p.get("name") or "")
+            if nom_b and "/" not in nom_b:
+                noms.append((ref + "." + nom_b, nom_b))
+            comp = components.get(ref) or {}
+            val = str(comp.get("val") or comp.get("value") or "")
+            typ = str(comp.get("type") or "")
+            if _RE_OPAMP.search(val) or _RE_AUDIO_AMP.search(val):
+                proposer(net, "Analogique", "Relié à %s (%s)" % (ref, val))
+            if _RE_COMP_RF.search(val + " " + typ) or re.match(r"(?:ANT|AE)\d", ref.upper()):
+                proposer(net, "RF", "Relié à %s (%s)" % (ref, val or typ or "antenne"))
+        for origine, nom in noms:
+            for tok in _jetons(nom):
+                for classe, rx in _REGLES_JETON:
+                    if rx.fullmatch(tok):
+                        quoi = "Nom du net" if origine == "net" else "Broche " + origine
+                        proposer(net, classe, "%s « %s »" % (quoi, nom))
+
+    paires = _paires_diff(nets)
+    en_paire = {n for pr in paires for n in pr}
+
+    classes: Dict[str, str] = {}
+    raisons: Dict[str, str] = {}
+    for net in list(nets) + [n for n in candidats if n not in nets]:
+        if _RE_GROUND_NET.search(net):
+            classe, raison = "Masse", "Nom de masse « %s »" % net
+        elif _RE_POWER_NET.search(net):
+            classe, raison = "Alimentation", "Nom d'alimentation « %s »" % net
+        else:
+            classe = next((c for c in PRIORITE_CLASSES if c in candidats[net]), None)
+            raison = candidats[net][classe] if classe else None
+            if net in en_paire and classe in (None, "Lent"):
+                classe, raison = "Rapide", "Paire différentielle"
+            elif classe == "Lent!":
+                classe = "Lent"
+        if classe:
+            classes[net] = classe
+            raisons[net] = raison
+    return classes, raisons, paires
 
 
 def _est_led(ref: str, comp: Dict[str, Any]) -> bool:
@@ -607,19 +733,15 @@ def analyser_motifs_schema(data: Dict[str, Any]) -> Dict[str, Any]:
 
     tous_motifs = zones_motifs + motifs_auto
 
-    # Dictionnaire des classes de nets suggérées
-    suggestions_netclasses = {}
-    for pat in tous_motifs:
-        nclass = pat.get("suggested_netclass")
-        if nclass:
-            for net in pat.get("nets", []):
-                suggestions_netclasses[net] = nclass
+    classes, raisons, paires = classer_nets(components, nets, tous_motifs)
 
     return {
         "succes": True,
         "total_motifs": len(tous_motifs),
         "motifs": tous_motifs,
         "zones": zones_export,
-        "classes_suggerees": suggestions_netclasses,
+        "classes_suggerees": classes,
+        "raisons_classes": raisons,
+        "paires_diff": paires,
         "courants_dc_estimes": courants
     }

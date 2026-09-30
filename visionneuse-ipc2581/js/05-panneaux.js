@@ -300,7 +300,8 @@ function pnlNets(){
   const vus=liste.slice(0,PNL_MAX);
   box.innerHTML=vus.map(function(n){
     const cl=n.classe||"signal";
-    const badge='<span class="badge-net badge-'+cl+'">'+cl.toUpperCase()+'</span>';
+    const badge='<span class="badge-net badge-'+cl+'">'
+      +(cl==="signal"&&n.nature?n.nature.toUpperCase():cl.toUpperCase())+'</span>';
     return '<button class="ligne'+(selNets().has(n.i)?" on":"")+'" data-net="'+n.i+'">'
       +badge
       +"<b>"+mdlEsc(n.nom)+"</b>"
@@ -323,6 +324,17 @@ function pnlNets(){
       btn.classList.toggle("on", btn.dataset.filtreClasse===PNL_NETS_CLASSE_FILTRE);
     });
   }
+}
+
+/* Menu de nature d'un net signal (Horloge, Rapide, RF, Analogique, Lent) ;
+   rien pour une masse ou une alimentation, dont la nature suit la famille. */
+function pnlSelNature(n,attr){
+  if((n.classe||"signal")!=="signal")return "";
+  return '<select class="ltRoleSelect'+(n.natureManuelle?" saisi":"")+'" '+attr+'="'+n.i+'"'
+    +' title="Nature du signal, comme dans l’éditeur PCB'+(n.natureRaison?" — "+mdlEsc(n.natureRaison):"")+'">'
+    +MDL_NATURES_SIGNAL.map(function(c){
+      return '<option'+(n.nature===c?" selected":"")+'>'+c+'</option>';
+    }).join("")+'</select>';
 }
 
 /* =============================================================================
@@ -367,6 +379,7 @@ function validerModalNets(){
 }
 
 function reinitialiserAutoDetectionModaleNets(){
+  if(V.modele)delete V.modele.netNatures;
   if(typeof mdlAutoDetecterClassesNets==="function"){
     mdlAutoDetecterClassesNets(V.modele?V.modele.classes_nets:null, null);
   }
@@ -471,9 +484,10 @@ function rendreModalNets(){
       (n.plans.length?n.plans.length+" plan(s)":"")
     ].filter(Boolean).join(" · ");
 
-    const raison=n.autoDetecte
+    const raison=(n.autoDetecte
       ? 'Auto : <b>'+mdlEsc(n.autoRaison||"—")+'</b>'
-      : '<span style="color:var(--cyan)">Manuel</span>';
+      : '<span style="color:var(--cyan)">Manuel</span>')
+      +(cl==="signal"&&n.natureRaison?' · '+mdlEsc(n.nature)+' : '+mdlEsc(n.natureRaison):'');
 
     return '<tr data-net-id="'+n.i+'">'
       +'<td class="net-nom"><b>'+mdlEsc(n.nom)+'</b></td>'
@@ -484,6 +498,7 @@ function rendreModalNets(){
       +'    <button class="seg-btn'+(cl==="pwr"?" on pwr":"")+'" data-type="pwr" title="Classer en alimentation (PWR)">⚡ PWR</button>'
       +'    <button class="seg-btn'+(cl==="signal"?" on sig":"")+'" data-type="signal" title="Classer en signal">〰 Signal</button>'
       +'  </div>'
+      +pnlSelNature(n,"data-net-nat")
       +'</td>'
       +'<td class="net-det">'+raison+'</td>'
       +'</tr>';
@@ -497,18 +512,17 @@ function rendreModalNets(){
       btn.onclick=function(){
         const typ=btn.dataset.type;
         if(typeof mdlNetPoserClasse==="function")mdlNetPoserClasse(idx,typ);
-        ctrl.querySelectorAll(".seg-btn").forEach(function(b){
-          b.className="seg-btn"+(b.dataset.type===typ?" on "+(typ==="signal"?"sig":typ):"");
-        });
-        const tr=ctrl.closest("tr");
-        if(tr){
-          const det=tr.querySelector(".net-det");
-          if(det)det.innerHTML='<span style="color:var(--cyan)">Manuel</span>';
-        }
+        rendreModalNets();              // le menu de nature suit la famille
         mettreAJourKpiModaleNets();
         mettreAJourApercuPrereglages();
       };
     });
+  });
+  tbody.querySelectorAll("[data-net-nat]").forEach(function(sel){
+    sel.onchange=function(){
+      mdlNetPoserNature(+sel.dataset.netNat,sel.value);
+      rendreModalNets();
+    };
   });
 }
 
@@ -731,7 +745,7 @@ function pnlDetail(){
       +'</span>';
     h+='<div class="fiche"><h3>Net</h3><table>'
       +l("Nom",badge+'<span class="val">'+mdlEsc(n.nom)+"</span>")
-      +l("Classification",selClasse)
+      +l("Classification",selClasse+pnlSelNature(n,"data-set-nature"))
       +l("Longueur",mdlMes(n.longueur,2))
       +l("Pistes",n.pistes.length+(n.arcs.length?" + "+n.arcs.length+" arc(s)":""))
       +l("Pastilles",n.pads.length)
@@ -825,6 +839,13 @@ function pnlDetail(){
     b.onclick=function(){
       const v=b.dataset.vsel;
       if(v==="rien")choisirRien(); else selOter(+v);
+    };
+  });
+  box.querySelectorAll("[data-set-nature]").forEach(function(sel){
+    sel.onclick=function(e){e.stopPropagation();};
+    sel.onchange=function(){
+      mdlNetPoserNature(+sel.dataset.setNature,sel.value);
+      pnlNets(); pnlDetail();
     };
   });
   box.querySelectorAll("[data-set-classe]").forEach(function(b){

@@ -27,7 +27,7 @@ function schFile(suffixe, repli){
 function saveJson(){
   storeCurrent();
   const nl=(typeof netlistText==="function")?netlistText():null;
-  const doc={format:"schemedit-2",pages:S.pages,page:S.page,netlist:nl};
+  const doc={format:"schemedit-2",pages:S.pages,page:S.page,netClasses:S.netClasses,netlist:nl};
   if(typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:nl});
   if(typeof projdLie==="function" && projdLie()){
     projdDocEcrire("schema",doc).then(function(nom){

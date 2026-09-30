@@ -670,7 +670,9 @@ const S = {
   classes:[{name:"Défaut",      w:0.3, clr:0.25, via:0.8, drill:0.4},
            {name:"Alimentation",w:0.6, clr:0.25, via:0.9, drill:0.45}],
   netClass:{},                // net → nom de classe ; absent = classe par défaut
+  netClassAuto:{},            // net → classe posée d'après le schéma (voir autoClass)
   dpPairs:[],                 // paires différentielles : {id,name,p,n}
+  dpSchema:[],                // paires déjà proposées par le schéma, "p|n" (voir autoPairs)
   dpRules:[],                 // règles de paire ; vide = la règle d'usine
   scale:5, ox:0, oy:0,
   grid:0.1, showGrid:true, flip:false, contrast:1,   // pas d'accrochage au démarrage
@@ -2054,55 +2056,132 @@ function maxClr(){
   for(const c of S.classes)m=Math.max(m,c.clr);
   return Math.max(m||FALLBACK_CLASS.clr,matMax());
 }
-/* rattache d'office les nets d'alimentation à la classe du même nom, si elle
-   existe, et applique les classes déduites du schéma si disponibles */
-function autoClass(){
-  const pwr=S.classes.find(c=>/aliment/i.test(c.name));
-  if(pwr){
-    for(const n of netTable())
-      if(isPower(n.name)&&!S.netClass[n.name])S.netClass[n.name]=pwr.name;
+/* Classes que le schéma sait proposer, et les règles d'une classe créée pour
+   l'occasion. « Lent » n'en a pas : c'est la classe par défaut. `re` retrouve
+   une classe déjà là sous un autre nom (« Impédance 50Ω » pour RF). */
+const SCH_CLASSES={
+  Alimentation:{re:/aliment|power/i,       w:0.6, clr:0.25,via:0.9,drill:0.45},
+  Masse:       {re:/masse|gnd|ground/i,    w:0.6, clr:0.25,via:0.9,drill:0.45},
+  // isolation = 2 largeurs : la règle des 3W, d'axe à axe
+  Horloge:     {re:/horloge|clock/i,       w:0.25,clr:0.5, via:0.8,drill:0.4},
+  Rapide:      {re:/rapide|fast/i,         w:0.25,clr:0.25,via:0.8,drill:0.4},
+  // largeur : 50 Ω sur la couche du dessus, d'après l'empilage
+  RF:          {re:/^rf\b|imp[ée]dance/i,  w:0,   clr:0.5, via:0.8,drill:0.4},
+  Analogique:  {re:/analog/i,              w:0.3, clr:0.35,via:0.8,drill:0.4}
+};
+function rfW50(){
+  try{
+    const g=dpStripGeom(0);
+    let lo=0.05,hi=3;
+    if(!(ltZ0(g,lo)>50&&ltZ0(g,hi)<50))return 0.3;
+    for(let i=0;i<40;i++){const m=(lo+hi)/2;if(ltZ0(g,m)>50)lo=m;else hi=m;}
+    return r3((lo+hi)/2);
+  }catch(_){return 0.3;}
+}
+/* la classe de la carte qui répond à un nom de classe du schéma, créée au
+   besoin ; null = classe par défaut */
+function schClass(nom){
+  const k=SCH_CLASSES[nom];
+  if(!k)return null;
+  const autres=S.classes.slice(1);
+  let c=autres.find(x=>x.name.toLowerCase()===nom.toLowerCase())||autres.find(x=>k.re.test(x.name));
+  if(!c){
+    c={name:nom,w:k.w||rfW50(),clr:k.clr,via:k.via,drill:k.drill};
+    S.classes.push(c);
   }
-
-  /* Intégration des classes déduites par l'analyse des motifs de circuit */
-  try {
-    const rawNc = typeof sessionStorage !== "undefined" && sessionStorage.getItem("web_cao_netclasses");
-    if (rawNc) {
-      const mapNc = JSON.parse(rawNc);
-      if (mapNc && typeof mapNc === "object") {
-        let fast = S.classes.find(c => /rapide|fast/i.test(c.name));
-        let analog = S.classes.find(c => /analog/i.test(c.name));
-
-        const nets = netTable();
-        const hasFastNet = nets.some(n => /rapide/i.test(mapNc[n.name] || ""));
-        const hasAnalogNet = nets.some(n => /analog/i.test(mapNc[n.name] || ""));
-
-        if (!fast && hasFastNet) {
-          fast = { name: "Rapide", w: 0.25, clr: 0.25, via: 0.8, drill: 0.4 };
-          S.classes.push(fast);
-        }
-        if (!analog && hasAnalogNet) {
-          analog = { name: "Analogique", w: 0.30, clr: 0.35, via: 0.8, drill: 0.4 };
-          S.classes.push(analog);
-        }
-
-        for (const n of nets) {
-          const sug = mapNc[n.name];
-          if (!sug || S.netClass[n.name]) continue;
-          if (/rapide/i.test(sug) && fast) S.netClass[n.name] = fast.name;
-          else if (/analog/i.test(sug) && analog) S.netClass[n.name] = analog.name;
-          else if (/alim/i.test(sug) && pwr) S.netClass[n.name] = pwr.name;
-        }
-      }
-    }
-  } catch (_) {}
+  return c;
+}
+/* Applique les classes venues du schéma (analyse + corrections faites là-bas)
+   et, à défaut, rattache les nets d'alimentation à la classe du même nom.
+   S.netClassAuto retient ce que cette fonction a posé : un net dont la classe
+   y figure encore suit le schéma, même après coup ; un net rattaché à la main
+   dans le PCB n'y figure plus, et le schéma n'y touche pas.
+   Sans données du schéma (autre onglet, carte seule), on ne fait que compléter.
+   Renvoie le nombre de nets changés. */
+function autoClass(){
+  let map=null;
+  try{
+    const raw=typeof sessionStorage!=="undefined"&&sessionStorage.getItem("web_cao_netclasses");
+    const m=raw&&JSON.parse(raw);
+    if(m&&typeof m==="object")map=m;
+  }catch(_){}
+  if(!S.netClassAuto)S.netClassAuto={};
+  const pwr=S.classes.find(c=>/aliment/i.test(c.name));
+  let n=0;
+  for(const {name} of netTable()){
+    const cur=S.netClass[name];
+    if(cur&&S.netClassAuto[name]!==cur)continue;      // choix fait dans le PCB
+    let cible;
+    if(!map){
+      if(cur||!(pwr&&isPower(name)))continue;
+      cible=pwr;
+    }else if(Object.prototype.hasOwnProperty.call(map,name))cible=schClass(String(map[name]));
+    else cible=(pwr&&isPower(name))?pwr:null;
+    const nom=(cible&&cible!==defClass())?cible.name:undefined;
+    if(nom!==cur){setNetClass(name,nom);n++;}
+    if(nom)S.netClassAuto[name]=nom;else delete S.netClassAuto[name];
+  }
+  return n+autoPairs();
+}
+/* Les paires différentielles trouvées par le schéma — y compris par les noms
+   de broches, sur des nets « $BN… » que la détection par nom ne voit pas —
+   deviennent des paires de la carte. Seulement entre nets rapides (Rapide,
+   Horloge, RF) : les entrées + et - d'un AOP ne se routent pas en paire 90 Ω.
+   S.dpSchema retient les paires déjà proposées : une paire supprimée à la
+   main ne revient pas à la synchro suivante. Renvoie le nombre de paires créées. */
+function autoPairs(){
+  let paires=null,classes=null;
+  try{
+    paires=JSON.parse(sessionStorage.getItem("web_cao_paires_diff")||"null");
+    classes=JSON.parse(sessionStorage.getItem("web_cao_netclasses")||"null");
+  }catch(_){}
+  if(!Array.isArray(paires)||!classes||typeof classes!=="object")return 0;
+  if(!Array.isArray(S.dpSchema))S.dpSchema=[];
+  const nets=new Set(netTable().map(x=>x.name)), vite=/^(Rapide|Horloge|RF)$/;
+  let k=0;
+  for(const pr of paires){
+    if(!Array.isArray(pr)||pr.length!==2)continue;
+    const p=String(pr[0]),n=String(pr[1]),cle=p+"|"+n;
+    if(S.dpSchema.indexOf(cle)>=0||!nets.has(p)||!nets.has(n))continue;
+    if(!vite.test(classes[p]||"")||!vite.test(classes[n]||""))continue;
+    S.dpSchema.push(cle);
+    if(dpOfNet(p)||dpOfNet(n))continue;          // déjà dans une paire
+    const m=dpMatch(p,n);
+    S.dpPairs.push({id:S.nextId++,name:dpFreeName(m?m.base:"PAIRE"),p:m?m.p:p,n:m?m.n:n});
+    k++;
+  }
+  return k;
 }
 
 function pcbAppliquerClassesSuggerees(){
-  autoClass();
+  const n=autoClass();
+  if(typeof zoneCache!=="undefined")zoneCache.clear();
   if(typeof touch==="function")touch();
   if(typeof refreshPanels==="function")refreshPanels();
   if(typeof draw==="function")draw();
+  return n;
 }
+/* Une correction de classe faite dans le schéma arrive ici en direct. */
+try{
+  if(typeof BroadcastChannel!=="undefined"){
+    const bc=new BroadcastChannel("web_cao_patterns_sync");
+    if(bc.unref)bc.unref();                 // Node : ne retient pas le banc d'essai
+    bc.onmessage=ev=>{
+      const d=ev.data;
+      if(!d||d.type!=="netclasses_updated"||!d.classes||typeof d.classes!=="object")return;
+      try{
+        sessionStorage.setItem("web_cao_netclasses",JSON.stringify(d.classes));
+        if(Array.isArray(d.paires))sessionStorage.setItem("web_cao_paires_diff",JSON.stringify(d.paires));
+      }catch(_){}
+      if(!S.fps.length)return;
+      const avant=JSON.stringify(S.classes);
+      const n=autoClass();
+      if(!n&&avant===JSON.stringify(S.classes))return;
+      pcbAppliquerClassesSuggerees();
+      if(typeof hint==="function")hint("Classes de nets et paires mises à jour depuis le schéma ("+n+" changement(s)).");
+    };
+  }
+}catch(_){}
 /* liste des nets présents, avec leurs nœuds */
 function netTable(){
   const m=new Map();

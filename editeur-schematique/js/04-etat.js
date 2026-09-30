@@ -22,8 +22,11 @@ const S={
   uid:1, hist:[], redo:[],
   grid:G, gridShown:G,             // pas d'accrochage · pas réellement affiché
   wireVer:0, dirty:false, bomAll:false,
-  netLabels:2, hoverNet:null, listTab:"bom", netAll:false  // 0 aucune · 1 nommés · 2 tous
+  netLabels:2, hoverNet:null, listTab:"bom", netAll:false, // 0 aucune · 1 nommés · 2 tous
+  netClasses:{}                   // corrections manuelles : nom de net → classe
 };
+// classes de net proposées au routage ; un net absent de S.netClasses suit l'analyse
+const NET_CLASSES=["Masse","Alimentation","Horloge","Rapide","RF","Analogique","Lent"];
 const HIST_MAX=60;
 // toute modification des fils invalide le cache des jonctions
 function touchWires(){S.wireVer++;}

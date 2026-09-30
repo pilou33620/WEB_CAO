@@ -294,7 +294,7 @@ function sheetInterconnections(){
 /* ---------- historique (document entier) ---------- */
 function serialize(){
   storeCurrent();
-  return JSON.stringify({pages:S.pages,page:S.page});
+  return JSON.stringify({pages:S.pages,page:S.page,netClasses:S.netClasses});
 }
 function push(snapshot){
   S.hist.push(snapshot===undefined?serialize():snapshot);
@@ -305,7 +305,9 @@ function push(snapshot){
 function restore(js){
   const o=JSON.parse(js);
   S.pages=o.pages;loadPage(o.page||0);
+  S.netClasses=o.netClasses||{};
   buildTabs();refreshPanels();draw();
+  if(typeof SCHEMA_PATTERNS!=="undefined"&&SCHEMA_PATTERNS.analyser)SCHEMA_PATTERNS.analyser(150);
   S.dirty=true;
 }
 function undo(){

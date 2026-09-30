@@ -197,6 +197,33 @@ def _pad_en_dict(pad, nets):
     return out
 
 
+def _natures_nets(composants, noms_nets):
+    """Nature de chaque net (Masse, Alimentation, Horloge, Rapide, RF,
+    Analogique) par le meme moteur que la schematique : noms de nets, motifs
+    (quartz, regulateurs...) et composants relies. Un echec n'empeche pas
+    l'import : la visionneuse retombe alors sur « Lent ».
+    ponytail: les detecteurs de motifs balaient composants x nets ; a surveiller
+    sur une tres grosse carte."""
+    try:
+        import pattern_recognition
+    except ImportError:
+        return {}
+    comps = {}
+    nets = {nom: [] for nom in noms_nets if nom}
+    for c in composants:
+        comps[c["ref"]] = {"val": c["val"], "type": c["type"]}
+        for p in c.get("pads", []) + c.get("pins", []):
+            n = p.get("n")
+            if n is not None and 0 <= n < len(noms_nets) and noms_nets[n]:
+                nets[noms_nets[n]].append({"ref": c["ref"], "pin": p.get("pin") or p.get("num") or ""})
+    try:
+        res = pattern_recognition.analyser_motifs_schema({"components": comps, "nets": nets})
+    except Exception:
+        return {}
+    return {"classes": res["classes_suggerees"], "raisons": res["raisons_classes"],
+            "paires": res["paires_diff"]}
+
+
 def design_en_dict(design: IPCDesign, fichier: str = "") -> dict:
     """IPCDesign -> dictionnaire JSON pour la visionneuse."""
     couches = _Index()
@@ -385,6 +412,7 @@ def design_en_dict(design: IPCDesign, fichier: str = "") -> dict:
         "couches": couches.noms,
         "nets": nets.noms,
         "classes_nets": classes_nets,
+        "natures_nets": _natures_nets(composants, nets.noms),
         "pistes": pistes,
         "arcs": arcs,
         "plans": plans,
