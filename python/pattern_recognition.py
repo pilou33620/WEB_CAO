@@ -187,13 +187,13 @@ def identifier_alimentations(
                 has_ic = any(p.get("ref") == ref or p.get("component") == ref for p in pins)
                 if has_ic:
                     comp_nets.append(n_name)
-                    is_sw_net = bool(re.search(r"SW|LX|IND|COIL", n_name, re.IGNORECASE))
                     is_in_net = bool(re.search(r"IN|VIN|VCC|VBAT|RAW", n_name, re.IGNORECASE))
                     is_out_net = bool(re.search(r"OUT|VOUT|3V3|5V|FB", n_name, re.IGNORECASE))
 
                     for p in pins:
                         c_ref = p.get("ref") or p.get("component") or ""
-                        if c_ref.startswith("L") and c_ref not in inductors:
+                        # L suivi d'un chiffre : LED1 n'est pas une inductance
+                        if re.match(r"L\d", c_ref, re.IGNORECASE) and c_ref not in inductors:
                             inductors.append(c_ref)
                         elif c_ref.startswith("D") and c_ref not in diodes:
                             diodes.append(c_ref)
@@ -216,7 +216,19 @@ def identifier_alimentations(
                             if c_ref.startswith("C") and c_ref not in cin_list and c_ref not in cout_list:
                                 cout_list.append(c_ref)
 
-            associes = list(inductors) + list(diodes) + list(cin_list) + list(cout_list) + list(feedback_res)
+            # Nœud de commutation : le net qui relie le contrôleur à l'inductance
+            # sans condensateur vers la masse. VIN d'un boost (ou VOUT d'un buck
+            # qui le mesure) touche aussi les deux, mais porte son découplage ;
+            # le condensateur de bootstrap (BOOT-SW) ne va pas à la masse.
+            def refs_du_net(n):
+                return {p.get("ref") or p.get("component") or "" for p in nets[n]}
+            capas_masse = {r for n in nets if _RE_GROUND_NET.search(n)
+                           for r in refs_du_net(n) if re.match(r"C\d", r, re.IGNORECASE)}
+            sw_nets = [n for n in comp_nets
+                       if ref in refs_du_net(n) and refs_du_net(n) & set(inductors)
+                       and not refs_du_net(n) & capas_masse]
+
+            associes =list(inductors) + list(diodes) + list(cin_list) + list(cout_list) + list(feedback_res)
             # Déduplication
             unique_comps = []
             for c in [ref] + associes:
@@ -242,6 +254,9 @@ def identifier_alimentations(
                 },
                 "layout_template": "buck_compact",
                 "nets": comp_nets,
+                # Classés Alimentation (largeur de piste), mais agresseurs :
+                # fronts de quelques ns sur toute la tension d'entrée
+                "noisy_nets": sw_nets,
                 "suggested_netclass": "Alimentation",
                 "sim_recommendation": "DC_DROP_AND_EM"
             })
@@ -734,6 +749,10 @@ def analyser_motifs_schema(data: Dict[str, Any]) -> Dict[str, Any]:
     tous_motifs = zones_motifs + motifs_auto
 
     classes, raisons, paires = classer_nets(components, nets, tous_motifs)
+    # Un drapeau, pas une classe : le nœud SW garde sa classe (sa largeur de
+    # piste) et devient en plus un agresseur pour l'analyse de la carte.
+    bruyants = {n: "Nœud de commutation : " + str(m.get("label"))
+                for m in tous_motifs for n in m.get("noisy_nets", ())}
 
     return {
         "succes": True,
@@ -743,5 +762,6 @@ def analyser_motifs_schema(data: Dict[str, Any]) -> Dict[str, Any]:
         "classes_suggerees": classes,
         "raisons_classes": raisons,
         "paires_diff": paires,
+        "nets_bruyants": bruyants,
         "courants_dc_estimes": courants
     }

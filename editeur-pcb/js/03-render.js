@@ -1007,6 +1007,9 @@ function paint(c,dpr,w,h,noGrid){
      absente du .png exporté. */
   if(!noGrid&&typeof simDCTraceSonde==="function")
     simDCTraceSonde(c,dpr,w2s);
+  /* Le constat choisi dans la vérification de la carte : une marque sur un
+     point, absente du .png exporté comme la sonde. */
+  if(!noGrid&&typeof simCarteTrace==="function")simCarteTrace(c,dpr,w2s);
   if(!noGrid&&typeof rpMesTrace==="function")rpMesTrace(c,dpr);
   if(!noGrid&&typeof rpPhareTrace==="function")rpPhareTrace(c,dpr);
   /* Badges visuels et color-coding des blocs et zones fonctionnels (Rooms) */

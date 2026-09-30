@@ -221,7 +221,7 @@ def _natures_nets(composants, noms_nets):
     except Exception:
         return {}
     return {"classes": res["classes_suggerees"], "raisons": res["raisons_classes"],
-            "paires": res["paires_diff"]}
+            "paires": res["paires_diff"], "bruyants": sorted(res["nets_bruyants"])}
 
 
 def design_en_dict(design: IPCDesign, fichier: str = "") -> dict:

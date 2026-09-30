@@ -23,6 +23,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 500 essais a
 | **RF — S21 port à port (`rf_reseau` v1.5.0)** | En service dans l'éditeur PCB et la visionneuse, chacun avec son empilage (pistes par `simulation_em`, lignes couplées à N conducteurs avec pertes et dispersion modale, coudes et vias aux bords des longements, pastilles en MoM 3D sur stratifié étalonné sur l'empilage, zones et coulées de masse entières en maillage adaptatif creux sur leur cuivre rempli, longements recoupés à leur écart local, chemins de masse piste + via, broches annexes, pistes des autres nets fermées sur leur Z₀, mutuelles des selfs entre elles et avec les pistes (Neumann avec image), fentes du plan de référence (Ott), composants SPICE / .sNp / idéaux, S généralisés sur ports complexes, « et si ») — quasi-statique (+ Getsinger) : le domaine de validité (modes supérieurs, ondes de surface, rayonnement) est calculé et signalé ; les modéliser demande le moteur pleine onde | 47 cas (`python/test/banc-rf.py`) + 8 essais de page (`editeur-pcb/test/harness.js`) + 3 (`harness-sim.js`) |
 | **PI — Chute DC & Échauffement (`dc_solver` v2.1.0)** | En service (IR drop, densité J, modèle étalement) | 42 cas (`python/test/banc-dc.py`) |
 | **Scoring placement & Rotation (`pcb_scoring`)** | En service (HPWL, congestion, découplage HF, auto-rotation) | 18 cas (`python/test/banc-pcb-scoring.py`) |
+| **Vérification de la carte (`analyse_carte`)** | En service (tous nets : angles, bouts orphelins, empilage ; à 3 fréquences : impédance, chemins de retour, fentes de plan, vias de couture, diaphonie, paires différentielles, découplage, bord de carte, moignons de vias, branches en T ; quartz, ESD, courant des rails ; dérogations et comparaison de révisions) — mode d'emploi : [docs/verification-carte.md](docs/verification-carte.md) | 20 cas (`python/test/banc-analyse-carte.py`) + route (`banc-serveur-routes.py`) + 9 essais éditeur + 3 visionneuse |
 | **Reconnaissance de motifs (`pattern_recognition`)** | En service (LDO/78xx/79xx/Buck, I2C, SPI, UART, quartz, RC, courants DC) | 22 cas (`python/test/banc-patterns.py`) |
 | **Assistant IA (schéma, PCB, visionneuse, Gestion LIB)** | En service (Google AI Studio : Gemma 4 31B par défaut, Gemini 3.8 Flash / Flash Thinking ; clé API en mémoire vive uniquement ; datasheets PDF jointes → réglages de simulation vérifiés et cochés un à un) | `commun/ia-assistant.js`, `gestion-lib/js/06-ia-lib.js` |
 | **Serveur `web_CAO.py`** | En service (détection Raspberry Pi / terminal sans affichage : navigateur non ouvert par défaut, `--navigateur` / `--sans-navigateur`) | `banc-serveur-routes.py`, `banc-lib-routes.py`, `banc-maj-github.py`, `banc-detection-plateforme.py` |
@@ -103,6 +104,47 @@ lib/
 - [x] **Mode différentiel dans la cascade de paramètres S** :
   - Calcul complet des paramètres S en mode mixte (*Mixed-Mode S-Parameters*) dans `python/simulation_em.py` (`_cascade_differentielle`) : mode différentiel pur $S_{dd}$ ($S_{dd11}, S_{dd21}$ sur $Z_{ref,diff}$ ex: 100 Ω ou 90 Ω), mode commun $S_{cc}$ ($S_{cc11}, S_{cc21}$ sur $Z_{ref,comm} = Z_{ref,diff}/4$ ex: 25 Ω), et conversion de mode CEM $S_{cd21}(\omega)$ calculée à partir du skew $\Delta L = |L_+ - L_-|$.
   - Interface dédiée dans l'onglet « Z différentielle » (`commun/simulation-em.js`) avec sélecteur interactif `[ Sdd ]`, `[ Scc ]`, `[ Scd ]`, courbe SVG multi-traces avec seuil CEM à $-20\text{ dB}$, repère de fréquence centrale $f_0$, lecture dynamique au survol et export Touchstone différentiel `.s2p`.
+
+### Vérification de la carte entière
+
+Une analyse de toute la carte, tous les nets, sans sélection, qui range ses
+constats du plus grave au moins grave (famille « DRC — Règles de conception » du panneau). Mode
+d'emploi : [docs/verification-carte.md](docs/verification-carte.md). Les règles
+électriques se jugent à **trois fréquences**, avec pour chaque net le front
+effectif min(front de sa classe, 10 % de la période), au genou 0,35 / t_r.
+
+**Fait (30/09/2026)**
+- [x] Classes de nets automatiques + correction à la main (schéma, PCB, visionneuse) ; nœud de découpage d'un hacheur marqué **bruyant** (`nets_bruyants`).
+- [x] Rapport par règle puis par net, classe du net affichée, clic → vue + marque, marquages sans net et nets « Lent par défaut » à part, export texte ; l'onglet *Santé liaison* retiré.
+- [x] **Angles des pistes** (tous nets) : aigus (critiques), droits (vigilance), jonctions en T ou en étoile, hors 45° ; pastilles et vias exclus, micro-zigzags d'export noyés dans le cuivre exclus.
+- [x] **Chemins de retour** (point 3) : chaque via de signal qui change de plan, par le moteur de Current Return Path ; verdict = pire de la réflexion |Γ| et de la boucle face à λ/20 ; traversée de cavité GND → alimentation chiffrée même hors parcours.
+- [x] **Diaphonie** (point 6) : chaque couple de pistes voisines, Kb/Kf par MoM à l'écart réel, NEXT/FEXT au front de l'agresseur face au budget.
+- [x] **Le cuivre des surfaces** envoyé par les deux outils (plans et versements de la visionneuse, zones et découpes de l'éditeur) et peint une fois par couche côté serveur (`_Surfaces`, numpy) ; contour de carte, trous métallisés et leur portée, broches des composants avec leur net.
+- [x] **1. Empilage** : couche de signal sans plan (critique si elle porte un net rapide), plan derrière une autre couche, plan collé à plus de 0,5 mm pour un net rapide, couches de signal face à face, cavité alimentation / masse (pF/cm²), symétrie (voilage).
+- [x] **2. Impédance des nets** : Z₀ par section MoM avec la masse coplanaire mesurée dans le cuivre de la couche, R, L, C, T_d par net ; réflexion Γ · min(1, 2T_d / t_r) de chaque tronçon face à la cible (Horloge, Rapide, RF) ou à l'impédance dominante du net.
+- [x] **4. Fentes et vides des plans** : plan de référence lu sous chaque piste, détours d1 / d2 plafonnés à 30 mm, impédance de fente d'Ott par `rf_reseau.z_fente`, |Γ| comme un via ; propre dégagement exclu ; une ligne par net et par plan.
+- [x] **5. Vias de couture** : cavités entre deux couches d'une même masse, plus grand trou sans via par transformée de distance, pas équivalent face à λ/20 au front le plus rapide de la carte.
+- [x] **7. Découplage** : chaque broche d'alimentation de CI, condensateur vers la masse le plus proche face à λ/40 au genou des signaux du circuit ; « aucun condensateur » critique.
+- [x] **8. Bord de carte** : cuivre à moins de 0,25 / 0,5 mm du détourage (tous nets), longueur de piste rapide à moins de max(1 mm, 5 h) du bord face à λ/20, règle des 20 H (info).
+- [x] **9. Paires différentielles** : Z_diff MoM à l'écart réel des morceaux couplés, 2 Z₀ pour les découplés, face à la cible réglable ; écart de longueur en temps face au front ; vias en nombre différent.
+- [x] **Bouts de piste orphelins** : piste isolée (critique), bout libre au départ d'une pastille, moignon, dépassement après un coin ; 2T_d / t_r à trois fréquences sur un signal. Trouve sur P01x290 une piste qui s'arrête à 1,2 mm de sa pastille.
+- [x] Durée de chaque règle rendue au panneau (`durees_s`) ; P01x274 : 20 s en tout.
+- [x] **Classe Antenne** (fabrication seulement), **porteuse RF** réglable (les nets RF jugés à leur fréquence), angle droit en vigilance, broches de circuit reliées à la masse par un condensateur mais non classées Alimentation listées en réserve. P01x274 reclassé : de ~50 critiques à 4.
+- [x] **Fréquence maximale par classe** (`FMAX_CLASSES` : Lent 10 MHz, Analogique 1 MHz, Découpage 10 MHz) : un net lent n'est plus condamné par la colonne 100 MHz ; unités réglables par champ ; diaphonie : une ligne par couple ; le cuivre sans net ne porte plus de classe au rapport.
+
+- [x] **Diaphonie** : arcs (cordes de 5°), couches voisines sans plan (méthode des images, un plan), somme des agresseurs en phase.
+- [x] **Paires** : masse coplanaire dans Z_diff (`_ecart_exterieur`) ; plan de référence sous une seule moitié, jugé en temps.
+- [x] **Bord** : clôture de vias dans la bande de 2 mm du détourage, face à λ/20.
+- [x] **Découplage** : plus court chemin sur les pistes du rail (`_Chemins`), inductance de boucle (pistes, vias, montage du boîtier), valeur et résonance du condensateur.
+- [x] **Éditeur** : zones envoyées remplies (dégagements autour des autres nets en trous) ; nœuds de découpage du schéma → PCB (`netBruyants`, gardés dans la carte).
+- [x] Nouvelles règles : **moignons de vias**, **branches en T**, **quartz**, **protection ESD**, **courant des rails** (IPC-2221, `courants` du document).
+- [x] Rapport : **dérogations**, **référence** et comparaison de révisions dans la page, **tout peindre** ; visionneuse : classement manuel **mémorisé par fichier**.
+
+**Reste à faire — compléter ce qui existe**
+- [ ] **Z₀ par classe** plutôt qu'une seule cible ; **porteuse par net** (une carte LoRa + NFC).
+- [ ] **Courant par rail** saisi dans le panneau (ou repris de l'onglet Chute DC) pour la règle de courant.
+- [ ] Couplage entre couches voisines **résolu** (MoM à conducteurs sur deux niveaux) au lieu de la méthode des images.
+- [ ] Éditeur : liaisons thermiques et rognage au bord dans les zones envoyées.
 
 ### Simulation PI (Power Integrity)
 - [x] **Impédance fréquentielle du PDN ($Z(\omega)$)** :

@@ -2,6 +2,16 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.19.0
+# Date: 2026-09-30
+# Explication: route /api/analyse-carte -- la verification de la carte entiere
+#   (python/analyse_carte.py), commune a l'editeur PCB et a la visionneuse.
+#   Premiere regle : les angles des pistes (aigus, droits, jonctions, hors 45).
+# Fonctions ajoutees/modifiees :
+# - MAX_ANALYSE, import tolerant de analyse_carte
+# - CustomHandler._analyse_etat, _analyse_lancer
+# - CustomHandler.do_OPTIONS / do_GET / do_HEAD / do_POST (routage)
+#
 # Version: 2.18.0
 # Date: 2026-09-28
 # Explication: revue de securite.
@@ -539,6 +549,18 @@ except Exception as _exc:                              # noqa: BLE001
 
 MAX_SCORING = 16 * 1024 * 1024
 MAX_PATTERNS = 16 * 1024 * 1024
+
+# -- verification de la carte entiere ---------------------------------------
+try:
+    import analyse_carte
+    ERREUR_ANALYSE = None
+except Exception as _exc:                              # noqa: BLE001
+    analyse_carte = None
+    ERREUR_ANALYSE = _exc
+
+# Toutes les pistes et toutes les pastilles placees d'une carte : 12 000
+# pastilles sur quatre couches font quelques mega-octets de JSON.
+MAX_ANALYSE = 32 * 1024 * 1024
 
 
 # Un IPC-2581 est un XML bavard : une carte de taille moyenne pese quelques
@@ -2681,6 +2703,24 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurIPC(400, "Document JSON (objet) attendu")
         return pattern_recognition.analyser_motifs_schema(doc)
 
+    # -- verification de la carte entiere --------------------------------
+    def _analyse_etat(self):
+        """GET /api/analyse-carte : verifie la disponibilite de l'analyse."""
+        if analyse_carte is None:
+            return {"dispo": False,
+                    "detail": "Analyse de carte indisponible : %s" % ERREUR_ANALYSE}
+        return {"dispo": True, "format": analyse_carte.FORMAT}
+
+    def _analyse_lancer(self):
+        """POST /api/analyse-carte : les constats de la carte entiere."""
+        if analyse_carte is None:
+            raise ErreurIPC(503, "Analyse de carte indisponible : %s" % ERREUR_ANALYSE)
+        doc = self._lire_document(MAX_ANALYSE)
+        try:
+            return analyse_carte.analyser_document(doc)
+        except analyse_carte.ErreurAnalyse as exc:
+            raise ErreurIPC(422, str(exc))
+
     def _ipc_api(self, action):
         """Execute action() et traduit les refus en JSON {"detail": ...}.
 
@@ -2935,7 +2975,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                          "/api/crosstalk", "/api/simulation-rf",
                          "/api/datasheet/telecharger",
                          "/api/datasheet/ouvrir",
-                         "/api/pcb/score-placement", "/api/schema/patterns"):
+                         "/api/pcb/score-placement", "/api/schema/patterns",
+                         "/api/analyse-carte"):
             self.send_error(405, "Unsupported method (OPTIONS)")
             return
         self.send_response(204)
@@ -2999,7 +3040,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                   "/api/crosstalk": self._crosstalk_lancer,
                   "/api/simulation-rf": self._rf_lancer,
                   "/api/pcb/score-placement": self._scoring_lancer,
-                  "/api/schema/patterns": self._patterns_lancer}.get(route)
+                  "/api/schema/patterns": self._patterns_lancer,
+                  "/api/analyse-carte": self._analyse_lancer}.get(route)
         if calcul:
             with CALCULS:
                 self._ipc_api(calcul)
@@ -3066,6 +3108,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/schema/patterns":
             self._ipc_api(self._patterns_etat)
             return
+        if route == "/api/analyse-carte":
+            self._ipc_api(self._analyse_etat)
+            return
         if route == "/api/lib/composants":
             self._lib_api(self._lib_composants_lire)
             return
@@ -3096,6 +3141,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/schema/patterns":
             self._ipc_api(self._patterns_etat)
+            return
+        if route == "/api/analyse-carte":
+            self._ipc_api(self._analyse_etat)
             return
         if route == "/api/lib/composants":
             self._lib_api(self._lib_composants_lire)

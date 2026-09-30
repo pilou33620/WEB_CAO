@@ -701,8 +701,35 @@ function mdlCharger(modele,nomFichier){
   mdlChemins();
   V.bbox=mdlBoite();
   ltPreparer();
-  mdlAutoDetecterClassesNets(modele.classes_nets, modele.netClasses || V.netClasses);
+  /* LE CLASSEMENT FAIT À LA MAIN REVIENT AVEC LE FICHIER : mémorisé par nom
+     de fichier (mdlMemoriserNets). Un .json exporté porte le sien, qui passe
+     devant. On ne reprend plus les classes du fichier PRÉCÉDENT (V.netClasses) :
+     deux cartes qui partagent un nom de net n'ont rien d'autre en commun. */
+  const mem=modele.netClasses?null:mdlMemoireNets();
+  if(mem&&mem.natures&&!modele.netNatures)modele.netNatures=mem.natures;
+  mdlAutoDetecterClassesNets(modele.classes_nets, modele.netClasses || (mem&&mem.classes) || null);
   return V;
+}
+
+/* La mémoire du classement manuel d'une carte, dans ce navigateur : les
+   familles GND / PWR / Signal choisies à la main et les natures. Rien si
+   rien n'a été touché. Une clé par nom de fichier. */
+function mdlCleMemoireNets(){ return "cao.visionneuse.nets.v1."+(V.fichier||""); }
+function mdlMemoireNets(){
+  try{
+    const o=JSON.parse(localStorage.getItem(mdlCleMemoireNets())||"null");
+    return o&&typeof o==="object"?o:null;
+  }catch(_){ return null; }
+}
+function mdlMemoriserNets(){
+  if(!V.fichier||!V.parNet)return;
+  const classes={}, natures=Object.assign({},(V.modele&&V.modele.netNatures)||{});
+  for(const n of V.parNet)if(n&&n.nom&&n.autoDetecte===false)classes[n.nom]=n.classe;
+  try{
+    if(!Object.keys(classes).length&&!Object.keys(natures).length)
+      localStorage.removeItem(mdlCleMemoireNets());
+    else localStorage.setItem(mdlCleMemoireNets(),JSON.stringify({classes,natures}));
+  }catch(_){}
 }
 
 /* Boîte d'un composant : ce que couvrent ses pastilles et ses broches, avec
@@ -1547,17 +1574,18 @@ function mdlNetPoserClasse(i,classe){
   if(!V.netClasses)V.netClasses={};
   V.netClasses[n.nom]=cl;
   mdlPoserNature(n);
+  mdlMemoriserNets();
 }
 
 /* ==========================================================================
    Nature d'un net : celle de l'éditeur PCB, plus fine que la famille
    GND / PWR / Signal qui règle les préréglages de simulation. Masse et
    Alimentation suivent la famille ; un signal est Horloge, Rapide, RF,
-   Analogique ou Lent (défaut). La suggestion vient du serveur (natures_nets,
+   Analogique, Antenne ou Lent (défaut). La suggestion vient du serveur (natures_nets,
    même moteur que la schématique) ; un choix manuel est gardé à part, dans
    V.modele.netNatures, et part avec l'export .json.
    ========================================================================== */
-const MDL_NATURES_SIGNAL=["Horloge","Rapide","RF","Analogique","Lent"];
+const MDL_NATURES_SIGNAL=["Horloge","Rapide","RF","Analogique","Antenne","Lent"];
 
 function mdlPoserNature(n){
   if(n.classe==="gnd"){n.nature="Masse";n.natureRaison="";n.natureManuelle=false;return;}
@@ -1588,4 +1616,5 @@ function mdlNetPoserNature(i,nature){
   if(!V.modele.netNatures)V.modele.netNatures={};
   V.modele.netNatures[n.nom]=nature;
   mdlPoserNature(n);
+  mdlMemoriserNets();
 }

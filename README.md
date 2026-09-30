@@ -128,7 +128,7 @@ Stocks et prix réels JLCPCB via la passerelle MCP [pcbparts.dev](https://pcbpar
 
 ## 📡 Simulation SI / PI
 
-Le bouton **« Simulation EM… »** (Éditeur PCB et Visionneuse IPC-2581) ouvre un panneau organisé en **deux familles et huit analyses**. Un clic sur le cuivre choisit ce qu'on analyse ; les résultats sont peints sur la carte.
+Le bouton **« Simulation EM… »** (Éditeur PCB et Visionneuse IPC-2581) ouvre un panneau organisé en **quatre familles et neuf analyses**. Un clic sur le cuivre choisit ce qu'on analyse ; les résultats sont peints sur la carte. La famille **DRC — Règles de conception**, elle, juge toute la carte sans sélection.
 
 ### Intégrité du signal (SI)
 
@@ -138,7 +138,6 @@ Le bouton **« Simulation EM… »** (Éditeur PCB et Visionneuse IPC-2581) ouvr
 | **Z différentielle** | Z<sub>diff</sub>, mode commun, modes pair/impair ; paramètres S en mode mixte (S<sub>dd</sub>, S<sub>cc</sub>, conversion S<sub>cd21</sub> due au skew), export `.s2p` | `solve_multiline`, `_cascade_differentielle` |
 | **Crosstalk** | **Où** le couplage se fabrique le long du parcours : NEXT / FEXT en %, dB et **millivolts** face au budget de bruit ; mode simple classé par K<sub>b</sub>·2T<sub>d</sub> ; défauts de plan et couture | `crosstalk.py` v3.6.0 (MTL en cascade, IFFT) |
 | **Current Return Path** | Vias de retour, changement de plan de référence et condensateurs de pontage, traversée de cavité, moignons de vias résonants, rayonnement de boucle | `simulation_em.py` |
-| **Santé liaison** | Synthèse de tous les diagnostics d'une liaison, classés par sévérité, avec recommandations | agrégation |
 | **Bus synchrone** | Fermeture *setup & hold* d'un bus nommé (SPI, QSPI…) : temps de vol réels, skew par rapport à l'horloge, compensation par serpentins | navigateur |
 
 ### Intégrité de l'alimentation (PI)
@@ -153,6 +152,12 @@ Le bouton **« Simulation EM… »** (Éditeur PCB et Visionneuse IPC-2581) ouvr
 | Analyse | Ce qu'elle répond | Moteur |
 | :--- | :--- | :--- |
 | **S21** | Le S<sub>21</sub> entre deux ports d'impédance **complexe** — la sortie d'une puce radio (ex. 14 + 8j Ω) et un connecteur U.FL ou une antenne — à travers tout le réseau qui les relie, dans l'**éditeur PCB comme dans la visionneuse**, chacun avec son empilage : pistes calculées par le solveur de l'onglet Impédance (MoM, coudes, vias), **couplage** entre pistes du réseau en lignes couplées à N conducteurs avec pertes, capacité des **pastilles** résolue en 3D, **zones** et **coulées de masse** entières en maillage adaptatif creux sur leur cuivre rempli, dispersion des lignes couplées recoupées à leur écart local, pistes des **autres nets** dans les lignes couplées (l'énergie qui y part est comptée), **mutuelles des selfs** entre elles et avec les pistes (Neumann avec image dans le plan), **fentes du plan** de référence franchies (détour du retour, Ott), **domaine de validité** quasi-statique calculé (modes supérieurs, ondes de surface, rayonnement), broches annexes de la puce, composants par leur modèle **SPICE** Murata, un **.sNp** (actifs compris) ou un idéal. Bilan à f₀ (gain transducique, Z vue par la puce face à sa cible, pertes de désadaptation et dissipées), abaque de Smith, et **« et si »** par composant pour retoucher l'adaptation | `rf_reseau.py` v1.5.0 (analyse nodale, S généralisés) |
+
+### DRC — Règles de conception
+
+| Analyse | Ce qu'elle répond | Moteur |
+| :--- | :--- | :--- |
+| **Vérification** | Toute la carte, **tous les nets**, sans sélection. Les angles des pistes — **aigus** (critiques), **droits** et **jonctions** en T ou en étoile (vigilance), segments **hors 45°** (info) —, les **bouts de piste orphelins** (piste isolée, antenne, moignon, dépassement) et l'**empilage** (plans voisins, couches face à face, cavité, symétrie). Puis, **à trois fréquences** (100 kHz, 1 MHz, 100 MHz par défaut) avec le **front effectif** de chaque net — min(front de sa classe, 10 % de la période) — : l'**impédance** de chaque net (Z₀ MoM avec sa masse coplanaire, R, L, C), le **chemin de retour** de chaque via qui change de plan (même moteur que Current Return Path), les **fentes et vides** des plans de référence (détour d'Ott), les **vias de couture** (plus grand trou face à λ/20), la **diaphonie** de chaque couple de pistes voisines (Kb/Kf par la méthode des moments, NEXT/FEXT face au budget), les **paires différentielles** (Z_diff avec masse coplanaire, écart de longueur, plan sous les deux moitiés, vias), le **découplage** de chaque broche d'alimentation (chemin réel, inductance de boucle, résonance selon la valeur), le **bord de carte** (détourage, rayonnement, clôture de vias, 20 H), les **moignons de vias** et les **branches en T** ; et sans fréquence, les **quartz**, la **protection ESD** des connecteurs et le **courant** des rails. **Dérogations**, **comparaison de révisions** dans la page, **tous les constats peints** sur la carte. Rapport par règle puis par net, un clic amène la vue sur le point ; le cuivre **sans net** (marquages) et les nets classés **Lent par défaut** sont rangés à part. Export en texte brut. Mode d'emploi : [docs/verification-carte.md](docs/verification-carte.md) | `analyse_carte.py` via `/api/analyse-carte` |
 
 > [!NOTE]
 > 📖 Fondements physiques, équations, étalons de validation et choix algorithmiques : [Guide Simulation EM & Crosstalk](docs/simulation-em.md) et [simulations-si-pi.json](simulations-si-pi.json).

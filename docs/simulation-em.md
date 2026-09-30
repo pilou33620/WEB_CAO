@@ -800,17 +800,100 @@ période de résonance —, le panneau le dit et propose un nombre. Ce n'est pas
 cosmétique : sur une piste de 28,7 mm, 21 points **ratent** le creux de S₁₁ et
 l'annoncent à −33 dB au lieu de −39,5.
 
-### Le panneau se range en SI, PI et RF
+### Le panneau se range en SI, PI, RF et DRC
 
-Trois familles d'analyse : **SI**, intégrité du signal — ce qu'un front devient
+Quatre familles d'analyse : **SI**, intégrité du signal — ce qu'un front devient
 en parcourant le cuivre —, **PI**, intégrité de l'alimentation — ce que le
-réseau de distribution laisse passer — et **RF**, le S₂₁ d'une chaîne
-d'adaptation entre deux ports (voir plus bas). SI porte **Impédance**, **Z
+réseau de distribution laisse passer —, **RF**, le S₂₁ d'une chaîne
+d'adaptation entre deux ports (voir plus bas), et **DRC** (Règles de conception), qui juge toute la
+carte sans sélection (voir [Vérification de la carte](#vérification-de-la-carte)).
+L'onglet *Santé liaison*, qui agrégeait les diagnostics d'UNE liaison, a été
+retiré : la vérification de la carte en reprend l'idée — un constat, sa
+sévérité, son geste — pour tous les nets à la fois. SI porte **Impédance**, **Z
 différentielle**, **Crosstalk** et **Current Return Path** ; PI
 porte **Chute DC** et **Z(ω) PDN**. Le découpage avait été posé quand il n'y avait qu'une
 analyse, parce qu'il coûtait moins cher à poser qu'à retailler ensuite autour
 de six. Ce qu'il resterait à y mettre est listé dans
 [A-FAIRE.md](../A-FAIRE.md).
+
+### Vérification de la carte
+
+> Mode d'emploi pas à pas : [verification-carte.md](verification-carte.md).
+
+**Toute la carte, tous les nets, sans sélection.** Le serveur
+(`python/analyse_carte.py`, route `/api/analyse-carte`) reçoit de l'outil ses
+pistes et ses arcs des seules couches de cuivre, ses pastilles **déjà
+placées** — la visionneuse sait tourner et poser celles des composants, le
+serveur n'a pas à le refaire —, le cuivre de ses surfaces (contours et trous),
+son contour, ses trous métallisés et les broches de ses composants. Il rend des
+constats `{regle, severite, x, y, c, n, msg}` dans les unités de l'outil ; un
+constat de carte (l'empilage) a `n` et `x` à null.
+
+Première règle, les angles des pistes, sur tous les nets — c'est une règle de
+fabrication, pas de classe de signal :
+
+| Règle | Sévérité | Ce qui la déclenche |
+| :--- | :--- | :--- |
+| aigu | critique | deux branches à moins de 89° : le fond du V retient le bain de gravure |
+| angle droit | vigilance | un coude à 90° ± 1° (les fabricants le tiennent) |
+| jonction | vigilance | trois branches ou plus au même point, ou un bout posé au milieu d'une autre piste (T) |
+| hors 45° | info | des segments hors des huit directions, une ligne par piste |
+
+**Ce qui n'est pas jugé, et pourquoi.** Un sommet dans le cercle inscrit d'une
+pastille ou d'un via : la piste y entre et en repart, le cuivre de la pastille
+recouvre l'angle. Sur P01x274, ce seul point faisait passer les « angles
+aigus » de 4 477 à 4. Et un V dont une branche est plus courte que
+(w/2)/tan(θ/2) : son coin intérieur ne s'ouvre jamais, il est noyé dans le
+cuivre — les micro-zigzags de quelques microns que laissent certains exports,
+ou un bout qui dépasse d'un coin de moins que ce seuil. Deux bouts à moins
+d'un micron sont le même point, limite d'arrondi comprise.
+
+**Deux choses sont rangées à part, repliées.** Le cuivre **sans net** —
+texte, logos, repères de couche dessinés en cuivre — est jugé comme le reste
+mais ne porte pas de signal. Et les nets de signal classés **Lent par
+défaut** : aucun indice ne les a classés, un net rapide au nom automatique s'y
+cache, et les règles électriques le jugent comme lent sans le dire.
+
+**Les bouts de piste orphelins** se jugent aussi sur tous les nets : un bout
+qui ne touche ni pastille, ni via, ni le cuivre d'une autre piste du net, ni
+le versement de son net, se remonte jusqu'à ce qui le retient — rien (piste
+isolée, critique), une pastille (antenne), un embranchement (moignon, ou
+dépassement s'il fait moins de 0,5 mm). **L'empilage** se juge une fois pour
+la carte : plans voisins, couches de signal face à face, cavité alimentation /
+masse, symétrie.
+
+**Les règles électriques se jugent à trois fréquences.** Un signal à la
+fréquence f n'a pas le front qu'on veut : il a celui de la techno qui le
+pilote — sa **classe** : un GPIO monte en quelques ns même à 100 kHz —, borné
+par la période. Le front effectif est donc min(t_r de la classe, 0,1 / f), et
+la règle juge au genou 0,35 / t_r. Fréquences (100 kHz, 1 MHz, 100 MHz), Z₀
+(50 Ω), budget de diaphonie (5 %), Z_diff visée (100 Ω) et front par classe (Horloge 2 ns, Rapide
+1 ns, RF 0,1 ns, Analogique 100 ns, Lent 10 ns, nœud de découpage 5 ns) se
+règlent dans le panneau. La classe de chaque net est écrite à côté de son nom
+dans le rapport : c'est elle qui fixe le verdict, et un net mal classé par son
+nom (LNA_EN pris pour du RF) se voit là.
+
+| Règle | Ce qu'elle juge | Comment |
+| :--- | :--- | :--- |
+| chemins de retour | chaque via de signal qui change de plan de référence | Même moteur que Current Return Path (`simulation_em`) : plans et leur net au droit du via, vias de masse retenus, inductance de boucle, traversée de cavité par les découplages quand les plans sont de nets différents. Verdict : le pire de la réflexion \|Γ\| = \|Z\| / \|Z + 2Z₀\| (5 % / 10 %) et de la distance du retour face à λ/20 dans le diélectrique (λ/10 pour condamner). Le message donne le front le plus raide que le via supporte |
+| diaphonie | chaque couple de pistes voisines de nets différents, même couche | Section à deux conducteurs résolue par la méthode des moments à l'écart réel ; NEXT = min(Kb max, Σ Kb·2T_d/t_r), FEXT = \|Σ Kf·T_d\| / t_r avec le front de l'agresseur. Hors jeu : la masse, les alimentations (sauf un nœud de découpage), les deux moitiés d'une paire différentielle |
+| impédance | chaque net de signal | Chaque section (couche, largeur, écarts à la masse coplanaire mesurés dans le cuivre de la couche) par `solve_line` : Z₀, v, C' ; R, L, C, T_d du net. Chaque tronçon réfléchit \|Z − Z_réf\| / (Z + Z_réf) · min(1, 2T_d / t_r), Z_réf la cible pour Horloge, Rapide, RF, l'impédance dominante du net sinon (5 % / 10 %) |
+| fentes | chaque piste de signal au-dessus d'un vide de son plan de référence | Détours d1, d2 le long de la normale (30 mm au plus), impédance de fente d'Ott (`rf_reseau.z_fente`), \|Γ\| comme un via ; dégagement du propre via exclu ; une ligne par net et par plan |
+| couture | chaque cavité entre deux couches d'une même masse | Plus grand trou sans via par transformée de distance (`scipy.ndimage`), pas équivalent √2 · d_max face à λ/20 au genou du front le plus rapide de la carte (λ/10 pour condamner) |
+| paires | chaque paire différentielle | Z_diff MoM à l'écart réel des morceaux couplés (à moins de 5 h), 2 Z₀ pour les découplés, pondérés par 2T_d / t_r face à la cible ; écart de longueur en temps face au front (10 % / 20 %) ; vias en nombre différent |
+| découplage | chaque broche d'alimentation de circuit intégré | Condensateur vers la masse le plus proche sur le même rail, face à λ/40 au genou du front le plus rapide des signaux du circuit (λ/20 pour condamner) ; aucun : critique |
+| bord | chaque piste près du contour | Détourage : cuivre à moins de 0,25 mm (critique) ou 0,5 mm (vigilance), tous nets ; CEM : longueur à moins de max(1 mm, 5 h) du bord face à λ/20 ; règle des 20 H en info |
+
+Une seule transition réfléchit peu, même mal refermée : c'est pour cela que la
+distance du retour entre dans le verdict. La réflexion dit ce que la ligne
+voit ; la boucle dit ce que la carte rayonne. Hors parcours, l'onglet Current
+Return Path ne chiffrait pas la cavité d'un via GND → alimentation ; la
+vérification la chiffre, en posant les deux plans que la cavité attend.
+
+La ligne de commande juge un fichier sans ouvrir de page :
+`python python/analyse_carte.py carte.xml`. Bancs :
+[python/test/banc-analyse-carte.py](../python/test/banc-analyse-carte.py),
+plus un essai par adaptateur dans les deux harnais.
 
 ### RF — le S₂₁ d'un réseau entre deux ports
 

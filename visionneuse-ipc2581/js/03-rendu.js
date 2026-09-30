@@ -219,6 +219,9 @@ function peindre(c,dpr,W,H){
   /* LE VISEUR DU PROFIL D'IMPÉDANCE, par-dessus les composants et les textes :
      il désigne un point de piste, et un boîtier ne doit pas le cacher. */
   if(typeof simZCurseurTraceIpc==="function")simZCurseurTraceIpc(c,dpr);
+  /* LE CONSTAT CHOISI DANS LA VÉRIFICATION DE LA CARTE : une marque sur un
+     point, par-dessus tout, comme le viseur. */
+  if(typeof simCarteTrace==="function")simCarteTrace(c,dpr,w2s);
   /* Les boîtiers retenus — plusieurs quand on les a pris à Ctrl+clic. Le reflet
      `V.comp` sert de repli : un banc d'essai peut le poser sans passer par la
      liste de sélection. */

@@ -473,6 +473,39 @@ def test_classement_nets():
     print("[PASS] test_classement_nets")
 
 
+def test_noeud_de_commutation():
+    # Buck asynchrone : SW relie contrôleur, inductance et diode
+    c = {"U1": {"val": "MP1584"}, "L1": {"val": "10uH"}, "D1": {"val": "B5819W"},
+         "C1": {"val": "10uF"}, "C2": {"val": "22uF"}}
+    n = {"VIN": [{"ref": "U1"}, {"ref": "C1"}], "$BN1": [{"ref": "U1"}, {"ref": "L1"}, {"ref": "D1"}],
+         "VOUT": [{"ref": "L1"}, {"ref": "C2"}],
+         "GND": [{"ref": "U1"}, {"ref": "D1"}, {"ref": "C1"}, {"ref": "C2"}]}
+    res = analyser_motifs_schema({"components": c, "nets": n})
+    assert list(res["nets_bruyants"]) == ["$BN1"], res["nets_bruyants"]
+    assert res["classes_suggerees"]["$BN1"] == "Alimentation"
+
+    # Buck synchrone : bootstrap BOOT-SW (pas à la masse), VOUT mesuré par le
+    # contrôleur (touche U1 et L1, mais porte C2 vers la masse)
+    c = {"U1": {"val": "TPS54331"}, "L1": {"val": "6.8uH"}, "C3": {"val": "100nF"},
+         "C1": {"val": "10uF"}, "C2": {"val": "22uF"}}
+    n = {"VIN": [{"ref": "U1"}, {"ref": "C1"}], "PH": [{"ref": "U1"}, {"ref": "L1"}, {"ref": "C3"}],
+         "BOOT": [{"ref": "U1"}, {"ref": "C3"}], "VOUT": [{"ref": "U1"}, {"ref": "L1"}, {"ref": "C2"}],
+         "GND": [{"ref": "U1"}, {"ref": "C1"}, {"ref": "C2"}]}
+    assert list(analyser_motifs_schema({"components": c, "nets": n})["nets_bruyants"]) == ["PH"]
+
+    # Boost : VIN touche le contrôleur et l'inductance mais porte Cin ;
+    # une LED sur la broche EN n'est pas une inductance
+    c = {"U1": {"val": "MT3608"}, "L1": {"val": "22uH"}, "D1": {"val": "SS34"},
+         "LED1": {"val": "LED"}, "C1": {"val": "22uF"}, "C2": {"val": "22uF"}}
+    n = {"VIN": [{"ref": "U1"}, {"ref": "L1"}, {"ref": "C1"}], "SW": [{"ref": "U1"}, {"ref": "L1"}, {"ref": "D1"}],
+         "EN": [{"ref": "U1"}, {"ref": "LED1"}], "VOUT": [{"ref": "D1"}, {"ref": "C2"}],
+         "GND": [{"ref": "U1"}, {"ref": "C1"}, {"ref": "C2"}, {"ref": "LED1"}]}
+    res = analyser_motifs_schema({"components": c, "nets": n})
+    assert list(res["nets_bruyants"]) == ["SW"], res["nets_bruyants"]
+    assert "LED1" not in res["motifs"][0]["role_map"]["inductors"]
+    print("[PASS] test_noeud_de_commutation")
+
+
 def test_nets_de_masse():
     from pattern_recognition import _nets_masse
     nets = {n: [] for n in ["GND", "AGND", "DGND", "GNDA", "VSS", "0V", "10V", "20V", "3V0", "VCC"]}
@@ -504,5 +537,6 @@ if __name__ == "__main__":
     test_analyse_vide_et_classes()
     test_nets_de_masse()
     test_classement_nets()
+    test_noeud_de_commutation()
     print("\n TOUS LES TESTS DE PATTERN_RECOGNITION SONT VALIDÉS AVEC SUCCÈS.")
 

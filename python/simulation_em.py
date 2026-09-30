@@ -2100,6 +2100,43 @@ def _impedance_traversee(param, freq):
     return tl.impedance_traversee_param(freq, param)
 
 
+def _param_cavite(cav):
+    """Les parametres de la traversee entre plans, tels que
+    `tl.impedance_traversee_param` les lit, ou None quand la cavite n'a pas de
+    capacite chiffree.
+
+    UNE SEULE FABRIQUE, parce que deux lecteurs la demandent : la cascade d'un
+    via de parcours (`_modele_transition`), et la verification de la carte
+    entiere (python/analyse_carte.py), qui juge chaque via a trois frequences.
+    Deux copies de ces lignes auraient fini par chiffrer deux traversees.
+    """
+    if not (cav and cav.get("capacite_plans_pF")):
+        return None
+    param_cav = {
+        "l_cavite": _nombre(cav.get("etalement_cavite_nH"), 0.0) * 1e-9,
+        "c_plans": _nombre(cav.get("capacite_plans_pF"), 0.0) * 1e-12,
+        "l_pont": None, "esr_pont": 0.0, "c_pont": None,
+    }
+    if cav.get("pont") is not None:
+        # TOUS LES PONTS sont en parallele. `l_pont`/`c_pont` restent
+        # renseignes -- ce sont ceux du DOMINANT, que la fiche nomme --
+        # mais c'est `ponts` que la cascade lit.
+        param_cav["ponts"] = list(cav.get("ponts_branches") or ())
+        param_cav["l_pont"] = (
+            _nombre(cav.get("etalement_nH"), 0.0) * 1e-9
+            + _nombre(cav.get("esl_nH"), ESL_PONT_REPLI) * 1e-9)
+        param_cav["c_pont"] = _nombre(cav.get("capacite_pont_F"),
+                                      C_PONT_REPLI)
+        param_cav["esr_pont"] = ESR_PONT_REPLI
+    elif cav.get("etalement_seul"):
+        # Rien d'autre que l'etalement : pas de branche capacitive, on
+        # ne compte qu'une inductance serie. C'est un minorant, et la
+        # fiche le dit.
+        param_cav = {"l_cavite": param_cav["l_cavite"], "c_plans": 0.0,
+                     "l_pont": None, "esr_pont": 0.0, "c_pont": None}
+    return param_cav
+
+
 def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
                        omega_c, fc, t_r=None, doc=None):
     """Le modele electrique complet d'une transition, calcule UNE FOIS.
@@ -2166,29 +2203,8 @@ def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
     param_cav = None
     if cav:
         trans["cavite"] = cav
-        if cav.get("capacite_plans_pF"):
-            param_cav = {
-                "l_cavite": _nombre(cav.get("etalement_cavite_nH"), 0.0) * 1e-9,
-                "c_plans": _nombre(cav.get("capacite_plans_pF"), 0.0) * 1e-12,
-                "l_pont": None, "esr_pont": 0.0, "c_pont": None,
-            }
-            if cav.get("pont") is not None:
-                # TOUS LES PONTS sont en parallele. `l_pont`/`c_pont` restent
-                # renseignes -- ce sont ceux du DOMINANT, que la fiche nomme --
-                # mais c'est `ponts` que la cascade lit.
-                param_cav["ponts"] = list(cav.get("ponts_branches") or ())
-                param_cav["l_pont"] = (
-                    _nombre(cav.get("etalement_nH"), 0.0) * 1e-9
-                    + _nombre(cav.get("esl_nH"), ESL_PONT_REPLI) * 1e-9)
-                param_cav["c_pont"] = _nombre(cav.get("capacite_pont_F"),
-                                              C_PONT_REPLI)
-                param_cav["esr_pont"] = ESR_PONT_REPLI
-            elif cav.get("etalement_seul"):
-                # Rien d'autre que l'etalement : pas de branche capacitive, on
-                # ne compte qu'une inductance serie. C'est un minorant, et la
-                # fiche le dit.
-                param_cav = {"l_cavite": param_cav["l_cavite"], "c_plans": 0.0,
-                             "l_pont": None, "esr_pont": 0.0, "c_pont": None}
+        param_cav = _param_cavite(cav)
+        if param_cav:
             z_c = _impedance_traversee(param_cav, f_eval_cav)
             cav["impedance_fc_ohm"] = round(abs(z_c), 4)
             # LA PART DU COURANT DE CHAQUE PONT, a la frequence d'evaluation.

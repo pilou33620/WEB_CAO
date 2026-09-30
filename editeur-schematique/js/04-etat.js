@@ -26,7 +26,7 @@ const S={
   netClasses:{}                   // corrections manuelles : nom de net → classe
 };
 // classes de net proposées au routage ; un net absent de S.netClasses suit l'analyse
-const NET_CLASSES=["Masse","Alimentation","Horloge","Rapide","RF","Analogique","Lent"];
+const NET_CLASSES=["Masse","Alimentation","Horloge","Rapide","RF","Analogique","Antenne","Lent"];
 const HIST_MAX=60;
 // toute modification des fils invalide le cache des jonctions
 function touchWires(){S.wireVer++;}

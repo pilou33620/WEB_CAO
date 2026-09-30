@@ -5227,6 +5227,135 @@ const SIM_IPC={
       centrerSur(x_mm/k, y_mm/k);
     }
   },
+  /* LA CARTE ENTIÈRE, pour la « Vérification de la carte », dans les unités
+     du fichier. Les pastilles partent PLACÉES — celles des composants
+     tournées et posées par `mdlPadPlace`, couche « ALL » dépliée —, avec le
+     rayon du plus grand cercle qu'elles contiennent : un sommet dedans est
+     dans leur cuivre, quelle que soit leur rotation. Les nets « Lent par
+     défaut » sont ceux de signal qu'aucun indice n'a classés et que personne
+     n'a corrigés à la main.
+
+     LES VIAS PARTENT PAR LE CHEMIN DE L'ONGLET CURRENT RETURN PATH : pour
+     chaque net de signal posé sur deux cuivres ou plus, on le chaîne comme
+     un Maj+clic (`simChainePistes`), et `simViasIpc` rend les fiches de ses
+     vias — vias de masse voisins, net des plans au droit du via, ponts. Le
+     net courant et la chaîne sont remis en place ensuite : le calcul ne
+     laisse pas de trace sur ce que regarde l'utilisateur.
+
+     Pour les règles électriques partent aussi le cuivre des surfaces (un
+     contour de plan et ses trous par entrée, tels que le fichier les donne),
+     le contour de la carte, les trous métallisés et leur portée quand le
+     fichier la déclare, et les broches de chaque composant, PLACÉES. Une
+     broche sans net (un <LogicalNet> muet) prend celui de la pastille posée
+     sur elle. */
+  carteEntiere:function(){
+    if(!V.modele)return {erreur:"Aucune carte ouverte."};
+    const cuivres=new Set(mdlCuivres());
+    if(!cuivres.size)
+      return {erreur:"Aucune couche de cuivre reconnue.",
+              conseil:"Vérifiez l'empilage : c'est lui qui dit quelles couches sont du cuivre."};
+    const formes=V.modele.formes||{};
+    const rayon=q=>{
+      const f=formes[q.forme]||{};
+      if(f.d)return f.d/2;
+      if(f.w&&f.h)return Math.min(f.w,f.h)/2;
+      return (q.d||0)/2;               // polygone, forme utilisateur : la taille du padstack
+    };
+    /* La demi-longueur : jusqu'où la pastille porte le cuivre le long de son
+       grand axe. Un bout de piste qui s'y arrête y est relié. */
+    const demi=q=>{
+      const f=formes[q.forme]||{};
+      return f.w&&f.h?Math.max(f.w,f.h)/2:rayon(q);
+    };
+    const pistes=[], arcs=[], pastilles=[];
+    for(const p of V.modele.pistes||[])
+      if(cuivres.has(p.c))
+        pistes.push({c:mdlCoucheNom(p.c),n:mdlNetNom(p.n),w:p.w,p:p.p});
+    for(const a of V.modele.arcs||[])
+      if(cuivres.has(a.c))
+        arcs.push({c:mdlCoucheNom(a.c),n:mdlNetNom(a.n),w:a.w,s:a.s,e:a.e,m:a.m,h:a.h});
+    const tol=0.05/simKUnite(), parCase=new Map();
+    const caseDe=(x,y)=>Math.floor(x/tol)+","+Math.floor(y/tol);
+    for(const c of cuivres)
+      for(const q of (V.couches[c].pads||[])){
+        const n=mdlNetNom(q.pad&&q.pad.n);
+        const p={x:q.x,y:q.y,r:rayon(q),c:mdlCoucheNom(c),n};
+        if(demi(q)>p.r)p.R=demi(q);
+        pastilles.push(p);
+        if(n){
+          const k=caseDe(q.x,q.y);
+          if(!parCase.has(k))parCase.set(k,[]);
+          parCase.get(k).push(q.x,q.y,n);
+        }
+      }
+    const netSous=(x,y)=>{
+      let best="", d=tol;
+      const i=Math.floor(x/tol), j=Math.floor(y/tol);
+      for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){
+        const t=parCase.get((i+a)+","+(j+b))||[];
+        for(let k=0;k<t.length;k+=3){
+          const e=Math.hypot(t[k]-x,t[k+1]-y);
+          if(e<=d){d=e;best=t[k+2];}
+        }
+      }
+      return best;
+    };
+    const percages=[];
+    for(const t of V.modele.percages||[]){
+      pastilles.push({x:t.x,y:t.y,r:(t.d||0)/2,n:mdlNetNom(t.n)});
+      if(/NON/i.test(t.p||""))continue;
+      const f={x:t.x,y:t.y,d:t.d||0,n:mdlNetNom(t.n)};
+      if(t.sa!=null&&t.sb!=null){f.de=mdlCoucheNom(t.sa);f.a=mdlCoucheNom(t.sb);}
+      percages.push(f);
+    }
+    const plans=[];
+    for(const g of V.modele.plans||[])
+      if(cuivres.has(g.c))
+        for(const ct of (g.g||[]))
+          if(ct&&ct.o&&ct.o.length>=6)
+            plans.push({c:mdlCoucheNom(g.c),n:mdlNetNom(g.n),o:ct.o,t:ct.t||[]});
+    const ct=V.modele.contour;
+    const contour=ct&&ct.o&&ct.o.length>=6?{o:ct.o,t:ct.t||[]}:null;
+    const composants=[];
+    for(const cp of V.modele.composants||[]){
+      const broches=[];
+      for(const b of (cp.pins&&cp.pins.length?cp.pins:(cp.pads||[]))){
+        const p=mdlPlacer(b.x,b.y,cp.x,cp.y,cp.r,!!cp.m);
+        broches.push({x:p.x,y:p.y,n:b.n!=null&&b.n>=0?mdlNetNom(b.n):netSous(p.x,p.y),
+                      pin:String(b.num||b.pin||"")});
+      }
+      if(broches.length)composants.push({ref:cp.ref,c:mdlCoucheNom(cp.c),broches,
+                                         val:cp.val||"",pkg:cp.pkg||""});
+    }
+    const nn=V.modele.natures_nets||{}, nat=nn.classes||{};
+    const parDefaut=(V.parNet||[]).filter(n=>
+      n.nom&&n.classe==="signal"&&!n.natureManuelle&&!nat[n.nom]&&
+      (n.pistes.length||n.arcs.length)&&!SIM_CARTE_SANS_NET.test(n.nom)).map(n=>n.nom);
+    const natures={};
+    for(const n of (V.parNet||[]))
+      if(n.nom)natures[n.nom]=n.classe==="gnd"?"Masse":
+                              n.classe==="pwr"?"Alimentation":(n.nature||"Lent");
+    const vias=[];
+    if(LT.pret){
+      const garde={net:V.net, chaine:SIM_CHAINE_IPC};
+      try{
+        for(const n of (V.parNet||[])){
+          if(!n.nom||natures[n.nom]==="Masse"||natures[n.nom]==="Alimentation")continue;
+          const cs=new Set(n.pistes.concat(n.arcs).map(p=>p.c).filter(c=>cuivres.has(c)));
+          if(cs.size<2)continue;
+          V.net=n.i;
+          simChainePistes(simZPistesDe({type:"net",net:n.i},mdlMevTout()));
+          for(const f of simViasIpc(n))vias.push(Object.assign(f,{net:n.nom}));
+        }
+      }finally{V.net=garde.net; SIM_CHAINE_IPC=garde.chaine;}
+    }
+    return {doc:{unite_mm:simKUnite(),pistes,arcs,pastilles,plans,contour,
+                 percages,composants,
+                 stackup:LT.pret?simStackupIpc():null, vias, natures,
+                 bruyants:nn.bruyants||[], paires:nn.paires||[],
+                 reference_nets:simRefListe()},
+            parDefaut};
+  },
   /* Extraction physique du temps de vol pour l'analyse de bus synchrone (supporte les XNets / nets composés "NET1 + NET2") */
   busNetFlight:function(netName){
     if(!netName||typeof V==="undefined"||!V||!V.parNet) return {net:netName||"", len:0, tflight:0, psmm:6.7, capPf:0};

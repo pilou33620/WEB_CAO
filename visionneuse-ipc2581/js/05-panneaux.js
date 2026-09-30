@@ -326,7 +326,7 @@ function pnlNets(){
   }
 }
 
-/* Menu de nature d'un net signal (Horloge, Rapide, RF, Analogique, Lent) ;
+/* Menu de nature d'un net signal (Horloge, Rapide, RF, Analogique, Antenne, Lent) ;
    rien pour une masse ou une alimentation, dont la nature suit la famille. */
 function pnlSelNature(n,attr){
   if((n.classe||"signal")!=="signal")return "";
@@ -383,6 +383,7 @@ function reinitialiserAutoDetectionModaleNets(){
   if(typeof mdlAutoDetecterClassesNets==="function"){
     mdlAutoDetecterClassesNets(V.modele?V.modele.classes_nets:null, null);
   }
+  if(typeof mdlMemoriserNets==="function")mdlMemoriserNets();   // la mémoire s'efface aussi
   mettreAJourKpiModaleNets();
   rendreModalNets();
   mettreAJourApercuPrereglages();

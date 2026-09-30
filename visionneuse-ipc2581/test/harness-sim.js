@@ -5881,6 +5881,79 @@ TA("simulation RF : le modèle vient de la ligne du catalogue, par le nom de pi�
   }finally{globalThis.fetch=avant;}
 });
 
+T("vérification de la carte : le cuivre seul, et les pastilles placées",()=>{
+  carte({
+    couches:["Top","Bottom","Silk"],
+    pistes:[{c:0,n:0,w:W,p:[X1,Y,X2,Y]}, {c:2,n:0,w:0.1,p:[0,0,5,0]}],
+    padstacks:{P1:{trou:0,pad:0,pads:[{c:"Top",d:1,f:"c1",a:0}]}},
+    formes:{c1:{t:"CIRCLE",d:1}},
+    pads:[{x:X2,y:Y,ps:"P1",n:0}],
+    percages:[{x:30,y:Y,d:0.3,p:"PLATED",n:1}]
+  });
+  const r=SIM_IPC.carteEntiere();
+  if(!r.doc||r.doc.unite_mm!==1)throw new Error("document en millimètres attendu");
+  const p=r.doc.pistes;
+  if(p.length!==1||p[0].c!=="Top"||p[0].n!=="N$1"||p[0].p.join()!==[X1,Y,X2,Y].join())
+    throw new Error("seul le cuivre part, nommé : "+JSON.stringify(p));
+  const pad=r.doc.pastilles.find(q=>q.x===X2&&q.y===Y);
+  if(!pad||pad.r!==0.5||pad.c!=="Top")
+    throw new Error("la pastille part placée, avec son rayon inscrit : "+JSON.stringify(pad));
+  const trou=r.doc.pastilles.find(q=>q.x===30&&q.y===Y);
+  if(!trou||trou.r!==0.15||("c" in trou))
+    throw new Error("un perçage vaut pour toutes les couches : "+JSON.stringify(trou));
+  if(r.parDefaut.join()!=="N$1")throw new Error("par défaut : "+r.parDefaut.join());
+  mdlNetPoserNature(0,"Rapide");
+  if(SIM_IPC.carteEntiere().parDefaut.length)
+    throw new Error("un net corrigé à la main n'est plus « par défaut »");
+});
+
+T("vérification de la carte : un net qui plonge envoie son via, et la vue ne bouge pas",()=>{
+  /* N$1 passe de Top à Bottom par un perçage : sa fiche part, nommée, avec
+     l'empilage. Le net regardé est celui d'avant l'analyse. */
+  carte({pistes:[{c:0,n:0,w:W,p:[X1,Y,30,Y]}, {c:1,n:0,w:W,p:[30,Y,X2,Y]}],
+         percages:[{x:30,y:Y,d:0.3,p:"PLATED",n:0}]});
+  V.net=-1;
+  const r=SIM_IPC.carteEntiere();
+  if(V.net!==-1)throw new Error("l'analyse a déplacé la vue");
+  const v=r.doc.vias;
+  if(v.length!==1||v[0].net!=="N$1"||v[0].layer_from===v[0].layer_to)
+    throw new Error("la fiche du via : "+JSON.stringify(v));
+  if(!r.doc.stackup||!r.doc.stackup.layers.length||r.doc.natures["GND"]!=="Masse")
+    throw new Error("empilage et natures : "+JSON.stringify(r.doc.natures));
+});
+
+T("vérification de la carte : surfaces, contour, trous et broches partent aussi",()=>{
+  /* Ce que lisent les règles électriques. Une broche sans net (un
+     <LogicalNet> muet) prend celui de la pastille posée sur elle ; un trou
+     non métallisé ne coud rien et ne part pas comme trou. */
+  carte({
+    pistes:[{c:0,n:0,w:W,p:[X1,Y,X2,Y]}],
+    plans:[{c:1,n:1,g:[{o:[0,0,60,0,60,40,0,40],t:[[10,10,12,10,12,12]]}]}],
+    padstacks:{P1:{trou:0,pad:0,pads:[{c:"Top",d:1,f:"c1",a:0}]}},
+    formes:{c1:{t:"CIRCLE",d:1}},
+    pads:[{x:X2,y:Y,ps:"P1",n:0}, {x:20,y:9,ps:"P1",n:0}],
+    composants:[{ref:"U1",pkg:"",c:0,x:20,y:10,r:90,m:0,val:"",
+                 pins:[{num:"1",x:1,y:0,n:2},{num:"2",x:-1,y:0}]}],
+    percages:[{x:30,y:Y,d:0.3,p:"PLATED",n:1,sa:0,sb:1},{x:31,y:Y,d:1,p:"NONPLATED"}]
+  });
+  const d=SIM_IPC.carteEntiere().doc;
+  const pl=d.plans[0];
+  if(d.plans.length!==1||pl.c!=="Bottom"||pl.n!=="GND"||pl.t.length!==1)
+    throw new Error("le plan et son trou : "+JSON.stringify(d.plans));
+  if(!d.contour||d.contour.o.join()!==CONTOUR.join())
+    throw new Error("le contour de la carte : "+JSON.stringify(d.contour));
+  if(d.percages.length!==1||d.percages[0].n!=="GND"||d.percages[0].de!=="Top"||
+     d.percages[0].a!=="Bottom")
+    throw new Error("les trous métallisés et leur portée : "+JSON.stringify(d.percages));
+  const u1=d.composants.find(c=>c.ref==="U1");
+  const b=u1&&u1.broches;
+  if(!b||b.length!==2||Math.abs(b[0].x-20)>1e-9||Math.abs(b[0].y-11)>1e-9||b[0].n!=="N$2"||
+     b[0].pin!=="1"||b[1].n!=="N$1")
+    throw new Error("les broches placées, et leur net : "+JSON.stringify(u1));
+  if(!d.pastilles.some(q=>q.x===X2&&q.y===Y&&q.n==="N$1"))
+    throw new Error("la pastille porte son net");
+});
+
 (async()=>{
   for(const [nom,fn] of T_ASYNC){
     try{await fn();console.log("  ok  "+nom);ok++;}

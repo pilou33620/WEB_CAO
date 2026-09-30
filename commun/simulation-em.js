@@ -176,6 +176,26 @@
                        vias_masse [{x, y, a, b}]            de quoi juger les
                                   changements de couche
 
+   Et pour la « Vérification de la carte », UNE méthode FACULTATIVE :
+
+     carteEntiere() -> {doc:{unite_mm, pistes, arcs, pastilles, …}, parDefaut}
+                     ou {erreur, conseil}
+                     Toute la carte, dans les unités de l'outil (`unite_mm`
+                     dit combien de millimètres fait une unité) : les pistes
+                     {c, n, w, p:[x,y,…]} et les arcs {c, n, w, s, e, m, h}
+                     des SEULES couches de cuivre, et les pastilles déjà
+                     PLACÉES {x, y, r (rayon inscrit), c, n} — un via ou un
+                     trou sans `c` vaut pour toutes les couches. Puis, pour
+                     les règles électriques : plans [{c, n, o, t}] (le cuivre
+                     des surfaces, un contour et ses trous par entrée),
+                     contour {o, t} (le bord de la carte), percages [{x, y,
+                     d, n, de, a}] (trous métallisés, portée par noms de
+                     couche, absente : traversant), composants [{ref, c,
+                     broches:[{x, y, n, pin}]}], stackup, vias, natures,
+                     bruyants, paires, reference_nets. `c` et `n` sont des
+                     NOMS : le rapport les écrit tels quels. `parDefaut`
+                     nomme les nets de signal classés Lent faute d'indice.
+
    `doc` est le document d'échange, `objets` la liste des objets de l'outil
    ALIGNÉE sur `doc.geometry.objects` : c'est par cet alignement que le
    résultat du serveur retrouve la piste à peindre. `opts` porte ce que
@@ -5580,910 +5600,713 @@ function simBrancherRetourFiche(){
 }
 
 /* ==========================================================================
-   RAPPORT DE SANTÉ DE LA LIAISON (SYNTHÈSE GLOBALE SI / VIAS / RETOURS)
+   VÉRIFICATION DE LA CARTE (famille « DRC — Règles de conception »)
    --------------------------------------------------------------------------
-   Une analyse dédiée dans la famille SI qui prend la liaison (ou le bus)
-   et dresse un bilan hiérarchisé par sévérité :
-     · Conforme (OK / Vert)
-     · Vigilance (Avertissement / Jaune)
-     · Critique (Erreur / Rouge)
-   autour de 4 piliers physiques :
-     1. Impédance & Continuité (Z₀, dispersion, réflexion ROS/S₁₁, coplanaire)
-     2. Vias & Discontinuités (moignons quart d'onde, antipads, capacité)
-     3. Chemin de retour & Plans (vias de masse, cavité, traversée, fentes)
-     4. Couplage & Environnement (diaphonie, pistes proches, règle des 3W)
-   Chaque anomalie comporte le chiffre mesuré et le geste correctif recommandé.
+   Toute la carte, tous les nets, sans sélection, jugée par le serveur
+   (python/analyse_carte.py, route /api/analyse-carte) : les angles des
+   pistes et les bouts orphelins, l'empilage, puis l'impédance de chaque net,
+   le chemin de retour de chaque via, les fentes des plans de référence, les
+   vias de couture, la diaphonie, les paires différentielles, le découplage
+   et le bord de carte. Les règles électriques se jugent à TROIS FRÉQUENCES,
+   chacune avec le front effectif du net — min(front de sa classe, 10 % de la
+   période) —, au genou 0,35 / t_r. Un constat de CARTE (l'empilage) n'a ni
+   net ni position : `n` et `x` valent null.
+
+   L'outil décrit sa carte par `carteEntiere()` — ses pistes, ses arcs, SES
+   pastilles déjà placées et ses seules couches de cuivre — et le serveur rend
+   des constats {regle, severite, x, y, c, n, msg} dans les unités de l'outil.
+
+   Le rapport se lit par règle, puis par net. Deux choses sont rangées à part,
+   repliées : le cuivre SANS NET (texte, logos, repères de couche dessinés en
+   cuivre : vrai cuivre, mais pas un signal), et les nets classés « Lent » PAR
+   DÉFAUT, qu'aucun indice n'a permis de classer — un net rapide mal nommé s'y
+   cache, et les règles à venir le jugeraient comme lent sans le dire.
    ========================================================================== */
-function simCorpsSante(){
-  return ''+
-  '<div class="pnl-bar simRefBar" id="simRefBar"></div>'+
-  '<div class="pnl-bar simBarF">'+
-    '<span class="pnl-lbl">Fréquence</span>'+
-    simChamp("simFc","Fréquence de travail / fondamentale : positionne la bande utile et les harmoniques")+
-    simChampUnite("simFUnite","la fréquence de travail")+
-    '<span class="simGr"><span class="pnl-lbl">t<sub>r</sub></span>'+
-    simChamp("simTr","Temps de montée du signal (10-90%). Détermine le spectre HF (f_knee = 0,35 / tr)")+
-    simChampUnite("simTrUnite","le temps de montée",SIM_UNITES_TR)+'</span>'+
+const SIM_CARTE_ROUTE="/api/analyse-carte";
+const SIM_CARTE_FORMAT="cao-analyse-carte-1";   // FORMAT de python/analyse_carte.py
+const SIM_CARTE={res:null,err:"",occupe:false,actif:-1,unite:1,parDefaut:[],natures:{},
+  tout:false,           // tous les constats peints sur la carte, pas seulement le choisi
+  /* Les réglages : fréquences en Hz, fronts en s (comme `SIM.saisie`), Ω, %.
+     Mêmes défauts que le serveur (FREQUENCES, Z0, BUDGET, TR_CLASSES).
+     `unites` ne dit que dans quoi chaque champ s'écrit à l'écran. */
+  reglages:{frequences:[1e5,1e6,1e8], z0:50, budget:5, zdiff:100,
+            tr:{Horloge:2e-9,Rapide:1e-9,RF:1e-10,Analogique:1e-7,Lent:1e-8,"Découpage":5e-9},
+            /* La fréquence que la classe ne dépasse jamais (FMAX_CLASSES) ;
+               0 : sans limite. Au-delà, la colonne garde le front de fmax. */
+            fmax:{Horloge:0,Rapide:0,RF:0,Analogique:1e6,Lent:1e7,"Découpage":1e7},
+            /* La porteuse des nets RF, en Hz ; 0 : jugés au front RF. */
+            porteuse:0},
+  unites:{f:["kHz","MHz","MHz"],
+          tr:{Horloge:"ns",Rapide:"ns",RF:"ps",Analogique:"ns",Lent:"ns","Découpage":"ns"},
+          fmax:{Horloge:"MHz",Rapide:"MHz",RF:"MHz",Analogique:"MHz",Lent:"MHz","Découpage":"MHz"},
+          porteuse:"MHz"}};
+/* Dans l'ordre du rapport à gravité égale. `unite` : la valeur jugée à
+   chaque fréquence est un rapport à cette longueur (sinon, un pourcentage). */
+const SIM_CARTE_REGLES={
+  aigu:{titre:"Angles aigus",
+        pourquoi:"Le fond du V retient le bain de gravure (acid trap) : cuivre "+
+                 "rongé ou résidus au coin."},
+  angle_droit:{titre:"Angles droits",
+        pourquoi:"Un coude à 90° : les fabricants le tiennent, mais le coin "+
+                 "extérieur se grave en arrondi et le coin intérieur garde "+
+                 "un peu de bain. Un chanfrein à 45° règle les deux."},
+  orphelin:{titre:"Bouts de piste orphelins",
+        pourquoi:"Du cuivre qui ne mène nulle part : une piste reliée à rien, "+
+                 "un bout libre au départ d'une pastille (antenne), un moignon "+
+                 "ou un dépassement après un coin. Sur un net de signal, jugé "+
+                 "aussi à trois fréquences : son aller-retour 2T_d en % du "+
+                 "front."},
+  jonction:{titre:"Jonctions",
+        pourquoi:"Un T ou une étoile hors pastille : des coins intérieurs à "+
+                 "la gravure, et une impédance qui chute au branchement."},
+  hors_45:{titre:"Segments hors 45°",
+        pourquoi:"Rien d'interdit : souvent la trace d'un sommet tiré à la "+
+                 "main ou d'un export. Une ligne par piste."},
+  empilage:{titre:"Empilage",
+        pourquoi:"L'empilage lui-même : une couche de signal sans plan collé "+
+                 "contre elle, deux couches de signal face à face, une "+
+                 "alimentation loin de sa masse, un empilage dissymétrique qui "+
+                 "voile la carte. Des constats de carte, sans position."},
+  retour:{titre:"Chemins de retour",
+        pourquoi:"Un via qui change de plan de référence emmène son courant "+
+                 "de retour : il lui faut un via de masse (même net) ou un "+
+                 "découplage (masse → alimentation) tout près. Jugé par la "+
+                 "réflexion |Γ| sur la ligne et par la taille de la boucle "+
+                 "face à λ/20, au genou du front, même moteur que l'onglet "+
+                 "Current Return Path."},
+  fente:{titre:"Fentes et vides des plans",
+        pourquoi:"Sous la piste, le plan de référence manque : le retour "+
+                 "contourne le vide par ses deux bouts, une self en série "+
+                 "(Ott) que le moteur RF chiffre. Jugé par la réflexion |Γ| au "+
+                 "genou du front, comme un via ; le dégagement du propre via "+
+                 "du net ne compte pas."},
+  couture:{titre:"Vias de couture", unite:"λ/20",
+        pourquoi:"Deux couches qui portent la même masse forment une cavité ; "+
+                 "entre deux vias de couture elle résonne quand l'écart "+
+                 "approche λ/2. Le plus grand trou sans via, en pas "+
+                 "équivalent, face à λ/20 au genou du front le plus rapide de "+
+                 "la carte."},
+  impedance:{titre:"Impédance des nets",
+        pourquoi:"Chaque section (couche, largeur) résolue par la méthode des "+
+                 "moments : Z₀, retard, R, L, C du net. Un tronçon qui "+
+                 "s'écarte de la référence — la cible Z₀ pour Horloge, Rapide "+
+                 "et RF, l'impédance dominante du net sinon — réfléchit |Γ|, "+
+                 "pondéré par 2T_d / t_r quand il est court."},
+  diaphonie:{titre:"Diaphonie",
+        pourquoi:"Deux pistes voisines de nets différents : NEXT et FEXT en % "+
+                 "de l'agresseur, face au budget. Sur la même couche, section "+
+                 "résolue par la méthode des moments à l'écart réel, arcs "+
+                 "compris ; entre deux couches voisines sans plan, pistes "+
+                 "superposées, par la méthode des images. Et la somme des "+
+                 "agresseurs d'une victime, au pire en phase. La victime est "+
+                 "le net de la ligne, l'agresseur est nommé."},
+  paire:{titre:"Paires différentielles",
+        pourquoi:"Z_diff résolue à l'écart réel le long de la paire, masse "+
+                 "coplanaire comprise, les morceaux découplés comptés pour "+
+                 "2 Z₀, face à la cible ; l'écart de longueur et le plan de "+
+                 "référence présent sous une seule moitié, en temps face au "+
+                 "front (ils font du mode commun) ; des vias en nombre "+
+                 "différent sur P et N."},
+  decouplage:{titre:"Découplage", unite:"λ/40",
+        pourquoi:"Chaque broche d'alimentation d'un circuit intégré doit "+
+                 "trouver un condensateur vers la masse à moins de λ/40, par le "+
+                 "CHEMIN RÉEL — les pistes du rail, vias compris —, au genou du "+
+                 "front le plus rapide de ses signaux. La boucle (pistes, vias, "+
+                 "boîtier) et la valeur du condensateur fixent sa résonance : "+
+                 "plus d'une décade sous le genou, il ne découple plus ce "+
+                 "circuit."},
+  bord:{titre:"Bord de carte", unite:"λ/20",
+        pourquoi:"Fabrication : le détourage met à nu le cuivre trop proche du "+
+                 "bord. CEM : une piste qui court près du bord y déborde du plan "+
+                 "de référence et rayonne, jugée par la longueur exposée face à "+
+                 "λ/20 ; une cavité de masse s'y ouvre, et sa clôture de vias se "+
+                 "juge au même λ/20. Et la règle des 20 H pour un plan "+
+                 "d'alimentation."},
+  moignon_via:{titre:"Moignons de vias", unite:"λ/20",
+        pourquoi:"Un via percé plus loin que les couches que le signal "+
+                 "emprunte laisse pendre un bout ouvert, qui résonne au quart "+
+                 "d'onde. Sa longueur face à λ/20 au genou : il résonne alors "+
+                 "cinq fois plus haut. Rétroperçage, via borgne ou couches "+
+                 "extrêmes y remédient."},
+  branche:{titre:"Branches en T",
+        pourquoi:"Un net qui se ramifie hors pastille vers une deuxième "+
+                 "charge : la dérivation pend comme un moignon, son aller-retour "+
+                 "2T_d en % du front. Routez en chaîne, ou terminez."},
+  quartz:{titre:"Quartz",
+        pourquoi:"Un circuit à gain élevé et à très haute impédance : pistes "+
+                 "courtes vers l'oscillateur (10 mm), et rien que la masse "+
+                 "dessous et autour."},
+  esd:{titre:"Protection ESD des connecteurs",
+        pourquoi:"Chaque signal qui sort par un connecteur doit trouver une "+
+                 "protection vers la masse (diode, TVS, réseau ESD) à moins de "+
+                 "10 mm de la broche. Un connecteur dont aucun signal n'est "+
+                 "protégé est sans doute interne : info."},
+  courant:{titre:"Courant et largeur des rails",
+        pourquoi:"Ce que la piste la plus étroite d'un rail tient à +10 °C "+
+                 "(IPC-2221, plus prudente que l'étalement de l'onglet Chute "+
+                 "DC). Avec un courant donné, le verdict ; sans, les "+
+                 "étranglements."}
+};
+
+/* ---------- Ce qui dure d'une vérification à l'autre, dans ce navigateur :
+   les dérogations d'une carte et la révision de référence. Rien d'autre ne
+   s'y garde, et tout se relit sans : un navigateur privé repart de zéro. */
+function simCarteStock(cle,val){
+  try{
+    if(val===undefined)return JSON.parse(localStorage.getItem(cle)||"null");
+    if(val===null)localStorage.removeItem(cle);
+    else localStorage.setItem(cle,JSON.stringify(val));
+  }catch(e){}
+  return null;
+}
+function simCarteNomCarte(){return (SIM_ED&&SIM_ED.carte?SIM_ED.carte():"")||"carte";}
+/* LA CLÉ D'UN CONSTAT : règle, net, couche, position au demi-millimètre. Pas
+   le message — ses chiffres bougent avec les réglages —, et pas plus fin que
+   0,5 mm : d'une révision à l'autre, un constat qui n'a pas bougé doit se
+   reconnaître. */
+function simCarteCle(k){
+  const u=SIM_CARTE.unite||1, q=v=>v==null?"":Math.round(v*u/0.5);
+  return [k.regle,k.n==null?"":k.n,k.c,q(k.x),q(k.y)].join("|");
+}
+const SIM_CARTE_DEROG="cao.carte.derogations.v1.";
+const SIM_CARTE_REF="cao.carte.reference.v1";
+function simCarteDerogations(){
+  const d=simCarteStock(SIM_CARTE_DEROG+simCarteNomCarte());
+  return d&&typeof d==="object"?d:{};
+}
+function simCarteReference(){
+  const r=simCarteStock(SIM_CARTE_REF);
+  return r&&r.cles&&typeof r.cles==="object"?r:null;
+}
+function simCarteResume(k){
+  return ((SIM_CARTE_REGLES[k.regle]||{}).titre||k.regle)+" · "+
+         simCarteNomNet(k.n==null?SIM_CARTE_CARTE:String(k.n))+" · "+k.c+" · "+k.msg;
+}
+/* Les réglages tels que le serveur les lit : hertz, secondes, fractions. */
+function simCarteReglagesDoc(){
+  const r=SIM_CARTE.reglages;
+  return {frequences:r.frequences.slice(), z0:r.z0, budget:r.budget/100,
+          zdiff:r.zdiff, tr:Object.assign({},r.tr), fmax:Object.assign({},r.fmax),
+          porteuse_rf:r.porteuse};
+}
+function simCarteF(f){
+  return f>=1e9?simNb(f/1e9,f%1e9?1:0)+" GHz":f>=1e6?simNb(f/1e6,f%1e6?1:0)+" MHz":
+         simNb(f/1e3,f%1e3?1:0)+" kHz";
+}
+const SIM_CARTE_SEV={critique:"CRITIQUE",vigilance:"VIGILANCE",info:"INFO"};
+/* Les noms que les logiciels de CAO donnent au cuivre sans net. */
+const SIM_CARTE_SANS_NET=/^(|non[-_ ]?net|no[-_ ]?net|\(sans net\))$/i;
+
+/* Un constat de carte (n null) n'est pas un marquage. */
+function simCarteSansNet(k){return k.n!=null&&SIM_CARTE_SANS_NET.test(String(k.n));}
+const SIM_CARTE_CARTE="\u0000carte";            // la clé de net d'un constat de carte
+/* La classe affichée à côté d'un net ; aucune pour le cuivre sans net. */
+function simCarteClasse(net){
+  return SIM_CARTE_SANS_NET.test(String(net))?"":(SIM_CARTE.natures[net]||"");
+}
+function simCarteNomNet(net){
+  return net===SIM_CARTE_CARTE?"toute la carte":(net||"sans net");
+}
+
+function simCorpsCarte(){
+  const champ=(id,titre,u)=>'<span class="simGr">'+simChamp(id,titre)+
+    '<span class="simU">'+u+'</span></span>';
+  const champU=(id,titre,quoi,liste)=>'<span class="simGr">'+simChamp(id,titre)+
+    simChampUnite(id+"U",quoi,liste)+'</span>';
+  let fronts="";
+  for(const k in SIM_CARTE.reglages.tr)
+    fronts+='<span class="simGr"><span class="pnl-lbl">'+simEsc(k)+'</span>'+
+      champU("simCarteTr"+k,"Le front de montée d'un net de classe « "+k+
+             " » : celui de la techno qui le pilote. À chaque fréquence, "+
+             "il est borné par 10 % de la période.","ce front",
+             SIM_UNITES_TR)+'</span>';
+  let fmax="";
+  for(const k in SIM_CARTE.reglages.fmax)
+    fmax+='<span class="simGr"><span class="pnl-lbl">'+simEsc(k)+'</span>'+
+      champU("simCarteFmax"+k,"La fréquence qu'un net de classe « "+k+" » ne "+
+             "dépasse jamais (un I2C ne monte pas à 100 MHz). Au-delà, la "+
+             "colonne le juge à cette fréquence. Vide : sans limite.",
+             "cette fréquence")+'</span>';
+  return '<div class="pnl-bar simBarFixe">'+
+    '<button class="tb mini on" id="simCarteGo" title="Juger toutes les '+
+      'pistes de la carte, tous nets confondus">▶ Vérifier la carte</button>'+
+    '<button class="tb mini" id="simCarteExport" title="Le rapport en texte '+
+      'brut : il se colle dans un courriel et se compare d\'une version à '+
+      'l\'autre">Rapport ↗</button>'+
+    '<button class="tb mini" id="simCarteRef" title="Garder cette vérification '+
+      'comme RÉFÉRENCE : les suivantes — de cette carte ou d\'une autre révision '+
+      '— marquent ce qui est nouveau et listent ce qui a été résolu">📌 Référence</button>'+
+    '<button class="tb mini'+(SIM_CARTE.tout?" on":"")+'" id="simCarteTout" '+
+      'title="Peindre tous les constats sur la carte à la fois, à la couleur '+
+      'de leur sévérité">◎ Tout peindre</button>'+
   '</div>'+
-  '<div class="pnl-bar simBarF">'+
-    '<span class="pnl-lbl">Bande S</span>'+
-    simChamp("simF1","Début de bande")+
-    simChampUnite("simFUniteBande1","le début de la bande S")+
-    '<span class="simSep">→</span>'+
-    simChamp("simF2","Fin de bande")+
-    simChampUnite("simFUniteBande2","la fin de la bande S")+
-    '<span class="simGr"><span class="pnl-lbl">Points</span>'+
-    simChamp("simN","Nombre de points de la courbe S")+"</span>"+
+  '<div class="pnl-bar"><span class="pnl-lbl">fréquences</span>'+
+    [0,1,2].map(i=>champU("simCarteF"+i,"Une des trois fréquences de "+
+      "jugement des règles électriques.","cette fréquence")).join("")+
+    '<span class="pnl-lbl">Z₀</span>'+champ("simCarteZ0","L'impédance de "+
+      "ligne supposée pour juger la réflexion d'un via.","Ω")+
+    '<span class="pnl-lbl">budget</span>'+champ("simCarteBudget","La "+
+      "diaphonie tolérée sur une victime, en % de l'agresseur. Au-delà de la "+
+      "moitié : vigilance.","%")+
+    '<span class="pnl-lbl">Z diff</span>'+champ("simCarteZdiff","L'impédance "+
+      "différentielle visée pour les paires (100 Ω ; USB 90 Ω).","Ω")+
+    '<span class="pnl-lbl">porteuse RF</span>'+champU("simCartePorteuse",
+      "La fréquence de la radio (868 MHz pour du LoRa). Remplie, les nets RF "+
+      "se jugent à cette porteuse dans toutes les colonnes, au lieu du front "+
+      "RF. Vide : front RF.","la porteuse")+
   '</div>'+
-  '<div class="pnl-bar simFAvertBar simBarFixe"><span id="simFAvert"></span></div>'+
-  '<div class="pnl-bar simBarFixe">'+
-    '<button class="tb mini on" id="simSanteGo" title="Calculer la sélection et dresser le bilan de santé">▶ Évaluer santé</button>'+
-    '<button class="tb mini" id="simSanteExport" title="Exporter le rapport de santé de la liaison">Rapport ↗</button>'+
-    '<label class="simSuivre" title="Recalculer à chaque changement de sélection"><input type="checkbox" id="simAuto"> suivre</label>'+
-  '</div>';
+  '<div class="pnl-bar"><span class="pnl-lbl">fronts</span>'+fronts+'</div>'+
+  '<div class="pnl-bar"><span class="pnl-lbl">f max</span>'+fmax+'</div>';
 }
-
-function simBrancherSante(){
-  simSaisieEcrire();
-  simRefEcrire();
-  const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
-  pose("simSanteGo","onclick",simGo);
-  pose("simSanteExport","onclick",simSanteExporter);
-  const auto=simEl("simAuto");
-  if(auto){auto.checked=SIM.suivre;
-           auto.onchange=function(){SIM.suivre=this.checked;};}
-  pose("simFc","oninput",function(){
-    simSaisie(); simAjusterBandePourFc(); simFAvertEcrire();
-    if(SIM.res&&!SIM.occupe){
-      SIM.res=null; SIM.objets=[];
-      SIM.err="La fréquence a changé : relancez le calcul.";
-      simRendre(); simRepeindre();
-    }
-  });
-  pose("simFUnite","onchange",function(){simUniteChanger(this.value,"fc");});
-  pose("simTr","oninput",function(){
-    simSaisie();
-    simFAvertEcrire();
-    if(SIM.res&&!SIM.occupe){
-      SIM.res=null; SIM.objets=[];
-      SIM.err="Le temps de montée a changé : relancez le calcul.";
-      simRendre(); simRepeindre();
-    }
-  });
-  pose("simTrUnite","onchange",function(){simUniteChanger(this.value,"tr");});
-  for(const id of ["simF1","simF2","simN"])
-    pose(id,"oninput",function(){
-      simSaisie(); simFAvertEcrire();
-      if(SIM.res&&!SIM.occupe){
-        SIM.res=null; SIM.objets=[];
-        SIM.err="La bande S a changé : relancez le calcul.";
-        simRendre(); simRepeindre();
-      }
-    });
-  pose("simFUniteBande1","onchange",function(){simUniteChanger(this.value,"bande1");});
-  pose("simFUniteBande2","onchange",function(){simUniteChanger(this.value,"bande2");});
-}
-
-function simRendreSante(){
-  if(SIM.occupe)
-    return simProgres("Synthèse globale des diagnostics de la liaison : impédance, vias, retour et couplage.");
-  if(SIM.err)return '<p class="simErr">'+simEsc(SIM.err)+"</p>";
-  if(SIM.res)return simFicheSante();
-  return '<p class="simEtat">Sélectionnez une piste, puis calculez.<br>'+
-    "<small>Cette analyse synthétise l'ensemble des diagnostics de Signal Integrity (SI) : "+
-    "dispersion d'impédance Z₀, moignons et résonances de vias, continuité du chemin de retour vertical, "+
-    "et risques de couplage / diaphonie, avec pour chaque défaut son chiffrage et le geste correctif.</small></p>";
-}
-
-function simDiagnostiquerSante(res, doc, opt){
-  if(!res || !res.segments || !res.segments.length){
-    return {
-      score_global: 0,
-      verdict: "Aucun résultat",
-      statut: "neutre",
-      compte: { ok: 0, alerte: 0, critique: 0, total: 0 },
-      categories: []
-    };
-  }
-
-  const optAjustee = opt || {};
-  const zCible = Number(optAjustee.zCible || (SIM.saisie && SIM.saisie.cible) || 50);
-  const fMax = Number(optAjustee.fMax || (res.points_s && res.points_s.length ? res.points_s[res.points_s.length-1].freq_hz : 3e9));
-  const tr = Number(optAjustee.tr || (SIM.saisie && SIM.saisie.tr) || (0.35 / fMax));
-  const fKnee = 0.35 / tr;
-
-  const items = [];
-
-  // --- PILIER 1 : IMPÉDANCE & CONTINUITÉ ---
-  const segsValides = res.segments.filter(s => s.z0 > 0);
-  if(segsValides.length){
-    let zMin = Infinity, zMax = -Infinity, pireEcartPct = 0, pireZ = zCible;
-    for(const s of segsValides){
-      if(s.z0 < zMin) zMin = s.z0;
-      if(s.z0 > zMax) zMax = s.z0;
-      const ecartPct = Math.abs(s.z0 - zCible) / zCible * 100;
-      if(ecartPct > pireEcartPct){
-        pireEcartPct = ecartPct;
-        pireZ = s.z0;
-      }
-    }
-
-    if(pireEcartPct <= 10){
-      items.push({
-        id: "z0_cible",
-        categorie: "impedance",
-        nomCategorie: "Impédance & Continuité",
-        titre: "Impédance caractéristique conforme",
-        severite: "ok",
-        chiffre: "Z₀ entre " + simNb(zMin, 1) + " et " + simNb(zMax, 1) + " Ω (cible " + simNb(zCible, 0) + " Ω, pire écart " + simNb(pireEcartPct, 1) + " %)",
-        impact: "Pertes par réflexion négligeables (< 1 % de puissance réfléchie). Adaptation de ligne garantie.",
-        recommandation: "Conserver la largeur actuelle des pistes."
-      });
-    } else if(pireEcartPct <= 20){
-      const action = pireZ > zCible ? "Élargir la piste ou rapprocher le plan de masse." : "Affiner la piste ou augmenter la hauteur de diélectrique.";
-      items.push({
-        id: "z0_cible",
-        categorie: "impedance",
-        nomCategorie: "Impédance & Continuité",
-        titre: "Tolérance d'impédance sous vigilance",
-        severite: "alerte",
-        chiffre: "Pire Z₀ = " + simNb(pireZ, 1) + " Ω (" + (pireZ > zCible ? "+" : "") + simNb(pireZ - zCible, 1) + " Ω, " + simNb(pireEcartPct, 1) + " % de déviation)",
-        impact: "Désadaptation modérée causant 5 à 10 % de réflexion et de légers dépassements (overshoot).",
-        recommandation: action
-      });
-    } else {
-      const action = pireZ > zCible ? "Élargir significativement la largeur de la piste (W) ou réduire l'épaisseur du substrat (h)." : "Réduire la largeur de piste ou utiliser un diélectrique de permittivité plus basse.";
-      items.push({
-        id: "z0_cible",
-        categorie: "impedance",
-        nomCategorie: "Impédance & Continuité",
-        titre: "Rupture critique d'impédance caractéristique",
-        severite: "critique",
-        chiffre: "Pire Z₀ = " + simNb(pireZ, 1) + " Ω (écart majeur de " + simNb(pireEcartPct, 1) + " % par rapport à " + simNb(zCible, 0) + " Ω)",
-        impact: "Réflexions sévères (> 15 %), sonneries destructrices sur les fronts montants et dégradation de l'ouverture de l'œil.",
-        recommandation: action
-      });
-    }
-  }
-
-  // Réflexions S11 et ROS (TOS)
-  if(res.points_s && res.points_s.length){
-    let pireS11Db = -Infinity, freqPire = 0;
-    for(const pt of res.points_s){
-      if(pt.s11_db != null && pt.s11_db > pireS11Db){
-        pireS11Db = pt.s11_db;
-        freqPire = pt.freq_hz;
-      }
-    }
-    const gamma = Math.pow(10, pireS11Db / 20);
-    const ros = gamma < 0.999 ? (1 + gamma) / (1 - gamma) : 99.9;
-
-    if(ros <= 1.35){
-      items.push({
-        id: "s11_ros",
-        categorie: "impedance",
-        nomCategorie: "Impédance & Continuité",
-        titre: "Taux d'onde stationnaire (ROS / S₁₁) excellent",
-        severite: "ok",
-        chiffre: "ROS max = " + simNb(ros, 2) + " (S₁₁ = " + simNb(pireS11Db, 1) + " dB à " + simFreq(freqPire) + ")",
-        impact: "Excellente transmission d'énergie tout au long de la bande passante utile.",
-        recommandation: "Aucune action d'adaptation nécessaire."
-      });
-    } else if(ros <= 1.8){
-      items.push({
-        id: "s11_ros",
-        categorie: "impedance",
-        nomCategorie: "Impédance & Continuité",
-        titre: "Réflexion modérée (ROS " + simNb(ros, 2) + ")",
-        severite: "alerte",
-        chiffre: "ROS max = " + simNb(ros, 2) + " (S₁₁ = " + simNb(pireS11Db, 1) + " dB à " + simFreq(freqPire) + ")",
-        impact: "Environ 5 à 10 % de l'amplitude du signal est renvoyée vers la source sous forme d'écho.",
-        recommandation: "Ajouter une résistance d'amortissement série (22-33 Ω) côté émetteur ou ajuster les discontinuités."
-      });
-    } else {
-      items.push({
-        id: "s11_ros",
-        categorie: "impedance",
-        nomCategorie: "Impédance & Continuité",
-        titre: "Réflexion excessive / fort désaccord d'onde",
-        severite: "critique",
-        chiffre: "ROS = " + simNb(ros, 2) + " (S₁₁ = " + simNb(pireS11Db, 1) + " dB à " + simFreq(freqPire) + ")",
-        impact: "Pertes importantes en transmission, déformation prononcée des fronts et risque d'interférences inter-symboles.",
-        recommandation: "Revoir impérativement la chaîne de transmission, éliminer les ruptures géométriques et adapter les impédances terminales."
-      });
-    }
-  }
-
-  // Coplanaire & dissymétrie
-  const coplanaire = res.segments.filter(s => s.coplanaire && s.ecart > 0);
-  if(coplanaire.length){
-    const dissym = coplanaire.filter(s => s.ecart_g != null && s.ecart_d != null && Math.abs(s.ecart_g - s.ecart_d) > 0.05);
-    if(dissym.length){
-      const maxDiff = Math.max(...dissym.map(s => Math.abs(s.ecart_g - s.ecart_d)));
-      items.push({
-        id: "coplanaire_dissym",
-        categorie: "impedance",
-        nomCategorie: "Impédance & Continuité",
-        titre: "Masse coplanaire dissymétrique",
-        severite: "alerte",
-        chiffre: "Dissymétrie de " + simNb(maxDiff, 3) + " mm entre le côté gauche et le côté droit",
-        impact: "Décentre la nappe de courant haute fréquence et génère un léger mode commun parasite.",
-        recommandation: "Régulariser l'ouverture du plan de masse coplanaire de manière équidistante des deux côtés."
-      });
-    } else {
-      items.push({
-        id: "coplanaire_ok",
-        categorie: "impedance",
-        nomCategorie: "Impédance & Continuité",
-        titre: "Masse coplanaire équilibrée",
-        severite: "ok",
-        chiffre: "Écart de masse symétrique à " + simNb(coplanaire[0].ecart, 3) + " mm",
-        impact: "Le blindage latéral est homogène et abaisse efficacement l'impédance de mode impair.",
-        recommandation: "Maintenir la distance actuelle de dégagement du plan."
-      });
-    }
-  }
-
-  // --- PILIER 2 : VIAS & DISCONTINUITÉS ---
-  const disc = res.discontinuites || {};
-  const transitions = (disc.transitions || []).concat(disc.vias_hors_chaine || []);
-
-  if(transitions.length === 0){
-    items.push({
-      id: "vias_aucun",
-      categorie: "vias",
-      nomCategorie: "Vias & Discontinuités",
-      titre: "Liaison planaire pure (aucun via)",
-      severite: "ok",
-      chiffre: "0 transition de couche",
-      impact: "L'absence de via évite toute discontinuité capacitive parasite et conserve le plan de référence d'un bout à l'autre.",
-      recommandation: "Tracé idéal pour signaux haute vitesse ou RF."
-    });
-  } else {
-    // Moignons (stubs)
-    let moignonPire = null, moignonCritique = false;
-    for(const t of transitions){
-      const mo = t.moignons || {};
-      const bouts = [mo.depart, mo.arrivee].filter(Boolean);
-      for(const b of bouts){
-        if(b.longueur_mm > 0.05){
-          if(!moignonPire || b.longueur_mm > moignonPire.longueur_mm){
-            moignonPire = b;
-          }
-          if(b.resonance_hz && b.resonance_hz <= Math.max(fMax, fKnee)){
-            moignonCritique = true;
-          }
-        }
-      }
-    }
-
-    if(!moignonPire){
-      items.push({
-        id: "moignon_ok",
-        categorie: "vias",
-        nomCategorie: "Vias & Discontinuités",
-        titre: "Vias sans moignon parasite (stub)",
-        severite: "ok",
-        chiffre: transitions.length + " via(s) sans moignon débordant",
-        impact: "Aucune résonance quart d'onde en circuit ouvert.",
-        recommandation: "Parcours optimisé entre les couches de routage."
-      });
-    } else if(moignonCritique){
-      items.push({
-        id: "moignon_crit",
-        categorie: "vias",
-        nomCategorie: "Vias & Discontinuités",
-        titre: "Moignon de via résonant dans la bande utile",
-        severite: "critique",
-        chiffre: "Longueur " + simNb(moignonPire.longueur_mm, 3) + " mm (" + simNb(moignonPire.capacite_fF, 0) + " fF) · Résonance à " + simNb(moignonPire.resonance_hz / 1e9, 1) + " GHz ≤ f_bande",
-        impact: "À sa résonance quart d'onde, le moignon agit comme un court-circuit à la masse et anéantit la transmission du signal.",
-        recommandation: "Pratiquer un contre-perçage (back-drilling), ou utiliser des vias enterrés/borgnes, ou router sur la couche externe la plus profonde."
-      });
-    } else {
-      items.push({
-        id: "moignon_alerte",
-        categorie: "vias",
-        nomCategorie: "Vias & Discontinuités",
-        titre: "Présence d'un moignon de via non résonant",
-        severite: "alerte",
-        chiffre: "Longueur " + simNb(moignonPire.longueur_mm, 3) + " mm (" + simNb(moignonPire.capacite_fF, 0) + " fF) · Résonance à " + simNb(moignonPire.resonance_hz / 1e9, 1) + " GHz",
-        impact: "Charge capacitive supplémentaire qui arrondit les fronts montants sans bloquer le signal.",
-        recommandation: "Vérifier la marge de gigue (jitter). Envisager un contre-perçage si le débit augmente."
-      });
-    }
-
-    // Antipads
-    const fourchette = transitions.filter(t => (t.cotes||{}).antipad_max && (t.cotes||{}).antipad_max > (t.cotes||{}).antipad_mm);
-    if(fourchette.length){
-      const c = fourchette[0].cotes;
-      items.push({
-        id: "antipad_fourchette",
-        categorie: "vias",
-        nomCategorie: "Vias & Discontinuités",
-        titre: "Fenêtres d'isolement (antipad) disparates",
-        severite: "alerte",
-        chiffre: "Antipad de " + simNb(c.antipad_mm, 2) + " à " + simNb(c.antipad_max, 2) + " mm",
-        impact: "Variation de l'effet capacitif entre les différents plans traversés.",
-        recommandation: "Harmoniser le diamètre de dégagement antipad sur toutes les couches internes."
-      });
-    }
-  }
-
-  // --- PILIER 3 : CHEMIN DE RETOUR & PLANS ---
-  /* UN VIA DE MASSE PRÉSENT N'EST PAS UN VIA DE MASSE QUI TRAVAILLE, et c'est
-     toute la différence que cette fiche doit porter. `retour.vias` liste TOUS
-     les candidats que le serveur a examinés — ceux qu'il a retenus ET ceux
-     qu'il a écartés en disant pourquoi : mauvais net, portée trop courte, ou
-     — le cas grave — un via de masse qui ne peut pas rejoindre un plan
-     d'alimentation. Lire `vias[0]` sans filtrer, ce que faisait la version
-     précédente, faisait sortir « chemin de retour bien refermé » sur une
-     transition GND → PWR dont le via de masse voisin, à 0,3 mm, ne referme
-     RIEN. Un vert sur le seul défaut que cette analyse existe pour trouver.
-     ON NE LIT DONC QUE LES RETENUS. */
-  const retenusDe = t => ((t.retour || {}).vias || []).filter(v => v.retenu);
-  if(transitions.length > 0){
-    /* Les trois états ne se confondent pas, et la fiche ne doit pas conclure
-       sur la carte quand elle n'a pas regardé :
-         · `muettes`  — la page n'envoie pas les vias voisins : limite de
-                        l'outil, pas défaut de la carte ;
-         · `barrees`  — la référence change et les nets diffèrent : AUCUN via
-                        de masse ne peut refermer, c'est l'item de cavité qui
-                        en parle, pas celui-ci ;
-         · `ouvertes` — le retour POUVAIT se refermer et ne se referme pas. */
-    const utiles = transitions.filter(t => (t.retour || {}).source !== "absent"
-                                           && !(t.retour || {}).reference_change);
-    const muettes = transitions.filter(t => (t.retour || {}).source === "absent");
-    const ouvertes = utiles.filter(t => retenusDe(t).length === 0);
-    /* « aucun candidat » et « des candidats, tous écartés » sont deux cartes
-       différentes et deux gestes différents : poser un via, ou corriger celui
-       qui est déjà là (portée, net). Le chiffre le dit. */
-    const ecartees = ouvertes.filter(t => ((t.retour || {}).vias || []).length > 0);
-
-    if(muettes.length > 0 && utiles.length === 0){
-      items.push({
-        id: "retour_non_sonde",
-        categorie: "retour",
-        nomCategorie: "Chemin de retour & Plans",
-        titre: "Chemin de retour vertical non sondé",
-        severite: "alerte",
-        chiffre: muettes.length + " transition(s) sans voisinage envoyé par la page",
-        impact: "L'inductance affichée est celle d'un conducteur seul : elle ne dépend pas du placement des vias de masse, et ne peut ni confirmer ni infirmer la continuité du retour.",
-        recommandation: "Ouvrir la liaison dans l'éditeur de PCB, qui envoie les vias de masse voisins, pour obtenir un verdict sur le retour."
-      });
-    }
-
-    if(ouvertes.length > 0){
-      const pire = ecartees[0] || ouvertes[0];
-      const raisonPire = (((pire.retour || {}).vias || [])[0] || {}).raison || "";
-      items.push({
-        id: "retour_aucun",
-        categorie: "retour",
-        nomCategorie: "Chemin de retour & Plans",
-        titre: ecartees.length
-          ? "Boucle de retour ouverte (vias de masse présents mais inopérants)"
-          : "Boucle de retour ouverte (aucun via de masse)",
-        severite: "critique",
-        chiffre: ecartees.length
-          ? ouvertes.length + " transition(s) dont " + ecartees.length +
-            " avec des vias de masse écartés" +
-            (raisonPire ? " — le plus proche : " + simEsc(raisonPire) : "")
-          : ouvertes.length + " transition(s) de via sans aucun via de masse à portée",
-        impact: "Le courant de retour haute fréquence doit trouver un chemin lointain : inductance de boucle décuplée, fort rayonnement CEM et rebonds de masse massifs. L'inductance affichée est un PLANCHER — la vraie boucle vaut davantage.",
-        recommandation: ecartees.length
-          ? "Corriger le via de masse déjà posé : lui donner la portée du via de signal, et un net de référence commun aux deux plans."
-          : "Poser un via de masse au pied du via de signal — au plus près que la fabrication permet (entraxe typique 0,7 à 1 mm avec des pastilles de 0,55 mm)."
-      });
-    } else if(utiles.length > 0){
-      /* LE SEUIL EST EN DISTANCE, LE CHIFFRE EST CELUI DU MODÈLE. Annoncer
-         « L_boucle > 1,2 nH » au-delà de 0,8 mm était faux sur tout empilage
-         courant : l'inductance de boucle croît AVEC L'ÉPAISSEUR TRAVERSÉE
-         autant qu'avec l'écart. Sur 1,5 mm de stratifié, un retour à 0,8 mm
-         vaut 0,78 nH et il faut 8 mm pour atteindre 1,2 ; sur 2,4 mm, 0,8 mm
-         suffit à les dépasser. On lit donc l'inductance que le modèle a
-         calculée pour CETTE transition, au lieu d'en promettre une. */
-      const lDe = t => {
-        const m = t.modelise || {};
-        return String(m.inductance_source || "").indexOf("boucle") === 0
-          ? m.inductance_nH : null;
-      };
-      const eloignes = utiles.filter(t => (retenusDe(t)[0] || {}).distance_mm > 0.8);
-      if(eloignes.length > 0){
-        const dMax = Math.max(...eloignes.map(t => (retenusDe(t)[0] || {}).distance_mm || 0));
-        const lMax = Math.max(...eloignes.map(t => lDe(t) || 0));
-        items.push({
-          id: "retour_eloigne",
-          categorie: "retour",
-          nomCategorie: "Chemin de retour & Plans",
-          titre: "Vias de masse de retour trop distants",
-          severite: "alerte",
-          chiffre: "Via de retour utile le plus proche à " + simNb(dMax, 2) + " mm (> 0,8 mm)" +
-                   (lMax > 0 ? " · L_boucle = " + simNb(lMax, 2) + " nH" : ""),
-          impact: "L'inductance de boucle croît en logarithme avec cet écart et linéairement avec l'épaisseur traversée : c'est elle qui ralentit le front et fait remonter le rebond de masse.",
-          recommandation: "Rapprocher les vias de masse du via de signal, ou en poser un second à l'opposé — deux vias en vis-à-vis valent mieux qu'un seul deux fois plus près."
-        });
-      } else {
-        const dMax = Math.max(...utiles.map(t => (retenusDe(t)[0] || {}).distance_mm || 0));
-        const lMax = Math.max(...utiles.map(t => lDe(t) || 0));
-        items.push({
-          id: "retour_ok",
-          categorie: "retour",
-          nomCategorie: "Chemin de retour & Plans",
-          titre: "Chemin de retour vertical bien refermé",
-          severite: "ok",
-          chiffre: "Via de masse utile à " + simNb(dMax, 2) + " mm (< 0,8 mm)" +
-                   (lMax > 0 ? " · L_boucle = " + simNb(lMax, 2) + " nH" : ""),
-          impact: "Inductance de boucle minimale, confinant le champ EM entre le via de signal et son blindage.",
-          recommandation: "Conserver cette disposition de couture."
-        });
-      }
-    }
-
-    // Traversée de plans (cavité GND -> PWR)
-    /* LES CLÉS SONT CELLES QUE LE SERVEUR ÉMET. La version précédente lisait
-       `cav.pont_decouplage` et `cav.c_pont`, qui n'existent NULLE PART dans la
-       fiche rendue par `_cavite_de_retour` — elle porte `pont` (l'objet du
-       découplage retenu, avec son repère et sa distance) et `capacite_pont_F`.
-       Le test était donc toujours vrai et la branche « traversée découplée »
-       inatteignable : toute traversée sortait « critique — sans condensateur
-       de pontage », même avec un 100 nF à 0,3 mm. */
-    const avecCavite = transitions.filter(t => (t.cavite || {}).plan_haut);
-    if(avecCavite.length > 0){
-      const cav = avecCavite[0].cavite;
-      const zt = cav.impedance_fc_ohm;
-      const entre = "(" + simEsc(cav.plan_haut) + " → " + simEsc(cav.plan_bas) + ")";
-      const cout = (zt != null ? " · Z traversée = " + simNb(zt, 2) + " Ω" : "");
-      /* LE VIA DE MASSE POSÉ À CÔTÉ, ET POURQUOI IL N'Y PEUT RIEN. C'est le
-         geste réflexe — un via de signal qui plonge, un via de masse au pied —
-         et il est juste PARTOUT SAUF ICI : entre deux plans de nets
-         différents, un via de masse joindrait de la masse à de la masse. Il ne
-         referme pas ce retour-là. Le dire dans l'item de la traversée est le
-         seul endroit où la personne qui vient de le poser va le lire. */
-      const ecarteProche = avecCavite
-        .map(t => ((t.retour || {}).vias || []).filter(v => !v.retenu)[0])
-        .filter(Boolean)
-        .sort((a, b) => a.distance_mm - b.distance_mm)[0];
-      const vain = ecarteProche
-        ? " · le via de masse à " + simNb(ecarteProche.distance_mm, 2) +
-          " mm n'y peut rien (" + simEsc(ecarteProche.raison || "écarté") + ")"
-        : "";
-      if(cav.etalement_seul || cav.cherche === false){
-        /* On n'a pas cherché les découplages : ce n'est pas un constat sur la
-           carte, c'est une limite de l'outil, et les deux ne se disent pas de
-           la même façon. */
-        items.push({
-          id: "cavite_non_sondee",
-          categorie: "retour",
-          nomCategorie: "Chemin de retour & Plans",
-          titre: "Changement de plan de référence — découplages non sondés",
-          severite: "alerte",
-          chiffre: "Traversée entre plans " + entre +
-                   " · seul l'étalement est compté (" + simNb(cav.etalement_cavite_nH, 2) + " nH)" + vain,
-          impact: "Le retour change de plan par la capacité répartie des deux plans et par les découplages qui les joignent. Faute de les avoir cherchés, la traversée est SOUS-ESTIMÉE.",
-          recommandation: "Ouvrir la liaison dans l'éditeur de PCB, qui envoie les condensateurs joignant les deux plans, pour chiffrer la traversée."
-        });
-      } else if(cav.borne || !cav.pont){
-        /* CHERCHÉ, RIEN TROUVÉ — le défaut grave, et il reste critique. Quand
-           le rayon de recherche est connu, le serveur suppose un pont À CE
-           RAYON : le chiffre est alors un MINORANT, le vrai découplage peut
-           être bien plus loin. C'est `borne`. Sans `pont` du tout, on n'a même
-           pas cela. Les deux disent la même chose à la personne qui route :
-           rien ne referme le retour près de ce via. */
-        items.push({
-          id: "cavite_non_decouplee",
-          categorie: "retour",
-          nomCategorie: "Chemin de retour & Plans",
-          titre: "Changement de plan de référence sans condensateur de pontage",
-          severite: "critique",
-          chiffre: "Traversée entre plans " + entre + cout +
-                   (cav.rayon_mm
-                      ? " · aucun découplage dans " + simNb(cav.rayon_mm, 1) + " mm (minorant)"
-                      : "") + vain,
-          impact: "Rupture de continuité de référence : le courant de retour traverse la cavité diélectrique, injecte du bruit dans les plans d'alimentation et rayonne fortement. Le chiffre est un MINORANT — le vrai découplage peut être bien plus loin.",
-          recommandation: "Router le signal sans changer de plan de référence, ou placer un condensateur de découplage de liaison (10 nF - 100 nF) au pied de la transition."
-        });
-      } else {
-        items.push({
-          id: "cavite_decouplee",
-          categorie: "retour",
-          nomCategorie: "Chemin de retour & Plans",
-          titre: "Traversée de cavité avec pont de découplage",
-          severite: (zt != null && zt > 5) ? "alerte" : "ok",
-          chiffre: "Découplage " + simEsc(cav.pont.repere || "le plus proche") +
-                   " à " + simNb(cav.pont.distance_mm, 2) + " mm" + cout,
-          impact: (zt != null && zt > 5)
-            ? "Le condensateur assure la continuité du retour, mais la traversée pèse encore un dixième de l'impédance de la ligne : le front s'en ressent."
-            : "Le condensateur assure la continuité du courant de retour alternatif entre les deux plans.",
-          recommandation: "L'étalement croît linéairement avec l'ÉCARTEMENT des plans et seulement en logarithme avec la distance au condensateur : amincir le diélectrique entre plans gagne davantage que rapprocher le découplage."
-        });
-      }
-    }
-  }
-
-  /* LES FENTES DU PLAN DE RÉFÉRENCE. Le pilier les annonçait dans son titre et
-     n'en disait rien : le document les porte (`doc.fentes`, sondées le long du
-     parcours), la carte les dessine, l'analyse de couplage les lit — mais la
-     fiche du chemin de retour, non. C'est pourtant le défaut de retour le plus
-     courant sur une carte réelle, et le seul qui coûte cher à basse fréquence.
-     `null` veut dire « on n'a pas su sonder » et ne produit rien : c'est la
-     même règle que partout ailleurs ici. */
-  const fentes = (doc || {}).fentes;
-  if(fentes && fentes.length){
-    const pire = fentes.reduce((a, b) => ((b.longueur || 0) > (a.longueur || 0) ? b : a));
-    const total = fentes.reduce((s, f) => s + (f.longueur || 0), 0);
-    items.push({
-      id: "fente_plan",
-      categorie: "retour",
-      nomCategorie: "Chemin de retour & Plans",
-      titre: "Discontinuité du plan de référence sous le parcours",
-      severite: (pire.longueur || 0) > 2 ? "critique" : "alerte",
-      chiffre: fentes.length + " fente(s) sur " + simNb(total, 2) +
-               " mm cumulés · la plus longue " + simNb(pire.longueur, 2) +
-               " mm à s = " + simNb(pire.s, 2) + " mm",
-      impact: "Le courant de retour ne peut pas suivre la piste : il contourne la fente. La boucle ainsi ouverte porte toute l'inductance et tout le rayonnement, et Z₀ n'a plus de sens sur cette portion.",
-      recommandation: "Faire contourner la fente à la piste plutôt qu'au retour, ou refermer le plan. Un condensateur de pontage au franchissement ne rattrape que la haute fréquence."
-    });
-  } else if(doc && !doc.fentes){
-    /* LE DOCUMENT EST LÀ, LE RELEVÉ N'Y EST PAS. `fentes` à `null` veut dire
-       « la page n'a pas su sonder » — un plan de référence sans zone de
-       cuivre, une source qui ne porte pas les contours. Ce n'est PAS « aucune
-       fente », et l'écrire en vert serait affirmer une continuité qu'on n'a
-       pas vérifiée. Sans document du tout, en revanche, on ne dit rien : il
-       n'y a pas de carte sur laquelle se prononcer. */
-    items.push({
-      id: "fente_non_sondee",
-      categorie: "retour",
-      nomCategorie: "Chemin de retour & Plans",
-      titre: "Fentes du plan de référence non sondées",
-      severite: "alerte",
-      chiffre: "Le document ne porte pas de relevé de continuité du plan",
-      impact: "Une fente sous le parcours ouvre la boucle de retour sans rien changer au dessin de la piste : elle ne peut pas être vue ici.",
-      recommandation: "Ouvrir la liaison dans l'éditeur de PCB, qui sonde le cuivre du plan de référence le long du parcours."
-    });
-  }
-
-  /* CE QUE LA BOUCLE RAYONNE. « Une boucle ouverte rayonne » est un conseil
-     qu'on répète sans jamais le chiffrer, et un conseil qu'on ne chiffre pas ne
-     se hiérarchise pas : on ne sait pas s'il faut refaire le routage ou passer
-     à autre chose. Trois millimètres carrés à 36 MHz et deux cents à 500 MHz ne
-     demandent pas la même journée de travail.
-
-     LE CHIFFRE EST UN PLANCHER, et chaque item le porte : sur une carte réelle,
-     l'émission qui fait échouer l'essai vient du mode commun sur les CÂBLES,
-     vingt à quarante décibels au-dessus de la boucle différentielle. Une marge
-     confortable ne promet donc rien ; une marge serrée est une certitude. */
-  /* LE COURANT QUI REVIENT PAR LA CAPACITÉ DES PLANS N'EST PAS UN CHEMIN
-     NEUTRE. Il existe — c'est du courant de déplacement, il se referme, et le
-     refuser reviendrait à déclarer impossible ce qui arrive sur toute carte
-     multicouche. Mais il n'entre pas dans un conducteur : il entre dans la
-     CAVITÉ, s'y propage jusqu'aux bords de la carte, y rayonne, et revient en
-     bruit sur l'alimentation. RIEN DE CELA NE SE VOIT SUR S21 — le signal, lui,
-     passe. La fiche pouvait donc afficher « traversée 0,08 Ω, front intact »
-     sur une transition qui injecte la moitié de son retour dans le plan
-     d'alim. C'est exactement ce qu'il faut dire. */
-  const cavParts = transitions
-    .map(t => t.cavite)
-    .filter(c => c && c.part_cavite != null && c.part_cavite > 0.20);
-  if(cavParts.length){
-    const c = cavParts.reduce((a, b) => (b.part_cavite > a.part_cavite ? b : a));
-    /* AU-DELÀ DE CENT POUR CENT, CE N'EST PLUS UN PARTAGE. Les deux branches
-       sont en opposition de phase et le courant CIRCULE entre elles :
-       l'inductance des découplages contre la capacité des plans, c'est
-       l'antirésonance parallèle. Écrire « 111 % passe par la cavité » serait
-       absurde ; c'est le phénomène qu'il faut nommer, parce que c'est LUI le
-       défaut — et l'impédance de la traversée y culmine. */
-    const anti = c.part_cavite > 1.0;
-    items.push({
-      id: anti ? "cavite_antiresonance" : "retour_par_la_cavite",
-      categorie: "retour",
-      nomCategorie: "Chemin de retour & Plans",
-      titre: anti
-        ? "Antirésonance de la traversée : le courant circule au lieu de revenir"
-        : "Le retour passe par la capacité des plans, pas par un découplage",
-      severite: (anti || c.part_cavite > 0.50) ? "critique" : "alerte",
-      chiffre: (anti
-        ? "Antirésonance près de " + simNb((c.freq_parts_hz || 0) / 1e6, 0) +
-          " MHz · " + simNb(100 * c.part_cavite, 0) +
-          " % du courant du signal circule dans la seule cavité · |Z| = " +
-          simNb(c.impedance_fc_ohm, 1) + " Ω"
-        : simNb(100 * c.part_cavite, 0) + " % du courant de retour traverse par la capacité répartie à " +
-          simNb((c.freq_parts_hz || 0) / 1e6, 1) + " MHz") +
-        " · plans " + simEsc(c.plan_haut) + " / " + simEsc(c.plan_bas) +
-        " (" + simNb(c.capacite_plans_pF, 0) + " pF" +
-        (c.aire_majoree ? ", aire de la carte entière — donc MAJORÉE" : "") + ")",
-      impact: anti
-        ? "L'inductance des découplages et la capacité répartie des plans s'annulent : l'impédance de la traversée y culmine, et le courant fait des allers-retours entre les deux branches au lieu de revenir à la source."
-        : "Ce courant se referme, mais dans la CAVITÉ entre les deux plans : il s'y propage jusqu'aux bords de la carte, y rayonne, et revient en bruit sur l'alimentation. Rien de cela n'apparaît sur S₂₁, où le signal passe intact.",
-      recommandation: anti
-        ? "Rapprocher un découplage du via déplace cette fréquence vers le haut ; amincir le diélectrique entre les deux plans la déplace AUSSI et baisse le pic. Le seul remède qui l'annule est de garder la même référence des deux côtés du via."
-        : "Poser un condensateur de liaison (10 nF - 100 nF) au pied de la transition : il ramène le courant de retour dans du cuivre. Ou garder la même référence des deux côtés du via, ce qui supprime le problème au lieu de le déplacer."
-    });
-  }
-
-  const rays = transitions.map(t => t.rayonnement).filter(Boolean);
-  const avecMarge = rays.filter(r => r.pire && r.pire.marge_db != null);
-  const reserveMC = " Ce chiffre est un PLANCHER : le mode commun sur les câbles" +
-    " domine l'émission réelle de 20 à 40 dB.";
-  if(avecMarge.length){
-    const ray = avecMarge.reduce((a, b) => (b.pire.marge_db < a.pire.marge_db ? b : a));
-    const p = ray.pire;
-    const serre = p.marge_db < 20;
-    items.push({
-      id: p.marge_db < 0 ? "rayonnement_hors_limite"
-                         : (serre ? "rayonnement_serre" : "rayonnement_ok"),
-      categorie: "retour",
-      nomCategorie: "Chemin de retour & Plans",
-      titre: p.marge_db < 0 ? "Rayonnement de la boucle de retour au-dessus de la limite"
-        : (serre ? "Marge de rayonnement étroite sur la boucle de retour"
-                 : "Rayonnement de la boucle de retour négligeable"),
-      severite: p.marge_db < 0 ? "critique" : (serre ? "alerte" : "ok"),
-      chiffre: "Boucle de " + simNb(ray.aire_boucle_mm2, 2) + " mm²" +
-               (ray.minorant ? " (minorant)" : "") + " · " +
-               simNb(p.champ_dbuv_m, 0) + " dB(µV/m) à " +
-               simNb(p.freq_hz / 1e6, 0) + " MHz, mesuré à " +
-               simNb(ray.distance_m, 0) + " m · limite CISPR 32 classe " +
-               simEsc(ray.classe) + " = " + simNb(p.limite_dbuv_m, 0) +
-               " → marge " + (p.marge_db >= 0 ? "+" : "") + simNb(p.marge_db, 1) + " dB",
-      impact: (serre
-        ? "Le courant de retour circule dans une boucle qui se comporte en antenne cadre : le champ croît comme le CARRÉ de la fréquence et proportionnellement à l'aire."
-        : "L'aire enfermée par le courant de retour est trop petite pour rayonner à ce rythme de signal.") +
-        reserveMC +
-        (p.champ_lointain ? ""
-          : " À cette fréquence la sonde est en champ PROCHE (λ/2π > distance) : la formule surestime."),
-      recommandation: serre
-        ? "Réduire l'AIRE de la boucle : rapprocher le via de masse (ou le condensateur de pontage) du via de signal, et amincir le diélectrique entre les deux plans concernés. C'est le seul geste qui agit à la fois sur l'inductance de boucle et sur l'émission."
-        : "Rien à faire de ce côté. Surveiller si le front s'accélère : le champ croît comme f²."
-    });
-  }else if(rays.some(r => r.hors_bande)){
-    items.push({
-      id: "rayonnement_hors_bande",
-      categorie: "retour",
-      nomCategorie: "Chemin de retour & Plans",
-      titre: "Rayonnement de la boucle hors de la bande réglementée",
-      severite: "ok",
-      chiffre: "Aucune harmonique de ce signal n'atteint 30 MHz, où commence la bande d'émission rayonnée de CISPR 32",
-      impact: "Le rayonnement de la boucle de retour n'est pas jugé ici. Cela ne vaut QUE pour la boucle : le mode commun sur les câbles, lui, se mesure à partir de 30 MHz quel que soit le rythme du signal." + reserveMC,
-      recommandation: "Rien à faire de ce côté tant que le front ne s'accélère pas."
-    });
-  }
-
-  // Couture de masse coplanaire
-  if(coplanaire.length){
-    const nonCousu = coplanaire.filter(s => s.couture && s.couture.espacement_max && s.couture.seuil_lambda10 && s.couture.espacement_max > s.couture.seuil_lambda10);
-    if(nonCousu.length){
-      const pireEsp = Math.max(...nonCousu.map(s => s.couture.espacement_max));
-      const seuil = nonCousu[0].couture.seuil_lambda10;
-      items.push({
-        id: "couture_lache",
-        categorie: "retour",
-        nomCategorie: "Chemin de retour & Plans",
-        titre: "Pas de couture de masse coplanaire excessif",
-        severite: "alerte",
-        chiffre: "Espacement max entre vias de masse = " + simNb(pireEsp, 2) + " mm > λ/10 (" + simNb(seuil, 2) + " mm)",
-        impact: "Au-delà de λ/10, le cuivre latéral cesse de se comporter comme un plan de masse idéal et peut entrer en résonance.",
-        recommandation: "Ajouter des vias de couture le long de la piste avec un pas régulier inférieur à " + simNb(seuil, 1) + " mm."
-      });
-    }
-  }
-
-  // --- PILIER 4 : COUPLAGE & ENVIRONNEMENT ---
-  const voisinage = (doc && doc.voisinage) || (SIM.doc && SIM.doc.voisinage) || [];
-  if(voisinage.length > 0){
-    let dMin = Infinity, pireVoisin = "";
-    for(const v of voisinage){
-      if(v.distance != null && v.distance < dMin){
-        dMin = v.distance;
-        pireVoisin = v.net || "voisine";
-      }
-    }
-    const largMoy = segsValides.length ? (segsValides.reduce((a, b) => a + (b.w || 0.2), 0) / segsValides.length) : 0.2;
-    const regle3W = 2 * largMoy;
-
-    if(dMin < regle3W){
-      items.push({
-        id: "couplage_proche",
-        categorie: "couplage",
-        nomCategorie: "Couplage & Environnement",
-        titre: "Piste voisine sous la règle des 3W",
-        severite: "alerte",
-        chiffre: "Écart de " + simNb(dMin, 3) + " mm avec « " + simEsc(pireVoisin) + " » (< 2W = " + simNb(regle3W, 3) + " mm)",
-        impact: "Diaphonie capacitive et inductive non négligeable. Risque de faux déclenchement sur les signaux sensibles.",
-        recommandation: "Écarter la piste d'au moins 3 fois sa largeur ou insérer une piste de garde reliée à la masse par des vias cousus."
-      });
-    } else {
-      items.push({
-        id: "couplage_3w_ok",
-        categorie: "couplage",
-        nomCategorie: "Couplage & Environnement",
-        titre: "Isolement latéral conforme (Règle 3W respectée)",
-        severite: "ok",
-        chiffre: "Écart minimal de " + simNb(dMin, 3) + " mm ≥ 2W (" + simNb(regle3W, 3) + " mm)",
-        impact: "Couplage croisé inférieur à -30 dB, garantissant un fonctionnement silencieux.",
-        recommandation: "Disposition spatiale optimale."
-      });
-    }
-  } else {
-    items.push({
-      id: "couplage_isole",
-      categorie: "couplage",
-      nomCategorie: "Couplage & Environnement",
-      titre: "Aucun agresseur proche détecté",
-      severite: "ok",
-      chiffre: "Tracé isolé à plus de 3 mm de tout autre signal",
-      impact: "Immunité totale contre la diaphonie sur la couche analysée.",
-      recommandation: "Aucune précaution de blindage supplémentaire requise."
-    });
-  }
-
-  // Calcul du score global
-  let totalPoints = 0;
-  let nbOk = 0, nbAlerte = 0, nbCritique = 0;
-
-  for(const it of items){
-    if(it.severite === "ok"){ totalPoints += 100; nbOk++; }
-    else if(it.severite === "alerte"){ totalPoints += 55; nbAlerte++; }
-    else if(it.severite === "critique"){ totalPoints += 10; nbCritique++; }
-  }
-
-  const scoreGlobal = items.length ? Math.round(totalPoints / items.length) : 100;
-  let verdict = "Liaison saine", statut = "ok";
-  if(nbCritique > 0 || scoreGlobal < 60){
-    verdict = "Liaison non conforme — actions critiques requises";
-    statut = "critique";
-  } else if(nbAlerte > 0 || scoreGlobal < 85){
-    verdict = "Liaison sous vigilance — améliorations conseillées";
-    statut = "alerte";
-  }
-
-  const catKeys = ["impedance", "vias", "retour", "couplage"];
-  const catNames = {
-    impedance: "Impédance & Continuité",
-    vias: "Vias & Discontinuités",
-    retour: "Chemin de retour & Plans",
-    couplage: "Couplage & Environnement"
-  };
-
-  const categories = catKeys.map(k => {
-    const list = items.filter(it => it.categorie === k);
-    return {
-      cle: k,
-      nom: catNames[k],
-      items: list,
-      nbOk: list.filter(i => i.severite === "ok").length,
-      nbAlerte: list.filter(i => i.severite === "alerte").length,
-      nbCritique: list.filter(i => i.severite === "critique").length
-    };
-  }).filter(c => c.items.length > 0);
-
-  return {
-    score_global: scoreGlobal,
-    verdict: verdict,
-    statut: statut,
-    compte: { ok: nbOk, alerte: nbAlerte, critique: nbCritique, total: items.length },
-    items: items,
-    categories: categories
-  };
-}
-
-function simFicheSante(){
-  const res = SIM.res;
-  if(!res) return "";
-  const diag = simDiagnostiquerSante(res, SIM.doc);
-  const filtre = SIM.santeFiltre || "tous";
-
-  let h = '<div class="simSanteWrap">';
-
-  // 1. En-tête avec score de santé et verdict
-  const colScore = diag.statut === "ok" ? "#49c07a" : (diag.statut === "alerte" ? "#f59e0b" : "#ef4444");
-  const bgScore = diag.statut === "ok" ? "rgba(73,192,122,0.12)" : (diag.statut === "alerte" ? "rgba(245,158,11,0.12)" : "rgba(239,68,68,0.12)");
-
-  h += '<div class="simSanteHeader" style="background:'+bgScore+'; border-left:4px solid '+colScore+'; padding:10px 14px; border-radius:4px; margin-bottom:12px;">';
-  h +=   '<div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">';
-  h +=     '<div>';
-  h +=       '<div style="font-size:10.5px; text-transform:uppercase; letter-spacing:0.5px; color:'+colScore+'; font-weight:700;">Score global de santé</div>';
-  h +=       '<div style="font-size:22px; font-weight:800; color:'+colScore+'; line-height:1.2;">'+diag.score_global+' <span style="font-size:13px; font-weight:500;">/ 100</span></div>';
-  h +=       '<div style="font-size:11.5px; font-weight:600; color:var(--txt,#e6e8ec); margin-top:2px;">'+simEsc(diag.verdict)+'</div>';
-  h +=     '</div>';
-  h +=     '<div class="simSanteBadges" style="display:flex; gap:6px; flex-wrap:wrap;">';
-  h +=       '<span class="simBadge simBadgeOk">✓ '+diag.compte.ok+' Conforme(s)</span>';
-  if(diag.compte.alerte > 0)
-    h +=     '<span class="simBadge simBadgeAlerte">⚠ '+diag.compte.alerte+' Vigilance</span>';
-  if(diag.compte.critique > 0)
-    h +=     '<span class="simBadge simBadgeCritique">✕ '+diag.compte.critique+' Critique(s)</span>';
-  h +=     '</div>';
-  h +=   '</div>';
-  h += '</div>';
-
-  // 2. Barre de filtres
-  h += '<div class="simSanteFiltres pnl-bar">';
-  h +=   '<button class="tb mini '+(filtre==="tous"?"on":"")+'" data-sante-filtre="tous">Tous ('+diag.compte.total+')</button>';
-  h +=   '<button class="tb mini '+(filtre==="anomalies"?"on":"")+'" data-sante-filtre="anomalies">Anomalies ('+(diag.compte.alerte+diag.compte.critique)+')</button>';
-  for(const cat of diag.categories){
-    const act = filtre === cat.cle ? "on" : "";
-    h += '<button class="tb mini '+act+'" data-sante-filtre="'+cat.cle+'">'+simEsc(cat.nom)+' ('+cat.items.length+')</button>';
-  }
-  h += '</div>';
-
-  // 3. Cartes par catégorie
-  for(const cat of diag.categories){
-    if(filtre !== "tous" && filtre !== "anomalies" && filtre !== cat.cle) continue;
-    let list = cat.items;
-    if(filtre === "anomalies"){
-      list = list.filter(i => i.severite !== "ok");
-      if(!list.length) continue;
-    }
-
-    h += '<div class="simSanteCat">';
-    h +=   '<div class="simSanteCatTitre">📁 ' + simEsc(cat.nom) + '</div>';
-
-    for(const it of list){
-      const borderCol = it.severite === "ok" ? "#49c07a" : (it.severite === "alerte" ? "#f59e0b" : "#ef4444");
-      const icon = it.severite === "ok" ? "✓" : (it.severite === "alerte" ? "⚠" : "✕");
-      const badgeTxt = it.severite === "ok" ? "CONFORME" : (it.severite === "alerte" ? "VIGILANCE" : "CRITIQUE");
-
-      h += '<div class="simSanteCard ' + it.severite + '">';
-      h +=   '<div class="simSanteCardHead">';
-      h +=     '<b style="color:'+borderCol+';">'+icon+' '+simEsc(it.titre)+'</b>';
-      h +=     '<span class="simSanteTag ' + it.severite + '">'+badgeTxt+'</span>';
-      h +=   '</div>';
-
-      h +=   '<div class="simSanteLigne">· <b>Mesure :</b> '+simEsc(it.chiffre)+'</div>';
-      h +=   '<div class="simSanteLigne">· <b>Impact :</b> '+simEsc(it.impact)+'</div>';
-
-      if(it.severite !== "ok"){
-        h += '<div class="simSanteReco">';
-        h +=   '💡 <b>Geste correctif :</b> '+simEsc(it.recommandation);
-        h += '</div>';
-      }
-      h += '</div>';
-    }
-    h += '</div>';
-  }
-
-  h += '</div>';
-  return h;
-}
-
-function simSanteApres(){
-  const box = simEl("simSortie");
-  if(!box) return;
-  box.querySelectorAll("[data-sante-filtre]").forEach(function(b){
-    b.onclick = function(){
-      SIM.santeFiltre = this.getAttribute("data-sante-filtre");
+function simBrancherCarte(){
+  const go=simEl("simCarteGo"), ex=simEl("simCarteExport"), r=SIM_CARTE.reglages;
+  if(go)go.onclick=simCarteGo;
+  if(ex){ex.onclick=simCarteExporter;ex.disabled=!SIM_CARTE.res;}
+  const rf=simEl("simCarteRef"), tt=simEl("simCarteTout");
+  if(rf){
+    rf.disabled=!SIM_CARTE.res;
+    rf.onclick=function(){
+      const res=SIM_CARTE.res;
+      if(!res)return;
+      const cles={};
+      for(const k of res.constats)if(!simCarteSansNet(k))cles[simCarteCle(k)]=simCarteResume(k);
+      simCarteStock(SIM_CARTE_REF,{carte:simCarteNomCarte(),
+                                   date:new Date().toISOString().slice(0,16).replace("T"," "),
+                                   cles});
       simRendre();
     };
+  }
+  if(tt)tt.onclick=function(){
+    SIM_CARTE.tout=!SIM_CARTE.tout;
+    this.classList.toggle("on",SIM_CARTE.tout);
+    if(SIM_ED&&SIM_ED.redessiner)SIM_ED.redessiner();
+  };
+  /* `vide` : un champ vide vaut 0 (« sans limite ») et s'affiche vide. */
+  const lie=(id,lire,ecrire,vide)=>{
+    const e=simEl(id);
+    if(!e)return;
+    e.value=vide&&!lire()?"":simNbLibre(lire());
+    e.oninput=function(){
+      const v=parseFloat(String(this.value).replace(",","."));
+      if(v>0)ecrire(v);
+      else if(vide&&!String(this.value).trim())ecrire(0);
+    };
+  };
+  /* Un champ à unité : la valeur vit en Hz ou en s, l'unité ne fait que
+     l'écrire. En changer CONVERTIT ce qui est affiché, comme partout. */
+  const lieU=(id,liste,lireU,ecrireU,lire,ecrire,vide)=>{
+    const sel=simEl(id+"U"), fac=()=>(liste.find(u=>u.cle===lireU())||liste[0]).f;
+    lie(id,()=>lire()/fac(),v=>ecrire(v*fac()),vide);
+    if(!sel)return;
+    sel.value=lireU();
+    sel.onchange=function(){
+      ecrireU(this.value);
+      const e=simEl(id);
+      if(e)e.value=vide&&!lire()?"":simNbLibre(lire()/fac());
+    };
+  };
+  const u=SIM_CARTE.unites;
+  [0,1,2].forEach(i=>lieU("simCarteF"+i,SIM_UNITES,()=>u.f[i],c=>{u.f[i]=c;},
+                          ()=>r.frequences[i],v=>{r.frequences[i]=v;}));
+  lie("simCarteZ0",()=>r.z0,v=>{r.z0=v;});
+  lie("simCarteBudget",()=>r.budget,v=>{r.budget=v;});
+  lie("simCarteZdiff",()=>r.zdiff,v=>{r.zdiff=v;});
+  for(const k in r.tr)lieU("simCarteTr"+k,SIM_UNITES_TR,()=>u.tr[k],c=>{u.tr[k]=c;},
+                          ()=>r.tr[k],v=>{r.tr[k]=v;});
+  for(const k in r.fmax)lieU("simCarteFmax"+k,SIM_UNITES,()=>u.fmax[k],c=>{u.fmax[k]=c;},
+                          ()=>r.fmax[k],v=>{r.fmax[k]=v;},true);
+  lieU("simCartePorteuse",SIM_UNITES,()=>u.porteuse,c=>{u.porteuse=c;},
+       ()=>r.porteuse,v=>{r.porteuse=v;},true);
+}
+
+async function simCarteGo(){
+  if(SIM_CARTE.occupe)return;
+  const go=simEl("simCarteGo");
+  SIM_CARTE.occupe=true; SIM_CARTE.err="";
+  if(go)go.disabled=true;
+  simProgresDemarrer();
+  simRendre();
+  try{
+    if(!SIM_ED||typeof SIM_ED.carteEntiere!=="function")
+      throw new Error("Cet outil ne sait pas encore décrire sa carte entière.");
+    const c=SIM_ED.carteEntiere();
+    if(!c||c.erreur)
+      throw new Error(((c&&c.erreur)||"Rien à analyser.")+
+                      (c&&c.conseil?"\n"+c.conseil:""));
+    const rep=await fetch((SIM_BASE||"")+SIM_CARTE_ROUTE,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(Object.assign({format:SIM_CARTE_FORMAT},c.doc,
+                                        {reglages:simCarteReglagesDoc()}))
+    });
+    let corps=null;
+    try{corps=await rep.json();}catch(e){corps=null;}
+    if(!rep.ok)
+      throw new Error((corps&&corps.detail)||
+                      ("Le serveur a refusé l'analyse ("+rep.status+")."));
+    SIM_CARTE.res=corps;
+    SIM_CARTE.unite=+c.doc.unite_mm||1;
+    SIM_CARTE.parDefaut=(c.parDefaut||[]).slice().sort();
+    SIM_CARTE.natures=c.doc.natures||{};
+    SIM_CARTE.actif=-1;
+  }catch(e){
+    SIM_CARTE.res=null;
+    SIM_CARTE.err=(e&&e.message)||String(e);
+  }finally{
+    SIM_CARTE.occupe=false;
+    if(go)go.disabled=false;
+    simProgresFini();
+    simRendre();
+    if(SIM_ED&&SIM_ED.redessiner)SIM_ED.redessiner();
+  }
+}
+
+function simRendreCarte(){
+  if(SIM_CARTE.occupe)
+    return simProgres("Toutes les pistes de la carte, tous les nets.");
+  if(SIM_CARTE.err)return '<p class="simErr">'+simEsc(SIM_CARTE.err)+"</p>";
+  if(SIM_CARTE.res)return simFicheCarte();
+  return '<p class="simEtat">Vérifie toute la carte, sans sélection.<br>'+
+    "<small>Les angles des pistes sur tous les nets — aigus, droits, "+
+    "jonctions en T, segments hors 45° —, les bouts de piste orphelins et "+
+    "l'empilage ; puis, à trois fréquences, l'impédance de chaque net, le "+
+    "chemin de retour de chaque via qui change de couche, les fentes des plans "+
+    "de référence, les vias de couture, la diaphonie, les paires "+
+    "différentielles, le découplage, le bord de carte, les moignons de vias "+
+    "et les branches en T ; et sans fréquence, les quartz, la protection ESD "+
+    "des connecteurs et le courant des rails.</small></p>";
+}
+
+/* Les constats d'une liste d'indices, rangés par règle puis par net. */
+function simCarteParRegle(ids){
+  const res=SIM_CARTE.res, out=[];
+  for(const regle of Object.keys(SIM_CARTE_REGLES)){
+    const parNet=new Map();
+    for(const i of ids){
+      const k=res.constats[i];
+      if(k.regle!==regle)continue;
+      const n=k.n==null?SIM_CARTE_CARTE:String(k.n);
+      if(!parNet.has(n))parNet.set(n,[]);
+      parNet.get(n).push(i);
+    }
+    if(parNet.size)out.push({regle,parNet});
+  }
+  /* Le bloc le plus grave d'abord ; à gravité égale, l'ordre des règles. */
+  const rangSev=g=>["critique","vigilance","info"].indexOf(simCartePire(g));
+  return out.sort((a,b)=>rangSev(a)-rangSev(b));
+}
+function simCartePire(g){
+  const sevs=[...g.parNet.values()].flat().map(i=>SIM_CARTE.res.constats[i].severite);
+  return ["critique","vigilance","info"].find(s=>sevs.indexOf(s)>=0)||"info";
+}
+/* La valeur jugée : un pourcentage, ou un rapport à la longueur de la règle
+   (λ/20, λ/40). */
+function simCarteValeur(k,f){
+  const u=(SIM_CARTE_REGLES[k.regle]||{}).unite;
+  return u?simNb(f.valeur,2)+" × "+u:simNb(100*f.valeur,1)+" %";
+}
+/* Le verdict à chaque fréquence : la fréquence, le niveau, et en infobulle le
+   front effectif et le genou où l'on a jugé. */
+function simCarteFreqs(k){
+  if(!(k.frequences&&k.frequences.length))return "";
+  return '<span class="simCarteFs">'+k.frequences.map(f=>
+    '<span class="simCarteF '+f.verdict+'" title="'+
+    (f.porteuse?"jugé à la porteuse RF "+simCarteF(f.porteuse)+" ; ":
+     f.f_plafond?"jugé à "+simCarteF(f.f_plafond)+", la fréquence maximale de "+
+                 "sa classe ; ":"")+"front "+simNb(f.tr*1e9,2)+
+    " ns, genou "+simCarteF(f.f_eval)+
+    (f.d_sur_lambda20!=null?", retour à "+simNb(f.d_sur_lambda20,2)+" × λ/20":"")+
+    (f.skew!=null?", écart de longueur "+simNb(100*f.skew,1)+" % du front":"")+
+    (f.plan_bancal?", plan sous une seule moitié "+simNb(100*f.plan_bancal,1)+" % du front":"")+
+    (f.f_res?", résonance du condensateur "+simCarteF(f.f_res):"")+
+    '">'+simCarteF(f.f)+" · "+simCarteValeur(k,f)+"</span>").join("")+"</span>";
+}
+function simCarteMm(v){return simNb(v*SIM_CARTE.unite,3);}
+function simCartePos(k){
+  return k.x==null?"":simCarteMm(k.x)+" ; "+simCarteMm(k.y)+" mm · ";
+}
+function simCarteLigne(i,ctx){
+  const k=SIM_CARTE.res.constats[i], cle=simCarteCle(k);
+  const neuf=ctx&&ctx.ref&&!ctx.ref.cles[cle];
+  return '<button class="simCarteLigne '+k.severite+(i===SIM_CARTE.actif?" on":"")+
+    '" data-carte-i="'+i+'" title="'+(k.x==null?"Un constat de carte, sans "+
+    "position":"Amener la vue sur ce point")+'">'+
+    (ctx&&ctx.derog?"":'<span class="simCarteOk" role="button" data-carte-ok="'+
+      simEsc(cle)+'" title="Accepter ce constat (dérogation) : il ne reviendra '+
+      'plus dans le rapport de cette carte">✓</span>')+
+    (neuf?'<span class="simCarteNeuf" title="Absent de la référence">nouveau</span>':"")+
+    simEsc(String(k.c))+" · "+simCartePos(k)+
+    simEsc(k.msg)+simCarteFreqs(k)+"</button>";
+}
+function simCarteRegles(groupes,ouvrir,ctx){
+  let h="";
+  for(const g of groupes){
+    const R=SIM_CARTE_REGLES[g.regle];
+    const ids=[...g.parNet.values()].flat();
+    const sev=simCartePire(g);
+    h+='<details class="simCarteRegle"'+(ouvrir&&sev!=="info"?" open":"")+'>'+
+       '<summary><span class="simCarteTag '+sev+'">'+SIM_CARTE_SEV[sev]+
+       "</span> <b>"+R.titre+"</b> · "+ids.length+
+       (g.parNet.size>1?" sur "+g.parNet.size+" nets":"")+"</summary>"+
+       '<div class="simCartePourquoi">'+simEsc(R.pourquoi)+"</div>";
+    for(const [net,lst] of g.parNet){
+      const cl=simCarteClasse(net);
+      h+='<div class="simCarteNet"><b>'+simEsc(simCarteNomNet(net))+"</b> "+
+         (cl?'<span class="simCarteClasse" title="La classe fixe le front, donc '+
+             'le verdict des règles électriques. Elle se corrige dans la liste '+
+             'des nets.">'+simEsc(cl)+"</span> ":"")+lst.length+"</div>";
+      for(const i of lst)h+=simCarteLigne(i,ctx);
+    }
+    h+="</details>";
+  }
+  return h;
+}
+/* Ce qui a été jugé, et sous quels réglages : sans eux, un rapport sorti de
+   la page ne se vérifie plus. */
+function simCarteMeta(res){
+  const L=[res.pistes+" pistes, angles à ±"+simNb(res.tolerance_deg,1)+"°"];
+  const b=res.bilan||{}, r=res.reglages;
+  if(b.retour)L.push(b.retour.vias+" vias de signal, dont "+b.retour.plan_change+
+                     " changent de plan de référence");
+  if(b.diaphonie)L.push(b.diaphonie.couples+" couples voisins, "+
+                        b.diaphonie.sections+" sections résolues");
+  if(b.impedance)L.push(b.impedance.nets+" nets chiffrés en impédance");
+  if(b.fente)L.push(b.fente.franchissements+" vides de plan sous les pistes");
+  if(b.couture)L.push(b.couture.cavites+" cavités de masse à coudre");
+  if(b.paire)L.push(b.paire.paires+" paires différentielles");
+  if(b.decouplage)L.push(b.decouplage.circuits+" circuits, "+b.decouplage.broches+
+                         " broches d'alimentation");
+  if(b.orphelin)L.push(b.orphelin.bouts+" bouts de piste libres");
+  if(b.diaphonie&&b.diaphonie.couples_larges_faces)
+    L.push(b.diaphonie.couples_larges_faces+" couples entre couches voisines");
+  if(b.decouplage&&b.decouplage.chemins_routes!=null)
+    L.push(b.decouplage.chemins_routes+" chemins de découplage routés");
+  if(b.moignon_via)L.push(b.moignon_via.vias+" vias de signal jugés en moignon");
+  if(b.branche)L.push(b.branche.embranchements+" embranchements hors pastille");
+  if(b.quartz)L.push(b.quartz.quartz+" quartz");
+  if(b.esd)L.push(b.esd.connecteurs+" connecteurs");
+  if(b.courant)L.push(b.courant.rails+" rails");
+  if(r)L.push("fréquences "+r.frequences.map(simCarteF).join(", ")+", Z₀ "+
+              simNbLibre(r.z0)+" Ω, budget "+simNbLibre(100*r.budget)+" %"+
+              (r.zdiff?", Z diff "+simNbLibre(r.zdiff)+" Ω":""));
+  const fm=Object.entries((r&&r.fmax)||{});
+  if(fm.length)L.push("fréquence maximale par classe : "+
+                      fm.map(([c,f])=>c+" "+simCarteF(f)).join(", "));
+  if(r&&r.porteuse_rf)L.push("nets RF jugés à leur porteuse, "+simCarteF(r.porteuse_rf));
+  return L;
+}
+/* Les constats d'un rapport, rangés : sur les nets, acceptés (dérogations),
+   marquages sans net. Et la comparaison à la référence. */
+function simCarteTri(){
+  const res=SIM_CARTE.res, derog=simCarteDerogations(), ref=simCarteReference();
+  const signal=[], acceptes=[], marquages=[], vus=new Set();
+  res.constats.forEach((k,i)=>{
+    const cle=simCarteCle(k);
+    vus.add(cle);
+    if(simCarteSansNet(k))marquages.push(i);
+    else if(derog[cle])acceptes.push(i);
+    else signal.push(i);
+  });
+  const resolus=ref?Object.keys(ref.cles).filter(c=>!vus.has(c)):[];
+  const nouveaux=ref?signal.filter(i=>!ref.cles[simCarteCle(res.constats[i])]).length:0;
+  return {signal,acceptes,marquages,derog,ref,resolus,nouveaux};
+}
+function simFicheCarte(){
+  const res=SIM_CARTE.res, T=simCarteTri(), signal=T.signal, marquages=T.marquages;
+  const cpt={critique:0,vigilance:0,info:0};
+  for(const i of signal)cpt[res.constats[i].severite]++;
+  let h='<div class="simCarteWrap"><div class="simCarteTete">'+
+    '<div class="simCarteBadges">'+
+      '<span class="simBadge simBadgeCritique">'+cpt.critique+" critique"+
+        (cpt.critique>1?"s":"")+"</span>"+
+      '<span class="simBadge simBadgeAlerte">'+cpt.vigilance+" vigilance</span>"+
+      '<span class="simBadge">'+cpt.info+" info</span></div>"+
+    '<div class="simCarteMeta">'+simEsc(simCarteMeta(res).join(" · "))+"</div>"+
+    (res.notes||[]).map(n=>'<p class="simNote simAlerte">· '+simEsc(n)+"</p>").join("")+
+    (T.ref?'<p class="simNote">Comparé à la référence <b>'+simEsc(T.ref.carte)+"</b> ("+
+      simEsc(T.ref.date||"")+") : <b>"+T.nouveaux+"</b> nouveau"+(T.nouveaux>1?"x":"")+
+      ", <b>"+T.resolus.length+"</b> résolu"+(T.resolus.length>1?"s":"")+
+      ' <span class="simCarteLien" role="button" data-carte-oublier="1" '+
+      'title="Ne plus comparer à cette référence">oublier</span></p>':"")+
+    "</div>";
+  const ctx={ref:T.ref};
+  h+=signal.length?simCarteRegles(simCarteParRegle(signal),true,ctx):
+     '<p class="simEtat">Aucun défaut sur les pistes des nets.</p>';
+  if(T.resolus.length)
+    h+='<details class="simCarteAPart"><summary>Résolus depuis la référence · '+
+       T.resolus.length+"</summary>"+'<div class="simCarteNoms">'+
+       T.resolus.map(c=>simEsc(T.ref.cles[c])).join("<br>")+"</div></details>";
+  if(T.acceptes.length)
+    h+='<details class="simCarteAPart"><summary>Dérogations acceptées · '+
+       T.acceptes.length+"</summary>"+
+       '<div class="simCartePourquoi">Des constats acceptés pour cette carte : ils '+
+       "ne comptent plus. Gardés dans ce navigateur. "+
+       '<span class="simCarteLien" role="button" data-carte-retablir="*">Tout rétablir</span>'+
+       "</div>"+simCarteRegles(simCarteParRegle(T.acceptes),false,{derog:true})+"</details>";
+  if(marquages.length)
+    h+='<details class="simCarteAPart"><summary>Marquages : cuivre sans net · '+
+       marquages.length+"</summary>"+
+       '<div class="simCartePourquoi">Texte, logos, repères de couche dessinés '+
+       "en cuivre : jugés comme le reste, rangés à part parce qu'ils ne "+
+       "portent pas de signal.</div>"+
+       simCarteRegles(simCarteParRegle(marquages),false)+"</details>";
+  if(SIM_CARTE.parDefaut.length)
+    h+='<details class="simCarteAPart"><summary>Nets classés Lent par '+
+       "défaut, non vérifiés · "+SIM_CARTE.parDefaut.length+"</summary>"+
+       '<div class="simCartePourquoi">Aucun indice — nom, motif, composant '+
+       "relié — ne les a classés : ils sont traités comme lents. Un net "+
+       "rapide au nom automatique s'y cache ; corrigez sa nature dans la "+
+       "liste des nets.</div>"+
+       '<div class="simCarteNoms">'+simEsc(SIM_CARTE.parDefaut.join(", "))+
+       "</div></details>";
+  return h+"</div>";
+}
+
+/* Un clic sur une ligne amène la vue sur le point et l'y marque. On ne
+   re-rend pas la fiche : les sections dépliées à la main se replieraient. */
+function simCarteApres(){
+  const ex=simEl("simCarteExport"), rf=simEl("simCarteRef");
+  if(ex)ex.disabled=!SIM_CARTE.res;
+  if(rf)rf.disabled=!SIM_CARTE.res;
+  const box=simEl("simSortie");
+  if(!box||!SIM_CARTE.res)return;
+  const cleDerog=SIM_CARTE_DEROG+simCarteNomCarte();
+  box.querySelectorAll("[data-carte-ok]").forEach(function(b){
+    b.onclick=function(ev){
+      ev.stopPropagation();
+      const d=simCarteDerogations();
+      d[this.getAttribute("data-carte-ok")]=new Date().toISOString().slice(0,10);
+      simCarteStock(cleDerog,d);
+      simRendre();
+      if(SIM_ED&&SIM_ED.redessiner)SIM_ED.redessiner();
+    };
+  });
+  box.querySelectorAll("[data-carte-retablir]").forEach(function(b){
+    b.onclick=function(ev){
+      ev.stopPropagation();
+      simCarteStock(cleDerog,null);
+      simRendre();
+      if(SIM_ED&&SIM_ED.redessiner)SIM_ED.redessiner();
+    };
+  });
+  box.querySelectorAll("[data-carte-oublier]").forEach(function(b){
+    b.onclick=function(){simCarteStock(SIM_CARTE_REF,null);simRendre();};
+  });
+  box.querySelectorAll("[data-carte-i]").forEach(function(b){
+    b.onclick=function(){
+      const i=+this.getAttribute("data-carte-i"), k=SIM_CARTE.res.constats[i];
+      if(!k)return;
+      SIM_CARTE.actif=i;
+      box.querySelectorAll(".simCarteLigne.on")
+         .forEach(e=>e.classList.remove("on"));
+      this.classList.add("on");
+      if(k.x!=null&&SIM_ED&&typeof SIM_ED.centrerSurVia==="function")
+        SIM_ED.centrerSurVia(k.x*SIM_CARTE.unite,k.y*SIM_CARTE.unite);
+      if(SIM_ED&&SIM_ED.redessiner)SIM_ED.redessiner();
+    };
   });
 }
 
-function simSanteExporter(){
-  if(!SIM.res){
-    SIM.err = "Rien à exporter : calculez d'abord.";
-    simRendre();
-    return;
-  }
-  const diag = simDiagnostiquerSante(SIM.res, SIM.doc);
-  const date = new Date().toISOString().replace("T"," ").slice(0,19);
-  let md = "# Rapport de santé de la liaison — Synthèse SI\n\n";
-  md += "**Date :** " + date + "\n";
-  md += "**Net / Portée :** " + (SIM.portee || (SIM.res && SIM.res.net) || "Sélection") + "\n";
-  md += "**Score global :** " + diag.score_global + " / 100 — " + diag.verdict + "\n";
-  md += "**Bilan :** " + diag.compte.ok + " conforme(s), " + diag.compte.alerte + " sous vigilance, " + diag.compte.critique + " critique(s)\n\n";
-
-  for(const cat of diag.categories){
-    md += "## " + cat.nom + "\n\n";
-    for(const it of cat.items){
-      const badge = it.severite === "ok" ? "[CONFORME]" : (it.severite === "alerte" ? "[VIGILANCE]" : "[CRITIQUE]");
-      md += "### " + badge + " " + it.titre + "\n";
-      md += "- **Mesure :** " + it.chiffre + "\n";
-      md += "- **Impact :** " + it.impact + "\n";
-      if(it.severite !== "ok"){
-        md += "- **Geste correctif :** " + it.recommandation + "\n";
-      }
-      md += "\n";
+/* La marque du constat choisi : un cercle et quatre traits, à la couleur de
+   sa sévérité. Elle désigne un point, elle ne décrit pas le cuivre. */
+const SIM_CARTE_COULEUR={critique:"#ef4444",vigilance:"#f59e0b",info:"#8af0ff"};
+function simCarteTrace(c,dpr,w2s){
+  const r=SIM_CARTE.res;
+  if(!r||SIM.analyse!=="verif"||typeof w2s!=="function")return;
+  /* TOUT PEINDRE : un anneau par constat — les dérogations et les marquages
+     exceptés —, le plus grave par-dessus. */
+  if(SIM_CARTE.tout){
+    const T=simCarteTri();
+    const ids=T.signal.slice().sort((a,b)=>
+      ["info","vigilance","critique"].indexOf(r.constats[a].severite)-
+      ["info","vigilance","critique"].indexOf(r.constats[b].severite));
+    c.save();
+    c.setTransform(dpr||1,0,0,dpr||1,0,0);
+    c.lineWidth=2;
+    for(const i of ids){
+      const k=r.constats[i], q=k.x!=null&&w2s(k.x,k.y);
+      if(!q||!isFinite(q.x)||!isFinite(q.y))continue;
+      c.strokeStyle=SIM_CARTE_COULEUR[k.severite]||"#8af0ff";
+      c.beginPath();c.arc(q.x,q.y,7,0,2*Math.PI);c.stroke();
     }
+    c.restore();
   }
+  if(SIM_CARTE.actif<0)return;
+  const k=r.constats[SIM_CARTE.actif];
+  const p=k&&k.x!=null&&w2s(k.x,k.y);
+  if(!p||!isFinite(p.x)||!isFinite(p.y))return;
+  c.save();
+  c.setTransform(dpr||1,0,0,dpr||1,0,0);
+  c.strokeStyle=SIM_CARTE_COULEUR[k.severite]||"#8af0ff";
+  c.lineWidth=2;
+  c.beginPath();
+  c.arc(p.x,p.y,14,0,2*Math.PI);
+  for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    c.moveTo(p.x+16*dx,p.y+16*dy);
+    c.lineTo(p.x+24*dx,p.y+24*dy);
+  }
+  c.stroke();
+  c.restore();
+}
 
-  const nomFichier = simNomFichier("-rapport-sante.md");
-  simTelecharger(md, nomFichier, "text/markdown;charset=utf-8");
+/* Texte brut, comme le rapport du crosstalk : il se colle dans un courriel et
+   se compare d'une version à l'autre. Les réglages y sont écrits. */
+function simCarteTexte(){
+  const res=SIM_CARTE.res;
+  if(!res)return "";
+  const carte=simCarteNomCarte();
+  const T=simCarteTri(), signal=T.signal, marquages=T.marquages;
+  const L=["VÉRIFICATION DE LA CARTE — "+carte].concat(simCarteMeta(res),
+           (res.notes||[]).map(n=>"Réserve : "+n),
+           T.ref?["Comparé à la référence "+T.ref.carte+" ("+(T.ref.date||"")+") : "+
+                  T.nouveaux+" nouveau(x), "+T.resolus.length+" résolu(s)"]:[],[""]);
+  const bloc=groupes=>{
+    for(const g of groupes){
+      const ids=[...g.parNet.values()].flat();
+      L.push("== "+SIM_CARTE_REGLES[g.regle].titre.toUpperCase()+" ("+
+             simCartePire(g)+") — "+ids.length+" ==");
+      for(const [net,lst] of g.parNet){
+        const cl=simCarteClasse(net);
+        L.push(simCarteNomNet(net)+(cl?" ("+cl+")":""));
+        for(const i of lst){
+          const k=res.constats[i];
+          L.push("  "+k.c+"  "+(k.x==null?"":"("+simCarteMm(k.x)+" ; "+
+                 simCarteMm(k.y)+") mm  ")+"["+k.severite+"] "+k.msg);
+          if(k.frequences&&k.frequences.length)
+            L.push("      "+k.frequences.map(f=>simCarteF(f.f)+" (front "+
+                   simNb(f.tr*1e9,2)+" ns"+(f.porteuse?", porteuse "+
+                   simCarteF(f.porteuse):f.f_plafond?", plafonné à "+
+                   simCarteF(f.f_plafond):"")+") "+simCarteValeur(k,f)+" "+
+                   f.verdict).join(" | "));
+        }
+      }
+      L.push("");
+    }
+  };
+  if(signal.length)bloc(simCarteParRegle(signal));
+  else L.push("Aucun défaut sur les pistes des nets.","");
+  if(marquages.length){
+    L.push("#### MARQUAGES : CUIVRE SANS NET — "+marquages.length,"");
+    bloc(simCarteParRegle(marquages));
+  }
+  if(T.resolus.length)
+    L.push("#### RÉSOLUS DEPUIS LA RÉFÉRENCE — "+T.resolus.length,
+           ...T.resolus.map(c=>"  "+T.ref.cles[c]),"");
+  if(T.acceptes.length){
+    L.push("#### DÉROGATIONS ACCEPTÉES — "+T.acceptes.length,"");
+    bloc(simCarteParRegle(T.acceptes));
+  }
+  if(SIM_CARTE.parDefaut.length)
+    L.push("#### NETS CLASSÉS LENT PAR DÉFAUT, NON VÉRIFIÉS — "+
+           SIM_CARTE.parDefaut.length,SIM_CARTE.parDefaut.join(", "),"");
+  return L.join("\n");
+}
+function simCarteExporter(){
+  if(!SIM_CARTE.res)return;
+  const carte=(SIM_ED&&SIM_ED.carte?SIM_ED.carte():"")||"carte";
+  simTelecharger(simCarteTexte(),
+                 (String(carte).replace(/[^\w.-]+/g,"_")||"carte")+
+                 "-verification-carte.txt","text/plain;charset=utf-8");
 }
 
 
@@ -18308,7 +18131,7 @@ const SIM_FAMILLES=[
   {cle:"si", court:"SI", nom:"Intégrité du signal",
    quoi:"Ce qu'un front devient en parcourant le cuivre : impédance, retard, "+
         "pertes, réflexions.",
-   analyses:["impedance","diff","crosstalk","retour","sante","bus"]},
+   analyses:["impedance","diff","crosstalk","retour","bus"]},
   {cle:"pi", court:"PI", nom:"Intégrité de l'alimentation",
    quoi:"Ce que le réseau de distribution laisse passer : chute continue, "+
         "impédance vue par le composant, résonances de plan.",
@@ -18316,7 +18139,13 @@ const SIM_FAMILLES=[
   {cle:"rf", court:"RF", nom:"Radiofréquence",
    quoi:"Ce qu'une chaîne RF laisse passer d'un port à l'autre : pistes, "+
         "composants et adaptation, entre deux impédances complexes.",
-   analyses:["s21"]}
+   analyses:["s21"]},
+  {cle:"carte", court:"DRC", nom:"Règles de conception",
+   quoi:"Toute la carte, tous les nets, sans sélection : fabrication (angles, "+
+        "bouts orphelins, bord), empilage, et à trois fréquences l'impédance, "+
+        "les retours, les fentes, la couture, la diaphonie, les paires et le "+
+        "découplage.",
+   analyses:["verif"]}
 ];
 
 /* Le catalogue des analyses. `impedance` est la seule à exister, et tout ce
@@ -18400,16 +18229,19 @@ const SIM_ANALYSES={
     rendre:simRendreRetour,
     apres:simBrancherRetourFiche
   },
-  sante:{
-    nom:"Santé liaison",
-    titre:"Synthèse globale des diagnostics de la liaison : impédance, discontinuités de vias, "+
-          "chemin de retour, couplage, classés par sévérité avec recommandations précises.",
+  verif:{
+    nom:"Vérification",
+    titre:"Toute la carte, tous les nets, sans sélection : les onze familles "+
+          "de règles, rangées du plus grave au moins grave.",
     peint:false,
     carte:"",
-    corps:simCorpsSante,
-    brancher:simBrancherSante,
-    rendre:simRendreSante,
-    apres:simSanteApres
+    corps:simCorpsCarte,
+    brancher:simBrancherCarte,
+    rendre:simRendreCarte,
+    apres:simCarteApres,
+    /* LA CARTE ENTIÈRE NE DÉPEND PAS DE LA SÉLECTION : cliquer une piste ne
+       doit ni effacer le rapport, ni le relancer. */
+    oublier:function(){return false;}
   },
   dc:{
     nom:"Chute DC",
@@ -18959,7 +18791,7 @@ function simProgres(detail,faits,total){
    dès que plus rien ne tourne, sans que personne ait à penser à l'éteindre. */
 let SIM_TIC=null;
 function simOccupeQuelconque(){
-  return !!(SIM.occupe||SIM.occupeDC||SIM_RF.occupe||
+  return !!(SIM.occupe||SIM.occupeDC||SIM_RF.occupe||SIM_CARTE.occupe||
             (typeof SIM_XT!=="undefined"&&SIM_XT&&SIM_XT.occupe));
 }
 function simProgresDemarrer(taille){
@@ -19742,7 +19574,7 @@ function simRafraichir(garderCarte){
      toutes, il lançait un calcul d'impédance sous l'onglet « Chute DC » — qui
      n'en affiche rien, et qui a son propre bouton. */
   const relancer=a.relancer||
-    (["impedance","diff","retour","sante"].indexOf(SIM.analyse)>=0?simGo:null);
+    (["impedance","diff","retour"].indexOf(SIM.analyse)>=0?simGo:null);
   if(!relancer)return;
   if(SIM_MINUTEUR)clearTimeout(SIM_MINUTEUR);
   SIM_MINUTEUR=setTimeout(function(){SIM_MINUTEUR=null;relancer();},180);

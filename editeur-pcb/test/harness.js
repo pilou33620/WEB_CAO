@@ -223,7 +223,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* Les unites d'une borne, et le champ de saisie commun a tout le panneau. */
   "SIM_DC_UNITES_V","SIM_DC_UNITES_A","simDCUnites","simDCUnite",
   "simDCListeUnite","simChamp","simCorpsImpedance","simCorpsDiff",
-  "simCorpsCrosstalk","simCorpsRetour","simCorpsSante",
+  "simCorpsCrosstalk","simCorpsRetour","simCorpsCarte",
   "SIM_BUS","simCorpsBus","simBrancherBus","simRendreBus","simBusCalculer","SIM_BUS_PRESETS","SIM_BUS_PROTOCOLES",
   "SIM_PDN","simCorpsPDN","simBrancherPDN","simRendrePDN","simCalculerPDN","simCourbePDN","simPDNActualiserComposants","simPDNExportCsv","simPDNExportJson","simPDNCsvTexte","simPDNJsonTexte","simPDNFormatFreq","simPDNFormatZ","simPDNCalculerModesCavite","simPDNGenererHeatmapCavite",
   /* Le modele multi-port de la cavite : couplage d un port a un mode,
@@ -246,8 +246,10 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simDCExportCsv","simDCExportJson","simDCNomFichier","simCsvLigne",
   "SIM_DC_VIA_ACTIF","SIM_DC_ACTIF_SEUIL","simPorteesSupposees",
   "simCulsDeSac","simDCCoucheInteressante",
-  "simChampTexte","SIM_XT","simRendreCrosstalk","simRendreRetour","simRendreSante",
-  "simDiagnostiquerSante","simFicheSante",
+  "simChampTexte","SIM_XT","simRendreCrosstalk","simRendreRetour","simRendreCarte",
+  "SIM_CARTE","simFicheCarte","simCarteTexte","simCarteReglagesDoc","cuLabel",
+  "simCarteTrace","simCarteCle","simCarteTri","simCarteNomCarte","SIM_CARTE_DEROG",
+  "SIM_CARTE_REF","SIM",
   "simRendreImpedance","simRendreDiff","simDCCsvTexte","simDCJsonTexte",
   "simTermeDiff","simLireDiff","simLectureTexteDiff","simCourbeDiff","simFicheSDiff","simDiffExportS2p","simDb",
   "simDCTraceSonde",
@@ -16731,345 +16733,279 @@ NET "GND"
     throw new Error("la piste en conflit n'a pas été supprimée");
 });
 
-T("Rapport de santé : diagnostic d'une liaison saine et conforme", ()=>{
-  const resSaine = {
-    segments: [
-      { z0: 50.2, longueur_mm: 20, w: 0.25, coplanaire: false, couche: "Top" },
-      { z0: 49.8, longueur_mm: 15, w: 0.25, coplanaire: false, couche: "Top" }
-    ],
-    discontinuites: {
-      transitions: [],
-      vias_hors_chaine: [],
-      coudes: []
-    },
-    points_s: [
-      { freq_hz: 1e9, s11_db: -28.5, s21_db: -0.15 },
-      { freq_hz: 2.4e9, s11_db: -24.2, s21_db: -0.32 }
-    ]
-  };
+/* ==========================================================================
+   Vérification de la carte (famille « DRC — Règles de conception ») : ce que l'éditeur envoie, et
+   le rapport qu'il en lit. Les règles elles-mêmes sont éprouvées côté serveur
+   (python/test/banc-analyse-carte.py).
+   ========================================================================== */
+function carteVerif(){
+  carteVide();
+  const fp=mkFp("J1","","",2);
+  fp.x=10;fp.y=20;fp.nets={1:"CLK",2:"$BN1"};
+  S.fps.push(fp);
+  const q=padsWorld(fp)[0];
+  S.tracks.push({l:0,net:"CLK",w:0.2,x1:q.x,y1:q.y,x2:30,y2:q.y});
+  S.tracks.push({l:0,net:"",w:0.2,x1:0,y1:0,x2:1,y2:0});
+  S.vias.push({id:S.nextId++,x:40,y:20,a:0,b:S.cu-1,d:0.6,drill:0.3,net:"CLK"});
+  touch();
+  return {fp,q};
+}
+T("Vérification de la carte : l'éditeur envoie toute la carte, pastilles placées",()=>{
+  const {fp,q}=carteVerif();
+  const r=SIM_PCB.carteEntiere();
+  if(!r.doc||r.doc.unite_mm!==1)throw new Error("document en millimètres attendu");
+  if(r.doc.pistes.length!==2)throw new Error("2 pistes attendues, "+r.doc.pistes.length);
+  const clk=r.doc.pistes.find(p=>p.n==="CLK");
+  if(!clk||clk.c!==cuLabel(0,S.cu)||clk.p.join()!==[q.x,q.y,30,q.y].join())
+    throw new Error("piste CLK mal décrite : "+JSON.stringify(clk));
+  if(!r.doc.pistes.some(p=>p.n===""))throw new Error("le cuivre sans net doit partir, nommé vide");
+  const pads=r.doc.pastilles.filter(p=>p.x===q.x&&p.y===q.y);
+  const couches=padLayers(fp,q).map(l=>cuLabel(l,S.cu)).join();
+  if(pads.map(p=>p.c).join()!==couches||pads.some(p=>p.r!==Math.min(q.w,q.h)/2))
+    throw new Error("la pastille part placée, sur ses couches : "+JSON.stringify(pads));
+  const via=r.doc.pastilles.filter(p=>p.x===40&&p.y===20);
+  if(via.length!==S.cu||via.some(p=>p.r!==0.3))
+    throw new Error("un via couvre chaque couche de sa portée : "+JSON.stringify(via));
+  /* CLK est routé sans classe : lent par défaut. $BN1 n'a pas de piste, le
+     cuivre sans net n'est pas un net. */
+  if(r.parDefaut.join()!=="CLK")throw new Error("par défaut : "+r.parDefaut.join());
+  /* Ce que les règles électriques lisent : l'empilage, la nature de chaque
+     net, la masse de référence. CLK sans classe est lent ; un nom de masse
+     est une masse. */
+  if(!r.doc.stackup||r.doc.stackup.layers.filter(c=>c.type==="copper").length!==S.cu)
+    throw new Error("l'empilage part avec la carte");
+  if(r.doc.natures.CLK!=="Lent"||!Array.isArray(r.doc.reference_nets)||!Array.isArray(r.doc.vias))
+    throw new Error("natures / masse / vias : "+JSON.stringify(r.doc.natures));
+  S.netClass.CLK="Horloge";
+  if(SIM_PCB.carteEntiere().parDefaut.length)
+    throw new Error("un net rattaché à une classe n'est plus « par défaut »");
+  delete S.netClass.CLK;
+  carteVide();
+  if(!SIM_PCB.carteEntiere().erreur)throw new Error("une carte sans piste doit le dire");
+});
 
-  const diag = simDiagnostiquerSante(resSaine, null, { zCible: 50 });
-  if (diag.score_global < 90) throw new Error("Le score d'une ligne saine doit dépasser 90, obtenu: " + diag.score_global);
-  if (diag.statut !== "ok") throw new Error("Le statut global doit être 'ok', obtenu: " + diag.statut);
-  if (diag.compte.critique !== 0) throw new Error("0 critique attendu, obtenu: " + diag.compte.critique);
-  if (diag.compte.alerte !== 0) throw new Error("0 alerte attendue, obtenu: " + diag.compte.alerte);
-  if (!diag.items.some(i => i.id === "z0_cible" && i.severite === "ok")) {
-    throw new Error("Item z0_cible conforme attendu");
+T("Vérification de la carte : un via qui plonge part avec son net, une masse non",()=>{
+  /* CLK passe de Top à Bottom par un via : sa fiche part, nommée. Le même via
+     sous GND ne part pas — une masse ne se juge pas comme un signal. */
+  for(const net of ["CLK","GND"]){
+    carteVide();
+    S.tracks.push({l:0,net,w:0.2,x1:0,y1:20,x2:40,y2:20});
+    S.tracks.push({l:S.cu-1,net,w:0.2,x1:40,y1:20,x2:60,y2:20});
+    S.vias.push({id:S.nextId++,x:40,y:20,a:0,b:S.cu-1,d:0.6,drill:0.3,net});
+    touch();
+    const v=SIM_PCB.carteEntiere().doc.vias;
+    if(net==="CLK"&&!(v.length===1&&v[0].net==="CLK"&&v[0].layer_from!==v[0].layer_to))
+      throw new Error("la fiche du via de CLK : "+JSON.stringify(v));
+    if(net==="GND"&&v.length)throw new Error("un via de masse ne se juge pas en signal");
   }
-  if (!diag.items.some(i => i.id === "vias_aucun" && i.severite === "ok")) {
-    throw new Error("Item vias_aucun attendu pour une ligne planaire");
+  carteVide();
+});
+
+T("Vérification de la carte : les réglages partent en unités du serveur",()=>{
+  const d=simCarteReglagesDoc();
+  if(d.frequences.join()!==[1e5,1e6,1e8].join()||d.budget!==0.05||d.z0!==50||
+     d.zdiff!==100||Math.abs(d.tr.Lent-1e-8)>1e-20||d.fmax.Lent!==1e7||d.fmax.RF!==0||d.porteuse_rf!==0)
+    throw new Error("réglages : "+JSON.stringify(d));
+});
+
+T("Vérification de la carte : un arc part dans le sens que le serveur lit",()=>{
+  /* La tangente que python/analyse_carte.py prend au départ d'un arc, avec
+     le même `h`. Un congé posé bout à bout avec la piste qui le précède doit
+     la prolonger : sinon chaque arc de la carte sortirait en angle droit. */
+  const tangente=a=>{
+    const sens=a.h?-1:1, rx=a.s[0]-a.m[0], ry=a.s[1]-a.m[1];
+    return [-sens*ry, sens*rx];
+  };
+  for(const ca of [Math.PI/2,-Math.PI/2]){
+    carteVide();
+    S.tracks.push({l:0,net:"A",w:0.2,x1:0,y1:0,x2:10,y2:0});
+    S.tracks.push({l:0,net:"A",w:0.2,x1:10,y1:0,x2:15,y2:(ca>0?5:-5),ca:ca});
+    const a=SIM_PCB.carteEntiere().doc.arcs[0];
+    const [tx,ty]=tangente(a);
+    if(!(tx>0&&Math.abs(ty)<1e-9))
+      throw new Error("ca="+ca.toFixed(2)+" : tangente de départ ("+tx+", "+ty+
+                      ") au lieu de +x — h="+a.h+" est inversé");
+  }
+  carteVide();
+});
+
+T("Vérification de la carte : le rapport range par règle, puis par net",()=>{
+  const garde=Object.assign({},SIM_CARTE);
+  try{
+    Object.assign(SIM_CARTE,{err:"",occupe:false,actif:-1,unite:1,
+      parDefaut:["$BN4","DATA"],natures:{CLK:"Horloge","Non-Net":"Lent"},
+      res:{pistes:3,tolerance_deg:1,compte:{critique:2,vigilance:1,info:0},
+           constats:[
+        {regle:"angle_droit",severite:"critique",x:1,y:2,c:"Top",n:"CLK",msg:"Angle droit"},
+        {regle:"angle_droit",severite:"critique",x:3,y:4,c:"Top",n:"Non-Net",msg:"Angle droit"},
+        {regle:"jonction",severite:"vigilance",x:5,y:6,c:"Bottom",n:"CLK",msg:"Jonction en T"}]}});
+    const h=simRendreCarte();
+    if(!/1 critique</.test(h))throw new Error("le marquage ne compte pas parmi les critiques des nets");
+    if(h.indexOf("Angles droits")>h.indexOf("Jonctions"))throw new Error("ordre des règles");
+    if(!/Marquages : cuivre sans net · 1/.test(h))throw new Error("marquages absents");
+    if(!/Lent par défaut, non vérifiés · 2/.test(h)||!/\$BN4, DATA/.test(h))
+      throw new Error("nets par défaut absents");
+    if((h.match(/data-carte-i=/g)||[]).length!==3)throw new Error("une ligne cliquable par constat");
+    const t=simCarteTexte();
+    for(const attendu of ["== ANGLES DROITS (critique) — 1 ==","  Top  (1,000 ; 2,000) mm  [critique] Angle droit",
+                          "#### MARQUAGES : CUIVRE SANS NET — 1","$BN4, DATA","CLK (Horloge)"])
+      if(t.indexOf(attendu)<0)throw new Error("rapport texte sans « "+attendu+" »:\n"+t);
+    if(/Non-Net \(/.test(t))throw new Error("le cuivre sans net n'a pas de classe:\n"+t);
+    SIM_CARTE.res.constats=[];
+    if(!/Aucun défaut sur les pistes/.test(simRendreCarte()))throw new Error("une carte propre doit le dire");
+  }finally{
+    Object.assign(SIM_CARTE,garde);
   }
 });
 
-T("Rapport de santé : détection des défauts critiques (moignon résonant, rupture de retour, forte désadaptation)", ()=>{
-  const resDegradee = {
-    segments: [
-      { z0: 72.5, longueur_mm: 30, w: 0.12, coplanaire: true, ecart: 0.2, ecart_g: 0.15, ecart_d: 0.35, couche: "Top" }
-    ],
-    discontinuites: {
-      transitions: [{
-        troncon: 1,
-        hauteur_mm: 1.6,
-        cotes: { percage_mm: 0.3, antipad_mm: 0.6, antipad_max: 0.9 },
-        moignons: {
-          depart: null,
-          arrivee: { longueur_mm: 1.1, capacite_fF: 220, resonance_hz: 1.8e9 }
-        },
-        retour: { retenus: 0, vias: [] },
-        cavite: { plan_haut: "GND", plan_bas: "+3.3V", impedance_fc_ohm: 45.0, pont_decouplage: false }
-      }],
-      vias_hors_chaine: []
-    },
-    points_s: [
-      { freq_hz: 1.8e9, s11_db: -4.2, s21_db: -12.5 }
-    ]
-  };
-
-  const diag = simDiagnostiquerSante(resDegradee, { voisinage: [{ distance: 0.15, net: "CLK_FAST" }] }, { zCible: 50, fMax: 2.5e9 });
-
-  if (diag.statut !== "critique") throw new Error("Statut attendu 'critique', obtenu: " + diag.statut);
-  if (diag.compte.critique < 3) throw new Error("Au moins 3 défauts critiques attendus, obtenu: " + diag.compte.critique);
-  
-  const idsCritiques = diag.items.filter(i => i.severite === "critique").map(i => i.id);
-  if (!idsCritiques.includes("z0_cible")) throw new Error("Défaut critique Z0 cible attendu");
-  if (!idsCritiques.includes("moignon_crit")) throw new Error("Défaut critique moignon résonant attendu");
-  if (!idsCritiques.includes("retour_aucun")) throw new Error("Défaut critique boucle de retour absente attendu");
-  if (!idsCritiques.includes("cavite_non_decouplee")) throw new Error("Défaut critique cavité non découplée attendu");
-
-  // Vérifier qu'un geste correctif est bien fourni
-  const moignon = diag.items.find(i => i.id === "moignon_crit");
-  if (!moignon.recommandation || !moignon.recommandation.includes("contre-perçage")) {
-    throw new Error("Geste correctif de contre-perçage attendu pour le moignon");
+T("Vérification de la carte : les nœuds de découpage du schéma partent au serveur",()=>{
+  carteVerif();
+  try{
+    sessionStorage.setItem("web_cao_nets_bruyants",JSON.stringify(["CLK","INCONNU"]));
+    autoClass();
+    if(S.netBruyants.join()!=="CLK,INCONNU")throw new Error("gardés : "+S.netBruyants);
+    if(docObj().netBruyants.join()!=="CLK,INCONNU")throw new Error("pas dans le document");
+    const d=SIM_PCB.carteEntiere().doc;
+    // seuls les nets de la carte partent
+    if(d.bruyants.join()!=="CLK")throw new Error("envoyés : "+JSON.stringify(d.bruyants));
+  }finally{
+    sessionStorage.removeItem("web_cao_nets_bruyants");
+    S.netBruyants=[];
+    carteVide();
   }
 });
 
-T("Rapport de santé : un via de masse qui ne referme rien n'est pas un chemin de retour", ()=>{
-  /* LE FAUX VERT. `retour.vias` liste TOUS les candidats — retenus ET écartés.
-     La version précédente exigeait `vias.length === 0` pour crier au défaut,
-     puis lisait `vias[0]` sans filtrer : une transition GND → PWR dont le via
-     de masse voisin à 0,3 mm ne referme RIEN sortait « chemin de retour bien
-     refermé », en vert, sur le seul défaut que cette analyse existe pour
-     trouver. */
-  const res = {
-    segments: [{ z0: 50.0, longueur_mm: 20, w: 0.25, coplanaire: false, couche: "Top" }],
-    discontinuites: {
-      transitions: [{
-        troncon: 1, hauteur_mm: 1.6,
-        cotes: { percage_mm: 0.3, antipad_mm: 0.6 },
-        moignons: { depart: null, arrivee: null },
-        retour: {
-          retenus: 0, trouves: 1, raccorde: false, source: "self",
-          plan_change: true, nets_differents: null, reference_change: false,
-          vias: [{ x: 0.3, y: 0, distance_mm: 0.3, net: "GND", retenu: false,
-                   raison: "ne rejoint pas PWR, le plan d'arrivée" }]
-        }
-      }],
-      vias_hors_chaine: []
-    },
-    points_s: [{ freq_hz: 1e9, s11_db: -25.0, s21_db: -0.2 }]
-  };
-
-  const diag = simDiagnostiquerSante(res, { fentes: [] }, { zCible: 50, fMax: 2e9 });
-  const ids = diag.items.map(i => i.id);
-  if (ids.includes("retour_ok"))
-    throw new Error("un via de masse écarté ne doit pas produire un verdict vert");
-  const item = diag.items.find(i => i.id === "retour_aucun");
-  if (!item) throw new Error("retour_aucun attendu quand aucun via retenu");
-  if (item.severite !== "critique")
-    throw new Error("retour_aucun doit rester critique, obtenu: " + item.severite);
-  if (!item.chiffre.includes("écartés"))
-    throw new Error("le chiffre doit dire que des vias étaient là et ont été écartés : " + item.chiffre);
-  if (!item.chiffre.includes("ne rejoint pas PWR"))
-    throw new Error("le chiffre doit porter la raison du serveur : " + item.chiffre);
+T("Vérification de la carte : dérogations, référence et tout peindre",()=>{
+  const garde=Object.assign({},SIM_CARTE);
+  const res=()=>({pistes:2,tolerance_deg:1,compte:{critique:1,vigilance:1,info:0},
+    constats:[
+      {regle:"angle_droit",severite:"vigilance",x:1,y:2,c:"Top",n:"CLK",msg:"Angle droit"},
+      {regle:"orphelin",severite:"critique",x:5,y:5,c:"Top",n:"DATA",msg:"Piste isolée"}]});
+  const carte=simCarteNomCarte();
+  try{
+    localStorage.removeItem(SIM_CARTE_DEROG+carte);
+    localStorage.removeItem(SIM_CARTE_REF);
+    Object.assign(SIM_CARTE,{err:"",occupe:false,actif:-1,unite:1,parDefaut:[],natures:{},
+                             res:res()});
+    // UNE DÉROGATION : le constat accepté quitte le compte et le rapport, il
+    // reste listé à part
+    const cle=simCarteCle(SIM_CARTE.res.constats[1]);
+    if(cle!=="orphelin|DATA|Top|10|10")throw new Error("clé : "+cle);
+    localStorage.setItem(SIM_CARTE_DEROG+carte,JSON.stringify({[cle]:"2026-09-30"}));
+    const h=simRendreCarte();
+    if(!/0 critique/.test(h)||!/Dérogations acceptées · 1/.test(h))
+      throw new Error("dérogation mal rangée");
+    const t=simCarteTexte();
+    if(t.indexOf("#### DÉROGATIONS ACCEPTÉES — 1")<0||
+       t.split("#### DÉROGATIONS")[0].indexOf("Piste isolée")>=0)
+      throw new Error("rapport texte :\n"+t);
+    // LA RÉFÉRENCE : gardée avec l'angle droit seul ; la révision suivante a
+    // en plus un orphelin (nouveau), et l'angle droit a disparu (résolu)
+    localStorage.removeItem(SIM_CARTE_DEROG+carte);
+    localStorage.setItem(SIM_CARTE_REF,JSON.stringify({carte:"rev-B",date:"2026-09-29",
+      cles:{[simCarteCle(SIM_CARTE.res.constats[0])]:"Angles droits · CLK",
+            "aigu|X|Top|0|0":"Angles aigus · X · Top · V"}}));
+    const T=simCarteTri();
+    if(T.nouveaux!==1||T.resolus.join()!=="aigu|X|Top|0|0")
+      throw new Error("comparaison : "+JSON.stringify(T));
+    const h2=simRendreCarte();
+    if(!/1<\/b> nouveau/.test(h2)||!/Résolus depuis la référence · 1/.test(h2)||
+       (h2.match(/simCarteNeuf/g)||[]).length!==1)
+      throw new Error("référence mal affichée");
+    // TOUT PEINDRE : un anneau par constat actif
+    SIM_CARTE.tout=true;
+    const avant=SIM.analyse;
+    SIM.analyse="verif";
+    let arcs=0;
+    const pinceau={save(){},restore(){},setTransform(){},beginPath(){},stroke(){},
+                   moveTo(){},lineTo(){},arc(){arcs++;}};
+    simCarteTrace(pinceau,1,(x,y)=>({x,y}));
+    SIM.analyse=avant;
+    if(arcs!==2)throw new Error("anneaux : "+arcs);
+  }finally{
+    localStorage.removeItem(SIM_CARTE_DEROG+carte);
+    localStorage.removeItem(SIM_CARTE_REF);
+    Object.assign(SIM_CARTE,garde);
+  }
 });
 
-T("Rapport de santé : un découplage trouvé rend la traversée de plan conforme", ()=>{
-  /* LA BRANCHE MORTE. Le test lisait `cav.pont_decouplage` et `cav.c_pont`,
-     deux clés que `_cavite_de_retour` n'émet NULLE PART — elle porte `pont` et
-     `capacite_pont_F`. Toute traversée sortait donc « critique — sans
-     condensateur de pontage », même avec un 100 nF au pied du via. */
-  const base = t => ({
-    segments: [{ z0: 50.0, longueur_mm: 20, w: 0.25, coplanaire: false, couche: "Top" }],
-    discontinuites: { transitions: [t], vias_hors_chaine: [] },
-    points_s: [{ freq_hz: 1e9, s11_db: -25.0, s21_db: -0.2 }]
-  });
-  const retourOk = {
-    retenus: 1, trouves: 1, raccorde: true, source: "boucle",
-    vias: [{ x: 0.4, y: 0, distance_mm: 0.4, net: "GND", retenu: true, part: 1 }]
-  };
-  const trav = {
-    troncon: 1, hauteur_mm: 1.6,
-    cotes: { percage_mm: 0.3, antipad_mm: 0.6 },
-    moignons: { depart: null, arrivee: null },
-    retour: retourOk,
-    modelise: { inductance_nH: 0.52, inductance_source: "boucle+cavite" },
-    cavite: {
-      plan_haut: "GND", plan_bas: "+3.3V", hauteur_mm: 0.2,
-      cherche: true, ponts: 2, borne: false,
-      pont: { x: 1.2, y: 0, distance_mm: 1.2, repere: "C12" },
-      capacite_pont_F: 1e-7, capacite_plans_pF: 76.2,
-      etalement_cavite_nH: 0.17, impedance_fc_ohm: 0.84
-    }
-  };
-
-  const diag = simDiagnostiquerSante(base(trav), { fentes: [] }, { zCible: 50, fMax: 2e9 });
-  const item = diag.items.find(i => i.id === "cavite_decouplee");
-  if (!item) throw new Error("cavite_decouplee attendu quand un pont est trouvé");
-  if (item.severite !== "ok")
-    throw new Error("une traversée à 0,84 ohm doit être conforme, obtenu: " + item.severite);
-  if (!item.chiffre.includes("C12") || !item.chiffre.includes("1,2"))
-    throw new Error("le repère et la distance du découplage doivent figurer : " + item.chiffre);
-  if (diag.items.some(i => i.id === "cavite_non_decouplee"))
-    throw new Error("aucun défaut de pontage ne doit sortir quand le pont est là");
-
-  /* Cherché, rien trouvé dans le rayon : le défaut grave, et il reste critique. */
-  const sansPont = JSON.parse(JSON.stringify(trav));
-  sansPont.cavite.ponts = 0;
-  sansPont.cavite.borne = true;
-  sansPont.cavite.rayon_mm = 10;
-  sansPont.cavite.impedance_fc_ohm = 4.6;
-  const diag2 = simDiagnostiquerSante(base(sansPont), { fentes: [] }, { zCible: 50, fMax: 2e9 });
-  const crit = diag2.items.find(i => i.id === "cavite_non_decouplee");
-  if (!crit || crit.severite !== "critique")
-    throw new Error("cherché sans rien trouver doit rester critique");
-  if (!crit.chiffre.includes("minorant"))
-    throw new Error("le chiffre doit se dire minorant : " + crit.chiffre);
-
-  /* LE VIA DE MASSE POSÉ AU PIED, ET POURQUOI IL N'Y PEUT RIEN. Entre deux
-     plans de nets différents, un via de masse joindrait de la masse à de la
-     masse : c'est le geste réflexe, et c'est le seul cas où il ne sert pas.
-     L'item de la traversée est le seul endroit où celui qui vient de le poser
-     va le lire. */
-  const avecVain = JSON.parse(JSON.stringify(sansPont));
-  avecVain.retour = {
-    retenus: 0, trouves: 1, raccorde: false, source: "self",
-    plan_change: true, nets_differents: true, reference_change: true,
-    vias: [{ x: 0.7, y: 0, distance_mm: 0.7, net: "GND", retenu: false,
-             raison: "ne rejoint pas L2, le plan d'arrivée" }]
-  };
-  const diag3 = simDiagnostiquerSante(base(avecVain), { fentes: [] }, { zCible: 50, fMax: 2e9 });
-  const crit3 = diag3.items.find(i => i.id === "cavite_non_decouplee");
-  if (!crit3) throw new Error("cavite_non_decouplee attendu");
-  if (!crit3.chiffre.includes("0,70 mm n'y peut rien"))
-    throw new Error("le via de masse écarté doit être nommé : " + crit3.chiffre);
-  if (diag3.items.some(i => i.id === "retour_aucun" || i.id === "retour_ok"))
-    throw new Error("un changement de référence se juge par la traversée, pas par le pilier des vias de retour");
+T("Vérification de la carte : zones, contour, trous et broches partent aussi",()=>{
+  /* Ce que lisent les règles électriques : le cuivre des zones (les découpes
+     de la couche en trous), le bord de la carte, les trous métallisés avec
+     leur portée, les broches de chaque empreinte avec leur net. */
+  const {q}=carteVerif();
+  S.zones.push({id:S.nextId++,l:0,net:"GND",
+                pts:[{x:0,y:0},{x:50,y:0},{x:50,y:50},{x:0,y:50}]});
+  S.cuts.push({l:0,pts:[{x:10,y:10},{x:12,y:10},{x:12,y:12}]});
+  touch();
+  const d=SIM_PCB.carteEntiere().doc;
+  const z=d.plans.find(p=>p.n==="GND");
+  if(!z||z.c!==cuLabel(0,S.cu)||z.o.join()!=="0,0,50,0,50,50,0,50"||
+     z.t[z.t.length-1].join()!=="10,10,12,10,12,12")
+    throw new Error("la zone et sa découpe : "+JSON.stringify(z));
+  /* LA ZONE PART REMPLIE : un trou autour de chaque via étranger, plus large
+     que le via de l'isolement */
+  for(const v of S.vias.filter(v=>v.net!=="GND"&&v.a<=0&&v.b>=0)){
+    const h=z.t.find(t=>{
+      const xs=t.filter((_,k)=>k%2===0), ys=t.filter((_,k)=>k%2===1);
+      return Math.min(...xs)<v.x&&Math.max(...xs)>v.x&&Math.min(...ys)<v.y&&Math.max(...ys)>v.y;
+    });
+    if(!h)throw new Error("pas de dégagement autour du via "+v.net+" : "+JSON.stringify(z.t));
+    const r=(Math.max(...h.filter((_,k)=>k%2===0))-Math.min(...h.filter((_,k)=>k%2===0)))/2;
+    if(!(r>v.d/2))throw new Error("dégagement plus petit que le via : "+r);
+  }
+  if(!d.contour||d.contour.o.length!==2*boardPoly().length)
+    throw new Error("le contour de la carte : "+JSON.stringify(d.contour));
+  const v=d.percages.find(t=>t.x===40&&t.y===20);
+  if(!v||v.n!=="CLK"||v.d!==0.3||v.de!==cuLabel(0,S.cu)||v.a!==cuLabel(S.cu-1,S.cu))
+    throw new Error("le via part comme trou, avec sa portée : "+JSON.stringify(v));
+  const j1=d.composants.find(c=>c.ref==="J1");
+  if(!j1||j1.broches.length!==2||j1.broches[0].n!=="CLK"||j1.broches[0].x!==q.x)
+    throw new Error("les broches de J1 : "+JSON.stringify(j1));
+  if(!d.pastilles.some(p=>p.x===q.x&&p.y===q.y&&p.n==="CLK"))
+    throw new Error("la pastille porte son net");
+  carteVide();
 });
 
-T("Rapport de santé : le seuil d'éloignement lit les vias RETENUS et l'inductance du modèle", ()=>{
-  /* Le seuil annonçait « L_boucle > 1,2 nH » au-delà de 0,8 mm, ce qui est faux
-     sur tout empilage courant : l'inductance de boucle croît avec l'ÉPAISSEUR
-     traversée autant qu'avec l'écart. On lit donc celle que le modèle a
-     calculée pour CETTE transition. Et on la lit sur le via RETENU, pas sur le
-     plus proche — qui peut être un via écarté. */
-  const res = {
-    segments: [{ z0: 50.0, longueur_mm: 20, w: 0.25, coplanaire: false, couche: "Top" }],
-    discontinuites: {
-      transitions: [{
-        troncon: 1, hauteur_mm: 1.6,
-        cotes: { percage_mm: 0.3, antipad_mm: 0.6 },
-        moignons: { depart: null, arrivee: null },
-        modelise: { inductance_nH: 1.05, inductance_source: "boucle" },
-        retour: {
-          retenus: 1, trouves: 2, raccorde: true, source: "boucle",
-          vias: [
-            { x: 0.3, y: 0, distance_mm: 0.3, net: "GND", retenu: false,
-              raison: "ne couvre pas Top vers Bottom" },
-            { x: 1.6, y: 0, distance_mm: 1.6, net: "GND", retenu: true, part: 1 }
-          ]
-        }
-      }],
-      vias_hors_chaine: []
-    },
-    points_s: [{ freq_hz: 1e9, s11_db: -25.0, s21_db: -0.2 }]
-  };
-
-  const diag = simDiagnostiquerSante(res, { fentes: [] }, { zCible: 50, fMax: 2e9 });
-  if (diag.items.some(i => i.id === "retour_ok"))
-    throw new Error("le via écarté à 0,3 mm ne doit pas faire passer la transition en vert");
-  const item = diag.items.find(i => i.id === "retour_eloigne");
-  if (!item) throw new Error("retour_eloigne attendu : le via RETENU est à 1,6 mm");
-  if (!item.chiffre.includes("1,60"))
-    throw new Error("la distance doit être celle du via retenu : " + item.chiffre);
-  if (!item.chiffre.includes("1,05"))
-    throw new Error("l'inductance doit venir du modèle, pas d'un seuil en dur : " + item.chiffre);
-});
-
-T("Rapport de santé : les fentes du plan de référence entrent dans le pilier du retour", ()=>{
-  /* Le pilier annonçait « fentes » dans son titre et n'en disait rien : le
-     document les portait, la carte les dessinait, l'analyse de couplage les
-     lisait — mais la fiche du chemin de retour, non. C'est pourtant le défaut
-     de retour le plus courant sur une carte réelle. */
-  const res = {
-    segments: [{ z0: 50.0, longueur_mm: 30, w: 0.25, coplanaire: false, couche: "Top" }],
-    discontinuites: { transitions: [], vias_hors_chaine: [] },
-    points_s: [{ freq_hz: 1e9, s11_db: -25.0, s21_db: -0.2 }]
-  };
-
-  const avec = simDiagnostiquerSante(res, {
-    fentes: [{ s: 5.0, longueur: 3.2, quoi: "le plan de référence L1 n'a pas de cuivre de retour" },
-             { s: 18.0, longueur: 0.9, quoi: "idem" }]
-  }, { zCible: 50, fMax: 2e9 });
-  const item = avec.items.find(i => i.id === "fente_plan");
-  if (!item) throw new Error("fente_plan attendu quand le document porte des fentes");
-  if (item.severite !== "critique")
-    throw new Error("une fente de 3,2 mm doit être critique, obtenu: " + item.severite);
-  if (!item.chiffre.includes("4,10"))
-    throw new Error("le cumul des fentes doit figurer : " + item.chiffre);
-
-  /* Un relevé VIDE est un constat, pas une ignorance : rien ne sort. */
-  const sans = simDiagnostiquerSante(res, { fentes: [] }, { zCible: 50, fMax: 2e9 });
-  if (sans.items.some(i => i.id === "fente_plan" || i.id === "fente_non_sondee"))
-    throw new Error("un relevé vide ne doit produire ni défaut ni réserve");
-
-  /* Un document SANS relevé est une ignorance, et elle se dit. */
-  const muet = simDiagnostiquerSante(res, { voisinage: [] }, { zCible: 50, fMax: 2e9 });
-  if (!muet.items.some(i => i.id === "fente_non_sondee"))
-    throw new Error("un document sans relevé de fentes doit lever une réserve");
-
-  /* Pas de document du tout : on ne se prononce sur rien. */
-  const rien = simDiagnostiquerSante(res, null, { zCible: 50, fMax: 2e9 });
-  if (rien.items.some(i => i.id === "fente_non_sondee"))
-    throw new Error("sans document, il n'y a pas de carte sur laquelle se prononcer");
-});
-
-T("Rapport de santé : le rayonnement de la boucle se chiffre et se hiérarchise", ()=>{
-  /* « Une boucle ouverte rayonne » est un conseil qu'on répète sans jamais le
-     chiffrer, et un conseil qu'on ne chiffre pas ne se hiérarchise pas. Trois
-     états, et ils ne se confondent pas : sous la limite (rien à faire), marge
-     étroite (à surveiller), au-dessus (à corriger). Plus un quatrième : le
-     spectre ne touche pas la bande réglementée, qui commence à 30 MHz. */
-  const base = ray => ({
-    segments: [{ z0: 50.0, longueur_mm: 20, w: 0.25, coplanaire: false, couche: "Top" }],
-    discontinuites: {
-      transitions: [{
-        troncon: 1, hauteur_mm: 1.6,
-        cotes: { percage_mm: 0.3, antipad_mm: 0.6 },
-        moignons: { depart: null, arrivee: null },
-        retour: { retenus: 1, trouves: 1, raccorde: true, source: "boucle",
-                  vias: [{ x: 0.5, y: 0, distance_mm: 0.5, net: "GND", retenu: true, part: 1 }] },
-        modelise: { inductance_nH: 0.55, inductance_source: "boucle" },
-        rayonnement: ray
-      }],
-      vias_hors_chaine: []
-    },
-    points_s: [{ freq_hz: 1e9, s11_db: -25.0, s21_db: -0.2 }]
-  });
-  const fiche = (marge, extra) => Object.assign({
-    aire_boucle_mm2: 8.52, distance_m: 3, classe: "B", minorant: false,
-    hors_bande: false,
-    pire: { harmonique: 5, freq_hz: 5e8, champ_dbuv_m: 47 - marge,
-            limite_dbuv_m: 47, marge_db: marge, champ_lointain: true }
-  }, extra || {});
-
-  const large = simDiagnostiquerSante(base(fiche(46.2)), { fentes: [] }, { zCible: 50, fMax: 2e9 });
-  const ok = large.items.find(i => i.id === "rayonnement_ok");
-  if (!ok || ok.severite !== "ok")
-    throw new Error("46 dB de marge doivent être conformes");
-  if (!ok.chiffre.includes("8,52 mm²"))
-    throw new Error("l'aire de la boucle doit figurer : " + ok.chiffre);
-  if (!ok.chiffre.includes("CISPR 32 classe B"))
-    throw new Error("la norme et la classe doivent être nommées : " + ok.chiffre);
-
-  const etroit = simDiagnostiquerSante(base(fiche(4.5)), { fentes: [] }, { zCible: 50, fMax: 2e9 });
-  const al = etroit.items.find(i => i.id === "rayonnement_serre");
-  if (!al || al.severite !== "alerte")
-    throw new Error("4,5 dB de marge doivent lever une alerte");
-  if (!al.recommandation.includes("AIRE"))
-    throw new Error("le geste correctif doit viser l'aire : " + al.recommandation);
-
-  const dehors = simDiagnostiquerSante(base(fiche(-3.5)), { fentes: [] }, { zCible: 50, fMax: 2e9 });
-  const cr = dehors.items.find(i => i.id === "rayonnement_hors_limite");
-  if (!cr || cr.severite !== "critique")
-    throw new Error("une marge négative doit être critique");
-
-  /* LE PLANCHER SE DIT, TOUJOURS : le mode commun sur les câbles domine
-     l'émission réelle de 20 à 40 dB. Un chiffre confortable ici ne promet rien
-     sur l'essai, et la fiche ne doit jamais laisser croire le contraire. */
-  for (const it of [ok, al, cr])
-    if (!it.impact.includes("mode commun"))
-      throw new Error("la réserve du mode commun manque sur " + it.id);
-
-  /* Champ PROCHE : la formule surestime, et la fiche le porte. */
-  const proche = simDiagnostiquerSante(
-    base(fiche(12, { pire: { harmonique: 1, freq_hz: 12e6, champ_dbuv_m: 28,
-                             limite_dbuv_m: 40, marge_db: 12, champ_lointain: false } })),
-    { fentes: [] }, { zCible: 50, fMax: 2e9 });
-  const pr = proche.items.find(i => i.id === "rayonnement_serre");
-  if (!pr || !pr.impact.includes("champ PROCHE"))
-    throw new Error("le champ proche doit être signalé : " + (pr ? pr.impact : "aucun item"));
-
-  /* Sous 30 MHz, CISPR 32 ne fixe AUCUNE limite rayonnée. Ce n'est pas une
-     absence de résultat, c'est un résultat. */
-  const hb = simDiagnostiquerSante(
-    base({ aire_boucle_mm2: 8.52, distance_m: 3, classe: "B",
-           minorant: false, hors_bande: true, pire: null }),
-    { fentes: [] }, { zCible: 50, fMax: 2e9 });
-  const it = hb.items.find(i => i.id === "rayonnement_hors_bande");
-  if (!it || it.severite !== "ok")
-    throw new Error("un spectre sous 30 MHz doit sortir « hors bande », conforme");
-  if (!it.impact.includes("mode commun"))
-    throw new Error("même hors bande, le mode commun se mesure dès 30 MHz : " + it.impact);
+T("Vérification de la carte : un constat de carte n'a ni net ni position",()=>{
+  const garde=Object.assign({},SIM_CARTE);
+  try{
+    Object.assign(SIM_CARTE,{err:"",occupe:false,actif:-1,unite:1,parDefaut:[],
+      natures:{GND:"Masse"},
+      res:{pistes:1,tolerance_deg:1,bilan:{couture:{cavites:1}},
+           reglages:{frequences:[1e5,1e6,1e8],z0:50,budget:0.05,zdiff:90,tr:{}},
+           constats:[
+        {regle:"empilage",severite:"vigilance",x:null,y:null,c:"empilage",n:null,
+         frequences:[],msg:"Empilage dissymétrique"},
+        {regle:"couture",severite:"critique",x:5,y:6,c:"L2 ↔ L3",n:"GND",msg:"Trou sans via",
+         frequences:[{f:1e8,tr:1e-9,f_eval:3.5e8,valeur:2.37,verdict:"critique"}]}]}});
+    const h=simRendreCarte();
+    if(/Marquages/.test(h))throw new Error("un constat de carte n'est pas un marquage");
+    if(!/toute la carte/.test(h))throw new Error("il se range sous « toute la carte »");
+    if(!/2,37 × λ\/20/.test(h))throw new Error("une couture se lit en λ/20");
+    if(!/cavités de masse/.test(h)||!/Z diff 90 Ω/.test(h))
+      throw new Error("ce qui a été jugé, et la cible des paires");
+    const t=simCarteTexte();
+    for(const attendu of ["  empilage  [vigilance] Empilage dissymétrique",
+                          "100 MHz (front 1,00 ns) 2,37 × λ/20 critique"])
+      if(t.indexOf(attendu)<0)throw new Error("rapport texte sans « "+attendu+" »:\n"+t);
+    /* Un clic sur un constat sans position ne déplace rien et ne marque rien. */
+    const avant=SIM.analyse;
+    SIM.analyse="verif";
+    let traces=0;
+    const pinceau={save(){traces++;},setTransform(){},beginPath(){},arc(){},moveTo(){},
+                   lineTo(){},stroke(){},restore(){}};
+    try{
+      SIM_CARTE.actif=0;
+      simCarteTrace(pinceau,1,(x,y)=>({x,y}));
+      if(traces)throw new Error("un constat de carte ne se marque pas sur le cuivre");
+      SIM_CARTE.actif=1;
+      simCarteTrace(pinceau,1,(x,y)=>({x,y}));
+      if(traces!==1)throw new Error("un constat placé se marque");
+    }finally{SIM.analyse=avant;}
+  }finally{
+    Object.assign(SIM_CARTE,garde);
+  }
 });
 
 T("Chevelu du retour : sur GND→PWR, c'est le découplage qui porte le retour, pas les vias de masse", ()=>{
@@ -17240,31 +17176,6 @@ T("Chevelu du retour : la part de chaque condensateur, MÊME formule que le serv
     throw new Error("l'étalement doit être LINÉAIRE en écartement des plans");
   if(simEtalementViaVia(1.065, 0.2, 0.3) !== 0)
     throw new Error("un pont plus proche que le perçage n'a pas de sens");
-});
-
-T("Rapport de santé : rendu HTML, structure des fiches et filtres", ()=>{
-  const garde = [SIM.res, SIM.doc, SIM.analyse, SIM.santeFiltre];
-  try {
-    SIM.res = {
-      segments: [{ z0: 62.0, longueur_mm: 10, w: 0.18, coplanaire: false, couche: "Top" }],
-      discontinuites: { transitions: [], vias_hors_chaine: [] },
-      points_s: [{ freq_hz: 1e9, s11_db: -14.0 }]
-    };
-    SIM.doc = { voisinage: [] };
-    SIM.analyse = "sante";
-    SIM.santeFiltre = "tous";
-
-    const htmlTous = simRendreSante();
-    if (!htmlTous.includes("simSanteHeader")) throw new Error("En-tête simSanteHeader absent");
-    if (!htmlTous.includes("Score global de santé")) throw new Error("Libellé du score global absent");
-    if (!htmlTous.includes("simSanteCard")) throw new Error("Cartes de diagnostic absentes");
-
-    SIM.santeFiltre = "anomalies";
-    const htmlAnomalies = simRendreSante();
-    if (!htmlAnomalies.includes("simSanteCard")) throw new Error("Les cartes d'anomalies doivent être présentes");
-  } finally {
-    [SIM.res, SIM.doc, SIM.analyse, SIM.santeFiltre] = garde;
-  }
 });
 
 /* ==========================================================================

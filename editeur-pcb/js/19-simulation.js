@@ -5124,6 +5124,131 @@ const SIM_PCB={
   centrerSurVia:function(x_mm,y_mm){
     if(typeof center==="function") center(x_mm,y_mm);
   },
+  /* LA CARTE ENTIÈRE, pour la « Vérification de la carte », en millimètres.
+     Un segment part comme une piste de deux points, un arc avec son centre ;
+     `ca` positif fait croître l'angle vu du centre (l'axe Y descend), c'est
+     le sens que le serveur dit anti-horaire. Les pastilles partent placées,
+     avec le rayon du plus grand cercle qu'elles contiennent, sur leurs
+     couches ; un via sur chaque couche de sa portée. Les nets « Lent par
+     défaut » sont ceux de signal restés dans la classe par défaut.
+
+     La NATURE d'un net se lit dans le nom de sa classe, par les motifs du
+     schéma (`SCH_CLASSES`) : « Impédance 50Ω » est du RF. Les vias partent
+     net par net, par `simViasPcb` — le chemin de l'onglet Current Return
+     Path.
+
+     Pour les règles électriques partent aussi les zones (une par entrée, les
+     découpes de sa couche en trous : `simZoneEn` ne lit pas autrement le
+     cuivre), le contour de la carte, les vias et les pastilles traversantes
+     comme trous métallisés, et les pastilles de chaque empreinte comme
+     broches, avec leur valeur et leur boîtier (découplage, quartz, ESD).
+
+     UNE ZONE PART REMPLIE, pas telle qu'elle est tracée : ses dégagements
+     autour des pistes, vias et pastilles des AUTRES nets partent en trous --
+     le même geste que `zoneCanvas`, qui les peint en noir. Une piste, une
+     gélule à la largeur w + 2 isolements ; un via, un cercle ; une pastille,
+     son rectangle agrandi. C'est ce que lisent la masse coplanaire, les
+     fentes et la couture. `isolement` reste pour une piste posée sans trou.
+     ponytail: les liaisons thermiques ne sont pas envoyées (le cuivre est
+     plein sous les pastilles du net) et le rognage au bord de carte non plus ;
+     les polygones sont des approximations à 8 côtés. */
+  carteEntiere:function(){
+    const nom=l=>cuLabel(l,S.cu);
+    const pistes=[], arcs=[], pastilles=[];
+    for(const t of S.tracks){
+      const A=arcOf(t);
+      if(A)arcs.push({c:nom(t.l),n:t.net||"",w:t.w,s:[t.x1,t.y1],e:[t.x2,t.y2],
+                      m:[A.cx,A.cy],h:t.ca<0?1:0});
+      else pistes.push({c:nom(t.l),n:t.net||"",w:t.w,p:[t.x1,t.y1,t.x2,t.y2]});
+    }
+    if(!pistes.length&&!arcs.length)return {erreur:"Aucune piste sur la carte."};
+    const percages=[], composants=[];
+    for(const fp of S.fps){
+      const broches=[];
+      for(const q of padsWorld(fp)){
+        for(const l of padLayers(fp,q))
+          pastilles.push({x:q.x,y:q.y,r:Math.min(q.w,q.h)/2,R:Math.max(q.w,q.h)/2,
+                          c:nom(l),n:q.net||""});
+        if(q.drill>0)percages.push({x:q.x,y:q.y,d:q.drill,n:q.net||""});
+        broches.push({x:q.x,y:q.y,n:q.net||"",pin:String(q.n)});
+      }
+      composants.push({ref:fp.ref,c:nom(fp.side?S.cu-1:0),broches,
+                       val:fp.value||"",pkg:fp.pkg||""});
+    }
+    for(const v of S.vias){
+      for(let l=v.a;l<=v.b;l++)pastilles.push({x:v.x,y:v.y,r:v.d/2,c:nom(l),n:v.net||""});
+      percages.push({x:v.x,y:v.y,d:v.drill,n:v.net||"",de:nom(v.a),a:nom(v.b)});
+    }
+    const plat=pts=>pts.flatMap(p=>[p.x,p.y]);
+    const gelule=(x1,y1,x2,y2,r)=>{        // une piste droite élargie, 8 côtés
+      const L=Math.hypot(x2-x1,y2-y1)||1e-9, ux=(x2-x1)/L*r, uy=(y2-y1)/L*r;
+      const k=Math.SQRT1_2;
+      return [x1-uy,y1+ux, x1-(ux+uy)*k,y1+(ux-uy)*k, x1-ux,y1-uy, x1-(ux-uy)*k,y1-(ux+uy)*k,
+              x1+uy,y1-ux, x2+uy,y2-ux, x2+(ux+uy)*k,y2-(ux-uy)*k, x2+ux,y2+uy,
+              x2+(ux-uy)*k,y2+(ux+uy)*k, x2-uy,y2+ux];
+    };
+    const cercle=(x,y,r)=>{
+      const o=[];
+      for(let k=0;k<8;k++)o.push(x+r*Math.cos(k*Math.PI/4),y+r*Math.sin(k*Math.PI/4));
+      return o;
+    };
+    const rect=(q,g)=>{
+      const c=Math.cos(q.rot||0), sn=Math.sin(q.rot||0), a=q.w/2+g, b=q.h/2+g;
+      return [[-a,-b],[a,-b],[a,b],[-a,b]].flatMap(([u,v])=>[q.x+u*c-v*sn,q.y+u*sn+v*c]);
+    };
+    const plans=S.zones.filter(z=>z.pts&&z.pts.length>=3).map(z=>{
+      const zn=z.net||"", bb=polyBBox(z.pts), trous=[];
+      const dans=(x,y)=>x>=bb.x1&&x<=bb.x2&&y>=bb.y1&&y<=bb.y2&&inPoly(x,y,z.pts);
+      for(const t of S.tracks){
+        if(t.l!==z.l||(zn&&t.net===zn))continue;
+        const r=t.w/2+clrK(zn,t.net,"cu","trk"), m=trkMid(t);
+        if(!dans(m.x,m.y)&&!dans(t.x1,t.y1)&&!dans(t.x2,t.y2))continue;
+        if(!arcOf(t)){trous.push(gelule(t.x1,t.y1,t.x2,t.y2,r));continue;}
+        for(let k=0;k<8;k++){
+          const a=trkAt(t,k/8), b=trkAt(t,(k+1)/8);
+          trous.push(gelule(a.x,a.y,b.x,b.y,r));
+        }
+      }
+      for(const v of S.vias){
+        if(z.l<v.a||z.l>v.b||(zn&&v.net===zn)||!dans(v.x,v.y))continue;
+        trous.push(cercle(v.x,v.y,v.d/2+clrK(zn,v.net,"cu","via")));
+      }
+      for(const fp of S.fps)
+        for(const q of padsWorld(fp)){
+          if((zn&&q.net===zn)||!padLayers(fp,q).includes(z.l)||!dans(q.x,q.y))continue;
+          trous.push(rect(q,clrK(zn,q.net,"cu",q.drill>0?"th":"smd")));
+        }
+      for(const c of S.cuts||[])if(c.l===z.l&&c.pts.length>2)trous.push(plat(c.pts));
+      return {c:nom(z.l),n:zn,o:plat(z.pts),isolement:clrK(zn,"","cu","trk"),t:trous};
+    });
+    const routes=new Set(S.tracks.map(t=>t.net));
+    const parDefaut=netTable().map(n=>n.name).filter(n=>
+      routes.has(n)&&!S.netClass[n]&&!isPower(n)&&!GND_RE.test(n));
+    const nature=n=>{
+      if(GND_RE.test(n))return "Masse";
+      if(isPower(n))return "Alimentation";
+      const c=S.netClass[n]||"";
+      return ["Masse","Alimentation","Horloge","Rapide","RF","Analogique","Antenne"]
+        .find(k=>c&&SCH_CLASSES[k].re.test(c))||"Lent";
+    };
+    const natures={}, parNet=new Map(), vias=[];
+    for(const {name} of netTable())natures[name]=nature(name);
+    for(const t of S.tracks)if(t.net){
+      if(!parNet.has(t.net))parNet.set(t.net,[]);
+      parNet.get(t.net).push(t);
+    }
+    for(const [n,trks] of parNet){
+      if(natures[n]==="Masse"||natures[n]==="Alimentation")continue;
+      for(const f of simViasPcb(trks))vias.push(Object.assign(f,{net:n}));
+    }
+    return {doc:{unite_mm:1,pistes,arcs,pastilles,plans,
+                 contour:{o:plat(boardPoly()),t:[]},percages,composants,
+                 stackup:simStackup(),vias,
+                 natures,bruyants:(S.netBruyants||[]).filter(n=>natures[n]),
+                 paires:(S.dpPairs||[]).map(p=>[p.p,p.n]),
+                 reference_nets:simRefListe()},
+            parDefaut};
+  },
   /* Extraction physique du temps de vol pour l'analyse de bus synchrone (supporte les XNets / nets composés "NET1 + NET2") */
   busNetFlight:function(netName){
     if(!netName) return {net:"", len:0, tflight:0, psmm:6.7, capPf:0, trksCount:0, viasCount:0};

@@ -11,7 +11,7 @@ function docObj(){
   return {format:"pcbedit-1",cu:S.cu,cuL:S.cuL,stack:S.stack,show:S.show,
           board:S.board,rule:S.rule,
           classes:S.classes,netClass:S.netClass,netClassAuto:S.netClassAuto,
-          dpPairs:S.dpPairs,dpRules:S.dpRules,dpSchema:S.dpSchema,
+          dpPairs:S.dpPairs,dpRules:S.dpRules,dpSchema:S.dpSchema,netBruyants:S.netBruyants||[],
           origin:S.origin,fabOrigin:S.fabOrigin,
           fps:S.fps,tracks:S.tracks,vias:S.vias,zones:S.zones,cuts:S.cuts,
           holes:S.holes||[],
@@ -577,6 +577,9 @@ function normDoc(d){
     // paires déjà proposées par le schéma (voir autoPairs) : de simples clés « p|n »
     out.dpSchema=(Array.isArray(src.dpSchema)?src.dpSchema:[])
       .filter(k=>typeof k==="string").map(k=>k.slice(0,200)).slice(0,5000);
+    // nœuds de découpage venus du schéma : de simples noms de nets
+    out.netBruyants=(Array.isArray(src.netBruyants)?src.netBruyants:[])
+      .filter(k=>typeof k==="string").map(dNet).slice(0,5000);
   }
 
   /* --- contenu de la carte --- */
@@ -630,6 +633,7 @@ function loadDoc(d,keepView){
   }
   S.netClassAuto=d.netClassAuto||{};
   S.dpPairs=d.dpPairs;S.dpRules=d.dpRules;S.dpSchema=d.dpSchema;
+  S.netBruyants=d.netBruyants||[];
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
   S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];
   S.active=d.active;S.pair=[0,S.cu-1];

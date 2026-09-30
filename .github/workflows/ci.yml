@@ -53,6 +53,9 @@ jobs:
       - name: Reconnaissance de motifs schématiques — banc d'essai
         run: python python/test/banc-patterns.py
 
+      - name: Vérification de la carte — banc d'essai
+        run: python python/test/banc-analyse-carte.py
+
       - name: Routes du serveur et sécurités — banc d'essai
         run: python python/test/banc-serveur-routes.py
 

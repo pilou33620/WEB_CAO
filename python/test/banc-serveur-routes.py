@@ -87,6 +87,28 @@ def test_routes():
         assert data["total_motifs"] >= 1
         print("[PASS] POST /api/schema/patterns (total motifs: %d)" % data["total_motifs"])
 
+        # 4b. /api/analyse-carte : la piste reliée à rien sort en critique
+        # (orphelin), son coude à 90° en vigilance ; un document d'un autre
+        # format est refusé en clair (422)
+        conn.request("GET", "/api/analyse-carte")
+        res = conn.getresponse()
+        assert res.status == 200 and json.loads(res.read().decode("utf-8")).get("dispo") is True
+        doc = {"format": "cao-analyse-carte-1", "unite_mm": 1,
+               "pistes": [{"c": "Top", "n": "CLK", "w": 0.2, "p": [0, 0, 10, 0, 10, 10]}]}
+        conn.request("POST", "/api/analyse-carte", body=json.dumps(doc).encode("utf-8"),
+                     headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 200
+        data = json.loads(res.read().decode("utf-8"))
+        assert [k["regle"] for k in data["constats"]] == ["orphelin", "angle_droit"], data
+        assert data["compte"]["critique"] == 1 and data["compte"]["vigilance"] == 1
+        assert data["constats"][0]["n"] == "CLK"
+        conn.request("POST", "/api/analyse-carte", body=b'{"format": "autre"}',
+                     headers={"Content-Type": "application/json"})
+        res = conn.getresponse()
+        assert res.status == 422 and "cao-analyse-carte-1" in json.loads(res.read().decode("utf-8"))["detail"]
+        print("[PASS] GET/POST /api/analyse-carte")
+
         # 5. POST /api/datasheet/telecharger
         payload_ds_inv = json.dumps({"url": "ftp://invalide", "mpn": "TEST"}).encode("utf-8")
         

@@ -673,6 +673,7 @@ const S = {
   netClassAuto:{},            // net → classe posée d'après le schéma (voir autoClass)
   dpPairs:[],                 // paires différentielles : {id,name,p,n}
   dpSchema:[],                // paires déjà proposées par le schéma, "p|n" (voir autoPairs)
+  netBruyants:[],             // nœuds de découpage venus du schéma (voir autoClass)
   dpRules:[],                 // règles de paire ; vide = la règle d'usine
   scale:5, ox:0, oy:0,
   grid:0.1, showGrid:true, flip:false, contrast:1,   // pas d'accrochage au démarrage
@@ -2067,7 +2068,9 @@ const SCH_CLASSES={
   Rapide:      {re:/rapide|fast/i,         w:0.25,clr:0.25,via:0.8,drill:0.4},
   // largeur : 50 Ω sur la couche du dessus, d'après l'empilage
   RF:          {re:/^rf\b|imp[ée]dance/i,  w:0,   clr:0.5, via:0.8,drill:0.4},
-  Analogique:  {re:/analog/i,              w:0.3, clr:0.35,via:0.8,drill:0.4}
+  Analogique:  {re:/analog/i,              w:0.3, clr:0.35,via:0.8,drill:0.4},
+  // une antenne rayonne : la vérification de la carte ne la juge qu'en fabrication
+  Antenne:     {re:/antenn/i,              w:0.3, clr:0.5, via:0.8,drill:0.4}
 };
 function rfW50(){
   try{
@@ -2121,6 +2124,15 @@ function autoClass(){
     if(nom!==cur){setNetClass(name,nom);n++;}
     if(nom)S.netClassAuto[name]=nom;else delete S.netClassAuto[name];
   }
+  /* LES NŒUDS DE DÉCOUPAGE du schéma : la vérification de la carte les juge
+     en agresseurs. Gardés dans le document, ils survivent au schéma fermé. */
+  try{
+    const b=JSON.parse(sessionStorage.getItem("web_cao_nets_bruyants")||"null");
+    if(Array.isArray(b)){
+      const neuf=b.map(String).sort();
+      if(JSON.stringify(neuf)!==JSON.stringify(S.netBruyants||[])){S.netBruyants=neuf;n++;}
+    }
+  }catch(_){}
   return n+autoPairs();
 }
 /* Les paires différentielles trouvées par le schéma — y compris par les noms
@@ -2172,6 +2184,7 @@ try{
       try{
         sessionStorage.setItem("web_cao_netclasses",JSON.stringify(d.classes));
         if(Array.isArray(d.paires))sessionStorage.setItem("web_cao_paires_diff",JSON.stringify(d.paires));
+        if(Array.isArray(d.bruyants))sessionStorage.setItem("web_cao_nets_bruyants",JSON.stringify(d.bruyants));
       }catch(_){}
       if(!S.fps.length)return;
       const avant=JSON.stringify(S.classes);

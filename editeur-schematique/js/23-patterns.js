@@ -100,11 +100,15 @@ var SCHEMA_PATTERNS = (function() {
     const classes = classesFinales(data);
     try {
       const paires = (data && data.paires_diff) || [];
+      // les nœuds de commutation d'un hacheur : ils agressent leurs voisins
+      const bruyants = Object.keys((data && data.nets_bruyants) || {});
       sessionStorage.setItem("web_cao_netclasses", JSON.stringify(classes));
       sessionStorage.setItem("web_cao_paires_diff", JSON.stringify(paires));
+      sessionStorage.setItem("web_cao_nets_bruyants", JSON.stringify(bruyants));
       if (typeof BroadcastChannel !== "undefined") {
         const bc = new BroadcastChannel("web_cao_patterns_sync");
-        bc.postMessage({ type: "netclasses_updated", classes: classes, paires: paires });
+        bc.postMessage({ type: "netclasses_updated", classes: classes, paires: paires,
+                         bruyants: bruyants });
         bc.close();
       }
     } catch (_) {}

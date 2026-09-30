@@ -1083,16 +1083,7 @@ b.simXtV,.simXtCoche b.simXtV,.simXtLect b.simXtV{
   background:#2563eb;color:#fff;
 }
 
-/* ---------- Rapport de santé de la liaison ---------- */
-.simSanteWrap{padding:6px 0}
-.simSanteHeader{
-  background:rgba(255,255,255,0.02);
-  border:1px solid var(--border2);
-  border-radius:4px;
-  padding:10px 14px;
-  margin-bottom:12px;
-}
-.simSanteBadges{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+/* ---------- Pastilles de comptage (vias du retour, vérification de la carte) ---------- */
 .simBadge{
   display:inline-block;padding:3px 8px;border-radius:12px;
   font-family:var(--mono);font-size:10.5px;font-weight:600;
@@ -1110,57 +1101,55 @@ b.simXtV,.simXtCoche b.simXtV,.simXtLect b.simXtV{
   background:rgba(239,68,68,0.15);color:#ef4444;
   border:1px solid rgba(239,68,68,0.35);
 }
-.simSanteFiltres{
-  display:flex;gap:4px;flex-wrap:wrap;
-  padding-bottom:8px;margin-bottom:10px;
-  border-bottom:1px solid var(--border2);
+
+/* ---------- Vérification de la carte ---------- */
+.simCarteWrap{padding:6px 0;font-size:11px}
+.simCarteTete{
+  border:1px solid var(--border2);border-radius:4px;
+  padding:8px 12px;margin-bottom:10px;
 }
-.simSanteCat{margin-bottom:14px}
-.simSanteCatTitre{
-  font-size:12px;font-weight:700;color:var(--txt);
-  margin-bottom:6px;display:flex;align-items:center;gap:6px;
+.simCarteBadges{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.simCarteMeta{margin-top:6px;color:var(--txt-dim)}
+.simCarteRegle,.simCarteAPart{
+  border:1px solid var(--border2);border-radius:4px;
+  padding:4px 10px;margin-bottom:8px;background:var(--panel2);
 }
-.simSanteCard{
-  background:var(--panel2);
-  border:1px solid var(--border2);
-  border-radius:4px;
-  padding:8px 12px;
-  margin-bottom:8px;
-  font-size:11px;
-  line-height:1.45;
-}
-.simSanteCard.critique{
-  border-left:3px solid var(--red);
-  background:rgba(239,68,68,0.04);
-}
-.simSanteCard.alerte{
-  border-left:3px solid var(--yellow);
-  background:rgba(245,158,11,0.04);
-}
-.simSanteCard.ok{
-  border-left:3px solid var(--blue);
-  background:rgba(73,192,122,0.03);
-}
-.simSanteCardHead{
-  display:flex;align-items:baseline;justify-content:space-between;
-  margin-bottom:4px;gap:8px;
-}
-.simSanteCardHead b{font-size:12px}
-.simSanteTag{
+.simCarteAPart{border-style:dashed}
+.simCarteRegle summary,.simCarteAPart summary{cursor:pointer;padding:3px 0}
+.simCartePourquoi{color:var(--txt-dim);margin:2px 0 6px;line-height:1.45}
+.simCarteTag{
   font-family:var(--mono);font-size:9px;font-weight:700;
   padding:1px 5px;border-radius:2px;letter-spacing:0.04em;
 }
-.simSanteTag.critique{background:var(--red);color:#fff}
-.simSanteTag.alerte{background:var(--yellow);color:#000}
-.simSanteTag.ok{background:#22c55e;color:#000}
-.simSanteLigne{margin-bottom:3px;color:var(--txt-dim)}
-.simSanteLigne b{color:var(--txt)}
-.simSanteReco{
-  margin-top:5px;padding:4px 8px;border-radius:3px;
-  background:rgba(255,255,255,0.04);border:1px dashed var(--border2);
-  color:#67e8f9;font-size:11px;
+.simCarteTag.critique{background:var(--red);color:#fff}
+.simCarteTag.vigilance{background:var(--yellow);color:#000}
+.simCarteTag.info{background:var(--border2);color:var(--txt)}
+.simCarteNet{margin:6px 0 2px;color:var(--txt-dim)}
+.simCarteNet b{color:var(--txt)}
+.simCarteClasse{font-size:9.5px;padding:0 4px;border-radius:2px;background:var(--border2);color:var(--txt)}
+.simCarteLigne{
+  display:block;width:100%;text-align:left;
+  font-family:var(--mono);font-size:10.5px;color:var(--txt);
+  background:none;border:0;border-radius:3px;padding:2px 6px;cursor:pointer;
 }
-.simSanteReco b{color:#a5f3fc}
+.simCarteLigne:hover{background:rgba(255,255,255,0.05)}
+.simCarteLigne.on{background:rgba(138,240,255,0.12);outline:1px solid rgba(138,240,255,0.4)}
+.simCarteNoms{font-family:var(--mono);font-size:10.5px;line-height:1.5;padding-bottom:4px}
+.simCarteLigne.critique{border-left:2px solid var(--red)}
+.simCarteLigne.vigilance{border-left:2px solid var(--yellow)}
+.simCarteFs{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 3px 12px}
+.simCarteF{font-size:9.5px;padding:0 5px;border-radius:2px;border:1px solid var(--border2);color:var(--txt-dim)}
+.simCarteF.vigilance{border-color:var(--yellow);color:var(--yellow)}
+.simCarteF.critique{border-color:var(--red);color:var(--red)}
+/* Accepter un constat (dérogation) : discret tant qu'on ne le survole pas. */
+.simCarteOk{display:inline-block;width:14px;margin-right:4px;text-align:center;
+  border-radius:2px;color:var(--txt-dim);opacity:.45;cursor:pointer}
+.simCarteLigne:hover .simCarteOk{opacity:1}
+.simCarteOk:hover{background:var(--border2);color:var(--txt)}
+/* Absent de la révision de référence. */
+.simCarteNeuf{font-size:9px;padding:0 4px;margin-right:4px;border-radius:2px;
+  background:var(--blue);color:#fff}
+.simCarteLien{color:var(--blue);cursor:pointer;text-decoration:underline}
 
 /* ---------- Simulateur de Bus Synchrone (Timing Closure) ---------- */
 .simBusWrap{padding:6px 0}
