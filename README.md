@@ -46,8 +46,8 @@ python web_CAO.py
 
 > [!TIP]
 > **Sous Windows** : un double-clic sur `web_CAO.py` (ou sur `demarrer_WEB_CAO.cmd`, qui garde la fenêtre ouverte si Python échoue à démarrer) ouvre la console et le navigateur à la bonne adresse. Le double-clic démarre **en mode local**, dossiers de projet compris : c'est le seul mode où l'outil est entier.
-> **Sur réseau local / tablette** : lancé **depuis un terminal**, le serveur écoute sur tout le réseau et affiche l'adresse IP à ouvrir sur la tablette. Les dossiers de projet restent refusés dans ce mode, la bibliothèque centrale passe en **lecture seule** (catalogue, empreintes et symboles se lisent, rien ne s'écrit ni ne se déplace) et la clé IA locale n'est pas partagée : un accès disque sans mot de passe ne s'ouvre pas à un réseau.
-> **Si le port est refusé** (`WinError 10013` sur certains postes d'entreprise) : le serveur prend le premier port libre de 8001 à 8020. L'adresse reste stable d'un lancement à l'autre, ce qui préserve réglages, profils et projets récents (rangés par origine dans le navigateur).
+> **Sur réseau local / tablette** : lancé **depuis un terminal**, le serveur écoute sur tout le réseau et affiche l'adresse IP à ouvrir sur la tablette. Les dossiers de projet restent refusés dans ce mode (sauf `--projets-reseau`, voir plus bas), la bibliothèque centrale passe en **lecture seule** (catalogue, empreintes et symboles se lisent, rien ne s'écrit ni ne se déplace) et la clé IA locale n'est pas partagée : un accès disque sans mot de passe ne s'ouvre pas à un réseau.
+> **Si le port est refusé** (`WinError 10013` sur certains postes d'entreprise) : le serveur prend le premier port libre de 8001 à 8020. L'adresse reste stable d'un lancement à l'autre, ce qui préserve réglages et profils (rangés par origine dans le navigateur).
 > **Mises à jour** : au démarrage, le serveur vérifie le dépôt GitHub, applique la mise à jour et redémarre de lui-même (`--sans-maj` pour s'en passer).
 
 ### 3. Sur iPad (avec Pyto)
@@ -112,6 +112,7 @@ Le serveur détecte l'absence d'affichage et n'ouvre pas de navigateur ; connect
 - **Import direct JLCPCB / LCSC** avec prévisualisation et respect strict des 39 colonnes.
 - **Assistant IA de bibliothèque** pour compléter une fiche composant.
 - **Bibliothèque centrale configurable** (page d'accueil ou `--lib`) : un dossier local, réseau ou synchronisé (Google Drive…), initialisable avec les composants par défaut ; arborescence `empreinte/`, `symbole/`, `simulation/`.
+- **Une seule LIB** : le dépôt WEB_CAO n'en garde plus de copie. Par défaut, `LIB/` à côté de l'outil si elle existe, sinon `../PROJETS/LIB_CAO`, celle du dépôt [WEB_SUITE_PROJETS](https://github.com/pilou33620/WEB_SUITE_PROJETS) que [WEB·SUITE](https://github.com/pilou33620/WEB_SUITE) synchronise avec GitHub. Lancé seul ou depuis WEB·SUITE, WEB_CAO trouve donc la même. Les empreintes PCB y sont lues et écrites, un `.json` par empreinte (`lib_empreinte_pcb/`) ; celles de l'ancien stockage du navigateur y sont reprises une fois.
 
 ## 🔎 Recherche de composants
 
@@ -122,6 +123,7 @@ Stocks et prix réels JLCPCB via la passerelle MCP [pcbparts.dev](https://pcbpar
 - Import XML, ZIP ou CVG ; traduction en un modèle JSON qui se rouvre ensuite **sans serveur**.
 - Affichage couche par couche, empilage, perçages, netlist et composants ; retournement de carte (`B`).
 - **Le même panneau de simulation SI/PI que l'éditeur PCB**, directement sur la carte du fabricant.
+- **Mesure de distance** (`M`, bouton 📏) : un clic au départ, un clic à l'arrivée, accroche au centre des pastilles et perçages (entraxe de vias).
 - La carte traduite rejoint le projet (`<projet>-IPC.json`).
 
 ---
@@ -185,7 +187,9 @@ Volet présent dans le schéma, le PCB, la visionneuse et Gestion LIB, branché 
 [ Recherche Composants ]  [ Gestion LIB ]  <==== Navigation sans perte (sessionStorage) ====> [ Visionneuse IPC-2581 ]
 ```
 
-- **Projets** : un nom commun aux outils (`carte PIR-SCH`, `-PCB`, `-IPC`), liste des projets récents, et un **dossier de projet sur disque** (`projet.cao.json` + documents + `datasheets/`) accessible via le serveur ou, sans serveur, via le sélecteur de dossier du navigateur (Chrome/Edge).
+- **Projets** : un nom commun aux outils (`carte PIR-SCH`, `-PCB`, `-IPC`) et un **dossier de projet sur disque** (`projet.cao.json` + documents + `datasheets/`) accessible via le serveur ou, sans serveur, via le sélecteur de dossier du navigateur (Chrome/Edge).
+- **Le disque fait foi** : l'accueil liste les projets trouvés dans les racines `--projets`, un clic les ouvre. Plus de liste de « récents » ni de sauvegarde automatique du schéma dans le navigateur (l'ancienne est effacée) ; un projet sans dossier est refermé au chargement.
+- **Unités** : changer l'unité d'un champ (fréquence, temps de montée, amplitude, bornes DC, règles de carte) garde le nombre écrit et le relit dans la nouvelle unité, comme une saisie : `868` passe de MHz à GHz sans être converti.
 - **Cross-probing Schéma ↔ PCB** : saut direct avec **phare** sur l'empreinte ciblée ; avec deux onglets côte à côte, la touche **`L`** synchronise la sélection (`BroadcastChannel`).
 - **Mémoire de session** : le travail non enregistré suit l'utilisateur d'un outil à l'autre (`sessionStorage`).
 - **Profils utilisateur** (`👤`, `profils/<nom>.json`) : panneaux dockables/flottants, grille, contraste, préférences.
@@ -208,7 +212,8 @@ Un seul fichier, bibliothèque standard Python. Chaque module de calcul est impo
 | `--sans-maj` | Pas de vérification des mises à jour GitHub |
 | `--dossier DIR` | Dossier servi (utile sous Pyto) |
 | `--projets DIR` | Racine(s) des dossiers de projet, répétable. Un chemin **complet** tapé hors de ces racines n'est accepté qu'en écoute locale, pour ce projet seulement : la liste des racines ne s'étend jamais depuis le navigateur |
-| `--lib DIR` | Dossier de la bibliothèque centrale (en lecture seule si le serveur écoute sur le réseau) |
+| `--projets-reseau` | En écoute réseau, ouvre quand même les projets (sous les racines `--projets` seulement) et l'écriture dans la LIB active. Restent locaux : chemin hors racines, choix du dossier de LIB, clé IA, datasheets. Sans mot de passe : réseau de confiance uniquement (WEB·SUITE le passe en `--reseau`) |
+| `--lib DIR` | Dossier de la bibliothèque centrale (défaut : `LIB/` à côté de l'outil, sinon `../PROJETS/LIB_CAO`) ; en lecture seule si le serveur écoute sur le réseau sans `--projets-reseau` |
 
 **Routes** : `/api/tools`, `/api/tool` (passerelle MCP) · `/api/ipc2581` · `/api/simulation`, `/api/simulation-dc`, `/api/crosstalk` · `/api/pcb/score-placement`, `/api/schema/patterns` · `/api/projets`, `/api/projet`, `/api/projet/doc` · `/api/profils`, `/api/profil` · `/api/lib/config`, `/api/lib/composants`, `/api/lib/fichiers`, `/api/lib/fichier` · `/api/datasheet/telecharger`, `/api/datasheet/ouvrir` · `/api/ia/cle`. Protection anti-traversée de chemins sur toutes les routes disque.
 
@@ -231,7 +236,7 @@ WEB_CAO/
 ├── commun/                        Code partagé entre les outils
 │   ├── workspace.js / .css        Panneaux dockables et flottants
 │   ├── session.js / .css          Travail en cours entre outils (sessionStorage)
-│   ├── projet.js, projet-disque.js  Nom de projet, récents, dossier sur disque
+│   ├── projet.js, projet-disque.js  Nom de projet, dossier sur disque
 │   ├── profils.js / .css          Préférences utilisateur
 │   ├── reperage.js / .css         Recherche (Ctrl+F) et mesure de cotes (K)
 │   ├── tactile.js / .css          Mode tactile et barre d'actions
@@ -255,7 +260,7 @@ WEB_CAO/
 │   ├── lier_modeles_murata.py, standardiser_catalogue.py, extraire_bibliotheques.py   Outils catalogue
 │   └── test/                      Bancs d'essai Python
 │
-├── LIB/                           Bibliothèque par défaut
+├── LIB/                           Facultatif, ignoré par git : sinon ../PROJETS/LIB_CAO (WEB_SUITE_PROJETS)
 │   ├── LIB_composants.csv         Catalogue de composants
 │   ├── lib_empreinte_pcb/         96 empreintes PCB (.json)
 │   ├── lib_empreinte_schematique/ 39 symboles (.json)
@@ -293,7 +298,7 @@ Sans ces paquets, les cinq outils fonctionnent ; seules les simulations numériq
 
 ## 🧪 Bancs d'essai & validation
 
-Tous les bancs tournent en intégration continue (GitHub Actions, `.github/workflows/ci.yml`) et en local avec Node.js et Python :
+Tous les bancs tournent en intégration continue (GitHub Actions, `.github/workflows/ci.yml`) et en local avec Node.js et Python. Les bancs lisent la LIB à son emplacement par défaut (`python/test/lib_essai.py`, donc `../PROJETS/LIB_CAO` : la CI clone WEB_SUITE_PROJETS) ; ceux qui écrivent travaillent sur une copie jetable :
 
 | Composant testé | Commande | Couverture |
 | :--- | :--- | :--- |

@@ -355,6 +355,13 @@ def design_en_dict(design: IPCDesign, fichier: str = "") -> dict:
 
     padstacks = {}
     for nom, pdef in design.padstacks.items():
+        # Un padstack « inline » nait d'un <Pad> lu dans un <LayerFeature> : sa
+        # couche est une vraie couche de features, meme si elle ne porte que des
+        # pastilles (pate, masque). Absente de la table, la visionneuse prenait
+        # la pastille pour un « ALL » et la posait sur tous les cuivres.
+        if nom.startswith("inline_pad_"):
+            for p in pdef.pads:
+                couches.rang(p.layer_ref)
         padstacks[nom] = {
             "trou": _r(pdef.hole_diameter),
             "pad": _r(pdef.pad_diameter),

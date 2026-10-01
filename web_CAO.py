@@ -92,11 +92,11 @@
 # Date: 2026-09-13
 # Explication: configuration dynamique du dossier de la bibliotheque centrale
 #   LIB (/api/lib/config, argument --lib, persistance config_lib.json, routage
-#   transparent /LIB/..., detection Google Drive / Cloud, initialisation automatique).
+#   transparent /LIB/..., initialisation automatique).
 # Fonctions ajoutees/modifiees :
 # - LIB_CONFIG_FICHIER, DOSSIER_LIB_ACTIF, DOSSIER_LIB_IMPOSE
 # - chemin_config_lib, charger_config_lib, enregistrer_config_lib
-# - dossier_lib, detecter_dossiers_cloud, initialiser_lib_dans_dossier
+# - dossier_lib, initialiser_lib_dans_dossier
 # - statistiques_lib, definir_dossier_lib
 # - CustomHandler.HIDDEN, CustomHandler.translate_path
 # - CustomHandler._lib_config_lire, _lib_config_ecrire
@@ -770,51 +770,6 @@ def chemin_lib_fichier(genre, nom_brut, creer=False):
     return os.path.join(rep, nom)
 
 
-def detecter_dossiers_cloud():
-    """Detecte les dossiers potentiels de Google Drive / Cloud sur la machine."""
-    suggestions = []
-    vues = set()
-
-    def ajouter(chemin, label):
-        if chemin and os.path.exists(chemin):
-            vrai = os.path.realpath(chemin)
-            if vrai not in vues:
-                vues.add(vrai)
-                suggestions.append({"label": label, "chemin": os.path.abspath(chemin)})
-
-    if sys.platform == "win32":
-        try:
-            import string
-            from ctypes import windll
-            bitmask = windll.kernel32.GetLogicalDrives()
-            for letter in string.ascii_uppercase:
-                if bitmask & 1:
-                    drive = letter + ":\\"
-                    for sous in ("Mon Drive", "My Drive"):
-                        d = os.path.join(drive, sous)
-                        if os.path.exists(d):
-                            ajouter(os.path.join(d, "CAO_LIB"), f"Google Drive ({letter}:\\{sous}\\CAO_LIB)")
-                            ajouter(d, f"Google Drive ({letter}:\\{sous})")
-                bitmask >>= 1
-        except Exception:
-            pass
-
-    user_home = os.path.expanduser("~")
-    candidats = [
-        (os.path.join(user_home, "Google Drive"), "Google Drive (Dossier utilisateur)"),
-        (os.path.join(user_home, "Mon Drive"), "Mon Drive (Dossier utilisateur)"),
-        (os.path.join(user_home, "My Drive"), "My Drive (Dossier utilisateur)"),
-        (os.path.join(user_home, "OneDrive"), "OneDrive (Dossier utilisateur)"),
-        (os.path.join(user_home, "Dropbox"), "Dropbox (Dossier utilisateur)"),
-    ]
-    for cand, lbl in candidats:
-        if os.path.exists(cand):
-            ajouter(os.path.join(cand, "CAO_LIB"), f"{lbl}\\CAO_LIB")
-            ajouter(cand, lbl)
-
-    return suggestions
-
-
 def initialiser_lib_dans_dossier(cible):
     """Copie la structure par defaut de la LIB (CSV, empreintes, symboles) dans cible."""
     source_lib = dossier_lib_defaut()
@@ -850,11 +805,6 @@ def initialiser_lib_dans_dossier(cible):
 def statistiques_lib(dossier):
     """Calcule les statistiques et l'etat d'un dossier de bibliotheque."""
     existe = os.path.exists(dossier) if dossier else False
-    est_gdrive = False
-    if dossier:
-        norm = dossier.lower().replace("/", "\\")
-        if "google drive" in norm or "mon drive" in norm or "my drive" in norm or norm.startswith("g:\\"):
-            est_gdrive = True
 
     stats = {
         "composants": 0,
@@ -886,7 +836,6 @@ def statistiques_lib(dossier):
 
     return {
         "existe": existe,
-        "google_drive": est_gdrive,
         "statistiques": stats
     }
 
@@ -916,9 +865,7 @@ def definir_dossier_lib(chemin_brut, initialiser=True, persister=True):
         }
 
     if chemin.lower().startswith(("http://", "https://", "www.")):
-        raise ErreurLib(400, "Un lien web (URL) ne permet pas d'enregistrer vos fichiers sur le disque. "
-                             "Pour synchroniser avec Google Drive, utilisez le dossier local synchronisé par "
-                             "« Google Drive pour ordinateur » (ex: G:\\Mon Drive\\...).")
+        raise ErreurLib(400, "Un lien web (URL) n'est pas un dossier : indiquez un chemin sur le disque.")
 
     cible = os.path.abspath(os.path.expanduser(chemin))
     # /LIB/ sert ce dossier en statique : la racine d'un disque, ce serait
@@ -1632,7 +1579,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def _chemin_lib(self, path):
         """/LIB/... -> fichier du dossier de bibliotheque actif, ou None.
 
-        Le dossier actif peut vivre hors du depot (--lib, Google Drive) : sans
+        Le dossier actif peut vivre hors du depot (--lib) : sans
         ce detour, /LIB/ servait toujours le LIB/ du depot. Hors du depot, il
         n'est servi qu'en ecoute locale -- meme regle que les dossiers de
         projet : un chemin choisi par /api/lib/config ne s'ouvre pas au reseau.
@@ -2382,7 +2329,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         return {"ok": True, "supprime": nom}
 
     def _lib_config_lire(self):
-        """GET /api/lib/config : etat, statistiques, chemin actif et suggestions cloud."""
+        """GET /api/lib/config : etat, statistiques et chemin actif."""
         dossier = dossier_lib()
         defaut = dossier_lib_defaut()
         est_defaut = os.path.realpath(dossier) == os.path.realpath(defaut) if os.path.exists(dossier) and os.path.exists(defaut) else (dossier == defaut)
@@ -2392,11 +2339,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             "defaut": defaut,
             "est_defaut": est_defaut,
             "existe": info["existe"],
-            "google_drive": info["google_drive"],
             "statistiques": info["statistiques"],
-            # les dossiers du poste ne se decrivent pas au reseau, et le choix
-            # d'un autre dossier y est de toute facon refuse (_lib_garde)
-            "suggestions_cloud": detecter_dossiers_cloud() if PROJETS_OUVERT else [],
             "modifiable": PROJETS_OUVERT
         }
 
@@ -2411,7 +2354,6 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         res = definir_dossier_lib(chemin, initialiser=initialiser)
         info = statistiques_lib(res["chemin"])
         res["statistiques"] = info["statistiques"]
-        res["google_drive"] = info["google_drive"]
         return res
 
     # -- import IPC-2581 ---------------------------------------------------

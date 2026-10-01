@@ -732,6 +732,33 @@ def zip_sans_ipc():
 T(u"une archive sans IPC-2581 est refusee en le disant", zip_sans_ipc)
 
 
+# -- Une couche qui ne porte que des pastilles --------------------------------
+def couche_de_pastilles_seules():
+    """La pate d'un connecteur pose dessous n'a ni piste ni texte : absente de
+    la table, la visionneuse prenait ses pastilles pour un « ALL » et les
+    peignait sur tous les cuivres, dessus compris."""
+    pate = CARTE.replace(
+        u"    <LayerFeature layerRef=\"Hole1-2\">",
+        u"""    <LayerFeature layerRef="MetalMask-B">
+     <Set geometry="c100">
+      <Pad>
+       <Location x="10" y="10"/>
+       <StandardPrimitiveRef id="c100"/>
+      </Pad>
+     </Set>
+    </LayerFeature>
+    <LayerFeature layerRef="Hole1-2">""", 1)
+    vrai(pate != CARTE, u"la carte variante n'a pas ete construite")
+    m2 = ipc2581_json.design_en_dict(
+        ipc2581_json.charger_octets(pate.encode("utf-8"), "pate.xml"), "pate.xml")
+    vrai("MetalMask-B" in m2["couches"],
+         u"la couche de pate manque a la table : %r" % m2["couches"])
+
+
+T(u"une couche qui ne porte que des pastilles entre dans la table",
+  couche_de_pastilles_seules)
+
+
 # -- Refus : ce qui doit echouer, et proprement -------------------------------
 def refus(data, quoi):
     try:

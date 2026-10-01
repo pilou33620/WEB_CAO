@@ -104,7 +104,6 @@
     padding: 2px 7px; border-radius: 4px; font-size: 11px;
     font-family: var(--mono); font-weight: 500;
   }
-  .badge-gdrive { background: rgba(66, 133, 244, 0.2); color: #8ab4f8; border: 1px solid rgba(66, 133, 244, 0.4); }
   .badge-defaut { background: rgba(242, 199, 68, 0.15); color: var(--yellow); border: 1px solid rgba(242, 199, 68, 0.3); }
   .badge-local { background: rgba(52, 168, 83, 0.2); color: #81c995; border: 1px solid rgba(52, 168, 83, 0.4); }
   .badge-stat {
@@ -113,12 +112,6 @@
     font-family: var(--mono);
   }
   .badge-stat b { color: var(--txt); }
-  .btn-cloud-sugg {
-    background: var(--panel); color: #8ab4f8; border: 1px solid var(--border2);
-    border-radius: 4px; padding: 4px 9px; font-size: 11px; cursor: pointer;
-    font-family: var(--ui); transition: all 0.15s;
-  }
-  .btn-cloud-sugg:hover { border-color: var(--blue); background: #1c222c; }
   .ulist { display: flex; flex-wrap: wrap; gap: 8px; }
   .ulist button {
     display: flex; align-items: center; gap: 7px;
@@ -590,7 +583,7 @@
           <div class="pdos" style="margin-top:10px; padding-top:10px;">
             <div class="urow">
               <input id="libChem" maxlength="400" autocomplete="off"
-                     placeholder="Chemin du dossier LIB… (ex. G:\Mon Drive\CAO\LIB ou D:\CAO\LIB)"
+                     placeholder="Chemin du dossier LIB… (ex. D:\CAO\LIB)"
                      aria-label="Chemin du dossier de la bibliothèque">
               <button id="libAppliquer" class="fort">Appliquer ce dossier</button>
               <button id="libParcourir" title="Parcourir les dossiers de cet ordinateur">📁 Parcourir…</button>
@@ -604,12 +597,7 @@
               </label>
             </div>
 
-            <div id="libCloudList" class="ulist" style="margin-top:10px;" hidden></div>
             <div class="pcur" id="libMsg" style="margin-top:8px;"></div>
-
-            <div class="uinfo" style="margin-top:10px;">
-              💡 <b>Google Drive &amp; Cloud :</b> Pour utiliser votre bibliothèque sur Google Drive et y accéder depuis tous vos ordinateurs sans transporter de clé USB, installez l'application <em>Google Drive pour ordinateur</em>. Elle associe votre Drive à un lecteur ou dossier local (ex: <code>G:\Mon Drive\…</code> ou <code>C:\Users\…\Google Drive</code>). Renseignez ce chemin ici : tous vos composants et empreintes seront automatiquement sauvegardés et synchronisés dans votre Cloud !
-            </div>
           </div>
         </div>
 
@@ -1161,7 +1149,7 @@ uRendre();
 
 /* ==========================================================================
    Bibliothèque centrale (LIB)
-   Permet d'indiquer le chemin du dossier de la LIB (local ou Google Drive)
+   Permet d'indiquer le chemin du dossier de la LIB (local ou réseau)
    et de synchroniser les composants et empreintes.
    ========================================================================== */
 let LIB_CONFIG = null;
@@ -1182,7 +1170,6 @@ function libRendreEtat(cfg){
   LIB_CONFIG = cfg;
   const elCur = document.getElementById("libCur");
   const elBadge = document.getElementById("libBadge");
-  const elCloud = document.getElementById("libCloudList");
   if(!elCur) return;
 
   if(!cfg){
@@ -1193,9 +1180,7 @@ function libRendreEtat(cfg){
 
   // Badge d'état
   if(elBadge){
-    if(cfg.google_drive){
-      elBadge.innerHTML = '<span class="badge-lib badge-gdrive">☁️ Google Drive</span>';
-    } else if(cfg.est_defaut){
+    if(cfg.est_defaut){
       elBadge.innerHTML = '<span class="badge-lib badge-defaut">Dépôt (par défaut)</span>';
     } else {
       elBadge.innerHTML = '<span class="badge-lib badge-local">Dossier personnalisé</span>';
@@ -1235,31 +1220,6 @@ function libRendreEtat(cfg){
   const champ = document.getElementById("libChem");
   if(champ && !champ.value.trim() && !cfg.est_defaut){
     champ.value = cfg.chemin;
-  }
-
-  // Affichage des raccourcis de dossiers cloud détectés
-  if(elCloud){
-    if(Array.isArray(cfg.suggestions_cloud) && cfg.suggestions_cloud.length > 0){
-      elCloud.innerHTML = '<span style="font-size:11px; color:var(--txt-dim); align-self:center;">Cloud détecté :</span> ' +
-        cfg.suggestions_cloud.map(function(s){
-          return '<button type="button" class="btn-cloud-sugg" data-chemin="' + libEsc(s.chemin) + '" title="' + libEsc(s.chemin) + '">' +
-            '☁️ ' + libEsc(s.label) +
-            '</button>';
-        }).join("");
-      elCloud.querySelectorAll(".btn-cloud-sugg").forEach(function(b){
-        b.onclick = function(){
-          if(champ){
-            champ.value = b.dataset.chemin;
-            champ.focus();
-            libMsg("Chemin « " + libEsc(b.dataset.chemin) + " » prêt. Cliquez sur « Appliquer ce dossier ».");
-          }
-        };
-      });
-      elCloud.hidden = false;
-    } else {
-      elCloud.innerHTML = "";
-      elCloud.hidden = true;
-    }
   }
 }
 
@@ -1306,14 +1266,14 @@ async function libParcourir(){
           if(!champ.value || champ.value === handle.name){
             champ.value = handle.name;
           }
-          libMsg("Dossier « " + handle.name + " » sélectionné. S'il s'agit d'un lecteur ou dossier local, vous pouvez aussi taper ou coller son chemin absolu (ex: G:\\Mon Drive\\...), puis cliquer sur « Appliquer ».");
+          libMsg("Dossier « " + handle.name + " » sélectionné. S'il s'agit d'un lecteur ou dossier local, vous pouvez aussi taper ou coller son chemin absolu (ex: D:\\CAO\\LIB), puis cliquer sur « Appliquer ».");
         }
       }
     } catch(err) {
       if(err.name !== "AbortError") libMsg(err.message, true);
     }
   } else {
-    alert("Sélection par explorateur non supportée par ce navigateur. Vous pouvez saisir ou coller directement le chemin complet du dossier (ex: G:\\Mon Drive\\CAO\\LIB).");
+    alert("Sélection par explorateur non supportée par ce navigateur. Vous pouvez saisir ou coller directement le chemin complet du dossier (ex: D:\\CAO\\LIB).");
   }
 }
 
@@ -1325,10 +1285,6 @@ if(bLibAppliquer){
     const initVide = document.getElementById("libInitVide") ? document.getElementById("libInitVide").checked : true;
     if(!val){
       if(champ) champ.focus();
-      return;
-    }
-    if(/^https?:\/\//i.test(val) || /^www\./i.test(val)){
-      libMsg("⚠️ Un lien web de navigateur ne permet pas d'enregistrer des composants et empreintes sur le disque. Pour synchroniser avec Google Drive, installez « Google Drive pour ordinateur » et indiquez le chemin du dossier synchronisé (ex: G:\\Mon Drive\\... ou C:\\Users\\...\\Google Drive).", true);
       return;
     }
     libAppliquer(val, initVide);
