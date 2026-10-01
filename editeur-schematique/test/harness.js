@@ -97,7 +97,7 @@ const EXPOSE=[
   "RP_SCH","rpNetFrais",
   /* session d'onglet commune (commun/session.js) */
   "sessBrancher","sessEnregistrer","sessLire","sessEcrire","sessEffacer",
-  "sessTient","sessUrl","sessQuitte","sessionSchema","restoreBackup","clearBackup",
+  "sessTient","sessUrl","sessQuitte","sessionSchema","autosave","clearBackup",
   "sessCibleEcrire","sessCiblePrendre","schSonde","schSonderCible","sessAller",
   "sessCanalDispo","sessMontrerAilleurs","sessEcouterProbe","SESS_CANAL",
   "schMontrerAilleurs","schCibleTrouver","schCibleAller","sessCibleAuChargement",
@@ -986,26 +986,20 @@ T("session : le schéma repart dans l'état où il a été laissé",()=>{
     "fermer l'onglet ne dirait rien d'un schéma jamais enregistré");
   if(S.hist.length)throw new Error("l'historique de la démonstration n'a plus de sens");
 });
-T("session : elle passe avant la sauvegarde automatique",()=>{
+T("navigateur : aucune copie du schéma n'y est gardée",()=>{
   dom.session.clear();dom.storage.clear();
-  /* deux filets tendus en même temps : celui de l'onglet doit gagner, c'est le
-     plus récent et le seul qui n'ait rien à demander à l'utilisateur */
-  sheet([C("resistor",1,1,{ref:"R9",value:"session"})],[]);
+  /* une copie dans le navigateur finissait par concurrencer, en plus vieille,
+     le fichier du projet : le dossier fait foi, l'onglet seul garde la session */
+  sheet([C("resistor",1,1,{ref:"R9",value:"en cours"})],[]);
   S.dirty=true;
-  sessEnregistrer();
-  dom.storage.setItem("schemedit.autosave",JSON.stringify({t:Date.now(),
-    doc:{pages:[{name:"Sauvegarde",comps:[C("resistor",1,1,{ref:"R8",value:"secours"})],
-                 wires:[]}],page:0}}));
-  sheet([],[]);
-  if(!sessionSchema())throw new Error("la session devait être reprise");
-  if(S.comps[0].value!=="session")
-    throw new Error("c'est la sauvegarde de secours qui a été reprise");
-  /* sans session, le filet de secours reprend son rôle (confirm() dit oui) */
-  dom.session.clear();
-  sheet([],[]);
-  if(sessionSchema())throw new Error("plus de session : rien à reprendre");
-  if(!restoreBackup())throw new Error("la sauvegarde automatique devait servir");
-  if(S.comps[0].value!=="secours")throw new Error("mauvais document repris");
+  autosave();
+  if(dom.storage.getItem("schemedit.autosave"))
+    throw new Error("autosave() ne doit plus rien écrire dans le navigateur");
+  /* l'ancienne sauvegarde d'une version précédente est effacée, pas reprise */
+  dom.storage.setItem("schemedit.autosave",JSON.stringify({t:1,doc:{pages:[]}}));
+  clearBackup();
+  if(dom.storage.getItem("schemedit.autosave"))throw new Error("ancienne sauvegarde restée");
+  S.dirty=false;
   dom.storage.clear();
 });
 T("session : un état illisible ou hostile ne casse pas le démarrage",()=>{

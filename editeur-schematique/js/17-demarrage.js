@@ -35,18 +35,17 @@ resize();
 fit();
 refreshPanels();
 S.dirty=false;
-/* Deux filets, dans cet ordre. La session d'onglet d'abord : elle vient du
-   même travail, poursuivi il y a quelques secondes dans un autre outil, et
-   se reprend sans rien demander. À défaut seulement, la sauvegarde
-   automatique du navigateur, qui elle peut dater et demande confirmation. */
+/* La session d'onglet d'abord : elle vient du même travail, poursuivi il y a
+   quelques secondes dans un autre outil, et se reprend sans rien demander.
+   L'ancienne sauvegarde automatique du navigateur, elle, n'est plus reprise :
+   elle pouvait dater, et ressusciter une version que le dossier a dépassée. */
 const SCH_REPRISE=sessionSchema();
-if(!SCH_REPRISE)
-  restoreBackup();          // propose de reprendre la session précédente si elle existe
+clearBackup();
 
-/* Troisième filet, et le plus solide : le dossier du projet. Les deux premiers
-   sont des filets de rattrapage (l'onglet, le navigateur) ; celui-ci est un
-   vrai fichier sur le disque.
-   Il vient en dernier parce qu'il est le plus ancien des trois : la session
+/* Ensuite, et c'est lui qui fait foi : le dossier du projet. La session n'est
+   qu'un filet de rattrapage (l'onglet) ; celui-ci est un vrai fichier sur le
+   disque.
+   Il vient en dernier parce qu'il est le plus ancien des deux : la session
    porte le travail de la minute qui précède, le fichier celui de la dernière
    fois qu'on a enregistré. Et il ne remplace jamais un travail non enregistré.
    Le rattachement est asynchrone (projet-disque.js), d'où l'abonnement. */

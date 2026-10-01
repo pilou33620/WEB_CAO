@@ -26,7 +26,7 @@ const PCB_ECO = {
 /**
  * Récupère et normalise les composants et les équipotentielles du schéma.
  * Accepte une source explicite (texte netlist, objet doc schéma JSON) ou puise
- * dans la session active, le projet disque ou la sauvegarde automatique.
+ * dans la session active ou le projet disque.
  */
 function pcbObtenirDonneesSchema(source) {
   let schDoc = null;
@@ -51,23 +51,13 @@ function pcbObtenirDonneesSchema(source) {
 
   /* Si aucune source explicite : la netlist annoncée par l'éditeur schématique
      d'un AUTRE onglet (BroadcastChannel) passe en premier. C'est la plus
-     récente : la session de cet onglet date du dernier passage par le schéma,
-     et la sauvegarde automatique est effacée dès que le schéma est enregistré.
-     Le document complet ne l'accompagne que si la sauvegarde automatique porte
-     exactement cette netlist -- un document plus ancien ferait renaître en
-     « ajout » un composant supprimé depuis. */
+     récente : la session de cet onglet date du dernier passage par le schéma. */
   const recue = PCB_ECO.netlistRecue;
   if (!schDoc && !netlistTxt && recue && recue.txt &&
       (!recue.projet || typeof projNom !== "function" || !projNom() ||
        String(recue.projet).toLowerCase() === String(projNom()).toLowerCase())) {
     netlistTxt = recue.txt;
     sourceNom = "Schéma ouvert dans un autre onglet";
-    try {
-      const b = JSON.parse(localStorage.getItem("schemedit.autosave") || "null");
-      // comparées sans leur en-tête : la 2e ligne porte l'heure d'écriture
-      const corps = t => String(t || "").split("\n").slice(2).join("\n");
-      if (b && b.doc && corps(b.netlist) === corps(recue.txt)) schDoc = b.doc;
-    } catch (_) {}
   }
 
   // Sinon, consulter la session
@@ -90,22 +80,9 @@ function pcbObtenirDonneesSchema(source) {
     if (!sourceNom) sourceNom = "Schéma actif";
   }
 
-  // Sauvegarde automatique locale du schéma
-  if (!schDoc && !netlistTxt && typeof localStorage !== "undefined") {
-    try {
-      const raw = localStorage.getItem("schemedit.autosave") ||
-                  localStorage.getItem("cao_schema_backup") ||
-                  localStorage.getItem("schema_auto");
-      if (raw) {
-        const b = JSON.parse(raw);
-        if (b && (b.doc || b.pages)) {
-          schDoc = b.doc || b;
-          if (b.netlist) netlistTxt = b.netlist;
-          sourceNom = "Sauvegarde schéma";
-        }
-      }
-    } catch (_) {}
-  }
+  /* Pas de repli sur une copie du schéma gardée par le navigateur : elle
+     pouvait dater, et l'ECO aurait comparé la carte à une version dépassée.
+     Le schéma du dossier du projet, lui, arrive par S.schDoc (pcbSyncSchema). */
 
   // Si le document JSON contient la netlist embarquée
   if (schDoc && schDoc.netlist && !netlistTxt) {

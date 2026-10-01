@@ -120,13 +120,17 @@ function projCharger(){
     try{ brut = JSON.parse(s.getItem(PROJ_CLE) || "null"); }
     catch(_){ brut = null; }
   }
-  PROJ_ETAT = projNormaliser(brut);
+  /* Seul le nom du projet ouvert traverse les pages. Plus de liste de
+     « récents » gardée par le navigateur : elle désignait des dossiers qui
+     avaient pu bouger ou vieillir depuis. Les projets se listent sur le
+     disque (/api/projets), là où git les tient à jour. */
+  PROJ_ETAT = projNormaliser(brut && {nom:brut.nom});
   return PROJ_ETAT;
 }
 function projEnregistrer(){
   const s = projStock();
   if(!s || !PROJ_ETAT) return false;
-  try{ s.setItem(PROJ_CLE, JSON.stringify(PROJ_ETAT)); return true; }
+  try{ s.setItem(PROJ_CLE, JSON.stringify({nom:PROJ_ETAT.nom})); return true; }
   catch(_){ return false; }
 }
 

@@ -214,9 +214,13 @@ document.getElementById("fileIn").onchange=e=>{
 };
 
 /* --------------------------------------------------------------------------
-   Filet de sécurité : sauvegarde automatique locale + confirmation de sortie
+   Annonce de la netlist au PCB + confirmation de sortie
+   Plus de sauvegarde automatique dans le navigateur : une copie gardée là
+   finissait par concurrencer, en plus vieille, le fichier du projet que git
+   tient à jour. Le dossier du projet fait foi ; ne rien perdre en partant,
+   c'est la confirmation de sortie qui s'en charge.
    -------------------------------------------------------------------------- */
-const BAK="schemedit.autosave";
+const BAK="schemedit.autosave";      // ancienne sauvegarde : effacée au démarrage
 /* dernière netlist annoncée aux autres onglets : tant que le schéma reste
    « modifié », autosave() passe toutes les 4 s, et chaque annonce fait
    recalculer l'ECO complet côté PCB -- on n'annonce que ce qui a changé */
@@ -224,41 +228,16 @@ let AUTOSAVE_NL_DIFFUSEE=null;
 function autosave(){
   if(!S.dirty)return;
   try{
-    const d=JSON.parse(serialize());
     const nl=(typeof netlistText==="function")?netlistText():null;
-    if(nl)d.netlist=nl;
-    localStorage.setItem(BAK,JSON.stringify({
-      t:Date.now(),
-      doc:d,
-      netlist:nl,
-      projet:(typeof projNom==="function"?projNom():"")
-    }));
     // comparée sans son en-tête : la 2e ligne porte l'heure, toujours neuve
     const cle=nl?nl.split("\n").slice(2).join("\n"):nl;
     if(cle!==AUTOSAVE_NL_DIFFUSEE&&typeof sessDiffuserSchemaModif==="function"){
       sessDiffuserSchemaModif({netlist:nl});
       AUTOSAVE_NL_DIFFUSEE=cle;
     }
-  }catch(_){/* mode privé, quota plein, contexte restreint : on continue sans */}
+  }catch(_){/* contexte restreint : on continue sans */}
 }
 function clearBackup(){try{localStorage.removeItem(BAK);}catch(_){}}
-function restoreBackup(){
-  try{
-    const raw=localStorage.getItem(BAK);
-    if(!raw)return false;
-    const b=JSON.parse(raw);
-    if(!b||!b.doc||!Array.isArray(b.doc.pages))return false;
-    const curProj=(typeof projNom==="function"?projNom():"");
-    if(b.projet!==undefined && b.projet!==curProj)return false;
-    const when=new Date(b.t||Date.now()).toLocaleString("fr-FR");
-    if(!confirm("Une sauvegarde automatique du "+when+" a été trouvée.\n\nLa reprendre ?")){
-      clearBackup();return false;
-    }
-    loadDoc(b.doc, true);
-    S.hist.length=0;S.redo.length=0;
-    return true;
-  }catch(_){clearBackup();return false;}
-}
 setInterval(autosave,4000);
 window.addEventListener("beforeunload",e=>{
   autosave();

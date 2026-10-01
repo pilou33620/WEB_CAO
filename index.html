@@ -556,15 +556,12 @@
               </div>
             </div>
 
-            <!-- Liste des projets récents sur le support -->
-            <div style="margin-top:14px; padding-top:12px; border-top:1px dashed var(--border2);">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <span style="font-size:11px; font-family:var(--mono); color:var(--txt-dim); text-transform:uppercase; font-weight:600;">
-                  Projets récents sur le support
-                </span>
-                <span style="font-size:11px; color:var(--txt-dim);">1 clic pour rouvrir</span>
+            <!-- Projets rangés dans les racines du serveur (--projets, ex. WEB_SUITE/PROJETS/CAO) -->
+            <div id="pBlocServeur" hidden style="margin-top:14px; padding-top:12px; border-top:1px dashed var(--border2);">
+              <div style="font-size:11px; font-family:var(--mono); color:var(--txt-dim); text-transform:uppercase; font-weight:600; margin-bottom:8px;">
+                Projets du dossier des projets
               </div>
-              <div id="pListeRecents" class="p-recents-list"></div>
+              <div id="pListeServeur"></div>
             </div>
           </div>
 
@@ -1055,76 +1052,30 @@ function pRendre() {
         : '<span style="color:var(--txt-dim); font-style:italic;">absent</span>';
     }
   }
+}
 
-  // Rendu de la liste des projets récents
-  const boxRecents = document.getElementById("pListeRecents");
-  if(boxRecents) {
-    const liste = projListe();
-    if(!liste.length) {
-      boxRecents.innerHTML = '<div style="font-size:12px; color:var(--txt-dim); font-style:italic; padding:6px 0;">Aucun projet dans l\'historique récent.</div>';
-    } else {
-      boxRecents.innerHTML = liste.map(function(item) {
-        const estActif = projMemeNom(item.nom, nom);
-        const quand = uQuand(item.t);
-        const cheminDisp = item.chemin || item.nom;
-        return '<div class="p-recent-item' + (estActif ? ' on' : '') + '" data-nom="' + uEsc(item.nom) + '" data-chemin="' + uEsc(item.chemin) + '" data-mode="' + uEsc(item.mode) + '">' +
-          '<div class="p-rec-info">' +
-            '<div style="font-weight:600; font-size:13px; color:' + (estActif ? 'var(--yellow)' : 'var(--txt)') + '; display:flex; align-items:center; gap:6px;">' +
-              '<span>📁 ' + uEsc(item.nom) + '</span>' +
-              (estActif ? '<span style="font-size:10px; color:var(--yellow); font-family:var(--mono);">(en cours)</span>' : '') +
-            '</div>' +
-            '<div style="font-size:11px; font-family:var(--mono); color:var(--txt-dim);" class="truncate">' +
-              uEsc(cheminDisp) +
-            '</div>' +
-          '</div>' +
-          '<div class="p-rec-actions">' +
-            (quand ? '<span style="font-size:11px; color:var(--txt-dim); font-family:var(--mono);">' + quand + '</span>' : '') +
-            '<button type="button" class="btn-sm btn-rec-open" style="color:var(--blue); font-weight:600;">Ouvrir →</button>' +
-            '<button type="button" class="btn-sm danger btn-rec-del" title="Oublier ce projet de l\'historique">✕</button>' +
-          '</div>' +
-        '</div>';
-      }).join("");
-
-      boxRecents.querySelectorAll(".p-recent-item").forEach(function(el) {
-        const itemNom = el.dataset.nom;
-        const itemChem = el.dataset.chemin;
-        const itemMode = el.dataset.mode;
-
-        const bOpen = el.querySelector(".btn-rec-open");
-        if(bOpen) {
-          bOpen.onclick = function(e) {
-            e.stopPropagation();
-            if(itemChem && itemMode === "serveur") {
-              pDosOuvrir(itemChem);
-            } else {
-              projOuvrir(itemNom, itemChem, itemMode);
-              pRendre();
-            }
-          };
-        }
-
-        const bDel = el.querySelector(".btn-rec-del");
-        if(bDel) {
-          bDel.onclick = function(e) {
-            e.stopPropagation();
-            if(confirm("Oublier « " + itemNom + " » de l'historique récent ?\n(Les fichiers sur le disque ne sont pas supprimés)")) {
-              projOublier(itemNom);
-              pRendre();
-            }
-          };
-        }
-
-        el.onclick = function() {
-          if(itemChem && itemMode === "serveur") {
-            pDosOuvrir(itemChem);
-          } else {
-            projOuvrir(itemNom, itemChem, itemMode);
-            pRendre();
-          }
-        };
-      });
-    }
-  }
+// Les projets que le serveur trouve dans ses racines : un clic les ouvre.
+function pRendreServeur(projets) {
+  const bloc = document.getElementById("pBlocServeur");
+  const box = document.getElementById("pListeServeur");
+  if(!bloc || !box) return;
+  bloc.hidden = !projets.length;
+  box.innerHTML = projets.map(function(p, i) {
+    return '<div class="p-recent-item" data-i="' + i + '">' +
+      '<div class="p-rec-info">' +
+        '<div style="font-weight:600; font-size:13px; color:var(--txt);">📁 ' + uEsc(p.nom) + '</div>' +
+        '<div style="font-size:11px; font-family:var(--mono); color:var(--txt-dim);" class="truncate">' + uEsc(p.chemin) + '</div>' +
+      '</div>' +
+      '<div class="p-rec-actions">' +
+        '<span style="font-size:11px; color:var(--txt-dim); font-family:var(--mono);">' + (uQuand(p.t) || "") + '</span>' +
+        '<button type="button" class="btn-sm" style="color:var(--blue); font-weight:600;">Ouvrir →</button>' +
+      '</div>' +
+    '</div>';
+  }).join("");
+  box.querySelectorAll(".p-recent-item").forEach(function(el) {
+    const p = projets[+el.dataset.i];
+    el.onclick = function() { pDosOuvrir(p.chemin, p.racine); };
+  });
 }
 
 function pDosRendre() {
@@ -1136,6 +1087,7 @@ function pDosRendre() {
   projdServeurDispo().then(function(dispo) {
     if(!dispo) return;
     projdListerServeur().then(function(r) {
+      pRendreServeur(r && r.projets || []);
       if(!elSugg || !r || !r.racines) return;
       let html = '<span style="font-size:11px; color:var(--txt-dim);">Emplacements rapides :</span>';
       r.racines.forEach(function(rac) {

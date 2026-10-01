@@ -535,10 +535,21 @@ function projdReprendre(){
     });
   }).catch(function(){ return null; });
 }
+/* Un projet sans dossier n'existe que dans la mémoire du navigateur, et
+   c'est ainsi que renaissent les mauvaises versions : on le referme. Seul
+   le disque fait foi. Un dossier en attente d'autorisation, lui, est bien
+   un dossier : on le garde, l'accueil propose de le rouvrir. */
+function projdReprendreOuFermer(){
+  return projdReprendre().then(function(r){
+    if(!r && !PROJD_ATTENTE && typeof projNom === "function" && projNom()
+       && typeof projFermer === "function") projFermer();
+    return r;
+  });
+}
 try{
   if(typeof window !== "undefined" && typeof document !== "undefined"){
     if(document.readyState === "loading")
-      document.addEventListener("DOMContentLoaded", function(){ projdReprendre(); });
-    else projdReprendre();
+      document.addEventListener("DOMContentLoaded", function(){ projdReprendreOuFermer(); });
+    else projdReprendreOuFermer();
   }
 }catch(_){}

@@ -168,6 +168,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "dPads","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
   "fpLibNames","fpLibGet","fpLibPut","fpLibDel","fpLibFile","fpLibParse",
   "fpLibMerge","feOverlap","FPLIB_KEY","FPLIB_FORMAT","FE","feIsOpen","feClose",
+  "FPLIB","FPLIB_FICHIER","fpLibCharger","fpLibFichier",
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
@@ -4619,8 +4620,46 @@ T("fenêtre d'empreinte ouverte : le clavier de la carte se tait",()=>{
   if(S.fps.length!==0)throw new Error("fenêtre fermée : le clavier reprend la main");
 });
 
+function fpLibRaz(){for(const k of Object.keys(FPLIB))delete FPLIB[k];}
+/* La LIB du serveur, simulée : liste, lecture, écriture et effacement de
+   lib_empreinte_pcb/. Une entrée illisible et un ancien stockage du
+   navigateur vérifient la lecture défensive et la reprise unique. */
+TA("bibliothèque : lue dans la LIB, écrite dans la LIB, plus dans le navigateur",async()=>{
+  fpLibRaz();
+  const disque={"0402.json":{format:"pcbfp-1",name:"0402",pins:2,style:"chip",pitch:0.95,span:0.95},
+                "casse.json":{name:"",pins:"beaucoup"}};
+  const appels=[];
+  const avant=global.fetch;
+  const rep=o=>Promise.resolve({ok:true,status:200,text:()=>Promise.resolve(JSON.stringify(o))});
+  global.fetch=(url,opt)=>{
+    const m=(opt&&opt.method)||"GET";       // URL est simulé par dom-stub : lecture à la main
+    if(!String(url).startsWith("/api/lib/"))return avant(url,opt);   // profils & co : hors sujet
+    if(String(url).split("?")[0]==="/api/lib/fichiers")return rep({pcb:Object.keys(disque)});
+    const nom=decodeURIComponent((String(url).match(/nom=([^&]*)/)||[])[1]||"");
+    if(m==="GET")return rep({data:disque[nom]});
+    const corps=opt.body?JSON.parse(opt.body):{};
+    appels.push(m+" "+(corps.nom||nom));
+    if(m==="PUT")disque[corps.nom]=corps.data;else delete disque[nom];
+    return rep({ok:true});
+  };
+  localStorage.setItem(FPLIB_KEY,JSON.stringify({"DIP-8 maison":{name:"DIP-8 maison",pins:8,style:"dip"}}));
+  try{
+    if(!await fpLibCharger())throw new Error("la LIB devait se charger");
+    if(fpLibNames().join()!=="0402,DIP-8 maison")throw new Error("bibliothèque : "+fpLibNames());
+    if(appels.join()!=="PUT DIP-8 maison.json")throw new Error("reprise : "+appels);
+    if(localStorage.getItem(FPLIB_KEY))throw new Error("l'ancien stockage devait être effacé");
+    if(disque["DIP-8 maison.json"].format!=="pcbfp-1")throw new Error("format du fichier écrit");
+    /* une modification et une suppression partent aussi au serveur */
+    fpLibPut({name:"0402",pins:2,style:"chip",pitch:1,span:1});
+    fpLibDel("DIP-8 maison");
+    await new Promise(r=>setTimeout(r,0));
+    if(appels.slice(1).join()!=="PUT 0402.json,DELETE DIP-8 maison.json")
+      throw new Error("écritures : "+appels);
+    if(disque["0402.json"].pitch!==1)throw new Error("0402 non réécrite dans son fichier");
+  }finally{global.fetch=avant;fpLibRaz();localStorage.removeItem(FPLIB_KEY);}
+});
 T("bibliothèque : enregistrer, relire, appliquer",()=>{
-  localStorage.removeItem(FPLIB_KEY);
+  fpLibRaz();
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
   const src=mkFp("U1","","DIP-8",8);
   src.x=20;src.y=15;S.fps.push(src);
@@ -4649,10 +4688,10 @@ T("bibliothèque : enregistrer, relire, appliquer",()=>{
   if(fpFree(cible))throw new Error("elle devait rendre la cible au calcul");
   if(cible.style!=="chip")throw new Error("style attendu chip : "+cible.style);
   if(cible.pins<8)throw new Error("les broches câblées font plancher : "+cible.pins);
-  localStorage.removeItem(FPLIB_KEY);
+  fpLibRaz();
 });
 T("bibliothèque : lecture défensive et fusion des noms",()=>{
-  localStorage.removeItem(FPLIB_KEY);
+  fpLibRaz();
   if(!fpLibParse("ceci n'est pas du json").err)
     throw new Error("un fichier illisible doit se dire");
   if(!fpLibParse('{"format":"pcbfp-1","footprints":[]}').err)
@@ -4675,18 +4714,13 @@ T("bibliothèque : lecture défensive et fusion des noms",()=>{
   const f=fpLibFile(null);
   if(f.format!==FPLIB_FORMAT||f.footprints.length!==2)
     throw new Error("fichier d'échange : "+JSON.stringify(f).slice(0,120));
-  localStorage.removeItem(FPLIB_KEY);
+  fpLibRaz();
   const back=fpLibParse(JSON.stringify(f));
   if(back.err||back.defs.length!==2)throw new Error("le fichier ne se relit pas");
   fpLibMerge(back.defs);
   if(fpLibNames().length!==2)throw new Error("les deux empreintes devaient revenir");
-  /* un stockage pollué ne casse rien */
-  localStorage.setItem(FPLIB_KEY,'{"x":{"name":"","pins":"beaucoup"},"y":42}');
-  if(Object.keys(fpLibAll()).length)throw new Error("des entrées invalides devaient partir");
-  localStorage.setItem(FPLIB_KEY,"pas du json");
-  if(Object.keys(fpLibAll()).length)throw new Error("un contenu illisible devait être ignoré");
   if(fpLibDel("absente"))throw new Error("supprimer l'absent ne fait rien");
-  localStorage.removeItem(FPLIB_KEY);
+  fpLibRaz();
 });
 
 /* =============================================================================
@@ -18458,7 +18492,12 @@ T("ECO : interface modale et mise à jour du badge de notification d'entête", (
     localStorage.removeItem("cao_schema_backup");
     localStorage.removeItem("schema_auto");
   }
+  /* une vieille sauvegarde du navigateur ne doit plus servir de schéma : seul
+     le dossier du projet (ou la session de l'onglet) fait foi */
+  localStorage.setItem("schemedit.autosave", JSON.stringify({ t: 1,
+    doc: { pages: [{ comps: [{ ref: "R9", value: "vieux", pkg: "0805" }] }] } }));
   const repVide = pcbVerifierEtNotifierEco(true);
+  localStorage.removeItem("schemedit.autosave");
   const badge = document.getElementById("ecoBadge");
   if (badge.style.display !== "none") throw new Error("Le badge doit être masqué quand aucun schéma n'est disponible");
 

@@ -4194,10 +4194,6 @@ function simPcbValeurResistance(fp){
       if(!sch && typeof pcbSchemaDoc === "function"){
         sch = pcbSchemaDoc();
       }
-      if(!sch && typeof localStorage !== "undefined"){
-        const raw = localStorage.getItem("cao_schema_backup") || localStorage.getItem("schema_auto");
-        if(raw) sch = JSON.parse(raw);
-      }
       if(sch && Array.isArray(sch.pages)){
         for(const pg of sch.pages){
           const sc = (pg.comps || []).find(c => c && c.ref === fp.ref);

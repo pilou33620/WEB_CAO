@@ -15,8 +15,8 @@
    règle une pastille à la fois.
 
    La bibliothèque garde les empreintes retouchées d'une séance à l'autre :
-   dans le navigateur pour les retrouver tout de suite, dans un .json pour les
-   emporter ailleurs ou les partager.
+   dans la LIB (lib_empreinte_pcb/, un .json par empreinte, suivie par git),
+   et dans un .json d'échange pour les emporter ailleurs ou les partager.
    ============================================================================= */
 
 /* ==========================================================================
@@ -87,25 +87,50 @@ function fpApplyDef(fp,def){
   if(w>fp.pins)fpSetPins(fp,w);
   return true;
 }
-/* Le stockage du navigateur peut être plein, coupé (navigation privée) ou
-   contenir n'importe quoi : à chaque lecture, on rebâtit une table propre. */
-function fpLibAll(){
-  const out={};
-  let raw=null;
-  try{raw=localStorage.getItem(FPLIB_KEY);}catch(_){return out;}
-  if(!raw)return out;
-  let o=null;
-  try{o=JSON.parse(raw);}catch(_){return out;}
-  if(!o||typeof o!=="object")return out;
-  for(const k of Object.keys(o)){
-    const d=normFpDef(o[k]);
-    if(d)out[d.name]=d;
-  }
-  return out;
+/* La bibliothèque vit dans la LIB du serveur : LIB/lib_empreinte_pcb/<nom>.json,
+   le même dossier et le même format que les empreintes livrées. Plus rien dans
+   le navigateur : une copie gardée là n'était ni partagée ni versionnée, et
+   finissait par diverger de la LIB. Les accesseurs restent synchrones : ils
+   lisent ce miroir, chargé au démarrage ; chaque écriture part au serveur. */
+const FPLIB={};            // nom -> définition
+const FPLIB_FICHIER={};    // nom -> fichier dans lib_empreinte_pcb/
+let FPLIB_SRV=false;       // vrai une fois la LIB lue : on peut y écrire
+let FPLIB_ENVOI=Promise.resolve(true);   // la dernière écriture, pour qui attend
+function fpLibAll(){return Object.assign({},FPLIB);}
+function fpLibFichier(name){
+  return FPLIB_FICHIER[name]||(String(name).replace(/[\\/:*?"<>|\x00-\x1f]/g,"_")+".json");
 }
+function fpLibApi(methode,params,corps){
+  const q=Object.keys(params||{}).map(k=>k+"="+encodeURIComponent(params[k])).join("&");
+  const opt={method:methode,headers:{}};
+  if(corps){opt.headers["Content-Type"]="application/json";opt.body=JSON.stringify(corps);}
+  return fetch("/api/lib/fichier"+(q?"?"+q:""),opt).then(r=>r.text().then(t=>{
+    if(!r.ok){let m="";try{m=JSON.parse(t).detail;}catch(_){}throw new Error(m||"erreur "+r.status);}
+    return t?JSON.parse(t):{};
+  }));
+}
+/* Le miroir prend `o` ; ce qui a changé part au serveur, fichier par fichier. */
 function fpLibWrite(o){
-  try{localStorage.setItem(FPLIB_KEY,JSON.stringify(o));return true;}
-  catch(_){return false;}
+  const envois=[];
+  for(const n of Object.keys(o)){
+    if(FPLIB[n]&&JSON.stringify(FPLIB[n])===JSON.stringify(o[n]))continue;
+    const f=fpLibFichier(n);
+    FPLIB_FICHIER[n]=f;
+    if(FPLIB_SRV)envois.push(fpLibApi("PUT",null,
+      {type:"pcb",nom:f,data:Object.assign({format:FPLIB_FORMAT},o[n])}));
+  }
+  for(const n of Object.keys(FPLIB)){
+    if(o[n])continue;
+    if(FPLIB_SRV)envois.push(fpLibApi("DELETE",{type:"pcb",nom:fpLibFichier(n)}));
+    delete FPLIB_FICHIER[n];
+  }
+  for(const n of Object.keys(FPLIB))delete FPLIB[n];
+  Object.assign(FPLIB,o);
+  FPLIB_ENVOI=Promise.all(envois).then(()=>true,e=>{
+    if(typeof hint==="function")hint("Empreinte non enregistrée dans la LIB : "+e.message);
+    return false;
+  });
+  return true;
 }
 function fpLibNames(){
   return Object.keys(fpLibAll()).sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
@@ -167,12 +192,36 @@ function fpLibMerge(defs){
     }
     d.name=name;all[name]=d;added.push(name);
   }
-  if(!fpLibWrite(all))
-    return {added:[],renamed:[],
-      err:"Le navigateur refuse d'enregistrer (stockage plein ou navigation "+
-          "privée) : gardez le .json, il fait foi."};
+  fpLibWrite(all);
   return {added:added,renamed:renamed};
 }
+/* Chargement de la LIB au démarrage. Les empreintes que l'ancienne version
+   gardait dans le navigateur rejoignent la LIB une fois, puis la copie du
+   navigateur est effacée -- seulement si la LIB les a bien reçues. */
+function fpLibCharger(){
+  const lire=(r)=>r.text().then(t=>{if(!r.ok)throw new Error("erreur "+r.status);return JSON.parse(t);});
+  return fetch("/api/lib/fichiers").then(lire).then(liste=>{
+    const noms=(liste.pcb||[]).filter(f=>/\.json$/i.test(f));
+    return Promise.all(noms.map(f=>
+      fetch("/api/lib/fichier?type=pcb&nom="+encodeURIComponent(f)).then(lire)
+        .then(r=>{const d=normFpDef(r.data);if(d){FPLIB[d.name]=d;FPLIB_FICHIER[d.name]=f;}})
+        .catch(()=>{})));
+  }).then(()=>{
+    FPLIB_SRV=true;
+    let ancien=null;
+    try{ancien=JSON.parse(localStorage.getItem(FPLIB_KEY)||"null");}catch(_){}
+    const defs=ancien&&typeof ancien==="object"
+      ?Object.keys(ancien).map(k=>normFpDef(ancien[k])).filter(Boolean):[];
+    if(defs.length)fpLibMerge(defs);
+    return FPLIB_ENVOI.then(ok=>{
+      if(ok)try{localStorage.removeItem(FPLIB_KEY);}catch(_){}
+      if(typeof feIsOpen==="function"&&feIsOpen())feSide();
+      return true;
+    });
+  }).catch(()=>false);     // pas de serveur (fichier ouvert seul) : bibliothèque de séance
+}
+if(typeof location!=="undefined"&&/^https?:$/.test(location.protocol)&&typeof fetch==="function")
+  fpLibCharger();
 
 /* ==========================================================================
    Fenêtre d'édition
@@ -498,8 +547,8 @@ function feSide(){
         '<button class="tb" id="feImport">Importer .json&hellip;</button>'+
       '</div>'+
       '<div class="empty" style="padding:8px 0 0">Les empreintes enregistrées '+
-      'restent dans ce navigateur ; le .json les emporte sur une autre machine '+
-      'ou dans un autre projet.</div>'+
+      'vont dans la LIB (lib_empreinte_pcb/), synchronisée avec GitHub ; le .json '+
+      'les emporte ailleurs.</div>'+
     '</div>';
   $("feSide").innerHTML=h;
   feWire();
@@ -687,9 +736,7 @@ function feSaveLib(){
                       "La remplacer ?"))return;
   const d=fpLibPut(fpDefOf(fp,name));
   if(!d){
-    feHint('<span class="warn">Le navigateur refuse d&rsquo;enregistrer '+
-      '(stockage plein ou navigation privée). Exportez un .json pour ne rien '+
-      'perdre.</span>');
+    feHint('<span class="warn">Empreinte illisible : rien n&rsquo;a été enregistré.</span>');
     return;
   }
   feSide();
@@ -697,7 +744,13 @@ function feSaveLib(){
   if(s)s.value=d.name;
   feHint("« "+esc(d.name)+" » "+(exists?"remplacée":"enregistrée")+" dans la "+
          "bibliothèque "+(d.pads?"("+d.pads.length+" pastilles dessinées)"
-                                :"(empreinte calculée)")+".");
+                                :"(empreinte calculée)")+
+         (FPLIB_SRV?" : LIB/lib_empreinte_pcb/"+esc(fpLibFichier(d.name)):
+          " pour cette séance seulement (LIB injoignable : exportez un .json)")+".");
+  FPLIB_ENVOI.then(ok=>{
+    if(!ok)feHint('<span class="warn">La LIB a refusé l&rsquo;empreinte (serveur '+
+      'en lecture seule ou arrêté). Exportez un .json pour ne rien perdre.</span>');
+  });
 }
 function feApplyLib(){
   const n=$("feLib").value, d=fpLibGet(n);
