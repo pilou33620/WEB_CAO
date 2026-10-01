@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard CAO Web</title>
 <link rel="stylesheet" href="commun/tactile.css">
+<link rel="stylesheet" href="commun/tuto.css">
 <style>
   :root {
     --bg: #0f1012;
@@ -357,6 +358,10 @@
     <header class="dash-header">
       <div class="brand"><i></i><h1>CAO Web</h1><span>SCHÉMA · PCB · COMPOSANTS</span></div>
       <p class="intro">Par quoi commencez-vous ?</p>
+      <div class="tuto-barre">
+        <button id="tutoParcours" class="tuto-parcours" type="button" hidden title="Ouvrir chaque mode l'un après l'autre, avec sa visite guidée">▶ Parcours complet</button>
+        <button id="tutoBascule" class="tuto-interrupteur" type="button" aria-pressed="false" title="Mode tuto : chaque mode s'ouvre avec sa visite guidée, et des ? expliquent les grandes fonctions"><span class="tuto-coche"></span>🎓 Mode tuto</button>
+      </div>
     </header>
 
     <!-- Les 5 applications principales en bandeau horizontal -->
@@ -654,6 +659,7 @@
 <script src="commun/projet.js"></script>
 <script src="commun/projet-disque.js"></script>
 <script src="commun/tactile.js"></script>
+<script src="commun/tuto.js" data-outil="accueil"></script>
 <script>
 "use strict";
 /* ==========================================================================
