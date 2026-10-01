@@ -10705,15 +10705,15 @@ T("relire rend les mêmes hertz, chaque champ dans son unité",()=>{
   },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande1:"MHz", uniteBande2:"GHz"});
 });
 
-T("changer l'unité de la bande ne déplace ni les hertz ni f₀",()=>{
+T("changer l'unité de la bande garde le nombre écrit, et pas f₀",()=>{
   simAvecSaisie(()=>{
     simSaisieEcrire();
     simUniteChanger("kHz","bande1");
-    /* LES HERTZ NE BOUGENT PAS : c'est toute la règle de la conversion. */
-    if(Math.abs(SIM.saisie.f1-100e6)>1)
-      throw new Error("f₁ a bougé : "+SIM.saisie.f1);
-    if(simEl("simF1").value!=="100000")
-      throw new Error("f₁ devrait s'écrire 100000 en kHz, pas « "+
+    /* LE NOMBRE NE BOUGE PAS : 100 en MHz passé en kHz vaut 100 kHz. */
+    if(Math.abs(SIM.saisie.f1-100e3)>1e-6)
+      throw new Error("f₁ devrait valoir 100 kHz : "+SIM.saisie.f1);
+    if(simEl("simF1").value!=="100")
+      throw new Error("f₁ devrait rester écrite 100, pas « "+
                       simEl("simF1").value+" »");
     /* ET f₀ N'A PAS SUIVI : c'est l'autre moitié de l'indépendance. */
     if(SIM.saisie.unite!=="GHz")
@@ -10731,9 +10731,11 @@ T("changer l'unité de f₀ ne touche pas la bande",()=>{
       throw new Error("l'unité de bande a suivi celle de f₀");
     if(Math.abs(SIM.saisie.f2-1000e6)>1)
       throw new Error("f₂ a bougé : "+SIM.saisie.f2);
-    if(simEl("simFc").value!=="250")
-      throw new Error("f₀ devrait s'écrire 250 en MHz, pas « "+
+    if(simEl("simFc").value!=="0,25")
+      throw new Error("f₀ devrait rester écrite 0,25, pas « "+
                       simEl("simFc").value+" »");
+    if(Math.abs(SIM.saisie.fc-0.25e6)>1e-6)
+      throw new Error("f₀ devrait valoir 0,25 MHz : "+SIM.saisie.fc);
   },{fc:250e6, f1:100e6, f2:1000e6, unite:"GHz", uniteBande1:"MHz", uniteBande2:"GHz"});
 });
 

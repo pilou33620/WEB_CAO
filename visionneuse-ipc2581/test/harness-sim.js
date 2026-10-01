@@ -849,46 +849,36 @@ T("une cote qui manque au fichier est annoncée SUPPOSÉE, avec où la saisir",(
    une bande ramenée de force par le serveur, des pertes fausses d'un facteur
    trois, et le repère f₀ posé au mauvais endroit sur la courbe.
 
-   CE QUI EST ÉPROUVÉ ICI est l'invariant qui compte : changer d'unité CONVERTIT
-   l'écriture, il ne réinterprète pas la valeur. Les hertz ne bougent pas.
+   CE QUI EST ÉPROUVÉ ICI : changer d'unité GARDE LE NOMBRE ÉCRIT. On corrige
+   l'unité de ce qu'on vient de taper : 868 passé de MHz en GHz vaut 868 GHz.
    ========================================================================== */
-T("changer d'unité ne change pas la fréquence, seulement son écriture",()=>{
+T("changer d'unité garde le nombre écrit et le relit dans la nouvelle unité",()=>{
   /* ON PASSE PAR LES CHAMPS, parce que c'est par là que passe l'utilisateur :
-     `simSaisie()` lit le DOM et le DOM l'emporte sur `SIM.saisie`. Poser la
-     valeur en mémoire seule éprouverait un chemin que personne n'emprunte. */
+     `simSaisie()` lit le DOM et le DOM l'emporte sur `SIM.saisie`. */
   const ch=id=>document.getElementById(id);
-  /* TROIS UNITÉS DEPUIS LE 2026-08-30 : f₀ a la sienne, la bande S a f1 et f2.
-     Les régler toutes les trois ici n'est pas une commodité d'essai — c'est ce
-     que fait le panneau, qui pose les trois listes. Ne régler que la première
-     laisserait la bande se lire en gigahertz, et « 100 » vaudrait 100 GHz. */
   SIM.saisie.unite="MHz"; SIM.saisie.uniteBande1="MHz"; SIM.saisie.uniteBande2="MHz";
-  ch("simFc").value="868"; ch("simF1").value="100"; ch("simF2").value="3000";
+  ch("simFc").value="868"; ch("simF1").value="100"; ch("simF2").value="1000000";
   simSaisie();
   if(SIM.saisie.fc!==868e6)
     throw new Error("868 en MHz vaut 868 MHz, pas "+SIM.saisie.fc+" Hz");
   simUniteChanger("GHz","fc");
   if(SIM.saisie.unite!=="GHz")throw new Error("l'unité doit avoir changé");
-  if(SIM.saisie.fc!==868e6)
-    throw new Error("changer d'unité ne déplace pas f₀ : "+SIM.saisie.fc+" Hz");
-  if(SIM.saisie.f1!==1e8||SIM.saisie.f2!==3e9)
-    throw new Error("la bande ne doit pas bouger non plus");
-  /* ET SON UNITÉ NON PLUS : changer celle de f₀ ne doit pas emporter celle de
-     la bande, sans quoi les listes n'en feraient qu'une. */
+  if(ch("simFc").value!=="868")
+    throw new Error("le champ doit garder 868 : « "+ch("simFc").value+" »");
+  if(SIM.saisie.fc!==868e9)
+    throw new Error("868 en GHz vaut 868 GHz, pas "+SIM.saisie.fc+" Hz");
+  /* LA BANDE NE BOUGE PAS, ni son unité : les listes sont indépendantes. */
+  if(SIM.saisie.f1!==1e8||SIM.saisie.f2!==1e12)
+    throw new Error("la bande ne doit pas bouger");
   if(SIM.saisie.uniteBande1!=="MHz" || SIM.saisie.uniteBande2!=="MHz")
     throw new Error("l'unité de la bande a suivi celle de f₀");
-  /* ET LE CHAMP A ÉTÉ RÉÉCRIT dans la nouvelle unité : c'est la moitié
-     visible du contrat. Sans cela on lirait 868 sous une étiquette GHz. */
-  if(ch("simFc").value!=="0,868")
-    throw new Error("le champ doit montrer 0,868 : « "+ch("simFc").value+" »");
-  /* Et l'aller-retour retombe exactement où il était : sans cela, choisir son
-     unité deux fois de suite ferait dériver la valeur. */
+  /* L'aller-retour retombe où il était. */
   simUniteChanger("MHz","fc");
-  simUniteChanger("GHz","fc");
   if(SIM.saisie.fc!==868e6)throw new Error("aller-retour : "+SIM.saisie.fc);
   /* Une unité inconnue ne fait rien plutôt que de poser un facteur absent :
      `simUnite()` retomberait sur GHz et multiplierait par un milliard. */
   simUniteChanger("parsecs","fc");
-  if(SIM.saisie.unite!=="GHz")throw new Error("une unité inconnue est refusée");
+  if(SIM.saisie.unite!=="MHz")throw new Error("une unité inconnue est refusée");
 });
 
 T("les quatre unités portent le bon facteur, et GHz reste le défaut",()=>{

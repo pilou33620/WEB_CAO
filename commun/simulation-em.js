@@ -558,10 +558,10 @@ function simDCBorneChoisie(){
    L'unité ne vit que dans l'affichage — et sur la borne, pour qu'elle survive
    à un re-clic.
 
-   EN CHANGER CONVERTIT CE QUI EST ÉCRIT, cela ne le réinterprète pas : 0,25 A
-   passé en mA devient 250 mA, le même courant. C'est déjà la règle des unités
-   de fréquence du panneau (`simChampUnite`), et deux règles opposées dans le
-   même panneau feraient de chaque changement d'unité un pari.
+   EN CHANGER GARDE LE NOMBRE ÉCRIT : 250 passé de A en mA vaut 250 mA. C'est
+   la règle des unités de fréquence du panneau (`simChampUnite`), et deux
+   règles opposées dans le même panneau feraient de chaque changement d'unité
+   un pari.
    ========================================================================== */
 const SIM_DC_UNITES_V=[{cle:"V", f:1}, {cle:"mV", f:1e-3}];
 const SIM_DC_UNITES_A=[{cle:"A", f:1}, {cle:"mA", f:1e-3}, {cle:"µA", f:1e-6}];
@@ -676,11 +676,11 @@ function simRendreBornes(){
          panneau, quel que soit le DOM sous lequel il tourne. */
       su.value=u.cle;
       su.onchange=()=>{
-        /* LA VALEUR PHYSIQUE NE BOUGE PAS : seule son écriture change. On
-           réaffiche donc la liste plutôt que de recalculer le champ ici — un
-           seul endroit sait convertir. */
+        /* LE NOMBRE ÉCRIT RESTE, l'unité change : 250 passé de mA en µA
+           vaut 250 µA. C'est le champ qu'on relit, comme une saisie. */
         b.unite=su.value;
-        simRendre();
+        if(ch&&ch.onchange)ch.onchange();
+        else simRendre();
       };
     }
     const del=simEl("simDCDel"+k);
@@ -695,15 +695,13 @@ function simRendreBornes(){
 
 /* La liste d'unités d'une borne : des volts pour une source, des ampères pour
    une charge. Elle a l'allure des autres listes d'unités du panneau
-   (`simChampUnite`) et le même contrat — en changer convertit ce qui est
-   écrit. */
+   (`simChampUnite`) et le même contrat — en changer garde le nombre écrit. */
 function simDCListeUnite(id,b){
   const liste=simDCUnites(b), courante=simDCUnite(b).cle;
   const quoi=(b.role==="source")?"la tension imposée":"le courant tiré";
   let h='<select class="simU simUSel" id="'+id+'" title="'+
-        simEsc("Unité de "+quoi+". En changer CONVERTIT ce qui est écrit, "+
-               "cela ne le réinterprète pas : 0,25 A passé en mA devient "+
-               "250 mA, le même courant.")+'">';
+        simEsc("Unité de "+quoi+". En changer garde le nombre écrit : "+
+               "250 passé de A en mA vaut 250 mA.")+'">';
   for(const u of liste)
     h+='<option value="'+u.cle+'"'+(u.cle===courante?" selected":"")+">"+
        u.cle+"</option>";
@@ -5277,12 +5275,12 @@ function simChampTexte(id,valeur,titre,sous){
    identique, et c'est bien pour cela qu'une seule fonction les pose. */
 /* `liste` par défaut est celle des fréquences : les trois champs qui
    l'utilisaient n'ont pas changé d'une ligne. Le temps de montée et
-   l'amplitude passent la leur, et la mécanique — convertir, jamais
-   réinterpréter — est la MÊME pour les trois, écrite une fois. */
+   l'amplitude passent la leur, et la mécanique — garder le nombre écrit et
+   le relire dans la nouvelle unité — est la MÊME pour les trois. */
 function simChampUnite(id,quoi,liste){
   let h='<select class="simU simUSel" id="'+id+'" title="Unité de '+quoi+
-        ". En changer CONVERTIT ce qui est écrit, cela ne le réinterprète "+
-        'pas.">';
+        ". En changer garde le nombre écrit : 868 passé de MHz en GHz "+
+        'vaut 868 GHz.">';
   for(const u of (liste||SIM_UNITES))
     h+='<option value="'+u.cle+'">'+u.cle+"</option>";
   return h+"</select>";
@@ -5900,8 +5898,8 @@ function simBrancherCarte(){
       else if(vide&&!String(this.value).trim())ecrire(0);
     };
   };
-  /* Un champ à unité : la valeur vit en Hz ou en s, l'unité ne fait que
-     l'écrire. En changer CONVERTIT ce qui est affiché, comme partout. */
+  /* Un champ à unité : la valeur vit en Hz ou en s. En changer GARDE le
+     nombre écrit et le relit dans la nouvelle unité, comme partout. */
   const lieU=(id,liste,lireU,ecrireU,lire,ecrire,vide)=>{
     const sel=simEl(id+"U"), fac=()=>(liste.find(u=>u.cle===lireU())||liste[0]).f;
     lie(id,()=>lire()/fac(),v=>ecrire(v*fac()),vide);
@@ -5910,7 +5908,7 @@ function simBrancherCarte(){
     sel.onchange=function(){
       ecrireU(this.value);
       const e=simEl(id);
-      if(e)e.value=vide&&!lire()?"":simNbLibre(lire()/fac());
+      if(e&&e.oninput)e.oninput.call(e);
     };
   };
   const u=SIM_CARTE.unites;
@@ -8777,8 +8775,8 @@ function simBrancherCrosstalk(){
       jeter(champs[id]);
     });
   pose("simXtFen","onchange",function(){jeter("La fenêtre a changé");});
-  /* CHANGER D'UNITÉ CONVERTIT, ÇA NE RÉINTERPRÈTE PAS : la valeur physique ne
-     bouge pas, donc le résultat affiché reste valable et rien ne se jette. */
+  /* CHANGER D'UNITÉ GARDE LE NOMBRE ÉCRIT : la valeur change, et
+     `simUniteChanger` rejoue la saisie du champ — qui jette le résultat. */
   pose("simFUniteBande2","onchange",function(){
     simUniteChanger(this.value,"bande2");
   });
@@ -18590,10 +18588,11 @@ function simSaisie(){
   return s;
 }
 
-/* CHANGER D'UNITÉ CONVERTIT, ÇA NE RÉINTERPRÈTE PAS. 868 en MHz devient 0,868
-   en GHz, jamais 868 GHz : la valeur physique ne bouge pas, seule son écriture
-   change. C'est ce qui fait qu'on peut choisir son unité APRÈS avoir tapé, et
-   qu'aucun résultat déjà calculé n'est invalidé au passage. */
+/* CHANGER D'UNITÉ GARDE LE NOMBRE ÉCRIT. 868 en MHz passé en GHz devient
+   868 GHz : on corrige l'unité de ce qu'on vient de taper, sans avoir à le
+   retaper. La valeur physique change donc, exactement comme si on avait tapé
+   dans le champ : c'est le gestionnaire `oninput` du champ qui est rejoué, et
+   lui seul sait ce que son panneau doit invalider. */
 function simUniteChanger(cle,laquelle){
   /* CHAQUE CHAMP A SA LISTE, et l'on vérifie contre LA SIENNE : poser « ns »
      sur la fréquence centrale doit être refusé comme le serait « GHz » sur le
@@ -18601,14 +18600,16 @@ function simUniteChanger(cle,laquelle){
   const listes={tr:SIM_UNITES_TR, swing:SIM_UNITES_V};
   const liste=listes[laquelle]||SIM_UNITES;
   if(!liste.some(u=>u.cle===cle))return;
-  simSaisie();                       // fige ce qui est écrit, ancienne unité
   if(laquelle==="bande1")SIM.saisie.uniteBande1=cle;
   else if(laquelle==="bande2")SIM.saisie.uniteBande2=cle;
   else if(laquelle==="bande")SIM.saisie.uniteBande=cle;
   else if(laquelle==="tr")SIM.saisie.uniteTr=cle;
   else if(laquelle==="swing")SIM.saisie.uniteV=cle;
   else                  SIM.saisie.unite=cle;
-  simSaisieEcrire();                 // le réécrit dans la nouvelle
+  const champ=simEl({fc:"simFc",tr:"simTr",bande1:"simF1",bande2:"simF2",
+                     swing:"simSwing"}[laquelle]);
+  if(champ&&champ.oninput)champ.oninput.call(champ);
+  else simSaisie();                  // relit le nombre écrit, dans la nouvelle unité
   simFAvertEcrire();
   if(laquelle==="swing"){simBruitAbsEcrire();simRendre();}
 }
@@ -19490,9 +19491,9 @@ function simBrancherImpedance(){
         simRendre(); simRepeindre();
       }
     });
-  /* L'UNITÉ NE CHANGE AUCUNE VALEUR, donc elle n'efface aucun résultat : elle
-     réécrit les mêmes hertz dans une autre case. C'est la différence avec les
-     champs ci-dessus, et c'est ce qui permet de la choisir après coup. */
+  /* L'UNITÉ GARDE LE NOMBRE ÉCRIT : la fréquence change, et
+     `simUniteChanger` rejoue la saisie du champ ci-dessus, qui efface le
+     résultat. */
   pose("simFUnite","onchange",function(){simUniteChanger(this.value,"fc");});
   pose("simFUniteBande1","onchange",
        function(){simUniteChanger(this.value,"bande1");});
