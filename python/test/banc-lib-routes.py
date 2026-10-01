@@ -15,7 +15,13 @@ import time
 # Assurer l'import de web_CAO
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import web_CAO
+import lib_essai
+
+# La LIB par defaut du serveur devient une copie jetable : les essais qui
+# ecrivent (test_08, enregistrement du catalogue) ne touchent pas la vraie.
+LIB = lib_essai.brancher(web_CAO)
 
 PORT = 8991
 BASE_URL = f"http://127.0.0.1:{PORT}"
@@ -250,7 +256,7 @@ class TestLibDossierTemporaire(unittest.TestCase):
         import tempfile
         self.base = f"http://127.0.0.1:{self.PORT}"
         self.tmp = tempfile.mkdtemp(prefix="webcao_lib_")
-        shutil.copy2(os.path.join(ROOT, "LIB", "LIB_composants.csv"), self.tmp)
+        shutil.copy2(os.path.join(LIB, "LIB_composants.csv"), self.tmp)
         os.makedirs(os.path.join(self.tmp, "lib_empreinte_pcb"))
         self.sauvegardes = {}
         for nom in ("LIB_composants.csv", "config_lib.json"):

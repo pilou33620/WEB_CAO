@@ -675,7 +675,7 @@ def charger_config_lib():
 def enregistrer_config_lib(chemin):
     """Enregistre le chemin de la LIB dans config_lib.json ou efface le fichier si par defaut."""
     cfg_path = chemin_config_lib()
-    defaut = os.path.realpath(os.path.join(ROOT, LIB_DIR_NAME))
+    defaut = os.path.realpath(dossier_lib_defaut())
     if not chemin or (os.path.exists(chemin) and os.path.realpath(chemin) == defaut):
         try:
             if os.path.exists(cfg_path):
@@ -694,15 +694,26 @@ def enregistrer_config_lib(chemin):
         raise ErreurLib(500, "Impossible d'enregistrer config_lib.json : %s" % exc)
 
 
+def dossier_lib_defaut():
+    """La LIB par defaut : LIB/ a cote d'index.html si elle existe, sinon celle
+    de WEB_SUITE, ../PROJETS/LIB_CAO -- la LIB suivie par git, dont le depot
+    WEB_CAO ne garde plus de copie. Une seule LIB, ou que l'outil soit lance."""
+    propre = os.path.join(ROOT, LIB_DIR_NAME)
+    if os.path.isdir(propre):
+        return propre
+    suite = os.path.join(os.path.dirname(os.path.abspath(ROOT)), "PROJETS", "LIB_CAO")
+    return suite if os.path.isdir(suite) else propre
+
+
 def dossier_lib():
-    """Le dossier centralise LIB (personnalise ou par defaut sous ROOT)."""
+    """Le dossier centralise LIB (personnalise, ou par defaut : dossier_lib_defaut)."""
     global DOSSIER_LIB_ACTIF
     if DOSSIER_LIB_ACTIF:
         return DOSSIER_LIB_ACTIF
     charger_config_lib()
     if DOSSIER_LIB_ACTIF:
         return DOSSIER_LIB_ACTIF
-    return os.path.join(ROOT, LIB_DIR_NAME)
+    return dossier_lib_defaut()
 
 
 def ecrire_texte_atomique(chemin, texte):
@@ -806,7 +817,7 @@ def detecter_dossiers_cloud():
 
 def initialiser_lib_dans_dossier(cible):
     """Copie la structure par defaut de la LIB (CSV, empreintes, symboles) dans cible."""
-    source_lib = os.path.join(ROOT, LIB_DIR_NAME)
+    source_lib = dossier_lib_defaut()
     if not os.path.exists(source_lib):
         return 0
 
@@ -889,7 +900,7 @@ def definir_dossier_lib(chemin_brut, initialiser=True, persister=True):
     suivant, sans --lib, continuait d'ouvrir ce dossier-la.
     """
     global DOSSIER_LIB_ACTIF
-    defaut = os.path.join(ROOT, LIB_DIR_NAME)
+    defaut = dossier_lib_defaut()
     chemin = str(chemin_brut or "").strip().strip('"')
 
     if not chemin or chemin.lower() in ("defaut", "default", "standard"):
@@ -967,6 +978,13 @@ PROJETS = "projets"               # racine par defaut, a cote d'index.html
 RACINES_PROJETS = []              # fixees au demarrage par --projets
 PROJETS_PROFONDEUR = 3            # niveaux explores en listant (clients/acme/carte)
 PROJETS_OUVERT = False            # vrai seulement si l'ecoute est locale
+# --projets-reseau : ouvre aussi au reseau la lecture/ecriture des projets SOUS
+# LES RACINES DECLAREES et des fichiers de la LIB active -- rien d'autre. Un
+# chemin tape hors des racines, le choix du dossier de LIB, la cle IA et les
+# datasheets restent reserves a l'ecoute locale. A n'utiliser que sur un
+# reseau de confiance : ces routes n'ont pas de mot de passe (WEB_SUITE le
+# passe avec --reseau, qui fait deja ce pari pour le lanceur).
+PROJETS_RESEAU = False
 MAX_PROJET = 16 * 1024 * 1024     # un schema ou une carte : quelques centaines de Ko
 PROJET_FICHIER = "projet.cao.json"
 PROJET_FORMAT = "cao-projet-1"
@@ -1628,7 +1646,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return None
         root = os.path.realpath(ROOT)
         hors_depot = real_lib != root and not real_lib.startswith(root + os.sep)
-        if hors_depot and not PROJETS_OUVERT:
+        if hors_depot and not (PROJETS_OUVERT or PROJETS_RESEAU):
             return None
         rel = clean[5:].lstrip("/\\") if clean.startswith("/LIB/") else ""
         cible = os.path.abspath(os.path.join(real_lib, rel))
@@ -1653,7 +1671,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             except OSError:
                 return True
             dans_lib = real == lib or real.startswith(lib + os.sep)
-            if not PROJETS_OUVERT or not dans_lib:
+            if not (PROJETS_OUVERT or PROJETS_RESEAU) or not dans_lib:
                 return True        # remontee hors du depot
             base = lib
         rel = os.path.relpath(real, base)
@@ -1921,13 +1939,15 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.close_connection = True
             self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
 
-    def _projet_garde(self):
+    def _projet_garde(self, reseau=True):
         """Ces routes n'existent que sur une ecoute locale.
 
         Ecrire sur le disque a la demande du navigateur est deja beaucoup ;
         l'offrir au reseau serait offrir le disque. Le refus dit quoi faire.
+        Exception : --projets-reseau, confine aux racines declarees ; `reseau`
+        a faux la refuse quand meme (datasheets : telechargement cote serveur).
         """
-        if not PROJETS_OUVERT:
+        if not (PROJETS_OUVERT or (reseau and PROJETS_RESEAU)):
             raise ErreurProjet(403, "Dossiers de projet refuses : ce serveur"
                                     " ecoute sur le reseau. Relancez-le avec"
                                     " --local pour ouvrir cette route.")
@@ -2161,16 +2181,17 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError):
             raise ErreurLib(400, "Corps JSON illisible")
 
-    def _lib_garde(self):
+    def _lib_garde(self, reseau=True):
         """Ecrire dans la bibliotheque n'existe que sur une ecoute locale.
 
         Meme regle que les dossiers de projet : lire le catalogue et les
         empreintes reste ouvert (les editeurs d'un iPad en ont besoin), mais
         ecrire, effacer ou deplacer la bibliotheque -- /api/lib/config accepte
         un chemin quelconque du disque -- ne s'offre pas a un reseau sans mot
-        de passe.
+        de passe. --projets-reseau ouvre l'ecriture DANS la LIB active ; la
+        deplacer (`reseau` a faux) reste local.
         """
-        if not PROJETS_OUVERT:
+        if not (PROJETS_OUVERT or (reseau and PROJETS_RESEAU)):
             raise ErreurLib(403, "Bibliotheque en lecture seule : ce serveur"
                                  " ecoute sur le reseau. Relancez-le avec"
                                  " --local pour la modifier.")
@@ -2363,7 +2384,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def _lib_config_lire(self):
         """GET /api/lib/config : etat, statistiques, chemin actif et suggestions cloud."""
         dossier = dossier_lib()
-        defaut = os.path.join(ROOT, LIB_DIR_NAME)
+        defaut = dossier_lib_defaut()
         est_defaut = os.path.realpath(dossier) == os.path.realpath(defaut) if os.path.exists(dossier) and os.path.exists(defaut) else (dossier == defaut)
         info = statistiques_lib(dossier)
         return {
@@ -2382,7 +2403,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def _lib_config_ecrire(self):
         """POST /api/lib/config : definir le chemin de la LIB."""
         charge = self._lire_json_lib()
-        self._lib_garde()
+        self._lib_garde(reseau=False)
         if not isinstance(charge, dict):
             raise ErreurLib(400, "Corps JSON invalide (objet attendu)")
         chemin = charge.get("chemin")
@@ -2775,7 +2796,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self._envoyer_json({"detail": self._detail_interne(exc)}, 500)
 
     def _datasheet_telecharger(self):
-        self._projet_garde()
+        self._projet_garde(reseau=False)
         taille = int(self.headers.get("Content-Length") or 0)
         if taille > MAX_CORPS:
             self._envoyer_json({"detail": "Requete trop grande"}, 413)
@@ -2903,7 +2924,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         })
 
     def _datasheet_ouvrir(self):
-        self._projet_garde()
+        self._projet_garde(reseau=False)
         params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         projet = (params.get("projet") or [""])[0]
         fichier = (params.get("fichier") or [""])[0]
@@ -3364,15 +3385,16 @@ def start_server(host, port, navigateur=True):
     else:
         print("  motifs schema : /api/schema/patterns ->"
               " alim, bus, osc, filtres (python/pattern_recognition.py)")
-    if PROJETS_OUVERT:
-        print("  projets       : /api/projets, /api/projet, /api/projet/doc")
+    if PROJETS_OUVERT or PROJETS_RESEAU:
+        print("  projets       : /api/projets, /api/projet, /api/projet/doc%s"
+              % ("" if PROJETS_OUVERT else "  (ouvertes au reseau : --projets-reseau)"))
         for i, racine in enumerate(racines_projets()):
             print("                  %s %s"
                   % ("racine :" if i == 0 else "        ", racine))
         if len(racines_projets()) > 1:
             print("                  (la premiere sert de defaut a la creation)")
     d_lib = dossier_lib()
-    defaut_lib = os.path.join(ROOT, LIB_DIR_NAME)
+    defaut_lib = dossier_lib_defaut()
     lib_est_defaut = os.path.realpath(d_lib) == os.path.realpath(defaut_lib) if os.path.exists(d_lib) and os.path.exists(defaut_lib) else (d_lib == defaut_lib)
     print("  bibliotheque  : %s %s" % (d_lib, "(personnalisee)" if not lib_est_defaut else "(par defaut)"))
     if is_local_only:
@@ -3618,6 +3640,10 @@ def main(argv=None):
                          " cote d'index.html). Repetable, ou plusieurs chemins"
                          " separes par « %s ». Aucun projet ne peut etre lu ni"
                          " ecrit hors de ces racines" % os.pathsep)
+    ap.add_argument("--projets-reseau", action="store_true",
+                    help="en ecoute reseau, ouvrir quand meme les projets (sous"
+                         " --projets seulement) et l'ecriture dans la LIB active."
+                         " Sans mot de passe : reseau de confiance uniquement")
     ap.add_argument("--lib", default=None, metavar="DOSSIER",
                     help="chemin d'acces au dossier de la bibliotheque LIB (defaut :"
                          " LIB/ a cote d'index.html ou config_lib.json)")
@@ -3652,6 +3678,9 @@ def main(argv=None):
                 if chemin not in vues:
                     vues.append(chemin)
         RACINES_PROJETS = vues
+    if args.projets_reseau:
+        global PROJETS_RESEAU
+        PROJETS_RESEAU = True
     host = "127.0.0.1" if args.local else args.host
     if double_clic and not args.local and not args.host:
         # Sans cela, le double-clic ouvrait l'ecoute sur tout le reseau -- et

@@ -30,7 +30,11 @@ sys.path.insert(0, os.path.join(RACINE, "python"))
 import rf_reseau as rf                                               # noqa: E402
 import simulation_em as se                                           # noqa: E402
 
-LIB_SIM = os.path.join(RACINE, "LIB", "lib_simulation")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import lib_essai                                                     # noqa: E402
+
+# Lecture seule : les modeles Murata de la vraie LIB (voir lib_essai.py)
+LIB_SIM = os.path.join(lib_essai.source(), "lib_simulation")
 ok = ko = 0
 
 

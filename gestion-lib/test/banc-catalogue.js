@@ -44,8 +44,15 @@ vm.runInContext(
   sandbox
 );
 
-const csv = fs.readFileSync(
-  path.join(__dirname, "..", "..", "LIB", "LIB_composants.csv"), "utf8");
+/* La LIB réelle, comme web_CAO.dossier_lib_defaut() la trouve : WEB_CAO_LIB,
+   sinon LIB/ à côté de l'outil, sinon celle de WEB_SUITE (../PROJETS/LIB_CAO,
+   clonée à cet endroit par ci.yml). Lecture seule. */
+const RACINE = path.join(__dirname, "..", "..");
+const LIB = [process.env.WEB_CAO_LIB, path.join(RACINE, "LIB"),
+             path.join(RACINE, "..", "PROJETS", "LIB_CAO")]
+  .find(d => d && fs.existsSync(path.join(d, "LIB_composants.csv")));
+if (!LIB) throw new Error("LIB introuvable : clonez WEB_SUITE_PROJETS en ../PROJETS");
+const csv = fs.readFileSync(path.join(LIB, "LIB_composants.csv"), "utf8");
 vm.runInContext("parserCsvBrut", sandbox)(csv);
 
 const etat = vm.runInContext("LIB_STATE", sandbox);

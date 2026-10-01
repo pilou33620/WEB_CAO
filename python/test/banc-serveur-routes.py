@@ -19,8 +19,13 @@ import time
 DOSSIER_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if DOSSIER_ROOT not in sys.path:
     sys.path.insert(0, DOSSIER_ROOT)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import web_CAO
+import lib_essai
+
+# Une copie jetable de la LIB sert de LIB par defaut (voir lib_essai.py)
+LIB = lib_essai.brancher(web_CAO)
 
 def test_routes():
     # Démarre le serveur sur un port aléatoire libre
@@ -426,7 +431,7 @@ def test_routes():
                     assert "lecture seule" in detail, detail
                 finally:
                     cl.close()
-            assert os.path.exists(os.path.join(DOSSIER_ROOT, "LIB", "lib_empreinte_pcb", "0603.json"))
+            assert os.path.exists(os.path.join(LIB, "lib_empreinte_pcb", "0603.json"))
             conn.request("GET", "/api/lib/fichiers")
             res = conn.getresponse()
             res.read()
