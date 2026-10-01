@@ -259,7 +259,31 @@ function simTangente(t,u){
    masse de ce côté ; `hors` porte le net du cuivre trouvé quand ce n'est PAS
    une masse de référence — c'est lui qui alimente la note de couplage. */
 function simCoteEn(t,x,y,nx,ny,refs){
-  const w2=(t.w||0)/2;
+  /* UNE ZONE DU MÊME NET ÉLARGIT LE CONDUCTEUR. Une zone de raccord posée sur
+     la piste est du cuivre de la ligne : on cherche où elle s'arrête de ce
+     côté (`ext`, au-delà du bord de la piste), et l'écart se mesure depuis
+     là. Sans cela on envoyait la largeur de la piste et un écart nul. */
+  const sien=d=>{
+    const z=simZoneEn(t.l,x+nx*((t.w||0)/2+d),y+ny*((t.w||0)/2+d));
+    return !!z&&z.net===t.net;
+  };
+  let ext=0;
+  if(t.net&&sien(SIM_SONDES[0])){
+    let lo=SIM_SONDES[0], hi=0;
+    for(const d of SIM_SONDES){if(sien(d))lo=d; else {hi=d; break;}}
+    if(!hi)return {ecart:0, net:"", hors:"", ext:SIM_ECART_MAX};
+    for(let k=0;k<6;k++){
+      const mid=(lo+hi)/2;
+      if(sien(mid))lo=mid; else hi=mid;
+    }
+    ext=r3(lo);
+  }
+  const r=simCoteDepuis(t,x,y,nx,ny,refs,(t.w||0)/2+ext);
+  r.ext=ext;
+  return r;
+}
+
+function simCoteDepuis(t,x,y,nx,ny,refs,w2){
   let d0=0;
   for(const d of SIM_SONDES){
     const z=simZoneEn(t.l,x+nx*(w2+d),y+ny*(w2+d));
@@ -304,6 +328,7 @@ function simEcartsA(t,u,refs){
   const g=simCoteEn(t,p.x,p.y,-tg.y, tg.x,refs);
   const d=simCoteEn(t,p.x,p.y, tg.y,-tg.x,refs);
   return {g:g.ecart, d:d.ecart,
+          w:(g.ext||d.ext)?r3((t.w||0)+g.ext+d.ext):0,
           hors:[g.hors,d.hors].filter(Boolean),
           horsD:[g,d].filter(o=>o.hors).map(o=>o.distance||0)};
 }
@@ -339,7 +364,7 @@ function simPlages(t,refs){
 
   return {
     plages:r.plages.map(function(p){
-      return {u1:p.u1, u2:p.u2, longueur:r3(p.longueur), g:p.g, d:p.d};
+      return {u1:p.u1, u2:p.u2, longueur:r3(p.longueur), g:p.g, d:p.d, w:p.w};
     }),
     hors:[...hors.values()]
       .filter(o=>isFinite(o.ecart))
@@ -1093,7 +1118,9 @@ function simSegments(liste){
       envoi.push({
         type:"track",
         start:[r3(a.x),r3(a.y)], end:[r3(b.x),r3(b.y)],
-        length:r3(total*Math.abs(p.u2-p.u1)), width:t.w, layer:simCuIndex(t.l),
+        /* `p.w` : la largeur d'une zone du même net qui porte la piste. */
+        length:r3(total*Math.abs(p.u2-p.u1)), width:(p.w>0)?p.w:t.w,
+        layer:simCuIndex(t.l),
         net:t.net||"", copper_thickness:cuT(t.l),
         /* GAUCHE ET DROITE SE DÉFINISSENT PAR RAPPORT AU SENS DE MARCHE :
            faire demi-tour les échange. Les laisser tels quels décrirait la
@@ -2758,7 +2785,7 @@ function simVoisinagePcb(liste,adjacentes){
     for(const g of trkSegs(t)){
       out.push({type:"track",
                 start:[r3(g.x1),r3(g.y1)], end:[r3(g.x2),r3(g.y2)],
-                width:t.w, layer:simCuIndex(t.l), net:t.net||"",
+                width:(e.w>0)?e.w:t.w, layer:simCuIndex(t.l), net:t.net||"",
                 copper_thickness:cuT(t.l),
                 gap_left:e.g, gap_right:e.d,
                 /* UNE VOISINE DE MASSE EST UNE GARDE, et une garde non cousue

@@ -782,10 +782,17 @@ function pnlDetail(){
   }
   if(s&&s.type==="pad"){
     const ps=V.modele.padstacks[s.ps];
+    /* L'ANNEAU D'UN VIA, quand c'est sa pastille que le clic a rencontrée — ce
+       qui est le cas presque toujours. Celui du perçage s'il est connu, sinon
+       ce que laisse la pastille de cette couche autour du trou. */
+    const t=s.trou;
+    const anneau=t?(t.a||(s.d>t.d?(s.d-t.d)/2:0)):0;
     h+='<div class="fiche"><h3>Pastille</h3><table>'
       +l("Broche",mdlEsc(s.pin||"—"))
       +l("Couche",mdlEsc(mdlCoucheNom(s.couche)))
-      +(ps&&ps.trou?l("Trou",mdlMes(ps.trou)):"")
+      +(ps&&ps.trou?l("Trou",mdlMes(ps.trou)):(t?l("Trou",mdlMes(t.d)):""))
+      +(anneau?l("Anneau",'<span class="val">'+mdlMes(anneau)+"</span>"+
+                 (t.a&&t.a_sup?pnlSuppose():"")):"")
       +(ps&&ps.pad?l("Diamètre",mdlMes(ps.pad)+
                      (ps.pad_sup?pnlSuppose():"")):"")
       +l("Définition",mdlEsc(s.ps||"—"))

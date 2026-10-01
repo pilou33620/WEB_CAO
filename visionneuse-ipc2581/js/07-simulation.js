@@ -351,12 +351,18 @@ function simProjPoly(p,cum,x,y){
    AUCUN des deux ne peut plus être battu. Un côté sans masse ne s'arrête donc
    jamais tôt — mais le rayon utile ne fait que trois cases, et c'est borné.
    ========================================================================== */
-function simEcartsEn(g,k,px,py,tx,ty,demi,net,refs){
-  const rayonMax=Math.ceil((SIM_GAP_MAX/k+demi)/g.pas);
+/* `lg`/`ld`, facultatifs : les demi-largeurs du conducteur à gauche et à
+   droite de l'axe, quand un PLAN DU MÊME NET l'élargit (`simLargeurSienne`).
+   Les écarts se prennent alors depuis ces bords et non depuis ceux de la
+   piste. Par défaut, la demi-largeur de la piste des deux côtés. */
+function simEcartsEn(g,k,px,py,tx,ty,demi,net,refs,lg,ld){
+  if(!(lg>demi))lg=demi;
+  if(!(ld>demi))ld=demi;
+  const rayonMax=Math.ceil((SIM_GAP_MAX/k+Math.max(lg,ld))/g.pas);
   const ci=Math.floor(px/g.pas), cj=Math.floor(py/g.pas);
   const cp={x:0,y:0};
   let mg=Infinity, md=Infinity;          // masse de référence, par côté
-  let hg=null, hd=null;                  // cuivre hors référence, par côté
+  let hg=null, hd=null;                 // cuivre hors référence, par côté
 
   for(let r=0;r<=rayonMax;r++){
     for(let i=ci-r;i<=ci+r;i++)
@@ -399,18 +405,19 @@ function simEcartsEn(g,k,px,py,tx,ty,demi,net,refs){
   /* De la distance d'AXE à cuivre à la distance de CUIVRE à cuivre, en
      millimètres. Au-delà de la portée utile, il n'y a pas d'effet coplanaire :
      on rend zéro plutôt qu'un grand nombre, qui se lirait comme une mesure. */
-  const conv=function(v){
+  const conv=function(v,l){
     if(!isFinite(v))return 0;
-    const e=(v-demi)*k;
+    const e=(v-l)*k;
     return (e>0&&e<=SIM_GAP_MAX)?Math.round(e*1000)/1000:0;
   };
   const hors=[], horsD=[];
-  for(const o of [hg,hd]){
+  for(const [o,l] of [[hg,lg],[hd,ld]]){
     if(!o)continue;
-    const e=conv(o.d);
+    const e=conv(o.d,l);
     if(e>0){hors.push(o.net); horsD.push(e);}
   }
-  return {g:conv(mg), d:conv(md), hors:hors, horsD:horsD};
+  return {g:conv(mg,lg), d:conv(md,ld), hors:hors, horsD:horsD,
+          w:(lg>demi||ld>demi)?Math.round((lg+ld)*k*1000)/1000:0};
 }
 
 /* ==========================================================================
@@ -506,6 +513,46 @@ function simRefIdx(){
    ne fait que le nourrir, et relever au passage ce qu'il ne regarde pas — les
    côtés qui portent de la masse, et le cuivre voisin qui n'en est pas.
    ========================================================================== */
+/* ==========================================================================
+   LE PLAN DU MÊME NET ÉLARGIT LE CONDUCTEUR
+   --------------------------------------------------------------------------
+   Une zone de raccord, une flaque de jonction, un versement du net lui-même :
+   là où l'axe de la piste y entre, le conducteur n'est plus la piste mais ce
+   cuivre-là. L'ignorer envoyait au solveur une piste de 0,21 mm là où la
+   carte porte un millimètre de cuivre, donc une impédance trop haute.
+
+   ON LANCE UN RAYON EN TRAVERS, et non l'arête la plus proche : celle-ci
+   attrape le bord qui ferme le plan devant ou derrière le point, et rendait
+   une section trois fois trop étroite. Le rayon perpendiculaire à l'axe, lui,
+   coupe le contour exactement là où la section s'arrête.
+
+   Rend {g, d} — les demi-largeurs à gauche et à droite de l'axe, en unités
+   du fichier, bornées à `cap` —, ou null si le point n'est dans aucun plan. */
+function simLargeurSienne(siens,px,py,tx,ty,cap){
+  const nx=-ty, ny=tx;                    // la gauche, comme dans simEcartsEn
+  for(const pl of siens)for(const ct of pl.g){
+    if(!mdlDansPoly(ct.o,px,py))continue;
+    const trous=ct.t||[];
+    if(trous.some(t=>mdlDansPoly(t,px,py)))continue;
+    let g=cap, d=cap;
+    for(const pts of [ct.o,...trous]){
+      const n=pts.length;
+      for(let i=0,j=n-2;i<n;j=i,i+=2){
+        const ax=pts[j], ay=pts[j+1], ex=pts[i]-ax, ey=pts[i+1]-ay;
+        const den=nx*ey-ny*ex;
+        if(Math.abs(den)<1e-15)continue;  // arête parallèle au rayon
+        const qx=ax-px, qy=ay-py;
+        const s=(qx*ny-qy*nx)/den;
+        if(s<0||s>1)continue;
+        const t=(qx*ey-qy*ex)/den;
+        if(t>0){if(t<g)g=t;}else if(-t<d)d=-t;
+      }
+    }
+    return {g:g, d:d};
+  }
+  return null;
+}
+
 function simPlagesIpc(piste,coucheIdx,refs,cum,total){
   const cotes={g:false, d:false}, hors=new Map();
   const seule=[{u1:0, u2:1, longueur:total, g:0, d:0}];
@@ -515,9 +562,16 @@ function simPlagesIpc(piste,coucheIdx,refs,cum,total){
   if(g.vide)return {plages:seule, hors:[], cotes:cotes};
 
   const k=simKUnite(), demi=(piste.w||0)/2;
+  /* Les plans du net de la piste, sur sa couche : là où l'axe y entre, c'est
+     leur cuivre qui fait la section (voir `simEcartsEn`). */
+  const N=(piste.n>=0&&V.parNet)?V.parNet[piste.n]:null;
+  const siens=N?N.plans.filter(pl=>pl.c===coucheIdx):[];
   const r=simPlagesDe(total,function(u){
     const s=simSurPoly(piste.p,cum,u);
-    const e=simEcartsEn(g,k,s.x,s.y,s.tx,s.ty,demi,piste.n,refs);
+    const l=siens.length?simLargeurSienne(siens,s.x,s.y,s.tx,s.ty,
+                                          demi+SIM_GAP_MAX/k):null;
+    const e=simEcartsEn(g,k,s.x,s.y,s.tx,s.ty,demi,piste.n,refs,
+                        l&&l.g, l&&l.d);
     if(e.g>0)cotes.g=true;
     if(e.d>0)cotes.d=true;
     e.hors.forEach(function(net,i){
@@ -1927,7 +1981,9 @@ function simSegments(liste,N){
         envoi.push({
           type: "track",
           start: [q1.x * k, q1.y * k], end: [q2.x * k, q2.y * k],
-          length: subLen, width: (p.w || 0) * k, layer: simRangCu(cu),
+          /* `pl.w` : la largeur d'un plan du même net qui porte la piste. */
+          length: subLen, width: (pl.w > 0) ? pl.w : (p.w || 0) * k,
+          layer: simRangCu(cu),
           net: (p.n >= 0) ? mdlNetNom(p.n) : "", copper_thickness: LT.cu[cu].ep,
           gap_left: e.retourne ? pl.d : pl.g, gap_right: e.retourne ? pl.g : pl.d
         });
@@ -1939,7 +1995,7 @@ function simSegments(liste,N){
            vigilance à l'autre bout. Le côté gauche/droite s'inverse avec lui,
            pour la même raison. */
         objets.push({piste: p, cum: cum, u1: Math.min(t0, t1), u2: Math.max(t0, t1),
-                     retourne: !!e.retourne,
+                     retourne: !!e.retourne, elargi: pl.w > 0,
                      couche: (c ? c.nom : "?"), coucheIdx: e.couche});
       }
     }
@@ -2205,6 +2261,30 @@ function simZTraceLot(c,dpr,lot){
             couleur:s.couleur
           });
         }
+      }
+    }
+  }
+
+  /* LE PLAN DU MÊME NET QUI A ÉLARGI LA SECTION se peint à sa couleur : c'est
+     son cuivre que le calcul a pris (`simLargeurSienne`), et le laisser gris
+     ferait croire qu'il n'y est pas.
+     ponytail: un plan traversé par plusieurs tronçons prend la couleur du
+     dernier peint ; le découper par tronçon si cela se met à compter. */
+  for(const t of traits){
+    if(!t.obj.elargi)continue;
+    const o=t.obj, m=simSurPoly(o.piste.p,o.cum,(o.u1+o.u2)/2);
+    const N=(o.piste.n>=0)?V.parNet[o.piste.n]:null;
+    for(const pl of (N?N.plans:[])){
+      if(pl.c!==o.coucheIdx)continue;
+      for(const ct of pl.g){
+        if(!mdlDansPoly(ct.o,m.x,m.y))continue;
+        const f=new Path2D();
+        for(const pts of [ct.o,...(ct.t||[])]){
+          f.moveTo(pts[0],pts[1]);
+          for(let i=2;i+1<pts.length;i+=2)f.lineTo(pts[i],pts[i+1]);
+          f.closePath();
+        }
+        c.fillStyle=t.couleur(0.95); c.fill(f,"evenodd");
       }
     }
   }

@@ -430,6 +430,26 @@ T("un îlot d'un autre signal n'est pas de la masse, et il est signalé",()=>{
     throw new Error("il longe toute la piste : "+v.longueur+" mm relevés");
 });
 
+T("un plan du même net élargit le conducteur, et l'écart part de son bord",()=>{
+  /* La piste de 0,4 mm traverse, de x=20 à x=30, un versement de SON net
+     large de 1,6 mm (0,6 au-dessus de l'axe, 1,0 en dessous) ; le GND est
+     creusé à 1,3 mm de l'axe des deux côtés. Dans le versement le conducteur
+     fait 1,6 mm, ses écarts 0,7 et 0,3 ; hors de lui, la piste et 1,1 mm. */
+  carte({plans:[plan(0,rect(20,Y-1.0,30,Y+0.6),[]),
+                plan(1,rect(2,2,58,38),[rect(2,Y-1.3,58,Y+1.3)])]});
+  const g=simSegments();
+  const dans=g.envoi.find(o=>o.start[0]>=19.9&&o.end[0]<=30.1&&o.width>1);
+  if(!dans)throw new Error("le tronçon dans le versement doit être élargi : "+
+    g.envoi.map(o=>o.start[0]+"→"+o.end[0]+" w="+o.width).join(" ; "));
+  if(Math.abs(dans.width-1.6)>0.01)throw new Error("largeur "+dans.width+" au lieu de 1,6");
+  const e=[dans.gap_left,dans.gap_right].sort();
+  if(Math.abs(e[0]-0.3)>0.01||Math.abs(e[1]-0.7)>0.01)
+    throw new Error("écarts "+e+" au lieu de 0,3 / 0,7");
+  const hors=g.envoi.find(o=>o.end[0]<=20.1);
+  if(!hors||hors.width!==W||Math.abs(hors.gap_left-1.1)>0.01)
+    throw new Error("hors du versement, la piste et son écart : "+JSON.stringify(hors));
+});
+
 T("le trou qui s'élargit à mi-parcours découpe la piste en deux plages",()=>{
   /* LE CAS QUE LE MINIMUM SUR TOUTE LA LONGUEUR ÉCRASAIT : la moitié serrée
      donnait son écart aux quarante millimètres. Deux trous bout à bout dans le

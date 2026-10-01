@@ -3934,14 +3934,19 @@ function simPlagesDe(total,mesure){
   const n=Math.max(1,Math.min(SIM_ECH_MAX,Math.ceil(total/SIM_PAS)));
   const pas=total/n;
   const plages=[];
+  /* `w`, facultatif : la largeur du conducteur quand elle n'est pas celle de
+     la piste — un plan du même net qui l'élargit. Zéro veut dire « la piste ».
+     Elle découpe comme un écart, et la plage en garde la moyenne. */
   for(let i=0;i<n;i++){
     const e=mesure((i+0.5)/n,i)||{g:0,d:0};
+    const w=e.w||0;
     const p=plages[plages.length-1];
-    if(p&&simMemeEcart(p.g,e.g)&&simMemeEcart(p.d,e.d)){
-      p.i2=i;
+    if(p&&simMemeEcart(p.g,e.g)&&simMemeEcart(p.d,e.d)&&
+       simMemeEcart(p.ws/(p.i2-p.i1+1),w)){
+      p.i2=i; p.ws+=w;
       if(e.g>0)p.g=(p.g>0)?Math.min(p.g,e.g):e.g;
       if(e.d>0)p.d=(p.d>0)?Math.min(p.d,e.d):e.d;
-    }else plages.push({i1:i, i2:i, g:e.g||0, d:e.d||0});
+    }else plages.push({i1:i, i2:i, g:e.g||0, d:e.d||0, ws:w});
   }
 
   /* Les plages trop courtes rejoignent leur voisine la plus longue. On
@@ -3957,8 +3962,10 @@ function simPlagesDe(total,mesure){
       if((p.i2-p.i1+1)*pas>=SIM_PLAGE_MIN)continue;
       const a=plages[i-1], b=plages[i+1];
       const cible=(!a)?b:((!b)?a:((a.i2-a.i1)>=(b.i2-b.i1)?a:b));
+      const wm=cible.ws/(cible.i2-cible.i1+1);   // elle garde SA largeur
       cible.i1=Math.min(cible.i1,p.i1);
       cible.i2=Math.max(cible.i2,p.i2);
+      cible.ws=wm*(cible.i2-cible.i1+1);
       plages.splice(i,1);
       encore=true;
       break;
@@ -3969,7 +3976,8 @@ function simPlagesDe(total,mesure){
     n:n, pas:pas,
     plages:plages.map(function(p){
       return {u1:p.i1/n, u2:(p.i2+1)/n,
-              longueur:(p.i2-p.i1+1)*pas, g:p.g, d:p.d};
+              longueur:(p.i2-p.i1+1)*pas, g:p.g, d:p.d,
+              w:Math.round(p.ws/(p.i2-p.i1+1)*1000)/1000};
     })
   };
 }

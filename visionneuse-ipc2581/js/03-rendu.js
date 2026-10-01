@@ -229,6 +229,7 @@ function peindre(c,dpr,W,H){
   if(!boitiers.length&&V.comp)boitiers.push(V.comp);
   for(const ref of boitiers)peindreCompChoisi(c,dpr,ref);
   if(V.survol)peindreSurvol(c,dpr);
+  if(typeof peindreMesure==="function")peindreMesure(c,dpr);
 
   c.setTransform(1,0,0,1,0,0);
   peindreEchelle(c,dpr,W,H);

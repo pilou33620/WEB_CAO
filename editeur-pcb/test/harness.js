@@ -9332,6 +9332,23 @@ T("masse de référence : GND est proposée, un net de signal ne l'est pas",()=>
   if(simRefSet().has("N$2"))throw new Error("N$2 ne doit pas y être");
 });
 
+T("une zone du même net élargit le conducteur au lieu d'annuler l'écart",()=>{
+  /* Masse arrosée partout, puis une zone de N$1 posée sur la piste de x=20 à
+     x=30 : 0,6 mm au-dessus de l'axe, 1,0 en dessous — 1,6 mm de cuivre. */
+  simCarte();
+  simZone("GND",2,2,58,38);
+  simZone("N$1",20,SIM_Y-1.0,30,SIM_Y+0.6);
+  const g=simSegments();
+  const dans=g.envoi.find(o=>o.width>1);
+  if(!dans)throw new Error("le tronçon dans la zone doit être élargi : "+
+    g.envoi.map(o=>o.start[0]+"→"+o.end[0]+" w="+o.width).join(" ; "));
+  if(Math.abs(dans.width-1.6)>0.02)throw new Error("largeur "+dans.width+" au lieu de 1,6");
+  if(!(dans.gap_left>0&&dans.gap_right>0))
+    throw new Error("la masse borde la zone : écarts "+dans.gap_left+" / "+dans.gap_right);
+  if(!g.envoi.some(o=>o.width===SIM_W))
+    throw new Error("hors de la zone, la piste garde sa largeur");
+});
+
 /* --------------------------------------------------------------------------
    LES COTES DU VIA PARTENT AVEC LA SÉLECTION
    --------------------------------------------------------------------------

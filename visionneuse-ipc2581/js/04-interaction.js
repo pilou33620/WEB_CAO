@@ -28,6 +28,48 @@ function pos(e){
 }
 
 /* ==========================================================================
+   Mesurer
+   --------------------------------------------------------------------------
+   M arme la règle : un clic pose le départ, le curseur tire le trait, un
+   second clic le fige, un troisième recommence. Glisser déplace toujours la
+   carte. Un point posé sur une pastille ou un perçage s'accroche à son
+   centre : c'est l'entraxe qu'on mesure entre deux vias, pas l'endroit où le
+   doigt est tombé. Échap ou M range la règle.
+   ========================================================================== */
+let MESURE=null;               // null, ou {a,b,fixe} en coordonnées monde
+
+function mesurer(on){
+  MESURE=(on===undefined?!MESURE:on)?{a:null,b:null,fixe:false}:null;
+  const b=document.getElementById("bMesure");
+  if(b)b.classList.toggle("on",!!MESURE);
+  hint(MESURE?"Mesure : cliquer le point de départ":"");
+  dessiner();
+}
+function mesurePoint(w){
+  const s=designer(w.x,w.y);
+  return (s&&(s.type==="pad"||s.type==="percage"))?{x:s.x,y:s.y}:{x:w.x,y:w.y};
+}
+function mesureTexte(){
+  const a=MESURE.a, b=MESURE.b, dx=b.x-a.x, dy=b.y-a.y;
+  return mdlMes(Math.hypot(dx,dy))+"  (ΔX "+mdlNb(dx)+"  ΔY "+mdlNb(dy)+")";
+}
+function peindreMesure(c,dpr){
+  if(!MESURE||!MESURE.a||!MESURE.b)return;
+  const a=w2s(MESURE.a.x,MESURE.a.y), b=w2s(MESURE.b.x,MESURE.b.y);
+  c.setTransform(dpr,0,0,dpr,0,0);
+  c.strokeStyle=c.fillStyle="#38bdf8"; c.lineWidth=1.5;
+  c.setLineDash([6,4]);
+  c.beginPath(); c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.stroke();
+  c.setLineDash([]);
+  for(const p of [a,b]){c.beginPath();c.arc(p.x,p.y,3,0,2*Math.PI);c.fill();}
+  const t=mesureTexte();
+  c.font="12px "+MONO; c.textAlign="left"; c.textBaseline="bottom";
+  const lx=(a.x+b.x)/2+8, ly=(a.y+b.y)/2-6, lw=c.measureText(t).width;
+  c.fillStyle="rgba(0,0,0,0.75)"; c.fillRect(lx-4,ly-16,lw+8,20);
+  c.fillStyle="#38bdf8"; c.fillText(t,lx,ly);
+}
+
+/* ==========================================================================
    Désignation
    ========================================================================== */
 /* Boîte d'une piste, calculée une fois et gardée sur l'objet : sans elle,
@@ -82,7 +124,7 @@ function designer(wx,wy){
         /* Le trou sous la pastille, s'il y en a un : c'est ce qui fait d'elle
            un via ou une broche traversante plutôt qu'un simple appui de CMS,
            et ce qui décide de ce que le clic met en évidence. */
-        return {type:"pad",x:q.x,y:q.y,r:Math.max((q.d||0)/2,tol),
+        return {type:"pad",x:q.x,y:q.y,r:Math.max((q.d||0)/2,tol),d:q.d||0,
                 net:(q.pad.n==null?-1:q.pad.n),couche:q.c,
                 pin:q.pad.pin||"",ps:q.pad.ps||"",
                 trou:mdlTrouEn(q.x,q.y),
@@ -285,6 +327,9 @@ cv.addEventListener("pointermove",function(e){
   const w=s2w(p.x,p.y);
   document.getElementById("fPos").textContent=
     "X "+mdlNb(w.x)+"  Y "+mdlNb(w.y)+"  "+V.unite;
+  if(MESURE&&MESURE.a&&!MESURE.fixe){
+    MESURE.b=mesurePoint(w); hint(mesureTexte()); redessiner(); return;
+  }
   /* LA SONDE DE LA CARTE DE CHALEUR, quand elle est affichée. Elle ne rend
      vrai que si l'on a changé de carreau : sans cela on redessinerait toute
      la carte à chaque pixel parcouru. */
@@ -309,6 +354,11 @@ function fin(e){
   if(!V.modele||!glisse||glisse.bouge)return;
   /* Un clic, pas un déplacement : on désigne. */
   const p=pos(e), w=s2w(p.x,p.y);
+  if(MESURE){
+    if(!MESURE.a||MESURE.fixe){MESURE.a=MESURE.b=mesurePoint(w);MESURE.fixe=false;}
+    else{MESURE.b=mesurePoint(w);MESURE.fixe=true;}
+    hint(mesureTexte()); dessiner(); return;
+  }
   /* DÉSIGNER UNE BORNE DE CHUTE CONTINUE. Le panneau de simulation arme
      l'attente ; ce clic-là choisit la pastille et ne touche ni au net montré
      ni à la sélection — on désigne un point de mesure, on ne navigue pas.
@@ -373,7 +423,7 @@ function porteeDe(s,maj){
 }
 cv.addEventListener("pointerup",fin);
 cv.addEventListener("dblclick",function(e){
-  if(!V.modele)return;
+  if(!V.modele||MESURE)return;
   const p=pos(e), w=s2w(p.x,p.y);
   const s=designer(w.x,w.y);
   if(!s)return;
@@ -430,7 +480,8 @@ document.addEventListener("keydown",function(e){
   else if(k==="r"){basculer("refs","bRefs");}
   else if(k==="d"){basculer("trous","bTrous");}
   else if(k==="p"){basculer("plans","bPlans");}
-  else if(k==="escape"){choisirRien();}
+  else if(k==="m"){mesurer();}
+  else if(k==="escape"){if(MESURE)mesurer(false);else choisirRien();}
   else if(k==="+"||k==="="){zoomer(1.25,cv.clientWidth/2,cv.clientHeight/2);}
   else if(k==="-"){zoomer(0.8,cv.clientWidth/2,cv.clientHeight/2);}
   else if(k==="o"&&!e.shiftKey){document.getElementById("fichier").click();}

@@ -253,6 +253,7 @@ function exportPng(){
   document.getElementById("bJson").onclick=exportJson;
   document.getElementById("bPng").onclick=exportPng;
   document.getElementById("bFit").onclick=fit;
+  document.getElementById("bMesure").onclick=function(){mesurer();};
   document.getElementById("bFlip").onclick=basculerFace;
   document.getElementById("bRefs").onclick=function(){basculer("refs","bRefs");};
   document.getElementById("bTrous").onclick=function(){basculer("trous","bTrous");};
