@@ -3239,6 +3239,41 @@ T("le mode simple classe par la longueur, et pas par le plafond",
   le_mode_simple_classe_par_la_longueur_et_pas_par_le_plafond)
 
 
+def deux_niveaux_tient_cohn_et_rejoint_le_fil_fin():
+    """`section_deux_niveaux` (larges faces) : Cohn, exact, en triplaque, un
+    ruban puis une paire ; et, rubans etroits et loin l'un de l'autre, la
+    methode des images a fil fin qu'il remplace."""
+    from scipy.special import ellipk
+    c0 = 299792458.0
+    K = lambda k: ellipk(k * k) / ellipk(1 - k * k)
+    w, s, b = 0.15e-3, 0.15e-3, 0.5e-3
+    r = tl.section_deux_niveaux([{"x": 0.0, "y": b / 2, "w": w}], b=b, epsilon_r=4.3)
+    z = math.sqrt(4.3) / (c0 * r["c"][0, 0])
+    z_cohn = 30 * math.pi / math.sqrt(4.3) * K(1 / math.cosh(math.pi * w / (2 * b)))
+    assert abs(z / z_cohn - 1) < 2e-3, (z, z_cohn)
+    r = tl.section_deux_niveaux([{"x": 0.0, "y": b / 2, "w": w},
+                                 {"x": w + s, "y": b / 2, "w": w}], b=b)
+    c = r["c"]
+    ke = math.tanh(math.pi * w / (2 * b)) * math.tanh(math.pi * (w + s) / (2 * b))
+    ko = math.tanh(math.pi * w / (2 * b)) / math.tanh(math.pi * (w + s) / (2 * b))
+    for z, k in ((1 / (c0 * (c[0, 0] + c[0, 1])), ke), (1 / (c0 * (c[0, 0] - c[0, 1])), ko)):
+        z_cohn = 30 * math.pi / K(k)
+        assert abs(z / z_cohn - 1) < 2e-3, (z, z_cohn)
+    # le fil fin : 20 um de large, 2 mm d'ecart lateral, un plan
+    sys.path.insert(0, os.path.join(RACINE, "python"))
+    import analyse_carte as ac
+    r = tl.section_deux_niveaux([{"x": 0.0, "y": 0.2e-3, "w": 20e-6},
+                                 {"x": 2e-3, "y": 0.4e-3, "w": 20e-6}])
+    kb = ct.coefficients_couple(r["c"], r["l"], 0, 1)[0]
+    ki = ac._kb_larges_faces(0.2, 0.4, 2.0, 0.02, 0.02)
+    assert abs(kb / ki - 1) < 0.05, (kb, ki)
+    assert abs(r["c"][0, 1] - r["c"][1, 0]) < 1e-9 * abs(r["c"][0, 1]), r["c"]
+
+
+T("deux niveaux : Cohn en triplaque, le fil fin a distance",
+  deux_niveaux_tient_cohn_et_rejoint_le_fil_fin)
+
+
 print("\n" + "-" * 62)
 print("  %d cas, %s" % (ok + ko, "tous passes" if not ko
                         else "%d en echec" % ko))

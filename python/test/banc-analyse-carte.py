@@ -269,6 +269,21 @@ def test_diaphonie():
     k = [x for x in de(sup, "diaphonie") if "couche voisine" in x["msg"]]
     assert k and k[0]["n"] == "DATA" and k[0]["c"] == "Top ↔ In1", de(sup, "diaphonie")
     assert sup["bilan"]["diaphonie"]["couples_larges_faces"] >= 1, sup["bilan"]
+    # RÉSOLU, pas estimé : les rubans à leurs deux hauteurs. Un plan de plus
+    # au-dessus de la paire ferme le domaine et réduit le couplage.
+    assert "MoM, un plan" in k[0]["msg"], k[0]["msg"]
+    kb = lambda m: float(m.split("Kb ")[1].split(" %")[0])
+    st2 = {"layers": [{"type": "copper", "name": "L0", "role": "plane", "net": "GND",
+                       "thickness": 0.035},
+                      {"type": "dielectric", "name": "d0", "thickness": 0.2, "epsilon_r": 4.3}]
+           + st["layers"]}
+    k2 = [x for x in de(analyser_document({"format": "cao-analyse-carte-1", "unite_mm": 1,
+                                           "stackup": st2,
+                                           "pistes": [droite("CLK", 0.0), droite("DATA", 0.0, c="In1")],
+                                           "natures": {"CLK": "Horloge", "DATA": "Lent"}}),
+                        "diaphonie") if "couche voisine" in x["msg"]]
+    assert k2 and "MoM, deux plans" in k2[0]["msg"], k2
+    assert kb(k2[0]["msg"]) < kb(k[0]["msg"]), (k2[0]["msg"], k[0]["msg"])
     loin = analyser_document({"format": "cao-analyse-carte-1", "unite_mm": 1, "stackup": st,
                               "pistes": [droite("CLK", 0.0), droite("DATA", 3.0, c="In1")],
                               "natures": {"CLK": "Horloge", "DATA": "Lent"}})

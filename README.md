@@ -332,7 +332,7 @@ python editeur-schematique/outils/build-monofichier.py  # → editeur-schematiqu
 
 ## 🗺️ Limites & feuille de route
 
-Les guides d'outil ont leur section *Limites connues* quand il y en a. Le backlog est dans [A-FAIRE.md](A-FAIRE.md) : il reste des tâches ouvertes, toutes dans la vérification de la carte (Z₀ par classe de net, courant par rail, couplage entre couches voisines, liaisons thermiques des zones).
+Les guides d'outil ont leur section *Limites connues* quand il y en a. Le backlog est dans [A-FAIRE.md](A-FAIRE.md) : il n'y reste aucune tâche ouverte.
 
 Le solveur 2,5D pleine onde (`mom_solver`) a été retiré au profit du solveur 2D instantané ; il est conservé dans la branche `archive/mom-solver-25d`.
 

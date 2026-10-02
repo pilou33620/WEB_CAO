@@ -141,10 +141,10 @@ effectif min(front de sa classe, 10 % de la période), au genou 0,35 / t_r.
 - [x] Rapport : **dérogations**, **référence** et comparaison de révisions dans la page, **tout peindre** ; visionneuse : classement manuel **mémorisé par fichier**.
 
 **Reste à faire — compléter ce qui existe**
-- [ ] **Z₀ par classe** plutôt qu'une seule cible ; **porteuse par net** (une carte LoRa + NFC).
-- [ ] **Courant par rail** saisi dans le panneau (ou repris de l'onglet Chute DC) pour la règle de courant.
-- [ ] Couplage entre couches voisines **résolu** (MoM à conducteurs sur deux niveaux) au lieu de la méthode des images.
-- [ ] Éditeur : liaisons thermiques et rognage au bord dans les zones envoyées.
+- [x] **Z₀ par classe** plutôt qu'une seule cible ; **porteuse par net** (une carte LoRa + NFC).
+- [x] **Courant par rail** saisi dans le panneau (ou repris de l'onglet Chute DC) pour la règle de courant.
+- [x] Couplage entre couches voisines **résolu** (MoM à conducteurs sur deux niveaux, `ligne_mom.section_deux_niveaux`) au lieu de la méthode des images.
+- [x] Éditeur : liaisons thermiques et rognage au bord dans les zones envoyées.
 
 ### Simulation PI (Power Integrity)
 - [x] **Impédance fréquentielle du PDN ($Z(\omega)$)** :

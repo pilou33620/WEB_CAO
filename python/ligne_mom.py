@@ -2,6 +2,17 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.6.0
+# Date: 2026-10-02
+# Explication: DEUX NIVEAUX. Deux pistes de couches voisines sans plan entre
+#   elles se couplaient par la methode des images a fil fin (rayon w/4, un
+#   seul plan) dans analyse_carte. `section_deux_niveaux` les resout : chaque
+#   ruban a sa hauteur, un plan ou deux, milieu homogene. Panneaux en cosinus
+#   (densite de l'arete) : Cohn exact a 0,05 % des 20 panneaux. Sur des
+#   rubans etroits et eloignes, rejoint les images a 3 % pres -- banc
+#   python/test/banc-crosstalk.py.
+# Fonctions ajoutees : section_deux_niveaux, _ln_ch_moins_cos, _reste_meme_niveau.
+#
 # Version: 2.5.1
 # Date: 2026-09-23
 # Explication: LA TRIPLAQUE NE DEBORDE PLUS. `green_spectral_strip` calculait
@@ -1478,6 +1489,108 @@ def sous_systeme(c_mat, c0_mat, indices):
     except np.linalg.LinAlgError:
         raise ValueError("sous-matrice de capacite singuliere")
     return c_sous, l_sous
+
+
+# ==========================================================================
+# DEUX NIVEAUX : DES RUBANS A DES HAUTEURS DIFFERENTES
+# --------------------------------------------------------------------------
+# Deux pistes de couches voisines sans plan entre elles se couplent par leur
+# LARGEUR, face a face : c'est la le couplage le plus fort d'une carte, et le
+# fil fin des images (rayon w/4) le connait mal des que les pistes se
+# superposent. Ici chaque ruban est decoupe en panneaux a SA hauteur, et la
+# fonction de Green est celle d'une charge lineique en milieu homogene :
+#
+#   un plan (y = 0)        phi = 1/(4 pi eps) . ln[(dx2+(y+y')2) / (dx2+(y-y')2)]
+#   deux plans (0 et b)    phi = 1/(4 pi eps) . ln[(ch(pi dx/b) - cos(pi(y+y')/b))
+#                                                 / (ch(pi dx/b) - cos(pi(y-y')/b))]
+#
+# la seconde est la serie des images entre deux plans, sommee. Sur un meme
+# niveau, la partie en 2.ln|dx| s'integre exactement sur chaque panneau, et le
+# reste, lisse, a la quadrature.
+#
+# CE QUE LE MILIEU HOMOGENE VEUT DIRE : un seul diélectrique entre les plans.
+# Le couplage Kb n'en depend alors pas (Kf est nul), et c'est le cas de deux
+# couches internes entre deux plans. Une paire de couches EXTERIEURES, avec
+# de l'air au-dessus, est un milieu stratifie : le resultat y reste une
+# estimation, du meme ordre que celle des images, mais resolue en largeur.
+# ==========================================================================
+
+def _ln_ch_moins_cos(a, c):
+    """ln(cosh a - cos c) sans debordement pour |a| grand."""
+    a = np.abs(a)
+    return a + np.log(0.5 * (1.0 + np.exp(-2.0 * a)) - np.cos(c) * np.exp(-a))
+
+
+def _reste_meme_niveau(dx, b):
+    """ln(ch(pi dx/b) - 1) - 2 ln|dx| : la partie lisse du noyau sur un niveau."""
+    t = np.pi * np.abs(dx) / (2.0 * b)
+    ts = np.maximum(t, 1e-300)
+    lsh = np.where(t < 1e-3, t * t / 6.0,
+                   np.where(t > 20.0, ts - np.log(2.0 * ts),
+                            np.log(np.sinh(np.minimum(ts, 20.0)) / ts)))
+    return np.log(2.0) + 2.0 * (np.log(np.pi / (2.0 * b)) + lsh)
+
+
+def section_deux_niveaux(conducteurs, b=None, epsilon_r=1.0, n=30, n_gauss=8):
+    """[C] et [L] de rubans fins a des hauteurs quelconques, en milieu homogene.
+
+    `conducteurs` : [{x, y, w}] en metres -- centre, hauteur au-dessus du plan
+    du bas, largeur. `b` : ecart entre les deux plans, ou None pour un plan
+    seul. Rend {"c", "l"} en F/m et H/m, dans l'ordre d'entree.
+
+    LES PANNEAUX SUIVENT UN COSINUS, pas l'exposant 1,5 de `_panneaux_bande` :
+    la charge d'un ruban fin diverge en 1/racine a ses aretes, et c'est
+    exactement la densite de Tchebychev. Mesure en triplaque contre Cohn
+    (exact) : 0,05 % a 20 panneaux, la ou l'exposant 1,5 en laisse 1,2 %.
+    """
+    t = 0.5 * (1.0 - np.cos(np.pi * np.arange(n + 1) / n))
+    xs, ys, ws, qui = [], [], [], []
+    for k, cd in enumerate(conducteurs):
+        w, y = float(cd["w"]), float(cd["y"])
+        if not (w > 0 and y > 0 and (b is None or y < b)):
+            raise ValueError("conducteur %d : largeur ou hauteur hors du domaine" % (k + 1))
+        x0 = float(cd["x"])
+        bords = x0 - w / 2.0 + w * t
+        xs.append(0.5 * (bords[1:] + bords[:-1])), ws.append(np.diff(bords))
+        ys.append(np.full(n, y)), qui.append(np.full(n, k))
+    xc, wp, yc, qui = map(np.concatenate, (xs, ws, ys, qui))
+    g, pg = _leggauss(n_gauss)
+    # points de Gauss de chaque panneau source : (N, G)
+    xg = xc[:, None] + 0.5 * wp[:, None] * g[None, :]
+    poids = 0.5 * wp[:, None] * pg[None, :]
+    dx = xc[:, None, None] - xg[None, :, :]               # obs, source, gauss
+    som = yc[:, None, None] + yc[None, :, None]
+    dif = yc[:, None, None] - yc[None, :, None]
+    # le noyau direct d'un meme niveau peut toucher ln 0 : il est remplace
+    # plus bas par son integrale exacte
+    with np.errstate(divide="ignore", invalid="ignore"):
+        if b is None:
+            image = np.log(dx * dx + som * som)
+            direct = np.log(dx * dx + dif * dif)
+        else:
+            image = _ln_ch_moins_cos(np.pi * dx / b, np.pi * som / b)
+            direct = _ln_ch_moins_cos(np.pi * dx / b, np.pi * dif / b)
+        a = ((image - direct) * poids[None, :, :]).sum(axis=2)
+    # MEME NIVEAU : 2 ln|dx| exact sur le panneau, le reste en quadrature
+    meme = np.abs(yc[:, None] - yc[None, :]) < 1e-12
+    if meme.any():
+        u1 = (xc[None, :] - wp[None, :] / 2.0) - xc[:, None]
+        u2 = (xc[None, :] + wp[None, :] / 2.0) - xc[:, None]
+        prim = lambda u: np.where(u == 0, 0.0, u * np.log(np.abs(np.where(u == 0, 1.0, u))) - u)
+        exact = 2.0 * (prim(u2) - prim(u1))
+        reste = (0.0 if b is None else
+                 (_reste_meme_niveau(dx, b) * poids[None, :, :]).sum(axis=2))
+        direct_meme = exact + reste
+        imag = (image * poids[None, :, :]).sum(axis=2)
+        a = np.where(meme, imag - direct_meme, a)
+    a /= 4.0 * np.pi * EPSILON_0
+    nc = len(conducteurs)
+    v = (qui[:, None] == np.arange(nc)[None, :]).astype(float)
+    sigma = np.linalg.solve(a, v)                          # par unite d'eps_r
+    c0 = np.array([[float((sigma[qui == i, j] * wp[qui == i]).sum())
+                    for j in range(nc)] for i in range(nc)])
+    c0 = 0.5 * (c0 + c0.T)
+    return {"c": float(epsilon_r) * c0, "l": MU_0 * EPSILON_0 * np.linalg.inv(c0)}
 
 
 def dispersion_getsinger(z0_statique, eps_eff_statique, epsilon_r, h, freq):

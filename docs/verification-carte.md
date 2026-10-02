@@ -348,11 +348,13 @@ s'agressent l'un l'autre, le sens le plus grave est gardé et la ligne ajoute
 
 **Entre deux couches voisines** sans plan entre elles, deux pistes qui se
 superposent (décalage d'axe à axe sous trois fois la hauteur) se couplent par
-leur largeur : Kb par la **méthode des images** au-dessus du plan le plus
-proche, en milieu homogène (Kf nul). C'est une estimation prudente — un second
-plan de l'autre côté réduirait le couplage —, écrite « (images, un plan) »
-dans la ligne ; aucun moteur du projet ne résout encore deux conducteurs sur
-deux niveaux.
+leur largeur : Kb **résolu** par la méthode des moments, chaque ruban à sa
+hauteur, entre les plans qui encadrent la paire (le second plan, quand il y
+en a un, ferme le domaine et réduit le couplage), en milieu homogène (Kf nul).
+La ligne dit « (MoM, un plan) » ou « (MoM, deux plans) ». Le solveur tient
+Cohn (exact) à 0,2 % en triplaque et rejoint, sur des rubans étroits et
+éloignés, la méthode des images à fil fin — qui ne sert plus que de repli,
+écrite « (images, un plan) », quand le budget de résolutions est épuisé.
 
 **La somme des agresseurs** : les niveaux de tous les agresseurs d'une victime
 s'ajoutent au pire, en phase. Une ligne de plus, « Somme de N agresseurs »,
@@ -603,13 +605,14 @@ coup d'œil, et le constat choisi reste marqué par-dessus.
 
 ## 8. Ce que la vérification ne dit pas (aujourd'hui)
 
-- **Diaphonie entre couches voisines** : méthode des images au-dessus d'un
-  seul plan, prudente ; pas de solveur à deux niveaux.
+- **Diaphonie entre couches voisines** : milieu homogène. Une paire de
+  couches extérieures, avec de l'air au-dessus, est stratifiée : le Kb y
+  reste une estimation, résolue en largeur.
 - **Visionneuse** : un perçage IPC-2581 ne dit pas toujours sa portée ; sans
   elle, il est **supposé traversant** (chemins de retour, moignons).
-- **Éditeur** : les zones partent remplies — dégagements autour des autres
-  nets en polygones à 8 côtés —, mais sans leurs liaisons thermiques ni le
-  rognage au bord de carte.
+- **Éditeur** : les zones partent remplies, rognées au bord et avec leurs
+  liaisons thermiques, comme le rendu les peint — mais en polygones à 8
+  côtés, et une pastille ronde ou polygonale part en rectangle.
 - **Découplage** : un T posé au milieu d'un segment du rail n'est pas un
   nœud du plus court chemin (il l'est pour les branches en T) ; un rail passé
   par un plan se mesure à vol d'oiseau.

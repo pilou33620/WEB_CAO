@@ -514,9 +514,8 @@ def _kb_larges_faces(h_v, h_a, x_lat, w_v, w_a):
     """Kb de deux pistes de couches voisines, sans plan entre elles, au-dessus
     du même plan de référence : méthode des images en milieu homogène (Kf
     nul, Kb = K_L / 2). Hauteurs et écart latéral d'axe à axe, en mm.
-    ponytail: un seul plan (le plus proche) ; un second plan de l'autre côté
-    réduit le couplage -- l'estimation est donc prudente. Un solveur MoM à
-    conducteurs sur deux niveaux le remplacera."""
+    Le repli de `_kb_deux_niveaux`, quand le budget de résolutions est
+    épuisé : fil fin de rayon w/4, un seul plan, donc prudent."""
     lv = math.log(2 * h_v / (w_v / 4))
     la = math.log(2 * h_a / (w_a / 4))
     lm = 0.5 * math.log((x_lat ** 2 + (h_v + h_a) ** 2)
@@ -541,8 +540,10 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
     t_r est le front effectif de l'AGRESSEUR à chaque fréquence.
 
     ENTRE DEUX COUCHES VOISINES sans plan entre elles (larges faces), deux
-    pistes qui se superposent se couplent par leur largeur : Kb par la méthode
-    des images (`_kb_larges_faces`), même modèle de niveau.
+    pistes qui se superposent se couplent par leur largeur : Kb RÉSOLU aussi,
+    rubans à leurs deux hauteurs entre les plans qui encadrent la paire
+    (`ligne_mom.section_deux_niveaux`, milieu homogène : Kf nul), même modèle
+    de niveau. Au-delà du budget, la méthode des images (`_kb_larges_faces`).
 
     LA SOMME DES AGRESSEURS : plusieurs voisins d'une même victime peuvent
     basculer ensemble. Leurs niveaux s'ajoutent au pire (en phase) ; une ligne
@@ -575,6 +576,25 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
     cache, couples, larges = {}, defaultdict(list), defaultdict(list)
     bilan = {"couples": 0, "sections": 0, "couples_larges_faces": 0}
     sans_plan = []
+
+    def deux_niveaux(h_v, h_a, x_lat, w_v, w_a, b_mm):
+        """Kb de la victime, rubans à leurs hauteurs (mm) ; None hors budget."""
+        cle = ("2n", round(h_v, 4), round(h_a, 4), round(x_lat, 2),
+               round(w_v, 3), round(w_a, 3), b_mm and round(b_mm, 4))
+        if cle not in cache:
+            if len(cache) >= SECTIONS_MAX:
+                return None
+            cache[cle] = None
+            try:
+                r = tl.section_deux_niveaux(
+                    [{"x": 0.0, "y": h_v * 1e-3, "w": w_v * 1e-3},
+                     {"x": x_lat * 1e-3, "y": h_a * 1e-3, "w": w_a * 1e-3}],
+                    b=b_mm * 1e-3 if b_mm else None)
+                # milieu homogène : Kf est nul, seul Kb compte
+                cache[cle] = xt.coefficients_couple(r["c"], r["l"], 0, 1)[0]
+            except Exception:                           # noqa: BLE001
+                pass
+        return cache[cle]
 
     for i, segs in par.items():
         h = se._hauteur_de_couche(couches, i, segs[0][5],
@@ -617,7 +637,12 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
         refs = set(_plans_voisins(couches, i)) | set(_plans_voisins(couches, j))
         if not refs:
             continue
-        p = min(refs, key=lambda q: max(abs(q - i), abs(q - j)))
+        # LES PLANS QUI ENCADRENT LA PAIRE : celui du dessous sert d'origine
+        # des hauteurs, celui du dessus (s'il existe) ferme le domaine.
+        dessous = [q for q in refs if q > j]
+        p = min(dessous) if dessous else max(refs)
+        dessus = [q for q in refs if q < i] if dessous else []
+        b_mm = _ep(couches, max(dessus), p) if dessus else None
         # hauteur de l'axe de chaque piste au-dessus du plan p, en mm
         h_i = _ep(couches, i, p) + float(couches[i].get("thickness") or 0.035) / 2
         h_j = _ep(couches, j, p) + float(couches[j].get("thickness") or 0.035) / 2
@@ -644,9 +669,12 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
                     continue
                 for v_, g_, hv, ha in ((a, b, h_i, h_j), (b, a, h_j, h_i)):
                     if joue(v_[0], False) and joue(g_[0], True):
-                        kb = _kb_larges_faces(hv, ha, x_lat, v_[5], g_[5])
+                        kb = deux_niveaux(hv, ha, x_lat, v_[5], g_[5], b_mm)
+                        quoi = "MoM, %s" % ("deux plans" if b_mm else "un plan")
+                        if kb is None:
+                            kb, quoi = _kb_larges_faces(hv, ha, x_lat, v_[5], g_[5]), "images, un plan"
                         larges[(v_[0], g_[0], nom)].append(
-                            (lg[0], x_lat, kb, 0.0, lg[0] * 1e-3 / v, lg[2]))
+                            (lg[0], x_lat, kb, 0.0, lg[0] * 1e-3 / v, lg[2], quoi))
     if sans_plan:
         notes.append("Diaphonie non calculée sur %s : pas de plan de référence dans"
                      " l'empilage." % ", ".join(sorted(set(sans_plan))))
@@ -716,8 +744,9 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
             continue
         if large:
             msg = ("Depuis %s, couche voisine : %.1f mm superposés, décalage mini %.3f mm"
-                   " d'axe à axe, Kb %.1f %% (images, un plan)"
-                   % (na, sum(x[0] for x in vals), min(x[1] for x in vals), 100 * kb_max))
+                   " d'axe à axe, Kb %.1f %% (%s)"
+                   % (na, sum(x[0] for x in vals), min(x[1] for x in vals), 100 * kb_max,
+                      " ; ".join(sorted({x[6] for x in vals}))))
         else:
             msg = ("Depuis %s : %.1f mm en regard, écart mini %.3f mm, Kb %.1f %%"
                    % (na, sum(x[0] for x in vals), min(x[1] for x in vals), 100 * kb_max))
