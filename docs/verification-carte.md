@@ -267,7 +267,7 @@ côtés. Si c'est le même plan, le retour suit : rien à dire. S'il change :
 | Cas | Ce qui porte le retour | Ce que dit le rapport |
 | :--- | :--- | :--- |
 | même net des deux côtés (GND → GND) | le via de masse le plus proche | la distance, l'inductance de boucle, le front le plus raide supporté |
-| nets différents (GND → alimentation) | un condensateur de découplage entre les deux plans, et la capacité des plans | le pont trouvé (repère, distance), ou « aucun découplage à moins de 10 mm » |
+| nets différents (GND → alimentation) | un condensateur de découplage entre les deux plans, et la capacité des plans | le pont trouvé (repère, distance), ou « aucun découplage à moins de 10 mm », ou « aucun découplage entre ces plans sur toute la carte » (la boucle se prend alors au rayon de la paire de plans) |
 | pas de cuivre de plan au droit du via | rien | critique d'office |
 | net des plans inconnu | ? | vigilance : l'empilage ne dit pas si un via de masse suffit |
 

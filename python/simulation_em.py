@@ -2802,6 +2802,16 @@ def _cavite_de_retour(trans, via, couches, segments, d_percage):
             fiche["etalement_seul"] = True
             fiche["inductance_nH"] = round(l_cavite * 1e9, 4)
             return fiche
+        # RIEN NON PLUS AU-DELA DU RAYON : aucun decouplage ne joint ces deux
+        # plans sur toute la carte (les deux pages balaient TOUS les composants
+        # et envoient le plus proche hors rayon des qu'il y en a un). Le pont
+        # suppose au rayon reste le bon proxy de l'impedance -- en basse
+        # frequence le retour passe par le reseau d'alimentation (0 ohm,
+        # regulateur, decouplage d'un autre rail), que la cavite seule ignore.
+        # Mais sa DISTANCE flatte : il n'y a rien a 10 mm, et la verification
+        # de carte doit le savoir (P01x291 : VDDIO sans un seul condensateur
+        # vers GND, des dizaines de vias jugés « ok » à 1 ns).
+        fiche["aucun_pont_carte"] = (via or {}).get("pont_hors_rayon_mm") is None
         l_etal = tl.inductance_etalement_via_via(h_cav * 1e-3, rayon * 1e-3,
                                                  max(d_percage, 1e-3) * 1e-3)
         detail = [{
@@ -3047,6 +3057,15 @@ def _avertir_retour(transitions, f_fin=0.0):
                          " compte que l'étalement dans les plans (%.2f nH), et"
                          " la traversée est donc SOUS-ESTIMÉE." % etal)
             out.append(tete + queue)
+        elif cav.get("borne") and cav.get("aucun_pont_carte"):
+            out.append(
+                tete + cout +
+                " AUCUN découplage ne joint ces deux plans sur toute la carte :"
+                " on a supposé un pont au rayon de %.1f mm (MINORANT, le réseau"
+                " d'alimentation finit par refermer), mais au front rapide le"
+                " retour s'étale dans toute la paire de plans. Poser un"
+                " condensateur au pied du via, ou garder la même référence."
+                % cav["rayon_mm"])
         elif cav.get("borne"):
             plus_proche_info = ""
             if cav.get("plus_proche_hors_rayon_mm") is not None:

@@ -3883,10 +3883,18 @@ function simNetPlanEnIpc(coucheIdx, x, y){
     if(!nomNet) continue;
     for(const ct of (pl.g || [])){
       if(!ct.o || ct.o.length < 6) continue;
-      if(!simXtDansContourIpc(ct.o, x, y)) continue;
+      /* LE DÉGAGEMENT N'EST PAS TOUJOURS UN TROU FERMÉ. Quand l'antipad du via
+         touche un autre dégagement (via voisin, fente), l'exportateur le fond
+         dans le CONTOUR du versement : le via tombe hors de tout contour et
+         la page concluait « pas de cuivre au droit du via » sur un via cerné
+         de VDDIO à 0,8 mm (P01x291). Hors contour, on sonde quand même, mais
+         le cuivre doit couvrir PLUS de la moitié du cercle extérieur (6 sur
+         8) : un via posé au bord du plan, ou dans la fente entre deux
+         versements, n'en voit que la moitié et reste « sans cuivre ». */
+      const dedans = simXtDansContourIpc(ct.o, x, y);
 
       let trouAntipad = false;
-      for(const t of (ct.t || [])){
+      if(dedans) for(const t of (ct.t || [])){
         if(t && t.length >= 6 && simXtDansContourIpc(t, x, y)){
           let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
           for(let i = 0; i < t.length; i += 2){
@@ -3900,7 +3908,7 @@ function simNetPlanEnIpc(coucheIdx, x, y){
         }
       }
 
-      let score = 0;
+      let score = 0, exterieur = 0;
       for(const r of rayons){
         for(let a = 0; a < 8; a++){
           const ang = a * Math.PI / 4;
@@ -3913,11 +3921,11 @@ function simNetPlanEnIpc(coucheIdx, x, y){
               break;
             }
           }
-          if(!dedansTrou) score++;
+          if(!dedansTrou){ score++; if(r === rayons[rayons.length - 1]) exterieur++; }
         }
       }
 
-      if((trouAntipad && score >= 3) || score >= 8){
+      if((trouAntipad && score >= 3) || (score >= 8 && (dedans || exterieur >= 6))){
         if(score > meilleurScore){
           meilleurScore = score;
           meilleurNet = nomNet;
