@@ -1366,10 +1366,12 @@
     for (let i = 0; i < lignes.length; i++) {
       let l = lignes[i];
 
-      // Blocs de code réservés
+      // Blocs de code réservés : le reste de la ligne vient du modèle (ou
+      // d'un PDF qu'il a lu) et s'échappe comme le reste ; « %% » n'est pas
+      // touché par echapperHtml, la réinsertion plus bas le retrouve.
       if (l.includes("%%CODEBLOCK_")) {
         if (inList) { out.push("</ul>"); inList = false; }
-        out.push(l);
+        out.push(echapperHtml(l));
         continue;
       }
 
@@ -1418,7 +1420,8 @@
     let finalHtml = out.join("");
     // Réinsertion des blocs de code
     codeBlocks.forEach((bloc, idx) => {
-      finalHtml = finalHtml.replace("%%CODEBLOCK_" + idx + "%%", bloc);
+      // fonction : un « $' » ou « $& » du code ne doit pas être interprété
+      finalHtml = finalHtml.replace("%%CODEBLOCK_" + idx + "%%", () => bloc);
     });
 
     return finalHtml;

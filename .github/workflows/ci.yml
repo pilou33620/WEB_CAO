@@ -76,6 +76,11 @@ jobs:
           node gestion-lib/test/banc-catalogue.js
           node gestion-lib/test/banc-import-jlc.js
 
+      - name: Assistant IA — échappement du HTML du modèle
+        run: |
+          node gestion-lib/test/banc-ia-xss.js
+          node commun/test/banc-ia-markdown.js
+
       - name: Mise à jour automatique GitHub — banc d'essai
         run: python python/test/banc-maj-github.py
 
