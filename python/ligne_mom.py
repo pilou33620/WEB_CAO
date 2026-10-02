@@ -2671,10 +2671,963 @@ def _ponts_du_param(param):
              "c": param.get("c_pont")}]
 
 
+# ==========================================================================
+# LA CAVITE MODALE -- LE MEME MODELE QUE LA SIMULATION PI
+# --------------------------------------------------------------------------
+# La traversee « capacite des plans en parallele avec les ponts » est un
+# modele a constantes localisees : il ne voit ni les modes de la paire de
+# plans, ni ou sont les condensateurs. Il fallait donc, faute de pont, en
+# supposer un -- et ce pont fictif resonnait avec la capacite des plans (pic
+# de 466 ohms vers 220 MHz sur P01x291, la ou rien n'existe).
+#
+# Ici la cavite est un reseau a ports (Okoshi / Novak), celui de la
+# simulation PI (commun/simulation-em.js, `simPDNCalculerModesCavite`,
+# `simPDNInductancesEpandage`) : le port 0 est le via, les autres les VRAIS
+# ponts a leur position, chacun termine par son impedance, et le reseau se
+# reduit au port 0 par complement de Schur.
+#
+#   Z_ij = 1/(jwC) + jw L_ij(queue) + somme_mn jw c_m^2 c_n^2 / C k_i k_j
+#                                          / (w_mn^2 - w^2 + jw w_mn / Q_mn)
+#   k_i  = cos(m pi x_i/a) cos(n pi y_i/b) sinc(m pi w_i/2a) sinc(n pi w_i/2b)
+#
+# ponytail: cavite RECTANGULAIRE (la boite du recouvrement), C de l'aire
+# reelle ; un contour quelconque demanderait un solveur de plans (BEM/FDTD).
+FREQ_MAX_MODES = 6e9
+PORT_MIN = 50e-6
+
+
+def cavite_modale(a, b, h, epsilon_r, tan_d, c_plans, ports, f_max=FREQ_MAX_MODES):
+    """Prepare la cavite a x b (m), ecart h (m), et ses ports [(x, y, w)] en
+    metres depuis un coin -- w, le cote du port. Rend un dict que
+    `impedance_cavite_modale` evalue a chaque frequence, sans rien recalculer
+    de geometrique."""
+    a, b, h = float(a), float(b), float(h)
+    er = max(1.0, float(epsilon_r))
+    xs = np.clip(np.array([p[0] for p in ports], float), 0.0, a)
+    ys = np.clip(np.array([p[1] for p in ports], float), 0.0, b)
+    ws = np.maximum(np.array([p[2] for p in ports], float), PORT_MIN)
+    v = C_0 / math.sqrt(er)
+
+    def grille(mx, nx):
+        m, n = np.meshgrid(np.arange(mx + 1), np.arange(nx + 1), indexing="ij")
+        m, n = m.ravel(), n.ravel()
+        garde = (m + n) > 0
+        return m[garde], n[garde]
+
+    def kappa(m, n):
+        # np.sinc(u) = sin(pi u)/(pi u) : l'argument se passe divise par pi
+        return (np.cos(np.outer(m * np.pi / a, xs)) * np.cos(np.outer(n * np.pi / b, ys))
+                * np.sinc(np.outer(m / (2 * a), ws)) * np.sinc(np.outer(n / (2 * b), ws)))
+
+    # LES MODES QUI RESONNENT dans la bande : chacun son pole et son Q.
+    m_max = min(64, max(1, int(2 * a * f_max / v)))
+    n_max = min(64, max(1, int(2 * b * f_max / v)))
+    m, n = grille(m_max, n_max)
+    f_mn = v / 2 * np.sqrt((m / a) ** 2 + (n / b) ** 2)
+    dyn = f_mn <= f_max
+    m, n, f_mn = m[dyn], n[dyn], f_mn[dyn]
+    delta_s = 1.0 / np.sqrt(np.pi * f_mn * MU_0 * SIGMA_CU)
+    inv_q = float(tan_d) + delta_s / h
+    poids = np.where(m > 0, 2.0, 1.0) * np.where(n > 0, 2.0, 1.0)
+
+    # LA QUEUE : les modes au-dessus de la bande n'y resonnent plus, ils
+    # inductent. Sommes une fois pour toutes (simPDNInductancesEpandage) ;
+    # c'est elle qui porte l'etalement local autour de chaque port.
+    w_min = float(ws.min())
+    mq, nq = grille(min(400, max(8, math.ceil(1.6 * a / w_min))),
+                    min(400, max(8, math.ceil(1.6 * b / w_min))))
+    deja = set(zip(m.tolist(), n.tolist()))
+    hors = np.array([(i, j) not in deja for i, j in zip(mq.tolist(), nq.tolist())])
+    mq, nq = mq[hors], nq[hors]
+    k2 = (mq / a) ** 2 + (nq / b) ** 2
+    base = (MU_0 * h * np.where(mq > 0, 2.0, 1.0) * np.where(nq > 0, 2.0, 1.0)
+            / (np.pi ** 2 * a * b * k2))
+    kq = kappa(mq, nq)
+    l_queue = (kq * base[:, None]).T @ kq
+
+    return {"c": float(c_plans), "tan_d": float(tan_d), "kappa": kappa(m, n), "poids": poids,
+            "w_mn": 2 * np.pi * f_mn, "inv_q": inv_q, "l_queue": l_queue,
+            "f_premier": float(f_mn.min()) if f_mn.size else None,
+            "statique": np.ones((len(ports), len(ports)))}
+
+
+def _z_ports(ws, cav):
+    """Les matrices Z des ports, une par pulsation de `ws` : (F, P, P).
+
+    Le mode statique porte les pertes du dielectrique, comme dans la PI :
+    1 / (w C tan d + j w C), pondere par `statique` (1 entre deux ports de la
+    meme cavite, 0 entre deux ilots qui ne se touchent pas)."""
+    ws = np.atleast_1d(np.asarray(ws, float))
+    g = (1j * ws[:, None] * cav["poids"][None, :] / cav["c"]
+         / (cav["w_mn"][None, :] ** 2 - ws[:, None] ** 2
+            + 1j * ws[:, None] * cav["w_mn"][None, :] * cav["inv_q"][None, :]))
+    k = cav["kappa"]
+    z = np.einsum("mi,fm,mj->fij", k, g, k)
+    z = z + ((1.0 / (ws * cav["c"] * (cav["tan_d"] + 1j)))[:, None, None]
+             * cav["statique"][None])
+    z = z + 1j * ws[:, None, None] * cav["l_queue"][None]
+    return z
+
+
+def impedance_cavite_modale_vec(freqs, cav, z_termes):
+    """Z vue au port 0 a chaque frequence de `freqs`, les ports 1..n termines
+    par `z_termes` (F, n), et les courants de ces ports pour un courant unite
+    injecte au port 0 (F, n). Toutes les frequences d'un coup. EN SI."""
+    fs = np.atleast_1d(np.asarray(freqs, float))
+    z = _z_ports(2.0 * np.pi * np.maximum(fs, 1e-3), cav)
+    n = z.shape[1] - 1
+    if n == 0:
+        return z[:, 0, 0], np.zeros((len(fs), 0), complex)
+    zt = np.asarray(z_termes, complex).reshape(len(fs), n)
+    a = z[:, 1:, 1:] + zt[:, :, None] * np.eye(n)[None]
+    i_l = -np.linalg.solve(a, z[:, 1:, 0][..., None])[..., 0]
+    return z[:, 0, 0] + np.einsum("fi,fi->f", z[:, 0, 1:], i_l), i_l
+
+
+def impedance_cavite_modale(freq, cav, z_termes):
+    """La meme chose a une seule frequence : (Z, [courants])."""
+    zin, i_l = impedance_cavite_modale_vec([freq], cav, np.reshape(np.asarray(z_termes, complex), (1, -1)))
+    return complex(zin[0]), list(i_l[0])
+
+
+def _z_branche(w, p):
+    """L'impedance d'un pont : serie R-L-C, plus en serie, pour un pont
+    INDIRECT (0 ohm vers un autre rail), ses condensateurs `aval` en parallele.
+    `w` scalaire ou tableau."""
+    w = np.asarray(w, float)
+    z = p.get("esr", 0.0) + 1j * w * p.get("l", 0.0)
+    if p.get("c"):
+        z = z + 1.0 / (1j * w * p["c"])
+    aval = p.get("aval")
+    if aval is not None:
+        y = sum((1.0 / _z_branche(w, q) for q in aval), np.zeros_like(z))
+        ok = np.abs(y) > 0
+        z = z + np.where(ok, 1.0 / np.where(ok, y, 1.0), 1e12)
+    return z
+
+
+def _traversee_modale_vec(freqs, param):
+    fs = np.atleast_1d(np.asarray(freqs, float))
+    w = 2.0 * np.pi * np.maximum(fs, 1e-3)
+    ponts = _ponts_du_param(param)
+    termes = (np.stack([_z_branche(w, p) * np.ones_like(w) for p in ponts], axis=1)
+              if ponts else np.zeros((len(fs), 0), complex))
+    return impedance_cavite_modale_vec(fs, param["modal"], termes)
+
+
+def _traversee_modale(freq, param):
+    zin, i_l = _traversee_modale_vec([freq], param)
+    return complex(zin[0]), list(i_l[0])
+
+
+def impedance_traversee_vec(freqs, param):
+    """L'impedance de la traversee a toutes les frequences de `freqs` : d'un
+    coup pour la cavite modale, une a une pour le modele localise."""
+    fs = np.atleast_1d(np.asarray(freqs, float))
+    if not param:
+        return np.zeros(len(fs), complex)
+    if param.get("modal"):
+        return _traversee_modale_vec(fs, param)[0]
+    return np.array([impedance_traversee_param(f, param) for f in fs])
+
+
+# ==========================================================================
+# LA CAVITE MAILLEE -- LA FORME REELLE DU RECOUVREMENT
+# --------------------------------------------------------------------------
+# Le rectangle de `cavite_modale` est la boite du recouvrement : sur P01x291,
+# 84 x 78 mm pour 2 477 mm2 de cuivre en regard. Ses modes sont ceux d'une
+# plaque qui n'existe pas. Ici le recouvrement est maille tel quel (la page
+# le balaie ligne par ligne, cellules carrees de `pas`), et chaque cellule est
+# un noeud du reseau L-C de la paire de plans :
+#
+#   lien entre deux cellules voisines : L = mu0 h (un carre de plan)
+#   cellule vers le plan d'en face     : C = eps0 er pas^2 / h
+#
+# On n'inverse pas ce reseau a chaque frequence : on en tire les MODES PROPRES
+# (K phi = w^2 M phi, decalage-inversion de scipy) et ils alimentent la meme
+# formule a ports que le rectangle -- le cos.cos analytique devient le phi
+# numerique. La queue inductive se calcule EXACTEMENT sur la grille (G = K+
+# moins les modes gardes), et une correction de Peaceman rend l'etalement
+# d'un via plus fin qu'une cellule. Les fentes sont des cellules absentes ;
+# un ilot est une autre composante connexe, et un pont pose dessus ne touche
+# pas le via. Modes et factorisation se calculent une fois par cavite et se
+# partagent entre tous ses vias.
+#
+# ponytail: maille de `pas` fixe (0,5 mm envoye) ; plans minces, rayonnement
+# des bords neglige (mur magnetique), comme le modele de cavite.
+_GRILLES = {}
+_GRILLES_MAX = 12
+PEACEMAN = 0.1985
+# UN ILOT DU RECOUVREMENT N'EST PAS ISOLE : il porte les deux memes nets que
+# la cavite principale, et un net est relie ailleurs par definition (pistes,
+# autres couches -- sur P01x291 un ilot GND/VDDIO de 118 mm2 a l'est). La page
+# envoie le cuivre des deux nets (`grille["reseau"]`) et le lien se resout
+# dans ce reseau (`_liens_par_reseau`). A defaut, on le rattache au plus pres
+# par une self de 1 nH/mm d'ecart.
+# ponytail: le repli est l'ordre de grandeur d'une piste.
+ILOT_H_PAR_M = 1e-6
+ETA_0 = 376.730313668
+
+
+def _directions(n=194):
+    """Des directions reparties sur la sphere (Fibonacci), d'angle solide egal."""
+    k = np.arange(n) + 0.5
+    th = np.arccos(1.0 - 2.0 * k / n)
+    ph = np.pi * (1.0 + 5 ** 0.5) * k
+    return np.column_stack([np.cos(ph) * np.sin(th), np.sin(ph) * np.sin(th), np.cos(th)])
+
+
+_DIRECTIONS = _directions()
+
+
+PAQUET_BORD = 2e-3          # les faces de bord se regroupent par carres de 2 mm
+
+
+def _paquets_bord(pos, tan, pas):
+    """Les faces de bord regroupees par carres de PAQUET_BORD : la matrice
+    d'agregation (E x C, creuse), le centre de chaque paquet et les deux
+    composantes du moment (t . pas) de chaque face. Une face vaut un courant
+    magnetique elementaire ; un paquet de 2 mm est petit devant la longueur
+    d'onde (erreur de phase 0,03 rad a 1 GHz), et le calcul du champ lointain
+    tombe d'autant -- il coutait plus d'une seconde par via sur P01x291."""
+    import scipy.sparse as sp
+    cle = np.floor(pos / PAQUET_BORD).astype(int)
+    _, inv = np.unique(cle, axis=0, return_inverse=True)
+    inv = np.asarray(inv).ravel()
+    nc = int(inv.max()) + 1 if inv.size else 0
+    A = sp.csr_matrix((np.ones(len(inv)), (np.arange(len(inv)), inv)), shape=(len(inv), nc))
+    compte = np.bincount(inv, minlength=nc)
+    centre = np.column_stack([np.bincount(inv, pos[:, 0], nc), np.bincount(inv, pos[:, 1], nc)])
+    centre /= np.maximum(compte, 1)[:, None]
+    return A, centre, tan[:, 0] * pas, tan[:, 1] * pas
+
+
+def _rayonnement_bords(freqs, paquets, v):
+    """LES BORDS D'UNE PAIRE DE PLANS RAYONNENT comme des fentes : la tension
+    V entre les plans y est un courant magnetique K = V (en volts) le long du
+    bord. On somme leur champ lointain de facon COHERENTE (phases comprises)
+    sur 194 directions, par paquets de faces (`_paquets_bord`) :
+
+        L(r) = somme_paquets M e^(j k r.r'),  E = k |L_perp| / (4 pi r)
+        P = k^2 / (32 pi^2 eta0) integrale |L_perp|^2 dOmega
+
+    Rend (P en W, E maximal a 1 m en V/m) pour chaque frequence de `freqs` et
+    chaque ligne de tensions de face `v` (F, E) -- valeurs crete."""
+    A, centre, tx, ty = paquets
+    fs = np.atleast_1d(np.asarray(freqs, float))
+    v = np.atleast_2d(np.asarray(v, complex))
+    mx = np.asarray((v * tx[None, :]) @ A)                  # (F, C)
+    my = np.asarray((v * ty[None, :]) @ A)
+    d = _DIRECTIONS
+    proj = d[:, :2] @ centre.T                               # (D, C)
+    p_out, e_out = np.zeros(len(fs)), np.zeros(len(fs))
+    for i, f in enumerate(fs):
+        k0 = 2 * np.pi * f / C_0
+        ph = np.exp(1j * k0 * proj)
+        lx, ly = ph @ mx[i], ph @ my[i]
+        rl = d[:, 0] * lx + d[:, 1] * ly
+        lt2 = np.maximum(np.abs(lx) ** 2 + np.abs(ly) ** 2 - np.abs(rl) ** 2, 0.0)
+        p_out[i] = k0 ** 2 / (32 * np.pi ** 2 * ETA_0) * lt2.mean() * 4 * np.pi
+        e_out[i] = k0 * math.sqrt(lt2.max()) / (4 * np.pi)
+    return p_out, e_out
+
+
+def _l_lineique(w_mm, h_mm):
+    """Self lineique d'une piste au-dessus de son plan, H/mm (Hammerstad dans
+    l'air, comme `simPDNInductanceLineique` de la page)."""
+    w, h = max(w_mm, 0.01), max(h_mm, 0.01)
+    u = w / h
+    z = (60 * math.log(8 / u + u / 4) if u <= 1
+         else 120 * math.pi / (u + 1.393 + 0.667 * math.log(u + 1.444)))
+    return z / C_0 * 1e-3
+
+
+_LIENS_CACHE = {}
+
+
+def _cellules_lignes(lignes):
+    """(i, j) de toutes les cellules d'une liste de lignes [[j, [i1, i2, ...]]]."""
+    ii, jj = [], []
+    for j, sp_ in lignes:
+        for a, b in zip(sp_[0::2], sp_[1::2]):
+            if b > a:
+                ii.append(np.arange(int(a), int(b)))
+                jj.append(np.full(int(b) - int(a), int(j)))
+    if not ii:
+        return np.zeros(0, int), np.zeros(0, int)
+    return np.concatenate(ii), np.concatenate(jj)
+
+
+PEEC_SEUIL = 0.01          # segments qui portent au moins 1 % du courant
+PEEC_MAX = 1500            # au plus, par ilot (les plus charges)
+PEEC_ILOT_MIN = 40         # cellules : en dessous, un ilot ne merite pas le calcul
+EP_CUIVRE_M = 35e-6
+
+
+def _peec_boucle(segs):
+    """LA SELF DE BOUCLE PAR PEEC : `segs` = (dir 0/1/2, centre (3,), longueur,
+    largeur, courant signe) en metres et amperes pour un courant de boucle
+    unite. Selfs partielles et mutuelles de barreaux paralleles (Neumann pour
+    deux filaments de meme longueur, decales le long de leur axe ; la
+    distance moyenne geometrique 0,2235 (w + t) d'un barreau rectangulaire
+    pour sa self et ses voisins colles) :
+
+        M = mu0/4pi [F(s + l) + F(s - l) - 2 F(s)],  F(x) = x asinh(x/d) - sqrt(x^2 + d^2)
+        L = somme_ij I_i I_j M_ij   (directions identiques seulement)
+
+    L'aller et le retour, de signes opposes, se compensent la ou ils se
+    longent : c'est la mutuelle que la somme des deux selfs ignorait."""
+    if not segs:
+        return 0.0
+    d_ = np.array([s[0] for s in segs])
+    c_ = np.array([s[1] for s in segs], float)
+    l_ = np.array([s[2] for s in segs], float)
+    w_ = np.array([s[3] for s in segs], float)
+    i_ = np.array([s[4] for s in segs], float)
+    total = 0.0
+    for ax in (0, 1, 2):
+        m = d_ == ax
+        if not m.any():
+            continue
+        c, l, w, i = c_[m], l_[m], w_[m], i_[m]
+        perp = [k for k in (0, 1, 2) if k != ax]
+        s = c[:, ax][:, None] - c[:, ax][None, :]
+        dist = np.hypot(c[:, perp[0]][:, None] - c[:, perp[0]][None, :],
+                        c[:, perp[1]][:, None] - c[:, perp[1]][None, :])
+        gmd = 0.2235 * ((w[:, None] + w[None, :]) / 2 + EP_CUIVRE_M)
+        d = np.maximum(dist, gmd)
+        ll = (l[:, None] + l[None, :]) / 2
+
+        def F(x):
+            return x * np.arcsinh(x / d) - np.sqrt(x * x + d * d)
+        M = MU_0 / (4 * np.pi) * (F(s + ll) + F(s - ll) - 2 * F(s))
+        total += float(i @ M @ i)
+    return max(total, 0.0)
+
+
+def _liens_par_reseau(reseau, pas, x0, y0, ii, jj, comp, principal):
+    """LE VRAI LIEN DE CHAQUE ILOT, par le cuivre des deux nets sur toutes les
+    couches. Chaque net est un reseau de cellules (meme pas, meme origine que
+    la grille) : un carre de plan vaut mu0 h, une piste L'(w, h) par pas, un
+    percage 0,76 nH/mm d'epaisseur traversee. On met la cavite principale a la
+    masse, on injecte un courant unite reparti sur chaque ilot : le reseau
+    rend le potentiel de l'ilot (sa self, chemins PARALLELES compris) et le
+    courant de chaque lien.
+
+    TROIS CHOSES DE PLUS QU'UNE SOMME DE DEUX SELFS :
+      · LA MUTUELLE. L'aller (un net) et le retour (l'autre) se longent ; leurs
+        courants, lien par lien, passent en barreaux PEEC (`_peec_boucle`) et
+        la self de boucle les compte de signes opposes. On garde la plus
+        petite des deux estimations (PEEC ou somme), toutes deux majorantes ;
+      · LES POINTS D'ENTREE. Le courant ne quitte pas l'ilot partout : on lit
+        ou il en sort et ou il rejoint la cavite, et l'ilot s'y relie (jusqu'a
+        quatre liens en parallele, chacun sa part) -- l'ilot n'est plus un
+        point equipotentiel pour la cavite ;
+      · LES BORNES. Entre le couplage parfait, (sqrt L_A - sqrt L_B)^2, et
+        aucun couplage, L_A + L_B : la fourchette de `traversee_fourchette`.
+
+    Rend {composante: {"liens": [(noeud ilot, noeud cavite, self H)], "L",
+    "L_somme", "L_min", "peec"}} pour les ilots que les DEUX nets rejoignent ;
+    les autres retombent sur l'estimation. Mis en cache.
+    ponytail: les courants de chaque net viennent de SA resolution (sans la
+    mutuelle) -- la PEEC les prend tels quels au lieu de resoudre le systeme
+    couple ; un ilot de moins de 40 cellules garde la somme."""
+    import scipy.sparse as sp
+    import scipy.sparse.linalg as spl
+    from scipy.sparse.csgraph import connected_components
+    from scipy.spatial import cKDTree
+    cle = hash((repr(reseau), pas, x0, y0, len(ii), int(principal), "peec2"))
+    if cle in _LIENS_CACHE:
+        return _LIENS_CACHE[cle]
+    i1, i2, j1, j2 = (int(reseau[k]) for k in ("i1", "i2", "j1", "j2"))
+    W, H = i2 - i1 + 1, j2 - j1 + 1
+    ep = [float(e) for e in reseau.get("ep") or ()]
+    zc = np.concatenate([[0.0], np.cumsum(ep)]) * 1e-3          # profondeur des couches
+    pas_mm = pas * 1e3
+    dedans_g = (ii >= i1) & (ii <= i2) & (jj >= j1) & (jj <= j2)
+    grille_idx = {(int(a), int(b)): k for k, (a, b) in enumerate(zip(ii.tolist(), jj.tolist()))}
+    taille_c = np.bincount(comp)
+    par_net = []                 # (L moyen par ilot, segments par ilot, sorties ilot, entrees cavite)
+    for net in reseau.get("nets") or ():
+        plan = int(net["plan"])
+        nc = 1 + max([plan] + [int(c["cu"]) for c in net.get("couches") or ()]
+                     + [int(t[0]) for t in net.get("pistes") or ()]
+                     + [int(c) for v in net.get("vias") or () for c in v[2]])
+        hcu = np.full(nc, 0.71)
+        for c in net.get("couches") or ():
+            hcu[int(c["cu"])] = float(c.get("h") or 0.71)
+        # TOUTES LES CELLULES D'UN COUP (numpy) : plans, pistes, pastilles
+        cu_l, i_l, j_l, w_l = [], [], [], []
+        partielles = []
+        for c in net.get("couches") or ():
+            ci, cj = _cellules_lignes(c["lignes"])
+            cu_l.append(np.full(ci.size, int(c["cu"]))); i_l.append(ci); j_l.append(cj)
+            w_l.append(np.full(ci.size, pas_mm))
+            # une cellule couverte en partie (un voile entre deux antipads)
+            # garde la largeur de cuivre qu'elle porte
+            for j, i, part in c.get("fractions") or ():
+                partielles.append((int(c["cu"]), int(i), int(j), max(float(part), 0.02) * pas_mm))
+        pist = np.array(net.get("pistes") or [], float).reshape(-1, 6)
+        if len(pist):
+            n_s = np.maximum(1, np.ceil(np.hypot(pist[:, 4] - pist[:, 2], pist[:, 5] - pist[:, 3])
+                                        / (pas_mm / 2))).astype(int)
+            seg = np.repeat(np.arange(len(pist)), n_s + 1)
+            t = np.concatenate([np.arange(k + 1) / k for k in n_s])
+            xs = pist[seg, 2] + (pist[seg, 4] - pist[seg, 2]) * t
+            ys = pist[seg, 3] + (pist[seg, 5] - pist[seg, 3]) * t
+            pi_ = np.floor((xs - x0 * 1e3) / pas_mm).astype(int)
+            pj_ = np.floor((ys - y0 * 1e3) / pas_mm).astype(int)
+            # UNE PISTE EN BIAIS passe d'une cellule a sa diagonale : le reseau
+            # ne relie que les quatre voisines, on pose la cellule du coin
+            coin = np.flatnonzero((seg[1:] == seg[:-1]) & (pi_[1:] != pi_[:-1])
+                                  & (pj_[1:] != pj_[:-1]))
+            cu_l.append(np.concatenate([pist[seg, 0], pist[seg[coin], 0]]).astype(int))
+            i_l.append(np.concatenate([pi_, pi_[coin + 1]]))
+            j_l.append(np.concatenate([pj_, pj_[coin]]))
+            w_l.append(np.concatenate([pist[seg, 1], pist[seg[coin], 1]]))
+        vias = [(float(x), float(y), sorted(set(int(c) for c in cs)))
+                for x, y, cs in net.get("vias") or ()]
+        for x, y, cs in vias:
+            i = int(math.floor((x - x0 * 1e3) / pas_mm)); j = int(math.floor((y - y0 * 1e3) / pas_mm))
+            cu_l.append(np.array(cs)); i_l.append(np.full(len(cs), i)); j_l.append(np.full(len(cs), j))
+            w_l.append(np.full(len(cs), pas_mm))
+        if not cu_l:
+            return {}
+        cu_a, i_a, j_a, w_a = (np.concatenate(v) for v in (cu_l, i_l, j_l, w_l))
+        ok = (i_a >= i1) & (i_a <= i2) & (j_a >= j1) & (j_a <= j2) & (cu_a < nc)
+        lin = (cu_a[ok] * H + (j_a[ok] - j1)) * W + (i_a[ok] - i1)
+        uniq, inv = np.unique(lin, return_inverse=True)
+        larg = np.zeros(len(uniq))
+        np.maximum.at(larg, inv, w_a[ok])
+        if partielles:
+            pa = np.array(partielles)
+            lp = ((pa[:, 0] * H + (pa[:, 2] - j1)) * W + (pa[:, 1] - i1)).astype(int)
+            pos_p = np.searchsorted(uniq, lp)
+            okp = (pos_p < len(uniq)) & (uniq[np.minimum(pos_p, len(uniq) - 1)] == lp)
+            # une piste qui la traverse peut l'elargir ; sinon sa part fait foi
+            larg[pos_p[okp]] = np.where(larg[pos_p[okp]] > pas_mm - 1e-9, pa[okp, 3],
+                                        np.maximum(larg[pos_p[okp]], pa[okp, 3]))
+        n = len(uniq)
+        carte = -np.ones(nc * W * H, int)
+        carte[uniq] = np.arange(n)
+        cu_n = uniq // (W * H)
+        reste = uniq % (W * H)
+        xn = x0 + ((reste % W) + i1 + 0.5) * pas
+        yn = y0 + ((reste // W) + j1 + 0.5) * pas
+        zn = zc[np.minimum(cu_n, len(zc) - 1)]
+        a_l, b_l, l_l, d_l = [], [], [], []
+        for ax, (di, dj) in enumerate(((1, 0), (0, 1))):
+            okv = (reste % W + di < W) & (reste // W + dj < H)
+            vois = np.where(okv, uniq + di + dj * W, 0)
+            okv &= carte[vois] >= 0
+            u, v = np.flatnonzero(okv), carte[vois[okv]]
+            w = np.minimum(larg[u], larg[v])
+            hh = hcu[cu_n[u]]
+            # un carre de plan : mu0 h ; un voile ou une bande de largeur w au
+            # moins egale a h : mu0 h pas / w ; plus etroit, la self d'une
+            # piste (le champ deborde)
+            plein = w >= pas_mm - 1e-9
+            large = ~plein & (w >= hh)
+            etroit = ~plein & ~large
+            l = MU_0 * hh * 1e-3 * np.where(plein, 1.0, pas_mm / np.maximum(w, 1e-6))
+            if etroit.any():
+                l[etroit] = [_l_lineique(x, y) * pas_mm for x, y in zip(w[etroit], hh[etroit])]
+            a_l.append(u); b_l.append(v); l_l.append(l); d_l.append(np.full(len(u), ax))
+        for x, y, cs in vias:
+            i = int(math.floor((x - x0 * 1e3) / pas_mm)); j = int(math.floor((y - y0 * 1e3) / pas_mm))
+            if not (i1 <= i <= i2 and j1 <= j <= j2):
+                continue
+            for ca, cb in zip(cs[:-1], cs[1:]):
+                u = carte[(ca * H + (j - j1)) * W + (i - i1)]
+                v = carte[(cb * H + (j - j1)) * W + (i - i1)]
+                if u < 0 or v < 0:
+                    continue
+                e = sum(ep[ca:cb]) if cb <= len(ep) else 0.2
+                a_l.append(np.array([u])); b_l.append(np.array([v]))
+                l_l.append(np.array([0.76e-9 * max(e, 0.01)])); d_l.append(np.array([2]))
+        a_l, b_l, d_l = np.concatenate(a_l), np.concatenate(b_l), np.concatenate(d_l)
+        y_l = 1.0 / np.maximum(np.concatenate(l_l), 1e-15)
+        if not len(a_l):
+            return {}
+        Lap = sp.coo_matrix((np.concatenate([y_l, y_l, -y_l, -y_l]),
+                             (np.concatenate([a_l, b_l, a_l, b_l]),
+                              np.concatenate([a_l, b_l, b_l, a_l]))), shape=(n, n)).tocsr()
+
+        def cel(m):
+            return carte[(plan * H + (jj[m] - j1)) * W + (ii[m] - i1)]
+        sol = np.flatnonzero(dedans_g & (comp == principal))
+        masse = cel(sol)
+        masse = np.unique(masse[masse >= 0])
+        if not masse.size:
+            return {}
+        _, lab = connected_components(Lap, directed=False)
+        relies = np.isin(lab, np.unique(lab[masse]))
+        est_masse = np.zeros(n, bool)
+        est_masse[masse] = True
+        libres = np.flatnonzero(relies & ~est_masse)
+        pos = -np.ones(n, int)
+        pos[libres] = np.arange(len(libres))
+        cols, quels = [], []
+        for c in np.unique(comp):
+            if c == principal:
+                continue
+            m = np.flatnonzero(dedans_g & (comp == c))
+            k = cel(m)
+            k = k[k >= 0]
+            k = k[pos[k] >= 0]
+            if not k.size:
+                continue
+            b = np.zeros(len(libres))
+            b[pos[k]] = 1.0 / k.size
+            cols.append(b)
+            quels.append((c, pos[k], k))
+        if not cols or not len(libres):
+            return {}
+        lu = spl.splu(Lap[libres][:, libres].tocsc())
+        x = lu.solve(np.column_stack(cols))
+        # la position et la largeur de chaque lien, pour la PEEC
+        cen = np.column_stack([(xn[a_l] + xn[b_l]) / 2, (yn[a_l] + yn[b_l]) / 2,
+                               (zn[a_l] + zn[b_l]) / 2])
+        lon = np.where(d_l == 2, np.abs(zn[b_l] - zn[a_l]), pas)
+        lw = np.where(d_l == 2, 0.3e-3, np.minimum(larg[a_l], larg[b_l]) * 1e-3)
+        sens = np.where(d_l == 2, np.sign(zn[b_l] - zn[a_l]), 1.0)
+        res_net = {}
+        for t_, (c, pk, k_isl) in enumerate(quels):
+            phi = np.zeros(n)
+            phi[libres] = x[:, t_]
+            i_lien = (phi[a_l] - phi[b_l]) * y_l * sens       # le long de l'axe
+            L = float(x[pk, t_].mean())
+            segs = []
+            if taille_c[c] >= PEEC_ILOT_MIN:
+                im = np.abs(i_lien)
+                garde = np.flatnonzero(im >= PEEC_SEUIL * im.max()) if im.max() > 0 else []
+                if len(garde) > PEEC_MAX:
+                    garde = garde[np.argsort(-im[garde])[:PEEC_MAX]]
+                segs = [(int(d_l[g]), cen[g], float(lon[g]), float(lw[g]), float(i_lien[g]))
+                        for g in garde]
+            # ou le courant quitte l'ilot, ou il rejoint la cavite (meme couche)
+            dans_ilot = np.zeros(n, bool)
+            dans_ilot[k_isl] = True
+            flux = (phi[a_l] - phi[b_l]) * y_l                 # de a vers b
+            sortie = np.zeros(n)
+            m1 = dans_ilot[a_l] & ~dans_ilot[b_l]
+            m2 = dans_ilot[b_l] & ~dans_ilot[a_l]
+            np.add.at(sortie, a_l[m1], np.maximum(flux[m1], 0))
+            np.add.at(sortie, b_l[m2], np.maximum(-flux[m2], 0))
+            arrivee = np.zeros(n)
+            m3 = est_masse[b_l] & ~est_masse[a_l]
+            m4 = est_masse[a_l] & ~est_masse[b_l]
+            np.add.at(arrivee, b_l[m3], np.maximum(flux[m3], 0))
+            np.add.at(arrivee, a_l[m4], np.maximum(-flux[m4], 0))
+            res_net[c] = (L, segs, sortie, arrivee, xn, yn, cu_n, plan)
+        par_net.append(res_net)
+
+    nets = len(par_net)
+    principaux = np.flatnonzero(comp == principal)
+    pts = np.column_stack([ii, jj]).astype(float)
+    arbre = cKDTree(pts[principaux])
+
+    def vers_grille(poids, xn, yn, cu_n, plan, defaut_set):
+        """Les noeuds d'un reseau ramenes aux cellules de la grille, par paquets
+        de 2 mm : [(noeud grille, part)], les plus charges d'abord, 4 au plus."""
+        sel = np.flatnonzero((poids > 0) & (cu_n == plan))
+        if not sel.size:
+            return []
+        gi = np.floor((xn[sel] - x0) / pas).astype(int)
+        gj = np.floor((yn[sel] - y0) / pas).astype(int)
+        cle_p = np.floor(np.column_stack([xn[sel], yn[sel]]) / 2e-3).astype(int)
+        _, inv = np.unique(cle_p, axis=0, return_inverse=True)
+        inv = np.asarray(inv).ravel()
+        tot = np.bincount(inv, poids[sel])
+        out = []
+        for p in np.argsort(-tot)[:4]:
+            if tot[p] < 0.1 * tot.sum():
+                break
+            membres = np.flatnonzero(inv == p)
+            best = membres[np.argmax(poids[sel][membres])]
+            g = grille_idx.get((int(gi[best]), int(gj[best])))
+            if g is not None and g in defaut_set:
+                out.append((g, float(tot[p] / tot.sum())))
+        s = sum(w for _, w in out)
+        return [(g, w / s) for g, w in out] if s > 0 else []
+
+    out = {}
+    for c in set().union(*[set(r) for r in par_net]) if par_net else ():
+        if not all(c in r for r in par_net):
+            continue
+        Ls = [r[c][0] for r in par_net]
+        L_somme = float(sum(Ls))
+        L_min = float((math.sqrt(max(Ls)) - math.sqrt(min(Ls))) ** 2) if nets == 2 else L_somme
+        segs = []
+        for q, r in enumerate(par_net):
+            signe = 1.0 if q == 0 else -1.0                  # l'aller, puis le retour
+            segs += [(d, ce, lo, wi, signe * cu) for d, ce, lo, wi, cu in r[c][1]]
+        L_peec = _peec_boucle(segs) if segs else None
+        L = min(L_peec, L_somme) if L_peec else L_somme
+        # les points d'entree, lus sur le net qui pese le plus
+        dom = par_net[int(np.argmax(Ls))][c]
+        ilot_set = set(np.flatnonzero(comp == c).tolist())
+        sorties = vers_grille(dom[2], dom[4], dom[5], dom[6], dom[7], ilot_set)
+        arrivees = vers_grille(dom[3], dom[4], dom[5], dom[6], dom[7], set(principaux.tolist()))
+        if not sorties or not arrivees:
+            m = np.flatnonzero(comp == c)
+            d, k = arbre.query(pts[m])
+            r_ = int(np.argmin(d))
+            sorties, arrivees = [(int(m[r_]), 1.0)], [(int(principaux[k[r_]]), 1.0)]
+        cible = arrivees[0][0]
+        out[c] = {"liens": [(g, cible, L / w) for g, w in sorties], "L": L,
+                  "L_somme": L_somme, "L_min": min(L_min, L), "peec": L_peec}
+    if len(_LIENS_CACHE) >= 16:
+        _LIENS_CACHE.pop(next(iter(_LIENS_CACHE)))
+    _LIENS_CACHE[cle] = out
+    return out
+
+
+def _grille_preparee(grille, h, epsilon_r, tan_d, f_max):
+    import scipy.sparse as sp
+    from scipy import ndimage
+    from scipy.sparse.csgraph import connected_components
+    cle = (hash((repr(grille.get("lignes")), repr(grille.get("reseau")), grille.get("pas"),
+                 grille.get("x0"), grille.get("y0"))),
+           round(h, 9), round(epsilon_r, 6), round(tan_d, 6))
+    if cle in _GRILLES:
+        return _GRILLES[cle]
+    pas = float(grille["pas"]) * 1e-3
+    ii, jj = [], []
+    for j, spans in grille["lignes"]:
+        for a, b in zip(spans[0::2], spans[1::2]):
+            ii.extend(range(int(a), int(b)))
+            jj.extend([int(j)] * (int(b) - int(a)))
+    index = {(a, b): k for k, (a, b) in enumerate(zip(ii, jj))}
+    lien = [(index[(a, b)], index[(a + 1, b)]) for a, b in index if (a + 1, b) in index]
+    lien += [(index[(a, b)], index[(a, b + 1)]) for a, b in index if (a, b + 1) in index]
+    lien = np.array(lien, int).reshape(-1, 2)
+    n = len(ii)
+    ii_a, jj_a = np.array(ii), np.array(jj)
+    x0 = float(grille.get("x0", 0.0)) * 1e-3
+    y0 = float(grille.get("y0", 0.0)) * 1e-3
+
+    # LES BORDS EXTERIEURS : une face de cellule qui donne sur le vide relie a
+    # l'exterieur. Les trous enclos (antipads, degagements) ne rayonnent pas
+    # et ne debordent guere : ils sont exclus.
+    i0, j0 = ii_a.min(), jj_a.min()
+    masque = np.zeros((ii_a.max() - i0 + 3, jj_a.max() - j0 + 3), bool)
+    masque[ii_a - i0 + 1, jj_a - j0 + 1] = True
+    lab, _ = ndimage.label(~masque)
+    ext = set(np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))) - {0}
+    f_noeud, f_pos, f_tan = [], [], []
+    for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        vi, vj = ii_a - i0 + 1 + di, jj_a - j0 + 1 + dj
+        bord = ~masque[vi, vj] & np.isin(lab[vi, vj], list(ext))
+        k = np.flatnonzero(bord)
+        f_noeud.append(k)
+        f_pos.append(np.column_stack([x0 + (ii_a[k] + 0.5 + di / 2) * pas,
+                                      y0 + (jj_a[k] + 0.5 + dj / 2) * pas]))
+        f_tan.append(np.tile([-dj, di], (len(k), 1)).astype(float))
+    f_noeud = np.concatenate(f_noeud)
+    f_pos, f_tan = np.vstack(f_pos), np.vstack(f_tan)
+
+    adj = sp.coo_matrix((np.ones(len(lien)), (lien[:, 0], lien[:, 1])), shape=(n, n))
+    ncomp, comp = connected_components(adj, directed=False)
+    taille0 = np.bincount(comp)
+    l_ilots = np.zeros(0)
+    liens_page = 0
+    bornes = {}
+    n_maillage = len(lien)              # les liens du maillage, avant ceux des ilots
+    if ncomp > 1:
+        from scipy.spatial import cKDTree
+        pts = np.column_stack([ii_a, jj_a]).astype(float) * pas
+        ordre = np.argsort(-taille0)
+        principal = ordre[0]
+        # le vrai lien de chaque ilot, par le cuivre des nets (la page en
+        # envoie le reseau) ; a defaut, l'estimation a 1 nH/mm
+        donnes = {}
+        if grille.get("reseau"):
+            try:
+                donnes = _liens_par_reseau(grille["reseau"], pas, x0, y0, ii_a, jj_a,
+                                           comp, principal)
+            except Exception:                           # noqa: BLE001
+                donnes = {}
+        relie = np.flatnonzero(comp == principal)
+        extra, wx, bornes = [], [], {}
+        for c in ordre[1:]:
+            membres = np.flatnonzero(comp == c)
+            if c in donnes:
+                # le vrai lien : aux points ou le courant quitte l'ilot, chacun
+                # sa part, et ses bornes (couplage parfait / sans couplage)
+                for a, b, l_e in donnes[c]["liens"]:
+                    extra.append((a, b))
+                    wx.append(l_e)
+                L = donnes[c]["L"]
+                bornes[c] = (donnes[c]["L_min"] / L, donnes[c]["L_somme"] / L, L,
+                             donnes[c]["peec"] is not None)
+                liens_page += 1
+            else:
+                d, k = cKDTree(pts[relie]).query(pts[membres])
+                m = int(np.argmin(d))
+                extra.append((membres[m], relie[k[m]]))
+                wx.append(ILOT_H_PAR_M * d[m])
+            relie = np.concatenate([relie, membres])
+        lien = np.vstack([lien, np.array(extra, int)])
+        l_ilots = np.array(wx)
+    prep = {"pas": pas, "ii": ii_a, "jj": jj_a, "comp": np.zeros(n, int),
+            "comp_orig": comp, "taille_orig": taille0,
+            "h": h, "er": epsilon_r, "tan_d": tan_d, "f_max": f_max, "lien": lien,
+            "l_ilots": l_ilots, "ilots": int(ncomp - 1), "liens_page": liens_page,
+            "bornes": bornes,
+            "par_comp": {}, "x0": x0, "y0": y0,
+            "f_noeud": f_noeud, "f_pos": f_pos, "f_tan": f_tan,
+            "lattice": n_maillage}
+    if len(_GRILLES) >= _GRILLES_MAX:
+        _GRILLES.pop(next(iter(_GRILLES)))
+    _GRILLES[cle] = prep
+    return prep
+
+
+def _premier_mode(ii, jj, pas, h, er):
+    """La premiere resonance d'un maillage nu (sans debordement), pour juger
+    la convergence. Hz, ou None."""
+    import scipy.sparse as sp
+    import scipy.sparse.linalg as spl
+    from scipy.sparse.csgraph import connected_components
+    index = {(a, b): k for k, (a, b) in enumerate(zip(ii.tolist(), jj.tolist()))}
+    lk = [(index[(a, b)], index[(a + 1, b)]) for a, b in index if (a + 1, b) in index]
+    lk += [(index[(a, b)], index[(a, b + 1)]) for a, b in index if (a, b + 1) in index]
+    n = len(index)
+    if n < 8 or not lk:
+        return None
+    lk = np.array(lk)
+    _, comp = connected_components(sp.coo_matrix((np.ones(len(lk)), (lk[:, 0], lk[:, 1])),
+                                                 shape=(n, n)), directed=False)
+    garde = comp == np.argmax(np.bincount(comp))
+    loc = -np.ones(n, int)
+    loc[garde] = np.arange(garde.sum())
+    lk = lk[garde[lk[:, 0]]]
+    a, b = loc[lk[:, 0]], loc[lk[:, 1]]
+    m = int(garde.sum())
+    w = np.full(len(a), 1.0 / (MU_0 * h))
+    K = sp.coo_matrix((np.concatenate([w, w, -w, -w]),
+                       (np.concatenate([a, b, a, b]), np.concatenate([a, b, b, a]))),
+                      shape=(m, m)).tocsc()
+    M = sp.diags(np.full(m, EPSILON_0 * er * pas * pas / h)).tocsc()
+    lam = spl.eigsh(K, k=3, M=M, sigma=-1.0, which="LM", return_eigenvectors=False)
+    lam = np.sort(lam[lam > 1e-6 * max(lam.max(), 1.0)])
+    return float(np.sqrt(lam[0]) / (2 * np.pi)) if lam.size else None
+
+
+def _composante(prep, c, echelle_ilots=1.0):
+    """Modes, capacite et factorisation d'une composante connexe, une fois.
+
+    LES BORDS DEBORDENT ET RAYONNENT. Chaque face exterieure ajoute la
+    capacite de debordement d'un bord de patch (allongement 0,412 h (er+0,3)
+    /(er-0,258), Hammerstad, large devant h) ; et chaque mode perd par ses
+    bords la puissance que `_rayonnement_bords` calcule sur sa forme propre,
+    soit 1/Q_rad = P / (w W). Les pics qui sortaient a plusieurs centaines
+    d'ohms n'avaient que les pertes du dielectrique et du cuivre."""
+    import scipy.sparse as sp
+    import scipy.sparse.linalg as spl
+    cle_c = (c, round(float(echelle_ilots), 6))
+    if cle_c in prep["par_comp"]:
+        return prep["par_comp"][cle_c]
+    noeuds = np.flatnonzero(prep["comp"] == c)
+    local = -np.ones(len(prep["comp"]), int)
+    local[noeuds] = np.arange(len(noeuds))
+    n = len(noeuds)
+    h, pas, er = prep["h"], prep["pas"], prep["er"]
+    c_cel = EPSILON_0 * er * pas * pas / h
+    # les liens du maillage, puis ceux des ilots (leur self a l'echelle)
+    poids = np.concatenate([np.full(prep["lattice"], 1.0 / (MU_0 * h)),
+                            1.0 / (MU_0 * h + echelle_ilots * prep["l_ilots"])])
+    c_face = EPSILON_0 * er * 0.412 * (er + 0.3) / (er - 0.258) * pas
+    fsel = local[prep["f_noeud"]] >= 0
+    f_loc = local[prep["f_noeud"][fsel]]
+    f_pos, f_tan = prep["f_pos"][fsel], prep["f_tan"][fsel]
+    paquets = _paquets_bord(f_pos, f_tan, pas)
+    c_vec = c_cel + c_face * np.bincount(f_loc, minlength=n)
+    garde = local[prep["lien"][:, 0]] >= 0
+    lk = prep["lien"][garde]
+    a, b = local[lk[:, 0]], local[lk[:, 1]]
+    w = poids[garde]
+    K = sp.coo_matrix((np.concatenate([w, w, -w, -w]),
+                       (np.concatenate([a, b, a, b]), np.concatenate([a, b, b, a]))),
+                      shape=(n, n)).tocsc()
+    c_tot = float(c_vec.sum())
+    phi0 = np.full(n, 1.0 / math.sqrt(c_tot))
+    # LES MODES de la bande : Weyl en donne le nombre, plus une marge
+    aire = n * pas * pas
+    k = int(min(max(n - 2, 0), 1.5 * aire * np.pi * prep["f_max"] ** 2 * er / C_0 ** 2 + 24))
+    lam, vec = np.zeros(0), np.zeros((n, 0))
+    if k >= 2:
+        M = sp.diags(c_vec).tocsc()
+        lam, vec = spl.eigsh(K, k=k, M=M, sigma=-1.0, which="LM")
+        g = lam > 1e-6 * max(lam.max(), 1.0)       # le mode statique a part
+        lam, vec = lam[g], vec[:, g]
+        vec = vec / np.sqrt(np.einsum("ij,i,ij->j", vec, c_vec, vec))
+        dans = np.sqrt(lam) / (2 * np.pi) <= prep["f_max"]
+        lam, vec = lam[dans], vec[:, dans]
+    f_mn = np.sqrt(lam) / (2 * np.pi)
+    inv_q_rad = np.zeros(lam.size)
+    if lam.size and len(f_loc):
+        for m in range(lam.size):
+            p, _ = _rayonnement_bords([f_mn[m]], paquets, vec[f_loc, m][None, :])
+            inv_q_rad[m] = p[0] / (2 * np.pi * f_mn[m] * 0.5)
+    # LA CONVERGENCE : la meme cavite au pas double (cellules 2 x 2 gardees a
+    # moitie pleines). L'erreur du pas fin vaut le tiers de l'ecart (ordre 2).
+    # Une fois par composante : elle ne depend pas de l'echelle des ilots.
+    convs = prep.setdefault("convergence", {})
+    if c not in convs:
+        convs[c] = None
+        try:
+            ci, cj = prep["ii"][noeuds] // 2, prep["jj"][noeuds] // 2
+            gros, nb = np.unique(np.column_stack([ci, cj]), axis=0, return_counts=True)
+            gros = gros[nb >= 2]
+            f_fin = _premier_mode(prep["ii"][noeuds], prep["jj"][noeuds], pas, h, er)
+            f_gros = _premier_mode(gros[:, 0], gros[:, 1], 2 * pas, h, er)
+            if f_fin and f_gros:
+                convs[c] = abs(f_gros - f_fin) / f_fin / 3.0
+        except Exception:                               # noqa: BLE001
+            convs[c] = None
+    conv = convs[c]
+    # la queue : K mis a la masse a un noeud, factorise une fois
+    reste = np.arange(n) != 0
+    lu = spl.splu(K[reste][:, reste].tocsc()) if n > 1 else None
+    out = {"local": local, "c_tot": c_tot, "c_vec": c_vec, "phi0": phi0,
+           "lam": lam, "vec": vec, "lu": lu, "reste": reste, "colonnes": {}, "n": n,
+           "inv_q_rad": inv_q_rad, "f_loc": f_loc, "f_pos": f_pos, "paquets": paquets,
+           "convergence": conv}
+    prep["par_comp"][cle_c] = out
+    return out
+
+
+def _colonne_g(cp, j):
+    """G e_j = (K+ sur le complement du mode statique) e_j, mis en cache."""
+    if j in cp["colonnes"]:
+        return cp["colonnes"][j]
+    b = -cp["phi0"] * cp["c_vec"] * cp["phi0"][j]
+    b[j] += 1.0
+    x = np.zeros(cp["n"])
+    if cp["lu"] is not None:
+        x[cp["reste"]] = cp["lu"].solve(b[cp["reste"]])
+    x -= cp["phi0"] * (cp["phi0"] @ (cp["c_vec"] * x))
+    cp["colonnes"][j] = x
+    return x
+
+
+def cavite_grille(grille, h, epsilon_r, tan_d, ports, f_max=FREQ_MAX_MODES,
+                  echelle_ilots=1.0):
+    """La cavite MAILLEE : meme dict que `cavite_modale`, ports [(x, y, w)] en
+    metres dans le repere de la carte. `echelle_ilots` multiplie la self des
+    liens entre ilots (la fourchette de `traversee_fourchette`)."""
+    prep = _grille_preparee(grille, float(h), max(1.0, float(epsilon_r)), float(tan_d), f_max)
+    pas = prep["pas"]
+    cx = prep["x0"] + (prep["ii"] + 0.5) * pas
+    cy = prep["y0"] + (prep["jj"] + 0.5) * pas
+    # LE PORT TOUCHE LE PLUS GROS CUIVRE A 1,5 MM, pas le noeud le plus
+    # proche : un cou de cuivre plus etroit que la maille disparait au
+    # maillage, et le via, au centre de son antipad, tombait sur une miette de
+    # 41 cellules (P01x291, 2,8 kohm au lieu de 20 ohm).
+    taille = prep["taille_orig"]
+    co = prep["comp_orig"]
+
+    # PLUS LOIN, RIEN EN REGARD : les deux plans sont la, mais pas l'un sur
+    # l'autre (P01x291, D5 : GND d'un cote du via, VDDIO de l'autre). Le
+    # retour rejoint la cavite en s'etalant sur l'ecart : on s'y accroche et
+    # cet etalement s'ajoute en serie (`ecart`).
+    ecart = [0.0] * len(ports)
+
+    def accroche(i, x, y):
+        d2 = (cx - x) ** 2 + (cy - y) ** 2
+        pres = np.flatnonzero(d2 <= max(1.5e-3, 2 * pas) ** 2)
+        if not pres.size:
+            gros = np.flatnonzero(taille[co] == taille.max())
+            k = int(gros[np.argmin(d2[gros])])
+            ecart[i] = math.sqrt(d2[k])
+            return k
+        gros = pres[taille[co[pres]] == taille[co[pres]].max()]
+        return int(gros[np.argmin(d2[gros])])
+    noeud = [accroche(i, x, y) for i, (x, y, _) in enumerate(ports)]
+    c = prep["comp"][noeud[0]]
+    cp = _composante(prep, c, echelle_ilots)
+    dedans = np.array([prep["comp"][k] == c for k in noeud])
+    loc = [int(cp["local"][k]) if d else -1 for k, d in zip(noeud, dedans)]
+    P = len(ports)
+    kappa = np.zeros((cp["lam"].size, P))
+    lq = np.zeros((P, P))
+    queue_bord = np.zeros((len(cp["f_loc"]), P))
+    for i in range(P):
+        if loc[i] < 0:
+            continue
+        kappa[:, i] = cp["vec"][loc[i], :] * math.sqrt(cp["c_tot"])
+        g = _colonne_g(cp, loc[i])
+        queue_bord[:, i] = g[cp["f_loc"]]
+        for jx in range(P):
+            if loc[jx] >= 0:
+                lq[i, jx] = g[loc[jx]]
+    # la queue = G moins les modes gardes en dynamique
+    if cp["lam"].size:
+        v = cp["vec"][[l if l >= 0 else 0 for l in loc], :] * dedans[:, None]
+        lq -= (v / cp["lam"][None, :]) @ v.T
+        queue_bord -= (cp["vec"][cp["f_loc"], :] / cp["lam"][None, :]) @ v.T
+    # PEACEMAN : un noeud de la grille vaut un contact de rayon 0,1985 pas ; un
+    # via plus fin s'etale en plus de mu0 h / 2pi ln(r_eq / r), une pastille
+    # plus large en moins (borne pour garder une self propre positive)
+    for i, (_, _, wp) in enumerate(ports):
+        r = max(float(wp), PORT_MIN) / 2
+        if loc[i] >= 0:
+            d = MU_0 * h / (2 * np.pi) * math.log(PEACEMAN * pas / r)
+            lq[i, i] = max(lq[i, i] + d, 0.1 * lq[i, i])
+            lq[i, i] += inductance_etalement_via_via(h, ecart[i], 2 * r) if ecart[i] else 0.0
+    f_mn = np.sqrt(cp["lam"]) / (2 * np.pi)
+    delta_s = 1.0 / np.sqrt(np.pi * np.maximum(f_mn, 1.0) * MU_0 * SIGMA_CU)
+    return {"c": cp["c_tot"], "tan_d": float(tan_d), "kappa": kappa,
+            "poids": np.ones(cp["lam"].size), "w_mn": 2 * np.pi * f_mn,
+            "inv_q": float(tan_d) + delta_s / h + cp["inv_q_rad"], "l_queue": lq,
+            "statique": np.outer(dedans, dedans).astype(float),
+            "f_premier": float(f_mn.min()) if f_mn.size else None,
+            "noeuds": cp["n"], "hors": int((~dedans).sum()), "ilots": prep["ilots"],
+            "liens_page": prep["liens_page"],
+            "bornes_ilot": prep["bornes"].get(int(co[noeud[0]])),
+            "sur_ilot": bool(co[noeud[0]] != np.argmax(taille)),
+            "ecart_via_mm": round(ecart[0] * 1e3, 2),
+            "convergence": cp["convergence"],
+            "q_rad_min": (float(1 / cp["inv_q_rad"].max()) if cp["inv_q_rad"].size
+                          and cp["inv_q_rad"].max() > 0 else None),
+            "bord": {"kappa": (cp["vec"][cp["f_loc"], :] * math.sqrt(cp["c_tot"])).T,
+                     "queue": queue_bord, "pos": cp["f_pos"], "paquets": cp["paquets"],
+                     "dedans": dedans.astype(float)}}
+
+
+def rayonnement_cavite(freqs, param):
+    """Le champ que la cavite rayonne par ses bords pour un courant de retour
+    UNITE (1 A crete) dans le via, les ponts termines : E maximal a 1 m en V/m
+    et puissance en W, a chaque frequence. Les tensions de bord se lisent sur
+    le meme reseau a ports que la traversee."""
+    cav = param["modal"]
+    bd = cav.get("bord")
+    fs = np.atleast_1d(np.asarray(freqs, float))
+    if not bd or not len(bd["pos"]):
+        return np.zeros(len(fs)), np.zeros(len(fs))
+    _, i_l = _traversee_modale_vec(fs, param)
+    i_ports = np.concatenate([np.ones((len(fs), 1)), i_l], axis=1)      # (F, P)
+    ws = 2 * np.pi * np.maximum(fs, 1e-3)
+    g = (1j * ws[:, None] * cav["poids"][None, :] / cav["c"]
+         / (cav["w_mn"][None, :] ** 2 - ws[:, None] ** 2
+            + 1j * ws[:, None] * cav["w_mn"][None, :] * cav["inv_q"][None, :]))
+    z_ep = np.einsum("me,fm,mp->fep", bd["kappa"], g, cav["kappa"])
+    z_ep += ((1.0 / (ws * cav["c"] * (cav["tan_d"] + 1j)))[:, None, None]
+             * bd["dedans"][None, None, :])
+    z_ep += 1j * ws[:, None, None] * bd["queue"][None]
+    v = np.einsum("fep,fp->fe", z_ep, i_ports)
+    p, e = _rayonnement_bords(fs, bd["paquets"], v)
+    return e, p
+
+
 def impedance_traversee_param(freq, param):
     """L'impedance de la traversee, lue depuis un dict de parametres. EN SI."""
     if not param:
         return 0.0 + 0.0j
+    if param.get("modal"):
+        return _traversee_modale(freq, param)[0]
     return impedance_traversee_ponts(freq, param.get("l_cavite", 0.0),
                                      param.get("c_plans", 0.0),
                                      _ponts_du_param(param))
@@ -2686,6 +3639,9 @@ def repartition_traversee_param(freq, param):
     Rend (parts_ponts, part_cavite)."""
     if not param:
         return [], 1.0
+    if param.get("modal"):
+        _, i_l = _traversee_modale(freq, param)
+        return [abs(i) for i in i_l], abs(1.0 + sum(i_l))
     return repartition_traversee(freq, param.get("l_cavite", 0.0),
                                  param.get("c_plans", 0.0),
                                  _ponts_du_param(param))

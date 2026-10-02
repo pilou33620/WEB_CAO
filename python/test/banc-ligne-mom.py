@@ -1941,6 +1941,126 @@ def une_deduction_et_une_observation_ne_se_disent_pas_pareil():
     assert "AUCUN découplage" in " ".join(r4["avertissements"]), r4["avertissements"]
 
 
+def la_cavite_modale_ne_resonne_que_la_ou_la_carte_resonne():
+    """Le modele modal de la traversee (celui de la PI) : condensateur en basse
+    frequence, aucun pic sous le premier mode quand il n'y a pas de pont --
+    c'est le pic du pont SUPPOSE que le modele localise inventait --, et le
+    premier mode a c / (2 a sqrt(er))."""
+    a, h, er = 0.05, 0.71e-3, 4.37
+    c = _tl.capacite_paire_plans(a * a, h, er)
+    cav = _tl.cavite_modale(a, a, h, er, 0.02, c, [(0.0, 0.0, 0.25e-3)])
+    z1 = abs(_tl.impedance_cavite_modale(1e6, cav, [])[0])
+    assert abs(z1 * 2 * np.pi * 1e6 * c - 1) < 1e-3, z1
+    f1 = 2.99792458e8 / (2 * a * np.sqrt(er))
+    assert abs(cav["f_premier"] / f1 - 1) < 1e-9, cav["f_premier"]
+    fs = np.linspace(20e6, 0.8 * f1, 200)
+    zs = [abs(_tl.impedance_cavite_modale(f, cav, [])[0]) for f in fs]
+    pics = [i for i in range(1, len(zs) - 1) if zs[i] > zs[i - 1] and zs[i] > zs[i + 1]]
+    assert not pics, "pic sous le premier mode a %.0f MHz" % (fs[pics[0]] / 1e6)
+    zr = [abs(_tl.impedance_cavite_modale(f, cav, [])[0]) for f in np.linspace(0.97 * f1, 1.03 * f1, 61)]
+    assert max(zr) > 5 * zs[-1], "le premier mode doit ressortir au coin"
+    # un pont reel au pied du via fait chuter la traversee, et prend le courant
+    p = {"modal": _tl.cavite_modale(a, a, h, er, 0.02, c, [(0.0, 0.0, 0.25e-3), (0.002, 0.0, 1e-3)]),
+         "ponts": [{"l": 1e-9, "esr": 0.03, "c": 100e-9}]}
+    assert abs(_tl.impedance_traversee_param(50e6, p)) < 0.1 * zs[0]
+    parts, _ = _tl.repartition_traversee_param(1e6, p)
+    assert abs(parts[0] - 1) < 0.05, parts
+
+
+T("la cavite modale ne resonne que la ou la carte resonne",
+  la_cavite_modale_ne_resonne_que_la_ou_la_carte_resonne)
+
+
+def current_return_path_passe_par_la_cavite_modale():
+    """L'onglet Current Return Path, quand la page donne la cavite et tous les
+    ponts : la fiche est modale, le relais 0 ohm porte le courant, la reponse
+    reste serialisable (les tableaux du reseau ne sortent pas)."""
+    import json
+    v = _via_moignon(0, 6, ponts=[], rayon=10.0)
+    v.update({"aire_plans_mm2": 2500.0, "ponts_carte": [],
+              "cavite_rect": {"x0": -25.0, "y0": -25.0, "a": 50.0, "b": 50.0},
+              "ponts_indirects": [{"x": 20.0, "y": 0.0, "repere": "R5", "r_ohm": 0.0,
+                                   "relais": "VDD", "suivants": [],
+                                   "caps": [{"x": 22.0, "y": 0.0, "repere": "C9",
+                                             "capacite_F": 100e-9}]}]})
+    r = _se.simuler(_doc_moignon(_GND_PWR, 0, 6, v))
+    cav = r["discontinuites"]["transitions"][0]["cavite"]
+    assert cav["modele"] == "modal" and cav["pont"]["repere"] == "R5 → VDD", cav["pont"]
+    assert "part" in cav["ponts_detail"][0], cav["ponts_detail"]
+    # en basse frequence, c'est le relais qui porte le retour ; en haut de
+    # bande, la capacite des plans le reprend
+    p = _se._param_cavite(cav)
+    assert _tl.repartition_traversee_param(1e6, p)[0][0] > 0.9
+    assert _tl.repartition_traversee_param(1e9, p)[1] > 0.5
+    assert any("Cavité modale" in a for a in r["avertissements"]), r["avertissements"]
+    json.dumps(r)
+
+
+T("current return path passe par la cavite modale",
+  current_return_path_passe_par_la_cavite_modale)
+def la_cavite_maillee_retrouve_le_rectangle_et_voit_la_forme():
+    """Le solveur sur grille : sur un carre, il redonne le modele analytique
+    (premier mode, capacite, basse frequence) ; sur un L, ses modes ne sont
+    plus ceux de la boite ; un ilot detache ne touche pas le via."""
+    a, s, h, er = 50.0, 0.5, 0.71e-3, 4.37
+    n = int(a / s)
+    carre = {"pas": s, "x0": 0.0, "y0": 0.0, "lignes": [[j, [0, n]] for j in range(n)]}
+    ports = [(0.012, 0.017, 0.25e-3), (0.030, 0.020, 1e-3)]
+    c = _tl.capacite_paire_plans(a * a * 1e-6, h, er)
+    cg = _tl.cavite_grille(carre, h, er, 0.02, ports)
+    cr = _tl.cavite_modale(a * 1e-3, a * 1e-3, h, er, 0.02, c, ports)
+    # le debordement des bords allonge la plaque (Hammerstad) : le premier
+    # mode descend de 1 a 3 %, et la capacite monte d'autant
+    assert 0.97 < cg["f_premier"] / cr["f_premier"] < 0.99, (cg["f_premier"], cr["f_premier"])
+    assert 1.0 < cg["c"] / c < 1.06, cg["c"] / c
+    # les bords rayonnent : Q de rayonnement de quelques centaines, et le Q
+    # total reste borne par le dielectrique (1/tan d = 50)
+    assert 100 < cg["q_rad_min"] < 5000 and all(1 / q < 50 for q in cg["inv_q"]), cg["q_rad_min"]
+    # la maille est juste : l'ecart au pas double reste sous le pour cent
+    assert cg["convergence"] is not None and cg["convergence"] < 0.01, cg["convergence"]
+    zt = np.array([[0.03 + 1j * 2 * np.pi * f * 1e-9 + 1 / (1j * 2 * np.pi * f * 100e-9)]
+                   for f in (1e6, 1e8)])
+    zg, _ = _tl.impedance_cavite_modale_vec([1e6, 1e8], cg, zt)
+    zr, _ = _tl.impedance_cavite_modale_vec([1e6, 1e8], cr, zt)
+    assert all(abs(abs(g) / abs(r) - 1) < 0.15 for g, r in zip(zg, zr)), (zg, zr)
+    # UN L : le carre prive de son quart haut-droit. La boite est la meme, le
+    # premier mode ne l'est plus.
+    ell = {"pas": s, "x0": 0.0, "y0": 0.0,
+           "lignes": [[j, [0, n] if j < n // 2 else [0, n // 2]] for j in range(n)]}
+    cl = _tl.cavite_grille(ell, h, er, 0.02, ports)
+    assert abs(cl["c"] / c - 0.75) < 0.05, cl["c"]
+    assert abs(cl["f_premier"] / cr["f_premier"] - 1) > 0.05, (cl["f_premier"], cr["f_premier"])
+    # UN ILOT : deux bandes separees par une fente de 5 mm. Elles portent les
+    # memes nets, donc se rejoignent ailleurs : une self de 1 nH/mm les relie.
+    # Le pont de l'autre bande referme le retour en basse frequence, et coute
+    # plus que s'il etait sur la meme bande.
+    ilots = {"pas": s, "x0": 0.0, "y0": 0.0,
+             "lignes": [[j, [0, 40, 50, n]] for j in range(n)]}
+    pt = [(0.005, 0.025, 0.25e-3), (0.040, 0.025, 1e-3)]
+    ci = _tl.cavite_grille(ilots, h, er, 0.02, pt)
+    assert ci["ilots"] == 1 and ci["hors"] == 0 and ci["noeuds"] == 90 * n, ci["noeuds"]
+    za = abs(_tl.impedance_cavite_modale_vec([1e6, 1e8], ci, zt)[0])
+    zm = abs(_tl.impedance_cavite_modale_vec([1e6, 1e8], _tl.cavite_grille(carre, h, er, 0.02, pt),
+                                             zt)[0])
+    assert za[0] < 10 and za[1] > zm[1], (za, zm)
+    # UNE MIETTE : deux cellules detachees a 1 mm de la cavite (un cou plus
+    # etroit que la maille). Elle est reliee a la cavite, et le via s'y
+    # accroche par le plus gros cuivre a 1,5 mm.
+    miette = {"pas": s, "x0": 0.0, "y0": 0.0,
+              "lignes": [[j, [0, 40] + ([41, 43] if j == 50 else [])] for j in range(n)]}
+    cm = _tl.cavite_grille(miette, h, er, 0.02, [(0.0210, 0.02525, 0.25e-3)])
+    assert cm["noeuds"] == 40 * n + 2 and cm["ilots"] == 1, cm["noeuds"]
+    # RIEN EN REGARD A 5 MM : le via rejoint la cavite par un etalement en
+    # serie, il ne tombe pas sur une miette
+    cf = _tl.cavite_grille(miette, h, er, 0.02, [(0.025, 0.02525, 0.25e-3)])
+    assert abs(cf["ecart_via_mm"] - 5.25) < 0.01, cf["ecart_via_mm"]
+    assert cf["l_queue"][0, 0] > cm["l_queue"][0, 0], (cf["l_queue"][0, 0], cm["l_queue"][0, 0])
+
+
+T("la cavite maillee retrouve le rectangle et voit la forme",
+  la_cavite_maillee_retrouve_le_rectangle_et_voit_la_forme)
+
+
 T("le moignon se soustrait, il ne se devine pas",
   le_moignon_se_soustrait_il_ne_se_devine_pas)
 T("le moignon pèse et résonne", le_moignon_pese_et_resonne)
@@ -3076,6 +3196,100 @@ def un_via_hors_chaine_a_quand_meme_un_retour():
         "un via hors parcours ne doit pas se donner pour cascade")
 
 
+def un_via_hors_chaine_chiffre_sa_traversee():
+    """Le via d'un net ramifie qui change de reference (GND -> PWR) : sa
+    traversee entre plans se chiffre comme celle d'une transition -- la
+    verification de carte le faisait, l'onglet non."""
+    v = {"x": 10.0, "y": 0.0, "layer_from": 0, "layer_to": 6,
+         "drill_diameter": 0.25, "pad_diameter": 0.55, "retours": [],
+         "ponts": [], "ponts_rayon_mm": 10.0, "aire_plans_mm2": 2500.0,
+         "cavite_rect": {"x0": -15.0, "y0": -25.0, "a": 50.0, "b": 50.0},
+         "ponts_carte": [{"x": 12.0, "y": 0.0, "repere": "C5", "capacite_F": 100e-9}],
+         "ponts_indirects": []}
+    r = _se.simuler(_doc_vias_seuls(_GND_PWR, [v]))
+    f = r["discontinuites"]["vias_hors_chaine"][0]
+    assert f["cavite"]["modele"] == "modal", f.get("cavite")
+    assert f["modelise"]["traversee_ohm"] > 0, f["modelise"]
+    assert f["cavite"]["ponts_detail"][0]["repere"] == "C5"
+    assert any("Cavité modale" in a for a in r["avertissements"]), r["avertissements"]
+    # LA MEME, MAILLEE par la page : la grille passe devant le rectangle, et
+    # sur un carre plein la traversee reste celle du rectangle a 15 % pres
+    v["cavite_grille"] = {"pas": 0.5, "x0": -15.0, "y0": -25.0,
+                          "lignes": [[j, [0, 100]] for j in range(100)]}
+    r2 = _se.simuler(_doc_vias_seuls(_GND_PWR, [v]))
+    f2 = r2["discontinuites"]["vias_hors_chaine"][0]
+    assert f2["cavite"]["grille"]["noeuds"] == 10000, f2["cavite"].get("grille")
+    assert any("Cavité maillée" in a for a in r2["avertissements"]), r2["avertissements"]
+    # sous le premier mode (1,4 GHz), les deux modeles s'accordent ; au-dessus,
+    # la grille et le rectangle different legitimement par les ports
+    zr = abs(_tl.impedance_traversee_param(1e8, _se._param_cavite(f["cavite"])))
+    zg = abs(_tl.impedance_traversee_param(1e8, _se._param_cavite(f2["cavite"])))
+    assert abs(zg / zr - 1) < 0.15, (zg, zr, f2["modelise"].get("traversee_f_hz"))
+    # LA CAVITE RAYONNE PAR SES BORDS : une marge CISPR 32 sort, en classe B a 3 m
+    ry = f2["cavite"]["rayonnement"]
+    assert ry["classe"] == "B" and ry["pire"]["limite_dbuv_m"] > 0, ry
+    assert -60 < ry["pire"]["marge_db"] < 120, ry
+    # UN ILOT RELIE PAR SON VRAI CHEMIN : deux bandes, le via sur la petite,
+    # le pont sur la grande. Le net du plan 1 s'interrompt entre elles et une
+    # piste de 0,3 mm sur la couche 0 les relie par deux percages ; le net du
+    # plan 2 est plein. La page en envoie le reseau, le serveur le resout.
+    v3 = dict(v, x=33.0, ponts_carte=[{"x": 0.0, "y": 0.0, "repere": "C5", "capacite_F": 100e-9}])
+    bandes = [[j, [0, 80, 90, 100]] for j in range(100)]
+    reseau = {"i1": -10, "i2": 110, "j1": -10, "j2": 110, "ep": [0.2, 0.71, 0.2],
+              "nets": [{"plan": 1, "couches": [{"cu": 1, "h": 0.71, "lignes": bandes}],
+                        "pistes": [[0, 0.3, 24.0, 0.0, 31.0, 0.0]],
+                        "vias": [[24.0, 0.0, [0, 1]], [31.0, 0.0, [0, 1]]]},
+                       {"plan": 2, "couches": [{"cu": 2, "h": 0.71,
+                                               "lignes": [[j, [0, 100]] for j in range(100)]}]}]}
+    v3["cavite_grille"] = {"pas": 0.5, "x0": -15.0, "y0": -25.0, "lignes": bandes,
+                           "reseau": reseau}
+    # le lien vaut la piste (7 mm a 0,35 nH/mm) et les percages, pas 1 nH/mm
+    liens = _tl._liens_par_reseau(reseau, 0.5e-3, -15e-3, -25e-3,
+                                  np.array([i for j, c in bandes for a, b in zip(c[0::2], c[1::2])
+                                            for i in range(a, b)]),
+                                  np.array([j for j, c in bandes for a, b in zip(c[0::2], c[1::2])
+                                            for i in range(a, b)]),
+                                  np.array([0 if i < 80 else 1 for j, c in bandes
+                                            for a, b in zip(c[0::2], c[1::2]) for i in range(a, b)]), 0)
+    li = liens[1]
+    assert list(liens) == [1] and 2e-9 < li["L"] < 8e-9, liens
+    # LA MUTUELLE : la piste aller longe son retour dans le plan, la PEEC
+    # en tient compte et la self de boucle reste sous la somme des deux nets ;
+    # les bornes encadrent la valeur retenue
+    assert li["peec"] is not None and li["L"] <= li["L_somme"], li
+    assert li["L_min"] <= li["L"] <= li["L_somme"], li
+    # LES POINTS D'ENTREE : le courant quitte l'ilot par le percage de la
+    # piste (x = 31 mm, colonne 92), pas n'importe ou
+    xs = [-15 + (np.array([i for j, c in bandes for a, b in zip(c[0::2], c[1::2])
+                           for i in range(a, b)])[g] + 0.5) * 0.5 for g, _, _ in li["liens"]]
+    assert li["liens"] and all(abs(x - 31) < 2.5 for x in xs), xs
+    # et la cavite qui s'y accroche par PLUSIEURS liens (deux percages : deux
+    # points de sortie) reste coherente avec son maillage
+    deux = dict(reseau, nets=[dict(reseau["nets"][0], pistes=[[0, 0.3, 24.0, -5.0, 31.0, -5.0],
+                                                               [0, 0.3, 24.0, 5.0, 31.0, 5.0]],
+                                   vias=[[24.0, -5.0, [0, 1]], [31.0, -5.0, [0, 1]],
+                                         [24.0, 5.0, [0, 1]], [31.0, 5.0, [0, 1]]]),
+                              reseau["nets"][1]])
+    cd = _tl.cavite_grille({"pas": 0.5, "x0": -15.0, "y0": -25.0, "lignes": bandes, "reseau": deux},
+                           0.71e-3, 4.37, 0.02, [(33e-3, 0.0, 0.25e-3), (0.0, 0.0, 1e-3)])
+    assert cd["liens_page"] == 1 and cd["bornes_ilot"], (cd["liens_page"], cd["bornes_ilot"])
+    # la meme piste EN BIAIS : ses cellules ne se touchent que par un coin, la
+    # cellule de coin les relie (sans elle, aucun lien)
+    biais = dict(reseau, nets=[dict(reseau["nets"][0], pistes=[[0, 0.3, 24.0, -2.0, 31.0, 3.0]],
+                                    vias=[[24.0, -2.0, [0, 1]], [31.0, 3.0, [0, 1]]]),
+                               reseau["nets"][1]])
+    lb = _tl._liens_par_reseau(biais, 0.5e-3, -15e-3, -25e-3, *(
+        np.array(v) for v in zip(*[(i, j, 0 if i < 80 else 1) for j, c in bandes
+                                   for a, b in zip(c[0::2], c[1::2]) for i in range(a, b)])), 0)
+    assert list(lb) == [1] and lb[1]["L"] > li["L"], lb
+    r3 = _se.simuler(_doc_vias_seuls(_GND_PWR, [dict(v3)]))
+    c3 = r3["discontinuites"]["vias_hors_chaine"][0]["cavite"]
+    assert c3["grille"]["ilots"] == 1 and c3["grille"]["ilots_par_la_page"] == 1, c3["grille"]
+    assert c3["grille"]["via_sur_ilot"] and c3["fourchette_ilots"], c3.get("fourchette_ilots")
+    fo = c3["fourchette_ilots"]
+    assert fo["f_bas"] != fo["f_haut"], fo
+
+
 def la_hauteur_vient_de_l_empilage_sans_troncon():
     """PAS DE TRONCON, MAIS UN EMPILAGE -- et c'est lui qui porte la hauteur.
 
@@ -3148,6 +3362,8 @@ def un_via_sans_changement_de_couche_n_en_est_pas_un():
 
 T("un via hors chaîne a quand même un retour",
   un_via_hors_chaine_a_quand_meme_un_retour)
+T("un via hors chaine chiffre sa traversee",
+  un_via_hors_chaine_chiffre_sa_traversee)
 T("sa hauteur vient de l'empilage, sans tronçon",
   la_hauteur_vient_de_l_empilage_sans_troncon)
 T("les plans se lisent dans l'empilage, même verdict",
