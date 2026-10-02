@@ -35,9 +35,9 @@ jobs:
       # Les solveurs d'impédance 2D MoM, de diaphonie, d'IR drop, les routes
       # du serveur et les sécurités sont systématiquement éprouvés ici.
       #
-      # LES DÉPENDANCES SONT INSTALLÉES ICI ET NULLE PART AILLEURS : c'est ce
-      # qui permet à requirements.txt de rester vide, donc au double-clic sur
-      # web_CAO.py de marcher sans réseau. Voir son en-tête.
+      # numpy et scipy sont ceux de requirements.txt : facultatifs pour
+      # l'application (web_CAO.py démarre sans eux, en bibliothèque standard),
+      # indispensables aux solveurs éprouvés ici. Voir son en-tête.
       - name: Solveurs — dépendances de calcul
         run: pip install --quiet numpy scipy
 

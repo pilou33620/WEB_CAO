@@ -292,10 +292,6 @@ et *ce navigateur ne partage rien entre onglets*. En `file://`, deux onglets
 n'ont pas la même origine et le canal n'existe pas : le bouton se désactive au
 lieu de disparaître.
 
-## Limites connues
-
-- **Bus et hiérarchie :** Pas de bus de signaux (un bus D0..D7 doit être tiré à huit fils individuels) ni de feuilles hiérarchiques (seuls les nets globaux multi-feuilles sont gérés).
-
 ## Deux règles à respecter
 
 **1. L'ordre des `<script>` compte.** Ce sont des scripts classiques, pas des
@@ -333,7 +329,7 @@ l'archiver ; le développement reste sur les fichiers séparés.
 python3 outils/build-monofichier.py && node test/harness.js
 ```
 
-75 cas, sans navigateur : découpe automatique des fils, extraction des nets
+Sans navigateur : découpe automatique des fils, extraction des nets
 (union-find, labels, symboles nommants, conflits de noms), nets globaux entre
 feuilles, netlist (dont les colonnes qui portent le boîtier jusqu'au PCB) et
 nomenclature, analyse du CSV de bibliothèque, espace de

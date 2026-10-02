@@ -302,16 +302,16 @@ Tous les bancs tournent en intégration continue (GitHub Actions, `.github/workf
 
 | Composant testé | Commande | Couverture |
 | :--- | :--- | :--- |
-| **Éditeur PCB** | `node editeur-pcb/test/harness.js`<br>`node editeur-pcb/test/banc-trois-ponts.js` | 779 essais : DRC, netlist, tracé, paires diff, Gerber, Excellon, PNS, simulation, PDN, RF |
+| **Éditeur PCB** | `node editeur-pcb/test/harness.js`<br>`node editeur-pcb/test/banc-trois-ponts.js` | 784 essais : DRC, netlist, tracé, paires diff, Gerber, Excellon, PNS, simulation, PDN, RF |
 | **Éditeur Schématique** | `node editeur-schematique/test/harness.js` | 119 essais : connectivité, nets, multi-feuilles, bus, nomenclature |
-| **Visionneuse IPC-2581** | `node visionneuse-ipc2581/test/harness-sim.js`<br>`python visionneuse-ipc2581/test/banc-essai.py` | 181 essais (géométrie de masse, simulation, datasheet, RF) + 55 (parseur XML) |
+| **Visionneuse IPC-2581** | `node visionneuse-ipc2581/test/harness-sim.js`<br>`python visionneuse-ipc2581/test/banc-essai.py` | 186 essais (géométrie de masse, simulation, datasheet, RF) + 57 (parseur XML) |
 | **Gestion LIB** | `node gestion-lib/test/banc-catalogue.js`<br>`node gestion-lib/test/banc-import-jlc.js` | 27 essais (lecture du catalogue, recherche par référence fabricant, auto-association des boîtiers) + 65 (import JLCPCB, 39 colonnes) |
 | **Solveur MoM (Z₀)** | `python python/test/banc-ligne-mom.py` | 199 cas contre étalons analytiques (Hammerstad-Jensen, Wen, Garg-Bahl…) |
 | **Crosstalk** | `python python/test/banc-crosstalk.py` | 65 cas : conservation de l'énergie, cascade, localisation, références exactes (triplaque, Cohn, Garg-Bahl) |
 | **Simulation RF** | `python python/test/banc-rf.py` | 47 cas : réseau en L calculé à la main (14 + 8j → 50 Ω), self et capa en parallèle (idéales et SPICE), piste voisine fermée sur son Z₀, mutuelle de Neumann contre Maxwell, selfs couplées en série, self → piste, fente contre Ott, gain de désadaptation, identité avec la cascade de `simulation_em`, Touchstone v1/v2, modèles Murata, SnP actif, vias et pistes de masse, coulée maillée, pastille 3D contre le carré isolé et Hammerstad-Jensen, dispersion modale contre Getsinger, masque de remplissage, zone maillée étroite et large contre la ligne MoM, coulée de 6 500 cellules, creux contre plein, pistes divergentes, domaine de validité, lignes couplées à N conducteurs contre `chaine_mtl`, atténuation du cuivre, zone maillée contre la ligne MoM, broches annexes |
 | **Chute DC** | `python python/test/banc-dc.py` | 42 cas : résistivité théorique, vias, double modèle thermique |
 | **Scoring de placement** | `python python/test/banc-pcb-scoring.py` | 18 cas : HPWL, congestion, découplage, auto-rotation |
-| **Reconnaissance de motifs** | `python python/test/banc-patterns.py` | 22 cas : LDO, 78xx/79xx, buck, I2C/SPI/UART, quartz, RC, courants DC |
+| **Reconnaissance de motifs** | `python python/test/banc-patterns.py` | 24 cas : LDO, 78xx/79xx, buck, I2C/SPI/UART, quartz, RC, courants DC |
 | **Serveur** | `python python/test/banc-serveur-routes.py`, `banc-lib-routes.py`, `banc-maj-github.py`, `banc-detection-plateforme.py` | Routes, sécurité anti-traversée, Host/CSRF, lecture seule en écoute réseau, bibliothèque, mise à jour, détection de plateforme |
 
 > [!IMPORTANT]
@@ -332,7 +332,7 @@ python editeur-schematique/outils/build-monofichier.py  # → editeur-schematiqu
 
 ## 🗺️ Limites & feuille de route
 
-Chaque guide d'outil a sa section *Limites connues*. Le backlog de [A-FAIRE.md](A-FAIRE.md) est entièrement soldé : il n'y a pas de chantier ouvert à ce jour.
+Les guides d'outil ont leur section *Limites connues* quand il y en a. Le backlog est dans [A-FAIRE.md](A-FAIRE.md) : il reste des tâches ouvertes, toutes dans la vérification de la carte (Z₀ par classe de net, courant par rail, couplage entre couches voisines, liaisons thermiques des zones).
 
 Le solveur 2,5D pleine onde (`mom_solver`) a été retiré au profit du solveur 2D instantané ; il est conservé dans la branche `archive/mom-solver-25d`.
 

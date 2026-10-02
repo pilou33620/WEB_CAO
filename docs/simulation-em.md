@@ -155,7 +155,7 @@ ne savent pas traiter — à commencer par la **triplaque décentrée**, que la
 formule IPC suppose centrée alors qu'un empilage 4 couches ne l'est jamais.
 
 Il est vérifié contre des étalons extérieurs, et le banc d'essai le refait à
-chaque exécution (`python/test/banc-ligne-mom.py`, 149 cas) :
+chaque exécution (`python/test/banc-ligne-mom.py`) :
 
 | Géométrie | Étalon | Écart maximal |
 | --- | --- | --- |
@@ -1454,7 +1454,7 @@ complète, terme de potentiel scalaire compris ; les deux potentiels ont chacun
 leur fonction de Green — c'était le défaut principal, et il pesait 26 % sur
 ε_eff ; les images complexes sont ajustées par un vrai GPOF à deux niveaux sur
 la Green spectrale exacte du milieu stratifié, et non posées sur des
-constantes. 56 essais le mesurent, dont la comparaison d'ε_eff contre
+constantes. Le banc le mesure, dont la comparaison d'ε_eff contre
 `ligne_mom` : **0,49 %** — deux méthodes qui ne partagent aucun code tombent
 sur le même chiffre, ce qui est un certificat de validité et non un concours
 de précision.

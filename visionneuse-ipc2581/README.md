@@ -478,11 +478,11 @@ Ce n'est pas la formule de la fiche de ligne, c'est un calcul de champ sur la
 section — et il traite des cas que la formule ne traite pas, à commencer par
 la **triplaque décentrée**, que les « Limites connues » plus bas signalent
 comme un défaut de la formule IPC-2141A. Vérifié contre étalons extérieurs
-(`../python/test/banc-ligne-mom.py`, 51 cas) : **0,42 %** d'écart
+(`../python/test/banc-ligne-mom.py`) : **0,42 %** d'écart
 au pire contre Hammerstad-Jensen sur le microruban, **0,30 %** contre la
 solution exacte en intégrales elliptiques sur la triplaque. La géométrie qui
 mesure la masse coplanaire sur le cuivre lu a son propre banc,
-`test/harness-sim.js` (108 cas), qui tourne sous Node sans navigateur — il
+`test/harness-sim.js`, qui tourne sous Node sans navigateur — il
 couvre aussi l'extraction du cuivre pour la CHUTE CONTINUE : les polygones
 envoyés au solveur, les tubes métallisés qui font changer de couche, et
 l'invariant qui compte, « aucune couche de cuivre sans chemin vertical » —
@@ -620,7 +620,7 @@ côté, dans un couloir de 2 mm, et le compare à λ/20 et λ/10 dans le stratif
 **en haut de la bande analysée**. Trois verdicts — serrée, limite, trop lâche —
 et un quatrième dit en toutes lettres quand aucun via de masse ne borde la
 piste. Ce n'est pas une modélisation, c'est un contrôle : ses limites sont dans
-`../A-FAIRE.md`, section *« Ce que la masse coplanaire suppose »*. La principale
+`../docs/HISTORIQUE_DEVELOPPEMENT.md`, section *« Ce que la masse coplanaire suppose »*. La principale
 ici : un perçage IPC-2581 ne dit pas sa plage de couches, donc un via borgne qui
 n'atteint pas le plan de référence compte quand même comme une couture.
 
@@ -658,9 +658,9 @@ l'écriture est refusée et le téléchargement prend le relais, en le disant.
 python visionneuse-ipc2581/test/banc-essai.py
 ```
 
-Le seul banc d'essai en Python du dépôt, et pour la raison qui fait exister la
+Un banc d'essai en Python, et pour la raison qui fait exister la
 route `/api/ipc2581` : ce qui se teste ici ne tourne pas dans le navigateur.
-38 cas sur le parseur et le modèle JSON — empilage et permittivités, contour,
+Il porte sur le parseur et le modèle JSON — empilage et permittivités, contour,
 largeurs de piste dans les deux écritures, pastilles, perçages, vias,
 composants et boîtiers, index des couches et des nets, archive `.zip`, et les
 refus (fichier vide, XML tronqué, archive illisible, archive sans IPC-2581).

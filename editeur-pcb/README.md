@@ -2052,8 +2052,8 @@ c'est là que le risque est le plus fort, pas à f₀ :
 | aucun via | dit en toutes lettres : rien ne ramène ce cuivre au plan d'en face |
 
 Ce n'est pas une modélisation — il faudrait l'onde complète — mais un contrôle.
-Ses limites sont dans `A-FAIRE.md`, section *« Ce que la masse coplanaire
-suppose »* : un via borgne qui n'atteint pas le plan compte quand même, et le
+Ses limites sont dans `docs/HISTORIQUE_DEVELOPPEMENT.md`, section *« Ce que la
+masse coplanaire suppose »* : un via borgne qui n'atteint pas le plan compte quand même, et le
 couloir de 2 mm est fixe plutôt que déduit de la hauteur au plan.
 
 ### Ce que ça vaut
@@ -2061,7 +2061,7 @@ couloir de 2 mm est fixe plutôt que déduit de la hauteur au plan.
 Ce n'est pas une formule de plus : c'est un calcul de champ sur la section, qui
 converge quand on raffine. Il est vérifié contre des étalons extérieurs, et le
 banc d'essai le refait à chaque exécution
-(`../python/test/banc-ligne-mom.py`, 43 cas) :
+(`../python/test/banc-ligne-mom.py`) :
 
 | Géométrie | Étalon | Écart maximal |
 | --- | --- | --- |
@@ -2361,7 +2361,7 @@ python3 outils/build-monofichier.py && node test/harness.js
 ```
 
 Le banc s'appuie sur le DOM minimal partagé (`../commun/test/dom-stub.js`),
-exécute `dist/pcb.js` et couvre 513 cas : import de netlist, boîtiers nommés
+exécute `dist/pcb.js` et couvre : import de netlist, boîtiers nommés
 et empreintes qu'ils posent, chevelu
 multicouche, vias, îlots de cuivre, classes de net, édition des pistes,
 géométrie du L chanfreiné, posture du coude et règle d'angle (45° / 90° /
