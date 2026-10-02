@@ -1,6 +1,6 @@
 # Vérification de la carte — tutoriel
 
-> **Guide d'utilisation** de l'analyse « DRC — Règles de conception » du panneau Simulation EM,
+> **Guide d'utilisation** de l'analyse « Audit de la carte » du panneau Simulation EM,
 > commune à l'**éditeur PCB** et à la **visionneuse IPC-2581**. Les dérivations
 > physiques et les étalons des moteurs réutilisés sont dans
 > [simulation-em.md](simulation-em.md) ; le reste à faire, dans
@@ -54,7 +54,7 @@ regarder (P01x274 : 20 s, dont 10 pour la diaphonie et 8 pour les impédances).
    électriques en ont besoin (plans de référence, épaisseurs, εr). Sans
    empilage, seuls les angles, les bouts orphelins et le découplage sont
    jugés, et le rapport le dit.
-3. `Simulation EM…` → famille **DRC — Règles de conception** → onglet **Vérification**.
+3. `Simulation EM…` → famille **Audit de la carte** → onglet **Vérification**.
 4. Réglez si besoin (§ 3), puis **▶ Vérifier la carte**.
 
 La visionneuse envoie tout ce que le fichier décrit : pistes et arcs, pastilles
@@ -685,7 +685,7 @@ Le détail, avec ce que chaque point réutilisera, est dans
 | :--- | :--- |
 | `python/analyse_carte.py` | les règles : `angles`, `orphelins`, `empilage`, `impedances`, `retours`, `fentes`, `coutures` (et la clôture du bord), `diaphonie`, `paires_diff`, `decouplages` (`_Chemins`), `bords`, `moignons_vias`, `branches_t` (`_graphe_topo`), `quartz`, `esd`, `courants` ; `_Surfaces` peint le cuivre des surfaces une fois ; `analyser_document` les enchaîne et rend la durée de chacune |
 | `web_CAO.py` | route `POST /api/analyse-carte` (plafond 32 Mo) |
-| `commun/simulation-em.js` | famille « DRC — Règles de conception », réglages, rapport, marque sur la carte, export |
+| `commun/simulation-em.js` | famille « Audit de la carte », réglages, rapport, marque sur la carte, export |
 | `visionneuse-ipc2581/js/07-simulation.js`, `editeur-pcb/js/19-simulation.js` | `carteEntiere()` : ce que chaque outil envoie |
 | `python/simulation_em.py`, `python/crosstalk.py`, `python/ligne_mom.py`, `python/rf_reseau.py` | les moteurs réutilisés (retour, cavité, section MoM, Kb/Kf, Z_diff, fente d'Ott) |
 

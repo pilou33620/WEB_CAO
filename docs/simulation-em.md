@@ -800,12 +800,12 @@ période de résonance —, le panneau le dit et propose un nombre. Ce n'est pas
 cosmétique : sur une piste de 28,7 mm, 21 points **ratent** le creux de S₁₁ et
 l'annoncent à −33 dB au lieu de −39,5.
 
-### Le panneau se range en SI, PI, RF et DRC
+### Le panneau se range en SI, PI, RF et Audit
 
 Quatre familles d'analyse : **SI**, intégrité du signal — ce qu'un front devient
 en parcourant le cuivre —, **PI**, intégrité de l'alimentation — ce que le
 réseau de distribution laisse passer —, **RF**, le S₂₁ d'une chaîne
-d'adaptation entre deux ports (voir plus bas), et **DRC** (Règles de conception), qui juge toute la
+d'adaptation entre deux ports (voir plus bas), et **Audit de la carte**, qui juge toute la
 carte sans sélection (voir [Vérification de la carte](#vérification-de-la-carte)).
 L'onglet *Santé liaison*, qui agrégeait les diagnostics d'UNE liaison, a été
 retiré : la vérification de la carte en reprend l'idée — un constat, sa
