@@ -7,8 +7,10 @@
    ============================================================================= */
 
 /* l'en-tête passe au-dessus des panneaux flottants (70) et sous les petits
-   menus d'options des outils (80) */
-header{position:relative;z-index:75}
+   menus d'options des outils (80). « body > » : les en-têtes de panneaux
+   sont aussi des <header class="pnl-head"> et passeraient sinon au-dessus
+   des menus déroulants (vu sur iPad, dock droit sous le menu Placer) */
+body>header{position:relative;z-index:75}
 
 .menubar{display:flex;flex-wrap:wrap;gap:2px;background:var(--panel2);
   border:1px solid var(--border2);border-radius:6px;padding:2px}
