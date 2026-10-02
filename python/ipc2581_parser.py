@@ -1,3 +1,28 @@
+# [2026-09-22] Version 1.74: seuls les calques utiles a la simulation sont lus
+# Description:
+#              - Un export du commerce porte des dizaines de calques qui ne
+#                sont pas du cuivre : serigraphie, masque, pate, zones de
+#                composant, keepouts, cotation, gabarits. Tous passaient par
+#                le meme chemin que le cuivre -- sur antenna4c.xml, le contour
+#                « BoardShape » et la zone « CompArea-A » ressortaient en PLANS
+#                DE CUIVRE, la serigraphie en piste.
+#              - Le tri se fait sur layerFunction (declare dans <Layer>) :
+#                cuivre et percage sont lus, BOARD_OUTLINE ne sert que de
+#                contour de repli quand <Profile> manque, le reste est ignore
+#                et liste dans design.ignored_layers.
+#              - Un calque SANS layerFunction reste lu, comme avant : mieux
+#                vaut un calque de trop qu'un cuivre perdu.
+#              - Le tri est demande par l'appelant : IPC2581Parser(...,
+#                tout_garder=False). Par defaut tout est lu, comme avant --
+#                la visionneuse de WEB_CAO affiche serigraphie et masque ;
+#                WEB_ANTENNA, qui simule, demande le tri.
+#              - Ce fichier est le meme dans WEB_CAO et WEB_ANTENNA (la CI de
+#                WEB_SUITE le verifie) : une correction se fait des deux cotes.
+#
+# Liste des fonctions ajoutees/modifiees :
+# - [+] _role_calque
+# - [~] _parse_ecad (filtre des LayerFeature), __init__ (tout_garder)
+#
 # [2026-09-03] Version 1.73: la portee des percages est enfin lue
 # Description:
 #              - IPC-2581 declare entre quelles couches court un percage, mais
@@ -160,9 +185,18 @@ def parse_ipc2581_file(xml_file: str) -> IPCDesign:
     return IPC2581Parser(xml_file).parse()
 
 
+# layerFunction IPC-2581 qui designent du cuivre (CONDUCTOR, SIGNAL, PLANE,
+# MIXED, CONDFILM, CONDFOIL, POWER_GROUND...). Meme famille que celle que la
+# page reconnait (js/02-modele.js).
+_RE_FONCTION_CUIVRE = re.compile(r"COND|SIGNAL|PLANE|POWER|GROUND|MIXED")
+
+
 class IPC2581Parser:
-    def __init__(self, xml_file: str):
+    def __init__(self, xml_file: str, tout_garder: bool = True):
         self.xml_file = xml_file
+        # False : seuls cuivre, percages et contour sont lus (voir _role_calque) ;
+        # True (defaut) : tout est lu, la visionneuse veut aussi la serigraphie
+        self.tout_garder = tout_garder
         self.tree = None
         self.root = None
         self.ns: Dict[str, str] = {}
@@ -1143,16 +1177,16 @@ class IPC2581Parser:
             local_func = layer_feature.attrib.get("layerFunction", "").upper()
             global_func = layer_functions_map.get(layer_ref, "")
 
-            is_drill_layer = False
-            if "DRILL" in local_func:
-                is_drill_layer = True
-            elif "DRILL" in global_func:
-                is_drill_layer = True
-            elif "DRILL" in layer_ref.upper() or "HOLE" in layer_ref.upper():
-                is_drill_layer = True
+            role = self._role_calque(layer_ref, local_func or global_func)
 
-            if is_drill_layer:
+            if role == "percage":
                 self._process_drill_layer(layer_feature, layer_ref)
+                continue
+            if role == "contour":
+                self._contour_de_repli(layer_feature)
+                continue
+            if role == "ignore":
+                self.design.ignored_layers[layer_ref] = local_func or global_func
                 continue
 
             for item_set in layer_feature.findall(self._tag("Set")):
@@ -1167,6 +1201,48 @@ class IPC2581Parser:
 
             for direct_features in layer_feature.findall(self._tag("Features")):
                 self._process_features(direct_features, layer_ref, "Non-Net")
+
+        if self.design.ignored_layers:
+            logger.info("%d calque(s) hors simulation ignore(s) : %s",
+                        len(self.design.ignored_layers),
+                        ", ".join(sorted(self.design.ignored_layers)))
+
+    def _role_calque(self, layer_ref: str, fonction: str) -> str:
+        """Ce qu'on fait d'un <LayerFeature> : "percage", "cuivre", "contour"
+        ou "ignore".
+
+        Seul le cuivre et les percages entrent dans une simulation ; le reste
+        d'un export (serigraphie, masque, pate, zones de composant, keepouts,
+        cotation) y serait pris pour du metal. Le tri se fait sur layerFunction ;
+        un calque qui n'en declare pas est garde -- un cuivre perdu coute plus
+        cher qu'un calque de trop.
+        """
+        nom = layer_ref.upper()
+        if "DRILL" in fonction or (not fonction and ("DRILL" in nom or "HOLE" in nom)):
+            return "percage"
+        if self.tout_garder or not fonction or _RE_FONCTION_CUIVRE.search(fonction):
+            return "cuivre"
+        if fonction in ("BOARD_OUTLINE", "PROFILE", "BOARDOUTLINE"):
+            return "contour"
+        return "ignore"
+
+    def _contour_de_repli(self, layer_feature: ET.Element):
+        """Un calque BOARD_OUTLINE ne sert que si <Profile> n'a rien donne."""
+        if self.design.board_outline is not None:
+            return
+        for contour in layer_feature.iter(self._tag("Contour")):
+            polygon = contour.find(self._tag("Polygon"))
+            if polygon is None:
+                continue
+            points = self._parse_polygon(polygon)
+            if len(points) >= 3:
+                contour_data = Contour(outline=points)
+                for cutout in contour.findall(self._tag("Cutout")):
+                    trou = self._parse_polygon(cutout)
+                    if len(trou) >= 3:
+                        contour_data.cutouts.append(trou)
+                self.design.board_outline = contour_data
+                return
 
     def _process_features(self, features_elem: ET.Element, layer_ref: str, net_name: str):
         """Traite un bloc <Features> (ou <UserSpecial>) : lignes, polylignes, arcs, textes, contours."""

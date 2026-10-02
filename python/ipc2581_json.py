@@ -430,6 +430,8 @@ def design_en_dict(design: IPCDesign, fichier: str = "") -> dict:
         "padstacks": padstacks,
         "formes": formes,
         "formesuser": formesuser,
+        # calques du fichier laisses de cote (nom -> layerFunction)
+        "ignores": dict(design.ignored_layers),
         "stats": {
             "couches": len(couches.noms),
             "empilage": len(empilage),
@@ -444,16 +446,18 @@ def design_en_dict(design: IPCDesign, fichier: str = "") -> dict:
             "composants": len(composants),
             "padstacks": len(padstacks),
             "longueur_cuivre": _r(longueur),
+            "calques_ignores": len(design.ignored_layers),
         },
     }
 
 
-def charger_octets(data: bytes, nom: str = "") -> IPCDesign:
+def charger_octets(data: bytes, nom: str = "", tout_garder: bool = True) -> IPCDesign:
     """Octets d'un fichier (XML ou ZIP) -> IPCDesign.
 
     Le parseur accepte un objet fichier autant qu'un chemin : les octets
     arrivent du navigateur, rien n'oblige a les poser sur le disque d'abord.
-    Leve IPC2581ParseError, comme le parseur.
+    Leve IPC2581ParseError, comme le parseur. tout_garder=False ne garde que
+    les calques utiles a une simulation (voir IPC2581Parser._role_calque).
     """
     if not data:
         raise IPC2581ParseError("Fichier vide.")
@@ -496,12 +500,12 @@ def charger_octets(data: bytes, nom: str = "") -> IPCDesign:
                 octets.append(morceau)
         data = b"".join(octets)
 
-    return IPC2581Parser(_Flux(data, interne or nom or "(flux)")).parse()
+    return IPC2581Parser(_Flux(data, interne or nom or "(flux)"), tout_garder).parse()
 
 
-def ipc2581_en_dict(data: bytes, nom: str = "") -> dict:
+def ipc2581_en_dict(data: bytes, nom: str = "", tout_garder: bool = True) -> dict:
     """Octets d'un fichier IPC-2581 (ou ZIP) -> dictionnaire JSON."""
-    return design_en_dict(charger_octets(data, nom), nom)
+    return design_en_dict(charger_octets(data, nom, tout_garder), nom)
 
 
 if __name__ == "__main__":

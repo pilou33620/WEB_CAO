@@ -759,6 +759,38 @@ T(u"une couche qui ne porte que des pastilles entre dans la table",
   couche_de_pastilles_seules)
 
 
+# -- Le tri des calques : la visionneuse voit tout, une simulation le cuivre --
+def tri_des_calques():
+    """ipc2581_*.py est le meme fichier dans WEB_ANTENNA, qui demande
+    tout_garder=False : la serigraphie y serait prise pour du cuivre. Ici,
+    par defaut, elle reste lue -- la visionneuse l'affiche."""
+    serigraphie = CARTE.replace(
+        u"    <LayerFeature layerRef=\"Hole1-2\">",
+        u"""    <LayerFeature layerRef="Symbol-A">
+     <Set>
+      <Features>
+       <Line startX="0" startY="0" endX="10" endY="0">
+        <LineDesc lineEnd="ROUND" lineWidth="0.15"/>
+       </Line>
+      </Features>
+     </Set>
+    </LayerFeature>
+    <LayerFeature layerRef="Hole1-2">""", 1)
+    vrai(serigraphie != CARTE, u"la carte variante n'a pas ete construite")
+    octets = serigraphie.encode("utf-8")
+    tout = ipc2581_json.ipc2581_en_dict(octets, "seri.xml")
+    tri = ipc2581_json.ipc2581_en_dict(octets, "seri.xml", tout_garder=False)
+    egal(tout["stats"]["pistes"], MODELE["stats"]["pistes"] + 1, u"pistes lues par defaut")
+    egal(tout["ignores"], {}, u"calques ignores par defaut")
+    egal(tri["stats"]["pistes"], MODELE["stats"]["pistes"], u"pistes une fois le tri fait")
+    egal(tri["ignores"], {"Symbol-A": "SILKSCREEN"}, u"calques ignores par le tri")
+    egal(tri["stats"]["calques_ignores"], 1, u"compte des calques ignores")
+
+
+T(u"tri des calques : la serigraphie reste lue par defaut, ecartee sur demande",
+  tri_des_calques)
+
+
 # -- Refus : ce qui doit echouer, et proprement -------------------------------
 def refus(data, quoi):
     try:
