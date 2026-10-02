@@ -408,7 +408,9 @@ def retours(doc, couches, reg, unite, notes, se):
             cav = se._cavite_de_retour(dict(trans, troncon=1), v, couches,
                                        encadre, d_percage) or {}
             param = se._param_cavite(cav)
-            if cav.get("pont"):
+            # `borne` : le pont est SUPPOSÉ au rayon, rien n'y a été trouvé ;
+            # le nommer « traversée par un découplage » inventait un composant.
+            if cav.get("pont") and not cav.get("borne"):
                 dist = float(cav["pont"].get("distance_mm") or 0)
                 chemin = "traversée par %s à %.2f mm" % (
                     cav["pont"].get("repere") or "un découplage", dist)
@@ -416,6 +418,14 @@ def retours(doc, couches, reg, unite, notes, se):
                 # rien dans le rayon : le pont est AU MOINS aussi loin
                 dist = float(cav.get("rayon_mm") or 0) or None
                 chemin = "aucun découplage à moins de %s mm" % cav.get("rayon_mm", "?")
+                if cav.get("aucun_pont_carte"):
+                    # Rien nulle part : au front rapide le retour s'étale dans
+                    # toute la paire de plans, la boucle se prend à son rayon.
+                    # ponytail: rayon de l'aire envoyée (celle de la carte,
+                    # majorée) ; les modes de la cavité si le chiffre doit tenir.
+                    dist = max(dist or 0, math.sqrt(
+                        float(cav.get("aire_plans_mm2") or 0) / math.pi)) or None
+                    chemin = "aucun découplage entre ces plans sur toute la carte"
             if param is None:
                 out.append(dict(base, severite="critique", frequences=[],
                                 msg="Référence %s : le retour doit traverser entre plans"

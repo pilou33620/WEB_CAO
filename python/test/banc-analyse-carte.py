@@ -198,6 +198,8 @@ def test_retour_gnd_vers_alim():
                                       "capacite_F": 100e-9, "esl_nH": 0.5}])])
     kl, kp = de(loin, "retour"), de(pres, "retour")
     assert kl and "GND → 3V3" in kl[0]["msg"], (kl, loin["notes"])
+    # aucun pont ni dans le rayon ni au-delà : pas de 100 nF inventé au rayon
+    assert "sur toute la carte" in kl[0]["msg"], kl
     g = lambda k: [f["valeur"] for f in k[0]["frequences"]] if k else [0, 0, 0]
     assert all(a < b for a, b in zip(g(kp), g(kl))), (g(kp), g(kl))
     assert not kp or "C5" in kp[0]["msg"], kp

@@ -1915,6 +1915,7 @@ def une_deduction_et_une_observation_ne_se_disent_pas_pareil():
 
     # La page cherche et ne trouve rien : le pont est AU MOINS au rayon.
     v2 = _via_moignon(0, 6, ponts=[], rayon=10.0)
+    v2["pont_hors_rayon_mm"] = 25.0
     r2 = _se.simuler(_doc_moignon(_GND_PWR, 0, 6, v2))
     a2 = " ".join(r2["avertissements"])
     assert "MINORANT" in a2, (
@@ -1929,6 +1930,15 @@ def une_deduction_et_une_observation_ne_se_disent_pas_pareil():
     assert (t2["cavite"]["impedance_fc_ohm"]
             > t3["cavite"]["impedance_fc_ohm"]), (
         "un decouplage suppose a 10 mm devrait couter plus qu'un mesure a 2")
+
+    # Rien dans le rayon NI AU-DELA : aucun pont sur la carte. Le minorant
+    # reste (l'impedance), mais la fiche le dit et la marque.
+    assert not t2["cavite"]["aucun_pont_carte"], "un pont existe a 25 mm"
+    v4 = _via_moignon(0, 6, ponts=[], rayon=10.0)
+    r4 = _se.simuler(_doc_moignon(_GND_PWR, 0, 6, v4))
+    t4 = r4["discontinuites"]["transitions"][0]
+    assert t4["cavite"]["aucun_pont_carte"] and t4["cavite"]["borne"], t4["cavite"]
+    assert "AUCUN découplage" in " ".join(r4["avertissements"]), r4["avertissements"]
 
 
 T("le moignon se soustrait, il ne se devine pas",
