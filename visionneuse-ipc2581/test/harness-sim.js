@@ -79,7 +79,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simRetoursIpc","SIM_RAYON_RETOUR_IPC","SIM_RAYON_RETOUR_OPTIMAL_IPC",
   /* Les découplages qui joignent deux plans de nets différents : c'est par
      eux que le retour passe quand aucun via de masse ne peut refermer. */
-  "simPontsPlansIpc","simValeurFaradsIpc","simCaviteIpc",
+  "simPontsPlansIpc","simValeurFaradsIpc","simCaviteIpc","simAireEnRegardIpc","simPontsCarte","simOhms",
   "simBornesNetsIpc","simNbBornesIpc","simPlansCuDeIpc",
   "simNetPlanEnIpc","simPlansNetsEnIpc","simPlansJointsEnIpc",
   "simPlansSansCuivreIpc",
@@ -3321,6 +3321,52 @@ T("un plan n'est pas d'un seul net : le net se mesure AU POINT",()=>{
   const rien=simPontsPlansIpc(0, 3, 30*k, 20*k);
   if(rien.ponts!==null||!/même net/.test(rien.raison))
     throw new Error("deux masses locales n'ont rien à ponter : "+JSON.stringify(rien));
+
+  /* 7. L'AIRE EN REGARD, PAS CELLE DE LA CARTE. Dans l'îlot, +3V3 (10 × 36)
+     face à la masse ; ailleurs, la masse de L2 (44 × 36) face à celle de L1. */
+  const ilot=simAireEnRegardIpc(0, 3, 6*k, 20*k), masse=simAireEnRegardIpc(0, 3, 30*k, 20*k);
+  if(Math.abs(ilot.aire-360)>1||Math.abs(masse.aire-1584)>1)
+    throw new Error("aire en regard : "+ilot.aire+" et "+masse.aire+" mm², attendu 360 et 1584");
+  /* et sa boîte, le rectangle de la cavité modale : l'îlot, x 2..12, y 2..38 */
+  const rc=ilot.rect;
+  if(Math.abs(rc.x0-2)>0.3||Math.abs(rc.a-10)>0.3||Math.abs(rc.y0-2)>0.3||Math.abs(rc.b-36)>0.3)
+    throw new Error("rectangle de la cavité : "+JSON.stringify(rc));
+  /* et sa grille à 0,5 mm : 20 × 72 cellules, de x 2 et y 2 */
+  const gr=ilot.grille;
+  const cellules=gr.lignes.reduce((n,[j,c])=>n+c.reduce((m,v,i)=>m+(i%2?v:-v),0),0);
+  if(gr.pas!==0.5||gr.lignes.length!==72||cellules!==1440||Math.abs(gr.x0-2)>1e-9||Math.abs(gr.y0-2)>1e-9)
+    throw new Error("grille de la cavité : "+JSON.stringify({pas:gr.pas,x0:gr.x0,y0:gr.y0,n:gr.lignes.length,cellules}));
+  const fc=simCaviteIpc({x:6*k, y:20*k}, 0, 3);
+  if(Math.abs(fc.aire_plans_mm2-360)>1||fc.aire_plans_majoree||!fc.cavite_rect)
+    throw new Error("la fiche porte l'aire mesurée, non majorée : "+JSON.stringify(fc));
+});
+
+T("les ponts de la carte : directs, et par un 0 Ω vers un rail découplé",()=>{
+  /* P01x291 en miniature : aucun condensateur VDDIO-GND, R211 (0R0) vers VDD,
+     et les découplages de VDD. Une résistance de 10 k n'est pas un pont. */
+  const r=simPontsCarte([
+    {ref:"R211", x:1, y:1, val:"0R0",  nets:["VDD","VDDIO"]},
+    {ref:"C1",   x:3, y:1, val:"100nF",nets:["VDD","GND"], pkg:"IPC_0402C"},
+    {ref:"R1",   x:0, y:0, val:"10k",  nets:["VDDIO","X"]},
+    {ref:"C7",   x:9, y:9, val:"1uF",  nets:["X","GND"]},
+    {ref:"R229", x:5, y:1, val:"0R0",  nets:["Vout","VDD"]},
+    {ref:"C30",  x:6, y:2, val:"10uF", nets:["Vout","GND"]}], new Set(["GND"]), new Set(["VDDIO"]));
+  if(r.directs.length) throw new Error("aucun pont direct : "+JSON.stringify(r.directs));
+  if(r.indirects.length!==1||r.indirects[0].repere!=="R211"||r.indirects[0].relais!=="VDD"||
+     r.indirects[0].caps.length!==1||r.indirects[0].caps[0].repere!=="C1")
+    throw new Error("le relais R211 → VDD → C1 : "+JSON.stringify(r.indirects));
+  const s2=r.indirects[0].suivants;
+  if(s2.length!==1||s2[0].repere!=="R229"||s2[0].relais!=="Vout"||s2[0].caps[0].repere!=="C30")
+    throw new Error("le relais suivant R229 → Vout → C30 : "+JSON.stringify(s2));
+  /* LES PARASITES DE LA PI : un 0402 vaut 0,45 nH d'ESL plus 0,5 nH de
+     montage ; un boîtier inconnu, 1 nH plus 0,8 nH. */
+  const c1=r.indirects[0].caps[0];
+  if(Math.abs(c1.esl_nH-0.95)>1e-6||Math.abs(c1.esr_ohm-0.028)>1e-9)
+    throw new Error("parasites du 0402 : "+JSON.stringify(c1));
+  if(Math.abs(r.indirects[0].esl_nH-1.8)>1e-6)
+    throw new Error("ESL du relais sans boîtier : "+r.indirects[0].esl_nH);
+  if(simOhms("4R7")!==4.7||simOhms("0R")!==0||simOhms("1k5")!==1500||simOhms("100nF")!==Infinity)
+    throw new Error("lecture des ohms");
 });
 
 T("un via au centre de son antipad reconnaît le plan de masse qui l'entoure",()=>{

@@ -1201,11 +1201,28 @@ function simPontsPlansIpc(cuA, cuB, x, y){
   }
   out.sort((p, q) => Math.hypot(p.x - x, p.y - y) -
                      Math.hypot(q.x - x, q.y - y));
+  /* ET TOUS CEUX DE LA CARTE, directs et par un 0 Ω, pour la cavité modale. */
+  /* La hauteur de chaque face au plan de la cavité le plus proche, pour le
+     montage des condensateurs : somme des diélectriques jusqu'à lui. */
+  const plans = [...simPlansCuDeIpc(lo), ...simPlansCuDeIpc(hi)].filter(i => i >= lo && i <= hi);
+  const ep = (i, j) => { let t = 0; for(let g = i; g < j; g++) t += (LT.gap[g] || {}).t || 0; return t; };
+  const h = plans.length ? {haut: ep(0, Math.min(...plans)),
+                            bas: ep(Math.max(...plans), LT.cu.length - 1)} : undefined;
+  const carte = simPontsCarte((V.modele.composants || [])
+    .filter(c => simNbBornesIpc(c) === 2)
+    .map(c => {
+      const props = c.props || {};
+      return {ref: c.ref, x: c.x * k, y: c.y * k, val: c.val, nets: [...simBornesNetsIpc(c)],
+              pkg: c.package || c.pkg || "", bas: simFaceDessousIpc(c),
+              mpn: c.mpn || c.part || props["Part Number"] || props.MPN || "",
+              partName: props["Part Name"] || ""};
+    })
+    .filter(c => c.nets.length === 2), nA, nB, h);
   /* CHERCHÉ, ET VOICI CE QU'ON A VU. Une liste vide est un CONSTAT sur la
      carte, pas un aveu sur l'outil — mais encore faut-il pouvoir distinguer
      « il n'y a pas de découplage près de ce via » de « aucun composant du
      fichier n'a deux bornes », qui n'appelle pas le même geste. */
-  return {ponts:out,
+  return {ponts:out, carte:carte,
           plus_proche_hors_rayon_mm: isFinite(dHorsPontMin) ? Math.round(dHorsPontMin * 1000) / 1000 : null,
           plus_proche_hors_rayon_ref: refHorsPontMin || null,
           raison:out.length ? ""
@@ -1222,21 +1239,78 @@ function simPontsPlansIpc(cuA, cuB, x, y){
    versements en regard, qui fixe leur capacité répartie, et la permittivité du
    diélectrique qui les sépare.
 
-   ON ENVOIE L'AIRE DE LA CARTE, ET C'EST UNE MAJORATION — un plan ne couvre
-   jamais toute la carte. Une capacité surestimée fait paraître la traversée
-   MEILLEURE qu'elle n'est en basse fréquence : c'est le sens qui flatte, et
-   c'est pour cela que `aire_plans_majoree` part avec, pour que la fiche le
-   dise. Mesurer l'aire réelle demanderait l'intersection de deux jeux de
-   polygones à trous ; ce sera le jour où ce chiffre commandera une décision. */
+   L'AIRE EST CELLE QUI EST VRAIMENT EN REGARD : le cuivre du net du plan du
+   haut, au droit du via, sur celui du plan du bas (`simAireEnRegardIpc`).
+   L'aire de la carte, envoyée avant, donnait 7 473 mm² sur P01x291 et une
+   capacité surestimée — le sens qui flatte. Elle reste le repli, déclaré
+   `aire_plans_majoree`, quand un des deux nets ne se lit pas au via. */
 function simCaviteIpc(fiche, cuA, cuB){
-  const aire = LT.aire > 0 ? LT.aire * Math.pow(simKUnite(), 2) : 0;
+  const reel = simAireEnRegardIpc(cuA, cuB, fiche.x, fiche.y);
+  const aire = reel ? reel.aire
+             : (LT.aire > 0 ? LT.aire * Math.pow(simKUnite(), 2) : 0);
   if(aire > 0){
     fiche.aire_plans_mm2 = Math.round(aire * 1000) / 1000;
-    fiche.aire_plans_majoree = true;
+    fiche.aire_plans_majoree = !reel;
   }
+  /* LE RECTANGLE DE LA CAVITÉ MODALE : la boîte du recouvrement. Avec
+     `ponts_carte`, le serveur passe du pont supposé au réseau à ports. */
+  if(reel) fiche.cavite_rect = reel.rect;
+  if(reel && reel.grille) fiche.cavite_grille = reel.grille;
   const g = LT.gap[Math.min(cuA, cuB)];
   if(g && g.er > 0) fiche.er_plans = g.er;
+  if(g && g.df > 0) fiche.tan_plans = g.df;
   return fiche;
+}
+
+/* {aire en mm², rect {x0, y0, a, b} en mm} : là où le cuivre du plan de
+   référence de `cuA` et celui de `cuB` se font face, chacun pris au net qu'il
+   porte AU DROIT DU VIA ; null quand la paire ou un des nets ne se lit pas.
+   `x`/`y` en MILLIMÈTRES.
+
+   Le balayage est `simAireCommune` (commun), partagé avec l'éditeur.
+   ponytail: tout le cuivre du net sur la couche, îlots détachés compris ; pas
+   de 0,25 mm. Mis en cache par paire, le résultat ne dépend pas du via. */
+const SIM_AIRE_PAS_MM = 0.25, SIM_GRILLE_PAS_MM = 0.5;
+let SIM_AIRE_CACHE = new Map(), SIM_AIRE_SRC = null;
+function simAireEnRegardIpc(cuA, cuB, x, y){
+  if(!LT.pret || x == null || y == null) return null;
+  const k = simKUnite();
+  if(!(k > 0)) return null;
+  const lo = Math.min(cuA, cuB), hi = Math.max(cuA, cuB);
+  const dedans = [...simPlansCuDeIpc(lo), ...simPlansCuDeIpc(hi)]
+    .filter(i => i >= lo && i <= hi);
+  if(dedans.length < 2) return null;
+  const pA = Math.min(...dedans), pB = Math.max(...dedans);
+  if(pA === pB) return null;
+  const cA = LT.cu[pA].couche, cB = LT.cu[pB].couche;
+  const nA = simNetPlanEnIpc(cA, x / k, y / k), nB = simNetPlanEnIpc(cB, x / k, y / k);
+  if(!nA || !nB) return null;
+  if(SIM_AIRE_SRC !== V.modele){ SIM_AIRE_CACHE = new Map(); SIM_AIRE_SRC = V.modele; }
+  const cle = cA + "|" + nA + "|" + cB + "|" + nB;
+  if(!SIM_AIRE_CACHE.has(cle)){
+    const r = simAireCommune(simCuivreDuNetIpc(cA, nA), simCuivreDuNetIpc(cB, nB),
+                             SIM_AIRE_PAS_MM / k);
+    const r3 = v => Math.round(v * k * 1000) / 1000;
+    /* et la grille du recouvrement à 0,5 mm, pour la cavité sur sa forme réelle */
+    const g = r.aire > 0 ? simGrilleCommune(simCuivreDuNetIpc(cA, nA), simCuivreDuNetIpc(cB, nB),
+                                            SIM_GRILLE_PAS_MM / k) : null;
+    SIM_AIRE_CACHE.set(cle, r.aire > 0 ? {aire: r.aire * k * k,
+      rect: {x0: r3(r.x1), y0: r3(r.y1), a: r3(r.x2 - r.x1), b: r3(r.y2 - r.y1)},
+      grille: g ? {pas: SIM_GRILLE_PAS_MM, x0: r3(g.x0), y0: r3(g.y0), lignes: g.lignes} : null} : null);
+  }
+  return SIM_AIRE_CACHE.get(cle);
+}
+
+/* Le cuivre du net `net` sur la couche, au format de `simAireCommune`. */
+function simCuivreDuNetIpc(coucheIdx, net){
+  const c = V.couches[coucheIdx], plein = [];
+  for(const pl of (c && c.plans) || []){
+    if(mdlNetNom(pl.n == null ? -1 : pl.n) !== net) continue;
+    for(const ct of (pl.g || []))
+      if(ct.o && ct.o.length >= 6)
+        plein.push([ct.o, ...(ct.t || []).filter(t => t && t.length >= 6)]);
+  }
+  return {plein: plein, vide: []};
 }
 
 function simViasIpc(N){
@@ -1283,6 +1357,8 @@ function simViasIpc(N){
     }
     if(rp.ponts){
       fiche.ponts = rp.ponts;
+      fiche.ponts_carte = rp.carte.directs;
+      fiche.ponts_indirects = rp.carte.indirects;
       fiche.ponts_rayon_mm = SIM_RAYON_PONT_IPC;
       simCaviteIpc(fiche, lo, hi);
     }
@@ -1388,6 +1464,8 @@ function simAccrocherViasIpc(envoi,N){
     }
     if(rpJ.ponts){
       via.ponts = rpJ.ponts;
+      via.ponts_carte = rpJ.carte.directs;
+      via.ponts_indirects = rpJ.carte.indirects;
       via.ponts_rayon_mm = SIM_RAYON_PONT_IPC;
       simCaviteIpc(via, a.layer / 2, b.layer / 2);
     }

@@ -45,6 +45,8 @@ import re
 import time
 from collections import defaultdict
 
+import numpy as np
+
 TOL_DEG = 1.0     # un 90° dessiné sur des coordonnées arrondies au µm s'en écarte de quelques dixièmes
 EPS_MM = 1e-3     # deux bouts à moins d'un micron sont le même point
 CASE_MM = 2.0     # maille de la grille de voisinage
@@ -465,12 +467,25 @@ def retours(doc, couches, reg, unite, notes, se):
         # couture classique), λ/10 pour condamner.
         er = _er_entre(couches, a, b)
 
-        def juge(f_eval, tr, L=l_via, P=param, d=dist):
-            zz = complex(0.0, 2 * math.pi * f_eval * L) + se._impedance_traversee(P, f_eval)
-            g = abs(zz) / abs(zz + 2 * z0)
+        def gamma(fs, L=l_via, P=param):
+            """|Γ| à toutes les fréquences de `fs` d'un coup (numpy)."""
+            fs = np.asarray(fs, float)
+            zz = 2j * np.pi * fs * L + se.tl.impedance_traversee_vec(fs, P)
+            return np.abs(zz) / np.abs(zz + 2 * z0)
+        # LA CAVITÉ MODALE RÉSONNE SOUS LE GENOU, et un front contient toutes
+        # les fréquences jusqu'à lui : P01x291 culmine à 142 MHz (335 Ω), qu'un
+        # front de 1 ns excite alors que son genou, 350 MHz, passe à 1 %. On
+        # prend donc le pire sur les deux décades sous le genou. Le modèle
+        # localisé garde son point unique : son pont supposé y inventerait le pic.
+        modal = bool(param and param.get("modal"))
+
+        def juge(f_eval, tr, d=dist):
+            fs = f_eval * 10 ** (-np.arange(25) / 12) if modal else np.array([f_eval])
+            gs = gamma(fs)
+            g, f_g = float(gs.max()), float(fs[int(gs.argmax())])
             verdicts = ["critique" if g > GAMMA_CRITIQUE else
                         "vigilance" if g > GAMMA_VIGILANCE else "ok"]
-            extra = {}
+            extra = {"f_pire_hz": round(f_g)} if modal else {}
             if d:
                 l20 = C0 / (f_eval * math.sqrt(er)) / 20 * 1e3
                 extra["d_sur_lambda20"] = round(d / l20, 3)
@@ -489,11 +504,28 @@ def retours(doc, couches, reg, unite, notes, se):
             limites.append(0.35 * 20 * dist * 1e-3 * math.sqrt(er) / C0)
         if param is None and l_via > 0:
             limites.append(0.35 * 2 * math.pi * l_via / (0.201 * z0))
+        resonance = ""
+        if modal:
+            # la plus basse fréquence où la traversée réfléchit trop : un front
+            # dont le genou la dépasse l'excite
+            # de 100 kHz à 3 GHz, là où le modèle modal tient ses modes
+            fs = 1e5 * 10 ** (np.arange(108) / 24)
+            gs = gamma(fs)
+            trop = fs[gs > GAMMA_CRITIQUE]
+            if trop.size:
+                limites.append(0.35 / trop[0])
+            # le pic de la TRAVERSÉE seule, sans l'inductance du via qui
+            # monte avec la fréquence et masquerait la résonance
+            zt = np.abs(se.tl.impedance_traversee_vec(fs, param))
+            i = int(zt.argmax())
+            if 0 < i < len(zt) - 1 and gs[i] > GAMMA_VIGILANCE:
+                resonance = " ; la traversée résonne à %s (%.0f Ω, |Γ| %.0f %%)" % (
+                    _hz(fs[i]), zt[i], 100 * gs[i])
         tient = (" ; tient des fronts jusqu'à %.2g ns" % (max(limites) * 1e9)
                  if limites else "")
         out.append(dict(base, severite=sev, frequences=freqs,
-                        msg="Référence %s, %s, L = %.2f nH%s"
-                            % (plans, chemin, l_via * 1e9, tient)))
+                        msg="Référence %s, %s, L = %.2f nH%s%s"
+                            % (plans, chemin, l_via * 1e9, resonance, tient)))
     return out, bilan
 
 

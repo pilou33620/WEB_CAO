@@ -3915,6 +3915,205 @@ function simMemeEcart(a,b){
   return Math.abs(a-b)<=SIM_PLAGE_TOL*Math.max(a,b);
 }
 
+/* L'AIRE OÙ DEUX CUIVRES SE FONT FACE, par balayage de lignes — celle qui fixe
+   la capacité d'une paire de plans. Chaque cuivre est {plein, vide} : des
+   GROUPES d'anneaux en sommets à plat [x0,y0,x1,y1,…] (un extérieur et ses
+   trous, jugés par parité), réunis entre groupes ; `vide` (découpes) se
+   retranche. Chaque ligne coupe les arêtes : O(arêtes × lignes), un plan de
+   23 000 sommets en quelques dizaines de millisecondes. Rend {aire, x1, y1,
+   x2, y2} — l'aire dans l'unité des sommets au carré, et la boîte du
+   recouvrement, qui sert de rectangle à la cavité modale ; `pas` dans la même
+   unité. */
+function simAireCommune(A, B, pas){
+  const boite = C => {
+    let y1 = Infinity, y2 = -Infinity;
+    for(const g of C.plein) for(const p of g)
+      for(let i = 1; i < p.length; i += 2){ if(p[i] < y1) y1 = p[i]; if(p[i] > y2) y2 = p[i]; }
+    return [y1, y2];
+  };
+  const [a1, a2] = boite(A), [b1, b2] = boite(B);
+  let somme = 0, x1 = Infinity, x2 = -Infinity, y1 = Infinity, y2 = -Infinity;
+  for(let y = Math.max(a1, b1) + pas / 2; y < Math.min(a2, b2); y += pas){
+    const sa = simSpansMoins(simSpansLigne(A.plein, y), simSpansLigne(A.vide || [], y));
+    const sb = simSpansMoins(simSpansLigne(B.plein, y), simSpansLigne(B.vide || [], y));
+    for(let i = 0, j = 0; i < sa.length && j < sb.length;){
+      const g = Math.max(sa[i][0], sb[j][0]), d = Math.min(sa[i][1], sb[j][1]);
+      if(d > g){
+        somme += d - g;
+        if(g < x1) x1 = g; if(d > x2) x2 = d;
+        if(y < y1) y1 = y - pas / 2; if(y > y2) y2 = y + pas / 2;
+      }
+      if(sa[i][1] < sb[j][1]) i++; else j++;
+    }
+  }
+  return {aire: somme * pas, x1: x1, y1: y1, x2: x2, y2: y2};
+}
+
+/* LE RECOUVREMENT MAILLÉ, pour la cavité sur sa forme réelle : les mêmes
+   lignes que `simAireCommune`, au pas `pas`, chaque cellule carrée gardée si
+   son centre tombe dans le cuivre commun. Rend {pas, x0, y0, lignes:
+   [[j, [i1, i2, i3, i4, …]]]} — des plages de cellules [i1, i2) par ligne,
+   dans l'unité des sommets — ou null quand rien ne se recouvre. Le serveur en
+   tire les modes propres (`ligne_mom.cavite_grille`). */
+function simGrilleCommune(A, B, pas){
+  const boite = C => {
+    let y1 = Infinity, y2 = -Infinity;
+    for(const g of C.plein) for(const p of g)
+      for(let i = 1; i < p.length; i += 2){ if(p[i] < y1) y1 = p[i]; if(p[i] > y2) y2 = p[i]; }
+    return [y1, y2];
+  };
+  const [a1, a2] = boite(A), [b1, b2] = boite(B);
+  const y0 = Math.max(a1, b1), rangs = [];
+  let x0 = Infinity;
+  for(let j = 0, y = y0 + pas / 2; y < Math.min(a2, b2); j++, y += pas){
+    const sa = simSpansMoins(simSpansLigne(A.plein, y), simSpansLigne(A.vide || [], y));
+    const sb = simSpansMoins(simSpansLigne(B.plein, y), simSpansLigne(B.vide || [], y));
+    const inter = [];
+    for(let i = 0, k = 0; i < sa.length && k < sb.length;){
+      const g = Math.max(sa[i][0], sb[k][0]), d = Math.min(sa[i][1], sb[k][1]);
+      if(d > g){ inter.push([g, d]); if(g < x0) x0 = g; }
+      if(sa[i][1] < sb[k][1]) i++; else k++;
+    }
+    if(inter.length) rangs.push([j, inter]);
+  }
+  if(!rangs.length) return null;
+  x0 = Math.floor(x0 / pas) * pas;
+  const lignes = [];
+  for(const [j, inter] of rangs){
+    const cel = [];
+    for(const [g, d] of inter){
+      const i1 = Math.ceil((g - x0) / pas - 0.5), i2 = Math.floor((d - x0) / pas - 0.5) + 1;
+      if(i2 <= i1) continue;
+      if(cel.length && cel[cel.length - 1] >= i1) cel[cel.length - 1] = Math.max(cel[cel.length - 1], i2);
+      else cel.push(i1, i2);
+    }
+    if(cel.length) lignes.push([j, cel]);
+  }
+  return lignes.length ? {pas: pas, x0: x0, y0: y0, lignes: lignes} : null;
+}
+
+/* Les intervalles [x1, x2] couverts à l'ordonnée y : parité par groupe (ses
+   trous l'évident), puis réunion des groupes, triés. */
+function simSpansLigne(groupes, y){
+  const tous = [];
+  for(const anneaux of groupes){
+    const xs = [];
+    for(const p of anneaux){
+      const n = p.length / 2;
+      for(let i = 0, j = n - 1; i < n; j = i++){
+        const yi = p[2*i+1], yj = p[2*j+1];
+        if((yi > y) !== (yj > y))
+          xs.push(p[2*i] + (y - yi) * (p[2*j] - p[2*i]) / (yj - yi));
+      }
+    }
+    xs.sort((u, v) => u - v);
+    for(let i = 0; i + 1 < xs.length; i += 2) tous.push([xs[i], xs[i+1]]);
+  }
+  tous.sort((u, v) => u[0] - v[0]);
+  const out = [];
+  for(const s of tous){
+    const der = out[out.length - 1];
+    if(der && s[0] <= der[1]) der[1] = Math.max(der[1], s[1]);
+    else out.push(s.slice());
+  }
+  return out;
+}
+
+/* TOUS LES PONTS DE LA CARTE entre deux plans de nets `nA` et `nB` (des Set),
+   pour la cavité modale : chacun devient un port à sa position, il n'y a plus
+   de rayon. `comps` : [{ref, x, y, val, nets:[n1, n2]}], deux bornes, en mm.
+
+   · DIRECTS : tout composant à deux bornes qui joint les deux nets (la même
+     règle que la recherche dans le rayon) ;
+   · INDIRECTS : une résistance de 1 Ω au plus (0 Ω, strap) d'un des deux nets
+     vers un RELAIS, puis les condensateurs du relais vers l'autre net — et,
+     de relais en relais (`suivants`, trois étages au plus), ceux des rails
+     plus loin. Sur P01x291 c'est le seul chemin : VDDIO → R211 (0R0) → VDD
+     (100 pF) → R229 (0R0) → Vout et ses découplages.
+   LES PARASITES SONT CEUX DE LA PI : base Murata par modèle ou référence
+   fabricant, puis valeurs par boîtier et par valeur (`simPDNParasitesCapa`),
+   plus le montage selon le boîtier et la hauteur de la face du composant au
+   plan de la cavité (`simPDNInductanceMontage`). `h` : {haut, bas} en mm,
+   absent quand l'empilage ne la donne pas. Les composants portent en plus
+   {pkg, mpn, partName, bas} quand l'outil les connaît.
+   ponytail: ni ferrite ni régulateur suivis (un chemin ignoré rend la
+   traversée plus chère, jamais moins). */
+function simPontsCarte(comps, nA, nB, h){
+  const montage = c => simPDNInductanceMontage(c.pkg, h ? (c.bas ? h.bas : h.haut) : undefined);
+  const parasites = (c, o) => {
+    const p = simPDNParasitesCapa({ref: c.ref, val: c.val, pkg: c.pkg, mpn: c.mpn,
+                                   partName: c.partName});
+    o.esl_nH = Math.round((p.esl + montage(c)) * 1e12) / 1e3;
+    o.esr_ohm = p.esr;
+    o.parasites = p.prov;
+    return o;
+  };
+  const directs = [], res = [], caps = [];
+  for(const c of comps){
+    const [p, q] = c.nets;
+    if(!p || !q || p === q) continue;
+    const a = nA.has(p) || nA.has(q), b = nB.has(p) || nB.has(q);
+    const f = simPDNParseFarads(c.val);
+    if(a && b){
+      const o = {x: c.x, y: c.y, repere: c.ref || ""};
+      if(f) o.capacite_F = f;
+      directs.push(f ? parasites(c, o) : o);
+    }else if(/^R/i.test(c.ref || "") && simOhms(c.val) <= 1) res.push(c);
+    else if(f) caps.push(c);
+  }
+  const vers = (net, face) => caps
+    .filter(c => c.nets.includes(net) && (face.has(c.nets[0]) || face.has(c.nets[1])))
+    .map(c => parasites(c, {x: c.x, y: c.y, repere: c.ref || "",
+                             capacite_F: simPDNParseFarads(c.val)}));
+  const descendre = (net, face, vus, etage) => {
+    const out = [];
+    if(etage > 3) return out;
+    for(const r of res){
+      if(!r.nets.includes(net)) continue;
+      const autre = r.nets[0] === net ? r.nets[1] : r.nets[0];
+      if(vus.has(autre)) continue;
+      const o = {x: r.x, y: r.y, repere: r.ref || "", relais: autre, r_ohm: simOhms(r.val),
+                 esl_nH: Math.round((simPDNParasitesDefaut(r.pkg, 0).esl + montage(r)) * 1e12) / 1e3,
+                 caps: vers(autre, face),
+                 suivants: descendre(autre, face, new Set([...vus, autre]), etage + 1)};
+      if(o.caps.length || o.suivants.length) out.push(o);
+    }
+    return out;
+  };
+  const vus = new Set([...nA, ...nB]), indirects = [];
+  nA.forEach(n => indirects.push(...descendre(n, nB, vus, 1)));
+  nB.forEach(n => indirects.push(...descendre(n, nA, vus, 1)));
+  return {directs: directs, indirects: indirects};
+}
+
+/* Une valeur de résistance en ohms : « 0R0 », « 4R7 », « 1k5 », « 10m »,
+   « 0 », « 0Ω » ; Infinity quand elle ne se lit pas. */
+function simOhms(txt){
+  const s = String(txt == null ? "" : txt).trim().replace(",", ".")
+              .replace(/\s*(Ω|ohms?)$/i, "");
+  const mult = {R: 1, r: 1, "": 1, k: 1e3, K: 1e3, M: 1e6, m: 1e-3};
+  let m = s.match(/^(\d*)([RrkKMm])(\d+)$/);
+  if(m) return parseFloat((m[1] || "0") + "." + m[3]) * mult[m[2]];
+  m = s.match(/^(\d+(?:\.\d+)?)\s*([RrkKMm]?)$/);
+  return m ? parseFloat(m[1]) * mult[m[2]] : Infinity;
+}
+
+/* `a` privé de `b`, deux listes triées d'intervalles disjoints. */
+function simSpansMoins(a, b){
+  if(!b.length) return a;
+  const out = [];
+  for(const [x1, x2] of a){
+    let g = x1;
+    for(const [c1, c2] of b){
+      if(c2 <= g || c1 >= x2) continue;
+      if(c1 > g) out.push([g, c1]);
+      g = Math.max(g, c2);
+    }
+    if(g < x2) out.push([g, x2]);
+  }
+  return out;
+}
+
 /* Découpe une piste de longueur `total` (mm) en plages d'écart constant.
 
    `mesure(u, i)` rend {g, d} — les deux écarts, en millimètres, à la fraction
@@ -4846,6 +5045,24 @@ function simRetourNotes(vias){
          " ne compte que l'étalement dans les plans ("+
          simNb(cav.etalement_cavite_nH,2)+" nH), et la traversée est donc "+
          "<b>sous-estimée</b>.</p>";
+    }else if(cav.modele==="modal"){
+      /* LA CAVITÉ MODALE : le réseau à ports de la simulation PI, le via et
+         chaque pont de la carte à sa position. Il n'y a plus de pont supposé. */
+      const r=cav.cavite_rect||{}, g=cav.grille;
+      h+='<p class="simNote">· La traversée pèse <b>'+
+         simNb(cav.impedance_fc_ohm,2)+" Ω</b> à f₀, cascadés dans le résultat. "+
+         (g ? "Cavité maillée sur sa forme réelle ("+(g.noeuds||g.cellules||0)+" cellules de "+
+              simNb(g.pas_mm,1)+" mm, modes propres compris"+
+              (cav.f_premier_mode_hz?", premier à "+simNb(cav.f_premier_mode_hz/1e6,0)+" MHz":"")+
+              (g.via_hors_recouvrement_mm?" ; rien en regard sous le via, la cavité est à "+
+                 simNb(g.via_hors_recouvrement_mm,1)+" mm":"")+"), "
+            : "Cavité modale de "+simNb(r.a,0)+" × "+simNb(r.b,0)+" mm (modes TM compris), ")+
+         simNb(cav.capacite_plans_pF,0)+" pF, "+(cav.ponts||0)+" pont(s) sur la carte"+
+         (cav.pont
+            ? " ; le plus proche : "+simEsc(cav.pont.repere||"?")+" à "+
+              simNb(cav.pont.distance_mm,2)+" mm."
+            : " — <b>aucun</b>, direct ni par un 0 Ω : le retour ne traverse que par la cavité.")+
+         "</p>";
     }else{
       h+='<p class="simNote">· La traversée pèse <b>'+
          simNb(cav.impedance_fc_ohm,2)+" Ω</b> à f₀, cascadés dans le "+

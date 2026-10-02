@@ -206,6 +206,40 @@ def test_retour_gnd_vers_alim():
     print("[PASS] test_retour_gnd_vers_alim")
 
 
+def test_retour_cavite_modale():
+    # La page donne la cavité (rectangle) et TOUS les ponts : plus de pont
+    # supposé au rayon. GND -> 3V3 sans rien, par un 0 ohm vers VDD et ses
+    # condensateurs, par un vrai découplage au pied du via.
+    cav = dict(ponts=[], ponts_rayon_mm=10.0, aire_plans_mm2=2500.0, er_plans=4.3,
+               cavite_rect={"x0": 0.0, "y0": 0.0, "a": 50.0, "b": 50.0},
+               ponts_indirects=[], ponts_carte=[])
+    run = lambda cl, **k: de(analyser(net_l3="3V3", natures={"CLK": cl},
+                                      vias=[via(retours=[masse(10.8)], **dict(cav, **k))]), "retour")
+    relais = lambda x: [{"x": x, "y": 10.0, "repere": "R5", "r_ohm": 0.0, "relais": "VDD",
+                         "caps": [{"x": x + 2, "y": 10.0, "repere": "C9", "capacite_F": 100e-9}]}]
+    # sans rien, la cavité seule : à 35 MHz (Lent) elle pèse des dizaines d'ohms
+    rien = run("Lent")
+    assert rien and rien[0]["severite"] == "critique" and "sur toute la carte" in rien[0]["msg"], rien
+    # un 0 ohm vers un rail découplé referme le retour ; un découplage aussi
+    assert run("Lent", ponts_indirects=relais(14.0)) == []
+    assert run("Lent", ponts_carte=[{"x": 11.0, "y": 10.0, "repere": "C5",
+                                     "capacite_F": 100e-9}]) == []
+    # le relais est nommé, et sa boucle compte jusqu'au condensateur (35 + 2 mm)
+    loin = run("Rapide", ponts_indirects=relais(45.0))
+    assert loin and "R5 → VDD à 37.00 mm" in loin[0]["msg"], loin
+    # deux étages : R5 vers VDD sans condensateur, puis R6 vers Vout découplé
+    chaine = [{"x": 45.0, "y": 10.0, "repere": "R5", "r_ohm": 0.0, "relais": "VDD", "caps": [],
+               "suivants": [{"x": 47.0, "y": 10.0, "repere": "R6", "r_ohm": 0.0, "relais": "Vout",
+                             "caps": [{"x": 48.0, "y": 10.0, "repere": "C30", "capacite_F": 10e-6}]}]}]
+    k = run("Rapide", ponts_indirects=chaine)
+    assert k and "R5 → VDD → R6 → Vout à 38.00 mm" in k[0]["msg"], k
+    # la boucle longue du relais résonne avec la capacité des plans : la fiche
+    # nomme le pic, et le juge le voit sous le genou (f_pire_hz)
+    assert "la traversée résonne à" in k[0]["msg"], k[0]["msg"]
+    assert all(f["f_pire_hz"] < f["f_eval"] for f in k[0]["frequences"]), k[0]["frequences"]
+    print("[PASS] test_retour_cavite_modale")
+
+
 def droite(n, y, x1=0.0, x2=100.0, c="Top", w=0.2):
     return {"c": c, "n": n, "w": w, "p": [x1, y, x2, y]}
 
@@ -733,6 +767,7 @@ if __name__ == "__main__":
     test_unites()
     test_retour_meme_masse()
     test_retour_gnd_vers_alim()
+    test_retour_cavite_modale()
     test_diaphonie()
     test_document_sans_empilage()
     test_empilage()

@@ -267,14 +267,14 @@ côtés. Si c'est le même plan, le retour suit : rien à dire. S'il change :
 | Cas | Ce qui porte le retour | Ce que dit le rapport |
 | :--- | :--- | :--- |
 | même net des deux côtés (GND → GND) | le via de masse le plus proche | la distance, l'inductance de boucle, le front le plus raide supporté |
-| nets différents (GND → alimentation) | un condensateur de découplage entre les deux plans, et la capacité des plans | le pont trouvé (repère, distance), ou « aucun découplage à moins de 10 mm », ou « aucun découplage entre ces plans sur toute la carte » (la boucle se prend alors au rayon de la paire de plans) |
+| nets différents (GND → alimentation) | la **cavité** des deux plans sur sa forme réelle (recouvrement maillé à 0,5 mm, modes propres compris) et tous les ponts de la carte, chacun à sa position : condensateurs directs, et chaînes de 0 Ω vers un autre rail découplé (VDDIO → R211 → VDD → R229 → Vout sur P01x291) | le pont le plus proche (repère ou chaîne, longueur de la boucle), la résonance de la traversée si elle réfléchit (fréquence, Ω, \|Γ\|), ou « aucun découplage entre ces plans sur toute la carte » |
 | pas de cuivre de plan au droit du via | rien | critique d'office |
 | net des plans inconnu | ? | vigilance : l'empilage ne dit pas si un via de masse suffit |
 
 Le verdict à chaque fréquence est le **pire de deux critères** :
 
 - la **réflexion** que le via cause sur la ligne, |Γ| = |Z| / |Z + 2 Z₀|
-  (vigilance au-delà de 5 %, critique au-delà de 10 %) — ce que le signal voit ;
+  (vigilance au-delà de 5 %, critique au-delà de 10 %) — ce que le signal voit ; avec la cavité modale, le pire sur les deux décades sous le genou, car un front contient toutes ces fréquences et la traversée peut y résonner ;
 - la **distance du retour** comparée à λ/20 au genou dans le diélectrique entre
   les plans (vigilance au-delà, critique au-delà de λ/10) — la taille de la
   boucle, qui excite la cavité et rayonne.

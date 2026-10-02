@@ -2100,6 +2100,123 @@ def _impedance_traversee(param, freq):
     return tl.impedance_traversee_param(freq, param)
 
 
+PORT_PONT_MM = 1.0          # cote d'un port de condensateur (pastilles 0402/0603)
+_GRILLES_PAGE = {}          # cle -> la grille du recouvrement envoyee par la page
+
+
+def _cavite_modale(fiche, via, rect, x0, y0, h_cav, er_cav, d_percage, rayon,
+                   c_plans):
+    """La fiche d'une cavite MODALE : le rectangle, le via et chaque pont de la
+    carte -- direct (un condensateur entre les deux plans) ou INDIRECT (une
+    resistance de 1 ohm au plus vers un autre rail, puis les condensateurs de
+    ce rail vers le plan d'en face). `_param_cavite` en fait le reseau.
+
+    ponytail: l'aval d'un pont indirect suit le rail relais comme un plan
+    au-dessus de la meme masse (etalement via-via a la hauteur de la cavite) ;
+    un rail route en pistes coute plus. Un seul niveau de relais."""
+    def br(p, d_extra=0.0):
+        esl = _nombre(p.get("esl_nH"), ESL_PONT_REPLI) * 1e-9
+        esr = _nombre(p.get("esr_ohm") if p.get("esr_ohm") is not None else p.get("esr"),
+                      ESR_PONT_REPLI)
+        l_trajet = (tl.inductance_etalement_via_via(h_cav * 1e-3, d_extra * 1e-3,
+                                                    max(d_percage, 1e-3) * 1e-3)
+                    if d_extra > 0 else 0.0)
+        return {"l": esl + l_trajet, "esr": esr,
+                "c": _nombre(p.get("capacite_F"), C_PONT_REPLI)}
+
+    detail, branches = [], []
+    for p in (via or {}).get("ponts_carte") or ():
+        px, py = _nombre(p.get("x"), x0), _nombre(p.get("y"), y0)
+        detail.append({"x": round(px, 4), "y": round(py, 4),
+                       "distance_mm": round(math.hypot(px - x0, py - y0), 4),
+                       "repere": str(p.get("repere") or ""),
+                       "capacite_F": _nombre(p.get("capacite_F"), C_PONT_REPLI),
+                       "capacite_source": "page" if p.get("capacite_F") is not None else "repli"})
+        branches.append(br(p))
+    def relais(p, depuis=None):
+        """La branche d'un relais et ses suivants, son chemin le plus court
+        jusqu'a un condensateur, et le nombre de condensateurs en aval ; None
+        sans aval. `depuis` : la position du relais precedent, d'ou part le
+        trajet dans le rail qui les relie."""
+        px, py = _nombre(p.get("x"), 0.0), _nombre(p.get("y"), 0.0)
+        aval, chemins, n = [], [], 0
+        for q in p.get("caps") or ():
+            d = math.hypot(_nombre(q.get("x"), px) - px, _nombre(q.get("y"), py) - py)
+            aval.append(br(q, d))
+            chemins.append(d)
+            n += 1
+        for s_ in p.get("suivants") or ():
+            sous = relais(s_, (px, py))
+            if sous:
+                aval.append(sous[0])
+                chemins.append(math.hypot(_nombre(s_.get("x"), px) - px,
+                                          _nombre(s_.get("y"), py) - py) + sous[1])
+                n += sous[2]
+        if not aval:
+            return None
+        d_amont = math.hypot(px - depuis[0], py - depuis[1]) if depuis else 0.0
+        l_amont = (tl.inductance_etalement_via_via(h_cav * 1e-3, d_amont * 1e-3,
+                                                   max(d_percage, 1e-3) * 1e-3)
+                   if d_amont > 0 else 0.0)
+        return ({"l": _nombre(p.get("esl_nH"), ESL_PONT_REPLI) * 1e-9 + l_amont,
+                 "esr": _nombre(p.get("r_ohm"), 0.0) + ESR_PONT_REPLI,
+                 "c": None, "aval": aval}, min(chemins), n)
+
+    def noms(p):
+        suite = [noms(s_) for s_ in (p.get("suivants") or ())]
+        return "%s → %s%s" % (p.get("repere") or "?", p.get("relais") or "?",
+                              (" → " + " | ".join(suite)) if suite else "")
+
+    for p in (via or {}).get("ponts_indirects") or ():
+        r = relais(p)
+        if not r:
+            continue
+        px, py = _nombre(p.get("x"), x0), _nombre(p.get("y"), y0)
+        # La boucle va du via au premier relais, puis de relais en relais
+        # jusqu'au condensateur le plus proche.
+        detail.append({"x": round(px, 4), "y": round(py, 4),
+                       "distance_mm": round(math.hypot(px - x0, py - y0) + r[1], 4),
+                       "repere": noms(p), "indirect": True, "condensateurs": r[2],
+                       "r_ohm": _nombre(p.get("r_ohm"), 0.0)})
+        branches.append(r[0])
+
+    ordre = sorted(range(len(detail)), key=lambda i: detail[i]["distance_mm"])
+    detail = [detail[i] for i in ordre]
+    branches = [branches[i] for i in ordre]
+    # LA FORME REELLE, quand la page la maille : elle passe devant le
+    # rectangle. La grille reste cote serveur (`_GRILLES_PAGE`) ; la fiche, qui
+    # repart vers la page, n'en porte que la cle et la taille.
+    grille = (via or {}).get("cavite_grille")
+    cle_grille = None
+    if grille and grille.get("lignes"):
+        cle_grille = "%x" % (hash((repr(grille["lignes"]), grille.get("pas"),
+                                   grille.get("x0"), grille.get("y0"))) & 0xFFFFFFFFFFFF)
+        if len(_GRILLES_PAGE) >= 16 and cle_grille not in _GRILLES_PAGE:
+            _GRILLES_PAGE.pop(next(iter(_GRILLES_PAGE)))
+        _GRILLES_PAGE[cle_grille] = grille
+    fiche.update({
+        "modele": "modal",
+        "grille": ({"cle": cle_grille, "pas_mm": _nombre(grille.get("pas"), 0.0),
+                    "cellules": sum((b - a) for _, sp_ in grille["lignes"]
+                                    for a, b in zip(sp_[0::2], sp_[1::2]))}
+                   if cle_grille else None),
+        "cavite_rect": {k: _nombre(rect.get(k), 0.0) for k in ("x0", "y0", "a", "b")},
+        "via_xy": [x0, y0], "percage_mm": d_percage,
+        "er_plans": er_cav, "tan_delta": _nombre((via or {}).get("tan_plans"), 0.02),
+        "ponts": len(detail), "borne": False,
+        "aucun_pont_carte": not detail,
+        "rayon_mm": round(rayon, 4) if rayon > 0 else None,
+        "ponts_detail": detail, "ponts_branches": branches,
+        "pont": ({k: detail[0][k] for k in ("x", "y", "distance_mm", "repere")}
+                 if detail else None),
+    })
+    if not detail:
+        fiche["raison"] = ("aucun découplage, direct ni par un 0 Ω, ne joint ces"
+                           " deux plans sur toute la carte : le retour ne"
+                           " traverse que par la cavité")
+    return fiche
+
+
 def _param_cavite(cav):
     """Les parametres de la traversee entre plans, tels que
     `tl.impedance_traversee_param` les lit, ou None quand la cavite n'a pas de
@@ -2110,6 +2227,34 @@ def _param_cavite(cav):
     entiere (python/analyse_carte.py), qui juge chaque via a trois frequences.
     Deux copies de ces lignes auraient fini par chiffrer deux traversees.
     """
+    if cav and cav.get("modele") == "modal" and cav.get("capacite_plans_pF"):
+        r, (vx, vy) = cav["cavite_rect"], cav["via_xy"]
+        grille = _GRILLES_PAGE.get((cav.get("grille") or {}).get("cle"))
+        if grille:
+            # la cavite maillee, ports dans le repere de la carte
+            ports = [(vx * 1e-3, vy * 1e-3, cav["percage_mm"] * 1e-3)]
+            ports += [(p["x"] * 1e-3, p["y"] * 1e-3, PORT_PONT_MM * 1e-3)
+                      for p in cav["ponts_detail"]]
+            modal = tl.cavite_grille(grille, cav["hauteur_mm"] * 1e-3, cav["er_plans"],
+                                     cav["tan_delta"], ports)
+            cav["grille"]["noeuds"] = modal["noeuds"]
+            cav["grille"]["ponts_hors_ilot"] = modal["hors"]
+            if modal["ecart_via_mm"]:
+                cav["grille"]["via_hors_recouvrement_mm"] = modal["ecart_via_mm"]
+            if modal["f_premier"]:
+                cav["f_premier_mode_hz"] = round(modal["f_premier"])
+            return {"modal": modal, "ponts": cav["ponts_branches"],
+                    "c_plans": modal["c"],
+                    "l_cavite": _nombre(cav.get("etalement_cavite_nH"), 0.0) * 1e-9}
+        ports = [((vx - r["x0"]) * 1e-3, (vy - r["y0"]) * 1e-3, cav["percage_mm"] * 1e-3)]
+        ports += [((p["x"] - r["x0"]) * 1e-3, (p["y"] - r["y0"]) * 1e-3, PORT_PONT_MM * 1e-3)
+                  for p in cav["ponts_detail"]]
+        c = cav["capacite_plans_pF"] * 1e-12
+        return {"modal": tl.cavite_modale(r["a"] * 1e-3, r["b"] * 1e-3,
+                                          cav["hauteur_mm"] * 1e-3, cav["er_plans"],
+                                          cav["tan_delta"], c, ports),
+                "ponts": cav["ponts_branches"], "c_plans": c,
+                "l_cavite": _nombre(cav.get("etalement_cavite_nH"), 0.0) * 1e-9}
     if not (cav and cav.get("capacite_plans_pF")):
         return None
     param_cav = {
@@ -2746,6 +2891,13 @@ def _cavite_de_retour(trans, via, couches, segments, d_percage):
     fiche["ponts"] = len(ponts)
     rayon = _nombre((via or {}).get("ponts_rayon_mm"), 0.0)
 
+    # LA CAVITE MODALE, quand la page en donne la forme et TOUS les ponts de la
+    # carte : plus de pont suppose au rayon, plus de resonance inventee.
+    rect = (via or {}).get("cavite_rect")
+    if rect and (via or {}).get("ponts_carte") is not None:
+        return _cavite_modale(fiche, via, rect, x0, y0, h_cav, er_cav,
+                              d_percage, rayon, c_plans)
+
     # TOUS LES PONTS, ET NON LE PLUS PROCHE. La version precedente ne gardait
     # que le condensateur le plus proche, en disant que c'etait « le sens
     # prudent ». C'etait vrai, et ce n'etait pas le sens JUSTE : plusieurs
@@ -2860,7 +3012,7 @@ def _cavite_de_retour(trans, via, couches, segments, d_percage):
     return fiche
 
 
-def _vias_hors_chaine(vias, couches, z_bornes, refs_nets):
+def _vias_hors_chaine(vias, couches, z_bornes, refs_nets, fc=0.0, t_r=None):
     """Le chemin de retour des vias de la selection, SANS passer par la chaine.
 
     POURQUOI CETTE FONCTION EXISTE. Jusqu'ici un via n'existait pour le calcul
@@ -2878,6 +3030,12 @@ def _vias_hors_chaine(vias, couches, z_bornes, refs_nets):
     de lui, et sa boucle se calcule. Que la ligne se ramifie trois millimetres
     plus loin n'y change rien. La page envoie donc les vias de la selection
     dans une liste A PART, sans ordre, et on les analyse ici.
+
+    LA TRAVERSEE ENTRE PLANS, ELLE, EST CHIFFREE : elle ne doit rien a l'ordre
+    non plus. Quand les deux plans sont de nets differents, la cavite se pose
+    depuis l'empilage (les plans de part et d'autre du via, comme la
+    verification de carte) et son impedance se lit au front du signal. Elle
+    manquait : la verification de carte chiffrait ces vias, l'onglet non.
 
     CE QU'ON NE FAIT PAS ICI, ET C'EST VOULU : aucune capacite, aucune matrice
     ABCD, rien qui entre dans la cascade. Ces vias ne sont pas dans un
@@ -2925,6 +3083,27 @@ def _vias_hors_chaine(vias, couches, z_bornes, refs_nets):
             # entre pour quelque chose. Ici il n'y entre pas.
             "cascade": False,
         }
+        if (trans.get("retour") or {}).get("nets_differents") is True:
+            # le front du signal, comme `_modele_transition`
+            f_eval = (max(fc, 0.35 / t_r) if (fc < 1e6 and t_r and t_r > 0)
+                      else fc) or 1e8
+            encadre = [dict(zip(("plan_haut", "plan_bas"), sorted(refs_av))),
+                       dict(zip(("plan_haut", "plan_bas"), sorted(refs_ap)))]
+            cav = _cavite_de_retour(dict(trans, troncon=1), v, couches, encadre,
+                                    d_percage)
+            param = _param_cavite(cav) if cav else None
+            if param:
+                z_c = _impedance_traversee(param, f_eval)
+                cav["impedance_fc_ohm"] = round(abs(z_c), 4)
+                parts, _ = tl.repartition_traversee_param(f_eval, param)
+                for f_pont, part in zip(cav.get("ponts_detail") or (), parts):
+                    f_pont["part"] = round(float(part), 4)
+                fiche["modelise"].update({
+                    "traversee_ohm": round(abs(z_c), 4),
+                    "traversee_reactance_ohm": round(z_c.imag, 4),
+                    "traversee_f_hz": f_eval})
+            if cav:
+                fiche["cavite"] = cav
         out.append(fiche)
     return out
 
@@ -3045,7 +3224,25 @@ def _avertir_retour(transitions, f_fin=0.0):
             tete += (" — étant entendu que le net de %s est DÉDUIT du rôle donné"
                      " à la couche, et non lu dans le cuivre"
                      % " / ".join(sup))
-        if cav.get("etalement_seul"):
+        if cav.get("modele") == "modal":
+            r = cav.get("cavite_rect") or {}
+            p = cav.get("pont")
+            g = cav.get("grille") or {}
+            forme = ("Cavité maillée sur sa forme réelle (%d cellules de %.1f mm%s)"
+                     % (g.get("noeuds") or g.get("cellules") or 0, g.get("pas_mm") or 0,
+                        (", %d pont(s) sur un autre îlot, sans effet" % g["ponts_hors_ilot"])
+                        if g.get("ponts_hors_ilot") else "")
+                     if g else "Cavité modale %.0f × %.0f mm" % (r.get("a", 0), r.get("b", 0)))
+            if cav.get("f_premier_mode_hz"):
+                forme += ", premier mode à %.0f MHz" % (cav["f_premier_mode_hz"] / 1e6)
+            out.append(
+                tete + cout +
+                " %s, %d pont(s) sur la carte%s." % (
+                    forme, cav.get("ponts") or 0,
+                    (" ; le plus proche : %s à %.2f mm" % (p["repere"] or "?", p["distance_mm"]))
+                    if p else " — AUCUN : le retour ne traverse que par la cavité."
+                    " Poser un condensateur au pied du via, ou garder la même référence"))
+        elif cav.get("etalement_seul"):
             pourquoi = str(cav.get("ponts_raison") or "").strip()
             etal = cav.get("etalement_cavite_nH") or 0.0
             if pourquoi:
@@ -5762,7 +5959,10 @@ def simuler(doc, journal=None, garder_abcd=False):
     bruts = [v for v in (doc.get("vias") or [])
              if (round(_nombre((v or {}).get("x"), 0.0), 3),
                  round(_nombre((v or {}).get("y"), 0.0), 3)) not in deja]
-    vias_seuls = _vias_hors_chaine(bruts, couches, z_bornes, refs_nets)
+    vias_seuls = _vias_hors_chaine(bruts, couches, z_bornes, refs_nets, fc, t_r)
+    if not transitions:
+        # un net ramifie n'a que ces vias-la : ce qu'ils obligent a dire se dit
+        avertissements.extend(_avertir_retour(vias_seuls, analyse.get("f_fin", 0.0)))
 
     # LOT 3b : construire les index de discontinuités par tronçon
     # Chaque coude ou transition insère sa matrice ABCD après le tronçon i
@@ -5776,6 +5976,13 @@ def simuler(doc, journal=None, garder_abcd=False):
     # l'axe de l'analyse est ce qui a ete demande, il ne depend pas de la
     # topologie et le panneau s'en sert pour dire sur quelle bande il
     # aurait calcule.
+    # LA TRAVERSEE MODALE A TOUTES LES FREQUENCES D'UN COUP : le reseau a ports
+    # se resout en lot (numpy) plutot qu'une frequence a la fois dans la boucle.
+    z_trav = {}
+    if topo["cascadable"]:
+        for i_t, mv in modeles_via.items():
+            if (mv.get("cavite") or {}).get("modal"):
+                z_trav[i_t] = dict(zip(freqs, tl.impedance_traversee_vec(freqs, mv["cavite"])))
     for f in (freqs if topo["cascadable"] else []):
         abcd = np.eye(2, dtype=complex)
         for i, (obj, seg) in enumerate(zip(objets, segments)):
@@ -5843,6 +6050,7 @@ def simuler(doc, journal=None, garder_abcd=False):
                                         mv["antipad"], float(f)),
                     _admittance_moignon(mv["moignon_arrivee"], mv["percage"],
                                         mv["antipad"], float(f)),
+                    z_trav[i][f] if i in z_trav else
                     _impedance_traversee(mv["cavite"], float(f)))
 
             abcd = abcd @ tl.abcd_line(z_f, complex(a_c + a_d, beta),

@@ -368,7 +368,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
      versements d'une meme couche, et le banc doit pouvoir le lire. */
   "simNetPlanEn",
   "simRetourCouleur","SIM_RAYON_RETOUR",
-  "simPontsPlans","SIM_RAYON_PONT",
+  "simPontsPlans","SIM_RAYON_PONT","simAireEnRegard",
   "simProjU","simTangente","simStackup","simCuIndex",
   "SIM_ECART_MAX","SIM_COULOIR","SIM_PLAGE_MIN","SIM_PAS",
   /* Le profil d'impédance le long du parcours, et sa réglette. */
@@ -10099,6 +10099,10 @@ T("un plan n'est pas d'un seul net : l'éditeur lit le cuivre SOUS le via", ()=>
   const dedans = simPontsPlans(0, 3, 8, SIM_Y);
   if(dedans === null)
     throw new Error("dans l'îlot, les nets diffèrent : il faut chercher un pont");
+  /* 4. L'AIRE EN REGARD est celle de l'îlot (12 × 16 mm), pas celle de la carte. */
+  const aire = simAireEnRegard(0, 3, 8, SIM_Y);
+  if(!(Math.abs(aire.aire - 192) < 1) || Math.abs(aire.x2 - aire.x1 - 12) > 0.3)
+    throw new Error("aire en regard dans l'îlot : " + JSON.stringify(aire) + ", attendu 192 mm², 12 mm de large");
 });
 
 T("plan PWR avec plan de masse GND : simCotesVia transmet plans_nets et plans_joints", ()=>{

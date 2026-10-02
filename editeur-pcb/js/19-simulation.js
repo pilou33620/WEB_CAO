@@ -771,6 +771,19 @@ function simPontsPlans(cuA, cuB, x, y, extraOut){
   out.sort((p, q) => Math.hypot(p.x - x, p.y - y) -
                      Math.hypot(q.x - x, q.y - y));
   if(extraOut && typeof extraOut === "object"){
+    /* TOUS LES PONTS DE LA CARTE, directs et par un 0 Ω : la cavité modale
+       en fait des ports à leur position (`simPontsCarte`, commun). */
+    const plans = [...simPlansRef(Math.min(cuA, cuB)), ...simPlansRef(Math.max(cuA, cuB))]
+      .filter(i => i >= Math.min(cuA, cuB) && i <= Math.max(cuA, cuB));
+    const ep = (i, j) => { let t = 0; for(let g = i; g < j; g++) t += diAt(g).t || 0; return t; };
+    const h = plans.length ? {haut: ep(0, Math.min(...plans)),
+                              bas: ep(Math.max(...plans), S.cu - 1)} : undefined;
+    extraOut.carte = simPontsCarte(S.fps.map(fp => ({fp: fp, pads: padsOf(fp)}))
+      .filter(o => o.pads.length === 2)
+      .map(o => ({ref: o.fp.ref, x: o.fp.x, y: o.fp.y, val: o.fp.value,
+                  nets: o.pads.map(q => String(q.net || "").trim()),
+                  pkg: o.fp.pkg || "", bas: !!o.fp.side,
+                  mpn: o.fp.mpn || o.fp.spice || "", partName: o.fp.partName || ""})), nA, nB, h);
     if(isFinite(dHorsPontMin)){
       extraOut.pont_hors_rayon_mm = r3(dHorsPontMin);
       extraOut.pont_hors_rayon_ref = refHorsPontMin || null;
@@ -836,25 +849,56 @@ function simCotesVia(v, x, y, cuA, cuB){
   }
   if(ponts){
     out.ponts = ponts;
+    if(extraPont.carte){
+      out.ponts_carte = extraPont.carte.directs;
+      out.ponts_indirects = extraPont.carte.indirects;
+    }
     out.ponts_rayon_mm = SIM_RAYON_PONT;
     /* L'AIRE DES DEUX PLANS EN REGARD fixe leur capacité répartie, et c'est
        par elle que le retour passe quand aucun découplage n'est proche.
-       ON ENVOIE L'AIRE DE LA CARTE, ET C'EST UNE MAJORATION : un plan ne
-       couvre jamais toute la carte. Une capacité surestimée fait paraître la
-       traversée MEILLEURE qu'elle n'est en basse fréquence — c'est le sens
-       qui flatte, et c'est pour cela que la fiche le dit. Mesurer l'aire réelle
-       des deux versements demanderait l'intersection de deux jeux de polygones
-       à trous ; ce sera le jour où ce chiffre commandera une décision. */
+       C'EST L'AIRE EN REGARD (`simAireEnRegard`) ; celle de la carte, une
+       majoration qui flatte la traversée, ne reste que le repli déclaré. */
     const b = S.board || {};
-    const aire = Math.max(0, (b.w || 0) * (b.h || 0));
+    const reel = simAireEnRegard(cuA, cuB, x, y);
+    const aire = reel ? reel.aire : Math.max(0, (b.w || 0) * (b.h || 0));
     if(aire > 0){
       out.aire_plans_mm2 = r3(aire);
-      out.aire_plans_majoree = true;
+      out.aire_plans_majoree = !reel;
     }
+    if(reel) out.cavite_rect = {x0: r3(reel.x1), y0: r3(reel.y1),
+                                a: r3(reel.x2 - reel.x1), b: r3(reel.y2 - reel.y1)};
+    if(reel && reel.grille) out.cavite_grille = reel.grille;
     const di = diAt(Math.min(cuA, cuB));
     if(di && di.er > 0) out.er_plans = di.er;
   }
   return out;
+}
+
+/* {aire en mm², x1, y1, x2, y2} : là où les zones des deux plans de référence
+   se font face, chacune au net qu'elle porte AU DROIT DU VIA, découpes
+   retranchées, et la boîte de ce recouvrement ; null quand la paire ou une des
+   zones manque.
+   ponytail: le contour de zone, pas son remplissage (dégagements des autres
+   nets non retranchés) ; pas de 0,25 mm. */
+function simAireEnRegard(cuA, cuB, x, y){
+  const lo = Math.min(cuA, cuB), hi = Math.max(cuA, cuB);
+  const ps = [...simPlansRef(lo), ...simPlansRef(hi)].filter(i => i >= lo && i <= hi);
+  if(ps.length < 2) return null;
+  const pA = Math.min(...ps), pB = Math.max(...ps);
+  const zA = pA !== pB && simZoneEn(pA, x, y), zB = pA !== pB && simZoneEn(pB, x, y);
+  if(!zA || !zB) return null;
+  const plat = pts => pts.flatMap(p => [p.x, p.y]);
+  const cuivre = (l, net) => ({
+    plein: S.zones.filter(z => z.l === l && z.net === net && z.pts && z.pts.length >= 3)
+                  .map(z => [plat(z.pts)]),
+    vide: S.cuts.filter(c => c.l === l && c.pts && c.pts.length > 2).map(c => [plat(c.pts)])
+  });
+  const A = cuivre(pA, zA.net), B = cuivre(pB, zB.net);
+  const r = simAireCommune(A, B, 0.25);
+  if(!(r.aire > 0)) return null;
+  /* et la grille du recouvrement à 0,5 mm, pour la cavité sur sa forme réelle */
+  r.grille = simGrilleCommune(A, B, 0.5);
+  return r;
 }
 
 /* Accroche à chaque changement de couche le via qui le réalise. On le fait sur
