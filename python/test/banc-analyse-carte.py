@@ -641,7 +641,11 @@ def test_nouvelles_regles():
     assert k and "Étranglement" in k[0]["msg"] and k[0]["severite"] == "info", k
     k = de(analyser(pistes=rail, natures=nat, courants={"VCC": 2.0}), "courant")
     assert k and k[0]["severite"] == "critique" and "2.00 A" in k[0]["msg"], k
-    assert de(analyser(pistes=rail, natures=nat, courants={"VCC": 0.3}), "courant") == []
+    ok = analyser(pistes=rail, natures=nat, courants={"VCC": 0.3, "AILLEURS": 1.0})
+    assert de(ok, "courant") == [], de(ok, "courant")
+    # le courant jugé se dit, même sans constat ; sans courant, rien de neuf
+    assert ok["bilan"]["courant"] == {"rails": 1, "courants_donnes": 1}, ok["bilan"]
+    assert analyser(pistes=rail, natures=nat)["bilan"]["courant"] == {"rails": 1}
 
     # CLÔTURE DE VIAS LE LONG DU BORD : des vias au centre seulement
     plans = [{"c": "L2", "n": "GND", "o": carre(0, 0, 50, 50)},
@@ -661,6 +665,46 @@ def test_nouvelles_regles():
          if "Clôture" in x["msg"]]
     assert k == [], k
     print("[PASS] test_nouvelles_regles")
+
+
+def test_cibles_par_classe_et_par_net():
+    # Z₀ PAR CLASSE : la ligne Rapide de 0,1 mm condamnée face à 50 Ω ne
+    # l'est plus face à sa propre impédance donnée en cible de sa classe ;
+    # une classe Lent à qui l'on donne une cible devient tenue
+    usb = dict(pistes=[droite("USB", 0.0, w=0.1)], natures={"USB": "Rapide"})
+    k = de(analyser(**usb), "impedance")
+    z = float(k[0]["msg"].split("Z₀ ")[1].split(" ")[0])
+    assert 70 < z < 110, z
+    assert de(analyser(reglages={"z0_classes": {"Rapide": z}}, **usb), "impedance") == []
+    k = de(analyser(reglages={"z0_classes": {"Rapide": 2 * z}}, **usb), "impedance")
+    assert k and "cible %.0f Ω" % (2 * z) in k[0]["msg"], k
+    assert de(analyser(pistes=[droite("DATA", 0.0, w=0.1)]), "impedance") == []
+    k = de(analyser(pistes=[droite("DATA", 0.0, w=0.1)], reglages={
+        "z0_classes": {"Lent": 25.0}, "fmax": {"Lent": 0}}), "impedance")
+    assert k and "cible 25 Ω" in k[0]["msg"], k
+    # le via d'une classe à 75 Ω réfléchit moins que face à 50 Ω
+    rf = dict(vias=[via(retour_hors_rayon_mm=5.0)], natures={"CLK": "RF"})
+    g50 = max(f["valeur"] for f in de(analyser(**rf), "retour")[0]["frequences"])
+    g75 = max(f["valeur"] for f in de(analyser(reglages={"z0_classes": {"RF": 75}},
+                                               **rf), "retour")[0]["frequences"])
+    assert g75 < g50, (g75, g50)
+    # PORTEUSE PAR NET : une carte LoRa + NFC, deux nets RF. Le LoRa suit la
+    # porteuse de la carte (868 MHz), le NFC la sienne (13,56 MHz)
+    deux = dict(vias=[via(net="LORA", retour_hors_rayon_mm=5.0),
+                      via(net="NFC", x=30.0, retour_hors_rayon_mm=5.0)],
+                natures={"LORA": "RF", "NFC": "RF"})
+    seule = {k["n"] for k in de(analyser(reglages={"porteuse_rf": 868e6}, **deux), "retour")}
+    assert seule == {"LORA", "NFC"}, seule          # le NFC condamné à 868 MHz
+    res = analyser(reglages={"porteuse_rf": 868e6, "porteuses": {"NFC": 13.56e6}}, **deux)
+    par = {k["n"]: k for k in de(res, "retour")}
+    assert list(par) == ["LORA"], par               # à 13,56 MHz, son via tient
+    assert all(f["porteuse"] == 868e6 for f in par["LORA"]["frequences"]), par
+    assert res["reglages"]["porteuses"] == {"NFC": 13.56e6}, res["reglages"]
+    # une porteuse de net vaut aussi hors classe RF, devant le front de sa classe
+    k = de(analyser(reglages={"porteuses": {"CLK": 2.4e9}}, vias=[via(retour_hors_rayon_mm=5.0)],
+                    natures={"CLK": "Lent"}), "retour")
+    assert k and all(f["porteuse"] == 2.4e9 for f in k[0]["frequences"]), k
+    print("[PASS] test_cibles_par_classe_et_par_net")
 
 
 if __name__ == "__main__":
@@ -684,4 +728,5 @@ if __name__ == "__main__":
     test_orphelins()
     test_antenne_porteuse_rails()
     test_nouvelles_regles()
+    test_cibles_par_classe_et_par_net()
     print("\n TOUS LES TESTS DE ANALYSE_CARTE SONT VALIDÉS AVEC SUCCÈS.")

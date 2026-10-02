@@ -249,6 +249,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simCulsDeSac","simDCCoucheInteressante",
   "simChampTexte","SIM_XT","simRendreCrosstalk","simRendreRetour","simRendreCarte",
   "SIM_CARTE","simFicheCarte","simCarteTexte","simCarteReglagesDoc","cuLabel",
+  "simCarteParNet","simCarteCourants","simCarteCourantsDC","simCarteMeta",
   "simCarteTrace","simCarteCle","simCarteTri","simCarteNomCarte","SIM_CARTE_DEROG",
   "SIM_CARTE_REF","SIM",
   "simRendreImpedance","simRendreDiff","simDCCsvTexte","simDCJsonTexte",
@@ -16859,6 +16860,40 @@ T("Vérification de la carte : les réglages partent en unités du serveur",()=>
   if(d.frequences.join()!==[1e5,1e6,1e8].join()||d.budget!==0.05||d.z0!==50||
      d.zdiff!==100||Math.abs(d.tr.Lent-1e-8)>1e-20||d.fmax.Lent!==1e7||d.fmax.RF!==0||d.porteuse_rf!==0)
     throw new Error("réglages : "+JSON.stringify(d));
+});
+
+T("Vérification de la carte : Z₀ par classe, porteuses par net, courants par rail",()=>{
+  const r=SIM_CARTE.reglages, garde=JSON.stringify(r), bornes=SIM_DCB.bornes;
+  try{
+    // vides, rien ne part : le document d'avant
+    let d=simCarteReglagesDoc();
+    if("z0_classes" in d||"porteuses" in d)throw new Error("champs vides envoyés : "+JSON.stringify(d));
+    r.z0c.Rapide=90; r.porteuses="NFC_ANT=13,56 MHz ; LORA = 868 ; X=abc ; 2G4=2.4GHz";
+    d=simCarteReglagesDoc();
+    if(JSON.stringify(d.z0_classes)!=='{"Rapide":90}'||Math.abs(d.porteuses.NFC_ANT-13.56e6)>1||
+       d.porteuses.LORA!==868e6||d.porteuses["2G4"]!==2.4e9||"X" in d.porteuses)
+      throw new Error("lus : "+JSON.stringify(d));
+    r.courants="VCC=0,5 ; 3V3=250 mA";
+    const c=simCarteCourants();
+    if(c.VCC!==0.5||Math.abs(c["3V3"]-0.25)>1e-12)throw new Error("courants : "+JSON.stringify(c));
+    // REPRIS DE CHUTE DC : les charges d'un rail s'additionnent, une source
+    // ne compte pas, un rail saisi et absent de l'onglet reste
+    SIM_DCB.bornes=[{role:"charge",net:"3V3",valeur:0.1},{role:"charge",net:"3V3",valeur:0.2},
+                    {role:"source",net:"3V3",valeur:3.3}];
+    const pcb=SIM_PCB.dcBornes;
+    SIM_PCB.dcBornes=()=>SIM_DCB.bornes;
+    try{ if(simCarteCourantsDC()!==1)throw new Error("un rail repris"); }
+    finally{ SIM_PCB.dcBornes=pcb; }
+    const c2=simCarteCourants();
+    if(c2.VCC!==0.5||Math.abs(c2["3V3"]-0.3)>1e-12)throw new Error("repris : "+r.courants);
+    // l'en-tête du rapport les dit
+    const L=simCarteMeta({pistes:1,tolerance_deg:1,bilan:{courant:{rails:2,courants_donnes:2}},
+      reglages:{frequences:[1e8],z0:50,budget:0.05,z0_classes:{Rapide:90},porteuses:{NFC:13.56e6}}}).join(" | ");
+    if(!/Z₀ par classe : Rapide 90 Ω/.test(L)||!/porteuses par net : NFC 13,6 MHz/.test(L)||
+       !/courant donné pour 2 rail/.test(L))throw new Error("en-tête : "+L);
+  }finally{
+    Object.assign(r,JSON.parse(garde)); SIM_DCB.bornes=bornes;
+  }
 });
 
 T("Vérification de la carte : un arc part dans le sens que le serveur lit",()=>{

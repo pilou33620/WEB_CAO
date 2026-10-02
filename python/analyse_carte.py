@@ -242,15 +242,35 @@ def _reglages(doc):
             fmax.pop(str(k), None)
     # UNE PORTEUSE RF : les nets RF se jugent à leur porteuse, pas au genou
     # d'un front. Elle devient le front RF (0,35 / f), sans borne de période.
-    # ponytail: une porteuse pour toute la carte ; par net si une carte en
-    # porte deux (LoRa + GNSS).
     porteuse = float(r.get("porteuse_rf") or 0)
     if porteuse > 0:
         tr["RF"] = 0.35 / porteuse
-    return {"frequences": freqs or list(FREQUENCES), "tr": tr, "fmax": fmax,
-            "porteuse_rf": porteuse if porteuse > 0 else None,
-            "z0": float(r.get("z0") or Z0), "budget": float(r.get("budget") or BUDGET),
-            "zdiff": float(r.get("zdiff") or ZDIFF)}
+    out = {"frequences": freqs or list(FREQUENCES), "tr": tr, "fmax": fmax,
+           "porteuse_rf": porteuse if porteuse > 0 else None,
+           "z0": float(r.get("z0") or Z0), "budget": float(r.get("budget") or BUDGET),
+           "zdiff": float(r.get("zdiff") or ZDIFF)}
+    # PAR CLASSE ET PAR NET, ce qui passe devant les réglages de carte. Une
+    # carte LoRa + NFC porte deux radios : 868 MHz sur l'une, 13,56 MHz sur
+    # l'autre, et juger le NFC à 868 MHz le condamne à tort. De même une
+    # vidéo à 75 Ω et une RF à 50 Ω sur la même carte. Clés absentes du
+    # rapport quand rien n'est donné : le rapport d'avant, à l'identique.
+    for cle in ("z0_classes", "porteuses"):
+        d = {str(k): float(v) for k, v in (r.get(cle) or {}).items() if v and float(v) > 0}
+        if d:
+            out[cle] = d
+    return out
+
+
+def _z0(reg, classe):
+    """L'impédance visée pour un net de cette classe : la sienne si le panneau
+    la donne, Z₀ de la carte sinon."""
+    return (reg.get("z0_classes") or {}).get(classe, reg["z0"])
+
+
+def _tient_z(reg, classe):
+    """La classe tient-elle une impédance ? Horloge, Rapide, RF d'office, et
+    toute classe à laquelle le panneau donne une cible."""
+    return classe in CLASSES_Z or classe in (reg.get("z0_classes") or {})
 
 
 def _classe(doc, net):
@@ -263,16 +283,24 @@ def _classe(doc, net):
     return str((doc.get("natures") or {}).get(net) or "Lent")
 
 
-def _par_frequence(reg, classe, juge):
+def _porteuse(reg, classe, net):
+    """La porteuse d'un net : la sienne (`porteuses`), celle des nets RF
+    sinon, aucune pour les autres classes."""
+    return ((reg.get("porteuses") or {}).get(net)
+            or (reg.get("porteuse_rf") if classe == "RF" else None))
+
+
+def _par_frequence(reg, classe, juge, net=None):
     """[{f, tr, f_eval, valeur, verdict, ...}] pour un net de `classe` (une
     classe sans front, masse ou alimentation, se juge comme Lent) :
-    `juge(f_eval, tr)` rend (valeur, verdict) ou (valeur, verdict, {champs})."""
+    `juge(f_eval, tr)` rend (valeur, verdict) ou (valeur, verdict, {champs}).
+    `net` : sa porteuse propre, s'il en a une, passe devant celle de sa classe."""
     c = classe if classe in reg["tr"] else "Lent"
     tr_c, fmax = reg["tr"][c], reg["fmax"].get(c)
     out = []
-    porteuse = reg.get("porteuse_rf") if c == "RF" else None
+    porteuse = _porteuse(reg, c, net)
     for f in reg["frequences"]:
-        tr = tr_c if porteuse else tr_effectif(tr_c, f, fmax)
+        tr = 0.35 / porteuse if porteuse else tr_effectif(tr_c, f, fmax)
         res = juge(0.35 / tr, tr)
         col = {"f": f, "tr": tr, "f_eval": 0.35 / tr,
                "valeur": round(res[0], 5), "verdict": res[1]}
@@ -284,9 +312,15 @@ def _par_frequence(reg, classe, juge):
     return out
 
 
-def _plus_vite(reg, classes):
-    """La classe au front le plus raide."""
-    return min(classes or {"Lent"}, key=lambda k: reg["tr"].get(k, reg["tr"]["Lent"]))
+def _plus_vite(reg, doc, nets):
+    """(net, classe) au front le plus raide -- sa porteuse s'il en a une ;
+    (None, "Lent") sans net."""
+    def tr(n):
+        c = _classe(doc, n)
+        p = _porteuse(reg, c, n)
+        return 0.35 / p if p else reg["tr"].get(c, reg["tr"]["Lent"])
+    n = min(nets, key=tr, default=None)
+    return n, (_classe(doc, n) if n is not None else "Lent")
 
 
 def _er_entre(couches, a, b):
@@ -324,7 +358,6 @@ def retours(doc, couches, reg, unite, notes, se):
     tl = se.tl
     z_bornes = se._z_empilage(couches)
     refs = set(str(x) for x in (doc.get("reference_nets") or ()) if str(x).strip())
-    z0 = reg["z0"]
 
     def nom(i):
         return str(couches[i].get("name") or i) if 0 <= i < len(couches) else "?"
@@ -349,6 +382,7 @@ def retours(doc, couches, reg, unite, notes, se):
             continue                    # même plan des deux côtés : le retour suit
         bilan["plan_change"] += 1
         net = str(v.get("net") or "")
+        z0 = _z0(reg, _classe(doc, net))
         x, y = float(v["x"]) / unite, float(v["y"]) / unite
         plans = "%s → %s" % ("/".join(r.get("nets_depart") or r.get("plans_depart") or ["?"]),
                              "/".join(r.get("nets_arrivee") or r.get("plans_arrivee") or ["?"]))
@@ -433,7 +467,7 @@ def retours(doc, couches, reg, unite, notes, se):
                 verdicts.append("critique" if d > 2 * l20 else
                                 "vigilance" if d > l20 else "ok")
             return g, _pire(verdicts), extra
-        freqs = _par_frequence(reg, _classe(doc, net), juge)
+        freqs = _par_frequence(reg, _classe(doc, net), juge, net)
         sev = _pire([f["verdict"] for f in freqs])
         if sev == "ok":
             continue
@@ -674,7 +708,7 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
             fx = abs(sum(x[3] * x[4] for x in vals)) / tr
             niv = max(nx, fx)
             return niv, verdict(niv)
-        freqs = _par_frequence(reg, _classe(doc, na), juge)
+        freqs = _par_frequence(reg, _classe(doc, na), juge, na)
         long_ = max(vals, key=lambda x: x[0])
         par_victime[nv].append((na, freqs, long_[5], c))
         sev = _pire([f["verdict"] for f in freqs])
@@ -1055,8 +1089,9 @@ def empilage(doc, couches):
 # dans une ligne de référence Z_ref réfléchit |Z - Z_ref| / (Z + Z_ref) --
 # mais seulement s'il est assez long pour que le front le voie : une
 # discontinuité courte réfléchit Γ · 2T_d / t_r. La référence est la cible
-# Z₀ pour les classes à impédance tenue (Horloge, Rapide, RF), l'impédance
-# dominante du net sinon.
+# Z₀ pour les classes à impédance tenue (Horloge, Rapide, RF, et toute
+# classe à qui `z0_classes` donne sa propre cible), l'impédance dominante du
+# net sinon.
 # ==========================================================================
 
 RHO_CU = 1.72e-8
@@ -1176,12 +1211,13 @@ def impedances(doc, couches, reg, unite, notes, se, troncons, surf=None):
             continue
         bilan["nets"] += 1
         cls = _classe(doc, n)
-        zref = reg["z0"] if cls in CLASSES_Z else max(pieces, key=lambda p: p["L"])["z"]
+        tenu = _tient_z(reg, cls)
+        zref = _z0(reg, cls) if tenu else max(pieces, key=lambda p: p["L"])["z"]
 
         def juge(f_eval, tr, P=pieces, zr=zref):
             g = max(abs(p["z"] - zr) / (p["z"] + zr) * min(1.0, 2 * p["td"] / tr) for p in P)
             return g, _gamma(g)
-        freqs = _par_frequence(reg, _classe(doc, n), juge)
+        freqs = _par_frequence(reg, _classe(doc, n), juge, n)
         sev = _pire([f["verdict"] for f in freqs])
         if sev == "ok":
             continue
@@ -1193,7 +1229,7 @@ def impedances(doc, couches, reg, unite, notes, se, troncons, surf=None):
                     "msg": "%.1f mm, Z₀ %s Ω%s, T_d %.0f ps ; R %.0f mΩ, L %.1f nH, C %.1f pF"
                            % (tot["L"], ("%.0f" % zs[0]) if zs[-1] - zs[0] < 0.5
                               else "%.0f–%.0f" % (zs[0], zs[-1]),
-                              " (cible %.0f Ω)" % zref if cls in CLASSES_Z else "",
+                              " (cible %.0f Ω)" % zref if tenu else "",
                               tot["td"] * 1e12, tot["r"] * 1e3, tot["l"] * 1e9, tot["c"] * 1e12)})
     bilan["sections"] = sum(1 for v in cache.values() if v)
     if sans:
@@ -1283,11 +1319,11 @@ def fentes(doc, couches, reg, unite, notes, surf, troncons):
                          and surf.lire(couches[q].get("name"), xm, ym)[0] != 0]
                 fe = {"largeur": w, "plan": p, "d1": ds[0], "d2": ds[1]}
 
-                def juge(f_eval, tr, fe=fe):
+                def juge(f_eval, tr, fe=fe, z0=_z0(reg, _classe(doc, n))):
                     z = complex(rf_reseau.z_fente(couches, fe, f_eval))
-                    g = abs(z) / abs(z + 2 * reg["z0"])
+                    g = abs(z) / abs(z + 2 * z0)
                     return g, _gamma(g)
-                freqs = _par_frequence(reg, _classe(doc, n), juge)
+                freqs = _par_frequence(reg, _classe(doc, n), juge, n)
                 sev = _pire([f["verdict"] for f in freqs])
                 if autre and sev == "critique":
                     sev = "vigilance"
@@ -1352,10 +1388,10 @@ def coutures(doc, couches, reg, unite, notes, surf):
         return [], {}
     np, a2 = surf.np, surf.pas ** 2
     rang = _rangs(couches)
-    classes = {_classe(doc, str(p.get("n") or "")) for p in
-               list(doc.get("pistes") or ()) + list(doc.get("arcs") or ())
-               if _signal(doc, str(p.get("n") or ""))}
-    vite = _plus_vite(reg, classes)
+    nets = {str(p.get("n") or "") for p in
+            list(doc.get("pistes") or ()) + list(doc.get("arcs") or ())
+            if _signal(doc, str(p.get("n") or ""))}
+    nv, vite = _plus_vite(reg, doc, nets)
     trous = []
     for t in doc.get("percages") or ():
         de, a = rang.get(t.get("de")), rang.get(t.get("a"))
@@ -1409,7 +1445,7 @@ def coutures(doc, couches, reg, unite, notes, surf):
                     def juge_b(f_eval, tr, s=s_bord, er=er):
                         r = s / (C0 / (f_eval * math.sqrt(er)) / 20 * 1e3)
                         return r, _ratio(r)
-                    fb = _par_frequence(reg, vite, juge_b)
+                    fb = _par_frequence(reg, vite, juge_b, nv)
                     sev_b = _pire([f["verdict"] for f in fb])
                     if sev_b != "ok":
                         x, y = surf.point(bi, bj)
@@ -1428,7 +1464,7 @@ def coutures(doc, couches, reg, unite, notes, surf):
             def juge(f_eval, tr, s=s_eq, er=er):
                 r = s / (C0 / (f_eval * math.sqrt(er)) / 20 * 1e3)
                 return r, _ratio(r)
-            freqs = _par_frequence(reg, vite, juge)
+            freqs = _par_frequence(reg, vite, juge, nv)
             sev = _pire([f["verdict"] for f in freqs])
             if sev == "ok":
                 continue
@@ -1615,19 +1651,19 @@ def decouplages(doc, couches, reg, unite, notes, troncons=(), se=None):
         if not (RE_CI.match(ref) or (len(br) >= 8 and not RE_CONNECTEUR.match(ref)
                                      and not RE_CAPA.match(ref))):
             continue
-        alims, classes = defaultdict(list), set()
+        alims, signaux = defaultdict(list), set()
         for b in br:
             n = str(b.get("n") or "")
             if n and _classe(doc, n) == "Alimentation":
                 alims[n].append(b)
             elif _signal(doc, n):
-                classes.add(_classe(doc, n))
+                signaux.add(n)
                 if n in vers_masse and _classe(doc, n) in ("Analogique", "Lent"):
                     suspects.append("%s.%s (%s)" % (ref, b.get("pin", "?"), n))
         if not alims:
             continue
         bilan["circuits"] += 1
-        vite = _plus_vite(reg, classes)
+        nv, vite = _plus_vite(reg, doc, signaux)
         c_ci = str(cp.get("c") or "")
         for n, pins in sorted(alims.items()):
             bilan["broches"] += len(pins)
@@ -1681,7 +1717,7 @@ def decouplages(doc, couches, reg, unite, notes, troncons=(), se=None):
                     if haut < f_eval / 10 and v == "ok":
                         v = "vigilance"
                 return r, v, extra
-            freqs = _par_frequence(reg, vite, juge)
+            freqs = _par_frequence(reg, vite, juge, nv)
             sev = _pire([f["verdict"] for f in freqs])
             if sev == "ok":
                 continue
@@ -1808,7 +1844,7 @@ def bords(doc, couches, reg, unite, notes, se, troncons, surf):
         def juge(f_eval, tr, L=L, er=er):
             r = L / (C0 / (f_eval * math.sqrt(er)) / 20 * 1e3)
             return r, _ratio(r)
-        freqs = _par_frequence(reg, _classe(doc, n), juge)
+        freqs = _par_frequence(reg, _classe(doc, n), juge, n)
         sev = _pire([f["verdict"] for f in freqs])
         if sev != "ok":
             out.append({"regle": "bord", "severite": sev, "frequences": freqs,
@@ -1999,7 +2035,7 @@ def paires_diff(doc, couches, reg, unite, notes, se, troncons, surf=None):
         v_ref = max(pieces, key=lambda x: x[1])[2]
         dl = abs(longueur[p] - longueur[q])
         dt = dl * 1e-3 / v_ref
-        vite = _plus_vite(reg, {_classe(doc, p), _classe(doc, q)})
+        nv, vite = _plus_vite(reg, doc, (p, q))
 
         db = bancal * 1e-3 / v_ref
 
@@ -2009,7 +2045,7 @@ def paires_diff(doc, couches, reg, unite, notes, se, troncons, surf=None):
             v = _pire([_gamma(g)] + ["critique" if x > 0.2 else "vigilance" if x > 0.1 else "ok"
                                      for x in (sk, mc)])
             return g, v, {"skew": round(sk, 4), "plan_bancal": round(mc, 4)}
-        freqs = _par_frequence(reg, vite, juge)
+        freqs = _par_frequence(reg, vite, juge, nv)
         sev = _pire([f["verdict"] for f in freqs])
         nv = (vias[p], vias[q])
         if nv[0] != nv[1] and sev == "ok":
@@ -2179,7 +2215,7 @@ def orphelins(doc, reg, unite, couches, surf, troncons):
             def juge(f_eval, tr, td=td):
                 r = 2 * td / tr
                 return r, "critique" if r > 0.2 else "vigilance" if r > 0.1 else "ok"
-            freqs = _par_frequence(reg, _classe(doc, n), juge)
+            freqs = _par_frequence(reg, _classe(doc, n), juge, n)
         out.append({"regle": "orphelin", "severite": _pire([base] + [f["verdict"] for f in freqs]),
                     "frequences": freqs, "x": nd[0] / unite, "y": nd[1] / unite,
                     "c": c, "n": n, "msg": msg % long_})
@@ -2288,7 +2324,7 @@ def moignons_vias(doc, couches, reg, unite, troncons):
         def juge(f_eval, tr, L=L, er=er):
             r = L / (C0 / (f_eval * math.sqrt(er)) / 20 * 1e3)
             return r, _ratio(r)
-        freqs = _par_frequence(reg, _classe(doc, n), juge)
+        freqs = _par_frequence(reg, _classe(doc, n), juge, n)
         sev = _pire([f["verdict"] for f in freqs])
         if sev == "ok":
             continue
@@ -2369,7 +2405,7 @@ def branches_t(doc, couches, reg, unite, troncons):
             def juge(f_eval, tr, td=td):
                 r = 2 * td / tr
                 return r, "critique" if r > 0.2 else "vigilance" if r > 0.1 else "ok"
-            freqs = _par_frequence(reg, _classe(doc, n), juge)
+            freqs = _par_frequence(reg, _classe(doc, n), juge, n)
             sev = _pire([f["verdict"] for f in freqs])
             if sev != "ok" and (pire is None or L > pire[0]):
                 pire = (L, k, freqs, sev, len(v))
@@ -2570,6 +2606,8 @@ def courants(doc, couches, unite, troncons):
         if L > ou.get(cle, (0,))[0]:
             ou[cle] = (L, (x1 + x2) / 2, (y1 + y2) / 2)
     out, bilan = [], {"rails": 0}
+    if donnes:              # que le rapport dise qu'un courant a été jugé, même sans constat
+        bilan["courants_donnes"] = sum(1 for n in donnes if n in par)
     for n, largeurs in par.items():
         bilan["rails"] += 1
         tot = sum(largeurs.values())

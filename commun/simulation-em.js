@@ -5641,7 +5641,13 @@ const SIM_CARTE={res:null,err:"",occupe:false,actif:-1,unite:1,parDefaut:[],natu
                0 : sans limite. Au-delà, la colonne garde le front de fmax. */
             fmax:{Horloge:0,Rapide:0,RF:0,Analogique:1e6,Lent:1e7,"Découpage":1e7},
             /* La porteuse des nets RF, en Hz ; 0 : jugés au front RF. */
-            porteuse:0},
+            porteuse:0,
+            /* Z₀ visée par classe, en Ω ; 0 : celle de la carte. Une classe
+               qui en reçoit une se juge face à elle (z0_classes). */
+            z0c:{Horloge:0,Rapide:0,RF:0,Analogique:0},
+            /* Du TEXTE, tel que saisi : « NFC=13,56 MHz ; LORA=868 MHz »,
+               « VCC=0,5 ; 3V3=1,2 A ». Lu à l'envoi par simCarteParNet. */
+            porteuses:"", courants:""},
   unites:{f:["kHz","MHz","MHz"],
           tr:{Horloge:"ns",Rapide:"ns",RF:"ps",Analogique:"ns",Lent:"ns","Découpage":"ns"},
           fmax:{Horloge:"MHz",Rapide:"MHz",RF:"MHz",Analogique:"MHz",Lent:"MHz","Découpage":"MHz"},
@@ -5788,12 +5794,56 @@ function simCarteResume(k){
   return ((SIM_CARTE_REGLES[k.regle]||{}).titre||k.regle)+" · "+
          simCarteNomNet(k.n==null?SIM_CARTE_CARTE:String(k.n))+" · "+k.c+" · "+k.msg;
 }
-/* Les réglages tels que le serveur les lit : hertz, secondes, fractions. */
+/* « NET=valeur ; NET=valeur » -> {NET: valeur dans l'unité de base}. Le
+   DERNIER « = » sépare (un nom de net peut en porter), le point-virgule ou la
+   fin de ligne séparent les entrées, la virgule reste décimale. L'unité, si
+   elle est écrite, se lit dans `unites` ({cle, f}) ; sinon `defaut`. Une
+   entrée illisible ou nulle est ignorée, pas refusée : le champ est libre. */
+function simCarteParNet(txt,unites,defaut){
+  const out={};
+  for(const m of String(txt||"").split(/[;\n]/)){
+    const i=m.lastIndexOf("="), n=m.slice(0,i).trim();
+    const v=/^\s*([0-9]*[.,]?[0-9]+(?:e[-+]?[0-9]+)?)\s*([a-zµ]*)\s*$/i.exec(m.slice(i+1));
+    if(i<1||!n||!v)continue;
+    const u=unites.find(x=>x.cle.toLowerCase()===(v[2]||defaut).toLowerCase());
+    const x=parseFloat(v[1].replace(",","."));
+    if(u&&x>0)out[n]=x*u.f;
+  }
+  return out;
+}
+const SIM_CARTE_UNITES_A=[{cle:"A",f:1},{cle:"mA",f:1e-3}];
+/* Les courants par rail saisis, en A : le champ `courants` du document. */
+function simCarteCourants(){
+  return simCarteParNet(SIM_CARTE.reglages.courants,SIM_CARTE_UNITES_A,"A");
+}
+/* LES COURANTS DE L'ONGLET CHUTE DC, rail par rail : la somme des CHARGES de
+   chaque net (une source impose une tension, pas un courant). Ils
+   remplacent la saisie de ces rails-là, sans effacer un rail que l'onglet ne
+   connaît pas. Rend le nombre de rails repris. */
+function simCarteCourantsDC(){
+  const somme=simCarteCourants(), vus={};
+  for(const b of (SIM_ED&&SIM_ED.dcBornes?SIM_ED.dcBornes():[])||[])
+    if(b.role==="charge"&&b.net&&+b.valeur>0){
+      if(!vus[b.net]){vus[b.net]=1;somme[b.net]=0;}
+      somme[b.net]+=+b.valeur;
+    }
+  SIM_CARTE.reglages.courants=Object.keys(somme).map(n=>
+    n+"="+String(+somme[n].toPrecision(4)).replace(".",",")+" A").join(" ; ");
+  return Object.keys(vus).length;
+}
+/* Les réglages tels que le serveur les lit : hertz, secondes, fractions.
+   Les cibles par classe et les porteuses par net ne partent que remplies :
+   sans elles, le document est celui d'avant, et le rapport aussi. */
 function simCarteReglagesDoc(){
-  const r=SIM_CARTE.reglages;
-  return {frequences:r.frequences.slice(), z0:r.z0, budget:r.budget/100,
-          zdiff:r.zdiff, tr:Object.assign({},r.tr), fmax:Object.assign({},r.fmax),
-          porteuse_rf:r.porteuse};
+  const r=SIM_CARTE.reglages, d={frequences:r.frequences.slice(), z0:r.z0,
+    budget:r.budget/100, zdiff:r.zdiff, tr:Object.assign({},r.tr),
+    fmax:Object.assign({},r.fmax), porteuse_rf:r.porteuse};
+  const z0c={};
+  for(const k in r.z0c)if(r.z0c[k]>0)z0c[k]=r.z0c[k];
+  const p=simCarteParNet(r.porteuses,SIM_UNITES,"MHz");
+  if(Object.keys(z0c).length)d.z0_classes=z0c;
+  if(Object.keys(p).length)d.porteuses=p;
+  return d;
 }
 function simCarteF(f){
   return f>=1e9?simNb(f/1e9,f%1e9?1:0)+" GHz":f>=1e6?simNb(f/1e6,f%1e6?1:0)+" MHz":
@@ -5826,6 +5876,14 @@ function simCorpsCarte(){
              " » : celui de la techno qui le pilote. À chaque fréquence, "+
              "il est borné par 10 % de la période.","ce front",
              SIM_UNITES_TR)+'</span>';
+  let z0c="";
+  for(const k in SIM_CARTE.reglages.z0c)
+    z0c+='<span class="simGr"><span class="pnl-lbl">'+simEsc(k)+'</span>'+
+      champ("simCarteZ0c"+k,"La Z₀ visée pour un net de classe « "+k+" » : "+
+            "son impédance se juge face à elle, la réflexion de ses vias et "+
+            "de ses fentes aussi. Vide : le Z₀ de la carte"+(k==="Analogique"?
+            " — et un net Analogique sans cible ne se compare qu'à lui-même":"")+
+            ".","Ω")+'</span>';
   let fmax="";
   for(const k in SIM_CARTE.reglages.fmax)
     fmax+='<span class="simGr"><span class="pnl-lbl">'+simEsc(k)+'</span>'+
@@ -5862,7 +5920,24 @@ function simCorpsCarte(){
       "RF. Vide : front RF.","la porteuse")+
   '</div>'+
   '<div class="pnl-bar"><span class="pnl-lbl">fronts</span>'+fronts+'</div>'+
-  '<div class="pnl-bar"><span class="pnl-lbl">f max</span>'+fmax+'</div>';
+  '<div class="pnl-bar"><span class="pnl-lbl">f max</span>'+fmax+'</div>'+
+  '<div class="pnl-bar"><span class="pnl-lbl">Z₀ par classe</span>'+z0c+'</div>'+
+  '<div class="pnl-bar"><span class="pnl-lbl">porteuses par net</span>'+
+    simChampTexte("simCartePorteuses",SIM_CARTE.reglages.porteuses,
+      "Une porteuse propre à un net, devant celle des nets RF : une carte "+
+      "LoRa + NFC se juge à 868 MHz sur l'une et à 13,56 MHz sur l'autre. "+
+      "« NET=valeur unité », séparés par des points-virgules ; sans unité, "+
+      "des MHz.","NFC_ANT=13,56 MHz ; LORA_RF=868 MHz")+
+  '</div>'+
+  '<div class="pnl-bar"><span class="pnl-lbl">courants par rail</span>'+
+    simChampTexte("simCarteCourants",SIM_CARTE.reglages.courants,
+      "Le courant que tire chaque rail, pour la règle de courant (IPC-2221) : "+
+      "sans lui, seuls les étranglements sortent, en info. « NET=valeur », "+
+      "en A (ou mA), séparés par des points-virgules.","VCC=0,5 ; 3V3=1,2 A")+
+    '<button class="tb mini" id="simCarteCourantsDC" title="Reprendre les '+
+      'courants des charges posées dans l\'onglet Chute DC, additionnés par '+
+      'rail">← Chute DC</button>'+
+  '</div>';
 }
 function simBrancherCarte(){
   const go=simEl("simCarteGo"), ex=simEl("simCarteExport"), r=SIM_CARTE.reglages;
@@ -5923,6 +5998,18 @@ function simBrancherCarte(){
                           ()=>r.fmax[k],v=>{r.fmax[k]=v;},true);
   lieU("simCartePorteuse",SIM_UNITES,()=>u.porteuse,c=>{u.porteuse=c;},
        ()=>r.porteuse,v=>{r.porteuse=v;},true);
+  for(const k in r.z0c)lie("simCarteZ0c"+k,()=>r.z0c[k],v=>{r.z0c[k]=v;},true);
+  for(const [id,cle] of [["simCartePorteuses","porteuses"],["simCarteCourants","courants"]]){
+    const e=simEl(id);
+    if(e)e.oninput=function(){r[cle]=String(this.value);};
+  }
+  const dc=simEl("simCarteCourantsDC");
+  if(dc)dc.onclick=function(){
+    const n=simCarteCourantsDC(), e=simEl("simCarteCourants");
+    if(e)e.value=r.courants;
+    this.title=n?n+" rail(s) repris de l'onglet Chute DC":
+      "Aucune charge dans l'onglet Chute DC : posez-y les consommateurs et leur courant.";
+  };
 }
 
 async function simCarteGo(){
@@ -5943,7 +6030,10 @@ async function simCarteGo(){
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(Object.assign({format:SIM_CARTE_FORMAT},c.doc,
-                                        {reglages:simCarteReglagesDoc()}))
+                                        {reglages:simCarteReglagesDoc()},
+        /* Les courants saisis passent devant ceux que l'outil enverrait. */
+        Object.keys(simCarteCourants()).length?
+          {courants:Object.assign({},c.doc.courants||{},simCarteCourants())}:{}))
     });
     let corps=null;
     try{corps=await rep.json();}catch(e){corps=null;}
@@ -6099,6 +6189,12 @@ function simCarteMeta(res){
   if(fm.length)L.push("fréquence maximale par classe : "+
                       fm.map(([c,f])=>c+" "+simCarteF(f)).join(", "));
   if(r&&r.porteuse_rf)L.push("nets RF jugés à leur porteuse, "+simCarteF(r.porteuse_rf));
+  const zc=Object.entries((r&&r.z0_classes)||{});
+  if(zc.length)L.push("Z₀ par classe : "+zc.map(([c,z])=>c+" "+simNbLibre(z)+" Ω").join(", "));
+  const pn=Object.entries((r&&r.porteuses)||{});
+  if(pn.length)L.push("porteuses par net : "+pn.map(([n,f])=>n+" "+simCarteF(f)).join(", "));
+  if(b.courant&&b.courant.courants_donnes)
+    L.push("courant donné pour "+b.courant.courants_donnes+" rail(s)");
   return L;
 }
 /* Les constats d'un rapport, rangés : sur les nets, acceptés (dérogations),
