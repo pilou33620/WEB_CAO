@@ -896,8 +896,34 @@ function simAireEnRegard(cuA, cuB, x, y){
   const A = cuivre(pA, zA.net), B = cuivre(pB, zB.net);
   const r = simAireCommune(A, B, 0.25);
   if(!(r.aire > 0)) return null;
-  /* et la grille du recouvrement à 0,5 mm, pour la cavité sur sa forme réelle */
-  r.grille = simGrilleCommune(A, B, 0.5);
+  /* et la grille du recouvrement, au pas que sa taille demande, pour la
+     cavité sur sa forme réelle ; ses îlots partent avec le réseau des deux
+     nets, que le serveur résout (`simReseauNets`) */
+  r.grille = simGrilleCommune(A, B, simPasGrille(r.aire));
+  if(r.grille){
+    const ep = (a, b) => { let t = 0; for(let g = Math.min(a, b); g < Math.max(a, b); g++)
+      t += diAt(g).t || 0; return t; };
+    const avecZone = new Set(S.zones.map(z => z.l));
+    try{
+      const reseau = simReseauNets({
+        grille: r.grille, k: 1, plans: [pA, pB], nets: [zA.net, zB.net], nCouches: S.cu, marge: 15,
+        cuivre: cuivre,
+        pistes: (cu, net) => S.tracks.filter(t => t.l === cu && t.net === net)
+          .map(t => ({w: t.w || 0.2, p: [t.x1, t.y1, t.x2, t.y2]})),
+        vias: net => S.vias.filter(v => v.net === net).map(v => {
+          const cs = [];
+          for(let c = Math.min(v.a, v.b); c <= Math.max(v.a, v.b); c++) cs.push(c);
+          return {x: v.x, y: v.y, couches: cs};
+        }),
+        h: cu => {
+          let best = Infinity;
+          avecZone.forEach(j => { if(j !== cu) best = Math.min(best, ep(cu, j)); });
+          return isFinite(best) ? best : ep(0, S.cu - 1);
+        },
+        ep: ep});
+      if(reseau) r.grille.reseau = reseau;
+    }catch(e){ /* sans réseau, le serveur estime à 1 nH/mm */ }
+  }
   return r;
 }
 

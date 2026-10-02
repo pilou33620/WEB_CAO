@@ -2104,6 +2104,79 @@ PORT_PONT_MM = 1.0          # cote d'un port de condensateur (pastilles 0402/060
 _GRILLES_PAGE = {}          # cle -> la grille du recouvrement envoyee par la page
 
 
+def _rayonnement_cavite(param, f0, tr, v0, z0, distance=DISTANCE_MESURE_REPLI,
+                        classe=CLASSE_CEM_REPLI):
+    """CE QUE LA CAVITE RAYONNE PAR SES BORDS, et sa marge CISPR 32.
+
+    Le courant de retour qui traverse la paire de plans y met des tensions de
+    bord, et ces bords rayonnent (`tl.rayonnement_cavite`, sommation coherente
+    sur la sphere). Le courant est celui du signal : le spectre trapezoidal de
+    `rayonnement_boucle`, amplitude / Z0, en efficace. Aux harmoniques
+    impaires quand elles sont moins de 400 dans la bande ; au-dela, sur
+    l'enveloppe, comme si une harmonique tombait partout -- le pire, et dit.
+    +6 dB de reflexion de sol, comme la boucle.
+
+    C'EST UNE ESTIMATION DE LA CAVITE SEULE : ni cables, ni mode commun, qui
+    dominent souvent l'essai. Une marge serree est un signal fort ; une marge
+    large ne promet rien."""
+    f_lo, f_hi = 30e6, 1e9
+    f0 = max(float(f0 or 0.0), 1.0)
+    tr = max(float(tr or 0.0), 1e-12)
+    n_bande = (f_hi - f_lo) / (2 * f0)
+    if n_bande <= 400:
+        ks = np.arange(1, int(f_hi / f0) + 2, 2)
+        fs = ks * f0
+        fs = fs[(fs >= f_lo) & (fs <= f_hi)]
+        mode = "harmoniques"
+    else:
+        fs = np.geomspace(f_lo, f_hi, 160)
+        mode = "enveloppe"
+    if not fs.size:
+        return {"hors_bande": True}
+    amp = 4 * v0 * f0 / (np.pi * fs) * np.abs(np.sinc(fs * tr))
+    i_eff = amp / max(z0, 1e-6) / math.sqrt(2.0)
+    e1, _ = tl.rayonnement_cavite(fs, param)
+    e = e1 / float(distance) * 2.0 * i_eff                  # 1/r, sol, courant
+    e_db = 20 * np.log10(np.maximum(e, 1e-30) * 1e6)
+    lim = np.array([tl.limite_cispr32(f, distance=distance, classe=classe) or np.nan
+                    for f in fs])
+    marge = lim - e_db
+    if not np.isfinite(marge).any():
+        return {"hors_bande": True}
+    i = int(np.nanargmin(marge))
+    return {"distance_m": float(distance), "classe": str(classe).upper(), "calcul": mode,
+            "pire": {"freq_hz": float(fs[i]), "champ_dbuv_m": round(float(e_db[i]), 1),
+                     "limite_dbuv_m": float(lim[i]), "marge_db": round(float(marge[i]), 1)},
+            "reserve": "cavité seule : ni câbles ni mode commun, qui dominent souvent l'essai"}
+
+
+def traversee_fourchette(cav):
+    """LA FOURCHETTE DES ILOTS : la meme cavite, la self de chaque lien entre
+    ilots portee a ses bornes physiques -- couplage parfait de l'aller et du
+    retour, (sqrt L_A - sqrt L_B)^2, et aucun couplage, L_A + L_B -- quand le
+    lien vient du reseau reel ; divisee puis multipliee par deux sinon. Rend {f_bas, f_haut, z_bas, z_haut}
+    du pic de traversee, ou None sans ilot. Le chemin reel d'un net entre deux
+    ilots n'est qu'estime (pistes, vias) : si le verdict change dans la
+    fourchette, il depend de cette estimation, et il faut le savoir."""
+    g = (cav or {}).get("grille") or {}
+    if not g.get("ilots"):
+        return None
+    fs = 1e5 * 10 ** (np.arange(108) / 24)
+    out = {}
+    # ENTRE LE COUPLAGE PARFAIT ET AUCUN COUPLAGE quand le lien vient du reseau
+    # reel (`_liens_par_reseau`) ; la self divisee et doublee sinon
+    kb, kh = g.get("lien_ilot_bornes") or (0.5, 2.0)
+    for nom, k in (("bas", max(kb, 0.05)), ("haut", max(kh, 1.0))):
+        p = _param_cavite(cav, echelle_ilots=k)
+        if not p:
+            return None
+        z = np.abs(tl.impedance_traversee_vec(fs, p))
+        i = int(z.argmax())
+        out["f_" + nom], out["z_" + nom] = float(fs[i]), float(z[i])
+    _param_cavite(cav)                  # la fiche reprend ses valeurs nominales
+    return out
+
+
 def _cavite_modale(fiche, via, rect, x0, y0, h_cav, er_cav, d_percage, rayon,
                    c_plans):
     """La fiche d'une cavite MODALE : le rectangle, le via et chaque pont de la
@@ -2217,7 +2290,7 @@ def _cavite_modale(fiche, via, rect, x0, y0, h_cav, er_cav, d_percage, rayon,
     return fiche
 
 
-def _param_cavite(cav):
+def _param_cavite(cav, echelle_ilots=1.0):
     """Les parametres de la traversee entre plans, tels que
     `tl.impedance_traversee_param` les lit, ou None quand la cavite n'a pas de
     capacite chiffree.
@@ -2236,9 +2309,21 @@ def _param_cavite(cav):
             ports += [(p["x"] * 1e-3, p["y"] * 1e-3, PORT_PONT_MM * 1e-3)
                       for p in cav["ponts_detail"]]
             modal = tl.cavite_grille(grille, cav["hauteur_mm"] * 1e-3, cav["er_plans"],
-                                     cav["tan_delta"], ports)
+                                     cav["tan_delta"], ports, echelle_ilots=echelle_ilots)
             cav["grille"]["noeuds"] = modal["noeuds"]
             cav["grille"]["ponts_hors_ilot"] = modal["hors"]
+            cav["grille"]["ilots"] = modal["ilots"]
+            cav["grille"]["ilots_par_la_page"] = modal["liens_page"]
+            cav["grille"]["via_sur_ilot"] = modal["sur_ilot"]
+            bo = modal.get("bornes_ilot")
+            if bo and modal["sur_ilot"]:
+                cav["grille"]["lien_ilot_nH"] = round(bo[2] * 1e9, 3)
+                cav["grille"]["lien_ilot_peec"] = bool(bo[3])
+                cav["grille"]["lien_ilot_bornes"] = [round(bo[0], 3), round(bo[1], 3)]
+            if modal["convergence"] is not None:
+                cav["grille"]["convergence_pct"] = round(100 * modal["convergence"], 2)
+            if modal["q_rad_min"]:
+                cav["grille"]["q_rayonnement_min"] = round(modal["q_rad_min"])
             if modal["ecart_via_mm"]:
                 cav["grille"]["via_hors_recouvrement_mm"] = modal["ecart_via_mm"]
             if modal["f_premier"]:
@@ -2478,6 +2563,10 @@ def _modele_transition(trans, objets, segments, couches, z_bornes, refs_nets,
                                   v0=v0_sig)
     if ray:
         trans["rayonnement"] = ray
+    if cav and param_cav and param_cav.get("modal", {}).get("bord"):
+        cav["rayonnement"] = _rayonnement_cavite(param_cav, f0_sig, tr_sig, v0_sig, z0)
+        if (cav.get("grille") or {}).get("via_sur_ilot"):
+            cav["fourchette_ilots"] = traversee_fourchette(cav)
 
     # PALIER 7 : BILAN D'IMPACT PHYSIQUE DU RETOUR HF & REBOND DE MASSE & CEM
     fknee = 0.35 / tr_sig if tr_sig > 0 else f0_sig
@@ -3102,6 +3191,12 @@ def _vias_hors_chaine(vias, couches, z_bornes, refs_nets, fc=0.0, t_r=None):
                     "traversee_ohm": round(abs(z_c), 4),
                     "traversee_reactance_ohm": round(z_c.imag, 4),
                     "traversee_f_hz": f_eval})
+                if param.get("modal", {}).get("bord"):
+                    cav["rayonnement"] = _rayonnement_cavite(
+                        param, fc or f_eval, t_r if (t_r and t_r > 0) else 0.35 / f_eval,
+                        AMPLITUDE_REPLI, 50.0)
+                    if (cav.get("grille") or {}).get("via_sur_ilot"):
+                        cav["fourchette_ilots"] = traversee_fourchette(cav)
             if cav:
                 fiche["cavite"] = cav
         out.append(fiche)
@@ -3235,6 +3330,23 @@ def _avertir_retour(transitions, f_fin=0.0):
                      if g else "Cavité modale %.0f × %.0f mm" % (r.get("a", 0), r.get("b", 0)))
             if cav.get("f_premier_mode_hz"):
                 forme += ", premier mode à %.0f MHz" % (cav["f_premier_mode_hz"] / 1e6)
+            if g.get("convergence_pct") is not None:
+                forme += " (maille juste à %.1f %% près)" % g["convergence_pct"]
+            fo = cav.get("fourchette_ilots")
+            if fo:
+                forme += ("; le via est sur un îlot du recouvrement, relié %s : la"
+                          " traversée y résonne entre %.0f et %.0f MHz selon ce chemin"
+                          % ("par le chemin réel du net" if g.get("ilots_par_la_page")
+                             else "par estimation (1 nH/mm)",
+                             min(fo["f_bas"], fo["f_haut"]) / 1e6,
+                             max(fo["f_bas"], fo["f_haut"]) / 1e6))
+            ry = (cav.get("rayonnement") or {}).get("pire")
+            if ry:
+                forme += ("; la cavité rayonne au pire %.0f dBµV/m à %.0f MHz (limite"
+                          " %.0f, marge %+.0f dB, classe %s à %.0f m, cavité seule)"
+                          % (ry["champ_dbuv_m"], ry["freq_hz"] / 1e6, ry["limite_dbuv_m"],
+                             ry["marge_db"], cav["rayonnement"]["classe"],
+                             cav["rayonnement"]["distance_m"]))
             out.append(
                 tete + cout +
                 " %s, %d pont(s) sur la carte%s." % (

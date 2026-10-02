@@ -3154,13 +3154,49 @@ async function simConnecter(){
     "numpy — « pip install numpy ».\n\n"+
     "Tentatives :\n  "+essais.join("\n  "));
 }
-/* Envoie le document et rend le résultat. Le corps est le JSON tel quel : la
-   route ne lit pas de fichier et n'écrit rien sur le disque. */
+/* LE CORPS D'UN ENVOI : le document en JSON, la grille de chaque cavité une
+   seule fois, et compressé en gzip au-delà de 256 Ko.
+
+   · LA GRILLE DU RECOUVREMENT est la même pour tous les vias d'une cavité
+     (P01x291 : 81 vias, 0,49 Mo de grilles pour 10 Ko utiles). Elle part dans
+     une table `cavites_grilles` au niveau du document, chaque via n'en garde
+     que la clé ; le serveur la déplie à la lecture (`_deplier_grilles`).
+   · GZIP : 5,5 → 1,5 Mo en 215 ms sur la même carte, par le
+     `CompressionStream` du navigateur ; le serveur décompresse quand
+     `Content-Encoding: gzip` est annoncé. Sans `CompressionStream` (vieux
+     navigateur), le corps part tel quel — rien ne casse.
+   Rend {body, headers}. */
+async function simCorpsJson(doc){
+  const table = {}, ids = new Map();
+  const texte = JSON.stringify(doc, (k, v) => {
+    if(k !== "cavite_grille" || !v || typeof v !== "object") return v;
+    if(!ids.has(v)){ ids.set(v, "g" + ids.size); table["g" + (ids.size - 1)] = v; }
+    return ids.get(v);
+  });
+  const corps = ids.size && texte[0] === "{"
+    ? '{"cavites_grilles":' + JSON.stringify(table) + (texte.length > 2 ? "," : "") + texte.slice(1)
+    : texte;
+  const headers = {"Content-Type": "application/json"};
+  if(corps.length < 262144 || typeof CompressionStream !== "function")
+    return {body: corps, headers: headers};
+  try{
+    const flux = new Blob([corps]).stream().pipeThrough(new CompressionStream("gzip"));
+    const gz = await new Response(flux).arrayBuffer();
+    headers["Content-Encoding"] = "gzip";
+    return {body: gz, headers: headers};
+  }catch(e){
+    return {body: corps, headers: {"Content-Type": "application/json"}};
+  }
+}
+
+/* Envoie le document et rend le résultat. Le corps est le JSON (compressé
+   s'il est gros, `simCorpsJson`) : la route ne lit pas de fichier et n'écrit
+   rien sur le disque. */
 async function simLancer(doc){
   await simConnecter();
+  const envoi=await simCorpsJson(doc);
   const rep=await fetch(SIM_BASE+SIM_ROUTE,{
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(doc)
+    method:"POST", headers:envoi.headers, body:envoi.body
   });
   if(!rep.ok)throw new Error(await simErreur(rep));
   const res=await rep.json();
@@ -3947,6 +3983,162 @@ function simAireCommune(A, B, pas){
     }
   }
   return {aire: somme * pas, x1: x1, y1: y1, x2: x2, y2: y2};
+}
+
+/* LE PAS DE LA GRILLE D'UNE CAVITÉ, en mm : 0,25 mm sur une petite cavité,
+   plus gros quand elle grandit, pour rester sous 20 000 cellules (0,5 mm sur
+   les 2 477 mm² de P01x291), jamais plus de 1 mm. Au quart de mm près. */
+function simPasGrille(aireMm2){
+  const p = Math.ceil(Math.sqrt(Math.max(aireMm2, 0) / 20000) / 0.25) * 0.25;
+  return Math.min(1, Math.max(0.25, p));
+}
+
+/* LES CELLULES D'UN CUIVRE QUI CONDUISENT, ligne par ligne, au pas et à
+   l'origine d'une grille. PAR COUVERTURE et non par centre : une cellule
+   compte dès que le cuivre en couvre une part, lue sur deux lignes par
+   rangée (au quart et aux trois quarts). Un plan criblé d'antipads (VDDIO de
+   P01x291) ne garde entre eux que des voiles plus fins qu'une cellule, et la
+   lecture par centre les effaçait : le réseau se coupait en morceaux là où le
+   cuivre est continu. La part couverte voyage avec la cellule quand elle
+   n'est pas pleine (`fractions`), pour que la self d'un voile reste celle
+   d'un voile.
+
+   PAR SEAUX D'ARÊTES : chaque arête ne coupe que les lignes qu'elle traverse
+   — un plan de 50 000 arêtes ne se relit pas à chaque ligne. `C` : {plein,
+   vide} en unités des sommets ; `k` mm par unité ; rangées j1..j2, colonnes
+   i1..i2. Rend {lignes: [[j, [i1, i2, …]]], fractions: [[j, i, part], …]}. */
+function simLignesCuivre(C, pas, x0, y0, j1, j2, i1, i2, k){
+  const nR = 2 * (j2 - j1 + 1);                           // deux lignes par rangée
+  const yDe = r => y0 + (Math.floor(r / 2) + j1 + (r % 2 ? 0.75 : 0.25)) * pas;
+  const seaux = (groupes) => {
+    const rows = Array.from({length: nR}, () => new Map());
+    groupes.forEach((anneaux, gi) => {
+      for(const p of anneaux){
+        const n = p.length / 2;
+        for(let a = 0, b = n - 1; a < n; b = a++){
+          const xa = p[2*a] * k, ya = p[2*a+1] * k, xb = p[2*b] * k, yb = p[2*b+1] * k;
+          if(ya === yb) continue;
+          const lo = Math.min(ya, yb), hi = Math.max(ya, yb);
+          const r1 = Math.max(0, Math.floor(((lo - y0) / pas - j1) * 2 - 0.5));
+          const r2 = Math.min(nR - 1, Math.ceil(((hi - y0) / pas - j1) * 2));
+          for(let r = r1; r <= r2; r++){
+            const y = yDe(r);
+            if((ya > y) === (yb > y)) continue;
+            const m = rows[r];
+            if(!m.has(gi)) m.set(gi, []);
+            m.get(gi).push(xa + (y - ya) * (xb - xa) / (yb - ya));
+          }
+        }
+      }
+    });
+    return rows.map(m => {
+      const tous = [];
+      for(const xs of m.values()){
+        xs.sort((u, v) => u - v);
+        for(let t = 0; t + 1 < xs.length; t += 2) tous.push([xs[t], xs[t + 1]]);
+      }
+      tous.sort((u, v) => u[0] - v[0]);
+      const out = [];
+      for(const sg of tous){
+        const d = out[out.length - 1];
+        if(d && sg[0] <= d[1]) d[1] = Math.max(d[1], sg[1]); else out.push(sg.slice());
+      }
+      return out;
+    });
+  };
+  const pleins = seaux(C.plein), vides = (C.vide && C.vide.length) ? seaux(C.vide) : null;
+  const lignes = [], fractions = [];
+  for(let jr = 0; jr < nR / 2; jr++){
+    const couv = new Map();                                // cellule → longueur couverte
+    for(const r of [2 * jr, 2 * jr + 1]){
+      const sp = vides ? simSpansMoins(pleins[r], vides[r]) : pleins[r];
+      for(const [a, b] of sp){
+        const ia = Math.max(i1, Math.floor((a - x0) / pas)), ib = Math.min(i2, Math.ceil((b - x0) / pas) - 1);
+        for(let i = ia; i <= ib; i++){
+          const l = Math.min(b, x0 + (i + 1) * pas) - Math.max(a, x0 + i * pas);
+          if(l > 0) couv.set(i, (couv.get(i) || 0) + l);
+        }
+      }
+    }
+    if(!couv.size) continue;
+    const is = [...couv.keys()].sort((u, v) => u - v), cel = [], j = jr + j1;
+    for(const i of is){
+      const part = couv.get(i) / (2 * pas);
+      if(part < 0.95) fractions.push([j, i, Math.round(part * 100) / 100]);
+      if(cel.length && cel[cel.length - 1] === i) cel[cel.length - 1] = i + 1;
+      else cel.push(i, i + 1);
+    }
+    lignes.push([j, cel]);
+  }
+  return {lignes: lignes, fractions: fractions};
+}
+
+/* LE RÉSEAU DES DEUX NETS QUI RELIE LES ÎLOTS D'UNE CAVITÉ. Un îlot du
+   recouvrement porte les deux mêmes nets que la cavité principale, et chacun
+   la rejoint par son cuivre — versements, pistes, perçages — sur toutes les
+   couches. On en envoie la description, au pas et à l'origine de la grille :
+   pour chaque net, ses cellules de cuivre couche par couche (en lignes, comme
+   la grille), ses pistes (largeur et bouts, en mm) et ses perçages (couches
+   desservies). Le serveur en résout la self équivalente, chemins parallèles
+   compris (`ligne_mom._liens_par_reseau`) — un plus court chemin traitait un
+   plan comme une piste d'une cellule de large.
+
+   `o` : {grille, k (mm par unité des sommets), plans: [cuA, cuB], nets:
+   [nA, nB], nCouches, marge (mm), cuivre(cu, net) → {plein, vide} en unités
+   des sommets, pistes(cu, net) → [{w (mm), p: [x, y, …] en unités des
+   sommets}], vias(net) → [{x, y (mm), couches: [cu…]}], h(cu) → mm de la
+   couche au plan le plus proche, ep(cuA, cuB) → mm}. Rend null quand la
+   grille n'a pas d'îlot. */
+function simReseauNets(o){
+  const g = o.grille, pas = g.pas, k = o.k || 1;
+  // des îlots ? (sinon rien à relier)
+  const cle = (i, j) => i + "," + j, vu = new Set(), cellules = new Set();
+  for(const [j, c] of g.lignes) for(let t = 0; t < c.length; t += 2)
+    for(let i = c[t]; i < c[t + 1]; i++) cellules.add(cle(i, j));
+  let composantes = 0;
+  for(const s of cellules){
+    if(vu.has(s)) continue;
+    if(++composantes > 1) break;
+    const pile = [s]; vu.add(s);
+    while(pile.length){
+      const [i, j] = pile.pop().split(",").map(Number);
+      for(const v of [cle(i + 1, j), cle(i - 1, j), cle(i, j + 1), cle(i, j - 1)])
+        if(cellules.has(v) && !vu.has(v)){ vu.add(v); pile.push(v); }
+    }
+  }
+  if(composantes < 2) return null;
+  let i1 = Infinity, i2 = -Infinity, j1 = Infinity, j2 = -Infinity;
+  for(const [j, c] of g.lignes){ j1 = Math.min(j1, j); j2 = Math.max(j2, j);
+    i1 = Math.min(i1, c[0]); i2 = Math.max(i2, c[c.length - 1]); }
+  const m = Math.ceil((o.marge || 15) / pas);
+  i1 -= m; i2 += m; j1 -= m; j2 += m;
+  const xmin = g.x0 + i1 * pas, xmax = g.x0 + (i2 + 1) * pas;
+  const ymin = g.y0 + j1 * pas, ymax = g.y0 + (j2 + 1) * pas;
+  const dans = (x, y) => x >= xmin && x <= xmax && y >= ymin && y <= ymax;
+  const r3 = v => Math.round(v * 1000) / 1000;
+  const nets = o.nets.map((net, q) => {
+    const couches = [];
+    for(let cu = 0; cu < o.nCouches; cu++){
+      const C = o.cuivre(cu, net);
+      if(!C || !C.plein.length) continue;
+      const lc = simLignesCuivre(C, pas, g.x0, g.y0, j1, j2, i1, i2, k);
+      if(lc.lignes.length) couches.push({cu: cu, h: r3(o.h(cu)), lignes: lc.lignes,
+                                         fractions: lc.fractions});
+    }
+    const pistes = [];
+    for(let cu = 0; cu < o.nCouches; cu++)
+      for(const p of o.pistes(cu, net) || [])
+        for(let t = 0; t + 3 < p.p.length; t += 2){
+          const xa = p.p[t] * k, ya = p.p[t + 1] * k, xb = p.p[t + 2] * k, yb = p.p[t + 3] * k;
+          if(dans(xa, ya) || dans(xb, yb)) pistes.push([cu, r3(p.w), r3(xa), r3(ya), r3(xb), r3(yb)]);
+        }
+    const vias = (o.vias(net) || []).filter(v => dans(v.x, v.y) && v.couches.length > 1)
+      .map(v => [r3(v.x), r3(v.y), v.couches]);
+    return {plan: o.plans[q], couches: couches, pistes: pistes, vias: vias};
+  });
+  const ep = [];
+  for(let cu = 0; cu + 1 < o.nCouches; cu++) ep.push(r3(o.ep(cu, cu + 1)));
+  return {i1: i1, i2: i2, j1: j1, j2: j2, ep: ep, nets: nets};
 }
 
 /* LE RECOUVREMENT MAILLÉ, pour la cavité sur sa forme réelle : les mêmes
@@ -5054,6 +5246,7 @@ function simRetourNotes(vias){
          (g ? "Cavité maillée sur sa forme réelle ("+(g.noeuds||g.cellules||0)+" cellules de "+
               simNb(g.pas_mm,1)+" mm, modes propres compris"+
               (cav.f_premier_mode_hz?", premier à "+simNb(cav.f_premier_mode_hz/1e6,0)+" MHz":"")+
+              (g.convergence_pct!=null?", maille juste à "+simNb(g.convergence_pct,1)+" % près":"")+
               (g.via_hors_recouvrement_mm?" ; rien en regard sous le via, la cavité est à "+
                  simNb(g.via_hors_recouvrement_mm,1)+" mm":"")+"), "
             : "Cavité modale de "+simNb(r.a,0)+" × "+simNb(r.b,0)+" mm (modes TM compris), ")+
@@ -5063,6 +5256,24 @@ function simRetourNotes(vias){
               simNb(cav.pont.distance_mm,2)+" mm."
             : " — <b>aucun</b>, direct ni par un 0 Ω : le retour ne traverse que par la cavité.")+
          "</p>";
+      const fo=cav.fourchette_ilots;
+      if(fo)
+        h+='<p class="simNote">· Le via est sur un <b>îlot</b> du recouvrement, relié '+
+           (g&&g.lien_ilot_nH!=null
+              ? "par le cuivre réel de ses deux nets ("+simNb(g.lien_ilot_nH,2)+" nH"+
+                (g.lien_ilot_peec?", mutuelle comprise":"")+")"
+              : "par estimation (1 nH/mm)")+
+           " : la traversée y résonne entre "+simNb(Math.min(fo.f_bas,fo.f_haut)/1e6,0)+" et "+
+           simNb(Math.max(fo.f_bas,fo.f_haut)/1e6,0)+" MHz selon ce lien ("+
+           (g&&g.lien_ilot_bornes?"du couplage parfait de l'aller et du retour à aucun couplage"
+                                 :"self ÷ 2 à × 2")+").</p>";
+      const ry=(cav.rayonnement||{}).pire;
+      if(ry)
+        h+='<p class="simNote">· La cavité <b>rayonne</b> par ses bords au pire '+
+           simNb(ry.champ_dbuv_m,0)+" dBµV/m à "+simNb(ry.freq_hz/1e6,0)+" MHz (limite "+
+           simNb(ry.limite_dbuv_m,0)+", <b>marge "+(ry.marge_db>=0?"+":"")+simNb(ry.marge_db,0)+
+           " dB</b>, classe "+simEsc(cav.rayonnement.classe)+" à "+simNb(cav.rayonnement.distance_m,0)+
+           " m) — cavité seule, ni câbles ni mode commun.</p>";
     }else{
       h+='<p class="simNote">· La traversée pèse <b>'+
          simNb(cav.impedance_fc_ohm,2)+" Ω</b> à f₀, cascadés dans le "+
@@ -6243,14 +6454,13 @@ async function simCarteGo(){
     if(!c||c.erreur)
       throw new Error(((c&&c.erreur)||"Rien à analyser.")+
                       (c&&c.conseil?"\n"+c.conseil:""));
-    const rep=await fetch((SIM_BASE||"")+SIM_CARTE_ROUTE,{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(Object.assign({format:SIM_CARTE_FORMAT},c.doc,
+    const envoi=await simCorpsJson(Object.assign({format:SIM_CARTE_FORMAT},c.doc,
                                         {reglages:simCarteReglagesDoc()},
         /* Les courants saisis passent devant ceux que l'outil enverrait. */
         Object.keys(simCarteCourants()).length?
-          {courants:Object.assign({},c.doc.courants||{},simCarteCourants())}:{}))
+          {courants:Object.assign({},c.doc.courants||{},simCarteCourants())}:{}));
+    const rep=await fetch((SIM_BASE||"")+SIM_CARTE_ROUTE,{
+      method:"POST", headers:envoi.headers, body:envoi.body
     });
     let corps=null;
     try{corps=await rep.json();}catch(e){corps=null;}

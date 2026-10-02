@@ -267,7 +267,7 @@ côtés. Si c'est le même plan, le retour suit : rien à dire. S'il change :
 | Cas | Ce qui porte le retour | Ce que dit le rapport |
 | :--- | :--- | :--- |
 | même net des deux côtés (GND → GND) | le via de masse le plus proche | la distance, l'inductance de boucle, le front le plus raide supporté |
-| nets différents (GND → alimentation) | la **cavité** des deux plans sur sa forme réelle (recouvrement maillé à 0,5 mm, modes propres compris) et tous les ponts de la carte, chacun à sa position : condensateurs directs, et chaînes de 0 Ω vers un autre rail découplé (VDDIO → R211 → VDD → R229 → Vout sur P01x291) | le pont le plus proche (repère ou chaîne, longueur de la boucle), la résonance de la traversée si elle réfléchit (fréquence, Ω, \|Γ\|), ou « aucun découplage entre ces plans sur toute la carte » |
+| nets différents (GND → alimentation) | la **cavité** des deux plans sur sa forme réelle (recouvrement maillé de 0,25 à 1 mm selon sa taille, modes propres et rayonnement des bords compris) et tous les ponts de la carte, chacun à sa position : condensateurs directs, et chaînes de 0 Ω vers un autre rail découplé (VDDIO → R211 → VDD → R229 → Vout sur P01x291) | le pont le plus proche (repère ou chaîne, longueur de la boucle), la résonance de la traversée si elle réfléchit (fréquence, Ω, \|Γ\|) et, quand le via est sur un îlot du recouvrement, sa fourchette selon le lien de l'îlot, ou « aucun découplage entre ces plans sur toute la carte » |
 | pas de cuivre de plan au droit du via | rien | critique d'office |
 | net des plans inconnu | ? | vigilance : l'empilage ne dit pas si un via de masse suffit |
 

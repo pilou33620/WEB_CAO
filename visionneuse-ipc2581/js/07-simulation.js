@@ -1291,14 +1291,56 @@ function simAireEnRegardIpc(cuA, cuB, x, y){
     const r = simAireCommune(simCuivreDuNetIpc(cA, nA), simCuivreDuNetIpc(cB, nB),
                              SIM_AIRE_PAS_MM / k);
     const r3 = v => Math.round(v * k * 1000) / 1000;
-    /* et la grille du recouvrement à 0,5 mm, pour la cavité sur sa forme réelle */
+    /* et la grille du recouvrement, au pas que sa taille demande, pour la
+       cavité sur sa forme réelle ; ses îlots, reliés par le vrai chemin des
+       deux nets, que le serveur résout (`simReseauNets`) */
+    const pasG = simPasGrille(r.aire * k * k);
     const g = r.aire > 0 ? simGrilleCommune(simCuivreDuNetIpc(cA, nA), simCuivreDuNetIpc(cB, nB),
-                                            SIM_GRILLE_PAS_MM / k) : null;
+                                            pasG / k) : null;
+    let grille = g ? {pas: pasG, x0: r3(g.x0), y0: r3(g.y0), lignes: g.lignes} : null;
+    if(grille){
+      try{
+        const reseau = simReseauNetsIpc(grille, [pA, pB], [nA, nB]);
+        if(reseau) grille.reseau = reseau;
+      }catch(e){ /* sans réseau, le serveur estime à 1 nH/mm */ }
+    }
     SIM_AIRE_CACHE.set(cle, r.aire > 0 ? {aire: r.aire * k * k,
       rect: {x0: r3(r.x1), y0: r3(r.y1), a: r3(r.x2 - r.x1), b: r3(r.y2 - r.y1)},
-      grille: g ? {pas: SIM_GRILLE_PAS_MM, x0: r3(g.x0), y0: r3(g.y0), lignes: g.lignes} : null} : null);
+      grille: grille} : null);
   }
   return SIM_AIRE_CACHE.get(cle);
+}
+
+/* Le réseau des deux nets qui relie les îlots d'une grille de cavité
+   (`simReseauNets`). `plans` : indices LT.cu des deux plans ; `nets` : leurs
+   noms. */
+function simReseauNetsIpc(grille, plans, nets){
+  const k = simKUnite();
+  const idx = n => V.modele.nets.indexOf(n);
+  const ep = (a, b) => { let t = 0; for(let g = Math.min(a, b); g < Math.max(a, b); g++)
+    t += (LT.gap[g] || {}).t || 0; return t; };
+  const h = cu => {
+    let best = Infinity;
+    for(let j = 0; j < LT.cu.length; j++) if(j !== cu && LT.cu[j].plan) best = Math.min(best, ep(cu, j));
+    return isFinite(best) ? best : ep(0, LT.cu.length - 1);
+  };
+  const parNom = new Map(LT.cu.map((c, i) => [c.nom, i]));
+  return simReseauNets({
+    grille: grille, k: k, plans: plans, nets: nets, nCouches: LT.cu.length, marge: 15,
+    cuivre: (cu, net) => simCuivreDuNetIpc(LT.cu[cu].couche, net),
+    pistes: (cu, net) => (V.modele.pistes || [])
+      .filter(p => p.c === LT.cu[cu].couche && p.n === idx(net))
+      .map(p => ({w: (p.w || 0.2) * k, p: p.p})),
+    vias: net => (V.modele.percages || [])
+      .filter(t => t.n === idx(net) && t.p === "PLATED")
+      .map(t => {
+        /* la portée de ses pastilles ; un trou métallisé qui n'en déclare
+           aucune (P01x291 : la plupart) traverse tout le cuivre */
+        const cs = (((V.modele.padstacks || {})[t.ps] || {}).pads || [])
+          .map(q => parNom.get(q.c)).filter(i => i != null);
+        return {x: t.x * k, y: t.y * k, couches: cs.length > 1 ? cs : LT.cu.map((_, i) => i)};
+      }),
+    h: h, ep: ep});
 }
 
 /* Le cuivre du net `net` sur la couche, au format de `simAireCommune`. */

@@ -420,6 +420,7 @@ import traceback
 import urllib.parse
 import urllib.request
 import webbrowser
+import zlib
 try:
     # Sous Pyto (iPad), ssl peut manquer : le serveur doit demarrer quand
     # meme, seuls les telechargements https s'en passeront.
@@ -561,6 +562,26 @@ except Exception as _exc:                              # noqa: BLE001
 # Toutes les pistes et toutes les pastilles placees d'une carte : 12 000
 # pastilles sur quatre couches font quelques mega-octets de JSON.
 MAX_ANALYSE = 32 * 1024 * 1024
+
+
+def _deplier_grilles(doc):
+    """La grille de chaque cavite part UNE fois, dans `cavites_grilles` ; les
+    vias n'en portent que la cle (`simCorpsJson`). On la remet en place, le
+    meme objet pour tous les vias de la cavite."""
+    table = doc.pop("cavites_grilles", None) if isinstance(doc, dict) else None
+    if not table:
+        return doc
+    pile = [doc]
+    while pile:
+        o = pile.pop()
+        if isinstance(o, dict):
+            g = o.get("cavite_grille")
+            if isinstance(g, str):
+                o["cavite_grille"] = table.get(g)
+            pile.extend(v for v in o.values() if isinstance(v, (dict, list)))
+        elif isinstance(o, list):
+            pile.extend(v for v in o if isinstance(v, (dict, list)))
+    return doc
 
 
 # Un IPC-2581 est un XML bavard : une carte de taille moyenne pese quelques
@@ -2541,8 +2562,22 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurIPC(413, "Document trop grand : %.1f Mo, maximum %d Mo"
                                  % (taille / 1048576.0, plafond // 1048576))
         corps = self.rfile.read(taille)
+        # LE CORPS ARRIVE COMPRESSE quand la page l'annonce (`simCorpsJson`).
+        # Le plafond garde son sens : on ne decompresse pas au-dela de huit
+        # fois ce qu'il autorise -- un corps de 1 Mo qui se deplie en 1 Go
+        # n'est pas un document.
+        if (self.headers.get("Content-Encoding") or "").strip().lower() == "gzip":
+            d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            try:
+                brut = d.decompress(corps, 8 * plafond)
+            except zlib.error as exc:
+                raise ErreurIPC(400, "Document gzip illisible : %s" % exc)
+            if d.unconsumed_tail:
+                raise ErreurIPC(413, "Document décompressé trop grand : plus de %d Mo"
+                                     % (8 * plafond // 1048576))
+            corps = brut
         try:
-            return json.loads(corps.decode("utf-8"))
+            return _deplier_grilles(json.loads(corps.decode("utf-8")))
         except (ValueError, UnicodeDecodeError) as exc:
             raise ErreurIPC(400, "Document JSON illisible : %s" % exc)
 
@@ -2931,7 +2966,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(204)
             self.send_header("Access-Control-Allow-Methods",
                              "GET, POST, PUT, DELETE, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Content-Encoding")
             self._cors()
             self.end_headers()
             return
@@ -2946,7 +2981,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         self.send_response(204)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Content-Encoding")
         self._cors()
         self.end_headers()
 

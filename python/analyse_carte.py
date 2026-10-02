@@ -521,6 +521,13 @@ def retours(doc, couches, reg, unite, notes, se):
             if 0 < i < len(zt) - 1 and gs[i] > GAMMA_VIGILANCE:
                 resonance = " ; la traversée résonne à %s (%.0f Ω, |Γ| %.0f %%)" % (
                     _hz(fs[i]), zt[i], 100 * gs[i])
+            # SUR UN ILOT, la resonance depend du chemin qui le relie a la cavite :
+            # on donne la fourchette (du couplage parfait a aucun couplage)
+            if (cav.get("grille") or {}).get("via_sur_ilot"):
+                fo = se.traversee_fourchette(cav)
+                if fo:
+                    resonance += " ; sur un îlot du recouvrement, entre %s et %s selon son lien" % (
+                        _hz(min(fo["f_bas"], fo["f_haut"])), _hz(max(fo["f_bas"], fo["f_haut"])))
         tient = (" ; tient des fronts jusqu'à %.2g ns" % (max(limites) * 1e9)
                  if limites else "")
         out.append(dict(base, severite=sev, frequences=freqs,

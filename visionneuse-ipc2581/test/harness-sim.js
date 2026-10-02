@@ -79,7 +79,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simRetoursIpc","SIM_RAYON_RETOUR_IPC","SIM_RAYON_RETOUR_OPTIMAL_IPC",
   /* Les découplages qui joignent deux plans de nets différents : c'est par
      eux que le retour passe quand aucun via de masse ne peut refermer. */
-  "simPontsPlansIpc","simValeurFaradsIpc","simCaviteIpc","simAireEnRegardIpc","simPontsCarte","simOhms",
+  "simPontsPlansIpc","simValeurFaradsIpc","simCaviteIpc","simAireEnRegardIpc","simPontsCarte","simOhms","simReseauNets","simPasGrille","simLignesCuivre",
   "simBornesNetsIpc","simNbBornesIpc","simPlansCuDeIpc",
   "simNetPlanEnIpc","simPlansNetsEnIpc","simPlansJointsEnIpc",
   "simPlansSansCuivreIpc",
@@ -3331,10 +3331,11 @@ T("un plan n'est pas d'un seul net : le net se mesure AU POINT",()=>{
   const rc=ilot.rect;
   if(Math.abs(rc.x0-2)>0.3||Math.abs(rc.a-10)>0.3||Math.abs(rc.y0-2)>0.3||Math.abs(rc.b-36)>0.3)
     throw new Error("rectangle de la cavité : "+JSON.stringify(rc));
-  /* et sa grille à 0,5 mm : 20 × 72 cellules, de x 2 et y 2 */
+  /* et sa grille au pas que sa taille demande : 360 mm², donc 0,25 mm,
+     40 × 144 cellules, de x 2 et y 2 */
   const gr=ilot.grille;
   const cellules=gr.lignes.reduce((n,[j,c])=>n+c.reduce((m,v,i)=>m+(i%2?v:-v),0),0);
-  if(gr.pas!==0.5||gr.lignes.length!==72||cellules!==1440||Math.abs(gr.x0-2)>1e-9||Math.abs(gr.y0-2)>1e-9)
+  if(gr.pas!==0.25||gr.lignes.length!==144||cellules!==5760||Math.abs(gr.x0-2)>1e-9||Math.abs(gr.y0-2)>1e-9)
     throw new Error("grille de la cavité : "+JSON.stringify({pas:gr.pas,x0:gr.x0,y0:gr.y0,n:gr.lignes.length,cellules}));
   const fc=simCaviteIpc({x:6*k, y:20*k}, 0, 3);
   if(Math.abs(fc.aire_plans_mm2-360)>1||fc.aire_plans_majoree||!fc.cavite_rect)
@@ -3367,6 +3368,42 @@ T("les ponts de la carte : directs, et par un 0 Ω vers un rail découplé",()=>
     throw new Error("ESL du relais sans boîtier : "+r.indirects[0].esl_nH);
   if(simOhms("4R7")!==4.7||simOhms("0R")!==0||simOhms("1k5")!==1500||simOhms("100nF")!==Infinity)
     throw new Error("lecture des ohms");
+});
+
+T("les îlots d'une cavité partent avec le réseau de leurs nets",()=>{
+  /* Le pas suit la taille : 0,25 mm en dessous de 1 250 mm², 0,5 mm vers
+     2 500, jamais plus de 1 mm. */
+  if(simPasGrille(360)!==0.25||simPasGrille(2477)!==0.5||simPasGrille(1e6)!==1)
+    throw new Error("pas de grille : "+[simPasGrille(360),simPasGrille(2477),simPasGrille(1e6)]);
+  /* Deux bandes de recouvrement (x 0..10 et 20..30 mm) ; le net A s'interrompt
+     entre elles et une piste de 0,3 mm sur la couche 0 les relie par deux
+     perçages, le net B est plein. Le réseau part : les cellules de chaque net
+     par couche, la piste, les perçages ; le serveur en tire la self. */
+  const pas=0.5, rect=(x1,y1,x2,y2)=>[x1,y1,x2,y1,x2,y2,x1,y2];
+  const lignes=[]; for(let j=0;j<20;j++) lignes.push([j,[0,20,40,60]]);
+  const cuivre=(cu,net)=>cu===1&&net==="A"?{plein:[[rect(0,0,10,10)],[rect(20,0,30,10)]],vide:[]}
+                        :cu===2&&net==="B"?{plein:[[rect(0,0,30,10)]],vide:[]}:{plein:[],vide:[]};
+  const o={grille:{pas,x0:0,y0:0,lignes}, k:1, plans:[1,2], nets:["A","B"], nCouches:3, marge:5,
+           cuivre, pistes:(cu,net)=>cu===0&&net==="A"?[{w:0.3,p:[9,5,21,5]}]:[],
+           vias:net=>net==="A"?[{x:9,y:5,couches:[0,1]},{x:21,y:5,couches:[0,1]}]:[],
+           h:cu=>cu===0?0.2:0.71, ep:()=>0.2};
+  const r=simReseauNets(o);
+  if(!r||r.nets.length!==2) throw new Error("réseau : "+JSON.stringify(r));
+  const a=r.nets[0], b=r.nets[1];
+  const nb=c=>c.lignes.reduce((n,[j,s])=>n+s.reduce((m,v,i)=>m+(i%2?v:-v),0),0);
+  if(a.plan!==1||a.couches.length!==1||nb(a.couches[0])!==800||a.pistes.length!==1||a.vias.length!==2||a.couches[0].fractions.length)
+    throw new Error("net A : "+JSON.stringify({plan:a.plan,couches:a.couches.length,cel:nb(a.couches[0]),p:a.pistes.length,v:a.vias.length}));
+  if(b.plan!==2||nb(b.couches[0])!==1200) throw new Error("net B : "+nb(b.couches[0]));
+  if(r.ep.length!==2) throw new Error("épaisseurs : "+r.ep);
+  /* UN VOILE PLUS FIN QU'UNE CELLULE : une bande de 0,2 mm de large, décalée
+     entre deux centres de cellules. Lue par centre elle disparaissait ; lue
+     par couverture elle reste, une cellule par rangée, à 40 % de cuivre. */
+  const voile=simLignesCuivre({plein:[[rect(2.1,0,2.3,5)]],vide:[]}, 0.5, 0, 0, 0, 9, 0, 9, 1);
+  if(voile.lignes.length!==10||voile.fractions.length!==10||Math.abs(voile.fractions[0][2]-0.4)>0.01)
+    throw new Error("voile : "+JSON.stringify(voile));
+  /* sans îlot, rien ne part */
+  if(simReseauNets(Object.assign({},o,{grille:{pas,x0:0,y0:0,lignes:lignes.map(([j])=>[j,[0,60]])}})))
+    throw new Error("une seule composante : pas de réseau");
 });
 
 T("un via au centre de son antipad reconnaît le plan de masse qui l'entoure",()=>{

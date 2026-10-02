@@ -112,6 +112,22 @@ def test_routes():
                      headers={"Content-Type": "application/json"})
         res = conn.getresponse()
         assert res.status == 422 and "cao-analyse-carte-1" in json.loads(res.read().decode("utf-8"))["detail"]
+        # le meme document, compresse en gzip et avec une table de grilles :
+        # la page envoie ainsi les grosses cartes (`simCorpsJson`)
+        import gzip
+        doc_g = dict(doc, cavites_grilles={"g0": {"pas": 0.5, "lignes": []}},
+                     vias=[{"x": 0, "y": 0, "cavite_grille": "g0"}])
+        conn.request("POST", "/api/analyse-carte", body=gzip.compress(json.dumps(doc_g).encode("utf-8")),
+                     headers={"Content-Type": "application/json", "Content-Encoding": "gzip"})
+        res = conn.getresponse()
+        assert res.status == 200, res.read()
+        assert [k["regle"] for k in json.loads(res.read().decode("utf-8"))["constats"]][:2] == ["orphelin", "angle_droit"]
+        depl = web_CAO._deplier_grilles(json.loads(json.dumps(doc_g)))
+        assert "cavites_grilles" not in depl and depl["vias"][0]["cavite_grille"]["pas"] == 0.5, depl
+        conn.request("POST", "/api/analyse-carte", body=b"pas du gzip",
+                     headers={"Content-Type": "application/json", "Content-Encoding": "gzip"})
+        res = conn.getresponse()
+        assert res.status == 400 and "gzip" in json.loads(res.read().decode("utf-8"))["detail"]
         print("[PASS] GET/POST /api/analyse-carte")
 
         # 5. POST /api/datasheet/telecharger
