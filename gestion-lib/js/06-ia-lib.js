@@ -259,7 +259,7 @@ DIRECTIVES STRICTES :
        appelle `gemini-3.8-flash` avec un budget de réflexion élevé, et non un
        modèle qui porterait ce nom — il n'en existe pas. */
     const conf = iaLibConfModele(IA_LIB.modele);
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(conf.endpoint)}:generateContent?key=${encodeURIComponent(IA_LIB.cleApi)}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(conf.endpoint)}:generateContent`;
 
     /* GEMMA 4 GÈRE NATIVEMENT `systemInstruction` : la directive part donc dans
        le champ prévu pour elle, et non noyée en tête du tour utilisateur. C'est
@@ -291,7 +291,8 @@ DIRECTIVES STRICTES :
 
     const appelerApi = async (body) => fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // la clé en en-tête, pas dans l'URL : une URL finit dans les journaux et les proxys
+      headers: { "Content-Type": "application/json", "x-goog-api-key": IA_LIB.cleApi },
       body: JSON.stringify(body)
     });
 

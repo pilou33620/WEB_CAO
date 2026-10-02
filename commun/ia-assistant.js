@@ -1743,8 +1743,7 @@
        ------------------------------------------------------------------------- */
     const conf = confModele(_modele);
     const url = "https://generativelanguage.googleapis.com/v1beta/models/" +
-                encodeURIComponent(conf.endpoint) +
-                ":generateContent?key=" + encodeURIComponent(_cleApi);
+                encodeURIComponent(conf.endpoint) + ":generateContent";
 
     const contents = [];
 
@@ -1788,7 +1787,8 @@
     const appelerApi = async (body) => {
       return await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // la clé en en-tête, pas dans l'URL : une URL finit dans les journaux et les proxys
+        headers: { "Content-Type": "application/json", "x-goog-api-key": _cleApi },
         body: JSON.stringify(body)
       });
     };

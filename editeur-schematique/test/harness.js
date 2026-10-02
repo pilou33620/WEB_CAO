@@ -16,7 +16,12 @@ const fs=require("fs");
 const path=require("path");
 const ROOT=path.join(__dirname,"..","..");
 
-const CSV_PATH=path.join(ROOT,"LIB_composants.csv");
+/* La LIB réelle, comme gestion-lib/test/banc-catalogue.js : WEB_CAO_LIB, sinon
+   LIB/ à côté de l'outil, sinon celle de WEB_SUITE (../PROJETS/LIB_CAO, clonée
+   là par ci.yml). La racine du dépôt n'a plus de LIB_composants.csv depuis le
+   déménagement de la LIB : l'essai y était sauté en silence. */
+const CSV_PATH=[process.env.WEB_CAO_LIB,path.join(ROOT,"LIB"),path.join(ROOT,"..","PROJETS","LIB_CAO")]
+  .filter(Boolean).map(d=>path.join(d,"LIB_composants.csv")).find(p=>fs.existsSync(p))||"";
 const CSV_TEXT=fs.existsSync(CSV_PATH)?fs.readFileSync(CSV_PATH,"utf8"):null;
 
 const dom=require(path.join(ROOT,"commun","test","dom-stub.js")).install({
