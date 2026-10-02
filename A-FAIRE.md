@@ -108,7 +108,7 @@ lib/
 ### Vérification de la carte entière
 
 Une analyse de toute la carte, tous les nets, sans sélection, qui range ses
-constats du plus grave au moins grave (famille « DRC — Règles de conception » du panneau). Mode
+constats du plus grave au moins grave (famille « Audit de la carte » du panneau). Mode
 d'emploi : [docs/verification-carte.md](docs/verification-carte.md). Les règles
 électriques se jugent à **trois fréquences**, avec pour chaque net le front
 effectif min(front de sa classe, 10 % de la période), au genou 0,35 / t_r.

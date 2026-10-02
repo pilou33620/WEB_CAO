@@ -5679,9 +5679,11 @@ function simChamp(id,titre,large){
    ferait sortir un pave numerique sur une tablette pour ecrire « U7 VDD ». Il
    porte la meme classe que les autres — c'est le meme panneau — plus `simTxt`,
    qui lui donne sa largeur : un nom est plus long qu'un nombre. `sous` est
-   l'infobulle de ce qui NE se renomme pas : le net et la couche. */
-function simChampTexte(id,valeur,titre,sous){
+   l'infobulle de ce qui NE se renomme pas : le net et la couche. `ph` : le
+   texte grisé du champ vide. */
+function simChampTexte(id,valeur,titre,sous,ph){
   return '<input id="'+id+'" type="text" spellcheck="false"'+
+         (ph?' placeholder="'+simEsc(ph)+'"':'')+
          ' class="simChamp simTxt" value="'+simEsc(valeur||"")+'"'+
          ' title="'+simEsc(titre+(sous?" — "+sous:""))+'">';
 }
@@ -6034,7 +6036,7 @@ function simBrancherRetourFiche(){
 }
 
 /* ==========================================================================
-   VÉRIFICATION DE LA CARTE (famille « DRC — Règles de conception »)
+   VÉRIFICATION DE LA CARTE (famille « Audit de la carte »)
    --------------------------------------------------------------------------
    Toute la carte, tous les nets, sans sélection, jugée par le serveur
    (python/analyse_carte.py, route /api/analyse-carte) : les angles des
@@ -6292,33 +6294,62 @@ function simCarteNomNet(net){
   return net===SIM_CARTE_CARTE?"toute la carte":(net||"sans net");
 }
 
+/* UN FRONT QUI NE TIENT PAS À SA FRÉQUENCE. La plus haute fréquence où la
+   classe est jugée — la dernière colonne, plafonnée par sa f max — fixe une
+   période T : un front plus long que T/2 n'atteint jamais son niveau, c'est
+   presque toujours une faute d'unité (100 ns au lieu de 100 ps). Le serveur ne
+   refuse rien — il borne le front à 10 % de T — : on le dit ici, sans bloquer.
+   Sous 10 ps, aucune carte ne suit : faute d'unité aussi. Rend des phrases. */
+function simCarteFrontsAvert(r){
+  const fHaut=Math.max(...r.frequences), out=[];
+  for(const k in r.tr){
+    const tr=r.tr[k], f=r.fmax[k]>0?Math.min(r.fmax[k],fHaut):fHaut;
+    if(!(tr>0))continue;
+    if(k==="RF"&&r.porteuse>0)continue;           // jugés à la porteuse, pas au front
+    if(tr>0.5/f)
+      out.push(k+" : front de "+simDureeXt(tr)+", plus long que la demi-période à "+
+               simCarteF(f)+" ("+simDureeXt(0.5/f)+") — le signal n'atteint jamais "+
+               "son niveau. Unité du front, ou f max de la classe ? Le calcul le "+
+               "ramènera à "+simDureeXt(0.1/f)+".");
+    else if(tr<1e-11)
+      out.push(k+" : front de "+simDureeXt(tr)+", sous 10 ps — aucune techno de "+
+               "carte ne monte aussi vite. Unité du front ?");
+  }
+  return out;
+}
+function simCarteAvertEcrire(){
+  const e=simEl("simCarteAvert");
+  if(!e)return;
+  const L=simCarteFrontsAvert(SIM_CARTE.reglages);
+  e.innerHTML="<span>"+L.map(m=>"⚠ "+simEsc(m)).join("<br>")+"</span>";
+  e.style.display=L.length?"":"none";
+}
+
 function simCorpsCarte(){
   const champ=(id,titre,u)=>'<span class="simGr">'+simChamp(id,titre)+
     '<span class="simU">'+u+'</span></span>';
   const champU=(id,titre,quoi,liste)=>'<span class="simGr">'+simChamp(id,titre)+
     simChampUnite(id+"U",quoi,liste)+'</span>';
-  let fronts="";
-  for(const k in SIM_CARTE.reglages.tr)
-    fronts+='<span class="simGr"><span class="pnl-lbl">'+simEsc(k)+'</span>'+
+  /* UN TABLEAU, UNE LIGNE PAR CLASSE : front, f max et Z₀ visée se lisent
+     côte à côte. Trois rangées qui répétaient chacune les six noms de classe
+     ne disaient pas qu'il s'agissait des mêmes nets. */
+  const r=SIM_CARTE.reglages;
+  let classes="";
+  for(const k in r.tr)
+    classes+='<tr><td>'+simEsc(k)+'</td><td>'+
       champU("simCarteTr"+k,"Le front de montée d'un net de classe « "+k+
              " » : celui de la techno qui le pilote. À chaque fréquence, "+
              "il est borné par 10 % de la période.","ce front",
-             SIM_UNITES_TR)+'</span>';
-  let z0c="";
-  for(const k in SIM_CARTE.reglages.z0c)
-    z0c+='<span class="simGr"><span class="pnl-lbl">'+simEsc(k)+'</span>'+
-      champ("simCarteZ0c"+k,"La Z₀ visée pour un net de classe « "+k+" » : "+
-            "son impédance se juge face à elle, la réflexion de ses vias et "+
-            "de ses fentes aussi. Vide : le Z₀ de la carte"+(k==="Analogique"?
-            " — et un net Analogique sans cible ne se compare qu'à lui-même":"")+
-            ".","Ω")+'</span>';
-  let fmax="";
-  for(const k in SIM_CARTE.reglages.fmax)
-    fmax+='<span class="simGr"><span class="pnl-lbl">'+simEsc(k)+'</span>'+
+             SIM_UNITES_TR)+'</td><td>'+
       champU("simCarteFmax"+k,"La fréquence qu'un net de classe « "+k+" » ne "+
              "dépasse jamais (un I2C ne monte pas à 100 MHz). Au-delà, la "+
              "colonne le juge à cette fréquence. Vide : sans limite.",
-             "cette fréquence")+'</span>';
+             "cette fréquence")+'</td><td>'+
+      (k in r.z0c?champ("simCarteZ0c"+k,"La Z₀ visée pour un net de classe « "+k+
+            " » : son impédance se juge face à elle, la réflexion de ses vias "+
+            "et de ses fentes aussi. Vide : le Z₀ de la carte"+(k==="Analogique"?
+            " — et un net Analogique sans cible ne se compare qu'à lui-même":"")+
+            ".","Ω"):'<span class="simU">—</span>')+'</td></tr>';
   return '<div class="pnl-bar simBarFixe">'+
     '<button class="tb mini on" id="simCarteGo" title="Juger toutes les '+
       'pistes de la carte, tous nets confondus">▶ Vérifier la carte</button>'+
@@ -6332,36 +6363,45 @@ function simCorpsCarte(){
       'title="Peindre tous les constats sur la carte à la fois, à la couleur '+
       'de leur sévérité">◎ Tout peindre</button>'+
   '</div>'+
-  '<div class="pnl-bar"><span class="pnl-lbl">fréquences</span>'+
+  '<div class="pnl-bar"><span class="pnl-lbl">fréquences d\'analyse</span>'+
     [0,1,2].map(i=>champU("simCarteF"+i,"Une des trois fréquences de "+
-      "jugement des règles électriques.","cette fréquence")).join("")+
-    '<span class="pnl-lbl">Z₀</span>'+champ("simCarteZ0","L'impédance de "+
-      "ligne supposée pour juger la réflexion d'un via.","Ω")+
-    '<span class="pnl-lbl">budget</span>'+champ("simCarteBudget","La "+
+      "jugement des règles électriques : une colonne du rapport chacune.",
+      "cette fréquence")).join("")+
+  '</div>'+
+  '<div class="pnl-bar"><span class="pnl-lbl">Z₀ des lignes</span>'+
+    champ("simCarteZ0","L'impédance de ligne supposée pour juger la réflexion "+
+      "d'un via, quand la classe n'a pas sa propre cible.","Ω")+
+    '<span class="pnl-lbl">Z diff des paires</span>'+champ("simCarteZdiff",
+      "L'impédance différentielle visée pour les paires (100 Ω ; USB 90 Ω).","Ω")+
+    '<span class="pnl-lbl">diaphonie tolérée</span>'+champ("simCarteBudget","La "+
       "diaphonie tolérée sur une victime, en % de l'agresseur. Au-delà de la "+
       "moitié : vigilance.","%")+
-    '<span class="pnl-lbl">Z diff</span>'+champ("simCarteZdiff","L'impédance "+
-      "différentielle visée pour les paires (100 Ω ; USB 90 Ω).","Ω")+
     '<span class="pnl-lbl">porteuse RF</span>'+champU("simCartePorteuse",
       "La fréquence de la radio (868 MHz pour du LoRa). Remplie, les nets RF "+
       "se jugent à cette porteuse dans toutes les colonnes, au lieu du front "+
       "RF. Vide : front RF.","la porteuse")+
   '</div>'+
-  '<div class="pnl-bar"><span class="pnl-lbl">fronts</span>'+fronts+'</div>'+
-  '<div class="pnl-bar"><span class="pnl-lbl">f max</span>'+fmax+'</div>'+
-  '<div class="pnl-bar"><span class="pnl-lbl">Z₀ par classe</span>'+z0c+'</div>'+
-  '<div class="pnl-bar"><span class="pnl-lbl">porteuses par net</span>'+
-    simChampTexte("simCartePorteuses",SIM_CARTE.reglages.porteuses,
+  '<div class="pnl-bar"><table class="simTab simTabClasses"><tr>'+
+    '<th>Classe de net</th>'+
+    '<th title="Le temps de montée de la techno qui pilote la classe">Front de montée</th>'+
+    '<th title="La fréquence que la classe ne dépasse jamais ; vide : sans limite">F max</th>'+
+    '<th title="L\'impédance visée ; vide : le Z₀ des lignes">Z₀ visée</th>'+
+  '</tr>'+classes+'</table></div>'+
+  '<div class="pnl-bar simCarteAvert" id="simCarteAvert" style="display:none"></div>'+
+  '<div class="pnl-bar"><span class="pnl-lbl">porteuse d\'un net</span>'+
+    simChampTexte("simCartePorteuses",r.porteuses,
       "Une porteuse propre à un net, devant celle des nets RF : une carte "+
       "LoRa + NFC se juge à 868 MHz sur l'une et à 13,56 MHz sur l'autre. "+
       "« NET=valeur unité », séparés par des points-virgules ; sans unité, "+
-      "des MHz.","NFC_ANT=13,56 MHz ; LORA_RF=868 MHz")+
+      "des MHz.","NFC_ANT=13,56 MHz ; LORA_RF=868 MHz",
+      "ex. NFC_ANT=13,56 MHz ; LORA_RF=868 MHz")+
   '</div>'+
-  '<div class="pnl-bar"><span class="pnl-lbl">courants par rail</span>'+
-    simChampTexte("simCarteCourants",SIM_CARTE.reglages.courants,
+  '<div class="pnl-bar"><span class="pnl-lbl">courant d\'un rail</span>'+
+    simChampTexte("simCarteCourants",r.courants,
       "Le courant que tire chaque rail, pour la règle de courant (IPC-2221) : "+
       "sans lui, seuls les étranglements sortent, en info. « NET=valeur », "+
-      "en A (ou mA), séparés par des points-virgules.","VCC=0,5 ; 3V3=1,2 A")+
+      "en A (ou mA), séparés par des points-virgules.","VCC=0,5 ; 3V3=1,2 A",
+      "ex. VCC=0,5 A ; 3V3=1,2 A")+
     '<button class="tb mini" id="simCarteCourantsDC" title="Reprendre les '+
       'courants des charges posées dans l\'onglet Chute DC, additionnés par '+
       'rail">← Chute DC</button>'+
@@ -6390,15 +6430,18 @@ function simBrancherCarte(){
     this.classList.toggle("on",SIM_CARTE.tout);
     if(SIM_ED&&SIM_ED.redessiner)SIM_ED.redessiner();
   };
-  /* `vide` : un champ vide vaut 0 (« sans limite ») et s'affiche vide. */
+  /* `vide` : un champ vide vaut 0 (« sans limite ») et s'affiche vide, avec
+     ce texte grisé. */
   const lie=(id,lire,ecrire,vide)=>{
     const e=simEl(id);
     if(!e)return;
     e.value=vide&&!lire()?"":simNbLibre(lire());
+    if(vide)e.placeholder=vide;
     e.oninput=function(){
       const v=parseFloat(String(this.value).replace(",","."));
       if(v>0)ecrire(v);
       else if(vide&&!String(this.value).trim())ecrire(0);
+      simCarteAvertEcrire();
     };
   };
   /* Un champ à unité : la valeur vit en Hz ou en s. En changer GARDE le
@@ -6423,10 +6466,11 @@ function simBrancherCarte(){
   for(const k in r.tr)lieU("simCarteTr"+k,SIM_UNITES_TR,()=>u.tr[k],c=>{u.tr[k]=c;},
                           ()=>r.tr[k],v=>{r.tr[k]=v;});
   for(const k in r.fmax)lieU("simCarteFmax"+k,SIM_UNITES,()=>u.fmax[k],c=>{u.fmax[k]=c;},
-                          ()=>r.fmax[k],v=>{r.fmax[k]=v;},true);
+                          ()=>r.fmax[k],v=>{r.fmax[k]=v;},"∞");
   lieU("simCartePorteuse",SIM_UNITES,()=>u.porteuse,c=>{u.porteuse=c;},
-       ()=>r.porteuse,v=>{r.porteuse=v;},true);
-  for(const k in r.z0c)lie("simCarteZ0c"+k,()=>r.z0c[k],v=>{r.z0c[k]=v;},true);
+       ()=>r.porteuse,v=>{r.porteuse=v;},"aucune");
+  for(const k in r.z0c)lie("simCarteZ0c"+k,()=>r.z0c[k],v=>{r.z0c[k]=v;},"Z₀");
+  simCarteAvertEcrire();
   for(const [id,cle] of [["simCartePorteuses","porteuses"],["simCarteCourants","courants"]]){
     const e=simEl(id);
     if(e)e.oninput=function(){r[cle]=String(this.value);};
@@ -18669,7 +18713,10 @@ const SIM_FAMILLES=[
    quoi:"Ce qu'une chaîne RF laisse passer d'un port à l'autre : pistes, "+
         "composants et adaptation, entre deux impédances complexes.",
    analyses:["s21"]},
-  {cle:"carte", court:"DRC", nom:"Règles de conception",
+  /* PAS « DRC », PAS « Règles de conception » : ce sont déjà le contrôle
+     géométrique de l'éditeur et sa fenêtre de règles. Ici, la carte entière
+     est jugée en fréquence. */
+  {cle:"carte", court:"AUDIT", nom:"Audit de la carte",
    quoi:"Toute la carte, tous les nets, sans sélection : fabrication (angles, "+
         "bouts orphelins, bord), empilage, et à trois fréquences l'impédance, "+
         "les retours, les fentes, la couture, la diaphonie, les paires et le "+

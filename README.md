@@ -130,7 +130,7 @@ Stocks et prix réels JLCPCB via la passerelle MCP [pcbparts.dev](https://pcbpar
 
 ## 📡 Simulation SI / PI
 
-Le bouton **« Simulation EM… »** (Éditeur PCB et Visionneuse IPC-2581) ouvre un panneau organisé en **quatre familles et neuf analyses**. Un clic sur le cuivre choisit ce qu'on analyse ; les résultats sont peints sur la carte. La famille **DRC — Règles de conception**, elle, juge toute la carte sans sélection.
+Le bouton **« Simulation EM… »** (Éditeur PCB et Visionneuse IPC-2581) ouvre un panneau organisé en **quatre familles et neuf analyses**. Un clic sur le cuivre choisit ce qu'on analyse ; les résultats sont peints sur la carte. La famille **Audit de la carte**, elle, juge toute la carte sans sélection.
 
 ### Intégrité du signal (SI)
 
@@ -155,7 +155,7 @@ Le bouton **« Simulation EM… »** (Éditeur PCB et Visionneuse IPC-2581) ouvr
 | :--- | :--- | :--- |
 | **S21** | Le S<sub>21</sub> entre deux ports d'impédance **complexe** — la sortie d'une puce radio (ex. 14 + 8j Ω) et un connecteur U.FL ou une antenne — à travers tout le réseau qui les relie, dans l'**éditeur PCB comme dans la visionneuse**, chacun avec son empilage : pistes calculées par le solveur de l'onglet Impédance (MoM, coudes, vias), **couplage** entre pistes du réseau en lignes couplées à N conducteurs avec pertes, capacité des **pastilles** résolue en 3D, **zones** et **coulées de masse** entières en maillage adaptatif creux sur leur cuivre rempli, dispersion des lignes couplées recoupées à leur écart local, pistes des **autres nets** dans les lignes couplées (l'énergie qui y part est comptée), **mutuelles des selfs** entre elles et avec les pistes (Neumann avec image dans le plan), **fentes du plan** de référence franchies (détour du retour, Ott), **domaine de validité** quasi-statique calculé (modes supérieurs, ondes de surface, rayonnement), broches annexes de la puce, composants par leur modèle **SPICE** Murata, un **.sNp** (actifs compris) ou un idéal. Bilan à f₀ (gain transducique, Z vue par la puce face à sa cible, pertes de désadaptation et dissipées), abaque de Smith, et **« et si »** par composant pour retoucher l'adaptation | `rf_reseau.py` v1.5.0 (analyse nodale, S généralisés) |
 
-### DRC — Règles de conception
+### Audit de la carte
 
 | Analyse | Ce qu'elle répond | Moteur |
 | :--- | :--- | :--- |

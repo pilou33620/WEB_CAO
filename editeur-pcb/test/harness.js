@@ -250,7 +250,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simChampTexte","SIM_XT","simRendreCrosstalk","simRendreRetour","simRendreCarte",
   "SIM_CARTE","simFicheCarte","simCarteTexte","simCarteReglagesDoc","cuLabel",
   "simCarteParNet","simCarteCourants","simCarteCourantsDC","simCarteMeta",
-  "simCarteTrace","simCarteCle","simCarteTri","simCarteNomCarte","SIM_CARTE_DEROG",
+  "simCarteTrace","simCarteFrontsAvert","simCarteCle","simCarteTri","simCarteNomCarte","SIM_CARTE_DEROG",
   "SIM_CARTE_REF","SIM",
   "simRendreImpedance","simRendreDiff","simDCCsvTexte","simDCJsonTexte",
   "simTermeDiff","simLireDiff","simLectureTexteDiff","simCourbeDiff","simFicheSDiff","simDiffExportS2p","simDb",
@@ -16792,7 +16792,7 @@ NET "GND"
 });
 
 /* ==========================================================================
-   Vérification de la carte (famille « DRC — Règles de conception ») : ce que l'éditeur envoie, et
+   Vérification de la carte (famille « Audit de la carte ») : ce que l'éditeur envoie, et
    le rapport qu'il en lit. Les règles elles-mêmes sont éprouvées côté serveur
    (python/test/banc-analyse-carte.py).
    ========================================================================== */
@@ -16859,6 +16859,17 @@ T("Vérification de la carte : un via qui plonge part avec son net, une masse no
   carteVide();
 });
 
+T("Vérification de la carte : un front qui ne tient pas à sa fréquence est signalé",()=>{
+  const r=JSON.parse(JSON.stringify(SIM_CARTE.reglages));
+  if(simCarteFrontsAvert(r).length)throw new Error("les défauts ne doivent rien signaler");
+  r.tr.Analogique=1e-6;                       // 1 µs à 1 MHz : plus que T/2
+  r.tr.RF=1e-13;                              // 0,1 ps : faute d'unité
+  const L=simCarteFrontsAvert(r);
+  if(L.length!==2||!/^RF/.test(L[0])||!/^Analogique/.test(L[1]))
+    throw new Error("attendu RF puis Analogique : "+L.join(" | "));
+  r.porteuse=868e6;
+  if(simCarteFrontsAvert(r).length!==1)throw new Error("avec une porteuse, le front RF ne compte plus");
+});
 T("Vérification de la carte : les réglages partent en unités du serveur",()=>{
   const d=simCarteReglagesDoc();
   if(d.frequences.join()!==[1e5,1e6,1e8].join()||d.budget!==0.05||d.z0!==50||

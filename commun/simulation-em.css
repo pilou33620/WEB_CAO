@@ -123,6 +123,12 @@ select.simUSel:focus{outline:none;border-color:var(--blue);color:var(--txt)}
    c'est simFAvertEcrire() qui l'affiche, pas un selecteur : `:empty` ne voit
    pas un <span> vide, et `:has` n'est pas partout. */
 .simFAvertBar{display:none}
+/* Le tableau des classes de l'Audit de la carte : des champs, pas des
+   nombres, donc tout à gauche. */
+table.simTabClasses{width:auto}
+.simTabClasses th,.simTabClasses td{text-align:left;padding:1px 10px 1px 0;white-space:nowrap}
+.simTabClasses td:first-child{color:var(--txt)}
+.simCarteAvert{font-size:10.5px;line-height:1.45;color:var(--yellow)}
 /* LE CHOIX DE LA PAIRE PORTE UN NOM DE NET, pas trois lettres d'unite : la
    liste des unites tient en « GHz », celle-ci en « USB2_HOST_DP ». Elle prend
    donc la place qui reste sur sa barre, avec un plafond -- un net a rallonge ne
