@@ -668,8 +668,10 @@ def charger_config_lib():
                 chemin = (data.get("chemin") or "").strip()
                 if chemin and os.path.exists(chemin):
                     DOSSIER_LIB_ACTIF = os.path.abspath(chemin)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Sans ce message, la LIB choisie était oubliée en silence et
+            # l'outil repartait sur celle par défaut.
+            print("[!] %s illisible (%s) : LIB par defaut utilisee." % (cfg_path, exc))
 
 
 def enregistrer_config_lib(chemin):

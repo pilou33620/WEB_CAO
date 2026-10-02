@@ -266,7 +266,7 @@ function profSurListe(fn){
 }
 function profSignalerListe(){
   for(const fn of PROF_ABO_L.slice()){
-    try{ fn(profListe()); }catch(_){}
+    try{ fn(profListe()); }catch(e){ console.error("profils : un abonné à la liste a échoué", e); }
   }
 }
 /* Un abonné qui lève ne doit pas empêcher les suivants de se remettre à jour :
@@ -274,7 +274,7 @@ function profSignalerListe(){
    indépendants, et l'un cassé ne justifie pas l'autre figé. */
 function profSignaler(){
   for(const fn of PROF_ABO.slice()){
-    try{ fn(PROF_NOM, PROF_DATA); }catch(_){}
+    try{ fn(PROF_NOM, PROF_DATA); }catch(e){ console.error("profils : un abonné a échoué", e); }
   }
 }
 /* Adopte un profil déjà normalisé comme profil courant. */

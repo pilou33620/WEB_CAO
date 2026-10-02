@@ -257,7 +257,7 @@ function projSurChangement(fn){
 function projSignaler(){
   const n = projNom();
   for(const fn of PROJ_ABONNES){
-    try{ fn(n); }catch(_){}
+    try{ fn(n); }catch(e){ console.error("projet : un abonné a échoué", e); }
   }
 }
 try{
