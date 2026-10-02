@@ -5172,9 +5172,10 @@ const SIM_PCB={
      gélule à la largeur w + 2 isolements ; un via, un cercle ; une pastille,
      son rectangle agrandi. C'est ce que lisent la masse coplanaire, les
      fentes et la couture. `isolement` reste pour une piste posée sans trou.
-     ponytail: les liaisons thermiques ne sont pas envoyées (le cuivre est
-     plein sous les pastilles du net) et le rognage au bord de carte non plus ;
-     les polygones sont des approximations à 8 côtés. */
+     La zone est rognée au contour moins la marge de bord, et les pastilles
+     de son net y tiennent par leurs liaisons thermiques, comme au rendu.
+     ponytail: les polygones sont des approximations à 8 côtés, une pastille
+     ronde ou polygonale part en rectangle. */
   carteEntiere:function(){
     const nom=l=>cuLabel(l,S.cu);
     const pistes=[], arcs=[], pastilles=[];
@@ -5219,9 +5220,47 @@ const SIM_PCB={
       const c=Math.cos(q.rot||0), sn=Math.sin(q.rot||0), a=q.w/2+g, b=q.h/2+g;
       return [[-a,-b],[a,-b],[a,b],[-a,b]].flatMap(([u,v])=>[q.x+u*c-v*sn,q.y+u*sn+v*c]);
     };
+    const P=boardPoly(), bP=polyBBox(P), marge=S.rule.edge, liaisons=[];
     const plans=S.zones.filter(z=>z.pts&&z.pts.length>=3).map(z=>{
       const zn=z.net||"", bb=polyBBox(z.pts), trous=[];
       const dans=(x,y)=>x>=bb.x1&&x<=bb.x2&&y>=bb.y1&&y<=bb.y2&&inPoly(x,y,z.pts);
+      /* LE ROGNAGE AU BORD, comme `clipToBoard` : tout ce qui sort du contour
+         -- un rectangle qui couvre zone et carte, relié au contour par un pont
+         aller-retour, que la parité du remplissage annule --, puis une bande
+         de la marge le long de chaque arête, en gélules : le trait rond du
+         rendu. */
+      const x1=Math.min(bb.x1,bP.x1)-1, y1=Math.min(bb.y1,bP.y1)-1;
+      const x2=Math.max(bb.x2,bP.x2)+1, y2=Math.max(bb.y2,bP.y2)+1;
+      trous.push([x1,y1, x2,y1, x2,y2, x1,y2, x1,y1].concat(plat(P),[P[0].x,P[0].y]));
+      if(marge>0)P.forEach((a,k)=>{
+        const b=P[(k+1)%P.length];
+        if(Math.max(a.x,b.x)+marge<bb.x1||Math.min(a.x,b.x)-marge>bb.x2||
+           Math.max(a.y,b.y)+marge<bb.y1||Math.min(a.y,b.y)-marge>bb.y2)return;
+        trous.push(gelule(a.x,a.y,b.x,b.y,marge));
+      });
+      /* LES LIAISONS THERMIQUES, comme `zoneCanvas` : une pastille du net de
+         la zone est détourée de l'isolement de sa classe, puis rattachée par
+         ses bras. Le détourage part en trou ; la pastille et ses bras partent
+         en petites surfaces du même net, peintes APRÈS la zone (le serveur
+         peint les plus grandes d'abord) et donc par-dessus le trou. Un via du
+         net reste plein, comme au rendu. */
+      const clr=classOf(zn).clr;
+      if(zn)for(const fp of S.fps)
+        for(const q of padsWorld(fp)){
+          if(q.net!==zn||!padLayers(fp,q).includes(z.l)||!dans(q.x,q.y))continue;
+          trous.push(rect(q,clr));
+          liaisons.push({c:nom(z.l),n:zn,o:rect(q,0),t:[]});
+          const tw=(q.thermalWidth>0)?q.thermalWidth:S.rule.thermal;
+          const bras=(q.thermalSpokes>0)?q.thermalSpokes:4;
+          const a0=(q.rot||0)+(q.thermalAngle||0)*Math.PI/180;
+          const L=Math.max(q.w,q.h)/2+clr+0.2;
+          for(let k=0;k<bras;k++){
+            const a=a0+2*Math.PI*k/bras, c=Math.cos(a), sn=Math.sin(a);
+            liaisons.push({c:nom(z.l),n:zn,t:[],
+              o:[[0,-tw/2],[L,-tw/2],[L,tw/2],[0,tw/2]]
+                .flatMap(([u,v])=>[q.x+u*c-v*sn,q.y+u*sn+v*c])});
+          }
+        }
       for(const t of S.tracks){
         if(t.l!==z.l||(zn&&t.net===zn))continue;
         const r=t.w/2+clrK(zn,t.net,"cu","trk"), m=trkMid(t);
@@ -5243,7 +5282,7 @@ const SIM_PCB={
         }
       for(const c of S.cuts||[])if(c.l===z.l&&c.pts.length>2)trous.push(plat(c.pts));
       return {c:nom(z.l),n:zn,o:plat(z.pts),isolement:clrK(zn,"","cu","trk"),t:trous};
-    });
+    }).concat(liaisons);
     const routes=new Set(S.tracks.map(t=>t.net));
     const parDefaut=netTable().map(n=>n.name).filter(n=>
       routes.has(n)&&!S.netClass[n]&&!isPower(n)&&!GND_RE.test(n));

@@ -17055,6 +17055,45 @@ T("Vérification de la carte : zones, contour, trous et broches partent aussi",(
   carteVide();
 });
 
+T("Vérification de la carte : la zone part rognée au bord, ses pastilles en liaisons thermiques",()=>{
+  /* Rejoue la peinture du serveur (_Surfaces) : les plus grandes surfaces
+     d'abord, chacune puis ses trous, au remplissage par parité. */
+  const {fp}=carteVerif();
+  const bord=S.board, regle=S.rule.edge;
+  S.board={x:0,y:0,w:40,h:30,pts:null};S.rule.edge=0.4;
+  fp.nets[2]="GND";
+  S.zones.push({id:S.nextId++,l:0,net:"GND",
+                pts:[{x:-10,y:-10},{x:60,y:-10},{x:60,y:60},{x:-10,y:60}]});
+  touch();
+  try{
+    const d=SIM_PCB.carteEntiere().doc, c0=cuLabel(0,S.cu);
+    const pts=f=>{const o=[];for(let k=0;k<f.length;k+=2)o.push({x:f[k],y:f[k+1]});return o;};
+    const aire=f=>Math.abs(signedArea(pts(f)));
+    const plans=d.plans.filter(p=>p.c===c0).sort((a,b)=>aire(b.o)-aire(a.o));
+    const net=(x,y)=>{
+      let v="";
+      for(const p of plans){
+        if(inPoly(x,y,pts(p.o)))v=p.n;
+        for(const t of p.t)if(inPoly(x,y,pts(t)))v="";
+      }
+      return v;
+    };
+    const q=padsWorld(fp).find(p=>p.net==="GND"), clr=classOf("GND").clr;
+    const cas=[["au milieu de la carte",20,5,"GND"],["hors de la carte",45,15,""],
+               ["dans la marge de bord",0.2,15,""],["juste après la marge",0.6,15,"GND"],
+               ["sur la pastille du net",q.x,q.y,"GND"],
+               ["sur un bras",q.x,q.y-q.h/2-clr/2,"GND"],
+               ["entre deux bras",q.x+q.w/2+clr/2,q.y-q.h/2-clr/2,""]];
+    for(const [quoi,x,y,attendu] of cas)
+      if(net(x,y)!==attendu)throw new Error(quoi+" ("+x+", "+y+") : « "+net(x,y)+
+                                            " », attendu « "+attendu+" »");
+    if(plans.filter(p=>p.n==="GND").length!==1+1+4)
+      throw new Error("la zone, la pastille et ses quatre bras : "+plans.length);
+  }finally{
+    S.board=bord;S.rule.edge=regle;carteVide();
+  }
+});
+
 T("Vérification de la carte : un constat de carte n'a ni net ni position",()=>{
   const garde=Object.assign({},SIM_CARTE);
   try{
