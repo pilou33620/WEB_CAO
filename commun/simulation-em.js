@@ -6326,14 +6326,24 @@ function simCarteAvertEcrire(){
 }
 
 function simCorpsCarte(){
-  const champ=(id,titre,u)=>'<span class="simGr">'+simChamp(id,titre)+
+  /* `lbl` : le libellé entre DANS le groupe — il ne reste jamais seul en fin
+     de ligne quand la barre passe à la ligne. */
+  const gr=lbl=>'<span class="simGr">'+(lbl?'<span class="pnl-lbl">'+lbl+'</span>':'');
+  const champ=(id,titre,u,lbl)=>gr(lbl)+simChamp(id,titre)+
     '<span class="simU">'+u+'</span></span>';
-  const champU=(id,titre,quoi,liste)=>'<span class="simGr">'+simChamp(id,titre)+
+  const champU=(id,titre,quoi,liste,lbl)=>gr(lbl)+simChamp(id,titre)+
     simChampUnite(id+"U",quoi,liste)+'</span>';
   /* UN TABLEAU, UNE LIGNE PAR CLASSE : front, f max et Z₀ visée se lisent
      côte à côte. Trois rangées qui répétaient chacune les six noms de classe
      ne disaient pas qu'il s'agissait des mêmes nets. */
   const r=SIM_CARTE.reglages;
+  /* Ce qu'on range dans chaque classe : l'aide de la dernière colonne. */
+  const EX={Horloge:"oscillateur, CLK, MCLK, XIN/XOUT d'un quartz",
+            Rapide:"USB D+/D−, Ethernet, DDR, HDMI, LVDS",
+            RF:"antenne LoRa 868 MHz, Wi-Fi/BLE 2,4 GHz, vers un SMA",
+            Analogique:"entrée d'ADC, capteur, référence, audio",
+            Lent:"GPIO, LED, bouton, reset, I2C, UART ; tout net non classé",
+            "Découpage":"nœud SW d'un buck ou d'un boost (détecté seul)"};
   let classes="";
   for(const k in r.tr)
     classes+='<tr><td>'+simEsc(k)+'</td><td>'+
@@ -6349,7 +6359,8 @@ function simCorpsCarte(){
             " » : son impédance se juge face à elle, la réflexion de ses vias "+
             "et de ses fentes aussi. Vide : le Z₀ de la carte"+(k==="Analogique"?
             " — et un net Analogique sans cible ne se compare qu'à lui-même":"")+
-            ".","Ω"):'<span class="simU">—</span>')+'</td></tr>';
+            ".","Ω"):'<span class="simU">—</span>')+'</td>'+
+      '<td class="simEx">'+simEsc(EX[k]||"")+'</td></tr>';
   return '<div class="pnl-bar simBarFixe">'+
     '<button class="tb mini on" id="simCarteGo" title="Juger toutes les '+
       'pistes de la carte, tous nets confondus">▶ Vérifier la carte</button>'+
@@ -6363,29 +6374,30 @@ function simCorpsCarte(){
       'title="Peindre tous les constats sur la carte à la fois, à la couleur '+
       'de leur sévérité">◎ Tout peindre</button>'+
   '</div>'+
-  '<div class="pnl-bar"><span class="pnl-lbl">fréquences d\'analyse</span>'+
+  '<div class="pnl-bar">'+
     [0,1,2].map(i=>champU("simCarteF"+i,"Une des trois fréquences de "+
       "jugement des règles électriques : une colonne du rapport chacune.",
-      "cette fréquence")).join("")+
-  '</div>'+
-  '<div class="pnl-bar"><span class="pnl-lbl">Z₀ des lignes</span>'+
-    champ("simCarteZ0","L'impédance de ligne supposée pour juger la réflexion "+
-      "d'un via, quand la classe n'a pas sa propre cible.","Ω")+
-    '<span class="pnl-lbl">Z diff des paires</span>'+champ("simCarteZdiff",
-      "L'impédance différentielle visée pour les paires (100 Ω ; USB 90 Ω).","Ω")+
-    '<span class="pnl-lbl">diaphonie tolérée</span>'+champ("simCarteBudget","La "+
-      "diaphonie tolérée sur une victime, en % de l'agresseur. Au-delà de la "+
-      "moitié : vigilance.","%")+
-    '<span class="pnl-lbl">porteuse RF</span>'+champU("simCartePorteuse",
+      "cette fréquence",null,i?"":"fréquences d'analyse")).join("")+
+    /* La porteuse est une fréquence : sur cette ligne, qui a la place. */
+    champU("simCartePorteuse",
       "La fréquence de la radio (868 MHz pour du LoRa). Remplie, les nets RF "+
       "se jugent à cette porteuse dans toutes les colonnes, au lieu du front "+
-      "RF. Vide : front RF.","la porteuse")+
+      "RF. Vide : front RF.","la porteuse",null,"porteuse RF")+
+  '</div>'+
+  '<div class="pnl-bar">'+
+    champ("simCarteZ0","L'impédance de ligne supposée pour juger la réflexion "+
+      "d'un via, quand la classe n'a pas sa propre cible.","Ω","Z₀ des lignes")+
+    champ("simCarteZdiff","L'impédance différentielle visée pour les paires "+
+      "(100 Ω ; USB 90 Ω).","Ω","Z diff des paires")+
+    champ("simCarteBudget","La diaphonie tolérée sur une victime, en % de "+
+      "l'agresseur. Au-delà de la moitié : vigilance.","%","diaphonie tolérée")+
   '</div>'+
   '<div class="pnl-bar"><table class="simTab simTabClasses"><tr>'+
     '<th>Classe de net</th>'+
     '<th title="Le temps de montée de la techno qui pilote la classe">Front de montée</th>'+
     '<th title="La fréquence que la classe ne dépasse jamais ; vide : sans limite">F max</th>'+
     '<th title="L\'impédance visée ; vide : le Z₀ des lignes">Z₀ visée</th>'+
+    '<th>Exemples de nets</th>'+
   '</tr>'+classes+'</table></div>'+
   '<div class="pnl-bar simCarteAvert" id="simCarteAvert" style="display:none"></div>'+
   '<div class="pnl-bar"><span class="pnl-lbl">porteuse d\'un net</span>'+
