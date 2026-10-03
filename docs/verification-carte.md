@@ -133,6 +133,11 @@ NFC ouverte ensuite repart des défauts — ou de ses propres réglages — et n
 les hérite pas. Ouvrir une autre carte efface aussi le rapport de la
 précédente. Un navigateur privé repart des défauts.
 
+Le nom de la carte : dans la visionneuse, celui du fichier ; dans l'éditeur
+PCB, celui du projet ouvert, sinon celui du fichier ouvert (ou le titre de
+l'exemple), retenu à travers la reprise de session. Une carte vide
+(« Nouveau ») s'appelle « carte ».
+
 ---
 
 ## 4. Lire le rapport

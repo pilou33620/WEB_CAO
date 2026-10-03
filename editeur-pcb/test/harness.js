@@ -132,7 +132,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "ltT","ltC","ltL","ltRange","ltTable","ltSection","propsTrack","propsTracks",
   "dpLayerEdit",
   /* cartes d'exemple (17-exemples.js) */
-  "EXEMPLES","exemple1","exemple2","exCharger","exOuvrir","exDoc","exPlane",
+  "EXEMPLES","exemple1","exemple2","exCharger","newDoc","exOuvrir","exDoc","exPlane",
   "exFp","exPin","exWire","exVia","exStub","exPair","exPower",
   /* rendu et fusion des lignes droites */
   "drawTracks","sameLine","routeVia",
@@ -16871,6 +16871,23 @@ T("Vérification de la carte : un front qui ne tient pas à sa fréquence est si
   r.porteuse=868e6;
   if(simCarteFrontsAvert(r).length!==1)throw new Error("avec une porteuse, le front RF ne compte plus");
 });
+T("Vérification de la carte : hors projet, une carte porte le nom de son fichier",()=>{
+  /* Sans projet, deux cartes s'appelaient « carte » et partageaient leurs
+     réglages d'audit. L'exemple ouvert donne son titre ; « Nouveau » rend
+     « carte ». */
+  const garde=serialize();
+  try{
+    exCharger(1);
+    if(SIM_PCB.carte()!==EXEMPLES[1].titre)throw new Error("exemple 2 : "+SIM_PCB.carte());
+    exCharger(0);
+    if(SIM_PCB.carte()!==EXEMPLES[0].titre)throw new Error("exemple 1 : "+SIM_PCB.carte());
+    newDoc();
+    if(SIM_PCB.carte()!=="carte")throw new Error("carte vide : "+SIM_PCB.carte());
+  }finally{
+    loadDoc(JSON.parse(garde));
+  }
+});
+
 T("Vérification de la carte : chaque carte garde ses réglages",()=>{
   /* Une carte LoRa réglée à 868 MHz ; la carte NFC ouverte ensuite repart
      des défauts ; revenir à la première rend ses 868 MHz et ses courants. */

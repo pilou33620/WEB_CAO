@@ -502,6 +502,7 @@ function exCharger(i){
     return false;
   push();
   loadDoc(ex.build());
+  PCB_FICHIER=ex.titre;              // son nom de carte, hors projet
   S.dirty=false;                     // un exemple n'est pas un travail à perdre
   fit();
   hint("Exemple « "+ex.titre+" » ouvert. Contrôle DRC, fenêtre des règles, "+

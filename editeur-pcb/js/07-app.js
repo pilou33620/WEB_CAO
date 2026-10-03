@@ -40,6 +40,12 @@ function saveJsonTelecharger(doc){
   if(typeof profNoterDocument==="function")profNoterDocument("pcb",nom);
   hint("Carte enregistrée dans "+nom+".");
 }
+/* LE NOM DE LA CARTE OUVERTE HORS PROJET : celui du fichier, ou le titre de
+   l'exemple. Sans lui, toutes les cartes sans projet s'appelaient « carte »,
+   et l'audit leur donnait les mêmes réglages et les mêmes dérogations. Le
+   projet, quand il y en a un, passe devant (SIM_PCB.carte). Gardé dans la
+   session de l'onglet. */
+let PCB_FICHIER="";
 function openFile(f){
   const r=new FileReader();
   r.onload=()=>{
@@ -58,6 +64,7 @@ function openFile(f){
           return;
         }
         push();loadDoc(d);
+        PCB_FICHIER=String(f.name).replace(/\.[^.]*$/,"");
         if(typeof profNoterDocument==="function")profNoterDocument("pcb",f.name);
         hint("Carte "+f.name+" chargée.");
         setTimeout(() => { if (typeof pcbVerifierEtNotifierEco === "function") pcbVerifierEtNotifierEco(true); }, 200);
@@ -385,6 +392,7 @@ function newDoc(){
   push();
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];S.drawings=[];S.drc=[];S.drcRun=false;S.hlNet=null;
   S.dpPairs=[];S.dp=null;   // les règles restent : elles décrivent un métier, pas une carte
+  PCB_FICHIER="";
   clearSel();zoneCache.clear();touch();
   refreshPanels();draw();
   hint("Carte vide. Importez une netlist pour commencer.");
@@ -618,6 +626,7 @@ function sessionPcb(){
   const repris=sessBrancher("pcb",()=>({
     doc:docObj(),
     sale:S.dirty,
+    fichier:PCB_FICHIER,
     vue:{scale:S.scale,ox:S.ox,oy:S.oy,flip:S.flip}
   }),pcbSonde);
   if(!repris)return false;
@@ -628,6 +637,7 @@ function sessionPcb(){
     hint("Reprise impossible : la carte mise de côté était illisible.");
     return false;
   }
+  PCB_FICHIER=String(repris.etat.fichier||"");
   const v=repris.etat.vue||{};
   if(Number.isFinite(+v.scale)&&+v.scale>0){
     S.scale=+v.scale;S.ox=+v.ox||0;S.oy=+v.oy||0;
