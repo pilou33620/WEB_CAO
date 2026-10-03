@@ -21,18 +21,18 @@ Elle couvre seize familles de règles :
 | Règle | Ce qu'elle cherche | Sévérité |
 | :--- | :--- | :--- |
 | **Angles des pistes** | angles aigus, angles droits, jonctions en T ou en étoile, segments hors 45° | critique / vigilance / vigilance / info |
-| **Bouts de piste orphelins** | piste reliée à rien, bout libre au départ d'une pastille (antenne), moignon, dépassement après un coin | critique ou vigilance, et 3 fréquences sur un signal |
+| **Bouts de piste orphelins** | piste reliée à rien, bout libre au départ d'une pastille (antenne), moignon, dépassement après un coin | critique ou vigilance, et à sa cadence sur un signal |
 | **Empilage** | couche de signal sans plan collé contre elle, deux couches de signal face à face, alimentation loin de sa masse, empilage dissymétrique | selon le cas (constat de carte) |
-| **Impédance des nets** | Z₀, R, L, C de chaque net ; les tronçons qui s'écartent de la référence | 3 fréquences |
-| **Chemins de retour** | chaque via de signal qui change de plan de référence : son courant de retour a-t-il un chemin court ? | 3 fréquences |
-| **Fentes et vides des plans** | une piste qui passe au-dessus d'un vide de son plan de référence | 3 fréquences |
-| **Vias de couture** | le plus grand trou sans via entre deux couches de la même masse | 3 fréquences |
-| **Diaphonie** | chaque couple de pistes voisines de nets différents, sur la même couche ou entre deux couches voisines, et la somme des agresseurs d'une victime | 3 fréquences |
-| **Paires différentielles** | Z_diff le long de la paire (masse coplanaire comprise), écart de longueur, plan sous une seule moitié, vias en nombre différent | 3 fréquences |
-| **Découplage** | un condensateur vers la masse au pied de chaque broche d'alimentation de circuit intégré, par le chemin réel ; sa résonance selon sa valeur | 3 fréquences |
-| **Bord de carte** | cuivre trop près du détourage, piste rapide qui longe le bord, clôture de vias, règle des 20 H | critique / vigilance, 3 fréquences, info |
-| **Moignons de vias** | le bout de perçage que le signal n'emprunte pas | 3 fréquences |
-| **Branches en T** | une dérivation vers une deuxième charge, hors pastille | 3 fréquences |
+| **Impédance des nets** | Z₀, R, L, C de chaque net ; les tronçons qui s'écartent de la référence | à la cadence |
+| **Chemins de retour** | chaque via de signal qui change de plan de référence : son courant de retour a-t-il un chemin court ? | à la cadence |
+| **Fentes et vides des plans** | une piste qui passe au-dessus d'un vide de son plan de référence | à la cadence |
+| **Vias de couture** | le plus grand trou sans via entre deux couches de la même masse | à la cadence |
+| **Diaphonie** | chaque couple de pistes voisines de nets différents, sur la même couche ou entre deux couches voisines, et la somme des agresseurs d'une victime | à la cadence |
+| **Paires différentielles** | Z_diff le long de la paire (masse coplanaire comprise), écart de longueur, plan sous une seule moitié, vias en nombre différent | à la cadence |
+| **Découplage** | un condensateur vers la masse au pied de chaque broche d'alimentation de circuit intégré, par le chemin réel ; sa résonance selon sa valeur | à la cadence |
+| **Bord de carte** | cuivre trop près du détourage, piste rapide qui longe le bord, clôture de vias, règle des 20 H | critique / vigilance, à la cadence, info |
+| **Moignons de vias** | le bout de perçage que le signal n'emprunte pas | à la cadence |
+| **Branches en T** | une dérivation vers une deuxième charge, hors pastille | à la cadence |
 | **Quartz** | pistes longues vers l'oscillateur, autre chose que la masse dessous | vigilance / critique |
 | **Protection ESD** | un signal de connecteur sans protection vers la masse à moins de 10 mm | vigilance, info si le connecteur n'a rien de protégé |
 | **Courant des rails** | ce que la piste la plus étroite d'un rail tient (IPC-2221) face au courant donné ; les étranglements | vigilance / critique, info sans courant |
@@ -78,46 +78,50 @@ python python/analyse_carte.py IPC2581_Exemple/P01x274PCB-C.xml
 
 ## 3. Les réglages
 
-Les règles électriques se jugent à **trois fréquences**. Pour chaque net, le
+Chaque classe de net a sa **cadence maximale** : la fréquence la plus haute à
+laquelle ses nets basculent (une horloge à 50 MHz, un I2C sous 1 MHz). Les
+règles électriques se jugent **à cette cadence**, une colonne par constat. Le
 front de montée pris en compte est :
 
-> **t_r effectif = min(front de la classe du net, 10 % de la période)**,
-> la période étant celle de min(f, **f max de la classe**)
+> **t_r effectif = min(front de la classe, 10 % de la période de sa cadence)**
 
 et la règle juge au **genou** 0,35 / t_r, là où s'arrête l'énergie du front.
-Pourquoi : à basse fréquence, c'est la **techno** qui fixe le front (un GPIO de
-microcontrôleur monte en quelques ns même s'il ne bascule qu'à 100 kHz) ; à
-haute fréquence, c'est la **période** (un signal à 100 MHz ne peut pas monter
-en 10 ns).
+Pourquoi : c'est d'abord la **techno** qui fixe le front (un GPIO de
+microcontrôleur monte en quelques ns même s'il ne bascule qu'à 100 kHz) ; mais
+un net cadencé vite ne peut pas avoir de front lent (à 100 MHz, pas plus de
+1 ns).
 
-| Réglage | Défaut | Sert à |
+Il n'y a plus de « fréquences d'analyse » communes à toute la carte : elles
+donnaient trois colonnes presque toujours identiques, et la cadence d'un net
+dépend de sa classe, pas de la carte.
+
+Les réglages se lisent dans un **tableau, une ligne par classe** (front,
+cadence max, Z₀ visée, exemples de nets) :
+
+| Classe | Front | Cadence max | Exemples |
+| :--- | :--- | :--- | :--- |
+| Horloge | 2 ns | 50 MHz | oscillateur, CLK, MCLK, XIN/XOUT d'un quartz |
+| Rapide | 1 ns | 100 MHz | USB, Ethernet, DDR, HDMI, LVDS |
+| RF | 100 ps | 1 GHz | antenne LoRa, Wi-Fi/BLE, vers un SMA |
+| Analogique | 100 ns | 1 MHz | entrée d'ADC, capteur, référence, audio |
+| Lent | 10 ns | 10 MHz | GPIO, LED, bouton, reset, I2C, UART ; tout net non classé |
+| Découpage | 5 ns | 2 MHz | nœud SW d'un hacheur, qui agresse ses voisins |
+
+Chaque cadence par défaut reste sous 0,1 / t_r : à réglages par défaut, c'est
+le **front** de la classe qui juge, la cadence ne l'écrase pas. Une horloge
+déclarée à 100 MHz, elle, voit son front ramené à 1 ns (genou 350 MHz).
+
+| Autre réglage | Défaut | Sert à |
 | :--- | :--- | :--- |
-| fréquences | 100 kHz · 1 MHz · 100 MHz | les trois colonnes du verdict |
-| Z₀ | 50 Ω | juger la réflexion d'un via ou d'une fente ; la cible des nets Horloge, Rapide et RF |
-| budget | 5 % | diaphonie tolérée (vigilance au-delà de la moitié) |
-| Z diff | 100 Ω | la cible des paires différentielles (USB : 90 Ω) |
-| front Horloge | 2 ns | |
-| front Rapide | 1 ns | USB, Ethernet, QSPI, DDR… |
-| front RF | 100 ps | genou à 3,5 GHz |
-| front Analogique | 100 ns | |
-| front Lent | 10 ns | GPIO, I2C, UART, reset… et tout net sans classe |
-| front Découpage | 5 ns | nœud SW d'un hacheur, qui agresse ses voisins |
-| porteuse RF | vide | remplie (868 MHz pour du LoRa), les nets RF se jugent à cette fréquence dans les trois colonnes, au lieu du front RF |
-| f max Lent | 10 MHz | un I2C, un GPIO ne montent pas plus haut |
-| f max Analogique | 1 MHz | |
-| f max Découpage | 10 MHz | |
-| f max Horloge, Rapide, RF | vide | sans limite |
+| Z₀ des lignes | 50 Ω | juger la réflexion d'un via ou d'une fente ; la cible des nets Horloge, Rapide et RF |
+| Z diff des paires | 100 Ω | la cible des paires différentielles (USB : 90 Ω) |
+| diaphonie tolérée | 5 % | budget de diaphonie (vigilance au-delà de la moitié) |
+| porteuse des nets RF | vide | remplie (868 MHz pour du LoRa), les nets RF se jugent à cette porteuse, au lieu de leur front et de leur cadence |
 
-**Exemple** : un net *Rapide* (1 ns) donne un genou de 350 MHz dans les trois
-colonnes. Un net *Lent* (10 ns) donne 35 MHz partout : dans la colonne
-100 MHz, il est jugé à sa **f max** de 10 MHz, où son front reste 10 ns — un
-I2C à 100 MHz n'existe pas, et le rapport ne le condamne plus pour ça. Vider
-le champ f max d'une classe rend l'ancien comportement (front borné par la
-seule période) : c'est la question « et si ce net devenait rapide ? ». Une
-colonne plafonnée le dit dans l'infobulle et dans le rapport texte
-(« plafonné à 10 MHz »).
+Un front plus long que la demi-période de sa cadence, ou sous 10 ps, est
+signalé sous le tableau : c'est presque toujours une faute d'unité.
 
-Chaque fréquence et chaque front a sa **liste d'unités** (Hz à GHz, ps à µs) :
+Chaque cadence et chaque front a sa **liste d'unités** (Hz à GHz, ps à µs) :
 en changer **convertit** la valeur affichée, elle ne la réinterprète pas.
 
 Changer un réglage ne relance rien : cliquez de nouveau sur **▶ Vérifier la
@@ -144,7 +148,7 @@ n'appartiennent à aucun net et n'ont pas de position : ils se rangent sous
 
 **Chaque ligne** : la couche (ou « couche → couche » pour un via, « couche ↔
 couche » pour une cavité), la position en mm, le constat chiffré, et pour les
-règles électriques **trois pastilles**, une par fréquence, colorées selon le
+règles électriques **une pastille**, à la cadence de la classe, colorée selon le
 verdict (ambre : vigilance, rouge : critique). La valeur d'une pastille est :
 
 - un **pourcentage** : la réflexion |Γ| (retour, fente, impédance, paire), le
@@ -207,7 +211,7 @@ traverse, le versement où elle entre.
 | un embranchement, à moins de 0,5 mm (ou 2 w) | **Dépassement** après un coin | vigilance |
 | un embranchement, plus loin | **Moignon** en bout de branche | vigilance |
 
-Sur un net de signal, le bout se juge aussi à trois fréquences : un moignon
+Sur un net de signal, le bout se juge aussi à la cadence de sa classe : un moignon
 réfléchit dès que son aller-retour 2T_d dépasse **10 %** du front (**20 %** :
 critique). Ne sont pas signalés : les bouts plus courts que le bout arrondi de
 la piste elle-même (un arrondi d'export), et le cuivre sans net.
@@ -271,7 +275,7 @@ côtés. Si c'est le même plan, le retour suit : rien à dire. S'il change :
 | pas de cuivre de plan au droit du via | rien | critique d'office |
 | net des plans inconnu | ? | vigilance : l'empilage ne dit pas si un via de masse suffit |
 
-Le verdict à chaque fréquence est le **pire de deux critères** :
+Le verdict est le **pire de deux critères** :
 
 - la **réflexion** que le via cause sur la ligne, |Γ| = |Z| / |Z + 2 Z₀|
   (vigilance au-delà de 5 %, critique au-delà de 10 %) — ce que le signal voit ; avec la cavité modale, le pire sur les deux décades sous le genou, car un front contient toutes ces fréquences et la traversée peut y résonner ;
@@ -334,7 +338,7 @@ Pour chaque couple de pistes de nets différents, **sur la même couche**, qui
 se font face à moins de cinq fois la hauteur au plan — les arcs comptent, en
 cordes de 5° — : la section à deux conducteurs est **résolue par la méthode
 des moments** à l'écart réel (pas une formule), d'où Kb et Kf. Puis, avec le front de
-l'**agresseur** à chaque fréquence :
+l'**agresseur** à sa cadence :
 
 - **NEXT** = min(Kb max, Σ Kb · 2T_d / t_r) — il sature au-delà de t_r·v/2 ;
 - **FEXT** = |Σ Kf · T_d| / t_r — il croît avec la longueur.
@@ -579,7 +583,7 @@ reliées à la masse par un condensateur sans être classées Alimentation
 
 **Rapport ↗** écrit `<carte>-verification-carte.txt` en texte brut : l'en-tête
 (ce qui a été jugé, réglages, réserves), puis chaque règle, chaque net avec sa
-classe, chaque constat avec son verdict aux trois fréquences et le front
+classe, chaque constat avec son verdict à la cadence de sa classe et le front
 employé. Texte brut exprès : il se colle dans un courriel ou un ticket, et
 deux révisions d'une carte **se comparent avec n'importe quel diff** — ce
 qu'un PDF ne permet pas.
@@ -641,8 +645,8 @@ coup d'œil, et le constat choisi reste marqué par-dessus.
   découplages signalés disent « tient des fronts jusqu'à X ns ». Monter le
   front d'une classe (ex. Lent à 2 ns) montre ce qui casserait si un GPIO
   devenait rapide ; le baisser, ce qui est surdimensionné.
-- **Balayer d'autres fréquences** : les trois colonnes sont réglables — une
-  carte Ethernet se juge à 25 / 125 / 250 MHz plutôt qu'aux défauts.
+- **Régler les cadences** : une ligne par classe dans le tableau — une
+  carte Ethernet déclare ses nets Rapide à 125 MHz plutôt qu'au défaut.
 - **Régler la cible des paires** par projet : 90 Ω pour de l'USB, 100 Ω pour
   du LVDS ou de l'Ethernet.
 - **Chasser les nets mal classés** : la classe écrite à côté de chaque net et
@@ -661,10 +665,10 @@ coup d'œil, et le constat choisi reste marqué par-dessus.
 | DRC d'angles (aigus, droits, T, hors 45°), tous nets | **fait** |
 | 1. Stack-up (plans voisins, couches face à face, cavité, symétrie) | **fait** |
 | 2. Impédance parasite (Z₀, R, L, C par net, discontinuités) | **fait** |
-| 3. Chemins de retour — via par via, à 3 fréquences | **fait** |
+| 3. Chemins de retour — via par via, à la cadence de chaque classe | **fait** |
 | 4. Plans de référence : piste qui franchit une fente ou un vide | **fait** |
 | 5. Vias de couture : plus grand trou sans via face à λ/20 | **fait** |
-| 6. Crosstalk — piste par piste, à 3 fréquences, arcs, couches voisines, somme des agresseurs | **fait** |
+| 6. Crosstalk — piste par piste, à la cadence de chaque classe, arcs, couches voisines, somme des agresseurs | **fait** |
 | 7. Découplage : chemin réel, inductance de boucle, valeur et résonance | **fait** |
 | 8. Bord de carte : détourage, pistes rapides, clôture de vias, 20 H | **fait** |
 | 9. Paires différentielles : Z_diff avec masse coplanaire, écart de longueur, plan sous les deux moitiés, vias | **fait** |

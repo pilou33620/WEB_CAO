@@ -23,7 +23,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 | **RF — S21 port à port (`rf_reseau` v1.5.0)** | En service dans l'éditeur PCB et la visionneuse, chacun avec son empilage (pistes par `simulation_em`, lignes couplées à N conducteurs avec pertes et dispersion modale, coudes et vias aux bords des longements, pastilles en MoM 3D sur stratifié étalonné sur l'empilage, zones et coulées de masse entières en maillage adaptatif creux sur leur cuivre rempli, longements recoupés à leur écart local, chemins de masse piste + via, broches annexes, pistes des autres nets fermées sur leur Z₀, mutuelles des selfs entre elles et avec les pistes (Neumann avec image), fentes du plan de référence (Ott), composants SPICE / .sNp / idéaux, S généralisés sur ports complexes, « et si ») — quasi-statique (+ Getsinger) : le domaine de validité (modes supérieurs, ondes de surface, rayonnement) est calculé et signalé ; les modéliser demande le moteur pleine onde | 47 cas (`python/test/banc-rf.py`) + 8 essais de page (`editeur-pcb/test/harness.js`) + 3 (`harness-sim.js`) |
 | **PI — Chute DC & Échauffement (`dc_solver` v2.1.0)** | En service (IR drop, densité J, modèle étalement) | 42 cas (`python/test/banc-dc.py`) |
 | **Scoring placement & Rotation (`pcb_scoring`)** | En service (HPWL, congestion, découplage HF, auto-rotation) | 18 cas (`python/test/banc-pcb-scoring.py`) |
-| **Vérification de la carte (`analyse_carte`)** | En service (tous nets : angles, bouts orphelins, empilage ; à 3 fréquences : impédance, chemins de retour, fentes de plan, vias de couture, diaphonie, paires différentielles, découplage, bord de carte, moignons de vias, branches en T ; quartz, ESD, courant des rails ; dérogations et comparaison de révisions) — mode d'emploi : [docs/verification-carte.md](docs/verification-carte.md) | 20 cas (`python/test/banc-analyse-carte.py`) + route (`banc-serveur-routes.py`) + 9 essais éditeur + 3 visionneuse |
+| **Vérification de la carte (`analyse_carte`)** | En service (tous nets : angles, bouts orphelins, empilage ; à la cadence de chaque classe : impédance, chemins de retour, fentes de plan, vias de couture, diaphonie, paires différentielles, découplage, bord de carte, moignons de vias, branches en T ; quartz, ESD, courant des rails ; dérogations et comparaison de révisions) — mode d'emploi : [docs/verification-carte.md](docs/verification-carte.md) | 20 cas (`python/test/banc-analyse-carte.py`) + route (`banc-serveur-routes.py`) + 9 essais éditeur + 3 visionneuse |
 | **Reconnaissance de motifs (`pattern_recognition`)** | En service (LDO/78xx/79xx/Buck, I2C, SPI, UART, quartz, RC, courants DC) | 24 cas (`python/test/banc-patterns.py`) |
 | **Assistant IA (schéma, PCB, visionneuse, Gestion LIB)** | En service (Google AI Studio : Gemma 4 31B par défaut, Gemini 3.8 Flash / Flash Thinking ; clé API en mémoire vive uniquement ; datasheets PDF jointes → réglages de simulation vérifiés et cochés un à un) | `commun/ia-assistant.js`, `gestion-lib/js/06-ia-lib.js` |
 | **Serveur `web_CAO.py`** | En service (détection Raspberry Pi / terminal sans affichage : navigateur non ouvert par défaut, `--navigateur` / `--sans-navigateur`) | `banc-serveur-routes.py`, `banc-lib-routes.py`, `banc-maj-github.py`, `banc-detection-plateforme.py` |
@@ -110,8 +110,9 @@ lib/
 Une analyse de toute la carte, tous les nets, sans sélection, qui range ses
 constats du plus grave au moins grave (famille « Audit de la carte » du panneau). Mode
 d'emploi : [docs/verification-carte.md](docs/verification-carte.md). Les règles
-électriques se jugent à **trois fréquences**, avec pour chaque net le front
-effectif min(front de sa classe, 10 % de la période), au genou 0,35 / t_r.
+électriques se jugent à la **cadence de chaque classe**, avec pour chaque net
+le front effectif min(front de sa classe, 10 % de la période de sa cadence),
+au genou 0,35 / t_r.
 
 **Fait (30/09/2026)**
 - [x] Classes de nets automatiques + correction à la main (schéma, PCB, visionneuse) ; nœud de découpage d'un hacheur marqué **bruyant** (`nets_bruyants`).
@@ -127,7 +128,7 @@ effectif min(front de sa classe, 10 % de la période), au genou 0,35 / t_r.
 - [x] **7. Découplage** : chaque broche d'alimentation de CI, condensateur vers la masse le plus proche face à λ/40 au genou des signaux du circuit ; « aucun condensateur » critique.
 - [x] **8. Bord de carte** : cuivre à moins de 0,25 / 0,5 mm du détourage (tous nets), longueur de piste rapide à moins de max(1 mm, 5 h) du bord face à λ/20, règle des 20 H (info).
 - [x] **9. Paires différentielles** : Z_diff MoM à l'écart réel des morceaux couplés, 2 Z₀ pour les découplés, face à la cible réglable ; écart de longueur en temps face au front ; vias en nombre différent.
-- [x] **Bouts de piste orphelins** : piste isolée (critique), bout libre au départ d'une pastille, moignon, dépassement après un coin ; 2T_d / t_r à trois fréquences sur un signal. Trouve sur P01x290 une piste qui s'arrête à 1,2 mm de sa pastille.
+- [x] **Bouts de piste orphelins** : piste isolée (critique), bout libre au départ d'une pastille, moignon, dépassement après un coin ; 2T_d / t_r à sa cadence sur un signal. Trouve sur P01x290 une piste qui s'arrête à 1,2 mm de sa pastille.
 - [x] Durée de chaque règle rendue au panneau (`durees_s`) ; P01x274 : 20 s en tout.
 - [x] **Classe Antenne** (fabrication seulement), **porteuse RF** réglable (les nets RF jugés à leur fréquence), angle droit en vigilance, broches de circuit reliées à la masse par un condensateur mais non classées Alimentation listées en réserve. P01x274 reclassé : de ~50 critiques à 4.
 - [x] **Fréquence maximale par classe** (`FMAX_CLASSES` : Lent 10 MHz, Analogique 1 MHz, Découpage 10 MHz) : un net lent n'est plus condamné par la colonne 100 MHz ; unités réglables par champ ; diaphonie : une ligne par couple ; le cuivre sans net ne porte plus de classe au rapport.

@@ -15,7 +15,7 @@ Les angles des pistes :
 Un point posé dans une pastille ou un via n'est pas jugé : la piste y entre
 et en repart, et le cuivre de la pastille recouvre l'angle.
 
-Puis, sur l'empilage et à trois fréquences (voir « LES RÈGLES ÉLECTRIQUES ») :
+Puis, sur l'empilage et à la cadence de chaque classe (voir « LES RÈGLES ÉLECTRIQUES ») :
 l'empilage, l'impédance de chaque net, le chemin de retour de chaque via, les
 fentes des plans de référence, les vias de couture, la diaphonie, le
 découplage, le bord de carte, les paires différentielles et les bouts de piste
@@ -191,25 +191,31 @@ def angles(pistes, arcs=(), pastilles=(), unite_mm=1.0, tol_deg=TOL_DEG):
 
 
 # ==========================================================================
-# LES RÈGLES ÉLECTRIQUES : trois fréquences, un front par net
+# LES RÈGLES ÉLECTRIQUES : une cadence et un front par classe
 # --------------------------------------------------------------------------
-# Un signal à la fréquence f n'a pas le front qu'on veut : il a celui de la
-# techno qui le pilote (sa CLASSE : un GPIO de microcontrôleur monte en
-# quelques ns même à 100 kHz), borné par la période (à 100 MHz, pas plus de
-# 10 % de 10 ns). Le front effectif est donc min(t_r de la classe, 0,1 / f),
-# et ce qu'il excite va jusqu'au genou 0,35 / t_r. C'est à ce genou que les
-# règles jugent, pour chacune des trois fréquences.
+# Un net n'a pas le front qu'on veut : il a celui de la techno qui le pilote
+# (sa CLASSE : un GPIO de microcontrôleur monte en quelques ns même à
+# 100 kHz), borné par la période de sa CADENCE MAXIMALE (à 100 MHz, pas plus
+# de 10 % de 10 ns). Le front effectif est donc min(t_r, 0,1 / cadence), et ce
+# qu'il excite va jusqu'au genou 0,35 / t_r. C'est à ce genou que les règles
+# jugent : une colonne par constat.
+#
+# La carte avait trois fréquences communes à toutes les classes. Elles ne
+# changeaient presque rien -- le front de la classe tranchait déjà, sauf à
+# la plus haute -- et la cadence d'un net est une propriété de sa classe,
+# pas de la carte : un I2C ne monte pas à 100 MHz, une horloge si.
 # ==========================================================================
 
-FREQUENCES = (1e5, 1e6, 1e8)
 # Le front de chaque classe, en secondes. Des défauts, modifiables dans le
 # panneau ; « Découpage » est celui d'un nœud SW de hacheur (nets_bruyants).
 TR_CLASSES = {"Horloge": 2e-9, "Rapide": 1e-9, "RF": 1e-10,
               "Analogique": 1e-7, "Lent": 1e-8, "Découpage": 5e-9}
-# La fréquence au-delà de laquelle un net de cette classe ne bascule jamais :
-# un I2C ne monte pas à 100 MHz. Au-dessus, la colonne juge le net à sa
-# fréquence maximale (son front ne raccourcit plus). Absente : sans limite.
-FMAX_CLASSES = {"Lent": 1e7, "Analogique": 1e6, "Découpage": 1e7}
+# La cadence maximale de chaque classe, en Hz : une horloge à 50 MHz, un bus
+# rapide à 100 MHz, un I2C ou un SPI sous 10 MHz, un hacheur à 2 MHz. Toutes
+# restent sous 0,1 / t_r du front par défaut : à défauts égaux, c'est le
+# front de la classe qui juge, la cadence ne l'écrase pas.
+CADENCES = {"Horloge": 5e7, "Rapide": 1e8, "RF": 1e9,
+            "Analogique": 1e6, "Lent": 1e7, "Découpage": 2e6}
 Z0 = 50.0                # impédance de ligne supposée pour juger une réflexion
 BUDGET = 0.05            # diaphonie tolérée, en fraction de l'agresseur
 # Réflexion d'un via : |Γ| au-delà duquel on alerte, puis on condamne.
@@ -219,10 +225,10 @@ SECTIONS_MAX = 3000      # résolutions MoM de la diaphonie, cache compris
 ANGLE_PARALLELE = math.radians(10)
 
 
-def tr_effectif(tr_classe, f, fmax=None):
-    """Le front d'un signal à f : celui de sa techno, borné par 10 % de la
-    période -- à f plafonnée par la fréquence maximale de sa classe."""
-    return min(tr_classe, 0.1 / (min(f, fmax) if fmax else f))
+def tr_effectif(tr_classe, cadence):
+    """Le front d'un net : celui de sa techno, borné par 10 % de la période
+    de sa cadence."""
+    return min(tr_classe, 0.1 / cadence)
 
 
 def _pire(verdicts):
@@ -231,23 +237,20 @@ def _pire(verdicts):
 
 def _reglages(doc):
     r = doc.get("reglages") or {}
-    freqs = [float(f) for f in (r.get("frequences") or FREQUENCES) if float(f) > 0][:6]
     tr = dict(TR_CLASSES)
     for k, v in (r.get("tr") or {}).items():
         if float(v) > 0:
             tr[str(k)] = float(v)
-    fmax = dict(FMAX_CLASSES)
-    for k, v in (r.get("fmax") or {}).items():      # 0 ou vide : sans limite
+    cadences = dict(CADENCES)
+    for k, v in (r.get("cadences") or {}).items():  # 0 ou vide : le défaut
         if v and float(v) > 0:
-            fmax[str(k)] = float(v)
-        else:
-            fmax.pop(str(k), None)
+            cadences[str(k)] = float(v)
     # UNE PORTEUSE RF : les nets RF se jugent à leur porteuse, pas au genou
     # d'un front. Elle devient le front RF (0,35 / f), sans borne de période.
     porteuse = float(r.get("porteuse_rf") or 0)
     if porteuse > 0:
         tr["RF"] = 0.35 / porteuse
-    out = {"frequences": freqs or list(FREQUENCES), "tr": tr, "fmax": fmax,
+    out = {"tr": tr, "cadences": cadences,
            "porteuse_rf": porteuse if porteuse > 0 else None,
            "z0": float(r.get("z0") or Z0), "budget": float(r.get("budget") or BUDGET),
            "zdiff": float(r.get("zdiff") or ZDIFF)}
@@ -296,22 +299,19 @@ def _par_frequence(reg, classe, juge, net=None):
     """[{f, tr, f_eval, valeur, verdict, ...}] pour un net de `classe` (une
     classe sans front, masse ou alimentation, se juge comme Lent) :
     `juge(f_eval, tr)` rend (valeur, verdict) ou (valeur, verdict, {champs}).
-    `net` : sa porteuse propre, s'il en a une, passe devant celle de sa classe."""
+    `net` : sa porteuse propre, s'il en a une, passe devant celle de sa classe.
+    UNE SEULE COLONNE, à la cadence de la classe (ou à la porteuse) ; la liste
+    reste une liste, que chaque règle et le rapport parcourent déjà."""
     c = classe if classe in reg["tr"] else "Lent"
-    tr_c, fmax = reg["tr"][c], reg["fmax"].get(c)
-    out = []
     porteuse = _porteuse(reg, c, net)
-    for f in reg["frequences"]:
-        tr = 0.35 / porteuse if porteuse else tr_effectif(tr_c, f, fmax)
-        res = juge(0.35 / tr, tr)
-        col = {"f": f, "tr": tr, "f_eval": 0.35 / tr,
-               "valeur": round(res[0], 5), "verdict": res[1]}
-        if porteuse:
-            col["porteuse"] = porteuse
-        elif fmax and f > fmax:
-            col["f_plafond"] = fmax
-        out.append(dict(col, **(res[2] if len(res) > 2 else {})))
-    return out
+    f = porteuse or reg["cadences"].get(c) or reg["cadences"]["Lent"]
+    tr = 0.35 / porteuse if porteuse else tr_effectif(reg["tr"][c], f)
+    res = juge(0.35 / tr, tr)
+    col = {"f": f, "tr": tr, "f_eval": 0.35 / tr,
+           "valeur": round(res[0], 5), "verdict": res[1]}
+    if porteuse:
+        col["porteuse"] = porteuse
+    return [dict(col, **(res[2] if len(res) > 2 else {}))]
 
 
 def _plus_vite(reg, doc, nets):
@@ -347,13 +347,13 @@ def _moteurs(notes):
 
 def retours(doc, couches, reg, unite, notes, se):
     """Chaque via de signal qui change de couche : son courant de retour
-    trouve-t-il un chemin court, et que coûte-t-il à trois fréquences ?
+    trouve-t-il un chemin court, et que coûte-t-il à la cadence de son net ?
 
     LE MÊME MOTEUR QUE L'ONGLET CURRENT RETURN PATH (simulation_em) : plans de
     référence de part et d'autre, net de ces plans AU DROIT du via (mesuré par
     la page), vias de masse retenus et leur inductance de boucle, traversée de
     cavité par les condensateurs de pontage quand les deux plans sont de nets
-    différents. Ce qu'on ajoute : le verdict à trois fréquences, par la
+    différents. Ce qu'on ajoute : le verdict à la cadence du net, par la
     réflexion |Γ| = |Z| / |Z + 2 Z0| que cette impédance série cause sur la
     ligne.
     """
@@ -576,7 +576,7 @@ def _kb_larges_faces(h_v, h_a, x_lat, w_v, w_a):
 
 def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
     """Chaque couple de pistes voisines de nets différents : combien la
-    victime reçoit de l'agresseur, à trois fréquences.
+    victime reçoit de l'agresseur, à la cadence de l'agresseur.
 
     SUR LA MÊME COUCHE, LA SECTION EST RÉSOLUE, PAS ESTIMÉE : Kb et Kf sortent
     des matrices [L] et [C] de la section à deux conducteurs, par la méthode
@@ -586,7 +586,7 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
     faiblement couplées :
         NEXT = min(Kb max, Σ Kb·2Td / t_r)   -- sature au-delà de t_r·v/2 ;
         FEXT = |Σ Kf·Td| / t_r                -- croît avec la longueur.
-    t_r est le front effectif de l'AGRESSEUR à chaque fréquence.
+    t_r est le front effectif de l'AGRESSEUR à sa cadence.
 
     ENTRE DEUX COUCHES VOISINES sans plan entre elles (larges faces), deux
     pistes qui se superposent se couplent par leur largeur : Kb RÉSOLU aussi,
@@ -2156,7 +2156,7 @@ def paires_diff(doc, couches, reg, unite, notes, se, troncons, surf=None):
 # ou rien (une piste isolée, reliée à rien). Ce qui retient peut tomber au
 # milieu d'un segment : le T d'une autre piste posé sur son corps, une
 # pastille qu'il traverse, le versement du net où il entre. Sur un net de signal, le bout
-# se juge aussi à trois fréquences : un moignon réfléchit dès que son
+# se juge aussi à la cadence de sa classe : un moignon réfléchit dès que son
 # aller-retour 2T_d dépasse 10 % du front (20 % : critique).
 # ==========================================================================
 

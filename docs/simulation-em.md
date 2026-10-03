@@ -862,13 +862,16 @@ dépassement s'il fait moins de 0,5 mm). **L'empilage** se juge une fois pour
 la carte : plans voisins, couches de signal face à face, cavité alimentation /
 masse, symétrie.
 
-**Les règles électriques se jugent à trois fréquences.** Un signal à la
-fréquence f n'a pas le front qu'on veut : il a celui de la techno qui le
-pilote — sa **classe** : un GPIO monte en quelques ns même à 100 kHz —, borné
-par la période. Le front effectif est donc min(t_r de la classe, 0,1 / f), et
-la règle juge au genou 0,35 / t_r. Fréquences (100 kHz, 1 MHz, 100 MHz), Z₀
-(50 Ω), budget de diaphonie (5 %), Z_diff visée (100 Ω) et front par classe (Horloge 2 ns, Rapide
-1 ns, RF 0,1 ns, Analogique 100 ns, Lent 10 ns, nœud de découpage 5 ns) se
+**Les règles électriques se jugent à la cadence de chaque classe.** Un net
+n'a pas le front qu'on veut : il a celui de la techno qui le pilote — sa
+**classe** : un GPIO monte en quelques ns même à 100 kHz —, borné par la
+période de sa cadence maximale. Le front effectif est donc min(t_r de la
+classe, 0,1 / cadence), et la règle juge au genou 0,35 / t_r : une colonne par
+constat. Les trois fréquences communes à la carte ont disparu — elles
+donnaient trois colonnes presque toujours identiques. Z₀ (50 Ω), budget de
+diaphonie (5 %), Z_diff visée (100 Ω) et, par classe, front et cadence
+(Horloge 2 ns / 50 MHz, Rapide 1 ns / 100 MHz, RF 0,1 ns / 1 GHz, Analogique
+100 ns / 1 MHz, Lent 10 ns / 10 MHz, nœud de découpage 5 ns / 2 MHz) se
 règlent dans le panneau. La classe de chaque net est écrite à côté de son nom
 dans le rapport : c'est elle qui fixe le verdict, et un net mal classé par son
 nom (LNA_EN pris pour du RF) se voit là.
