@@ -249,6 +249,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simCulsDeSac","simDCCoucheInteressante",
   "simChampTexte","SIM_XT","simRendreCrosstalk","simRendreRetour","simRendreCarte",
   "SIM_CARTE","simFicheCarte","simCarteTexte","simCarteReglagesDoc","cuLabel",
+  "simCarteReglagesCharger","simCarteReglagesGarder",
   "simCarteParNet","simCarteCourants","simCarteCourantsDC","simCarteMeta",
   "simCarteTrace","simCarteFrontsAvert","simCarteCle","simCarteTri","simCarteNomCarte","SIM_CARTE_DEROG",
   "SIM_CARTE_REF","SIM",
@@ -16870,6 +16871,33 @@ T("Vérification de la carte : un front qui ne tient pas à sa fréquence est si
   r.porteuse=868e6;
   if(simCarteFrontsAvert(r).length!==1)throw new Error("avec une porteuse, le front RF ne compte plus");
 });
+T("Vérification de la carte : chaque carte garde ses réglages",()=>{
+  /* Une carte LoRa réglée à 868 MHz ; la carte NFC ouverte ensuite repart
+     des défauts ; revenir à la première rend ses 868 MHz et ses courants. */
+  const carte=SIM_PCB.carte, garde=JSON.stringify(SIM_CARTE.reglages), r=SIM_CARTE.reglages;
+  let nom="LORA.pcb";
+  SIM_PCB.carte=()=>nom;
+  try{
+    simCarteReglagesCharger();
+    r.porteuse=868e6; r.courants="VCC=0,5 A"; r.cadences.Horloge=1e8;
+    simCarteReglagesGarder();
+    SIM_CARTE.res={constats:[]};
+    nom="NFC.pcb"; simCarteReglagesCharger();
+    if(SIM_CARTE.res!==null)throw new Error("le rapport de la carte LoRa survit sur la NFC");
+    if(SIM_CARTE.reglages!==r)throw new Error("l'objet des réglages doit rester le même");
+    if(r.porteuse!==0||r.courants!==""||r.cadences.Horloge!==5e7)
+      throw new Error("la carte NFC hérite de la LoRa : "+JSON.stringify(r));
+    nom="LORA.pcb"; simCarteReglagesCharger();
+    if(r.porteuse!==868e6||r.courants!=="VCC=0,5 A"||r.cadences.Horloge!==1e8||r.cadences.Lent!==1e7)
+      throw new Error("la carte LoRa a perdu ses réglages : "+JSON.stringify(r));
+  }finally{
+    SIM_PCB.carte=carte;
+    for(const n of ["LORA.pcb","NFC.pcb"])localStorage.removeItem("cao.carte.reglages.v1."+n);
+    SIM_CARTE.carteReglee=undefined; SIM_CARTE.res=null;
+    Object.assign(r,JSON.parse(garde));
+  }
+});
+
 T("Vérification de la carte : les réglages partent en unités du serveur",()=>{
   const d=simCarteReglagesDoc();
   /* une cadence par classe, plus de fréquences communes */
