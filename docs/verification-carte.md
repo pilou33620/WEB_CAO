@@ -127,6 +127,12 @@ en changer **convertit** la valeur affichée, elle ne la réinterprète pas.
 Changer un réglage ne relance rien : cliquez de nouveau sur **▶ Vérifier la
 carte**. Les réglages employés sont écrits en tête du rapport.
 
+**Les réglages sont gardés par carte**, dans ce navigateur, sous le nom de la
+carte (comme les dérogations) : une carte LoRa garde ses 868 MHz, la carte
+NFC ouverte ensuite repart des défauts — ou de ses propres réglages — et ne
+les hérite pas. Ouvrir une autre carte efface aussi le rapport de la
+précédente. Un navigateur privé repart des défauts.
+
 ---
 
 ## 4. Lire le rapport

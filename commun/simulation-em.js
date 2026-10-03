@@ -6190,8 +6190,9 @@ const SIM_CARTE_REGLES={
 };
 
 /* ---------- Ce qui dure d'une vérification à l'autre, dans ce navigateur :
-   les dérogations d'une carte et la révision de référence. Rien d'autre ne
-   s'y garde, et tout se relit sans : un navigateur privé repart de zéro. */
+   les réglages et les dérogations d'une carte, et la révision de référence.
+   Rien d'autre ne s'y garde, et tout se relit sans : un navigateur privé
+   repart de zéro. */
 function simCarteStock(cle,val){
   try{
     if(val===undefined)return JSON.parse(localStorage.getItem(cle)||"null");
@@ -6218,6 +6219,35 @@ function simCarteDerogations(){
 function simCarteReference(){
   const r=simCarteStock(SIM_CARTE_REF);
   return r&&r.cles&&typeof r.cles==="object"?r:null;
+}
+/* LES RÉGLAGES D'UNE CARTE, gardés sous son nom : une carte LoRa garde ses
+   868 MHz, la carte NFC ouverte ensuite ne les hérite pas. Une carte jamais
+   réglée repart des défauts. Fusion clé par clé, au type près : un réglage
+   ajouté plus tard prend son défaut sur une carte enregistrée avant lui, et
+   une valeur abîmée dans le stockage est ignorée. L'objet `reglages` reste le
+   même : seules ses clés changent. */
+const SIM_CARTE_REGLAGES="cao.carte.reglages.v1.";
+const SIM_CARTE_DEFAUTS=JSON.stringify({reglages:SIM_CARTE.reglages,unites:SIM_CARTE.unites});
+function simCarteReglagesCharger(){
+  const nom=simCarteNomCarte();
+  if(SIM_CARTE.carteReglee===nom)return;
+  /* UNE AUTRE CARTE : le rapport de la précédente part avec ses réglages —
+     ses constats peints sur la nouvelle carte tomberaient n'importe où. */
+  if(SIM_CARTE.carteReglee!==undefined)
+    Object.assign(SIM_CARTE,{res:null,err:"",actif:-1,parDefaut:[],natures:{}});
+  SIM_CARTE.carteReglee=nom;
+  const d=JSON.parse(SIM_CARTE_DEFAUTS), m=simCarteStock(SIM_CARTE_REGLAGES+nom)||{};
+  for(const q of ["reglages","unites"])
+    for(const k in d[q]){
+      const v=(m[q]||{})[k], def=d[q][k];
+      if(v!=null&&typeof v===typeof def)
+        d[q][k]=typeof def==="object"?Object.assign(def,v):v;
+      SIM_CARTE[q][k]=d[q][k];
+    }
+}
+function simCarteReglagesGarder(){
+  simCarteStock(SIM_CARTE_REGLAGES+simCarteNomCarte(),
+                {reglages:SIM_CARTE.reglages,unites:SIM_CARTE.unites});
 }
 function simCarteResume(k){
   return ((SIM_CARTE_REGLES[k.regle]||{}).titre||k.regle)+" · "+
@@ -6324,6 +6354,7 @@ function simCarteAvertEcrire(){
 }
 
 function simCorpsCarte(){
+  simCarteReglagesCharger();             // les réglages de CETTE carte
   /* `lbl` : le libellé entre DANS le groupe — il ne reste jamais seul en fin
      de ligne quand la barre passe à la ligne. */
   const gr=lbl=>'<span class="simGr">'+(lbl?'<span class="pnl-lbl">'+lbl+'</span>':'');
@@ -6416,6 +6447,7 @@ function simCorpsCarte(){
   '</div>';
 }
 function simBrancherCarte(){
+  simCarteReglagesCharger();
   const go=simEl("simCarteGo"), ex=simEl("simCarteExport"), r=SIM_CARTE.reglages;
   if(go)go.onclick=simCarteGo;
   if(ex){ex.onclick=simCarteExporter;ex.disabled=!SIM_CARTE.res;}
@@ -6450,6 +6482,7 @@ function simBrancherCarte(){
       if(v>0)ecrire(v);
       else if(vide&&!String(this.value).trim())ecrire(0);
       simCarteAvertEcrire();
+      simCarteReglagesGarder();
     };
   };
   /* Un champ à unité : la valeur vit en Hz ou en s. En changer GARDE le
@@ -6479,12 +6512,13 @@ function simBrancherCarte(){
   simCarteAvertEcrire();
   for(const [id,cle] of [["simCartePorteuses","porteuses"],["simCarteCourants","courants"]]){
     const e=simEl(id);
-    if(e)e.oninput=function(){r[cle]=String(this.value);};
+    if(e)e.oninput=function(){r[cle]=String(this.value);simCarteReglagesGarder();};
   }
   const dc=simEl("simCarteCourantsDC");
   if(dc)dc.onclick=function(){
     const n=simCarteCourantsDC(), e=simEl("simCarteCourants");
     if(e)e.value=r.courants;
+    simCarteReglagesGarder();
     this.title=n?n+" rail(s) repris de l'onglet Chute DC":
       "Aucune charge dans l'onglet Chute DC : posez-y les consommateurs et leur courant.";
   };
@@ -6492,6 +6526,7 @@ function simBrancherCarte(){
 
 async function simCarteGo(){
   if(SIM_CARTE.occupe)return;
+  simCarteReglagesCharger();
   const go=simEl("simCarteGo");
   SIM_CARTE.occupe=true; SIM_CARTE.err="";
   if(go)go.disabled=true;
@@ -18819,8 +18854,14 @@ const SIM_ANALYSES={
     rendre:simRendreCarte,
     apres:simCarteApres,
     /* LA CARTE ENTIÈRE NE DÉPEND PAS DE LA SÉLECTION : cliquer une piste ne
-       doit ni effacer le rapport, ni le relancer. */
-    oublier:function(){return false;}
+       doit ni effacer le rapport, ni le relancer. Ouvrir une AUTRE carte, si :
+       le panneau se repose avec les réglages de celle-ci, sans le rapport de
+       la précédente (simCarteReglagesCharger). */
+    oublier:function(){
+      if(SIM_CARTE.carteReglee!==undefined&&SIM_CARTE.carteReglee!==simCarteNomCarte())
+        simPoser();
+      return false;
+    }
   },
   dc:{
     nom:"Chute DC",
