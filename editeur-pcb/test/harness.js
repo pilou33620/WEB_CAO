@@ -16872,9 +16872,15 @@ T("Vérification de la carte : un front qui ne tient pas à sa fréquence est si
 });
 T("Vérification de la carte : les réglages partent en unités du serveur",()=>{
   const d=simCarteReglagesDoc();
-  if(d.frequences.join()!==[1e5,1e6,1e8].join()||d.budget!==0.05||d.z0!==50||
-     d.zdiff!==100||Math.abs(d.tr.Lent-1e-8)>1e-20||d.fmax.Lent!==1e7||d.fmax.RF!==0||d.porteuse_rf!==0)
+  /* une cadence par classe, plus de fréquences communes */
+  if("frequences" in d||"fmax" in d||d.budget!==0.05||d.z0!==50||
+     d.zdiff!==100||Math.abs(d.tr.Lent-1e-8)>1e-20||d.cadences.Lent!==1e7||
+     d.cadences.Horloge!==5e7||d.cadences.RF!==1e9||d.porteuse_rf!==0)
     throw new Error("réglages : "+JSON.stringify(d));
+  /* et chaque défaut laisse le front de sa classe intact : 0,1 / cadence ≥ t_r */
+  for(const k in d.tr)
+    if(0.1/d.cadences[k]<d.tr[k]*(1-1e-9))
+      throw new Error(k+" : la cadence écrase le front par défaut");
 });
 
 T("Vérification de la carte : Z₀ par classe, porteuses par net, courants par rail",()=>{
@@ -16903,8 +16909,9 @@ T("Vérification de la carte : Z₀ par classe, porteuses par net, courants par 
     if(c2.VCC!==0.5||Math.abs(c2["3V3"]-0.3)>1e-12)throw new Error("repris : "+r.courants);
     // l'en-tête du rapport les dit
     const L=simCarteMeta({pistes:1,tolerance_deg:1,bilan:{courant:{rails:2,courants_donnes:2}},
-      reglages:{frequences:[1e8],z0:50,budget:0.05,z0_classes:{Rapide:90},porteuses:{NFC:13.56e6}}}).join(" | ");
-    if(!/Z₀ par classe : Rapide 90 Ω/.test(L)||!/porteuses par net : NFC 13,6 MHz/.test(L)||
+      reglages:{cadences:{Horloge:5e7},z0:50,budget:0.05,z0_classes:{Rapide:90},porteuses:{NFC:13.56e6}}}).join(" | ");
+    if(!/cadence par classe : Horloge 50 MHz/.test(L)||
+       !/Z₀ par classe : Rapide 90 Ω/.test(L)||!/porteuses par net : NFC 13,6 MHz/.test(L)||
        !/courant donné pour 2 rail/.test(L))throw new Error("en-tête : "+L);
   }finally{
     Object.assign(r,JSON.parse(garde)); SIM_DCB.bornes=bornes;
@@ -17115,7 +17122,7 @@ T("Vérification de la carte : un constat de carte n'a ni net ni position",()=>{
     Object.assign(SIM_CARTE,{err:"",occupe:false,actif:-1,unite:1,parDefaut:[],
       natures:{GND:"Masse"},
       res:{pistes:1,tolerance_deg:1,bilan:{couture:{cavites:1}},
-           reglages:{frequences:[1e5,1e6,1e8],z0:50,budget:0.05,zdiff:90,tr:{}},
+           reglages:{cadences:{Rapide:1e8},z0:50,budget:0.05,zdiff:90,tr:{}},
            constats:[
         {regle:"empilage",severite:"vigilance",x:null,y:null,c:"empilage",n:null,
          frequences:[],msg:"Empilage dissymétrique"},

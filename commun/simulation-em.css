@@ -114,6 +114,8 @@ select.simUSel{
    ligne -- panneau etroit, police plus large --, les deux y vont ensemble :
    un libelle seul en fin de ligne se lit comme un defaut de mise en page. */
 .simGr{display:inline-flex;align-items:center;gap:6px}
+/* Un groupe qui porte un champ de texte : il prend la place qui reste. */
+.simGr.simGrLarge{flex:1 1 300px}
 .pnl-bar.simBarF{gap:4px}
 select.simUSel:hover{color:var(--txt);border-color:var(--border)}
 select.simUSel:focus{outline:none;border-color:var(--blue);color:var(--txt)}

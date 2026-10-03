@@ -153,25 +153,24 @@ def test_retour_meme_masse():
     res = analyser(vias=[via(retours=[masse(10.8)])], natures={"CLK": "Rapide"})
     assert de(res, "retour") == [], res["constats"]
     assert res["bilan"]["retour"] == {"vias": 1, "plan_change": 1}, res["bilan"]
-    # aucun via dans le rayon, le plus proche à 30 mm. Un Lent (10 ns) tient à
-    # 100 kHz et 1 MHz (λ/20 = 207 mm au genou de 35 MHz). Il ne bascule pas
-    # au-delà de 10 MHz (FMAX_CLASSES) : à 100 MHz son front reste 10 ns
+    # aucun via dans le rayon, le plus proche à 30 mm. Un Lent (10 ns) tient
+    # (λ/20 = 207 mm au genou de 35 MHz) : sa cadence de 10 MHz (CADENCES)
+    # laisse son front à 10 ns
     res = analyser(vias=[via(retour_hors_rayon_mm=30.0)], natures={"CLK": "Lent"})
     assert de(res, "retour") == [], de(res, "retour")
-    assert res["reglages"]["fmax"]["Lent"] == 1e7, res["reglages"]
-    # sans plafond (0), à 100 MHz son front tombe à 1 ns, genou 350 MHz,
-    # λ/20 = 21 mm : la boucle est trop grande
+    assert res["reglages"]["cadences"]["Lent"] == 1e7, res["reglages"]
+    # cadencé à 100 MHz, son front tombe à 1 ns, genou 350 MHz, λ/20 = 21 mm :
+    # la boucle est trop grande. Une seule colonne, à la cadence de la classe
     res = analyser(vias=[via(retour_hors_rayon_mm=30.0)], natures={"CLK": "Lent"},
-                   reglages={"fmax": {"Lent": 0}})
+                   reglages={"cadences": {"Lent": 1e8}})
     k = de(res, "retour")
-    assert len(k) == 1 and [f["verdict"] for f in k[0]["frequences"]] == \
-        ["ok", "ok", "vigilance"], k
-    assert [round(f["tr"] * 1e9, 3) for f in k[0]["frequences"]] == [10, 10, 1]
-    assert 1 < k[0]["frequences"][2]["d_sur_lambda20"] < 2, k[0]["frequences"]
+    assert len(k) == 1 and [f["verdict"] for f in k[0]["frequences"]] == ["vigilance"], k
+    assert [(f["f"], round(f["tr"] * 1e9, 3)) for f in k[0]["frequences"]] == [(1e8, 1)]
+    assert 1 < k[0]["frequences"][0]["d_sur_lambda20"] < 2, k[0]["frequences"]
     assert "30.00 mm" in k[0]["msg"] and "tient des fronts" in k[0]["msg"], k[0]["msg"]
-    # un front RF de 0,1 ns (genou 3,5 GHz, λ/20 ≈ 2 mm) condamne partout
+    # un front RF de 0,1 ns (genou 3,5 GHz, λ/20 ≈ 2 mm) condamne
     k = de(analyser(vias=[via(retour_hors_rayon_mm=30.0)], natures={"CLK": "RF"}), "retour")
-    assert [f["verdict"] for f in k[0]["frequences"]] == ["critique"] * 3, k
+    assert [f["verdict"] for f in k[0]["frequences"]] == ["critique"], k
     # le front de la classe se règle dans le document
     k = de(analyser(vias=[via(retour_hors_rayon_mm=30.0)], natures={"CLK": "Lent"},
                     reglages={"tr": {"Lent": 0.1e-9}}), "retour")
@@ -200,7 +199,7 @@ def test_retour_gnd_vers_alim():
     assert kl and "GND → 3V3" in kl[0]["msg"], (kl, loin["notes"])
     # aucun pont ni dans le rayon ni au-delà : pas de 100 nF inventé au rayon
     assert "sur toute la carte" in kl[0]["msg"], kl
-    g = lambda k: [f["valeur"] for f in k[0]["frequences"]] if k else [0, 0, 0]
+    g = lambda k: [f["valeur"] for f in k[0]["frequences"]] if k else [0]
     assert all(a < b for a, b in zip(g(kp), g(kl))), (g(kp), g(kl))
     assert not kp or "C5" in kp[0]["msg"], kp
     print("[PASS] test_retour_gnd_vers_alim")
@@ -283,12 +282,13 @@ def test_diaphonie():
                    natures={"VCC": "Alimentation"})
     assert vcc["bilan"]["diaphonie"]["couples"] == 0 and de(vcc, "diaphonie") == []
     # UN ARC compte comme les pistes droites : un quart de cercle de 20 mm de
-    # rayon, décalé de 0,4 mm, suit la victime et la couple
+    # rayon, décalé de 0,4 mm, suit la victime et la couple (agresseur à 1 ns :
+    # sur 31 mm, une horloge à 2 ns resterait sous le budget)
     arc = {"c": "Top", "n": "CLK", "w": 0.2, "s": [0.0, 20.0], "e": [20.0, 0.0],
            "m": [0.0, 0.0], "h": True}
     arc2 = {"c": "Top", "n": "DATA", "w": 0.2, "s": [0.0, 20.4], "e": [20.4, 0.0],
             "m": [0.0, 0.0], "h": True}
-    k = de(analyser(arcs=[arc, arc2], natures={"CLK": "Horloge", "DATA": "Lent"}),
+    k = de(analyser(arcs=[arc, arc2], natures={"CLK": "Rapide", "DATA": "Lent"}),
            "diaphonie")
     assert k and "Depuis CLK" in k[0]["msg"], k
     # LARGES FACES : deux couches de signal voisines (Top, In1) sans plan entre
@@ -327,7 +327,7 @@ def test_diaphonie():
     # LA SOMME : deux agresseurs de part et d'autre, chacun sous le budget
     # (vigilance), ensemble au-dessus (critique)
     tri = [droite("A1", -0.4, x2=30.0), droite("V", 0.0, x2=30.0), droite("A2", 0.4, x2=30.0)]
-    nat = {"A1": "Horloge", "A2": "Horloge", "V": "Lent"}
+    nat = {"A1": "Rapide", "A2": "Rapide", "V": "Lent"}
     res = de(analyser(pistes=tri, natures=nat), "diaphonie")
     seuls = [x for x in res if x["n"] == "V" and "Somme" not in x["msg"]]
     somme = [x for x in res if "Somme de 2 agresseurs" in x["msg"]]
@@ -395,20 +395,20 @@ def test_empilage():
 def test_impedance():
     # une piste uniforme ne se compare qu'à elle-même : rien
     assert de(analyser(pistes=[droite("DATA", 0.0)]), "impedance") == []
-    # une ligne Rapide de 0,1 mm, loin des 50 Ω visés, sur 100 mm : critique partout
+    # une ligne Rapide de 0,1 mm, loin des 50 Ω visés, sur 100 mm : critique
     res = analyser(pistes=[droite("USB", 0.0, w=0.1)], natures={"USB": "Rapide"})
     k = de(res, "impedance")
-    assert len(k) == 1 and verdicts(k[0]) == ["critique"] * 3 and "cible 50 Ω" in k[0]["msg"], k
+    assert len(k) == 1 and verdicts(k[0]) == ["critique"] and "cible 50 Ω" in k[0]["msg"], k
     assert res["bilan"]["impedance"]["nets"] == 1, res["bilan"]
     # un rétrécissement de 20 mm dans une piste lente de 0,3 mm : invisible tant
-    # que le front est lent -- et il le reste, un Lent ne passe pas 10 MHz --,
-    # vu quand, sans plafond, il tombe à 1 ns
+    # que le front est lent -- et il le reste, un Lent cadencé à 10 MHz --,
+    # vu quand, cadencé à 100 MHz, il tombe à 1 ns
     retreci = [droite("DATA", 0.0, x2=40.0, w=0.3),
                droite("DATA", 0.0, x1=40.0, x2=60.0, w=0.1),
                droite("DATA", 0.0, x1=60.0, w=0.3)]
     assert de(analyser(pistes=retreci), "impedance") == []
-    k = de(analyser(pistes=retreci, reglages={"fmax": {"Lent": 0}}), "impedance")
-    assert len(k) == 1 and verdicts(k[0])[:2] == ["ok", "ok"] and verdicts(k[0])[2] != "ok", k
+    k = de(analyser(pistes=retreci, reglages={"cadences": {"Lent": 1e8}}), "impedance")
+    assert len(k) == 1 and verdicts(k[0]) != ["ok"], k
     assert "–" in k[0]["msg"], k[0]["msg"]
     print("[PASS] test_impedance")
 
@@ -467,7 +467,7 @@ def test_decouplage():
     assert de(analyser(composants=[u1, capa(2.0)], natures=natures), "decouplage") == []
     # à 15 mm : hors du rayon de λ/40 au genou de 350 MHz (≈ 10 mm)
     k = de(analyser(composants=[u1, capa(15.0)], natures=natures), "decouplage")
-    assert len(k) == 1 and verdicts(k[0]) == ["vigilance"] * 3 and "C1" in k[0]["msg"], k
+    assert len(k) == 1 and verdicts(k[0]) == ["vigilance"] and "C1" in k[0]["msg"], k
     assert k[0]["n"] == "VCC" and "tient des fronts" in k[0]["msg"], k
     # un condensateur qui ne va pas à la masse ne découple pas
     k = de(analyser(composants=[u1, capa(2.0, autre="CLK")], natures=natures), "decouplage")
@@ -498,12 +498,12 @@ def test_bord():
     fab = [x for x in k if not x["frequences"]]
     cem = [x for x in k if x["frequences"]]
     assert len(fab) == 1 and fab[0]["severite"] == "critique" and "0.10 mm" in fab[0]["msg"], k
-    assert cem == [], cem           # un Lent plafonné à 10 MHz ne rayonne pas ici
-    sans = de(analyser(contour=contour, pistes=[droite("DATA", 0.2, x1=10.0, x2=40.0)],
-                       reglages={"fmax": {"Lent": 0}}), "bord")
-    cem = [x for x in sans if x["frequences"]]
-    assert len(cem) == 1 and verdicts(cem[0]) == ["ok", "ok", "vigilance"], cem
-    assert "f_plafond" not in cem[0]["frequences"][2], cem
+    assert cem == [], cem           # un Lent cadencé à 10 MHz ne rayonne pas ici
+    vite = de(analyser(contour=contour, pistes=[droite("DATA", 0.2, x1=10.0, x2=40.0)],
+                       reglages={"cadences": {"Lent": 1e8}}), "bord")
+    cem = [x for x in vite if x["frequences"]]
+    assert len(cem) == 1 and verdicts(cem[0]) == ["vigilance"], cem
+    assert cem[0]["frequences"][0]["f"] == 1e8, cem
     assert de(analyser(contour=contour, pistes=[droite("DATA", 25.0, x1=10.0, x2=40.0)]),
               "bord") == []
     # la règle des 20 H : 3V3 aussi grand que la masse
@@ -563,9 +563,9 @@ def test_orphelins():
     res = analyser(pistes=[droite("S", 0.0, x2=10.0)], pastilles=[pad(0, 0)])
     k = de(res, "orphelin")
     assert len(k) == 1 and "antenne" in k[0]["msg"] and k[0]["x"] == 10.0, k
-    # sévérité de base « bout libre » ; un Lent plafonné à 10 MHz tient à 100 MHz
-    assert verdicts(k[0]) == ["ok", "ok", "ok"] and k[0]["severite"] == "vigilance", k
-    assert k[0]["frequences"][2]["f_plafond"] == 1e7 and k[0]["frequences"][2]["tr"] == 1e-8, k
+    # sévérité de base « bout libre » ; un Lent cadencé à 10 MHz garde ses 10 ns
+    assert verdicts(k[0]) == ["ok"] and k[0]["severite"] == "vigilance", k
+    assert k[0]["frequences"][0]["f"] == 1e7 and k[0]["frequences"][0]["tr"] == 1e-8, k
     # une piste reliée à rien : critique, une seule fois
     k = de(analyser(pistes=[droite("S", 0.0, x1=20.0, x2=30.0)]), "orphelin")
     assert len(k) == 1 and k[0]["severite"] == "critique" and "isolée" in k[0]["msg"], k
@@ -596,11 +596,11 @@ def test_antenne_porteuse_rails():
     k = de(analyser(pistes=[droite("ANT", 0.0, x1=20.0, x2=30.0)],
                     natures={"ANT": "Antenne"}), "orphelin")
     assert k and k[0]["severite"] == "critique", k
-    # porteuse RF à 868 MHz : front 0,40 ns dans toutes les colonnes, sans
-    # borne de période ; le via qui condamne à 0,1 ns tient ici mieux
+    # porteuse RF à 868 MHz : front 0,40 ns, sans borne de période ni cadence
+    # (même cadencé à 10 GHz) ; le via qui condamne à 0,1 ns tient ici mieux
     rf = dict(vias=[via(retour_hors_rayon_mm=5.0)], natures={"CLK": "RF"})
     dur = de(analyser(**rf), "retour")
-    k = de(analyser(reglages={"porteuse_rf": 868e6, "frequences": [1e5, 1e6, 1e9]}, **rf),
+    k = de(analyser(reglages={"porteuse_rf": 868e6, "cadences": {"RF": 1e10}}, **rf),
            "retour")
     assert k and all(abs(f["tr"] - 0.35 / 868e6) < 1e-15 and f["porteuse"] == 868e6
                      for f in k[0]["frequences"]), k
@@ -731,7 +731,7 @@ def test_cibles_par_classe_et_par_net():
     assert k and "cible %.0f Ω" % (2 * z) in k[0]["msg"], k
     assert de(analyser(pistes=[droite("DATA", 0.0, w=0.1)]), "impedance") == []
     k = de(analyser(pistes=[droite("DATA", 0.0, w=0.1)], reglages={
-        "z0_classes": {"Lent": 25.0}, "fmax": {"Lent": 0}}), "impedance")
+        "z0_classes": {"Lent": 25.0}, "cadences": {"Lent": 1e8}}), "impedance")
     assert k and "cible 25 Ω" in k[0]["msg"], k
     # le via d'une classe à 75 Ω réfléchit moins que face à 50 Ω
     rf = dict(vias=[via(retour_hors_rayon_mm=5.0)], natures={"CLK": "RF"})

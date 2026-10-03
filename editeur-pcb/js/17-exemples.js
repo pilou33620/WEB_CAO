@@ -260,6 +260,14 @@ function exemple2(){
 
   D.classes.push({name:"Impédance 50Ω",w:0.38,clr:0.25,via:0.8,drill:0.4});
   D.netClass["RF_ANT"]="Impédance 50Ω";
+  /* La NATURE d'un net (Audit de la carte, simulation) se lit dans le nom de
+     sa classe : restés en « Défaut », l'USB et l'horloge SPI y passaient pour
+     des signaux lents. Même géométrie que « Défaut » : le routage ne change
+     pas. */
+  D.classes.push({name:"Rapide", w:0.25,clr:0.2,via:0.6,drill:0.3},
+                 {name:"Horloge",w:0.25,clr:0.2,via:0.6,drill:0.3});
+  D.netClass["USB_DP"]=D.netClass["USB_DM"]="Rapide";
+  D.netClass["SPI_SCK"]="Horloge";
 
   const W=0.4, S1=0.25, WRF=0.38;
   const VD=0.8, VF=0.4;
