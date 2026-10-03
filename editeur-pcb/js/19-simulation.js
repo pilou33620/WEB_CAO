@@ -4320,8 +4320,11 @@ function simEstResistancePcb(ref, val, type){
 const SIM_PCB={
   outil:"editeur-pcb",
 
+  /* Le projet d'abord, sinon le fichier ouvert (PCB_FICHIER, 07-app.js) :
+     deux cartes sans projet ne partagent plus « carte ». */
   carte:function(){
-    return (typeof fabBase==="function")?fabBase():"carte";
+    return (typeof pcbProjNom==="function"&&pcbProjNom())||
+           (typeof PCB_FICHIER==="string"&&PCB_FICHIER)||"carte";
   },
 
   refCandidats:simRefCandidatsPcb,
