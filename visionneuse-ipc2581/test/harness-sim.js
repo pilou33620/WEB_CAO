@@ -5566,6 +5566,12 @@ T("PDN (B6/B7) : point observé sur le circuit alimenté, montage selon la profo
   if(!(c1.lMount > c2.lMount)) throw new Error("un condensateur loin de la cavité doit voir plus d'inductance");
 });
 
+T("PDN : le modèle du catalogue (« lib/simulation/X.sub ») trouve la base Murata", function(){
+  const p = simPDNParasitesCapa({spice:"lib/simulation/GCM155R71C104KA55.sub", mpn:"GCM155R71C104KA55D", val:"100nF"});
+  if(p.prov !== "spice") throw new Error("prov « spice » attendue, obtenue " + p.prov);
+  if(Math.abs(p.esr - 0.0142) > 1e-6) throw new Error("ESR Murata attendue 0.0142, obtenue " + p.esr);
+});
+
 T("PDN (B8) : la visionneuse trouve la base Murata par `part`, et chiffre comme l'éditeur", function(){
   cartePdn4c();
   if(!SIM_PARASITES_MURATA_DEFAUT || !SIM_PARASITES_MURATA_DEFAUT.GCM155R71C104KA55)

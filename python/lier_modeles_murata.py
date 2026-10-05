@@ -9,10 +9,16 @@ qu'on regarde une resonance ou une impedance en frequence.
 
 Murata publie, lui, un modele par reference : un reseau RLC a une quinzaine
 de noeuds qui reproduit la vraie courbe jusqu'a plusieurs GHz. Les packs
-telecharges sont ranges tels quels dans LIB/lib_simulation/<pack>/. Ce script
-fait le lien : pour chaque reference GCM, GRM ou LQW du catalogue il cherche
-le .mod correspondant, le recopie a plat dans LIB/lib_simulation/ sous le nom
-de la reference, et remplace le modele generique dans le CSV.
+telecharges se deposent tels quels dans lib_simulation/<pack>/. Ce script
+fait le lien : pour chaque reference Murata du catalogue -- la reference
+principale, puis les secondes sources -- il cherche le .mod correspondant, le
+recopie a plat dans lib_simulation/ sous le nom de la reference, et remplace
+le modele generique dans le CSV. Les packs se suppriment ensuite : seuls les
+.sub a plat servent, et le calcul PDN en tire lui-meme C/ESR/ESL et L/DCR
+(web_CAO.py, /api/lib/parasites) -- aucune table a regenerer.
+
+La LIB est celle de l'outil (web_CAO.dossier_lib_defaut : WEB_SUITE/PROJETS/
+LIB_CAO), ou celle que designe la variable WEB_CAO_LIB.
 
 A plat, et pas en place : la route /api/lib/fichier refuse tout nom qui
 contient un separateur de dossier (web_CAO.py, chemin_lib_fichier). Un modele
@@ -34,17 +40,24 @@ import sys
 import zipfile
 
 RACINE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LIB = os.path.join(RACINE, "LIB")
+sys.path.insert(0, RACINE)
+import web_CAO  # noqa: E402
+
+LIB = os.environ.get("WEB_CAO_LIB") or web_CAO.dossier_lib_defaut()
 SIM = os.path.join(LIB, "lib_simulation")
 CSV_CATALOGUE = os.path.join(LIB, "LIB_composants.csv")
 COL_MODELE = "Modèle Simulation"
-COL_REFERENCE = "Part Number"
+# La reference principale d'abord, puis les secondes sources : un composant
+# d'un autre fabricant dont la 2e source est une Murata prend son modele.
+COLS_REFERENCE = ("Part Number", "2nd source P/N", "3nd source P/N", "4nd source P/N")
 COL_NOM = "Part Name"
 COL_VALEUR = "Value"
 
-# Les seules familles couvertes ici. Ce sont celles dont Murata publie des
-# modeles large bande et dont les packs sont presents dans lib_simulation.
-FAMILLES = ("GCM", "GRM", "LQW")
+# Les familles Murata dont un pack peut etre depose. Les MLCC partagent le
+# meme codage de reference (voir cle_sans_tolerance), ce qui permet les
+# rapprochements par valeur ; les autres ne se relient qu'a l'identique.
+MLCC = ("GCM", "GRM", "GJM", "GCQ", "GRT", "GCJ")
+FAMILLES = MLCC + ("LQW", "LQG", "LQP", "LQM", "BLM")
 
 # Les modeles generiques que ce script a le droit de remplacer. Tout autre
 # contenu deja present dans la colonne est un choix fait par quelqu'un : on
@@ -105,17 +118,20 @@ def indexer_modeles():
 # -- correspondance reference catalogue -> modele ---------------------------
 
 ARBITRAGES = {
-    # 7 références GCM C0G 0402 50V dont la valeur nominale n'est pas au standard GCM155
-    "GCM1555C1HR70WA16D": "GCM1555C1HR75WA16",   # 0.7 pF -> 0.75 pF GCM C0G
-    "GCM1555C1H2R1BA16D": "GCM1555C1H2R0CA16",   # 2.1 pF -> 2.0 pF GCM C0G
-    "GCM1555C1H2R4BA16D": "GCM1885C1H2R4BA16",   # 2.4 pF -> GCM 2.4 pF C0G (modèle compatible multi-boîtier)
-    "GCM1555C1H3R6BA16D": "GCM1885C1H3R6BA16",   # 3.6 pF -> GCM 3.6 pF C0G (modèle compatible multi-boîtier)
-    "GCM1555C1H7R5DA16D": "GCM0335C1H7R5DA16",   # 7.5 pF -> GCM 7.5 pF C0G (modèle compatible multi-boîtier)
+    # Références GCM C0G 0402 50V sans modèle GCM : le GRM de même boîtier,
+    # même valeur et même tension (le réseau RLC ne dépend pas de la
+    # qualification auto) plutôt qu'un GCM d'un autre boîtier.
+    "GCM1555C1HR70WA16D": "GRM1555C1HR70WA01",   # 0.7 pF
+    "GCM1555C1H2R1BA16D": "GRM1555C1H2R1BA01",   # 2.1 pF
+    "GCM1555C1H2R4BA16D": "GRM1555C1H2R4BA01",   # 2.4 pF
+    "GCM1555C1H3R6BA16D": "GRM1555C1H3R6BA01",   # 3.6 pF
+    "GCM1555C1H7R5DA16D": "GRM1555C1H7R5DA01",   # 7.5 pF
+    # Aucune valeur exacte publiée : la plus proche
     "GCM1555G1H8R7CA16J": "GCM1555C1H8R2DA16",   # 8.7 pF -> 8.2 pF GCM C0G
     "GCM1555C1H131JA16D": "GCM1555C1H121JA16",   # 130 pF -> 120 pF GCM C0G
-    # Inductances boîtier 0201 / 0402 compatibles
-    "LQW03AW9N1J00D": "LQW15AN9N1H00",            # 9.1 nH -> LQW 9.1 nH
-    "LQW04AN2N6C00D": "LQW15AN2N5C00",            # 2.6 nH -> LQW 2.5 nH
+    # Inductances : la LQW15 (0402) de même valeur
+    "LQW03AW9N1J00D": "LQW15AN9N1H00",            # 9.1 nH
+    "LQW04AN2N6C00D": "LQW15AN2N6C00",            # 2.6 nH
 }
 
 
@@ -143,7 +159,7 @@ def cle_sans_tolerance(reference):
     Murata ne publie qu'une des deux ; la faire servir pour l'autre est un
     rapprochement legitime, mais il est signale comme tel dans le rapport.
     """
-    if len(reference) != 17 or not reference.startswith(("GCM", "GRM")):
+    if len(reference) != 17 or not reference.startswith(MLCC):
         return None
     return reference[:13] + reference[14:]
 
@@ -151,7 +167,8 @@ def cle_sans_tolerance(reference):
 def resoudre(reference, index, index_tolerance, index_13=None, index_val_diel=None):
     """(nom du modele, qualite) pour une reference, ou (None, None).
 
-    Qualite : 'exact', 'emballage', 'tolerance', 'variante_code', 'compatible_boitier', 'arbitrage'.
+    Qualite : 'exact', 'emballage', 'tolerance', 'variante_code', 'meme_boitier',
+    'compatible_boitier', 'arbitrage'.
     """
     # 0. Table d'arbitrage explicite
     for essai in variantes(reference):
@@ -173,22 +190,33 @@ def resoudre(reference, index, index_tolerance, index_13=None, index_val_diel=No
     # 3. Même base de 13 caractères (diélectrique, tension, valeur identiques, code usine/emballage différent)
     if index_13:
         for essai in variantes(reference):
-            if len(essai) >= 13 and essai.startswith(("GCM", "GRM")):
+            if len(essai) >= 13 and essai.startswith(MLCC):
                 proches = index_13.get(essai[:13])
                 if proches:
                     return sorted(proches)[0], "variante_code"
 
-    # 4. Modèle compatible multi-boîtier (même famille GCM/GRM, même diélectrique et même valeur)
+    # 4. Même boîtier, même diélectrique, même valeur, toutes familles MLCC
+    #    confondues -- puis, en dernier recours, un autre boîtier. Parmi les
+    #    candidats : même tension, puis même tolérance, puis même famille.
     if index_val_diel:
         for essai in variantes(reference):
-            m = re.match(r"^(GCM|GRM)[0-9A-Z]{3}([A-Z0-9]{2})[0-9A-Z]{2}([0-9R][0-9R][0-9R])", essai)
-            if m:
-                fam, diel, val_code = m.group(1), m.group(2), m.group(3)
-                proches = index_val_diel.get((fam, diel, val_code)) or index_val_diel.get(("ANY", diel, val_code))
+            m = RE_MLCC.match(essai)
+            if not m:
+                continue
+            fam, taille, diel, val_code = m.group(1), m.group(2), m.group(3), m.group(5)
+            for cle, qualite in (((taille, diel, val_code), "meme_boitier"),
+                                 (("ANY", diel, val_code), "compatible_boitier")):
+                proches = index_val_diel.get(cle)
                 if proches:
-                    return sorted(proches)[0], "compatible_boitier"
+                    return min(proches, key=lambda c: (c[8:10] != essai[8:10],
+                                                       c[13:14] != essai[13:14],
+                                                       c[:3] != fam, c)), qualite
 
     return None, None
+
+
+# serie, dimensions (3), epaisseur, dielectrique (2), tension (2), valeur (3)
+RE_MLCC = re.compile(r"^(%s)([0-9A-Z]{2})[0-9A-Z]([A-Z0-9]{2})([0-9A-Z]{2})([0-9R]{3})" % "|".join(MLCC))
 
 
 # -- controle de coherence --------------------------------------------------
@@ -214,7 +242,7 @@ def valeur_reference(reference):
     (1N5 = 1,5 nH, 10N = 10 nH).
     """
     ref = reference.rstrip("#")
-    if ref.startswith(("GCM", "GRM")) and len(ref) >= 13:
+    if ref.startswith(MLCC) and len(ref) >= 13:
         code, echelle = ref[10:13], 1e-12
     elif ref.startswith("LQW") and len(ref) >= 11:
         code, echelle = ref[7:11].rstrip("ABCDFGHJKM")[:3], 1e-9
@@ -288,22 +316,22 @@ def principal():
 
     index_13 = {}
     for ref in index:
-        if len(ref) >= 13 and ref.startswith(("GCM", "GRM")):
+        if len(ref) >= 13 and ref.startswith(MLCC):
             index_13.setdefault(ref[:13], []).append(ref)
 
     index_val_diel = {}
     for ref in index:
-        m = re.match(r"^(GCM|GRM)[0-9A-Z]{3}([A-Z0-9]{2})[0-9A-Z]{2}([0-9R][0-9R][0-9R])", ref)
+        m = RE_MLCC.match(ref)
         if m:
-            fam, diel, val_code = m.group(1), m.group(2), m.group(3)
-            index_val_diel.setdefault((fam, diel, val_code), []).append(ref)
+            taille, diel, val_code = m.group(2), m.group(3), m.group(5)
+            index_val_diel.setdefault((taille, diel, val_code), []).append(ref)
             index_val_diel.setdefault(("ANY", diel, val_code), []).append(ref)
 
     print("  %d modeles .mod indexes dans %s"
           % (len(index), os.path.relpath(SIM, RACINE)))
 
     lignes, entete = lire_catalogue()
-    i_ref = entete.index(COL_REFERENCE)
+    i_refs = [entete.index(c) for c in COLS_REFERENCE if c in entete]
     i_mod = entete.index(COL_MODELE)
     i_nom = entete.index(COL_NOM)
     i_val = entete.index(COL_VALEUR)
@@ -319,14 +347,24 @@ def principal():
         champs = next(csv.reader([lignes[n]], delimiter=";"))
         if len(champs) <= i_mod:
             continue
-        reference = (champs[i_ref] or "").strip().upper()
-        if not reference.startswith(FAMILLES):
+        murata = [r for r in ((champs[i] or "").strip().upper() for i in i_refs if i < len(champs))
+                  if r.startswith(FAMILLES)]
+        if not murata:
             continue
-        nom, actuel = champs[i_nom], (champs[i_mod] or "").strip()
-        modele, qualite = resoudre(reference, index, index_tolerance, index_13, index_val_diel)
+        nom = champs[i_nom]
+        # le catalogue ecrit « lib/simulation/X.sub » : on compare le nom seul
+        actuel = os.path.basename((champs[i_mod] or "").strip().replace("\\", "/"))
+        reference, modele, qualite = murata[0], None, None
+        for r in murata:
+            modele, qualite = resoudre(r, index, index_tolerance, index_13, index_val_diel)
+            if modele:
+                reference = r
+                break
 
         if valeurs_discordantes(reference, champs[i_val]):
+            # la reference ou la valeur est fausse : relier propagerait l'erreur
             doutes.append((nom, reference, champs[i_val]))
+            continue
 
         if modele is None:
             absents.append((nom, reference))
@@ -339,7 +377,7 @@ def principal():
             conserves.append((nom, reference, actuel, fichier))
             continue
         a_copier[fichier] = index[modele]
-        lignes[n] = remplacer_dernier_champ(lignes[n], fichier)
+        lignes[n] = remplacer_dernier_champ(lignes[n], "lib/simulation/" + fichier)
         lies.append((nom, reference, fichier, qualite))
 
     def bloc(titre, elements):
@@ -351,7 +389,8 @@ def principal():
                            ("emballage", "suffixe d'emballage ignore"),
                            ("tolerance", "equivalent de tolerance (a verifier)"),
                            ("variante_code", "variante de code usine/emballage"),
-                           ("compatible_boitier", "modele Murata compatible multi-boitier"),
+                           ("meme_boitier", "meme boitier, valeur et dielectrique (a verifier)"),
+                           ("compatible_boitier", "autre boitier, meme valeur (a verifier)"),
                            ("arbitrage", "arbitrage de valeur / serie")):
         bloc("Modeles fabricant relies -- " + titre,
              ["%-22s -> %-25s %s" % (r, f, nom)

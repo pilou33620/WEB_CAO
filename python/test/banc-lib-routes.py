@@ -45,6 +45,17 @@ class TestLibRoutes(unittest.TestCase):
         cls.httpd.server_close()
         web_CAO.PROJETS_OUVERT = cls.ouvert
 
+    def test_00_parasites_relus_dans_les_sub(self):
+        # la table du calcul PDN suit la bibliotheque : chaque .sub Murata y
+        # figure, un modele generique ({C}, {L}) non
+        with urllib.request.urlopen(f"{BASE_URL}/api/lib/parasites") as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertEqual(data["GCM155R71C104KA55"], {"c": 1.02e-07, "esl": 2.01e-10, "esr": 0.0142})
+        self.assertEqual(data["LQW15AN10NG00"], {"l": 1.2e-08, "dcr": 0.12})
+        self.assertNotIn("CAPACITOR", data)
+        self.assertEqual(web_CAO.parasites_spice("C01 Port1 N01 1e-12\nL02 N01 N02 2e-10\nR03 N02 Port2 0.3"),
+                         {"c": 1e-12, "esl": 2e-10, "esr": 0.3})
+
     def test_01_lib_fichiers(self):
         req = urllib.request.Request(f"{BASE_URL}/api/lib/fichiers")
         with urllib.request.urlopen(req) as resp:

@@ -793,6 +793,52 @@ def chemin_lib_fichier(genre, nom_brut, creer=False):
     return os.path.join(rep, nom)
 
 
+def parasites_spice(texte):
+    """C/ESR/ESL d'un condensateur Murata, ou L/DCR d'une self, lus dans son .sub.
+
+    Les deux formats Murata ouvrent sur la branche principale : C01 (C
+    nominale), L02 (ESL) et R03 (ESR) pour un MLCC ; L2 (L) puis R2 (DCR) pour
+    une LQW. Le reste de l'echelle ne joue qu'au-dela de la resonance, que le
+    calcul PDN ne modelise pas. Un modele generique (valeurs {C}, {L}) ne
+    donne rien : None.
+    """
+    v = {}
+    for ligne in texte.splitlines():
+        m = re.match(r"\s*([CLR]\w*)\s+\S+\s+\S+\s+([-+]?[0-9.]+(?:[eE][-+]?[0-9]+)?)\s*$", ligne)
+        if m:
+            v.setdefault(m.group(1).upper(), float(m.group(2)))
+    if {"C01", "L02", "R03"} <= v.keys():
+        return {"c": v["C01"], "esl": v["L02"], "esr": v["R03"]}
+    if {"L2", "R2"} <= v.keys():
+        return {"l": v["L2"], "dcr": v["R2"]}
+    return None
+
+
+def parasites_lib(rep):
+    """{REFERENCE: parasites} pour chaque modele fabricant de lib_simulation.
+
+    Relu a chaque appel (une centaine de petits fichiers) : un .sub ajoute a
+    la bibliotheque compte au calcul suivant, sans table a regenerer.
+    """
+    res = {}
+    try:
+        noms = os.listdir(rep)
+    except OSError:
+        return res
+    for f in sorted(noms):
+        base, ext = os.path.splitext(f)
+        if ext.lower() not in (".sub", ".mod"):
+            continue
+        try:
+            with open(os.path.join(rep, f), "r", encoding="utf-8", errors="replace") as fh:
+                p = parasites_spice(fh.read())
+        except OSError:
+            continue
+        if p:
+            res[base.upper()] = p
+    return res
+
+
 def initialiser_lib_dans_dossier(cible):
     """Copie la structure par defaut de la LIB (CSV, empreintes, symboles) dans cible."""
     source_lib = dossier_lib_defaut()
@@ -2284,6 +2330,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                     res[genre] = []
         return res
 
+    def _lib_parasites(self):
+        """C/ESR/ESL et L/DCR des modeles fabricant, pour le calcul PDN."""
+        return parasites_lib(os.path.join(dossier_lib(), LIB_SOUS_DOSSIERS["simulation"]))
+
     def _lib_fichier_lire(self):
         """Lit un fichier individuel d'empreinte ou de modele."""
         params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -2961,7 +3011,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         route = self._route()
         if route in ("/api/profils", "/api/profil",
                      "/api/projets", "/api/projet", "/api/projet/doc",
-                     "/api/lib/composants", "/api/lib/fichiers", "/api/lib/fichier",
+                     "/api/lib/composants", "/api/lib/fichiers", "/api/lib/fichier", "/api/lib/parasites",
                      "/api/lib/config", "/api/ia/cle"):
             self.send_response(204)
             self.send_header("Access-Control-Allow-Methods",
@@ -3117,6 +3167,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route == "/api/lib/fichiers":
             self._lib_api(self._lib_fichiers_liste)
             return
+        if route == "/api/lib/parasites":
+            self._lib_api(self._lib_parasites)
+            return
         if route == "/api/lib/fichier":
             self._lib_api(self._lib_fichier_lire)
             return
@@ -3150,6 +3203,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/lib/fichiers":
             self._lib_api(self._lib_fichiers_liste)
+            return
+        if route == "/api/lib/parasites":
+            self._lib_api(self._lib_parasites)
             return
         if route == "/api/lib/fichier":
             self._lib_api(self._lib_fichier_lire)

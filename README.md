@@ -108,7 +108,7 @@ Le serveur détecte l'absence d'affichage et n'ouvre pas de navigateur ; connect
 
 - **Catalogue** `LIB_composants.csv` (≈ 560 références, 39 colonnes normalisées : MPN, fabricant, secondes sources, diélectrique, fournisseur…) : tableau filtrable, pagination, tri, édition.
 - **Éditeur visuel et paramétrique** d'empreintes PCB et de symboles schématiques (vue visuelle ou JSON, générateur, annuler / rétablir).
-- **Modèles de simulation** : ~16 800 modèles SPICE Murata (GCM/GRM/LQW) indexés ; 104/104 références Murata du catalogue reliées à leur modèle fabricant (`python/lier_modeles_murata.py`). Les ESR/ESL/DCR/I<sub>sat</sub> réels alimentent la chute DC et le PDN.
+- **Modèles de simulation** : modèles SPICE Murata à plat dans `lib_simulation/`, 110 références du catalogue reliées à leur modèle fabricant ou à l'équivalent de même boîtier (`python/lier_modeles_murata.py`, qui lit les packs déposés puis permet de les supprimer). Les ESR/ESL/DCR sont relus dans les `.sub` par `/api/lib/parasites` : un modèle ajouté compte tout de suite dans la chute DC et le PDN.
 - **Import direct JLCPCB / LCSC** avec prévisualisation et respect strict des 39 colonnes.
 - **Assistant IA de bibliothèque** pour compléter une fiche composant.
 - **Bibliothèque centrale configurable** (page d'accueil ou `--lib`) : un dossier local, réseau ou synchronisé (Google Drive…), initialisable avec les composants par défaut ; arborescence `empreinte/`, `symbole/`, `simulation/`.

@@ -559,7 +559,8 @@ function pcbParasitesComposant(c) {
   const pkg = String(c.pkg || c["Package type"] || "").toUpperCase();
   const mpn = String(c.mpn || c["Part Number"] || c["Part Number "] || "").toUpperCase();
   const partName = String(c.csvPartName || c["Part Name"] || "").toUpperCase();
-  const spiceMod = String(c.spice || c["Modèle Simulation"] || "").replace(/\.(sub|mod)$/i, "").toUpperCase();
+  /* « lib/simulation/X.sub » se cherche « X » dans la table (voir simCleModele) */
+  const spiceMod = String(c.spice || c["Modèle Simulation"] || "").replace(/^.*[\\\/]/, "").replace(/\.(sub|mod)$/i, "").toUpperCase();
 
   let esr = c.esr != null ? c.esr : (c.esr_ohm != null ? c.esr_ohm : null);
   let esl = c.esl != null ? c.esl : (c.esl_nH != null ? c.esl_nH * 1e-9 : null);

@@ -18888,6 +18888,14 @@ T("Simulation PI : détection et injection des condensateurs du rail PCB avec mo
   if (c1.lMount !== 0.50e-9) throw new Error("L_mount pour boîtier 0402 attendue 0.50 nH, trouvé: " + c1.lMount);
 });
 
+T("Simulation PI : le modèle du catalogue (« lib/simulation/X.sub ») trouve la base Murata", () => {
+  /* La colonne porte le chemin, la référence un suffixe d'emballage : aucune
+     des deux clés brutes n'est dans la table. */
+  const p = pcbParasitesComposant({ spice: "lib/simulation/GCM155R71C104KA55.sub", mpn: "GCM155R71C104KA55D" });
+  if (p.provenance !== "spice") throw new Error("provenance « spice » attendue, obtenue " + p.provenance);
+  if (Math.abs(p.esr - 0.0142) > 1e-6) throw new Error("ESR Murata attendue 0.0142, trouvé: " + p.esr);
+});
+
 T("Simulation PI : les condensateurs sont rendus dans le repère de la cavité, pas du document", () => {
   /* `pdnCavitePlans` rend une TAILLE, et le solveur travaille sur [0,a]×[0,b].
      Mais S.board.x / .y ne valent zéro que sur une carte dessinée de zéro : un
