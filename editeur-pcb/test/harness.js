@@ -154,7 +154,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "PNS_SHOVE_MAX","PNS_SHOVE_RANG","pnsPushOut","pnsShoveAside","pnsRelink","pnsShoveVia",
   "pnsShove","pnsShoveHeads","pnsApply","pnsSlideOut","pnsBoutsLibres","crossN","ROUTE_MODES","routeMode","setRouteMode","pushSnap","drawShove",
   "placeVia","mkVia","viaObstacle","viaIsole","viaTrou","viaPaire","dpViaGap","holeClr","viaDrill","pnsItemVia","pnsPairGap","pnsWorld","pnsClr","pnsLineItems","pnsViaEscape","pnsViaSuites","pnsPointEscape","dpNets","dpLine","dpAxis","dpAxisDirect","dpPose",
-  "PNS_OPT_WIN","pnsAnchors","pnsMergeTry","pnsOptimize","routeOptimizeTail",
+  "PNS_OPT_WIN","pnsAnchors","pnsMergeTry","pnsOptimize","routeOptimizeTail","pnsEchardes","pnsDejog",
   /* boîtiers nommés : le nom venu du schéma décide de l'empreinte */
   "PKG_LIB","pkgKey","pkgGeom","fpGeomFor","applyPkgGeom","fpWiredPins",
   "PCB_LIB_CACHE","PCB_LIB_LIST","pcbChargerCatalogueEmpreintes","pcbObtenirEmpreinteLib","pcbAppliquerEmpreinteLib",
@@ -7184,6 +7184,21 @@ T("optimiseur : il ne raccourcit jamais à travers un obstacle",()=>{
     throw new Error("l'optimiseur a raccourci à travers le via");
   if(pnsLen(opt)<=30+1e-6)
     throw new Error("il ne pouvait pas descendre jusqu'à la ligne droite");
+});
+T("optimiseur : une dent par pastille, toutes retirées, même après un long contournement",()=>{
+  /* un tour d'enveloppe le long d'une rangée de pastilles laisse une dent de
+     scie : vingt dents, soixante sommets. Quatre passes et une file de seize
+     sommets n'en retiraient qu'une partie, et le reste finissait en échardes */
+  plateau(60,40);
+  const pts=[{x:5,y:20}];
+  for(let k=0;k<20;k++)pts.push({x:6+2*k,y:20},{x:6.12+2*k,y:20.12},{x:6.24+2*k,y:20});
+  pts.push({x:50,y:20});
+  const opt=pnsOptimize(pnsWorld(),{l:0,net:"SIG",w:0.3,pts},null,0);
+  if(pnsEchardes(opt,0.3))throw new Error(pnsEchardes(opt,0.3)+" écharde(s) restée(s)");
+  // la queue du tracé : un clic qui pose soixante segments les fait tous relire
+  const R={net:"SIG",w:0.3,layer:0,done:pnsSegs(pts).map(s=>Object.assign({l:0},s))};
+  routeOptimizeTail(R,R.done.length);
+  if(pnsEchardes(pnsPts(R.done),0.3))throw new Error("la queue du tracé garde ses échardes");
 });
 T("optimiseur : un sommet tenu par un via ne se déplace pas",()=>{
   plateau();

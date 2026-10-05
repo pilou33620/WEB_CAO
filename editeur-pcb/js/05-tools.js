@@ -2942,6 +2942,7 @@ function stepRoute(){
      détour : le raccourcir serait manger le clic de l'utilisateur. */
   const auto=!!R.contourne||!!R.shove;
   if(R.shove&&pnsApply(R.shove)){R.shoved=true;R.shove=null;refreshPanels();}
+  const ajout=R.preview.length;
   for(const s of R.preview)R.done.push(s);
   const last=R.preview[R.preview.length-1];
   R.pt={x:last.x2,y:last.y2};
@@ -2949,7 +2950,7 @@ function stepRoute(){
   /* Le coude qu'on vient de figer repasse à l'optimiseur : un tour d'enveloppe
      laisse des sommets dont plus rien ne justifie l'existence une fois
      l'obstacle passé. C'est ce qui donne au tracé son allure finie. */
-  if(auto)routeOptimizeTail(R);
+  if(auto)routeOptimizeTail(R,ajout);
   R.flip=false;                  // la bascule ne valait que pour ce coude
   if(R.end) {
     if (R.end.via && !R.end.net && R.net && R.end.obj) {
