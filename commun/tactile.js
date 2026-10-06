@@ -166,6 +166,7 @@ function tactileCreerHud(outil){
   if(outil === "pcb"){
     html += '<button class="hud-btn" id="hudMulti" aria-pressed="false" title="Sélection multiple : chaque toucher ajoute ou retire un élément, glisser sur le vide trace un lasso"><span class="hud-icon">⬚</span><span class="hud-lbl">Multi</span></button>';
     html += '<div class="hud-sep"></div>';
+    html += '<button class="hud-btn" id="hudSave" title="Enregistrer — et envoyer sur GitHub quand WEB_SUITE le permet"><span class="hud-icon">💾</span><span class="hud-lbl">Sauver</span></button>';
     html += '<button class="hud-btn" id="hudUndo" title="Annuler (Ctrl+Z)"><span class="hud-icon">↺</span><span class="hud-lbl">Annul</span></button>';
     html += '<button class="hud-btn" id="hudRedo" title="Rétablir (Ctrl+Y)"><span class="hud-icon">↻</span><span class="hud-lbl">Rétab</span></button>';
     html += '<div class="hud-sep"></div>';
@@ -178,6 +179,7 @@ function tactileCreerHud(outil){
   } else if(outil === "schema"){
     html += '<button class="hud-btn" id="hudMulti" aria-pressed="false" title="Sélection multiple : chaque toucher ajoute ou retire un élément, glisser sur le vide trace un lasso"><span class="hud-icon">⬚</span><span class="hud-lbl">Multi</span></button>';
     html += '<div class="hud-sep"></div>';
+    html += '<button class="hud-btn" id="hudSave" title="Enregistrer — et envoyer sur GitHub quand WEB_SUITE le permet"><span class="hud-icon">💾</span><span class="hud-lbl">Sauver</span></button>';
     html += '<button class="hud-btn" id="hudUndo" title="Annuler (Ctrl+Z)"><span class="hud-icon">↺</span><span class="hud-lbl">Annul</span></button>';
     html += '<button class="hud-btn" id="hudRedo" title="Rétablir (Ctrl+Y)"><span class="hud-icon">↻</span><span class="hud-lbl">Rétab</span></button>';
     html += '<div class="hud-sep"></div>';
@@ -210,6 +212,19 @@ function tactileCreerHud(outil){
     bMulti.onclick = function(e){
       e.preventDefault();
       tactileMultiDefinir(!TACTILE_MULTI);
+    };
+  }
+
+  /* Sauver : « Enregistrer + GitHub » quand l'éditeur l'affiche (outil lancé
+     par WEB_SUITE, projet du serveur ouvert), l'enregistrement simple sinon. */
+  const bSave = hud.querySelector("#hudSave");
+  if(bSave){
+    bSave.onclick = function(e){
+      e.preventDefault();
+      const git = document.getElementById("bSaveGit");
+      const el = (git && git.style.display !== "none") ? git : document.getElementById("bSave");
+      if(el) el.click();
+      else tactileSimulerTouche("s", "KeyS", {ctrlKey: true});
     };
   }
 

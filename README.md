@@ -215,7 +215,9 @@ Un seul fichier, bibliothèque standard Python. Chaque module de calcul est impo
 | `--projets-reseau` | En écoute réseau, ouvre quand même les projets (sous les racines `--projets` seulement) et l'écriture dans la LIB active. Restent locaux : chemin hors racines, choix du dossier de LIB, clé IA, datasheets. Sans mot de passe : réseau de confiance uniquement (WEB·SUITE le passe en `--reseau`) |
 | `--lib DIR` | Dossier de la bibliothèque centrale (défaut : `LIB/` à côté de l'outil, sinon `../PROJETS/LIB_CAO`) ; en lecture seule si le serveur écoute sur le réseau sans `--projets-reseau` |
 
-**Routes** : `/api/tools`, `/api/tool` (passerelle MCP) · `/api/ipc2581` · `/api/simulation`, `/api/simulation-dc`, `/api/crosstalk` · `/api/pcb/score-placement`, `/api/schema/patterns` · `/api/projets`, `/api/projet`, `/api/projet/doc` · `/api/profils`, `/api/profil` · `/api/lib/config`, `/api/lib/composants`, `/api/lib/fichiers`, `/api/lib/fichier` · `/api/datasheet/telecharger`, `/api/datasheet/ouvrir` · `/api/ia/cle`. Protection anti-traversée de chemins sur toutes les routes disque.
+**Enregistrer + GitHub.** Lancé par [WEB·SUITE](https://github.com/pilou33620/WEB_SUITE), WEB_CAO reçoit de lui, par l'environnement (`WEBSUITE_LANCEUR`, `WEBSUITE_JETON`), l'adresse du lanceur sur ce poste et le jeton de son mode réseau. Les éditeurs affichent alors **Fichier → Enregistrer + GitHub** (et le bouton **💾 Sauver** de la barre tactile) dès qu'un projet du serveur est ouvert : le document est écrit dans son dossier, puis `/api/github/envoyer` relaie au lanceur l'envoi de `PROJETS` (commit + pull + push). Pensé pour l'iPad relié à un téléphone sous Termux ou à un Raspberry Pi : le lanceur n'est plus à aller chercher dans un autre onglet. Un autre appareil que ce poste doit présenter le jeton du lanceur (le cookie que pose son adresse **Réseau**, valable pour tout l'hôte) ; sans lanceur, ces routes n'existent pas. Marche à suivre côté serveur (connexion GitHub par `gh auth login`) : README de WEB·SUITE, « Sauvegarder depuis une tablette ».
+
+**Routes** : `/api/tools`, `/api/tool` (passerelle MCP) · `/api/ipc2581` · `/api/simulation`, `/api/simulation-dc`, `/api/crosstalk` · `/api/pcb/score-placement`, `/api/schema/patterns` · `/api/projets`, `/api/projet`, `/api/projet/doc` · `/api/github`, `/api/github/envoyer`, `/api/github/identite` (relai au lanceur WEB·SUITE) · `/api/profils`, `/api/profil` · `/api/lib/config`, `/api/lib/composants`, `/api/lib/fichiers`, `/api/lib/fichier` · `/api/datasheet/telecharger`, `/api/datasheet/ouvrir` · `/api/ia/cle`. Protection anti-traversée de chemins sur toutes les routes disque.
 
 ---
 
@@ -312,7 +314,7 @@ Tous les bancs tournent en intégration continue (GitHub Actions, `.github/workf
 | **Chute DC** | `python python/test/banc-dc.py` | 42 cas : résistivité théorique, vias, double modèle thermique |
 | **Scoring de placement** | `python python/test/banc-pcb-scoring.py` | 18 cas : HPWL, congestion, découplage, auto-rotation |
 | **Reconnaissance de motifs** | `python python/test/banc-patterns.py` | 24 cas : LDO, 78xx/79xx, buck, I2C/SPI/UART, quartz, RC, courants DC |
-| **Serveur** | `python python/test/banc-serveur-routes.py`, `banc-lib-routes.py`, `banc-maj-github.py`, `banc-detection-plateforme.py` | Routes, sécurité anti-traversée, Host/CSRF, lecture seule en écoute réseau, bibliothèque, mise à jour, détection de plateforme |
+| **Serveur** | `python python/test/banc-serveur-routes.py`, `banc-lib-routes.py`, `banc-maj-github.py`, `banc-detection-plateforme.py`, `banc-github-relai.py` | Routes, sécurité anti-traversée, Host/CSRF, lecture seule en écoute réseau, bibliothèque, mise à jour, détection de plateforme, relai « Enregistrer + GitHub » (jeton du lanceur exigé des autres appareils) |
 
 > [!IMPORTANT]
 > Le dossier `dist/` n'est pas versionné. Après toute modification de `js/`, relancez `build-monofichier.py` : c'est le monofichier qu'on ouvre en double-clic.

@@ -68,6 +68,9 @@ jobs:
       - name: Routes de gestion de bibliothèque — banc d'essai
         run: python python/test/banc-lib-routes.py
 
+      - name: Enregistrer + GitHub (relai au lanceur WEB_SUITE) — banc d'essai
+        run: python python/test/banc-github-relai.py
+
       - name: Projets en écoute réseau (--projets-reseau) — banc d'essai
         run: python python/test/banc-projets-reseau.py
 

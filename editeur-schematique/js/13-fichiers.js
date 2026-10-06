@@ -23,28 +23,31 @@ function schFile(suffixe, repli){
 }
 /* Avec un dossier de projet rattaché, enregistrer écrit dans ce dossier ; sans
    dossier, on télécharge comme avant — en double-clic sur le monofichier,
-   aucun accès disque n'est possible. */
+   aucun accès disque n'est possible. Rend une promesse : vrai si le document
+   est dans le dossier du projet (« Enregistrer + GitHub » n'envoie qu'alors). */
 function saveJson(){
   storeCurrent();
   const nl=(typeof netlistText==="function")?netlistText():null;
   const doc={format:"schemedit-2",pages:S.pages,page:S.page,netClasses:S.netClasses,netlist:nl};
   if(typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:nl});
   if(typeof projdLie==="function" && projdLie()){
-    projdDocEcrire("schema",doc).then(function(nom){
+    return projdDocEcrire("schema",doc).then(function(nom){
       S.dirty=false;
       clearBackup();
       if(typeof profNoterDocument==="function")profNoterDocument("schema",nom);
       document.getElementById("fHint").textContent=
         "Document enregistré dans le dossier du projet ("+nom+").";
+      return true;
     }).catch(function(e){
       /* Rien n'est sauvé : on le dit, puis on retombe sur le téléchargement. */
       document.getElementById("fHint").textContent=
         "Écriture refusée : "+e.message+" — enregistrement en téléchargement.";
       saveJsonTelecharger(doc);
+      return false;
     });
-    return;
   }
   saveJsonTelecharger(doc);
+  return Promise.resolve(false);
 }
 function saveJsonTelecharger(doc){
   const nl=doc.netlist||((typeof netlistText==="function")?netlistText():null);

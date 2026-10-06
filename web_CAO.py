@@ -403,7 +403,9 @@ cet acces.
 """
 import argparse
 import datetime
+import hmac
 import http.client
+import http.cookies
 import http.server
 import ipaddress
 import json
@@ -1011,6 +1013,33 @@ PROJET_FORMAT = "cao-projet-1"
 # (commun/projet-disque.js) : les deux se lisent ensemble.
 PROJET_SUFFIXE = {"schema": "-SCH.json", "pcb": "-PCB.json",
                   "ipc2581": "-IPC.json"}
+
+
+# WEB_SUITE : le lanceur qui a demarre cet outil donne son adresse sur ce poste
+# et, en mode reseau, son jeton (lanceur/outils.py, par l'environnement : une
+# option inconnue ferait echouer une version plus ancienne). Les routes
+# /api/github* relaient alors a ce lanceur l'envoi des projets sur GitHub
+# (commit + push de PROJETS), pour que l'editeur enregistre ET envoie d'un seul
+# geste -- depuis une tablette, le lanceur est dans un autre onglet. Sans
+# lanceur, ces routes n'existent pas.
+LANCEUR = os.environ.get("WEBSUITE_LANCEUR", "")
+JETON_LANCEUR = os.environ.get("WEBSUITE_JETON", "")
+BISCUIT_LANCEUR = "websuite_jeton"     # le cookie que pose le lanceur (meme hote)
+DELAI_LANCEUR = 660                    # le push du lanceur peut prendre 600 s
+
+
+def adresse_lanceur():
+    """(hote, port) du lanceur, s'il est sur ce poste ; None sinon.
+
+    Le relai ne part que vers la boucle locale : une adresse venue d'ailleurs
+    ferait de cette route un tremplin vers n'importe quel serveur."""
+    try:
+        u = urllib.parse.urlsplit(LANCEUR)
+        if u.scheme != "http" or not u.port or u.hostname not in ("127.0.0.1", "localhost"):
+            return None
+        return "127.0.0.1", u.port
+    except ValueError:
+        return None
 
 
 class ErreurProjet(Exception):
@@ -2155,6 +2184,83 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                                     charge, "Le fichier projet")
         return {"ok": True, "dossier": dossier, "nom": charge.get("nom")}
 
+    # -- envoi sur GitHub, relaye au lanceur WEB_SUITE --------------------
+    # Le lanceur exige son jeton de tout autre appareil que ce poste : sans
+    # cela, n'importe qui sur le reseau pousserait sur GitHub avec les
+    # identifiants du poste. Le relai exige donc le meme jeton, que la tablette
+    # porte deja : le cookie pose par le lanceur vaut pour tout l'hote, et le
+    # navigateur l'envoie aussi a ce port-ci.
+
+    def _github_garde(self):
+        if not adresse_lanceur():
+            raise ErreurProjet(404, "Envoi sur GitHub indisponible : cet outil n'a pas"
+                                    " ete lance par WEB_SUITE.")
+        self._projet_garde()
+        if self._client_local():
+            return True
+        try:
+            biscuit = http.cookies.SimpleCookie(self.headers.get("Cookie") or "")
+        except http.cookies.CookieError:
+            biscuit = {}
+        recu = biscuit[BISCUIT_LANCEUR].value if BISCUIT_LANCEUR in biscuit else ""
+        if not (JETON_LANCEUR and recu and hmac.compare_digest(recu, JETON_LANCEUR)):
+            raise ErreurProjet(403, "Envoi sur GitHub refuse : ouvrez d'abord, sur cet"
+                                    " appareil, l'adresse Reseau du lanceur WEB_SUITE"
+                                    " (elle se termine par ?jeton=...).")
+        return True
+
+    def _client_local(self):
+        """La requete vient-elle de ce poste (boucle locale) ?"""
+        try:
+            ip = ipaddress.ip_address(self.client_address[0].split("%")[0])
+        except ValueError:
+            return False
+        return (getattr(ip, "ipv4_mapped", None) or ip).is_loopback
+
+    def _github_relai(self, route, charge):
+        hote, port = adresse_lanceur()
+        corps = json.dumps(charge).encode("utf-8")
+        try:
+            c = http.client.HTTPConnection(hote, port, timeout=DELAI_LANCEUR)
+            c.request("POST", route, body=corps,
+                      headers={"Content-Type": "application/json", "X-WebSuite": "1",
+                               "Host": "127.0.0.1:%d" % port})
+            r = c.getresponse()
+            texte = r.read().decode("utf-8", "replace")
+            c.close()
+        except (OSError, http.client.HTTPException) as exc:
+            raise ErreurProjet(502, "Lanceur WEB_SUITE injoignable : %s" % exc)
+        try:
+            rep = json.loads(texte)
+        except ValueError:
+            rep = None
+        if not isinstance(rep, dict):
+            raise ErreurProjet(502, "Reponse illisible du lanceur WEB_SUITE")
+        if r.status != 200:
+            raise ErreurProjet(502, "Le lanceur WEB_SUITE refuse : %s"
+                                    % (rep.get("erreur") or r.status))
+        return {"ok": bool(rep.get("ok")), "identite": bool(rep.get("identite")),
+                "message": str(rep.get("message") or "")}
+
+    def _github_etat(self):
+        self._github_garde()
+        return {"disponible": True}
+
+    def _github_envoyer(self):
+        charge = self._projet_corps()
+        self._github_garde()
+        message = charge.get("message") if isinstance(charge, dict) else ""
+        return self._github_relai("/api/envoyer",
+                                  {"id": "web_cao", "message": str(message or "")[:500]})
+
+    def _github_identite(self):
+        charge = self._projet_corps()
+        self._github_garde()
+        if not isinstance(charge, dict):
+            raise ErreurProjet(400, "Corps JSON attendu")
+        return self._github_relai("/api/identite", {"nom": str(charge.get("nom") or ""),
+                                                    "email": str(charge.get("email") or "")})
+
     def _projet_doc_lire(self):
         dossier = self._projet_dossier()
         outil = self._projet_outil()
@@ -3011,6 +3117,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         route = self._route()
         if route in ("/api/profils", "/api/profil",
                      "/api/projets", "/api/projet", "/api/projet/doc",
+                     "/api/github", "/api/github/envoyer", "/api/github/identite",
                      "/api/lib/composants", "/api/lib/fichiers", "/api/lib/fichier", "/api/lib/parasites",
                      "/api/lib/config", "/api/ia/cle"):
             self.send_response(204)
@@ -3075,6 +3182,12 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if not self._valider_csrf():
             return
         route = self._route()
+        if route == "/api/github/envoyer":
+            self._projet_api(self._github_envoyer)
+            return
+        if route == "/api/github/identite":
+            self._projet_api(self._github_identite)
+            return
         if route == "/api/lib/composants":
             self._lib_api(self._lib_composants_ecrire)
             return
@@ -3127,6 +3240,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/profil":
             self._profil_api(self._profil_lire)
+            return
+        if route == "/api/github":
+            self._projet_api(self._github_etat)
             return
         if route == "/api/projets":
             self._projet_api(self._projets_index)

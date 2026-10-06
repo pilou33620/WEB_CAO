@@ -476,6 +476,81 @@ function projdDocEcrire(outil, obj){
     return projdEcrireFichierHandle(PROJD_HANDLE,nom,obj).then(function(){ return note(nom); });
   });
 }
+/* ==========================================================================
+   Enregistrer + GitHub (WEB_SUITE)
+   --------------------------------------------------------------------------
+   Lance par WEB_SUITE, web_CAO.py relaie au lanceur l'envoi de PROJETS sur
+   GitHub (commit + pull + push, routes /api/github*). L'editeur enregistre et
+   envoie ainsi d'un seul geste : depuis une tablette reliee a un telephone
+   (Termux) ou a un Raspberry Pi, le lanceur est dans un autre onglet.
+   Seul un projet tenu par le serveur est concerne : c'est lui qui vit dans
+   PROJETS/, le dossier que le lanceur envoie.
+   ========================================================================== */
+let PROJD_GH;                            // undefined = pas encore teste
+function projdGithubDispo(){
+  if(PROJD_GH !== undefined) return Promise.resolve(PROJD_GH);
+  if(typeof fetch !== "function"){ PROJD_GH = false; return Promise.resolve(false); }
+  return projdApi("GET","/api/github").then(function(r){
+    PROJD_GH = !!(r && r.disponible); return PROJD_GH;
+  }).catch(function(){ PROJD_GH = false; return false; });
+}
+function projdGithubPossible(){
+  return PROJD_GH === true && PROJD.mode === "serveur";
+}
+/* Envoie PROJETS sur GitHub. Poste neuf (git sans nom ni e-mail) : on les
+   demande une fois, le lanceur les range dans la config du depot PROJETS. */
+function projdGithubEnvoyer(message){
+  const envoi = function(){
+    return projdApi("POST","/api/github/envoyer",null,{message:message||""});
+  };
+  return envoi().then(function(r){
+    if(!r.identite) return r;
+    const nom = prompt("Premier envoi depuis ce serveur.\nVotre nom pour les commits git :");
+    if(!nom) return {ok:false, message:"Envoi annulé : enregistré sur le serveur seulement."};
+    const email = prompt("Votre adresse e-mail (celle de votre compte GitHub) :");
+    if(!email) return {ok:false, message:"Envoi annulé : enregistré sur le serveur seulement."};
+    return projdApi("POST","/api/github/identite",null,{nom:nom, email:email})
+      .then(function(i){ return i.ok ? envoi() : i; });
+  });
+}
+/* Le geste complet. `enregistrer` rend une promesse : vrai si le document est
+   bien dans le dossier du projet (faux s'il a fallu le telecharger, et l'on
+   n'envoie alors rien). `dire` affiche une ligne d'etat. */
+function projdEnregistrerGithub(enregistrer, defaut, dire){
+  const message = prompt("Message du commit pour GitHub\n(Annuler = enregistrer sans envoyer) :", defaut);
+  return Promise.resolve(enregistrer()).then(function(dansProjet){
+    if(!dansProjet) return;
+    if(message === null){
+      dire("Enregistré dans le dossier du projet (pas envoyé sur GitHub).");
+      return;
+    }
+    dire("Enregistré. Envoi sur GitHub…");
+    return projdGithubEnvoyer(message || defaut).then(function(r){
+      if(r.ok){ dire("Enregistré et envoyé sur GitHub."); return; }
+      /* Un refus se lit en entier (il dit quoi faire) : la barre d'etat le
+         couperait, surtout sur une tablette. */
+      const t = r.message || "Envoi sur GitHub refusé.";
+      dire(t);
+      try{ alert(t); }catch(_){}
+    });
+  }).catch(function(e){
+    const t = "Envoi sur GitHub impossible : " + e.message;
+    dire(t);
+    try{ alert(t); }catch(_){}
+  });
+}
+/* Le bouton n'apparait que lorsque le geste est possible ; il suit
+   l'ouverture et la fermeture d'un projet. */
+function projdGithubBouton(id, action){
+  const b = document.getElementById(id);
+  if(!b) return;
+  b.onclick = action;
+  const peindre = function(){ b.style.display = projdGithubPossible() ? "" : "none"; };
+  peindre();
+  try{ if(typeof projSurChangement === "function") projSurChangement(peindre); }catch(_){}
+  projdGithubDispo().then(peindre);
+}
+
 /* Reecrit le fichier projet (revision, auteur, notes, date de modification). */
 function projdMajFichier(champs){
   if(!projdLie()) return Promise.reject(new Error("Aucun dossier de projet"));

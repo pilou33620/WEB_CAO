@@ -15,23 +15,27 @@ function dl(blob,name){
    source pour l'archive de fabrication comme pour les exports d'ici.
    Avec un dossier de projet rattaché, enregistrer écrit dans ce dossier ; sans
    dossier, on télécharge comme avant. Le repli n'est pas un luxe : en
-   double-clic sur le monofichier, aucun accès disque n'est possible. */
+   double-clic sur le monofichier, aucun accès disque n'est possible.
+   Rend une promesse : vrai si la carte est dans le dossier du projet
+   (« Enregistrer + GitHub » n'envoie qu'alors). */
 function saveJson(){
   const doc=docObj();
   if(typeof projdLie==="function" && projdLie()){
-    projdDocEcrire("pcb",doc).then(function(nom){
+    return projdDocEcrire("pcb",doc).then(function(nom){
       S.dirty=false;
       if(typeof profNoterDocument==="function")profNoterDocument("pcb",nom);
       hint("Carte enregistrée dans le dossier du projet ("+nom+").");
+      return true;
     }).catch(function(e){
       /* On ne fait pas semblant : si l'écriture échoue, le travail n'est pas
          sauvé, et on le dit avant de proposer le téléchargement. */
       hint("Écriture refusée : "+e.message+" — enregistrement en téléchargement.");
       saveJsonTelecharger(doc);
+      return false;
     });
-    return;
   }
   saveJsonTelecharger(doc);
+  return Promise.resolve(false);
 }
 function saveJsonTelecharger(doc){
   const nom=pcbFile(".json","carte.json");
@@ -521,6 +525,12 @@ $("bDrc").onclick=()=>{
 $("bRules").onclick=()=>reOpen();
 if($("bMfgCaps")) $("bMfgCaps").onclick=()=>reOpen("mfg");
 $("bSave").onclick=saveJson;
+/* Enregistrer + GitHub : visible seulement si WEB_SUITE a lancé cet outil et
+   qu'un projet du serveur est ouvert (commun/projet-disque.js). */
+if(typeof projdGithubBouton==="function")projdGithubBouton("bSaveGit",function(){
+  const p=(typeof projNom==="function"&&projNom())||"";
+  projdEnregistrerGithub(saveJson,"Carte "+(p?p+" ":"")+new Date().toLocaleString("fr-FR"),hint);
+});
 $("bOpen").onclick=()=>$("fileIn").click();
 $("fileIn").onchange=()=>{const f=$("fileIn").files[0];if(f)openFile(f);$("fileIn").value="";};
 $("bPng").onclick=exportPng;
