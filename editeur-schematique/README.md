@@ -79,6 +79,18 @@ tiré modificateur enfoncé s'ajoute lui aussi à ce qui est déjà pris. Tout c
 qui suit vaut alors pour le groupe entier : déplacement, rotation, miroir,
 copier-coller, suppression, `U` pour n'effacer que les fils.
 
+Le groupe se saisit par **n'importe lequel** de ses éléments : un composant, son
+libellé, un fil, une étiquette de net. Les poignées — bout de fil, coin de
+trait — et le déplacement d'un libellé seul ne passent devant que lorsque
+l'élément est **seul** sélectionné. `Ctrl+clic` sur un élément déjà pris ne
+l'en retire qu'au relâchement : si le geste glisse, c'est toute la sélection
+qui part, lui compris.
+
+**Au doigt**, le bouton **Multi** de la barre tactile tient lieu de `Ctrl` :
+enclenché, chaque toucher ajoute un élément à la sélection ou l'en retire, et
+glisser sur le vide trace un lasso au lieu de déplacer la vue (deux doigts la
+déplacent toujours). Glisser ensuite l'un des éléments pris emmène le groupe.
+
 **Le schéma attend le retour quand on change d'outil.** Les boutons *Éditeur
 PCB*, *Composants* et *Accueil* mettent le document de côté dans la session de
 l'onglet avant de changer de page (`commun/session.js`), et `sessionSchema()`

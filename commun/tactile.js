@@ -39,6 +39,8 @@ function tactileDefinir(actif){
   if(document.body){
     document.body.classList.toggle("mode-tactile", on);
   }
+  // le HUD disparaît avec le mode : son bouton « Multi » ne doit pas rester pris
+  if(!on) tactileMultiDefinir(false);
 
   // Mise à jour de l'indicateur d'entête si présent
   const btn = document.getElementById("bTactileToggle");
@@ -62,6 +64,32 @@ function tactileDefinir(actif){
         : {type: "cao-tactile-change", detail: {actif: on}};
       window.dispatchEvent(evt);
     }catch(_){}
+  }
+}
+
+/* Sélection multiple au doigt. Un écran tactile n'a ni Maj ni Ctrl : ce
+   bouton du HUD en tient lieu. Tant qu'il est enfoncé, chaque toucher ajoute
+   l'élément à la sélection ou l'en retire, et glisser sur le vide trace un
+   lasso au lieu de déplacer la vue (deux doigts la déplacent toujours). Il
+   n'est pas mémorisé : on le rallume quand on en a besoin, comme on presse Maj. */
+let TACTILE_MULTI = false;
+
+/**
+ * Renvoie vrai si la sélection multiple tactile est enclenchée.
+ */
+function tactileMultiActif(){
+  return TACTILE_MULTI && tactileEstActif();
+}
+
+/**
+ * Enclenche ou relâche la sélection multiple tactile.
+ */
+function tactileMultiDefinir(actif){
+  TACTILE_MULTI = !!actif;
+  const b = document.getElementById("hudMulti");
+  if(b){
+    b.classList.toggle("active", TACTILE_MULTI);
+    b.setAttribute("aria-pressed", TACTILE_MULTI ? "true" : "false");
   }
 }
 
@@ -136,6 +164,8 @@ function tactileCreerHud(outil){
   html += '<button class="hud-btn hud-toggle" id="hudReplier" title="Masquer / Afficher les boutons tactiles"><span class="hud-icon">⋯</span></button>';
 
   if(outil === "pcb"){
+    html += '<button class="hud-btn" id="hudMulti" aria-pressed="false" title="Sélection multiple : chaque toucher ajoute ou retire un élément, glisser sur le vide trace un lasso"><span class="hud-icon">⬚</span><span class="hud-lbl">Multi</span></button>';
+    html += '<div class="hud-sep"></div>';
     html += '<button class="hud-btn" id="hudUndo" title="Annuler (Ctrl+Z)"><span class="hud-icon">↺</span><span class="hud-lbl">Annul</span></button>';
     html += '<button class="hud-btn" id="hudRedo" title="Rétablir (Ctrl+Y)"><span class="hud-icon">↻</span><span class="hud-lbl">Rétab</span></button>';
     html += '<div class="hud-sep"></div>';
@@ -146,6 +176,8 @@ function tactileCreerHud(outil){
     html += '<button class="hud-btn" id="hudEsc" title="Terminer ou annuler le tracé (Échap)"><span class="hud-icon">✕</span><span class="hud-lbl">Échap</span></button>';
     html += '<button class="hud-btn hud-danger" id="hudDel" title="Supprimer la sélection (Suppr)"><span class="hud-icon">🗑</span><span class="hud-lbl">Suppr</span></button>';
   } else if(outil === "schema"){
+    html += '<button class="hud-btn" id="hudMulti" aria-pressed="false" title="Sélection multiple : chaque toucher ajoute ou retire un élément, glisser sur le vide trace un lasso"><span class="hud-icon">⬚</span><span class="hud-lbl">Multi</span></button>';
+    html += '<div class="hud-sep"></div>';
     html += '<button class="hud-btn" id="hudUndo" title="Annuler (Ctrl+Z)"><span class="hud-icon">↺</span><span class="hud-lbl">Annul</span></button>';
     html += '<button class="hud-btn" id="hudRedo" title="Rétablir (Ctrl+Y)"><span class="hud-icon">↻</span><span class="hud-lbl">Rétab</span></button>';
     html += '<div class="hud-sep"></div>';
@@ -170,6 +202,14 @@ function tactileCreerHud(outil){
       e.stopPropagation();
       hud.classList.toggle("replie");
       btnReplier.querySelector(".hud-icon").textContent = hud.classList.contains("replie") ? "📱" : "⋯";
+    };
+  }
+
+  const bMulti = hud.querySelector("#hudMulti");
+  if(bMulti){
+    bMulti.onclick = function(e){
+      e.preventDefault();
+      tactileMultiDefinir(!TACTILE_MULTI);
     };
   }
 

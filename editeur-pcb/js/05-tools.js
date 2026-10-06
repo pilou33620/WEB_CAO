@@ -802,9 +802,17 @@ function selectHit(h,add){
   else if(h.drawing){if(!S.sel.drawings)S.sel.drawings=new Set();S.sel.drawings.add(h.drawing.id);}
   else if(h.edge)S.sel.edge=true;
 }
+/* L'élément touché fait-il déjà partie de la sélection ? */
+function hitSelected(h){
+  return !!h&&!!((h.fp&&S.sel.fps.has(h.fp.id))||(h.track&&S.sel.tracks.has(h.track))||
+    (h.via&&S.sel.vias.has(h.via))||(h.zone&&S.sel.zones.has(h.zone))||
+    (h.cut&&S.sel.cuts.has(h.cut))||
+    (h.drawing&&S.sel.drawings&&S.sel.drawings.has(h.drawing.id))||
+    (h.hole&&S.sel.holes&&S.sel.holes.has(h.hole.id))||(h.edge&&S.sel.edge));
+}
 /* Ctrl+clic (ou Maj+clic) sur un élément : il entre dans la sélection, ou il en
-   sort. Renvoie vrai s'il vient d'en sortir — l'appelant n'enchaîne alors pas
-   sur un glissement, qui déplacerait tout le reste. */
+   sort. Renvoie vrai s'il vient d'en sortir. Le clic sur le canevas ne l'appelle
+   pour un retrait qu'au relâchement, et seulement si le geste n'a pas glissé. */
 function toggleHit(h){
   if(!h)return false;
   const t=(set,v)=>{if(set.has(v)){set.delete(v);return true;}set.add(v);return false;};
@@ -3716,8 +3724,15 @@ cv.addEventListener("pointerdown",e=>{
   if(S.mode==="cut"){
     cutClick(p.x,p.y);draw();return;
   }
+  /* Au doigt, le bouton « Multi » du HUD tactile tient lieu de Ctrl : chaque
+     toucher ajoute à la sélection ou en retire. */
+  const multi=typeof tactileMultiActif==="function"&&tactileMultiActif();
+  /* Une sélection qui contient des boîtiers se déplace en bloc : les bouts de
+     piste, de trait et les sommets de zone tombent sur les pastilles, et les
+     laisser passer devant étirerait une piste au lieu d'emmener le groupe. */
+  const handles=!multi&&!S.sel.fps.size;
   /* sélection : les extrémités d'une piste ou d'un trait déjà sélectionné passent devant tout */
-  if(!e.shiftKey&&S.sel.drawings)
+  if(handles&&!e.shiftKey&&S.sel.drawings)
     for(const d of selDrawingsPcb()){
       for(const en of [1,2]){
         const ex=en===1?d.x1:d.x2, ey=en===1?d.y1:d.y2;
@@ -3727,7 +3742,7 @@ cv.addEventListener("pointerdown",e=>{
         }
       }
     }
-  if(!e.shiftKey)
+  if(handles&&!e.shiftKey)
   for(const t of S.sel.tracks){
     for(const en of [1,2]){
       const ex=en===1?t.x1:t.x2, ey=en===1?t.y1:t.y2;
@@ -3769,6 +3784,7 @@ cv.addEventListener("pointerdown",e=>{
     }
   }
   // les sommets d'une zone déjà sélectionnée passent aussi devant
+  if(handles)
   for(const z of S.sel.zones){
     for(let i=0;i<z.pts.length;i++)
       if(dist(p.x,p.y,z.pts[i].x,z.pts[i].y)<=px(6)){
@@ -3789,7 +3805,7 @@ cv.addEventListener("pointerdown",e=>{
   if(!e.shiftKey && !e.ctrlKey && !e.metaKey && typeof simRetourClicPcb === "function" && simRetourClicPcb(p.x, p.y)){
     draw(); return;
   }
-  const h=hitTest(p.x,p.y,e);
+  let h=hitTest(p.x,p.y,e);
   /* Maj+clic ou double-clic sur une piste : c'est la piste entière qui est prise, et le
      doublé l'étend à toutes les couches (`selectRun`). Ailleurs — empreinte,
      via, zone, vide — Maj garde son rôle d'ajout, comme Ctrl.
@@ -3804,7 +3820,11 @@ cv.addEventListener("pointerdown",e=>{
     refreshPanels();draw();return;
   }
   // Ctrl et Maj font la même chose : ajouter à la sélection, ou en retirer
-  const add=e.shiftKey||e.ctrlKey||e.metaKey;
+  const add=e.shiftKey||e.ctrlKey||e.metaKey||multi;
+  /* Le repère d'un boîtier pris avec d'autres — ou touché avec Ctrl/Maj — vaut
+     son boîtier : c'est le groupe qui part, pas le texte seul. Le texte ne se
+     déplace à part que lorsque son boîtier est seul sélectionné, ou pas du tout. */
+  if(h&&h.fpText&&(add||(S.sel.fps.has(h.fpText.id)&&selCount()>1)))h={fp:h.fpText};
   if(h && h.fpText) {
     if(!add) {clearSel();S.hlNet=null;}
     S.hlText = h;
@@ -3822,19 +3842,18 @@ cv.addEventListener("pointerdown",e=>{
     drag={marquee:true,add:add,zone:h?h.zone:null};
     refreshPanels();draw();return;
   }
+  /* Avec Ctrl/Maj, un élément déjà pris n'en sort qu'au relâchement : si le
+     geste glisse, c'est toute la sélection qui part, lui compris. Sans
+     modificateur, saisir un élément de la sélection l'emmène avec les autres. */
+  let toggleOff=null;
   if(add){
-    if(toggleHit(h)){refreshPanels();draw();return;}   // retiré : pas de glissement
-  }else{
-    const already=(h.fp&&S.sel.fps.has(h.fp.id))||(h.track&&S.sel.tracks.has(h.track))||
-                  (h.via&&S.sel.vias.has(h.via))||
-                  (h.drawing&&S.sel.drawings&&S.sel.drawings.has(h.drawing.id))||
-                  (h.hole&&S.sel.holes&&S.sel.holes.has(h.hole.id));
-    if(!already)selectHit(h,false);
-  }
+    if(hitSelected(h))toggleOff=h;
+    else toggleHit(h);
+  }else if(!hitSelected(h))selectHit(h,false);
   const pn=(h.pad&&h.pad.net)||null;
   if(pn)S.hlNet=pn;
   drag={move:true,x:p.x,y:p.y,moved:false,dx:0,dy:0,
-        trk:null,via:null,joints:null};
+        trk:null,via:null,joints:null,toggleOff};
   refreshPanels();
   // la mise en avant se voit sur le canevas : on la montre aussi dans la liste
   if(pn)revealNet(pn);
@@ -4222,6 +4241,10 @@ cv.addEventListener("pointerup",e=>{
     }
     S.marquee=null;refreshPanels();draw();
   }
+  // Ctrl/Maj sur un élément déjà pris, sans glisser : c'était un retrait
+  if(drag&&drag.move&&!drag.moved&&drag.toggleOff){
+    toggleHit(drag.toggleOff);refreshPanels();draw();
+  }
   drag=null;
 });
 cv.addEventListener("pointercancel",e=>{
@@ -4243,7 +4266,7 @@ cv.addEventListener("contextmenu",e=>{
       const h = hitTest(w.x, w.y);
       if(h){
         if(h.track){ S.sel.tracks.add(h.track); if(h.track.net) S.hlNet = h.track.net; }
-        else if(h.fp){ S.sel.fps.add(h.fp); }
+        else if(h.fp){ S.sel.fps.add(h.fp.id); }
         else if(h.via){ S.sel.vias.add(h.via); if(h.via.net) S.hlNet = h.via.net; }
         refreshPanels(); draw();
       }

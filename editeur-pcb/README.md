@@ -682,6 +682,20 @@ modificateur enfoncé s'ajoute à ce qui est déjà pris. Le déplacement, la
 rotation, le retournement et la suppression travaillent depuis toujours sur
 l'ensemble de la sélection.
 
+Le groupe se saisit par **n'importe lequel** de ses éléments. Le repère d'une
+empreinte prise avec d'autres vaut son empreinte — il passe devant le boîtier au
+test d'atteinte, et le saisir défaisait la sélection pour ne déplacer que le
+texte ; il ne se déplace plus à part que lorsque son empreinte est seule
+sélectionnée. De même, dès que la sélection contient une empreinte, les bouts de
+piste, de trait et les sommets de zone cessent d'être des poignées : ils tombent
+sur les pastilles, et c'est le groupe qui doit partir. `Ctrl+clic` sur un
+élément déjà pris ne l'en retire qu'au relâchement : si le geste glisse, toute
+la sélection part, lui compris.
+
+**Au doigt**, le bouton **Multi** de la barre tactile tient lieu de `Ctrl` :
+chaque toucher ajoute un élément à la sélection ou l'en retire. Le lasso se
+tire déjà au doigt sur le vide ; deux doigts déplacent la vue.
+
 **Le panneau Propriétés d'une sélection multiple.** Ce qui est pris se range par
 familles — empreintes, segments, vias, zones, découpes — et, dans chaque
 famille, par **cotes identiques** (`MP_KINDS`, `js/06-panels.js`). Cinq vias

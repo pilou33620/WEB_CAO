@@ -300,6 +300,9 @@ function beginDrag(p,handle,detach){
 }
 function finishDrag(){
   if(!S.drag)return;
+  // Ctrl/Maj sur un élément déjà pris, sans glisser : c'était un retrait
+  const off=S.drag.toggleOff;
+  if(off&&!S.drag.moved)off.set.delete(off.id);
   if(S.drag.moved){
     push(S.drag.before);                 // instantané pris au premier déplacement réel
     // deux broches qui se séparent gardent leur liaison : un fil la matérialise
@@ -435,8 +438,25 @@ cv.addEventListener("pointerdown",e=>{
     clearSel();S.sel.add(el.id);
     refreshPanels();draw();return;
   }
-  // Ctrl et Maj font la même chose : ajouter à la sélection (ou en retirer)
-  const addSel=e.shiftKey||e.ctrlKey||e.metaKey;
+  /* Ctrl et Maj font la même chose : ajouter à la sélection (ou en retirer).
+     Au doigt, le bouton « Multi » du HUD tactile en tient lieu. */
+  const multi=typeof tactileMultiActif==="function"&&tactileMultiActif();
+  const addSel=e.shiftKey||e.ctrlKey||e.metaKey||multi;
+  /* Saisir un élément d'une sélection de plusieurs, c'est emmener le groupe :
+     ses poignées (bout de fil, coin de trait) et ses libellés ne passent devant
+     que lorsqu'il est seul sélectionné. */
+  const several=selCount()>1;
+  /* Prise d'un élément : sans modificateur, il remplace la sélection s'il n'en
+     faisait pas partie ; avec, il y entre — ou en sort, mais seulement au
+     relâchement : si le geste glisse, c'est toute la sélection qui part. */
+  const grab=(set,id,handleOf)=>{
+    let off=null;
+    if(addSel){if(set.has(id))off={set,id};else set.add(id);}
+    else if(!set.has(id)){clearSel();set.add(id);}
+    beginDrag(p,(!addSel&&handleOf)?handleOf():null,e.altKey);
+    S.drag.toggleOff=off;
+    refreshPanels();draw();
+  };
   if(S.mode==="mesure"){rpMesClic(p.x,p.y);draw();return;}
   if(S.mode==="draw"){
     const pt={x:snap(p.x),y:snap(p.y)};
@@ -525,7 +545,7 @@ cv.addEventListener("pointerdown",e=>{
     return;
   }
   // poignées d'extrémités des traits sélectionnés (étirement)
-  if(!addSel){
+  if(!addSel&&!several){
     for(const d of selDrawings()){
       const tol=(e.pointerType==="mouse"?9:18)/S.scale;
       if(Math.hypot(p.x-d.x1,p.y-d.y1)<=tol){
@@ -558,8 +578,10 @@ cv.addEventListener("pointerdown",e=>{
   }
   // libellé de composant : il se saisit avant le symbole
   const ht=hitText(p.x,p.y);
+  // Ctrl/Maj, ou composant pris dans un groupe : le libellé vaut son composant
+  if(ht&&(addSel||(several&&S.sel.has(ht.el.id)))){grab(S.sel,ht.el.id);return;}
   if(ht){
-    if(!addSel&&!S.sel.has(ht.el.id)){clearSel();S.sel.add(ht.el.id);}
+    if(!S.sel.has(ht.el.id)){clearSel();S.sel.add(ht.el.id);}
     const cur=textOff(ht.el,ht.kind)||[0,0];
     S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:false,items:[],
             probes:[],probe:null,ends:[],contacts:[],
@@ -571,6 +593,9 @@ cv.addEventListener("pointerdown",e=>{
   // étiquette de net : elle se déplace de la même façon, et le clic sélectionne
   // le net pour que le panneau propose de la masquer
   const hn=hitNetLabel(p.x,p.y);
+  if(hn&&!addSel&&several&&hn.net.wires.some(w=>S.selW.has(w))){
+    beginDrag(p,null,e.altKey);refreshPanels();draw();return;
+  }
   if(hn){
     const cur=(hn.wire&&hn.wire.lblOff)||[0,0];
     if(!addSel)selectNet(hn.net);
@@ -598,47 +623,25 @@ cv.addEventListener("pointerdown",e=>{
   }
   // sélection : composant d'abord, puis fil, puis trait
   const el=hitComp(p.x,p.y);
-  if(el){
-    if(addSel){
-      // Ctrl (ou Maj) + clic : on ajoute, ou on retire. Retirer ne doit pas
-      // enchaîner sur un glissement, sinon le geste déplacerait le reste
-      if(S.sel.has(el.id)){S.sel.delete(el.id);refreshPanels();draw();return;}
-      S.sel.add(el.id);
-    }
-    else if(!S.sel.has(el.id)){clearSel();S.sel.add(el.id);}
-    beginDrag(p,null,e.altKey);
-    refreshPanels();draw();return;
-  }
+  if(el){grab(S.sel,el.id);return;}
   const wi=hitWire(p.x,p.y);
   if(wi>=0){
     const w=S.wires[wi];
-    if(addSel){
-      if(S.selW.has(w)){S.selW.delete(w);refreshPanels();draw();return;}
-      S.selW.add(w);
-    }
-    else if(!S.selW.has(w)){clearSel();S.selW.add(w);}
-    // extrémité saisie : on étire le segment au lieu de le translater
-    let handle=null;
-    if(!addSel&&S.selW.has(w)){
+    // extrémité d'un fil seul sélectionné : on étire le segment au lieu de le translater
+    grab(S.selW,w,()=>{
+      if(selCount()!==1)return null;
       const tol=(e.pointerType==="mouse"?9:18)/S.scale;
-      if(Math.hypot(p.x-w.x1,p.y-w.y1)<=tol)handle={w,e:1};
-      else if(Math.hypot(p.x-w.x2,p.y-w.y2)<=tol)handle={w,e:2};
-    }
-    beginDrag(p,handle,e.altKey);
-    refreshPanels();draw();return;
+      if(Math.hypot(p.x-w.x1,p.y-w.y1)<=tol)return {w,e:1};
+      if(Math.hypot(p.x-w.x2,p.y-w.y2)<=tol)return {w,e:2};
+      return null;
+    });
+    return;
   }
   const hd=hitDrawing(p.x,p.y);
-  if(hd){
-    if(addSel){
-      if(S.selD.has(hd.id)){S.selD.delete(hd.id);refreshPanels();draw();return;}
-      S.selD.add(hd.id);
-    }
-    else if(!S.selD.has(hd.id)){clearSel();S.selD.add(hd.id);}
-    beginDrag(p,null,e.altKey);
-    refreshPanels();draw();return;
-  }
-  if(e.pointerType!=="mouse"){
+  if(hd){grab(S.selD,hd.id);return;}
+  if(e.pointerType!=="mouse"&&!multi){
     // au doigt, glisser sur le vide déplace la vue : plus naturel qu'un lasso
+    // (« Multi » enclenché, le doigt trace le lasso ; deux doigts déplacent la vue)
     S.pan={x:e.clientX,y:e.clientY,ox:S.ox,oy:S.oy};
     if(!addSel)clearSel();
   }else{

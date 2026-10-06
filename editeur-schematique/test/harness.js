@@ -74,6 +74,7 @@ const EXPOSE=[
   /* libellés déplaçables et étiquettes de net (08 + 09) */
   "compTexts","textBox","textOff","setTextOff","netLabelAt","netLabelBoxes",
   "pinContacts","reconnectContacts","resetTexts","pinContactPoints","moveSelBy",
+  "hitText","hitComp","selCount","tactileMultiDefinir","tactileMultiActif",
   "rotateSel","mirrorSel",
   "splitWireArray","textW",
   /* presse-papier et grille (10) */
@@ -2428,6 +2429,99 @@ T("nomenclature et netlist enrichies : liaison automatique avec LIB_composants.c
     throw new Error("Section de références catalogue absente de la netlist: \n" + nl);
   }
   if(nl.indexOf("GCM155R71A104KA55D") < 0) throw new Error("MPN absent de la section netlist");
+});
+
+/* ==========================================================================
+   Sélection multiple : saisir n'importe quel élément emmène le groupe
+   (09-interaction.js). Au doigt, le bouton « Multi » du HUD tient lieu de Ctrl.
+   ========================================================================== */
+function ptr(x,y,o){const q=w2s(x,y);return Object.assign({clientX:q.x,clientY:q.y,pointerType:"mouse"},o||{});}
+function glisseSch(a,b){
+  dom.fire("pointerdown",a);
+  dom.fire("pointermove",Object.assign({},a,{clientX:(a.clientX+b.clientX)/2,clientY:(a.clientY+b.clientY)/2}));
+  dom.fire("pointermove",b);
+  dom.fireWin("pointerup",b);
+}
+function groupeTroisR(){
+  const rs=[1,2,3].map(i=>C("resistor",10*i,10,{ref:"R"+i,value:"10k"}));
+  // un fil libre, loin des symboles : ses bouts ne touchent rien
+  const w={x1:40*G,y1:10*G,x2:45*G,y2:10*G};
+  sheet(rs,[w]);
+  S.scale=1;S.ox=0;S.oy=0;setMode("select");
+  for(const r of rs)S.sel.add(r.id);
+  S.selW.add(w);
+  return {rs,w};
+}
+T("sélection multiple : saisir le libellé d'un composant emmène tout le groupe",()=>{
+  const {rs}=groupeTroisR();
+  const t=compTexts(rs[1]).find(t=>t.kind==="val"), b=textBox(t);
+  const cx=(b.x1+b.x2)/2, cy=(b.y1+b.y2)/2;
+  if(!hitText(cx,cy))throw new Error("le décor doit viser le libellé");
+  glisseSch(ptr(cx,cy),ptr(cx+2*G,cy+G));
+  if(selCount()!==4)throw new Error("la sélection devait rester entière : "+selCount());
+  rs.forEach((r,i)=>{
+    if(r.x!==(10+10*i+2)*G||r.y!==11*G)throw new Error(r.ref+" devait suivre le groupe : "+r.x+","+r.y);
+  });
+  if(textOff(rs[1],t.kind))throw new Error("le libellé ne devait pas se décaler de son symbole");
+});
+T("composant seul sélectionné : son libellé se déplace toujours à part",()=>{
+  const {rs}=groupeTroisR();
+  clearSel();S.sel.add(rs[1].id);
+  const t=compTexts(rs[1]).find(t=>t.kind==="val"), b=textBox(t);
+  const cx=(b.x1+b.x2)/2, cy=(b.y1+b.y2)/2;
+  glisseSch(ptr(cx,cy),ptr(cx+G,cy));
+  if(rs[1].x!==20*G)throw new Error("le symbole ne devait pas bouger");
+  if(!textOff(rs[1],t.kind))throw new Error("le libellé devait se décaler");
+});
+T("sélection multiple : le bout d'un fil pris avec le groupe ne l'étire pas",()=>{
+  const {rs,w}=groupeTroisR();
+  // tout près de l'extrémité : jadis la poignée d'étirement
+  const ex=w.x1+3, ey=w.y1;
+  glisseSch(ptr(ex,ey),ptr(ex,ey+2*G));
+  if(w.x1!==40*G||w.x2!==45*G||w.y1!==12*G||w.y2!==12*G)
+    throw new Error("le fil devait partir en bloc : "+[w.x1,w.y1,w.x2,w.y2].join(","));
+  if(rs[2].y!==12*G)throw new Error("R3 devait suivre le groupe : "+rs[2].y);
+});
+T("fil seul sélectionné : son bout s'étire toujours",()=>{
+  const {w}=groupeTroisR();
+  clearSel();S.selW.add(w);
+  glisseSch(ptr(w.x1+3,w.y1),ptr(w.x1+3,w.y1+2*G));
+  if(w.y1!==12*G||w.y2!==10*G)throw new Error("seul le bout saisi devait bouger : "+[w.x1,w.y1,w.x2,w.y2].join(","));
+});
+T("Ctrl+clic sur un composant pris : il sort au relâchement, Ctrl+glisser emmène le groupe",()=>{
+  const {rs}=groupeTroisR();
+  const c=ptr(rs[2].x,rs[2].y,{ctrlKey:true});
+  dom.fire("pointerdown",c);dom.fireWin("pointerup",c);
+  if(S.sel.has(rs[2].id))throw new Error("le clic seul devait retirer R3");
+  S.sel.add(rs[2].id);
+  glisseSch(ptr(rs[2].x,rs[2].y,{ctrlKey:true}),ptr(rs[2].x+G,rs[2].y,{ctrlKey:true}));
+  if(!S.sel.has(rs[2].id))throw new Error("après un glissement R3 reste pris");
+  if(rs[0].x!==11*G)throw new Error("R1 devait suivre : "+rs[0].x);
+});
+T("mode tactile, bouton « Multi » : chaque toucher ajoute ou retire, le doigt trace le lasso",()=>{
+  const {rs}=groupeTroisR();
+  const garde=localStorage.getItem("cao.modeTactile");
+  localStorage.setItem("cao.modeTactile","1");
+  tactileMultiDefinir(true);
+  try{
+    clearSel();
+    const tch=(x,y)=>ptr(x,y,{pointerType:"touch"});
+    for(const r of rs){dom.fire("pointerdown",tch(r.x,r.y));dom.fireWin("pointerup",tch(r.x,r.y));}
+    if(S.sel.size!==3)throw new Error("trois touchers devaient prendre trois composants : "+S.sel.size);
+    dom.fire("pointerdown",tch(rs[0].x,rs[0].y));dom.fireWin("pointerup",tch(rs[0].x,rs[0].y));
+    if(S.sel.has(rs[0].id))throw new Error("toucher un composant pris devait le retirer");
+    clearSel();
+    glisseSch(tch(0,0),tch(40*G,20*G));
+    if(S.sel.size!==3)throw new Error("au doigt, « Multi » enclenché, glisser sur le vide trace un lasso : "+S.sel.size);
+    tactileMultiDefinir(false);
+    clearSel();
+    const ox=S.ox;
+    glisseSch(tch(0,0),tch(5*G,0));
+    if(S.sel.size||S.ox===ox)throw new Error("« Multi » relâché, glisser sur le vide déplace la vue");
+  }finally{
+    tactileMultiDefinir(false);
+    if(garde===null)localStorage.removeItem("cao.modeTactile");else localStorage.setItem("cao.modeTactile",garde);
+  }
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

@@ -107,7 +107,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "PAD_SHAPES","padShape","padRadius","padChamferVal","padChamferPts","polyOffset",
   "ptPolyDist","padWorldPts","padClone","padDist","padHalf","fpSetPad","gPad",
   /* sélection multiple et presse-papier */
-  "selectHit","toggleHit","altTarget","selCount","trackRun","selectRun","deleteSel","unrouteSel","copySelPcb","cutSelPcb",
+  "selectHit","toggleHit","altTarget","selCount","fpTextPos",
+  "tactileMultiDefinir","tactileMultiActif","trackRun","selectRun","deleteSel","unrouteSel","copySelPcb","cutSelPcb",
   "pasteClipPcb","pcbClipContent","pcbSetClip","pcbGetClip","freeFpRef","GRID_STEPS",
   "setGridStep","gridShownStep","gridLabel","fpById",
   /* import défensif (normDoc) et aller-retour de document */
@@ -1374,6 +1375,96 @@ T("déplacer un boîtier : ses pistes le suivent, à 45°",()=>{
     chemin("A",{x:v1.x,y:v1.y},{x:r[0].x,y:r[0].y});
     chemin("B",{x:r[1].x,y:r[1].y},{x:v2.x,y:v2.y});
   }finally{undo();suiviFin(reg);}
+});
+/* Sélection de plusieurs boîtiers : on les saisit par n'importe lequel, y
+   compris par son repère (le texte passe devant le boîtier au test d'atteinte)
+   ou par une pastille où aboutit une piste sélectionnée. Sinon le groupe se
+   défaisait et seul le texte, ou le bout de piste, partait. */
+function groupeTroisBoitiers(){
+  const reg=suiviDecor();
+  const fs=[["R1",10,10],["R2",20,10],["R3",30,10]].map(([r,x,y])=>{
+    const f=mkFp(r,"10k","0603",2);f.x=x;f.y=y;S.fps.push(f);return f;});
+  touch();
+  for(const f of fs)S.sel.fps.add(f.id);
+  return {reg,fs};
+}
+function glisse(a,b){
+  fire("pointerdown",a);
+  fire("pointermove",Object.assign({},a,{clientX:(a.clientX+b.clientX)/2,clientY:(a.clientY+b.clientY)/2}));
+  fire("pointermove",b);
+  fire("pointerup",b);
+}
+T("sélection multiple : saisir le repère d'un boîtier emmène tout le groupe",()=>{
+  const {reg,fs}=groupeTroisBoitiers();
+  const avant=fs.map(f=>[f.x,f.y]);
+  const tp=fpTextPos(fs[1]).ref;
+  const h=hitTest(tp.x,tp.y);
+  try{
+    if(!h||!h.fpText)throw new Error("le décor doit viser le repère, pas "+JSON.stringify(Object.keys(h||{})));
+    glisse(sc(tp.x,tp.y),sc(tp.x+4,tp.y+3));
+    if(S.sel.fps.size!==3)throw new Error("la sélection devait rester entière : "+S.sel.fps.size);
+    fs.forEach((f,i)=>{
+      if(Math.abs(f.x-avant[i][0]-4)>1e-6||Math.abs(f.y-avant[i][1]-3)>1e-6)
+        throw new Error(f.ref+" devait suivre le groupe : "+f.x+","+f.y);
+    });
+    if(fs[1].refOffX||fs[1].refOffY)throw new Error("le repère ne devait pas se décaler de son boîtier");
+  }finally{undo();suiviFin(reg);}
+});
+T("boîtier seul sélectionné : son repère se déplace toujours à part",()=>{
+  const {reg,fs}=groupeTroisBoitiers();
+  clearSel();S.sel.fps.add(fs[1].id);
+  const tp=fpTextPos(fs[1]).ref;
+  try{
+    glisse(sc(tp.x,tp.y),sc(tp.x+2,tp.y+1));
+    if(fs[1].x!==20||fs[1].y!==10)throw new Error("le boîtier ne devait pas bouger");
+    if(!fs[1].refOffX&&!fs[1].refOffY)throw new Error("le repère devait se décaler");
+  }finally{undo();suiviFin(reg);}
+});
+T("sélection multiple : une piste prise avec les boîtiers ne s'étire pas par son bout",()=>{
+  const {reg,fs}=groupeTroisBoitiers();
+  const q=padsWorld(fs[0]), r=padsWorld(fs[1]);
+  const t={l:0,net:"A",w:0.3,x1:q[1].x,y1:q[1].y,x2:r[0].x,y2:r[0].y};
+  S.tracks.push(t);touch();S.sel.tracks.add(t);
+  try{
+    // la pastille de R1 où la piste aboutit : jadis la poignée du bout de piste
+    glisse(sc(q[1].x,q[1].y),sc(q[1].x+3,q[1].y+2));
+    const len=Math.hypot(t.x2-t.x1,t.y2-t.y1), len0=Math.hypot(r[0].x-q[1].x,r[0].y-q[1].y);
+    if(Math.abs(len-len0)>1e-6)throw new Error("la piste devait partir en bloc, pas s'étirer");
+    if(Math.abs(fs[2].x-33)>1e-6)throw new Error("R3 devait suivre le groupe : "+fs[2].x);
+  }finally{undo();suiviFin(reg);}
+});
+T("Ctrl+clic sur un boîtier pris : il sort au relâchement, mais Ctrl+glisser emmène le groupe",()=>{
+  const {reg,fs}=groupeTroisBoitiers();
+  try{
+    const c=Object.assign(sc(fs[2].x,fs[2].y),{ctrlKey:true});
+    fire("pointerdown",c);fire("pointerup",c);
+    if(S.sel.fps.has(fs[2].id)||S.sel.fps.size!==2)throw new Error("le clic seul devait retirer R3");
+    S.sel.fps.add(fs[2].id);
+    glisse(Object.assign(sc(fs[2].x,fs[2].y),{ctrlKey:true}),Object.assign(sc(fs[2].x+2,fs[2].y),{ctrlKey:true}));
+    if(S.sel.fps.size!==3)throw new Error("après un glissement la sélection reste entière");
+    if(Math.abs(fs[0].x-12)>1e-6)throw new Error("R1 devait suivre : "+fs[0].x);
+  }finally{undo();suiviFin(reg);}
+});
+T("mode tactile, bouton « Multi » : chaque toucher ajoute ou retire, comme Ctrl",()=>{
+  const {reg,fs}=groupeTroisBoitiers();
+  const garde=localStorage.getItem("cao.modeTactile");
+  localStorage.setItem("cao.modeTactile","1");
+  tactileMultiDefinir(true);
+  try{
+    clearSel();
+    const tch=f=>Object.assign(sc(f.x,f.y),{pointerType:"touch"});
+    for(const f of fs){fire("pointerdown",tch(f));fire("pointerup",tch(f));}
+    if(S.sel.fps.size!==3)throw new Error("trois touchers devaient prendre trois boîtiers : "+S.sel.fps.size);
+    fire("pointerdown",tch(fs[0]));fire("pointerup",tch(fs[0]));
+    if(S.sel.fps.has(fs[0].id))throw new Error("toucher un boîtier pris devait le retirer");
+    tactileMultiDefinir(false);
+    fire("pointerdown",tch(fs[2]));fire("pointerup",tch(fs[2]));
+    if(S.sel.fps.size!==2)throw new Error("« Multi » relâché, toucher un boîtier pris ne change rien");
+  }finally{
+    tactileMultiDefinir(false);
+    if(garde===null)localStorage.removeItem("cao.modeTactile");else localStorage.setItem("cao.modeTactile",garde);
+    S.fps=[];S.tracks=[];touch();clearSel();suiviFin(reg);
+  }
 });
 T("déplacer un boîtier : la piste entre deux de ses pastilles part en bloc",()=>{
   const reg=suiviDecor();
