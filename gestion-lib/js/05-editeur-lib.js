@@ -857,6 +857,117 @@ function editeurMettreAJourSelectionTable(idx) {
   if (selTr) {
     selTr.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
+  if (isPcb) rendreDetailPad();
+}
+
+/* ---------- Fiche de la pastille sélectionnée ----------
+   Ce que le tableau n'a pas la place de dire : le masque et la pâte propres
+   à la pastille, et pour une traversante sa forme sur les couches internes
+   et au dessous. Une empreinte de bibliothèque ignore le nombre de couches de
+   la carte qui l'utilisera : « couches internes » vaut pour toutes, « dessous »
+   pour la dernière (clés `int` et `bas` de `parCouche`, que l'éditeur PCB lit
+   couche par couche — Gerber, zones, contrôle des règles et routeur). */
+const FORMES_PAD_LIB = {circ: "Rond", rect: "Rect. arrondi", sharp: "Rect. angles droits", oval: "Ovale", chamfer: "Chanfreiné"};
+function rendreDetailPad() {
+  const cont = document.getElementById("editeurPadDetail");
+  if (!cont || EDITEUR_LIB.type !== "pcb") return;
+  const pads = (EDITEUR_LIB.data && EDITEUR_LIB.data.pads) || [];
+  const idx = EDITEUR_LIB.selectionIndex;
+  const p = (idx != null && idx >= 0) ? pads[idx] : null;
+  if (!p) {
+    cont.innerHTML = `<div class="hint-txt" style="font-size:11px; color:var(--txt-dim);">Sélectionnez une pastille pour régler son masque, sa pâte et sa forme par couche.</div>`;
+    return;
+  }
+  const n = v => (v == null || !isFinite(v)) ? "" : String(Math.round(v * 1000) / 1000);
+  const mMode = p.noMask ? "aucun" : (p.mask != null ? "propre" : "regle");
+  const pMode = p.noPaste ? "aucune" : (p.paste != null ? "propre" : "regle");
+  const th = (p.drill || 0) > 0;
+  const pc = p.parCouche || {};
+  const ligneCouche = (cle, titre, avecAucune) => {
+    const o = pc[cle];
+    const mode = !o ? "meme" : (o.shape === "aucune" ? "aucune" : "autre");
+    return `
+      <div class="pad-detail-row" style="display:flex; gap:6px; align-items:flex-end; margin-top:6px; flex-wrap:wrap;">
+        <label style="min-width:120px; font-size:11px;">${titre}<br>
+          <select data-pc="${cle}" data-k="mode">
+            <option value="meme" ${mode === "meme" ? "selected" : ""}>Même forme</option>
+            <option value="autre" ${mode === "autre" ? "selected" : ""}>Autre forme</option>
+            ${avecAucune ? `<option value="aucune" ${mode === "aucune" ? "selected" : ""}>Aucune pastille</option>` : ""}
+          </select></label>
+        ${mode === "autre" ? `
+          <label style="font-size:11px;">Forme<br><select data-pc="${cle}" data-k="shape">
+            ${Object.keys(FORMES_PAD_LIB).map(k => `<option value="${k}" ${o.shape === k ? "selected" : ""}>${FORMES_PAD_LIB[k]}</option>`).join("")}
+          </select></label>
+          <label style="font-size:11px;">W<br><input type="number" step="0.05" min="0.05" data-pc="${cle}" data-k="w" value="${n(o.w)}" style="width:62px;"></label>
+          <label style="font-size:11px;">H<br><input type="number" step="0.05" min="0.05" data-pc="${cle}" data-k="h" value="${n(o.h)}" style="width:62px;"></label>` : ""}
+      </div>`;
+  };
+  cont.innerHTML = `
+    <div style="font-weight:600; font-size:12px; margin-bottom:4px;">Pastille ${escapeHtml(p.n)} — masque, pâte${th ? " et forme par couche" : ""}</div>
+    <div class="pad-detail-row" style="display:flex; gap:6px; align-items:flex-end; flex-wrap:wrap;">
+      <label style="min-width:150px; font-size:11px;">Masque (vernis)<br><select id="padMaskMode">
+        <option value="regle" ${mMode === "regle" ? "selected" : ""}>Règle de la carte</option>
+        <option value="propre" ${mMode === "propre" ? "selected" : ""}>Marge propre</option>
+        <option value="aucun" ${mMode === "aucun" ? "selected" : ""}>Recouverte de vernis</option>
+      </select></label>
+      ${mMode === "propre" ? `<label style="font-size:11px;">Marge (mm)<br><input type="number" step="0.01" id="padMaskV" value="${n(p.mask)}" style="width:70px;"></label>` : ""}
+    </div>
+    ${th ? `<div style="font-size:11px; color:var(--txt-dim); margin-top:6px;">Traversante : pas de pâte au pochoir.</div>` : `
+    <div class="pad-detail-row" style="display:flex; gap:6px; align-items:flex-end; margin-top:6px; flex-wrap:wrap;">
+      <label style="min-width:150px; font-size:11px;">Pâte à braser<br><select id="padPasteMode">
+        <option value="regle" ${pMode === "regle" ? "selected" : ""}>Règle de la carte</option>
+        <option value="propre" ${pMode === "propre" ? "selected" : ""}>Réduction propre</option>
+        <option value="aucune" ${pMode === "aucune" ? "selected" : ""}>Sans pâte</option>
+      </select></label>
+      ${pMode === "propre" ? `<label style="font-size:11px;">Réduction (mm)<br><input type="number" step="0.01" id="padPasteV" value="${n(p.paste)}" style="width:70px;"></label>` : ""}
+    </div>`}
+    ${th ? `
+      <div style="font-size:11px; color:var(--txt-dim); margin-top:8px;">La forme du tableau vaut pour le dessus et pour les couches marquées « Même forme ».</div>
+      ${ligneCouche("int", "Couches internes", true)}
+      ${ligneCouche("bas", "Dessous", false)}` : ""}
+    <div style="font-size:11px; color:var(--txt-dim); margin-top:8px;">Marge positive : le vernis s'ouvre au-delà de la pastille. Réduction positive : la pâte est plus petite que la pastille.</div>
+  `;
+  const avant = () => { editeurHistoriquePush(); };
+  const apres = () => { rendreDetailPad(); if (EDITEUR_LIB.renderer) EDITEUR_LIB.renderer.render(); };
+  const mm = document.getElementById("padMaskMode");
+  if (mm) mm.onchange = () => {
+    avant();
+    delete p.mask; delete p.noMask;
+    if (mm.value === "aucun") p.noMask = true;
+    else if (mm.value === "propre") p.mask = 0.05;
+    apres();
+  };
+  const mv = document.getElementById("padMaskV");
+  if (mv) mv.onchange = () => { avant(); const v = parseFloat(mv.value); p.mask = isFinite(v) ? Math.max(-5, Math.min(5, v)) : 0; apres(); };
+  const pm = document.getElementById("padPasteMode");
+  if (pm) pm.onchange = () => {
+    avant();
+    delete p.paste; delete p.noPaste;
+    if (pm.value === "aucune") p.noPaste = true;
+    else if (pm.value === "propre") p.paste = 0.05;
+    apres();
+  };
+  const pv = document.getElementById("padPasteV");
+  if (pv) pv.onchange = () => { avant(); const v = parseFloat(pv.value); p.paste = isFinite(v) ? Math.max(-5, Math.min(5, v)) : 0; apres(); };
+  cont.querySelectorAll("[data-pc]").forEach(el => {
+    el.onchange = () => {
+      avant();
+      const cle = el.getAttribute("data-pc"), k = el.getAttribute("data-k");
+      const pcN = Object.assign({}, p.parCouche || {});
+      if (k === "mode") {
+        if (el.value === "meme") delete pcN[cle];
+        else if (el.value === "aucune") pcN[cle] = {shape: "aucune"};
+        else pcN[cle] = {shape: p.shape === "circ" ? "circ" : (p.shape || "circ"), w: p.w || 1, h: p.h || 1};
+      } else if (pcN[cle]) {
+        const o = Object.assign({}, pcN[cle]);
+        if (k === "shape") o.shape = el.value;
+        else { const v = parseFloat(el.value); if (isFinite(v) && v >= 0.05) o[k] = v; }
+        pcN[cle] = o;
+      }
+      if (Object.keys(pcN).length) p.parCouche = pcN; else delete p.parCouche;
+      apres();
+    };
+  });
 }
 
 /* ---------- Remplissage et liaison formulaire ---------- */
@@ -1096,7 +1207,9 @@ function remplirElementsEditeur() {
           <tbody id="tbodyPadsEditeur">${rowsHtml}</tbody>
         </table>
       </div>
+      <div id="editeurPadDetail" style="margin-top:10px;"></div>
     `;
+    rendreDetailPad();
 
     // Écouteurs inputs pads
     const tbody = document.getElementById("tbodyPadsEditeur");

@@ -1446,7 +1446,11 @@ function padClone(q){
    veut dire « pas de cuivre ici ». Le Gerber cuivre et le remplissage des
    zones s'en servent ; le DRC et le routeur gardent la forme principale. */
 function padSurCouche(q,l){
-  const o=q.parCouche&&q.parCouche[l];
+  /* une couche nommée l'emporte ; sinon « int » vaut pour toutes les couches
+     internes et « bas » pour le dessous — c'est ainsi qu'une empreinte de
+     bibliothèque, qui ignore le nombre de couches de la carte, le décrit */
+  const pc=q.parCouche;
+  const o=pc&&(pc[l]||(l>0&&l===S.cu-1?pc.bas:(l>0&&l<S.cu-1?pc.int:null)));
   if(!o)return q;
   if(o.shape==="aucune")return null;
   const r=Object.assign({},q,{shape:o.shape,w:o.w,h:o.h});
@@ -1660,6 +1664,30 @@ function fpSetPad(fp,i,k,v){
     q.thermalWidth=clamp(r4(+v||0),0,200);
   }else if(k==="thermalGap"){
     q.thermalGap=clamp(r4(+v||0),0,200);
+  /* masque et pâte propres à la pastille : null rend la règle de la carte */
+  }else if(k==="mask"){
+    if(v==null||v===""){delete q.mask;}else{q.mask=clamp(r4(+v||0),-5,5);delete q.noMask;}
+  }else if(k==="noMask"){
+    if(v){q.noMask=true;delete q.mask;}else delete q.noMask;
+  }else if(k==="paste"){
+    if(v==null||v===""){delete q.paste;}else{q.paste=clamp(r4(+v||0),-5,5);delete q.noPaste;}
+  }else if(k==="noPaste"){
+    if(v){q.noPaste=true;delete q.paste;}else delete q.noPaste;
+  /* forme sur une couche : v = {l, o} ; o null rend la forme principale,
+     {shape:"aucune"} retire la pastille de cette couche */
+  }else if(k==="parCouche"){
+    const l=Math.round(+(v&&v.l));
+    if(!Number.isInteger(l)||l<0||l>=CU_MAX)return false;
+    const pc=Object.assign({},q.parCouche||{});
+    const o=v.o;
+    if(!o)delete pc[l];
+    else if(o.shape==="aucune")pc[l]={shape:"aucune"};
+    else{
+      const e={shape:padShape(o.shape),w:clamp(r4(+o.w||q.w),0.05,200),h:clamp(r4(+o.h||q.h),0.05,200)};
+      if(e.shape==="poly")e.shape="sharp";      // le polygone par couche n'a pas d'éditeur
+      pc[l]=e;
+    }
+    if(Object.keys(pc).length)q.parCouche=pc;else delete q.parCouche;
   }else return false;
   /* le perçage se recale après coup : retailler la pastille au-dessous de son
      trou ne doit pas laisser un anneau négatif */
@@ -1877,6 +1905,15 @@ function padsWorld(fp){
 function padLayers(fp,pad){
   if(pad.drill>0){const L=[];for(let i=0;i<S.cu;i++)L.push(i);return L;}
   return [fp.side?S.cu-1:0];
+}
+/* Les couches où la pastille porte du cuivre. `padLayers` dit où passe le
+   trou (toutes les couches pour une traversante) : c'est lui que les zones
+   dégagent. Une pastille retirée d'une couche interne (`parCouche`, « aucune »)
+   n'y raccorde rien — la connectivité et les accroches du routeur passent par
+   ici. */
+function padCuLayers(fp,pad){
+  const L=padLayers(fp,pad);
+  return pad.parCouche?L.filter(l=>padSurCouche(pad,l)!==null):L;
 }
 function fpBBox(fp){
   const T=fpXform(fp), b=bodyOf(fp), ps=padsWorld(fp);

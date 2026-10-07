@@ -173,7 +173,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
-  "apSet","apForPad","fePad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","fePad","netAtPoint","padCuLayers","pnsItemsPad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform","feZoom","feRefit","feReattach",
@@ -5170,6 +5170,78 @@ T("outil aplat de sérigraphie : rectangle et polygone pleins, au Gerber",()=>{
   undo();
   if(S.drawings.filter(d=>d.shape==="poly").length!==1)throw new Error("Ctrl+Z retire le dernier aplat");
   S.drawings=[];S.silkShape="line";setMode("select");carteVide();
+});
+/* FORME PAR COUCHE, JUGÉE COUCHE PAR COUCHE : une couronne interne plus
+   petite laisse passer une piste que la couronne extérieure gênerait ; là où
+   la pastille est retirée, le trou seul compte, et rien ne s'y raccorde. */
+T("forme par couche : DRC, routeur et connectivité jugent la vraie forme",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.cu=4;d.cuL=[];d.stack=null;
+  d.fps=[{id:1,ref:"J1",x:20,y:20,pins:1,nets:{1:"A"},pads:[
+    {n:1,x:0,y:0,w:2,h:2,shape:"circ",drill:1,
+     parCouche:{"1":{shape:"circ",w:1.4,h:1.4},"2":{shape:"aucune"}}}]}];
+  loadDoc(d,true);
+  const clr=classOf("B").clr;
+  const ligne=(l,y)=>({l,net:"B",w:0.3,x1:10,y1:y,x2:30,y2:y});
+  const iso=()=>runDrc().filter(e=>/Isolation piste\/pastille/.test(e.msg));
+  /* à 0,3 mm de la couronne de 1,4 mm, mais au ras de celle de 2 mm */
+  const y=20+0.7+clr+0.05+0.15;
+  S.tracks=[ligne(1,y)];touch();
+  if(iso().length)throw new Error("couche 2 : la couronne réduite laisse passer : "+iso()[0].msg);
+  S.tracks=[ligne(0,y)];touch();
+  if(!iso().length)throw new Error("dessus : la couronne pleine doit gêner");
+  /* couche 3 : pas de pastille, le trou seul — loin, rien ; près, un défaut nommé */
+  S.tracks=[ligne(2,y)];touch();
+  if(iso().length)throw new Error("couche 3 loin du trou : rien");
+  S.tracks=[ligne(2,20+0.5+0.1+0.15)];touch();
+  const e=iso();
+  if(!e.length||!/trou/.test(e[0].msg))throw new Error("couche 3 près du trou : "+JSON.stringify(e.map(o=>o.msg)));
+  /* les items du routeur : trois groupes de couches */
+  const its=pnsItemsPad(S.fps[0],padsWorld(S.fps[0])[0]);
+  if(its.length!==4||its[1].q.w!==1.4||!its[2].trouSeul||its[3].l0!==3)
+    throw new Error("items : "+its.map(i=>i.l0+"-"+i.l1+":"+i.q.w).join(" "));
+  /* connectivité : du cuivre sur les couches 1, 2 et 4, pas sur la 3 */
+  if(padCuLayers(S.fps[0],padsWorld(S.fps[0])[0]).join()!=="0,1,3")throw new Error("couches de cuivre");
+  if(!netAtPoint(20,20,1)||netAtPoint(20,20,2))throw new Error("rien ne se raccorde sur la couche sans pastille");
+  carteVide();
+});
+/* LA FENÊTRE D'EMPREINTE règle masque, pâte et forme par couche. */
+T("fpSetPad : masque, pâte et forme par couche se règlent",()=>{
+  carteVide();
+  const fp=mkFp("J5","","",2);fp.x=10;fp.y=10;S.fps.push(fp);
+  fpSetPad(fp,0,"drill",0.8);fpSetPad(fp,0,"w",1.6);fpSetPad(fp,0,"h",1.6);
+  fpSetPad(fp,0,"mask",0.1);
+  fpSetPad(fp,1,"noMask",true);fpSetPad(fp,1,"paste",0.05);
+  fpSetPad(fp,0,"parCouche",{l:1,o:{shape:"circ",w:1.2,h:1.2}});
+  const q0=fp.pads[0], q1=fp.pads[1];
+  if(q0.mask!==0.1||!q1.noMask||q1.paste!==0.05||q0.parCouche[1].w!==1.2)
+    throw new Error("réglages : "+JSON.stringify([q0,q1]));
+  fpSetPad(fp,1,"noMask",false);fpSetPad(fp,0,"mask",null);fpSetPad(fp,0,"parCouche",{l:1,o:null});
+  if(fp.pads[1].noMask||fp.pads[0].mask!=null||fp.pads[0].parCouche)throw new Error("retour à la règle");
+  fpSetPad(fp,0,"parCouche",{l:1,o:{shape:"aucune"}});
+  if(fp.pads[0].parCouche[1].shape!=="aucune")throw new Error("pastille retirée d'une couche");
+  carteVide();
+});
+/* UNE EMPREINTE DE BIBLIOTHÈQUE ignore le nombre de couches de la carte :
+   « int » vaut pour toutes les couches internes, « bas » pour le dessous ;
+   une couche nommée l'emporte. */
+T("forme par couche de bibliothèque : couches internes et dessous",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.cu=6;d.cuL=[];d.stack=null;
+  d.fps=[{id:1,ref:"J2",x:20,y:20,pins:1,nets:{1:"A"},pads:[
+    {n:1,x:0,y:0,w:2,h:2,shape:"circ",drill:1,
+     parCouche:{int:{shape:"circ",w:1.3,h:1.3},bas:{shape:"sharp",w:2.2,h:2.2},"2":{shape:"aucune"}}}]}];
+  loadDoc(d,true);
+  const q=padsWorld(S.fps[0])[0];
+  const f=l=>{const c=padSurCouche(q,l);return c?c.shape+c.w:"-";};
+  const vu=[0,1,2,3,4,5].map(f).join(" ");
+  if(vu!=="circ2 circ1.3 - circ1.3 circ1.3 sharp2.2")throw new Error("couche par couche : "+vu);
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour non neutre");
+  if(pnsItemsPad(S.fps[0],padsWorld(S.fps[0])[0]).length!==5)throw new Error("items du routeur");
+  carteVide();
 });
 T("ouverture Gerber : un angle non entier n'est pas arrondi au degré",()=>{
   const A=apSet();

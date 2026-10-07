@@ -13,7 +13,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 807 essais (`editeur-pcb/test/harness.js`) |
+| **Éditeur PCB** | En service | 812 essais (`editeur-pcb/test/harness.js`) |
 | **Éditeur Schématique** | En service | 119 essais (`editeur-schematique/test/harness.js`) |
 | **Visionneuse IPC-2581** | En service | 189 essais (`harness-sim.js`) + 59 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.5.0)** | En service (0,3 à 0,4 % vs étalons) | 199 cas (`python/test/banc-ligne-mom.py`) |

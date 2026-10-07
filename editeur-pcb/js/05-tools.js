@@ -176,8 +176,9 @@ function dPads(a){
     if(q.parCouche&&typeof q.parCouche==="object"){
       const pc={};
       for(const k in q.parCouche){
-        const li=+k, e=q.parCouche[k];
-        if(!Number.isInteger(li)||li<0||li>=CU_MAX||!e||typeof e!=="object")continue;
+        const li=(k==="int"||k==="bas")?k:+k, e=q.parCouche[k];
+        if(typeof li==="number"&&(!Number.isInteger(li)||li<0||li>=CU_MAX))continue;
+        if(!e||typeof e!=="object")continue;
         if(e.shape==="aucune"){pc[li]={shape:"aucune"};continue;}
         const r={shape:padShape(e.shape),w:r4(dRange(e.w,o.w,0.05,200)),h:r4(dRange(e.h,o.h,0.05,200))};
         if(r.shape==="poly"){
@@ -1001,8 +1002,8 @@ function viaAt(l,x,y){
 function padAt(l,x,y){
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
-      if(!padLayers(fp,q).includes(l))continue;
-      if(padDist(x,y,q)<=0)return q;
+      if(!padCuLayers(fp,q).includes(l))continue;
+      if(padDist(x,y,padSurCouche(q,l))<=0)return q;
     }
   return null;
 }
@@ -1398,7 +1399,7 @@ function followMoved(){
              fps,vias,mobile:[],base:null};
   if(!fps.length&&!vias.length)return out;
   const pads=[];
-  for(const fp of fps)for(const q of padsWorld(fp))pads.push({q,L:padLayers(fp,q)});
+  for(const fp of fps)for(const q of padsWorld(fp))pads.push({q,L:padCuLayers(fp,q)});
   const user=S.sel.tracks;
   // l'emprise de ce qu'on déplace : sur une carte chargée, on n'examine pas
   // chaque bout de piste contre chaque pastille
@@ -1640,7 +1641,7 @@ function followBase(F){
 function followWorld(F){
   const N=F.base.branch(), chain=new Set();
   for(const c of F.chains)for(const t of c.trk)chain.add(t);
-  for(const fp of F.fps)for(const q of padsWorld(fp))N.add(pnsItemPad(fp,q));
+  for(const fp of F.fps)for(const q of padsWorld(fp))for(const it of pnsItemsPad(fp,q))N.add(it);
   for(const v of F.vias)N.add(pnsItemVia(v));
   for(const t of F.mobile)
     if(!chain.has(t)&&dist(t.x1,t.y1,t.x2,t.y2)>1e-9)
@@ -1775,7 +1776,7 @@ function followShove(F){
       heads.push({l:t.l,net:t.net,w:t.w,pts:[{x:s.x1,y:s.y1},{x:s.x2,y:s.y2}]});
   }
   // un boîtier est UNE tête : ses pastilles poussent ensemble
-  for(const fp of F.fps)heads.push({items:padsWorld(fp).map(q=>pnsItemPad(fp,q)),group:true});
+  for(const fp of F.fps)heads.push({items:padsWorld(fp).flatMap(q=>pnsItemsPad(fp,q)),group:true});
   for(const v of F.vias)heads.push({item:pnsItemVia(v)});
   const r=pnsShoveHeads(F.base,heads,null,Date.now(),{tendre:true});
   if(!r||!r.ok)return null;
@@ -2821,8 +2822,8 @@ function magnet(x,y,layer,skip){
   let best=null,bd=R;
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
-      if(!padLayers(fp,q).includes(layer))continue;
-      const d=padDist(x,y,q);
+      if(!padCuLayers(fp,q).includes(layer))continue;
+      const d=padDist(x,y,padSurCouche(q,layer));
       if(d<=0)return {x:q.x,y:q.y,net:q.net,pad:true,obj:q};
       if(d<bd){bd=d;best={x:q.x,y:q.y,net:q.net,pad:true,obj:q};}
     }

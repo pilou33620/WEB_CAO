@@ -701,14 +701,35 @@ change pour le cuivre d'origine, qui les respecte ; ce qu'on ajoute est
 protégé). Dès que le contour change, la signature ne correspond plus et la
 zone se recalcule comme une autre.
 
-**Pastille telle que le fichier la donne** : forme par couche (`parCouche`,
-`"aucune"` pour une pastille retirée d'une couche interne), utilisée au Gerber
-cuivre et au remplissage des zones — le DRC et le routeur gardent la forme
-principale ; marge de masque (`mask`) et réduction de pâte (`paste`) propres
-à la pastille, ou pastille sous le vernis (`noMask`) / sans pâte (`noPaste`).
+**Masque, pâte et forme par couche d'une pastille** — réglés dans l'éditeur
+d'empreintes de Gestion LIB (onglet « Pastilles / Broches », fiche de la
+pastille sélectionnée) :
+- *masque* : règle de la carte, marge propre (`mask`, en mm, positive = le
+  vernis s'ouvre au-delà de la pastille), ou pastille recouverte de vernis
+  (`noMask`) ;
+- *pâte* (CMS) : règle de la carte, réduction propre (`paste`), ou sans pâte
+  (`noPaste`) ;
+- *forme par couche* (traversante) : la forme du tableau vaut pour le dessus ;
+  « couches internes » (`parCouche.int`) et « dessous » (`parCouche.bas`)
+  peuvent prendre une autre forme, et les couches internes aucune pastille.
+  Une couche nommée par son rang (`parCouche[2]`) l'emporte. Comme une
+  empreinte de bibliothèque ignore le nombre de couches de la carte, c'est
+  `padSurCouche(q, l)` qui résout la forme d'une couche donnée.
 
-**Aplat de sérigraphie** : dessin `poly`, polygone plein avec ses trous —
-sélection, déplacement, rotation, presse-papier, Gerber.
+La forme par couche est utilisée partout : Gerber cuivre, remplissage des
+zones, **contrôle des règles et routeur** (une traversante entre dans l'index
+en un item par suite de couches de même forme ; là où la pastille est
+retirée, le trou seul reste un obstacle, signalé « trou, sans pastille sur
+cette couche »), et **connectivité** (`padCuLayers` : une piste qui arrive sur
+une couche sans pastille n'est pas raccordée). `padLayers` reste la liste des
+couches que traverse le trou — c'est elle que les zones dégagent.
+
+**Aplat de sérigraphie** : dessin `poly`, polygone plein avec ses trous. Il se
+trace avec l'outil Sérigraphie, forme « Aplat plein » (menu Sérigraphie, ou
+Maj+S pour passer d'une forme à l'autre) : un clic par sommet, retour sur le
+premier point ou Entrée pour fermer, ou deux coins puis Entrée pour un
+rectangle plein. Sélection, déplacement, rotation, presse-papier, Gerber ; la
+fiche permet de changer de face et de le supprimer.
 
 **Broches nommées dans la netlist** : « U1.A1 », « D1.K » se résolvent par
 le nom de la pastille (`nom`), puis par la grille d'un BGA calculé (lettre =
@@ -725,6 +746,14 @@ des zones avec la marge de bord, effacées du cuivre Gerber, fraisées dans le
 profil (`Profile,NP`) et rappelées dans le master drawing et la fiche de la
 carte. Elles suivent un redimensionnement ; le panneau de la carte les compte
 et les retire. Un document sans découpe n'écrit pas la clé.
+
+Elles se tracent avec l'outil **Découpe carte** (menu Placer, ou Maj+E) : un
+clic par sommet, retour sur le premier point ou Entrée pour fermer, deux
+coins puis Entrée pour un rectangle, Maj pour 45°/90°. Une découpe qui sort
+du contour est refusée. Un clic dans une découpe la sélectionne : ses sommets
+se tirent, Alt+clic sur une arête en ajoute un, elle se déplace avec la
+sélection, Suppr ou la gomme la retirent. (« Découpe zone », touche X, reste
+la découpe d'une zone de cuivre.)
 
 **Sérigraphie automatique** : chaque empreinte imprime d'office le contour de
 son boîtier, son point de broche 1 et son repère. `fp.silk = false` (la case
