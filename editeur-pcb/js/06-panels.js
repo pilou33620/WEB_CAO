@@ -591,6 +591,7 @@ function buildProps(){
   if(vi.length===1&&only(1))return propsVia(box,vi[0]);
   if(hl.length===1&&only(1))return propsHole(box,hl[0]);
   if(S.sel.edge&&only(0))return propsBoard(box);
+  if(S.sel.decoupes&&S.sel.decoupes.size===1&&only(1))return propsDecoupe(box,[...S.sel.decoupes][0]);
   if(zo.length===1&&only(1))return propsZone(box,zo[0]);
   if(dr.length===1&&only(1))return propsDrawing(box,dr[0]);
   /* Une piste prise entière — Maj+clic, ou Maj+double-clic qui la suit d'une
@@ -664,6 +665,26 @@ function propsHole(box, h){
   if(bDel)bDel.onclick=deleteSel;
 }
 function propsDrawing(box, d){
+  /* aplat de sérigraphie : sa face, sa taille, et le retirer */
+  if(d.shape==="poly"){
+    const b=polyBBox(d.pts);
+    box.innerHTML=
+      '<div class="cat">Aplat de sérigraphie</div>'+
+      '<div class="prop"><label>Couche sérigraphie</label><select id="pDrwLayer">'+
+      '<option value="silkT"'+(d.layer==="silkT"?" selected":"")+'>F.SilkS (Dessus / Composants)</option>'+
+      '<option value="silkB"'+(d.layer==="silkB"?" selected":"")+'>B.SilkS (Dessous / Cuivre)</option>'+
+      '</select></div>'+
+      '<div class="prop two"><div><label>Largeur (mm)</label><input value="'+fmt(b.x2-b.x1,2)+'" disabled></div>'+
+      '<div><label>Hauteur (mm)</label><input value="'+fmt(b.y2-b.y1,2)+'" disabled></div></div>'+
+      '<div class="prop two"><div><label>Sommets</label><input value="'+d.pts.length+'" disabled></div>'+
+      '<div><label>Trous</label><input value="'+((d.trous||[]).length)+'" disabled></div></div>'+
+      '<div class="prop"><div class="row"><button class="tb" id="pDrwDel">Supprimer l\'aplat</button></div></div>'+
+      '<div class="pinnote">Encre pleine, exportée en région dans les Gerber .GTO / .GBO. '+
+      'Se déplace avec la sélection, tourne avec R.</div>';
+    $("pDrwLayer").onchange=e=>{push();d.layer=e.target.value;touch();draw();};
+    $("pDrwDel").onclick=()=>{push();S.drawings=S.drawings.filter(o=>o!==d);clearSel();touch();refreshPanels();draw();};
+    return;
+  }
   const isText = d.shape === "text";
   const isRect = d.shape === "rect";
   if(isText){
@@ -802,6 +823,7 @@ function silkMenuBuild(){
   const isLine=!S.silkShape||S.silkShape==="line";
   const isRect=S.silkShape==="rect";
   const isText=S.silkShape==="text";
+  const isAplat=S.silkShape==="aplat";
   m.innerHTML=
     '<div class="mtitle">Sérigraphie</div>'+
     '<div class="prop"><div class="row">'+
@@ -809,12 +831,16 @@ function silkMenuBuild(){
     '</div><div class="row">'+
     '<button class="tb'+(isRect?' sel':'')+'" id="smRect">▢ Rectangle (cadre) <kbd>Shift+S</kbd></button>'+
     '</div><div class="row">'+
+    '<button class="tb'+(isAplat?' sel':'')+'" id="smAplat" title="Polygone plein : un clic par sommet, ou deux coins puis Entrée">▰ Aplat plein (logo, bandeau)</button>'+
+    '</div><div class="row">'+
     '<button class="tb'+(isText?' sel':'')+'" id="smText">T Texte libre</button>'+
     '</div></div>';
   const bLine=$("smLine");
   if(bLine)bLine.onclick=()=>{S.silkShape="line";setMode("silk");silkMenuClose();};
   const bRect=$("smRect");
   if(bRect)bRect.onclick=()=>{S.silkShape="rect";setMode("silk");silkMenuClose();};
+  const bAplat=$("smAplat");
+  if(bAplat)bAplat.onclick=()=>{S.silkShape="aplat";setMode("silk");silkMenuClose();};
   const bText=$("smText");
   if(bText)bText.onclick=()=>{S.silkShape="text";setMode("silk");silkMenuClose();};
   return m;
@@ -1350,6 +1376,22 @@ function propsFp(box,fp){
       buildProps();buildList();revealNet(S.hlNet);draw();
     };
   });
+}
+/* Une découpe de carte : sa taille, ses sommets, et les gestes qui la
+   modifient. */
+function propsDecoupe(box,D){
+  const b=polyBBox(D);
+  box.innerHTML=
+    '<div class="cat">Découpe de carte</div>'+
+    '<div class="prop two"><div><label>Largeur (mm)</label><input value="'+fmt(b.x2-b.x1,2)+'" disabled></div>'+
+      '<div><label>Hauteur (mm)</label><input value="'+fmt(b.y2-b.y1,2)+'" disabled></div></div>'+
+    '<div class="prop two"><div><label>Sommets</label><input value="'+D.length+'" disabled></div>'+
+      '<div><label>Coin (X ; Y)</label><input value="'+fmt(ux(b.x1),2)+' ; '+fmt(uy(b.y1),2)+'" disabled></div></div>'+
+    '<div class="empty" style="padding:6px 12px">Glissez un sommet pour le déplacer · Alt+clic sur une arête '+
+      'ajoute un sommet · Suppr retire la découpe. Fraisée avec le contour ; le cuivre s\'en tient à '+
+      'la marge de bord.</div>'+
+    '<div class="prop"><div class="row"><button class="tb" id="bdDel">Supprimer la découpe</button></div></div>';
+  $("bdDel").onclick=()=>{deleteSel();};
 }
 function propsBoard(box){
   const P=boardPoly(), out=S.fps.filter(f=>!inBoard(f.x,f.y,0));

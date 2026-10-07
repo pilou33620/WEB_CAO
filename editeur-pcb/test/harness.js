@@ -173,7 +173,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
-  "apSet","apForPad","fePad","brocheNum","parseNetlist","applyNetlist","padSurCouche","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","fePad","aplatClick","closeAplat","selDecoupes","deleteSel","hitTest","selectHit","brocheNum","parseNetlist","applyNetlist","padSurCouche","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform","feZoom","feRefit","feReattach",
@@ -5126,6 +5126,50 @@ T("netlist : broches nommées (BGA, diode) reconnues",()=>{
   applyNetlist(txt,false);
   if(JSON.stringify(S.fps.find(f=>f.ref==="D1").nets)!==avant)throw new Error("réimport instable");
   carteVide();
+});
+/* L'OUTIL DÉCOUPE DE CARTE (Maj+E) : deux coins puis Entrée font un
+   rectangle, trois clics ou plus un polygone ; une découpe qui sort du contour
+   est refusée ; elle se sélectionne, et Suppr la retire. */
+T("outil découpe de carte : rectangle, polygone, refus hors carte, suppression",()=>{
+  const garde=JSON.parse(JSON.stringify(S.board));
+  try{
+    carteVide();S.board={x:0,y:0,w:60,h:40,pts:null};
+    setMode("decoupe");
+    edgeClick(10,10,true);edgeClick(20,18,true);closeEdge();
+    let D=boardCutouts();
+    if(D.length!==1||D[0].length!==4||D[0][2].x!==20||D[0][2].y!==18)throw new Error("rectangle : "+JSON.stringify(D));
+    if(!S.sel.decoupes.has(D[0]))throw new Error("la découpe posée est sélectionnée");
+    setMode("decoupe");
+    edgeClick(30,10,true);edgeClick(40,10,true);edgeClick(35,20,true);closeEdge();
+    if(boardCutouts().length!==2||boardCutouts()[1].length!==3)throw new Error("polygone");
+    setMode("decoupe");
+    edgeClick(50,30,true);edgeClick(70,35,true);closeEdge();
+    if(boardCutouts().length!==2)throw new Error("une découpe hors carte est refusée");
+    setMode("select");clearSel();
+    const h=hitTest(15,14,null);
+    if(!h||h.decoupe!==boardCutouts()[0])throw new Error("clic dans la découpe : "+JSON.stringify(h));
+    selectHit(h,false);deleteSel();
+    if(boardCutouts().length!==1||boardCutouts()[0].length!==3)throw new Error("Suppr retire la découpe choisie");
+    undo();
+    if(boardCutouts().length!==2)throw new Error("Ctrl+Z la rend");
+  }finally{ S.board=garde; carteVide(); setMode("select"); }
+});
+/* L'APLAT DE SÉRIGRAPHIE : dans l'outil Sérigraphie, un polygone plein ;
+   deux coins puis Entrée donnent un rectangle plein. */
+T("outil aplat de sérigraphie : rectangle et polygone pleins, au Gerber",()=>{
+  carteVide();S.drawings=[];
+  S.silkShape="aplat";setMode("silk");
+  aplatClick(10,10);aplatClick(16,13);closeAplat();
+  aplatClick(30,10);aplatClick(36,10);aplatClick(33,15);aplatClick(30,10);
+  const ap=S.drawings.filter(d=>d.shape==="poly");
+  if(ap.length!==2||ap[0].pts.length!==4||ap[0].pts[2].x!==16||ap[1].pts.length!==3)
+    throw new Error("aplats : "+JSON.stringify(ap.map(d=>d.pts)));
+  if(ap[0].layer!=="silkT")throw new Error("face : "+ap[0].layer);
+  const g=gerberSilk(0);
+  if((g.match(/G36\*/g)||[]).length!==2)throw new Error("deux régions pleines au Gerber de sérigraphie");
+  undo();
+  if(S.drawings.filter(d=>d.shape==="poly").length!==1)throw new Error("Ctrl+Z retire le dernier aplat");
+  S.drawings=[];S.silkShape="line";setMode("select");carteVide();
 });
 T("ouverture Gerber : un angle non entier n'est pas arrondi au degré",()=>{
   const A=apSet();

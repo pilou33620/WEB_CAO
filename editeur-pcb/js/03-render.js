@@ -315,8 +315,15 @@ function drawBoard(c){
     c.lineWidth=px(S.sel.edge?2:1.6);
     c.beginPath();polyPath(c,P);c.stroke();
     /* les découpes intérieures : le même trait, elles aussi sont fraisées */
-    c.strokeStyle=C_EDGE;c.lineWidth=px(1.6);
-    c.beginPath();for(const d of boardCutouts())polyPath(c,d);c.stroke();
+    for(const d of boardCutouts()){
+      const sel=S.sel.decoupes&&S.sel.decoupes.has(d);
+      c.strokeStyle=sel?C_SEL:C_EDGE;c.lineWidth=px(sel?2:1.6);
+      c.beginPath();polyPath(c,d);c.stroke();
+      if(sel){
+        c.fillStyle=C_SEL;
+        for(const p of d){c.beginPath();c.arc(p.x,p.y,px(3.5),0,Math.PI*2);c.fill();}
+      }
+    }
     c.strokeStyle="rgba(230,232,236,.20)";c.lineWidth=px(1);
     c.setLineDash([px(5),px(4)]);
     c.beginPath();polyPath(c,P);c.stroke();      // rappel visuel de la marge
@@ -629,6 +636,21 @@ function drawSilk(c){
       }
       c.restore();
     }
+  }
+  /* prévisualisation d'un aplat de sérigraphie */
+  if(S.aplatDraft&&S.aplatDraft.pts.length){
+    const Z=S.aplatDraft, pts=Z.pts.concat(Z.cur?[Z.cur]:[]);
+    const top=!(S.flip||S.active===S.cu-1), col=top?C_SILK_T:C_SILK_B;
+    c.save();
+    c.beginPath();c.moveTo(pts[0].x,pts[0].y);
+    for(let k=1;k<pts.length;k++)c.lineTo(pts[k].x,pts[k].y);
+    if(pts.length>2){c.closePath();c.globalAlpha=0.35;c.fillStyle=col;c.fill();c.globalAlpha=1;}
+    c.strokeStyle=col;c.lineWidth=px(1.5);c.setLineDash([px(4),px(3)]);c.stroke();c.setLineDash([]);
+    c.fillStyle=col;
+    for(const p of Z.pts){c.beginPath();c.arc(p.x,p.y,px(2.6),0,Math.PI*2);c.fill();}
+    c.strokeStyle=C_SEL;c.lineWidth=px(1.6);
+    c.beginPath();c.arc(Z.pts[0].x,Z.pts[0].y,px(6),0,Math.PI*2);c.stroke();
+    c.restore();
   }
   /* prévisualisation du tracé de sérigraphie */
   if(S.silkDraft){

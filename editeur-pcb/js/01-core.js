@@ -716,7 +716,8 @@ const S = {
   dp:null,                    // tracé de paire différentielle en cours
   zoneDraft:null,             // zone en cours de saisie
   cutDraft:null,              // découpe de zone en cours
-  silkDraft:null, silkShape:"line",   // tracé de sérigraphie en cours et forme active (line|rect)
+  silkDraft:null, silkShape:"line",   // tracé de sérigraphie en cours et forme active (line|rect|aplat|text)
+  aplatDraft:null,                     // aplat de sérigraphie en cours de saisie
   meanderDraft:null, meanderOpts:{amplitude:1.5,pitch:1.2,side:0,targetDelta:0}, // accordéons de retard
   hlNet:null,                 // net mis en avant
   hlText:null,                // texte de composant en cours de déplacement

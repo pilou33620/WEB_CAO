@@ -780,8 +780,15 @@ function redo(){
    Sélection
    ========================================================================== */
 function clearSel(){S.sel.fps.clear();S.sel.tracks.clear();S.sel.vias.clear();
-  S.sel.zones.clear();S.sel.cuts.clear();if(S.sel.drawings)S.sel.drawings.clear();if(S.sel.holes)S.sel.holes.clear();S.sel.edge=false;}
-function selCount(){return S.sel.fps.size+S.sel.tracks.size+S.sel.vias.size+S.sel.zones.size+S.sel.cuts.size+(S.sel.drawings?S.sel.drawings.size:0)+(S.sel.holes?S.sel.holes.size:0);}
+  S.sel.zones.clear();S.sel.cuts.clear();if(S.sel.drawings)S.sel.drawings.clear();if(S.sel.holes)S.sel.holes.clear();S.sel.edge=false;
+  if(S.sel.decoupes)S.sel.decoupes.clear();}
+function selCount(){return S.sel.fps.size+S.sel.tracks.size+S.sel.vias.size+S.sel.zones.size+S.sel.cuts.size+(S.sel.drawings?S.sel.drawings.size:0)+(S.sel.holes?S.sel.holes.size:0)+(S.sel.decoupes?S.sel.decoupes.size:0);}
+/* découpes de carte sélectionnées : les polygones eux-mêmes (tableaux de
+   sommets de S.board.cutouts), sans identifiant à garder */
+function selDecoupes(){
+  if(!S.sel.decoupes)S.sel.decoupes=new Set();
+  return boardCutouts().filter(D=>S.sel.decoupes.has(D));
+}
 function selDrawingsPcb(){return (S.drawings||[]).filter(d=>S.sel.drawings&&S.sel.drawings.has(d.id));}
 function selHolesPcb(){return (S.holes||[]).filter(h=>S.sel.holes&&S.sel.holes.has(h.id));}
 function hitTest(x,y,e){
@@ -853,6 +860,10 @@ function hitTest(x,y,e){
     const c=S.cuts[i];
     if(layerAlpha(c.l)>0&&c.pts.length>1&&polyEdgeDist(x,y,c.pts)<=px(5))return {cut:c};
   }
+  /* une découpe de carte se prend par son bord ou par son vide */
+  if(S.show.edge)
+    for(const D of boardCutouts())
+      if(polyEdgeDist(x,y,D)<=px(5)||inPoly(x,y,D))return {decoupe:D};
   if(S.show.edge&&polyEdgeDist(x,y,boardPoly())<=px(5))return {edge:true};
   /* Dernier recours : le plein d'une zone. Un plan de masse ou d'alimentation
      couvre toute la carte — son contour se confond avec celui de la carte et
@@ -906,6 +917,7 @@ function selectHit(h,add){
   else if(h.hole){if(!S.sel.holes)S.sel.holes=new Set();S.sel.holes.add(h.hole.id);}
   else if(h.drawing){if(!S.sel.drawings)S.sel.drawings=new Set();S.sel.drawings.add(h.drawing.id);}
   else if(h.edge)S.sel.edge=true;
+  else if(h.decoupe){if(!S.sel.decoupes)S.sel.decoupes=new Set();S.sel.decoupes.add(h.decoupe);}
 }
 /* L'élément touché fait-il déjà partie de la sélection ? */
 function hitSelected(h){
@@ -913,7 +925,8 @@ function hitSelected(h){
     (h.via&&S.sel.vias.has(h.via))||(h.zone&&S.sel.zones.has(h.zone))||
     (h.cut&&S.sel.cuts.has(h.cut))||
     (h.drawing&&S.sel.drawings&&S.sel.drawings.has(h.drawing.id))||
-    (h.hole&&S.sel.holes&&S.sel.holes.has(h.hole.id))||(h.edge&&S.sel.edge));
+    (h.hole&&S.sel.holes&&S.sel.holes.has(h.hole.id))||(h.edge&&S.sel.edge)||
+    (h.decoupe&&S.sel.decoupes&&S.sel.decoupes.has(h.decoupe)));
 }
 /* Ctrl+clic (ou Maj+clic) sur un élément : il entre dans la sélection, ou il en
    sort. Renvoie vrai s'il vient d'en sortir. Le clic sur le canevas ne l'appelle
@@ -929,6 +942,7 @@ function toggleHit(h){
   if(h.hole){if(!S.sel.holes)S.sel.holes=new Set();return t(S.sel.holes,h.hole.id);}
   if(h.drawing){if(!S.sel.drawings)S.sel.drawings=new Set();return t(S.sel.drawings,h.drawing.id);}
   if(h.edge){S.sel.edge=!S.sel.edge;return !S.sel.edge;}
+  if(h.decoupe){if(!S.sel.decoupes)S.sel.decoupes=new Set();return t(S.sel.decoupes,h.decoupe);}
   return false;
 }
 /* Points où Alt a un sens : extrémité ou corps d'une piste déjà sélectionnée,
@@ -951,6 +965,7 @@ function altTarget(x,y){
       }
     }
   if(S.sel.edge&&S.board.pts&&polyEdgeDist(x,y,S.board.pts)<=px(6))return true;
+  for(const D of selDecoupes())if(polyEdgeDist(x,y,D)<=px(6))return true;
   for(const z of S.sel.zones)
     if(polyEdgeDist(x,y,z.pts)<=px(6))return true;
   return false;
@@ -2394,6 +2409,12 @@ function deleteSel(){
     S.drawings=S.drawings.filter(d=>!S.sel.drawings.has(d.id));
   if(S.holes&&S.sel.holes)
     S.holes=S.holes.filter(h=>!S.sel.holes.has(h.id));
+  const dec=selDecoupes();
+  if(dec.length){
+    S.board.cutouts=boardCutouts().filter(D=>dec.indexOf(D)<0);
+    if(!S.board.cutouts.length)delete S.board.cutouts;
+    boardChanged();
+  }
   clearSel();touch();refreshPanels();draw();
 }
 /* ==========================================================================
@@ -3466,8 +3487,11 @@ function edgeClick(x,y,exact){
   const Z=S.edgeDraft;
   const p=exact?{x:r3(x),y:r3(y)}:{x:snapX(x),y:snapY(y)};
   if(!Z){
-    S.edgeDraft={pts:[p],cur:null};
-    hint("Clic pour chaque sommet du contour · retour sur le premier point (ou Entrée) pour fermer · Échap abandonne.");
+    const dec=S.mode==="decoupe";
+    S.edgeDraft={pts:[p],cur:null,decoupe:dec};
+    hint(dec
+      ? "Découpe : un clic par sommet · deux coins puis Entrée pour un rectangle · retour sur le premier point (ou Entrée) pour fermer · Maj pour 45°/90° · Échap abandonne."
+      : "Clic pour chaque sommet du contour · retour sur le premier point (ou Entrée) pour fermer · Échap abandonne.");
     return;
   }
   if(Z.pts.length>=3&&dist(p.x,p.y,Z.pts[0].x,Z.pts[0].y)<=px(9)){closeEdge();return;}
@@ -3494,6 +3518,7 @@ function edgeMove(x,y,ortho){
 function closeEdge(){
   const Z=S.edgeDraft;
   S.edgeDraft=null;
+  if(Z&&Z.decoupe){closeDecoupe(Z);return;}
   if(!Z||Z.pts.length<3){draw();return;}
   push();
   S.board.pts=Z.pts.map(p=>({x:r3(p.x),y:r3(p.y)}));
@@ -3504,6 +3529,84 @@ function closeEdge(){
   hint("Contour redéfini : "+S.board.pts.length+" sommets, "+
        fmt(S.board.w,1)+" × "+fmt(S.board.h,1)+" mm"+
        (out?" — "+out+" empreinte(s) se retrouvent dehors":"")+".");
+}
+
+/* APLAT DE SÉRIGRAPHIE : un polygone plein d'encre — logo, bandeau où écrire
+   au feutre. Même geste que le contour et les zones ; deux coins puis Entrée
+   donnent un rectangle plein. Dessus ou dessous selon la face regardée, comme
+   les autres tracés de sérigraphie. */
+function aplatClick(x,y){
+  const p={x:snapX(x),y:snapY(y)};
+  const Z=S.aplatDraft;
+  if(!Z){S.aplatDraft={pts:[p],cur:null};return;}
+  if(Z.pts.length>=3&&dist(p.x,p.y,Z.pts[0].x,Z.pts[0].y)<=px(9)){closeAplat();return;}
+  const last=Z.pts[Z.pts.length-1];
+  if(dist(p.x,p.y,last.x,last.y)<1e-6)return;
+  Z.pts.push(p);
+}
+function aplatMove(x,y,ortho){
+  const Z=S.aplatDraft;
+  if(!Z)return;
+  let p={x:snapX(x),y:snapY(y)};
+  if(ortho&&Z.pts.length){
+    const a=Z.pts[Z.pts.length-1], dx=p.x-a.x, dy=p.y-a.y;
+    if(Math.abs(Math.abs(dx)-Math.abs(dy))<Math.min(Math.abs(dx),Math.abs(dy)))
+      p={x:a.x+Math.sign(dx)*Math.min(Math.abs(dx),Math.abs(dy)),
+         y:a.y+Math.sign(dy)*Math.min(Math.abs(dx),Math.abs(dy))};
+    else if(Math.abs(dx)>Math.abs(dy))p={x:p.x,y:a.y};
+    else p={x:a.x,y:p.y};
+  }
+  const f=Z.pts[0];
+  if(Z.pts.length>=3&&dist(p.x,p.y,f.x,f.y)<=px(9))p={x:f.x,y:f.y};
+  Z.cur=p;
+}
+function closeAplat(){
+  const Z=S.aplatDraft;
+  S.aplatDraft=null;
+  if(!Z){draw();return;}
+  let pts=Z.pts.map(p=>({x:r4(p.x),y:r4(p.y)}));
+  if(pts.length===2){
+    const [a,b]=pts;
+    if(Math.abs(a.x-b.x)<0.05||Math.abs(a.y-b.y)<0.05){hint("Rectangle trop fin : aplat abandonné.");draw();return;}
+    pts=[{x:a.x,y:a.y},{x:b.x,y:a.y},{x:b.x,y:b.y},{x:a.x,y:b.y}];
+  }
+  if(pts.length<3){draw();return;}
+  push();
+  const layer=(S.flip||S.active===S.cu-1)?"silkB":"silkT";
+  const d=normDrawingPcb({shape:"poly",layer:layer,pts:pts},0);
+  d.id=S.nextId++;
+  S.drawings.push(d);
+  clearSel();if(!S.sel.drawings)S.sel.drawings=new Set();S.sel.drawings.add(d.id);
+  touch();refreshPanels();draw();
+  hint("Aplat de sérigraphie posé ("+(layer==="silkB"?"dessous":"dessus")+", "+pts.length+" sommets).");
+}
+
+/* Découpe de carte : une fenêtre fraisée dans le substrat. Deux coins font un
+   rectangle ; trois sommets ou plus, le polygone tracé. Elle doit tomber dans
+   la carte — une découpe qui déborde du contour n'est plus une découpe, c'est
+   le contour qu'il faut redessiner. */
+function closeDecoupe(Z){
+  let pts=Z.pts.map(p=>({x:r3(p.x),y:r3(p.y)}));
+  if(pts.length===2){
+    const [a,b]=pts;
+    if(Math.abs(a.x-b.x)<0.05||Math.abs(a.y-b.y)<0.05){hint("Rectangle trop fin : découpe abandonnée.");draw();return;}
+    pts=[{x:a.x,y:a.y},{x:b.x,y:a.y},{x:b.x,y:b.y},{x:a.x,y:b.y}];
+  }
+  if(pts.length<3){draw();return;}
+  const P=boardPoly();
+  if(pts.some(p=>!inPoly(p.x,p.y,P)&&polyEdgeDist(p.x,p.y,P)>1e-6)){
+    hint("La découpe sort du contour de carte : elle n'est pas posée. Redessinez le contour (E) si la carte doit s'ouvrir sur le bord.");
+    draw();return;
+  }
+  push();
+  if(!Array.isArray(S.board.cutouts))S.board.cutouts=[];
+  S.board.cutouts.push(pts);
+  boardChanged();
+  clearSel();if(!S.sel.decoupes)S.sel.decoupes=new Set();S.sel.decoupes.add(pts);
+  refreshPanels();reSync();draw();
+  const b=polyBBox(pts);
+  hint("Découpe posée : "+pts.length+" sommets, "+fmt(b.x2-b.x1,2)+" × "+fmt(b.y2-b.y1,2)+
+       " mm. Le cuivre s'en tient à la marge de bord ("+fmt(S.rule.edge,2)+" mm).");
 }
 
 /* ==========================================================================
@@ -3522,7 +3625,7 @@ function coordAnchor(){
   return null;
 }
 function coordUsable(){
-  return S.mode==="track"||S.mode==="zone"||S.mode==="edge"||
+  return S.mode==="track"||S.mode==="zone"||S.mode==="edge"||S.mode==="decoupe"||
          (S.mode==="select"&&S.sel.fps.size===1);
 }
 function coordMode(m){
@@ -3579,7 +3682,7 @@ function coordApply(){
     else{routeToPoint(pt);stepRoute();}
   }else if(S.mode==="zone"){
     zoneClick(pt.x,pt.y,true);
-  }else if(S.mode==="edge"){
+  }else if(S.mode==="edge"||S.mode==="decoupe"){
     edgeClick(pt.x,pt.y,true);
   }else if(S.mode==="select"&&S.sel.fps.size===1){
     const f=fpById([...S.sel.fps][0]);
@@ -3736,6 +3839,7 @@ cv.addEventListener("pointerdown",e=>{
     return;
   }
   if(S.mode==="silk"){
+    if(S.silkShape==="aplat"){aplatClick(p.x,p.y);draw();return;}
     if(S.silkShape==="text"){
       const sx=snapX(p.x), sy=snapY(p.y);
       const txt=(typeof prompt==="function")?prompt("Texte de sérigraphie :","TEXT"):"TEXT";
@@ -3804,7 +3908,7 @@ cv.addEventListener("pointerdown",e=>{
   if(S.mode==="zone"){
     zoneClick(p.x,p.y);draw();return;
   }
-  if(S.mode==="edge"){
+  if(S.mode==="edge"||S.mode==="decoupe"){
     edgeClick(p.x,p.y);draw();return;
   }
   if(S.mode==="origin"){
@@ -3830,6 +3934,11 @@ cv.addEventListener("pointerdown",e=>{
       else if(h.hole)S.holes=S.holes.filter(hl=>hl!==h.hole);
       else if(h.zone){detachAuto(h.zone);S.zones=S.zones.filter(z=>z!==h.zone);
         buildLayers();buildTabs();}
+      else if(h.decoupe){
+        S.board.cutouts=boardCutouts().filter(D=>D!==h.decoupe);
+        if(!S.board.cutouts.length)delete S.board.cutouts;
+        boardChanged();
+      }
       else if(h.edge)hint("Le contour de carte ne s'efface pas : redessinez-le (E) ou repassez au rectangle.");
       touch();refreshPanels();draw();
     }
@@ -3895,6 +4004,24 @@ cv.addEventListener("pointerdown",e=>{
       P.splice(bi,0,{x:snapX(p.x),y:snapY(p.y)});
       boardChanged();
       drag={vert:{z:S.board,i:bi},board:true,moved:true};draw();return;
+    }
+  }
+  /* sommets d'une découpe de carte sélectionnée : même geste que le contour */
+  for(const D of selDecoupes()){
+    for(let i=0;i<D.length;i++)
+      if(dist(p.x,p.y,D[i].x,D[i].y)<=px(6)){
+        drag={vert:{z:{pts:D},i},board:true,moved:false};return;
+      }
+    if(e.altKey&&polyEdgeDist(p.x,p.y,D)<=px(6)){
+      let bi=0,bd=1e9;
+      for(let i=0,j=D.length-1;i<D.length;j=i++){
+        const d=segDist(p.x,p.y,D[j].x,D[j].y,D[i].x,D[i].y);
+        if(d<bd){bd=d;bi=i;}
+      }
+      push();
+      D.splice(bi,0,{x:snapX(p.x),y:snapY(p.y)});
+      boardChanged();
+      drag={vert:{z:{pts:D},i:bi},board:true,moved:true};draw();return;
     }
   }
   // les sommets d'une zone déjà sélectionnée passent aussi devant
@@ -4102,6 +4229,10 @@ cv.addEventListener("pointermove",e=>{
       for(const ct of S.sel.cuts){
         for(const q of ct.pts){q.x=r3(q.x+dx);q.y=r3(q.y+dy);}
       }
+      if(S.sel.decoupes&&S.sel.decoupes.size){
+        for(const D of selDecoupes())for(const q of D){q.x=r3(q.x+dx);q.y=r3(q.y+dy);}
+        if(typeof zoneCache!=="undefined")zoneCache.clear();
+      }
       if(drag.drw){
         for(const o of drag.drw){
           o.d.x1=r3(o.x1+drag.dx);o.d.y1=r3(o.y1+drag.dy);
@@ -4129,6 +4260,7 @@ cv.addEventListener("pointermove",e=>{
         for(const id of S.sel.fps){const f=fpById(id);if(f){f.x=r3(f.x-dx);f.y=r3(f.y-dy);}}
         for(const z of S.sel.zones)for(const q of z.pts){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
         for(const ct of S.sel.cuts)for(const q of ct.pts){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
+        for(const D of selDecoupes())for(const q of D){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
         for(const o of drag.trk){
           o.t.x1=r3(o.x1+drag.dx);o.t.y1=r3(o.y1+drag.dy);
           o.t.x2=r3(o.x2+drag.dx);o.t.y2=r3(o.y2+drag.dy);
@@ -4156,6 +4288,7 @@ cv.addEventListener("pointermove",e=>{
     }
     return;
   }
+  if(S.aplatDraft){aplatMove(p.x,p.y,e.shiftKey);draw();return;}
   if(S.silkDraft){
     let nx=snapX(p.x), ny=snapY(p.y);
     if(e.shiftKey){
@@ -4209,7 +4342,7 @@ cv.addEventListener("pointermove",e=>{
                            ?simDCCoucheVoulue():S.active))draw();
   if(S.mode==="zone"&&S.zoneDraft){zoneMove(p.x,p.y,e.shiftKey);draw();return;}
   if(S.mode==="cut"&&S.cutDraft){cutMove(p.x,p.y,e.shiftKey);draw();return;}
-  if(S.mode==="edge"&&S.edgeDraft){edgeMove(p.x,p.y,e.shiftKey);draw();return;}
+  if((S.mode==="edge"||S.mode==="decoupe")&&S.edgeDraft){edgeMove(p.x,p.y,e.shiftKey);draw();return;}
   if(S.mode==="track"&&S.route){updateRoute(p.x,p.y);draw();return;}
   if(S.mode==="dpair"&&S.dp){dpUpdate(p.x,p.y);draw();return;}
   if(S.mode==="dpair"){
@@ -4527,7 +4660,7 @@ document.addEventListener("keydown",e=>{
   switch(k){
     case "s":
       if(e.shiftKey){
-        const nextShape=S.silkShape==="line"?"rect":(S.silkShape==="rect"?"text":"line");
+        const nextShape={line:"rect",rect:"aplat",aplat:"text",text:"line"}[S.silkShape]||"line";
         S.silkShape=nextShape;
         setMode("silk");
         draw();
@@ -4547,7 +4680,7 @@ document.addEventListener("keydown",e=>{
     case "m":setMode("meander");break;
     case "z":setMode("zone");break;
     case "x":setMode("cut");break;
-    case "e":setMode("edge");break;
+    case "e":setMode(e.shiftKey?"decoupe":"edge");break;
     case "o":setMode("origin");break;
     case "a":pcbOuvrirExplorateurLib();break;
     /* K comme « kote » — C est pris par le copier, M par rien mais se confond
@@ -4591,8 +4724,9 @@ document.addEventListener("keydown",e=>{
       else if(S.meanderDraft){S.meanderDraft=null;hint("Serpentin annulé.");}
       else if(S.zoneDraft){S.zoneDraft=null;hint("Zone abandonnée.");}
       else if(S.cutDraft){S.cutDraft=null;hint("Découpe abandonnée.");}
-      else if(S.edgeDraft){S.edgeDraft=null;hint("Contour abandonné.");}
+      else if(S.edgeDraft){hint(S.edgeDraft.decoupe?"Découpe abandonnée.":"Contour abandonné.");S.edgeDraft=null;}
       else if(S.silkDraft){S.silkDraft=null;hint("Tracé de sérigraphie annulé.");}
+      else if(S.aplatDraft){S.aplatDraft=null;hint("Aplat abandonné.");}
       else if(S.mode==="mesure"&&rpMesEnCours()){rpMesRaz();rpMesDire();draw();break;}
       else{clearSel();S.hlNet=null;refreshPanels();}
       if(S.mode!=="select")setMode("select");
@@ -4604,6 +4738,7 @@ document.addEventListener("keydown",e=>{
       else if(S.zoneDraft)closeZone();
       else if(S.cutDraft)closeCut();
       else if(S.edgeDraft)closeEdge();
+      else if(S.aplatDraft)closeAplat();
       break;
     case "backspace":
       if(S.dp){dpBack();e.preventDefault();}
@@ -4623,6 +4758,11 @@ document.addEventListener("keydown",e=>{
         if(!S.edgeDraft.pts.length)S.edgeDraft=null;
         draw();e.preventDefault();
       }
+      else if(S.aplatDraft){
+        S.aplatDraft.pts.pop();
+        if(!S.aplatDraft.pts.length)S.aplatDraft=null;
+        draw();e.preventDefault();
+      }
       break;
     case "delete":deleteSel();break;
   }
@@ -4637,8 +4777,9 @@ function setMode(m){
   if(S.dp&&m!=="dpair")dpCommit();
   if(S.coord.open&&!coordUsable())coordClose();
   if(S.zoneDraft&&m!=="zone")S.zoneDraft=null;
-  if(S.edgeDraft&&m!=="edge")S.edgeDraft=null;
+  if(S.edgeDraft&&m!==(S.edgeDraft.decoupe?"decoupe":"edge"))S.edgeDraft=null;
   if(S.silkDraft&&m!=="silk")S.silkDraft=null;
+  if(S.aplatDraft&&(m!=="silk"||S.silkShape!=="aplat"))S.aplatDraft=null;
   if(S.meanderDraft&&m!=="meander")S.meanderDraft=null;
   /* La cote appartient au mode : la garder affichee en revenant a la selection
      laisserait une annotation qu'aucun geste ne reprend. */
@@ -4648,7 +4789,7 @@ function setMode(m){
   if(m!=="meander"&&typeof meanderMenuClose==="function")meanderMenuClose();
   for(const [id,md] of [["mSelect","select"],["mTrack","track"],["mVia","via"],["mHole","hole"],
                         ["mDiff","dpair"],["mMeander","meander"],
-                        ["mZone","zone"],["mSilk","silk"],["mEdge","edge"],["mOrigin","origin"],
+                        ["mZone","zone"],["mSilk","silk"],["mEdge","edge"],["mDecoupe","decoupe"],["mOrigin","origin"],
                         ["mErase","erase"],["mMesure","mesure"]]){
     const b=$(id);
     if(b)b.classList.toggle("on",m===md);
@@ -4656,6 +4797,7 @@ function setMode(m){
   $("fMode").textContent={select:"Sélection",track:"Piste",via:"Via",hole:"Trou NPTH",
                           dpair:"Paire différentielle",meander:"Serpentin (Appariement)",
                           zone:"Zone de cuivre",silk:"Sérigraphie",edge:"Contour de carte",
+                          decoupe:"Découpe de carte",
                           origin:"Origine",erase:"Gomme",
                           mesure:"Mesure"}[m];
   cv.style.cursor=m==="erase"?"not-allowed":"crosshair";
@@ -4674,6 +4816,8 @@ function setMode(m){
     zone:"Clic pour chaque sommet, retour sur le premier point pour fermer · Maj contraint à 45° · Entrée ferme, Échap abandonne.",
     silk:S.silkShape==="text"
       ? "Cliquez sur la carte pour poser un texte de sérigraphie · Échap annule."
+      : S.silkShape==="aplat"
+      ? "Aplat de sérigraphie : un clic par sommet · deux coins puis Entrée pour un rectangle plein · retour sur le premier point (ou Entrée) pour fermer · Maj pour 45°/90° · Échap abandonne."
       : "Cliquez et glissez (ou deux clics) pour tracer un trait de sérigraphie (F.SilkS/B.SilkS) · Maj contraint à l'horizontale/verticale/45° · Échap annule.",
     edge:"Dessinez le contour de la carte, sommet par sommet · retour sur le premier point pour fermer · Maj contraint à 45°.",
     origin:"Cliquez le point qui servira d'origine — une pastille proche l'attire.",
