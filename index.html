@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard CAO Web</title>
+<link rel="stylesheet" href="commun/projet.css">
 <link rel="stylesheet" href="commun/tactile.css">
 <link rel="stylesheet" href="commun/tuto.css">
 <style>
@@ -411,6 +412,7 @@
                   <span style="color:var(--blue);">📁 Dossier :</span>
                   <code id="pActifChemin" style="color:var(--txt); background:var(--bg); padding:2px 6px; border-radius:4px; border:1px solid var(--border);"></code>
                 </div>
+                <div id="pActifSauve" class="p-sauve"></div>
               </div>
               <div style="display:flex; gap:6px; align-items:center;">
                 <button id="pBtnFermer" class="btn-sm" type="button" title="Fermer ce projet sans supprimer les fichiers">✕ Fermer</button>
@@ -1030,20 +1032,22 @@ function pRendre() {
     const elDocPcb = document.getElementById("pDocPcb");
     const elDocIpc = document.getElementById("pDocIpc");
 
-    if(elDocSch) {
-      elDocSch.innerHTML = (d.schema && d.schema.present)
-        ? '<span style="color:var(--green);">✓ ' + uEsc(d.schema.fichier) + '</span>'
-        : '<span style="color:var(--txt-dim); font-style:italic;">non créé</span>';
-    }
-    if(elDocPcb) {
-      elDocPcb.innerHTML = (d.pcb && d.pcb.present)
-        ? '<span style="color:var(--green);">✓ ' + uEsc(d.pcb.fichier) + '</span>'
-        : '<span style="color:var(--txt-dim); font-style:italic;">non créé</span>';
-    }
-    if(elDocIpc) {
-      elDocIpc.innerHTML = (d.ipc2581 && d.ipc2581.present)
-        ? '<span style="color:var(--green);">✓ ' + uEsc(d.ipc2581.fichier) + '</span>'
-        : '<span style="color:var(--txt-dim); font-style:italic;">absent</span>';
+    // chaque document : son fichier, puis l'heure de sa dernière sauvegarde
+    const doc = function(e, vide){
+      if(!(e && e.present)) return '<span style="color:var(--txt-dim); font-style:italic;">' + vide + '</span>';
+      return '<span style="color:var(--green);">✓ ' + uEsc(e.fichier) + '</span>' +
+        (e.modifie ? '<div class="p-doc-quand">enregistré ' + uEsc(projdQuand(e.modifie)) + '</div>' : '');
+    };
+    if(elDocSch) elDocSch.innerHTML = doc(d.schema, "non créé");
+    if(elDocPcb) elDocPcb.innerHTML = doc(d.pcb, "non créé");
+    if(elDocIpc) elDocIpc.innerHTML = doc(d.ipc2581, "absent");
+
+    const elSauve = document.getElementById("pActifSauve");
+    if(elSauve) {
+      const t = projdDerniereSauvegarde(), g = projdDernierEnvoi();
+      elSauve.innerHTML =
+        '<span>💾 Dernière sauvegarde : <b>' + (t ? uEsc(projdQuand(t)) : "aucune") + '</b></span>' +
+        (g ? '<span title="Envoi fait depuis ce navigateur">☁ Envoyé sur GitHub : <b>' + uEsc(projdQuand(g)) + '</b></span>' : '');
     }
   }
 }
@@ -1061,7 +1065,7 @@ function pRendreServeur(projets) {
         '<div style="font-size:11px; font-family:var(--mono); color:var(--txt-dim);" class="truncate">' + uEsc(p.chemin) + '</div>' +
       '</div>' +
       '<div class="p-rec-actions">' +
-        '<span style="font-size:11px; color:var(--txt-dim); font-family:var(--mono);">' + (uQuand(p.t) || "") + '</span>' +
+        '<span style="font-size:11px; color:var(--txt-dim); font-family:var(--mono);" title="Dernière sauvegarde">' + (p.t ? "💾 " + uEsc(projdQuand(p.t)) : "") + '</span>' +
         '<button type="button" class="btn-sm" style="color:var(--blue); font-weight:600;">Ouvrir →</button>' +
       '</div>' +
     '</div>';
@@ -1104,6 +1108,13 @@ function pDosRendre() {
 
 /* Un autre onglet peut changer de projet : on suit sans recharger. */
 projSurChangement(function(){ pRendre(); pDosRendre(); });
+/* De retour sur l'accueil après une sauvegarde dans un éditeur : on relit le
+   dossier, pour que l'heure de la dernière sauvegarde soit la bonne. */
+document.addEventListener("visibilitychange", function(){
+  if(document.visibilityState !== "visible") return;
+  if(projdLie()) projdRafraichir().catch(function(){});
+  else pDosRendre();
+});
 pMajApercuNouveau();
 pRendre();
 /* La reprise du dossier est asynchrone : projet-disque.js s'en occupe au

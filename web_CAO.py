@@ -1051,6 +1051,30 @@ class ErreurProjet(Exception):
         self.message = message
 
 
+def mtime_ms(chemin):
+    """Date de derniere ecriture d'un fichier, en ms depuis l'epoque (0 s'il manque)."""
+    try:
+        return int(os.path.getmtime(chemin) * 1000)
+    except OSError:
+        return 0
+
+
+def derniere_sauvegarde(dossier):
+    """La derniere ecriture dans un projet : son fichier projet ou l'un de ses
+    documents (schema, carte, IPC). C'est l'heure que l'accueil affiche ; celle
+    du seul projet.cao.json ne bougeait pas quand on enregistrait le schema."""
+    quand = mtime_ms(os.path.join(dossier, PROJET_FICHIER))
+    suffixes = tuple(s.lower() for s in PROJET_SUFFIXE.values())
+    try:
+        entrees = os.listdir(dossier)
+    except OSError:
+        return quand
+    for entree in entrees:
+        if entree.lower().endswith(suffixes):
+            quand = max(quand, mtime_ms(os.path.join(dossier, entree)))
+    return quand
+
+
 def racines_projets():
     """Les racines declarees, sous lesquelles tout projet doit se trouver.
 
@@ -2151,11 +2175,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                         nom = nom_projet(json.load(flux).get("nom")) or relatif
                 except (OSError, ValueError):
                     pass               # illisible : liste sous son nom de dossier
-                try:
-                    quand = int(os.path.getmtime(principal) * 1000)
-                except OSError:
-                    quand = 0
-                accumule.append({"nom": nom, "chemin": relatif, "racine": racine, "t": quand})
+                accumule.append({"nom": nom, "chemin": relatif, "racine": racine,
+                                 "t": derniere_sauvegarde(chemin)})
             else:
                 self._explorer_projets(racine, chemin, niveau + 1, accumule)
 
@@ -2166,8 +2187,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         for outil in PROJET_SUFFIXE:
             chemin = self._projet_doc_chemin(dossier, outil, charge, lire=True)
             etat[outil] = {"fichier": os.path.basename(chemin),
-                           "present": lisible(chemin)}
-        return {"projet": charge, "dossier": dossier, "documents": etat}
+                           "present": lisible(chemin),
+                           "modifie": mtime_ms(chemin)}
+        return {"projet": charge, "dossier": dossier, "documents": etat,
+                "sauve": derniere_sauvegarde(dossier)}
 
     def _projet_ecrire(self):
         # le corps d'abord : un chemin refuse ne doit pas laisser la requete a
@@ -2279,7 +2302,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         # projet et on n'y ecrit pas de document
         chemin = self._projet_doc_chemin(dossier, outil, self._projet_charge(dossier))
         self._projet_fichier_ecrire(chemin, charge, "Le document %s" % outil)
-        return {"ok": True, "fichier": os.path.basename(chemin)}
+        return {"ok": True, "fichier": os.path.basename(chemin),
+                "modifie": mtime_ms(chemin)}
 
     # -- bibliotheques CAO (LIB) -------------------------------------------
     def _lire_json_lib(self):

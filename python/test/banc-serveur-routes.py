@@ -639,6 +639,21 @@ def test_routes():
         assert not os.path.exists(os.path.join(dossier, "settings.json"))
         print("[PASS] Projet : nom de document limite au suffixe de l'outil")
 
+        # 34. L'heure de la derniere sauvegarde suit l'ecriture du document :
+        # l'accueil l'affiche, et celle du seul projet.cao.json ne bougeait pas.
+        ecrit = data.get("modifie")
+        assert isinstance(ecrit, int) and ecrit > 0, data
+        conn.request("GET", "/api/projet?chemin=" + _up.quote(dossier))
+        res = conn.getresponse()
+        lu = json.loads(res.read().decode("utf-8"))
+        assert res.status == 200, lu
+        assert lu["documents"]["schema"]["modifie"] == ecrit, lu["documents"]
+        assert lu["documents"]["pcb"]["modifie"] == 0, lu["documents"]
+        assert lu["sauve"] >= ecrit, lu
+        os.utime(os.path.join(dossier, "projet.cao.json"), (1, 1))   # fichier projet ancien
+        assert web_CAO.derniere_sauvegarde(dossier) == ecrit
+        print("[PASS] Projet : heure de la derniere sauvegarde (document, dossier)")
+
     finally:
         conn.close()
         httpd.shutdown()

@@ -1,0 +1,62 @@
+/* ==========================================================================
+   WEB_CAO -- Projet : avis de sauvegarde (commun/projet-disque.js, projdAvis)
+   En haut de l'écran, bien visible : la barre d'état des éditeurs est coupée
+   sur une tablette. Vert : enregistré (et envoyé) ; orange : enregistré mais
+   pas tout ; rouge : échec, reste jusqu'à ce qu'on le touche.
+   ========================================================================== */
+#projdAvis {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  left: 50%;
+  z-index: 99990;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: max-content;
+  max-width: min(560px, calc(100% - 32px));
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid #3a3e46;
+  border-left-width: 5px;
+  background: rgba(20, 22, 26, 0.97);
+  color: #e6e8ec;
+  font: 14px/1.35 system-ui, -apple-system, sans-serif;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -12px);
+  transition: opacity 0.2s, transform 0.2s;
+}
+#projdAvis.on { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
+#projdAvis .pa-ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-weight: 700;
+  color: #0d0f12;
+  background: #8b919c;
+}
+#projdAvis .pa-txt { display: grid; gap: 2px; min-width: 0; }
+#projdAvis b { font-weight: 600; }
+#projdAvis small { color: #b9bec7; font-size: 12.5px; overflow-wrap: anywhere; }
+#projdAvis.ok { border-left-color: #3fb27f; }
+#projdAvis.ok .pa-ico { background: #3fb27f; }
+#projdAvis.partiel { border-left-color: #f0a030; }
+#projdAvis.partiel .pa-ico { background: #f0a030; }
+#projdAvis.info { border-left-color: #3fa0ea; }
+#projdAvis.info .pa-ico { background: #3fa0ea; }
+#projdAvis.encours { border-left-color: #3fa0ea; }
+#projdAvis.encours .pa-ico { background: #3fa0ea; }
+#projdAvis.erreur { border-left-color: #e8443a; }
+#projdAvis.erreur .pa-ico { background: #e8443a; color: #fff; }
+@media (prefers-reduced-motion: reduce) { #projdAvis { transition: none; } }
+
+/* Accueil : heure de la dernière sauvegarde du projet */
+.p-sauve { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--txt-dim, #8b919c); }
+.p-sauve b { color: var(--txt, #e6e8ec); font-weight: 600; }
+.p-doc-quand { font-size: 10.5px; font-weight: 400; color: var(--txt-dim, #8b919c); font-family: ui-monospace, Menlo, Consolas, monospace; }

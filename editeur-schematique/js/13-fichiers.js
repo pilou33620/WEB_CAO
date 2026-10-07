@@ -37,16 +37,22 @@ function saveJson(){
       if(typeof profNoterDocument==="function")profNoterDocument("schema",nom);
       document.getElementById("fHint").textContent=
         "Document enregistré dans le dossier du projet ("+nom+").";
+      if(typeof projdAvis==="function")
+        projdAvis("ok","Schéma enregistré dans le projet",nom+" · "+projdQuand(Date.now()));
       return true;
     }).catch(function(e){
       /* Rien n'est sauvé : on le dit, puis on retombe sur le téléchargement. */
       document.getElementById("fHint").textContent=
         "Écriture refusée : "+e.message+" — enregistrement en téléchargement.";
+      if(typeof projdAvis==="function")
+        projdAvis("erreur","Schéma pas enregistré dans le projet",e.message+" — le fichier est téléchargé à la place.");
       saveJsonTelecharger(doc);
       return false;
     });
   }
   saveJsonTelecharger(doc);
+  if(typeof projdAvis==="function")
+    projdAvis("info","Schéma téléchargé","Aucun projet ouvert : le fichier .json est téléchargé, il n'est rangé dans aucun dossier de projet.");
   return Promise.resolve(false);
 }
 function saveJsonTelecharger(doc){

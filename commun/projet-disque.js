@@ -68,9 +68,29 @@ function projdDocuments(){
   for(const outil in PROJD_SUFFIXE){
     const e = d && d[outil];
     out[outil] = {fichier:(e && e.fichier) || projdNomDoc(outil),
-                  present:!!(e && e.present)};
+                  present:!!(e && e.present), modifie:(e && e.modifie) || 0};
   }
   return out;
+}
+/* Heure (ms) de la derniere sauvegarde d'un document du projet, 0 si aucune. */
+function projdDerniereSauvegarde(){
+  const d = PROJD.documents || {};
+  let t = 0;
+  for(const outil in d) if(d[outil] && d[outil].present) t = Math.max(t, d[outil].modifie || 0);
+  return t;
+}
+/* « aujourd'hui à 14:32 », « hier à 09:10 », « 7 oct. à 14:32 ». */
+function projdQuand(t){
+  if(!t) return "";
+  const d = new Date(t), now = new Date();
+  const hm = d.toLocaleTimeString("fr-FR", {hour:"2-digit", minute:"2-digit"});
+  const jour = function(x){ return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
+  const ecart = Math.round((jour(now) - jour(d)) / 864e5);
+  if(ecart === 0) return "aujourd'hui à " + hm;
+  if(ecart === 1) return "hier à " + hm;
+  const o = {day:"numeric", month:"short"};
+  if(d.getFullYear() !== now.getFullYear()) o.year = "numeric";
+  return d.toLocaleDateString("fr-FR", o) + " à " + hm;
 }
 /* Vrai si un dossier est rattache : les editeurs y lisent et y ecrivent au
    lieu de passer par le telechargement. */
@@ -277,7 +297,11 @@ async function projdSonderDossier(h, fichier){
       const suf = PROJD_SUFFIXE[outil].toLowerCase();
       trouve = noms.find(function(n){ return n.toLowerCase().endsWith(suf); }) || "";
     }
-    docs[outil] = {fichier:trouve || attendu, present:!!trouve};
+    let modifie = 0;
+    if(trouve){
+      try{ modifie = (await (await h.getFileHandle(trouve)).getFile()).lastModified || 0; }catch(_){}
+    }
+    docs[outil] = {fichier:trouve || attendu, present:!!trouve, modifie:modifie};
   }
   return docs;
 }
@@ -312,6 +336,21 @@ function projdOuvrirServeur(ou, racine){
          lui redemander document par document pour l'afficher. */
       return projdAdopter("serveur", r.dossier||ou, r.projet, r.documents);
     });
+}
+/* Relit ce que contient le dossier rattache (heures de sauvegarde comprises) :
+   l'accueil le fait quand on y revient, un editeur ayant pu enregistrer entre-temps. */
+function projdRafraichir(){
+  if(PROJD.mode === "serveur")
+    return projdApi("GET","/api/projet",{chemin:PROJD.chemin}).then(function(r){
+      if(r && r.documents){ PROJD.documents = r.documents; try{ projSignaler(); }catch(_){} }
+      return projdEtat();
+    });
+  if(PROJD.mode === "dossier" && PROJD_HANDLE)
+    return projdSonderDossier(PROJD_HANDLE, PROJD.fichier).then(function(docs){
+      PROJD.documents = docs; try{ projSignaler(); }catch(_){}
+      return projdEtat();
+    });
+  return Promise.resolve(projdEtat());
 }
 /* Cree le dossier et son fichier projet. Le nom du projet fait le nom du
    dossier : un dossier « carte PIR » qui contiendrait un projet appele
@@ -461,15 +500,15 @@ function projdDocEcrire(outil, obj){
     return Promise.reject(new Error("Aucun dossier de projet rattache"));
   /* Ce qui vient d'etre ecrit est desormais la : le releve doit le dire, sinon
      l'accueil continuerait d'annoncer un dossier sans schema. */
-  function note(f){
+  function note(f, quand){
     if(!PROJD.documents) PROJD.documents = {};
-    PROJD.documents[outil] = {fichier:f||nom, present:true};
+    PROJD.documents[outil] = {fichier:f||nom, present:true, modifie:quand||Date.now()};
     try{ projSignaler(); }catch(_){}
     return f||nom;
   }
   if(PROJD.mode === "serveur")
     return projdApi("PUT","/api/projet/doc",{chemin:PROJD.chemin, doc:outil}, obj)
-      .then(function(r){ return note(r.fichier); });
+      .then(function(r){ return note(r.fichier, r.modifie); });
   if(!PROJD_HANDLE) return Promise.reject(new Error("Dossier plus accessible"));
   return projdHandleAutorise(PROJD_HANDLE,true).then(function(ok){
     if(!ok) throw new Error("Acces au dossier refuse");
@@ -519,25 +558,79 @@ function projdGithubEnvoyer(message){
 function projdEnregistrerGithub(enregistrer, defaut, dire){
   const message = prompt("Message du commit pour GitHub\n(Annuler = enregistrer sans envoyer) :", defaut);
   return Promise.resolve(enregistrer()).then(function(dansProjet){
-    if(!dansProjet) return;
+    if(!dansProjet) return;               // l'editeur a deja dit pourquoi
+    const heure = projdQuand(Date.now());
     if(message === null){
       dire("Enregistré dans le dossier du projet (pas envoyé sur GitHub).");
+      projdAvis("partiel", "Enregistré sur le serveur, pas envoyé sur GitHub",
+        heure + " · vous avez annulé le message de commit : rien n'est parti sur GitHub.");
       return;
     }
     dire("Enregistré. Envoi sur GitHub…");
+    projdAvis("encours", "Enregistré · envoi sur GitHub…", heure);
     return projdGithubEnvoyer(message || defaut).then(function(r){
-      if(r.ok){ dire("Enregistré et envoyé sur GitHub."); return; }
+      if(r.ok){
+        projdNoterEnvoi();
+        dire("Enregistré et envoyé sur GitHub.");
+        projdAvis("ok", "Enregistré et envoyé sur GitHub", projdQuand(Date.now()) + " · « " + (message || defaut) + " »");
+        return;
+      }
       /* Un refus se lit en entier (il dit quoi faire) : la barre d'etat le
          couperait, surtout sur une tablette. */
       const t = r.message || "Envoi sur GitHub refusé.";
       dire(t);
-      try{ alert(t); }catch(_){}
+      projdAvis("erreur", "Enregistré sur le serveur, mais pas envoyé sur GitHub", t);
     });
   }).catch(function(e){
     const t = "Envoi sur GitHub impossible : " + e.message;
     dire(t);
-    try{ alert(t); }catch(_){}
+    projdAvis("erreur", "Enregistré sur le serveur, mais pas envoyé sur GitHub", t);
   });
+}
+/* Dernier envoi reussi sur GitHub, par projet. Garde dans ce navigateur : un
+   envoi fait depuis un autre appareil n'y figure pas. */
+const PROJD_ENVOI_CLE = "cao.projet.envoiGithub";
+function projdNoterEnvoi(){
+  try{
+    const m = JSON.parse(localStorage.getItem(PROJD_ENVOI_CLE) || "{}");
+    m[PROJD.chemin || projNom()] = Date.now();
+    localStorage.setItem(PROJD_ENVOI_CLE, JSON.stringify(m));
+  }catch(_){}
+}
+function projdDernierEnvoi(){
+  try{
+    const m = JSON.parse(localStorage.getItem(PROJD_ENVOI_CLE) || "{}");
+    return m[PROJD.chemin || projNom()] || 0;
+  }catch(_){ return 0; }
+}
+
+/* ==========================================================================
+   Avis de sauvegarde
+   --------------------------------------------------------------------------
+   La barre d'etat des editeurs est coupee sur une tablette : une sauvegarde
+   reussie ou ratee y passait inapercue. L'avis s'affiche en haut de l'ecran.
+   `etat` : "ok" (vert), "partiel" (orange : enregistre mais pas tout), "info",
+   "encours", "erreur" (rouge, reste jusqu'a ce qu'on le touche).
+   ========================================================================== */
+function projdAvis(etat, titre, detail){
+  if(typeof document === "undefined" || !document.body || !document.createElement) return;
+  let a = document.getElementById("projdAvis");
+  if(!a){
+    a = document.createElement("div");
+    a.id = "projdAvis";
+    a.setAttribute("role", "status");
+    a.setAttribute("aria-live", "polite");
+    a.onclick = function(){ a.classList.remove("on"); };
+    document.body.appendChild(a);
+  }
+  const ico = {ok:"✓", partiel:"!", info:"i", encours:"…", erreur:"✕"}[etat] || "i";
+  a.className = "on " + (etat || "info");
+  a.innerHTML = '<span class="pa-ico">' + ico + '</span><span class="pa-txt"><b></b><small></small></span>';
+  a.querySelector("b").textContent = titre || "";
+  a.querySelector("small").textContent = detail || "";
+  clearTimeout(projdAvis.minuterie);
+  if(etat !== "erreur" && etat !== "encours")
+    projdAvis.minuterie = setTimeout(function(){ a.classList.remove("on"); }, etat === "partiel" ? 9000 : 5000);
 }
 /* Le bouton n'apparait que lorsque le geste est possible ; il suit
    l'ouverture et la fermeture d'un projet. */
