@@ -439,7 +439,7 @@ cv.addEventListener("pointerdown",e=>{
     refreshPanels();draw();return;
   }
   /* Ctrl et Maj font la même chose : ajouter à la sélection (ou en retirer).
-     Au doigt, le bouton « Multi » du HUD tactile en tient lieu. */
+     Au doigt, la commande « Multi » de la roulette tactile en tient lieu. */
   const multi=typeof tactileMultiActif==="function"&&tactileMultiActif();
   const addSel=e.shiftKey||e.ctrlKey||e.metaKey||multi;
   /* Saisir un élément d'une sélection de plusieurs, c'est emmener le groupe :
@@ -833,6 +833,31 @@ cv.addEventListener("dblclick",e=>{
     return;
   }
 });
+/* Roulette du mode tactile (commun/tactile.js). Un double-tap au stylet
+   l'ouvre ; cette fonction lui dit ce qu'il y a sous la pointe, et prend
+   l'élément s'il ne l'était pas, pour que ses commandes agissent sur lui.
+   Un fil ou un trait en cours garde le double-tap pour lui : il le termine,
+   comme le double-clic ci-dessus. */
+function schRouletteCible(clientX,clientY){
+  if(S.wireStart||S.drawStart)return {occupe:true};
+  const r=cv.getBoundingClientRect(), p=s2w(clientX-r.left,clientY-r.top);
+  const comp=hitComp(p.x,p.y);
+  if(comp){
+    if(!S.sel.has(comp.id)){clearSel();S.sel.add(comp.id);refreshPanels();draw();}
+    return {ctx:"comp", titre:selCount()>1?selCount()+" sél.":comp.ref,
+      actions:typeof ceOpen==="function"?{props:()=>ceOpen(comp)}:{}};
+  }
+  const hn=hitNetLabel(p.x,p.y), wi=hn?-1:hitWire(p.x,p.y);
+  if(hn||wi>=0){
+    const w=wi>=0?S.wires[wi]:null;
+    const net=hn?hn.net:netAtLive(w.x1,w.y1);
+    if(w&&!S.selW.has(w)){clearSel();S.selW.add(w);refreshPanels();draw();}
+    return {ctx:"fil", titre:(net&&net.name)||"fil",
+      actions:net?{netEntier:()=>selectNet(net)}:{}};
+  }
+  const pg=S.pages&&S.pages[S.page];
+  return {ctx:"vide", titre:(pg&&pg.name)||"Feuille"};
+}
 cv.addEventListener("auxclick",e=>{if(e.button===1)e.preventDefault();});
 cv.addEventListener("wheel",e=>{
   e.preventDefault();

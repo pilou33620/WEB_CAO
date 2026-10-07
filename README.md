@@ -55,7 +55,7 @@ python web_CAO.py
 ```bash
 python web_CAO.py --local --dossier ~/Documents/WEB_CAO
 ```
-Activez ensuite le **mode tactile** depuis la page d'accueil (pincement, déplacement à deux doigts, Apple Pencil, barre d'actions sous le pouce).
+Activez ensuite le **mode tactile** depuis la page d'accueil (pincement, déplacement à deux doigts, Apple Pencil, roulette de commandes au double-tap).
 
 ### 4. Raspberry Pi / terminal sans écran
 Le serveur détecte l'absence d'affichage et n'ouvre pas de navigateur ; connectez-vous depuis un autre poste du réseau (`--navigateur` / `--sans-navigateur` pour forcer).
@@ -193,7 +193,13 @@ Volet présent dans le schéma, le PCB, la visionneuse et Gestion LIB, branché 
 - **Cross-probing Schéma ↔ PCB** : saut direct avec **phare** sur l'empreinte ciblée ; avec deux onglets côte à côte, la touche **`L`** synchronise la sélection (`BroadcastChannel`).
 - **Mémoire de session** : le travail non enregistré suit l'utilisateur d'un outil à l'autre (`sessionStorage`).
 - **Profils utilisateur** (`👤`, `profils/<nom>.json`) : panneaux dockables/flottants, grille, contraste, préférences.
-- **Mode tactile** : iPad Pro, tablettes, écrans tactiles, stylet.
+- **Mode tactile** : iPad Pro, tablettes, écrans tactiles, stylet. Un **double-tap** au stylet (ou au
+  doigt) sur la feuille ouvre une **roulette de commandes** sous la pointe, propre à ce qui est touché :
+  un composant (Propriétés, Pivoter, Miroir…), un fil ou une piste (Net entier, Via…), le vide
+  (Enregistrer, Fil, Coller…). Les groupes (Édition, Historique, Vue…) s'ouvrent en éventail. Le secteur
+  **＋** range, ajoute ou crée ses propres commandes et groupes (un raccourci clavier rejoué), gardés
+  dans le profil. Pendant un tracé, le double-tap le termine comme le double-clic. La paume posée
+  pendant que le stylet écrit est ignorée.
 - **Outils partagés** : recherche universelle `Ctrl+F` (repères, nets, toutes feuilles) et mesure de cotes `K` (aimantée sur pastilles, vias et pistes au PCB).
 
 ---
@@ -215,7 +221,7 @@ Un seul fichier, bibliothèque standard Python. Chaque module de calcul est impo
 | `--projets-reseau` | En écoute réseau, ouvre quand même les projets (sous les racines `--projets` seulement) et l'écriture dans la LIB active. Restent locaux : chemin hors racines, choix du dossier de LIB, clé IA, datasheets. Sans mot de passe : réseau de confiance uniquement (WEB·SUITE le passe en `--reseau`) |
 | `--lib DIR` | Dossier de la bibliothèque centrale (défaut : `LIB/` à côté de l'outil, sinon `../PROJETS/LIB_CAO`) ; en lecture seule si le serveur écoute sur le réseau sans `--projets-reseau` |
 
-**Enregistrer + GitHub.** Lancé par [WEB·SUITE](https://github.com/pilou33620/WEB_SUITE), WEB_CAO reçoit de lui, par l'environnement (`WEBSUITE_LANCEUR`, `WEBSUITE_JETON`), l'adresse du lanceur sur ce poste et le jeton de son mode réseau. Les éditeurs affichent alors **Fichier → Enregistrer + GitHub** (et le bouton **💾 Sauver** de la barre tactile) dès qu'un projet du serveur est ouvert : le document est écrit dans son dossier, puis `/api/github/envoyer` relaie au lanceur l'envoi de `PROJETS` (commit + pull + push). Pensé pour l'iPad relié à un téléphone sous Termux ou à un Raspberry Pi : le lanceur n'est plus à aller chercher dans un autre onglet. Un autre appareil que ce poste doit présenter le jeton du lanceur (le cookie que pose son adresse **Réseau**, valable pour tout l'hôte) ; sans lanceur, ces routes n'existent pas. Marche à suivre côté serveur (connexion GitHub par `gh auth login`) : README de WEB·SUITE, « Sauvegarder depuis une tablette ».
+**Enregistrer + GitHub.** Lancé par [WEB·SUITE](https://github.com/pilou33620/WEB_SUITE), WEB_CAO reçoit de lui, par l'environnement (`WEBSUITE_LANCEUR`, `WEBSUITE_JETON`), l'adresse du lanceur sur ce poste et le jeton de son mode réseau. Les éditeurs affichent alors **Fichier → Enregistrer + GitHub** (et la commande **Enregistrer** de la roulette tactile) dès qu'un projet du serveur est ouvert : le document est écrit dans son dossier, puis `/api/github/envoyer` relaie au lanceur l'envoi de `PROJETS` (commit + pull + push). Pensé pour l'iPad relié à un téléphone sous Termux ou à un Raspberry Pi : le lanceur n'est plus à aller chercher dans un autre onglet. Un autre appareil que ce poste doit présenter le jeton du lanceur (le cookie que pose son adresse **Réseau**, valable pour tout l'hôte) ; sans lanceur, ces routes n'existent pas. Marche à suivre côté serveur (connexion GitHub par `gh auth login`) : README de WEB·SUITE, « Sauvegarder depuis une tablette ».
 
 **Routes** : `/api/tools`, `/api/tool` (passerelle MCP) · `/api/ipc2581` · `/api/simulation`, `/api/simulation-dc`, `/api/crosstalk` · `/api/pcb/score-placement`, `/api/schema/patterns` · `/api/projets`, `/api/projet`, `/api/projet/doc` · `/api/github`, `/api/github/envoyer`, `/api/github/identite` (relai au lanceur WEB·SUITE) · `/api/profils`, `/api/profil` · `/api/lib/config`, `/api/lib/composants`, `/api/lib/fichiers`, `/api/lib/fichier` · `/api/datasheet/telecharger`, `/api/datasheet/ouvrir` · `/api/ia/cle`. Protection anti-traversée de chemins sur toutes les routes disque.
 
@@ -241,7 +247,7 @@ WEB_CAO/
 │   ├── projet.js, projet-disque.js  Nom de projet, dossier sur disque
 │   ├── profils.js / .css          Préférences utilisateur
 │   ├── reperage.js / .css         Recherche (Ctrl+F) et mesure de cotes (K)
-│   ├── tactile.js / .css          Mode tactile et barre d'actions
+│   ├── tactile.js / .css          Mode tactile, stylet et roulette de commandes
 │   ├── menus.js / .css            Barre de menus des éditeurs (Fichier, Édition, Placer…)
 │   ├── explorateur-lib.js / .css  Explorateur visuel de bibliothèque
 │   ├── ia-assistant.js / .css     Assistant IA (Google AI Studio)

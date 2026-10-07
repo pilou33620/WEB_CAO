@@ -3948,7 +3948,7 @@ cv.addEventListener("pointerdown",e=>{
   if(S.mode==="cut"){
     cutClick(p.x,p.y);draw();return;
   }
-  /* Au doigt, le bouton « Multi » du HUD tactile tient lieu de Ctrl : chaque
+  /* Au doigt, la commande « Multi » de la roulette tactile tient lieu de Ctrl : chaque
      toucher ajoute à la sélection ou en retire. */
   const multi=typeof tactileMultiActif==="function"&&tactileMultiActif();
   /* Une sélection qui contient des boîtiers se déplace en bloc : les bouts de
@@ -4554,6 +4554,29 @@ cv.addEventListener("wheel",e=>{
   S.oy+=(a.y-b.y)*S.scale;
   draw();
 },{passive:false});
+
+/* Roulette du mode tactile (commun/tactile.js). Un double-tap au stylet
+   l'ouvre ; cette fonction lui dit ce qu'il y a sous la pointe, et prend
+   l'élément s'il ne l'était pas, pour que ses commandes agissent sur lui.
+   Un tracé en cours (piste, paire, zone, contour) garde le double-tap pour
+   lui : il le termine, comme le double-clic ci-dessus. */
+function pcbRouletteCible(clientX,clientY){
+  if(S.dp||S.route||S.zoneDraft||S.edgeDraft)return {occupe:true};
+  const r=cv.getBoundingClientRect(), p=s2w(clientX-r.left,clientY-r.top);
+  const h=hitTest(p.x,p.y,null);
+  const fp=h&&(h.fp||h.fpText);
+  if(fp){
+    if(!S.sel.fps.has(fp.id)){clearSel();S.sel.fps.add(fp.id);refreshPanels();draw();}
+    return {ctx:"comp", titre:selCount()>1?selCount()+" sél.":fp.ref, actions:{}};
+  }
+  if(h&&(h.track||h.via)){
+    const o=h.track||h.via, set=h.track?S.sel.tracks:S.sel.vias;
+    if(!set.has(o)){clearSel();set.add(o);if(o.net)S.hlNet=o.net;refreshPanels();draw();}
+    return {ctx:"fil", titre:o.net||(h.track?"piste":"via"),
+      actions:o.net?{netEntier:()=>selectNetRouting(o.net)}:{}};
+  }
+  return {ctx:"vide", titre:"Carte"};
+}
 
 /* ==========================================================================
    Clavier

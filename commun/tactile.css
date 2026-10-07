@@ -64,104 +64,200 @@ body.mode-tactile .tbsel {
   box-shadow: 0 0 6px var(--blue, #3fa0ea);
 }
 
-/* 4. Barre d'actions rapides tactile flottante (HUD) */
-#tactileHud {
+/* 4. Roulette de commandes (double-tap au stylet) et son panneau de réglage.
+   Elle garde son propre habillage sombre : elle flotte au-dessus de la feuille,
+   quel que soit le thème de l'éditeur. */
+#trRoue {
   position: fixed;
-  bottom: 34px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 9500;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(20, 22, 26, 0.94);
-  border: 1px solid rgba(63, 160, 234, 0.35);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65), 0 2px 6px rgba(0, 0, 0, 0.4);
-  border-radius: 30px;
-  padding: 6px 10px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 9600;
+  display: none;
+  -webkit-user-select: none;
   user-select: none;
   touch-action: none;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+#trRoue.ouvert { display: block; }
+#trRoue .tr-svg { position: absolute; left: -1px; top: -1px; overflow: visible; pointer-events: none; }
+#trRoue .tr-anneau { pointer-events: auto; transform-origin: 0 0; animation: trOuvre 0.16s cubic-bezier(.2,.9,.3,1.2); }
+#trRoue .tr-ombre { filter: drop-shadow(0 14px 30px rgba(0, 0, 0, 0.65)); }
+#trRoue .tr-disque { fill: #26292f; stroke: #3a3e46; stroke-width: 1; }
+#trRoue .tr-creux { fill: #121418; }
+#trRoue .tr-coin { fill: transparent; }
+#trRoue .tr-seg.chaud .tr-coin,
+#trRoue .tr-seg.ouvert .tr-coin { fill: url(#trHachure); }
+#trRoue .tr-seg.danger.chaud .tr-coin { fill: rgba(232, 68, 58, 0.38); }
+#trRoue .tr-bulle { fill: #3f86d6; stroke: #9cc8f5; stroke-width: 2; opacity: 0; transition: opacity 0.12s; }
+#trRoue .tr-seg.ouvert .tr-bulle { opacity: 1; }
+#trRoue .tr-ico path { fill: none; stroke: #b9bec7; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#trRoue .tr-ico text { fill: #b9bec7; font-size: 20px; text-anchor: middle; dominant-baseline: central; }
+#trRoue .tr-seg.chaud .tr-ico path,
+#trRoue .tr-seg.ouvert .tr-ico path { stroke: #fff; }
+#trRoue .tr-seg.chaud .tr-ico text,
+#trRoue .tr-seg.ouvert .tr-ico text { fill: #fff; }
+#trRoue .tr-seg.actif .tr-ico path { stroke: #e8c832; }
+#trRoue .tr-marque { fill: #6b717c; }
+#trRoue .tr-seg.chaud .tr-marque,
+#trRoue .tr-seg.ouvert .tr-marque { fill: #3fa0ea; }
+#trRoue .tr-nomseg { font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; fill: #8b919c; text-anchor: middle; dominant-baseline: central; }
+#trRoue .tr-guide { fill: none; stroke: #3a3e46; stroke-width: 1; stroke-dasharray: 2 5; opacity: 0; transition: opacity 0.15s; }
+#trRoue.eventail .tr-guide { opacity: 1; }
+#trRoue .tr-lien { fill: none; stroke: #9aa0aa; stroke-width: 1.2; }
+#trRoue .tr-bord { fill: url(#trBord); }
+#trRoue .tr-stries line { stroke: #9da2ab; stroke-width: 1; }
+#trRoue .tr-face { fill: url(#trBouton); stroke: rgba(0, 0, 0, 0.18); }
+#trRoue .tr-lueur { fill: none; stroke-width: 5; opacity: 0.75; stroke: #8b919c; }
+#trRoue.ctx-comp .tr-lueur { stroke: #3fa0ea; }
+#trRoue.ctx-fil .tr-lueur { stroke: #e8c832; }
+#trRoue.ctx-vide .tr-lueur { opacity: 0.4; }
+#trRoue .tr-t1 { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; fill: #1b1d22; text-anchor: middle; dominant-baseline: central; }
+#trRoue .tr-t2 { font-size: 9px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; fill: #5a5f69; text-anchor: middle; dominant-baseline: central; }
+@keyframes trOuvre {
+  from { transform: scale(0.55) rotate(-25deg); opacity: 0; }
+  to { transform: scale(1) rotate(0); opacity: 1; }
 }
 
-#tactileHud.replie .hud-btn:not(.hud-toggle) {
-  display: none;
+/* Éventail de pastilles d'un groupe */
+#trRoue .tr-eventail { position: absolute; left: 0; top: 0; }
+#trRoue .tr-pastille {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 14px 0 10px;
+  white-space: nowrap;
+  box-sizing: border-box;
+  background: #24272d;
+  border: 1px solid #3a3e46;
+  border-radius: 12px;
+  color: #e6e8ec;
+  font: 500 14px system-ui, -apple-system, sans-serif;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.85);
+  animation: trPastille 0.18s ease-out forwards;
+}
+#trRoue .tr-pastille svg { width: 20px; height: 20px; flex: none; }
+#trRoue .tr-pastille svg path { fill: none; stroke: #b9bec7; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#trRoue .tr-pastille kbd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: #8b919c; margin-left: 4px; }
+#trRoue .tr-pastille.chaud { background: #2f343c; border-color: #3fa0ea; box-shadow: 0 0 0 1px #3fa0ea, 0 10px 24px rgba(0, 0, 0, 0.55); }
+#trRoue .tr-pastille.chaud svg path { stroke: #fff; }
+#trRoue .tr-pastille.danger.chaud { border-color: #e8443a; box-shadow: 0 0 0 1px #e8443a, 0 10px 24px rgba(0, 0, 0, 0.55); }
+.tr-gl { display: inline-block; width: 20px; text-align: center; font-size: 17px; }
+@keyframes trPastille { to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  #trRoue .tr-anneau, #trRoue .tr-pastille { animation: none; opacity: 1; transform: none; }
 }
 
-#tactileHud.replie {
-  border-radius: 20px;
-  padding: 4px 8px;
-}
-
-/* Boutons individuels du HUD */
-.hud-btn {
+/* Pastille « Sélection multiple » : rappelle que Multi est enclenché */
+#tactileMultiPuce {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9550;
   display: inline-flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1px solid #e8c832;
+  background: rgba(20, 22, 26, 0.94);
+  color: #e6e8ec;
+  font: 500 13px system-ui, -apple-system, sans-serif;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+#tactileMultiPuce[hidden] { display: none; }
+#tactileMultiPuce svg path { fill: none; stroke: #e8c832; stroke-width: 1.8; stroke-linecap: round; }
+#tactileMultiPuce b { color: #8b919c; font-weight: 500; }
+
+/* Message bref de la roulette */
+#trAvis {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 40px);
+  transform: translateX(-50%);
+  z-index: 9800;
+  max-width: calc(100% - 32px);
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid #333842;
+  background: rgba(20, 22, 26, 0.96);
+  color: #e6e8ec;
+  font: 13px system-ui, -apple-system, sans-serif;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+#trAvis.on { opacity: 1; }
+
+/* Panneau de personnalisation de la roulette */
+#trPerso {
+  position: fixed;
+  inset: 0;
+  z-index: 9700;
+  display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 44px;
-  height: 44px;
-  padding: 2px 8px;
-  border: 1px solid #333842;
-  border-radius: 22px;
-  background: #181a1f;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.5);
+  font: 14px system-ui, -apple-system, sans-serif;
   color: #e6e8ec;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  touch-action: manipulation;
-  transition: all 0.12s ease;
-  position: relative;
 }
-
-.hud-btn .hud-icon {
-  font-size: 16px;
-  line-height: 1;
-  margin-bottom: 2px;
+#trPerso[hidden] { display: none; }
+#trPerso .tr-boite {
+  display: grid;
+  gap: 16px;
+  width: min(660px, 100%);
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid #333842;
+  background: #15171b;
 }
-
-.hud-btn .hud-lbl {
-  font-size: 9px;
-  line-height: 1;
-  color: #8b919c;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.hud-btn:active,
-.hud-btn.active {
-  background: #2b7fbf;
-  border-color: #3fa0ea;
-  color: #fff;
-  transform: scale(0.96);
-}
-
-.hud-btn:active .hud-lbl,
-.hud-btn.active .hud-lbl {
-  color: #fff;
-}
-
-.hud-btn.hud-danger:active {
-  background: #c9342c;
-  border-color: #e8443a;
-}
-
-.hud-btn.hud-toggle {
-  min-width: 34px;
-  height: 34px;
-  border-radius: 17px;
-  background: #131417;
-  border-color: #2b2e34;
-}
-
-.hud-sep {
-  width: 1px;
-  height: 28px;
-  background: #2b2e34;
-  margin: 0 2px;
+#trPerso h2 { margin: 0; font-size: 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+#trPerso h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8b919c; }
+#trPerso section[hidden] { display: none; }
+#trPerso .tr-liste { display: grid; gap: 6px; }
+#trPerso .tr-ligne { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; padding: 5px 8px; border-radius: 8px; border: 1px solid #2a2e35; background: #1b1e23; }
+#trPerso .tr-ligne.sous { margin-left: 28px; background: #181a1e; }
+#trPerso .tr-ligne.grp { border-color: #35506b; }
+#trPerso .tr-i { display: flex; justify-content: center; }
+#trPerso svg path { fill: none; stroke: #c9ccd2; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#trPerso .tr-n { min-width: 0; }
+#trPerso .tr-n small { display: block; color: #8b919c; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; }
+#trPerso .tr-acts { display: flex; gap: 4px; }
+#trPerso button,
+#trPerso select { min-width: 36px; min-height: 36px; border-radius: 7px; border: 1px solid #333842; background: #20242a; color: #e6e8ec; font: inherit; cursor: pointer; }
+#trPerso select { padding: 0 8px; }
+#trPerso button:focus-visible,
+#trPerso select:focus-visible,
+#trPerso input:focus-visible { outline: 2px solid #3fa0ea; outline-offset: 1px; }
+#trPerso button.prim { padding: 0 14px; background: #2b7fbf; border-color: #3fa0ea; }
+#trPerso .tr-onglets { display: flex; flex-wrap: wrap; gap: 6px; }
+#trPerso .tr-onglets button { padding: 0 12px; font-size: 13px; color: #8b919c; }
+#trPerso .tr-onglets button[aria-selected="true"] { color: #e6e8ec; border-color: #3fa0ea; background: rgba(63, 160, 234, 0.15); }
+#trPerso .tr-catalogue { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; }
+#trPerso .tr-catalogue button { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 13px; }
+#trPerso .tr-rang { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: #8b919c; }
+#trPerso .tr-rang input { max-width: 240px; }
+#trPerso .tr-form { display: grid; grid-template-columns: 70px 1fr 1fr auto; gap: 8px; align-items: end; }
+#trPerso label { display: grid; gap: 4px; font-size: 11px; color: #8b919c; }
+#trPerso input { width: 100%; min-height: 36px; box-sizing: border-box; padding: 0 8px; border-radius: 7px; border: 1px solid #333842; background: #0f1114; color: #e6e8ec; font: inherit; }
+#trPerso .tr-opts { display: grid; gap: 6px; }
+#trPerso .tr-opts label { display: flex; gap: 8px; align-items: center; font-size: 13px; color: #e6e8ec; }
+#trPerso .tr-opts input { width: auto; min-height: 0; }
+#trPerso .tr-note { margin: 6px 0 0; font-size: 12px; color: #8b919c; }
+@media (max-width: 540px) {
+  #trPerso .tr-form { grid-template-columns: 60px 1fr; }
 }
 
 /* Rétroaction visuelle lors d'un appui long */

@@ -74,7 +74,7 @@ const EXPOSE=[
   /* libellés déplaçables et étiquettes de net (08 + 09) */
   "compTexts","textBox","textOff","setTextOff","netLabelAt","netLabelBoxes",
   "pinContacts","reconnectContacts","resetTexts","pinContactPoints","moveSelBy",
-  "hitText","hitComp","selCount","tactileMultiDefinir","tactileMultiActif",
+  "hitText","hitComp","selCount","tactileMultiDefinir","tactileMultiActif","schRouletteCible","trToucheParse",
   "rotateSel","mirrorSel",
   "splitWireArray","textW",
   /* presse-papier et grille (10) */
@@ -2433,7 +2433,7 @@ T("nomenclature et netlist enrichies : liaison automatique avec LIB_composants.c
 
 /* ==========================================================================
    Sélection multiple : saisir n'importe quel élément emmène le groupe
-   (09-interaction.js). Au doigt, le bouton « Multi » du HUD tient lieu de Ctrl.
+   (09-interaction.js). Au doigt, la commande « Multi » de la roulette tactile tient lieu de Ctrl.
    ========================================================================== */
 function ptr(x,y,o){const q=w2s(x,y);return Object.assign({clientX:q.x,clientY:q.y,pointerType:"mouse"},o||{});}
 function glisseSch(a,b){
@@ -2522,6 +2522,33 @@ T("mode tactile, bouton « Multi » : chaque toucher ajoute ou retire, le doigt 
     tactileMultiDefinir(false);
     if(garde===null)localStorage.removeItem("cao.modeTactile");else localStorage.setItem("cao.modeTactile",garde);
   }
+});
+
+T("roulette tactile : ce qui est sous le stylet choisit les commandes",()=>{
+  const {rs,w}=groupeTroisR();
+  clearSel();
+  const sur=(x,y)=>{const q=ptr(x,y);return schRouletteCible(q.clientX,q.clientY);};
+  const c=sur(rs[1].x,rs[1].y);
+  if(c.ctx!=="comp"||c.titre!=="R2")throw new Error("sur R2 : composant attendu, reçu "+c.ctx+" "+c.titre);
+  if(!S.sel.has(rs[1].id)||selCount()!==1)throw new Error("le composant touché doit être pris, seul");
+  if(typeof c.actions.props!=="function")throw new Error("Propriétés doit être proposé sur un composant");
+  const f=sur((w.x1+w.x2)/2,w.y1);
+  if(f.ctx!=="fil")throw new Error("sur le fil : fil attendu, reçu "+f.ctx);
+  if(!S.selW.has(w)||S.sel.size)throw new Error("le fil touché doit être pris à la place du composant");
+  if(sur(25*G,40*G).ctx!=="vide")throw new Error("loin de tout : le vide");
+  S.wireStart={x:0,y:0};
+  try{
+    if(!sur(rs[0].x,rs[0].y).occupe)throw new Error("fil en cours : le double-tap doit le terminer, pas ouvrir la roulette");
+  }finally{S.wireStart=null;}
+});
+T("roulette tactile : les raccourcis tapés par l'utilisateur sont compris",()=>{
+  const a=trToucheParse("Ctrl+Shift+N");
+  if(a.key!=="n"||a.code!=="KeyN"||!a.ctrlKey||!a.shiftKey||a.altKey)throw new Error("Ctrl+Shift+N mal lu : "+JSON.stringify(a));
+  const b=trToucheParse("Suppr");
+  if(b.key!=="Delete"||b.ctrlKey)throw new Error("Suppr mal lu : "+JSON.stringify(b));
+  if(trToucheParse("échap").key!=="Escape")throw new Error("échap mal lu");
+  if(trToucheParse("w").code!=="KeyW"||trToucheParse("7").code!=="Digit7")throw new Error("codes de touche faux");
+  if(trToucheParse("Ctrl+").key)throw new Error("un raccourci sans touche ne doit rien donner");
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

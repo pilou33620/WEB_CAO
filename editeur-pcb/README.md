@@ -783,7 +783,7 @@ sur les pastilles, et c'est le groupe qui doit partir. `Ctrl+clic` sur un
 élément déjà pris ne l'en retire qu'au relâchement : si le geste glisse, toute
 la sélection part, lui compris.
 
-**Au doigt**, le bouton **Multi** de la barre tactile tient lieu de `Ctrl` :
+**Au doigt**, la commande **Multi** de la roulette tactile (groupe *Sélection*) tient lieu de `Ctrl` :
 chaque toucher ajoute un élément à la sélection ou l'en retire. Le lasso se
 tire déjà au doigt sur le vide ; deux doigts déplacent la vue.
 

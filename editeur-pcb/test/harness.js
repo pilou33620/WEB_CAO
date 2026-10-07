@@ -108,7 +108,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "ptPolyDist","padWorldPts","padClone","padDist","padHalf","fpSetPad","gPad",
   /* sélection multiple et presse-papier */
   "selectHit","toggleHit","altTarget","selCount","fpTextPos",
-  "tactileMultiDefinir","tactileMultiActif","trackRun","selectRun","deleteSel","unrouteSel","copySelPcb","cutSelPcb",
+  "tactileMultiDefinir","tactileMultiActif","pcbRouletteCible","trackRun","selectRun","deleteSel","unrouteSel","copySelPcb","cutSelPcb",
   "pasteClipPcb","pcbClipContent","pcbSetClip","pcbGetClip","freeFpRef","GRID_STEPS",
   "setGridStep","gridShownStep","gridLabel","fpById",
   /* import défensif (normDoc) et aller-retour de document */
@@ -1465,6 +1465,26 @@ T("mode tactile, bouton « Multi » : chaque toucher ajoute ou retire, comme Ctr
     if(garde===null)localStorage.removeItem("cao.modeTactile");else localStorage.setItem("cao.modeTactile",garde);
     S.fps=[];S.tracks=[];touch();clearSel();suiviFin(reg);
   }
+});
+T("roulette tactile : boîtier, piste ou carte selon ce qui est sous le stylet",()=>{
+  const {reg,fs}=groupeTroisBoitiers();
+  const t={l:S.active,net:"SIG",w:0.4,x1:10,y1:20,x2:30,y2:20};
+  S.tracks.push(t);touch();
+  try{
+    clearSel();
+    const sur=(x,y)=>{const q=sc(x,y);return pcbRouletteCible(q.clientX,q.clientY);};
+    const c=sur(fs[1].x,fs[1].y);
+    if(c.ctx!=="comp"||c.titre!=="R2")throw new Error("sur R2 : boîtier attendu, reçu "+c.ctx+" "+c.titre);
+    if(!S.sel.fps.has(fs[1].id)||selCount()!==1)throw new Error("le boîtier touché doit être pris, seul");
+    const f=sur(20,20);
+    if(f.ctx!=="fil"||f.titre!=="SIG")throw new Error("sur la piste : net SIG attendu, reçu "+f.ctx+" "+f.titre);
+    if(!S.sel.tracks.has(t)||S.sel.fps.size)throw new Error("la piste touchée doit être prise à la place du boîtier");
+    if(typeof f.actions.netEntier!=="function")throw new Error("Net entier doit être proposé sur une piste");
+    if(sur(20,60).ctx!=="vide")throw new Error("loin de tout : la carte");
+    S.route={};
+    try{ if(!sur(20,20).occupe)throw new Error("piste en cours : le double-tap doit la terminer"); }
+    finally{ S.route=null; }
+  }finally{S.fps=[];S.tracks=[];touch();clearSel();suiviFin(reg);}
 });
 T("déplacer un boîtier : la piste entre deux de ses pastilles part en bloc",()=>{
   const reg=suiviDecor();
