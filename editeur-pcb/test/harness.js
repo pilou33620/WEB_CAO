@@ -173,7 +173,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
-  "apSet","apForPad","fePad","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","fePad","brocheNum","parseNetlist","applyNetlist","padSurCouche","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform","feZoom","feRefit","feReattach",
@@ -5021,6 +5021,110 @@ T("sérigraphie automatique coupée : seule celle des dessins s'imprime",()=>{
   const tout=gerberSilk(0);
   const n=g=>(g.match(/D01\*/g)||[]).length;
   if(!(n(tout)>n(avec)))throw new Error("R7 ne devait rien imprimer d'office : "+n(avec)+" / "+n(tout));
+  carteVide();
+});
+/* JUSQU'À 32 COUCHES, nombre impair compris : un document les garde, et
+   l'empilage d'usine reste fabricable (pas 31 cœurs de 1,48 mm, ni 30 µm
+   d'isolant pour tenir dans 1,6 mm). */
+T("32 couches : lues, empilées, et l'épaisseur reste fabricable",()=>{
+  const garde=JSON.parse(serialize());
+  try{
+    if(CU_MAX!==32)throw new Error("plafond : "+CU_MAX);
+    const d=JSON.parse(serialize());
+    d.cu=13;d.cuL=[];d.stack=null;
+    d.tracks=[{l:12,net:"A",w:0.3,x1:1,y1:1,x2:5,y2:1}];
+    d.vias=[{x:5,y:1,d:0.8,drill:0.4,a:3,b:12,net:"A"}];
+    loadDoc(d,true);
+    if(S.cu!==13||S.cuL.length!==13||S.stack.di.length!==12)throw new Error("13 couches : "+S.cu);
+    if(S.tracks[0].l!==12||S.vias[0].b!==12)throw new Error("la 13e couche porte son cuivre");
+    d.cu=40;loadDoc(d,true);
+    if(S.cu!==32)throw new Error("au-delà de 32, ramené à 32 : "+S.cu);
+    const st=stackDefaults(32);
+    let t=0;for(const c of st.cu)t+=c.t;for(const x of st.di)t+=x.t;
+    if(Math.abs(t-3.6)>0.01||st.di.some(x=>x.t<0.06))throw new Error("empilage 32 couches : "+t);
+    if(st.di[0].k!=="prepreg"||st.di[1].k!=="core")throw new Error("prepreg et cœurs alternés");
+    setCuCount(2,true);setCuCount(32,true);
+    if(stackTotal()<3)throw new Error("1,6 mm ne tient plus 32 couches : "+stackTotal());
+  }finally{ loadDoc(garde,true); }
+});
+/* ZONE AU CUIVRE DU FICHIER : remplie avec les trous du fabricant tant que
+   son contour ne bouge pas ; recalculée comme une autre dès qu'il bouge. */
+T("zone importée : cuivre du fichier, puis recalcul dès qu'on la modifie",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.zones=[{id:1,l:0,net:"GND",pts:[{x:0,y:0},{x:40,y:0},{x:40,y:30},{x:0,y:30}],fichier:true,
+            trous:[[{x:10,y:10},{x:14,y:10},{x:14,y:14},{x:10,y:14}],[{x:1,y:1},{x:2,y:2}]]}];
+  loadDoc(d,true);
+  const z=S.zones[0];
+  if(!z.fichier||z.trous.length!==1||!z.sig||!zoneFichier(z))throw new Error("lue : "+JSON.stringify(z));
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour non neutre");
+  const g=gerberCopper(0);
+  if(!/LPC[\s\S]*X14000000Y\d+D01\*[\s\S]*X10000000/.test(g))throw new Error("le trou du fichier n'est pas dans le cuivre");
+  S.zones[0].pts[2].x=45;touch();
+  if(zoneFichier(S.zones[0]))throw new Error("contour modifié : la zone doit se recalculer");
+  if(/X14000000Y\d+D01/.test(gerberCopper(0)))throw new Error("le trou ne doit plus sortir");
+  carteVide();
+});
+/* UNE PASTILLE TELLE QUE LE FICHIER LA DONNE : forme par couche (couronne
+   interne plus petite, ou retirée), ouverture de masque et de pâte propres,
+   pastille recouverte de vernis. */
+T("pastille : forme par couche, masque et pâte propres",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.cu=4;d.cuL=[];d.stack=null;
+  d.fps=[{id:1,ref:"J1",x:10,y:10,pins:2,pads:[
+    {n:1,x:0,y:0,w:1.6,h:1.6,shape:"circ",drill:0.8,mask:0.05,
+     parCouche:{"1":{shape:"circ",w:1.2,h:1.2},"2":{shape:"aucune"},"40":{shape:"circ",w:2,h:2}}},
+    {n:2,x:3,y:0,w:1,h:0.5,shape:"sharp",drill:0,noMask:true,paste:0.07}]}];
+  loadDoc(d,true);
+  const q=S.fps[0].pads[0];
+  if(Object.keys(q.parCouche).join()!=="1,2")throw new Error("couches hors carte écartées : "+JSON.stringify(q.parCouche));
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour non neutre");
+  const w=padsWorld(S.fps[0]);
+  if(padSurCouche(w[0],1).w!==1.2||padSurCouche(w[0],2)!==null||padSurCouche(w[0],0).w!==1.6)
+    throw new Error("forme par couche");
+  const cu=i=>gerberCopper(i);
+  if(!/ADD\d+C,1\.6/.test(cu(0))||!/ADD\d+C,1\.2/.test(cu(1))||/ADD\d+C,1\.[26]/.test(cu(2)))
+    throw new Error("Gerber : 1,6 dessus, 1,2 sur L2, rien sur L3");
+  const mo=maskOpenings(0);
+  if(mo.length!==1||mo[0].grow!==0.05)throw new Error("masque : la pastille 2 est sous le vernis, la 1 a sa marge : "+JSON.stringify(mo.map(o=>o.grow)));
+  const po=pasteOpenings(0);
+  if(po.length!==1||po[0].grow!==-0.07)throw new Error("pâte réduite de 0,07 : "+JSON.stringify(po.map(o=>o.grow)));
+  carteVide();
+});
+/* BROCHES NOMMÉES : « U1.A1 » était ignoré sans un mot. Il se résout par le
+   nom de la pastille, par la grille d'un BGA calculé, ou reçoit un numéro
+   libre — et le nom reste sur la pastille. */
+T("netlist : broches nommées (BGA, diode) reconnues",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.fps=[{id:1,ref:"U1",x:10,y:10,pins:3,pads:[
+    {n:1,x:0,y:0,w:0.4,h:0.4,shape:"circ",nom:"A1"},{n:2,x:1,y:0,w:0.4,h:0.4,shape:"circ",nom:"A2"},
+    {n:3,x:0,y:1,w:0.4,h:0.4,shape:"circ",nom:"B1"}]}];
+  loadDoc(d,true);
+  const {nets}=parseNetlist('NET "VCC"\n  U1.A2\n  U2.B3\n  D1.K\nNET "GND"\n  U1.B1\n  D1.A\n  R1.2,');
+  const vcc=nets.get("VCC").map(n=>n.ref+"."+n.pin).join(" ");
+  if(vcc!=="U1.A2 U2.B3 D1.K")throw new Error("lecture : "+vcc);
+  if(nets.get("GND")[2].pin!==2)throw new Error("numéro suivi d'une virgule");
+  const txt='=== Composants ===\nU1 MCU BGA\nU2 FPGA BGA-16\nD1 1N4148 SOD-123\nR1 10k 0603\n'+
+            'NET "VCC"\n  U1.A2\n  U2.B3\n  D1.K\nNET "GND"\n  U1.B1\n  D1.A\n  R1.2\n';
+  const r=applyNetlist(txt,false);
+  if(r.err)throw new Error(r.err);
+  const u1=S.fps.find(f=>f.ref==="U1"), u2=S.fps.find(f=>f.ref==="U2"), d1=S.fps.find(f=>f.ref==="D1");
+  if(u1.nets[2]!=="VCC"||u1.nets[3]!=="GND")throw new Error("U1 par le nom des pastilles : "+JSON.stringify(u1.nets));
+  /* U2 : BGA calculé de 16 broches, grille 4 × 4 : B3 = rangée 1, colonne 2 → 7 */
+  if(u2.style==="bga"&&!u2.pads){
+    if(u2.nets[7]!=="VCC")throw new Error("U2.B3 sur la grille : "+JSON.stringify(u2.nets));
+  }else if(!Object.values(u2.nets).includes("VCC"))throw new Error("U2.B3 perdu");
+  const kd=padsOf(d1).find(q=>q.nom==="K"), an=padsOf(d1).find(q=>q.nom==="A");
+  if(!kd||!an||d1.nets[kd.n]!=="VCC"||d1.nets[an.n]!=="GND")
+    throw new Error("D1 : K et A reçoivent un numéro et gardent leur nom : "+JSON.stringify(d1.nets));
+  /* une seconde importation retrouve les mêmes numéros par le nom */
+  const avant=JSON.stringify(d1.nets);
+  applyNetlist(txt,false);
+  if(JSON.stringify(S.fps.find(f=>f.ref==="D1").nets)!==avant)throw new Error("réimport instable");
   carteVide();
 });
 T("ouverture Gerber : un angle non entier n'est pas arrondi au degré",()=>{

@@ -637,7 +637,7 @@ function dpVia(){
        fmt(g.gap,3)+" mm d'écart · vias écartés de "+
        fmt(dist(D.aP.x,D.aP.y,D.aN.x,D.aN.y),3)+" mm.");
 }
-/* Changement de couche direct (touches 1-8) : deux vias et on continue. */
+/* Changement de couche direct (touches 1-9, 0, Page ↑/↓) : deux vias et on continue. */
 function dpToLayer(i){
   const D=S.dp;
   if(!D||i===D.layer||i<0||i>=S.cu)return;

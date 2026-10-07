@@ -5326,7 +5326,10 @@ const SIM_PCB={
          peint les plus grandes d'abord) et donc par-dessus le trou. Un via du
          net reste plein, comme au rendu. */
       const clr=classOf(zn).clr;
-      if(zn)for(const fp of S.fps)
+      /* zone au cuivre du fichier : ses trous, et pas de liaison ajoutée */
+      const fichier=zoneFichier(z);
+      if(fichier)for(const t of (z.trous||[]))trous.push(plat(t).concat([t[0].x,t[0].y]));
+      if(zn&&!fichier)for(const fp of S.fps)
         for(const q of padsWorld(fp)){
           if(q.net!==zn||!padLayers(fp,q).includes(z.l)||!dans(q.x,q.y))continue;
           trous.push(rect(q,clr));

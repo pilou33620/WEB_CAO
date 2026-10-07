@@ -655,8 +655,8 @@ function sessionPcb(){
   }
   setFlip(!!v.flip);
   S.dirty=!!repris.etat.sale;
-  /* une carte déposée par un autre outil (la visionneuse IPC-2581) arrive sans
-     cadrage : on la montre en entier plutôt que le coin de l'ancienne vue */
+  /* une carte déposée dans la session sans cadrage (par un autre outil)
+     arrive sans vue : on la montre en entier plutôt que le coin de l'ancienne vue */
   if(cadree)draw();else fit();
   hint("Carte reprise dans l'état où vous l'aviez laissée en changeant d'outil"+
        (repris.etat.sale?" — pensez à l'enregistrer avant de fermer l'onglet.":"."));

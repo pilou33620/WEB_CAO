@@ -169,6 +169,27 @@ function dPads(a){
        qui porte le net, le nom n'est qu'une étiquette qui l'accompagne */
     const nom=padNom(q.nom);
     if(nom)o.nom=nom;
+    if(q.mask!=null&&isFinite(+q.mask))o.mask=r4(clamp(+q.mask,-5,5));
+    if(q.noMask)o.noMask=true;
+    if(q.paste!=null&&isFinite(+q.paste))o.paste=r4(clamp(+q.paste,-5,5));
+    if(q.noPaste)o.noPaste=true;
+    if(q.parCouche&&typeof q.parCouche==="object"){
+      const pc={};
+      for(const k in q.parCouche){
+        const li=+k, e=q.parCouche[k];
+        if(!Number.isInteger(li)||li<0||li>=CU_MAX||!e||typeof e!=="object")continue;
+        if(e.shape==="aucune"){pc[li]={shape:"aucune"};continue;}
+        const r={shape:padShape(e.shape),w:r4(dRange(e.w,o.w,0.05,200)),h:r4(dRange(e.h,o.h,0.05,200))};
+        if(r.shape==="poly"){
+          const pts=dPts(e.pts,3);
+          if(pts)r.pts=pts.map(p=>({x:r4(clamp(p.x,-200,200)),y:r4(clamp(p.y,-200,200))}));
+          else r.shape="sharp";
+        }
+        if(e.chamfer!=null)r.chamfer=r4(dRange(e.chamfer,0,0,100));
+        pc[li]=r;
+      }
+      if(Object.keys(pc).length)o.parCouche=pc;
+    }
     out.push(o);
   }
   if(!out.length)return null;
@@ -424,6 +445,13 @@ function normZone(z,cu,i){
   const out={id:dInt(z.id,i+1,1,Number.MAX_SAFE_INTEGER),
              l:dInt(z.l,0,0,cu-1),net:dNet(z.net),pts:pts};
   if(z.auto)out.auto=true;
+  /* cuivre du fichier : les trous et la signature du contour d'origine
+     (posée à la première lecture si le fichier ne la porte pas) */
+  if(z.fichier){
+    out.fichier=true;
+    out.trous=(Array.isArray(z.trous)?z.trous:[]).map(t=>dPts(t,3)).filter(Boolean).slice(0,20000);
+    out.sig=typeof z.sig==="string"?z.sig.slice(0,40):zoneSig(out.pts);
+  }
   return out;
 }
 function normCut(c,cu,i){
@@ -445,8 +473,35 @@ function uniqueIds(list){
   }
   return max;
 }
+/* un dessin déplacé d'un bloc : ses deux points, et ses sommets s'il en a */
+function drwDecaler(d,dx,dy){
+  d.x1=r3(d.x1+dx);d.y1=r3(d.y1+dy);d.x2=r3(d.x2+dx);d.y2=r3(d.y2+dy);
+  if(d.pts)d.pts=d.pts.map(p=>({x:r4(p.x+dx),y:r4(p.y+dy)}));
+  if(d.trous)d.trous=d.trous.map(t=>t.map(p=>({x:r4(p.x+dx),y:r4(p.y+dy)})));
+}
+/* pendant un glisser : les sommets repartent de leur place d'origine */
+function drwSuivre(o,dx,dy){
+  if(o.pts)o.d.pts=o.pts.map(p=>({x:r4(p.x+dx),y:r4(p.y+dy)}));
+  if(o.trous)o.d.trous=o.trous.map(t=>t.map(p=>({x:r4(p.x+dx),y:r4(p.y+dy)})));
+}
 function normDrawingPcb(d,i){
   if(!d||typeof d!=="object")return null;
+  /* Aplat de sérigraphie : un polygone plein, avec ses trous (le logo, le
+     bandeau d'une carte importée). x1…y2 en tiennent la boîte, pour la
+     sélection au lasso et le presse-papier. */
+  if(d.shape==="poly"){
+    const pts=dPts(d.pts,3);
+    if(!pts)return null;
+    const P=pts.map(p=>({x:r4(p.x),y:r4(p.y)}));
+    const b=polyBBox(P);
+    const out={id:dInt(d.id,i+1,1,Number.MAX_SAFE_INTEGER),shape:"poly",type:"poly",
+               layer:d.layer==="silkB"?"silkB":"silkT",pts:P,
+               x1:r4(b.x1),y1:r4(b.y1),x2:r4(b.x2),y2:r4(b.y2)};
+    const tr=(Array.isArray(d.trous)?d.trous:[]).map(t=>dPts(t,3)).filter(Boolean)
+      .map(t=>t.map(p=>({x:r4(p.x),y:r4(p.y)})));
+    if(tr.length)out.trous=tr.slice(0,5000);
+    return out;
+  }
   const isText=(d.shape==="text"||d.type==="text");
   const shape=isText?"text":((d.shape==="rect"||d.type==="rect")?"rect":"line");
   const layer=d.layer==="silkB"?"silkB":"silkT";
@@ -502,7 +557,7 @@ function normHole(h,i){
 }
 function normDoc(d){
   const src=(d&&typeof d==="object")?d:{};
-  const cu=dInt(src.cu,2,1,8);
+  const cu=dInt(src.cu,2,1,CU_MAX);
   const out={format:"pcbedit-1",cu:cu};
 
   /* --- empilage : toujours exactement `cu` couches --- */
@@ -762,7 +817,11 @@ function hitTest(x,y,e){
       const d=S.drawings[i];
       if(d.layer==="silkT"&&!S.show.silkT)continue;
       if(d.layer==="silkB"&&!S.show.silkB)continue;
-      const tol=Math.max(d.width/2,px(3.5));
+      const tol=Math.max((d.width||0)/2,px(3.5));
+      if(d.shape==="poly"){
+        if(inPoly(x,y,d.pts)||polyEdgeDist(x,y,d.pts)<=tol)return {drawing:d};
+        continue;
+      }
       if(d.shape==="rect"){
         if(segDist(x,y,d.x1,d.y1,d.x2,d.y1)<=tol||
            segDist(x,y,d.x2,d.y1,d.x2,d.y2)<=tol||
@@ -1766,7 +1825,9 @@ function beginMove(){
   // les chanfreins présents AVANT le geste : ce sont eux qu'on rendra s'ils se replient.
   // Ceux d'une piste qui suit sont redessinés par elle : ils ne se « perdent » pas
   drag.diag=diagTracks([...movedTracks()].filter(t=>!fol.own.has(t)));
-  drag.drw=selDrawingsPcb().map(d=>({d,x1:d.x1,y1:d.y1,x2:d.x2,y2:d.y2}));
+  drag.drw=selDrawingsPcb().map(d=>({d,x1:d.x1,y1:d.y1,x2:d.x2,y2:d.y2,
+    pts:d.pts?d.pts.map(p=>({x:p.x,y:p.y})):null,
+    trous:d.trous?d.trous.map(t=>t.map(p=>({x:p.x,y:p.y}))):null}));
   drag.holes=selHolesPcb().map(h=>({h,x:h.x,y:h.y}));
   // un boîtier emmène ses pastilles, une zone son contour : c'est un autre
   // problème que l'isolation d'une piste, on laisse alors le geste libre. Seul
@@ -2391,7 +2452,9 @@ function pcbClipContent(){
       height:d.height,
       rot:d.rot,
       x1:r3(d.x1-x),y1:r3(d.y1-y),x2:r3(d.x2-x),y2:r3(d.y2-y),
-      width:d.width
+      width:d.width,
+      pts:d.pts?d.pts.map(p=>({x:r3(p.x-x),y:r3(p.y-y)})):undefined,
+      trous:d.trous?d.trous.map(t=>t.map(p=>({x:r3(p.x-x),y:r3(p.y-y)}))):undefined
     }))
   };
 }
@@ -2484,7 +2547,7 @@ function pasteClipPcb(){
     const d=normDrawingPcb(src,0);
     if(!d){dropped++;continue;}
     d.id=S.nextId++;
-    d.x1=r3(d.x1+bx);d.y1=r3(d.y1+by);d.x2=r3(d.x2+bx);d.y2=r3(d.y2+by);
+    drwDecaler(d,bx,by);
     S.drawings.push(d);
     if(!S.sel.drawings)S.sel.drawings=new Set();
     S.sel.drawings.add(d.id);
@@ -2513,6 +2576,11 @@ function rotateSel(){
           d.x1=r3(rx); d.y1=r3(ry);
           d.x2=d.x1; d.y2=d.y1;
         }
+      }else if(d.shape==="poly"){
+        const tourne=p=>({x:r4(-(p.y-cy)+cx),y:r4((p.x-cx)+cy)});
+        d.pts=d.pts.map(tourne);
+        if(d.trous)d.trous=d.trous.map(t=>t.map(tourne));
+        const b=polyBBox(d.pts);d.x1=b.x1;d.y1=b.y1;d.x2=b.x2;d.y2=b.y2;
       }else{
         const rx1=-(d.y1-cy)+cx, ry1=(d.x1-cx)+cy;
         const rx2=-(d.y2-cy)+cx, ry2=(d.x2-cx)+cy;
@@ -2901,7 +2969,7 @@ function startRoute(x,y,exact){
     return;
   }
   hint("Clic pour poser un coude · « / » bascule la posture du coude · V pose un via et "+
-       "change de couche · touches 1-8 : couche · Échap termine.");
+       "change de couche · touches 1-9, 0, Page ↑/↓ : couche · Échap termine.");
 }
 /* L'aimant angulaire ne joue qu'en l'air. Une arrivée ancrée — pastille, via,
    bout de piste — se pose au point exact : déplacer l'arrivée de quelques
@@ -4038,6 +4106,7 @@ cv.addEventListener("pointermove",e=>{
         for(const o of drag.drw){
           o.d.x1=r3(o.x1+drag.dx);o.d.y1=r3(o.y1+drag.dy);
           o.d.x2=r3(o.x2+drag.dx);o.d.y2=r3(o.y2+drag.dy);
+          drwSuivre(o,drag.dx,drag.dy);
         }
       }
       if(drag.holes){
@@ -4069,6 +4138,7 @@ cv.addEventListener("pointermove",e=>{
           for(const o of drag.drw){
             o.d.x1=r3(o.x1+drag.dx);o.d.y1=r3(o.y1+drag.dy);
             o.d.x2=r3(o.x2+drag.dx);o.d.y2=r3(o.y2+drag.dy);
+            drwSuivre(o,drag.dx,drag.dy);
           }
         }
         if(drag.holes){
@@ -4436,14 +4506,23 @@ document.addEventListener("keydown",e=>{
      sans ce garde-fou, Ctrl+R faisait pivoter la sélection puis rechargeait la
      page. */
   if(e.ctrlKey||e.metaKey||e.altKey)return;
-  if(e.key>="1"&&e.key<="8"){
-    const i=+e.key-1;
-    if(i<S.cu){
-      e.preventDefault();
-      if(S.dp)dpToLayer(i);else routeToLayer(i);
-      draw();
+  /* 1 à 9 puis 0 pour la dixième ; Page ↑ / Page ↓ passent à la couche
+     voisine — la seule façon d'atteindre les couches au-delà de dix au
+     clavier. */
+  {
+    let i=-1;
+    if(e.key>="1"&&e.key<="9")i=+e.key-1;
+    else if(e.key==="0")i=9;
+    else if(e.key==="PageUp")i=Math.max(0,S.active-1);
+    else if(e.key==="PageDown")i=Math.min(S.cu-1,S.active+1);
+    if(i>=0){
+      if(i<S.cu){
+        e.preventDefault();
+        if(S.dp)dpToLayer(i);else routeToLayer(i);
+        draw();
+      }
+      return;
     }
-    return;
   }
   switch(k){
     case "s":
@@ -4585,11 +4664,11 @@ function setMode(m){
            "la portion droite entière, les coudes voisins glissent sans changer d'angle "+
            "(Alt pendant le glissement les laisse sur place) · "+
            "D passe un angle droit en 45° · U déroute la sélection sans toucher aux empreintes · R pivote · F retourne · Ctrl+C/Ctrl+V copie-colle · Alt+clic insère un point sur une piste sélectionnée.",
-    track:"Clic sur une pastille pour partir · V pose un via · 1-8 change de couche · Tab saisit les coordonnées · Échap termine.",
+    track:"Clic sur une pastille pour partir · V pose un via · 1-9, 0, Page ↑/↓ changent de couche · Tab saisit les coordonnées · Échap termine.",
     via:"Clic pour poser un via traversant, accroché à la pastille ou à la piste la plus proche.",
     hole:"Cliquez pour poser un trou mécanique non métallisé autonome (NPTH) hors empreinte · Échap annule.",
     dpair:"Clic sur une pastille de la paire pour partir — l'autre net est trouvé tout seul · "+
-          "V pose les deux vias en éventail · « / » bascule la posture · 1-8 change de couche · "+
+          "V pose les deux vias en éventail · « / » bascule la posture · 1-9, 0, Page ↑/↓ changent de couche · "+
           "arrivée sur les pastilles d'en face pour terminer · Échap dépose ce qui est tracé.",
     meander:"Cliquez et étirez une piste droite pour générer un serpentin d'appariement de longueur (accordéon) · Échap annule.",
     zone:"Clic pour chaque sommet, retour sur le premier point pour fermer · Maj contraint à 45° · Entrée ferme, Échap abandonne.",

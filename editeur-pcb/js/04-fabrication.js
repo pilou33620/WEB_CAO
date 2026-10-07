@@ -19,7 +19,10 @@ function maskOpenings(side){
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(!padLayers(fp,q).includes(l))continue;
-      out.push({q,grow:S.rule.mask});
+      /* une pastille peut porter sa propre ouverture (carte importée), ou
+         n'en avoir aucune : recouverte de vernis */
+      if(q.noMask)continue;
+      out.push({q:padSurCouche(q,l)||q,grow:q.mask!=null?q.mask:S.rule.mask});
     }
   if(!viaTented())
     for(const v of S.vias)
@@ -37,7 +40,8 @@ function pasteOpenings(side){
     for(const q of padsWorld(fp)){
       if(q.drill>0)continue;
       if(!padLayers(fp,q).includes(l))continue;
-      out.push({q,grow:-S.rule.paste});
+      if(q.noPaste)continue;
+      out.push({q,grow:-(q.paste!=null?q.paste:S.rule.paste)});
     }
   }
   return out;
@@ -300,6 +304,10 @@ function gerberCopper(i){
     for(const ct of S.cuts){
       if(ct.l===i&&ct.pts.length>=3)gRegion(body,ct.pts);
     }
+    /* les trous du cuivre d'une zone importée, tels que le fabricant les a */
+    for(const z of zs)
+      if(zoneFichier(z)&&Array.isArray(z.trous))
+        for(const t of z.trous)if(t&&t.length>=3)gRegion(body,t);
     const zn=(x,y)=>{const z=zoneAt(i,x,y);return z?z.net:null;};
     for(const t of S.tracks){
       if(t.l!==i)continue;
@@ -321,7 +329,13 @@ function gerberCopper(i){
         const z=zn(q.x,q.y);
         if(z===null)continue;
         const same=(z===q.net&&q.net);
-        gPad(body,A,q,same?classOf(z).clr:
+        if(same&&zoneFichier(zoneAt(i,q.x,q.y)))continue;   // raccordée par le fichier
+        const qc=padSurCouche(q,i);
+        if(!qc){                       // pas de cuivre ici : le trou seul se dégage
+          if(q.drill>0)gFlash(body,A,A.get("C,"+fmt(q.drill+2*clrK(z,q.net,"cu","th"),4)),q.x,q.y);
+          continue;
+        }
+        gPad(body,A,qc,same?classOf(z).clr:
           clrK(z,q.net,"cu",q.drill>0?"th":"smd"));
         if(same)thermals.push(q);
         else if(q.drill>0)
@@ -351,7 +365,10 @@ function gerberCopper(i){
     if(i>=v.a&&i<=v.b)gFlash(body,A,A.get("C,"+fmt(v.d,4)),v.x,v.y);
   for(const fp of S.fps)
     for(const q of padsWorld(fp))
-      if(padLayers(fp,q).includes(i))gPad(body,A,q,0);
+      if(padLayers(fp,q).includes(i)){
+        const qc=padSurCouche(q,i);
+        if(qc)gPad(body,A,qc,0);
+      }
   const fn="Copper,L"+(i+1)+","+(i===0?"Top":(i===S.cu-1?"Bot":"Inr"));
   return gAssemble(gHeader(fn),A,body);
 }
@@ -392,6 +409,16 @@ function gerberSilk(side){
     for(const d of S.drawings){
       if(d.layer !== targetLayer) continue;
       const w = d.width || lw;
+      if(d.shape === "poly"){
+        /* aplat : la région pleine, puis ses trous effacés */
+        gRegion(body, d.pts);
+        if(d.trous&&d.trous.length){
+          body.push("%LPC*%");
+          for(const t of d.trous)gRegion(body, t);
+          body.push("%LPD*%");
+        }
+        continue;
+      }
       if(d.shape === "text"){
         const strokes = textStrokes(d.text || "TEXT", d.x1, d.y1, d.size || 1.5, !!side, d.rot || 0);
         for(const poly of strokes){
