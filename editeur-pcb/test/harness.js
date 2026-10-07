@@ -173,7 +173,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
-  "apSet","apForPad","fePad","padSurCouche","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","fePad","brocheNum","parseNetlist","applyNetlist","padSurCouche","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform","feZoom","feRefit","feReattach",
@@ -5092,6 +5092,39 @@ T("pastille : forme par couche, masque et pâte propres",()=>{
   if(mo.length!==1||mo[0].grow!==0.05)throw new Error("masque : la pastille 2 est sous le vernis, la 1 a sa marge : "+JSON.stringify(mo.map(o=>o.grow)));
   const po=pasteOpenings(0);
   if(po.length!==1||po[0].grow!==-0.07)throw new Error("pâte réduite de 0,07 : "+JSON.stringify(po.map(o=>o.grow)));
+  carteVide();
+});
+/* BROCHES NOMMÉES : « U1.A1 » était ignoré sans un mot. Il se résout par le
+   nom de la pastille, par la grille d'un BGA calculé, ou reçoit un numéro
+   libre — et le nom reste sur la pastille. */
+T("netlist : broches nommées (BGA, diode) reconnues",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.fps=[{id:1,ref:"U1",x:10,y:10,pins:3,pads:[
+    {n:1,x:0,y:0,w:0.4,h:0.4,shape:"circ",nom:"A1"},{n:2,x:1,y:0,w:0.4,h:0.4,shape:"circ",nom:"A2"},
+    {n:3,x:0,y:1,w:0.4,h:0.4,shape:"circ",nom:"B1"}]}];
+  loadDoc(d,true);
+  const {nets}=parseNetlist('NET "VCC"\n  U1.A2\n  U2.B3\n  D1.K\nNET "GND"\n  U1.B1\n  D1.A\n  R1.2,');
+  const vcc=nets.get("VCC").map(n=>n.ref+"."+n.pin).join(" ");
+  if(vcc!=="U1.A2 U2.B3 D1.K")throw new Error("lecture : "+vcc);
+  if(nets.get("GND")[2].pin!==2)throw new Error("numéro suivi d'une virgule");
+  const txt='=== Composants ===\nU1 MCU BGA\nU2 FPGA BGA-16\nD1 1N4148 SOD-123\nR1 10k 0603\n'+
+            'NET "VCC"\n  U1.A2\n  U2.B3\n  D1.K\nNET "GND"\n  U1.B1\n  D1.A\n  R1.2\n';
+  const r=applyNetlist(txt,false);
+  if(r.err)throw new Error(r.err);
+  const u1=S.fps.find(f=>f.ref==="U1"), u2=S.fps.find(f=>f.ref==="U2"), d1=S.fps.find(f=>f.ref==="D1");
+  if(u1.nets[2]!=="VCC"||u1.nets[3]!=="GND")throw new Error("U1 par le nom des pastilles : "+JSON.stringify(u1.nets));
+  /* U2 : BGA calculé de 16 broches, grille 4 × 4 : B3 = rangée 1, colonne 2 → 7 */
+  if(u2.style==="bga"&&!u2.pads){
+    if(u2.nets[7]!=="VCC")throw new Error("U2.B3 sur la grille : "+JSON.stringify(u2.nets));
+  }else if(!Object.values(u2.nets).includes("VCC"))throw new Error("U2.B3 perdu");
+  const kd=padsOf(d1).find(q=>q.nom==="K"), an=padsOf(d1).find(q=>q.nom==="A");
+  if(!kd||!an||d1.nets[kd.n]!=="VCC"||d1.nets[an.n]!=="GND")
+    throw new Error("D1 : K et A reçoivent un numéro et gardent leur nom : "+JSON.stringify(d1.nets));
+  /* une seconde importation retrouve les mêmes numéros par le nom */
+  const avant=JSON.stringify(d1.nets);
+  applyNetlist(txt,false);
+  if(JSON.stringify(S.fps.find(f=>f.ref==="D1").nets)!==avant)throw new Error("réimport instable");
   carteVide();
 });
 T("ouverture Gerber : un angle non entier n'est pas arrondi au degré",()=>{

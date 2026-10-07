@@ -6193,8 +6193,9 @@ T("vers l'éditeur PCB : découpes de carte, sérigraphie et textes repris",()=>
     const mx=(d.x1+d.x2)/2, my=(d.y1+d.y2)/2;
     if(r-Math.hypot(mx-cx,my-cy)>0.021)throw new Error("flèche trop grande");
   }
-  /* l'aplat en contour : trois côtés, refermé */
-  if(bilan.aplats!==1)throw new Error("aplat : "+bilan.aplats);
+  /* l'aplat : un polygone plein de trois sommets, dessus */
+  const ap=doc.drawings.find(d=>d.shape==="poly");
+  if(bilan.aplats!==1||!ap||ap.layer!=="silkT"||ap.pts.length!==3)throw new Error("aplat : "+JSON.stringify(ap));
   /* les textes : centrés sur leur boîte, taille, angle retourné, face */
   const tx=doc.drawings.filter(d=>d.shape==="text");
   const r12=tx.find(d=>d.text==="R12"), dos=tx.find(d=>d.text==="DOS");

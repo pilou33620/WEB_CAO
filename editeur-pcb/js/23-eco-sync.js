@@ -112,12 +112,20 @@ function pcbObtenirDonneesSchema(source) {
           netsMap.set(netName, nodes || []);
           for (const nd of (nodes || [])) {
             if (nd && nd.ref && nd.pin != null) {
-              pinNetMap.set(nd.ref + "." + nd.pin, netName);
+              /* broche nommée (« A1 ») : son numéro sur l'empreinte posée */
+              let pin = nd.pin;
+              if (typeof pin !== "number" && typeof brocheNum === "function") {
+                const f = S.fps.find(x => x.ref === nd.ref);
+                const n = f ? brocheNum(f, pin) : null;
+                if (n != null) pin = n;
+              }
+              pinNetMap.set(nd.ref + "." + pin, netName);
+              const nPin = typeof pin === "number" ? pin : 0;
               const curComp = compsMap.get(nd.ref);
               if (curComp) {
-                curComp.pins = Math.max(curComp.pins || 0, +nd.pin);
+                curComp.pins = Math.max(curComp.pins || 0, nPin);
               } else {
-                compsMap.set(nd.ref, { ref: nd.ref, value: "", pkg: "", pins: +nd.pin });
+                compsMap.set(nd.ref, { ref: nd.ref, value: "", pkg: "", pins: nPin || 1 });
               }
             }
           }

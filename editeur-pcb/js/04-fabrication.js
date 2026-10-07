@@ -409,6 +409,16 @@ function gerberSilk(side){
     for(const d of S.drawings){
       if(d.layer !== targetLayer) continue;
       const w = d.width || lw;
+      if(d.shape === "poly"){
+        /* aplat : la région pleine, puis ses trous effacés */
+        gRegion(body, d.pts);
+        if(d.trous&&d.trous.length){
+          body.push("%LPC*%");
+          for(const t of d.trous)gRegion(body, t);
+          body.push("%LPD*%");
+        }
+        continue;
+      }
       if(d.shape === "text"){
         const strokes = textStrokes(d.text || "TEXT", d.x1, d.y1, d.size || 1.5, !!side, d.rot || 0);
         for(const poly of strokes){

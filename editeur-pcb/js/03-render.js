@@ -525,6 +525,19 @@ function drawSilk(c){
       c.lineJoin = "round";
       const isRect = d.shape === "rect";
       const isText = d.shape === "text";
+      if(d.shape === "poly"){
+        c.globalAlpha = S.hlNet ? 0.55 : 1;
+        c.fillStyle = sel ? C_SEL : (top ? C_SILK_T : C_SILK_B);
+        c.beginPath();
+        for(const P of [d.pts].concat(d.trous||[])){
+          c.moveTo(P[0].x,P[0].y);
+          for(let k=1;k<P.length;k++)c.lineTo(P[k].x,P[k].y);
+          c.closePath();
+        }
+        c.fill("evenodd");
+        c.restore();
+        continue;
+      }
       if(isText){
         const mirror = (d.layer === "silkB") !== (!!S.flip);
         const strokes = (typeof textStrokes === "function")

@@ -473,8 +473,35 @@ function uniqueIds(list){
   }
   return max;
 }
+/* un dessin déplacé d'un bloc : ses deux points, et ses sommets s'il en a */
+function drwDecaler(d,dx,dy){
+  d.x1=r3(d.x1+dx);d.y1=r3(d.y1+dy);d.x2=r3(d.x2+dx);d.y2=r3(d.y2+dy);
+  if(d.pts)d.pts=d.pts.map(p=>({x:r4(p.x+dx),y:r4(p.y+dy)}));
+  if(d.trous)d.trous=d.trous.map(t=>t.map(p=>({x:r4(p.x+dx),y:r4(p.y+dy)})));
+}
+/* pendant un glisser : les sommets repartent de leur place d'origine */
+function drwSuivre(o,dx,dy){
+  if(o.pts)o.d.pts=o.pts.map(p=>({x:r4(p.x+dx),y:r4(p.y+dy)}));
+  if(o.trous)o.d.trous=o.trous.map(t=>t.map(p=>({x:r4(p.x+dx),y:r4(p.y+dy)})));
+}
 function normDrawingPcb(d,i){
   if(!d||typeof d!=="object")return null;
+  /* Aplat de sérigraphie : un polygone plein, avec ses trous (le logo, le
+     bandeau d'une carte importée). x1…y2 en tiennent la boîte, pour la
+     sélection au lasso et le presse-papier. */
+  if(d.shape==="poly"){
+    const pts=dPts(d.pts,3);
+    if(!pts)return null;
+    const P=pts.map(p=>({x:r4(p.x),y:r4(p.y)}));
+    const b=polyBBox(P);
+    const out={id:dInt(d.id,i+1,1,Number.MAX_SAFE_INTEGER),shape:"poly",type:"poly",
+               layer:d.layer==="silkB"?"silkB":"silkT",pts:P,
+               x1:r4(b.x1),y1:r4(b.y1),x2:r4(b.x2),y2:r4(b.y2)};
+    const tr=(Array.isArray(d.trous)?d.trous:[]).map(t=>dPts(t,3)).filter(Boolean)
+      .map(t=>t.map(p=>({x:r4(p.x),y:r4(p.y)})));
+    if(tr.length)out.trous=tr.slice(0,5000);
+    return out;
+  }
   const isText=(d.shape==="text"||d.type==="text");
   const shape=isText?"text":((d.shape==="rect"||d.type==="rect")?"rect":"line");
   const layer=d.layer==="silkB"?"silkB":"silkT";
@@ -790,7 +817,11 @@ function hitTest(x,y,e){
       const d=S.drawings[i];
       if(d.layer==="silkT"&&!S.show.silkT)continue;
       if(d.layer==="silkB"&&!S.show.silkB)continue;
-      const tol=Math.max(d.width/2,px(3.5));
+      const tol=Math.max((d.width||0)/2,px(3.5));
+      if(d.shape==="poly"){
+        if(inPoly(x,y,d.pts)||polyEdgeDist(x,y,d.pts)<=tol)return {drawing:d};
+        continue;
+      }
       if(d.shape==="rect"){
         if(segDist(x,y,d.x1,d.y1,d.x2,d.y1)<=tol||
            segDist(x,y,d.x2,d.y1,d.x2,d.y2)<=tol||
@@ -1794,7 +1825,9 @@ function beginMove(){
   // les chanfreins présents AVANT le geste : ce sont eux qu'on rendra s'ils se replient.
   // Ceux d'une piste qui suit sont redessinés par elle : ils ne se « perdent » pas
   drag.diag=diagTracks([...movedTracks()].filter(t=>!fol.own.has(t)));
-  drag.drw=selDrawingsPcb().map(d=>({d,x1:d.x1,y1:d.y1,x2:d.x2,y2:d.y2}));
+  drag.drw=selDrawingsPcb().map(d=>({d,x1:d.x1,y1:d.y1,x2:d.x2,y2:d.y2,
+    pts:d.pts?d.pts.map(p=>({x:p.x,y:p.y})):null,
+    trous:d.trous?d.trous.map(t=>t.map(p=>({x:p.x,y:p.y}))):null}));
   drag.holes=selHolesPcb().map(h=>({h,x:h.x,y:h.y}));
   // un boîtier emmène ses pastilles, une zone son contour : c'est un autre
   // problème que l'isolation d'une piste, on laisse alors le geste libre. Seul
@@ -2419,7 +2452,9 @@ function pcbClipContent(){
       height:d.height,
       rot:d.rot,
       x1:r3(d.x1-x),y1:r3(d.y1-y),x2:r3(d.x2-x),y2:r3(d.y2-y),
-      width:d.width
+      width:d.width,
+      pts:d.pts?d.pts.map(p=>({x:r3(p.x-x),y:r3(p.y-y)})):undefined,
+      trous:d.trous?d.trous.map(t=>t.map(p=>({x:r3(p.x-x),y:r3(p.y-y)}))):undefined
     }))
   };
 }
@@ -2512,7 +2547,7 @@ function pasteClipPcb(){
     const d=normDrawingPcb(src,0);
     if(!d){dropped++;continue;}
     d.id=S.nextId++;
-    d.x1=r3(d.x1+bx);d.y1=r3(d.y1+by);d.x2=r3(d.x2+bx);d.y2=r3(d.y2+by);
+    drwDecaler(d,bx,by);
     S.drawings.push(d);
     if(!S.sel.drawings)S.sel.drawings=new Set();
     S.sel.drawings.add(d.id);
@@ -2541,6 +2576,11 @@ function rotateSel(){
           d.x1=r3(rx); d.y1=r3(ry);
           d.x2=d.x1; d.y2=d.y1;
         }
+      }else if(d.shape==="poly"){
+        const tourne=p=>({x:r4(-(p.y-cy)+cx),y:r4((p.x-cx)+cy)});
+        d.pts=d.pts.map(tourne);
+        if(d.trous)d.trous=d.trous.map(t=>t.map(tourne));
+        const b=polyBBox(d.pts);d.x1=b.x1;d.y1=b.y1;d.x2=b.x2;d.y2=b.y2;
       }else{
         const rx1=-(d.y1-cy)+cx, ry1=(d.x1-cx)+cy;
         const rx2=-(d.y2-cy)+cx, ry2=(d.x2-cx)+cy;
@@ -4066,6 +4106,7 @@ cv.addEventListener("pointermove",e=>{
         for(const o of drag.drw){
           o.d.x1=r3(o.x1+drag.dx);o.d.y1=r3(o.y1+drag.dy);
           o.d.x2=r3(o.x2+drag.dx);o.d.y2=r3(o.y2+drag.dy);
+          drwSuivre(o,drag.dx,drag.dy);
         }
       }
       if(drag.holes){
@@ -4097,6 +4138,7 @@ cv.addEventListener("pointermove",e=>{
           for(const o of drag.drw){
             o.d.x1=r3(o.x1+drag.dx);o.d.y1=r3(o.y1+drag.dy);
             o.d.x2=r3(o.x2+drag.dx);o.d.y2=r3(o.y2+drag.dy);
+            drwSuivre(o,drag.dx,drag.dy);
           }
         }
         if(drag.holes){

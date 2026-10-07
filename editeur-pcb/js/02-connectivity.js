@@ -812,22 +812,98 @@ function parseNetlist(txt){
       continue;
     }
     if(cur){
-      const nd=line.trim().match(/^([A-Za-z_][\w$\-]*)\.(\d+)\b(.*)$/);
-      if(nd)nets.get(cur).push({ref:nd[1],pin:+nd[2]});
+      /* une broche est un numéro (« U1.7 ») ou un nom (« U1.A1 », « D3.K ») :
+         le nom se résout plus loin sur l'empreinte (brocheNum) */
+      const nd=line.trim().match(/^([A-Za-z_][\w$\-]*)\.([A-Za-z0-9_+\-]+)(.*)$/);
+      if(nd)nets.get(cur).push({ref:nd[1],pin:/^\d+$/.test(nd[2])?+nd[2]:nd[2]});
     }
   }
   return {comps,nets};
+}
+/* ==========================================================================
+   Broches nommées
+   --------------------------------------------------------------------------
+   Le numéro de pastille reste l'entier qui porte le net. Une netlist qui
+   nomme ses broches — un BGA (« A1 »), une diode (« K ») — se résout ici :
+   par le nom porté par la pastille (`nom`, posé à l'import d'une carte
+   IPC-2581 ou à une netlist précédente), puis, pour un BGA calculé par
+   l'éditeur, par sa grille (lettre = rangée, chiffre = colonne, lettres
+   JEDEC : sans I, O, Q, S, X, Z). Rien de cela : null, et l'appelant
+   attribue un numéro libre en gardant le nom sur la pastille.
+   ========================================================================== */
+const BGA_LETTRES="ABCDEFGHJKLMNPRTUVWY";
+function bgaRangee(l){
+  const L=String(l).toUpperCase();
+  if(L.length===1)return BGA_LETTRES.indexOf(L);
+  if(L.length===2){
+    const a=BGA_LETTRES.indexOf(L[0]), b=BGA_LETTRES.indexOf(L[1]);
+    return (a<0||b<0)?-1:(a+1)*BGA_LETTRES.length+b;
+  }
+  return -1;
+}
+function brocheNum(fp,pin){
+  if(typeof pin==="number")return pin;
+  const nom=String(pin).toUpperCase();
+  for(const q of padsOf(fp))if(q.nom&&String(q.nom).toUpperCase()===nom)return q.n;
+  if(fp.style==="bga"&&!fpFree(fp)){
+    const m=nom.match(/^([A-Z]{1,2})(\d+)$/);
+    if(m){
+      const cols=Math.max(1,Math.ceil(Math.sqrt(fp.pins)));
+      const r=bgaRangee(m[1]), c=+m[2]-1;
+      if(r>=0&&c>=0&&c<cols){
+        const n=r*cols+c+1;
+        if(n<=fp.pins)return n;
+      }
+    }
+  }
+  return null;
+}
+/* Résout toutes les broches d'un composant ; celles qu'aucun nom ne désigne
+   reçoivent un numéro libre, et l'empreinte devient dessinée (pastilles
+   figées) pour que le nom reste écrit sur la pastille. Rend Map broche → n. */
+function brochesResoudre(fp,pins){
+  const res=new Map(), libres=[];
+  for(const p of pins){
+    if(res.has(p))continue;
+    const n=brocheNum(fp,p);
+    if(n!=null)res.set(p,n);else libres.push(p);
+  }
+  if(libres.length){
+    const pris=new Set(res.values());
+    for(const q of padsOf(fp))if(q.nom)pris.add(q.n);
+    let n=1;
+    for(const p of libres){
+      while(pris.has(n))n++;
+      res.set(p,n);pris.add(n);
+    }
+    const max=Math.max(fp.pins,...res.values());
+    if(max>fp.pins)fpSetPins(fp,max);
+    if(!fpFree(fp)){fp.pads=padsOf(fp).map(padClone);fpSyncPins(fp);}
+    for(const p of libres){
+      const q=fp.pads.find(o=>o.n===res.get(p));
+      if(q)q.nom=padNom(p);
+    }
+  }
+  return res;
 }
 /* Applique une netlist : les empreintes déjà posées gardent leur place, les
    nouvelles sont rangées à côté de la carte. Rien n'est routé automatiquement. */
 function applyNetlist(txt,dropMissing){
   const {comps,nets}=parseNetlist(txt);
-  const pinCount=new Map(), pinNet=new Map();
+  const pinCount=new Map(), pinNet=new Map(), brochesDe=new Map();
   for(const [name,nodes] of nets)
     for(const nd of nodes){
-      pinCount.set(nd.ref,Math.max(pinCount.get(nd.ref)||0,nd.pin));
+      if(!brochesDe.has(nd.ref))brochesDe.set(nd.ref,new Set());
+      brochesDe.get(nd.ref).add(nd.pin);
       pinNet.set(nd.ref+"."+nd.pin,name);
     }
+  /* broches nécessaires : le plus grand numéro, ou le compte des broches
+     quand certaines sont nommées */
+  for(const [ref,set] of brochesDe){
+    let max=0,noms=0,nums=0;
+    for(const p of set){if(typeof p==="number"){max=Math.max(max,p);nums++;}else noms++;}
+    pinCount.set(ref,noms?Math.max(max,nums+noms):max);
+  }
   const refs=new Set([...comps.keys(),...pinCount.keys()]);
   if(!refs.size)return {err:"Aucun composant reconnu dans ce fichier."};
   push();
@@ -870,9 +946,10 @@ function applyNetlist(txt,dropMissing){
     }
     const oldNets={...(fp.nets||{})};
     fp.nets={};
-    for(let p=1;p<=fp.pins;p++){
+    const num=brochesResoudre(fp,[...(brochesDe.get(ref)||[])]);
+    for(const [p,n] of num){
       const nn=pinNet.get(ref+"."+p);
-      if(nn)fp.nets[p]=nn;
+      if(nn)fp.nets[n]=nn;
     }
     // Détection des conflits sur les pastilles déjà routées
     if(Array.isArray(S.tracks)&&S.tracks.length>0&&typeof padsWorld==="function"){

@@ -33,7 +33,7 @@
      · empilage  : cuivres, isolants (épaisseur, εr, tan δ, matière), vernis,
                    ceux-là mêmes des calculs de la visionneuse ;
      · découpes  : les trous du contour deviennent des découpes de carte ;
-     · sérigraphie: traits, arcs (en cordes), aplats (par leur contour) et
+     · sérigraphie: traits, arcs (en cordes), aplats pleins (trous compris) et
                    textes, dessus et dessous. Une face qui a la sienne perd
                    celle que l'éditeur dessine d'office pour ses empreintes.
    Ce qui reste de côté — textes hors sérigraphie, tracés de documentation —
@@ -554,17 +554,26 @@ function ipcVersPcb(modele,nomCarte){
   /* --- plans → zones : le contour extérieur de chaque morceau --- */
   for(const pl of (modele.plans||[])){
     const l=coucheEd(pl.c);
-    /* un aplat de sérigraphie (logo, bandeau) : son contour et ses trous,
-       tracés — l'éditeur n'a pas d'aplat de sérigraphie */
+    /* un aplat de sérigraphie (logo, bandeau) : un polygone plein, avec ses
+       trous */
     if(seri.has(pl.c)){
-      for(const g of (pl.g||[]))
-        for(const o of [g.o].concat(g.t||[])){
-          if(!Array.isArray(o)||o.length<6)continue;
-          for(let i=0;i+3<o.length;i+=2)trait(seri.get(pl.c),0,o[i],o[i+1],o[i+2],o[i+3]);
-          const n=o.length;
-          if(o[0]!==o[n-2]||o[1]!==o[n-1])trait(seri.get(pl.c),0,o[n-2],o[n-1],o[0],o[1]);
-        }
-      bilan.aplats=(bilan.aplats||0)+1;
+      const pts=function(o){
+        const q=[];
+        for(let i=0;i+1<o.length;i+=2)q.push({x:X(o[i]),y:Y(o[i+1])});
+        const u=q[0], v=q[q.length-1];
+        if(q.length>3&&u.x===v.x&&u.y===v.y)q.pop();
+        return q;
+      };
+      for(const g of (pl.g||[])){
+        if(!g||!Array.isArray(g.o)||g.o.length<6)continue;
+        const o=pts(g.o);
+        if(o.length<3)continue;
+        const d={id:id++,shape:"poly",layer:seri.get(pl.c),pts:o};
+        const tr=(g.t||[]).map(pts).filter(t=>t.length>=3);
+        if(tr.length)d.trous=tr;
+        doc.drawings.push(d);
+        bilan.aplats=(bilan.aplats||0)+1;
+      }
       continue;
     }
     if(l<0)continue;
@@ -634,8 +643,8 @@ function ipcVersPcbResume(b){
   if(b.trous)L.push(b.trous+" trou(s) non métallisé(s)");
   if(b.pastillesLibres)L.push(b.pastillesLibres+" pastille(s) isolée(s)");
   if(b.decoupes)L.push(b.decoupes+" découpe(s) de carte");
-  if(b.serigraphie)L.push(b.serigraphie+" trait(s) de sérigraphie"+
-    (b.aplats?" (dont "+b.aplats+" aplat(s) en contour)":""));
+  if(b.serigraphie)L.push(b.serigraphie+" trait(s) de sérigraphie");
+  if(b.aplats)L.push(b.aplats+" aplat(s) de sérigraphie");
   if(b.textes)L.push(b.textes+" texte(s)");
   if(b.isolants)L.push("empilage : "+b.isolants+" isolant(s) du fichier");
   if(b.trousZones)L.push(b.trousZones+" trou(s) de plan du fichier");
