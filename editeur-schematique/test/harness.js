@@ -2538,7 +2538,7 @@ T("roulette tactile : ce qui est sous le stylet choisit les commandes",()=>{
   if(sur(25*G,40*G).ctx!=="vide")throw new Error("loin de tout : le vide");
   S.wireStart={x:0,y:0};
   try{
-    if(!sur(rs[0].x,rs[0].y).occupe)throw new Error("fil en cours : le double-tap doit le terminer, pas ouvrir la roulette");
+    if(!sur(rs[0].x,rs[0].y).occupe)throw new Error("fil en cours : la roulette doit proposer de le terminer");
   }finally{S.wireStart=null;}
 });
 T("roulette tactile : les raccourcis tapés par l'utilisateur sont compris",()=>{

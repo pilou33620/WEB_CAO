@@ -64,7 +64,7 @@ body.mode-tactile .tbsel {
   box-shadow: 0 0 6px var(--blue, #3fa0ea);
 }
 
-/* 4. Roulette de commandes (double-tap au stylet) et son panneau de réglage.
+/* 4. Roulette de commandes (appui long au stylet) et son panneau de réglage.
    Elle garde son propre habillage sombre : elle flotte au-dessus de la feuille,
    quel que soit le thème de l'éditeur. */
 #trRoue {
@@ -119,6 +119,26 @@ body.mode-tactile .tbsel {
   to { transform: scale(1) rotate(0); opacity: 1; }
 }
 
+/* Anneau qui se remplit pendant l'appui long ; invisible pour un simple toucher */
+.tr-appui {
+  position: fixed;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  border-radius: 50%;
+  border: 3px solid #3fa0ea;
+  box-shadow: 0 0 14px rgba(63, 160, 234, 0.45);
+  pointer-events: none;
+  z-index: 9590;
+  opacity: 0;
+  transform: scale(1.6);
+  animation-name: trAppui;
+  animation-timing-function: ease-in;
+  animation-delay: 120ms;
+  animation-fill-mode: forwards;
+}
+@keyframes trAppui { to { opacity: 1; transform: scale(0.7); } }
+
 /* Éventail de pastilles d'un groupe */
 #trRoue .tr-eventail { position: absolute; left: 0; top: 0; }
 #trRoue .tr-pastille {
@@ -151,6 +171,7 @@ body.mode-tactile .tbsel {
 @keyframes trPastille { to { opacity: 1; transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) {
   #trRoue .tr-anneau, #trRoue .tr-pastille { animation: none; opacity: 1; transform: none; }
+  .tr-appui { animation: none; opacity: 1; transform: scale(0.7); }
 }
 
 /* Pastille « Sélection multiple » : rappelle que Multi est enclenché */

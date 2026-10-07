@@ -2,9 +2,9 @@
 /* ==========================================================================
    WEB_CAO -- Module du Mode Tactile (commun aux éditeurs et à la visionneuse)
    Gère l'activation globale, la persistance, l'adaptation CSS, le stylet et
-   la roulette de commandes : un double-tap sur la feuille l'ouvre sous la
+   la roulette de commandes : un appui long sur la feuille l'ouvre sous la
    pointe, avec les commandes de ce qui est touché (composant, fil ou piste,
-   vide). Elle remplace l'ancienne barre d'actions du bas.
+   vide, tracé en cours). Elle remplace l'ancienne barre d'actions du bas.
    ========================================================================== */
 
 const TACTILE_CLE = "cao.modeTactile";
@@ -145,13 +145,15 @@ function tactileInitialiser(opts){
 /* ==========================================================================
    Roulette de commandes
    --------------------------------------------------------------------------
-   Ouverture : double-tap du stylet (ou du doigt, réglable) sur la feuille,
-   ou bouton latéral d'un stylet qui en a un. La souris garde son double-clic.
+   Ouverture : appui long du stylet (ou du doigt, réglable) n'importe où sur
+   la feuille, ou bouton latéral d'un stylet qui en a un. La souris garde son
+   clic droit. Sans lever, on glisse jusqu'à une commande et on lève pour la
+   lancer ; lever sur place laisse la roulette ouverte, à toucher ensuite.
    Ce qui est sous la pointe choisit la roulette : chaque éditeur le dit par
    sa fonction schRouletteCible / pcbRouletteCible, qui renvoie
      { ctx: "comp"|"fil"|"vide", titre, actions: {nom: fonction} }
-   ou { occupe: true } pendant un tracé : le double-tap y garde son rôle,
-   terminer le fil ou la piste, comme le double-clic.
+   ou { occupe: true } pendant un tracé : la roulette « tracé » s'ouvre alors,
+   avec Terminer (le double-clic de l'éditeur), Échap, Via…
    Une entrée de roulette est une commande ou un groupe { g, ico, items } qui
    s'ouvre en éventail de pastilles. Le tout se règle par le secteur ＋ et se
    garde dans le profil (ou le navigateur s'il n'y a pas de profil).
@@ -201,6 +203,7 @@ const TR_ICONES = {
   outils:"M14 6a4 4 0 0 0-5 5L3 17l4 4 6-6a4 4 0 0 0 5-5l-3 3-3-1-1-3z",
   groupe:"M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z",
   plus:"M12 5v14 M5 12h14",
+  terminer:"M4 12l5 5L20 6",
 };
 
 /* Commandes. `k` est le raccourci rejoué (par défaut `touche`), `bouton` un
@@ -226,6 +229,7 @@ const TR_COMMUNES = {
   montrer:  {ico:"montrer",  nom:"Montrer ailleurs", touche:"L"},
   rot:      {ico:"rot",      nom:"Pivoter",     touche:"R", bouton:"bRot"},
   netEntier:{ico:"netEntier",nom:"Net entier",  touche:"", action:"netEntier"},
+  terminer: {ico:"terminer", nom:"Terminer",    touche:"double-clic", action:"terminer"},
 };
 const TR_OUTILS = {
   schema: {
@@ -254,6 +258,7 @@ const TR_OUTILS = {
              {g:"Vue", ico:"vue", items:["cadrer","grille","chercher","etiquettes"]},
              {g:"Historique", ico:"historique", items:["annuler","retablir"]},
              {g:"Sélection", ico:"selection", items:["multi","toutSel","echap"]}],
+      trace:["terminer","echap","annuler","grille"],
     },
   },
   pcb: {
@@ -281,6 +286,7 @@ const TR_OUTILS = {
              {g:"Vue", ico:"vue", items:["cadrer","grille","chevelu","dessous","chercher"]},
              {g:"Historique", ico:"historique", items:["annuler","retablir"]},
              {g:"Sélection", ico:"selection", items:["multi","toutSel","echap"]}],
+      trace:["terminer","via","echap","annuler","grille"],
     },
   },
   ipc: {
@@ -294,19 +300,20 @@ const TR_OUTILS = {
     defaut: { vide: ["cadrer","zoomPlus","zoomMoins","dessous"] },
   },
 };
-const TR_CTX_NOM = {comp:"composant", fil:"fil / piste", vide:"vide"};
+const TR_CTX_NOM = {comp:"composant", fil:"fil / piste", vide:"vide", trace:"tracé"};
 const TR_MAX = 8, TR_MAX_GRP = 6;
 const TR_R_BOUTON = 50, TR_R_INT = 60, TR_R_EXT = 146, TR_R_ICO = 104, TR_R_FAN = TR_R_EXT + 34;
-/* Seuils de geste. Un tap au Pencil reste parfois posé 200 à 300 ms : des
-   seuils serrés (260 ms, 8 px) laissaient passer les double-taps. */
-const TR_SEUILS = {pen:{ms:450, px:12, drag:10}, touch:{ms:450, px:16, drag:14}};
-const TR_DBL_MS = 500, TR_DBL_PX = 44, TR_PAUME_MS = 400;
+/* Appui long : la pointe reste posée TR_APPUI_MS sans bouger de plus que
+   `drag` px. Un peu avant les 550 ms de l'appui long propre aux éditeurs,
+   que l'ouverture de la roulette annule. */
+const TR_SEUILS = {pen:{drag:10}, touch:{drag:14}};
+const TR_APPUI_MS = 450, TR_PAUME_MS = 400, TR_GLISSE_PX = 24;
 
 const TR = {
   outil: null, cv: null, cfg: null,
   roue: null, el: null, perso: null, persoCtx: "comp",
-  ptr: new Map(), tapPrec: null, styletPose: false, dernierStylet: 0,
-  rejetes: new Set(), ouverteA: 0, dblSynthA: 0, dblNatifA: 0, roulettePtr: null,
+  ptr: new Map(), appui: null, tenu: null, styletPose: false, dernierStylet: 0,
+  rejetes: new Set(), ouverteA: 0, roulettePtr: null,
 };
 
 function trCmd(id){
@@ -319,7 +326,7 @@ function trCatalogue(){
     .filter(id=>!(TR.outil==="ipc" && TR_COMMUNES[id] && id!=="cadrer"))
     .concat(Object.keys(TR.cfg.perso));
 }
-function trContextes(){ const o = TR_OUTILS[TR.outil]; return (o && o.contextes) || ["comp","fil","vide"]; }
+function trContextes(){ const o = TR_OUTILS[TR.outil]; return (o && o.contextes) || ["comp","fil","vide","trace"]; }
 function trEchappe(s){ return String(s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch])); }
 function trSvg(nom, taille){
   return '<svg viewBox="0 0 24 24" width="'+(taille||20)+'" height="'+(taille||20)+'" aria-hidden="true"><path d="'+(TR_ICONES[nom]||TR_ICONES.groupe)+'"/></svg>';
@@ -368,7 +375,10 @@ function tactileRouletteBrancher(outil){
   window.addEventListener("pointermove", trPointerMove, true);
   window.addEventListener("pointerup", trPointerFin, true);
   window.addEventListener("pointercancel", trPointerFin, true);
-  window.addEventListener("dblclick", trDblClick, true);
+  // l'appui long natif (iPad) ou celui de l'éditeur ne doit pas ouvrir un menu par-dessus
+  window.addEventListener("contextmenu", e=>{
+    if(TR.roue || TR.appui || Date.now()-TR.ouverteA < 1000){ e.stopImmediatePropagation(); e.preventDefault(); }
+  }, true);
   window.addEventListener("keydown", e=>{
     if(TR.roue && e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); tactileRouletteFermer(); }
     else if(TR.perso && !TR.perso.hidden && e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); trPersoFermer(); }
@@ -396,6 +406,7 @@ function trPointerDown(e){
       for(const [id,p] of TR.ptr){
         if(p.type!=="touch") continue;
         TR.ptr.delete(id); TR.rejetes.add(id);
+        if(TR.appui && TR.appui.id===id) trAppuiAnnuler();
         try{ TR.cv.dispatchEvent(new PointerEvent("pointercancel",{pointerId:id, pointerType:"touch", bubbles:true, clientX:p.x, clientY:p.y})); }catch(_){}
       }
     }
@@ -405,15 +416,25 @@ function trPointerDown(e){
     trRejeter(e); return;
   }
   if(e.pointerType!=="pen" && e.pointerType!=="touch") return;
-  TR.ptr.set(e.pointerId, {x:e.clientX, y:e.clientY, x0:e.clientX, y0:e.clientY, t0:Date.now(), type:e.pointerType, bouge:false});
-  if(TR.ptr.size > 1){ for(const p of TR.ptr.values()) p.bouge = true; TR.tapPrec = null; }   // pincement : pas un tap
+  TR.ptr.set(e.pointerId, {x:e.clientX, y:e.clientY, x0:e.clientX, y0:e.clientY, type:e.pointerType});
+  trAppuiAnnuler();
+  // un seul point posé : l'appui long peut commencer ; deux, c'est un pincement
+  if(TR.ptr.size===1 && (e.pointerType==="pen" || TR.cfg.doigt)) trAppuiDebut(e);
 }
 function trPointerMove(e){
   if(TR.rejetes.has(e.pointerId)){ e.stopImmediatePropagation(); return; }
+  // pointe restée posée après l'ouverture : elle glisse sur la roulette
+  if(TR.tenu && TR.tenu.id===e.pointerId){
+    e.stopImmediatePropagation();
+    if(Math.hypot(e.clientX-TR.tenu.x0, e.clientY-TR.tenu.y0) >= TR_GLISSE_PX) TR.tenu.glisse = true;
+    trSurvol(e.clientX, e.clientY);
+    return;
+  }
   const p = TR.ptr.get(e.pointerId);
   if(!p) return;
   p.x = e.clientX; p.y = e.clientY;
-  if(!p.bouge && Math.hypot(p.x-p.x0, p.y-p.y0) >= (TR_SEUILS[p.type]||TR_SEUILS.touch).drag) p.bouge = true;
+  if(TR.appui && TR.appui.id===e.pointerId &&
+     Math.hypot(p.x-p.x0, p.y-p.y0) >= (TR_SEUILS[p.type]||TR_SEUILS.touch).drag) trAppuiAnnuler();
 }
 function trPointerFin(e){
   if(e.pointerType==="pen"){ TR.styletPose = false; TR.dernierStylet = Date.now(); }
@@ -422,50 +443,60 @@ function trPointerFin(e){
     if(e.isTrusted){ TR.rejetes.delete(e.pointerId); e.stopImmediatePropagation(); }
     return;
   }
-  const p = TR.ptr.get(e.pointerId);
-  if(!p) return;
-  TR.ptr.delete(e.pointerId);
-  // un tap que le système annule (vue de l'appli, geste natif) compte quand même
-  const annule = e.type==="pointercancel";
-  const x = annule ? p.x : e.clientX, y = annule ? p.y : e.clientY;
-  const S = TR_SEUILS[p.type] || TR_SEUILS.touch;
-  const tap = !p.bouge && Date.now()-p.t0 < S.ms && Math.hypot(x-p.x0, y-p.y0) < S.px;
-  if(!tap){ TR.tapPrec = null; return; }
-  const t = Date.now(), prec = TR.tapPrec;
-  if(prec && prec.type===p.type && t-prec.t < TR_DBL_MS && Math.hypot(x-prec.x, y-prec.y) < TR_DBL_PX){
-    TR.tapPrec = null;
-    if(p.type==="touch" && !TR.cfg.doigt) return;
-    trDoubleTap(x, y);
-  }else TR.tapPrec = {t, x, y, type:p.type};
-}
-/* Le double-clic du navigateur arrive parfois juste derrière notre double-tap :
-   la roulette ouverte, il ne doit pas ouvrir en plus la fenêtre des propriétés. */
-function trDblClick(e){
-  if(!e.isTrusted) return;
-  TR.dblNatifA = Date.now();
-  if(Date.now()-TR.ouverteA < 700 || Date.now()-TR.dblSynthA < 700){ e.stopImmediatePropagation(); e.preventDefault(); }
-}
-function trDoubleTap(x, y){
-  const cible = trCible(x, y);
-  if(cible.occupe){
-    // tracé en cours : le double-tap le termine, comme le double-clic — on le
-    // rejoue nous-mêmes si le navigateur n'en a pas émis
-    setTimeout(()=>{
-      if(Date.now()-TR.dblNatifA < 300) return;
-      TR.dblSynthA = Date.now();
-      try{ TR.cv.dispatchEvent(new MouseEvent("dblclick",{bubbles:true, cancelable:true, clientX:x, clientY:y})); }catch(_){}
-    }, 80);
+  if(TR.tenu && TR.tenu.id===e.pointerId){
+    e.stopImmediatePropagation();
+    const glisse = TR.tenu.glisse;
+    TR.tenu = null;
+    // lever après avoir glissé choisit ; lever sur place laisse la roulette ouverte
+    if(glisse && e.type==="pointerup") trChoisir(e.clientX, e.clientY, true);
     return;
   }
-  trOuvrir(x, y, cible);
+  if(TR.appui && TR.appui.id===e.pointerId) trAppuiAnnuler();
+  TR.ptr.delete(e.pointerId);
+}
+
+/* Appui long : un anneau se remplit sous la pointe, puis la roulette s'ouvre.
+   Le geste en cours est retiré à l'éditeur (pointercancel), qui lâche ce qu'il
+   avait pris : glissement, déplacement de la vue, son propre appui long. */
+function trAppuiDebut(e){
+  const x = e.clientX, y = e.clientY, id = e.pointerId;
+  const anneau = document.createElement("div");
+  anneau.className = "tr-appui";
+  anneau.style.left = x+"px"; anneau.style.top = y+"px";
+  anneau.style.animationDuration = (TR_APPUI_MS-120)+"ms";
+  document.body.appendChild(anneau);
+  TR.appui = {id, anneau, minuterie: setTimeout(()=>trAppuiFin(id), TR_APPUI_MS)};
+}
+function trAppuiAnnuler(){
+  if(!TR.appui) return;
+  clearTimeout(TR.appui.minuterie);
+  if(TR.appui.anneau.parentNode) TR.appui.anneau.parentNode.removeChild(TR.appui.anneau);
+  TR.appui = null;
+}
+function trAppuiFin(id){
+  const p = TR.ptr.get(id);
+  trAppuiAnnuler();
+  if(!p || !tactileEstActif()) return;
+  const x = p.x, y = p.y;
+  TR.ptr.delete(id);
+  try{ TR.cv.dispatchEvent(new PointerEvent("pointercancel",{pointerId:id, pointerType:p.type, bubbles:true, clientX:x, clientY:y})); }catch(_){}
+  if(navigator.vibrate){ try{ navigator.vibrate(12); }catch(_){} }
+  trOuvrir(x, y, trCible(x, y));
+  TR.tenu = {id, x0:x, y0:y, glisse:false};
 }
 function trCible(x, y){
   const f = {schema:"schRouletteCible", pcb:"pcbRouletteCible"}[TR.outil];
   let c = null;
   try{ if(f && typeof globalThis[f] === "function") c = globalThis[f](x, y); }catch(err){ if(typeof console !== "undefined") console.error("roulette :", err); }
+  if(c && c.occupe){
+    // tracé en cours : « Terminer » rejoue le double-clic qui le clôt dans l'éditeur
+    return {ctx:"trace", titre:"Tracé", actions:{terminer:()=>{
+      try{ TR.cv.dispatchEvent(new MouseEvent("dblclick",{bubbles:true, cancelable:true, clientX:x, clientY:y})); }catch(_){}
+    }}};
+  }
   return c || {ctx:"vide", titre:TR_OUTILS[TR.outil].nomVide};
 }
-function trOuvrirSur(x, y){ const c = trCible(x, y); if(!c.occupe) trOuvrir(x, y, c); }
+function trOuvrirSur(x, y){ trOuvrir(x, y, trCible(x, y)); }
 
 /* ---------- Dessin de la roulette ---------- */
 function trPol(r, a){ return [r*Math.sin(a), -r*Math.cos(a)]; }
@@ -546,7 +577,7 @@ function trOuvrir(x, y, cible){
   trMajBouton();
 }
 function tactileRouletteFermer(){
-  TR.roue = null; TR.roulettePtr = null;
+  TR.roue = null; TR.roulettePtr = null; TR.tenu = null;
   if(TR.el){ TR.el.className = ""; TR.el.innerHTML = ""; }
 }
 function tactileRouletteOuverte(){ return !!TR.roue; }
@@ -665,15 +696,21 @@ function trRouePointerUp(e){
   e.stopPropagation();
   if(TR.roulettePtr !== e.pointerId || !TR.roue) return;
   TR.roulettePtr = null;
-  const r = TR.roue;
-  const p = trPastilleSous(e.clientX, e.clientY);
+  trChoisir(e.clientX, e.clientY, false);
+}
+/* Lever la pointe en (x, y) : une pastille ou une commande se lance, un groupe
+   s'ouvre, le bouton central ferme. `glisse` : la pointe arrive de l'appui long
+   sans avoir été levée ; le centre vaut alors renoncement. */
+function trChoisir(x, y, glisse){
+  const r = TR.roue; if(!r) return;
+  const p = trPastilleSous(x, y);
   if(p){
     const id = p.dataset.id, ctx = r.cible.ctx;
     tactileRouletteFermer();
     if(id) trExecuter(id, r.cible); else trPersoOuvrir(ctx);
     return;
   }
-  const i = trIndexSous(e.clientX, e.clientY);
+  const i = trIndexSous(x, y);
   if(i === -2){ tactileRouletteFermer(); return; }
   if(i < 0) return;
   const en = r.entrees[i];
@@ -750,8 +787,8 @@ function trPersoConstruire(){
   d.innerHTML =
     '<div class="tr-boite">'+
       '<h2><span id="trPersoTitre">Roulette de commandes</span><button type="button" class="tr-fermer" aria-label="Fermer">✕</button></h2>'+
-      '<section'+(ctxs.length<2?' hidden':'')+'><h3>Roulette affichée quand on double-tape sur…</h3><div class="tr-onglets" role="tablist">'+
-        ctxs.map(c=>'<button type="button" role="tab" data-ctx="'+c+'">'+({comp:"un composant", fil:"un fil / une piste", vide:"le vide"}[c])+'</button>').join("")+
+      '<section'+(ctxs.length<2?' hidden':'')+'><h3>Roulette affichée par un appui long sur…</h3><div class="tr-onglets" role="tablist">'+
+        ctxs.map(c=>'<button type="button" role="tab" data-ctx="'+c+'">'+({comp:"un composant", fil:"un fil / une piste", vide:"le vide", trace:"un tracé en cours"}[c])+'</button>').join("")+
       '</div></section>'+
       '<section><h3>Contenu, sens horaire en partant du haut</h3><div class="tr-liste"></div>'+
         '<p class="tr-note">Huit éléments au plus dans la roulette, six commandes au plus par groupe.</p></section>'+
@@ -767,7 +804,7 @@ function trPersoConstruire(){
         '<button class="prim" type="submit">Ajouter</button></form>'+
         '<p class="tr-note">Elle va dans la destination choisie plus haut ; la roulette rejoue ce raccourci dans l\'éditeur.</p></section>'+
       '<section class="tr-opts"><h3>Gestes</h3>'+
-        '<label><input type="checkbox" data-opt="doigt"> Le double-tap au doigt ouvre aussi la roulette</label>'+
+        '<label><input type="checkbox" data-opt="doigt"> L\'appui long au doigt ouvre aussi la roulette</label>'+
         '<label><input type="checkbox" data-opt="paume"> Ignorer la paume et les doigts quand le stylet est posé</label>'+
         '<label><input type="checkbox" data-opt="noms"> Afficher les noms sous les icônes</label>'+
         '<div class="tr-rang"><button type="button" class="tr-raz">Revenir aux roulettes d\'origine</button></div>'+

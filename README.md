@@ -55,7 +55,7 @@ python web_CAO.py
 ```bash
 python web_CAO.py --local --dossier ~/Documents/WEB_CAO
 ```
-Activez ensuite le **mode tactile** depuis la page d'accueil (pincement, déplacement à deux doigts, Apple Pencil, roulette de commandes au double-tap).
+Activez ensuite le **mode tactile** depuis la page d'accueil (pincement, déplacement à deux doigts, Apple Pencil, roulette de commandes à l'appui long).
 
 ### 4. Raspberry Pi / terminal sans écran
 Le serveur détecte l'absence d'affichage et n'ouvre pas de navigateur ; connectez-vous depuis un autre poste du réseau (`--navigateur` / `--sans-navigateur` pour forcer).
@@ -193,12 +193,13 @@ Volet présent dans le schéma, le PCB, la visionneuse et Gestion LIB, branché 
 - **Cross-probing Schéma ↔ PCB** : saut direct avec **phare** sur l'empreinte ciblée ; avec deux onglets côte à côte, la touche **`L`** synchronise la sélection (`BroadcastChannel`).
 - **Mémoire de session** : le travail non enregistré suit l'utilisateur d'un outil à l'autre (`sessionStorage`).
 - **Profils utilisateur** (`👤`, `profils/<nom>.json`) : panneaux dockables/flottants, grille, contraste, préférences.
-- **Mode tactile** : iPad Pro, tablettes, écrans tactiles, stylet. Un **double-tap** au stylet (ou au
-  doigt) sur la feuille ouvre une **roulette de commandes** sous la pointe, propre à ce qui est touché :
-  un composant (Propriétés, Pivoter, Miroir…), un fil ou une piste (Net entier, Via…), le vide
-  (Enregistrer, Fil, Coller…). Les groupes (Édition, Historique, Vue…) s'ouvrent en éventail. Le secteur
+- **Mode tactile** : iPad Pro, tablettes, écrans tactiles, stylet. Un **appui long** au stylet (ou au
+  doigt) n'importe où sur la feuille ouvre une **roulette de commandes** sous la pointe, propre à ce
+  qui est touché : un composant (Propriétés, Pivoter, Miroir…), un fil ou une piste (Net entier, Via…),
+  le vide (Enregistrer, Fil, Coller…), un tracé en cours (Terminer, Via, Échap). Sans lever, on glisse
+  jusqu'à la commande et on lève ; lever sur place laisse la roulette ouverte. Les groupes (Édition, Historique, Vue…) s'ouvrent en éventail. Le secteur
   **＋** range, ajoute ou crée ses propres commandes et groupes (un raccourci clavier rejoué), gardés
-  dans le profil. Pendant un tracé, le double-tap le termine comme le double-clic. La paume posée
+  dans le profil. La paume posée
   pendant que le stylet écrit est ignorée.
 - **Outils partagés** : recherche universelle `Ctrl+F` (repères, nets, toutes feuilles) et mesure de cotes `K` (aimantée sur pastilles, vias et pistes au PCB).
 

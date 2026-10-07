@@ -833,11 +833,11 @@ cv.addEventListener("dblclick",e=>{
     return;
   }
 });
-/* Roulette du mode tactile (commun/tactile.js). Un double-tap au stylet
+/* Roulette du mode tactile (commun/tactile.js). Un appui long au stylet
    l'ouvre ; cette fonction lui dit ce qu'il y a sous la pointe, et prend
    l'élément s'il ne l'était pas, pour que ses commandes agissent sur lui.
-   Un fil ou un trait en cours garde le double-tap pour lui : il le termine,
-   comme le double-clic ci-dessus. */
+   Un fil ou un trait en cours : « occupe », la roulette propose alors de le
+   terminer par le double-clic ci-dessus. */
 function schRouletteCible(clientX,clientY){
   if(S.wireStart||S.drawStart)return {occupe:true};
   const r=cv.getBoundingClientRect(), p=s2w(clientX-r.left,clientY-r.top);

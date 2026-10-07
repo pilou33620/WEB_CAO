@@ -1482,7 +1482,7 @@ T("roulette tactile : boîtier, piste ou carte selon ce qui est sous le stylet",
     if(typeof f.actions.netEntier!=="function")throw new Error("Net entier doit être proposé sur une piste");
     if(sur(20,60).ctx!=="vide")throw new Error("loin de tout : la carte");
     S.route={};
-    try{ if(!sur(20,20).occupe)throw new Error("piste en cours : le double-tap doit la terminer"); }
+    try{ if(!sur(20,20).occupe)throw new Error("piste en cours : la roulette doit proposer de la terminer"); }
     finally{ S.route=null; }
   }finally{S.fps=[];S.tracks=[];touch();clearSel();suiviFin(reg);}
 });
