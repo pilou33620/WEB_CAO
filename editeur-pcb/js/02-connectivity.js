@@ -76,10 +76,7 @@ function zoneMask(l,net){
   c.setTransform(res,0,0,res,-x1*res,-y1*res);
   c.fillStyle="#fff";
   for(const z of zs){
-    c.beginPath();
-    c.moveTo(z.pts[0].x,z.pts[0].y);
-    for(let k=1;k<z.pts.length;k++)c.lineTo(z.pts[k].x,z.pts[k].y);
-    c.closePath();c.fill();
+    c.beginPath();zonePath(c,z);c.fill("evenodd");
   }
   clipToBoard(c,x1,y1,x2,y2);
   /* une zone d'un autre net posée par-dessus recouvre celle-ci à l'écran :
@@ -87,10 +84,7 @@ function zoneMask(l,net){
   for(const z of S.zones){
     if(z.l!==l||(z.net||"")===net||z.pts.length<3)continue;
     if(S.zones.indexOf(z)<S.zones.indexOf(zs[0]))continue;
-    c.beginPath();
-    c.moveTo(z.pts[0].x,z.pts[0].y);
-    for(let k=1;k<z.pts.length;k++)c.lineTo(z.pts[k].x,z.pts[k].y);
-    c.closePath();c.fill();
+    c.beginPath();zonePath(c,z);c.fill("evenodd");
   }
   c.strokeStyle="#000";c.fillStyle="#000";c.lineCap="round";c.lineJoin="round";
   for(const t of S.tracks){
@@ -108,6 +102,7 @@ function zoneMask(l,net){
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(!padLayers(fp,q).includes(l))continue;
+      if(q.net===net&&zoneFichier(zoneAt(l,q.x,q.y)))continue;   // raccordée par le fichier
       padFill(c,q,q.net===net?clr:clrK(net,q.net,"cu",q.drill>0?"th":"smd"));
       if(q.net===net)thermals.push(q);
       else if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2+clr,0,Math.PI*2);c.fill();}

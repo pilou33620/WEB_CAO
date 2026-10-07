@@ -173,7 +173,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
-  "apSet","apForPad","fePad","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","fePad","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform","feZoom","feRefit","feReattach",
@@ -5046,6 +5046,25 @@ T("32 couches : lues, empilées, et l'épaisseur reste fabricable",()=>{
     setCuCount(2,true);setCuCount(32,true);
     if(stackTotal()<3)throw new Error("1,6 mm ne tient plus 32 couches : "+stackTotal());
   }finally{ loadDoc(garde,true); }
+});
+/* ZONE AU CUIVRE DU FICHIER : remplie avec les trous du fabricant tant que
+   son contour ne bouge pas ; recalculée comme une autre dès qu'il bouge. */
+T("zone importée : cuivre du fichier, puis recalcul dès qu'on la modifie",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.zones=[{id:1,l:0,net:"GND",pts:[{x:0,y:0},{x:40,y:0},{x:40,y:30},{x:0,y:30}],fichier:true,
+            trous:[[{x:10,y:10},{x:14,y:10},{x:14,y:14},{x:10,y:14}],[{x:1,y:1},{x:2,y:2}]]}];
+  loadDoc(d,true);
+  const z=S.zones[0];
+  if(!z.fichier||z.trous.length!==1||!z.sig||!zoneFichier(z))throw new Error("lue : "+JSON.stringify(z));
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour non neutre");
+  const g=gerberCopper(0);
+  if(!/LPC[\s\S]*X14000000Y\d+D01\*[\s\S]*X10000000/.test(g))throw new Error("le trou du fichier n'est pas dans le cuivre");
+  S.zones[0].pts[2].x=45;touch();
+  if(zoneFichier(S.zones[0]))throw new Error("contour modifié : la zone doit se recalculer");
+  if(/X14000000Y\d+D01/.test(gerberCopper(0)))throw new Error("le trou ne doit plus sortir");
+  carteVide();
 });
 T("ouverture Gerber : un angle non entier n'est pas arrondi au degré",()=>{
   const A=apSet();

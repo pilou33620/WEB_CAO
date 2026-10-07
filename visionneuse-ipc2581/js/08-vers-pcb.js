@@ -27,9 +27,11 @@
                    forme utilisateur devient une pastille « poly » ;
      · pistes et arcs, vias (portée comprise quand le fichier la déclare),
        trous non métallisés, contour de carte ;
-     · plans     : leur contour devient une zone du même net. L'éditeur la
-                   remplit avec SES règles : le cuivre ressemble à l'original,
-                   il n'est pas identique au micron ;
+     · plans     : une zone du même net qui garde le cuivre du fichier —
+                   contour et trous, liaisons thermiques comprises —, tant
+                   qu'on ne modifie pas son contour ;
+     · empilage  : cuivres, isolants (épaisseur, εr, tan δ, matière), vernis,
+                   ceux-là mêmes des calculs de la visionneuse ;
      · découpes  : les trous du contour deviennent des découpes de carte ;
      · sérigraphie: traits, arcs (en cordes), aplats (par leur contour) et
                    textes, dessus et dessous. Une face qui a la sienne perd
@@ -38,7 +40,7 @@
    est compté et dit, pas tu.
    ============================================================================= */
 
-const VP_CU_PERMIS=[1,2,4,6,8];  // nombres de couches que propose l'éditeur
+const VP_CU_MAX=32;              // couches de cuivre que gère l'éditeur
 
 /* Facteur vers le millimètre, d'après l'unité que déclare le fichier. */
 function vpEchelle(unites){
@@ -124,6 +126,64 @@ function vpPadDe(ps,c,rangDe,estCuivre){
   return {f:choix?choix.f:"", d:(choix&&choix.d)||ps.pad||ps.trou||0.5};
 }
 
+/* L'EMPILAGE RÉEL. Le même que celui des calculs de la visionneuse
+   (`ltPreparer`) quand c'est la carte affichée : valeurs du fichier,
+   complétées par ce que l'utilisateur a saisi dans « La carte » — l'éditeur
+   calcule alors les mêmes impédances. Entre deux cuivres, plusieurs couches
+   (prepreg + cœur + prepreg) n'en font qu'une chez l'éditeur : épaisseurs
+   additionnées, εr et tan δ moyennés au prorata de l'épaisseur — la moyenne
+   même de la visionneuse —, matières jointes, et « cœur » s'il y en a un.
+   Le vernis : épaisseur et εr des calques SOLDERMASK de l'empilage. */
+function vpEmpilage(modele,cus,k,bilan){
+  const st={cu:[],di:[]};
+  const pile=(modele.empilage||[]).slice().sort((a,b)=>(a.seq||0)-(b.seq||0));
+  const num=v=>{const x=parseFloat(String(v==null?"":v).replace(",","."));return isFinite(x)&&x>0?x:0;};
+  const lt=(typeof LT!=="undefined"&&typeof V!=="undefined"&&V.modele===modele&&LT.pret&&LT.cu.length===cus.length)?LT:null;
+  const genreDe=e=>mdlGenre(e.nom,e);
+  /* cuivres */
+  cus.forEach(function(c,i){
+    const t=lt?lt.cu[i].ep:(c.ep>0?c.ep*k:0);
+    st.cu.push(t>=0.001&&t<=2?{t:vpR4(t)}:{});
+  });
+  /* isolants, intervalle par intervalle */
+  const rangs=cus.map(c=>pile.findIndex(e=>e.nom===c.nom));
+  for(let i=0;i+1<cus.length;i++){
+    const a=rangs[i], b=rangs[i+1];
+    const entre=(a>=0&&b>a)?pile.slice(a+1,b).filter(e=>genreDe(e)!=="cuivre"):[];
+    let t=0,s=0,tdf=0,sdf=0;
+    const mats=[];let coeur=false;
+    for(const e of entre){
+      const ep=(e.ep||0)*k, er=num(e.dk), df=num(e.df);
+      t+=ep; s+=ep*(er||4.3);
+      if(df){tdf+=ep;sdf+=ep*df;}
+      if(e.mat&&mats.indexOf(e.mat)<0)mats.push(String(e.mat));
+      if(/CORE|COEUR/i.test((e.type||"")+" "+(e.nom||"")+" "+(e.mat||"")))coeur=true;
+    }
+    const g=lt?lt.gap[i]:null;
+    const T=g&&g.t>0?g.t:t, er=g&&g.er>0?g.er:(t>0?s/t:0), df=g&&g.df>0?g.df:(tdf>0?sdf/tdf:0);
+    const d={k:coeur?"core":(entre.length?"prepreg":"core")};
+    if(T>=0.005&&T<=20)d.t=vpR4(T);
+    if(er>=1&&er<=30)d.er=vpR4(er);
+    if(df>0&&df<=1)d.df=vpR4(df);
+    if(mats.length)d.mat=mats.join(" + ").slice(0,40);
+    st.di.push(d);
+    if(d.t)bilan.isolants=(bilan.isolants||0)+1;
+  }
+  /* vernis épargne */
+  const masques=pile.filter(e=>genreDe(e)==="masque");
+  const m0=masques.find(e=>e.ep>0);
+  if(m0&&m0.ep*k<=1)st.maskT=vpR4(m0.ep*k);
+  const er0=masques.map(e=>num(e.dk)).find(v=>v>=1&&v<=20);
+  if(er0)st.maskEr=er0;
+  /* épaisseur totale : celle que déclare le fichier, sinon la somme */
+  let somme=0;
+  for(const c of st.cu)somme+=c.t||0;
+  for(const d of st.di)somme+=d.t||0;
+  const tot=modele.epaisseur>0?modele.epaisseur*k:somme;
+  if(tot>=0.05&&tot<=50)st.target=vpR4(tot);
+  return st;
+}
+
 /* Traduction complète. Rend {doc, bilan} ; `bilan` dit ce qui est passé et
    ce qui ne l'a pas fait. Lève une erreur quand la carte ne peut pas entrer
    dans l'éditeur (pas de cuivre, plus de huit couches). */
@@ -134,12 +194,12 @@ function ipcVersPcb(modele,nomCarte){
   const rangDe=vpIndexCouches(modele.couches);
   const cus=couches.filter(c=>c.cuivre).sort((a,b)=>a.rangCu-b.rangCu);
   if(!cus.length)throw new Error("la carte ne déclare aucune couche de cuivre");
-  if(cus.length>8)
-    throw new Error("la carte a "+cus.length+" couches de cuivre ; l'éditeur PCB en gère 8 au plus");
-  const cu=VP_CU_PERMIS.find(n=>n>=cus.length);
-  /* rang IPC → couche de l'éditeur : le dernier cuivre est toujours le dessous */
+  if(cus.length>VP_CU_MAX)
+    throw new Error("la carte a "+cus.length+" couches de cuivre ; l'éditeur PCB en gère "+VP_CU_MAX+" au plus");
+  /* le nombre exact de couches du fichier, impair compris */
+  const cu=cus.length;
   const versEd=new Map();
-  cus.forEach(function(c,r){ versEd.set(c.i,(r===cus.length-1)?cu-1:r); });
+  cus.forEach(function(c,r){ versEd.set(c.i,r); });
   const coucheEd=function(i){ return versEd.has(i)?versEd.get(i):-1; };
   const estCuivre=function(i){ return versEd.has(i); };
   const dessous=cus[cus.length-1].i;
@@ -204,15 +264,7 @@ function ipcVersPcb(modele,nomCarte){
     const src=cus.find(c=>coucheEd(c.i)===i);
     doc.cuL.push(src?{name:String(src.nom).slice(0,40)}:{});
   }
-  /* épaisseurs de cuivre et épaisseur totale, quand le fichier les donne */
-  const stack={cu:[]};
-  for(let i=0;i<cu;i++){
-    const src=cus.find(c=>coucheEd(c.i)===i);
-    const t=src&&src.ep>0?src.ep*k:0;
-    stack.cu.push(t>=0.001&&t<=2?{t:vpR4(t)}:{});
-  }
-  if(modele.epaisseur>0&&modele.epaisseur*k>=0.05)stack.target=vpR4(modele.epaisseur*k);
-  doc.stack=stack;
+  doc.stack=vpEmpilage(modele,cus,k,bilan);
   if(contour&&contour.length>=6){
     const pts=[];
     for(let i=0;i+1<contour.length;i+=2)pts.push({x:X(contour[i]),y:Y(contour[i+1])});
@@ -445,7 +497,19 @@ function ipcVersPcb(modele,nomCarte){
       const a=pts[0], b=pts[pts.length-1];
       if(pts.length>3&&a.x===b.x&&a.y===b.y)pts.pop();
       if(pts.length<3)continue;
-      doc.zones.push({id:id++,l:l,net:netNom(pl.n),pts:pts});
+      /* le cuivre tel que le fabricant l'a calculé : le contour, et ses
+         trous (dégagements, liaisons thermiques). L'éditeur le remplit ainsi
+         tant qu'on ne touche pas au contour. */
+      const trous=[];
+      for(const t of (g.t||[])){
+        const q=[];
+        for(let i=0;i+1<t.length;i+=2)q.push({x:X(t[i]),y:Y(t[i+1])});
+        const u=q[0], v=q[q.length-1];
+        if(q.length>3&&u.x===v.x&&u.y===v.y)q.pop();
+        if(q.length>=3)trous.push(q);
+      }
+      doc.zones.push({id:id++,l:l,net:netNom(pl.n),pts:pts,fichier:true,trous:trous});
+      bilan.trousZones=(bilan.trousZones||0)+trous.length;
       bilan.zones++;
     }
   }

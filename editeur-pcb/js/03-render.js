@@ -152,10 +152,7 @@ function zoneCanvas(i){
   const col=layerColor(i);
   c.fillStyle=col;
   for(const z of zs){
-    c.beginPath();
-    c.moveTo(z.pts[0].x,z.pts[0].y);
-    for(let k=1;k<z.pts.length;k++)c.lineTo(z.pts[k].x,z.pts[k].y);
-    c.closePath();c.fill();
+    c.beginPath();zonePath(c,z);c.fill("evenodd");
   }
   /* le cuivre s'arrête à la marge de bord, quoi qu'ait tracé la main */
   clipToBoard(c,x1,y1,x2,y2);
@@ -193,6 +190,12 @@ function zoneCanvas(i){
     for(const q of padsWorld(fp)){
       if(!padLayers(fp,q).includes(i))continue;
       const same=sameNet(q.x,q.y,q.net);
+      /* zone au cuivre du fichier : la pastille de son net y est déjà raccordée
+         comme le fabricant l'a voulu — seul le trou se perce */
+      if(same&&zoneFichier(zoneAt(i,q.x,q.y))){
+        if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2,0,Math.PI*2);c.fill();}
+        continue;
+      }
       padFill(c,q,same?clr:clrK(zoneNetAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd"));
       if(same)thermals.push(q);
       else if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2+clr,0,Math.PI*2);c.fill();}

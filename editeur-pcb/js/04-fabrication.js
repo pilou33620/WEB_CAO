@@ -300,6 +300,10 @@ function gerberCopper(i){
     for(const ct of S.cuts){
       if(ct.l===i&&ct.pts.length>=3)gRegion(body,ct.pts);
     }
+    /* les trous du cuivre d'une zone importée, tels que le fabricant les a */
+    for(const z of zs)
+      if(zoneFichier(z)&&Array.isArray(z.trous))
+        for(const t of z.trous)if(t&&t.length>=3)gRegion(body,t);
     const zn=(x,y)=>{const z=zoneAt(i,x,y);return z?z.net:null;};
     for(const t of S.tracks){
       if(t.l!==i)continue;
@@ -321,6 +325,7 @@ function gerberCopper(i){
         const z=zn(q.x,q.y);
         if(z===null)continue;
         const same=(z===q.net&&q.net);
+        if(same&&zoneFichier(zoneAt(i,q.x,q.y)))continue;   // raccordée par le fichier
         gPad(body,A,q,same?classOf(z).clr:
           clrK(z,q.net,"cu",q.drill>0?"th":"smd"));
         if(same)thermals.push(q);

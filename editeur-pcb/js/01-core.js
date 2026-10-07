@@ -1888,6 +1888,36 @@ function polyEdgeDist(x,y,pts){
     d=Math.min(d,segDist(x,y,pts[j].x,pts[j].y,pts[i].x,pts[i].y));
   return d;
 }
+/* ZONE AU CUIVRE DU FICHIER. Une zone importée (IPC-2581) porte le cuivre
+   que le fabricant a calculé : son contour, et les trous de ce cuivre
+   (`trous`) — dégagements, liaisons thermiques comprises. Tant que son contour
+   n'a pas bougé, elle est remplie exactement ainsi : trous du fichier, pas de
+   liaison thermique ajoutée. Les isolations autour du cuivre d'un autre net
+   restent appliquées, ce qui ne change rien au cuivre d'origine (il les
+   respecte déjà) mais protège ce qu'on ajoute ensuite. Dès que le contour
+   change — sommet déplacé, zone déplacée —, la signature ne correspond plus
+   et la zone redevient une zone ordinaire, recalculée. */
+function zoneSig(pts){
+  let s=0;
+  for(let i=0;i<pts.length;i++)s+=(pts[i].x*31.7+pts[i].y*17.3)*(i%7+1);
+  return pts.length+":"+s.toFixed(4);
+}
+function zoneFichier(z){
+  return !!(z&&z.fichier&&z.sig===zoneSig(z.pts));
+}
+/* contour de la zone, puis ses trous du fichier : à remplir en « evenodd » */
+function zonePath(c,z){
+  c.moveTo(z.pts[0].x,z.pts[0].y);
+  for(let k=1;k<z.pts.length;k++)c.lineTo(z.pts[k].x,z.pts[k].y);
+  c.closePath();
+  if(zoneFichier(z)&&Array.isArray(z.trous))
+    for(const t of z.trous){
+      if(!t||t.length<3)continue;
+      c.moveTo(t[0].x,t[0].y);
+      for(let k=1;k<t.length;k++)c.lineTo(t[k].x,t[k].y);
+      c.closePath();
+    }
+}
 function zoneAt(l,x,y){
   for(let i=S.zones.length-1;i>=0;i--){
     const z=S.zones[i];

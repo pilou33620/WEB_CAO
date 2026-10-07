@@ -424,6 +424,13 @@ function normZone(z,cu,i){
   const out={id:dInt(z.id,i+1,1,Number.MAX_SAFE_INTEGER),
              l:dInt(z.l,0,0,cu-1),net:dNet(z.net),pts:pts};
   if(z.auto)out.auto=true;
+  /* cuivre du fichier : les trous et la signature du contour d'origine
+     (posée à la première lecture si le fichier ne la porte pas) */
+  if(z.fichier){
+    out.fichier=true;
+    out.trous=(Array.isArray(z.trous)?z.trous:[]).map(t=>dPts(t,3)).filter(Boolean).slice(0,20000);
+    out.sig=typeof z.sig==="string"?z.sig.slice(0,40):zoneSig(out.pts);
+  }
   return out;
 }
 function normCut(c,cu,i){

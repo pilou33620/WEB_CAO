@@ -6139,8 +6139,8 @@ T("vers l'éditeur PCB : broches « A1 » renumérotées, le nom reste sur la pa
 T("vers l'éditeur PCB : couches, vias, trous, arcs, zones, contour, origine",()=>{
   mdlCharger(vpCarteEssai(),"essai.xml");
   const {doc,bilan}=ipcVersPcb(V.modele,"essai.xml");
-  if(doc.cu!==4||doc.cuL[0].name!=="TOP"||doc.cuL[1].name!=="IN1"||doc.cuL[3].name!=="BOT")
-    throw new Error("3 cuivres → 4 couches, le dessous au fond : "+JSON.stringify(doc.cuL));
+  if(doc.cu!==3||doc.cuL[0].name!=="TOP"||doc.cuL[1].name!=="IN1"||doc.cuL[2].name!=="BOT")
+    throw new Error("3 cuivres → 3 couches, dans l'ordre : "+JSON.stringify(doc.cuL));
   const j1=doc.fps.find(f=>f.ref==="J1");
   if(Math.abs(j1.pads[0].drill-0.762)>1e-6)throw new Error("perçage traversant : "+j1.pads[0].drill);
   if(doc.vias.length!==1)throw new Error("un seul via, les trous de J1 n'en sont pas : "+doc.vias.length);
@@ -6151,10 +6151,11 @@ T("vers l'éditeur PCB : couches, vias, trous, arcs, zones, contour, origine",()
   if(bilan.pastillesLibres!==0)throw new Error("la pastille du via n'est pas une empreinte");
   /* un arc de 90° et un cercle complet coupé en trois */
   const arcs=doc.tracks.filter(t=>t.ca);
-  if(arcs.length!==4||arcs[0].l!==3)throw new Error("arcs : "+arcs.length+" / couche "+(arcs[0]&&arcs[0].l));
+  if(arcs.length!==4||arcs[0].l!==2)throw new Error("arcs : "+arcs.length+" / couche "+(arcs[0]&&arcs[0].l));
   /* le sens : horaire dans le fichier (Y en haut), donc positif chez l'éditeur (Y en bas) */
   if(!(arcs[0].ca>0)||Math.abs(arcs[0].ca-Math.PI/2)>1e-3)throw new Error("balayage : "+arcs[0].ca);
-  if(doc.zones.length!==1||doc.zones[0].l!==1||doc.zones[0].net!=="GND")throw new Error("zone : "+JSON.stringify(doc.zones));
+  if(doc.zones.length!==1||doc.zones[0].l!==1||doc.zones[0].net!=="GND"||!doc.zones[0].fichier)
+    throw new Error("zone : "+JSON.stringify(doc.zones));
   if(!doc.board.pts||doc.board.pts.length!==4||doc.board.w!==50.8||doc.board.h!==25.4)
     throw new Error("contour : "+JSON.stringify(doc.board));
   if(doc.origin.x!==0||doc.origin.y!==25.4||!doc.fabOrigin)throw new Error("origine : "+JSON.stringify(doc.origin));
@@ -6211,17 +6212,49 @@ T("vers l'éditeur PCB : découpes de carte, sérigraphie et textes repris",()=>
   if(sans.fps.some(f=>f.silk===false)||sans.drawings.length)
     throw new Error("sans sérigraphie dans le fichier, l'éditeur garde la sienne");
 });
+T("vers l'éditeur PCB : une zone garde le cuivre du fichier, trous compris",()=>{
+  const m=vpCarteEssai();
+  m.plans=[{c:1,n:0,g:[{o:[0.1,0.1, 1.9,0.1, 1.9,0.9, 0.1,0.9, 0.1,0.1],
+                       t:[[0.3,0.3, 0.4,0.3, 0.4,0.4, 0.3,0.4],[1,0.5, 1.1,0.5, 1.05,0.6]]}]}];
+  mdlCharger(m,"zones.xml");
+  const z=ipcVersPcb(V.modele,"zones.xml").doc.zones[0];
+  if(!z.fichier||z.pts.length!==4||z.trous.length!==2||z.trous[1].length!==3)
+    throw new Error("zone au cuivre du fichier : "+JSON.stringify(z));
+  if(z.trous[0][0].x!==7.62||z.trous[0][0].y!==17.78)throw new Error("trou en mm, Y retourné : "+JSON.stringify(z.trous[0][0]));
+});
+T("vers l'éditeur PCB : l'empilage réel — isolants, εr, tan δ, matières, vernis",()=>{
+  const m=vpCarteEssai();
+  m.unites="MILLIMETER";
+  m.empilage=[
+    {nom:"MASQUE_H",seq:0,ep:0.02,type:"SOLDERMASK",dk:"3.5"},
+    {nom:"TOP",seq:1,ep:0.035,type:"CONDUCTOR"},
+    {nom:"PP1",seq:2,ep:0.1,type:"DIELPREG",dk:"4.0",df:"0.02",mat:"1080"},
+    {nom:"PP2",seq:3,ep:0.1,type:"DIELPREG",dk:"4.4",df:"0.01",mat:"2116"},
+    {nom:"IN1",seq:4,ep:0.018,type:"PLANE"},
+    {nom:"CORE",seq:5,ep:1.2,type:"DIELCORE",dk:"4.6",df:"0.015",mat:"FR-4 Tg170"},
+    {nom:"BOT",seq:6,ep:0.035,type:"CONDUCTOR"}];
+  m.epaisseur=1.55;
+  mdlCharger(m,"empilage.xml");
+  const st=ipcVersPcb(V.modele,"empilage.xml").doc.stack;
+  if(st.cu.map(c=>c.t).join()!=="0.035,0.018,0.035")throw new Error("cuivres : "+JSON.stringify(st.cu));
+  const a=st.di[0], b=st.di[1];
+  if(a.k!=="prepreg"||a.t!==0.2||Math.abs(a.er-4.2)>1e-6||Math.abs(a.df-0.015)>1e-6||a.mat!=="1080 + 2116")
+    throw new Error("deux prepregs en un isolant : "+JSON.stringify(a));
+  if(b.k!=="core"||b.t!==1.2||b.er!==4.6||b.df!==0.015||b.mat!=="FR-4 Tg170")
+    throw new Error("le cœur : "+JSON.stringify(b));
+  if(st.maskT!==0.02||st.maskEr!==3.5||st.target!==1.55)throw new Error("vernis, épaisseur : "+JSON.stringify(st));
+});
 T("vers l'éditeur PCB : unités, et refus d'une carte que l'éditeur ne peut pas tenir",()=>{
   if(vpEchelle("INCH")!==25.4||vpEchelle("MILLIMETER")!==1||vpEchelle("MICRON")!==0.001||vpEchelle("MIL")!==0.0254||vpEchelle("")!==1)
     throw new Error("facteurs d'unité");
   const m=vpCarteEssai();
   m.empilage=[];m.couches=[];
-  for(let i=0;i<10;i++){m.empilage.push({nom:"L"+i,seq:i,type:"CONDUCTOR"});m.couches.push("L"+i);}
+  for(let i=0;i<34;i++){m.empilage.push({nom:"L"+i,seq:i,type:"CONDUCTOR"});m.couches.push("L"+i);}
   m.pistes=[];m.arcs=[];m.plans=[];m.composants=[];m.pads=[];m.percages=[];m.textes=[];
   mdlCharger(m,"dix.xml");
   let err="";
   try{ipcVersPcb(V.modele,"dix.xml");}catch(e){err=e.message;}
-  if(!/8 au plus/.test(err))throw new Error("dix cuivres : refus attendu, obtenu « "+err+" »");
+  if(!/32 au plus/.test(err))throw new Error("34 cuivres : refus attendu, obtenu « "+err+" »");
 });
 
 (async()=>{
