@@ -6158,10 +6158,58 @@ T("vers l'éditeur PCB : couches, vias, trous, arcs, zones, contour, origine",()
   if(!doc.board.pts||doc.board.pts.length!==4||doc.board.w!==50.8||doc.board.h!==25.4)
     throw new Error("contour : "+JSON.stringify(doc.board));
   if(doc.origin.x!==0||doc.origin.y!==25.4||!doc.fabOrigin)throw new Error("origine : "+JSON.stringify(doc.origin));
-  if(bilan.ignores.textes!==1||bilan.ignores.pistesHorsCuivre!==1||bilan.ignores.decoupesCarte!==1)
-    throw new Error("ce qui ne passe pas est compté : "+JSON.stringify(bilan.ignores));
-  if(!/INCH/.test(ipcVersPcbResume(bilan))||!/non repris/.test(ipcVersPcbResume(bilan)))
+  if(bilan.ignores.textes!==0||bilan.ignores.pistesHorsCuivre!==0)
+    throw new Error("tout est repris : "+JSON.stringify(bilan.ignores));
+  if(!/INCH/.test(ipcVersPcbResume(bilan))||!/découpe/.test(ipcVersPcbResume(bilan)))
     throw new Error("résumé : "+ipcVersPcbResume(bilan));
+});
+T("vers l'éditeur PCB : découpes de carte, sérigraphie et textes repris",()=>{
+  const m=vpCarteEssai();
+  /* « Symbol-B » : rien dans le nom ne dit sérigraphie, et c'est le fichier
+     qui dit dessous */
+  m.couches.push("Symbol-B");
+  m.calques={"Symbol-B":{f:"SILKSCREEN",s:"BOTTOM"},"SILK":{f:"SILKSCREEN",s:"TOP"}};
+  m.arcs.push({c:4,n:-1,w:0.006,s:[1.0,0.8],e:[1.0,0.8],m:[0.9,0.8],h:0});
+  m.plans.push({c:3,n:-1,g:[{o:[1.5,0.1, 1.7,0.1, 1.7,0.2],t:[]}]});
+  m.textes=[{c:3,t:"R12",x:0.5,y:0.5,r:90,h:0.05,b:[0.48,0.45,0.52,0.6]},
+            {c:4,t:"DOS",x:1,y:0.5,h:0.04},
+            {c:0,t:"CUIVRE",x:1,y:1}];
+  mdlCharger(m,"essai.xml");
+  const {doc,bilan}=ipcVersPcb(V.modele,"essai.xml");
+  /* la découpe : 3 sommets, Y retourné, en mm */
+  const dc=doc.board.cutouts;
+  if(!dc||dc.length!==1||dc[0].length!==3||dc[0][0].x!==25.4||dc[0][0].y!==20.32)
+    throw new Error("découpe : "+JSON.stringify(dc));
+  /* le trait de SILK (diagonale du fichier d'essai) sur le dessus */
+  const traits=doc.drawings.filter(d=>d.shape==="line");
+  const diag=traits.find(d=>d.layer==="silkT"&&d.x1===0&&d.y1===25.4&&d.x2===25.4&&d.y2===0);
+  if(!diag||Math.abs(diag.width-0.127)>1e-6)throw new Error("trait de sérigraphie : "+JSON.stringify(traits[0]));
+  /* le cercle de Symbol-B en cordes, dessous, sous 0,02 mm de flèche */
+  const cercle=traits.filter(d=>d.layer==="silkB");
+  if(cercle.length<12)throw new Error("cercle de sérigraphie en cordes : "+cercle.length);
+  const r=0.1*25.4, cx=0.9*25.4, cy=(1-0.8)*25.4;
+  for(const d of cercle){
+    const mx=(d.x1+d.x2)/2, my=(d.y1+d.y2)/2;
+    if(r-Math.hypot(mx-cx,my-cy)>0.021)throw new Error("flèche trop grande");
+  }
+  /* l'aplat en contour : trois côtés, refermé */
+  if(bilan.aplats!==1)throw new Error("aplat : "+bilan.aplats);
+  /* les textes : centrés sur leur boîte, taille, angle retourné, face */
+  const tx=doc.drawings.filter(d=>d.shape==="text");
+  const r12=tx.find(d=>d.text==="R12"), dos=tx.find(d=>d.text==="DOS");
+  if(!r12||r12.layer!=="silkT"||Math.abs(r12.x1-12.7)>1e-6||Math.abs(r12.y1-(1-0.525)*25.4)>1e-6)
+    throw new Error("R12 au milieu de sa boîte : "+JSON.stringify(r12));
+  if(Math.abs(r12.size-1.27)>1e-6||r12.rot!==-90)throw new Error("taille et angle : "+JSON.stringify(r12));
+  if(!dos||dos.layer!=="silkB")throw new Error("texte dessous : "+JSON.stringify(dos));
+  if(bilan.textes!==2||bilan.ignores.textes!==1)throw new Error("textes : "+JSON.stringify(bilan));
+  /* la sérigraphie du fichier remplace celle de l'éditeur, face par face */
+  if(doc.fps.some(f=>f.silk!==false))throw new Error("sérigraphie automatique coupée sur les deux faces");
+  m.couches.pop();delete m.calques;
+  m.arcs.pop();m.plans.pop();m.textes=[];m.pistes=m.pistes.filter(p=>p.c!==3);
+  mdlCharger(m,"essai.xml");
+  const sans=ipcVersPcb(V.modele,"essai.xml").doc;
+  if(sans.fps.some(f=>f.silk===false)||sans.drawings.length)
+    throw new Error("sans sérigraphie dans le fichier, l'éditeur garde la sienne");
 });
 T("vers l'éditeur PCB : unités, et refus d'une carte que l'éditeur ne peut pas tenir",()=>{
   if(vpEchelle("INCH")!==25.4||vpEchelle("MILLIMETER")!==1||vpEchelle("MICRON")!==0.001||vpEchelle("MIL")!==0.0254||vpEchelle("")!==1)

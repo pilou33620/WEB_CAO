@@ -608,6 +608,10 @@ function figBoard(){
     contour='<rect x="'+x0+'" y="'+y0+'" width="'+r3(W)+'" height="'+r3(H)+
       '" fill="'+C_SUB+'" stroke="'+C_EDGE+'" stroke-width="1.6"/>';
   }
+  /* les découpes intérieures, en creux dans le substrat */
+  for(const D of boardCutouts())
+    contour+='<path d="M'+D.map(p=>r3(x0+(p.x-b.x)*sc)+" "+r3(y0+(p.y-b.y)*sc)).join(" L")+
+      ' Z" fill="var(--bg,#0e0f11)" stroke="'+C_EDGE+'" stroke-width="1.2"/>';
   const inner=contour+
     '<path d="M'+r3(ox-11)+' '+r3(oy)+' H'+r3(ox+11)+' M'+r3(ox)+' '+r3(oy-11)+
       ' V'+r3(oy+11)+'" stroke="var(--yellow)" stroke-width="1.4"/>'+
@@ -618,7 +622,8 @@ function figBoard(){
     reNote(346,20,S.fabOrigin?"repère fichiers : origine":"repère fichiers : coin","end");
   return reFig(inner,"Le contour de carte et l'origine utilisateur",
     "Carte "+fmt(b.w,2)+" × "+fmt(b.h,2)+" mm · "+
-    (b.pts?P.length+" sommets":"rectangle")+" · origine "+
+    (b.pts?P.length+" sommets":"rectangle")+
+    (boardCutouts().length?" · "+boardCutouts().length+" découpe(s)":"")+" · origine "+
     fmt(S.origin.x,2)+" ; "+fmt(S.origin.y,2)+" mm");
 }
 

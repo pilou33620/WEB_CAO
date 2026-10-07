@@ -375,6 +375,9 @@ function normFp(f,i){
      décision qu'un document doit garder — sans quoi la règle automatique la
      déferait à la lecture. Tout le reste qu'un fichier pourrait porter là est
      ramené à un point exploitable, ou écarté. */
+  /* sérigraphie automatique (contour, point, repère) coupée : une carte
+     importée apporte la sienne. Absent = coupée jamais, comme avant. */
+  if(f.silk===false)out.silk=false;
   if(f.mark===false)out.mark=false;
   else if(f.mark&&typeof f.mark==="object"){
     const mx=+f.mark.x, my=+f.mark.y;
@@ -519,6 +522,10 @@ function normDoc(d){
   out.board={x:dRange(b.x,0,-COORD,COORD),y:dRange(b.y,0,-COORD,COORD),
              w:dRange(b.w,100,1,COORD),h:dRange(b.h,80,1,COORD),
              pts:dPts(b.pts,3)};
+  /* découpes intérieures : seulement celles qui ont trois sommets ou plus ;
+     un document qui n'en a pas n'écrit pas la clé */
+  const dec=(Array.isArray(b.cutouts)?b.cutouts:[]).map(p=>dPts(p,3)).filter(Boolean);
+  if(dec.length)out.board.cutouts=dec.slice(0,500);
   const o=(src.origin&&typeof src.origin==="object")?src.origin:{};
   out.origin={x:dRange(o.x,0,-COORD,COORD),y:dRange(o.y,0,-COORD,COORD)};
   out.fabOrigin=!!src.fabOrigin;

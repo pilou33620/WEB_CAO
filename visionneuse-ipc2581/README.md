@@ -67,7 +67,7 @@ et ceux du dossier partagé, identiques aux autres outils :
 | `js/05-panneaux.js` | 505 | Les cinq panneaux : couches, la carte, nets, composants, sélection — et la fiche de ligne de transmission |
 | `js/06-demarrage.js` | 333 | Ouverture d'un fichier (bouton, dépôt, reprise de session), exports `.json` et `.png`, réglages de l'utilisateur |
 | `js/07-simulation.js` | 3280 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias, **cuivre voisin joint au problème** —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes ; et pour l'onglet **Crosstalk**, les trois mesures que le serveur ne peut pas deviner : positions de couture sur l'abscisse du parcours, fentes du plan sondées dessous, perçages de masse |
-| `js/08-vers-pcb.js` | 462 | La carte traduite pour l'éditeur PCB (`ipcVersPcb`) et le bouton qui l'y pousse, présent seulement dans un projet |
+| `js/08-vers-pcb.js` | 574 | La carte traduite pour l'éditeur PCB (`ipcVersPcb`) et le bouton qui l'y pousse, présent seulement dans un projet |
 | `../python/simulation_em.py` | 3312 | Pont vers `python/ligne_mom.py` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
 | `test/harness-sim.js` | 2896 | Banc d'essai de la masse coplanaire, de la chute continue, du voisinage et des trois mesures du crosstalk, sous Node : `node test/harness-sim.js` |
 
@@ -682,9 +682,23 @@ l'onglet, marquée « à enregistrer ».
 | perçages non métallisés | trous de fixation |
 | pistes, arcs | segments et pistes circulaires (un cercle complet est coupé en trois) |
 | plans remplis | zones du même net : l'éditeur les remplit avec ses règles, proche de l'original sans l'être au micron |
+| découpes intérieures du contour | découpes de carte (`board.cutouts`) : fraisées avec le contour, le cuivre s'en tient à la marge de bord |
+| sérigraphie (traits, arcs, aplats) | traits de sérigraphie dessus/dessous ; un arc en cordes (flèche < 0,02 mm), un aplat par son contour |
+| textes de sérigraphie | textes de l'éditeur, centrés sur leur boîte, à leur taille et leur angle |
 
-Ce qui ne passe pas — textes, sérigraphie, découpes intérieures de la carte —
-est compté et dit dans le pied de page.
+La face d'un calque de sérigraphie vient de ce que le fichier déclare
+(`layerFunction`, `side` — « Symbol-A » ne dit rien par son nom), à défaut de
+son nom puis de sa place dans l'empilage. Quand une face a sa sérigraphie dans
+le fichier, les empreintes de cette face perdent la sérigraphie que l'éditeur
+dessine d'office (contour de boîtier, point de broche 1, repère) : sans quoi
+tout sortirait en double. La case « Sérigraphie automatique » des propriétés
+la rend à une empreinte.
+
+Restent de côté, comptés dans le pied de page : les textes posés ailleurs que
+sur la sérigraphie (l'éditeur n'a pas de texte de cuivre — les exports
+tracent d'ailleurs le plus souvent ces textes en traits, repris comme pistes),
+et les tracés de documentation (cotes, assemblage, masque), que l'éditeur
+produit lui-même ou n'a pas.
 
 ## Banc d'essai
 

@@ -29,9 +29,13 @@
        trous non métallisés, contour de carte ;
      · plans     : leur contour devient une zone du même net. L'éditeur la
                    remplit avec SES règles : le cuivre ressemble à l'original,
-                   il n'est pas identique au micron.
-   Ce qui ne passe pas — sérigraphie, textes, découpes intérieures de la
-   carte — est compté et dit, pas tu.
+                   il n'est pas identique au micron ;
+     · découpes  : les trous du contour deviennent des découpes de carte ;
+     · sérigraphie: traits, arcs (en cordes), aplats (par leur contour) et
+                   textes, dessus et dessous. Une face qui a la sienne perd
+                   celle que l'éditeur dessine d'office pour ses empreintes.
+   Ce qui reste de côté — textes hors sérigraphie, tracés de documentation —
+   est compté et dit, pas tu.
    ============================================================================= */
 
 const VP_CU_PERMIS=[1,2,4,6,8];  // nombres de couches que propose l'éditeur
@@ -142,8 +146,37 @@ function ipcVersPcb(modele,nomCarte){
   const nets=modele.nets||[];
   const netNom=function(i){ return (i!=null&&i>=0&&i<nets.length)?String(nets[i]||""):""; };
   const bilan={composants:0,renumerotes:0,pastillesLibres:0,pistes:0,arcs:0,vias:0,
-               trous:0,zones:0,ignores:{textes:(modele.textes||[]).length,
-               pistesHorsCuivre:0,decoupesCarte:0},unites:k!==1?String(modele.unites):""};
+               trous:0,zones:0,decoupes:0,serigraphie:0,textes:0,
+               ignores:{textes:0,pistesHorsCuivre:0},unites:k!==1?String(modele.unites):""};
+
+  /* --- calques non cuivre : la sérigraphie, et de quel côté. La fonction et
+         la face déclarées par le fichier (`calques`, parseur 1.75+) passent
+         devant le nom : « Symbol-A » ne dit ni l'un ni l'autre. --- */
+  const declares=modele.calques||{};
+  const cuSeqMax=Math.max(...cus.map(c=>c.seq||0));
+  const seri=new Map();                 // index de calque → "silkT" | "silkB"
+  couches.forEach(function(c){
+    if(estCuivre(c.i))return;
+    const d=declares[c.nom]||{};
+    const f=String(d.f||"").toUpperCase();
+    const estSeri=f?/SILK|LEGEND/.test(f):c.genre==="serigraphie";
+    if(!estSeri)return;
+    const s=String(d.s||"").toUpperCase();
+    let dessous;
+    if(s==="BOTTOM")dessous=true;
+    else if(s==="TOP")dessous=false;
+    else if(/BOT|BACK|DESSOUS|(^|[-_. ])B([-_. ]|$)|[-_.]B$/i.test(c.nom))dessous=true;
+    else dessous=!!(c.empile&&c.seq>cuSeqMax);
+    seri.set(c.i,dessous?"silkB":"silkT");
+  });
+  /* la face d'un composant : son calque déclaré, à défaut son miroir */
+  const faceDessous=function(hote){
+    const nom=hote.c>=0?modele.couches[hote.c]:"";
+    const d=nom&&declares[nom];
+    if(d&&String(d.s).toUpperCase()==="BOTTOM")return true;
+    if(d&&String(d.s).toUpperCase()==="TOP")return !!hote.m;
+    return !!hote.m||hote.c===dessous;
+  };
 
   /* --- repère : boîte de la carte, Y retourné, posée à partir de (0, 0) --- */
   let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
@@ -186,7 +219,16 @@ function ipcVersPcb(modele,nomCarte){
     const a=pts[0], b=pts[pts.length-1];
     if(pts.length>3&&a.x===b.x&&a.y===b.y)pts.pop();
     if(pts.length>=3)doc.board.pts=pts;
-    bilan.ignores.decoupesCarte=(modele.contour.t||[]).length;
+    /* les découpes intérieures : des trous dans la carte, fraisés avec elle */
+    const dec=[];
+    for(const t of (modele.contour.t||[])){
+      const q=[];
+      for(let i=0;i+1<t.length;i+=2)q.push({x:X(t[i]),y:Y(t[i+1])});
+      const u=q[0], v=q[q.length-1];
+      if(q.length>3&&u.x===v.x&&u.y===v.y)q.pop();
+      if(q.length>=3)dec.push(q);
+    }
+    if(dec.length){doc.board.cutouts=dec;bilan.decoupes=dec.length;}
   }
 
   /* --- perçages, rangés par position : un trou sous une pastille de
@@ -198,8 +240,7 @@ function ipcVersPcb(modele,nomCarte){
   /* --- composants --- */
   let id=1;
   const poserEmpreinte=function(ref,valeur,pkg,hote,pads){
-    const surDessous=!!hote.m||hote.c===dessous;
-    const side=surDessous?1:0;
+    const side=faceDessous(hote)?1:0;
     const flipX=(side^(hote.m?1:0))===1;
     /* numéros : les broches entières et distinctes gardent le leur, sinon le
        composant est renuméroté dans l'ordre, et le nom suit la pastille */
@@ -318,8 +359,31 @@ function ipcVersPcb(modele,nomCarte){
   }
 
   /* --- pistes et arcs, sur le cuivre seulement --- */
+  const trait=function(couche,w,ax,ay,bx,by){
+    const d={id:id++,shape:"line",layer:couche,x1:X(ax),y1:Y(ay),x2:X(bx),y2:Y(by),
+             width:vpR4(Math.min(10,Math.max(0.05,(w>0?w*k:0.12))))};
+    if(d.x1===d.x2&&d.y1===d.y2){id--;return;}
+    doc.drawings.push(d);
+    bilan.serigraphie++;
+  };
+  /* un arc en cordes, la flèche sous 0,02 mm : la sérigraphie de l'éditeur
+     n'a que des traits droits */
+  const cordes=function(a){
+    const g=mdlArc(a);
+    if(!(g.r>0))return [[a.s[0],a.s[1]],[a.e[0],a.e[1]]];
+    const balaye=(a.h?-1:1)*mdlArcAngle(g);
+    const rmm=g.r*k, pas=rmm>0.02?2*Math.acos(1-0.02/rmm):Math.PI/4;
+    const n=Math.max(2,Math.min(128,Math.ceil(Math.abs(balaye)/pas)));
+    const out=[];
+    for(let j=0;j<=n;j++){const t=g.d+balaye*j/n;out.push([g.cx+g.r*Math.cos(t),g.cy+g.r*Math.sin(t)]);}
+    return out;
+  };
   for(const p of (modele.pistes||[])){
     const l=coucheEd(p.c);
+    if(seri.has(p.c)){
+      for(let i=0;i+3<p.p.length;i+=2)trait(seri.get(p.c),p.w,p.p[i],p.p[i+1],p.p[i+2],p.p[i+3]);
+      continue;
+    }
     if(l<0||!(p.w>0)){bilan.ignores.pistesHorsCuivre++;continue;}
     const net=netNom(p.n), w=vpR4(Math.max(0.01,p.w*k));
     for(let i=0;i+3<p.p.length;i+=2){
@@ -331,6 +395,11 @@ function ipcVersPcb(modele,nomCarte){
   }
   for(const a of (modele.arcs||[])){
     const l=coucheEd(a.c);
+    if(seri.has(a.c)&&a.s&&a.e&&a.m){
+      const q=cordes(a);
+      for(let i=0;i+1<q.length;i++)trait(seri.get(a.c),a.w,q[i][0],q[i][1],q[i+1][0],q[i+1][1]);
+      continue;
+    }
     if(l<0||!(a.w>0)||!a.s||!a.e||!a.m){bilan.ignores.pistesHorsCuivre++;continue;}
     const g=mdlArc(a);
     if(!(g.r>0))continue;
@@ -355,6 +424,19 @@ function ipcVersPcb(modele,nomCarte){
   /* --- plans → zones : le contour extérieur de chaque morceau --- */
   for(const pl of (modele.plans||[])){
     const l=coucheEd(pl.c);
+    /* un aplat de sérigraphie (logo, bandeau) : son contour et ses trous,
+       tracés — l'éditeur n'a pas d'aplat de sérigraphie */
+    if(seri.has(pl.c)){
+      for(const g of (pl.g||[]))
+        for(const o of [g.o].concat(g.t||[])){
+          if(!Array.isArray(o)||o.length<6)continue;
+          for(let i=0;i+3<o.length;i+=2)trait(seri.get(pl.c),0,o[i],o[i+1],o[i+2],o[i+3]);
+          const n=o.length;
+          if(o[0]!==o[n-2]||o[1]!==o[n-1])trait(seri.get(pl.c),0,o[n-2],o[n-1],o[0],o[1]);
+        }
+      bilan.aplats=(bilan.aplats||0)+1;
+      continue;
+    }
     if(l<0)continue;
     for(const g of (pl.g||[])){
       if(!g||!Array.isArray(g.o)||g.o.length<6)continue;
@@ -368,6 +450,36 @@ function ipcVersPcb(modele,nomCarte){
     }
   }
 
+  /* --- textes de sérigraphie : centrés là où le fichier les pose. La boîte
+         du texte, quand elle est donnée, situe son milieu : absolue si elle
+         contient le point d'ancrage, relative à lui sinon. --- */
+  for(const t of (modele.textes||[])){
+    const couche=seri.get(t.c);
+    if(!couche||!t.t){bilan.ignores.textes++;continue;}
+    let cx=t.x, cy=t.y;
+    if(Array.isArray(t.b)&&t.b.length===4){
+      const [bx1,by1,bx2,by2]=t.b, mx=(bx1+bx2)/2, my=(by1+by2)/2;
+      const dedans=t.x>=bx1-1e-9&&t.x<=bx2+1e-9&&t.y>=by1-1e-9&&t.y<=by2+1e-9;
+      if(dedans){cx=mx;cy=my;}
+      else{
+        const a=(t.r||0)*Math.PI/180;
+        cx=t.x+mx*Math.cos(a)-my*Math.sin(a); cy=t.y+mx*Math.sin(a)+my*Math.cos(a);
+      }
+    }
+    const h=t.h>0?t.h*k:1;
+    doc.drawings.push({id:id++,shape:"text",type:"text",layer:couche,text:String(t.t).slice(0,200),
+      x1:X(cx),y1:Y(cy),x2:X(cx),y2:Y(cy),size:vpR4(Math.min(25,Math.max(0.5,h))),
+      rot:vpR4(-(t.r||0)%360),width:vpR4(Math.min(5,Math.max(0.05,h/8)))});
+    bilan.textes++;
+  }
+
+  /* La sérigraphie du fichier remplace celle que l'éditeur dessine d'office
+     (contour de boîtier, point de broche 1, repère) : sans quoi chaque
+     composant aurait la sienne en double. Face par face — une face sans
+     sérigraphie dans le fichier garde la sérigraphie automatique. */
+  const faces=new Set(doc.drawings.map(d=>d.layer));
+  for(const fp of doc.fps)if(faces.has(fp.side?"silkB":"silkT"))fp.silk=false;
+
   doc.nextId=id;
   if(nomCarte)bilan.fichier=String(nomCarte);
   return {doc:doc,bilan:bilan};
@@ -379,14 +491,18 @@ function ipcVersPcbResume(b){
            b.vias+" via(s)",b.zones+" zone(s)"];
   if(b.trous)L.push(b.trous+" trou(s) non métallisé(s)");
   if(b.pastillesLibres)L.push(b.pastillesLibres+" pastille(s) isolée(s)");
+  if(b.decoupes)L.push(b.decoupes+" découpe(s) de carte");
+  if(b.serigraphie)L.push(b.serigraphie+" trait(s) de sérigraphie"+
+    (b.aplats?" (dont "+b.aplats+" aplat(s) en contour)":""));
+  if(b.textes)L.push(b.textes+" texte(s)");
   let t=L.join(", ");
   if(b.unites)t+=" — converti de "+b.unites+" en mm";
   if(b.renumerotes)t+=" — "+b.renumerotes+" composant(s) renuméroté(s), nom de broche gardé";
   const ign=[];
-  if(b.ignores.textes)ign.push(b.ignores.textes+" texte(s)");
-  if(b.ignores.pistesHorsCuivre)ign.push(b.ignores.pistesHorsCuivre+" tracé(s) hors cuivre");
-  if(b.ignores.decoupesCarte)ign.push(b.ignores.decoupesCarte+" découpe(s) de carte");
-  if(ign.length)t+=" — non repris : "+ign.join(", ");
+  if(b.ignores.textes)ign.push(b.ignores.textes+" texte(s) hors sérigraphie");
+  if(b.ignores.pistesHorsCuivre)ign.push(b.ignores.pistesHorsCuivre+
+    " tracé(s) de documentation (cotes, assemblage, masque)");
+  if(ign.length)t+=" — laissé de côté : "+ign.join(", ");
   return t+".";
 }
 

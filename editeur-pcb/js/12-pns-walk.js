@@ -80,6 +80,10 @@ function pnsSurCarte(pts){
      déclare dehors, et le moteur refusait alors de la toucher. */
   for(const p of pts)
     if(!inPoly(p.x,p.y,P)&&polyEdgeDist(p.x,p.y,P)>1e-6)return false;
+  /* une découpe est un trou dans la carte : pas plus de cuivre que dehors */
+  for(const D of boardCutouts())
+    for(const p of pts)
+      if(inPoly(p.x,p.y,D)&&polyEdgeDist(p.x,p.y,D)>1e-6)return false;
   return true;
 }
 

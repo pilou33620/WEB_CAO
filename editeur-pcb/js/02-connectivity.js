@@ -406,7 +406,12 @@ function segPadDist(t,q){
 function inBoard(x,y,m){
   const P=boardPoly();
   if(!inPoly(x,y,P))return false;
-  return !m || polyEdgeDist(x,y,P)>=m;
+  if(m&&polyEdgeDist(x,y,P)<m)return false;
+  for(const D of boardCutouts()){
+    if(inPoly(x,y,D))return false;
+    if(m&&polyEdgeDist(x,y,D)<m)return false;
+  }
+  return true;
 }
 function runDrc(){
   const out=[];

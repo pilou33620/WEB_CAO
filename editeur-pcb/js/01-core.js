@@ -1895,6 +1895,14 @@ function boardPoly(){
   if(b.pts&&b.pts.length>=3)return b.pts;
   return [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h},{x:b.x,y:b.y+b.h}];
 }
+/* Découpes intérieures de la carte : des fenêtres fraisées dans le substrat
+   (passage de câble, dégagement d'un transformateur, carte en U). Chacune est
+   un polygone d'au moins trois sommets, à l'intérieur du contour ; le cuivre
+   s'en tient à la marge de bord, comme du contour extérieur. */
+function boardCutouts(){
+  const c=S.board&&S.board.cutouts;
+  return Array.isArray(c)?c.filter(p=>Array.isArray(p)&&p.length>=3):[];
+}
 function signedArea(pts){
   let a=0;
   for(let i=0,j=pts.length-1;i<pts.length;j=i++)
@@ -1926,6 +1934,12 @@ function setBoardSize(w,h){
   if(b.pts&&b.pts.length>=3){
     const sx=w/b.w, sy=h/b.h, ox=b.x, oy=b.y;
     for(const p of b.pts){p.x=r3(ox+(p.x-ox)*sx);p.y=r3(oy+(p.y-oy)*sy);}
+  }
+  /* les découpes suivent la carte : elles sont dedans, elles le restent */
+  {
+    const sx=w/b.w, sy=h/b.h, ox=b.x, oy=b.y;
+    for(const P of boardCutouts())
+      for(const p of P){p.x=r3(ox+(p.x-ox)*sx);p.y=r3(oy+(p.y-oy)*sy);}
   }
   b.w=w;b.h=h;
   boardChanged();

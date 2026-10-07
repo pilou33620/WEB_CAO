@@ -75,7 +75,15 @@ function boardClipPx(c){
     const q=w2s(P[i].x,P[i].y);
     if(i)c.lineTo(q.x,q.y);else c.moveTo(q.x,q.y);
   }
-  c.closePath();c.clip();
+  c.closePath();
+  for(const D of boardCutouts()){
+    for(let i=0;i<D.length;i++){
+      const q=w2s(D[i].x,D[i].y);
+      if(i)c.lineTo(q.x,q.y);else c.moveTo(q.x,q.y);
+    }
+    c.closePath();
+  }
+  c.clip("evenodd");
   return true;
 }
 /* La grille passe PAR-DESSUS le substrat. Peinte dessous, la carte l'avalait :
@@ -271,8 +279,13 @@ function clipToBoard(c,x1,y1,x2,y2){
   c.rect(x1-1,y1-1,(x2-x1)+2,(y2-y1)+2);
   polyPath(c,P);
   c.fill("evenodd");
+  /* les découpes : vidées, puis leur marge rognée de la même bande */
+  const D=boardCutouts();
+  if(D.length){
+    c.beginPath();for(const d of D)polyPath(c,d);c.fill();
+  }
   if(m>0){
-    c.beginPath();polyPath(c,P);
+    c.beginPath();polyPath(c,P);for(const d of D)polyPath(c,d);
     c.lineWidth=2*m;c.lineJoin="round";c.lineCap="round";
     c.strokeStyle="#000";c.stroke();
   }
@@ -283,7 +296,9 @@ function clipToBoard(c,x1,y1,x2,y2){
 function drawSub(c){
   const P=boardPoly();
   c.fillStyle=C_SUB;
-  c.beginPath();polyPath(c,P);c.fill();
+  c.beginPath();polyPath(c,P);
+  for(const d of boardCutouts())polyPath(c,d);
+  c.fill("evenodd");
 }
 function drawBoard(c){
   const P=boardPoly();
@@ -291,6 +306,9 @@ function drawBoard(c){
     c.strokeStyle=S.sel.edge?C_SEL:C_EDGE;
     c.lineWidth=px(S.sel.edge?2:1.6);
     c.beginPath();polyPath(c,P);c.stroke();
+    /* les découpes intérieures : le même trait, elles aussi sont fraisées */
+    c.strokeStyle=C_EDGE;c.lineWidth=px(1.6);
+    c.beginPath();for(const d of boardCutouts())polyPath(c,d);c.stroke();
     c.strokeStyle="rgba(230,232,236,.20)";c.lineWidth=px(1);
     c.setLineDash([px(5),px(4)]);
     c.beginPath();polyPath(c,P);c.stroke();      // rappel visuel de la marge
@@ -451,13 +469,22 @@ function drawSilk(c){
     const T=fpXform(fp), b=bodyOf(fp);
     const pts=[T(b.x1,b.y1),T(b.x2,b.y1),T(b.x2,b.y2),T(b.x1,b.y2)];
     const sel=S.sel.fps.has(fp.id);
+    /* Sérigraphie automatique coupée (carte importée : sa vraie sérigraphie
+       est dans les dessins) : ni contour, ni point de broche 1 imprimés. Le
+       contour ne revient qu'en pointillés à la sélection, pour voir ce qu'on
+       tient, et le repère passe en gris — le gris de ce qui ne s'imprime pas. */
+    const auto=fp.silk!==false;
     c.globalAlpha=S.hlNet?0.55:1;
     c.strokeStyle=sel?C_SEL:(top?C_SILK_T:C_SILK_B);
     c.lineWidth=px(1.2);
-    c.beginPath();
-    c.moveTo(pts[0].x,pts[0].y);
-    for(let i=1;i<4;i++)c.lineTo(pts[i].x,pts[i].y);
-    c.closePath();c.stroke();
+    if(auto||sel){
+      if(!auto)c.setLineDash([px(4),px(3)]);
+      c.beginPath();
+      c.moveTo(pts[0].x,pts[0].y);
+      for(let i=1;i<4;i++)c.lineTo(pts[i].x,pts[i].y);
+      c.closePath();c.stroke();
+      c.setLineDash([]);
+    }
     if(sel){
       c.fillStyle="rgba(138,240,255,.10)";c.fill();
     }
@@ -465,7 +492,7 @@ function drawSilk(c){
        film — même place, même diamètre. L'écran montrait un anneau large
        autour de la pastille, qui n'existait dans aucun fichier et masquait le
        cuivre ; ce qu'on voit est maintenant ce qui sera imprimé. */
-    const mk=fpMark(fp);
+    const mk=auto?fpMark(fp):null;
     if(mk){
       const w=T(mk.x,mk.y);
       c.fillStyle=sel?C_SEL:(top?C_SILK_T:C_SILK_B);
@@ -474,7 +501,7 @@ function drawSilk(c){
     // repère + valeur
     const tp = fpTextPos(fp);
     TXT(c,fp.ref,tp.ref.x,tp.ref.y,tp.ref.size,
-        sel?C_SEL:(top?C_SILK_T:C_SILK_B));
+        sel?C_SEL:(!auto?"#9aa3b0":(top?C_SILK_T:C_SILK_B)));
     if(S.scale>6&&fp.value)
       TXT(c,fp.value,tp.val.x,tp.val.y,tp.val.size,"#9aa3b0");
   }

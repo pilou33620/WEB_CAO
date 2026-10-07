@@ -1219,6 +1219,10 @@ function propsFp(box,fp){
       rotChoix([fp.rot||0]).map(a=>'<option value="'+a+'"'+
         ((fp.rot||0)===a?" selected":"")+'>'+a+'°</option>').join("")+'</select>'+
       '<button id="bOptRot" class="tb" style="padding:2px 6px;font-size:11px;" title="Trouver et appliquer l\'orientation optimale pour minimiser les croisements de chevelu">✨ Auto</button></div></div>'+
+    '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" '+
+      'title="Contour du boîtier, point de broche 1 et repère imprimés d\'office. Coupée sur une '+
+      'carte importée : sa sérigraphie d\'origine est dans les dessins.">'+
+      '<input type="checkbox" id="pSilk"'+(fp.silk===false?"":" checked")+'> Sérigraphie automatique</label></div>'+
     '<div class="cat">Broches et nets</div><table class="bom"><tbody>';
   for(const q of ps){
     let pinSchName = "";
@@ -1253,6 +1257,8 @@ function propsFp(box,fp){
   upd("pX",v=>fp.x=wxu(v),true);
   upd("pY",v=>fp.y=wyu(v),true);
   upd("pRot",v=>fp.rot=+v,true);
+  if($("pSilk"))$("pSilk").onchange=e=>{push();if(e.target.checked)delete fp.silk;else fp.silk=false;
+    touch();refreshPanels();draw();};
   const ap=$("pPkgApply");
   if(ap)ap.onclick=e=>{
     e.preventDefault();
@@ -1354,11 +1360,16 @@ function propsBoard(box){
         ? "Glissez les poignées pour déformer · Ctrl+clic sur une arête ajoute un sommet · redimensionner met le contour à l\'échelle."
         : "Contour rectangulaire. Le mode Contour (E) permet d\'en dessiner un librement.")+
       (out.length?'<br><span class="warn">'+out.length+' empreinte(s) hors du contour.</span>':"")+
+      (boardCutouts().length?'<br>'+boardCutouts().length+' découpe(s) intérieure(s) : '+
+        'fraisées avec le contour, le cuivre s\'en tient à la marge de bord.':"")+
       '</div>'+
     '<div class="prop"><div class="row">'+
       '<button class="tb" id="bpDraw">Redessiner <kbd>E</kbd></button>'+
       (S.board.pts?'<button class="tb" id="bpRect">Revenir au rectangle</button>':"")+
+      (boardCutouts().length?'<button class="tb" id="bpCutOff">Retirer les découpes</button>':"")+
       '</div></div>';
+  if($("bpCutOff"))$("bpCutOff").onclick=()=>{push();delete S.board.cutouts;boardChanged();
+    reSync();refreshPanels();draw();hint("Découpes intérieures retirées.");};
   $("bpW").onchange=()=>{push();setBoardSize(parseFloat($("bpW").value)||S.board.w,S.board.h);
     reSync();refreshPanels();draw();};
   $("bpH").onchange=()=>{push();setBoardSize(S.board.w,parseFloat($("bpH").value)||S.board.h);

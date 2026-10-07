@@ -5312,6 +5312,13 @@ const SIM_PCB={
            Math.max(a.y,b.y)+marge<bb.y1||Math.min(a.y,b.y)-marge>bb.y2)return;
         trous.push(gelule(a.x,a.y,b.x,b.y,marge));
       });
+      /* les découpes intérieures de la carte : un trou de plus, et leur marge */
+      for(const D of boardCutouts()){
+        const bD=polyBBox(D);
+        if(bD.x2+marge<bb.x1||bD.x1-marge>bb.x2||bD.y2+marge<bb.y1||bD.y1-marge>bb.y2)continue;
+        trous.push(plat(D).concat([D[0].x,D[0].y]));
+        if(marge>0)D.forEach((a,k)=>{const b=D[(k+1)%D.length];trous.push(gelule(a.x,a.y,b.x,b.y,marge));});
+      }
       /* LES LIAISONS THERMIQUES, comme `zoneCanvas` : une pastille du net de
          la zone est détourée de l'isolement de sa classe, puis rattachée par
          ses bras. Le détourage part en trou ; la pastille et ses bras partent
@@ -5378,7 +5385,7 @@ const SIM_PCB={
       for(const f of simViasPcb(trks))vias.push(Object.assign(f,{net:n}));
     }
     return {doc:{unite_mm:1,pistes,arcs,pastilles,plans,
-                 contour:{o:plat(boardPoly()),t:[]},percages,composants,
+                 contour:{o:plat(boardPoly()),t:boardCutouts().map(plat)},percages,composants,
                  stackup:simStackup(),vias,
                  natures,bruyants:(S.netBruyants||[]).filter(n=>natures[n]),
                  paires:(S.dpPairs||[]).map(p=>[p.p,p.n]),
