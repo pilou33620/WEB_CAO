@@ -23,7 +23,12 @@ const C_DRILL   = "#0c0d0f";
 const C_SEL     = "#8af0ff";
 const C_RATS    = "#5d6773";
 const C_ERR     = "#e8443a";
-const INNER_PAL = ["#5bd6a0","#c98cf0","#f2a03d","#b5d334","#f070b0","#8fa0ff"];
+const INNER_PAL = ["#5bd6a0","#c98cf0","#f2a03d","#b5d334","#f070b0","#8fa0ff",
+                   "#4fc3c8","#e0c050","#a07cf0","#7fd36b","#ff8a65","#64b5f6"];
+/* Jusqu'à 32 couches de cuivre, nombre impair compris : c'est ce que
+   produisent les fabricants de cartes HDI et de fonds de panier, et c'est ce
+   qu'une carte IPC-2581 peut déclarer. */
+const CU_MAX = 32;
 
 const PWR_RE = /^(gnd|agnd|dgnd|pgnd|masse|0v|vcc|vdd|vee|vss|\+?\d+v\d*|v\+|v-)$/i;
 
@@ -482,7 +487,26 @@ const STACK_PRESETS=[
        ["prepreg",0.145,4.3,0.02,"FR-4"]]}
 ];
 function diCount(n){return Math.max(1,n-1);}
-function presetsFor(n){return STACK_PRESETS.filter(p=>p.n===n);}
+/* Au-delà des modèles d'usine (et pour un nombre impair), un empilage
+   plausible plutôt que n − 1 cœurs de 1,48 mm — 32 couches en auraient fait
+   46 mm. L'épaisseur totale suit l'usage des fabricants ; cuivres extérieurs
+   35 µm, intérieurs 17,5 µm ; diélectriques alternés prepreg / cœur, de même
+   épaisseur, qui se partagent le reste. */
+function stackGenerique(n){
+  const th=n<=2?1.6:n<=10?1.6:n<=14?2.0:n<=20?2.4:n<=26?3.2:3.6;
+  const cu=[];
+  for(let i=0;i<n;i++)cu.push((i===0||i===n-1)?35:17.5);
+  const reste=th-cu.reduce((a,b)=>a+b,0)/1000, nd=diCount(n);
+  const t=r3(Math.max(0.05,reste/nd)), di=[];
+  for(let i=0;i<nd;i++)
+    di.push(n<=2?["core",t,4.5,0.02,"FR-4"]
+                :(i%2===0?["prepreg",t,4.3,0.02,"FR-4"]:["core",t,4.5,0.02,"FR-4"]));
+  return {n:n,th:th,name:n+" couches · FR-4 "+String(th).replace(".",",")+" mm",cu:cu,di:di};
+}
+function presetsFor(n){
+  const p=STACK_PRESETS.filter(p=>p.n===n);
+  return p.length?p:[stackGenerique(n)];
+}
 function diFrom(a){
   return {k:DI_KIND[a[0]]?a[0]:"core",t:a[1],er:a[2],
           df:a[3]==null?0.02:a[3],mat:a[4]||"FR-4"};
@@ -594,7 +618,13 @@ function stackMirror(){
    on répartit les diélectriques sur l'épaisseur visée. */
 function stackResize(n){
   const old=S.stack||stackDefaults(n), d=stackDefaults(n);
-  d.target=old.target;d.finish=old.finish;
+  /* L'épaisseur visée se garde — sauf si elle ne laisse plus de place aux
+     isolants : 1,6 mm pour 32 couches, c'est 30 µm de diélectrique entre
+     chaque cuivre, ce qu'aucun fabricant ne presse. Sous 60 µm par isolant,
+     l'épaisseur d'usine de ce nombre de couches reprend la main. */
+  let cuT=0;for(const c of d.cu)cuT+=c.t;
+  if(old.target-cuT>=0.06*diCount(n))d.target=old.target;
+  d.finish=old.finish;
   d.maskT=old.maskT;d.maskEr=old.maskEr;
   d.maskColor=old.maskColor;d.silkColor=old.silkColor;
   if(old.cu.length){

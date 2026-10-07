@@ -28,6 +28,11 @@ function buildTabs(){
   box.querySelectorAll(".tab").forEach(el=>{
     el.onclick=()=>{routeToLayer(+el.dataset.i);draw();};
   });
+  /* au-delà d'une dizaine de couches, la barre défile : l'onglet actif reste
+     en vue */
+  const on=box.querySelector(".tab.on");
+  if(on&&typeof on.scrollIntoView==="function")
+    try{on.scrollIntoView({block:"nearest",inline:"nearest"});}catch(_){}
 }
 function buildLayers(){
   const box=$("layers");

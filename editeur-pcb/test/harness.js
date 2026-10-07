@@ -173,7 +173,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
-  "apSet","apForPad","fePad","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","fePad","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform","feZoom","feRefit","feReattach",
@@ -5022,6 +5022,30 @@ T("sérigraphie automatique coupée : seule celle des dessins s'imprime",()=>{
   const n=g=>(g.match(/D01\*/g)||[]).length;
   if(!(n(tout)>n(avec)))throw new Error("R7 ne devait rien imprimer d'office : "+n(avec)+" / "+n(tout));
   carteVide();
+});
+/* JUSQU'À 32 COUCHES, nombre impair compris : un document les garde, et
+   l'empilage d'usine reste fabricable (pas 31 cœurs de 1,48 mm, ni 30 µm
+   d'isolant pour tenir dans 1,6 mm). */
+T("32 couches : lues, empilées, et l'épaisseur reste fabricable",()=>{
+  const garde=JSON.parse(serialize());
+  try{
+    if(CU_MAX!==32)throw new Error("plafond : "+CU_MAX);
+    const d=JSON.parse(serialize());
+    d.cu=13;d.cuL=[];d.stack=null;
+    d.tracks=[{l:12,net:"A",w:0.3,x1:1,y1:1,x2:5,y2:1}];
+    d.vias=[{x:5,y:1,d:0.8,drill:0.4,a:3,b:12,net:"A"}];
+    loadDoc(d,true);
+    if(S.cu!==13||S.cuL.length!==13||S.stack.di.length!==12)throw new Error("13 couches : "+S.cu);
+    if(S.tracks[0].l!==12||S.vias[0].b!==12)throw new Error("la 13e couche porte son cuivre");
+    d.cu=40;loadDoc(d,true);
+    if(S.cu!==32)throw new Error("au-delà de 32, ramené à 32 : "+S.cu);
+    const st=stackDefaults(32);
+    let t=0;for(const c of st.cu)t+=c.t;for(const x of st.di)t+=x.t;
+    if(Math.abs(t-3.6)>0.01||st.di.some(x=>x.t<0.06))throw new Error("empilage 32 couches : "+t);
+    if(st.di[0].k!=="prepreg"||st.di[1].k!=="core")throw new Error("prepreg et cœurs alternés");
+    setCuCount(2,true);setCuCount(32,true);
+    if(stackTotal()<3)throw new Error("1,6 mm ne tient plus 32 couches : "+stackTotal());
+  }finally{ loadDoc(garde,true); }
 });
 T("ouverture Gerber : un angle non entier n'est pas arrondi au degré",()=>{
   const A=apSet();

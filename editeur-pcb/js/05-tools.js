@@ -502,7 +502,7 @@ function normHole(h,i){
 }
 function normDoc(d){
   const src=(d&&typeof d==="object")?d:{};
-  const cu=dInt(src.cu,2,1,8);
+  const cu=dInt(src.cu,2,1,CU_MAX);
   const out={format:"pcbedit-1",cu:cu};
 
   /* --- empilage : toujours exactement `cu` couches --- */
@@ -2901,7 +2901,7 @@ function startRoute(x,y,exact){
     return;
   }
   hint("Clic pour poser un coude · « / » bascule la posture du coude · V pose un via et "+
-       "change de couche · touches 1-8 : couche · Échap termine.");
+       "change de couche · touches 1-9, 0, Page ↑/↓ : couche · Échap termine.");
 }
 /* L'aimant angulaire ne joue qu'en l'air. Une arrivée ancrée — pastille, via,
    bout de piste — se pose au point exact : déplacer l'arrivée de quelques
@@ -4436,14 +4436,23 @@ document.addEventListener("keydown",e=>{
      sans ce garde-fou, Ctrl+R faisait pivoter la sélection puis rechargeait la
      page. */
   if(e.ctrlKey||e.metaKey||e.altKey)return;
-  if(e.key>="1"&&e.key<="8"){
-    const i=+e.key-1;
-    if(i<S.cu){
-      e.preventDefault();
-      if(S.dp)dpToLayer(i);else routeToLayer(i);
-      draw();
+  /* 1 à 9 puis 0 pour la dixième ; Page ↑ / Page ↓ passent à la couche
+     voisine — la seule façon d'atteindre les couches au-delà de dix au
+     clavier. */
+  {
+    let i=-1;
+    if(e.key>="1"&&e.key<="9")i=+e.key-1;
+    else if(e.key==="0")i=9;
+    else if(e.key==="PageUp")i=Math.max(0,S.active-1);
+    else if(e.key==="PageDown")i=Math.min(S.cu-1,S.active+1);
+    if(i>=0){
+      if(i<S.cu){
+        e.preventDefault();
+        if(S.dp)dpToLayer(i);else routeToLayer(i);
+        draw();
+      }
+      return;
     }
-    return;
   }
   switch(k){
     case "s":
@@ -4585,11 +4594,11 @@ function setMode(m){
            "la portion droite entière, les coudes voisins glissent sans changer d'angle "+
            "(Alt pendant le glissement les laisse sur place) · "+
            "D passe un angle droit en 45° · U déroute la sélection sans toucher aux empreintes · R pivote · F retourne · Ctrl+C/Ctrl+V copie-colle · Alt+clic insère un point sur une piste sélectionnée.",
-    track:"Clic sur une pastille pour partir · V pose un via · 1-8 change de couche · Tab saisit les coordonnées · Échap termine.",
+    track:"Clic sur une pastille pour partir · V pose un via · 1-9, 0, Page ↑/↓ changent de couche · Tab saisit les coordonnées · Échap termine.",
     via:"Clic pour poser un via traversant, accroché à la pastille ou à la piste la plus proche.",
     hole:"Cliquez pour poser un trou mécanique non métallisé autonome (NPTH) hors empreinte · Échap annule.",
     dpair:"Clic sur une pastille de la paire pour partir — l'autre net est trouvé tout seul · "+
-          "V pose les deux vias en éventail · « / » bascule la posture · 1-8 change de couche · "+
+          "V pose les deux vias en éventail · « / » bascule la posture · 1-9, 0, Page ↑/↓ changent de couche · "+
           "arrivée sur les pastilles d'en face pour terminer · Échap dépose ce qui est tracé.",
     meander:"Cliquez et étirez une piste droite pour générer un serpentin d'appariement de longueur (accordéon) · Échap annule.",
     zone:"Clic pour chaque sommet, retour sur le premier point pour fermer · Maj contraint à 45° · Entrée ferme, Échap abandonne.",
