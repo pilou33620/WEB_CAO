@@ -226,7 +226,7 @@ function computeConn(exact){
   const padNodes=[];
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
-      const k="P"+fp.id+"."+q.n, ls=padLayers(fp,q);
+      const k="P"+fp.id+"."+q.n, ls=padCuLayers(fp,q);
       padNodes.push({k,q,fp,layers:ls});
       for(const l of ls)put(l,q.x,q.y,k);
     }
@@ -246,8 +246,10 @@ function computeConn(exact){
   });
   S.vias.forEach((v,i)=>{for(let l=v.a;l<=v.b;l++)touchSeg(l,v.x,v.y,v.d/2,"V"+i);});
   for(const p of padNodes)
-    for(const l of p.layers)
-      touchSeg(l,p.q.x,p.q.y,Math.min(p.q.w,p.q.h)/2,p.k);
+    for(const l of p.layers){
+      const qc=padSurCouche(p.q,l)||p.q;      // la forme de CETTE couche
+      touchSeg(l,p.q.x,p.q.y,Math.min(qc.w,qc.h)/2,p.k);
+    }
 
   /* Zones de cuivre : on ne se contente pas du contour tracé. Le remplissage
      réel est rasterisé puis découpé en îlots ; un item n'est relié qu'à l'îlot
@@ -339,8 +341,8 @@ function computeConn(exact){
 function netAtPoint(x,y,layer){
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
-      if(!padLayers(fp,q).includes(layer))continue;
-      if(padDist(x,y,q)<=0)return {net:q.net,pad:q,fp};
+      if(!padCuLayers(fp,q).includes(layer))continue;
+      if(padDist(x,y,padSurCouche(q,layer))<=0)return {net:q.net,pad:q,fp};
     }
   for(const t of S.tracks)
     if(t.l===layer && trkDist(x,y,t)<=t.w/2)return {net:t.net,track:t};
@@ -439,13 +441,13 @@ function runDrc(){
   /* Une piste circulaire entre dans le monde en une vingtaine de cordes : sans
      cela, un même défaut d'isolation se serait écrit vingt fois, une par corde.
      C'est la piste qui compte, pas le morceau par lequel on l'a mesurée. */
-  const uid=it=>{const o=it.arc||it;let k=idOf.get(o);if(k==null)idOf.set(o,k=idOf.size);return k;};
+  const uid=it=>{const o=it.arc||(it.k==="P"?it.src:it);let k=idOf.get(o);if(k==null)idOf.set(o,k=idOf.size);return k;};
   const neuf=(a,b)=>{
     const i=uid(a), j=uid(b), k=i<j?i+"|"+j:j+"|"+i;
     if(vu.has(k))return false;
     vu.add(k);return true;
   };
-  const tagOf=it=>it.fp.ref+"."+it.q.n;
+  const tagOf=it=>it.fp.ref+"."+it.q.n+(it.trouSeul?" (trou, sans pastille sur cette couche)":"");
   const bTT=[], bTP=[], bV=[], bPP=[];
   for(const a of N.all())
     for(const b of N.colliding(a)){

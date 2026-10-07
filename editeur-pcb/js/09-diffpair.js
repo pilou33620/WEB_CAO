@@ -150,7 +150,7 @@ function dpAnchors(net,layer){
   if(!net)return out;
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
-      if(q.net!==net||!padLayers(fp,q).includes(layer))continue;
+      if(q.net!==net||!padCuLayers(fp,q).includes(layer))continue;
       out.push({x:q.x,y:q.y,obj:q,pad:true});
     }
   for(const v of S.vias){

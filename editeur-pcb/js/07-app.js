@@ -479,6 +479,7 @@ if($("mMeander")) $("mMeander").onclick=e=>{
 $("mZone").onclick=e=>{e.stopPropagation();setMode("zone");zoneMenuToggle();};
 if($("mSilk")) $("mSilk").onclick=e=>{e.stopPropagation();setMode("silk");silkMenuToggle();};
 $("mEdge").onclick=()=>setMode("edge");
+$("mDecoupe").onclick=()=>setMode("decoupe");
 $("mOrigin").onclick=()=>setMode("origin");
 $("mErase").onclick=()=>setMode("cut");
 if($("bAddFp")) $("bAddFp").onclick=()=>pcbOuvrirExplorateurLib();

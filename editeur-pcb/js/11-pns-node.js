@@ -44,10 +44,33 @@ const PNS_MARGIN=1e-3;
    englobante pour l'index. `src` retient l'objet de `S` dont l'item est né —
    nul pour le cuivre qui n'existe encore que dans une branche.
    ========================================================================== */
-function pnsItemPad(fp,q){
-  const ls=padLayers(fp,q), r=Math.hypot(q.w,q.h)/2;
-  return {k:"P", q, fp, net:q.net||"", l0:ls[0], l1:ls[ls.length-1], src:q,
+function pnsItemPad(fp,q,qc,l0,l1){
+  const ls=padLayers(fp,q), g=qc||q, r=Math.hypot(g.w,g.h)/2;
+  return {k:"P", q:g, fp, net:q.net||"", l0:l0!=null?l0:ls[0], l1:l1!=null?l1:ls[ls.length-1], src:q,
           bx1:q.x-r, by1:q.y-r, bx2:q.x+r, by2:q.y+r};
+}
+/* LA PASTILLE COUCHE PAR COUCHE. Une traversante dont la forme change d'une
+   couche à l'autre (`parCouche`) entre dans le monde en plusieurs items, un
+   par suite de couches de même forme, chacun avec SA forme : le contrôle et
+   le routeur jugent donc la couronne interne à sa vraie taille. Là où la
+   pastille est retirée, reste le trou : un item de son diamètre (`trouSeul`),
+   que le cuivre des autres nets doit respecter comme une pastille. */
+function pnsItemsPad(fp,q){
+  if(!q.parCouche||!(q.drill>0))return [pnsItemPad(fp,q)];
+  const cle=l=>{const c=padSurCouche(q,l);return c?c.shape+"|"+c.w+"|"+c.h:"trou";};
+  const out=[];
+  let l0=0;
+  for(let l=1;l<=S.cu;l++){
+    if(l<S.cu&&cle(l)===cle(l0))continue;
+    const c=padSurCouche(q,l0);
+    const g=c||Object.assign({},q,{shape:"circ",w:q.drill,h:q.drill,trouSeul:true});
+    if(!c){delete g.pts;delete g.chamfer;}
+    const it=pnsItemPad(fp,q,g,l0,l-1);
+    if(!c)it.trouSeul=true;
+    out.push(it);
+    l0=l;
+  }
+  return out;
 }
 function pnsItemVia(v){
   const r=v.d/2;
@@ -384,7 +407,7 @@ function pnsStamp(){
 function pnsBuild(){
   const N=pnsNode(null);
   for(const fp of S.fps)
-    for(const q of padsWorld(fp))N.add(pnsItemPad(fp,q));
+    for(const q of padsWorld(fp))for(const it of pnsItemsPad(fp,q))N.add(it);
   for(const v of S.vias)N.add(pnsItemVia(v));
   for(const t of S.tracks)for(const it of pnsItemsTrack(t))N.add(it);
   return N;
