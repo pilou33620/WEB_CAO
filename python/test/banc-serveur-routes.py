@@ -577,6 +577,29 @@ def test_routes():
         assert res.getheader("X-Content-Type-Options") == "nosniff"
         print("[PASS] CORS/CSRF : seule l'origine du serveur est admise, nosniff pose")
 
+        # 30b. Telephone serveur hors des plages privees classiques (partage de
+        # connexion, 4G, Tailscale 100.64/10, liaison directe 169.254) : sa propre
+        # page doit pouvoir ecrire. Un 403 CSRF y laissait lire le projet sans
+        # pouvoir l'enregistrer. Une autre origine reste refusee.
+        vrai_ip = web_CAO.get_local_ip
+        try:
+            for ip in ("100.84.12.7", "169.254.20.3"):
+                web_CAO.get_local_ip = lambda ip=ip: ip
+                for origine, attendu in (("http://%s:8000" % ip, 200),
+                                         ("http://%s:9999" % ip, 403),
+                                         ("http://evil.example", 403),
+                                         ("null", 403)):
+                    conn.request("POST", "/api/pcb/score-placement", body=payload_pcb,
+                                 headers={"Content-Type": "application/json", "Origin": origine,
+                                          "Host": "%s:8000" % ip})
+                    res = conn.getresponse()
+                    res.read()
+                    assert res.status == attendu, "%s, Origin %s : %d au lieu de %d" % (
+                        ip, origine, res.status, attendu)
+        finally:
+            web_CAO.get_local_ip = vrai_ip
+        print("[PASS] CSRF : serveur sur une IP hors plages privees, sa page ecrit, les autres non")
+
         # 31. LIB : pas de page ni d'executable, pas de racine de disque.
         for nom in ("x.html", "x.bat", "x.svg", "x.json::$DATA"):
             conn.request("POST", "/api/lib/fichier",

@@ -173,11 +173,13 @@ var SCHEMA_PATTERNS = (function() {
     if (!el) return;
 
     if (erreur) {
+      // « HTTP … » : le serveur a répondu, il refuse ; sinon il est injoignable
+      const repondu = /^HTTP \d/.test(String(erreur));
       el.innerHTML = `
         <div style="padding:12px;color:var(--txt-dim);font-size:12px;line-height:1.5;">
-          <div style="color:var(--yellow);font-weight:600;margin-bottom:6px;">⚠️ Serveur non disponible</div>
+          <div style="color:var(--yellow);font-weight:600;margin-bottom:6px;">⚠️ ${repondu ? "Analyse refusée par le serveur" : "Serveur non disponible"}</div>
           <div>${esc(erreur)}</div>
-          <div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">Lancez <code>python web_CAO.py</code> pour activer la reconnaissance de motifs.</div>
+          ${repondu ? "" : '<div style="margin-top:8px;font-size:11px;color:var(--txt-dim);">Lancez <code>python web_CAO.py</code> pour activer la reconnaissance de motifs.</div>'}
           <button class="tb" id="bPatternsRefresh" style="margin-top:10px;width:100%;justify-content:center;">🔄 Réessayer</button>
         </div>
       `;
@@ -325,7 +327,11 @@ var SCHEMA_PATTERNS = (function() {
         });
 
         if (!res.ok) {
-          throw new Error("HTTP " + res.status + " : " + res.statusText);
+          /* Le serveur explique ses refus (CSRF, module absent) : son message
+             vaut mieux qu'un « Forbidden » qui fait croire au serveur arrete. */
+          let detail = "";
+          try { detail = ((await res.json()) || {}).detail || ""; } catch (_) {}
+          throw new Error("HTTP " + res.status + " : " + (detail || res.statusText));
         }
 
         const data = await res.json();

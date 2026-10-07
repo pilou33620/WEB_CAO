@@ -1178,14 +1178,6 @@ def nom_fichier_doc(valeur):
     return nom
 
 
-# Origines autorisees a appeler l'API : cette machine et les reseaux prives,
-# pour le cas ou la page serait servie depuis un autre port.
-ORIGINES = re.compile(
-    r"^https?://(localhost|127\.0\.0\.1|\[::1\]"
-    r"|192\.168\.\d{1,3}\.\d{1,3}"
-    r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
-    r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$")
-
 # Extensions qu'une route LIB accepte d'ecrire : des donnees, jamais une page
 # (.html servie sur l'origine de l'outil = script avec tous ses droits) ni un
 # executable.
@@ -1785,15 +1777,22 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         return urllib.parse.urlsplit(self.path).path.rstrip('/') or '/'
 
     def _origine_permise(self, origine):
-        """Vrai si `origine` est un reseau prive ET ce serveur-ci.
+        """Vrai si `origine` est ce serveur-ci : « http://<Host> », rien d'autre.
 
-        Etre sur le reseau prive ne suffit plus : une box, une imprimante ou
+        Etre sur le reseau prive ne suffit pas : une box, une imprimante ou
         un autre serveur de dev du LAN lisait la cle IA (/api/ia/cle) et
         ecrivait sur le disque. Toutes les pages sont servies par ce serveur :
         leur origine est « http://<Host> », rien d'autre n'en a besoin.
+
+        Le Host, lui, a deja ete verifie (parse_request) : c'est une adresse de
+        ce poste ou localhost, jamais un nom qu'un DNS piege pourrait rebrancher.
+        Exiger EN PLUS une plage privee (192.168/10/172.16) n'ajoutait rien et
+        cassait le telephone serveur : partage de connexion, 4G, Tailscale
+        (100.64-127.x) ou liaison directe (169.254.x) donnaient une page qui
+        lisait le projet mais ne pouvait plus l'enregistrer (403 CSRF).
         """
         hote = (self.headers.get("Host") or "").strip().lower()
-        return bool(origine and hote and ORIGINES.match(origine)
+        return bool(origine and hote
                     and origine.lower() in ("http://" + hote, "https://" + hote))
 
     def _cors(self):
