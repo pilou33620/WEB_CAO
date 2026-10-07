@@ -672,7 +672,40 @@ pastille tombe sur la trame des pistes qui viendront la rejoindre ; `Alt` le
 relâche, pour les cotes qui ne tombent pas dessus (un pas de 0,65 mm, par
 exemple). Les pastilles dessinées et le contour imposé sont enregistrés dans le
 `.json` de la carte (`fp.pads`, `fp.body`) et font l'aller-retour sans perte —
-même essai de neutralité que le reste du document.
+même essai de neutralité que le reste du document. « Sans perte » vaut pour
+tout ce que porte une pastille : les sommets d'un polygone (`pts`), le
+chanfrein et ses coins, les branches thermiques, et le **nom d'origine** de la
+broche (`nom`, « A1 », « K ») quand une carte venue d'ailleurs a dû être
+renumérotée — le numéro `n` reste l'entier qui porte le net, le nom
+l'accompagne et s'affiche sous lui dans le panneau Propriétés. La rotation
+d'une empreinte est un angle **quelconque**, ramené dans [0, 360[ au millième
+de degré : la liste du panneau propose les huitièmes de tour et l'angle réel
+du composant s'il n'en est pas un, et le Gerber flashe les pastilles à cet
+angle, sans l'arrondir au degré. Sur la carte aussi, la forme suit :
+`padsWorld()` transmet les sommets, le chanfrein et les branches thermiques
+(les sommets au miroir pour une empreinte posée dessous), si bien qu'une
+pastille polygonale se dessine, se contrôle et part au Gerber avec sa vraie
+forme, et non plus comme le rectangle w × h qui l'encadre.
+
+**Découpes intérieures de carte** (`board.cutouts`, une liste de polygones) :
+une fenêtre fraisée dans le substrat. Elles sont dessinées comme le contour,
+exclues de la carte pour tout ce qui demande « est-ce dedans ? » (`inBoard` :
+DRC des vias, trous et pastilles, routeur, poussée), rognées du remplissage
+des zones avec la marge de bord, effacées du cuivre Gerber, fraisées dans le
+profil (`Profile,NP`) et rappelées dans le master drawing et la fiche de la
+carte. Elles suivent un redimensionnement ; le panneau de la carte les compte
+et les retire. Un document sans découpe n'écrit pas la clé.
+
+**Sérigraphie automatique** : chaque empreinte imprime d'office le contour de
+son boîtier, son point de broche 1 et son repère. `fp.silk = false` (la case
+« Sérigraphie automatique » des propriétés) coupe les trois : c'est le cas
+d'une carte importée de l'IPC-2581, dont la sérigraphie d'origine est dans les
+dessins. Le repère reste visible à l'écran, en gris — le gris de ce qui ne
+s'imprime pas.
+
+L'historique garde 80 instantanés, dans la limite de 48 millions de caractères
+(`UNDO_BUDGET`, ~96 Mo en mémoire) : sur une très grosse carte, ce sont les plus
+récents qui tiennent dans ce budget qui restent — jamais moins d'un.
 
 ## Sélection multiple et presse-papier
 

@@ -34,9 +34,20 @@ function push(){pushSnap(null);}
    shove écarte du cuivre dès le premier clic, bien avant le dépôt, si bien que
    l'état à retenir pour un Ctrl+Z est celui d'AVANT le geste — pas celui d'un
    tracé à moitié fait, cuivre déjà poussé et pistes pas encore posées. */
+/* Quatre-vingts instantanés, mais pas au-delà d'un budget de mémoire : sur
+   une grosse carte (vingt mille pistes, trois mégaoctets de texte par
+   instantané), quatre-vingts copies pèseraient près d'un demi-gigaoctet. On
+   garde alors les plus récents qui tiennent dans le budget — toujours au moins
+   le dernier, pour qu'un Ctrl+Z reste possible. */
+const UNDO_MAX=80, UNDO_BUDGET=48e6;       // en caractères (≈ 96 Mo en mémoire)
+function histBorner(pile){
+  let tot=0;
+  for(const t of pile)tot+=t.length;
+  while(pile.length>UNDO_MAX||(pile.length>1&&tot>UNDO_BUDGET))tot-=pile.shift().length;
+}
 function pushSnap(snap){
   S.undo.push(snap||serialize());
-  if(S.undo.length>80)S.undo.shift();
+  histBorner(S.undo);
   S.redo.length=0;S.dirty=true;
 }
 /* ==========================================================================
@@ -118,12 +129,15 @@ function dMat(v){
     }
   return out;
 }
-const FP_ROT_OK={0:1,45:1,90:1,135:1,180:1,225:1,270:1,315:1};
 /* Pastilles posées à la main. Une pastille sans centre exploitable est
    écartée ; si rien ne reste, l'empreinte redevient paramétrique — mieux vaut
    une empreinte calculée qu'une empreinte sans cuivre. Le champ produit est
    exactement celui de padClone(), sans quoi l'aller-retour d'un document ne
-   serait plus neutre. */
+   serait plus neutre : les sommets d'un polygone, le chanfrein et les
+   branches thermiques passent donc aussi. Ils manquaient — un Ctrl+Z, une
+   reprise de session ou un rechargement rendaient un polygone sans sommets et
+   un chanfrein aux valeurs d'usine. Un polygone de moins de trois sommets
+   exploitables redevient un rectangle à angles droits de même encombrement. */
 function dPads(a){
   if(!Array.isArray(a))return null;
   const out=[];
@@ -131,11 +145,31 @@ function dPads(a){
     if(!q||typeof q!=="object")continue;
     const x=+q.x, y=+q.y;
     if(!Number.isFinite(x)||!Number.isFinite(y))continue;
-    out.push({n:dInt(q.n,out.length+1,1,4096),
-              x:clamp(r4(x),-COORD,COORD), y:clamp(r4(y),-COORD,COORD),
-              w:r4(dRange(q.w,1,0.05,200)), h:r4(dRange(q.h,1,0.05,200)),
-              shape:padShape(q.shape), drill:r4(dRange(q.drill,0,0,200)),
-              rot:padRot(q.rot)});
+    const o={n:dInt(q.n,out.length+1,1,4096),
+             x:clamp(r4(x),-COORD,COORD), y:clamp(r4(y),-COORD,COORD),
+             w:r4(dRange(q.w,1,0.05,200)), h:r4(dRange(q.h,1,0.05,200)),
+             shape:padShape(q.shape), drill:r4(dRange(q.drill,0,0,200)),
+             rot:padRot(q.rot)};
+    if(o.shape==="poly"){
+      const pts=dPts(Array.isArray(q.pts)?q.pts.map(p=>Array.isArray(p)?{x:p[0],y:p[1]}:p):null,3);
+      if(pts)o.pts=pts.map(p=>({x:r4(clamp(p.x,-200,200)),y:r4(clamp(p.y,-200,200))}));
+      else o.shape="sharp";
+    }
+    if(o.shape==="chamfer"||q.chamfer!=null){
+      o.chamfer=r4(dRange(q.chamfer,Math.min(o.w,o.h)*0.25,0,100));
+      const cc=q.chamferCorners;
+      if(cc==="all"||cc==="pin1")o.chamferCorners=cc;
+      else if(Array.isArray(cc))o.chamferCorners=[0,1,2,3].map(i=>!!cc[i]);
+    }
+    if(q.thermalSpokes!=null)o.thermalSpokes=dInt(q.thermalSpokes,4,1,8);
+    if(q.thermalAngle!=null)o.thermalAngle=padRot(q.thermalAngle);
+    if(q.thermalWidth!=null)o.thermalWidth=r4(dRange(q.thermalWidth,0.3,0.05,50));
+    if(q.thermalGap!=null)o.thermalGap=r4(dRange(q.thermalGap,0.3,0,50));
+    /* nom d'origine de la broche (« A1 », « K ») : le numéro reste l'entier
+       qui porte le net, le nom n'est qu'une étiquette qui l'accompagne */
+    const nom=padNom(q.nom);
+    if(nom)o.nom=nom;
+    out.push(o);
   }
   if(!out.length)return null;
   for(const q of out){
@@ -311,7 +345,10 @@ function normFp(f,i){
     span:dRange(f.span,g.span,0.05,1000),
     x:dRange(f.x,0,-COORD,COORD),
     y:dRange(f.y,0,-COORD,COORD),
-    rot:FP_ROT_OK[dNum(f.rot,0)]?dNum(f.rot,0):0,
+    /* angle quelconque, ramené dans [0, 360[ au millième de degré : tout le
+       reste (padsWorld, DRC, Gerber, placement) calcule déjà en cosinus et
+       sinus. Une carte importée garde ainsi ses composants à 30° ou à 12,5°. */
+    rot:padRot(f.rot),
     side:f.side?1:0,
     nets:dNets(f.nets)
   };
@@ -338,6 +375,9 @@ function normFp(f,i){
      décision qu'un document doit garder — sans quoi la règle automatique la
      déferait à la lecture. Tout le reste qu'un fichier pourrait porter là est
      ramené à un point exploitable, ou écarté. */
+  /* sérigraphie automatique (contour, point, repère) coupée : une carte
+     importée apporte la sienne. Absent = coupée jamais, comme avant. */
+  if(f.silk===false)out.silk=false;
   if(f.mark===false)out.mark=false;
   else if(f.mark&&typeof f.mark==="object"){
     const mx=+f.mark.x, my=+f.mark.y;
@@ -482,6 +522,10 @@ function normDoc(d){
   out.board={x:dRange(b.x,0,-COORD,COORD),y:dRange(b.y,0,-COORD,COORD),
              w:dRange(b.w,100,1,COORD),h:dRange(b.h,80,1,COORD),
              pts:dPts(b.pts,3)};
+  /* découpes intérieures : seulement celles qui ont trois sommets ou plus ;
+     un document qui n'en a pas n'écrit pas la clé */
+  const dec=(Array.isArray(b.cutouts)?b.cutouts:[]).map(p=>dPts(p,3)).filter(Boolean);
+  if(dec.length)out.board.cutouts=dec.slice(0,500);
   const o=(src.origin&&typeof src.origin==="object")?src.origin:{};
   out.origin={x:dRange(o.x,0,-COORD,COORD),y:dRange(o.y,0,-COORD,COORD)};
   out.fabOrigin=!!src.fabOrigin;
@@ -667,11 +711,13 @@ function loadDoc(d,keepView){
 function undo(){
   if(!S.undo.length)return;
   S.redo.push(serialize());
+  histBorner(S.redo);
   loadDoc(JSON.parse(S.undo.pop()),true);
 }
 function redo(){
   if(!S.redo.length)return;
   S.undo.push(serialize());
+  histBorner(S.undo);
   loadDoc(JSON.parse(S.redo.pop()),true);
 }
 

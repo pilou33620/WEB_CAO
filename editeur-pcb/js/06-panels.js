@@ -1216,9 +1216,13 @@ function propsFp(box,fp){
     '<div class="prop two">'+numProp("pX","X (mm)",ux(fp.x),0.1,-1e4)+
       numProp("pY","Y (mm)",uy(fp.y),0.1,-1e4)+'</div>'+
     '<div class="prop"><label>Rotation</label><div style="display:flex;align-items:center;gap:4px;"><select id="pRot" style="flex:1;">'+
-      [0,45,90,135,180,225,270,315].map(a=>'<option value="'+a+'"'+
+      rotChoix([fp.rot||0]).map(a=>'<option value="'+a+'"'+
         ((fp.rot||0)===a?" selected":"")+'>'+a+'°</option>').join("")+'</select>'+
       '<button id="bOptRot" class="tb" style="padding:2px 6px;font-size:11px;" title="Trouver et appliquer l\'orientation optimale pour minimiser les croisements de chevelu">✨ Auto</button></div></div>'+
+    '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" '+
+      'title="Contour du boîtier, point de broche 1 et repère imprimés d\'office. Coupée sur une '+
+      'carte importée : sa sérigraphie d\'origine est dans les dessins.">'+
+      '<input type="checkbox" id="pSilk"'+(fp.silk===false?"":" checked")+'> Sérigraphie automatique</label></div>'+
     '<div class="cat">Broches et nets</div><table class="bom"><tbody>';
   for(const q of ps){
     let pinSchName = "";
@@ -1227,7 +1231,8 @@ function propsFp(box,fp){
       pinSchName = (pinObj && pinObj.name) || (Array.isArray(schComp.pinNames) && schComp.pinNames[q.n - 1]) || "";
     }
     h+='<tr data-net="'+esc(q.net||"")+'"'+(q.net&&S.hlNet===q.net?' class="on"':"")+
-       '><td class="r" style="width:28px">#'+esc(q.n)+'</td>'+
+       '><td class="r" style="width:28px"'+(q.nom?' title="Broche « '+esc(q.nom)+' » à l\'origine"':"")+
+       '>#'+esc(q.n)+(q.nom?'<br><span style="color:var(--txt-dim);font-size:10px">'+esc(q.nom)+'</span>':"")+'</td>'+
        (pinSchName ? '<td style="font-family:var(--mono);font-size:11px;color:#f0abfc;font-weight:600;width:75px;overflow:hidden;text-overflow:ellipsis" title="Broche schéma : '+esc(pinSchName)+'">'+esc(pinSchName)+'</td>' : '<td style="width:30px;color:var(--txt-dim);font-size:10px">—</td>')+
        '<td class="net">'+(q.net?'<span class="dot" style="background:'+netColor(q.net)+
        '"></span>'+esc(q.net):'<span style="color:var(--txt-dim)">non connectée</span>')+'</td></tr>';
@@ -1252,6 +1257,8 @@ function propsFp(box,fp){
   upd("pX",v=>fp.x=wxu(v),true);
   upd("pY",v=>fp.y=wyu(v),true);
   upd("pRot",v=>fp.rot=+v,true);
+  if($("pSilk"))$("pSilk").onchange=e=>{push();if(e.target.checked)delete fp.silk;else fp.silk=false;
+    touch();refreshPanels();draw();};
   const ap=$("pPkgApply");
   if(ap)ap.onclick=e=>{
     e.preventDefault();
@@ -1353,11 +1360,16 @@ function propsBoard(box){
         ? "Glissez les poignées pour déformer · Ctrl+clic sur une arête ajoute un sommet · redimensionner met le contour à l\'échelle."
         : "Contour rectangulaire. Le mode Contour (E) permet d\'en dessiner un librement.")+
       (out.length?'<br><span class="warn">'+out.length+' empreinte(s) hors du contour.</span>':"")+
+      (boardCutouts().length?'<br>'+boardCutouts().length+' découpe(s) intérieure(s) : '+
+        'fraisées avec le contour, le cuivre s\'en tient à la marge de bord.':"")+
       '</div>'+
     '<div class="prop"><div class="row">'+
       '<button class="tb" id="bpDraw">Redessiner <kbd>E</kbd></button>'+
       (S.board.pts?'<button class="tb" id="bpRect">Revenir au rectangle</button>':"")+
+      (boardCutouts().length?'<button class="tb" id="bpCutOff">Retirer les découpes</button>':"")+
       '</div></div>';
+  if($("bpCutOff"))$("bpCutOff").onclick=()=>{push();delete S.board.cutouts;boardChanged();
+    reSync();refreshPanels();draw();hint("Découpes intérieures retirées.");};
   $("bpW").onchange=()=>{push();setBoardSize(parseFloat($("bpW").value)||S.board.w,S.board.h);
     reSync();refreshPanels();draw();};
   $("bpH").onchange=()=>{push();setBoardSize(S.board.w,parseFloat($("bpH").value)||S.board.h);
@@ -1745,6 +1757,14 @@ function mpTexte(id,label,list,pick,off){
     (m?' value="'+esc(pick(list[0])||"")+'"':' placeholder="mixte"')+
     (off?" disabled":"")+'></div>';
 }
+/* Les angles proposés pour une empreinte : les huitièmes de tour, plus ceux
+   que portent déjà les empreintes affichées. Sans eux, un composant importé à
+   30° montrerait « 0° » dans la liste — et la liste mentirait. */
+function rotChoix(cur){
+  const a=[0,45,90,135,180,225,270,315];
+  for(const v of cur)if(a.indexOf(v)<0)a.push(v);
+  return a.sort((x,y)=>x-y);
+}
 /* `opts` : [valeur, texte]. La valeur est comparée en texte — une couche et
    une face sont des indices, un net est un nom. */
 function mpChoix(id,label,list,pick,opts,off){
@@ -1818,7 +1838,7 @@ const MP_KINDS={
           mpNum("mpFpSpan","Écartement",list,f=>f.span,2,0.01,0.2,off)+
           mpChoix("mpFpSide","Face",list,f=>(f.side?1:0),[[0,"Dessus"],[1,"Dessous"]])+'</div>'+
         '<div class="prop">'+mpChoix("mpFpRot","Rotation",list,f=>(f.rot||0),
-            [0,45,90,135,180,225,270,315].map(a=>[a,a+"°"]))+'</div>'+
+            rotChoix(list.map(f=>f.rot||0)).map(a=>[a,a+"°"]))+'</div>'+
         (libre?'<div class="empty" style="padding:2px 12px 8px">Empreinte dessinée '+
           'à la main dans la sélection : les cotes génériques ne commandent plus '+
           'rien pour elle, elles restent grisées.</div>':"");

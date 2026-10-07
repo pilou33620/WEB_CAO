@@ -181,7 +181,10 @@ function apForPad(A,q,grow){
   const g=grow||0;
   if(q.shape==="circ")return A.get("C,"+fmt(Math.max(0.01,Math.max(q.w,q.h)+2*g),4));
   let w=Math.max(0.01,q.w+2*g), h=Math.max(0.01,q.h+2*g);
-  let deg=((Math.round((q.rot||0)*180/Math.PI)%360)+360)%360;
+  /* au millième de degré, comme la pastille elle-même : un composant posé à
+     12,5° ne doit pas sortir à 13° chez le fabricant */
+  let deg=padRot((q.rot||0)*180/Math.PI);
+  if(deg>=360)deg=0;
   if(q.shape==="oval"){
     /* le grand axe passe en x, quitte à tourner d'un quart de tour : c'est la
        convention de l'ouverture O, et celle de la macro */
@@ -265,6 +268,13 @@ function gOutside(body,A,x1,y1,x2,y2){
   if(m>0)
     for(let i=0,j=P.length-1;i<P.length;j=i++)
       gSeg(body,A,P[j].x,P[j].y,P[i].x,P[i].y,2*m);
+  /* les découpes intérieures : effacées, marge comprise */
+  for(const D of boardCutouts()){
+    gRegion(body,D);
+    if(m>0)
+      for(let i=0,j=D.length-1;i<D.length;j=i++)
+        gSeg(body,A,D[j].x,D[j].y,D[i].x,D[i].y,2*m);
+  }
 }
 function gRect(body,x1,y1,x2,y2){
   gRegion(body,[{x:x1,y:y1},{x:x2,y:y1},{x:x2,y:y2},{x:x1,y:y2}]);
@@ -359,6 +369,7 @@ function gerberSilk(side){
   const A=apSet(), body=[], lw=0.15;
   for(const fp of S.fps){
     if(!!fp.side!==!!side)continue;
+    if(fp.silk===false)continue;          // sérigraphie importée : dans les dessins
     const T=fpXform(fp), bb=bodyOf(fp);
     const c=[T(bb.x1,bb.y1),T(bb.x2,bb.y1),T(bb.x2,bb.y2),T(bb.x1,bb.y2)];
     for(let k=0;k<4;k++)gSeg(body,A,c[k].x,c[k].y,c[(k+1)%4].x,c[(k+1)%4].y,lw);
@@ -421,9 +432,10 @@ function gerberSilk(side){
    écrits séparément, chacun avec l'attribut qui le décrit.
    ========================================================================== */
 function edgeSegs(body,A){
-  const c=boardPoly();
-  for(let k=0;k<c.length;k++)
-    gSeg(body,A,c[k].x,c[k].y,c[(k+1)%c.length].x,c[(k+1)%c.length].y,0.1);
+  /* le contour, puis chaque découpe intérieure : le fraisage les suit tous */
+  for(const c of [boardPoly()].concat(boardCutouts()))
+    for(let k=0;k<c.length;k++)
+      gSeg(body,A,c[k].x,c[k].y,c[(k+1)%c.length].x,c[(k+1)%c.length].y,0.1);
 }
 /* Le profil de découpe. « NP » : le bord n'est pas métallisé — un contour
    plaqué existe (bords dorés, connecteur de carte) mais se commande à part. */
@@ -766,6 +778,7 @@ function fabReadme(files,dr){
   L.push("");
   L.push("Carte : "+fmt(S.board.w,2)+" x "+fmt(S.board.h,2)+" mm"+
          (S.board.pts?" (contour libre, "+S.board.pts.length+" sommets)":" (rectangle)")+
+         (boardCutouts().length?", "+boardCutouts().length+" decoupe(s) interieure(s)":"")+
          ", "+S.cu+" couche(s) de cuivre.");
   L.push("Empilage : "+fmt(stackTotal(),3)+" mm, finition "+S.stack.finish+
          " ; la coupe complete est dans EMPILAGE.txt.");

@@ -55,7 +55,8 @@ const FICHIERS=[
   path.join(RACINE,"js","02-modele.js"),
   path.join(RACINE,"..","commun","simulation-em.js"),
   path.join(RACINE,"..","commun","simulation-datasheet.js"),
-  path.join(RACINE,"js","07-simulation.js")
+  path.join(RACINE,"js","07-simulation.js"),
+  path.join(RACINE,"js","08-vers-pcb.js")
 ];
 const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simSaisie","simPorts","SIM_FORMAT",
@@ -170,7 +171,9 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simDsCatalogue","simDsPreparer","simDsAppliquer","simDsGroupes","simDsNb",
   "simDsBorneDe","simDsReappliquerCapas","SIM_DS","simPDNAssistantActif",
   /* La simulation RF : la carte lue, décrite pour le panneau commun. */
-  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfPlateauIpc","simRfZ","simRfModele"];
+  "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfPlateauIpc","simRfZ","simRfModele",
+  /* La carte du fabricant traduite pour l'éditeur PCB (08-vers-pcb.js). */
+  "ipcVersPcb","ipcVersPcbResume","vpEchelle","mdlPadPlace","mdlPlacer"];
 
 /* Un seul `eval`, sur les trois fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -6051,6 +6054,174 @@ T("vérification de la carte : surfaces, contour, trous et broches partent aussi
     throw new Error("les broches placées, et leur net : "+JSON.stringify(u1));
   if(!d.pastilles.some(q=>q.x===X2&&q.y===Y&&q.n==="N$1"))
     throw new Error("la pastille porte son net");
+});
+
+/* ==========================================================================
+   DE LA CARTE DU FABRICANT À L'ÉDITEUR PCB (08-vers-pcb.js)
+   --------------------------------------------------------------------------
+   La traduction se juge à la place du cuivre : chaque pastille doit tomber,
+   dans le repère de l'éditeur (Y vers le bas, millimètres), là où la
+   visionneuse la pose. On rejoue ici la transformation de l'éditeur
+   (fpXform : miroir de face, puis rotation) plutôt que de charger tout
+   l'éditeur — c'est la formule qu'il applique, trois lignes.
+   ========================================================================== */
+function vpEditeurMonde(fp,q){
+  const a=(fp.rot||0)*Math.PI/180, m=fp.side?-1:1;
+  return {x:fp.x+(m*q.x)*Math.cos(a)-q.y*Math.sin(a),
+          y:fp.y+(m*q.x)*Math.sin(a)+q.y*Math.cos(a)};
+}
+function vpCarteEssai(){
+  return {unites:"INCH",epaisseur:0.062,nets:["GND","SIG","A1NET"],
+    contour:{o:[0,0, 2,0, 2,1, 0,1, 0,0],t:[[1,0.2, 1.1,0.2, 1.1,0.3]]},
+    empilage:[{nom:"TOP",seq:1,ep:0.0014,type:"CONDUCTOR"},{nom:"D1",seq:2,ep:0.01,type:"DIELECTRIC"},
+              {nom:"IN1",seq:3,ep:0.0014,type:"PLANE"},{nom:"D2",seq:4,ep:0.04,type:"DIELECTRIC"},
+              {nom:"BOT",seq:5,ep:0.0014,type:"CONDUCTOR"}],
+    couches:["TOP","IN1","BOT","SILK"],
+    pistes:[{c:0,n:1,w:0.008,p:[0.5,0.5, 0.8,0.5, 0.8,0.7]},{c:3,n:-1,w:0.005,p:[0,0,1,1]}],
+    arcs:[{c:2,n:1,w:0.01,s:[1.2,0.5],e:[1.0,0.3],m:[1.0,0.5],h:1},
+          {c:0,n:0,w:0.01,s:[1.5,0.5],e:[1.5,0.5],m:[1.4,0.5],h:0}],
+    plans:[{c:1,n:0,g:[{o:[0.1,0.1, 1.9,0.1, 1.9,0.9, 0.1,0.9],t:[]}]}],
+    textes:[{c:3,t:"REV A",x:0.1,y:0.1}],
+    padstacks:{
+      SMD:{trou:0,pad:0.02,pads:[{c:"TOP",d:0.02,f:"R1"},{c:"BOT",d:0.02,f:"R1"}]},
+      TH:{trou:0.03,pad:0.06,pads:[{c:"TOP",d:0.06,f:"C1"},{c:"BOT",d:0.06,f:"C1"}]},
+      VIA:{trou:0.012,pad:0.024,pads:[{c:"TOP",d:0.024,f:"C2"}]}},
+    formes:{R1:{t:"RECTCENTER",w:0.03,h:0.015},C1:{t:"CIRCLE",d:0.06},C2:{t:"CIRCLE",d:0.024}},
+    formesuser:{},
+    pads:[{x:1.6,y:0.2,ps:"VIA",n:0}],
+    composants:[
+      {ref:"U1",pkg:"BGA",c:0,x:0.6,y:0.4,r:30,m:0,val:"MCU",
+       pads:[{x:-0.02,y:0.02,ps:"SMD",pin:"A1",n:2},{x:0.02,y:0.02,ps:"SMD",pin:"A2",n:1},
+             {x:0.02,y:-0.02,ps:"SMD",pin:"B1",n:0}]},
+      {ref:"C5",pkg:"0402",c:2,x:1.2,y:0.7,r:45,m:1,val:"100n",
+       pads:[{x:-0.02,y:0,ps:"SMD",pin:"1",r:10},{x:0.02,y:0.005,ps:"SMD",pin:"2"}],
+       pins:[{num:"1",n:0},{num:"2",n:1}]},
+      {ref:"J1",pkg:"HDR",c:0,x:0.3,y:0.3,r:90,m:0,
+       pads:[{x:0,y:0,ps:"TH",pin:"1",n:0},{x:0.1,y:0,ps:"TH",pin:"2",n:1}]}],
+    percages:[{x:0.3,y:0.3,d:0.03,p:"PLATED",ps:"TH",n:0},
+              {x:0.3,y:0.4,d:0.03,p:"PLATED",ps:"TH",n:1},
+              {x:1.6,y:0.2,d:0.012,p:"VIA",ps:"VIA",n:0,sa:0,sb:1},
+              {x:1.8,y:0.8,d:0.125,p:"NONPLATED",ps:""}]};
+}
+T("vers l'éditeur PCB : pastilles à leur place, en mm, Y retourné, dessous compris",()=>{
+  mdlCharger(vpCarteEssai(),"essai.xml");
+  const {doc}=ipcVersPcb(V.modele,"essai.xml");
+  let n=0;
+  for(const c of V.modele.composants){
+    const fp=doc.fps.find(f=>f.ref===c.ref);
+    if(!fp)throw new Error(c.ref+" absent");
+    c.pads.forEach(function(p,j){
+      const w=mdlPlacer(p.x,p.y,c.x,c.y,c.r,!!c.m);          // repère du fichier
+      const e=vpEditeurMonde(fp,fp.pads[j]);
+      const ex=(w.x-0)*25.4, ey=(1-w.y)*25.4;                  // X0 = 0, Y0 = 1 pouce
+      if(Math.hypot(e.x-ex,e.y-ey)>0.002)
+        throw new Error(c.ref+"."+p.pin+" : "+JSON.stringify(e)+" au lieu de "+ex+","+ey);
+      n++;
+    });
+  }
+  if(n!==7)throw new Error("7 pastilles attendues, "+n);
+  const c5=doc.fps.find(f=>f.ref==="C5");
+  if(c5.side!==1||c5.rot!==-45)throw new Error("C5 : dessous, -45° attendus : "+c5.side+" "+c5.rot);
+  if(c5.nets[1]!=="GND"||c5.nets[2]!=="SIG")throw new Error("nets des broches logiques : "+JSON.stringify(c5.nets));
+});
+T("vers l'éditeur PCB : broches « A1 » renumérotées, le nom reste sur la pastille",()=>{
+  mdlCharger(vpCarteEssai(),"essai.xml");
+  const {doc,bilan}=ipcVersPcb(V.modele,"essai.xml");
+  const u1=doc.fps.find(f=>f.ref==="U1");
+  if(u1.pads.map(q=>q.n+":"+q.nom).join(" ")!=="1:A1 2:A2 3:B1")
+    throw new Error("numéros : "+u1.pads.map(q=>q.n+":"+q.nom).join(" "));
+  if(u1.nets[1]!=="A1NET"||u1.nets[2]!=="SIG"||u1.nets[3]!=="GND")
+    throw new Error("nets suivant la renumérotation : "+JSON.stringify(u1.nets));
+  const j1=doc.fps.find(f=>f.ref==="J1");
+  if(j1.pads.some(q=>q.nom))throw new Error("broches entières : pas de nom");
+  if(bilan.renumerotes!==1)throw new Error("un composant renuméroté : "+bilan.renumerotes);
+});
+T("vers l'éditeur PCB : couches, vias, trous, arcs, zones, contour, origine",()=>{
+  mdlCharger(vpCarteEssai(),"essai.xml");
+  const {doc,bilan}=ipcVersPcb(V.modele,"essai.xml");
+  if(doc.cu!==4||doc.cuL[0].name!=="TOP"||doc.cuL[1].name!=="IN1"||doc.cuL[3].name!=="BOT")
+    throw new Error("3 cuivres → 4 couches, le dessous au fond : "+JSON.stringify(doc.cuL));
+  const j1=doc.fps.find(f=>f.ref==="J1");
+  if(Math.abs(j1.pads[0].drill-0.762)>1e-6)throw new Error("perçage traversant : "+j1.pads[0].drill);
+  if(doc.vias.length!==1)throw new Error("un seul via, les trous de J1 n'en sont pas : "+doc.vias.length);
+  const v=doc.vias[0];
+  if(v.a!==0||v.b!==1||v.net!=="GND"||Math.abs(v.drill-0.3048)>1e-6||Math.abs(v.d-0.6096)>1e-6)
+    throw new Error("via borgne TOP→IN1 : "+JSON.stringify(v));
+  if(doc.holes.length!==1||Math.abs(doc.holes[0].d-3.175)>1e-6)throw new Error("trou NPTH : "+JSON.stringify(doc.holes));
+  if(bilan.pastillesLibres!==0)throw new Error("la pastille du via n'est pas une empreinte");
+  /* un arc de 90° et un cercle complet coupé en trois */
+  const arcs=doc.tracks.filter(t=>t.ca);
+  if(arcs.length!==4||arcs[0].l!==3)throw new Error("arcs : "+arcs.length+" / couche "+(arcs[0]&&arcs[0].l));
+  /* le sens : horaire dans le fichier (Y en haut), donc positif chez l'éditeur (Y en bas) */
+  if(!(arcs[0].ca>0)||Math.abs(arcs[0].ca-Math.PI/2)>1e-3)throw new Error("balayage : "+arcs[0].ca);
+  if(doc.zones.length!==1||doc.zones[0].l!==1||doc.zones[0].net!=="GND")throw new Error("zone : "+JSON.stringify(doc.zones));
+  if(!doc.board.pts||doc.board.pts.length!==4||doc.board.w!==50.8||doc.board.h!==25.4)
+    throw new Error("contour : "+JSON.stringify(doc.board));
+  if(doc.origin.x!==0||doc.origin.y!==25.4||!doc.fabOrigin)throw new Error("origine : "+JSON.stringify(doc.origin));
+  if(bilan.ignores.textes!==0||bilan.ignores.pistesHorsCuivre!==0)
+    throw new Error("tout est repris : "+JSON.stringify(bilan.ignores));
+  if(!/INCH/.test(ipcVersPcbResume(bilan))||!/découpe/.test(ipcVersPcbResume(bilan)))
+    throw new Error("résumé : "+ipcVersPcbResume(bilan));
+});
+T("vers l'éditeur PCB : découpes de carte, sérigraphie et textes repris",()=>{
+  const m=vpCarteEssai();
+  /* « Symbol-B » : rien dans le nom ne dit sérigraphie, et c'est le fichier
+     qui dit dessous */
+  m.couches.push("Symbol-B");
+  m.calques={"Symbol-B":{f:"SILKSCREEN",s:"BOTTOM"},"SILK":{f:"SILKSCREEN",s:"TOP"}};
+  m.arcs.push({c:4,n:-1,w:0.006,s:[1.0,0.8],e:[1.0,0.8],m:[0.9,0.8],h:0});
+  m.plans.push({c:3,n:-1,g:[{o:[1.5,0.1, 1.7,0.1, 1.7,0.2],t:[]}]});
+  m.textes=[{c:3,t:"R12",x:0.5,y:0.5,r:90,h:0.05,b:[0.48,0.45,0.52,0.6]},
+            {c:4,t:"DOS",x:1,y:0.5,h:0.04},
+            {c:0,t:"CUIVRE",x:1,y:1}];
+  mdlCharger(m,"essai.xml");
+  const {doc,bilan}=ipcVersPcb(V.modele,"essai.xml");
+  /* la découpe : 3 sommets, Y retourné, en mm */
+  const dc=doc.board.cutouts;
+  if(!dc||dc.length!==1||dc[0].length!==3||dc[0][0].x!==25.4||dc[0][0].y!==20.32)
+    throw new Error("découpe : "+JSON.stringify(dc));
+  /* le trait de SILK (diagonale du fichier d'essai) sur le dessus */
+  const traits=doc.drawings.filter(d=>d.shape==="line");
+  const diag=traits.find(d=>d.layer==="silkT"&&d.x1===0&&d.y1===25.4&&d.x2===25.4&&d.y2===0);
+  if(!diag||Math.abs(diag.width-0.127)>1e-6)throw new Error("trait de sérigraphie : "+JSON.stringify(traits[0]));
+  /* le cercle de Symbol-B en cordes, dessous, sous 0,02 mm de flèche */
+  const cercle=traits.filter(d=>d.layer==="silkB");
+  if(cercle.length<12)throw new Error("cercle de sérigraphie en cordes : "+cercle.length);
+  const r=0.1*25.4, cx=0.9*25.4, cy=(1-0.8)*25.4;
+  for(const d of cercle){
+    const mx=(d.x1+d.x2)/2, my=(d.y1+d.y2)/2;
+    if(r-Math.hypot(mx-cx,my-cy)>0.021)throw new Error("flèche trop grande");
+  }
+  /* l'aplat en contour : trois côtés, refermé */
+  if(bilan.aplats!==1)throw new Error("aplat : "+bilan.aplats);
+  /* les textes : centrés sur leur boîte, taille, angle retourné, face */
+  const tx=doc.drawings.filter(d=>d.shape==="text");
+  const r12=tx.find(d=>d.text==="R12"), dos=tx.find(d=>d.text==="DOS");
+  if(!r12||r12.layer!=="silkT"||Math.abs(r12.x1-12.7)>1e-6||Math.abs(r12.y1-(1-0.525)*25.4)>1e-6)
+    throw new Error("R12 au milieu de sa boîte : "+JSON.stringify(r12));
+  if(Math.abs(r12.size-1.27)>1e-6||r12.rot!==-90)throw new Error("taille et angle : "+JSON.stringify(r12));
+  if(!dos||dos.layer!=="silkB")throw new Error("texte dessous : "+JSON.stringify(dos));
+  if(bilan.textes!==2||bilan.ignores.textes!==1)throw new Error("textes : "+JSON.stringify(bilan));
+  /* la sérigraphie du fichier remplace celle de l'éditeur, face par face */
+  if(doc.fps.some(f=>f.silk!==false))throw new Error("sérigraphie automatique coupée sur les deux faces");
+  m.couches.pop();delete m.calques;
+  m.arcs.pop();m.plans.pop();m.textes=[];m.pistes=m.pistes.filter(p=>p.c!==3);
+  mdlCharger(m,"essai.xml");
+  const sans=ipcVersPcb(V.modele,"essai.xml").doc;
+  if(sans.fps.some(f=>f.silk===false)||sans.drawings.length)
+    throw new Error("sans sérigraphie dans le fichier, l'éditeur garde la sienne");
+});
+T("vers l'éditeur PCB : unités, et refus d'une carte que l'éditeur ne peut pas tenir",()=>{
+  if(vpEchelle("INCH")!==25.4||vpEchelle("MILLIMETER")!==1||vpEchelle("MICRON")!==0.001||vpEchelle("MIL")!==0.0254||vpEchelle("")!==1)
+    throw new Error("facteurs d'unité");
+  const m=vpCarteEssai();
+  m.empilage=[];m.couches=[];
+  for(let i=0;i<10;i++){m.empilage.push({nom:"L"+i,seq:i,type:"CONDUCTOR"});m.couches.push("L"+i);}
+  m.pistes=[];m.arcs=[];m.plans=[];m.composants=[];m.pads=[];m.percages=[];m.textes=[];
+  mdlCharger(m,"dix.xml");
+  let err="";
+  try{ipcVersPcb(V.modele,"dix.xml");}catch(e){err=e.message;}
+  if(!/8 au plus/.test(err))throw new Error("dix cuivres : refus attendu, obtenu « "+err+" »");
 });
 
 (async()=>{

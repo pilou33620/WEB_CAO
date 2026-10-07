@@ -791,6 +791,47 @@ T(u"tri des calques : la serigraphie reste lue par defaut, ecartee sur demande",
   tri_des_calques)
 
 
+def textes_et_calques():
+    """La norme nomme le texte « textString » et donne sa taille par
+    <BoundingBox> : seul « text » etait lu, et sans taille. L'editeur PCB, qui
+    reprend la serigraphie, a besoin des deux -- et de la face du calque, que
+    le nom « Symbol-A » ne dit pas."""
+    seri = CARTE.replace(
+        u"    <LayerFeature layerRef=\"Hole1-2\">",
+        u"""    <LayerFeature layerRef="Symbol-A">
+     <Set>
+      <Features>
+       <Text textString="R1" fontSize="1">
+        <Xform rotation="90"/>
+        <BoundingBox lowerLeftX="4" lowerLeftY="2" upperRightX="6" upperRightY="3.2"/>
+        <Location x="4" y="2"/>
+       </Text>
+       <Text text="ANCIEN">
+        <Location x="1" y="1"/>
+       </Text>
+       <Text textString="SANS BOITE" fontSize="0.8"/>
+      </Features>
+     </Set>
+    </LayerFeature>
+    <LayerFeature layerRef="Hole1-2">""", 1)
+    vrai(seri != CARTE, u"la carte variante n'a pas ete construite")
+    m = ipc2581_json.ipc2581_en_dict(seri.encode("utf-8"), "textes.xml")
+    par = {t["t"]: t for t in m["textes"]}
+    vrai("R1" in par and "ANCIEN" in par and "SANS BOITE" in par,
+         u"les trois ecritures sont lues : %s" % sorted(par))
+    proche(par["R1"]["h"], 1.2, u"hauteur prise sur la boite")
+    egal(par["R1"]["b"], [4, 2, 6, 3.2], u"boite du texte")
+    egal(par["R1"]["r"], 90, u"rotation")
+    proche(par["SANS BOITE"]["h"], 0.8, u"hauteur prise sur fontSize")
+    vrai("h" not in par["ANCIEN"], u"sans taille, pas de cle")
+    egal(m["calques"]["Symbol-A"], {"f": "SILKSCREEN", "s": "TOP"}, u"fonction et face du calque")
+    egal(m["calques"]["Conductor-2"]["s"], "BOTTOM", u"face d'un cuivre")
+
+
+T(u"textes : textString, taille par la boite ou fontSize ; face des calques",
+  textes_et_calques)
+
+
 # -- Refus : ce qui doit echouer, et proprement -------------------------------
 def refus(data, quoi):
     try:

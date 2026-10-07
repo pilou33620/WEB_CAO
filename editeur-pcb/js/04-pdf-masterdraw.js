@@ -552,11 +552,12 @@ function masterDrawingPdf(fabFiles){
     const k=Math.min((frameW-16)/bw,(frameH-16)/bh);
     const ox=fx+(frameW-bw*k)/2, oy=fy+(frameH-bh*k)/2;
     L.push("q 0.6 G 0.5 w");
-    for(let i=0;i<P.length;i++){
-      const a=P[i], b=P[(i+1)%P.length];
-      L.push(mdX(ox+(a.x-x1)*k)+" "+mdY(oy+(a.y-y1)*k+bh*k)+" m "
-            +mdX(ox+(b.x-x1)*k)+" "+mdY(oy+(b.y-y1)*k+bh*k)+" l S");
-    }
+    for(const Q of [P].concat(boardCutouts()))
+      for(let i=0;i<Q.length;i++){
+        const a=Q[i], b=Q[(i+1)%Q.length];
+        L.push(mdX(ox+(a.x-x1)*k)+" "+mdY(oy+(a.y-y1)*k+bh*k)+" m "
+              +mdX(ox+(b.x-x1)*k)+" "+mdY(oy+(b.y-y1)*k+bh*k)+" l S");
+      }
     L.push("Q");
     mdText(L,fmt(bw,2)+" mm",ox+bw*k/2-6,fy+frameH+3,6,false,0.35);
     mdText(L,fmt(bh,2)+" mm",fx-2,oy+bh*k/2,6,false,0.35);

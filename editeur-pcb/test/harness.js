@@ -61,7 +61,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "gerberEdge","gerberOutline","ipcNetlist","masterDrawingPdf","noAcc",
   "drillFile","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
   "positionsCsvText","bomPcbCsvText","pcbCsvCell",
-  "edgeClick","edgeMove","closeEdge","boardPoly","setBoardSize","setBoardRect","inBoard",
+  "edgeClick","edgeMove","closeEdge","boardPoly","setBoardSize","setBoardRect","inBoard","boardCutouts",
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
   "placeOrigin","ux","uy","wxu","wyu","snapX","snapY","gOrigin","routeToPoint","hint",
@@ -173,7 +173,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
-  "apSet","apForPad","fePad",
+  "apSet","apForPad","fePad","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform","feZoom","feRefit","feReattach",
@@ -4896,6 +4896,154 @@ T("ouvertures Gerber : rond, rectangle, oblong, et leurs rotations",()=>{
   if(!/AMRRECT/.test(ap({x:0,y:0,w:2,h:1,shape:"sharp",rot:Math.PI/6})))
     throw new Error("rectangle de biais : macro RRECT attendue");
 });
+/* UNE CARTE VENUE D'AILLEURS NE DOIT RIEN PERDRE EN ROUTE. normFp() ramenait
+   tout angle hors des huitièmes de tour à 0°, et dPads() oubliait les sommets
+   d'un polygone, le chanfrein et les branches thermiques. Le chargement d'un
+   fichier, la reprise de session ET chaque Ctrl+Z passent par là : un
+   composant à 30° revenait droit, une pastille polygonale sans sommets. */
+T("aller-retour : angle quelconque, polygone, chanfrein, thermique, nom de broche",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.fps=[{id:1,ref:"U9",x:10,y:10,rot:-327.5,pins:3,style:"chip",nets:{1:"A",2:"B",3:"C"},
+    pads:[{n:1,x:0,y:0,w:1,h:1,shape:"poly",nom:"A1",
+           pts:[{x:-0.5,y:-0.5},{x:0.5,y:-0.5},[0,0.6]]},
+          {n:2,x:2,y:0,w:1,h:1,shape:"chamfer",chamfer:0.2,chamferCorners:[1,0,0,1],
+           thermalSpokes:2,thermalAngle:45,thermalWidth:0.25,thermalGap:0.3,nom:"K"},
+          {n:3,x:4,y:0,w:1,h:1,shape:"poly",pts:[{x:0,y:0},{x:1,y:0}]}]}];
+  loadDoc(d,true);
+  const f=S.fps[0];
+  if(f.rot!==32.5)throw new Error("angle ramené dans [0,360[ attendu 32.5 : "+f.rot);
+  const [p1,p2,p3]=f.pads;
+  if(!p1.pts||p1.pts.length!==3||p1.pts[2].y!==0.6)
+    throw new Error("sommets du polygone perdus : "+JSON.stringify(p1));
+  if(p1.nom!=="A1"||p2.nom!=="K")throw new Error("noms de broche perdus");
+  if(p2.chamfer!==0.2||JSON.stringify(p2.chamferCorners)!=="[true,false,false,true]")
+    throw new Error("chanfrein perdu : "+JSON.stringify(p2));
+  if(p2.thermalSpokes!==2||p2.thermalAngle!==45||p2.thermalWidth!==0.25||p2.thermalGap!==0.3)
+    throw new Error("branches thermiques perdues : "+JSON.stringify(p2));
+  if(p3.shape!=="sharp"||p3.pts)
+    throw new Error("polygone à deux sommets : rectangle attendu : "+JSON.stringify(p3));
+  if(Math.abs(padsWorld(f)[0].rot-32.5*Math.PI/180)>1e-9)
+    throw new Error("la rotation de l'empreinte n'atteint pas ses pastilles");
+  /* et l'aller-retour est neutre : ce qui sort se relit à l'identique */
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("le second aller-retour change le document");
+  /* un Ctrl+Z rend la même chose */
+  push();S.fps[0].x=50;touch();undo();
+  if(S.fps[0].rot!==32.5||!S.fps[0].pads[0].pts)
+    throw new Error("Ctrl+Z : la carte revient amputée");
+  /* la liste des angles montre l'angle réel, pas « 0° » */
+  if(rotChoix([32.5]).indexOf(32.5)<0||rotChoix([90]).length!==8)
+    throw new Error("liste des angles : "+rotChoix([32.5]));
+  carteVide();
+});
+/* padsWorld() ne passait ni les sommets d'un polygone ni le chanfrein : sur la
+   carte, une pastille « poly » se dessinait, se contrôlait et partait au Gerber
+   comme un rectangle w × h. Dessous, les sommets passent au miroir. */
+T("pastille polygonale : sa forme atteint la carte, miroir compris",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  const tri=[{x:0,y:0},{x:1,y:0},{x:0,y:0.5}];
+  d.fps=[{id:1,ref:"Q1",x:10,y:10,rot:0,side:0,pins:1,
+          pads:[{n:1,x:0,y:0,w:1,h:0.5,shape:"poly",pts:tri}]},
+         {id:2,ref:"Q2",x:20,y:10,rot:0,side:1,pins:1,
+          pads:[{n:1,x:0,y:0,w:1,h:0.5,shape:"poly",pts:tri}]}];
+  loadDoc(d,true);
+  const dessus=padWorldPts(padsWorld(S.fps[0])[0],0);
+  if(dessus.length!==3||dessus[1].x!==11||dessus[2].y!==10.5)
+    throw new Error("dessus : "+JSON.stringify(dessus));
+  const dessous=padWorldPts(padsWorld(S.fps[1])[0],0);
+  if(dessous.length!==3||dessous[1].x!==19||dessous[2].y!==10.5)
+    throw new Error("dessous, au miroir : "+JSON.stringify(dessous));
+  const ch=padsWorld({id:3,x:0,y:0,rot:0,side:0,nets:{},pins:1,
+    pads:[{n:1,x:0,y:0,w:1,h:1,shape:"chamfer",chamfer:0.3}]})[0];
+  if(ch.chamfer!==0.3)throw new Error("le chanfrein se perdait en route");
+  carteVide();
+});
+/* DÉCOUPES INTÉRIEURES DE CARTE : un trou fraisé dans le substrat. Le cuivre
+   s'en tient à la marge de bord comme du contour, le fraisage les suit, et le
+   document les garde. */
+T("découpe intérieure : lue, hors carte, cuivre rogné, fraisée au Gerber",()=>{
+  const garde=JSON.parse(JSON.stringify(S.board));
+  try{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.board={x:0,y:0,w:60,h:40,pts:null,
+           cutouts:[[{x:20,y:10},{x:40,y:10},{x:40,y:30},{x:20,y:30}],[{x:1,y:1},{x:2,y:2}]]};
+  d.zones=[{id:1,l:0,net:"GND",pts:[{x:0,y:0},{x:60,y:0},{x:60,y:40},{x:0,y:40}]}];
+  d.vias=[{x:30,y:20,d:0.8,drill:0.4,a:0,b:1,net:"GND"}];
+  loadDoc(d,true);
+  if(boardCutouts().length!==1)throw new Error("une découpe valable sur deux : "+boardCutouts().length);
+  if(inBoard(30,20,0))throw new Error("le milieu de la découpe n'est pas dans la carte");
+  if(inBoard(19.8,20,0.4))throw new Error("trop près du bord de la découpe");
+  if(!inBoard(10,20,0.4))throw new Error("le reste de la carte en fait partie");
+  if(realCanvas){
+    const M=zoneMask(0,"GND");
+    if(!M)throw new Error("masque non calculé");
+    if(maskAt(M,30,20))throw new Error("la zone ne se remplit pas dans la découpe");
+    if(maskAt(M,19.9,20))throw new Error("ni dans sa marge");
+    if(!maskAt(M,10,20))throw new Error("elle se remplit ailleurs");
+  }
+  if(!runDrc().some(e=>/Via hors du contour/.test(e.msg)))throw new Error("un via dans la découpe est signalé");
+  /* le cuivre du Gerber : la découpe y est effacée (une région de plus) */
+  const gc=gerberCopper(0);
+  if(!/LPC[\s\S]*X20000000Y30000000D01\*/.test(gc.replace(/Y-/g,"Y")))
+    throw new Error("la découpe n'est pas effacée du cuivre");
+  const g=gerberOutline();
+  if((g.match(/D01\*/g)||[]).length!==8)throw new Error("le fraisage suit contour et découpe : "+(g.match(/D01\*/g)||[]).length);
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour non neutre");
+  setBoardSize(120,80);
+  if(boardCutouts()[0][2].x!==80||boardCutouts()[0][2].y!==60)
+    throw new Error("la découpe suit la mise à l'échelle : "+JSON.stringify(boardCutouts()[0][2]));
+  /* une carte sans découpe n'écrit pas la clé */
+  carteVide();S.board={x:0,y:0,w:100,h:80,pts:null};
+  if(/cutouts/.test(serialize()))throw new Error("clé écrite sans découpe");
+  }finally{ S.board=garde; carteVide(); }
+});
+/* SÉRIGRAPHIE AUTOMATIQUE COUPÉE : une carte importée apporte la sienne dans
+   les dessins. L'empreinte n'imprime alors ni contour ni repère — sans quoi
+   chaque composant sortait en double au Gerber. */
+T("sérigraphie automatique coupée : seule celle des dessins s'imprime",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.fps=[{id:1,ref:"R7",x:10,y:10,pins:2,style:"chip",silk:false},
+         {id:2,ref:"R8",x:30,y:10,pins:2,style:"chip"}];
+  d.drawings=[{id:3,shape:"text",layer:"silkT",text:"R7",x1:10,y1:7,size:1,rot:-90,width:0.15}];
+  loadDoc(d,true);
+  if(S.fps[0].silk!==false||S.fps[1].silk!==undefined)throw new Error("drapeau relu");
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour non neutre");
+  if(S.drawings[0].rot!==-90)throw new Error("angle du texte : "+S.drawings[0].rot);
+  const avec=gerberSilk(0);
+  S.fps[0].silk=undefined;delete S.fps[0].silk;
+  const tout=gerberSilk(0);
+  const n=g=>(g.match(/D01\*/g)||[]).length;
+  if(!(n(tout)>n(avec)))throw new Error("R7 ne devait rien imprimer d'office : "+n(avec)+" / "+n(tout));
+  carteVide();
+});
+T("ouverture Gerber : un angle non entier n'est pas arrondi au degré",()=>{
+  const A=apSet();
+  apForPad(A,{x:0,y:0,w:2,h:1,shape:"sharp",rot:12.5*Math.PI/180},0);
+  if(!/RRECT,2\.0*X1\.0*X12\.5\b/.test(A.defs.join(" ")))
+    throw new Error("angle de flash : "+A.defs.join(" "));
+});
+T("historique : borné en mémoire autant qu'en nombre",()=>{
+  const gros="x".repeat(Math.ceil(UNDO_BUDGET/4));
+  const pile=[];
+  for(let i=0;i<10;i++)pile.push(gros+i);
+  histBorner(pile);
+  if(pile.length>4||pile[pile.length-1]!==gros+9)
+    throw new Error("les plus récents qui tiennent attendus : "+pile.length);
+  const enorme=["x".repeat(UNDO_BUDGET+10)];
+  histBorner(enorme);
+  if(enorme.length!==1)throw new Error("le dernier instantané se garde toujours");
+  const petits=[];
+  for(let i=0;i<UNDO_MAX+5;i++)petits.push("{}");
+  histBorner(petits);
+  if(petits.length!==UNDO_MAX)throw new Error("plafond en nombre : "+petits.length);
+});
 T("déplacer l'origine ne déplace pas le cuivre",()=>{
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();
   const fp=mkFp("U1","","DIP-8",8);
@@ -6477,6 +6625,22 @@ T("session : la carte mise de côté revient à l'identique",()=>{
   if(d)throw new Error("la carte a changé en chemin : "+d);
   if(!S.dirty)throw new Error("l'état « modifié » doit revenir aussi, sinon "+
     "l'onglet se fermerait sans un mot sur un travail jamais enregistré");
+});
+/* Une carte déposée par un autre outil — la visionneuse IPC-2581 la traduit et
+   l'écrit dans la session de l'onglet — arrive sans cadrage : l'éditeur doit
+   la montrer en entier, pas le coin de l'ancienne vue. */
+T("session : une carte reçue sans cadrage est montrée en entier",()=>{
+  dom.session.clear();
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.board={x:0,y:0,w:400,h:300,pts:null};
+  d.fps=[{id:1,ref:"J9",x:390,y:290,pins:1,pads:[{n:1,x:0,y:0,w:1,h:1}]}];
+  sessEcrire("pcb",{doc:d,sale:true,fichier:"carte"});
+  S.scale=50;S.ox=0;S.oy=0;
+  if(!sessionPcb())throw new Error("reprise refusée");
+  if(!(S.scale<50))throw new Error("la vue n'a pas été recadrée : échelle "+S.scale);
+  if(!S.dirty||S.fps[0].ref!=="J9")throw new Error("carte reçue, à enregistrer");
+  dom.session.clear();carteVide();
 });
 /* ==========================================================================
    Cross-probing schéma ↔ PCB (commun/session.js + pcbSonde/pcbSonderCible)
