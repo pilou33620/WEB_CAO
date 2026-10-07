@@ -687,6 +687,36 @@ angle, sans l'arrondir au degré. Sur la carte aussi, la forme suit :
 pastille polygonale se dessine, se contrôle et part au Gerber avec sa vraie
 forme, et non plus comme le rectangle w × h qui l'encadre.
 
+**Jusqu'à 32 couches de cuivre** (`CU_MAX`), nombre impair compris. Au-delà
+des modèles d'usine, l'empilage proposé reste fabricable (épaisseur selon le
+nombre de couches, prepreg et cœurs alternés) ; changer le nombre de couches
+garde l'épaisseur visée tant qu'elle laisse 60 µm par isolant. Clavier :
+1-9, 0 pour la dixième couche, Page ↑ / Page ↓ pour la couche voisine.
+
+**Zone au cuivre du fichier** (`fichier`, `trous`, `sig`) : une zone importée
+est remplie avec le cuivre que le fabricant a calculé — ses trous, liaisons
+thermiques comprises — à l'écran, à l'analyse, au Gerber et en simulation.
+Les isolations autour du cuivre d'un autre net restent appliquées (rien ne
+change pour le cuivre d'origine, qui les respecte ; ce qu'on ajoute est
+protégé). Dès que le contour change, la signature ne correspond plus et la
+zone se recalcule comme une autre.
+
+**Pastille telle que le fichier la donne** : forme par couche (`parCouche`,
+`"aucune"` pour une pastille retirée d'une couche interne), utilisée au Gerber
+cuivre et au remplissage des zones — le DRC et le routeur gardent la forme
+principale ; marge de masque (`mask`) et réduction de pâte (`paste`) propres
+à la pastille, ou pastille sous le vernis (`noMask`) / sans pâte (`noPaste`).
+
+**Aplat de sérigraphie** : dessin `poly`, polygone plein avec ses trous —
+sélection, déplacement, rotation, presse-papier, Gerber.
+
+**Broches nommées dans la netlist** : « U1.A1 », « D1.K » se résolvent par
+le nom de la pastille (`nom`), puis par la grille d'un BGA calculé (lettre =
+rangée, chiffre = colonne, lettres JEDEC), sinon reçoivent un numéro libre et
+gardent leur nom sur la pastille (l'empreinte devient dessinée). Une seconde
+importation retrouve les mêmes numéros ; la synchronisation ECO résout les
+mêmes noms.
+
 **Découpes intérieures de carte** (`board.cutouts`, une liste de polygones) :
 une fenêtre fraisée dans le substrat. Elles sont dessinées comme le contour,
 exclues de la carte pour tout ce qui demande « est-ce dedans ? » (`inBoard` :
