@@ -693,8 +693,8 @@ nombre de couches, prepreg et cœurs alternés) ; changer le nombre de couches
 garde l'épaisseur visée tant qu'elle laisse 60 µm par isolant. Clavier :
 1-9, 0 pour la dixième couche, Page ↑ / Page ↓ pour la couche voisine.
 
-**Zone au cuivre du fichier** (`fichier`, `trous`, `sig`) : une zone importée
-est remplie avec le cuivre que le fabricant a calculé — ses trous, liaisons
+**Zone au cuivre du fichier** (`fichier`, `trous`, `sig`) : une zone dont le
+document porte le cuivre déjà calculé est remplie avec ce cuivre — ses trous, liaisons
 thermiques comprises — à l'écran, à l'analyse, au Gerber et en simulation.
 Les isolations autour du cuivre d'un autre net restent appliquées (rien ne
 change pour le cuivre d'origine, qui les respecte ; ce qu'on ajoute est
@@ -728,10 +728,9 @@ et les retire. Un document sans découpe n'écrit pas la clé.
 
 **Sérigraphie automatique** : chaque empreinte imprime d'office le contour de
 son boîtier, son point de broche 1 et son repère. `fp.silk = false` (la case
-« Sérigraphie automatique » des propriétés) coupe les trois : c'est le cas
-d'une carte importée de l'IPC-2581, dont la sérigraphie d'origine est dans les
-dessins. Le repère reste visible à l'écran, en gris — le gris de ce qui ne
-s'imprime pas.
+« Sérigraphie automatique » des propriétés) coupe les trois : utile quand la
+sérigraphie de l'empreinte est dessinée à part, dans les dessins. Le repère
+reste visible à l'écran, en gris — le gris de ce qui ne s'imprime pas.
 
 L'historique garde 80 instantanés, dans la limite de 48 millions de caractères
 (`UNDO_BUDGET`, ~96 Mo en mémoire) : sur une très grosse carte, ce sont les plus

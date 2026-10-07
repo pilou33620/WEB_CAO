@@ -1925,8 +1925,8 @@ function polyEdgeDist(x,y,pts){
     d=Math.min(d,segDist(x,y,pts[j].x,pts[j].y,pts[i].x,pts[i].y));
   return d;
 }
-/* ZONE AU CUIVRE DU FICHIER. Une zone importée (IPC-2581) porte le cuivre
-   que le fabricant a calculé : son contour, et les trous de ce cuivre
+/* ZONE AU CUIVRE DU FICHIER. Une zone écrite par un autre outil peut porter
+   le cuivre déjà calculé : son contour, et les trous de ce cuivre
    (`trous`) — dégagements, liaisons thermiques comprises. Tant que son contour
    n'a pas bougé, elle est remplie exactement ainsi : trous du fichier, pas de
    liaison thermique ajoutée. Les isolations autour du cuivre d'un autre net

@@ -1225,8 +1225,8 @@ function propsFp(box,fp){
         ((fp.rot||0)===a?" selected":"")+'>'+a+'°</option>').join("")+'</select>'+
       '<button id="bOptRot" class="tb" style="padding:2px 6px;font-size:11px;" title="Trouver et appliquer l\'orientation optimale pour minimiser les croisements de chevelu">✨ Auto</button></div></div>'+
     '<div class="prop"><label style="display:flex;align-items:center;gap:6px;cursor:pointer" '+
-      'title="Contour du boîtier, point de broche 1 et repère imprimés d\'office. Coupée sur une '+
-      'carte importée : sa sérigraphie d\'origine est dans les dessins.">'+
+      'title="Contour du boîtier, point de broche 1 et repère imprimés d\'office. Coupée quand '+
+      'la sérigraphie de l\'empreinte est dessinée à part, dans les dessins.">'+
       '<input type="checkbox" id="pSilk"'+(fp.silk===false?"":" checked")+'> Sérigraphie automatique</label></div>'+
     '<div class="cat">Broches et nets</div><table class="bom"><tbody>';
   for(const q of ps){

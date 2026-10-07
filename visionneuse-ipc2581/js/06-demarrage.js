@@ -139,7 +139,6 @@ function poser(modele,nom,vue){
   prefAppliquer();
   pnlTout();
   document.getElementById("accueil").hidden=true;
-  if(typeof vpBoutonEtat==="function")vpBoutonEtat();
   if(vue&&vue.scale>0){ V.vue.scale=vue.scale; V.vue.ox=vue.ox; V.vue.oy=vue.oy;
                         V.vue.flip=!!vue.flip; boutonsEtat(); dessiner(); }
   else fit();

@@ -67,7 +67,6 @@ et ceux du dossier partagé, identiques aux autres outils :
 | `js/05-panneaux.js` | 505 | Les cinq panneaux : couches, la carte, nets, composants, sélection — et la fiche de ligne de transmission |
 | `js/06-demarrage.js` | 333 | Ouverture d'un fichier (bouton, dépôt, reprise de session), exports `.json` et `.png`, réglages de l'utilisateur |
 | `js/07-simulation.js` | 3280 | Simulation EM : la portée désignée mise au format du solveur — masse coplanaire mesurée côté par côté, découpage en plages d'écart, couture de vias, **cuivre voisin joint au problème** —, la carte de chaleur d'impédance et les valeurs écrites sur les pistes ; et pour l'onglet **Crosstalk**, les trois mesures que le serveur ne peut pas deviner : positions de couture sur l'abscisse du parcours, fentes du plan sondées dessous, perçages de masse |
-| `js/08-vers-pcb.js` | 735 | La carte traduite pour l'éditeur PCB (`ipcVersPcb`) et le bouton qui l'y pousse, présent seulement dans un projet |
 | `../python/simulation_em.py` | 3312 | Pont vers `python/ligne_mom.py` : empilage à plat → section droite, résolution par tronçon, **appariement des tronçons parallèles**, cascade ABCD → JSON |
 | `test/harness-sim.js` | 2896 | Banc d'essai de la masse coplanaire, de la chute continue, du voisinage et des trois mesures du crosstalk, sous Node : `node test/harness-sim.js` |
 
@@ -652,57 +651,6 @@ sinon.
 Un modèle traduit pèse lourd — 8 Mo pour une 4 couches de taille moyenne. La
 voie serveur plafonne à 16 Mo (`MAX_PROJET`, `web_CAO.py`) : au-delà,
 l'écriture est refusée et le téléchargement prend le relais, en le disant.
-
-### Pousser la carte dans l'éditeur PCB
-
-Un projet neuf qui n'a qu'un IPC-2581 — pas de schéma, pas de circuit
-imprimé — peut repartir de la carte du fabricant. Dans un projet, et
-**seulement** dans un projet, la barre porte « ➜ Pousser vers le PCB » :
-en visionneuse seule (aucun projet ouvert, ou le monofichier de `dist/`), le
-bouton n'existe pas — il n'y aurait ni éditeur où atterrir ni dossier où
-ranger la carte.
-
-Le clic traduit la carte au format de l'éditeur (`ipcVersPcb`,
-`js/08-vers-pcb.js`), l'écrit dans le dossier (`<projet>-PCB.json`) et ouvre
-l'éditeur dessus. Si le projet a déjà une carte PCB, rien n'est écrasé sans
-confirmation. Faute de dossier accessible, la carte voyage par la session de
-l'onglet, marquée « à enregistrer ».
-
-| IPC-2581 | Éditeur PCB |
-|---|---|
-| unités INCH, MICRON, MIL | millimètres |
-| axe Y vers le haut | axe Y vers le bas ; la carte posée à partir de (0, 0), l'origine de fabrication remise sur celle du fichier — les Gerber ressortent dans les coordonnées d'origine |
-| cuivres de l'empilage | le même nombre de couches (jusqu'à 32, impair compris), dans le même ordre ; refus au-delà de 32 |
-| empilage physique | épaisseur de chaque cuivre ; entre deux cuivres, un isolant : épaisseurs additionnées, εr et tan δ moyennés au prorata de l'épaisseur (la moyenne des calculs de la visionneuse, valeurs saisies dans « La carte » comprises), matières jointes, « cœur » s'il y en a un ; vernis (épaisseur, εr) ; épaisseur totale |
-| composant (position, angle quelconque, miroir) | empreinte dessinée pastille par pastille, à son angle réel, dessous si le composant y est |
-| broches « A1 », « K » | composant renuméroté de 1 à N, nom d'origine gardé sur la pastille (`nom`) |
-| cercle, rectangle, ovale, chanfrein | les mêmes formes |
-| polygone, forme utilisateur | pastille `poly` |
-| pastille traversante dont la forme change d'une couche à l'autre | forme par couche (`parCouche`) ; couche sans pastille dans le padstack : pastille retirée de cette couche |
-| ouvertures de masque et de pâte (padstack, ou pastilles posées sur ces calques) | marge de masque / réduction de pâte propres à la pastille ; masque décrit mais pas sur cette face : pastille sous le vernis |
-| perçage sous une pastille | perçage de la pastille |
-| autres perçages métallisés | vias ; portée déclarée, sinon déduite des cuivres où le padstack pose une pastille (borgne / enterré) |
-| perçage d'un autre padstack sous une pastille CMS | via dans la pastille : il reste un via, la pastille reste CMS |
-| perçages non métallisés | trous de fixation |
-| pistes, arcs | segments et pistes circulaires (un cercle complet est coupé en trois) |
-| plans remplis | zones du même net qui gardent le cuivre du fichier (contour et trous, liaisons thermiques comprises) ; une zone dont on modifie le contour redevient une zone ordinaire, recalculée |
-| découpes intérieures du contour | découpes de carte (`board.cutouts`) : fraisées avec le contour, le cuivre s'en tient à la marge de bord |
-| sérigraphie (traits, arcs, aplats) | traits de sérigraphie dessus/dessous ; un arc en cordes (flèche < 0,02 mm) ; un aplat en aplat plein, trous compris |
-| textes de sérigraphie | textes de l'éditeur, centrés sur leur boîte, à leur taille et leur angle |
-
-La face d'un calque de sérigraphie vient de ce que le fichier déclare
-(`layerFunction`, `side` — « Symbol-A » ne dit rien par son nom), à défaut de
-son nom puis de sa place dans l'empilage. Quand une face a sa sérigraphie dans
-le fichier, les empreintes de cette face perdent la sérigraphie que l'éditeur
-dessine d'office (contour de boîtier, point de broche 1, repère) : sans quoi
-tout sortirait en double. La case « Sérigraphie automatique » des propriétés
-la rend à une empreinte.
-
-Restent de côté, comptés dans le pied de page : les textes posés ailleurs que
-sur la sérigraphie (l'éditeur n'a pas de texte de cuivre — les exports
-tracent d'ailleurs le plus souvent ces textes en traits, repris comme pistes),
-et les tracés de documentation (cotes, assemblage, masque), que l'éditeur
-produit lui-même ou n'a pas.
 
 ## Banc d'essai
 

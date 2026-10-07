@@ -825,8 +825,8 @@ function parseNetlist(txt){
    --------------------------------------------------------------------------
    Le numéro de pastille reste l'entier qui porte le net. Une netlist qui
    nomme ses broches — un BGA (« A1 »), une diode (« K ») — se résout ici :
-   par le nom porté par la pastille (`nom`, posé à l'import d'une carte
-   IPC-2581 ou à une netlist précédente), puis, pour un BGA calculé par
+   par le nom porté par la pastille (`nom`, posé à la main, par un fichier
+   ou par une netlist précédente), puis, pour un BGA calculé par
    l'éditeur, par sa grille (lettre = rangée, chiffre = colonne, lettres
    JEDEC : sans I, O, Q, S, X, Z). Rien de cela : null, et l'appelant
    attribue un numéro libre en gardant le nom sur la pastille.
