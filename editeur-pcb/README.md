@@ -672,7 +672,20 @@ pastille tombe sur la trame des pistes qui viendront la rejoindre ; `Alt` le
 relâche, pour les cotes qui ne tombent pas dessus (un pas de 0,65 mm, par
 exemple). Les pastilles dessinées et le contour imposé sont enregistrés dans le
 `.json` de la carte (`fp.pads`, `fp.body`) et font l'aller-retour sans perte —
-même essai de neutralité que le reste du document.
+même essai de neutralité que le reste du document. « Sans perte » vaut pour
+tout ce que porte une pastille : les sommets d'un polygone (`pts`), le
+chanfrein et ses coins, les branches thermiques, et le **nom d'origine** de la
+broche (`nom`, « A1 », « K ») quand une carte venue d'ailleurs a dû être
+renumérotée — le numéro `n` reste l'entier qui porte le net, le nom
+l'accompagne et s'affiche sous lui dans le panneau Propriétés. La rotation
+d'une empreinte est un angle **quelconque**, ramené dans [0, 360[ au millième
+de degré : la liste du panneau propose les huitièmes de tour et l'angle réel
+du composant s'il n'en est pas un, et le Gerber flashe les pastilles à cet
+angle, sans l'arrondir au degré.
+
+L'historique garde 80 instantanés, dans la limite de 48 millions de caractères
+(`UNDO_BUDGET`, ~96 Mo en mémoire) : sur une très grosse carte, ce sont les plus
+récents qui tiennent dans ce budget qui restent — jamais moins d'un.
 
 ## Sélection multiple et presse-papier
 

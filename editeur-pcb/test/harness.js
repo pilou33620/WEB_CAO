@@ -173,7 +173,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
-  "apSet","apForPad","fePad",
+  "apSet","apForPad","fePad","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform","feZoom","feRefit","feReattach",
@@ -4895,6 +4895,69 @@ T("ouvertures Gerber : rond, rectangle, oblong, et leurs rotations",()=>{
   /* un angle quelconque sur un rectangle garde la macro de rectangle tourné */
   if(!/AMRRECT/.test(ap({x:0,y:0,w:2,h:1,shape:"sharp",rot:Math.PI/6})))
     throw new Error("rectangle de biais : macro RRECT attendue");
+});
+/* UNE CARTE VENUE D'AILLEURS NE DOIT RIEN PERDRE EN ROUTE. normFp() ramenait
+   tout angle hors des huitièmes de tour à 0°, et dPads() oubliait les sommets
+   d'un polygone, le chanfrein et les branches thermiques. Le chargement d'un
+   fichier, la reprise de session ET chaque Ctrl+Z passent par là : un
+   composant à 30° revenait droit, une pastille polygonale sans sommets. */
+T("aller-retour : angle quelconque, polygone, chanfrein, thermique, nom de broche",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.fps=[{id:1,ref:"U9",x:10,y:10,rot:-327.5,pins:3,style:"chip",nets:{1:"A",2:"B",3:"C"},
+    pads:[{n:1,x:0,y:0,w:1,h:1,shape:"poly",nom:"A1",
+           pts:[{x:-0.5,y:-0.5},{x:0.5,y:-0.5},[0,0.6]]},
+          {n:2,x:2,y:0,w:1,h:1,shape:"chamfer",chamfer:0.2,chamferCorners:[1,0,0,1],
+           thermalSpokes:2,thermalAngle:45,thermalWidth:0.25,thermalGap:0.3,nom:"K"},
+          {n:3,x:4,y:0,w:1,h:1,shape:"poly",pts:[{x:0,y:0},{x:1,y:0}]}]}];
+  loadDoc(d,true);
+  const f=S.fps[0];
+  if(f.rot!==32.5)throw new Error("angle ramené dans [0,360[ attendu 32.5 : "+f.rot);
+  const [p1,p2,p3]=f.pads;
+  if(!p1.pts||p1.pts.length!==3||p1.pts[2].y!==0.6)
+    throw new Error("sommets du polygone perdus : "+JSON.stringify(p1));
+  if(p1.nom!=="A1"||p2.nom!=="K")throw new Error("noms de broche perdus");
+  if(p2.chamfer!==0.2||JSON.stringify(p2.chamferCorners)!=="[true,false,false,true]")
+    throw new Error("chanfrein perdu : "+JSON.stringify(p2));
+  if(p2.thermalSpokes!==2||p2.thermalAngle!==45||p2.thermalWidth!==0.25||p2.thermalGap!==0.3)
+    throw new Error("branches thermiques perdues : "+JSON.stringify(p2));
+  if(p3.shape!=="sharp"||p3.pts)
+    throw new Error("polygone à deux sommets : rectangle attendu : "+JSON.stringify(p3));
+  if(Math.abs(padsWorld(f)[0].rot-32.5*Math.PI/180)>1e-9)
+    throw new Error("la rotation de l'empreinte n'atteint pas ses pastilles");
+  /* et l'aller-retour est neutre : ce qui sort se relit à l'identique */
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("le second aller-retour change le document");
+  /* un Ctrl+Z rend la même chose */
+  push();S.fps[0].x=50;touch();undo();
+  if(S.fps[0].rot!==32.5||!S.fps[0].pads[0].pts)
+    throw new Error("Ctrl+Z : la carte revient amputée");
+  /* la liste des angles montre l'angle réel, pas « 0° » */
+  if(rotChoix([32.5]).indexOf(32.5)<0||rotChoix([90]).length!==8)
+    throw new Error("liste des angles : "+rotChoix([32.5]));
+  carteVide();
+});
+T("ouverture Gerber : un angle non entier n'est pas arrondi au degré",()=>{
+  const A=apSet();
+  apForPad(A,{x:0,y:0,w:2,h:1,shape:"sharp",rot:12.5*Math.PI/180},0);
+  if(!/RRECT,2\.0*X1\.0*X12\.5\b/.test(A.defs.join(" ")))
+    throw new Error("angle de flash : "+A.defs.join(" "));
+});
+T("historique : borné en mémoire autant qu'en nombre",()=>{
+  const gros="x".repeat(Math.ceil(UNDO_BUDGET/4));
+  const pile=[];
+  for(let i=0;i<10;i++)pile.push(gros+i);
+  histBorner(pile);
+  if(pile.length>4||pile[pile.length-1]!==gros+9)
+    throw new Error("les plus récents qui tiennent attendus : "+pile.length);
+  const enorme=["x".repeat(UNDO_BUDGET+10)];
+  histBorner(enorme);
+  if(enorme.length!==1)throw new Error("le dernier instantané se garde toujours");
+  const petits=[];
+  for(let i=0;i<UNDO_MAX+5;i++)petits.push("{}");
+  histBorner(petits);
+  if(petits.length!==UNDO_MAX)throw new Error("plafond en nombre : "+petits.length);
 });
 T("déplacer l'origine ne déplace pas le cuivre",()=>{
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];clearSel();touch();

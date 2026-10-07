@@ -181,7 +181,10 @@ function apForPad(A,q,grow){
   const g=grow||0;
   if(q.shape==="circ")return A.get("C,"+fmt(Math.max(0.01,Math.max(q.w,q.h)+2*g),4));
   let w=Math.max(0.01,q.w+2*g), h=Math.max(0.01,q.h+2*g);
-  let deg=((Math.round((q.rot||0)*180/Math.PI)%360)+360)%360;
+  /* au millième de degré, comme la pastille elle-même : un composant posé à
+     12,5° ne doit pas sortir à 13° chez le fabricant */
+  let deg=padRot((q.rot||0)*180/Math.PI);
+  if(deg>=360)deg=0;
   if(q.shape==="oval"){
     /* le grand axe passe en x, quitte à tourner d'un quart de tour : c'est la
        convention de l'ouverture O, et celle de la macro */

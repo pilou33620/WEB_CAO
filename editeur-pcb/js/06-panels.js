@@ -1216,7 +1216,7 @@ function propsFp(box,fp){
     '<div class="prop two">'+numProp("pX","X (mm)",ux(fp.x),0.1,-1e4)+
       numProp("pY","Y (mm)",uy(fp.y),0.1,-1e4)+'</div>'+
     '<div class="prop"><label>Rotation</label><div style="display:flex;align-items:center;gap:4px;"><select id="pRot" style="flex:1;">'+
-      [0,45,90,135,180,225,270,315].map(a=>'<option value="'+a+'"'+
+      rotChoix([fp.rot||0]).map(a=>'<option value="'+a+'"'+
         ((fp.rot||0)===a?" selected":"")+'>'+a+'°</option>').join("")+'</select>'+
       '<button id="bOptRot" class="tb" style="padding:2px 6px;font-size:11px;" title="Trouver et appliquer l\'orientation optimale pour minimiser les croisements de chevelu">✨ Auto</button></div></div>'+
     '<div class="cat">Broches et nets</div><table class="bom"><tbody>';
@@ -1227,7 +1227,8 @@ function propsFp(box,fp){
       pinSchName = (pinObj && pinObj.name) || (Array.isArray(schComp.pinNames) && schComp.pinNames[q.n - 1]) || "";
     }
     h+='<tr data-net="'+esc(q.net||"")+'"'+(q.net&&S.hlNet===q.net?' class="on"':"")+
-       '><td class="r" style="width:28px">#'+esc(q.n)+'</td>'+
+       '><td class="r" style="width:28px"'+(q.nom?' title="Broche « '+esc(q.nom)+' » à l\'origine"':"")+
+       '>#'+esc(q.n)+(q.nom?'<br><span style="color:var(--txt-dim);font-size:10px">'+esc(q.nom)+'</span>':"")+'</td>'+
        (pinSchName ? '<td style="font-family:var(--mono);font-size:11px;color:#f0abfc;font-weight:600;width:75px;overflow:hidden;text-overflow:ellipsis" title="Broche schéma : '+esc(pinSchName)+'">'+esc(pinSchName)+'</td>' : '<td style="width:30px;color:var(--txt-dim);font-size:10px">—</td>')+
        '<td class="net">'+(q.net?'<span class="dot" style="background:'+netColor(q.net)+
        '"></span>'+esc(q.net):'<span style="color:var(--txt-dim)">non connectée</span>')+'</td></tr>';
@@ -1745,6 +1746,14 @@ function mpTexte(id,label,list,pick,off){
     (m?' value="'+esc(pick(list[0])||"")+'"':' placeholder="mixte"')+
     (off?" disabled":"")+'></div>';
 }
+/* Les angles proposés pour une empreinte : les huitièmes de tour, plus ceux
+   que portent déjà les empreintes affichées. Sans eux, un composant importé à
+   30° montrerait « 0° » dans la liste — et la liste mentirait. */
+function rotChoix(cur){
+  const a=[0,45,90,135,180,225,270,315];
+  for(const v of cur)if(a.indexOf(v)<0)a.push(v);
+  return a.sort((x,y)=>x-y);
+}
 /* `opts` : [valeur, texte]. La valeur est comparée en texte — une couche et
    une face sont des indices, un net est un nom. */
 function mpChoix(id,label,list,pick,opts,off){
@@ -1818,7 +1827,7 @@ const MP_KINDS={
           mpNum("mpFpSpan","Écartement",list,f=>f.span,2,0.01,0.2,off)+
           mpChoix("mpFpSide","Face",list,f=>(f.side?1:0),[[0,"Dessus"],[1,"Dessous"]])+'</div>'+
         '<div class="prop">'+mpChoix("mpFpRot","Rotation",list,f=>(f.rot||0),
-            [0,45,90,135,180,225,270,315].map(a=>[a,a+"°"]))+'</div>'+
+            rotChoix(list.map(f=>f.rot||0)).map(a=>[a,a+"°"]))+'</div>'+
         (libre?'<div class="empty" style="padding:2px 12px 8px">Empreinte dessinée '+
           'à la main dans la sélection : les cotes génériques ne commandent plus '+
           'rien pour elle, elles restent grisées.</div>':"");

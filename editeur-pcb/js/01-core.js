@@ -1384,7 +1384,17 @@ function padClone(q){
   if(q.thermalAngle!=null)out.thermalAngle=padRot(q.thermalAngle);
   if(q.thermalWidth!=null)out.thermalWidth=Math.max(0.05,r4(q.thermalWidth));
   if(q.thermalGap!=null)out.thermalGap=Math.max(0,r4(q.thermalGap));
+  const nom=padNom(q.nom);
+  if(nom)out.nom=nom;
   return out;
+}
+/* Nom d'origine d'une broche — « A1 » sur un BGA, « K » sur une diode —
+   quand il n'est pas son numéro. Le numéro `n` reste l'entier qui porte le
+   net partout (netlist, DRC, ECO) ; le nom l'accompagne pour qu'une carte
+   importée d'ailleurs, renumérotée, ne perde pas la correspondance. */
+function padNom(v){
+  if(v==null)return "";
+  return String(v).replace(/[\u0000-\u001f]/g,"").trim().slice(0,16);
 }
 /* Rotation d'une pastille, en degrés, dans le repère de l'empreinte — comme
    `fp.rot` pour l'empreinte entière. Ramenée dans [0, 360[ : deux pastilles
