@@ -173,7 +173,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
-  "apSet","apForPad","fePad","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
+  "apSet","apForPad","fePad","padSurCouche","maskOpenings","pasteOpenings","zoneFichier","zoneSig","CU_MAX","stackDefaults","stackTotal","stackGenerique","histBorner","UNDO_MAX","UNDO_BUDGET","rotChoix","padNom",
   /* repère de broche 1 */
   "MARK_D","PASSIF_REF","fpMarkWanted","fpMarkAuto","fpMark","fpSetMark",
   "fpMoveMark","fpSetMarkD","fpXform","feZoom","feRefit","feReattach",
@@ -5064,6 +5064,34 @@ T("zone importée : cuivre du fichier, puis recalcul dès qu'on la modifie",()=>
   S.zones[0].pts[2].x=45;touch();
   if(zoneFichier(S.zones[0]))throw new Error("contour modifié : la zone doit se recalculer");
   if(/X14000000Y\d+D01/.test(gerberCopper(0)))throw new Error("le trou ne doit plus sortir");
+  carteVide();
+});
+/* UNE PASTILLE TELLE QUE LE FICHIER LA DONNE : forme par couche (couronne
+   interne plus petite, ou retirée), ouverture de masque et de pâte propres,
+   pastille recouverte de vernis. */
+T("pastille : forme par couche, masque et pâte propres",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.cu=4;d.cuL=[];d.stack=null;
+  d.fps=[{id:1,ref:"J1",x:10,y:10,pins:2,pads:[
+    {n:1,x:0,y:0,w:1.6,h:1.6,shape:"circ",drill:0.8,mask:0.05,
+     parCouche:{"1":{shape:"circ",w:1.2,h:1.2},"2":{shape:"aucune"},"40":{shape:"circ",w:2,h:2}}},
+    {n:2,x:3,y:0,w:1,h:0.5,shape:"sharp",drill:0,noMask:true,paste:0.07}]}];
+  loadDoc(d,true);
+  const q=S.fps[0].pads[0];
+  if(Object.keys(q.parCouche).join()!=="1,2")throw new Error("couches hors carte écartées : "+JSON.stringify(q.parCouche));
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour non neutre");
+  const w=padsWorld(S.fps[0]);
+  if(padSurCouche(w[0],1).w!==1.2||padSurCouche(w[0],2)!==null||padSurCouche(w[0],0).w!==1.6)
+    throw new Error("forme par couche");
+  const cu=i=>gerberCopper(i);
+  if(!/ADD\d+C,1\.6/.test(cu(0))||!/ADD\d+C,1\.2/.test(cu(1))||/ADD\d+C,1\.[26]/.test(cu(2)))
+    throw new Error("Gerber : 1,6 dessus, 1,2 sur L2, rien sur L3");
+  const mo=maskOpenings(0);
+  if(mo.length!==1||mo[0].grow!==0.05)throw new Error("masque : la pastille 2 est sous le vernis, la 1 a sa marge : "+JSON.stringify(mo.map(o=>o.grow)));
+  const po=pasteOpenings(0);
+  if(po.length!==1||po[0].grow!==-0.07)throw new Error("pâte réduite de 0,07 : "+JSON.stringify(po.map(o=>o.grow)));
   carteVide();
 });
 T("ouverture Gerber : un angle non entier n'est pas arrondi au degré",()=>{

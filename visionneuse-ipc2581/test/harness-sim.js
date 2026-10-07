@@ -6222,6 +6222,49 @@ T("vers l'éditeur PCB : une zone garde le cuivre du fichier, trous compris",()=
     throw new Error("zone au cuivre du fichier : "+JSON.stringify(z));
   if(z.trous[0][0].x!==7.62||z.trous[0][0].y!==17.78)throw new Error("trou en mm, Y retourné : "+JSON.stringify(z.trous[0][0]));
 });
+T("vers l'éditeur PCB : formes par couche, masque et pâte du fichier, vias borgnes, via dans la pastille",()=>{
+  const m=vpCarteEssai();
+  m.unites="MILLIMETER";
+  m.couches.push("SM_TOP","SM_BOT","PASTE_TOP");
+  m.calques={SM_TOP:{f:"SOLDERMASK",s:"TOP"},SM_BOT:{f:"SOLDERMASK",s:"BOTTOM"},PASTE_TOP:{f:"PASTE",s:"TOP"}};
+  m.formes.C16={t:"CIRCLE",d:1.6};m.formes.C12={t:"CIRCLE",d:1.2};m.formes.C17={t:"CIRCLE",d:1.7};
+  m.formes.R1={t:"RECTCENTER",w:1,h:0.5};m.formes.RM={t:"RECTCENTER",w:1.1,h:0.6};m.formes.RP={t:"RECTCENTER",w:0.9,h:0.4};
+  m.padstacks={
+    TH:{trou:0.8,pad:1.6,pads:[{c:"TOP",d:1.6,f:"C16"},{c:"IN1",d:1.2,f:"C12"},{c:"BOT",d:1.6,f:"C16"},
+                               {c:"SM_TOP",d:1.7,f:"C17"},{c:"SM_BOT",d:1.7,f:"C17"}]},
+    THNF:{trou:0.8,pad:1.6,pads:[{c:"TOP",d:1.6,f:"C16"},{c:"BOT",d:1.6,f:"C16"}]},
+    SMD:{trou:0,pad:1,pads:[{c:"TOP",f:"R1"},{c:"SM_TOP",f:"RM"},{c:"PASTE_TOP",f:"RP"}]},
+    SMDT:{trou:0,pad:1,pads:[{c:"TOP",f:"R1"},{c:"SM_BOT",f:"RM"}]},
+    NU:{trou:0,pad:1,pads:[{c:"TOP",f:"R1"}]},
+    OUV:{trou:0,pad:1.2,pads:[{c:"SM_TOP",f:"RM"}]},
+    BV:{trou:0.2,pad:0.45,pads:[{c:"TOP",d:0.45},{c:"IN1",d:0.45}]},
+    VIA:{trou:0.3,pad:0.6,pads:[{c:"TOP",d:0.6},{c:"IN1",d:0.6},{c:"BOT",d:0.6}]}};
+  m.composants=[{ref:"J1",c:0,x:10,y:10,r:0,m:0,pads:[{x:0,y:0,ps:"TH",pin:"1"},{x:2.54,y:0,ps:"THNF",pin:"2"}]},
+                {ref:"R1",c:0,x:20,y:10,r:0,m:0,pads:[{x:0,y:0,ps:"SMD",pin:"1"},{x:2,y:0,ps:"SMDT",pin:"2"},{x:4,y:0,ps:"NU",pin:"3"}]}];
+  m.pads=[{x:24,y:10,ps:"OUV"}];
+  m.percages=[{x:10,y:10,d:0.8,p:"PLATED",ps:"TH"},{x:12.54,y:10,d:0.8,p:"PLATED",ps:"THNF"},
+              {x:5,y:5,d:0.2,p:"VIA",ps:"BV"},{x:6,y:6,d:0.3,p:"VIA",ps:"VIA"},
+              {x:22,y:10,d:0.3,p:"VIA",ps:"VIA"}];
+  m.contour={o:[0,0,40,0,40,30,0,30],t:[]};m.plans=[];m.pistes=[];m.arcs=[];m.textes=[];
+  mdlCharger(m,"padstacks.xml");
+  const {doc,bilan}=ipcVersPcb(V.modele,"padstacks.xml");
+  const j1=doc.fps.find(f=>f.ref==="J1"), r1=doc.fps.find(f=>f.ref==="R1");
+  const [p1,p2]=j1.pads;
+  if(!p1.parCouche||!p1.parCouche[1]||p1.parCouche[1].w!==1.2||p1.parCouche[0]||p1.parCouche[2])
+    throw new Error("couronne interne plus petite : "+JSON.stringify(p1.parCouche));
+  if(!p2.parCouche||p2.parCouche[1].shape!=="aucune")throw new Error("pastille non fonctionnelle retirée : "+JSON.stringify(p2.parCouche));
+  if(p1.mask!==0.05)throw new Error("marge de masque du padstack : "+p1.mask);
+  const [s1,s2,s3]=r1.pads;
+  if(s1.mask!==0.05||s1.paste!==0.05)throw new Error("masque et pâte CMS : "+JSON.stringify(s1));
+  if(!s2.noMask)throw new Error("masque décrit, mais pas sur cette face : vernis attendu");
+  if(s3.mask!==0.05||s3.noMask)throw new Error("ouverture prise sur le calque de masque : "+JSON.stringify(s3));
+  const bv=doc.vias.find(v=>Math.abs(v.drill-0.2)<1e-9);
+  if(!bv||bv.a!==0||bv.b!==1)throw new Error("via borgne déduit des pastilles : "+JSON.stringify(bv));
+  const tv=doc.vias.find(v=>v.x===6);
+  if(tv.a!==0||tv.b!==2)throw new Error("via traversant : "+JSON.stringify(tv));
+  if(s2.drill!==0||!doc.vias.some(v=>v.x===22))throw new Error("via dans la pastille : la pastille reste CMS, le via reste");
+  if(!bilan.viasDansPastille||!bilan.viasDeduits)throw new Error("bilan : "+JSON.stringify(bilan));
+});
 T("vers l'éditeur PCB : l'empilage réel — isolants, εr, tan δ, matières, vernis",()=>{
   const m=vpCarteEssai();
   m.unites="MILLIMETER";

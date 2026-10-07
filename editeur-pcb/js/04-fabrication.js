@@ -19,7 +19,10 @@ function maskOpenings(side){
   for(const fp of S.fps)
     for(const q of padsWorld(fp)){
       if(!padLayers(fp,q).includes(l))continue;
-      out.push({q,grow:S.rule.mask});
+      /* une pastille peut porter sa propre ouverture (carte importée), ou
+         n'en avoir aucune : recouverte de vernis */
+      if(q.noMask)continue;
+      out.push({q:padSurCouche(q,l)||q,grow:q.mask!=null?q.mask:S.rule.mask});
     }
   if(!viaTented())
     for(const v of S.vias)
@@ -37,7 +40,8 @@ function pasteOpenings(side){
     for(const q of padsWorld(fp)){
       if(q.drill>0)continue;
       if(!padLayers(fp,q).includes(l))continue;
-      out.push({q,grow:-S.rule.paste});
+      if(q.noPaste)continue;
+      out.push({q,grow:-(q.paste!=null?q.paste:S.rule.paste)});
     }
   }
   return out;
@@ -326,7 +330,12 @@ function gerberCopper(i){
         if(z===null)continue;
         const same=(z===q.net&&q.net);
         if(same&&zoneFichier(zoneAt(i,q.x,q.y)))continue;   // raccordée par le fichier
-        gPad(body,A,q,same?classOf(z).clr:
+        const qc=padSurCouche(q,i);
+        if(!qc){                       // pas de cuivre ici : le trou seul se dégage
+          if(q.drill>0)gFlash(body,A,A.get("C,"+fmt(q.drill+2*clrK(z,q.net,"cu","th"),4)),q.x,q.y);
+          continue;
+        }
+        gPad(body,A,qc,same?classOf(z).clr:
           clrK(z,q.net,"cu",q.drill>0?"th":"smd"));
         if(same)thermals.push(q);
         else if(q.drill>0)
@@ -356,7 +365,10 @@ function gerberCopper(i){
     if(i>=v.a&&i<=v.b)gFlash(body,A,A.get("C,"+fmt(v.d,4)),v.x,v.y);
   for(const fp of S.fps)
     for(const q of padsWorld(fp))
-      if(padLayers(fp,q).includes(i))gPad(body,A,q,0);
+      if(padLayers(fp,q).includes(i)){
+        const qc=padSurCouche(q,i);
+        if(qc)gPad(body,A,qc,0);
+      }
   const fn="Copper,L"+(i+1)+","+(i===0?"Top":(i===S.cu-1?"Bot":"Inr"));
   return gAssemble(gHeader(fn),A,body);
 }

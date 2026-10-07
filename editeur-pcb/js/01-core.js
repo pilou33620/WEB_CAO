@@ -1416,7 +1416,43 @@ function padClone(q){
   if(q.thermalGap!=null)out.thermalGap=Math.max(0,r4(q.thermalGap));
   const nom=padNom(q.nom);
   if(nom)out.nom=nom;
+  /* masque et pâte propres à la pastille (carte importée) */
+  if(q.mask!=null&&isFinite(q.mask))out.mask=r4(q.mask);
+  if(q.noMask)out.noMask=true;
+  if(q.paste!=null&&isFinite(q.paste))out.paste=r4(q.paste);
+  if(q.noPaste)out.noPaste=true;
+  if(q.parCouche&&typeof q.parCouche==="object"){
+    const pc={};
+    for(const k in q.parCouche){
+      const o=q.parCouche[k];
+      if(!o)continue;
+      const e={shape:o.shape==="aucune"?"aucune":padShape(o.shape)};
+      if(e.shape!=="aucune"){
+        e.w=Math.max(0.05,r4(o.w||q.w));e.h=Math.max(0.05,r4(o.h||q.h));
+        if(e.shape==="poly"&&Array.isArray(o.pts))e.pts=o.pts.map(p=>({x:r4(p.x),y:r4(p.y)}));
+        if(o.chamfer!=null)e.chamfer=r4(o.chamfer);
+      }
+      pc[k]=e;
+    }
+    if(Object.keys(pc).length)out.parCouche=pc;
+  }
   return out;
+}
+/* LA PASTILLE TELLE QU'ELLE EST SUR LA COUCHE `l`. Une pastille traversante
+   n'a pas forcément la même forme partout : le fichier d'un fabricant donne
+   souvent une couronne plus petite sur les couches internes, ou l'en retire
+   (pastille non fonctionnelle). `parCouche` le dit, couche par couche ; null
+   veut dire « pas de cuivre ici ». Le Gerber cuivre et le remplissage des
+   zones s'en servent ; le DRC et le routeur gardent la forme principale. */
+function padSurCouche(q,l){
+  const o=q.parCouche&&q.parCouche[l];
+  if(!o)return q;
+  if(o.shape==="aucune")return null;
+  const r=Object.assign({},q,{shape:o.shape,w:o.w,h:o.h});
+  delete r.pts;delete r.chamfer;
+  if(o.pts)r.pts=(q.fp&&q.fp.side)?o.pts.map(p=>({x:-p.x,y:p.y})):o.pts;
+  if(o.chamfer!=null)r.chamfer=o.chamfer;
+  return r;
 }
 /* Nom d'origine d'une broche — « A1 » sur un BGA, « K » sur une diode —
    quand il n'est pas son numéro. Le numéro `n` reste l'entier qui porte le
@@ -1831,7 +1867,8 @@ function padsWorld(fp){
     if(q.pts)o.pts=fp.side?q.pts.map(p=>({x:-p.x,y:p.y})):q.pts;
     if(q.chamfer!=null)o.chamfer=q.chamfer;
     if(q.chamferCorners)o.chamferCorners=q.chamferCorners;
-    for(const k of ["thermalSpokes","thermalAngle","thermalWidth","thermalGap"])
+    for(const k of ["thermalSpokes","thermalAngle","thermalWidth","thermalGap",
+                    "mask","noMask","paste","noPaste","parCouche"])
       if(q[k]!=null)o[k]=q[k];
     return o;
   });

@@ -196,7 +196,12 @@ function zoneCanvas(i){
         if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2,0,Math.PI*2);c.fill();}
         continue;
       }
-      padFill(c,q,same?clr:clrK(zoneNetAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd"));
+      const qc=padSurCouche(q,i);
+      if(!qc){                         // pas de cuivre sur cette couche : le trou seul
+        if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2+clrK(zoneNetAt(i,q.x,q.y),q.net,"cu","th"),0,Math.PI*2);c.fill();}
+        continue;
+      }
+      padFill(c,qc,same?clr:clrK(zoneNetAt(i,q.x,q.y),q.net,"cu",q.drill>0?"th":"smd"));
       if(same)thermals.push(q);
       else if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2+clr,0,Math.PI*2);c.fill();}
     }

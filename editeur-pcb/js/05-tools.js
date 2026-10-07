@@ -169,6 +169,27 @@ function dPads(a){
        qui porte le net, le nom n'est qu'une étiquette qui l'accompagne */
     const nom=padNom(q.nom);
     if(nom)o.nom=nom;
+    if(q.mask!=null&&isFinite(+q.mask))o.mask=r4(clamp(+q.mask,-5,5));
+    if(q.noMask)o.noMask=true;
+    if(q.paste!=null&&isFinite(+q.paste))o.paste=r4(clamp(+q.paste,-5,5));
+    if(q.noPaste)o.noPaste=true;
+    if(q.parCouche&&typeof q.parCouche==="object"){
+      const pc={};
+      for(const k in q.parCouche){
+        const li=+k, e=q.parCouche[k];
+        if(!Number.isInteger(li)||li<0||li>=CU_MAX||!e||typeof e!=="object")continue;
+        if(e.shape==="aucune"){pc[li]={shape:"aucune"};continue;}
+        const r={shape:padShape(e.shape),w:r4(dRange(e.w,o.w,0.05,200)),h:r4(dRange(e.h,o.h,0.05,200))};
+        if(r.shape==="poly"){
+          const pts=dPts(e.pts,3);
+          if(pts)r.pts=pts.map(p=>({x:r4(clamp(p.x,-200,200)),y:r4(clamp(p.y,-200,200))}));
+          else r.shape="sharp";
+        }
+        if(e.chamfer!=null)r.chamfer=r4(dRange(e.chamfer,0,0,100));
+        pc[li]=r;
+      }
+      if(Object.keys(pc).length)o.parCouche=pc;
+    }
     out.push(o);
   }
   if(!out.length)return null;

@@ -215,20 +215,37 @@ function ipcVersPcb(modele,nomCarte){
   const declares=modele.calques||{};
   const cuSeqMax=Math.max(...cus.map(c=>c.seq||0));
   const seri=new Map();                 // index de calque → "silkT" | "silkB"
+  const masq=new Map(), pate=new Map(); // index de calque → 0 dessus | 1 dessous
+  const dessousDe=function(c){
+    const s=String((declares[c.nom]||{}).s||"").toUpperCase();
+    if(s==="BOTTOM")return true;
+    if(s==="TOP")return false;
+    if(/BOT|BACK|DESSOUS|(^|[-_. ])B([-_. ]|$)|[-_.]B$/i.test(c.nom))return true;
+    return !!(c.empile&&c.seq>cuSeqMax);
+  };
   couches.forEach(function(c){
     if(estCuivre(c.i))return;
-    const d=declares[c.nom]||{};
-    const f=String(d.f||"").toUpperCase();
-    const estSeri=f?/SILK|LEGEND/.test(f):c.genre==="serigraphie";
-    if(!estSeri)return;
-    const s=String(d.s||"").toUpperCase();
-    let dessous;
-    if(s==="BOTTOM")dessous=true;
-    else if(s==="TOP")dessous=false;
-    else if(/BOT|BACK|DESSOUS|(^|[-_. ])B([-_. ]|$)|[-_.]B$/i.test(c.nom))dessous=true;
-    else dessous=!!(c.empile&&c.seq>cuSeqMax);
-    seri.set(c.i,dessous?"silkB":"silkT");
+    const f=String((declares[c.nom]||{}).f||"").toUpperCase();
+    const genre=f?(/SILK|LEGEND/.test(f)?"serigraphie":/PASTE|STENCIL/.test(f)?"pate":
+                   /MASK|RESIST/.test(f)?"masque":"autre"):c.genre;
+    if(genre==="serigraphie")seri.set(c.i,dessousDe(c)?"silkB":"silkT");
+    else if(genre==="masque")masq.set(c.i,dessousDe(c)?1:0);
+    else if(genre==="pate")pate.set(c.i,dessousDe(c)?1:0);
   });
+  /* Ouvertures de masque et de pâte posées en pastilles libres sur leur
+     calque (c'est ainsi qu'Altium et Allegro les exportent) : rangées par
+     face et par position, pour les rendre à la pastille de cuivre dessous. */
+  const ouvEn={masque:new Map(),pate:new Map()};
+  for(const p of (modele.pads||[])){
+    const ps=modele.padstacks?modele.padstacks[p.ps]:null;
+    for(const pd of ((ps&&ps.pads)||[])){
+      const r=rangDe(pd.c);
+      const quoi=masq.has(r)?"masque":pate.has(r)?"pate":"";
+      if(!quoi)continue;
+      const face=(quoi==="masque"?masq:pate).get(r);
+      ouvEn[quoi].set(face+"|"+vpCle(p.x,p.y),vpForme(modele,pd.f,pd.d||ps.pad||0,k));
+    }
+  }
   /* la face d'un composant : son calque déclaré, à défaut son miroir */
   const faceDessous=function(hote){
     const nom=hote.c>=0?modele.couches[hote.c]:"";
@@ -321,13 +338,14 @@ function ipcVersPcb(modele,nomCarte){
                w:vpR4(forme.w),h:vpR4(forme.h),shape:forme.shape,drill:0,rot:0};
       const pr=p.r||0;
       q.rot=flipX?pr+180:-pr;
-      if(forme.pts){
-        q.pts=forme.pts.map(function(s){
+      const local=function(pts){
+        return pts.map(function(s){
           let sx=p.m?-s.x:s.x, sy=s.y;
           if(!flipX)sy=-sy;
           return {x:vpR4(sx),y:vpR4(sy)};
         });
-      }
+      };
+      if(forme.pts)q.pts=local(forme.pts);
       if(forme.chamfer!=null)q.chamfer=vpR4(forme.chamfer);
       if(!entiers&&b)q.nom=b.slice(0,16);
       /* le perçage : celui du padstack, ou le trou que le fichier pose pile
@@ -335,7 +353,12 @@ function ipcVersPcb(modele,nomCarte){
       const w=mdlPlacer(p.x||0,p.y||0,hote.x,hote.y,hote.r,!!hote.m);
       const t=trouEn.get(vpCle(w.x,w.y));
       let drill=ps&&ps.trou>0?ps.trou*k:0;
-      if(t&&t.d>0){drill=drill||t.d*k; pris.add(vpCle(w.x,w.y));}
+      /* un trou sous une pastille CMS qui appartient à un AUTRE padstack (ou
+         qui se dit via) est un via dans la pastille : il reste un via, la
+         pastille reste CMS */
+      const viaDansPad=!!(t&&!drill&&((t.ps&&p.ps&&t.ps!==p.ps)||/VIA/i.test(String(t.p||""))));
+      if(viaDansPad)bilan.viasDansPastille=(bilan.viasDansPastille||0)+1;
+      if(t&&t.d>0&&!viaDansPad){drill=drill||t.d*k; pris.add(vpCle(w.x,w.y));}
       else if(drill)pris.add(vpCle(w.x,w.y));
       if(drill>0){
         q.drill=vpR4(drill);
@@ -346,6 +369,50 @@ function ipcVersPcb(modele,nomCarte){
           q.w=Math.max(q.w,vpR4(drill+0.2));q.h=Math.max(q.h,vpR4(drill+0.2));
         }
       }
+      /* la forme couche par couche d'une pastille traversante : celle que
+         donne son padstack pour chaque cuivre, ou rien (pastille non
+         fonctionnelle retirée d'une couche interne) */
+      const entrees=((ps&&ps.pads)||[]).filter(e=>e&&!(e.a&&!e.d));
+      const surCu=entrees.filter(e=>estCuivre(rangDe(e.c)));
+      const touteResolue=entrees.every(e=>rangDe(e.c)>=0);
+      if(drill>0&&surCu.length&&touteResolue){
+        const pc={};
+        for(let L=0;L<cu;L++){
+          const e=surCu.find(x=>coucheEd(rangDe(x.c))===L);
+          if(!e){pc[L]={shape:"aucune"};continue;}
+          const f=vpForme(modele,e.f,e.d||ps.pad||0,k);
+          if(f.shape===q.shape&&Math.abs(f.w-q.w)<1e-4&&Math.abs(f.h-q.h)<1e-4)continue;
+          if(f.shape===forme.shape&&Math.abs(f.w-forme.w)<1e-4&&Math.abs(f.h-forme.h)<1e-4)continue;
+          const o={shape:f.shape,w:vpR4(f.w),h:vpR4(f.h)};
+          if(f.pts)o.pts=local(f.pts);
+          if(f.chamfer!=null)o.chamfer=vpR4(f.chamfer);
+          pc[L]=o;
+        }
+        if(Object.keys(pc).length){q.parCouche=pc;bilan.formesParCouche=(bilan.formesParCouche||0)+1;}
+      }
+      /* masque et pâte : ce que dit le padstack sur le calque de la face,
+         sinon l'ouverture posée à la même place sur ce calque. L'écart à la
+         pastille de cuivre devient sa marge propre ; un padstack qui décrit
+         le masque mais pas sur cette face : pastille recouverte de vernis. */
+      const face=side;
+      const ouverture=function(quoi,calques){
+        const avec=entrees.filter(e=>calques.has(rangDe(e.c)));
+        const e=avec.find(x=>calques.get(rangDe(x.c))===face);
+        if(e)return vpForme(modele,e.f,e.d||0,k);
+        if(avec.length)return "aucune";
+        return ouvEn[quoi].get(face+"|"+vpCle(w.x,w.y))||null;
+      };
+      const ecart=(f)=>((f.w-forme.w)/2+(f.h-forme.h)/2)/2;
+      const om=ouverture("masque",masq);
+      if(om==="aucune")q.noMask=true;
+      else if(om&&Math.abs(ecart(om))<5)q.mask=vpR4(ecart(om));
+      if(!(drill>0)){
+        const op=ouverture("pate",pate);
+        if(op==="aucune")q.noPaste=true;
+        else if(op&&Math.abs(ecart(op))<5)q.paste=vpR4(-ecart(op));
+      }
+      if(q.mask!=null||q.noMask||q.paste!=null||q.noPaste)
+        bilan.ouverturesPropres=(bilan.ouverturesPropres||0)+1;
       pris.add("pad:"+vpCle(w.x,w.y));
       fp.pads.push(q);
       const net=netNom(p.n);
@@ -387,6 +454,17 @@ function ipcVersPcb(modele,nomCarte){
     if(t.sa!=null&&t.sb!=null){
       const a=coucheEd(t.sa), b=coucheEd(t.sb);
       if(a>=0&&b>=0&&a!==b){v.a=Math.min(a,b);v.b=Math.max(a,b);}
+    }else if(ps&&Array.isArray(ps.pads)){
+      /* portée non déclarée : celle des cuivres où le padstack pose une
+         pastille — un via dont les pastilles ne vont que de TOP à IN2 est
+         borgne. Seulement si toutes ses couches se résolvent : « ALL » ne
+         dit rien de la portée. */
+      const ent=ps.pads.filter(e=>e&&!(e.a&&!e.d));
+      const ls=ent.map(e=>coucheEd(rangDe(e.c))).filter(l=>l>=0);
+      if(ent.length&&ent.every(e=>rangDe(e.c)>=0)&&ls.length>=2){
+        const a=Math.min(...ls), b=Math.max(...ls);
+        if(a!==b&&(a>0||b<cu-1)){v.a=a;v.b=b;bilan.viasDeduits=(bilan.viasDeduits||0)+1;}
+      }
     }
     doc.vias.push(v);
     viaEn.add(cle);
@@ -559,6 +637,12 @@ function ipcVersPcbResume(b){
   if(b.serigraphie)L.push(b.serigraphie+" trait(s) de sérigraphie"+
     (b.aplats?" (dont "+b.aplats+" aplat(s) en contour)":""));
   if(b.textes)L.push(b.textes+" texte(s)");
+  if(b.isolants)L.push("empilage : "+b.isolants+" isolant(s) du fichier");
+  if(b.trousZones)L.push(b.trousZones+" trou(s) de plan du fichier");
+  if(b.formesParCouche)L.push(b.formesParCouche+" pastille(s) à forme par couche");
+  if(b.ouverturesPropres)L.push(b.ouverturesPropres+" ouverture(s) de masque/pâte propres");
+  if(b.viasDeduits)L.push(b.viasDeduits+" via(s) borgne(s)/enterré(s) déduit(s)");
+  if(b.viasDansPastille)L.push(b.viasDansPastille+" via(s) dans une pastille");
   let t=L.join(", ");
   if(b.unites)t+=" — converti de "+b.unites+" en mm";
   if(b.renumerotes)t+=" — "+b.renumerotes+" composant(s) renuméroté(s), nom de broche gardé";

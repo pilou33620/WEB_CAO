@@ -103,7 +103,12 @@ function zoneMask(l,net){
     for(const q of padsWorld(fp)){
       if(!padLayers(fp,q).includes(l))continue;
       if(q.net===net&&zoneFichier(zoneAt(l,q.x,q.y)))continue;   // raccordée par le fichier
-      padFill(c,q,q.net===net?clr:clrK(net,q.net,"cu",q.drill>0?"th":"smd"));
+      const qc=padSurCouche(q,l);
+      if(!qc){
+        if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2+clrK(net,q.net,"cu","th"),0,Math.PI*2);c.fill();}
+        continue;
+      }
+      padFill(c,qc,q.net===net?clr:clrK(net,q.net,"cu",q.drill>0?"th":"smd"));
       if(q.net===net)thermals.push(q);
       else if(q.drill>0){c.beginPath();c.arc(q.x,q.y,q.drill/2+clr,0,Math.PI*2);c.fill();}
     }
