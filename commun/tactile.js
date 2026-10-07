@@ -481,13 +481,13 @@ function trAppuiFin(id){
   TR.ptr.delete(id);
   try{ TR.cv.dispatchEvent(new PointerEvent("pointercancel",{pointerId:id, pointerType:p.type, bubbles:true, clientX:x, clientY:y})); }catch(_){}
   if(navigator.vibrate){ try{ navigator.vibrate(12); }catch(_){} }
-  trOuvrir(x, y, trCible(x, y));
+  trOuvrir(x, y, trCible(x, y, p.type));
   TR.tenu = {id, x0:x, y0:y, glisse:false};
 }
-function trCible(x, y){
+function trCible(x, y, type){
   const f = {schema:"schRouletteCible", pcb:"pcbRouletteCible"}[TR.outil];
   let c = null;
-  try{ if(f && typeof globalThis[f] === "function") c = globalThis[f](x, y); }catch(err){ if(typeof console !== "undefined") console.error("roulette :", err); }
+  try{ if(f && typeof globalThis[f] === "function") c = globalThis[f](x, y, type||"pen"); }catch(err){ if(typeof console !== "undefined") console.error("roulette :", err); }
   if(c && c.occupe){
     // tracé en cours : « Terminer » rejoue le double-clic qui le clôt dans l'éditeur
     return {ctx:"trace", titre:"Tracé", actions:{terminer:()=>{
@@ -496,7 +496,7 @@ function trCible(x, y){
   }
   return c || {ctx:"vide", titre:TR_OUTILS[TR.outil].nomVide};
 }
-function trOuvrirSur(x, y){ trOuvrir(x, y, trCible(x, y)); }
+function trOuvrirSur(x, y){ trOuvrir(x, y, trCible(x, y, "pen")); }
 
 /* ---------- Dessin de la roulette ---------- */
 function trPol(r, a){ return [r*Math.sin(a), -r*Math.cos(a)]; }

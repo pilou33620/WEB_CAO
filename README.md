@@ -199,7 +199,9 @@ Volet présent dans le schéma, le PCB, la visionneuse et Gestion LIB, branché 
   le vide (Enregistrer, Fil, Coller…), un tracé en cours (Terminer, Via, Échap). Sans lever, on glisse
   jusqu'à la commande et on lève ; lever sur place laisse la roulette ouverte. Les groupes (Édition, Historique, Vue…) s'ouvrent en éventail. Le secteur
   **＋** range, ajoute ou crée ses propres commandes et groupes (un raccourci clavier rejoué), gardés
-  dans le profil. La paume posée
+  dans le profil. Pour prendre plusieurs éléments : glisser au stylet sur le vide trace un lasso, ou
+  **Multi** (groupe *Sélection*) fait ajouter chaque toucher ; un appui long sur l'un des éléments pris
+  ouvre la roulette pour toute la sélection. La paume posée
   pendant que le stylet écrit est ignorée.
 - **Outils partagés** : recherche universelle `Ctrl+F` (repères, nets, toutes feuilles) et mesure de cotes `K` (aimantée sur pastilles, vias et pistes au PCB).
 

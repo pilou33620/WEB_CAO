@@ -86,6 +86,7 @@ l'élément est **seul** sélectionné. `Ctrl+clic` sur un élément déjà pris
 l'en retire qu'au relâchement : si le geste glisse, c'est toute la sélection
 qui part, lui compris.
 
+**Au stylet**, glisser sur le vide trace le lasso, comme à la souris ; le doigt, lui, déplace la vue.
 **Au doigt**, la commande **Multi** de la roulette tactile (groupe *Sélection*) tient lieu de `Ctrl` :
 enclenché, chaque toucher ajoute un élément à la sélection ou l'en retire, et
 glisser sur le vide trace un lasso au lieu de déplacer la vue (deux doigts la

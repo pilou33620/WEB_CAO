@@ -2551,6 +2551,44 @@ T("roulette tactile : les raccourcis tapés par l'utilisateur sont compris",()=>
   if(trToucheParse("Ctrl+").key)throw new Error("un raccourci sans touche ne doit rien donner");
 });
 
+T("roulette tactile : un fil se vise au stylet à quelques pixels près",()=>{
+  const {w}=groupeTroisR();
+  clearSel();
+  const q=ptr((w.x1+w.x2)/2,w.y1);
+  if(schRouletteCible(q.clientX,q.clientY+10,"pen").ctx!=="fil")throw new Error("à 10 px du fil, le stylet doit le prendre");
+  if(!S.selW.has(w))throw new Error("le fil visé doit être sélectionné, pour Supprimer");
+  if(schRouletteCible(q.clientX,q.clientY+18,"touch").ctx!=="fil")throw new Error("à 18 px, le doigt doit encore le prendre");
+  if(schRouletteCible(q.clientX,q.clientY+40,"touch").ctx!=="vide")throw new Error("à 40 px, c'est le vide");
+});
+T("roulette tactile : l'appui long garde la sélection multiple",()=>{
+  const {rs}=groupeTroisR();
+  const garde=localStorage.getItem("cao.modeTactile");
+  localStorage.setItem("cao.modeTactile","1");
+  try{
+    clearSel();S.sel.add(rs[0].id);S.sel.add(rs[1].id);
+    const sur=r=>{const q=ptr(r.x,r.y);return schRouletteCible(q.clientX,q.clientY,"pen");};
+    if(sur(rs[0]).titre!=="2 sél."||S.sel.size!==2)throw new Error("sur un élément pris, la sélection reste entière");
+    tactileMultiDefinir(true);
+    sur(rs[2]);
+    if(S.sel.size!==3)throw new Error("« Multi » enclenché, l'élément touché s'ajoute : "+S.sel.size);
+    // l'appui long annule le geste de l'éditeur : l'élément pris ne doit pas en sortir
+    const tch=ptr(rs[0].x,rs[0].y,{pointerType:"touch"});
+    dom.fire("pointerdown",tch);
+    dom.fireWin("pointercancel",Object.assign({type:"pointercancel"},tch));
+    if(!S.sel.has(rs[0].id))throw new Error("un geste annulé ne doit rien retirer de la sélection");
+  }finally{
+    tactileMultiDefinir(false);
+    if(garde===null)localStorage.removeItem("cao.modeTactile");else localStorage.setItem("cao.modeTactile",garde);
+  }
+});
+T("stylet : glisser sur le vide trace un lasso, comme la souris",()=>{
+  const {rs}=groupeTroisR();
+  clearSel();
+  const ox=S.ox;
+  glisseSch(ptr(0,0,{pointerType:"pen"}),ptr(40*G,20*G,{pointerType:"pen"}));
+  if(S.sel.size!==3||S.ox!==ox)throw new Error("le lasso au stylet devait prendre les trois résistances sans bouger la vue : "+S.sel.size);
+});
+
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
 process.exit(ko?1:0);
 

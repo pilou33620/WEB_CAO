@@ -4560,22 +4560,46 @@ cv.addEventListener("wheel",e=>{
    l'élément s'il ne l'était pas, pour que ses commandes agissent sur lui.
    Un tracé en cours (piste, paire, zone, contour) : « occupe », la roulette
    propose alors de le terminer par le double-clic ci-dessus. */
-function pcbRouletteCible(clientX,clientY){
+function pcbRouletteCible(clientX,clientY,type){
   if(S.dp||S.route||S.zoneDraft||S.edgeDraft)return {occupe:true};
   const r=cv.getBoundingClientRect(), p=s2w(clientX-r.left,clientY-r.top);
-  const h=hitTest(p.x,p.y,null);
+  let h=hitTest(p.x,p.y,null);
+  // une piste fine se vise mal au doigt : rien de net dessous, on cherche plus large
+  if(!h||h.inside)h=pcbPisteProche(p.x,p.y,px(type==="touch"?22:14))||h;
+  /* l'élément touché entre dans la sélection ; elle n'est remplacée que s'il
+     n'en faisait pas partie et que « Multi » n'est pas enclenché */
+  const prendre=(set,v)=>{
+    if(set.has(v))return false;
+    if(!(typeof tactileMultiActif==="function"&&tactileMultiActif()))clearSel();
+    set.add(v);return true;
+  };
   const fp=h&&(h.fp||h.fpText);
   if(fp){
-    if(!S.sel.fps.has(fp.id)){clearSel();S.sel.fps.add(fp.id);refreshPanels();draw();}
+    if(prendre(S.sel.fps,fp.id)){refreshPanels();draw();}
     return {ctx:"comp", titre:selCount()>1?selCount()+" sél.":fp.ref, actions:{}};
   }
   if(h&&(h.track||h.via)){
-    const o=h.track||h.via, set=h.track?S.sel.tracks:S.sel.vias;
-    if(!set.has(o)){clearSel();set.add(o);if(o.net)S.hlNet=o.net;refreshPanels();draw();}
+    const o=h.track||h.via;
+    if(prendre(h.track?S.sel.tracks:S.sel.vias,o)){if(o.net)S.hlNet=o.net;refreshPanels();draw();}
     return {ctx:"fil", titre:o.net||(h.track?"piste":"via"),
       actions:o.net?{netEntier:()=>selectNetRouting(o.net)}:{}};
   }
   return {ctx:"vide", titre:"Carte"};
+}
+function pcbPisteProche(x,y,tol){
+  let best=null,bd=tol;
+  for(const v of S.vias){
+    if(layerAlpha(v.a)<=0)continue;
+    const d=dist(x,y,v.x,v.y)-v.d/2;
+    if(d<=bd){bd=d;best={via:v};}
+  }
+  for(const t of S.tracks){
+    if(layerAlpha(t.l)<=0)continue;
+    // à distance égale, la couche active passe devant
+    const d=trkDist(x,y,t)-t.w/2-(t.l===S.active?px(2):0);
+    if(d<=bd){bd=d;best={track:t};}
+  }
+  return best;
 }
 
 /* ==========================================================================

@@ -639,9 +639,10 @@ cv.addEventListener("pointerdown",e=>{
   }
   const hd=hitDrawing(p.x,p.y);
   if(hd){grab(S.selD,hd.id);return;}
-  if(e.pointerType!=="mouse"&&!multi){
+  if(e.pointerType==="touch"&&!multi){
     // au doigt, glisser sur le vide déplace la vue : plus naturel qu'un lasso
-    // (« Multi » enclenché, le doigt trace le lasso ; deux doigts déplacent la vue)
+    // (« Multi » enclenché, le doigt trace le lasso ; deux doigts déplacent la vue).
+    // Le stylet, lui, trace le lasso comme la souris.
     S.pan={x:e.clientX,y:e.clientY,ox:S.ox,oy:S.oy};
     if(!addSel)clearSel();
   }else{
@@ -773,6 +774,8 @@ cv.addEventListener("pointermove",e=>{
 
 function endPointer(e){
   cancelSchLongpress();
+  // geste annulé (roulette tactile, système) : pas un clic, rien ne sort de la sélection
+  if(e.type==="pointercancel"&&S.drag)S.drag.toggleOff=null;
   PTR.delete(e.pointerId);
   if(pinch&&PTR.size<2)pinch=null;
   if(PTR.size>0)return;
@@ -838,25 +841,41 @@ cv.addEventListener("dblclick",e=>{
    l'élément s'il ne l'était pas, pour que ses commandes agissent sur lui.
    Un fil ou un trait en cours : « occupe », la roulette propose alors de le
    terminer par le double-clic ci-dessus. */
-function schRouletteCible(clientX,clientY){
+function schRouletteCible(clientX,clientY,type){
   if(S.wireStart||S.drawStart)return {occupe:true};
   const r=cv.getBoundingClientRect(), p=s2w(clientX-r.left,clientY-r.top);
+  /* l'élément touché entre dans la sélection ; elle n'est remplacée que s'il
+     n'en faisait pas partie et que « Multi » n'est pas enclenché */
+  const prendre=(set,v)=>{
+    if(set.has(v))return;
+    if(!(typeof tactileMultiActif==="function"&&tactileMultiActif()))clearSel();
+    set.add(v);refreshPanels();draw();
+  };
   const comp=hitComp(p.x,p.y);
   if(comp){
-    if(!S.sel.has(comp.id)){clearSel();S.sel.add(comp.id);refreshPanels();draw();}
+    prendre(S.sel,comp.id);
     return {ctx:"comp", titre:selCount()>1?selCount()+" sél.":comp.ref,
       actions:typeof ceOpen==="function"?{props:()=>ceOpen(comp)}:{}};
   }
-  const hn=hitNetLabel(p.x,p.y), wi=hn?-1:hitWire(p.x,p.y);
+  // un fil fait 2 px : au doigt ou au stylet, on le cherche plus large qu'à la souris
+  const hn=hitNetLabel(p.x,p.y), wi=hn?-1:schFilProche(p.x,p.y,(type==="touch"?22:14)/S.scale);
   if(hn||wi>=0){
     const w=wi>=0?S.wires[wi]:null;
     const net=hn?hn.net:netAtLive(w.x1,w.y1);
-    if(w&&!S.selW.has(w)){clearSel();S.selW.add(w);refreshPanels();draw();}
+    if(w)prendre(S.selW,w);
     return {ctx:"fil", titre:(net&&net.name)||"fil",
       actions:net?{netEntier:()=>selectNet(net)}:{}};
   }
   const pg=S.pages&&S.pages[S.page];
   return {ctx:"vide", titre:(pg&&pg.name)||"Feuille"};
+}
+function schFilProche(wx,wy,tol){
+  let best=-1,bd=tol*tol;
+  for(let i=S.wires.length-1;i>=0;i--){
+    const w=S.wires[i], d=ptSegDistSq(wx,wy,w.x1,w.y1,w.x2,w.y2);
+    if(d<bd){bd=d;best=i;}
+  }
+  return best;
 }
 cv.addEventListener("auxclick",e=>{if(e.button===1)e.preventDefault();});
 cv.addEventListener("wheel",e=>{

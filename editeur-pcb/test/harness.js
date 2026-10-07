@@ -108,7 +108,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "ptPolyDist","padWorldPts","padClone","padDist","padHalf","fpSetPad","gPad",
   /* sélection multiple et presse-papier */
   "selectHit","toggleHit","altTarget","selCount","fpTextPos",
-  "tactileMultiDefinir","tactileMultiActif","pcbRouletteCible","trackRun","selectRun","deleteSel","unrouteSel","copySelPcb","cutSelPcb",
+  "tactileMultiDefinir","tactileMultiActif","pcbRouletteCible","pcbPisteProche","trackRun","selectRun","deleteSel","unrouteSel","copySelPcb","cutSelPcb",
   "pasteClipPcb","pcbClipContent","pcbSetClip","pcbGetClip","freeFpRef","GRID_STEPS",
   "setGridStep","gridShownStep","gridLabel","fpById",
   /* import défensif (normDoc) et aller-retour de document */
@@ -1484,6 +1484,10 @@ T("roulette tactile : boîtier, piste ou carte selon ce qui est sous le stylet",
     S.route={};
     try{ if(!sur(20,20).occupe)throw new Error("piste en cours : la roulette doit proposer de la terminer"); }
     finally{ S.route=null; }
+    clearSel();
+    const q=sc(20,20);
+    if(pcbRouletteCible(q.clientX,q.clientY+10,"pen").ctx!=="fil")throw new Error("à 10 px de la piste, le stylet doit la prendre");
+    if(!S.sel.tracks.has(t))throw new Error("la piste visée doit être sélectionnée, pour Supprimer");
   }finally{S.fps=[];S.tracks=[];touch();clearSel();suiviFin(reg);}
 });
 T("déplacer un boîtier : la piste entre deux de ses pastilles part en bloc",()=>{
