@@ -681,7 +681,11 @@ l'accompagne et s'affiche sous lui dans le panneau Propriétés. La rotation
 d'une empreinte est un angle **quelconque**, ramené dans [0, 360[ au millième
 de degré : la liste du panneau propose les huitièmes de tour et l'angle réel
 du composant s'il n'en est pas un, et le Gerber flashe les pastilles à cet
-angle, sans l'arrondir au degré.
+angle, sans l'arrondir au degré. Sur la carte aussi, la forme suit :
+`padsWorld()` transmet les sommets, le chanfrein et les branches thermiques
+(les sommets au miroir pour une empreinte posée dessous), si bien qu'une
+pastille polygonale se dessine, se contrôle et part au Gerber avec sa vraie
+forme, et non plus comme le rectangle w × h qui l'encadre.
 
 L'historique garde 80 instantanés, dans la limite de 48 millions de caractères
 (`UNDO_BUDGET`, ~96 Mo en mémoire) : sur une très grosse carte, ce sont les plus

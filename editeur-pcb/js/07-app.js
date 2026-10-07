@@ -649,12 +649,15 @@ function sessionPcb(){
   }
   PCB_FICHIER=String(repris.etat.fichier||"");
   const v=repris.etat.vue||{};
-  if(Number.isFinite(+v.scale)&&+v.scale>0){
+  const cadree=Number.isFinite(+v.scale)&&+v.scale>0;
+  if(cadree){
     S.scale=+v.scale;S.ox=+v.ox||0;S.oy=+v.oy||0;
   }
   setFlip(!!v.flip);
   S.dirty=!!repris.etat.sale;
-  draw();
+  /* une carte déposée par un autre outil (la visionneuse IPC-2581) arrive sans
+     cadrage : on la montre en entier plutôt que le coin de l'ancienne vue */
+  if(cadree)draw();else fit();
   hint("Carte reprise dans l'état où vous l'aviez laissée en changeant d'outil"+
        (repris.etat.sale?" — pensez à l'enregistrer avant de fermer l'onglet.":"."));
   return true;

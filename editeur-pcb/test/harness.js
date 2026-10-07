@@ -4938,6 +4938,29 @@ T("aller-retour : angle quelconque, polygone, chanfrein, thermique, nom de broch
     throw new Error("liste des angles : "+rotChoix([32.5]));
   carteVide();
 });
+/* padsWorld() ne passait ni les sommets d'un polygone ni le chanfrein : sur la
+   carte, une pastille « poly » se dessinait, se contrôlait et partait au Gerber
+   comme un rectangle w × h. Dessous, les sommets passent au miroir. */
+T("pastille polygonale : sa forme atteint la carte, miroir compris",()=>{
+  carteVide();
+  const d=JSON.parse(serialize());
+  const tri=[{x:0,y:0},{x:1,y:0},{x:0,y:0.5}];
+  d.fps=[{id:1,ref:"Q1",x:10,y:10,rot:0,side:0,pins:1,
+          pads:[{n:1,x:0,y:0,w:1,h:0.5,shape:"poly",pts:tri}]},
+         {id:2,ref:"Q2",x:20,y:10,rot:0,side:1,pins:1,
+          pads:[{n:1,x:0,y:0,w:1,h:0.5,shape:"poly",pts:tri}]}];
+  loadDoc(d,true);
+  const dessus=padWorldPts(padsWorld(S.fps[0])[0],0);
+  if(dessus.length!==3||dessus[1].x!==11||dessus[2].y!==10.5)
+    throw new Error("dessus : "+JSON.stringify(dessus));
+  const dessous=padWorldPts(padsWorld(S.fps[1])[0],0);
+  if(dessous.length!==3||dessous[1].x!==19||dessous[2].y!==10.5)
+    throw new Error("dessous, au miroir : "+JSON.stringify(dessous));
+  const ch=padsWorld({id:3,x:0,y:0,rot:0,side:0,nets:{},pins:1,
+    pads:[{n:1,x:0,y:0,w:1,h:1,shape:"chamfer",chamfer:0.3}]})[0];
+  if(ch.chamfer!==0.3)throw new Error("le chanfrein se perdait en route");
+  carteVide();
+});
 T("ouverture Gerber : un angle non entier n'est pas arrondi au degré",()=>{
   const A=apSet();
   apForPad(A,{x:0,y:0,w:2,h:1,shape:"sharp",rot:12.5*Math.PI/180},0);
@@ -6540,6 +6563,22 @@ T("session : la carte mise de côté revient à l'identique",()=>{
   if(d)throw new Error("la carte a changé en chemin : "+d);
   if(!S.dirty)throw new Error("l'état « modifié » doit revenir aussi, sinon "+
     "l'onglet se fermerait sans un mot sur un travail jamais enregistré");
+});
+/* Une carte déposée par un autre outil — la visionneuse IPC-2581 la traduit et
+   l'écrit dans la session de l'onglet — arrive sans cadrage : l'éditeur doit
+   la montrer en entier, pas le coin de l'ancienne vue. */
+T("session : une carte reçue sans cadrage est montrée en entier",()=>{
+  dom.session.clear();
+  carteVide();
+  const d=JSON.parse(serialize());
+  d.board={x:0,y:0,w:400,h:300,pts:null};
+  d.fps=[{id:1,ref:"J9",x:390,y:290,pins:1,pads:[{n:1,x:0,y:0,w:1,h:1}]}];
+  sessEcrire("pcb",{doc:d,sale:true,fichier:"carte"});
+  S.scale=50;S.ox=0;S.oy=0;
+  if(!sessionPcb())throw new Error("reprise refusée");
+  if(!(S.scale<50))throw new Error("la vue n'a pas été recadrée : échelle "+S.scale);
+  if(!S.dirty||S.fps[0].ref!=="J9")throw new Error("carte reçue, à enregistrer");
+  dom.session.clear();carteVide();
 });
 /* ==========================================================================
    Cross-probing schéma ↔ PCB (commun/session.js + pcbSonde/pcbSonderCible)

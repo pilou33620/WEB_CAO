@@ -1787,12 +1787,23 @@ function fpXform(fp){
    dessin, empreinte et pastille cumulées, tel que l'attendent padPath(),
    padDist() et les ouvertures Gerber. Sur une empreinte retournée, la
    rotation propre d'une pastille s'inverse avec le miroir. */
+/* La forme suit la pastille : sommets d'un polygone, chanfrein, branches
+   thermiques. Sans eux, le dessin, le contrôle et le Gerber retombaient sur le
+   rectangle w × h. Les sommets sont dans le repère de la pastille ; dessous,
+   ils passent au miroir comme le reste de l'empreinte — la rotation, elle, est
+   déjà retournée ci-dessus. */
 function padsWorld(fp){
   const T=fpXform(fp), a=(fp.rot||0)*Math.PI/180, m=fp.side?-1:1;
   return padsOf(fp).map(q=>{
     const c=T(q.x,q.y);
-    return {n:q.n, x:r3(c.x), y:r3(c.y), w:q.w, h:q.h, shape:q.shape,
-            drill:q.drill, net:q.net, rot:a+m*(q.rot||0)*Math.PI/180, fp};
+    const o={n:q.n, x:r3(c.x), y:r3(c.y), w:q.w, h:q.h, shape:q.shape,
+             drill:q.drill, net:q.net, rot:a+m*(q.rot||0)*Math.PI/180, fp};
+    if(q.pts)o.pts=fp.side?q.pts.map(p=>({x:-p.x,y:p.y})):q.pts;
+    if(q.chamfer!=null)o.chamfer=q.chamfer;
+    if(q.chamferCorners)o.chamferCorners=q.chamferCorners;
+    for(const k of ["thermalSpokes","thermalAngle","thermalWidth","thermalGap"])
+      if(q[k]!=null)o[k]=q[k];
+    return o;
   });
 }
 function padLayers(fp,pad){
