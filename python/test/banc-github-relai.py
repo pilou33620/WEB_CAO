@@ -124,6 +124,15 @@ try:
              s != 403, (s, d))
     os.rmdir(ailleurs)
     regler()
+
+    # -- mode WEB_SUITE : la LIB est celle de PROJETS, elle ne se deplace pas --
+    lib_avant = web_CAO.dossier_lib()
+    s, d = req("GET", "/api/lib/config")
+    verifier("WEB_SUITE : LIB annoncee non deplacable", s == 200 and d.get("suite") is True
+             and d.get("modifiable") is False, (s, d))
+    s, d = req("POST", "/api/lib/config", {"chemin": tempfile.gettempdir(), "initialiser": False})
+    verifier("WEB_SUITE : deplacer la LIB est refuse", s == 403 and "WEB_SUITE" in d.get("detail", "")
+             and web_CAO.dossier_lib() == lib_avant, (s, d))
     s, d = req("POST", "/api/github/envoyer", {"message": "Schema : ajout du regulateur"})
     verifier("ce poste : envoi relaye au lanceur", s == 200 and d.get("ok") is True
              and d.get("message") == "Envoyé sur GitHub.", (s, d))

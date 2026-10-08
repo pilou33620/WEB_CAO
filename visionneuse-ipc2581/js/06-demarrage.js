@@ -187,18 +187,43 @@ function modeleTexte(){
    et la voie serveur plafonne à 16 Mo (MAX_PROJET, web_CAO.py). Au-delà,
    l'écriture est refusée et le téléchargement prend le relais, en le disant. */
 function exportJson(){
-  if(!V.modele)return;
-  if(typeof projdLie==="function"&&projdLie()){
-    projdDocEcrire(PREF,JSON.parse(modeleTexte())).then(function(nom){
-      if(typeof profNoterDocument==="function")profNoterDocument(PREF,nom);
-      hint("Carte rangée dans le dossier du projet ("+nom+").");
-    }).catch(function(e){
-      hint("Écriture refusée : "+e.message+" — export en téléchargement.");
-      exportJsonTelecharger();
-    });
-    return;
-  }
+  if(!V.modele){ hint("Aucune carte ouverte : rien à enregistrer."); return Promise.resolve(false); }
+  if(typeof projdSuiteDispo!=="function")return exportJsonClassique();
+  /* Lancé par WEB_SUITE : la seule sauvegarde est le projet de PROJETS puis
+     GitHub (commun/projet-disque.js), jamais un téléchargement. */
+  return projdSuiteDispo().then(function(suite){
+    if(!suite)return exportJsonClassique();
+    return projdEnregistrerGithub(function(){return exportJsonProjet(false);},
+      function(){const p=(typeof projNom==="function"&&projNom())||"";
+        return "Carte IPC-2581 "+(p?p+" ":"")+new Date().toLocaleString("fr-FR");},
+      hint,"la carte IPC-2581");
+  });
+}
+function exportJsonClassique(){
+  if(typeof projdLie==="function"&&projdLie())return exportJsonProjet(true);
   exportJsonTelecharger();
+  return Promise.resolve(false);
+}
+/* Range le modèle dans le dossier du projet. `repli` : en cas d'échec,
+   télécharger à la place (jamais en mode WEB_SUITE). */
+function exportJsonProjet(repli){
+  return projdDocEcrire(PREF,JSON.parse(modeleTexte())).then(function(nom){
+    if(typeof profNoterDocument==="function")profNoterDocument(PREF,nom);
+    hint("Carte rangée dans le dossier du projet ("+nom+").");
+    if(typeof projdAvis==="function")
+      projdAvis("ok","Carte IPC-2581 rangée dans le projet",nom+" · "+projdQuand(Date.now()));
+    return true;
+  }).catch(function(e){
+    if(!repli){
+      hint("Écriture refusée : "+e.message+" — rien n'est enregistré.");
+      if(typeof projdAvis==="function")
+        projdAvis("erreur","Carte IPC-2581 pas enregistrée dans le projet",e.message);
+      return false;
+    }
+    hint("Écriture refusée : "+e.message+" — export en téléchargement.");
+    exportJsonTelecharger();
+    return false;
+  });
 }
 function exportJsonTelecharger(){
   telecharger(new Blob([modeleTexte()],{type:"application/json"}),nomBase()+".json");
@@ -251,6 +276,21 @@ function exportPng(){
   });
 
   document.getElementById("bJson").onclick=exportJson;
+  /* Lancé par WEB_SUITE, « Exporter .json » devient la sauvegarde du projet :
+     écrite dans PROJETS, puis envoyée sur GitHub. */
+  if(typeof projdSuiteDispo==="function")projdSuiteDispo().then(function(suite){
+    if(!suite)return;
+    const b=document.getElementById("bJson");
+    b.innerHTML="☁ Enregistrer (projet + GitHub) <kbd>Ctrl+S</kbd>";
+    b.title="Lancé par WEB_SUITE, seule sauvegarde : range la carte traduite dans le dossier du projet (PROJETS), puis l'envoie sur GitHub";
+  });
+  /* Ctrl+S enregistre la carte (la roulette tactile passe aussi par là). */
+  document.addEventListener("keydown",function(e){
+    if((e.ctrlKey||e.metaKey)&&!e.altKey&&String(e.key).toLowerCase()==="s"){
+      e.preventDefault();
+      exportJson();
+    }
+  });
   document.getElementById("bPng").onclick=exportPng;
   document.getElementById("bFit").onclick=fit;
   document.getElementById("bMesure").onclick=function(){mesurer();};

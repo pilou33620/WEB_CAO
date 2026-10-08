@@ -647,36 +647,49 @@ function projdEnregistrerGithub(enregistrer, defaut, dire, libelle){
       // une fonction : le nom du projet n'est connu qu'une fois celui-ci choisi
       const message = (typeof defaut === "function" ? defaut() : defaut)
                       || ("WEB_CAO " + new Date().toLocaleString("fr-FR"));
-      if(PROJD_GH && !PROJD_GH.disponible){
-        /* Lance par WEB_SUITE, mais cet appareil n'a pas le droit d'envoyer
-           (jeton du lanceur absent) : le projet est sur le serveur, on dit
-           quoi faire pour que l'envoi passe la prochaine fois. */
-        const t = PROJD_GH.detail || "Envoi sur GitHub refusé à cet appareil.";
-        dire(t);
-        projdAvis("partiel", "Enregistré sur le serveur, pas envoyé sur GitHub", t);
+      return projdEnvoyerSuite(message, dire, "Enregistré").then(function(){ return true; });
+    });
+  });
+}
+/* Ce qui vient d'etre ecrit dans PROJETS (un document de projet, ou la LIB)
+   part sur GitHub, et l'avis le dit. `titre` commence la phrase de l'avis
+   (« Enregistré », « Bibliothèque enregistrée ») ; `accord` (« e ») accorde
+   « envoyé » avec lui. Rend vrai si l'envoi a reussi ; ne rejette jamais :
+   ce qui est ecrit l'est, seul l'envoi a pu echouer. */
+function projdEnvoyerSuite(message, dire, titre, accord){
+  const t0 = titre || "Enregistré";
+  const env = "envoyé" + (accord || "");
+  dire = dire || function(){};
+  return projdGithubTester().then(function(etat){
+    if(!etat.disponible){
+      /* Lance par WEB_SUITE, mais cet appareil n'a pas le droit d'envoyer
+         (jeton du lanceur absent) : c'est sur le serveur, on dit quoi faire
+         pour que l'envoi passe la prochaine fois. */
+      const t = etat.detail || "Envoi sur GitHub refusé à cet appareil.";
+      dire(t);
+      projdAvis("partiel", t0 + " sur le serveur, pas " + env + " sur GitHub", t);
+      return false;
+    }
+    dire(t0 + ". Envoi sur GitHub…");
+    projdAvis("encours", t0 + " · envoi sur GitHub…", projdQuand(Date.now()));
+    return projdGithubEnvoyerFile(message).then(function(r){
+      if(r.ok){
+        projdNoterEnvoi();
+        dire(t0 + " et " + env + " sur GitHub.");
+        projdAvis("ok", t0 + " et " + env + " sur GitHub", projdQuand(Date.now()) + " · « " + message + " »");
         return true;
       }
-      dire("Enregistré. Envoi sur GitHub…");
-      projdAvis("encours", "Enregistré · envoi sur GitHub…", projdQuand(Date.now()));
-      return projdGithubEnvoyerFile(message).then(function(r){
-        if(r.ok){
-          projdNoterEnvoi();
-          dire("Enregistré et envoyé sur GitHub.");
-          projdAvis("ok", "Enregistré et envoyé sur GitHub", projdQuand(Date.now()) + " · « " + message + " »");
-          return true;
-        }
-        /* Un refus se lit en entier (il dit quoi faire) : la barre d'etat le
-           couperait, surtout sur une tablette. */
-        const t = r.message || "Envoi sur GitHub refusé.";
-        dire(t);
-        projdAvis("erreur", "Enregistré sur le serveur, mais pas envoyé sur GitHub", t);
-        return true;
-      }, function(e){
-        const t = "Envoi sur GitHub impossible : " + e.message;
-        dire(t);
-        projdAvis("erreur", "Enregistré sur le serveur, mais pas envoyé sur GitHub", t);
-        return true;
-      });
+      /* Un refus se lit en entier (il dit quoi faire) : la barre d'etat le
+         couperait, surtout sur une tablette. */
+      const t = r.message || "Envoi sur GitHub refusé.";
+      dire(t);
+      projdAvis("erreur", t0 + " sur le serveur, mais pas " + env + " sur GitHub", t);
+      return false;
+    }, function(e){
+      const t = "Envoi sur GitHub impossible : " + e.message;
+      dire(t);
+      projdAvis("erreur", t0 + " sur le serveur, mais pas " + env + " sur GitHub", t);
+      return false;
     });
   });
 }
@@ -686,7 +699,7 @@ const PROJD_ENVOI_CLE = "cao.projet.envoiGithub";
 function projdNoterEnvoi(){
   try{
     const m = JSON.parse(localStorage.getItem(PROJD_ENVOI_CLE) || "{}");
-    m[PROJD.chemin || projNom()] = Date.now();
+    m[PROJD.chemin || (typeof projNom === "function" ? projNom() : "") || "PROJETS"] = Date.now();
     localStorage.setItem(PROJD_ENVOI_CLE, JSON.stringify(m));
   }catch(_){}
 }

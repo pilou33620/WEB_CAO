@@ -1286,7 +1286,16 @@ function libRendreEtat(cfg){
     const el = document.getElementById(id);
     if(el) el.disabled = verrou;
   });
-  if(verrou){
+  if(cfg.suite){
+    /* Lancé par WEB_SUITE : la LIB est PROJETS/LIB_CAO, et chaque
+       enregistrement de la Gestion LIB part sur GitHub avec les projets. */
+    const ligne = document.getElementById("libChem");
+    if(ligne && ligne.parentNode) ligne.parentNode.style.display = "none";
+    const init = document.getElementById("libInitVide");
+    if(init && init.closest) { const l = init.closest("div"); if(l) l.style.display = "none"; }
+    libMsg("☁ Lancé par WEB·SUITE : la bibliothèque est celle de <b>PROJETS/LIB_CAO</b>. " +
+           "Dans la Gestion LIB, chaque enregistrement (catalogue, empreinte, symbole) y est écrit puis envoyé sur GitHub.");
+  } else if(verrou){
     libMsg("🔒 Bibliothèque en lecture seule : ce serveur écoute sur le réseau. " +
            "Relancez-le avec <code>--local</code> (ou par double-clic) pour changer de dossier ou modifier la bibliothèque.");
   }

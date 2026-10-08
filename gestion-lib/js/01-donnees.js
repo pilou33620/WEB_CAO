@@ -240,6 +240,29 @@ async function obtenirFichierLib(type, nom) {
   }
 }
 
+/* ---------- Lancé par WEB_SUITE : la LIB part sur GitHub ----------
+   La LIB est alors PROJETS/LIB_CAO, que le lanceur envoie avec les projets.
+   Chaque écriture réussie (catalogue, empreinte, symbole, suppression) est
+   suivie d'un envoi (commun/projet-disque.js) : comme pour le schéma et la
+   carte, enregistrer veut dire « écrit dans PROJETS et envoyé sur GitHub ».
+   Les écritures rapprochées -- un import JLCPCB écrit le symbole puis le
+   catalogue -- partent en un seul envoi. */
+const LIB_SUITE = { quoi: [], minuterie: null };
+function libSuiteNoter(quoi) {
+  if (typeof projdSuiteDispo !== "function") return;
+  projdSuiteDispo().then(suite => {
+    if (!suite) return;
+    if (!LIB_SUITE.quoi.includes(quoi)) LIB_SUITE.quoi.push(quoi);
+    clearTimeout(LIB_SUITE.minuterie);
+    LIB_SUITE.minuterie = setTimeout(() => {
+      const liste = LIB_SUITE.quoi.splice(0);
+      const msg = "LIB : " + liste.slice(0, 6).join(", ")
+        + (liste.length > 6 ? " (+" + (liste.length - 6) + ")" : "");
+      projdEnvoyerSuite(msg, null, "Bibliothèque enregistrée", "e");
+    }, 1200);
+  });
+}
+
 // Sauvegarde d'un fichier d'empreinte ou symbole sur le serveur
 async function sauvegarderFichierLib(type, nom, dataOuContenu) {
   if (!type || !nom) throw new Error("Type et nom de fichier requis");
@@ -258,6 +281,7 @@ async function sauvegarderFichierLib(type, nom, dataOuContenu) {
   }
 
   const res = await apiPost("/api/lib/fichier", payload);
+  libSuiteNoter(nom);
 
   // Mettre à jour le cache
   const cle = `${type}:${nom}`;
@@ -289,6 +313,7 @@ async function sauvegarderFichierLib(type, nom, dataOuContenu) {
 async function supprimerFichierLib(type, nom) {
   if (!type || !nom) throw new Error("Type et nom de fichier requis");
   const res = await apiDelete(`/api/lib/fichier?type=${encodeURIComponent(type)}&nom=${encodeURIComponent(nom)}`);
+  libSuiteNoter("suppression de " + nom);
 
   // Nettoyer cache
   const cle = `${type}:${nom}`;
@@ -320,6 +345,7 @@ async function enregistrerCatalogue() {
   };
   const res = await apiPost("/api/lib/composants", payload);
   LIB_STATE.sale = false;
+  libSuiteNoter("catalogue");
 
   if (typeof sessDiffuserLibModif === "function") {
     sessDiffuserLibModif({

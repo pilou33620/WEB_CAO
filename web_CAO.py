@@ -2562,7 +2562,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             "est_defaut": est_defaut,
             "existe": info["existe"],
             "statistiques": info["statistiques"],
-            "modifiable": PROJETS_OUVERT
+            # Lance par WEB_SUITE, la LIB est celle de PROJETS (LIB_CAO) :
+            # le lanceur l'envoie sur GitHub, elle ne se deplace pas.
+            "modifiable": PROJETS_OUVERT and not adresse_lanceur(),
+            "suite": bool(adresse_lanceur())
         }
 
     def _lib_config_ecrire(self):
@@ -2571,6 +2574,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self._lib_garde(reseau=False)
         if not isinstance(charge, dict):
             raise ErreurLib(400, "Corps JSON invalide (objet attendu)")
+        if adresse_lanceur():
+            raise ErreurLib(403, "Lance par WEB_SUITE : la bibliotheque est celle de"
+                                 " PROJETS (LIB_CAO), envoyee sur GitHub avec les"
+                                 " projets. Elle ne se deplace pas d'ici.")
         chemin = charge.get("chemin")
         initialiser = bool(charge.get("initialiser", True))
         res = definir_dossier_lib(chemin, initialiser=initialiser)

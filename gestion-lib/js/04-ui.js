@@ -86,6 +86,29 @@ function initApp() {
   const bExport = document.getElementById("bExportCsv");
   if (bExport) bExport.addEventListener("click", () => telechargerCsv());
 
+  /* Lancé par WEB_SUITE, « Enregistrer » écrit dans PROJETS/LIB_CAO puis
+     envoie sur GitHub (01-donnees.js, libSuiteNoter) : c'est la seule
+     sauvegarde, le téléchargement du CSV disparaît. */
+  if (typeof projdSuiteDispo === "function") projdSuiteDispo().then(suite => {
+    if (!suite) return;
+    if (bExport) bExport.style.display = "none";
+    if (bSave) {
+      bSave.textContent = LIB_STATE.sale ? "💾 Enregistrer (LIB + GitHub) *" : "💾 Enregistré (LIB + GitHub)";
+      bSave.title = "Lancé par WEB_SUITE, seule sauvegarde : écrit le catalogue dans PROJETS/LIB_CAO, puis l'envoie sur GitHub (Ctrl+S)";
+    }
+  });
+
+  /* Ctrl+S : l'éditeur d'empreinte ou de symbole s'il est ouvert, le
+     catalogue sinon (la roulette tactile passe aussi par là). */
+  window.addEventListener("keydown", e => {
+    if (!((e.ctrlKey || e.metaKey) && !e.altKey && String(e.key).toLowerCase() === "s")) return;
+    e.preventDefault();
+    if (typeof EDITEUR_LIB !== "undefined" && EDITEUR_LIB.actif && typeof editeurEnregistrer === "function")
+      editeurEnregistrer();
+    else
+      actionEnregistrer();
+  });
+
   const bNouveau = document.getElementById("bNewComp");
   if (bNouveau) bNouveau.addEventListener("click", ouvrirModaleNouveauComposant);
 
@@ -244,7 +267,9 @@ function rafraichirStats() {
   const bSave = document.getElementById("bSave");
   if (bSave) {
     bSave.classList.toggle("on", LIB_STATE.sale);
-    bSave.textContent = LIB_STATE.sale ? "💾 Enregistrer *" : "💾 Enregistré";
+    // lancé par WEB_SUITE, le bouton dit aussi où part l'enregistrement
+    const git = (typeof projdSuite === "function" && projdSuite()) ? " (LIB + GitHub)" : "";
+    bSave.textContent = LIB_STATE.sale ? "💾 Enregistrer" + git + " *" : "💾 Enregistré" + git;
   }
 }
 
@@ -777,6 +802,10 @@ function rafraichirGalerieSim() {
 async function actionEnregistrer() {
   afficherToast("Enregistrement des modifications en cours...", "info");
   try {
+    if (!LIB_STATE.sale) {
+      afficherToast("Aucune modification du catalogue à enregistrer", "info");
+      return;
+    }
     const res = await enregistrerCatalogue();
     afficherToast("Modifications enregistrées avec succès dans LIB/LIB_composants.csv", "success");
     rafraichirStats();
