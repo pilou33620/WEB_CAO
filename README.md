@@ -202,7 +202,8 @@ Volet présent dans le schéma, le PCB, la visionneuse et Gestion LIB, branché 
   dans le profil. Pour prendre plusieurs éléments : glisser au stylet sur le vide trace un lasso, ou
   **Multi** (groupe *Sélection*) fait ajouter chaque toucher ; un appui long sur l'un des éléments pris
   ouvre la roulette pour toute la sélection. La paume posée
-  pendant que le stylet écrit est ignorée.
+  pendant que le stylet écrit est ignorée. Le bouton **Roulette**, à côté de **Tactile** dans l'entête,
+  l'ouvre aussi au milieu de la feuille, sur ce qui est sélectionné, sans appui long et même à la souris.
 - **Outils partagés** : recherche universelle `Ctrl+F` (repères, nets, toutes feuilles) et mesure de cotes `K` (aimantée sur pastilles, vias et pistes au PCB).
 
 ---

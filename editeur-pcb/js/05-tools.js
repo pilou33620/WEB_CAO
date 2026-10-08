@@ -4562,6 +4562,17 @@ cv.addEventListener("wheel",e=>{
    propose alors de le terminer par le double-clic ci-dessus. */
 function pcbRouletteCible(clientX,clientY,type){
   if(S.dp||S.route||S.zoneDraft||S.edgeDraft)return {occupe:true};
+  /* Ouverte par le bouton « Roulette » de l'entête, sans pointe : la roulette
+     de ce qui est déjà sélectionné, sans rien prendre ni lâcher. */
+  if(clientX==null){
+    const n=selCount();
+    if(!n)return {ctx:"vide", titre:"Carte"};
+    const o=S.sel.fps.size?null:([...S.sel.tracks][0]||[...S.sel.vias][0]);
+    if(o)return {ctx:"fil", titre:n>1?n+" sél.":(o.net||(S.sel.tracks.size?"piste":"via")),
+      actions:o.net?{netEntier:()=>selectNetRouting(o.net)}:{}};
+    const fp=n===1&&S.sel.fps.size?fpById([...S.sel.fps][0]):null;
+    return {ctx:"comp", titre:fp?fp.ref:n+" sél.", actions:{}};
+  }
   const r=cv.getBoundingClientRect(), p=s2w(clientX-r.left,clientY-r.top);
   let h=hitTest(p.x,p.y,null);
   // une piste fine se vise mal au doigt : rien de net dessous, on cherche plus large

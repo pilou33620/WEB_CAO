@@ -4,7 +4,9 @@
    Gère l'activation globale, la persistance, l'adaptation CSS, le stylet et
    la roulette de commandes : un appui long sur la feuille l'ouvre sous la
    pointe, avec les commandes de ce qui est touché (composant, fil ou piste,
-   vide, tracé en cours). Elle remplace l'ancienne barre d'actions du bas.
+   vide, tracé en cours). Elle remplace l'ancienne barre d'actions du bas. Le
+   bouton « Roulette », à côté de « Tactile », l'ouvre aussi au milieu de la
+   feuille, sur ce qui est sélectionné, à la souris comme au doigt.
    ========================================================================== */
 
 const TACTILE_CLE = "cao.modeTactile";
@@ -204,6 +206,7 @@ const TR_ICONES = {
   groupe:"M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z",
   plus:"M12 5v14 M5 12h14",
   terminer:"M4 12l5 5L20 6",
+  roue:"M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0 M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0 M12 3v6 M12 15v6 M3 12h6 M15 12h6",
 };
 
 /* Commandes. `k` est le raccourci rejoué (par défaut `touche`), `bouton` un
@@ -313,7 +316,7 @@ const TR = {
   outil: null, cv: null, cfg: null,
   roue: null, el: null, perso: null, persoCtx: "comp",
   ptr: new Map(), appui: null, tenu: null, styletPose: false, dernierStylet: 0,
-  rejetes: new Set(), ouverteA: 0, roulettePtr: null,
+  rejetes: new Set(), ouverteA: 0, roulettePtr: null, bouton: null,
 };
 
 function trCmd(id){
@@ -362,6 +365,7 @@ function tactileRouletteBrancher(outil){
   TR.cv = (typeof cv !== "undefined" && cv && cv.getContext) ? cv
         : (document.getElementById("board") || document.getElementById("sheet") || document.getElementById("carte"));
   if(!TR.cv || typeof window.addEventListener !== "function") return;
+  trBoutonCreer();
   // pastille « Multi » : rappelle la sélection multiple et la relâche d'un toucher
   if(!document.getElementById("tactileMultiPuce")){
     const p = document.createElement("button");
@@ -388,6 +392,34 @@ function tactileRouletteBrancher(outil){
 
 function trSurFeuille(e){ return !!TR.cv && e.target === TR.cv; }
 
+/* Bouton « Roulette » de l'entête, juste après « Tactile » : ouvre la roulette
+   au milieu de la feuille sans appui long (et sans clic droit), la referme si
+   elle est ouverte. Hors mode tactile aussi : elle sert alors à la souris. */
+function trBoutonCreer(){
+  const t = document.getElementById("bTactileToggle");
+  if(!t || !t.parentNode || document.getElementById("bRoulette")) return;
+  const b = document.createElement("button");
+  b.type = "button"; b.id = "bRoulette"; b.className = "tb tb-roulette";
+  b.title = "Roulette de commandes, sur ce qui est sélectionné (en mode tactile : aussi par un appui long sur la feuille)";
+  b.setAttribute("aria-haspopup", "menu"); b.setAttribute("aria-expanded", "false");
+  b.innerHTML = trSvg("roue", 15)+"<span>Roulette</span>";
+  b.onclick = ()=>{ if(TR.roue) tactileRouletteFermer(); else tactileRouletteOuvrirBouton(); };
+  t.parentNode.insertBefore(b, t.nextSibling);
+  TR.bouton = b;
+}
+function trBoutonMaj(){
+  if(!TR.bouton) return;
+  TR.bouton.classList.toggle("on", !!TR.roue);
+  TR.bouton.setAttribute("aria-expanded", String(!!TR.roue));
+}
+/* La roulette au milieu de la feuille, sur la sélection (ou le tracé en cours). */
+function tactileRouletteOuvrirBouton(){
+  if(!TR.outil || !TR.cv) return;
+  const r = TR.cv.getBoundingClientRect();
+  const x = r.left + r.width/2, y = r.top + r.height/2;
+  trOuvrir(x, y, trCible(x, y, "bouton", true));
+}
+
 /* Rejet de la paume : tant que le stylet est posé, et un court instant après,
    un doigt sur la feuille est ignoré. Si la paume était là avant le stylet, ses
    points sont annulés auprès de l'éditeur, sinon il croirait à un pincement. */
@@ -396,7 +428,13 @@ function trPaume(e){
   return e.pointerType==="touch" && TR.cfg.paume && (TR.styletPose || Date.now()-TR.dernierStylet < TR_PAUME_MS);
 }
 function trPointerDown(e){
-  if(!tactileEstActif()) return;
+  // le bouton « Roulette » la bascule lui-même : il ne doit pas la fermer avant
+  if(TR.bouton && TR.bouton.contains(e.target)) return;
+  if(!tactileEstActif()){
+    // ouverte par le bouton, à la souris : un clic ailleurs la referme
+    if(TR.roue && !(TR.el && TR.el.contains(e.target))) tactileRouletteFermer();
+    return;
+  }
   // le stylet est posé, sur la feuille comme sur la roulette qu'il tient
   if(e.pointerType==="pen"){ TR.styletPose = true; TR.dernierStylet = Date.now(); }
   // la paume d'abord : posée pendant que le stylet tient la roulette, elle ne la ferme pas
@@ -490,10 +528,12 @@ function trAppuiFin(id){
   trOuvrir(x, y, trCible(x, y, p.type));
   TR.tenu = {id, x0:x, y0:y, glisse:false};
 }
-function trCible(x, y, type){
+/* `sansPoint` : ouverte par le bouton, l'éditeur décrit la sélection au lieu
+   de prendre ce qui est sous (x, y). */
+function trCible(x, y, type, sansPoint){
   const f = {schema:"schRouletteCible", pcb:"pcbRouletteCible"}[TR.outil];
   let c = null;
-  try{ if(f && typeof globalThis[f] === "function") c = globalThis[f](x, y, type||"pen"); }catch(err){ if(typeof console !== "undefined") console.error("roulette :", err); }
+  try{ if(f && typeof globalThis[f] === "function") c = sansPoint ? globalThis[f](null, null, type) : globalThis[f](x, y, type||"pen"); }catch(err){ if(typeof console !== "undefined") console.error("roulette :", err); }
   if(c && c.occupe){
     // tracé en cours : « Terminer » rejoue le double-clic qui le clôt dans l'éditeur
     return {ctx:"trace", titre:"Tracé", actions:{terminer:()=>{
@@ -581,10 +621,12 @@ function trOuvrir(x, y, cible){
   TR.el.style.left = x+"px"; TR.el.style.top = y+"px";
   TR.el.className = "ouvert ctx-"+cible.ctx;
   trMajBouton();
+  trBoutonMaj();
 }
 function tactileRouletteFermer(){
   TR.roue = null; TR.roulettePtr = null; TR.tenu = null;
   if(TR.el){ TR.el.className = ""; TR.el.innerHTML = ""; }
+  trBoutonMaj();
 }
 function tactileRouletteOuverte(){ return !!TR.roue; }
 function trMajBouton(){
