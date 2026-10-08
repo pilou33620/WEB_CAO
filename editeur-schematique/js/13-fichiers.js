@@ -23,37 +23,59 @@ function schFile(suffixe, repli){
 }
 /* Avec un dossier de projet rattaché, enregistrer écrit dans ce dossier ; sans
    dossier, on télécharge comme avant — en double-clic sur le monofichier,
-   aucun accès disque n'est possible. Rend une promesse : vrai si le document
-   est dans le dossier du projet (« Enregistrer + GitHub » n'envoie qu'alors). */
+   aucun accès disque n'est possible.
+   Lancé par WEB_SUITE, c'est autre chose : la seule sauvegarde est le projet
+   de PROJETS puis GitHub (commun/projet-disque.js), jamais un téléchargement.
+   Rend une promesse : vrai si le document est dans le dossier du projet. */
 function saveJson(){
   storeCurrent();
   const nl=(typeof netlistText==="function")?netlistText():null;
   const doc={format:"schemedit-2",pages:S.pages,page:S.page,netClasses:S.netClasses,netlist:nl};
   if(typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:nl});
-  if(typeof projdLie==="function" && projdLie()){
-    return projdDocEcrire("schema",doc).then(function(nom){
-      S.dirty=false;
-      clearBackup();
-      if(typeof profNoterDocument==="function")profNoterDocument("schema",nom);
-      document.getElementById("fHint").textContent=
-        "Document enregistré dans le dossier du projet ("+nom+").";
-      if(typeof projdAvis==="function")
-        projdAvis("ok","Schéma enregistré dans le projet",nom+" · "+projdQuand(Date.now()));
-      return true;
-    }).catch(function(e){
-      /* Rien n'est sauvé : on le dit, puis on retombe sur le téléchargement. */
-      document.getElementById("fHint").textContent=
-        "Écriture refusée : "+e.message+" — enregistrement en téléchargement.";
-      if(typeof projdAvis==="function")
-        projdAvis("erreur","Schéma pas enregistré dans le projet",e.message+" — le fichier est téléchargé à la place.");
-      saveJsonTelecharger(doc);
-      return false;
-    });
-  }
+  if(typeof projdSuiteDispo!=="function")return saveJsonClassique(doc);
+  return projdSuiteDispo().then(function(suite){
+    if(!suite)return saveJsonClassique(doc);
+    return projdEnregistrerGithub(function(){return saveJsonProjet(doc,false);},
+      function(){const p=(typeof projNom==="function"&&projNom())||"";
+        return "Schéma "+(p?p+" ":"")+new Date().toLocaleString("fr-FR");},
+      function(t){document.getElementById("fHint").textContent=t;},"le schéma");
+  });
+}
+function saveJsonClassique(doc){
+  if(typeof projdLie==="function" && projdLie())return saveJsonProjet(doc,true);
   saveJsonTelecharger(doc);
   if(typeof projdAvis==="function")
     projdAvis("info","Schéma téléchargé","Aucun projet ouvert : le fichier .json est téléchargé, il n'est rangé dans aucun dossier de projet.");
   return Promise.resolve(false);
+}
+/* Écrit dans le dossier du projet. `repli` : en cas d'échec, télécharger à la
+   place (jamais en mode WEB_SUITE, où rien ne s'enregistre hors du projet). */
+function saveJsonProjet(doc,repli){
+  return projdDocEcrire("schema",doc).then(function(nom){
+    S.dirty=false;
+    clearBackup();
+    if(typeof profNoterDocument==="function")profNoterDocument("schema",nom);
+    document.getElementById("fHint").textContent=
+      "Document enregistré dans le dossier du projet ("+nom+").";
+    if(typeof projdAvis==="function")
+      projdAvis("ok","Schéma enregistré dans le projet",nom+" · "+projdQuand(Date.now()));
+    return true;
+  }).catch(function(e){
+    /* Rien n'est sauvé : on le dit, puis on retombe sur le téléchargement
+       s'il est permis. */
+    if(!repli){
+      document.getElementById("fHint").textContent="Écriture refusée : "+e.message+" — rien n'est enregistré.";
+      if(typeof projdAvis==="function")
+        projdAvis("erreur","Schéma pas enregistré dans le projet",e.message+" — votre travail reste dans l'éditeur, réessayez.");
+      return false;
+    }
+    document.getElementById("fHint").textContent=
+      "Écriture refusée : "+e.message+" — enregistrement en téléchargement.";
+    if(typeof projdAvis==="function")
+      projdAvis("erreur","Schéma pas enregistré dans le projet",e.message+" — le fichier est téléchargé à la place.");
+    saveJsonTelecharger(doc);
+    return false;
+  });
 }
 function saveJsonTelecharger(doc){
   const nl=doc.netlist||((typeof netlistText==="function")?netlistText():null);

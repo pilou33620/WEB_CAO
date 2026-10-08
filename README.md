@@ -106,7 +106,7 @@ La clé API reste en mémoire vive, ou est fournie par le serveur (`GEMINI_API_K
 | `--projets-reseau` | En écoute réseau, ouvre quand même les projets et l'écriture dans la LIB (réseau de confiance uniquement) |
 | `--lib DIR` | Dossier de la bibliothèque centrale |
 
-Lancé par [WEB·SUITE](https://github.com/pilou33620/WEB_SUITE), WEB_CAO propose aussi **Fichier → Enregistrer + GitHub** : le projet est écrit sur disque puis envoyé sur GitHub par le lanceur (voir le README de WEB·SUITE).
+Lancé par [WEB·SUITE](https://github.com/pilou33620/WEB_SUITE), WEB_CAO n'a plus qu'**une seule sauvegarde** : **Enregistrer (projet + GitHub)** (`Ctrl+S`, menu Fichier ou roulette tactile) écrit le schéma ou la carte dans le dossier du projet, sous `PROJETS/CAO`, puis le lanceur l'envoie sur GitHub (commit + push). Pas de téléchargement, ni de dossier pris ailleurs : sans projet ouvert, l'éditeur demande dans quel projet ranger le document (existant ou nouveau). Cela vaut sur le PC du lanceur comme depuis une tablette reliée à un Raspberry Pi (voir le README de WEB·SUITE pour le jeton du mode réseau).
 
 </details>
 

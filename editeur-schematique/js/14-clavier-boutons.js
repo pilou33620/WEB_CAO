@@ -137,13 +137,10 @@ document.getElementById("bGrid").onclick=()=>setGrid(!S.showGrid);
 document.getElementById("selGrid").onchange=e=>setGridStep(+e.target.value);
 document.getElementById("bFit").onclick=fit;
 document.getElementById("bSave").onclick=saveJson;
-/* Enregistrer + GitHub : visible seulement si WEB_SUITE a lancé cet outil et
-   qu'un projet du serveur est ouvert (commun/projet-disque.js). */
-if(typeof projdGithubBouton==="function")projdGithubBouton("bSaveGit",function(){
-  const p=(typeof projNom==="function"&&projNom())||"";
-  projdEnregistrerGithub(saveJson,"Schéma "+(p?p+" ":"")+new Date().toLocaleString("fr-FR"),
-    function(t){document.getElementById("fHint").textContent=t;});
-});
+/* Lancé par WEB_SUITE, « Enregistrer » laisse la place à « Enregistrer
+   (projet + GitHub) », seule sauvegarde ; saveJson choisit la voie
+   (commun/projet-disque.js). */
+if(typeof projdGithubBouton==="function")projdGithubBouton("bSaveGit",saveJson,"bSave");
 document.getElementById("bPng").onclick=exportPng;
 document.getElementById("bomAll").onchange=e=>{
   S.bomAll=e.target.checked;

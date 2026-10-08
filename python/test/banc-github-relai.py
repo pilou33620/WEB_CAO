@@ -20,6 +20,7 @@ import json
 import os
 import sys
 import threading
+import urllib.parse
 
 DOSSIER_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if DOSSIER_ROOT not in sys.path:
@@ -108,6 +109,21 @@ try:
     regler()
     s, d = req("GET", "/api/github")
     verifier("ce poste : envoi disponible", s == 200 and d.get("disponible") is True, (s, d))
+    verifier("ce poste : mode WEB_SUITE annonce (seule sauvegarde : projet + GitHub)",
+             d.get("suite") is True, d)
+
+    # -- mode WEB_SUITE : un projet ne vit que sous les racines (PROJETS/CAO) --
+    import tempfile
+    ailleurs = tempfile.mkdtemp()
+    s, d = req("GET", "/api/projet?chemin=" + urllib.parse.quote(ailleurs))
+    verifier("WEB_SUITE : chemin tape hors de PROJETS refuse (jamais envoye sur GitHub)",
+             s == 403 and "WEB_SUITE" in d.get("detail", ""), (s, d))
+    regler(lanceur=False)
+    s, d = req("GET", "/api/projet?chemin=" + urllib.parse.quote(ailleurs))
+    verifier("sans lanceur : ce meme chemin reste permis en ecoute locale",
+             s != 403, (s, d))
+    os.rmdir(ailleurs)
+    regler()
     s, d = req("POST", "/api/github/envoyer", {"message": "Schema : ajout du regulateur"})
     verifier("ce poste : envoi relaye au lanceur", s == 200 and d.get("ok") is True
              and d.get("message") == "Envoyé sur GitHub.", (s, d))
@@ -133,6 +149,10 @@ try:
 
     # -- autre appareil du reseau : le jeton du lanceur est exige ----------
     regler(local=False, ouvert=False, reseau=True)
+    s, d = req("GET", "/api/github")
+    verifier("autre appareil sans jeton : mode WEB_SUITE, envoi indisponible et explique",
+             s == 200 and d.get("suite") is True and d.get("disponible") is False
+             and "jeton" in d.get("detail", ""), (s, d))
     s, d = req("POST", "/api/github/envoyer", {"message": "x"})
     verifier("autre appareil sans jeton : refuse, rien de relaye", s == 403 and not RECUS, (s, d))
     s, d = req("POST", "/api/github/envoyer", {"message": "x"},
