@@ -165,7 +165,7 @@ function linkMover(avant){
    ménage au relâchement. La sélection en cours est mise de côté le temps du
    geste : seuls les boîtiers bougent, pas la piste ou le via sélectionnés à
    côté. Rend le nombre de bouts que le geste a laissés hors de leur pastille —
-   une pastille CMS passée sur l'autre face, typiquement. */
+   une pastille CMS passée sur l'autre face que rien n'a pu re-router. */
 function transformFps(ids,mutate){
   const fps=ids.map(fpById).filter(Boolean);
   if(!fps.length){mutate();return 0;}
@@ -188,7 +188,7 @@ function transformFps(ids,mutate){
       const id=linkHolder(t,e,set,I);
       if(id!=null)tient.push({t,e,id});
     }
-  let perdus=0;
+  let perdus=0, rr=null;
   try{
     beginMove();
     const F=drag.follow;
@@ -210,6 +210,7 @@ function transformFps(ids,mutate){
     const sh=F.shove;
     S.dragShove=null;
     if(sh)pnsApply(sh);
+    rr=followReroute(F);
     pruneAfterDrag([...movedTracks()]);
     mitreAfterDrag([...movedTracks()].filter(t=>S.tracks.indexOf(t)>=0),drag.diag);
     for(const o of tient){
@@ -221,11 +222,8 @@ function transformFps(ids,mutate){
   }finally{
     drag=null;S.sel=keep;S.dragShove=null;
   }
+  rerouteHint(rr);
   return perdus;
-}
-function linkPerdusHint(n){
-  if(n>0)hint(n+" bout(s) de piste ne touchent plus leur pastille (passée sur "+
-              "l'autre face ?) : le chevelu les montre, à re-router.");
 }
 
 /* ==========================================================================
@@ -334,4 +332,185 @@ function padOffPoint(q,l,x,y,ancre){
   const p=padDist(g.x,g.y,s)<=0?g:{x:r3(x),y:r3(y)};
   if(Math.abs(p.x-q.x)<EPS_J&&Math.abs(p.y-q.y)<EPS_J)return null;   // c'est le centre
   return p;
+}
+
+/* ==========================================================================
+   Après le suivi : vérifier, re-router, sinon signaler
+   --------------------------------------------------------------------------
+   Le suivi garde la forme de la piste et ne contourne qu'à petite dose, le
+   temps du geste. Au relâchement, chaque liaison qui a suivi est jugée :
+   - elle passe sous l'isolation d'un autre net, ou en croise une piste :
+     on la RE-ROUTE en entier, de son bout tenu jusqu'à la pastille, en
+     contournant (`pnsWalkaround`) — anti-collision active seulement ;
+   - son bout ne touche plus sa pastille (une CMS passée sur l'autre face) :
+     on la refait sur la couche où est désormais la pastille, si son autre
+     bout y est accessible (un via, une pastille traversante) ;
+   - sans issue, elle reste telle quelle, TRACÉE EN ROUGE, et le DRC la porte
+     « à re-router ». La marque tombe d'elle-même quand la piste disparaît
+     (effacée, annulée, re-routée à la main) ou qu'elle n'est plus en faute.
+   ========================================================================== */
+/* Les liaisons marquées : {trk:[pistes], msg, x, y}. Hors document : une
+   marque dit l'état d'un geste, pas une propriété de la carte. */
+S.aRerouter=[];
+function rerouteLive(){
+  const T=new Set(S.tracks);
+  S.aRerouter=S.aRerouter.filter(g=>g.trk.some(t=>T.has(t)));
+  return T;
+}
+function rerouteMarked(t){
+  for(const g of S.aRerouter)if(g.trk.indexOf(t)>=0)return true;
+  return false;
+}
+/* Ce qui tient les bouts d'une liaison n'est pas un obstacle. */
+function rerouteSkip(N,ends){
+  const skip=new Set();
+  for(const e of ends){
+    const j=N.jointAt(e.l,e.x,e.y);
+    for(const it of j.pads)skip.add(it);
+    for(const it of j.vias)skip.add(it);
+  }
+  return skip;
+}
+function rerouteFaulty(N,trk,skip,T){
+  for(const t of trk){
+    if(!T.has(t)||dist(t.x1,t.y1,t.x2,t.y2)<1e-6)continue;
+    for(const it of pnsItemsTrack(t))if(N.colliding(it,skip).length)return true;
+  }
+  return false;
+}
+/* Le meilleur trajet de A à B sur la couche l dans le monde N : un coude
+   direct s'il passe, sinon le plus court des contournements. */
+function reroutePath(N,l,net,w,A,B,skip){
+  const line=pts=>({l,net,w,pts});
+  let best=null;
+  for(const legs of followLegs(A,B,cornerMode())){
+    let pts=legs;
+    if(N.firstObstacle(line(pts),skip)){
+      const r=pnsWalkaround(N,line(pts),skip);
+      if(!r.ok||r.pts.length<2)continue;
+      pts=pnsOptimize(N,line(r.pts),skip);
+    }
+    pts=followRound45(pnsSimplify(pts));
+    pts[0]={x:A.x,y:A.y};pts[pts.length-1]={x:B.x,y:B.y};
+    if(pts.length<2||N.firstObstacle(line(pts),skip))continue;
+    if(cornerMode()!=="free"&&!pnsIs45(pts))continue;
+    if(!best||pnsLen(pts)<pnsLen(best))best=pts;
+  }
+  return best;
+}
+/* La pastille du boîtier `fid` sous P, et les couches où elle a du cuivre. */
+function rerouteHeldLayers(fid,P){
+  const f=fpById(fid);
+  if(!f)return [];
+  for(const q of padsWorld(f)){
+    const L=padCuLayers(f,q).filter(l=>padHolds(f,q,l,P.x,P.y));
+    if(L.length)return L;
+  }
+  return [];
+}
+/* Le passage au relâchement. `F` : le suivi du geste (`followMoved`). Rend
+   {faits, marques} ; les pistes refaites remplacent celles de la liaison. */
+function followReroute(F){
+  const res={faits:0,marques:0,perdus:0};
+  if(!F)return res;
+  touch();
+  let T=rerouteLive();
+  const W=pnsWorld();
+  const jobs=[];
+  for(const c of F.chains){
+    const pts=c.cur||c.V, P=pts[pts.length-1], V0=c.V[0];
+    if(P.x===c.P0.x&&P.y===c.P0.y)continue;
+    const L=rerouteHeldLayers(F.p0fp.get(c.P0),P);
+    const ends=[{l:c.l,x:V0.x,y:V0.y},{l:c.l,x:P.x,y:P.y}];
+    if(L.length&&L.indexOf(c.l)<0){
+      // la pastille a changé de face : la liaison change de couche avec elle
+      const l2=L.find(l=>viaAt(l,V0.x,V0.y)||padAt(l,V0.x,V0.y));
+      jobs.push({c,V0,P,l:l2,perdu:true});
+      continue;
+    }
+    if(rerouteFaulty(W,c.trk,rerouteSkip(W,ends),T))jobs.push({c,V0,P,l:c.l});
+  }
+  // le cuivre emporté en bloc ou étiré d'un trait : on ne le refait pas, on le juge
+  const bloc=[...F.rigid,...F.rubber.map(r=>r.t)].filter(t=>T.has(t));
+  for(const t of bloc){
+    const ends=[{l:t.l,x:t.x1,y:t.y1},{l:t.l,x:t.x2,y:t.y2}];
+    if(rerouteFaulty(W,[t],rerouteSkip(W,ends),T))
+      jobs.push({c:{trk:[t]},bloc:true});
+  }
+  if(!jobs.length){rerouteForget(F,T);return res;}
+  // le monde sans les liaisons qu'on va refaire
+  const out=new Set();
+  for(const j of jobs)if(!j.bloc)for(const t of j.c.trk)out.add(t);
+  const N=W.branch();
+  for(const it of W.all())if(it.src&&out.has(it.src))N.remove(it);
+  const neuves=[];
+  for(const j of jobs){
+    let pts=null;
+    if(!j.bloc&&j.l!=null&&S.avoid){
+      const ends=[{l:j.l,x:j.V0.x,y:j.V0.y},{l:j.l,x:j.P.x,y:j.P.y}];
+      pts=reroutePath(N,j.l,j.c.net,j.c.w,j.V0,j.P,rerouteSkip(N,ends));
+    }else if(!j.bloc&&j.l!=null&&j.perdu){
+      // anti-collision coupée : la liaison change de couche telle quelle
+      pts=(j.c.cur||j.c.V).map(p=>({x:p.x,y:p.y}));
+    }
+    if(pts){
+      const drop=new Set(j.c.trk);
+      S.tracks=S.tracks.filter(t=>!drop.has(t));
+      const nv=[];
+      for(let i=0;i+1<pts.length;i++){
+        if(pts[i].x===pts[i+1].x&&pts[i].y===pts[i+1].y)continue;
+        const t={l:j.l,net:j.c.net,w:j.c.w,x1:pts[i].x,y1:pts[i].y,x2:pts[i+1].x,y2:pts[i+1].y};
+        S.tracks.push(t);nv.push(t);
+        for(const it of pnsItemsTrack(t))N.add(it);
+      }
+      neuves.push(...nv);
+      res.faits++;
+      continue;
+    }
+    const trk=j.c.trk.filter(t=>T.has(t)&&dist(t.x1,t.y1,t.x2,t.y2)>=1e-6);
+    if(!trk.length)continue;
+    const m=trk[Math.floor(trk.length/2)];
+    S.aRerouter=S.aRerouter.filter(g=>!g.trk.some(t=>trk.indexOf(t)>=0));
+    S.aRerouter.push({trk,x:(m.x1+m.x2)/2,y:(m.y1+m.y2)/2,l:m.l,
+      bout:j.perdu?{l:j.c.l,x:j.P.x,y:j.P.y}:null,
+      msg:j.perdu?"Piste "+(m.net||"sans net")+" : sa pastille a changé de face, à re-router"
+                 :"Piste "+(m.net||"sans net")+" en défaut après le déplacement : à re-router"});
+    res.marques++;
+    if(j.perdu)res.perdus++;
+  }
+  touch();
+  rerouteForget(F,new Set(S.tracks));
+  return res;
+}
+/* Une liaison marquée qui n'est plus en faute perd sa marque : à la fin d'un
+   geste, et à chaque DRC. Celle dont la pastille a changé de face la garde
+   tant que son bout pend dans le vide — c'est la couche qui est fausse, pas
+   l'isolation : un via posé là, ou la piste reprise, la lève. */
+function rerouteForget(F,T){
+  const N=pnsWorld();
+  S.aRerouter=S.aRerouter.filter(g=>{
+    const trk=g.trk.filter(t=>T.has(t));
+    if(!trk.length)return false;
+    // pastille passée sur l'autre face : marquée tant que le bout y pend
+    if(g.bout){
+      const b=g.bout;
+      if(padAt(b.l,b.x,b.y)||viaAt(b.l,b.x,b.y))return false;
+      return trk.some(t=>t.l===b.l&&((Math.abs(t.x1-b.x)<EPS_J&&Math.abs(t.y1-b.y)<EPS_J)||
+                                     (Math.abs(t.x2-b.x)<EPS_J&&Math.abs(t.y2-b.y)<EPS_J)));
+    }
+    const ends=[];
+    for(const t of trk)ends.push({l:t.l,x:t.x1,y:t.y1},{l:t.l,x:t.x2,y:t.y2});
+    return rerouteFaulty(N,trk,rerouteSkip(N,ends),T);
+  });
+}
+function rerouteHint(r){
+  if(!r||(!r.faits&&!r.marques))return;
+  const a=r.faits?r.faits+" liaison(s) re-routée(s) automatiquement":"";
+  const b=r.marques?r.marques+" liaison(s) à re-router — en rouge, et au DRC":"";
+  hint([a,b].filter(Boolean).join(" ; ")+".");
+}
+/* Pour le DRC : une ligne par liaison marquée. */
+function rerouteDrc(out){
+  if(S.aRerouter.length)rerouteForget(null,rerouteLive());
+  for(const g of S.aRerouter)out.push({x:g.x,y:g.y,l:g.l,msg:g.msg});
 }

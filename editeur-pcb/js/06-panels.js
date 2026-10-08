@@ -1288,7 +1288,7 @@ function propsFp(box,fp){
   upd("pPitch",v=>fp.pitch=Math.max(0.2,v),true);
   upd("pSpan",v=>fp.span=Math.max(0.2,v),true);
   // position, face, rotation : le cuivre accroché suit (`transformFps`)
-  const fpPose=fn=>v=>linkPerdusHint(transformFps([fp.id],()=>fn(v)));
+  const fpPose=fn=>v=>transformFps([fp.id],()=>fn(v));
   upd("pSide",fpPose(v=>fp.side=+v),true);
   upd("pX",fpPose(v=>fp.x=wxu(v)),true);
   upd("pY",fpPose(v=>fp.y=wyu(v)),true);

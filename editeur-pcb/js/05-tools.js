@@ -2618,9 +2618,9 @@ function rotateSel(){
   if(!list.length&&!drw.length&&!hls.length)return;
   push();
   // autour du centre de chaque boîtier, son cuivre avec lui
-  linkPerdusHint(transformFps(list,()=>{
+  transformFps(list,()=>{
     for(const id of list){const f=fpById(id);if(f)f.rot=((f.rot||0)+90)%360;}
-  }));
+  });
   if(drw.length){
     let cx=0, cy=0;
     for(const d of drw){cx+=d.x1+d.x2; cy+=d.y1+d.y2;}
@@ -2663,9 +2663,9 @@ function flipSel(){
   const drw=selDrawingsPcb();
   if(!list.length&&!drw.length)return;
   push();
-  linkPerdusHint(transformFps(list,()=>{
+  transformFps(list,()=>{
     for(const id of list){const f=fpById(id);if(f)f.side=f.side?0:1;}
-  }));
+  });
   for(const d of drw){d.layer=d.layer==="silkB"?"silkT":"silkB";}
   touch();refreshPanels();draw();
 }
@@ -4471,6 +4471,8 @@ cv.addEventListener("pointerup",e=>{
       const n=(sh.lignes||[]).length, v=(sh.vias||[]).length;
       hint("Le cuivre voisin s'est écarté : "+n+" piste(s)"+(v?", "+v+" via(s)":"")+" poussée(s).");
     }
+    // la liaison restée en faute est re-routée, ou marquée (`25-liens.js`)
+    rerouteHint(followReroute(drag.follow));
     const bouge=[...movedTracks()], avant=drag.diag;
     pruneAfterDrag(bouge);
     if(mitreAfterDrag(bouge,avant))

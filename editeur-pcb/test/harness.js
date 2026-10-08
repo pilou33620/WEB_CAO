@@ -1282,7 +1282,8 @@ function suiviDecor(){
   setMode("select");S.active=0;clearSel();
   return reg;
 }
-function suiviFin(reg){S.grid=reg.grid;S.avoid=reg.avoid;S.rule.corner=reg.corner;}
+function suiviFin(reg){S.grid=reg.grid;S.avoid=reg.avoid;S.rule.corner=reg.corner;
+  if(reg.route)S.rule.route=reg.route;}
 function tout45(){
   for(const t of S.tracks){
     const dx=Math.abs(t.x2-t.x1), dy=Math.abs(t.y2-t.y1);
@@ -1534,12 +1535,79 @@ T("un bout volontairement décalé garde son décalage, qui tourne avec la pasti
     if(!bout)throw new Error("le bout décalé devait garder sa place dans le repère du boîtier");
   }finally{undo();suiviFin(reg);}
 });
-T("retourner une capa CMS : les bouts qui perdent leur pastille sont comptés",()=>{
+T("retourner une capa CMS : ses liaisons passent dessous, celle qui ne peut pas est marquée",()=>{
   const D=decouplage();
+  const bas=S.cu-1;
   try{
     push();
     const n=transformFps([D.C.id],()=>{D.C.side=1;});
-    if(n!==3)throw new Error("trois bouts sur C passent sous la carte : "+n);
+    // vers le via d'alim et le via de masse : la liaison change de couche
+    const c1=D.pad(D.C,1), c2=D.pad(D.C,2);
+    const dessous=S.tracks.filter(t=>t.l===bas);
+    if(!dessous.some(t=>t.net==="GND")||!dessous.some(t=>t.net==="+3V3"))
+      throw new Error("les liaisons vers les vias devaient passer dessous");
+    relie("GND",{x:c2.x,y:c2.y},{x:D.gnd.x,y:D.gnd.y});
+    relie("+3V3",{x:c1.x,y:c1.y},{x:D.alim.x,y:D.alim.y});
+    // vers la broche CMS de la puce, restée dessus : rien à faire sans via
+    if(n!==1)throw new Error("un seul bout reste hors de sa pastille : "+n);
+    if(S.aRerouter.length!==1||!/changé de face/.test(S.aRerouter[0].msg))
+      throw new Error("la liaison vers la puce devait être marquée : "+JSON.stringify(S.aRerouter.map(g=>g.msg)));
+    if(!runDrc().some(e=>/changé de face, à re-router/.test(e.msg)))
+      throw new Error("le DRC devait porter la liaison à re-router");
+    // un via posé au bout pendant : la liaison est réparée, la marque tombe
+    const g=S.aRerouter[0], m=g.bout;
+    S.vias.push({x:m.x,y:m.y,d:0.6,drill:0.3,a:0,b:S.cu-1,net:"+3V3"});touch();
+    if(runDrc().some(e=>/changé de face/.test(e.msg)))
+      throw new Error("un via au bout pendant devait lever la marque");
+  }finally{undo();suiviFin(D.reg);}
+  if(runDrc().some(e=>/à re-router/.test(e.msg)))throw new Error("annuler devait effacer la marque");
+});
+/* Un via d'un autre net sur le trajet que prend le suivi. */
+function obstacleDecor(avoid){
+  const D=decouplage();
+  D.reg.route=S.rule.route;
+  S.avoid=avoid;S.rule.route="mark";       // le suivi ne contourne pas : seul le relâchement agit
+  const ob={x:22.4,y:23.4,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"AUTRE"};
+  S.vias.push(ob);touch();
+  return Object.assign(D,{ob});
+}
+function gndContreObstacle(D){
+  const clr=classOf("GND").clr;
+  let pire=1e9;
+  for(const t of S.tracks.filter(t=>t.net==="GND"&&t.l===0)){
+    const vx=t.x2-t.x1, vy=t.y2-t.y1, L2=vx*vx+vy*vy;
+    const u=L2>0?Math.max(0,Math.min(1,((D.ob.x-t.x1)*vx+(D.ob.y-t.y1)*vy)/L2)):0;
+    const d=Math.hypot(t.x1+u*vx-D.ob.x,t.y1+u*vy-D.ob.y)-D.ob.d/2-t.w/2;
+    pire=Math.min(pire,d-clr);
+  }
+  return pire;
+}
+T("re-routage : la liaison qui passerait sur un via étranger le contourne",()=>{
+  const D=obstacleDecor(true);
+  clearSel();S.sel.fps.add(D.C.id);
+  try{
+    rotateSel();
+    const c2=D.pad(D.C,2);
+    relie("GND",{x:c2.x,y:c2.y},{x:D.gnd.x,y:D.gnd.y});
+    if(gndContreObstacle(D)<-1e-3)throw new Error("la masse frôle encore le via étranger : "+gndContreObstacle(D));
+    tout45();
+    if(S.aRerouter.some(g=>g.trk.some(t=>t.net==="GND")))throw new Error("rien à marquer : elle a été refaite");
+  }finally{undo();suiviFin(D.reg);}
+});
+T("re-routage : anti-collision coupée, la liaison en faute est marquée en rouge",()=>{
+  const D=obstacleDecor(false);
+  clearSel();S.sel.fps.add(D.C.id);
+  try{
+    rotateSel();
+    if(gndContreObstacle(D)>=0)throw new Error("le décor devait mettre la masse en faute");
+    const g=S.aRerouter.find(g=>g.trk.some(t=>t.net==="GND"));
+    if(!g)throw new Error("la liaison en faute devait être marquée");
+    if(!runDrc().some(e=>/GND en défaut après le déplacement : à re-router/.test(e.msg)))
+      throw new Error("le DRC devait la porter");
+    // l'obstacle parti, la liaison n'est plus en faute : le DRC suivant le constate
+    S.vias=S.vias.filter(v=>v!==D.ob);touch();
+    if(runDrc().some(e=>/à re-router/.test(e.msg)))
+      throw new Error("une liaison redevenue saine ne doit plus être marquée");
   }finally{undo();suiviFin(D.reg);}
 });
 /* Les vias de sortie : le via de masse au pied de la capa part avec elle. */

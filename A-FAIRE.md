@@ -112,10 +112,10 @@ lib/
   - Exploitation des groupes de motifs pour proposer un pré-placement automatique par bloc fonctionnel (`editeur-pcb/js/22-bloc-placement.js`).
   - Agencement automatique dès l'import de la netlist ou de l'ECO en grappes cohérentes (régulateur Buck/LDO + condensateurs de découplage + inductance + diode) avec orientation des pastilles et absence de collision.
 
-- [ ] **Liens du cuivre et suivi des boîtiers** (`editeur-pcb/js/25-liens.js`) :
+- [x] **Liens du cuivre et suivi des boîtiers** (`editeur-pcb/js/25-liens.js`) :
   - [x] Étape 1 : chaque bout de piste porte le lien de ce qui le tient (`a1`/`a2` : `{f, p}` pastille ou `{v}` via), vérifié contre la géométrie avant usage et reconstruit s'il ment ; les vias ont un identifiant. Rotation (R, autour du centre du boîtier), retournement (F), cotes X / Y / Rot / Face du panneau et « Aller à » passent par `transformFps` : le cuivre suit par le même moteur que le glissement, au centre des pastilles ; un bout volontairement décalé garde son décalage dans le repère du boîtier.
   - [x] Étape 2 : via de sortie emporté par son boîtier — posé dans une de ses pastilles, ou relié à elles par une piste courte (≤ 3 mm, `FANOUT_MAX`) et à aucune pastille d'un autre boîtier resté en place ; il glisse, tourne et se retourne avec lui, et ce qui part de lui suit. Ctrl au routage : le bout se pose où l'on vise dans le cuivre de la pastille au lieu du centre.
-  - [ ] Étape 3 : après suivi, liaison en faute (isolation, croisement, CMS passée sur l'autre face) re-routée automatiquement ; sans issue, tracé en rouge + marqueur DRC « à re-router ».
+  - [x] Étape 3 : au relâchement, chaque liaison qui a suivi est jugée. En faute d'isolation ou de croisement, elle est re-routée en entier de son bout tenu à la pastille (contournement, anti-collision active) ; pastille passée sur l'autre face, elle change de couche si son autre bout y est accessible (via, traversante). Sans issue : tracée en rouge et portée au DRC « à re-router » ; la marque tombe quand la liaison n'est plus en faute (réévaluée à chaque geste et à chaque DRC).
 
 ### Simulation SI (Signal Integrity)
 - [x] **Mode différentiel dans la cascade de paramètres S** :

@@ -770,6 +770,8 @@ function runDrc(){
   /* les paires différentielles : largeur hors bornes, trajet découplé trop
      long, net disparu — le module qui les connaît fait lui-même le contrôle */
   if(typeof dpDrc==="function")dpDrc(out);
+  /* les liaisons qu'un déplacement de boîtier a laissées en faute */
+  if(typeof rerouteDrc==="function")rerouteDrc(out);
 
   S.drc=out; S.drcRun=true;
   return out;

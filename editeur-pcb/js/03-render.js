@@ -386,15 +386,21 @@ function drawTracks(c,i,a){
   const col=layerColor(i);
   // un lot par largeur (et par transparence pour le cuivre) : le pinceau ne
   // sait faire qu'une largeur à la fois
-  const halo=new Map(), cu=new Map();
+  const halo=new Map(), cu=new Map(), rouge=new Map();
   const lot=(m,k)=>{let v=m.get(k);if(!v)m.set(k,v=[]);return v;};
+  // les liaisons à re-router après un déplacement (`25-liens.js`)
+  const marque=new Set();
+  for(const g of (S.aRerouter||[]))for(const t of g.trk)marque.add(t);
   for(const t of S.tracks){
     if(t.l!==i)continue;
     if(S.sel.tracks.has(t))lot(halo,t.w).push(t);
+    if(marque.has(t))lot(rouge,t.w).push(t);
     lot(cu,t.w+"|"+netAlpha(t.net)).push(t);
   }
   c.globalAlpha=a*0.55;c.strokeStyle=C_SEL;
   for(const [w,segs] of halo){c.lineWidth=w+px(3.4);strokeRuns(c,segs);}
+  c.globalAlpha=a*0.8;c.strokeStyle=C_ERR;
+  for(const [w,segs] of rouge){c.lineWidth=w+px(4);strokeRuns(c,segs);}
   c.strokeStyle=col;
   for(const [k,segs] of cu){
     const s=k.split("|");
