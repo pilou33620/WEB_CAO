@@ -122,7 +122,23 @@ function nlCol(v,n){
   const t=String(v==null?"":v).replace(/\s+/g," ").trim()||"—";
   return t+" ".repeat(Math.max(2,n-t.length));
 }
-function byRef(a,b){return String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true})||a.pin-b.pin;}
+function byRef(a,b){
+  return String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true})||
+    String(nlPad(a)).localeCompare(String(nlPad(b)),"fr",{numeric:true});
+}
+/* Patte écrite dans la netlist : celle de l'empreinte (25-brochage.js). */
+function nlPad(nd){return nd.pad==null?nd.pin:nd.pad;}
+/* Une patte n'apparaît qu'une fois par net : les parties d'un AOP double
+   partagent V+ et V−, chacune y apporte la même patte du boîtier. */
+function nlUniques(nodes){
+  const vu=new Set(), out=[];
+  for(const nd of nodes){
+    const k=nd.ref+"."+nlPad(nd);
+    if(vu.has(k))continue;
+    vu.add(k);out.push(nd);
+  }
+  return out;
+}
 /* Netlist lisible, une section par feuille. Les nets portant le même nom sur
    plusieurs feuilles sont signalés : ils forment un net global. */
 /* Le texte est produit par netlistText(), sans effet de bord : c'est ce que le
@@ -158,6 +174,17 @@ function netlistText(horodatage){
       out.push("");
     }
   }
+  /* ce que le contrôle du brochage trouve à redire, en commentaire : le PCB
+     saute ces lignes, celui qui lit le fichier les voit avant de router */
+  const ctl=(typeof brControles==="function")?brControles():[];
+  if(ctl.length){
+    out.push("=== Contrôle du brochage ===");
+    for(const c of ctl)
+      out.push("  ; "+(c.niveau==="erreur"?"ERREUR ":"alerte ")+c.ref+" : "+c.texte);
+    out.push("");
+  }
+  const relies=new Set();
+  for(const g of D.groups)for(const nd of g.nodes)relies.add(nd.ref+"."+nlPad(nd));
   const globals=D.groups.filter(g=>g.global&&!g.isBus&&!g.members[0].net.isBus);
   const multi=S.pages.length>1;
   if(globals.length){
@@ -166,10 +193,10 @@ function netlistText(horodatage){
       out.push("");
       out.push('NET "'+g.name+'"   ; '+(g.pages.length>1?"feuilles ":"feuille ")+
         g.pages.map(i=>i+1).join(", ")+(g.conflict?"   ; conflit de noms":""));
-      const nodes=g.nodes.slice().sort(byRef);
+      const nodes=nlUniques(g.nodes.slice().sort(byRef));
       if(!nodes.length)out.push("    ; aucun composant raccordé");
       for(const nd of nodes)
-        out.push("    "+padr(nd.ref+"."+nd.pin,12)+
+        out.push("    "+padr(nd.ref+"."+nlPad(nd),12)+
           (multi?padr("(f"+(nd.page+1)+")",7):"")+(nd.label||""));
     }
     out.push("");
@@ -184,16 +211,19 @@ function netlistText(horodatage){
       out.push('NET "'+g.name+'"'+
         (n.conflict?"   ; conflit de noms : "+n.names.join(" / "):"")+
         (n.named?"":"   ; nom attribué automatiquement"));
-      const nodes=g.nodes.slice().sort(byRef);
+      const nodes=nlUniques(g.nodes.slice().sort(byRef));
       if(!nodes.length)out.push("    ; aucun composant raccordé");
       for(const nd of nodes)
-        out.push("    "+padr(nd.ref+"."+nd.pin,12)+(nd.label||""));
+        out.push("    "+padr(nd.ref+"."+nlPad(nd),12)+(nd.label||""));
     }
+    /* une patte partagée (alimentation d'un AOP double) câblée sur une
+       partie n'est pas en l'air parce que l'autre partie la laisse libre */
     const loose=[];
-    for(const n of sh.nets.loose) for(const nd of n.nodes) loose.push(nd);
+    for(const n of sh.nets.loose) for(const nd of n.nodes)
+      if(!relies.has(nd.ref+"."+nlPad(nd)))loose.push(nd);
     if(loose.length){
       out.push("");
-      out.push("; broches en l'air : "+loose.sort(byRef).map(n=>n.ref+"."+n.pin).join(" "));
+      out.push("; broches en l'air : "+nlUniques(loose.sort(byRef)).map(n=>n.ref+"."+nlPad(n)).join(" "));
     }
     out.push("");
   }
@@ -204,7 +234,11 @@ function exportNetlist(){
   if(typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:txt});
   const nom=schFile("-netlist.txt","netlist.txt");
   dl(new Blob([txt],{type:"text/plain;charset=utf-8"}),nom);
-  document.getElementById("fHint").textContent="Netlist exportée dans "+nom+".";
+  const ctl=(typeof brControles==="function")?brControles():[];
+  const err=ctl.filter(c=>c.niveau==="erreur").length;
+  document.getElementById("fHint").textContent="Netlist exportée dans "+nom+"."+
+    (ctl.length?" ⚠ "+ctl.length+" remarque(s) de brochage"+(err?" dont "+err+" erreur(s)":"")+
+      " : "+ctl[0].ref+" — "+ctl[0].texte:"");
 }
 
 /* Nomenclature exploitable : une ligne par composant, plus un récapitulatif
@@ -217,9 +251,15 @@ function bomRows(){
   const rows=[];
   storeCurrent();
   const lib = (typeof window !== "undefined" && Array.isArray(window.CSV_LIB)) ? window.CSV_LIB : [];
+  /* U3A et U3B sont un seul boîtier : une ligne, une empreinte */
+  const boitiers=new Set();
   S.pages.forEach((p,i)=>{
     const src=(i===S.page)?S.comps:(p.comps||[]);
     for(const c of src) if(!defOf(c.type).noRef) {
+      if(c.ref&&c.part&&typeof brLu==="function"&&brochageParties(brLu(c)).length){
+        if(boitiers.has(c.ref))continue;
+        boitiers.add(c.ref);
+      }
       // Résolution automatique dans LIB_composants.csv si disponible
       let entry = null;
       if(lib.length){

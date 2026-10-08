@@ -21543,6 +21543,20 @@ NET "VOUT"
     throw new Error("le point de test devait être percé (LIB) : "+JSON.stringify(tp.pads));
   if(u.nets[1]!=="VOUT"||tp.nets[1]!=="VOUT")throw new Error("les nets suivent l'empreinte LIB");
   if(S.fps.find(f=>f.ref==="R1").pads)throw new Error("R1 sans empreinte LIB reste calculée");
+  /* le contrôle du brochage du schéma arrive en commentaire : rien à lire */
+  carteVide();fpLibRaz();
+  const r2=applyNetlist(`=== Composants ===
+    U3      LM358             SOIC-8
+
+=== Contrôle du brochage ===
+  ; alerte U3 : partie U3B non posée : ses entrées restent en l'air au PCB.
+
+=== Feuille 1 — Principale ===
+NET "VCC"
+    U3.8        V+
+`,false);
+  if(r2.added!==1||S.fps.length!==1||S.fps[0].nets[8]!=="VCC")
+    throw new Error("section de contrôle mal lue : "+JSON.stringify(r2));
   /* nom de boîtier long : il arrive entier et le PCB le reconnaît (percé) */
   carteVide();fpLibRaz();
   applyNetlist(`=== Composants ===

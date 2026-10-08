@@ -146,6 +146,8 @@ function schAppliquerMajLibComposant(comp, dataFichier) {
       if (entry["Manufacturer"]) comp.manufacturer = entry["Manufacturer"];
       if (entry["MPN"]) comp.mpn = entry["MPN"];
       if (entry["Description"]) comp.desc = entry["Description"];
+      // le brochage venu de la LIB suit la LIB ; une table retouchée à la main reste
+      if (typeof brDepuisLib === "function") brDepuisLib(comp, entry, false);
 
       // Spécifications électriques du catalogue LIB CSV
       const vRating = entry["Voltage Rating"] || entry["voltage rating"] || entry["Voltage"] || "";

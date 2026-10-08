@@ -183,6 +183,16 @@
           </div>
         </div>
 
+        <!-- Brochage : broche du symbole → patte de l'empreinte, d'après la
+             datasheet de la référence (commun/brochage.js pour la syntaxe) -->
+        <div class="insp-brochage">
+          <label for="inspBrochage">Brochage <span>symbole → empreinte</span></label>
+          <input id="inspBrochage" autocomplete="off" spellcheck="false"
+                 placeholder="OUT=1,IN-=2,IN+=3,V-=4,V+=8"
+                 title="NOM=patte, séparés par des virgules. Plusieurs parties : A:…|B:…|*:V-=4,V+=8 (« * » vaut pour toutes). Pattes libres : NC=5/6">
+          <div id="inspBrochageApercu" class="insp-brochage-apercu"></div>
+        </div>
+
         <!-- Aperçu Symbole Schématique -->
         <div class="preview-card">
           <div class="preview-card-head">
@@ -420,6 +430,7 @@
 
   <!-- Scripts -->
   <script src="../commun/session.js"></script>
+  <script src="../commun/brochage.js"></script>
   <script src="js/01-donnees.js"></script>
   <script src="js/02-rendu-pcb.js"></script>
   <script src="js/03-rendu-symbole.js"></script>

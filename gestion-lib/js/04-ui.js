@@ -432,6 +432,8 @@ async function selectionnerComposant(id) {
   document.getElementById("inspMpn").textContent = comp["manufacturer part Number"] || comp["Part Number "] || "—";
   document.getElementById("inspVal").textContent = comp["Value"] || "—";
 
+  inspBrochageAfficher(comp);
+
   const colPcb = "Empreinte PCB";
   const colSch = LIB_STATE.colonnes.includes("Empreinte Schématique") ? "Empreinte Schématique" : "Empreinte Schematique";
   const colSim = LIB_STATE.colonnes.includes("Modèle Simulation") ? "Modèle Simulation" : "Modele Simulation";
@@ -478,6 +480,49 @@ async function selectionnerComposant(id) {
       simWrap.hidden = true;
     }
   }
+}
+
+/* ---------- Brochage de la référence ----------
+   Le symbole « AOP » sert au MCP6001 comme au LM358 ; c'est la référence qui
+   sait où tombent ses broches. La saisie est vérifiée à la frappe, la valeur
+   n'entre dans le catalogue que lisible — une erreur ici, et le schéma
+   relierait les mauvaises pattes. */
+function inspBrochageApercu(texte) {
+  const lu = typeof brochageLire === "function" ? brochageLire(texte) : null;
+  if (!lu) return { ok: true, html: texte.trim() ? "" : "Vide : la broche n du symbole va sur la patte n." };
+  if (lu.erreurs.length)
+    return { ok: false, html: lu.erreurs.map(e => '<div class="err">⛔ ' + escapeHtml(e) + "</div>").join("") };
+  const html = lu.parties.map(p =>
+    (p.nom ? "<b>" + escapeHtml(p.nom) + "</b>  " : "") +
+    Object.entries(p.broches).map(([b, n]) => escapeHtml(b) + "→<b>" + escapeHtml(n) + "</b>").join("  ") +
+    (p.nc.length ? "  NC→" + escapeHtml(p.nc.join("/")) : "")).join("<br>");
+  return { ok: true, html: html };
+}
+function inspBrochageAfficher(comp) {
+  const inp = document.getElementById("inspBrochage");
+  const ap = document.getElementById("inspBrochageApercu");
+  if (!inp || !ap) return;
+  inp.value = comp["Brochage"] || "";
+  const montrer = () => {
+    const r = inspBrochageApercu(inp.value);
+    ap.innerHTML = r.html;
+    inp.classList.toggle("invalide", !r.ok);
+    return r.ok;
+  };
+  montrer();
+  inp.oninput = montrer;
+  inp.onchange = () => {
+    if (!montrer()) return;
+    const val = inp.value.trim();
+    /* la colonne n'existe pas encore dans un catalogue ancien : elle s'ajoute
+       en fin de ligne à l'enregistrement */
+    if (!LIB_STATE.colonnes.includes("Brochage")) LIB_STATE.colonnes.push("Brochage");
+    if (modifierComposant(comp._id, "Brochage", val)) {
+      rafraichirStats();
+      if (typeof afficherToast === "function")
+        afficherToast("Brochage de " + (comp["Part Name"] || "la référence") + " modifié — à enregistrer", "info");
+    }
+  };
 }
 
 /* ---------- Rendu des galeries d'empreintes, symboles et simulation avec pagination ---------- */

@@ -925,3 +925,24 @@
     font-weight: bold;
   }
 
+
+/* Brochage par référence (js/25-brochage.js) : broche du symbole → patte de
+   l'empreinte, et ce que le contrôle en dit */
+.br-bloc{margin-top:10px;border-top:1px solid var(--border);padding-top:10px}
+.br-bloc label{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+.br-src{font-size:10px;color:var(--txt-dim);text-transform:none;letter-spacing:0;font-weight:400}
+.br-choisir{width:100%;margin-bottom:8px;border-color:#f59e0b;color:#f59e0b;font-weight:600}
+.br-parties{align-items:center;gap:6px}
+.br-parties span{font-size:11px;color:var(--txt-dim)}
+.br-parties select{flex:1;min-width:0}
+.br-table{display:grid;grid-template-columns:1fr auto;gap:2px 10px;margin:6px 0;padding:6px 8px;
+  background:var(--panel2);border:1px solid var(--border);border-radius:4px;
+  font-family:var(--mono);font-size:10.5px}
+.br-nom{color:var(--txt-dim)}
+.br-patte{color:#f0abfc;font-weight:700;text-align:right}
+.br-patte.br-vide{color:var(--red)}
+.br-alerte{font-size:11px;line-height:1.4;padding:5px 7px;margin:4px 0;border-radius:4px}
+.br-niv-erreur{background:rgba(232,68,58,.13);border:1px solid var(--red);color:#fca5a5}
+.br-niv-alerte{background:rgba(245,158,11,.12);border:1px solid #f59e0b;color:#fcd34d}
+.br-toutes{display:flex;gap:6px;align-items:flex-start;font-size:10.5px;color:var(--txt-dim);
+  text-transform:none;letter-spacing:0;margin:-2px 0 6px}

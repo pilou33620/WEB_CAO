@@ -143,10 +143,14 @@ function drawComp(c,el,ghost){
   c.restore();
   // textes (jamais pivotés, pour rester lisibles)
   c.save();if(ghost)c.globalAlpha=.45;
-  if(def.refIn && el.ref) TXT(c,el.ref,el.x,el.y+1,12.5,C_TXT);
+  if(def.refIn && el.ref) TXT(c,schRepereAffiche(el),el.x,el.y+1,12.5,C_TXT);
   if(def.valIn && el.value) TXT(c,el.value,el.x,el.y+1,12.5,C_TXT);
   for(const t of compTexts(el)) TXT(c,t.text,t.x,t.y,t.size,t.col,t.align);
   c.restore();
+}
+/* Repère imprimé : « U3A » pour la partie A d'un AOP double (25-brochage.js). */
+function schRepereAffiche(el){
+  return (typeof brRepere==="function")?brRepere(el):(el.ref||"");
 }
 /* Libellés extérieurs d'un composant — repère et valeur — avec leur position.
    Une seule source pour le tracé, la saisie à la souris et le fil de rappel :
@@ -171,10 +175,10 @@ function compTexts(el){
   // une seule étiquette de valeur, à un seul endroit : sous le symbole (ou à sa
   // droite s'il est pivoté), recentrée quand aucune référence ne l'accompagne
   if(vert){
-    if(showRef)out.push({kind:"ref",text:el.ref,x:el.x+off,y:el.y-9,size:12.5,col:C_TXT,align:"left"});
+    if(showRef)out.push({kind:"ref",text:schRepereAffiche(el),x:el.x+off,y:el.y-9,size:12.5,col:C_TXT,align:"left"});
     if(showVal)out.push({kind:"val",text:el.value,x:el.x+off,y:showRef?el.y+9:el.y,size:12,col:"#cfd4db",align:"left"});
   }else{
-    if(showRef)out.push({kind:"ref",text:el.ref,x:el.x,y:el.y-off,size:12.5,col:C_TXT,align:"center"});
+    if(showRef)out.push({kind:"ref",text:schRepereAffiche(el),x:el.x,y:el.y-off,size:12.5,col:C_TXT,align:"center"});
     if(showVal)out.push({kind:"val",text:el.value,x:el.x,y:el.y+off,size:12,col:"#cfd4db",align:"center"});
   }
   for(const t of out){

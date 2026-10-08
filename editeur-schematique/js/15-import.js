@@ -41,6 +41,14 @@ function normComp(c,i){
     if(c.distributeurs && typeof c.distributeurs === "object") el.distributeurs = c.distributeurs;
     if(Array.isArray(c.pinout)) el.pinout = c.pinout.map(p=>({number:String(p.number||""), name:String(p.name||"")}));
     if(c.pinoutVerified) el.pinoutVerified = true;
+    /* brochage par référence (25-brochage.js) : le texte de la LIB, la
+       partie, et la table broche → patte, une patte courte par broche */
+    if(c.brochage) el.brochage = String(c.brochage).slice(0, 600);
+    if(c.part && /^[A-Za-z0-9]{1,4}$/.test(String(c.part))) el.part = String(c.part).toUpperCase();
+    if(Array.isArray(c.pinMap) && c.pinMap.length <= 64)
+      el.pinMap = c.pinMap.map(v => { const t = String(v == null ? "" : v).trim(); return /^[A-Za-z0-9]{1,8}$/.test(t) ? t : ""; });
+    if(el.pinMap && !el.pinMap.some(Boolean)) delete el.pinMap;
+    if(el.pinMap && c.pinMapMain) el.pinMapMain = true;
   }
   /* Libellés déplacés à la main : deux nombres, bornés. Un décalage aberrant
      enverrait le repère à l'autre bout de la feuille, hors de toute prise. */

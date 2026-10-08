@@ -126,7 +126,12 @@ const EXPOSE=[
   /* explorateur visuel de bibliothèque */
   "ELIB","explorateurLibOuvrir","explorateurLibFermer","elibClassifierItem","elibIsSmd","elibIsTht","elibHasSpice","elibFiltrerEtAfficher","schOuvrirExplorateurLib",
   /* schémas d'exemples */
-  "demo","demo2","demo12v","demo12v_p2","SCH_EXEMPLES","schChargerExemple","schExOuvrir"
+  "demo","demo2","demo12v","demo12v_p2","SCH_EXEMPLES","schChargerExemple","schExOuvrir",
+  /* brochage par référence (commun/brochage.js + 25-brochage.js) */
+  "brochageLire","brochagePartie","brochageParties","brochagePattes","brochageNom",
+  "brNomBroche","brPatte","brDepuisLib","brAppliquer","brChoisirPartie","brSaisirPatte",
+  "brCandidats","brReferenceAChoisir","brPattesBoitier","brControles","brControlesDe",
+  "brAjouterPartie","brPartieLibre","brRepere","brPanneauHtml","PKG_MAX","buildProps"
 ];
 /* les noms absents du bundle sont ignorés : le banc d'essai reste utilisable
    même si un module est renommé, les essais concernés échoueront tout seuls */
@@ -2588,6 +2593,180 @@ T("stylet : glisser sur le vide trace un lasso, comme la souris",()=>{
   glisseSch(ptr(0,0,{pointerType:"pen"}),ptr(40*G,20*G,{pointerType:"pen"}));
   if(S.sel.size!==3||S.ox!==ox)throw new Error("le lasso au stylet devait prendre les trois résistances sans bouger la vue : "+S.sel.size);
 });
+
+/* ==========================================================================
+   Brochage par référence (commun/brochage.js, 25-brochage.js)
+   Relevé sur la carte PIR : un AOP posé en SOIC-8 sans brochage mettait V+
+   sur la pastille 4 du LM358 — la masse. La référence de la LIB porte
+   désormais, colonne « Brochage », la patte de chaque broche du symbole.
+   ========================================================================== */
+const BR_LM358="A:OUT=1,IN-=2,IN+=3|B:OUT=7,IN-=6,IN+=5|*:V-=4,V+=8";
+const BR_MCP6001="OUT=1,V−=2,IN+=3,IN-=4,V+=5";
+const BR_LIB=[
+  {"Part Name":"AOP_MCP6001","Reference designator Prefix":"U","Value":"MCP6001",
+   "Empreinte PCB":"lib/empreinte/SOT-23-5.json","Empreinte Schématique":"lib/symbole/opamp.json",
+   "Brochage":BR_MCP6001},
+  {"Part Name":"AOP_LM358","Reference designator Prefix":"U","Value":"LM358",
+   "Empreinte PCB":"lib/empreinte/SOIC-8.json","Empreinte Schématique":"lib/symbole/opamp.json",
+   "Brochage":BR_LM358},
+  {"Part Name":"AOP_SANS","Reference designator Prefix":"U","Value":"TLV9001",
+   "Empreinte PCB":"lib/empreinte/SOT-23-5.json","Empreinte Schématique":"lib/symbole/opamp.json"},
+  {"Part Name":"R0603_10K","Reference designator Prefix":"R","Value":"10k",
+   "Empreinte PCB":"lib/empreinte/0603.json","Empreinte Schématique":"lib/symbole/resistor.json"}
+];
+/* un AOP câblé : un bout de fil nommé par broche, vers l'extérieur
+   (IN− et IN+ à gauche, OUT à droite, V+ en haut, V− en bas) */
+function brAop(x,y,opts,noms){
+  const el=C("opamp",x,y,Object.assign({value:"LM358",pkg:"SOIC-8"},opts||{}));
+  const dir=[[-40,0],[-40,0],[40,0],[0,-40],[0,40]];
+  const ps=allPins(el), ws=[];
+  noms.forEach((nm,i)=>{if(nm)ws.push({x1:ps[i].x,y1:ps[i].y,x2:ps[i].x+dir[i][0],y2:ps[i].y+dir[i][1],net:nm});});
+  return {el,ws};
+}
+function brAvecLib(fn){
+  const avant=window.CSV_LIB;
+  window.CSV_LIB=BR_LIB;
+  try{fn();}finally{window.CSV_LIB=avant;}
+}
+T("brochage : lecture de la colonne (parties, « * », NC, signe moins)",()=>{
+  const a=brochageLire(BR_MCP6001);
+  if(a.erreurs.length)throw new Error("erreurs inattendues : "+a.erreurs.join(" ; "));
+  const p=brochagePartie(a,"");
+  if(p.broches["V-"]!=="2"||p.broches["IN-"]!=="4"||p.broches["V+"]!=="5")
+    throw new Error("MCP6001 mal lu : "+JSON.stringify(p.broches));
+  const b=brochageLire(BR_LM358);
+  if(brochageParties(b).join()!=="A,B")throw new Error("deux parties attendues : "+brochageParties(b));
+  const pb=brochagePartie(b,"B");
+  if(pb.broches.OUT!=="7"||pb.broches["IN+"]!=="5"||pb.broches["V+"]!=="8"||pb.broches["V-"]!=="4")
+    throw new Error("partie B : les alimentations « * » rejoignent chaque partie : "+JSON.stringify(pb.broches));
+  if(brochagePattes(b).join()!=="1,2,3,4,5,6,7,8")throw new Error("pattes : "+brochagePattes(b));
+  const nc=brochageLire("B=1,C=3,E=2,NC=4/5");
+  if(brochagePartie(nc).nc.join()!=="4,5")throw new Error("NC : "+JSON.stringify(nc));
+  if(brochageLire("")!==null||brochageLire("xx")!==null)throw new Error("vide ou « xx » : pas de brochage");
+  const err=brochageLire("OUT=1,IN-=1,V+");
+  if(err.erreurs.length!==2)throw new Error("deux erreurs attendues (patte prise deux fois, « = » manquant) : "+err.erreurs.join(" | "));
+});
+T("brochage : nombre de pattes déduit du nom de boîtier",()=>{
+  const cas={"SOIC-8":8,"SOT-23-5":5,"SOT23-5":5,"SOT-223-4":4,"MSOP-8":8,"lib/empreinte/SOIC-14.json":14,
+             "0603":2,"SOT-23":0,"SC-70":0,"SMA":2,"":0};
+  for(const [k,v] of Object.entries(cas))
+    if(brPattesBoitier(k)!==v)throw new Error(k+" : "+v+" attendu, "+brPattesBoitier(k));
+});
+T("brochage : le bug relevé — AOP en SOIC-8 sans référence, V+ sur la masse",()=>{
+  /* V+ (broche 4 du symbole) va sur la patte 4 : la masse d'un LM358 */
+  const {el,ws}=brAop(10,10,{id:++_uid,ref:"U1"},["FB","VIN","VOUT","VCC","GND"]);
+  sheet([el],ws);
+  const txt=netlistText("—");
+  if(!/NET "VCC"[\s\S]*?U1\.4/.test(txt))throw new Error("sans table, V+ part bien sur U1.4 : "+txt);
+  if(!/=== Contrôle du brochage ===\n  ; ERREUR U1 : symbole à 5 broches/.test(txt))
+    throw new Error("l'alerte part aussi en commentaire dans la netlist : "+txt);
+  const c=brControles().filter(x=>x.ref==="U1");
+  if(!c.some(x=>x.niveau==="erreur"&&/5 broches sur un boîtier SOIC-8 à 8 pattes/.test(x.texte)))
+    throw new Error("l'alerte « symbole plus petit que le boîtier » manque : "+JSON.stringify(c));
+});
+T("brochage : la référence MCP6001 applique la datasheet, la netlist suit",()=>brAvecLib(()=>{
+  const {el,ws}=brAop(10,10,{id:++_uid,ref:"U1",pkg:"SOT-23-5"},["FB","VIN","VOUT","3V3","GND"]);
+  sheet([el],ws);
+  if(brReferenceAChoisir(el)!==3)throw new Error("trois références AOP proposées : "+brReferenceAChoisir(el));
+  if(brCandidats(el)[0]["Part Name"]==="AOP_SANS")throw new Error("celles qui ont un brochage passent devant");
+  el.csvPartName="AOP_MCP6001";
+  brDepuisLib(el,BR_LIB[0],true);
+  if(el.pinMap.join()!=="4,3,1,5,2")throw new Error("table IN-,IN+,OUT,V+,V- attendue 4,3,1,5,2 : "+el.pinMap);
+  if(brReferenceAChoisir(el))throw new Error("la référence est choisie : plus de badge");
+  const txt=netlistText("—");
+  for(const [net,patte] of [["FB",4],["VIN",3],["VOUT",1],["3V3",5],["GND",2]])
+    if(!new RegExp('NET "'+net+'"\\s*\\n\\s*U1\\.'+patte+'\\b').test(txt))
+      throw new Error(net+" devait arriver sur U1."+patte+" :\n"+txt);
+  if(!/U1\.5\s+V\+/.test(txt))throw new Error("le nom de la broche suit la patte : "+txt);
+  if(brControles().length)throw new Error("aucune alerte attendue : "+JSON.stringify(brControles()));
+  /* une autre référence sans brochage : la table s'en va */
+  brDepuisLib(el,BR_LIB[2],true);
+  if(el.pinMap||el.brochage)throw new Error("nouvelle référence sans brochage : plus de table");
+}));
+T("brochage : la référence sans colonne garde la table retouchée à la main à la mise à jour",()=>{
+  const el=C("opamp",0,0,{id:++_uid,ref:"U2",pkg:"SOT-23-5"});
+  sheet([el],[]);
+  brSaisirPatte(el,3,"5");
+  if(!el.pinMapMain||brPatte(el,3)!==5||brPatte(el,0)!==1)throw new Error("saisie manuelle : "+JSON.stringify(el.pinMap));
+  if(brSaisirPatte(el,0,"x;y"))throw new Error("une patte illisible est refusée");
+  brDepuisLib(el,BR_LIB[2],false);
+  if(!el.pinMap||brPatte(el,3)!==5)throw new Error("mise à jour LIB sans brochage : la table manuelle reste");
+});
+T("brochage : AOP double LM358 — U3A et U3B, un seul boîtier",()=>brAvecLib(()=>{
+  const A=brAop(10,10,{id:++_uid,ref:"U3",csvPartName:"AOP_LM358"},["FB1","IN1","OUT1","VCC","GND"]);
+  const B=brAop(30,10,{id:++_uid,ref:"U3",csvPartName:"AOP_LM358",part:"B"},["FB2","IN2","OUT2","VCC","GND"]);
+  brDepuisLib(A.el,BR_LIB[1],true);
+  B.el.brochage=BR_LM358;B.el.part="B";brAppliquer(B.el);
+  sheet([A.el,B.el],A.ws.concat(B.ws));
+  if(A.el.part!=="A"||brRepere(A.el)!=="U3A"||brRepere(B.el)!=="U3B")
+    throw new Error("repères affichés : "+brRepere(A.el)+" / "+brRepere(B.el));
+  if(!compTexts(B.el).some(t=>t.kind==="ref"&&t.text==="U3B"))throw new Error("le symbole imprime U3B");
+  if(B.el.pinMap.join()!=="6,5,7,8,4")throw new Error("table de la partie B : "+B.el.pinMap);
+  const txt=netlistText("—");
+  const vcc=txt.match(/NET "VCC"\s*\n((?:\s+U\S+.*\n?)*)/);
+  if(!vcc||(vcc[1].match(/U3\.8/g)||[]).length!==1)throw new Error("U3.8 une seule fois dans VCC :\n"+txt);
+  if(!/NET "OUT2"\s*\n\s*U3\.7/.test(txt)||!/NET "FB1"\s*\n\s*U3\.2/.test(txt))throw new Error("sorties : "+txt);
+  const comps=txt.split("\n").filter(l=>/^\s{4}U3\s/.test(l));
+  if(comps.length!==1)throw new Error("U3 une seule fois dans les composants : "+comps.length);
+  if(bomRows().filter(r=>r.ref==="U3").length!==1)throw new Error("une ligne de nomenclature pour U3");
+  if(brControles().length)throw new Error("rien à redire : "+JSON.stringify(brControles()));
+  /* alimentations de B sur un autre net : deux nets sur la patte 8 */
+  B.ws.find(w=>w.net==="VCC").net="5V";
+  touchWires();
+  const c=brControles();
+  if(!c.some(x=>/patte U3\.8 reliée à (VCC et à 5V|5V et à VCC)/.test(x.texte)))
+    throw new Error("conflit sur la patte partagée attendu : "+JSON.stringify(c));
+  /* B retirée : son AOP reste en l'air */
+  sheet([A.el],A.ws);
+  const d=brControles();
+  if(!d.some(x=>x.niveau==="alerte"&&/partie U3B non posée/.test(x.texte)))
+    throw new Error("partie absente signalée : "+JSON.stringify(d));
+  if(brPartieLibre(A.el)!=="B")throw new Error("B est la partie libre");
+  const nv=brAjouterPartie(A.el);
+  if(!nv||nv.ref!=="U3"||nv.part!=="B"||nv.pinMap.join()!=="6,5,7,8,4")
+    throw new Error("« + U3B » pose la partie B : "+JSON.stringify(nv));
+  if(brPartieLibre(A.el)!==null)throw new Error("plus de partie libre");
+  const e=brControles();
+  if(e.some(x=>/non posée/.test(x.texte)))throw new Error("les deux parties sont posées : "+JSON.stringify(e));
+  /* deux fois la même partie */
+  nv.part="A";
+  if(!brControles().some(x=>/partie U3A posée deux fois/.test(x.texte)))throw new Error("partie en double");
+}));
+T("brochage : alimentation sur la masse signalée par le nom des broches",()=>{
+  const el=C("opamp",10,10,{id:++_uid,ref:"U4",pkg:"SOT-23-5",pinMap:["4","3","1","5","2"]});
+  const {ws}=brAop(10,10,{},["FB","VIN","VOUT","GND","3V3"]);
+  sheet([el],ws);
+  const c=brControles();
+  if(!c.some(x=>/broche d'alimentation V\+ \(patte 5\) reliée à la masse GND/.test(x.texte)))
+    throw new Error("V+ sur GND : "+JSON.stringify(c));
+  if(!c.some(x=>/broche V- \(patte 2\) reliée au rail positif 3V3/.test(x.texte)))
+    throw new Error("V− sur 3V3 : "+JSON.stringify(c));
+});
+T("brochage : normComp garde brochage, partie et table ; le boîtier long reste entier",()=>{
+  const long="Trou metalise diam. trou 1.2mm - dim. plated 2.54mmx1.6mm";
+  const n=normComp({id:5,type:"opamp",x:0,y:0,ref:"U3",value:"LM358",pkg:"SOIC-8",
+    brochage:BR_LM358,part:"b",pinMap:["6","5","7","8","4"],pinMapMain:true},0);
+  if(n.brochage!==BR_LM358||n.part!=="B"||n.pinMap.join()!=="6,5,7,8,4"||!n.pinMapMain)
+    throw new Error("relu : "+JSON.stringify(n));
+  const bad=normComp({id:6,type:"opamp",x:0,y:0,ref:"U1",pinMap:["<b>","1"],part:"<x>"},0);
+  if(bad.part||bad.pinMap.join()!==",1")throw new Error("valeurs illisibles écartées : "+JSON.stringify(bad));
+  const tp=normComp({id:7,type:"testpoint_pth",x:0,y:0,ref:"TP1",pkg:long},0);
+  if(tp.pkg!==long||PKG_MAX<long.length)throw new Error("boîtier coupé : "+tp.pkg);
+});
+T("brochage : l'inspecteur propose les références du symbole et montre la table",()=>brAvecLib(()=>{
+  const el=addComp("opamp",200,200);
+  sheet([el],[]);
+  clearSel();S.sel.add(el.id);refreshPanels();
+  const box=document.getElementById("props");
+  const html=String(box&&box.innerHTML||"");
+  if(!/Référence à choisir \(3\)/.test(html))throw new Error("badge attendu dans l'inspecteur");
+  if(!/IN-/.test(html)||!/V\+/.test(html))throw new Error("la table broche → patte s'affiche");
+  if(!/5 broches sur un boîtier SOIC-8/.test(html))throw new Error("l'alerte s'affiche dans l'inspecteur");
+  el.csvPartName="AOP_LM358";brDepuisLib(el,BR_LIB[1],true);refreshPanels();
+  const h2=String(box.innerHTML||"");
+  if(/Référence à choisir/.test(h2))throw new Error("plus de badge une fois la référence choisie");
+  if(!/pBrPartie/.test(h2)||!/pBrAjout/.test(h2))throw new Error("choix de partie et « + U…B » attendus");
+}));
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
 process.exit(ko?1:0);

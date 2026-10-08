@@ -17,7 +17,7 @@ function netBlock(net){
                           :"étiquette de net";
   const nodes = net.nodes.slice()
     .sort((a,b)=>String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}))
-    .map(n=>n.ref+"."+n.pin+(n.label?" ("+n.label+")":""));
+    .map(n=>n.ref+"."+(n.pad==null?n.pin:n.pad)+(n.label?" ("+n.label+")":""));
   const aw=net.anchorWire||null;
   const hidden=!!(aw&&aw.lblHide), moved=!!(aw&&aw.lblOff);
   let h='<div class="prop"><label>Net</label>'+
@@ -463,6 +463,9 @@ function refreshPanels(){
                 (!isLoaded ? '<button class="tb" style="margin-top:5px; margin-bottom:10px; width:100%; border-color:var(--blue); color:var(--blue);" onclick="document.getElementById(\'csvIn\').click()">Charger le CSV manuellement</button>' : '') +
                 '<input id="pCsvSearch" placeholder="Rechercher (ex: 10k, A4984...)" value="'+esc(el.csvPartName||"")+'" ' + (isLoaded?"":"disabled") + ' style="margin-bottom:5px;">' +
                 '<select id="pCsvList" size="4" style="width:100%; font-size:11px; background:var(--bg); color:var(--txt); border:1px solid var(--border); margin-bottom:6px;" ' + (isLoaded?"":"disabled") + '></select>' +
+                (isLoaded && typeof brCandidats === "function" && brCandidats(el).length
+                  ? '<label class="br-toutes"><input type="checkbox" id="pCsvToutes"> toutes les références « ' + esc(def.p || "") + ' », pas seulement celles du symbole ' + esc(def.n) + '</label>'
+                  : '') +
                 '<div style="background:var(--panel2); border:1px solid var(--border2); border-radius:4px; padding:6px 8px; font-size:11px; line-height:1.5;">' +
                   '<div><span style="color:var(--txt-dim)">Part Name :</span> <b style="color:var(--yellow)">' + esc(el.csvPartName || "Non associé") + '</b></div>' +
                   '<div><span style="color:var(--txt-dim)">Symbole :</span> <b style="color:var(--blue)">' + esc(el.symSch || def.n || el.type) + '</b></div>' +
@@ -476,6 +479,7 @@ function refreshPanels(){
     }
     
     html += enrichHtml + csvHtml +
+      ((typeof brPanneauHtml==="function")?brPanneauHtml(el):"")+
       (def.noRef?"":pkgField(el))+
       '<div class="row"><button class="tb" id="pRot">Pivoter</button><button class="tb" id="pMir">Miroir</button></div>'+
       '<div class="row"><button class="tb" id="pCompEd" style="width:100%; border-color:var(--blue); color:var(--blue); font-weight:600;">✎ Détails du composant…</button></div>'+
@@ -512,6 +516,7 @@ function refreshPanels(){
       if(NAME_SRC[el.type])refreshPanels();else buildList();
     };
     bindPkgField(el);
+    if(typeof brPanneauBrancher==="function")brPanneauBrancher(el);
     const pg2=document.getElementById("pGlob");
     if(pg2)pg2.onclick=()=>{
       push();
@@ -530,10 +535,22 @@ function refreshPanels(){
     const searchInp = document.getElementById("pCsvSearch");
     const listSel = document.getElementById("pCsvList");
     if (searchInp && listSel) {
+        /* Un symbole générique (AOP, transistor, régulateur…) propose d'abord
+           les références de la LIB qui l'utilisent : ce sont elles qui
+           apportent boîtier et brochage. La case élargit à tout le préfixe. */
+        const cands = (typeof brCandidats === "function") ? brCandidats(el) : [];
+        const cbToutes = document.getElementById("pCsvToutes");
         const updateList = () => {
             const q = searchInp.value.toLowerCase();
             let matches = [];
-            for(const item of window.CSV_LIB) {
+            const restreint = cands.length && !(cbToutes && cbToutes.checked);
+            for(const item of (restreint ? cands : window.CSV_LIB)) {
+                if (restreint) {
+                    if (matches.length > 100) break;
+                    const t = (item["Part Name"] + " " + item["Description"] + " " + item["Value"] + " " + item["Part Number"]).toLowerCase();
+                    if (t.includes(q)) matches.push(item);
+                    continue;
+                }
                 if (matches.length > 100) break; // limite d'affichage
                 
                 // Filtre strict sur le type de composant avec mapping étendu
@@ -580,7 +597,8 @@ function refreshPanels(){
             for(const m of matches) {
                 const opt = document.createElement("option");
                 opt.value = m["Part Name"];
-                opt.textContent = m["Part Name"] + " | " + (m["Value"] || "") + " | " + (m["Empreinte PCB"] || m["Package type"] || "");
+                opt.textContent = m["Part Name"] + " | " + (m["Value"] || "") + " | " + (m["Empreinte PCB"] || m["Package type"] || "").replace(/^.*[\\\/]/, "").replace(/\.json$/i, "") +
+                    ((typeof brColonne === "function" && brColonne(m)) ? " | brochage ✓" : "");
                 opt.dataset.val = m["Value"] || "";
                 opt.dataset.pkg = m["Package type"] || "";
                 opt.dataset.fp = m["Empreinte PCB"] || "";
@@ -593,6 +611,7 @@ function refreshPanels(){
         };
         updateList();
         searchInp.oninput = updateList;
+        if (cbToutes) cbToutes.onchange = updateList;
         listSel.onchange = () => {
             const opt = listSel.options[listSel.selectedIndex];
             if (!opt) return;
@@ -604,7 +623,7 @@ function refreshPanels(){
             if (opt.dataset.sch) el.symSch = opt.dataset.sch;
             if (opt.dataset.fp) {
                 el.fpPcb = opt.dataset.fp;
-                const cleanPkg = opt.dataset.fp.replace(/\.json$/i, "");
+                const cleanPkg = opt.dataset.fp.replace(/^.*[\\\/]/, "").replace(/\.json$/i, "");
                 if (cleanPkg) el.pkg = cleanPkg;
             } else if (opt.dataset.pkg && opt.dataset.pkg !== "xx") {
                 el.pkg = opt.dataset.pkg;
@@ -614,6 +633,8 @@ function refreshPanels(){
             // Spécifications électriques issues du catalogue LIB CSV
             if (window.CSV_LIB && Array.isArray(window.CSV_LIB)) {
                 const item = window.CSV_LIB.find(it => (it["Part Name"] || "") === opt.value);
+                // broche du symbole → patte de l'empreinte, selon la référence
+                if (typeof brDepuisLib === "function") brDepuisLib(el, item, true);
                 if (item) {
                     const specs = el.specs ? { ...el.specs } : {};
                     const vRating = item["Voltage Rating"] || item["voltage rating"] || item["Voltage"] || "";
@@ -917,7 +938,8 @@ function buildBom(){
            '<th style="text-align:right">Valeur</th></tr></thead><tbody>';
   for(const {c,page} of list){
     const sheet=S.bomAll?' <span style="font-family:var(--mono);font-size:9px;opacity:.55">f'+(page+1)+'</span>':"";
-    html+='<tr data-id="'+esc(c.id)+'" data-page="'+page+'"><td class="r">'+esc(c.ref||"—")+sheet+'</td>'+
+    // une ligne par symbole, pour le retrouver d'un clic : U3A et U3B
+    html+='<tr data-id="'+esc(c.id)+'" data-page="'+page+'"><td class="r">'+esc(schRepereAffiche(c)||"—")+sheet+'</td>'+
           '<td>'+esc(defOf(c.type).n)+
             (c.pkg?'<span class="pkgcell">'+esc(c.pkg)+'</span>':"")+
           '</td><td class="v">'+esc(c.value||"")+'</td></tr>';

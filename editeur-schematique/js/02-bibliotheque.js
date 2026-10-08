@@ -14,6 +14,10 @@
    positions : elles restent réglées à l'œil.
 
    pins : [[x,y],...] en coordonnées locales
+   pn   : noms des broches, dans l'ordre de `pins`, pour les symboles
+          génériques. C'est par eux que la colonne « Brochage » de la LIB dit
+          sur quelle patte du boîtier chaque broche tombe (25-brochage.js) :
+          « OUT=1,IN-=2,IN+=3,V-=4,V+=8 » pour un LM358.
    ========================================================================== */
 "use strict";
 /* Arrondi au quart de millimètre — sert aux emprises calculées à partir d'une
@@ -59,43 +63,43 @@ ferrite_bead:{n:"Perle de ferrite",cat:"Passifs",p:"FB",v:"120R",pk:"passif",pkg
        c.beginPath();c.arc(-6,-9,4,0,Math.PI);c.stroke();
        c.beginPath();c.arc(6,-9,4,0,Math.PI);c.stroke();}},
 /* ---------------- semi-conducteurs ---------------- */
-diode:{n:"Diode",cat:"Semi-conducteurs",p:"D",v:"1N4148",pk:"diode",pins:[[-40,0],[40,0]],
+diode:{n:"Diode",cat:"Semi-conducteurs",p:"D",v:"1N4148",pk:"diode",pins:[[-40,0],[40,0]],pn:["A","K"],
   d(c){L(c,-40,0,-10,0);P(c,[[-10,-15],[-10,15],[10,0]],C_FILL);
        c.lineWidth=4.5;L(c,10,-15,10,15);c.lineWidth=3;L(c,10,0,40,0);}},
-led:{n:"LED",cat:"Semi-conducteurs",p:"D",v:"LED",pk:"diode",pkg:"0805",ext:[-40,-40,40,20],pins:[[-40,0],[40,0]],
+led:{n:"LED",cat:"Semi-conducteurs",p:"D",v:"LED",pk:"diode",pkg:"0805",ext:[-40,-40,40,20],pins:[[-40,0],[40,0]],pn:["A","K"],
   d(c){L(c,-40,0,-10,0);P(c,[[-10,-15],[-10,15],[10,0]],C_FILL);
        c.lineWidth=4.5;L(c,10,-15,10,15);c.lineWidth=3;L(c,10,0,40,0);
        L(c,-5,-20,5,-30);ARR(c,7,-32,-Math.PI/4,8);
        L(c,5,-20,15,-30);ARR(c,17,-32,-Math.PI/4,8);}},
-zener:{n:"Zener",cat:"Semi-conducteurs",p:"D",v:"5V1",pk:"diode",pins:[[-40,0],[40,0]],
+zener:{n:"Zener",cat:"Semi-conducteurs",p:"D",v:"5V1",pk:"diode",pins:[[-40,0],[40,0]],pn:["A","K"],
   d(c){L(c,-40,0,-10,0);P(c,[[-10,-15],[-10,15],[10,0]],C_FILL);
        c.lineWidth=4.5;L(c,10,-15,10,15);c.lineWidth=3;
        L(c,10,-15,5,-20);L(c,10,15,15,20);L(c,10,0,40,0);}},
-schottky:{n:"Schottky",cat:"Semi-conducteurs",p:"D",v:"SS34",pk:"diode",pkg:"SMA",pins:[[-40,0],[40,0]],
+schottky:{n:"Schottky",cat:"Semi-conducteurs",p:"D",v:"SS34",pk:"diode",pkg:"SMA",pins:[[-40,0],[40,0]],pn:["A","K"],
   d(c){L(c,-40,0,-10,0);P(c,[[-10,-15],[-10,15],[10,0]],C_FILL);
        c.lineWidth=4.5;L(c,10,-15,10,15);c.lineWidth=3;
        L(c,10,-15,5,-15);L(c,5,-15,5,-10);L(c,10,15,15,15);L(c,15,15,15,10);L(c,10,0,40,0);}},
-npn:{n:"NPN",cat:"Semi-conducteurs",p:"Q",v:"MMBT5551",pk:"transistor",pkg:"SOT-23-3",pins:[[-40,0],[20,-40],[20,40]],
+npn:{n:"NPN",cat:"Semi-conducteurs",p:"Q",v:"MMBT5551",pk:"transistor",pkg:"SOT-23-3",pins:[[-40,0],[20,-40],[20,40]],pn:["B","C","E"],
   d(c){L(c,-40,0,-5,0);c.lineWidth=4.5;L(c,-5,-25,-5,25);c.lineWidth=3;
        L(c,-5,-15,20,-30);L(c,20,-30,20,-40);
        L(c,-5,15,20,30);L(c,20,30,20,40);ARR(c,15,27,Math.atan2(30-15,20+5),10);}},
-pnp:{n:"PNP",cat:"Semi-conducteurs",p:"Q",v:"MMBT5401",pk:"transistor",pkg:"SOT-23-3",pins:[[-40,0],[20,-40],[20,40]],
+pnp:{n:"PNP",cat:"Semi-conducteurs",p:"Q",v:"MMBT5401",pk:"transistor",pkg:"SOT-23-3",pins:[[-40,0],[20,-40],[20,40]],pn:["B","C","E"],
   d(c){L(c,-40,0,-5,0);c.lineWidth=4.5;L(c,-5,-25,-5,25);c.lineWidth=3;
        L(c,-5,-15,20,-30);L(c,20,-30,20,-40);
        L(c,-5,15,20,30);L(c,20,30,20,40);ARR(c,0,18,Math.atan2(-30+15,-20-5),10);}},
-nmos:{n:"MOSFET N",cat:"Semi-conducteurs",p:"Q",v:"AO3400",pk:"transistor",pkg:"SOT-23-3",pins:[[-40,0],[20,-40],[20,40]],
+nmos:{n:"MOSFET N",cat:"Semi-conducteurs",p:"Q",v:"AO3400",pk:"transistor",pkg:"SOT-23-3",pins:[[-40,0],[20,-40],[20,40]],pn:["G","D","S"],
   d(c){L(c,-40,0,-15,0);L(c,-15,-25,-15,25);
        L(c,-5,-25,-5,-10);L(c,-5,-5,-5,5);L(c,-5,10,-5,25);
        L(c,-5,-20,20,-20);L(c,20,-20,20,-40);
        L(c,-5,20,20,20);L(c,20,20,20,40);
        L(c,-5,0,20,0);ARR(c,0,0,Math.PI,10);}},
-pmos:{n:"MOSFET P",cat:"Semi-conducteurs",p:"Q",v:"AO3401",pk:"transistor",pkg:"SOT-23-3",pins:[[-40,0],[20,-40],[20,40]],
+pmos:{n:"MOSFET P",cat:"Semi-conducteurs",p:"Q",v:"AO3401",pk:"transistor",pkg:"SOT-23-3",pins:[[-40,0],[20,-40],[20,40]],pn:["G","S","D"],
   d(c){L(c,-40,0,-15,0);L(c,-15,-25,-15,25);
        L(c,-5,-25,-5,-10);L(c,-5,-5,-5,5);L(c,-5,10,-5,25);
        L(c,-5,-20,20,-20);L(c,20,-20,20,-40);
        L(c,-5,20,20,20);L(c,20,20,20,40);
        L(c,-5,0,20,0);ARR(c,15,0,0,10);}},
-tvs_diode:{n:"Diode TVS",cat:"Semi-conducteurs",p:"D",v:"TVS",pk:"diode",pkg:"SOD-323",pins:[[-40,0],[40,0]],
+tvs_diode:{n:"Diode TVS",cat:"Semi-conducteurs",p:"D",v:"TVS",pk:"diode",pkg:"SOD-323",pins:[[-40,0],[40,0]],pn:["A","K"],
   d(c){L(c,-40,0,-15,0);L(c,15,0,40,0);
        P(c,[[-15,-10],[-15,10],[-2,0]],C_FILL);
        P(c,[[15,-10],[15,10],[2,0]],C_FILL);
@@ -108,7 +112,7 @@ esd_array:{n:"Réseau ESD",cat:"Semi-conducteurs",p:"U",v:"USBLC6",pk:"ci",pkg:"
        L(c,40,-20,25,-20);L(c,40,0,25,0);L(c,40,20,25,20);
        TXT(c,"ESD",0,-8,11,C_TXT);TXT(c,"ARRAY",0,8,8,"#93c5fd");}},
 /* ---------------- intégrés ---------------- */
-opamp:{n:"AOP",cat:"Intégrés",p:"U",v:"LM358",pk:"ci",pkg:"SOIC-8",pins:[[-40,-20],[-40,20],[60,0],[0,-40],[0,40]],
+opamp:{n:"AOP",cat:"Intégrés",p:"U",v:"LM358",pk:"ci",pkg:"SOIC-8",pins:[[-40,-20],[-40,20],[60,0],[0,-40],[0,40]],pn:["IN-","IN+","OUT","V+","V-"],
   d(c){L(c,-40,-20,-20,-20);L(c,-40,20,-20,20);L(c,40,0,60,0);
        L(c,0,-40,0,-27);L(c,0,40,0,27);
        P(c,[[-20,-40],[-20,40],[40,0]],"rgba(47,134,204,.35)");
@@ -172,7 +176,7 @@ ic:{n:"Circuit intégré",cat:"Intégrés",p:"U",v:"NE555",icon:"CI",valSelf:tru
     const room=(b.x2-b.x1)-wl-wr-18;
     if(textW(val,13,true)<=room)TXT(c,val,cx,g.mid,13,C_TXT);
     else TXT(c,val,cx,b.y2+17,13,C_TXT);}},
-regulator:{n:"Régulateur",cat:"Intégrés",p:"U",v:"AMS1117",valIn:true,pk:"regulateur",pkg:"SOT-223-4",pins:[[-60,0],[60,0],[0,60]],
+regulator:{n:"Régulateur",cat:"Intégrés",p:"U",v:"AMS1117",valIn:true,pk:"regulateur",pkg:"SOT-223-4",pins:[[-60,0],[60,0],[0,60]],pn:["IN","OUT","GND"],
   d(c){RR(c,-40,-25,80,50,4,C_FILL);L(c,-60,0,-40,0);L(c,40,0,60,0);L(c,0,25,0,60);}},
 /* ---------------- alimentation ---------------- */
 vcc:{n:"Alimentation",cat:"Alimentation",p:"#",v:"12V",noRef:true,pins:[[0,20]],

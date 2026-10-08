@@ -1499,3 +1499,16 @@ table.lib-table tr.selected td {
 
 
 
+
+/* Brochage de la référence (inspecteur) : broche du symbole → patte */
+.insp-brochage { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; }
+.insp-brochage label { display: flex; justify-content: space-between; font-weight: 600;
+  font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--txt-dim); }
+.insp-brochage label span { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.insp-brochage input { background: var(--bg); border: 1px solid var(--border2); color: var(--txt);
+  border-radius: 4px; padding: 5px 7px; font-family: var(--mono); font-size: 11.5px; }
+.insp-brochage input:focus { outline: none; border-color: var(--border-focus); }
+.insp-brochage input.invalide { border-color: var(--red); }
+.insp-brochage-apercu { font-family: var(--mono); font-size: 10.5px; line-height: 1.5; color: var(--txt-dim); }
+.insp-brochage-apercu b { color: var(--purple); }
+.insp-brochage-apercu .err { color: var(--red); font-family: var(--ui); }

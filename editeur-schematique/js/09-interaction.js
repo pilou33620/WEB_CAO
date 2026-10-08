@@ -410,13 +410,17 @@ cv.addEventListener("pointerdown",e=>{
       const fp = it["Empreinte PCB"] || "";
       if(fp) {
         el.fpPcb = fp;
-        const cleanPkg = fp.replace(/\.json$/i, "");
+        /* « lib/empreinte/SC-70.json » → « SC-70 » : le PCB cherche le
+           boîtier par son nom, pas par le chemin du catalogue */
+        const cleanPkg = fp.replace(/^.*[\\\/]/, "").replace(/\.json$/i, "");
         if(cleanPkg) el.pkg = cleanPkg;
       } else if(it["Package type"] && it["Package type"] !== "xx") {
         el.pkg = it["Package type"];
       }
       const sim = it["Modèle Simulation"] || it["Modele Simulation"] || "";
       if(sim && sim !== "-" && sim !== "xx") el.simModel = sim;
+      // broche du symbole → patte de l'empreinte, selon la référence
+      if(typeof brDepuisLib === "function") brDepuisLib(el, it, true);
 
       // Spécifications électriques
       const specs = el.specs ? { ...el.specs } : {};

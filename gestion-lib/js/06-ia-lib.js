@@ -248,9 +248,11 @@ DIRECTIVES STRICTES :
   "Description": "Description technique complète",
   "Manufacturer": "Fabricant",
   "Empreinte PCB": "SOIC-8.json",
-  "Empreinte Schématique": "opamp.json"
+  "Empreinte Schématique": "opamp.json",
+  "Brochage": "A:OUT=1,IN-=2,IN+=3|B:OUT=7,IN-=6,IN+=5|*:V-=4,V+=8"
 }
 \`\`\`
+   « Brochage » : pour chaque broche du symbole, la patte de l'empreinte relevée sur la datasheet, « NOM=patte » séparés par des virgules (jamais de point-virgule). Noms des broches des symboles : opamp IN-, IN+, OUT, V+, V- ; npn/pnp B, C, E ; nmos G, D, S ; pmos G, S, D ; diodes A, K ; regulator IN, OUT, GND. Composant à plusieurs parties (AOP double, quadruple) : « A:…|B:… », et « *: » pour les broches communes à toutes les parties (alimentations). Pattes laissées libres : « NC=5/6 ». Exemple MCP6001 SOT-23-5 : « OUT=1,V-=2,IN+=3,IN-=4,V+=5 ».
 
 5. Sois direct, pas de blabla inutile, explique brièvement les choix de dimensions en millimètres (pitch, pads).`;
 
@@ -614,6 +616,17 @@ function iaAppliquerAuCatalogue(dataB64) {
   try {
     const rawJson = decodeURIComponent(escape(atob(dataB64)));
     const patch = JSON.parse(rawJson);
+    /* le brochage proposé n'entre que lisible, et sa colonne s'ajoute à un
+       catalogue qui ne l'a pas encore — sinon l'enregistrement l'oublierait */
+    if (patch && patch["Brochage"] != null) {
+      const lu = typeof brochageLire === "function" ? brochageLire(patch["Brochage"]) : null;
+      if (lu && lu.erreurs.length) {
+        afficherToast("Brochage proposé illisible, écarté : " + lu.erreurs[0], "error");
+        delete patch["Brochage"];
+      } else if (!LIB_STATE.colonnes.includes("Brochage")) {
+        LIB_STATE.colonnes.push("Brochage");
+      }
+    }
 
     if (LIB_STATE.selection) {
       // Mettre à jour le composant sélectionné

@@ -56,7 +56,7 @@ var SCHEMA_PATTERNS = (function() {
           if (compRef) {
             netsMap[nName].push({
               ref: compRef,
-              pin: nd.pin || nd.pinName || 1,
+              pin: nd.pad || nd.pin || nd.pinName || 1,   // patte de l'empreinte (25-brochage.js)
               name: nd.label || ""
             });
           }

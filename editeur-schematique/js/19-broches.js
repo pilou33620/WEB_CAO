@@ -481,6 +481,7 @@ function ceBuild(){
                 '<tr>' +
                   '<th style="width:34px; text-align:center;">N°</th>' +
                   '<th>Nom de la broche</th>' +
+                  '<th style="width:58px; text-align:center;" title="Patte de l\'empreinte où va la broche (datasheet). Vide : la patte de même numéro.">Patte</th>' +
                   '<th style="width:75px; text-align:center;">Pos (X,Y)</th>' +
                   '<th>Net connecté</th>' +
                 '</tr>' +
@@ -673,13 +674,18 @@ function ceSync(){
   ps.forEach((p, i) => {
     const tr = document.createElement("tr");
     const pName = (el.pinNames && el.pinNames[i]) || "";
+    /* nom proposé par le symbole (IN-, V+, B, C, E…) : c'est lui que la
+       colonne Brochage de la LIB désigne */
+    const pDefaut = (typeof brNomBroche === "function") ? brNomBroche({type: el.type}, i) : "";
+    const pPatte = (Array.isArray(el.pinMap) && el.pinMap[i]) || "";
     const worldP = pinPos(el, i);
     const n = netAt(worldP.x, worldP.y);
     const live = isRealNet(n);
 
     tr.innerHTML =
       '<td style="text-align:center; font-family:var(--mono); color:var(--txt-dim); font-size:11px;">' + (i + 1) + '</td>' +
-      '<td><input class="ce-pin-name" data-idx="' + i + '" value="' + esc(pName) + '" placeholder="Nom (ex: VCC, GND, IN...)" style="width:100%; padding:3px 6px; font-size:11.5px; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--txt);"></td>' +
+      '<td><input class="ce-pin-name" data-idx="' + i + '" value="' + esc(pName) + '" placeholder="' + esc(pDefaut || "Nom (ex: VCC, GND, IN...)") + '" style="width:100%; padding:3px 6px; font-size:11.5px; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--txt);"></td>' +
+      '<td><input class="ce-pin-pad" data-idx="' + i + '" value="' + esc(pPatte) + '" placeholder="' + (i + 1) + '" maxlength="8" style="width:100%; padding:3px 6px; font-size:11.5px; font-family:var(--mono); text-align:center; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--txt);"></td>' +
       '<td style="text-align:center; font-family:var(--mono); font-size:10px; color:var(--txt-dim);">' + Math.round(p[0]/IC_STEP) + ' , ' + Math.round(p[1]/IC_STEP) + '</td>' +
       '<td style="font-size:11px;">' +
         (live ? '<span style="color:' + netColor(n) + '; font-weight:600;">' + esc(n.name) + '</span>' : '<span style="color:var(--txt-dim); font-style:italic;">non connecté</span>') +
@@ -687,6 +693,17 @@ function ceSync(){
     tbody.appendChild(tr);
   });
 
+  /* la patte saisie part dans la netlist au lieu du numéro de broche :
+     c'est la renumérotation « datasheet » d'un symbole générique */
+  tbody.querySelectorAll(".ce-pin-pad").forEach(inp => {
+    inp.oninput = () => {
+      if (typeof brSaisirPatte !== "function") return;
+      cePush();
+      if (!brSaisirPatte(el, +inp.dataset.idx, inp.value)) inp.style.borderColor = "#ef4444";
+      else inp.style.borderColor = "";
+      draw();
+    };
+  });
   tbody.querySelectorAll(".ce-pin-name").forEach(inp => {
     inp.oninput = () => {
       cePush();

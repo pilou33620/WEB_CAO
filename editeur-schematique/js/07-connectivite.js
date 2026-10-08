@@ -392,9 +392,14 @@ function computeNets(comps,wires){
     const n=net(nd.k);
     n.pts.push({x:nd.x,y:nd.y});
     if(NAME_SRC[nd.el.type])n.powers.push(nd.el);
+    /* `pin` reste le numéro de la broche dans le symbole ; `pad` est la patte
+       de l'empreinte où elle tombe (25-brochage.js) — c'est elle que la
+       netlist écrit et que le PCB relie. Sans table, les deux coïncident. */
     else if(!nd.def.noRef)n.nodes.push({
       ref:nd.el.ref||"?", pin:nd.i+1, id:nd.el.id,
-      label:(nd.el.pinNames&&nd.el.pinNames[nd.i])||"", x:nd.x, y:nd.y});
+      pad:(typeof brPatte==="function")?brPatte(nd.el,nd.i):nd.i+1,
+      label:(typeof brNomBroche==="function")?brNomBroche(nd.el,nd.i)
+           :((nd.el.pinNames&&nd.el.pinNames[nd.i])||""), x:nd.x, y:nd.y});
   }
   for(const cl of claims){
     const n=net(cl.k);
@@ -450,7 +455,11 @@ function compSig(c){
   return c.type+","+c.x+","+c.y+","+(c.rot|0)+(c.mir?"m":"")+(c.npins||0)+
     (c.icShape==="quad"?"q":c.icShape==="libre"?("f"+posHash(c.pinPos)):"")+
     ((c.icW||c.icHs)?("w"+(c.icW||0)+"/"+(c.icHs||0)):"")+
-    (NAME_SRC[c.type]?(","+c.value):"");
+    (NAME_SRC[c.type]?(","+c.value):"")+
+    /* repère, noms et pattes partent dans les nœuds : les changer doit
+       refaire les nets, sinon la netlist garderait l'ancien brochage */
+    ","+(c.ref||"")+(c.pinMap?",p"+c.pinMap.join("."):"")+
+    (c.pinNames?",n"+c.pinNames.join("."):"");
 }
 let _netCache=null, _netSig="";
 function netSig(){
