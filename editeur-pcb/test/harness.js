@@ -381,7 +381,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simRfZ","simRfExclure","simRfImporter","simRfOublierModele","simRfBroche",
   "simRfValeurSI","trkAt","simRfMasque",
   /* les liens des bouts de piste, et la transformation des boîtiers */
-  "transformFps","linkSync","fpXformInv"];
+  "transformFps","linkSync","fpXformInv","padDist","updateRoute"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -1541,6 +1541,120 @@ T("retourner une capa CMS : les bouts qui perdent leur pastille sont comptés",(
     const n=transformFps([D.C.id],()=>{D.C.side=1;});
     if(n!==3)throw new Error("trois bouts sur C passent sous la carte : "+n);
   }finally{undo();suiviFin(D.reg);}
+});
+/* Les vias de sortie : le via de masse au pied de la capa part avec elle. */
+function sortieDecor(){
+  const D=decouplage();
+  const c2=D.pad(D.C,2);
+  // un via de masse à 1,5 mm de C.2, et de là une piste dessous vers le plan
+  const vs={x:c2.x+1.5,y:c2.y,d:0.6,drill:0.3,a:0,b:S.cu-1,net:"GND"};
+  const court={l:0,net:"GND",w:0.3,x1:c2.x,y1:c2.y,x2:vs.x,y2:vs.y};
+  const dessous={l:S.cu-1,net:"GND",w:0.3,x1:vs.x,y1:vs.y,x2:vs.x+8,y2:vs.y};
+  S.vias.push(vs);S.tracks.push(court,dessous);touch();
+  return Object.assign(D,{vs,court,dessous});
+}
+T("via de sortie : glisser la capa l'emmène, sa piste du dessous suit",()=>{
+  const D=sortieDecor();
+  clearSel();S.sel.fps.add(D.C.id);
+  const x0=D.vs.x, y0=D.vs.y, fin={x:D.dessous.x2,y:D.dessous.y2};
+  try{
+    // la saisie : un point du boîtier que ne recouvre aucune piste
+    const prise=[[0,0.3],[-0.3,0.35],[0.3,0.35],[0,0.4],[0,-0.3]].map(([a,b])=>({x:D.C.x+a,y:D.C.y+b}))
+      .find(p=>{const h=hitTest(p.x,p.y);return h&&h.fp;});
+    if(!prise)throw new Error("aucune prise sur le boîtier");
+    glisse(sc(prise.x,prise.y),sc(prise.x,prise.y+3));
+    const dy=D.C.y-20;
+    if(!(dy>0))throw new Error("la capa devait descendre : "+D.C.y);
+    if(Math.abs(D.vs.x-x0)>1e-6||Math.abs(D.vs.y-y0-dy)>1e-6)
+      throw new Error("le via de sortie devait suivre la capa : "+D.vs.x+","+D.vs.y);
+    const c2=D.pad(D.C,2);
+    relie("GND",{x:c2.x,y:c2.y},{x:D.vs.x,y:D.vs.y});
+    relie("GND",{x:D.vs.x,y:D.vs.y},fin);
+    if(S.sel.vias.has(D.vs))throw new Error("le via ne devait pas rester sélectionné");
+    tout45();
+  }finally{undo();suiviFin(D.reg);}
+});
+T("via de sortie : il tourne avec la capa, à sa place dans son repère",()=>{
+  const D=sortieDecor();
+  clearSel();S.sel.fps.add(D.C.id);
+  const L0=fpXformInv(D.C)(D.vs.x,D.vs.y), fin={x:D.dessous.x2,y:D.dessous.y2};
+  try{
+    rotateSel();
+    const L=fpXformInv(D.C)(D.vs.x,D.vs.y);
+    if(Math.abs(L.x-L0.x)>2e-3||Math.abs(L.y-L0.y)>2e-3)
+      throw new Error("le via devait tourner avec la capa : "+JSON.stringify([L0,L]));
+    const c2=D.pad(D.C,2);
+    relie("GND",{x:c2.x,y:c2.y},{x:D.vs.x,y:D.vs.y});
+    relie("GND",{x:D.vs.x,y:D.vs.y},fin);
+    decouplageRelie(D);
+  }finally{undo();suiviFin(D.reg);}
+});
+T("via partagé entre deux boîtiers : il ne suit aucun des deux",()=>{
+  const D=sortieDecor();
+  const C2=mkFp("C2","100n","0603",2);
+  const q=padsWorld(C2)[0];
+  C2.x=D.vs.x+1.5-(q.x-C2.x);C2.y=D.vs.y-(q.y-C2.y);S.fps.push(C2);touch();
+  const p=D.pad(C2,1);
+  S.tracks.push({l:0,net:"GND",w:0.3,x1:D.vs.x,y1:D.vs.y,x2:p.x,y2:p.y});touch();
+  clearSel();S.sel.fps.add(D.C.id);
+  const x0=D.vs.x, y0=D.vs.y;
+  try{
+    glisse(sc(D.C.x,D.C.y),sc(D.C.x,D.C.y-3));
+    if(D.vs.x!==x0||D.vs.y!==y0)throw new Error("le via partagé a bougé : "+D.vs.x+","+D.vs.y);
+  }finally{undo();suiviFin(D.reg);}
+});
+T("via dans la pastille : il suit son boîtier",()=>{
+  const D=decouplage();
+  const c1=D.pad(D.C,1);
+  const v={x:c1.x,y:c1.y,d:0.4,drill:0.2,a:0,b:S.cu-1,net:"+3V3"};
+  S.vias.push(v);touch();
+  clearSel();S.sel.fps.add(D.C.id);
+  try{
+    rotateSel();
+    const n=D.pad(D.C,1);
+    if(v.x!==n.x||v.y!==n.y)throw new Error("le via devait rester au centre de C.1 : "+v.x+","+v.y);
+  }finally{undo();suiviFin(D.reg);}
+});
+T("via loin de la capa : il reste en place",()=>{
+  const D=decouplage();
+  clearSel();S.sel.fps.add(D.C.id);
+  const g={x:D.gnd.x,y:D.gnd.y};
+  try{
+    rotateSel();
+    if(D.gnd.x!==g.x||D.gnd.y!==g.y)throw new Error("le via à 7 mm ne devait pas bouger");
+  }finally{undo();suiviFin(D.reg);}
+});
+T("Ctrl : le bout se pose hors du centre, dans le cuivre de la pastille",()=>{
+  const reg=suiviDecor();
+  const R=mkFp("R1","","",2);R.style="row";R.pitch=2.54;R.x=60;R.y=60;S.fps.push(R);touch();
+  const p=padsWorld(R)[0];
+  setMode("track");S.active=0;
+  try{
+    // sans Ctrl : au centre, même en visant le bord du cuivre
+    S.padOff=false;
+    startRoute(p.x+0.4,p.y);
+    if(S.route.pt.x!==p.x||S.route.pt.y!==p.y)throw new Error("sans Ctrl, le départ est au centre");
+    S.route=null;
+    // avec Ctrl : là où l'on vise, sur la grille
+    S.padOff=true;
+    startRoute(p.x+0.4,p.y);
+    const o=S.route.pt;
+    if(Math.abs(o.x-p.x)<1e-6&&Math.abs(o.y-p.y)<1e-6)throw new Error("avec Ctrl, le départ devait être décalé");
+    if(padDist(o.x,o.y,p)>0)throw new Error("le départ décalé doit rester dans le cuivre");
+    S.padOff=false;
+    updateRoute(o.x,o.y-8);stepRoute();commitRoute();
+    const t=S.tracks.find(t=>Math.abs(t.x1-o.x)<1e-6&&Math.abs(t.y1-o.y)<1e-6);
+    if(!t)throw new Error("la piste devait partir du point décalé");
+    linkSync();
+    if(!t.a1||t.a1.f!==R.id)throw new Error("le bout décalé reste lié à sa pastille : "+JSON.stringify(t.a1));
+    // hors du cuivre, Ctrl ne décale rien : l'aimant ramène au centre
+    S.padOff=true;
+    startRoute(p.x+1.2,p.y+1.2);
+    const c=S.route.pt;
+    S.route=null;
+    if(padDist(p.x+1.2,p.y+1.2,p)<=0)throw new Error("le décor devait viser hors du cuivre");
+    if(c.x!==p.x||c.y!==p.y)throw new Error("hors du cuivre, Ctrl ne décale pas : "+c.x+","+c.y);
+  }finally{S.padOff=false;S.route=null;setMode("select");suiviFin(reg);}
 });
 /* Sélection de plusieurs boîtiers : on les saisit par n'importe lequel, y
    compris par son repère (le texte passe devant le boîtier au test d'atteinte)

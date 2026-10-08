@@ -195,6 +195,11 @@ function transformFps(ids,mutate){
     mutate();
     const mv=linkMover(avant);
     F.map=P0=>mv(P0,F.p0fp.get(P0));
+    // les vias de sortie tournent et se retournent avec leur boîtier
+    for(const o of drag.via){
+      const P=mv({x:o.x,y:o.y},drag.fanout.get(o.v));
+      o.v.x=P.x;o.v.y=P.y;
+    }
     // une piste tendue entre deux pastilles qui bougent part en bloc, coudes compris
     for(const o of drag.trk){
       const k=F.rigidOf.get(o.t);
@@ -221,4 +226,112 @@ function transformFps(ids,mutate){
 function linkPerdusHint(n){
   if(n>0)hint(n+" bout(s) de piste ne touchent plus leur pastille (passée sur "+
               "l'autre face ?) : le chevelu les montre, à re-router.");
+}
+
+/* ==========================================================================
+   Les vias de sortie
+   --------------------------------------------------------------------------
+   Le via de masse au pied d'une capa de découplage appartient à la capa : on
+   ne déplace pas l'une sans l'autre. Un via est emporté par les boîtiers
+   qu'on déplace quand :
+   - il est posé dans une de leurs pastilles (via dans la pastille), ou
+   - il en part au moins une piste courte (≤ FANOUT_MAX, de coude en coude,
+     sans embranchement) qui finit sur une de leurs pastilles,
+   - et aucune piste courte ne le relie à la pastille d'un AUTRE boîtier,
+     resté en place : ce via-là est partagé, il ne suit personne.
+   Le reste de ce qui part du via (la piste vers le régulateur, sur l'autre
+   face) le suit comme une piste suit un via qu'on tire. L'appartenance se
+   déduit à chaque geste, d'après le cuivre tel qu'il est : rien à tenir à jour.
+   ========================================================================== */
+const FANOUT_MAX=3;
+/* Les chaînes qui partent du via `v` : pour chacune, la pastille où elle
+   aboutit (ou null) et sa longueur. */
+function fanoutChains(v){
+  const out=[];
+  for(const t of S.tracks){
+    if(t.l<v.a||t.l>v.b)continue;
+    for(const e of [1,2]){
+      const x=e===1?t.x1:t.x2, y=e===1?t.y1:t.y2;
+      if(Math.abs(x-v.x)>=EPS_J||Math.abs(y-v.y)>=EPS_J)continue;
+      let cur=t, ce=e, len=0, pad=null;
+      for(let k=0;k<FOLLOW_MAX;k++){
+        const F=endFar(cur,ce);
+        len+=trkLen(cur);
+        if(len>FANOUT_MAX)break;
+        pad=padAt(cur.l,F.x,F.y);
+        if(pad||viaAt(cur.l,F.x,F.y))break;
+        const j=jointAt(F.x,F.y,cur.l);
+        if(j.ends.length!==2||j.vias.length)break;
+        const nx=j.ends.find(o=>o.t!==cur);
+        if(!nx||nx.t.net!==cur.net)break;
+        cur=nx.t;ce=nx.e;
+      }
+      out.push({pad:len<=FANOUT_MAX?pad:null,len});
+    }
+  }
+  return out;
+}
+/* Les vias de sortie des boîtiers `fps` : via → id du boîtier qui l'emporte. */
+function fanoutVias(fps){
+  const res=new Map();
+  if(!fps.length)return res;
+  const ids=new Set(fps.map(f=>f.id));
+  let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
+  for(const f of fps){
+    const b=fpBBox(f);
+    x1=Math.min(x1,b.x1);y1=Math.min(y1,b.y1);x2=Math.max(x2,b.x2);y2=Math.max(y2,b.y2);
+  }
+  x1-=FANOUT_MAX;y1-=FANOUT_MAX;x2+=FANOUT_MAX;y2+=FANOUT_MAX;
+  for(const v of S.vias){
+    if(v.x<x1||v.x>x2||v.y<y1||v.y>y2)continue;
+    // via dans la pastille
+    let dans=null;
+    for(const f of fps){
+      for(const q of padsWorld(f))
+        if(padCuLayers(f,q).some(l=>l>=v.a&&l<=v.b&&padHolds(f,q,l,v.x,v.y))){dans=f.id;break;}
+      if(dans!=null)break;
+    }
+    if(dans!=null){res.set(v,dans);continue;}
+    let best=null, bl=1e9, autre=false;
+    for(const c of fanoutChains(v)){
+      if(!c.pad)continue;
+      if(!ids.has(c.pad.fp.id)){autre=true;break;}
+      if(c.len<bl){bl=c.len;best=c.pad.fp.id;}
+    }
+    if(best!=null&&!autre)res.set(v,best);
+  }
+  return res;
+}
+/* Au départ d'un geste qui emporte des boîtiers : leurs vias de sortie entrent
+   dans le geste comme des vias tirés. Ils sont rendus à la sélection d'avant
+   au relâchement (`fanoutRelease`) — on ne les a pas choisis. */
+function fanoutTake(){
+  const fps=[...S.sel.fps].map(fpById).filter(Boolean);
+  const m=fanoutVias(fps);
+  for(const v of [...m.keys()])
+    if(S.sel.vias.has(v))m.delete(v);       // déjà tiré par l'utilisateur
+    else S.sel.vias.add(v);
+  return m;
+}
+function fanoutRelease(d){
+  if(d&&d.fanout)for(const v of d.fanout.keys())S.sel.vias.delete(v);
+}
+
+/* ==========================================================================
+   Le bout volontairement décalé
+   --------------------------------------------------------------------------
+   Une piste entre et sort au centre de la pastille : c'est la règle, et
+   l'aimant du routeur la tient. Ctrl enfoncé, le bout se pose là où l'on
+   vise DANS le cuivre de la pastille — sur la grille si elle y tombe, au
+   point exact sinon. Il garde ensuite ce décalage dans le repère du boîtier :
+   tourner ou retourner le boîtier l'emmène (`linkMover`). Hors du cuivre,
+   Ctrl ne change rien : l'aimant ramène au centre.
+   ========================================================================== */
+function padOffPoint(q,l,x,y,ancre){
+  const s=padSurCouche(q,l);
+  if(!s||padDist(x,y,s)>0)return null;
+  const g={x:snapXn(x,ancre?ancre.x:null),y:snapYn(y,ancre?ancre.y:null)};
+  const p=padDist(g.x,g.y,s)<=0?g:{x:r3(x),y:r3(y)};
+  if(Math.abs(p.x-q.x)<EPS_J&&Math.abs(p.y-q.y)<EPS_J)return null;   // c'est le centre
+  return p;
 }

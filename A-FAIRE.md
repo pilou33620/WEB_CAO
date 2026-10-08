@@ -114,7 +114,7 @@ lib/
 
 - [ ] **Liens du cuivre et suivi des boîtiers** (`editeur-pcb/js/25-liens.js`) :
   - [x] Étape 1 : chaque bout de piste porte le lien de ce qui le tient (`a1`/`a2` : `{f, p}` pastille ou `{v}` via), vérifié contre la géométrie avant usage et reconstruit s'il ment ; les vias ont un identifiant. Rotation (R, autour du centre du boîtier), retournement (F), cotes X / Y / Rot / Face du panneau et « Aller à » passent par `transformFps` : le cuivre suit par le même moteur que le glissement, au centre des pastilles ; un bout volontairement décalé garde son décalage dans le repère du boîtier.
-  - [ ] Étape 2 : via de sortie (relié à une seule pastille par une piste courte) emporté par son boîtier ; Ctrl+clic pour poser volontairement un bout hors centre.
+  - [x] Étape 2 : via de sortie emporté par son boîtier — posé dans une de ses pastilles, ou relié à elles par une piste courte (≤ 3 mm, `FANOUT_MAX`) et à aucune pastille d'un autre boîtier resté en place ; il glisse, tourne et se retourne avec lui, et ce qui part de lui suit. Ctrl au routage : le bout se pose où l'on vise dans le cuivre de la pastille au lieu du centre.
   - [ ] Étape 3 : après suivi, liaison en faute (isolation, croisement, CMS passée sur l'autre face) re-routée automatiquement ; sans issue, tracé en rouge + marqueur DRC « à re-router ».
 
 ### Simulation SI (Signal Integrity)

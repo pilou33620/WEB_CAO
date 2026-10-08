@@ -1441,6 +1441,10 @@ function followMoved(){
   const holder=(t,e,x,y)=>{
     const a=t["a"+e];
     if(a&&a.f!=null&&fpIds.has(a.f))return a.f;
+    // un via de sortie : le boîtier qui l'emporte
+    if(drag&&drag.fanout)
+      for(const [v,id] of drag.fanout)
+        if(t.l>=v.a&&t.l<=v.b&&Math.abs(v.x-x)<EPS_J&&Math.abs(v.y-y)<EPS_J)return id;
     for(const p of pads)if(p.L.includes(t.l)&&padDist(x,y,p.q)<=EPS_J)return p.fp.id;
     return null;
   };
@@ -1852,6 +1856,8 @@ function followShove(F){
 function beginMove(){
   for(const t of [...S.sel.tracks])
     for(const o of collinearRun(t))S.sel.tracks.add(o);
+  // les vias de sortie des boîtiers tirés partent avec eux (`25-liens.js`)
+  drag.fanout=fanoutTake();
   const fol=followMoved();
   drag.follow=fol;
   drag.trk=[...S.sel.tracks].map(t=>({t,x1:t.x1,y1:t.y1,x2:t.x2,y2:t.y2}));
@@ -2987,7 +2993,11 @@ function routeTarget(x,y){
   const net=S.route?S.route.net:"";
   const m=magnet(x,y,l);
   // une pastille du bon net est une arrivée légitime : on ne la repousse pas
-  if(m&&(!net||!m.net||m.net===net)){S.hover={x:m.x,y:m.y};return m;}
+  if(m&&(!net||!m.net||m.net===net)){
+    const off=m.pad&&S.padOff?padOffPoint(m.obj,l,x,y,S.route?S.route.pt:null):null;
+    if(off){S.hover=off;return Object.assign({},m,off,{off:true});}
+    S.hover={x:m.x,y:m.y};return m;
+  }
   S.hover=null;
   const w=S.route?S.route.w:defaultWidth(net);
   // le point de départ sert d'ancre : depuis un centre de pastille hors grille,
@@ -3754,6 +3764,7 @@ function evPos(e){
 }
 cv.addEventListener("pointerdown",e=>{
   PTR_PCB.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType});
+  S.padOff=!!(e.ctrlKey||e.metaKey);       // Ctrl : bout posé hors du centre (`routeTarget`)
   if(e.pointerType!=="mouse"&&e.cancelable)e.preventDefault();
 
   // deux doigts : pincement pour zoomer et translater
@@ -4133,6 +4144,7 @@ cv.addEventListener("pointerdown",e=>{
   draw();
 });
 cv.addEventListener("pointermove",e=>{
+  S.padOff=!!(e.ctrlKey||e.metaKey);
   if(PTR_PCB.has(e.pointerId))PTR_PCB.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType});
 
   if(LONGPRESS_TIMER&&LONGPRESS_START){
@@ -4464,6 +4476,7 @@ cv.addEventListener("pointerup",e=>{
     if(mitreAfterDrag(bouge,avant))
       hint("Le coude a repris son 45° : le chanfrein s'était replié en "+
            "raccourcissant la piste.");
+    fanoutRelease(drag);
     drag=null;refreshPanels();draw();return;
   }
   if(drag&&drag.marquee){
@@ -4533,6 +4546,7 @@ cv.addEventListener("pointercancel",e=>{
   PTR_PCB.delete(e.pointerId);
   if(PTR_PCB.size<2)PINCH_PCB=null;
   if(drag&&drag.follow){pruneDeadTracks();S.dragShove=null;}   // jambes de réserve repliées
+  fanoutRelease(drag);
   drag=null;
 });
 cv.addEventListener("contextmenu",e=>{
