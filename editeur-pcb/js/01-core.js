@@ -882,8 +882,27 @@ const PKG_LIB={
   "MiniMELF":{style:"chip",pins:2,span:3.2},
   "SOD-123":{style:"chip",pins:2,span:3.6},
   "SOD-323":{style:"chip",pins:2,span:2.4},
-  /* petits boîtiers CMS : deux rangées, la rangée impaire recentrée */
-  "SOT-23":{style:"sop",pins:3,pitch:0.95,span:2.6},
+  /* SOT-23 : les pattes tombent sur une grille de trois places au pas de
+     0,95 mm. Le SOT-23 a ses broches 1 et 2 aux deux extrémités (1,9 mm
+     d'écart) et la 3 au milieu d'en face ; le SOT-23-5 a ses broches 1 à 3 à
+     gauche, la 4 en face de la 3 et la 5 en face de la 1 — pas de patte au
+     milieu à droite. Le calcul à deux rangées ne sait dire ni l'un ni l'autre
+     (il resserrait les pattes au pas et recentrait la rangée courte) : les
+     pastilles sont donc données, aux cotes du motif TI DBV/DBZ (1,1 × 0,6 mm,
+     rangées à 2,6 mm). */
+  "SOT-23":{style:"sop",pins:3,pitch:0.95,span:2.6,
+    pads:[{n:1,x:-1.3,y:-0.95,w:1.1,h:0.6,shape:"rect",drill:0},
+          {n:2,x:-1.3,y:0.95,w:1.1,h:0.6,shape:"rect",drill:0},
+          {n:3,x:1.3,y:0,w:1.1,h:0.6,shape:"rect",drill:0}],
+    body:{x1:-0.4,y1:-1.65,x2:0.4,y2:1.65}},
+  "SOT-23-5":{style:"sop",pins:5,pitch:0.95,span:2.6,
+    pads:[{n:1,x:-1.3,y:-0.95,w:1.1,h:0.6,shape:"rect",drill:0},
+          {n:2,x:-1.3,y:0,w:1.1,h:0.6,shape:"rect",drill:0},
+          {n:3,x:-1.3,y:0.95,w:1.1,h:0.6,shape:"rect",drill:0},
+          {n:4,x:1.3,y:0.95,w:1.1,h:0.6,shape:"rect",drill:0},
+          {n:5,x:1.3,y:-0.95,w:1.1,h:0.6,shape:"rect",drill:0}],
+    body:{x1:-0.4,y1:-1.65,x2:0.4,y2:1.65}},
+  /* autres petits boîtiers CMS : deux rangées, la rangée impaire recentrée */
   "SOT-89":{style:"sop",pins:3,pitch:1.5,span:3},
   "SOT-223":{style:"sop",pins:4,pitch:2.3,span:6.3},
   /* puissance : la languette n'est pas dessinée */
@@ -1180,8 +1199,13 @@ function pkgGeom(pkg,pinsHint){
     span=d.style==="quad"?(quadSide(pins)-1)*pitch+(d.lead||2):
          d.style==="bga" ?pitch:defaultGeom(d.style).span;
   const out={style:d.style,pitch:pitch,span:Math.max(0.05,r3(span)),pins:pins,pkg:hit.name};
-  if(d.pads)out.pads=d.pads.map(padClone);
-  if(d.body)out.body={...d.body};
+  /* Pastilles données : elles ne valent que pour le brochage de la table. Un
+     nom qui en annonce un autre (« SOT-23-8 »), ou une broche câblée au-delà,
+     retombe sur le calcul — une broche câblée ne reste jamais sans pastille. */
+  if(d.pads&&(!d.pins||pins===d.pins)){
+    out.pads=d.pads.map(padClone);
+    if(d.body)out.body={...d.body};
+  }
   return out;
 }
 /* Style et cotes d'un composant : le boîtier nommé d'abord, le brochage
@@ -1210,6 +1234,7 @@ function applyPkgGeom(fp){
   if(g.pads){
     fp.pads=g.pads.map(padClone);
     if(g.body)fp.body={...g.body};
+    fp.lib=g.pkg;
     fpSyncPins(fp);
   }else if(!fpFree(fp)){
     delete fp.pads;delete fp.body;
@@ -1224,6 +1249,9 @@ function mkFp(ref,value,pkg,pins){
   if(g.pads){
     fp.pads=g.pads.map(padClone);
     if(g.body)fp.body={...g.body};
+    /* pastilles venues de la table, pas dessinées à la main : un changement
+       de boîtier au schéma les refait (comme celles de la LIB) */
+    fp.lib=g.pkg;
     fpSyncPins(fp);
   }
   return fp;

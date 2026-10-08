@@ -957,6 +957,7 @@ function applyNetlist(txt,dropMissing){
           if(g.pads){
             fp.pads=g.pads.map(padClone);
             if(g.body)fp.body={...g.body};
+            fp.lib=g.pkg;
             fpSyncPins(fp);
           }
           repkg.push(fp);

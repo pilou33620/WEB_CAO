@@ -483,6 +483,7 @@ function pcbAppliquerEco(items, options) {
             if (g.pads && typeof padClone === "function") {
               fp.pads = g.pads.map(padClone);
               if (g.body) fp.body = { ...g.body };
+              fp.lib = g.pkg;
               if (typeof fpSyncPins === "function") fpSyncPins(fp);
             }
           }

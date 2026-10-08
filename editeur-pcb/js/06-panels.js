@@ -1161,7 +1161,10 @@ function pkgNote(fp){
   if(!g)
     return '<div class="empty" style="padding:4px 12px 8px">Boîtier hors table : '+
       'l&rsquo;empreinte reste celle réglée ici.</div>';
-  const same=fp.style===g.style&&fp.pins===g.pins&&
+  /* Un boîtier à pastilles données (SOT-23-5…) n'est jamais « le même » qu'une
+     empreinte encore calculée : c'est le cas d'une carte dessinée avant que
+     ses pastilles ne soient corrigées, et le bouton les remet en place. */
+  const same=!g.pads&&fp.style===g.style&&fp.pins===g.pins&&
              Math.abs(fp.pitch-g.pitch)<1e-6&&Math.abs(fp.span-g.span)<1e-6;
   /* Le bouton ne paraît que si les cotes en place ne sont plus celles du
      boîtier : il n'y a rien à reposer autrement. Un bouton, et non un lien —

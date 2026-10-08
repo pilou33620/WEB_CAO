@@ -83,8 +83,11 @@ function exFp(D,o){
             pins:o.pins||g.pins,style:o.style||g.style,
             pitch:o.pitch||g.pitch,span:o.span||g.span,
             x:o.x,y:o.y,rot:o.rot||0,side:0,nets:o.nets||{}};
+  /* les pastilles données par la table des boîtiers (SOT-23…) viennent avec */
   if(o.pads)fp.pads=o.pads;
+  else if(g.pads){fp.pads=g.pads.map(padClone);fp.lib=g.pkg;}
   if(o.body)fp.body=o.body;
+  else if(g.body&&!o.pads)fp.body={...g.body};
   if(o.csvPartName)fp.csvPartName=o.csvPartName;
   if(o.csvMpn)fp.csvMpn=o.csvMpn;
   if(o.manufacturer)fp.manufacturer=o.manufacturer;
@@ -210,7 +213,7 @@ function exemple1(){
 
   /* ---------- l'étage NPN ---------- */
   exWire(D,0,"EN",S1,[exPin(J1,3),{x:9.29,y:18.54},exPin(R2,1)]);
-  exWire(D,0,"BASE_Q3",S1,[exPin(R2,2),{x:14,y:20.5},{x:15.675,y:20.5},
+  exWire(D,0,"BASE_Q3",S1,[exPin(R2,2),{x:14,y:20.5},{x:16.15,y:20.5},
                            exPin(Q3,1)]);
   exWire(D,0,"BASE_Q3",S1,[{x:14,y:20.5},exPin(R3,1)]);
   exWire(D,0,"SORTIE",S1,[exPin(Q3,3),{x:21,y:22},{x:22.5,y:22},exPin(R1,1)]);
@@ -224,7 +227,7 @@ function exemple1(){
   exStub(D,0,"GND",W,[exPin(U1,2),{x:10.85,y:13.8}],VD,VF);
   exStub(D,0,"GND",W,[exPin(C2,2),{x:22,y:14.2}],VD,VF);
   exStub(D,0,"GND",W,[exPin(R3,2),{x:14,y:27.4}],VD,VF);
-  exStub(D,0,"GND",W,[exPin(Q3,2),{x:15.55,y:23.625}],VD,VF);
+  exStub(D,0,"GND",W,[exPin(Q3,2),{x:15.55,y:24.1}],VD,VF);
   return D;
 }
 
@@ -389,7 +392,7 @@ function exemple2(){
   exWire(D,TOP,"+5V",W,[{x:11,y:10.95},exPin(U3,3)]);
 
   /* ---------- 3,3 V ---------- */
-  exWire(D,TOP,"+3V3",W,[exPin(U3,5),{x:16.5,y:9.525},{x:18.525,y:11.55},exPin(C2,1)]);
+  exWire(D,TOP,"+3V3",W,[exPin(U3,5),{x:16.025,y:9.05},{x:18.525,y:11.55},exPin(C2,1)]);
   exStub(D,TOP,"+3V3",W,[exPin(C2,1),{x:20.5,y:12.75}],VD,VF);
   exStub(D,TOP,"+3V3",W,[exPin(U1,1),{x:34,y:17.2}],VD,VF);
   exStub(D,TOP,"+3V3",W,[exPin(U1,17),{x:46,y:22.8}],VD,VF);

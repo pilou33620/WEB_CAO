@@ -190,12 +190,36 @@ const PCB_FOOTPRINTS = [
   { name: "SOD-523",  style: "chip", pins: 2, pitch: 1.6, span: 1.6, desc: "Diode CMS ultra-compacte SOD-523" },
 
   // Petits boîtiers CMS
-  { name: "SOT-23",   style: "sop", pins: 3, pitch: 0.95, span: 2.6, desc: "Boîtier CMS transistor SOT-23 (TO-236)" },
-  { name: "SOT-23-5", style: "sop", pins: 5, pitch: 0.95, span: 2.8, desc: "Boîtier CMS SOT-23-5 (TSOP-5)" },
+  /* SOT-23 et SC-70 : les pattes tombent sur une grille de trois places au
+     pas du boîtier. Le calcul à deux rangées resserrait les broches 1 et 2
+     du 3 broches et recentrait les broches 4 et 5 du 5 broches : les
+     pastilles sont données (comme dans PKG_LIB, editeur-pcb/js/01-core.js). */
+  { name: "SOT-23",   style: "sop", pins: 3, pitch: 0.95, span: 2.6, desc: "Boîtier CMS transistor SOT-23 (TO-236)",
+    pads: [
+      { n: 1, x: -1.3, y: -0.95, w: 1.1, h: 0.6, shape: "rect", drill: 0 },
+      { n: 2, x: -1.3, y: 0.95,  w: 1.1, h: 0.6, shape: "rect", drill: 0 },
+      { n: 3, x: 1.3,  y: 0,     w: 1.1, h: 0.6, shape: "rect", drill: 0 }
+    ],
+    body: { x1: -0.4, y1: -1.65, x2: 0.4, y2: 1.65 } },
+  { name: "SOT-23-5", style: "sop", pins: 5, pitch: 0.95, span: 2.6, desc: "Boîtier CMS SOT-23-5 (TSOP-5)",
+    pads: [
+      { n: 1, x: -1.3, y: -0.95, w: 1.1, h: 0.6, shape: "rect", drill: 0 },
+      { n: 2, x: -1.3, y: 0,     w: 1.1, h: 0.6, shape: "rect", drill: 0 },
+      { n: 3, x: -1.3, y: 0.95,  w: 1.1, h: 0.6, shape: "rect", drill: 0 },
+      { n: 4, x: 1.3,  y: 0.95,  w: 1.1, h: 0.6, shape: "rect", drill: 0 },
+      { n: 5, x: 1.3,  y: -0.95, w: 1.1, h: 0.6, shape: "rect", drill: 0 }
+    ],
+    body: { x1: -0.4, y1: -1.65, x2: 0.4, y2: 1.65 } },
   { name: "SOT-23-6", style: "sop", pins: 6, pitch: 0.95, span: 2.6, desc: "Boîtier CMS SOT-23-6 (TSOP-6)" },
   { name: "SOT-89",   style: "sop", pins: 3, pitch: 1.5,  span: 3.0, desc: "Boîtier CMS SOT-89 3 broches" },
   { name: "SOT-223",  style: "sop", pins: 4, pitch: 2.3,  span: 6.3, desc: "Boîtier CMS régulateur SOT-223 4 broches" },
-  { name: "SC-70",    style: "sop", pins: 3, pitch: 0.65, span: 2.1, desc: "Boîtier ultra-compact SC-70-3 (SOT-323)" },
+  { name: "SC-70",    style: "sop", pins: 3, pitch: 0.65, span: 2.1, desc: "Boîtier ultra-compact SC-70-3 (SOT-323)",
+    pads: [
+      { n: 1, x: -1.05, y: -0.65, w: 0.9, h: 0.4, shape: "rect", drill: 0 },
+      { n: 2, x: -1.05, y: 0.65,  w: 0.9, h: 0.4, shape: "rect", drill: 0 },
+      { n: 3, x: 1.05,  y: 0,     w: 0.9, h: 0.4, shape: "rect", drill: 0 }
+    ],
+    body: { x1: -0.15, y1: -1.25, x2: 0.15, y2: 1.25 } },
   { name: "SC-70-6",  style: "sop", pins: 6, pitch: 0.65, span: 2.1, desc: "Boîtier ultra-compact SC-70-6" },
 
   // Puissance

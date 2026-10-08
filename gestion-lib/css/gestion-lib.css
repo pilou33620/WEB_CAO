@@ -29,6 +29,21 @@ html, body {
   overflow: hidden;
   font-size: 13px;
 }
+/* La page est une colonne : en-tête, onglets et bandeau prennent leur hauteur,
+   le contenu prend le reste. Elle se cale sur la hauteur réellement visible
+   (dvh) : sur iPad, 100vh compte aussi la place de la barre d'adresse de
+   Safari, et le bas de la galerie — sa dernière rangée — passait dessous
+   sans pouvoir être atteint. */
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+body > header.app-header,
+body > .nav-tabs,
+body > .stats-band {
+  flex-shrink: 0;
+}
 
 /* Header */
 header.app-header {
@@ -219,7 +234,8 @@ header.app-header {
 /* Layout principal */
 .main-layout {
   display: flex;
-  height: calc(100vh - 48px - 37px - 31px);
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
   overflow: hidden;
 }
@@ -928,7 +944,7 @@ table.lib-table tr.selected td {
   top: 48px;
   right: 0;
   width: 440px;
-  height: calc(100vh - 48px);
+  bottom: 0;
   background: var(--panel);
   border-left: 1px solid var(--border);
   z-index: 80;

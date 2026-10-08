@@ -157,7 +157,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "placeVia","mkVia","viaObstacle","viaIsole","viaTrou","viaPaire","dpViaGap","holeClr","viaDrill","pnsItemVia","pnsPairGap","pnsWorld","pnsClr","pnsLineItems","pnsViaEscape","pnsViaSuites","pnsPointEscape","dpNets","dpLine","dpAxis","dpAxisDirect","dpPose",
   "PNS_OPT_WIN","pnsAnchors","pnsMergeTry","pnsOptimize","routeOptimizeTail","pnsEchardes","pnsDejog",
   /* boîtiers nommés : le nom venu du schéma décide de l'empreinte */
-  "PKG_LIB","pkgKey","pkgGeom","fpGeomFor","applyPkgGeom","fpWiredPins",
+  "PKG_LIB","pkgKey","pkgGeom","fpGeomFor","applyPkgGeom","fpWiredPins","pkgNote",
   "PCB_LIB_CACHE","PCB_LIB_LIST","pcbChargerCatalogueEmpreintes","pcbObtenirEmpreinteLib","pcbAppliquerEmpreinteLib",
   "PCB_LIB_ALERTE","pcbTrouverEmpreintesAmettreAJour","pcbEmpreinteAlerteLib","pcbAppliquerMajLib",
   "sessDiffuserLibModif","sessEcouterLibModif",
@@ -4387,6 +4387,33 @@ T("empreinte en grille : un BGA tient son pas",()=>{
   if(xs.length!==4)throw new Error("grille 4×4 attendue, "+xs.length+" colonnes");
   const d=Math.abs(+xs[1]-+xs[0]);
   if(Math.abs(d-fp.pitch)>1e-9)throw new Error("pas de la grille : "+d);
+});
+T("SOT-23 et SOT-23-5 : les pattes sur la grille du boîtier",()=>{
+  const at=(ps,n)=>{const q=ps.find(p=>p.n===n);return q.x.toFixed(3)+","+q.y.toFixed(3);};
+  /* SOT-23-5 : 1-2-3 à gauche, la 4 en face de la 3, la 5 en face de la 1,
+     rien au milieu à droite */
+  const u=padsOf(mkFp("U1","","SOT-23-5",0));
+  const attendu={1:"-1.300,-0.950",2:"-1.300,0.000",3:"-1.300,0.950",
+                 4:"1.300,0.950",5:"1.300,-0.950"};
+  if(u.length!==5)throw new Error("5 pastilles attendues, "+u.length);
+  for(const n in attendu)
+    if(at(u,+n)!==attendu[n])throw new Error("SOT-23-5 broche "+n+" en "+at(u,+n)+" au lieu de "+attendu[n]);
+  // même boîtier écrit autrement
+  if(at(padsOf(mkFp("U2","","SOT23-5",0)),4)!==attendu[4])throw new Error("« SOT23-5 » devait donner le même brochage");
+  /* SOT-23 : broches 1 et 2 à 1,9 mm l'une de l'autre, la 3 au milieu d'en face */
+  const q=padsOf(mkFp("Q1","","SOT-23",0));
+  if(at(q,1)!=="-1.300,-0.950"||at(q,2)!=="-1.300,0.950"||at(q,3)!=="1.300,0.000")
+    throw new Error("SOT-23 : "+[1,2,3].map(n=>at(q,n)).join(" / "));
+  // un brochage annoncé différent retombe sur le calcul, sans perdre de broche
+  const g=pkgGeom("SOT-23-8",0);
+  if(g.pads||g.pins!==8)throw new Error("SOT-23-8 : "+JSON.stringify(g));
+  /* une carte dessinée avant la correction (pastilles calculées) se voit
+     proposer de reposer l'empreinte, et le bouton la remet d'aplomb */
+  const old=mkFp("U3","","SOT-23-5",0);
+  delete old.pads;delete old.body;delete old.lib;
+  if(!/pPkgApply/.test(pkgNote(old)))throw new Error("le bouton « Reposer l'empreinte » devait paraître");
+  applyPkgGeom(old);
+  if(at(padsOf(old),5)!==attendu[5])throw new Error("empreinte non reposée : "+at(padsOf(old),5));
 });
 T("deux rangées : la rangée impaire est recentrée",()=>{
   const q=mkFp("Q1","","SOT-23",0);
