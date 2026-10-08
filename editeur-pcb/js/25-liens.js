@@ -142,20 +142,39 @@ function fpXformInv(o){
    tendue entre deux broches) : dans le repère du boîtier, qui tourne et se
    retourne avec lui. `own` : le boîtier à suivre faute de pastille sous P. */
 function linkMover(avant){
+  /* la pastille de même NUMÉRO dans le boîtier tel qu'il est maintenant : une
+     rotation garde l'ordre des pastilles, une empreinte refaite (ECO, LIB) ne
+     le garde pas forcément. Numéro en double (languettes de masse) : celle de
+     même rang, sinon la première. Plus de pastille de ce numéro : null. */
+  const homologue=(A,q,i)=>{
+    const nv=padsWorld(A.fp), meme=nv.filter(o=>String(o.n)===String(q.n));
+    if(meme.length===1)return meme[0];
+    if(nv[i]&&String(nv[i].n)===String(q.n))return nv[i];
+    return meme[0]||null;
+  };
   return (P,own)=>{
-    let id=null, E=null;
-    for(const [k,A] of avant)
+    let E=null, Q=null, I=-1;
+    for(const [,A] of avant){
       for(let i=0;i<A.ps.length;i++){
         const q=A.ps[i];
         if(Math.abs(q.x-P.x)<EPS_J&&Math.abs(q.y-P.y)<EPS_J){
-          const n=padsWorld(A.fp)[i];
-          return {x:n.x,y:n.y};
+          const n=homologue(A,q,i);
+          return n?{x:n.x,y:n.y}:{x:P.x,y:P.y};
         }
-        if(id==null&&padDist(P.x,P.y,q)<=EPS_J){id=k;E=A;}
+        if(!E&&padDist(P.x,P.y,q)<=EPS_J){E=A;Q=q;I=i;}
       }
-    if(!E)E=avant.get(own);
-    if(!E)return {x:P.x,y:P.y};
-    const L=E.inv(P.x,P.y), W=fpXform(E.fp)(L.x,L.y);
+    }
+    const T=E||avant.get(own);
+    if(!T)return {x:P.x,y:P.y};
+    const vers=(x,y)=>{const L=T.inv(x,y);return fpXform(T.fp)(L.x,L.y);};
+    const W=vers(P.x,P.y);
+    if(Q){
+      // un bout décalé dans sa pastille : le même décalage, autour du nouveau centre
+      const n=homologue(T,Q,I);
+      if(!n)return {x:P.x,y:P.y};
+      const W0=vers(Q.x,Q.y);
+      return {x:r3(n.x+W.x-W0.x),y:r3(n.y+W.y-W0.y)};
+    }
     return {x:r3(W.x),y:r3(W.y)};
   };
 }
@@ -166,7 +185,7 @@ function linkMover(avant){
    geste : seuls les boîtiers bougent, pas la piste ou le via sélectionnés à
    côté. Rend le nombre de bouts que le geste a laissés hors de leur pastille —
    une pastille CMS passée sur l'autre face, typiquement. */
-function transformFps(ids,mutate){
+function transformFps(ids,mutate,opts){
   const fps=ids.map(fpById).filter(Boolean);
   if(!fps.length){mutate();return 0;}
   // un glissement en cours a déjà son suivi : on transforme seulement
@@ -181,6 +200,8 @@ function transformFps(ids,mutate){
   S.sel={fps:new Set(set),tracks:new Set(),vias:new Set(),zones:new Set(),cuts:new Set(),
          drawings:new Set(),holes:new Set(),decoupes:new Set(),edge:false};
   drag={move:true,moved:true,dx:0,dy:0,x:0,y:0};
+  const etchAvant=S.moveEtch;
+  if(opts&&opts.etch)S.moveEtch=opts.etch;
   // qui tient chaque bout : relevé AVANT que les pastilles ne bougent
   const tient=[];
   for(const t of S.tracks)
@@ -220,7 +241,7 @@ function transformFps(ids,mutate){
       if(f&&!padsWorld(f).some(q=>padHolds(f,q,o.t.l,x,y)))perdus++;
     }
   }finally{
-    drag=null;S.sel=keep;S.dragShove=null;
+    drag=null;S.sel=keep;S.dragShove=null;S.moveEtch=etchAvant;
   }
   rerouteHint(rr);
   return perdus;
@@ -402,8 +423,12 @@ function followCheck(F){
   const jobs=[];
   for(const c of F.chains){
     const pts=c.cur||c.V, P=pts[pts.length-1], V0=c.V[0];
-    if(P.x===c.P0.x&&P.y===c.P0.y)continue;
     const L=rerouteHeldLayers(F.p0fp.get(c.P0),P);
+    // plus rien ne tient le bout : la pastille a disparu (empreinte refaite)
+    if(!L.length&&!viaAt(c.l,P.x,P.y)){
+      jobs.push({trk:c.trk,perdu:true,disparue:true,bout:{l:c.l,x:P.x,y:P.y}});continue;
+    }
+    if(P.x===c.P0.x&&P.y===c.P0.y)continue;
     if(L.length&&L.indexOf(c.l)<0){jobs.push({trk:c.trk,perdu:true,bout:{l:c.l,x:P.x,y:P.y}});continue;}
     const ends=[{l:c.l,x:V0.x,y:V0.y},{l:c.l,x:P.x,y:P.y}];
     if(rerouteFaulty(W,c.trk,rerouteSkip(W,ends),T))jobs.push({trk:c.trk});
@@ -420,7 +445,8 @@ function followCheck(F){
     const m=trk[Math.floor(trk.length/2)];
     S.aRerouter=S.aRerouter.filter(g=>!g.trk.some(t=>trk.indexOf(t)>=0));
     S.aRerouter.push({trk,x:(m.x1+m.x2)/2,y:(m.y1+m.y2)/2,l:m.l,bout:j.bout||null,
-      msg:j.perdu?"Piste "+(m.net||"sans net")+" : sa pastille a changé de face, à re-router"
+      msg:j.disparue?"Piste "+(m.net||"sans net")+" : sa pastille n'existe plus, à re-router"
+         :j.perdu?"Piste "+(m.net||"sans net")+" : sa pastille a changé de face, à re-router"
                  :"Piste "+(m.net||"sans net")+" en défaut après le déplacement : à re-router"});
     res.marques++;
     if(j.perdu)res.perdus++;
@@ -713,4 +739,28 @@ function linkHorsCentreDrc(out){
         msg:"Piste "+(t.net||"sans net")+" : entre dans "+f.ref+"."+q.n+" à "+fmt(d,2)+
             " mm de son centre"});
     }
+}
+
+/* ==========================================================================
+   Une empreinte refaite : ECO, LIB, boîtier changé à la main
+   --------------------------------------------------------------------------
+   Quand les pastilles d'un composant sont remplacées (nouveau boîtier venu du
+   schéma, empreinte reprise de la LIB, pas ou écartement retouchés), chaque
+   piste reliée retrouve la pastille de même NUMÉRO dans la nouvelle empreinte
+   et la suit comme à un déplacement (coude à 45°, via de sortie compris).
+   Une pastille disparue laisse sa piste en place, en rouge, « à re-router ».
+   La conduite est toujours « glisser » : arracher les pistes parce que le
+   schéma a changé de boîtier serait une perte, pas un choix.
+   Sans piste accrochée, c'est un simple changement : la porte coûte alors un
+   seul balayage des bouts de piste, l'import d'une netlist ne la sent pas.
+   ========================================================================== */
+function fpReshape(fp,mutate){
+  if(!fp||typeof drag!=="undefined"&&drag)return mutate();
+  const b=fpBBox(fp), m=FANOUT_MAX+1;
+  const pres=t=>[[t.x1,t.y1],[t.x2,t.y2]].some(([x,y])=>
+    x>=b.x1-m&&x<=b.x2+m&&y>=b.y1-m&&y<=b.y2+m);
+  if(!S.tracks.some(pres))return mutate();
+  let r;
+  transformFps([fp.id],()=>{r=mutate();},{etch:"glisser"});
+  return r;
 }

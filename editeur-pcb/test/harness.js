@@ -384,7 +384,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simRfZ","simRfExclure","simRfImporter","simRfOublierModele","simRfBroche",
   "simRfValeurSI","trkAt","simRfMasque",
   /* les liens des bouts de piste, et la transformation des boîtiers */
-  "transformFps","linkSync","fpXformInv","padDist","updateRoute","hitTest"];
+  "transformFps","linkSync","fpXformInv","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -1820,6 +1820,63 @@ T("contrôle : un bout de piste arrêté hors du centre de sa pastille est signa
     if(e.length!==1||!e[0].info||!/R1\.1 à 0\.30 mm/.test(e[0].msg))
       throw new Error("une seule info attendue, sur R1.1 : "+JSON.stringify(e.map(x=>x.msg)));
   }finally{S.tracks=[];S.fps=[];touch();suiviFin(reg);}
+});
+/* Empreinte refaite (ECO, LIB, boîtier changé) : les pistes retrouvent la
+   pastille de même numéro. */
+T("ECO : la capa passe de 0603 en 0805, ses pistes suivent leurs pastilles",()=>{
+  const D=decouplage();
+  // anti-collision active : la piste qui suit contourne la pastille voisine, plus large
+  D.reg.route=S.rule.route;S.avoid=true;S.rule.route="walk";
+  const c1=D.pad(D.C,1);
+  try{
+    const r=pcbAppliquerEco([{type:"BOITIER",active:true,ref:"C1",newPkg:"0805",newPins:2}]);
+    if(D.C.pkg!=="0805")throw new Error("le boîtier devait changer : "+D.C.pkg+" "+JSON.stringify(r));
+    const n1=D.pad(D.C,1);
+    if(n1.x===c1.x&&n1.y===c1.y)throw new Error("le décor : les pastilles du 0805 ne sont pas au même endroit");
+    tout45();
+    decouplageRelie(D);
+    if(S.aRerouter.length)throw new Error("rien à marquer : "+S.aRerouter.map(g=>g.msg));
+  }finally{undo();suiviFin(D.reg);}
+});
+T("empreinte de la LIB aux pastilles renumérotées : chaque piste suit SON numéro",()=>{
+  const D=decouplage();
+  const c1=D.pad(D.C,1), c2=D.pad(D.C,2);
+  try{
+    push();
+    // la même capa, pastilles inversées : la 1 à droite, la 2 à gauche, plus écartées
+    const lx=(c1.x-D.C.x)*1.4, rx=(c2.x-D.C.x)*1.4;
+    pcbAppliquerDefEmpreinte(D.C,"0603-INV",{style:"chip",pitch:1,span:1,pins:2,
+      pads:[{n:2,x:lx,y:0,w:0.9,h:0.95,shape:"rect",drill:0},
+            {n:1,x:rx,y:0,w:0.9,h:0.95,shape:"rect",drill:0}]});
+    const n1=D.pad(D.C,1);
+    if(Math.abs(n1.x-(D.C.x+rx))>1e-6)throw new Error("le décor : la pastille 1 doit être à droite");
+    decouplageRelie(D);
+  }finally{undo();suiviFin(D.reg);}
+});
+T("ECO : une broche qui disparaît laisse sa piste en place, marquée à re-router",()=>{
+  const D=decouplage();
+  const vdd={x:D.vdd.x,y:D.vdd.y};
+  try{
+    // la puce passe de SOIC-8 à SOT-23-5 : sa broche 8 (VDD) n'existe plus
+    pcbAppliquerEco([{type:"BOITIER",active:true,ref:"U1",newPkg:"SOT-23-5",newPins:5}]);
+    if(D.pad(D.X,8))throw new Error("le décor : plus de broche 8");
+    if(!S.tracks.some(t=>(t.x1===vdd.x&&t.y1===vdd.y)||(t.x2===vdd.x&&t.y2===vdd.y)))
+      throw new Error("la piste de l'ancienne broche 8 ne doit pas bouger");
+    const g=S.aRerouter.find(g=>/n'existe plus/.test(g.msg));
+    if(!g)throw new Error("elle doit être marquée : "+JSON.stringify(S.aRerouter.map(g=>g.msg)));
+    if(!runDrc().some(e=>/n'existe plus, à re-router/.test(e.msg)))throw new Error("et portée au DRC");
+  }finally{undo();suiviFin(D.reg);}
+});
+T("empreinte refaite : la conduite « arracher » ne s'applique pas",()=>{
+  const D=decouplage();
+  const avant=S.moveEtch;
+  try{
+    S.moveEtch="arracher";
+    pcbAppliquerEco([{type:"BOITIER",active:true,ref:"C1",newPkg:"0805",newPins:2}]);
+    if(S.tracks.filter(t=>t.net==="+3V3").length<2)throw new Error("un changement de boîtier n'arrache rien");
+    decouplageRelie(D);
+    if(S.moveEtch!=="arracher")throw new Error("le réglage de l'utilisateur est rendu");
+  }finally{S.moveEtch=avant;undo();suiviFin(D.reg);}
 });
 /* Les vias de sortie : le via de masse au pied de la capa part avec elle. */
 function sortieDecor(){

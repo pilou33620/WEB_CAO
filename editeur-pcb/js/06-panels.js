@@ -1283,10 +1283,12 @@ function propsFp(box,fp){
   /* le boîtier nommé commande l'empreinte, ici comme à l'import de la netlist :
      saisir « SOIC-8 » repose les pastilles, un nom hors table ne touche à rien */
   upd("pPkg",v=>{fp.pkg=v.trim();applyPkgGeom(fp);});
-  upd("pStyle",v=>{fp.style=v;const g=defaultGeom(v);fp.pitch=g.pitch;fp.span=g.span;});
-  upd("pPins",v=>fpSetPins(fp,v),true);
-  upd("pPitch",v=>fp.pitch=Math.max(0.2,v),true);
-  upd("pSpan",v=>fp.span=Math.max(0.2,v),true);
+  // les pastilles refaites : les pistes suivent leur numéro (`fpReshape`)
+  const fpForme=fn=>v=>fpReshape(fp,()=>fn(v));
+  upd("pStyle",fpForme(v=>{fp.style=v;const g=defaultGeom(v);fp.pitch=g.pitch;fp.span=g.span;}));
+  upd("pPins",fpForme(v=>fpSetPins(fp,v)),true);
+  upd("pPitch",fpForme(v=>fp.pitch=Math.max(0.2,v)),true);
+  upd("pSpan",fpForme(v=>fp.span=Math.max(0.2,v)),true);
   // position, face, rotation : le cuivre accroché suit (`transformFps`)
   const fpPose=fn=>v=>transformFps([fp.id],()=>fn(v));
   upd("pSide",fpPose(v=>fp.side=+v),true);

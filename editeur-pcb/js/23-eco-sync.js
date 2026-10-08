@@ -472,8 +472,10 @@ function pcbAppliquerEco(items, options) {
       case "BOITIER": {
         const fp = fpsMap.get(item.ref);
         if (fp) {
+          // Mise à jour géométrique sans déplacer le composant ; les pistes
+          // accrochées suivent le numéro de leur pastille (`fpReshape`)
+          const refaire = () => {
           fp.pkg = item.newPkg;
-          // Mise à jour géométrique sans déplacer le composant
           if (typeof fpFree === "function" && !fpFree(fp) && typeof fpGeomFor === "function") {
             const g = fpGeomFor(item.newPkg, item.newPins || fp.pins);
             fp.style = g.style;
@@ -487,8 +489,10 @@ function pcbAppliquerEco(items, options) {
               if (typeof fpSyncPins === "function") fpSyncPins(fp);
             }
           }
-          // CONSERVATION RIGOUREUSE DU ROUTAGE :
-          // Toutes les pistes existantes de S.tracks sont maintenues en place.
+          };
+          if (typeof fpReshape === "function") fpReshape(fp, refaire); else refaire();
+          // CONSERVATION DU ROUTAGE : aucune piste n'est effacée ; celle dont la
+          // pastille a disparu reste en place, marquée « à re-router ».
           nbBoitiers++;
         }
         break;

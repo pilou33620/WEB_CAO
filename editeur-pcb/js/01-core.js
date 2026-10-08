@@ -1091,6 +1091,12 @@ function pcbObtenirEmpreinteLib(pkg){
 
 function pcbAppliquerDefEmpreinte(fp, pkgName, def){
   if(!fp || !pkgName || !def) return false;
+  // l'empreinte de la LIB remplace les pastilles : les pistes suivent leur numéro
+  if(typeof fpReshape==="function")
+    return fpReshape(fp,()=>pcbAppliquerDefEmpreinteBrut(fp,pkgName,def));
+  return pcbAppliquerDefEmpreinteBrut(fp,pkgName,def);
+}
+function pcbAppliquerDefEmpreinteBrut(fp, pkgName, def){
   // Conserver les associations de net existantes par numéro de broche
   const netMap = {};
   if(fp.nets && typeof fp.nets === "object"){
@@ -1227,7 +1233,12 @@ function fpWiredPins(fp){
 }
 /* Repose une empreinte existante sur son boîtier. Boîtier hors table : rien ne
    bouge, le réglage fait à la main garde le dernier mot. */
+/* Les pastilles refaites d'après le boîtier : les pistes accrochées suivent
+   leur numéro de pastille (`fpReshape`, 25-liens.js). */
 function applyPkgGeom(fp){
+  return typeof fpReshape==="function"?fpReshape(fp,()=>applyPkgGeomBrut(fp)):applyPkgGeomBrut(fp);
+}
+function applyPkgGeomBrut(fp){
   const g=pkgGeom(fp.pkg,fpWiredPins(fp));
   if(!g)return false;
   if(fpFree(fp)&&!g.pads)return false;
@@ -1640,11 +1651,14 @@ function fpFreeze(fp){
    c'est un geste explicite, et Ctrl+Z le rattrape. */
 function fpGeneric(fp){
   if(!fpFree(fp)&&!fp.body)return false;
-  delete fp.pads;delete fp.body;
-  if(!applyPkgGeom(fp)){
-    const g=fpGeomFor(fp.pkg,fp.pins);
-    fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;
-  }
+  const brut=()=>{
+    delete fp.pads;delete fp.body;
+    if(!applyPkgGeomBrut(fp)){
+      const g=fpGeomFor(fp.pkg,fp.pins);
+      fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;
+    }
+  };
+  if(typeof fpReshape==="function")fpReshape(fp,brut);else brut();
   return true;
 }
 /* Pose d'une pastille, en coordonnées locales. Le premier déplacement fige
