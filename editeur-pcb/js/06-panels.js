@@ -2137,11 +2137,20 @@ function listComps(box){
   const rows=S.fps.slice().sort((a,b)=>
     String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}));
   let h='<table class="bom"><thead><tr><th>Repère</th><th>Composant</th><th>Br.</th></tr></thead><tbody>';
-  for(const fp of rows)
-    h+='<tr data-id="'+esc(fp.id)+'"'+(S.sel.fps.has(fp.id)?' class="on"':"")+'>'+
-       '<td class="r">'+esc(fp.ref)+'</td><td>'+esc(fp.value||"—")+
+  const vid=(S.variantes&&S.variantes.active)||"";
+  if(vid){
+    const nm=rows.filter(fp=>!varEstMonte(fp,vid)).length;
+    h='<div class="var-resume">Variante « '+esc(varNom(S.variantes,vid))+' » : '+(rows.length-nm)+
+      ' montée(s), <b>'+nm+' non montée(s)</b></div>'+h;
+  }
+  for(const fp of rows){
+    const nm=vid&&!varEstMonte(fp,vid);
+    h+='<tr data-id="'+esc(fp.id)+'"'+((S.sel.fps.has(fp.id)||nm)?' class="'+(S.sel.fps.has(fp.id)?"on":"")+(nm?" nm":"")+'"':"")+
+       (nm?' title="Non montée dans cette variante"':'')+'>'+
+       '<td class="r">'+esc(fp.ref)+'</td><td>'+(nm?'<span class="var-badge">NM</span>':'')+esc(fp.value||"—")+
        (fp.pkg?'<span class="pkgcell">'+esc(fp.pkg)+'</span>':"")+'</td>'+
        '<td class="n">'+esc(fp.pins)+(fp.side?" ⤵":"")+'</td></tr>';
+  }
   box.innerHTML=h+'</tbody></table>';
   box.querySelectorAll("tr[data-id]").forEach(tr=>{
     tr.onclick=()=>{

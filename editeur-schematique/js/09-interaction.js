@@ -950,6 +950,20 @@ cv.addEventListener("dblclick",e=>{
    terminer par le double-clic ci-dessus. */
 function schRouletteCible(clientX,clientY,type){
   if(S.wireStart||S.drawStart)return {occupe:true};
+  /* Ouverte par le bouton « Roulette » de l'entête, sans pointe : la roulette
+     de ce qui est déjà sélectionné, sans rien prendre ni lâcher. */
+  if(clientX==null){
+    const n=selCount(), ws=selWires();
+    if(!n){const pg=S.pages&&S.pages[S.page];return {ctx:"vide", titre:(pg&&pg.name)||"Feuille"};}
+    if(ws.length===n){
+      const net=netAtLive(ws[0].x1,ws[0].y1);
+      return {ctx:"fil", titre:n>1?n+" sél.":((net&&net.name)||"fil"),
+        actions:net?{netEntier:()=>selectNet(net)}:{}};
+    }
+    const comp=n===1&&S.sel.size===1?S.comps.find(c=>c.id===[...S.sel][0]):null;
+    return {ctx:"comp", titre:comp?comp.ref:n+" sél.",
+      actions:comp&&typeof ceOpen==="function"?{props:()=>ceOpen(comp)}:{}};
+  }
   const r=cv.getBoundingClientRect(), p=s2w(clientX-r.left,clientY-r.top);
   /* l'élément touché entre dans la sélection ; elle n'est remplacée que s'il
      n'en faisait pas partie et que « Multi » n'est pas enclenché */

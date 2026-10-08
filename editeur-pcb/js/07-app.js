@@ -433,6 +433,7 @@ function newDoc(){
   push();
   S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];S.drawings=[];S.drc=[];S.drcRun=false;S.hlNet=null;
   S.dpPairs=[];S.dp=null;   // les règles restent : elles décrivent un métier, pas une carte
+  S.variantes={liste:[],active:""};
   PCB_FICHIER="";
   clearSel();zoneCache.clear();touch();
   refreshPanels();draw();
@@ -571,6 +572,7 @@ $("bOpen").onclick=()=>$("fileIn").click();
 $("fileIn").onchange=()=>{const f=$("fileIn").files[0];if(f)openFile(f);$("fileIn").value="";};
 $("bPng").onclick=exportPng;
 $("bFab").onclick=exportFab;
+$("bVariantes").onclick=()=>pcbVarOuvrir();   // 25-variantes.js se charge après ce fichier
 $("bNew").onclick=newDoc;
 $("cuCount").onchange=()=>{
   const n=+$("cuCount").value;

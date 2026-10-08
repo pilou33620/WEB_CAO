@@ -558,6 +558,12 @@ function pcbAppliquerEco(items, options) {
   if (typeof refreshPanels === "function") refreshPanels();
   if (typeof runDrc === "function") runDrc();
   if (typeof touch === "function") touch();
+  /* Les variantes de montage suivent : une empreinte ajoutée hérite des
+     variantes où son composant n'est pas posé. Même pas d'historique. */
+  if (typeof pcbVarDepuisSchema === "function") {
+    try { pcbVarDepuisSchema(null, true); } catch (_) {}
+  }
+
   if (typeof draw === "function") draw();
 
   // Mise à jour des vérifications

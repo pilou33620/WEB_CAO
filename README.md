@@ -40,7 +40,7 @@ WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande 
 | **Tablette, téléphone, écran tactile** | Ouvrir l'adresse affichée par un serveur lancé ailleurs sur le réseau, ou lancer le serveur sur l'appareil lui-même s'il exécute Python (par ex. [Pyto](https://pyto.app/) sur iPhone / iPad : `python web_CAO.py --local --dossier <dossier>`). Activez le **mode tactile** depuis l'accueil. |
 | **Raspberry Pi, serveur sans écran** | Le serveur détecte l'absence d'affichage et n'ouvre pas de navigateur ; on s'y connecte depuis un autre appareil du réseau. |
 
-**Mode tactile** : pincement pour zoomer, deux doigts pour se déplacer, stylet reconnu (la paume est ignorée). Un appui long ouvre une **roulette de commandes** adaptée à ce qui est touché (composant, piste, vide…), personnalisable et gardée dans le profil.
+**Mode tactile** : pincement pour zoomer, deux doigts pour se déplacer, stylet reconnu (la paume est ignorée). Un appui long ouvre une **roulette de commandes** adaptée à ce qui est touché (composant, piste, vide…), personnalisable et gardée dans le profil ; le bouton **Roulette**, à côté de **Tactile**, l'ouvre aussi sans appui long, même à la souris.
 
 > [!NOTE]
 > Lancé **depuis un terminal**, le serveur écoute sur tout le réseau. Par prudence (pas de mot de passe), les dossiers de projet y sont alors refusés et la bibliothèque passe en lecture seule, sauf avec `--projets-reseau` sur un réseau de confiance. Lancé par double-clic ou avec `--local`, il n'écoute que la machine elle-même et tout est permis.
@@ -51,7 +51,7 @@ WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande 
 
 | Outil | Rôle | Serveur | Guide |
 | :--- | :--- | :---: | :--- |
-| **Éditeur Schématique** | Multi-feuilles, bus et hiérarchie, netlist et BOM enrichies, reconnaissance de motifs (LDO, buck, I2C/SPI/UART…) | Non | [Guide](editeur-schematique/README.md) |
+| **Éditeur Schématique** | Multi-feuilles, bus et hiérarchie, netlist et BOM enrichies, variantes de montage (composants non montés), reconnaissance de motifs (LDO, buck, I2C/SPI/UART…) | Non | [Guide](editeur-schematique/README.md) |
 | **Éditeur PCB** | Routage *Push & Shove*, paires différentielles, vias borgnes/enterrés, DRC temps réel, profils fabricants, placement assisté, synchro schéma → PCB | Non¹ | [Guide](editeur-pcb/README.md) |
 | **Gestion LIB** | Catalogue `LIB_composants.csv`, éditeurs d'empreintes et de symboles, modèles SPICE, import JLCPCB / LCSC | Oui | — |
 | **Recherche de composants** | Stocks et prix JLCPCB via [pcbparts.dev](https://pcbparts.dev/), équivalences, empreintes KiCad, datasheets | Oui | [Guide](recherche-composants/README.md) |
@@ -117,7 +117,7 @@ index.html               Accueil : outils, projet, bibliothèque, profil, mode t
 web_CAO.py               Serveur local et API (bibliothèque standard Python)
 editeur-schematique/     editeur-pcb/     gestion-lib/
 recherche-composants/    visionneuse-ipc2581/
-commun/                  Code partagé : panneaux, projets, profils, tactile, IA, simulation
+commun/                  Code partagé : panneaux, projets, profils, tactile, variantes de montage, IA, simulation
 python/                  Solveurs (MoM, diaphonie, DC, RF), parseur IPC-2581, bancs d'essai
 profils/                 Profils utilisateurs et fabricants
 docs/                    Guides de simulation et historique de développement

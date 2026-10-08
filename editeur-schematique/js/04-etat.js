@@ -23,7 +23,8 @@ const S={
   grid:G, gridShown:G,             // pas d'accrochage · pas réellement affiché
   wireVer:0, dirty:false, bomAll:false,
   netLabels:2, hoverNet:null, listTab:"bom", netAll:false, // 0 aucune · 1 nommés · 2 tous
-  netClasses:{}                   // corrections manuelles : nom de net → classe
+  netClasses:{},                  // corrections manuelles : nom de net → classe
+  variantes:{liste:[],active:""}  // variantes de montage (commun/variantes.js)
 };
 // classes de net proposées au routage ; un net absent de S.netClasses suit l'analyse
 const NET_CLASSES=["Masse","Alimentation","Horloge","Rapide","RF","Analogique","Antenne","Lent"];

@@ -594,6 +594,7 @@ function draw(){
   drawWires(ctx);
   drawJunctions(ctx);
   for(const el of S.comps) drawComp(ctx,el,false);
+  if(typeof schVarDessiner==="function")schVarDessiner(ctx);
   drawNetLabels(ctx);
   drawTextLinks(ctx);
   drawSel(ctx);

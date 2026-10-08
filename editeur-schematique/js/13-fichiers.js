@@ -30,7 +30,7 @@ function schFile(suffixe, repli){
 function saveJson(){
   storeCurrent();
   const nl=(typeof netlistText==="function")?netlistText():null;
-  const doc={format:"schemedit-2",pages:S.pages,page:S.page,netClasses:S.netClasses,netlist:nl};
+  const doc={format:"schemedit-2",pages:S.pages,page:S.page,netClasses:S.netClasses,variantes:S.variantes,netlist:nl};
   if(typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:nl});
   if(typeof projdSuiteDispo!=="function")return saveJsonClassique(doc);
   return projdSuiteDispo().then(function(suite){
@@ -114,6 +114,7 @@ function exportPng(){
   drawWires(c);
   drawJunctions(c);
   for(const el of S.comps) drawComp(c,el,false);
+  if(typeof schVarDessiner==="function")schVarDessiner(c);   // l'image montre la variante active
   drawNetLabels(c,true);          // le zoom écran ne doit pas décider de l'export
   o.toBlob(b=>{
     if(!b){alert("Export impossible : image trop grande pour le navigateur.");return;}
@@ -269,7 +270,11 @@ function csvCell(v){
   const t=String(v==null?"":v);
   return /[";\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;
 }
-function bomRows(){
+/* `variante` : l'identifiant d'une variante de montage (commun/variantes.js),
+   la variante active si absent, "" pour la carte complète. Chaque ligne dit
+   alors si le composant est posé (`monte`). */
+function bomRows(variante){
+  const vid=variante===undefined?((S.variantes&&S.variantes.active)||""):variante;
   const rows=[];
   storeCurrent();
   const lib = (typeof window !== "undefined" && Array.isArray(window.CSV_LIB)) ? window.CSV_LIB : [];
@@ -344,7 +349,8 @@ function bomRows(){
           mouser: mouser,
           digikey: digikey,
           specs: sp,
-          datasheet: datasheet
+          datasheet: datasheet,
+          monte: varEstMonte(c, vid)
       });
     }
   });
@@ -352,16 +358,22 @@ function bomRows(){
     String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}));
   return rows;
 }
-/* Corps du CSV, sans marque d'ordre ni écriture disque : testable tel quel. */
-function bomCsvText(){
-  const rows=bomRows();
+/* Corps du CSV, sans marque d'ordre ni écriture disque : testable tel quel.
+   Avec une variante de montage, chaque composant dit s'il est monté, le
+   récapitulatif ne compte que les composants posés (c'est ce qu'on commande)
+   et les non-montés (DNP) sont listés à part, en fin de fichier. */
+function bomCsvText(variante){
+  const vid=variante===undefined?((S.variantes&&S.variantes.active)||""):variante;
+  const rows=bomRows(vid);
   if(!rows.length)return "";
-  const out=["Repère;Composant;Valeur;Boîtier;Empreinte PCB;Réf Bibliothèque;Part Number;Fabricant;Code LCSC;Réf Mouser;Réf DigiKey;Spécifications;Datasheet;Feuille"];
+  const out=["Repère;Composant;Valeur;Boîtier;Empreinte PCB;Réf Bibliothèque;Part Number;Fabricant;Code LCSC;Réf Mouser;Réf DigiKey;Spécifications;Datasheet;Feuille;Montage"];
   for(const r of rows)
-    out.push([r.ref, r.type, r.value, r.pkg, r.fpPcb, r.csvPartName, r.mpn, r.manufacturer, r.lcsc, r.mouser, r.digikey, r.specs, r.datasheet, r.page].map(csvCell).join(";"));
-  // récapitulatif : quantités par référence de commande
+    out.push([r.ref, r.type, r.value, r.pkg, r.fpPcb, r.csvPartName, r.mpn, r.manufacturer, r.lcsc, r.mouser, r.digikey, r.specs, r.datasheet, r.page,
+              r.monte?"Monté":"Non monté (DNP)"].map(csvCell).join(";"));
+  // récapitulatif : quantités par référence de commande, composants posés seuls
   const groups=new Map();
   for(const r of rows){
+    if(!r.monte)continue;
     const k=r.type+"|"+r.value+"|"+r.pkg+"|"+r.fpPcb+"|"+r.csvPartName+"|"+r.mpn+"|"+r.manufacturer;
     if(!groups.has(k))groups.set(k,{...r,refs:[]});
     groups.get(k).refs.push(r.ref);
@@ -369,14 +381,28 @@ function bomCsvText(){
   out.push("","Qté;Composant;Valeur;Boîtier;Empreinte PCB;Réf Bibliothèque;Part Number;Fabricant;Code LCSC;Repères");
   for(const g of [...groups.values()].sort((a,b)=>b.refs.length-a.refs.length))
     out.push([g.refs.length, g.type, g.value, g.pkg, g.fpPcb, g.csvPartName, g.mpn, g.manufacturer, g.lcsc, g.refs.join(" ")].map(csvCell).join(";"));
+  const nm=rows.filter(r=>!r.monte).map(r=>String(r.ref))
+    .sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
+  out.push("","Variante;"+csvCell(varNom(S.variantes,vid)),
+           "Composants montés;"+(rows.length-nm.length),
+           "Non montés (DNP);"+nm.length+(nm.length?";"+csvCell(nm.join(" ")):""));
   return out.join("\r\n");
 }
-function exportBomCsv(){
-  const txt=bomCsvText();
+/* Nom du fichier de nomenclature : la variante y figure, « -nomenclature-Lite.csv ». */
+function bomCsvNom(variante){
+  const sl=variante?varSlug(S.variantes,variante):"";
+  const suf=sl?"-nomenclature-"+sl+".csv":"-nomenclature.csv";
+  return schFile(suf,suf.slice(1));
+}
+function exportBomCsv(variante){
+  const vid=typeof variante==="string"?variante:((S.variantes&&S.variantes.active)||"");
+  const txt=bomCsvText(vid);
   if(!txt){alert("Document vide : rien à exporter.");return;}
   // marque d'ordre UTF-8 + point-virgule : Excel ouvre alors proprement
-  const nom=schFile("-nomenclature.csv","nomenclature.csv");
+  const nom=bomCsvNom(vid);
   dl(new Blob(["\ufeff"+txt],{type:"text/csv;charset=utf-8"}),nom);
+  const rows=bomRows(vid), nm=rows.filter(r=>!r.monte).length;
   document.getElementById("fHint").textContent=
-    bomRows().length+" composant(s) exporté(s) dans "+nom+".";
+    rows.length+" composant(s) exporté(s) dans "+nom+
+    (vid?" — variante « "+varNom(S.variantes,vid)+" », "+nm+" non monté(s).":".");
 }

@@ -64,6 +64,24 @@ body.mode-tactile .tbsel {
   box-shadow: 0 0 6px var(--blue, #3fa0ea);
 }
 
+/* Bouton « Roulette », à côté de « Tactile » : ouvre la roulette de commandes */
+.tb-roulette {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.tb-roulette svg path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tb-roulette.on {
+  border-color: var(--blue, #3fa0ea);
+  background: rgba(63, 160, 234, 0.15);
+}
+
 /* 4. Roulette de commandes (appui long au stylet) et son panneau de réglage.
    Elle garde son propre habillage sombre : elle flotte au-dessus de la feuille,
    quel que soit le thème de l'éditeur. */

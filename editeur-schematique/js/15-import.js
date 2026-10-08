@@ -49,6 +49,9 @@ function normComp(c,i){
       el.pinMap = c.pinMap.map(v => { const t = brochageListe(v).join("/"); return BROCHAGE_PATTES.test(t) ? t : ""; });
     if(el.pinMap && !el.pinMap.some(Boolean)) delete el.pinMap;
     if(el.pinMap && c.pinMapMain) el.pinMapMain = true;
+    // variantes de montage où il n'est pas posé (réduites au modèle par loadDoc)
+    const nm = varNormNonMonte(c.nonMonte);
+    if(nm.length) el.nonMonte = nm;
   }
   /* Libellés déplacés à la main : deux nombres, bornés. Un décalage aberrant
      enverrait le repère à l'autre bout de la feuille, hors de toute prise. */
@@ -190,6 +193,14 @@ function loadDoc(o, keepPage){
   S.netClasses={};
   const nc=(o.netClasses&&typeof o.netClasses==="object")?o.netClasses:{};
   for(const k in nc)if(NET_CLASSES.includes(nc[k]))S.netClasses[k]=nc[k];
+  /* variantes de montage : un composant ne garde que celles que le document
+     déclare -- une variante supprimée à la main ne le laisse pas « non monté » */
+  S.variantes=varNorm(o.variantes);
+  for(const p of S.pages) for(const c of p.comps){
+    if(!c.nonMonte)continue;
+    const nm=varNormNonMonte(c.nonMonte,S.variantes);
+    if(nm.length)c.nonMonte=nm;else delete c.nonMonte;
+  }
   if(keepPage && o.page!==undefined){
     const reqP = Math.round(num(o.page, 0));
     const targetP = addedHier ? (reqP + 1) : reqP;

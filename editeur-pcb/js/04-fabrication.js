@@ -833,6 +833,15 @@ function fabReadme(files,dr){
   L.push("positions.csv et bom.csv servent a l'assemblage : millimetres,");
   L.push("rotation en degres dans le sens antihoraire, meme origine que les");
   L.push("Gerber. Ils ne concernent pas le fabricant du circuit nu.");
+  {
+    const vid=(S.variantes&&S.variantes.active)||"";
+    const nm=varReperesNonMontes(S.fps,vid);
+    L.push("Variante de montage : "+(vid?varNom(S.variantes,vid):"carte complete (tout est monte)")+".");
+    if(nm.length){
+      L.push("Composants NON MONTES (DNP), absents de bom.csv et positions.csv,");
+      L.push("pastilles gravees mais laissees vides : "+nm.join(" "));
+    }
+  }
   L.push("");
   L.push("Fichiers :");
   for(const f of files)L.push("  "+f.name);
@@ -871,10 +880,16 @@ function pcbCsvCell(v){
    La rotation est positive dans le sens horaire (convention JLCPCB).
    La face est "Top" ou "Bottom" comme sur la plupart des assembleurs.
    L'origine est la même que pour les Gerber. */
+/* Variante de montage (25-variantes.js) : les empreintes qu'elle ne pose pas
+   ne sont ni placées ni commandées -- elles sortent des deux fichiers. */
+function fabFpsMontes(){
+  const vid=(S.variantes&&S.variantes.active)||"";
+  return S.fps.filter(fp=>varEstMonte(fp,vid));
+}
 function positionsCsvText(){
   const o=gOrigin(), rows=[];
   rows.push("Designator,Value,Package,X,Y,Rotation,Side");
-  for(const fp of S.fps){
+  for(const fp of fabFpsMontes()){
     const x=fmt(fp.x-o.x,4);
     const y=fmt(o.y-fp.y,4);   // Y Gerber monte, le document descend
     const rot=fp.rot||0;
@@ -895,7 +910,7 @@ function positionsCsvText(){
    nomenclature du schéma, mais les données viennent du PCB. */
 function bomPcbCsvText(){
   const rows=[];
-  for(const fp of S.fps)
+  for(const fp of fabFpsMontes())
     rows.push({ref:fp.ref||"", value:fp.value||"", pkg:fp.pkg||""});
   rows.sort((a,b)=>String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}));
   const out=["Reference,Value,Package"];
@@ -1039,11 +1054,16 @@ function exportFab(){
     alert("Rien à fabriquer : la carte est vide.");
     return null;
   }
+  // les variantes du schéma ont pu changer depuis que la carte les a copiées
+  if(typeof pcbVarDepuisSchema==="function")pcbVarDepuisSchema();
   const {files,drill}=buildFabFiles();
-  const zipNom=pcbFile("-fabrication.zip","fabrication.zip");
+  const vid=(S.variantes&&S.variantes.active)||"";
+  const sl=vid?varSlug(S.variantes,vid):"";
+  const zipNom=pcbFile("-fabrication"+(sl?"-"+sl:"")+".zip","fabrication"+(sl?"-"+sl:"")+".zip");
   dl(zipBlob(files),zipNom);
   hint(files.length+" fichier(s) exportés dans "+zipNom+" — "+
        drill.holes+" trou(s), "+drill.tools+" outil(s) de perçage, "+
-       S.fps.length+" empreinte(s).");
+       S.fps.length+" empreinte(s)"+
+       (vid?" — variante « "+varNom(S.variantes,vid)+" », "+(S.fps.length-fabFpsMontes().length)+" non montée(s).":"."));
   return files;
 }

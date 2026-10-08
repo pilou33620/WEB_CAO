@@ -60,7 +60,10 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "buildFabFiles","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   "gerberEdge","gerberOutline","ipcNetlist","masterDrawingPdf","noAcc",
   "drillFile","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
-  "positionsCsvText","bomPcbCsvText","pcbCsvCell",
+  "positionsCsvText","bomPcbCsvText","pcbCsvCell","fabReadme",
+  /* variantes de montage (commun/variantes.js + 25-variantes.js) */
+  "varNorm","varVide","varEstMonte","pcbVarDepuisSchema","pcbVarChoisir","pcbVarDessiner",
+  "pcbVarOuvrir","pcbVarFermer","fabFpsMontes","listComps",
   "edgeClick","edgeMove","closeEdge","boardPoly","setBoardSize","setBoardRect","inBoard","boardCutouts",
   "boardChanged","polyEdgeDist","segDist","orient","signedArea",
   "coordOpen","coordClose","coordApply","coordMode","coordPoint","coordAnchor",
@@ -22073,6 +22076,83 @@ NET "GND"
   const t2=S.fps.find(f=>f.ref==="TP2");
   if(!padsOf(t2).some(q=>q.drill>0))throw new Error("le point de test au nom long doit être percé");
   carteVide();
+});
+/* ---------- variantes de montage (BOM) ---------- */
+function carteVariantes(){
+  carteVide();
+  S.variantes=varVide();
+  for(const [r,v,pk,x] of [["R1","10k","0603",10],["R2","10k","0603",20],["C1","100n","0402",30],["U1","MCU","SOIC-8",40]]){
+    const f=mkFp(r,v,pk,pk==="SOIC-8"?8:2);f.x=x;f.y=20;S.fps.push(f);
+  }
+  touch();
+  // le schéma qui les décrit : Lite ne pose ni R2 ni C1
+  return {format:"schemedit-2",variantes:{liste:[{id:"v1",nom:"Lite"},{id:"v2",nom:"Pro"}],active:"v1"},
+    pages:[{name:"Essai",comps:[{ref:"R1",type:"resistor"},{ref:"R2",type:"resistor",nonMonte:["v1"]},
+      {ref:"C1",type:"capacitor",nonMonte:["v1","inconnue"]},{ref:"U1",type:"ic",nonMonte:["v2"]}]}]};
+}
+T("variantes PCB : reprises du schéma, par repère",()=>{
+  const sch=carteVariantes();
+  try{
+    if(!pcbVarDepuisSchema(sch))throw new Error("la reprise doit changer la carte");
+    if(S.variantes.liste.length!==2||S.variantes.active!=="v1")throw new Error("modèle : "+JSON.stringify(S.variantes));
+    const nm=r=>JSON.stringify(S.fps.find(f=>f.ref===r).nonMonte||null);
+    if(nm("R2")!=='["v1"]'||nm("C1")!=='["v1"]'||nm("R1")!=="null"||nm("U1")!=='["v2"]')
+      throw new Error("non-montés : R2 "+nm("R2")+" C1 "+nm("C1")+" R1 "+nm("R1")+" U1 "+nm("U1"));
+    if(pcbVarDepuisSchema(sch))throw new Error("une seconde reprise identique ne change rien");
+    // la variante choisie sur la carte est gardée
+    pcbVarChoisir("v2");
+    pcbVarDepuisSchema(sch);
+    if(S.variantes.active!=="v2")throw new Error("la variante choisie sur la carte doit rester");
+  }finally{carteVide();S.variantes=varVide();}
+});
+T("variantes PCB : bom.csv et positions.csv sans les non-montés",()=>{
+  const sch=carteVariantes();
+  try{
+    pcbVarDepuisSchema(sch);
+    const pos=positionsCsvText().trim().split(/\r?\n/);
+    if(pos.length!==1+2)throw new Error("Lite : 2 empreintes à placer, "+(pos.length-1)+"\n"+pos.join("\n"));
+    if(pos.some(l=>/^(R2|C1),/.test(l)))throw new Error("R2 et C1 ne se placent pas dans Lite");
+    const bom=bomPcbCsvText();
+    if(/\bR2\b|\bC1\b/.test(bom))throw new Error("R2 et C1 ne se commandent pas dans Lite :\n"+bom);
+    if(!/\r\n1,10k,0603,R1\r\n/.test(bom))throw new Error("un seul 10k dans Lite :\n"+bom);
+    const lis=fabReadme([],{files:[],tools:0,holes:0});
+    if(lis.indexOf("Variante de montage : Lite")<0||lis.indexOf("C1 R2")<0)throw new Error("LISEZ-MOI : variante et DNP absents");
+    // carte complète : tout revient
+    pcbVarChoisir("");
+    if(positionsCsvText().trim().split(/\r?\n/).length!==1+4)throw new Error("carte complète : 4 empreintes");
+    if(bomPcbCsvText().indexOf("2,10k,0603,R1 R2")<0)throw new Error("carte complète : 2 × 10k");
+  }finally{carteVide();S.variantes=varVide();}
+});
+T("variantes PCB : le document les garde, aller-retour neutre",()=>{
+  const sch=carteVariantes();
+  try{
+    pcbVarDepuisSchema(sch);
+    /* ce que les variantes mettent dans le document : modèle et non-montés */
+    const vu=()=>JSON.stringify([S.variantes,S.fps.map(f=>[f.ref,f.nonMonte||null])]);
+    const avant=vu();
+    loadDoc(JSON.parse(serialize()),true);
+    if(vu()!==avant)throw new Error("la relecture doit être neutre : "+avant+" ≠ "+vu());
+    if(S.variantes.active!=="v1"||S.fps.find(f=>f.ref==="R2").nonMonte[0]!=="v1")throw new Error("variantes perdues");
+    // annuler la reprise du schéma
+    undo();
+    if(S.fps.some(f=>f.nonMonte))throw new Error("Ctrl+Z doit défaire la reprise");
+  }finally{carteVide();S.variantes=varVide();}
+});
+T("variantes PCB : la carte barre les non-montés, la liste les marque",()=>{
+  const sch=carteVariantes();
+  try{
+    pcbVarDepuisSchema(sch);
+    const n=[];
+    const ctx={save(){},restore(){},fillRect(){},beginPath(){},stroke(){},fillText(t){n.push(t);},
+      moveTo(){},lineTo(){},set fillStyle(_){},set strokeStyle(_){},set lineWidth(_){},set lineCap(_){},
+      set font(_){},set textAlign(_){},set textBaseline(_){}};
+    pcbVarDessiner(ctx);
+    if(n.length!==2)throw new Error("deux empreintes à barrer dans Lite, "+n.length);
+    const box={innerHTML:"",querySelectorAll(){return [];}};
+    listComps(box);
+    if((box.innerHTML.match(/var-badge/g)||[]).length!==2)throw new Error("liste : deux NM attendus");
+    pcbVarOuvrir();pcbVarFermer();
+  }finally{carteVide();S.variantes=varVide();}
 });
 
 (async()=>{

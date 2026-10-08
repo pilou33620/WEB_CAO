@@ -1016,6 +1016,7 @@ function paint(c,dpr,w,h,noGrid){
   drawNetPads(c);
   drawRats(c);
   drawSilk(c);
+  if(typeof pcbVarDessiner==="function")pcbVarDessiner(c);   // non montés de la variante
   drawTech(c);
   drawRoute(c);
   if(S.dragShove)drawShove(c,S.dragShove);     // le cuivre qu'écarte le boîtier tiré
