@@ -15,7 +15,7 @@ Ce que montre le routage :
     protection ESD sans tronçon, puis parallèle jusqu'au MCU ;
   · chaque condensateur de découplage entre sa broche et ses vias ;
   · le bus SPI : CS et MISO au dessus, SCK et MOSI au dessous par vias ;
-  · le quartz 32,768 kHz court et symétrique, entouré de vias de masse ;
+  · le quartz 8 MHz court et symétrique, entouré de vias de masse ;
   · VBUS en piste large au dessous, plan +3V3 en retrait du bord, vias de
     couture de masse tout autour de la carte.
 
@@ -245,7 +245,7 @@ empreinte("U2", "alim", [Pad("U2", n, x, y, 0.6, 1.1, net) for n, x, y, net in L
 c0603("C1", 7.45, 24.15, "h", "GND", "VBUS", "alim", (5.95, 24.15, "C1", 0.55, "end"))
 c0603("C2", 7.45, 21.85, "h", "GND", "+3V3", "alim", (5.95, 21.85, "C2", 0.55, "end"))
 
-# ---------------------------------------------------------------- quartz 32,768 kHz
+# ---------------------------------------------------------------- quartz 8 MHz (deux pastilles)
 empreinte("Y1", "quartz", [Pad("Y1", 1, 21.05, 20.8, 1.0, 1.8, "OSC_IN"),
                            Pad("Y1", 2, 23.55, 20.8, 1.0, 1.8, "OSC_OUT")],
           [ligne_soie(21.75, 19.75, 22.85, 19.75), ligne_soie(21.75, 21.85, 22.85, 21.85)],
@@ -694,7 +694,7 @@ def generer():
                    ("mcu", "Placement · microcontrôleur LQFP-32 et son découplage"),
                    ("flash", "Placement · mémoire Flash SPI"),
                    ("alim", "Placement · régulateur 3,3 V"),
-                   ("quartz", "Placement · quartz 32,768 kHz et capacités de charge"),
+                   ("quartz", "Placement · quartz 8 MHz et capacités de charge"),
                    ("swd", "Placement · connecteur SWD et LED")]:
         suivants = [v for v in T_PLACE.values() if v > T_PLACE[g]]
         etat.append((T_PLACE[g], min(suivants) if suivants else T_CHEVELU, msg))
