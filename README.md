@@ -74,6 +74,11 @@ Le serveur détecte l'absence d'affichage et n'ouvre pas de navigateur ; connect
 
 ### Aperçu visuel
 
+<p align="center">
+  <img src="screen/schematique-ne555.svg" width="800" alt="Animation : saisie d'un clignoteur à NE555 dans l'Éditeur Schématique, du placement des composants à la simulation où la LED clignote">
+</p>
+<p align="center"><em>10 s dans l'Éditeur Schématique : placer, câbler, vérifier, simuler — le clignoteur à NE555, LED à 1,4 Hz</em></p>
+
 | Éditeur Schématique | Éditeur PCB |
 | :---: | :---: |
 | ![Éditeur Schématique](screen/sch.png) | ![Éditeur PCB](screen/pcb.png) |
@@ -282,7 +287,7 @@ WEB_CAO/
 ├── projets/                       Racine par défaut des dossiers de projet
 ├── IPC2581_Exemple/               Cartes IPC-2581 d'exemple
 ├── docs/                          simulation-em.md, HISTORIQUE_DEVELOPPEMENT.md
-├── screen/                        Captures d'écran
+├── screen/                        Captures d'écran, animation du schématique (generer_animation_ne555.py)
 ├── A-FAIRE.md                     Feuille de route et backlog
 └── requirements.txt               numpy, scipy (solveurs uniquement)
 ```
