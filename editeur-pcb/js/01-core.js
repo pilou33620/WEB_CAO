@@ -1010,7 +1010,7 @@ const PCB_LIB_CACHE = new Map();
 const PCB_LIB_DEFAUT = [
   "01005", "0201", "0402", "0603", "0805", "1206", "1210", "1812", "2512",
   "SMA", "SMB", "SMC", "MELF", "MiniMELF", "SOD-123", "SOD-323", "SOD-523",
-  "SOT-23", "SOT-23-5", "SOT-23-6", "SOT-89", "SOT-223", "SC-70", "SC-70-6",
+  "SOT-23", "SOT-23-5", "SOT-23-6", "SOT-89", "SOT-223", "SC-70", "SC-70-5", "SC-70-6",
   "DIP-4", "DIP-6", "DIP-8", "DIP-14", "DIP-16", "DIP-18", "DIP-20", "DIP-24", "DIP-28", "DIP-32", "DIP-40",
   "SOIC-8", "SOIC-14", "SOIC-16", "SOIC-20", "SOIC-24", "SOIC-28",
   "TSSOP-8", "TSSOP-14", "TSSOP-16", "TSSOP-20", "TSSOP-24", "TSSOP-28",

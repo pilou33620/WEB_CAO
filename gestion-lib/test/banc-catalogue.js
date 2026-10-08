@@ -105,7 +105,10 @@ for (const [boitier, attendu] of [["TSSOP-8", "TSSOP-8.json"], ["MSOP-8", "MSOP-
                                   ["SOIC-8", "SOIC-8.json"], ["SOP-8", "SOIC-8.json"],
                                   ["SOT-223", "SOT-223.json"], ["SOT-23-5", "SOT-23-5.json"],
                                   ["SOT-23", "SOT-23.json"], ["D2PAK", "TO-263.json"],
-                                  ["DPAK", "TO-252.json"], ["0603", "0603.json"]]) {
+                                  ["DPAK", "TO-252.json"], ["0603", "0603.json"],
+                                  ["SC70-5", "SC-70-5.json"], ["SOT-353", "SC-70-5.json"],
+                                  ["SC-70-6", "SC-70-6.json"], ["SOT-323", "SC-70.json"],
+                                  ["SC-70", "SC-70.json"]]) {
   assert(candidate(norm(boitier), "U") === attendu, "Boîtier " + boitier + " -> " + attendu);
 }
 
@@ -131,7 +134,9 @@ assert(!sansModele["Modèle Simulation"], "Pas de modèle de simulation inexista
    chaque valeur se relit sans erreur (commun/brochage.js). */
 vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "..", "commun", "brochage.js"), "utf8"), sandbox);
 const lire = vm.runInContext("brochageLire", sandbox);
+/* copies sans brochage : l'essai vaut que la LIB ait déjà la colonne ou non */
 const reels = JSON.parse(JSON.stringify(etat.composants.filter(c => c["Part Name"] && c._id != null)));
+for (const c of reels) delete c["Brochage"];
 const parNom = n => reels.find(c => c["Part Name"] === n);
 vm.runInContext("autoAssocierCatalogue", sandbox)(reels);
 const br = n => (parNom(n) || {})["Brochage"] || "";
@@ -142,8 +147,11 @@ assert(br("AOP_OPA369AIDCKT") === "OUT=1,V-=2,IN+=3,IN-=4,V+=5", "OPA369 : broch
 assert(br("REG_LM78L05ACMX") === "OUT=1,GND=2/3/6/7,IN=8,NC=4/5", "LM78L05 en SO-8 : masses multiples");
 assert(br("REG_LP2980AIM5X-3.3") === "IN=1/3,GND=2,OUT=5,NC=4", "LP2980 : ON/OFF relié à l'entrée");
 assert(!br("TRAN_DNPN_DTC144EKAT146"), "Transistor numérique : brochage laissé à la main");
-assert(!br("TRAN_MOS-SI4463CDY-T1-GE3"), "SOIC-8 : pas de règle de famille");
-assert(!br("TRAN_MOS-SI2301CDS"), "MOSFET rangé sous le symbole NPN : symbole à revoir, pas de brochage");
+assert(!br("REG_LD39050PU25R"), "Boîtier sans règle de famille ni référence connue : rien");
+const mosNpn = { "Part Name": "TRAN_MOS-X", "Description": "P-MOS SOT-23", "Reference designator Prefix": "Q",
+  "Number Of pins": "3", "Package type": "SOT23-3", "Empreinte Schématique": "lib/symbole/npn.json" };
+vm.runInContext("autoAssocierCatalogue", sandbox)([mosNpn]);
+assert(!mosNpn["Brochage"], "MOSFET rangé sous le symbole NPN : symbole à revoir, pas de brochage");
 const remplis = reels.filter(c => c["Brochage"]);
 assert(remplis.length >= 15, "Au moins quinze références complétées (" + remplis.length + ")");
 assert(remplis.every(c => { const l = lire(c["Brochage"]); return l && !l.erreurs.length; }),

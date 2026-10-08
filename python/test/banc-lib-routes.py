@@ -184,8 +184,10 @@ class TestLibRoutes(unittest.TestCase):
             self.assertEqual(resp.status, 200)
             data = json.loads(resp.read().decode("utf-8"))
             cols = data.get("colonnes", [])
-            self.assertEqual(len(cols), 39)
-            self.assertEqual(cols, colonnes_attendues)
+            # « Brochage » (broche du symbole -> patte de l'empreinte) vient
+            # en fin de ligne ; une LIB plus ancienne ne l'a pas encore
+            self.assertEqual(cols[:39], colonnes_attendues)
+            self.assertIn(cols[39:], ([], ["Brochage"]))
 
     def test_10_lib_config_get(self):
         req = urllib.request.Request(f"{BASE_URL}/api/lib/config")
