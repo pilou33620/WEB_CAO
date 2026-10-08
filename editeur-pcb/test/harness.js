@@ -381,7 +381,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simRfZ","simRfExclure","simRfImporter","simRfOublierModele","simRfBroche",
   "simRfValeurSI","trkAt","simRfMasque",
   /* les liens des bouts de piste, et la transformation des boîtiers */
-  "transformFps","linkSync","fpXformInv","padDist","updateRoute"];
+  "transformFps","linkSync","fpXformInv","padDist","updateRoute","hitTest"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -1535,32 +1535,27 @@ T("un bout volontairement décalé garde son décalage, qui tourne avec la pasti
     if(!bout)throw new Error("le bout décalé devait garder sa place dans le repère du boîtier");
   }finally{undo();suiviFin(reg);}
 });
-T("retourner une capa CMS : ses liaisons passent dessous, celle qui ne peut pas est marquée",()=>{
+T("retourner une capa CMS : rien n'est refait d'office, les liaisons sont marquées",()=>{
   const D=decouplage();
   const bas=S.cu-1;
   try{
     push();
     const n=transformFps([D.C.id],()=>{D.C.side=1;});
-    // vers le via d'alim et le via de masse : la liaison change de couche
-    const c1=D.pad(D.C,1), c2=D.pad(D.C,2);
-    const dessous=S.tracks.filter(t=>t.l===bas);
-    if(!dessous.some(t=>t.net==="GND")||!dessous.some(t=>t.net==="+3V3"))
-      throw new Error("les liaisons vers les vias devaient passer dessous");
-    relie("GND",{x:c2.x,y:c2.y},{x:D.gnd.x,y:D.gnd.y});
-    relie("+3V3",{x:c1.x,y:c1.y},{x:D.alim.x,y:D.alim.y});
-    // vers la broche CMS de la puce, restée dessus : rien à faire sans via
-    if(n!==1)throw new Error("un seul bout reste hors de sa pastille : "+n);
-    if(S.aRerouter.length!==1||!/changé de face/.test(S.aRerouter[0].msg))
-      throw new Error("la liaison vers la puce devait être marquée : "+JSON.stringify(S.aRerouter.map(g=>g.msg)));
-    if(!runDrc().some(e=>/changé de face, à re-router/.test(e.msg)))
-      throw new Error("le DRC devait porter la liaison à re-router");
-    // un via posé au bout pendant : la liaison est réparée, la marque tombe
-    const g=S.aRerouter[0], m=g.bout;
-    S.vias.push({x:m.x,y:m.y,d:0.6,drill:0.3,a:0,b:S.cu-1,net:"+3V3"});touch();
-    if(runDrc().some(e=>/changé de face/.test(e.msg)))
-      throw new Error("un via au bout pendant devait lever la marque");
+    if(S.tracks.some(t=>t.l===bas))throw new Error("aucune piste ne doit changer de couche d'office");
+    if(n!==3)throw new Error("trois bouts hors de leur pastille : "+n);
+    const m=S.aRerouter.filter(g=>/changé de face/.test(g.msg));
+    if(m.length!==3)throw new Error("trois liaisons marquées attendues : "+m.length);
+    if(runDrc().filter(e=>/changé de face, à re-router/.test(e.msg)).length!==3)
+      throw new Error("le DRC devait porter les trois liaisons");
+    // un via posé au bout pendant : cette liaison-là est réparée, sa marque tombe
+    const b=m[0].bout;
+    S.vias.push({x:b.x,y:b.y,d:0.6,drill:0.3,a:0,b:S.cu-1,net:m[0].trk[0].net});touch();
+    // deux liaisons arrivent au centre de C.1 : un via là les répare toutes les deux
+    const ici=m.filter(g=>g.bout.x===b.x&&g.bout.y===b.y).length;
+    if(runDrc().filter(e=>/changé de face/.test(e.msg)).length!==3-ici)
+      throw new Error("un via au bout pendant devait lever sa marque");
   }finally{undo();suiviFin(D.reg);}
-  if(runDrc().some(e=>/à re-router/.test(e.msg)))throw new Error("annuler devait effacer la marque");
+  if(runDrc().some(e=>/à re-router/.test(e.msg)))throw new Error("annuler devait effacer les marques");
 });
 /* Un via d'un autre net sur le trajet que prend le suivi. */
 function obstacleDecor(avoid){
@@ -1582,19 +1577,20 @@ function gndContreObstacle(D){
   }
   return pire;
 }
-T("re-routage : la liaison qui passerait sur un via étranger le contourne",()=>{
+T("liaison en faute après une rotation : marquée en rouge, jamais refaite d'office",()=>{
   const D=obstacleDecor(true);
   clearSel();S.sel.fps.add(D.C.id);
   try{
     rotateSel();
+    const g=S.aRerouter.find(g=>g.trk.some(t=>t.net==="GND"));
+    if(!g)throw new Error("la masse en faute devait être marquée");
+    if(gndContreObstacle(D)>=0)throw new Error("la liaison ne devait pas être refaite");
     const c2=D.pad(D.C,2);
     relie("GND",{x:c2.x,y:c2.y},{x:D.gnd.x,y:D.gnd.y});
-    if(gndContreObstacle(D)<-1e-3)throw new Error("la masse frôle encore le via étranger : "+gndContreObstacle(D));
     tout45();
-    if(S.aRerouter.some(g=>g.trk.some(t=>t.net==="GND")))throw new Error("rien à marquer : elle a été refaite");
   }finally{undo();suiviFin(D.reg);}
 });
-T("re-routage : anti-collision coupée, la liaison en faute est marquée en rouge",()=>{
+T("anti-collision coupée : la liaison en faute est marquée, la marque tombe avec la faute",()=>{
   const D=obstacleDecor(false);
   clearSel();S.sel.fps.add(D.C.id);
   try{
@@ -1609,6 +1605,115 @@ T("re-routage : anti-collision coupée, la liaison en faute est marquée en roug
     if(runDrc().some(e=>/à re-router/.test(e.msg)))
       throw new Error("une liaison redevenue saine ne doit plus être marquée");
   }finally{undo();suiviFin(D.reg);}
+});
+/* Les gestes du déplacement : tourner en glissant, et la conduite des pistes. */
+function prise(f){
+  const p=[[0,0.3],[-0.3,0.35],[0.3,0.35],[0,0.4],[0,-0.3]].map(([a,b])=>({x:f.x+a,y:f.y+b}))
+    .find(p=>{const h=hitTest(p.x,p.y);return h&&h.fp===f;});
+  if(!p)throw new Error("aucune prise sur "+f.ref);
+  return p;
+}
+function avecConduite(m,fn){
+  const avant=S.moveEtch;
+  S.moveEtch=m;
+  try{fn();}finally{S.moveEtch=avant;}
+}
+T("R en plein glissement : la capa tourne, ses pistes suivent, le geste continue",()=>{
+  const D=decouplage();
+  clearSel();S.sel.fps.add(D.C.id);
+  const p=prise(D.C);
+  try{
+    fire("pointerdown",sc(p.x,p.y));
+    fire("pointermove",sc(p.x,p.y+1));
+    key("r");
+    if(D.C.rot!==90)throw new Error("R devait tourner la capa pendant le geste : "+D.C.rot);
+    fire("pointermove",sc(p.x,p.y+3));
+    fire("pointerup",sc(p.x,p.y+3));
+    if(!(D.C.y>20))throw new Error("la capa devait finir plus bas : "+D.C.y);
+    tout45();
+    decouplageRelie(D);
+    undo();
+    if((fpById(D.C.id).rot||0)!==0||fpById(D.C.id).y!==20)throw new Error("un seul Ctrl+Z défait le geste entier");
+  }finally{suiviFin(D.reg);}
+});
+T("Espace en plein glissement : un quart de tour, comme R",()=>{
+  const D=decouplage();
+  clearSel();S.sel.fps.add(D.C.id);
+  const p=prise(D.C);
+  try{
+    fire("pointerdown",sc(p.x,p.y));
+    fire("pointermove",sc(p.x+1,p.y));
+    key(" ");key(" ");
+    fire("pointerup",sc(p.x+1,p.y));
+    if(D.C.rot!==180)throw new Error("deux Espace : un demi-tour, "+D.C.rot);
+    decouplageRelie(D);
+  }finally{undo();suiviFin(D.reg);}
+});
+T("conduite « étirer » : le dernier segment s'étire d'un trait jusqu'à la pastille",()=>{
+  const D=decouplage();
+  clearSel();S.sel.fps.add(D.C.id);
+  const p=prise(D.C), n0=S.tracks.length;
+  try{
+    avecConduite("etirer",()=>{
+      glisse(sc(p.x,p.y),sc(p.x,p.y+3));
+    });
+    if(S.tracks.length!==n0)throw new Error("étirer n'ajoute aucun coude : "+S.tracks.length+" pistes");
+    decouplageRelie(D);
+  }finally{undo();suiviFin(D.reg);}
+});
+T("conduite « arracher » : les pistes accrochées partent, le reste ne bouge pas",()=>{
+  const D=decouplage();
+  const autre={l:0,net:"N",w:0.3,x1:40,y1:40,x2:45,y2:40};
+  S.tracks.push(autre);touch();
+  clearSel();S.sel.fps.add(D.C.id);
+  const p=prise(D.C);
+  try{
+    avecConduite("arracher",()=>{
+      glisse(sc(p.x,p.y),sc(p.x,p.y+3));
+    });
+    if(S.tracks.some(t=>t.net==="+3V3"||t.net==="GND"))
+      throw new Error("les pistes de la capa devaient être retirées");
+    if(S.tracks.indexOf(autre)<0)throw new Error("une piste sans rapport ne devait pas partir");
+    if(!(D.C.y>20))throw new Error("la capa devait bouger");
+    undo();
+    if(S.tracks.filter(t=>t.net==="+3V3").length!==2)throw new Error("Ctrl+Z devait rendre les pistes");
+  }finally{suiviFin(D.reg);}
+});
+T("arracher : la piste entre deux broches du boîtier part avec lui, entière",()=>{
+  const reg=suiviDecor();
+  const U=mkFp("U2","","SOIC-8",8);U.x=40;U.y=40;S.fps.push(U);touch();
+  const q=padsWorld(U), p1=q.find(o=>o.n===1), p2=q.find(o=>o.n===2);
+  S.tracks.push({l:0,net:"N",w:0.3,x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y});touch();
+  clearSel();S.sel.fps.add(U.id);
+  try{
+    avecConduite("arracher",()=>{transformFps([U.id],()=>{U.x=45;});});
+    const r=padsWorld(U);
+    relie("N",{x:r.find(o=>o.n===1).x,y:r.find(o=>o.n===1).y},{x:r.find(o=>o.n===2).x,y:r.find(o=>o.n===2).y});
+  }finally{suiviFin(reg);}
+});
+T("Maj+Espace en plein geste : la conduite change, le geste repart de l'état d'avant",()=>{
+  const D=decouplage();
+  clearSel();S.sel.fps.add(D.C.id);
+  const p=prise(D.C), avant=S.moveEtch;
+  try{
+    S.moveEtch="glisser";
+    fire("pointerdown",sc(p.x,p.y));
+    fire("pointermove",sc(p.x,p.y+2));
+    key("r");
+    key(" ",{shiftKey:true});
+    if(S.moveEtch!=="etirer")throw new Error("Maj+Espace devait passer à « étirer » : "+S.moveEtch);
+    const C=fpById(D.C.id);
+    if(C.rot!==90)throw new Error("le quart de tour devait être rejoué : "+C.rot);
+    if(!(C.y>20))throw new Error("le décalage devait être rejoué : "+C.y);
+    if(!S.sel.fps.has(C.id))throw new Error("la sélection devait être rendue");
+    fire("pointermove",sc(p.x,p.y+3));
+    fire("pointerup",sc(p.x,p.y+3));
+    const pad=(n)=>padsWorld(C).find(q=>String(q.n)===String(n));
+    const X=fpById(D.X.id), vdd=padsWorld(X).find(q=>q.n===8);
+    relie("+3V3",{x:vdd.x,y:vdd.y},{x:pad(1).x,y:pad(1).y});
+    undo();
+    if(fpById(D.C.id).rot||fpById(D.C.id).y!==20)throw new Error("un seul Ctrl+Z défait le geste rejoué");
+  }finally{S.moveEtch=avant;suiviFin(D.reg);}
 });
 /* Les vias de sortie : le via de masse au pied de la capa part avec elle. */
 function sortieDecor(){

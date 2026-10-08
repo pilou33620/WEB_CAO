@@ -1056,6 +1056,18 @@ obst(){
       '<div><label class="check"><input type="checkbox" id="reAvoid"'+
       (S.avoid?" checked":"")+'> Anti-collision</label></div>'+
     '</div>'+
+    '<div class="prop two">'+
+      '<div><label>Pistes au déplacement d\'un boîtier</label><select id="reMoveEtch">'+
+      Object.keys(MOVE_ETCH).map(k=>'<option value="'+k+'"'+
+        (k===moveEtch()?" selected":"")+'>'+esc(MOVE_ETCH[k])+'</option>').join("")+
+      '</select></div>'+
+    '</div>'+
+    '<div class="restate pad">Glisser : le cuivre suit à 45°. Étirer : le dernier '+
+    'segment s\'étire jusqu\'à la pastille. Arracher : les pistes accrochées sont '+
+    'retirées, le chevelu reprend la liaison. Maj+Espace change de conduite en '+
+    'plein geste ; R ou Espace tourne le boîtier qu\'on glisse. Une liaison laissée '+
+    'en faute n\'est jamais refaite d\'office : elle passe en rouge et au contrôle. '+
+    'Réglage de l\'utilisateur, pas de la carte.</div>'+
     '<div class="restate pad">Le routeur juge au même seuil que le contrôle : ce '+
     'qu\'il accepte de poser, le contrôle l\'accepte, et ce qu\'il refuse, le '+
     'contrôle l\'aurait signalé. Anti-collision décochée, le tracé ne juge plus '+
@@ -1835,6 +1847,7 @@ function reBind(){
   chk("reShort",v=>S.rule.short=v);
   sel("reCorner",v=>{setCornerMode(v);reSync();});
   sel("reRoute",v=>{setRouteMode(v);reSync();});
+  sel("reMoveEtch",v=>{setMoveEtch(v);reSync();});
   sel("reFinish",v=>{
     if(!VIA_FINISH[v])return;
     push();S.rule.viaFinish=v;touch();

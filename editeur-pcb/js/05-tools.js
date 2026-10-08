@@ -1412,7 +1412,9 @@ function followMoved(){
   /* `p0fp` : le boîtier qui emporte chaque point tiré, `rigidOf` celui d'une
      piste qui part en bloc — `transformFps` en tire la rotation à appliquer */
   const out={chains:[],rubber:[],rigid:new Set(),keys:new Set(),own:new Set(),skip:null,
-             fps,vias,mobile:[],base:null,p0fp:new Map(),rigidOf:new Map()};
+             fps,vias,mobile:[],base:null,p0fp:new Map(),rigidOf:new Map(),ripped:[]};
+  // glisser, étirer ou arracher (`25-liens.js`) ; un via tiré seul glisse toujours
+  const etch=fps.length?moveEtch():"glisser";
   if(!fps.length&&!vias.length)return out;
   const pads=[];
   for(const fp of fps)for(const q of padsWorld(fp))pads.push({q,L:padCuLayers(fp,q),fp});
@@ -1459,7 +1461,9 @@ function followMoved(){
       seen.add(t);
       const P0={x,y}, hid=holder(t,en,x,y);
       out.p0fp.set(P0,hid);
-      if(isArc(t)||mode==="free"){out.rubber.push({t,e:en,P0});out.own.add(t);continue;}
+      if(etch!=="arracher"&&(isArc(t)||mode==="free"||etch==="etirer")){
+        out.rubber.push({t,e:en,P0});out.own.add(t);continue;
+      }
       // de coude en coude jusqu'à ce qui tient la piste
       const list=[t];
       let cur=t, ce=en, end="fixe";
@@ -1479,6 +1483,11 @@ function followMoved(){
         cur=nx.t;ce=nx.e;
       }
       if(end==="bouge"){for(const o of list){out.rigid.add(o);out.own.add(o);out.rigidOf.set(o,hid);}continue;}
+      if(etch==="arracher"){
+        if(end==="sel")for(let k=1;k<list.length;k++)seen.delete(list[k]);
+        out.ripped.push(...(end==="sel"?[t]:list));
+        continue;
+      }
       if(end==="sel"){
         for(let k=1;k<list.length;k++)seen.delete(list[k]);
         out.rubber.push({t,e:en,P0});out.own.add(t);continue;
@@ -1854,11 +1863,22 @@ function followShove(F){
 /* Premier déplacement réel : la sélection s'étend aux portions droites, et on
    relève l'état de départ de tout ce qui va bouger. */
 function beginMove(){
+  // la sélection d'origine, pour rejouer le geste sous une autre conduite
+  if(!drag.selSnap)drag.selSnap=dragSelSnap();
   for(const t of [...S.sel.tracks])
     for(const o of collinearRun(t))S.sel.tracks.add(o);
   // les vias de sortie des boîtiers tirés partent avec eux (`25-liens.js`)
   drag.fanout=fanoutTake();
+  // l'état des boîtiers au départ : une rotation en plein geste en part
+  drag.avant=linkAvant([...S.sel.fps].map(fpById).filter(Boolean));
+  if(!drag.rotq)drag.rotq=new Map();
   const fol=followMoved();
+  // conduite « arracher » : les pistes accrochées quittent la carte
+  if(fol.ripped.length){
+    const R=new Set(fol.ripped);
+    S.tracks=S.tracks.filter(t=>!R.has(t));
+    for(const t of R)S.sel.tracks.delete(t);
+  }
   drag.follow=fol;
   drag.trk=[...S.sel.tracks].map(t=>({t,x1:t.x1,y1:t.y1,x2:t.x2,y2:t.y2}));
   // une piste tendue entre deux points qui bougent part en bloc, comme la sélection
@@ -1882,6 +1902,9 @@ function beginMove(){
   // l'angle aigu reste surveillé : la piste qui suit en règle « libre » s'étire
   // d'un trait, et passé le coude précédent elle repartirait en V.
   if(S.sel.fps.size||S.sel.zones.size||S.sel.cuts.size||(S.sel.holes&&S.sel.holes.size)){drag.clear=null;drag.cross=null;}
+  if(fol.fps.length)
+    hint("Pistes : « "+MOVE_ETCH[moveEtch()]+" » (Maj+Espace pour changer) · R ou Espace : "+
+         "quart de tour · Alt : les pistes restent en place.");
 }
 /* État de départ de l'anti-collision : ce que le geste emmène, et ce qui était
    déjà en faute avant qu'il ne commence. */
@@ -4143,6 +4166,87 @@ cv.addEventListener("pointerdown",e=>{
   if(pn)revealNet(pn);
   draw();
 });
+/* Un pas de glissement de (dx, dy) : boîtiers, cuivre, zones et dessins de la
+   sélection, puis les articulations et le cuivre qui suit. Sorti du
+   gestionnaire de souris pour être rejoué : un changement de comportement en
+   plein geste repart de l'état d'avant et refait le chemin parcouru
+   (`dragRestart`). */
+function dragMoveBy(dx,dy,alt){
+  const kx=drag.dx, ky=drag.dy;               // dernière position sans faute
+  drag.dx=r3(drag.dx+dx);drag.dy=r3(drag.dy+dy);
+  for(const id of S.sel.fps){const f=fpById(id);if(f){f.x=r3(f.x+dx);f.y=r3(f.y+dy);}}
+  // pistes et vias en absolu : les articulations réécrivent leurs bouts,
+  // un cumul relatif dériverait dès le deuxième mouvement
+  for(const o of drag.trk){
+    o.t.x1=r3(o.x1+drag.dx);o.t.y1=r3(o.y1+drag.dy);
+    o.t.x2=r3(o.x2+drag.dx);o.t.y2=r3(o.y2+drag.dy);
+  }
+  for(const o of drag.via){o.v.x=r3(o.x+drag.dx);o.v.y=r3(o.y+drag.dy);}
+  for(const z of S.sel.zones){
+    if(detachAuto(z)){buildLayers();buildTabs();}
+    for(const q of z.pts){q.x=r3(q.x+dx);q.y=r3(q.y+dy);}
+  }
+  for(const ct of S.sel.cuts){
+    for(const q of ct.pts){q.x=r3(q.x+dx);q.y=r3(q.y+dy);}
+  }
+  if(S.sel.decoupes&&S.sel.decoupes.size){
+    for(const D of selDecoupes())for(const q of D){q.x=r3(q.x+dx);q.y=r3(q.y+dy);}
+    if(typeof zoneCache!=="undefined")zoneCache.clear();
+  }
+  if(drag.drw){
+    for(const o of drag.drw){
+      o.d.x1=r3(o.x1+drag.dx);o.d.y1=r3(o.y1+drag.dy);
+      o.d.x2=r3(o.x2+drag.dx);o.d.y2=r3(o.y2+drag.dy);
+      drwSuivre(o,drag.dx,drag.dy);
+    }
+  }
+  if(drag.holes){
+    for(const o of drag.holes){
+      if(!o.h.locked){
+        o.h.x=r3(o.x+drag.dx);
+        o.h.y=r3(o.y+drag.dy);
+      }
+    }
+  }
+  drag.x+=dx;drag.y+=dy;
+  // Alt enfoncé pendant le geste : les voisins restent où ils sont
+  dragRotFix();
+  applyJoints(drag.joints,drag.dx,drag.dy,alt);
+  applyFollow(drag.follow,drag.dx,drag.dy,alt);
+  /* Le déplacement s'applique en absolu : revenir au décalage précédent
+     suffit à replacer tout ce que le geste avait touché, coudes compris. */
+  if(clearStop()||crossStop()||acuteStop()){
+    drag.dx=kx;drag.dy=ky;drag.x-=dx;drag.y-=dy;
+    // boîtiers, zones et découpes bougent en relatif : on défait ce pas
+    for(const id of S.sel.fps){const f=fpById(id);if(f){f.x=r3(f.x-dx);f.y=r3(f.y-dy);}}
+    for(const z of S.sel.zones)for(const q of z.pts){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
+    for(const ct of S.sel.cuts)for(const q of ct.pts){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
+    for(const D of selDecoupes())for(const q of D){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
+    for(const o of drag.trk){
+      o.t.x1=r3(o.x1+drag.dx);o.t.y1=r3(o.y1+drag.dy);
+      o.t.x2=r3(o.x2+drag.dx);o.t.y2=r3(o.y2+drag.dy);
+    }
+    for(const o of drag.via){o.v.x=r3(o.x+drag.dx);o.v.y=r3(o.y+drag.dy);}
+    if(drag.drw){
+      for(const o of drag.drw){
+        o.d.x1=r3(o.x1+drag.dx);o.d.y1=r3(o.y1+drag.dy);
+        o.d.x2=r3(o.x2+drag.dx);o.d.y2=r3(o.y2+drag.dy);
+        drwSuivre(o,drag.dx,drag.dy);
+      }
+    }
+    if(drag.holes){
+      for(const o of drag.holes){
+        if(!o.h.locked){
+          o.h.x=r3(o.x+drag.dx);
+          o.h.y=r3(o.y+drag.dy);
+        }
+      }
+    }
+    dragRotFix();
+    applyJoints(drag.joints,drag.dx,drag.dy,alt);
+    applyFollow(drag.follow,drag.dx,drag.dy,alt);
+  }
+}
 cv.addEventListener("pointermove",e=>{
   S.padOff=!!(e.ctrlKey||e.metaKey);
   if(PTR_PCB.has(e.pointerId))PTR_PCB.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType});
@@ -4256,78 +4360,7 @@ cv.addEventListener("pointermove",e=>{
     const dx=snapX(p.x)-snapX(drag.x), dy=snapY(p.y)-snapY(drag.y);
     if(dx||dy){
       if(!drag.moved){push();drag.moved=true;beginMove();}
-      const kx=drag.dx, ky=drag.dy;               // dernière position sans faute
-      drag.dx=r3(drag.dx+dx);drag.dy=r3(drag.dy+dy);
-      for(const id of S.sel.fps){const f=fpById(id);if(f){f.x=r3(f.x+dx);f.y=r3(f.y+dy);}}
-      // pistes et vias en absolu : les articulations réécrivent leurs bouts,
-      // un cumul relatif dériverait dès le deuxième mouvement
-      for(const o of drag.trk){
-        o.t.x1=r3(o.x1+drag.dx);o.t.y1=r3(o.y1+drag.dy);
-        o.t.x2=r3(o.x2+drag.dx);o.t.y2=r3(o.y2+drag.dy);
-      }
-      for(const o of drag.via){o.v.x=r3(o.x+drag.dx);o.v.y=r3(o.y+drag.dy);}
-      for(const z of S.sel.zones){
-        if(detachAuto(z)){buildLayers();buildTabs();}
-        for(const q of z.pts){q.x=r3(q.x+dx);q.y=r3(q.y+dy);}
-      }
-      for(const ct of S.sel.cuts){
-        for(const q of ct.pts){q.x=r3(q.x+dx);q.y=r3(q.y+dy);}
-      }
-      if(S.sel.decoupes&&S.sel.decoupes.size){
-        for(const D of selDecoupes())for(const q of D){q.x=r3(q.x+dx);q.y=r3(q.y+dy);}
-        if(typeof zoneCache!=="undefined")zoneCache.clear();
-      }
-      if(drag.drw){
-        for(const o of drag.drw){
-          o.d.x1=r3(o.x1+drag.dx);o.d.y1=r3(o.y1+drag.dy);
-          o.d.x2=r3(o.x2+drag.dx);o.d.y2=r3(o.y2+drag.dy);
-          drwSuivre(o,drag.dx,drag.dy);
-        }
-      }
-      if(drag.holes){
-        for(const o of drag.holes){
-          if(!o.h.locked){
-            o.h.x=r3(o.x+drag.dx);
-            o.h.y=r3(o.y+drag.dy);
-          }
-        }
-      }
-      drag.x+=dx;drag.y+=dy;
-      // Alt enfoncé pendant le geste : les voisins restent où ils sont
-      applyJoints(drag.joints,drag.dx,drag.dy,e.altKey);
-      applyFollow(drag.follow,drag.dx,drag.dy,e.altKey);
-      /* Le déplacement s'applique en absolu : revenir au décalage précédent
-         suffit à replacer tout ce que le geste avait touché, coudes compris. */
-      if(clearStop()||crossStop()||acuteStop()){
-        drag.dx=kx;drag.dy=ky;drag.x-=dx;drag.y-=dy;
-        // boîtiers, zones et découpes bougent en relatif : on défait ce pas
-        for(const id of S.sel.fps){const f=fpById(id);if(f){f.x=r3(f.x-dx);f.y=r3(f.y-dy);}}
-        for(const z of S.sel.zones)for(const q of z.pts){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
-        for(const ct of S.sel.cuts)for(const q of ct.pts){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
-        for(const D of selDecoupes())for(const q of D){q.x=r3(q.x-dx);q.y=r3(q.y-dy);}
-        for(const o of drag.trk){
-          o.t.x1=r3(o.x1+drag.dx);o.t.y1=r3(o.y1+drag.dy);
-          o.t.x2=r3(o.x2+drag.dx);o.t.y2=r3(o.y2+drag.dy);
-        }
-        for(const o of drag.via){o.v.x=r3(o.x+drag.dx);o.v.y=r3(o.y+drag.dy);}
-        if(drag.drw){
-          for(const o of drag.drw){
-            o.d.x1=r3(o.x1+drag.dx);o.d.y1=r3(o.y1+drag.dy);
-            o.d.x2=r3(o.x2+drag.dx);o.d.y2=r3(o.y2+drag.dy);
-            drwSuivre(o,drag.dx,drag.dy);
-          }
-        }
-        if(drag.holes){
-          for(const o of drag.holes){
-            if(!o.h.locked){
-              o.h.x=r3(o.x+drag.dx);
-              o.h.y=r3(o.y+drag.dy);
-            }
-          }
-        }
-        applyJoints(drag.joints,drag.dx,drag.dy,e.altKey);
-        applyFollow(drag.follow,drag.dx,drag.dy,e.altKey);
-      }
+      dragMoveBy(dx,dy,e.altKey);
       touch();draw();
     }
     return;
@@ -4471,8 +4504,8 @@ cv.addEventListener("pointerup",e=>{
       const n=(sh.lignes||[]).length, v=(sh.vias||[]).length;
       hint("Le cuivre voisin s'est écarté : "+n+" piste(s)"+(v?", "+v+" via(s)":"")+" poussée(s).");
     }
-    // la liaison restée en faute est re-routée, ou marquée (`25-liens.js`)
-    rerouteHint(followReroute(drag.follow));
+    // la liaison restée en faute est marquée, pas refaite (`25-liens.js`)
+    rerouteHint(followCheck(drag.follow));
     const bouge=[...movedTracks()], avant=drag.diag;
     pruneAfterDrag(bouge);
     if(mitreAfterDrag(bouge,avant))
@@ -4784,7 +4817,8 @@ document.addEventListener("keydown",e=>{
     /* Montrer la sélection sur le schéma resté ouvert dans un autre onglet.
        Le geste vit dans js/18-reperage.js, chargé après celui-ci. */
     case "l":if(typeof pcbMontrerAilleurs==="function")pcbMontrerAilleurs();break;
-    case "r":rotateSel();break;
+    // en plein glissement, le boîtier tourne et le geste continue (`25-liens.js`)
+    case "r":if(!dragRotate(e.shiftKey?-1:1))rotateSel();break;
     case "f":flipSel();break;
     case "d":mitreSel();break;
     case "u":unrouteSel();break;
@@ -4797,6 +4831,10 @@ document.addEventListener("keydown",e=>{
        temps du coude en cours. */
     case "/":
     case " ":
+      /* Espace en plein glissement d'un boîtier : un quart de tour, comme dans
+         Altium ; Maj+Espace : la conduite des pistes qui suivent */
+      if(k===" "&&!S.route&&!S.dp&&e.shiftKey){cycleMoveEtch();e.preventDefault();break;}
+      if(k===" "&&dragRotate(1)){e.preventDefault();break;}
       if(S.dp){
         S.dp.flip=!S.dp.flip;
         dpUpdate(S.mouse.x,S.mouse.y);draw();e.preventDefault();

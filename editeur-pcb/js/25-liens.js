@@ -165,7 +165,7 @@ function linkMover(avant){
    ménage au relâchement. La sélection en cours est mise de côté le temps du
    geste : seuls les boîtiers bougent, pas la piste ou le via sélectionnés à
    côté. Rend le nombre de bouts que le geste a laissés hors de leur pastille —
-   une pastille CMS passée sur l'autre face que rien n'a pu re-router. */
+   une pastille CMS passée sur l'autre face, typiquement. */
 function transformFps(ids,mutate){
   const fps=ids.map(fpById).filter(Boolean);
   if(!fps.length){mutate();return 0;}
@@ -210,7 +210,7 @@ function transformFps(ids,mutate){
     const sh=F.shove;
     S.dragShove=null;
     if(sh)pnsApply(sh);
-    rr=followReroute(F);
+    rr=followCheck(F);
     pruneAfterDrag([...movedTracks()]);
     mitreAfterDrag([...movedTracks()].filter(t=>S.tracks.indexOf(t)>=0),drag.diag);
     for(const o of tient){
@@ -335,31 +335,27 @@ function padOffPoint(q,l,x,y,ancre){
 }
 
 /* ==========================================================================
-   Après le suivi : vérifier, re-router, sinon signaler
+   Après le suivi : vérifier et signaler, sans rien refaire
    --------------------------------------------------------------------------
-   Le suivi garde la forme de la piste et ne contourne qu'à petite dose, le
-   temps du geste. Au relâchement, chaque liaison qui a suivi est jugée :
-   - elle passe sous l'isolation d'un autre net, ou en croise une piste :
-     on la RE-ROUTE en entier, de son bout tenu jusqu'à la pastille, en
-     contournant (`pnsWalkaround`) — anti-collision active seulement ;
-   - son bout ne touche plus sa pastille (une CMS passée sur l'autre face) :
-     on la refait sur la couche où est désormais la pastille, si son autre
-     bout y est accessible (un via, une pastille traversante) ;
-   - sans issue, elle reste telle quelle, TRACÉE EN ROUGE, et le DRC la porte
-     « à re-router ». La marque tombe d'elle-même quand la piste disparaît
-     (effacée, annulée, re-routée à la main) ou qu'elle n'est plus en faute.
+   Au relâchement, chaque liaison qui a suivi est jugée :
+   - elle passe sous l'isolation d'un autre net, ou en croise une piste ;
+   - son bout ne touche plus sa pastille (une CMS passée sur l'autre face).
+   Elle n'est PAS refaite : un re-routage silencieux changerait la longueur
+   d'une liaison appariée, l'écart d'une paire ou la couche d'une piste
+   d'impédance contrôlée, sans qu'on l'ait vu. Elle reste telle quelle,
+   TRACÉE EN ROUGE, et le DRC la porte « à re-router » — c'est la conduite
+   des outils du commerce. La marque tombe d'elle-même quand la piste
+   disparaît (effacée, annulée, reprise à la main) ou n'est plus en faute.
+   Le contournement PENDANT le geste (`followPath`) reste : on le voit faire,
+   et on lâche ou pas.
    ========================================================================== */
-/* Les liaisons marquées : {trk:[pistes], msg, x, y}. Hors document : une
-   marque dit l'état d'un geste, pas une propriété de la carte. */
+/* Les liaisons marquées : {trk:[pistes], msg, x, y, l, bout}. Hors document :
+   une marque dit l'état d'un geste, pas une propriété de la carte. */
 S.aRerouter=[];
 function rerouteLive(){
   const T=new Set(S.tracks);
   S.aRerouter=S.aRerouter.filter(g=>g.trk.some(t=>T.has(t)));
   return T;
-}
-function rerouteMarked(t){
-  for(const g of S.aRerouter)if(g.trk.indexOf(t)>=0)return true;
-  return false;
 }
 /* Ce qui tient les bouts d'une liaison n'est pas un obstacle. */
 function rerouteSkip(N,ends){
@@ -378,27 +374,7 @@ function rerouteFaulty(N,trk,skip,T){
   }
   return false;
 }
-/* Le meilleur trajet de A à B sur la couche l dans le monde N : un coude
-   direct s'il passe, sinon le plus court des contournements. */
-function reroutePath(N,l,net,w,A,B,skip){
-  const line=pts=>({l,net,w,pts});
-  let best=null;
-  for(const legs of followLegs(A,B,cornerMode())){
-    let pts=legs;
-    if(N.firstObstacle(line(pts),skip)){
-      const r=pnsWalkaround(N,line(pts),skip);
-      if(!r.ok||r.pts.length<2)continue;
-      pts=pnsOptimize(N,line(r.pts),skip);
-    }
-    pts=followRound45(pnsSimplify(pts));
-    pts[0]={x:A.x,y:A.y};pts[pts.length-1]={x:B.x,y:B.y};
-    if(pts.length<2||N.firstObstacle(line(pts),skip))continue;
-    if(cornerMode()!=="free"&&!pnsIs45(pts))continue;
-    if(!best||pnsLen(pts)<pnsLen(best))best=pts;
-  }
-  return best;
-}
-/* La pastille du boîtier `fid` sous P, et les couches où elle a du cuivre. */
+/* La pastille du boîtier `fid` sous P : les couches où elle a du cuivre. */
 function rerouteHeldLayers(fid,P){
   const f=fpById(fid);
   if(!f)return [];
@@ -409,86 +385,50 @@ function rerouteHeldLayers(fid,P){
   return [];
 }
 /* Le passage au relâchement. `F` : le suivi du geste (`followMoved`). Rend
-   {faits, marques} ; les pistes refaites remplacent celles de la liaison. */
-function followReroute(F){
-  const res={faits:0,marques:0,perdus:0};
+   {marques, perdus}. */
+function followCheck(F){
+  const res={marques:0,perdus:0};
   if(!F)return res;
   touch();
-  let T=rerouteLive();
+  const T=rerouteLive();
   const W=pnsWorld();
   const jobs=[];
   for(const c of F.chains){
     const pts=c.cur||c.V, P=pts[pts.length-1], V0=c.V[0];
     if(P.x===c.P0.x&&P.y===c.P0.y)continue;
     const L=rerouteHeldLayers(F.p0fp.get(c.P0),P);
+    if(L.length&&L.indexOf(c.l)<0){jobs.push({trk:c.trk,perdu:true,bout:{l:c.l,x:P.x,y:P.y}});continue;}
     const ends=[{l:c.l,x:V0.x,y:V0.y},{l:c.l,x:P.x,y:P.y}];
-    if(L.length&&L.indexOf(c.l)<0){
-      // la pastille a changé de face : la liaison change de couche avec elle
-      const l2=L.find(l=>viaAt(l,V0.x,V0.y)||padAt(l,V0.x,V0.y));
-      jobs.push({c,V0,P,l:l2,perdu:true});
-      continue;
-    }
-    if(rerouteFaulty(W,c.trk,rerouteSkip(W,ends),T))jobs.push({c,V0,P,l:c.l});
+    if(rerouteFaulty(W,c.trk,rerouteSkip(W,ends),T))jobs.push({trk:c.trk});
   }
-  // le cuivre emporté en bloc ou étiré d'un trait : on ne le refait pas, on le juge
-  const bloc=[...F.rigid,...F.rubber.map(r=>r.t)].filter(t=>T.has(t));
-  for(const t of bloc){
+  // le cuivre emporté en bloc ou étiré d'un trait
+  for(const t of [...F.rigid,...F.rubber.map(r=>r.t)]){
+    if(!T.has(t))continue;
     const ends=[{l:t.l,x:t.x1,y:t.y1},{l:t.l,x:t.x2,y:t.y2}];
-    if(rerouteFaulty(W,[t],rerouteSkip(W,ends),T))
-      jobs.push({c:{trk:[t]},bloc:true});
+    if(rerouteFaulty(W,[t],rerouteSkip(W,ends),T))jobs.push({trk:[t]});
   }
-  if(!jobs.length){rerouteForget(F,T);return res;}
-  // le monde sans les liaisons qu'on va refaire
-  const out=new Set();
-  for(const j of jobs)if(!j.bloc)for(const t of j.c.trk)out.add(t);
-  const N=W.branch();
-  for(const it of W.all())if(it.src&&out.has(it.src))N.remove(it);
-  const neuves=[];
   for(const j of jobs){
-    let pts=null;
-    if(!j.bloc&&j.l!=null&&S.avoid){
-      const ends=[{l:j.l,x:j.V0.x,y:j.V0.y},{l:j.l,x:j.P.x,y:j.P.y}];
-      pts=reroutePath(N,j.l,j.c.net,j.c.w,j.V0,j.P,rerouteSkip(N,ends));
-    }else if(!j.bloc&&j.l!=null&&j.perdu){
-      // anti-collision coupée : la liaison change de couche telle quelle
-      pts=(j.c.cur||j.c.V).map(p=>({x:p.x,y:p.y}));
-    }
-    if(pts){
-      const drop=new Set(j.c.trk);
-      S.tracks=S.tracks.filter(t=>!drop.has(t));
-      const nv=[];
-      for(let i=0;i+1<pts.length;i++){
-        if(pts[i].x===pts[i+1].x&&pts[i].y===pts[i+1].y)continue;
-        const t={l:j.l,net:j.c.net,w:j.c.w,x1:pts[i].x,y1:pts[i].y,x2:pts[i+1].x,y2:pts[i+1].y};
-        S.tracks.push(t);nv.push(t);
-        for(const it of pnsItemsTrack(t))N.add(it);
-      }
-      neuves.push(...nv);
-      res.faits++;
-      continue;
-    }
-    const trk=j.c.trk.filter(t=>T.has(t)&&dist(t.x1,t.y1,t.x2,t.y2)>=1e-6);
+    const trk=j.trk.filter(t=>T.has(t)&&dist(t.x1,t.y1,t.x2,t.y2)>=1e-6);
     if(!trk.length)continue;
     const m=trk[Math.floor(trk.length/2)];
     S.aRerouter=S.aRerouter.filter(g=>!g.trk.some(t=>trk.indexOf(t)>=0));
-    S.aRerouter.push({trk,x:(m.x1+m.x2)/2,y:(m.y1+m.y2)/2,l:m.l,
-      bout:j.perdu?{l:j.c.l,x:j.P.x,y:j.P.y}:null,
+    S.aRerouter.push({trk,x:(m.x1+m.x2)/2,y:(m.y1+m.y2)/2,l:m.l,bout:j.bout||null,
       msg:j.perdu?"Piste "+(m.net||"sans net")+" : sa pastille a changé de face, à re-router"
                  :"Piste "+(m.net||"sans net")+" en défaut après le déplacement : à re-router"});
     res.marques++;
     if(j.perdu)res.perdus++;
   }
-  touch();
-  rerouteForget(F,new Set(S.tracks));
+  rerouteForget(F,T,new Set(jobs.flatMap(j=>j.trk)));
   return res;
 }
 /* Une liaison marquée qui n'est plus en faute perd sa marque : à la fin d'un
    geste, et à chaque DRC. Celle dont la pastille a changé de face la garde
    tant que son bout pend dans le vide — c'est la couche qui est fausse, pas
    l'isolation : un via posé là, ou la piste reprise, la lève. */
-function rerouteForget(F,T){
+function rerouteForget(F,T,neuves){
   const N=pnsWorld();
   S.aRerouter=S.aRerouter.filter(g=>{
+    if(neuves&&g.trk.some(t=>neuves.has(t)))return true;
     const trk=g.trk.filter(t=>T.has(t));
     if(!trk.length)return false;
     // pastille passée sur l'autre face : marquée tant que le bout y pend
@@ -504,13 +444,162 @@ function rerouteForget(F,T){
   });
 }
 function rerouteHint(r){
-  if(!r||(!r.faits&&!r.marques))return;
-  const a=r.faits?r.faits+" liaison(s) re-routée(s) automatiquement":"";
-  const b=r.marques?r.marques+" liaison(s) à re-router — en rouge, et au DRC":"";
-  hint([a,b].filter(Boolean).join(" ; ")+".");
+  if(!r||!r.marques)return;
+  hint(r.marques+" liaison(s) à re-router — en rouge, et au DRC"+
+       (r.perdus?" ("+r.perdus+" dont la pastille a changé de face)":"")+".");
 }
 /* Pour le DRC : une ligne par liaison marquée. */
 function rerouteDrc(out){
   if(S.aRerouter.length)rerouteForget(null,rerouteLive());
   for(const g of S.aRerouter)out.push({x:g.x,y:g.y,l:g.l,msg:g.msg});
+}
+
+/* ==========================================================================
+   Ce que deviennent les pistes quand on déplace un boîtier
+   --------------------------------------------------------------------------
+   Trois conduites, comme les options du déplacement d'Allegro :
+     « glisser »   le cuivre suit en gardant ses 45° : le coude glisse le long
+                   de la piste, et contourne ce qui gêne (`followPath`) ;
+     « étirer »    le dernier segment s'étire d'un trait jusqu'à la pastille,
+                   à l'angle que donne le déplacement — rien d'autre ne bouge ;
+     « arracher »  les pistes qui arrivent sur le boîtier sont retirées
+                   jusqu'à ce qui les tenait (pastille, via, embranchement) :
+                   le chevelu reprend la liaison, à router de nouveau.
+   La piste tendue entre deux broches du boîtier, et le via de sortie, partent
+   avec lui dans les trois cas. C'est un réglage de l'utilisateur, pas de la
+   carte : il ne va pas dans le document, et se garde d'une session à l'autre.
+   Maj+Espace le change en plein geste : le geste repart de l'état d'avant et
+   refait le chemin parcouru (`dragRestart`).
+   ========================================================================== */
+const MOVE_ETCH={glisser:"glisser",etirer:"étirer",arracher:"arracher"};
+const MOVE_ETCH_CLE="pcb.moveEtch";
+function moveEtch(){
+  if(!MOVE_ETCH[S.moveEtch]){
+    let m=null;
+    try{m=localStorage.getItem(MOVE_ETCH_CLE);}catch(_){}
+    S.moveEtch=MOVE_ETCH[m]?m:"glisser";
+  }
+  return S.moveEtch;
+}
+function setMoveEtch(m){
+  if(!MOVE_ETCH[m])return;
+  S.moveEtch=m;
+  try{localStorage.setItem(MOVE_ETCH_CLE,m);}catch(_){}
+  if(typeof drag!=="undefined"&&drag&&drag.move&&drag.moved)dragRestart();
+  hint("Pistes au déplacement d'un boîtier : « "+MOVE_ETCH[m]+" »"+
+       (m==="glisser"?" — elles suivent à 45°."
+        :m==="etirer"?" — le dernier segment s'étire jusqu'à la pastille."
+        :" — elles sont retirées, le chevelu reprend la liaison.")+
+       " Maj+Espace pour changer.");
+  if(typeof reSync==="function")reSync();
+  draw();
+}
+function cycleMoveEtch(){
+  const k=Object.keys(MOVE_ETCH);
+  setMoveEtch(k[(k.indexOf(moveEtch())+1)%k.length]);
+}
+
+/* ==========================================================================
+   Tourner pendant qu'on glisse
+   --------------------------------------------------------------------------
+   R ou Espace, la souris enfoncée sur un boîtier : il tourne d'un quart de
+   tour autour de son centre (Maj+R dans l'autre sens) et le geste continue.
+   Le cuivre qui suit ne raisonne plus en décalage (dx, dy) mais en « où va ce
+   point » : `linkMover`, d'après l'état relevé au départ du geste — la même
+   règle que la rotation hors glissement (`transformFps`).
+   ========================================================================== */
+function linkAvant(fps){
+  const avant=new Map();
+  for(const f of fps)
+    avant.set(f.id,{fp:f,ps:padsWorld(f),inv:fpXformInv({x:f.x,y:f.y,rot:f.rot,side:f.side})});
+  return avant;
+}
+/* Après un pas de glissement : ce qui tourne avec les boîtiers reprend sa
+   place — le suivi par `F.map`, la piste tendue entre deux broches et le via
+   de sortie par leur boîtier. Sans rotation, rien à faire : le décalage suffit. */
+function dragRotFix(){
+  if(!drag||!drag.rot||!drag.follow)return;
+  const F=drag.follow, mv=linkMover(drag.avant);
+  F.map=P0=>mv(P0,F.p0fp.get(P0));
+  for(const o of drag.trk){
+    if(!F.rigidOf.has(o.t))continue;
+    const k=F.rigidOf.get(o.t), A=mv({x:o.x1,y:o.y1},k), B=mv({x:o.x2,y:o.y2},k);
+    o.t.x1=A.x;o.t.y1=A.y;o.t.x2=B.x;o.t.y2=B.y;
+  }
+  for(const o of drag.via){
+    if(!drag.fanout||!drag.fanout.has(o.v))continue;
+    const P=mv({x:o.x,y:o.y},drag.fanout.get(o.v));
+    o.v.x=P.x;o.v.y=P.y;
+  }
+}
+function dragRotate(sens){
+  if(typeof drag==="undefined"||!drag||!drag.move||!S.sel.fps.size)return false;
+  if(!drag.moved){push();drag.moved=true;beginMove();}
+  for(const id of S.sel.fps){
+    const f=fpById(id);
+    if(!f)continue;
+    f.rot=(((f.rot||0)+90*sens)%360+360)%360;
+    drag.rotq.set(id,(drag.rotq.get(id)||0)+sens);
+  }
+  drag.rot=true;
+  dragRotFix();
+  applyJoints(drag.joints,drag.dx,drag.dy,false);
+  applyFollow(drag.follow,drag.dx,drag.dy,false);
+  touch();draw();
+  return true;
+}
+/* La sélection telle qu'elle était au départ du geste, en indices : elle doit
+   survivre au rechargement de l'instantané (`dragRestart`). */
+function dragSelSnap(){
+  const ix=(arr,set)=>[...set].map(o=>arr.indexOf(o)).filter(i=>i>=0);
+  return {fps:[...S.sel.fps],tracks:ix(S.tracks,S.sel.tracks),vias:ix(S.vias,S.sel.vias),
+          zones:ix(S.zones,S.sel.zones),cuts:ix(S.cuts,S.sel.cuts),
+          drawings:[...(S.sel.drawings||[])],holes:[...(S.sel.holes||[])],
+          decoupes:S.sel.decoupes?ix(boardCutouts(),S.sel.decoupes):[],edge:S.sel.edge};
+}
+function dragSelRestore(st){
+  clearSel();
+  for(const id of st.fps)S.sel.fps.add(id);
+  for(const i of st.tracks)if(S.tracks[i])S.sel.tracks.add(S.tracks[i]);
+  for(const i of st.vias)if(S.vias[i])S.sel.vias.add(S.vias[i]);
+  for(const i of st.zones)if(S.zones[i])S.sel.zones.add(S.zones[i]);
+  for(const i of st.cuts)if(S.cuts[i])S.sel.cuts.add(S.cuts[i]);
+  if(!S.sel.drawings)S.sel.drawings=new Set();
+  for(const id of st.drawings)S.sel.drawings.add(id);
+  if(!S.sel.holes)S.sel.holes=new Set();
+  for(const id of st.holes)S.sel.holes.add(id);
+  if(st.decoupes.length){
+    if(!S.sel.decoupes)S.sel.decoupes=new Set();
+    const D=boardCutouts();
+    for(const i of st.decoupes)if(D[i])S.sel.decoupes.add(D[i]);
+  }
+  S.sel.edge=st.edge;
+}
+/* Rejouer le geste en cours sous une autre conduite : retour à l'instantané
+   d'avant le geste (celui que `push` a pris au premier mouvement), même
+   sélection, puis le même chemin — décalage et quarts de tour. */
+function dragRestart(){
+  if(!drag||!drag.move||!drag.moved||!S.undo.length)return;
+  const st=drag.selSnap, dx=drag.dx, dy=drag.dy, rq=drag.rotq, mx=drag.x, my=drag.y;
+  if(drag.follow)S.dragShove=null;
+  loadDoc(JSON.parse(S.undo[S.undo.length-1]),true);
+  dragSelRestore(st);
+  drag.dx=0;drag.dy=0;drag.rot=false;
+  beginMove();
+  if(dx||dy)dragMoveBy(dx,dy,false);
+  drag.x=mx;drag.y=my;
+  let q=false;
+  for(const [id,n] of rq){
+    const f=fpById(id);
+    if(!f||!n)continue;
+    f.rot=(((f.rot||0)+90*n)%360+360)%360;
+    drag.rotq.set(id,n);q=true;
+  }
+  if(q){
+    drag.rot=true;
+    dragRotFix();
+    applyJoints(drag.joints,drag.dx,drag.dy,false);
+    applyFollow(drag.follow,drag.dx,drag.dy,false);
+  }
+  touch();
 }
