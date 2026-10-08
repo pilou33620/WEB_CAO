@@ -434,8 +434,6 @@ def generer():
     fils = [f for _, f in FILS]
     nb_nets, jonctions = connectivite(fils, {c[0]: c[3] for c in composants})
 
-    pos_curseur = [(0.0, 760, 560), (0.12, 760, 560)]
-    clics = []
     etat = [(0.0, T_POSE["pont"] - 0.05, "Nouvelle feuille · ne555_interne")]
 
     # --- placement, bloc par bloc ---------------------------------------------
@@ -447,10 +445,6 @@ def generer():
         t0 = T_POSE[g]
         t_fin = T_POSE[groupes[gi + 1]] if gi + 1 < len(groupes) else T_FIL0
         pas = min(0.045, 0.3 / max(1, len(membres)))
-        cx = sum((c[4][0] + c[4][2]) / 2 for c in membres) / len(membres) + TX
-        cy = sum((c[4][1] + c[4][3]) / 2 for c in membres) / len(membres) + TY
-        pos_curseur += [(t0 - 0.2, None, None), (t0 - 0.03, cx, cy), (t0 + 0.15, cx, cy)]
-        clics.append((t0, cx, cy))
         etat.append((t0 - 0.05, t_fin - 0.05,
                      BLOCS[g][2] if g in BLOCS else "Placer · broches du boîtier DIP-8"))
         for i, (nom, bloc, d, pins, (x1, y1, x2, y2), t) in enumerate(membres):
@@ -480,20 +474,12 @@ def generer():
         k = (duree_vague * 0.6) / max(lg)
         nom_vague = (BLOCS[v][0][0].lower() + BLOCS[v][0][1:]) if v in BLOCS else "rails Vcc et masse"
         etat.append((tv, tv + duree_vague, "Câbler · %s — %d fils" % (nom_vague, len(lot))))
-        # le curseur suit le plus long fil de la vague
-        i_long = max(range(len(lot)), key=lambda i: lg[i])
         for i, (f, l) in enumerate(zip(lot, lg)):
             t = tv + i * pas
             d = max(0.08, l * k)
             cls = anim([(t, "stroke-dashoffset:1"), (t + d, "stroke-dashoffset:0")])
             fils_svg.append('<path class="%s" d="M%s" pathLength="1" stroke-dasharray="1 2"/>' % (
                 cls, " L".join("%g,%g" % p for p in f)))
-            if i == i_long:
-                pos_curseur.append((t, f[0][0] + TX, f[0][1] + TY))
-                tt = t
-                for a, b in zip(f, f[1:]):
-                    tt += d * (abs(b[0] - a[0]) + abs(b[1] - a[1])) / l
-                    pos_curseur.append((tt, b[0] + TX, b[1] + TY))
 
     # --- vérification -------------------------------------------------------------
     pas = 0.45 / len(jonctions)
@@ -518,27 +504,6 @@ def generer():
                 px, py, apparait(tr, 0.2), -w / 2, -h / 2, w, h, col, corps))
     etat.append((T_BLOCS, T_FONDU + 0.3,
                  "NE555 · 25 transistors, 16 résistances — conçu par Hans Camenzind pour Signetics (1971)"))
-
-    # --- curseur ----------------------------------------------------------------
-    pos, der = [], None
-    for tm, x, y in sorted(pos_curseur, key=lambda p: p[0]):
-        if x is None:
-            x, y = der
-        pos.append((tm, x, y))
-        der = (x, y)
-    fin_cur = T_FIL1 + 0.05
-    pos.append((fin_cur + 0.4, der[0] + 50, der[1] - 30))
-    cls_cur = anim([(tm, "transform:translate(%.1fpx,%.1fpx)" % (x, y)) for tm, x, y in pos])
-    curseur = (
-        '<g class="%s"><g class="%s"><path d="M0,0 L0,17 L4.6,13 L7.6,20 L10.2,18.9 L7.3,12.4 L13,12.4 Z" '
-        'fill="#fff" stroke="#111" stroke-width="1.1" stroke-linejoin="round"/></g></g>' % (
-            fondu(0.08, 0.2, fin_cur, 0.35), cls_cur))
-    ondes = "".join(
-        '<circle class="%s" cx="%.1f" cy="%.1f" r="22" fill="none" stroke="%s" stroke-width="2"/>' % (
-            anim([(t - 0.01, "opacity:0;transform:scale(.2)"), (t, "opacity:.9;transform:scale(.3)"),
-                  (t + 0.4, "opacity:0;transform:scale(1.7)")],
-                 "transform-box:fill-box;transform-origin:center"), x, y, C_SEL)
-        for t, x, y in clics)
 
     # --- barres -----------------------------------------------------------------
     textes_etat = "".join(
@@ -595,7 +560,6 @@ def generer():
         "".join(fils_svg), '</g>',
         "".join(corps_svg), sub, jonctions_svg, "".join(puces),
         '</g></g>',
-        ondes, curseur,
         '<rect width="%d" height="27" fill="%s"/>' % (W, C_BAR),
         ligne(0, 27.5, W, 27.5, C_BAR_BORD, 1),
         '<rect x="12" y="7" width="13" height="13" rx="3" fill="%s"/>' % C_FILL,
