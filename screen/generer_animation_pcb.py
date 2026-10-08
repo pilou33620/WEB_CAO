@@ -11,8 +11,8 @@ descend par son via, au plus près de la pastille.
 
 Ce que montre le routage :
   · la paire USB 2.0 (90 Ω) tenue couplée, passée à travers la protection ESD
-    sans tronçon, D− ramené au dessous par deux vias sous le connecteur, et
-    les deux brins appariés en longueur par un accordéon ;
+    sans tronçon, D− ramené au dessous par deux vias sous le connecteur, les
+    deux brins de même longueur à 0,02 mm près, sans accordéon ;
   · chaque condensateur de découplage entre sa broche et ses vias ;
   · le bus SPI : CS et MISO au dessus, SCK et MOSI au dessous par vias ;
   · le quartz 32,768 kHz court et symétrique, entouré de vias de masse ;
@@ -220,9 +220,9 @@ def mcu(cote, i):
 
 # découplage du MCU
 c0402("C3", 15.3, 9.2, "h", "GND", "+3V3", "mcu", (15.3, 7.55, "C3", 0.5))
-c0402("C4", 20.0, 5.7, "h", "+3V3", "GND", "mcu", (17.9, 5.7, "C4", 0.5))
-c0402("C5", 19.2, 18.4, "h", "+3V3", "GND", "mcu", (17.3, 18.4, "C5", 0.5))
-c0402("C6", 27.7, 8.0, "h", "+3V3", "GND", "mcu", (29.4, 8.0, "C6", 0.5))
+c0402("C4", 19.0, 5.7, "h", "GND", "+3V3", "mcu", (17.45, 5.7, "C4", 0.5))
+c0402("C5", 18.2, 18.4, "h", "GND", "+3V3", "mcu", (16.65, 18.4, "C5", 0.5))
+c0402("C6", 27.8, 9.2, "h", "+3V3", "GND", "mcu", (27.8, 7.55, "C6", 0.5))
 
 # ---------------------------------------------------------------- Flash SPI SOIC-8
 FX, FY = 33.0, 11.905
@@ -241,10 +241,11 @@ c0402("C7", 37.6, 10.5, "v", "+3V3", "GND", "flash", (38.3, 9.6, "C7", 0.5, "sta
 LDO = [(1, 9.55, 24.15, "VBUS"), (2, 10.5, 24.15, "GND"), (3, 11.45, 24.15, "VBUS"),
        (4, 11.45, 21.85, ""), (5, 9.55, 21.85, "+3V3")]
 empreinte("U2", "alim", [Pad("U2", n, x, y, 0.6, 1.1, net) for n, x, y, net in LDO],
-          [("c", 8.85, 24.95, 0.18)],
+          [("c", 8.95, 23.3, 0.18)],
           [(12.7, 22.6, "U2", 0.7, "start"), (12.7, 23.6, "AP2112K", 0.5, "start")])
-c0603("C1", 7.6, 23.5, "v", "VBUS", "GND", "alim", (6.6, 23.5, "C1", 0.55, "end"))
-c0603("C2", 10.3, 20.0, "h", "+3V3", "GND", "alim", (10.3, 18.95, "C2", 0.55))
+# C1 et C2 sur les rangées de VIN et de VOUT : chaque broche entre droit dans sa capacité
+c0603("C1", 7.45, 24.15, "h", "GND", "VBUS", "alim", (5.95, 24.15, "C1", 0.55, "end"))
+c0603("C2", 7.45, 21.85, "h", "GND", "+3V3", "alim", (5.95, 21.85, "C2", 0.55, "end"))
 
 # ---------------------------------------------------------------- quartz 32,768 kHz
 empreinte("Y1", "quartz", [Pad("Y1", 1, 21.05, 20.8, 1.0, 1.8, "OSC_IN"),
@@ -288,17 +289,17 @@ fan("+3V3", [(15.8, 9.2), (15.8, 8.4)], 15.8, 8.4)
 fan("GND", [(14.8, 9.2), (14.8, 8.4)], 14.8, 8.4)
 fan("GND", [(16.6, 12.4), (16.1, 12.4)], 16.1, 12.4)                   # U1 L4
 piste("T", SIG, "+3V3", [(19.5, 7.1), (19.5, 6.0)], "fanout")         # U1 T1 -> C4
-piste("T", SIG, "GND", [(20.3, 7.1), (20.3, 6.4), (20.5, 6.2), (20.5, 6.0)], "fanout")
 fan("+3V3", [(19.5, 5.7), (19.5, 4.9)], 19.5, 4.9)
-fan("GND", [(20.5, 5.7), (20.5, 4.9)], 20.5, 4.9)
-piste("T", SIG, "+3V3", [(26.4, 9.2), (26.6, 9.2), (27.2, 8.6), (27.2, 8.0)], "fanout")  # R0 -> C6
-fan("+3V3", [(27.2, 8.0), (27.2, 7.2)], 27.2, 7.2)
-fan("GND", [(28.2, 8.0), (28.2, 7.2)], 28.2, 7.2)
+fan("GND", [(18.5, 5.7), (18.5, 4.9)], 18.5, 4.9)
+fan("GND", [(20.3, 7.1), (20.3, 6.5)], 20.3, 6.5)                      # U1 T2
+piste("T", SIG, "+3V3", [(26.4, 9.2), (27.3, 9.2)], "fanout")         # U1 R0 -> C6
+fan("+3V3", [(27.3, 9.2), (27.3, 8.4)], 27.3, 8.4)
+fan("GND", [(28.3, 9.2), (28.3, 8.4)], 28.3, 8.4)
 fan("GND", [(26.4, 11.6), (27.2, 11.6)], 27.2, 11.6)                   # U1 R3
 piste("T", SIG, "+3V3", [(18.7, 16.9), (18.7, 18.4)], "fanout")       # U1 B0 -> C5
-piste("T", SIG, "GND", [(19.5, 16.9), (19.5, 17.9), (19.7, 18.1), (19.7, 18.4)], "fanout")
 fan("+3V3", [(18.7, 18.4), (18.7, 19.2)], 18.7, 19.2)
-fan("GND", [(19.7, 18.4), (19.7, 19.2)], 19.7, 19.2)
+fan("GND", [(17.7, 18.4), (17.7, 19.2)], 17.7, 19.2)
+fan("GND", [(19.5, 16.9), (19.5, 17.7)], 19.5, 17.7)                   # U1 B1
 fan("+3V3", [(31.075, 12.54), (31.7, 12.54)], 31.7, 12.54)             # U4 WP
 fan("GND", [(31.075, 13.81), (31.7, 13.81)], 31.7, 13.81)              # U4 GND
 fan("+3V3", [(34.925, 11.27), (34.3, 11.27)], 34.3, 11.27)             # U4 HOLD
@@ -309,12 +310,11 @@ fan("GND", [(21.05, 23.6), (21.05, 24.4)], 21.05, 24.4)                # C8
 fan("GND", [(23.55, 23.6), (23.55, 24.4)], 23.55, 24.4)                # C9
 fan("GND", [(18.75, 3.6), (18.3, 3.6)], 18.3, 3.6)                     # D1 cathode
 fan("GND", [(10.5, 23.6), (10.5, 23.0)], 10.5, 23.0, PWR, 0.6, 0.3)    # U2 GND
-fan("GND", [(7.6, 24.25), (7.6, 25.2)], 7.6, 25.2, PWR, 0.6, 0.3)      # C1
-fan("GND", [(11.05, 20.0), (11.9, 20.0)], 11.9, 20.0, PWR, 0.6, 0.3)   # C2
-piste("T", PWR, "+3V3", [(9.55, 21.3), (9.55, 20.0)], "fanout")       # U2 VOUT -> C2
-piste("T", PWR, "+3V3", [(9.55, 20.0), (8.5, 20.0), (8.5, 20.9)], "fanout")
-via(8.5, 20.0, "+3V3", "fanout", 0.6, 0.3)
-via(8.5, 20.9, "+3V3", "fanout", 0.6, 0.3)
+fan("GND", [(6.7, 24.15), (6.7, 25.15)], 6.7, 25.15, PWR, 0.6, 0.3)   # C1
+fan("GND", [(6.7, 21.85), (6.7, 20.85)], 6.7, 20.85, PWR, 0.6, 0.3)   # C2
+piste("T", PWR, "+3V3", [(9.55, 21.85), (8.2, 21.85)], "fanout")      # U2 VOUT -> C2
+fan("+3V3", [(8.2, 21.85), (8.2, 20.85)], 8.2, 20.85, PWR, 0.6, 0.3)
+fan("+3V3", [(9.55, 21.3), (9.55, 20.7)], 9.55, 20.7, PWR, 0.6, 0.3)
 for x, y in [(19.9, 20.8), (24.7, 20.8), (22.3, 22.6)]:                # garde du quartz
     via(x, y, "GND", "fanout")
 
@@ -324,41 +324,16 @@ def longueur(pts):
     return sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(pts, pts[1:]))
 
 
-def accordeon(x0, x1, y, n, haut, sens=-1, c=0.1):
-    """Accordéon d'accord de longueur entre x0 et x1, n bosses de hauteur
-    `haut`, coins chanfreinés à 45°."""
-    pas = (x1 - x0) / (2 * n)
-    pts = [(x0, y)]
-    for k in range(n):
-        xa, xb = x0 + (2 * k + 0.5) * pas, x0 + (2 * k + 1.5) * pas
-        yh = y + sens * haut
-        pts += [(xa - c, y), (xa, y + sens * c), (xa, yh - sens * c), (xa + c, yh),
-                (xb - c, yh), (xb, yh - sens * c), (xb, y + sens * c), (xb + c, y)]
-    pts.append((x1, y))
-    return pts
-
-
 DP_A6 = [(7.125, 10.75), (7.95, 10.75), (8.45, 11.25)]
 DP_B6 = [(7.125, 11.75), (7.95, 11.75), (8.45, 11.25)]
-DP_TETE = [(8.45, 11.25), (9.2, 11.25), (9.975, 10.475), (13.5, 10.475)]
-DP_QUEUE = [(15.9, 10.475), (16.225, 10.8), (17.35, 10.8)]
+DP_TOUT = [(8.45, 11.25), (9.2, 11.25), (9.975, 10.475), (13.7, 10.475), (14.025, 10.8), (17.35, 10.8)]
 DN_DEBUT = [(7.125, 10.25), (7.55, 10.25)]
 DN_DESSOUS = [(7.55, 10.25), (7.55, 11.25), (7.55, 11.6), (8.05, 12.1), (8.6, 12.1)]
 DN_A7 = [(7.125, 11.25), (7.55, 11.25)]
 DN_DESSUS = [(8.6, 12.1), (9.3, 12.1), (9.575, 12.375), (13.7, 12.375), (14.475, 11.6), (17.35, 11.6)]
-L_DN = longueur(DN_DEBUT) + longueur(DN_DESSOUS) + longueur(DN_DESSUS)
-L_DP0 = longueur(DP_A6) + longueur(DP_TETE) + longueur(DP_QUEUE)
-# hauteur des bosses : celle qui égale D+ à D− (dichotomie)
-a, b = 0.05, 0.7
-for _ in range(60):
-    m = (a + b) / 2
-    if L_DP0 + longueur(accordeon(13.5, 15.9, 10.475, 2, m)) < L_DN:
-        a = m
-    else:
-        b = m
-ACC = accordeon(13.5, 15.9, 10.475, 2, (a + b) / 2)
-DP_TOUT = DP_TETE + ACC[1:] + DP_QUEUE[1:]
+# longueurs mesurées depuis les broches A6 / A7 du connecteur
 L_DP = longueur(DP_A6) + longueur(DP_TOUT)
+L_DN = longueur(DN_A7) + longueur(DN_DESSOUS[2:]) + longueur(DN_DESSUS)
 piste("T", SIG, "USB_DP", DP_A6, "usb")
 piste("T", SIG, "USB_DP", DP_B6, "usb")
 piste("T", SIG, "USB_DP", DP_TOUT, "usb")
@@ -374,19 +349,20 @@ via(9.9, 13.2, "GND", "usb")                                           # retour 
 # -- CC, VBUS et régulateur ----------------------------------------------------
 piste("T", SIG, "CC1", [(7.125, 9.75), (7.9, 9.75), (8.9, 8.75), (8.9, 8.1)], "cc")
 piste("T", SIG, "CC2", [(7.125, 12.75), (7.9, 12.75), (8.9, 13.75), (8.9, 13.9)], "cc")
-piste("T", PWR, "VBUS", [(7.125, 8.6), (7.6, 8.6)], "vbus")
-piste("T", PWR, "VBUS", [(7.125, 13.4), (7.6, 13.4)], "vbus")
-via(7.6, 8.6, "VBUS", "vbus", 0.6, 0.3)
-via(7.6, 13.4, "VBUS", "vbus", 0.6, 0.3)
-piste("B", 0.5, "VBUS", [(7.6, 8.6), (6.5, 9.7), (6.5, 12.3), (7.6, 13.4), (7.6, 21.9)], "vbus")
+piste("T", PWR, "VBUS", [(7.125, 8.6), (7.45, 8.6)], "vbus")
+piste("T", PWR, "VBUS", [(7.125, 13.4), (7.45, 13.4)], "vbus")
+via(7.45, 8.6, "VBUS", "vbus", 0.6, 0.3)
+via(7.45, 13.4, "VBUS", "vbus", 0.6, 0.3)
+piste("B", 0.5, "VBUS", [(7.45, 8.6), (6.5, 9.55), (6.5, 12.45), (7.45, 13.4), (7.45, 24.4),
+                         (8.2, 25.15)], "vbus")
 piste("T", SIG, "VBUS", [(13.3, 11.425), (13.85, 11.425)], "vbus")
 via(13.85, 11.425, "VBUS", "vbus", 0.6, 0.3)
-piste("B", PWR, "VBUS", [(13.85, 11.425), (13.85, 16.4), (12.85, 17.4), (7.6, 17.4)], "vbus")
-via(7.6, 21.9, "VBUS", "vbus", 0.6, 0.3)
-piste("T", PWR, "VBUS", [(7.6, 21.9), (7.6, 22.75)], "vbus")
-piste("T", PWR, "VBUS", [(7.6, 22.75), (8.7, 22.75), (9.55, 23.6), (9.55, 24.15)], "vbus")
-piste("T", 0.25, "VBUS", [(11.45, 24.15), (11.45, 25.1), (11.05, 25.5), (9.95, 25.5),
-                          (9.55, 25.1), (9.55, 24.15)], "vbus")
+piste("B", PWR, "VBUS", [(13.85, 11.425), (13.85, 16.4), (12.85, 17.4), (7.45, 17.4)], "vbus")
+via(8.2, 25.15, "VBUS", "vbus", 0.6, 0.3)
+piste("T", PWR, "VBUS", [(8.2, 25.15), (8.2, 24.15)], "vbus")          # via -> C1
+piste("T", PWR, "VBUS", [(8.2, 24.15), (9.55, 24.15)], "vbus")         # C1 -> VIN
+piste("T", 0.25, "VBUS", [(11.45, 24.15), (11.45, 25.25), (11.05, 25.65), (9.95, 25.65),
+                          (9.55, 25.25), (9.55, 24.15)], "vbus")       # EN tenu à VIN
 
 # -- bus SPI -------------------------------------------------------------------
 piste("T", SIG, "SPI_CS", [(26.4, 10.0), (29.525, 10.0)], "spi")
@@ -762,7 +738,7 @@ def generer():
     for c, w, net, pts, _ in usb:
         # D+ et D− avancent ensemble ; le dessous et les entrées suivent leur rang
         l = longueur(pts)
-        if pts == DP_TOUT or pts == DN_DESSUS:
+        if pts in (DP_TOUT, DN_DESSUS):
             poser(c, w, net, pts, T_USB0 + 0.25, T_USB1 - T_USB0 - 0.3)
         else:
             poser(c, w, net, pts, T_USB0, 0.25)
@@ -777,8 +753,8 @@ def generer():
     etat += [(T_CHEVELU, T_FANOUT0, "Placement · chevelu : %d nets à relier" % nb_nets),
              (T_FANOUT0, T_USB0, "Routage · fan-out : chaque broche d'alimentation descend à son plan par un via"),
              (T_USB0, T_ROUTE["cc"],
-              "Routage · paire USB 90 Ω, D+ et D− de même longueur (%s mm) — D− passe au dessous sous le connecteur"
-              % virgule(L_DN, 1)),
+              "Routage · paire USB 90 Ω par l'ESD, écart D+/D− %s mm — D− passe au dessous sous le connecteur"
+              % virgule(abs(L_DP - L_DN), 2)),
              (T_ROUTE["cc"], T_ROUTE["spi"], "Routage · CC1/CC2, VBUS en piste large au dessous, régulateur"),
              (T_ROUTE["spi"], T_ROUTE["swd"], "Routage · bus SPI : CS et MISO dessus, SCK et MOSI dessous"),
              (T_ROUTE["swd"], T_COUTURE, "Routage · SWD, LED et quartz, courts et symétriques"),
