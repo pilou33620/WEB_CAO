@@ -324,25 +324,28 @@ def longueur(pts):
     return sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(pts, pts[1:]))
 
 
-DP_A6 = [(7.125, 10.75), (7.95, 10.75), (8.45, 11.25)]
-DP_B6 = [(7.125, 11.75), (7.95, 11.75), (8.45, 11.25)]
-DP_TOUT = [(8.45, 11.25), (9.2, 11.25), (9.975, 10.475), (13.7, 10.475), (14.025, 10.8), (17.35, 10.8)]
-DN_DEBUT = [(7.125, 10.25), (7.55, 10.25)]
-DN_DESSOUS = [(7.55, 10.25), (7.55, 11.25), (7.55, 11.6), (8.05, 12.1), (8.6, 12.1)]
-DN_A7 = [(7.125, 11.25), (7.55, 11.25)]
+# USB-C est réversible : D+ sort sur A6 et B6, D− sur A7 et B7, entrelacées sur
+# la rangée. Les deux D+ sont pontées au dessus, au ras des pastilles (le
+# tronçon mort, côté de la fiche qui ne sert pas, reste le plus court
+# possible) ; les deux D− descendent par un via chacune et se rejoignent au
+# dessous, puis remontent par un troisième via.
+DP_PONT = [(7.125, 10.75), (7.75, 10.75), (7.9, 10.9), (7.9, 11.6), (7.75, 11.75), (7.125, 11.75)]
+DP_TOUT = [(7.9, 11.25), (9.2, 11.25), (9.975, 10.475), (13.7, 10.475), (14.025, 10.8), (17.35, 10.8)]
+DN_DEBUT = [(7.125, 10.25), (7.4, 10.25)]
+DN_DESSOUS = [(7.4, 10.25), (7.4, 11.25), (7.4, 11.6), (7.9, 12.1), (8.6, 12.1)]
+DN_A7 = [(7.125, 11.25), (7.4, 11.25)]
 DN_DESSUS = [(8.6, 12.1), (9.3, 12.1), (9.575, 12.375), (13.7, 12.375), (14.475, 11.6), (17.35, 11.6)]
 # longueurs mesurées depuis les broches A6 / A7 du connecteur
-L_DP = longueur(DP_A6) + longueur(DP_TOUT)
-L_DN = longueur(DN_A7) + longueur(DN_DESSOUS[2:]) + longueur(DN_DESSUS)
-piste("T", SIG, "USB_DP", DP_A6, "usb")
-piste("T", SIG, "USB_DP", DP_B6, "usb")
+L_DP = longueur(DP_PONT[:3] + [(7.9, 11.25)]) + longueur(DP_TOUT)
+L_DN = longueur(DN_A7) + longueur(DN_DESSOUS[1:]) + longueur(DN_DESSUS)
+piste("T", SIG, "USB_DP", DP_PONT, "usb")
 piste("T", SIG, "USB_DP", DP_TOUT, "usb")
 piste("T", SIG, "USB_DM", DN_DEBUT, "usb")
 piste("T", SIG, "USB_DM", DN_A7, "usb")
 piste("B", SIG, "USB_DM", DN_DESSOUS, "usb")
 piste("T", SIG, "USB_DM", DN_DESSUS, "usb")
-via(7.55, 10.25, "USB_DM", "usb")
-via(7.55, 11.25, "USB_DM", "usb")
+via(7.4, 10.25, "USB_DM", "usb")
+via(7.4, 11.25, "USB_DM", "usb")
 via(8.6, 12.1, "USB_DM", "usb")
 via(9.9, 13.2, "GND", "usb")                                           # retour de D−
 
