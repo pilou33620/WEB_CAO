@@ -1,0 +1,175 @@
+"use strict";
+/* ==========================================================================
+   Éditeur PCB — 27-groupes.js
+   Les groupes : un bloc de composants et de vias qui se déplace d'une pièce
+   --------------------------------------------------------------------------
+   C'est l'« Union » d'Altium : la capa de découplage, son via de masse et le
+   via d'alimentation, figés ensemble ; un étage d'alimentation entier, ses
+   selfs et ses condensateurs, posés une fois pour toutes.
+
+   Un groupe nomme ses composants et ses vias par identifiant :
+       {id, nom:"G1", fps:[17, 18], vias:[42]}
+   Les PISTES n'en font pas partie : celles qui vont d'un membre à un autre
+   partent en bloc d'elles-mêmes, comme toute piste tendue entre deux points
+   qui bougent (`followMoved`) ; celles qui sortent du groupe le suivent à 45°.
+   Il n'y a donc rien à tenir à jour quand on retouche le routage interne.
+
+   Ce qu'il fait :
+     · un clic sur un membre prend le groupe entier, le lasso aussi ;
+     · le glissement, R (à l'arrêt ou en glissant), le retournement, les cotes
+       saisies emportent tout le groupe : ses vias sont des vias de sortie de
+       ses composants, sans limite de distance ;
+     · Ctrl+G groupe la sélection, Ctrl+Maj+G dissout les groupes touchés ;
+       le panneau Propriétés d'un composant dit son groupe et le dissout.
+   Un membre effacé quitte son groupe ; un groupe sans composant, ou réduit à
+   un seul membre, disparaît : il ne tiendrait plus rien ensemble.
+   ========================================================================== */
+function normGroupes(src,fps,vias){
+  const fids=new Set(fps.map(f=>f.id)), vids=new Set(vias.filter(v=>v.id).map(v=>v.id));
+  const out=[], pris=new Set();
+  for(const g of (Array.isArray(src)?src:[])){
+    if(!g||typeof g!=="object")continue;
+    const id=+g.id;
+    if(!Number.isInteger(id)||id<1)continue;
+    // un membre n'appartient qu'à un groupe : le premier qui le nomme
+    const f=[...new Set((Array.isArray(g.fps)?g.fps:[]).map(Number))]
+      .filter(x=>fids.has(x)&&!pris.has("f"+x));
+    const v=[...new Set((Array.isArray(g.vias)?g.vias:[]).map(Number))]
+      .filter(x=>vids.has(x)&&!pris.has("v"+x));
+    if(!f.length||f.length+v.length<2)continue;
+    f.forEach(x=>pris.add("f"+x));v.forEach(x=>pris.add("v"+x));
+    out.push({id,nom:String(g.nom||("G"+id)).slice(0,40),fps:f,vias:v});
+  }
+  return out;
+}
+/* Les groupes à jour de la carte : membres effacés retirés. EN PLACE — un
+   groupe garde son objet, on le compare par identité — et seulement quand la
+   carte a changé. */
+function groupesPropres(){
+  if(!Array.isArray(S.groupes))S.groupes=[];
+  if(!S.groupes.length)return S.groupes;
+  const st=S.ver+"/"+S.fps.length+"/"+S.vias.length+"/"+S.groupes.length;
+  if(S.groupesSt===st)return S.groupes;
+  const fids=new Set(S.fps.map(f=>f.id)), vids=new Set(S.vias.map(v=>v.id).filter(Boolean));
+  for(const g of S.groupes){
+    g.fps=g.fps.filter(x=>fids.has(x));
+    g.vias=g.vias.filter(x=>vids.has(x));
+  }
+  S.groupes=S.groupes.filter(g=>g.fps.length&&g.fps.length+g.vias.length>=2);
+  S.groupesSt=S.ver+"/"+S.fps.length+"/"+S.vias.length+"/"+S.groupes.length;
+  return S.groupes;
+}
+function groupeDeFp(id){return groupesPropres().find(g=>g.fps.indexOf(id)>=0)||null;}
+function groupeDeVia(v){return v&&v.id?groupesPropres().find(g=>g.vias.indexOf(v.id)>=0)||null:null;}
+function groupeVias(g){return g.vias.map(id=>S.vias.find(v=>v.id===id)).filter(Boolean);}
+/* Les groupes que touche la sélection en cours. */
+function groupesSel(){
+  const out=new Set();
+  for(const id of S.sel.fps){const g=groupeDeFp(id);if(g)out.add(g);}
+  for(const v of S.sel.vias){const g=groupeDeVia(v);if(g)out.add(g);}
+  return [...out];
+}
+/* Toucher un membre, c'est prendre le groupe : composants et vias. */
+function groupeEtendreSel(){
+  for(const g of groupesSel()){
+    for(const id of g.fps)S.sel.fps.add(id);
+    for(const v of groupeVias(g))S.sel.vias.add(v);
+  }
+}
+/* Retirer un membre de la sélection (Ctrl+clic), c'est retirer le groupe. */
+function groupeRetirerSel(h){
+  const g=h&&(h.fp?groupeDeFp(h.fp.id):h.via?groupeDeVia(h.via):null);
+  if(!g)return;
+  for(const id of g.fps)S.sel.fps.delete(id);
+  for(const v of groupeVias(g))S.sel.vias.delete(v);
+}
+/* Les vias de groupe qu'emportent les composants `fps` : via → composant. */
+function groupesViasEmportes(fps){
+  const res=new Map(), ids=new Set(fps.map(f=>f.id));
+  for(const g of groupesPropres()){
+    const f=g.fps.find(id=>ids.has(id));
+    if(f==null)continue;
+    for(const v of groupeVias(g))res.set(v,f);
+  }
+  return res;
+}
+function groupeCreer(){
+  viaIds();
+  const fps=[...S.sel.fps].filter(id=>fpById(id)), vias=[...S.sel.vias];
+  if(!fps.length||fps.length+vias.length<2){
+    hint("Grouper : sélectionnez au moins un composant et un autre membre (composant ou via).");
+    return null;
+  }
+  push();
+  // un membre quitte son ancien groupe
+  for(const g of S.groupes){
+    g.fps=g.fps.filter(id=>fps.indexOf(id)<0);
+    g.vias=g.vias.filter(id=>!vias.some(v=>v.id===id));
+  }
+  let n=1;
+  while(S.groupes.some(g=>g.nom==="G"+n))n++;
+  const g={id:S.nextId++,nom:"G"+n,fps:fps.slice(),vias:vias.map(v=>v.id)};
+  S.groupes.push(g);
+  groupesPropres();
+  touch();refreshPanels();draw();
+  hint("Groupe « "+g.nom+" » : "+fps.length+" composant(s), "+vias.length+
+       " via(s). Il se déplace et tourne d'un bloc — Ctrl+Maj+G le dissout.");
+  return g;
+}
+function groupeDissoudre(liste){
+  const gs=liste||groupesSel();
+  if(!gs.length){hint("Aucun groupe dans la sélection.");return 0;}
+  push();
+  S.groupes=S.groupes.filter(g=>gs.indexOf(g)<0);
+  touch();refreshPanels();draw();
+  hint(gs.length+" groupe(s) dissous : chaque membre redevient libre.");
+  return gs.length;
+}
+/* Le cadre d'un groupe dont un membre est sélectionné, et son nom. */
+function groupesDessiner(c){
+  const gs=groupesSel();
+  if(!gs.length)return;
+  c.save();
+  c.strokeStyle=C_SEL;c.lineWidth=px(1.2);c.setLineDash([px(6),px(4)]);
+  c.fillStyle=C_SEL;c.font=px(11)+"px sans-serif";c.textBaseline="bottom";
+  for(const g of gs){
+    let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
+    for(const id of g.fps){
+      const f=fpById(id);
+      if(!f)continue;
+      const b=fpBBox(f);
+      x1=Math.min(x1,b.x1);y1=Math.min(y1,b.y1);x2=Math.max(x2,b.x2);y2=Math.max(y2,b.y2);
+    }
+    for(const v of groupeVias(g)){
+      x1=Math.min(x1,v.x-v.d/2);y1=Math.min(y1,v.y-v.d/2);
+      x2=Math.max(x2,v.x+v.d/2);y2=Math.max(y2,v.y+v.d/2);
+    }
+    if(x1>x2)continue;
+    const m=px(6);
+    c.strokeRect(x1-m,y1-m,x2-x1+2*m,y2-y1+2*m);
+    c.fillText(g.nom,x1-m,y1-m-px(2));
+  }
+  c.restore();
+}
+/* Le panneau Propriétés d'un composant groupé : son groupe, et de quoi le dissoudre. */
+function groupesPropsHtml(fp){
+  const g=groupeDeFp(fp.id);
+  if(!g)return "";
+  const refs=g.fps.map(id=>(fpById(id)||{}).ref).filter(Boolean);
+  return '<div class="prop"><label>Groupe</label><div class="two">'+
+    '<input id="pGrpNom" value="'+esc(g.nom)+'" title="Nom du groupe">'+
+    '<button class="tb" id="pGrpSuppr" title="Ctrl+Maj+G">Dissoudre</button></div>'+
+    '<div class="empty" style="padding:4px 0">'+esc(refs.join(", "))+
+    (g.vias.length?" + "+g.vias.length+" via(s)":"")+'</div></div>';
+}
+function groupesPropsBind(fp){
+  const g=groupeDeFp(fp.id);
+  if(!g)return;
+  const n=$("pGrpNom"), b=$("pGrpSuppr");
+  if(n)n.onchange=()=>{
+    const v=String(n.value||"").trim().slice(0,40);
+    if(!v||v===g.nom)return;
+    push();g.nom=v;touch();refreshPanels();draw();
+  };
+  if(b)b.onclick=e=>{if(e&&e.preventDefault)e.preventDefault();groupeDissoudre([g]);};
+}

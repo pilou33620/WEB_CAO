@@ -65,6 +65,7 @@ js/20-placement-score.js panneau Qualité de placement & rotation assistée :
 js/26-variantes.js       variantes de montage reprises du schéma : choix de la
                          variante, empreintes non montées barrées, bom.csv et
                          positions.csv sans elles
+js/27-groupes.js         groupes (Unions) : composants et vias déplacés d'une pièce
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```

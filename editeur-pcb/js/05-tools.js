@@ -18,6 +18,7 @@ function docObj(){
           holes:S.holes||[],
           drawings:S.drawings||[],
           variantes:S.variantes,
+          groupes:groupesPropres(),
           rf:normRf(S.rf),
           active:S.active,nextId:S.nextId};
 }
@@ -721,6 +722,8 @@ function normDoc(d){
   out.rf=normRf(src.rf);
   /* variantes de montage : une empreinte ne garde que celles que le document déclare */
   out.variantes=varNorm(src.variantes);
+  /* groupes : seulement des membres qui existent (27-groupes.js) */
+  out.groupes=normGroupes(src.groupes,out.fps,out.vias);
   for(const fp of out.fps){
     if(!fp.nonMonte)continue;
     const nm=varNormNonMonte(fp.nonMonte,out.variantes);
@@ -763,6 +766,7 @@ function loadDoc(d,keepView){
   S.dpPairs=d.dpPairs;S.dpRules=d.dpRules;S.dpSchema=d.dpSchema;
   S.netBruyants=d.netBruyants||[];
   S.variantes=d.variantes;
+  S.groupes=d.groupes;S.groupesSt=null;
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
   S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];
   S.active=d.active;S.pair=[0,S.cu-1];
@@ -4181,6 +4185,7 @@ cv.addEventListener("pointerdown",e=>{
     if(hitSelected(h))toggleOff=h;
     else toggleHit(h);
   }else if(!hitSelected(h))selectHit(h,false);
+  groupeEtendreSel();                       // un membre touché prend son groupe
   const pn=(h.pad&&h.pad.net)||null;
   if(pn)S.hlNet=pn;
   drag={move:true,x:p.x,y:p.y,moved:false,dx:0,dy:0,
@@ -4594,11 +4599,12 @@ cv.addEventListener("pointerup",e=>{
       else S.sel.zones.add(drag.zone);
       if(drag.zone.net){S.hlNet=drag.zone.net;revealNet(drag.zone.net);}
     }
+    groupeEtendreSel();
     S.marquee=null;refreshPanels();draw();
   }
   // Ctrl/Maj sur un élément déjà pris, sans glisser : c'était un retrait
   if(drag&&drag.move&&!drag.moved&&drag.toggleOff){
-    toggleHit(drag.toggleOff);refreshPanels();draw();
+    toggleHit(drag.toggleOff);groupeRetirerSel(drag.toggleOff);refreshPanels();draw();
   }
   drag=null;
 });
@@ -4774,6 +4780,8 @@ document.addEventListener("keydown",e=>{
   if((e.ctrlKey||e.metaKey)&&k==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
   if((e.ctrlKey||e.metaKey)&&k==="y"){e.preventDefault();redo();return;}
   if((e.ctrlKey||e.metaKey)&&k==="s"){e.preventDefault();saveJson();return;}
+  /* Ctrl+G groupe la sélection, Ctrl+Maj+G dissout ses groupes (27-groupes.js) */
+  if((e.ctrlKey||e.metaKey)&&k==="g"){e.preventDefault();e.shiftKey?groupeDissoudre():groupeCreer();return;}
   if((e.ctrlKey||e.metaKey)&&k==="a"){
     e.preventDefault();
     S.fps.forEach(f=>S.sel.fps.add(f.id));

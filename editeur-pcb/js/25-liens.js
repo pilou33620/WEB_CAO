@@ -302,7 +302,11 @@ function fanoutVias(fps){
     x1=Math.min(x1,b.x1);y1=Math.min(y1,b.y1);x2=Math.max(x2,b.x2);y2=Math.max(y2,b.y2);
   }
   x1-=FANOUT_MAX;y1-=FANOUT_MAX;x2+=FANOUT_MAX;y2+=FANOUT_MAX;
+  // les vias d'un groupe partent avec ses composants, à toute distance (27-groupes.js)
+  const grp=typeof groupesViasEmportes==="function"?groupesViasEmportes(fps):new Map();
+  for(const [v,f] of grp)res.set(v,f);
   for(const v of S.vias){
+    if(grp.has(v))continue;
     // marqué à la main : libre, ou lié à un boîtier quelle que soit la distance
     if(v.lie===0)continue;
     if(v.lie>0){
@@ -334,13 +338,17 @@ function fanoutVias(fps){
 function fanoutTake(){
   const fps=[...S.sel.fps].map(fpById).filter(Boolean);
   const m=fanoutVias(fps);
-  for(const v of [...m.keys()])
-    if(S.sel.vias.has(v))m.delete(v);       // déjà tiré par l'utilisateur
-    else S.sel.vias.add(v);
+  m.ajoutes=new Set();
+  for(const v of [...m.keys()]){
+    if(S.sel.vias.has(v)){
+      // déjà tiré par l'utilisateur ; un via de groupe, lui, tourne avec son groupe
+      if(!(typeof groupeDeVia==="function"&&groupeDeVia(v)))m.delete(v);
+    }else{S.sel.vias.add(v);m.ajoutes.add(v);}
+  }
   return m;
 }
 function fanoutRelease(d){
-  if(d&&d.fanout)for(const v of d.fanout.keys())S.sel.vias.delete(v);
+  if(d&&d.fanout)for(const v of (d.fanout.ajoutes||d.fanout.keys()))S.sel.vias.delete(v);
 }
 
 /* ==========================================================================

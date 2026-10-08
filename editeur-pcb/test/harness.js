@@ -384,7 +384,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simRfZ","simRfExclure","simRfImporter","simRfOublierModele","simRfBroche",
   "simRfValeurSI","trkAt","simRfMasque",
   /* les liens des bouts de piste, et la transformation des boîtiers */
-  "transformFps","linkSync","fpXformInv","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest"];
+  "transformFps","linkSync","fpXformInv","groupeEtendreSel","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -1877,6 +1877,86 @@ T("empreinte refaite : la conduite « arracher » ne s'applique pas",()=>{
     decouplageRelie(D);
     if(S.moveEtch!=="arracher")throw new Error("le réglage de l'utilisateur est rendu");
   }finally{S.moveEtch=avant;undo();suiviFin(D.reg);}
+});
+/* Les groupes (27-groupes.js) : composants et vias d'une pièce. */
+function groupeDecor(){
+  const D=decouplage();
+  // la capa et son via de masse, à 7 mm : trop loin pour un via de sortie automatique
+  clearSel();S.sel.fps.add(D.C.id);S.sel.vias.add(D.gnd);
+  key("g",{ctrlKey:true});
+  clearSel();
+  return D;
+}
+T("groupes : Ctrl+G groupe la capa et son via, un clic sur la capa prend les deux",()=>{
+  const D=groupeDecor();
+  try{
+    if(S.groupes.length!==1||S.groupes[0].nom!=="G1")throw new Error("un groupe G1 attendu : "+JSON.stringify(S.groupes));
+    const p=prise(D.C);
+    fire("pointerdown",sc(p.x,p.y));fire("pointerup",sc(p.x,p.y));
+    if(!S.sel.vias.has(D.gnd))throw new Error("cliquer la capa doit prendre son via de groupe");
+    // Ctrl+clic sur un membre déjà pris : tout le groupe sort
+    fire("pointerdown",Object.assign(sc(p.x,p.y),{ctrlKey:true}));
+    fire("pointerup",Object.assign(sc(p.x,p.y),{ctrlKey:true}));
+    if(S.sel.fps.size||S.sel.vias.size)throw new Error("Ctrl+clic retire le groupe entier");
+  }finally{undo();suiviFin(D.reg);}
+});
+T("groupes : glisser la capa emmène son via à 7 mm, la piste entre eux part en bloc",()=>{
+  const D=groupeDecor();
+  const g0={x:D.gnd.x,y:D.gnd.y}, tg=JSON.stringify(S.tracks.filter(t=>t.net==="GND").map(t=>[t.x2-t.x1,t.y2-t.y1]));
+  try{
+    const p=prise(D.C);
+    glisse(sc(p.x,p.y),sc(p.x+2,p.y+3));
+    const dx=D.C.x-20, dy=D.C.y-20;
+    if(!dx&&!dy)throw new Error("la capa devait bouger");
+    if(Math.abs(D.gnd.x-g0.x-dx)>1e-6||Math.abs(D.gnd.y-g0.y-dy)>1e-6)
+      throw new Error("le via du groupe devait suivre : "+D.gnd.x+","+D.gnd.y);
+    if(JSON.stringify(S.tracks.filter(t=>t.net==="GND").map(t=>[t.x2-t.x1,t.y2-t.y1]))!==tg)
+      throw new Error("la piste interne au groupe ne devait pas changer de forme");
+    decouplageRelie(D);
+  }finally{undo();undo();suiviFin(D.reg);}
+});
+T("groupes : R tourne le via du groupe avec la capa",()=>{
+  const D=groupeDecor();
+  const L0=fpXformInv(D.C)(D.gnd.x,D.gnd.y);
+  try{
+    S.sel.fps.add(D.C.id);groupeEtendreSel();
+    rotateSel();
+    const L=fpXformInv(D.C)(D.gnd.x,D.gnd.y);
+    if(Math.abs(L.x-L0.x)>2e-3||Math.abs(L.y-L0.y)>2e-3)throw new Error("le via du groupe tourne avec la capa");
+    decouplageRelie(D);
+  }finally{undo();undo();suiviFin(D.reg);}
+});
+T("groupes : deux composants groupés tournent en bloc, la piste qui sort suit",()=>{
+  const D=decouplage();
+  try{
+    clearSel();S.sel.fps.add(D.C.id);S.sel.fps.add(D.X.id);
+    key("g",{ctrlKey:true});
+    clearSel();S.sel.fps.add(D.C.id);groupeEtendreSel();
+    if(!S.sel.fps.has(D.X.id))throw new Error("la puce vient avec la capa");
+    // la piste puce → capa est interne au groupe : elle tourne telle quelle
+    const L0=Math.hypot(D.tX.x2-D.tX.x1,D.tX.y2-D.tX.y1);
+    rotateSel();
+    if(S.tracks.indexOf(D.tX)<0||Math.abs(Math.hypot(D.tX.x2-D.tX.x1,D.tX.y2-D.tX.y1)-L0)>2e-3)
+      throw new Error("la piste interne part en bloc, sans changer de longueur");
+    decouplageRelie(D);
+  }finally{undo();undo();suiviFin(D.reg);}
+});
+T("groupes : enregistrés, relus ; un membre effacé les défait ; Ctrl+Maj+G dissout",()=>{
+  const D=groupeDecor();
+  try{
+    const d=JSON.parse(serialize());
+    if(!d.groupes||d.groupes.length!==1||d.groupes[0].fps[0]!==D.C.id||d.groupes[0].vias[0]!==D.gnd.id)
+      throw new Error("le groupe doit s'écrire : "+JSON.stringify(d.groupes));
+    loadDoc(d,true);
+    if(S.groupes.length!==1)throw new Error("le groupe doit se relire");
+    // la capa effacée : il ne reste qu'un via, le groupe n'a plus lieu d'être
+    S.fps=S.fps.filter(f=>f.ref!=="C1");touch();
+    if(JSON.parse(serialize()).groupes.length!==0)throw new Error("un groupe sans composant disparaît");
+    undo();
+    clearSel();S.sel.fps.add(S.fps.find(f=>f.ref==="C1").id);
+    key("g",{ctrlKey:true,shiftKey:true});
+    if(S.groupes.length!==0)throw new Error("Ctrl+Maj+G dissout le groupe");
+  }finally{suiviFin(D.reg);}
 });
 /* Les vias de sortie : le via de masse au pied de la capa part avec elle. */
 function sortieDecor(){

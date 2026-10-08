@@ -128,6 +128,10 @@ lib/
 - [x] **Liens exploités quand une empreinte est refaite** (ECO « boîtier », empreinte reprise de la LIB, boîtier saisi, retour au générique, pas / écartement / nombre de broches) : une seule porte, `fpReshape` ; chaque piste reliée retrouve la pastille de même NUMÉRO dans la nouvelle empreinte et la suit comme à un déplacement (conduite « glisser » imposée). Une pastille disparue laisse sa piste en place, marquée « sa pastille n'existe plus, à re-router ».
 - [x] **Ménage** : `26-variantes.js` (PCB et schéma) au lieu d'un second fichier 25 ; `simLotsSontPaireDiff` n'est plus défini qu'une fois (`commun/simulation-em.js`).
 
+- [x] **Groupes** (les « Unions » d'Altium, `editeur-pcb/js/27-groupes.js`) : Ctrl+G groupe les composants et vias sélectionnés, Ctrl+Maj+G dissout ; un clic (ou le lasso) sur un membre prend le groupe entier, Ctrl+clic le retire entier ; glissement, R (à l'arrêt comme en glissant), cotes saisies emportent tout, les vias du groupe à toute distance ; les pistes entre membres partent en bloc, celles qui sortent suivent à 45°. Le panneau Propriétés d'un composant montre son groupe (renommer, dissoudre), la carte l'encadre quand il est sélectionné. Enregistré dans le document ; un groupe sans composant ou réduit à un membre disparaît.
+  - [ ] Retournement (F) d'un groupe : aujourd'hui chaque composant se retourne sur place ; un miroir du groupe entier demande de revoir le retournement d'un composant tourné (rot à corriger avec la face).
+  - [ ] Copier-coller d'un groupe : les copies ne sont pas regroupées, et les pistes internes ne viennent que si elles sont sélectionnées.
+
 ### Simulation SI (Signal Integrity)
 - [x] **Mode différentiel dans la cascade de paramètres S** :
   - Calcul complet des paramètres S en mode mixte (*Mixed-Mode S-Parameters*) dans `python/simulation_em.py` (`_cascade_differentielle`) : mode différentiel pur $S_{dd}$ ($S_{dd11}, S_{dd21}$ sur $Z_{ref,diff}$ ex: 100 Ω ou 90 Ω), mode commun $S_{cc}$ ($S_{cc11}, S_{cc21}$ sur $Z_{ref,comm} = Z_{ref,diff}/4$ ex: 25 Ω), et conversion de mode CEM $S_{cd21}(\omega)$ calculée à partir du skew $\Delta L = |L_+ - L_-|$.

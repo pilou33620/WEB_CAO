@@ -1272,7 +1272,9 @@ function propsFp(box,fp){
        '"></span>'+esc(q.net):'<span style="color:var(--txt-dim)">non connectée</span>')+'</td></tr>';
   }
   h+='</tbody></table>';
+  if(typeof groupesPropsHtml==="function")h+=groupesPropsHtml(fp);   // son groupe (27-groupes.js)
   box.innerHTML=h;
+  if(typeof groupesPropsBind==="function")groupesPropsBind(fp);
   const upd=(id,fn,num)=>{
     const el=$(id);
     if(!el)return;
