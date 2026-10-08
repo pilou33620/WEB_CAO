@@ -1,0 +1,12 @@
+# Releves du calculateur de lignes de uSimmics, a remplir a la main.
+# Une ligne par configuration ; laisser vide ce qui n'est pas encore releve.
+# Les virgules decimales sont acceptees. Puis : python python/test/banc-usimmics.py
+cas;S_mm;Z_even;Z_odd;eps_even;eps_odd
+cas2;0.2;;;;
+cas2;0.35;;;;
+cas2;0.7;;;;
+cas2;1.05;;;;
+cas3;0.2;;;;
+cas3;0.35;;;;
+cas3;0.7;;;;
+cas3;1.05;;;;
