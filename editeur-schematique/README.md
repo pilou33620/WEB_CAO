@@ -66,6 +66,9 @@ identiques pour l'éditeur PCB :
 | `js/21-reperage.js` | 223 | Ce que la recherche et la mesure valent sur un schéma : aimant sur les broches, cibles de toutes les feuilles, cadrage, cross-probing vers le PCB |
 | `js/22-recherche-composants.js` | 215 | Intégration recherche distributeurs (Mouser/DigiKey) et pinouts |
 | `js/23-patterns.js` | 135 | Reconnaissance des motifs de circuits, estimation des courants DC et pont vers le placement/DRC PCB |
+| `js/24-lib-sync.js` | 274 | Synchronisation et alertes avec Gestion LIB |
+| `js/25-brochage.js` | 405 | Brochage par référence : broche du symbole → patte de l'empreinte (`el.pinMap`), parties d'un composant multiple (`U3A`, `U3B`), choix de la référence, contrôle du brochage |
+| `../commun/brochage.js` | 152 | Lecture de la colonne « Brochage » de `LIB_composants.csv`, partagée avec Gestion LIB |
 | `../commun/reperage.js` | 294 | Chercher un repère, mesurer une distance — le geste, partagé avec l'éditeur PCB et paramétré par l'adaptateur de `21-reperage.js` |
 | `../commun/profils.js` | 555 | Profils utilisateur : qui travaille, ses panneaux, ses réglages, ses derniers documents — **chargé en premier**, avant l'espace de travail qui l'interroge |
 | `../commun/session.js` | 362 | Session d'onglet : le schéma part et revient quand on passe au PCB ou à la recherche, et porte le cross-probing entre les deux — **chargé en premier** |
@@ -153,6 +156,25 @@ centre que si les colonnes de noms lui laissent la place, sinon elle descend
 sous le corps. *Ajuster aux noms* élargit le corps juste ce qu'il faut : les
 broches s'écartent d'autant, c'est une action volontaire et jamais un effet de
 bord de la frappe d'un nom.
+
+**Brochage par référence** (`js/25-brochage.js`, `../commun/brochage.js`). Un
+symbole générique ne dit que ses broches (AOP : `IN-`, `IN+`, `OUT`, `V+`,
+`V-`) ; c'est la référence de la LIB qui sait sur quelle patte du boîtier
+chacune tombe, colonne `Brochage` de `LIB_composants.csv` :
+
+| Référence | Brochage |
+|---|---|
+| MCP6001 (SOT-23-5) | `OUT=1,V-=2,IN+=3,IN-=4,V+=5` |
+| LM358 (SOIC-8, deux AOP) | `A:OUT=1,IN-=2,IN+=3\|B:OUT=7,IN-=6,IN+=5\|*:V-=4,V+=8` |
+
+Choisir la référence (badge « Référence à choisir » de l'inspecteur) recopie
+la table sur le composant, `el.pinMap` : la netlist écrit alors la patte, plus
+le numéro de broche. Sans table, la broche n va sur la patte n — et un AOP en
+SOIC-8 mettait V+ sur la masse du LM358 ; ce cas est signalé. Un composant à
+plusieurs parties garde un seul repère (`U3`) et une partie (`el.part`),
+affichés `U3A` ; netlist et nomenclature n'y voient qu'un boîtier. Le contrôle
+(`brControles()`) relève aussi une alimentation reliée à la masse, une patte
+partagée prise par deux nets, une partie posée deux fois ou oubliée.
 
 **Libellés déplaçables.** Le repère et la valeur d'un composant s'attrapent à
 la souris et se posent où on veut ; un trait pointillé — le fil de rappel —

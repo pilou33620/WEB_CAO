@@ -393,6 +393,9 @@ function normFp(f,i){
   }
   const body=dBody(f.body);
   if(body)out.body=body;
+  /* pastilles venues de la LIB à l'import de netlist, et pas d'un dessin :
+     un changement de boîtier au schéma peut les refaire (applyNetlist) */
+  if(out.pads&&f.lib)out.lib=dStr(f.lib,80);
   /* Repère de broche 1 : `false` veut dire « retiré à la main », et c'est une
      décision qu'un document doit garder — sans quoi la règle automatique la
      déferait à la lecture. Tout le reste qu'un fichier pourrait porter là est

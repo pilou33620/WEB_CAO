@@ -21543,6 +21543,17 @@ NET "VOUT"
     throw new Error("le point de test devait être percé (LIB) : "+JSON.stringify(tp.pads));
   if(u.nets[1]!=="VOUT"||tp.nets[1]!=="VOUT")throw new Error("les nets suivent l'empreinte LIB");
   if(S.fps.find(f=>f.ref==="R1").pads)throw new Error("R1 sans empreinte LIB reste calculée");
+  /* boîtier changé au schéma : l'empreinte LIB n'est pas un dessin, elle se refait */
+  const r1=applyNetlist(`=== Composants ===
+    U1      MCP6001           SOIC-8
+
+=== Feuille 1 — Principale ===
+NET "VOUT"
+    U1.1
+`,false);
+  const u2=S.fps.find(f=>f.ref==="U1");
+  if(r1.repkg!==1||u2.pkg!=="SOIC-8"||u2.lib||u2.pins!==8||Math.abs(u2.pitch-1.27)>1e-9)
+    throw new Error("U1 devait passer en SOIC-8 calculé : "+JSON.stringify({repkg:r1.repkg,pkg:u2.pkg,lib:u2.lib,pins:u2.pins,pads:u2.pads&&u2.pads.length}));
   /* le contrôle du brochage du schéma arrive en commentaire : rien à lire */
   carteVide();fpLibRaz();
   const r2=applyNetlist(`=== Composants ===

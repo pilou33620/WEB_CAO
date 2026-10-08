@@ -926,6 +926,7 @@ function applyNetlist(txt,dropMissing){
       const lib=libPour(meta.pkg);
       if(lib&&fpApplyDef(fp,lib)){
         if(pins>fp.pins)fpSetPins(fp,pins);
+        fp.lib=lib.name;
         libFp.push(fp);
       }
       S.fps.push(fp);added.push(fp);
@@ -942,10 +943,15 @@ function applyNetlist(txt,dropMissing){
            reste. Le refaire effacerait un travail que la netlist ne sait pas
            reproduire — la fenêtre d'empreinte le dit et laisse rendre la main
            au calcul d'un clic. */
-        const lib=fpFree(fp)?null:libPour(meta.pkg);
+        /* dessinée à la main : pastilles explicites qui ne viennent pas de
+           la LIB. Celles que la LIB a posées se refont comme les autres. */
+        const dessin=fpFree(fp)&&!fp.lib;
+        const lib=dessin?null:libPour(meta.pkg);
         if(lib&&fpApplyDef(fp,lib)){
+          fp.lib=lib.name;
           libFp.push(fp);repkg.push(fp);
-        }else if(!fpFree(fp)){
+        }else if(!dessin){
+          if(fp.lib){delete fp.pads;delete fp.body;delete fp.lib;}
           const g=fpGeomFor(meta.pkg,pins);
           fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
           if(g.pads){

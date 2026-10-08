@@ -246,7 +246,9 @@ const FE={open:false,fp:null,sel:0,drag:null,pushed:false,fit:true,z:8,cx:0,cy:0
 function feIsOpen(){return FE.open;}
 /* Un seul instantané pour toute la séance : on annule d'un coup, pas pastille
    par pastille. */
-function fePush(){if(!FE.pushed){push();FE.pushed=true;}}
+/* Retoucher l'empreinte la fait sienne : venue de la LIB, elle devient un
+   dessin que la netlist ne refait plus (applyNetlist). */
+function fePush(){if(!FE.pushed){push();FE.pushed=true;}if(FE.fp)delete FE.fp.lib;}
 function feHint(h){const e=$("feHint");if(e)e.innerHTML=h;}
 
 /* ---------- construction paresseuse ----------
