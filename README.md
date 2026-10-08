@@ -75,9 +75,9 @@ Le serveur détecte l'absence d'affichage et n'ouvre pas de navigateur ; connect
 ### Aperçu visuel
 
 <p align="center">
-  <img src="screen/schematique-ne555.svg" width="800" alt="Animation : saisie d'un clignoteur à NE555 dans l'Éditeur Schématique, du placement des composants à la simulation où la LED clignote">
+  <img src="screen/schematique-ne555.svg" width="800" alt="Animation : saisie du schéma interne du NE555 dans l'Éditeur Schématique — 25 transistors et 16 résistances posés bloc par bloc, câblés, vérifiés puis repérés par fonction">
 </p>
-<p align="center"><em>10 s dans l'Éditeur Schématique : placer, câbler, vérifier, simuler — le clignoteur à NE555, LED à 1,4 Hz</em></p>
+<p align="center"><em>10 s dans l'Éditeur Schématique : placer, câbler, vérifier, repérer — l'intérieur d'un NE555, 25 transistors et 16 résistances</em></p>
 
 | Éditeur Schématique | Éditeur PCB |
 | :---: | :---: |
