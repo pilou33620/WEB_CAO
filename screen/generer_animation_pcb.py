@@ -655,7 +655,8 @@ def svg_plan(nom, net, retrait, couleur):
         for p in pads:
             if p.drill > 0:
                 r = max(p.w, p.h) / 2 + 0.3
-                m.append('<circle cx="%g" cy="%g" r="%g" fill="#000"/>' % (p.x, p.y, r))
+                m.append('<circle class="%s" cx="%g" cy="%g" r="%g" fill="#000"/>' % (
+                    fondu(T_EMPREINTE[ref], 0.05), p.x, p.y, r))
                 if p.net == net:
                     for ang in (0, 90, 180, 270):
                         m.append('<rect x="%g" y="%g" width="%g" height="0.5" fill="#fff" '
@@ -667,20 +668,23 @@ def svg_plan(nom, net, retrait, couleur):
     return masque, aplat
 
 
-# chronologie
-T_CONTOUR = 0.0
-T_PLACE = {"trous": 0.55, "usb": 0.75, "mcu": 1.05, "flash": 1.35, "alim": 1.6,
-           "quartz": 1.85, "swd": 2.05}
-T_CHEVELU = 2.3
-T_FANOUT0, T_FANOUT1 = 2.5, 3.05
-T_L2, T_L3 = 3.1, 3.5
-T_USB0, T_USB1 = 3.95, 4.95
-T_ROUTE = {"cc": 5.0, "vbus": 5.3, "spi": 5.65, "swd": 6.0, "quartz": 6.3}
-T_COUTURE = 6.65
-T_DRC0, T_DRC1 = 7.15, 7.7
-T_TOUR = [(7.75, "T"), (8.15, "L2"), (8.55, "L3"), (8.95, "B")]
-T_TOUR_FIN = 9.35
-T_FONDU = 9.45
+# chronologie : réglages, placement, routage, DRC
+T_PANNEAU0, T_PANNEAU1 = 0.5, 2.2      # panneau d'empilage et de règles
+T_SIGNAL = 0.7                         # L1 et L4 déclarées couches de signaux
+T_L2, T_L3 = 0.95, 1.4                 # plans versés
+T_REGLES = 1.85
+T_PLACE = {"trous": 2.45, "usb": 2.65, "mcu": 2.9, "flash": 3.15, "alim": 3.35,
+           "quartz": 3.55, "swd": 3.75}
+T_CHEVELU = 3.95
+T_FANOUT0, T_FANOUT1 = 4.15, 4.7
+T_USB0, T_USB1 = 4.75, 5.6
+T_ROUTE = {"cc": 5.65, "vbus": 5.9, "spi": 6.2, "swd": 6.5, "quartz": 6.8}
+T_COUTURE = 7.1
+T_DRC0, T_DRC1 = 7.55, 8.0
+T_TOUR = [(8.05, "T"), (8.42, "L2"), (8.79, "L3"), (9.16, "B")]
+T_TOUR_FIN = 9.5
+T_FONDU = 9.55
+T_EMPREINTE = {}                       # instant de pose de chaque empreinte
 
 
 def couche_opacite(couche, base):
@@ -699,13 +703,19 @@ def couche_opacite(couche, base):
 def generer():
     nb_couture = coudre()
     d_min, nb_nets = verifier()
-    etat = [(0.0, T_PLACE["trous"], "Contour de carte · 44 × 30 mm · empilage 4 couches")]
+    etat = [(0.0, T_SIGNAL, "Réglages · contour de carte 44 × 30 mm, coins arrondis"),
+            (T_SIGNAL, T_L2, "Réglages · empilage 4 couches : signaux sur L1 Top et L4 Bottom"),
+            (T_L2, T_L3, "Réglages · L2 Inner 1 tout entière au plan de masse GND"),
+            (T_L3, T_REGLES, "Réglages · L3 Inner 2 tout entière au plan +3V3, en retrait de 1 mm"),
+            (T_REGLES, T_PLACE["trous"],
+             "Réglages · règles : piste 0,20 mm, isolement 0,15 mm, paire USB 90 Ω")]
 
     # --- empreintes ----------------------------------------------------------
     pads_top, pads_tht, soie = [], [], []
     for ref, groupe, pads, traits, textes in EMPREINTES:
         t = T_PLACE[groupe] + 0.03 * (sum(1 for e in EMPREINTES[:EMPREINTES.index((ref, groupe, pads, traits, textes))]
                                            if e[1] == groupe))
+        T_EMPREINTE[ref] = t
         cls = apparait(t)
         top = "".join(svg_pad(p, C_TOP) for p in pads if p.drill == 0)
         tht = "".join(svg_pad(p, C_THRU) + svg_trou(p) for p in pads if p.drill > 0)
@@ -725,12 +735,12 @@ def generer():
             s += txt(x, y, mot, taille, C_SILK, ancre)
         if s:
             soie.append('<g class="%s">%s</g>' % (cls, s))
-    for g, msg in [("usb", "Placer · USB-C, protection ESD, résistances CC"),
-                   ("mcu", "Placer · microcontrôleur LQFP-32 et son découplage"),
-                   ("flash", "Placer · mémoire Flash SPI"),
-                   ("alim", "Placer · régulateur 3,3 V"),
-                   ("quartz", "Placer · quartz 32,768 kHz et capacités de charge"),
-                   ("swd", "Placer · connecteur SWD et LED")]:
+    for g, msg in [("usb", "Placement · USB-C, protection ESD, résistances CC"),
+                   ("mcu", "Placement · microcontrôleur LQFP-32 et son découplage"),
+                   ("flash", "Placement · mémoire Flash SPI"),
+                   ("alim", "Placement · régulateur 3,3 V"),
+                   ("quartz", "Placement · quartz 32,768 kHz et capacités de charge"),
+                   ("swd", "Placement · connecteur SWD et LED")]:
         suivants = [v for v in T_PLACE.values() if v > T_PLACE[g]]
         etat.append((T_PLACE[g], min(suivants) if suivants else T_CHEVELU, msg))
 
@@ -764,23 +774,21 @@ def generer():
         lmax = max(longueur(p[3]) for p in lot)
         for i, (c, w, net, pts, _) in enumerate(lot):
             poser(c, w, net, pts, t0 + i * 0.02, max(0.08, (t1 - t0 - 0.1) * longueur(pts) / lmax))
-    etat += [(T_CHEVELU, T_FANOUT0, "Chevelu · %d nets à relier" % nb_nets),
-             (T_FANOUT0, T_L2, "Fan-out · chaque broche d'alimentation descend à son plan par un via"),
-             (T_L2, T_L3, "Plan L2 · Inner 1 entièrement à la masse (GND)"),
-             (T_L3, T_USB0, "Plan L3 · Inner 2 entièrement au +3V3, en retrait de 1 mm du bord"),
+    etat += [(T_CHEVELU, T_FANOUT0, "Placement · chevelu : %d nets à relier" % nb_nets),
+             (T_FANOUT0, T_USB0, "Routage · fan-out : chaque broche d'alimentation descend à son plan par un via"),
              (T_USB0, T_ROUTE["cc"],
-              "Paire USB · 90 Ω, D+ et D− de même longueur (%s mm) — D− passe au dessous sous le connecteur"
+              "Routage · paire USB 90 Ω, D+ et D− de même longueur (%s mm) — D− passe au dessous sous le connecteur"
               % virgule(L_DN, 1)),
-             (T_ROUTE["cc"], T_ROUTE["spi"], "Router · CC1/CC2, VBUS en piste large au dessous, régulateur"),
-             (T_ROUTE["spi"], T_ROUTE["swd"], "Router · bus SPI : CS et MISO dessus, SCK et MOSI dessous"),
-             (T_ROUTE["swd"], T_COUTURE, "Router · SWD, LED et quartz, courts et symétriques"),
-             (T_COUTURE, T_DRC0, "Vias de couture · %d vias de masse sur le pourtour" % nb_couture),
+             (T_ROUTE["cc"], T_ROUTE["spi"], "Routage · CC1/CC2, VBUS en piste large au dessous, régulateur"),
+             (T_ROUTE["spi"], T_ROUTE["swd"], "Routage · bus SPI : CS et MISO dessus, SCK et MOSI dessous"),
+             (T_ROUTE["swd"], T_COUTURE, "Routage · SWD, LED et quartz, courts et symétriques"),
+             (T_COUTURE, T_DRC0, "Routage · %d vias de couture de masse sur le pourtour" % nb_couture),
              (T_DRC0, T_TOUR[0][0],
               "DRC · 0 erreur, 0 connexion non routée — isolement mini %s mm" % virgule(d_min, 2)),
-             (T_TOUR[0][0], T_TOUR[1][0], "L1 Top · signaux"),
-             (T_TOUR[1][0], T_TOUR[2][0], "L2 Inner 1 · plan de masse, rien d'autre"),
-             (T_TOUR[2][0], T_TOUR[3][0], "L3 Inner 2 · plan +3V3, rien d'autre"),
-             (T_TOUR[3][0], T_FONDU + 0.3, "L4 Bottom · signaux : D−, SCK, MOSI, VBUS")]
+             (T_TOUR[0][0], T_TOUR[1][0], "DRC · vue L1 Top : signaux"),
+             (T_TOUR[1][0], T_TOUR[2][0], "DRC · vue L2 Inner 1 : le plan de masse, rien d'autre"),
+             (T_TOUR[2][0], T_TOUR[3][0], "DRC · vue L3 Inner 2 : le plan +3V3, rien d'autre"),
+             (T_TOUR[3][0], T_FONDU + 0.3, "DRC · vue L4 Bottom : D−, SCK, MOSI et VBUS")]
 
     # --- vias ---------------------------------------------------------------------
     vias_svg = []
@@ -794,7 +802,7 @@ def generer():
     # --- chevelu -----------------------------------------------------------------
     rats = []
     for net, segs in chevelu().items():
-        fin = {"GND": T_L2 + 0.3, "+3V3": T_L3 + 0.3}.get(net, fin_net.get(net, T_COUTURE))
+        fin = {"GND": T_FANOUT1, "+3V3": T_FANOUT1}.get(net, fin_net.get(net, T_COUTURE))
         cls = anim([(T_CHEVELU, "opacity:0"), (T_CHEVELU + 0.15, "opacity:.75"),
                     (fin - 0.1, "opacity:.75"), (fin, "opacity:0")])
         rats.append('<g class="%s">%s</g>' % (cls, "".join(
@@ -883,9 +891,9 @@ def generer():
                  if a > 0 else [(0, "opacity:1"), (b, "opacity:1"), (b + 0.04, "opacity:0")]),
             txt(16, H - 12, m, 11, "#d7dbe0", "start", "600"))
         for a, b, m in etat)
-    etapes = [("1  Placer", 0.0, T_FANOUT0), ("2  Plans", T_FANOUT0, T_USB0),
-              ("3  Router", T_USB0, T_DRC0), ("4  DRC", T_DRC0, T_FONDU + 0.3)]
-    puces, x = [], 548
+    etapes = [("1  Réglages", 0.0, T_PLACE["trous"] - 0.05), ("2  Placement", T_PLACE["trous"] - 0.05, T_FANOUT0),
+              ("3  Routage", T_FANOUT0, T_DRC0), ("4  DRC", T_DRC0, T_FONDU + 0.3)]
+    puces, x = [], 516
     for nom, a, b in etapes:
         w = largeur_texte(nom, 10.5) + 18
         actif = anim([(a, "opacity:0"), (a + 0.12, "opacity:1"), (b, "opacity:1"), (b + 0.12, "opacity:0")]
@@ -900,6 +908,37 @@ def generer():
             '<g class="%s"><rect x="%g" y="5" width="%g" height="17" rx="8.5" fill="%s" stroke="%s"/>%s</g>' % (
                 actif, x, w, C_FILL, C_SEL, txt(x + w / 2, 13.5, nom, 10.5, "#fff", "middle", "bold")))
         x += w + 8
+
+    # --- panneau des réglages : empilage physique et règles --------------------
+    px0, py0, pw = 462, 118, 300
+    lignes = [(T_SIGNAL, "1", "Top", "L1_Top", C_TOP, "Signal", "#9aa1ab"),
+              (T_L2, "2", "Inner 1", "L2_Inner", C_IN1, "PLAN GND", "#f2c744"),
+              (T_L3, "3", "Inner 2", "L3_Inner", C_IN2, "PLAN +3V3", "#f2c744"),
+              (T_SIGNAL + 0.1, "4", "Bottom", "L4_Bottom", C_BOT, "Signal", "#9aa1ab")]
+    corps = [txt(px0 + 14, py0 + 18, "EMPILAGE PHYSIQUE · 4 COUCHES", 9, "#9aa1ab", "start", "700")]
+    for i, (t, num, nom, ident, col, role, col_role) in enumerate(lignes):
+        y = py0 + 44 + 26 * i
+        wr = largeur_texte(role, 9) + 12
+        corps.append(
+            '<g class="%s">' % fondu(t, 0.15) +
+            '<rect x="%g" y="%g" width="%g" height="22" rx="3" fill="#24272c"/>' % (px0 + 8, y - 11, pw - 16) +
+            '<rect x="%g" y="%g" width="3" height="22" fill="%s"/>' % (px0 + 8, y - 11, col) +
+            txt(px0 + 20, y, num, 10, "#80868f", "start", "600") +
+            '<rect x="%g" y="%g" width="9" height="9" rx="2" fill="%s"/>' % (px0 + 34, y - 4.5, col) +
+            txt(px0 + 50, y, nom, 11, "#e5e7eb", "start", "600") +
+            txt(px0 + 112, y, ident, 9.5, "#80868f", "start", "600") +
+            '<rect x="%g" y="%g" width="%g" height="15" rx="3" fill="none" stroke="%s"/>' % (
+                px0 + pw - 18 - wr, y - 7.5, wr, col_role) +
+            txt(px0 + pw - 18 - wr / 2, y + 0.5, role, 9, col_role, "middle", "700") + '</g>')
+    yr = py0 + 44 + 26 * 4 + 6
+    regles = ["Piste 0,20 mm · alimentation 0,40 mm", "Isolement 0,15 mm · via 0,45 / 0,20 mm",
+              "Paire USB 90 Ω : 0,20 mm, écart 0,15 mm"]
+    corps.append('<g class="%s">%s%s</g>' % (
+        fondu(T_REGLES, 0.15), txt(px0 + 14, yr + 4, "RÈGLES DE CONCEPTION", 9, "#9aa1ab", "start", "700"),
+        "".join(txt(px0 + 20, yr + 24 + 19 * j, r, 10.5, "#e5e7eb", "start", "600") for j, r in enumerate(regles))))
+    hp = yr + 24 + 19 * 3 - py0
+    panneau = ('<g class="%s"><rect x="%g" y="%g" width="%g" height="%g" rx="6" fill="#1b1d21" fill-opacity=".96" '
+               'stroke="#3a3d44"/>%s</g>' % (fondu(T_PANNEAU0, 0.2, T_PANNEAU1, 0.2), px0, py0, pw, hp, "".join(corps)))
 
     scene = fondu(0, 0.0, T_FONDU, 0.4)
     svg = [
@@ -947,6 +986,7 @@ def generer():
         '<g stroke="%s" stroke-width="0.07" stroke-dasharray="0.25 0.18">%s</g>' % (C_RATS, "".join(rats)),
         contour, drc,
         '</g></g>',
+        panneau,
         # barre de titre
         '<rect width="%d" height="27" fill="%s"/>' % (W, C_BAR),
         '<rect x="12" y="7" width="13" height="13" rx="3" fill="%s"/>' % C_TOP,
