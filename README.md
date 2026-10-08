@@ -79,6 +79,11 @@ Le serveur détecte l'absence d'affichage et n'ouvre pas de navigateur ; connect
 </p>
 <p align="center"><em>10 s dans l'Éditeur Schématique : placer, câbler, vérifier, repérer — l'intérieur d'un NE555, 25 transistors et 16 résistances</em></p>
 
+<p align="center">
+  <img src="screen/pcb-4-couches.svg" width="800" alt="Animation : conception d'une carte USB-C 4 couches dans l'Éditeur PCB — placement, plans de masse et +3V3 internes, paire USB 90 Ω appariée, bus SPI, vias de couture, DRC puis tour des couches">
+</p>
+<p align="center"><em>10 s dans l'Éditeur PCB : une carte USB-C 4 couches — signaux sur Top et Bottom, L2 tout en masse, L3 tout en +3V3, paire USB 90 Ω appariée en longueur, DRC sans erreur</em></p>
+
 | Éditeur Schématique | Éditeur PCB |
 | :---: | :---: |
 | ![Éditeur Schématique](screen/sch.png) | ![Éditeur PCB](screen/pcb.png) |
@@ -287,7 +292,7 @@ WEB_CAO/
 ├── projets/                       Racine par défaut des dossiers de projet
 ├── IPC2581_Exemple/               Cartes IPC-2581 d'exemple
 ├── docs/                          simulation-em.md, HISTORIQUE_DEVELOPPEMENT.md
-├── screen/                        Captures d'écran, animation du schématique (generer_animation_ne555.py)
+├── screen/                        Captures d'écran, animations du schématique et du PCB (generer_animation_*.py)
 ├── A-FAIRE.md                     Feuille de route et backlog
 └── requirements.txt               numpy, scipy (solveurs uniquement)
 ```
