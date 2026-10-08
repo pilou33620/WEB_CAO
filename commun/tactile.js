@@ -392,8 +392,15 @@ function trSurFeuille(e){ return !!TR.cv && e.target === TR.cv; }
    un doigt sur la feuille est ignoré. Si la paume était là avant le stylet, ses
    points sont annulés auprès de l'éditeur, sinon il croirait à un pincement. */
 function trRejeter(e){ TR.rejetes.add(e.pointerId); e.stopImmediatePropagation(); if(e.cancelable) e.preventDefault(); }
+function trPaume(e){
+  return e.pointerType==="touch" && TR.cfg.paume && (TR.styletPose || Date.now()-TR.dernierStylet < TR_PAUME_MS);
+}
 function trPointerDown(e){
   if(!tactileEstActif()) return;
+  // le stylet est posé, sur la feuille comme sur la roulette qu'il tient
+  if(e.pointerType==="pen"){ TR.styletPose = true; TR.dernierStylet = Date.now(); }
+  // la paume d'abord : posée pendant que le stylet tient la roulette, elle ne la ferme pas
+  if(trSurFeuille(e) && trPaume(e)){ trRejeter(e); return; }
   if(TR.roue && !(TR.el && TR.el.contains(e.target))){
     tactileRouletteFermer();
     if(trSurFeuille(e)){ e.stopImmediatePropagation(); if(e.cancelable) e.preventDefault(); TR.rejetes.add(e.pointerId); }
@@ -401,7 +408,6 @@ function trPointerDown(e){
   }
   if(!trSurFeuille(e)) return;
   if(e.pointerType==="pen"){
-    TR.styletPose = true; TR.dernierStylet = Date.now();
     if(TR.cfg.paume){
       for(const [id,p] of TR.ptr){
         if(p.type!=="touch") continue;
@@ -412,8 +418,6 @@ function trPointerDown(e){
     }
     // bouton latéral d'un stylet (Surface, Wacom…) : la roulette tout de suite
     if(e.buttons & 2){ trRejeter(e); trOuvrirSur(e.clientX, e.clientY); return; }
-  }else if(e.pointerType==="touch" && TR.cfg.paume && (TR.styletPose || Date.now()-TR.dernierStylet < TR_PAUME_MS)){
-    trRejeter(e); return;
   }
   if(e.pointerType!=="pen" && e.pointerType!=="touch") return;
   TR.ptr.set(e.pointerId, {x:e.clientX, y:e.clientY, x0:e.clientX, y0:e.clientY, type:e.pointerType});
@@ -437,7 +441,9 @@ function trPointerMove(e){
      Math.hypot(p.x-p.x0, p.y-p.y0) >= (TR_SEUILS[p.type]||TR_SEUILS.touch).drag) trAppuiAnnuler();
 }
 function trPointerFin(e){
-  if(e.pointerType==="pen"){ TR.styletPose = false; TR.dernierStylet = Date.now(); }
+  /* Seul le vrai lever du stylet compte : le pointercancel que nous envoyons à
+     l'ouverture de la roulette le laisse posé, et la paume reste ignorée. */
+  if(e.pointerType==="pen" && e.isTrusted){ TR.styletPose = false; TR.dernierStylet = Date.now(); }
   if(TR.rejetes.has(e.pointerId)){
     // le pointercancel que nous envoyons nous-mêmes doit atteindre l'éditeur
     if(e.isTrusted){ TR.rejetes.delete(e.pointerId); e.stopImmediatePropagation(); }
@@ -822,10 +828,17 @@ function trPersoConstruire(){
     const b = e.target.closest("button[data-a]"); if(!b) return;
     const ch = b.dataset.ch.split(".").map(Number);
     const tab = ch.length===2 ? trR()[ch[0]].items : trR(), i = ch[ch.length-1];
+    // le groupe choisi comme destination suit son déplacement dans la roulette
+    const j = b.dataset.a==="haut" ? i-1 : b.dataset.a==="bas" ? i+1 : -1, sd = q("#trDest");
+    let suivre = null;
+    if(ch.length===1 && j>=0 && j<tab.length){
+      if(sd.value===String(i)) suivre = String(j); else if(sd.value===String(j)) suivre = String(i);
+    }
     if(b.dataset.a==="haut" && i>0) [tab[i-1],tab[i]] = [tab[i],tab[i-1]];
     if(b.dataset.a==="bas" && i<tab.length-1) [tab[i+1],tab[i]] = [tab[i],tab[i+1]];
-    if(b.dataset.a==="ret"){ tab.splice(i,1); if(ch.length===1) q("#trDest").value = "roue"; }
+    if(b.dataset.a==="ret"){ tab.splice(i,1); if(ch.length===1) sd.value = "roue"; }
     trEnregistrer(); trPersoRendre();
+    if(suivre!==null){ sd.value = suivre; trPersoRendre(); }
   });
   q("#trDest").addEventListener("change", trPersoRendre);
   q(".tr-catalogue").addEventListener("click", e=>{
