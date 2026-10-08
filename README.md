@@ -78,11 +78,13 @@ Le serveur détecte l'absence d'affichage et n'ouvre pas de navigateur ; connect
   <img src="screen/schematique-carte-usb.svg" width="800" alt="Animation : saisie du schéma de la carte USB dans l'Éditeur Schématique — connecteur micro-B, protection ESD, régulateur 3,3 V, STM32 et son découplage, quartz, Flash SPI, SWD et LED, placés, câblés, vérifiés puis envoyés à l'Éditeur PCB">
 </p>
 <p align="center"><em>10 s dans l'Éditeur Schématique : le schéma de la carte USB — placement, câblage, ERC, puis envoi de la netlist à l'Éditeur PCB</em></p>
+<p align="center"><sub>Version GIF : <a href="screen/schematique-carte-usb.gif">schematique-carte-usb.gif</a></sub></p>
 
 <p align="center">
   <img src="screen/pcb-4-couches.svg" width="800" alt="Animation : conception d'une carte USB 4 couches dans l'Éditeur PCB — placement, plans de masse et +3V3 internes, paire USB 90 Ω appariée, bus SPI, vias de couture, DRC puis tour des couches">
 </p>
 <p align="center"><em>Puis la même carte dans l'Éditeur PCB : 4 couches — signaux sur Top et Bottom, L2 tout en masse, L3 tout en +3V3, paire USB 90 Ω appariée en longueur, DRC sans erreur</em></p>
+<p align="center"><sub>Version GIF : <a href="screen/pcb-4-couches.gif">pcb-4-couches.gif</a></sub></p>
 
 | Éditeur Schématique | Éditeur PCB |
 | :---: | :---: |
@@ -292,7 +294,7 @@ WEB_CAO/
 ├── projets/                       Racine par défaut des dossiers de projet
 ├── IPC2581_Exemple/               Cartes IPC-2581 d'exemple
 ├── docs/                          simulation-em.md, HISTORIQUE_DEVELOPPEMENT.md
-├── screen/                        Captures d'écran, animations du schématique et du PCB (generer_animation_*.py)
+├── screen/                        Captures d'écran, animations du schématique et du PCB (generer_animation_*.py, svg_vers_gif.js)
 ├── A-FAIRE.md                     Feuille de route et backlog
 └── requirements.txt               numpy, scipy (solveurs uniquement)
 ```
