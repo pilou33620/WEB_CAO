@@ -238,24 +238,126 @@ function endsAt(anchors){
   }
   return out;
 }
+/* Fils en équerre pendant un déplacement. Une extrémité qui suit une broche ne
+   se contente plus d'être tirée en ligne droite — le fil partait en biais dès
+   que le symbole quittait l'axe du segment. Chaque extrémité reçoit un plan :
+   · « move »  : l'autre bout bouge aussi, le fil est simplement translaté ;
+   · « slide » : l'autre bout est un coude libre (un seul fil perpendiculaire,
+                 ni broche ni jonction) — le coude glisse avec le fil, le
+                 voisin s'allonge sur son propre axe, on garde un L ;
+   · « elbow » : sinon, le fil reste droit le long de son axe et un décroché
+                 en Z (ou en L) rattrape l'écart ; ses segments sont de vrais
+                 fils, recréés à chaque mouvement ;
+   · sans plan (fil oblique, Alt+glisser) : étirement libre, comme avant. */
+function wireAxis(w){
+  if(w.y1===w.y2&&w.x1!==w.x2)return "h";
+  if(w.x1===w.x2&&w.y1!==w.y2)return "v";
+  return w.x1===w.x2&&w.y1===w.y2?"0":null;
+}
+function freeCorner(w,o,anchors){
+  if(anchors.has(key(o.x,o.y)))return null;
+  for(const el of S.comps) for(const q of allPins(el)) if(q.x===o.x&&q.y===o.y)return null;
+  let hit=null;
+  for(const w2 of S.wires){
+    if(w2===w)continue;
+    const e=(w2.x1===o.x&&w2.y1===o.y)?1:(w2.x2===o.x&&w2.y2===o.y)?2:0;
+    if(!e){if(insideSeg(o,w2))return null;continue;}
+    if(hit)return null;                       // jonction : au moins trois fils
+    hit={w:w2,e};
+  }
+  if(!hit)return null;
+  const a=wireAxis(w), b=wireAxis(hit.w);
+  if(!(a==="h"&&b==="v")&&!(a==="v"&&b==="h"))return null;
+  const r=hit.e===1?{x:hit.w.x2,y:hit.w.y2}:{x:hit.w.x1,y:hit.w.y1};
+  if(anchors.has(key(r.x,r.y)))return null;
+  hit.x0=o.x;hit.y0=o.y;
+  return hit;
+}
+function planEnds(ends,anchors){
+  for(const a of ends){
+    const w=a.w, o=a.e===1?{x:w.x2,y:w.y2}:{x:w.x1,y:w.y1};
+    a.ox0=o.x;a.oy0=o.y;
+    if(anchors.has(key(o.x,o.y))){a.mode="move";continue;}
+    a.axis=wireAxis(w);
+    if(!a.axis)continue;                      // fil oblique : étirement libre
+    a.corner=a.axis==="0"?null:freeCorner(w,o,anchors);
+    a.mode=a.corner?"slide":"elbow";
+    a.extra=[];
+  }
+  return ends;
+}
+function setEnd(w,e,x,y){
+  if(e===1){w.x1=x;w.y1=y;}else{w.x2=x;w.y2=y;}
+}
 function applyEnds(ends,dx,dy){
   for(const a of ends){
-    if(a.e===1){a.w.x1=a.x0+dx;a.w.y1=a.y0+dy;}
-    else{a.w.x2=a.x0+dx;a.w.y2=a.y0+dy;}
+    const px=a.x0+dx, py=a.y0+dy;
+    if(a.mode==="slide"){
+      const ox=a.axis==="v"?a.ox0+dx:a.ox0, oy=a.axis==="h"?a.oy0+dy:a.oy0;
+      setEnd(a.w,a.e,px,py);
+      setEnd(a.w,a.e===1?2:1,ox,oy);
+      setEnd(a.corner.w,a.corner.e,ox,oy);
+    }else if(a.mode==="elbow"){
+      for(const s of a.extra){const i=S.wires.indexOf(s);if(i>=0)S.wires.splice(i,1);}
+      a.extra=[];
+      // chaîne O → coude(s) → P' ; le fil d'origine garde le premier tronçon
+      const o={x:a.ox0,y:a.oy0}, p={x:px,y:py}, pts=[o];
+      if(a.axis==="h"&&py!==o.y){
+        const mx=snap((o.x+px)/2);
+        pts.push({x:mx,y:o.y},{x:mx,y:py});
+      }else if(a.axis==="v"&&px!==o.x){
+        const my=snap((o.y+py)/2);
+        pts.push({x:o.x,y:my},{x:px,y:my});
+      }else if(a.axis==="0"&&px!==o.x&&py!==o.y){
+        const s0=routeL(o,p)[0];
+        pts.push({x:s0.x2,y:s0.y2});
+      }
+      pts.push(p);
+      const chain=pts.filter((q,i)=>!i||q.x!==pts[i-1].x||q.y!==pts[i-1].y);
+      const n1=chain[1]||o;
+      setEnd(a.w,a.e,n1.x,n1.y);
+      for(let i=2;i<chain.length;i++){
+        const s={x1:chain[i-1].x,y1:chain[i-1].y,x2:chain[i].x,y2:chain[i].y};
+        if(a.w.bus)s.bus=true;
+        a.extra.push(s);
+      }
+      S.wires.push(...a.extra);
+    }else{
+      setEnd(a.w,a.e,px,py);
+    }
   }
   if(ends.length)touchWires();
+}
+/* Au dépôt : un coude qui a glissé jusqu'au bout de son voisin, ou un fil
+   ramené sur lui-même, laisse un segment nul qu'on retire. */
+function dropNullWires(ends){
+  const cand=new Set();
+  for(const a of ends){
+    cand.add(a.w);
+    if(a.corner)cand.add(a.corner.w);
+    for(const s of a.extra||[])cand.add(s);
+  }
+  let n=0;
+  for(const w of cand){
+    if(w.x1!==w.x2||w.y1!==w.y2)continue;
+    const i=S.wires.indexOf(w);
+    if(i>=0){S.wires.splice(i,1);S.selW.delete(w);n++;}
+  }
+  if(n)touchWires();
+  return n;
 }
 function moveSelBy(dx,dy){
   const els=selEls(), wires=selWires(), drawings=selDrawings();
   if(!els.length&&!wires.length&&!drawings.length)return;
   const anchors=anchorKeys(els,wires);
-  const ends=endsAt(anchors);
+  const ends=planEnds(endsAt(anchors),anchors);
   const probes=probeFollowers(anchors,new Set(els));
   const contacts=pinContacts(els);
   for(const el of els){el.x+=dx;el.y+=dy;}
   for(const d of drawings){d.x1+=dx;d.y1+=dy;d.x2+=dx;d.y2+=dy;}
   applyProbes(probes,dx,dy);
   applyEnds(ends,dx,dy);
+  dropNullWires(ends);
   reconnectContacts(contacts);   // une flèche suffit à décoller deux broches
   draw();
 }
@@ -282,7 +384,7 @@ function beginDrag(p,handle,detach){
     for(const w of wires)ends.push({w,e:1,x0:w.x1,y0:w.y1},{w,e:2,x0:w.x2,y0:w.y2});
   }else{
     anchors=anchorKeys(els,wires);
-    ends=endsAt(anchors);
+    ends=planEnds(endsAt(anchors),anchors);   // fils gardés en équerre
   }
   S.drag={sx:p.x,sy:p.y,moved:false,before:null,handle:!!handle,
           items:els.map(c=>({el:c,x0:c.x,y0:c.y})),
@@ -305,6 +407,7 @@ function finishDrag(){
   if(off&&!S.drag.moved)off.set.delete(off.id);
   if(S.drag.moved){
     push(S.drag.before);                 // instantané pris au premier déplacement réel
+    dropNullWires(S.drag.ends);
     // deux broches qui se séparent gardent leur liaison : un fil la matérialise
     reconnectContacts(S.drag.contacts);
     resolveSplits();                     // découpe seulement au dépôt, pas pendant le glissement
