@@ -90,7 +90,7 @@ const EXPOSE=[
   /* fichiers (13) */
   "netlistText","bomRows","bomCsvText","csvCell","serialize","loadJsonText",
   "schFile",
-  /* variantes de montage (commun/variantes.js + 25-variantes.js) */
+  /* variantes de montage (commun/variantes.js + 26-variantes.js) */
   "varNorm","varVide","varAjouter","varSupprimer","varRenommer","varDefinirMonte","varEstMonte",
   "varReperesNonMontes","varSlug","varNom","schVarComposants","schVarChoisir","schVarDessiner",
   "schVarPropsHtml","schVarOuvrir","schVarFermer","bomCsvNom",

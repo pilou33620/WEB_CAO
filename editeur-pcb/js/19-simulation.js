@@ -1416,21 +1416,8 @@ function simProjSegmentSurPiste(tSource, u1, u2, tCible){
   return {u1:minU, u2:maxU, q1:q1, q2:q2, p1:p1, p2:p2};
 }
 
-function simLotsSontPaireDiff(){
-  const quoi=typeof simCarteQuoi==="function"?simCarteQuoi():"";
-  const isDiff=quoi==="zdiff"||(typeof SIM!=="undefined"&&(SIM.analyse==="diff"||SIM.analyse==="zdiff"));
-  if(!isDiff)return false;
-  if(typeof SIM==="undefined"||!SIM.lots||SIM.lots.length<2)return false;
-  const nets=new Set(SIM.lots.map(l=>l.net).filter(Boolean));
-  if(nets.size<2)return false;
-  for(const l of SIM.lots){
-    const ch=typeof simChaleurRes==="function"?simChaleurRes(l.res):(l.res&&l.res.couplage&&l.res.couplage.chaleur);
-    const vn=Array.isArray(ch)&&ch.find(it=>it&&it.z_diff_net);
-    if(!vn||!nets.has(vn.z_diff_net))return false;
-  }
-  return true;
-}
-
+/* `simLotsSontPaireDiff` vit dans ../commun/simulation-em.js, partagé avec la
+   visionneuse : la copie qui se tenait ici en était l'exact double. */
 var simZDrawnLabels = new Set();
 function simZTrace(c){
   if(typeof simCarteActive!=="function"||!simCarteActive())return;

@@ -157,7 +157,7 @@ document.getElementById("tabNets").onclick=()=>setListTab("nets");
 document.getElementById("bNets").onclick=cycleNetLabels;
 document.getElementById("bNetlist").onclick=exportNetlist;
 document.getElementById("bCsv").onclick=exportBomCsv;
-/* variantes de montage : 25-variantes.js se charge APRÈS ce fichier, d'où
+/* variantes de montage : 26-variantes.js se charge APRÈS ce fichier, d'où
    l'appel différé -- nommer la fonction ici lèverait une erreur au chargement */
 document.getElementById("bVariantes").onclick=()=>schVarOuvrir();
 document.getElementById("bomVarGerer").onclick=()=>schVarOuvrir();

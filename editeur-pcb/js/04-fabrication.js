@@ -880,7 +880,7 @@ function pcbCsvCell(v){
    La rotation est positive dans le sens horaire (convention JLCPCB).
    La face est "Top" ou "Bottom" comme sur la plupart des assembleurs.
    L'origine est la même que pour les Gerber. */
-/* Variante de montage (25-variantes.js) : les empreintes qu'elle ne pose pas
+/* Variante de montage (26-variantes.js) : les empreintes qu'elle ne pose pas
    ne sont ni placées ni commandées -- elles sortent des deux fichiers. */
 function fabFpsMontes(){
   const vid=(S.variantes&&S.variantes.active)||"";

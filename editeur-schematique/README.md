@@ -69,7 +69,7 @@ identiques pour l'éditeur PCB :
 | `js/24-lib-sync.js` | 274 | Synchronisation et alertes avec Gestion LIB |
 | `js/25-brochage.js` | 405 | Brochage par référence : broche du symbole → patte de l'empreinte (`el.pinMap`), parties d'un composant multiple (`U3A`, `U3B`), choix de la référence, contrôle du brochage |
 | `../commun/brochage.js` | 152 | Lecture de la colonne « Brochage » de `LIB_composants.csv`, partagée avec Gestion LIB |
-| `js/25-variantes.js` | 330 | Variantes de montage : fenêtre des variantes, choix dans la nomenclature, section du panneau Propriétés, non-montés barrés sur la feuille |
+| `js/26-variantes.js` | 330 | Variantes de montage : fenêtre des variantes, choix dans la nomenclature, section du panneau Propriétés, non-montés barrés sur la feuille |
 | `../commun/variantes.js` | 160 | Le modèle des variantes de montage, partagé avec le PCB — **chargé avant `js/`** |
 | `../commun/reperage.js` | 294 | Chercher un repère, mesurer une distance — le geste, partagé avec l'éditeur PCB et paramétré par l'adaptateur de `21-reperage.js` |
 | `../commun/profils.js` | 555 | Profils utilisateur : qui travaille, ses panneaux, ses réglages, ses derniers documents — **chargé en premier**, avant l'espace de travail qui l'interroge |

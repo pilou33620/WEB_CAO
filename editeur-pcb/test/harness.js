@@ -61,7 +61,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "gerberEdge","gerberOutline","ipcNetlist","masterDrawingPdf","noAcc",
   "drillFile","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
   "positionsCsvText","bomPcbCsvText","pcbCsvCell","fabReadme",
-  /* variantes de montage (commun/variantes.js + 25-variantes.js) */
+  /* variantes de montage (commun/variantes.js + 26-variantes.js) */
   "varNorm","varVide","varEstMonte","pcbVarDepuisSchema","pcbVarChoisir","pcbVarDessiner",
   "pcbVarOuvrir","pcbVarFermer","fabFpsMontes","listComps",
   "edgeClick","edgeMove","closeEdge","boardPoly","setBoardSize","setBoardRect","inBoard","boardCutouts",

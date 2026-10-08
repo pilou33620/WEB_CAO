@@ -704,7 +704,7 @@ const S = {
   dpPairs:[],                 // paires différentielles : {id,name,p,n}
   dpSchema:[],                // paires déjà proposées par le schéma, "p|n" (voir autoPairs)
   netBruyants:[],             // nœuds de découpage venus du schéma (voir autoClass)
-  variantes:{liste:[],active:""},   // variantes de montage, copiées du schéma (25-variantes.js)
+  variantes:{liste:[],active:""},   // variantes de montage, copiées du schéma (26-variantes.js)
   dpRules:[],                 // règles de paire ; vide = la règle d'usine
   scale:5, ox:0, oy:0,
   grid:0.1, showGrid:true, flip:false, contrast:1,   // pas d'accrochage au démarrage

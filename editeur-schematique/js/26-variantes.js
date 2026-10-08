@@ -1,5 +1,5 @@
 /* =============================================================================
-   editeur-schematique — 25-variantes.js
+   editeur-schematique — 26-variantes.js
    Variantes de montage (BOM) : quels composants sont posés dans chaque version
    de la carte. Le modèle et ses règles sont dans commun/variantes.js ; ici,
    l'interface : la fenêtre des variantes (une case « monté » par composant et

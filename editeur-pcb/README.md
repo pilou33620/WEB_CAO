@@ -62,7 +62,7 @@ js/20-placement-score.js panneau Qualité de placement & rotation assistée :
                          conformité du découplage HF (≤ 3.5 mm), groupement par bloc
                          fonctionnel schéma et optimisation d'orientation en 1 clic (✨ Auto)
                          pour minimiser les croisements de chevelu (0°, 90°, 180°, 270°)
-js/25-variantes.js       variantes de montage reprises du schéma : choix de la
+js/26-variantes.js       variantes de montage reprises du schéma : choix de la
                          variante, empreintes non montées barrées, bom.csv et
                          positions.csv sans elles
 outils/build-monofichier.py assemble le tout dans dist/
