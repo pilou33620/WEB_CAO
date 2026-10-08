@@ -61,6 +61,9 @@ js/20-placement-score.js panneau Qualité de placement & rotation assistée :
                          conformité du découplage HF (≤ 3.5 mm), groupement par bloc
                          fonctionnel schéma et optimisation d'orientation en 1 clic (✨ Auto)
                          pour minimiser les croisements de chevelu (0°, 90°, 180°, 270°)
+js/25-variantes.js       variantes de montage reprises du schéma : choix de la
+                         variante, empreintes non montées barrées, bom.csv et
+                         positions.csv sans elles
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -68,6 +71,8 @@ test/harness.js          banc d'essai sans navigateur
 Ces fichiers viennent du dossier partagé, à la racine du dépôt :
 
 ```
+../commun/variantes.js   le modèle des variantes de montage, partagé avec le
+                         schéma (chargé avant js/) ; variantes.css son habillage
 ../commun/workspace.css  habillage de l'espace de travail
 ../commun/workspace.js   panneaux détachables, paramétré par WS_CONFIG
 ../commun/session.css    habillage des boutons de navigation
@@ -764,6 +769,28 @@ reste visible à l'écran, en gris — le gris de ce qui ne s'imprime pas.
 L'historique garde 80 instantanés, dans la limite de 48 millions de caractères
 (`UNDO_BUDGET`, ~96 Mo en mémoire) : sur une très grosse carte, ce sont les plus
 récents qui tiennent dans ce budget qui restent — jamais moins d'un.
+
+## Variantes de montage (BOM)
+
+Les variantes se créent dans le **schéma** (Fichier → Variantes de montage…) :
+c'est lui qui sait quel composant est posé dans quelle version de la carte.
+La carte en garde une copie dans son document — `variantes` et, sur chaque
+empreinte rapprochée par son repère, `nonMonte` — reprise du schéma :
+
+- en ouvrant **Fichier → Variante de montage…** (et par « ⟳ Reprendre du
+  schéma », qui relit le schéma enregistré du projet) ;
+- à l'application d'un ECO Schéma ↔ PCB, dans le même pas d'historique ;
+- avant chaque **Fabrication .zip**.
+
+Chaque reprise qui change quelque chose s'annule par `Ctrl+Z`. La variante
+choisie sur la carte est gardée tant qu'elle existe au schéma.
+
+La variante active barre ses empreintes non montées (NM) sur la carte et dans
+la liste des composants, et les **retire de `bom.csv` et `positions.csv`** :
+un assembleur ne commande ni ne place un composant DNP. Le cuivre, lui, ne
+change pas — pastilles, masque et pâte restent ceux de la carte complète. Le
+`LISEZ-MOI.txt` de l'archive nomme la variante et liste les DNP, et l'archive
+prend son nom (`…-fabrication-Lite.zip`).
 
 ## Sélection multiple et presse-papier
 

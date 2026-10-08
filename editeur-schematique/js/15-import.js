@@ -41,6 +41,9 @@ function normComp(c,i){
     if(c.distributeurs && typeof c.distributeurs === "object") el.distributeurs = c.distributeurs;
     if(Array.isArray(c.pinout)) el.pinout = c.pinout.map(p=>({number:String(p.number||""), name:String(p.name||"")}));
     if(c.pinoutVerified) el.pinoutVerified = true;
+    // variantes de montage où il n'est pas posé (réduites au modèle par loadDoc)
+    const nm = varNormNonMonte(c.nonMonte);
+    if(nm.length) el.nonMonte = nm;
   }
   /* Libellés déplacés à la main : deux nombres, bornés. Un décalage aberrant
      enverrait le repère à l'autre bout de la feuille, hors de toute prise. */
@@ -182,6 +185,14 @@ function loadDoc(o, keepPage){
   S.netClasses={};
   const nc=(o.netClasses&&typeof o.netClasses==="object")?o.netClasses:{};
   for(const k in nc)if(NET_CLASSES.includes(nc[k]))S.netClasses[k]=nc[k];
+  /* variantes de montage : un composant ne garde que celles que le document
+     déclare -- une variante supprimée à la main ne le laisse pas « non monté » */
+  S.variantes=varNorm(o.variantes);
+  for(const p of S.pages) for(const c of p.comps){
+    if(!c.nonMonte)continue;
+    const nm=varNormNonMonte(c.nonMonte,S.variantes);
+    if(nm.length)c.nonMonte=nm;else delete c.nonMonte;
+  }
   if(keepPage && o.page!==undefined){
     const reqP = Math.round(num(o.page, 0));
     const targetP = addedHier ? (reqP + 1) : reqP;

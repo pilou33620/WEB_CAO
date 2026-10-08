@@ -391,9 +391,11 @@ function refreshPanels(){
           '<div class="pinnote" style="padding:8px 0 0">Les composants restent en '+
           'place et sélectionnés : de quoi recâbler autrement sans les redésigner.'+
           '</div></div>'
-        : "");
+        : "")+
+      (els.length&&typeof schVarMultiHtml==="function"?schVarMultiHtml(els):"");
     const pdw=document.getElementById("pDelW");
     if(pdw)pdw.onclick=delWiresSel;
+    if(els.length&&typeof schVarMultiBind==="function")schVarMultiBind(els);
   }else{
     const el=els[0], def=defOf(el.type);
     let html=
@@ -477,6 +479,7 @@ function refreshPanels(){
     
     html += enrichHtml + csvHtml +
       (def.noRef?"":pkgField(el))+
+      (typeof schVarPropsHtml==="function"?schVarPropsHtml(el):"")+
       '<div class="row"><button class="tb" id="pRot">Pivoter</button><button class="tb" id="pMir">Miroir</button></div>'+
       '<div class="row"><button class="tb" id="pCompEd" style="width:100%; border-color:var(--blue); color:var(--blue); font-weight:600;">✎ Détails du composant…</button></div>'+
       ((el.refOff||el.valOff)
@@ -512,6 +515,7 @@ function refreshPanels(){
       if(NAME_SRC[el.type])refreshPanels();else buildList();
     };
     bindPkgField(el);
+    if(typeof schVarPropsBind==="function")schVarPropsBind(el);
     const pg2=document.getElementById("pGlob");
     if(pg2)pg2.onclick=()=>{
       push();
@@ -806,6 +810,8 @@ function setListTab(t){
   document.getElementById("tabBom").classList.toggle("on",t==="bom");
   document.getElementById("tabNets").classList.toggle("on",t==="nets");
   document.getElementById("bomAllWrap").style.display=(t==="bom")?"":"none";
+  const bv=document.getElementById("bomVarWrap");
+  if(bv)bv.style.display=(t==="bom")?"":"none";
   document.getElementById("netAllWrap").style.display=(t==="nets")?"":"none";
   if(typeof profilNoter==="function")profilNoter();
   buildList();
@@ -907,18 +913,25 @@ function buildBom(){
   }else{
     for(const c of S.comps) if(!defOf(c.type).noRef) list.push({c,page:S.page});
   }
+  if(typeof schVarMajSelecteur==="function")schVarMajSelecteur();
   if(!list.length){
     box.innerHTML='<div class="empty">La nomenclature se remplit à mesure que vous posez des composants.</div>';
     return;
   }
+  /* variante de montage active : ses non-montés restent listés, barrés */
+  const vid=(S.variantes&&S.variantes.active)||"";
+  const nNm=vid?list.filter(x=>!varEstMonte(x.c,vid)).length:0;
   // String() : un fichier importé peut porter un repère absent, localeCompare planterait
   list.sort((a,b)=>String(a.c.ref||"").localeCompare(String(b.c.ref||""),"fr",{numeric:true}));
-  let html='<table class="bom"><thead><tr><th>Rep.</th><th>Composant</th>'+
+  let html=(vid?'<div class="var-resume">Variante « '+esc(varNom(S.variantes,vid))+' » : '+
+             (list.length-nNm)+' monté(s), <b>'+nNm+' non monté(s)</b></div>':'')+
+           '<table class="bom"><thead><tr><th>Rep.</th><th>Composant</th>'+
            '<th style="text-align:right">Valeur</th></tr></thead><tbody>';
   for(const {c,page} of list){
     const sheet=S.bomAll?' <span style="font-family:var(--mono);font-size:9px;opacity:.55">f'+(page+1)+'</span>':"";
-    html+='<tr data-id="'+esc(c.id)+'" data-page="'+page+'"><td class="r">'+esc(c.ref||"—")+sheet+'</td>'+
-          '<td>'+esc(defOf(c.type).n)+
+    const nm=vid&&!varEstMonte(c,vid);
+    html+='<tr data-id="'+esc(c.id)+'" data-page="'+page+'"'+(nm?' class="nm" title="Non monté dans cette variante"':'')+'><td class="r">'+esc(c.ref||"—")+sheet+'</td>'+
+          '<td>'+(nm?'<span class="var-badge">NM</span>':'')+esc(defOf(c.type).n)+
             (c.pkg?'<span class="pkgcell">'+esc(c.pkg)+'</span>':"")+
           '</td><td class="v">'+esc(c.value||"")+'</td></tr>';
   }

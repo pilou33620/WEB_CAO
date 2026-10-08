@@ -87,6 +87,7 @@ Le serveur détecte l'absence d'affichage et n'ouvre pas de navigateur ; connect
 - **Bus** : notation vectorielle (`D[0..7]`, `SPI{…}`), piquage interactif avec auto-incrémentation du signal suivant, isolation électrique du tronc.
 - **Bibliothèque** : explorateur visuel pop-up (symbole + empreinte en double aperçu), 39 symboles de base, recherche dans `LIB_composants.csv` avec préfixe, valeur et brochage affectés automatiquement ; le boîtier choisi au schéma décide de l'empreinte au PCB.
 - **Netlist & BOM enrichies** : réconciliation avec le catalogue (empreinte, MPN, fabricant, références LCSC / Mouser / DigiKey).
+- **Variantes de montage (BOM)** : une même carte montée de plusieurs façons — « Lite » sans tels composants, « Pro » sans tels autres. **Fichier → Variantes de montage…** les crée et coche, composant par composant, ce qui est monté dans chacune ; le panneau Propriétés le dit aussi pour le composant sélectionné. La variante choisie dans la nomenclature barre ses non-montés (DNP) sur la feuille, et l'export `.csv` la suit : colonne *Montage*, récapitulatif de commande sans les DNP, liste des DNP en fin de fichier (`…-nomenclature-Lite.csv`). Le PCB reprend les variantes du schéma (**Fichier → Variante de montage…**, et à chaque ECO ou export de fabrication) : les empreintes non montées y sont barrées et sortent de `bom.csv` et `positions.csv`, le cuivre ne changeant pas.
 - **Reconnaissance de motifs** : régulateurs (LDO, 78xx/79xx, buck), bus I2C / SPI / UART, quartz, filtres RC ; suggestion de classes de nets et inférence des courants DC transmis à la simulation.
 - **Recherche de composants intégrée** et **cross-probing** vers le PCB.
 
@@ -253,6 +254,7 @@ WEB_CAO/
 │   ├── profils.js / .css          Préférences utilisateur
 │   ├── reperage.js / .css         Recherche (Ctrl+F) et mesure de cotes (K)
 │   ├── tactile.js / .css          Mode tactile, stylet et roulette de commandes
+│   ├── variantes.js / .css        Variantes de montage (BOM, composants non montés)
 │   ├── menus.js / .css            Barre de menus des éditeurs (Fichier, Édition, Placer…)
 │   ├── explorateur-lib.js / .css  Explorateur visuel de bibliothèque
 │   ├── ia-assistant.js / .css     Assistant IA (Google AI Studio)

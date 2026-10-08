@@ -399,6 +399,7 @@ function schChargerExemple(i){
     return false;
   }
   if(typeof push==="function") push();
+  S.variantes={liste:[],active:""};   // un autre document : ses variantes à lui
 
   if(i === 0){
     S.pages = [newHierPage("Hiérarchie"), newPage("Microcontrôleur & Bus"), newPage("Alimentation & RF")];

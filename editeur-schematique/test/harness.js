@@ -90,6 +90,10 @@ const EXPOSE=[
   /* fichiers (13) */
   "netlistText","bomRows","bomCsvText","csvCell","serialize","loadJsonText",
   "schFile",
+  /* variantes de montage (commun/variantes.js + 25-variantes.js) */
+  "varNorm","varVide","varAjouter","varSupprimer","varRenommer","varDefinirMonte","varEstMonte",
+  "varReperesNonMontes","varSlug","varNom","schVarComposants","schVarChoisir","schVarDessiner",
+  "schVarPropsHtml","schVarOuvrir","schVarFermer","bomCsvNom",
   /* nom de projet commun (commun/projet.js) */
   "projNom","projOuvrir","projFermer","projDoc","projPeindre",
   /* CSV de bibliothèque (18) */
@@ -2587,6 +2591,109 @@ T("stylet : glisser sur le vide trace un lasso, comme la souris",()=>{
   const ox=S.ox;
   glisseSch(ptr(0,0,{pointerType:"pen"}),ptr(40*G,20*G,{pointerType:"pen"}));
   if(S.sel.size!==3||S.ox!==ox)throw new Error("le lasso au stylet devait prendre les trois résistances sans bouger la vue : "+S.sel.size);
+});
+
+/* ---------- variantes de montage (BOM) ---------- */
+function variantesEssai(){
+  const mk=(ref,val)=>C("resistor",0,0,{ref:ref,value:val,pkg:"0603"});
+  const r1=mk("R1","10k"),r2=mk("R2","10k"),r3=mk("R3","1k"),r4=mk("R4","0R");
+  sheet([r1,r2,r3,r4],[]);
+  S.variantes=varVide();
+  const lite=varAjouter(S.variantes,"Lite",schVarComposants());
+  const pro=varAjouter(S.variantes,"Version Pro",schVarComposants());
+  varDefinirMonte(r2,lite,false);varDefinirMonte(r4,lite,false);
+  varDefinirMonte(r3,pro,false);
+  return {r1,r2,r3,r4,lite,pro};
+}
+function variantesFin(){S.variantes=varVide();}
+T("variantes : la carte complète monte tout, chaque variante retire les siens",()=>{
+  const v=variantesEssai();
+  try{
+    if(varReperesNonMontes(schVarComposants(),"").length)throw new Error("la carte complète ne retire rien");
+    const a=varReperesNonMontes(schVarComposants(),v.lite).join(" ");
+    if(a!=="R2 R4")throw new Error("Lite doit retirer R2 R4 : "+a);
+    const b=varReperesNonMontes(schVarComposants(),v.pro).join(" ");
+    if(b!=="R3")throw new Error("Pro doit retirer R3 : "+b);
+  }finally{variantesFin();}
+});
+T("variantes : la nomenclature CSV suit la variante (DNP listés, récapitulatif sans eux)",()=>{
+  const v=variantesEssai();
+  try{
+    const csv=bomCsvText(v.lite), l=csv.split("\r\n");
+    if(l[0].slice(-8)!==";Montage")throw new Error("colonne Montage absente : "+l[0]);
+    const r2=l.find(x=>x.indexOf("R2;")===0);
+    if(!/Non monté \(DNP\)$/.test(r2))throw new Error("R2 doit être non monté : "+r2);
+    // récapitulatif : les deux 10k ne font plus qu'un (R2 non monté), le 0R disparaît
+    const recap=l.slice(l.findIndex(x=>x.indexOf("Qté;")===0)+1);
+    if(!recap.some(x=>/^1;.*;R1$/.test(x)))throw new Error("10k : 1 pièce (R1) attendue :\n"+recap.join("\n"));
+    if(recap.some(x=>/R4/.test(x)&&/^\d+;/.test(x)))throw new Error("R4 (non monté) ne doit pas être commandé");
+    if(csv.indexOf("Non montés (DNP);2;R2 R4")<0)throw new Error("liste des DNP absente :\n"+csv);
+    if(csv.indexOf("Variante;Lite")<0)throw new Error("nom de variante absent");
+    // carte complète : tout est monté, les deux 10k regroupés
+    const plein=bomCsvText("");
+    if(plein.indexOf("Non monté (DNP)")>=0)throw new Error("la carte complète n'a pas de DNP");
+    if(!/\r\n2;[^\r\n]*R1 R2/.test(plein))throw new Error("carte complète : 2 × 10k attendus");
+    // sans argument : la variante active
+    S.variantes.active=v.pro;
+    if(bomRows().find(r=>r.ref==="R3").monte)throw new Error("la variante active doit s'appliquer par défaut");
+  }finally{variantesFin();}
+});
+T("variantes : enregistrement, relecture et historique les gardent",()=>{
+  const v=variantesEssai();
+  try{
+    S.variantes.active=v.lite;
+    const js=serialize();
+    const doc=JSON.parse(js);
+    // une variante inconnue dans un fichier retouché est écartée
+    doc.pages[0].comps.find(c=>c.ref==="R1").nonMonte=["fantome",v.pro];
+    S.variantes=varVide();
+    loadDoc(doc);
+    if(S.variantes.liste.length!==2||S.variantes.active!==v.lite)throw new Error("modèle perdu : "+JSON.stringify(S.variantes));
+    const tous=schVarComposants();
+    const r1=tous.find(c=>c.ref==="R1"), r2=tous.find(c=>c.ref==="R2");
+    if(JSON.stringify(r1.nonMonte)!==JSON.stringify([v.pro]))throw new Error("identifiant inconnu gardé : "+JSON.stringify(r1.nonMonte));
+    if(varEstMonte(r2,v.lite))throw new Error("R2 doit rester non monté dans Lite après relecture");
+    // annuler une modification de variante
+    push();
+    varDefinirMonte(r2,v.lite,true);
+    undo();
+    const r2b=schVarComposants().find(c=>c.ref==="R2");
+    if(varEstMonte(r2b,v.lite))throw new Error("Ctrl+Z doit rendre R2 non monté");
+    if(S.variantes.active!==v.lite)throw new Error("l'historique doit garder la variante active");
+  }finally{variantesFin();}
+});
+T("variantes : copier, renommer, supprimer, noms de fichier",()=>{
+  const v=variantesEssai();
+  try{
+    const copie=varAjouter(S.variantes,"Lite sans R1",schVarComposants(),v.lite);
+    varDefinirMonte(v.r1,copie,false);
+    if(varReperesNonMontes(schVarComposants(),copie).join(" ")!=="R1 R2 R4")throw new Error("la copie part des non-montés de Lite");
+    if(varSlug(S.variantes,v.pro)!=="Version-Pro")throw new Error("slug : "+varSlug(S.variantes,v.pro));
+    if(bomCsvNom(v.pro)!=="nomenclature-Version-Pro.csv")throw new Error("nom de fichier : "+bomCsvNom(v.pro));
+    if(!varRenommer(S.variantes,v.pro,"Pro")||varNom(S.variantes,v.pro)!=="Pro")throw new Error("renommer");
+    S.variantes.active=v.lite;
+    varSupprimer(S.variantes,v.lite,schVarComposants());
+    if(S.variantes.active!=="")throw new Error("supprimer la variante active revient à la carte complète");
+    if(schVarComposants().some(c=>(c.nonMonte||[]).includes(v.lite)))throw new Error("trace de la variante supprimée");
+  }finally{variantesFin();}
+});
+T("variantes : la feuille barre les non-montés, le panneau propose les cases",()=>{
+  const v=variantesEssai();
+  try{
+    const traits=[];
+    const ctx={save(){},restore(){},fillRect(){},beginPath(){},stroke(){},fillText(t){traits.push(t);},
+      moveTo(){},lineTo(){},set fillStyle(_){},set strokeStyle(_){},set lineWidth(_){},set lineCap(_){},
+      set font(_){},set textAlign(_){},set textBaseline(_){}};
+    schVarDessiner(ctx);
+    if(traits.length)throw new Error("carte complète : rien à barrer");
+    S.variantes.active=v.lite;
+    schVarDessiner(ctx);
+    if(traits.length!==2)throw new Error("deux non-montés à barrer dans Lite, "+traits.length);
+    const h=schVarPropsHtml(v.r2);
+    if(h.indexOf('data-var="'+v.lite+'"')<0||h.indexOf('data-var="'+v.pro+'" checked')<0)
+      throw new Error("cases du panneau : "+h);
+    schVarOuvrir();schVarFermer();
+  }finally{variantesFin();}
 });
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");

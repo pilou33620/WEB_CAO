@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="../commun/reperage.css">
 <link rel="stylesheet" href="../commun/ia-assistant.css">
 <link rel="stylesheet" href="../commun/projet.css">
+<link rel="stylesheet" href="../commun/variantes.css">
 <link rel="stylesheet" href="../commun/tactile.css">
 <link rel="stylesheet" href="../commun/menus.css">
 <link rel="stylesheet" href="../commun/tuto.css">
@@ -44,7 +45,8 @@
           <div class="mnu-h">Exporter</div>
           <button data-ic="🖼" class="tb" id="bPng">Exporter .png</button>
           <button data-ic="≣" class="tb" id="bNetlist">Netlist .txt</button>
-          <button data-ic="▦" class="tb" id="bCsv">Nomenclature .csv</button>
+          <button data-ic="▦" class="tb" id="bCsv" title="Nomenclature de la variante de montage active">Nomenclature .csv</button>
+          <button data-ic="◫" class="tb" id="bVariantes" title="Variantes de montage : quels composants sont posés dans chaque version de la carte (BOM, DNP)">Variantes de montage…</button>
         </div>
       </div>
       <div class="mnu" data-mnu="edition">
@@ -180,6 +182,7 @@
           <button class="segb on" id="tabBom">Nomenclature</button>
           <button class="segb" id="tabNets">Nets</button>
         </span>
+        <span id="bomVarWrap" class="var-barre"><select id="bomVar" title="Variante de montage : la nomenclature, son export et la feuille la suivent"></select><button class="pnl-btn" id="bomVarGerer" type="button" title="Gérer les variantes de montage">◫</button></span>
         <label id="bomAllWrap" style="margin-left:auto; display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:9.5px; color:var(--txt-dim);"><input type="checkbox" id="bomAll" style="accent-color:var(--blue); margin:0;"> tout le doc.</label>
         <label id="netAllWrap" style="margin-left:auto; display:none; align-items:center; gap:5px; font-family:var(--mono); font-size:9.5px; color:var(--txt-dim);"><input type="checkbox" id="netAll" style="accent-color:var(--blue); margin:0;"> tout le doc.</label>
       </div>
@@ -242,6 +245,7 @@
 <script src="../commun/projet.js"></script>
 <script src="../commun/projet-disque.js"></script>
 <script src="../commun/reperage.js"></script>
+<script src="../commun/variantes.js"></script>
 <script src="js/00-espace-config.js"></script>
 <script src="js/01-noyau.js"></script>
 <script src="js/02-bibliotheque.js"></script>
@@ -267,6 +271,7 @@
 <script src="js/22-recherche-composants.js"></script>
 <script src="js/23-patterns.js"></script>
 <script src="js/24-lib-sync.js"></script>
+<script src="js/25-variantes.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/ia-assistant.js"></script>

@@ -16,6 +16,7 @@ function docObj(){
           fps:S.fps,tracks:S.tracks,vias:S.vias,zones:S.zones,cuts:S.cuts,
           holes:S.holes||[],
           drawings:S.drawings||[],
+          variantes:S.variantes,
           rf:normRf(S.rf),
           active:S.active,nextId:S.nextId};
 }
@@ -378,6 +379,9 @@ function normFp(f,i){
   for(const k of ["refOffX","refOffY","valOffX","valOffY"])
     if(f[k]!=null&&Number.isFinite(+f[k]))out[k]=clamp(+f[k],-COORD,COORD);
   /* métadonnées de bibliothèque (LIB_composants.csv) */
+  /* variantes de montage où l'empreinte n'est pas posée (réduites au modèle par normDoc) */
+  const nm=varNormNonMonte(f.nonMonte);
+  if(nm.length)out.nonMonte=nm;
   if(f.csvPartName)out.csvPartName=dStr(f.csvPartName,100);
   if(f.csvMpn)out.csvMpn=dStr(f.csvMpn,100);
   if(f.manufacturer)out.manufacturer=dStr(f.manufacturer,100);
@@ -698,6 +702,13 @@ function normDoc(d){
   out.active=dInt(src.active,0,0,cu-1);
   out.nextId=Math.max(dInt(src.nextId,1,1,Number.MAX_SAFE_INTEGER),maxId+1);
   out.rf=normRf(src.rf);
+  /* variantes de montage : une empreinte ne garde que celles que le document déclare */
+  out.variantes=varNorm(src.variantes);
+  for(const fp of out.fps){
+    if(!fp.nonMonte)continue;
+    const nm=varNormNonMonte(fp.nonMonte,out.variantes);
+    if(nm.length)fp.nonMonte=nm;else delete fp.nonMonte;
+  }
   return out;
 }
 
@@ -734,6 +745,7 @@ function loadDoc(d,keepView){
   S.netClassAuto=d.netClassAuto||{};
   S.dpPairs=d.dpPairs;S.dpRules=d.dpRules;S.dpSchema=d.dpSchema;
   S.netBruyants=d.netBruyants||[];
+  S.variantes=d.variantes;
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
   S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];
   S.active=d.active;S.pair=[0,S.cu-1];

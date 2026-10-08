@@ -66,6 +66,8 @@ identiques pour l'éditeur PCB :
 | `js/21-reperage.js` | 223 | Ce que la recherche et la mesure valent sur un schéma : aimant sur les broches, cibles de toutes les feuilles, cadrage, cross-probing vers le PCB |
 | `js/22-recherche-composants.js` | 215 | Intégration recherche distributeurs (Mouser/DigiKey) et pinouts |
 | `js/23-patterns.js` | 135 | Reconnaissance des motifs de circuits, estimation des courants DC et pont vers le placement/DRC PCB |
+| `js/25-variantes.js` | 330 | Variantes de montage : fenêtre des variantes, choix dans la nomenclature, section du panneau Propriétés, non-montés barrés sur la feuille |
+| `../commun/variantes.js` | 160 | Le modèle des variantes de montage, partagé avec le PCB — **chargé avant `js/`** |
 | `../commun/reperage.js` | 294 | Chercher un repère, mesurer une distance — le geste, partagé avec l'éditeur PCB et paramétré par l'adaptateur de `21-reperage.js` |
 | `../commun/profils.js` | 555 | Profils utilisateur : qui travaille, ses panneaux, ses réglages, ses derniers documents — **chargé en premier**, avant l'espace de travail qui l'interroge |
 | `../commun/session.js` | 362 | Session d'onglet : le schéma part et revient quand on passe au PCB ou à la recherche, et porte le cross-probing entre les deux — **chargé en premier** |
@@ -274,6 +276,32 @@ toutes lettres évite qu'on prenne le nombre pour une dimension de carte. C'est
 la seule différence de fond entre les deux mesures, et elle tient à un booléen
 de l'adaptateur (`physique:false`, `js/21-reperage.js`) — tout le reste du
 geste est le même code, `../commun/reperage.js`, partagé avec le PCB.
+
+### Variantes de montage (BOM)
+
+Une même carte se monte souvent de plusieurs façons : une version « Lite »
+sans le module radio, une version « Pro » sans le connecteur de debug. Le
+cuivre est le même ; seule la liste des composants posés change.
+
+- **Fichier → Variantes de montage…** (ou ◫ dans la barre de la nomenclature)
+  ouvre la fenêtre : à gauche les variantes (ajouter, au besoin en copiant
+  une autre, renommer, supprimer, exporter), à droite une case « monté » par
+  composant et par variante, avec un filtre et « tout / rien » par colonne.
+- La **carte complète** monte tout. Une variante retire des composants.
+- Le **panneau Propriétés** d'un composant donne ses cases ; plusieurs
+  composants sélectionnés se posent ou se retirent d'un coup dans la variante
+  active.
+- La **variante active** se choisit dans la barre de la nomenclature : ses
+  non-montés y sont barrés (NM) et voilés d'une croix rouge sur la feuille.
+- **Nomenclature .csv** suit la variante active : colonne *Montage*,
+  récapitulatif de commande sans les DNP, puis la variante et la liste des
+  DNP en fin de fichier. « Exporter la BOM de chaque variante » en sort un
+  fichier par variante, carte complète comprise.
+
+Le document garde `variantes: {liste:[{id, nom}], active}` et, sur chaque
+composant, `nonMonte: [id…]` : c'est le composant qui porte l'information,
+renuméroter les repères ne perd donc rien. Chaque geste s'annule (`Ctrl+Z`).
+Le PCB reprend ces variantes par repère (voir son README).
 
 ### Cross-probing vers le PCB
 
