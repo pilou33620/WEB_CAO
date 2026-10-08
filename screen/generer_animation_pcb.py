@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Génère screen/pcb-4-couches.svg : 10 s de conception d'une carte 4 couches
-dans l'Éditeur PCB — une carte microcontrôleur USB-C de 44 × 30 mm.
+dans l'Éditeur PCB — une carte microcontrôleur USB de 44 × 30 mm.
 
     python screen/generer_animation_pcb.py
 
@@ -10,9 +10,9 @@ passe sur les couches internes : chaque broche de masse ou d'alimentation y
 descend par son via, au plus près de la pastille.
 
 Ce que montre le routage :
-  · la paire USB 2.0 (90 Ω) tenue couplée, passée à travers la protection ESD
-    sans tronçon, D− ramené au dessous par deux vias sous le connecteur, les
-    deux brins de même longueur à 0,02 mm près, sans accordéon ;
+  · la paire USB 2.0 (90 Ω) : un seul D+ et un seul D− (connecteur micro-B),
+    couplée depuis le connecteur, ouverte symétriquement à travers la
+    protection ESD sans tronçon, puis parallèle jusqu'au MCU ;
   · chaque condensateur de découplage entre sa broche et ses vias ;
   · le bus SPI : CS et MISO au dessus, SCK et MOSI au dessous par vias ;
   · le quartz 32,768 kHz court et symétrique, entouré de vias de masse ;
@@ -164,33 +164,31 @@ def c0603(ref, cx, cy, sens, net1, net2, groupe, texte=None):
     empreinte(ref, groupe, pads, [], [texte] if texte else [])
 
 
-# ---------------------------------------------------------------- connecteur USB-C
+# ---------------------------------------------------------------- connecteur USB micro-B
+# Une seule paire : 1 VBUS, 2 D−, 3 D+, 4 ID (non connectée), 5 GND, au pas de
+# 0,65 mm ; le blindage tient par deux pattes traversantes et deux CMS.
 YC = 11.0
-J1 = [(-3.2, 0.6, "GND"), (-2.4, 0.6, "VBUS"), (-1.75, 0.3, ""), (-1.25, 0.3, "CC1"),
-      (-0.75, 0.3, "USB_DM"), (-0.25, 0.3, "USB_DP"), (0.25, 0.3, "USB_DM"), (0.75, 0.3, "USB_DP"),
-      (1.25, 0.3, ""), (1.75, 0.3, "CC2"), (2.4, 0.6, "VBUS"), (3.2, 0.6, "GND")]
-pads = [Pad("J1", i + 1, 6.55, YC + dy, 1.15, h, net) for i, (dy, h, net) in enumerate(J1)]
-for i, (x, y) in enumerate([(1.6, YC - 4.32), (5.0, YC - 4.32), (1.6, YC + 4.32), (5.0, YC + 4.32)]):
+J1 = [(-1.3, "VBUS"), (-0.65, "USB_DM"), (0.0, "USB_DP"), (0.65, ""), (1.3, "GND")]
+pads = [Pad("J1", i + 1, 5.6, YC - 0.325 + dy, 1.35, 0.4, net) for i, (dy, net) in enumerate(J1)]
+for i, (x, y) in enumerate([(1.6, YC - 3.9), (1.6, YC + 3.25)]):
     pads.append(Pad("J1", "S%d" % (i + 1), x, y, 1.8, 1.0, "GND", "oval", 0.6))
+for i, (x, y) in enumerate([(4.9, YC - 3.2), (4.9, YC + 2.55)]):
+    pads.append(Pad("J1", "S%d" % (i + 3), x, y, 1.4, 1.6, "GND"))
 empreinte("J1", "usb", pads,
-          [ligne_soie(0.3, 5.75, 4.0, 5.75), ligne_soie(0.3, 16.25, 4.0, 16.25)],
-          [(3.0, 10.3, "J1", 0.8), (3.0, 11.6, "USB-C", 0.6)])
-
-# ---------------------------------------------------------------- CC : 5,1 kΩ à la masse
-c0402("R2", 8.9, 7.6, "v", "GND", "CC1", "usb", (9.45, 7.6, "R2", 0.55, "start"))
-c0402("R3", 8.9, 14.4, "v", "CC2", "GND", "usb", (9.45, 14.4, "R3", 0.55, "start"))
+          [ligne_soie(0.3, 6.3, 3.6, 6.3), ligne_soie(0.3, 15.1, 3.6, 15.1)],
+          [(2.6, 10.1, "J1", 0.8), (2.6, 11.3, "micro-B", 0.55)])
 
 # ---------------------------------------------------------------- ESD USBLC6-2SC6, couché
-ESD = [(1, 10.45, 10.475, "USB_DP"), (2, 10.45, 11.425, "GND"), (3, 10.45, 12.375, "USB_DM"),
-       (4, 12.75, 12.375, "USB_DM"), (5, 12.75, 11.425, "VBUS"), (6, 12.75, 10.475, "USB_DP")]
+ESD = [(1, 10.45, 9.4, "USB_DM"), (2, 10.45, 10.35, "GND"), (3, 10.45, 11.3, "USB_DP"),
+       (4, 12.75, 11.3, "USB_DP"), (5, 12.75, 10.35, "VBUS"), (6, 12.75, 9.4, "USB_DM")]
 empreinte("U3", "usb", [Pad("U3", n, x, y, 1.1, 0.6, net) for n, x, y, net in ESD],
-          [ligne_soie(11.05, 9.85, 12.15, 9.85), ligne_soie(11.05, 13.0, 12.15, 13.0)],
-          [(11.6, 9.2, "U3", 0.6)])
+          [ligne_soie(11.05, 8.75, 12.15, 8.75), ligne_soie(11.05, 11.95, 12.15, 11.95)],
+          [(11.6, 8.1, "U3", 0.6)])
 
 # ---------------------------------------------------------------- MCU LQFP-32
 MX, MY = 21.5, 12.0
 COTES = {
-    "L": ["+3V3", "", "USB_DP", "USB_DM", "GND", "", "", ""],
+    "L": ["+3V3", "USB_DM", "USB_DP", "", "GND", "", "", ""],
     "T": ["", "+3V3", "GND", "", "LED", "", "SWDIO", "SWCLK"],
     "R": ["+3V3", "SPI_CS", "SPI_MISO", "GND", "SPI_SCK", "SPI_MOSI", "", ""],
     "B": ["+3V3", "GND", "", "", "OSC_IN", "OSC_OUT", "", ""],
@@ -279,11 +277,10 @@ def fan(net, pts, vx, vy, w=SIG, d=0.45, drill=0.2):
     via(vx, vy, net, "fanout", d, drill)
 
 
-piste("T", 0.3, "GND", [(5.975, 7.8), (5.6, 7.8), (5.0, 7.2), (5.0, 6.68)], "fanout")
-piste("T", 0.3, "GND", [(5.975, 14.2), (5.6, 14.2), (5.0, 14.8), (5.0, 15.32)], "fanout")
-fan("GND", [(8.9, 7.1), (8.9, 6.3)], 8.9, 6.3)                         # R2
-fan("GND", [(8.9, 14.9), (8.9, 15.7)], 8.9, 15.7)                      # R3
-fan("GND", [(11.0, 11.425), (11.6, 11.425)], 11.6, 11.425)             # U3 broche 2
+piste("T", 0.3, "GND", [(5.6, 12.125), (5.6, 12.75)], "fanout")       # J1 GND -> patte de blindage
+fan("GND", [(4.9, 7.8), (4.9, 6.75)], 4.9, 6.75, PWR, 0.6, 0.3)        # pattes CMS du blindage
+fan("GND", [(4.9, 14.35), (4.9, 15.35)], 4.9, 15.35, PWR, 0.6, 0.3)
+fan("GND", [(11.0, 10.35), (11.6, 10.35)], 11.6, 10.35)             # U3 broche 2
 piste("T", SIG, "+3V3", [(16.6, 9.2), (15.8, 9.2)], "fanout")         # U1 -> C3
 fan("+3V3", [(15.8, 9.2), (15.8, 8.4)], 15.8, 8.4)
 fan("GND", [(14.8, 9.2), (14.8, 8.4)], 14.8, 8.4)
@@ -324,43 +321,22 @@ def longueur(pts):
     return sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(pts, pts[1:]))
 
 
-# USB-C est réversible : D+ sort sur A6 et B6, D− sur A7 et B7, entrelacées sur
-# la rangée. Les deux D+ sont pontées au dessus, au ras des pastilles (le
-# tronçon mort, côté de la fiche qui ne sert pas, reste le plus court
-# possible) ; les deux D− descendent par un via chacune et se rejoignent au
-# dessous, puis remontent par un troisième via.
-DP_PONT = [(7.125, 10.75), (7.75, 10.75), (7.9, 10.9), (7.9, 11.6), (7.75, 11.75), (7.125, 11.75)]
-DP_TOUT = [(7.9, 11.25), (9.2, 11.25), (9.975, 10.475), (13.7, 10.475), (14.025, 10.8), (17.35, 10.8)]
-DN_DEBUT = [(7.125, 10.25), (7.4, 10.25)]
-DN_DESSOUS = [(7.4, 10.25), (7.4, 11.25), (7.4, 11.6), (7.9, 12.1), (8.6, 12.1)]
-DN_A7 = [(7.125, 11.25), (7.4, 11.25)]
-DN_DESSUS = [(8.6, 12.1), (9.3, 12.1), (9.575, 12.375), (13.7, 12.375), (14.475, 11.6), (17.35, 11.6)]
-# longueurs mesurées depuis les broches A6 / A7 du connecteur
-L_DP = longueur(DP_PONT[:3] + [(7.9, 11.25)]) + longueur(DP_TOUT)
-L_DN = longueur(DN_A7) + longueur(DN_DESSOUS[1:]) + longueur(DN_DESSUS)
-piste("T", SIG, "USB_DP", DP_PONT, "usb")
+# Micro-B : un seul D+ et un seul D−, au pas de 0,65 mm. La paire sort couplée,
+# s'ouvre symétriquement vers les broches de l'ESD (D− par 1-6, D+ par 3-4),
+# le traverse sans tronçon et rejoint le MCU en parallèle.
+DN_TOUT = [(6.275, 10.025), (8.9, 10.025), (9.525, 9.4), (13.75, 9.4), (14.35, 10.0), (17.35, 10.0)]
+DP_TOUT = [(6.275, 10.675), (8.9, 10.675), (9.525, 11.3), (13.6, 11.3), (14.1, 10.8), (17.35, 10.8)]
+L_DP, L_DN = longueur(DP_TOUT), longueur(DN_TOUT)
 piste("T", SIG, "USB_DP", DP_TOUT, "usb")
-piste("T", SIG, "USB_DM", DN_DEBUT, "usb")
-piste("T", SIG, "USB_DM", DN_A7, "usb")
-piste("B", SIG, "USB_DM", DN_DESSOUS, "usb")
-piste("T", SIG, "USB_DM", DN_DESSUS, "usb")
-via(7.4, 10.25, "USB_DM", "usb")
-via(7.4, 11.25, "USB_DM", "usb")
-via(8.6, 12.1, "USB_DM", "usb")
-via(9.9, 13.2, "GND", "usb")                                           # retour de D−
+piste("T", SIG, "USB_DM", DN_TOUT, "usb")
 
-# -- CC, VBUS et régulateur ----------------------------------------------------
-piste("T", SIG, "CC1", [(7.125, 9.75), (7.9, 9.75), (8.9, 8.75), (8.9, 8.1)], "cc")
-piste("T", SIG, "CC2", [(7.125, 12.75), (7.9, 12.75), (8.9, 13.75), (8.9, 13.9)], "cc")
-piste("T", PWR, "VBUS", [(7.125, 8.6), (7.45, 8.6)], "vbus")
-piste("T", PWR, "VBUS", [(7.125, 13.4), (7.45, 13.4)], "vbus")
-via(7.45, 8.6, "VBUS", "vbus", 0.6, 0.3)
-via(7.45, 13.4, "VBUS", "vbus", 0.6, 0.3)
-piste("B", 0.5, "VBUS", [(7.45, 8.6), (6.5, 9.55), (6.5, 12.45), (7.45, 13.4), (7.45, 24.4),
-                         (8.2, 25.15)], "vbus")
-piste("T", SIG, "VBUS", [(13.3, 11.425), (13.85, 11.425)], "vbus")
-via(13.85, 11.425, "VBUS", "vbus", 0.6, 0.3)
-piste("B", PWR, "VBUS", [(13.85, 11.425), (13.85, 16.4), (12.85, 17.4), (7.45, 17.4)], "vbus")
+# -- VBUS et régulateur ----------------------------------------------------------
+piste("T", PWR, "VBUS", [(6.275, 9.375), (6.85, 9.375)], "vbus")
+via(6.85, 9.375, "VBUS", "vbus", 0.6, 0.3)
+piste("B", 0.5, "VBUS", [(6.85, 9.375), (6.85, 12.8), (7.45, 13.4), (7.45, 24.4), (8.2, 25.15)], "vbus")
+piste("T", SIG, "VBUS", [(13.3, 10.35), (13.6, 10.35)], "vbus")
+via(13.6, 10.35, "VBUS", "vbus")
+piste("B", PWR, "VBUS", [(13.6, 10.35), (13.6, 16.4), (12.6, 17.4), (7.45, 17.4)], "vbus")
 via(8.2, 25.15, "VBUS", "vbus", 0.6, 0.3)
 piste("T", PWR, "VBUS", [(8.2, 25.15), (8.2, 24.15)], "vbus")          # via -> C1
 piste("T", PWR, "VBUS", [(8.2, 24.15), (9.55, 24.15)], "vbus")         # C1 -> VIN
@@ -657,7 +633,7 @@ T_PLACE = {"trous": 2.45, "usb": 2.65, "mcu": 2.9, "flash": 3.15, "alim": 3.35,
 T_CHEVELU = 3.95
 T_FANOUT0, T_FANOUT1 = 4.15, 4.7
 T_USB0, T_USB1 = 4.75, 5.6
-T_ROUTE = {"cc": 5.65, "vbus": 5.9, "spi": 6.2, "swd": 6.5, "quartz": 6.8}
+T_ROUTE = {"vbus": 5.65, "spi": 6.05, "swd": 6.45, "quartz": 6.8}
 T_COUTURE = 7.1
 T_DRC0, T_DRC1 = 7.55, 8.0
 T_TOUR = [(8.05, "T"), (8.42, "L2"), (8.79, "L3"), (9.16, "B")]
@@ -714,7 +690,7 @@ def generer():
             s += txt(x, y, mot, taille, C_SILK, ancre)
         if s:
             soie.append('<g class="%s">%s</g>' % (cls, s))
-    for g, msg in [("usb", "Placement · USB-C, protection ESD, résistances CC"),
+    for g, msg in [("usb", "Placement · connecteur USB micro-B et protection ESD"),
                    ("mcu", "Placement · microcontrôleur LQFP-32 et son découplage"),
                    ("flash", "Placement · mémoire Flash SPI"),
                    ("alim", "Placement · régulateur 3,3 V"),
@@ -739,12 +715,8 @@ def generer():
         poser(c, w, net, pts, T_FANOUT0 + i * pas, 0.15)
     usb = [p for p in PISTES if p[4] == "usb"]
     for c, w, net, pts, _ in usb:
-        # D+ et D− avancent ensemble ; le dessous et les entrées suivent leur rang
-        l = longueur(pts)
-        if pts in (DP_TOUT, DN_DESSUS):
-            poser(c, w, net, pts, T_USB0 + 0.25, T_USB1 - T_USB0 - 0.3)
-        else:
-            poser(c, w, net, pts, T_USB0, 0.25)
+        # D+ et D− avancent ensemble
+        poser(c, w, net, pts, T_USB0 + 0.1, T_USB1 - T_USB0 - 0.15)
     phases = list(T_ROUTE)
     for k, ph in enumerate(phases):
         lot = [p for p in PISTES if p[4] == ph]
@@ -755,10 +727,10 @@ def generer():
             poser(c, w, net, pts, t0 + i * 0.02, max(0.08, (t1 - t0 - 0.1) * longueur(pts) / lmax))
     etat += [(T_CHEVELU, T_FANOUT0, "Placement · chevelu : %d nets à relier" % nb_nets),
              (T_FANOUT0, T_USB0, "Routage · fan-out : chaque broche d'alimentation descend à son plan par un via"),
-             (T_USB0, T_ROUTE["cc"],
-              "Routage · paire USB 90 Ω par l'ESD, écart D+/D− %s mm — D− passe au dessous sous le connecteur"
+             (T_USB0, T_ROUTE["vbus"],
+              "Routage · paire USB 90 Ω : un D+, un D−, couplés et passés par l'ESD — écart %s mm"
               % virgule(abs(L_DP - L_DN), 2)),
-             (T_ROUTE["cc"], T_ROUTE["spi"], "Routage · CC1/CC2, VBUS en piste large au dessous, régulateur"),
+             (T_ROUTE["vbus"], T_ROUTE["spi"], "Routage · VBUS en piste large au dessous, régulateur"),
              (T_ROUTE["spi"], T_ROUTE["swd"], "Routage · bus SPI : CS et MISO dessus, SCK et MOSI dessous"),
              (T_ROUTE["swd"], T_COUTURE, "Routage · SWD, LED et quartz, courts et symétriques"),
              (T_COUTURE, T_DRC0, "Routage · %d vias de couture de masse sur le pourtour" % nb_couture),
@@ -767,7 +739,7 @@ def generer():
              (T_TOUR[0][0], T_TOUR[1][0], "DRC · vue L1 Top : signaux"),
              (T_TOUR[1][0], T_TOUR[2][0], "DRC · vue L2 Inner 1 : le plan de masse, rien d'autre"),
              (T_TOUR[2][0], T_TOUR[3][0], "DRC · vue L3 Inner 2 : le plan +3V3, rien d'autre"),
-             (T_TOUR[3][0], T_FONDU + 0.3, "DRC · vue L4 Bottom : D−, SCK, MOSI et VBUS")]
+             (T_TOUR[3][0], T_FONDU + 0.3, "DRC · vue L4 Bottom : SCK, MOSI et VBUS")]
 
     # --- vias ---------------------------------------------------------------------
     vias_svg = []
@@ -821,7 +793,7 @@ def generer():
         fondu(0.1, 0.4), LARG, HAUT, C_SUB)
     logo = ('<g class="%s">%s%s</g>' % (fondu(T_COUTURE + 0.1, 0.3),
                                          txt(34.6, 22.7, "WEB_CAO", 1.7, C_SILK),
-                                         txt(34.6, 24.6, "USB-C · 4 couches · rév. A", 0.62, C_SILK, "middle", "600")))
+                                         txt(34.6, 24.6, "USB · 4 couches · rév. A", 0.62, C_SILK, "middle", "600")))
 
     # --- onglets de couches -----------------------------------------------------
     onglets, x = [], 12
@@ -924,7 +896,7 @@ def generer():
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d" '
         'font-family="%s" role="img" aria-labelledby="titre desc">' % (W, H, W, H, POLICE),
         '<title id="titre">WEB_CAO — conception d\'une carte 4 couches</title>',
-        '<desc id="desc">Animation de 10 secondes dans l\'Éditeur PCB : une carte USB-C de 44 × 30 mm '
+        '<desc id="desc">Animation de 10 secondes dans l\'Éditeur PCB : une carte USB de 44 × 30 mm '
         'sur 4 couches — signaux sur Top et Bottom, plan de masse en L2, plan +3V3 en L3. Placement, '
         'fan-out des alimentations, coulée des plans, paire USB 90 Ω appariée en longueur, bus SPI, '
         'vias de couture, DRC sans erreur puis tour des quatre couches.</desc>',
