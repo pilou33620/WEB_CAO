@@ -469,6 +469,50 @@ function empreinteCandidate(pkg, pref) {
 // Auto-association automatique basée sur préfixe et boîtier. Sans argument,
 // tout le catalogue ; avec une liste, ces composants-là seulement (un
 // composant qu'on vient de créer ne doit pas réécrire les autres).
+/* ---------- Brochages connus ----------
+   La colonne « Brochage » (commun/brochage.js) dit, pour une référence, sur
+   quelle patte de l'empreinte tombe chaque broche du symbole. On ne la
+   remplit d'office que là où il n'y a pas de doute :
+     · une famille entière suit le même brochage normalisé : transistors
+       bipolaires en SOT-23 / SOT-323 (JEDEC TO-236 : base 1, émetteur 2,
+       collecteur 3), MOSFET en SOT-23 / SOT-323 (grille 1, source 2,
+       drain 3) ;
+     · une référence précise, relevée sur sa datasheet.
+   Le reste — diodes dont l'empreinte ne marque pas la cathode, boîtiers dont
+   la numérotation diffère d'un fabricant à l'autre — se saisit à la main.
+   Une valeur déjà saisie n'est jamais remplacée. */
+const BROCHAGES_REFERENCES = [
+  // OPA369AIDCK, SC70-5 (DCK) : OUT 1, V− 2, +IN 3, −IN 4, V+ 5
+  [/^OPA369A?IDCK/i, "opamp", "OUT=1,V-=2,IN+=3,IN-=4,V+=5"],
+  // LM78Lxx en SO-8 : sortie 1, masse 2-3-6-7, entrée 8, 4 et 5 libres
+  [/^LM78L\d+A?CM/i, "regulator", "OUT=1,GND=2/3/6/7,IN=8,NC=4/5"],
+  // LP2980 en SOT-23-5 : VIN 1, GND 2, ON/OFF 3 (relié à l'entrée : toujours
+  // en marche), NC 4, VOUT 5
+  [/^LP2980A?IM5/i, "regulator", "IN=1/3,GND=2,OUT=5,NC=4"]
+];
+const BROCHAGE_SOT23_3 = /^(SOT-?23(-?3)?|SOT-?323(-?3)?|SC-?70(-?3)?|TO-?236(AB)?)$/;
+function brochageConnu(c, sym) {
+  const mpn = String(c["Part Number"] || c["manufacturer part Number"] || "").trim();
+  const mpn2 = String(c["manufacturer part Number"] || "").trim();
+  for (const [re, s, br] of BROCHAGES_REFERENCES)
+    if (s === sym && (re.test(mpn) || re.test(mpn2))) return br;
+  const nomPcb = String(c["Empreinte PCB"] || "").replace(/^.*[\\\/]/, "").replace(/\.json$/i, "");
+  const boitier = String(c["Package type"] || "").toUpperCase().replace(/\s+/g, "");
+  const sot23 = BROCHAGE_SOT23_3.test(boitier) || /^(SOT-23|SC-70)$/i.test(nomPcb);
+  const pattes = parseInt(c["Number Of pins"], 10);
+  if (!sot23 || (pattes && pattes !== 3)) return "";
+  // transistors « numériques » (résistances intégrées) : brochage propre au fabricant
+  if (/^DT[ACB]/i.test(mpn)) return "";
+  /* un MOSFET rangé sous un symbole bipolaire (ou l'inverse) : le symbole est
+     à revoir d'abord, le brochage ne doit pas masquer l'erreur */
+  const texte = (c["Part Name"] || "") + " " + (c["Description"] || "");
+  if ((sym === "npn" || sym === "pnp") && /MOS/i.test(texte)) return "";
+  if ((sym === "nmos" || sym === "pmos") && /\b(NPN|PNP|BJT)\b/i.test(texte)) return "";
+  if (sym === "npn" || sym === "pnp") return "B=1,E=2,C=3";
+  if (sym === "nmos" || sym === "pmos") return "G=1,S=2,D=3";
+  return "";
+}
+
 function autoAssocierCatalogue(liste) {
   const colPcb = "Empreinte PCB";
   const colSch = LIB_STATE.colonnes.includes("Empreinte Schématique") ? "Empreinte Schématique" : "Empreinte Schematique";
@@ -545,6 +589,18 @@ function autoAssocierCatalogue(liste) {
       if (c[colSim] && simFiles.length && !simFiles.includes(c[colSim])) c[colSim] = "";
       if (c[colSim]) modifs++;
     }
+  }
+
+  // 4. Brochage : symbole → empreinte, seulement là où il est certain
+  const colBr = "Brochage";
+  for (const c of (Array.isArray(liste) ? liste : LIB_STATE.composants)) {
+    if (String(c[colBr] || "").trim()) continue;
+    const sym = String(c[colSch] || "").replace(/^.*[\\\/]/, "").replace(/\.json$/i, "").toLowerCase();
+    const br = brochageConnu(c, sym);
+    if (!br) continue;
+    if (!LIB_STATE.colonnes.includes(colBr)) LIB_STATE.colonnes.push(colBr);
+    c[colBr] = br;
+    modifs++;
   }
 
   if (modifs > 0) {

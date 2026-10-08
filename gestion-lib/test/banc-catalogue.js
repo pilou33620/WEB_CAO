@@ -126,4 +126,32 @@ const sansModele = { "Part Name": "C?", "Reference designator Prefix": "C", "Pac
 vm.runInContext("autoAssocierCatalogue", sandbox)([sansModele]);
 assert(!sansModele["Modèle Simulation"], "Pas de modèle de simulation inexistant associé");
 
+/* Brochages connus : sur la LIB réelle, seules les familles normalisées et
+   les références relevées sur datasheet reçoivent une colonne Brochage, et
+   chaque valeur se relit sans erreur (commun/brochage.js). */
+vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "..", "commun", "brochage.js"), "utf8"), sandbox);
+const lire = vm.runInContext("brochageLire", sandbox);
+const reels = JSON.parse(JSON.stringify(etat.composants.filter(c => c["Part Name"] && c._id != null)));
+const parNom = n => reels.find(c => c["Part Name"] === n);
+vm.runInContext("autoAssocierCatalogue", sandbox)(reels);
+const br = n => (parNom(n) || {})["Brochage"] || "";
+assert(br("TRAN_NPN_BC847B_185") === "B=1,E=2,C=3", "BC847B en SOT-23 : B=1,E=2,C=3");
+assert(br("TRAN_PNP_BC857C") === "B=1,E=2,C=3", "BC857C en SOT-23 : B=1,E=2,C=3");
+assert(br("TRAN_MOS-BSS123") === "G=1,S=2,D=3", "BSS123 en SOT-23 : G=1,S=2,D=3");
+assert(br("AOP_OPA369AIDCKT") === "OUT=1,V-=2,IN+=3,IN-=4,V+=5", "OPA369 : brochage de la datasheet");
+assert(br("REG_LM78L05ACMX") === "OUT=1,GND=2/3/6/7,IN=8,NC=4/5", "LM78L05 en SO-8 : masses multiples");
+assert(br("REG_LP2980AIM5X-3.3") === "IN=1/3,GND=2,OUT=5,NC=4", "LP2980 : ON/OFF relié à l'entrée");
+assert(!br("TRAN_DNPN_DTC144EKAT146"), "Transistor numérique : brochage laissé à la main");
+assert(!br("TRAN_MOS-SI4463CDY-T1-GE3"), "SOIC-8 : pas de règle de famille");
+assert(!br("TRAN_MOS-SI2301CDS"), "MOSFET rangé sous le symbole NPN : symbole à revoir, pas de brochage");
+const remplis = reels.filter(c => c["Brochage"]);
+assert(remplis.length >= 15, "Au moins quinze références complétées (" + remplis.length + ")");
+assert(remplis.every(c => { const l = lire(c["Brochage"]); return l && !l.erreurs.length; }),
+  "Chaque brochage proposé se relit sans erreur");
+assert(etat.colonnes.includes("Brochage"), "La colonne Brochage rejoint le catalogue");
+const deja = { "Part Name": "X", "Reference designator Prefix": "Q", "Package type": "SOT-23",
+  "Empreinte Schématique": "npn.json", "Brochage": "B=2,E=1,C=3" };
+vm.runInContext("autoAssocierCatalogue", sandbox)([deja]);
+assert(deja["Brochage"] === "B=2,E=1,C=3", "Un brochage déjà saisi n'est jamais remplacé");
+
 console.log("\nRésultat : " + reussis + "/" + total + " tests réussis.");
