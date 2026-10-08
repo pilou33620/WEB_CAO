@@ -2503,6 +2503,58 @@ T("Ctrl+clic sur un composant pris : il sort au relâchement, Ctrl+glisser emmè
   if(!S.sel.has(rs[2].id))throw new Error("après un glissement R3 reste pris");
   if(rs[0].x!==11*G)throw new Error("R1 devait suivre : "+rs[0].x);
 });
+/* Fils en équerre : déplacer un symbole ne doit jamais laisser un fil en biais */
+function equerre(){
+  const obl=S.wires.filter(w=>w.x1!==w.x2&&w.y1!==w.y2);
+  if(obl.length)throw new Error("fil en biais : "+obl.map(w=>[w.x1,w.y1,w.x2,w.y2].join(",")).join(" | "));
+  const nul=S.wires.filter(w=>w.x1===w.x2&&w.y1===w.y2);
+  if(nul.length)throw new Error(nul.length+" segment(s) nul(s) laissé(s)");
+}
+function relies(a,b){
+  const na=netAtLive(a.x,a.y);
+  if(!na||na!==netAtLive(b.x,b.y))throw new Error("la liaison entre les deux broches est perdue");
+}
+T("déplacer un symbole hors de l'axe du fil : décroché en équerre, pas de biais",()=>{
+  const r1=C("resistor",10,10,{ref:"R1"}), r2=C("resistor",30,10,{ref:"R2"});
+  const a=allPins(r1)[1], b=allPins(r2)[0];
+  sheet([r1,r2],[{x1:a.x,y1:a.y,x2:b.x,y2:b.y}]);
+  S.scale=1;S.ox=0;S.oy=0;setMode("select");
+  glisseSch(ptr(r1.x,r1.y),ptr(r1.x+G,r1.y+2*G));
+  if(r1.y!==12*G)throw new Error("R1 devait descendre : "+r1.y);
+  equerre();
+  if(S.wires.length!==3)throw new Error("un Z de trois segments attendu : "+S.wires.length);
+  relies(allPins(r1)[1],allPins(r2)[0]);
+  undo();
+  if(S.wires.length!==1||S.wires[0].y1!==S.wires[0].y2)throw new Error("annuler rend le fil d'origine");
+});
+T("déplacer un symbole : un coude libre glisse avec lui au lieu de casser l'équerre",()=>{
+  const r1=C("resistor",10,10,{ref:"R1"}), r2=C("resistor",30,20,{ref:"R2"});
+  const a=allPins(r1)[1], b=allPins(r2)[0];
+  const ws=[{x1:a.x,y1:a.y,x2:25*G,y2:a.y},{x1:25*G,y1:a.y,x2:25*G,y2:b.y},{x1:25*G,y1:b.y,x2:b.x,y2:b.y}];
+  sheet([r1,r2],ws);
+  S.sel.add(r1.id);
+  moveSelBy(0,3*G);
+  equerre();
+  if(S.wires.length!==3)throw new Error("le coude devait glisser sans ajouter de segment : "+S.wires.length);
+  if(ws[0].y1!==13*G||ws[0].y2!==13*G||ws[1].y1!==13*G)throw new Error("coude non suivi : "+JSON.stringify(ws));
+  relies(allPins(r1)[1],allPins(r2)[0]);
+  // jusqu'au bout du voisin : le segment vertical disparaît, rien de nul ne reste
+  moveSelBy(0,7*G);
+  equerre();
+  relies(allPins(r1)[1],allPins(r2)[0]);
+});
+T("flèches répétées sur un symbole : les fils restent en équerre",()=>{
+  const r1=C("resistor",10,10,{ref:"R1"}), r2=C("resistor",30,10,{ref:"R2"});
+  const a=allPins(r1)[1], b=allPins(r2)[0];
+  sheet([r1,r2],[{x1:a.x,y1:a.y,x2:b.x,y2:b.y}]);
+  S.sel.add(r1.id);
+  for(const d of [[0,G],[0,G],[G,0],[0,-G],[0,-G],[-G,0]]){
+    moveSelBy(d[0],d[1]);
+    equerre();
+    relies(allPins(r1)[1],allPins(r2)[0]);
+  }
+  if(S.wires.length>3)throw new Error("les décrochés s'empilent : "+S.wires.length);
+});
 T("mode tactile, bouton « Multi » : chaque toucher ajoute ou retire, le doigt trace le lasso",()=>{
   const {rs}=groupeTroisR();
   const garde=localStorage.getItem("cao.modeTactile");

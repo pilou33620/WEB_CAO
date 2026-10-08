@@ -118,6 +118,12 @@ Alt garde ses deux usages sans qu'ils se gênent : sur le vide il déplace la vu
 `pointerdown`, qui ne prend le geste de déplacement de vue que si le pointeur
 ne survole rien.
 
+**Fils en équerre au déplacement.** Un symbole déplacé (à la souris, au stylet
+ou aux flèches) emmène ses fils sans jamais les mettre en biais : si l'autre
+bout du fil est un coude libre, le coude glisse avec le symbole et le fil
+voisin s'allonge ; sinon un décroché en Z rattrape l'écart. `Alt+glisser`
+garde l'étirement libre.
+
 **Presse-papier.** `Ctrl+C` / `Ctrl+X` / `Ctrl+V`, ou les boutons *Copier* et
 *Coller*. Le bloc copié est rangé relativement à son coin haut-gauche puis
 reposé sous le pointeur ; les composants reçoivent un repère libre (coller deux
