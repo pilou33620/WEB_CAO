@@ -46,7 +46,7 @@ function normComp(c,i){
     if(c.brochage) el.brochage = String(c.brochage).slice(0, 600);
     if(c.part && /^[A-Za-z0-9]{1,4}$/.test(String(c.part))) el.part = String(c.part).toUpperCase();
     if(Array.isArray(c.pinMap) && c.pinMap.length <= 64)
-      el.pinMap = c.pinMap.map(v => { const t = String(v == null ? "" : v).trim(); return /^[A-Za-z0-9]{1,8}$/.test(t) ? t : ""; });
+      el.pinMap = c.pinMap.map(v => { const t = brochageListe(v).join("/"); return BROCHAGE_PATTES.test(t) ? t : ""; });
     if(el.pinMap && !el.pinMap.some(Boolean)) delete el.pinMap;
     if(el.pinMap && c.pinMapMain) el.pinMapMain = true;
   }

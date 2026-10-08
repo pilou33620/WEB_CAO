@@ -21568,6 +21568,19 @@ NET "VCC"
 `,false);
   if(r2.added!==1||S.fps.length!==1||S.fps[0].nets[8]!=="VCC")
     throw new Error("section de contrôle mal lue : "+JSON.stringify(r2));
+  /* une broche du schéma sur deux pattes (languette du SOT-223) : les deux
+     pastilles prennent le net */
+  carteVide();fpLibRaz();
+  applyNetlist(`=== Composants ===
+    U1      AMS1117           SOT-223-4
+
+=== Feuille 1 — Principale ===
+NET "3V3"
+    U1.2        OUT
+    U1.4        OUT
+`,false);
+  const reg=S.fps[0];
+  if(reg.nets[2]!=="3V3"||reg.nets[4]!=="3V3")throw new Error("languette : "+JSON.stringify(reg.nets));
   /* nom de boîtier long : il arrive entier et le PCB le reconnaît (percé) */
   carteVide();fpLibRaz();
   applyNetlist(`=== Composants ===

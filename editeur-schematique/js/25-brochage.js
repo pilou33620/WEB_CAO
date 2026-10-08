@@ -31,13 +31,18 @@ function brNomBroche(el, i) {
   const def = defOf(el.type);
   return (def.pn && def.pn[i]) || "";
 }
-/* Patte de l'empreinte où va la broche i. Un nombre reste un nombre — la
-   netlist écrit « U1.8 » comme avant —, un nom (« A1 ») reste un nom. */
-function brPatte(el, i) {
-  const p = el && Array.isArray(el.pinMap) ? String(el.pinMap[i] == null ? "" : el.pinMap[i]).trim() : "";
-  if (!p) return i + 1;
-  return /^\d+$/.test(p) ? +p : p;
+/* Pattes de l'empreinte où va la broche i : une le plus souvent, plusieurs
+   pour une languette (« OUT=2/4 » d'un SOT-223) — chacune part alors dans le
+   net. Un nombre reste un nombre — la netlist écrit « U1.8 » comme avant —,
+   un nom (« A1 ») reste un nom. */
+function brPattes(el, i) {
+  const v = el && Array.isArray(el.pinMap) ? el.pinMap[i] : "";
+  const l = brochageListe(v);
+  if (!l.length) return [i + 1];
+  return l.map(p => /^\d+$/.test(p) ? +p : p);
 }
+/* La première : celle qu'on nomme quand une seule suffit. */
+function brPatte(el, i) { return brPattes(el, i)[0]; }
 function brAUneTable(el) {
   return !!(el && Array.isArray(el.pinMap) && el.pinMap.some(p => String(p == null ? "" : p).trim()));
 }
@@ -110,8 +115,8 @@ function brChoisirPartie(el, partie) {
 function brSaisirPatte(el, i, valeur) {
   const n = pinsOf(el).length;
   if (i < 0 || i >= n) return false;
-  const v = String(valeur == null ? "" : valeur).trim().slice(0, 8);
-  if (v && !BROCHAGE_PATTE.test(v)) return false;
+  const v = brochageListe(valeur).join("/");
+  if (v && !BROCHAGE_PATTES.test(v)) return false;
   const map = Array.isArray(el.pinMap) ? el.pinMap.slice(0, n) : [];
   while (map.length < n) map.push("");
   map[i] = v;
@@ -242,11 +247,11 @@ function brControles() {
       const nom = brochageNom(brNomBroche(el, i)), net = nets[i];
       if (!nom || !net) continue;
       if (BR_POS.test(nom) && brNetMasse(net))
-        dire(x, "erreur", "broche d'alimentation " + nom + " (patte " + brPatte(el, i) + ") reliée à la masse " + net + ".");
+        dire(x, "erreur", "broche d'alimentation " + nom + " (patte " + brPattes(el, i).join("/") + ") reliée à la masse " + net + ".");
       else if (BR_MASSE_BROCHE.test(nom) && (brNetPositif(net) || brNetNegatif(net)))
-        dire(x, "erreur", "broche de masse " + nom + " (patte " + brPatte(el, i) + ") reliée à l'alimentation " + net + ".");
+        dire(x, "erreur", "broche de masse " + nom + " (patte " + brPattes(el, i).join("/") + ") reliée à l'alimentation " + net + ".");
       else if (BR_NEG.test(nom) && brNetPositif(net))
-        dire(x, "erreur", "broche " + nom + " (patte " + brPatte(el, i) + ") reliée au rail positif " + net + ".");
+        dire(x, "erreur", "broche " + nom + " (patte " + brPattes(el, i).join("/") + ") reliée au rail positif " + net + ".");
     }
   }
 
@@ -266,9 +271,11 @@ function brControles() {
       for (let i = 0; i < n; i++) {
         const net = nets[i];
         if (!net) continue;
-        const p = String(brPatte(x.el, i));
-        if (!patteNet.has(p)) patteNet.set(p, new Map());
-        patteNet.get(p).set(net, x);
+        for (const q of brPattes(x.el, i)) {
+          const p = String(q);
+          if (!patteNet.has(p)) patteNet.set(p, new Map());
+          patteNet.get(p).set(net, x);
+        }
       }
     }
     for (const [p, parNet] of patteNet)
@@ -374,7 +381,7 @@ function brPanneauHtml(el) {
     const nom = brNomBroche(el, i) || String(i + 1);
     const vide = el.brochage && Array.isArray(el.pinMap) && !String(el.pinMap[i] || "").trim();
     h += '<span class="br-nom">' + e(nom) + '</span><span class="br-patte' + (vide ? " br-vide" : "") + '">' +
-      (vide ? "?" : e(brPatte(el, i))) + '</span>';
+      (vide ? "?" : e(brPattes(el, i).join("/"))) + '</span>';
   }
   h += '</div>';
   for (const a of alertes)

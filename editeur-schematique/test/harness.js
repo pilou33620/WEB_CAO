@@ -129,7 +129,7 @@ const EXPOSE=[
   "demo","demo2","demo12v","demo12v_p2","SCH_EXEMPLES","schChargerExemple","schExOuvrir",
   /* brochage par référence (commun/brochage.js + 25-brochage.js) */
   "brochageLire","brochagePartie","brochageParties","brochagePattes","brochageNom",
-  "brNomBroche","brPatte","brDepuisLib","brAppliquer","brChoisirPartie","brSaisirPatte",
+  "brNomBroche","brPatte","brPattes","brochageListe","BROCHAGE_PATTES","brDepuisLib","brAppliquer","brChoisirPartie","brSaisirPatte",
   "brCandidats","brReferenceAChoisir","brPattesBoitier","brControles","brControlesDe",
   "brAjouterPartie","brPartieLibre","brRepere","brPanneauHtml","PKG_MAX","buildProps"
 ];
@@ -2767,6 +2767,36 @@ T("brochage : l'inspecteur propose les références du symbole et montre la tabl
   if(/Référence à choisir/.test(h2))throw new Error("plus de badge une fois la référence choisie");
   if(!/pBrPartie/.test(h2)||!/pBrAjout/.test(h2))throw new Error("choix de partie et « + U…B » attendus");
 }));
+
+T("brochage : une broche sur plusieurs pattes — languette OUT du régulateur SOT-223",()=>{
+  const lu=brochageLire("GND=1,OUT=2 / 4,IN=3");
+  if(lu.erreurs.length||brochagePartie(lu).broches.OUT!=="2/4")throw new Error("lecture : "+JSON.stringify(lu));
+  if(brochagePattes(lu).join()!=="1,2,3,4")throw new Error("pattes : "+brochagePattes(lu));
+  if(!brochageLire("OUT=2/x!").erreurs.length)throw new Error("une patte illisible dans la liste est refusée");
+  if(!brochageLire("OUT=2/4,GND=4").erreurs.some(e=>/patte 4 donnée à OUT et à GND/.test(e)))
+    throw new Error("une patte de la liste reprise par une autre broche est signalée");
+  /* le régulateur câblé : IN à gauche, OUT à droite, GND en bas */
+  const el=C("regulator",10,10,{id:++_uid,ref:"U1",value:"AMS1117",pkg:"SOT-223-4"});
+  const ps=allPins(el);
+  const ws=[{x1:ps[0].x,y1:ps[0].y,x2:ps[0].x-40,y2:ps[0].y,net:"5V"},
+            {x1:ps[1].x,y1:ps[1].y,x2:ps[1].x+40,y2:ps[1].y,net:"3V3"},
+            {x1:ps[2].x,y1:ps[2].y,x2:ps[2].x,y2:ps[2].y+40,net:"GND"}];
+  sheet([el],ws);
+  if(!brControles().some(x=>/3 broches sur un boîtier SOT-223-4 à 4 pattes/.test(x.texte)))
+    throw new Error("sans table, la languette reste en l'air : alerte attendue");
+  el.brochage="GND=1,OUT=2/4,IN=3";brAppliquer(el);
+  if(el.pinMap.join()!=="3,2/4,1"||brPattes(el,1).join()!=="2,4"||brPatte(el,1)!==2)
+    throw new Error("table : "+JSON.stringify(el.pinMap));
+  const txt=netlistText("—");
+  if(!/NET "3V3"\s*\n\s*U1\.2\s+OUT\s*\n\s*U1\.4\s+OUT/.test(txt))throw new Error("OUT sur les pattes 2 et 4 :\n"+txt);
+  if(!/NET "5V"\s*\n\s*U1\.3\b/.test(txt)||!/NET "GND"\s*\n\s*U1\.1\b/.test(txt))throw new Error("IN et GND : "+txt);
+  if(brControles().length)throw new Error("rien à redire : "+JSON.stringify(brControles()));
+  /* saisie à la main, relecture */
+  if(!brSaisirPatte(el,1," 2 / 4 ")||el.pinMap[1]!=="2/4")throw new Error("saisie « 2 / 4 » : "+el.pinMap[1]);
+  if(brSaisirPatte(el,1,"2/<b>"))throw new Error("saisie illisible refusée");
+  const n=normComp(JSON.parse(JSON.stringify(el)),0);
+  if(n.pinMap[1]!=="2/4")throw new Error("normComp garde « 2/4 » : "+JSON.stringify(n.pinMap));
+});
 
 console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
 process.exit(ko?1:0);

@@ -166,6 +166,7 @@ chacune tombe, colonne `Brochage` de `LIB_composants.csv` :
 |---|---|
 | MCP6001 (SOT-23-5) | `OUT=1,V-=2,IN+=3,IN-=4,V+=5` |
 | LM358 (SOIC-8, deux AOP) | `A:OUT=1,IN-=2,IN+=3\|B:OUT=7,IN-=6,IN+=5\|*:V-=4,V+=8` |
+| AMS1117 (SOT-223, languette = OUT) | `GND=1,OUT=2/4,IN=3` |
 
 Choisir la référence (badge « Référence à choisir » de l'inspecteur) recopie
 la table sur le composant, `el.pinMap` : la netlist écrit alors la patte, plus

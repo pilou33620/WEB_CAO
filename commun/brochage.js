@@ -18,6 +18,9 @@
                                                 plusieurs parties (AOP double) ;
                                                 « * » vaut pour toutes
      ...,NC=5/6/7                               pattes laissées libres exprès
+     IN=3,OUT=2/4,GND=1                         une broche sur plusieurs pattes
+                                                (languette d'un SOT-223, masses
+                                                multiples d'un QFN)
 
    À gauche du « = », le nom de la broche du symbole (IN-, V+, B, C, E, G…) ou
    son numéro dans le symbole ; à droite, le numéro (ou le nom, « A1 ») de la
@@ -38,6 +41,12 @@ function brochageNom(s) {
 }
 
 const BROCHAGE_PATTE = /^[A-Za-z0-9]{1,8}$/;
+/* une ou plusieurs pattes, « 2 » ou « 2/4 » : huit au plus pour une broche */
+const BROCHAGE_PATTES = /^[A-Za-z0-9]{1,8}(\/[A-Za-z0-9]{1,8}){0,7}$/;
+/* « 2 / 4 » → ["2","4"] ; vide → [] */
+function brochageListe(v) {
+  return String(v == null ? "" : v).split("/").map(x => x.trim()).filter(Boolean);
+}
 const BROCHAGE_PARTIE = /^[A-Za-z0-9]{1,4}$/;
 
 /* Lecture d'un brochage. Rend null pour un texte vide (ou « xx », « - »,
@@ -86,15 +95,18 @@ function brochageLire(texte) {
         }
         continue;
       }
-      if (!BROCHAGE_PATTE.test(droite)) {
-        erreurs.push("« " + t + " » : patte « " + droite + " » illisible");
+      const liste = [...new Set(brochageListe(droite))];
+      const illisible = liste.find(p => !BROCHAGE_PATTE.test(p));
+      if (!liste.length || illisible != null || liste.length > 8) {
+        erreurs.push("« " + t + " » : patte « " + (illisible != null ? illisible : droite) + " » illisible");
         continue;
       }
+      const pattes = liste.join("/");
       const deja = cible.broches[broche];
-      if (deja != null && deja !== droite)
+      if (deja != null && deja !== pattes)
         erreurs.push("broche " + broche + (cible.nom && cible.nom !== "*" ? " (partie " + cible.nom + ")" : "") +
-          " donnée deux fois : patte " + deja + " puis " + droite);
-      cible.broches[broche] = droite;
+          " donnée deux fois : patte " + deja + " puis " + pattes);
+      cible.broches[broche] = pattes;
     }
   }
   const parties = nommees.length ? nommees : [{ nom: "", broches: {}, nc: [] }];
@@ -110,12 +122,13 @@ function brochageLire(texte) {
      des alimentations — le contrôle du schéma juge alors les nets. */
   for (const p of parties) {
     const vu = {};
-    for (const [b, n] of Object.entries(p.broches)) {
-      if (vu[n] && vu[n] !== b)
-        erreurs.push("patte " + n + " donnée à " + vu[n] + " et à " + b +
-          (p.nom ? " (partie " + p.nom + ")" : ""));
-      vu[n] = b;
-    }
+    for (const [b, v] of Object.entries(p.broches))
+      for (const n of brochageListe(v)) {
+        if (vu[n] && vu[n] !== b)
+          erreurs.push("patte " + n + " donnée à " + vu[n] + " et à " + b +
+            (p.nom ? " (partie " + p.nom + ")" : ""));
+        vu[n] = b;
+      }
   }
   return { parties: parties, erreurs: erreurs };
 }
@@ -138,7 +151,7 @@ function brochagePattes(lu) {
   const s = new Set();
   if (lu && lu.parties)
     for (const p of lu.parties) {
-      for (const n of Object.values(p.broches)) s.add(n);
+      for (const v of Object.values(p.broches)) for (const n of brochageListe(v)) s.add(n);
       for (const n of p.nc) s.add(n);
     }
   return [...s].sort((a, b) => String(a).localeCompare(String(b), "fr", { numeric: true }));

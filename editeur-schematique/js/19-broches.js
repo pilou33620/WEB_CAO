@@ -685,7 +685,7 @@ function ceSync(){
     tr.innerHTML =
       '<td style="text-align:center; font-family:var(--mono); color:var(--txt-dim); font-size:11px;">' + (i + 1) + '</td>' +
       '<td><input class="ce-pin-name" data-idx="' + i + '" value="' + esc(pName) + '" placeholder="' + esc(pDefaut || "Nom (ex: VCC, GND, IN...)") + '" style="width:100%; padding:3px 6px; font-size:11.5px; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--txt);"></td>' +
-      '<td><input class="ce-pin-pad" data-idx="' + i + '" value="' + esc(pPatte) + '" placeholder="' + (i + 1) + '" maxlength="8" style="width:100%; padding:3px 6px; font-size:11.5px; font-family:var(--mono); text-align:center; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--txt);"></td>' +
+      '<td><input class="ce-pin-pad" data-idx="' + i + '" value="' + esc(pPatte) + '" placeholder="' + (i + 1) + '" maxlength="71" title="Patte de l\'empreinte ; plusieurs : 2/4" style="width:100%; padding:3px 6px; font-size:11.5px; font-family:var(--mono); text-align:center; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--txt);"></td>' +
       '<td style="text-align:center; font-family:var(--mono); font-size:10px; color:var(--txt-dim);">' + Math.round(p[0]/IC_STEP) + ' , ' + Math.round(p[1]/IC_STEP) + '</td>' +
       '<td style="font-size:11px;">' +
         (live ? '<span style="color:' + netColor(n) + '; font-weight:600;">' + esc(n.name) + '</span>' : '<span style="color:var(--txt-dim); font-style:italic;">non connecté</span>') +

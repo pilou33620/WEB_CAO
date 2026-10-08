@@ -394,12 +394,17 @@ function computeNets(comps,wires){
     if(NAME_SRC[nd.el.type])n.powers.push(nd.el);
     /* `pin` reste le numéro de la broche dans le symbole ; `pad` est la patte
        de l'empreinte où elle tombe (25-brochage.js) — c'est elle que la
-       netlist écrit et que le PCB relie. Sans table, les deux coïncident. */
-    else if(!nd.def.noRef)n.nodes.push({
-      ref:nd.el.ref||"?", pin:nd.i+1, id:nd.el.id,
-      pad:(typeof brPatte==="function")?brPatte(nd.el,nd.i):nd.i+1,
-      label:(typeof brNomBroche==="function")?brNomBroche(nd.el,nd.i)
-           :((nd.el.pinNames&&nd.el.pinNames[nd.i])||""), x:nd.x, y:nd.y});
+       netlist écrit et que le PCB relie. Sans table, les deux coïncident.
+       Une broche sur plusieurs pattes (languette « OUT=2/4 ») donne un nœud
+       par patte : toutes rejoignent le net. */
+    else if(!nd.def.noRef){
+      const pads=(typeof brPattes==="function")?brPattes(nd.el,nd.i):[nd.i+1];
+      const label=(typeof brNomBroche==="function")?brNomBroche(nd.el,nd.i)
+           :((nd.el.pinNames&&nd.el.pinNames[nd.i])||"");
+      for(const pad of pads)n.nodes.push({
+        ref:nd.el.ref||"?", pin:nd.i+1, id:nd.el.id, pad:pad,
+        label:label, x:nd.x, y:nd.y});
+    }
   }
   for(const cl of claims){
     const n=net(cl.k);

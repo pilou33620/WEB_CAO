@@ -252,7 +252,7 @@ DIRECTIVES STRICTES :
   "Brochage": "A:OUT=1,IN-=2,IN+=3|B:OUT=7,IN-=6,IN+=5|*:V-=4,V+=8"
 }
 \`\`\`
-   « Brochage » : pour chaque broche du symbole, la patte de l'empreinte relevée sur la datasheet, « NOM=patte » séparés par des virgules (jamais de point-virgule). Noms des broches des symboles : opamp IN-, IN+, OUT, V+, V- ; npn/pnp B, C, E ; nmos G, D, S ; pmos G, S, D ; diodes A, K ; regulator IN, OUT, GND. Composant à plusieurs parties (AOP double, quadruple) : « A:…|B:… », et « *: » pour les broches communes à toutes les parties (alimentations). Pattes laissées libres : « NC=5/6 ». Exemple MCP6001 SOT-23-5 : « OUT=1,V-=2,IN+=3,IN-=4,V+=5 ».
+   « Brochage » : pour chaque broche du symbole, la patte de l'empreinte relevée sur la datasheet, « NOM=patte » séparés par des virgules (jamais de point-virgule). Noms des broches des symboles : opamp IN-, IN+, OUT, V+, V- ; npn/pnp B, C, E ; nmos G, D, S ; pmos G, S, D ; diodes A, K ; regulator IN, OUT, GND. Composant à plusieurs parties (AOP double, quadruple) : « A:…|B:… », et « *: » pour les broches communes à toutes les parties (alimentations). Pattes laissées libres : « NC=5/6 ». Une broche sur plusieurs pattes (languette, masses multiples) : « OUT=2/4 » ; exemple AMS1117 SOT-223 : « GND=1,OUT=2/4,IN=3 ». Exemple MCP6001 SOT-23-5 : « OUT=1,V-=2,IN+=3,IN-=4,V+=5 ».
 
 5. Sois direct, pas de blabla inutile, explique brièvement les choix de dimensions en millimètres (pitch, pads).`;
 
