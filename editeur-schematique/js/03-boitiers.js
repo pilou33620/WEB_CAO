@@ -14,6 +14,11 @@
    stocke séparément : la liste des bases reste courte et lisible, et le nombre
    de broches se choisit ensuite. Nom composé : « SOIC-8 », ou la base seule
    pour les boîtiers à brochage figé (passifs deux bornes). */
+/* Longueur gardée d'un nom de boîtier. Les noms de la LIB vont jusqu'à
+   « Trou metalise diam. trou 1.2mm - dim. plated 2.54mmx1.6mm » (57
+   caractères) : coupé à 40, le PCB ne retrouvait plus l'empreinte et posait
+   le point de test en CMS. */
+const PKG_MAX=120;
 const PKG_BASES=[
   {b:"01005",fam:"Passifs CMS",kinds:["passif"],flat:true,note:"très petit, téléphonie"},
   {b:"0201",fam:"Passifs CMS",kinds:["passif"],flat:true},

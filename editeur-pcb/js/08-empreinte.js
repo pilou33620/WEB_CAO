@@ -136,6 +136,20 @@ function fpLibNames(){
   return Object.keys(fpLibAll()).sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
 }
 function fpLibGet(name){return fpLibAll()[String(name)]||null;}
+/* L'empreinte de la LIB qui répond à un nom de boîtier venu du schéma ou d'une
+   netlist. Le nom exact d'abord, puis la même clé (pkgKey : « SOT23-5 » vaut
+   « SOT-23-5 ») ; un chemin de catalogue (« lib/empreinte/SC-70.json ») se
+   réduit à son fichier. Rien de cela : null, et la géométrie calculée reste. */
+function fpLibPourBoitier(pkg){
+  const nom=String(pkg==null?"":pkg).replace(/^.*[\\/]/,"").replace(/\.json$/i,"").trim();
+  if(!nom)return null;
+  if(FPLIB[nom])return FPLIB[nom];
+  const k=pkgKey(nom);
+  if(!k)return null;
+  for(const n of Object.keys(FPLIB))
+    if(pkgKey(n)===k||pkgKey(FPLIB[n].pkg)===k)return FPLIB[n];
+  return null;
+}
 /* Enregistrement sous un nom : le même nom remplace, c'est ce qu'on attend
    d'une correction. Renvoie la définition retenue, ou null si le stockage
    n'est pas disponible. */

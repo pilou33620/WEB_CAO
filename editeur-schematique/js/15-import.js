@@ -25,7 +25,7 @@ function normComp(c,i){
     value:String(c.value==null?(def.v||""):c.value).slice(0,240)
   };
   if(!def.noRef){
-    const pk=String(c.pkg==null?"":c.pkg).trim().slice(0,40);
+    const pk=String(c.pkg==null?"":c.pkg).trim().slice(0,PKG_MAX);
     if(pk)el.pkg=pk;
     if(c.csvMpn) el.csvMpn = String(c.csvMpn).slice(0, 100);
     if(c.csvPartName) el.csvPartName = String(c.csvPartName).slice(0, 100);

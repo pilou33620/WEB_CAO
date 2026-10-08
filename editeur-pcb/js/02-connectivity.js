@@ -910,14 +910,24 @@ function applyNetlist(txt,dropMissing){
   if(!refs.size)return {err:"Aucun composant reconnu dans ce fichier."};
   push();
   const byRef=new Map(S.fps.map(f=>[f.ref,f]));
-  const added=[], kept=[], repkg=[];
+  const added=[], kept=[], repkg=[], libFp=[];
   const conflicts=[];
+  /* l'empreinte de la LIB, quand le boîtier en a une : c'est elle que Gestion
+     LIB a dessinée (pastilles, perçages, sérigraphie). Sans elle, seule la
+     géométrie générique déduite du nom était posée, et il fallait passer par
+     « Réaffecter » composant par composant. */
+  const libPour=pkg=>(typeof fpLibPourBoitier==="function")?fpLibPourBoitier(pkg):null;
   for(const ref of refs){
     const meta=comps.get(ref)||{value:"",pkg:""};
     const pins=Math.max(1,pinCount.get(ref)||2);
     let fp=byRef.get(ref);
     if(!fp){
       fp=mkFp(ref,meta.value,meta.pkg,pins);
+      const lib=libPour(meta.pkg);
+      if(lib&&fpApplyDef(fp,lib)){
+        if(pins>fp.pins)fpSetPins(fp,pins);
+        libFp.push(fp);
+      }
       S.fps.push(fp);added.push(fp);
     }else{
       fp.value=meta.value||fp.value;
@@ -932,7 +942,10 @@ function applyNetlist(txt,dropMissing){
            reste. Le refaire effacerait un travail que la netlist ne sait pas
            reproduire — la fenêtre d'empreinte le dit et laisse rendre la main
            au calcul d'un clic. */
-        if(!fpFree(fp)){
+        const lib=fpFree(fp)?null:libPour(meta.pkg);
+        if(lib&&fpApplyDef(fp,lib)){
+          libFp.push(fp);repkg.push(fp);
+        }else if(!fpFree(fp)){
           const g=fpGeomFor(meta.pkg,pins);
           fp.style=g.style;fp.pitch=g.pitch;fp.span=g.span;fp.pins=g.pins;
           if(g.pads){
@@ -982,7 +995,11 @@ function applyNetlist(txt,dropMissing){
      cela, une carte fraîchement importée laisse la classe Alimentation vide */
   autoClass();
   touch();
-  return {added:added.length,kept:kept.length,removed,repkg:repkg.length,nets:nets.size,conflicts};
+  return {added:added.length,kept:kept.length,removed,repkg:repkg.length,nets:nets.size,conflicts,
+          lib:libFp.length,
+          /* créées sans empreinte LIB alors que la LIB n'est pas encore lue :
+             l'appelant peut aller la chercher (importNetlist) */
+          sansLib:added.filter(f=>!libFp.includes(f))};
 }
 
 /* Nettoie ou détache automatiquement les pistes de cuivre en conflit après un changement de brochage */

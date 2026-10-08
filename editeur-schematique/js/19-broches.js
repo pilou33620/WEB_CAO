@@ -571,7 +571,7 @@ function ceBuild(){
   ceEl("cePkgTxt").oninput = () => {
     if(!CE.el) return;
     cePush();
-    CE.el.pkg = ceEl("cePkgTxt").value.trim().slice(0, 40);
+    CE.el.pkg = ceEl("cePkgTxt").value.trim().slice(0, PKG_MAX);
   };
 
   ceEl("cePkgSel").onchange = () => {

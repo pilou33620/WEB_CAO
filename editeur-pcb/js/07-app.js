@@ -95,11 +95,23 @@ function importNetlist(txt,dropMissing){
   hint("Netlist importée : "+res.added+" empreinte(s) créée(s), "+res.kept+" mise(s) à jour, "+
        res.nets+" net(s)"+(res.removed?", "+res.removed+" supprimée(s)":"")+
        (res.repkg?", "+res.repkg+" empreinte(s) refaite(s) sur un nouveau boîtier":"")+
+       (res.lib?", "+res.lib+" empreinte(s) de la LIB appliquée(s)":"")+
        (nbConf?", ⚠️ "+nbConf+" pastille(s) routée(s) en conflit":"")+
        ". Les nouvelles empreintes attendent à droite de la carte — « Placement auto » les fait entrer.");
   if(nbConf>0&&typeof openNetlistConflictDialog==="function"){
     openNetlistConflictDialog(res.conflicts);
   }
+  /* LIB pas encore chargée (import juste après l'ouverture) : chaque boîtier
+     resté générique va chercher son fichier lib_empreinte_pcb/<boîtier>.json.
+     Une fois la LIB lue, ce qu'elle n'a pas, elle ne l'a pas : on ne la
+     redemande pas. */
+  if(typeof FPLIB_SRV!=="undefined"&&!FPLIB_SRV&&typeof pcbAppliquerEmpreinteLib==="function"&&
+     typeof location!=="undefined"&&/^https?:$/.test(location.protocol))
+    for(const fp of res.sansLib||[]){
+      if(!fp.pkg||fpFree(fp))continue;
+      const r=pcbAppliquerEmpreinteLib(fp,fp.pkg);
+      if(r&&typeof r.then==="function")r.then(ok=>{if(ok){zoneCache.clear();touch();refreshPanels();draw();}});
+    }
   setTimeout(() => {
     if (typeof pcbVerifierEtNotifierPinout === "function") pcbVerifierEtNotifierPinout(false);
     if (typeof pcbVerifierEtNotifierEco === "function") pcbVerifierEtNotifierEco(true);

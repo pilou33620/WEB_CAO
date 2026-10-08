@@ -169,7 +169,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "dPads","dBody","fpDefOf","normFpDef","fpApplyDef","fpLibAll","fpLibWrite",
   "fpLibNames","fpLibGet","fpLibPut","fpLibDel","fpLibFile","fpLibParse",
   "fpLibMerge","feOverlap","FPLIB_KEY","FPLIB_FORMAT","FE","feIsOpen","feClose",
-  "FPLIB","FPLIB_FICHIER","fpLibCharger","fpLibFichier",
+  "FPLIB","FPLIB_FICHIER","fpLibCharger","fpLibFichier","fpLibPourBoitier",
   /* formes de pastille, rotation, origine de l'empreinte */
   "PAD_SHAPES","padShape","padRadius","padRot","padHalf","padDist","padOpening",
   "fpLocalBox","fpMoveOrigin","fpOffCenter","fpIsCentered","fpCenterOrigin",
@@ -21511,6 +21511,50 @@ TA("simulation RF : piste voisine d'un autre net, self géométrique, fente du p
   if(d.branches.some(b=>b.net!=="RF_OUT"&&b.fentes))
     throw new Error("une seule branche franchit la fente");
   carteVide();S.rf={};
+});
+
+/* L'import de netlist pose l'empreinte de la LIB quand le boîtier en a une :
+   avant, seule la géométrie générique déduite du nom arrivait, et la LIB ne
+   s'appliquait qu'à la main (« Réaffecter »). */
+T("import de netlist : l'empreinte de la LIB s'applique au boîtier",()=>{
+  carteVide();fpLibRaz();
+  FPLIB["SOT-23-5"]={name:"SOT-23-5",pkg:"SOT-23-5",pins:5,style:"sot",pitch:0.95,span:2.6,
+    pads:[1,2,3,4,5].map((n,i)=>({n:n,x:i<3?-1.3:1.3,y:i<3?(i-1)*0.95:(i===3?0.95:-0.95),
+      w:0.6,h:1.1,shape:"rect",drill:0,rot:0}))};
+  FPLIB["Trou-metalise-1.2mm"]={name:"Trou-metalise-1.2mm",pkg:"Trou-metalise-1.2mm",pins:1,
+    style:"row",pitch:2.54,span:2.54,pads:[{n:1,x:0,y:0,w:2.54,h:1.6,shape:"oval",drill:1.2,rot:0}]};
+  const res=applyNetlist(`=== Composants ===
+    U1      MCP6001           SOT23-5
+    TP1     —                 lib/empreinte/Trou-metalise-1.2mm.json
+    R1      10k               0603
+
+=== Feuille 1 — Principale ===
+NET "VOUT"
+    U1.1
+    TP1.1
+    R1.1
+`,false);
+  const u=S.fps.find(f=>f.ref==="U1"), tp=S.fps.find(f=>f.ref==="TP1");
+  if(res.lib!==2)throw new Error("deux empreintes LIB attendues : "+res.lib);
+  if(!u.pads||u.pads.length!==5||Math.abs(u.pads[0].w-0.6)>1e-9)
+    throw new Error("U1 devait recevoir les pastilles de la LIB : "+JSON.stringify(u.pads));
+  if(u.pkg!=="SOT23-5")throw new Error("le nom du boîtier venu du schéma reste : "+u.pkg);
+  if(!tp.pads||tp.pads[0].drill!==1.2)
+    throw new Error("le point de test devait être percé (LIB) : "+JSON.stringify(tp.pads));
+  if(u.nets[1]!=="VOUT"||tp.nets[1]!=="VOUT")throw new Error("les nets suivent l'empreinte LIB");
+  if(S.fps.find(f=>f.ref==="R1").pads)throw new Error("R1 sans empreinte LIB reste calculée");
+  /* nom de boîtier long : il arrive entier et le PCB le reconnaît (percé) */
+  carteVide();fpLibRaz();
+  applyNetlist(`=== Composants ===
+    TP2     —                 Trou metalise diam. trou 1.2mm - dim. plated 2.54mmx1.6mm
+
+=== Feuille 1 — Principale ===
+NET "GND"
+    TP2.1
+`,false);
+  const t2=S.fps.find(f=>f.ref==="TP2");
+  if(!padsOf(t2).some(q=>q.drill>0))throw new Error("le point de test au nom long doit être percé");
+  carteVide();
 });
 
 (async()=>{
