@@ -748,8 +748,9 @@ function trExecuter(id, cible){
     if(t.key) tactileSimulerTouche(t.key, t.code, t);
   }catch(err){ if(typeof console !== "undefined") console.error("roulette :", id, err); }
 }
-/* Enregistrer : « Enregistrer + GitHub » quand l'éditeur l'affiche (outil
-   lancé par WEB_SUITE, projet du serveur ouvert), l'enregistrement simple sinon. */
+/* Enregistrer : « Enregistrer (projet + GitHub) » quand l'éditeur l'affiche
+   (outil lancé par WEB_SUITE : c'est alors la seule sauvegarde),
+   l'enregistrement simple sinon. */
 function trSauver(){
   const git = document.getElementById("bSaveGit");
   const el = (git && git.style.display !== "none") ? git : document.getElementById("bSave");

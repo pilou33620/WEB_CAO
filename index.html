@@ -451,6 +451,15 @@
             <i>Aucun projet actuellement ouvert. Choisissez une option ci-dessous pour commencer.</i>
           </div>
 
+          <!-- Lancé par WEB_SUITE : les projets vivent dans PROJETS, et chaque
+               enregistrement y est écrit puis envoyé sur GitHub -->
+          <div id="pSuiteInfo" class="p-aucun-card" hidden style="margin-bottom:14px; border-color:var(--blue);">
+            ☁ <b>Lancé par WEB·SUITE</b> : les projets sont ceux du dossier <b>PROJETS</b> téléchargé depuis GitHub.
+            Dans les éditeurs, <b>Enregistrer</b> (<kbd>Ctrl+S</kbd>) écrit le schéma ou la carte dans le dossier du projet,
+            puis l'envoie sur GitHub : c'est la seule sauvegarde.
+            <div id="pSuiteDetail" style="margin-top:6px; color:var(--red);" hidden></div>
+          </div>
+
           <!-- Sélecteur d'onglets : Nouveau Projet vs Ouvrir un projet -->
           <div class="p-tabs" style="margin-bottom:14px;">
             <button id="pTabNouveau" class="p-tab active" type="button">
@@ -480,7 +489,7 @@
               </div>
             </div>
 
-            <div style="margin-bottom:12px;">
+            <div id="pBlocCheminNouveau" style="margin-bottom:12px;">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                 <label for="pCheminNouveau" style="font-size:11px; font-family:var(--mono); color:var(--txt-dim); text-transform:uppercase;">
                   2. Chemin d'accès / Dossier parent sur le support <span style="color:var(--red);">*</span>
@@ -525,7 +534,7 @@
 
           <!-- ==================== PANNEAU 2 : OUVRIR UN PROJET EXISTANT ==================== -->
           <div id="pPanelOuvrir" class="p-panel-content" hidden>
-            <div style="font-size:12px; color:var(--txt-dim); margin-bottom:12px;">
+            <div id="pOuvrirIntro" style="font-size:12px; color:var(--txt-dim); margin-bottom:12px;">
               Choisissez directement le dossier de votre projet sur le support (disque, clé USB, Google Drive...) :
             </div>
 
@@ -544,7 +553,7 @@
             </div>
 
             <!-- Saisie directe d'un chemin -->
-            <div style="margin-top:14px; padding-top:12px; border-top:1px dashed var(--border2);">
+            <div id="pBlocCheminExistant" style="margin-top:14px; padding-top:12px; border-top:1px dashed var(--border2);">
               <label for="pCheminExistant" style="display:block; font-size:11px; font-family:var(--mono); color:var(--txt-dim); text-transform:uppercase; margin-bottom:4px;">
                 Ou saisir directement le chemin du dossier :
               </label>
@@ -717,6 +726,9 @@ function uRendre(){ uRendreListe(); uRendreInfo(); uRendreRecents(); }
    Refonte Gestion de Projet : Nouveau projet & Ouvrir un projet existant
    ========================================================================== */
 let PROJ_PARENT_HANDLE = null; // DirectoryHandle sélectionné pour un nouveau projet
+/* Lancé par WEB_SUITE : la racine des projets (PROJETS/CAO), seul endroit
+   où l'on crée et ouvre un projet -- c'est le dossier envoyé sur GitHub. */
+let PROJ_SUITE_RACINE = "";
 
 // Gestion des onglets : Nouveau Projet vs Ouvrir un projet
 const tabNouveau = document.getElementById("pTabNouveau");
@@ -749,7 +761,7 @@ const elPrevPcb = document.getElementById("pPrevPcb");
 
 function pMajApercuNouveau() {
   const nom = (inNomNouveau && inNomNouveau.value.trim()) || "NouveauProjet";
-  let chem = (inChemNouveau && inChemNouveau.value.trim()) || "D:\\projets";
+  let chem = (PROJ_SUITE_RACINE || (inChemNouveau && inChemNouveau.value.trim())) || "D:\\projets";
   if(!chem.endsWith("\\") && !chem.endsWith("/")) {
     chem += (chem.includes("/") ? "/" : "\\");
   }
@@ -813,6 +825,17 @@ if(bCreerNouveau) {
     }
 
     pDosMsg("Création du projet « " + uEsc(nom) + " »…");
+
+    // Lancé par WEB_SUITE : toujours dans PROJETS, jamais ailleurs
+    if(typeof projdSuite === "function" && projdSuite()) {
+      projdCreerServeur(nom, { chemin: nom })
+        .then(function(etat) {
+          if(inNomNouveau) inNomNouveau.value = "";
+          pDosFait(etat);
+        })
+        .catch(function(e) { pDosMsg(e.message, true); });
+      return;
+    }
 
     // Si on a un dossier parent sélectionné via File System Access
     if(PROJ_PARENT_HANDLE && typeof projdCreerDansParent === "function") {
@@ -1115,8 +1138,49 @@ document.addEventListener("visibilitychange", function(){
   if(projdLie()) projdRafraichir().catch(function(){});
   else pDosRendre();
 });
+/* Lancé par WEB_SUITE : seuls les projets de PROJETS (téléchargé depuis
+   GitHub par le lanceur) s'ouvrent et se créent ici. Les dossiers choisis
+   dans le navigateur ou tapés à la main disparaissent : ce qui y serait
+   enregistré ne partirait jamais sur GitHub. */
+function pAppliquerSuite() {
+  if(typeof projdSuiteDispo !== "function") return;
+  projdSuiteDispo().then(function(suite) {
+    if(!suite) return;
+    const info = document.getElementById("pSuiteInfo");
+    if(info) info.hidden = false;
+    const det = document.getElementById("pSuiteDetail");
+    if(det && PROJD_GH && !PROJD_GH.disponible && PROJD_GH.detail) {
+      det.textContent = PROJD_GH.detail;
+      det.hidden = false;
+    }
+    ["pBlocCheminNouveau", "pZoneChoisirDossier", "pBlocCheminExistant"].forEach(function(id) {
+      const el = document.getElementById(id);
+      if(el) el.style.display = "none";
+    });
+    const intro = document.getElementById("pOuvrirIntro");
+    if(intro) intro.textContent = "Projets du dossier PROJETS (synchronisé avec GitHub par WEB·SUITE) :";
+    PROJ_PARENT_HANDLE = null;
+    /* Un dossier du navigateur repris de la dernière fois n'est pas dans
+       PROJETS : on le détache (rien n'est effacé). */
+    const horsProjets = function() {
+      if(projdEtat().mode !== "dossier") return;
+      projdDetacher();
+      pDosMsg("Lancé par WEB·SUITE : le dossier ouvert la dernière fois n'est pas dans PROJETS, il a été détaché (rien n'est effacé).", true);
+    };
+    horsProjets();
+    projSurChangement(horsProjets);   // la reprise du dossier peut finir après
+    projdListerServeur().then(function(r) {
+      PROJ_SUITE_RACINE = (r && r.racines && r.racines[0]) || "";
+      pMajApercuNouveau();
+      // aucun projet ouvert : on montre d'abord les projets en cours
+      if(!projNom() && r && r.projets && r.projets.length) pBasculerOnglet(false);
+    }).catch(function(_) {});
+  });
+}
+
 pMajApercuNouveau();
 pRendre();
+pAppliquerSuite();
 /* La reprise du dossier est asynchrone : projet-disque.js s'en occupe au
    chargement, et prévient par projSignaler() une fois le fichier lu. */
 pDosRendre();
@@ -1222,7 +1286,16 @@ function libRendreEtat(cfg){
     const el = document.getElementById(id);
     if(el) el.disabled = verrou;
   });
-  if(verrou){
+  if(cfg.suite){
+    /* Lancé par WEB_SUITE : la LIB est PROJETS/LIB_CAO, et chaque
+       enregistrement de la Gestion LIB part sur GitHub avec les projets. */
+    const ligne = document.getElementById("libChem");
+    if(ligne && ligne.parentNode) ligne.parentNode.style.display = "none";
+    const init = document.getElementById("libInitVide");
+    if(init && init.closest) { const l = init.closest("div"); if(l) l.style.display = "none"; }
+    libMsg("☁ Lancé par WEB·SUITE : la bibliothèque est celle de <b>PROJETS/LIB_CAO</b>. " +
+           "Dans la Gestion LIB, chaque enregistrement (catalogue, empreinte, symbole) y est écrit puis envoyé sur GitHub.");
+  } else if(verrou){
     libMsg("🔒 Bibliothèque en lecture seule : ce serveur écoute sur le réseau. " +
            "Relancez-le avec <code>--local</code> (ou par double-clic) pour changer de dossier ou modifier la bibliothèque.");
   }

@@ -1158,6 +1158,13 @@ def chemin_projet(brut, base=None):
     else:
         dossier = os.path.abspath(os.path.join(depart, os.path.expanduser(brut)))
     racine = sous_racine(dossier)
+    # Lance par WEB_SUITE, un projet ne vit que sous PROJETS/CAO : c'est le
+    # seul dossier que le lanceur envoie sur GitHub, et « Enregistrer » y est
+    # la seule sauvegarde. Un chemin tape ailleurs ne serait jamais envoye.
+    if not racine and adresse_lanceur():
+        raise ErreurProjet(403, "Lance par WEB_SUITE : les projets vivent dans"
+                                " %s (le dossier envoye sur GitHub). Ouvrez ou"
+                                " creez le projet la." % " ; ".join(racines_projets()))
     if not racine and PROJETS_OUVERT and os.path.isabs(os.path.expanduser(brut)):
         # Un chemin complet TAPE hors des racines (« D:\clients\carte PIR ») est
         # accepte en ecoute locale, pour CET appel seulement : son dossier
@@ -2265,8 +2272,21 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 "message": str(rep.get("message") or "")}
 
     def _github_etat(self):
-        self._github_garde()
-        return {"disponible": True}
+        """Mode WEB_SUITE et envoi possible d'ici.
+
+        `suite` dit que le lanceur a demarre cet outil : l'editeur n'offre
+        alors qu'une sauvegarde, dans le projet puis sur GitHub, meme si
+        l'envoi est refuse a cet appareil (`disponible` faux, `detail` dit
+        pourquoi) -- le refus s'affiche a l'enregistrement, sans repli sur un
+        telechargement. Sans lanceur, 404 comme avant."""
+        if not adresse_lanceur():
+            raise ErreurProjet(404, "Envoi sur GitHub indisponible : cet outil n'a pas"
+                                    " ete lance par WEB_SUITE.")
+        try:
+            self._github_garde()
+        except ErreurProjet as exc:
+            return {"suite": True, "disponible": False, "detail": exc.message}
+        return {"suite": True, "disponible": True}
 
     def _github_envoyer(self):
         charge = self._projet_corps()
@@ -2542,7 +2562,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             "est_defaut": est_defaut,
             "existe": info["existe"],
             "statistiques": info["statistiques"],
-            "modifiable": PROJETS_OUVERT
+            # Lance par WEB_SUITE, la LIB est celle de PROJETS (LIB_CAO) :
+            # le lanceur l'envoie sur GitHub, elle ne se deplace pas.
+            "modifiable": PROJETS_OUVERT and not adresse_lanceur(),
+            "suite": bool(adresse_lanceur())
         }
 
     def _lib_config_ecrire(self):
@@ -2551,6 +2574,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self._lib_garde(reseau=False)
         if not isinstance(charge, dict):
             raise ErreurLib(400, "Corps JSON invalide (objet attendu)")
+        if adresse_lanceur():
+            raise ErreurLib(403, "Lance par WEB_SUITE : la bibliotheque est celle de"
+                                 " PROJETS (LIB_CAO), envoyee sur GitHub avec les"
+                                 " projets. Elle ne se deplace pas d'ici.")
         chemin = charge.get("chemin")
         initialiser = bool(charge.get("initialiser", True))
         res = definir_dossier_lib(chemin, initialiser=initialiser)

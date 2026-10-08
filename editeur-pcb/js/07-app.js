@@ -16,32 +16,51 @@ function dl(blob,name){
    Avec un dossier de projet rattaché, enregistrer écrit dans ce dossier ; sans
    dossier, on télécharge comme avant. Le repli n'est pas un luxe : en
    double-clic sur le monofichier, aucun accès disque n'est possible.
-   Rend une promesse : vrai si la carte est dans le dossier du projet
-   (« Enregistrer + GitHub » n'envoie qu'alors). */
+   Lancé par WEB_SUITE, c'est autre chose : la seule sauvegarde est le projet
+   de PROJETS puis GitHub (commun/projet-disque.js), jamais un téléchargement.
+   Rend une promesse : vrai si la carte est dans le dossier du projet. */
 function saveJson(){
   const doc=docObj();
-  if(typeof projdLie==="function" && projdLie()){
-    return projdDocEcrire("pcb",doc).then(function(nom){
-      S.dirty=false;
-      if(typeof profNoterDocument==="function")profNoterDocument("pcb",nom);
-      hint("Carte enregistrée dans le dossier du projet ("+nom+").");
-      if(typeof projdAvis==="function")
-        projdAvis("ok","Carte enregistrée dans le projet",nom+" · "+projdQuand(Date.now()));
-      return true;
-    }).catch(function(e){
-      /* On ne fait pas semblant : si l'écriture échoue, le travail n'est pas
-         sauvé, et on le dit avant de proposer le téléchargement. */
-      hint("Écriture refusée : "+e.message+" — enregistrement en téléchargement.");
-      if(typeof projdAvis==="function")
-        projdAvis("erreur","Carte pas enregistrée dans le projet",e.message+" — le fichier est téléchargé à la place.");
-      saveJsonTelecharger(doc);
-      return false;
-    });
-  }
+  if(typeof projdSuiteDispo!=="function")return saveJsonClassique(doc);
+  return projdSuiteDispo().then(function(suite){
+    if(!suite)return saveJsonClassique(doc);
+    return projdEnregistrerGithub(function(){return saveJsonProjet(doc,false);},
+      function(){const p=(typeof projNom==="function"&&projNom())||"";
+        return "Carte "+(p?p+" ":"")+new Date().toLocaleString("fr-FR");},hint,"la carte");
+  });
+}
+function saveJsonClassique(doc){
+  if(typeof projdLie==="function" && projdLie())return saveJsonProjet(doc,true);
   saveJsonTelecharger(doc);
   if(typeof projdAvis==="function")
     projdAvis("info","Carte téléchargée","Aucun projet ouvert : le fichier .json est téléchargé, il n'est rangé dans aucun dossier de projet.");
   return Promise.resolve(false);
+}
+/* Écrit dans le dossier du projet. `repli` : en cas d'échec, télécharger à la
+   place (jamais en mode WEB_SUITE, où rien ne s'enregistre hors du projet). */
+function saveJsonProjet(doc,repli){
+  return projdDocEcrire("pcb",doc).then(function(nom){
+    S.dirty=false;
+    if(typeof profNoterDocument==="function")profNoterDocument("pcb",nom);
+    hint("Carte enregistrée dans le dossier du projet ("+nom+").");
+    if(typeof projdAvis==="function")
+      projdAvis("ok","Carte enregistrée dans le projet",nom+" · "+projdQuand(Date.now()));
+    return true;
+  }).catch(function(e){
+    /* On ne fait pas semblant : si l'écriture échoue, le travail n'est pas
+       sauvé, et on le dit avant de proposer le téléchargement s'il est permis. */
+    if(!repli){
+      hint("Écriture refusée : "+e.message+" — rien n'est enregistré.");
+      if(typeof projdAvis==="function")
+        projdAvis("erreur","Carte pas enregistrée dans le projet",e.message+" — votre travail reste dans l'éditeur, réessayez.");
+      return false;
+    }
+    hint("Écriture refusée : "+e.message+" — enregistrement en téléchargement.");
+    if(typeof projdAvis==="function")
+      projdAvis("erreur","Carte pas enregistrée dans le projet",e.message+" — le fichier est téléchargé à la place.");
+    saveJsonTelecharger(doc);
+    return false;
+  });
 }
 function saveJsonTelecharger(doc){
   const nom=pcbFile(".json","carte.json");
@@ -544,12 +563,10 @@ $("bDrc").onclick=()=>{
 $("bRules").onclick=()=>reOpen();
 if($("bMfgCaps")) $("bMfgCaps").onclick=()=>reOpen("mfg");
 $("bSave").onclick=saveJson;
-/* Enregistrer + GitHub : visible seulement si WEB_SUITE a lancé cet outil et
-   qu'un projet du serveur est ouvert (commun/projet-disque.js). */
-if(typeof projdGithubBouton==="function")projdGithubBouton("bSaveGit",function(){
-  const p=(typeof projNom==="function"&&projNom())||"";
-  projdEnregistrerGithub(saveJson,"Carte "+(p?p+" ":"")+new Date().toLocaleString("fr-FR"),hint);
-});
+/* Lancé par WEB_SUITE, « Enregistrer » laisse la place à « Enregistrer
+   (projet + GitHub) », seule sauvegarde ; saveJson choisit la voie
+   (commun/projet-disque.js). */
+if(typeof projdGithubBouton==="function")projdGithubBouton("bSaveGit",saveJson,"bSave");
 $("bOpen").onclick=()=>$("fileIn").click();
 $("fileIn").onchange=()=>{const f=$("fileIn").files[0];if(f)openFile(f);$("fileIn").value="";};
 $("bPng").onclick=exportPng;

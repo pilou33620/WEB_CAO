@@ -516,25 +516,45 @@ function projdDocEcrire(outil, obj){
   });
 }
 /* ==========================================================================
-   Enregistrer + GitHub (WEB_SUITE)
+   Enregistrer = projet + GitHub (WEB_SUITE)
    --------------------------------------------------------------------------
    Lance par WEB_SUITE, web_CAO.py relaie au lanceur l'envoi de PROJETS sur
-   GitHub (commit + pull + push, routes /api/github*). L'editeur enregistre et
-   envoie ainsi d'un seul geste : depuis une tablette reliee a un telephone
-   (Termux) ou a un Raspberry Pi, le lanceur est dans un autre onglet.
-   Seul un projet tenu par le serveur est concerne : c'est lui qui vit dans
-   PROJETS/, le dossier que le lanceur envoie.
+   GitHub (commit + pull + push, routes /api/github*). C'est alors la SEULE
+   sauvegarde des editeurs : Ctrl+S, le menu Fichier et la roulette tactile
+   ecrivent le document dans le dossier du projet (PROJETS/CAO/<projet>), puis
+   l'envoient sur GitHub, sans question ni telechargement. Que l'on soit sur le
+   PC du lanceur ou sur une tablette reliee a un Raspberry Pi, le projet n'a
+   ainsi qu'un seul endroit : le depot des projets.
+   Sans lanceur (double-clic, serveur seul), rien ne change : enregistrer
+   ecrit dans le projet ouvert, ou telecharge le fichier.
    ========================================================================== */
-let PROJD_GH;                            // undefined = pas encore teste
-function projdGithubDispo(){
+let PROJD_GH;                            // undefined = pas encore teste ; sinon {suite, disponible, detail}
+let PROJD_GH_TEST = null;                // la requete en cours, partagee
+function projdGithubTester(){
   if(PROJD_GH !== undefined) return Promise.resolve(PROJD_GH);
-  if(typeof fetch !== "function"){ PROJD_GH = false; return Promise.resolve(false); }
-  return projdApi("GET","/api/github").then(function(r){
-    PROJD_GH = !!(r && r.disponible); return PROJD_GH;
-  }).catch(function(){ PROJD_GH = false; return false; });
+  if(PROJD_GH_TEST) return PROJD_GH_TEST;
+  const non = {suite:false, disponible:false, detail:""};
+  if(typeof fetch !== "function" || typeof location === "undefined"
+     || !/^https?:$/.test(location.protocol)){
+    PROJD_GH = non; return Promise.resolve(PROJD_GH);
+  }
+  PROJD_GH_TEST = projdApi("GET","/api/github").then(function(r){
+    PROJD_GH = {suite:!!(r && r.suite !== false), disponible:!!(r && r.disponible),
+                detail:String((r && r.detail) || "")};
+    return PROJD_GH;
+  }).catch(function(){ PROJD_GH = non; return PROJD_GH; });
+  return PROJD_GH_TEST;
+}
+/* L'outil a-t-il ete lance par WEB_SUITE ? (promesse, puis lecture synchrone) */
+function projdSuiteDispo(){
+  return projdGithubTester().then(function(e){ return e.suite; });
+}
+function projdSuite(){ return !!(PROJD_GH && PROJD_GH.suite); }
+function projdGithubDispo(){
+  return projdGithubTester().then(function(e){ return e.disponible; });
 }
 function projdGithubPossible(){
-  return PROJD_GH === true && PROJD.mode === "serveur";
+  return !!(PROJD_GH && PROJD_GH.disponible) && PROJD.mode === "serveur";
 }
 /* Envoie PROJETS sur GitHub. Poste neuf (git sans nom ni e-mail) : on les
    demande une fois, le lanceur les range dans la config du depot PROJETS. */
@@ -552,39 +572,125 @@ function projdGithubEnvoyer(message){
       .then(function(i){ return i.ok ? envoi() : i; });
   });
 }
-/* Le geste complet. `enregistrer` rend une promesse : vrai si le document est
-   bien dans le dossier du projet (faux s'il a fallu le telecharger, et l'on
-   n'envoie alors rien). `dire` affiche une ligne d'etat. */
-function projdEnregistrerGithub(enregistrer, defaut, dire){
-  const message = prompt("Message du commit pour GitHub\n(Annuler = enregistrer sans envoyer) :", defaut);
-  return Promise.resolve(enregistrer()).then(function(dansProjet){
-    if(!dansProjet) return;               // l'editeur a deja dit pourquoi
-    const heure = projdQuand(Date.now());
-    if(message === null){
-      dire("Enregistré dans le dossier du projet (pas envoyé sur GitHub).");
-      projdAvis("partiel", "Enregistré sur le serveur, pas envoyé sur GitHub",
-        heure + " · vous avez annulé le message de commit : rien n'est parti sur GitHub.");
-      return;
+/* Un envoi a la fois. Un enregistrement fait pendant un envoi en cours n'y
+   serait pas forcement : on en relance un seul apres, qui emporte tout ce qui
+   a ete ecrit entre-temps (avec le message du dernier enregistrement). */
+let PROJD_ENVOI = null, PROJD_ENVOI_SUIVANT = null, PROJD_ENVOI_MSG = "";
+function projdGithubEnvoyerFile(message){
+  PROJD_ENVOI_MSG = message;
+  if(!PROJD_ENVOI){
+    const fin = function(){ PROJD_ENVOI = null; };
+    PROJD_ENVOI = projdGithubEnvoyer(message).then(function(r){ fin(); return r; },
+                                                   function(e){ fin(); throw e; });
+    return PROJD_ENVOI;
+  }
+  if(!PROJD_ENVOI_SUIVANT){
+    PROJD_ENVOI_SUIVANT = PROJD_ENVOI.catch(function(){}).then(function(){
+      PROJD_ENVOI_SUIVANT = null;
+      return projdGithubEnvoyerFile(PROJD_ENVOI_MSG);
+    });
+  }
+  return PROJD_ENVOI_SUIVANT;
+}
+/* En mode WEB_SUITE, rien ne s'enregistre hors d'un projet de PROJETS. Sans
+   projet du serveur ouvert, on demande ou ranger le document : un projet
+   existant (on l'ouvre) ou un nouveau (on le cree dans PROJETS/CAO). Rend
+   vrai si un projet du serveur est ouvert a la sortie. */
+function projdProjetSuite(libelle){
+  if(PROJD.mode === "serveur") return Promise.resolve(true);
+  return projdListerServeur().catch(function(){ return {projets:[]}; }).then(function(r){
+    const projets = (r && r.projets) || [];
+    const ici = PROJD.mode ? "Le dossier ouvert n'est pas dans PROJETS (il ne serait pas envoyé sur GitHub).\n"
+                           : "Aucun projet ouvert.\n";
+    const liste = projets.length
+      ? "\nProjets existants : " + projets.slice(0, 12).map(function(p){ return p.nom; }).join(", ") + "\n" : "";
+    const brut = prompt(ici + "Lancé par WEB_SUITE, tout s'enregistre dans un projet de PROJETS, puis part sur GitHub."
+      + liste + "\nNom du projet où ranger " + libelle + " (créé s'il n'existe pas) :", projNom() || "");
+    if(brut === null) return false;
+    const nom = projNomValide(brut);
+    if(!nom){
+      alert("Nom de projet refusé : évitez \\ / : * ? \" < > | et les points en début ou fin de nom (60 caractères au plus).");
+      return false;
     }
-    dire("Enregistré. Envoi sur GitHub…");
-    projdAvis("encours", "Enregistré · envoi sur GitHub…", heure);
-    return projdGithubEnvoyer(message || defaut).then(function(r){
+    const bas = nom.toLowerCase();
+    const existe = projets.find(function(p){
+      return String(p.nom).toLowerCase() === bas
+          || String(p.chemin).split(/[\\/]/).pop().toLowerCase() === bas;
+    });
+    if(existe){
+      if(!confirm("Le projet « " + existe.nom + " » existe déjà.\n\nL'ouvrir et y enregistrer "
+                  + libelle + " ? (celui du projet sera remplacé)")) return false;
+      return projdOuvrirServeur(existe.chemin, existe.racine).then(function(){ return true; });
+    }
+    return projdCreerServeur(nom, {chemin:nom}).then(function(){ return true; });
+  }).catch(function(e){
+    projdAvis("erreur", "Rien n'est enregistré", "Projet impossible à ouvrir ou créer : " + e.message);
+    return false;
+  });
+}
+/* Le geste complet, seule sauvegarde en mode WEB_SUITE. `enregistrer` rend
+   une promesse : vrai si le document est bien dans le dossier du projet (sinon
+   l'editeur a deja dit pourquoi, et l'on n'envoie rien). `defaut` est le
+   message du commit (ou la fonction qui le donne), `dire` affiche une ligne d'etat, `libelle` nomme le
+   document (« le schéma », « la carte »). Rend vrai si c'est enregistre. */
+function projdEnregistrerGithub(enregistrer, defaut, dire, libelle){
+  const quoi = libelle || "le document";
+  return projdProjetSuite(quoi).then(function(ok){
+    if(!ok){
+      dire("Rien n'est enregistré : aucun projet choisi.");
+      projdAvis("erreur", "Rien n'est enregistré",
+        "Lancé par WEB_SUITE, on n'enregistre que dans un projet de PROJETS. Votre travail reste dans l'éditeur : enregistrez de nouveau en choisissant un projet.");
+      return false;
+    }
+    return Promise.resolve(enregistrer()).then(function(dansProjet){
+      if(!dansProjet) return false;          // l'editeur a deja dit pourquoi
+      // une fonction : le nom du projet n'est connu qu'une fois celui-ci choisi
+      const message = (typeof defaut === "function" ? defaut() : defaut)
+                      || ("WEB_CAO " + new Date().toLocaleString("fr-FR"));
+      return projdEnvoyerSuite(message, dire, "Enregistré").then(function(){ return true; });
+    });
+  });
+}
+/* Ce qui vient d'etre ecrit dans PROJETS (un document de projet, ou la LIB)
+   part sur GitHub, et l'avis le dit. `titre` commence la phrase de l'avis
+   (« Enregistré », « Bibliothèque enregistrée ») ; `accord` (« e ») accorde
+   « envoyé » avec lui. Rend vrai si l'envoi a reussi ; ne rejette jamais :
+   ce qui est ecrit l'est, seul l'envoi a pu echouer. */
+function projdEnvoyerSuite(message, dire, titre, accord){
+  const t0 = titre || "Enregistré";
+  const env = "envoyé" + (accord || "");
+  dire = dire || function(){};
+  return projdGithubTester().then(function(etat){
+    if(!etat.disponible){
+      /* Lance par WEB_SUITE, mais cet appareil n'a pas le droit d'envoyer
+         (jeton du lanceur absent) : c'est sur le serveur, on dit quoi faire
+         pour que l'envoi passe la prochaine fois. */
+      const t = etat.detail || "Envoi sur GitHub refusé à cet appareil.";
+      dire(t);
+      projdAvis("partiel", t0 + " sur le serveur, pas " + env + " sur GitHub", t);
+      return false;
+    }
+    dire(t0 + ". Envoi sur GitHub…");
+    projdAvis("encours", t0 + " · envoi sur GitHub…", projdQuand(Date.now()));
+    return projdGithubEnvoyerFile(message).then(function(r){
       if(r.ok){
         projdNoterEnvoi();
-        dire("Enregistré et envoyé sur GitHub.");
-        projdAvis("ok", "Enregistré et envoyé sur GitHub", projdQuand(Date.now()) + " · « " + (message || defaut) + " »");
-        return;
+        dire(t0 + " et " + env + " sur GitHub.");
+        projdAvis("ok", t0 + " et " + env + " sur GitHub", projdQuand(Date.now()) + " · « " + message + " »");
+        return true;
       }
       /* Un refus se lit en entier (il dit quoi faire) : la barre d'etat le
          couperait, surtout sur une tablette. */
       const t = r.message || "Envoi sur GitHub refusé.";
       dire(t);
-      projdAvis("erreur", "Enregistré sur le serveur, mais pas envoyé sur GitHub", t);
+      projdAvis("erreur", t0 + " sur le serveur, mais pas " + env + " sur GitHub", t);
+      return false;
+    }, function(e){
+      const t = "Envoi sur GitHub impossible : " + e.message;
+      dire(t);
+      projdAvis("erreur", t0 + " sur le serveur, mais pas " + env + " sur GitHub", t);
+      return false;
     });
-  }).catch(function(e){
-    const t = "Envoi sur GitHub impossible : " + e.message;
-    dire(t);
-    projdAvis("erreur", "Enregistré sur le serveur, mais pas envoyé sur GitHub", t);
   });
 }
 /* Dernier envoi reussi sur GitHub, par projet. Garde dans ce navigateur : un
@@ -593,7 +699,7 @@ const PROJD_ENVOI_CLE = "cao.projet.envoiGithub";
 function projdNoterEnvoi(){
   try{
     const m = JSON.parse(localStorage.getItem(PROJD_ENVOI_CLE) || "{}");
-    m[PROJD.chemin || projNom()] = Date.now();
+    m[PROJD.chemin || (typeof projNom === "function" ? projNom() : "") || "PROJETS"] = Date.now();
     localStorage.setItem(PROJD_ENVOI_CLE, JSON.stringify(m));
   }catch(_){}
 }
@@ -632,16 +738,21 @@ function projdAvis(etat, titre, detail){
   if(etat !== "erreur" && etat !== "encours")
     projdAvis.minuterie = setTimeout(function(){ a.classList.remove("on"); }, etat === "partiel" ? 9000 : 5000);
 }
-/* Le bouton n'apparait que lorsque le geste est possible ; il suit
-   l'ouverture et la fermeture d'un projet. */
-function projdGithubBouton(id, action){
+/* Les boutons d'enregistrement. Lance par WEB_SUITE, « Enregistrer » (`idSave`)
+   disparait et seul `id` reste (projet + GitHub) ; sinon c'est l'inverse.
+   Les deux menent au meme saveJson de l'editeur, qui choisit la voie. */
+function projdGithubBouton(id, action, idSave){
   const b = document.getElementById(id);
   if(!b) return;
   b.onclick = action;
-  const peindre = function(){ b.style.display = projdGithubPossible() ? "" : "none"; };
+  const s = idSave ? document.getElementById(idSave) : null;
+  const peindre = function(){
+    const suite = projdSuite();
+    b.style.display = suite ? "" : "none";
+    if(s) s.style.display = suite ? "none" : "";
+  };
   peindre();
-  try{ if(typeof projSurChangement === "function") projSurChangement(peindre); }catch(_){}
-  projdGithubDispo().then(peindre);
+  projdSuiteDispo().then(peindre);
 }
 
 /* Reecrit le fichier projet (revision, auteur, notes, date de modification). */
