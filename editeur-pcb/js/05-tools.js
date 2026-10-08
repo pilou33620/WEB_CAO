@@ -8,6 +8,7 @@
    Historique
    ========================================================================== */
 function docObj(){
+  linkSync();                  // les liens des pistes, à jour de la carte
   return {format:"pcbedit-1",cu:S.cu,cuL:S.cuL,stack:S.stack,show:S.show,
           board:S.board,rule:S.rule,
           classes:S.classes,netClass:S.netClass,netClassAuto:S.netClassAuto,
@@ -428,6 +429,11 @@ function normTrack(t,cu){
   const ca=+t.ca;
   if(Number.isFinite(ca)&&Math.abs(ca)>ARC_MIN)
     out.ca=r4(clamp(ca,-ARC_MAX,ARC_MAX));
+  /* les liens de ses bouts (`25-liens.js`) : vérifiés avant usage, un lien
+     faux ne coûte que d'être reconstruit */
+  const a1=linkNorm(t.a1), a2=linkNorm(t.a2);
+  if(a1)out.a1=a1;
+  if(a2)out.a2=a2;
   return out;
 }
 function normVia(v,cu){
@@ -438,9 +444,13 @@ function normVia(v,cu){
   let a=dInt(v.a,0,0,cu-1), b=dInt(v.b,cu-1,0,cu-1);
   if(a>b){const s=a;a=b;b=s;}
   if(a===b){a=0;b=cu-1;}                           // un via doit relier deux couches
-  return {x:clamp(x,-COORD,COORD),y:clamp(y,-COORD,COORD),
-          d:d,drill:dRange(v.drill,Math.min(0.4,d-0.1),0.05,r3(d-0.05)),
-          a:a,b:b,net:dNet(v.net)};
+  const out={x:clamp(x,-COORD,COORD),y:clamp(y,-COORD,COORD),
+             d:d,drill:dRange(v.drill,Math.min(0.4,d-0.1),0.05,r3(d-0.05)),
+             a:a,b:b,net:dNet(v.net)};
+  // l'identifiant que visent les liens des pistes ; absent, `viaIds` en donne un
+  const id=+v.id;
+  if(Number.isInteger(id)&&id>=1&&id<=Number.MAX_SAFE_INTEGER)out.id=id;
+  return out;
 }
 function normZone(z,cu,i){
   if(!z||typeof z!=="object")return null;
@@ -697,7 +707,8 @@ function normDoc(d){
   if(cu<2)out.vias=[];                    // une seule couche : aucun via ne relie rien
 
   const maxId=Math.max(uniqueIds(out.fps),uniqueIds(out.zones),uniqueIds(out.cuts),
-                       uniqueIds(out.holes),uniqueIds(out.dpPairs),uniqueIds(out.drawings));
+                       uniqueIds(out.holes),uniqueIds(out.dpPairs),uniqueIds(out.drawings),
+                       uniqueIds(out.vias.filter(v=>v.id)));
   out.active=dInt(src.active,0,0,cu-1);
   out.nextId=Math.max(dInt(src.nextId,1,1,Number.MAX_SAFE_INTEGER),maxId+1);
   out.rf=normRf(src.rf);
@@ -1398,11 +1409,13 @@ function applyJoints(J,dx,dy,detach){
 const FOLLOW_MAX=64;
 function followMoved(){
   const fps=[...S.sel.fps].map(fpById).filter(Boolean), vias=[...S.sel.vias];
+  /* `p0fp` : le boîtier qui emporte chaque point tiré, `rigidOf` celui d'une
+     piste qui part en bloc — `transformFps` en tire la rotation à appliquer */
   const out={chains:[],rubber:[],rigid:new Set(),keys:new Set(),own:new Set(),skip:null,
-             fps,vias,mobile:[],base:null};
+             fps,vias,mobile:[],base:null,p0fp:new Map(),rigidOf:new Map()};
   if(!fps.length&&!vias.length)return out;
   const pads=[];
-  for(const fp of fps)for(const q of padsWorld(fp))pads.push({q,L:padCuLayers(fp,q)});
+  for(const fp of fps)for(const q of padsWorld(fp))pads.push({q,L:padCuLayers(fp,q),fp});
   const user=S.sel.tracks;
   // l'emprise de ce qu'on déplace : sur une carte chargée, on n'examine pas
   // chaque bout de piste contre chaque pastille
@@ -1423,6 +1436,14 @@ function followMoved(){
     for(const p of pads)if(p.L.includes(l)&&padDist(x,y,p.q)<=EPS_J)return true;
     return false;
   };
+  // le boîtier qui tient ce bout : son lien s'il en vient, sinon la pastille
+  const fpIds=new Set(fps.map(f=>f.id));
+  const holder=(t,e,x,y)=>{
+    const a=t["a"+e];
+    if(a&&a.f!=null&&fpIds.has(a.f))return a.f;
+    for(const p of pads)if(p.L.includes(t.l)&&padDist(x,y,p.q)<=EPS_J)return p.fp.id;
+    return null;
+  };
   for(const v of vias)out.keys.add(anchorKey(v.a,v.x,v.y));
   const mode=cornerMode(), seen=new Set();
   for(const t of [...S.tracks]){
@@ -1432,7 +1453,8 @@ function followMoved(){
       out.keys.add(anchorKey(t.l,x,y));
       if(user.has(t)||seen.has(t))continue;
       seen.add(t);
-      const P0={x,y};
+      const P0={x,y}, hid=holder(t,en,x,y);
+      out.p0fp.set(P0,hid);
       if(isArc(t)||mode==="free"){out.rubber.push({t,e:en,P0});out.own.add(t);continue;}
       // de coude en coude jusqu'à ce qui tient la piste
       const list=[t];
@@ -1452,7 +1474,7 @@ function followMoved(){
         list.push(nx.t);seen.add(nx.t);
         cur=nx.t;ce=nx.e;
       }
-      if(end==="bouge"){for(const o of list){out.rigid.add(o);out.own.add(o);}continue;}
+      if(end==="bouge"){for(const o of list){out.rigid.add(o);out.own.add(o);out.rigidOf.set(o,hid);}continue;}
       if(end==="sel"){
         for(let k=1;k<list.length;k++)seen.delete(list[k]);
         out.rubber.push({t,e:en,P0});out.own.add(t);continue;
@@ -1679,7 +1701,8 @@ function followGrow(F,c,P0){
      « mark »  elles prennent le coude direct le plus propre, sans détour. */
 function applyFollow(F,dx,dy,alt){
   if(!F)return;
-  const at=P0=>alt?{x:P0.x,y:P0.y}:{x:r3(P0.x+dx),y:r3(P0.y+dy)};
+  // `F.map` : une rotation ou un retournement (`transformFps`) dit où va chaque point
+  const at=F.map&&!alt?F.map:P0=>alt?{x:P0.x,y:P0.y}:{x:r3(P0.x+dx),y:r3(P0.y+dy)};
   for(const r of F.rubber){
     const P=at(r.P0);
     if(r.e===1){r.t.x1=P.x;r.t.y1=P.y;}else{r.t.x2=P.x;r.t.y2=P.y;}
@@ -2588,7 +2611,10 @@ function rotateSel(){
   const hls=selHolesPcb();
   if(!list.length&&!drw.length&&!hls.length)return;
   push();
-  for(const id of list){const f=fpById(id);if(f)f.rot=((f.rot||0)+90)%360;}
+  // autour du centre de chaque boîtier, son cuivre avec lui
+  linkPerdusHint(transformFps(list,()=>{
+    for(const id of list){const f=fpById(id);if(f)f.rot=((f.rot||0)+90)%360;}
+  }));
   if(drw.length){
     let cx=0, cy=0;
     for(const d of drw){cx+=d.x1+d.x2; cy+=d.y1+d.y2;}
@@ -2631,7 +2657,9 @@ function flipSel(){
   const drw=selDrawingsPcb();
   if(!list.length&&!drw.length)return;
   push();
-  for(const id of list){const f=fpById(id);if(f)f.side=f.side?0:1;}
+  linkPerdusHint(transformFps(list,()=>{
+    for(const id of list){const f=fpById(id);if(f)f.side=f.side?0:1;}
+  }));
   for(const d of drw){d.layer=d.layer==="silkB"?"silkT":"silkB";}
   touch();refreshPanels();draw();
 }
@@ -3690,7 +3718,7 @@ function coordApply(){
     edgeClick(pt.x,pt.y,true);
   }else if(S.mode==="select"&&S.sel.fps.size===1){
     const f=fpById([...S.sel.fps][0]);
-    if(f){push();f.x=pt.x;f.y=pt.y;touch();refreshPanels();}
+    if(f){push();transformFps([f.id],()=>{f.x=pt.x;f.y=pt.y;});touch();refreshPanels();}
   }
   S.mouse={x:pt.x,y:pt.y};
   if(S.coord.mode!=="abs"){$("ciA").value="0";$("ciB").value="0";}

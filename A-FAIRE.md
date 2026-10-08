@@ -112,6 +112,11 @@ lib/
   - Exploitation des groupes de motifs pour proposer un pré-placement automatique par bloc fonctionnel (`editeur-pcb/js/22-bloc-placement.js`).
   - Agencement automatique dès l'import de la netlist ou de l'ECO en grappes cohérentes (régulateur Buck/LDO + condensateurs de découplage + inductance + diode) avec orientation des pastilles et absence de collision.
 
+- [ ] **Liens du cuivre et suivi des boîtiers** (`editeur-pcb/js/25-liens.js`) :
+  - [x] Étape 1 : chaque bout de piste porte le lien de ce qui le tient (`a1`/`a2` : `{f, p}` pastille ou `{v}` via), vérifié contre la géométrie avant usage et reconstruit s'il ment ; les vias ont un identifiant. Rotation (R, autour du centre du boîtier), retournement (F), cotes X / Y / Rot / Face du panneau et « Aller à » passent par `transformFps` : le cuivre suit par le même moteur que le glissement, au centre des pastilles ; un bout volontairement décalé garde son décalage dans le repère du boîtier.
+  - [ ] Étape 2 : via de sortie (relié à une seule pastille par une piste courte) emporté par son boîtier ; Ctrl+clic pour poser volontairement un bout hors centre.
+  - [ ] Étape 3 : après suivi, liaison en faute (isolation, croisement, CMS passée sur l'autre face) re-routée automatiquement ; sans issue, tracé en rouge + marqueur DRC « à re-router ».
+
 ### Simulation SI (Signal Integrity)
 - [x] **Mode différentiel dans la cascade de paramètres S** :
   - Calcul complet des paramètres S en mode mixte (*Mixed-Mode S-Parameters*) dans `python/simulation_em.py` (`_cascade_differentielle`) : mode différentiel pur $S_{dd}$ ($S_{dd11}, S_{dd21}$ sur $Z_{ref,diff}$ ex: 100 Ω ou 90 Ω), mode commun $S_{cc}$ ($S_{cc11}, S_{cc21}$ sur $Z_{ref,comm} = Z_{ref,diff}/4$ ex: 25 Ω), et conversion de mode CEM $S_{cd21}(\omega)$ calculée à partir du skew $\Delta L = |L_+ - L_-|$.

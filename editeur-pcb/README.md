@@ -37,6 +37,7 @@ js/11-pns-node.js        routeur : modèle du monde, index spatial, branches
 js/12-pns-walk.js        routeur : contournement d'obstacle
 js/13-pns-shove.js       routeur : poussée du cuivre gênant, de proche en proche
 js/14-pns-placer.js      routeur : optimiseur du trajet posé
+js/25-liens.js           liens des bouts de piste (pastille, via) et transformation des boîtiers
 js/15-regles.js          fenêtre des règles : arbre, figures cotées, matrice
                          des natures de cuivre
 js/16-profil.js          réglages d'affichage rangés dans le profil de

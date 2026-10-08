@@ -1287,10 +1287,12 @@ function propsFp(box,fp){
   upd("pPins",v=>fpSetPins(fp,v),true);
   upd("pPitch",v=>fp.pitch=Math.max(0.2,v),true);
   upd("pSpan",v=>fp.span=Math.max(0.2,v),true);
-  upd("pSide",v=>fp.side=+v,true);
-  upd("pX",v=>fp.x=wxu(v),true);
-  upd("pY",v=>fp.y=wyu(v),true);
-  upd("pRot",v=>fp.rot=+v,true);
+  // position, face, rotation : le cuivre accroché suit (`transformFps`)
+  const fpPose=fn=>v=>linkPerdusHint(transformFps([fp.id],()=>fn(v)));
+  upd("pSide",fpPose(v=>fp.side=+v),true);
+  upd("pX",fpPose(v=>fp.x=wxu(v)),true);
+  upd("pY",fpPose(v=>fp.y=wyu(v)),true);
+  upd("pRot",fpPose(v=>fp.rot=+v),true);
   if($("pSilk"))$("pSilk").onchange=e=>{push();if(e.target.checked)delete fp.silk;else fp.silk=false;
     touch();refreshPanels();draw();};
   const ap=$("pPkgApply");

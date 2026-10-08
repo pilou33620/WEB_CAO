@@ -379,7 +379,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* La simulation RF : le réseau entre deux ports, et sa persistance. */
   "simRfProbleme","simRfClic","SIM_RF_ATTENTE","simRfEtat","normRf",
   "simRfZ","simRfExclure","simRfImporter","simRfOublierModele","simRfBroche",
-  "simRfValeurSI","trkAt","simRfMasque"];
+  "simRfValeurSI","trkAt","simRfMasque",
+  /* les liens des bouts de piste, et la transformation des boîtiers */
+  "transformFps","linkSync","fpXformInv"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -1375,6 +1377,170 @@ T("déplacer un boîtier : ses pistes le suivent, à 45°",()=>{
     chemin("A",{x:v1.x,y:v1.y},{x:r[0].x,y:r[0].y});
     chemin("B",{x:r[1].x,y:r[1].y},{x:v2.x,y:v2.y});
   }finally{undo();suiviFin(reg);}
+});
+/* ==========================================================================
+   Les liens du cuivre (`25-liens.js`)
+   --------------------------------------------------------------------------
+   Le cas de référence : une puce X, sa capa de découplage C et l'alimentation.
+   L'alimentation arrive sur C.1 et repart de C.1 vers la broche VDD de X ;
+   C.2 descend à la masse par un via. Chaque piste part du CENTRE d'une
+   pastille et arrive au centre de la suivante : quoi qu'on fasse de C, elles
+   doivent y rester.
+   ========================================================================== */
+function decouplage(){
+  const reg=suiviDecor();
+  const X=mkFp("U1","X","SOIC-8",8);X.x=10;X.y=20;
+  const C=mkFp("C1","100n","0603",2);C.x=20;C.y=20;
+  S.fps.push(X,C);touch();
+  const pad=(f,n)=>padsWorld(f).find(q=>String(q.n)===String(n));
+  const vdd=pad(X,8), c1=pad(C,1), c2=pad(C,2);
+  const alim={x:30,y:12,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"+3V3"};
+  const gnd={x:c2.x+4,y:c2.y+6,d:0.8,drill:0.4,a:0,b:S.cu-1,net:"GND"};
+  S.vias.push(alim,gnd);
+  const tX={l:0,net:"+3V3",w:0.3,x1:vdd.x,y1:vdd.y,x2:c1.x,y2:c1.y};
+  const tA={l:0,net:"+3V3",w:0.3,x1:c1.x,y1:c1.y,x2:alim.x,y2:alim.y};
+  const tG={l:0,net:"GND",w:0.3,x1:c2.x,y1:c2.y,x2:gnd.x,y2:gnd.y};
+  S.tracks.push(tX,tA,tG);touch();
+  return {reg,X,C,pad,alim,gnd,vdd,tX,tA,tG};
+}
+/* `chemin` suit le premier segment venu : sur C.1, où deux pistes se
+   rejoignent, il peut repartir vers la puce. Ici on cherche en largeur, de
+   bout de segment en bout de segment, sans s'arrêter aux pastilles. */
+function relie(net,a,b){
+  const k=p=>Math.round(p.x*1e4)+"|"+Math.round(p.y*1e4);
+  const L=S.tracks.filter(t=>t.net===net), vus=new Set([k(a)]), file=[a];
+  while(file.length){
+    const p=file.shift();
+    if(k(p)===k(b))return;
+    for(const t of L)
+      for(const [u,v] of [[{x:t.x1,y:t.y1},{x:t.x2,y:t.y2}],[{x:t.x2,y:t.y2},{x:t.x1,y:t.y1}]])
+        if(k(u)===k(p)&&!vus.has(k(v))){vus.add(k(v));file.push(v);}
+  }
+  throw new Error(net+" : "+a.x+","+a.y+" n'est plus relié à "+b.x+","+b.y);
+}
+/* Les trois liaisons du décor, de bout en bout, d'un centre à l'autre. */
+function decouplageRelie(D){
+  const c1=D.pad(D.C,1), c2=D.pad(D.C,2), vdd=D.pad(D.X,8);
+  relie("+3V3",{x:vdd.x,y:vdd.y},{x:c1.x,y:c1.y});
+  relie("+3V3",{x:c1.x,y:c1.y},{x:D.alim.x,y:D.alim.y});
+  relie("GND",{x:c2.x,y:c2.y},{x:D.gnd.x,y:D.gnd.y});
+}
+T("liens : chaque bout de piste nomme sa pastille ou son via",()=>{
+  const D=decouplage();
+  try{
+    linkSync();
+    if(!D.alim.id||!D.gnd.id||D.alim.id===D.gnd.id)throw new Error("chaque via doit avoir son identifiant");
+    const e=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+    if(!e(D.tX.a1,{f:D.X.id,p:8}))throw new Error("tX.a1 : "+JSON.stringify(D.tX.a1));
+    if(!e(D.tX.a2,{f:D.C.id,p:1}))throw new Error("tX.a2 : "+JSON.stringify(D.tX.a2));
+    if(!e(D.tA.a2,{v:D.alim.id}))throw new Error("tA.a2 : "+JSON.stringify(D.tA.a2));
+    if(!e(D.tG.a1,{f:D.C.id,p:2}))throw new Error("tG.a1 : "+JSON.stringify(D.tG.a1));
+    // un coude en l'air n'est tenu par rien
+    S.tracks.push({l:0,net:"N",w:0.3,x1:50,y1:50,x2:55,y2:50});touch();linkSync();
+    const z=S.tracks[S.tracks.length-1];
+    if(z.a1||z.a2)throw new Error("un bout libre ne doit pas avoir de lien");
+    S.tracks.pop();touch();
+  }finally{suiviFin(D.reg);}
+});
+T("liens : enregistrés, relus, et un lien faux est reconstruit",()=>{
+  const D=decouplage();
+  try{
+    const d=JSON.parse(serialize());
+    const t=d.tracks.find(o=>o.net==="GND");
+    if(!t.a1||t.a1.f!==D.C.id)throw new Error("le lien doit être écrit : "+JSON.stringify(t.a1));
+    if(!d.vias.every(v=>v.id>=1))throw new Error("les vias doivent être écrits avec leur identifiant");
+    // un lien qui ment (pastille 2 au lieu de 1) : la géométrie le corrige
+    d.tracks.find(o=>o.a2&&o.a2.f===D.C.id).a2={f:D.C.id,p:2};
+    loadDoc(d);
+    linkSync();
+    const tx=S.tracks.find(o=>o.a1&&o.a1.p===8);
+    if(!tx||tx.a2.p!==1)throw new Error("le lien faux devait redevenir C1.1 : "+JSON.stringify(tx&&tx.a2));
+    const ids=S.vias.map(v=>v.id);
+    if(new Set(ids).size!==ids.length)throw new Error("identifiants de via en double");
+  }finally{suiviFin(D.reg);}
+});
+T("tourner la capa : les pistes restent au centre de ses pastilles",()=>{
+  const D=decouplage();
+  clearSel();S.sel.fps.add(D.C.id);
+  try{
+    for(let k=1;k<=4;k++){
+      rotateSel();
+      if(D.C.rot!==(90*k)%360)throw new Error("rotation : "+D.C.rot);
+      tout45();
+      decouplageRelie(D);
+    }
+    // la puce, elle, n'a pas bougé : sa broche garde son bout de piste
+    if(!S.tracks.some(t=>(t.x1===D.vdd.x&&t.y1===D.vdd.y)||(t.x2===D.vdd.x&&t.y2===D.vdd.y)))
+      throw new Error("le départ sur la puce a bougé");
+  }finally{suiviFin(D.reg);}
+});
+T("tourner la capa : la sélection d'une piste à côté ne part pas avec",()=>{
+  const D=decouplage();
+  clearSel();S.sel.fps.add(D.C.id);S.sel.tracks.add(D.tA);
+  try{
+    rotateSel();
+    decouplageRelie(D);
+    if(!S.sel.tracks.has(D.tA)||!S.sel.fps.has(D.C.id))throw new Error("la sélection devait être rendue");
+  }finally{suiviFin(D.reg);}
+});
+T("tourner puis annuler : tout revient en place",()=>{
+  const D=decouplage();
+  clearSel();S.sel.fps.add(D.C.id);
+  const avant=JSON.stringify(S.tracks.map(t=>[t.x1,t.y1,t.x2,t.y2]));
+  try{
+    rotateSel();
+    undo();
+    const apres=JSON.stringify(S.tracks.map(t=>[t.x1,t.y1,t.x2,t.y2]));
+    if(apres!==avant)throw new Error("Ctrl+Z devait rendre les pistes");
+    if((fpById(D.C.id).rot||0)!==0)throw new Error("Ctrl+Z devait rendre la rotation");
+  }finally{suiviFin(D.reg);}
+});
+T("cotes saisies : X, Y et rotation emmènent les pistes",()=>{
+  const D=decouplage();
+  try{
+    push();
+    transformFps([D.C.id],()=>{D.C.x=23;D.C.y=16;});
+    tout45();decouplageRelie(D);
+    transformFps([D.C.id],()=>{D.C.rot=270;});
+    tout45();decouplageRelie(D);
+  }finally{undo();suiviFin(D.reg);}
+});
+T("tourner un boîtier : la piste entre deux de ses broches tourne avec lui",()=>{
+  const reg=suiviDecor();
+  const U=mkFp("U2","","SOIC-8",8);U.x=40;U.y=40;S.fps.push(U);touch();
+  const q=padsWorld(U), p1=q.find(o=>o.n===1), p2=q.find(o=>o.n===2);
+  const t={l:0,net:"N",w:0.3,x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y};
+  S.tracks.push(t);touch();
+  clearSel();S.sel.fps.add(U.id);
+  try{
+    rotateSel();
+    const r=padsWorld(U), r1=r.find(o=>o.n===1), r2=r.find(o=>o.n===2);
+    relie("N",{x:r1.x,y:r1.y},{x:r2.x,y:r2.y});
+  }finally{undo();suiviFin(reg);}
+});
+T("un bout volontairement décalé garde son décalage, qui tourne avec la pastille",()=>{
+  const reg=suiviDecor();
+  const R=mkFp("R1","","",2);R.style="row";R.pitch=2.54;R.x=60;R.y=60;S.fps.push(R);touch();
+  const p=padsWorld(R)[0];
+  const t={l:0,net:"N",w:0.3,x1:p.x+0.3,y1:p.y,x2:p.x+0.3,y2:p.y-8};
+  S.tracks.push(t);touch();
+  const inv=fpXformInv(R), L0=inv(t.x1,t.y1);
+  clearSel();S.sel.fps.add(R.id);
+  try{
+    rotateSel();
+    const bout=S.tracks.filter(o=>o.net==="N").flatMap(o=>[[o.x1,o.y1],[o.x2,o.y2]])
+      .map(([x,y])=>fpXformInv(R)(x,y))
+      .find(L=>Math.abs(L.x-L0.x)<2e-3&&Math.abs(L.y-L0.y)<2e-3);
+    if(!bout)throw new Error("le bout décalé devait garder sa place dans le repère du boîtier");
+  }finally{undo();suiviFin(reg);}
+});
+T("retourner une capa CMS : les bouts qui perdent leur pastille sont comptés",()=>{
+  const D=decouplage();
+  try{
+    push();
+    const n=transformFps([D.C.id],()=>{D.C.side=1;});
+    if(n!==3)throw new Error("trois bouts sur C passent sous la carte : "+n);
+  }finally{undo();suiviFin(D.reg);}
 });
 /* Sélection de plusieurs boîtiers : on les saisit par n'importe lequel, y
    compris par son repère (le texte passe devant le boîtier au test d'atteinte)
