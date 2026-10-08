@@ -119,6 +119,12 @@ lib/
   - [x] Tourner en glissant : R / Maj+R ou Espace, la souris enfoncée sur un boîtier, un quart de tour autour de son centre ; le cuivre qui suit, la piste entre deux broches et le via de sortie tournent avec lui ; un seul Ctrl+Z défait le geste.
   - [x] Conduite des pistes au déplacement d'un boîtier, comme les options d'Allegro : glisser (suivi à 45°), étirer (le dernier segment s'étire), arracher (pistes accrochées retirées, chevelu). Réglage de l'utilisateur (fenêtre des règles, gardé d'une session à l'autre) ; Maj+Espace le change en plein geste, qui repart de l'état d'avant et refait le chemin parcouru.
 
+- [x] **Suivi des boîtiers — réglages tranchés** :
+  - Via de sortie, comme Allegro (qui MARQUE le via de sortie comme celui du composant) : marquage à la main dans le panneau Propriétés du via — « toujours U1 » (quelle que soit la distance, tant qu'une piste ou la pastille l'y relie), « jamais », ou automatique (piste ≤ 3 mm). Aucun outil du commerce ne fixe de longueur : les 3 mm ne servent qu'à deviner.
+  - Alt en plein glissement : le via de sortie et sa piste restent en place, comme les autres pistes.
+  - R sur plusieurs boîtiers (et en plein glissement) : le groupe tourne en bloc autour du centre de son encombrement ; la piste tendue entre deux d'entre eux part sans se déformer.
+  - Contrôle : un bout de piste arrêté hors du centre de sa pastille est signalé (information, pas une faute) ; un coude qui passe dans une pastille longue n'en est pas un.
+
 ### Simulation SI (Signal Integrity)
 - [x] **Mode différentiel dans la cascade de paramètres S** :
   - Calcul complet des paramètres S en mode mixte (*Mixed-Mode S-Parameters*) dans `python/simulation_em.py` (`_cascade_differentielle`) : mode différentiel pur $S_{dd}$ ($S_{dd11}, S_{dd21}$ sur $Z_{ref,diff}$ ex: 100 Ω ou 90 Ω), mode commun $S_{cc}$ ($S_{cc11}, S_{cc21}$ sur $Z_{ref,comm} = Z_{ref,diff}/4$ ex: 25 Ω), et conversion de mode CEM $S_{cd21}(\omega)$ calculée à partir du skew $\Delta L = |L_+ - L_-|$.

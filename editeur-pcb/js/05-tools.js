@@ -454,6 +454,9 @@ function normVia(v,cu){
   // l'identifiant que visent les liens des pistes ; absent, `viaIds` en donne un
   const id=+v.id;
   if(Number.isInteger(id)&&id>=1&&id<=Number.MAX_SAFE_INTEGER)out.id=id;
+  // marqué à la main : 0 = libre, sinon le boîtier qu'il suit (`25-liens.js`)
+  const lie=+v.lie;
+  if(v.lie!=null&&Number.isInteger(lie)&&lie>=0&&lie<=Number.MAX_SAFE_INTEGER)out.lie=lie;
   return out;
 }
 function normZone(z,cu,i){
@@ -1424,7 +1427,8 @@ function followMoved(){
   /* `p0fp` : le boîtier qui emporte chaque point tiré, `rigidOf` celui d'une
      piste qui part en bloc — `transformFps` en tire la rotation à appliquer */
   const out={chains:[],rubber:[],rigid:new Set(),keys:new Set(),own:new Set(),skip:null,
-             fps,vias,mobile:[],base:null,p0fp:new Map(),rigidOf:new Map(),ripped:[]};
+             fps,vias,mobile:[],base:null,p0fp:new Map(),rigidOf:new Map(),ripped:[],
+             rigidVia:new Set()};
   // glisser, étirer ou arracher (`25-liens.js`) ; un via tiré seul glisse toujours
   const etch=fps.length?moveEtch():"glisser";
   if(!fps.length&&!vias.length)return out;
@@ -1494,7 +1498,16 @@ function followMoved(){
         list.push(nx.t);seen.add(nx.t);
         cur=nx.t;ce=nx.e;
       }
-      if(end==="bouge"){for(const o of list){out.rigid.add(o);out.own.add(o);out.rigidOf.set(o,hid);}continue;}
+      if(end==="bouge"){
+        for(const o of list){out.rigid.add(o);out.own.add(o);out.rigidOf.set(o,hid);}
+        // la piste qui mène au via de sortie : Alt la garde en place avec lui
+        const Fz=endFar(cur,ce);
+        if(drag&&drag.fanout)
+          for(const v of drag.fanout.keys())
+            if((Math.abs(v.x-x)<EPS_J&&Math.abs(v.y-y)<EPS_J)||(Math.abs(v.x-Fz.x)<EPS_J&&Math.abs(v.y-Fz.y)<EPS_J))
+              for(const o of list)out.rigidVia.add(o);
+        continue;
+      }
       if(etch==="arracher"){
         if(end==="sel")for(let k=1;k<list.length;k++)seen.delete(list[k]);
         out.ripped.push(...(end==="sel"?[t]:list));
@@ -1883,7 +1896,7 @@ function beginMove(){
   drag.fanout=fanoutTake();
   // l'état des boîtiers au départ : une rotation en plein geste en part
   drag.avant=linkAvant([...S.sel.fps].map(fpById).filter(Boolean));
-  if(!drag.rotq)drag.rotq=new Map();
+
   const fol=followMoved();
   // conduite « arracher » : les pistes accrochées quittent la carte
   if(fol.ripped.length){
@@ -2653,9 +2666,8 @@ function rotateSel(){
   if(!list.length&&!drw.length&&!hls.length)return;
   push();
   // autour du centre de chaque boîtier, son cuivre avec lui
-  transformFps(list,()=>{
-    for(const id of list){const f=fpById(id);if(f)f.rot=((f.rot||0)+90)%360;}
-  });
+  // un boîtier autour de son centre, plusieurs ensemble (`fpsTourner`)
+  transformFps(list,()=>fpsTourner(list,1));
   if(drw.length){
     let cx=0, cy=0;
     for(const d of drw){cx+=d.x1+d.x2; cy+=d.y1+d.y2;}
@@ -4222,7 +4234,8 @@ function dragMoveBy(dx,dy,alt){
   }
   drag.x+=dx;drag.y+=dy;
   // Alt enfoncé pendant le geste : les voisins restent où ils sont
-  dragRotFix();
+  dragAltHold(alt);
+  dragRotFix(alt);
   applyJoints(drag.joints,drag.dx,drag.dy,alt);
   applyFollow(drag.follow,drag.dx,drag.dy,alt);
   /* Le déplacement s'applique en absolu : revenir au décalage précédent
@@ -4254,7 +4267,8 @@ function dragMoveBy(dx,dy,alt){
         }
       }
     }
-    dragRotFix();
+    dragAltHold(alt);
+    dragRotFix(alt);
     applyJoints(drag.joints,drag.dx,drag.dy,alt);
     applyFollow(drag.follow,drag.dx,drag.dy,alt);
   }

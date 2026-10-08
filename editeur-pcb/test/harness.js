@@ -1718,6 +1718,109 @@ T("Maj+Espace en plein geste : la conduite change, le geste repart de l'état d'
     if(fpById(D.C.id).rot||fpById(D.C.id).y!==20)throw new Error("un seul Ctrl+Z défait le geste rejoué");
   }finally{S.moveEtch=avant;suiviFin(D.reg);}
 });
+/* Plusieurs boîtiers : ils tournent ensemble, autour de leur centre commun. */
+T("R sur deux boîtiers : le groupe tourne en bloc, la piste entre eux sans se déformer",()=>{
+  const reg=suiviDecor();
+  const A=mkFp("R1","","0603",2);A.x=10;A.y=10;
+  const B=mkFp("R2","","0603",2);B.x=16;B.y=10;
+  S.fps.push(A,B);touch();
+  const a2=padsWorld(A).find(q=>q.n===2), b1=padsWorld(B).find(q=>q.n===1);
+  S.tracks.push({l:0,net:"N",w:0.3,x1:a2.x,y1:a2.y,x2:b1.x,y2:b1.y});touch();
+  clearSel();S.sel.fps.add(A.id);S.sel.fps.add(B.id);
+  const d0=Math.hypot(B.x-A.x,B.y-A.y);
+  try{
+    rotateSel();
+    if(A.rot!==90||B.rot!==90)throw new Error("chacun prend le quart de tour : "+A.rot+","+B.rot);
+    if(Math.abs(A.x-B.x)>1e-6)throw new Error("côte à côte en x, ils doivent finir l'un sous l'autre : "+A.x+","+B.x);
+    if(Math.abs(Math.hypot(B.x-A.x,B.y-A.y)-d0)>1e-6)throw new Error("l'écart entre eux ne change pas");
+    const n2=padsWorld(A).find(q=>q.n===2), n1=padsWorld(B).find(q=>q.n===1);
+    relie("N",{x:n2.x,y:n2.y},{x:n1.x,y:n1.y});
+    tout45();
+    if(S.tracks.filter(t=>t.net==="N").length!==1)throw new Error("la piste part en bloc, sans coude ajouté");
+    rotateSel();rotateSel();rotateSel();
+    if(Math.abs(A.x-10)>1e-6||Math.abs(A.y-10)>1e-6||Math.abs(B.x-16)>1e-6)
+      throw new Error("quatre quarts de tour ramènent le groupe en place : "+[A.x,A.y,B.x,B.y]);
+  }finally{for(let i=0;i<4;i++)undo();suiviFin(reg);}
+});
+T("R en glissant deux boîtiers : le groupe tourne en bloc, Maj+Espace le rejoue",()=>{
+  const reg=suiviDecor();
+  const A=mkFp("R1","","0603",2);A.x=10;A.y=10;
+  const B=mkFp("R2","","0603",2);B.x=16;B.y=10;
+  S.fps.push(A,B);touch();
+  clearSel();S.sel.fps.add(A.id);S.sel.fps.add(B.id);
+  const p=prise(A), avant=S.moveEtch;
+  try{
+    S.moveEtch="glisser";
+    fire("pointerdown",sc(p.x,p.y));
+    fire("pointermove",sc(p.x,p.y+2));
+    key("r");
+    key(" ",{shiftKey:true});
+    fire("pointerup",sc(p.x,p.y+2));
+    const a=fpById(A.id), b=fpById(B.id);
+    if(a.rot!==90||b.rot!==90)throw new Error("quart de tour rejoué pour les deux : "+a.rot+","+b.rot);
+    if(Math.abs(a.x-b.x)>1e-6)throw new Error("le groupe devait tourner en bloc : "+a.x+","+b.x);
+  }finally{S.moveEtch=avant;undo();suiviFin(reg);}
+});
+T("Alt en glissant : le via de sortie reste en place, comme les pistes",()=>{
+  const D=sortieDecor();
+  clearSel();S.sel.fps.add(D.C.id);
+  const p=prise(D.C), v0={x:D.vs.x,y:D.vs.y};
+  try{
+    fire("pointerdown",sc(p.x,p.y));
+    fire("pointermove",Object.assign(sc(p.x,p.y+1.5),{altKey:true}));
+    fire("pointermove",Object.assign(sc(p.x,p.y+3),{altKey:true}));
+    fire("pointerup",Object.assign(sc(p.x,p.y+3),{altKey:true}));
+    if(!(D.C.y>20))throw new Error("la capa devait bouger");
+    if(D.vs.x!==v0.x||D.vs.y!==v0.y)throw new Error("Alt : le via de sortie ne bouge pas : "+D.vs.x+","+D.vs.y);
+    if(D.court.x2!==v0.x||D.court.y2!==v0.y)throw new Error("Alt : sa piste reste accrochée au via");
+  }finally{undo();suiviFin(D.reg);}
+});
+T("via marqué « jamais » : il ne suit pas, même à 1,5 mm",()=>{
+  const D=sortieDecor();
+  D.vs.lie=0;touch();
+  clearSel();S.sel.fps.add(D.C.id);
+  const v0={x:D.vs.x,y:D.vs.y};
+  try{
+    rotateSel();
+    if(D.vs.x!==v0.x||D.vs.y!==v0.y)throw new Error("un via libre ne suit aucun boîtier");
+    const d=JSON.parse(serialize()).vias.find(v=>v.id===D.vs.id);
+    if(d.lie!==0)throw new Error("le marquage doit s'enregistrer : "+JSON.stringify(d));
+  }finally{undo();suiviFin(D.reg);}
+});
+T("via marqué sur la capa : il la suit même à 7 mm, pas s'il n'y est plus relié",()=>{
+  const D=decouplage();
+  D.gnd.lie=D.C.id;touch();
+  clearSel();S.sel.fps.add(D.C.id);
+  const L0=fpXformInv(D.C)(D.gnd.x,D.gnd.y);
+  try{
+    rotateSel();
+    const L=fpXformInv(D.C)(D.gnd.x,D.gnd.y);
+    if(Math.abs(L.x-L0.x)>2e-3||Math.abs(L.y-L0.y)>2e-3)throw new Error("le via marqué devait tourner avec la capa");
+    undo();
+    // la piste coupée : le marquage ne tient plus, le via reste
+    S.tracks=S.tracks.filter(t=>t.net!=="GND");touch();
+    const g=S.vias.find(v=>v.net==="GND"), g0={x:g.x,y:g.y};
+    clearSel();S.sel.fps.add(D.C.id);
+    rotateSel();
+    if(g.x!==g0.x||g.y!==g0.y)throw new Error("un via qui n'est plus relié à la capa ne la suit pas");
+  }finally{undo();suiviFin(D.reg);}
+});
+T("contrôle : un bout de piste arrêté hors du centre de sa pastille est signalé (info)",()=>{
+  const reg=suiviDecor();
+  const R=mkFp("R1","","",2);R.style="row";R.pitch=2.54;R.x=60;R.y=60;S.fps.push(R);touch();
+  const p=padsWorld(R)[0];
+  S.tracks.push({l:0,net:"N",w:0.3,x1:p.x+0.3,y1:p.y,x2:p.x+0.3,y2:p.y-8});
+  // et un coude dans la pastille, qui continue jusqu'au centre : pas une entrée
+  const q=padsWorld(R)[1];
+  S.tracks.push({l:0,net:"M",w:0.3,x1:q.x,y1:q.y,x2:q.x+0.3,y2:q.y-0.3},
+                {l:0,net:"M",w:0.3,x1:q.x+0.3,y1:q.y-0.3,x2:q.x+0.3,y2:q.y-8});
+  touch();
+  try{
+    const e=runDrc().filter(x=>/de son centre/.test(x.msg));
+    if(e.length!==1||!e[0].info||!/R1\.1 à 0\.30 mm/.test(e[0].msg))
+      throw new Error("une seule info attendue, sur R1.1 : "+JSON.stringify(e.map(x=>x.msg)));
+  }finally{S.tracks=[];S.fps=[];touch();suiviFin(reg);}
+});
 /* Les vias de sortie : le via de masse au pied de la capa part avec elle. */
 function sortieDecor(){
   const D=decouplage();

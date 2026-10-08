@@ -1717,6 +1717,16 @@ function propsVia(box,v){
     '<div class="prop"><label>Net</label><select id="vN"><option value="">— libre —</option>'+
       netTable().map(n=>'<option'+(n.name===v.net?" selected":"")+'>'+esc(n.name)+'</option>').join("")+
       '</select></div>'+
+    /* via de sortie : suit-il un boîtier qu'on déplace ? (`25-liens.js`) */
+    (()=>{
+      const auto=viaLieAuto(v), rel=viaBoitiersRelies(v);
+      const cur=v.lie==null?"auto":String(v.lie);
+      const opt=(val,txt)=>'<option value="'+val+'"'+(cur===val?" selected":"")+'>'+esc(txt)+'</option>';
+      return '<div class="prop"><label>Suit un boîtier déplacé</label><select id="vLie">'+
+        opt("auto","automatique — "+(auto?auto.ref:"aucun")+" (piste ≤ "+FANOUT_MAX+" mm)")+
+        rel.map(f=>opt(String(f.id),"toujours "+f.ref)).join("")+
+        opt("0","jamais (via libre)")+'</select></div>';
+    })()+
     /* l'empilage physique donne la longueur réellement percée : un via borgne
        s'arrête en route, et c'est elle qui décide du rapport d'aspect */
     '<div class="empty" style="padding:6px 12px">'+
@@ -1750,6 +1760,12 @@ function propsVia(box,v){
     touch();refreshPanels();draw();
   };
   ["vD","vDr","vA","vB","vN"].forEach(id=>$(id).onchange=f);
+  $("vLie").onchange=()=>{
+    push();
+    const x=$("vLie").value;
+    if(x==="auto")delete v.lie;else v.lie=+x;
+    touch();refreshPanels();draw();
+  };
 }
 
 /* ==========================================================================

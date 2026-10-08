@@ -244,7 +244,8 @@ function transformFps(ids,mutate){
 const FANOUT_MAX=3;
 /* Les chaînes qui partent du via `v` : pour chacune, la pastille où elle
    aboutit (ou null) et sa longueur. */
-function fanoutChains(v){
+function fanoutChains(v,max){
+  if(max==null)max=FANOUT_MAX;
   const out=[];
   for(const t of S.tracks){
     if(t.l<v.a||t.l>v.b)continue;
@@ -255,7 +256,7 @@ function fanoutChains(v){
       for(let k=0;k<FOLLOW_MAX;k++){
         const F=endFar(cur,ce);
         len+=trkLen(cur);
-        if(len>FANOUT_MAX)break;
+        if(len>max)break;
         pad=padAt(cur.l,F.x,F.y);
         if(pad||viaAt(cur.l,F.x,F.y))break;
         const j=jointAt(F.x,F.y,cur.l);
@@ -264,7 +265,7 @@ function fanoutChains(v){
         if(!nx||nx.t.net!==cur.net)break;
         cur=nx.t;ce=nx.e;
       }
-      out.push({pad:len<=FANOUT_MAX?pad:null,len});
+      out.push({pad:len<=max?pad:null,len});
     }
   }
   return out;
@@ -281,6 +282,12 @@ function fanoutVias(fps){
   }
   x1-=FANOUT_MAX;y1-=FANOUT_MAX;x2+=FANOUT_MAX;y2+=FANOUT_MAX;
   for(const v of S.vias){
+    // marqué à la main : libre, ou lié à un boîtier quelle que soit la distance
+    if(v.lie===0)continue;
+    if(v.lie>0){
+      if(ids.has(v.lie)&&viaTientA(v,v.lie))res.set(v,v.lie);
+      if(fpById(v.lie)&&viaTientA(v,v.lie))continue;
+    }
     if(v.x<x1||v.x>x2||v.y<y1||v.y>y2)continue;
     // via dans la pastille
     let dans=null;
@@ -517,17 +524,17 @@ function linkAvant(fps){
 /* Après un pas de glissement : ce qui tourne avec les boîtiers reprend sa
    place — le suivi par `F.map`, la piste tendue entre deux broches et le via
    de sortie par leur boîtier. Sans rotation, rien à faire : le décalage suffit. */
-function dragRotFix(){
+function dragRotFix(alt){
   if(!drag||!drag.rot||!drag.follow)return;
   const F=drag.follow, mv=linkMover(drag.avant);
   F.map=P0=>mv(P0,F.p0fp.get(P0));
   for(const o of drag.trk){
-    if(!F.rigidOf.has(o.t))continue;
+    if(!F.rigidOf.has(o.t)||(alt&&F.rigidVia.has(o.t)))continue;
     const k=F.rigidOf.get(o.t), A=mv({x:o.x1,y:o.y1},k), B=mv({x:o.x2,y:o.y2},k);
     o.t.x1=A.x;o.t.y1=A.y;o.t.x2=B.x;o.t.y2=B.y;
   }
   for(const o of drag.via){
-    if(!drag.fanout||!drag.fanout.has(o.v))continue;
+    if(!drag.fanout||!drag.fanout.has(o.v)||alt)continue;
     const P=mv({x:o.x,y:o.y},drag.fanout.get(o.v));
     o.v.x=P.x;o.v.y=P.y;
   }
@@ -535,12 +542,8 @@ function dragRotFix(){
 function dragRotate(sens){
   if(typeof drag==="undefined"||!drag||!drag.move||!S.sel.fps.size)return false;
   if(!drag.moved){push();drag.moved=true;beginMove();}
-  for(const id of S.sel.fps){
-    const f=fpById(id);
-    if(!f)continue;
-    f.rot=(((f.rot||0)+90*sens)%360+360)%360;
-    drag.rotq.set(id,(drag.rotq.get(id)||0)+sens);
-  }
+  fpsTourner([...S.sel.fps],sens);
+  drag.rotN=(drag.rotN||0)+sens;
   drag.rot=true;
   dragRotFix();
   applyJoints(drag.joints,drag.dx,drag.dy,false);
@@ -580,7 +583,7 @@ function dragSelRestore(st){
    sélection, puis le même chemin — décalage et quarts de tour. */
 function dragRestart(){
   if(!drag||!drag.move||!drag.moved||!S.undo.length)return;
-  const st=drag.selSnap, dx=drag.dx, dy=drag.dy, rq=drag.rotq, mx=drag.x, my=drag.y;
+  const st=drag.selSnap, dx=drag.dx, dy=drag.dy, rn=drag.rotN||0, mx=drag.x, my=drag.y;
   if(drag.follow)S.dragShove=null;
   loadDoc(JSON.parse(S.undo[S.undo.length-1]),true);
   dragSelRestore(st);
@@ -588,18 +591,126 @@ function dragRestart(){
   beginMove();
   if(dx||dy)dragMoveBy(dx,dy,false);
   drag.x=mx;drag.y=my;
-  let q=false;
-  for(const [id,n] of rq){
-    const f=fpById(id);
-    if(!f||!n)continue;
-    f.rot=(((f.rot||0)+90*n)%360+360)%360;
-    drag.rotq.set(id,n);q=true;
-  }
-  if(q){
+  if(rn%4){
+    for(let i=0;i<Math.abs(rn);i++)fpsTourner([...S.sel.fps],Math.sign(rn));
+    drag.rotN=rn;
     drag.rot=true;
     dragRotFix();
     applyJoints(drag.joints,drag.dx,drag.dy,false);
     applyFollow(drag.follow,drag.dx,drag.dy,false);
   }
   touch();
+}
+
+/* Le via `v` est-il encore relié au boîtier `fid` : posé dans une de ses
+   pastilles, ou au bout d'une piste sans embranchement qui y mène ? Un via
+   copié avec son marquage, loin de son boîtier, ne le suit donc pas. */
+function viaTientA(v,fid){
+  const f=fpById(fid);
+  if(!f)return false;
+  for(const q of padsWorld(f))
+    if(padCuLayers(f,q).some(l=>l>=v.a&&l<=v.b&&padHolds(f,q,l,v.x,v.y)))return true;
+  return fanoutChains(v,1e9).some(c=>c.pad&&c.pad.fp===f);
+}
+/* Les boîtiers auxquels le via peut être lié : ceux qu'une piste ou une
+   pastille lui relie. Pour le panneau Propriétés. */
+function viaBoitiersRelies(v){
+  const out=new Map();
+  for(const f of S.fps)
+    for(const q of padsWorld(f))
+      if(padCuLayers(f,q).some(l=>l>=v.a&&l<=v.b&&padHolds(f,q,l,v.x,v.y)))out.set(f.id,f);
+  for(const c of fanoutChains(v,1e9))if(c.pad)out.set(c.pad.fp.id,c.pad.fp);
+  return [...out.values()];
+}
+/* Le boîtier que la règle automatique donnerait au via, marquage mis de côté. */
+function viaLieAuto(v){
+  const lie=v.lie;
+  delete v.lie;
+  try{
+    for(const f of viaBoitiersRelies(v))if(fanoutVias([f]).has(v))return f;
+    return null;
+  }finally{if(lie!=null)v.lie=lie;}
+}
+
+/* ==========================================================================
+   Alt en plein glissement : rien de ce qui n'est pas le boîtier ne bouge
+   --------------------------------------------------------------------------
+   Les pistes qui suivent restent déjà en place sous Alt (`applyFollow`). Le
+   via de sortie aussi, et la piste qui le relie à sa pastille avec lui.
+   ========================================================================== */
+function dragAltHold(alt){
+  if(!alt||!drag||!drag.fanout||!drag.fanout.size)return;
+  const F=drag.follow;
+  for(const o of drag.via)
+    if(drag.fanout.has(o.v)){o.v.x=o.x;o.v.y=o.y;}
+  for(const o of drag.trk)
+    if(F&&F.rigidVia.has(o.t)){o.t.x1=o.x1;o.t.y1=o.y1;o.t.x2=o.x2;o.t.y2=o.y2;}
+}
+
+/* ==========================================================================
+   Tourner plusieurs boîtiers : le groupe en bloc
+   --------------------------------------------------------------------------
+   Un boîtier seul tourne autour de son centre. Plusieurs tournent ENSEMBLE
+   autour du centre de leur encombrement commun, comme dans Altium ou KiCad :
+   chacun prend le quart de tour et sa place tourne avec lui, si bien que la
+   piste tendue entre deux d'entre eux part en bloc, sans se déformer. Un quart
+   de tour garde l'encombrement d'un groupe centré sur lui-même : enchaîner les
+   quarts de tour, ou les rejouer après un décalage, donne la même chose.
+   ========================================================================== */
+function fpsTourner(ids,sens){
+  const fps=ids.map(fpById).filter(Boolean);
+  if(!fps.length)return;
+  let cx=null, cy=null;
+  if(fps.length>1){
+    let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
+    for(const f of fps){
+      const b=fpBBox(f);
+      x1=Math.min(x1,b.x1);y1=Math.min(y1,b.y1);x2=Math.max(x2,b.x2);y2=Math.max(y2,b.y2);
+    }
+    cx=(x1+x2)/2;cy=(y1+y2)/2;
+  }
+  for(const f of fps){
+    f.rot=(((f.rot||0)+90*sens)%360+360)%360;
+    if(cx==null)continue;
+    // le même sens que `fpXform` : x' = −y, y' = x pour un quart de tour direct
+    const dx=f.x-cx, dy=f.y-cy;
+    f.x=r3(cx-dy*sens);f.y=r3(cy+dx*sens);
+  }
+}
+
+/* ==========================================================================
+   Contrôle : la piste qui n'entre pas au centre de sa pastille
+   --------------------------------------------------------------------------
+   La règle est d'entrer au centre ; un bout décalé est permis (Ctrl au
+   routage), mais il se voit : une ligne d'information par bout, jamais une
+   faute. Les cartes d'avant les liens y trouvent leurs entrées de travers.
+   ========================================================================== */
+function linkHorsCentreDrc(out){
+  linkSync();
+  const vus=new Set();
+  /* un coude qui tombe dans le cuivre d'une pastille longue n'est pas une
+     entrée : la piste continue jusqu'au centre. Seul le bout où elle S'ARRÊTE
+     dans la pastille est jugé. */
+  const bouts=new Map(), cle=(t,x,y)=>t.l+"|"+t.net+"|"+r3(x)+"|"+r3(y);
+  for(const t of S.tracks)
+    for(const k of [cle(t,t.x1,t.y1),cle(t,t.x2,t.y2)])bouts.set(k,(bouts.get(k)||0)+1);
+  for(const t of S.tracks)
+    for(const e of [1,2]){
+      const a=t["a"+e];
+      if(!a||a.f==null)continue;
+      if(bouts.get(cle(t,e===1?t.x1:t.x2,e===1?t.y1:t.y2))>1)continue;
+      const f=fpById(a.f);
+      if(!f)continue;
+      const x=e===1?t.x1:t.x2, y=e===1?t.y1:t.y2;
+      const q=padsWorld(f).find(o=>String(o.n)===String(a.p)&&padHolds(f,o,t.l,x,y));
+      if(!q)continue;
+      const d=dist(x,y,q.x,q.y);
+      if(d<=EPS_J)continue;
+      const k=t.l+"|"+r3(x)+"|"+r3(y);
+      if(vus.has(k))continue;
+      vus.add(k);
+      out.push({info:true,x,y,l:t.l,
+        msg:"Piste "+(t.net||"sans net")+" : entre dans "+f.ref+"."+q.n+" à "+fmt(d,2)+
+            " mm de son centre"});
+    }
 }

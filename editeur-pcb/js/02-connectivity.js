@@ -772,6 +772,8 @@ function runDrc(){
   if(typeof dpDrc==="function")dpDrc(out);
   /* les liaisons qu'un déplacement de boîtier a laissées en faute */
   if(typeof rerouteDrc==="function")rerouteDrc(out);
+  /* les bouts de piste qui n'entrent pas au centre de leur pastille (info) */
+  if(typeof linkHorsCentreDrc==="function")linkHorsCentreDrc(out);
 
   S.drc=out; S.drcRun=true;
   return out;
