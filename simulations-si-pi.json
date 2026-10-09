@@ -270,10 +270,10 @@
     },
     {
       "fichier": "python/crosstalk.py",
-      "version": "4.0.0",
+      "version": "4.1.0",
       "role": "Crosstalk niveau 2 : pic de bruit relatif par paire (onglet Crosstalk, piste selectionnee)",
       "domaine": "SI",
-      "methode_generale": "[C] et [L] bloc par bloc le long du parcours (MoM 2D via ligne_mom/simulation_em) -> k_total = 1/2 (Cm/C11 + Lm/L11), Kb = k_total/2, Kf = 1/2 (Lm/L11 - Cm/C11) -> NEXT = Kb si 2Td >= t_r, Kb.2Td/t_r sinon ; FEXT = |Kf|.Td/t_r ; echelon unitaire, lignes adaptees",
+      "methode_generale": "[C] et [L] bloc par bloc le long du parcours (MoM 2D via ligne_mom/simulation_em) -> k_total = 1/2 (Cm/C11 + Lm/L11), Kb = k_total/2, Kf = 1/2 (Lm/L11 - Cm/C11) -> NEXT = Kb si 2Td >= t_r, Kb.2Td/t_r sinon ; FEXT = |Kf|.Td/t_r ; echelon unitaire, lignes adaptees ; option pertes R,G au genou 0,35/t_r (NEXT x exp(-2A(x)), FEXT x exp(-A(L))) ; somme des agresseurs en phase ou quadratique (RSS)",
       "entree": "document cao-crosstalk-1 (mm)",
       "sortie": "resultat cao-crosstalk-resultat-1",
       "fonctions": [
@@ -282,10 +282,11 @@
         { "nom": "sections_couplees / _matrices_bloc / coefficients_couple", "usage": ["sections_couplees"], "description": "[C] et [L] par bloc, Kb et Kf de chaque voisine, profil de retard" },
         { "nom": "geometrie_superposee / kb_superposees", "usage": ["pistes_superposees"], "description": "Kb de deux rubans superposes sur couches voisines sans plan entre eux (section_deux_niveaux, milieu homogene)" },
         { "nom": "niveau2 / statut / front_de_classe", "usage": ["niveau2"], "description": "Tuple de diagnostic : k_total, NEXT/FEXT (fraction, %, dB), T_d, saturation, statuts vert/orange/rouge ; t_r deduit de la classe du net" },
+        { "nom": "alpha_genou / somme_agresseurs", "usage": ["pertes", "somme_agresseurs"], "description": "Attenuation R (effet de peau) + G (tan delta) au genou du front ; somme des agresseurs d'une victime, arithmetique (pire) ou quadratique (rss)" },
         { "nom": "analyser", "usage": ["diagnostic_crosstalk"], "description": "Fonction principale : tableau niveau 2 par paire, carte locale du NEXT, zones a risque, controles du plan de masse (fentes, pas de couture), actions correctives ordonnees" },
         { "nom": "chaine_mtl / s_depuis_chaine", "usage": ["reference_lignes_couplees"], "description": "Lignes couplees en cascade, conservees comme reference de rf_reseau" }
       ],
-      "verification": "python/test/banc-crosstalk.py (39 cas valides, 100% succes)"
+      "verification": "python/test/banc-crosstalk.py (41 cas valides, 100% succes)"
     },
     {
       "fichier": "python/dc_solver.py",

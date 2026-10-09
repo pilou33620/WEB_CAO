@@ -13,12 +13,12 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 833 essais (`editeur-pcb/test/harness.js`) |
+| **Éditeur PCB** | En service | 836 essais (`editeur-pcb/test/harness.js`) |
 | **Éditeur Schématique** | En service | 119 essais (`editeur-schematique/test/harness.js`) |
 | **Visionneuse IPC-2581** | En service | 186 essais (`harness-sim.js`) + 59 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.5.0)** | En service (0,3 à 0,4 % vs étalons) | 199 cas (`python/test/banc-ligne-mom.py`) |
 | **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | inclus dans les 199 cas |
-| **SI — Crosstalk niveau 2 (`crosstalk` v4.0.0)** | En service (scan normalisé : k_total, NEXT et FEXT en % et dB, statut vert / orange / rouge, piste sélectionnée — t_r saisi ou déduit de la classe — ou toute la carte sous un t_r global ; pistes superposées résolues ; l'analyse électrique est retirée) | 39 cas (`python/test/banc-crosstalk.py`), dont la triplaque exacte (Cohn) et les formules du niveau 2 |
+| **SI — Crosstalk niveau 2 (`crosstalk` v4.1.0)** | En service (scan normalisé : k_total, NEXT et FEXT en % et dB, statut vert / orange / rouge, piste sélectionnée — t_r saisi ou déduit de la classe — ou toute la carte sous un t_r global ; pistes superposées résolues ; pertes R, G au genou du front en option ; somme des agresseurs en phase ou quadratique ; coloration au statut DRC sur le layout ; l'analyse électrique est retirée) | 41 cas (`python/test/banc-crosstalk.py`), dont la triplaque exacte (Cohn) et les formules du niveau 2 |
 | **Cascade SI / PDN (`simulation_em` v4.3.0)** | En service | couvert par les bancs `ligne_mom`, crosstalk et éditeur |
 | **SI — Diagramme de l'œil (`oeil` v1.0.0)** | En service (réponse à un bit depuis la cascade ABCD, simple et différentiel ; œil PRBS7/9/15 et pire cas PDA ; CTLE, FFE, DFE ; 18 gabarits de protocole avec leur fiabilité) — émetteur/récepteur linéaires, sans gigue aléatoire ni diaphonie | 19 cas (`python/test/banc-oeil.py`) |
 | **RF — S21 port à port (`rf_reseau` v1.5.0)** | En service dans l'éditeur PCB et la visionneuse, chacun avec son empilage (pistes par `simulation_em`, lignes couplées à N conducteurs avec pertes et dispersion modale, coudes et vias aux bords des longements, pastilles en MoM 3D sur stratifié étalonné sur l'empilage, zones et coulées de masse entières en maillage adaptatif creux sur leur cuivre rempli, longements recoupés à leur écart local, chemins de masse piste + via, broches annexes, pistes des autres nets fermées sur leur Z₀, mutuelles des selfs entre elles et avec les pistes (Neumann avec image), fentes du plan de référence (Ott), composants SPICE / .sNp / idéaux, S généralisés sur ports complexes, « et si ») — quasi-statique (+ Getsinger) : le domaine de validité (modes supérieurs, ondes de surface, rayonnement) est calculé et signalé ; les modéliser demande le moteur pleine onde | 47 cas (`python/test/banc-rf.py`) + 8 essais de page (`editeur-pcb/test/harness.js`) + 3 (`harness-sim.js`) |
@@ -172,6 +172,7 @@ au genou 0,35 / t_r.
 - [x] **Fréquence maximale par classe** (`FMAX_CLASSES` : Lent 10 MHz, Analogique 1 MHz, Découpage 10 MHz) : un net lent n'est plus condamné par la colonne 100 MHz ; unités réglables par champ ; diaphonie : une ligne par couple ; le cuivre sans net ne porte plus de classe au rapport.
 
 - [x] **Diaphonie** : arcs (cordes de 5°), couches voisines sans plan (méthode des images, un plan), somme des agresseurs en phase.
+- [x] **Diaphonie** : pertes R, G au genou du front (option), somme des agresseurs en phase ou quadratique, paires colorées au statut DRC sur le layout.
 - [x] **Paires** : masse coplanaire dans Z_diff (`_ecart_exterieur`) ; plan de référence sous une seule moitié, jugé en temps.
 - [x] **Bord** : clôture de vias dans la bande de 2 mm du détourage, face à λ/20.
 - [x] **Découplage** : plus court chemin sur les pistes du rail (`_Chemins`), inductance de boucle (pistes, vias, montage du boîtier), valeur et résonance du condensateur.

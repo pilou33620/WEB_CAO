@@ -319,6 +319,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simCorpsCrosstalk","simRendreCrosstalk","simXtReglages",
   "simXtStatut","simXtStatuts","simXtSeuils","simXtPireStatut",
   "simXtCarteFiche","simXtCartePaires",
+  "simXtCarteTrace","simXtCartePeinture","simXtCarteSommes",
+  "simXtCtrlPertesSomme","simXtSommeNom","simXtCalculDit",
   
   "simXtCarte","simXtReduire","simXtCouleur","simXtTableauCandidats","simXY",
   "simXtTableauCouples","simXtMasse",
@@ -335,7 +337,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simXtCourbeDe","simXtValeurA","simXtPeindreChaleur","simXtPeindreCurseur",
   "simXtCouleurVictime","simXtSurCuivre","simXtCorridor","simXtBoutonChaleur",
   "simXtLargeurCuivre","simXtRisqueTrace","px",
-  "SIM_XT_RAMPE","simXtPct",
+  "SIM_XT_COULEUR_STATUT","simXtPct",
   /* Le repli des reglages : il vaut pour toutes les analyses, il vit donc
      dans les onglets et non dans un corps. */
   "simOnglets","simPoser","simPlierAppliquer","simCorps",
@@ -16161,6 +16163,145 @@ T("toute la carte : le tableau des paires, jugé aux mêmes seuils",()=>{
     throw new Error("une ligne se clique pour centrer la vue");
   SIM_XT.carte=garde.c;
   Object.assign(SIM_CARTE.reglages,garde.g);
+});
+
+T("pertes et somme des agresseurs : réglages partagés, envoyés aux deux routes",()=>{
+  const garde=JSON.parse(JSON.stringify(SIM_CARTE.reglages));
+  try{
+    /* D'OFFICE : sans pertes (le pire cas normalisé), agresseurs en phase. */
+    let r=simXtReglages(), d=simCarteReglagesDoc();
+    if(r.pertes!==false||r.somme!=="pire"||d.xt_pertes!==false||d.xt_somme!=="pire")
+      throw new Error("défauts : "+JSON.stringify([r.pertes,r.somme,d.xt_pertes,d.xt_somme]));
+    SIM_CARTE.reglages.xt_pertes=true; SIM_CARTE.reglages.xt_somme="rss";
+    r=simXtReglages(); d=simCarteReglagesDoc();
+    if(r.pertes!==true||r.somme!=="rss"||d.xt_pertes!==true||d.xt_somme!=="rss")
+      throw new Error("la piste et la carte lisent les mêmes réglages");
+    /* UNE VALEUR ABÎMÉE RETOMBE SUR « en phase » — le pire cas. */
+    SIM_CARTE.reglages.xt_somme="n'importe";
+    if(simXtReglages().somme!=="pire"||simCarteReglagesDoc().xt_somme!=="pire")
+      throw new Error("une somme inconnue retombe sur le pire cas");
+    /* LES COMMANDES : une case et une liste, dans les deux panneaux. */
+    const h=simXtCtrlPertesSomme("simXt");
+    if(h.indexOf('id="simXtPertes"')<0||h.indexOf('id="simXtSomme"')<0||
+       h.indexOf('value="rss"')<0)
+      throw new Error("commandes : "+h);
+    if(simCorpsCrosstalk().indexOf('id="simXtSomme"')<0)
+      throw new Error("le panneau Crosstalk porte la somme");
+  }finally{
+    Object.assign(SIM_CARTE.reglages,garde);
+  }
+});
+
+T("la somme des agresseurs compte dans le statut de la paire",()=>{
+  const garde=JSON.parse(JSON.stringify(SIM_CARTE.reglages));
+  SIM_CARTE.reglages.xt_orange=3; SIM_CARTE.reglages.xt_rouge=7;
+  try{
+    /* Seule, la paire est verte ; avec ses autres agresseurs, la victime
+       passe rouge : la paire le porte. */
+    const c={victime:"V", next:0.02, fext:0.01,
+             somme:{mode:"rss", next:0.08, fext:0.012,
+                    agresseurs:[{agresseur:"A"},{agresseur:"B"}]}};
+    const st=simXtStatuts(c);
+    if(st.next!=="vert"||st.somme!=="rouge"||st.paire!=="rouge")
+      throw new Error("statuts : "+JSON.stringify(st));
+    if(simXtStatuts({next:0.02,fext:0.01}).somme!==null)
+      throw new Error("sans somme, pas de statut de somme");
+    if(simXtSommeNom("rss")!=="quadratique"||simXtSommeNom("pire")!=="en phase")
+      throw new Error("noms des sommes");
+    if(simXtCalculDit({reglages:{pertes:true,somme:"rss"}}).indexOf("quadratique")<0)
+      throw new Error("la fiche dit la somme prise par le calcul");
+    /* TOUTE LA CARTE : les victimes sommées ont leur tableau. */
+    const t=simXtCarteSommes({somme_mode:"rss",
+      sommes:[{victime:"V", agresseurs:["A","B"], next:0.05, fext:0.001}]});
+    if(t.indexOf("quadratique")<0||t.indexOf("<b>V</b>")<0||
+       t.indexOf("simXtSt-orange")<0)
+      throw new Error("tableau des sommes : "+t);
+  }finally{
+    Object.assign(SIM_CARTE.reglages,garde);
+  }
+});
+
+T("coloration : la chaleur se peint aux couleurs du statut DRC, bornée par la paire",()=>{
+  const garde=JSON.parse(JSON.stringify(SIM_CARTE.reglages));
+  SIM_CARTE.reglages.xt_orange=3; SIM_CARTE.reglages.xt_rouge=7;
+  xtDecorChaleur(0.4);
+  const canevas=()=>{const vu={couleurs:new Set()};
+    let cour=null;
+    vu.c={save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},
+          arc(){},fill(){},closePath(){},
+          stroke(){vu.couleurs.add(cour);},
+          set strokeStyle(v){cour=v;}, set lineCap(v){}, set lineJoin(v){},
+          set lineWidth(v){}};
+    return vu;};
+  try{
+    /* UNE CARTE LOCALE DE 12 % À 0 : les trois couleurs, pas de rampe. */
+    const L=SIM_XT.res.carte_chaleur.lignes[0];
+    L.valeurs=L.valeurs.map((_,i)=>0.12*(1-i/399));
+    SIM_XT.res.couples[0].next=0.12;
+    let v=canevas(); simXtPeindreChaleur(v.c,(x,y)=>[x,y],0.5);
+    for(const s of ["vert","orange","rouge"])
+      if(!v.couleurs.has(SIM_XT_COULEUR_STATUT[s]))
+        throw new Error("couleur "+s+" absente : "+[...v.couleurs]);
+    /* BORNÉE PAR LE NEXT DE LA PAIRE : une crête locale ne peint pas en
+       rouge une paire que le niveau 2 juge orange. */
+    SIM_XT.res.couples[0].next=0.05;
+    v=canevas(); simXtPeindreChaleur(v.c,(x,y)=>[x,y],0.5);
+    if(v.couleurs.has(SIM_XT_COULEUR_STATUT.rouge))
+      throw new Error("la crête locale ne dépasse pas la paire");
+    if(!v.couleurs.has(SIM_XT_COULEUR_STATUT.orange))
+      throw new Error("l'orange de la paire se peint");
+    /* LES SEUILS RE-PEIGNENT SANS RELANCE. */
+    SIM_CARTE.reglages.xt_orange=6; SIM_CARTE.reglages.xt_rouge=9;
+    v=canevas(); simXtPeindreChaleur(v.c,(x,y)=>[x,y],0.5);
+    if(v.couleurs.has(SIM_XT_COULEUR_STATUT.orange))
+      throw new Error("à 6 %, une paire de 5 % est verte partout");
+  }finally{
+    SIM.ouvert=false; SIM.analyse="impedance"; SIM_XT.res=null;
+    Object.assign(SIM_CARTE.reglages,garde);
+  }
+});
+
+T("coloration : toute la carte peint ses paires sur le layout, au statut",()=>{
+  const garde={c:SIM_XT.carte, g:JSON.parse(JSON.stringify(SIM_CARTE.reglages)),
+               o:SIM.ouvert, a:SIM.analyse, r:SIM_CARTE.res};
+  SIM_CARTE.reglages.xt_orange=3; SIM_CARTE.reglages.xt_rouge=7;
+  const paire=(v,nx,traits)=>({victime:v, agresseur:"AG", couche:"Top",
+    longueur:10, ecart:0.2, x:1, y:1, k_total:2*nx, next:nx, fext:0.001,
+    next_db:0, fext_db:-60, sature:false, td_ps:60, traits:traits});
+  SIM_XT.carte={res:{bilan:{diaphonie:{t_r:1e-9, paires_total:3,
+                 paires:[paire("R",0.09,[[0,0,10,0]]),
+                         paire("O",0.04,[[0,1,10,1],[12,1,14,1]]),
+                         paire("V",0.01,[[0,2,10,2]])]}}, notes:[]},
+                err:"", occupe:false, unite:1, tout:false, peindre:true};
+  SIM_CARTE.res=null;
+  const pinceau=()=>{const vu={traits:[], cour:null};
+    vu.c={save(){},restore(){},setTransform(){},beginPath(){},stroke(){},
+          arc(){},moveTo(x,y){vu.traits.push([vu.cour,x,y]);},lineTo(){},
+          set strokeStyle(v){vu.cour=v;}, set lineWidth(v){},
+          set lineCap(v){}, set globalAlpha(v){}};
+    return vu;};
+  try{
+    SIM.ouvert=true; SIM.analyse="crosstalk";
+    let p=pinceau(); simCarteTrace(p.c,1,(x,y)=>({x,y}));
+    const de=s=>p.traits.filter(t=>t[0]===SIM_XT_COULEUR_STATUT[s]).length;
+    if(de("rouge")!==1||de("orange")!==2||de("vert")!==0)
+      throw new Error("traits : "+JSON.stringify(p.traits));
+    /* LE ROUGE PASSE PAR-DESSUS : il est peint en dernier. */
+    if(p.traits[p.traits.length-1][0]!==SIM_XT_COULEUR_STATUT.rouge)
+      throw new Error("le rouge doit être peint en dernier");
+    SIM_XT.carte.tout=true;
+    p=pinceau(); simCarteTrace(p.c,1,(x,y)=>({x,y}));
+    if(de("vert")!==1)throw new Error("« montrer les vertes » les peint aussi");
+    SIM_XT.carte.peindre=false;
+    p=pinceau(); simCarteTrace(p.c,1,(x,y)=>({x,y}));
+    if(p.traits.length)throw new Error("la case éteint la coloration");
+    SIM_XT.carte.peindre=true; SIM.analyse="verif";
+    if(simXtCartePeinture().length)
+      throw new Error("hors de l'onglet Crosstalk, rien ne se peint");
+  }finally{
+    SIM_XT.carte=garde.c; SIM.ouvert=garde.o; SIM.analyse=garde.a;
+    SIM_CARTE.res=garde.r; Object.assign(SIM_CARTE.reglages,garde.g);
+  }
 });
 
 T("sans masse déclarée, le problème le DIT plutôt que de se taire",()=>{

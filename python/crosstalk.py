@@ -668,7 +668,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-crosstalk-1"
 FORMAT_RESULTAT = "cao-crosstalk-resultat-1"
-VERSION = "4.0.0"
+VERSION = "4.1.0"
 VERSION_MOTEURS = {
     "crosstalk": VERSION,
     "simulation_em": getattr(se, "VERSION", "4.2.0") if se is not None else "indisponible",
@@ -718,6 +718,8 @@ DEFAUTS = {
     "tr_classes": {},           # {classe: s} -- les fronts du panneau carte
     "seuil_orange": SEUIL_ORANGE,
     "seuil_rouge": SEUIL_ROUGE,
+    "pertes": False,            # R et G au genou du front : voir alpha_genou
+    "somme": "pire",            # plusieurs agresseurs : « pire » ou « rss »
     # -- la lecture
     "risque": 0.5,              # fraction du pire point d'une victime au-dela
                                 # de laquelle la plage se peint sur le cuivre
@@ -1981,25 +1983,33 @@ def pire_statut(statuts):
     return max(statuts or ["vert"], key=lambda s: ORDRE_STATUT.get(s, 0))
 
 
-def niveau2(morceaux, t_r, orange=SEUIL_ORANGE, rouge=SEUIL_ROUGE):
+def niveau2(morceaux, t_r, orange=SEUIL_ORANGE, rouge=SEUIL_ROUGE,
+            att_fext=1.0):
     """Le diagnostic d'une paire, a partir de ses morceaux couples.
 
-    `morceaux` : [(Kb, Kf, dT)] -- les deux coefficients de chaque portion
-    couplee et le retard de la victime sur cette portion, en secondes.
+    `morceaux` : [(Kb, Kf, dT)] ou [(Kb, Kf, dT, att)] -- les deux
+    coefficients de chaque portion couplee, le retard de la victime sur cette
+    portion, en secondes, et, quand les PERTES sont comptees, l'attenuation
+    de l'aller-retour jusqu'a elle (exp(-2.alpha.x), voir `alpha_genou`).
+    `att_fext` : l'attenuation du trajet du bruit avant, exp(-alpha.L).
     `t_r` : le front, en secondes. Rend le tuple de diagnostic sous forme de
     dictionnaire : k_total, NEXT et FEXT (fraction, % et dB), T_d, la
     saturation et les trois statuts.
     """
     t_r = float(t_r) if t_r and t_r > 0 else TR_DEFAUT
+    att = [float(m[3]) if len(m) > 3 else 1.0 for m in morceaux]
     kb_max = max([float(m[0]) for m in morceaux] or [0.0])
     kf_max = max([abs(float(m[1])) for m in morceaux] or [0.0])
-    s_kb = sum(float(m[0]) * float(m[2]) for m in morceaux)
+    # LE PLAFOND SATURE, ATTENUE COMME SON MORCEAU : avec pertes, un morceau
+    # lointain ne renvoie plus tout son Kb jusqu'au bout proche.
+    kb_plafond = max([float(m[0]) * a for m, a in zip(morceaux, att)] or [0.0])
+    s_kb = sum(float(m[0]) * float(m[2]) * a for m, a in zip(morceaux, att))
     s_kf = sum(float(m[1]) * float(m[2]) for m in morceaux)
     td = sum(float(m[2]) for m in morceaux)
     non_sature = 2.0 * s_kb / t_r
-    sature = bool(kb_max > 0 and non_sature >= kb_max)
-    nxt = kb_max if sature else non_sature
-    fxt = abs(s_kf) / t_r
+    sature = bool(kb_plafond > 0 and non_sature >= kb_plafond)
+    nxt = kb_plafond if sature else non_sature
+    fxt = abs(s_kf) * float(att_fext) / t_r
     s_n, s_f = statut(nxt, orange, rouge), statut(fxt, orange, rouge)
     return {
         # LE COUPLAGE GEOMETRIQUE PUR, au morceau le plus serre :
@@ -2018,6 +2028,41 @@ def niveau2(morceaux, t_r, orange=SEUIL_ORANGE, rouge=SEUIL_ROUGE):
         "fext_db": round(_db(fxt), 2),
         "statut_next": s_n, "statut_fext": s_f,
         "statut": pire_statut([s_n, s_f])}
+
+
+def alpha_genou(z0, eps_eff, largeur_mm, epsilon_r, tan_delta, t_r):
+    """L'attenuation de la ligne au GENOU du front, 0,35 / t_r, en Np/m.
+
+    R (effet de peau, `ligne_mom.line_losses_detaillees`) et G (tan delta du
+    dielectrique) -- les deux termes de RLGC que [C] et [L] ne portent pas.
+    Au genou, c'est la composante la plus haute que le front porte vraiment :
+    l'attenuation qu'on en tire est une MAJORATION de celle du front entier,
+    donc une correction prudente -- elle ne retire jamais plus que la ligne.
+    """
+    if not (z0 > 0 and eps_eff > 0 and largeur_mm > 0 and t_r > 0):
+        return 0.0
+    d = tl.line_losses_detaillees(float(z0), float(eps_eff),
+                                  float(largeur_mm) * 1e-3,
+                                  float(epsilon_r or eps_eff),
+                                  float(tan_delta or 0.0), 0.35 / float(t_r))
+    return float(d.get("alpha_c", 0.0)) + float(d.get("alpha_d", 0.0))
+
+
+SOMMES = ("pire", "rss")
+
+
+def somme_agresseurs(niveaux, mode="pire"):
+    """Le bruit cumule d'une victime sur plusieurs agresseurs.
+
+    « pire » : la somme ARITHMETIQUE, tous les agresseurs basculant ensemble
+    et en phase -- le pire cas. « rss » : la somme QUADRATIQUE (power sum),
+    racine de la somme des carres -- des agresseurs independants, qui ne
+    basculent pas tous au meme instant.
+    """
+    v = [abs(float(x)) for x in (niveaux or ())]
+    if mode == "rss":
+        return math.sqrt(sum(x * x for x in v))
+    return sum(v)
 
 
 def front_de_classe(classe, tr_classes=None):
@@ -2133,7 +2178,7 @@ def _superposees(couches, fiche, cache, notes):
 
 
 def sections_couplees(couches, parcours, retenus, refs, t_r, notes,
-                      gardes=(), fentes=()):
+                      gardes=(), fentes=(), pertes=False):
     """[C] et [L] bloc par bloc le long du parcours, et ce qu'on en tire.
 
     Rend `infos` -- avec les BLOCS (bornes, Kb et Kf de chaque voisine contre
@@ -2301,9 +2346,43 @@ def sections_couplees(couches, parcours, retenus, refs, t_r, notes,
                 "kb": round(kb, 6), "kf": round(kf, 6),
                 "presente": conducteurs[g]["net"] in nets_presents,
                 "mesure": bool(0 in couples_bloc and g in couples_bloc)}
+        # LES AUTRES AGRESSEURS SELECTIONNES, vers chaque victime : la meme
+        # coupe les porte deja, et leurs termes croises sont la, gratuits.
+        # C'est ce qui permet de SOMMER les agresseurs d'une victime.
+        coef_agr = {}
+        for ag in range(1, n):
+            if conducteurs[ag]["role"] != "agresseur":
+                continue
+            net_ag = conducteurs[ag]["net"]
+            if net_ag not in nets_presents:
+                continue
+            d = coef_agr.setdefault(net_ag, {})
+            for g in range(1, n):
+                if g == ag or conducteurs[g]["role"] == "agresseur":
+                    continue
+                kb, kf = coefficients_couple(c_g, l_g, ag, g)
+                d[conducteurs[g]["net"]] = {
+                    "kb": round(kb, 6), "kf": round(kf, 6),
+                    "presente": conducteurs[g]["net"] in nets_presents}
+        # LES PERTES DU BLOC, R et G au genou du front, sur la ligne de
+        # l'agresseur : Z0 et eps_eff de sa diagonale, eps_r et tan delta de
+        # sa couche. Seulement si on les a demandees.
+        alpha = 0.0
+        if pertes:
+            c00, l00 = float(c_g[0, 0]), float(l_g[0, 0])
+            z0_a = math.sqrt(l00 / c00) if c00 > 0 and l00 > 0 else 0.0
+            _geo, inf = se.section_de_couche(couches, seg["couche"],
+                                             seg["largeur"], seg["epaisseur"],
+                                             0.0, None,
+                                             tuple(sorted(plans_nus)))
+            inf = inf if isinstance(inf, dict) else {}
+            alpha = alpha_genou(z0_a, eps[0] if len(eps) else 0.0,
+                                seg["largeur"], _nb(inf.get("er"), 0.0),
+                                _nb(inf.get("tan_delta"), 0.0), t_r)
         blocs.append({"s0": round(a, 4), "s1": round(b, 4),
                       "voisines": [p["net"] for p in presents],
-                      "couplage": coef,
+                      "couplage": coef, "couplage_agresseurs": coef_agr,
+                      "alpha": alpha,
                       "gardes": [g["net"] for g in gardes_bloc] if presents
                       else []})
 
@@ -2975,6 +3054,12 @@ def _reglages(doc):
             % (100.0 * orange, 100.0 * rouge),
             "Il faut 0 < orange ≤ rouge < 100 % (3 % et 7 % par défaut).")
     r["seuil_orange"], r["seuil_rouge"] = orange, rouge
+    r["pertes"] = bool(r.get("pertes"))
+    r["somme"] = str(r.get("somme") or "pire").strip().lower()
+    if r["somme"] not in SOMMES:
+        raise ErreurCrosstalk(
+            "Somme des agresseurs « %s » inconnue." % r["somme"],
+            "« pire » (arithmétique, en phase) ou « rss » (quadratique).")
     # LE SEUIL DE RISQUE EST UNE FRACTION D'UN MAXIMUM : hors de ]0 ; 1[, il ne
     # decoupe rien. A zero, toute la piste serait « a risque » -- donc aucune
     # portion ne le serait, puisque tout se vaut ; a un, seul le point du
@@ -3285,7 +3370,8 @@ def analyser(doc, journal=None):
 
     # -- [C] ET [L], BLOC PAR BLOC -----------------------------------------
     infos = sections_couplees(couches, parcours, retenus, refs, t_r, notes,
-                              gardes, doc.get("fentes") or ())
+                              gardes, doc.get("fentes") or (),
+                              pertes=reglages["pertes"])
     # LE COUPLAGE NON CALCULE NE SE LIT PAS COMME UN COUPLAGE NUL. La section
     # droite n'est pas resoluble sur un bloc -- pas de plan de reference sous
     # la piste, solveur en echec --, [C] et [L] y restent DIAGONALES, le terme
@@ -3536,6 +3622,27 @@ def _lire_couples(base, infos, retenus, couches, axe, espacements, masse,
     couverture = couverture_calcul(blocs, retenus)
     cache_sup = {}
     couples, lignes, sans_superposition = [], [], []
+    # LES PERTES, LE LONG DU PARCOURS : l'integrale de alpha depuis le depart
+    # de l'agresseur (Np). Un morceau couple a l'abscisse x renvoie son NEXT
+    # au bout proche apres un aller-retour, exp(-2.A(x)) ; le FEXT parcourt
+    # toute la liaison, exp(-A(L)). Sans pertes demandees, alpha est nul.
+    pertes = bool(reglages.get("pertes"))
+    cumul = [0.0]
+    for bl in blocs:
+        cumul.append(cumul[-1] + _nb(bl.get("alpha"), 0.0)
+                     * (_nb(bl["s1"]) - _nb(bl["s0"])) * 1e-3)
+
+    def integrale(x):
+        """A(x), l'attenuation cumulee jusqu'a l'abscisse x (mm), en Np."""
+        for k, bl in enumerate(blocs):
+            if x <= _nb(bl["s1"]) + TOL_BORNE:
+                return cumul[k] + _nb(bl.get("alpha"), 0.0) * max(
+                    0.0, x - _nb(bl["s0"])) * 1e-3
+        return cumul[-1]
+    att_fext = math.exp(-cumul[-1]) if pertes else 1.0
+    agresseurs_sel = sorted(set(a for bl in blocs
+                                for a in (bl.get("couplage_agresseurs") or {})))
+    somme_mode = reglages.get("somme") or "pire"
     for g, v in enumerate(infos["conducteurs"]):
         if g == 0:
             continue
@@ -3556,20 +3663,50 @@ def _lire_couples(base, infos, retenus, couches, axe, espacements, masse,
                 continue
             d_t = float(ret[k + 1]) - float(ret[k])
             td_plat += d_t
+            a_n = (math.exp(-2.0 * integrale(0.5 * (_nb(bl["s0"])
+                                                    + _nb(bl["s1"]))))
+                   if pertes else 1.0)
             morceaux.append((_nb(c_b.get("kb"), 0.0), _nb(c_b.get("kf"), 0.0),
-                             d_t))
+                             d_t, a_n))
         # LES MORCEAUX SUPERPOSES, resolus a part : le solveur de section
         # range ses conducteurs cote a cote, celui-ci les empile.
         sup = _superposees(couches, fiche, cache_sup, notes)
-        morceaux += [(m[0], m[1], m[2]) for m in sup]
+        morceaux += [(m[0], m[1], m[2],
+                      math.exp(-2.0 * integrale(0.5 * (m[4] + m[5])))
+                      if pertes else 1.0) for m in sup]
         long_sup = sum(m[3] for m in sup)
         if fiche.get("superpositions") and not sup:
             sans_superposition.append(net)
         if sup:
             # UNE VOISINE QUI NE FAIT QUE SE SUPERPOSER A MAINTENANT UN CHIFFRE.
             etat = dict(etat, non_calcule=False)
-        n2 = niveau2(morceaux, t_r, orange, rouge)
+        n2 = niveau2(morceaux, t_r, orange, rouge, att_fext)
         niveau = max(n2["next"], n2["fext"])
+        # LES AUTRES AGRESSEURS SELECTIONNES, et leur SOMME vers cette
+        # victime : arithmetique (pire cas, en phase) ou quadratique.
+        par_agr = []
+        if v["role"] != "agresseur":
+            for net_ag in agresseurs_sel:
+                m_ag = []
+                for k, bl in enumerate(blocs):
+                    if k + 1 >= len(ret):
+                        break
+                    c_a = ((bl.get("couplage_agresseurs") or {})
+                           .get(net_ag) or {}).get(net) or {}
+                    if not c_a.get("presente"):
+                        continue
+                    m_ag.append((_nb(c_a.get("kb"), 0.0),
+                                 _nb(c_a.get("kf"), 0.0),
+                                 float(ret[k + 1]) - float(ret[k]),
+                                 math.exp(-2.0 * integrale(
+                                     0.5 * (_nb(bl["s0"]) + _nb(bl["s1"]))))
+                                 if pertes else 1.0))
+                if m_ag:
+                    n_ag = niveau2(m_ag, t_r, orange, rouge, att_fext)
+                    if n_ag["next"] > 0 or n_ag["fext"] > 0:
+                        par_agr.append({"agresseur": net_ag,
+                                        "next": n_ag["next"],
+                                        "fext": n_ag["fext"]})
         # LA CARTE LOCALE, EN NEXT : Kb(x) . min(1, 2 T_d / t_r) -- le NEXT
         # qu'aurait la paire si tout son longement couplait comme a cet
         # endroit. Son maximum est le NEXT de la paire quand le couplage est
@@ -3605,6 +3742,22 @@ def _lire_couples(base, infos, retenus, couches, axe, espacements, masse,
                        "NEXT et FEXT sous le seuil de confirmation de %.1f dB."
                        % _nb(reglages.get("seuil_db"), -40.0))}
         couple.update(n2)
+        couple["pertes"] = pertes
+        if par_agr:
+            tous = [{"agresseur": principal, "next": n2["next"],
+                     "fext": n2["fext"]}] + par_agr
+            sn = somme_agresseurs([x["next"] for x in tous], somme_mode)
+            sf = somme_agresseurs([x["fext"] for x in tous], somme_mode)
+            st_n, st_f = statut(sn, orange, rouge), statut(sf, orange, rouge)
+            couple["somme"] = {
+                "mode": somme_mode, "agresseurs": tous,
+                "next": round(sn, 6), "fext": round(sf, 6),
+                "next_pc": round(100.0 * sn, 3),
+                "fext_pc": round(100.0 * sf, 3),
+                "statut_next": st_n, "statut_fext": st_f,
+                "statut": pire_statut([st_n, st_f])}
+            couple["statut"] = pire_statut([couple["statut"],
+                                            couple["somme"]["statut"]])
         couple["kb_max"] = n2["kb"]
         couple["kb_max_pc"] = round(100.0 * n2["kb"], 3)
         couple["k_total_pc"] = round(100.0 * n2["k_total"], 3)

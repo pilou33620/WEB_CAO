@@ -6078,8 +6078,11 @@ const SIM_CARTE={res:null,err:"",occupe:false,actif:-1,unite:1,parDefaut:[],natu
   reglages:{z0:50, zdiff:100,
             /* LA DIAPHONIE, NIVEAU 2 : un front GLOBAL pour toute la carte
                (1 ns) et les seuils DRC en % de l'agresseur — vert, orange,
-               rouge. Les mêmes que le panneau Crosstalk. */
-            xt_tr:1e-9, xt_orange:3, xt_rouge:7,
+               rouge. Les mêmes que le panneau Crosstalk. `xt_pertes` : R et
+               G au genou du front (n'ôtent que du bruit, coupés d'office) ;
+               `xt_somme` : les agresseurs d'une victime en phase (« pire »)
+               ou en somme quadratique (« rss »). */
+            xt_tr:1e-9, xt_orange:3, xt_rouge:7, xt_pertes:false, xt_somme:"pire",
             tr:{Horloge:2e-9,Rapide:1e-9,RF:1e-10,Analogique:1e-7,Lent:1e-8,"Découpage":5e-9},
             /* La cadence maximale de la classe : sa colonne du rapport s'y
                juge, et son front est borné par 10 % de sa période. */
@@ -6315,6 +6318,7 @@ function simCarteReglagesDoc(){
     xt_tr:r.xt_tr>0?r.xt_tr:1e-9,
     xt_orange:(r.xt_orange>0?r.xt_orange:3)/100,
     xt_rouge:(r.xt_rouge>0?r.xt_rouge:7)/100,
+    xt_pertes:!!r.xt_pertes, xt_somme:r.xt_somme==="rss"?"rss":"pire",
     zdiff:r.zdiff, tr:Object.assign({},r.tr),
     cadences:Object.assign({},r.cadences), porteuse_rf:r.porteuse};
   const z0c={};
@@ -6438,6 +6442,7 @@ function simCorpsCarte(){
       "dessous, VERT. En % de l'agresseur, 3 % par défaut.","%","orange dès")+
     champ("simCarteXtRouge","Diaphonie : au-delà, ROUGE (critique). En % de "+
       "l'agresseur, 7 % par défaut.","%","rouge au-delà de")+
+    simXtCtrlPertesSomme("simCarteXt")+
   '</div>'+
   '<div class="pnl-bar"><table class="simTab simTabClasses"><tr>'+
     '<th>Classe de net</th>'+
@@ -6530,6 +6535,9 @@ function simBrancherCarte(){
        ()=>r.xt_tr,v=>{r.xt_tr=v;});
   lie("simCarteXtOrange",()=>r.xt_orange,v=>{r.xt_orange=v;});
   lie("simCarteXtRouge",()=>r.xt_rouge,v=>{r.xt_rouge=v;});
+  simXtCtrlPertesSommeBrancher("simCarteXt",function(){
+    simCarteReglagesGarder();
+  });
   lie("simCarteZdiff",()=>r.zdiff,v=>{r.zdiff=v;});
   for(const k in r.tr)lieU("simCarteTr"+k,SIM_UNITES_TR,()=>u.tr[k],c=>{u.tr[k]=c;},
                           ()=>r.tr[k],v=>{r.tr[k]=v;});
@@ -6854,6 +6862,7 @@ function simCarteApres(){
    sa sévérité. Elle désigne un point, elle ne décrit pas le cuivre. */
 const SIM_CARTE_COULEUR={critique:"#ef4444",vigilance:"#f59e0b",info:"#8af0ff"};
 function simCarteTrace(c,dpr,w2s){
+  if(typeof simXtCarteTrace==="function")simXtCarteTrace(c,dpr,w2s);
   const r=SIM_CARTE.res;
   if(!r||SIM.analyse!=="verif"||typeof w2s!=="function")return;
   /* TOUT PEINDRE : un anneau par constat — les dérogations et les marquages
@@ -8645,7 +8654,9 @@ const SIM_XT={
   saisie:{tr:0, distance:0, longueur:0, adjacentes:true, seuil:-40,
           risque:50},
   /* TOUTE LA CARTE : son résultat, son verrou, et ce que le tableau montre. */
-  carte:{res:null, err:"", occupe:false, unite:1, tout:false}
+  carte:{res:null, err:"", occupe:false, unite:1, tout:false,
+         /* Les paires colorées sur le layout, au statut DRC. */
+         peindre:true}
 };
 
 /* Ce que valent les réglages repliés quand on n'y a pas touché. */
@@ -8740,10 +8751,61 @@ function simXtPireStatut(liste){
     if((SIM_XT_ORDRE_STATUT[s]||0)>SIM_XT_ORDRE_STATUT[p])p=s;
   return p;
 }
-/* Les trois statuts d'une paire, re-jugés aux seuils courants. */
+/* Les statuts d'une paire, re-jugés aux seuils courants. `somme` : celui
+   de la victime sous TOUS ses agresseurs — quand le serveur l'a sommée —,
+   et il compte dans le statut de la paire : aucun ne dépasse seul, ensemble
+   ils franchissent. */
 function simXtStatuts(c){
   const n=simXtStatut(+c.next||0), f=simXtStatut(+c.fext||0);
-  return {next:n, fext:f, paire:simXtPireStatut([n,f])};
+  const S=c.somme, s=S?simXtPireStatut([simXtStatut(+S.next||0),
+                                       simXtStatut(+S.fext||0)]):null;
+  return {next:n, fext:f, somme:s,
+          paire:simXtPireStatut(s?[n,f,s]:[n,f])};
+}
+/* Le nom de la somme, tel qu'on le lit. */
+function simXtSommeNom(mode){
+  return mode==="rss"?"quadratique":"en phase";
+}
+/* Ce que le calcul a pris : pertes ou non, et la somme — LUS DANS LE
+   RÉSULTAT, pas dans les réglages courants, qui ont pu changer depuis. */
+function simXtCalculDit(r){
+  const reg=(r&&r.reglages)||{};
+  const pertes=r&&("pertes" in r)?!!r.pertes:!!reg.pertes;
+  const mode=(r&&(r.somme_mode||reg.somme))||"pire";
+  return (pertes?"pertes R, G au genou du front":"sans pertes (pire cas)")+
+         " · agresseurs sommés "+simXtSommeNom(mode);
+}
+
+/* LES PERTES ET LA SOMME DES AGRESSEURS : deux réglages du CALCUL, partagés
+   par le panneau Crosstalk et la vérification de carte. Ils vivent dans
+   `SIM_CARTE.reglages` ; `pre` préfixe les identifiants de chaque panneau. */
+function simXtCtrlPertesSomme(pre){
+  const r=SIM_CARTE.reglages||{};
+  return '<label class="simSuivre" title="'+simEsc(
+      "Les pertes de la ligne — R (effet de peau) et G (tan δ) — évaluées au "+
+      "genou du front, 0,35/t_r. Elles ne font qu'ÔTER du bruit : coupées, le "+
+      "niveau 2 reste le pire cas normalisé. Sensibles au-delà de quelques "+
+      "centimètres sous un front de 100 ps et moins ; à 1 ns, quelques %.")+
+    '"><input type="checkbox" id="'+pre+'Pertes"'+(r.xt_pertes?" checked":"")+
+    "> pertes R, G</label>"+
+    '<span class="simGr"><span class="pnl-lbl">Σ agresseurs</span>'+
+    '<select id="'+pre+'Somme" title="'+simEsc(
+      "Plusieurs agresseurs sur une victime : EN PHASE, la somme arithmétique "+
+      "— tous basculent ensemble, le pire cas ; QUADRATIQUE, la racine de la "+
+      "somme des carrés — des agresseurs indépendants (power sum).")+'">'+
+    '<option value="pire"'+(r.xt_somme==="rss"?"":" selected")+
+    ">en phase</option>"+
+    '<option value="rss"'+(r.xt_somme==="rss"?" selected":"")+
+    ">quadratique</option></select></span>";
+}
+/* Les branche : `apres` est appelé une fois la valeur écrite. */
+function simXtCtrlPertesSommeBrancher(pre,apres){
+  const r=SIM_CARTE.reglages;
+  const p=simEl(pre+"Pertes"), s=simEl(pre+"Somme");
+  if(p){p.checked=!!r.xt_pertes;
+        p.onchange=function(){r.xt_pertes=!!this.checked;apres();};}
+  if(s){s.value=r.xt_somme==="rss"?"rss":"pire";
+        s.onchange=function(){r.xt_somme=this.value==="rss"?"rss":"pire";apres();};}
 }
 /* Des décibels lisibles : un niveau nul — un FEXT en milieu homogène, par
    exemple — n'a pas de décibels, et « −300 dB » se lirait comme une mesure. */
@@ -8762,6 +8824,8 @@ function simXtReglages(){
     t_r:s.tr>0?s.tr:0,
     tr_classes:Object.assign({},(SIM_CARTE.reglages||{}).tr||{}),
     seuil_orange:seuils.orange, seuil_rouge:seuils.rouge,
+    pertes:!!SIM_CARTE.reglages.xt_pertes,
+    somme:SIM_CARTE.reglages.xt_somme==="rss"?"rss":"pire",
     distance_max:Math.max(0,+s.distance||0),
     longueur_min:Math.max(0,+s.longueur||0),
     couches_adjacentes:!!s.adjacentes,
@@ -8814,6 +8878,7 @@ function simCorpsCrosstalk(){
     simChamp("simXtRouge","Au-delà, le niveau est ROUGE (7 % par défaut). "+
       "Changer un seuil re-juge la fiche sans relancer le calcul.")+
     '<span class="simU">%</span></span>'+
+    simXtCtrlPertesSomme("simXt")+
   '</div>'+
   '<div id="simXtAvance"'+(simXtAvanceOuvert()?"":' class="simXtPlie"')+'>'+
   '<div class="pnl-bar simBarF">'+
@@ -8921,6 +8986,21 @@ function simBrancherCrosstalk(){
         simRendre(); simRepeindre();
       }
     });
+  /* LES PERTES ET LA SOMME CHANGENT LES NIVEAUX : les deux résultats,
+     piste et carte entière, partent. */
+  simXtCtrlPertesSommeBrancher("simXt",function(){
+    if(typeof simCarteReglagesGarder==="function")simCarteReglagesGarder();
+    const quoi=["Les pertes ou la somme des agresseurs ont changé"];
+    let jete=false;
+    if(SIM_XT.res&&!SIM_XT.occupe){
+      SIM_XT.res=null; SIM_XT.err=quoi+" : relancez l'analyse."; jete=true;
+    }
+    if(SIM_XT.carte.res&&!SIM_XT.carte.occupe){
+      SIM_XT.carte.res=null;
+      SIM_XT.carte.err=quoi+" : relancez « toute la carte »."; jete=true;
+    }
+    if(jete){simRendre(); simRepeindre();}
+  });
   pose("simXtTrCarte","oninput",function(){
     const v=parseFloat(String(this.value).replace(",","."));
     if(v>0){
@@ -8969,7 +9049,15 @@ function simXtSensBrancher(){
         SIM_ED.centrerSurVia(p.x*u,p.y*u);
     };
   const t=simEl("simXtCarteTout");
-  if(t)t.onchange=function(){SIM_XT.carte.tout=this.checked;simRendre();};
+  if(t)t.onchange=function(){
+    SIM_XT.carte.tout=this.checked;simRendre();
+    if(SIM_ED&&typeof SIM_ED.redessiner==="function")SIM_ED.redessiner();
+  };
+  const pc=simEl("simXtCartePeindre");
+  if(pc)pc.onchange=function(){
+    SIM_XT.carte.peindre=this.checked;
+    if(SIM_ED&&typeof SIM_ED.redessiner==="function")SIM_ED.redessiner();
+  };
 }
 
 /* LES CHAMPS SONT LUS EN NOMBRES : la virgule décimale est une affaire
@@ -9130,6 +9218,67 @@ async function simXtCarteGo(){
   }
 }
 
+/* TOUTE LA CARTE, COLORÉE SUR LE LAYOUT : la portion de chaque victime qui
+   fait face à son agresseur, à la couleur du statut DRC de la paire,
+   re-jugé aux seuils courants. Les paires vertes ne se peignent qu'avec
+   « montrer aussi les paires vertes » ; les rouges passent par-dessus. Le
+   trait est EN PIXELS : il désigne du cuivre à toute échelle. Les traits
+   sont dans les unités de l'outil, celles de `w2s`. */
+function simXtCartePeinture(){
+  const C=SIM_XT.carte;
+  if(typeof SIM==="undefined"||!SIM.ouvert||SIM.analyse!=="crosstalk"||
+     !C.res||C.peindre===false)return [];
+  const out=[];
+  for(const p of simXtCartePaires()){
+    const s=simXtStatuts(p).paire;
+    if(s==="vert"&&!C.tout)continue;
+    if((p.traits||[]).length)out.push({s:s, traits:p.traits});
+  }
+  return out.sort((a,b)=>SIM_XT_ORDRE_STATUT[a.s]-SIM_XT_ORDRE_STATUT[b.s]);
+}
+function simXtCarteTrace(c,dpr,w2s){
+  if(typeof w2s!=="function")return;
+  const L=simXtCartePeinture();
+  if(!L.length)return;
+  c.save();
+  c.setTransform(dpr||1,0,0,dpr||1,0,0);
+  c.lineCap="round";
+  c.globalAlpha=0.85;
+  for(const x of L){
+    c.strokeStyle=SIM_XT_COULEUR_STATUT[x.s];
+    c.lineWidth=x.s==="vert"?3:5;
+    c.beginPath();
+    for(const t of x.traits){
+      const a=w2s(t[0],t[1]), b=w2s(t[2],t[3]);
+      if(!a||!b||!isFinite(a.x)||!isFinite(b.x))continue;
+      c.moveTo(a.x,a.y); c.lineTo(b.x,b.y);
+    }
+    c.stroke();
+  }
+  c.restore();
+}
+
+/* LES VICTIMES À PLUSIEURS AGRESSEURS, sommés : ce qu'aucune paire ne dit
+   seule. Le statut se re-juge aux seuils courants, comme celui des paires. */
+function simXtCarteSommes(d){
+  const L=(d.sommes||[]).map(x=>({x:x,s:simXtPireStatut(
+            [simXtStatut(+x.next||0),simXtStatut(+x.fext||0)])}))
+    .filter(y=>SIM_XT.carte.tout||y.s!=="vert");
+  if(!L.length)return "";
+  let h='<p class="simNote"><b>Σ agresseurs</b> — somme '+
+    simEsc(simXtSommeNom(d.somme_mode))+" de tous les voisins d’une victime "+
+    "(NEXT et FEXT chacun de leur côté) :</p>"+
+    '<table class="simTab simXtN2"><thead><tr><th>victime</th>'+
+    "<th>agresseurs</th><th>Σ NEXT</th><th>Σ FEXT</th><th>statut</th>"+
+    "</tr></thead><tbody>";
+  for(const y of L.slice(0,200))
+    h+="<tr><td><b>"+simEsc(y.x.victime)+"</b></td><td>"+
+       simEsc((y.x.agresseurs||[]).join(", "))+"</td><td>"+
+       simXtPct(y.x.next)+" %</td><td>"+simXtPct(y.x.fext)+" %</td><td>"+
+       simXtPastille(y.s)+"</td></tr>";
+  return h+"</tbody></table>";
+}
+
 /* Toutes les paires que le serveur a jugées, dans son ordre (le pire en
    tête). */
 function simXtCartePaires(){
@@ -9162,9 +9311,16 @@ function simXtCarteFiche(){
     " verte(s) · seuils "+simNb(100*seuils.orange,1)+" % / "+
     simNb(100*seuils.rouge,1)+" %"+
     ((d.paires_total||0)>paires.length?" · les "+paires.length+
-      " plus couplées affichées":"")+"</span>";
+      " plus couplées affichées":"")+" · "+
+    (d.pertes?"pertes R, G":"sans pertes")+"</span>";
   h+='<p><label class="simSuivre"><input type="checkbox" id="simXtCarteTout"'+
-     (C.tout?" checked":"")+"> montrer aussi les paires vertes</label></p>";
+     (C.tout?" checked":"")+"> montrer aussi les paires vertes</label> "+
+     '<label class="simSuivre" title="'+simEsc("Colorer sur le layout la "+
+       "portion de chaque victime qui fait face à son agresseur, à la "+
+       "couleur du statut de la paire")+'"><input type="checkbox" '+
+     'id="simXtCartePeindre"'+(C.peindre!==false?" checked":"")+
+     "> colorer sur le layout</label></p>";
+  h+=simXtCarteSommes(d);
   const vues=paires.map((p,i)=>({p:p,i:i,s:simXtStatuts(p)}))
                    .filter(x=>C.tout||x.s.paire!=="vert");
   if(!vues.length)
@@ -9304,7 +9460,18 @@ function simXtResume(r){
      simEsc(r.principal||"—")+"</b>, lignes adaptées, <b>t<sub>r</sub> = "+
      simEsc(simDureeXt(r.t_r))+"</b> ("+simEsc(r.source_tr||"")+") · "+
      "vert &lt; "+simNb(100*seuils.orange,1)+" % ≤ orange ≤ "+
-     simNb(100*seuils.rouge,1)+" % &lt; rouge</p>";
+     simNb(100*seuils.rouge,1)+" % &lt; rouge · "+simXtCalculDit(r)+"</p>";
+  const somme=(r.couples||[]).filter(c=>c.somme)[0];
+  if(somme){
+    const S=somme.somme, st=simXtStatuts(somme).somme;
+    h+="<p>Sous <b>tous ses agresseurs</b> (somme "+
+       simEsc(simXtSommeNom(S.mode))+" de "+(S.agresseurs||[]).length+
+       ") : NEXT "+simXtPct(S.next)+" %, FEXT "+simXtPct(S.fext)+" % "+
+       simXtPastille(st)+" — compté dans le statut de "+
+       "<b>"+simEsc(somme.victime)+"</b>"+
+       ((r.couples||[]).filter(c=>c.somme).length>1?" et des autres victimes sommées":"")+
+       ".</p>";
+  }
   const nc=simXtNonCalcules(r);
   if(nc.length)
     h+='<p class="simXtAlerte"><b>'+nc.length+" voisine(s) NON CALCULÉE(S)"+
@@ -9414,7 +9581,10 @@ function simXtTableauCouples(r){
   let h='<div class="simXtBloc"><b>Étape 0b — niveau 2, paire par paire</b>'+
         '<table class="simTab simXtN2"><thead><tr><th>#</th><th>victime</th>'+
         "<th>k<sub>total</sub></th><th>NEXT</th><th>NEXT dB</th>"+
-        "<th>FEXT</th><th>FEXT dB</th><th>statut</th>"+
+        "<th>FEXT</th><th>FEXT dB</th>"+
+        '<th title="La victime sous TOUS ses agresseurs voisins, NEXT et '+
+        'FEXT sommés chacun — en phase ou en quadratique">Σ agresseurs</th>'+
+        "<th>statut</th>"+
         "<th>T<sub>d</sub></th><th>NEXT saturé</th><th>où</th>"+
         "<th>longement</th><th>écart</th><th>couche</th></tr></thead><tbody>";
   for(const c of liste){
@@ -9431,6 +9601,11 @@ function simXtTableauCouples(r){
        "<td>"+simXtDb(c.next_db)+"</td>"+
        "<td>"+simXtPct(c.fext)+" % "+simXtPastille(s.fext)+"</td>"+
        "<td>"+simXtDb(c.fext_db)+"</td>"+
+       "<td>"+(c.somme?'<span title="'+simEsc("somme "+
+         simXtSommeNom(c.somme.mode)+" : "+((c.somme.agresseurs||[])
+           .map(x=>x.agresseur).join(", ")))+'">NEXT '+simXtPct(c.somme.next)+
+         " %, FEXT "+simXtPct(c.somme.fext)+" % "+simXtPastille(s.somme)+
+         "</span>":"—")+"</td>"+
        "<td>"+simXtPastille(s.paire)+"</td>"+
        "<td>"+simNb(c.td_ps||0,1)+" ps</td>"+
        '<td title="'+simEsc(c.t_sature_ps>0?"saturé sous un front de "+
@@ -9443,7 +9618,7 @@ function simXtTableauCouples(r){
   }
   for(const c of nc)
     h+='<tr class="simXtAlerte"><td>—</td><td><b>'+simEsc(c.victime)+
-       '</b></td><td colspan="9">non calculé — ce n’est pas un couplage '+
+       '</b></td><td colspan="10">non calculé — ce n’est pas un couplage '+
        "nul</td><td>"+simNb(c.longement,1)+" mm</td><td>"+
        simNb(c.distance,3)+" mm</td><td>"+
        simEsc(c.nom_couche||c.type||"")+"</td></tr>";
@@ -9461,19 +9636,13 @@ function simXtTableauCouples(r){
    ========================================================================== */
 const SIM_XT_COLONNES=400;      // points tracés ; au-delà, c'est du DOM
 
-/* CINQ ARRÊTS, du bleu de nuit au rouge : la rampe de la chaleur sur le
-   cuivre, rapportée au pire point de la carte. */
-const SIM_XT_RAMPE=[[ 38, 66,116],   // presque rien : bleu de nuit
-                    [ 42,134,214],   // bleu
-                    [ 46,196,170],   // turquoise
-                    [222,198, 70],   // jaune
-                    [232, 68, 58]];  // le maximum de la carte : rouge
-function simXtCouleur(t){
-  const r=Math.max(0,Math.min(1,t));
-  const n=SIM_XT_RAMPE.length-1;
-  const i=Math.min(n-1,Math.floor(r*n));
-  const k=r*n-i, p=SIM_XT_RAMPE[i], q=SIM_XT_RAMPE[i+1];
-  return "rgb("+p.map((x,j)=>Math.round(x+(q[j]-x)*k)).join(",")+")";
+/* LES COULEURS DU STATUT DRC, sur le cuivre comme dans la fiche : la
+   chaleur ne se lit plus « par rapport au pire point », elle se lit aux
+   seuils — une portion verte est tranquille, quelle que soit la carte. */
+const SIM_XT_COULEUR_STATUT={vert:"rgb(52,178,96)", orange:"rgb(240,150,32)",
+                             rouge:"rgb(232,58,50)"};
+function simXtCouleur(v){
+  return SIM_XT_COULEUR_STATUT[simXtStatut(+v||0)];
 }
 
 /* Le maximum par case : on garde le pic, jamais sa moyenne. */
@@ -10120,11 +10289,12 @@ function simXtValeurA(ligne,total,s){
 }
 
 /* LA CHALEUR LE LONG DU CUIVRE. Un segment par pas d'échantillonnage, de la
-   couleur de la valeur à cette abscisse-là : c'est la carte de chaleur du
-   panneau, posée là où l'on corrige. Le maximum est celui de la CARTE ENTIÈRE
-   et non celui de la victime — sans quoi la plus tranquille des victimes
-   s'afficherait aussi rouge que la pire, ce qui est le contresens qu'une carte
-   de chaleur ne doit pas faire.
+   couleur du STATUT DRC à cette abscisse-là : vert, orange, rouge, aux seuils
+   courants — c'est la carte locale du panneau, posée là où l'on corrige.
+   LA VALEUR LOCALE EST BORNÉE PAR LE NEXT DE LA PAIRE : elle dit ce que
+   ferait la paire si tout son longement couplait comme ici, et une crête
+   courte ne doit pas peindre en rouge une paire que le niveau 2 juge verte.
+   Une abscisse sans couplage ne se peint pas.
 
    `conv` fait passer des millimètres à l'unité de dessin de l'outil, et `ep`
    donne l'épaisseur : le calcul est commun aux deux éditeurs, la conversion
@@ -10135,7 +10305,10 @@ function simXtPeindreChaleur(c,conv,ep){
   const ch=SIM_XT.res.carte_chaleur;
   const axe=ch.axe||[];
   const total=axe.length?axe[axe.length-1]:0;
-  const pire=Math.max(1e-12,ch.max||0);
+  const plafond={};
+  for(const k of (SIM_XT.res.couples||[]))
+    if(!k.non_calcule&&isFinite(k.next))
+      plafond[k.victime]=Math.max(plafond[k.victime]||0,+k.next);
   c.save();
   c.lineCap="round";
   c.lineJoin="round";
@@ -10157,8 +10330,14 @@ function simXtPeindreChaleur(c,conv,ep){
         const a=m[i], b=m[i+1];
         const vA=simXtValeurA(ligne,total,a.s);
         const vB=simXtValeurA(ligne,total,b.s);
-        const color=simXtCouleur(Math.max(vA,vB)/pire);
+        const v=Math.min(Math.max(vA,vB),
+                         net in plafond?plafond[net]:Infinity);
         const p0=conv(a.x,a.y), p1=conv(b.x,b.y);
+        if(!(v>0)){
+          if(lastColor!==null){c.stroke(); lastColor=null;}
+          continue;
+        }
+        const color=simXtCouleur(v);
         if(color!==lastColor){
           if(lastColor!==null)c.stroke();
           c.beginPath();
@@ -10414,14 +10593,16 @@ function simXtExportCsv(){
          (r.source_tr||"")+")");
   l.push("# seuils DRC : orange "+n(100*seuils.orange)+" %, rouge "+
          n(100*seuils.rouge)+" %");
+  l.push("# "+simXtCalculDit(r));
   l.push("victime;k_total_%;NEXT_%;NEXT_dB;statut_NEXT;FEXT_%;FEXT_dB;"+
-         "statut_FEXT;statut;Td_ps;NEXT_sature;longement_mm;ecart_mm;"+
-         "confirmee;non_calcule");
+         "statut_FEXT;somme_NEXT_%;somme_FEXT_%;statut_somme;statut;Td_ps;"+
+         "NEXT_sature;longement_mm;ecart_mm;confirmee;non_calcule");
   for(const c of (r.couples||[])){
     const s=simXtStatuts(c);
     l.push([c.victime, n(100*(c.k_total||0)), n(100*(c.next||0)),
             n(c.next_db), s.next, n(100*(c.fext||0)), n(c.fext_db), s.fext,
-            s.paire, n(c.td_ps||0), c.sature?"oui":"non", n(c.longement),
+            c.somme?n(100*c.somme.next):"", c.somme?n(100*c.somme.fext):"",
+            s.somme||"", s.paire, n(c.td_ps||0), c.sature?"oui":"non", n(c.longement),
             n(c.distance), c.confirmee?"oui":"non",
             c.non_calcule?"oui":"non"].join(";"));
   }
@@ -10470,7 +10651,8 @@ function simXtExportCarteCsv(){
   const seuils=simXtSeuils();
   const l=["# crosstalk niveau 2 — toute la carte — t_r global "+n(d.t_r||0)+
            " s ; seuils orange "+n(100*seuils.orange)+" %, rouge "+
-           n(100*seuils.rouge)+" %",
+           n(100*seuils.rouge)+" % ; "+(d.pertes?"pertes R, G":"sans pertes")+
+           " ; agresseurs sommes "+simXtSommeNom(d.somme_mode),
            "victime;agresseur;couche;superposees;longueur_mm;ecart_mm;"+
            "k_total_%;NEXT_%;NEXT_dB;statut_NEXT;FEXT_%;FEXT_dB;statut_FEXT;"+
            "statut;Td_ps;NEXT_sature;x;y"];
@@ -10480,6 +10662,14 @@ function simXtExportCarteCsv(){
             n(p.longueur),n(p.ecart),n(100*p.k_total),n(100*p.next),
             n(p.next_db),s.next,n(100*p.fext),n(p.fext_db),s.fext,s.paire,
             n(p.td_ps),p.sature?"oui":"non",n(p.x),n(p.y)].join(";"));
+  }
+  if((d.sommes||[]).length){
+    l.push("");
+    l.push("victime;agresseurs;somme_NEXT_%;somme_FEXT_%;statut_somme");
+    for(const x of d.sommes)
+      l.push([x.victime,(x.agresseurs||[]).join(" + "),n(100*x.next),
+              n(100*x.fext),simXtPireStatut([simXtStatut(+x.next||0),
+                                            simXtStatut(+x.fext||0)])].join(";"));
   }
   simTelecharger("﻿"+l.join("\r\n")+"\r\n",
                  ((SIM_ED&&SIM_ED.carte?SIM_ED.carte():"")||"carte")
@@ -10503,6 +10693,7 @@ function simXtRapportTexte(r){
   t("Temps de montée      : "+simDureeXt(r.t_r)+" — "+(r.source_tr||""));
   t("Seuils DRC           : vert < "+simNb(100*seuils.orange,1)+
     " % ≤ orange ≤ "+simNb(100*seuils.rouge,1)+" % < rouge");
+  t("Calcul               : "+simXtCalculDit(r));
   t("STATUT               : "+(conf.length?statut.toUpperCase()
                                           :"aucune victime confirmée"));
   t("");
@@ -10519,6 +10710,9 @@ function simXtRapportTexte(r){
       "   NEXT "+simXtPct(c.next)+" % ("+simXtDb(c.next_db)+" dB, "+s.next+
       (c.sature?", saturé":"")+")"+
       "   FEXT "+simXtPct(c.fext)+" % ("+simXtDb(c.fext_db)+" dB, "+s.fext+")"+
+      (c.somme?"   Σ "+simXtSommeNom(c.somme.mode)+" NEXT "+
+               simXtPct(c.somme.next)+" % FEXT "+simXtPct(c.somme.fext)+
+               " % ("+s.somme+")":"")+
       "   statut "+s.paire+
       "   T_d "+simNb(c.td_ps||0,1)+" ps   "+simNb(c.longement,1)+" mm à "+
       simNb(c.distance,3)+" mm"+

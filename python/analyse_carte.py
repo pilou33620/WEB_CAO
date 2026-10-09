@@ -262,9 +262,16 @@ def _reglages(doc):
            "xt_tr": float(r.get("xt_tr") or XT_TR),
            "xt_orange": float(r.get("xt_orange") or XT_ORANGE),
            "xt_rouge": float(r.get("xt_rouge") or XT_ROUGE),
+           # PERTES R et G au genou du front (crosstalk.alpha_genou), et la
+           # façon de sommer les agresseurs d'une victime : « pire »
+           # (arithmétique, en phase) ou « rss » (quadratique).
+           "xt_pertes": bool(r.get("xt_pertes")),
+           "xt_somme": str(r.get("xt_somme") or "pire").lower(),
            "zdiff": float(r.get("zdiff") or ZDIFF)}
     if not out["xt_tr"] > 0:
         raise ErreurAnalyse("Le front global de la diaphonie doit être positif.")
+    if out["xt_somme"] not in ("pire", "rss"):
+        raise ErreurAnalyse("Somme des agresseurs inconnue : « pire » ou « rss ».")
     if not 0 < out["xt_orange"] <= out["xt_rouge"] < 1:
         raise ErreurAnalyse("Seuils de diaphonie incohérents : il faut"
                             " 0 < orange ≤ rouge < 100 %.")
@@ -573,6 +580,24 @@ def _longement(a, b):
     return hi - lo, d - (wa + wb) / 2, (mx, my)
 
 
+def _portion(v, a):
+    """La portion du segment victime `v` qui fait face au segment `a`, en mm :
+    [x1, y1, x2, y2] -- c'est ce que la carte colore. Les deux sont des
+    tronçons (net, x1, y1, x2, y2, w)."""
+    _, x1, y1, x2, y2, _w = v
+    dx, dy = x2 - x1, y2 - y1
+    L = math.hypot(dx, dy)
+    if L <= 0:
+        return [x1, y1, x2, y2]
+    ux, uy = dx / L, dy / L
+    t1 = (a[1] - x1) * ux + (a[2] - y1) * uy
+    t2 = (a[3] - x1) * ux + (a[4] - y1) * uy
+    lo, hi = max(0.0, min(t1, t2)), min(L, max(t1, t2))
+    if hi <= lo:
+        lo, hi = 0.0, L
+    return [x1 + ux * lo, y1 + uy * lo, x1 + ux * hi, y1 + uy * hi]
+
+
 def _kb_larges_faces(h_v, h_a, x_lat, w_v, w_a):
     """Kb de deux pistes de couches voisines, sans plan entre elles, au-dessus
     du même plan de référence : méthode des images en milieu homogène (Kf
@@ -686,7 +711,8 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
                     for v_, g_ in ((a, b), (b, a)):
                         if joue(v_[0], False) and joue(g_[0], True):
                             couples[(v_[0], g_[0], i)].append(
-                                (lg[0], lg[1], v_[5], g_[5], lg[2]))
+                                (lg[0], lg[1], v_[5], g_[5], lg[2],
+                                 _portion(v_, g_)))
 
     # LARGES FACES : deux couches de cuivre consécutives, ni l'une ni l'autre
     # plan, jugées au-dessus du plan de référence le plus proche des deux.
@@ -708,7 +734,13 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
         h_i = _ep(couches, i, p) + float(couches[i].get("thickness") or 0.035) / 2
         h_j = _ep(couches, j, p) + float(couches[j].get("thickness") or 0.035) / 2
         smax = 3 * max(h_i, h_j)
-        v = C0 / math.sqrt(_er_entre(couches, min(i, j, p), max(i, j, p)))
+        er_ij = _er_entre(couches, min(i, j, p), max(i, j, p))
+        v = C0 / math.sqrt(er_ij)
+        # LES PERTES d'une paire superposée : milieu homogène, eps_eff = eps_r ;
+        # Z0 n'est pas résolu ici, on prend celui de la carte.
+        tand_ij = max([float(c.get("tan_delta") or 0) for c in
+                       couches[min(i, j, p):max(i, j, p) + 1]
+                       if c.get("type") == "dielectric"] or [0.0])
         grille = defaultdict(list)
         for k, sg in enumerate(par[j]):
             for cle in _cases(CASE_MM, sg[1], sg[2], sg[3], sg[4], smax + sg[5]):
@@ -734,8 +766,12 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
                         quoi = "MoM, %s" % ("deux plans" if b_mm else "un plan")
                         if kb is None:
                             kb, quoi = _kb_larges_faces(hv, ha, x_lat, v_[5], g_[5]), "images, un plan"
+                        alpha = (xt.alpha_genou(reg["z0"], er_ij, v_[5], er_ij,
+                                                tand_ij, reg["xt_tr"])
+                                 if reg["xt_pertes"] else 0.0)
                         larges[(v_[0], g_[0], nom)].append(
-                            (lg[0], x_lat, kb, 0.0, lg[0] * 1e-3 / v, lg[2], quoi))
+                            (lg[0], x_lat, kb, 0.0, lg[0] * 1e-3 / v, lg[2], quoi,
+                             _portion(v_, g_), alpha))
     if sans_plan:
         notes.append("Diaphonie non calculée sur %s : pas de plan de référence dans"
                      " l'empilage." % ", ".join(sorted(set(sans_plan))))
@@ -746,9 +782,9 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
             if len(cache) >= SECTIONS_MAX:
                 return None
             cache[cle] = None
-            geo, _ = se.section_de_couche(couches, i, w_v,
-                                          float(couches[i].get("thickness") or 0.035),
-                                          0.0, 0.0)
+            geo, inf = se.section_de_couche(couches, i, w_v,
+                                            float(couches[i].get("thickness") or 0.035),
+                                            0.0, 0.0)
             if geo is not None:
                 geo = dict(geo)
                 geo["conducteurs"] = [
@@ -758,8 +794,15 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
                     r = tl.solve_multiline(geo)
                     rg = {e: m for m, e in enumerate(r["ordre"])}
                     kb, kf = xt.coefficients_couple(r["c"], r["l"], rg[0], rg[1])
-                    v = C0 / math.sqrt(max(float(r["lignes"][rg[0]]["eps_eff"]), 1.0))
-                    cache[cle] = (kb, kf, v)
+                    eps = max(float(r["lignes"][rg[0]]["eps_eff"]), 1.0)
+                    v = C0 / math.sqrt(eps)
+                    inf = inf if isinstance(inf, dict) else {}
+                    alpha = (xt.alpha_genou(float(r["lignes"][rg[0]]["z0"]), eps, w_v,
+                                            float(inf.get("er") or eps),
+                                            float(inf.get("tan_delta") or 0.0),
+                                            reg["xt_tr"])
+                             if reg["xt_pertes"] else 0.0)
+                    cache[cle] = (kb, kf, v, alpha)
                 except Exception:                       # noqa: BLE001
                     pass
         return cache[cle]
@@ -771,6 +814,22 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
     t_r, orange, rouge = reg["xt_tr"], reg["xt_orange"], reg["xt_rouge"]
     sev_de = {"rouge": "critique", "orange": "vigilance", "vert": "ok"}
     perdus = 0
+
+    def morceaux_n2(vals):
+        """(morceaux, att_fext) pour `crosstalk.niveau2`. Avec pertes, la
+        position de chaque morceau le long de la liaison n'est pas connue ici :
+        le longement est supposé partir du driver — le plus pessimiste des
+        placements, celui où les pertes retirent le moins."""
+        if not reg["xt_pertes"]:
+            return [(x[2], x[3], x[4]) for x in vals], 1.0
+        out, x_mm, a_tot = [], 0.0, 0.0
+        for x in vals:
+            alpha = float(x[8] or 0.0)
+            mi = (x_mm + x[0] / 2.0) * 1e-3
+            out.append((x[2], x[3], x[4], math.exp(-2.0 * alpha * mi)))
+            x_mm += x[0]
+            a_tot += alpha * x[0] * 1e-3
+        return out, math.exp(-a_tot)
 
     def colonne(n2):
         """La colonne unique du constat : le front global, et le pire des deux."""
@@ -785,12 +844,13 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
     tous = {}
     for (nv, na, i), morceaux in couples.items():
         vals = []
-        for L, s, w_v, w_a, pt in morceaux:
+        for L, s, w_v, w_a, pt, portion in morceaux:
             sec = section(i, w_v, w_a, s)
             if sec is None:
                 perdus += 1
                 continue
-            vals.append((L, s, sec[0], sec[1], L * 1e-3 / sec[2], pt))
+            vals.append((L, s, sec[0], sec[1], L * 1e-3 / sec[2], pt, None,
+                         portion, sec[3]))
         if vals:
             tous[(nv, na, str(couches[i].get("name")))] = (vals, False)
     for cle, vals in larges.items():
@@ -802,7 +862,8 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
     rang_sev = {"critique": 2, "vigilance": 1, "ok": 0}
     for (nv, na, c), (vals, large) in tous.items():
         bilan["couples_larges_faces" if large else "couples"] += 1
-        n2 = xt.niveau2([(x[2], x[3], x[4]) for x in vals], t_r, orange, rouge)
+        m_n2, att_f = morceaux_n2(vals)
+        n2 = xt.niveau2(m_n2, t_r, orange, rouge, att_f)
         freqs = colonne(n2)
         long_ = max(vals, key=lambda x: x[0])
         par_victime[nv].append((na, n2, long_[5], c))
@@ -818,7 +879,12 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
                  "next_db": n2["next_db"], "fext": n2["fext"],
                  "fext_db": n2["fext_db"], "sature": n2["sature"],
                  "td_ps": n2["td_ps"], "statut_next": n2["statut_next"],
-                 "statut_fext": n2["statut_fext"], "statut": n2["statut"]}
+                 "statut_fext": n2["statut_fext"], "statut": n2["statut"],
+                 # LES PORTIONS DE LA VICTIME QUI FONT FACE À L'AGRESSEUR,
+                 # dans les unités de l'outil : c'est ce que la carte colore,
+                 # au statut de la paire.
+                 "traits": [[round(c_ / unite, 4) for c_ in x[7]]
+                            for x in vals if x[7]][:200]}
         cle_p = (frozenset((nv, na)), c)
         avant = paires_vues.get(cle_p)
         if avant is None or max(paire["next"], paire["fext"]) > \
@@ -855,17 +921,23 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
     bilan["t_r"] = t_r
     bilan["seuils"] = {"orange": orange, "rouge": rouge}
 
-    # LA SOMME, EN PHASE : ce qu'aucun agresseur ne fait seul. NEXT et FEXT
-    # se somment chacun de leur côté, et se jugent aux mêmes seuils.
+    # LA SOMME DES AGRESSEURS D'UNE VICTIME : ce qu'aucun ne fait seul. NEXT
+    # et FEXT se somment chacun de leur côté — arithmétiquement (« pire », en
+    # phase) ou quadratiquement (« rss », des agresseurs indépendants) — et se
+    # jugent aux mêmes seuils.
+    mode = reg["xt_somme"]
+    sommes = []
     for nv, lst in par_victime.items():
         if len(lst) < 2:
             continue
-        s_next = sum(x[1]["next"] for x in lst)
-        s_fext = sum(x[1]["fext"] for x in lst)
+        s_next = xt.somme_agresseurs([x[1]["next"] for x in lst], mode)
+        s_fext = xt.somme_agresseurs([x[1]["fext"] for x in lst], mode)
         s_n, s_f = xt.statut(s_next, orange, rouge), xt.statut(s_fext, orange, rouge)
         somme = {"next": round(s_next, 6), "fext": round(s_fext, 6),
                  "statut_next": s_n, "statut_fext": s_f,
                  "statut": xt.pire_statut([s_n, s_f])}
+        sommes.append(dict(somme, victime=nv, mode=mode,
+                           agresseurs=sorted(set(x[0] for x in lst))))
         seul = max(rang_sev[sev_de[x[1]["statut"]]] for x in lst)
         sev = sev_de[somme["statut"]]
         if rang_sev[sev] <= seul:
@@ -874,12 +946,16 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
         _, _, pt, c = top[0]
         out.append({"regle": "diaphonie", "severite": sev, "frequences": colonne(somme),
                     "x": pt[0] / unite, "y": pt[1] / unite, "c": c, "n": nv,
-                    "msg": "Somme de %d agresseurs en phase (%s%s) : NEXT %.2f %%, FEXT"
+                    "msg": "Somme " + ("quadratique" if mode == "rss" else "en phase")
+                           + " de %d agresseurs (%s%s) : NEXT %.2f %%, FEXT"
                            " %.2f %% — aucun ne dépasse seul, ensemble ils franchissent"
                            " le seuil"
                            % (len(lst), ", ".join("%s %.1f %%" % (x[0], 100 * max(
                                x[1]["next"], x[1]["fext"])) for x in top[:4]),
                               "…" if len(top) > 4 else "", 100 * s_next, 100 * s_fext)})
+    bilan["sommes"] = sorted(sommes, key=lambda x: -max(x["next"], x["fext"]))
+    bilan["somme_mode"] = mode
+    bilan["pertes"] = reg["xt_pertes"]
     bilan["sections"] = sum(1 for c in cache.values() if c)
     if perdus:
         notes.append("%d longement(s) sans section résolue (plafond de %d résolutions"

@@ -339,7 +339,7 @@ def test_diaphonie():
     nat = {"A1": "Rapide", "A2": "Rapide", "V": "Lent"}
     res = de(analyser(pistes=tri, natures=nat), "diaphonie")
     seuls = [x for x in res if x["n"] == "V" and "Somme" not in x["msg"]]
-    somme = [x for x in res if "Somme de 2 agresseurs" in x["msg"]]
+    somme = [x for x in res if "de 2 agresseurs" in x["msg"]]
     assert somme and all(x["severite"] != "critique" for x in seuls), res
     assert somme[0]["severite"] == "critique", somme
     # LE FRONT GLOBAL ET LES SEUILS SE RÈGLENT : un front plus lent calme
@@ -361,6 +361,31 @@ def test_diaphonie():
     assert paires and {"k_total", "next", "fext", "statut"} <= set(paires[0]), paires
     assert any(p["statut"] == "vert" for p in paires), paires
     assert seule["bilan"]["diaphonie"]["t_r"] == 1e-9
+    # LES TRAITS À COLORER : la portion de la victime en regard, en mm.
+    p0 = [p for p in paires if p["statut"] != "vert"][0]
+    assert p0["traits"] and len(p0["traits"][0]) == 4, p0
+    x1, y1, x2, y2 = p0["traits"][0]
+    assert abs(abs(x2 - x1) - 100.0) < 1.0 and abs(y1 - y2) < 1e-6, p0["traits"]
+    # LA SOMME QUADRATIQUE est plus douce que le pire cas, jamais plus forte.
+    pire = analyser(pistes=tri, natures=nat)["bilan"]["diaphonie"]["sommes"][0]
+    rss = analyser(pistes=tri, natures=nat,
+                   reglages={"xt_somme": "rss"})["bilan"]["diaphonie"]["sommes"][0]
+    assert rss["mode"] == "rss" and pire["mode"] == "pire", (rss, pire)
+    assert rss["next"] < pire["next"] and rss["next"] > 0.7 * pire["next"], (rss, pire)
+    # LES PERTES R et G ne font que RETIRER du bruit, et peu à 1 ns.
+    sans = analyser(pistes=[droite("CLK", 0.0), droite("DATA", 0.4)])
+    avec = analyser(pistes=[droite("CLK", 0.0), droite("DATA", 0.4)],
+                    reglages={"xt_pertes": True})
+    ps = sans["bilan"]["diaphonie"]["paires"][0]
+    pa = avec["bilan"]["diaphonie"]["paires"][0]
+    assert pa["next"] < ps["next"] and pa["next"] > 0.85 * ps["next"], (pa, ps)
+    assert avec["bilan"]["diaphonie"]["pertes"] is True
+    try:
+        analyser(pistes=court2, reglages={"xt_somme": "moyenne"})
+    except ErreurAnalyse:
+        pass
+    else:
+        raise AssertionError("une somme inconnue a été acceptée")
     try:
         analyser(pistes=court2, reglages={"xt_orange": 0.08, "xt_rouge": 0.03})
     except ErreurAnalyse:

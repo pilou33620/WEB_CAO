@@ -117,6 +117,8 @@ déclarée à 100 MHz, elle, voit son front ramené à 1 ns (genou 350 MHz).
 | Z diff des paires | 100 Ω | la cible des paires différentielles (USB : 90 Ω) |
 | t_r diaphonie | 1 ns | le front GLOBAL de la diaphonie (niveau 2), le même pour toutes les paires |
 | orange dès / rouge au-delà de | 3 % / 7 % | les seuils DRC de la diaphonie : vert, orange (vigilance), rouge (critique) |
+| pertes R, G | coupées | la diaphonie avec les pertes de la ligne au genou du front (n'ôtent que du bruit) |
+| Σ agresseurs | en phase | la somme des agresseurs d'une victime : en phase (arithmétique) ou quadratique |
 | porteuse des nets RF | vide | remplie (868 MHz pour du LoRa), les nets RF se jugent à cette porteuse, au lieu de leur front et de leur cadence |
 
 Un front plus long que la demi-période de sa cadence, ou sous 10 ps, est
@@ -375,8 +377,16 @@ Cohn (exact) à 0,2 % en triplaque et rejoint, sur des rubans étroits et
 écrite « (images, un plan) », quand le budget de résolutions est épuisé.
 
 **La somme des agresseurs** : les niveaux de tous les agresseurs d'une victime
-s'ajoutent au pire, en phase. Une ligne de plus, « Somme de N agresseurs »,
-quand la somme franchit un seuil qu'aucun ne franchit seul.
+s'ajoutent, NEXT et FEXT chacun de leur côté — **en phase** (somme
+arithmétique, le pire cas, d'office) ou **quadratique** (racine de la somme
+des carrés, des agresseurs indépendants), au choix du réglage « Σ
+agresseurs ». Une ligne de plus, « Somme en phase (ou quadratique) de N
+agresseurs », quand la somme franchit un seuil qu'aucun ne franchit seul.
+
+**Les pertes R, G** (case, coupée d'office) : l'effet de peau et tan δ au
+genou du front 0,35 / t_r atténuent chaque contribution — exp(−2A(x)) pour le
+NEXT, exp(−A(L)) pour le FEXT. Elles ne font qu'ôter du bruit ; sensibles
+sous des fronts de 100 ps et sur les longs longements, de quelques % à 1 ns.
 
 Le moteur est celui de l'onglet **Crosstalk** : même section MoM
 (`solve_multiline`), mêmes Kb/Kf (`coefficients_couple`), même niveau 2

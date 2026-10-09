@@ -298,6 +298,40 @@ cas ci-dessus pour un couplage uniforme. En stripline homogène,
 `Cm/C11 = Lm/L11` et le FEXT s'annule ; en microruban, la différence de vitesse
 entre les modes pair et impair donne un FEXT bien réel.
 
+#### Les pertes R et G (option)
+
+La case **pertes R, G** (rangée *Statut DRC*, et la même dans la
+vérification de carte) ajoute les pertes de la ligne au niveau 2 : la
+résistance du cuivre par effet de peau (R) et la conductance du diélectrique
+par tan δ (G), évaluées au **genou du front** `f = 0,35 / t_r`
+(`ligne_mom.line_losses_detaillees`), soit une atténuation α par mm, bloc par
+bloc. La contribution de chaque bloc au NEXT, qui fait l'aller et le retour
+jusqu'à x, est pondérée par `exp(−2·A(x))` (A, l'atténuation cumulée depuis la
+source) ; le FEXT, qui co-propage sur toute la liaison, par `exp(−A(L))`.
+**Les pertes ne font qu'ôter du bruit** : elles sont coupées d'office, et le
+niveau 2 sans pertes reste le pire cas normalisé. Leur effet mesuré, sur des
+microrubans FR-4 de 0,2 mm : à 1 ns, −2 % à −10 % du FEXT de 50 à 150 mm, le
+NEXT saturé presque inchangé ; à 100 ps, jusqu'à −45 % sur les longs
+longements. Elles comptent donc pour les fronts raides et les liaisons
+longues, à peine pour le reste.
+
+#### La somme des agresseurs
+
+Une victime longée par **plusieurs** agresseurs reçoit leur bruit à tous. La
+liste **Σ agresseurs** choisit comment il se compose, NEXT et FEXT chacun de
+leur côté :
+
+- **en phase** (d'office) : la somme arithmétique — tous les agresseurs
+  basculent ensemble, le pire cas ;
+- **quadratique** : la racine de la somme des carrés (*power sum*) — des
+  agresseurs indépendants, ce que rend un scanner comme SIwave en mode RSS.
+
+La somme a son propre statut, aux mêmes seuils, et **le statut de la paire
+la compte** : une victime qu'aucun agresseur ne met seul en orange peut y
+passer avec tous. La fiche la donne en colonne « Σ agresseurs », le rapport
+et le `.csv` aussi ; toute la carte en dresse le tableau, victime par
+victime.
+
 #### Ce que l'outil rend, paire par paire
 
 | métrique | unité | signification |
@@ -326,6 +360,21 @@ lequel elle se produit), le longement, l'écart et la couche.
   formules et les mêmes seuils. Le tableau montre d'office les paires orange et
   rouges (une case affiche aussi les vertes) ; un clic sur une ligne centre la
   vue sur la paire.
+
+#### La coloration sur le layout
+
+Les deux portées se **peignent sur le cuivre** de l'éditeur PCB comme de la
+visionneuse IPC-2581, aux **couleurs du statut DRC** — vert, orange, rouge,
+aux seuils courants (changer un seuil re-peint sans relancer) :
+
+- la piste analysée : chaque victime, le long de son cuivre, à la couleur de
+  son NEXT local **borné par le NEXT de la paire** — une crête courte ne
+  peint pas en rouge une paire que le niveau 2 juge orange ; une abscisse
+  sans couplage ne se peint pas ;
+- toute la carte : la portion de chaque victime qui fait face à son
+  agresseur, à la couleur du statut de la paire, les rouges par-dessus. Les
+  vertes ne se peignent qu'avec « montrer aussi les paires vertes » ; la case
+  « colorer sur le layout » éteint le tout.
 
 #### La carte locale : où le NEXT se fabrique
 

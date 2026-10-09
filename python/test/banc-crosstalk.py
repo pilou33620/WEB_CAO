@@ -1789,6 +1789,56 @@ def le_classement_suit_le_statut_puis_le_niveau():
         [c["statut"] for c in res["couples"] if c["confirmee"]])
 
 
+def les_pertes_ne_font_que_retirer_du_bruit():
+    """R et G au genou : moins de bruit, jamais plus -- et peu a 1 ns."""
+    def doc(t_r, pertes):
+        d = doc_essai([], t_r=t_r, pertes=pertes)
+        d["geometry"]["objects"] = [pis(0, 0, 150, 0, "CLK")]
+        d["voisinage"] = [pis(0, 0.45, 150, 0.45, "VIC")]
+        return ct.analyser(d)["couples"][0]
+    for t_r, borne in ((1e-9, 0.90), (100e-12, 0.60)):
+        sans, avec = doc(t_r, False), doc(t_r, True)
+        assert avec["next"] < sans["next"] and avec["fext"] < sans["fext"], \
+            (t_r, sans, avec)
+        assert avec["next"] > borne * sans["next"], (t_r, sans["next"],
+                                                     avec["next"])
+        assert avec["pertes"] and not sans["pertes"]
+    a = ct.alpha_genou(50.0, 3.3, 0.2, 4.3, 0.02, 1e-9)
+    assert 0.1 < a < 1.0, "alpha a 350 MHz, 0,2 mm FR-4 : %g Np/m" % a
+    assert ct.alpha_genou(50.0, 3.3, 0.2, 4.3, 0.02, 100e-12) > a
+
+
+T("les pertes R et G ne font que retirer du bruit",
+  les_pertes_ne_font_que_retirer_du_bruit)
+
+
+def plusieurs_agresseurs_se_somment_vers_une_victime():
+    """Deux agresseurs selectionnes : pire cas arithmetique, ou quadratique."""
+    assert abs(ct.somme_agresseurs([0.03, 0.04], "rss") - 0.05) < 1e-12
+    assert abs(ct.somme_agresseurs([0.03, 0.04], "pire") - 0.07) < 1e-12
+    res = {}
+    for mode in ("pire", "rss"):
+        d = doc_essai([pis(0, 0.45, 40, 0.45, "VIC"),
+                       pis(0, 0.9, 40, 0.9, "AG2")], somme=mode)
+        d["agresseurs"] = ["CLK", "AG2"]
+        c = [x for x in ct.analyser(d)["couples"] if x["victime"] == "VIC"][0]
+        assert c.get("somme") and c["somme"]["mode"] == mode, c
+        assert [x["agresseur"] for x in c["somme"]["agresseurs"]] == \
+            ["CLK", "AG2"], c["somme"]
+        res[mode] = c["somme"]["next"]
+    assert res["rss"] < res["pire"], res
+    try:
+        ct.analyser(doc_essai([pis(0, 0.45, 40, 0.45, "VIC")], somme="max"))
+    except ct.ErreurCrosstalk:
+        pass
+    else:
+        raise AssertionError("une somme inconnue a ete acceptee")
+
+
+T("plusieurs agresseurs se somment vers une victime, en phase ou en RSS",
+  plusieurs_agresseurs_se_somment_vers_une_victime)
+
+
 T("le classement suit le statut, puis le niveau",
   le_classement_suit_le_statut_puis_le_niveau)
 
