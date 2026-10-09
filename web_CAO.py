@@ -2,6 +2,18 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.20.0
+# Date: 2026-10-09
+# Explication: route /api/oeil -- le diagramme de l'oeil d'une liaison
+#   (python/oeil.py) : GET rend les gabarits des protocoles, POST l'oeil PRBS,
+#   l'oeil pire cas et le controle du gabarit. Import tolerant, plafond de
+#   corps celui de /api/simulation (meme document, un champ de plus).
+# Fonctions ajoutees/modifiees :
+# - import tolerant de oeil
+# - CustomHandler._oeil_etat, _oeil_lancer
+# - CustomHandler.do_OPTIONS / do_GET / do_HEAD / do_POST (routage)
+# - start_server (ligne de journal au demarrage)
+#
 # Version: 2.19.0
 # Date: 2026-09-30
 # Explication: route /api/analyse-carte -- la verification de la carte entiere
@@ -521,6 +533,17 @@ try:
 except Exception as _exc:                              # noqa: BLE001
     rf_reseau = None
     ERREUR_RF = _exc
+
+# Diagramme de l'oeil (onglet « Diagramme de l'œil » de la famille SI) : la
+# liaison de simulation_em repassee en temporel, et les gabarits des
+# protocoles. Meme motif que les precedents : sans numpy, /api/oeil repond 503
+# en le disant.
+try:
+    import oeil
+    ERREUR_OEIL = oeil.ERREUR_OEIL
+except Exception as _exc:                              # noqa: BLE001
+    oeil = None
+    ERREUR_OEIL = _exc
 
 # Un document de simulation ne porte qu'un net et son empilage : il est petit.
 MAX_SIM = getattr(simulation_em, "MAX_CORPS", 4 * 1024 * 1024)
@@ -2727,6 +2750,32 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             raise ErreurIPC(413, "Reseau trop lourd pour la memoire"
                                  " disponible")
 
+    def _oeil_etat(self):
+        """GET /api/oeil : disponibilite et liste des gabarits."""
+        if oeil is None or ERREUR_OEIL is not None:
+            return {"dispo": False,
+                    "detail": "Diagramme de l'œil indisponible : %s"
+                              % ERREUR_OEIL,
+                    "conseil": "Il a besoin de numpy :"
+                               " « pip install numpy »."}
+        return oeil.etat()
+
+    def _oeil_lancer(self):
+        """POST /api/oeil : l'oeil d'une liaison et son gabarit."""
+        if oeil is None or ERREUR_OEIL is not None:
+            raise ErreurIPC(503, "Diagramme de l'œil indisponible : %s"
+                                 % ERREUR_OEIL)
+        doc = self._lire_document(MAX_SIM)
+        try:
+            return oeil.analyser(doc, journal=sys.stderr.write)
+        except oeil.ErreurOeil as exc:
+            detail = exc.message
+            if exc.conseil:
+                detail += "\n" + exc.conseil
+            raise ErreurIPC(422, detail)
+        except MemoryError:
+            raise ErreurIPC(413, "Œil trop lourd pour la mémoire disponible")
+
     # -- la lecture d'un document, ecrite UNE fois ---------------------------
     # Les quatre routes de calcul lisaient toutes les memes six lignes :
     # Content-Length, le plafond, la lecture, le decodage JSON. Une seule les
@@ -3180,6 +3229,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         if route not in ("/api/tools", "/api/tool", "/api/ipc2581",
                          "/api/simulation", "/api/simulation-dc",
                          "/api/crosstalk", "/api/simulation-rf",
+                         "/api/oeil",
                          "/api/datasheet/telecharger",
                          "/api/datasheet/ouvrir",
                          "/api/pcb/score-placement", "/api/schema/patterns",
@@ -3252,6 +3302,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                   "/api/simulation-dc": self._dc_lancer,
                   "/api/crosstalk": self._crosstalk_lancer,
                   "/api/simulation-rf": self._rf_lancer,
+                  "/api/oeil": self._oeil_lancer,
                   "/api/pcb/score-placement": self._scoring_lancer,
                   "/api/schema/patterns": self._patterns_lancer,
                   "/api/analyse-carte": self._analyse_lancer}.get(route)
@@ -3317,6 +3368,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/simulation-rf":
             self._ipc_api(self._rf_etat)
+            return
+        if route == "/api/oeil":
+            self._ipc_api(self._oeil_etat)
             return
         if route == "/api/pcb/score-placement":
             self._ipc_api(self._scoring_etat)
@@ -3411,6 +3465,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             return
         if route == "/api/simulation-rf":
             self._ipc_api(self._rf_etat)
+            return
+        if route == "/api/oeil":
+            self._ipc_api(self._oeil_etat)
             return
         super().do_HEAD()
 
@@ -3574,6 +3631,11 @@ def start_server(host, port, navigateur=True):
     else:
         print("  simulation RF : /api/simulation-rf ->"
               " S21 port a port, pistes + composants (python/rf_reseau.py)")
+    if oeil is None or ERREUR_OEIL is not None:
+        print("  oeil          : /api/oeil -> indisponible (%s)" % ERREUR_OEIL)
+    else:
+        print("  oeil          : /api/oeil ->"
+              " reponse a un bit, PRBS, pire cas, gabarits (python/oeil.py)")
     if pcb_scoring is None:
         print("  scoring PCB   : /api/pcb/score-placement -> indisponible (%s)"
               % ERREUR_SCORING)

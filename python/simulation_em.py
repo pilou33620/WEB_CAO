@@ -2,6 +2,19 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 4.3.0
+# Date: 2026-10-09
+# Explication: LA GRILLE PEUT ETRE IMPOSEE. Le diagramme de l'oeil
+#   (python/oeil.py) repasse la liaison en temporel : il lui faut une grille
+#   reguliere de plusieurs milliers de points partant pres du continu, sans
+#   frequence centrale inseree et sans le plafond MAX_POINTS de la page.
+#   `simuler(..., freqs_imposees=)` la prend telle quelle ; tout le reste du
+#   calcul est inchange. Et `garder_abcd` rend aussi la cascade du mode
+#   differentiel (`s_diff["abcd_dd"]`), hors JSON comme celle de la ligne.
+#   Rien ne bouge pour qui ne passe ni l'un ni l'autre.
+# Fonctions modifiees : simuler (+ freqs_imposees), _cascade_differentielle
+#   (+ garder_abcd)
+#
 # Version: 4.2.0
 # Date: 2026-09-22
 # Explication: UN PLAN PEUT MANQUER LA OU ON EST, MEME S'IL EST DANS
@@ -654,7 +667,7 @@ except Exception as _exc:                              # noqa: BLE001
 
 FORMAT = "cao-sim-em-3"
 FORMAT_RESULTAT = "cao-sim-em-resultat-5"
-VERSION = "4.2.0"
+VERSION = "4.3.0"
 VERSION_MOTEURS = {
     "simulation_em": VERSION,
     "ligne_mom": getattr(tl, "VERSION", "2.5.0") if tl is not None else "indisponible",
@@ -5658,7 +5671,7 @@ def _couplage(couches, objets, doc, analyse, avertissements):
     }
 
 
-def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_diff, doc, analyse, avertissements, topo):
+def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_diff, doc, analyse, avertissements, topo, garder_abcd=False):
     """Calcule la cascade de paramètres S en mode mixte pour la paire différentielle :
     - Sdd : différentiel pur 2x2 (sur z_ref_diff, ex: 100 Ω ou 90 Ω)
     - Scc : mode commun pur 2x2 (sur z_ref_comm = z_ref_diff / 4.0, ex: 25 Ω)
@@ -5712,6 +5725,7 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
     matrices_sdd = []
     matrices_scc = []
     matrices_scd = []
+    abcds_dd = []
 
     for f in freqs:
         f_flt = float(f)
@@ -5774,6 +5788,8 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
         matrices_sdd.append(s_dd)
         matrices_scc.append(s_cc)
         matrices_scd.append(s_cd)
+        if garder_abcd:
+            abcds_dd.append(abcd_diff)
 
     entete_sdd = [
         "WEB_CAO -- Parametres S differentiels purs (Sdd)",
@@ -5788,7 +5804,7 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
         "Skew mesure : %.3f mm" % delta_l_mm
     ]
 
-    return {
+    sortie = {
         "partenaire": partenaire,
         "delta_l_mm": round(delta_l_mm, 4),
         "z_ref_diff": z_ref_diff,
@@ -5799,6 +5815,11 @@ def _cascade_differentielle(couches, objets, segments, couplage, freqs, z_ref_di
         "touchstone_sdd": touchstone(freqs, matrices_sdd, z_ref_diff, entete_sdd) if matrices_sdd else "",
         "touchstone_scc": touchstone(freqs, matrices_scc, z_ref_comm, entete_scc) if matrices_scc else "",
     }
+    # LA MATRICE ABCD DU MODE DIFFERENTIEL, comme `garder_abcd` le fait pour
+    # la ligne seule : tableaux numpy, hors JSON, pour python/oeil.py.
+    if garder_abcd:
+        sortie["abcd_dd"] = abcds_dd
+    return sortie
 
 
 def frequences(analyse):
@@ -5810,12 +5831,18 @@ def frequences(analyse):
     return freqs
 
 
-def simuler(doc, journal=None, garder_abcd=False):
+def simuler(doc, journal=None, garder_abcd=False, freqs_imposees=None):
     """Document -> impedance par troncon et parametres S. Leve ErreurSimulation.
 
     `garder_abcd` ajoute au resultat la matrice ABCD de la liaison a chaque
     frequence (tableaux numpy, donc hors JSON) : c'est ce que python/rf_reseau.py
     assemble avec les composants. La route HTTP ne le demande jamais.
+
+    `freqs_imposees` REMPLACE LA GRILLE DE LA BANDE S. Le diagramme de l'oeil
+    (python/oeil.py) repasse en temporel : il lui faut une grille REGULIERE,
+    partant pres du continu, de plusieurs milliers de points -- ni la frequence
+    centrale inseree au milieu, ni le plafond MAX_POINTS de la page. Le reste
+    du calcul (sections, discontinuites, cascade) est exactement le meme.
     """
     if ERREUR_SOLVEUR is not None:
         raise ErreurSimulation("Solveur EM indisponible : %s" % ERREUR_SOLVEUR,
@@ -6081,7 +6108,8 @@ def simuler(doc, journal=None, garder_abcd=False):
     coudes_par_troncon = {c["troncon"]: c for c in coudes}
     transitions_par_troncon = {t["troncon"]: t for t in transitions}
 
-    freqs = frequences(analyse)
+    freqs = (np.asarray(freqs_imposees, dtype=float)
+             if freqs_imposees is not None else frequences(analyse))
     matrices = []
     abcds = []
     # PAS DE CASCADE SUR CE QUI N'EST PAS UNE CHAINE. `freqs` reste rendu :
@@ -6234,7 +6262,8 @@ def simuler(doc, journal=None, garder_abcd=False):
         z_ref_diff = 100.0
     s_diff = _cascade_differentielle(couches, objets, segments, couplage,
                                      freqs, z_ref_diff, doc, analyse,
-                                     avertissements, topo)
+                                     avertissements, topo,
+                                     garder_abcd=garder_abcd)
 
     resultat = {
         "format": FORMAT_RESULTAT,

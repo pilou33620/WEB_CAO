@@ -50,6 +50,9 @@ jobs:
       - name: Simulation RF (S21 port à port) — banc d'essai
         run: python python/test/banc-rf.py
 
+      - name: Diagramme de l'œil (PRBS, pire cas, gabarits) — banc d'essai
+        run: python python/test/banc-oeil.py
+
       - name: Chute de tension continue (IR drop) — banc d'essai
         run: python python/test/banc-dc.py
 
