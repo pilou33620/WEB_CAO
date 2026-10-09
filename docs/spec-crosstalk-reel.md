@@ -106,6 +106,44 @@ Trois types en V1, tous les champs réglables.
 **Durée simulée** : automatique (quelques périodes jusqu'au régime établi, ou
 longueur de la trame), modifiable.
 
+### 5.1 Méthode de calcul : un front, puis la superposition
+
+**Le piège.** La transformée inverse ne voit qu'une fenêtre T = 1/Δf, et ce
+qui la dépasse se replie au début. Simuler la trame d'un coup en fréquence
+coûterait f_max × durée points : 8 bits à 1 Mbit/s avec des fronts de 1 ns,
+soit ~3 GHz × 8 µs ≈ **24 000 fréquences**, contre `MAX_POINTS` = 401
+aujourd'hui. Même problème pour une horloge sur plusieurs périodes. **On ne
+fait donc pas ça.**
+
+**La méthode retenue**, exacte puisque le réseau (lignes, terminaisons,
+passifs) est linéaire :
+
+1. **Une réponse par sens de front**, calculée en fréquence comme
+   aujourd'hui, avec terminaisons et passifs posés sur la matrice S : la
+   tension sur la broche de la victime pour un front montant de l'agresseur,
+   et une pour un front descendant. Deux réponses distinctes parce que
+   Rs haut ≠ Rs bas (TTL, open-drain) et tr ≠ tf ; avec un driver symétrique,
+   la descendante est l'opposée de la montante. La fenêtre n'a à couvrir que
+   le front, quelques allers-retours et l'amortissement des rebonds — quelques
+   dizaines de ns —, donc les 401 points suffisent.
+2. **La trame ou l'horloge se construit dans le temps** en additionnant, à
+   chaque transition du motif, la réponse du bon sens décalée à son instant.
+   Deux bits identiques à la suite n'ajoutent rien. Coût négligeable, durée
+   et motif quelconques.
+3. **Le spectre** affiché se calcule ensuite sur cette forme d'onde.
+
+**Garde-fous à prévoir :**
+
+- la fenêtre de la réponse à un front doit contenir **tout** l'amortissement :
+  vérifier que la réponse est revenue sous un seuil (par exemple 1 % de son
+  pic) en fin de fenêtre, sinon allonger la fenêtre, et le dire si la limite
+  de points est atteinte ;
+- la superposition suppose un réseau **linéaire** : c'est vrai avec les
+  presets (Rs fixes, capacités fixes) ; une diode ESD qui conduit ou un
+  driver modélisé en IBIS sortiraient de ce cadre (voir § 9) ;
+- le front unique reste calculé tel quel : c'est le cas particulier d'une
+  seule transition.
+
 ---
 
 ## 6. Victimes : nature, charge, critère
@@ -154,3 +192,6 @@ remonter ces nets en tête du classement et des actions.
 - Couplage vertical entre pistes superposées : manque connu du solveur de
   section, hors de ce chantier.
 - Rebond de masse (SSN) : hors de l'onglet Crosstalk.
+- Composants non linéaires (driver IBIS, diode ESD en conduction) : la
+  superposition du § 5.1 ne s'y applique plus ; il faudrait une approche
+  mixte, lignes en fréquence et composants dans le temps.
