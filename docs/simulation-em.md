@@ -278,8 +278,9 @@ victime le long du **couplage**, sommé bloc par bloc.
 
 Deux pistes **superposées** sur des couches voisines sans plan entre elles sont
 résolues à part — deux rubans à leurs hauteurs, entre les plans qui encadrent
-la paire (`ligne_mom.section_deux_niveaux`), milieu homogène donc Kf nul — et
-comptées dans le NEXT de la paire.
+la paire (`ligne_mom.section_deux_niveaux`), milieu homogène donc Kf nul —,
+comptées dans le NEXT de la paire, et placées sur la carte locale à l'abscisse
+où la victime passe sous (ou sur) l'agresseur.
 
 #### Les formules
 

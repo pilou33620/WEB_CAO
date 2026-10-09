@@ -289,7 +289,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simCorpsDiff","simRendreDiff",
   /* Le seuil qui juge le crosstalk -- pourcentage ou millivolts -- et la
      tension qui convertit un rapport en volts. */
-  "simSeuilFraction","simSeuilNom","simTension",
+  "simTension",
   "simDocFinir",
   /* Les DEUX cartes de chaleur, et ce qui les colore. `simCarteSegment` est
      le seul point par lequel un canevas apprend ce qu'il peint. */
@@ -305,7 +305,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* Choisir sa paire a la main plutot que de la laisser deviner. */
   "simPaireCandidats","simPaireSoi","simPaireEcrire","simDocFinir",
   "simCoupleSection","simCoupleSections",
-  "SIM_UNITES_TR","SIM_UNITES_V","simUniteTr","simUniteV","simBruitAbsEcrire",
+  "SIM_UNITES_TR","SIM_UNITES_V","simUniteTr","simUniteV",
   "simLotsPeints","simLotsMultiples","simPourChaqueLot","simLotMirroir",
   "simLotBilan","simTableauLots","simOublierRes",
   "simDiscontinuites","simCoteSource",
@@ -17145,13 +17145,6 @@ T("simulation Chute DC : préservation des personnalisations manuelles lors d'un
     throw new Error("la provenance manuelle doit être conservée");
 });
 
-T("simulation EM - Crosstalk : amplitude (swing) et marge récepteur issues du schéma",()=>{
-  const info=SIM_PCB.schemaInfosCrosstalk("+3.3V");
-  if(info.swing!==3.3)throw new Error("swing attendu: 3.3, obtenu: "+info.swing);
-  if(info.marge!==400)throw new Error("marge attendue: 400, obtenu: "+info.marge);
-  if(info.driver.indexOf("U1")<0&&info.driver.indexOf("U2")<0)
-    throw new Error("driver non identifié: "+info.driver);
-});
 
 T("simulation EM - Impédance : détection résistance adaptation série et calcul réflexion",()=>{
   // Empreinte R1 (22 ohms) sur la liaison

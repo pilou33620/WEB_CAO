@@ -2932,8 +2932,7 @@ function simDocPcb(liste,opts){
          fréquences y sont en hertz : l'unité du champ ne dit que dans quoi on
          l'écrit. Zéro veut dire « déduis-le de la bande ». */
       /* L'AMPLITUDE voyage avec le temps de montée, et pour la même raison :
-         elle vient de la rangée « Signal » du panneau, qui la porte déjà pour
-         la diaphonie. Le serveur en a besoin pour le RAYONNEMENT de la boucle
+         elle se saisit sous « Current Return Path ». Le serveur en a besoin pour le RAYONNEMENT de la boucle
          de retour, où elle entre LINÉAIREMENT — se tromper d'un facteur deux
          sur l'amplitude, c'est six décibels sur le champ. Zéro veut dire
          « prends ton repli ». */
@@ -4400,38 +4399,6 @@ const SIM_PCB={
       rTermComp:rTermComp,
       composants:comps.slice(0,6)
     };
-  },
-
-  /* Amplitude agresseur et marge récepteur pour Crosstalk */
-  schemaInfosCrosstalk:function(aggrNet){
-    let net=aggrNet;
-    if(!net&&S.sel&&S.sel.tracks&&S.sel.tracks.size){
-      const tr=[...S.sel.tracks][0];
-      if(tr&&tr.net)net=tr.net;
-    }
-    const schM=pcbComposantsSchema();
-    let swing=3.3, driverName="Défaut 3.3V", marge=400;
-    
-    if(net){
-      const {sources,charges,ics}=pcbNetComposants(net);
-      const candidates=[...ics,...charges,...sources];
-      for(const cand of candidates){
-        const sp=cand.specs;
-        if(sp&&(sp.tension>0||sp.voltIn>0||sp.voltOut>0)){
-          const v=sp.voltOut||sp.tension||sp.voltIn;
-          if(v>=0.8&&v<=15){
-            swing=v;
-            driverName=(cand.comp.ref||"?")+(sp.mpn?" ("+sp.mpn+")":(sp.value?" ("+sp.value+")":""));
-            if(swing<=1.9)marge=250;
-            else if(swing<=2.7)marge=300;
-            else if(swing<=3.6)marge=400;
-            else marge=400;
-            break;
-          }
-        }
-      }
-    }
-    return {swing:swing, driver:driverName, marge:marge};
   },
 
   /* Terminaison différentielle entre les deux nets d'une paire */

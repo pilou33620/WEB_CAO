@@ -121,9 +121,6 @@ function simDsGroupes() {
         { cle: "swing", lib: "Amplitude du signal (crête à crête)", unite: "V", min: 0.05, max: 60,
           ou: "VOH − VOL du driver, ou tension d'alimentation des E/S (VDDIO) en CMOS ; différentiel : VOD.",
           lire: () => S_().swing, ecrire: v => { S_().swing = v; } },
-        { cle: "marge", lib: "Marge de bruit du récepteur", unite: "mV", f: 1e-3, min: 1, max: 20000,
-          ou: "La plus petite de (VIL max − VOL max) et (VOH min − VIH min), driver et récepteur réunis.",
-          lire: () => S_().marge, ecrire: v => { S_().marge = v; } },
         { cle: "cible", lib: "Impédance visée, piste simple", unite: "Ω", min: 10, max: 200,
           ou: "Impédance recommandée par la datasheet ou la norme de l'interface (ex. 50 Ω, 40 Ω DDR).",
           lire: () => S_().cible, ecrire: v => { S_().cible = v; } },
@@ -465,8 +462,8 @@ function simDsPreparer(act) {
    `ids` : les lignes cochées. Chaque simulation touchée est ensuite remise
    d'aplomb — un seul endroit sait ce qu'un changement invalide :
      · SI : une f₀ nouvelle rend faux le résultat d'impédance, un front
-       nouveau celui du crosstalk ; amplitude, marge et cibles ne changent que
-       le verdict.
+       nouveau celui du crosstalk (repris comme t_r de la piste) ; amplitude
+       et cibles ne changent que le verdict.
      · PDN : Z(ω) se recalcule en local, en quelques millisecondes.
      · Bus : même chose.
      · DC : le résultat est gardé ; la fiche dit déjà quand λ a changé depuis.
@@ -497,7 +494,13 @@ function simDsAppliquer(prep, ids) {
         if (!ch) continue;
         simDsEcrire(ch, l.nouveau);
         if (l.sim === "si" && l.cle === "fc") oublierZ = true;
-        if (l.sim === "si" && l.cle === "tr") oublierXt = true;
+        if (l.sim === "si" && l.cle === "tr") {
+          oublierXt = true;
+          /* LE FRONT DU DRIVER EST AUSSI CELUI DE LA PISTE SOUS « CROSSTALK »
+             (niveau 2) : le champ t_r de l'onglet le reprend. */
+          if (typeof SIM_XT !== "undefined" && SIM.saisie.tr > 0)
+            SIM_XT.saisie.tr = SIM.saisie.tr;
+        }
       } else if (l.genre === "capa") {
         for (const c of simDsCapasVisees(l.cible)) {
           c[l.def.prop] = l.nouveau * l.def.f;

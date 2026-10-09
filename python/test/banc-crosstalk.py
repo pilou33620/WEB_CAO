@@ -1754,6 +1754,20 @@ def une_piste_seulement_superposee_a_son_chiffre():
     geo = ct.geometrie_superposee(stack["layers"], 0, 2)
     assert geo is not None and geo[2] is None, geo
     assert abs(geo[0] - (0.2 + 0.035 + 0.2 + 0.0175)) < 1e-9, geo
+    # ET ELLE SE PLACE SUR LA CARTE LOCALE, A SON ABSCISSE : une victime qui
+    # ne passe sous l'agresseur que de 10 a 25 mm y monte la, et nulle part
+    # ailleurs.
+    doc = doc_essai([pis(10, 0.0, 25, 0.0, "DATA", couche=2)])
+    doc["stackup"] = stack
+    res = ct.analyser(doc)
+    ligne = ligne_de(res, "DATA", "next")
+    axe = res["carte_chaleur"]["axe"]
+    dedans = [v for x, v in zip(axe, ligne["valeurs"]) if 11.0 <= x <= 24.0]
+    dehors = [v for x, v in zip(axe, ligne["valeurs"]) if x <= 9.0 or x >= 26.0]
+    assert dedans and min(dedans) > 0, "la superposition doit etre tracee"
+    assert max(dehors) == 0.0, "rien hors de la superposition : %g" % max(dehors)
+    z = res["risques"]
+    assert z and abs(z[0]["s0"] - 10.0) < 1.0 and abs(z[0]["s1"] - 25.0) < 1.0, z
     # ET SEPAREE PAR UN PLAN, ELLE EST ECARTEE COMME AVANT.
     doc = doc_essai([pis(0, 0.0, 40, 0.0, "DATA", couche=4)])
     res = ct.analyser(doc)

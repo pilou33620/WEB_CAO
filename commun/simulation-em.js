@@ -2677,10 +2677,8 @@ const SIM={
              du front, donc le seuil de pas de couture et la lecture des
              decibels sous la bande du signal. Zero veut dire « deduis-le de
              la bande », ce que le serveur fait par la regle du genou.
-             `swing`, `bruitPct` et `marge` vivent dans la rangee « Signal »
-             de l'onglet Crosstalk : le premier convertit un rapport en volts,
-             les deux autres prononcent le verdict. Aucun des trois ne part au
-             serveur, et aucun ne relance quoi que ce soit. */
+             `swing`, l'amplitude du signal, se saisit sous « Current Return
+             Path » : elle fixe le rayonnement de la boucle de retour. */
           /* `tr` est en SECONDES et `swing` en VOLTS — comme les fréquences
              vivent en hertz. `uniteTr` et `uniteV` ne disent que dans quoi on
              les écrit. Un `tr` à zéro n'est pas un front instantané : c'est
@@ -2695,12 +2693,7 @@ const SIM={
           paireN:"",
           diffPiste1:"", diffPiste2:"",
           cibleDiff:100, tolDiffPct:10, tr:0, uniteTr:"ps",
-          swing:3.3, uniteV:"V", bruitPct:5,
-          /* LA MARGE DE BRUIT DU RÉCEPTEUR, en VOLTS comme `swing`. Zéro veut
-             dire « pas de marge donnée », et l'on retombe alors sur le budget
-             en pourcentage. Remplie, elle le REMPLACE : deux seuils
-             concurrents seraient pires que pas de seuil du tout. */
-          marge:0,
+          swing:3.3, uniteV:"V",
           /* TROIS UNITÉS. `unite` écrit f₀ ; `uniteBande1` et `uniteBande2` écrivent
              les deux bouts de la bande S. Elles étaient autrefois confondues,
              puis il y en a eu deux, et maintenant trois pour permettre "10 kHz -> 1 GHz".
@@ -5776,6 +5769,13 @@ function simCorpsRetour(){
     simChamp("simTr","Temps de montée du signal (10-90%). Détermine le spectre HF (f_knee = 0,35 / tr) "+
                      "et l’excitation de la cavité inter-plans. Vide, il est déduit de la fréquence.")+
     simChampUnite("simTrUnite","le temps de montée",SIM_UNITES_TR)+'</span>'+
+    /* L'AMPLITUDE DU SIGNAL : elle entre LINÉAIREMENT dans le rayonnement de
+       la boucle de retour — un facteur deux, six décibels sur le champ. */
+    '<span class="simGr" id="simGrSwing"><span class="pnl-lbl">amplitude</span>'+
+    simChamp("simSwing","L'amplitude crête à crête du signal (VOH − VOL, ou "+
+                        "VDDIO en CMOS) : elle fixe le rayonnement de la boucle "+
+                        "de retour, linéairement.")+
+    simChampUnite("simSwingUnite","l'amplitude",SIM_UNITES_V)+'</span>'+
   '</div>'+
   '<div class="pnl-bar simBarF">'+
     '<span class="pnl-lbl">Bande S</span>'+
@@ -5817,6 +5817,15 @@ function simBrancherRetour(){
     }
   });
   pose("simFUnite","onchange",function(){simUniteChanger(this.value,"fc");});
+  pose("simSwing","oninput",function(){
+    simSaisie();
+    if(SIM.res&&!SIM.occupe){
+      SIM.res=null; SIM.objets=[];
+      SIM.err="L'amplitude a changé : relancez le calcul.";
+      simRendre(); simRepeindre();
+    }
+  });
+  pose("simSwingUnite","onchange",function(){simUniteChanger(this.value,"swing");});
   pose("simTr","oninput",function(){
     simSaisie();
     simFAvertEcrire();
@@ -8577,53 +8586,6 @@ function simCorpsLancer(){
     '<button class="tb mini" id="simJson" title="Le problème lui-même : il se donne au solveur en ligne de commande">.json</button>'+
     '<label class="simSuivre" title="Recalculer à chaque changement de sélection"><input type="checkbox" id="simAuto"> suivre</label>'+
   '</div>';
-}
-
-
-/* Le budget en clair, dans l'unité de l'amplitude : un budget de 5 % sur un
-   signal LVDS de 350 mV vaut 17 mV, et l'écrire en volts n'apprendrait rien. */
-function simBruitAbsEcrire(){
-  const el=simEl("simBruitAbs");
-  if(!el)return;
-  const s=SIM.saisie;
-  /* L'UNITÉ SUIT L'ORDRE DE GRANDEUR, comme partout ailleurs : 5 % d'un LVDS
-     de 350 mV valent 17,5 mV, et les écrire « 0,018 V » demanderait de
-     compter les zéros pour retrouver le chiffre qu'on compare. */
-  let txt="≤ "+simTension(s.swing*s.bruitPct/100);
-  /* ET IL DIT QUAND IL NE DÉCIDE PLUS RIEN. Une marge remplie REMPLACE le
-     pourcentage ; laisser sa valeur en clair, muette, à côté d'un champ qui ne
-     juge plus ferait chercher lequel des deux a rougi. */
-  if(s.marge>0&&s.swing>0)txt+=" — remplacé par la marge";
-  el.textContent=txt;
-}
-
-
-/* ==========================================================================
-   LE SEUIL QUI JUGE — POURCENTAGE OU MILLIVOLTS
-   --------------------------------------------------------------------------
-   UN BUDGET EN POURCENTAGE EST UNE CONVENTION ; ce qui fait qu'une carte marche
-   ou non, c'est la MARGE DE BRUIT du récepteur : l'écart entre ce que le driver
-   garantit (V_OL / V_OH) et ce que le récepteur exige (V_IL / V_IH). Un 3,3 V
-   LVCMOS a typiquement 300 à 700 mV de marge basse ; un LVDS à 350 mV
-   d'amplitude n'a pas du tout le même budget qu'un 3,3 V, alors que « 5 % »
-   s'écrit pareil pour les deux.
-
-   ON N'EN GARDE QU'UN SEUL À LA FOIS. Deux seuils concurrents affichés côte à
-   côte seraient pires que pas de seuil : on ne saurait plus lequel a rougi. La
-   marge, remplie, REMPLACE le pourcentage — et la fiche dit lequel des deux
-   elle applique. */
-function simSeuilFraction(){
-  const s=SIM.saisie;
-  /* La marge est en volts, comme l'amplitude. Sans amplitude, on ne peut pas
-     la ramener à une fraction : on retombe alors sur le pourcentage. */
-  if(s.marge>0&&s.swing>0)return s.marge/s.swing;
-  return s.bruitPct/100;
-}
-function simSeuilNom(){
-  const s=SIM.saisie;
-  return (s.marge>0&&s.swing>0)
-    ? "marge "+simNb(s.marge*1e3,0)+" mV"
-    : "budget "+simNb(s.bruitPct,1)+" %";
 }
 
 
@@ -17357,11 +17319,6 @@ function simSaisieEcrire(){
   if(selTr)selTr.value=simUniteTr().cle;
   const selV=simEl("simSwingUnite");
   if(selV)selV.value=simUniteV().cle;
-  pose("simBruit",String(s.bruitPct).replace(".",","));
-  /* LA MARGE RESTE VIDE QUAND ELLE VAUT ZÉRO : zéro n'est pas une marge, c'est
-     « je n'en donne pas », et l'on juge alors au pourcentage. Y écrire 0
-     ferait croire à un récepteur sans aucune marge de bruit. */
-  pose("simMarge",s.marge>0?String(Math.round(s.marge*1e3)):"");
   pose("simMaille25D",s.maille25d?simNbLibre(s.maille25d):"");
   const sel=simEl("simFUnite");
   if(sel)sel.value=simUnite().cle;
@@ -17412,12 +17369,6 @@ function simSaisie(){
   const tr=simEl("simTr");
   if(tr)s.tr=String(tr.value).trim()?lu("simTr",s.tr/ktr,0)*ktr:0;
   s.swing=lu("simSwing",s.swing/kv,0)*kv;
-  s.bruitPct=lu("simBruit",s.bruitPct,0);
-  /* MÊME RÈGLE QUE LE FRONT POUR LA MARGE : un champ vide n'est pas une
-     saisie illisible, c'est une INTENTION — pas de marge donnée, on retombe
-     sur le budget en pourcentage. */
-  const mg=simEl("simMarge");
-  if(mg)s.marge=String(mg.value).trim()?lu("simMarge",s.marge*1e3,0)/1e3:0;
   const m25=simEl("simMaille25D");
   if(m25)s.maille25d=String(m25.value).trim()?lu("simMaille25D",s.maille25d||0.35,0.05):null;
   return s;
@@ -17446,7 +17397,6 @@ function simUniteChanger(cle,laquelle){
   if(champ&&champ.oninput)champ.oninput.call(champ);
   else simSaisie();                  // relit le nombre écrit, dans la nouvelle unité
   simFAvertEcrire();
-  if(laquelle==="swing"){simBruitAbsEcrire();simRendre();}
 }
 
 /* Quand l'utilisateur change la fréquence de travail f₀ (par exemple 8 MHz pour

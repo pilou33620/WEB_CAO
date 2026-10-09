@@ -532,8 +532,8 @@
 #       par defaut, reglables -- et celui de la paire, le pire des deux.
 #   LES PISTES EMPILEES SONT CALCULEES : deux rubans de couches voisines sans
 #   plan entre eux passent par `ligne_mom.section_deux_niveaux`, comme dans
-#   la verification de carte (milieu homogene : Kf nul). Elles n'ont pas
-#   d'abscisse sur la carte locale, mais elles ont leur ligne au tableau.
+#   la verification de carte (milieu homogene : Kf nul), et se placent sur
+#   la carte locale par la projection de la victime sur l'agresseur.
 #   LA CARTE LOCALE RESTE, en NEXT % : Kb(x) . min(1, 2T_d/t_r), c'est-a-dire
 #   le NEXT qu'aurait la paire si tout son longement couplait comme a cet
 #   endroit. Son maximum est le NEXT de la paire quand le couplage est
@@ -1101,6 +1101,21 @@ def _seuil_distance(reglages, largeur, hauteur):
         DISTANCE_AUTO, largeur, hauteur)
 
 
+def _projection_sur(axe, autre):
+    """(d0, d1) : la portion de l'axe `axe` -- (origine, direction, longueur)
+    -- que le troncon `autre` recouvre vu de dessus, en mm depuis l'origine.
+    Rend (0, longueur) si `autre` n'a pas d'axe exploitable."""
+    (ax, ay), (ux, uy), la = axe
+    b = se._axe(autre)
+    if b is None:
+        return 0.0, la
+    (bx, by), (vx, vy), lb = b
+    t1 = (bx - ax) * ux + (by - ay) * uy
+    t2 = (bx + vx * lb - ax) * ux + (by + vy * lb - ay) * uy
+    d0, d1 = max(0.0, min(t1, t2)), min(la, max(t1, t2))
+    return (d0, d1) if d1 > d0 else (0.0, la)
+
+
 def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
                            nets_agresseurs, paires):
     """Etape 0a. Rend (candidats, seuils).
@@ -1237,14 +1252,18 @@ def candidats_geometriques(parcours, voisinage, couches, reglages, refs,
                 # etiquette du couple.
                 if not blinde:
                     c["vert"]["blinde"] = False
+                    # OU, LE LONG DU PARCOURS : la victime projetee sur
+                    # l'axe de ce troncon de l'agresseur, ramenee a
+                    # l'abscisse du cuivre comme les intervalles lateraux.
+                    d0, d1 = _projection_sur(axe, autre)
                     c["superpositions"].append({
                         "longueur": round(recouvrement, 4),
                         "decalage": round(decalage, 4),
                         "couche_agresseur": seg["couche"],
                         "largeur_agresseur": seg["largeur"],
                         "couche_victime": couche_a, "largeur_victime": w_a,
-                        "s0": round(seg["s0"], 4),
-                        "s1": round(seg["s1"], 4)})
+                        "s0": round(seg["s0"] + d0 * seg["echelle"], 4),
+                        "s1": round(seg["s0"] + d1 * seg["echelle"], 4)})
             if not vertical:
                 c["cotes"].add(cote)
                 # LA COUTURE D'UNE GARDE EST LA SIENNE, et cousue d'UN SEUL
@@ -2076,8 +2095,9 @@ def kb_superposees(h_v, h_a, x_lat, w_v, w_a, b_mm=None):
 def _superposees(couches, fiche, cache, notes):
     """Les morceaux couples d'une victime SUPERPOSEE a l'agresseur.
 
-    Rend [(Kb, 0, dT, longueur_mm)] -- un par superposition sans plan entre
-    les deux couches --, ou une liste vide. Une superposition que le solveur
+    Rend [(Kb, 0, dT, longueur_mm, s0, s1)] -- un par superposition sans plan
+    entre les deux couches, avec sa plage le long du parcours --, ou une liste
+    vide. Une superposition que le solveur
     refuse est dite dans les notes plutot que comptee nulle.
     """
     out = []
@@ -2107,7 +2127,8 @@ def _superposees(couches, fiche, cache, notes):
         if kb is None:
             continue
         longueur = _nb(sp.get("longueur"), 0.0)
-        out.append((kb, 0.0, longueur * 1e-3 * math.sqrt(er) / C_0, longueur))
+        out.append((kb, 0.0, longueur * 1e-3 * math.sqrt(er) / C_0, longueur,
+                    _nb(sp.get("s0"), 0.0), _nb(sp.get("s1"), 0.0)))
     return out
 
 
@@ -3550,11 +3571,17 @@ def _lire_couples(base, infos, retenus, couches, axe, espacements, masse,
         n2 = niveau2(morceaux, t_r, orange, rouge)
         niveau = max(n2["next"], n2["fext"])
         # LA CARTE LOCALE, EN NEXT : Kb(x) . min(1, 2 T_d / t_r) -- le NEXT
-        # qu'aurait la paire si tout son longement A PLAT couplait comme a cet
+        # qu'aurait la paire si tout son longement couplait comme a cet
         # endroit. Son maximum est le NEXT de la paire quand le couplage est
-        # uniforme ; les superpositions, sans abscisse, n'y sont pas.
-        facteur = min(1.0, 2.0 * td_plat / t_r) if t_r > 0 else 1.0
-        local = kb * facteur
+        # uniforme. LES SUPERPOSITIONS Y SONT, a leur abscisse : la victime
+        # projetee sur l'agresseur, la ou elle passe dessous ou dessus.
+        kb_loc = kb.copy()
+        for m in sup:
+            dans = (axe >= m[4] - TOL_BORNE) & (axe <= m[5] + TOL_BORNE)
+            kb_loc[dans] = np.maximum(kb_loc[dans], m[0])
+        td_tout = td_plat + sum(m[2] for m in sup)
+        facteur = min(1.0, 2.0 * td_tout / t_r) if t_r > 0 else 1.0
+        local = kb_loc * facteur
         local_max = float(local.max()) if local.size else 0.0
         couple = {
             "agresseur": principal, "victime": net, "role": v["role"],
@@ -3637,7 +3664,8 @@ def _lire_couples(base, infos, retenus, couches, axe, espacements, masse,
             "PISTES SUPERPOSÉES résolues à part (deux rubans à leurs hauteurs,"
             " entre les plans qui encadrent la paire, milieu homogène : Kf"
             " nul) : %s. Leur couplage entre dans le NEXT et le k_total de la"
-            " paire ; il n'a pas d'abscisse sur la carte locale."
+            " paire, et sur la carte locale à l'abscisse où elles passent sous"
+            " ou sur l'agresseur."
             % ", ".join("« %s » sur %.2f mm" % (c["victime"],
                                                 c["longueur_superposee"])
                         for c in superposees))
@@ -3732,6 +3760,9 @@ def _hypotheses(reglages, masse, seuils, base):
         " est posé FLOTTANT, ou son effet coplanaire annulé, plutôt que de"
         " faire cadeau d'une masse idéale à 0 V.",
         "CE QUE CE NIVEAU NE COUVRE PAS, rassemblé — et dans quel sens :"
+        " (0) une superposition est placée sur la carte locale par la"
+        " projection de la victime sur l'agresseur, à la précision du"
+        " tronçon ;"
         " (1) les lignes sont supposées adaptées : une ligne désadaptée"
         " renvoie une part du bruit vers l'autre bout → les deux niveaux"
         " peuvent y être dépassés ; (2) le modèle de couplage faible ignore"

@@ -125,7 +125,7 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   "simCorpsDiff","simRendreDiff",
   /* Le seuil qui juge le crosstalk, et la tension qui convertit un rapport
      en volts. */
-  "simSeuilFraction","simSeuilNom","simTension",
+  "simTension",
   /* Les DEUX cartes de chaleur, et ce qui les colore. `simCarteSegment` est
      le seul point par lequel un canevas apprend ce qu'il peint. */
   "simCarteQuoi","simCarteActive","simCarteSegment","simCarteRetenir",
@@ -5565,20 +5565,21 @@ T("Datasheet : seules les lignes cochées s'appliquent", function(){
   if (SIM_PDN.vdd !== 1.8 || SIM_PDN.fVrmKhz !== 100) throw new Error("vdd seul attendu, obtenu vdd=" + SIM_PDN.vdd + " f_vrm=" + SIM_PDN.fVrmKhz);
 });
 
-T("Datasheet : les unités du catalogue sont converties (ns → s, mV → V, MHz → Hz)", function(){
-  const s = SIM.saisie, avant = { tr: s.tr, marge: s.marge, fc: s.fc, swing: s.swing };
+T("Datasheet : les unités du catalogue sont converties (ns → s, MHz → Hz)", function(){
+  const s = SIM.saisie, avant = { tr: s.tr, fc: s.fc, swing: s.swing };
+  const trXt = SIM_XT.saisie.tr;
   const p = simDsPreparer({ type: "sim_params", valeurs: [
-    { sim: "si", cle: "tr", valeur: 1.2 }, { sim: "si", cle: "marge", valeur: 400 },
+    { sim: "si", cle: "tr", valeur: 1.2 },
     { sim: "si", cle: "fc", valeur: 240 }, { sim: "si", cle: "swing", valeur: 1.8 }
   ] });
   const r = simDsAppliquer(p, p.lignes.map(l => l.id));
   try {
     if (Math.abs(s.tr - 1.2e-9) > 1e-15) throw new Error("tr : 1,2e-9 s attendu, obtenu " + s.tr);
-    if (Math.abs(s.marge - 0.4) > 1e-12) throw new Error("marge : 0,4 V attendu, obtenu " + s.marge);
+    if (Math.abs(SIM_XT.saisie.tr - 1.2e-9) > 1e-15) throw new Error("le front du driver devient le t_r de la piste sous Crosstalk : " + SIM_XT.saisie.tr);
     if (Math.abs(s.fc - 240e6) > 1e-3) throw new Error("f₀ : 240 MHz attendus, obtenu " + s.fc);
     if (s.swing !== 1.8) throw new Error("amplitude : 1,8 V attendu");
     if (!r.messages.some(m => m.indexOf("relancez") >= 0)) throw new Error("f₀ et tr changés : il faut dire de relancer");
-  } finally { Object.assign(s, avant); }
+  } finally { Object.assign(s, avant); SIM_XT.saisie.tr = trXt; }
 });
 
 T("Datasheet : timings de bus, et un tco négatif (RGMII) reste permis", function(){
