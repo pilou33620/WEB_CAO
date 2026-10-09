@@ -1007,6 +1007,21 @@ T("session : le schéma repart dans l'état où il a été laissé",()=>{
     "fermer l'onglet ne dirait rien d'un schéma jamais enregistré");
   if(S.hist.length)throw new Error("l'historique de la démonstration n'a plus de sens");
 });
+T("session : projet ouvert, une session sans travail non enregistré laisse la place au fichier",()=>{
+  dom.session.clear();
+  projOuvrir("carte PIR");
+  try{
+    // l'éditeur ouvert avant que le projet soit lu : feuille vide, mise de côté
+    sheet([],[]);S.dirty=false;
+    if(!sessEnregistrer())throw new Error("rien de mis de côté");
+    if(sessionSchema())throw new Error("une session vide et propre ne doit pas masquer le fichier du projet");
+    // un travail non enregistré, lui, revient
+    sheet([C("resistor",2,2,{ref:"R1",value:"10k"})],[]);S.dirty=true;
+    sessEnregistrer();
+    sheet([],[]);S.dirty=false;
+    if(!sessionSchema()||!S.comps.length)throw new Error("le travail non enregistré doit revenir");
+  }finally{projFermer();dom.session.clear();S.dirty=false;}
+});
 T("navigateur : aucune copie du schéma n'y est gardée",()=>{
   dom.session.clear();dom.storage.clear();
   /* une copie dans le navigateur finissait par concurrencer, en plus vieille,

@@ -306,6 +306,12 @@ function sessionSchema(){
   if(repris.etat && repris.etat.projet!==undefined && repris.etat.projet!==curProj){
     return false;
   }
+  /* Projet ouvert et rien de non enregistré dans la session : le fichier du
+     projet dit la même chose, ou mieux. La session ne passe devant lui que
+     pour sauver un travail pas encore écrit — sinon un schéma mis de côté
+     vide (outil ouvert avant que le projet soit lu, puis onglet quitté)
+     masquerait pour toujours celui du dossier. */
+  if(curProj && repris.etat && !repris.etat.sale)return false;
   try{
     loadDoc(repris.etat.doc, true);        // normPage() vérifie tout au passage
   }catch(_){

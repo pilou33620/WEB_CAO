@@ -683,13 +683,21 @@ function pcbSonde(cible){
 }
 let PCB_REPRISE=false;
 function sessionPcb(){
+  const curProj=(typeof projNom==="function"?projNom():"");
   const repris=sessBrancher("pcb",()=>({
     doc:docObj(),
     sale:S.dirty,
     fichier:PCB_FICHIER,
+    projet:(typeof projNom==="function"?projNom():""),
     vue:{scale:S.scale,ox:S.ox,oy:S.oy,flip:S.flip}
   }),pcbSonde);
   if(!repris)return false;
+  /* Comme au schéma : une carte d'un autre projet ne revient pas, et, projet
+     ouvert, une carte sans travail non enregistré laisse la place au fichier
+     du dossier — sinon une carte vide mise de côté le masquerait. */
+  const e=repris.etat||{};
+  if(e.projet!==undefined&&e.projet!==curProj)return false;
+  if(curProj&&!e.sale)return false;
   try{
     loadDoc(repris.etat.doc,true);       // normDoc() se charge de tout vérifier
   }catch(_){

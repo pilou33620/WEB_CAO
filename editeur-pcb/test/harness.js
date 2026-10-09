@@ -7701,6 +7701,24 @@ T("session : la carte mise de côté revient à l'identique",()=>{
   if(!S.dirty)throw new Error("l'état « modifié » doit revenir aussi, sinon "+
     "l'onglet se fermerait sans un mot sur un travail jamais enregistré");
 });
+T("session : projet ouvert, une carte sans travail non enregistré laisse la place au fichier",()=>{
+  dom.session.clear();
+  projOuvrir("carte PIR");
+  try{
+    carteVide();S.dirty=false;
+    if(!sessEnregistrer())throw new Error("rien de mis de côté");
+    if(sessionPcb())throw new Error("une carte vide et propre ne doit pas masquer le fichier du projet");
+    importNetlist(NET,false);S.dirty=true;
+    sessEnregistrer();
+    carteVide();S.dirty=false;
+    if(!sessionPcb()||!S.fps.length)throw new Error("le travail non enregistré doit revenir");
+    // la carte d'un autre projet ne revient pas
+    sessEnregistrer();
+    projOuvrir("carte PIR v2");
+    carteVide();
+    if(sessionPcb())throw new Error("carte d'un autre projet reprise");
+  }finally{projFermer();dom.session.clear();carteVide();S.dirty=false;}
+});
 /* Une carte déposée par un autre outil — la visionneuse IPC-2581 la traduit et
    l'écrit dans la session de l'onglet — arrive sans cadrage : l'éditeur doit
    la montrer en entier, pas le coin de l'ancienne vue. */
