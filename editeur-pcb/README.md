@@ -66,6 +66,8 @@ js/26-variantes.js       variantes de montage reprises du schéma : choix de la
                          variante, empreintes non montées barrées, bom.csv et
                          positions.csv sans elles
 js/27-groupes.js         groupes (Unions) : composants et vias déplacés d'une pièce
+js/28-placement-satellites.js  « Placement auto », second temps : découplage et
+                         composants série posés contre leur broche
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -771,6 +773,36 @@ reste visible à l'écran, en gris — le gris de ce qui ne s'imprime pas.
 L'historique garde 80 instantanés, dans la limite de 48 millions de caractères
 (`UNDO_BUDGET`, ~96 Mo en mémoire) : sur une très grosse carte, ce sont les plus
 récents qui tiennent dans ce budget qui restent — jamais moins d'un.
+
+## Placement auto : l'ensemble, puis les satellites
+
+Le bouton « Placement auto » (panneau Propriétés, rien de sélectionné) dégrossit
+en deux temps. Un seul Ctrl+Z défait les deux.
+
+1. **L'ensemble** (`autoPlace`, 02-connectivity.js) : attraction le long du
+   chevelu, répulsion des boîtiers. Les empreintes encore à côté de la carte
+   partent d'une grille sur la carte ; un circuit garde 3 mm autour de lui
+   pour ses satellites, un petit composant 1 mm. Une dernière série de passes
+   écarte jusqu'à ce que plus rien ne se recouvre.
+2. **Les satellites** (`placerSatellites`, 28-placement-satellites.js), dans cet
+   ordre :
+   - **découplage** : un condensateur entre une alimentation et la masse va
+     contre une broche de ce net d'un circuit (trois pattes ou plus, sur la
+     carte). Un par broche d'abord, du plus petit au plus gros ; ceux qui
+     restent repassent derrière les premiers ;
+   - **série et liaison** : un composant à deux pattes dont un net de signal
+     touche un circuit va contre cette broche. Le net le plus privé l'emporte,
+     puis le circuit le plus proche ;
+   - **chaîne** : ce qui ne touche aucun circuit mais touche un satellite déjà
+     posé va contre lui (la LED derrière sa résistance), sur deux niveaux ;
+   - le reste reprend la place libre la plus proche.
+
+   Chaque satellite tourne sa pastille du net partagé vers la broche et prend
+   la première place libre en partant d'elle (0,6 mm entre boîtes).
+
+Ne bougent pas : les points de test (`TP…`), qui se placent à la main. Les
+connecteurs (`J…`) ne sont ni satellites ni circuits d'accueil. Les textes de
+sérigraphie ne comptent pas dans l'encombrement : ils restent à reprendre.
 
 ## Variantes de montage (BOM)
 

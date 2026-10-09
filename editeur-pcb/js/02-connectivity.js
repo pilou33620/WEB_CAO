@@ -1055,12 +1055,34 @@ function arrange(list){
   }
 }
 /* Placement assisté : attraction le long du chevelu, répulsion des boîtiers.
-   Quelques dizaines d'itérations suffisent pour dégrossir. */
+   Quelques dizaines d'itérations suffisent pour dégrossir. Les empreintes
+   encore hors de la carte (rangées à côté après un import) partent d'une
+   grille sur la carte : sans cela elles s'entassaient contre le bord droit.
+   Les points de test ne bougent pas : ils se placent à la main. Une fois
+   l'ensemble dégrossi, les satellites (découplage, composants série) vont
+   contre leur broche — placerSatellites(), 28-placement-satellites.js. */
 function autoPlace(iter){
+  const fixe=fp=>typeof placeManuelle==="function"&&placeManuelle(fp);
   const items=S.fps.map(fp=>({fp,bb:fpBBox(fp)}));
-  if(items.length<2)return;
-  const pos=new Map(items.map(i=>[i.fp.id,{x:i.fp.x,y:i.fp.y,
-    w:(i.bb.x2-i.bb.x1)/2+1, h:(i.bb.y2-i.bb.y1)/2+1}]));
+  if(items.filter(i=>!fixe(i.fp)).length<2)return null;
+  push();
+  const b=S.board;
+  /* un circuit garde autour de lui la place de ses satellites et des pistes
+     qui en sortent ; un petit composant, juste de quoi passer une piste */
+  const marge=fp=>padsOf(fp).length>=3?3:1;
+  const pos=new Map(items.map(i=>[i.fp.id,{x:i.fp.x,y:i.fp.y,fixe:fixe(i.fp),
+    w:(i.bb.x2-i.bb.x1)/2+marge(i.fp), h:(i.bb.y2-i.bb.y1)/2+marge(i.fp)}]));
+  /* départ : les empreintes hors carte se répartissent sur une grille */
+  const dehors=items.filter(i=>!fixe(i.fp)&&!inBoard(i.fp.x,i.fp.y));
+  if(dehors.length){
+    const nc=Math.max(1,Math.ceil(Math.sqrt(dehors.length*b.w/Math.max(1,b.h))));
+    const nr=Math.ceil(dehors.length/nc);
+    dehors.forEach((i,k)=>{
+      const p=pos.get(i.fp.id);
+      p.x=b.x+b.w*((k%nc)+0.5)/nc;
+      p.y=b.y+b.h*(Math.floor(k/nc)+0.5)/nr;
+    });
+  }
   /* liens : une arête par paire de broches d'un même net */
   const links=[];
   const byNet=new Map();
@@ -1075,41 +1097,51 @@ function autoPlace(iter){
     const u=[...new Set(ids)];
     for(let i=0;i<u.length;i++)for(let j=i+1;j<u.length;j++)links.push([u[i],u[j]]);
   }
-  const b=S.board;
-  for(let it=0;it<(iter||120);it++){
-    const f=new Map([...pos.keys()].map(k=>[k,{x:0,y:0}]));
-    for(const [a,c] of links){
-      const p=pos.get(a), q=pos.get(c);
-      if(!p||!q)continue;
-      const dx=q.x-p.x, dy=q.y-p.y;
-      f.get(a).x+=dx*0.012; f.get(a).y+=dy*0.012;
-      f.get(c).x-=dx*0.012; f.get(c).y-=dy*0.012;
-    }
-    const keys=[...pos.keys()];
+  const keys=[...pos.keys()];
+  const pas=(attire)=>{
+    const f=new Map(keys.map(k=>[k,{x:0,y:0}]));
+    if(attire)
+      for(const [a,c] of links){
+        const p=pos.get(a), q=pos.get(c);
+        if(!p||!q)continue;
+        const dx=q.x-p.x, dy=q.y-p.y;
+        f.get(a).x+=dx*0.012; f.get(a).y+=dy*0.012;
+        f.get(c).x-=dx*0.012; f.get(c).y-=dy*0.012;
+      }
+    let recouvre=false;
     for(let i=0;i<keys.length;i++)
       for(let j=i+1;j<keys.length;j++){
         const p=pos.get(keys[i]), q=pos.get(keys[j]);
         const ox=(p.w+q.w)-Math.abs(q.x-p.x), oy=(p.h+q.h)-Math.abs(q.y-p.y);
         if(ox>0&&oy>0){                          // boîtiers en collision : on écarte
+          recouvre=true;
+          /* contre une empreinte fixe, l'autre fait tout le chemin */
+          const ki=p.fixe?0:(q.fixe?1:0.5), kj=q.fixe?0:(p.fixe?1:0.5);
           if(ox<oy){
-            const s=(q.x>p.x?1:-1)*ox*0.5;
-            f.get(keys[i]).x-=s;f.get(keys[j]).x+=s;
+            const s=(q.x>p.x?1:-1)*ox;
+            f.get(keys[i]).x-=s*ki;f.get(keys[j]).x+=s*kj;
           }else{
-            const s=(q.y>p.y?1:-1)*oy*0.5;
-            f.get(keys[i]).y-=s;f.get(keys[j]).y+=s;
+            const s=(q.y>p.y?1:-1)*oy;
+            f.get(keys[i]).y-=s*ki;f.get(keys[j]).y+=s*kj;
           }
         }
       }
     for(const k of keys){
       const p=pos.get(k), d=f.get(k);
+      if(p.fixe)continue;
       p.x=clamp(p.x+clamp(d.x,-2,2), b.x+p.w, b.x+b.w-p.w);
       p.y=clamp(p.y+clamp(d.y,-2,2), b.y+p.h, b.y+b.h-p.h);
     }
-  }
-  push();
+    return recouvre;
+  };
+  for(let it=0;it<(iter||120);it++)pas(true);
+  /* puis on écarte seulement, jusqu'à ce que plus rien ne se recouvre */
+  for(let it=0;it<200&&pas(false);it++);
   for(const fp of S.fps){
     const p=pos.get(fp.id);
-    if(p){fp.x=snapX(p.x);fp.y=snapY(p.y);}
+    if(p&&!p.fixe){fp.x=snapX(p.x);fp.y=snapY(p.y);}
   }
+  const res=typeof placerSatellites==="function"?placerSatellites():null;
   touch();
+  return res||{};
 }

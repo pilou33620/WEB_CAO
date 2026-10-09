@@ -611,7 +611,17 @@ function buildProps(){
     '<button class="tb" id="pAuto">Placement auto</button>'+
     '<button class="tb" id="pArr">Ranger à côté</button></div></div>';
   const a=$("pAuto");
-  if(a)a.onclick=()=>{autoPlace(150);refreshPanels();draw();hint("Placement dégrossi : ajustez à la main, rien n'est figé.");};
+  if(a)a.onclick=()=>{
+    const r=autoPlace(150)||{};
+    refreshPanels();draw();
+    const sat=[];
+    if(r.decouplage)sat.push(r.decouplage+" découplage(s)");
+    if(r.serie)sat.push(r.serie+" composant(s) série");
+    if(r.chaine)sat.push(r.chaine+" en chaîne");
+    hint("Placement dégrossi"+(sat.length?" — contre leur broche : "+sat.join(", "):"")+
+      (r.sansPlace&&r.sansPlace.length?" — sans place : "+r.sansPlace.join(", "):"")+
+      ". Points de test laissés à la main. Ajustez, rien n'est figé.");
+  };
   const b=$("pArr");
   if(b)b.onclick=()=>{push();arrange(S.fps.slice());touch();draw();};
 }

@@ -53,7 +53,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* nature d'un via : traversant, borgne dessus/dessous, enterre */
   "VIA_KINDS","viaKindOf","viaKindTxt","viaKindsAvail","viaSetKind","viaBuild","fabBase",
   "flipSel","push","undo","redo","touch","padsWorld","cuId","serialize","loadDoc","exportPng",
-  "setFlip","setContrast","autoPlace","conn","netTable","fit","zoneClick","zoneMove",
+  "setFlip","setContrast","autoPlace","placerSatellites","placeManuelle","satValeurF","conn","netTable","fit","zoneClick","zoneMove",
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "clrPair","applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
   "deleteNetRouting","autoClass","mkFp","w2s","runDrc","padsOf",
@@ -3705,6 +3705,57 @@ T("réimport (fusion)",()=>{
   if(S.fps.length!==4)throw new Error("doublons créés : "+S.fps.length);
   const u=S.fps.find(f=>f.ref==="U1"), b=before.find(f=>f.r==="U1");
   if(u.x!==b.x||u.y!==b.y)throw new Error("position perdue au réimport");
+});
+/* Satellites (28-placement-satellites.js) : le découplage contre la broche
+   d'alimentation, le plus petit devant ; la résistance série contre la sortie,
+   la LED derrière elle ; le point de test ne bouge pas. */
+T("placement auto : découplage et série contre leur broche",()=>{
+  const saved=serialize();
+  S.fps=[];S.tracks=[];S.vias=[];S.zones=[];S.holes=[];touch();
+  S.board={x:0,y:0,w:60,h:40};
+  const mk=(ref,val,pkg,pins,nets,x,y)=>{
+    const f=mkFp(ref,val,pkg,pins);f.x=x;f.y=y;f.nets=nets;S.fps.push(f);return f;
+  };
+  /* tout part à côté de la carte, comme après un import de netlist */
+  const u=mk("U1","NE555","SOIC-8",8,{1:"GND",3:"OUT",8:"VCC",4:"VCC"},70,5);
+  const c10=mk("C2","10u","0603",2,{1:"VCC",2:"GND"},70,12);
+  const c100=mk("C1","100n","0603",2,{1:"VCC",2:"GND"},70,15);
+  const r=mk("R1","470R","0603",2,{1:"OUT",2:"LED_A"},70,18);
+  const d=mk("D1","RED","0805",2,{1:"GND",2:"LED_A"},70,21);
+  const j=mk("J1","CONN2","",2,{1:"VCC",2:"GND"},70,24);
+  j.style="row";j.pitch=2.54;
+  const tp=mk("TP1","TP","",1,{1:"OUT"},75,30);
+  touch();
+  const res=autoPlace(60);
+  const pad=(f,n)=>padsWorld(f).find(q=>q.n===n);
+  const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+  if(!res||res.decouplage!==2)throw new Error("deux découplages attendus : "+JSON.stringify(res));
+  if(tp.x!==75||tp.y!==30)throw new Error("le point de test a bougé");
+  const d100=Math.min(dist(pad(c100,1),pad(u,8)),dist(pad(c100,1),pad(u,4)));
+  const d10=Math.min(dist(pad(c10,1),pad(u,8)),dist(pad(c10,1),pad(u,4)));
+  if(d100>3)throw new Error("100 n trop loin de sa broche : "+d100.toFixed(2));
+  if(d10>4)throw new Error("10 µ trop loin : "+d10.toFixed(2));
+  if(dist(pad(r,1),pad(u,3))>3)throw new Error("R1 loin de la sortie U1.3");
+  if(dist(pad(d,2),pad(r,2))>4)throw new Error("D1 loin de R1");
+  /* chaque satellite tourne sa pastille partagée vers la broche */
+  if(dist(pad(r,1),pad(u,3))>dist(pad(r,2),pad(u,3)))throw new Error("R1 à l'envers");
+  const surCarte=S.fps.filter(f=>f!==tp);
+  for(const f of surCarte){
+    const bb=fpBBox(f);
+    if(!inBoard(bb.x1,bb.y1)||!inBoard(bb.x2,bb.y2))throw new Error(f.ref+" hors carte");
+  }
+  for(let a=0;a<surCarte.length;a++)for(let b=a+1;b<surCarte.length;b++){
+    const p=fpBBox(surCarte[a]),q=fpBBox(surCarte[b]);
+    if(p.x1<q.x2&&q.x1<p.x2&&p.y1<q.y2&&q.y1<p.y2)
+      throw new Error(surCarte[a].ref+" et "+surCarte[b].ref+" se recouvrent");
+  }
+  /* un seul Ctrl+Z défait tout */
+  undo();
+  const u2=S.fps.find(f=>f.ref==="U1");
+  if(u2.x!==70||u2.y!==5)throw new Error("Ctrl+Z n'a pas rendu le placement");
+  if(Math.abs(satValeurF("4n7")-4.7e-9)>1e-15||Math.abs(satValeurF("4,7u")-4.7e-6)>1e-12)
+    throw new Error("lecture des valeurs de condensateur");
+  loadDoc(JSON.parse(saved),true);
 });
 /* ==========================================================================
    Échappement HTML : une netlist ou un document .json malveillant
