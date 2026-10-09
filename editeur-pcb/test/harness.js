@@ -271,6 +271,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "pcbDetecterDisparitesEco","pcbAppliquerEco","pcbOuvrirFenetreEco","pcbVerifierEtNotifierEco",
   /* export demandé par le schéma (bouton « ⇉ PCB ») */
   "pcbExportDemande","pcbExportDepuisSchema","PCB_EXPORT_CLE","saveJson","saveProjetGithub",
+  "PCB_LIB_DEFAUT",
   "sessDiffuserSchemaModif","sessEcouterSchemaModif",
   "SIM_DC_NOEUDS_CIBLE","SIM_DC_CARREAUX_MAX","SIM_DC_MARGE_GRILLE",
   "simRefCandidatsPcb","simPlagesDe","simMemeEcart","simZoneEn","simCoteEn",
@@ -21668,6 +21669,50 @@ T("variantes PCB : la carte barre les non-montés, la liste les marque",()=>{
     if((box.innerHTML.match(/var-badge/g)||[]).length!==2)throw new Error("liste : deux NM attendus");
     pcbVarOuvrir();pcbVarFermer();
   }finally{carteVide();S.variantes=varVide();}
+});
+
+/* Un boîtier posé hors grille (placement auto, import) : le tirer pose SON
+   centre sur la grille. Avant, le geste avançait d'un nombre entier de pas
+   et gardait le décalage : deux 0402 identiques ne s'alignaient jamais. */
+T("déplacer un boîtier hors grille pose son centre sur la grille",()=>{
+  carteVide();
+  const r1=mkFp("R1","10k","0402",2);r1.x=111;r1.y=5.3;
+  const r2=mkFp("R2","100k","0402",2);r2.x=112.2;r2.y=3;
+  S.fps.push(r1,r2);touch();
+  const g0=S.grid;
+  try{
+    setGridStep(0.5);S.scale=20;S.ox=0;S.oy=0;S.origin.x=0;S.origin.y=0;
+    setMode("select");
+    for(const [f,x] of [[r1,120],[r2,120]]){
+      clearSel();
+      // saisi par son corps, un peu à côté du centre, puis tiré vers x = 120
+      fire("pointerdown",sc(f.x+0.2,f.y));
+      fire("pointermove",sc(x+0.27,f.y+0.04));
+      fire("pointerup",sc(x+0.27,f.y+0.04));
+    }
+    if(r1.x!==120||r2.x!==120)throw new Error("les deux centres devaient tomber sur x = 120 : "+r1.x+" / "+r2.x);
+    if(Math.abs(r1.y/0.5-Math.round(r1.y/0.5))>1e-9||Math.abs(r2.y/0.5-Math.round(r2.y/0.5))>1e-9)
+      throw new Error("y sur la grille de 0,5 attendu : "+r1.y+" / "+r2.y);
+    // un clic qui tremble de moins de 3 px ne recale rien
+    const y0=r1.y;r1.x=130.3;touch();clearSel();
+    fire("pointerdown",sc(130.3,y0));
+    fire("pointermove",sc(130.3+1/S.scale,y0));
+    fire("pointerup",sc(130.3+1/S.scale,y0));
+    if(r1.x!==130.3)throw new Error("un simple clic ne doit pas déplacer le boîtier : "+r1.x);
+  }finally{S.grid=g0;carteVide();}
+});
+T("empreintes : toutes centrées sur leur origine (LIB et boîtiers intégrés)",()=>{
+  const noms=new Set(PCB_LIB_DEFAUT.filter(n=>typeof n==="string"));
+  const dir=path.join(__dirname,"..","..","..","PROJETS","LIB_CAO","lib_empreinte_pcb");
+  if(fs.existsSync(dir))for(const f of fs.readdirSync(dir))if(/\.json$/.test(f))noms.add(f.replace(/\.json$/,""));
+  const faux=[];
+  for(const n of noms){
+    const m=/(\d+)$/.exec(n);
+    const fp=mkFp("X1","",n,m?+m[1]:2);fp.x=0;fp.y=0;fp.rot=0;
+    const b=fpBBox(fp);
+    if(Math.abs((b.x1+b.x2)/2)>0.01||Math.abs((b.y1+b.y2)/2)>0.01)faux.push(n);
+  }
+  if(faux.length)throw new Error("empreintes décentrées : "+faux.join(", "));
 });
 
 /* ==========================================================================

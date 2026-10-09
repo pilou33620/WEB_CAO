@@ -4188,8 +4188,13 @@ cv.addEventListener("pointerdown",e=>{
   groupeEtendreSel();                       // un membre touché prend son groupe
   const pn=(h.pad&&h.pad.net)||null;
   if(pn)S.hlNet=pn;
+  /* boîtier saisi (corps ou pastille) : c'est SON centre qui s'accroche à la
+     grille, pas le déplacement. Sinon un boîtier posé hors grille (placement
+     auto, import) gardait son décalage, et deux 0402 côte à côte ne
+     s'alignaient jamais. Par identifiant : dragRestart recharge le document. */
+  const anc=(h.fp&&S.sel.fps.has(h.fp.id))?h.fp.id:null;
   drag={move:true,x:p.x,y:p.y,moved:false,dx:0,dy:0,
-        trk:null,via:null,joints:null,toggleOff};
+        trk:null,via:null,joints:null,toggleOff,anc};
   refreshPanels();
   // la mise en avant se voit sur le canevas : on la montre aussi dans la liste
   if(pn)revealNet(pn);
@@ -4388,7 +4393,11 @@ cv.addEventListener("pointermove",e=>{
     return;
   }
   if(drag&&drag.move){
-    const dx=snapX(p.x)-snapX(drag.x), dy=snapY(p.y)-snapY(drag.y);
+    const fa=drag.anc!=null?fpById(drag.anc):null;
+    // un clic qui tremble ne recale pas le boîtier : il faut vraiment tirer
+    if(fa&&!drag.moved&&Math.hypot(p.x-drag.x,p.y-drag.y)<px(3))return;
+    const dx=fa?r3(snapX(fa.x+p.x-drag.x)-fa.x):snapX(p.x)-snapX(drag.x);
+    const dy=fa?r3(snapY(fa.y+p.y-drag.y)-fa.y):snapY(p.y)-snapY(drag.y);
     if(dx||dy){
       if(!drag.moved){push();drag.moved=true;beginMove();}
       dragMoveBy(dx,dy,e.altKey);

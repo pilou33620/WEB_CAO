@@ -971,55 +971,55 @@ const PKG_LIB={
   "USB-C-6P":{
     style:"row", pins:5, pitch:0.5, span:3.0,
     pads:[
-      {n:1, x:-1.25, y:-1.5, w:0.6, h:1.2, shape:"rect", drill:0},
-      {n:1, x:1.25,  y:-1.5, w:0.6, h:1.2, shape:"rect", drill:0},
-      {n:2, x:-2.75, y:-1.5, w:0.8, h:1.2, shape:"rect", drill:0},
-      {n:2, x:2.75,  y:-1.5, w:0.8, h:1.2, shape:"rect", drill:0},
-      {n:3, x:-0.5,  y:-1.5, w:0.4, h:1.2, shape:"rect", drill:0},
-      {n:4, x:0.5,   y:-1.5, w:0.4, h:1.2, shape:"rect", drill:0},
-      {n:5, x:-4.3,  y:-1.0, w:1.6, h:2.0, shape:"oval", drill:0.9},
-      {n:5, x:4.3,   y:-1.0, w:1.6, h:2.0, shape:"oval", drill:0.9},
-      {n:5, x:-4.3,  y:3.2,  w:1.6, h:2.0, shape:"oval", drill:0.9},
-      {n:5, x:4.3,   y:3.2,  w:1.6, h:2.0, shape:"oval", drill:0.9}
+      {n:1, x:-1.25, y:-2.5, w:0.6, h:1.2, shape:"rect", drill:0},
+      {n:1, x:1.25,  y:-2.5, w:0.6, h:1.2, shape:"rect", drill:0},
+      {n:2, x:-2.75, y:-2.5, w:0.8, h:1.2, shape:"rect", drill:0},
+      {n:2, x:2.75,  y:-2.5, w:0.8, h:1.2, shape:"rect", drill:0},
+      {n:3, x:-0.5,  y:-2.5, w:0.4, h:1.2, shape:"rect", drill:0},
+      {n:4, x:0.5,   y:-2.5, w:0.4, h:1.2, shape:"rect", drill:0},
+      {n:5, x:-4.3,  y:-2.0, w:1.6, h:2.0, shape:"oval", drill:0.9},
+      {n:5, x:4.3,   y:-2.0, w:1.6, h:2.0, shape:"oval", drill:0.9},
+      {n:5, x:-4.3,  y:2.2,  w:1.6, h:2.0, shape:"oval", drill:0.9},
+      {n:5, x:4.3,   y:2.2,  w:1.6, h:2.0, shape:"oval", drill:0.9}
     ],
-    body:{x1:-4.5, y1:-2.5, x2:4.5, y2:4.5}
+    body:{x1:-4.5, y1:-3.5, x2:4.5, y2:3.5}
   },
   "USB-C-16P":{
     style:"row", pins:8, pitch:0.5, span:3.0,
     pads:[
-      {n:2, x:-2.75, y:-1.5, w:0.6,  h:1.2, shape:"rect", drill:0},
-      {n:7, x:-2.25, y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
-      {n:1, x:-1.75, y:-1.5, w:0.5,  h:1.2, shape:"rect", drill:0},
-      {n:5, x:-1.25, y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
-      {n:4, x:-0.75, y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
-      {n:3, x:-0.25, y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
-      {n:4, x:0.25,  y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
-      {n:3, x:0.75,  y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
-      {n:6, x:1.25,  y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
-      {n:1, x:1.75,  y:-1.5, w:0.5,  h:1.2, shape:"rect", drill:0},
-      {n:7, x:2.25,  y:-1.5, w:0.35, h:1.2, shape:"rect", drill:0},
-      {n:2, x:2.75,  y:-1.5, w:0.6,  h:1.2, shape:"rect", drill:0},
-      {n:8, x:-4.3,  y:-1.0, w:1.6,  h:2.0, shape:"oval", drill:0.9},
-      {n:8, x:4.3,   y:-1.0, w:1.6,  h:2.0, shape:"oval", drill:0.9},
-      {n:8, x:-4.3,  y:3.2,  w:1.6,  h:2.0, shape:"oval", drill:0.9},
-      {n:8, x:4.3,   y:3.2,  w:1.6,  h:2.0, shape:"oval", drill:0.9}
+      {n:2, x:-2.75, y:-2.5, w:0.6,  h:1.2, shape:"rect", drill:0},
+      {n:7, x:-2.25, y:-2.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:1, x:-1.75, y:-2.5, w:0.5,  h:1.2, shape:"rect", drill:0},
+      {n:5, x:-1.25, y:-2.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:4, x:-0.75, y:-2.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:3, x:-0.25, y:-2.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:4, x:0.25,  y:-2.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:3, x:0.75,  y:-2.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:6, x:1.25,  y:-2.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:1, x:1.75,  y:-2.5, w:0.5,  h:1.2, shape:"rect", drill:0},
+      {n:7, x:2.25,  y:-2.5, w:0.35, h:1.2, shape:"rect", drill:0},
+      {n:2, x:2.75,  y:-2.5, w:0.6,  h:1.2, shape:"rect", drill:0},
+      {n:8, x:-4.3,  y:-2.0, w:1.6,  h:2.0, shape:"oval", drill:0.9},
+      {n:8, x:4.3,   y:-2.0, w:1.6,  h:2.0, shape:"oval", drill:0.9},
+      {n:8, x:-4.3,  y:2.2,  w:1.6,  h:2.0, shape:"oval", drill:0.9},
+      {n:8, x:4.3,   y:2.2,  w:1.6,  h:2.0, shape:"oval", drill:0.9}
     ],
-    body:{x1:-4.5, y1:-2.5, x2:4.5, y2:4.5}
+    body:{x1:-4.5, y1:-3.5, x2:4.5, y2:3.5}
   },
   "MICRO-USB-B":{
     style:"row", pins:6, pitch:0.65, span:2.6,
     pads:[
-      {n:1, x:-1.3,  y:-1.5, w:0.4, h:1.35, shape:"rect", drill:0},
-      {n:2, x:-0.65, y:-1.5, w:0.4, h:1.35, shape:"rect", drill:0},
-      {n:3, x:0,     y:-1.5, w:0.4, h:1.35, shape:"rect", drill:0},
-      {n:4, x:0.65,  y:-1.5, w:0.4, h:1.35, shape:"rect", drill:0},
-      {n:5, x:1.3,   y:-1.5, w:0.4, h:1.35, shape:"rect", drill:0},
-      {n:6, x:-3.5,  y:-1.0, w:1.6, h:1.8,  shape:"oval", drill:0.9},
-      {n:6, x:3.5,   y:-1.0, w:1.6, h:1.8,  shape:"oval", drill:0.9},
-      {n:6, x:-3.5,  y:2.5,  w:1.6, h:1.8,  shape:"oval", drill:0.9},
-      {n:6, x:3.5,   y:2.5,  w:1.6, h:1.8,  shape:"oval", drill:0.9}
+      {n:1, x:-1.3,  y:-2.0, w:0.4, h:1.35, shape:"rect", drill:0},
+      {n:2, x:-0.65, y:-2.0, w:0.4, h:1.35, shape:"rect", drill:0},
+      {n:3, x:0,     y:-2.0, w:0.4, h:1.35, shape:"rect", drill:0},
+      {n:4, x:0.65,  y:-2.0, w:0.4, h:1.35, shape:"rect", drill:0},
+      {n:5, x:1.3,   y:-2.0, w:0.4, h:1.35, shape:"rect", drill:0},
+      {n:6, x:-3.5,  y:-1.5, w:1.6, h:1.8,  shape:"oval", drill:0.9},
+      {n:6, x:3.5,   y:-1.5, w:1.6, h:1.8,  shape:"oval", drill:0.9},
+      {n:6, x:-3.5,  y:2.0,  w:1.6, h:1.8,  shape:"oval", drill:0.9},
+      {n:6, x:3.5,   y:2.0,  w:1.6, h:1.8,  shape:"oval", drill:0.9}
     ],
-    body:{x1:-3.8, y1:-2.5, x2:3.8, y2:3.5}
+    body:{x1:-3.8, y1:-3.0, x2:3.8, y2:3.0}
   }
 };
 /* ==========================================================================

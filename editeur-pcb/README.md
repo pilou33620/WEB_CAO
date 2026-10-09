@@ -2234,6 +2234,14 @@ d'abord — 0,05 · 0,1 · 0,25 · 0,5 · 1 · 2 · 5 mm — plus les deux pas i
 dont on ne peut pas se passer : 1,27 et 2,54 mm (0,05 et 0,1 pouce),
 l'écartement des broches de la plupart des boîtiers traversants.
 
+**Un boîtier tiré pose son centre sur la grille.** Toutes les empreintes ont
+leur origine au centre de leur corps (LIB et boîtiers intégrés : un essai le
+vérifie). Saisi par son corps ou une pastille, un boîtier n'avance donc pas d'un
+nombre entier de pas : c'est son centre qui va au nœud le plus proche
+(`drag.anc`, `js/05-tools.js`). Avant, un boîtier rangé hors grille par le
+placement automatique gardait son décalage, et deux 0402 identiques ne
+s'alignaient jamais. Un clic qui tremble de moins de 3 px ne recale rien.
+
 Le pied de page annonce ce que vaut une case : `1 carré = 0,5 mm`. Trop serrée
 à l'écran, la grille n'est plus tracée qu'une case sur deux, sur cinq… : le
 pied de page annonce alors la case réellement visible et rappelle le pas
