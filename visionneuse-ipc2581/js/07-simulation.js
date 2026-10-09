@@ -5337,6 +5337,14 @@ const SIM_IPC={
     const doc=base.doc;
     delete doc.ports;
     doc.agresseurs=nets;
+    /* LA CLASSE DE CHAQUE AGRESSEUR : c'est d'elle que le serveur déduit le
+       temps de montée quand le champ t_r est laissé vide. Même lecture que
+       la vérification de carte (`carteEntiere`). */
+    doc.natures={};
+    for(const n of (V.parNet||[]))
+      if(n.nom&&nets.indexOf(n.nom)>=0)
+        doc.natures[n.nom]=n.classe==="gnd"?"Masse":
+                           n.classe==="pwr"?"Alimentation":(n.nature||"Lent");
     /* LE VOISINAGE EST REPRIS AVEC LES COUCHES ADJACENTES : c'est la seule
        différence de géométrie avec le document de simulation, et elle compte —
        deux pistes superposées sont le cas que la section droite ne sait pas

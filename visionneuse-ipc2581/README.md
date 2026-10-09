@@ -247,7 +247,7 @@ Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI*
 | --- | --- | --- |
 | **Impédance** | Z₀ tronçon par tronçon, paramètres S de la liaison | la section droite d'UNE piste |
 | **Z différentielle** | Z_diff et Z_commune des paires qui longent la sélection | la même section, à DEUX conducteurs |
-| **Crosstalk** | **COMBIEN** une voisine prend — en %, en dB et **en volts** — et **OÙ** cela se fabrique | une matrice S MULTI-PORTS mise en cascade, synthétisée depuis le DESIGN |
+| **Crosstalk** | le **niveau 2** : pour la piste sélectionnée ou pour toute la carte, le pic de bruit relatif de chaque victime — k_total, NEXT et FEXT en % et en dB, statut vert / orange / rouge (3 % / 7 %) — sous un échelon unitaire et un front t_r, et **OÙ** le NEXT se fabrique le long du parcours | [C] et [L] bloc par bloc (MoM 2D) le long du parcours, depuis le DESIGN |
 | **Current Return Path** | par où revient le courant de chaque via | la liaison verticale |
 | **Diagramme de l'œil** | si la liaison passe le gabarit de son protocole (USB, PCIe, HDMI, LVDS, MIPI, SATA, SGMII, SPI, QSPI, SD, eMMC), avec quelle marge — œil PRBS et œil pire cas | la même cascade que l'Impédance (ou la paire), passée en temporel par sa propre route, `/api/oeil` — voir [le guide Simulation EM](../docs/simulation-em.md) |
 
@@ -256,12 +256,11 @@ relance rien, et les trois fiches parlent nécessairement du même cuivre. Elles
 ne posent pas la même question — une piste parfaitement à 50 Ω peut avoir un
 retour catastrophique.
 
-> **Un onglet *Diaphonie* a existé, et il a été retiré.** Il rendait NEXT et
-> FEXT sur une section droite unique : il disait *combien*, jamais *où*.
-> *Crosstalk* rend le même « combien » — le pour-cent, les décibels et la
-> tension sur la broche de la victime — avec une abscisse en millimètres en
-> plus. Deux onglets pour une seule question, répondue par deux physiques,
-> finissaient par rendre deux verdicts qu'on ne sait pas arbitrer.
+> **Un onglet *Diaphonie* a existé, et il a été retiré — puis l'analyse
+> « électrique » qui l'avait remplacé.** *Crosstalk* ne fait plus que le
+> **niveau 2**, le scan normalisé : le pic de bruit relatif que chaque victime
+> subit, en pour-cent et en décibels de l'amplitude de l'agresseur, avec une
+> abscisse en millimètres en plus.
 
 Le bouton **« réglages »**, au bout de la rangée des onglets, **replie les
 commandes** de l'analyse courante pour laisser toute la hauteur du panneau au
@@ -269,27 +268,16 @@ résultat. La rangée qui porte le bouton d'action ne se replie jamais — on
 relance sans déplier.
 
 **Crosstalk est à part**, avec sa route (`/api/crosstalk`), son calcul et son
-résultat. Il répond seul à la question du couplage : combien une voisine prend
-— en pour-cent de l'agresseur, en décibels et **en volts**, l'amplitude du
-signal se saisissant dans la rangée **Signal** —, et lequel des quarante
-millimètres qui longent en est responsable. Le seul geste demandé est de
-**désigner l'agresseur** : les victimes, les ports et leur correspondance se
-déduisent de la géométrie, et **aucun fichier de paramètres S ne s'importe** —
-la matrice se génère à partir du design. Les portions où le couplage de chaque
-victime se fabrique sont peintes **sur son cuivre**, ambre quand le dessin des
-pistes l'explique et rouge quand rien ne l'explique. Voir
-[le README du dépôt](../README.md#crosstalk--où-le-couplage-se-fabrique).
-
-Trois cases collées à la figure — **NEXT**, **FEXT**, **mV** — disent ce
-qu'elle trace et dans quelle unité, sans rien relancer : les deux courbes et
-les deux unités sont déjà dans le résultat. Éteindre un sens **resserre** la
-figure sur celui qui reste, plutôt que de garder un cadre vide qui se lirait
-comme un couplage nul.
-
-Les volts se lisent **sur la courbe** : le pour-cent gradue l'axe de gauche, la
-tension celui de droite — trois crans chacun —, et chaque courbe porte **sa
-tension écrite à son pic**, dans la couleur de sa victime. La réglette reste ce
-qui répond position par position.
+résultat. C'est le **niveau 2** : un échelon d'agresseur unitaire, des lignes
+adaptées et un front t_r — celui de l'agresseur désigné (saisi, ou déduit de la
+classe de son net), ou un t_r **global** (1 ns) pour **toute la carte**. Par
+paire : k_total, NEXT et FEXT en % et en dB, chacun vert, orange ou rouge (3 %
+et 7 % par défaut, les mêmes seuils que la vérification de carte). Le seul
+geste demandé est de **désigner l'agresseur** : les victimes se déduisent de la
+géométrie, pistes superposées comprises. La **carte locale** dit où le NEXT se
+fabrique le long du parcours, et les portions à reprendre sont peintes **sur
+le cuivre** de chaque victime. Voir
+[le guide Simulation EM](../docs/simulation-em.md#crosstalk--le-niveau-2-scan-normalisé).
 
 #### Trois mesures que seule cette page peut faire, et une hypothèse à connaître
 

@@ -27,7 +27,7 @@ Elle couvre seize familles de règles :
 | **Chemins de retour** | chaque via de signal qui change de plan de référence : son courant de retour a-t-il un chemin court ? | à la cadence |
 | **Fentes et vides des plans** | une piste qui passe au-dessus d'un vide de son plan de référence | à la cadence |
 | **Vias de couture** | le plus grand trou sans via entre deux couches de la même masse | à la cadence |
-| **Diaphonie** | chaque couple de pistes voisines de nets différents, sur la même couche ou entre deux couches voisines, et la somme des agresseurs d'une victime | à la cadence |
+| **Diaphonie** | chaque couple de pistes voisines de nets différents, sur la même couche ou entre deux couches voisines, et la somme des agresseurs d'une victime | niveau 2, au t_r global |
 | **Paires différentielles** | Z_diff le long de la paire (masse coplanaire comprise), écart de longueur, plan sous une seule moitié, vias en nombre différent | à la cadence |
 | **Découplage** | un condensateur vers la masse au pied de chaque broche d'alimentation de circuit intégré, par le chemin réel ; sa résonance selon sa valeur | à la cadence |
 | **Bord de carte** | cuivre trop près du détourage, piste rapide qui longe le bord, clôture de vias, règle des 20 H | critique / vigilance, à la cadence, info |
@@ -115,7 +115,8 @@ déclarée à 100 MHz, elle, voit son front ramené à 1 ns (genou 350 MHz).
 | :--- | :--- | :--- |
 | Z₀ des lignes | 50 Ω | juger la réflexion d'un via ou d'une fente ; la cible des nets Horloge, Rapide et RF |
 | Z diff des paires | 100 Ω | la cible des paires différentielles (USB : 90 Ω) |
-| diaphonie tolérée | 5 % | budget de diaphonie (vigilance au-delà de la moitié) |
+| t_r diaphonie | 1 ns | le front GLOBAL de la diaphonie (niveau 2), le même pour toutes les paires |
+| orange dès / rouge au-delà de | 3 % / 7 % | les seuils DRC de la diaphonie : vert, orange (vigilance), rouge (critique) |
 | porteuse des nets RF | vide | remplie (868 MHz pour du LoRa), les nets RF se jugent à cette porteuse, au lieu de leur front et de leur cadence |
 
 Un front plus long que la demi-période de sa cadence, ou sous 10 ps, est
@@ -348,16 +349,18 @@ bords des versements.
 Pour chaque couple de pistes de nets différents, **sur la même couche**, qui
 se font face à moins de cinq fois la hauteur au plan — les arcs comptent, en
 cordes de 5° — : la section à deux conducteurs est **résolue par la méthode
-des moments** à l'écart réel (pas une formule), d'où Kb et Kf. Puis, avec le front de
-l'**agresseur** à sa cadence :
+des moments** à l'écart réel (pas une formule), d'où Kb et Kf. Puis, au
+**niveau 2** — un échelon unitaire, des lignes adaptées, et le **t_r global**
+de la carte (1 ns par défaut) :
 
-- **NEXT** = min(Kb max, Σ Kb · 2T_d / t_r) — il sature au-delà de t_r·v/2 ;
+- **k_total** = ½ (Cm/C11 + Lm/L11), le couplage géométrique pur ;
+- **NEXT** = Kb si 2T_d ≥ t_r, Σ Kb · 2T_d / t_r sinon (Kb = k_total / 2) ;
 - **FEXT** = |Σ Kf · T_d| / t_r — il croît avec la longueur.
 
-Le niveau retenu est le plus grand des deux, comparé au **budget** (critique
-au-dessus, vigilance au-delà de la moitié). Chaque ligne se lit « victime
-(le net de la ligne) ← *Depuis* agresseur », avec la longueur en regard,
-l'écart minimal et le Kb. **Une ligne par couple** : quand les deux nets
+NEXT et FEXT ont **chacun leur statut** : vert sous 3 %, orange (vigilance)
+de 3 à 7 %, rouge (critique) au-delà ; la ligne prend le pire des deux. Chaque
+ligne se lit « victime (le net de la ligne) ← *Depuis* agresseur », avec la
+longueur en regard, l'écart minimal, le k_total, le NEXT et le FEXT. **Une ligne par couple** : quand les deux nets
 s'agressent l'un l'autre, le sens le plus grave est gardé et la ligne ajoute
 « et réciproquement ».
 
@@ -375,11 +378,11 @@ Cohn (exact) à 0,2 % en triplaque et rejoint, sur des rubans étroits et
 s'ajoutent au pire, en phase. Une ligne de plus, « Somme de N agresseurs »,
 quand la somme franchit un seuil qu'aucun ne franchit seul.
 
-Le moteur est celui de l'onglet **Crosstalk** en mode *Analyse géométrique* :
-même section MoM (`solve_multiline`), mêmes Kb/Kf (`coefficients_couple`).
-Ce qu'on y ajoute : le front de l'agresseur, qui fait d'un Kb un niveau. Ce
-qu'on n'y prend pas : la présélection et le profil d'espacement de l'onglet,
-et son mode *précis* (lignes couplées en cascade, IFFT).
+Le moteur est celui de l'onglet **Crosstalk** : même section MoM
+(`solve_multiline`), mêmes Kb/Kf (`coefficients_couple`), même niveau 2
+(`crosstalk.niveau2`), mêmes seuils. Le bouton **▶ Toute la carte** de l'onglet
+fait tourner cette règle seule et en montre le tableau, paire par paire ; le
+t_r global et les deux seuils se règlent indifféremment ici ou là-bas.
 
 Hors jeu : la masse (ni victime ni agresseur), les alimentations (sauf un nœud
 de découpage, qui agresse), et les deux moitiés d'une **paire

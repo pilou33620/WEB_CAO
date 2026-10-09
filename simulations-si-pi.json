@@ -12,10 +12,10 @@
       },
       {
         "id": "crosstalk",
-        "titre": "Crosstalk spatialisé",
+        "titre": "Crosstalk niveau 2 (scan normalisé)",
         "domaine": "SI",
-        "moteurs_associes": ["crosstalk.py", "simulation_em.py", "ligne_mom.py"],
-        "description": "Diaphonie NEXT/FEXT localisée spatialement le long du parcours par cascade multi-ports et IFFT, mise en regard du profil d'espacement et diagnostic des fentes/coutures de masse."
+        "moteurs_associes": ["crosstalk.py", "analyse_carte.py", "simulation_em.py", "ligne_mom.py"],
+        "description": "Pic de bruit relatif par paire, sans tension ni protocole : échelon unitaire, lignes adaptées, front t_r (saisi, déduit de la classe du net, ou global pour toute la carte). k_total, NEXT et FEXT en % et dB, statut vert/orange/rouge (3 % / 7 %), carte locale du NEXT le long du parcours et diagnostic des fentes/coutures de masse."
       },
       {
         "id": "return_path",
@@ -49,10 +49,10 @@
       },
       {
         "numero": 3,
-        "nom": "Diaphonie spatialisée NEXT/FEXT",
+        "nom": "Diaphonie niveau 2 (NEXT/FEXT normalisés)",
         "domaine": "SI",
         "moteur": "crosstalk.py",
-        "sorties": ["carte NEXT/FEXT(x)", "profil d'espacement", "zones à risque", "actions correctives"]
+        "sorties": ["k_total", "NEXT % / dB", "FEXT % / dB", "statut DRC", "carte NEXT local(x)", "zones à risque", "actions correctives"]
       },
       {
         "numero": 4,
@@ -270,25 +270,22 @@
     },
     {
       "fichier": "python/crosstalk.py",
-      "version": "3.1.0",
-      "role": "Diaphonie NEXT/FEXT localisee spatialement (onglet Crosstalk)",
+      "version": "4.0.0",
+      "role": "Crosstalk niveau 2 : pic de bruit relatif par paire (onglet Crosstalk, piste selectionnee)",
       "domaine": "SI",
-      "methode_generale": "Reseau de lignes couplees multi-ports synthetise depuis la geometrie du design (via ligne_mom/simulation_em), cascade troncon par troncon -> matrice S multi-ports -> IFFT (reflectometrie temporelle sur les termes croises S victime-agresseur) -> axe de position le long du parcours",
+      "methode_generale": "[C] et [L] bloc par bloc le long du parcours (MoM 2D via ligne_mom/simulation_em) -> k_total = 1/2 (Cm/C11 + Lm/L11), Kb = k_total/2, Kf = 1/2 (Lm/L11 - Cm/C11) -> NEXT = Kb si 2Td >= t_r, Kb.2Td/t_r sinon ; FEXT = |Kf|.Td/t_r ; echelon unitaire, lignes adaptees",
       "entree": "document cao-crosstalk-1 (mm)",
       "sortie": "resultat cao-crosstalk-resultat-1",
       "fonctions": [
-        { "nom": "etat", "usage": ["metadonnees_moteur"], "description": "Disponibilite, version, moteurs sous-jacents, methode declaree" },
-        { "nom": "candidats_geometriques", "usage": ["preselection_geometrique"], "description": "Etape 0a : preselection geometrique des voisines qui longent l'agresseur (meme couche + couches adjacentes), avec profil d'espacement et gestion des pistes de garde" },
-        { "nom": "confirmation_par_simulation", "usage": ["confirmation_niveau"], "description": "Etape 0b : NEXT/FEXT reels par candidat, seuil de confirmation (-40 dB par defaut)" },
-        { "nom": "reseau_synthetise / _matrices_bloc / chaine_mtl", "usage": ["synthese_multiports"], "description": "Construction de la matrice S multi-ports par cascade de sections couplees" },
-        { "nom": "verifier_bande / bande_deduite / bande_pour_resolution", "usage": ["resolution_spatiale"], "description": "Deduction du haut de bande et de la resolution spatiale (contrainte quasi-TEM lambda/10, fenetre temporelle vs repliement)" },
-        { "nom": "fenetre / vers_temporel", "usage": ["ifft_reflectometrie"], "description": "Fenetrage (Kaiser/Hann/rect) puis IFFT -> reponse impulsionnelle reelle" },
-        { "nom": "profil_du_sens / positions", "usage": ["localisation_spatiale"], "description": "Conversion temps vers position (NEXT contre-propage, FEXT co-propage), profil de couplage le long de l'abscisse" },
-        { "nom": "valider_matrice", "usage": ["validation_physique"], "description": "Controle passivite (sigma_max <= 1) et reciprocite (S = S transpose) de la matrice synthetisee" },
-        { "nom": "touchstone_np", "usage": ["export_donnees"], "description": "Export Touchstone du reseau multi-ports (comparaison a un solveur pleine onde)" },
-        { "nom": "analyser", "usage": ["diagnostic_crosstalk"], "description": "Fonction principale : carte de couplage NEXT/FEXT en fonction de la position, zones a risque, desaccords avec le plan de masse (fentes, pas de couture), actions correctives ordonnees" }
+        { "nom": "etat", "usage": ["metadonnees_moteur"], "description": "Disponibilite, version, moteurs sous-jacents, methode declaree, fronts par classe" },
+        { "nom": "candidats_geometriques", "usage": ["preselection_geometrique"], "description": "Etape 0a : preselection geometrique des voisines qui longent l'agresseur (meme couche + couches adjacentes, superpositions mesurees), avec profil d'espacement et gestion des pistes de garde" },
+        { "nom": "sections_couplees / _matrices_bloc / coefficients_couple", "usage": ["sections_couplees"], "description": "[C] et [L] par bloc, Kb et Kf de chaque voisine, profil de retard" },
+        { "nom": "geometrie_superposee / kb_superposees", "usage": ["pistes_superposees"], "description": "Kb de deux rubans superposes sur couches voisines sans plan entre eux (section_deux_niveaux, milieu homogene)" },
+        { "nom": "niveau2 / statut / front_de_classe", "usage": ["niveau2"], "description": "Tuple de diagnostic : k_total, NEXT/FEXT (fraction, %, dB), T_d, saturation, statuts vert/orange/rouge ; t_r deduit de la classe du net" },
+        { "nom": "analyser", "usage": ["diagnostic_crosstalk"], "description": "Fonction principale : tableau niveau 2 par paire, carte locale du NEXT, zones a risque, controles du plan de masse (fentes, pas de couture), actions correctives ordonnees" },
+        { "nom": "chaine_mtl / s_depuis_chaine", "usage": ["reference_lignes_couplees"], "description": "Lignes couplees en cascade, conservees comme reference de rf_reseau" }
       ],
-      "verification": "python/test/banc-crosstalk.py (45 cas valides, 100% succes)"
+      "verification": "python/test/banc-crosstalk.py (39 cas valides, 100% succes)"
     },
     {
       "fichier": "python/dc_solver.py",

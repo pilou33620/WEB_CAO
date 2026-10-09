@@ -734,17 +734,30 @@ input.simChamp.large{width:88px}
 .simXtN-bande{border-left-color:var(--violet,#b3a1ff);background:#1e1b2b}
 .simXtN-bande .simXtVerdict{color:var(--violet,#b3a1ff)}
 
-/* LE MODE SIMPLE N'EST NI UNE ALERTE NI UNE BONNE NOUVELLE : c'est un
-   CLASSEMENT, et il ne prononce aucun verdict. Le bleu le dit sans emprunter
-   a l'echelle des budgets -- lui donner le vert du « sous le budget » ferait
-   lire « ca passe » sous un chiffre qui ne compare rien, et le rouge ferait
-   l'inverse. */
-.simXtN-geo{border-left-color:var(--blue,#6cb6ff);background:#161e2b}
-.simXtN-geo .simXtVerdict{color:var(--blue,#6cb6ff)}
-/* LE CLASSEMENT SE LIT COMME UNE LISTE ORDONNEE, parce que c'en est une : le
-   rang est le resultat, pas une decoration. */
-.simXtRang{margin:6px 0 2px 0;padding-left:22px}
-.simXtRang li{margin:2px 0;line-height:1.45}
+/* NIVEAU 2 : LE STATUT DRC, vert / orange / rouge, sur la fiche et en
+   pastille dans chaque case. Le vert a son repli : l'editeur ne le declare
+   pas, et une variable absente peindrait un verdict rassurant comme le texte
+   ordinaire. */
+.simXtN-vert{border-left-color:var(--green,#4cc38a);background:#16211a}
+.simXtN-vert .simXtVerdict{color:var(--green,#4cc38a)}
+.simXtN-orange{border-left-color:var(--yellow);background:#241f13}
+.simXtN-orange .simXtVerdict{color:var(--yellow)}
+.simXtN-rouge{border-left-color:var(--red);background:#241a1a}
+.simXtN-rouge .simXtVerdict{color:var(--red)}
+.simXtSt{
+  display:inline-block;padding:0 5px;border-radius:3px;margin-left:2px;
+  font-family:var(--mono);font-size:9.5px;line-height:1.5;
+  text-transform:uppercase;letter-spacing:.04em;color:#111;
+}
+.simXtSt-vert{background:var(--green,#4cc38a)}
+.simXtSt-orange{background:var(--yellow,#e8b04a)}
+.simXtSt-rouge{background:var(--red,#e8443a);color:#fff}
+.simXtN2 td{white-space:nowrap}
+.simXtLigneCarte{cursor:pointer}
+.simXtLigneCarte:hover td{background:rgba(255,255,255,.04)}
+.simXtGrille{stroke:var(--border);stroke-width:1;opacity:.6}
+.simXtCurseur{stroke:var(--txt);stroke-width:1;opacity:.7}
+.simXtFig{display:block;margin:6px 0}
 
 /* ==========================================================================
    CE QU'IL Y A À FAIRE, ET LES RÉSERVES

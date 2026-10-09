@@ -3102,6 +3102,17 @@ const SIM_XT_SONDES_MAX=2000;   /* au-delà, on grossit le pas plutôt que d'ino
    C'est le même axe que celui du serveur (`_parcours`), et il faut que ce soit
    le même : c'est lui qui met un via de couture et un pic de couplage à la
    même abscisse sur la carte. */
+/* LA NATURE D'UN NET — sa classe électrique —, la même pour la vérification
+   de carte et pour le crosstalk : masse, alimentation, puis la classe de net
+   posée dans l'éditeur, « Lent » à défaut. */
+function simNaturePcb(n){
+  if(GND_RE.test(n))return "Masse";
+  if(isPower(n))return "Alimentation";
+  const c=S.netClass[n]||"";
+  return ["Masse","Alimentation","Horloge","Rapide","RF","Analogique","Antenne"]
+    .find(k=>c&&SCH_CLASSES[k].re.test(c))||"Lent";
+}
+
 function simXtParcours(g){
   const out=[];
   let s=0;
@@ -4818,6 +4829,10 @@ const SIM_PCB={
 
     const doc=base.doc;
     doc.agresseurs=nets;
+    /* LA CLASSE DE CHAQUE AGRESSEUR : c'est d'elle que le serveur déduit le
+       temps de montée quand le champ t_r est laissé vide. */
+    doc.natures={};
+    for(const n of nets)doc.natures[n]=simNaturePcb(n);
     /* LE VOISINAGE EST REPRIS AVEC LES COUCHES ADJACENTES : c'est la seule
        différence de géométrie avec le document de simulation, et elle compte —
        deux pistes superposées sont le cas que la section droite ne sait pas
@@ -5357,13 +5372,7 @@ const SIM_PCB={
     const routes=new Set(S.tracks.map(t=>t.net));
     const parDefaut=netTable().map(n=>n.name).filter(n=>
       routes.has(n)&&!S.netClass[n]&&!isPower(n)&&!GND_RE.test(n));
-    const nature=n=>{
-      if(GND_RE.test(n))return "Masse";
-      if(isPower(n))return "Alimentation";
-      const c=S.netClass[n]||"";
-      return ["Masse","Alimentation","Horloge","Rapide","RF","Analogique","Antenne"]
-        .find(k=>c&&SCH_CLASSES[k].re.test(c))||"Lent";
-    };
+    const nature=simNaturePcb;
     const natures={}, parNet=new Map(), vias=[];
     for(const {name} of netTable())natures[name]=nature(name);
     for(const t of S.tracks)if(t.net){

@@ -13,12 +13,12 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 812 essais (`editeur-pcb/test/harness.js`) |
+| **Éditeur PCB** | En service | 833 essais (`editeur-pcb/test/harness.js`) |
 | **Éditeur Schématique** | En service | 119 essais (`editeur-schematique/test/harness.js`) |
-| **Visionneuse IPC-2581** | En service | 189 essais (`harness-sim.js`) + 59 (`banc-essai.py`) |
+| **Visionneuse IPC-2581** | En service | 186 essais (`harness-sim.js`) + 59 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.5.0)** | En service (0,3 à 0,4 % vs étalons) | 199 cas (`python/test/banc-ligne-mom.py`) |
 | **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | inclus dans les 199 cas |
-| **SI — Crosstalk localisé (`crosstalk` v3.6.0)** | En service (%, dB, volts le long du tracé ; mode simple classé par Kb·2Td) | 65 cas (`python/test/banc-crosstalk.py`), dont validation de bout en bout contre la triplaque exacte, Cohn et Garg-Bahl |
+| **SI — Crosstalk niveau 2 (`crosstalk` v4.0.0)** | En service (scan normalisé : k_total, NEXT et FEXT en % et dB, statut vert / orange / rouge, piste sélectionnée — t_r saisi ou déduit de la classe — ou toute la carte sous un t_r global ; pistes superposées résolues ; l'analyse électrique est retirée) | 39 cas (`python/test/banc-crosstalk.py`), dont la triplaque exacte (Cohn) et les formules du niveau 2 |
 | **Cascade SI / PDN (`simulation_em` v4.3.0)** | En service | couvert par les bancs `ligne_mom`, crosstalk et éditeur |
 | **SI — Diagramme de l'œil (`oeil` v1.0.0)** | En service (réponse à un bit depuis la cascade ABCD, simple et différentiel ; œil PRBS7/9/15 et pire cas PDA ; CTLE, FFE, DFE ; 18 gabarits de protocole avec leur fiabilité) — émetteur/récepteur linéaires, sans gigue aléatoire ni diaphonie | 19 cas (`python/test/banc-oeil.py`) |
 | **RF — S21 port à port (`rf_reseau` v1.5.0)** | En service dans l'éditeur PCB et la visionneuse, chacun avec son empilage (pistes par `simulation_em`, lignes couplées à N conducteurs avec pertes et dispersion modale, coudes et vias aux bords des longements, pastilles en MoM 3D sur stratifié étalonné sur l'empilage, zones et coulées de masse entières en maillage adaptatif creux sur leur cuivre rempli, longements recoupés à leur écart local, chemins de masse piste + via, broches annexes, pistes des autres nets fermées sur leur Z₀, mutuelles des selfs entre elles et avec les pistes (Neumann avec image), fentes du plan de référence (Ott), composants SPICE / .sNp / idéaux, S généralisés sur ports complexes, « et si ») — quasi-statique (+ Getsinger) : le domaine de validité (modes supérieurs, ondes de surface, rayonnement) est calculé et signalé ; les modéliser demande le moteur pleine onde | 47 cas (`python/test/banc-rf.py`) + 8 essais de page (`editeur-pcb/test/harness.js`) + 3 (`harness-sim.js`) |
@@ -157,7 +157,7 @@ au genou 0,35 / t_r.
 - [x] Rapport par règle puis par net, classe du net affichée, clic → vue + marque, marquages sans net et nets « Lent par défaut » à part, export texte ; l'onglet *Santé liaison* retiré.
 - [x] **Angles des pistes** (tous nets) : aigus (critiques), droits (vigilance), jonctions en T ou en étoile, hors 45° ; pastilles et vias exclus, micro-zigzags d'export noyés dans le cuivre exclus.
 - [x] **Chemins de retour** (point 3) : chaque via de signal qui change de plan, par le moteur de Current Return Path ; verdict = pire de la réflexion |Γ| et de la boucle face à λ/20 ; traversée de cavité GND → alimentation chiffrée même hors parcours.
-- [x] **Diaphonie** (point 6) : chaque couple de pistes voisines, Kb/Kf par MoM à l'écart réel, NEXT/FEXT au front de l'agresseur face au budget.
+- [x] **Diaphonie** (point 6) : chaque couple de pistes voisines, Kb/Kf par MoM à l'écart réel, NEXT/FEXT au niveau 2 sous le t_r global, statut vert / orange / rouge (3 % / 7 %).
 - [x] **Le cuivre des surfaces** envoyé par les deux outils (plans et versements de la visionneuse, zones et découpes de l'éditeur) et peint une fois par couche côté serveur (`_Surfaces`, numpy) ; contour de carte, trous métallisés et leur portée, broches des composants avec leur net.
 - [x] **1. Empilage** : couche de signal sans plan (critique si elle porte un net rapide), plan derrière une autre couche, plan collé à plus de 0,5 mm pour un net rapide, couches de signal face à face, cavité alimentation / masse (pF/cm²), symétrie (voilage).
 - [x] **2. Impédance des nets** : Z₀ par section MoM avec la masse coplanaire mesurée dans le cuivre de la couche, R, L, C, T_d par net ; réflexion Γ · min(1, 2T_d / t_r) de chaque tronçon face à la cible (Horloge, Rapide, RF) ou à l'impédance dominante du net.
@@ -203,7 +203,7 @@ au genou 0,35 / t_r.
 Les fonctionnalités suivantes sont entièrement développées, intégrées et validées. Leur historique détaillé d'implémentation est consultable dans [docs/HISTORIQUE_DEVELOPPEMENT.md](docs/HISTORIQUE_DEVELOPPEMENT.md) :
 
 1. **Solveur DC & Thermique** : maillage surfacique multi-couches, extraction exacte des vias en série/parallèle, modèle d'étalement thermique IPC-2152 en °C, détection des culs-de-sac.
-2. **SI & Crosstalk spatial** : matrice multi-lignes MoM 2D, réflectométrie temporelle IFFT pour localiser le couplage en volts et en position sur la victime.
+2. **SI & Crosstalk niveau 2** : matrice multi-lignes MoM 2D, k_total, NEXT et FEXT normalisés (échelon unitaire, lignes adaptées, t_r par classe ou global) avec statut vert / orange / rouge, pour la piste sélectionnée et pour toute la carte ; la carte locale dit où le NEXT se fabrique. (L'analyse électrique — matrice S, IFFT, volts — a été retirée.)
 3. **Modélisation physique des discontinuités** : coudes de Gupta (L, C), vias en $\pi$ (L Grover, C antipads), moignons résonants complexes, traversée de plans selon Bogatin.
 4. **Scoring de placement & Motifs** : HPWL, congestion, découplage HF, auto-rotation vectorielle anti-croisements, détection de motifs (LDO, Buck, bus numériques, quartz, RC) et injection automatique des courants DC.
 5. **Bus & Feuilles hiérarchiques** : mode bus épaissi, notation vectorielle, feuille racine synoptique avec blocs de sous-feuilles et sheet pins.

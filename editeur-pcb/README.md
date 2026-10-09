@@ -1742,7 +1742,7 @@ Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI*
 | --- | --- | --- |
 | **Impédance** | Z₀ tronçon par tronçon, paramètres S de la liaison | la section droite d'UNE piste |
 | **Z différentielle** | Z_diff et Z_commune des paires qui longent la sélection | la même section, à DEUX conducteurs |
-| **Crosstalk** | **COMBIEN** une voisine prend — en %, en dB et **en volts** — et **OÙ** le long du parcours cela se fabrique | une matrice S MULTI-PORTS mise en cascade, synthétisée depuis le DESIGN |
+| **Crosstalk** | le **niveau 2** : pour la piste sélectionnée ou pour toute la carte, le pic de bruit relatif de chaque victime — k_total, NEXT et FEXT en % et en dB, statut vert / orange / rouge (3 % / 7 %) — sous un échelon unitaire et un front t_r, et **OÙ** le NEXT se fabrique le long du parcours | [C] et [L] bloc par bloc (MoM 2D) le long du parcours, depuis le DESIGN |
 | **Current Return Path** | par où revient le courant de chaque via | la liaison verticale |
 | **Diagramme de l'œil** | si la liaison passe le gabarit de son protocole (USB, PCIe, HDMI, LVDS, MIPI, SATA, SGMII, SPI, QSPI, SD, eMMC), avec quelle marge — œil PRBS et œil pire cas | la même cascade que l'Impédance (ou la paire), passée en temporel par sa propre route, `/api/oeil` — voir [le guide Simulation EM](../docs/simulation-em.md) |
 
@@ -1751,14 +1751,11 @@ relance rien, et les trois fiches parlent nécessairement du même cuivre. Elles
 ne posent pas la même question — une piste parfaitement à 50 Ω peut avoir un
 retour catastrophique.
 
-> **Un onglet *Diaphonie* a existé, et il a été retiré.** Il rendait NEXT et
-> FEXT sur une section droite unique : il disait *combien*, jamais *où*, et sa
-> carte de chaleur **attribuait** le bruit aux tronçons au prorata du couplage
-> local au lieu de le mesurer le long de la piste. *Crosstalk* rend le même
-> « combien » — le pour-cent, les décibels et la tension sur la broche de la
-> victime — avec une abscisse en millimètres en plus. Deux onglets pour une
-> seule question, répondue par deux physiques, finissaient par rendre deux
-> verdicts qu'on ne sait pas arbitrer.
+> **Un onglet *Diaphonie* a existé, et il a été retiré — puis l'analyse
+> « électrique » qui l'avait remplacé.** *Crosstalk* ne fait plus que le
+> **niveau 2**, le scan normalisé : le pic de bruit relatif que chaque victime
+> subit, en pour-cent et en décibels de l'amplitude de l'agresseur, sans
+> tension ni protocole à connaître, avec une abscisse en millimètres en plus.
 
 Le bouton **« réglages »**, au bout de la rangée des onglets, **replie les
 commandes** de l'analyse courante pour laisser toute la hauteur du panneau au
@@ -1767,35 +1764,20 @@ lit. La rangée qui porte le bouton d'action ne se replie jamais — on relance
 sans déplier —, non plus que celle qui avertit sur la bande.
 
 **Crosstalk est à part**, avec sa route (`/api/crosstalk`), son calcul et son
-résultat. Il répond seul à la question du couplage : combien une voisine prend,
-et lequel des quarante millimètres qui longent en est responsable. Les portions où le couplage de
-chaque victime se fabrique sont peintes **sur son cuivre**, ambre quand le
-dessin des pistes l'explique et rouge quand rien ne l'explique. Le seul geste
-demandé est de **sélectionner l'agresseur** : les victimes, les ports et leur correspondance se
-déduisent de la géométrie, et **aucun fichier de paramètres S ne s'importe** —
-la matrice se génère à partir du design. Le profil d'espacement, mesuré sur le
-tracé, se superpose à la carte pour que chaque pic se recoupe avec le
-resserrement qui devrait l'expliquer. Voir
-[le README du dépôt](../README.md#crosstalk--où-le-couplage-se-fabrique).
+résultat. C'est le **niveau 2** : un échelon d'agresseur unitaire, des lignes
+adaptées, un front t_r — celui de la piste sélectionnée (saisi, ou déduit de la
+**classe** de son net), ou un t_r **global** (1 ns) pour **toute la carte**. Par
+paire, il rend **k_total** = ½(Cm/C11 + Lm/L11), le **NEXT** (Kb si 2T_d ≥ t_r,
+Kb·2T_d/t_r sinon) et le **FEXT** (|Kf|·T_d/t_r), en % et en dB, chacun avec
+son **statut** vert / orange / rouge (3 % et 7 % par défaut, réglables, les mêmes
+que la vérification de carte). Le seul geste demandé est de **sélectionner
+l'agresseur** : les victimes se déduisent de la géométrie, pistes superposées
+comprises. La **carte locale** dit où, le long du parcours, le NEXT se fabrique,
+et les portions à reprendre sont peintes **sur le cuivre** de chaque victime.
+Le bouton **▶ Toute la carte** scanne toutes les paires voisines sous le t_r
+global ; un clic sur une ligne du tableau centre la vue sur la paire. Voir
+[le guide Simulation EM](../docs/simulation-em.md).
 
-Trois cases collées à la figure — **NEXT**, **FEXT**, **mV** — disent ce
-qu'elle trace et dans quelle unité, sans rien relancer : les deux courbes et
-les deux unités sont déjà dans le résultat. Éteindre un sens **resserre** la
-figure sur celui qui reste, plutôt que de garder un cadre vide qui se lirait
-comme un couplage nul.
-
-Les volts se lisent **sur la courbe** : le pour-cent gradue l'axe de gauche, la
-tension celui de droite — trois crans chacun —, et chaque courbe porte **sa
-tension écrite à son pic**, dans la couleur de sa victime. La réglette reste ce
-qui répond position par position.
-
-### Z différentielle : la section à N conducteurs, lue en ohms
-
-Le solveur résout la section à **N conducteurs** (`solve_multiline`,
-`../python/ligne_mom.py`) : la matrice de capacité de Maxwell **[C]**, puis
-**[L] = μ₀ε₀[C₀]⁻¹** puisque le milieu n'est pas magnétique. De ces deux
-matrices sortent, sans aucun solveur de plus, les modes **pair** et **impair**
-— donc Z_diff = 2·Z_impair et Z_comm = Z_pair/2.
 
 **L'autre moitié d'une paire n'est pas toujours dans la sélection** : on
 désigne un net, pas deux. La page joint donc au problème le **voisinage** — le
@@ -1805,7 +1787,7 @@ même couche, parallèle à 15° près, un recouvrement mesuré par projection, 
 
 Ici, **un couplage n'est pas un défaut** : c'est le mode impair d'une paire,
 celui que le récepteur différentiel rejette. Ce qu'une voisine *prend* se lit
-sous *Crosstalk*, en pour-cent, en décibels et en volts.
+sous *Crosstalk*, en pour-cent et en décibels.
 
 ### Une piste, deux voisines : une seule section
 
@@ -1846,13 +1828,11 @@ d'un régulateur, un bus qui commute — et on veut savoir *qui il dérange, de
 combien, et où*. Une ligne par piste qui longe la sélection.
 
 **Rien ne se totalise, et c'est voulu.** Une *victime* additionne ses agresseurs
-— trois à 3 % lui font 9 %, et c'est ce qu'on dimensionne. Un *agresseur* non :
-ses victimes sont des nets différents, chacun avec son propre budget. Faire la
-somme de ce que la sélection envoie à trois pistes ne décrirait aucune tension
-existant nulle part. Chaque ligne se juge donc seule, et sur **le pire de ses
-deux bouts** : le NEXT s'observe au bout proche de la victime, le FEXT à son
-bout lointain, jamais au même point — donc jamais additionnés, ni en pour-cent
-ni en volts.
+— la vérification de carte les somme au pire en phase —, un *agresseur* non :
+ses victimes sont des nets différents. Chaque ligne se juge donc seule, et le
+NEXT et le FEXT ont **chacun leur statut** : le NEXT s'observe au bout proche de
+la victime, le FEXT à son bout lointain, jamais au même point — donc jamais
+additionnés. La paire prend le pire des deux.
 
 **Un partenaire différentiel déclaré n'est pas une victime.** Une paire est
 serrée *par construction* — c'est tout ce qu'on lui demande —, et son couplage
@@ -1869,16 +1849,12 @@ chaque victime. Le chiffre annoncé est ce qu'elle prend à la sélection, pas s
 bruit total — c'est un **minorant**, et la fiche le dit. Pour le budget complet
 d'une victime, sélectionnez-la : elle devient l'agresseur à son tour.
 
-**Le temps de montée** et **l'amplitude** ont chacun leur unité — ps / ns / µs
-et mV / V —, choisie dans une liste comme celle des fréquences : la valeur vit
-en secondes et en volts jusqu'au bout, et en changer *convertit* ce qui est
-écrit sans le réinterpréter. Le front ne change ni [C] ni [L] : sous *Crosstalk*
-il fixe le **genou** — donc le seuil de pas de couture, et la lecture des
-décibels sous la bande que le signal atteint vraiment. Laissé vide, il est
-déduit du haut de la bande par la règle du genou (0,35 / f_max), et la fiche le
-dit. L'amplitude, elle, ne change **aucun** calcul : elle convertit les rapports
-en volts, et c'est le seul champ du panneau qui ne jette pas le résultat
-affiché.
+**Le temps de montée** se saisit en nanosecondes. Laissé vide, il est déduit
+de la **classe** du net agresseur — les fronts du tableau des classes de la
+vérification de carte (Horloge 2 ns, Rapide 1 ns, RF 100 ps, Lent 10 ns…) —, et
+la fiche dit lequel a servi. Il ne change ni [C] ni [L] : il fait d'un Kb un
+NEXT et d'un Kf un FEXT, et fixe le seuil de pas de couture. Il n'y a plus
+d'amplitude : le niveau 2 est normalisé.
 
 **Ce que ça ne couvre pas, et qui est écrit sous chaque fiche** : le couplage
 entre pistes de **couches différentes** dans la section droite — *Crosstalk*,
@@ -1917,7 +1893,7 @@ maintenant dans le calcul**, et la coupe marque en rouge *garde NON COUSUE* avec
 le trou mesuré. Sur la carte d'exemple, la même garde à 1,4 mm de couture tient
 à 150 ps et **flotte à 15 ps** — le couplage y passe de 0,69 % à 5,74 %. La
 nature du conducteur entre donc dans **toutes** les sections : la Z
-différentielle comme la matrice S multi-ports du crosstalk.
+différentielle comme les sections du crosstalk.
 
 *Ce qui n'y est pas* : la **résonance** d'un tel cuivre. Le quasi-statique rend
 le transfert, pas le pic aux multiples de λ/2.
@@ -1959,20 +1935,13 @@ une section droite.
 Ce bloc est rendu par le serveur et apparaît en dernier sous chaque fiche : il
 clôt la liste des hypothèses.
 
-### Juger en millivolts plutôt qu'en pourcentage
+### Le statut DRC : vert, orange, rouge
 
-Un budget en pourcentage est une convention ; ce qui décide qu'une carte marche,
-c'est la **marge de bruit** du récepteur — l'écart entre ce que le driver
-garantit (V_OL / V_OH) et ce que le récepteur exige (V_IL / V_IH). Dans la
-rangée **Signal** de l'onglet *Crosstalk*, le champ **marge** (mV), rempli,
-**remplace** le pourcentage : deux seuils concurrents seraient pires que pas de
-seuil, puisqu'on ne saurait plus lequel a rougi. La fiche dit toujours lequel
-des deux elle applique, et le trace en travers des courbes.
-
-C'est le même champ **amplitude** qui rend les deux comparables : le couplage
-est un rapport, l'amplitude le convertit en volts, et c'est en volts qu'une
-marge de récepteur se lit sur une fiche technique. L'unité suit l'ordre de
-grandeur — V, mV, µV —, et aucun des trois champs ne relance le calcul.
+Le crosstalk se juge en **pour-cent de l'agresseur**, contre deux seuils : vert
+sous **3 %**, orange de 3 à **7 %**, rouge au-delà. Ils se règlent dans la
+rangée **Statut DRC** de l'onglet *Crosstalk* — ou dans la vérification de
+carte, ce sont les mêmes — et changer un seuil re-juge la fiche sans relancer
+le calcul : les niveaux ne dépendent que du cuivre et du front.
 
 ### Plusieurs morceaux à la fois : les lots
 

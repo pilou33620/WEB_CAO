@@ -217,7 +217,13 @@ TR_CLASSES = {"Horloge": 2e-9, "Rapide": 1e-9, "RF": 1e-10,
 CADENCES = {"Horloge": 5e7, "Rapide": 1e8, "RF": 1e9,
             "Analogique": 1e6, "Lent": 1e7, "Découpage": 2e6}
 Z0 = 50.0                # impédance de ligne supposée pour juger une réflexion
-BUDGET = 0.05            # diaphonie tolérée, en fraction de l'agresseur
+# LA DIAPHONIE, NIVEAU 2 : un front GLOBAL pour toute la carte (1 ns, la
+# majorité des fronts rapides du numérique moderne) et les seuils DRC vert /
+# orange / rouge, en fraction de l'agresseur. Les mêmes que l'analyse d'une
+# piste sélectionnée (crosstalk.TR_DEFAUT, SEUIL_ORANGE, SEUIL_ROUGE).
+XT_TR = 1e-9
+XT_ORANGE, XT_ROUGE = 0.03, 0.07
+PAIRES_MAX = 3000        # paires rendues au tableau « toute la carte »
 # Réflexion d'un via : |Γ| au-delà duquel on alerte, puis on condamne.
 GAMMA_VIGILANCE, GAMMA_CRITIQUE = 0.05, 0.10
 C0 = 299792458.0
@@ -252,8 +258,16 @@ def _reglages(doc):
         tr["RF"] = 0.35 / porteuse
     out = {"tr": tr, "cadences": cadences,
            "porteuse_rf": porteuse if porteuse > 0 else None,
-           "z0": float(r.get("z0") or Z0), "budget": float(r.get("budget") or BUDGET),
+           "z0": float(r.get("z0") or Z0),
+           "xt_tr": float(r.get("xt_tr") or XT_TR),
+           "xt_orange": float(r.get("xt_orange") or XT_ORANGE),
+           "xt_rouge": float(r.get("xt_rouge") or XT_ROUGE),
            "zdiff": float(r.get("zdiff") or ZDIFF)}
+    if not out["xt_tr"] > 0:
+        raise ErreurAnalyse("Le front global de la diaphonie doit être positif.")
+    if not 0 < out["xt_orange"] <= out["xt_rouge"] < 1:
+        raise ErreurAnalyse("Seuils de diaphonie incohérents : il faut"
+                            " 0 < orange ≤ rouge < 100 %.")
     # PAR CLASSE ET PAR NET, ce qui passe devant les réglages de carte. Une
     # carte LoRa + NFC porte deux radios : 868 MHz sur l'une, 13,56 MHz sur
     # l'autre, et juger le NFC à 868 MHz le condamne à tort. De même une
@@ -582,11 +596,13 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
     des matrices [L] et [C] de la section à deux conducteurs, par la méthode
     des moments (ligne_mom, via `section_de_couche` et
     `crosstalk.coefficients_couple`), à l'écart réel de chaque longement --
-    arcs compris, en cordes de 5°. Le niveau suit le modèle des lignes
-    faiblement couplées :
-        NEXT = min(Kb max, Σ Kb·2Td / t_r)   -- sature au-delà de t_r·v/2 ;
-        FEXT = |Σ Kf·Td| / t_r                -- croît avec la longueur.
-    t_r est le front effectif de l'AGRESSEUR à sa cadence.
+    arcs compris, en cordes de 5°. Le niveau est celui du NIVEAU 2 -- un
+    échelon unitaire, des lignes adaptées, `crosstalk.niveau2` :
+        k_total = ½ (Cm/C11 + Lm/L11) ;
+        NEXT = Kb si 2 T_d ≥ t_r, Σ Kb·2Td / t_r sinon ;
+        FEXT = |Σ Kf·Td| / t_r.
+    t_r est le front GLOBAL de la carte (1 ns par défaut, réglable), et
+    chaque niveau se juge aux seuils vert / orange / rouge (3 % et 7 %).
 
     ENTRE DEUX COUCHES VOISINES sans plan entre elles (larges faces), deux
     pistes qui se superposent se couplent par leur largeur : Kb RÉSOLU aussi,
@@ -635,12 +651,8 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
                 return None
             cache[cle] = None
             try:
-                r = tl.section_deux_niveaux(
-                    [{"x": 0.0, "y": h_v * 1e-3, "w": w_v * 1e-3},
-                     {"x": x_lat * 1e-3, "y": h_a * 1e-3, "w": w_a * 1e-3}],
-                    b=b_mm * 1e-3 if b_mm else None)
                 # milieu homogène : Kf est nul, seul Kb compte
-                cache[cle] = xt.coefficients_couple(r["c"], r["l"], 0, 1)[0]
+                cache[cle] = xt.kb_superposees(h_v, h_a, x_lat, w_v, w_a, b_mm)
             except Exception:                           # noqa: BLE001
                 pass
         return cache[cle]
@@ -752,10 +764,22 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
                     pass
         return cache[cle]
 
-    budget, perdus = reg["budget"], 0
+    # LE NIVEAU 2 : un échelon unitaire sous le front GLOBAL de la carte, des
+    # lignes adaptées. Les formules sont celles de `crosstalk.niveau2`, que
+    # l'analyse d'une piste sélectionnée emploie aussi : deux outils qui
+    # jugent le même longement rendent le même chiffre.
+    t_r, orange, rouge = reg["xt_tr"], reg["xt_orange"], reg["xt_rouge"]
+    sev_de = {"rouge": "critique", "orange": "vigilance", "vert": "ok"}
+    perdus = 0
 
-    def verdict(niv):
-        return "critique" if niv > budget else "vigilance" if niv > budget / 2 else "ok"
+    def colonne(n2):
+        """La colonne unique du constat : le front global, et le pire des deux."""
+        return [{"f": 0.35 / t_r, "tr": t_r, "f_eval": 0.35 / t_r,
+                 "valeur": round(max(n2["next"], n2["fext"]), 5),
+                 "verdict": sev_de[n2["statut"]],
+                 "next": n2["next"], "fext": n2["fext"],
+                 "statut_next": n2["statut_next"],
+                 "statut_fext": n2["statut_fext"]}]
 
     # (victime, agresseur, couche) -> ([(L, écart, Kb, Kf, Td, point)], larges faces ?)
     tous = {}
@@ -774,31 +798,45 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
 
     # UN COUPLE, UNE LIGNE : A ← B et B ← A sont le même longement. On garde
     # le sens le plus grave et l'on dit que l'autre est signalé aussi.
-    garde, par_victime = {}, defaultdict(list)
+    garde, par_victime, paires_vues = {}, defaultdict(list), {}
     rang_sev = {"critique": 2, "vigilance": 1, "ok": 0}
     for (nv, na, c), (vals, large) in tous.items():
         bilan["couples_larges_faces" if large else "couples"] += 1
-        kb_max = max(x[2] for x in vals)
-
-        def juge(f_eval, tr, vals=vals, kb_max=kb_max):
-            nx = min(kb_max, sum(x[2] * 2 * x[4] / tr for x in vals))
-            fx = abs(sum(x[3] * x[4] for x in vals)) / tr
-            niv = max(nx, fx)
-            return niv, verdict(niv)
-        freqs = _par_frequence(reg, _classe(doc, na), juge, na)
+        n2 = xt.niveau2([(x[2], x[3], x[4]) for x in vals], t_r, orange, rouge)
+        freqs = colonne(n2)
         long_ = max(vals, key=lambda x: x[0])
-        par_victime[nv].append((na, freqs, long_[5], c))
-        sev = _pire([f["verdict"] for f in freqs])
+        par_victime[nv].append((na, n2, long_[5], c))
+        sev = sev_de[n2["statut"]]
+        # LE TUPLE DE DIAGNOSTIC DE LA PAIRE, vert compris : c'est le tableau
+        # « toute la carte » du panneau Crosstalk.
+        paire = {"victime": nv, "agresseur": na, "couche": c,
+                 "superposee": large,
+                 "longueur": round(sum(x[0] for x in vals), 3),
+                 "ecart": round(min(x[1] for x in vals), 4),
+                 "x": long_[5][0] / unite, "y": long_[5][1] / unite,
+                 "k_total": n2["k_total"], "next": n2["next"],
+                 "next_db": n2["next_db"], "fext": n2["fext"],
+                 "fext_db": n2["fext_db"], "sature": n2["sature"],
+                 "td_ps": n2["td_ps"], "statut_next": n2["statut_next"],
+                 "statut_fext": n2["statut_fext"], "statut": n2["statut"]}
+        cle_p = (frozenset((nv, na)), c)
+        avant = paires_vues.get(cle_p)
+        if avant is None or max(paire["next"], paire["fext"]) > \
+                max(avant["next"], avant["fext"]):
+            paires_vues[cle_p] = paire
         if sev == "ok":
             continue
+        chiffres = ("k_total %.1f %%, NEXT %.2f %% (%s), FEXT %.2f %% (%s)"
+                    % (100 * n2["k_total"], 100 * n2["next"], n2["statut_next"],
+                       100 * n2["fext"], n2["statut_fext"]))
         if large:
             msg = ("Depuis %s, couche voisine : %.1f mm superposés, décalage mini %.3f mm"
-                   " d'axe à axe, Kb %.1f %% (%s)"
-                   % (na, sum(x[0] for x in vals), min(x[1] for x in vals), 100 * kb_max,
+                   " d'axe à axe, %s (%s)"
+                   % (na, sum(x[0] for x in vals), min(x[1] for x in vals), chiffres,
                       " ; ".join(sorted({x[6] for x in vals}))))
         else:
-            msg = ("Depuis %s : %.1f mm en regard, écart mini %.3f mm, Kb %.1f %%"
-                   % (na, sum(x[0] for x in vals), min(x[1] for x in vals), 100 * kb_max))
+            msg = ("Depuis %s : %.1f mm en regard, écart mini %.3f mm, %s"
+                   % (na, sum(x[0] for x in vals), min(x[1] for x in vals), chiffres))
         k = {"regle": "diaphonie", "severite": sev, "frequences": freqs,
              "x": long_[5][0] / unite, "y": long_[5][1] / unite, "c": c, "n": nv, "msg": msg}
         cle = (frozenset((nv, na)), c)
@@ -811,28 +849,37 @@ def diaphonie(doc, couches, reg, unite, notes, se, xt, troncons=None):
             k = pire
         garde[cle] = k
     out = list(garde.values())
+    bilan["paires"] = sorted(paires_vues.values(),
+                             key=lambda p: -max(p["next"], p["fext"]))[:PAIRES_MAX]
+    bilan["paires_total"] = len(paires_vues)
+    bilan["t_r"] = t_r
+    bilan["seuils"] = {"orange": orange, "rouge": rouge}
 
-    # LA SOMME, EN PHASE : ce qu'aucun agresseur ne fait seul.
+    # LA SOMME, EN PHASE : ce qu'aucun agresseur ne fait seul. NEXT et FEXT
+    # se somment chacun de leur côté, et se jugent aux mêmes seuils.
     for nv, lst in par_victime.items():
         if len(lst) < 2:
             continue
-        cols = []
-        for m, f0 in enumerate(lst[0][1]):
-            s = sum(x[1][m]["valeur"] for x in lst)
-            cols.append(dict(f0, valeur=round(s, 5), verdict=verdict(s)))
-        seul = max(rang_sev[_pire([f["verdict"] for f in x[1]])] for x in lst)
-        sev = _pire([f["verdict"] for f in cols])
+        s_next = sum(x[1]["next"] for x in lst)
+        s_fext = sum(x[1]["fext"] for x in lst)
+        s_n, s_f = xt.statut(s_next, orange, rouge), xt.statut(s_fext, orange, rouge)
+        somme = {"next": round(s_next, 6), "fext": round(s_fext, 6),
+                 "statut_next": s_n, "statut_fext": s_f,
+                 "statut": xt.pire_statut([s_n, s_f])}
+        seul = max(rang_sev[sev_de[x[1]["statut"]]] for x in lst)
+        sev = sev_de[somme["statut"]]
         if rang_sev[sev] <= seul:
             continue
-        top = sorted(lst, key=lambda x: -max(f["valeur"] for f in x[1]))
+        top = sorted(lst, key=lambda x: -max(x[1]["next"], x[1]["fext"]))
         _, _, pt, c = top[0]
-        out.append({"regle": "diaphonie", "severite": sev, "frequences": cols,
+        out.append({"regle": "diaphonie", "severite": sev, "frequences": colonne(somme),
                     "x": pt[0] / unite, "y": pt[1] / unite, "c": c, "n": nv,
-                    "msg": "Somme de %d agresseurs en phase (%s%s) : aucun ne dépasse seul,"
-                           " ensemble ils franchissent le seuil"
+                    "msg": "Somme de %d agresseurs en phase (%s%s) : NEXT %.2f %%, FEXT"
+                           " %.2f %% — aucun ne dépasse seul, ensemble ils franchissent"
+                           " le seuil"
                            % (len(lst), ", ".join("%s %.1f %%" % (x[0], 100 * max(
-                               f["valeur"] for f in x[1])) for x in top[:4]),
-                              "…" if len(top) > 4 else "")})
+                               x[1]["next"], x[1]["fext"])) for x in top[:4]),
+                              "…" if len(top) > 4 else "", 100 * s_next, 100 * s_fext)})
     bilan["sections"] = sum(1 for c in cache.values() if c)
     if perdus:
         notes.append("%d longement(s) sans section résolue (plafond de %d résolutions"
@@ -2742,9 +2789,17 @@ def analyser_document(doc):
     if antennes:
         notes.append("Classés Antenne, jugés en fabrication seulement (angles, détourage,"
                      " piste isolée) : %s." % ", ".join(antennes))
+    # `regles` : la liste des règles à faire tourner, toutes à défaut. Le
+    # panneau Crosstalk n'y met que « diaphonie » : la carte entière, sous son
+    # front global, sans attendre les angles, les impédances ni les retours.
+    regles = set(str(x) for x in (doc.get("regles") or ()) if x)
+    voulue = (lambda r: not regles or r in regles)
     try:
         t0 = time.perf_counter()
-        constats = angles(*listes, unite_mm=unite)
+        angulaires = {"aigu", "angle_droit", "jonction", "hors_45"}
+        constats = ([k for k in angles(*listes, unite_mm=unite)
+                     if voulue(k["regle"])]
+                    if not regles or regles & angulaires else [])
         reg = _reglages(doc)
         couches = (doc.get("stackup") or {}).get("layers") or []
         troncons = _troncons(doc, unite)
@@ -2762,7 +2817,8 @@ def analyser_document(doc):
                          " retour, fentes, coutures, diaphonie, bord de carte et paires"
                          " différentielles non vérifiés.")
         else:
-            constats += empilage(doc, couches)
+            if voulue("empilage"):
+                constats += empilage(doc, couches)
             se, xt = _moteurs(notes)
             if se:
                 etapes += [
@@ -2784,6 +2840,8 @@ def analyser_document(doc):
                     notes.append("Pas de plans ni de versements dans le document : fentes et"
                                  " vias de couture non vérifiés.")
         for regle, etape in etapes:
+            if not voulue(regle):
+                continue
             t0 = time.perf_counter()
             k, b = etape()
             durees[regle] = time.perf_counter() - t0

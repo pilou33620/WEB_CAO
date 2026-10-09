@@ -13,7 +13,7 @@ DOSSIER_PYTHON = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if DOSSIER_PYTHON not in sys.path:
     sys.path.insert(0, DOSSIER_PYTHON)
 
-from analyse_carte import angles, analyser_document
+from analyse_carte import angles, analyser_document, ErreurAnalyse
 
 
 def piste(*pts, n="S", c=0, w=0.2):
@@ -247,14 +247,21 @@ def test_diaphonie():
     # 100 mm côte à côte à 0,2 mm (écart = hauteur au plan) : Kb ≈ 9 %
     res = analyser(pistes=[droite("CLK", 0.0), droite("DATA", 0.4)],
                    natures={"CLK": "Horloge", "DATA": "Lent"})
-    k = {(x["n"], x["msg"].split(" :")[0]): x for x in de(res, "diaphonie")}
-    assert list(k) == [("DATA", "Depuis CLK")], list(k)     # un couple, une ligne
-    v = k[("DATA", "Depuis CLK")]
+    # UN FRONT GLOBAL (niveau 2) : les deux sens se valent, une seule ligne
+    # qui dit la réciproque.
+    k = de(res, "diaphonie")
+    assert len(k) == 1 and "réciproquement" in k[0]["msg"], k
+    v = k[0]
     # deux horloges s'agressent l'une l'autre : toujours une ligne, qui le dit
     mu = de(analyser(pistes=[droite("CLK", 0.0), droite("CLK2", 0.4)],
                      natures={"CLK": "Horloge", "CLK2": "Horloge"}), "diaphonie")
     assert len(mu) == 1 and "réciproquement" in mu[0]["msg"], mu
-    assert v["severite"] == "critique" and 8 < float(v["msg"].split("Kb ")[1].split(" ")[0]) < 10, v
+    kt = lambda m: float(m.split("k_total ")[1].split(" %")[0])
+    assert v["severite"] == "critique" and 16 < kt(v["msg"]) < 20, v
+    # LE TUPLE DE DIAGNOSTIC : NEXT et FEXT, chacun son statut.
+    f0 = v["frequences"][0]
+    assert f0["tr"] == 1e-9 and {"next", "fext", "statut_next",
+                                 "statut_fext"} <= set(f0), f0
     assert "100.0 mm en regard" in v["msg"] and "écart mini 0.200 mm" in v["msg"], v["msg"]
     # le NEXT sature : au front le plus raide il vaut Kb, pas davantage
     assert max(f["valeur"] for f in v["frequences"]) < 0.10, v["frequences"]
@@ -277,7 +284,7 @@ def test_diaphonie():
     assert sw["bilan"]["diaphonie"]["couples"] >= 1, sw["bilan"]
     assert de(analyser(pistes=[droite("SW", 0.0), droite("DATA", 0.4)],
                        natures={"SW": "Alimentation"}, bruyants=["SW"],
-                       reglages={"tr": {"Découpage": 1e-9}}), "diaphonie")
+                       reglages={"xt_tr": 1e-9}), "diaphonie")
     vcc = analyser(pistes=[droite("VCC", 0.0), droite("DATA", 0.4)],
                    natures={"VCC": "Alimentation"})
     assert vcc["bilan"]["diaphonie"]["couples"] == 0 and de(vcc, "diaphonie") == []
@@ -290,7 +297,7 @@ def test_diaphonie():
             "m": [0.0, 0.0], "h": True}
     k = de(analyser(arcs=[arc, arc2], natures={"CLK": "Rapide", "DATA": "Lent"}),
            "diaphonie")
-    assert k and "Depuis CLK" in k[0]["msg"], k
+    assert k and "réciproquement" in k[0]["msg"], k
     # LARGES FACES : deux couches de signal voisines (Top, In1) sans plan entre
     # elles, pistes superposées : couplées ; décalées de 3 mm : non
     st = {"layers": [{"type": "copper", "name": "Top", "role": "signal", "thickness": 0.035},
@@ -303,12 +310,14 @@ def test_diaphonie():
                              "pistes": [droite("CLK", 0.0), droite("DATA", 0.0, c="In1")],
                              "natures": {"CLK": "Horloge", "DATA": "Lent"}})
     k = [x for x in de(sup, "diaphonie") if "couche voisine" in x["msg"]]
-    assert k and k[0]["n"] == "DATA" and k[0]["c"] == "Top ↔ In1", de(sup, "diaphonie")
+    # un front global : les deux sens se valent, la ligne dit la réciproque
+    assert k and k[0]["n"] in ("CLK", "DATA") and k[0]["c"] == "Top ↔ In1", \
+        de(sup, "diaphonie")
     assert sup["bilan"]["diaphonie"]["couples_larges_faces"] >= 1, sup["bilan"]
     # RÉSOLU, pas estimé : les rubans à leurs deux hauteurs. Un plan de plus
     # au-dessus de la paire ferme le domaine et réduit le couplage.
     assert "MoM, un plan" in k[0]["msg"], k[0]["msg"]
-    kb = lambda m: float(m.split("Kb ")[1].split(" %")[0])
+    kb = lambda m: float(m.split("k_total ")[1].split(" %")[0])
     st2 = {"layers": [{"type": "copper", "name": "L0", "role": "plane", "net": "GND",
                        "thickness": 0.035},
                       {"type": "dielectric", "name": "d0", "thickness": 0.2, "epsilon_r": 4.3}]
@@ -324,15 +333,40 @@ def test_diaphonie():
                               "pistes": [droite("CLK", 0.0), droite("DATA", 3.0, c="In1")],
                               "natures": {"CLK": "Horloge", "DATA": "Lent"}})
     assert not [x for x in de(loin, "diaphonie") if "couche voisine" in x["msg"]], loin
-    # LA SOMME : deux agresseurs de part et d'autre, chacun sous le budget
-    # (vigilance), ensemble au-dessus (critique)
-    tri = [droite("A1", -0.4, x2=30.0), droite("V", 0.0, x2=30.0), droite("A2", 0.4, x2=30.0)]
+    # LA SOMME : deux agresseurs de part et d'autre, chacun orange
+    # (vigilance), ensemble au-delà du rouge (critique)
+    tri = [droite("A1", -0.4, x2=40.0), droite("V", 0.0, x2=40.0), droite("A2", 0.4, x2=40.0)]
     nat = {"A1": "Rapide", "A2": "Rapide", "V": "Lent"}
     res = de(analyser(pistes=tri, natures=nat), "diaphonie")
     seuls = [x for x in res if x["n"] == "V" and "Somme" not in x["msg"]]
     somme = [x for x in res if "Somme de 2 agresseurs" in x["msg"]]
     assert somme and all(x["severite"] != "critique" for x in seuls), res
     assert somme[0]["severite"] == "critique", somme
+    # LE FRONT GLOBAL ET LES SEUILS SE RÈGLENT : un front plus lent calme
+    # la carte, des seuils plus larges aussi.
+    court2 = [droite("CLK", 0.0, x2=10.0), droite("DATA", 0.4, x2=10.0)]
+    vif = de(analyser(pistes=court2, reglages={"xt_tr": 100e-12}), "diaphonie")
+    lent = de(analyser(pistes=court2, reglages={"xt_tr": 10e-9}), "diaphonie")
+    assert vif and vif[0]["severite"] == "critique" and not lent, (vif, lent)
+    large = de(analyser(pistes=[droite("CLK", 0.0), droite("DATA", 0.4)],
+                        reglages={"xt_orange": 0.5, "xt_rouge": 0.6}), "diaphonie")
+    assert large == [], large
+    # LE TABLEAU « TOUTE LA CARTE » : chaque paire, verte comprise, et la
+    # seule règle demandée.
+    seule = analyser(regles=["diaphonie"],
+                     pistes=[droite("CLK", 0.0), droite("DATA", 0.4),
+                             droite("LOIN", 1.2)])
+    assert {k["regle"] for k in seule["constats"]} <= {"diaphonie"}, seule["constats"]
+    paires = seule["bilan"]["diaphonie"]["paires"]
+    assert paires and {"k_total", "next", "fext", "statut"} <= set(paires[0]), paires
+    assert any(p["statut"] == "vert" for p in paires), paires
+    assert seule["bilan"]["diaphonie"]["t_r"] == 1e-9
+    try:
+        analyser(pistes=court2, reglages={"xt_orange": 0.08, "xt_rouge": 0.03})
+    except ErreurAnalyse:
+        pass
+    else:
+        raise AssertionError("des seuils inversés ont été acceptés")
     print("[PASS] test_diaphonie")
 
 
