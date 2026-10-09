@@ -516,15 +516,20 @@ function projdDocEcrire(outil, obj){
   });
 }
 /* ==========================================================================
-   Enregistrer = projet + GitHub (WEB_SUITE)
+   Enregistrer (local) et Sauvegarder le projet (GitHub) -- WEB_SUITE
    --------------------------------------------------------------------------
    Lance par WEB_SUITE, web_CAO.py relaie au lanceur l'envoi de PROJETS sur
-   GitHub (commit + pull + push, routes /api/github*). C'est alors la SEULE
-   sauvegarde des editeurs : Ctrl+S, le menu Fichier et la roulette tactile
-   ecrivent le document dans le dossier du projet (PROJETS/CAO/<projet>), puis
-   l'envoient sur GitHub, sans question ni telechargement. Que l'on soit sur le
-   PC du lanceur ou sur une tablette reliee a un Raspberry Pi, le projet n'a
-   ainsi qu'un seul endroit : le depot des projets.
+   GitHub (commit + pull + push, routes /api/github*). Deux gestes, alors :
+     - Enregistrer (Ctrl+S, menu Fichier, roulette tactile) et l'export du
+       schema vers le PCB ecrivent le document dans le dossier du projet
+       (PROJETS/CAO/<projet>), et c'est tout : rien ne part sur GitHub. Une
+       retouche de derniere minute ne fait pas un commit ;
+     - « Sauvegarder le projet » (Ctrl+Maj+S) enregistre le document ouvert de
+       la meme facon, puis envoie tout le projet sur GitHub en un seul commit
+       (schema, carte et LIB ecrits depuis le dernier envoi).
+   Que l'on soit sur le PC du lanceur ou sur une tablette reliee a un
+   Raspberry Pi, le projet n'a ainsi qu'un seul endroit : le depot des projets.
+   Jamais de telechargement en mode WEB_SUITE.
    Sans lanceur (double-clic, serveur seul), rien ne change : enregistrer
    ecrit dans le projet ouvert, ou telecharge le fichier.
    ========================================================================== */
@@ -628,13 +633,16 @@ function projdProjetSuite(libelle){
     return false;
   });
 }
-/* Le geste complet, seule sauvegarde en mode WEB_SUITE. `enregistrer` rend
-   une promesse : vrai si le document est bien dans le dossier du projet (sinon
-   l'editeur a deja dit pourquoi, et l'on n'envoie rien). `defaut` est le
-   message du commit (ou la fonction qui le donne), `dire` affiche une ligne d'etat, `libelle` nomme le
-   document (« le schéma », « la carte »). Rend vrai si c'est enregistre. */
-function projdEnregistrerGithub(enregistrer, defaut, dire, libelle){
+/* Enregistrer en mode WEB_SUITE : dans un projet de PROJETS, sur le disque du
+   serveur, sans rien envoyer sur GitHub. `enregistrer` rend une promesse :
+   vrai si le document est bien dans le dossier du projet (sinon l'editeur a
+   deja dit pourquoi). `dire` affiche une ligne d'etat, `libelle` nomme le
+   document (« le schéma », « la carte »). `envoi` : vrai quand
+   projdEnregistrerGithub enchaine l'envoi, l'avis ne dit alors pas « pas
+   encore sur GitHub ». Rend vrai si c'est enregistre. */
+function projdEnregistrerLocal(enregistrer, dire, libelle, envoi){
   const quoi = libelle || "le document";
+  dire = dire || function(){};
   return projdProjetSuite(quoi).then(function(ok){
     if(!ok){
       dire("Rien n'est enregistré : aucun projet choisi.");
@@ -644,11 +652,28 @@ function projdEnregistrerGithub(enregistrer, defaut, dire, libelle){
     }
     return Promise.resolve(enregistrer()).then(function(dansProjet){
       if(!dansProjet) return false;          // l'editeur a deja dit pourquoi
-      // une fonction : le nom du projet n'est connu qu'une fois celui-ci choisi
-      const message = (typeof defaut === "function" ? defaut() : defaut)
-                      || ("WEB_CAO " + new Date().toLocaleString("fr-FR"));
-      return projdEnvoyerSuite(message, dire, "Enregistré").then(function(){ return true; });
+      if(!envoi){
+        const t = "Enregistré en local, pas encore sur GitHub : « Sauvegarder le projet » l'y envoie.";
+        dire(t);
+        projdAvis("ok", "Enregistré en local", projdQuand(Date.now())
+          + " · pas encore sur GitHub : « ☁ Sauvegarder le projet » (Ctrl+Maj+S) l'y envoie");
+      }
+      return true;
     });
+  });
+}
+/* Sauvegarder le projet : le document ouvert est enregistre comme ci-dessus,
+   puis tout le projet part sur GitHub en un seul commit (le lanceur ajoute
+   tout ce qui a change dans PROJETS, exports locaux compris). `defaut` est le
+   message du commit (ou la fonction qui le donne). Rend vrai si c'est
+   enregistre. */
+function projdEnregistrerGithub(enregistrer, defaut, dire, libelle){
+  return projdEnregistrerLocal(enregistrer, dire, libelle, true).then(function(ok){
+    if(!ok) return false;
+    // une fonction : le nom du projet n'est connu qu'une fois celui-ci choisi
+    const message = (typeof defaut === "function" ? defaut() : defaut)
+                    || ("WEB_CAO " + new Date().toLocaleString("fr-FR"));
+    return projdEnvoyerSuite(message, dire, "Projet sauvegardé").then(function(){ return true; });
   });
 }
 /* Ce qui vient d'etre ecrit dans PROJETS (un document de projet, ou la LIB)
@@ -738,18 +763,22 @@ function projdAvis(etat, titre, detail){
   if(etat !== "erreur" && etat !== "encours")
     projdAvis.minuterie = setTimeout(function(){ a.classList.remove("on"); }, etat === "partiel" ? 9000 : 5000);
 }
-/* Les boutons d'enregistrement. Lance par WEB_SUITE, « Enregistrer » (`idSave`)
-   disparait et seul `id` reste (projet + GitHub) ; sinon c'est l'inverse.
-   Les deux menent au meme saveJson de l'editeur, qui choisit la voie. */
+/* Les boutons d'enregistrement. « Enregistrer » (`idSave`) reste toujours :
+   lance par WEB_SUITE, il ecrit en local dans le projet, et son titre le dit.
+   « Sauvegarder le projet » (`id`, qui appelle `action`) n'apparait que lance
+   par WEB_SUITE : c'est lui qui envoie sur GitHub. */
 function projdGithubBouton(id, action, idSave){
   const b = document.getElementById(id);
   if(!b) return;
   b.onclick = action;
   const s = idSave ? document.getElementById(idSave) : null;
+  const titreSave = s ? s.title : "";
   const peindre = function(){
     const suite = projdSuite();
     b.style.display = suite ? "" : "none";
-    if(s) s.style.display = suite ? "none" : "";
+    if(s) s.title = suite
+      ? "Écrit dans le dossier du projet (PROJETS), sans envoyer sur GitHub — « Sauvegarder le projet » s'en charge"
+      : titreSave;
   };
   peindre();
   projdSuiteDispo().then(peindre);
@@ -825,10 +854,16 @@ function projdReprendreOuFermer(){
     return r;
   });
 }
+/* La reprise, pour qui doit l'attendre : l'export du schema vers le PCB ne
+   touche a la carte qu'une fois le dossier du projet rattache. */
+let PROJD_REPRISE_P = null;
+function projdPret(){ return PROJD_REPRISE_P || Promise.resolve(null); }
 try{
   if(typeof window !== "undefined" && typeof document !== "undefined"){
     if(document.readyState === "loading")
-      document.addEventListener("DOMContentLoaded", function(){ projdReprendreOuFermer(); });
-    else projdReprendreOuFermer();
+      PROJD_REPRISE_P = new Promise(function(fin){
+        document.addEventListener("DOMContentLoaded", function(){ fin(projdReprendreOuFermer()); });
+      });
+    else PROJD_REPRISE_P = projdReprendreOuFermer();
   }
 }catch(_){}

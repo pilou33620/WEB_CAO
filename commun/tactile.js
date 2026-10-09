@@ -164,6 +164,7 @@ function tactileInitialiser(opts){
 /* Icônes au trait, 24×24, embarquées : WEB_CAO tourne aussi hors ligne. */
 const TR_ICONES = {
   sauver:"M5 3h11l3 3v15H5z M8 3v6h8V3 M8 21v-7h8v7",
+  nuage:"M7 19h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 10.5 4.25 4.25 0 0 0 7 19z M12 16v-6 M9.5 12.5L12 10l2.5 2.5",
   annuler:"M9 14L4 9l5-5 M4 9h10a6 6 0 0 1 0 12h-3",
   retablir:"M15 14l5-5-5-5 M20 9H10a6 6 0 0 0 0 12h3",
   rot:"M20 12a8 8 0 1 1-2.34-5.66 M20 4v5h-5",
@@ -215,6 +216,7 @@ const TR_ICONES = {
    que si l'éditeur la fournit). */
 const TR_COMMUNES = {
   sauver:   {ico:"sauver",   nom:"Enregistrer", touche:"Ctrl+S", fn:trSauver},
+  sauverGit:{ico:"nuage",    nom:"Projet → GitHub", touche:"Ctrl+Maj+S", fn:trSauverProjet},
   annuler:  {ico:"annuler",  nom:"Annuler",     touche:"Ctrl+Z", bouton:"bUndo"},
   retablir: {ico:"retablir", nom:"Rétablir",    touche:"Ctrl+Y", bouton:"bRedo"},
   copier:   {ico:"copier",   nom:"Copier",      touche:"Ctrl+C"},
@@ -246,6 +248,7 @@ const TR_OUTILS = {
       trait:    {ico:"trait",    nom:"Trait",      touche:"T"},
       zone:     {ico:"zone",     nom:"Zone",       touche:"Z"},
       etiquettes:{ico:"tag",     nom:"Noms de nets",touche:"N"},
+      exportPcb:{ico:"montrer",  nom:"Vers le PCB", touche:"", bouton:"bExportPcb"},
     },
     defaut: {
       comp: ["props","rot","miroir","suppr",
@@ -256,7 +259,7 @@ const TR_OUTILS = {
              {g:"Édition", ico:"edition", items:["copier","couper","coller"]},
              {g:"Historique", ico:"historique", items:["annuler","retablir"]},
              "etiquettes","echap"],
-      vide: ["sauver","fil","coller",
+      vide: ["sauver","exportPcb","fil","coller",
              {g:"Dessiner", ico:"outils", items:["biblio","bus","trait","zone","mesure"]},
              {g:"Vue", ico:"vue", items:["cadrer","grille","chercher","etiquettes"]},
              {g:"Historique", ico:"historique", items:["annuler","retablir"]},
@@ -796,14 +799,20 @@ function trExecuter(id, cible){
     if(t.key) tactileSimulerTouche(t.key, t.code, t);
   }catch(err){ if(typeof console !== "undefined") console.error("roulette :", id, err); }
 }
-/* Enregistrer : « Enregistrer (projet + GitHub) » quand l'éditeur l'affiche
-   (outil lancé par WEB_SUITE : c'est alors la seule sauvegarde),
-   l'enregistrement simple sinon. */
+/* Enregistrer : toujours l'enregistrement local de l'éditeur. Lancé par
+   WEB_SUITE, il écrit dans le projet sans rien envoyer sur GitHub ; c'est
+   « Projet → GitHub » (trSauverProjet) qui envoie. */
 function trSauver(){
-  const git = document.getElementById("bSaveGit");
-  const el = (git && git.style.display !== "none") ? git : document.getElementById("bSave");
+  const el = document.getElementById("bSave");
   if(el) el.click();
   else tactileSimulerTouche("s", "KeyS", {ctrlKey: true});
+}
+/* Sauvegarder le projet sur GitHub, quand l'éditeur l'affiche (lancé par
+   WEB_SUITE) ; l'enregistrement simple sinon. */
+function trSauverProjet(){
+  const git = document.getElementById("bSaveGit");
+  if(git && git.style.display !== "none") git.click();
+  else trSauver();
 }
 function trEchap(){
   const el = document.getElementById("mSelect");

@@ -24,21 +24,81 @@ function schFile(suffixe, repli){
 /* Avec un dossier de projet rattaché, enregistrer écrit dans ce dossier ; sans
    dossier, on télécharge comme avant — en double-clic sur le monofichier,
    aucun accès disque n'est possible.
-   Lancé par WEB_SUITE, c'est autre chose : la seule sauvegarde est le projet
-   de PROJETS puis GitHub (commun/projet-disque.js), jamais un téléchargement.
+   Lancé par WEB_SUITE, c'est autre chose : on n'enregistre que dans un projet
+   de PROJETS, jamais en téléchargement, et sans rien envoyer sur GitHub --
+   c'est saveProjetGithub() qui envoie (commun/projet-disque.js).
    Rend une promesse : vrai si le document est dans le dossier du projet. */
-function saveJson(){
+function schDocCourant(){
   storeCurrent();
   const nl=(typeof netlistText==="function")?netlistText():null;
   const doc={format:"schemedit-2",pages:S.pages,page:S.page,netClasses:S.netClasses,variantes:S.variantes,netlist:nl};
   if(typeof sessDiffuserSchemaModif==="function")sessDiffuserSchemaModif({netlist:nl});
+  return doc;
+}
+function schDire(t){document.getElementById("fHint").textContent=t;}
+function saveJson(){
+  const doc=schDocCourant();
+  if(typeof projdSuiteDispo!=="function")return saveJsonClassique(doc);
+  return projdSuiteDispo().then(function(suite){
+    if(!suite)return saveJsonClassique(doc);
+    return projdEnregistrerLocal(function(){return saveJsonProjet(doc,false);},schDire,"le schéma");
+  });
+}
+/* « Sauvegarder le projet » (lancé par WEB_SUITE) : le schéma est enregistré
+   comme ci-dessus, puis tout le projet part sur GitHub en un seul commit. */
+function saveProjetGithub(){
+  const doc=schDocCourant();
   if(typeof projdSuiteDispo!=="function")return saveJsonClassique(doc);
   return projdSuiteDispo().then(function(suite){
     if(!suite)return saveJsonClassique(doc);
     return projdEnregistrerGithub(function(){return saveJsonProjet(doc,false);},
       function(){const p=(typeof projNom==="function"&&projNom())||"";
-        return "Schéma "+(p?p+" ":"")+new Date().toLocaleString("fr-FR");},
-      function(t){document.getElementById("fHint").textContent=t;},"le schéma");
+        return "Projet "+(p?p+" ":"")+new Date().toLocaleString("fr-FR");},
+      schDire,"le schéma");
+  });
+}
+/* « Exporter vers le PCB » : pour une retouche de dernière minute, sans
+   passer par la netlist .txt ni par GitHub.
+     1. le schéma est écrit dans le dossier du projet, en local ;
+     2. une demande d'export est déposée dans la session de l'onglet ;
+     3. l'éditeur PCB s'ouvre dans cet onglet, applique la netlist à la carte
+        du projet (empreintes nouvelles, boîtiers changés, valeurs, nets ; le
+        placement et le routage restent) et l'écrit à son tour en local
+        (editeur-pcb/js/23-eco-sync.js, pcbExportDepuisSchema).
+   Rien ne part sur GitHub : c'est « Sauvegarder le projet » qui envoie.
+   Sans projet (hors WEB_SUITE), la carte de l'onglet est mise à jour sans être
+   écrite : on l'enregistre ensuite comme d'habitude. */
+const SCH_EXPORT_PCB="cao.export.pcb.v1";
+function exporterVersPcb(){
+  if(typeof sessAller!=="function"||(typeof sessAutonome==="function"&&sessAutonome())){
+    alert("Version un seul fichier : l'éditeur PCB n'est pas à côté.\n\n"+
+          "Exportez la netlist (Fichier → Netlist .txt) et importez-la dans l'éditeur PCB.");
+    return Promise.resolve(false);
+  }
+  const doc=schDocCourant();
+  const ecrire=(typeof projdSuiteDispo==="function")?projdSuiteDispo().then(function(suite){
+    if(suite)return projdEnregistrerLocal(function(){return saveJsonProjet(doc,false);},schDire,"le schéma",true);
+    if(typeof projdLie==="function"&&projdLie())return saveJsonProjet(doc,false);
+    return null;             // pas de projet : la carte de l'onglet suivra seule
+  }):Promise.resolve(null);
+  return ecrire.then(function(r){
+    if(r===false)return false;   // rien d'écrit : on reste, la raison est affichée
+    try{
+      window.sessionStorage.setItem(SCH_EXPORT_PCB,JSON.stringify({
+        t:Date.now(),projet:(typeof projNom==="function"&&projNom())||"",ecrire:r===true}));
+    }catch(_){
+      alert("Export impossible : le stockage de session de ce navigateur est indisponible.");
+      return false;
+    }
+    schDire("Export vers le PCB…");
+    sessAller("pcb");
+    /* départ refusé (session pleine, et l'utilisateur reste) : la demande ne
+       doit pas attendre la prochaine ouverture du PCB */
+    if(typeof sessQuitte==="function"&&!sessQuitte()){
+      try{window.sessionStorage.removeItem(SCH_EXPORT_PCB);}catch(_){}
+      return false;
+    }
+    return true;
   });
 }
 function saveJsonClassique(doc){

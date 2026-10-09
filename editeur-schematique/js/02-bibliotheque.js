@@ -26,18 +26,18 @@ function q5(v){return (v<0?-1:1)*Math.ceil(Math.abs(v)/5)*5;}
 
 const LIB = {
 /* ---------------- passifs ---------------- */
-resistor:{n:"Résistance",cat:"Passifs",p:"R",v:"10k",refIn:true,pk:"passif",pkg:"0603",pins:[[-40,0],[40,0]],
+resistor:{n:"Résistance",cat:"Passifs",p:"R",v:"10k",refIn:true,pk:"passif",pkg:"0402",pins:[[-40,0],[40,0]],
   d(c){L(c,-40,0,-20,0);L(c,20,0,40,0);RR(c,-20,-10,40,20,4,C_FILL);}},
 potentiometer:{n:"Potentiomètre",cat:"Passifs",p:"RV",v:"10k",refIn:true,pk:"passif",pins:[[-40,0],[40,0],[0,-40]],
   d(c){L(c,-40,0,-20,0);L(c,20,0,40,0);RR(c,-20,-10,40,20,4,C_FILL);
        L(c,0,-40,0,-20);ARR(c,0,-15,Math.PI/2,10);}},
-capacitor:{n:"Condensateur",cat:"Passifs",p:"C",v:"100n",pk:"passif",pkg:"0603",pins:[[-40,0],[40,0]],
+capacitor:{n:"Condensateur",cat:"Passifs",p:"C",v:"100n",pk:"passif",pkg:"0402",pins:[[-40,0],[40,0]],
   d(c){L(c,-40,0,-5,0);L(c,5,0,40,0);c.lineWidth=4.5;L(c,-5,-15,-5,15);L(c,5,-15,5,15);c.lineWidth=3;}},
 cap_pol:{n:"Chimique",cat:"Passifs",p:"C",v:"470µ",pk:"passif",pins:[[-40,0],[40,0]],
   d(c){L(c,-40,0,-5,0);L(c,5,0,40,0);c.lineWidth=4.5;L(c,-5,-15,-5,15);c.lineWidth=3;
        c.beginPath();c.arc(25,0,20,Math.PI*0.72,Math.PI*1.28);c.stroke();
        TXT(c,"+",-20,-20,14,C_TXT);}},
-inductor:{n:"Bobine",cat:"Passifs",p:"L",v:"10µH",pk:"passif",pkg:"0805",pins:[[-40,0],[40,0]],
+inductor:{n:"Bobine",cat:"Passifs",p:"L",v:"10µH",pk:"passif",pkg:"0402",pins:[[-40,0],[40,0]],
   d(c){for(let i=0;i<4;i++){c.beginPath();c.arc(-30+i*20,0,10,Math.PI,0);c.stroke();}}},
 transformer:{n:"Transfo",cat:"Passifs",p:"T",v:"1:1",ext:[-40,-30,40,30],pins:[[-40,-20],[-40,20],[40,-20],[40,20]],
   d(c){L(c,-40,-20,-20,-20);L(c,-40,20,-20,20);L(c,40,-20,20,-20);L(c,40,20,20,20);

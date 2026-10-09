@@ -347,6 +347,22 @@ l'arrivée en s'appuyant sur `rpTrouve()` -- la même recherche par repère que
 `Ctrl+F`, sur laquelle `schSonderCible()` s'appelle exactement comme
 `rpQAller()`.
 
+### Exporter vers le PCB — **⇉ PCB**
+
+Pour une retouche de dernière minute, sans passer par la netlist `.txt` :
+`exporterVersPcb()` (`js/13-fichiers.js`) écrit le schéma dans le dossier du
+projet, dépose une demande dans `sessionStorage` (`cao.export.pcb.v1`) puis
+ouvre l'éditeur PCB dans l'onglet. À son chargement complet,
+`pcbExportDepuisSchema()` (`editeur-pcb/js/23-eco-sync.js`) attend le
+projet, la carte et la LIB d'empreintes, applique la netlist mise de côté par
+la session (`importNetlist`, comme « Importer netlist » : placement et routage
+gardés) et écrit la carte dans le projet.
+
+Tout reste **local** : lancé par WEB·SUITE, ni l'export ni « Enregistrer »
+(`Ctrl+S`) n'envoient sur GitHub. C'est « ☁ Sauvegarder le projet »
+(`Ctrl+Maj+S`) qui le fait, en un seul commit pour tout le projet. Sans
+projet ouvert, la carte de l'onglet est mise à jour sans être écrite.
+
 ### Montrer sur l'onglet d'à côté — `L`
 
 L'autre façon de travailler : le schéma ici, le PCB dans une seconde fenêtre.

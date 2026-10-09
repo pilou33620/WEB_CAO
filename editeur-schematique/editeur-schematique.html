@@ -40,9 +40,10 @@
           <button data-ic="＋" class="tb" id="bNew">Nouveau</button>
           <button data-ic="📂" class="tb" id="bOpen">Ouvrir</button>
           <button data-ic="💾" class="tb" id="bSave">Enregistrer .json <kbd>Ctrl+S</kbd></button>
-          <button data-ic="☁" class="tb" id="bSaveGit" style="display:none" title="Lancé par WEB_SUITE, seule sauvegarde : écrit dans le dossier du projet (PROJETS), puis l'envoie sur GitHub (commit + push par le lanceur)">Enregistrer (projet + GitHub) <kbd>Ctrl+S</kbd></button>
+          <button data-ic="☁" class="tb" id="bSaveGit" style="display:none" title="Lancé par WEB_SUITE : enregistre, puis envoie tout le projet sur GitHub en un seul commit (commit + push par le lanceur). Enregistrer et l'export vers le PCB, eux, restent en local">Sauvegarder le projet → GitHub <kbd>Ctrl+Maj+S</kbd></button>
           <button data-ic="★" class="tb" id="bExemples" title="Deux schémas complets à ouvrir : Interface IoT 4 couches (paire diff, bus SPI, RF 50 Ω) ou Commande 12 V 2 couches">Exemples…</button>
           <div class="mnu-h">Exporter</div>
+          <button data-ic="➔" class="tb" id="bExportPcb" title="Met à jour la carte du projet avec ce schéma (empreintes, boîtiers, valeurs, nets ; placement et routage gardés), l'écrit en local, sans GitHub, puis ouvre l'éditeur PCB">Exporter vers le PCB</button>
           <button data-ic="🖼" class="tb" id="bPng">Exporter .png</button>
           <button data-ic="≣" class="tb" id="bNetlist">Netlist .txt</button>
           <button data-ic="▦" class="tb" id="bCsv" title="Nomenclature de la variante de montage active">Nomenclature .csv</button>
@@ -105,6 +106,7 @@
         </div>
       </div>
     </nav>
+    <button class="tb" id="bExportPcbBarre" type="button" title="Exporter vers le PCB : met à jour la carte du projet avec ce schéma, l'écrit en local (sans GitHub), puis ouvre l'éditeur PCB">⇉ PCB</button>
     <button class="mnu-chip" id="mnuChip" type="button" title="Outil actif — un clic ouvre le menu Placer"></button>
   </div>
   <input type="file" id="fileIn" accept=".json,application/json" style="display:none">

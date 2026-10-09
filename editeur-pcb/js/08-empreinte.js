@@ -234,8 +234,11 @@ function fpLibCharger(){
     });
   }).catch(()=>false);     // pas de serveur (fichier ouvert seul) : bibliothèque de séance
 }
+/* La lecture en cours, pour qui doit l'attendre (l'export du schéma, qui
+   pose les empreintes de la LIB avant d'écrire la carte). */
+let FPLIB_PRET=Promise.resolve(false);
 if(typeof location!=="undefined"&&/^https?:$/.test(location.protocol)&&typeof fetch==="function")
-  fpLibCharger();
+  FPLIB_PRET=fpLibCharger();
 
 /* ==========================================================================
    Fenêtre d'édition

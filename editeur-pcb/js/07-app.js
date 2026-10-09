@@ -16,17 +16,28 @@ function dl(blob,name){
    Avec un dossier de projet rattaché, enregistrer écrit dans ce dossier ; sans
    dossier, on télécharge comme avant. Le repli n'est pas un luxe : en
    double-clic sur le monofichier, aucun accès disque n'est possible.
-   Lancé par WEB_SUITE, c'est autre chose : la seule sauvegarde est le projet
-   de PROJETS puis GitHub (commun/projet-disque.js), jamais un téléchargement.
+   Lancé par WEB_SUITE, c'est autre chose : on n'enregistre que dans un projet
+   de PROJETS, jamais en téléchargement, et sans rien envoyer sur GitHub --
+   c'est saveProjetGithub() qui envoie (commun/projet-disque.js).
    Rend une promesse : vrai si la carte est dans le dossier du projet. */
 function saveJson(){
   const doc=docObj();
   if(typeof projdSuiteDispo!=="function")return saveJsonClassique(doc);
   return projdSuiteDispo().then(function(suite){
     if(!suite)return saveJsonClassique(doc);
+    return projdEnregistrerLocal(function(){return saveJsonProjet(doc,false);},hint,"la carte");
+  });
+}
+/* « Sauvegarder le projet » (lancé par WEB_SUITE) : la carte est enregistrée
+   comme ci-dessus, puis tout le projet part sur GitHub en un seul commit. */
+function saveProjetGithub(){
+  const doc=docObj();
+  if(typeof projdSuiteDispo!=="function")return saveJsonClassique(doc);
+  return projdSuiteDispo().then(function(suite){
+    if(!suite)return saveJsonClassique(doc);
     return projdEnregistrerGithub(function(){return saveJsonProjet(doc,false);},
       function(){const p=(typeof projNom==="function"&&projNom())||"";
-        return "Carte "+(p?p+" ":"")+new Date().toLocaleString("fr-FR");},hint,"la carte");
+        return "Projet "+(p?p+" ":"")+new Date().toLocaleString("fr-FR");},hint,"la carte");
   });
 }
 function saveJsonClassique(doc){
@@ -106,7 +117,7 @@ function openFile(f){
 }
 function importNetlist(txt,dropMissing){
   const res=applyNetlist(txt,dropMissing);
-  if(res.err){alert(res.err);return;}
+  if(res.err){alert(res.err);return res;}
   zoneCache.clear();
   buildLayers();refreshPanels();
   if(!S.tracks.length)fit();else draw();
@@ -135,6 +146,7 @@ function importNetlist(txt,dropMissing){
     if (typeof pcbVerifierEtNotifierPinout === "function") pcbVerifierEtNotifierPinout(false);
     if (typeof pcbVerifierEtNotifierEco === "function") pcbVerifierEtNotifierEco(true);
   }, 150);
+  return res;
 }
 
 /* Boîte de dialogue interactive pour nettoyer les pistes de cuivre en conflit après mise à jour de la netlist */
@@ -564,10 +576,10 @@ $("bDrc").onclick=()=>{
 $("bRules").onclick=()=>reOpen();
 if($("bMfgCaps")) $("bMfgCaps").onclick=()=>reOpen("mfg");
 $("bSave").onclick=saveJson;
-/* Lancé par WEB_SUITE, « Enregistrer » laisse la place à « Enregistrer
-   (projet + GitHub) », seule sauvegarde ; saveJson choisit la voie
+/* Lancé par WEB_SUITE, « Enregistrer » écrit en local dans le projet et
+   « Sauvegarder le projet » apparaît : c'est lui qui envoie sur GitHub
    (commun/projet-disque.js). */
-if(typeof projdGithubBouton==="function")projdGithubBouton("bSaveGit",saveJson,"bSave");
+if(typeof projdGithubBouton==="function")projdGithubBouton("bSaveGit",saveProjetGithub,"bSave");
 $("bOpen").onclick=()=>$("fileIn").click();
 $("fileIn").onchange=()=>{const f=$("fileIn").files[0];if(f)openFile(f);$("fileIn").value="";};
 $("bPng").onclick=exportPng;
@@ -746,6 +758,7 @@ function init(){
    Le rattachement du dossier est asynchrone (projet-disque.js le reprend au
    chargement) : d'où l'abonnement, en plus de l'appel depuis init(). */
 let PCB_PROJET_LU=false;
+let PCB_PROJET_P=null;     // la lecture en cours, pour qui doit l'attendre (export du schéma)
 function pcbChargerProjet(){
   if(PCB_PROJET_LU||PCB_REPRISE||S.dirty)return;
   if(typeof projdLie!=="function")return;
@@ -758,7 +771,7 @@ function pcbChargerProjet(){
     return;
   }
   PCB_PROJET_LU=true;
-  projdDocLire("pcb").then(function(d){
+  PCB_PROJET_P=projdDocLire("pcb").then(function(d){
     if(!d)return;              // dossier sans carte : il n'y a rien à reprendre
     if(S.dirty)return;         // travail commencé pendant la lecture : on n'écrase pas
     loadDoc(d);

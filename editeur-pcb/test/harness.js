@@ -269,6 +269,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   /* synchronisation schéma ↔ PCB & ECO */
   "PCB_ECO","pcbObtenirDonneesSchema","pcbPistesConnecteesFp","pcbPistesConnecteesPad",
   "pcbDetecterDisparitesEco","pcbAppliquerEco","pcbOuvrirFenetreEco","pcbVerifierEtNotifierEco",
+  /* export demandé par le schéma (bouton « ⇉ PCB ») */
+  "pcbExportDemande","pcbExportDepuisSchema","PCB_EXPORT_CLE","saveJson","saveProjetGithub",
   "sessDiffuserSchemaModif","sessEcouterSchemaModif",
   "SIM_DC_NOEUDS_CIBLE","SIM_DC_CARREAUX_MAX","SIM_DC_MARGE_GRILLE",
   "simRefCandidatsPcb","simPlagesDe","simMemeEcart","simZoneEn","simCoteEn",
@@ -21666,6 +21668,52 @@ T("variantes PCB : la carte barre les non-montés, la liste les marque",()=>{
     if((box.innerHTML.match(/var-badge/g)||[]).length!==2)throw new Error("liste : deux NM attendus");
     pcbVarOuvrir();pcbVarFermer();
   }finally{carteVide();S.variantes=varVide();}
+});
+
+/* ==========================================================================
+   Export demandé par le schéma (bouton « ⇉ PCB » de l'éditeur schématique)
+   ========================================================================== */
+T("export du schéma : la demande ne sert qu'une fois, et pas périmée",()=>{
+  dom.session.clear();
+  sessionStorage.setItem(PCB_EXPORT_CLE,JSON.stringify({t:Date.now(),projet:""}));
+  if(!pcbExportDemande())throw new Error("la demande fraîche devait être lue");
+  if(pcbExportDemande()!==null)throw new Error("une demande lue ne doit pas resservir (rechargement)");
+  sessionStorage.setItem(PCB_EXPORT_CLE,JSON.stringify({t:Date.now()-10*60*1000,projet:""}));
+  if(pcbExportDemande()!==null)throw new Error("une demande vieille de 10 min doit être oubliée");
+  if(sessionStorage.getItem(PCB_EXPORT_CLE)!==null)throw new Error("la demande périmée doit être effacée");
+});
+TA("export du schéma : boîtier changé, empreinte ajoutée, placement gardé",async()=>{
+  dom.session.clear();
+  carteVide();
+  importNetlist(NET,false);
+  const r1=S.fps.find(f=>f.ref==="R1");
+  r1.x=42;r1.y=17;touch();
+  const nl=NET.replace(/(R1\s+10k\s+)0603/,"$10402").replace(/(C1\s+100n\s+)0603/,"$10402")
+    .replace("=== Composants ===","=== Composants ===\n    C9      1u                0402              f1")
+    .replace(/NET "GND"([^\n]*)\n/,'NET "GND"$1\n    C9.2\n');
+  if(nl===NET||!/C9\.2/.test(nl))throw new Error("décor : netlist modifiée attendue");
+  sessEcrire("schema",{doc:{format:"schemedit-2",pages:[]},netlist:nl,sale:false,projet:""});
+  try{
+    const ecrite=await pcbExportDepuisSchema({t:Date.now(),projet:""});
+    if(ecrite!==false)throw new Error("sans projet, la carte ne peut pas être écrite");
+    const r=S.fps.find(f=>f.ref==="R1"), c=S.fps.find(f=>f.ref==="C1"), c9=S.fps.find(f=>f.ref==="C9");
+    if(r.pkg!=="0402"||c.pkg!=="0402")throw new Error("boîtiers 0402 attendus : "+r.pkg+" "+c.pkg);
+    if(r.x!==42||r.y!==17)throw new Error("R1 devait rester en place : "+r.x+","+r.y);
+    if(!c9||c9.pkg!=="0402"||c9.nets[2]!=="GND")throw new Error("C9 devait être ajouté sur GND : "+JSON.stringify(c9&&c9.nets));
+    if(S.fps.length!==5)throw new Error("5 empreintes attendues, "+S.fps.length);
+  }finally{carteVide();dom.session.clear();}
+});
+TA("export du schéma : sans netlist dans la session, rien ne bouge",async()=>{
+  dom.session.clear();
+  carteVide();
+  importNetlist(NET,false);
+  const avant=JSON.stringify(S.fps.map(f=>[f.ref,f.pkg,f.x,f.y]));
+  try{
+    if(await pcbExportDepuisSchema({t:Date.now(),projet:""})!==false)
+      throw new Error("sans netlist, l'export doit échouer");
+    if(JSON.stringify(S.fps.map(f=>[f.ref,f.pkg,f.x,f.y]))!==avant)
+      throw new Error("la carte ne devait pas changer");
+  }finally{carteVide();}
 });
 
 (async()=>{

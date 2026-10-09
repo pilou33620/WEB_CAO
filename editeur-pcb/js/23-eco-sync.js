@@ -988,3 +988,105 @@ function pcbInitialiserEcoSync() {
 }
 
 pcbInitialiserEcoSync();
+
+/* =============================================================================
+   8. EXPORT DEMANDÉ PAR LE SCHÉMA (bouton « Exporter vers le PCB »)
+   -----------------------------------------------------------------------------
+   Le schéma s'est écrit dans le projet, a déposé une demande dans la session
+   de l'onglet, puis a ouvert cette page (editeur-schematique/js/13-fichiers.js,
+   exporterVersPcb). On applique sa netlist à la carte, comme « Importer
+   netlist » : les empreintes posées gardent leur place et leurs pistes, les
+   nouvelles attendent à droite de la carte. Puis la carte est écrite dans le
+   projet, en local : rien ne part sur GitHub, c'est « Sauvegarder le projet »
+   qui envoie.
+   ============================================================================= */
+const PCB_EXPORT_CLE = "cao.export.pcb.v1";
+const PCB_EXPORT_MAX_MS = 2 * 60 * 1000;   // une demande plus vieille est oubliée
+
+/* La demande du schéma, consommée une seule fois : un rechargement de la page
+   ne refait pas l'export. */
+function pcbExportDemande() {
+  let s = null;
+  try { s = window.sessionStorage; } catch (_) { return null; }
+  if (!s) return null;
+  let o = null;
+  try {
+    const raw = s.getItem(PCB_EXPORT_CLE);
+    if (!raw) return null;
+    s.removeItem(PCB_EXPORT_CLE);
+    o = JSON.parse(raw);
+  } catch (_) { return null; }
+  if (!o || typeof o !== "object" || !(Date.now() - (+o.t || 0) < PCB_EXPORT_MAX_MS)) return null;
+  return o;
+}
+
+function pcbExportAvis(etat, titre, detail) {
+  if (typeof hint === "function") hint(titre + (detail ? " — " + detail : "."));
+  /* l'avis n'est qu'un affichage : son échec ne doit pas faire croire à
+     celui de l'export, la carte est déjà à jour */
+  try { if (typeof projdAvis === "function") projdAvis(etat, titre, detail || ""); } catch (_) {}
+}
+
+async function pcbExportDepuisSchema(dem) {
+  if (!dem) return false;
+  // 1. le dossier du projet, rattaché de façon asynchrone au chargement
+  if (typeof projdPret === "function") { try { await projdPret(); } catch (_) {} }
+  const projet = (typeof projNom === "function" && projNom()) || "";
+  if (dem.projet && projet && String(dem.projet).toLowerCase() !== projet.toLowerCase()) {
+    pcbExportAvis("erreur", "Export vers le PCB annulé",
+      "le schéma vient du projet « " + dem.projet + " », la carte ouverte est celle de « " + projet + " ».");
+    return false;
+  }
+  // 2. la carte : celle laissée dans l'onglet passe devant, sinon celle du projet
+  if (typeof pcbChargerProjet === "function") pcbChargerProjet();
+  if (typeof PCB_PROJET_P !== "undefined" && PCB_PROJET_P) { try { await PCB_PROJET_P; } catch (_) {} }
+  // 3. les empreintes de la LIB : un boîtier changé prend la sienne
+  if (typeof FPLIB_PRET !== "undefined") { try { await FPLIB_PRET; } catch (_) {} }
+  // 4. la netlist du schéma, telle que l'onglet l'a mise de côté en partant
+  const sess = (typeof sessLire === "function") ? sessLire("schema") : null;
+  const etat = sess && sess.etat;
+  const nl = etat && typeof etat.netlist === "string" ? etat.netlist : "";
+  if (!nl) {
+    pcbExportAvis("erreur", "Export vers le PCB impossible",
+      "la netlist du schéma n'a pas suivi (stockage de session plein ?). Passez par Fichier → Importer netlist.");
+    return false;
+  }
+  if (etat.doc && typeof pcbDefinirSchema === "function")
+    pcbDefinirSchema(Object.assign({}, etat.doc, {netlist: nl}));
+  const res = importNetlist(nl, false);
+  if (!res || res.err) return false;          // importNetlist l'a dit
+  const bilan = [
+    res.added ? res.added + " empreinte(s) créée(s)" : "",
+    res.repkg ? res.repkg + " boîtier(s) changé(s)" : "",
+    res.nets + " net(s)",
+    (res.conflicts && res.conflicts.length) ? "⚠️ " + res.conflicts.length + " pastille(s) routée(s) en conflit" : ""
+  ].filter(Boolean).join(", ");
+  // 5. la carte, écrite en local dans le projet
+  if (typeof projdLie === "function" && projdLie() && typeof saveJsonProjet === "function") {
+    const ecrite = await saveJsonProjet(docObj(), false);
+    if (!ecrite) return false;                // saveJsonProjet a dit pourquoi
+    pcbExportAvis("ok", "Schéma exporté vers le PCB",
+      bilan + " · carte écrite en local, pas encore sur GitHub : « ☁ Sauvegarder le projet » l'y envoie");
+    return true;
+  }
+  pcbExportAvis("info", "Schéma exporté vers le PCB",
+    bilan + " · aucun projet ouvert : la carte n'est pas enregistrée (Ctrl+S)");
+  return false;
+}
+
+/* Au chargement complet de la page : tous les modules sont là, le projet et
+   la LIB d'empreintes ont commencé à se lire. */
+function pcbExportAuChargement() {
+  const dem = pcbExportDemande();
+  if (!dem) return;
+  pcbExportDepuisSchema(dem).catch(function(e) {
+    pcbExportAvis("erreur", "Export vers le PCB interrompu", e && e.message ? e.message : String(e));
+  });
+}
+try {
+  if (typeof window !== "undefined" && typeof document !== "undefined" &&
+      typeof window.addEventListener === "function") {
+    if (document.readyState === "complete") setTimeout(pcbExportAuChargement, 0);
+    else window.addEventListener("load", pcbExportAuChargement);
+  }
+} catch (_) {}

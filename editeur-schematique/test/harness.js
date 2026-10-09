@@ -109,6 +109,8 @@ const EXPOSE=[
   "sessBrancher","sessEnregistrer","sessLire","sessEcrire","sessEffacer",
   "sessTient","sessUrl","sessQuitte","sessionSchema","autosave","clearBackup",
   "sessCibleEcrire","sessCiblePrendre","schSonde","schSonderCible","sessAller",
+  /* exporter vers le PCB, enregistrer en local, sauvegarder le projet */
+  "exporterVersPcb","SCH_EXPORT_PCB","saveJson","saveProjetGithub","schDocCourant",
   "sessCanalDispo","sessMontrerAilleurs","sessEcouterProbe","SESS_CANAL",
   "schMontrerAilleurs","schCibleTrouver","schCibleAller","sessCibleAuChargement",
   /* espace de travail commun */
@@ -148,6 +150,9 @@ eval(code.replace(/^"use strict";/,"")+"\n"
    Outils du banc
    ========================================================================== */
 let ok=0,ko=0;
+/* essais asynchrones : lancés à la fin, l'un après l'autre */
+const T_ASYNC=[];
+function TA(name,fn){T_ASYNC.push([name,fn]);}
 function T(name,fn){
   try{fn();console.log("  ok  "+name);ok++;}
   catch(e){console.log("  KO  "+name+" → "+e.message+"\n"+(e.stack||"").split("\n")[1]);ko++;}
@@ -2956,7 +2961,44 @@ T("variantes : la feuille barre les non-montés, le panneau propose les cases",(
   }finally{variantesFin();}
 });
 
-console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
-process.exit(ko?1:0);
+/* ==========================================================================
+   Exporter vers le PCB (bouton « ⇉ PCB »)
+   ========================================================================== */
+T("passifs : résistance, condensateur et bobine posés en 0402 par défaut",()=>{
+  for(const t of ["resistor","capacitor","inductor"]){
+    sheet([],[]);
+    const el=addComp(t,100,100);
+    if(el.pkg!=="0402")throw new Error(t+" : 0402 attendu, obtenu "+el.pkg);
+    if(!pkgKnown(el.pkg))throw new Error(t+" : 0402 inconnu de PKG_BASES");
+  }
+});
+TA("exporter vers le PCB : sans projet, la netlist suit l'onglet et la demande est déposée",async()=>{
+  dom.session.clear();
+  sheet([C("resistor",2,2,{ref:"R1",value:"10k",pkg:"0402"}),
+         C("capacitor",6,2,{ref:"C1",value:"100n",pkg:"0402"})],[]);
+  sessBrancher("schema",()=>({doc:JSON.parse(serialize()),
+    netlist:netlistText(),sale:S.dirty,projet:""}),schSonde);
+  clearSel();
+  const ok=await exporterVersPcb();
+  if(!ok)throw new Error("l'export devait partir vers le PCB");
+  const dem=JSON.parse(sessionStorage.getItem(SCH_EXPORT_PCB)||"null");
+  if(!dem||!(dem.t>0)||dem.ecrire!==false)
+    throw new Error("demande d'export attendue, sans écriture (aucun projet) : "+JSON.stringify(dem));
+  const sch=sessLire("schema");
+  const nl=sch&&sch.etat&&sch.etat.netlist||"";
+  if(!/R1\s+10k\s+0402/.test(nl)||!/C1\s+100n\s+0402/.test(nl))
+    throw new Error("la netlist mise de côté doit porter les boîtiers : "+nl);
+  if(!/editeur-pcb\.html$/.test(String(location.href)))
+    throw new Error("l'éditeur PCB devait s'ouvrir : "+location.href);
+});
+
+(async()=>{
+  for(const [name,fn] of T_ASYNC){
+    try{await fn();console.log("  ok  "+name);ok++;}
+    catch(e){console.log("  KO  "+name+" → "+e.message+"\n"+(e.stack||"").split("\n")[1]);ko++;}
+  }
+  console.log("\n"+ok+" essais réussis, "+ko+" en échec.");
+  process.exit(ko?1:0);
+})();
 
 

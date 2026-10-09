@@ -36,7 +36,9 @@ window.addEventListener("keydown",e=>{
   }
   if(mod&&k==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
   if(mod&&k==="y"){e.preventDefault();redo();return;}
-  if(mod&&k==="s"){e.preventDefault();saveJson();return;}
+  /* Ctrl+S enregistre en local ; Ctrl+Maj+S sauvegarde le projet sur GitHub
+     (lancé par WEB_SUITE, sinon c'est l'enregistrement simple) */
+  if(mod&&k==="s"){e.preventDefault();e.shiftKey?saveProjetGithub():saveJson();return;}
   if(mod&&k==="a"){
     e.preventDefault();
     S.comps.forEach(c=>S.sel.add(c.id));
@@ -137,10 +139,13 @@ document.getElementById("bGrid").onclick=()=>setGrid(!S.showGrid);
 document.getElementById("selGrid").onchange=e=>setGridStep(+e.target.value);
 document.getElementById("bFit").onclick=fit;
 document.getElementById("bSave").onclick=saveJson;
-/* Lancé par WEB_SUITE, « Enregistrer » laisse la place à « Enregistrer
-   (projet + GitHub) », seule sauvegarde ; saveJson choisit la voie
+/* Lancé par WEB_SUITE, « Enregistrer » écrit en local dans le projet et
+   « Sauvegarder le projet » apparaît : c'est lui qui envoie sur GitHub
    (commun/projet-disque.js). */
-if(typeof projdGithubBouton==="function")projdGithubBouton("bSaveGit",saveJson,"bSave");
+if(typeof projdGithubBouton==="function")projdGithubBouton("bSaveGit",saveProjetGithub,"bSave");
+/* Exporter vers le PCB : écrit en local, puis ouvre l'éditeur PCB (13-fichiers.js) */
+document.getElementById("bExportPcb").onclick=exporterVersPcb;
+document.getElementById("bExportPcbBarre").onclick=exporterVersPcb;
 document.getElementById("bPng").onclick=exportPng;
 document.getElementById("bomAll").onchange=e=>{
   S.bomAll=e.target.checked;

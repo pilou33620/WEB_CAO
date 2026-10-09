@@ -4779,7 +4779,9 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Tab"){e.preventDefault();S.coord.open?coordClose():coordOpen();return;}
   if((e.ctrlKey||e.metaKey)&&k==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
   if((e.ctrlKey||e.metaKey)&&k==="y"){e.preventDefault();redo();return;}
-  if((e.ctrlKey||e.metaKey)&&k==="s"){e.preventDefault();saveJson();return;}
+  /* Ctrl+S enregistre en local ; Ctrl+Maj+S sauvegarde le projet sur GitHub
+     (lancé par WEB_SUITE, sinon c'est l'enregistrement simple) */
+  if((e.ctrlKey||e.metaKey)&&k==="s"){e.preventDefault();e.shiftKey?saveProjetGithub():saveJson();return;}
   /* Ctrl+G groupe la sélection, Ctrl+Maj+G dissout ses groupes (27-groupes.js) */
   if((e.ctrlKey||e.metaKey)&&k==="g"){e.preventDefault();e.shiftKey?groupeDissoudre():groupeCreer();return;}
   if((e.ctrlKey||e.metaKey)&&k==="a"){

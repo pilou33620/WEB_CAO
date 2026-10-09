@@ -410,7 +410,7 @@ console.log(`[PCB] ${pcbCount} empreintes générées dans ${PCB_DIR}`);
 const SCH_SYMBOLS = [
   // Passifs
   {
-    id: "resistor", name: "Résistance", cat: "Passifs", prefix: "R", defaultValue: "10k", defaultPkg: "0603",
+    id: "resistor", name: "Résistance", cat: "Passifs", prefix: "R", defaultValue: "10k", defaultPkg: "0402",
     pins: [[-40, 0], [40, 0]], ext: [-40, -10, 40, 10],
     primitives: [
       { op: "line", x1: -40, y1: 0, x2: -20, y2: 0 },
@@ -430,7 +430,7 @@ const SCH_SYMBOLS = [
     ]
   },
   {
-    id: "capacitor", name: "Condensateur", cat: "Passifs", prefix: "C", defaultValue: "100n", defaultPkg: "0603",
+    id: "capacitor", name: "Condensateur", cat: "Passifs", prefix: "C", defaultValue: "100n", defaultPkg: "0402",
     pins: [[-40, 0], [40, 0]], ext: [-40, -15, 40, 15],
     primitives: [
       { op: "line", x1: -40, y1: 0, x2: -5, y2: 0 },
@@ -451,7 +451,7 @@ const SCH_SYMBOLS = [
     ]
   },
   {
-    id: "inductor", name: "Bobine / Inductance", cat: "Passifs", prefix: "L", defaultValue: "10µH", defaultPkg: "0805",
+    id: "inductor", name: "Bobine / Inductance", cat: "Passifs", prefix: "L", defaultValue: "10µH", defaultPkg: "0402",
     pins: [[-40, 0], [40, 0]], ext: [-40, -10, 40, 10],
     primitives: [
       { op: "line", x1: -40, y1: 0, x2: -30, y2: 0 },
