@@ -88,16 +88,54 @@ var SCHEMA_PATTERNS = (function() {
   }
 
   /* ---------- Classes de nets : suggestion de l'analyse + corrections ---------- */
+  /* Sans serveur, ou avant la première analyse, la masse et les alimentations
+     se reconnaissent encore à leur nom, avec les règles du serveur
+     (python/pattern_recognition.py, _RE_GROUND_NET puis _RE_POWER_NET) ; le
+     reste est « Lent », la classe par défaut. */
+  const RE_MASSE = /GND|VSS|(?<![\d.])0V(?!\d)|^MASSE$/i;
+  const RE_ALIM = /VCC|VDD|VBAT|3V3|3[.,]3V|5V|12V|\bPWR\b|AVCC|DVCC|\+V/i;
+  function classeAuto(nom) {
+    const d = _derniersMotifs;
+    const sug = d && d.classes_suggerees && d.classes_suggerees[nom];
+    if (sug) return { classe: sug, raison: (d.raisons_classes || {})[nom] || "Analyse du schéma" };
+    if (RE_MASSE.test(nom)) return { classe: "Masse", raison: "Nom de masse « " + nom + " »" };
+    if (RE_ALIM.test(nom)) return { classe: "Alimentation", raison: "Nom d'alimentation « " + nom + " »" };
+    return { classe: "Lent", raison: d ? "Aucun indice : lent par défaut"
+                                       : "Sans analyse du serveur : lent par défaut" };
+  }
+
+  // les nets nommés du document, toutes feuilles : ceux qu'on peut classer
+  function nomsNets() {
+    try {
+      if (typeof docNets === "function")
+        return docNets().groups.filter(g => g.name && g.members.some(m => m.net && m.net.named))
+          .map(g => g.name);
+    } catch (_) {}
+    return Object.keys(_derniersNets || {}).filter(Boolean);
+  }
+
   function classesFinales(data) {
-    const res = Object.assign({}, (data && data.classes_suggerees) || {});
+    const res = {};
+    if (!data) {
+      // pas d'analyse : seules les évidences, le PCB garde le reste (partiel)
+      for (const n of nomsNets()) {
+        const c = classeAuto(n).classe;
+        if (c !== "Lent") res[n] = c;
+      }
+    }
+    Object.assign(res, (data && data.classes_suggerees) || {});
     const man = (typeof S !== "undefined" && S && S.netClasses) || {};
     for (const n in man) res[n] = man[n];
     return res;
   }
 
-  // l'éditeur PCB, ouvert dans un autre onglet, applique ces classes en direct
+  /* L'éditeur PCB applique ces classes : en direct s'il est ouvert dans un
+     autre onglet (BroadcastChannel), à son ouverture sinon — par la session
+     s'il s'ouvre dans cet onglet, par la copie du projet (localStorage) s'il
+     s'ouvre dans un autre, depuis l'accueil. */
   function publierClasses(data) {
     const classes = classesFinales(data);
+    const partiel = !data;
     try {
       const paires = (data && data.paires_diff) || [];
       // les nœuds de commutation d'un hacheur : ils agressent leurs voisins
@@ -105,20 +143,39 @@ var SCHEMA_PATTERNS = (function() {
       sessionStorage.setItem("web_cao_netclasses", JSON.stringify(classes));
       sessionStorage.setItem("web_cao_paires_diff", JSON.stringify(paires));
       sessionStorage.setItem("web_cao_nets_bruyants", JSON.stringify(bruyants));
+      sessionStorage.setItem("web_cao_netclasses_partiel", partiel ? "1" : "0");
+      try {
+        const projet = (typeof projNom === "function" && projNom()) || "";
+        if (projet) localStorage.setItem("web_cao_netclasses." + projet, JSON.stringify(
+          { t: Date.now(), classes: classes, paires: paires, bruyants: bruyants, partiel: partiel }));
+      } catch (_) {}
       if (typeof BroadcastChannel !== "undefined") {
         const bc = new BroadcastChannel("web_cao_patterns_sync");
         bc.postMessage({ type: "netclasses_updated", classes: classes, paires: paires,
-                         bruyants: bruyants });
+                         bruyants: bruyants, partiel: partiel });
         bc.close();
       }
     } catch (_) {}
+  }
+
+  /* Corrige la classe d'un net, d'où qu'on la choisisse (liste des nets,
+     panneau du fil, panneau des motifs) : "" la rend à l'analyse. */
+  function poserClasse(nom, classe) {
+    if (!nom || typeof S === "undefined" || !S) return;
+    const v = NET_CLASSES.includes(classe) ? classe : "";
+    if ((S.netClasses[nom] || "") === v) return;
+    if (typeof push === "function") push();
+    if (v) S.netClasses[nom] = v;
+    else delete S.netClasses[nom];
+    publierClasses(_derniersMotifs);
+    // sans analyse, le panneau des motifs garde son message (serveur absent)
+    if (_derniersMotifs) rendrePanneau(_derniersMotifs, null);
   }
 
   function htmlClassesNets(data) {
     const noms = Object.keys(_derniersNets).filter(n => n && _derniersNets[n].length)
       .sort((a, b) => a.localeCompare(b, "fr", { numeric: true }));
     if (!noms.length) return "";
-    const sug = (data && data.classes_suggerees) || {};
     const why = (data && data.raisons_classes) || {};
     const man = S.netClasses || {};
     const partenaire = {};
@@ -131,9 +188,9 @@ var SCHEMA_PATTERNS = (function() {
         </summary>
         <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px;">
           ${noms.map(n => {
-            const auto = sug[n] || "Lent";
+            const auto = classeAuto(n).classe;
             const raison = man[n] ? "Corrigé à la main (auto : " + auto + ")"
-              : (why[n] || "Aucun indice : lent par défaut");
+              : (why[n] || classeAuto(n).raison);
             return `
               <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
                 <div style="min-width:0;">
@@ -157,12 +214,8 @@ var SCHEMA_PATTERNS = (function() {
     if (det) det.ontoggle = () => { _netsOuverts = det.open; };
     el.querySelectorAll("select[data-net]").forEach(sel => {
       sel.onchange = () => {
-        const n = sel.dataset.net;
-        if (typeof push === "function") push();
-        if (sel.value) S.netClasses[n] = sel.value;
-        else delete S.netClasses[n];
-        publierClasses(_derniersMotifs);
-        rendrePanneau(_derniersMotifs, null);
+        poserClasse(sel.dataset.net, sel.value);
+        if (typeof buildList === "function") buildList();
       };
     });
   }
@@ -361,6 +414,8 @@ var SCHEMA_PATTERNS = (function() {
         }
       } catch (err) {
         rendrePanneau(null, err.message);
+        // serveur absent : le PCB reçoit au moins les corrections et les évidences
+        if (!_derniersMotifs) publierClasses(null);
       } finally {
         _chargementEnCours = false;
       }
@@ -391,6 +446,9 @@ var SCHEMA_PATTERNS = (function() {
 
   return {
     analyser,
-    ciblerComposantSchema
+    ciblerComposantSchema,
+    classeAuto,
+    poserClasse,
+    publierClasses: () => publierClasses(_derniersMotifs)
   };
 })();

@@ -37,7 +37,9 @@
       cartes.forEach((a,k)=>{if(a)a.href=PARCOURS[k].page+(v?"?tuto":"");});
     }
     bouton.onclick=()=>{const v=!lire();ecrire(v);montrer(v);};
-    tout.onclick=()=>{location.href=PARCOURS[0].page+"?tuto";};
+    /* Comme les cartes, le parcours s'ouvre dans un nouvel onglet : l'accueil
+       reste ouvert derrière. Fenêtre bloquée : on y va dans celui-ci. */
+    tout.onclick=()=>{const u=PARCOURS[0].page+"?tuto";if(!window.open(u,"_blank"))location.href=u;};
     montrer(lire());
     return;
   }

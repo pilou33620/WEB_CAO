@@ -28,7 +28,8 @@ function netBlock(net){
     '<div class="row"><button class="tb'+(hidden?" on":"")+'" id="pNetHide">'+
       (hidden?"Étiquette masquée":"Masquer l'étiquette")+'</button>'+
       (moved?'<button class="tb" id="pNetHome">Replacer l\'étiquette</button>':"")+
-    '</div></div>';
+    '</div></div>'+
+    (net.named?'<div class="prop"><label>Classe du net</label>'+netClassSelect(net.name)+'</div>':"");
   const g=docGroupOf(net);
   h+='<div class="pinnote">'+
      (net.global
@@ -783,6 +784,8 @@ function bindNetBlock(wires){
   if(own.size!==1)return;
   const net=[...own][0];
   if(btn)btn.onclick=()=>selectNet(net);
+  const box=document.getElementById("props");
+  if(box)bindNetClassSelects(box);
   /* Masquage et déplacement de l'étiquette sont rangés sur tous les fils du
      net : le fil qui la porte — le plus long — peut changer à la prochaine
      scission, le réglage ne doit pas disparaître avec lui. */
@@ -825,6 +828,39 @@ function bindNetBlock(wires){
     };
   }
 }
+/* ---------- classe d'un net ----------
+   Le menu « Auto » suit l'analyse du serveur (motifs, broches, composants
+   reliés) ou, sans elle, les noms de masse et d'alimentation ; un autre choix
+   est une correction gardée dans le document (S.netClasses). La liste est
+   celle de l'éditeur PCB et de la visionneuse IPC-2581. */
+function netClassSelect(nom){
+  const P=(typeof SCHEMA_PATTERNS!=="undefined"&&SCHEMA_PATTERNS.classeAuto)?SCHEMA_PATTERNS:null;
+  const auto=P?P.classeAuto(nom):{classe:"Lent",raison:""};
+  const man=(S.netClasses||{})[nom]||"";
+  const tip=man?"Corrigé à la main (auto : "+auto.classe+")":auto.raison;
+  return '<select class="netcls'+(man?" man":"")+'" data-netcls="'+esc(nom)+'" title="'+esc(tip)+'"'+
+    ' aria-label="Classe du net '+esc(nom)+'">'+
+    '<option value="">Auto · '+esc(auto.classe)+'</option>'+
+    NET_CLASSES.map(c=>'<option'+(man===c?" selected":"")+'>'+c+'</option>').join("")+
+    '</select>';
+}
+function setNetClassSch(nom,classe){
+  if(typeof SCHEMA_PATTERNS!=="undefined"&&SCHEMA_PATTERNS.poserClasse)
+    SCHEMA_PATTERNS.poserClasse(nom,classe);
+  else{
+    push();
+    if(NET_CLASSES.includes(classe))S.netClasses[nom]=classe;else delete S.netClasses[nom];
+  }
+  const h=document.getElementById("fHint");
+  if(h)h.textContent="Net "+nom+(S.netClasses[nom]?" classé « "+S.netClasses[nom]+" »":" rendu à la classe automatique")+
+    " — l'éditeur PCB l'applique à la synchronisation.";
+}
+function bindNetClassSelects(box){
+  box.querySelectorAll("select[data-netcls]").forEach(sel=>{
+    sel.onclick=ev=>ev.stopPropagation();
+    sel.onchange=()=>{setNetClassSch(sel.dataset.netcls,sel.value);refreshPanels();};
+  });
+}
 /* ---------- panneau : nomenclature ou liste des nets ---------- */
 function setListTab(t){
   S.listTab=t;
@@ -847,17 +883,18 @@ function buildNetsDoc(box){
     box.innerHTML='<div class="empty">Aucun net dans le document.</div>';
     return;
   }
-  let html='<table class="bom"><thead><tr><th>Net</th><th>Feuilles</th>'+
+  let html='<table class="bom"><thead><tr><th>Net</th><th>Classe</th>'+
            '<th style="text-align:right">Nœuds</th></tr></thead><tbody>';
   for(const g of D.groups){
     const col=netColor({named:true,name:g.name});
+    const named=g.members.some(m=>m.net&&m.net.named);
     html+='<tr data-g="'+esc(g.name)+'" data-page="'+g.pages[0]+'" '+
       'title="'+esc(g.global?("Net global — "+sheetList(g.pages)):"Net local à la feuille "+(g.pages[0]+1))+'">'+
       '<td class="net'+(g.conflict?" warn":"")+'">'+
         '<span class="dot" style="background:'+(g.global?col:"#8b919c")+'"></span>'+
-        (g.global?"⇄ ":"")+esc(g.name)+(g.conflict?" ⚠":"")+'</td>'+
-      '<td style="color:var(--txt-dim);font-family:var(--mono);font-size:10px">'+
-        esc(sheetList(g.pages))+'</td>'+
+        (g.global?"⇄ ":"")+esc(g.name)+(g.conflict?" ⚠":"")+
+        '<span class="pkgcell">'+esc(sheetList(g.pages))+'</span></td>'+
+      '<td>'+(named?netClassSelect(g.name):'<span class="netcls-none">—</span>')+'</td>'+
       '<td class="n">'+g.nodes.length+'</td></tr>';
   }
   html+='</tbody></table>';
@@ -866,8 +903,10 @@ function buildNetsDoc(box){
     D.groups.length+' net(s) dans le document, '+multi.length+' à cheval sur plusieurs feuilles.'+
     '<br>⇄ = net global (masse, alimentation, étiquette globale) : le nom suffit à relier les feuilles.'+
     '<br>Clic sur une ligne : ouvre la feuille et sélectionne le net.'+
+    '<br>Classe : celle que le PCB et la simulation appliqueront au net.'+
     '</div>';
   box.innerHTML=html;
+  bindNetClassSelects(box);
   box.querySelectorAll("tr[data-g]").forEach(tr=>{
     tr.onclick=()=>{
       const pg=+tr.dataset.page;
@@ -890,7 +929,7 @@ function buildNets(){
   const list=N.list.slice().sort((a,b)=>
     (a.named!==b.named) ? (a.named?-1:1)
     : String(a.name).localeCompare(String(b.name),"fr",{numeric:true}));
-  let html='<table class="bom"><thead><tr><th>Net</th><th>Source</th>'+
+  let html='<table class="bom"><thead><tr><th>Net</th><th>Classe</th>'+
            '<th style="text-align:right">Nœuds</th></tr></thead><tbody>';
   for(const n of list){
     const src=n.global?"globale":n.src===2?"étiq.":n.src===1?"label":"auto";
@@ -900,10 +939,10 @@ function buildNets(){
     html+='<tr data-net="'+esc(n.id)+'" title="'+esc(tip)+'">'+
       '<td class="net'+(n.conflict?" warn":"")+'">'+
         '<span class="dot" style="background:'+netColor(n)+'"></span>'+
-        (n.global?"⇄ ":"")+esc(n.name)+(n.conflict?" ⚠":"")+'</td>'+
-      '<td style="color:var(--txt-dim)">'+src+
-        (g&&g.pages.length>1?' <span style="font-family:var(--mono);font-size:9px;opacity:.6">'+
-          esc(sheetList(g.pages))+'</span>':"")+'</td>'+
+        (n.global?"⇄ ":"")+esc(n.name)+(n.conflict?" ⚠":"")+
+        '<span class="pkgcell">'+src+
+          (g&&g.pages.length>1?' · '+esc(sheetList(g.pages)):"")+'</span></td>'+
+      '<td>'+(n.named?netClassSelect(n.name):'<span class="netcls-none" title="Nommez le net pour le classer">—</span>')+'</td>'+
       '<td class="n">'+n.nodes.length+'</td></tr>';
   }
   html+='</tbody></table>';
@@ -914,8 +953,10 @@ function buildNets(){
     (dangling?'<br><span class="warn">'+dangling+' broche(s) en l\'air.</span>':"")+
     (conflicts?'<br><span class="warn">'+conflicts+' net(s) à noms multiples.</span>':"")+
     '<br>Clic sur une ligne : sélectionne les fils du net. Survol : halo sur la feuille.'+
+    '<br>Classe : celle que le PCB et la simulation appliqueront au net (un net sans nom ne se classe pas).'+
     '</div>';
   box.innerHTML=html;
+  bindNetClassSelects(box);
   box.querySelectorAll("tr[data-net]").forEach(tr=>{
     const n=netById(tr.dataset.net);
     tr.onclick=()=>selectNet(n);

@@ -1625,8 +1625,7 @@ function propsTrack(box,t){
       netTable().map(n=>'<option'+(n.name===t.net?" selected":"")+'>'+esc(n.name)+'</option>').join("")+
       '</select></div>'+
     '<div class="prop"><label>Classe du net</label><select id="tC">'+
-      S.classes.map(x=>'<option'+(x.name===cl.name?" selected":"")+'>'+esc(x.name)+'</option>').join("")+
-      '</select></div>'+
+      classOptionsHtml(cl.name)+'</select></div>'+
     '<div class="empty" style="padding:6px 12px">Classe '+esc(cl.name)+' : '+fmt(cl.w,2)+
       ' mm, isolation '+fmt(cl.clr,2)+' mm.<br>'+
       'Tirez une extrémité pour la déplacer · Alt+glisser la détache du coude · '+
@@ -1647,7 +1646,7 @@ function propsTrack(box,t){
   $("tC").onchange=()=>{
     if(!t.net){alert("Cette piste n'est rattachée à aucun net : la classe ne s'applique pas.");
       buildProps();return;}
-    push();setNetClass(t.net,$("tC").value);touch();zoneCache.clear();
+    push();poserClasseNet(t.net,$("tC").value);touch();zoneCache.clear();
     reSync();refreshPanels();draw();
   };
   $("tAll").onclick=()=>{
@@ -2113,9 +2112,8 @@ function listNets(box){
        '<td class="net"><span class="dot" style="background:'+r.color+'"></span>'+esc(r.name)+
        '<span class="pkgcell">'+(info?info.pads.length:r.nodes.length)+' broches · '+
        fmt(cl.w,2)+' mm</span></td>'+
-       '<td><select class="netcls" data-net="'+esc(r.name)+'">'+
-       S.classes.map(x=>'<option'+(x.name===cl.name?" selected":"")+'>'+esc(x.name)+
-         '</option>').join("")+'</select></td>'+
+       '<td><select class="netcls" data-net="'+esc(r.name)+'" title="Classe du net '+
+         esc(r.name)+'">'+classOptionsHtml(cl.name)+'</select></td>'+
        '<td class="v '+(miss?"warn":"ok")+'">'+(miss?miss+" à router":"routé")+'</td></tr>';
   }
   h+='</tbody></table>';
@@ -2130,9 +2128,12 @@ function listNets(box){
   });
   box.querySelectorAll("select.netcls").forEach(sel=>{
     sel.onchange=()=>{
-      push();setNetClass(sel.dataset.net,sel.value);
+      push();
+      const neuve=!S.classes.some(x=>x.name===sel.value);
+      const cl=poserClasseNet(sel.dataset.net,sel.value);
       touch();zoneCache.clear();reSync();buildList();draw();
-      hint("Net "+sel.dataset.net+" rattaché à la classe "+sel.value+
+      hint("Net "+sel.dataset.net+" rattaché à la classe "+cl.name+
+           (neuve?" (créée : "+fmt(cl.w,2)+" mm, isolation "+fmt(cl.clr,2)+" mm, réglable dans Règles)":"")+
            " — « Appliquer au routage » recale les pistes déjà posées.");
     };
     sel.onclick=ev=>ev.stopPropagation();

@@ -2308,6 +2308,58 @@ function schClass(nom){
   }
   return c;
 }
+/* LES CLASSES QU'ON PEUT CHOISIR POUR UN NET : celles de la carte, puis celles
+   que le schéma connaît et que la carte n'a pas encore (Horloge, RF, Antenne…).
+   C'est la même liste que dans le schéma et la visionneuse IPC-2581 ; « Lent »
+   n'y figure pas, c'est la classe par défaut. Une classe choisie dans la
+   seconde liste est créée au premier rattachement, avec ses règles d'office. */
+function classesAProposer(){
+  const autres=S.classes.slice(1);
+  return Object.keys(SCH_CLASSES).filter(k=>!autres.some(x=>
+    x.name.toLowerCase()===k.toLowerCase()||SCH_CLASSES[k].re.test(x.name)));
+}
+function classOptionsHtml(courante){
+  const neuves=classesAProposer();
+  return S.classes.map(x=>'<option'+(x.name===courante?" selected":"")+'>'+esc(x.name)+
+      '</option>').join("")+
+    (neuves.length?'<optgroup label="Nouvelle classe">'+
+      neuves.map(k=>'<option value="'+esc(k)+'">'+esc(k)+' +</option>').join("")+
+      '</optgroup>':"");
+}
+/* Rattache un net à une classe donnée par son nom, en créant au besoin celle
+   que le schéma connaît. Renvoie la classe effective. */
+function poserClasseNet(net,nom){
+  let c=S.classes.find(x=>x.name===nom)||null;
+  if(!c&&SCH_CLASSES[nom])c=schClass(nom);
+  setNetClass(net,c?c.name:undefined);
+  return classOf(net);
+}
+/* CE QUE LE SCHÉMA A PUBLIÉ : classes, paires, nœuds bruyants. D'abord la
+   session de l'onglet (le schéma ouvert avant, dans cet onglet), sinon la copie
+   que le schéma garde par projet dans localStorage : le schéma et le PCB
+   ouverts chacun dans son onglet depuis l'accueil n'ont pas la même session.
+   `partiel` : le schéma n'a pas pu analyser (serveur absent), ses classes ne
+   sont que les corrections et les évidences (masse, alimentations) ; un net
+   qu'il ne cite pas garde alors celle qu'il a. */
+function schemaPublie(){
+  const lire=(st,k)=>{try{const r=st&&st.getItem(k);return r?JSON.parse(r):null;}catch(_){return null;}};
+  const ss=typeof sessionStorage!=="undefined"?sessionStorage:null;
+  const m=lire(ss,"web_cao_netclasses");
+  const pub={classes:(m&&typeof m==="object")?m:null,paires:lire(ss,"web_cao_paires_diff"),
+             bruyants:lire(ss,"web_cao_nets_bruyants"),partiel:lire(ss,"web_cao_netclasses_partiel")===1};
+  if(!pub.classes){
+    let projet="";
+    try{projet=(typeof projNom==="function"&&projNom())||"";}catch(_){}
+    const ls=projet&&typeof localStorage!=="undefined"?localStorage:null;
+    const o=ls&&lire(ls,"web_cao_netclasses."+projet);
+    if(o&&o.classes&&typeof o.classes==="object"){
+      pub.classes=o.classes;pub.partiel=!!o.partiel;
+      if(!pub.paires)pub.paires=o.paires||null;
+      if(!pub.bruyants)pub.bruyants=o.bruyants||null;
+    }
+  }
+  return pub;
+}
 /* Applique les classes venues du schéma (analyse + corrections faites là-bas)
    et, à défaut, rattache les nets d'alimentation à la classe du même nom.
    S.netClassAuto retient ce que cette fonction a posé : un net dont la classe
@@ -2316,12 +2368,8 @@ function schClass(nom){
    Sans données du schéma (autre onglet, carte seule), on ne fait que compléter.
    Renvoie le nombre de nets changés. */
 function autoClass(){
-  let map=null;
-  try{
-    const raw=typeof sessionStorage!=="undefined"&&sessionStorage.getItem("web_cao_netclasses");
-    const m=raw&&JSON.parse(raw);
-    if(m&&typeof m==="object")map=m;
-  }catch(_){}
+  const pub=schemaPublie();
+  const map=pub.classes, partiel=pub.partiel;
   if(!S.netClassAuto)S.netClassAuto={};
   const pwr=S.classes.find(c=>/aliment/i.test(c.name));
   let n=0;
@@ -2329,10 +2377,11 @@ function autoClass(){
     const cur=S.netClass[name];
     if(cur&&S.netClassAuto[name]!==cur)continue;      // choix fait dans le PCB
     let cible;
-    if(!map){
+    const cite=!!map&&Object.prototype.hasOwnProperty.call(map,name);
+    if(!cite&&(!map||partiel)){
       if(cur||!(pwr&&isPower(name)))continue;
       cible=pwr;
-    }else if(Object.prototype.hasOwnProperty.call(map,name))cible=schClass(String(map[name]));
+    }else if(cite)cible=schClass(String(map[name]));
     else cible=(pwr&&isPower(name))?pwr:null;
     const nom=(cible&&cible!==defClass())?cible.name:undefined;
     if(nom!==cur){setNetClass(name,nom);n++;}
@@ -2341,7 +2390,7 @@ function autoClass(){
   /* LES NŒUDS DE DÉCOUPAGE du schéma : la vérification de la carte les juge
      en agresseurs. Gardés dans le document, ils survivent au schéma fermé. */
   try{
-    const b=JSON.parse(sessionStorage.getItem("web_cao_nets_bruyants")||"null");
+    const b=pub.bruyants;
     if(Array.isArray(b)){
       const neuf=b.map(String).sort();
       if(JSON.stringify(neuf)!==JSON.stringify(S.netBruyants||[])){S.netBruyants=neuf;n++;}
@@ -2356,11 +2405,8 @@ function autoClass(){
    S.dpSchema retient les paires déjà proposées : une paire supprimée à la
    main ne revient pas à la synchro suivante. Renvoie le nombre de paires créées. */
 function autoPairs(){
-  let paires=null,classes=null;
-  try{
-    paires=JSON.parse(sessionStorage.getItem("web_cao_paires_diff")||"null");
-    classes=JSON.parse(sessionStorage.getItem("web_cao_netclasses")||"null");
-  }catch(_){}
+  const pub=schemaPublie();
+  const paires=pub.paires, classes=pub.classes;
   if(!Array.isArray(paires)||!classes||typeof classes!=="object")return 0;
   if(!Array.isArray(S.dpSchema))S.dpSchema=[];
   const nets=new Set(netTable().map(x=>x.name)), vite=/^(Rapide|Horloge|RF)$/;
@@ -2399,6 +2445,7 @@ try{
         sessionStorage.setItem("web_cao_netclasses",JSON.stringify(d.classes));
         if(Array.isArray(d.paires))sessionStorage.setItem("web_cao_paires_diff",JSON.stringify(d.paires));
         if(Array.isArray(d.bruyants))sessionStorage.setItem("web_cao_nets_bruyants",JSON.stringify(d.bruyants));
+        sessionStorage.setItem("web_cao_netclasses_partiel",d.partiel?"1":"0");
       }catch(_){}
       if(!S.fps.length)return;
       const avant=JSON.stringify(S.classes);

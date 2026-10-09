@@ -18,7 +18,7 @@ Les éditeurs s'ouvrent par simple double-clic dans le navigateur, sans `npm ins
 
 ## ⚡ Démarrage rapide
 
-**Sans rien installer** : ouvrez `index.html` dans un navigateur récent. Schéma, routage et exports de fabrication fonctionnent tels quels.
+**Sans rien installer** : ouvrez `index.html` dans un navigateur récent. Schéma, routage et exports de fabrication fonctionnent tels quels. Chaque outil s'ouvre dans un nouvel onglet : l'accueil reste ouvert.
 
 **Avec le serveur local** (recommandé, Python 3 standard) : il ajoute la recherche de composants en ligne, le parseur IPC-2581, les solveurs de simulation, les dossiers de projet sur disque et la bibliothèque centrale.
 

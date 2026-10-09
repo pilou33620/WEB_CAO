@@ -466,6 +466,20 @@ Gerber de `04-fabrication`. Un via que le routeur refuse de poser est un via que
 le contrôle aurait signalé, et le message dit les deux cotes — celle qu'on a et
 celle que la règle exige.
 
+## Classer un net
+
+La colonne *Classe* de la liste **Nets** (et « Classe du net » dans le panneau
+d'une piste) propose les classes de la carte, puis, sous *Nouvelle classe*,
+celles que le schéma connaît et que la carte n'a pas encore : Horloge, RF,
+Antenne… Choisie là, une classe est créée avec ses règles d'office (largeur,
+isolation, via ; 50 Ω sur la couche du dessus pour RF), réglables ensuite dans
+**Règles**. « Défaut » tient lieu de « Lent ».
+
+Les classes posées dans le schéma arrivent seules (`autoClass`) : en direct
+quand le schéma est ouvert dans un autre onglet, sinon à l'ouverture, par la
+session de l'onglet ou par la copie que le schéma garde pour le projet. Un
+choix fait dans le PCB reste prioritaire.
+
 ## Le boîtier choisi au schéma décide de l'empreinte
 
 L'éditeur schématique fait choisir un boîtier par composant (`0603`, `SOIC-8`,

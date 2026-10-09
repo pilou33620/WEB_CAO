@@ -306,6 +306,26 @@ la seule différence de fond entre les deux mesures, et elle tient à un boolée
 de l'adaptateur (`physique:false`, `js/21-reperage.js`) — tout le reste du
 geste est le même code, `../commun/reperage.js`, partagé avec le PCB.
 
+### Classes de nets
+
+Chaque net nommé se classe dans la liste **Nets** du panneau « Nomenclature &
+Nets » (colonne *Classe*, sur la feuille ou sur tout le document) et dans le
+panneau Propriétés quand on sélectionne un de ses fils. Les huit classes sont
+celles de l'éditeur PCB et de la visionneuse IPC-2581 : Masse, Alimentation,
+Horloge, Rapide, RF, Analogique, Antenne, Lent.
+
+- **Auto · …** suit l'analyse du serveur (motifs, broches, composants reliés) ;
+  sans serveur, la masse et les alimentations se reconnaissent encore à leur
+  nom, le reste est « Lent ».
+- Un autre choix est une correction : elle ressort en jaune, part avec le
+  document (`netClasses`) et se défait par *Auto*.
+- L'éditeur PCB l'applique : en direct s'il est ouvert dans un autre onglet,
+  sinon à son ouverture (session de l'onglet, ou copie gardée par projet).
+  Sans analyse du serveur, le PCB ne reçoit que les corrections et les
+  évidences : un net non cité garde sa classe sur la carte.
+
+Un net sans nom (`N$…`) ne se classe pas : son nom change au moindre fil.
+
 ### Variantes de montage (BOM)
 
 Une même carte se monte souvent de plusieurs façons : une version « Lite »

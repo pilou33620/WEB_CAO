@@ -56,6 +56,7 @@ const code=fs.readFileSync(path.join(__dirname,"..","dist","schema.js"),"utf8");
 const EXPOSE=[
   /* état et feuilles */
   "S","G","newPage","loadPage","storeCurrent","gotoPage","addPage","removePage","clearSel",
+  "SCHEMA_PATTERNS","NET_CLASSES","netClassSelect",
   "addComp","schComposantsDansZone","schToutesLesZones",
   "push","undo","redo","touchWires","buildTabs","draw","fit","resize",
   /* bus et hiérarchie */
@@ -2964,6 +2965,52 @@ T("variantes : la feuille barre les non-montés, le panneau propose les cases",(
 /* ==========================================================================
    Exporter vers le PCB (bouton « ⇉ PCB »)
    ========================================================================== */
+/* ==========================================================================
+   Classes de nets dans la liste des nets, sans serveur
+   ========================================================================== */
+T("classes de net : choisies dans la liste des nets, publiées au PCB même sans serveur",()=>{
+  const r1=C("resistor",0,0,{ref:"R1"}), r2=C("resistor",6,0,{ref:"R2"}), r3=C("resistor",12,0,{ref:"R3"});
+  const a=allPins(r1)[1], b=allPins(r2)[0], c=allPins(r2)[1], d=allPins(r3)[0];
+  sheet([r1,r2,r3],[{x1:a.x,y1:a.y,x2:b.x,y2:b.y,net:"PIR_S"},{x1:c.x,y1:c.y,x2:d.x,y2:d.y,net:"3V3_A"}]);
+  S.netClasses={};
+  const P=SCHEMA_PATTERNS;
+  if(P.classeAuto("3V3_A").classe!=="Alimentation")throw new Error("3V3_A : "+P.classeAuto("3V3_A").classe);
+  if(P.classeAuto("GND").classe!=="Masse")throw new Error("GND non reconnu");
+  if(P.classeAuto("10V").classe==="Masse")throw new Error("10V n'est pas une masse");
+  if(P.classeAuto("PIR_S").classe!=="Lent")throw new Error("PIR_S : lent par défaut");
+  // la liste des nets propose les huit classes, au net nommé seulement
+  S.netAll=false;setListTab("nets");
+  const box=document.getElementById("bom");
+  const h=box.innerHTML;
+  for(const k of NET_CLASSES)if(h.indexOf("<option>"+k+"</option>")<0)throw new Error("classe "+k+" absente");
+  if(h.indexOf('data-netcls="PIR_S"')<0||h.indexOf("Auto · Alimentation")<0)
+    throw new Error("menu de classe absent de la liste des nets");
+  dom.session.clear();
+  S.dirty=false;
+  P.poserClasse("PIR_S","Analogique");
+  if(S.netClasses.PIR_S!=="Analogique"||!S.dirty)throw new Error("correction non gardée");
+  const pub=JSON.parse(sessionStorage.getItem("web_cao_netclasses")||"null");
+  if(!pub||pub.PIR_S!=="Analogique"||pub["3V3_A"]!=="Alimentation")
+    throw new Error("publication au PCB : "+JSON.stringify(pub));
+  if(sessionStorage.getItem("web_cao_netclasses_partiel")!=="1")
+    throw new Error("sans analyse, la publication est partielle");
+  // gardée dans le document, rendue à l'auto par ""
+  if(JSON.parse(serialize()).netClasses.PIR_S!=="Analogique")throw new Error("absente du document");
+  if(netClassSelect("PIR_S").indexOf('class="netcls man"')<0)throw new Error("correction non signalée");
+  P.poserClasse("PIR_S","");
+  if(S.netClasses.PIR_S)throw new Error("« Auto » doit effacer la correction");
+  // la copie par projet, pour un PCB ouvert dans un autre onglet
+  projOuvrir("carte PIR");
+  try{
+    P.poserClasse("PIR_S","Horloge");
+    const o=JSON.parse(localStorage.getItem("web_cao_netclasses."+projNom())||"null");
+    if(!o||o.classes.PIR_S!=="Horloge"||o.partiel!==true)throw new Error("copie du projet : "+JSON.stringify(o));
+  }finally{
+    localStorage.removeItem("web_cao_netclasses."+projNom());
+    projFermer();
+    S.netClasses={};dom.session.clear();
+  }
+});
 T("passifs : résistance, condensateur et bobine posés en 0402 par défaut",()=>{
   for(const t of ["resistor","capacitor","inductor"]){
     sheet([],[]);

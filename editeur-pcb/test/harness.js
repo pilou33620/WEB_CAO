@@ -56,7 +56,7 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "setFlip","setContrast","autoPlace","placerSatellites","placeManuelle","satValeurF","conn","netTable","fit","zoneClick","zoneMove",
   "closeZone","fullBoardZone","zoneMask","labelMask","maskAt","classOf","setNetClass","defaultWidth",
   "clrPair","applyClasses","jointAt","splitTrack","netTracks","selectNetRouting",
-  "deleteNetRouting","autoClass","mkFp","w2s","runDrc","padsOf",
+  "deleteNetRouting","autoClass","classOptionsHtml","poserClasseNet","schemaPublie","listNets","mkFp","w2s","runDrc","padsOf",
   "buildFabFiles","gerberCopper","gerberMask","gerberPaste","gerberSilk",
   "gerberEdge","gerberOutline","ipcNetlist","masterDrawingPdf","noAcc",
   "drillFile","maskOpenings","pasteOpenings","textStrokes","crc32","zipBlob","exportFab",
@@ -3979,6 +3979,56 @@ T("classes du schéma : une correction faite après coup atteint la carte",()=>{
   delete doc.netClassAuto;loadDoc(doc,true);
   if(S.netClassAuto["+5V"]!=="Horloge")throw new Error("migration : "+JSON.stringify(S.netClassAuto));
   S.netClassAuto={};
+});
+T("classes de net : toutes celles du schéma se choisissent, créées au besoin",()=>{
+  S.netClass={};S.netClassAuto={};
+  importNetlist(NET,true);
+  S.classes=S.classes.filter(c=>c.name==="Défaut"||c.name==="Alimentation");
+  const h=classOptionsHtml("Défaut");
+  for(const k of ["Horloge","Rapide","RF","Analogique","Antenne","Masse"])
+    if(h.indexOf('value="'+k+'"')<0)throw new Error("classe "+k+" absente du menu :\n"+h);
+  if(/value="Alimentation"/.test(h))throw new Error("Alimentation existe déjà, pas de doublon");
+  const c=poserClasseNet("N$2","Antenne");
+  if(c.name!=="Antenne"||S.netClass["N$2"]!=="Antenne")throw new Error("Antenne non créée : "+JSON.stringify(c));
+  if(!S.classes.some(x=>x.name==="Antenne"))throw new Error("la classe doit rejoindre la carte");
+  if(/value="Antenne"/.test(classOptionsHtml("Antenne")))throw new Error("Antenne proposée deux fois");
+  // la liste des nets propose le même menu
+  S.listTab="nets";const box=document.createElement("div");listNets(box);
+  if(box.innerHTML.indexOf('value="Horloge"')<0)throw new Error("menu de la liste des nets incomplet");
+  // « Lent » n'est pas une classe de la carte : c'est Défaut
+  poserClasseNet("N$2","Lent");
+  if(S.netClass["N$2"])throw new Error("Lent = Défaut : "+S.netClass["N$2"]);
+});
+T("classes de net : le schéma d'un autre onglet est relu par le projet, sans rien défaire s'il est partiel",()=>{
+  S.netClass={};S.netClassAuto={};
+  importNetlist(NET,true);
+  sessionStorage.removeItem("web_cao_netclasses");
+  sessionStorage.removeItem("web_cao_netclasses_partiel");
+  projOuvrir("carte PIR");
+  const cle="web_cao_netclasses."+projNom();
+  try{
+    localStorage.setItem(cle,JSON.stringify({classes:{"N$1":"Analogique","N$2":"Horloge"},partiel:false}));
+    autoClass();
+    if(S.netClass["N$1"]!=="Analogique"||S.netClass["N$2"]!=="Horloge")
+      throw new Error("copie du projet non relue : "+JSON.stringify(S.netClass));
+    // schéma sans serveur : il ne cite que ses corrections, le reste tient
+    localStorage.setItem(cle,JSON.stringify({classes:{"N$1":"RF"},partiel:true}));
+    autoClass();
+    if(S.netClass["N$1"]!=="RF")throw new Error("correction non appliquée : "+S.netClass["N$1"]);
+    if(S.netClass["N$2"]!=="Horloge")throw new Error("classe défaite par un schéma partiel");
+    // complet : un net qu'il ne cite plus revient au défaut
+    localStorage.setItem(cle,JSON.stringify({classes:{"N$1":"RF"},partiel:false}));
+    autoClass();
+    if(S.netClass["N$2"])throw new Error("un schéma complet doit défaire : "+S.netClass["N$2"]);
+    // la session de l'onglet passe avant la copie du projet
+    sessionStorage.setItem("web_cao_netclasses",JSON.stringify({"N$1":"Analogique"}));
+    if(schemaPublie().classes["N$1"]!=="Analogique")throw new Error("la session doit primer");
+  }finally{
+    localStorage.removeItem(cle);
+    sessionStorage.removeItem("web_cao_netclasses");
+    projFermer();
+    S.netClass={};S.netClassAuto={};
+  }
 });
 T("paires du schéma : créées entre nets rapides, une seule fois",()=>{
   S.dpPairs=[];S.dpSchema=[];S.netClass={};S.netClassAuto={};
