@@ -73,7 +73,7 @@ Le bouton **« Simulation EM… »** de l'Éditeur PCB et de la Visionneuse ouvr
 
 | Famille | Analyses |
 | :--- | :--- |
-| **Signal (SI)** | Impédance Z₀ (méthode des moments 2D), Z différentielle et paramètres S, diaphonie localisée NEXT/FEXT, chemin de retour, *setup & hold* d'un bus synchrone |
+| **Signal (SI)** | Impédance Z₀ (méthode des moments 2D), Z différentielle et paramètres S, diaphonie localisée NEXT/FEXT, chemin de retour, *setup & hold* d'un bus synchrone, **diagramme de l'œil** (PRBS et pire cas) avec les gabarits USB, PCIe, HDMI, LVDS, MIPI, SATA, SGMII, SPI, QSPI, SD et eMMC |
 | **Alimentation (PI)** | Chute DC et échauffement, impédance du PDN Z(ω) avec condensateurs réels et résonances de cavité |
 | **RF** | S₂₁ d'un réseau d'adaptation entre ports d'impédance complexe, abaque de Smith, « et si » par composant |
 | **Audit** | Vérification de toute la carte, tous les nets, règle par règle ([mode d'emploi](docs/verification-carte.md)) |

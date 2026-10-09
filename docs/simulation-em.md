@@ -898,6 +898,93 @@ La ligne de commande juge un fichier sans ouvrir de page :
 [python/test/banc-analyse-carte.py](../python/test/banc-analyse-carte.py),
 plus un essai par adaptateur dans les deux harnais.
 
+### Diagramme de l'œil — la liaison vue par le récepteur
+
+L'onglet **Diagramme de l'œil** (famille SI) répond à la question que les
+paramètres S laissent ouverte : le récepteur voit une suite de bits, pas une
+sinusoïde. Chaque bit déborde sur ses voisins (pertes, réflexions, moignons),
+et l'œil est ce qui reste d'ouvert quand on superpose tous les bits. Les
+normes jugent aussi la liaison ainsi : un **gabarit** (masque) dans lequel
+aucune trace n'a le droit d'entrer.
+
+**La liaison est celle de l'onglet Impédance.** La sélection part dans
+`simulation_em.simuler` exactement comme pour Z₀ (MoM 2D sur la section,
+dispersion, pertes, coudes, vias, moignons), mais sur une grille régulière de
+plusieurs centaines à quelques milliers de fréquences (`freqs_imposees`). En
+mode différentiel, c'est la cascade du mode impair de la paire
+(`s_diff["abcd_dd"]`). `python/oeil.py` n'ajoute que ce qui l'entoure :
+
+1. **l'émetteur**, générateur de Thévenin linéaire : tension à vide, résistance
+   de sortie, front gaussien de temps de montée tᵣ (10–90 %) et, au besoin, une
+   pré-accentuation (FFE) ;
+2. **le récepteur** : résistance de terminaison (vide = haute impédance) et
+   capacité de broche, puis l'**égaliseur de référence** du protocole quand le
+   gabarit le suppose (CTLE, DFE) ;
+3. la fonction de transfert générateur → broche,
+   H = 1 / (A + B·Y_L + Z_s·(C + D·Y_L)), passée en temporel par IFFT : réponse
+   à un échelon, puis **réponse à un bit** ;
+4. deux yeux tirés de cette réponse :
+   - l'**œil PRBS** (PRBS7, 9 ou 15), par superposition — la liaison est
+     linéaire, la somme des réponses décalées *est* la forme d'onde ;
+   - l'**œil pire cas** (analyse de distorsion crête, PDA) : la pire
+     combinaison de bits voisins, toutes séquences confondues ;
+5. le gabarit, et sa **marge** : de combien on peut l'agrandir avant qu'il
+   touche.
+
+**La grille.** La fenêtre temporelle doit contenir toute la réponse : trente
+traversées de la ligne, douze fronts et les constantes de temps du récepteur,
+et l'on en prend le double pour que la queue ne revienne pas par l'autre bout
+de l'IFFT. Le haut de la grille est 1,6/tᵣ, où le front gaussien ne laisse plus
+que 5·10⁻⁴. Au-delà de 8 192 points, la fenêtre est raccourcie et le résultat
+le dit. Une réponse qui ne s'est pas éteinte dans la fenêtre est signalée.
+
+**L'instant d'échantillonnage** est au milieu de la plage de phases où l'œil
+pire cas est ouvert, entre les deux croisements, là où une récupération
+d'horloge le placerait et où les gabarits se posent. La largeur se mesure en
+faisant le tour de l'UI, puisque l'œil se répète.
+
+**La marge.** Pour l'œil PRBS, c'est la plus petite *jauge* des traces dans le
+polygone convexe du gabarit : la jauge vaut 1 sur le bord, et le gabarit
+agrandi d'un facteur k autour de son centre est exactement {jauge ≤ k}. Elle ne
+dépend pas des unités des axes. Pour l'œil pire cas, c'est le plus grand k tel
+que le gabarit agrandi tienne, phase par phase, entre ses deux frontières. Juger
+les points de ces frontières comme des traces serait faux : dans les
+croisements elles plongent sous le seuil, là où de vraies traces passent par
+zéro, et la marge pire cas dépasserait celle du PRBS.
+
+**Les gabarits** vivent dans `python/oeil.py` (`GABARITS`) et la page les reçoit
+par `GET /api/oeil`. Il n'y a donc qu'une source. Chacun porte sa **fiabilité**,
+affichée à côté du verdict, parce que les normes sont payantes :
+
+| Fiabilité | Sens | Gabarits |
+| :--- | :--- | :--- |
+| recoupé | valeurs retrouvées dans une source publique (fiche de fabricant, note d'application), pas dans la norme elle-même | USB 2.0 HS Template 1, USB 3.x Gen 1 (après CTLE), PCIe Gen 1, SGMII |
+| à vérifier | valeurs de la norme non recoupées | USB 2.0 HS extrémité, PCIe Gen 2 et Gen 3, HDMI 1.4, SATA Gen 1 à 3 |
+| dérivé | pas de gabarit officiel : seuils VIL/VIH du récepteur et sa fenêtre setup/hold | LVDS, MIPI D-PHY HS, SPI 3,3 V et 1,8 V, QSPI, SD High Speed, eMMC HS |
+
+Un gabarit au **connecteur** (USB 2.0 Template 1) se juge à la broche du
+connecteur : c'est le bon point quand la piste va du PHY au connecteur. Les
+autres se jugent à l'entrée du récepteur. Les bus lents (SPI, QSPI, SD, eMMC)
+n'ont pas de masque officiel : le gabarit dérivé interdit la zone entre VIL et
+VIH pendant la fenêtre setup/hold du récepteur, avec les limites de tension
+absolues. L'œil y est centré au mieux, et le décalage entre donnée et horloge
+reste l'affaire de l'onglet *Bus synchrone*.
+
+**Hors du modèle**, et dit dans chaque résultat : émetteur et récepteur non
+linéaires (IBIS), gigue aléatoire, diaphonie des voisines, condensateurs de
+liaison, et en différentiel les vias et coudes de la paire (la cascade du mode
+impair ne porte que ses tronçons). L'Ethernet cuivre (MLT-3, PAM-5) n'est pas
+binaire et n'a pas de gabarit. L'I²C (drain ouvert, front montant RC) n'est pas
+linéaire et n'en a pas non plus.
+
+**Étalons** ([python/test/banc-oeil.py](../python/test/banc-oeil.py)) : la
+ligne adaptée sans pertes rend un œil parfait (demi-excursion, 1 UI, retard
+de la ligne) ; une ligne ouverte attaquée par 30 Ω rend l'œil pire cas du
+diagramme en treillis à 0,3 % près ; avec 10 Ω, l'œil fermé se dit fermé ; le
+pire cas n'est jamais plus ouvert que le PRBS, ni en hauteur ni en marge ; un
+CTLE, une FFE ou un DFE ouvrent un œil fermé par les pertes ; la grille imposée
+rend la même cascade que la grille de la page.
+
 ### RF — le S₂₁ d'un réseau entre deux ports
 
 La famille **RF** porte un onglet, **S21**, et une question : on sort d'une

@@ -241,7 +241,7 @@ sous le résultat plutôt que supposé en silence.
 ### Quatre onglets dans SI, dont trois sur une seule réponse du serveur
 
 Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI**
-(intégrité de l'alimentation). SI en porte quatre :
+(intégrité de l'alimentation). SI porte notamment :
 
 | Onglet | Ce qu'il répond | Ce qu'il lit |
 | --- | --- | --- |
@@ -249,8 +249,9 @@ Le panneau se range en deux familles — **SI** (intégrité du signal) et **PI*
 | **Z différentielle** | Z_diff et Z_commune des paires qui longent la sélection | la même section, à DEUX conducteurs |
 | **Crosstalk** | **COMBIEN** une voisine prend — en %, en dB et **en volts** — et **OÙ** cela se fabrique | une matrice S MULTI-PORTS mise en cascade, synthétisée depuis le DESIGN |
 | **Current Return Path** | par où revient le courant de chaque via | la liaison verticale |
+| **Diagramme de l'œil** | si la liaison passe le gabarit de son protocole (USB, PCIe, HDMI, LVDS, MIPI, SATA, SGMII, SPI, QSPI, SD, eMMC), avec quelle marge — œil PRBS et œil pire cas | la même cascade que l'Impédance (ou la paire), passée en temporel par sa propre route, `/api/oeil` — voir [le guide Simulation EM](../docs/simulation-em.md) |
 
-**Trois des quatre lisent la MÊME réponse du serveur** : changer d'onglet ne
+**Impédance, Z différentielle et Current Return Path lisent la MÊME réponse du serveur** : changer d'onglet ne
 relance rien, et les trois fiches parlent nécessairement du même cuivre. Elles
 ne posent pas la même question — une piste parfaitement à 50 Ω peut avoir un
 retour catastrophique.

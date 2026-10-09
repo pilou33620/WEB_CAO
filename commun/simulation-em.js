@@ -7263,19 +7263,12 @@ function simChampPisteDiff(id, listId, placeholder){
   return '<input id="'+id+'" type="text" class="simChamp simInputTxt" placeholder="'+simEsc(placeholder)+'" list="'+listId+'" autocomplete="off" spellcheck="false">';
 }
 
-function simCorpsDiff(){
+/* LES DEUX PISTES D'UNE PAIRE, ÉCRITES UNE FOIS. « Z différentielle » et
+   « Diagramme de l'œil » posent le même cadre, avec les mêmes identifiants : ce
+   sont les mêmes champs de `SIM.saisie`, et une paire choisie sous un onglet
+   l'est sous l'autre. Voir `simDiffPistesBrancher`. */
+function simDiffPistesHtml(){
   return ''+
-  '<div class="pnl-bar simRefBar" id="simRefBar"></div>'+
-  '<div class="pnl-bar">'+
-    '<span class="pnl-lbl">Cible Z<sub>diff</sub></span>'+
-    simChamp("simZDiffCible","Impédance différentielle visée. 100 Ω pour USB "+
-                             "et Ethernet, 90 Ω pour USB 2.0, 100 ou 85 Ω "+
-                             "selon les normes PCIe.")+
-    '<span class="simU">Ω</span>'+
-    '<span class="pnl-lbl">Tolérance</span>'+
-    simChamp("simZDiffTol","En pourcentage de la cible. 10 % est l'usage.")+
-    '<span class="simU">%</span>'+
-  '</div>'+
   '<div class="simDiffPistesCadre">'+
     '<div class="pnl-bar simDiffPisteLigne">'+
       '<span class="pnl-lbl simDiffLbl">Piste 1</span>'+
@@ -7296,7 +7289,23 @@ function simCorpsDiff(){
       '</div>'+
       '<button class="tb mini" id="simDiffSwap" title="Inverser Piste 1 et Piste 2">⇄</button>'+
     '</div>'+
+  '</div>';
+}
+
+function simCorpsDiff(){
+  return ''+
+  '<div class="pnl-bar simRefBar" id="simRefBar"></div>'+
+  '<div class="pnl-bar">'+
+    '<span class="pnl-lbl">Cible Z<sub>diff</sub></span>'+
+    simChamp("simZDiffCible","Impédance différentielle visée. 100 Ω pour USB "+
+                             "et Ethernet, 90 Ω pour USB 2.0, 100 ou 85 Ω "+
+                             "selon les normes PCIe.")+
+    '<span class="simU">Ω</span>'+
+    '<span class="pnl-lbl">Tolérance</span>'+
+    simChamp("simZDiffTol","En pourcentage de la cible. 10 % est l'usage.")+
+    '<span class="simU">%</span>'+
   '</div>'+
+  simDiffPistesHtml()+
   '<div class="pnl-bar simBarFixe">'+
     '<button class="tb mini on" id="simGo" title="Calculer la paire différentielle">▶ Calculer</button>'+
     '<button class="tb mini" id="simJson" title="Le problème lui-même : il se donne au solveur en ligne de commande">.json</button>'+
@@ -7410,23 +7419,11 @@ function simPaireEcrire(){
   simDiffNetlistEcrire();
 }
 
-function simBrancherDiff(){
-  simSaisieEcrire();
-  simRefEcrire();
-  simDiffNetlistEcrire();
-
+/* Les boutons et les champs du cadre des deux pistes. `apresEchange` dit ce
+   que l'onglet fait quand on permute Piste 1 et Piste 2 : « Z différentielle »
+   relance son calcul s'il en avait un, l'œil se contente de redessiner. */
+function simDiffPistesBrancher(apresEchange){
   const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
-  pose("simGo","onclick",simGo);
-  pose("simJson","onclick",simExportJson);
-  pose("simDiffExportS2pBar","onclick",simDiffExportS2p);
-  const auto=simEl("simAuto");
-  if(auto){auto.checked=SIM.suivre;
-           auto.onchange=function(){SIM.suivre=this.checked;};}
-  simBrancherVoile("simVoile","z");
-
-  for(const id of ["simZDiffCible","simZDiffTol"])
-    pose(id,"oninput",function(){simSaisie();simRendre();simRepeindre();});
-
   // Bouton Capture Piste 1
   pose("simDiffPick1","onclick",function(){
     const sels=(SIM_ED&&typeof SIM_ED.netsSelectionnes==="function")?SIM_ED.netsSelectionnes():[];
@@ -7521,7 +7518,7 @@ function simBrancherDiff(){
     if(e2)e2.value=SIM.saisie.diffPiste2||"";
     if(SIM_ED&&typeof SIM_ED.astuce==="function")
       SIM_ED.astuce("⇄ Piste 1 et Piste 2 permutées.");
-    if(SIM.res&&!SIM.occupe)simGo();
+    if(apresEchange)apresEchange();
     else simRendre();
   });
 
@@ -7542,6 +7539,29 @@ function simBrancherDiff(){
     SIM.saisie.diffPiste2=String(this.value||"").trim();
     SIM.saisie.paireN=SIM.saisie.diffPiste2;
     simRendre();
+  });
+}
+
+function simBrancherDiff(){
+  simSaisieEcrire();
+  simRefEcrire();
+  simDiffNetlistEcrire();
+
+  const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
+  pose("simGo","onclick",simGo);
+  pose("simJson","onclick",simExportJson);
+  pose("simDiffExportS2pBar","onclick",simDiffExportS2p);
+  const auto=simEl("simAuto");
+  if(auto){auto.checked=SIM.suivre;
+           auto.onchange=function(){SIM.suivre=this.checked;};}
+  simBrancherVoile("simVoile","z");
+
+  for(const id of ["simZDiffCible","simZDiffTol"])
+    pose(id,"oninput",function(){simSaisie();simRendre();simRepeindre();});
+
+  simDiffPistesBrancher(function(){
+    if(SIM.res&&!SIM.occupe)simGo();
+    else simRendre();
   });
 
   simDiffSuivreSelection();
@@ -18753,11 +18773,608 @@ function simRfApres(){
     };
 }
 
+/* ==========================================================================
+   DIAGRAMME DE L'ŒIL
+   --------------------------------------------------------------------------
+   La liaison vue par le récepteur, bit après bit, et le gabarit du protocole.
+   Le calcul est au serveur (`/api/oeil`, `python/oeil.py`) : la sélection part
+   EXACTEMENT comme sous « Impédance » — ou comme sous « Z différentielle » pour
+   une paire —, le serveur la cascade sur une grille fine, la ferme sur
+   l'émetteur et le récepteur, et rend l'œil PRBS, l'œil pire cas et le
+   contrôle du gabarit. Ce panneau ne fait que saisir et dessiner.
+
+   LES GABARITS VIENNENT DU SERVEUR (GET /api/oeil) et ne sont pas recopiés
+   ici : un gabarit corrigé dans `oeil.py` l'est dans les deux outils. Chacun
+   porte sa FIABILITÉ — les normes sont payantes, et une valeur qui n'a pas pu
+   être recoupée le dit à l'écran, à côté du verdict.
+   ========================================================================== */
+const SIM_OEIL_ROUTE="/api/oeil";
+const SIM_OEIL={
+  gabarits:null, gabErr:"", charge:false,
+  gab:"",
+  /* TOUT EN UNITÉS SI, comme le reste du panneau : bit/s, secondes, volts,
+     ohms, farads. `u` ne dit que dans quoi on les écrit. `rl` à 0 veut dire
+     « haute impédance ». */
+  saisie:{mode:"simple", debit:100e6, tr:1e-9, vh:3.3, vb:0, rs:40, rl:0,
+          cl:5e-12, motif:"prbs7", egaliseur:true, ffe:"", dfe:0,
+          setup:0, hold:0},
+  u:{debit:"Mb/s", tr:"ns"},
+  res:null, err:"", occupe:false, doc:null, notes:[]
+};
+const SIM_OEIL_UNITES_DEBIT=[{cle:"Mb/s",f:1e6},{cle:"Gb/s",f:1e9}];
+const SIM_OEIL_FIAB={
+  corrobore:{nom:"recoupé", cls:"simBadgeOk"},
+  a_verifier:{nom:"à vérifier", cls:"simBadgeAlerte"},
+  derive:{nom:"dérivé", cls:"simBadgeDerive"}
+};
+
+function simOeilGabarit(){
+  return (SIM_OEIL.gabarits||[]).find(g=>g.id===SIM_OEIL.gab)||null;
+}
+function simOeilMode(){
+  return SIM_OEIL.saisie.mode==="diff"?"diff":"simple";
+}
+function simOeilUDebit(){
+  return SIM_OEIL_UNITES_DEBIT.find(u=>u.cle===SIM_OEIL.u.debit)||SIM_OEIL_UNITES_DEBIT[0];
+}
+function simOeilUTr(){
+  return SIM_UNITES_TR.find(u=>u.cle===SIM_OEIL.u.tr)||SIM_UNITES_TR[1];
+}
+
+/* La liste des gabarits, une fois par serveur. Un serveur d'avant l'œil
+   répond 404 : on le dit, plutôt que de laisser une liste vide. */
+async function simOeilCharger(){
+  if(SIM_OEIL.gabarits||SIM_OEIL.charge)return;
+  SIM_OEIL.charge=true; SIM_OEIL.gabErr="";
+  try{
+    await simConnecter();
+    const rep=await fetch(SIM_BASE+SIM_OEIL_ROUTE,{headers:{Accept:"application/json"}});
+    if(rep.status===404)
+      throw new Error("Ce serveur ne connaît pas le diagramme de l'œil : "+
+        "relancez « python web_CAO.py » depuis une version à jour du dépôt.");
+    const j=await rep.json();
+    if(!j||!j.dispo)throw new Error((j&&j.detail)||"Diagramme de l'œil indisponible.");
+    SIM_OEIL.gabarits=j.gabarits||[];
+  }catch(e){
+    SIM_OEIL.gabErr=e.message||String(e);
+  }finally{
+    SIM_OEIL.charge=false;
+    if(SIM.analyse==="oeil")simPoser();
+  }
+}
+
+/* CHOISIR UN GABARIT REMPLIT LES RÉGLAGES : débit, front, émetteur,
+   récepteur, égaliseur et fenêtre setup/hold du protocole. Ils restent
+   modifiables — c'est un point de départ, pas un verrou. */
+function simOeilAppliquerGabarit(id){
+  SIM_OEIL.gab=id||"";
+  SIM_OEIL.res=null; SIM_OEIL.err="";
+  const g=simOeilGabarit();
+  if(!g)return;
+  const s=SIM_OEIL.saisie, em=g.emetteur||{}, rc=g.recepteur||{};
+  s.mode=g.mode==="diff"?"diff":"simple";
+  s.debit=g.debit; s.tr=em.tr||0;
+  s.vh=em.v_haut; s.vb=em.v_bas; s.rs=em.r_source;
+  s.rl=rc.r_charge||0; s.cl=rc.c_charge||0;
+  s.ffe=(em.ffe&&em.ffe.length>1)?em.ffe.map(c=>simNbLibre(c)).join("  "):"";
+  s.dfe=((g.egaliseur||{}).dfe||{}).prises||0;
+  s.egaliseur=true;
+  s.setup=g.setup||0; s.hold=g.hold||0;
+  SIM_OEIL.u.debit=g.debit>=1e9?"Gb/s":"Mb/s";
+  SIM_OEIL.u.tr=(em.tr||0)<1e-9?"ps":"ns";
+}
+
+function simOeilSelectGabarit(){
+  let h='<select id="simOeilGab" class="simUSel" title="Le protocole : il fixe le gabarit et pré-remplit les réglages">'+
+        '<option value="">Aucun gabarit — œil libre</option>';
+  const fams=[];
+  for(const g of (SIM_OEIL.gabarits||[]))if(fams.indexOf(g.famille)<0)fams.push(g.famille);
+  for(const f of fams){
+    h+='<optgroup label="'+simEsc(f)+'">';
+    for(const g of SIM_OEIL.gabarits.filter(x=>x.famille===f))
+      h+='<option value="'+simEsc(g.id)+'"'+(g.id===SIM_OEIL.gab?" selected":"")+">"+
+         simEsc(g.nom)+"</option>";
+    h+="</optgroup>";
+  }
+  return h+"</select>";
+}
+function simOeilBadge(fiab){
+  const f=SIM_OEIL_FIAB[fiab];
+  return f?'<span class="simBadge '+f.cls+'">'+simEsc(f.nom)+"</span>":"";
+}
+function simOeilChampU(id,liste,cle,quoi){
+  let h='<select class="simU simUSel" id="'+id+'" title="Unité '+simEsc(quoi)+'">';
+  for(const u of liste)
+    h+='<option value="'+u.cle+'"'+(u.cle===cle?" selected":"")+">"+u.cle+"</option>";
+  return h+"</select>";
+}
+
+function simCorpsOeil(){
+  /* PENDANT LE CHARGEMENT DES GABARITS, LE PANNEAU EST COMPLET : on peut
+     calculer un œil libre sans attendre la liste, et la rangée qui lance doit
+     survivre au repli comme sous les autres onglets. */
+  const g=simOeilGabarit();
+  const seuils=g&&g.masque&&g.masque.type==="seuils";
+  const aEg=g&&g.egaliseur;
+  let h='<div class="pnl-bar simRefBar" id="simRefBar"></div>';
+  if(SIM_OEIL.gabErr)
+    h+='<div class="pnl-bar"><span class="simErr">'+simEsc(SIM_OEIL.gabErr)+"</span></div>";
+  else if(!SIM_OEIL.gabarits)
+    h+='<div class="pnl-bar"><span class="simNote">Chargement des gabarits depuis le serveur…</span></div>';
+  h+='<div class="pnl-bar">'+
+       '<span class="pnl-lbl">Protocole</span>'+simOeilSelectGabarit()+
+       (g?" "+simOeilBadge(g.fiabilite):"")+
+     "</div>";
+  if(g)
+    h+='<div class="pnl-bar"><span class="simNote">· '+simEsc(g.lieu)+
+       (g.note?"<br>· "+simEsc(g.note):"")+"</span></div>";
+  h+='<div class="pnl-bar">'+
+       '<span class="pnl-lbl">Mode</span>'+
+       '<select id="simOeilMode" class="simUSel" title="Simple : une piste contre la masse. Différentiel : les deux pistes d\'une paire.">'+
+         '<option value="simple"'+(simOeilMode()==="simple"?" selected":"")+">simple</option>"+
+         '<option value="diff"'+(simOeilMode()==="diff"?" selected":"")+">différentiel</option>"+
+       "</select>"+
+       '<span class="pnl-lbl">Motif</span>'+
+       '<select id="simOeilMotif" class="simUSel" title="Séquence pseudo-aléatoire émise. PRBS7 (127 bits) suffit pour la plupart des liaisons ; PRBS15 fait apparaître les longues suites de bits identiques.">'+
+         ["prbs7","prbs9","prbs15"].map(m=>'<option value="'+m+'"'+(SIM_OEIL.saisie.motif===m?" selected":"")+">"+m.toUpperCase()+"</option>").join("")+
+       "</select>"+
+     "</div>";
+  if(simOeilMode()==="diff")h+=simDiffPistesHtml();
+  h+='<div class="pnl-bar simBarF">'+
+       '<span class="pnl-lbl">Débit</span>'+
+       simChamp("simOeilDebit","Débit de la liaison, par fil (par paire en différentiel)")+
+       simOeilChampU("simOeilDebitU",SIM_OEIL_UNITES_DEBIT,SIM_OEIL.u.debit,"du débit")+
+       '<span class="pnl-lbl">Front</span>'+
+       simChamp("simOeilTr","Temps de montée 10–90 % à la sortie de l'émetteur. Vide : 30 % de l'UI.")+
+       simOeilChampU("simOeilTrU",SIM_UNITES_TR,SIM_OEIL.u.tr,"du temps de montée")+
+     "</div>"+
+     '<div class="pnl-bar simBarF">'+
+       '<span class="pnl-lbl">Émetteur</span>'+
+       simChamp("simOeilVh","Niveau haut À VIDE du générateur (V). En différentiel : la tension différentielle à vide d'un « 1 ».")+
+       '<span class="simU">V</span><span class="simSep">/</span>'+
+       simChamp("simOeilVb","Niveau bas À VIDE du générateur (V)")+
+       '<span class="simU">V</span>'+
+       '<span class="pnl-lbl">R<sub>s</sub></span>'+
+       simChamp("simOeilRs","Résistance de sortie de l'émetteur (différentielle en mode différentiel)")+
+       '<span class="simU">Ω</span>'+
+       '<span class="simU" id="simOeilAmpl">—</span>'+
+     "</div>"+
+     '<div class="pnl-bar simBarF">'+
+       '<span class="pnl-lbl">Récepteur</span>'+
+       '<span class="pnl-lbl">R<sub>L</sub></span>'+
+       simChamp("simOeilRl","Terminaison du récepteur. Vide ou 0 : haute impédance (entrée CMOS).")+
+       '<span class="simU">Ω</span>'+
+       '<span class="pnl-lbl">C<sub>L</sub></span>'+
+       simChamp("simOeilCl","Capacité de la broche d'entrée")+
+       '<span class="simU">pF</span>'+
+     "</div>"+
+     '<div class="pnl-bar simBarF">'+
+       '<span class="pnl-lbl">FFE</span>'+
+       '<input id="simOeilFfe" type="text" spellcheck="false" class="simChamp simTxt" placeholder="aucune" title="Pré-accentuation de l\'émetteur : les coefficients dans l\'ordre (pré-curseur, principal, post-curseurs), séparés par des espaces. Ex. « 0,834 -0,166 » pour −3,5 dB de désaccentuation. Le principal est le plus grand en valeur absolue.">'+
+       '<span class="pnl-lbl">DFE</span>'+
+       simChamp("simOeilDfe","Nombre de prises du DFE du récepteur (0 à 8)")+
+       '<span class="simU">prise(s)</span>'+
+       (aEg?simXtCase("simOeilEg","égaliseur de référence",
+          "Applique le CTLE (et le DFE) de référence du protocole : c'est après lui que le gabarit officiel se juge."):"")+
+     "</div>";
+  if(seuils)
+    h+='<div class="pnl-bar simBarF">'+
+         '<span class="pnl-lbl">Setup</span>'+
+         simChamp("simOeilSetup","Temps de setup du récepteur, avant l'échantillonnage (fiche du composant)")+
+         '<span class="simU">ns</span>'+
+         '<span class="pnl-lbl">Hold</span>'+
+         simChamp("simOeilHold","Temps de hold du récepteur, après l'échantillonnage")+
+         '<span class="simU">ns</span>'+
+       "</div>";
+  h+='<div class="pnl-bar simBarFixe">'+
+       '<button class="tb mini on" id="simOeilGo" title="Calculer l\'œil de la sélection">▶ Calculer</button>'+
+       '<button class="tb mini" id="simOeilCsv" title="Les mesures, l\'œil pire cas et la réponse à un bit">.csv</button>'+
+     "</div>";
+  return h;
+}
+
+function simOeilEcrire(){
+  const s=SIM_OEIL.saisie, pose=(id,v)=>{const e=simEl(id);if(e)e.value=v;};
+  pose("simOeilDebit",simNbLibre(s.debit/simOeilUDebit().f));
+  pose("simOeilTr",s.tr>0?simNbLibre(s.tr/simOeilUTr().f):"");
+  pose("simOeilVh",simNbLibre(s.vh));
+  pose("simOeilVb",simNbLibre(s.vb));
+  pose("simOeilRs",simNbLibre(s.rs));
+  pose("simOeilRl",s.rl>0?simNbLibre(s.rl):"");
+  pose("simOeilCl",simNbLibre(s.cl*1e12));
+  pose("simOeilFfe",s.ffe||"");
+  pose("simOeilDfe",String(s.dfe||0));
+  pose("simOeilSetup",simNbLibre(s.setup*1e9));
+  pose("simOeilHold",simNbLibre(s.hold*1e9));
+  const eg=simEl("simOeilEg");
+  if(eg)eg.checked=!!s.egaliseur;
+  simOeilAmplitude();
+}
+function simOeilLire(){
+  const s=SIM_OEIL.saisie;
+  const lu=(id,defaut,mini)=>{
+    const el=simEl(id);
+    if(!el)return defaut;
+    const txt=String(el.value).trim();
+    if(!txt)return null;
+    const v=parseFloat(txt.replace(",","."));
+    return (isFinite(v)&&v>=(mini==null?-1e9:mini))?v:defaut;
+  };
+  const d=lu("simOeilDebit",s.debit/simOeilUDebit().f,0);
+  if(d!=null)s.debit=d*simOeilUDebit().f;
+  const tr=lu("simOeilTr",s.tr/simOeilUTr().f,0);
+  s.tr=tr==null?0:tr*simOeilUTr().f;
+  const vh=lu("simOeilVh",s.vh); if(vh!=null)s.vh=vh;
+  const vb=lu("simOeilVb",s.vb); if(vb!=null)s.vb=vb;
+  const rs=lu("simOeilRs",s.rs,0); if(rs!=null)s.rs=rs;
+  const rl=lu("simOeilRl",s.rl,0); s.rl=rl==null?0:rl;
+  const cl=lu("simOeilCl",s.cl*1e12,0); s.cl=cl==null?0:cl*1e-12;
+  const ffe=simEl("simOeilFfe"); if(ffe)s.ffe=String(ffe.value).trim();
+  const dfe=lu("simOeilDfe",s.dfe,0); s.dfe=dfe==null?0:Math.min(8,Math.round(dfe));
+  const su=lu("simOeilSetup",s.setup*1e9,0); if(simEl("simOeilSetup"))s.setup=su==null?0:su*1e-9;
+  const ho=lu("simOeilHold",s.hold*1e9,0); if(simEl("simOeilHold"))s.hold=ho==null?0:ho*1e-9;
+  const eg=simEl("simOeilEg"); if(eg)s.egaliseur=!!eg.checked;
+  return s;
+}
+/* Ce qui arrive à la charge en continu : le pont diviseur Rs / RL. C'est le
+   chiffre qu'on compare d'instinct à une fiche (« 400 mV sur 45 Ω »), et le
+   générateur À VIDE n'en dit rien tant qu'on n'a pas fait la division. */
+function simOeilAmplitude(){
+  const e=simEl("simOeilAmpl");
+  if(!e)return;
+  const s=SIM_OEIL.saisie;
+  const k=s.rl>0?s.rl/(s.rl+s.rs):1;
+  e.textContent="≈ "+simNb(s.vb*k,3)+" … "+simNb(s.vh*k,3)+" V à la charge";
+}
+
+/* Les réglages tels qu'ils partent au serveur. UN SEUL ENDROIT LES TRADUIT. */
+function simOeilReglages(){
+  const s=SIM_OEIL.saisie, g=simOeilGabarit();
+  const o={debit:s.debit, tr:s.tr||0, v_haut:s.vh, v_bas:s.vb,
+           r_source:s.rs, r_charge:s.rl||0, c_charge:s.cl||0,
+           mode:simOeilMode(), motif:s.motif, gabarit:g?g.id:"",
+           egaliseur:!!s.egaliseur, dfe_prises:s.dfe||0};
+  const c=String(s.ffe||"").trim();
+  if(c)o.ffe=c.split(/[\s;]+/).filter(Boolean).map(x=>parseFloat(x.replace(",",".")));
+  else o.ffe=[1];
+  if(g&&g.masque&&g.masque.type==="seuils"){o.setup=s.setup; o.hold=s.hold;}
+  return o;
+}
+
+function simBrancherOeil(){
+  if(!SIM_OEIL.gabarits&&!SIM_OEIL.gabErr)simOeilCharger();
+  simRefEcrire();
+  simSaisieEcrire();
+  simDiffNetlistEcrire();
+  simOeilEcrire();
+  const pose=(id,quoi,fn)=>{const e=simEl(id);if(e)e[quoi]=fn;};
+  pose("simOeilGab","onchange",function(){
+    simOeilLire();
+    simOeilAppliquerGabarit(this.value);
+    if(!this.value)SIM_OEIL.gab="";
+    simPoser();
+  });
+  pose("simOeilMode","onchange",function(){
+    simOeilLire();
+    SIM_OEIL.saisie.mode=this.value;
+    SIM_OEIL.res=null;
+    simPoser();
+  });
+  pose("simOeilMotif","onchange",function(){SIM_OEIL.saisie.motif=this.value;});
+  pose("simOeilDebitU","onchange",function(){
+    simOeilLire(); SIM_OEIL.u.debit=this.value; simOeilEcrire();
+  });
+  pose("simOeilTrU","onchange",function(){
+    simOeilLire(); SIM_OEIL.u.tr=this.value; simOeilEcrire();
+  });
+  for(const id of ["simOeilVh","simOeilVb","simOeilRs","simOeilRl"])
+    pose(id,"oninput",function(){simOeilLire();simOeilAmplitude();});
+  pose("simOeilGo","onclick",simOeilGo);
+  pose("simOeilCsv","onclick",simOeilExportCsv);
+  if(simOeilMode()==="diff"){
+    simDiffPistesBrancher(function(){simRendre();});
+    simDiffSuivreSelection();
+  }
+}
+
+async function simOeilGo(){
+  if(SIM_OEIL.occupe)return;
+  simOeilLire();
+  SIM_OEIL.res=null; SIM_OEIL.err=""; SIM_OEIL.notes=[];
+  simSaisie();
+  const P=simProblemes();
+  if(!P||!P.length){
+    SIM_OEIL.err=SIM.err||"Rien à calculer : sélectionnez la liaison.";
+    SIM.err="";
+    simRendre();
+    return;
+  }
+  SIM.err="";
+  /* UN SEUL PARCOURS. L'outil peut couper la sélection en morceaux (une ligne
+     interrompue par un composant) : l'œil porte sur le premier, et le dit.
+     En différentiel, le second lot est la même paire vue de l'autre piste. */
+  const p=P[0];
+  if(simOeilMode()==="simple"&&P.length>1)
+    SIM_OEIL.notes.push("La sélection est coupée en "+P.length+" morceaux : "+
+      "l'œil porte sur le premier (« "+(p.titre||p.doc.net||"lot 1")+" »).");
+  const doc=p.doc;
+  doc.oeil=simOeilReglages();
+  SIM_OEIL.occupe=true;
+  simProgresDemarrer();
+  simRendre();
+  try{
+    await simConnecter();
+    const envoi=await simCorpsJson(doc);
+    const rep=await fetch(SIM_BASE+SIM_OEIL_ROUTE,{
+      method:"POST", headers:envoi.headers, body:envoi.body});
+    if(!rep.ok)throw new Error(await simErreur(rep));
+    const res=await rep.json();
+    if(!res||!res.densite)throw new Error("Réponse inattendue du serveur.");
+    SIM_OEIL.res=res; SIM_OEIL.doc=doc;
+    if(SIM_ED&&SIM_ED.astuce){
+      const m=res.mesures;
+      SIM_ED.astuce("Œil : hauteur "+simOeilV(m.hauteur_prbs)+", largeur "+
+                    simNb(m.largeur_prbs_ui,2)+" UI"+
+                    (res.gabarit?(m.violations?" — gabarit violé":" — gabarit respecté"):"")+".");
+    }
+  }catch(e){
+    SIM_OEIL.err=e.message||String(e);
+  }finally{
+    SIM_OEIL.occupe=false;
+    simProgresFini();
+    simRendre();
+  }
+}
+
+/* Une tension se lit en millivolts sous le volt. */
+function simOeilV(v){
+  if(!isFinite(v))return "—";
+  return Math.abs(v)<1?simNb(v*1e3,1)+" mV":simNb(v,3)+" V";
+}
+/* Trois chiffres significatifs, dans l'unité qui les porte. */
+function simOeilT(s){
+  if(!isFinite(s))return "—";
+  const a=Math.abs(s);
+  const ecrit=(v,u)=>simNb(v,Math.abs(v)>=100?0:Math.abs(v)>=10?1:2)+" "+u;
+  if(a===0)return "0";
+  if(a>=1e-6)return ecrit(s*1e6,"µs");
+  if(a>=1e-9)return ecrit(s*1e9,"ns");
+  return ecrit(s*1e12,"ps");
+}
+
+/* LE VERDICT, DANS L'ORDRE DE LA CONFIANCE. Le gabarit d'abord, s'il y en a
+   un, et le pire cas avec lui : un œil PRBS qui passe et un pire cas qui
+   touche, c'est une liaison qui échouera sur une séquence que le PRBS ne
+   contient pas. */
+function simOeilVerdict(r){
+  const m=r.mesures, g=r.gabarit;
+  if(g&&g.polygone&&g.polygone.length){
+    const n=m.violations||0, hors=m.hors_limites||0;
+    if(n||hors)
+      return '<p class="simVerdict dehors">Gabarit violé'+
+        ' <span>'+(n?n+" échantillon(s) dans le masque":"")+
+        (n&&hors?", ":"")+(hors?hors+" hors des limites hautes et basses":"")+
+        " · marge "+simNb(100*m.marge,0)+" %</span></p>";
+    if(m.marge_pire<0)
+      return '<p class="simVerdict limite">Gabarit respecté en PRBS, pas au pire cas'+
+        ' <span>marge PRBS '+simNb(100*m.marge,0)+" %, pire cas "+
+        simNb(100*m.marge_pire,0)+" %</span></p>";
+    return '<p class="simVerdict dedans">Gabarit respecté'+
+      ' <span>marge '+simNb(100*m.marge,0)+" % (pire cas "+
+      simNb(100*m.marge_pire,0)+" %)</span></p>";
+  }
+  if(m.hauteur_pire>0)
+    return '<p class="simVerdict dedans">Œil ouvert <span>'+
+      simOeilV(m.hauteur_prbs)+" × "+simNb(m.largeur_prbs_ui,2)+" UI</span></p>";
+  if(m.hauteur_prbs>0)
+    return '<p class="simVerdict limite">Œil ouvert en PRBS, fermé au pire cas <span>'+
+      simOeilV(m.hauteur_prbs)+"</span></p>";
+  return '<p class="simVerdict dehors">Œil fermé <span>'+
+    simOeilV(m.hauteur_prbs)+"</span></p>";
+}
+
+/* LA DENSITÉ EN IMAGE, une fois. Douze mille rectangles SVG alourdiraient le
+   DOM pour rien ; un canevas de nx × ny pixels, étiré dans la figure, dit la
+   même chose. Échelle logarithmique : les traces rares — celles qui touchent
+   le gabarit — restent visibles à côté des paliers où tout passe. Sans
+   canevas (banc d'essai sous Node), la figure se dessine sans l'image. */
+function simOeilImage(d){
+  try{
+    if(typeof document==="undefined"||!document.createElement)return "";
+    const c=document.createElement("canvas");
+    if(!c||!c.getContext)return "";
+    c.width=d.nx; c.height=d.ny;
+    const ctx=c.getContext("2d");
+    if(!ctx||!ctx.createImageData)return "";
+    const img=ctx.createImageData(d.nx,d.ny), px=img.data;
+    const lmax=Math.log1p(Math.max(1,d.max));
+    const rampe=[[52,84,170],[64,190,220],[250,214,90]];
+    for(let i=0;i<d.nx*d.ny;i++){
+      const n=d.comptes[i];
+      if(!n)continue;
+      const a=Math.log1p(n)/lmax, t=a*2, k=Math.min(1,Math.floor(t)), f=t-k;
+      const c0=rampe[k], c1=rampe[Math.min(2,k+1)];
+      px[4*i]=c0[0]+(c1[0]-c0[0])*f;
+      px[4*i+1]=c0[1]+(c1[1]-c0[1])*f;
+      px[4*i+2]=c0[2]+(c1[2]-c0[2])*f;
+      px[4*i+3]=Math.round(255*(0.45+0.55*a));
+    }
+    ctx.putImageData(img,0,0);
+    return c.toDataURL("image/png");
+  }catch(e){
+    return "";
+  }
+}
+
+function simOeilFigure(r){
+  const d=r.densite, W=simLargeurTrace(), H=300, mg={g:58,d:12,h:12,b:34};
+  const lo=d.v_bas, hi=d.v_haut;
+  const X=t=>mg.g+(W-mg.g-mg.d)*(t+1)/2;
+  const Y=v=>mg.h+(H-mg.h-mg.b)*(hi-v)/(hi-lo);
+  let svg='<svg class="simCourbe simOeil" viewBox="0 0 '+W+' '+H+'" '+
+          'preserveAspectRatio="xMidYMid meet" role="img" '+
+          'aria-label="Diagramme de l\'œil sur deux intervalles unitaires">';
+  /* La grille des tensions : cinq crans ronds. */
+  const pas=simOeilPas((hi-lo)/5);
+  for(let v=Math.ceil(lo/pas)*pas;v<=hi+1e-12;v+=pas){
+    const y=Y(v);
+    svg+='<line class="simGrille" x1="'+mg.g+'" y1="'+simXY(y)+'" x2="'+(W-mg.d)+
+         '" y2="'+simXY(y)+'"/>'+
+         '<text class="simCote" x="'+(mg.g-6)+'" y="'+simXY(y+3.5)+
+         '" text-anchor="end">'+simOeilVCourt(v,pas)+"</text>";
+  }
+  for(const t of [-1,-0.5,0,0.5,1]){
+    const x=X(t);
+    svg+='<line class="simGrille" x1="'+simXY(x)+'" y1="'+mg.h+'" x2="'+simXY(x)+
+         '" y2="'+(H-mg.b)+'"/>'+
+         '<text class="simCote" x="'+simXY(x)+'" y="'+(H-mg.b+13)+
+         '" text-anchor="middle">'+(t===0?"0":simNb(t,1))+" UI</text>"+
+         '<text class="simCote simUnite" x="'+simXY(x)+'" y="'+(H-mg.b+25)+
+         '" text-anchor="middle">'+simOeilT(t*r.ui)+"</text>";
+  }
+  const img=simOeilImage(d);
+  if(img)
+    svg+='<image href="'+img+'" x="'+mg.g+'" y="'+mg.h+'" width="'+(W-mg.g-mg.d)+
+         '" height="'+(H-mg.h-mg.b)+'" preserveAspectRatio="none"/>';
+  /* Le seuil de décision. */
+  svg+='<line class="simOeilSeuil" x1="'+mg.g+'" y1="'+simXY(Y(r.seuil))+'" x2="'+
+       (W-mg.d)+'" y2="'+simXY(Y(r.seuil))+'"/>';
+  /* L'œil pire cas : la frontière que AUCUNE séquence ne franchit. */
+  const pc=r.pire_cas;
+  for(const cle of ["haut","bas"]){
+    let dd="", leve=true;
+    for(let i=0;i<pc.tau.length;i++){
+      const v=pc[cle][i];
+      if(v==null||v<lo||v>hi){leve=true;continue;}
+      dd+=(leve?"M":"L")+simXY(X(pc.tau[i]))+" "+simXY(Y(v));
+      leve=false;
+    }
+    if(dd)svg+='<path class="simOeilPire" d="'+dd+'"/>';
+  }
+  /* Le gabarit, au centre, et ses limites hautes et basses. */
+  const g=r.gabarit;
+  if(g&&g.polygone&&g.polygone.length){
+    const pts=g.polygone.map(p=>simXY(X(p[0]))+","+simXY(Y(p[1]))).join(" ");
+    svg+='<polygon class="simOeilMasque" points="'+pts+'"/>';
+  }
+  if(g)for(const cle of ["v_max","v_min"])
+    if(g[cle]!=null&&g[cle]>=lo&&g[cle]<=hi)
+      svg+='<line class="simOeilLimite" x1="'+mg.g+'" y1="'+simXY(Y(g[cle]))+
+           '" x2="'+(W-mg.d)+'" y2="'+simXY(Y(g[cle]))+'"/>';
+  svg+='<text class="simCote simUnite" x="4" y="'+(mg.h+4)+'">V</text>';
+  return svg+"</svg>"+
+    '<p class="simLeg simNote">'+
+      '<span class="simOeilLegD"></span> densité des traces (PRBS, échelle log) · '+
+      '<span class="simOeilLegP"></span> œil pire cas · '+
+      (g&&g.polygone&&g.polygone.length?'<span class="simOeilLegM"></span> gabarit · ':"")+
+      '<span class="simOeilLegS"></span> seuil</p>';
+}
+function simOeilPas(brut){
+  const p=Math.pow(10,Math.floor(Math.log10(Math.max(brut,1e-12))));
+  const n=brut/p;
+  return (n<=1?1:n<=2?2:n<=5?5:10)*p;
+}
+function simOeilVCourt(v,pas){
+  if(Math.abs(v)<pas/1e3)v=0;
+  return pas<0.1?simNb(v*1e3,pas<0.01?1:0)+"m":simNb(v,pas<1?1:0);
+}
+
+function simRendreOeil(){
+  if(SIM_OEIL.occupe)
+    return simProgres("Cascade de la liaison sur une grille fine, passage en "+
+      "temporel, superposition des bits, puis contrôle du gabarit.");
+  if(SIM_OEIL.err&&!SIM_OEIL.res)
+    return '<p class="simErr">'+simEsc(SIM_OEIL.err)+"</p>";
+  const r=SIM_OEIL.res;
+  if(!r)
+    return '<p class="simEtat">Sélectionnez la liaison — ou les deux pistes '+
+      "de la paire en mode différentiel —, choisissez le protocole, puis "+
+      "<b>▶ Calculer</b>.<br><small>La piste est calculée comme sous "+
+      "« Impédance » (section droite, pertes, coudes, vias), fermée sur "+
+      "l'émetteur et le récepteur, puis passée en temporel : l'œil "+
+      "<b>PRBS</b> superpose les bits d'une séquence, l'œil <b>pire cas</b> "+
+      "prend la pire combinaison de voisins, toutes séquences confondues. Le "+
+      "gabarit du protocole dit si la liaison passe, et avec quelle marge."+
+      "</small></p>";
+  const m=r.mesures, g=r.gabarit, eg=r.egalisation||{};
+  let h=simOeilVerdict(r);
+  if(g){
+    h+='<p class="simNote">· Gabarit <b>'+simEsc(g.nom)+"</b> "+
+       simOeilBadge(g.fiabilite)+"<br><small>"+simEsc(g.fiabilite_texte)+
+       (g.source?"<br>Source : "+simEsc(g.source):"")+"</small></p>";
+  }
+  for(const n of SIM_OEIL.notes)h+='<p class="simNote">· '+simEsc(n)+"</p>";
+  h+=simOeilFigure(r);
+  const ui=r.ui;
+  const lignes=[
+    ["Hauteur d'œil", simOeilV(m.hauteur_prbs), simOeilV(m.hauteur_pire)],
+    ["Largeur d'œil", simNb(m.largeur_prbs_ui,2)+" UI ("+simOeilT(m.largeur_prbs_ui*ui)+")",
+                      simNb(m.largeur_pire_ui,2)+" UI ("+simOeilT(m.largeur_pire_ui*ui)+")"]
+  ];
+  if(g&&g.polygone&&g.polygone.length)
+    lignes.push(["Marge sur le gabarit", simNb(100*m.marge,0)+" %",
+                 simNb(100*m.marge_pire,0)+" %"]);
+  h+='<table class="simTab"><tr><th></th><th>PRBS ('+simEsc(r.motif.toUpperCase())+
+     ")</th><th>pire cas</th></tr>"+
+     lignes.map(l=>"<tr><td>"+l[0]+"</td><td>"+l[1]+"</td><td>"+l[2]+"</td></tr>").join("")+
+     "</table>";
+  const det=[
+    ["Débit", simNb(r.debit/(r.debit>=1e9?1e9:1e6),3)+(r.debit>=1e9?" Gb/s":" Mb/s")+
+              " — UI "+simOeilT(ui)],
+    ["Niveaux échantillonnés", simOeilV(m.niveau_0)+" / "+simOeilV(m.niveau_1)],
+    ["Excursion vue", simOeilV(m.v_min_vu)+" … "+simOeilV(m.v_max_vu)],
+    ["Interférence entre bits (pire cas)", simOeilV(m.isi_pire)],
+    ["Retard de la liaison", simOeilT(m.retard)]
+  ];
+  if(eg.ctle)det.push(["CTLE", eg.ctle.adc_db!=null?"gain continu "+simNb(eg.ctle.adc_db,0)+" dB":
+                       "Adc "+simNb(eg.ctle.adc,3)+", zéro "+simFreq(eg.ctle.fz)]);
+  if(eg.dfe_v&&eg.dfe_v.length)det.push(["DFE", eg.dfe_v.map(v=>simOeilV(v)).join(", ")]);
+  if(eg.ffe&&eg.ffe.length>1)det.push(["FFE", eg.ffe.map(c=>simNb(c,3)).join("  ")]);
+  if(r.ligne)det.push(["Ligne (Z₀ d'une piste seule)", "Z₀ "+simNb(r.ligne.z0_min,1)+"–"+simNb(r.ligne.z0_max,1)+
+                       " Ω, "+simNb(r.ligne.longueur,1)+" mm"+
+                       (r.partenaire?" — paire avec « "+simEsc(r.partenaire)+" »":"")]);
+  det.push(["Calcul", r.grille.points+" fréquences jusqu'à "+simFreq(r.grille.f_max)+
+            ", fenêtre "+simOeilT(r.grille.fenetre)+", "+r.bits+" bits, "+
+            simNb(r.duree,1)+" s"]);
+  h+='<table class="simTab">'+det.map(l=>"<tr><td>"+l[0]+"</td><td>"+l[1]+"</td></tr>").join("")+"</table>";
+  if(r.avertissements&&r.avertissements.length)
+    h+=r.avertissements.map(a=>'<p class="simNote">· '+simEsc(a)+"</p>").join("");
+  if(SIM_OEIL.err)h+='<p class="simErr">'+simEsc(SIM_OEIL.err)+"</p>";
+  return h;
+}
+
+function simOeilExportCsv(){
+  const r=SIM_OEIL.res;
+  if(!r){SIM_OEIL.err="Rien à enregistrer : calculez d'abord.";simRendre();return;}
+  const n=v=>(v==null||!isFinite(v))?"":String(v).replace(".",",");
+  const m=r.mesures;
+  const l=["# Diagramme de l'oeil -- WEB_CAO",
+           "net;"+(r.net||"")+(r.partenaire?" / "+r.partenaire:""),
+           "mode;"+r.mode, "debit_bit_s;"+n(r.debit), "ui_s;"+n(r.ui),
+           "tr_s;"+n(r.tr), "motif;"+r.motif,
+           "gabarit;"+(r.gabarit?r.gabarit.nom+" ("+r.gabarit.fiabilite+")":"aucun"),
+           ""];
+  for(const k of Object.keys(m))l.push(k+";"+n(m[k]));
+  l.push("","# oeil pire cas","tau_ui;haut_v;bas_v");
+  const pc=r.pire_cas;
+  for(let i=0;i<pc.tau.length;i++)l.push([n(pc.tau[i]),n(pc.haut[i]),n(pc.bas[i])].join(";"));
+  l.push("","# reponse a un bit (excursion pleine)","t_s;v");
+  const rb=r.reponse_bit;
+  rb.v.forEach((v,i)=>l.push(n(rb.t0+i*rb.dt)+";"+n(v)));
+  simTelecharger(l.join("\r\n"),simNomFichier("-oeil.csv"),"text/csv");
+}
+
+function simOeilOublier(){
+  const eu=!!SIM_OEIL.res;
+  SIM_OEIL.res=null; SIM_OEIL.err=""; SIM_OEIL.notes=[];
+  return eu;
+}
+
 const SIM_FAMILLES=[
   {cle:"si", court:"SI", nom:"Intégrité du signal",
    quoi:"Ce qu'un front devient en parcourant le cuivre : impédance, retard, "+
         "pertes, réflexions.",
-   analyses:["impedance","diff","crosstalk","retour","bus"]},
+   analyses:["impedance","diff","crosstalk","retour","bus","oeil"]},
   {cle:"pi", court:"PI", nom:"Intégrité de l'alimentation",
    quoi:"Ce que le réseau de distribution laisse passer : chute continue, "+
         "impédance vue par le composant, résonances de plan.",
@@ -18907,6 +19524,21 @@ const SIM_ANALYSES={
     oublier:function(){
       return false;
     }
+  },
+  oeil:{
+    nom:"Diagramme de l'œil",
+    titre:"La liaison vue par le récepteur, bit après bit : œil PRBS, œil "+
+          "pire cas et gabarit du protocole (USB, PCIe, HDMI, LVDS, MIPI, "+
+          "SATA, SGMII, SPI, QSPI, SD, eMMC), avec la marge.",
+    /* `peint` COMMANDE simZActif(), donc la carte des IMPÉDANCES : l'œil est
+       une figure du panneau, il ne peint pas le cuivre. */
+    peint:false,
+    carte:"",
+    corps:simCorpsOeil,
+    brancher:simBrancherOeil,
+    rendre:simRendreOeil,
+    oublier:simOeilOublier,
+    relancer:simOeilGo
   },
   s21:{
     nom:"S21",
@@ -19429,7 +20061,7 @@ function simProgres(detail,faits,total){
    dès que plus rien ne tourne, sans que personne ait à penser à l'éteindre. */
 let SIM_TIC=null;
 function simOccupeQuelconque(){
-  return !!(SIM.occupe||SIM.occupeDC||SIM_RF.occupe||SIM_CARTE.occupe||
+  return !!(SIM.occupe||SIM.occupeDC||SIM_RF.occupe||SIM_CARTE.occupe||SIM_OEIL.occupe||
             (typeof SIM_XT!=="undefined"&&SIM_XT&&SIM_XT.occupe));
 }
 function simProgresDemarrer(taille){
@@ -19758,7 +20390,10 @@ function simProbleme(){
    sur sa carte. S'il ne sait pas découper — `problemes` absent —, on retombe
    sur `probleme` et il y a un lot, ce qui est le comportement d'avant. */
 function simProblemes(){
-  if(SIM.analyse==="diff"&&SIM_ED&&typeof SIM_ED.problemeDiff==="function"){
+  /* L'ŒIL EN DIFFÉRENTIEL PREND LE MÊME CHEMIN QUE « Z différentielle » :
+     les deux pistes de la paire, l'une en ligne, l'autre en voisinage. */
+  const enDiff=SIM.analyse==="diff"||(SIM.analyse==="oeil"&&simOeilMode()==="diff");
+  if(enDiff&&SIM_ED&&typeof SIM_ED.problemeDiff==="function"){
     const p1=SIM.saisie&&SIM.saisie.diffPiste1;
     const p2=SIM.saisie&&SIM.saisie.diffPiste2;
     if(p1&&p2&&String(p1).trim().toLowerCase()===String(p2).trim().toLowerCase()){
@@ -20158,7 +20793,7 @@ function simRafraichir(garderCarte){
     return eu;
   })();
   if(avait){SIM.err=""; simRendre();}
-  if(SIM.analyse==="diff"){
+  if(SIM.analyse==="diff"||(SIM.analyse==="oeil"&&simOeilMode()==="diff")){
     simDiffSuivreSelection();
   }
   if(SIM.analyse==="bus"){
