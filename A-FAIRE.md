@@ -14,10 +14,10 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 905 essais (`editeur-pcb/test/harness.js`), dont 28 pour les plans (Draftsman) et 24 pour le gestionnaire de contraintes et la topologie |
+| **Éditeur PCB** | En service | 908 essais (`editeur-pcb/test/harness.js`), dont 28 pour les plans (Draftsman) et 24 pour le gestionnaire de contraintes et la topologie |
 | **Éditeur Schématique** | En service | 155 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
 | **Visionneuse IPC-2581** | En service | 190 essais (`harness-sim.js`) + 59 (`banc-essai.py`) |
-| **SI — Impédance & Vias (`ligne_mom` v2.5.0)** | En service (0,3 à 0,4 % vs étalons) | 199 cas (`python/test/banc-ligne-mom.py`) |
+| **SI — Impédance & Vias (`ligne_mom` v2.7.0)** | En service (0,3 à 0,4 % vs étalons ; pertes conducteur par l'inductance incrémentale de Wheeler, ruban + plan(s) + bords ; rugosité, diélectrique causal et via en ligne disponibles, non branchés) | 221 cas (`python/test/banc-ligne-mom.py`) |
 | **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | inclus dans les 199 cas |
 | **SI — Crosstalk niveau 2 (`crosstalk` v4.1.0)** | En service (scan normalisé : k_total, NEXT et FEXT en % et dB, statut vert / orange / rouge, piste sélectionnée — t_r saisi ou déduit de la classe — ou toute la carte sous un t_r global ; pistes superposées résolues ; pertes R, G au genou du front en option ; somme des agresseurs en phase ou quadratique ; coloration au statut DRC sur le layout ; l'analyse électrique est retirée) | 41 cas (`python/test/banc-crosstalk.py`), dont la triplaque exacte (Cohn) et les formules du niveau 2 |
 | **Cascade SI / PDN (`simulation_em` v4.3.0)** | En service | couvert par les bancs `ligne_mom`, crosstalk et éditeur |
@@ -148,7 +148,9 @@ lib/
   - [x] Topologie : une piste qui traverse une pastille du net sans s'y arrêter s'y raccorde.
   - [x] Largeur de classe par couche (`wL`, `classWidth`) : le routeur prend celle de la couche active et en change au via, le DRC et « aligner sur la classe » la suivent, la largeur pour Z cible se pose couche par couche ; report quand le nombre de couches change. 4 essais.
   - [x] Topologie (point à point, chaîne avec ordre imposé, étoile à branches égales, fly-by terminé) et moignons (dérivation, point de test, bout libre, moignon de via) par net ou par classe (`editeur-pcb/js/31-topologie.js`) ; onglet « Topologie et moignons », DRC, CSV. 7 essais sur cartes construites.
-  - [ ] Contre-perçage (back-drill) décrit dans l'empilage, pour retirer le moignon de via du calcul et le porter au plan de fabrication.
+  - [x] Contre-perçage (back-drill) décrit dans l'empilage (`stack.cp` : face, couche à ne pas couper ou auto, surperçage, moignon résiduel), pris par un via, un net ou une classe (`cp`) ; `cpVia` ramène le moignon au résiduel dans la topologie / DRC, la simulation SI/RF (`contre_percage`) et la vérification de la carte (`cp`) ; contre-perçage impossible signalé au DRC. 3 essais (`harness.js`), bancs ligne-mom et analyse-carte.
+  - [x] Contre-perçage en fabrication : un Excellon par paire de couches (`…-BACKDRILL-B-In2.DRL`, couche à ne pas couper et profondeur en commentaire), LISEZ-MOI, feuille d'empilage, master drawing ; plan de fabrication : symboles dans la vue de la carte (et ses détails), tableau, passe sur la coupe, note.
+  - [ ] Contre-perçage : visionneuse IPC-2581 (lire le back-drill du fichier), couches empruntées par une zone de cuivre, profondeur en champ Excellon/IPC-2581 plutôt qu'en commentaire.
 
 - [x] **Rooms** (`editeur-pcb/js/32-rooms.js`) : les blocs du schéma (zones étiquetées) encadrés sur la carte comme les rooms d'Altium — cadre, fond teinté, étiquette ; un clic sur l'étiquette prend le bloc ; Affichage → Rooms ; lus dans le document du schéma (session ou projet), à défaut dans l'analyse « Motifs & Blocs ». Remplacent les pastilles de couleur. 3 essais.
 
@@ -159,6 +161,8 @@ lib/
   - passifs détectés et posés à leur position réelle (R série avec nets chaînés, pull-up/down, C vers masse, ESD/TVS, ferrite) ;
   - stimuli front / horloge / trame série ; victimes par nature (logique, reset, ADC, horloge, alim, VREF) avec leur critère ;
   - sortie : forme d'onde, verdict, spectre ; analyse géométrique : étiquette « net sensible » seulement.
+- [x] **Pertes conducteur** (`ligne_mom.line_losses`, v2.7.0, 10/10/2026) : l'ancien `Rs/(2·Z0·w)` ne comptait que le ruban ; remplacé par l'inductance incrémentale de Wheeler (ruban et plan(s) reculés séparément, Hammerstad-Jensen corrigé de l'épaisseur pour le microruban, Wheeler 1978 pour la triplaque, résistance continue en quadrature). Validé : coaxiale exacte, plaques parallèles, Pucel ±8 %, exemple de Pozar ±5 %. Inchangé à 50 Ω en microruban (les oublis se compensaient) ; ×0,64 sur un microruban 87 Ω, ×1,30 sur un 26 Ω, ×0,70 en triplaque étroite. `modele_conducteur="ancien"` rend l'ancien chiffre.
+- [ ] **Brancher les options de `ligne_mom` 2.7.0** (prêtes, désactivées) : `hauteur=` / `topologie=` et rugosité de l'empilage (Hammerstad-Groiss, Huray) dans `simulation_em.py` (cascades simple et différentielle), `rf_reseau.py`, `crosstalk.py` (`alpha_genou`) ; `dielectrique_causal=True` (Djordjevic-Sarkar) pour l'œil ; `abcd_via_ligne` (via en ligne coaxiale + moignon en ligne ouverte) comme modèle haute fréquence du via.
 - [x] **Mode différentiel dans la cascade de paramètres S** :
   - Calcul complet des paramètres S en mode mixte (*Mixed-Mode S-Parameters*) dans `python/simulation_em.py` (`_cascade_differentielle`) : mode différentiel pur $S_{dd}$ ($S_{dd11}, S_{dd21}$ sur $Z_{ref,diff}$ ex: 100 Ω ou 90 Ω), mode commun $S_{cc}$ ($S_{cc11}, S_{cc21}$ sur $Z_{ref,comm} = Z_{ref,diff}/4$ ex: 25 Ω), et conversion de mode CEM $S_{cd21}(\omega)$ calculée à partir du skew $\Delta L = |L_+ - L_-|$.
   - Interface dédiée dans l'onglet « Z différentielle » (`commun/simulation-em.js`) avec sélecteur interactif `[ Sdd ]`, `[ Scc ]`, `[ Scd ]`, courbe SVG multi-traces avec seuil CEM à $-20\text{ dB}$, repère de fréquence centrale $f_0$, lecture dynamique au survol et export Touchstone différentiel `.s2p`.
