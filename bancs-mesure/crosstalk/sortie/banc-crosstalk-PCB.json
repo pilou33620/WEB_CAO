@@ -1,0 +1,7671 @@
+{
+ "format": "pcbedit-1",
+ "cu": 4,
+ "cuL": [
+  {
+   "name": "Top",
+   "custom": false,
+   "color": "#e8443a",
+   "vis": true,
+   "plane": false,
+   "net": "",
+   "role": "signal"
+  },
+  {
+   "name": "Inner 1",
+   "custom": false,
+   "color": "#5bd6a0",
+   "vis": true,
+   "plane": true,
+   "net": "GND",
+   "role": "gnd"
+  },
+  {
+   "name": "Inner 2",
+   "custom": false,
+   "color": "#c98cf0",
+   "vis": true,
+   "plane": true,
+   "net": "GND",
+   "role": "gnd"
+  },
+  {
+   "name": "Bottom",
+   "custom": false,
+   "color": "#3fa0ea",
+   "vis": true,
+   "plane": true,
+   "net": "GND",
+   "role": "gnd"
+  }
+ ],
+ "stack": {
+  "target": 1.6,
+  "finish": "ENIG (or chimique)",
+  "maskT": 0.01,
+  "maskEr": 3.8,
+  "maskColor": "vert",
+  "silkColor": "blanc",
+  "cu": [
+   {
+    "t": 0.035
+   },
+   {
+    "t": 0.0152
+   },
+   {
+    "t": 0.0152
+   },
+   {
+    "t": 0.035
+   }
+  ],
+  "di": [
+   {
+    "k": "prepreg",
+    "t": 0.2104,
+    "er": 4.4,
+    "df": 0.02,
+    "mat": "7628"
+   },
+   {
+    "k": "core",
+    "t": 1.065,
+    "er": 4.6,
+    "df": 0.02,
+    "mat": "FR-4 core"
+   },
+   {
+    "k": "prepreg",
+    "t": 0.2104,
+    "er": 4.4,
+    "df": 0.02,
+    "mat": "7628"
+   }
+  ]
+ },
+ "show": {
+  "silkT": true,
+  "silkB": true,
+  "edge": true,
+  "rats": true,
+  "plane": true,
+  "drc": true,
+  "maskT": false,
+  "maskB": false,
+  "pasteT": false,
+  "pasteB": false
+ },
+ "board": {
+  "x": 0,
+  "y": 0,
+  "w": 130,
+  "h": 176,
+  "pts": null
+ },
+ "rule": {
+  "edge": 0.4,
+  "thermal": 0.5,
+  "mask": 0.05,
+  "paste": 0,
+  "viaFinish": "tented",
+  "corner": "45",
+  "route": "shove",
+  "hole": 0.25,
+  "mat": {},
+  "short": false,
+  "aspWarn": 8,
+  "aspMax": 10,
+  "mfgProfile": "jlcpcb"
+ },
+ "classes": [
+  {
+   "name": "Défaut",
+   "w": 0.25,
+   "clr": 0.2,
+   "via": 0.5,
+   "drill": 0.3
+  },
+  {
+   "name": "RF 50 ohms",
+   "w": 0.35,
+   "clr": 0.2,
+   "via": 0.5,
+   "drill": 0.3
+  }
+ ],
+ "netClass": {
+  "XT0_A": "RF 50 ohms",
+  "XT0_V": "RF 50 ohms",
+  "XT1_A": "RF 50 ohms",
+  "XT1_V": "RF 50 ohms",
+  "XT2_A": "RF 50 ohms",
+  "XT2_V": "RF 50 ohms",
+  "XT3_A": "RF 50 ohms",
+  "XT3_V": "RF 50 ohms",
+  "XT4_A": "RF 50 ohms",
+  "XT4_V": "RF 50 ohms",
+  "CAL_LONG": "RF 50 ohms",
+  "CAL_COURT": "RF 50 ohms"
+ },
+ "netClassAuto": {
+  "XT0_A": "RF 50 ohms",
+  "XT0_V": "RF 50 ohms",
+  "XT1_A": "RF 50 ohms",
+  "XT1_V": "RF 50 ohms",
+  "XT2_A": "RF 50 ohms",
+  "XT2_V": "RF 50 ohms",
+  "XT3_A": "RF 50 ohms",
+  "XT3_V": "RF 50 ohms",
+  "XT4_A": "RF 50 ohms",
+  "XT4_V": "RF 50 ohms",
+  "CAL_LONG": "RF 50 ohms",
+  "CAL_COURT": "RF 50 ohms"
+ },
+ "dpPairs": [],
+ "dpRules": [],
+ "dpSchema": [],
+ "netBruyants": [],
+ "origin": {
+  "x": 0,
+  "y": 0
+ },
+ "fabOrigin": false,
+ "fps": [
+  {
+   "id": 4,
+   "ref": "J01",
+   "value": "A0 SOURCE",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 0,
+   "y": 34,
+   "rot": 0,
+   "side": 0,
+   "nets": {
+    "1": "XT0_A",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 5,
+   "ref": "J01B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 0,
+   "y": 34,
+   "rot": 180,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 6,
+   "ref": "J02",
+   "value": "V0 NEXT",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 0,
+   "y": 46,
+   "rot": 0,
+   "side": 0,
+   "nets": {
+    "1": "XT0_V",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 7,
+   "ref": "J02B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 0,
+   "y": 46,
+   "rot": 180,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 8,
+   "ref": "J03",
+   "value": "A0 CHARGE 50",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 130,
+   "y": 34,
+   "rot": 180,
+   "side": 0,
+   "nets": {
+    "1": "XT0_A",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 9,
+   "ref": "J03B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 130,
+   "y": 34,
+   "rot": 0,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 10,
+   "ref": "J04",
+   "value": "V0 FEXT",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 130,
+   "y": 46,
+   "rot": 180,
+   "side": 0,
+   "nets": {
+    "1": "XT0_V",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 11,
+   "ref": "J04B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 130,
+   "y": 46,
+   "rot": 0,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 17,
+   "ref": "J11",
+   "value": "A1 SOURCE",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 0,
+   "y": 62,
+   "rot": 0,
+   "side": 0,
+   "nets": {
+    "1": "XT1_A",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 18,
+   "ref": "J11B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 0,
+   "y": 62,
+   "rot": 180,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 19,
+   "ref": "J12",
+   "value": "V1 NEXT",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 0,
+   "y": 74,
+   "rot": 0,
+   "side": 0,
+   "nets": {
+    "1": "XT1_V",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 20,
+   "ref": "J12B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 0,
+   "y": 74,
+   "rot": 180,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 21,
+   "ref": "J13",
+   "value": "A1 CHARGE 50",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 130,
+   "y": 62,
+   "rot": 180,
+   "side": 0,
+   "nets": {
+    "1": "XT1_A",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 22,
+   "ref": "J13B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 130,
+   "y": 62,
+   "rot": 0,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 23,
+   "ref": "J14",
+   "value": "V1 FEXT",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 130,
+   "y": 74,
+   "rot": 180,
+   "side": 0,
+   "nets": {
+    "1": "XT1_V",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 24,
+   "ref": "J14B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 130,
+   "y": 74,
+   "rot": 0,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 30,
+   "ref": "J21",
+   "value": "A2 SOURCE",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 0,
+   "y": 90,
+   "rot": 0,
+   "side": 0,
+   "nets": {
+    "1": "XT2_A",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 31,
+   "ref": "J21B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 0,
+   "y": 90,
+   "rot": 180,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 32,
+   "ref": "J22",
+   "value": "V2 NEXT",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 0,
+   "y": 102,
+   "rot": 0,
+   "side": 0,
+   "nets": {
+    "1": "XT2_V",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 33,
+   "ref": "J22B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 0,
+   "y": 102,
+   "rot": 180,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 34,
+   "ref": "J23",
+   "value": "A2 CHARGE 50",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 130,
+   "y": 90,
+   "rot": 180,
+   "side": 0,
+   "nets": {
+    "1": "XT2_A",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 35,
+   "ref": "J23B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 130,
+   "y": 90,
+   "rot": 0,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 36,
+   "ref": "J24",
+   "value": "V2 FEXT",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 130,
+   "y": 102,
+   "rot": 180,
+   "side": 0,
+   "nets": {
+    "1": "XT2_V",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 37,
+   "ref": "J24B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 130,
+   "y": 102,
+   "rot": 0,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 43,
+   "ref": "J31",
+   "value": "A3 SOURCE",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 0,
+   "y": 118,
+   "rot": 0,
+   "side": 0,
+   "nets": {
+    "1": "XT3_A",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 44,
+   "ref": "J31B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 0,
+   "y": 118,
+   "rot": 180,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 45,
+   "ref": "J32",
+   "value": "V3 NEXT",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 0,
+   "y": 130,
+   "rot": 0,
+   "side": 0,
+   "nets": {
+    "1": "XT3_V",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 46,
+   "ref": "J32B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 0,
+   "y": 130,
+   "rot": 180,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 47,
+   "ref": "J33",
+   "value": "A3 CHARGE 50",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 130,
+   "y": 118,
+   "rot": 180,
+   "side": 0,
+   "nets": {
+    "1": "XT3_A",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 48,
+   "ref": "J33B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 130,
+   "y": 118,
+   "rot": 0,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 49,
+   "ref": "J34",
+   "value": "V3 FEXT",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 130,
+   "y": 130,
+   "rot": 180,
+   "side": 0,
+   "nets": {
+    "1": "XT3_V",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 50,
+   "ref": "J34B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 130,
+   "y": 130,
+   "rot": 0,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 56,
+   "ref": "J41",
+   "value": "A4 SOURCE",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 0,
+   "y": 146,
+   "rot": 0,
+   "side": 0,
+   "nets": {
+    "1": "XT4_A",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 57,
+   "ref": "J41B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 0,
+   "y": 146,
+   "rot": 180,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 58,
+   "ref": "J42",
+   "value": "V4 NEXT",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 0,
+   "y": 158,
+   "rot": 0,
+   "side": 0,
+   "nets": {
+    "1": "XT4_V",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 59,
+   "ref": "J42B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 0,
+   "y": 158,
+   "rot": 180,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 60,
+   "ref": "J43",
+   "value": "A4 CHARGE 50",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 130,
+   "y": 146,
+   "rot": 180,
+   "side": 0,
+   "nets": {
+    "1": "XT4_A",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 61,
+   "ref": "J43B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 130,
+   "y": 146,
+   "rot": 0,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 62,
+   "ref": "J44",
+   "value": "V4 FEXT",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 130,
+   "y": 158,
+   "rot": 180,
+   "side": 0,
+   "nets": {
+    "1": "XT4_V",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 63,
+   "ref": "J44B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 130,
+   "y": 158,
+   "rot": 0,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 72,
+   "ref": "J91",
+   "value": "CAL_LONG",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 0,
+   "y": 20,
+   "rot": 0,
+   "side": 0,
+   "nets": {
+    "1": "CAL_LONG",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 73,
+   "ref": "J91B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 0,
+   "y": 20,
+   "rot": 180,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 74,
+   "ref": "J92",
+   "value": "CAL_LONG",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 130,
+   "y": 20,
+   "rot": 180,
+   "side": 0,
+   "nets": {
+    "1": "CAL_LONG",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 75,
+   "ref": "J92B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 130,
+   "y": 20,
+   "rot": 0,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 77,
+   "ref": "J93",
+   "value": "CAL_COURT",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 40,
+   "y": 0,
+   "rot": 90,
+   "side": 0,
+   "nets": {
+    "1": "CAL_COURT",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 78,
+   "ref": "J93B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 40,
+   "y": 0,
+   "rot": 270,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  },
+  {
+   "id": 79,
+   "ref": "J94",
+   "value": "CAL_COURT",
+   "pkg": "SMA-EDGE-142-0701-801",
+   "pins": 3,
+   "style": "row",
+   "pitch": 2.54,
+   "span": 2.54,
+   "x": 90,
+   "y": 0,
+   "rot": 90,
+   "side": 0,
+   "nets": {
+    "1": "CAL_COURT",
+    "2": "GND",
+    "3": "GND"
+   },
+   "csvPartName": "CONN_Embase_SMA_CI_Bord_de_carte",
+   "csvMpn": "142-0701-801",
+   "manufacturer": "Cinch Connectivity Solutions",
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": 0,
+     "w": 3,
+     "h": 1,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 3,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801"
+  },
+  {
+   "id": 80,
+   "ref": "J94B",
+   "value": "",
+   "pkg": "SMA-EDGE-142-0701-801-DOS",
+   "pins": 2,
+   "style": "chip",
+   "pitch": 2.4,
+   "span": 2.4,
+   "x": 90,
+   "y": 0,
+   "rot": 270,
+   "side": 1,
+   "nets": {
+    "1": "GND",
+    "2": "GND"
+   },
+   "pads": [
+    {
+     "n": 1,
+     "x": 1.75,
+     "y": -2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    },
+    {
+     "n": 2,
+     "x": 1.75,
+     "y": 2.79,
+     "w": 3,
+     "h": 1.5,
+     "shape": "rect",
+     "drill": 0,
+     "rot": 0
+    }
+   ],
+   "body": {
+    "x1": -9,
+    "y1": -3.2,
+    "x2": 0,
+    "y2": 3.2
+   },
+   "lib": "SMA-EDGE-142-0701-801-DOS"
+  }
+ ],
+ "tracks": [
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 31.21,
+   "x2": 3.95,
+   "y2": 31.21,
+   "a1": {
+    "f": 4,
+    "p": 2
+   },
+   "a2": {
+    "v": 88
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 36.79,
+   "x2": 3.95,
+   "y2": 36.79,
+   "a1": {
+    "f": 4,
+    "p": 3
+   },
+   "a2": {
+    "v": 90
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 43.21,
+   "x2": 3.95,
+   "y2": 43.21,
+   "a1": {
+    "f": 6,
+    "p": 2
+   },
+   "a2": {
+    "v": 92
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 48.79,
+   "x2": 3.95,
+   "y2": 48.79,
+   "a1": {
+    "f": 6,
+    "p": 3
+   },
+   "a2": {
+    "v": 94
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 36.79,
+   "x2": 126.05,
+   "y2": 36.79,
+   "a1": {
+    "f": 8,
+    "p": 2
+   },
+   "a2": {
+    "v": 96
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 31.21,
+   "x2": 126.05,
+   "y2": 31.21,
+   "a1": {
+    "f": 8,
+    "p": 3
+   },
+   "a2": {
+    "v": 98
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 48.79,
+   "x2": 126.05,
+   "y2": 48.79,
+   "a1": {
+    "f": 10,
+    "p": 2
+   },
+   "a2": {
+    "v": 100
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 43.21,
+   "x2": 126.05,
+   "y2": 43.21,
+   "a1": {
+    "f": 10,
+    "p": 3
+   },
+   "a2": {
+    "v": 102
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT0_A",
+   "w": 0.35,
+   "x1": 1.75,
+   "y1": 34,
+   "x2": 128.25,
+   "y2": 34,
+   "a1": {
+    "f": 4,
+    "p": 1
+   },
+   "a2": {
+    "f": 8,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT0_V",
+   "w": 0.35,
+   "x1": 1.75,
+   "y1": 46,
+   "x2": 128.25,
+   "y2": 46,
+   "a1": {
+    "f": 6,
+    "p": 1
+   },
+   "a2": {
+    "f": 10,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 59.21,
+   "x2": 3.95,
+   "y2": 59.21,
+   "a1": {
+    "f": 17,
+    "p": 2
+   },
+   "a2": {
+    "v": 104
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 64.79,
+   "x2": 3.95,
+   "y2": 64.79,
+   "a1": {
+    "f": 17,
+    "p": 3
+   },
+   "a2": {
+    "v": 106
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 71.21,
+   "x2": 3.95,
+   "y2": 71.21,
+   "a1": {
+    "f": 19,
+    "p": 2
+   },
+   "a2": {
+    "v": 108
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 76.79,
+   "x2": 3.95,
+   "y2": 76.79,
+   "a1": {
+    "f": 19,
+    "p": 3
+   },
+   "a2": {
+    "v": 110
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 64.79,
+   "x2": 126.05,
+   "y2": 64.79,
+   "a1": {
+    "f": 21,
+    "p": 2
+   },
+   "a2": {
+    "v": 112
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 59.21,
+   "x2": 126.05,
+   "y2": 59.21,
+   "a1": {
+    "f": 21,
+    "p": 3
+   },
+   "a2": {
+    "v": 114
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 76.79,
+   "x2": 126.05,
+   "y2": 76.79,
+   "a1": {
+    "f": 23,
+    "p": 2
+   },
+   "a2": {
+    "v": 116
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 71.21,
+   "x2": 126.05,
+   "y2": 71.21,
+   "a1": {
+    "f": 23,
+    "p": 3
+   },
+   "a2": {
+    "v": 118
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT1_A",
+   "w": 0.35,
+   "x1": 1.75,
+   "y1": 62,
+   "x2": 9.35,
+   "y2": 62,
+   "a1": {
+    "f": 17,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT1_A",
+   "w": 0.35,
+   "x1": 9.35,
+   "y1": 62,
+   "x2": 15,
+   "y2": 67.65
+  },
+  {
+   "l": 0,
+   "net": "XT1_A",
+   "w": 0.35,
+   "x1": 15,
+   "y1": 67.65,
+   "x2": 115,
+   "y2": 67.65
+  },
+  {
+   "l": 0,
+   "net": "XT1_A",
+   "w": 0.35,
+   "x1": 115,
+   "y1": 67.65,
+   "x2": 120.65,
+   "y2": 62
+  },
+  {
+   "l": 0,
+   "net": "XT1_A",
+   "w": 0.35,
+   "x1": 120.65,
+   "y1": 62,
+   "x2": 128.25,
+   "y2": 62,
+   "a2": {
+    "f": 21,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT1_V",
+   "w": 0.35,
+   "x1": 1.75,
+   "y1": 74,
+   "x2": 9.35,
+   "y2": 74,
+   "a1": {
+    "f": 19,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT1_V",
+   "w": 0.35,
+   "x1": 9.35,
+   "y1": 74,
+   "x2": 15,
+   "y2": 68.35
+  },
+  {
+   "l": 0,
+   "net": "XT1_V",
+   "w": 0.35,
+   "x1": 15,
+   "y1": 68.35,
+   "x2": 115,
+   "y2": 68.35
+  },
+  {
+   "l": 0,
+   "net": "XT1_V",
+   "w": 0.35,
+   "x1": 115,
+   "y1": 68.35,
+   "x2": 120.65,
+   "y2": 74
+  },
+  {
+   "l": 0,
+   "net": "XT1_V",
+   "w": 0.35,
+   "x1": 120.65,
+   "y1": 74,
+   "x2": 128.25,
+   "y2": 74,
+   "a2": {
+    "f": 23,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 87.21,
+   "x2": 3.95,
+   "y2": 87.21,
+   "a1": {
+    "f": 30,
+    "p": 2
+   },
+   "a2": {
+    "v": 120
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 92.79,
+   "x2": 3.95,
+   "y2": 92.79,
+   "a1": {
+    "f": 30,
+    "p": 3
+   },
+   "a2": {
+    "v": 122
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 99.21,
+   "x2": 3.95,
+   "y2": 99.21,
+   "a1": {
+    "f": 32,
+    "p": 2
+   },
+   "a2": {
+    "v": 124
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 104.79,
+   "x2": 3.95,
+   "y2": 104.79,
+   "a1": {
+    "f": 32,
+    "p": 3
+   },
+   "a2": {
+    "v": 126
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 92.79,
+   "x2": 126.05,
+   "y2": 92.79,
+   "a1": {
+    "f": 34,
+    "p": 2
+   },
+   "a2": {
+    "v": 128
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 87.21,
+   "x2": 126.05,
+   "y2": 87.21,
+   "a1": {
+    "f": 34,
+    "p": 3
+   },
+   "a2": {
+    "v": 130
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 104.79,
+   "x2": 126.05,
+   "y2": 104.79,
+   "a1": {
+    "f": 36,
+    "p": 2
+   },
+   "a2": {
+    "v": 132
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 99.21,
+   "x2": 126.05,
+   "y2": 99.21,
+   "a1": {
+    "f": 36,
+    "p": 3
+   },
+   "a2": {
+    "v": 134
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT2_A",
+   "w": 0.35,
+   "x1": 1.75,
+   "y1": 90,
+   "x2": 9.7,
+   "y2": 90,
+   "a1": {
+    "f": 30,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT2_A",
+   "w": 0.35,
+   "x1": 9.7,
+   "y1": 90,
+   "x2": 15,
+   "y2": 95.3
+  },
+  {
+   "l": 0,
+   "net": "XT2_A",
+   "w": 0.35,
+   "x1": 15,
+   "y1": 95.3,
+   "x2": 115,
+   "y2": 95.3
+  },
+  {
+   "l": 0,
+   "net": "XT2_A",
+   "w": 0.35,
+   "x1": 115,
+   "y1": 95.3,
+   "x2": 120.3,
+   "y2": 90
+  },
+  {
+   "l": 0,
+   "net": "XT2_A",
+   "w": 0.35,
+   "x1": 120.3,
+   "y1": 90,
+   "x2": 128.25,
+   "y2": 90,
+   "a2": {
+    "f": 34,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT2_V",
+   "w": 0.35,
+   "x1": 1.75,
+   "y1": 102,
+   "x2": 9.7,
+   "y2": 102,
+   "a1": {
+    "f": 32,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT2_V",
+   "w": 0.35,
+   "x1": 9.7,
+   "y1": 102,
+   "x2": 15,
+   "y2": 96.7
+  },
+  {
+   "l": 0,
+   "net": "XT2_V",
+   "w": 0.35,
+   "x1": 15,
+   "y1": 96.7,
+   "x2": 115,
+   "y2": 96.7
+  },
+  {
+   "l": 0,
+   "net": "XT2_V",
+   "w": 0.35,
+   "x1": 115,
+   "y1": 96.7,
+   "x2": 120.3,
+   "y2": 102
+  },
+  {
+   "l": 0,
+   "net": "XT2_V",
+   "w": 0.35,
+   "x1": 120.3,
+   "y1": 102,
+   "x2": 128.25,
+   "y2": 102,
+   "a2": {
+    "f": 36,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 115.21,
+   "x2": 3.95,
+   "y2": 115.21,
+   "a1": {
+    "f": 43,
+    "p": 2
+   },
+   "a2": {
+    "v": 136
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 120.79,
+   "x2": 3.95,
+   "y2": 120.79,
+   "a1": {
+    "f": 43,
+    "p": 3
+   },
+   "a2": {
+    "v": 138
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 127.21,
+   "x2": 3.95,
+   "y2": 127.21,
+   "a1": {
+    "f": 45,
+    "p": 2
+   },
+   "a2": {
+    "v": 140
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 132.79,
+   "x2": 3.95,
+   "y2": 132.79,
+   "a1": {
+    "f": 45,
+    "p": 3
+   },
+   "a2": {
+    "v": 142
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 120.79,
+   "x2": 126.05,
+   "y2": 120.79,
+   "a1": {
+    "f": 47,
+    "p": 2
+   },
+   "a2": {
+    "v": 144
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 115.21,
+   "x2": 126.05,
+   "y2": 115.21,
+   "a1": {
+    "f": 47,
+    "p": 3
+   },
+   "a2": {
+    "v": 146
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 132.79,
+   "x2": 126.05,
+   "y2": 132.79,
+   "a1": {
+    "f": 49,
+    "p": 2
+   },
+   "a2": {
+    "v": 148
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 127.21,
+   "x2": 126.05,
+   "y2": 127.21,
+   "a1": {
+    "f": 49,
+    "p": 3
+   },
+   "a2": {
+    "v": 150
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT3_A",
+   "w": 0.35,
+   "x1": 1.75,
+   "y1": 118,
+   "x2": 9.7,
+   "y2": 118,
+   "a1": {
+    "f": 43,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT3_A",
+   "w": 0.35,
+   "x1": 9.7,
+   "y1": 118,
+   "x2": 15,
+   "y2": 123.3
+  },
+  {
+   "l": 0,
+   "net": "XT3_A",
+   "w": 0.35,
+   "x1": 15,
+   "y1": 123.3,
+   "x2": 115,
+   "y2": 123.3
+  },
+  {
+   "l": 0,
+   "net": "XT3_A",
+   "w": 0.35,
+   "x1": 115,
+   "y1": 123.3,
+   "x2": 120.3,
+   "y2": 118
+  },
+  {
+   "l": 0,
+   "net": "XT3_A",
+   "w": 0.35,
+   "x1": 120.3,
+   "y1": 118,
+   "x2": 128.25,
+   "y2": 118,
+   "a2": {
+    "f": 47,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT3_V",
+   "w": 0.35,
+   "x1": 1.75,
+   "y1": 130,
+   "x2": 9.7,
+   "y2": 130,
+   "a1": {
+    "f": 45,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT3_V",
+   "w": 0.35,
+   "x1": 9.7,
+   "y1": 130,
+   "x2": 15,
+   "y2": 124.7
+  },
+  {
+   "l": 0,
+   "net": "XT3_V",
+   "w": 0.35,
+   "x1": 15,
+   "y1": 124.7,
+   "x2": 115,
+   "y2": 124.7
+  },
+  {
+   "l": 0,
+   "net": "XT3_V",
+   "w": 0.35,
+   "x1": 115,
+   "y1": 124.7,
+   "x2": 120.3,
+   "y2": 130
+  },
+  {
+   "l": 0,
+   "net": "XT3_V",
+   "w": 0.35,
+   "x1": 120.3,
+   "y1": 130,
+   "x2": 128.25,
+   "y2": 130,
+   "a2": {
+    "f": 49,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.35,
+   "x1": 15,
+   "y1": 124,
+   "x2": 115,
+   "y2": 124,
+   "a1": {
+    "v": 152
+   },
+   "a2": {
+    "v": 172
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 143.21,
+   "x2": 3.95,
+   "y2": 143.21,
+   "a1": {
+    "f": 56,
+    "p": 2
+   },
+   "a2": {
+    "v": 173
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 148.79,
+   "x2": 3.95,
+   "y2": 148.79,
+   "a1": {
+    "f": 56,
+    "p": 3
+   },
+   "a2": {
+    "v": 175
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 155.21,
+   "x2": 3.95,
+   "y2": 155.21,
+   "a1": {
+    "f": 58,
+    "p": 2
+   },
+   "a2": {
+    "v": 177
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 160.79,
+   "x2": 3.95,
+   "y2": 160.79,
+   "a1": {
+    "f": 58,
+    "p": 3
+   },
+   "a2": {
+    "v": 179
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 148.79,
+   "x2": 126.05,
+   "y2": 148.79,
+   "a1": {
+    "f": 60,
+    "p": 2
+   },
+   "a2": {
+    "v": 181
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 143.21,
+   "x2": 126.05,
+   "y2": 143.21,
+   "a1": {
+    "f": 60,
+    "p": 3
+   },
+   "a2": {
+    "v": 183
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 160.79,
+   "x2": 126.05,
+   "y2": 160.79,
+   "a1": {
+    "f": 62,
+    "p": 2
+   },
+   "a2": {
+    "v": 185
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 155.21,
+   "x2": 126.05,
+   "y2": 155.21,
+   "a1": {
+    "f": 62,
+    "p": 3
+   },
+   "a2": {
+    "v": 187
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT4_A",
+   "w": 0.35,
+   "x1": 1.75,
+   "y1": 146,
+   "x2": 9.7,
+   "y2": 146,
+   "a1": {
+    "f": 56,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT4_A",
+   "w": 0.35,
+   "x1": 9.7,
+   "y1": 146,
+   "x2": 15,
+   "y2": 151.3
+  },
+  {
+   "l": 0,
+   "net": "XT4_A",
+   "w": 0.35,
+   "x1": 15,
+   "y1": 151.3,
+   "x2": 115,
+   "y2": 151.3
+  },
+  {
+   "l": 0,
+   "net": "XT4_A",
+   "w": 0.35,
+   "x1": 115,
+   "y1": 151.3,
+   "x2": 120.3,
+   "y2": 146
+  },
+  {
+   "l": 0,
+   "net": "XT4_A",
+   "w": 0.35,
+   "x1": 120.3,
+   "y1": 146,
+   "x2": 128.25,
+   "y2": 146,
+   "a2": {
+    "f": 60,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT4_V",
+   "w": 0.35,
+   "x1": 1.75,
+   "y1": 158,
+   "x2": 9.7,
+   "y2": 158,
+   "a1": {
+    "f": 58,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "XT4_V",
+   "w": 0.35,
+   "x1": 9.7,
+   "y1": 158,
+   "x2": 15,
+   "y2": 152.7
+  },
+  {
+   "l": 0,
+   "net": "XT4_V",
+   "w": 0.35,
+   "x1": 15,
+   "y1": 152.7,
+   "x2": 115,
+   "y2": 152.7
+  },
+  {
+   "l": 0,
+   "net": "XT4_V",
+   "w": 0.35,
+   "x1": 115,
+   "y1": 152.7,
+   "x2": 120.3,
+   "y2": 158
+  },
+  {
+   "l": 0,
+   "net": "XT4_V",
+   "w": 0.35,
+   "x1": 120.3,
+   "y1": 158,
+   "x2": 128.25,
+   "y2": 158,
+   "a2": {
+    "f": 62,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 17.21,
+   "x2": 3.95,
+   "y2": 17.21,
+   "a1": {
+    "f": 72,
+    "p": 2
+   },
+   "a2": {
+    "v": 189
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 1.75,
+   "y1": 22.79,
+   "x2": 3.95,
+   "y2": 22.79,
+   "a1": {
+    "f": 72,
+    "p": 3
+   },
+   "a2": {
+    "v": 191
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 22.79,
+   "x2": 126.05,
+   "y2": 22.79,
+   "a1": {
+    "f": 74,
+    "p": 2
+   },
+   "a2": {
+    "v": 193
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 128.25,
+   "y1": 17.21,
+   "x2": 126.05,
+   "y2": 17.21,
+   "a1": {
+    "f": 74,
+    "p": 3
+   },
+   "a2": {
+    "v": 195
+   }
+  },
+  {
+   "l": 0,
+   "net": "CAL_LONG",
+   "w": 0.35,
+   "x1": 1.75,
+   "y1": 20,
+   "x2": 128.25,
+   "y2": 20,
+   "a1": {
+    "f": 72,
+    "p": 1
+   },
+   "a2": {
+    "f": 74,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 42.79,
+   "y1": 1.75,
+   "x2": 42.79,
+   "y2": 3.95,
+   "a1": {
+    "f": 77,
+    "p": 2
+   },
+   "a2": {
+    "v": 197
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 37.21,
+   "y1": 1.75,
+   "x2": 37.21,
+   "y2": 3.95,
+   "a1": {
+    "f": 77,
+    "p": 3
+   },
+   "a2": {
+    "v": 199
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 92.79,
+   "y1": 1.75,
+   "x2": 92.79,
+   "y2": 3.95,
+   "a1": {
+    "f": 79,
+    "p": 2
+   },
+   "a2": {
+    "v": 201
+   }
+  },
+  {
+   "l": 0,
+   "net": "GND",
+   "w": 0.8,
+   "x1": 87.21,
+   "y1": 1.75,
+   "x2": 87.21,
+   "y2": 3.95,
+   "a1": {
+    "f": 79,
+    "p": 3
+   },
+   "a2": {
+    "v": 203
+   }
+  },
+  {
+   "l": 0,
+   "net": "CAL_COURT",
+   "w": 0.35,
+   "x1": 40,
+   "y1": 1.75,
+   "x2": 40,
+   "y2": 2.75,
+   "a1": {
+    "f": 77,
+    "p": 1
+   },
+   "a2": {
+    "f": 77,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "CAL_COURT",
+   "w": 0.35,
+   "x1": 40,
+   "y1": 2.75,
+   "x2": 46.25,
+   "y2": 9,
+   "a1": {
+    "f": 77,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "CAL_COURT",
+   "w": 0.35,
+   "x1": 46.25,
+   "y1": 9,
+   "x2": 83.75,
+   "y2": 9
+  },
+  {
+   "l": 0,
+   "net": "CAL_COURT",
+   "w": 0.35,
+   "x1": 83.75,
+   "y1": 9,
+   "x2": 90,
+   "y2": 2.75,
+   "a2": {
+    "f": 79,
+    "p": 1
+   }
+  },
+  {
+   "l": 0,
+   "net": "CAL_COURT",
+   "w": 0.35,
+   "x1": 90,
+   "y1": 2.75,
+   "x2": 90,
+   "y2": 1.75,
+   "a1": {
+    "f": 79,
+    "p": 1
+   },
+   "a2": {
+    "f": 79,
+    "p": 1
+   }
+  }
+ ],
+ "vias": [
+  {
+   "x": 3.95,
+   "y": 31.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 88
+  },
+  {
+   "x": 3.95,
+   "y": 30.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 89
+  },
+  {
+   "x": 3.95,
+   "y": 36.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 90
+  },
+  {
+   "x": 3.95,
+   "y": 37.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 91
+  },
+  {
+   "x": 3.95,
+   "y": 43.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 92
+  },
+  {
+   "x": 3.95,
+   "y": 42.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 93
+  },
+  {
+   "x": 3.95,
+   "y": 48.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 94
+  },
+  {
+   "x": 3.95,
+   "y": 49.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 95
+  },
+  {
+   "x": 126.05,
+   "y": 36.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 96
+  },
+  {
+   "x": 126.05,
+   "y": 37.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 97
+  },
+  {
+   "x": 126.05,
+   "y": 31.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 98
+  },
+  {
+   "x": 126.05,
+   "y": 30.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 99
+  },
+  {
+   "x": 126.05,
+   "y": 48.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 100
+  },
+  {
+   "x": 126.05,
+   "y": 49.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 101
+  },
+  {
+   "x": 126.05,
+   "y": 43.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 102
+  },
+  {
+   "x": 126.05,
+   "y": 42.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 103
+  },
+  {
+   "x": 3.95,
+   "y": 59.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 104
+  },
+  {
+   "x": 3.95,
+   "y": 58.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 105
+  },
+  {
+   "x": 3.95,
+   "y": 64.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 106
+  },
+  {
+   "x": 3.95,
+   "y": 65.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 107
+  },
+  {
+   "x": 3.95,
+   "y": 71.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 108
+  },
+  {
+   "x": 3.95,
+   "y": 70.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 109
+  },
+  {
+   "x": 3.95,
+   "y": 76.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 110
+  },
+  {
+   "x": 3.95,
+   "y": 77.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 111
+  },
+  {
+   "x": 126.05,
+   "y": 64.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 112
+  },
+  {
+   "x": 126.05,
+   "y": 65.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 113
+  },
+  {
+   "x": 126.05,
+   "y": 59.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 114
+  },
+  {
+   "x": 126.05,
+   "y": 58.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 115
+  },
+  {
+   "x": 126.05,
+   "y": 76.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 116
+  },
+  {
+   "x": 126.05,
+   "y": 77.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 117
+  },
+  {
+   "x": 126.05,
+   "y": 71.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 118
+  },
+  {
+   "x": 126.05,
+   "y": 70.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 119
+  },
+  {
+   "x": 3.95,
+   "y": 87.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 120
+  },
+  {
+   "x": 3.95,
+   "y": 86.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 121
+  },
+  {
+   "x": 3.95,
+   "y": 92.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 122
+  },
+  {
+   "x": 3.95,
+   "y": 93.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 123
+  },
+  {
+   "x": 3.95,
+   "y": 99.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 124
+  },
+  {
+   "x": 3.95,
+   "y": 98.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 125
+  },
+  {
+   "x": 3.95,
+   "y": 104.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 126
+  },
+  {
+   "x": 3.95,
+   "y": 105.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 127
+  },
+  {
+   "x": 126.05,
+   "y": 92.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 128
+  },
+  {
+   "x": 126.05,
+   "y": 93.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 129
+  },
+  {
+   "x": 126.05,
+   "y": 87.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 130
+  },
+  {
+   "x": 126.05,
+   "y": 86.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 131
+  },
+  {
+   "x": 126.05,
+   "y": 104.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 132
+  },
+  {
+   "x": 126.05,
+   "y": 105.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 133
+  },
+  {
+   "x": 126.05,
+   "y": 99.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 134
+  },
+  {
+   "x": 126.05,
+   "y": 98.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 135
+  },
+  {
+   "x": 3.95,
+   "y": 115.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 136
+  },
+  {
+   "x": 3.95,
+   "y": 114.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 137
+  },
+  {
+   "x": 3.95,
+   "y": 120.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 138
+  },
+  {
+   "x": 3.95,
+   "y": 121.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 139
+  },
+  {
+   "x": 3.95,
+   "y": 127.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 140
+  },
+  {
+   "x": 3.95,
+   "y": 126.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 141
+  },
+  {
+   "x": 3.95,
+   "y": 132.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 142
+  },
+  {
+   "x": 3.95,
+   "y": 133.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 143
+  },
+  {
+   "x": 126.05,
+   "y": 120.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 144
+  },
+  {
+   "x": 126.05,
+   "y": 121.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 145
+  },
+  {
+   "x": 126.05,
+   "y": 115.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 146
+  },
+  {
+   "x": 126.05,
+   "y": 114.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 147
+  },
+  {
+   "x": 126.05,
+   "y": 132.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 148
+  },
+  {
+   "x": 126.05,
+   "y": 133.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 149
+  },
+  {
+   "x": 126.05,
+   "y": 127.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 150
+  },
+  {
+   "x": 126.05,
+   "y": 126.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 151
+  },
+  {
+   "x": 15,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 152
+  },
+  {
+   "x": 20,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 153
+  },
+  {
+   "x": 25,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 154
+  },
+  {
+   "x": 30,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 155
+  },
+  {
+   "x": 35,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 156
+  },
+  {
+   "x": 40,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 157
+  },
+  {
+   "x": 45,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 158
+  },
+  {
+   "x": 50,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 159
+  },
+  {
+   "x": 55,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 160
+  },
+  {
+   "x": 60,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 161
+  },
+  {
+   "x": 65,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 162
+  },
+  {
+   "x": 70,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 163
+  },
+  {
+   "x": 75,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 164
+  },
+  {
+   "x": 80,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 165
+  },
+  {
+   "x": 85,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 166
+  },
+  {
+   "x": 90,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 167
+  },
+  {
+   "x": 95,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 168
+  },
+  {
+   "x": 100,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 169
+  },
+  {
+   "x": 105,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 170
+  },
+  {
+   "x": 110,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 171
+  },
+  {
+   "x": 115,
+   "y": 124,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 172
+  },
+  {
+   "x": 3.95,
+   "y": 143.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 173
+  },
+  {
+   "x": 3.95,
+   "y": 142.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 174
+  },
+  {
+   "x": 3.95,
+   "y": 148.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 175
+  },
+  {
+   "x": 3.95,
+   "y": 149.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 176
+  },
+  {
+   "x": 3.95,
+   "y": 155.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 177
+  },
+  {
+   "x": 3.95,
+   "y": 154.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 178
+  },
+  {
+   "x": 3.95,
+   "y": 160.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 179
+  },
+  {
+   "x": 3.95,
+   "y": 161.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 180
+  },
+  {
+   "x": 126.05,
+   "y": 148.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 181
+  },
+  {
+   "x": 126.05,
+   "y": 149.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 182
+  },
+  {
+   "x": 126.05,
+   "y": 143.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 183
+  },
+  {
+   "x": 126.05,
+   "y": 142.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 184
+  },
+  {
+   "x": 126.05,
+   "y": 160.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 185
+  },
+  {
+   "x": 126.05,
+   "y": 161.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 186
+  },
+  {
+   "x": 126.05,
+   "y": 155.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 187
+  },
+  {
+   "x": 126.05,
+   "y": 154.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 188
+  },
+  {
+   "x": 3.95,
+   "y": 17.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 189
+  },
+  {
+   "x": 3.95,
+   "y": 16.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 190
+  },
+  {
+   "x": 3.95,
+   "y": 22.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 191
+  },
+  {
+   "x": 3.95,
+   "y": 23.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 192
+  },
+  {
+   "x": 126.05,
+   "y": 22.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 193
+  },
+  {
+   "x": 126.05,
+   "y": 23.79,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 194
+  },
+  {
+   "x": 126.05,
+   "y": 17.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 195
+  },
+  {
+   "x": 126.05,
+   "y": 16.21,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 196
+  },
+  {
+   "x": 42.79,
+   "y": 3.95,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 197
+  },
+  {
+   "x": 43.79,
+   "y": 3.95,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 198
+  },
+  {
+   "x": 37.21,
+   "y": 3.95,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 199
+  },
+  {
+   "x": 36.21,
+   "y": 3.95,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 200
+  },
+  {
+   "x": 92.79,
+   "y": 3.95,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 201
+  },
+  {
+   "x": 93.79,
+   "y": 3.95,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 202
+  },
+  {
+   "x": 87.21,
+   "y": 3.95,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 203
+  },
+  {
+   "x": 86.21,
+   "y": 3.95,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 204
+  },
+  {
+   "x": 10,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 205
+  },
+  {
+   "x": 15,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 206
+  },
+  {
+   "x": 20,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 207
+  },
+  {
+   "x": 25,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 208
+  },
+  {
+   "x": 30,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 209
+  },
+  {
+   "x": 35,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 210
+  },
+  {
+   "x": 40,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 211
+  },
+  {
+   "x": 45,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 212
+  },
+  {
+   "x": 50,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 213
+  },
+  {
+   "x": 55,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 214
+  },
+  {
+   "x": 60,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 215
+  },
+  {
+   "x": 65,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 216
+  },
+  {
+   "x": 70,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 217
+  },
+  {
+   "x": 75,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 218
+  },
+  {
+   "x": 80,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 219
+  },
+  {
+   "x": 85,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 220
+  },
+  {
+   "x": 90,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 221
+  },
+  {
+   "x": 95,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 222
+  },
+  {
+   "x": 100,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 223
+  },
+  {
+   "x": 105,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 224
+  },
+  {
+   "x": 110,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 225
+  },
+  {
+   "x": 115,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 226
+  },
+  {
+   "x": 120,
+   "y": 27,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 227
+  },
+  {
+   "x": 10,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 228
+  },
+  {
+   "x": 15,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 229
+  },
+  {
+   "x": 20,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 230
+  },
+  {
+   "x": 25,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 231
+  },
+  {
+   "x": 30,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 232
+  },
+  {
+   "x": 35,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 233
+  },
+  {
+   "x": 40,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 234
+  },
+  {
+   "x": 45,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 235
+  },
+  {
+   "x": 50,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 236
+  },
+  {
+   "x": 55,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 237
+  },
+  {
+   "x": 60,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 238
+  },
+  {
+   "x": 65,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 239
+  },
+  {
+   "x": 70,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 240
+  },
+  {
+   "x": 75,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 241
+  },
+  {
+   "x": 80,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 242
+  },
+  {
+   "x": 85,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 243
+  },
+  {
+   "x": 90,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 244
+  },
+  {
+   "x": 95,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 245
+  },
+  {
+   "x": 100,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 246
+  },
+  {
+   "x": 105,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 247
+  },
+  {
+   "x": 110,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 248
+  },
+  {
+   "x": 115,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 249
+  },
+  {
+   "x": 120,
+   "y": 54,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 250
+  },
+  {
+   "x": 10,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 251
+  },
+  {
+   "x": 15,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 252
+  },
+  {
+   "x": 20,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 253
+  },
+  {
+   "x": 25,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 254
+  },
+  {
+   "x": 30,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 255
+  },
+  {
+   "x": 35,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 256
+  },
+  {
+   "x": 40,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 257
+  },
+  {
+   "x": 45,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 258
+  },
+  {
+   "x": 50,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 259
+  },
+  {
+   "x": 55,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 260
+  },
+  {
+   "x": 60,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 261
+  },
+  {
+   "x": 65,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 262
+  },
+  {
+   "x": 70,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 263
+  },
+  {
+   "x": 75,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 264
+  },
+  {
+   "x": 80,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 265
+  },
+  {
+   "x": 85,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 266
+  },
+  {
+   "x": 90,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 267
+  },
+  {
+   "x": 95,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 268
+  },
+  {
+   "x": 100,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 269
+  },
+  {
+   "x": 105,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 270
+  },
+  {
+   "x": 110,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 271
+  },
+  {
+   "x": 115,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 272
+  },
+  {
+   "x": 120,
+   "y": 82,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 273
+  },
+  {
+   "x": 10,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 274
+  },
+  {
+   "x": 15,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 275
+  },
+  {
+   "x": 20,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 276
+  },
+  {
+   "x": 25,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 277
+  },
+  {
+   "x": 30,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 278
+  },
+  {
+   "x": 35,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 279
+  },
+  {
+   "x": 40,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 280
+  },
+  {
+   "x": 45,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 281
+  },
+  {
+   "x": 50,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 282
+  },
+  {
+   "x": 55,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 283
+  },
+  {
+   "x": 60,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 284
+  },
+  {
+   "x": 65,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 285
+  },
+  {
+   "x": 70,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 286
+  },
+  {
+   "x": 75,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 287
+  },
+  {
+   "x": 80,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 288
+  },
+  {
+   "x": 85,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 289
+  },
+  {
+   "x": 90,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 290
+  },
+  {
+   "x": 95,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 291
+  },
+  {
+   "x": 100,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 292
+  },
+  {
+   "x": 105,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 293
+  },
+  {
+   "x": 110,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 294
+  },
+  {
+   "x": 115,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 295
+  },
+  {
+   "x": 120,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 296
+  },
+  {
+   "x": 10,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 297
+  },
+  {
+   "x": 15,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 298
+  },
+  {
+   "x": 20,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 299
+  },
+  {
+   "x": 25,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 300
+  },
+  {
+   "x": 30,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 301
+  },
+  {
+   "x": 35,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 302
+  },
+  {
+   "x": 40,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 303
+  },
+  {
+   "x": 45,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 304
+  },
+  {
+   "x": 50,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 305
+  },
+  {
+   "x": 55,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 306
+  },
+  {
+   "x": 60,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 307
+  },
+  {
+   "x": 65,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 308
+  },
+  {
+   "x": 70,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 309
+  },
+  {
+   "x": 75,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 310
+  },
+  {
+   "x": 80,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 311
+  },
+  {
+   "x": 85,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 312
+  },
+  {
+   "x": 90,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 313
+  },
+  {
+   "x": 95,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 314
+  },
+  {
+   "x": 100,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 315
+  },
+  {
+   "x": 105,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 316
+  },
+  {
+   "x": 110,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 317
+  },
+  {
+   "x": 115,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 318
+  },
+  {
+   "x": 120,
+   "y": 138,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 319
+  },
+  {
+   "x": 5,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 320
+  },
+  {
+   "x": 5,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 321
+  },
+  {
+   "x": 10,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 322
+  },
+  {
+   "x": 10,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 323
+  },
+  {
+   "x": 15,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 324
+  },
+  {
+   "x": 15,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 325
+  },
+  {
+   "x": 20,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 326
+  },
+  {
+   "x": 20,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 327
+  },
+  {
+   "x": 25,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 328
+  },
+  {
+   "x": 25,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 329
+  },
+  {
+   "x": 30,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 330
+  },
+  {
+   "x": 30,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 331
+  },
+  {
+   "x": 35,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 332
+  },
+  {
+   "x": 40,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 333
+  },
+  {
+   "x": 45,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 334
+  },
+  {
+   "x": 50,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 335
+  },
+  {
+   "x": 50,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 336
+  },
+  {
+   "x": 55,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 337
+  },
+  {
+   "x": 55,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 338
+  },
+  {
+   "x": 60,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 339
+  },
+  {
+   "x": 60,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 340
+  },
+  {
+   "x": 65,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 341
+  },
+  {
+   "x": 65,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 342
+  },
+  {
+   "x": 70,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 343
+  },
+  {
+   "x": 70,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 344
+  },
+  {
+   "x": 75,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 345
+  },
+  {
+   "x": 75,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 346
+  },
+  {
+   "x": 80,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 347
+  },
+  {
+   "x": 80,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 348
+  },
+  {
+   "x": 85,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 349
+  },
+  {
+   "x": 90,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 350
+  },
+  {
+   "x": 95,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 351
+  },
+  {
+   "x": 100,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 352
+  },
+  {
+   "x": 100,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 353
+  },
+  {
+   "x": 105,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 354
+  },
+  {
+   "x": 105,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 355
+  },
+  {
+   "x": 110,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 356
+  },
+  {
+   "x": 110,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 357
+  },
+  {
+   "x": 115,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 358
+  },
+  {
+   "x": 115,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 359
+  },
+  {
+   "x": 120,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 360
+  },
+  {
+   "x": 120,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 361
+  },
+  {
+   "x": 125,
+   "y": 1.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 362
+  },
+  {
+   "x": 125,
+   "y": 174.5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 363
+  },
+  {
+   "x": 1.5,
+   "y": 5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 364
+  },
+  {
+   "x": 128.5,
+   "y": 5,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 365
+  },
+  {
+   "x": 1.5,
+   "y": 10,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 366
+  },
+  {
+   "x": 128.5,
+   "y": 10,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 367
+  },
+  {
+   "x": 1.5,
+   "y": 40,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 368
+  },
+  {
+   "x": 128.5,
+   "y": 40,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 369
+  },
+  {
+   "x": 1.5,
+   "y": 55,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 370
+  },
+  {
+   "x": 128.5,
+   "y": 55,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 371
+  },
+  {
+   "x": 1.5,
+   "y": 80,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 372
+  },
+  {
+   "x": 128.5,
+   "y": 80,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 373
+  },
+  {
+   "x": 1.5,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 374
+  },
+  {
+   "x": 128.5,
+   "y": 110,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 375
+  },
+  {
+   "x": 1.5,
+   "y": 140,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 376
+  },
+  {
+   "x": 128.5,
+   "y": 140,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 377
+  },
+  {
+   "x": 1.5,
+   "y": 165,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 378
+  },
+  {
+   "x": 128.5,
+   "y": 165,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 379
+  },
+  {
+   "x": 1.5,
+   "y": 170,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 380
+  },
+  {
+   "x": 128.5,
+   "y": 170,
+   "d": 0.5,
+   "drill": 0.3,
+   "a": 0,
+   "b": 3,
+   "net": "GND",
+   "id": 381
+  }
+ ],
+ "zones": [
+  {
+   "id": 1,
+   "l": 1,
+   "net": "GND",
+   "pts": [
+    {
+     "x": 0,
+     "y": 0
+    },
+    {
+     "x": 130,
+     "y": 0
+    },
+    {
+     "x": 130,
+     "y": 176
+    },
+    {
+     "x": 0,
+     "y": 176
+    }
+   ],
+   "auto": true
+  },
+  {
+   "id": 2,
+   "l": 2,
+   "net": "GND",
+   "pts": [
+    {
+     "x": 0,
+     "y": 0
+    },
+    {
+     "x": 130,
+     "y": 0
+    },
+    {
+     "x": 130,
+     "y": 176
+    },
+    {
+     "x": 0,
+     "y": 176
+    }
+   ],
+   "auto": true
+  },
+  {
+   "id": 3,
+   "l": 3,
+   "net": "GND",
+   "pts": [
+    {
+     "x": 0,
+     "y": 0
+    },
+    {
+     "x": 130,
+     "y": 0
+    },
+    {
+     "x": 130,
+     "y": 176
+    },
+    {
+     "x": 0,
+     "y": 176
+    }
+   ],
+   "auto": true
+  }
+ ],
+ "cuts": [
+  {
+   "id": 64,
+   "l": 1,
+   "pts": [
+    {
+     "x": 64,
+     "y": 142
+    },
+    {
+     "x": 66,
+     "y": 142
+    },
+    {
+     "x": 66,
+     "y": 162
+    },
+    {
+     "x": 64,
+     "y": 162
+    }
+   ]
+  },
+  {
+   "id": 65,
+   "l": 2,
+   "pts": [
+    {
+     "x": 64,
+     "y": 142
+    },
+    {
+     "x": 66,
+     "y": 142
+    },
+    {
+     "x": 66,
+     "y": 162
+    },
+    {
+     "x": 64,
+     "y": 162
+    }
+   ]
+  },
+  {
+   "id": 66,
+   "l": 3,
+   "pts": [
+    {
+     "x": 64,
+     "y": 142
+    },
+    {
+     "x": 66,
+     "y": 142
+    },
+    {
+     "x": 66,
+     "y": 162
+    },
+    {
+     "x": 64,
+     "y": 162
+    }
+   ]
+  }
+ ],
+ "holes": [
+  {
+   "id": 82,
+   "x": 5,
+   "y": 171,
+   "d": 3.2
+  },
+  {
+   "id": 83,
+   "x": 125,
+   "y": 171,
+   "d": 3.2
+  },
+  {
+   "id": 84,
+   "x": 5,
+   "y": 13,
+   "d": 3.2
+  },
+  {
+   "id": 85,
+   "x": 125,
+   "y": 13,
+   "d": 3.2
+  }
+ ],
+ "drawings": [
+  {
+   "id": 12,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "CAS 0 : PLANCHER - pistes a 12 mm",
+   "x1": 65,
+   "y1": 31.8,
+   "x2": 65,
+   "y2": 31.8,
+   "size": 1.4,
+   "height": 1.4,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 13,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "A0 SRC",
+   "x1": 9,
+   "y1": 32.2,
+   "x2": 9,
+   "y2": 32.2,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 14,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "V0 NEXT",
+   "x1": 9,
+   "y1": 48.4,
+   "x2": 9,
+   "y2": 48.4,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 15,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "A0 50R",
+   "x1": 113,
+   "y1": 32.2,
+   "x2": 113,
+   "y2": 32.2,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 16,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "V0 FEXT",
+   "x1": 113,
+   "y1": 48.4,
+   "x2": 113,
+   "y2": 48.4,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 25,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "CAS 1 : S = W",
+   "x1": 65,
+   "y1": 59.8,
+   "x2": 65,
+   "y2": 59.8,
+   "size": 1.4,
+   "height": 1.4,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 26,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "A1 SRC",
+   "x1": 9,
+   "y1": 60.2,
+   "x2": 9,
+   "y2": 60.2,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 27,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "V1 NEXT",
+   "x1": 9,
+   "y1": 76.4,
+   "x2": 9,
+   "y2": 76.4,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 28,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "A1 50R",
+   "x1": 113,
+   "y1": 60.2,
+   "x2": 113,
+   "y2": 60.2,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 29,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "V1 FEXT",
+   "x1": 113,
+   "y1": 76.4,
+   "x2": 113,
+   "y2": 76.4,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 38,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "CAS 2 : S = 3W",
+   "x1": 65,
+   "y1": 87.8,
+   "x2": 65,
+   "y2": 87.8,
+   "size": 1.4,
+   "height": 1.4,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 39,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "A2 SRC",
+   "x1": 9,
+   "y1": 88.2,
+   "x2": 9,
+   "y2": 88.2,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 40,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "V2 NEXT",
+   "x1": 9,
+   "y1": 104.4,
+   "x2": 9,
+   "y2": 104.4,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 41,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "A2 50R",
+   "x1": 113,
+   "y1": 88.2,
+   "x2": 113,
+   "y2": 88.2,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 42,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "V2 FEXT",
+   "x1": 113,
+   "y1": 104.4,
+   "x2": 113,
+   "y2": 104.4,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 51,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "CAS 3 : S = 3W + GARDE",
+   "x1": 65,
+   "y1": 115.8,
+   "x2": 65,
+   "y2": 115.8,
+   "size": 1.4,
+   "height": 1.4,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 52,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "A3 SRC",
+   "x1": 9,
+   "y1": 116.2,
+   "x2": 9,
+   "y2": 116.2,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 53,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "V3 NEXT",
+   "x1": 9,
+   "y1": 132.4,
+   "x2": 9,
+   "y2": 132.4,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 54,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "A3 50R",
+   "x1": 113,
+   "y1": 116.2,
+   "x2": 113,
+   "y2": 116.2,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 55,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "V3 FEXT",
+   "x1": 113,
+   "y1": 132.4,
+   "x2": 113,
+   "y2": 132.4,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 67,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "CAS 4 : S = 3W + FENTE PLAN",
+   "x1": 65,
+   "y1": 143.8,
+   "x2": 65,
+   "y2": 143.8,
+   "size": 1.4,
+   "height": 1.4,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 68,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "A4 SRC",
+   "x1": 9,
+   "y1": 144.2,
+   "x2": 9,
+   "y2": 144.2,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 69,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "V4 NEXT",
+   "x1": 9,
+   "y1": 160.4,
+   "x2": 9,
+   "y2": 160.4,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 70,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "A4 50R",
+   "x1": 113,
+   "y1": 144.2,
+   "x2": 113,
+   "y2": 144.2,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 71,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "V4 FEXT",
+   "x1": 113,
+   "y1": 160.4,
+   "x2": 113,
+   "y2": 160.4,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 76,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "CAL_LONG",
+   "x1": 65,
+   "y1": 18.2,
+   "x2": 65,
+   "y2": 18.2,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 81,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "CAL_COURT",
+   "x1": 65,
+   "y1": 11.6,
+   "x2": 65,
+   "y2": 11.6,
+   "size": 1.2,
+   "height": 1.2,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 86,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "WEB_CAO - BANC CROSSTALK - rev A",
+   "x1": 65,
+   "y1": 169.5,
+   "x2": 65,
+   "y2": 169.5,
+   "size": 1.6,
+   "height": 1.6,
+   "rot": 0,
+   "width": 0.15
+  },
+  {
+   "id": 87,
+   "shape": "text",
+   "type": "text",
+   "layer": "silkT",
+   "text": "JLC04161H-7628 / W=0.35 mm / Lc=100 mm / SMA 142-0701-801",
+   "x1": 65,
+   "y1": 172.5,
+   "x2": 65,
+   "y2": 172.5,
+   "size": 1.1,
+   "height": 1.1,
+   "rot": 0,
+   "width": 0.15
+  }
+ ],
+ "variantes": {
+  "liste": [],
+  "active": ""
+ },
+ "groupes": [],
+ "dessin": null,
+ "contraintes": {
+  "classes": {},
+  "nets": {},
+  "matrice": {},
+  "groupes": [],
+  "schema": {
+   "nets": {},
+   "groupes": []
+  }
+ },
+ "rf": {
+  "ports": [
+   null,
+   null
+  ],
+  "modeles": {},
+  "exclus": [],
+  "broches": {}
+ },
+ "active": 0,
+ "nextId": 382
+}

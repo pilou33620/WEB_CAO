@@ -1,0 +1,11 @@
+# Releves du banc crosstalk : une ligne par cas, par source et par front.
+# source        : MESURE (oscilloscope) ou SIWAVE (Crosstalk Scan, domaine temporel)
+# t_10_90_ns    : temps de montee 10-90 % de l'agresseur, mesure sur sa charge (J{cas}3)
+#                 -- pour SIwave : le Rise Time saisi dans le scan
+# V_agresseur_mV: amplitude de l'echelon sur la charge de l'agresseur (J{cas}3, 50 ohms)
+#                 -- pour SIwave : l'amplitude de la source sur 50 ohms (moitie de la f.e.m.)
+# V_NEXT_mV     : crete de la victime cote source (J{cas}2), en valeur absolue
+# V_FEXT_mV     : crete de la victime cote charge (J{cas}4), en valeur absolue
+# Les virgules decimales sont acceptees. Laisser vide ce qui n'est pas releve.
+# Puis : python bancs-mesure/crosstalk/banc-crosstalk-mesure.py
+cas;source;t_10_90_ns;V_agresseur_mV;V_NEXT_mV;V_FEXT_mV;note

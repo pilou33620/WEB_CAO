@@ -68,6 +68,9 @@ jobs:
       - name: Crosstalk (MTL en cascade) — banc d'essai
         run: python python/test/banc-crosstalk.py
 
+      - name: Banc de mesure crosstalk — prévisions WEB_CAO
+        run: python bancs-mesure/crosstalk/banc-crosstalk-mesure.py
+
       - name: Simulation RF (S21 port à port) — banc d'essai
         run: |
           if [ "$LIB_REELLE" = 1 ]; then python python/test/banc-rf.py
@@ -146,6 +149,9 @@ jobs:
           node editeur-pcb/test/harness.js
           # hors CI jusqu'ici, il s'etait casse sans que rien ne le signale
           node editeur-pcb/test/banc-trois-ponts.js
+          # la carte d'essai du crosstalk se regenere, toute routee et sans
+          # remarque au DRC (ecrite a part : la carte versionnee ne bouge pas)
+          node bancs-mesure/crosstalk/generer-carte.js /tmp/banc-crosstalk-PCB.json
 
       - name: Éditeur schématique — assemblage puis banc d'essai
         run: |
