@@ -4,6 +4,7 @@ Ce document liste les tâches planifiées, en cours et à venir pour la suite de
 Pour les détails techniques approfondis, les dérivations physiques et l'historique complet des réalisations passées, consulter :
 - [docs/simulation-em.md](docs/simulation-em.md) — Référence technique des solveurs et modèles SI/PI.
 - [docs/HISTORIQUE_DEVELOPPEMENT.md](docs/HISTORIQUE_DEVELOPPEMENT.md) — Archive complète des développements, audits et post-mortems (août - sept. 2026).
+- [docs/spec-crosstalk-reel.md](docs/spec-crosstalk-reel.md) — **Spécification à lire avant de toucher au crosstalk** : simulation en conditions réelles (terminaisons, passifs, stimuli, natures de victime).
 
 ---
 
@@ -149,6 +150,12 @@ lib/
 - [x] **Rooms** (`editeur-pcb/js/32-rooms.js`) : les blocs du schéma (zones étiquetées) encadrés sur la carte comme les rooms d'Altium — cadre, fond teinté, étiquette ; un clic sur l'étiquette prend le bloc ; Affichage → Rooms ; lus dans le document du schéma (session ou projet), à défaut dans l'analyse « Motifs & Blocs ». Remplacent les pastilles de couleur. 3 essais.
 
 ### Simulation SI (Signal Integrity)
+- [ ] **Crosstalk en conditions réelles** — voir [docs/spec-crosstalk-reel.md](docs/spec-crosstalk-reel.md) (décisions du 09/10/2026, rien de codé) :
+  - case « conditions réelles » dans l'Analyse électrique, éditeur PCB et visionneuse IPC-2581 ;
+  - drivers en presets modifiables (CMOS, FPGA, open-drain, TTL 74LS / 74F-ALS, LVTTL), Rs haut / Rs bas, valeurs gardées par projet ;
+  - passifs détectés et posés à leur position réelle (R série avec nets chaînés, pull-up/down, C vers masse, ESD/TVS, ferrite) ;
+  - stimuli front / horloge / trame série ; victimes par nature (logique, reset, ADC, horloge, alim, VREF) avec leur critère ;
+  - sortie : forme d'onde, verdict, spectre ; analyse géométrique : étiquette « net sensible » seulement.
 - [x] **Mode différentiel dans la cascade de paramètres S** :
   - Calcul complet des paramètres S en mode mixte (*Mixed-Mode S-Parameters*) dans `python/simulation_em.py` (`_cascade_differentielle`) : mode différentiel pur $S_{dd}$ ($S_{dd11}, S_{dd21}$ sur $Z_{ref,diff}$ ex: 100 Ω ou 90 Ω), mode commun $S_{cc}$ ($S_{cc11}, S_{cc21}$ sur $Z_{ref,comm} = Z_{ref,diff}/4$ ex: 25 Ω), et conversion de mode CEM $S_{cd21}(\omega)$ calculée à partir du skew $\Delta L = |L_+ - L_-|$.
   - Interface dédiée dans l'onglet « Z différentielle » (`commun/simulation-em.js`) avec sélecteur interactif `[ Sdd ]`, `[ Scc ]`, `[ Scd ]`, courbe SVG multi-traces avec seuil CEM à $-20\text{ dB}$, repère de fréquence centrale $f_0$, lecture dynamique au survol et export Touchstone différentiel `.s2p`.
