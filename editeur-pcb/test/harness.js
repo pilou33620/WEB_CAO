@@ -401,7 +401,8 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "cmNouveauGroupe","cmGroupeModifier","cmGroupeSupprimer","cmCsv","cmLignesNets","cmOuvrir","cmFermer",
   "cmAppliquerLargeurZ","CM","CM_ONGLETS","className","classWidth","cmPoserLargeurCouche","normClass","routeVia",
   /* topologie et moignons (31-topologie.js) */
-  "topoGraphe","topoAnalyser","topoVerifier","topoResume","topoMoignonsVias","TOPO_FORMES","stackSpan","cuT"];
+  "topoGraphe","topoAnalyser","topoVerifier","topoResume","topoMoignonsVias","TOPO_FORMES","stackSpan","cuT",
+  "cmDepuisSchema","cmTousGroupes","cmResumeSchema","cmLireChamp","pcbAppliquerEco","pcbDetecterDisparitesEco","cmEcartSchema"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -22464,6 +22465,92 @@ T("topologie : réglages bornés, aller-retour, onglet de la fenêtre",()=>{
   if(topoMsgs("SPI_CS").length)throw new Error("SPI_CS est point à point sur l'exemple : "+topoMsgs("SPI_CS"));
   cmOuvrir("topologie");cmFermer();
   cmRaz();
+});
+
+T("topologie : une piste qui traverse une pastille du net s'y raccorde",()=>{
+  topoCarte();
+  const a=topoFp("U1",0,0,"BUS"), c=topoFp("U3",40,0,"BUS");
+  const b=topoFp("U2",20.8,0,"BUS");                     // patte 1 de U2 en (20, 0) : sur le trajet
+  topoPiste("BUS",a,c);topoFin();                        // une seule piste, de U1 à U3, sans arrêt sur U2
+  const T=topoAnalyser("BUS");
+  if(T.forme!=="chaîne"||T.ordre.join(">")!=="U1>U2>U3")throw new Error(T.forme+" "+T.ordre.join(">"));
+  if(T.moignons.length)throw new Error("U2 est sur le chemin : pas de moignon — "+T.moignons.map(m=>m.broche).join(" "));
+  cmPoser("nets","BUS","topo","chaine");cmPoser("nets","BUS","ordre","U1,U2,U3");
+  if(topoMsgs("BUS").length)throw new Error(topoMsgs("BUS").join(" | "));
+  /* une piste qui passe à côté, sans toucher la pastille, ne s'y raccorde pas */
+  S.fps.find(f=>f.ref==="U2").y=3;topoFin();
+  if(topoAnalyser("BUS").forme!=="incomplet")throw new Error("pastille à 3 mm : non reliée, "+topoAnalyser("BUS").forme);
+  if(b.n!==1)throw new Error("patte");
+  cmRaz();setCuCount(2);
+});
+T("contraintes du schéma : reprises à part, le PCB garde le dernier mot",()=>{
+  exCharger(1);cmRaz();
+  const doc={format:"schemedit-2",pages:[],contraintes:{
+    nets:{SPI_CS:{lMax:10,topo:"p2p"},SPI_SCK:{z:"abc",viasMax:0}},
+    groupes:[{id:"g1",nom:"SPI",nets:["SPI_CS","SPI_SCK","SPI_MOSI"],mode:"mm",tol:1}]}};
+  if(!cmDepuisSchema(doc))throw new Error("première reprise : changement attendu");
+  if(cmDepuisSchema(doc))throw new Error("même document : rien ne change");
+  /* Ctrl+Z défait la reprise, et la reprise se refait */
+  undo();
+  if(Object.keys(S.contraintes.schema.nets).length)throw new Error("Ctrl+Z doit défaire la reprise");
+  cmDepuisSchema(doc);
+  const C=S.contraintes;
+  if(JSON.stringify(C.schema.nets.SPI_SCK)!=='{"viasMax":0}')throw new Error("bornes du schéma : "+JSON.stringify(C.schema.nets));
+  if(Object.keys(C.nets).length||C.groupes.length)throw new Error("rien n'est recopié dans les réglages du PCB");
+  let r=cmRegleDe("SPI_CS");
+  if(r.lMax.src!=="schéma"||r.lMax.v!==10||r.topo.v!=="p2p")throw new Error(JSON.stringify(r.lMax));
+  const m=cmVerifier("SPI_CS",cmMesures().get("SPI_CS"),r).map(f=>f.msg);
+  if(!m.some(x=>/longueur .* au-delà du maximum de 10,00 mm \(schéma\)/.test(x)))throw new Error(m.join(" | "));
+  /* le PCB passe devant ; vidé, le schéma revient */
+  cmPoser("nets","SPI_CS","lMax","100");
+  r=cmRegleDe("SPI_CS");
+  if(r.lMax.src!=="net"||r.lMax.v!==100)throw new Error("le réglage du PCB doit l'emporter");
+  if(r.topo.src!=="schéma")throw new Error("les autres champs restent ceux du schéma");
+  cmPoser("nets","SPI_CS","lMax","");
+  if(cmRegleDe("SPI_CS").lMax.src!=="schéma")throw new Error("vidé : le schéma revient");
+  /* les groupes du schéma : évalués, au DRC, en lecture seule */
+  const g=cmTousGroupes();
+  if(g.length!==1||!g[0].schema||g[0].id!=="s:g1")throw new Error(JSON.stringify(g));
+  runDrc();
+  if(!S.drc.some(d=>/^Groupe SPI : /.test(d.msg)))throw new Error("groupe du schéma absent du DRC");
+  if(cmManqueLongueur("SPI_SCK")==null)throw new Error("le serpentin suit aussi les groupes du schéma");
+  /* aller-retour du document */
+  cmDepuisSchema(doc);
+  const a=serialize();loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("aller-retour");
+  if(cmResumeSchema()!=="2 net(s), 1 groupe(s)")throw new Error(cmResumeSchema());
+  cmRaz();
+});
+T("contraintes du schéma : l'ECO et la fenêtre les reprennent",()=>{
+  exCharger(1);cmRaz();
+  const avant=S.schDoc;
+  S.schDoc={format:"schemedit-2",pages:[],contraintes:{nets:{USB_DP:{z:90}},groupes:[]}};
+  try{
+    cmOuvrir("nets");cmFermer();
+    if(!S.contraintes.schema.nets.USB_DP)throw new Error("l'ouverture du gestionnaire doit relire le schéma");
+    /* l'ECO : une ligne « contraintes » quand seules elles changent, appliquée
+       si elle reste cochée, et rien d'autre ne bouge */
+    const doc2={format:"schemedit-2",pages:[],contraintes:{nets:{USB_DM:{z:90}},groupes:[]}};
+    /* le schéma tel que la carte : seules les contraintes diffèrent */
+    const pinNet=new Map();
+    for(const f of S.fps)for(const q of padsOf(f))if(q.net)pinNet.set(f.ref+"."+q.n,q.net);
+    const sch=d=>({disponible:true,comps:new Map(S.fps.map(f=>[f.ref,{ref:f.ref,value:f.value,pkg:f.pkg,pins:f.pins}])),
+                   pinNet,schDoc:d,sourceNom:"essai"});
+    const R=pcbDetecterDisparitesEco(sch(doc2));
+    if(R.items.some(x=>x.type!=="CONTRAINTES"))
+      throw new Error("le schéma d'essai devait coller à la carte : "+R.items.map(x=>x.type+" "+(x.ref||"")).join(", "));
+    const it=R.items.find(x=>x.type==="CONTRAINTES");
+    if(!it||!/2 net\(s\) modifié\(s\)/.test(it.resume))throw new Error("ligne ECO : "+JSON.stringify(it&&it.resume));
+    const decoche=R.items.map(x=>Object.assign({},x,{active:x.type!=="CONTRAINTES"&&x.active}));
+    pcbAppliquerEco(decoche,{});
+    if(S.contraintes.schema.nets.USB_DM)throw new Error("décochée, la ligne ne s'applique pas");
+    const r=pcbAppliquerEco(R.items.filter(x=>x.type==="CONTRAINTES"),{});
+    if(!r.succes||r.contraintes!==1||!S.contraintes.schema.nets.USB_DM||S.contraintes.schema.nets.USB_DP)
+      throw new Error("l'ECO doit reprendre les contraintes du schéma : "+JSON.stringify(S.contraintes.schema.nets));
+    if(pcbDetecterDisparitesEco(sch(doc2)).items.some(x=>x.type==="CONTRAINTES"))
+      throw new Error("une fois reprises, plus de ligne");
+    if(cmLireChamp("ordre","U1 → U4 > U5")+""!=="U1,U4,U5")throw new Error("lecture commune de l'ordre");
+  }finally{S.schDoc=avant;cmRaz();}
 });
 
 (async()=>{

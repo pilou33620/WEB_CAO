@@ -75,6 +75,8 @@ js/30-contraintes.js     gestionnaire de contraintes : mesures par net,
                          contraintes héritées ou propres, groupes
                          d'appariement, DRC, fenêtre en tableur (le modèle
                          et l'isolation entre classes sont dans 01-core.js)
+../commun/contraintes.js ce qu'est une contrainte de net, partagé avec le
+                         schéma qui en saisit aussi
 js/31-topologie.js       forme du cuivre de chaque net (graphe des pistes,
                          vias et broches) : point à point, chaîne, étoile,
                          fly-by ; moignons de dérivation et de vias
@@ -943,7 +945,8 @@ couches change, dessus et dessous gardent leur réglage, comme le cuivre.
 
 **Topologie et moignons** (`31-topologie.js`). Le cuivre d'un net est lu
 comme un graphe : ses broches, ses vias et les jonctions de pistes (une
-jonction en T coupe la piste qu'elle touche), reliés par les pistes avec
+jonction en T coupe la piste qu'elle touche, comme une piste qui traverse une
+pastille du net sans s'y arrêter), reliés par les pistes avec
 leur longueur. Le bout d'une piste se rattache à ce que `linkSync` dit qui
 le tient. On en tire :
 
@@ -991,8 +994,19 @@ Les longueurs, délais et Z₀ sont ceux de `ltLine` : formules de ligne
 (Hammerstad, Wheeler, IPC-2141A) sur l'empilage. L'audit par la méthode des
 moments reste dans **Simulation EM**. **⬇ CSV** exporte le tableau des nets.
 
+**Contraintes saisies dans le schéma.** Le schéma saisit lui aussi des
+contraintes de net et des groupes d'appariement (Outils → Contraintes de
+nets…). Le PCB les reprend de son document — à l'ouverture de cette fenêtre,
+par l'ECO (une ligne « ⊞ CONTRAINTES », cochée par défaut) et à l'export
+« ⇉ PCB » — et les garde à part, dans `contraintes.schema`, sans les recopier
+dans les siennes. Pour chaque champ d'un net : le réglage du PCB, sinon celui
+du schéma, sinon celui de la classe ; la source est dite (« (schéma) » au
+DRC, marque « sch » et valeur en grisé dans le tableau). Les groupes du schéma
+sont évalués, contrôlés et suivis par le serpentin comme ceux du PCB, et se
+modifient dans le schéma. Chaque reprise s'annule par Ctrl+Z.
+
 Les contraintes sont dans le document, `contraintes`, bornées à la lecture
-(`cmNorm`). Une nouvelle carte garde celles des classes et la matrice (un
+(`cmNorm`, sur les règles communes de `commun/contraintes.js`). Une nouvelle carte garde celles des classes et la matrice (un
 métier, comme les règles) et perd celles des nets et les groupes.
 
 Ce module ne touche à rien de ce qui est partagé avec la visionneuse
@@ -2875,10 +2889,9 @@ désactive au lieu de disparaître.
 - Une pastille est rectangulaire (coins adoucis ou angles droits), oblongue ou
   ronde, avec sa rotation propre. Pas de forme quelconque : ni pastille en
   polygone, ni plage thermique découpée, ni chanfrein.
-- Gestionnaire de contraintes : les contraintes se saisissent dans le PCB,
-  pas encore dans le schéma. La topologie ignore une jonction faite en
-  croisant une pastille sans s'y arrêter, et le moignon d'un via se compte
-  en épaisseur d'empilage (le contre-perçage n'est pas décrit).
+- Gestionnaire de contraintes : le moignon d'un via se compte en épaisseur
+  d'empilage (le contre-perçage n'est pas décrit) ; les contraintes de classe
+  ne se saisissent que dans le PCB.
 - Plans (Draftsman) : les vues sont placées d'office et les cotes se limitent
   à l'encombrement du contour ; ni cote posée à la main, ni vue de détail
   agrandie, ni export DXF. Le texte est en Helvetica standard (non

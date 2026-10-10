@@ -707,7 +707,7 @@ const S = {
   variantes:{liste:[],active:""},   // variantes de montage, copiées du schéma (26-variantes.js)
   groupes:[],                       // blocs composants + vias déplacés d'une pièce (27-groupes.js)
   dessin:null,                      // réglages des plans : format, feuilles, cartouche (29-draftsman.js)
-  contraintes:{classes:{},nets:{},matrice:{},groupes:[]},  // gestionnaire de contraintes (30-contraintes.js)
+  contraintes:{classes:{},nets:{},matrice:{},groupes:[],schema:{nets:{},groupes:[]}},  // gestionnaire de contraintes (30-contraintes.js)
   dpRules:[],                 // règles de paire ; vide = la règle d'usine
   scale:5, ox:0, oy:0,
   grid:0.1, showGrid:true, flip:false, contrast:1,   // pas d'accrochage au démarrage
@@ -2299,68 +2299,24 @@ function dpGapPair(a,b){
    un minimum qui s'ajoute aux classes, comme la matrice des natures : vide,
    le contrôle et le routeur rendent exactement ce qu'ils rendaient. Les
    groupes d'appariement égalisent des longueurs ou des délais. */
-function cmNormRegle(o){
-  if(!o||typeof o!=="object"||Array.isArray(o))return null;
-  const r={};
-  const num=(v,a,b)=>{
-    if(v===null||v===undefined||v==="")return null;
-    const n=+v;return Number.isFinite(n)&&n>=a&&n<=b?n:null;
-  };
-  const z=num(o.z,1,1000);if(z!=null)r.z=z;
-  const t=num(o.zTol,0.1,100);if(t!=null)r.zTol=t;
-  const lx=num(o.lMax,0.01,1e5);if(lx!=null)r.lMax=lx;
-  const ln=num(o.lMin,0.01,1e5);if(ln!=null)r.lMin=ln;
-  const vm=num(o.viasMax,0,1e4);if(vm!=null)r.viasMax=Math.round(vm);
-  if(Array.isArray(o.couches)){
-    const c=[...new Set(o.couches.map(Number).filter(i=>Number.isInteger(i)&&i>=0&&i<64))].sort((a,b)=>a-b);
-    if(c.length)r.couches=c;
-  }
-  /* topologie et moignons (31-topologie.js) : la forme exigée, l'ordre des
-     repères le long d'une chaîne, les longueurs de moignon admises (0 : aucun
-     moignon), l'écart admis entre les branches d'une étoile */
-  if(["p2p","chaine","etoile","flyby"].indexOf(o.topo)>=0)r.topo=o.topo;
-  if(Array.isArray(o.ordre)){
-    const od=o.ordre.map(x=>String(x).trim().slice(0,24)).filter(Boolean).slice(0,64);
-    if(od.length)r.ordre=od;
-  }
-  const sm=num(o.stubMax,0,1e5);if(sm!=null)r.stubMax=sm;
-  const vs=num(o.viaStubMax,0,100);if(vs!=null)r.viaStubMax=vs;
-  const et=num(o.etoileTol,0,1e5);if(et!=null)r.etoileTol=et;
-  return Object.keys(r).length?r:null;
-}
+/* `cmNormRegle` et `cmNormGroupes` : commun/contraintes.js, partagés avec le
+   schéma, qui saisit lui aussi des contraintes de net. */
 function cmCle(a,b){a=String(a);b=String(b);return a<b?a+"|"+b:b+"|"+a;}
 function cmNorm(src){
   const s=(src&&typeof src==="object"&&!Array.isArray(src))?src:{};
-  const out={classes:{},nets:{},matrice:{},groupes:[]};
-  for(const k of ["classes","nets"]){
-    const m=s[k];
-    if(!m||typeof m!=="object"||Array.isArray(m))continue;
-    for(const nom of Object.keys(m)){
-      const r=cmNormRegle(m[nom]), n=String(nom).slice(0,200);
-      if(r&&n)out[k][n]=r;
-    }
-  }
+  const out={classes:cmNormNets(s.classes),nets:cmNormNets(s.nets),matrice:{},groupes:[]};
   const mx=s.matrice;
   if(mx&&typeof mx==="object"&&!Array.isArray(mx))
     for(const k of Object.keys(mx)){
       const p=String(k).split("|"), v=+mx[k];
       if(p.length===2&&p[0]&&p[1]&&Number.isFinite(v)&&v>0&&v<=50)out.matrice[cmCle(p[0],p[1])]=v;
     }
-  const ids=new Set();
-  for(const g of (Array.isArray(s.groupes)?s.groupes:[])){
-    if(!g||typeof g!=="object")continue;
-    const nom=String(g.nom==null?"":g.nom).trim().slice(0,60);
-    const nets=[...new Set((Array.isArray(g.nets)?g.nets:[]).map(x=>String(x)).filter(Boolean))].slice(0,512);
-    if(!nom||!nets.length)continue;
-    let id=String(g.id==null?"":g.id).slice(0,24);
-    if(!id||ids.has(id)){let k=1;while(ids.has("g"+k))k++;id="g"+k;}
-    ids.add(id);
-    const mode=g.mode==="ps"?"ps":"mm";
-    const t=+g.tol;
-    const tol=Number.isFinite(t)&&t>=0&&t<=1e5?t:(mode==="ps"?10:0.5);
-    const ref=nets.includes(String(g.ref))?String(g.ref):"";
-    out.groupes.push({id,nom,nets,mode,tol,ref});
-  }
+  out.groupes=cmNormGroupes(s.groupes);
+  /* ce que le schéma a saisi : ses contraintes de net et ses groupes, gardés
+     à part — le PCB les lit sans les recopier dans les siens, et un réglage
+     fait dans le PCB passe devant (cmRegleDe, 30-contraintes.js) */
+  const sc=(s.schema&&typeof s.schema==="object"&&!Array.isArray(s.schema))?s.schema:{};
+  out.schema={nets:cmNormNets(sc.nets),groupes:cmNormGroupes(sc.groupes)};
   return out;
 }
 /* L'isolation que la matrice des classes impose entre les nets a et b ; 0 si

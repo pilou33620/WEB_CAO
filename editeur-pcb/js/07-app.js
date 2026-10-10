@@ -448,7 +448,7 @@ function newDoc(){
   /* contraintes : celles des classes et la matrice restent (un métier),
      celles des nets et les groupes d'appariement partent avec la carte */
   S.contraintes=cmNorm({classes:S.contraintes&&S.contraintes.classes,
-                        matrice:S.contraintes&&S.contraintes.matrice});
+                        matrice:S.contraintes&&S.contraintes.matrice});   // schéma compris : il sera relu
   S.variantes={liste:[],active:""};
   PCB_FICHIER="";
   clearSel();zoneCache.clear();touch();

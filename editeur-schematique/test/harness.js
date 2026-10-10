@@ -138,7 +138,11 @@ const EXPOSE=[
   "brochageLire","brochagePartie","brochageParties","brochagePattes","brochageNom",
   "brNomBroche","brPatte","brPattes","brochageListe","BROCHAGE_PATTES","brDepuisLib","brAppliquer","brChoisirPartie","brSaisirPatte",
   "brCandidats","brReferenceAChoisir","brPattesBoitier","brControles","brControlesDe",
-  "brAjouterPartie","brPartieLibre","brRepere","brPanneauHtml","PKG_MAX","buildProps"
+  "brAjouterPartie","brPartieLibre","brRepere","brPanneauHtml","PKG_MAX","buildProps",
+  /* contraintes de nets pour le PCB (commun/contraintes.js, 27-contraintes.js) */
+  "schCmModele","schCmPoser","schCmGroupeCreer","schCmGroupeModifier","schCmGroupeSupprimer",
+  "schCmNetsNommes","schCmOrphelins","schCmResumeNet","schCmOuvrir","schCmFermer","SCM",
+  "cmNormNets","cmNormGroupes","cmLireChamp","schDocCourant","restore"
 ];
 /* les noms absents du bundle sont ignorés : le banc d'essai reste utilisable
    même si un module est renommé, les essais concernés échoueront tout seuls */
@@ -3052,6 +3056,74 @@ TA("exporter vers le PCB : sans projet, la netlist suit l'onglet et la demande e
     throw new Error("la netlist mise de côté doit porter les boîtiers : "+nl);
   if(!/editeur-pcb\.html$/.test(String(location.href)))
     throw new Error("l'éditeur PCB devait s'ouvrir : "+location.href);
+});
+
+/* ==========================================================================
+   Contraintes de nets pour le PCB (27-contraintes.js)
+   ========================================================================== */
+function scmFeuille(){
+  const r1=C("resistor",0,0,{ref:"R1"}), r2=C("resistor",6,0,{ref:"R2"}), r3=C("resistor",12,0,{ref:"R3"});
+  const a=allPins(r1)[1], b=allPins(r2)[0], c=allPins(r2)[1], d=allPins(r3)[0];
+  sheet([r1,r2,r3],[{x1:a.x,y1:a.y,x2:b.x,y2:b.y,net:"CLK"},{x1:c.x,y1:c.y,x2:d.x,y2:d.y,net:"DATA"}]);
+  S.contraintes={nets:{},groupes:[]};
+}
+T("contraintes de nets : saisie bornée comme au PCB",()=>{
+  scmFeuille();
+  schCmPoser("CLK","z","50");schCmPoser("CLK","zTol","5");schCmPoser("CLK","lMax","40,5");
+  schCmPoser("CLK","topo","chaine");schCmPoser("CLK","ordre","R1 > R2");schCmPoser("CLK","couches","1, 4");
+  schCmPoser("CLK","stubMax","0");
+  const r=schCmModele().nets.CLK;
+  const att={z:50,zTol:5,lMax:40.5,couches:[0,3],topo:"chaine",ordre:["R1","R2"],stubMax:0};
+  if(JSON.stringify(r)!==JSON.stringify(att))throw new Error(JSON.stringify(r));
+  schCmPoser("CLK","z","abc");
+  if("z" in schCmModele().nets.CLK)throw new Error("une saisie illisible efface le champ");
+  schCmPoser("CLK","lMax","1e9");
+  if("lMax" in schCmModele().nets.CLK)throw new Error("hors bornes : écarté");
+  for(const k of ["zTol","couches","topo","ordre","stubMax"])schCmPoser("CLK",k,"");
+  if(schCmModele().nets.CLK)throw new Error("un net sans contrainte disparaît de la table");
+});
+T("contraintes de nets : dans le document, l'aller-retour et l'annulation",()=>{
+  scmFeuille();
+  schCmPoser("CLK","lMax","30");
+  const js=serialize();
+  if(JSON.parse(js).contraintes.nets.CLK.lMax!==30)throw new Error("absent de serialize()");
+  if(schDocCourant().contraintes.nets.CLK.lMax!==30)throw new Error("absent du document enregistré");
+  schCmPoser("CLK","lMax","10");
+  undo();
+  if(schCmModele().nets.CLK.lMax!==30)throw new Error("Ctrl+Z doit rendre 30 mm");
+  /* un document retouché à la main est borné à la lecture */
+  const doc=JSON.parse(js);
+  doc.contraintes={nets:{CLK:{lMax:-3,viasMax:"2"},X:"n'importe quoi"},groupes:[{nom:"G",nets:["CLK","DATA"],tol:"x"}]};
+  loadDoc(doc);
+  const C2=schCmModele();
+  if(JSON.stringify(C2.nets)!=='{"CLK":{"viasMax":2}}')throw new Error(JSON.stringify(C2.nets));
+  if(C2.groupes.length!==1||C2.groupes[0].tol!==0.5)throw new Error(JSON.stringify(C2.groupes));
+  loadDoc({format:"schemedit-2",pages:[{name:"Feuille 1",comps:[],wires:[]}]});
+  if(Object.keys(schCmModele().nets).length||schCmModele().groupes.length)
+    throw new Error("un document sans contraintes n'en hérite pas du précédent");
+});
+T("contraintes de nets : groupes d'appariement, nets disparus, résumé",()=>{
+  scmFeuille();
+  const noms=schCmNetsNommes().map(n=>n.name);
+  if(noms.indexOf("CLK")<0||noms.indexOf("DATA")<0)throw new Error("nets nommés : "+noms.join(" "));
+  if(schCmGroupeCreer("seul",["CLK"],"mm",1))throw new Error("un groupe demande deux nets");
+  const g=schCmGroupeCreer("BUS",["CLK","DATA"],"ps",15);
+  if(!g||g.mode!=="ps"||g.tol!==15)throw new Error(JSON.stringify(g));
+  schCmGroupeModifier(g.id,x=>{x.ref="DATA";});
+  if(schCmModele().groupes[0].ref!=="DATA")throw new Error("référence");
+  schCmPoser("CLK","z","50");schCmPoser("CLK","topo","p2p");
+  const r=schCmResumeNet("CLK");
+  if(!/50 Ω/.test(r)||!/point à point/.test(r)||!/groupe BUS/.test(r))throw new Error(r);
+  schCmPoser("ANCIEN","lMax","5");
+  const o=schCmOrphelins();
+  if(o.nets.join()!=="ANCIEN")throw new Error("net disparu : "+JSON.stringify(o.nets));
+  schCmGroupeSupprimer(g.id);
+  if(schCmModele().groupes.length)throw new Error("groupe non supprimé");
+  schCmOuvrir("CLK");
+  try{
+    if(SCM.filtre!=="CLK")throw new Error("la fenêtre s'ouvre filtrée sur le net");
+  }finally{schCmFermer();}
+  S.contraintes={nets:{},groupes:[]};
 });
 
 (async()=>{

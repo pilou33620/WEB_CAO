@@ -101,6 +101,8 @@
           <div class="mnu-h">Chercher</div>
           <button data-ic="⌕" class="tb" id="bFind" title="Chercher un composant par son repère (toutes feuilles), ou un net par son nom">Rechercher <kbd>Ctrl+F</kbd></button>
           <button data-ic="⇱" class="tb" id="bProbe" title="Montrer la sélection sur le PCB resté ouvert dans un autre onglet — il saute dessus sans que celui-ci bouge">Montrer au PCB <kbd>L</kbd></button>
+          <div class="mnu-h">Contraintes</div>
+          <button data-ic="⊞" class="tb" id="bSchContraintes" title="Contraintes de nets pour le PCB : impédance, longueur, vias, couches, topologie, moignons, groupes d'appariement — reprises par le gestionnaire de contraintes du PCB">Contraintes de nets…</button>
           <div class="mnu-h">Analyser</div>
           <button data-ic="⚡" class="tb" id="bPatterns" title="Détecter les blocs fonctionnels (alimentations, bus rapides, filtres...) et qualifier les nets">Motifs & Blocs</button>
         </div>
@@ -249,6 +251,7 @@
 <script src="../commun/reperage.js"></script>
 <script src="../commun/brochage.js"></script>
 <script src="../commun/variantes.js"></script>
+<script src="../commun/contraintes.js"></script>
 <script src="js/00-espace-config.js"></script>
 <script src="js/01-noyau.js"></script>
 <script src="js/02-bibliotheque.js"></script>
@@ -276,6 +279,7 @@
 <script src="js/24-lib-sync.js"></script>
 <script src="js/25-brochage.js"></script>
 <script src="js/26-variantes.js"></script>
+<script src="js/27-contraintes.js"></script>
 <script src="../commun/explorateur-lib.js"></script>
 <script src="../commun/workspace.js"></script>
 <script src="../commun/ia-assistant.js"></script>

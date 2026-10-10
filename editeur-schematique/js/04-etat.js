@@ -24,6 +24,7 @@ const S={
   wireVer:0, dirty:false, bomAll:false,
   netLabels:2, hoverNet:null, listTab:"bom", netAll:false, // 0 aucune · 1 nommés · 2 tous
   netClasses:{},                  // corrections manuelles : nom de net → classe
+  contraintes:{nets:{},groupes:[]},// contraintes de nets pour le PCB (27-contraintes.js)
   variantes:{liste:[],active:""}  // variantes de montage (commun/variantes.js)
 };
 // classes de net proposées au routage ; un net absent de S.netClasses suit l'analyse

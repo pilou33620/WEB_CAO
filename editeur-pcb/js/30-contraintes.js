@@ -81,20 +81,60 @@ function cmMesures(){
    Ce qui est exigé d'un net : le net d'abord, sa classe ensuite
    ========================================================================== */
 function cmModele(){
-  if(!S.contraintes||!S.contraintes.classes)S.contraintes=cmNorm(S.contraintes);
+  if(!S.contraintes||!S.contraintes.classes||!S.contraintes.schema)S.contraintes=cmNorm(S.contraintes);
   return S.contraintes;
+}
+/* Les groupes d'appariement : ceux du PCB, puis ceux du schéma (lus, pas
+   modifiables ici : ils se règlent dans le schéma). */
+function cmTousGroupes(){
+  const C=cmModele();
+  return C.groupes.concat(C.schema.groupes.map(g=>Object.assign({},g,{id:"s:"+g.id,schema:true})));
+}
+/* ---------- les contraintes saisies dans le schéma ----------
+   Le schéma les range dans son document (`contraintes` : par net, et ses
+   groupes) ; le PCB les lit là où il lit ses variantes — la session de
+   l'onglet, ou le document du projet — et les garde à part, dans
+   `contraintes.schema`. Rien n'est recopié dans les réglages du PCB : un
+   champ réglé dans le PCB passe devant celui du schéma, un champ vide dans
+   le PCB prend celui du schéma, puis celui de la classe. Rend vrai si
+   quelque chose a changé ; `dejaPousse` : l'appelant a déjà ouvert le pas
+   d'historique (ECO, export du schéma). */
+/* Ce qui changerait à reprendre le document `doc`, en clair ; null si rien.
+   L'ECO en fait une ligne de sa liste. */
+function cmEcartSchema(doc){
+  if(!doc||typeof doc!=="object")return null;
+  const src=(doc.contraintes&&typeof doc.contraintes==="object")?doc.contraintes:{};
+  const nv={nets:cmNormNets(src.nets),groupes:cmNormGroupes(src.groupes)}, av=cmModele().schema;
+  if(JSON.stringify(nv)===JSON.stringify(av))return null;
+  const noms=new Set(Object.keys(nv.nets).concat(Object.keys(av.nets)));
+  let n=0;
+  for(const k of noms)if(JSON.stringify(nv.nets[k]||null)!==JSON.stringify(av.nets[k]||null))n++;
+  const g=JSON.stringify(nv.groupes)!==JSON.stringify(av.groupes);
+  return [n?n+" net(s) modifié(s)":"",g?nv.groupes.length+" groupe(s) d'appariement":""].filter(Boolean).join(", ")||"mise à jour";
+}
+function cmDepuisSchema(doc,dejaPousse){
+  if(!doc&&typeof pcbSchemaDoc==="function")doc=pcbSchemaDoc();
+  if(!doc||typeof doc!=="object")return false;
+  const src=(doc.contraintes&&typeof doc.contraintes==="object")?doc.contraintes:{};
+  const neuf={nets:cmNormNets(src.nets),groupes:cmNormGroupes(src.groupes)};
+  if(JSON.stringify(neuf)===JSON.stringify(cmModele().schema))return false;
+  if(!dejaPousse)push();
+  S.contraintes.schema=neuf;
+  touch();
+  return true;
 }
 function cmRegleDe(net){
   const C=cmModele(), cl=classOf(net);
-  const rc=C.classes[cl.name]||{}, rn=C.nets[net]||{};
-  const pick=k=>rn[k]!=null?{v:rn[k],src:"net"}:(rc[k]!=null?{v:rc[k],src:"classe"}:null);
+  const rc=C.classes[cl.name]||{}, rn=C.nets[net]||{}, rs=C.schema.nets[net]||{};
+  const pick=k=>rn[k]!=null?{v:rn[k],src:"net"}:(rs[k]!=null?{v:rs[k],src:"schéma"}:
+                (rc[k]!=null?{v:rc[k],src:"classe"}:null));
   return {classe:cl.name,w:cl.w,clr:cl.clr,via:cl.via,drill:cl.drill,
           z:pick("z"),zTol:pick("zTol")||{v:CM_ZTOL,src:"défaut"},
           lMax:pick("lMax"),lMin:pick("lMin"),viasMax:pick("viasMax"),couches:pick("couches"),
           topo:pick("topo"),ordre:pick("ordre"),stubMax:pick("stubMax"),viaStubMax:pick("viaStubMax"),
           etoileTol:pick("etoileTol"),
           paire:dpOfNet(net),
-          groupes:C.groupes.filter(g=>g.nets.indexOf(net)>=0)};
+          groupes:cmTousGroupes().filter(g=>g.nets.indexOf(net)>=0)};
 }
 function cmNomCouche(i){return "L"+(i+1);}
 function cmMm(v,n){return fmt(v,n==null?2:n).replace(".",",");}
@@ -103,7 +143,7 @@ function cmMm(v,n){return fmt(v,n==null?2:n).replace(".",",");}
 function cmVerifier(net,m,r){
   const out=[];
   if(!m||!m.n)return out;
-  const de=x=>x.src==="net"?" (net)":" (classe "+r.classe+")";
+  const de=x=>x.src==="net"?" (net)":(x.src==="schéma"?" (schéma)":" (classe "+r.classe+")");
   if(r.lMax&&m.len>r.lMax.v+1e-6)
     out.push({cle:"lMax",msg:"longueur "+cmMm(m.len)+" mm, au-delà du maximum de "+cmMm(r.lMax.v)+" mm"+de(r.lMax)});
   if(r.lMin&&m.len<r.lMin.v-1e-6)
@@ -160,7 +200,7 @@ function cmManqueLongueur(net){
   if(!net)return null;
   const M=cmMesures(), m=M.get(net);
   if(!m||!m.n)return null;
-  for(const g of cmModele().groupes){
+  for(const g of cmTousGroupes()){
     if(g.nets.indexOf(net)<0)continue;
     const e=cmEvaluerGroupe(g,M);
     if(e.cible==null||e.refNet===net)continue;
@@ -204,7 +244,8 @@ function cmAncre(m){
 }
 function cmDrc(out){
   const C=cmModele();
-  const vide=!Object.keys(C.classes).length&&!Object.keys(C.nets).length&&!C.groupes.length;
+  const vide=!Object.keys(C.classes).length&&!Object.keys(C.nets).length&&!C.groupes.length&&
+             !Object.keys(C.schema.nets).length&&!C.schema.groupes.length;
   if(vide)return;
   const M=cmMesures();
   for(const [net,m] of M){
@@ -214,7 +255,7 @@ function cmDrc(out){
       out.push({info:!!f.info,x:a.x,y:a.y,l:a.l,msg:"Contrainte "+net+" : "+f.msg});
     }
   }
-  for(const g of C.groupes){
+  for(const g of cmTousGroupes()){
     const e=cmEvaluerGroupe(g,M);
     if(e.absents.length){
       out.push({info:true,x:S.board.x,y:S.board.y,l:0,
@@ -245,22 +286,7 @@ function cmEdit(fn){
 }
 /* Une valeur saisie : vide efface (le net revient à sa classe), une virgule
    vaut un point. Les couches s'écrivent « 1, 4 » ou « L1 L4 ». */
-function cmLire(cle,txt){
-  const t=String(txt==null?"":txt).trim();
-  if(!t)return null;
-  if(cle==="couches"){
-    const c=(t.match(/\d+/g)||[]).map(x=>+x-1).filter(i=>i>=0&&i<S.cu);
-    return c.length?c:null;
-  }
-  if(cle==="topo")return ["p2p","chaine","etoile","flyby"].indexOf(t)>=0?t:null;
-  /* « U1, U4, U5 », « U1 > U4 > U5 » ou « U1 → U4 → U5 » */
-  if(cle==="ordre"){
-    const o=t.split(/[\s,;>→]+/).map(x=>x.trim()).filter(Boolean);
-    return o.length?o:null;
-  }
-  const n=parseFloat(t.replace(",","."));
-  return Number.isFinite(n)?n:null;
-}
+function cmLire(cle,txt){return cmLireChamp(cle,txt,S.cu);}
 function cmPoser(portee,nom,cle,txt){
   const v=cmLire(cle,txt);
   cmEdit(C=>{
@@ -356,6 +382,10 @@ function cmLignesNets(){
   rows.sort((a,b)=>a.net.localeCompare(b.net,"fr",{numeric:true}));
   return rows;
 }
+function cmResumeSchema(){
+  const s=cmModele().schema;
+  return Object.keys(s.nets).length+" net(s), "+s.groupes.length+" groupe(s)";
+}
 function cmCsv(){
   const L=["Net;Classe;Longueur (mm);Délai (ps);Vias;Z0 min;Z0 max;Z cible;Tol %;L min;L max;Vias max;Couches;Groupes;"+
           "Topologie;Forme du cuivre;Moignon mesuré (mm);Moignon de via (mm);État;Écarts"];
@@ -384,6 +414,7 @@ var CM={onglet:"nets",filtre:"",fautes:false,sel:new Set(),grpFiltre:"",grpSel:n
 
 function cmOuvrir(onglet){
   if(onglet)CM.onglet=onglet;
+  try{if(cmDepuisSchema())hint("Contraintes du schéma reprises : "+cmResumeSchema()+".");}catch(_){}
   let m=document.getElementById("cmEd");
   if(!m){
     m=document.createElement("div");
@@ -561,7 +592,10 @@ function cmHtmlNets(){
     '<th>État</th><th>Net</th><th>Classe</th><th class="n">Long. mm</th><th class="n">Délai ps</th><th class="n">Vias</th><th class="n">Z₀ Ω</th>'+
     '<th>Z cible Ω</th><th>Tol. %</th><th>L min</th><th>L max</th><th>Vias max</th><th>Couches</th><th>Groupes</th><th>Écarts</th></tr></thead><tbody>';
   for(const o of vis.slice(0,1500)){
-    const r=o.r, m=o.m, rn=cmModele().nets[o.net]||{}, rc=cmModele().classes[r.classe]||{};
+    const r=o.r, m=o.m, rn=cmModele().nets[o.net]||{};
+    /* ce qui s'applique quand la case du PCB est vide : le schéma, puis la classe */
+    const rs=cmModele().schema.nets[o.net]||null;
+    const rc=Object.assign({},cmModele().classes[r.classe]||{},rs||{});
     const k=c=>"net"+CM_SEP+o.net+CM_SEP+c;
     const her=c=>rc[c]!=null?(c==="couches"?rc[c].map(i=>i+1).join(","):rc[c]):(c==="zTol"?CM_ZTOL:null);
     const z0=m.z0min==null?"—":(m.z0max-m.z0min>0.05?cmMm(m.z0min,1)+"–"+cmMm(m.z0max,1):cmMm(m.z0min,1));
@@ -570,7 +604,8 @@ function cmHtmlNets(){
     h+='<tr class="cm-'+o.etat+'"><td><input type="checkbox" data-selnet="'+esc(o.net)+'"'+(CM.sel.has(o.net)?" checked":"")+'></td>'+
       '<td>'+cmEtat(o.etat)+'</td>'+
       '<td><button type="button" class="cm-net" data-a="voir" data-v="'+esc(o.net)+'" title="Fermer et sélectionner le routage de ce net">'+esc(o.net)+'</button>'+
-        (r.paire?' <span class="cm-tag" title="paire différentielle">'+esc(r.paire.name)+'</span>':"")+'</td>'+
+        (r.paire?' <span class="cm-tag" title="paire différentielle">'+esc(r.paire.name)+'</span>':"")+
+        (rs?' <span class="cm-tag cm-sch" title="contraintes saisies dans le schéma (en grisé) ; une case remplie ici passe devant">sch</span>':"")+'</td>'+
       '<td><select class="tbsel cm-sel" data-cm="'+esc("netclasse"+CM_SEP+o.net)+'">'+
         S.classes.map(c=>'<option'+(c.name===r.classe?" selected":"")+'>'+esc(c.name)+'</option>').join("")+'</select></td>'+
       '<td class="n">'+(m.n?cmMm(m.len):"—")+'</td><td class="n">'+(m.n?cmMm(m.ps,0):"—")+'</td>'+
@@ -587,7 +622,7 @@ function cmHtmlNets(){
   }
   h+='</tbody></table>'+(vis.length>1500?'<p class="cm-note">… '+(vis.length-1500)+' net(s) de plus : filtrez.</p>':"")+
      (vis.length?"":'<p class="cm-note">Aucun net ne correspond.</p>')+'</div>'+
-    '<p class="cm-note">Une case vide hérite de la classe (valeur en grisé). Les longueurs et délais sont ceux du cuivre routé, '+
+    '<p class="cm-note">Une case vide hérite du schéma (marque « sch »), sinon de la classe : la valeur qui s\'applique est en grisé. Les longueurs et délais sont ceux du cuivre routé, '+
     'vias compris pour le délai ; Z₀ est calculée par les formules de ligne (Hammerstad, Wheeler) sur l\'empilage. '+
     'Pour l\'audit complet par la méthode des moments : Simulation EM.</p>';
   return h;
@@ -678,7 +713,22 @@ function cmHtmlPaires(){
 function cmHtmlGroupes(){
   const C=cmModele(), M=cmMesures();
   let h='';
-  if(!C.groupes.length)h+='<p class="cm-note">Aucun groupe. Un groupe d\'appariement égalise des longueurs (ou des délais) : '+
+  for(const g of C.schema.groupes){
+    const e=cmEvaluerGroupe(g,M), nf=e.membres.filter(x=>!x.ok).length;
+    h+='<div class="cm-grp cm-grp-sch"><div class="cm-grp-t">'+cmEtat(e.cible==null?"nr":(nf?"err":"ok"))+
+      '<b>'+esc(g.nom)+'</b> <span class="cm-tag cm-sch">schéma</span> '+(g.mode==="ps"?"en délai":"en longueur")+
+      ' ± '+cmMm(g.tol,g.mode==="ps"?0:2)+' '+cmUnite(g)+(g.ref?' · référence '+esc(g.ref):"")+
+      '<span class="cm-sp"></span><span class="cm-note">cible '+(e.cible==null?"—":cmMm(e.cible,g.mode==="ps"?0:2)+" "+cmUnite(g)+
+        " ("+esc(e.refNet)+")")+' — se règle dans le schéma</span></div>'+
+      '<table class="cm-table"><tbody>'+e.membres.map(x=>{
+        const etat=!x.routé?"nr":(x.ok?"ok":"err");
+        return '<tr class="cm-'+etat+'"><td>'+cmEtat(etat)+'</td><td><button type="button" class="cm-net" data-a="voir" data-v="'+
+          esc(x.net)+'">'+esc(x.net)+'</button>'+(x.net===e.refNet?' <span class="cm-tag">réf.</span>':"")+'</td>'+
+          '<td class="n">'+(x.routé?cmMm(x.m.len):"—")+' mm</td><td class="n">'+(x.routé?cmMm(x.m.ps,0):"—")+' ps</td>'+
+          '<td class="n">'+(x.ecart==null?"—":(x.ecart>0?"+":"")+cmMm(x.ecart,g.mode==="ps"?0:2)+" "+cmUnite(g))+'</td></tr>';
+      }).join("")+'</tbody></table></div>';
+  }
+  if(!C.groupes.length&&!C.schema.groupes.length)h+='<p class="cm-note">Aucun groupe. Un groupe d\'appariement égalise des longueurs (ou des délais) : '+
     'bus de données d\'une mémoire, lignes d\'un RGMII, voies d\'un bus parallèle. Cochez ses nets ci-dessous.</p>';
   for(const g of C.groupes){
     const e=cmEvaluerGroupe(g,M);
@@ -762,7 +812,7 @@ function cmHtmlTopologie(){
     '<th class="n">Broches</th><th>Ordre le long du cuivre</th><th class="n">Moignon max mesuré</th><th class="n">Moignon via mesuré</th>'+
     '<th>Topologie</th><th>Ordre imposé</th><th>Moignon max</th><th>Via max</th><th>Tol. étoile</th><th>Écarts</th></tr></thead><tbody>';
   for(const o of vis.slice(0,600)){
-    const r=o.r, rn=C.nets[o.net]||{}, rc=C.classes[r.classe]||{};
+    const r=o.r, rn=C.nets[o.net]||{}, rc=Object.assign({},C.classes[r.classe]||{},C.schema.nets[o.net]||{});
     const k=x=>"net"+CM_SEP+o.net+CM_SEP+x;
     const T=topoResume(o.net,r.ordre?r.ordre.v[0]:"");
     const f=o.f.filter(x=>/^(topo|ordre|stubMax|viaStubMax|etoileTol)$/.test(x.cle));

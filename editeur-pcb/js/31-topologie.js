@@ -32,7 +32,8 @@
    bout d'une piste se rattache à ce que `linkSync` (25-liens.js) dit qui le
    tient — pastille ou via — sinon à un point de jonction de sa couche. Un
    bout qui tombe au milieu d'une autre piste (une jonction en T) coupe
-   celle-ci en deux. Un via dans une pastille CMS lui est relié d'office.
+   celle-ci en deux, comme une piste qui traverse une pastille du net sans
+   s'y arrêter. Un via dans une pastille CMS lui est relié d'office.
 
    Un net qui porte une zone de cuivre (un plan) n'a pas de forme au sens de
    ce module : il n'est pas jugé.
@@ -82,6 +83,23 @@ function topoGraphe(net){
       coupes.get(i).push({u,n});
     });
   }
+  /* une piste qui TRAVERSE une pastille du net sans s'y arrêter — un fil
+     posé sur la rangée de broches d'un connecteur, le bus qui passe sur la
+     patte d'une mémoire : la pastille la touche au point de la piste le plus
+     proche de son centre, et la piste s'y coupe comme à une jonction en T */
+  for(const p of pads)
+    tracks.forEach((t,i)=>{
+      if(isArc(t)||ends[i][0]===p||ends[i][1]===p)return;
+      if(padCuLayers(p.fp,p.q).indexOf(t.l)<0)return;
+      const L2=(t.x2-t.x1)*(t.x2-t.x1)+(t.y2-t.y1)*(t.y2-t.y1);
+      if(L2<1e-12)return;
+      const u=((p.x-t.x1)*(t.x2-t.x1)+(p.y-t.y1)*(t.y2-t.y1))/L2;
+      if(u<=1e-6||u>=1-1e-6)return;
+      const s=padSurCouche(p.q,t.l);
+      if(!s||padDist(t.x1+u*(t.x2-t.x1),t.y1+u*(t.y2-t.y1),s)>t.w/2+TOPO_EPS)return;
+      if(!coupes.has(i))coupes.set(i,[]);
+      coupes.get(i).push({u,n:p});
+    });
   tracks.forEach((t,i)=>{
     const L=trkLen(t);
     const pts=[{u:0,n:ends[i][0]}].concat((coupes.get(i)||[]).sort((a,b)=>a.u-b.u),[{u:1,n:ends[i][1]}]);
@@ -276,7 +294,7 @@ function topoVerifier(net,r){
   const out=[];
   const veut=r.topo||r.stubMax||r.viaStubMax;
   if(!veut)return out;
-  const de=x=>x.src==="net"?" (net)":" (classe "+r.classe+")";
+  const de=x=>x.src==="net"?" (net)":(x.src==="schéma"?" (schéma)":" (classe "+r.classe+")");
   const ordre=r.ordre?r.ordre.v:[];
   const T=topoAnalyser(net,ordre[0]||"");
   if(T.forme==="plan"||T.forme==="non routé"||T.forme==="sans broche"||T.forme==="une broche"||
