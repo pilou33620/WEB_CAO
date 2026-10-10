@@ -587,9 +587,23 @@ affichée à côté du verdict, parce que les normes sont payantes :
 
 | Fiabilité | Sens | Gabarits |
 | :--- | :--- | :--- |
-| recoupé | valeurs retrouvées dans une source publique (fiche de fabricant, note d'application), pas dans la norme elle-même | USB 2.0 HS Template 1, USB 3.x Gen 1 (après CTLE), PCIe Gen 1, SGMII |
-| à vérifier | valeurs de la norme non recoupées | USB 2.0 HS extrémité, PCIe Gen 2 et Gen 3, HDMI 1.4, SATA Gen 1 à 3 |
+| recoupé | valeurs retrouvées dans une source publique (fiche de fabricant, note d'application, procédure de test), pas dans la norme elle-même | USB 2.0 HS Template 1, USB 3.x Gen 1 (après CTLE), PCIe Gen 1, Gen 2 et Gen 3 (après CTLE et DFE de référence), SATA Gen 1 à 3, SGMII |
+| à vérifier | valeurs de la norme non recoupées : aucune source publique ne les reproduit | USB 2.0 HS extrémité (Template 2), HDMI 1.4 (TP2) |
 | dérivé | pas de gabarit officiel : seuils VIL/VIH du récepteur et sa fenêtre setup/hold | LVDS, MIPI D-PHY HS, SPI 3,3 V et 1,8 V, QSPI, SD High Speed, eMMC HS |
+
+**La vérification d'octobre 2026.** PCIe Gen 2 (120 mV, 0,60 UI à 10⁻¹²)
+et Gen 3 (25 mV, 0,3 UI derrière le CTLE à pôles 2 et 8 GHz, gain continu
+−6 à −12 dB, et le DFE à une prise bornée à ±30 mV) sont recoupés ; leurs
+valeurs n'ont pas bougé. SATA garde ses hauteurs (325, 275, 240 mVppd) et sa
+largeur passe de 0,4 UI à 1 − TJ de la tolérance à la gigue du récepteur :
+0,49 UI en Gen 1, 0,43 UI en Gen 2 et 3, en losange. USB 2.0 extrémité et
+HDMI 1.4 restent « à vérifier » : les seules valeurs publiques trouvées pour
+HDMI sont celles de la source HDMI 2.0 au bout du câble de référence, une
+autre exigence, qu'on ne recopie pas. Les gabarits PCIe et SATA portent aussi
+leur taux d'erreur (10⁻¹²) : c'est sur ce contour de l'œil statistique qu'ils
+se jugent quand la gigue est saisie. Les gabarits dérivés citent maintenant le
+composant réel (récepteurs LVDS SN65LVDS32 / DS90LV028A à ±100 mV, D-PHY à
+±70 mV en v1.2 et 40 mV chez Efinix en v1.1).
 
 Un gabarit au **connecteur** (USB 2.0 Template 1) se juge à la broche du
 connecteur : c'est le bon point quand la piste va du PHY au connecteur. Les

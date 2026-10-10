@@ -176,9 +176,19 @@ GABARITS = [
      "debit": 480e6, "mode": "diff",
      "lieu": "À l'entrée du récepteur, au bout de la liaison.",
      "fiabilite": "a_verifier",
-     "source": "USB 2.0 §7.1.2.2, Templates 2 et 4 (extrémité lointaine).",
-     "note": "Coordonnées non recoupées : vérifiez les points du template "
-             "dans la spécification avant de vous fier au verdict.",
+     # VERIFIE EN 2026-10 SANS SUCCES : aucune source publique accessible
+     # (fiches TI, Keysight, Diodes AN77, notes onsemi) ne reproduit les
+     # points du Template 2 ; elles renvoient toutes a la figure 7-15 de la
+     # norme. Les points ci-dessous sont ceux de la figure tels qu'on s'en
+     # souvient (0 V a 12,5 et 87,5 % UI, ±175 mV de 35 a 65 % UI) : ils
+     # restent « a verifier », et c'est dit.
+     "source": "USB 2.0 §7.1.2.2, figure 7-15 (Template 2, extrémité de "
+               "câble captif / TP3 d'un hub) et figure 7-17 (Template 4, "
+               "sensibilité du récepteur au bout du câble).",
+     "note": "Points du template NON recoupés : aucune source publique "
+             "consultée (fiches TI, Keysight, Diodes, onsemi) ne les "
+             "reproduit ; elles renvoient à la figure 7-15 de la norme. "
+             "Vérifiez-les avant de vous fier au verdict.",
      "masque": {"type": "polygone",
                 "points": [[-0.375, 0.0], [-0.15, 0.175], [0.15, 0.175],
                            [0.375, 0.0], [0.15, -0.175], [-0.15, -0.175]]},
@@ -223,10 +233,22 @@ GABARITS = [
      "nom": "PCIe Gen 2 (5 GT/s) — récepteur",
      "debit": 5e9, "mode": "diff",
      "lieu": "Aux broches du récepteur (horloge commune).",
-     "fiabilite": "a_verifier",
-     "source": "PCIe 2.0 : VRX-DIFF-PP-CC ≥ 120 mV, TRX-TJ-CC ≤ 0,40 UI "
-               "(largeur 0,6 UI).",
-     "note": "Désaccentuation de l'émetteur −3,5 dB (−6 dB possible).",
+     "fiabilite": "corrobore",
+     "ber": 1e-12,
+     # PCIe 2.0 Base, §4.3.4 (5 GT/s, horloge commune) : VRX-DIFF-PP-CC >=
+     # 120 mV et TRX-TJ-CC <= 0,40 UI, soit 0,60 UI d'ouverture a 1e-12.
+     # Recoupe : guide de simulation PCIe de Microchip, tableau
+     # « Specifications of the Received Signal for PCIe » (5 Gb/s : hauteur
+     # 120 mV, largeur 0,6 UI). Le 0,4 UI qu'on lit parfois est la largeur
+     # de 2,5 GT/s.
+     "source": "PCIe 2.0 Base §4.3.4 : VRX-DIFF-PP-CC ≥ 120 mV, "
+               "TRX-TJ-CC ≤ 0,40 UI (largeur 0,60 UI à 10⁻¹²) ; recoupé "
+               "dans le guide de simulation PCIe de Microchip (tableau "
+               "« Specifications of the Received Signal », 5 Gb/s : 120 mV, "
+               "0,6 UI).",
+     "note": "Désaccentuation de l'émetteur −3,5 dB (−6 dB possible). La "
+             "largeur s'entend à 10⁻¹² : jugez-la sur le contour de taux "
+             "d'erreur quand la gigue est saisie.",
      "masque": {"type": "hexagone", "largeur_ui": 0.60, "plat_ui": 0.0,
                 "hauteur_v": 0.120},
      "emetteur": {"v_haut": 1.0, "v_bas": -1.0, "r_source": 100.0,
@@ -237,11 +259,23 @@ GABARITS = [
      "debit": 8e9, "mode": "diff",
      "lieu": "Derrière les broches du récepteur, après CTLE et DFE de "
              "référence.",
-     "fiabilite": "a_verifier",
-     "source": "Structure corroborée (CTLE à gain continu de −6 à −12 dB par "
-               "pas de 1 dB, puis DFE à une prise : notes Pericom AN359 / "
-               "AN377). Pôles 2 et 8 GHz, DFE ±30 mV, hauteur 25 mV et "
-               "largeur 0,3 UI NON recoupés.",
+     "fiabilite": "corrobore",
+     "ber": 1e-12,
+     # PCIe 3.0 Base §4.3.4.5 (oeil stresse du recepteur, 8 GT/s) : EH >=
+     # 25 mV et EW >= 0,3 UI a 1e-12, DERRIERE le CTLE et le DFE de
+     # reference. Recoupements 2026-10 : CTLE a deux poles fixes 2 et 8 GHz
+     # (fiche Tektronix des CTLE PCIe3/PCIe4), gain continu -6 a -12 dB par
+     # pas de 1 dB (Pericom AN359, TI DS80PCI800), DFE a une prise bornee a
+     # ±30 mV (brevet US 9 191 245, qui cite la norme), EH 25 mV / EW 0,3 UI
+     # (forum allaboutcircuits -- source secondaire, la plus faible des
+     # quatre ; la meme paire 15 mV / 0,3 UI se lit pour Gen 5 chez
+     # Tektronix).
+     "source": "PCIe 3.0 Base §4.3.4.5 : EH ≥ 25 mV, EW ≥ 0,3 UI à 10⁻¹² "
+               "après CTLE et DFE de référence. Pôles 2 et 8 GHz : fiche "
+               "Tektronix des CTLE PCIe3 ; gain continu −6 à −12 dB : "
+               "Pericom AN359, TI DS80PCI800 ; DFE ±30 mV : brevet "
+               "US 9 191 245 ; EH/EW : source secondaire (forum), cohérente "
+               "avec 15 mV / 0,3 UI cités pour Gen 5 par Tektronix.",
      "note": "Le gain continu du CTLE est choisi parmi les sept réglages pour "
              "ouvrir l'œil au mieux. Émetteur : préréglage P7 (pré-accentuation "
              "−0,1, désaccentuation −0,2).",
@@ -259,9 +293,17 @@ GABARITS = [
      "debit": 3.4e9, "mode": "diff",
      "lieu": "Au connecteur du récepteur (TP2).",
      "fiabilite": "a_verifier",
-     "source": "HDMI 1.4, masque du récepteur : 150 mV, 0,6 UI. Seule la "
-               "hauteur de 150 mV apparaît dans une note ST (AN5121), pour "
-               "une autre gamme de débit.",
+     # VERIFIE EN 2026-10 SANS SUCCES. Le masque du puits a TP2 est la
+     # figure 4-32 de HDMI 1.4 (§4.2.6), qu'aucune source publique ne
+     # reproduit. Ce qu'on trouve (ST AN5121, TI TMDS181) est le masque de
+     # la SOURCE au bout du cable de reference (TP2_EQ) de HDMI 2.0 : 0,6 UI
+     # et 335 mV a 3,4 Gb/s, 0,4 UI et 150 mV a 6 Gb/s. Ce n'est pas la meme
+     # exigence : on ne le recopie pas, et le gabarit reste « a verifier ».
+     "source": "HDMI 1.4 §4.2.6, figure 4-32 (masque du puits à TP2) : "
+               "150 mV, 0,6 UI, NON recoupés. Les seules valeurs publiques "
+               "(ST AN5121, TI TMDS181 : 0,6 UI / 335 mV à 3,4 Gb/s, "
+               "0,4 UI / 150 mV à 6 Gb/s) sont celles de la SOURCE au bout "
+               "du câble de référence en HDMI 2.0 — une autre exigence.",
      "note": "L'émetteur TMDS est une source de courant (10 mA) sans "
              "terminaison de départ : les réflexions qui reviennent ne sont "
              "pas absorbées côté émetteur.",
@@ -275,8 +317,16 @@ GABARITS = [
      "debit": 400e6, "mode": "diff",
      "lieu": "Aux broches du récepteur.",
      "fiabilite": "derive",
-     "source": "Seuil du récepteur ±100 mV (TIA/EIA-644). Largeur 0,5 UI "
-               "supposée : à remplacer par la fenêtre du récepteur réel.",
+     # LES VALEURS DU COMPOSANT, PAS SEULEMENT DE LA NORME : les recepteurs
+     # du commerce (SN65LVDS32, DS90LV028A) garantissent leur basculement a
+     # ±100 mV -- c'est le pire cas qu'on retient --, et leur fiche ne donne
+     # pas de fenetre setup/hold propre : elle appartient au deserialiseur
+     # qui suit. D'ou 0,5 UI, a remplacer par la sienne.
+     "source": "Seuil du récepteur ±100 mV (TIA/EIA-644), garanti tel quel "
+               "par les récepteurs courants (SN65LVDS32, DS90LV028A : "
+               "VIT ±100 mV au plus). Largeur 0,5 UI supposée : la fenêtre "
+               "est celle du désérialiseur qui suit, à reprendre de sa "
+               "fiche.",
      "note": "Driver à courant de 3,5 mA, terminaison 100 Ω au récepteur.",
      "masque": {"type": "hexagone", "largeur_ui": 0.50, "plat_ui": 0.20,
                 "hauteur_v": 0.200},
@@ -288,9 +338,12 @@ GABARITS = [
      "debit": 1e9, "mode": "diff",
      "lieu": "Aux broches du récepteur.",
      "fiabilite": "derive",
-     "source": "Seuils ±70 mV (VIDTH / VIDTL) : fiches Microchip et Intel "
-               "AN 754. Fenêtre setup + hold de 0,3 UI (0,15 + 0,15) non "
-               "recoupée.",
+     "source": "Seuils ±70 mV (VIDTH / VIDTL, D-PHY v1.2) : fiches "
+               "Microchip SAM9X7, Intel AN 754, TI TDA2 — c'est le pire cas "
+               "retenu ; un récepteur réel peut faire mieux (Efinix T55, "
+               "D-PHY v1.1 : VIDTH 40 mV au plus). Fenêtre setup + hold de "
+               "0,3 UI (TSETUP[RX] 0,15 + THOLD[RX] 0,15 UI, tableau des "
+               "temps données-horloge de D-PHY) non recoupée.",
      "note": "Émetteur HS terminé 50 Ω par fil, ±200 mV différentiel sur "
              "100 Ω.",
      "masque": {"type": "hexagone", "largeur_ui": 0.30, "plat_ui": 0.30,
@@ -303,11 +356,23 @@ GABARITS = [
      "nom": "SATA Gen 1 (1,5 Gb/s) — récepteur",
      "debit": 1.5e9, "mode": "diff",
      "lieu": "Aux broches du récepteur.",
-     "fiabilite": "a_verifier",
-     "source": "SATA : 325 mVppd minimum en Gen 1i ; largeur 0,4 UI "
-               "(TJ 0,6 UI). Non recoupé.",
+     "fiabilite": "corrobore",
+     "ber": 1e-12,
+     # SATA rev. 3.x §7.2 (recepteur, iSATA) : amplitude minimale 325 mVppd
+     # en Gen 1i. LARGEUR = 1 - TJ du signal de tolerance a la gigue du
+     # recepteur (§7.4.12/7.4.13). Recoupe : procedure de test SATA-IO
+     # (SyntheSys/BERTScope, « SATA_PHY_MOI ») -- « smallest bit of the lone
+     # bit pattern » 325 mV, gigue totale 0,51 UI. Avant 2026-10 : largeur
+     # 0,4 UI pour les trois et un plateau de 0,1 UI, ni l'une ni l'autre
+     # recoupes ; le losange (plateau nul) ne suppose rien de plus que les
+     # deux exigences.
+     "source": "SATA rev. 3.x : 325 mVppd minimum (Gen 1i) ; largeur "
+               "1 − TJ = 0,49 UI d'après la tolérance à la gigue du "
+               "récepteur. Recoupé dans la procédure de test SATA-IO "
+               "(SyntheSys/BERTScope) : bit isolé ≥ 325 mV, gigue totale "
+               "0,51 UI.",
      "note": "",
-     "masque": {"type": "hexagone", "largeur_ui": 0.40, "plat_ui": 0.10,
+     "masque": {"type": "hexagone", "largeur_ui": 0.49, "plat_ui": 0.0,
                 "hauteur_v": 0.325},
      "emetteur": {"v_haut": 0.5, "v_bas": -0.5, "r_source": 100.0,
                   "tr": 100e-12},
@@ -316,11 +381,23 @@ GABARITS = [
      "nom": "SATA Gen 2 (3 Gb/s) — récepteur",
      "debit": 3e9, "mode": "diff",
      "lieu": "Aux broches du récepteur.",
-     "fiabilite": "a_verifier",
-     "source": "SATA : 275 mVppd minimum en Gen 2i ; largeur 0,4 UI. Non "
-               "recoupé.",
+     "fiabilite": "corrobore",
+     "ber": 1e-12,
+     # SATA rev. 3.x §7.2 (recepteur, iSATA) : amplitude minimale 275 mVppd
+     # en Gen 2i. LARGEUR = 1 - TJ du signal de tolerance a la gigue du
+     # recepteur (§7.4.12/7.4.13). Recoupe : procedure de test SATA-IO
+     # (SyntheSys/BERTScope, « SATA_PHY_MOI ») -- « smallest bit of the lone
+     # bit pattern » 275 mV, gigue totale 0,57 UI. Avant 2026-10 : largeur
+     # 0,4 UI pour les trois et un plateau de 0,1 UI, ni l'une ni l'autre
+     # recoupes ; le losange (plateau nul) ne suppose rien de plus que les
+     # deux exigences.
+     "source": "SATA rev. 3.x : 275 mVppd minimum (Gen 2i) ; largeur "
+               "1 − TJ = 0,43 UI d'après la tolérance à la gigue du "
+               "récepteur. Recoupé dans la procédure de test SATA-IO "
+               "(SyntheSys/BERTScope) : bit isolé ≥ 275 mV, gigue totale "
+               "0,57 UI.",
      "note": "",
-     "masque": {"type": "hexagone", "largeur_ui": 0.40, "plat_ui": 0.10,
+     "masque": {"type": "hexagone", "largeur_ui": 0.43, "plat_ui": 0.0,
                 "hauteur_v": 0.275},
      "emetteur": {"v_haut": 0.5, "v_bas": -0.5, "r_source": 100.0,
                   "tr": 67e-12},
@@ -329,11 +406,25 @@ GABARITS = [
      "nom": "SATA Gen 3 (6 Gb/s) — récepteur",
      "debit": 6e9, "mode": "diff",
      "lieu": "Aux broches du récepteur.",
-     "fiabilite": "a_verifier",
-     "source": "SATA : 240 mVppd minimum en Gen 3 ; largeur 0,4 UI. Non "
-               "recoupé.",
+     "fiabilite": "corrobore",
+     "ber": 1e-12,
+     # SATA rev. 3.x §7.2 (recepteur, iSATA) : amplitude minimale 240 mVppd
+     # en Gen 3i. LARGEUR = 1 - TJ du signal de tolerance a la gigue du
+     # recepteur (§7.4.12/7.4.13). Recoupe : procedure de test SATA-IO
+     # (SyntheSys/BERTScope, « SATA_PHY_MOI ») -- « smallest bit of the lone
+     # bit pattern » 240 mV, gigue totale 0,57 UI. Avant 2026-10 : largeur
+     # 0,4 UI pour les trois et un plateau de 0,1 UI, ni l'une ni l'autre
+     # recoupes ; le losange (plateau nul) ne suppose rien de plus que les
+     # deux exigences.
+     # Un ECN propose (SATA-IO, ECN 050) d'abaisser ce minimum a 200 mV du
+     # cote du peripherique : son adoption n'a pas pu etre confirmee.
+     "source": "SATA rev. 3.x : 240 mVppd minimum (Gen 3i) ; largeur "
+               "1 − TJ = 0,43 UI d'après la tolérance à la gigue du "
+               "récepteur. Recoupé dans la procédure de test SATA-IO "
+               "(SyntheSys/BERTScope) : bit isolé ≥ 240 mV, gigue totale "
+               "0,57 UI.",
      "note": "",
-     "masque": {"type": "hexagone", "largeur_ui": 0.40, "plat_ui": 0.10,
+     "masque": {"type": "hexagone", "largeur_ui": 0.43, "plat_ui": 0.0,
                 "hauteur_v": 0.240},
      "emetteur": {"v_haut": 0.5, "v_bas": -0.5, "r_source": 100.0,
                   "tr": 40e-12},
