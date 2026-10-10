@@ -651,7 +651,9 @@ aucune trace n'a le droit d'entrer.
 dispersion, pertes, coudes, vias, moignons), mais sur une grille régulière de
 plusieurs centaines à quelques milliers de fréquences (`freqs_imposees`). En
 mode différentiel, c'est la cascade du mode impair de la paire
-(`s_diff["abcd_dd"]`), ses vias et ses coudes compris (voir plus bas).
+(`s_diff["abcd_dd"]`), ses vias et ses coudes compris (voir plus bas) — et,
+pour une paire **dissymétrique**, la cascade à quatre accès brin par brin
+(`s_diff["abcd_brins"]`, voir « La paire dissymétrique, brin par brin »).
 `python/oeil.py` (2.0.0) n'ajoute que ce qui l'entoure :
 
 1. **l'émetteur**, générateur de Thévenin linéaire (ou tampon IBIS, voir plus
@@ -793,8 +795,8 @@ tenues : courant positif quand il **entre** par la broche, tensions de
 `[Pullup]` et `[POWER Clamp]` relatives à leur référence (V_ref − V_broche),
 suffixes T G M k m u n p f (M = méga, m = milli), « NA » renvoyant à typ.
 Depuis `ibis` 1.1.0, le boîtier et les broches sont lus aussi (voir plus
-bas) ; ce qui reste ignoré (sous-modèles, `[Model Spec]`, boîtiers décrits
-par sections) est **dit** dans le résultat.
+bas), et depuis la 1.2.0 les boîtiers décrits par sections ; ce qui reste
+ignoré (sous-modèles, `[Model Spec]`) est **dit** dans le résultat.
 
 **Le tampon émetteur, dans le temps** : I_broche = Ku(t)·I_pu(V) + Kd(t)·I_pd(V)
 + I_pc(V) + I_gc(V) + C_comp·dV/dt. Les commandes Ku, Kd viennent des formes
@@ -833,12 +835,15 @@ suit le coin du tampon) est le boîtier moyen ; `[Pin]` donne, broche par
 broche, le signal, le modèle et R_pin/L_pin/C_pin, qui **priment** valeur par
 valeur (« NA » renvoie à `[Package]`) ; un `[Package Model]` qui renvoie à un
 `[Define Package Model]` du même fichier prime sur les deux — on en prend la
-**diagonale** (matrices pleine, en bande ou creuse) ; les mutuelles sont lues
-pour être **dites** (le plus fort couplage de la broche, k_L et k_C), pas
-comptées ; un boîtier décrit par sections (`Len=`) n'est pas lu, et
-`[Pin]`/`[Package]` le remplacent. `[Model Selector]` : une broche qui
-désigne un sélecteur prend le modèle choisi s'il en fait partie, le premier
-sinon. Les broches POWER, GND et NC sont refusées.
+**diagonale** (matrices pleine, en bande ou creuse). Ses mutuelles **entre
+les deux broches d'une paire de `[Diff Pin]`** sont comptées depuis
+`oeil` 2.2.0 (voir plus bas) ; les autres sont **dites** (le plus fort
+couplage de la broche hors de sa paire, k_L et k_C), pas comptées. Un
+boîtier décrit **par sections** (`[Number Of Sections]`, `Len=` dans
+`[Pin Numbers]`) est lu depuis `ibis` 1.2.0 (voir plus bas).
+`[Model Selector]` : une broche qui désigne un sélecteur prend le modèle
+choisi s'il en fait partie, le premier sinon. Les broches POWER, GND et NC
+sont refusées.
 
 **Où il se pose.** Topologie des simulateurs IBIS : C_comp au die, puis
 R_pkg et L_pkg en série, puis C_pkg à la broche. Le boîtier est **linéaire** :
@@ -854,7 +859,37 @@ cascade : l'œil est celui d'avant, au bit près. `boitier: false` le retire.
 
 **Dans l'interface**, la liste des `[Pin]` (et, en différentiel, celle des
 `[Diff Pin]`) s'ajoute au choix du modèle ; choisir une broche choisit son
-modèle et son boîtier.
+modèle et son boîtier. En différentiel, deux menus de plus par bout : le
+modèle et le coin du **brin inverse** (`modele_n`, `coin_n` ; « = P » ne part
+pas, et le serveur prend ceux du brin direct — ou, avec une paire de
+`[Diff Pin]`, le modèle de la broche inverse, qu'un modèle choisi ne
+remplace que dans son `[Model Selector]`).
+
+**Les sections (`ibis` 1.2.0).** Chaque broche de `[Pin Numbers]` peut porter
+une suite de sections, rangées **de la broche vers le die** :
+`Len = 0 L=1.2n /` est **localisée** (valeurs totales : C et G à la broche,
+puis R et L en série — la topologie de `[Package]`, qu'une section unique
+rejoint exactement) ; `Len = 1.2 L=2.3n C=4.3p /` est une **ligne** (R, L,
+G, C par unité de longueur, l'unité étant celle de Len) : avec
+z·l = (R + jωL)·Len, y·l = (G + jωC)·Len et θ = √(z·l·y·l),
+A = D = ch θ, B = z·l·sh θ/θ, C = y·l·sh θ/θ — ce qui reste juste quand C ou
+L est nul. `Fork … Endfork` est une dérivation : la branche, ouverte au
+bout, posée en parallèle (Y = C_b/A_b). Vue du die (émetteur), la même
+cascade retournée (A et D échangés). Les totaux (R, L, C) sont rendus pour
+être lus ; une broche par sections n'a pas de mutuelle lue.
+
+**Les mutuelles de la paire (`oeil` 2.2.0).** Entre une broche et son inverse
+de `[Diff Pin]`, les termes hors diagonale du `[Package Model]` sont
+**comptés** : `ibis.mutuelle_paire` rend L_m, R_m et la capacité de couplage
+C_m (valeur absolue : la norme écrit la matrice de Maxwell, terme négatif ;
+des fichiers l'écrivent positif). Brin par brin, le boîtier de la paire est
+un quadripôle couplé (`ibis.abcd_boitier_paire`) : impédance série
+[[R_p + jωL_p, R_m + jωL_m], [R_m + jωL_m, R_n + jωL_n]], admittance à la
+broche jω·[[C_p, −C_m], [−C_m, C_n]] (diagonale de Maxwell). Dans la moyenne
+du mode impair (paire symétrique, sans les deux brins), L − L_m, R − R_m et
+C + C_m. Les mutuelles **positives** de L baissent l'inductance vue en mode
+impair : le front différentiel se raidit (banc : 6 nH couplés à 3 nH, le
+10-90 % passe de 133 à 98 ps).
 
 #### La paire de tampons : deux brins, et le mode commun
 
@@ -868,9 +903,10 @@ celle du mode commun, **reconstruite exactement des S_cc** que `s_diff` rend
 pas modifié. On les remet par brin (V = T_V·V_modes, I = T_I·I_modes : quatre
 accès, ondes de tension sur R₀ = Z_diff/2 par brin), et ce qui est propre à
 un brin s'y pose tel quel : boîtier de chaque broche, C_comp de chaque
-entrée, surlongueur d'un brin (le `delta_l_mm` de la paire, posé comme une
-ligne seule sur le brin inverse — le dessin ne dit pas lequel est le plus
-long). La terminaison du récepteur est la résistance différentielle et, au
+entrée. Une paire **dissymétrique** (largeurs, surlongueur, vias d'un seul
+brin…) n'est plus remise depuis ses deux modes : c'est la cascade à quatre
+accès de `simulation_em` qui sert (voir ci-dessous), et la référence
+symétrique est la paire symétrisée. La terminaison du récepteur est la résistance différentielle et, au
 besoin, une impédance de mode commun (`r_charge_mc`, prise médiane ; 0 =
 flottante). Le pas de temps est celui de la ligne seule, avec quatre ondes
 entrantes : les deux bouts se résolvent à tour de rôle (deux Newton 2×2 en
@@ -909,6 +945,71 @@ mutuelle entre les deux fûts est comptée** (voir « La mutuelle des fûts de l
 paire » plus bas) : L − M en mode impair, L + M en mode commun. `s_diff` dit
 combien de vias et de coudes il porte, et l'œil le répète.
 
+#### La paire dissymétrique, brin par brin (`simulation_em` 5.1.0, `oeil` 2.2.0)
+
+**Les modes pair et impair ne sont les modes propres que d'une paire
+symétrique.** Deux largeurs différentes, une masse coplanaire d'un seul côté,
+un via sur un seul brin, un brin plus long que l'autre : le mode impair ne
+reste pas impair en chemin, une part passe en mode commun, et deux cascades
+de modes indépendantes ne savent pas le dire. Jusqu'à la 5.0.x, la section
+moyennait les deux diagonales (`modes_paire`) et Scd21 n'était qu'une
+estimation d'après la surlongueur, posée sur le brin N d'office.
+
+**La paire est donc mise en cascade brin par brin** — quatre accès (1p, 1n,
+2p, 2n), ABCD 4 × 4 en blocs [[A, B], [C, D]] sur (p, n) :
+
+- un **tronçon couplé** : la ligne à deux conducteurs de [L] et [C] 2 × 2 —
+  la section de la carte de chaleur, résolue par `ligne_mom.solve_multiline`
+  et rangée (piste, partenaire) dans `couplage.chaleur[i].matrices_paire` —
+  décomposée en ses deux modes propres par [L]^½ [C] [L]^½ (symétrique : ses
+  vecteurs propres restent orthogonaux quand les vitesses se confondent ; en
+  triplaque, milieu homogène, les vecteurs propres de [L]). Tv les tensions
+  modales (mode « impair » normé à V_p − V_n = 1, « pair » à
+  (V_p + V_n)/2 = 1), Ti = (Tvᵀ)⁻¹ ; A = Tv·ch·Tv⁻¹, B = Tv·Zm·sh·Ti⁻¹,
+  C = Ti·sh/Zm·Tv⁻¹, D = Ti·ch·Ti⁻¹. Les pertes, mode par mode, à
+  l'impédance par brin du mode et à la largeur moyenne des deux brins ; le
+  diélectrique causal à remplissage constant ;
+- un **tronçon que la partenaire ne longe pas** : la piste seule, et la
+  partenaire seule — sur **sa** couche et à sa largeur quand le document dit
+  qu'elle reste sur une seule couche ;
+- un **via** : sur les deux brins (mutuelle des fûts comprise) quand la
+  partenaire a du cuivre sur les deux couches qu'il relie, ou un via dessiné
+  à moins de 3 mm ; sinon **sur le brin P seul**, traversée de cavité
+  comprise. Les vias de la partenaire sans vis-à-vis sont comptés, pas
+  modélisés (il faudrait sa section de part et d'autre) ;
+- un **coude** : ceux de la partenaire, quand ses bouts se suivent, se
+  rangent au coude de la piste le plus proche (3 mm) — sur les deux brins —
+  ou, sans vis-à-vis, au raccord le plus proche, sur elle seule ; un coude
+  de la piste sans vis-à-vis reste sur P ;
+- la **surlongueur**, sur le brin **le plus long** — celui que les longueurs
+  désignent (`s_diff.brin_long`, son net) —, comme une ligne seule, côté
+  récepteur (le dessin ne dit pas où elle se loge).
+
+Sdd, Scc, **Scd et Sdc** sortent des S 4 × 4 (R₀ = Z_ref,diff/2 par brin) par
+la matrice des modes mixtes, Sdd sur Z_ref,diff, Scc sur Z_ref,diff/4 comme
+avant ; `s_diff` dit `quatre_acces`, `dissymetries`, `brin_long`,
+`vias_brins`, et rend `s_dc` ; `garder_abcd` ajoute `abcd_brins` (et
+`abcd_cc`, la paire symétrisée). **Une paire symétrique reste au bit près ce
+qu'elle était** : sans dissymétrie (diagonales de [L] et [C] à 10⁻³ près,
+surlongueur sous 1 µm, vias et coudes sur les deux brins), la cascade des
+deux modes sert, inchangée ; forcée à quatre accès (`quatre_acces=True`), elle
+la rejoint à 10⁻⁹ près — c'est le cas de non-régression du banc.
+
+**Dans l'œil.** En linéaire, le transfert différentiel de la paire par brin
+(`oeil.transfert_paire`) : générateur de Thévenin partagé (+V/2 et −V/2,
+R_s/2 de chaque côté), (A + B·Y + Z_s(C + D·Y))·V₂ = E, H = V₂p − V₂n — pour
+une paire symétrique, `transfert` sur le mode impair, exactement ; boîtiers
+IBIS posés brin par brin, mutuelles comprises. Avec des tampons IBIS, les
+deux brins sont simulés sur la paire par brin, et le mode commun dit les
+dissymétries de la paire (« paire : … ») ; la référence symétrique est la
+paire symétrisée. Le résultat porte `paire_brins` (dissymétries, brin le
+plus long, surlongueur, vias).
+
+**Les limites.** Les deux brins couplés ont la longueur de la piste tronçon
+par tronçon (la surlongueur n'est qu'au bout) ; un brin sur une autre couche
+que la piste sur un tronçon couplé n'est pas couplé ; le coude de la
+partenaire prend la hauteur et la permittivité de la piste.
+
 #### IBIS-AMI : le .ami lu, pas exécuté
 
 Un `[Algorithmic Model]` renvoie à une bibliothèque binaire du fabricant
@@ -933,14 +1034,13 @@ AMI sur la réponse du canal analogique. L'adaptation et la récupération
 d'horloge du modèle ne sont pas reproduites.
 
 **Hors du modèle**, et dit dans chaque résultat : condensateurs de liaison
-(couplage AC), mutuelles d'un `[Package Model]` (dites, pas comptées) et
-boîtiers par sections, exécution des modèles AMI, géométrie dissymétrique
-de la paire (les deux brins restent de même section dans la cascade).
+(couplage AC), mutuelles d'un `[Package Model]` hors de la paire (dites, pas
+comptées) et mutuelles entre sections, exécution des modèles AMI.
 L'Ethernet cuivre (MLT-3, PAM-5) n'est pas binaire et n'a pas de gabarit.
 L'I²C (drain ouvert, front montant RC) n'a pas de gabarit non plus — mais son
 tampon IBIS se simule maintenant.
 
-**Étalons** ([python/test/banc-oeil.py](../python/test/banc-oeil.py), 45 cas) :
+**Étalons** ([python/test/banc-oeil.py](../python/test/banc-oeil.py), 50 cas) :
 la ligne adaptée sans pertes rend un œil parfait (demi-excursion, 1 UI, retard
 de la ligne) ; une ligne ouverte attaquée par 30 Ω rend l'œil pire cas du
 diagramme en treillis à 0,3 % près ; avec 10 Ω, l'œil fermé se dit fermé ; le
@@ -969,7 +1069,23 @@ entre les deux brins du récepteur à 2 % près ; une paire symétrique n'a pas
 de mode commun (< 1 µV), décalée de 30 ps elle en a un de
 V_cc·erf(Δ/(2√2·σ)) à 2 % près ; une paire dessinée passe tout le chemin
 (S_cc → mode commun) ; un `.ami` d'exemple se lit et propose FFE, DFE, CTLE
-et gigue.
+et gigue. **2.2.0** : une paire symétrique (vias et mutuelle des fûts
+compris) forcée à quatre accès rend Sdd et Scc à 10⁻⁹ près, Scd et Sdc nuls,
+et la matrice par brin des deux modes ; ses modes propres sont Z_diff,
+Z_commune et les deux ε_eff de `modes_paire` ; son transfert est celui du
+mode impair. Une paire couplée faiblement (1,2 mm) : un brin plus long de
+3 mm rend |Scd21| = |S21|·|sin(π·f·Δτ)| à 5 % près, et le brin le plus long
+est nommé dans les deux sens ; deux largeurs (0,2 / 0,4 mm),
+|Scd21| = |S21_P − S21_N|/2 à 15 % près (brins simulés seuls) ; deux vias
+sur un seul brin, la même à 3 % près. L'œil d'une paire à 4 mm de
+surlongueur se ferme devant celui de la paire égale ; brin par brin, 10 mm
+de plus font un mode commun et un œil brut plus fermé que celui de la paire
+symétrisée. Une mutuelle de boîtier de 3 nH sur 6 nH monte le Sdd21 du
+boîtier et raidit le front différentiel de plus de 10 % ; sans mutuelle, le
+boîtier couplé est exactement les deux boîtiers. Des sections se lisent
+(totaux, dérivation) ; une section de longueur ℓ rejoint le modèle localisé
+de mêmes totaux comme ℓ ; une section adaptée de 50 ps retarde le front de
+50 ps à 3 % près sans l'adoucir, là où le modèle localisé le ralentit.
 
 ### RF — le S₂₁ d'un réseau entre deux ports
 

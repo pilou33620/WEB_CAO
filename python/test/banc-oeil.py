@@ -1376,6 +1376,353 @@ def un_fichier_ami_se_lit_et_propose_l_egaliseur():
             raise AssertionError("AMI faux accepte : %r" % faux)
 
 
+# =============================================================================
+# 2.2.0 -- la paire par brin, les mutuelles et les sections du boitier
+# =============================================================================
+
+SIX = [_cu("TOP", "signal"), _di("PP", 0.200, 4.20), _cu("GND", "plane"),
+       _di("C1", 0.200, 4.50), _cu("IN1", "signal"),
+       _di("C2", 2.200, 4.50), _cu("PWR", "plane"),
+       _di("PP2", 0.200, 4.20), _cu("BOT", "signal")]
+VIA_TRAVERSANT = {"drill_diameter": 0.3, "pad_diameter": 0.6,
+                  "layer_from": 0, "layer_to": 8}
+
+
+def _brin(x1, x2, y, net, largeur=0.2, couche=0, via=None):
+    o = _piste(x1, y, x2, y, net, largeur)
+    o["layer"] = couche
+    if via:
+        o["via"] = via
+    return o
+
+
+def _plats(x):
+    return np.array([[complex(*v) for v in m] for m in x])
+
+
+def _cascade_et_forcee(d, f):
+    """La simulation de `d` -- et sa cascade differentielle refaite, dans le
+    meme appel, a quatre acces d'office."""
+    orig = se._cascade_differentielle
+    forcee = {}
+
+    def double(*a, **k):
+        forcee["s_diff"] = orig(*a, **dict(k, quatre_acces=True))
+        return orig(*a, **k)
+    se._cascade_differentielle = double
+    try:
+        res = se.simuler(d, garder_abcd=True, freqs_imposees=f)
+    finally:
+        se._cascade_differentielle = orig
+    return res, forcee["s_diff"]
+
+
+def _s21_seul(objets, f, pile=None):
+    """S21 (50 ohms) d'un brin simule SEUL : le chiffre de l'estimation."""
+    d = _doc(objets, {})
+    d.pop("oeil")
+    if pile:
+        d["stackup"]["layers"] = pile
+    return _plats(se.simuler(d, garder_abcd=True, freqs_imposees=f)["s"])[:, 2]
+
+
+def une_paire_symetrique_rejoint_la_cascade_des_deux_modes():
+    """LE CAS DE NON-REGRESSION. Une paire symetrique qui plonge par deux
+    vias (mutuelle des futs comprise) : la cascade a quatre acces, forcee,
+    rend les Sdd et Scc de la cascade des deux modes a 1e-9 pres, un Scd et
+    un Sdc nuls, et la matrice par brin que `ibis.abcd_brins` remet des
+    deux modes. Par defaut, la paire n'est pas mise a quatre acces. Les
+    modes propres d'une section symetrique sont exactement pair et impair :
+    Z_diff, Z_commune et les deux eps_eff de `modes_paire`. Et le transfert
+    de la paire par brin est celui du mode impair."""
+    import ligne_mom
+    objets = [_brin(0, 20, 0, "P", 0.2, 0), _brin(20, 40, 0, "P", 0.2, 4,
+                                                  VIA_TRAVERSANT)]
+    vois = [_brin(0, 20, 0.35, "N", 0.2, 0), _brin(20, 40, 0.35, "N", 0.2, 4,
+                                                   VIA_TRAVERSANT)]
+    d = _doc(objets, {}, vois, [("P", "N")])
+    d["stackup"]["layers"] = SIX
+    f = np.linspace(1e8, 2e10, 12)
+    res, frc = _cascade_et_forcee(d, f)
+    sd = res["s_diff"]
+    assert not sd["quatre_acces"] and frc["quatre_acces"], sd["dissymetries"]
+    assert sd["vias"] == 1 and frc["vias_brins"] == {"deux": 1, "p": 0}
+    for cle in ("s_dd", "s_cc"):
+        e = np.max(np.abs(_plats(sd[cle]) - _plats(frc[cle])))
+        assert e < 1e-9, (cle, e)
+    assert np.max(np.abs(_plats(frc["s_cd"]))) < 1e-9
+    assert np.max(np.abs(_plats(frc["s_dc"]))) < 1e-9
+    m4 = ibis.abcd_brins(np.array(sd["abcd_dd"]), np.array(sd["abcd_cc"]))
+    e = np.max(np.abs(m4 - np.array(frc["abcd_brins"]))) / np.max(np.abs(m4))
+    assert e < 1e-9, e
+    # les modes propres d'une section symetrique
+    lm = [[4.1e-7, 0.9e-7], [0.9e-7, 4.1e-7]]
+    cm = [[1.2e-10, -0.25e-10], [-0.25e-10, 1.2e-10]]
+    md = se._modes_brins(lm, cm)
+    mp = ligne_mom.modes_paire(cm, lm)
+    proche(md["zm"][0], mp["z_diff"], 1e-9, "Z_diff modale")
+    proche(md["zm"][1], mp["z_commune"], 1e-9, "Z_commune modale")
+    proche(md["eps"][0], mp["eps_eff_impair"], 1e-9, "eps impair")
+    proche(md["eps"][1], mp["eps_eff_pair"], 1e-9, "eps pair")
+    g = [complex(0.3, 40.0), complex(0.2, 36.0)]
+    a = se._abcd_ligne_couplee(md, g, md["zm"], 0.02)
+    m_d = np.array([[np.cosh(g[0] * 0.02), md["zm"][0] * np.sinh(g[0] * 0.02)],
+                    [np.sinh(g[0] * 0.02) / md["zm"][0], np.cosh(g[0] * 0.02)]])
+    m_c = np.array([[np.cosh(g[1] * 0.02), md["zm"][1] * np.sinh(g[1] * 0.02)],
+                    [np.sinh(g[1] * 0.02) / md["zm"][1], np.cosh(g[1] * 0.02)]])
+    b = se._brins_des_modes(m_d, m_c)
+    assert np.max(np.abs(a - b)) < 1e-9 * np.max(np.abs(b))
+    # le transfert de la paire par brin : celui du mode impair
+    p = oeil._params({"debit": 5e9, "r_source": 100.0, "r_charge": 100.0,
+                      "c_charge": 0.3e-12, "mode": "diff"}, None)
+    h1, h01 = oeil.transfert(np.array(sd["abcd_dd"]), f, 100.0, 100.0,
+                             0.3e-12)
+    h2, h02, _ = oeil.transfert_paire(None, f, m4, p)
+    assert np.max(np.abs(h1 - h2)) < 1e-9, np.max(np.abs(h1 - h2))
+    proche(h02, h01, 1e-3, "transfert au continu")
+
+
+def une_paire_dissymetrique_convertit_ses_modes():
+    """Trois dissymetries, chacune contre une estimation qu'on fait a la
+    main avec deux brins SEULS (couplage faible : 1,2 mm entre les deux) :
+      · un brin plus long de 3 mm : |Scd21| = |S21| |sin(pi f dtau)| -- et
+        le brin le plus long est NOMME, dans un sens comme dans l'autre ;
+      · deux largeurs (0,2 / 0,4 mm) : |Scd21| = |S21_P - S21_N| / 2 ;
+      · un brin qui plonge par deux vias quand l'autre reste sur TOP : la
+        meme, chaque brin simule seul, vias compris.
+    Le Scd n'est plus nul, et il est ce que les deux brins seuls disent."""
+    f = np.linspace(1e8, 2e10, 12)
+    ecart = 1.2
+    # -- la surlongueur, sur le brin le plus long --
+    p_ = [_brin(0, 30, 0, "P")]
+    res = se.simuler(_doc(p_, {}, [_brin(0, 33, ecart, "N")], [("P", "N")]),
+                     garder_abcd=True, freqs_imposees=f)
+    sd = res["s_diff"]
+    assert sd["quatre_acces"] and sd["brin_long"] == "N", sd["brin_long"]
+    assert sd["brin_long_role"] == "n"
+    t_p = _s21_seul(p_, f)
+    dtau = 3e-3 * math.sqrt(res["segments"][0]["eps_eff"]) / oeil.C_0
+    est = np.abs(t_p) * np.abs(np.sin(math.pi * f * dtau))
+    vu = np.abs(_plats(sd["s_cd"])[:, 2])
+    for v, e in zip(vu, est):
+        if e > 0.05:
+            proche(v, e, 0.05, "Scd21 d'une surlongueur")
+    autre = se.simuler(_doc([_brin(0, 33, 0, "P")], {},
+                            [_brin(0, 30, ecart, "N")], [("P", "N")]),
+                       garder_abcd=True, freqs_imposees=f)["s_diff"]
+    assert autre["brin_long"] == "P" and autre["brin_long_role"] == "p"
+    # -- deux largeurs --
+    p_, n_ = [_brin(0, 30, 0, "P", 0.2)], [_brin(0, 30, ecart, "N", 0.4)]
+    sd = se.simuler(_doc(p_, {}, n_, [("P", "N")]), garder_abcd=True,
+                    freqs_imposees=f)["s_diff"]
+    assert sd["quatre_acces"] and sd["brin_long"] is None
+    assert any("largeurs" in x for x in sd["dissymetries"])
+    est = np.abs(_s21_seul(p_, f) - _s21_seul(n_, f)) / 2.0
+    vu = np.abs(_plats(sd["s_cd"])[:, 2])
+    for v, e in zip(vu, est):
+        if e > 0.01:
+            proche(v, e, 0.15, "Scd21 de deux largeurs")
+    assert np.max(vu) > 0.05
+    # -- les vias sur un seul brin --
+    p_ = [_brin(0, 10, 0, "P", 0.2, 0), _brin(10, 11, 0, "P", 0.2, 4,
+                                              VIA_TRAVERSANT),
+          _brin(11, 21, 0, "P", 0.2, 0, VIA_TRAVERSANT)]
+    n_ = [_brin(0, 21, ecart, "N", 0.2, 0)]
+    d = _doc(p_, {}, n_, [("P", "N")])
+    d["stackup"]["layers"] = SIX
+    sd = se.simuler(d, garder_abcd=True, freqs_imposees=f)["s_diff"]
+    assert sd["vias_brins"] == {"deux": 0, "p": 2}, sd["vias_brins"]
+    assert any("seul" in x for x in sd["dissymetries"]), sd["dissymetries"]
+    est = np.abs(_s21_seul(p_, f, SIX) - _s21_seul(n_, f, SIX)) / 2.0
+    vu = np.abs(_plats(sd["s_cd"])[:, 2])
+    for v, e in zip(vu, est):
+        if e > 0.01:
+            proche(v, e, 0.03, "Scd21 des vias d'un seul brin")
+    assert np.max(vu) > 0.2
+
+
+def l_oeil_d_une_paire_dissymetrique():
+    """L'oeil d'une paire dont un brin est plus long de 4 mm : la cascade a
+    quatre acces sert, le brin le plus long est nomme dans le resultat et
+    l'oeil differentiel se ferme devant celui de la meme paire a brins
+    egaux. Brin par brin, tampons IBIS et 10 mm de plus : le mode commun
+    dit la surlongueur, et l'oeil brut se ferme devant celui de la paire
+    symetrisee."""
+    o = {"debit": 10e9, "tr": 20e-12, "v_haut": 1.0, "v_bas": -1.0,
+         "r_source": 100.0, "r_charge": 100.0, "c_charge": 0.0,
+         "mode": "diff"}
+    p_ = [_brin(0, 20, 0, "P")]
+    egale = oeil.analyser(_doc(p_, dict(o), [_brin(0, 20, 0.35, "N")],
+                               [("P", "N")]))
+    longue = oeil.analyser(_doc(p_, dict(o), [_brin(0, 24, 0.35, "N")],
+                                [("P", "N")]))
+    assert "paire_brins" not in egale
+    assert longue["paire_brins"]["brin_long"] == "N", longue["paire_brins"]
+    assert any("quatre accès" in a for a in longue["avertissements"])
+    assert any("le brin N est le plus long" in a
+               for a in longue["avertissements"])
+    h_e = egale["mesures"]["hauteur_pire"]
+    h_l = longue["mesures"]["hauteur_pire"]
+    assert h_l < h_e - 0.02, (h_l, h_e)
+    # brin par brin, tampons IBIS : le mode commun dit la paire, et l'oeil
+    # brut (10 mm de plus, 60 ps sur 200) est moins ouvert que celui de la
+    # paire symetrisee
+    ob = dict(o, debit=5e9, ibis_emetteur={"texte": _ibis_boitier(
+        sigma=20e-12)})
+    r = oeil.analyser(_doc(p_, ob, [_brin(0, 30, 0.35, "N")], [("P", "N")]))
+    mc = r["mode_commun"]
+    assert any("plus long" in a for a in mc["asymetries"]), mc["asymetries"]
+    assert mc["crete_crete"] > 0.1, mc["crete_crete"]
+    assert mc["hauteur_brute"] < mc["hauteur_symetrique"] - 0.005, mc
+
+
+MUTUELLE ="""[Define Package Model] PKG_M
+[Number Of Pins] 2
+[Pin Numbers]
+A1
+A2
+[Model Data]
+[Inductance Matrix] Full_matrix
+[Row] 1
+6nH 3nH
+[Row] 2
+6nH
+[Capacitance Matrix] Full_matrix
+[Row] 1
+1pF -0.3pF
+[Row] 2
+1pF
+[End Model Data]
+[End Package Model]
+"""
+
+
+def la_mutuelle_du_boitier_ouvre_l_oeil_differentiel():
+    """Deux broches de paire a 6 nH, couplees a 3 nH et 0,3 pF : le mode
+    impair voit L - L_m = 3 nH et C + C_m = 1,3 pF. La mutuelle est lue,
+    COMPTEE entre les deux broches de [Diff Pin] (la note le dit), le Sdd21
+    du boitier monte, et le front differentiel est plus raide qu'avec les
+    memes broches sans mutuelle. Sans mutuelle, le boitier couple est
+    exactement les deux boitiers brin par brin."""
+    entete = ("[Pin] signal_name model_name R_pin L_pin C_pin\n"
+              "A1 DP LIN\nA2 DN LIN\n"
+              "[Diff Pin] inv_pin vdiff tdelay_typ tdelay_min tdelay_max\n"
+              "A1 A2 0.1V 0 0 0\n[Package Model] PKG_M\n")
+    txt = _ibis_boitier(entete, sigma=10e-12, suite=MUTUELLE)
+    sans = txt.replace("6nH 3nH", "6nH 0nH").replace("1pF -0.3pF", "1pF 0pF")
+    lu = ibis.lire(txt, complet=True)
+    mut = ibis.mutuelle_paire(lu, "A1", "A2")
+    proche(mut["l"], 3e-9, 1e-12, "L_m")
+    proche(mut["c"], 0.3e-12, 1e-12, "C_m")
+    assert ibis.mutuelle_paire(ibis.lire(sans, complet=True), "A1",
+                               "A2") is None
+    bt = ibis.boitier_broche(lu, "A1")
+    f = np.linspace(1e8, 1e10, 50)
+    m_c = ibis.abcd_boitier_paire(f, bt, bt, mut, "emission")
+    m_0 = ibis.abcd_boitier_paire(f, bt, bt, None, "emission")
+    m_s = ibis.abcd_par_brin(ibis.abcd_boitier(f, bt, "emission"),
+                             ibis.abcd_boitier(f, bt, "emission"), len(f))
+    assert np.max(np.abs(m_0 - m_s)) < 1e-12
+    s_c = ibis.s_depuis_abcd_4(m_c, 50.0)
+    s_0 = ibis.s_depuis_abcd_4(m_0, 50.0)
+    sdd_c = np.array([abs(se._modes_mixtes(s)[0][1, 0]) for s in s_c])
+    sdd_0 = np.array([abs(se._modes_mixtes(s)[0][1, 0]) for s in s_0])
+    assert np.all(sdd_c[10:] > sdd_0[10:]), (sdd_c[-1], sdd_0[-1])
+    # la moyenne en mode impair : L - L_m et C + C_m
+    o = {"debit": 2e9, "mode": "diff", "r_charge": 100.0, "c_charge": 0.0,
+         "ibis_emetteur": {"texte": txt, "broche": "A1"}}
+    p = oeil._params(o, None)
+    ctx = oeil.preparer_ibis(o, p)
+    assert ctx["mut_em"] and any("comptées" in x for x in ctx["notes"])
+    assert ctx["infos"]["emetteur"]["mutuelle"]["l"] == mut["l"]
+    m1, note = oeil.appliquer_boitiers(ctx, f, oeil.ligne_ideale(f, 100.0,
+                                                                 0.0), "diff")
+    assert "mutuelles" in note, note
+    attendu = ibis.abcd_boitier(f, {"r": 0.0, "l": 6e-9, "c": 0.65e-12},
+                                "emission")
+    assert np.max(np.abs(m1 - attendu)) < 1e-9
+    # le front differentiel, brin par brin
+    fronts = []
+    for t in (txt, sans):
+        nl, ctx, p = _paire_ideale(dict(o, ibis_emetteur={
+            "texte": t, "broche": "A1"}))
+        fronts.append(_dix_quatre_vingt_dix(nl["s"], nl["dt"]))
+    assert fronts[0] < 0.9 * fronts[1], fronts
+
+
+SECTIONS = """[Define Package Model] PKG_S
+[Number Of Sections] 3
+[Number Of Pins] 2
+[Pin Numbers]
+A1 Len = 0 L=0.5n /
+   Len = 10 L=0.25n C=0.1p /
+   Len = 0 C=0.2p /
+A2 Len = 10 L=0.25n C=0.1p /
+   Fork
+   Len = 2 L=0.25n C=0.1p /
+   Endfork
+   Len = 0 L=1n /
+[End Package Model]
+"""
+
+
+def un_boitier_par_sections_est_une_ligne():
+    """[Number Of Sections] et ses [Pin Numbers] : chaque broche ses
+    sections (Len, et par unite de longueur ; Len = 0 localisee ; une
+    derivation Fork/Endfork). Les totaux se lisent. Une section de
+    longueur l rejoint le modele localise de memes totaux quand l tend vers
+    zero (l'ecart decroit comme l) ; une section adaptee (Zc = 50 ohms, 5 ps
+    par unite, 10 unites) RETARDE le front de 50 ps sans l'adoucir, ou le
+    modele localise de memes totaux le ralentit."""
+    entete = ("[Pin] signal_name model_name R_pin L_pin C_pin\n"
+              "A1 SIG LIN\nA2 SIG2 LIN\n[Package Model] PKG_S\n")
+    txt = _ibis_boitier(entete, sigma=10e-12, suite=SECTIONS)
+    lu = ibis.lire(txt, complet=True)
+    mb = lu["modeles_boitier"]["PKG_S"]
+    assert mb["broches"] == ["A1", "A2"], mb["broches"]
+    assert len(mb["sections_broche"]["A1"]) == 3
+    assert "fourche" in mb["sections_broche"]["A2"][1]
+    bt = ibis.boitier_broche(lu, "A1")
+    proche(bt["l"], 3e-9, 1e-12, "L totale")
+    proche(bt["c"], 1.2e-12, 1e-12, "C totale")
+    assert "section" in bt["source"] and bt["sections"]
+    b2 = ibis.boitier_broche(lu, "A2")
+    proche(b2["c"], 1.2e-12, 1e-12, "C totale, derivation comprise")
+    # la limite localisee
+    f = np.array([5e9])
+    ecarts = []
+    for lg in (1.0, 0.1, 0.01):
+        sec = [{"len": lg, "r": 0.0, "l": 0.25e-9, "c": 0.1e-12, "g": 0.0}]
+        dist = ibis.abcd_sections(f, sec)[0]
+        loc = ibis.abcd_sections(f, [{"len": 0.0, "r": 0.0, "l": 0.25e-9 * lg,
+                                      "c": 0.1e-12 * lg, "g": 0.0}])[0]
+        ecarts.append(np.max(np.abs(dist - loc))
+                      / np.max(np.abs(loc - np.eye(2))))
+    assert ecarts[1] < 0.15 * ecarts[0] and ecarts[2] < 0.15 * ecarts[1], \
+        ecarts
+    # le retard d'une ligne adaptee
+    def front(t):
+        base = {"debit": 1e9, "r_charge": 50.0, "c_charge": 0.0,
+                "ibis_emetteur": {"texte": t, "broche": "A1"}}
+        _, nl, ctx = _oeil_boitier(base)
+        s = np.asarray(nl["s"])
+        i = int(np.argmax(s >= 0.5))
+        t50 = (i - 1 + (0.5 - s[i - 1]) / (s[i] - s[i - 1])) * nl["dt"]
+        return t50, _dix_quatre_vingt_dix(s, nl["dt"]), ctx
+    adaptee = ("[Define Package Model] PKG_S\n[Number Of Sections] 1\n"
+               "[Number Of Pins] 1\n[Pin Numbers]\n"
+               "A1 Len = 10 L=0.25n C=0.1p /\n[End Package Model]\n")
+    t0, r0, _ = front(_ibis_boitier("[Pin] signal_name model_name\n"
+                                    "A1 SIG LIN\n", sigma=10e-12))
+    t1, r1, ctx = front(_ibis_boitier(entete, sigma=10e-12, suite=adaptee))
+    assert ctx["bt_em"][0]["sections"], ctx["bt_em"][0]
+    proche(t1 - t0, 50e-12, 0.03, "retard de la section adaptee")
+    proche(r1, r0, 0.05, "front de la section adaptee")
+    loc = adaptee.replace("Len = 10 L=0.25n C=0.1p", "Len = 0 L=2.5n C=1p")
+    _, r2, _ = front(_ibis_boitier(entete, sigma=10e-12, suite=loc))
+    assert r2 > 1.3 * r1, (r2, r1)
+
+
 for nom, fn in list(globals().items()):
     if callable(fn) and getattr(fn, "__module__", "") == "__main__" \
             and not nom.startswith("_") and nom not in ("T", "proche"):
