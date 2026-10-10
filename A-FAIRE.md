@@ -13,7 +13,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 857 essais (`editeur-pcb/test/harness.js`), dont 13 pour les plans (Draftsman) |
+| **Éditeur PCB** | En service | 867 essais (`editeur-pcb/test/harness.js`), dont 13 pour les plans (Draftsman) et 10 pour le gestionnaire de contraintes |
 | **Éditeur Schématique** | En service | 119 essais (`editeur-schematique/test/harness.js`) |
 | **Visionneuse IPC-2581** | En service | 186 essais (`harness-sim.js`) + 59 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.5.0)** | En service (0,3 à 0,4 % vs étalons) | 199 cas (`python/test/banc-ligne-mom.py`) |
@@ -135,8 +135,13 @@ lib/
 
 - [x] **Plans de fabrication et d'assemblage (Draftsman)** (`editeur-pcb/js/29-draftsman.js`, 10/10/2026) : feuilles A4 / A3 / A2 avec cadre, repères de zones et cartouche ; plan de fabrication (vue cotée, symboles et tableau de perçage, trous de fixation, coupe d'empilage, notes), assemblage dessus / dessous (dessous en miroir, non-montés de la variante en tirets), nomenclature, couches de cuivre en option. PDF au **texte cherchable** (WinAnsi, accents compris ; valeurs, boîtiers, références fabricant et nets en texte invisible à leur place ; signets par feuille et par composant), dans `fabrication.zip` et annoncé par le Master Drawing. Recherche et surlignage dans la fenêtre. 13 essais (`harness.js`).
   - [ ] Cotes posées à la main, accrochées à la géométrie (trous de fixation, connecteurs), et vues placées à la souris.
-  - [ ] Vue de détail agrandie, tableau des impédances contrôlées (attend le Constraint Manager).
+  - [ ] Vue de détail agrandie.
+  - [x] Tableau des impédances contrôlées au plan de fabrication (classes à Z cible du gestionnaire de contraintes).
   - [ ] Export DXF pour la mécanique ; fonte embarquée (sous-ensemble TTF) pour un rendu identique partout.
+
+- [x] **Gestionnaire de contraintes** (`editeur-pcb/js/30-contraintes.js`, modèle dans `01-core.js`, 10/10/2026) : tableur Nets / Classes / Paires / Groupes d'appariement / Isolation entre classes, mesure à côté de chaque contrainte (longueur, délai, vias, Z₀) ; contraintes de net ou héritées de la classe (Z cible et tolérance, longueur min / max, vias max, couches permises) ; largeur pour Z cible couche par couche ; groupes en longueur ou en délai, cible du serpentin ; matrice d'isolation classe × classe appliquée au routeur, au DRC, aux zones et aux Gerber ; écarts au DRC ; export CSV ; tableau des impédances contrôlées au plan de fabrication. La visionneuse IPC-2581 et `commun/` ne sont pas touchés. 10 essais (`harness.js`).
+  - [ ] Saisie des contraintes dans le schéma (directives sur les nets), transmises au PCB par l'ECO.
+  - [ ] Largeur de classe par couche (le routeur prendrait celle de la couche active), topologie et longueur de moignon.
 
 ### Simulation SI (Signal Integrity)
 - [x] **Mode différentiel dans la cascade de paramètres S** :

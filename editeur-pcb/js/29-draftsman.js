@@ -792,6 +792,25 @@ function dfBlocEmpilage(){
             bx,yy+6,7.5,{gras:true,cat:"empilage"});
   }};
 }
+function dfImpedances(){
+  if(typeof cmModele!=="function"||typeof cmLargeurPourZ!=="function")return [];
+  const C=cmModele(), out=[];
+  const nets=netTable().map(n=>n.name);
+  for(const c of S.classes){
+    const r=C.classes[c.name];
+    if(!r||!r.z)continue;
+    const ls=[];
+    for(let l=0;l<S.cu;l++){
+      const w=cmLargeurPourZ(r.z,l);
+      if(w)ls.push("L"+(l+1)+" : "+fmt(w,3).replace(".",","));
+    }
+    out.push({classe:c.name,
+      z:fmt(r.z,1).replace(".",",")+" Ω ± "+fmt(r.zTol!=null?r.zTol:10,0)+" %",
+      largeurs:ls.length?ls.join(" ; "):"hors d'atteinte sur l'empilage",
+      nets:nets.filter(n=>className(n)===c.name).length});
+  }
+  return out;
+}
 function dfFeuillesFab(ctx){
   const F=dfNouvelle(ctx,"Plan de fabrication","fab");
   const Z=dfZone(F);
@@ -841,6 +860,14 @@ function dfFeuillesFab(ctx){
       npth.map((h,i)=>["H"+(i+1),fmt(h.x-o.x,3).replace(".",","),fmt(o.y-h.y,3).replace(".",","),
                        fmt(h.d,2).replace(".",",")]),{cat:"percage"}));
     npth.forEach((h,i)=>{const s=V.T(h.x,h.y);dfTexte(F,"H"+(i+1),s.x+2.2,s.y-2,6.5,{c:0.2,cat:"percage"});});
+  }
+  /* les classes à impédance cible du gestionnaire de contraintes
+     (30-contraintes.js) : la largeur qui la donne, couche par couche */
+  const imp=dfImpedances();
+  if(imp.length){
+    blocs.push(dfBlocEspace(4),dfBlocTitre("Impédances contrôlées"));
+    blocs.push(...dfTableau([{t:"Classe",p:24},{t:"Z cible",p:16,a:"d"},{t:"Couches et largeurs (mm)",p:44},{t:"Nets",p:10,a:"d"}],
+      imp.map(r=>[r.classe,r.z,r.largeurs,String(r.nets)]),{cat:"impedance"}));
   }
   blocs.push(dfBlocEspace(4),dfBlocTitre("Coupe d'empilage"),dfBlocEmpilage());
   blocs.push(dfBlocEspace(2),dfBlocTitre("Notes de fabrication"),...dfBlocParagraphes(dfNotesFab(ctx)));
@@ -1076,7 +1103,7 @@ const DF_CAT={repere:"repère",valeur:"valeur",boitier:"boîtier",mpn:"réf. fab
   fabricant:"fabricant",description:"description",net:"net",bom:"nomenclature",
   percage:"perçage",empilage:"empilage",note:"note",cartouche:"cartouche",
   titre:"titre",tableau:"tableau",legende:"légende",cote:"cote",nm:"non monté",
-  symbole:"symbole",zone:"zone"};
+  symbole:"symbole",zone:"zone",impedance:"impédance"};
 
 function dfOuvrir(){
   if(typeof pcbVarDepuisSchema==="function")pcbVarDepuisSchema();

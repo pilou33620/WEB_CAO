@@ -20,6 +20,7 @@ function docObj(){
           variantes:S.variantes,
           groupes:groupesPropres(),
           dessin:S.dessin||null,
+          contraintes:S.contraintes,
           rf:normRf(S.rf),
           active:S.active,nextId:S.nextId};
 }
@@ -729,6 +730,8 @@ function normDoc(d){
      borne à l'usage (dfCfg), il n'est pas encore chargé au démarrage */
   out.dessin=(src.dessin&&typeof src.dessin==="object"&&!Array.isArray(src.dessin))
     ?JSON.parse(JSON.stringify(src.dessin)):null;
+  /* contraintes du gestionnaire : chaque champ borné (cmNorm, 01-core.js) */
+  out.contraintes=cmNorm(src.contraintes);
   for(const fp of out.fps){
     if(!fp.nonMonte)continue;
     const nm=varNormNonMonte(fp.nonMonte,out.variantes);
@@ -773,6 +776,7 @@ function loadDoc(d,keepView){
   S.variantes=d.variantes;
   S.groupes=d.groupes;S.groupesSt=null;
   S.dessin=d.dessin;
+  S.contraintes=d.contraintes;
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
   S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];
   S.active=d.active;S.pair=[0,S.cu-1];
@@ -3888,7 +3892,13 @@ cv.addEventListener("pointerdown",e=>{
     if(hit&&hit.track&&!isArc(hit.track)){
       const skewInfo=typeof dpSkewForTrack==="function"?dpSkewForTrack(hit.track):null;
       const mOpts=(typeof S!=="undefined"&&S.meanderOpts)?S.meanderOpts:{};
-      const targetDelta=(skewInfo&&skewInfo.needed>0)?skewInfo.needed:(mOpts.targetDelta||null);
+      /* la cible : l'écart de la paire, sinon ce qui manque au net pour
+         rejoindre son groupe d'appariement (30-contraintes.js), sinon le
+         réglage du serpentin */
+      const manque=(!(skewInfo&&skewInfo.needed>0)&&typeof cmManqueLongueur==="function")
+        ?cmManqueLongueur(hit.track.net):null;
+      const targetDelta=(skewInfo&&skewInfo.needed>0)?skewInfo.needed:
+        (manque>0?manque:(mOpts.targetDelta||null));
       const side=(mOpts.side!=null&&mOpts.side!==0)?mOpts.side:1;
       const amplitude=mOpts.amplitude||1.5;
       const pitch=mOpts.pitch||1.2;

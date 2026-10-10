@@ -71,6 +71,10 @@ js/28-placement-satellites.js  « Placement auto », second temps : découplage 
 js/29-draftsman.js       plans de fabrication et d'assemblage (Draftsman) :
                          feuilles cadrées et cartouchées, PDF au texte
                          cherchable, aperçu SVG et recherche dans la fenêtre
+js/30-contraintes.js     gestionnaire de contraintes : mesures par net,
+                         contraintes héritées ou propres, groupes
+                         d'appariement, DRC, fenêtre en tableur (le modèle
+                         et l'isolation entre classes sont dans 01-core.js)
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -906,6 +910,48 @@ sans dépendance, comme le Master Drawing : contenu non compressé, état
 graphique réémis seulement quand il change, table xref comptée en écrivant.
 La chasse des caractères vient de la table métrique d'Helvetica : c'est elle
 qui centre un repère sur son composant et coupe les colonnes des tableaux.
+
+## Gestionnaire de contraintes
+
+**Outils → Gestionnaire de contraintes…** rassemble en tableur ce qui était
+réparti entre la fenêtre des règles, le panneau des paires et le serpentin,
+et met à côté de chaque contrainte la valeur **mesurée** : vert si elle est
+tenue, rouge sinon, gris pour un net non routé.
+
+| Onglet | Ce qu'on y voit et règle |
+| --- | --- |
+| Nets | classe (modifiable, aussi pour tous les nets cochés), longueur, délai (vias compris), vias, Z₀ ; impédance cible et tolérance, longueur min / max, vias max, couches permises. Une case vide hérite de la classe, dont la valeur s'affiche en grisé. Un clic sur le nom ferme la fenêtre et sélectionne son routage |
+| Classes | largeur, isolation, via, perçage (les règles de la fenêtre des règles, mêmes valeurs), et les contraintes électriques de la classe. Pour une impédance cible : la largeur qui la donne sur chaque couche de signal, d'après l'empilage, à appliquer d'un clic |
+| Paires diff. | longueurs P et N, écart en mm et en ps, longueur découplée face à la règle |
+| Groupes d'appariement | des nets qui doivent avoir la même longueur ou le même délai, à une tolérance près, autour d'une référence (le plus long, ou un net choisi). Ce qui manque à chaque net est affiché ; un groupe se crée en cochant ses nets, ou depuis les pistes sélectionnées sur la carte |
+| Isolation entre classes | une matrice classe × classe : « Alimentation ↔ RF : 0,5 mm » |
+
+**Ce que la carte en fait** :
+
+- le **DRC** liste chaque écart : `Contrainte SPI_CS : longueur 45,00 mm, au-delà du maximum de 30,00 mm (classe Défaut)`,
+  `Groupe SPI : SPI_SCK à -28,63 mm de SPI_CS, tolérance ± 1,00 mm` ;
+- l'**isolation entre classes** entre dans `clrPair` / `clrK` : le routeur, le
+  DRC, le remplissage des zones et les Gerber l'appliquent. C'est un minimum
+  qui s'ajoute aux classes et à la matrice des natures, comme elle : une
+  matrice vide ne change rien. Les deux nets d'une paire différentielle
+  gardent l'écart de leur règle ;
+- le **serpentin**, posé sur un net d'un groupe, prend pour cible ce qui lui
+  manque (en délai, converti avec le retard par millimètre du net). La paire
+  différentielle garde la priorité ;
+- les **plans** (Draftsman) reprennent les classes à impédance cible dans un
+  tableau « Impédances contrôlées » du plan de fabrication.
+
+Les longueurs, délais et Z₀ sont ceux de `ltLine` : formules de ligne
+(Hammerstad, Wheeler, IPC-2141A) sur l'empilage. L'audit par la méthode des
+moments reste dans **Simulation EM**. **⬇ CSV** exporte le tableau des nets.
+
+Les contraintes sont dans le document, `contraintes`, bornées à la lecture
+(`cmNorm`). Une nouvelle carte garde celles des classes et la matrice (un
+métier, comme les règles) et perd celles des nets et les groupes.
+
+Ce module ne touche à rien de ce qui est partagé avec la visionneuse
+IPC-2581 : ses natures de nets, ses Z₀ par classe et ses porteuses vivent
+dans `commun/simulation-em.js` et l'audit du serveur, inchangés.
 
 ## Sélection multiple et presse-papier
 
@@ -2783,6 +2829,9 @@ désactive au lieu de disparaître.
 - Une pastille est rectangulaire (coins adoucis ou angles droits), oblongue ou
   ronde, avec sa rotation propre. Pas de forme quelconque : ni pastille en
   polygone, ni plage thermique découpée, ni chanfrein.
+- Gestionnaire de contraintes : une classe n'a qu'une largeur, pas une par
+  couche ; les contraintes se saisissent dans le PCB, pas encore dans le
+  schéma ; pas de topologie (étoile, chaîne) ni de longueur de moignon.
 - Plans (Draftsman) : les vues sont placées d'office et les cotes se limitent
   à l'encombrement du contour ; ni cote posée à la main, ni vue de détail
   agrandie, ni export DXF. Le texte est en Helvetica standard (non

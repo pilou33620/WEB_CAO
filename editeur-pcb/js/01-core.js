@@ -707,6 +707,7 @@ const S = {
   variantes:{liste:[],active:""},   // variantes de montage, copiées du schéma (26-variantes.js)
   groupes:[],                       // blocs composants + vias déplacés d'une pièce (27-groupes.js)
   dessin:null,                      // réglages des plans : format, feuilles, cartouche (29-draftsman.js)
+  contraintes:{classes:{},nets:{},matrice:{},groupes:[]},  // gestionnaire de contraintes (30-contraintes.js)
   dpRules:[],                 // règles de paire ; vide = la règle d'usine
   scale:5, ox:0, oy:0,
   grid:0.1, showGrid:true, flip:false, contrast:1,   // pas d'accrochage au démarrage
@@ -2253,11 +2254,94 @@ function dpGapPair(a,b){
   }
   return null;
 }
-/* Isolation entre deux nets : la plus exigeante des deux classes l'emporte. */
+/* ---------- les contraintes du gestionnaire (30-contraintes.js) ----------
+   Le modèle vit ici, avec les classes qu'il complète, parce que `normDoc` le
+   lit au démarrage et que l'isolation entre classes entre dans `clrPair` : les
+   deux tournent avant que le module du gestionnaire soit chargé.
+
+   Une contrainte de net ou de classe : impédance cible et sa tolérance (%),
+   longueur min / max (mm), nombre de vias max, couches permises. La matrice
+   donne une isolation entre DEUX classes (« Alimentation | RF » : 0,5 mm) —
+   un minimum qui s'ajoute aux classes, comme la matrice des natures : vide,
+   le contrôle et le routeur rendent exactement ce qu'ils rendaient. Les
+   groupes d'appariement égalisent des longueurs ou des délais. */
+function cmNormRegle(o){
+  if(!o||typeof o!=="object"||Array.isArray(o))return null;
+  const r={};
+  const num=(v,a,b)=>{
+    if(v===null||v===undefined||v==="")return null;
+    const n=+v;return Number.isFinite(n)&&n>=a&&n<=b?n:null;
+  };
+  const z=num(o.z,1,1000);if(z!=null)r.z=z;
+  const t=num(o.zTol,0.1,100);if(t!=null)r.zTol=t;
+  const lx=num(o.lMax,0.01,1e5);if(lx!=null)r.lMax=lx;
+  const ln=num(o.lMin,0.01,1e5);if(ln!=null)r.lMin=ln;
+  const vm=num(o.viasMax,0,1e4);if(vm!=null)r.viasMax=Math.round(vm);
+  if(Array.isArray(o.couches)){
+    const c=[...new Set(o.couches.map(Number).filter(i=>Number.isInteger(i)&&i>=0&&i<64))].sort((a,b)=>a-b);
+    if(c.length)r.couches=c;
+  }
+  return Object.keys(r).length?r:null;
+}
+function cmCle(a,b){a=String(a);b=String(b);return a<b?a+"|"+b:b+"|"+a;}
+function cmNorm(src){
+  const s=(src&&typeof src==="object"&&!Array.isArray(src))?src:{};
+  const out={classes:{},nets:{},matrice:{},groupes:[]};
+  for(const k of ["classes","nets"]){
+    const m=s[k];
+    if(!m||typeof m!=="object"||Array.isArray(m))continue;
+    for(const nom of Object.keys(m)){
+      const r=cmNormRegle(m[nom]), n=String(nom).slice(0,200);
+      if(r&&n)out[k][n]=r;
+    }
+  }
+  const mx=s.matrice;
+  if(mx&&typeof mx==="object"&&!Array.isArray(mx))
+    for(const k of Object.keys(mx)){
+      const p=String(k).split("|"), v=+mx[k];
+      if(p.length===2&&p[0]&&p[1]&&Number.isFinite(v)&&v>0&&v<=50)out.matrice[cmCle(p[0],p[1])]=v;
+    }
+  const ids=new Set();
+  for(const g of (Array.isArray(s.groupes)?s.groupes:[])){
+    if(!g||typeof g!=="object")continue;
+    const nom=String(g.nom==null?"":g.nom).trim().slice(0,60);
+    const nets=[...new Set((Array.isArray(g.nets)?g.nets:[]).map(x=>String(x)).filter(Boolean))].slice(0,512);
+    if(!nom||!nets.length)continue;
+    let id=String(g.id==null?"":g.id).slice(0,24);
+    if(!id||ids.has(id)){let k=1;while(ids.has("g"+k))k++;id="g"+k;}
+    ids.add(id);
+    const mode=g.mode==="ps"?"ps":"mm";
+    const t=+g.tol;
+    const tol=Number.isFinite(t)&&t>=0&&t<=1e5?t:(mode==="ps"?10:0.5);
+    const ref=nets.includes(String(g.ref))?String(g.ref):"";
+    out.groupes.push({id,nom,nets,mode,tol,ref});
+  }
+  return out;
+}
+/* L'isolation que la matrice des classes impose entre les nets a et b ; 0 si
+   la case est vide. Appelée par le contrôle et le routeur pour chaque paire
+   d'objets voisins : une matrice vide sort tout de suite. */
+function cmClrClasses(a,b){
+  const m=S.contraintes&&S.contraintes.matrice;
+  if(!m)return 0;
+  for(const _ in m){
+    const v=m[cmCle(classOf(a).name,classOf(b).name)];
+    return v>0?v:0;
+  }
+  return 0;
+}
+function cmClrMax(){
+  const m=S.contraintes&&S.contraintes.matrice;
+  let x=0;
+  if(m)for(const k in m){const v=+m[k];if(v>x)x=v;}
+  return x;
+}
+/* Isolation entre deux nets : la plus exigeante des deux classes l'emporte,
+   et la case de la matrice des classes si elle exige davantage. */
 function clrPair(a,b){
   const g=dpGapPair(a,b);
   if(g!=null)return g;
-  return Math.max(classOf(a).clr,classOf(b).clr);
+  return Math.max(classOf(a).clr,classOf(b).clr,cmClrClasses(a,b));
 }
 /* La même, natures comprises : c'est celle-ci que le contrôle, le routeur et
    les zones de cuivre appliquent. `ka` et `kb` disent de quoi il s'agit —
@@ -2265,12 +2349,12 @@ function clrPair(a,b){
 function clrK(a,b,ka,kb){
   const g=dpGapPair(a,b);
   if(g!=null)return g;
-  return Math.max(classOf(a).clr,classOf(b).clr,matGet(ka,kb));
+  return Math.max(classOf(a).clr,classOf(b).clr,matGet(ka,kb),cmClrClasses(a,b));
 }
 function maxClr(){
   let m=0;
   for(const c of S.classes)m=Math.max(m,c.clr);
-  return Math.max(m||FALLBACK_CLASS.clr,matMax());
+  return Math.max(m||FALLBACK_CLASS.clr,matMax(),cmClrMax());
 }
 /* Classes que le schéma sait proposer, et les règles d'une classe créée pour
    l'occasion. « Lent » n'en a pas : c'est la classe par défaut. `re` retrouve

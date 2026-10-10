@@ -394,7 +394,12 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "transformFps","linkSync","fpXformInv","groupeEtendreSel","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest",
   /* plans de fabrication et d'assemblage (29-draftsman.js) */
   "dfCfg","dfRegler","dfDocument","dfPdf","dfPdfOctets","dfChercher","dfSvg","dfWinAnsi","dfPdfLit",
-  "dfLargeur","dfCouper","dfPercages","dfVue","dfOuvrir","dfFermer","dfExporter","DF_FORMATS","DF"];
+  "dfLargeur","dfCouper","dfPercages","dfVue","dfOuvrir","dfFermer","dfExporter","DF_FORMATS","DF","dfImpedances",
+  /* gestionnaire de contraintes (01-core.js pour le modèle, 30-contraintes.js) */
+  "cmNorm","cmCle","cmClrClasses","cmClrMax","cmMesures","cmRegleDe","cmVerifier","cmEvaluerGroupe",
+  "cmManqueLongueur","cmLargeurPourZ","cmDrc","cmEdit","cmPoser","cmPoserPhysique","cmPoserMatrice",
+  "cmNouveauGroupe","cmGroupeModifier","cmGroupeSupprimer","cmCsv","cmLignesNets","cmOuvrir","cmFermer",
+  "cmAppliquerLargeurZ","CM","CM_ONGLETS","className"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -22045,6 +22050,179 @@ T("plans : aperçu SVG et fenêtre",()=>{
   try{
     if(!DF.doc||!DF.doc.feuilles.length)throw new Error("la fenêtre n'a rien construit");
   }finally{dfFermer();}
+});
+
+/* ==========================================================================
+   Gestionnaire de contraintes (01-core.js : modèle ; 30-contraintes.js)
+   ========================================================================== */
+function cmRaz(){S.contraintes=cmNorm(null);}
+function cmMsgs(){runDrc();return S.drc.filter(d=>/^(Contrainte|Groupe) /.test(d.msg));}
+T("contraintes : vides, rien ne change — isolation, DRC, routeur",()=>{
+  exCharger(1);cmRaz();
+  const a="+3V3", b="USB_DP";
+  const attendu=Math.max(classOf(a).clr,classOf(b).clr);
+  if(clrPair(a,b)!==attendu)throw new Error("clrPair a changé : "+clrPair(a,b));
+  if(clrK(a,b,"trk","trk")!==Math.max(attendu,matGet("trk","trk")))throw new Error("clrK a changé");
+  if(cmClrMax()!==0||cmClrClasses(a,b)!==0)throw new Error("matrice vide : 0 attendu");
+  if(cmMsgs().length)throw new Error("aucun défaut de contrainte attendu sur une carte sans contrainte");
+});
+T("contraintes : lecture bornée, aller-retour neutre",()=>{
+  const n=cmNorm({classes:{Rapide:{z:"50",zTol:-3,lMax:1e9,viasMax:2.6,couches:[0,"3",99,-1,0]}},
+    nets:{X:{},Y:"n'importe quoi",Z:{lMin:5}},matrice:{"B|A":0.3,"C|D":-1,"E":2,"F|G":"x"},
+    groupes:[{nom:"G",nets:["N1","N1","N2"],mode:"ps",tol:"abc",ref:"inconnu"},{nom:"",nets:["a"]},
+             {id:"g1",nom:"H",nets:["N3"]},{id:"g1",nom:"I",nets:["N4"]}]});
+  const r=n.classes.Rapide;
+  if(r.z!==50||r.zTol!==undefined||r.lMax!==undefined||r.viasMax!==3||JSON.stringify(r.couches)!=="[0,3]")
+    throw new Error("règle de classe mal bornée : "+JSON.stringify(r));
+  if(Object.keys(n.nets).join()!=="Z")throw new Error("règles de net vides gardées : "+JSON.stringify(n.nets));
+  if(JSON.stringify(n.matrice)!=='{"A|B":0.3}')throw new Error("matrice : "+JSON.stringify(n.matrice));
+  if(n.groupes.length!==3)throw new Error("groupes : "+JSON.stringify(n.groupes));
+  const g=n.groupes[0];
+  if(g.nets.join()!=="N1,N2"||g.mode!=="ps"||g.tol!==10||g.ref!=="")throw new Error("groupe : "+JSON.stringify(g));
+  if(n.groupes[1].id===n.groupes[2].id)throw new Error("identifiants de groupe en double");
+  exCharger(1);
+  S.contraintes=n;
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("l'aller-retour change le document");
+  cmRaz();
+});
+T("contraintes : le net l'emporte sur sa classe, la classe sur le défaut",()=>{
+  exCharger(1);cmRaz();
+  const net="SPI_CS", cl=className(net);
+  cmPoser("classes",cl,"lMax","30");
+  let r=cmRegleDe(net);
+  if(!r.lMax||r.lMax.v!==30||r.lMax.src!=="classe")throw new Error("héritage de classe : "+JSON.stringify(r.lMax));
+  if(r.zTol.v!==10||r.zTol.src!=="défaut")throw new Error("tolérance par défaut : "+JSON.stringify(r.zTol));
+  cmPoser("nets",net,"lMax","60");
+  r=cmRegleDe(net);
+  if(r.lMax.v!==60||r.lMax.src!=="net")throw new Error("le net doit l'emporter : "+JSON.stringify(r.lMax));
+  cmPoser("nets",net,"lMax","");
+  if(cmRegleDe(net).lMax.src!=="classe")throw new Error("vider le champ rend la classe");
+  cmRaz();
+});
+T("contraintes : longueur, vias, couches au DRC ; un net non routé n'est pas jugé",()=>{
+  exCharger(1);cmRaz();
+  const M=cmMesures(), m=M.get("SPI_CS");
+  if(!(m.len>40))throw new Error("SPI_CS routé sur plus de 40 mm attendu : "+m.len);
+  cmPoser("nets","SPI_CS","lMax",String(Math.floor(m.len-1)));
+  cmPoser("nets","GND","viasMax","1");
+  const l=m.couches[0];
+  cmPoser("nets","SPI_CS","couches",String(((l+1)%S.cu)+1));
+  const d=cmMsgs().map(x=>x.msg);
+  if(!d.some(x=>/^Contrainte SPI_CS : longueur .* au-delà du maximum/.test(x)))throw new Error("longueur max : "+d.join(" | "));
+  if(!d.some(x=>/^Contrainte GND : \d+ via\(s\) pour 1 admis/.test(x)))throw new Error("vias max : "+d.join(" | "));
+  if(!d.some(x=>/^Contrainte SPI_CS : routé sur L\d/.test(x)))throw new Error("couches : "+d.join(" | "));
+  /* même contrainte sur un net sans cuivre : rien */
+  const save=S.tracks;
+  S.tracks=S.tracks.filter(t=>t.net!=="SPI_CS");touch();
+  if(cmMsgs().some(x=>/SPI_CS/.test(x.msg)))throw new Error("un net non routé ne se juge pas");
+  S.tracks=save;touch();
+  cmRaz();
+});
+T("contraintes : impédance cible, tenue ou non",()=>{
+  exCharger(1);cmRaz();
+  const m=cmMesures().get("RF_ANT");
+  if(m.z0min==null)throw new Error("Z₀ de RF_ANT non calculée");
+  const cl=className("RF_ANT");
+  cmPoser("classes",cl,"z",String(Math.round(m.z0min)));
+  if(cmVerifier("RF_ANT",m,cmRegleDe("RF_ANT")).length)throw new Error("Z tenue : aucun écart attendu");
+  cmPoser("classes",cl,"z",String(Math.round(m.z0min*2)));
+  const f=cmVerifier("RF_ANT",cmMesures().get("RF_ANT"),cmRegleDe("RF_ANT"));
+  if(f.length!==1||f[0].cle!=="z"||f[0].info)throw new Error("Z hors tolérance : "+JSON.stringify(f));
+  cmRaz();
+});
+T("contraintes : largeur pour une impédance, couche par couche",()=>{
+  exCharger(1);cmRaz();
+  const w=cmLargeurPourZ(50,0);
+  if(!(w>0.05&&w<3))throw new Error("largeur 50 Ω en L1 : "+w);
+  const z=ltZ0(dpStripGeom(0),w);
+  if(Math.abs(z-50)>0.2)throw new Error("la largeur trouvée donne "+z+" Ω");
+  const plan=[...Array(S.cu).keys()].find(l=>["gnd","pwr","shield"].includes(layerRole(l)));
+  if(plan!=null&&cmLargeurPourZ(50,plan)!==null)throw new Error("un plan ne porte pas de piste");
+  const cl=className("RF_ANT");
+  cmPoser("classes",cl,"z","50");
+  const ww=cmAppliquerLargeurZ(cl,0);
+  if(Math.abs(classOf("RF_ANT").w-ww)>1e-9)throw new Error("largeur de classe non appliquée");
+  undo();
+  cmRaz();
+});
+T("contraintes : isolation entre classes — routeur et DRC, paire intacte, Ctrl+Z",()=>{
+  exCharger(1);cmRaz();
+  const a="+3V3", b="SPI_CS", ca=className(a), cb=className(b);
+  const avant=clrPair(a,b), mx=maxClr();
+  cmPoserMatrice(ca,cb,"0,9");
+  if(clrPair(a,b)!==0.9||clrK(a,b,"trk","via")<0.9)throw new Error("matrice non appliquée : "+clrPair(a,b));
+  if(clrPair(b,a)!==0.9)throw new Error("la case vaut dans les deux sens");
+  if(maxClr()<0.9||pnsMaxClr()<0.9)throw new Error("la marge d'interrogation doit l'inclure");
+  /* les deux nets d'une paire différentielle gardent l'écart de leur règle */
+  const p=S.dpPairs[0];
+  const gap=clrPair(p.p,p.n);
+  cmPoserMatrice(className(p.p),className(p.n),"2");
+  if(clrPair(p.p,p.n)!==gap)throw new Error("la paire perd son écart : "+clrPair(p.p,p.n));
+  undo();undo();
+  if(clrPair(a,b)!==avant||maxClr()!==mx)throw new Error("Ctrl+Z ne rend pas l'isolation d'avant");
+  cmRaz();
+});
+T("contraintes : groupe d'appariement — cible, tolérance, serpentin",()=>{
+  exCharger(1);cmRaz();
+  const g=cmNouveauGroupe("SPI",["SPI_CS","SPI_MISO","SPI_MOSI","SPI_SCK"],"mm",1);
+  const M=cmMesures();
+  const e=cmEvaluerGroupe(g);
+  const plusLong=["SPI_CS","SPI_MISO","SPI_MOSI","SPI_SCK"].reduce((x,y)=>M.get(y).len>M.get(x).len?y:x);
+  if(e.refNet!==plusLong||Math.abs(e.cible-M.get(plusLong).len)>1e-9)throw new Error("cible : le plus long attendu");
+  const court=e.membres.find(x=>x.net==="SPI_SCK");
+  if(court.ok)throw new Error("SPI_SCK est hors tolérance");
+  const manque=cmManqueLongueur("SPI_SCK");
+  if(Math.abs(manque-(M.get(plusLong).len-M.get("SPI_SCK").len))>1e-3)throw new Error("serpentin : "+manque);
+  if(cmManqueLongueur(plusLong)!==null)throw new Error("la référence n'a rien à ajouter");
+  if(!cmMsgs().some(x=>/^Groupe SPI : SPI_SCK à -/.test(x.msg)))throw new Error("DRC du groupe absent");
+  /* une paire différentielle garde la priorité au serpentin */
+  const t=S.tracks.find(x=>x.net===S.dpPairs[0].p);
+  if(!dpSkewForTrack(t))throw new Error("la paire doit rester la première cible");
+  /* référence choisie, et en délai */
+  cmGroupeModifier(g.id,x=>{x.ref="SPI_MOSI";x.mode="ps";x.tol=5;});
+  const e2=cmEvaluerGroupe(cmNorm(S.contraintes).groupes[0]);
+  if(e2.refNet!=="SPI_MOSI"||Math.abs(e2.cible-M.get("SPI_MOSI").ps)>1e-6)throw new Error("référence en délai : "+e2.refNet);
+  /* tolérance large : tout tient */
+  cmGroupeModifier(g.id,x=>{x.mode="mm";x.tol=100;});
+  if(cmMsgs().some(x=>/^Groupe /.test(x.msg)))throw new Error("tolérance de 100 mm : rien à signaler");
+  cmGroupeSupprimer(g.id);
+  if(S.contraintes.groupes.length)throw new Error("groupe non supprimé");
+  cmRaz();
+});
+T("contraintes : règles physiques des classes, nouvelle carte, CSV, fenêtre",()=>{
+  exCharger(1);cmRaz();
+  const cl=S.classes[0].name, w0=S.classes[0].w;
+  if(cmPoserPhysique(cl,"w","abc")!==false||S.classes[0].w!==w0)throw new Error("valeur refusée attendue");
+  if(!cmPoserPhysique(cl,"w","0,33")||S.classes[0].w!==0.33)throw new Error("largeur non posée");
+  undo();
+  if(S.classes[0].w!==w0)throw new Error("Ctrl+Z sur la largeur");
+  cmPoser("classes",cl,"z","55");
+  cmPoserMatrice(S.classes[0].name,S.classes[1].name,"0.5");
+  cmPoser("nets","SPI_CS","lMax","10");
+  cmNouveauGroupe("X",["SPI_CS","SPI_SCK"],"mm",1);
+  const csv=cmCsv();
+  if(!/^Net;Classe;Longueur/.test(csv)||!/\nSPI_CS;[^\n]*;faute;/.test(csv))throw new Error("CSV : "+csv.slice(0,300));
+  const conf=global.confirm;global.confirm=()=>true;
+  try{newDoc();}finally{global.confirm=conf;}
+  if(!S.contraintes.classes[cl]||!Object.keys(S.contraintes.matrice).length)throw new Error("une carte neuve garde les classes et la matrice");
+  if(Object.keys(S.contraintes.nets).length||S.contraintes.groupes.length)throw new Error("une carte neuve perd nets et groupes");
+  exCharger(1);cmRaz();
+  for(const [o] of CM_ONGLETS){cmOuvrir(o);}
+  cmFermer();
+});
+T("contraintes : impédances contrôlées au plan de fabrication",()=>{
+  exCharger(1);cmRaz();
+  if(dfImpedances().length)throw new Error("sans Z cible, pas de tableau");
+  const cl=className("RF_ANT");
+  cmPoser("classes",cl,"z","50");
+  const imp=dfImpedances();
+  if(imp.length!==1||imp[0].classe!==cl||!/L1 : /.test(imp[0].largeurs))throw new Error(JSON.stringify(imp));
+  const doc=dfDocument();
+  if(!dfChercher(doc,"impedances controlees").length)throw new Error("tableau absent du plan");
+  if(!dfChercher(doc,cl).some(h=>h.cat==="impedance"))throw new Error("classe absente du tableau");
+  cmRaz();
 });
 
 (async()=>{

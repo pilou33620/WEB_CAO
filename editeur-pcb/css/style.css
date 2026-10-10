@@ -1048,3 +1048,67 @@
     .df-corps{flex-direction:column}
     .df-cfg{width:auto;max-height:38vh;border-right:none;border-bottom:1px solid var(--border)}
   }
+
+  /* ---------- gestionnaire de contraintes (30-contraintes.js) ----------
+     Un tableur : la contrainte saisie, en grisé celle héritée de la classe,
+     et la mesure à côté. Vert tenu, rouge en faute, gris non routé. */
+  .cm-box{width:min(1400px,100%);height:min(880px,100%)}
+  .cm-resume{flex:1;font-family:var(--mono);font-size:10px;color:var(--txt-dim);text-align:right;margin-right:6px}
+  .cm-resume b{font-weight:600}
+  .cm-ok{color:#5bd6a0}
+  .cm-err{color:var(--red)}
+  .cm-nr{color:var(--txt-dim)}
+  .cm-onglets{display:flex;gap:4px;flex-wrap:wrap;padding:6px 10px;background:var(--panel2);border-bottom:1px solid var(--border)}
+  .cm-onglet{
+    background:transparent;border:1px solid var(--border2);border-radius:5px;color:var(--txt-dim);
+    font-size:11.5px;padding:4px 10px;cursor:pointer;font-family:var(--ui);
+  }
+  .cm-onglet:hover{color:var(--txt)}
+  .cm-onglet.on{background:var(--blue-deep);border-color:var(--blue);color:#fff}
+  .cm-corps{flex:1;overflow:auto;padding:10px 12px;min-height:0}
+  .cm-barre{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .cm-sp{flex:1}
+  .cm-filtre{
+    background:#101216;border:1px solid var(--border2);color:var(--txt);border-radius:5px;
+    padding:4px 8px;font-size:12px;font-family:var(--ui);min-width:200px;
+  }
+  .cm-filtre:focus,.cm-in:focus{outline:none;border-color:var(--blue)}
+  .cm-case{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--txt);cursor:pointer}
+  .cm-case input{accent-color:var(--blue);margin:0}
+  .cm-lot{font-size:11.5px;color:var(--txt-dim);display:inline-flex;gap:6px;align-items:center}
+  .cm-table-w{overflow-x:auto}
+  .cm-table{border-collapse:collapse;width:100%;font-size:11.5px}
+  .cm-table th{
+    position:sticky;top:0;background:var(--panel2);color:var(--txt-dim);font-weight:500;text-align:left;
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+    padding:5px 6px;border-bottom:1px solid var(--border2);white-space:nowrap;
+  }
+  .cm-table td{padding:3px 6px;border-bottom:1px solid var(--border);vertical-align:middle;color:var(--txt)}
+  .cm-table .n{text-align:right;font-family:var(--mono);font-size:11px;white-space:nowrap}
+  .cm-table tr.cm-err td{background:rgba(232,68,58,.08)}
+  .cm-table tr.cm-nr td{color:var(--txt-dim)}
+  .cm-in{
+    width:62px;background:#101216;border:1px solid var(--border2);color:var(--txt);border-radius:4px;
+    padding:2px 5px;font-family:var(--mono);font-size:11px;
+  }
+  .cm-in.cm-large{width:110px}
+  .cm-in::placeholder{color:#5d636e}
+  .cm-sel{max-width:130px}
+  .cm-net{background:none;border:none;color:var(--blue);cursor:pointer;font-family:var(--mono);font-size:11.5px;padding:0;text-align:left}
+  .cm-net:hover{text-decoration:underline}
+  .cm-tag{font-size:9.5px;font-family:var(--mono);color:var(--yellow);border:1px solid var(--border2);border-radius:4px;padding:0 4px}
+  .cm-pastille{font-size:12px}
+  .cm-msg{color:var(--red);font-size:11px;min-width:180px}
+  .cm-mini{
+    background:transparent;border:1px solid var(--border2);border-radius:4px;color:var(--txt);
+    font-size:10.5px;padding:1px 6px;cursor:pointer;font-family:var(--mono);margin:1px 2px 1px 0;
+  }
+  .cm-mini:hover{border-color:var(--blue)}
+  .cm-lz{white-space:normal;min-width:180px}
+  .cm-note{font-size:11px;color:var(--txt-dim);margin:8px 0;line-height:1.5}
+  .cm-grp{border:1px solid var(--border2);border-radius:6px;padding:8px 10px;margin-bottom:10px;background:var(--panel2)}
+  .cm-grp-t{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:12px;color:var(--txt)}
+  .cm-neuf .cm-filtre{margin:4px 0 6px}
+  .cm-liste{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:3px 12px;max-height:240px;overflow:auto}
+  .cm-mat td,.cm-mat th{text-align:center}
+  .cm-mat .cm-vide{background:rgba(255,255,255,.02)}

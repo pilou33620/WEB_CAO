@@ -770,6 +770,9 @@ function runDrc(){
   /* les paires différentielles : largeur hors bornes, trajet découplé trop
      long, net disparu — le module qui les connaît fait lui-même le contrôle */
   if(typeof dpDrc==="function")dpDrc(out);
+  /* les contraintes du gestionnaire : longueurs, vias, couches, impédance,
+     groupes d'appariement (30-contraintes.js) */
+  if(typeof cmDrc==="function")cmDrc(out);
   /* les liaisons qu'un déplacement de boîtier a laissées en faute */
   if(typeof rerouteDrc==="function")rerouteDrc(out);
   /* les bouts de piste qui n'entrent pas au centre de leur pastille (info) */
