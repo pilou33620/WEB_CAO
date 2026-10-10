@@ -383,7 +383,20 @@ gardée, le diamètre du foret, la profondeur depuis la face, les couches
 coupées, le moignon avant et après — ou pourquoi ce perçage ne peut pas se
 faire (il couperait une couche où le signal entre ; un moignon admis plus
 épais que le diélectrique laisserait la couche suivante reliée : faute au DRC,
-et le moignon reste entier). Les **moignons de via** de la topologie, la
+et le moignon reste entier).
+
+Le signal entre dans le via sur les couches de ses **pistes**, d'une
+**pastille CMS** du net posée dessus, et d'une **zone de cuivre** (plan,
+coulée) du net qui touche le fût : cuivre plein autour du perçage, liaison
+directe ou thermique — exactement ce qui relie le via à la zone pour la
+connectivité (`viaZones` de `conn()`, `js/02-connectivity.js` : le remplissage
+rasterisé quand il est calculé, sinon la zone du dessus au droit du via, hors
+découpes et trous d'une zone au cuivre du fichier). Une coulée SIG sur L3
+interdit donc de couper L3 (« le foret couperait L3 (zone SIG), où le signal
+entre » au DRC), la couche *auto* devient L3 et le moignon se mesure depuis
+elle. Un via pris dans un **dégagement** — découpe de zone, zone d'un autre
+net posée par-dessus, trou du remplissage du fichier — ou une zone qui ne fait
+que passer à côté n'y comptent pas. Les **moignons de via** de la topologie, la
 simulation SI/RF (`contre_percage` de la fiche de via) et la vérification de
 la carte (`cp` d'un perçage) comptent le moignon résiduel.
 
@@ -395,6 +408,29 @@ tous les outils CAM lisent). Le LISEZ-MOI, la feuille d'empilage et le master
 drawing les annoncent ; le plan de fabrication (Draftsman) porte leurs
 symboles, un tableau (foret, face, couche gardée, profondeur, moignon admis,
 nombre), la passe sur la coupe d'empilage et une note.
+
+À côté de chaque `.DRL`, inchangé, la même passe part en **Gerber X2**
+(`carte-BACKDRILL-B-In2.gbr`, `cpGerberX2`, `js/04-fabrication.js`), où la
+profondeur est un **champ**. La spécification Gerber d'Ucamco n'a pas de
+fonction de fichier propre au contre-perçage : un perçage se déclare
+`Plated` / `NonPlated` avec sa paire de couches et `PTH`, `NPTH`, `Blind` ou
+`Buried`. Elle a en revanche la fonction d'ouverture `.AperFunction,BackDrill`.
+Le fichier s'écrit donc comme chez KiCad : `%TF.FileFunction,NonPlated,3,4,Blind,Drill*%`
+(les couches que le foret retire, face comprise, couche gardée exclue, comptées
+de 1) et `%TA.AperFunction,BackDrill*%` sur chaque outil. La profondeur et la
+couche à ne pas couper n'ont pas d'attribut normalisé : elles partent en
+**attributs utilisateur** (sans point devant, comme la norme le réserve),
+nommés d'après les types `<Backdrill>` d'IPC-2581 :
+
+    %TFBackDrill_StartLayer,4*%         face percée
+    %TFBackDrill_MustNotCutLayer,2*%    couche à ne pas couper
+    %TFBackDrill_MaxStubLengthMM,0.150*%  moignon résiduel admis
+    %TABackDrill_DepthMM,1.234*%        profondeur de l'outil défini juste après
+
+Le LISEZ-MOI explique ce choix. L'éditeur **n'exporte pas d'IPC-2581** : le
+contre-perçage n'y est donc pas écrit (la visionneuse IPC-2581, elle, le lit).
+Le `.gbr` n'est pas listé par le master drawing (qui ne détaille que les
+Excellon).
 
 ## Les règles de conception, et leurs figures
 
@@ -3127,7 +3163,7 @@ désactive au lieu de disparaître.
   ronde, avec sa rotation propre. Pas de forme quelconque : ni pastille en
   polygone, ni plage thermique découpée, ni chanfrein.
 - Gestionnaire de contraintes : le moignon d'un via se compte en épaisseur
-  d'empilage (le contre-perçage n'est pas décrit) ; les contraintes de classe
+  d'empilage, contre-perçage déduit ; les contraintes de classe
   ne se saisissent que dans le PCB.
 - Plans (Draftsman) : les cotes à la main sont linéaires (horizontale,
   verticale, alignée), de diamètre ou de rayon — ni cote angulaire, ni cote
