@@ -5,13 +5,24 @@
    Document de référence IPC pour la commande et la fabrication : trois pages
    (PCB Details, Files Included, Stack-up), générées en pur JavaScript sans
    aucune dépendance. Le PDF est du texte structuré (ISO 32000) : on l'écrit
-   directement, fontes Helvetica standard (built-in Type1).
+   directement.
 
    Géométrie : la mise en page se pense en millimètres, Y vers le bas comme
    sur une feuille de papier ; l'émission convertit en points PDF, Y vers le
-   haut, à chaque opération. Les textes passent par noAcc() : les fontes
-   standard du PDF ne connaissent pas l'UTF-8, et un document technique
-   international s'écrit sans accents de toute façon.
+   haut, à chaque opération.
+
+   Fonte : la même que les plans, PlansSans (Liberation Sans, OFL), avec le
+   même sous-ensembleur (33-draftsman-export.js) et la même option « Fonte
+   embarquée » du document (`dessin.fonte`, cochée par défaut). Mais ici en
+   TrueType simple, un octet par caractère, l'ASCII à son propre code : le
+   contenu des pages se relit en clair (« SHEET: 1 / 3 », « REV: B », les
+   noms de fichiers annoncés), tandis que é, µ, ±, °, Ω, ≤, ≥ s'affichent,
+   se cherchent et se copient par la /ToUnicode. Les chasses sont celles
+   d'Helvetica : la mise en page ne bouge pas. Les textes ne sont donc codés
+   qu'à l'assemblage, quand on sait tout ce que le document écrit : mdText()
+   pose une ligne {pre, s, gras}, mdAssemble() la code. Option décochée, ou
+   fonte absente : Helvetica en WinAnsi (dfPdfLit, 29-draftsman.js) — les
+   accents, µ, ±, ° passent encore, Ω devient « Ohm » et ≥ « >= ».
    ========================================================================== */
 
 /* ---------- constantes de mise en page, en millimètres ---------- */
@@ -32,11 +43,13 @@ function mdL(mm){return mdPt(mm*72/25.4);}
    Règle d'or : le texte vit dans BT…ET, le tracé dehors — jamais les deux
    dans le même bloc, le lecteur PDF rejeterait le contenu. */
 
-/* Texte. `size` en points, `x`/`y` en mm depuis le haut, `gray` 0..1. */
+/* Texte. `size` en points, `x`/`y` en mm depuis le haut, `gray` 0..1. La
+   chaîne reste en clair jusqu'à mdAssemble(), qui choisit la fonte. */
 function mdText(L,txt,x,y,size,bold,gray){
-  L.push("BT /F"+(bold?"2":"1")+" "+mdPt(size)+" Tf "
-         +(gray==null?"0 g":mdPt(gray)+" g")+" "
-         +mdX(x)+" "+mdY(y)+" Td "+pdfStr(noAcc(txt))+" Tj ET");
+  L.push({pre:"BT /F"+(bold?"2":"1")+" "+mdPt(size)+" Tf "
+             +(gray==null?"0 g":mdPt(gray)+" g")+" "
+             +mdX(x)+" "+mdY(y)+" Td ",
+          s:String(txt==null?"":txt),gras:!!bold});
 }
 /* Segment. */
 function mdLine(L,x1,y1,x2,y2,gray,w){
@@ -103,12 +116,29 @@ function mdWrap(txt,maxW,size){
   return out.length?out:[String(txt)];
 }
 
+/* La fonte du document : la fonte simple embarquée (33-draftsman-export.js)
+   si l'option du document le veut et que la fonte se charge, sinon null —
+   Helvetica. `textes` : les {s, gras} de toutes les pages. */
+function mdFonte(textes){
+  if(typeof dfCfg!=="function"||!dfCfg().fonte||typeof dffPreparerSimple!=="function")return null;
+  return dffPreparerSimple(textes);
+}
+/* Un texte en littéral PDF : codé pour la fonte embarquée, sinon en WinAnsi
+   (dfPdfLit) — et, sans 29-draftsman.js, sans ses accents, comme autrefois. */
+function mdChaine(FE,s,gras){
+  if(FE)return FE.chaine(s,gras);
+  return typeof dfPdfLit==="function"?dfPdfLit(s):pdfStr(noAcc(s));
+}
+
 /* ---------- assembleur PDF ----------
-   Reçoit les contenus de pages (tableaux de lignes d'opérateurs) et rend un
-   Uint8Array. Plan des objets, fixe : 1=catalogue, 2=arbre des pages,
-   3..5=fontes, 6=ressources, puis par page un objet Page et un objet
-   Contents. Les offsets de la xref se comptent en écrivant — c'est ce qui
-   les rend justes. */
+   Reçoit les contenus de pages (tableaux de lignes d'opérateurs, et des
+   textes {pre, s, gras} encore à coder) et rend un Uint8Array. Plan des
+   objets : 1=catalogue, 2=arbre des pages, 3 et 4=fontes normale et
+   grasse, 5=Helvetica-Oblique (avec Helvetica seulement), puis les
+   ressources, par page un objet Page et un objet Contents, et, la fonte
+   embarquée, descripteur, fichier et /ToUnicode de chaque graisse. Les
+   offsets de la xref se comptent en écrivant — c'est ce qui les rend
+   justes. */
 function mdAssemble(pages){
   const chunks=[];
   let pos=0;
@@ -116,49 +146,65 @@ function mdAssemble(pages){
   const emitB=b=>{chunks.push(b);pos+=b.length;};
   const offsets=[];
 
+  const textes=[];
+  for(const P of pages)for(const l of P)if(typeof l!=="string")textes.push(l);
+  const FE=mdFonte(textes);
+
   emit("%PDF-1.4\n%\u00E2\u00E3\u00CF\u00D3\n");
 
   const nPages=pages.length;
-  const firstPage=7;
-  const totalObjs=6+nPages*2;
+  let totalObjs=0;
+  const alloc=()=>++totalObjs;
+  const CAT=alloc(), PAGES=alloc(), F1=alloc(), F2=alloc(), F3=FE?0:alloc(), RES=alloc();
+  const firstPage=RES+1;
+  totalObjs+=nPages*2;
   const writeObj=(n,dict,stream)=>{
     offsets[n]=pos;
     emit(n+" 0 obj\n"+dict+"\n");
     if(stream){
       emit("stream\n");
-      emitB(stream);
+      emitB(typeof stream==="string"?new TextEncoder().encode(stream):stream);
       emit("\nendstream\n");
     }
     emit("endobj\n");
   };
 
-  writeObj(1,"<< /Type /Catalog /Pages 2 0 R >>");
+  writeObj(CAT,"<< /Type /Catalog /Pages "+PAGES+" 0 R >>");
 
   const kids=[];
   for(let i=0;i<nPages;i++)kids.push((firstPage+i*2)+" 0 R");
-  writeObj(2,"<< /Type /Pages /Kids ["+kids.join(" ")+"] /Count "+nPages
+  writeObj(PAGES,"<< /Type /Pages /Kids ["+kids.join(" ")+"] /Count "+nPages
            +" /MediaBox [0 0 "+mdPt(MD_PW*72/25.4)+" "+mdPt(MD_PH*72/25.4)+"] >>");
 
-  writeObj(3,"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
-  writeObj(4,"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
-  writeObj(5,"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique >>");
-  writeObj(6,"<< /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >>");
+  /* La fonte embarquée écrit ses objets après les pages, numérotés à la
+     suite. L'oblique d'Helvetica, que rien n'emploie, ne reste qu'avec
+     Helvetica : le document embarqué n'a ainsi aucune fonte substituée. */
+  const fins=[];
+  if(FE)FE.ecrire(F1,F2,alloc,(n,dict,stream)=>fins.push([n,dict,stream]));
+  else{
+    writeObj(F1,"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+    writeObj(F2,"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
+    writeObj(F3,"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>");
+  }
+  writeObj(RES,"<< /Font << /F1 "+F1+" 0 R /F2 "+F2+" 0 R"+(F3?" /F3 "+F3+" 0 R":"")+" >> >>");
 
   for(let i=0;i<nPages;i++){
-    const content=new TextEncoder().encode(pages[i].join("\n")+"\n");
+    const lignes=pages[i].map(l=>typeof l==="string"?l:l.pre+mdChaine(FE,l.s,l.gras)+" Tj ET");
+    const content=new TextEncoder().encode(lignes.join("\n")+"\n");
     const cObj=firstPage+i*2+1, pObj=firstPage+i*2;
     writeObj(cObj,"<< /Length "+content.length+" >>",content);
-    writeObj(pObj,"<< /Type /Page /Parent 2 0 R"
+    writeObj(pObj,"<< /Type /Page /Parent "+PAGES+" 0 R"
              +" /MediaBox [0 0 "+mdPt(MD_PW*72/25.4)+" "+mdPt(MD_PH*72/25.4)+"]"
-             +" /Contents "+cObj+" 0 R /Resources 6 0 R >>");
+             +" /Contents "+cObj+" 0 R /Resources "+RES+" 0 R >>");
   }
+  for(const [n,dict,stream] of fins)writeObj(n,dict,stream);
 
   const xref=pos;
   emit("xref\n0 "+(totalObjs+1)+"\n");
   emit("0000000000 65535 f \n");
   for(let n=1;n<=totalObjs;n++)
     emit(String(offsets[n]||0).padStart(10,"0")+" 00000 n \n");
-  emit("trailer\n<< /Size "+(totalObjs+1)+" /Root 1 0 R >>\n");
+  emit("trailer\n<< /Size "+(totalObjs+1)+" /Root "+CAT+" 0 R >>\n");
   emit("startxref\n"+xref+"\n%%EOF\n");
 
   const out=new Uint8Array(pos);
@@ -279,18 +325,18 @@ function masterDrawingPdf(fabFiles){
      S.board.pts?("Freeform: "+S.board.pts.length+" points"):"Rectangular"],
     ["Length x Width",fmt(S.board.w,2)+" mm x "+fmt(S.board.h,2)+" mm"],
     ["Markings","UL + Date (YYWW) + Manufacturer ID - Layer: Soldermask bottom"],
-    ["Final board thickness",fmt(stackTotal(),3)+" mm (+/-10%)"],
-    ["Base copper thickness","Outer: "+fmt(outerUm,1)+" um ("+ozO+")"
-      +(innerUm?"   Inner: "+fmt(innerUm,1)+" um":"")],
-    ["Final copper thickness","Outer: min "+fmt(outerUm*0.95,1)+" um"
-      +(innerUm?"   Inner: min "+fmt(innerUm*0.95,1)+" um":"")],
+    ["Final board thickness",fmt(stackTotal(),3)+" mm (±10%)"],
+    ["Base copper thickness","Outer: "+fmt(outerUm,1)+" µm ("+ozO+")"
+      +(innerUm?"   Inner: "+fmt(innerUm,1)+" µm":"")],
+    ["Final copper thickness","Outer: min "+fmt(outerUm*0.95,1)+" µm"
+      +(innerUm?"   Inner: min "+fmt(innerUm*0.95,1)+" µm":"")],
   ],[
     ["Solder mask color",maskC],
     ["IPC class","Class 2"],
     ["RoHS","Compliant"],
     ["Lead free","Yes"],
     ["Ul94 rating","V-0"],
-    ["CTI",">= 100V"],
+    ["CTI","≥ 100 V"],
   ]);
   y+=MD_LH*0.4;
 
@@ -298,7 +344,7 @@ function masterDrawingPdf(fabFiles){
   const mat=(S.stack.di[0]&&S.stack.di[0].mat)||"FR-4";
   twoCol([
     ["Board material",mat+", shall comply with IPC-4101/99/126, UL V-0 and Lead Free compliant"],
-    ["Minimum Tg (TMA)",(S.stack.tg||150)+" C"],
+    ["Minimum Tg (TMA)",(S.stack.tg||150)+" °C"],
   ],[
     ["Approved materials","S1000, S1000H, S1002-2, EM-827 and IT158TC"],
   ]);
@@ -311,7 +357,7 @@ function masterDrawingPdf(fabFiles){
      (trk>0?fmt(trk,2):"—")+" mm / "+(spc>0?fmt(spc,2):"—")+" mm"],
     ["Minimum hole",(hole>0?fmt(hole,2):"—")+" mm"],
     ["Minimum annular ring",(ann>0?fmt(ann,2):"—")+" mm"],
-    ["Hole wall copper",">= 20 um"],
+    ["Hole wall copper","≥ 20 µm"],
   ],[
     ["Hole types","PTH and Non-PTH"],
     ["Via types","Through"+(viaCensus().blind?" , Blind":"")
@@ -332,8 +378,8 @@ function masterDrawingPdf(fabFiles){
   const fin=(S.stack.finish||"ENIG");
   twoCol([
     ["Surface finish",fin],
-    ["Nickel","118-236 uin (3-6 um)"],
-    ["Gold",">= 2 uin (>= 0.05 um)"],
+    ["Nickel","118–236 µin (3–6 µm)"],
+    ["Gold","≥ 2 µin (≥ 0.05 µm)"],
   ],[
     ["Finish class",/ENIG/i.test(fin)?"Electroless Nickel Immersion Gold":fin],
   ]);
@@ -350,7 +396,7 @@ function masterDrawingPdf(fabFiles){
   y+=MD_LH;
   mdText(L,"Manufacturer may open solder mask clearance as necessary and shall not",MD_ML+2,y,8);
   y+=MD_LH;
-  mdText(L,"exceed 0.1mm and Bridge mini (Web): 100um.",MD_ML+2,y,8);
+  mdText(L,"exceed 0.1mm and Bridge mini (Web): 100 µm.",MD_ML+2,y,8);
   y+=MD_LH*1.2;
 
   section("Silk screen");
@@ -512,24 +558,24 @@ function masterDrawingPdf(fabFiles){
       const role=roleLabel(r.i);
       stackRow([String(cuN),nm,"CONDUCTOR",
         "Copper "+ozLabel(cuT(r.i))+(role&&role!=="Signal"?" - "+role:""),
-        fmt(cuT(r.i)*1000,3)+" mm","+/-10%"],salt=!salt);
+        fmt(cuT(r.i)*1000,3)+" mm","±10%"],salt=!salt);
       cuN++;
     }else if(r.kind==="di"){
       const d=diAt(r.i);
       stackRow(["","Dielectric "+(r.i+1),"DIELECTRIC",
         (d.mat||"FR-4")+" "+(d.k==="core"?"CORE":(d.k==="prepreg"?"PREPREG":"FILM"))
-        +" er "+fmt(d.er,2),
-        fmt(d.t,3)+" mm","+/-10%"],salt=!salt);
+        +" εr "+fmt(d.er,2),
+        fmt(d.t,3)+" mm","±10%"],salt=!salt);
     }else if(r.kind==="mask"){
       stackRow(["","Solder Mask "+(r.i?"Bottom":"Top"),"DIELECTRIC",
         "Solder Mask IPC-SM840 ("+maskC+")",
-        fmt(S.stack.maskT*1000,3)+" mm","+/-10%"],salt=!salt);
+        fmt(S.stack.maskT*1000,3)+" mm","±10%"],salt=!salt);
     }else{
       stackRow(["","Silk Screen "+(r.i?"Bottom":"Top"),"LEGEND",
         "Ink "+(S.stack.silkColor||"blanc"),"—","—"],salt=!salt);
     }
   }
-  stackRow(["","","","Total thickness",fmt(stackTotal(),3)+" mm","+/-10%"],false,true);
+  stackRow(["","","","Total thickness",fmt(stackTotal(),3)+" mm","±10%"],false,true);
   y+=MD_LH*1.2;
 
   section("Via summary");

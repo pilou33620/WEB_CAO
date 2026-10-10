@@ -26,6 +26,8 @@ js/02-connectivity.js    union-find, îlots de cuivre, chevelu, DRC, netlist, pl
 js/03-render.js          canevas, ordre des couches, remplissage des zones, calques
 js/04-fabrication.js     masque et pâte, Gerber RS-274X, Excellon, feuille
                          d'empilage, archive ZIP
+js/04-pdf-masterdraw.js  Master Drawing PDF (pages IPC du dossier de
+                         fabrication), fonte des plans embarquée
 js/05-tools.js           historique, sélection, tracé, zones, contour, souris, clavier
 js/06-panels.js          onglets de couches, listes, règles, propriétés
                          (objet seul et groupes de sélection), empilage physique
@@ -75,7 +77,8 @@ js/29-draftsman.js       plans de fabrication et d'assemblage (Draftsman) :
                          cherchable, aperçu SVG et recherche dans la fenêtre
 js/33-draftsman-export.js  plans : export DXF (carte 1:1 pour la mécanique,
                          feuille entière) et fonte TrueType embarquée en
-                         sous-ensemble dans le PDF
+                         sous-ensemble dans le PDF des plans et dans le
+                         Master Drawing
 js/fontes/plans-sans.js  la fonte PlansSans (Liberation Sans pré-réduite, en
                          base64), produite par outils/fonte-plans.py ; sa
                          licence OFL à côté, js/fontes/OFL-PlansSans.txt
@@ -1088,6 +1091,22 @@ Un caractère que la fonte n'a pas suit le chemin de WinAnsi (⌀ → Ø, ✓ �
 lettre sans son accent, puis « ? »). Décochée — ou si la fonte ne se charge
 pas —, le PDF reprend Helvetica en WinAnsi, comme avant. Le choix est gardé
 dans le document (`dessin.fonte`).
+
+**Le Master Drawing** (`04-pdf-masterdraw.js`, dans **Fabrication .zip**)
+emporte la même fonte, par le même sous-ensembleur et sous la même option.
+Il était en Helvetica sans accents (« 35 um », « +/-10% », « >= 100V ») ; il
+écrit maintenant « 35 µm », « ±10% », « ≥ 100 V », « 150 °C », « εr », et le
+nom du projet avec ses accents — le tout cherchable et copiable. Mais ici en
+**TrueType simple**, un octet par caractère : l'ASCII garde son propre code,
+les autres caractères prennent les codes libres (159 par graisse, au-delà
+« ? »), la fonte est déclarée symbolique et sa `cmap` (1,0) et (3,0) dit quel
+glyphe porte quel code, la `/ToUnicode` quel caractère. Le contenu des pages
+se relit donc en clair (« SHEET: 1 / 3 », « REV: B », les noms de fichiers
+annoncés) : un `grep` ou un `diff` entre deux révisions le lisent. Les chasses
+sont celles d'Helvetica : aucune ligne ne bouge, seuls « — » et « °C » sont un
+peu plus larges que les « - » et « C » d'avant, dans des cases qui ont la
+place. Option décochée, ou fonte absente : Helvetica en WinAnsi, accents
+compris (Ω → `Ohm`, ≥ → `>=`).
 
 Pour changer de fonte ou de jeu de caractères : `python3 outils/fonte-plans.py
 [Regular.ttf Bold.ttf]`, puis reconstruire le monofichier.
