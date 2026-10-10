@@ -16,12 +16,12 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 | --- | --- | --- |
 | **Éditeur PCB** | En service | 905 essais (`editeur-pcb/test/harness.js`), dont 28 pour les plans (Draftsman) et 24 pour le gestionnaire de contraintes et la topologie |
 | **Éditeur Schématique** | En service | 155 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
-| **Visionneuse IPC-2581** | En service | 186 essais (`harness-sim.js`) + 59 (`banc-essai.py`) |
+| **Visionneuse IPC-2581** | En service | 190 essais (`harness-sim.js`) + 59 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.5.0)** | En service (0,3 à 0,4 % vs étalons) | 199 cas (`python/test/banc-ligne-mom.py`) |
 | **SI — Z différentielle (`solve_multiline`)** | En service (< 3 % vs Garg-Bahl) | inclus dans les 199 cas |
 | **SI — Crosstalk niveau 2 (`crosstalk` v4.1.0)** | En service (scan normalisé : k_total, NEXT et FEXT en % et dB, statut vert / orange / rouge, piste sélectionnée — t_r saisi ou déduit de la classe — ou toute la carte sous un t_r global ; pistes superposées résolues ; pertes R, G au genou du front en option ; somme des agresseurs en phase ou quadratique ; coloration au statut DRC sur le layout ; l'analyse électrique est retirée) | 41 cas (`python/test/banc-crosstalk.py`), dont la triplaque exacte (Cohn) et les formules du niveau 2 |
 | **Cascade SI / PDN (`simulation_em` v4.3.0)** | En service | couvert par les bancs `ligne_mom`, crosstalk et éditeur |
-| **SI — Diagramme de l'œil (`oeil` v1.0.0)** | En service (réponse à un bit depuis la cascade ABCD, simple et différentiel ; œil PRBS7/9/15 et pire cas PDA ; CTLE, FFE, DFE ; 18 gabarits de protocole avec leur fiabilité) — émetteur/récepteur linéaires, sans gigue aléatoire ni diaphonie | 19 cas (`python/test/banc-oeil.py`) |
+| **SI — Diagramme de l'œil (`oeil` v2.0.0)** | En service (réponse à un bit depuis la cascade ABCD, simple et différentiel, vias et coudes de la paire compris ; œil PRBS et pire cas PDA ; CTLE, FFE, DFE ; œil statistique RJ/DJ/bruit, contours 10⁻⁶…10⁻¹⁵ et baignoire ; diaphonie bornée saisie ou reprise du couplage (NEXT/FEXT du niveau 2) ; tampons IBIS émetteur et récepteur simulés dans le temps (`ibis.py`) ; 18 gabarits avec leur fiabilité) — boîtier IBIS, AMI et couplage AC hors modèle | 36 cas (`python/test/banc-oeil.py`) |
 | **RF — S21 port à port (`rf_reseau` v1.5.0)** | En service dans l'éditeur PCB et la visionneuse, chacun avec son empilage (pistes par `simulation_em`, lignes couplées à N conducteurs avec pertes et dispersion modale, coudes et vias aux bords des longements, pastilles en MoM 3D sur stratifié étalonné sur l'empilage, zones et coulées de masse entières en maillage adaptatif creux sur leur cuivre rempli, longements recoupés à leur écart local, chemins de masse piste + via, broches annexes, pistes des autres nets fermées sur leur Z₀, mutuelles des selfs entre elles et avec les pistes (Neumann avec image), fentes du plan de référence (Ott), composants SPICE / .sNp / idéaux, S généralisés sur ports complexes, « et si ») — quasi-statique (+ Getsinger) : le domaine de validité (modes supérieurs, ondes de surface, rayonnement) est calculé et signalé ; les modéliser demande le moteur pleine onde | 47 cas (`python/test/banc-rf.py`) + 8 essais de page (`editeur-pcb/test/harness.js`) + 3 (`harness-sim.js`) |
 | **PI — Chute DC & Échauffement (`dc_solver` v2.1.0)** | En service (IR drop, densité J, modèle étalement) | 42 cas (`python/test/banc-dc.py`) |
 | **Scoring placement & Rotation (`pcb_scoring`)** | En service (HPWL, congestion, découplage HF, auto-rotation) | 18 cas (`python/test/banc-pcb-scoring.py`) |
@@ -164,9 +164,10 @@ lib/
   - Interface dédiée dans l'onglet « Z différentielle » (`commun/simulation-em.js`) avec sélecteur interactif `[ Sdd ]`, `[ Scc ]`, `[ Scd ]`, courbe SVG multi-traces avec seuil CEM à $-20\text{ dB}$, repère de fréquence centrale $f_0$, lecture dynamique au survol et export Touchstone différentiel `.s2p`.
 
 - [x] **Diagramme de l'œil** (onglet SI, `python/oeil.py`, route `/api/oeil`) : œil PRBS et pire cas, gabarits par protocole (USB 2.0/3.x, PCIe 1–3, HDMI, LVDS, MIPI D-PHY, SATA, SGMII, SPI, QSPI, SD, eMMC), égaliseur de référence, marge, export CSV.
-- [ ] **Œil : vérifier les gabarits « à vérifier »** contre les normes (USB 2.0 extrémité, PCIe Gen 2/3, HDMI 1.4, SATA) et passer les gabarits dérivés aux valeurs des composants réels.
-- [ ] **Œil : gigue et diaphonie** — gigue aléatoire de l'émetteur (œil statistique et contours de taux d'erreur), agresseurs voisins repris de `crosstalk.py` dans l'analyse pire cas.
-- [ ] **Œil : modèles IBIS** pour l'émetteur et le récepteur (non linéaires), et vias de la paire dans la cascade différentielle.
+- [x] **Œil : gabarits vérifiés** — PCIe Gen 2 et Gen 3 recoupés (valeurs inchangées, jugés à 10⁻¹²), SATA Gen 1–3 recoupés (largeur 1 − TJ : 0,49 / 0,43 / 0,43 UI, en losange) ; gabarits dérivés rattachés aux récepteurs réels (SN65LVDS32, D-PHY 70/40 mV).
+- [x] **Œil : gigue et diaphonie** — œil statistique (RJ, DJ double Dirac, bruit), contours de taux d'erreur, baignoire, marge au taux visé ; agresseurs bornés dans le pire cas, repris de `crosstalk.py`.
+- [x] **Œil : modèles IBIS** (`python/ibis.py`) — lecteur .ibs, tampon émetteur et diodes du récepteur simulés pas à pas contre le canal ; vias et coudes de la paire dans la cascade différentielle (`simulation_em` 4.4.0).
+- [ ] **Œil : reste** — USB 2.0 Template 2 et HDMI 1.4 TP2 à vérifier dans la norme (non publiques) ; mutuelle entre fûts des vias de la paire ; boîtier IBIS (R/L/C_pkg), [Diff Pin] et AMI ; conversion de mode d'une paire de tampons dissymétriques.
 
 ### Vérification de la carte entière
 
