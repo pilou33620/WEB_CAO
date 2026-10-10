@@ -913,6 +913,469 @@ def les_vias_de_la_paire_entrent_dans_la_cascade():
     assert h_avec < h_sans - 0.02, (h_avec, h_sans)
 
 
+# =============================================================================
+# 2.1.0 -- le boitier, les broches, la paire de tampons, l'AMI
+# =============================================================================
+
+def _ibis_boitier(entete="", r=50.0, vcc=1.0, sigma=40e-12, nom="LIN",
+                  type_="I/O", c_comp=0.0, suite=""):
+    """`_ibis_lineaire` (r = 50 ohms : adapte a la ligne) avec, entre
+    [Component] et [Model], les lignes de boitier et de broches `entete`,
+    et apres le modele les lignes `suite`."""
+    txt = _ibis_lineaire(r=r, vcc=vcc, sigma=sigma, c_comp=c_comp, nom=nom)
+    txt = txt.replace("[Component] ESSAI\n", "[Component] ESSAI\n" + entete)
+    txt = txt.replace("Model_type I/O", "Model_type " + type_)
+    return txt.replace("[End]", suite + "[End]")
+
+
+def _oeil_boitier(o, retard=0.3e-9, z0=50.0):
+    """L'oeil d'une ligne ideale sans pertes, boitiers IBIS comptes."""
+    p = oeil._params(o, None)
+    ctx = oeil.preparer_ibis(o, p)
+    df, n, _, _ = oeil.grille(p["debit"], ctx["tr_lissage"], retard,
+                              4 * p["tr"])
+    f = df * np.arange(1, n + 1)
+    abcd, _ = oeil.appliquer_boitiers(ctx, f, oeil.ligne_ideale(f, z0,
+                                                                retard))
+    nl = oeil.simuler_non_lineaire(ctx, f, abcd, p, z0)
+    p["v_haut"], p["v_bas"] = nl["v_haut"], nl["v_bas"]
+    return oeil.oeil(f, abcd, p, None, non_lineaire=nl), nl, ctx
+
+
+def _dix_quatre_vingt_dix(s, dt):
+    """Le temps de montee 10-90 % d'une reponse normalisee, interpole."""
+    s = np.asarray(s, dtype=float)
+
+    def instant(x):
+        i = int(np.argmax(s >= x))
+        return (i - 1 + (x - s[i - 1]) / (s[i] - s[i - 1])) * dt
+    return instant(0.9) - instant(0.1)
+
+
+def _ex_gauss(t, sigma, tau):
+    """La reponse a un echelon d'un front gaussien (sigma) suivi d'un
+    premier ordre (tau) : la loi exponentielle-gaussienne."""
+    t = np.asarray(t, dtype=float)
+    phi = 0.5 * np.vectorize(math.erfc)(-t / (sigma * math.sqrt(2.0)))
+    arg = -t / (sigma * math.sqrt(2.0)) + sigma / (tau * math.sqrt(2.0))
+    queue = np.exp(-t / tau + 0.5 * (sigma / tau) ** 2) * \
+        0.5 * np.vectorize(math.erfc)(arg)
+    return phi - queue
+
+
+BOITIER = """[Package]
+R_pkg 0.2 0.1 0.3
+L_pkg 8nH 6nH 10nH
+C_pkg 1pF 0.8pF 1.2pF
+[Pin] signal_name model_name R_pin L_pin C_pin
+A1 DP LIN 0.05 2nH 0.4pF
+A2 DN LIN NA NA 0.6pF
+A3 VCC POWER
+A4 SEL SELECT
+B1 DQ LIN
+[Diff Pin] inv_pin vdiff tdelay_typ tdelay_min tdelay_max
+A1 A2 0.1V 40ps 30ps 50ps
+[Model Selector] SELECT
+LIN tampon lineaire
+LIN2 l'autre
+[Package Model] PKG_ESSAI
+"""
+
+MODELE_BOITIER = """[Define Package Model] PKG_ESSAI
+[Manufacturer] Essai
+[OEM] Essai
+[Description] boitier d'essai
+[Number Of Pins] 3
+[Pin Numbers]
+A1
+A2
+B1
+[Model Data]
+[Inductance Matrix] Full_matrix
+[Row] 1
+3.0nH 0.6nH 0.1nH
+[Row] 2
+3.5nH 0.2nH
+[Row] 3
+4.0nH
+[Capacitance Matrix] Sparse_matrix
+[Row] 1
+1 0.7pF
+2 -0.1pF
+[Row] 2
+2 0.8pF
+[End Model Data]
+[End Package Model]
+"""
+
+
+def le_boitier_et_les_broches_se_lisent():
+    """[Package] typ/min/max, [Pin] (« NA » renvoie a [Package]), [Diff Pin]
+    pris aussi par sa broche inverse, [Model Selector], et la diagonale
+    d'un [Package Model] (matrice pleine et creuse), qui prime ; ses
+    mutuelles sont dites. Sans `complet`, la lecture est celle de la 1.0.0."""
+    lin2 = _ibis_lineaire(r=40.0, nom="LIN2").split("[Model] LIN2", 1)[1]
+    txt = _ibis_boitier(BOITIER, suite="[Model] LIN2" + lin2.replace(
+        "[End]", "") + MODELE_BOITIER)
+    assert "[Package]" in ibis.lire(txt)["ignores"]
+    lu = ibis.lire(txt, "essai.ibs", complet=True)
+    assert "[Package]" not in lu["ignores"], lu["ignores"]
+    for vu, attendu in zip(lu["boitier"]["l"], (8e-9, 6e-9, 10e-9)):
+        proche(vu, attendu, 1e-12, "L_pkg")
+    assert lu["ordre_broches"] == ["A1", "A2", "A3", "A4", "B1"]
+    # sans modele de boitier : [Pin] puis [Package], valeur par valeur
+    sans = dict(lu, modele_boitier="")
+    def rlc(b, attendu):
+        for k, v in zip("rlc", attendu):
+            proche(b[k], v, 1e-12, "%s de %s" % (k, attendu))
+    b = ibis.boitier_broche(sans, "A1")
+    rlc(b, (0.05, 2e-9, 0.4e-12))
+    assert b["source"] == "[Pin]"
+    rlc(ibis.boitier_broche(sans, "A2", "max"), (0.3, 10e-9, 0.6e-12))
+    rlc(ibis.boitier_broche(sans, ""), (0.2, 8e-9, 1e-12))
+    # le [Package Model] : sa diagonale prime, ses mutuelles se disent
+    b = ibis.boitier_broche(lu, "A1")
+    proche(b["l"], 3e-9, 1e-12, "L du modele de boitier")
+    proche(b["c"], 0.7e-12, 1e-12, "C du modele de boitier (creuse)")
+    assert b["r"] == 0.05 and "[Package Model] PKG_ESSAI" in b["source"]
+    assert b["notes"] and "k_L 0.19" in b["notes"][0], b["notes"]
+    proche(ibis.boitier_broche(lu, "B1")["l"], 4e-9, 1e-12, "L de B1")
+    k = ibis.couplage_boitier(lu["modeles_boitier"]["PKG_ESSAI"], "A1", "A2")
+    proche(k["l"], 0.6 / math.sqrt(3.0 * 3.5), 1e-9, "k_L A1-A2")
+    # [Diff Pin], dans les deux sens
+    p = ibis.paire_diff(lu, "A1")
+    assert p["inverse"] == "A2" and p["vdiff"] == 0.1, p
+    for vu, attendu in zip(p["tdelay"], (40e-12, 30e-12, 50e-12)):
+        proche(vu, attendu, 1e-12, "tdelay")
+    q = ibis.paire_diff(lu, "A2")
+    assert q["inverse"] == "A1" and q["tdelay"][0] == -p["tdelay"][0]
+    # les modeles des broches, selecteur compris
+    assert ibis.modele_broche(lu, "A1")[0] == "LIN"
+    assert ibis.modele_broche(lu, "A4")[0] == "LIN"
+    assert ibis.modele_broche(lu, "A4", "LIN2")[0] == "LIN2"
+    for mauvaise in ("A3", "Z9"):
+        try:
+            ibis.modele_broche(lu, mauvaise)
+        except ibis.ErreurIbis:
+            pass
+        else:
+            raise AssertionError("broche %s acceptee" % mauvaise)
+
+
+def un_boitier_nul_ne_change_rien():
+    """Un [Package] et des [Pin] tout a zero : l'oeil est celui d'un
+    fichier sans boitier, au bit pres -- la cascade n'est pas touchee."""
+    base = {"debit": 1e9, "r_charge": 50.0, "c_charge": 0.0}
+    nul = ("[Package]\nR_pkg 0 0 0\nL_pkg 0 0 0\nC_pkg 0 0 0\n"
+           "[Pin] signal_name model_name R_pin L_pin C_pin\n"
+           "A1 SIG LIN 0 0 0\n")
+    r0, _, _ = _oeil_boitier(dict(base, ibis_emetteur={
+        "texte": _ibis_boitier()}))
+    r1, _, ctx = _oeil_boitier(dict(base, ibis_emetteur={
+        "texte": _ibis_boitier(nul), "broche": "A1"}))
+    assert ctx["bt_em"] == (None, None), ctx["bt_em"]
+    assert r1["mesures"] == r0["mesures"], (r1["mesures"], r0["mesures"])
+    assert r1["densite"]["comptes"] == r0["densite"]["comptes"]
+
+
+def l_inductance_du_boitier_ralentit_le_front():
+    """Tampon de 50 ohms, L_pkg 5 nH, ligne de 50 ohms adaptee : le front
+    passe par un premier ordre de constante L / (Rs + Z0) = 50 ps. Le
+    10-90 % simule est celui de la loi exponentielle-gaussienne (front du
+    tampon compose avec le lissage, puis le premier ordre) a 3 % pres."""
+    sigma = 10e-12
+    base = {"debit": 1e9, "r_charge": 50.0, "c_charge": 0.0}
+    pkg = "[Package]\nR_pkg 0 0 0\nL_pkg 5nH 5nH 5nH\nC_pkg 0 0 0\n"
+    _, nl0, _ = _oeil_boitier(dict(base, ibis_emetteur={
+        "texte": _ibis_boitier(sigma=sigma)}))
+    _, nl1, ctx = _oeil_boitier(dict(base, ibis_emetteur={
+        "texte": _ibis_boitier(pkg, sigma=sigma)}))
+    assert ctx["infos"]["emetteur"]["boitier"]["source"] == "[Package]"
+    sig = sigma * math.sqrt(1.0 + oeil.LISSAGE_SUR_FRONT ** 2)
+    t = np.arange(-8 * sig, 30 * 50e-12, 0.05e-12)
+    attendu = _dix_quatre_vingt_dix(_ex_gauss(t, sig, 50e-12), 0.05e-12)
+    vu0 = _dix_quatre_vingt_dix(nl0["s"], nl0["dt"])
+    vu1 = _dix_quatre_vingt_dix(nl1["s"], nl1["dt"])
+    proche(vu0, 2.5631 * sig, 0.03, "10-90 sans boitier")
+    proche(vu1, attendu, 0.03, "10-90 avec L_pkg")
+    # les niveaux ne bougent pas : L est un court-circuit en continu
+    proche(nl1["v_haut"], nl0["v_haut"], 1e-6, "niveau haut")
+
+
+def la_capacite_du_boitier_renvoie_une_reflexion():
+    """C_pkg de 2 pF a la broche d'un recepteur adapte (50 ohms) : la
+    charge vaut Z0 / (1 + p C Z0), le coefficient de reflexion
+    -p tau / (1 + p tau), tau = Z0 C / 2 = 50 ps -- vu de l'emetteur
+    adapte, l'echo d'un echelon est -e^(-t/tau), lisse par le front. Le creux simule a l'emetteur est le creux
+    calcule a 3 % pres ; sans C_pkg, il n'y en a pas."""
+    sigma, retard = 10e-12, 0.3e-9
+    rx_txt = _ibis_boitier("[Package]\nR_pkg 0 0 0\nL_pkg 0 0 0\n"
+                           "C_pkg 2pF 2pF 2pF\n", nom="RX", type_="Input")
+    creux = []
+    for rx in (None, rx_txt):
+        o = {"debit": 1e9, "r_charge": 50.0, "c_charge": 0.0,
+             "ibis_emetteur": {"texte": _ibis_boitier(sigma=sigma)}}
+        if rx:
+            o["ibis_recepteur"] = {"texte": rx, "modele": "RX"}
+        _, nl, ctx = _oeil_boitier(o, retard)
+        pas = nl["infos"]["pas_par_ui"]
+        v1, _ = nl["liaison"].simuler([0, 0, 1, 1, 1], pas, 1e-9)
+        dt = nl["dt"]
+        t50 = 2e-9 + nl["t50"]
+        # l'echo revient a 2 T apres le front ; avant lui, le palier E/2
+        i0 = int((t50 + 2 * retard - 4 * sigma) / dt)
+        i1 = int((t50 + 2 * retard + 300e-12) / dt)
+        palier = float(v1[int((t50 + retard) / dt)])
+        creux.append((palier, palier - float(np.min(v1[i0:i1]))))
+    proche(creux[0][0], 0.5, 1e-3, "palier E/2")
+    assert creux[0][1] < 0.005, creux
+    sig = sigma * math.sqrt(1.0 + oeil.LISSAGE_SUR_FRONT ** 2)
+    tau = 50.0 * 2e-12 / 2.0
+    pas_t = 0.05e-12
+    t = np.arange(-8 * sig, 10 * tau, pas_t)
+    # echo = - (front lisse, en pente) * e^(-t/tau)
+    pente = np.exp(-0.5 * (t / sig) ** 2) / (sig * math.sqrt(2 * math.pi))
+    noyau = np.exp(-np.arange(len(t)) * pas_t / tau)
+    echo = -np.convolve(pente, noyau)[:len(t)] * pas_t
+    attendu = 0.5 * float(-np.min(echo))
+    proche(creux[1][1], attendu, 0.03, "creux de l'echo de C_pkg")
+
+
+def la_broche_prime_sur_le_boitier():
+    """[Pin] L_pin 2 nH contre [Package] L_pkg 8 nH : la broche A1 prend la
+    sienne, la broche A2 (« NA ») celle du boitier -- et son front est plus
+    lent. Sans broche, le boitier moyen ; `boitier: false`, aucun."""
+    txt = _ibis_boitier(BOITIER.replace("[Package Model] PKG_ESSAI\n", ""),
+                        sigma=10e-12)
+    base = {"debit": 1e9, "r_charge": 50.0, "c_charge": 0.0}
+    vus = {}
+    for broche in ("A1", "A2", ""):
+        o = dict(base, ibis_emetteur={"texte": txt, "broche": broche})
+        p = oeil._params(o, None)
+        ctx = oeil.preparer_ibis(o, p)
+        vus[broche] = ctx["bt_em"][0]
+    proche(vus["A1"]["l"], 2e-9, 1e-12, "L de A1")
+    proche(vus["A2"]["l"], 8e-9, 1e-12, "L de A2")
+    proche(vus[""]["l"], 8e-9, 1e-12, "L sans broche")
+    assert vus["A1"]["source"] == "[Pin]"
+    assert "[Package]" in vus["A2"]["source"]
+    assert vus[""]["source"] == "[Package]"
+    o = dict(base, boitier=False, ibis_emetteur={"texte": txt,
+                                                 "broche": "A1"})
+    assert oeil.preparer_ibis(o, oeil._params(o, None))["bt_em"] == \
+        (None, None)
+    _, nl1, _ = _oeil_boitier(dict(base, ibis_emetteur={"texte": txt,
+                                                        "broche": "A1"}))
+    _, nl2, _ = _oeil_boitier(dict(base, ibis_emetteur={"texte": txt,
+                                                        "broche": "A2"}))
+    assert _dix_quatre_vingt_dix(nl2["s"], nl2["dt"]) > \
+        1.5 * _dix_quatre_vingt_dix(nl1["s"], nl1["dt"])
+
+
+def _paire_ideale(o, retard=0.3e-9, zd=100.0, zc=25.0):
+    """La paire de deux lignes ideales sans couplage (Z0 = 50 ohms), ses
+    deux brins simules : (nl, ctx, p)."""
+    p = oeil._params(o, None)
+    ctx = oeil.preparer_ibis(o, p)
+    df, n, _, _ = oeil.grille(p["debit"], ctx["tr_lissage"], retard,
+                              4 * p["tr"])
+    f = df * np.arange(1, n + 1)
+    nl = oeil.simuler_paire(ctx, f, oeil.ligne_ideale(f, zd, retard),
+                            oeil.ligne_ideale(f, zc, retard), p, zd)
+    return nl, ctx, p
+
+
+def _croisement(v, dt, niveau, montant, apres=0):
+    v = np.asarray(v, dtype=float)
+    i = apres + int(np.argmax((v[apres:] >= niveau) if montant
+                              else (v[apres:] <= niveau)))
+    return (i - 1 + (niveau - v[i - 1]) / (v[i] - v[i - 1])) * dt
+
+
+def le_tdelay_de_diff_pin_decale_les_brins():
+    """[Diff Pin] A1 A2, tdelay 40 ps : choisie par sa broche, la paire
+    prend le modele de chaque broche et retarde le brin inverse. Les deux
+    modes adaptes (100 ohms entre les brins, 25 ohms de mode commun), chaque
+    brin du recepteur voit son propre tampon : l'ecart entre le front du
+    brin p et celui du brin n EST le tdelay. Le vdiff du recepteur devient
+    son seuil."""
+    txt = _ibis_boitier(BOITIER.replace("[Package Model] PKG_ESSAI\n", "")
+                        .replace("L_pkg 8nH 6nH 10nH", "L_pkg 0 0 0")
+                        .replace("C_pkg 1pF 0.8pF 1.2pF", "C_pkg 0 0 0")
+                        .replace("0.05 2nH 0.4pF", "0 0 0")
+                        .replace("NA NA 0.6pF", "0 0 0"), sigma=20e-12)
+    o = {"debit": 1e9, "mode": "diff", "r_charge": 100.0, "c_charge": 0.0,
+         "r_charge_mc": 25.0,
+         "ibis_emetteur": {"texte": txt, "broche": "A1"},
+         "ibis_recepteur": {"texte": txt, "broche": "A1", "modele": "LIN"}}
+    nl, ctx, _ = _paire_ideale(o)
+    proche(ctx["decalage"], 40e-12, 1e-12, "tdelay lu")
+    assert ctx["vdiff"] == 0.1, ctx["vdiff"]
+    assert ctx["infos"]["emetteur"]["inverse"] == "A2"
+    pas = nl["pas_bit"]
+    v = nl["liaison"].simuler([0, 0, 1, 1, 1], pas, 1e-9)
+    dt = nl["dt"]
+    hp, bp = float(v[2][-1]), float(v[2][0])
+    hn, bn = float(v[3][0]), float(v[3][-1])
+    tp = _croisement(v[2], dt, 0.5 * (hp + bp), True, 2 * pas)
+    tn = _croisement(v[3], dt, 0.5 * (hn + bn), False, 2 * pas)
+    proche(tn - tp, 40e-12, 0.02, "decalage mesure")
+    # coin max : le tdelay max
+    o2 = dict(o, ibis_emetteur={"texte": txt, "broche": "A1", "coin": "max"})
+    p2 = oeil._params(o2, None)
+    proche(oeil.preparer_ibis(o2, p2)["decalage"], 50e-12, 1e-12,
+           "tdelay max")
+    # le seuil du recepteur, contre l'oeil
+    r = {"mode": "diff", "mesures": {"hauteur_prbs": 0.3,
+                                     "hauteur_pire": 0.15},
+         "avertissements": []}
+    oeil._seuil_vdiff(r, ctx)
+    proche(r["mesures"]["marge_vdiff_pire"], -0.025, 1e-9, "marge vdiff")
+    assert r["avertissements"]
+
+
+def une_paire_symetrique_n_a_pas_de_mode_commun():
+    """Deux tampons lineaires opposes, sans decalage : le mode commun ne
+    bouge pas (au milliardieme). Decales de 30 ps, terminaison flottante en
+    mode commun et source adaptee dans les deux modes : le mode commun au
+    recepteur est (E_p + E_n)/2, et son excursion crete a crete vaut
+    Vcc erf(dt / (2 sqrt 2 sigma)) -- sigma, celui du front compose avec
+    le lissage -- a 2 % pres. L'oeil differentiel brut de la paire decalee
+    n'est pas plus ouvert que celui de la paire symetrique."""
+    sigma = 40e-12
+    base = {"debit": 1e9, "mode": "diff", "r_charge": 100.0,
+            "c_charge": 0.0,
+            "ibis_emetteur": {"texte": _ibis_boitier(sigma=sigma)}}
+    bits = oeil.prbs(7)[:63]
+    nl, _, _ = _paire_ideale(base)
+    nl["onde"](bits)
+    mc = oeil.mode_commun(nl)
+    assert mc["crete_crete"] < 1e-6, mc["crete_crete"]
+    proche(mc["continu"], 0.5, 1e-4, "mode commun continu")
+    nl2, ctx2, p2 = _paire_ideale(dict(base, decalage_n=30e-12))
+    assert oeil.asymetries(ctx2)
+    nl2["onde"](bits)
+    sig = sigma * math.sqrt(1.0 + oeil.LISSAGE_SUR_FRONT ** 2)
+    mc2 = oeil.mode_commun(nl2)
+    proche(mc2["crete_crete"], math.erf(30e-12 / (2 * math.sqrt(2) * sig)),
+           0.02, "mode commun crete a crete")
+    assert mc2["conversion_db"] is not None and mc2["conversion_db"] < 0
+    assert mc2["hauteur_brute"] <= mc["hauteur_brute"] + 1e-6, (
+        mc2["hauteur_brute"], mc["hauteur_brute"])
+
+
+def la_paire_dessinee_rend_son_mode_commun():
+    """Le chemin complet, sur une paire couplee dessinee : la cascade du mode
+    commun se reconstruit des S_cc de `simulation_em` (aller-retour exact
+    sur une ligne ideale), les deux brins sont simules, et le resultat porte
+    le mode commun. Tampons identiques sans decalage : rien en mode commun,
+    meme couple (Z_pair != Z_impair). Avec le tdelay de [Diff Pin] et les
+    boitiers de leurs broches : un mode commun, sa courbe, et l'oeil de la
+    paire symetrique pour comparer."""
+    import ligne_mom
+    f = np.linspace(1e8, 2e10, 40)
+    cc = oeil.ligne_ideale(f, 22.0, 0.4e-9, 0.5)
+    plat = [[[float(v.real), float(v.imag)]
+             for v in ligne_mom.cascade_to_s(m, 25.0).flatten()] for m in cc]
+    assert np.max(np.abs(oeil.abcd_depuis_s(plat, 25.0) - cc)) < 1e-9
+    paire = _paire(20.0)
+    entete = BOITIER.replace("[Package Model] PKG_ESSAI\n", "")
+    o = {"debit": 2e8, "mode": "diff", "r_charge": 100.0, "c_charge": 0.0}
+    sym = oeil.analyser(_doc(paire["objets"], dict(o, ibis_emetteur={
+        "texte": _ibis_boitier(sigma=150e-12)}), paire["voisinage"],
+        paire["paires"]))
+    assert sym["ibis"]["deux_brins"], sym["ibis"]
+    assert sym["mode_commun"]["crete_crete"] < 1e-6, sym["mode_commun"]
+    assert "hauteur_symetrique" not in sym["mode_commun"]
+    r = oeil.analyser(_doc(paire["objets"], dict(o, ibis_emetteur={
+        "texte": _ibis_boitier(entete, sigma=150e-12), "broche": "A1"}),
+        paire["voisinage"], paire["paires"]))
+    mc = r["mode_commun"]
+    assert mc["crete_crete"] > 0.01, mc["crete_crete"]
+    assert any("décalé" in a for a in mc["asymetries"]), mc["asymetries"]
+    assert any("boîtiers" in a for a in mc["asymetries"]), mc["asymetries"]
+    assert len(mc["courbe"]["v"]) == len(mc["courbe"]["v_diff"]) > 100
+    assert mc["hauteur_brute"] <= mc["hauteur_symetrique"] + 1e-6
+    assert r["ibis"]["emetteur"]["boitier_n"]["source"] == \
+        "[Package] + [Pin]", r["ibis"]["emetteur"]["boitier_n"]
+    assert any("broche par broche" in a for a in r["avertissements"])
+
+
+def un_fichier_ami_se_lit_et_propose_l_egaliseur():
+    """Un .ami en arbre : parametres reserves et propres au modele, Range,
+    List, Value, chaines entre guillemets. Les prises de FFE (-1, 0, 1)
+    donnent une FFE ramenee a sum |c| = 1 ; le nombre de prises du DFE et
+    leur plage, le DFE ; une liste de gains en dB, le CTLE (poles supposes) ;
+    Tx_Rj et Rx_Rj, la RJ en quadrature. Le [Algorithmic Model] du .ibs est
+    lu comme un renvoi -- la bibliotheque n'est pas executee."""
+    tx = """(essai_tx
+  (Description "Emetteur d'essai (FFE 3 prises)")
+  (Reserved_Parameters
+    (AMI_Version (Usage Info) (Type String) (Value "7.0"))
+    (Init_Returns_Impulse (Usage Info) (Type Boolean) (Value True))
+    (Tx_Rj (Usage Info) (Type Float) (Value 1.2e-12))
+    (Tx_Dj (Usage Info) (Type Float) (Value 5e-12)))
+  (Model_Specific
+    (TX_FFE
+      (Tap
+        (-1 (Usage In) (Type Float) (Range -0.1 -0.25 0) (Description "pre"))
+        (0 (Usage In) (Type Float) (Range 0.7 0.5 1.0))
+        (1 (Usage In) (Type Float) (Range -0.2 -0.35 0))))
+    (Swing (Usage In) (Type Float) (List 0.8 0.6 1.0) (Description "V"))))
+"""
+    rx = """(essai_rx
+  (Reserved_Parameters
+    (AMI_Version (Usage Info) (Type String) (Value "7.0"))
+    (Rx_Rj (Usage Info) (Type Float) (Value 1.6e-12))
+    (Rx_Receiver_Sensitivity (Usage Info) (Type Float) (Value 0.02)))
+  (Model_Specific
+    (CTLE (CTLE_Boost_dB (Usage In) (Type Float) (List 0 3 6 9)))
+    (DFE (Taps (Usage In) (Type Integer) (Range 5 1 5))
+         (Tap1 (Usage In) (Type Float) (Range 0 -0.08 0.08)))))
+"""
+    a = ibis.lire_ami(tx, "tx.ami")
+    assert a["modele"] == "essai_tx" and "FFE" in a["description"]
+    ch = {p["chemin"]: p for p in a["parametres"]}
+    assert ch["Reserved_Parameters/AMI_Version"]["valeur"] == "7.0"
+    assert ch["Model_Specific/TX_FFE/Tap/-1"]["plage"] == (-0.25, 0.0)
+    assert ch["Model_Specific/TX_FFE/Tap/-1"]["valeur"] == -0.1
+    assert ch["Model_Specific/Swing"]["liste"] == [0.8, 0.6, 1.0]
+    b = ibis.lire_ami(rx, "rx.ami")
+    prop = ibis.proposer_egaliseur(a, b, 10e9)
+    proche(sum(abs(c) for c in prop["ffe"]), 1.0, 1e-3, "sum |c|")
+    assert prop["ffe_principal"] == 1 and prop["ffe"][0] < 0, prop["ffe"]
+    assert prop["dfe_prises"] == 5 and prop["dfe_max"] == 0.08, prop
+    assert prop["ctle"]["adc_db"] == [-9.0, -6.0, -3.0, 0.0], prop["ctle"]
+    proche(prop["rj"], 2e-12, 1e-9, "RJ en quadrature")
+    proche(prop["dj"], 5e-12, 1e-9, "DJ")
+    assert prop["sensibilite"] == 0.02
+    # appliquee a la demande, et l'AMI le dit ; la gigue saisie l'emporte
+    txt = _ibis_boitier(suite="[Algorithmic Model]\n"
+                        "Executable Linux_gcc_x86_64 tx.so tx.ami\n"
+                        "[End Algorithmic Model]\n")
+    o = {"debit": 10e9, "mode": "diff", "r_charge": 100.0, "rj": 1e-12,
+         "ami_regler": True,
+         "ibis_emetteur": {"texte": txt, "ami": {"texte": tx,
+                                                 "fichier": "tx.ami"}},
+         "ibis_recepteur": {"texte": txt, "ami": {"texte": rx}}}
+    p = oeil._params(o, None)
+    ctx = oeil.preparer_ibis(o, p)
+    ami = oeil.preparer_ami(o, p, ctx)
+    assert p["ffe"] == prop["ffe"] and p["dfe_prises"] == 5
+    assert p["ctle"]["forme"] == "pcie3" and p["rj_ui"] == 1e-12 * 10e9
+    proche(p["dj_ui"], 5e-12 * 10e9, 1e-9, "DJ appliquee")
+    assert ctx["vdiff"] == 0.02
+    assert ami["renvois"][0]["bibliotheque"] == "tx.so"
+    assert "pas exécuté" in ami["note"] or "PAS exécuté" in ami["note"]
+    for faux in ("(a (b (c)", "(a))", "rien"):
+        try:
+            ibis.lire_ami(faux)
+        except ibis.ErreurIbis:
+            pass
+        else:
+            raise AssertionError("AMI faux accepte : %r" % faux)
+
+
 for nom, fn in list(globals().items()):
     if callable(fn) and getattr(fn, "__module__", "") == "__main__" \
             and not nom.startswith("_") and nom not in ("T", "proche"):

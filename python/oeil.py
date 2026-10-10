@@ -49,11 +49,24 @@ le resultat est celui de la 1.0.0 :
 Et la cascade differentielle porte maintenant les vias et les coudes de la
 paire (`simulation_em` 4.4.0).
 
+DEPUIS LA 2.1.0, l'IBIS va jusqu'au bout, toujours FACULTATIF :
+    9. le BOITIER de chaque broche ([Package], [Pin], diagonale d'un
+       [Package Model]), fondu dans la cascade entre le die et la piste --
+       voir `appliquer_boitiers` ; un boitier nul rend l'oeil d'avant ;
+   10. en differentiel, les DEUX BRINS de la paire, chacun son tampon, son
+       modele, son coin, son boitier ([Diff Pin]) et le tdelay du brin
+       inverse ; le MODE COMMUN qui en sort, et l'oeil d'une paire
+       symetrique pour comparer -- voir `simuler_paire`, `mode_commun` ;
+       le vdiff du recepteur devient son seuil ;
+   11. le fichier .ami d'un modele IBIS-AMI, LU et montre, et l'egaliseur
+       de reference regle d'apres lui sur demande -- la bibliotheque du
+       fabricant n'est PAS executee : voir `preparer_ami`.
+
 CE QUI N'EST PAS LA, et se dit dans chaque resultat : les condensateurs de
-liaison (couplage AC), le boitier des modeles IBIS, la conversion de mode
-d'une paire de tampons dissymetriques. Les gabarits portent chacun leur
-FIABILITE : les normes sont payantes, et une valeur qui n'a pas pu etre
-recoupee le dit.
+liaison (couplage AC), les mutuelles d'un [Package Model] (lues, dites, pas
+comptees), un boitier decrit par sections, l'execution d'un modele AMI.
+Les gabarits portent chacun leur FIABILITE : les normes sont payantes, et
+une valeur qui n'a pas pu etre recoupee le dit.
 
 Le document d'entree est celui de `simulation_em` (format « cao-sim-em-* »)
 avec un champ de plus, EN UNITES SI :
@@ -72,7 +85,15 @@ avec un champ de plus, EN UNITES SI :
           agresseurs_auto (bool), agresseurs_sens "meme"|"oppose"|"inconnu",
           agresseurs_v (V), agresseurs_tr (s),
           ibis_emetteur, ibis_recepteur {texte, fichier, modele,
-                                         coin "typ"|"min"|"max"}}
+                                         coin "typ"|"min"|"max",
+          -- facultatifs, 2.1.0 --
+                                         broche (de [Pin] ; en differentiel,
+                                         celle d'une paire de [Diff Pin]),
+                                         modele_n, coin_n (brin inverse),
+                                         ami {texte, fichier}},
+          boitier (bool, vrai par defaut), decalage_n (s, retard du brin
+          inverse : remplace le tdelay), r_charge_mc (ohm, impedance de mode
+          commun du recepteur, 0 = flottant), ami_regler (bool)}
 """
 
 import math
@@ -92,7 +113,7 @@ except Exception as _exc:                              # noqa: BLE001
     np = se = None
     ERREUR_OEIL = _exc
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 FORMAT_RESULTAT = "cao-oeil-resultat-1"
 # UN FICHIER IBIS VOYAGE DANS LA REQUETE, en texte : quelques megaoctets pour
 # les plus gros composants, deux fois si l'emetteur et le recepteur en ont
@@ -1463,6 +1484,16 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
         # lineaire ne la verifie pas. Elle est periodique (regime etabli),
         # et le CTLE s'y applique donc en circulaire, exactement.
         y = np.tile(nl["onde"](bits), rep)
+        if len(p["ffe"]) > 1 or p["ffe"][0] != 1.0:
+            # LA FFE SUR LA FORME D'ONDE SIMULEE, comme le flot IBIS-AMI la
+            # pose sur la reponse du canal analogique : lineairement, la
+            # somme des formes d'onde decalees d'un bit, autour du milieu.
+            # Le tampon non lineaire n'a qu'un niveau par etat ; c'est la
+            # meme approximation que celle d'un emetteur AMI.
+            yy = np.zeros(ns)
+            for j, cj in enumerate(p["ffe"]):
+                yy += cj * np.roll(y - v_mil, j * spu)
+            y = v_mil + yy
         if m["spec"]:
             fy = np.fft.rfftfreq(ns, dt_e)
             y = np.fft.irfft(np.fft.rfft(y) * ctle(fy, m["spec"]), ns)
@@ -1645,7 +1676,8 @@ def oeil(freqs, abcds_ou_h, p, gab=None, h0=None, journal=None,
             "principal": amp * float(p_eq[i_s]),
             "niveau_1": niveau_1, "niveau_0": niveau_0,
             "v_max_vu": float(np.max(y)), "v_min_vu": float(np.min(y)),
-            "retard": (i_s * dt_e - ui / 2.0 - nl["t50"]) if nl is not None
+            "retard": (i_s * dt_e - ui / 2.0 - nl["t50"]
+                       - p["ffe_principal"] * ui) if nl is not None
             else (i_s * dt_e - 4.0 * tr / TR_SUR_SIGMA - ui / 2.0
                   - p["ffe_principal"] * ui),
         }, **mes_g),
@@ -1733,51 +1765,157 @@ def _er_max(doc):
 #   · la sequence PRBS elle-meme, en regime etabli : c'est elle qui fait
 #     l'oeil PRBS et sa densite, sans aucune linearisation.
 #
-# EN DIFFERENTIEL, deux tampons simples en opposition ([Diff Pin]) : chacun
-# attaque le DEMI-CIRCUIT du mode impair (Z/2, terminaison R/2 vers le mode
-# commun), l'un avec la sequence, l'autre avec son inverse, et la tension
-# differentielle est leur difference. Le mode commun est tenu a sa valeur
-# continue : la conversion de mode qu'une dissymetrie des deux tampons
-# produirait n'est pas suivie.
+# LE BOITIER (2.1.0) : R_pkg et L_pkg en serie, C_pkg a la broche, de
+# chaque cote -- [Package], [Pin] par broche, diagonale d'un
+# [Package Model] (voir `ibis.boitier_broche`). Il est LINEAIRE : on le fond
+# dans la cascade du canal, ABCD contre ABCD, ENTRE le die (ou le tampon
+# et C_comp restent au Newton) et la piste. Rien n'est ajoute au pas de
+# temps -- ni inconnue, ni integration de plus --, et le boitier passe par
+# le meme chemin que la piste : parametres S, fenetre, reponses
+# impulsionnelles. Le prix : ses resonances au-dessus du haut de la grille
+# sont lissees comme le reste (le lissage est la moitie du front du
+# tampon, bien plus court que L_pkg / R0 ou R0 C_pkg pour les boitiers
+# usuels). Un boitier nul ne touche pas la cascade : le resultat est celui
+# d'avant, au bit pres.
+#
+# EN DIFFERENTIEL (2.1.0), LES DEUX BRINS. Chaque tampon attaque SON brin
+# de la paire, remise par brin a partir de ses deux modes -- la cascade du
+# mode impair (`abcd_dd`) et celle du mode commun, reconstruite des S_cc
+# que `simulation_em` rend (voir `abcd_depuis_s`). Le brin inverse recoit
+# la sequence inverse, retardee de tdelay ([Diff Pin]) ; chaque brin a son
+# modele, son coin, son boitier, sa capacite d'entree. Ce qui n'est pas
+# oppose part en mode commun, et se rend : `mode_commun` du resultat.
+# Sans la cascade du mode commun, on retombe sur le demi-circuit du mode
+# impair, le mode commun tenu a sa valeur continue, et on le dit.
 # ==========================================================================
 
 try:
     import ibis
-except Exception as _exc_ibis:                         # noqa: BLE001
+    _exc_ibis = None
+except Exception as _exc:                              # noqa: BLE001
     ibis = None
+    _exc_ibis = _exc
 
 # Pas de temps d'une simulation non lineaire, au plus : au-dela, quelques
 # dizaines de secondes de calcul.
 MAX_PAS_NL = 400000
 # Le lissage du canal, en fraction du front du tampon : voir `ibis`.
 LISSAGE_SUR_FRONT = 0.5
+# La courbe du mode commun rendue : ses premiers bits, a ce pas par UI.
+BITS_MODE_COMMUN = 40
+PAS_MODE_COMMUN = 16
 
 
-def _charger_ibis(d, role):
-    """(fichier lu, [Model], Tampon) d'un champ `ibis_emetteur` ou
-    `ibis_recepteur` : {texte, fichier, modele, coin}."""
-    try:
-        lu = ibis.lire(d.get("texte") or "", str(d.get("fichier") or ""))
-    except ibis.ErreurIbis as exc:
-        raise ErreurOeil("IBIS de l'%s : %s" % (role, exc.message),
-                         exc.conseil)
-    nom = str(d.get("modele") or "")
+def _tampon(lu, nom, coin, role):
+    """([Model], Tampon) du modele `nom` (ou du premier qui convient au
+    role) d'un fichier lu."""
     modeles = lu["modeles"]
     if nom and nom not in modeles:
         raise ErreurOeil("IBIS de l'%s : pas de [Model] « %s » dans %s."
-                         % (role, nom, d.get("fichier") or "le fichier"),
+                         % (role, nom, lu["fichier"] or "le fichier"),
                          "Modèles présents : %s." % ", ".join(sorted(modeles)))
     if not nom:
         voulus = [m for m in modeles.values()
                   if ibis.est_emetteur(m) == (role == "émetteur")]
         nom = (voulus or list(modeles.values()))[0]["nom"]
     m = modeles[nom]
-    coin = str(d.get("coin") or "typ").lower()
     try:
         t = ibis.Tampon(m, coin)
     except ibis.ErreurIbis as exc:
         raise ErreurOeil(exc.message, exc.conseil)
-    return lu, m, t
+    return m, t
+
+
+def _charger_ibis(d, role, diff=False, boitier=True):
+    """Un bout de la liaison, d'un champ `ibis_emetteur` ou `ibis_recepteur`
+    {texte, fichier, modele, coin, broche, modele_n, coin_n} :
+    {lu, m, t, m_n, t_n, bt, bt_n, broche, inverse, paire, notes}.
+
+    LA BROCHE choisit le modele ([Pin], ou le premier d'un
+    [Model Selector]) et le boitier. EN DIFFERENTIEL, la broche designe une
+    paire de [Diff Pin], et le brin inverse prend le modele et le boitier
+    de SA broche ; sans broche, la premiere paire dont le modele est celui
+    choisi est prise d'office, et sans [Diff Pin] les deux brins prennent
+    le meme modele et le boitier moyen."""
+    try:
+        lu = ibis.lire(d.get("texte") or "", str(d.get("fichier") or ""),
+                       complet=True)
+    except ibis.ErreurIbis as exc:
+        raise ErreurOeil("IBIS de l'%s : %s" % (role, exc.message),
+                         exc.conseil)
+    coin = str(d.get("coin") or "typ").lower()
+    coin_n = str(d.get("coin_n") or coin).lower()
+    nom = str(d.get("modele") or "")
+    nom_n = str(d.get("modele_n") or "")
+    broche = str(d.get("broche") or "")
+    inverse = ""
+    paire = None
+    notes = []
+
+    def erreur(exc):
+        return ErreurOeil("IBIS de l'%s : %s" % (role, exc.message),
+                          exc.conseil)
+    if diff:
+        if broche:
+            paire = ibis.paire_diff(lu, broche)
+            if paire is None:
+                liste = ", ".join("%s/%s" % (x["broche"], x["inverse"])
+                                  for x in lu["paires_diff"])
+                raise ErreurOeil(
+                    "IBIS de l'%s : la broche %s n'est dans aucune "
+                    "[Diff Pin]." % (role, broche),
+                    ("Paires du fichier : %s." % liste) if liste else
+                    "Le fichier n'a pas de [Diff Pin] : laissez la broche "
+                    "vide, les deux brins prendront le même modèle.")
+        else:
+            for x in lu["paires_diff"]:
+                try:
+                    nm, _ = ibis.modele_broche(lu, x["broche"], nom)
+                except ibis.ErreurIbis:
+                    continue
+                if not nom or nm == nom:
+                    paire = dict(x, note="paire prise d'office")
+                    break
+        if paire is not None:
+            broche, inverse = paire["broche"], paire["inverse"]
+            if paire.get("note"):
+                notes.append("%s : %s/%s, %s." % (role, broche, inverse,
+                                                   paire["note"]))
+    if broche:
+        try:
+            nom, note = ibis.modele_broche(lu, broche, nom)
+        except ibis.ErreurIbis as exc:
+            raise erreur(exc)
+        if note:
+            notes.append("%s, broche %s : %s." % (role, broche, note))
+    if inverse:
+        try:
+            nom_n, note = ibis.modele_broche(lu, inverse, nom_n or nom)
+        except ibis.ErreurIbis as exc:
+            raise erreur(exc)
+    m, t = _tampon(lu, nom, coin, role)
+    m_n = t_n = None
+    if diff:
+        m_n, t_n = _tampon(lu, nom_n or m["nom"], coin_n, role)
+    bt = bt_n = None
+    if boitier:
+        bt = ibis.boitier_broche(lu, broche, coin)
+        if diff:
+            bt_n = ibis.boitier_broche(lu, inverse, coin_n)
+        for x in (bt, bt_n):
+            if x is not None:
+                notes.extend(x["notes"])
+        bt = None if ibis.boitier_nul(bt) else bt
+        bt_n = None if ibis.boitier_nul(bt_n) else bt_n
+    return {"lu": lu, "m": m, "t": t, "m_n": m_n, "t_n": t_n, "bt": bt,
+            "bt_n": bt_n, "broche": broche, "inverse": inverse,
+            "paire": paire, "notes": notes, "coin": coin}
+
+
+def _infos_boitier(bt):
+    if bt is None:
+        return None
+    return {"r": bt["r"], "l": bt["l"], "c": bt["c"], "source": bt["source"]}
 
 
 def preparer_ibis(o, p):
@@ -1785,30 +1923,53 @@ def preparer_ibis(o, p):
 
     Modifie `p` : la capacite du recepteur devient son C_comp, et un
     emetteur IBIS n'a ni pre-accentuation ni front gaussien -- ses niveaux
-    et son front sont les siens."""
+    et son front sont les siens. En differentiel, un `decalage_n` saisi
+    suffit a simuler les deux brins, meme sans fichier."""
     em_d = o.get("ibis_emetteur")
     rx_d = o.get("ibis_recepteur")
     em_d = em_d if isinstance(em_d, dict) and em_d.get("texte") else None
     rx_d = rx_d if isinstance(rx_d, dict) and rx_d.get("texte") else None
-    if not (em_d or rx_d):
+    diff = p["mode"] == "diff"
+    dec_saisi = diff and o.get("decalage_n") not in (None, "")
+    dec = _nombre(o.get("decalage_n"), 0.0) if dec_saisi else 0.0
+    if not (em_d or rx_d or dec):
         return None
     if ibis is None:
         raise ErreurOeil("Lecteur IBIS indisponible : %s" % _exc_ibis)
-    ctx = {"em": None, "m_em": None, "rx": None, "infos": {}}
+    if abs(dec) >= p["ui"]:
+        raise ErreurOeil("Décalage du brin inverse de %.3g ps : au moins une "
+                         "UI." % (dec * 1e12),
+                         "Il se saisit en secondes, plus petit qu'un bit.")
+    avec_bt = o.get("boitier", True) not in (False, 0, "0", "false", "non")
+    ctx = {"em": None, "m_em": None, "em_n": None, "m_em_n": None,
+           "m_rx": None, "rx": None, "rx_n": None, "c_rx": None,
+           "bt_em": (None, None), "bt_rx": (None, None), "decalage": 0.0, "vdiff": None,
+           "infos": {}, "notes": [], "boitier": avec_bt,
+           "r_mc": max(0.0, _nombre(o.get("r_charge_mc"), 0.0))}
     dt0 = p["ui"] / ECHANTILLONS_UI / 8.0
     if em_d:
-        lu, m, t = _charger_ibis(em_d, "émetteur")
-        if not ibis.est_emetteur(m):
-            raise ErreurOeil("Le [Model] « %s » est de type %s : ce n'est "
-                             "pas un émetteur." % (m["nom"], m["type"] or
-                                                   "inconnu"),
-                             "Choisissez un modèle Output, I/O ou 3-state.")
+        b = _charger_ibis(em_d, "émetteur", diff, avec_bt)
+        m, t = b["m"], b["t"]
+        for mm in (m, b["m_n"]):
+            if mm is not None and not ibis.est_emetteur(mm):
+                raise ErreurOeil("Le [Model] « %s » est de type %s : ce "
+                                 "n'est pas un émetteur."
+                                 % (mm["nom"], mm["type"] or "inconnu"),
+                                 "Choisissez un modèle Output, I/O ou "
+                                 "3-state.")
         try:
             cmd = ibis.commandes(m, t, dt0)
+            if diff:
+                ibis.commandes(b["m_n"], b["t_n"], dt0)
         except ibis.ErreurIbis as exc:
             raise ErreurOeil(exc.message, exc.conseil)
-        ctx.update(em=t, m_em=m)
+        ctx.update(em=t, m_em=m, em_n=b["t_n"], m_em_n=b["m_n"],
+                   bt_em=(b["bt"], b["bt_n"]))
+        ctx["notes"].extend(b["notes"])
+        if b["paire"] is not None:
+            ctx["decalage"] = float(b["paire"]["tdelay"][ibis.COINS[t.coin]])
         tr_e = ibis.duree_front(cmd["montant"], dt0)
+        lu = b["lu"]
         ctx["infos"]["emetteur"] = {
             "fichier": lu["fichier"], "composant": lu["composant"],
             "modele": m["nom"], "type": m["type"], "coin": t.coin,
@@ -1816,26 +1977,137 @@ def preparer_ibis(o, p):
             "front_10_90": tr_e,
             "niveau_haut_vide": t.niveau(1.0, 0.0),
             "niveau_bas_vide": t.niveau(0.0, 1.0),
+            "broche": b["broche"], "boitier": _infos_boitier(b["bt"]),
             "ignores": lu["ignores"]}
+        if diff:
+            ctx["infos"]["emetteur"].update({
+                "inverse": b["inverse"], "modele_n": b["m_n"]["nom"],
+                "coin_n": b["t_n"].coin,
+                "boitier_n": _infos_boitier(b["bt_n"]),
+                "tdelay": ctx["decalage"] if b["paire"] else None})
         p["tr"] = tr_e
         p["ffe"], p["ffe_principal"] = [1.0], 0
     if rx_d:
-        lu, m, t = _charger_ibis(rx_d, "récepteur")
+        b = _charger_ibis(rx_d, "récepteur", diff, avec_bt)
+        m, t, t_n = b["m"], b["t"], b["t_n"]
+        ctx["m_rx"] = m
         # LA CAPACITE D'ENTREE PART DANS LE CANAL, lineaire ; seules les
         # diodes et les terminaisons restent au Newton. En differentiel,
-        # deux broches en serie : la capacite differentielle est la moitie.
-        p["c_charge"] = t.c_comp if p["mode"] == "simple" else t.c_comp / 2
-        nl = t.a_des_diodes() or t.g_gnd or t.g_pow
-        ctx["rx"] = t if nl else None
+        # deux broches en serie.
+        if diff:
+            cs = t.c_comp + t_n.c_comp
+            p["c_charge"] = t.c_comp * t_n.c_comp / cs if cs > 0 else 0.0
+            ctx["c_rx"] = (t.c_comp, t_n.c_comp)
+        else:
+            p["c_charge"] = t.c_comp
+        for cle, tt in (("rx", t), ("rx_n", t_n)):
+            if tt is not None and (tt.a_des_diodes() or tt.g_gnd or
+                                   tt.g_pow):
+                ctx[cle] = tt
+        ctx["bt_rx"] = (b["bt"], b["bt_n"])
+        ctx["notes"].extend(b["notes"])
+        if b["paire"] is not None and b["paire"]["vdiff"]:
+            ctx["vdiff"] = abs(float(b["paire"]["vdiff"]))
+        lu = b["lu"]
         ctx["infos"]["recepteur"] = {
             "fichier": lu["fichier"], "composant": lu["composant"],
             "modele": m["nom"], "type": m["type"], "coin": t.coin,
             "c_comp": t.c_comp, "diodes": bool(t.a_des_diodes()),
-            "vinl": t.vinl, "vinh": t.vinh, "ignores": lu["ignores"]}
-    ctx["temporel"] = ctx["em"] is not None or ctx["rx"] is not None
+            "vinl": t.vinl, "vinh": t.vinh, "broche": b["broche"],
+            "boitier": _infos_boitier(b["bt"]), "ignores": lu["ignores"]}
+        if diff:
+            ctx["infos"]["recepteur"].update({
+                "inverse": b["inverse"], "modele_n": b["m_n"]["nom"],
+                "coin_n": t_n.coin, "c_comp_n": t_n.c_comp,
+                "boitier_n": _infos_boitier(b["bt_n"]),
+                "vdiff": ctx["vdiff"]})
+    if dec_saisi:
+        ctx["decalage"] = dec
+    ctx["temporel"] = (ctx["em"] is not None or ctx["rx"] is not None or
+                       ctx["rx_n"] is not None or
+                       (diff and ctx["decalage"] != 0.0))
+    ctx["paire"] = diff and ctx["temporel"]
     ctx["tr_e"] = p["tr"]
     ctx["tr_lissage"] = LISSAGE_SUR_FRONT * p["tr"]
     return ctx
+
+
+def asymetries(ctx):
+    """Ce qui distingue les deux brins d'une paire, en clair."""
+    out = []
+    if not ctx:
+        return out
+    if ctx["decalage"]:
+        out.append("brin inverse décalé de %.3g ps" % (ctx["decalage"] * 1e12))
+    a, b = ctx["em"], ctx["em_n"]
+    if a is not None and b is not None:
+        if ctx["m_em"] is not ctx["m_em_n"]:
+            out.append("émetteur : modèles %s / %s" % (ctx["m_em"]["nom"],
+                                                       ctx["m_em_n"]["nom"]))
+        elif a.coin != b.coin:
+            out.append("émetteur : coins %s / %s" % (a.coin, b.coin))
+    rp, rn = ctx["rx"], ctx["rx_n"]
+    if (rp is None) != (rn is None):
+        out.append("récepteur : diodes sur un seul brin")
+    if ctx["c_rx"] and abs(ctx["c_rx"][0] - ctx["c_rx"][1]) > 1e-18:
+        out.append("récepteur : C_comp %.3g / %.3g pF"
+                   % (ctx["c_rx"][0] * 1e12, ctx["c_rx"][1] * 1e12))
+    for bout, cle in (("émetteur", "bt_em"), ("récepteur", "bt_rx")):
+        a, b = ctx[cle]
+        if (a is None) != (b is None) or (a is not None and any(
+                abs(a[k] - b[k]) > 1e-6 * max(abs(a[k]), abs(b[k]), 1e-30)
+                for k in ("r", "l", "c"))):
+            out.append("%s : boîtiers différents" % bout)
+    return out
+
+
+def appliquer_boitiers(ctx, freqs, abcds, mode="simple"):
+    """La cascade (N, 2, 2) entre die et die : boitier de l'emetteur IBIS
+    devant, boitier du recepteur IBIS derriere. En differentiel (cascade
+    du mode impair), le boitier de chaque brin est pose a l'identique sur
+    les deux -- la MOYENNE des deux broches, serie doublee et derivation
+    divisee par deux. Rend (abcds, note)."""
+    if not ctx:
+        return abcds, ""
+    m = np.array(abcds, dtype=complex)
+    touche = False
+    for cle, sens, actif in (("bt_em", "emission", ctx["em"] is not None),
+                             ("bt_rx", "reception", True)):
+        a, b = ctx[cle]
+        if not actif or (a is None and b is None):
+            continue
+        if mode == "diff":
+            moy = {k: 0.5 * ((a or {}).get(k, 0.0) + (b or {}).get(k, 0.0))
+                   for k in ("r", "l", "c")}
+            bt = {"r": 2.0 * moy["r"], "l": 2.0 * moy["l"],
+                  "c": moy["c"] / 2.0}
+        else:
+            bt = a
+        mb = ibis.abcd_boitier(freqs, bt, sens)
+        if mb is None:
+            continue
+        m = mb @ m if sens == "emission" else m @ mb
+        touche = True
+    if not touche:
+        return abcds, ""
+    return m, "boîtiers comptés (R/L_pkg en série, C_pkg à la broche)"
+
+
+def abcd_depuis_s(s_plats, z_ref):
+    """(N, 2, 2) ABCD des S 2-ports a plat [[re, im] x 4] (S11, S12, S21,
+    S22) sur z_ref : la cascade du mode commun que `simulation_em` rend
+    sous forme de S_cc. Exacte, tant que S21 n'est pas nul."""
+    s = np.array([[complex(v[0], v[1]) for v in m] for m in s_plats])
+    s11, s12, s21, s22 = s[:, 0], s[:, 1], s[:, 2], s[:, 3]
+    if np.any(np.abs(s21) < 1e-300):
+        return None
+    z = float(z_ref)
+    m = np.empty((len(s), 2, 2), dtype=complex)
+    m[:, 0, 0] = ((1 + s11) * (1 - s22) + s12 * s21) / (2 * s21)
+    m[:, 0, 1] = z * ((1 + s11) * (1 + s22) - s12 * s21) / (2 * s21)
+    m[:, 1, 0] = ((1 - s11) * (1 - s22) - s12 * s21) / (2 * s21 * z)
+    m[:, 1, 1] = ((1 - s11) * (1 + s22) + s12 * s21) / (2 * s21)
+    return m
 
 
 def _mode_commun(em, r_demi, v0):
@@ -1853,20 +2125,80 @@ def _mode_commun(em, r_demi, v0):
     return vcm
 
 
+def _pas(freqs, ui):
+    """(dt, k) : le pas de la simulation, un k-ieme du pas de l'oeil."""
+    dt_e = ui / ECHANTILLONS_UI
+    k = int(math.ceil(dt_e * 2.2 * freqs[-1]))
+    k = min(max(k, 1), 16)
+    return dt_e / k, k
+
+
+def _fronts_et_onde(courir, L, dt, k, n_cmd, ui, facteur, seulement_onde=False):
+    """Ce que les deux simulations rendent, quelle que soit la liaison :
+    {s, v_haut, v_bas, asym, onde, dernier}.
+
+    `courir(bits)` rend (v, quatre) : la tension vue par le recepteur, au
+    pas dt, et les quatre tensions des brins (ou None). `facteur` : le cout
+    d'un pas, en pas de ligne seule, pour le plafond."""
+    spu = ECHANTILLONS_UI
+    pas_bit = k * spu
+    n_long = int(math.ceil(L * dt / ui)) + 4
+    n_long = max(n_long, int(math.ceil(n_cmd * dt / ui)) + 4)
+    dernier = {}
+
+    def onde(bits):
+        bits = [int(b) for b in bits]
+        per = len(bits)
+        reps_ = int(math.ceil(n_long / float(per))) + 1
+        if (reps_ + 1) * per * pas_bit * facteur > MAX_PAS_NL:
+            raise ErreurOeil("Simulation IBIS trop longue pour ce motif "
+                             "(%d bits, %d pas par bit)." % (per, pas_bit),
+                             "Prenez PRBS7, ou un débit plus faible.")
+        vv, quatre = courir(bits * (reps_ + 1))
+        debut = reps_ * per * pas_bit
+        if quatre is not None:
+            dernier["brins"] = quatre[:, debut::k][:, :per * spu]
+            dernier["bits"] = bits
+        return vv[debut::k][:per * spu]
+
+    if seulement_onde:
+        return {"onde": onde, "dernier": dernier}
+    if (2 + 2 * n_long) * pas_bit * facteur > MAX_PAS_NL:
+        raise ErreurOeil("Simulation IBIS trop longue : la réponse dure %d "
+                         "bits à %d pas par bit." % (n_long, pas_bit),
+                         "Réduisez la longueur de la liaison ou le débit, ou "
+                         "retirez le modèle IBIS.")
+    v, _ = courir([0, 0] + [1] * n_long + [0] * n_long)
+    i_r, i_f = 2 * pas_bit, (2 + n_long) * pas_bit
+    v_bas, v_haut = float(v[i_r - 1]), float(v[i_f - 1])
+    if not v_haut - v_bas > 1e-6:
+        raise ErreurOeil("Le tampon IBIS ne bascule pas : niveaux %.3g V et "
+                         "%.3g V au récepteur." % (v_bas, v_haut),
+                         "Vérifiez le modèle choisi (un Input ne pilote "
+                         "rien) et le coin.")
+    s_r = (v[i_r:i_f] - v_bas) / (v_haut - v_bas)
+    s_d = (v_haut - v[i_f:i_f + n_long * pas_bit]) / (v_haut - v_bas)
+    n = min(len(s_r), len(s_d))
+    s = 0.5 * (s_r[:n] + s_d[:n])
+    asym = float(np.max(np.abs(s_r[:n] - s_d[:n])))
+    return {"s": s, "v_haut": v_haut, "v_bas": v_bas, "asym": asym,
+            "onde": onde, "dernier": dernier}
+
+
 def simuler_non_lineaire(ctx, freqs, abcds, p, r0):
     """La liaison simulee dans le temps : ce que `oeil(non_lineaire=...)` lit.
 
     Rend {s, dt, onde, t50, v_haut, v_bas, infos} : la reponse moyenne a un
     echelon (normalisee de 0 a 1, au pas dt), une fonction qui rend la forme
     d'onde periodique d'une sequence (au pas ui/64), l'instant de mi-front
-    du tampon, et les niveaux etablis a la broche du recepteur."""
+    du tampon, et les niveaux etablis a la broche du recepteur.
+
+    En differentiel, c'est le DEMI-CIRCUIT du mode impair (deux tampons
+    exactement opposes, mode commun fixe) : `simuler_paire` fait mieux des
+    que la cascade du mode commun est connue."""
     ui = p["ui"]
-    spu = ECHANTILLONS_UI
-    dt_e = ui / spu
     freqs = np.asarray(freqs, dtype=float)
-    k = int(math.ceil(dt_e * 2.2 * freqs[-1]))
-    k = min(max(k, 1), 16)
-    dt = dt_e / k
+    dt, k = _pas(freqs, ui)
     diff = p["mode"] == "diff"
     abcd = np.array(abcds, dtype=complex)
     r_l, c_l = p["r_charge"], p["c_charge"]
@@ -1906,61 +2238,297 @@ def simuler_non_lineaire(ctx, freqs, abcds, p, r0):
         em, cmd = ibis.tampon_lineaire(rs, vh, vb, p["tr"], dt)
         t50 = 4.0 * p["tr"] / TR_SUR_SIGMA
     v_ref = 0.0
+    rx = ctx["rx"]
     if diff:
         if ctx["em"] is not None:
             v_ref = _mode_commun(em, (r_l if r_l > 0 else None),
                                  0.5 * (em.v_pu + em.v_pd))
-        elif ctx["rx"] is not None:
-            v_ref = 0.5 * (ctx["rx"].v_pc + ctx["rx"].v_gc)
-    lia = ibis.Liaison(reps, r0, dt, em, cmd, ctx["rx"], v_ref)
-    pas_bit = k * spu
+        elif rx is not None:
+            v_ref = 0.5 * (rx.v_pc + rx.v_gc)
+    lia = ibis.Liaison(reps, r0, dt, em, cmd, rx, v_ref)
+    pas_bit = k * ECHANTILLONS_UI
 
     def courir(bits):
         _, v2 = lia.simuler(bits, pas_bit, ui)
         if diff:
             _, v2n = lia.simuler([1 - b for b in bits], pas_bit, ui)
             v2 = v2 - v2n
-        return v2
+        return v2, None
 
-    n_long = int(math.ceil(L * dt / ui)) + 4
-    n_long = max(n_long, int(math.ceil(len(cmd["montant"][0]) * dt / ui)) + 4)
-    if (2 + 2 * n_long) * pas_bit * (2 if diff else 1) > MAX_PAS_NL:
-        raise ErreurOeil("Simulation IBIS trop longue : la réponse dure %d "
-                         "bits à %d pas par bit." % (n_long, pas_bit),
-                         "Réduisez la longueur de la liaison ou le débit, ou "
-                         "retirez le modèle IBIS.")
-    v = courir([0, 0] + [1] * n_long + [0] * n_long)
-    i_r, i_f = 2 * pas_bit, (2 + n_long) * pas_bit
-    v_bas, v_haut = float(v[i_r - 1]), float(v[i_f - 1])
-    if not v_haut - v_bas > 1e-6:
-        raise ErreurOeil("Le tampon IBIS ne bascule pas : niveaux %.3g V et "
-                         "%.3g V au récepteur." % (v_bas, v_haut),
-                         "Vérifiez le modèle choisi (un Input ne pilote "
-                         "rien) et le coin.")
-    s_r = (v[i_r:i_f] - v_bas) / (v_haut - v_bas)
-    s_d = (v_haut - v[i_f:i_f + n_long * pas_bit]) / (v_haut - v_bas)
-    n = min(len(s_r), len(s_d))
-    s = 0.5 * (s_r[:n] + s_d[:n])
-    asym = float(np.max(np.abs(s_r[:n] - s_d[:n])))
-
-    def onde(bits):
-        bits = [int(b) for b in bits]
-        per = len(bits)
-        reps_ = int(math.ceil(n_long / float(per))) + 1
-        if (reps_ + 1) * per * pas_bit * (2 if diff else 1) > MAX_PAS_NL:
-            raise ErreurOeil("Simulation IBIS trop longue pour ce motif "
-                             "(%d bits, %d pas par bit)." % (per, pas_bit),
-                             "Prenez PRBS7, ou un débit plus faible.")
-        vv = courir(bits * (reps_ + 1))
-        return vv[reps_ * per * pas_bit::k][:per * spu]
-
+    fo = _fronts_et_onde(courir, L, dt, k, len(cmd["montant"][0]), ui,
+                         2 if diff else 1)
     infos = dict(ctx["infos"])
     infos.update({"pas_s": dt, "pas_par_ui": pas_bit, "r0": r0,
                   "lissage_s": ctx["tr_lissage"], "longueur_reponse": L,
-                  "asymetrie": asym, "v_haut": v_haut, "v_bas": v_bas,
+                  "asymetrie": fo["asym"], "v_haut": fo["v_haut"],
+                  "v_bas": fo["v_bas"],
                   "mode_commun": v_ref if diff else None})
-    return {"s": s, "dt": dt, "onde": onde, "t50": t50, "v_haut": v_haut,
-            "v_bas": v_bas, "infos": infos}
+    return {"s": fo["s"], "dt": dt, "onde": fo["onde"], "t50": t50,
+            "v_haut": fo["v_haut"], "v_bas": fo["v_bas"], "infos": infos,
+            "liaison": lia}
+
+
+def _canal_paire(ctx, freqs, abcd_dd, abcd_cc, p, r0, dt, symetrique=False,
+                 surlongueur=None):
+    """Les 4 x 4 reponses impulsionnelles de la paire PAR BRIN, boitiers,
+    surlongueur et charge comprises, et leur longueur utile."""
+    freqs = np.asarray(freqs, dtype=float)
+    n = len(freqs)
+    m = ibis.abcd_brins(abcd_dd, abcd_cc)
+    zero = np.array([0.0])
+    m0 = ibis.abcd_brins(
+        np.array([[[1.0, max(0.0, float(np.real(abcd_dd[0][0][1])))],
+                   [0.0, 1.0]]]),
+        np.array([[[1.0, max(0.0, float(np.real(abcd_cc[0][0][1])))],
+                   [0.0, 1.0]]]))
+    bt_e, bt_r = ctx["bt_em"], ctx["bt_rx"]
+    if symetrique:
+        bt_e, bt_r = (bt_e[0], bt_e[0]), (bt_r[0], bt_r[0])
+    if ctx["em"] is not None and (bt_e[0] or bt_e[1]):
+        m = ibis.abcd_par_brin(ibis.abcd_boitier(freqs, bt_e[0], "emission"),
+                               ibis.abcd_boitier(freqs, bt_e[1], "emission"),
+                               n) @ m
+        m0 = ibis.abcd_par_brin(ibis.abcd_boitier(zero, bt_e[0], "emission"),
+                                ibis.abcd_boitier(zero, bt_e[1], "emission"),
+                                1) @ m0
+    if surlongueur and not symetrique:
+        # La surlongueur d'un brin : une ligne seule, sur le brin n.
+        lg = ligne_ideale(freqs, surlongueur["z0"], surlongueur["retard"])
+        m = m @ ibis.abcd_par_brin(None, lg, n)
+    if bt_r[0] or bt_r[1]:
+        m = m @ ibis.abcd_par_brin(
+            ibis.abcd_boitier(freqs, bt_r[0], "reception"),
+            ibis.abcd_boitier(freqs, bt_r[1], "reception"), n)
+        m0 = m0 @ ibis.abcd_par_brin(
+            ibis.abcd_boitier(zero, bt_r[0], "reception"),
+            ibis.abcd_boitier(zero, bt_r[1], "reception"), 1)
+    # LA CHARGE PAR BRIN : la resistance differentielle entre les deux
+    # brins, l'impedance de mode commun (prise mediane) s'il y en a une, la
+    # capacite d'entree de chaque broche vers la masse.
+    r_l = p["r_charge"]
+    yd = (1.0 / r_l) if 0 < r_l < 1e9 else 0.0
+    yc = (1.0 / ctx["r_mc"]) if ctx["r_mc"] > 0 else 0.0
+    cp, cn = ctx["c_rx"] or (2.0 * p["c_charge"], 2.0 * p["c_charge"])
+    if symetrique:
+        cn = cp
+
+    def charge(w):
+        y = np.zeros((len(w), 2, 2), dtype=complex)
+        y[:, 0, 0] = yc / 4.0 + yd + 1j * w * cp
+        y[:, 1, 1] = yc / 4.0 + yd + 1j * w * cn
+        y[:, 0, 1] = y[:, 1, 0] = yc / 4.0 - yd
+        return y
+    s = ibis.s_depuis_abcd_4(ibis.charger_brins(m, charge(2 * math.pi *
+                                                          freqs)), r0)
+    s0 = np.real(ibis.s_depuis_abcd_4(ibis.charger_brins(m0, charge(zero)),
+                                      r0)[0])
+    reps = [[ibis.reponses_impulsionnelles(freqs, s[:, i, j], s0[i, j], dt,
+                                           None, ctx["tr_lissage"])[0]
+             for j in range(4)] for i in range(4)]
+    L = ibis._tronquer([h for ligne in reps for h in ligne])
+    reps = [[h[:max(L, 2)].copy() for h in ligne] for ligne in reps]
+    return reps, L
+
+
+def simuler_paire(ctx, freqs, abcd_dd, abcd_cc, p, r0_diff, surlongueur=None,
+                  symetrique=False, seulement_onde=False):
+    """La paire simulee dans le temps, brin par brin : ce que
+    `oeil(non_lineaire=...)` lit, plus les tensions des deux brins.
+
+    `r0_diff` : la reference differentielle (R0 = r0_diff / 2 par brin).
+    `symetrique` : la MEME paire, mais les deux brins pareils (ceux du brin
+    p, sans decalage ni surlongueur) -- la reference a laquelle on compare
+    la vraie. `surlongueur` {retard, z0} : un brin plus long que l'autre."""
+    ui = p["ui"]
+    freqs = np.asarray(freqs, dtype=float)
+    dt, k = _pas(freqs, ui)
+    r0 = r0_diff / 2.0
+    reps, L = _canal_paire(ctx, freqs, abcd_dd, abcd_cc, p, r0, dt,
+                           symetrique, surlongueur)
+    em, em_n = ctx["em"], ctx["em_n"]
+    if em is not None:
+        cmd = ibis.commandes(ctx["m_em"], em, dt)
+        if symetrique or (ctx["m_em_n"] is ctx["m_em"] and
+                          em_n.coin == em.coin):
+            em_n, cmd_n = em, cmd
+        else:
+            cmd_n = ibis.commandes(ctx["m_em_n"], em_n, dt)
+        t50 = ibis.instant_mi_front(cmd["montant"], dt)
+    else:
+        # L'emetteur de Thevenin, partage en deux brins : la moitie de la
+        # tension a vide et de la resistance de chaque cote.
+        em, cmd = ibis.tampon_lineaire(p["r_source"] / 2.0,
+                                       p["v_haut"] / 2.0, p["v_bas"] / 2.0,
+                                       p["tr"], dt)
+        em_n, cmd_n = em, cmd
+        t50 = 4.0 * p["tr"] / TR_SUR_SIGMA
+    dec = 0.0 if symetrique else ctx["decalage"]
+    rx = (ctx["rx"], ctx["rx"] if symetrique else ctx["rx_n"])
+    lia = ibis.LiaisonPaire(reps, r0, dt, (em, em_n), (cmd, cmd_n), rx,
+                            (0.0, dec) if dec >= 0 else (-dec, 0.0))
+    pas_bit = k * ECHANTILLONS_UI
+    # Le croisement differentiel tombe au milieu des deux fronts.
+    t50 += 0.5 * abs(dec)
+
+    def courir(bits):
+        v = lia.simuler(bits, pas_bit, ui)
+        return v[2] - v[3], v
+    n_cmd = max(len(cmd["montant"][0]), len(cmd_n["montant"][0]))
+    fo = _fronts_et_onde(courir, L, dt, k, n_cmd, ui, 2, seulement_onde)
+    if seulement_onde:
+        return fo
+    infos = dict(ctx["infos"])
+    infos.update({"pas_s": dt, "pas_par_ui": pas_bit, "r0": r0,
+                  "lissage_s": ctx["tr_lissage"], "longueur_reponse": L,
+                  "asymetrie": fo["asym"], "v_haut": fo["v_haut"],
+                  "v_bas": fo["v_bas"], "deux_brins": True,
+                  "decalage_s": dec,
+                  "r_charge_mc": ctx["r_mc"] or None})
+    return {"s": fo["s"], "dt": dt, "onde": fo["onde"], "t50": t50,
+            "v_haut": fo["v_haut"], "v_bas": fo["v_bas"], "infos": infos,
+            "liaison": lia, "dernier": fo["dernier"], "pas_bit": pas_bit}
+
+
+def hauteur_onde(y, bits, spu=None):
+    """La hauteur d'oeil d'une forme d'onde periodique BRUTE (sans
+    egaliseur), a la meilleure phase -- latence comprise : min des 1 moins
+    max des 0. C'est la mesure commune de la paire reelle et de sa
+    reference symetrique.
+
+    LA LATENCE, en bits, se lit a l'intercorrelation de la forme d'onde
+    (moyennee sur l'UI) avec la sequence ; on cherche ensuite la phase sur
+    ce rang et ses deux voisins -- sans tableau de per x per x spu."""
+    spu = spu or ECHANTILLONS_UI
+    bits = np.asarray(bits, dtype=bool)
+    per = len(bits)
+    y = np.asarray(y, dtype=float)[:per * spu].reshape(per, spu)
+    a = np.where(bits, 1.0, -1.0)
+    c = np.fft.irfft(np.fft.rfft(y.mean(axis=1)) * np.conj(np.fft.rfft(a)),
+                     per)
+    k0 = int(np.argmax(c))
+    meilleur = -np.inf
+    for k in (k0 - 1, k0, k0 + 1):
+        yk = np.roll(y, -k, axis=0)
+        h = np.min(yk[bits], axis=0) - np.max(yk[~bits], axis=0)
+        meilleur = max(meilleur, float(np.max(h)))
+    return meilleur
+
+
+def mode_commun(nl, nl_ref=None):
+    """Le mode commun de la paire, d'apres la derniere forme d'onde PRBS
+    simulee : {continu, crete_crete, crete, rms, conversion_db, emetteur,
+    courbe, hauteur_brute, hauteur_symetrique}."""
+    d = nl.get("dernier") or {}
+    v = d.get("brins")
+    if v is None:
+        return None
+    vc = 0.5 * (v[2] + v[3])
+    vd = v[2] - v[3]
+    ve = 0.5 * (v[0] + v[1])
+    moy = float(np.mean(vc))
+    cc = float(np.max(vc) - np.min(vc))
+    dpp = float(np.max(vd) - np.min(vd))
+    spu = ECHANTILLONS_UI
+    pas = spu // PAS_MODE_COMMUN
+    nb = min(len(d["bits"]), BITS_MODE_COMMUN)
+    sortie = {
+        "continu": moy, "crete_crete": cc,
+        "crete": float(np.max(np.abs(vc - moy))),
+        "rms": float(np.std(vc)),
+        "conversion_db": (20.0 * math.log10(cc / dpp)
+                          if cc > 0 and dpp > 0 else None),
+        "emetteur": {"continu": float(np.mean(ve)),
+                     "crete_crete": float(np.max(ve) - np.min(ve))},
+        "courbe": {"dt_ui": 1.0 / PAS_MODE_COMMUN,
+                   "v": [round(float(x), 6) for x in vc[:nb * spu:pas]],
+                   "v_diff": [round(float(x), 6)
+                              for x in vd[:nb * spu:pas]]},
+        "hauteur_brute": hauteur_onde(vd, d["bits"], spu),
+    }
+    if nl_ref is not None:
+        sortie["hauteur_symetrique"] = hauteur_onde(
+            nl_ref["onde"](d["bits"]), d["bits"], spu)
+    return sortie
+
+
+def preparer_ami(o, p, ctx):
+    """Les fichiers .ami de la requete, lus et montres, et ce qu'ils
+    proposent pour l'egaliseur de reference -- applique si `ami_regler`.
+    Rend None s'il n'y a ni .ami ni [Algorithmic Model]."""
+    if ibis is None:
+        return None
+    lus = {}
+    for cle, champ in (("emetteur", "ibis_emetteur"),
+                       ("recepteur", "ibis_recepteur")):
+        d = o.get(champ)
+        a = d.get("ami") if isinstance(d, dict) else None
+        if isinstance(a, dict) and a.get("texte"):
+            try:
+                lus[cle] = ibis.lire_ami(a["texte"], str(a.get("fichier") or
+                                                         ""))
+            except ibis.ErreurIbis as exc:
+                raise ErreurOeil("AMI de l'%s : %s" % (
+                    "émetteur" if cle == "emetteur" else "récepteur",
+                    exc.message), exc.conseil)
+    renvois = []
+    for bout, cle in (("émetteur", "m_em"), ("récepteur", "m_rx")):
+        m = (ctx or {}).get(cle) or {}
+        for x in (m.get("ami") or []):
+            renvois.append(dict(x, bout=bout, modele=m["nom"]))
+    if not lus and not renvois:
+        return None
+    prop = ibis.proposer_egaliseur(lus.get("emetteur"), lus.get("recepteur"),
+                                   p["debit"])
+    applique = []
+    if o.get("ami_regler") and lus:
+        if prop.get("ffe"):
+            p["ffe"], p["ffe_principal"] = prop["ffe"], prop["ffe_principal"]
+            applique.append("FFE")
+        if prop.get("dfe_prises"):
+            p["dfe_prises"] = prop["dfe_prises"]
+            if prop.get("dfe_max"):
+                p["dfe_max"] = prop["dfe_max"]
+            applique.append("DFE")
+        if prop.get("ctle"):
+            p["ctle"] = prop["ctle"]
+            applique.append("CTLE")
+        # La gigue et le bruit du modele, seulement s'ils n'ont pas ete
+        # saisis : la saisie l'emporte.
+        if prop.get("rj") and not p["rj_ui"]:
+            p["rj_ui"] = prop["rj"] / p["ui"]
+            applique.append("RJ")
+        if prop.get("dj") and not p["dj_ui"] and prop["dj"] < p["ui"]:
+            p["dj_ui"] = prop["dj"] / p["ui"]
+            applique.append("DJ")
+        if prop.get("bruit_v") and not p["bruit_v"]:
+            p["bruit_v"] = prop["bruit_v"]
+            applique.append("bruit")
+        if any(x in applique for x in ("RJ", "DJ", "bruit")):
+            p["stat"] = True
+        if prop.get("sensibilite") and ctx is not None and \
+                ctx.get("vdiff") is None and p["mode"] == "diff":
+            ctx["vdiff"] = prop["sensibilite"]
+            applique.append("sensibilité")
+
+    def resume(a):
+        if a is None:
+            return None
+        return {"fichier": a["fichier"], "modele": a["modele"],
+                "description": a["description"], "tronque": a["tronque"],
+                "parametres": [
+                    {k: x.get(k) for k in ("chemin", "groupe", "usage",
+                                           "type", "forme", "valeur",
+                                           "plage", "liste", "description")}
+                    for x in a["parametres"]]}
+    return {"emetteur": resume(lus.get("emetteur")),
+            "recepteur": resume(lus.get("recepteur")),
+            "renvois": renvois, "propositions": prop, "applique": applique,
+            "note": ("Le modèle AMI lui-même (bibliothèque du fabricant) "
+                     "n'est PAS exécuté : seul son fichier .ami est lu. "
+                     "L'égaliseur de l'œil reste celui de référence (CTLE, "
+                     "FFE, DFE linéaires), réglé — si demandé — d'après les "
+                     "paramètres lisibles ; l'adaptation et la récupération "
+                     "d'horloge du modèle ne sont pas reproduites.")}
 
 
 def agresseurs_du_couplage(couplage, p, o, partenaire=None, excursion=None):
@@ -2053,6 +2621,24 @@ def _r_reference(res, p):
     return float((res.get("ligne") or {}).get("z0_moyen") or 50.0)
 
 
+def _seuil_vdiff(r, ctx):
+    """LA SENSIBILITE DU RECEPTEUR DIFFERENTIEL -- vdiff de [Diff Pin], ou
+    Rx_Receiver_Sensitivity d'un .ami -- contre l'oeil : il faut |V| >= vdiff
+    a l'echantillonnage, soit une demi-hauteur au moins egale."""
+    v = (ctx or {}).get("vdiff")
+    if not v or r.get("mode") != "diff":
+        return
+    m = r["mesures"]
+    m["vdiff"] = v
+    m["marge_vdiff_prbs"] = 0.5 * m["hauteur_prbs"] - v
+    m["marge_vdiff_pire"] = 0.5 * m["hauteur_pire"] - v
+    if m["marge_vdiff_pire"] < 0:
+        r["avertissements"].append(
+            "Seuil du récepteur ±%.3g mV : l'œil pire cas %s." % (
+                v * 1e3, "n'y arrive pas" if m["marge_vdiff_prbs"] < 0 else
+                "n'y arrive pas, l'œil PRBS si"))
+
+
 def analyser(doc, journal=None):
     """Document de simulation + reglages de l'oeil -> l'oeil. Leve ErreurOeil."""
     if ERREUR_OEIL is not None:
@@ -2071,6 +2657,9 @@ def analyser(doc, journal=None):
                          "Rechargez la page : la liste vient du serveur.")
     p = _params(o, gab)
     ctx = preparer_ibis(o, p)
+    # L'AMI apres l'IBIS : il peut regler l'egaliseur que l'IBIS a remis a
+    # zero, et AVANT la grille, qui depend du CTLE.
+    ami = preparer_ami(o, p, ctx)
     temporel = bool(ctx and ctx["temporel"])
     if temporel and p["motif"] == "prbs15":
         raise ErreurOeil("PRBS15 et modèle IBIS : 32 767 bits à simuler pas "
@@ -2138,10 +2727,52 @@ def analyser(doc, journal=None):
         av.append("Grille de fréquences plafonnée à %d points : la fenêtre de "
                   "calcul est raccourcie à %.3g ns." % (MAX_FREQS,
                                                         fenetre * 1e9))
+    # -- les deux brins de la paire, ou le canal seul avec ses boitiers --
+    abcd_cc, surlong, nl_ref = None, None, None
+    if ctx and ctx["paire"]:
+        sd = res.get("s_diff") or {}
+        if sd.get("s_cc") and len(sd["s_cc"]) == len(freqs):
+            abcd_cc = abcd_depuis_s(sd["s_cc"], sd.get("z_ref_comm") or
+                                    0.25 * float(sd.get("z_ref_diff") or
+                                                 100.0))
+        dl = float(sd.get("delta_l_mm") or 0.0)
+        if abcd_cc is not None and dl > 0:
+            segs = res.get("segments") or [{}]
+            eps = float(segs[0].get("eps_eff", 4.0) or 4.0)
+            surlong = {"retard": dl * 1e-3 * math.sqrt(max(eps, 1.0)) / C_0,
+                       "z0": float((res.get("ligne") or {}).get("z0_moyen")
+                                   or 50.0), "mm": dl}
+            av.append("Les deux brins diffèrent de %.3g mm : la surlongueur "
+                      "(%.3g ps) est posée sur le brin inverse, comme une "
+                      "ligne seule — le dessin ne dit pas lequel est le plus "
+                      "long." % (dl, surlong["retard"] * 1e12))
+        if abcd_cc is None:
+            av.append("Cascade du mode commun indisponible : la paire est "
+                      "simulée en demi-circuit du mode impair, le mode "
+                      "commun tenu fixe — décalage et dissymétries des deux "
+                      "brins ne sont pas suivis.")
+    note_bt = ""
+    if abcd_cc is None:
+        abcds, note_bt = appliquer_boitiers(ctx, freqs, abcds, p["mode"])
+        if note_bt and p["mode"] == "diff" and asymetries(ctx):
+            note_bt += " — la moyenne des deux broches, sur les deux brins"
+    elif any(ctx["bt_em"]) or any(ctx["bt_rx"]):
+        note_bt = "boîtiers comptés, broche par broche"
+    if ctx and ctx["notes"]:
+        av.extend(ctx["notes"])
     nl = None
-    if temporel:
+    if temporel and abcd_cc is not None:
+        nl = simuler_paire(ctx, freqs, abcds, abcd_cc, p,
+                           _r_reference(res, p), surlong)
+        p["v_haut"], p["v_bas"] = nl["v_haut"], nl["v_bas"]
+        if asymetries(ctx) or surlong:
+            nl_ref = simuler_paire(ctx, freqs, abcds, abcd_cc, p,
+                                   _r_reference(res, p), None,
+                                   symetrique=True, seulement_onde=True)
+    elif temporel:
         nl = simuler_non_lineaire(ctx, freqs, abcds, p, _r_reference(res, p))
         p["v_haut"], p["v_bas"] = nl["v_haut"], nl["v_bas"]
+    if nl is not None:
         if nl["infos"]["asymetrie"] > 0.05:
             av.append("Les fronts montant et descendant du tampon diffèrent "
                       "de %.0f %% : le pire cas et l'œil statistique "
@@ -2175,11 +2806,40 @@ def analyser(doc, journal=None):
         quoi = " et ".join(bouts)
         if temporel:
             quoi += (", simulés dans le temps (pas %.3g ps, canal lissé par "
-                     "un front de %.3g ps ; boîtier R/L/C_pkg non compté)"
-                     % (nl["dt"] * 1e12, ctx["tr_lissage"] * 1e12))
+                     "un front de %.3g ps%s)"
+                     % (nl["dt"] * 1e12, ctx["tr_lissage"] * 1e12,
+                        (" ; les deux brins de la paire" if abcd_cc is not
+                         None else "")))
+        quoi += " ; %s" % (note_bt or (
+            "boîtier non compté (demandé)" if not ctx["boitier"] else
+            "sans boîtier dans les fichiers"))
         r["ibis"] = nl["infos"] if nl else ctx["infos"]
+        if abcd_cc is not None and nl is not None:
+            mc = mode_commun(nl, nl_ref)
+            if mc is not None:
+                mc["asymetries"] = asymetries(ctx) + (
+                    ["surlongueur de %.3g mm" % surlong["mm"]]
+                    if surlong else []) + (
+                    ["fronts montant et descendant du tampon différents "
+                     "(%.0f %%) : le mode commun en vient même entre deux "
+                     "brins identiques" % (100 * nl["infos"]["asymetrie"])]
+                    if nl["infos"]["asymetrie"] > 0.01 else [])
+                r["mode_commun"] = mc
+        _seuil_vdiff(r, ctx)
     else:
         quoi = "Émetteur et récepteur linéaires (pas de modèle IBIS)"
+    if ami is not None:
+        r["ami"] = ami
+        if ami["renvois"] and not (ami["emetteur"] or ami["recepteur"]):
+            av.append("Le modèle déclare un [Algorithmic Model] (%s) : "
+                      "chargez son fichier .ami pour le lire. La bibliothèque "
+                      "elle-même n'est pas exécutée." % ", ".join(
+                          "%s, %s" % (x["fichier_ami"], x["bibliotheque"])
+                          for x in ami["renvois"]))
+        elif ami["applique"]:
+            av.append("Égaliseur de référence réglé d'après le .ami : %s. "
+                      "Le modèle AMI n'est pas exécuté." % ", ".join(
+                          ami["applique"]))
     r["avertissements"] = av + r["avertissements"] + [
         "%s, %s, et sans condensateurs de liaison : l'œil est celui que la "
         "piste seule laisse passer." % (

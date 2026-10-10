@@ -22,9 +22,19 @@ CE QUI EST LU, de chaque [Model] :
     [Rising Waveform], [Falling Waveform] : formes d'onde sous charge
     d'essai (R_fixture, V_fixture, C_fixture), autant qu'il y en a ;
     [Rgnd], [Rpower] : terminaisons d'entree.
-Le reste du fichier ([Package], [Pin], [Model Selector], [Diff Pin],
-sous-modeles, AMI) est ignore -- et dit dans le resultat. Le boitier
-(R_pkg, L_pkg, C_pkg) n'entre pas dans le calcul.
+Et, en lecture complete (1.1.0, `lire(..., complet=True)`), le BOITIER ET
+LES BROCHES : [Package], [Pin], [Diff Pin], [Model Selector],
+[Package Model] -> [Define Package Model] (diagonale des matrices ; les
+mutuelles sont dites, pas comptees), le renvoi [Algorithmic Model] -- voir
+« Le boitier et les broches ». Le reste (sous-modeles, [Model Spec],
+boitiers par sections) est ignore, et dit dans le resultat.
+
+LE FICHIER .AMI d'un modele IBIS-AMI se lit aussi (`lire_ami`) : l'arbre de
+ses parametres, et ce qu'ils proposent pour un egaliseur de reference
+(`proposer_egaliseur`). La bibliotheque du fabricant n'est PAS executee.
+
+LA PAIRE (1.1.0) : deux tampons sur les deux brins d'une paire couplee,
+remise par brin depuis ses deux modes -- voir `LiaisonPaire`.
 
 LES CONVENTIONS DE LA NORME, a ne pas confondre :
   · un courant est COMPTE POSITIF QUAND IL ENTRE dans le composant par la
@@ -58,7 +68,7 @@ try:
 except Exception:                                      # noqa: BLE001
     np = None
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 COINS = {"typ": 0, "min": 1, "max": 2}
 SUFFIXES = {"T": 1e12, "G": 1e9, "M": 1e6, "k": 1e3, "m": 1e-3, "u": 1e-6,
             "n": 1e-9, "p": 1e-12, "f": 1e-15}
@@ -132,8 +142,35 @@ REFERENCES = {"voltage range": "voltage_range",
               "rgnd": "rgnd", "rpower": "rpower"}
 
 
-def lire(texte, nom_fichier=""):
+# LE BOITIER ET LES BROCHES (1.1.0), lus quand `lire(..., complet=True)` :
+# les mots-cles du [Component] et ceux des modeles de boitier.
+BOITIER = {"r_pkg": "r", "l_pkg": "l", "c_pkg": "c"}
+MATRICES = {"resistance matrix": "r", "inductance matrix": "l",
+            "capacitance matrix": "c"}
+MOTS_COMPLETS = ("package", "pin", "diff pin", "model selector",
+                 "package model", "define package model",
+                 "end package model", "number of sections", "pin numbers",
+                 "resistance matrix", "inductance matrix",
+                 "capacitance matrix", "bandwidth", "row",
+                 "algorithmic model", "end algorithmic model")
+# Ceux d'un [Define Package Model] qui ne portent rien d'utile au calcul :
+# lus, et tus.
+DECOR_BOITIER = ("manufacturer", "oem", "description", "model data",
+                 "end model data", "number of pins", "merged pins")
+# Les « modeles » de [Pin] qui n'en sont pas : alimentations et broches
+# libres.
+BROCHES_PASSIVES = ("POWER", "GND", "NC", "NA")
+
+
+def lire(texte, nom_fichier="", complet=False):
     """Le texte d'un fichier .ibs -> {version, composant, modeles, ignores}.
+
+    `complet` (1.1.0) lit AUSSI le boitier et les broches -- [Package],
+    [Pin], [Diff Pin], [Model Selector], [Package Model],
+    [Define Package Model] -- et le renvoi [Algorithmic Model] de chaque
+    [Model] : voir `boitier_broche`, `paire_diff`, `modele_broche`. Sans
+    lui, la lecture est celle de la 1.0.0 au mot pres, et ces mots-cles
+    sont dits ignores.
 
     Leve ErreurIbis si aucun [Model] n'est lisible."""
     if not isinstance(texte, str):
@@ -145,9 +182,16 @@ def lire(texte, nom_fichier=""):
     commentaire = "|"
     res = {"fichier": nom_fichier, "version": "", "composant": "",
            "modeles": {}, "ignores": []}
+    if complet:
+        res.update({"boitier": None, "broches": {}, "ordre_broches": [],
+                    "paires_diff": [], "selecteurs": {},
+                    "modele_boitier": "", "modeles_boitier": {},
+                    "composants": 0})
     modele = None
     section = None          # le mot-cle en cours, normalise
     onde = None             # la forme d'onde en cours
+    etat = {"composants": 0, "colonnes": [], "selecteur": None,
+            "mb": None, "matrice": None, "rang": None}
     ignores = set()
     for n_ligne, brute in enumerate(texte.splitlines(), start=1):
         ligne = brute
@@ -168,10 +212,15 @@ def lire(texte, nom_fichier=""):
             cle = _cle(mot)
             arg = arg.strip()
             section, onde = cle, None
+            if complet and (cle in MOTS_COMPLETS or (
+                    etat["mb"] is not None and cle in DECOR_BOITIER)):
+                _mot_complet(res, etat, cle, arg, modele)
+                continue
             if cle == "ibis ver":
                 res["version"] = arg
             elif cle == "component":
                 res["composant"] = res["composant"] or arg
+                etat["composants"] += 1
             elif cle == "model":
                 nom = arg.split()[0] if arg else "modele%d" % (
                     len(res["modeles"]) + 1)
@@ -202,6 +251,16 @@ def lire(texte, nom_fichier=""):
                              "manufacturer", "model spec", "receiver "
                              "thresholds", "temperature range"):
                 ignores.add("[%s]" % mot.strip())
+            continue
+        # -- le boitier et les broches, en lecture complete ------------------
+        if complet and section in MOTS_COMPLETS:
+            try:
+                _ligne_complete(res, etat, section, ligne, modele)
+            except ValueError:
+                raise ErreurIbis("Ligne %d illisible dans [%s] : « %s »."
+                                 % (n_ligne, section, brute.strip()),
+                                 "Vérifiez le fichier : une valeur IBIS n'a "
+                                 "que des chiffres, un suffixe et « NA ».")
             continue
         if modele is None:
             continue
@@ -267,8 +326,652 @@ def lire(texte, nom_fichier=""):
     for m in res["modeles"].values():
         for cle, tab in list(m["tableaux"].items()):
             tab.sort(key=lambda r: r[0])
+    if complet:
+        res["composants"] = etat["composants"]
+        for mb in res["modeles_boitier"].values():
+            _matrices(mb)
     res["ignores"] = sorted(ignores)
     return res
+
+
+# ==========================================================================
+# Le boitier et les broches
+# --------------------------------------------------------------------------
+# CE QUE LA NORME EN DIT, et ce qui est lu :
+#   [Package]   R_pkg, L_pkg, C_pkg (typ/min/max) : le boitier MOYEN, celui
+#               de toute broche qui n'en dit pas plus ;
+#   [Pin]       nom, signal, modele, et R_pin, L_pin, C_pin facultatifs (une
+#               seule colonne) : ils PRIMENT sur [Package], valeur par
+#               valeur -- un « NA » renvoie a [Package] ;
+#   [Package Model] nom -> [Define Package Model] : des matrices R, L, C
+#               par broche (pleine, en bande ou creuse). Elles priment sur
+#               les deux autres. On en prend la DIAGONALE ; les mutuelles
+#               sont lues pour etre DITES (le plus fort couplage, et celui
+#               entre les deux broches d'une paire), pas comptees. Une
+#               description par sections (Len=, [Number Of Sections]) n'est
+#               pas lue : on retombe alors sur [Pin] et [Package], et on le
+#               dit ;
+#   [Diff Pin]  broche, broche inverse, vdiff, tdelay typ/min/max ;
+#   [Model Selector] : un nom de [Pin] qui designe plusieurs modeles, le
+#               premier etant celui par defaut.
+# LA TOPOLOGIE, celle des simulateurs IBIS : C_comp au die, puis R_pkg et
+# L_pkg en serie, puis C_pkg a la broche, vers la masse. Les colonnes
+# min/max de [Package] suivent le coin choisi pour le tampon.
+# ==========================================================================
+
+def _mot_complet(res, etat, cle, arg, modele):
+    """Un mot-cle du boitier ou des broches : l'etat qu'il ouvre."""
+    if cle == "model selector":
+        etat["selecteur"] = arg.split()[0] if arg else ""
+        res["selecteurs"].setdefault(etat["selecteur"], [])
+    elif cle == "package model":
+        if arg and not res["modele_boitier"] and etat["composants"] <= 1:
+            res["modele_boitier"] = arg.split()[0]
+    elif cle == "define package model":
+        mb = {"nom": arg.split()[0] if arg else "", "broches": [],
+              "sections": 0, "lignes": {}, "genres": {},
+              "diag": {"r": {}, "l": {}, "c": {}},
+              "mutuelles": {"r": {}, "l": {}, "c": {}}}
+        etat["mb"], etat["matrice"], etat["rang"] = mb, None, None
+        res["modeles_boitier"][mb["nom"]] = mb
+    elif cle == "end package model":
+        etat["mb"], etat["matrice"], etat["rang"] = None, None, None
+    elif cle in MATRICES and etat["mb"] is not None:
+        lettre = MATRICES[cle]
+        etat["matrice"] = lettre
+        etat["mb"]["genres"][lettre] = (arg.split() or ["full_matrix"])[
+            0].lower()
+        etat["rang"] = None
+    elif cle == "row" and etat["mb"] is not None:
+        etat["rang"] = _rang(etat["mb"], arg)
+    elif cle == "number of sections" and etat["mb"] is not None:
+        try:
+            etat["mb"]["sections"] = int(nombre(arg) or 0)
+        except ValueError:
+            etat["mb"]["sections"] = 0
+    elif cle == "pin":
+        etat["colonnes"] = [c.lower() for c in arg.split()]
+    elif cle == "algorithmic model" and modele is not None:
+        modele.setdefault("ami", [])
+
+
+def _rang(mb, arg):
+    """L'indice (0..N-1) de la broche d'une [Row] : son nom dans
+    [Pin Numbers], ou son rang compte depuis 1."""
+    a = (arg.split() or [""])[0]
+    if a in mb["broches"]:
+        return mb["broches"].index(a)
+    try:
+        k = int(float(a)) - 1
+    except ValueError:
+        return None
+    return k if 0 <= k < max(len(mb["broches"]), k + 1) else None
+
+
+def _ligne_complete(res, etat, section, ligne, modele):
+    """Une ligne de donnees du boitier ou des broches."""
+    champs = ligne.replace("=", " = ").split()
+    premier = etat["composants"] <= 1
+    if section == "package" and premier:
+        k = champs[0].lower()
+        vals = [c for c in champs[1:] if c != "="]
+        if k in BOITIER and vals:
+            if res["boitier"] is None:
+                res["boitier"] = {"r": None, "l": None, "c": None}
+            res["boitier"][BOITIER[k]] = _trois(vals)
+    elif section == "pin" and premier:
+        bruts = ligne.split()
+        if len(bruts) < 3:
+            return
+        b = {"nom": bruts[0], "signal": bruts[1], "modele": bruts[2],
+             "r": None, "l": None, "c": None}
+        # Les colonnes R/L/C_pin, a la place que leur donne l'en-tete.
+        for j, col in enumerate(etat["colonnes"]):
+            lettre = {"r_pin": "r", "l_pin": "l", "c_pin": "c"}.get(col)
+            if lettre and j + 1 < len(bruts):
+                b[lettre] = nombre(bruts[j + 1])
+        if b["nom"] not in res["broches"]:
+            res["ordre_broches"].append(b["nom"])
+        res["broches"][b["nom"]] = b
+    elif section == "diff pin" and premier:
+        bruts = ligne.split()
+        if len(bruts) < 2:
+            return
+        vdiff = nombre(bruts[2]) if len(bruts) > 2 else None
+        td = _trois(bruts[3:6]) if len(bruts) > 3 else (None,) * 3
+        res["paires_diff"].append({
+            "broche": bruts[0], "inverse": bruts[1], "vdiff": vdiff,
+            "tdelay": tuple(x if x is not None else 0.0 for x in td)})
+    elif section == "model selector" and etat["selecteur"] is not None:
+        res["selecteurs"][etat["selecteur"]].append(champs[0])
+    elif section == "pin numbers" and etat["mb"] is not None:
+        etat["mb"]["broches"].append(champs[0])
+        if any("=" in c for c in ligne.split()) or "/" in ligne:
+            # Une description par sections (Len=, L=, R=, C=) : non lue.
+            etat["mb"]["sections"] = max(etat["mb"]["sections"], 1)
+    elif section == "row" and etat["mb"] is not None \
+            and etat["matrice"] and etat["rang"] is not None:
+        cle = (etat["matrice"], etat["rang"])
+        etat["mb"]["lignes"].setdefault(cle, []).extend(ligne.split())
+    elif section == "algorithmic model" and modele is not None:
+        bruts = ligne.split()
+        if bruts and bruts[0].lower().startswith("executable") and \
+                len(bruts) >= 4:
+            modele.setdefault("ami", []).append(
+                {"plateforme": bruts[1], "bibliotheque": bruts[2],
+                 "fichier_ami": bruts[3]})
+
+
+def _matrices(mb):
+    """Les matrices d'un modele de boitier -> diagonale et mutuelles."""
+    n = len(mb["broches"])
+    for (lettre, i), vals in mb.pop("lignes").items():
+        genre = mb["genres"].get(lettre, "full_matrix")
+        if not 0 <= i < n:
+            continue
+        ligne = []
+        if genre.startswith("sparse"):
+            for j in range(0, len(vals) - 1, 2):
+                col = _rang(mb, vals[j])
+                if col is not None:
+                    ligne.append((col, nombre(vals[j + 1])))
+        else:
+            # Pleine ou en bande : la ligne i part de la diagonale.
+            for k, v in enumerate(vals):
+                ligne.append((i + k, nombre(v)))
+        for col, v in ligne:
+            if v is None or not 0 <= col < n:
+                continue
+            if col == i:
+                mb["diag"][lettre][mb["broches"][i]] = v
+            elif v:
+                mb["mutuelles"][lettre][(mb["broches"][i],
+                                         mb["broches"][col])] = v
+
+
+def couplage_boitier(mb, a, b=None):
+    """Le coefficient de couplage |Mij| / sqrt(Mii Mjj) le plus fort de la
+    broche `a` (avec `b` seule si elle est donnee), en L et en C."""
+    sortie = {}
+    for lettre in ("l", "c"):
+        d = mb["diag"][lettre]
+        k_max = 0.0
+        for (i, j), v in mb["mutuelles"][lettre].items():
+            if a not in (i, j) or (b is not None and b not in (i, j)):
+                continue
+            if d.get(i) and d.get(j):
+                k_max = max(k_max, abs(v) / math.sqrt(abs(d[i] * d[j])))
+        sortie[lettre] = k_max
+    return sortie
+
+
+def modele_broche(lu, broche, voulu=""):
+    """(nom du [Model], note) de la broche `broche` d'un fichier lu en
+    entier. Un [Model Selector] rend `voulu` s'il en fait partie, son
+    premier modele sinon. Leve ErreurIbis pour une broche inconnue ou
+    passive (POWER, GND, NC)."""
+    b = (lu.get("broches") or {}).get(broche)
+    if b is None:
+        raise ErreurIbis("Pas de broche « %s » dans [Pin]." % broche,
+                         "Choisissez une broche de la liste.")
+    nom = b["modele"]
+    if nom.upper() in BROCHES_PASSIVES:
+        raise ErreurIbis("La broche %s est %s : elle n'a pas de tampon."
+                         % (broche, nom),
+                         "Choisissez une broche de signal.")
+    sel = (lu.get("selecteurs") or {}).get(nom)
+    if sel:
+        if voulu in sel:
+            return voulu, "%s parmi le sélecteur %s" % (voulu, nom)
+        return sel[0], "%s, premier du sélecteur %s" % (sel[0], nom)
+    if nom not in lu["modeles"]:
+        raise ErreurIbis("La broche %s renvoie au [Model] « %s », absent du "
+                         "fichier." % (broche, nom),
+                         "Le fichier est-il complet ?")
+    return nom, ""
+
+
+def paire_diff(lu, broche):
+    """L'entree de [Diff Pin] de `broche` : {broche, inverse, vdiff, tdelay,
+    note}, ou None. Une broche donnee par son INVERSE rend la paire
+    retournee, tdelay de signe oppose."""
+    for p in lu.get("paires_diff") or []:
+        if p["broche"] == broche:
+            return dict(p, note="")
+        if p["inverse"] == broche:
+            return dict(p, broche=p["inverse"], inverse=p["broche"],
+                        tdelay=tuple(-x for x in p["tdelay"]),
+                        note="paire prise par sa broche inverse")
+    return None
+
+
+def boitier_broche(lu, broche="", coin="typ"):
+    """Le boitier d'une broche : {r, l, c (SI), source, notes}.
+
+    Priorite, valeur par valeur : [Define Package Model] (diagonale), puis
+    [Pin], puis [Package] a la colonne du coin. Sans rien de tout cela,
+    r = l = c = 0."""
+    col = COINS.get(coin, 0)
+    notes = []
+    val = {"r": 0.0, "l": 0.0, "c": 0.0}
+    src = {"r": "", "l": "", "c": ""}
+    pk = lu.get("boitier") or {}
+    for k in val:
+        if pk.get(k) is not None and pk[k][col] is not None:
+            val[k], src[k] = float(pk[k][col]), "[Package]"
+    b = (lu.get("broches") or {}).get(broche) if broche else None
+    if b is not None:
+        for k in val:
+            if b.get(k) is not None:
+                val[k], src[k] = float(b[k]), "[Pin]"
+    nom_mb = lu.get("modele_boitier") or ""
+    if nom_mb and broche:
+        mb = (lu.get("modeles_boitier") or {}).get(nom_mb)
+        if mb is None:
+            notes.append("[Package Model] %s défini hors du fichier (.pkg) : "
+                         "non lu." % nom_mb)
+        elif mb["sections"]:
+            notes.append("[Package Model] %s décrit par sections : non lu, "
+                         "[Pin] et [Package] le remplacent." % nom_mb)
+        elif broche in mb["broches"]:
+            for k in val:
+                if mb["diag"][k].get(broche) is not None:
+                    val[k] = float(mb["diag"][k][broche])
+                    src[k] = "[Package Model] " + nom_mb
+            kc = couplage_boitier(mb, broche)
+            if kc["l"] > 0 or kc["c"] > 0:
+                notes.append("Mutuelles du [Package Model] ignorées (couplage "
+                             "le plus fort de %s : k_L %.2f, k_C %.2f)."
+                             % (broche, kc["l"], kc["c"]))
+    sources = sorted(set(s for s in src.values() if s))
+    return {"r": val["r"], "l": val["l"], "c": val["c"],
+            "source": " + ".join(sources) if sources else "aucun",
+            "notes": notes}
+
+
+def boitier_nul(bt):
+    return bt is None or not (bt["r"] or bt["l"] or bt["c"])
+
+
+def abcd_boitier(freqs, bt, sens):
+    """La matrice ABCD (N, 2, 2) d'un boitier, ou None s'il est nul.
+
+    `sens` « emission » : du die vers la broche -- R et L en serie, puis
+    C_pkg ; « reception » : de la broche vers le die -- C_pkg, puis R et L."""
+    if boitier_nul(bt):
+        return None
+    w = 2 * math.pi * np.asarray(freqs, dtype=float)
+    z = bt["r"] + 1j * w * bt["l"]
+    y = 1j * w * bt["c"]
+    m = np.zeros((len(w), 2, 2), dtype=complex)
+    if sens == "emission":
+        # [1 Z ; 0 1] @ [1 0 ; Y 1]
+        m[:, 0, 0] = 1.0 + z * y
+        m[:, 0, 1] = z
+        m[:, 1, 0] = y
+        m[:, 1, 1] = 1.0
+    else:
+        # [1 0 ; Y 1] @ [1 Z ; 0 1]
+        m[:, 0, 0] = 1.0
+        m[:, 0, 1] = z
+        m[:, 1, 0] = y
+        m[:, 1, 1] = 1.0 + y * z
+    return m
+
+
+# ==========================================================================
+# IBIS-AMI : le fichier .ami
+# --------------------------------------------------------------------------
+# LE MODELE AMI N'EST PAS EXECUTE ICI. Un [Algorithmic Model] renvoie a une
+# bibliotheque binaire du fabricant (.dll, .so) -- son egaliseur, sa
+# recuperation d'horloge, ses algorithmes d'adaptation -- et a un fichier
+# .ami, texte, qui en decrit les PARAMETRES : ceux que la norme reserve
+# (AMI_Version, Init_Returns_Impulse, Tx_Rj, Rx_Noise...) et ceux propres
+# au modele (Model_Specific : prises de FFE, de DFE, gains de CTLE...).
+# Executer du code natif venu d'un fichier televerse n'est pas une option.
+# On LIT donc le .ami -- syntaxe en arbre, a parentheses --, on le montre,
+# et l'on en tire, quand ils sont lisibles, de quoi REGLER L'EGALISEUR DE
+# REFERENCE de l'oeil (FFE, DFE, CTLE) et sa gigue : c'est une proposition
+# fondee sur des noms de parametres usuels, pas le comportement du modele.
+# ==========================================================================
+
+MAX_AMI = 2 * 1024 * 1024
+MAX_PARAMS_AMI = 400
+_CLES_PARAM = ("usage", "type", "format", "value", "default", "range",
+               "list", "description", "increment", "steps", "corner",
+               "table", "list_tip", "labels")
+
+
+def _jetons_ami(texte):
+    """Les jetons d'un .ami : « ( », « ) », et des atomes (une chaine entre
+    guillemets est un seul atome)."""
+    i, n = 0, len(texte)
+    while i < n:
+        c = texte[i]
+        if c in "()":
+            yield c
+            i += 1
+        elif c.isspace():
+            i += 1
+        elif c == '"':
+            j = texte.find('"', i + 1)
+            if j < 0:
+                raise ErreurIbis("Chaîne entre guillemets non fermée dans le "
+                                 "fichier AMI.")
+            yield ("chaine", texte[i + 1:j])
+            i = j + 1
+        elif c == "|":
+            # L'usage des fichiers du commerce : « | » commente la ligne.
+            j = texte.find("\n", i)
+            i = n if j < 0 else j
+        else:
+            j = i
+            while j < n and not texte[j].isspace() and texte[j] not in '()"':
+                j += 1
+            yield texte[i:j]
+            i = j
+
+
+class _Chaine(str):
+    """Un atome AMI ecrit entre guillemets : du texte, meme s'il a l'air
+    d'un nombre (« "7.0" »)."""
+
+
+def _noeud(liste):
+    tete = liste[0] if liste else ""
+    nom = str(tete[1]) if isinstance(tete, tuple) else (
+        tete if isinstance(tete, str) else "")
+    n = {"nom": nom, "valeurs": [], "enfants": []}
+    for x in liste[1:]:
+        if isinstance(x, list):
+            n["enfants"].append(_noeud(x))
+        else:
+            n["valeurs"].append(_Chaine(x[1]) if isinstance(x, tuple)
+                                else x)
+    return n
+
+
+def _num(x):
+    if isinstance(x, _Chaine):
+        return None
+    try:
+        return nombre(x)
+    except (ValueError, TypeError):
+        return None
+
+
+def _param_ami(n):
+    """Un parametre AMI (un noeud qui a Usage ou Type), ou None."""
+    enf = {}
+    for e in n["enfants"]:
+        enf.setdefault(e["nom"].lower(), e)
+    if "usage" not in enf and "type" not in enf:
+        return None
+    p = {"nom": n["nom"],
+         "usage": (enf.get("usage", {}).get("valeurs") or [""])[0],
+         "type": " ".join(enf.get("type", {}).get("valeurs") or []),
+         "description": " ".join(enf.get("description", {}).get("valeurs")
+                                 or []),
+         "forme": "", "valeur": None, "plage": None, "liste": None}
+    vals = []
+    if "format" in enf and enf["format"]["valeurs"]:
+        p["forme"] = enf["format"]["valeurs"][0].lower()
+        vals = enf["format"]["valeurs"][1:]
+    else:
+        for f in ("range", "list", "increment", "steps", "corner", "value",
+                  "table"):
+            if f in enf:
+                p["forme"] = f
+                vals = enf[f]["valeurs"]
+                break
+    nums = [_num(v) for v in vals]
+    if p["forme"] in ("range", "increment", "steps", "corner") and \
+            len(nums) >= 3:
+        p["valeur"] = nums[0] if nums[0] is not None else vals[0]
+        if nums[1] is not None and nums[2] is not None:
+            p["plage"] = (min(nums[1], nums[2]), max(nums[1], nums[2]))
+        if p["forme"] == "increment" and len(nums) >= 4:
+            p["pas"] = nums[3]
+    elif p["forme"] == "list" and vals:
+        p["liste"] = [x if y is None else y for x, y in zip(vals, nums)]
+        p["valeur"] = p["liste"][0]
+        lnum = [y for y in nums if y is not None]
+        if lnum:
+            p["plage"] = (min(lnum), max(lnum))
+    elif vals:
+        p["valeur"] = nums[0] if nums[0] is not None else vals[0]
+    for f in ("value", "default"):
+        if f in enf and enf[f]["valeurs"]:
+            v = enf[f]["valeurs"][0]
+            p["valeur"] = _num(v) if _num(v) is not None else v
+    return p
+
+
+def lire_ami(texte, nom_fichier=""):
+    """Le texte d'un fichier .ami -> {modele, description, reserves,
+    specifiques, parametres, fichier}.
+
+    `parametres` : la liste a plat, chacun avec son CHEMIN dans l'arbre
+    (« Model_Specific/TX_FFE/Tap/-1 »), son Usage, son Type, sa valeur
+    (Value, Default ou typ), sa plage et sa liste. Leve ErreurIbis si le
+    texte n'est pas un arbre AMI."""
+    if not isinstance(texte, str) or not texte.strip():
+        raise ErreurIbis("Fichier AMI vide.")
+    if len(texte) > MAX_AMI:
+        raise ErreurIbis("Fichier AMI de %.1f Mo : trop gros pour un .ami."
+                         % (len(texte) / 1e6))
+    pile, racines = [], []
+    for j in _jetons_ami(texte):
+        if j == "(":
+            pile.append([])
+        elif j == ")":
+            if not pile:
+                raise ErreurIbis("Parenthèse fermante en trop dans le "
+                                 "fichier AMI.")
+            fini = pile.pop()
+            (pile[-1] if pile else racines).append(fini)
+        elif pile:
+            pile[-1].append(j)
+    if pile or not racines:
+        raise ErreurIbis("Fichier AMI incomplet : parenthèses non "
+                         "équilibrées." if pile else
+                         "Aucun arbre « (modèle ...) » dans le fichier AMI.",
+                         "Un .ami s'écrit (Nom (Reserved_Parameters ...) "
+                         "(Model_Specific ...)).")
+    racine = _noeud(racines[0])
+    res = {"fichier": nom_fichier, "modele": racine["nom"],
+           "description": "", "parametres": [], "tronque": False}
+    for e in racine["enfants"]:
+        if e["nom"].lower() == "description":
+            res["description"] = " ".join(e["valeurs"])
+
+    def parcourir(n, chemin):
+        p = _param_ami(n)
+        if p is not None:
+            if len(res["parametres"]) >= MAX_PARAMS_AMI:
+                res["tronque"] = True
+                return
+            p["chemin"] = "/".join(chemin)
+            p["groupe"] = ("reserve" if chemin and chemin[0].lower()
+                           .startswith("reserved") else "specifique")
+            res["parametres"].append(p)
+            return
+        for e in n["enfants"]:
+            if e["nom"].lower() in _CLES_PARAM:
+                continue
+            parcourir(e, chemin + [e["nom"]])
+    for e in racine["enfants"]:
+        if e["nom"].lower() != "description":
+            parcourir(e, [e["nom"]])
+    res["reserves"] = {p["nom"]: p for p in res["parametres"]
+                       if p["groupe"] == "reserve"}
+    return res
+
+
+def _valeur(p):
+    v = p.get("valeur") if p else None
+    return v if isinstance(v, (int, float)) else None
+
+
+def _indice_prise(nom):
+    """Le rang d'une prise de FFE d'apres son nom : « -1 », « pre1 »,
+    « post2 », « main », « c_m1 », « c1 »... ou None."""
+    n = nom.lower()
+    m = re.match(r"^[+-]?\d+$", n)
+    if m:
+        return int(n)
+    m = re.match(r"^(?:tap_?)?pre(?:_?cursor)?_?(\d*)$", n)
+    if m:
+        return -int(m.group(1) or 1)
+    m = re.match(r"^(?:tap_?)?post(?:_?cursor)?_?(\d*)$", n)
+    if m:
+        return int(m.group(1) or 1)
+    if n in ("main", "main_cursor", "tap_main", "cursor", "c0", "tap0"):
+        return 0
+    m = re.match(r"^c_?(m|n|-)_?(\d+)$", n)
+    if m:
+        return -int(m.group(2))
+    m = re.match(r"^c_?p?(\d+)$", n)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def proposer_egaliseur(ami_tx=None, ami_rx=None, debit=1e9):
+    """Ce que les .ami permettent de proposer pour l'egaliseur de reference
+    et la gigue de l'oeil : {ffe, ffe_principal, dfe_prises, dfe_max, ctle,
+    rj, dj, bruit_v, sensibilite, notes}. Une cle absente : rien de lisible.
+
+    HEURISTIQUE, ET DITE : on reconnait des noms usuels (Tap, FFE, DFE,
+    CTLE, dB) et les parametres reserves de gigue et de bruit. Chaque
+    proposition dit le parametre d'ou elle vient."""
+    prop = {"notes": []}
+    tx = (ami_tx or {}).get("parametres") or []
+    rx = (ami_rx or {}).get("parametres") or []
+
+    # -- la FFE de l'emetteur --------------------------------------------
+    prises = {}
+    for p in tx:
+        ch = p["chemin"].lower()
+        if p["groupe"] != "specifique" or "dfe" in ch:
+            continue
+        if not any(k in ch for k in ("tap", "ffe", "emph", "cursor")):
+            continue
+        k = _indice_prise(p["nom"])
+        v = _valeur(p)
+        if k is not None and v is not None and k not in prises:
+            prises[k] = (v, p["chemin"])
+    if prises and 0 in prises and len(prises) >= 2:
+        rangs = sorted(prises)
+        coefs = [prises[k][0] for k in rangs]
+        if max(abs(c) for c in coefs) > 1.5:
+            prop["notes"].append(
+                "FFE : les prises (%s…) valent jusqu'à %g — des codes de "
+                "réglage, pas des coefficients : non proposée."
+                % (prises[rangs[0]][1], max(abs(c) for c in coefs)))
+        else:
+            somme = sum(abs(c) for c in coefs) or 1.0
+            prop["ffe"] = [round(c / somme, 4) for c in coefs]
+            prop["ffe_principal"] = rangs.index(0)
+            prop["notes"].append(
+                "FFE : %d prises (rangs %d à %d) tirées des valeurs par "
+                "défaut de %s…, ramenées à Σ|c| = 1."
+                % (len(rangs), rangs[0], rangs[-1],
+                   "/".join(prises[0][1].split("/")[:-1])))
+
+    # -- le DFE du recepteur ---------------------------------------------
+    n_dfe, dfe_max, src = None, None, ""
+    rangs_dfe = []
+    for p in rx:
+        ch = p["chemin"].lower()
+        if p["groupe"] != "specifique" or "dfe" not in ch:
+            continue
+        nom = p["nom"].lower()
+        v = _valeur(p)
+        if re.match(r"^(n|num|nb|number|nombre)?_?(of_)?taps?(_count)?$|"
+                    r"^tap_?count$|^dfe_?taps$", nom) and v is not None \
+                and float(v).is_integer() and v >= 1 and "dfe" in ch:
+            n_dfe, src = int(v), p["chemin"]
+            if p.get("plage"):
+                n_dfe = int(p["plage"][1])
+            continue
+        m = re.match(r"^(?:dfe_?)?(?:tap|h)_?(\d+)$", nom) or \
+            re.match(r"^(\d+)$", nom)
+        if m and int(m.group(1)) >= 1:
+            rangs_dfe.append(int(m.group(1)))
+            borne = max(abs(x) for x in p["plage"]) if p.get("plage") \
+                else (abs(v) if v is not None else None)
+            if borne is not None:
+                dfe_max = max(dfe_max or 0.0, borne)
+            src = src or p["chemin"]
+    if n_dfe is None and rangs_dfe:
+        n_dfe = max(rangs_dfe)
+    if n_dfe:
+        prop["dfe_prises"] = min(n_dfe, 8)
+        if dfe_max:
+            prop["dfe_max"] = dfe_max
+        prop["notes"].append(
+            "DFE : %d prise(s)%s d'après %s%s." % (
+                n_dfe, (" (limitées à 8)" if n_dfe > 8 else ""), src,
+                (", amplitude bornée à %g (lue telle quelle, en volts si le "
+                 "modèle les exprime ainsi)" % dfe_max) if dfe_max else ""))
+
+    # -- le CTLE du recepteur --------------------------------------------
+    for p in rx:
+        ch = p["chemin"].lower()
+        if p["groupe"] != "specifique" or "ctle" not in ch:
+            continue
+        nom = p["nom"].lower()
+        texte_db = ("db" in nom) or ("db" in (p.get("description") or "")
+                                     .lower())
+        if not texte_db or not any(k in nom for k in
+                                   ("gain", "boost", "peak", "db")):
+            continue
+        if p.get("liste"):
+            vals = [x for x in p["liste"] if isinstance(x, (int, float))]
+        elif p.get("plage"):
+            a, b = p["plage"]
+            pas = p.get("pas") or max(1.0, (b - a) / 12.0)
+            vals = list(np.arange(a, b + 0.5 * pas, pas))
+        elif _valeur(p) is not None:
+            vals = [_valeur(p)]
+        else:
+            continue
+        if not vals:
+            continue
+        continu = "dc" in nom
+        adc = sorted(set(round(float(v) if continu else -abs(float(v)), 2)
+                         for v in vals))[:16]
+        prop["ctle"] = {"forme": "pcie3", "fp1": debit / 4.0,
+                        "fp2": float(debit), "adc_db": adc}
+        prop["notes"].append(
+            "CTLE : gains continus %s dB essayés, d'après %s ; pôles SUPPOSÉS "
+            "(fp1 = débit/4, fp2 = débit) — le .ami ne les donne pas."
+            % (", ".join("%g" % x for x in adc), p["chemin"]))
+        break
+
+    # -- la gigue et le bruit : les parametres reserves ------------------
+    def res_(ami, nom):
+        p = ((ami or {}).get("reserves") or {}).get(nom)
+        return _valeur(p)
+    rj = [res_(ami_tx, "Tx_Rj"), res_(ami_rx, "Rx_Rj")]
+    dj = [res_(ami_tx, "Tx_Dj"), res_(ami_tx, "Tx_DCD"),
+          res_(ami_rx, "Rx_Dj"), res_(ami_rx, "Rx_DCD")]
+    if any(x for x in rj if x):
+        prop["rj"] = math.sqrt(sum(x * x for x in rj if x))
+        prop["notes"].append("RJ %.3g ps rms : Tx_Rj et Rx_Rj en quadrature."
+                             % (prop["rj"] * 1e12))
+    if any(x for x in dj if x):
+        prop["dj"] = sum(abs(x) for x in dj if x)
+        prop["notes"].append("DJ %.3g ps c-c : somme de Tx_Dj, Tx_DCD, Rx_Dj "
+                             "et Rx_DCD présents." % (prop["dj"] * 1e12))
+    bruit = res_(ami_rx, "Rx_Noise")
+    if bruit:
+        prop["bruit_v"] = abs(bruit)
+    sens = res_(ami_rx, "Rx_Receiver_Sensitivity")
+    if sens:
+        prop["sensibilite"] = abs(sens)
+    return prop
 
 
 def resume(lu):
@@ -815,3 +1518,314 @@ class Liaison(object):
             if abs(d1) < 1e-10 and abs(d2) < 1e-10:
                 break
         return a1, a2
+
+
+# ==========================================================================
+# La paire : deux tampons, deux brins couples, deux recepteurs
+# --------------------------------------------------------------------------
+# POURQUOI DEUX BRINS. Le demi-circuit du mode impair suppose deux tampons
+# parfaitement opposes : ce que l'un monte, l'autre le descend au meme
+# instant et de la meme facon, et le mode commun ne bouge pas. Un vrai
+# couple de tampons CMOS ne l'est pas -- montee et descente differentes,
+# un brin en retard sur l'autre (tdelay de [Diff Pin]), deux coins, deux
+# boitiers -- et ce qui n'est pas oppose part en MODE COMMUN : le bruit que
+# le recepteur differentiel rejette (a peu pres), mais que la paire rayonne
+# et que les diodes voient.
+#
+# LE CANAL, PAR BRIN. La paire symetrique de `simulation_em` est donnee par
+# ses deux modes, sans couplage entre eux : la cascade du mode impair
+# (V_d = V_p - V_n, I_d = (I_p - I_n)/2) et celle du mode commun
+# (V_c = (V_p + V_n)/2, I_c = I_p + I_n). On les remet par brin -- quatre
+# acces, p et n de chaque cote, ondes de tension sur R0 par brin --, et ce
+# qui est propre a UN brin s'y pose tel quel : boitier de chaque broche,
+# capacite d'entree de chaque recepteur, surlongueur d'un brin. La
+# terminaison du recepteur est une resistance differentielle et, au
+# besoin, une impedance de mode commun (prise mediane).
+#
+# LE PAS DE TEMPS, comme pour la ligne seule (`Liaison`), mais quatre ondes
+# entrantes et un Newton 4x4 : b = S0 a + h, (a - b)/R0 = - I(V) a chaque
+# acces. L'histoire est un seul produit matrice-vecteur par pas.
+# ==========================================================================
+
+def abcd_brins(abcd_dd, abcd_cc):
+    """(N, 4, 4) ABCD par brin -- blocs 2x2 [[A, B], [C, D]] sur (p, n) --
+    d'une paire symetrique donnee par ses deux modes (N, 2, 2).
+
+    Les deux bases : V_brins = TV V_modes, I_brins = TI I_modes, les modes
+    dans l'ordre (d, c) ; A_brins = TV A_modes TV^-1, B = TV B TI^-1,
+    C = TI C TV^-1, D = TI D TI^-1."""
+    tv = np.array([[0.5, 1.0], [-0.5, 1.0]])
+    ti = np.array([[1.0, 0.5], [-1.0, 0.5]])
+    tvi, tii = np.linalg.inv(tv), np.linalg.inv(ti)
+    dd = np.asarray(abcd_dd, dtype=complex)
+    cc = np.asarray(abcd_cc, dtype=complex)
+    n = len(dd)
+    m = np.zeros((n, 4, 4), dtype=complex)
+    for (r, c), (ga, dr) in (((0, 0), (tv, tvi)), ((0, 1), (tv, tii)),
+                             ((1, 0), (ti, tvi)), ((1, 1), (ti, tii))):
+        bloc = np.zeros((n, 2, 2), dtype=complex)
+        bloc[:, 0, 0] = dd[:, r, c]
+        bloc[:, 1, 1] = cc[:, r, c]
+        m[:, 2 * r:2 * r + 2, 2 * c:2 * c + 2] = ga @ bloc @ dr
+    return m
+
+
+def abcd_par_brin(m_p, m_n, n):
+    """(N, 4, 4) de deux 2-ports (N, 2, 2) poses chacun sur son brin, sans
+    couplage ; None vaut un fil."""
+    out = np.zeros((n, 4, 4), dtype=complex)
+    for k, mm in enumerate((m_p, m_n)):
+        if mm is None:
+            mm = np.zeros((n, 2, 2), dtype=complex)
+            mm[:, 0, 0] = mm[:, 1, 1] = 1.0
+        for r in range(2):
+            for c in range(2):
+                out[:, 2 * r + k, 2 * c + k] = mm[:, r, c]
+    return out
+
+
+def charger_brins(m, y_l):
+    """La charge (N, 2, 2) en admittance, posee au bout de la cascade
+    (N, 4, 4) : A' = A + B Y, C' = C + D Y."""
+    out = m.copy()
+    out[:, :2, :2] = m[:, :2, :2] + m[:, :2, 2:] @ y_l
+    out[:, 2:, :2] = m[:, 2:, :2] + m[:, 2:, 2:] @ y_l
+    return out
+
+
+def s_depuis_abcd_4(m, r0):
+    """(N, 4, 4) S, ondes de tension sur R0 a chaque brin, d'une cascade
+    (N, 4, 4) ; acces dans l'ordre (1p, 1n, 2p, 2n). C'est la formule du
+    deux-ports, ecrite en blocs : a1 = P V2 + Q I2, b1 = R V2 + U I2."""
+    a, b = m[:, :2, :2], m[:, :2, 2:]
+    c, d = m[:, 2:, :2], m[:, 2:, 2:]
+    p, q = (a + r0 * c) / 2.0, (b + r0 * d) / 2.0
+    r, u = (a - r0 * c) / 2.0, (b - r0 * d) / 2.0
+    w = np.linalg.inv(p + q / r0)
+    s21 = w
+    s22 = -w @ (p - q / r0)
+    s11 = (r + u / r0) @ w
+    s12 = (r - u / r0) + (r + u / r0) @ s22
+    s = np.zeros(m.shape, dtype=complex)
+    s[:, :2, :2], s[:, :2, 2:] = s11, s12
+    s[:, 2:, :2], s[:, 2:, 2:] = s21, s22
+    return s
+
+
+class _Commande(object):
+    """Les commandes d'un brin, avec le pas : de quoi reprendre `_k` et
+    `_depart` de `Liaison` sans les recopier."""
+    _k = Liaison._k
+    _depart = Liaison._depart
+
+    def __init__(self, cmd, dt):
+        self.cmd, self.dt = cmd, dt
+
+
+class LiaisonPaire(object):
+    """Deux tampons, la paire en ondes par brin, deux recepteurs.
+
+    `canal` : 4 x 4 reponses impulsionnelles au pas dt (acces 1p, 1n, 2p,
+    2n) ; `emetteurs`, `cmds`, `recepteurs` : un par brin (p, n) ;
+    `decalages` : le retard de chaque brin sur la sequence (s) -- tdelay."""
+
+    def __init__(self, canal, r0, dt, emetteurs, cmds,
+                 recepteurs=(None, None), decalages=(0.0, 0.0)):
+        self.s = [[np.asarray(canal[i][j], dtype=float) for j in range(4)]
+                  for i in range(4)]
+        self.L = len(self.s[0][0])
+        self.r0, self.dt = float(r0), float(dt)
+        self.em = list(emetteurs)
+        self.cmd = [_Commande(c, self.dt) for c in cmds]
+        self.rx = list(recepteurs)
+        d0 = min(decalages)
+        self.dec = [float(x) - d0 for x in decalages]
+        self.s0 = np.array([[h[0] for h in ligne] for ligne in self.s])
+        # LES DEUX BOUTS SE RESOLVENT A TOUR DE ROLE : ce qui traverse la
+        # paire en un pas n'est que le reste de la fenetre (1e-3 au plus
+        # quand la ligne est plus longue que le pas). Deux Newton 2x2 en
+        # scalaires, l'un apres l'autre, chacun avec la derniere valeur de
+        # l'autre bout, jusqu'a ce que rien ne bouge -- trois fois plus
+        # vite que le Newton 4x4 en numpy, qui reste le recours. Un bout
+        # sans diode est lineaire, et se resout d'un produit.
+        s0 = self.s0
+        self.s0_12 = s0[:2, 2:].copy()
+        self.s0_21 = s0[2:, :2].copy()
+        self.s0_1 = [float(s0[0, 0]), float(s0[0, 1]), float(s0[1, 0]),
+                     float(s0[1, 1])]
+        self.s0_2 = [float(s0[2, 2]), float(s0[2, 3]), float(s0[3, 2]),
+                     float(s0[3, 3])]
+        self.lin_2 = None
+        if self.rx[0] is None and self.rx[1] is None:
+            # (I - S22) a2 = h2
+            self.lin_2 = np.linalg.inv(np.eye(2) - s0[2:, 2:])
+        # LE NOYAU A PLAT : l'histoire A[j-L+1:j] (L-1 lignes, 4 colonnes)
+        # se lit d'un seul produit, K[i, 4k + j] = s_ij[L-1-k].
+        L = self.L
+        self.K = np.zeros((4, 4 * (L - 1)))
+        for i in range(4):
+            for j in range(4):
+                self.K[i, j::4] = self.s[i][j][1:][::-1]
+
+    def _evenements(self, bits, spu_sim, n_pas):
+        """Pour chaque brin, {pas: (sens, avance)} : le brin n emet
+        l'inverse, chaque brin bascule a n UI + son decalage."""
+        dt = self.dt
+        ev = [{}, {}]
+        for x in (0, 1):
+            b = bits if x == 0 else [1 - v for v in bits]
+            for ib in range(1, len(b)):
+                if b[ib] == b[ib - 1]:
+                    continue
+                t_s = ib * spu_sim * dt + self.dec[x]
+                n_s = int(math.ceil(t_s / dt - 1e-9))
+                if n_s < n_pas:
+                    ev[x][n_s] = ("montant" if b[ib] else "descendant",
+                                  n_s * dt - t_s)
+        return ev
+
+    def simuler(self, bits, spu_sim, ui):
+        """Les quatre tensions (4, n_pas) -- broche p et n de l'emetteur,
+        puis du recepteur, au die --, en volts absolus."""
+        bits = [int(b) for b in bits]
+        n_pas = len(bits) * spu_sim
+        dt, L = self.dt, self.L
+        ev = self._evenements(bits, spu_sim, n_pas)
+        etat_bas = [bits[0] == 0, bits[0] == 1]
+        sens = [None, None]
+        t_front = [0.0, 0.0]
+        ku = [0.0, 0.0]
+        kd = [0.0, 0.0]
+        for x in (0, 1):
+            ku[x], kd[x] = self.cmd[x]._k(etat_bas[x], None, 0.0)
+        ku_cour = list(ku)
+        s_dc = np.array([[float(np.sum(h)) for h in ligne]
+                         for ligne in self.s])
+        a = self._newton(ku, kd, np.zeros(4), s_dc, None, None)
+        A = np.empty((L - 1 + n_pas, 4))
+        A[:L - 1] = a
+        v_prec = a + s_dc @ a
+        V = np.empty((n_pas, 4))
+        K, s0 = self.K, self.s0
+        for n in range(n_pas):
+            for x in (0, 1):
+                e = ev[x].get(n)
+                if e is not None:
+                    sens[x] = e[0]
+                    t_front[x] = self.cmd[x]._depart(e[0], ku_cour[x]) + e[1]
+                    etat_bas[x] = e[0] == "descendant"
+                elif sens[x] is not None:
+                    t_front[x] += dt
+                ku[x], kd[x] = self.cmd[x]._k(etat_bas[x], sens[x],
+                                              t_front[x])
+                ku_cour[x] = ku[x]
+            j = n + L - 1
+            h = K @ A[j - L + 1:j].ravel() if L > 1 else np.zeros(4)
+            a_ = self._deux_bouts(ku, kd, h, v_prec, a)
+            a = a_ if a_ is not None else \
+                self._newton(ku, kd, h, s0, v_prec, a)
+            A[j] = a
+            v_prec = a + s0 @ a + h
+            V[n] = v_prec
+        return V.T
+
+    def _deux_bouts(self, ku, kd, h, v_prec, a):
+        """Les quatre ondes entrantes, bout par bout, a tour de role ; None
+        si cela ne converge pas."""
+        dt = self.dt
+        em = self.em
+        rx = self.rx
+
+        def tampons(x, v):
+            i, g = em[x].i_total(v, ku[x], kd[x])
+            cc = em[x].c_comp
+            if cc:
+                i += cc * (v - v_prec[x]) / dt
+                g += cc / dt
+            return i, g
+        def diodes(x, v):
+            return rx[x].i_statique(v) if rx[x] is not None else (0.0, 0.0)
+        (c00, c01), (c10, c11) = self.s0_12.tolist()
+        (e00, e01), (e10, e11) = self.s0_21.tolist()
+        h0, h1, h2, h3 = h.tolist()
+        a0, a1, a2, a3 = a.tolist()
+        for _ in range(30):
+            p0, p1 = a0, a1
+            a0, a1 = self._newton2(self.s0_1, h0 + c00 * a2 + c01 * a3,
+                                   h1 + c10 * a2 + c11 * a3, tampons, a0, a1)
+            g0, g1 = h2 + e00 * a0 + e01 * a1, h3 + e10 * a0 + e11 * a1
+            if self.lin_2 is not None:
+                (l00, l01), (l10, l11) = self.lin_2.tolist()
+                n2, n3 = l00 * g0 + l01 * g1, l10 * g0 + l11 * g1
+            else:
+                n2, n3 = self._newton2(self.s0_2, g0, g1, diodes, a2, a3)
+            fini = abs(n2 - a2) < 1e-11 and abs(n3 - a3) < 1e-11 and \
+                abs(a0 - p0) < 1e-11 and abs(a1 - p1) < 1e-11
+            a2, a3 = n2, n3
+            if fini:
+                return np.array([a0, a1, a2, a3])
+        return None
+
+    def _newton2(self, s, h0, h1, courant, a0, a1):
+        """Un bout de la paire : deux ondes, deux equations, en scalaires --
+        le Newton de `Liaison`, les deux brins a la place des deux bouts."""
+        r0 = self.r0
+        s00, s01, s10, s11 = s
+        for _ in range(60):
+            b0 = s00 * a0 + s01 * a1 + h0
+            b1 = s10 * a0 + s11 * a1 + h1
+            i0, g0 = courant(0, a0 + b0)
+            i1, g1 = courant(1, a1 + b1)
+            f0 = (a0 - b0) / r0 + i0
+            f1 = (a1 - b1) / r0 + i1
+            j00 = (1.0 - s00) / r0 + g0 * (1.0 + s00)
+            j01 = -s01 / r0 + g0 * s01
+            j10 = -s10 / r0 + g1 * s10
+            j11 = (1.0 - s11) / r0 + g1 * (1.0 + s11)
+            det = j00 * j11 - j01 * j10
+            if abs(det) < 1e-30:
+                break
+            d0 = (f0 * j11 - f1 * j01) / det
+            d1 = (j00 * f1 - j10 * f0) / det
+            d0 = max(-0.5, min(0.5, d0))
+            d1 = max(-0.5, min(0.5, d1))
+            a0 -= d0
+            a1 -= d1
+            if abs(d0) < 1e-10 and abs(d1) < 1e-10:
+                break
+        return a0, a1
+
+    def _newton(self, ku, kd, h, s, v_prec, a):
+        """Les quatre ondes entrantes qui satisfont les quatre acces."""
+        r0, dt = self.r0, self.dt
+        un = np.eye(4)
+        a = np.zeros(4) if a is None else np.array(a, dtype=float)
+        jac0 = (un - s) / r0
+        plus = un + s
+        i = np.zeros(4)
+        g = np.zeros(4)
+        for _ in range(60):
+            b = s @ a + h
+            v = a + b
+            for x in (0, 1):
+                em = self.em[x]
+                ie, ge = em.i_total(v[x], ku[x], kd[x])
+                if v_prec is not None and em.c_comp:
+                    ie += em.c_comp * (v[x] - v_prec[x]) / dt
+                    ge += em.c_comp / dt
+                i[x], g[x] = ie, ge
+                rx = self.rx[x]
+                if rx is not None:
+                    i[2 + x], g[2 + x] = rx.i_statique(v[2 + x])
+            f = (a - b) / r0 + i
+            jac = jac0 + g[:, None] * plus
+            try:
+                d = np.linalg.solve(jac, f)
+            except np.linalg.LinAlgError:
+                break
+            # Pas borne, comme pour la ligne seule.
+            d = np.clip(d, -0.5, 0.5)
+            a = a - d
+            if float(np.max(np.abs(d))) < 1e-10:
+                break
+        return a
