@@ -14,7 +14,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 898 essais (`editeur-pcb/test/harness.js`), dont 21 pour les plans (Draftsman) et 24 pour le gestionnaire de contraintes et la topologie |
+| **Éditeur PCB** | En service | 905 essais (`editeur-pcb/test/harness.js`), dont 28 pour les plans (Draftsman) et 24 pour le gestionnaire de contraintes et la topologie |
 | **Éditeur Schématique** | En service | 155 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
 | **Visionneuse IPC-2581** | En service | 186 essais (`harness-sim.js`) + 59 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.5.0)** | En service (0,3 à 0,4 % vs étalons) | 199 cas (`python/test/banc-ligne-mom.py`) |
@@ -135,8 +135,9 @@ lib/
   - [x] Copier-coller d'un groupe : nouveau groupe (« G1 (copie) », « G1 (copie 2) »…) avec ses vias et son cuivre interne même non sélectionné (pistes entre membres, vias libres traversés) ; liens `a1`/`a2` et vias marqués re-pointés sur les copies ; les pistes sortantes restent ; Ctrl+X emporte le cuivre interne. 1 essai.
 
 - [x] **Plans de fabrication et d'assemblage (Draftsman)** (`editeur-pcb/js/29-draftsman.js`, 10/10/2026) : feuilles A4 / A3 / A2 avec cadre, repères de zones et cartouche ; plan de fabrication (vue cotée, symboles et tableau de perçage, trous de fixation, coupe d'empilage, notes), assemblage dessus / dessous (dessous en miroir, non-montés de la variante en tirets), nomenclature, couches de cuivre en option. PDF au **texte cherchable** (WinAnsi, accents compris ; valeurs, boîtiers, références fabricant et nets en texte invisible à leur place ; signets par feuille et par composant), dans `fabrication.zip` et annoncé par le Master Drawing. Recherche et surlignage dans la fenêtre. 13 essais (`harness.js`).
-  - [ ] Cotes posées à la main, accrochées à la géométrie (trous de fixation, connecteurs), et vues placées à la souris.
-  - [ ] Vue de détail agrandie.
+  - [x] Cotes posées à la main, accrochées à la géométrie (`editeur-pcb/js/34-draftsman-vues.js`) : horizontale, verticale, alignée, diamètre, rayon ; points aimantés (trous, vias, centres et bords de pastilles, sommets et bords du contour) ; enregistrées par référence, elles suivent le composant, orphelines en rouge « (orpheline) » à l'écran comme au PDF, sur le calque COTES du DXF. Vues déplacées à la souris (aimant 2,5 mm, dans le cadre, hors cartouche, « Replacer automatiquement »). 7 essais.
+  - [x] Vue de détail agrandie : cercle ou rectangle, 2:1 à 20:1, découpée à sa fenêtre, repère « A » et étiquette « DÉTAIL A — ÉCHELLE 5:1 », placée d'office puis déplaçable, cotable.
+  - [ ] Cotes angulaires, en chaîne ou depuis une origine commune ; tolérances portées sur la cote ; vues qui se repoussent au lieu de se recouvrir.
   - [x] Tableau des impédances contrôlées au plan de fabrication (classes à Z cible du gestionnaire de contraintes).
   - [x] Export DXF pour la mécanique (`editeur-pcb/js/33-draftsman-export.js`) : R12 (AC1009) en mm ; carte seule à 1:1 dans le repère des Gerber (contour et découpes en LINE/ARC, arcs facettés retrouvés, un CIRCLE par trou métallisé / non métallisé, encombrement et repères par face, cotes, tableau de perçage) et feuille entière lue dans la liste d'objets (calques par `dfCalque`, catégorie ou place) ; boutons dans la fenêtre, `-CARTE.dxf` et `-PLAN-FABRICATION.dxf` dans `fabrication.zip`.
   - [x] Fonte embarquée : PlansSans (Liberation Sans OFL, pré-réduite par `outils/fonte-plans.py`, 80 Ko dans `js/fontes/plans-sans.js`), sous-ensemble des glyphes employés à chaque PDF, CIDFontType2 / Identity-H / ToUnicode (Ω, ≤, ≥ cherchables) ; option cochée par défaut, repli Helvetica. 8 essais (`harness.js`), vérifiés par pdftotext, pypdf et ezdxf.

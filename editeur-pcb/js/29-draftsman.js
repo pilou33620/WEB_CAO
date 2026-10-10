@@ -40,6 +40,17 @@
 
    Les réglages (format, feuilles, noms du cartouche, notes) sont dans le
    document, `S.dessin`, et suivent la carte.
+
+   CE QUI SE POSE À LA MAIN est dans 34-draftsman-vues.js : les cotes
+   accrochées à la géométrie (trou, via, pastille, sommet ou bord du contour,
+   enregistrées par RÉFÉRENCE et non en coordonnées : elles suivent le
+   composant qu'on déplace, et deviennent rouges, « orphelines », quand leur
+   référence disparaît), les vues déplacées à la souris et les vues de détail
+   agrandies. Ce fichier-ci n'en garde que les points d'ancrage : chaque
+   feuille déclare ses VUES (`F.vues` : une plage de ses objets, une clé
+   stable comme « fab/carte » ou « fab/percage »), et `dfAgencer` les déplace
+   après coup. Sans position enregistrée, rien ne bouge : la disposition
+   calculée reste celle d'avant.
    ========================================================================== */
 
 const DF_FORMATS={A4:{w:297,h:210},A3:{w:420,h:297},A2:{w:594,h:420}};
@@ -72,7 +83,9 @@ function dfCfg(){
     notes:txt(src.notes,4000),
     fonte:typeof src.fonte==="boolean"?src.fonte:true,   // fonte embarquée (33-draftsman-export.js)
     feuilles:{fab:b("fab",true), asmT:b("asmT",true), asmB:b("asmB",true),
-              bom:b("bom",true), couches:b("couches",false)}
+              bom:b("bom",true), couches:b("couches",false)},
+    /* posés à la main (34-draftsman-vues.js) */
+    cotes:dfNormCotes(src.cotes), vues:dfNormVues(src.vues), details:dfNormDetails(src.details)
   };
 }
 function dfRegler(cle,val){
@@ -179,7 +192,8 @@ function dfCouper(s,largeur,pt,gras){
 /* Couleurs : un nombre est un gris (0 noir, 1 blanc), un tableau un RVB 0..1. */
 function dfNouvelle(ctx,titre,genre){
   const fm=DF_FORMATS[ctx.cfg.format];
-  return {w:fm.w,h:fm.h,format:ctx.cfg.format,titre,genre,items:[],signets:[],echelle:""};
+  return {w:fm.w,h:fm.h,format:ctx.cfg.format,titre,genre,items:[],signets:[],echelle:"",
+          vues:[],cotes:[]};
 }
 function dfPoly(F,pts,o){
   o=o||{};
@@ -408,8 +422,10 @@ function dfSvgCouleur(c){
   const g=Math.round(clamp(c,0,1)*255);
   return "rgb("+g+","+g+","+g+")";
 }
-/* `hits` : boîtes à surligner [{x1,y1,x2,y2,actif}] — la recherche. */
-function dfSvg(F,hits){
+/* `hits` : boîtes à surligner [{x1,y1,x2,y2,actif}] — la recherche. `sur` :
+   le calque des outils de la fenêtre (cadres des vues, accroche, élastique),
+   du SVG brut que 34-draftsman-vues.js remplace sans tout refaire. */
+function dfSvg(F,hits,sur){
   const n=v=>dfNum(v);
   const o=['<svg xmlns="http://www.w3.org/2000/svg" class="df-svg" viewBox="0 0 '+n(F.w)+" "+n(F.h)+
     '" width="'+n(F.w)+'mm" height="'+n(F.h)+'mm"><rect width="'+n(F.w)+'" height="'+n(F.h)+'" fill="#fff"/>'];
@@ -436,7 +452,7 @@ function dfSvg(F,hits){
   for(const h of (hits||[]))
     o.push('<rect class="df-hit'+(h.actif?" on":"")+'" x="'+n(h.x1-0.8)+'" y="'+n(h.y1-0.8)+
       '" width="'+n(h.x2-h.x1+1.6)+'" height="'+n(h.y2-h.y1+1.6)+'" rx="0.8"/>');
-  o.push("</svg>");
+  o.push('<g class="df-sur" id="dfSur">'+(sur||"")+"</g></svg>");
   return o.join("");
 }
 
@@ -533,7 +549,11 @@ function dfVue(box,face,marge){
   const ox=box.x+(box.w-bw*k)/2, oy=box.y+(box.h-bh*k)/2;
   const T=face?(x,y)=>({x:ox+(B.x2-x)*k,y:oy+(y-B.y1)*k})
               :(x,y)=>({x:ox+(x-B.x1)*k,y:oy+(y-B.y1)*k});
-  return {k,T,B,ox,oy,bw,bh,face,echelle:dfEchelleTxt(k)};
+  /* l'inverse, de la feuille à la carte : l'accroche des cotes et le tracé
+     d'un détail à la souris en partent */
+  const inv=face?(X,Y)=>({x:B.x2-(X-ox)/k,y:B.y1+(Y-oy)/k})
+                :(X,Y)=>({x:B.x1+(X-ox)/k,y:B.y1+(Y-oy)/k});
+  return {k,T,inv,B,ox,oy,bw,bh,face,echelle:dfEchelleTxt(k)};
 }
 function dfContour(F,V,lw){
   dfCalque(F,"CONTOUR");
@@ -577,10 +597,10 @@ function dfPistePts(t){
 }
 
 /* ---------- cotation ---------- */
-function dfFleche(F,x,y,dx,dy){
+function dfFleche(F,x,y,dx,dy,c){
   const L=2, l=0.55, n=Math.hypot(dx,dy)||1, ux=dx/n, uy=dy/n;
   dfPoly(F,[{x,y},{x:x-ux*L-uy*l,y:y-uy*L+ux*l},{x:x-ux*L+uy*l,y:y-uy*L-ux*l}],
-         {ferme:true,plein:0,lw:0.1});
+         {ferme:true,plein:c==null?0:c,trait:c==null?0:c,lw:0.1});
 }
 /* Cote horizontale (sens "h") ou verticale ("v") entre deux points de la
    feuille, tirée à `d` mm du plus éloigné des deux. */
@@ -611,25 +631,35 @@ function dfCote(F,p1,p2,sens,d,texte){
    largeur où il sera posé (un paragraphe coupé sur 138 mm ne prend pas la
    hauteur du même coupé sur 118). Quand un bloc ne tient plus, une feuille
    « (suite) » s'ouvre, pleine largeur, et l'en-tête d'un tableau y est
-   répété. */
+   répété.
+   Un bloc marqué `vue` (dfVueBlocs) appartient à une vue qu'on déplace à la
+   souris : les blocs consécutifs d'une même vue, sur une même feuille, n'en
+   font qu'une (« fab/percage », « fab~1/percage » pour sa suite). */
 function dfFlux(ctx,F0,zone,blocs,titre,genre){
   const feuilles=[F0];
-  let F=F0, Z=zone, y=Z.y;
+  let F=F0, Z=zone, y=Z.y, vue=null;
   const nouvelle=()=>{
     F=dfNouvelle(ctx,titre+" (suite)",genre);
+    F.suite=feuilles.length;
     feuilles.push(F);
     const z=dfZone(F);
     Z={x:z.x1,y:z.y1,w:z.x2-z.x1,bas:z.cart.y-4};
     y=Z.y;
   };
+  const fermer=()=>{if(vue){dfVueFin(vue.F,vue.m,dfCleVue(vue.F,vue.nom),vue.nom);vue=null;}};
+  const ouvrir=nom=>{if(!vue&&nom)vue={F,nom,m:dfVueDebut(F)};};
   for(const b of blocs){
-    if(y+b.h(Z.w)>Z.bas&&y>Z.y+0.1){
+    const saut=y+b.h(Z.w)>Z.bas&&y>Z.y+0.1;
+    if(saut||(vue&&vue.nom!==b.vue))fermer();
+    if(saut){
       nouvelle();
+      ouvrir(b.vue);
       if(b.entete){b.entete.dessiner(F,Z.x,y,Z.w);y+=b.entete.h(Z.w);}
-    }
+    }else ouvrir(b.vue);
     b.dessiner(F,Z.x,y,Z.w);
     y+=b.h(Z.w);
   }
+  fermer();
   return feuilles;
 }
 function dfBlocTitre(t){
@@ -829,6 +859,31 @@ function dfImpedances(){
   }
   return out;
 }
+/* La vue de la carte du plan de fabrication : contour et symboles de
+   perçage. Une vue de détail la redessine à plus grande échelle, avec en plus
+   le trou à sa vraie taille et les pastilles, sur lesquelles se posent les
+   cotes. */
+function dfDessinFab(F,V,groupes,detail){
+  dfContour(F,V,0.45);
+  if(detail){
+    dfCalque(F,"PASTILLES");
+    for(const fp of S.fps)
+      for(const q of padsWorld(fp))
+        dfPoly(F,dfPadForme(q).map(p=>V.T(p.x,p.y)),{ferme:true,lw:0.1,trait:0.6});
+    dfCalque(F);
+  }
+  /* perçages : un symbole par outil, de taille fixe sur la feuille */
+  const rs=clamp(V.k*0.35,0.7,1.3);
+  dfCalque(F,"PERCAGE");
+  groupes.forEach((e,i)=>{
+    for(const p of e.pts){
+      const s=V.T(p.x,p.y);
+      if(detail)dfCercle(F,s.x,s.y,e.d/2*V.k,{lw:0.12,trait:0.35});
+      dfSymbole(F,i,s.x,s.y,rs);
+    }
+  });
+  dfCalque(F);
+}
 function dfFeuillesFab(ctx){
   const F=dfNouvelle(ctx,"Plan de fabrication","fab");
   const Z=dfZone(F);
@@ -837,17 +892,10 @@ function dfFeuillesFab(ctx){
   const box={x:Z.x1,y:Z.y1+10,w:colX-Z.x1-8,h:Z.y2-Z.y1-10};
   const V=dfVue(box,0,16);
   F.echelle=V.echelle;
+  const m=dfVueDebut(F);
   dfTexte(F,"VUE DE DESSUS — ÉCHELLE "+V.echelle,Z.x1,Z.y1+5,9,{gras:true,cat:"titre"});
-  dfContour(F,V,0.45);
-
-  /* perçages : un symbole par outil, de taille fixe sur la feuille */
   const groupes=dfPercages();
-  const rs=clamp(V.k*0.35,0.7,1.3);
-  dfCalque(F,"PERCAGE");
-  groupes.forEach((e,i)=>{
-    for(const p of e.pts){const s=V.T(p.x,p.y);dfSymbole(F,i,s.x,s.y,rs);}
-  });
-  dfCalque(F);
+  dfDessinFab(F,V,groupes,false);
 
   /* cotes hors tout du contour et origine des fichiers */
   const P=boardPoly();
@@ -862,6 +910,11 @@ function dfFeuillesFab(ctx){
     dfLigne(F,so.x-2,so.y,so.x+2,so.y,0.2);dfLigne(F,so.x,so.y-2,so.x,so.y+2,0.2);
     dfTexte(F,"0,0",so.x+1.6,so.y+3.4,6,{c:0.25,cat:"cote"});
   }
+  const npth=(S.holes||[]).filter(h=>h.d>0);
+  npth.forEach((h,i)=>{const s=V.T(h.x,h.y);dfTexte(F,"H"+(i+1),s.x+2.2,s.y-2,6.5,{c:0.2,cat:"percage"});});
+  /* cotes posées à la main et repères des détails, puis la vue est close */
+  dfAnnoter(F,V,dfCleVue(F,"carte"),ctx);
+  dfVueFin(F,m,dfCleVue(F,"carte"),"carte",{V,dessin:(G,W)=>dfDessinFab(G,W,groupes,true)});
 
   /* colonne de droite : tableaux, coupe, notes */
   const blocs=[dfBlocTitre("Tableau de perçage")];
@@ -872,25 +925,24 @@ function dfFeuillesFab(ctx){
       {t:"Métallisé",p:15,a:"m"},{t:"Portée",p:15,a:"m"},{t:"Usage",p:35}],lignes,
     {symbole:(Fx,ri,cx,cy)=>{if(ri<groupes.length)dfSymbole(Fx,ri,cx,cy,1.05);},
      gras:ri=>ri===groupes.length,cat:"percage"}));
-  const npth=(S.holes||[]).filter(h=>h.d>0);
+  dfVueBlocs("percage",blocs);
   if(npth.length){
     const o=gOrigin();
-    blocs.push(dfBlocEspace(4),dfBlocTitre("Trous de fixation (non métallisés)"));
-    blocs.push(...dfTableau([{t:"N°",p:10,a:"m"},{t:"X (mm)",p:25,a:"d"},{t:"Y (mm)",p:25,a:"d"},{t:"Ø (mm)",p:20,a:"d"}],
+    blocs.push(dfBlocEspace(4),...dfVueBlocs("fixation",[dfBlocTitre("Trous de fixation (non métallisés)"),
+      ...dfTableau([{t:"N°",p:10,a:"m"},{t:"X (mm)",p:25,a:"d"},{t:"Y (mm)",p:25,a:"d"},{t:"Ø (mm)",p:20,a:"d"}],
       npth.map((h,i)=>["H"+(i+1),fmt(h.x-o.x,3).replace(".",","),fmt(o.y-h.y,3).replace(".",","),
-                       fmt(h.d,2).replace(".",",")]),{cat:"percage"}));
-    npth.forEach((h,i)=>{const s=V.T(h.x,h.y);dfTexte(F,"H"+(i+1),s.x+2.2,s.y-2,6.5,{c:0.2,cat:"percage"});});
+                       fmt(h.d,2).replace(".",",")]),{cat:"percage"})]));
   }
   /* les classes à impédance cible du gestionnaire de contraintes
      (30-contraintes.js) : la largeur qui la donne, couche par couche */
   const imp=dfImpedances();
   if(imp.length){
-    blocs.push(dfBlocEspace(4),dfBlocTitre("Impédances contrôlées"));
-    blocs.push(...dfTableau([{t:"Classe",p:24},{t:"Z cible",p:16,a:"d"},{t:"Couches et largeurs (mm)",p:44},{t:"Nets",p:10,a:"d"}],
-      imp.map(r=>[r.classe,r.z,r.largeurs,String(r.nets)]),{cat:"impedance"}));
+    blocs.push(dfBlocEspace(4),...dfVueBlocs("impedances",[dfBlocTitre("Impédances contrôlées"),
+      ...dfTableau([{t:"Classe",p:24},{t:"Z cible",p:16,a:"d"},{t:"Couches et largeurs (mm)",p:44},{t:"Nets",p:10,a:"d"}],
+      imp.map(r=>[r.classe,r.z,r.largeurs,String(r.nets)]),{cat:"impedance"})]));
   }
-  blocs.push(dfBlocEspace(4),dfBlocTitre("Coupe d'empilage"),dfBlocEmpilage());
-  blocs.push(dfBlocEspace(2),dfBlocTitre("Notes de fabrication"),...dfBlocParagraphes(dfNotesFab(ctx)));
+  blocs.push(dfBlocEspace(4),...dfVueBlocs("empilage",[dfBlocTitre("Coupe d'empilage"),dfBlocEmpilage()]));
+  blocs.push(dfBlocEspace(2),...dfVueBlocs("notes",[dfBlocTitre("Notes de fabrication"),...dfBlocParagraphes(dfNotesFab(ctx))]));
   return dfFlux(ctx,F,{x:colX,y:Z.y1,w:colW,bas:Z.cart.y-4},blocs,"Plan de fabrication","fab");
 }
 
@@ -907,11 +959,21 @@ function dfFeuilleAsm(ctx,face){
   const comps=S.fps.filter(fp=>!!fp.side===!!face)
     .sort((a,b)=>String(a.ref).localeCompare(String(b.ref),"fr",{numeric:true}));
   const nm=comps.filter(fp=>!varEstMonte(fp,ctx.vid));
+  const m=dfVueDebut(F);
   dfTexte(F,(face?"VUE DE DESSOUS (carte retournée, vue en miroir)":"VUE DE DESSUS")+
           " — ÉCHELLE "+V.echelle,Z.x1,Z.y1+5,9,{gras:true,cat:"titre"});
   dfTexte(F,comps.length+" composant(s) sur cette face"+
           (nm.length?" — "+nm.length+" non monté(s) dans la variante, en tirets : "+nm.map(f=>f.ref).join(", "):""),
           Z.x1,Z.y1+10,6.5,{c:0.3,cat:"legende"});
+  dfDessinAsm(F,V,ctx,comps,true);
+  const cle=dfCleVue(F,"carte");
+  dfAnnoter(F,V,cle,ctx);
+  dfVueFin(F,m,cle,"carte",{V,dessin:(G,W)=>dfDessinAsm(G,W,ctx,comps,false)});
+  return F;
+}
+/* Pastilles, corps, repères et texte cherchable des composants d'une face.
+   `signets` : la vue principale seule en pose ; un détail n'en ajoute pas. */
+function dfDessinAsm(F,V,ctx,comps,signets){
   dfContour(F,V,0.4);
 
   /* les pastilles d'abord, en gris léger : elles situent le corps. Le net de
@@ -960,10 +1022,9 @@ function dfFeuilleAsm(ctx,face){
     for(const [v,cat] of [[fp.value,"valeur"],[fp.pkg,"boitier"],[dfMpn(fp),"mpn"],
                           [fp.manufacturer,"fabricant"],[fp.description,"description"]])
       if(v)dfTexte(F,ref+" "+v,cx,cy,pt,{ancre:"m",cache:true,cible,cat});
-    F.signets.push({titre:ref+(fp.value?" — "+fp.value:"")+(monte?"":" (NM)"),x:cx,y:cy});
+    if(signets)F.signets.push({titre:ref+(fp.value?" — "+fp.value:"")+(monte?"":" (NM)"),x:cx,y:cy});
   }
   dfCalque(F);
-  return F;
 }
 
 /* ==========================================================================
@@ -993,18 +1054,19 @@ function dfFeuillesBom(ctx){
   const Z=dfZone(F);
   const grp=dfGroupesBom(ctx.vid);
   const total=grp.reduce((a,e)=>a+e.refs.length,0);
-  const blocs=[dfBlocTitre("Nomenclature — "+total+" composant(s), "+grp.length+" référence(s)"+
-                           (ctx.variante?" — variante "+ctx.variante:""))];
+  const blocs=dfVueBlocs("nomenclature",[dfBlocTitre("Nomenclature — "+total+" composant(s), "+grp.length+" référence(s)"+
+                           (ctx.variante?" — variante "+ctx.variante:""))]);
   blocs.push(...dfTableau([{t:"N°",p:5,a:"d"},{t:"Qté",p:5,a:"d"},{t:"Repères",p:30},{t:"Valeur",p:14},
       {t:"Boîtier",p:14},{t:"Réf. fabricant",p:16},{t:"Fabricant",p:10},{t:"Face",p:8}],
     grp.map((e,i)=>[String(i+1),String(e.refs.length),e.refs.join(", "),e.value,e.pkg,e.mpn,e.fab,
                     [...e.faces].join(", ")]),
     {cat:"bom",pt:7}));
+  dfVueBlocs("nomenclature",blocs);
   const nm=S.fps.filter(fp=>!varEstMonte(fp,ctx.vid)).map(fp=>String(fp.ref))
     .sort((a,b)=>a.localeCompare(b,"fr",{numeric:true}));
   if(nm.length){
-    blocs.push(dfBlocEspace(4),dfBlocTitre("Non montés dans la variante « "+ctx.variante+" »"));
-    blocs.push(...dfBlocParagraphes([{texte:nm.join(", "),retrait:0}],7.5));
+    blocs.push(dfBlocEspace(4),...dfVueBlocs("nonmontes",[dfBlocTitre("Non montés dans la variante « "+ctx.variante+" »"),
+      ...dfBlocParagraphes([{texte:nm.join(", "),retrait:0}],7.5)]));
   }
   return dfFlux(ctx,F,{x:Z.x1,y:Z.y1,w:Z.x2-Z.x1,bas:Z.cart.y-4},blocs,"Nomenclature","bom");
 }
@@ -1019,10 +1081,19 @@ function dfFeuilleCouche(ctx,i){
   const box={x:Z.x1,y:Z.y1+12,w:Z.x2-Z.x1,h:Z.cart.y-6-(Z.y1+12)};
   const V=dfVue(box,0,8);
   F.echelle=V.echelle;
+  const m=dfVueDebut(F);
   dfTexte(F,"COUCHE L"+(i+1)+" — "+nom.toUpperCase()+" — VUE DE DESSUS — ÉCHELLE "+V.echelle,
           Z.x1,Z.y1+5,9,{gras:true,cat:"titre"});
   dfTexte(F,"Les noms de nets sont posés en texte invisible sur la plus longue piste de chaque net : "+
           "la recherche du lecteur PDF les trouve.",Z.x1,Z.y1+10,6.5,{c:0.3,cat:"legende"});
+  dfDessinCouche(F,V,i);
+  const cle=dfCleVue(F,"carte");
+  dfAnnoter(F,V,cle,ctx);
+  dfVueFin(F,m,cle,"carte",{V,dessin:(G,W)=>dfDessinCouche(G,W,i)});
+  return F;
+}
+/* Zones, contour, pistes, pastilles et vias d'une couche. */
+function dfDessinCouche(F,V,i){
   const cu=0.15, P=p=>V.T(p.x,p.y);
   const boite=pts=>({x1:Math.min(...pts.map(p=>p.x))-0.6,y1:Math.min(...pts.map(p=>p.y))-0.6,
                      x2:Math.max(...pts.map(p=>p.x))+0.6,y2:Math.max(...pts.map(p=>p.y))+0.6});
@@ -1060,7 +1131,6 @@ function dfFeuilleCouche(ctx,i){
     const m=P(trkAt(e.t,0.5));
     dfTexte(F,net,m.x,m.y,4,{ancre:"m",cache:true,cible:boite(e.pts),cat:"net"});
   }
-  return F;
 }
 
 /* ==========================================================================
@@ -1082,6 +1152,8 @@ function dfDocument(){
   if(f.asmB&&S.fps.some(fp=>fp.side))feuilles.push(dfFeuilleAsm(ctx,1));
   if(f.bom)feuilles.push(...dfFeuillesBom(ctx));
   if(f.couches)for(let i=0;i<S.cu;i++)feuilles.push(dfFeuilleCouche(ctx,i));
+  /* vues déplacées à la main, puis vues de détail (34-draftsman-vues.js) */
+  feuilles.forEach(F=>dfAgencer(F,ctx));
   feuilles.forEach((F,i)=>dfCadre(F,ctx,i+1,feuilles.length));
   const refs=S.fps.map(fp=>fp.ref).filter(Boolean);
   return {feuilles,ctx,meta:{
@@ -1127,7 +1199,7 @@ const DF_CAT={repere:"repère",valeur:"valeur",boitier:"boîtier",mpn:"réf. fab
   fabricant:"fabricant",description:"description",net:"net",bom:"nomenclature",
   percage:"perçage",empilage:"empilage",note:"note",cartouche:"cartouche",
   titre:"titre",tableau:"tableau",legende:"légende",cote:"cote",nm:"non monté",
-  symbole:"symbole",zone:"zone",impedance:"impédance"};
+  symbole:"symbole",zone:"zone",impedance:"impédance",detail:"détail"};
 
 function dfOuvrir(){
   if(typeof pcbVarDepuisSchema==="function")pcbVarDepuisSchema();
@@ -1140,6 +1212,7 @@ function dfOuvrir(){
     document.body.appendChild(m);
     m.addEventListener("pointerdown",e=>{if(e.target===m)dfFermer();});
     m.addEventListener("keydown",e=>{
+      if(dfOutilsTouche(e)){e.preventDefault();e.stopPropagation();return;}
       if(e.key==="Escape"){e.stopPropagation();dfFermer();return;}
       if(e.key==="Enter"&&e.target&&e.target.id==="dfQ"){
         e.preventDefault();dfAller(DF.hits.length?(DF.actif+(e.shiftKey?-1:1)+DF.hits.length)%DF.hits.length:-1);
@@ -1167,6 +1240,7 @@ function dfOuvrir(){
       else if(a==="zoom-"){DF.zoom=Math.max(0.5,DF.zoom/1.4);dfRendreApercu();}
       else if(a==="zoom0"){DF.zoom=1;dfRendreApercu();}
     });
+    dfBrancherOutils(m);         // cotes, vues à la souris, détails
   }
   m.hidden=false;
   dfRendreCadre();
@@ -1204,8 +1278,10 @@ function dfRendreCadre(){
         champ("societe","Société")+champ("auteur","Dessiné par")+champ("verifie","Vérifié par")+champ("approuve","Approuvé par")+
         '<div class="df-h">Notes ajoutées au plan de fabrication</div>'+
         '<textarea data-cfg="notes" class="df-notes" placeholder="Une note par ligne">'+esc(c.notes)+'</textarea>'+
+        '<div class="df-h">Cotes et détails</div><div id="dfCotes"></div>'+
       '</aside>'+
-      '<main class="df-apercu"><div class="df-onglets" id="dfOnglets"></div><div class="df-feuille" id="dfFeuille"></div></main>'+
+      '<main class="df-apercu"><div class="df-onglets" id="dfOnglets"></div><div class="df-outils" id="dfOutils"></div>'+
+        '<div class="df-feuille" id="dfFeuille" tabindex="-1"></div></main>'+
     '</div></div>';
   if(typeof dfxCadre==="function")dfxCadre(m);      // DXF et fonte (33-draftsman-export.js)
 }
@@ -1217,7 +1293,7 @@ function dfReconstruire(){
   if(dfMinuterie)clearTimeout(dfMinuterie);
   const go=()=>{
     dfMinuterie=null;
-    DF.doc=dfDocument();
+    DF.doc=dfDocument();DF.acc=null;
     if(DF.page>=DF.doc.feuilles.length)DF.page=0;
     dfChercherUi(true);
   };
@@ -1270,7 +1346,8 @@ function dfRendreApercu(){
     '<button type="button" class="tb" data-a="zoom0" title="Page entière">'+Math.round(DF.zoom*100)+' %</button>'+
     '<button type="button" class="tb" data-a="zoom+" title="Agrandir">+</button></span>';
   const hits=DF.hits.map((h,i)=>({...h.box,p:h.p,actif:i===DF.actif})).filter(h=>h.p===DF.page);
-  f.innerHTML=dfSvg(F[DF.page],hits);
+  f.innerHTML=dfSvg(F[DF.page],hits,dfSurSvg(F[DF.page]));
+  dfRendreOutils();
   const svg=f.querySelector&&f.querySelector("svg");
   if(svg&&svg.style){svg.style.width=(DF.zoom*100)+"%";svg.style.height="auto";}
   const on=f.querySelector&&f.querySelector(".df-hit.on");
