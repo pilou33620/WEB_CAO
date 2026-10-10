@@ -3458,8 +3458,10 @@ T("master drawing PDF",()=>{
   while((si=bin.indexOf("SHEET: ",si))>=0){sheets++;si++;}
   if(sheets!==count)
     throw new Error(count+" cartouche(s) attendu(s), "+sheets);
-  if(bin.indexOf("/BaseFont /Helvetica-Bold")<0)
-    throw new Error("fonte Helvetica-Bold absente");
+  /* la graisse : Helvetica-Bold, ou la grasse embarquée (fichier compris) */
+  if(bin.indexOf("/BaseFont /Helvetica-Bold")<0&&
+     !(bin.indexOf("/FontFile2 ")>=0&&/\/BaseFont \/[A-Z]{6}\+PlansSans-Bold /.test(bin)))
+    throw new Error("fonte grasse absente : ni Helvetica-Bold, ni PlansSans-Bold embarquée");
   if(bin.indexOf("/Contents ")<0)throw new Error("référence /Contents absente");
 });
 T("fichier de placement positions.csv",()=>{
@@ -22923,6 +22925,265 @@ T("plans : vérification externe du PDF (pdftotext) et du DXF (ezdxf), si les ou
       if(+err!==0||+cer!==drillFile().holes||u!=="4"||v!=="AC1009")throw new Error("ezdxf : "+e.stdout);
     }
   }finally{S.dessin=null;fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+/* ==========================================================================
+   Master Drawing : la fonte des plans, en TrueType simple (04-pdf-masterdraw.js,
+   33-draftsman-export.js)
+   ========================================================================== */
+function mdPdf(){return buildFabFiles().files.find(f=>/-MASTER-DRAWING\.pdf$/.test(f.name)).data;}
+/* Le texte du Master Drawing tel qu'un lecteur le retrouve : chaque littéral
+   décodé par la /ToUnicode d'un octet de sa fonte, ou lu tel quel (WinAnsi). */
+function mdTextes(pdf){
+  const t=dfLatin(pdf);
+  const res=/\/Font << \/F1 (\d+) 0 R \/F2 (\d+) 0 R/.exec(t);
+  const cartes={};
+  for(const [nom,id] of [["1",res[1]],["2",res[2]]]){
+    const tu=/\/ToUnicode (\d+) 0 R/.exec(pdfObjet(t,id).dict);
+    if(!tu)continue;
+    const m=new Map();
+    for(const x of pdfObjet(t,tu[1]).flux.matchAll(/<([0-9A-F]{2})> <((?:[0-9A-F]{4})+)>/g))
+      m.set(parseInt(x[1],16),Buffer.from(x[2],"hex").swap16().toString("utf16le"));
+    cartes[nom]=m;
+  }
+  const out=[];
+  for(const x of t.matchAll(/BT \/F(\d) [^\n]*? Td (\((?:\\[0-7]{3}|\\.|[^\\)])*\)) Tj ET/g)){
+    const o=x[2].slice(1,-1).replace(/\\([0-7]{3}|.)/g,(a,b)=>b.length===3?String.fromCharCode(parseInt(b,8)):b);
+    let s="";
+    for(const c of o){
+      if(!cartes[x[1]]){s+=c;continue;}
+      const u=cartes[x[1]].get(c.charCodeAt(0));
+      if(u==null)throw new Error("code "+c.charCodeAt(0)+" sans /ToUnicode");
+      s+=u;
+    }
+    out.push({f:x[1],s});
+  }
+  return out;
+}
+/* Un sous-ensemble de fonte simple : sa cmap (1,0) de format 6, code d'un
+   octet → glyphe, et si un glyphe est vide (loca longue). */
+function mdCmap6(u8){
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength), tab={};
+  for(let i=0;i<dv.getUint16(4);i++)
+    tab[String.fromCharCode(...u8.subarray(12+16*i,16+16*i))]=dv.getUint32(12+16*i+8);
+  const C=tab.cmap, vide=g=>dv.getUint32(tab.loca+4*g+4)===dv.getUint32(tab.loca+4*g);
+  if(dv.getInt16(tab.head+50)!==1)throw new Error("loca longue attendue");
+  for(let i=0;i<dv.getUint16(C+2);i++){
+    const o=C+dv.getUint32(C+8+8*i);
+    if(dv.getUint16(C+4+8*i)===1&&dv.getUint16(C+6+8*i)===0&&dv.getUint16(o)===6){
+      const a=dv.getUint16(o+6), c6=new Map();
+      for(let k=0;k<dv.getUint16(o+8);k++)c6.set(a+k,dv.getUint16(o+10+2*k));
+      return {c6,vide};
+    }
+  }
+  throw new Error("pas de cmap (1,0) de format 6");
+}
+T("master drawing : fonte embarquée — FontFile2, ToUnicode, accents et symboles retrouvés",()=>{
+  exCharger(1);
+  S.dessin=null;
+  projOuvrir("Éclairage 10 kΩ");
+  try{
+    if(dfCfg().fonte!==true)throw new Error("la fonte embarquée est l'option par défaut");
+    const pdf=mdPdf(), t=dfLatin(pdf);
+    pdfXrefJuste(t);
+    for(const k of ["/Subtype /TrueType","/ToUnicode","+PlansSans-Regular","+PlansSans-Bold"])
+      if(t.indexOf(k)<0)throw new Error(k+" absent");
+    if((t.match(/\/FontFile2 /g)||[]).length!==2)throw new Error("deux fontes embarquées : normale et grasse");
+    if(t.indexOf("/Helvetica")>=0)throw new Error("aucune fonte substituée quand la fonte est embarquée");
+    if(!/\/FontDescriptor \/FontName \/[A-Z]{6}\+PlansSans-Regular \/Flags 4 /.test(t))throw new Error("fonte simple symbolique (Flags 4)");
+    /* le contenu reste lisible en clair : l'ASCII garde son code */
+    if(t.indexOf("(SHEET: 1 / ")<0||t.indexOf("(REV: A)")<0)throw new Error("le contenu ASCII doit se lire tel quel");
+    /* le texte retrouvé : accents, Ω, µ, ±, °, ≥, ε */
+    const tx=mdTextes(pdf), tout=tx.map(x=>x.s).join("\n");
+    for(const s of ["TITLE: Éclairage 10 kΩ-PCB-MASTER-DRAWING","≥ 100 V","≥ 20 µm","(±10%)","150 °C","εr 4.30","118–236 µin (3–6 µm)"])
+      if(tout.indexOf(s)<0)throw new Error("« "+s+" » introuvable dans le texte extrait");
+    /* le sous-ensemble : petit, et chaque code a son glyphe dessiné */
+    const re=/\/Length (\d+) \/Length1 \d+ >>\nstream\n/g;let r;const subs=[];
+    while((r=re.exec(t)))subs.push(new Uint8Array(Buffer.from(t.substr(re.lastIndex,+r[1]),"latin1")));
+    const full=dffBase64(DF_FONTE_TTF.normal);
+    if(subs.length!==2||subs.some(b=>!(b.length<full.length*0.5)))throw new Error("sous-ensembles : "+subs.map(b=>b.length));
+    const {c6,vide}=mdCmap6(subs[0]);
+    const normaux=tx.filter(x=>x.f==="1").map(x=>x.s).join("");
+    const tu=new Map();
+    const id=/\/Font << \/F1 (\d+) 0 R/.exec(t)[1];
+    for(const x of pdfObjet(t,/\/ToUnicode (\d+) 0 R/.exec(pdfObjet(t,id).dict)[1]).flux.matchAll(/<([0-9A-F]{2})> <((?:[0-9A-F]{4})+)>/g))
+      tu.set(Buffer.from(x[2],"hex").swap16().toString("utf16le"),parseInt(x[1],16));
+    for(const ch of new Set(normaux)){
+      const g=c6.get(tu.get(ch));
+      if(!g)throw new Error("« "+ch+" » sans glyphe dans le sous-ensemble");
+      if(ch.trim()&&vide(g))throw new Error("« "+ch+" » : glyphe vide");
+    }
+  }finally{projFermer();S.dessin=null;}
+});
+T("master drawing : repli sur Helvetica en WinAnsi — option décochée, fonte absente",()=>{
+  exCharger(1);
+  projOuvrir("Éclairage 10 kΩ");
+  S.dessin={fonte:false};
+  try{
+    const t=dfLatin(mdPdf());
+    pdfXrefJuste(t);
+    if(t.indexOf("/FontFile2")>=0)throw new Error("décochée : rien d'embarqué");
+    for(const k of ["/BaseFont /Helvetica /Encoding /WinAnsiEncoding","/BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding"])
+      if(t.indexOf(k)<0)throw new Error(k+" absent");
+    /* WinAnsi : É et ± en un octet, Ω en « Ohm », ≥ en « >= » */
+    for(const s of ["TITLE: \\311clairage 10 kOhm-PCB","(\\26110%)",">= 100 V","150 \\260C"])
+      if(t.indexOf(s)<0)throw new Error("« "+s+" » attendu en WinAnsi");
+    /* la fonte qui ne se charge pas : Helvetica aussi, même cochée */
+    S.dessin=null;
+    const avant=DFF_CACHE.gras;
+    DFF_CACHE.gras=null;
+    try{
+      const t2=dfLatin(mdPdf());
+      pdfXrefJuste(t2);
+      if(t2.indexOf("/FontFile2")>=0||t2.indexOf("/BaseFont /Helvetica-Bold")<0)throw new Error("fonte absente : repli attendu");
+    }finally{DFF_CACHE.gras=avant;}
+  }finally{projFermer();S.dessin=null;}
+});
+T("master drawing : vérification externe (pdffonts, pdftotext, pypdf), si les outils sont là",()=>{
+  const cp=require("child_process"), os=require("os");
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),"md-"));
+  try{
+    exCharger(1);
+    projOuvrir("Éclairage 10 kΩ");
+    const f=path.join(dir,"md.pdf");
+    try{fs.writeFileSync(f,mdPdf());}finally{projFermer();}
+    const pf=cp.spawnSync("pdffonts",[f],{encoding:"utf8"});
+    if(pf.error)console.log("     (pdffonts absent)");
+    else{
+      const l=pf.stdout.trim().split("\n").slice(2);
+      if(l.length!==2||l.some(x=>!/PlansSans-(Regular|Bold) +TrueType .* yes yes yes /.test(x)))throw new Error("pdffonts : "+pf.stdout);
+    }
+    const p=cp.spawnSync("pdftotext",["-enc","UTF-8",f,"-"],{encoding:"utf8"});
+    if(p.error)console.log("     (pdftotext absent)");
+    else{
+      if(p.status!==0||/Error/.test(p.stderr))throw new Error("pdftotext : "+p.stderr);
+      for(const s of ["Éclairage 10 kΩ","≥ 100 V","µm","±10%","150 °C","SHEET: 1 /"])
+        if(p.stdout.indexOf(s)<0)throw new Error("pdftotext ne retrouve pas « "+s+" »");
+    }
+    const py="import sys\nfrom pypdf import PdfReader\nr=PdfReader(sys.argv[1],strict=True)\n"+
+             "sys.stdout.buffer.write('\\n'.join(p.extract_text() for p in r.pages).encode('utf-8'))";
+    const e=cp.spawnSync("python3",["-c",py,f],{encoding:"utf8"});
+    if(e.error||/No module named/.test(e.stderr||""))console.log("     (pypdf absent)");
+    else{
+      if(e.status!==0)throw new Error("pypdf : "+e.stderr);
+      for(const s of ["Éclairage 10 kΩ","≥ 20 µm","εr"])if(e.stdout.indexOf(s)<0)throw new Error("pypdf ne retrouve pas « "+s+" »");
+    }
+  }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+/* ==========================================================================
+   DXF de la carte : un calque par outil de perçage (33-draftsman-export.js)
+   ========================================================================== */
+/* La couleur de chaque calque, lue dans la table LAYER. */
+function dxfCouleurs(t){
+  const m=new Map();
+  for(const x of t.matchAll(/\r\n  0\r\nLAYER\r\n  2\r\n([^\r]*)\r\n 70\r\n0\r\n 62\r\n(\d+)\r\n/g))m.set(x[1],+x[2]);
+  return m;
+}
+T("plans DXF : un calque par outil — POINT par trou, couleur par diamètre, cercles gardés",()=>{
+  exCharger(1);
+  S.holes=[mkHole(5,5,3.2),mkHole(60,5,3.2),mkHole(5,38,2.5)];
+  try{
+    const r=dxfCarte(), D=dxfLu(r.octets);
+    /* ce que la carte perce, outil par outil ; le Ø à deux décimales, trois
+       s'il le faut (le 0,864 de l'exemple), « _ » pour la virgule */
+    const att=new Map(), plus=(k,n)=>att.set(k,(att.get(k)||0)+(n||1));
+    const dm=d=>{const s=d.toFixed(3);return (s.endsWith("0")?s.slice(0,-1):s).replace(".","_");};
+    for(const fp of S.fps)for(const q of padsWorld(fp))if(q.drill>0)plus("TROUS_PTH_"+dm(q.drill));
+    for(const v of S.vias)if(v.drill>0)plus("VIAS_"+(Math.min(v.a,v.b)===0&&Math.max(v.a,v.b)===S.cu-1?"":"L"+(Math.min(v.a,v.b)+1)+"-L"+(Math.max(v.a,v.b)+1)+"_")+dm(v.drill));
+    if(!att.has("TROUS_PTH_0_864"))throw new Error("l'exemple devait avoir un perçage de 0,864");
+    plus("TROUS_NPTH_3_20",2);plus("TROUS_NPTH_2_50");
+    const pts=new Map();
+    for(const e of D.ents)if(e.type==="POINT")pts.set(e.cal,(pts.get(e.cal)||0)+1);
+    if(JSON.stringify([...att].sort())!==JSON.stringify([...pts].sort()))
+      throw new Error("POINT par calque : "+JSON.stringify([...pts].sort())+" pour "+JSON.stringify([...att].sort()));
+    if(att.size<4)throw new Error("l'exemple doit avoir plusieurs outils : "+[...att.keys()]);
+    for(const c of pts.keys()){
+      if(!/^[A-Z0-9$_-]{1,31}$/.test(c))throw new Error("nom de calque refusé par R12 : "+c);
+      if(D.calques.indexOf(c)<0)throw new Error("calque non déclaré : "+c);
+    }
+    /* chaque POINT est au centre d'un CIRCLE du calque historique, du bon diamètre */
+    const cer=D.ents.filter(e=>e.type==="CIRCLE");
+    for(const e of D.ents.filter(e=>e.type==="POINT")){
+      const d=e.cal.replace(/^.*_(\d+_\d+)$/,"$1");
+      const hist=/^TROUS_NPTH/.test(e.cal)?"TROUS_NON_METALLISES":"TROUS_METALLISES";
+      if(!cer.some(c=>c.cal===hist&&Math.abs(c.n(10)-e.n(10))<1e-6&&Math.abs(c.n(20)-e.n(20))<1e-6&&dm(c.n(40)*2)===d))
+        throw new Error("POINT de "+e.cal+" sans son cercle sur "+hist);
+    }
+    /* les cercles par diamètre : autant que de POINT de ce diamètre */
+    const parD=new Map();
+    for(const [c,n] of pts){const d=c.replace(/^.*_(\d+_\d+)$/,"$1");parD.set(d,(parD.get(d)||0)+n);}
+    for(const [d,n] of parD){
+      const k=cer.filter(c=>dm(c.n(40)*2)===d).length;
+      if(k!==n)throw new Error(n+" trous de "+d+", "+k+" CIRCLE");
+    }
+    /* une couleur par diamètre, distincte d'un diamètre à l'autre */
+    const col=dxfCouleurs(D.t), parCouleur=new Map();
+    for(const c of pts.keys()){
+      const d=c.replace(/^.*_(\d+_\d+)$/,"$1"), k=col.get(c);
+      if(!k||k===7)throw new Error("couleur du calque "+c+" : "+k);
+      if(parCouleur.has(k)&&parCouleur.get(k)!==d)throw new Error("même couleur pour "+d+" et "+parCouleur.get(k));
+      parCouleur.set(k,d);
+    }
+    if(col.get("TROUS_METALLISES")!==1||col.get("TROUS_NON_METALLISES")!==3)throw new Error("couleurs des calques historiques changées");
+    if(D.header.$PDMODE[0]!=="3")throw new Error("POINT en croix ($PDMODE 3)");
+    if(r.outils.length!==pts.size)throw new Error("outils rendus : "+r.outils.length);
+    /* la feuille du plan n'a pas de calque d'outil */
+    const F=dxfLu(dxfFeuilles(dfDocument().feuilles.filter(F=>F.genre==="fab")).octets);
+    if(F.ents.some(e=>e.type==="POINT")||F.header.$PDMODE)throw new Error("la feuille ne change pas");
+  }finally{S.holes=[];}
+});
+T("plans DXF : contre-perçage sur son calque, CONTRE_PERCAGE_<face>_<Ø>",()=>{
+  cpCarte();
+  try{
+    let D=dxfLu(dxfCarte().octets);
+    if(D.calques.some(c=>/^CONTRE_PERCAGE/.test(c)))throw new Error("sans règle, pas de calque de contre-perçage");
+    const r=cpAjouter({cote:"dessous",garde:-1,res:0.1});
+    cmPoser("classes",className("SIG"),"cp",r.id);
+    const c=cpVia(S.vias[0]);
+    if(!c||c.faute||c.diam!==0.55)throw new Error("contre-perçage attendu, foret de 0,55");
+    D=dxfLu(dxfCarte().octets);
+    const cal="CONTRE_PERCAGE_DESSOUS_0_55";
+    const cer=D.ents.filter(e=>e.cal===cal&&e.type==="CIRCLE"), pt=D.ents.filter(e=>e.cal===cal&&e.type==="POINT");
+    if(cer.length!==2||pt.length!==2)throw new Error(cal+" : "+cer.length+" CIRCLE, "+pt.length+" POINT");
+    if(cer.some(e=>Math.abs(e.n(40)-0.275)>1e-9))throw new Error("le cercle a le Ø du foret");
+    const o=gOrigin();
+    if(!cer.some(e=>Math.abs(e.n(10)-(S.vias[0].x-o.x))<1e-6&&Math.abs(e.n(20)-(o.y-S.vias[0].y))<1e-6))throw new Error("au repère de l'Excellon");
+    /* les vias eux-mêmes restent sur leurs calques : cercle historique, outil */
+    if(D.ents.filter(e=>e.cal==="TROUS_METALLISES"&&e.type==="CIRCLE"&&Math.abs(e.n(40)-0.15)<1e-9).length!==2||
+       D.ents.filter(e=>e.cal==="VIAS_0_30"&&e.type==="POINT").length!==2)throw new Error("les vias percés à 0,30 restent où ils sont");
+    /* par-dessus */
+    cpModifier(r.id,"cote","dessus");
+    for(const t of S.tracks)t.l=t.l===1?2:3;
+    touch();
+    D=dxfLu(dxfCarte().octets);
+    if(D.ents.filter(e=>e.cal==="CONTRE_PERCAGE_DESSUS_0_55"&&e.type==="CIRCLE").length!==2)
+      throw new Error("depuis le dessus : "+D.calques.filter(c=>/CONTRE/.test(c)));
+  }finally{cpRaz();exCharger(1);}
+});
+T("plans DXF : calques par outil relus par ezdxf, si l'outil est là",()=>{
+  const cp=require("child_process"), os=require("os");
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),"dxf-"));
+  try{
+    exCharger(1);
+    S.holes=[mkHole(5,5,3.2)];
+    const f=path.join(dir,"carte.dxf"), r=dxfCarte();
+    S.holes=[];
+    fs.writeFileSync(f,r.octets);
+    const py="import sys,ezdxf\nd=ezdxf.readfile(sys.argv[1])\na=d.audit()\nm=d.modelspace()\n"+
+             "print(len(a.errors))\n"+
+             "for l in sorted({e.dxf.layer for e in m.query('POINT')}):print(l,len(m.query('POINT[layer==\"'+l+'\"]')),d.layers.get(l).color)";
+    const e=cp.spawnSync("python3",["-c",py,f],{encoding:"utf8"});
+    if(e.error||/No module named/.test(e.stderr||""))console.log("     (ezdxf absent : DXF non vérifié)");
+    else{
+      if(e.status!==0)throw new Error("ezdxf : "+e.stderr);
+      const l=e.stdout.trim().split("\n");
+      if(l[0]!=="0")throw new Error("ezdxf : erreurs d'audit "+l[0]);
+      const lu=l.slice(1).map(x=>x.split(" "));
+      if(JSON.stringify(lu.map(x=>[x[0],+x[1]]))!==JSON.stringify(r.outils.map(o=>[o.cal,o.n])))
+        throw new Error("ezdxf relit "+l.slice(1).join(" ; "));
+    }
+  }finally{S.holes=[];fs.rmSync(dir,{recursive:true,force:true});}
 });
 
 /* ==========================================================================

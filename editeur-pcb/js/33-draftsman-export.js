@@ -10,8 +10,11 @@
         · la CARTE SEULE, à l'échelle 1:1, en millimètres, dans le repère des
           Gerber et de l'Excellon (même origine, Y vers le haut) : contour,
           découpes, trous (un CIRCLE par trou, métallisés et non métallisés
-          sur deux calques), encombrement et repère de chaque composant (une
-          face par calque), cotes hors tout, tableau de perçage à côté ;
+          sur deux calques), un calque par outil de perçage (TROUS_PTH_0_80,
+          TROUS_NPTH_3_20, VIAS_0_30, CONTRE_PERCAGE_DESSOUS_0_55…) avec un
+          POINT au centre de chaque trou, encombrement et repère de chaque
+          composant (une face par calque), cotes hors tout, tableau de
+          perçage à côté ;
         · la FEUILLE du plan entière (cadre, cartouche, vue cotée, tableaux,
           notes), lue dans la liste d'objets de la feuille — la même que
           lisent le PDF et l'aperçu SVG. Tout ce que 29-draftsman.js dessine
@@ -34,6 +37,17 @@
       le WinAnsi du PDF, ce qui n'y entre pas écrit de la même façon (Ω →
       Ohm, ≥ → >=) ; °, ± et Ø en %%d, %%p et %%c, les codes que tout
       lecteur DXF connaît.
+
+      Les trous, deux fois : les CIRCLE sur les calques historiques
+      TROUS_METALLISES et TROUS_NON_METALLISES (qui les lit les y retrouve),
+      et, sur un calque par outil, un POINT par trou — la position que
+      l'assistant de perçage d'un modeleur ou une FAO de perçage attend, et
+      de quoi choisir les trous d'un diamètre d'un clic. Remplacer les deux
+      calques historiques aurait cassé les lecteurs qui s'y attendent ;
+      doubler les CIRCLE aurait compté chaque trou deux fois. Le diamètre du
+      nom s'écrit « 0_30 » : R12 refuse le point dans un nom de calque. Une
+      couleur par diamètre ; le contre-perçage, qu'aucun calque historique
+      ne porte, a aussi le CIRCLE de son foret.
 
       Le modèle de la carte ne garde que des sommets. Un arc importé (coin
       arrondi, carte ronde) y est une suite de cordes égales : dxfSegments()
@@ -65,10 +79,17 @@
       dans le document (`dessin.fonte`). Sans elle, ou si la fonte n'est pas
       chargée, le PDF reprend Helvetica en WinAnsi, comme avant.
 
+      Le Master Drawing (04-pdf-masterdraw.js) emporte la même fonte, par
+      le même sous-ensembleur et sous la même option, mais en TrueType
+      simple d'un octet par caractère (dffPreparerSimple) : l'ASCII y garde
+      son code, et son contenu se relit en clair. dffStyles, dffEtiquette,
+      dffToUnicode et dffDescripteur servent les deux.
+
    Points d'accroche dans les autres fichiers, un appel chacun : dfCalque()
    dans les feuilles et dfFontePreparer() dans dfPdf() (29-draftsman.js),
    dfxCadre() à la fin de dfRendreCadre(), dxfFichiers() dans
-   buildFabFiles() (04-fabrication.js) ; le Master Drawing annonce les DXF.
+   buildFabFiles() (04-fabrication.js), dffPreparerSimple() dans mdFonte()
+   (04-pdf-masterdraw.js) ; le Master Drawing annonce les DXF.
    ========================================================================== */
 
 /* ==========================================================================
@@ -94,7 +115,7 @@ const DXF_CAT={zone:"CADRE",cartouche:"CARTOUCHE",cote:"COTES",repere:"REPERES",
 const DXF_CAPS=0.716;
 
 function dxfNouveau(){
-  return {calques:new Set(),e:[],x1:Infinity,y1:Infinity,x2:-Infinity,y2:-Infinity,
+  return {calques:new Set(),couleurs:new Map(),e:[],x1:Infinity,y1:Infinity,x2:-Infinity,y2:-Infinity,
           n:{LINE:0,ARC:0,CIRCLE:0,POLYLINE:0,TEXT:0,SOLID:0}};
 }
 function dxfNum(v){
@@ -187,6 +208,9 @@ function dxfOctets(D){
   g(9,"$LUPREC");g(70,3);
   g(9,"$INSUNITS");g(70,4);
   g(9,"$MEASUREMENT");g(70,1);
+  /* les POINT des calques d'outil : une croix de 0,2 mm au centre du trou,
+     au lieu d'un pixel qu'on ne voit pas */
+  if(D.n.POINT){g(9,"$PDMODE");g(70,3);g(9,"$PDSIZE");g(40,0.2);}
   g(0,"ENDSEC");
 
   g(0,"SECTION");g(2,"TABLES");
@@ -197,7 +221,7 @@ function dxfOctets(D){
   const cals=[...D.calques].sort();
   g(0,"TABLE");g(2,"LAYER");g(70,cals.length+1);
   g(0,"LAYER");g(2,"0");g(70,0);g(62,7);g(6,"CONTINUOUS");
-  for(const c of cals){g(0,"LAYER");g(2,c);g(70,0);g(62,DXF_CALQUES[c]||7);g(6,"CONTINUOUS");}
+  for(const c of cals){g(0,"LAYER");g(2,c);g(70,0);g(62,D.couleurs.get(c)||DXF_CALQUES[c]||7);g(6,"CONTINUOUS");}
   g(0,"ENDTAB");
   /* STANDARD pour la forme, PLANS pour les textes : Arial, dont les chasses
      sont celles d'Helvetica — les colonnes des tableaux restent justes. */
@@ -360,6 +384,7 @@ function dxfCarte(){
       dxfCercle(D,e.plaque?"TROUS_METALLISES":"TROUS_NON_METALLISES",P(p.x,p.y),e.d/2);
       trous++;
     }
+  const outils=dxfOutils(D,P);
 
   /* encombrement et repère : le corps de chaque composant, une face par
      calque ; les non-montés de la variante active en tirets */
@@ -415,7 +440,65 @@ function dxfCarte(){
   }
   dxfTexte(D,"TABLEAU_PERCAGE","Millimètres, échelle 1:1, origine des fichiers Gerber et Excellon, vue de dessus.",
            {x:tx,y:yb-4},2,0,"g");
-  return {octets:dxfOctets(D),D,trous};
+  return {octets:dxfOctets(D),D,trous,outils};
+}
+/* Le diamètre dans un nom de calque : deux décimales, trois s'il le faut
+   (0,254), et « _ » pour la virgule — R12 n'admet dans un nom que lettres,
+   chiffres, « $ », « - » et « _ » : « 0.30 » y serait refusé. */
+function dxfDiam(d){
+  let s=(+d).toFixed(3);
+  if(s.endsWith("0"))s=s.slice(0,-1);
+  return s.replace(".","_");
+}
+/* Couleurs AutoCAD (ACI) des calques d'outil, une par diamètre, du plus
+   petit au plus grand : franches d'abord, puis des teintes intermédiaires ;
+   ni le blanc (7) du contour, ni les gris. */
+const DXF_TEINTES=[1,3,5,2,6,4,30,140,210,50,90,170,240,110,190,20,70,150,230,130];
+/* Les calques par outil. Les CIRCLE restent sur les calques historiques
+   (TROUS_METALLISES, TROUS_NON_METALLISES), un par trou : qui s'y attend
+   les retrouve. Chaque outil a en plus son calque, avec un POINT au centre
+   de chacun de ses trous — la position que l'assistant de perçage d'un
+   modeleur ou une FAO de perçage prend pour poser un trou :
+     TROUS_PTH_<Ø>                  pastilles traversantes, métallisées
+     TROUS_NPTH_<Ø>                 trous de fixation, non métallisés
+     VIAS_<Ø>, VIAS_L1-L2_<Ø>       vias traversants, puis borgnes et enterrés
+                                    par portée (un outil par passe)
+     CONTRE_PERCAGE_<face>_<Ø>      contre-perçage (cpPaires, 01-core.js),
+                                    au Ø du foret, face d'où l'on repasse ;
+                                    ici aussi le CIRCLE du foret, qu'aucun
+                                    calque historique ne porte
+   Rend [{cal, d, n}], dans l'ordre des calques. */
+function dxfOutils(D,P){
+  const cal=new Map();
+  const poser=(nom,d,x,y)=>{
+    let e=cal.get(nom);
+    if(!e)cal.set(nom,e={cal:nom,d,n:0});
+    e.n++;
+    const p=P(x,y);
+    dxfEtendre(D,p.x,p.y);
+    dxfEnt(D,"POINT",nom,[10,p.x,20,p.y,30,0]);
+    return p;
+  };
+  for(const fp of S.fps)
+    for(const q of padsWorld(fp))
+      if(q.drill>0)poser("TROUS_PTH_"+dxfDiam(q.drill),q.drill,q.x,q.y);
+  for(const v of S.vias){
+    if(!(v.drill>0))continue;
+    const a=Math.min(v.a,v.b), b=Math.max(v.a,v.b);
+    poser("VIAS_"+(a===0&&b===S.cu-1?"":"L"+(a+1)+"-L"+(b+1)+"_")+dxfDiam(v.drill),v.drill,v.x,v.y);
+  }
+  for(const h of (S.holes||[]))
+    if(h.d>0)poser("TROUS_NPTH_"+dxfDiam(h.d),h.d,h.x,h.y);
+  if(typeof cpPaires==="function")
+    for(const pa of cpPaires())
+      for(const o of pa.outils.values()){
+        const nom="CONTRE_PERCAGE_"+(pa.cote==="dessus"?"DESSUS":"DESSOUS")+"_"+dxfDiam(o.diam);
+        for(const q of o.pts)dxfCercle(D,nom,poser(nom,o.diam,q.x,q.y),o.diam/2);
+      }
+  /* une couleur par diamètre */
+  const ds=[...new Set([...cal.values()].map(e=>dxfDiam(e.d)))].sort((u,v)=>parseFloat(u.replace("_","."))-parseFloat(v.replace("_",".")));
+  for(const e of cal.values())D.couleurs.set(e.cal,DXF_TEINTES[ds.indexOf(dxfDiam(e.d))%DXF_TEINTES.length]);
+  return [...cal.values()].sort((u,v)=>u.cal<v.cal?-1:u.cal>v.cal?1:0);
 }
 
 /* ==========================================================================
@@ -501,7 +584,7 @@ function dxfExporterCarte(){
   const r=dxfCarte();
   dl(new Blob([r.octets],{type:"image/vnd.dxf"}),pcbFile("-CARTE.dxf","carte.dxf"));
   hint("DXF de la carte à l'échelle 1:1 : contour ("+(r.D.n.ARC?r.D.n.ARC+" arc(s), ":"")+
-       "mm, origine des Gerber), "+r.trous+" trou(s), "+S.fps.length+" composant(s).");
+       "mm, origine des Gerber), "+r.trous+" trou(s) sur "+r.outils.length+" calque(s) d'outil, "+S.fps.length+" composant(s).");
   return r;
 }
 function dxfExporterFeuille(){
@@ -525,7 +608,7 @@ function dfxCadre(m){
       '<button class="tb" type="button" data-dxf="feuille" title="DXF de la feuille affichée, entière, en millimètres">⬇ DXF feuille</button>');
   const fm=m.querySelector('select[data-cfg="format"]');
   if(fm&&fm.insertAdjacentHTML)
-    fm.insertAdjacentHTML("afterend",'<div class="df-h">PDF</div><label class="df-case" title="Sous-ensemble de la fonte PlansSans (Liberation Sans) embarqué : même rendu dans tous les lecteurs, Ω, ≤, ≥ écrits tels quels, texte toujours cherchable et copiable">'+
+    fm.insertAdjacentHTML("afterend",'<div class="df-h">PDF</div><label class="df-case" title="Sous-ensemble de la fonte PlansSans (Liberation Sans) embarqué : même rendu dans tous les lecteurs, Ω, ≤, ≥ écrits tels quels, texte toujours cherchable et copiable — vaut aussi pour le Master Drawing de Fabrication .zip">'+
       '<input type="checkbox" data-dxf="fonte"'+(dfCfg().fonte?" checked":"")+'> Fonte embarquée</label>');
   if(m.dfxBranche)return;
   m.dfxBranche=true;
@@ -669,8 +752,9 @@ function dffSomme(u8){
     s=(s+(((u8[i]<<24)|((u8[i+1]||0)<<16)|((u8[i+2]||0)<<8)|(u8[i+3]||0))>>>0))>>>0;
   return s;
 }
+/* Sous-table cmap de format 4 : paires [code, glyphe] triées, un segment par
+   suite consécutive. */
 function dffCmap4(paires){
-  /* paires [unicode, glyphe] triées : un segment par suite consécutive */
   const segs=[];
   for(const [c,g] of paires){
     const s=segs[segs.length-1];
@@ -680,22 +764,46 @@ function dffCmap4(paires){
   segs.push({s:0xFFFF,e:0xFFFF,g:1});
   const n=segs.length;
   let e=1;while(e*2<=n)e*=2;
-  const len=16+8*n, b=new Uint8Array(12+len), dv=new DataView(b.buffer);
-  dv.setUint16(2,1);dv.setUint16(4,3);dv.setUint16(6,1);dv.setUint32(8,12);
-  const o=12;
-  dv.setUint16(o,4);dv.setUint16(o+2,len);
-  dv.setUint16(o+6,2*n);dv.setUint16(o+8,2*e);dv.setUint16(o+10,Math.log2(e));dv.setUint16(o+12,2*n-2*e);
+  const len=16+8*n, b=new Uint8Array(len), dv=new DataView(b.buffer);
+  dv.setUint16(0,4);dv.setUint16(2,len);
+  dv.setUint16(6,2*n);dv.setUint16(8,2*e);dv.setUint16(10,Math.log2(e));dv.setUint16(12,2*n-2*e);
   segs.forEach((s,i)=>{
-    dv.setUint16(o+14+2*i,s.e);
-    dv.setUint16(o+16+2*n+2*i,s.s);
-    dv.setUint16(o+16+4*n+2*i,(s.g-s.s)&0xFFFF);
+    dv.setUint16(14+2*i,s.e);
+    dv.setUint16(16+2*n+2*i,s.s);
+    dv.setUint16(16+4*n+2*i,(s.g-s.s)&0xFFFF);
   });
   return b;
 }
+/* Sous-table de format 6 : un glyphe par code, du premier au dernier — les
+   codes d'un octet d'une fonte simple. */
+function dffCmap6(paires){
+  const a=paires[0][0], n=paires[paires.length-1][0]-a+1;
+  const b=new Uint8Array(10+2*n), dv=new DataView(b.buffer);
+  dv.setUint16(0,6);dv.setUint16(2,b.length);dv.setUint16(6,a);dv.setUint16(8,n);
+  for(const [c,g] of paires)dv.setUint16(10+2*(c-a),g);
+  return b;
+}
+/* La table cmap : des sous-tables [plateforme, codage, octets], rangées par
+   plateforme puis par codage. */
+function dffCmap(sous){
+  let taille=4+8*sous.length;
+  for(const x of sous)taille+=x[2].length;
+  const u=new Uint8Array(taille), dv=new DataView(u.buffer);
+  dv.setUint16(2,sous.length);
+  let off=4+8*sous.length;
+  sous.forEach(([p,e,b],i)=>{
+    dv.setUint16(4+8*i,p);dv.setUint16(6+8*i,e);dv.setUint32(8+8*i,off);
+    u.set(b,off);off+=b.length;
+  });
+  return u;
+}
 /* Sous-ensemble de Fo réduit aux glyphes `garde` (Set d'anciens numéros) et
    à la carte `uni` (Map unicode → ancien glyphe). Rend les octets de la
-   fonte et la renumérotation. */
-function dffSousEnsemble(Fo,garde,uni){
+   fonte et la renumérotation. `simple` (Master Drawing) : `uni` va alors
+   d'un code d'un octet à l'ancien glyphe, et la cmap est celle d'une fonte
+   symbolique — (1,0) code → glyphe, (3,0) 0xF000 + code → glyphe —, que le
+   PDF lit sans /Encoding. */
+function dffSousEnsemble(Fo,garde,uni,simple){
   const tous=new Set([0,...garde]);
   const pile=[...tous];
   while(pile.length)
@@ -720,7 +828,9 @@ function dffSousEnsemble(Fo,garde,uni){
   if(Fo.tab.post)post.set(Fo.u8.subarray(Fo.tab.post.off,Fo.tab.post.off+Math.min(32,Fo.tab.post.len)));
   new DataView(post.buffer).setUint32(0,0x00030000);
   const paires=[...uni].map(([c,g])=>[c,remap.get(g)]).filter(([c])=>c<0xFFFF).sort((a,b)=>a[0]-b[0]);
-  const T={head,hhea,maxp,hmtx,loca,glyf,post,cmap:dffCmap4(paires)};
+  const cmap=simple?dffCmap([[1,0,dffCmap6(paires)],[3,0,dffCmap4(paires.map(([c,g])=>[0xF000+c,g]))]])
+                   :dffCmap([[3,1,dffCmap4(paires)]]);
+  const T={head,hhea,maxp,hmtx,loca,glyf,post,cmap};
   if(Fo.tab["OS/2"])T["OS/2"]=copie("OS/2");
   if(Fo.tab.name)T.name=copie("name");
   /* assemblage : répertoire trié, tables alignées sur 4 octets */
@@ -780,37 +890,76 @@ function dffGlyphes(Fo,s){
 }
 function dffHex(v){return v.toString(16).toUpperCase().padStart(4,"0");}
 function dffUtf16(s){let o="";for(let i=0;i<s.length;i++)o+=dffHex(s.charCodeAt(i));return o;}
-/* Préparation, appelée par dfPdf() avant d'écrire : les glyphes de chaque
-   style, le sous-ensemble, et de quoi coder le texte et écrire les objets.
-   null quand l'option est décochée ou la fonte absente : Helvetica alors. */
-function dfFontePreparer(feuilles){
-  if(!dfCfg().fonte)return null;
+/* Les glyphes qu'emploie une suite de textes ({s, gras}), par style : la
+   fonte, la carte unicode → glyphe (`uni`) et glyphe → texte qu'il porte
+   (`gl`). null si l'une des deux graisses manque : Helvetica alors. Partagé
+   par les deux PDF, les plans et le Master Drawing. */
+function dffStyles(textes){
   const styles={normal:null,gras:null};
   for(const st of ["normal","gras"]){
     const Fo=dffFonte(st);
     if(!Fo)return null;
     styles[st]={Fo,uni:new Map(),gl:new Map(),vu:false};
   }
-  for(const F of feuilles)
-    for(const it of F.items){
-      if(it.t!=="t")continue;
-      const E=styles[it.gras?"gras":"normal"];
-      E.vu=true;
-      for(const x of dffGlyphes(E.Fo,it.s)){
-        if(!E.gl.has(x.g))E.gl.set(x.g,x.u);
-        const c=x.u.codePointAt(0);
-        if(!E.uni.has(c))E.uni.set(c,x.g);
-      }
+  for(const it of textes){
+    const E=styles[it.gras?"gras":"normal"];
+    E.vu=true;
+    for(const x of dffGlyphes(E.Fo,it.s)){
+      if(!E.gl.has(x.g))E.gl.set(x.g,x.u);
+      const c=x.u.codePointAt(0);
+      if(!E.uni.has(c))E.uni.set(c,x.g);
     }
+  }
+  return styles;
+}
+/* L'étiquette de sous-ensemble (« ABCDEF+ ») : six capitales tirées d'une
+   suite de nombres, les glyphes gardés. */
+function dffEtiquette(v){
+  let h=2166136261;
+  for(const g of v){h^=g;h=Math.imul(h,16777619)>>>0;}
+  let tag="";for(let i=0;i<6;i++){tag+=String.fromCharCode(65+h%26);h=Math.floor(h/26)+i*7919;}
+  return tag;
+}
+/* La /ToUnicode : `bf` les couples « <code> <UTF-16BE> », `octets` la
+   longueur d'un code (2 en Identity-H, 1 pour une fonte simple). */
+function dffToUnicode(bf,octets){
+  let cmap="/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n"+
+    "/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n"+
+    "/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n"+
+    "1 begincodespacerange\n"+(octets===1?"<00> <FF>":"<0000> <FFFF>")+"\nendcodespacerange\n";
+  for(let i=0;i<bf.length;i+=100){
+    const lot=bf.slice(i,i+100);
+    cmap+=lot.length+" beginbfchar\n"+lot.join("\n")+"\nendbfchar\n";
+  }
+  return cmap+"endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n";
+}
+/* Le descripteur de la fonte du style `st`, son fichier en objet FF.
+   `flags` : 32 (non symbolique) pour la CIDFont, 4 (symbolique) pour la
+   fonte simple, dont la cmap dit seule quel glyphe porte quel code. */
+function dffDescripteur(E,st,FF,flags){
+  const Fo=E.Fo, k=1000/Fo.upm;
+  return "<< /Type /FontDescriptor /FontName /"+E.nom+" /Flags "+flags+
+    " /FontBBox ["+Fo.bbox.map(v=>Math.round(v*k)).join(" ")+"] /ItalicAngle 0"+
+    " /Ascent "+Math.round(Fo.asc*k)+" /Descent "+Math.round(Fo.desc*k)+
+    " /CapHeight "+Math.round(Fo.caps*k)+" /StemV "+(st==="gras"?120:80)+
+    (st==="gras"?" /FontWeight 700":"")+" /FontFile2 "+FF+" 0 R >>";
+}
+function dffNom(st){return "PlansSans-"+(st==="gras"?"Bold":"Regular");}
+
+/* Préparation, appelée par dfPdf() avant d'écrire : les glyphes de chaque
+   style, le sous-ensemble, et de quoi coder le texte et écrire les objets.
+   null quand l'option est décochée ou la fonte absente : Helvetica alors. */
+function dfFontePreparer(feuilles){
+  if(!dfCfg().fonte)return null;
+  const textes=[];
+  for(const F of feuilles)for(const it of F.items)if(it.t==="t")textes.push(it);
+  const styles=dffStyles(textes);
+  if(!styles)return null;
   for(const st in styles){
     const E=styles[st];
     if(!E.vu)continue;
     E.sub=dffSousEnsemble(E.Fo,new Set(E.gl.keys()),E.uni);
-    /* l'étiquette de sous-ensemble : six capitales tirées des glyphes */
-    let h=2166136261;
-    for(const g of [...E.gl.keys()].sort((a,b)=>a-b)){h^=g;h=Math.imul(h,16777619)>>>0;}
-    let tag="";for(let i=0;i<6;i++){tag+=String.fromCharCode(65+h%26);h=Math.floor(h/26)+i*7919;}
-    E.nom=tag+"+PlansSans-"+(st==="gras"?"Bold":"Regular");
+    E.nom=dffEtiquette([...E.gl.keys()].sort((a,b)=>a-b))+"+"+dffNom(st);
   }
   const FE={styles,
     chaine(s,gras){
@@ -837,29 +986,99 @@ function dfFontePreparer(feuilles){
         for(let i=0;i<sub.n;i++)larg.push(Math.round(Fo.hm[inv[i]][0]*k));
         const bf=[];
         for(const [g,u] of E.gl)bf.push("<"+dffHex(sub.remap.get(g))+"> <"+dffUtf16(u)+">");
-        let cmap="/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n"+
-          "/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n"+
-          "/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n"+
-          "1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n";
-        for(let i=0;i<bf.length;i+=100){
-          const lot=bf.slice(i,i+100);
-          cmap+=lot.length+" beginbfchar\n"+lot.join("\n")+"\nendbfchar\n";
-        }
-        cmap+="endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n";
+        const cmap=dffToUnicode(bf,2);
         obj(id,"<< /Type /Font /Subtype /Type0 /BaseFont /"+E.nom+" /Encoding /Identity-H"+
             " /DescendantFonts ["+CID+" 0 R] /ToUnicode "+TU+" 0 R >>");
         obj(CID,"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /"+E.nom+
             " /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >>"+
             " /FontDescriptor "+DESC+" 0 R /CIDToGIDMap /Identity /DW "+(larg[0]||0)+
             " /W [0 ["+larg.join(" ")+"]] >>");
-        obj(DESC,"<< /Type /FontDescriptor /FontName /"+E.nom+" /Flags 32"+
-            " /FontBBox ["+Fo.bbox.map(v=>Math.round(v*k)).join(" ")+"] /ItalicAngle 0"+
-            " /Ascent "+Math.round(Fo.asc*k)+" /Descent "+Math.round(Fo.desc*k)+
-            " /CapHeight "+Math.round(Fo.caps*k)+" /StemV "+(st==="gras"?120:80)+
-            (st==="gras"?" /FontWeight 700":"")+" /FontFile2 "+FF+" 0 R >>");
+        obj(DESC,dffDescripteur(E,st,FF,32));
         obj(FF,"<< /Length "+sub.octets.length+" /Length1 "+sub.octets.length+" >>",sub.octets);
         obj(TU,"<< /Length "+cmap.length+" >>",cmap);
       });
     }};
   return FE;
+}
+
+/* ==========================================================================
+   Fonte embarquée : la fonte simple du Master Drawing
+   ========================================================================== */
+/* Le Master Drawing (04-pdf-masterdraw.js) emporte la même fonte, mais en
+   TrueType SIMPLE, un octet par caractère : l'ASCII y garde son propre code,
+   si bien que le contenu des pages se lit encore en clair — « SHEET: 1 / 3 »,
+   « REV: B », les noms de fichiers annoncés — par un grep, un diff entre deux
+   révisions, ou le fabricant qui ouvre le fichier dans un éditeur. Le reste
+   (é, Ω, µ, ±, °, ≤, ≥, —…) prend les codes libres, de 0x80 à 0xFF puis de
+   0x01 à 0x1F : 159 caractères hors ASCII par graisse, bien plus qu'un
+   Master Drawing n'en écrit. Au-delà, « ? ». La fonte est déclarée
+   symbolique, sans /Encoding : sa cmap (1,0) et (3,0) dit quel glyphe porte
+   quel code, et la /ToUnicode quel caractère — le texte se cherche et se
+   copie, accents et symboles compris. `textes` : les {s, gras} du
+   document. null si la fonte ne se charge pas. */
+function dffPreparerSimple(textes){
+  const styles=dffStyles(textes);
+  if(!styles)return null;
+  for(const st in styles){
+    const E=styles[st];
+    if(!E.vu)continue;
+    const ascii=new Map(), libres=[];
+    for(let c=0x20;c<0x7F;c++){const g=E.Fo.cmap.get(c);if(g&&!ascii.has(g))ascii.set(g,c);}
+    for(let c=0x80;c<=0xFF;c++)libres.push(c);
+    for(let c=0x01;c<0x20;c++)libres.push(c);
+    E.code=new Map();E.carte=new Map();          // glyphe → code, code → glyphe
+    let deborde=false;
+    for(const g of E.gl.keys()){
+      const c=ascii.has(g)?ascii.get(g):libres.shift();
+      if(c==null){deborde=true;continue;}
+      E.code.set(g,c);E.carte.set(c,g);
+    }
+    const q=E.Fo.cmap.get(0x3F)||0;
+    if(deborde&&!E.code.has(q)){E.code.set(q,0x3F);E.carte.set(0x3F,q);}
+    const paires=[...E.carte].sort((a,b)=>a[0]-b[0]);
+    E.sub=dffSousEnsemble(E.Fo,new Set(E.code.keys()),E.carte,true);
+    E.nom=dffEtiquette([].concat(...paires))+"+"+dffNom(st);
+  }
+  const codes=(E,s)=>dffGlyphes(E.Fo,s).map(x=>E.code.has(x.g)?E.code.get(x.g):0x3F);
+  return {styles,
+    /* le littéral PDF : (, ) et \ échappés, le reste hors ASCII en octal */
+    chaine(s,gras){
+      let o="(";
+      for(const c of codes(styles[gras?"gras":"normal"],s)){
+        if(c===0x28||c===0x29||c===0x5C)o+="\\"+String.fromCharCode(c);
+        else if(c<0x20||c>0x7E)o+="\\"+c.toString(8).padStart(3,"0");
+        else o+=String.fromCharCode(c);
+      }
+      return o+")";
+    },
+    /* largeur en mm du texte en corps `pt` */
+    largeur(s,pt,gras){
+      const E=styles[gras?"gras":"normal"];
+      let w=0;
+      for(const c of codes(E,s))w+=E.Fo.hm[E.carte.get(c)][0];
+      return w/E.Fo.upm*pt*DF_PT;
+    },
+    /* Les objets : la fonte d'id `F1` (normale) et `F2` (grasse), puis
+       descripteur, fichier et /ToUnicode, numérotés par `alloc`. Un style
+       qu'aucun texte n'emploie garde son Helvetica. */
+    ecrire(F1,F2,alloc,obj){
+      [["normal",F1,"/Helvetica"],["gras",F2,"/Helvetica-Bold"]].forEach(([st,id,repli])=>{
+        const E=styles[st];
+        if(!E.vu){obj(id,"<< /Type /Font /Subtype /Type1 /BaseFont "+repli+" /Encoding /WinAnsiEncoding >>");return;}
+        const Fo=E.Fo, k=1000/Fo.upm, sub=E.sub;
+        const DESC=alloc(), FF=alloc(), TU=alloc();
+        const cs=[...E.carte.keys()].sort((a,b)=>a-b), c0=cs[0], c1=cs[cs.length-1];
+        const larg=[];
+        for(let c=c0;c<=c1;c++){const g=E.carte.get(c);larg.push(g==null?0:Math.round(Fo.hm[g][0]*k));}
+        const bf=cs.map(c=>"<"+c.toString(16).toUpperCase().padStart(2,"0")+"> <"+
+                            dffUtf16(E.gl.get(E.carte.get(c))||"?")+">");
+        const cmap=dffToUnicode(bf,1);
+        obj(id,"<< /Type /Font /Subtype /TrueType /BaseFont /"+E.nom+
+            " /FirstChar "+c0+" /LastChar "+c1+" /Widths ["+larg.join(" ")+"]"+
+            " /FontDescriptor "+DESC+" 0 R /ToUnicode "+TU+" 0 R >>");
+        obj(DESC,dffDescripteur(E,st,FF,4));
+        obj(FF,"<< /Length "+sub.octets.length+" /Length1 "+sub.octets.length+" >>",sub.octets);
+        obj(TU,"<< /Length "+cmap.length+" >>",cmap);
+      });
+    }};
 }
