@@ -949,6 +949,38 @@ def les_refus():
         raise AssertionError("une partie reelle negative a ete acceptee")
 
 
+def le_dielectrique_causal_et_la_rugosite_entrent_dans_la_rf():
+    """rf_reseau 1.6.0 : l'empilage porte le dielectrique causal et la
+    rugosite, et les deux arrivent aux branches (par simulation_em) comme a
+    la section couplee ([C](f), tan delta(f)). Fiche calee sur F0 : a F0, le
+    S est celui du calcul non causal au bit pres ; ailleurs il bouge. Rq de
+    2 um : la paire perd davantage."""
+    def doc(**stack):
+        # L'EMPILAGE EST RECOPIE ET SON tan delta REMIS : un cas plus haut
+        # ecrit dans les dictionnaires de QUATRE, et sans perte le
+        # dielectrique causal n'a rien a prolonger.
+        d = _doc_paire(0.15)
+        couches = [dict(c, tan_delta=0.02) if c["type"] == "dielectric"
+                   else dict(c) for c in QUATRE]
+        d["stackup"] = dict(d["stackup"], layers=couches, **stack)
+        return d
+    r0 = rf.analyser(doc())
+    r1 = rf.analyser(doc(dielectrique_causal=True, f_ref_dielectrique=F0))
+    assert r1["couplages"], "la section couplee doit exister"
+    k = _k0(r0)
+    assert r0["freqs"][k] == F0
+    for i in (0, 1):
+        assert abs(_s(r1, k, i, 0) - _s(r0, k, i, 0)) < 1e-12, (i, _s(r1, k, i, 0))
+    assert abs(_s(r1, 0, 1, 0) - _s(r0, 0, 1, 0)) > 1e-6
+    assert abs(_s(r1, len(r0["freqs"]) - 1, 1, 0)
+               - _s(r0, len(r0["freqs"]) - 1, 1, 0)) > 1e-6
+    rug = doc()
+    rug["stackup"]["layers"][0]["rugosite_rms_um"] = 2.0
+    r2 = rf.analyser(rug)
+    assert abs(_s(r2, k, 1, 0)) < abs(_s(r0, k, 1, 0)) - 1e-4, (
+        abs(_s(r2, k, 1, 0)), abs(_s(r0, k, 1, 0)))
+
+
 for nom, fn in list(globals().items()):
     if callable(fn) and getattr(fn, "__module__", "") == "__main__" \
             and not nom.startswith("_") and nom not in ("T", "proche"):
