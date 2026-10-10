@@ -234,7 +234,7 @@ l'intérieur) et n'entre pas dans les perçages de la carte — un trou nu posé
 sur le via le ferait passer pour non relié. Un foret sans via est compté à
 part.
 
-Le parseur (`ipc2581_parser.py`, 1.76) pose le résultat sur le perçage, et le
+Le parseur (`ipc2581_parser.py`, 1.76 et suivants) pose le résultat sur le perçage, et le
 modèle le transporte dans `percages[i].cp` : `cote` (« dessous » / « dessus »),
 `de` et `g` (rangs de la face et de la couche gardée), `res` (mm), `prof`
 (mm), `d` (diamètre du foret), `spec`, `src`. Dans la page :
