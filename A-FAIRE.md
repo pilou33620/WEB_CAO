@@ -13,7 +13,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 881 essais (`editeur-pcb/test/harness.js`), dont 13 pour les plans (Draftsman) et 24 pour le gestionnaire de contraintes et la topologie |
+| **Éditeur PCB** | En service | 884 essais (`editeur-pcb/test/harness.js`), dont 13 pour les plans (Draftsman) et 24 pour le gestionnaire de contraintes et la topologie |
 | **Éditeur Schématique** | En service | 155 essais (`editeur-schematique/test/harness.js`), dont 3 pour les contraintes de nets |
 | **Visionneuse IPC-2581** | En service | 186 essais (`harness-sim.js`) + 59 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.5.0)** | En service (0,3 à 0,4 % vs étalons) | 199 cas (`python/test/banc-ligne-mom.py`) |
@@ -145,6 +145,8 @@ lib/
   - [x] Largeur de classe par couche (`wL`, `classWidth`) : le routeur prend celle de la couche active et en change au via, le DRC et « aligner sur la classe » la suivent, la largeur pour Z cible se pose couche par couche ; report quand le nombre de couches change. 4 essais.
   - [x] Topologie (point à point, chaîne avec ordre imposé, étoile à branches égales, fly-by terminé) et moignons (dérivation, point de test, bout libre, moignon de via) par net ou par classe (`editeur-pcb/js/31-topologie.js`) ; onglet « Topologie et moignons », DRC, CSV. 7 essais sur cartes construites.
   - [ ] Contre-perçage (back-drill) décrit dans l'empilage, pour retirer le moignon de via du calcul et le porter au plan de fabrication.
+
+- [x] **Rooms** (`editeur-pcb/js/32-rooms.js`) : les blocs du schéma (zones étiquetées) encadrés sur la carte comme les rooms d'Altium — cadre, fond teinté, étiquette ; un clic sur l'étiquette prend le bloc ; Affichage → Rooms ; lus dans le document du schéma (session ou projet), à défaut dans l'analyse « Motifs & Blocs ». Remplacent les pastilles de couleur. 3 essais.
 
 ### Simulation SI (Signal Integrity)
 - [x] **Mode différentiel dans la cascade de paramètres S** :

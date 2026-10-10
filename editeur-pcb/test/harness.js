@@ -402,7 +402,10 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "cmAppliquerLargeurZ","CM","CM_ONGLETS","className","classWidth","cmPoserLargeurCouche","normClass","routeVia",
   /* topologie et moignons (31-topologie.js) */
   "topoGraphe","topoAnalyser","topoVerifier","topoResume","topoMoignonsVias","TOPO_FORMES","stackSpan","cuT",
-  "cmDepuisSchema","cmTousGroupes","cmResumeSchema","cmLireChamp","pcbAppliquerEco","pcbDetecterDisparitesEco","cmEcartSchema"];
+  "cmDepuisSchema","cmTousGroupes","cmResumeSchema","cmLireChamp","pcbAppliquerEco","pcbDetecterDisparitesEco","cmEcartSchema",
+  /* rooms (32-rooms.js) */
+  "roomsDepuisDoc","roomsListe","roomNomCourt","roomCouleur","roomAuLabel","roomEtiquette","roomsBasculer",
+  "roomsPeindre","roomsPeindreFond","roomsVisibles","ctx","profilEtat"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -22551,6 +22554,62 @@ T("contraintes du schéma : l'ECO et la fenêtre les reprennent",()=>{
       throw new Error("une fois reprises, plus de ligne");
     if(cmLireChamp("ordre","U1 → U4 > U5")+""!=="U1,U4,U5")throw new Error("lecture commune de l'ordre");
   }finally{S.schDoc=avant;cmRaz();}
+});
+
+/* ==========================================================================
+   Rooms : les blocs du schéma encadrés sur la carte (32-rooms.js)
+   ========================================================================== */
+function roomsDocEssai(){
+  return {format:"schemedit-2",pages:[{name:"Hiérarchie",comps:[],drawings:[]},
+    {name:"F1",comps:[{ref:"U1",x:50,y:50},{ref:"C3",x:60,y:40},{ref:"U2",x:500,y:50},{ref:"J1",x:900,y:900}],
+     drawings:[{id:1,shape:"rect",label:"Clignoteur · astable 1,5 Hz",color:"#60a5fa",x1:0,y1:0,x2:200,y2:200},
+               {id:2,shape:"rect",label:"Étage 1",color:"javascript:alert(1)",x1:400,y1:0,x2:600,y2:200},
+               {id:3,shape:"line",label:"pas une zone",x1:0,y1:0,x2:10,y2:10},
+               {id:4,shape:"rect",label:"Vide",x1:2000,y1:2000,x2:2100,y2:2100}]}]};
+}
+T("rooms : lues dans le document du schéma, composant par son centre",()=>{
+  const z=roomsDepuisDoc(roomsDocEssai());
+  if(z.length!==3)throw new Error("trois rectangles étiquetés attendus : "+z.map(x=>x.label).join(" | "));
+  if(z[0].refs.join()!=="U1,C3"||z[1].refs.join()!=="U2"||z[2].refs.length)throw new Error(JSON.stringify(z.map(x=>x.refs)));
+  if(roomNomCourt("Clignoteur TLC555 · D1 témoin")!=="Clignoteur TLC555")throw new Error("nom court");
+  if(roomCouleur("javascript:alert(1)")!=="#f59e0b"||roomCouleur("#60A5FA")!=="#60A5FA")throw new Error("couleur non filtrée");
+});
+T("rooms : une région autour des empreintes du bloc, qui suit le placement",()=>{
+  exCharger(1);
+  const avant=S.schDoc;
+  S.schDoc=roomsDocEssai();touch();
+  try{
+    const L=roomsListe();
+    if(L.length!==2)throw new Error("une room par bloc qui a des empreintes sur la carte (le bloc vide n'en a pas) : "+L.length);
+    const r=L[0], u1=S.fps.find(f=>f.ref==="U1"), b=fpBBox(u1);
+    if(r.nom!=="Clignoteur"||r.fps.length!==2)throw new Error(r.nom+" "+r.fps.length);
+    if(!(r.x1<=b.x1&&r.y1<=b.y1&&r.x2>=b.x2&&r.y2>=b.y2))throw new Error("la room doit contenir U1");
+    if(L[1].couleur!=="#f59e0b")throw new Error("couleur douteuse : repli");
+    const x0=r.x1;
+    u1.x-=200;touch();
+    if(!(roomsListe()[0].x1<x0-100))throw new Error("la room suit le boîtier déplacé");
+    u1.x+=200;touch();
+    /* masquées : rien ne se peint, l'étiquette ne prend rien */
+    roomsBasculer(false);
+    if(roomsVisibles()||profilEtat().rooms!==false)throw new Error("masquer, et le profil le retient");
+    const e=roomEtiquette(ctx,roomsListe()[0]);
+    if(roomAuLabel((e.x1+e.x2)/2,(e.y1+e.y2)/2))throw new Error("masquées, les étiquettes ne se cliquent pas");
+    roomsBasculer(true);
+    const e2=roomEtiquette(ctx,roomsListe()[0]);
+    const R=roomAuLabel((e2.x1+e2.x2)/2,(e2.y1+e2.y2)/2);
+    if(!R||R.nom!=="Clignoteur")throw new Error("clic sur l'étiquette");
+    roomsPeindreFond(ctx);roomsPeindre(ctx);
+  }finally{S.schDoc=avant;touch();}
+});
+T("rooms : sans schéma, les zones de l'analyse « Motifs & Blocs » ; sans rien, aucune",()=>{
+  exCharger(1);
+  const avant=S.schDoc;
+  S.schDoc={format:"schemedit-2",pages:[]};touch();
+  try{
+    const z=BLOC_PLACEMENT.getZones();
+    const L=roomsListe();
+    if(!z.length&&L.length)throw new Error("ni schéma ni analyse : aucune room");
+  }finally{S.schDoc=avant;touch();}
 });
 
 (async()=>{

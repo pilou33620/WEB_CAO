@@ -77,6 +77,8 @@ js/30-contraintes.js     gestionnaire de contraintes : mesures par net,
                          et l'isolation entre classes sont dans 01-core.js)
 ../commun/contraintes.js ce qu'est une contrainte de net, partagé avec le
                          schéma qui en saisit aussi
+js/32-rooms.js           rooms : les blocs fonctionnels du schéma encadrés
+                         sur la carte, sélection d'un bloc par son étiquette
 js/31-topologie.js       forme du cuivre de chaque net (graphe des pistes,
                          vias et broches) : point à point, chaîne, étoile,
                          fly-by ; moignons de dérivation et de vias
@@ -829,6 +831,27 @@ en deux temps. Un seul Ctrl+Z défait les deux.
 Ne bougent pas : les points de test (`TP…`), qui se placent à la main. Les
 connecteurs (`J…`) ne sont ni satellites ni circuits d'accueil. Les textes de
 sérigraphie ne comptent pas dans l'encombrement : ils restent à reprendre.
+
+## Rooms : les blocs du schéma sur la carte
+
+Chaque bloc fonctionnel du schéma — un rectangle étiqueté (« Étage 1 · ampli
+non inverseur ×215 ») — apparaît sur la carte comme une **room**, à la manière
+d'Altium : un cadre à coins arrondis autour de toutes ses empreintes, un fond
+à peine teinté (sous le cuivre), et un onglet à son nom court (ce qui précède
+le premier « · ») dans sa couleur.
+
+- **Un clic sur l'étiquette prend le bloc entier** : il glisse d'une pièce,
+  R le tourne, Ctrl ou Maj l'ajoute à la sélection.
+- La room **suit ses composants** : elle se resserre quand on les rapproche,
+  et deux rooms qui se chevauchent disent deux blocs mêlés.
+- **Affichage → Rooms** les montre ou les cache ; le réglage est celui du
+  profil, comme la grille.
+
+Les blocs se lisent dans le **document du schéma** (session de l'onglet ou
+dossier du projet) : un composant appartient à une zone si son centre est
+dedans, la règle de l'éditeur schématique. À défaut, ce sont les zones de
+l'analyse « Motifs & Blocs ». Les rooms remplacent les pastilles de couleur
+posées au coin de chaque empreinte. Rien n'est gravé ni exporté.
 
 ## Variantes de montage (BOM)
 

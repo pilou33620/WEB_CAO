@@ -707,6 +707,7 @@ const S = {
   variantes:{liste:[],active:""},   // variantes de montage, copiées du schéma (26-variantes.js)
   groupes:[],                       // blocs composants + vias déplacés d'une pièce (27-groupes.js)
   dessin:null,                      // réglages des plans : format, feuilles, cartouche (29-draftsman.js)
+  voirRooms:true,                   // affichage des rooms (32-rooms.js) — réglage du profil, pas du document
   contraintes:{classes:{},nets:{},matrice:{},groupes:[],schema:{nets:{},groupes:[]}},  // gestionnaire de contraintes (30-contraintes.js)
   dpRules:[],                 // règles de paire ; vide = la règle d'usine
   scale:5, ox:0, oy:0,

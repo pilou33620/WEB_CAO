@@ -4186,6 +4186,18 @@ cv.addEventListener("pointerdown",e=>{
   }
   // Ctrl et Maj font la même chose : ajouter à la sélection, ou en retirer
   const add=e.shiftKey||e.ctrlKey||e.metaKey||multi;
+  /* L'ÉTIQUETTE D'UNE ROOM (32-rooms.js) : le bloc entier est pris, et le
+     geste continue comme sur un boîtier de la sélection — il glisse d'une
+     pièce. Ctrl ou Maj l'ajoute à ce qui est déjà pris. */
+  if((!h||h.inside)&&typeof roomAuLabel==="function"){
+    const salle=roomAuLabel(p.x,p.y);
+    if(salle){
+      if(!add){clearSel();S.hlNet=null;}
+      for(const f of salle.fps)S.sel.fps.add(f.id);
+      h={fp:salle.fps[0]};
+      hint("Room « "+salle.nom+" » : "+salle.fps.length+" composant(s) pris — glissez pour déplacer le bloc, R pour le tourner.");
+    }
+  }
   /* Le repère d'un boîtier pris avec d'autres — ou touché avec Ctrl/Maj — vaut
      son boîtier : c'est le groupe qui part, pas le texte seul. Le texte ne se
      déplace à part que lorsque son boîtier est seul sélectionné, ou pas du tout. */
