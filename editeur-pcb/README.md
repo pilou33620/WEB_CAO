@@ -456,8 +456,10 @@ nommés d'après les types `<Backdrill>` d'IPC-2581 :
 
 Le LISEZ-MOI explique ce choix. L'éditeur **n'exporte pas d'IPC-2581** : le
 contre-perçage n'y est donc pas écrit (la visionneuse IPC-2581, elle, le lit).
-Le `.gbr` n'est pas listé par le master drawing (qui ne détaille que les
-Excellon).
+Le master drawing liste le `.gbr` dans ses fichiers, juste sous l'Excellon de
+la même passe (« Back-drill Gerber X2 (depth as attribute), copper layer 4,
+must-not-cut layer 2 ») ; il reste hors des perçages que détaille le plan de
+fabrication.
 
 ## Les règles de conception, et leurs figures
 
