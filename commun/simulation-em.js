@@ -4972,7 +4972,7 @@ function simMoignonTexte(t){
   const bouts=[mo.depart,mo.arrivee].filter(Boolean);
   if(!bouts.length)return "";
   return "<br><small>"+bouts.map(f=>
-    "moignon "+simNb(f.longueur_mm,3)+" mm · rés. "+
+    "moignon "+simNb(f.longueur_mm,3)+" mm"+(f.contre_perce?" (contre-percé)":"")+" · rés. "+
     simNb((f.resonance_hz||0)/1e9,1)+" GHz").join(" · ")+"</small>";
 }
 

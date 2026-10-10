@@ -408,6 +408,29 @@ l'espacement mesuré), `.json` (le problème, rejouable), **rapport** texte
 hypothèses) et, pour toute la carte, le `.csv` de toutes les paires.
 
 
+### Le moignon d'un via, et son contre-perçage
+
+Le via d'une transition est un π L-C, avec un **moignon** en dérivation à
+chaque bout que le signal n'emprunte pas (`_moignons`, `python/simulation_em.py`) :
+la portée percée (`layer_from`, `layer_to`) moins les couches de départ et
+d'arrivée, en épaisseur d'empilage, avec sa résonance quart d'onde.
+
+Un via **contre-percé** (*back-drill*, règles de l'empilage de l'éditeur PCB)
+envoie en plus, dans sa fiche :
+
+    "contre_percage": {"cote": "dessous" | "dessus",
+                       "couche_garde": <indice d'empilage de la couche à ne pas couper>,
+                       "moignon_residuel_mm": 0.15}
+
+Le moignon de ce côté va alors de la couche empruntée à la pointe du foret —
+`moignon_residuel_mm` sous (ou sur) la couche gardée —, jamais plus loin
+qu'avant ; sa fiche porte `contre_perce`, et `moignons.contre_percage` vaut
+`"applique"`. Un contre-perçage qui couperait une couche empruntée n'est pas
+compté (`"ignore"`, et un avertissement le dit). Sans le champ, rien ne change.
+La vérification de la carte lit la même chose dans le `cp` d'un perçage (voir
+[verification-carte.md](verification-carte.md#moignons-de-vias)).
+
+
 ### Lire la courbe
 
 Deux traces : **S₁₁** (ce que le port d'entrée réfléchit) et **S₂₁** (ce qui

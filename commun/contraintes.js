@@ -8,7 +8,8 @@
    contraintes et les échangent par le document du schéma : il faut qu'ils les
    lisent avec les MÊMES bornes. Une contrainte : impédance cible et tolérance
    (%), longueur min / max (mm), vias max, couches permises, topologie et
-   ordre des repères, moignons admis, tolérance d'une étoile. Un groupe
+   ordre des repères, moignons admis, tolérance d'une étoile, contre-perçage
+   (la règle de l'empilage du PCB qui s'applique aux vias du net). Un groupe
    d'appariement : des nets à égaliser en longueur (mm) ou en délai (ps).
 
    Rien ici ne touche à l'état d'un éditeur : des fonctions pures.
@@ -41,7 +42,17 @@ function cmNormRegle(o){
   const sm=num(o.stubMax,0,1e5);if(sm!=null)r.stubMax=sm;
   const vs=num(o.viaStubMax,0,100);if(vs!=null)r.viaStubMax=vs;
   const et=num(o.etoileTol,0,1e5);if(et!=null)r.etoileTol=et;
+  /* contre-perçage (editeur-pcb/js/01-core.js, `cpVia`) : l'identifiant
+     d'une règle de l'empilage du PCB, ou « non » pour n'en vouloir aucune là
+     où la classe en pose une. Le schéma ne le saisit pas : il le garde. */
+  const cp=cmLireCp(o.cp);if(cp)r.cp=cp;
   return Object.keys(r).length?r:null;
+}
+/* Un identifiant de règle de contre-perçage : lettres, chiffres, « - » et
+   « _ », 24 caractères au plus ; « non » en est un. */
+function cmLireCp(v){
+  const t=String(v==null?"":v).trim();
+  return /^[A-Za-z0-9_-]{1,24}$/.test(t)?t:null;
 }
 /* Une table nom → contrainte, chaque entrée bornée, les vides écartées. */
 function cmNormNets(m){
@@ -86,6 +97,7 @@ function cmLireChamp(cle,txt,nCouches){
     return c.length?c:null;
   }
   if(cle==="topo")return CM_TOPOS.indexOf(t)>=0?t:null;
+  if(cle==="cp")return cmLireCp(t);
   if(cle==="ordre"){
     const o=t.split(/[\s,;>\u2192]+/).map(x=>x.trim()).filter(Boolean);
     return o.length?o:null;

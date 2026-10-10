@@ -2068,6 +2068,68 @@ T("le moignon court-circuite à sa résonance, sans diverger",
   le_moignon_court_circuite_a_sa_resonance)
 T("une portée inconnue ne vaut pas moignon nul",
   la_portee_inconnue_ne_vaut_pas_moignon_nul)
+
+
+def le_contre_percage_ramene_le_moignon_au_residuel():
+    """LE FORET REPASSE RETIRE LE MOIGNON, ET LE CREUX S'EN VA AVEC LUI.
+
+    Meme via TOP -> BOT, meme signal TOP -> IN3 : contre-perce par-dessous en
+    gardant IN3, il ne reste que le moignon residuel sous IN3. Sa resonance
+    monte d'autant, et a la frequence ou le moignon entier court-circuitait la
+    liaison, |S21| se releve. Un contre-percage qui couperait la couche
+    empruntee n'est pas applique ; sans le champ, rien ne change ; par-dessus,
+    il arrete le moignon du haut.
+    """
+    via = _via_moignon(0, 8)
+    r0 = _se.simuler(_doc_moignon(_SIX, 0, 4, via, fc=1e9, fmax=2e9))
+    m0 = r0["discontinuites"]["transitions"][0]["moignons"]
+    assert "contre_percage" not in m0 and "contre_perce" not in m0["arrivee"], m0
+    f_res = m0["arrivee"]["resonance_hz"]
+
+    cp = dict(via, contre_percage={"cote": "dessous", "couche_garde": 4,
+                                   "moignon_residuel_mm": 0.1})
+    r = _se.simuler(_doc_moignon(_SIX, 0, 4, cp, fc=1e9, fmax=2e9))
+    m = r["discontinuites"]["transitions"][0]["moignons"]
+    assert m["contre_percage"] == "applique", m
+    proche(m["arrivee"]["longueur_mm"], 0.1, 1e-9, "moignon residuel")
+    assert m["arrivee"]["contre_perce"] is True
+    assert m["arrivee"]["resonance_hz"] > 5 * f_res, (m["arrivee"]["resonance_hz"], f_res)
+
+    def creux(v):
+        d = _doc_moignon(_SIX, 0, 4, v, fc=f_res, fmax=f_res * 1.4)
+        d["analyse"]["f_debut"] = f_res * 0.6
+        d["analyse"]["points"] = 41
+        s = _se.simuler(d)["s"]
+        return min(20 * np.log10(max(abs(complex(*x[2])), 1e-15)) for x in s)
+    # la reference : le via borgne TOP -> IN3, qui n'a pas de moignon du tout
+    # (a 3 dB pres : le residuel reste, et le fut repasse n'a pas la meme self)
+    avant, apres, borgne = creux(via), creux(cp), creux(_via_moignon(0, 4))
+    assert avant < -20.0 and apres > avant + 20.0 and abs(apres - borgne) < 3.0, (
+        "contre-perce, la liaison devrait valoir le via borgne : %.1f dB -> %.1f dB"
+        " (borgne %.1f dB)" % (avant, apres, borgne))
+
+    # la couche a garder au-dessus de la couche empruntee : il couperait IN3
+    faux = dict(via, contre_percage={"cote": "dessous", "couche_garde": 2,
+                                     "moignon_residuel_mm": 0.1})
+    rf = _se.simuler(_doc_moignon(_SIX, 0, 4, faux))
+    m = rf["discontinuites"]["transitions"][0]["moignons"]
+    assert m["contre_percage"] == "ignore", m
+    assert any("couperait une couche" in a for a in rf["avertissements"]), (
+        "le contre-percage ecarte n'est pas dit")
+    proche(m["arrivee"]["longueur_mm"], m0["arrivee"]["longueur_mm"], 1e-9,
+           "un contre-percage fautif ne retire rien")
+
+    # par-dessus : signal IN3 -> BOT, le moignon du haut tombe au residuel
+    haut = dict(via, contre_percage={"cote": "dessus", "couche_garde": 4,
+                                     "moignon_residuel_mm": 0.15})
+    t = _se.simuler(_doc_moignon(_SIX, 4, 8, haut))["discontinuites"]["transitions"][0]
+    assert t["moignons"]["contre_percage"] == "applique", t["moignons"]
+    proche(t["moignons"]["depart"]["longueur_mm"], 0.15, 1e-9, "moignon du haut")
+    assert t["moignons"]["arrivee"] is None
+
+
+T("le contre-perçage ramène le moignon au résiduel",
+  le_contre_percage_ramene_le_moignon_au_residuel)
 def les_formules_de_cavite_rendent_les_exemples_du_livre():
     """LES FORMULES SONT CITEES, DONC ELLES SE VERIFIENT SUR LA SOURCE.
 

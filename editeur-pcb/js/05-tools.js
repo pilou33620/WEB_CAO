@@ -296,6 +296,10 @@ function normStack(s,cu){
                  df:dRange(o.df,d.df,0,1),
                  mat:dStr(o.mat,40).trim()||d.mat});
   }
+  /* règles de contre-perçage (01-core.js) : écrites seulement s'il y en a,
+     un document qui n'en parle pas se relit à l'identique */
+  const cp=cpNormRegles(src.cp,cu);
+  if(cp.length)out.cp=cp;
   return out;
 }
 function normClass(c,i){
@@ -470,6 +474,9 @@ function normVia(v,cu){
   // marqué à la main : 0 = libre, sinon le boîtier qu'il suit (`25-liens.js`)
   const lie=+v.lie;
   if(v.lie!=null&&Number.isInteger(lie)&&lie>=0&&lie<=Number.MAX_SAFE_INTEGER)out.lie=lie;
+  // contre-perçage imposé au via : une règle de l'empilage, ou « non » (01-core.js)
+  const cp=cmLireCp(v.cp);
+  if(cp)out.cp=cp;
   return out;
 }
 function normZone(z,cu,i){

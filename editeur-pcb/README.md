@@ -355,6 +355,47 @@ d'outils — et le master drawing les liste avec la même portée. Celle-ci
 nom : le nom commence par celui du projet, et « carte 2 » y aurait glissé son
 chiffre.
 
+### Contre-perçage (back-drill)
+
+Un traversant que le signal n'emprunte que de L1 à L3 laisse pendre le fût
+jusqu'au dessous : un **moignon**, qui charge la ligne et résonne au quart
+d'onde. Le contre-perçage le retire après métallisation — un foret un peu plus
+gros repasse depuis une face et s'arrête avant la **couche à ne pas couper**,
+en laissant un **moignon résiduel** (0,1 à 0,25 mm).
+
+Les règles se décrivent dans l'**empilage physique**, section *Contre-perçage*
+(`S.stack.cp`, `js/01-core.js`) : la face d'où l'on repasse, la couche gardée
+(ou *auto* : la dernière couche où le signal entre, via par via), le
+surperçage (foret = perçage du via + 0,25 mm d'usage) et le moignon résiduel
+admis (0,15 mm d'usage). Une règle s'applique à un **via** (panneau
+Propriétés), à un **net** ou à une **classe** (gestionnaire de contraintes,
+onglet *Topologie et moignons*, champ `cp`) ; le via passe devant le net, le
+net devant la classe, et « aucun » arrête l'héritage. Enregistré dans le
+document :
+
+    stack.cp   [{id:"cp1", cote:"dessous"|"dessus", garde:2 (indice de couche, −1 = auto),
+                 sur:0.25, res:0.15}]
+    vias[i].cp "cp1" | "non"
+    contraintes.classes[nom].cp, contraintes.nets[nom].cp   "cp1" | "non"
+
+`cpVia(v)` dit pour un via s'il est contre-percé, de quel côté, la couche
+gardée, le diamètre du foret, la profondeur depuis la face, les couches
+coupées, le moignon avant et après — ou pourquoi ce perçage ne peut pas se
+faire (il couperait une couche où le signal entre ; un moignon admis plus
+épais que le diélectrique laisserait la couche suivante reliée : faute au DRC,
+et le moignon reste entier). Les **moignons de via** de la topologie, la
+simulation SI/RF (`contre_percage` de la fiche de via) et la vérification de
+la carte (`cp` d'un perçage) comptent le moignon résiduel.
+
+En fabrication, **un Excellon par paire de couches**, comme KiCad et Altium :
+`carte-BACKDRILL-B-In2.DRL` repasse par-dessous jusqu'à In2 gardée ; l'en-tête
+dit la face, la couche à ne pas couper, les couches retirées et la profondeur
+de chaque outil, en commentaire (Excellon n'a pas de champ de profondeur que
+tous les outils CAM lisent). Le LISEZ-MOI, la feuille d'empilage et le master
+drawing les annoncent ; le plan de fabrication (Draftsman) porte leurs
+symboles, un tableau (foret, face, couche gardée, profondeur, moignon admis,
+nombre), la passe sur la coupe d'empilage et une note.
+
 ## Les règles de conception, et leurs figures
 
 Les règles vivaient dans deux panneaux du dock : *Règles de tracé* et *Paires
@@ -1146,7 +1187,8 @@ le tient. On en tire :
 | Étoile | un centre ; les branches de même longueur à la tolérance près (1 mm sans réglage), sauf celle de la source (premier repère de l'ordre) |
 | Fly-by | ce que demande une chaîne, et la terminaison au bout opposé à la source : une résistance `R…`, ou le dernier repère de l'ordre |
 | Moignon max | chaque dérivation et chaque bout libre ; 0 interdit tout moignon. Les branches d'une étoile n'en sont pas |
-| Moignon de via max | chaque via du net ; le message propose un via borgne ou un contre-perçage |
+| Moignon de via max | chaque via du net, contre-perçage déduit ; le message propose un via borgne ou un contre-perçage |
+| Contre-perçage | la règle de l'empilage que prennent les vias du net (voir [Contre-perçage](#contre-perçage-back-drill)) |
 
 Un net qui porte une zone de cuivre (un plan) n'est pas jugé ; un net dont
 une broche n'est pas encore reliée l'est pour information seulement.

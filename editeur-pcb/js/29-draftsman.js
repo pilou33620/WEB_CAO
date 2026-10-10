@@ -786,6 +786,8 @@ function dfNotesFab(ctx){
     "Le contour est défini par le fichier "+base+".GM1 ; tolérance de détourage ± 0,15 mm.",
     "Test électrique 100 % d'après la netlist "+base+".ipc (IPC-D-356).",
     "Cotes en millimètres, vue de dessus, sauf indication contraire."];
+  const cp=dfContrePercage(null,{note:true});
+  if(cp)notes.splice(notes.length-1,0,cp);
   for(const l of String(ctx.cfg.notes||"").split(/\r?\n/))
     if(l.trim())notes.push(l.trim());
   return notes.map((t,i)=>({num:(i+1)+".",texte:t,retrait:6}));
@@ -833,9 +835,61 @@ function dfBlocEmpilage(){
       dfTexte(F,l.det,bx+bw+4+colDet,yy+l.h/2+0.8,6,{c:0.25,cat:"empilage"});
       yy+=l.h;
     }
+    dfContrePercage(F,{coupe:{libs,x:bx,w:bw,y:y+2}});
     dfTexte(F,"Épaisseur totale : "+fmt(stackTotal(),3).replace(".",",")+" mm ± 10 %",
             bx,yy+6,7.5,{gras:true,cat:"empilage"});
   }};
+}
+/* Le contre-perçage (01-core.js, `cpPaires`) au plan de fabrication, d'une
+   seule fonction pour ses trois places :
+     o.vue   ses symboles sur la vue (à partir du symbole n° o.i0, plus grands
+             que ceux du perçage qu'ils repassent) et son tableau, rendu en
+             blocs : foret, face, couche à ne pas couper, profondeur, moignon ;
+     o.coupe les passes sur la coupe d'empilage, un trait de la face percée à
+             la pointe du foret ({libs, x, w, y} : les tranches dessinées) ;
+     o.note  la note de fabrication, ou "" sans contre-perçage. */
+function dfContrePercage(F,o){
+  const P=typeof cpPaires==="function"?cpPaires():[];
+  const n=S.cu, nom=i=>cpCoucheFichier(i)+" (L"+(i+1)+")", mm=v=>fmt(v,3).replace(".",",");
+  if(o.note)return P.length?"Contre-perçage (back-drill) selon le tableau et les fichiers "+fabBase()+
+    "-BACKDRILL-*.DRL : diamètre de foret et profondeur depuis la face indiquée, tolérance de profondeur "+
+    "± 0,05 mm ; la couche gardée ne doit pas être coupée, moignon résiduel ≤ "+
+    mm(Math.max(...P.map(p=>p.res)))+" mm.":"";
+  if(o.coupe){
+    const ys=[];let yy=o.coupe.y;
+    for(const l of o.coupe.libs){ys.push({r:l.r,y:yy,h:l.h});yy+=l.h;}
+    const cu=i=>ys.find(e=>e.r.kind==="cu"&&e.r.i===i), di=i=>ys.find(e=>e.r.kind==="di"&&e.r.i===i);
+    P.forEach((p,j)=>{
+      const bas=p.cote==="dessous", g=cu(p.garde), f=cu(bas?n-1:0), d=di(bas?p.garde:p.garde-1);
+      if(!g||!f||!d)return;
+      const k=clamp(p.res/Math.max(1e-3,diAt(d.r.i).t),0,1)*d.h;
+      const y1=bas?f.y+f.h:f.y, y2=bas?g.y+g.h+k:g.y-k, x=o.coupe.x+o.coupe.w-2.5-j*2.6;
+      dfLigne(F,x,y1,x,y2,0.9,[0.7,0.1,0.1]);
+      dfLigne(F,x-1,y2,x+1,y2,0.3,[0.7,0.1,0.1]);
+      dfTexte(F,cpCoucheFichier(bas?n-1:0)+"→"+cpCoucheFichier(p.garde),x-1.4,bas?y1-0.8:y1+2.6,4.6,
+              {ancre:"d",c:[0.7,0.1,0.1],cat:"empilage"});
+    });
+    return null;
+  }
+  if(!P.length)return [];
+  const rows=[];
+  for(const p of P)
+    for(const t of p.outils.values())rows.push({p,t});
+  /* les symboles, dans la vue de la carte (dfDessinFab) : ils bougent avec
+     elle et passent dans ses détails */
+  if(o.vue){
+    rows.forEach((e,j)=>{
+      for(const q of e.t.pts){const s=o.vue.T(q.x,q.y);dfSymbole(F,o.i0+j,s.x,s.y,o.rs*1.7);}
+    });
+    return [];
+  }
+  return [dfBlocEspace(4),dfBlocTitre("Contre-perçage (back-drill)"),
+    ...dfTableau([{t:"Symb.",p:9,a:"m"},{t:"Ø foret (mm)",p:14,a:"d"},{t:"Depuis",p:12,a:"m"},
+                  {t:"Ne pas couper",p:16,a:"m"},{t:"Prof. (mm)",p:13,a:"d"},{t:"Moignon admis (mm)",p:18,a:"d"},
+                  {t:"Qté",p:8,a:"d"}],
+      rows.map(e=>["",mm(e.t.diam),nom(e.p.cote==="dessous"?n-1:0),nom(e.p.garde),mm(e.t.prof),
+                   mm(e.t.res),String(e.t.pts.length)]),
+      {symbole:(Fx,ri,cx,cy)=>dfSymbole(Fx,o.i0+ri,cx,cy,1.05),cat:"percage"})];
 }
 function dfImpedances(){
   if(typeof cmModele!=="function"||typeof cmLargeurPourZ!=="function")return [];
@@ -882,6 +936,7 @@ function dfDessinFab(F,V,groupes,detail){
       dfSymbole(F,i,s.x,s.y,rs);
     }
   });
+  dfContrePercage(F,{vue:V,i0:groupes.length,rs});
   dfCalque(F);
 }
 function dfFeuillesFab(ctx){
@@ -925,6 +980,7 @@ function dfFeuillesFab(ctx){
       {t:"Métallisé",p:15,a:"m"},{t:"Portée",p:15,a:"m"},{t:"Usage",p:35}],lignes,
     {symbole:(Fx,ri,cx,cy)=>{if(ri<groupes.length)dfSymbole(Fx,ri,cx,cy,1.05);},
      gras:ri=>ri===groupes.length,cat:"percage"}));
+  blocs.push(...dfContrePercage(F,{i0:groupes.length}));   // son tableau suit celui des perçages
   dfVueBlocs("percage",blocs);
   if(npth.length){
     const o=gOrigin();

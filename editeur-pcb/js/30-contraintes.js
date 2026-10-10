@@ -132,7 +132,7 @@ function cmRegleDe(net){
           z:pick("z"),zTol:pick("zTol")||{v:CM_ZTOL,src:"défaut"},
           lMax:pick("lMax"),lMin:pick("lMin"),viasMax:pick("viasMax"),couches:pick("couches"),
           topo:pick("topo"),ordre:pick("ordre"),stubMax:pick("stubMax"),viaStubMax:pick("viaStubMax"),
-          etoileTol:pick("etoileTol"),
+          etoileTol:pick("etoileTol"),cp:pick("cp"),
           paire:dpOfNet(net),
           groupes:cmTousGroupes().filter(g=>g.nets.indexOf(net)>=0)};
 }
@@ -388,7 +388,7 @@ function cmResumeSchema(){
 }
 function cmCsv(){
   const L=["Net;Classe;Longueur (mm);Délai (ps);Vias;Z0 min;Z0 max;Z cible;Tol %;L min;L max;Vias max;Couches;Groupes;"+
-          "Topologie;Forme du cuivre;Moignon mesuré (mm);Moignon de via (mm);État;Écarts"];
+          "Topologie;Forme du cuivre;Moignon mesuré (mm);Moignon de via (mm);Contre-perçage;État;Écarts"];
   const v=x=>x?String(x.v):"";
   for(const o of cmLignesNets()){
     const r=o.r, m=o.m;
@@ -400,6 +400,7 @@ function cmCsv(){
       r.topo?TOPO_FORMES[r.topo.v]:"",
       ...(()=>{const T=typeof topoResume==="function"?topoResume(o.net,r.ordre?r.ordre.v[0]:""):null;
                return T?[T.forme,T.moignon?fmt(T.moignon.len,2):"",T.moignonVia?fmt(T.moignonVia.len,3):""]:["","",""];})(),
+      r.cp&&r.cp.v!=="non"?r.cp.v:"",
       {err:"faute",ok:"ok",nr:"non routé","-":""}[o.etat],
       o.f.map(x=>x.msg).concat(o.grp.filter(g=>g.x&&!g.x.ok).map(g=>"groupe "+g.g.nom)).join(" | ")]
       .map(x=>{const s=String(x);return /[;"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(";"));
@@ -786,6 +787,18 @@ function cmSelTopo(cle,val,herite){
     o.map(([k,l])=>'<option value="'+k+'"'+(k===(val||"")?" selected":"")+'>'+
       (k===""&&herite?"("+esc(TOPO_FORMES[herite])+")":esc(l))+'</option>').join("")+'</select>';
 }
+/* La règle de contre-perçage d'une classe ou d'un net : une règle de
+   l'empilage (01-core.js), « non », ou vide pour hériter. */
+function cmSelCp(cle,val,herite){
+  const L=typeof cpRegles==="function"?cpRegles():[];
+  const o=[["","—"]].concat(L.map(r=>[r.id,r.id+" · "+(r.cote==="dessous"?"dessous":"dessus")+" → "+
+    (r.garde<0?"auto":cpNomCouche(r.garde))]),[["non","aucun"]]);
+  const her=herite?(herite==="non"?"aucun":herite):"";
+  return '<select class="tbsel cm-sel" data-cm="'+esc(cle)+'" title="Contre-perçage des vias'+
+    (her?" ; vide : "+esc(her)+" (classe)":"")+' — les règles se créent dans l\'empilage physique">'+
+    o.map(([k,l])=>'<option value="'+esc(k)+'"'+(k===(val||"")?" selected":"")+'>'+
+      (k===""&&her?"("+esc(her)+")":esc(l))+'</option>').join("")+'</select>';
+}
 function cmHtmlTopologie(){
   const C=cmModele();
   let h='<p class="cm-note"><b>Point à point</b> : deux broches, un chemin. <b>Chaîne</b> : les broches l\'une après l\'autre, '+
@@ -793,15 +806,17 @@ function cmHtmlTopologie(){
     'longueur depuis un centre (le premier repère de l\'ordre est la source, sa branche ne compte pas). <b>Fly-by</b> : une chaîne '+
     'terminée par une résistance (ou le dernier repère de l\'ordre) au bout opposé à la source. Le <b>moignon</b> est la longueur '+
     'd\'une broche au chemin principal (point de test compris) ou d\'un bout de piste libre ; le <b>moignon de via</b>, la part du '+
-    'fût au-delà des couches où passe le signal. Un net à zone de cuivre (plan) n\'est pas jugé.</p>';
+    'fût au-delà des couches où passe le signal ; le <b>contre-perçage</b> (règles de l\'empilage physique) le '+
+    'ramène au moignon résiduel. Un net à zone de cuivre (plan) n\'est pas jugé.</p>';
   h+='<div class="cm-table-w"><table class="cm-table"><thead><tr><th>Classe</th><th>Topologie</th><th>Moignon max mm</th>'+
-    '<th>Moignon de via max mm</th><th>Tol. étoile mm</th></tr></thead><tbody>';
+    '<th>Moignon de via max mm</th><th>Tol. étoile mm</th><th>Contre-perçage</th></tr></thead><tbody>';
   for(const c of S.classes){
     const r=C.classes[c.name]||{}, k=x=>"classe"+CM_SEP+c.name+CM_SEP+x;
     h+='<tr><td><b>'+esc(c.name)+'</b></td><td>'+cmSelTopo(k("topo"),r.topo,"")+'</td>'+
       '<td>'+cmChamp(k("stubMax"),r.stubMax,"","Longueur de moignon admise, mm (0 : aucun)")+'</td>'+
       '<td>'+cmChamp(k("viaStubMax"),r.viaStubMax,"","Moignon de via admis, mm")+'</td>'+
-      '<td>'+cmChamp(k("etoileTol"),r.etoileTol,TOPO_ETOILE_TOL,"Écart admis entre les branches d'une étoile, mm")+'</td></tr>';
+      '<td>'+cmChamp(k("etoileTol"),r.etoileTol,TOPO_ETOILE_TOL,"Écart admis entre les branches d'une étoile, mm")+'</td>'+
+      '<td>'+cmSelCp(k("cp"),r.cp,"")+'</td></tr>';
   }
   h+='</tbody></table></div>';
   const vis=cmNetsVisibles();
@@ -810,7 +825,8 @@ function cmHtmlTopologie(){
     '> en faute seulement</label></div>';
   h+='<div class="cm-table-w"><table class="cm-table"><thead><tr><th>État</th><th>Net</th><th>Classe</th><th>Forme du cuivre</th>'+
     '<th class="n">Broches</th><th>Ordre le long du cuivre</th><th class="n">Moignon max mesuré</th><th class="n">Moignon via mesuré</th>'+
-    '<th>Topologie</th><th>Ordre imposé</th><th>Moignon max</th><th>Via max</th><th>Tol. étoile</th><th>Écarts</th></tr></thead><tbody>';
+    '<th>Topologie</th><th>Ordre imposé</th><th>Moignon max</th><th>Via max</th><th>Tol. étoile</th><th>Contre-perçage</th>'+
+    '<th>Écarts</th></tr></thead><tbody>';
   for(const o of vis.slice(0,600)){
     const r=o.r, rn=C.nets[o.net]||{}, rc=Object.assign({},C.classes[r.classe]||{},C.schema.nets[o.net]||{});
     const k=x=>"net"+CM_SEP+o.net+CM_SEP+x;
@@ -828,6 +844,7 @@ function cmHtmlTopologie(){
       '<td>'+cmChamp(k("stubMax"),rn.stubMax,rc.stubMax,"Moignon admis, mm")+'</td>'+
       '<td>'+cmChamp(k("viaStubMax"),rn.viaStubMax,rc.viaStubMax,"Moignon de via admis, mm")+'</td>'+
       '<td>'+cmChamp(k("etoileTol"),rn.etoileTol,rc.etoileTol!=null?rc.etoileTol:TOPO_ETOILE_TOL,"Écart admis entre branches, mm")+'</td>'+
+      '<td>'+cmSelCp(k("cp"),rn.cp,rc.cp)+'</td>'+
       '<td class="cm-msg">'+esc(f.map(x=>x.msg).join(" ; "))+'</td></tr>';
   }
   return h+'</tbody></table>'+(vis.length>600?'<p class="cm-note">… filtrez pour voir les autres nets.</p>':"")+'</div>';

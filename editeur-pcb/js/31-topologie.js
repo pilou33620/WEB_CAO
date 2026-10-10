@@ -149,7 +149,9 @@ function topoEstPointTest(n){return /^TP/i.test(n.ref);}
 /* ---------- moignons de via ----------
    Le fût court de la couche a à la couche b ; le signal n'en emprunte que la
    part entre la plus haute et la plus basse couche où il entre et sort. Le
-   reste pend : c'est le moignon, compté en épaisseur d'empilage. */
+   reste pend : c'est le moignon, compté en épaisseur d'empilage. Un via
+   contre-percé (`cpVia`, 01-core.js) n'en garde, du côté repercé, que le
+   moignon résiduel ; un contre-perçage fautif ne retire rien. */
 function topoMoignonsVias(G){
   const out=[];
   for(const v of G.vias){
@@ -161,11 +163,16 @@ function topoMoignonsVias(G){
     for(const e of vn.adj)if(e.n.type==="pad"&&!(e.n.q.drill>0))used.add(padLayers(e.n.fp,e.n.q)[0]);
     if(used.size<2)continue;                 // via de couture ou en l'air : pas un passage de signal
     const lo=Math.min(...used), hi=Math.max(...used);
-    let len=0;
-    if(hi<b)len+=stackSpan(hi,b)-cuT(hi);
-    if(lo>a)len+=stackSpan(a,lo)-cuT(lo);
-    if(len>1e-4)out.push({v,len:r3(len),x:v.x,y:v.y,de:lo,a:hi,
-      txt:"via L"+(lo+1)+"→L"+(hi+1)+" percé L"+(a+1)+"–L"+(b+1)});
+    let bas=hi<b?stackSpan(hi,b)-cuT(hi):0, haut=lo>a?stackSpan(a,lo)-cuT(lo):0;
+    const cp=typeof cpVia==="function"?cpVia(v):null;
+    if(cp&&!cp.faute){
+      if(cp.cote==="dessous")bas=Math.min(bas,cp.moignon);else haut=Math.min(haut,cp.moignon);
+    }
+    const len=bas+haut;
+    if(len>1e-4)out.push({v,len:r3(len),x:v.x,y:v.y,de:lo,a:hi,cp:cp&&!cp.faute?cp:null,
+      txt:"via L"+(lo+1)+"→L"+(hi+1)+" percé L"+(a+1)+"–L"+(b+1)+
+          (cp&&!cp.faute?", contre-percé jusque "+(cp.cote==="dessous"?"sous ":"sur ")+
+            cpNomCouche(cp.garde):"")});
   }
   return out.sort((x,y)=>y.len-x.len);
 }

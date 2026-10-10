@@ -810,6 +810,16 @@ function simCotesVia(v, x, y, cuA, cuB){
     out.net = v.net || "";
     out.layer_from = simCuIndex(Math.min(v.a, v.b));
     out.layer_to = simCuIndex(Math.max(v.a, v.b));
+    /* LE CONTRE-PERÇAGE RACCOURCIT LE MOIGNON, et le serveur ne peut pas le
+       deviner : la portée percée reste L1–L4, c'est le foret repassé depuis
+       une face qui en retire le bout. On envoie la face, la couche à ne pas
+       couper (indice d'empilage, comme `layer_from`) et le moignon résiduel ;
+       `_moignons` (python/simulation_em.py) y arrête le moignon de ce côté.
+       Un contre-perçage fautif ne part pas : il ne se ferait pas tel quel. */
+    const cp = typeof cpVia === "function" ? cpVia(v) : null;
+    if(cp && !cp.faute)
+      out.contre_percage = {cote: cp.cote, couche_garde: simCuIndex(cp.garde),
+                            moignon_residuel_mm: cp.res};
     const anti = simAntipadVia(v);
     if(anti){
       out.antipad_diameter = anti.min;
@@ -5244,7 +5254,13 @@ const SIM_PCB={
     }
     for(const v of S.vias){
       for(let l=v.a;l<=v.b;l++)pastilles.push({x:v.x,y:v.y,r:v.d/2,c:nom(l),n:v.net||""});
-      percages.push({x:v.x,y:v.y,d:v.drill,n:v.net||"",de:nom(v.a),a:nom(v.b)});
+      const t={x:v.x,y:v.y,d:v.drill,n:v.net||"",de:nom(v.a),a:nom(v.b)};
+      /* contre-perçage (01-core.js) : la face repercée, la couche à ne pas
+         couper et le moignon résiduel — la règle des moignons de vias y
+         arrête le moignon de ce côté */
+      const cp=typeof cpVia==="function"?cpVia(v):null;
+      if(cp&&!cp.faute)t.cp={cote:cp.cote,garde:nom(cp.garde),res:cp.res};
+      percages.push(t);
     }
     const plat=pts=>pts.flatMap(p=>[p.x,p.y]);
     const gelule=(x1,y1,x2,y2,r)=>{        // une piste droite élargie, 8 côtés

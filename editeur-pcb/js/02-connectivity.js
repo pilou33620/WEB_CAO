@@ -739,6 +739,13 @@ function runDrc(){
       out.push({info:true,via:v,x:v.x,y:v.y,l:v.a,
         msg:"Via "+cuId(v.a,S.cu)+" → "+cuId(v.b,S.cu)+" : "+b.why});
   }
+  /* le contre-perçage qui ne peut pas se faire tel quel : il couperait le
+     signal, ou laisserait une couche reliée au fût (01-core.js, `cpVia`) */
+  if(typeof cpViasPerces==="function")
+    for(const c of cpViasPerces())
+      if(c.faute)out.push({via:c.v,x:c.v.x,y:c.v.y,l:c.garde,
+        msg:"Contre-perçage "+c.regle.id+" du via "+(c.v.net||"sans net")+" ("+CP_COTES[c.cote]+
+            ", "+cpNomCouche(c.garde)+" gardée) : "+c.faute});
   /* les pastilles traversantes se regroupent par diamètre de perçage : une
      entrée par trou noierait la liste sur un connecteur */
   const byDrill=new Map();
