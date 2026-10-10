@@ -95,7 +95,11 @@ except Exception:                                      # noqa: BLE001
 # sections couplees. Les branches les recoivent par `simulation_em.simuler`.
 # La piste de masse passe aussi son epaisseur de cuivre, qu'elle laissait au
 # 35 um par defaut.
-VERSION = "1.6.0"
+# 1.7.0 (2026-10-10) : le plan de reference a sa propre rugosite
+# (`simulation_em._rugosite_section`, ligne_mom 2.8.0) dans la piste de masse
+# et les sections couplees. Un plan qui n'en declare pas prend celle de la
+# piste : sans elle, le chiffre d'avant au bit pres.
+VERSION = "1.7.0"
 FORMAT = "cao-sim-rf-1"
 FORMAT_RESULTAT = "cao-sim-rf-resultat-1"
 MASSE = "0"
@@ -622,7 +626,7 @@ def _ligne(couches, couche, largeur_mm, ep_mm, cache):
             # topologie, sa hauteur (h au plan, ou b entre plans) et la
             # rugosite de sa couche. Voir `simulation_em._geometrie_pertes`.
             "kw_pertes": dict(se._geometrie_pertes(info),
-                              **se._rugosite_couche(couches, couche)),
+                              **se._rugosite_section(couches, couche, info)),
             "ep": ep_mm}
     return cache[cle]
 
@@ -1599,7 +1603,7 @@ def y_section(couches, section, objs, freqs, cache, opts=None):
     lignes = [r["lignes"][q] for q in ordre]
     tan_d = _nombre(info.get("tan_delta"), 0.0)
     kw = dict(se._geometrie_pertes(info, couple=True),
-              **se._rugosite_couche(couches, couche))
+              **se._rugosite_section(couches, couche, info))
     r_f = []
     for f in freqs:
         r_f.append([2 * tl.line_losses(li["z0"], li["eps_eff"],

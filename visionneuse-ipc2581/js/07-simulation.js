@@ -122,7 +122,138 @@ function simStackupIpc(){
       tan_delta:g.df||LT_DF
     });
   });
-  return {layers:couches};
+  const out={layers:couches};
+  /* LES OPTIONS DE MODÈLE DE LA CARTE (`simModelesIpc`) partent avec
+     l'empilage, comme depuis l'éditeur (`simStackup`, 19-simulation.js), et
+     seulement quand elles s'écartent du défaut : l'empilage voyage tel quel
+     jusqu'à la RF et à l'œil, qui les reçoivent donc aussi. */
+  const m=simModelesIpc();
+  if(m.causal){out.dielectrique_causal=true;out.f_ref_dielectrique=m.fref;}
+  if(m.via!==SIM_VIA_DEFAUT_IPC)out.modele_via=m.via;
+  return out;
+}
+
+/* ==========================================================================
+   LES OPTIONS DE MODÈLE DE LA CARTE, COMME DANS L'ÉDITEUR
+   --------------------------------------------------------------------------
+   L'éditeur PCB les saisit dans son panneau d'empilage (`S.stack.sim`,
+   01-core.js) ; la visionneuse, dans « Empilage du calcul ». Mêmes choix,
+   mêmes défauts, même envoi :
+     · DIÉLECTRIQUE CAUSAL (Djordjevic-Sarkar), désactivé : Dk et Df lus
+       comme les valeurs de la fiche à `fref` (1 GHz par défaut) ;
+     · MODÈLE DE VIA, « auto » : le π tant que le via est court devant λ, la
+       ligne répartie au-delà ;
+   et une option propre à la visionneuse :
+     · LA PORTÉE PERCÉE DE TOUS LES VIAS DÉCLARÉS, désactivée : voir
+       `simPorteeTrouIpc`.
+
+   GARDÉES PAR FICHIER, dans le profil comme les valeurs d'empilage saisies
+   (`V.sur`, 06-demarrage.js), sous `V.sur.sim[nom du fichier]` : ce sont des
+   choix sur UNE carte, et rouvrir un autre fichier ne doit pas en hériter.
+   Seul ce qui s'écarte du défaut s'écrit ; les plus anciens fichiers sortent
+   au-delà de SIM_MODELES_IPC_MAX.
+   ========================================================================== */
+const SIM_MODELES_VIA_IPC={pi:"π (C/2 – L – C/2)",ligne:"Ligne (barreau réparti)",
+                           auto:"Auto (ligne si le via est long devant λ)"};
+const SIM_FREF_DEFAUT_IPC=1e9;          // Hz : la fréquence des fiches de FR-4
+const SIM_VIA_DEFAUT_IPC="auto";        // comme le serveur (`MODELE_VIA_DEFAUT`)
+const SIM_MODELES_IPC_MAX=100;          // fichiers dont on garde les choix
+
+function simModelesIpcCle(){return String((typeof V!=="undefined"&&V&&V.fichier)||"");}
+/* Ce qui s'écrit : seulement ce qui s'écarte du défaut, ou null. */
+function simModelesIpcNorm(o){
+  if(!o||typeof o!=="object")return null;
+  const out={};
+  if(o.causal===true)out.causal=true;
+  const f=+o.fref;
+  if(Number.isFinite(f)&&f>=1e6&&f<=1e12&&f!==SIM_FREF_DEFAUT_IPC)out.fref=f;
+  if(SIM_MODELES_VIA_IPC[o.via]&&o.via!==SIM_VIA_DEFAUT_IPC)out.via=o.via;
+  if(o.portees===true)out.portees=true;
+  return Object.keys(out).length?out:null;
+}
+/* Les options de la carte ouverte, défauts compris. */
+function simModelesIpc(){
+  const t=(typeof V!=="undefined"&&V&&V.sur&&V.sur.sim&&V.sur.sim[simModelesIpcCle()])||{};
+  return {causal:t.causal===true,
+          fref:(+t.fref>0)?+t.fref:SIM_FREF_DEFAUT_IPC,
+          via:SIM_MODELES_VIA_IPC[t.via]?t.via:SIM_VIA_DEFAUT_IPC,
+          portees:t.portees===true};
+}
+/* Poser une ou plusieurs options de la carte ouverte, et les garder. */
+function simModelesIpcPoser(o){
+  const r=simModelesIpcNorm(Object.assign({},simModelesIpc(),o||{}));
+  if(!V.sur)V.sur={cu:{},gap_t:{},gap_er:{},role:{}};
+  const tab=Object.assign({},V.sur.sim||{}), k=simModelesIpcCle();
+  delete tab[k];
+  if(r)tab[k]=r;                    // en dernier : le plus récent
+  const cles=Object.keys(tab);
+  while(cles.length>SIM_MODELES_IPC_MAX)delete tab[cles.shift()];
+  if(Object.keys(tab).length)V.sur.sim=tab;else delete V.sur.sim;
+  if(typeof prefEcrire==="function")prefEcrire();
+}
+/* La relecture du profil (06-demarrage.js, `prefSurcharges`) : chaque fichier
+   repasse par la norme, ce qui n'en est pas une option tombe. */
+function simModelesIpcRelire(t){
+  if(!t||typeof t!=="object"||Array.isArray(t))return null;
+  const out={};
+  for(const k of Object.keys(t).slice(-SIM_MODELES_IPC_MAX)){
+    const r=simModelesIpcNorm(t[k]);
+    if(r)out[k]=r;
+  }
+  return Object.keys(out).length?out:null;
+}
+/* Le bloc du panneau « Empilage du calcul » (05-panneaux.js). */
+function simModelesIpcForm(){
+  const m=simModelesIpc();
+  const ghz=String(Math.round(m.fref/1e6)/1e3).replace(".",",");
+  return "<h3>Modèles de simulation</h3>"
+    +'<table class="pileForm">'
+    +'<tr><td class="g" colspan="2"><label><input type="checkbox" id="simCausalIpc"'
+    +(m.causal?" checked":"")+"> Diélectrique causal (Djordjevic-Sarkar)</label></td></tr>"
+    +'<tr><td class="g">Fréquence de la fiche</td><td>'
+    +'<input type="text" inputmode="decimal" spellcheck="false" class="ltv'
+    +(m.fref!==SIM_FREF_DEFAUT_IPC?" saisi":"")+'" id="simFrefIpc" value="'+ghz+'"'
+    +(m.causal?"":" disabled")+"> GHz</td></tr>"
+    +'<tr><td class="g">Modèle de via</td><td><select class="ltRoleSelect'
+    +(m.via!==SIM_VIA_DEFAUT_IPC?" saisi":"")+'" id="simViaMIpc">'
+    +Object.keys(SIM_MODELES_VIA_IPC).map(k=>'<option value="'+k+'"'
+       +(k===m.via?" selected":"")+">"+mdlEsc(SIM_MODELES_VIA_IPC[k])+"</option>").join("")
+    +"</select></td></tr>"
+    +'<tr><td class="g" colspan="2"><label><input type="checkbox" id="simPorteesIpc"'
+    +(m.portees?" checked":"")+"> Portée percée de tous les vias déclarés</label></td></tr>"
+    +"</table>"
+    +'<div class="note">'
+    +(m.causal?"Dk et Df sont lus comme les valeurs de la fiche à "+ghz
+               +" GHz et prolongés de façon causale : Dk décroît avec la fréquence, "
+               +"et la vitesse de phase comme les pertes le suivent."
+              :"Dk et Df constants sur toute la bande : simple, mais non causal — "
+               +"une réponse impulsionnelle (œil) en part légèrement de travers.")
+    +"<br>Via « auto » : réseau en π tant que le via est court devant la longueur "
+    +"d'onde, ligne répartie au-delà ; les deux ont le même L et le même C."
+    +"<br>"+(m.portees
+      ?"Chaque via dont le fichier déclare la portée de son perçage la donne au "
+       +"calcul : le moignon qui dépasse de la couche d'arrivée est chiffré."
+      :"Seuls les vias contre-percés donnent leur portée percée ; les autres "
+       +"laissent leur moignon « inconnu ».")
+    +" Ces choix valent pour ce fichier, et vous suivent d'une ouverture à l'autre.</div>";
+}
+function simModelesIpcCabler(box){
+  const q=id=>box.querySelector("#"+id);
+  const apres=function(){if(typeof pnlInfos==="function")pnlInfos();};
+  const c=q("simCausalIpc");
+  if(c)c.onchange=function(){simModelesIpcPoser({causal:!!c.checked});apres();};
+  const f=q("simFrefIpc");
+  if(f)f.onchange=function(){
+    /* Vide ou illisible : le retour au défaut, comme un champ d'empilage. */
+    const v=parseFloat(String(f.value).replace(",","."));
+    simModelesIpcPoser({fref:(isFinite(v)&&v>0)?Math.min(Math.max(v,0.001),1000)*1e9
+                                              :SIM_FREF_DEFAUT_IPC});
+    apres();
+  };
+  const s=q("simViaMIpc");
+  if(s)s.onchange=function(){if(SIM_MODELES_VIA_IPC[s.value])simModelesIpcPoser({via:s.value});apres();};
+  const p=q("simPorteesIpc");
+  if(p)p.onchange=function(){simModelesIpcPoser({portees:!!p.checked});apres();};
 }
 
 /* ==========================================================================
@@ -657,12 +788,38 @@ const SIM_TOL_VIA_IPC = 0.02;           /* mm — la tolérance de raccord du se
    contre_percage} ou null. */
 function simContrePercageIpc(t){
   const cp = (typeof mdlContrePercage === "function") ? mdlContrePercage(t) : null;
-  if(!cp || !cp.complet || t.sa == null || t.sb == null) return null;
-  const a = simCuDe(t.sa), b = simCuDe(t.sb), g = simCuDe(cp.g);
-  if(a < 0 || b < 0 || g < 0 || a === b) return null;
-  return {layer_from: simRangCu(Math.min(a, b)), layer_to: simRangCu(Math.max(a, b)),
-          contre_percage: {cote: cp.cote, couche_garde: simRangCu(g),
-                           moignon_residuel_mm: cp.res}};
+  if(!cp || !cp.complet) return null;
+  const pt = simPorteeTrouIpc(t), g = simCuDe(cp.g);
+  if(!pt || g < 0) return null;
+  return Object.assign(pt, {contre_percage: {cote: cp.cote, couche_garde: simRangCu(g),
+                                             moignon_residuel_mm: cp.res}});
+}
+
+/* LA PORTÉE PERCÉE D'UN TROU, telle que le fichier la déclare (`sa` / `sb`,
+   ipc2581_json.py), en rangs d'empilage : {layer_from, layer_to}, ou null
+   quand le fichier ne la dit pas, qu'une des deux couches n'est pas dans
+   l'empilage de calcul, ou qu'elle ne joint qu'une couche.
+
+   CE QU'ELLE CHANGE AU SERVEUR. `_moignons` (python/simulation_em.py)
+   soustrait le saut du signal de la portée percée : sans elle, le moignon est
+   « inconnu », car un via traversant et un borgne bien ajusté ont la même
+   apparence dans le reste du document. Le contre-perçage l'envoie toujours
+   (`simContrePercageIpc`) ; pour les AUTRES vias déclarés, c'est l'option
+   « portée percée de tous les vias » (`simModelesIpc().portees`) qui décide.
+   ELLE EST DÉSACTIVÉE PAR DÉFAUT : la fiche d'un via sans contre-perçage
+   reste alors celle d'avant, à l'identique — un essai du banc le vérifie. */
+function simPorteeTrouIpc(t){
+  if(!t || t.sa == null || t.sb == null) return null;
+  const a = simCuDe(t.sa), b = simCuDe(t.sb);
+  if(a < 0 || b < 0 || a === b) return null;
+  return {layer_from: simRangCu(Math.min(a, b)), layer_to: simRangCu(Math.max(a, b))};
+}
+/* La portée à envoyer pour ce trou : celle du contre-perçage s'il y en a un,
+   sinon la portée déclarée quand l'option le demande, sinon null. */
+function simPorteeEnvoyeeIpc(t){
+  const cp = simContrePercageIpc(t);
+  if(cp) return cp;
+  return simModelesIpc().portees ? simPorteeTrouIpc(t) : null;
 }
 
 function simViaAuRaccordIpc(N, x, y, cuA, cuB){
@@ -704,8 +861,9 @@ function simViaAuRaccordIpc(N, x, y, cuA, cuB){
       fiche.pad_diameter = pastille;
       if(sup) fiche.pad_diameter_supposee = true;
     }
-    /* contre-percé : sa portée percée et la passe du foret partent avec lui */
-    const cp = simContrePercageIpc(t);
+    /* contre-percé : sa portée percée et la passe du foret partent avec lui ;
+       les autres, leur portée déclarée si l'option le demande */
+    const cp = simPorteeEnvoyeeIpc(t);
     if(cp) Object.assign(fiche, cp);
     return fiche;
   }
@@ -1463,8 +1621,10 @@ function simViasIpc(N){
        place de la portée supposée : c'est d'elle que le serveur soustrait le
        moignon, et le contre-perçage n'a de sens que contre elle. Une portée
        percée plus courte que le saut serait une incohérence : on la laisse. */
+    /* Avec l'option « portée percée de tous les vias » (`simPorteeEnvoyeeIpc`),
+       la portée déclarée d'un via sans contre-perçage prend la même place. */
     const tcp = simTrouAuPointIpc(N, v.x, v.y);
-    const cpv = tcp ? simContrePercageIpc(tcp) : null;
+    const cpv = tcp ? simPorteeEnvoyeeIpc(tcp) : null;
     if(cpv && cpv.layer_from <= fiche.layer_from && cpv.layer_to >= fiche.layer_to){
       Object.assign(fiche, cpv);
       delete fiche.portee_supposee;

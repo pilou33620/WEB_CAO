@@ -24634,6 +24634,32 @@ T("contre-perçage : fichier Gerber X2 à côté du .DRL, profondeur en champ",(
     if(lis.indexOf(t)<0)throw new Error("LISEZ-MOI sans « "+t+" »");
   cpRaz();
 });
+T("contre-perçage : le Master Drawing annonce le Gerber X2 sous son Excellon",()=>{
+  const bord=S.board;
+  cpCarte();
+  try{
+    if(mdTextes(mdPdf()).some(x=>/BACKDRILL/.test(x.s)))throw new Error("sans contre-perçage, rien d'annoncé");
+    const r=cpAjouter({cote:"dessous",garde:-1,res:0.1});
+    cmPoser("nets","SIG","cp",r.id);
+    const tx=mdTextes(mdPdf()).map(x=>x.s);
+    const iD=tx.indexOf("carte-BACKDRILL-B-In1.DRL"), iX=tx.indexOf("carte-BACKDRILL-B-In1.gbr");
+    if(iD<0||iX<0)throw new Error("fichiers annoncés : "+tx.filter(s=>/BACKDRILL/.test(s)).join(" | "));
+    const dX="Back-drill Gerber X2 (depth as attribute), copper layer 4, must-not-cut layer 2";
+    /* la ligne du X2 suit celle du .DRL (nom, puis libellé), sur une seule ligne */
+    if(tx[iD+1]!=="Back-drill Excellon file from copper layer 4, must-not-cut layer 2"||tx[iX-1]!=="X"||tx[iX+1]!==dX||iX!==iD+3)
+      throw new Error(JSON.stringify(tx.slice(iD-1,iX+3)));
+    /* deux passes (une coulée SIG sur L3 fait garder L3 au premier via) :
+       chacune son X2, chacun sous son Excellon */
+    S.board={x:-10,y:-10,w:50,h:20,pts:null};
+    cpZone("SIG",2,5,-3,15,3);
+    if(cpPaires().length!==2)throw new Error("deux passes attendues");
+    const ty=mdTextes(mdPdf()).map(x=>x.s), noms=ty.filter(s=>/^carte-BACKDRILL/.test(s));
+    if(noms.join()!=="carte-BACKDRILL-B-In1.DRL,carte-BACKDRILL-B-In1.gbr,carte-BACKDRILL-B-In2.DRL,carte-BACKDRILL-B-In2.gbr")
+      throw new Error(noms.join(" | "));
+    if(ty.indexOf("Back-drill Gerber X2 (depth as attribute), copper layer 4, must-not-cut layer 3")<0)
+      throw new Error("libellé de la seconde passe");
+  }finally{S.board=bord;S.zones=[];cpRaz();}
+});
 
 /* ==========================================================================
    Rooms : les blocs du schéma encadrés sur la carte (32-rooms.js)
