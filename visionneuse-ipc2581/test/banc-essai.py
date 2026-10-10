@@ -866,6 +866,32 @@ def xml_sans_ecad():
 T(u"un IPC-2581 sans <Ecad> ressort vide plutot qu'en erreur", xml_sans_ecad)
 
 
+def rugosite_du_cuivre():
+    """<Conductor type="SURFACE_ROUGHNESS_*"> dans une <Spec> : la plus forte
+    des faces, en micrometres, unite lue sur la balise (parseur 1.76). Sans
+    elle, rien n'est ecrit."""
+    vrai(all("rug" not in e for e in MODELE["empilage"]),
+         u"une carte sans rugosite en ecrit une")
+    spec = (u'<Spec name="Cu-1_Rugosite">'
+            u'<Conductor type="SURFACE_ROUGHNESS_UPFACING">'
+            u'<Property value="0.0008" unit="MM"/></Conductor>'
+            u'<Conductor type="SURFACE_ROUGHNESS_DOWNFACING">'
+            u'<Property value="1.6" unit="MICRON"/></Conductor>'
+            u'</Spec>\n  </CadHeader>')
+    xml = CARTE.replace(u"</CadHeader>", spec, 1).replace(
+        u'<StackupLayer layerOrGroupRef="Conductor-1" thickness="0.035" sequence="1"/>',
+        u'<StackupLayer layerOrGroupRef="Conductor-1" thickness="0.035" sequence="1">'
+        u'<SpecRef id="Cu-1_Rugosite"/></StackupLayer>')
+    d = ipc2581_json.charger_octets(xml.encode("utf-8"), "rugueuse.xml")
+    m = ipc2581_json.design_en_dict(d, "rugueuse.xml")
+    rug = {e["nom"]: e.get("rug") for e in m["empilage"]}
+    proche(rug["Conductor-1"], 1.6, u"rugosite de Conductor-1 (micrometres)")
+    egal(rug["Conductor-2"], None, u"rugosite d'un cuivre qui n'en declare pas")
+
+
+T(u"la rugosite du cuivre se lit dans une <Spec> de conducteur", rugosite_du_cuivre)
+
+
 # =============================================================================
 print(u"-" * 62)
 if ECHECS:

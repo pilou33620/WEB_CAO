@@ -5916,6 +5916,22 @@ T("œil : l'œil statistique, la diaphonie et l'IBIS se rendent",()=>{
   }finally{SIM_OEIL.res=null;}
 });
 
+T("la rugosité que le fichier déclare part au serveur, et seulement elle",()=>{
+  carte();
+  let pile=simStackupIpc().layers.filter(c=>c.type==="copper");
+  if(pile.some(c=>"rugosite_rms_um" in c||"modele_rugosite" in c))
+    throw new Error("un cuivre lisse envoie une rugosité");
+  carte({empilage:[
+    {nom:"Top",    seq:1, ep:0.035, type:"CONDUCTOR", rug:1.6},
+    {nom:"Coeur",  seq:2, ep:0.2,   type:"DIELECTRIC", dk:"4.3", df:"0.02"},
+    {nom:"Bottom", seq:3, ep:0.035, type:"PLANE"}]});
+  pile=simStackupIpc().layers.filter(c=>c.type==="copper");
+  if(pile[0].rugosite_rms_um!==1.6||pile[0].modele_rugosite!=="hammerstad")
+    throw new Error("rugosité du dessus : "+JSON.stringify(pile[0]));
+  if("rugosite_rms_um" in pile[1])throw new Error("le plan n'en déclare pas");
+  carte();
+});
+
 (async()=>{
   for(const [nom,fn] of T_ASYNC){
     try{await fn();console.log("  ok  "+nom);ok++;}
