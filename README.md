@@ -65,7 +65,7 @@ WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande 
 
 **Entre les outils** : un projet commun sur disque (`projet.cao.json`, documents, `datasheets/`), cross-probing schéma ↔ PCB (touche `L` entre deux onglets), travail en cours qui suit d'un outil à l'autre, profils utilisateur (panneaux, grille, préférences), recherche `Ctrl+F` et mesure `K`.
 
-**Bibliothèque centrale** : un dossier local, réseau ou synchronisé (`--lib` ou page d'accueil). Par défaut `LIB/` à côté de l'outil, sinon `../PROJETS/LIB_CAO` ([WEB_SUITE_PROJETS](https://github.com/pilou33620/WEB_SUITE_PROJETS)).
+**Bibliothèque centrale** : un dossier local, réseau ou synchronisé (`--lib` ou page d'accueil). Par défaut `LIB/` à côté de l'outil, sinon `../PROJETS/LIB_CAO` ([WEB_SUITE_PROJETS](https://github.com/pilou33620/WEB_SUITE_PROJETS), dépôt privé : le poste doit être connecté au compte GitHub, voir WEB·SUITE).
 
 ---
 
@@ -146,7 +146,7 @@ node gestion-lib/test/banc-catalogue.js
 python python/test/banc-ligne-mom.py      # et les autres banc-*.py de python/test/
 ```
 
-Les bancs lisent la LIB à son emplacement par défaut (`../PROJETS/LIB_CAO`).
+Les bancs lisent la LIB à son emplacement par défaut (`../PROJETS/LIB_CAO`). WEB_SUITE_PROJETS étant privé, l'intégration continue la clone avec le secret `PROJETS_TOKEN` du dépôt (token GitHub en lecture seule sur WEB_SUITE_PROJETS) ; sur un poste, un clone fait avec votre compte GitHub (ou `WEB_CAO_LIB=<dossier>`) suffit.
 
 </details>
 

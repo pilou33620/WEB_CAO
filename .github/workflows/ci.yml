@@ -13,8 +13,21 @@ jobs:
       # La LIB ne vit plus dans ce depot : c'est celle de WEB_SUITE, dans le
       # depot WEB_SUITE_PROJETS. Clonee a cote, la ou WEB_SUITE la range
       # (../PROJETS/LIB_CAO) : web_CAO.py et les bancs l'y trouvent seuls.
-      - name: LIB — dépôt WEB_SUITE_PROJETS
-        run: git clone --depth 1 https://github.com/pilou33620/WEB_SUITE_PROJETS.git ../PROJETS
+      #
+      # WEB_SUITE_PROJETS EST PRIVE : le clone passe par le secret PROJETS_TOKEN
+      # de ce depot (token GitHub en lecture seule sur WEB_SUITE_PROJETS). Le
+      # jeton n'apparait pas dans le journal (GitHub masque les secrets) et ne
+      # reste pas dans ../PROJETS/.git/config (adresse remise sans lui).
+      - name: LIB — dépôt WEB_SUITE_PROJETS (privé, secret PROJETS_TOKEN)
+        env:
+          JETON: ${{ secrets.PROJETS_TOKEN }}
+        run: |
+          if [ -z "$JETON" ]; then
+            echo "::error title=Secret PROJETS_TOKEN manquant::WEB_SUITE_PROJETS est privé. Créez un token GitHub (Contents : Read-only sur WEB_SUITE_PROJETS) et enregistrez-le dans WEB_CAO → Settings → Secrets and variables → Actions → New repository secret, nom PROJETS_TOKEN."
+            exit 1
+          fi
+          git clone --depth 1 "https://x-access-token:${JETON}@github.com/pilou33620/WEB_SUITE_PROJETS.git" ../PROJETS
+          git -C ../PROJETS remote set-url origin https://github.com/pilou33620/WEB_SUITE_PROJETS.git
 
       - uses: actions/setup-node@v4
         with:

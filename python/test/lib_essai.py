@@ -6,7 +6,8 @@ WEB_CAO ne versionne plus de LIB : elle vit dans le depot WEB_SUITE_PROJETS
 la variable WEB_CAO_LIB ; ceux qui ECRIVENT travaillent sur une copie jetable,
 jamais sur la vraie bibliotheque.
 
-En integration continue, ci.yml clone WEB_SUITE_PROJETS a cote du depot.
+En integration continue, ci.yml clone WEB_SUITE_PROJETS a cote du depot (depot
+prive : avec le secret PROJETS_TOKEN).
 """
 import atexit
 import os
