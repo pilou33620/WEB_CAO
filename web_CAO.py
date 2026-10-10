@@ -409,9 +409,10 @@ en lancant le script depuis un terminal.
 Sert le dossier du depot en lecture seule, et relaie la recherche de
 composants vers pcbparts.dev (/api/tools et /api/tool). Par defaut l'ecoute se
 fait sur toutes les interfaces, ce qui est le but : ouvrir le schema sur un
-iPad du meme reseau WiFi. C'est un serveur de developpement, sans
-authentification -- a n'utiliser que sur un reseau de confiance. --local coupe
-cet acces.
+iPad du meme reseau WiFi. Un autre appareil que ce poste saisit une fois le
+code d'appairage a 6 chiffres affiche dans la console (appairage.py, commun aux
+web tools : meme jeton et meme cookie que WEB_SUITE et les autres outils du
+poste). --local coupe cet acces.
 """
 import argparse
 import datetime
@@ -465,6 +466,12 @@ if ROOT not in sys.path:
 DOSSIER_PYTHON = os.path.join(ROOT, "python")
 if DOSSIER_PYTHON not in sys.path:
     sys.path.insert(0, DOSSIER_PYTHON)
+
+# Code d'appairage exige des autres appareils du reseau : appairage.py, commun
+# aux web tools (copie identique dans WEB_SUITE, WEB_ANTENNA, WEB_3D...).
+# Remplace dans start_server() selon l'adresse d'ecoute obtenue.
+import appairage  # noqa: E402
+GARDE = appairage.Garde("WEB_CAO", actif=False)
 try:
     import passerelle_mcp
     ERREUR_PASSERELLE = None
@@ -1710,7 +1717,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             if hote_brut.lower() not in hotes_permis:
                 self.send_error(403, "Host non autorise (protection DNS Rebinding)")
                 return False
-        return True
+        # Puis le code d'appairage, exige de tout autre appareil que ce poste
+        return GARDE.filtrer(self)
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -3595,6 +3603,8 @@ def start_server(host, port, navigateur=True):
     bound_host, bound_port = httpd.server_address[0], httpd.server_address[1]
     is_local_only = bound_host in ("127.0.0.1", "::1")
     url = adresse_locale(bound_host, bound_port)
+    global GARDE
+    GARDE = appairage.Garde("WEB_CAO", actif=not is_local_only)
 
     # Les dossiers de projet ne s'ouvrent que sur une ecoute locale. Le choix
     # se fait ici, sur l'adresse reellement obtenue -- pas sur l'intention :
@@ -3671,9 +3681,10 @@ def start_server(host, port, navigateur=True):
         print("  Depuis un autre appareil du meme reseau WiFi (iPad par exemple),")
         print("  ouvrez le navigateur et tapez cette adresse.")
         print()
-        print("  ATTENTION : le serveur ecoute sur toutes les interfaces et n'a")
-        print("  aucune authentification. A reserver a un reseau de confiance ;")
-        print("  utilisez --local pour un acces limite a cette machine.")
+        print("  La premiere fois, l'autre appareil demande le code d'appairage")
+        print("  ci-dessous ; il s'en souvient ensuite, pour tous les web tools")
+        print("  de ce poste. --local limite l'acces a cette machine.")
+        GARDE.annoncer()
         print()
         print("  Les dossiers de projet sont refuses dans ce mode : lire et")
         print("  ecrire sur le disque ne s'ouvre pas a un reseau sans mot de")
