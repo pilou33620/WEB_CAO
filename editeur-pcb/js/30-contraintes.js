@@ -35,7 +35,8 @@
    ========================================================================== */
 
 const CM_ONGLETS=[["nets","Nets"],["classes","Classes"],["paires","Paires diff."],
-                  ["groupes","Groupes d'appariement"],["matrice","Isolation entre classes"]];
+                  ["groupes","Groupes d'appariement"],["topologie","Topologie et moignons"],
+                  ["matrice","Isolation entre classes"]];
 const CM_ZTOL=10;                    // tolérance d'impédance par défaut, en %
 /* séparateur des clés de champ (« net␞USB_DP␞lMax ») : un caractère qu'aucun
    nom de net ou de classe ne porte, et qui vit sans souci dans un attribut */
@@ -90,6 +91,8 @@ function cmRegleDe(net){
   return {classe:cl.name,w:cl.w,clr:cl.clr,via:cl.via,drill:cl.drill,
           z:pick("z"),zTol:pick("zTol")||{v:CM_ZTOL,src:"défaut"},
           lMax:pick("lMax"),lMin:pick("lMin"),viasMax:pick("viasMax"),couches:pick("couches"),
+          topo:pick("topo"),ordre:pick("ordre"),stubMax:pick("stubMax"),viaStubMax:pick("viaStubMax"),
+          etoileTol:pick("etoileTol"),
           paire:dpOfNet(net),
           groupes:C.groupes.filter(g=>g.nets.indexOf(net)>=0)};
 }
@@ -120,6 +123,8 @@ function cmVerifier(net,m,r){
       out.push({cle:"z",msg:"Z₀ "+cmMm(m.z0min,1)+(m.z0max-m.z0min>0.05?" – "+cmMm(m.z0max,1):"")+
         " Ω, hors de "+cmMm(r.z.v,1)+" Ω ± "+cmMm(r.zTol.v,0)+" %"+de(r.z)});
   }
+  /* la forme du net et ses moignons (31-topologie.js) */
+  if(typeof topoVerifier==="function")for(const f of topoVerifier(net,r))out.push(f);
   return out;
 }
 
@@ -247,6 +252,12 @@ function cmLire(cle,txt){
     const c=(t.match(/\d+/g)||[]).map(x=>+x-1).filter(i=>i>=0&&i<S.cu);
     return c.length?c:null;
   }
+  if(cle==="topo")return ["p2p","chaine","etoile","flyby"].indexOf(t)>=0?t:null;
+  /* « U1, U4, U5 », « U1 > U4 > U5 » ou « U1 → U4 → U5 » */
+  if(cle==="ordre"){
+    const o=t.split(/[\s,;>→]+/).map(x=>x.trim()).filter(Boolean);
+    return o.length?o:null;
+  }
   const n=parseFloat(t.replace(",","."));
   return Number.isFinite(n)?n:null;
 }
@@ -339,14 +350,15 @@ function cmLignesNets(){
     });
     const fauteGrp=grp.some(o=>o.x&&!o.x.ok);
     const etat=!m.n?"nr":((f.some(x=>!x.info)||fauteGrp)?"err":
-               ((r.z||r.lMax||r.lMin||r.viasMax||r.couches||grp.length)?"ok":"-"));
+               ((r.z||r.lMax||r.lMin||r.viasMax||r.couches||r.topo||r.stubMax||r.viaStubMax||grp.length)?"ok":"-"));
     rows.push({net,m,r,f,grp,etat});
   }
   rows.sort((a,b)=>a.net.localeCompare(b.net,"fr",{numeric:true}));
   return rows;
 }
 function cmCsv(){
-  const L=["Net;Classe;Longueur (mm);Délai (ps);Vias;Z0 min;Z0 max;Z cible;Tol %;L min;L max;Vias max;Couches;Groupes;État;Écarts"];
+  const L=["Net;Classe;Longueur (mm);Délai (ps);Vias;Z0 min;Z0 max;Z cible;Tol %;L min;L max;Vias max;Couches;Groupes;"+
+          "Topologie;Forme du cuivre;Moignon mesuré (mm);Moignon de via (mm);État;Écarts"];
   const v=x=>x?String(x.v):"";
   for(const o of cmLignesNets()){
     const r=o.r, m=o.m;
@@ -355,6 +367,9 @@ function cmCsv(){
       v(r.z),r.zTol.v,v(r.lMin),v(r.lMax),v(r.viasMax),
       r.couches?r.couches.v.map(cmNomCouche).join(" "):"",
       r.groupes.map(g=>g.nom).join(" "),
+      r.topo?TOPO_FORMES[r.topo.v]:"",
+      ...(()=>{const T=typeof topoResume==="function"?topoResume(o.net,r.ordre?r.ordre.v[0]:""):null;
+               return T?[T.forme,T.moignon?fmt(T.moignon.len,2):"",T.moignonVia?fmt(T.moignonVia.len,3):""]:["","",""];})(),
       {err:"faute",ok:"ok",nr:"non routé","-":""}[o.etat],
       o.f.map(x=>x.msg).concat(o.grp.filter(g=>g.x&&!g.x.ok).map(g=>"groupe "+g.g.nom)).join(" | ")]
       .map(x=>{const s=String(x);return /[;"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(";"));
@@ -505,7 +520,8 @@ function cmRendre(){
 function cmRendreCorps(){
   const c=document.getElementById("cmCorps");
   if(!c)return;
-  const f={nets:cmHtmlNets,classes:cmHtmlClasses,paires:cmHtmlPaires,groupes:cmHtmlGroupes,matrice:cmHtmlMatrice}[CM.onglet]||cmHtmlNets;
+  const f={nets:cmHtmlNets,classes:cmHtmlClasses,paires:cmHtmlPaires,groupes:cmHtmlGroupes,
+           topologie:cmHtmlTopologie,matrice:cmHtmlMatrice}[CM.onglet]||cmHtmlNets;
   c.innerHTML=f();
   const lignes=cmLignesNets();
   const err=lignes.filter(o=>o.etat==="err").length, ok=lignes.filter(o=>o.etat==="ok").length;
@@ -709,6 +725,62 @@ function cmHtmlGroupes(){
     '<p class="cm-note">Le serpentin (Placer → Serpentin), posé sur un net d\'un groupe, propose d\'ajouter ce qui lui manque. '+
     'En délai, la longueur à ajouter se déduit du retard par millimètre du net.</p>';
   return h;
+}
+/* ---------- topologie et moignons ----------
+   La forme lue sur le cuivre de chaque net, à côté de celle qu'on exige ; les
+   classes en tête (une règle pour tous leurs nets), les nets ensuite. */
+function cmSelTopo(cle,val,herite){
+  const o=[["","—"]].concat(Object.keys(TOPO_FORMES).map(k=>[k,TOPO_FORMES[k]]));
+  return '<select class="tbsel cm-sel" data-cm="'+esc(cle)+'" title="Topologie exigée'+
+    (herite?" ; vide : "+esc(TOPO_FORMES[herite])+" (classe)":"")+'">'+
+    o.map(([k,l])=>'<option value="'+k+'"'+(k===(val||"")?" selected":"")+'>'+
+      (k===""&&herite?"("+esc(TOPO_FORMES[herite])+")":esc(l))+'</option>').join("")+'</select>';
+}
+function cmHtmlTopologie(){
+  const C=cmModele();
+  let h='<p class="cm-note"><b>Point à point</b> : deux broches, un chemin. <b>Chaîne</b> : les broches l\'une après l\'autre, '+
+    'dans l\'ordre imposé (« U1, U4, U5 »), dérivations ≤ moignon max (1 mm sans réglage). <b>Étoile</b> : des branches de même '+
+    'longueur depuis un centre (le premier repère de l\'ordre est la source, sa branche ne compte pas). <b>Fly-by</b> : une chaîne '+
+    'terminée par une résistance (ou le dernier repère de l\'ordre) au bout opposé à la source. Le <b>moignon</b> est la longueur '+
+    'd\'une broche au chemin principal (point de test compris) ou d\'un bout de piste libre ; le <b>moignon de via</b>, la part du '+
+    'fût au-delà des couches où passe le signal. Un net à zone de cuivre (plan) n\'est pas jugé.</p>';
+  h+='<div class="cm-table-w"><table class="cm-table"><thead><tr><th>Classe</th><th>Topologie</th><th>Moignon max mm</th>'+
+    '<th>Moignon de via max mm</th><th>Tol. étoile mm</th></tr></thead><tbody>';
+  for(const c of S.classes){
+    const r=C.classes[c.name]||{}, k=x=>"classe"+CM_SEP+c.name+CM_SEP+x;
+    h+='<tr><td><b>'+esc(c.name)+'</b></td><td>'+cmSelTopo(k("topo"),r.topo,"")+'</td>'+
+      '<td>'+cmChamp(k("stubMax"),r.stubMax,"","Longueur de moignon admise, mm (0 : aucun)")+'</td>'+
+      '<td>'+cmChamp(k("viaStubMax"),r.viaStubMax,"","Moignon de via admis, mm")+'</td>'+
+      '<td>'+cmChamp(k("etoileTol"),r.etoileTol,TOPO_ETOILE_TOL,"Écart admis entre les branches d'une étoile, mm")+'</td></tr>';
+  }
+  h+='</tbody></table></div>';
+  const vis=cmNetsVisibles();
+  h+='<div class="cm-barre" style="margin-top:12px"><input type="search" id="cmFiltre" class="cm-filtre" placeholder="Filtrer : net ou classe" value="'+
+    esc(CM.filtre)+'"><label class="cm-case"><input type="checkbox" id="cmFautes"'+(CM.fautes?" checked":"")+
+    '> en faute seulement</label></div>';
+  h+='<div class="cm-table-w"><table class="cm-table"><thead><tr><th>État</th><th>Net</th><th>Classe</th><th>Forme du cuivre</th>'+
+    '<th class="n">Broches</th><th>Ordre le long du cuivre</th><th class="n">Moignon max mesuré</th><th class="n">Moignon via mesuré</th>'+
+    '<th>Topologie</th><th>Ordre imposé</th><th>Moignon max</th><th>Via max</th><th>Tol. étoile</th><th>Écarts</th></tr></thead><tbody>';
+  for(const o of vis.slice(0,600)){
+    const r=o.r, rn=C.nets[o.net]||{}, rc=C.classes[r.classe]||{};
+    const k=x=>"net"+CM_SEP+o.net+CM_SEP+x;
+    const T=topoResume(o.net,r.ordre?r.ordre.v[0]:"");
+    const f=o.f.filter(x=>/^(topo|ordre|stubMax|viaStubMax|etoileTol)$/.test(x.cle));
+    const etat=!o.m.n?"nr":(f.some(x=>!x.info)?"err":((r.topo||r.stubMax||r.viaStubMax)?"ok":"-"));
+    h+='<tr class="cm-'+etat+'"><td>'+cmEtat(etat)+'</td>'+
+      '<td><button type="button" class="cm-net" data-a="voir" data-v="'+esc(o.net)+'">'+esc(o.net)+'</button></td>'+
+      '<td>'+esc(r.classe)+'</td><td>'+esc(T.forme)+'</td><td class="n">'+T.broches+'</td>'+
+      '<td>'+esc(T.ordre.join(" → "))+'</td>'+
+      '<td class="n">'+(T.moignon?cmMm(T.moignon.len)+' <span class="cm-nr">'+esc(T.moignon.broche)+'</span>':"—")+'</td>'+
+      '<td class="n">'+(T.moignonVia?cmMm(T.moignonVia.len,3):"—")+'</td>'+
+      '<td>'+cmSelTopo(k("topo"),rn.topo,rc.topo)+'</td>'+
+      '<td>'+cmChamp(k("ordre"),rn.ordre?rn.ordre.join(", "):"",rc.ordre?rc.ordre.join(", "):"","Ordre des repères le long du net, le premier est la source : « U1, U4, U5 »",true)+'</td>'+
+      '<td>'+cmChamp(k("stubMax"),rn.stubMax,rc.stubMax,"Moignon admis, mm")+'</td>'+
+      '<td>'+cmChamp(k("viaStubMax"),rn.viaStubMax,rc.viaStubMax,"Moignon de via admis, mm")+'</td>'+
+      '<td>'+cmChamp(k("etoileTol"),rn.etoileTol,rc.etoileTol!=null?rc.etoileTol:TOPO_ETOILE_TOL,"Écart admis entre branches, mm")+'</td>'+
+      '<td class="cm-msg">'+esc(f.map(x=>x.msg).join(" ; "))+'</td></tr>';
+  }
+  return h+'</tbody></table>'+(vis.length>600?'<p class="cm-note">… filtrez pour voir les autres nets.</p>':"")+'</div>';
 }
 function cmHtmlMatrice(){
   const C=cmModele(), cls=S.classes.map(c=>c.name);

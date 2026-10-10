@@ -2315,6 +2315,17 @@ function cmNormRegle(o){
     const c=[...new Set(o.couches.map(Number).filter(i=>Number.isInteger(i)&&i>=0&&i<64))].sort((a,b)=>a-b);
     if(c.length)r.couches=c;
   }
+  /* topologie et moignons (31-topologie.js) : la forme exigée, l'ordre des
+     repères le long d'une chaîne, les longueurs de moignon admises (0 : aucun
+     moignon), l'écart admis entre les branches d'une étoile */
+  if(["p2p","chaine","etoile","flyby"].indexOf(o.topo)>=0)r.topo=o.topo;
+  if(Array.isArray(o.ordre)){
+    const od=o.ordre.map(x=>String(x).trim().slice(0,24)).filter(Boolean).slice(0,64);
+    if(od.length)r.ordre=od;
+  }
+  const sm=num(o.stubMax,0,1e5);if(sm!=null)r.stubMax=sm;
+  const vs=num(o.viaStubMax,0,100);if(vs!=null)r.viaStubMax=vs;
+  const et=num(o.etoileTol,0,1e5);if(et!=null)r.etoileTol=et;
   return Object.keys(r).length?r:null;
 }
 function cmCle(a,b){a=String(a);b=String(b);return a<b?a+"|"+b:b+"|"+a;}

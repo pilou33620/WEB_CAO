@@ -399,7 +399,9 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "cmNorm","cmCle","cmClrClasses","cmClrMax","cmMesures","cmRegleDe","cmVerifier","cmEvaluerGroupe",
   "cmManqueLongueur","cmLargeurPourZ","cmDrc","cmEdit","cmPoser","cmPoserPhysique","cmPoserMatrice",
   "cmNouveauGroupe","cmGroupeModifier","cmGroupeSupprimer","cmCsv","cmLignesNets","cmOuvrir","cmFermer",
-  "cmAppliquerLargeurZ","CM","CM_ONGLETS","className","classWidth","cmPoserLargeurCouche","normClass","routeVia"];
+  "cmAppliquerLargeurZ","CM","CM_ONGLETS","className","classWidth","cmPoserLargeurCouche","normClass","routeVia",
+  /* topologie et moignons (31-topologie.js) */
+  "topoGraphe","topoAnalyser","topoVerifier","topoResume","topoMoignonsVias","TOPO_FORMES","stackSpan","cuT"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -22295,6 +22297,173 @@ T("largeur par couche : DRC, alignement sur la classe, report des couches",()=>{
     if(JSON.stringify(S.contraintes.nets.SPI_CS.couches)!=="[0,1]")
       throw new Error("report des couches permises : "+JSON.stringify(S.contraintes.nets.SPI_CS.couches));
   }finally{delete cl.wL;exCharger(1);}
+});
+
+/* ==========================================================================
+   Topologie et moignons (31-topologie.js) — cartes construites pour l'essai
+   ========================================================================== */
+/* Une carte quatre couches vide, et de quoi y poser des boîtiers deux pattes
+   (patte 1 sur `net`) et des pistes d'un point à l'autre. */
+function topoCarte(){
+  setCuCount(4);carteVide();S.holes=[];S.dpPairs=[];cmRaz();
+}
+function topoFp(ref,x,y,net){
+  const fp=mkFp(ref,"","0603",2);
+  fp.x=x;fp.y=y;fp.nets={1:net,2:"AUTRE_"+ref};
+  S.fps.push(fp);
+  return padsWorld(fp).find(q=>q.n===1);
+}
+function topoPiste(net,a,b,l){
+  S.tracks.push({l:l||0,net,w:0.2,x1:r3(a.x),y1:r3(a.y),x2:r3(b.x),y2:r3(b.y)});
+}
+function topoFin(){touch();}
+function topoMsgs(net){return cmVerifier(net,cmMesures().get(net),cmRegleDe(net)).map(f=>f.msg);}
+T("topologie : chaîne, son ordre, et l'ordre imposé",()=>{
+  topoCarte();
+  const a=topoFp("U1",0,0,"BUS"), b=topoFp("U2",20,0,"BUS"), c=topoFp("U3",40,0,"BUS");
+  topoPiste("BUS",a,b);topoPiste("BUS",b,c);topoFin();
+  const T=topoAnalyser("BUS");
+  if(T.forme!=="chaîne"||T.ordre.join(">")!=="U1>U2>U3")throw new Error(T.forme+" "+T.ordre.join(">"));
+  cmPoser("nets","BUS","topo","chaine");
+  cmPoser("nets","BUS","ordre","U1, U2, U3");
+  if(topoMsgs("BUS").length)throw new Error("chaîne dans l'ordre : rien à dire — "+topoMsgs("BUS"));
+  cmPoser("nets","BUS","ordre","U3 > U2 > U1");
+  if(topoMsgs("BUS").length)throw new Error("l'ordre se lit dans les deux sens");
+  cmPoser("nets","BUS","ordre","U1 → U3 → U2");
+  const m=topoMsgs("BUS");
+  if(!m.some(x=>/^ordre U1 → U2 → U3 le long du cuivre, attendu U1 → U3 → U2/.test(x)))throw new Error(m.join(" | "));
+  runDrc();
+  if(!S.drc.some(d=>/^Contrainte BUS : ordre /.test(d.msg)))throw new Error("l'ordre doit partir au DRC");
+});
+T("topologie : dérivation — chaîne refusée, moignon mesuré, point de test nommé",()=>{
+  topoCarte();
+  const a=topoFp("U1",0,0,"BUS"), c=topoFp("U3",40,0,"BUS");
+  const b=topoFp("U2",20,-4,"BUS"), tp=topoFp("TP1",30,3,"BUS");
+  topoPiste("BUS",a,c);                                   // le tronc, d'un trait
+  topoPiste("BUS",{x:20,y:a.y},b);                        // en T au milieu, vers U2
+  topoPiste("BUS",{x:30,y:a.y},tp);                       // en T, vers le point de test
+  topoFin();
+  const T=topoAnalyser("BUS");
+  const mU2=T.moignons.find(m=>m.ref==="U2"), mTP=T.moignons.find(m=>m.ref==="TP1");
+  if(!mU2||Math.abs(mU2.len-r3(dist(20,a.y,b.x,b.y)))>1e-6)
+    throw new Error("moignon vers U2 : "+T.moignons.map(m=>m.broche+" "+m.len).join(", "));
+  if(!mTP||!mTP.tp)throw new Error("point de test non reconnu");
+  if(T.ordre.join(">")!=="U1>U2>TP1>U3")throw new Error("ordre avec dérivations : "+T.ordre.join(">"));
+  cmPoser("nets","BUS","topo","chaine");
+  if(!topoMsgs("BUS").some(x=>/^chaîne attendue : U2\.1 pend sur /.test(x)))throw new Error(topoMsgs("BUS").join(" | "));
+  cmPoser("nets","BUS","stubMax","2");
+  const m=topoMsgs("BUS");
+  if(!m.some(x=>/^moignon de [\d,]+ mm vers U2\.1, 2,00 mm admis/.test(x)))throw new Error(m.join(" | "));
+  if(!m.some(x=>/vers TP1\.1 \(point de test\)/.test(x)))throw new Error("point de test : "+m.join(" | "));
+  if(m.some(x=>/pend sur/.test(x)))throw new Error("avec un moignon max, un seul message par dérivation");
+  cmPoser("nets","BUS","stubMax","10");
+  if(topoMsgs("BUS").length)throw new Error("moignons sous 10 mm : rien à dire");
+});
+T("topologie : étoile — branches égales ou non, source exclue, centre sur une broche",()=>{
+  topoCarte();
+  const C={x:50,y:50};
+  const a=topoFp("U1",50,30,"CLK"), b=topoFp("U2",70,50,"CLK"), c=topoFp("U3",50,72,"CLK");
+  for(const p of [a,b,c])topoPiste("CLK",C,p);
+  topoFin();
+  const T=topoAnalyser("CLK");
+  if(T.forme!=="étoile"||T.branches.length!==3)throw new Error(T.forme+" "+JSON.stringify(T.branches));
+  cmPoser("nets","CLK","topo","etoile");
+  const m=topoMsgs("CLK");
+  if(!m.some(x=>/^branches de l'étoile inégales : U3\.1 /.test(x)))throw new Error(m.join(" | "));
+  cmPoser("nets","CLK","etoileTol","5");
+  if(topoMsgs("CLK").length)throw new Error("tolérance de 5 mm : rien à dire");
+  /* U1 et U2 : 20,0 et 19,2 mm (la patte 1 est décalée du centre du boîtier),
+     U3 : 22 mm — la source, dont la branche ne compte pas */
+  cmPoser("nets","CLK","etoileTol","1");
+  cmPoser("nets","CLK","ordre","U3");
+  if(topoMsgs("CLK").length)throw new Error("la branche de la source ne compte pas : "+topoMsgs("CLK"));
+  /* une chaîne n'est pas une étoile */
+  cmPoser("nets","CLK","topo","chaine");cmPoser("nets","CLK","ordre","");
+  if(!topoMsgs("CLK").some(x=>/^chaîne attendue, le cuivre fait une étoile/.test(x)))throw new Error(topoMsgs("CLK").join(" | "));
+  /* le pilote au centre : trois pistes partent de sa broche */
+  topoCarte();
+  const s=topoFp("U9",0,0,"CK2");
+  for(const [r,x,y] of [["U1",10,0],["U2",0,10],["U3",-10,0]])topoPiste("CK2",s,topoFp(r,x,y,"CK2"));
+  topoFin();
+  if(topoAnalyser("CK2").forme!=="étoile")throw new Error("pilote au centre : "+topoAnalyser("CK2").forme);
+});
+T("topologie : point à point, fly-by et terminaison",()=>{
+  topoCarte();
+  const a=topoFp("U1",0,0,"N1"), b=topoFp("U2",20,0,"N1"), c=topoFp("U3",40,0,"N1");
+  topoPiste("N1",a,b);topoPiste("N1",b,c);topoFin();
+  cmPoser("nets","N1","topo","p2p");
+  if(!topoMsgs("N1").some(x=>/^point à point attendu, le net relie 3 broches/.test(x)))throw new Error(topoMsgs("N1").join(" | "));
+  /* fly-by : la résistance de terminaison au bout opposé */
+  topoCarte();
+  const u1=topoFp("U1",0,0,"A0"), d0=topoFp("U2",20,0,"A0"), d1=topoFp("U3",40,0,"A0"), rt=topoFp("R1",60,0,"A0");
+  topoPiste("A0",u1,d0);topoPiste("A0",d0,d1);topoPiste("A0",d1,rt);topoFin();
+  cmPoser("nets","A0","topo","flyby");
+  if(topoMsgs("A0").length)throw new Error("fly-by terminé : "+topoMsgs("A0").join(" | "));
+  topoCarte();
+  const v1=topoFp("U1",0,0,"A0"), r1=topoFp("R1",20,0,"A0"), w1=topoFp("U2",40,0,"A0"), w2=topoFp("U3",60,0,"A0");
+  topoPiste("A0",v1,r1);topoPiste("A0",r1,w1);topoPiste("A0",w1,w2);topoFin();
+  cmPoser("nets","A0","topo","flyby");
+  if(!topoMsgs("A0").some(x=>/^fly-by : une résistance de terminaison doit être au bout de la ligne/.test(x)))
+    throw new Error(topoMsgs("A0").join(" | "));
+  cmPoser("nets","A0","ordre","U1,R1,U2,U3");           // l'ordre dit qui termine : U3
+  if(topoMsgs("A0").length)throw new Error("terminaison donnée par l'ordre : "+topoMsgs("A0").join(" | "));
+});
+T("topologie : moignon de via et bout de piste libre",()=>{
+  topoCarte();
+  const a=topoFp("U1",0,0,"SIG"), b=topoFp("U2",30,0,"SIG");
+  S.vias.push({x:10,y:0,d:0.6,drill:0.3,a:0,b:3,net:"SIG"},{x:20,y:0,d:0.6,drill:0.3,a:0,b:3,net:"SIG"});
+  topoPiste("SIG",a,{x:10,y:0},0);topoPiste("SIG",{x:10,y:0},{x:20,y:0},1);topoPiste("SIG",{x:20,y:0},b,0);
+  topoFin();
+  const T=topoAnalyser("SIG");
+  if(T.forme!=="point à point")throw new Error("le passage par L2 reste point à point : "+T.forme);
+  const attendu=stackSpan(1,3)-cuT(1);
+  if(T.moignonsVias.length!==2||Math.abs(T.moignonsVias[0].len-r3(attendu))>1e-6)
+    throw new Error("moignon L2→L4 attendu "+attendu+" : "+JSON.stringify(T.moignonsVias.map(v=>v.len)));
+  cmPoser("nets","SIG","viaStubMax","0,2");
+  const m=topoMsgs("SIG");
+  if(m.filter(x=>/^moignon de via de [\d,]+ mm \(via L1→L2 percé L1–L4\)/.test(x)).length!==2)throw new Error(m.join(" | "));
+  /* un via borgne L1–L2 n'a pas de moignon */
+  for(const v of S.vias)v.b=1;
+  topoFin();
+  if(topoAnalyser("SIG").moignonsVias.length)throw new Error("via borgne : pas de moignon");
+  /* bout libre : une piste qui part de U1 et ne mène nulle part */
+  topoPiste("SIG",a,{x:a.x,y:a.y+3},0);topoFin();
+  cmPoser("nets","SIG","stubMax","1");
+  if(!topoMsgs("SIG").some(x=>/^bout de piste libre de 3,00 mm/.test(x)))throw new Error(topoMsgs("SIG").join(" | "));
+});
+T("topologie : boucle, plan, routage incomplet, contrainte de classe",()=>{
+  topoCarte();
+  const a=topoFp("U1",0,0,"L"), b=topoFp("U2",20,0,"L");
+  topoPiste("L",a,b);topoPiste("L",a,{x:10,y:8});topoPiste("L",{x:10,y:8},b);topoFin();
+  cmPoser("nets","L","topo","p2p");
+  if(topoAnalyser("L").forme!=="maillé"||!topoMsgs("L").some(x=>/le cuivre forme une boucle/.test(x)))
+    throw new Error(topoAnalyser("L").forme+" "+topoMsgs("L").join(" | "));
+  /* un net à plan n'est pas jugé */
+  S.zones.push({id:S.nextId++,l:1,net:"L",pts:[{x:-5,y:-5},{x:25,y:-5},{x:25,y:10},{x:-5,y:10}]});topoFin();
+  if(topoAnalyser("L").forme!=="plan"||topoMsgs("L").length)throw new Error("plan : non jugé");
+  /* une broche pas encore reliée : signalée pour information */
+  topoCarte();
+  const c=topoFp("U1",0,0,"M"), d=topoFp("U2",20,0,"M");topoFp("U3",40,0,"M");
+  topoPiste("M",c,d);topoFin();
+  cmPoser("classes",className("M"),"topo","chaine");
+  const f=topoVerifier("M",cmRegleDe("M"));
+  if(f.length!==1||!f[0].info||!/U3\.1 pas encore relié/.test(f[0].msg))throw new Error(JSON.stringify(f));
+  if(cmRegleDe("M").topo.src!=="classe")throw new Error("la topologie vient de la classe");
+  cmRaz();setCuCount(2);
+});
+T("topologie : réglages bornés, aller-retour, onglet de la fenêtre",()=>{
+  const n=cmNorm({nets:{X:{topo:"spirale",ordre:["U1"," ","U2",3],stubMax:0,viaStubMax:500,etoileTol:"2"}}});
+  const r=n.nets.X;
+  if(r.topo!==undefined||JSON.stringify(r.ordre)!=='["U1","U2","3"]'||r.stubMax!==0||r.viaStubMax!==undefined||r.etoileTol!==2)
+    throw new Error(JSON.stringify(r));
+  exCharger(1);cmRaz();
+  cmPoser("nets","SPI_CS","topo","p2p");cmPoser("nets","SPI_CS","ordre","U1,U2");cmPoser("classes","Défaut","stubMax","1,5");
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("l'aller-retour change le document");
+  if(topoMsgs("SPI_CS").length)throw new Error("SPI_CS est point à point sur l'exemple : "+topoMsgs("SPI_CS"));
+  cmOuvrir("topologie");cmFermer();
+  cmRaz();
 });
 
 (async()=>{

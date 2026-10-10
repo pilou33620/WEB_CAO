@@ -75,6 +75,9 @@ js/30-contraintes.js     gestionnaire de contraintes : mesures par net,
                          contraintes héritées ou propres, groupes
                          d'appariement, DRC, fenêtre en tableur (le modèle
                          et l'isolation entre classes sont dans 01-core.js)
+js/31-topologie.js       forme du cuivre de chaque net (graphe des pistes,
+                         vias et broches) : point à point, chaîne, étoile,
+                         fly-by ; moignons de dérivation et de vias
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -924,6 +927,7 @@ tenue, rouge sinon, gris pour un net non routé.
 | Classes | largeur, isolation, via, perçage (les règles de la fenêtre des règles, mêmes valeurs), **une largeur par couche** de signal, et les contraintes électriques de la classe. Pour une impédance cible : la largeur qui la donne sur chaque couche, d'après l'empilage, à poser d'un clic sur sa couche ou sur toutes |
 | Paires diff. | longueurs P et N, écart en mm et en ps, longueur découplée face à la règle |
 | Groupes d'appariement | des nets qui doivent avoir la même longueur ou le même délai, à une tolérance près, autour d'une référence (le plus long, ou un net choisi). Ce qui manque à chaque net est affiché ; un groupe se crée en cochant ses nets, ou depuis les pistes sélectionnées sur la carte |
+| Topologie et moignons | la forme lue sur le cuivre de chaque net, l'ordre des repères le long du cuivre, le plus long moignon et le plus long moignon de via ; la topologie exigée, l'ordre imposé, les moignons admis — par classe ou par net |
 | Isolation entre classes | une matrice classe × classe : « Alimentation ↔ RF : 0,5 mm » |
 
 **Largeur par couche.** Une même impédance ne demande pas la même piste en
@@ -936,6 +940,37 @@ avec la largeur de la couche active et en change au via ; chaque tronçon
 garde celle de sa couche. Le DRC juge une piste à la largeur de sa couche, et
 « aligner sur la classe » (panneau Propriétés) la suit. Quand le nombre de
 couches change, dessus et dessous gardent leur réglage, comme le cuivre.
+
+**Topologie et moignons** (`31-topologie.js`). Le cuivre d'un net est lu
+comme un graphe : ses broches, ses vias et les jonctions de pistes (une
+jonction en T coupe la piste qu'elle touche), reliés par les pistes avec
+leur longueur. Le bout d'une piste se rattache à ce que `linkSync` dit qui
+le tient. On en tire :
+
+- la **forme** : point à point, chaîne, chaîne à dérivations courtes, étoile
+  (un centre, une broche au bout de chaque branche — le centre peut être la
+  broche du pilote), arbre, maillé (une boucle), incomplet, plan ;
+- le **tronc** : le plus long chemin entre deux broches, ou celui qui part
+  de la source quand l'ordre imposé la donne ; l'**ordre** des repères le
+  long de ce tronc, dérivations comprises ;
+- les **moignons** : la distance de chaque broche hors du tronc jusqu'à lui
+  (un point de test `TP…` est nommé comme tel), et les bouts de piste qui
+  ne mènent à aucune broche ;
+- les **moignons de via** : la part du fût au-delà de la plus haute et de la
+  plus basse couche où le signal entre et sort, en épaisseur d'empilage (un
+  traversant qui relie L1 à L2 d'une quatre couches laisse L2 → L4).
+
+| Contrainte | Ce qui est contrôlé |
+| --- | --- |
+| Point à point | deux broches exactement, un seul chemin |
+| Chaîne | pas d'étoile ni de boucle ; aucune dérivation au-delà du moignon admis (1 mm sans réglage) ; l'ordre imposé, lu dans un sens ou dans l'autre |
+| Étoile | un centre ; les branches de même longueur à la tolérance près (1 mm sans réglage), sauf celle de la source (premier repère de l'ordre) |
+| Fly-by | ce que demande une chaîne, et la terminaison au bout opposé à la source : une résistance `R…`, ou le dernier repère de l'ordre |
+| Moignon max | chaque dérivation et chaque bout libre ; 0 interdit tout moignon. Les branches d'une étoile n'en sont pas |
+| Moignon de via max | chaque via du net ; le message propose un via borgne ou un contre-perçage |
+
+Un net qui porte une zone de cuivre (un plan) n'est pas jugé ; un net dont
+une broche n'est pas encore reliée l'est pour information seulement.
 
 **Ce que la carte en fait** :
 
@@ -2841,8 +2876,9 @@ désactive au lieu de disparaître.
   ronde, avec sa rotation propre. Pas de forme quelconque : ni pastille en
   polygone, ni plage thermique découpée, ni chanfrein.
 - Gestionnaire de contraintes : les contraintes se saisissent dans le PCB,
-  pas encore dans le schéma ; pas de topologie (étoile, chaîne) ni de
-  longueur de moignon.
+  pas encore dans le schéma. La topologie ignore une jonction faite en
+  croisant une pastille sans s'y arrêter, et le moignon d'un via se compte
+  en épaisseur d'empilage (le contre-perçage n'est pas décrit).
 - Plans (Draftsman) : les vues sont placées d'office et les cotes se limitent
   à l'encombrement du contour ; ni cote posée à la main, ni vue de détail
   agrandie, ni export DXF. Le texte est en Helvetica standard (non
