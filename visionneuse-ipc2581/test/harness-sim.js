@@ -174,7 +174,10 @@ const EXPOSE=["SIM_UNITES","simUnite","simUniteChanger","simNbLibre",
   /* Le diagramme de l'œil : la saisie de la gigue, de la diaphonie et des
      fichiers IBIS, et le rendu de l'œil statistique. */
   "SIM_OEIL","simCorpsOeil","simRendreOeil","simOeilReglages",
-  "simOeilIbisModeles","simOeilBer"];
+  "simOeilIbisModeles","simOeilBer",
+  /* Œil 2.1.0 : les broches, les paires et le boîtier IBIS, le mode commun
+     de la paire, le fichier .ami. */
+  "simOeilIbisBroches","simOeilBrocheValide"];
 
 /* Un seul `eval`, sur les trois fichiers concaténés : ils se voient l'un
    l'autre comme dans la page, où ils partagent la portée globale. Le "use
@@ -5912,6 +5915,99 @@ T("œil : l'œil statistique, la diaphonie et l'IBIS se rendent",()=>{
     const html=simRendreOeil();
     for(const t of ["simOeilContour","simOeilBaignoire","10⁻¹²","SCK","OUT33",
                     "pas à 10⁻¹²","Simulation non linéaire"])
+      if(html.indexOf(t)<0)throw new Error("absent du rendu : "+t);
+  }finally{SIM_OEIL.res=null;}
+});
+T("œil : sans broche, boîtier, décalage ni AMI, rien de plus ne part",()=>{
+  const s=SIM_OEIL.saisie, avant=JSON.stringify(s);
+  try{
+    s.mode="diff";
+    const o=simOeilReglages();
+    for(const k of ["boitier","decalage_n","r_charge_mc","ami_regler"])
+      if(k in o)throw new Error("champ facultatif envoyé à vide : "+k);
+  }finally{Object.assign(s,JSON.parse(avant));}
+});
+T("œil : les [Pin] et les [Diff Pin] d'un fichier IBIS se listent",()=>{
+  const b=simOeilIbisBroches("[Component] U1\n[Pin] signal_name model_name R_pin L_pin C_pin\n"+
+    "A1 DP OUT 0.1 2nH 0.5pF | broche\nA2 DN OUT\nA3 VCC POWER\n"+
+    "[Diff Pin] inv_pin vdiff tdelay_typ tdelay_min tdelay_max\nA1 A2 0.1 40ps NA NA\n"+
+    "[Model] OUT\n[Algorithmic Model]\nExecutable Linux_gcc_x86_64 tx.so tx.ami\n"+
+    "[End Algorithmic Model]\n[End]\n");
+  if(b.broches.length!==3||b.broches[0].modele!=="OUT"||b.broches[2].modele!=="POWER")
+    throw new Error(JSON.stringify(b.broches));
+  if(b.paires.length!==1||b.paires[0].inverse!=="A2"||b.paires[0].tdelay!=="40ps")
+    throw new Error(JSON.stringify(b.paires));
+  if(!b.ami)throw new Error("[Algorithmic Model] non vu");
+});
+T("œil : la broche, la paire, le boîtier, le décalage et l'AMI partent quand ils sont choisis",()=>{
+  const s=SIM_OEIL.saisie, avant=JSON.stringify(s);
+  try{
+    const f={fichier:"u1.ibs", texte:"[Model] OUT", modeles:[{nom:"OUT",type:"I/O"}],
+             modele:"OUT", coin:"typ", broches:[{nom:"A1",signal:"DP",modele:"OUT"},
+             {nom:"A2",signal:"DN",modele:"OUT"},{nom:"A3",signal:"VCC",modele:"POWER"}],
+             paires:[{broche:"A1",inverse:"A2",vdiff:"0.1",tdelay:"40ps"}], broche:"A2",
+             amiAttendu:true, ami:{fichier:"tx.ami", texte:"(tx)"}};
+    SIM_OEIL.ibis.em=f;
+    s.mode="simple";
+    let o=simOeilReglages();
+    if(o.ibis_emetteur.broche!=="A2"||o.ibis_emetteur.ami.fichier!=="tx.ami")
+      throw new Error(JSON.stringify(o.ibis_emetteur));
+    /* En différentiel, A2 n'est pas la broche d'une paire : elle ne part pas. */
+    s.mode="diff"; s.decN=30e-12; s.rmc=25; s.boitier=false; s.amiRegler=true;
+    o=simOeilReglages();
+    if("broche" in o.ibis_emetteur)throw new Error("broche hors paire : "+o.ibis_emetteur.broche);
+    if(o.decalage_n!==30e-12||o.r_charge_mc!==25||o.boitier!==false||!o.ami_regler)
+      throw new Error(JSON.stringify(o));
+    f.broche="A1";
+    if(simOeilReglages().ibis_emetteur.broche!=="A1")throw new Error("paire A1/A2");
+    const h=simCorpsOeil();
+    for(const id of ["simOeilIbisBroche_em","simOeilAmiX_em","simOeilBoitier","simOeilDecN",
+                     "simOeilRmc","simOeilAmiRegler","simOeilAmiFichier"])
+      if(h.indexOf('id="'+id+'"')<0)throw new Error("champ absent : "+id);
+    if(h.indexOf("A1/A2")<0)throw new Error("la paire n'est pas proposée");
+  }finally{
+    Object.assign(s,JSON.parse(avant)); SIM_OEIL.ibis.em=null;
+  }
+});
+T("œil : le boîtier, le mode commun de la paire et l'AMI se rendent",()=>{
+  const tau=[], h=[], b=[];
+  for(let i=0;i<=128;i++){tau.push(i/64-1);h.push(0.2);b.push(-0.2);}
+  SIM_OEIL.res={
+    debit:1e9, ui:1e-9, tr:1e-10, mode:"diff", motif:"prbs7", bits:127, seuil:0,
+    densite:{nx:128, ny:160, v_haut:0.5, v_bas:-0.5, comptes:new Array(128*160).fill(1), max:1},
+    pire_cas:{tau, haut:h, bas:b},
+    mesures:{hauteur_prbs:0.4, largeur_prbs_ui:0.9, hauteur_pire:0.38, largeur_pire_ui:0.85,
+             isi_pire:0.01, principal:0.2, niveau_1:0.2, niveau_0:-0.2, v_max_vu:0.3,
+             v_min_vu:-0.3, retard:1e-9, vdiff:0.1, marge_vdiff_prbs:0.1, marge_vdiff_pire:0.09},
+    gabarit:null, egalisation:{ctle:null, dfe_v:[], ffe:[1], ffe_principal:0},
+    reponse_bit:{dt:1e-11, t0:-1e-10, v:[0,0.2,0]},
+    grille:{points:100, df:1e7, f_max:4e10, fenetre:1e-7, h0:1},
+    ibis:{emetteur:{modele:"OUT", type:"I/O", coin:"typ", fichier:"u1.ibs", c_comp:1e-12,
+                    front_10_90:1e-10, commande:"x", broche:"A1", inverse:"A2", tdelay:4e-11,
+                    boitier:{r:0.1, l:2e-9, c:5e-13, source:"[Pin]"},
+                    boitier_n:{r:0.2, l:8e-9, c:1e-12, source:"[Package]"},
+                    modele_n:"OUT", coin_n:"typ"},
+          pas_s:1e-12, lissage_s:2e-11, v_haut:0.4, v_bas:-0.4, asymetrie:0.01, deux_brins:true},
+    mode_commun:{continu:0.5, crete_crete:0.08, crete:0.04, rms:0.01, conversion_db:-20,
+                 emetteur:{continu:0.5, crete_crete:0.05},
+                 courbe:{dt_ui:0.0625, v:[0.5,0.52,0.48,0.5], v_diff:[-0.4,0,0.4,0.4]},
+                 hauteur_brute:0.39, hauteur_symetrique:0.41,
+                 asymetries:["brin inverse décalé de 40 ps"]},
+    ami:{emetteur:{fichier:"tx.ami", modele:"tx", description:"", tronque:false,
+                   parametres:[{chemin:"Model_Specific/TX_FFE/Tap/-1", groupe:"specifique",
+                                usage:"In", type:"Float", forme:"range", valeur:-0.1,
+                                plage:[-0.25,0], liste:null, description:""}]},
+         recepteur:null, renvois:[{bout:"émetteur", modele:"OUT", plateforme:"Linux",
+                                   bibliotheque:"tx.so", fichier_ami:"tx.ami"}],
+         propositions:{notes:["FFE : 3 prises"]}, applique:[],
+         note:"Le modèle AMI lui-même n'est PAS exécuté."},
+    avertissements:[], duree:1
+  };
+  try{
+    const html=simRendreOeil();
+    for(const t of ["broche A1 / inverse A2","8,00 nH","Mode commun (récepteur)","simOeilMcTrace",
+                    "paire symétrique","décalé de 40 ps","IBIS-AMI","TX_FFE/Tap/-1","tx.so",
+                    "PAS exécuté","Seuil du récepteur","deux brins"])
       if(html.indexOf(t)<0)throw new Error("absent du rendu : "+t);
   }finally{SIM_OEIL.res=null;}
 });
