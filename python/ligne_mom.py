@@ -2,6 +2,57 @@
 # -*- coding: utf-8 -*-
 # ==========================================
 # VERSIONING
+# Version: 2.7.0
+# Date: 2026-10-10
+# Explication: LES PERTES DU CONDUCTEUR COMPTENT ENFIN LE PLAN ET LES BORDS.
+#   `line_losses` rendait alpha_c = Rs / (2 Z0 w) : une nappe de courant de
+#   largeur w, sur une seule face du ruban. Ni le retour dans le plan, ni la
+#   face superieure et les flancs, ni la concentration du courant aux aretes.
+#   Elle passe a la REGLE DE L'INDUCTANCE INCREMENTALE de Wheeler,
+#   R = (Rs/eta0) dZ0_air/dn, derivee numeriquement sur Hammerstad-Jensen
+#   (microruban, epaisseur comprise) ou Wheeler 1978 (triplaque, deux plans),
+#   plus la resistance continue du ruban en quadrature. ACTIVE PAR DEFAUT :
+#   c'est la correction d'une erreur, et tous les bancs passent.
+#
+#   CE QUE CELA CHANGE, MESURE, et ce n'est pas un simple facteur deux. Les
+#   oublis de l'ancien modele se compensaient : le plan ajoute de la perte,
+#   l'etalement du courant au-dela de w en retire. Microruban 50 ohms de FR-4
+#   sur 0,3 mm : 1,311 -> 1,314 dB/m a 1 GHz, 4,118 -> 4,105 a 10 GHz -- le
+#   meme chiffre, par chance. Piste etroite de 87 ohms (0,15 mm) : 8,60 ->
+#   5,48 dB/m a 10 GHz, l'ancien en comptait 57 % de trop. Piste large de 26 ohms :
+#   2,91 -> 3,76, il oubliait le plan. Triplaque de 0,1 mm entre plans a
+#   0,3 mm : 20,9 -> 14,6 dB/m a 10 GHz : il entassait sur UNE face le
+#   courant que la triplaque partage entre ses deux faces et ses deux plans.
+#   ETALONS du banc : la ligne coaxiale (exacte), les plaques paralleles,
+#   Pucel en microruban, Pozar en triplaque.
+#
+#   `line_losses` ne connait pas la hauteur : elle se DEDUIT de
+#   Z0.racine(eps_eff), que la formule de Z0_air inverse. `hauteur=` la donne
+#   quand on l'a ; `modele_conducteur="ancien"` rend l'ancien chiffre au bit
+#   pres.
+#
+#   ET TROIS PIECES PRETES, BRANCHEES NULLE PART AILLEURS (desactivees par
+#   defaut, aucun appelant ne change) :
+#     · LA RUGOSITE : `facteur_rugosite`, Hammerstad-Groiss (K -> 2) ou Huray
+#       (K borne par 1 + 3/2 SR), et `rugosite_rms=` / `rayon_nodule=` +
+#       `rapport_surface=` dans `line_losses`. Zero par defaut, K = 1.
+#     · LE DIELECTRIQUE CAUSAL : `djordjevic_sarkar` rend er(f) et tan d(f)
+#       cales sur la fiche a f_ref, Kramers-Kronig verifie au banc ;
+#       `dielectrique_causal=True` dans `line_losses`.
+#     · LE VIA COMME LIGNE : `abcd_via_ligne`, troncon coaxial
+#       percage/antipad avec son moignon ouvert en derivation. Rejoint le pi
+#       en basse frequence, resonne au quart d'onde du moignon.
+#
+#   VERSION valait encore « 2.5.0 » apres la 2.6.0 ; elle suit desormais
+#   l'en-tete.
+# Fonctions ajoutees : profondeur_peau, resistance_surface, resistance_wheeler,
+#   facteur_rugosite, djordjevic_sarkar, abcd_via_ligne, _pertes,
+#   _z_air_microruban, _z_air_triplaque, _hauteur_deduite, _recul,
+#   _topologie_pertes, _z_air_section. Constantes : ETA_0,
+#   MODELES_CONDUCTEUR, MODELES_RUGOSITE, EPAISSEUR_MIN_WHEELER.
+# Fonctions modifiees : line_losses, line_losses_detaillees (parametres nommes
+#   optionnels en plus ; meme forme de retour, cles ajoutees au detail).
+#
 # Version: 2.6.0
 # Date: 2026-10-02
 # Explication: DEUX NIVEAUX. Deux pistes de couches voisines sans plan entre
@@ -337,7 +388,7 @@ import math
 import numpy as np
 
 
-VERSION = "2.5.0"
+VERSION = "2.7.0"
 
 
 def etat():
@@ -1618,165 +1669,545 @@ def dispersion_getsinger(z0_statique, eps_eff_statique, epsilon_r, h, freq):
     return float(eps_f), float(z_f)
 
 
-def line_losses(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
-                epaisseur=35e-6):
-    """Atténuation linéique, en nepers par mètre : conducteur + diélectrique.
+# ==========================================================================
+# LES PERTES DU CONDUCTEUR : LA REGLE DE L'INDUCTANCE INCREMENTALE
+# --------------------------------------------------------------------------
+# CE QUI ETAIT COMPTE JUSQU'A LA 2.6.0, ET CE QUI MANQUAIT. alpha_c valait
+# Rs / (2 Z0 w) : une nappe de courant de largeur w sur UNE face du ruban,
+# rien d'autre. Ni le courant de RETOUR dans le plan, qui traverse la meme
+# epaisseur de peau ; ni la face superieure et les flancs du ruban ; ni la
+# CONCENTRATION du courant sur les bords, ou la densite monte comme
+# 1/racine(distance a l'arete) et ou se dissipe une bonne part de la perte.
+#
+# POURQUOI LE CHIFFRE ETAIT POURTANT A PEU PRES JUSTE A 50 OHMS, ET FAUX
+# AILLEURS. Les oublis se compensent par hasard : le plan ajoute une perte, et
+# l'etalement du courant au-dela de w (champ de bord, face superieure) en
+# retire. Sur un microruban 50 ohms de FR-4 les deux s'annulent a quelques
+# pour cent pres. Sur une piste ETROITE (90 ohms et plus) l'ancien modele
+# surestime la perte de moitie, parce qu'il entasse sur w un courant qui
+# s'etale en fait sur tout le perimetre ; sur une piste LARGE il en oublie la
+# moitie, celle du plan, et tend vers Rs/(2 Z0 w) la ou les plaques
+# paralleles imposent Rs/(Z0 w). En triplaque, ou le courant se partage entre
+# les deux faces du ruban, il surestime d'un tiers.
+#
+# LA REGLE DE WHEELER (1942), exacte tant que la profondeur de peau est petite
+# devant l'epaisseur et les rayons de courbure : la resistance lineique est la
+# derivee de l'inductance quand TOUTES les parois parcourues reculent d'une
+# meme distance n a l'interieur du metal,
+#
+#     R = (Rs / mu0) . dL/dn  =  (Rs / eta0) . dZ0_air/dn      [ohm/m]
+#     alpha_c = R / (2 Z0)                                    [Np/m]
+#
+# puisque L = Z0_air / c ne depend pas du dielectrique. Pucel (1968) pour le
+# microruban et Cohn / Wheeler (1978) pour la triplaque n'ont pas fait autre
+# chose : ils ont derive A LA MAIN une formule de Z0 avec epaisseur. On fait
+# la meme derivation numeriquement, en differences centrees, sur la formule de
+# Z0 la plus juste dont on dispose : Hammerstad-Jensen (1980) avec sa
+# correction d'epaisseur pour le microruban, Wheeler (1978) pour la triplaque.
+# Le bord est dans la correction d'epaisseur -- c'est elle qui fait croitre la
+# perte quand t baisse --, le plan dans le recul de h.
+#
+# CE QUE LA SECTION NE DONNE PAS ICI, ET COMMENT ON S'EN PASSE. `line_losses`
+# ne recoit ni la hauteur au plan ni la topologie, et ses appelants ne
+# changent pas. La topologie se lit sur eps_eff : un milieu homogene
+# (eps_eff = er) est une triplaque, sinon c'est un microruban. La hauteur se
+# DEDUIT de l'impedance : Z0_air = Z0 . racine(eps_eff) ne depend que de w, t
+# et h, et la formule de Z0_air croit avec h -- une dichotomie la retrouve.
+# Sur un coplanaire ou un mode impair, c'est la hauteur du microruban de meme
+# Z0_air, plus basse que la vraie : la perte monte, ce qui est le sens de la
+# physique (le courant se resserre sur les aretes en regard). Quand la
+# hauteur est connue, `hauteur=` la donne et rien n'est deduit.
+#
+# REPLI : si la formule ne peut rendre ce Z0_air (impedance hors de sa plage),
+# on prend les plaques paralleles, R = 2 Rs / w, et le detail le dit.
+#
+# LE CONTINU. Sous la profondeur de peau la regle n'a plus de sens et Rs tend
+# vers zero : le ruban retrouve sa resistance continue 1/(sigma w t), qu'on
+# compose en quadrature avec la part alternative. Au-dessus du megahertz sur
+# du 35 um, la difference est sous le pour cent.
+#
+# CE QUE LE BANC VERIFIE (python/test/banc-ligne-mom.py) : la regle sur la
+# ligne COAXIALE, ou alpha_c est exact ; les plaques paralleles en limite de
+# ruban large ; Pucel en microruban et la formule de Pozar (incrementale sur
+# Wheeler) en triplaque, toutes deux publiees et algebriquement independantes
+# de ce code.
+# ==========================================================================
 
-    MODÈLE AMÉLIORÉ (2026-08-28) : l'effet de peau exact.
+ETA_0 = MU_0 * C_0                  # impedance du vide, 376,73 ohms
 
-    Le modèle précédent utilisait R_s / (Z0 * w) comme approximation, ce qui
-    suppose un courant uniforme dans la largeur. En réalité :
+# Les deux modeles de conducteur. « wheeler » est le defaut depuis la 2.7.0 ;
+# « ancien » rend au bit pres le Rs/(2 Z0 w) des versions precedentes, pour
+# comparer ou pour retrouver un chiffre deja publie.
+MODELES_CONDUCTEUR = ("wheeler", "ancien")
 
-    1. L'EFFET DE PEAU concentre le courant aux surfaces du conducteur.
-       δ = sqrt(2 / (ω μ σ)) : profondeur de pénétration à 5 GHz dans le cuivre
-       = 0.93 µm. Sur 35 µm d'épaisseur, le courant ne parcourt que 0.93 µm
-       de chaque côté — 2.6% de l'épaisseur — donc la résistance est 39× plus
-       haute que le DC.
+# En dessous de ce cuivre, la regle de Wheeler derive sans fin -- la perte
+# d'arete d'un ruban d'epaisseur nulle est infinie. On calcule alors la part
+# alternative sur un micron, et le continu sur l'epaisseur vraie.
+EPAISSEUR_MIN_WHEELER = 1e-6
 
-    2. La GÉOMÉTRIE compte : une piste fine (w ≈ t) conduit différemment
-       d'une piste large (w >> t). Pour w >> t, le courant des deux faces
-       se additionne ; pour w ≈ t, les faces latérales comptent aussi.
 
-    3. Le FACTEUR DE FORME :
-       - Piste large (w >> t) : R_ac = Rs / (δ) * (1/w + 2/t) ≈ 2*Rs/(δ*t)
-       - Piste fine (w ≤ t)   : R_ac = Rs / (δ) * (2/w + 2/t)
-       où Rs = 1/(σ δ) est la résistance de surface.
+def profondeur_peau(freq, sigma=SIGMA_CU):
+    """delta = racine(2 / (omega mu0 sigma)), en metres. Zero a frequence nulle.
 
-    Vérification : 35 µm de cuivre, 5 GHz, w=0.38 mm, t=35 µm
-       δ = 0.93 µm, Rs = 8.2 mΩ/carré
-       Piste large : R_ac ≈ 2 * 8.2e-3 / (0.93e-6 * 35e-6) = 630 kΩ/m
-       α_c = 630e3 / (50 * 0.38e-3) = 33 nepers/m = 286 dB/m — WAY trop
-
-    CORRECTION : l'approximation "courant sur les bords" n'est pas juste.
-    Le courant microwondé dans un microruban circule SUR la surface du ruban,
-    pas dans l'épaisseur. La résistance est celle d'une nappe de résistance
-    Rs sur le périmètre du ruban :
-
-       R_ac (Ω/m) = Rs * (P / (w * t))
-
-    où P = 2(w + t) est le périmètre du cuivre. C'est parce que le champ
-    EM microwondé penetre le cuivre sur δ, et le courant resultant voit une
-    section effective δ * P.
-
-    Modèle final :
-       R_ac = Rs * (2*(w + t)) / (w * t)
-       α_c  = R_ac / (2 * Z0)   [Np/m]
-
-    Vérification : 35 µm, 5 GHz, w=0.38 mm
-       Rs = 1/(5.8e7 * 0.93e-6) = 0.0185 Ω/carré
-       R_ac = 0.0185 * 2*(0.38e-3 + 35e-6) / (0.38e-3 * 35e-6)
-            = 0.0185 * 2*0.415e-3 / (13.3e-9)
-            = 0.0185 * 830 / 13.3e-9
-            = 0.0185 * 62.4e6
-            = 1155 Ω/m = 11.6 dB/cm
-
-    Ça fait beaucoup — attendons 0.2-0.5 dB/cm à 5 GHz sur FR-4. Le problème
-    est que le facteur de forme (P/(w*t)) surestime pour une piste plate.
-
-    APPROXIMATION INDUSTRIELLE (Cavill, Hammerstad) :
-       α_c (dB/m) ≈ 8.68 * Rs * (1/w) / Z0   pour w >> t
-
-    C'est l'approximation qui ignore l'épaisseur et suppose le courant
-    concentré sur les faces. Vérification : 0.38 mm, 5 GHz
-       α_c = 8.68 * 0.0185 * (1/0.38e-3) / 50
-            = 0.16 * 2632 / 50
-            = 8.5 dB/m = 0.85 dB/10cm
-
-    C'est beaucoup plus raisonnable. L'épaisseur n'intervient que quand w < 2t,
-    c'est-à-dire pour des pistes carrées ou des fils ronds.
+    Ecrite operation pour operation comme dans les versions precedentes : le
+    modele « ancien » doit rendre son chiffre AU BIT PRES.
     """
-    if not (freq > 0) or not (z0 > 0) or not (largeur > 0):
-        return 0.0, 0.0
+    f = float(freq)
+    if not (f > 0):
+        return 0.0
+    omega = 2.0 * np.pi * f
+    return float(np.sqrt(2.0 / (omega * MU_0 * float(sigma))))
 
-    # -- conducteur : effet de peau
-    omega = 2.0 * np.pi * freq
-    delta_peau = np.sqrt(2.0 / (omega * MU_0 * SIGMA_CU))
 
-    # Résistance de surface (Ω/carré)
-    Rs = 1.0 / (SIGMA_CU * delta_peau)
+def resistance_surface(freq, sigma=SIGMA_CU):
+    """Rs = 1 / (sigma delta) = racine(pi f mu0 / sigma), en ohms par carre."""
+    d = profondeur_peau(freq, sigma)
+    return 1.0 / (float(sigma) * d) if d > 0 else 0.0
 
-    # Facteur de forme selon le rapport largeur/épaisseur
+
+def _z_air_microruban(w, t, h):
+    """Z0 d'un microruban dans l'air, Hammerstad-Jensen 1980, epaisseur comprise.
+
+        u1 = u + (t/pi) ln(1 + 4e / (t coth^2 racine(6,517 u)))
+        Z  = (eta0 / 2pi) ln(f(u1)/u1 + racine(1 + 4/u1^2))
+        f(u) = 6 + (2pi - 6) exp(-(30,666/u)^0,7528)
+
+    u et t rapportes a h. Donnee a 0,01 % pour u <= 1000 et t/h < 0,1 ; lisse
+    partout, ce qui compte ici parce qu'on la derive. Rend None hors domaine.
+    """
+    if not (w > 0 and h > 0 and t >= 0):
+        return None
+    u = w / h
+    tn = t / h
+    if tn > 0:
+        cth = 1.0 / math.tanh(math.sqrt(6.517 * u))
+        u = u + (tn / math.pi) * math.log(1.0 + 4.0 * math.e / (tn * cth * cth))
+    fu = 6.0 + (2.0 * math.pi - 6.0) * math.exp(-(30.666 / u) ** 0.7528)
+    return (ETA_0 / (2.0 * math.pi)) * math.log(fu / u + math.sqrt(1.0 + 4.0 / (u * u)))
+
+
+def _z_air_triplaque(w, t, b):
+    """Z0 d'une triplaque centree dans l'air, Wheeler 1978 (Wadell, eq. 3.5.1).
+
+        x = t/b,  m = 2 / (1 + (2/3) x/(1-x))
+        dW/(b-t) = x/(pi(1-x)) [1 - 1/2 ln((x/(2-x))^2 + (0,0796 x/(W/b + 1,1 x))^m)]
+        W'/(b-t) = W/(b-t) + dW/(b-t),  a = 4 / (pi W'/(b-t))
+        Z = (eta0 / 4pi) ln(1 + a (2a + racine(4a^2 + 6,27)))
+
+    Donnee a 0,5 % pour W/(b-t) > 0,1 et t/b < 0,5 -- elle rejoint la solution
+    exacte en integrales elliptiques quand t tend vers zero. b est la distance
+    ENTRE LES DEUX PLANS. Rend None hors domaine.
+    """
+    if not (w > 0 and b > 0 and 0.0 <= t < b):
+        return None
+    x = t / b
+    if x > 0:
+        m = 2.0 / (1.0 + (2.0 / 3.0) * x / (1.0 - x))
+        dw = (x / (math.pi * (1.0 - x))) * (
+            1.0 - 0.5 * math.log((x / (2.0 - x)) ** 2
+                                 + (0.0796 * x / (w / b + 1.1 * x)) ** m))
+        wp = w / (b - t) + dw
+    else:
+        wp = w / b
+    if not (wp > 0):
+        return None
+    a = 4.0 / (math.pi * wp)
+    return (ETA_0 / (4.0 * math.pi)) * math.log(
+        1.0 + a * (2.0 * a + math.sqrt(4.0 * a * a + 6.27)))
+
+
+def _topologie_pertes(topologie, eps_eff, epsilon_r):
+    """« micro » ou « triplaque » : donnee, ou lue sur eps_eff (milieu homogene
+    -> triplaque)."""
+    t = (topologie or "").strip().lower()
+    if t in ("strip", "stripline", "triplaque"):
+        return "triplaque"
+    if t in ("micro", "microstrip", "microruban"):
+        return "micro"
+    er = float(epsilon_r)
+    if not (er > 1.0):
+        # Dans l'air tout milieu est homogene : rien ne les distingue, et le
+        # microruban est le cas courant d'une carte.
+        return "micro"
+    return "triplaque" if float(eps_eff) >= er * (1.0 - 2e-3) else "micro"
+
+
+def _z_air_section(topo, w, t, h):
+    if topo == "triplaque":
+        return _z_air_triplaque(w, t, h)
+    return _z_air_microruban(w, t, h)
+
+
+def _recul(topo, paroi, w, t, h, n):
+    """La section quand les parois de `paroi` reculent de n dans le metal.
+
+    Microruban : le ruban perd n sur chaque flanc et chaque face (w - 2n,
+    t - 2n), sa face inferieure monte de n ; le plan descend de n. Triplaque :
+    meme ruban, centre, et chacun des deux plans recule de n (b + 2n).
+    """
+    if paroi == "ruban":
+        return (w - 2.0 * n, t - 2.0 * n, h + (n if topo == "micro" else 0.0))
+    return (w, t, h + (n if topo == "micro" else 2.0 * n))
+
+
+def resistance_wheeler(z_air_recule, pas):
+    """La regle de l'inductance incrementale, sur une section quelconque.
+
+    `z_air_recule(n)` rend le Z0 DANS L'AIR de la section dont les parois
+    parcourues ont recule de n (metres) dans le metal. On rend
+
+        (1 / eta0) . dZ0_air/dn    [1/m]
+
+    qu'il suffit de multiplier par Rs pour avoir R en ohms par metre. La
+    derivee est centree, a +-`pas` : erreur en pas^2. Rend None si la section
+    reculee sort du domaine de la formule.
+    """
+    p = float(pas)
+    z_p = z_air_recule(p)
+    z_m = z_air_recule(-p)
+    if z_p is None or z_m is None:
+        return None
+    k = (z_p - z_m) / (2.0 * p * ETA_0)
+    return k if (math.isfinite(k) and k > 0) else None
+
+
+@functools.lru_cache(maxsize=4096)
+def _hauteur_deduite(topo, z_air, w, t):
+    """La hauteur (h, ou b en triplaque) qui rend ce Z0_air a cette largeur.
+
+    Z0_air croit avec la hauteur, et doucement en log h : fausse position de
+    l'Illinois sur ln h, dans [w/1e4, 1e4 w], jusqu'a 1e-12 pres sur Z0_air --
+    une dizaine d'evaluations. En cache : un meme troncon revient a chaque
+    frequence. None si la cible sort de la plage de la formule.
+    """
+    lo = max(w * 1e-4, 1.25 * t) if topo == "triplaque" else w * 1e-4
+    hi = max(w, t) * 1e4
+    z_lo = _z_air_section(topo, w, t, lo)
+    z_hi = _z_air_section(topo, w, t, hi)
+    if z_lo is None or z_hi is None or not (z_lo <= z_air <= z_hi):
+        return None
+    a, fa = math.log(lo), z_lo - z_air
+    b, fb = math.log(hi), z_hi - z_air
+    if fa == 0.0:
+        return lo
+    if fb == 0.0:
+        return hi
+    cote = 0
+    c = 0.5 * (a + b)
+    for _ in range(200):
+        c = (a * fb - b * fa) / (fb - fa)
+        z = _z_air_section(topo, w, t, math.exp(c))
+        if z is None:
+            return None
+        fc = z - z_air
+        if abs(fc) <= 1e-12 * z_air or abs(b - a) <= 1e-14:
+            break
+        if fc * fb > 0:
+            b, fb = c, fc
+            if cote == -1:
+                fa *= 0.5
+            cote = -1
+        else:
+            a, fa = c, fc
+            if cote == 1:
+                fb *= 0.5
+            cote = 1
+    return math.exp(c)
+
+
+# ==========================================================================
+# LA RUGOSITE DU CUIVRE
+# --------------------------------------------------------------------------
+# Le cuivre electrodepose est rugueux, et ses dents -- quelques microns --
+# sont de l'ordre de la profondeur de peau des le gigahertz : le courant suit
+# le relief et le chemin s'allonge. Les deux modeles du metier rendent un
+# FACTEUR K >= 1 sur alpha_c :
+#
+#   HAMMERSTAD-GROISS (1975) : K = 1 + (2/pi) atan(1,4 (Delta/delta)^2)
+#       Delta = rugosite RMS. K -> 1 en basse frequence, -> 2 en haute :
+#       le relief au plus double le chemin -- c'est sa limite connue, il sature
+#       la ou les mesures continuent de monter.
+#
+#   HURAY (2010), « boules de neige », une seule taille de nodule :
+#       K = 1 + (3/2) . SR / (1 + delta/a + delta^2/(2 a^2))
+#       a = rayon du nodule, SR = N . 4 pi a^2 / A_plat le rapport de la
+#       surface des nodules a la surface plane. K est BORNE par 1 + 3/2 SR,
+#       et n'a pas la saturation a 2 de Hammerstad.
+#
+# Zero rugosite rend K = 1 exactement : rien ne change pour qui ne la donne pas.
+# ==========================================================================
+
+MODELES_RUGOSITE = ("hammerstad", "huray")
+
+
+def facteur_rugosite(freq, rugosite_rms=0.0, modele="hammerstad",
+                     rayon_nodule=0.0, rapport_surface=0.0, sigma=SIGMA_CU):
+    """Le facteur K >= 1 de la rugosite sur alpha_c. TOUT EN METRES.
+
+    `freq` scalaire ou tableau (rend alors un tableau). « hammerstad » lit
+    `rugosite_rms` ; « huray » lit `rayon_nodule` et `rapport_surface`. Un
+    parametre nul, ou un modele inconnu, rend 1.
+    """
+    m = (modele or "hammerstad").strip().lower()
+    if np.ndim(freq) == 0:
+        # Le chemin scalaire, sans tableau : `line_losses` l'appelle a chaque
+        # frequence de chaque troncon.
+        f = float(freq)
+        if not (f > 0):
+            return 1.0
+        delta = math.sqrt(1.0 / (math.pi * f * MU_0 * float(sigma)))
+        if m == "hammerstad" and float(rugosite_rms) > 0:
+            return 1.0 + (2.0 / math.pi) * math.atan(
+                1.4 * (float(rugosite_rms) / delta) ** 2)
+        if m == "huray" and float(rayon_nodule) > 0 and float(rapport_surface) > 0:
+            a = float(rayon_nodule)
+            return 1.0 + 1.5 * float(rapport_surface) / (
+                1.0 + delta / a + delta * delta / (2.0 * a * a))
+        return 1.0
+    f = np.asarray(freq, dtype=float)
+    k = np.ones_like(f)
+    pos = f > 0
+    if np.any(pos):
+        delta = np.zeros_like(f)
+        delta[pos] = np.sqrt(1.0 / (np.pi * f[pos] * MU_0 * float(sigma)))
+        if m == "hammerstad" and float(rugosite_rms) > 0:
+            r = float(rugosite_rms)
+            k[pos] = 1.0 + (2.0 / np.pi) * np.arctan(1.4 * (r / delta[pos]) ** 2)
+        elif m == "huray" and float(rayon_nodule) > 0 and float(rapport_surface) > 0:
+            a = float(rayon_nodule)
+            d = delta[pos]
+            k[pos] = 1.0 + 1.5 * float(rapport_surface) / (
+                1.0 + d / a + d * d / (2.0 * a * a))
+    return k
+
+
+# ==========================================================================
+# LE DIELECTRIQUE CAUSAL : DJORDJEVIC-SARKAR
+# --------------------------------------------------------------------------
+# Un er et un tan delta CONSTANTS sur toute la bande ne sont la permittivite
+# d'aucun materiau : Kramers-Kronig lie les deux parties, et une perte non
+# nulle impose une permittivite qui DECROIT avec la frequence. Le defaut ne se
+# voit pas sur un |S21|, il se voit apres transformee de Fourier : une reponse
+# impulsionnelle qui commence AVANT le front, et un oeil qui s'ouvre de travers.
+#
+# LE MODELE DE DJORDJEVIC ET SARKAR (2001), « large bande de Debye » : une
+# infinite de poles de Debye repartis uniformement en log entre f1 et f2, dont
+# la somme s'ecrit fermee :
+#
+#     eps(f) = eps_inf + Delta_eps / log10(f2/f1) . log10((f2 + j f)/(f1 + j f))
+#
+# Entre f1 et f2, er decroit LINEAIREMENT EN log f et tan delta est presque
+# plat -- ce que mesurent les fiches de stratifie. On le cale sur la valeur
+# donnee a f_ref : deux equations (partie reelle, partie imaginaire), deux
+# inconnues (eps_inf, Delta_eps). Causal par construction : c'est une somme de
+# Debye, analytique dans le demi-plan.
+# ==========================================================================
+
+
+def djordjevic_sarkar(er_ref, tand_ref, f_ref, freqs, f1=1e3, f2=1e12):
+    """(er(f), tan_delta(f)) causaux, cales sur (er_ref, tand_ref) a f_ref.
+
+    `freqs` scalaire ou tableau, en hertz. Rend deux flottants ou deux
+    tableaux. A f_ref on retrouve exactement les valeurs donnees ; a frequence
+    nulle er vaut eps_inf + Delta_eps et tan delta zero.
+    """
+    er0 = float(er_ref)
+    td0 = float(tand_ref)
+    fr = float(f_ref)
+    f1 = float(f1)
+    f2 = float(f2)
+    if not (f2 > f1 > 0 and fr > 0):
+        raise ValueError("djordjevic_sarkar : il faut 0 < f1 < f2 et f_ref > 0")
+    m = np.log10(f2 / f1)
+
+    def forme(x):
+        x = np.asarray(x, dtype=float)
+        return np.log10((f2 + 1j * x) / (f1 + 1j * x)) / m
+
+    fr_c = complex(forme(fr))
+    d_eps = -er0 * td0 / fr_c.imag
+    e_inf = er0 - d_eps * fr_c.real
+    eps = e_inf + d_eps * forme(freqs)
+    er = eps.real
+    td = -eps.imag / eps.real
+    if np.ndim(er) == 0:
+        return float(er), float(td)
+    return er, td
+
+
+# ==========================================================================
+# line_losses : le tout
+# ==========================================================================
+
+def _pertes(z0, eps_eff, largeur, epsilon_r, tan_delta, freq, epaisseur,
+            hauteur, topologie, modele_conducteur, rugosite_rms,
+            modele_rugosite, rayon_nodule, rapport_surface,
+            dielectrique_causal, f_ref_dielectrique):
+    """Le calcul commun a `line_losses` et `line_losses_detaillees`."""
+    z0 = float(z0)
+    eps_eff = float(eps_eff)
+    er = float(epsilon_r)
+    f = float(freq)
     w = float(largeur)
     t = float(epaisseur)
 
+    delta_peau = profondeur_peau(f)
+    rs = resistance_surface(f)
+
+    # -- L'ANCIEN MODELE, toujours calcule : il sert au modele « ancien » et
+    # au detail, pour qu'on puisse lire l'ecart.
     if w > 2.0 * t:
-        # Piste large : le courant circule sur les deux faces
-        # R_ac = Rs * (1/w + 2/t) / 2 ... non
-        # Modèle industriel : α_c = Rs / (Z0 * w)
-        R_ac_par_m = Rs / w
+        r_ancien = rs / w
     else:
-        # Piste fine ou piste thick : le courant occupe toute l'épaisseur
-        # R_ac = Rs * (2/w + 2/t) / 2 = Rs * (1/w + 1/t)
-        # Mais borné par le cas large
-        R_ac_par_m = Rs * (1.0 / w + 1.0 / max(t, 1e-9))
-        R_ac_par_m = min(R_ac_par_m, Rs / w)  # ne pas dépasser le cas large
+        r_ancien = rs * (1.0 / w + 1.0 / max(t, 1e-9))
+        r_ancien = min(r_ancien, rs / w)
 
-    # α_c en Np/m puis converti en dB/m
-    alpha_c = R_ac_par_m / (2.0 * z0)
+    modele = (modele_conducteur or "wheeler").strip().lower()
+    if modele not in MODELES_CONDUCTEUR:
+        raise ValueError("modele_conducteur inconnu : %r" % modele_conducteur)
+    k_rug = facteur_rugosite(f, rugosite_rms, modele_rugosite, rayon_nodule,
+                             rapport_surface)
 
-    # -- diélectrique
-    remplissage = (epsilon_r * (eps_eff - 1.0)) \
-        / (eps_eff * (epsilon_r - 1.0)) if epsilon_r > 1.0 else 1.0
-    alpha_d = (np.pi * freq * np.sqrt(eps_eff) / C_0) * tan_delta * remplissage
+    topo = _topologie_pertes(topologie, eps_eff, er)
+    h = None
+    source_h = None
+    r_dc = 0.0
+    if modele == "ancien":
+        r_ruban = r_ancien * k_rug
+        r_plan = 0.0
+        source_h = "sans objet"
+    else:
+        t_c = max(t, EPAISSEUR_MIN_WHEELER)
+        if hauteur is not None and float(hauteur) > 0:
+            h = float(hauteur)
+            source_h = "donnee"
+        else:
+            h = _hauteur_deduite(topo, z0 * math.sqrt(max(eps_eff, 1.0)), w, t_c)
+            source_h = "deduite" if h is not None else None
+        k_ruban = k_plan = None
+        if h is not None:
+            pas = 1e-3 * min(w, t_c, h)
+            k_ruban = resistance_wheeler(
+                lambda n: _z_air_section(topo, *_recul(topo, "ruban", w, t_c, h, n)),
+                pas)
+            k_plan = resistance_wheeler(
+                lambda n: _z_air_section(topo, *_recul(topo, "plan", w, t_c, h, n)),
+                pas)
+        if k_ruban is None or k_plan is None:
+            # REPLI : les plaques paralleles, ruban et plan chacun Rs/w.
+            k_ruban = k_plan = 1.0 / w
+            source_h = "repli plaques paralleles"
+        r_dc = 1.0 / (SIGMA_CU * w * t) if t > 0 else 0.0
+        r_ruban = math.hypot(rs * k_rug * k_ruban, r_dc)
+        r_plan = rs * k_rug * k_plan
 
-    return float(alpha_c), float(alpha_d)
+    r_tot = r_ruban + r_plan
+    alpha_c = r_tot / (2.0 * z0)
+
+    # -- dielectrique
+    er_f, td_f, eps_f = er, float(tan_delta), eps_eff
+    if dielectrique_causal and er > 1.0 and td_f > 0:
+        er_f, td_f = djordjevic_sarkar(er, td_f, f_ref_dielectrique, f)
+        # Le remplissage du microruban ne bouge pas : seul er bouge.
+        q = (eps_eff - 1.0) / (er - 1.0)
+        eps_f = 1.0 + q * (er_f - 1.0)
+    remplissage = (er_f * (eps_f - 1.0)) \
+        / (eps_f * (er_f - 1.0)) if er_f > 1.0 else 1.0
+    alpha_d = (np.pi * f * np.sqrt(eps_f) / C_0) * td_f * remplissage
+
+    return {"alpha_c": float(alpha_c), "alpha_d": float(alpha_d),
+            "Rs": float(rs), "delta_peau": float(delta_peau),
+            "R_ac_par_m": float(r_tot), "R_ruban": float(r_ruban),
+            "R_plan": float(r_plan), "R_dc": float(r_dc),
+            "R_ancien": float(r_ancien),
+            "modele_conducteur": modele, "topologie": topo,
+            "hauteur": None if h is None else float(h),
+            "hauteur_source": source_h,
+            "facteur_rugosite": float(k_rug),
+            "er_f": float(er_f), "tan_delta_f": float(td_f),
+            "eps_eff_f": float(eps_f)}
+
+
+def line_losses(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
+                epaisseur=35e-6, hauteur=None, topologie=None,
+                modele_conducteur="wheeler", rugosite_rms=0.0,
+                modele_rugosite="hammerstad", rayon_nodule=0.0,
+                rapport_surface=0.0, dielectrique_causal=False,
+                f_ref_dielectrique=1e9):
+    """Atténuation linéique, en nepers par mètre : (alpha_c, alpha_d). EN SI.
+
+    CONDUCTEUR (2.7.0) : la règle de l'inductance incrémentale de Wheeler,
+    ruban ET plan(s) de référence ET bords -- voir l'en-tête de section plus
+    haut. alpha_c = R / (2 Z0), R = (Rs/eta0) dZ0_air/dn, sur Hammerstad-
+    Jensen (microruban) ou Wheeler 1978 (triplaque), plus la résistance
+    continue du ruban en quadrature.
+
+      `hauteur`   : h au plan (microruban) ou b ENTRE les deux plans
+                    (triplaque). None : déduite de Z0.racine(eps_eff).
+      `topologie` : « micro » ou « triplaque ». None : triplaque si
+                    eps_eff = er (milieu homogène), microruban sinon.
+      `modele_conducteur` : « wheeler » (défaut) ou « ancien », qui rend au
+                    bit près le Rs/(2 Z0 w) des versions jusqu'à 2.6.0.
+
+    RUGOSITÉ : facteur K de `facteur_rugosite` sur alpha_c. `rugosite_rms`
+    (Hammerstad-Groiss) ou `rayon_nodule` + `rapport_surface` (Huray, avec
+    modele_rugosite="huray"). Zéro par défaut : K = 1, rien ne change.
+
+    DIÉLECTRIQUE : alpha_d = (pi f racine(eps_eff) / c) tan_delta . q, q le
+    facteur de remplissage. Avec `dielectrique_causal=True`, er et tan_delta
+    sont lus comme les valeurs à `f_ref_dielectrique` et prolongés par
+    Djordjevic-Sarkar ; eps_eff suit er à remplissage constant. Désactivé par
+    défaut. Z0, lui, est celui que l'appelant passe : on ne le recalcule pas.
+    """
+    if not (freq > 0) or not (z0 > 0) or not (largeur > 0):
+        return 0.0, 0.0
+    d = _pertes(z0, eps_eff, largeur, epsilon_r, tan_delta, freq, epaisseur,
+                hauteur, topologie, modele_conducteur, rugosite_rms,
+                modele_rugosite, rayon_nodule, rapport_surface,
+                dielectrique_causal, f_ref_dielectrique)
+    return d["alpha_c"], d["alpha_d"]
 
 
 def line_losses_detaillees(z0, eps_eff, largeur, epsilon_r, tan_delta, freq,
-                           epaisseur=35e-6):
+                           epaisseur=35e-6, hauteur=None, topologie=None,
+                           modele_conducteur="wheeler", rugosite_rms=0.0,
+                           modele_rugosite="hammerstad", rayon_nodule=0.0,
+                           rapport_surface=0.0, dielectrique_causal=False,
+                           f_ref_dielectrique=1e9):
     """Atténuation détaillée avec toutes les composantes.
 
-    Retourne un dict avec :
+    Mêmes options nommées que `line_losses`. Retourne un dict avec :
         - alpha_c : atténuation conducteur (Np/m)
         - alpha_d : atténuation diélectrique (Np/m)
         - Rs : résistance de surface (Ω/carré)
         - delta_peau : profondeur de peau (m)
-        - R_ac_par_m : résistance AC du conducteur (Ω/m)
-        - facteur_forme : rapport P/(w*t) normalisé
+        - R_ac_par_m : résistance linéique totale du conducteur (Ω/m),
+          ruban + plan(s) : alpha_c = R_ac_par_m / (2 Z0)
+        - facteur_forme : rapport P/(w*t) (périmètre sur section, 1/m)
         - alpha_c_dB : alpha_c en dB/m
         - alpha_d_dB : alpha_d en dB/m
+    et, depuis la 2.7.0 :
+        - R_ruban, R_plan, R_dc : les parts de R (Ω/m)
+        - R_ancien : le Rs/w de l'ancien modèle, pour lire l'écart
+        - modele_conducteur, topologie, hauteur (m), hauteur_source
+          (« donnee », « deduite », « repli plaques paralleles »)
+        - facteur_rugosite
+        - er_f, tan_delta_f, eps_eff_f : le diélectrique à cette fréquence
     """
     if not (freq > 0) or not (z0 > 0) or not (largeur > 0):
         return {"alpha_c": 0.0, "alpha_d": 0.0, "Rs": 0.0,
                 "delta_peau": 0.0, "R_ac_par_m": 0.0,
                 "facteur_forme": 0.0, "alpha_c_dB": 0.0, "alpha_d_dB": 0.0}
-
-    omega = 2.0 * np.pi * freq
-    delta_peau = np.sqrt(2.0 / (omega * MU_0 * SIGMA_CU))
-    Rs = 1.0 / (SIGMA_CU * delta_peau)
-
+    d = _pertes(z0, eps_eff, largeur, epsilon_r, tan_delta, freq, epaisseur,
+                hauteur, topologie, modele_conducteur, rugosite_rms,
+                modele_rugosite, rayon_nodule, rapport_surface,
+                dielectrique_causal, f_ref_dielectrique)
     w = float(largeur)
     t = float(epaisseur)
-
-    # Périmètre effectif / section
-    perimetre = 2.0 * (w + t)
-    section = w * t
-    facteur_forme = perimetre / max(section, 1e-12)
-
-    # Résistance AC
-    if w > 2.0 * t:
-        R_ac_par_m = Rs / w
-    else:
-        R_ac_par_m = Rs * (1.0 / w + 1.0 / max(t, 1e-9))
-        R_ac_par_m = min(R_ac_par_m, Rs / w)
-
-    alpha_c = R_ac_par_m / (2.0 * z0)
-
-    # Diélectrique
-    remplissage = (epsilon_r * (eps_eff - 1.0)) \
-        / (eps_eff * (epsilon_r - 1.0)) if epsilon_r > 1.0 else 1.0
-    alpha_d = (np.pi * freq * np.sqrt(eps_eff) / C_0) * tan_delta * remplissage
-
-    return {
-        "alpha_c": float(alpha_c),
-        "alpha_d": float(alpha_d),
-        "Rs": float(Rs),
-        "delta_peau": float(delta_peau),
-        "R_ac_par_m": float(R_ac_par_m),
-        "facteur_forme": float(facteur_forme),
-        "alpha_c_dB": float(8.686 * alpha_c),
-        "alpha_d_dB": float(8.686 * alpha_d),
-    }
+    d["facteur_forme"] = float(2.0 * (w + t) / max(w * t, 1e-12))
+    d["alpha_c_dB"] = float(8.686 * d["alpha_c"])
+    d["alpha_d_dB"] = float(8.686 * d["alpha_d"])
+    return d
 
 
 # ==========================================================================
@@ -3717,6 +4148,87 @@ def abcd_via_complet(l_boucle, c_totale, freq, y_depart=0.0, y_arrivee=0.0,
     c = y1 + y2 + z * y1 * y2
     d = 1.0 + z * y1
     return np.array([[a, b], [c, d]], dtype=complex)
+
+
+def abcd_via_ligne(longueur, d_barreau, d_antipad, epsilon_r, freq,
+                   longueur_moignon=0.0, tan_delta=0.0, cote_moignon="arrivee",
+                   c_depart=0.0, c_arrivee=0.0, pertes_conducteur=True,
+                   z_via=None):
+    """Le via comme un TRONCON DE LIGNE COAXIALE, moignon compris. TOUT EN SI.
+
+        [1 0; Yd 1] . ABCD_ligne(Zc, gamma, longueur) . [1 0; Ya 1]
+
+    CE QUE LE PI NE SAIT PAS. `abcd_via` et `abcd_via_boucle` concentrent le
+    via en C/2 - L - C/2 : juste tant que le via est court devant la longueur
+    d'onde, et muet sur ce qui se passe quand il ne l'est plus. Un barreau de
+    1,6 mm dans du FR-4 fait un dixieme de longueur d'onde vers 9 GHz ; au-dela
+    le pi derive, et c'est justement la bande des liaisons multi-gigabits. Ici
+    le barreau est une LIGNE : l'ame est le percage, le blindage le bord des
+    antipads -- la meme approximation que `impedance_moignon`, avec les memes
+    reserves (elle surestime Zc entre deux plans).
+
+        L' = (mu0 / 2pi) ln(D/d)          C' = 2pi eps0 er / ln(D/d)
+        R' = Rs (1/(pi d) + 1/(pi D))     G' = omega C' tan_delta
+
+    R' est la perte exacte du coaxial (ame + blindage) ; `pertes_conducteur`
+    l'eteint. `z_via`, s'il est donne, remplace Zc = racine(L'/C') (par un Z0
+    mesure ou calcule ailleurs) en gardant le meme retard racine(er)/c.
+
+    LE MOIGNON se pose EN DERIVATION -- voir `abcd_via_complet` --, du cote
+    `cote_moignon` (« arrivee » ou « depart ») : une ligne de meme Zc et meme
+    gamma, ouverte au bout, d'admittance tanh(gamma l)/Zc. A son quart d'onde
+    elle court-circuite le noeud : c'est la `frequence_resonance_moignon`.
+
+    `c_depart`, `c_arrivee` : capacites de pastille au plan
+    (`capacite_pastille_au_plan`), en derivation a chaque bout.
+
+    A BASSE FREQUENCE, ce modele REJOINT le pi : B -> j omega L' l et
+    C -> j omega C' (l + l_moignon) + pastilles, soit `capacite_antipad` sur
+    toute la longueur du barreau -- le banc le verifie. Il ne remplace pas
+    `abcd_via_complet` (inductance de boucle, traversee de cavite) : il en est
+    le complement pour le haut du spectre.
+    """
+    lg = float(longueur)
+    lm = max(float(longueur_moignon or 0.0), 0.0)
+    d = float(d_barreau)
+    da = float(d_antipad)
+    er = float(epsilon_r)
+    f = float(freq)
+    if not (d > 0 and da > d and er > 0 and lg >= 0):
+        return np.eye(2, dtype=complex)
+    ln_r = np.log(da / d)
+    l_p = MU_0 / (2.0 * np.pi) * ln_r
+    c_p = 2.0 * np.pi * EPSILON_0 * er / ln_r
+    if z_via is not None and float(z_via) > 0:
+        # Meme retard, autre impedance.
+        v = C_0 / np.sqrt(er)
+        l_p = float(z_via) / v
+        c_p = 1.0 / (float(z_via) * v)
+    omega = 2.0 * np.pi * f
+    r_p = 0.0
+    if pertes_conducteur and f > 0:
+        r_p = resistance_surface(f) * (1.0 / (np.pi * d) + 1.0 / (np.pi * da))
+    if not (f > 0):
+        # Le continu : la resistance du barreau, rien d'autre.
+        return np.array([[1.0, r_p * lg], [0.0, 1.0]], dtype=complex)
+    z_s = r_p + 1j * omega * l_p
+    y_p = omega * c_p * float(tan_delta) + 1j * omega * c_p
+    zc = np.sqrt(z_s / y_p)
+    gamma = np.sqrt(z_s * y_p)
+    if gamma.real < 0:
+        gamma = -gamma
+    m = abcd_line(zc, gamma, lg)
+
+    y_moignon = np.tanh(gamma * lm) / zc if lm > 0 else 0.0
+    yd = 1j * omega * float(c_depart or 0.0)
+    ya = 1j * omega * float(c_arrivee or 0.0)
+    if (cote_moignon or "arrivee").strip().lower().startswith("dep"):
+        yd = yd + y_moignon
+    else:
+        ya = ya + y_moignon
+    gauche = np.array([[1.0, 0.0], [yd, 1.0]], dtype=complex)
+    droite = np.array([[1.0, 0.0], [ya, 1.0]], dtype=complex)
+    return gauche @ m @ droite
 
 
 def abcd_coude(w, h, epsilon_r, freq, angle_deg=90.0):
