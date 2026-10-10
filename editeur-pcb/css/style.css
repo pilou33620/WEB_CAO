@@ -983,3 +983,68 @@
   }
 
 
+
+  /* ---------- plans (Draftsman, 29-draftsman.js) ----------
+     Réglages et résultats de recherche à gauche, la feuille à droite. La
+     feuille reste blanche dans le thème sombre : c'est du papier. */
+  .df-box{width:min(1280px,100%);height:min(860px,100%)}
+  .df-q{
+    flex:0 1 320px;min-width:140px;background:#101216;border:1px solid var(--border2);
+    color:var(--txt);border-radius:5px;padding:5px 8px;font-family:var(--ui);font-size:12px;
+  }
+  .df-q:focus{outline:none;border-color:var(--blue)}
+  .df-n{font-family:var(--mono);font-size:10px;color:var(--yellow);min-width:80px}
+  .df-corps{min-height:0}
+  .df-cfg{
+    width:250px;flex:none;overflow-y:auto;padding:10px 12px;
+    border-right:1px solid var(--border);background:var(--panel);
+  }
+  .df-h{
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--txt-dim);margin:12px 0 6px;
+  }
+  .df-h:first-child{margin-top:0}
+  .df-case{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--txt);margin:4px 0;cursor:pointer}
+  .df-case input{accent-color:var(--blue);margin:0}
+  .df-cfg select{width:100%}
+  .df-champ{display:flex;flex-direction:column;gap:3px;margin:0 0 7px}
+  .df-champ span{font-size:10.5px;color:var(--txt-dim)}
+  .df-champ input{
+    background:#101216;border:1px solid var(--border2);color:var(--txt);border-radius:5px;
+    padding:4px 7px;font-size:12px;font-family:var(--ui);
+  }
+  .df-champ input:focus,.df-cfg textarea:focus{outline:none;border-color:var(--blue)}
+  .modal .df-cfg textarea.df-notes{height:110px;font-family:var(--ui);font-size:11.5px}
+  .df-res:empty{display:none}
+  .df-res{margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  .df-hit-l{
+    display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;text-align:left;
+    background:transparent;border:1px solid transparent;border-radius:5px;padding:4px 6px;
+    color:var(--txt);cursor:pointer;font-family:var(--ui);
+  }
+  .df-hit-l b{font-weight:600;font-size:12px;word-break:break-all}
+  .df-hit-l span{font-size:10px;color:var(--txt-dim);font-family:var(--mono)}
+  .df-hit-l:hover{background:var(--panel2);border-color:var(--border2)}
+  .df-hit-l.on{background:var(--blue-dim);border-color:var(--blue)}
+  .df-vide{font-size:11.5px;color:var(--txt-dim);margin:6px 0}
+  .df-apercu{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;background:#2a2d33}
+  .df-onglets{
+    display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:6px 8px;
+    background:var(--panel2);border-bottom:1px solid var(--border);
+  }
+  .df-onglet{
+    background:transparent;border:1px solid var(--border2);border-radius:5px;color:var(--txt-dim);
+    font-size:11px;padding:3px 8px;cursor:pointer;font-family:var(--ui);
+  }
+  .df-onglet:hover{color:var(--txt)}
+  .df-onglet.on{background:var(--blue-deep);border-color:var(--blue);color:#fff}
+  .df-onglet i{font-style:normal;background:var(--yellow);color:#111;border-radius:7px;padding:0 5px;font-size:10px;margin-left:3px}
+  .df-zoom{margin-left:auto;display:inline-flex;gap:3px}
+  .df-feuille{flex:1;overflow:auto;padding:14px;min-height:0}
+  .df-svg{display:block;margin:0 auto;box-shadow:0 6px 24px rgba(0,0,0,.45);background:#fff}
+  .df-hit{fill:rgba(255,176,0,.22);stroke:#ff8a00;stroke-width:.35}
+  .df-hit.on{fill:rgba(255,120,0,.35);stroke:#e8443a;stroke-width:.6}
+  @media (max-width:760px){
+    .df-corps{flex-direction:column}
+    .df-cfg{width:auto;max-height:38vh;border-right:none;border-bottom:1px solid var(--border)}
+  }

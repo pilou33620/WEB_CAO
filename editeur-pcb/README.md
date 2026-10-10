@@ -68,6 +68,9 @@ js/26-variantes.js       variantes de montage reprises du schéma : choix de la
 js/27-groupes.js         groupes (Unions) : composants et vias déplacés d'une pièce
 js/28-placement-satellites.js  « Placement auto », second temps : découplage et
                          composants série posés contre leur broche
+js/29-draftsman.js       plans de fabrication et d'assemblage (Draftsman) :
+                         feuilles cadrées et cartouchées, PDF au texte
+                         cherchable, aperçu SVG et recherche dans la fenêtre
 outils/build-monofichier.py assemble le tout dans dist/
 test/harness.js          banc d'essai sans navigateur
 ```
@@ -839,6 +842,70 @@ un assembleur ne commande ni ne place un composant DNP. Le cuivre, lui, ne
 change pas — pastilles, masque et pâte restent ceux de la carte complète. Le
 `LISEZ-MOI.txt` de l'archive nomme la variante et liste les DNP, et l'archive
 prend son nom (`…-fabrication-Lite.zip`).
+
+## Plans de fabrication et d'assemblage (Draftsman)
+
+**Fichier → Plans (Draftsman)…** ouvre une fenêtre à deux volets : à gauche
+les réglages et les résultats de recherche, à droite la feuille. Le bouton
+**Exporter PDF** télécharge `<projet>-PLANS.pdf`, et le même fichier part
+dans **Fabrication .zip**, où le Master Drawing l'annonce avec son contenu.
+
+| Feuille | Ce qu'elle porte |
+| --- | --- |
+| Plan de fabrication | vue de dessus à une échelle normalisée (2:1, 1:1, 1:2…), contour et découpes, cotes hors tout, origine des fichiers ; un symbole de perçage par outil (diamètre, métallisation, portée) et son tableau ; trous de fixation avec leurs coordonnées ; coupe d'empilage dessinée ; notes de fabrication tirées de la carte (matériau, Tg, épaisseur, finition, vernis, vias, test électrique) puis celles qu'on ajoute |
+| Assemblage dessus / dessous | corps des composants, pastilles en gris, point de broche 1, repère centré et tourné selon le boîtier ; non-montés de la variante active en tirets, marqués NM. Dessous, la vue est en miroir : la carte retournée, comme le monteur la voit |
+| Nomenclature | groupée par valeur, boîtier et référence fabricant : quantité, repères, fabricant, face ; non-montés listés à part |
+| Couches de cuivre (option) | une feuille par couche : pistes, arcs, pastilles, vias, zones |
+
+Chaque feuille a son cadre, ses repères de zones (1, 2, 3… / A, B, C…) et un
+cartouche : société, projet, titre, dessiné / vérifié / approuvé, date, n° de
+document (`<projet>-PLANS`), révision (celle du projet), échelle, format,
+feuille n / N. Les formats sont A4, A3 (par défaut) et A2 paysage. Une
+colonne trop longue (beaucoup d'outils, une longue nomenclature) continue sur
+une feuille « (suite) », l'en-tête de tableau répété.
+
+### Un PDF qui se cherche
+
+Tout le texte est du texte, jamais des traits : `Ctrl+F` dans n'importe quel
+lecteur PDF trouve un repère, une valeur, une note. Trois choix le
+garantissent :
+
+- les fontes sont en **WinAnsi**, pas en ASCII : « Épaisseur », « résistance »,
+  « ± », « µ », « Ø » s'écrivent et se cherchent. Ce que WinAnsi n'a pas
+  s'écrit comme un technicien l'écrirait (Ω → `Ohm`, ≥ → `>=`, εr → `er`) ;
+- ce qui ne s'affiche pas est posé en **texte invisible** (mode de rendu 3,
+  celui de la couche texte d'un document numérisé) : sur le corps de chaque
+  composant, sa valeur, son boîtier, sa référence fabricant, son fabricant ;
+  sur chaque pastille, son net ; sur les feuilles de cuivre, le nom de chaque
+  net sur sa plus longue piste. Chercher `100nF` surligne les condensateurs
+  **à leur place sur le plan**, chercher `GND` les broches où arrive la masse ;
+- des **signets** : une entrée par feuille et, sous chaque assemblage, une
+  entrée par composant qui mène à lui.
+
+La fenêtre cherche de la même façon, dans le même texte (invisibles compris),
+sans tenir compte des accents ni de la casse : la liste des résultats dit ce
+qui a été trouvé et où (« net · U1 · broche 5 · f. 2 »), les onglets comptent
+les résultats par feuille, et l'aperçu surligne les endroits. `Entrée` passe
+au résultat suivant, `Maj+Entrée` au précédent.
+
+### Où vivent les réglages
+
+Dans le document, `dessin` : format, feuilles cochées, noms du cartouche,
+notes. `normDoc` n'en fait qu'une copie — il tourne au démarrage, avant que
+`29-draftsman.js` soit chargé — et `dfCfg()` les borne à chaque usage. Une
+nouvelle carte les garde, comme les règles : ils décrivent qui dessine, pas la
+carte.
+
+### Comment c'est fait
+
+Une feuille est une liste d'objets en millimètres, Y vers le bas : traits et
+polygones, cercles, textes (taille en points, ancrage, rotation, invisible
+ou non, zone à surligner). Deux sorties la lisent, `dfPdf()` et `dfSvg()` :
+l'aperçu est donc exactement ce qui s'imprime. Le PDF est écrit à la main,
+sans dépendance, comme le Master Drawing : contenu non compressé, état
+graphique réémis seulement quand il change, table xref comptée en écrivant.
+La chasse des caractères vient de la table métrique d'Helvetica : c'est elle
+qui centre un repère sur son composant et coupe les colonnes des tableaux.
 
 ## Sélection multiple et presse-papier
 
@@ -2716,9 +2783,10 @@ désactive au lieu de disparaître.
 - Une pastille est rectangulaire (coins adoucis ou angles droits), oblongue ou
   ronde, avec sa rotation propre. Pas de forme quelconque : ni pastille en
   polygone, ni plage thermique découpée, ni chanfrein.
-- Ni trous non métallisés, ni texte de sérigraphie libre. Une pastille sans net
-  fait office de pastille libre, mais elle appartient toujours à une
-  empreinte.
+- Plans (Draftsman) : les vues sont placées d'office et les cotes se limitent
+  à l'encombrement du contour ; ni cote posée à la main, ni vue de détail
+  agrandie, ni export DXF. Le texte est en Helvetica standard (non
+  embarquée) : un lecteur la remplace par une fonte équivalente.
 - Les **pistes** savent être circulaires (voir plus haut) ; les zones de
   cuivre, les coupes et le contour de carte restent des polygones. Le
   routeur ne pose pas d'arc : ils arrivent d'un fichier, et l'éditeur les
@@ -2743,8 +2811,6 @@ désactive au lieu de disparaître.
   le microruban, ni triplaque asymétrique : le plan le plus proche décide, et la
   formule la suppose centrée. Le couplage entre deux pistes voisines n'est pris
   en compte que pour une paire différentielle déclarée.
-- Pas de serpentin d'appariement de longueur : l'écart entre les deux pistes
-  d'une paire est mesuré et signalé, jamais corrigé.
 - Le contrôle des vias borgnes et enterrés suppose un pressage unique. Un
   empilage à laminage séquentiel est signalé comme tel, mais sa séquence ne se
   décrit pas : il n'y a qu'une liste de diélectriques, pas de sous-ensembles.

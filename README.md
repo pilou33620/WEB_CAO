@@ -52,14 +52,16 @@ WEB_CAO tourne dans n'importe quel navigateur récent ; seul le serveur demande 
 | Outil | Rôle | Serveur | Guide |
 | :--- | :--- | :---: | :--- |
 | **Éditeur Schématique** | Multi-feuilles, bus et hiérarchie, netlist et BOM enrichies, variantes de montage (composants non montés), reconnaissance de motifs (LDO, buck, I2C/SPI/UART…) | Non | [Guide](editeur-schematique/README.md) |
-| **Éditeur PCB** | Routage *Push & Shove*, paires différentielles, vias borgnes/enterrés, DRC temps réel, profils fabricants, placement assisté, synchro schéma → PCB | Non¹ | [Guide](editeur-pcb/README.md) |
+| **Éditeur PCB** | Routage *Push & Shove*, paires différentielles, vias borgnes/enterrés, DRC temps réel, profils fabricants, placement assisté, synchro schéma → PCB, plans de fabrication et d'assemblage (Draftsman) | Non¹ | [Guide](editeur-pcb/README.md) |
 | **Gestion LIB** | Catalogue `LIB_composants.csv`, éditeurs d'empreintes et de symboles, modèles SPICE, import JLCPCB / LCSC | Oui | — |
 | **Recherche de composants** | Stocks et prix JLCPCB via [pcbparts.dev](https://pcbparts.dev/), équivalences, empreintes KiCad, datasheets | Oui | [Guide](recherche-composants/README.md) |
 | **Visionneuse IPC-2581** | Carte livrée par le fabricant : couches, empilage, nets, mesures et simulation SI/PI | Oui | [Guide](visionneuse-ipc2581/README.md) |
 
 ¹ La simulation, elle, passe par le serveur.
 
-**Dossier de fabrication** (`fabrication.zip`) : Gerber RS-274X, Excellon par portée de perçage, IPC-D-356, BOM, positions et Master Drawing PDF.
+**Dossier de fabrication** (`fabrication.zip`) : Gerber RS-274X, Excellon par portée de perçage, IPC-D-356, BOM, positions, Master Drawing PDF et plans PDF.
+
+**Plans (Draftsman)** : plan de fabrication coté (carte et tableau de perçage, coupe d'empilage, notes), plans d'assemblage dessus / dessous, nomenclature et, en option, une feuille par couche de cuivre, chacune avec cadre et cartouche. Le PDF **se cherche** : repères, valeurs, références fabricant et noms de nets y sont du vrai texte, posé à l'endroit du composant ou de la broche, avec un signet par composant. La fenêtre de l'éditeur cherche et surligne de la même façon ([guide](editeur-pcb/README.md#plans-de-fabrication-et-dassemblage-draftsman)).
 
 **Entre les outils** : un projet commun sur disque (`projet.cao.json`, documents, `datasheets/`), cross-probing schéma ↔ PCB (touche `L` entre deux onglets), travail en cours qui suit d'un outil à l'autre, profils utilisateur (panneaux, grille, préférences), recherche `Ctrl+F` et mesure `K`.
 

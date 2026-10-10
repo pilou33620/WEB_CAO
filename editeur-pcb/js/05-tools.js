@@ -19,6 +19,7 @@ function docObj(){
           drawings:S.drawings||[],
           variantes:S.variantes,
           groupes:groupesPropres(),
+          dessin:S.dessin||null,
           rf:normRf(S.rf),
           active:S.active,nextId:S.nextId};
 }
@@ -724,6 +725,10 @@ function normDoc(d){
   out.variantes=varNorm(src.variantes);
   /* groupes : seulement des membres qui existent (27-groupes.js) */
   out.groupes=normGroupes(src.groupes,out.fps,out.vias);
+  /* réglages des plans : une copie de données pures ; 29-draftsman.js les
+     borne à l'usage (dfCfg), il n'est pas encore chargé au démarrage */
+  out.dessin=(src.dessin&&typeof src.dessin==="object"&&!Array.isArray(src.dessin))
+    ?JSON.parse(JSON.stringify(src.dessin)):null;
   for(const fp of out.fps){
     if(!fp.nonMonte)continue;
     const nm=varNormNonMonte(fp.nonMonte,out.variantes);
@@ -767,6 +772,7 @@ function loadDoc(d,keepView){
   S.netBruyants=d.netBruyants||[];
   S.variantes=d.variantes;
   S.groupes=d.groupes;S.groupesSt=null;
+  S.dessin=d.dessin;
   S.fps=d.fps;S.tracks=d.tracks;S.vias=d.vias;
   S.zones=d.zones;S.cuts=d.cuts;S.holes=d.holes||[];S.drawings=d.drawings||[];
   S.active=d.active;S.pair=[0,S.cu-1];

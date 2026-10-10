@@ -391,7 +391,10 @@ const EXPOSE=["S","conn","draw","init","importNetlist","setCuCount","setMode","s
   "simRfZ","simRfExclure","simRfImporter","simRfOublierModele","simRfBroche",
   "simRfValeurSI","trkAt","simRfMasque",
   /* les liens des bouts de piste, et la transformation des boîtiers */
-  "transformFps","linkSync","fpXformInv","groupeEtendreSel","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest"];
+  "transformFps","linkSync","fpXformInv","groupeEtendreSel","pcbAppliquerDefEmpreinte","padDist","updateRoute","hitTest",
+  /* plans de fabrication et d'assemblage (29-draftsman.js) */
+  "dfCfg","dfRegler","dfDocument","dfPdf","dfPdfOctets","dfChercher","dfSvg","dfWinAnsi","dfPdfLit",
+  "dfLargeur","dfCouper","dfPercages","dfVue","dfOuvrir","dfFermer","dfExporter","DF_FORMATS","DF"];
 /* WS est réassigné par « Réinitialiser la disposition » : on l'expose en
    accesseur pour que le banc d'essai voie toujours l'objet courant. */
 eval(code.replace(/^"use strict";/,"")+"\n"
@@ -21827,6 +21830,221 @@ TA("export du schéma : sans netlist dans la session, rien ne bouge",async()=>{
     if(JSON.stringify(S.fps.map(f=>[f.ref,f.pkg,f.x,f.y]))!==avant)
       throw new Error("la carte ne devait pas changer");
   }finally{carteVide();}
+});
+
+/* ==========================================================================
+   Plans de fabrication et d'assemblage (29-draftsman.js)
+   ========================================================================== */
+/* Le PDF en chaîne latin1 : un octet, un caractère — les décalages de la
+   table xref se vérifient directement dessus. */
+function dfLatin(pdf){return Buffer.from(pdf).toString("latin1");}
+function dfToutes(){return {fab:true,asmT:true,asmB:true,bom:true,couches:true};}
+T("plans : PDF valide, chaque entrée de la table xref tombe sur son objet",()=>{
+  exCharger(1);
+  S.dessin={feuilles:dfToutes()};
+  try{
+    const doc=dfDocument();
+    if(doc.feuilles.length!==1+1+1+S.cu)
+      throw new Error("fabrication, assemblage dessus, nomenclature et "+S.cu+" couches attendus : "+
+                      doc.feuilles.map(f=>f.titre).join(" | "));
+    const t=dfLatin(dfPdfOctets(doc));
+    if(!t.startsWith("%PDF-1.4"))throw new Error("signature");
+    if(!/%%EOF\n$/.test(t))throw new Error("fin de fichier");
+    const sx=+(/startxref\n(\d+)\n%%EOF/.exec(t)||[])[1];
+    if(t.slice(sx,sx+5)!=="xref\n")throw new Error("startxref ne pointe pas sur la table");
+    const m=/^xref\n0 (\d+)\n/.exec(t.slice(sx));
+    const n=+m[1];
+    const lignes=t.slice(sx+m[0].length).split("\n");
+    for(let i=1;i<n;i++){
+      const off=+lignes[i].slice(0,10);
+      if(!t.startsWith(i+" 0 obj\n",off))throw new Error("objet "+i+" : décalage "+off+" faux");
+    }
+    /* chaque flux annonce sa vraie longueur */
+    const re=/<< \/Length (\d+) >>\nstream\n/g;let r,k=0;
+    while((r=re.exec(t))){
+      const fin=re.lastIndex+(+r[1]);
+      if(t.slice(fin,fin+10)!=="\nendstream")throw new Error("longueur de flux fausse");
+      k++;
+    }
+    if(k!==doc.feuilles.length)throw new Error(k+" flux pour "+doc.feuilles.length+" feuilles");
+    if(t.indexOf("/WinAnsiEncoding")<0)throw new Error("fontes sans codage WinAnsi : les accents ne se chercheraient pas");
+  }finally{S.dessin=null;}
+});
+T("plans : le texte est du vrai texte — repères visibles, valeurs invisibles, accents",()=>{
+  exCharger(1);
+  const t=dfLatin(dfPdfOctets());
+  if(t.indexOf("(U1) Tj")<0)throw new Error("le repère U1 n'est pas écrit en texte");
+  /* invisible : mode de rendu 3, la valeur posée sur le corps du composant */
+  if(!/3 Tr [^\n]*\(C3 100n\) Tj/.test(t))throw new Error("valeur de C3 absente ou visible");
+  if(!/0 Tr [^\n]*\(U1\) Tj/.test(t))throw new Error("le repère doit rester visible (mode 0)");
+  /* « Épaisseur » : É = 0xC9 en WinAnsi, octal 311 */
+  if(t.indexOf("\\311paisseur")<0)throw new Error("accent perdu dans « Épaisseur »");
+  if(/\(Carte\) Tj/.test(t)===false)throw new Error("nom du projet absent du cartouche");
+});
+T("plans : codage WinAnsi et ce qui n'y entre pas",()=>{
+  const c=dfWinAnsi("é€Ω≥µ");
+  const att=[0xE9,0x80,0x4F,0x68,0x6D,0x3E,0x3D,0xB5];
+  if(JSON.stringify(c)!==JSON.stringify(att))throw new Error(JSON.stringify(c));
+  if(dfPdfLit("a(b)\\c")!=="(a\\(b\\)\\\\c)")throw new Error(dfPdfLit("a(b)\\c"));
+  if(dfPdfLit("ő")!=="(o)")throw new Error("lettre hors Latin-1 : "+dfPdfLit("ő"));
+  if(dfPdfLit("日")!=="(?)")throw new Error("idéogramme : "+dfPdfLit("日"));
+});
+T("plans : coupe des lignes à la largeur de la colonne",()=>{
+  const l=dfCouper("C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11, C12, C13, C14",20,7);
+  if(l.length<3)throw new Error("trop peu de lignes : "+JSON.stringify(l));
+  for(const x of l)if(dfLargeur(x,7)>20+1e-9)throw new Error("« "+x+" » dépasse");
+  const m=dfCouper("RÉFÉRENCEFABRICANTTRÈSLONGUESANSESPACE",15,7);
+  for(const x of m)if(dfLargeur(x,7)>15+1e-9)throw new Error("mot coupé trop large : "+x);
+  if(m.join("")!=="RÉFÉRENCEFABRICANTTRÈSLONGUESANSESPACE")throw new Error("lettres perdues");
+});
+T("plans : recherche — repère, valeur, net, sans accents ni casse",()=>{
+  exCharger(1);
+  const doc=dfDocument();
+  const asm=doc.feuilles.findIndex(f=>f.genre==="asmT");
+  const u1=dfChercher(doc,"u1").filter(h=>h.p===asm);
+  if(u1.length!==1||u1[0].cat!=="repere")throw new Error("U1 sur l'assemblage : "+JSON.stringify(u1));
+  const fp=S.fps.find(f=>f.ref==="U1");
+  const b=u1[0].box;
+  if(!(b.x2-b.x1>3&&b.y2-b.y1>3))throw new Error("la cible doit être le corps de U1, pas son texte");
+  const val=dfChercher(doc,"100N").filter(h=>h.p===asm);
+  const n100=S.fps.filter(f=>f.value==="100n"&&!f.side).length;
+  if(val.length!==n100)throw new Error(n100+" condensateurs de 100n, "+val.length+" trouvés");
+  const gnd=dfChercher(doc,"gnd").filter(h=>h.p===asm&&h.cat==="net");
+  if(!gnd.length||!/broche/.test(gnd[0].lieu))throw new Error("le net GND n'est pas cherchable sur l'assemblage");
+  if(!dfChercher(doc,"epaisseur").some(h=>/Épaisseur/.test(h.s)))throw new Error("la recherche doit ignorer les accents");
+  if(dfChercher(doc,"   ").length)throw new Error("une recherche vide ne trouve rien");
+  if(!fp)throw new Error("U1 absent de l'exemple");
+});
+T("plans : signets — une entrée par feuille, une par composant de l'assemblage",()=>{
+  exCharger(1);
+  const doc=dfDocument();
+  const t=dfLatin(dfPdf(doc.feuilles,doc.meta));
+  const dest=(t.match(/\/Dest \[/g)||[]).length;
+  const attendus=doc.feuilles.length+S.fps.filter(f=>!f.side).length;
+  if(dest!==attendus)throw new Error(attendus+" signets attendus, "+dest);
+  if(t.indexOf("/PageMode /UseOutlines")<0)throw new Error("les signets doivent s'ouvrir avec le document");
+  /* les titres de signets en UTF-16 : « Assemblage — face dessus » garde son tiret long */
+  const h=Buffer.from("﻿2. Assemblage — face dessus","utf16le").swap16().toString("hex").toUpperCase();
+  if(t.indexOf("<"+h+">")<0)throw new Error("titre de signet UTF-16 introuvable");
+});
+T("plans : tableau de perçage — autant de trous que les fichiers Excellon",()=>{
+  exCharger(1);
+  const g=dfPercages();
+  const n=g.reduce((a,e)=>a+e.pts.length,0);
+  if(n!==drillFile().holes)throw new Error(n+" trous au plan, "+drillFile().holes+" à l'Excellon");
+  const vias=g.filter(e=>e.usages.has("vias"));
+  if(!vias.length||vias.some(e=>!e.plaque))throw new Error("vias métallisés attendus");
+  S.holes=[mkHole(5,5,3.2)];
+  try{
+    const g2=dfPercages(), np=g2.find(e=>!e.plaque);
+    if(!np||np.pts.length!==1||Math.abs(np.d-3.2)>1e-9)throw new Error("trou de fixation absent : "+JSON.stringify(np));
+    const doc=dfDocument();
+    if(!dfChercher(doc,"fixation").length)throw new Error("le tableau des trous de fixation manque");
+  }finally{S.holes=[];}
+});
+T("plans : variante — non montés en tirets, hors nomenclature",()=>{
+  exCharger(1);
+  const c3=S.fps.find(f=>f.ref==="C3");
+  S.variantes={liste:[{id:"eco",nom:"Économique"}],active:"eco"};
+  c3.nonMonte=["eco"];
+  try{
+    const doc=dfDocument();
+    const asm=doc.feuilles.find(f=>f.genre==="asmT");
+    const nm=asm.items.find(it=>it.t==="t"&&it.s==="NM");
+    if(!nm)throw new Error("marque NM absente");
+    if(!asm.items.some(it=>it.t==="p"&&it.tirets))throw new Error("corps du non-monté sans tirets");
+    const bom=doc.feuilles.find(f=>f.genre==="bom");
+    /* le tableau (cat « bom ») ne porte plus C3 ; la liste des non-montés, si */
+    const refs=bom.items.filter(it=>it.t==="t"&&it.cat==="bom").map(it=>it.s).join(" | ");
+    if(/\bC3\b/.test(refs))throw new Error("C3 encore dans la nomenclature : "+refs);
+    if(!bom.items.some(it=>it.t==="t"&&/non montés dans la variante « économique »/i.test(it.s)))
+      throw new Error("titre des non-montés absent");
+    if(!bom.items.some(it=>it.t==="t"&&it.cat==="note"&&/\bC3\b/.test(it.s)))
+      throw new Error("C3 absent de la liste des non-montés");
+    const cart=doc.feuilles[0].items.find(it=>it.t==="t"&&/^Variante de montage : Économique$/.test(it.s));
+    if(!cart)throw new Error("la variante doit figurer près du cartouche");
+  }finally{delete c3.nonMonte;S.variantes={liste:[],active:""};}
+});
+T("plans : face dessous — feuille propre, vue en miroir",()=>{
+  exCharger(1);
+  const fp=S.fps.find(f=>f.ref==="U2");
+  fp.side=1;
+  try{
+    const doc=dfDocument();
+    const B=doc.feuilles.find(f=>f.genre==="asmB");
+    if(!B)throw new Error("feuille d'assemblage dessous absente");
+    if(B.signets.length!==1||!/^U2/.test(B.signets[0].titre))throw new Error("U2 seul attendu dessous");
+    const T0=doc.feuilles.find(f=>f.genre==="asmT");
+    if(T0.signets.some(s=>/^U2/.test(s.titre)))throw new Error("U2 ne doit plus être dessus");
+    /* miroir : le composant le plus à gauche dessus est le plus à droite dessous */
+    const box={x:0,y:0,w:200,h:150};
+    const V0=dfVue(box,0,5), V1=dfVue(box,1,5);
+    const a=V0.T(fp.x,fp.y), b=V1.T(fp.x,fp.y);
+    if(Math.abs((a.x-box.w/2)+(b.x-box.w/2))>1e-6||Math.abs(a.y-b.y)>1e-6)
+      throw new Error("la vue de dessous n'est pas le miroir de celle de dessus");
+  }finally{fp.side=0;}
+});
+T("plans : couches de cuivre — le nom des nets se cherche sur chaque couche",()=>{
+  exCharger(1);
+  S.dessin={feuilles:{fab:false,asmT:false,asmB:false,bom:false,couches:true}};
+  try{
+    const doc=dfDocument();
+    if(doc.feuilles.length!==S.cu)throw new Error(S.cu+" feuilles attendues, "+doc.feuilles.length);
+    const t=S.tracks.find(x=>x.net);
+    const h=dfChercher(doc,t.net).filter(x=>x.cat==="net");
+    if(!h.some(x=>x.p===t.l))throw new Error("net "+t.net+" introuvable sur sa couche L"+(t.l+1));
+  }finally{S.dessin=null;}
+});
+T("plans : réglages dans le document, bornés, aller-retour neutre",()=>{
+  exCharger(1);
+  S.dessin={format:"Z9",auteur:"x".repeat(500),feuilles:{bom:"oui",couches:true}};
+  const c=dfCfg();
+  if(c.format!=="A3")throw new Error("format inconnu : A3 attendu");
+  if(c.auteur.length!==120)throw new Error("champ non borné");
+  if(c.feuilles.bom!==true||c.feuilles.couches!==true)throw new Error("feuilles mal lues");
+  dfRegler("format","A4");dfRegler("asmT",false);dfRegler("societe","ACME Électronique");
+  if(S.dessin.format!=="A4"||S.dessin.feuilles.asmT!==false)throw new Error("réglage non retenu");
+  const a=serialize();
+  loadDoc(JSON.parse(a),true);
+  if(serialize()!==a)throw new Error("l'aller-retour change le document");
+  if(dfCfg().societe!=="ACME Électronique")throw new Error("société perdue au rechargement");
+  const doc=dfDocument();
+  if(doc.feuilles[0].w!==DF_FORMATS.A4.w)throw new Error("format A4 non appliqué");
+  if(doc.feuilles.some(f=>f.genre==="asmT"))throw new Error("feuille décochée encore produite");
+  S.dessin=null;
+});
+T("plans : dans le dossier de fabrication, annoncés par le master drawing",()=>{
+  exCharger(1);
+  const files=buildFabFiles().files;
+  const plans=files.find(f=>/-PLANS\.pdf$/.test(f.name));
+  if(!plans||!(plans.data instanceof Uint8Array))throw new Error("plans absents de l'archive");
+  const md=files.find(f=>/MASTER-DRAWING\.pdf$/.test(f.name));
+  if(dfLatin(md.data).indexOf(plans.name)<0)throw new Error("le master drawing n'annonce pas "+plans.name);
+  const ip=files.indexOf(plans), im=files.indexOf(md);
+  if(ip>im)throw new Error("les plans doivent précéder le master drawing qui les liste");
+  /* aucune feuille : ni fichier, ni annonce */
+  S.dessin={feuilles:{fab:false,asmT:false,asmB:false,bom:false,couches:false}};
+  try{
+    if(dfPdfOctets()!==null)throw new Error("sans feuille, pas de PDF");
+    const f2=buildFabFiles().files;
+    if(f2.some(f=>/-PLANS\.pdf$/.test(f.name)))throw new Error("PDF vide dans l'archive");
+    const md2=dfLatin(f2.find(f=>/MASTER-DRAWING\.pdf$/.test(f.name)).data);
+    if(md2.indexOf("-PLANS.pdf")>=0)throw new Error("le master drawing annonce des plans absents");
+  }finally{S.dessin=null;}
+});
+T("plans : aperçu SVG et fenêtre",()=>{
+  exCharger(1);
+  const doc=dfDocument();
+  const asm=doc.feuilles.find(f=>f.genre==="asmT");
+  const svg=dfSvg(asm,[{x1:1,y1:1,x2:5,y2:5,actif:true}]);
+  if(!/^<svg [^>]*viewBox="0 0 420 297"/.test(svg))throw new Error("cadre A3 attendu");
+  if(svg.indexOf(">U1</text>")<0)throw new Error("repère absent de l'aperçu");
+  if(/>C3 100n</.test(svg))throw new Error("un texte invisible ne se peint pas dans l'aperçu");
+  if(svg.indexOf('class="df-hit on"')<0)throw new Error("surlignage absent");
+  dfOuvrir();
+  try{
+    if(!DF.doc||!DF.doc.feuilles.length)throw new Error("la fenêtre n'a rien construit");
+  }finally{dfFermer();}
 });
 
 (async()=>{

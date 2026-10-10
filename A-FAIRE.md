@@ -13,7 +13,7 @@ L'ensemble de la chaîne est fonctionnel et couvert par **plus de 1 700 essais a
 
 | Composant | Statut | Couverture / Bancs |
 | --- | --- | --- |
-| **Éditeur PCB** | En service | 836 essais (`editeur-pcb/test/harness.js`) |
+| **Éditeur PCB** | En service | 857 essais (`editeur-pcb/test/harness.js`), dont 13 pour les plans (Draftsman) |
 | **Éditeur Schématique** | En service | 119 essais (`editeur-schematique/test/harness.js`) |
 | **Visionneuse IPC-2581** | En service | 186 essais (`harness-sim.js`) + 59 (`banc-essai.py`) |
 | **SI — Impédance & Vias (`ligne_mom` v2.5.0)** | En service (0,3 à 0,4 % vs étalons) | 199 cas (`python/test/banc-ligne-mom.py`) |
@@ -132,6 +132,11 @@ lib/
 - [x] **Groupes** (les « Unions » d'Altium, `editeur-pcb/js/27-groupes.js`) : Ctrl+G groupe les composants et vias sélectionnés, Ctrl+Maj+G dissout ; un clic (ou le lasso) sur un membre prend le groupe entier, Ctrl+clic le retire entier ; glissement, R (à l'arrêt comme en glissant), cotes saisies emportent tout, les vias du groupe à toute distance ; les pistes entre membres partent en bloc, celles qui sortent suivent à 45°. Le panneau Propriétés d'un composant montre son groupe (renommer, dissoudre), la carte l'encadre quand il est sélectionné. Enregistré dans le document ; un groupe sans composant ou réduit à un membre disparaît.
   - [ ] Retournement (F) d'un groupe : aujourd'hui chaque composant se retourne sur place ; un miroir du groupe entier demande de revoir le retournement d'un composant tourné (rot à corriger avec la face).
   - [ ] Copier-coller d'un groupe : les copies ne sont pas regroupées, et les pistes internes ne viennent que si elles sont sélectionnées.
+
+- [x] **Plans de fabrication et d'assemblage (Draftsman)** (`editeur-pcb/js/29-draftsman.js`, 10/10/2026) : feuilles A4 / A3 / A2 avec cadre, repères de zones et cartouche ; plan de fabrication (vue cotée, symboles et tableau de perçage, trous de fixation, coupe d'empilage, notes), assemblage dessus / dessous (dessous en miroir, non-montés de la variante en tirets), nomenclature, couches de cuivre en option. PDF au **texte cherchable** (WinAnsi, accents compris ; valeurs, boîtiers, références fabricant et nets en texte invisible à leur place ; signets par feuille et par composant), dans `fabrication.zip` et annoncé par le Master Drawing. Recherche et surlignage dans la fenêtre. 13 essais (`harness.js`).
+  - [ ] Cotes posées à la main, accrochées à la géométrie (trous de fixation, connecteurs), et vues placées à la souris.
+  - [ ] Vue de détail agrandie, tableau des impédances contrôlées (attend le Constraint Manager).
+  - [ ] Export DXF pour la mécanique ; fonte embarquée (sous-ensemble TTF) pour un rendu identique partout.
 
 ### Simulation SI (Signal Integrity)
 - [x] **Mode différentiel dans la cascade de paramètres S** :

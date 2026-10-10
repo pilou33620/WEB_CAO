@@ -441,17 +441,25 @@ function masterDrawingPdf(fabFiles){
   tableRow("bom.csv","Bill of materials",true,alt=!alt);
   tableRow("EMPILAGE.txt","Stackup report",true,alt=!alt);
   tableRow(docNum+".pdf","Master drawing (this document)",true,alt=!alt);
+  /* Les plans du Draftsman (29-draftsman.js) : cotes, perçage, assemblage.
+     Annoncés seulement s'ils sont dans l'archive, et pour ce qu'ils
+     contiennent vraiment. */
+  const plansF=(fabFiles||[]).find(f=>/-PLANS\.pdf$/.test(f.name));
+  if(plansF)tableRow(plansF.name,"Fabrication and assembly drawings (searchable text)",true,alt=!alt);
   y+=MD_LH*1.2;
 
-  section("Content of "+docNum+".pdf");
-  const pdfRows=[
-    ["Board dimensions (cotation)","Included in the PDF file"],
-    ["Drilling map","Included in the PDF file"],
-    ["Top and bottom equipment","Included in the PDF file"],
-    ["PDF file of Gerber files","Included in the PDF file"]];
-  tableHead();
-  alt=false;
-  for(const [d,c] of pdfRows)tableRow("",d+" — "+c,true,alt=!alt);
+  if(plansF){
+    const cf=typeof dfCfg==="function"?dfCfg().feuilles:{};
+    section("Content of "+plansF.name);
+    const pdfRows=[
+      ["Board dimensions, drilling map and drill table, stack-up, fabrication notes",cf.fab],
+      ["Top and bottom assembly drawings (designators, pin 1, not-mounted parts)",cf.asmT||cf.asmB],
+      ["Bill of materials",cf.bom],
+      ["Copper layers",cf.couches]];
+    tableHead();
+    alt=false;
+    for(const [d,inc] of pdfRows)tableRow("",d,!!inc,alt=!alt);
+  }
 
   /* ================= PAGE 3 — Stack-up ================= */
   startPage();
