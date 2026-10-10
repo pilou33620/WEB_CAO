@@ -14,20 +14,28 @@ jobs:
       # depot WEB_SUITE_PROJETS. Clonee a cote, la ou WEB_SUITE la range
       # (../PROJETS/LIB_CAO) : web_CAO.py et les bancs l'y trouvent seuls.
       #
-      # WEB_SUITE_PROJETS EST PRIVE : le clone passe par le secret PROJETS_TOKEN
-      # de ce depot (token GitHub en lecture seule sur WEB_SUITE_PROJETS). Le
-      # jeton n'apparait pas dans le journal (GitHub masque les secrets) et ne
-      # reste pas dans ../PROJETS/.git/config (adresse remise sans lui).
-      - name: LIB — dépôt WEB_SUITE_PROJETS (privé, secret PROJETS_TOKEN)
+      # WEB_SUITE_PROJETS EST PRIVE. Sans token, la vraie LIB n'est pas
+      # disponible ici : les bancs qui eprouvent son CONTENU (banc-lib-routes,
+      # banc-rf, catalogue) sont sautes avec un avertissement, et les autres
+      # (routes et securites du serveur) tournent sur une LIB factice minimale
+      # (WEB_CAO_LIB_MINIMALE, voir python/test/lib_essai.py). Ces trois bancs
+      # restent a lancer sur un poste qui a la LIB.
+      #
+      # Avec un secret PROJETS_TOKEN (token en lecture seule sur
+      # WEB_SUITE_PROJETS), la LIB est clonee et tout tourne : le jeton est
+      # masque dans le journal et retire de l'adresse du clone.
+      - name: LIB — dépôt WEB_SUITE_PROJETS (privé)
         env:
           JETON: ${{ secrets.PROJETS_TOKEN }}
         run: |
           if [ -z "$JETON" ]; then
-            echo "::error title=Secret PROJETS_TOKEN manquant::WEB_SUITE_PROJETS est privé. Créez un token GitHub (Contents : Read-only sur WEB_SUITE_PROJETS) et enregistrez-le dans WEB_CAO → Settings → Secrets and variables → Actions → New repository secret, nom PROJETS_TOKEN."
-            exit 1
+            echo "::warning title=LIB privée non testée::WEB_SUITE_PROJETS est privé : banc-lib-routes, banc-rf et le catalogue de la Gestion LIB sont sautés. Les routes et sécurités du serveur tournent sur une LIB factice."
+            echo "WEB_CAO_LIB_MINIMALE=1" >> "$GITHUB_ENV"
+            exit 0
           fi
           git clone --depth 1 "https://x-access-token:${JETON}@github.com/pilou33620/WEB_SUITE_PROJETS.git" ../PROJETS
           git -C ../PROJETS remote set-url origin https://github.com/pilou33620/WEB_SUITE_PROJETS.git
+          echo "LIB_REELLE=1" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:
@@ -61,7 +69,9 @@ jobs:
         run: python python/test/banc-crosstalk.py
 
       - name: Simulation RF (S21 port à port) — banc d'essai
-        run: python python/test/banc-rf.py
+        run: |
+          if [ "$LIB_REELLE" = 1 ]; then python python/test/banc-rf.py
+          else echo "::warning title=Banc sauté::banc-rf.py : la LIB privée n'est pas disponible ici (voir l'étape LIB)."; fi
 
       - name: Diagramme de l'œil (PRBS, pire cas, gabarits) — banc d'essai
         run: python python/test/banc-oeil.py
@@ -82,7 +92,9 @@ jobs:
         run: python python/test/banc-serveur-routes.py
 
       - name: Routes de gestion de bibliothèque — banc d'essai
-        run: python python/test/banc-lib-routes.py
+        run: |
+          if [ "$LIB_REELLE" = 1 ]; then python python/test/banc-lib-routes.py
+          else echo "::warning title=Banc sauté::banc-lib-routes.py : la LIB privée n'est pas disponible ici (voir l'étape LIB)."; fi
 
       - name: Enregistrer + GitHub (relai au lanceur WEB_SUITE) — banc d'essai
         run: python python/test/banc-github-relai.py
@@ -92,7 +104,8 @@ jobs:
 
       - name: Gestion LIB — catalogue et import JLCPCB
         run: |
-          node gestion-lib/test/banc-catalogue.js
+          if [ "$LIB_REELLE" = 1 ]; then node gestion-lib/test/banc-catalogue.js
+          else echo "::warning title=Banc sauté::banc-catalogue.js : la LIB privée n'est pas disponible ici (voir l'étape LIB)."; fi
           node gestion-lib/test/banc-import-jlc.js
 
       - name: Assistant IA — échappement du HTML du modèle

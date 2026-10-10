@@ -146,7 +146,7 @@ node gestion-lib/test/banc-catalogue.js
 python python/test/banc-ligne-mom.py      # et les autres banc-*.py de python/test/
 ```
 
-Les bancs lisent la LIB à son emplacement par défaut (`../PROJETS/LIB_CAO`). WEB_SUITE_PROJETS étant privé, l'intégration continue la clone avec le secret `PROJETS_TOKEN` du dépôt (token GitHub en lecture seule sur WEB_SUITE_PROJETS) ; sur un poste, un clone fait avec votre compte GitHub (ou `WEB_CAO_LIB=<dossier>`) suffit.
+Les bancs lisent la LIB à son emplacement par défaut (`../PROJETS/LIB_CAO`). WEB_SUITE_PROJETS étant privé, l'intégration continue ne l'a pas : `banc-lib-routes.py`, `banc-rf.py` et `gestion-lib/test/banc-catalogue.js` y sont sautés (avertissement dans le journal) et les routes du serveur tournent sur une LIB factice (`WEB_CAO_LIB_MINIMALE=1`). Ces trois bancs se lancent sur un poste qui a la LIB (clone fait avec votre compte GitHub, ou `WEB_CAO_LIB=<dossier>`). Un secret `PROJETS_TOKEN` (token en lecture seule sur WEB_SUITE_PROJETS) les remettrait dans l'intégration continue.
 
 </details>
 
