@@ -23039,6 +23039,121 @@ T("master drawing : repli sur Helvetica en WinAnsi — option décochée, fonte 
     }finally{DFF_CACHE.gras=avant;}
   }finally{projFermer();S.dessin=null;}
 });
+/* Les pages du Master Drawing, dans l'ordre : leur flux et leurs textes, avec
+   position (mm depuis le haut, comme la mise en page) et largeur exacte, lue
+   dans les /Widths de la fonte embarquée. */
+function mdPages(pdf){
+  const t=dfLatin(pdf), mm=v=>v*25.4/72;
+  const res=/\/Font << \/F1 (\d+) 0 R \/F2 (\d+) 0 R/.exec(t);
+  const larg={};
+  for(const [nom,id] of [["1",res[1]],["2",res[2]]]){
+    const d=pdfObjet(t,id).dict, fc=/\/FirstChar (\d+)/.exec(d), w=/\/Widths \[([^\]]*)\]/.exec(d);
+    if(!fc||!w)throw new Error("fonte F"+nom+" sans /Widths : la fonte embarquée est attendue");
+    larg[nom]={c0:+fc[1],w:w[1].trim().split(/\s+/).map(Number)};
+  }
+  const kids=/\/Type \/Pages \/Kids \[([^\]]*)\]/.exec(t)[1].match(/\d+(?= 0 R)/g);
+  return kids.map(id=>{
+    const flux=pdfObjet(t,/\/Contents (\d+) 0 R/.exec(pdfObjet(t,id).dict)[1]).flux;
+    const textes=[];
+    for(const l of flux.split("\n")){
+      const m=/^BT \/F(\d) ([\d.]+) Tf [\d.]+ g ([\d.-]+) ([\d.-]+) Td \((.*)\) Tj ET$/.exec(l);
+      if(!m)continue;
+      const s=m[5].replace(/\\([0-7]{3}|.)/g,(a,b)=>b.length===3?String.fromCharCode(parseInt(b,8)):b);
+      const L=larg[m[1]], pt=+m[2];
+      let w=0;
+      for(const c of s)w+=L.w[c.charCodeAt(0)-L.c0]||0;
+      const x=mm(+m[3]), y=297-mm(+m[4]);
+      textes.push({f:m[1],pt,s,x,y,w:mm(w/1000*pt),
+        b:{x1:x,x2:x+mm(w/1000*pt),y1:y-mm(0.9*pt),y2:y+mm(0.22*pt)}});
+    }
+    return {flux,textes};
+  });
+}
+const mdDisjointes=(a,b)=>a.x2<=b.x1||b.x2<=a.x1||a.y2<=b.y1||b.y2<=a.y1;
+/* La boîte, en mm depuis le haut, des coordonnées des lignes `lignes` du flux. */
+function mdBoite(lignes){
+  const b={x1:Infinity,y1:Infinity,x2:-Infinity,y2:-Infinity};
+  for(const l of lignes){
+    /* « x y m », « x1 y1 x2 y2 x3 y3 c », « x y m x y l S » : des couples */
+    const n=l.trim().split(/\s+/).filter(x=>/^-?\d+(\.\d+)?$/.test(x)).map(Number);
+    for(let i=0;i+1<n.length;i+=2){
+      const x=n[i]*25.4/72, y=297-n[i+1]*25.4/72;
+      b.x1=Math.min(b.x1,x);b.x2=Math.max(b.x2,x);b.y1=Math.min(b.y1,y);b.y2=Math.max(b.y2,y);
+    }
+  }
+  return b;
+}
+T("master drawing : épaisseurs de l'empilage en millimètres, cuivre et vernis compris",()=>{
+  exCharger(1);
+  S.dessin=null;
+  const P=mdPages(mdPdf()).find(p=>p.textes.some(x=>x.s==="Stackup table:   Unit = Millimeter"));
+  if(!P)throw new Error("page de l'empilage introuvable");
+  /* la colonne « Thickness » : x = marge + 7 + 31 + 24 + 62 + 2 mm */
+  const col=P.textes.filter(x=>Math.abs(x.x-(16+7+31+24+62+2))<0.2&&/^\d+\.\d+ mm$/.test(x.s));
+  const total=col.filter(x=>x.f==="2"), cel=col.filter(x=>x.f==="1").map(x=>parseFloat(x.s));
+  if(total.length!==1||total[0].s!==fmt(stackTotal(),3)+" mm")throw new Error("total : "+total.map(x=>x.s));
+  if(cel.length!==S.cu+(S.cu-1)+2)throw new Error(cel.length+" épaisseurs pour "+S.cu+" cuivres");
+  /* l'unité juste : chaque couche plus mince que la carte, et la somme fait l'empilage */
+  if(cel.some(v=>!(v>0&&v<stackTotal())))throw new Error("une épaisseur dépasse la carte : "+cel.join(" "));
+  const somme=cel.reduce((a,v)=>a+v,0), att=stackLam()+2*S.stack.maskT;
+  if(Math.abs(somme-att)>5e-4)throw new Error("somme "+somme+" mm pour "+att+" mm");
+  for(let i=0;i<S.cu;i++){
+    const s=fmt(cuT(i),4).replace(/0$/,"")+" mm";
+    if(!col.some(x=>x.s===s))throw new Error("cuivre L"+(i+1)+" : « "+s+" » attendu");
+  }
+  if(!col.some(x=>x.s===fmt(S.stack.maskT,4).replace(/0$/,"")+" mm"))throw new Error("vernis en mm");
+  if(P.textes.some(x=>/^\d{2,}\.\d{3} mm$/.test(x.s)&&parseFloat(x.s)>=10))throw new Error("une épaisseur en µm écrite « mm »");
+});
+T("master drawing : le contour de carte dans son cadre, au-dessus du cartouche",()=>{
+  for(const [w,h] of [[0,0],[30,80]]){
+    exCharger(1);
+    S.dessin=null;
+    if(w){S.board={x:0,y:0,w,h,pts:null};boardChanged();}
+    try{
+      const P=mdPages(mdPdf()).find(p=>p.textes.some(x=>x.s==="BOARD OUTLINE DRAWING"));
+      if(!P)throw new Error("page du contour introuvable");
+      const L=P.flux.split("\n");
+      const i=L.indexOf("q 0.6 G 0.5 w"), j=L.indexOf("Q",i);
+      if(i<0||j<0)throw new Error("tracé du contour introuvable");
+      const C=mdBoite(L.slice(i+1,j));
+      const rect=re=>{const n=re.split(" ").slice(-6,-2).map(Number).map(v=>v*25.4/72);
+        return {x1:n[0],x2:n[0]+n[2],y2:297-n[1],y1:297-n[1]-n[3]};};
+      const cad=L.filter(l=>/ 0\.400 w .* re S$/.test(l)).map(rect).find(r=>Math.abs(r.x2-r.x1-110)<0.01);
+      const car=L.filter(l=>/ 0\.500 w .* re S$/.test(l)).map(rect).find(r=>Math.abs(r.x2-r.x1-178)<0.01);
+      if(!cad||!car)throw new Error("cadre ou cartouche introuvable");
+      const e=0.01;
+      if(C.x1<cad.x1-e||C.x2>cad.x2+e||C.y1<cad.y1-e||C.y2>cad.y2+e)
+        throw new Error("contour hors du cadre : "+JSON.stringify(C)+" dans "+JSON.stringify(cad));
+      if(!(C.y2<car.y1&&cad.y2<car.y1))throw new Error("le contour descend sur le cartouche");
+      /* à l'échelle, centré : marges égales, proportions de la carte */
+      const B=boardPoly(), bw=Math.max(...B.map(p=>p.x))-Math.min(...B.map(p=>p.x)), bh=Math.max(...B.map(p=>p.y))-Math.min(...B.map(p=>p.y));
+      if(Math.abs((C.x2-C.x1)/(C.y2-C.y1)-bw/bh)>2e-3)throw new Error("proportions faussées");
+      if(Math.abs((C.x1-cad.x1)-(cad.x2-C.x2))>0.01||Math.abs((C.y1-cad.y1)-(cad.y2-C.y2))>0.01)throw new Error("contour décentré");
+      /* les cotes ne croisent pas leurs traits d'attache */
+      const hT=P.textes.find(x=>x.s===fmt(bh,2)+" mm"), wT=P.textes.find(x=>x.s===fmt(bw,2)+" mm");
+      if(!hT||!wT||hT.b.x2>cad.x1-1.5||wT.b.y1<cad.y2+1.5)throw new Error("cote sur son trait d'attache");
+    }finally{exCharger(1);}
+  }
+});
+T("master drawing : le schéma de l'anneau ne touche aucun texte de la page 1",()=>{
+  exCharger(1);
+  S.dessin=null;
+  const P=mdPages(mdPdf())[0], L=P.flux.split("\n");
+  const cer=[];
+  for(let i=0;i<L.length;i++)if(L[i]==="0.500 G 0.4 w")cer.push(mdBoite(L.slice(i+1,i+6)));
+  if(cer.length!==2)throw new Error("deux cercles attendus, "+cer.length);
+  const lab=P.textes.find(x=>x.s==="Annular ring");
+  if(!lab)throw new Error("légende du schéma absente");
+  const S1={x1:Math.min(cer[0].x1,lab.b.x1),x2:Math.max(cer[0].x2,lab.b.x2),y1:Math.min(cer[0].y1,lab.b.y1),y2:Math.max(cer[0].y2,lab.b.y2)};
+  const autres=P.textes.filter(x=>x!==lab);
+  const touche=autres.filter(x=>!mdDisjointes(x.b,S1));
+  if(touche.length)throw new Error("le schéma touche « "+touche.map(x=>x.s).join(" », « ")+" »");
+  /* dans la section « Pattern », avant « Surface details » */
+  const yP=autres.find(x=>x.s==="PATTERN").y, yS=autres.find(x=>x.s==="SURFACE DETAILS").y;
+  if(!(S1.y1>yP&&S1.y2<yS-4))throw new Error("schéma hors de sa section");
+  const via=autres.find(x=>x.s.startsWith("Via protection"));
+  if(!(S1.x2<via.b.x1))throw new Error("le schéma doit rester à gauche de la colonne de droite");
+});
 T("master drawing : vérification externe (pdffonts, pdftotext, pypdf), si les outils sont là",()=>{
   const cp=require("child_process"), os=require("os");
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),"md-"));

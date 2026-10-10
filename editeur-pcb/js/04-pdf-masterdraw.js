@@ -37,6 +37,10 @@ function mdPt(v){return (Math.round(v*1000)/1000).toFixed(3);}
 function mdX(mm){return mdPt(mm*72/25.4);}
 function mdY(mm){return mdPt((MD_PH-mm)*72/25.4);}
 function mdL(mm){return mdPt(mm*72/25.4);}
+/* Une épaisseur d'empilage, en millimètres comme le dit le tableau : trois
+   décimales, quatre s'il le faut (cuivre ½ oz, 0.0175). Les cuivres et le
+   vernis y étaient écrits en µm suivis de « mm » — « 35.000 mm ». */
+function mdMm(v){const s=fmt(v,4);return s.endsWith("0")?s.slice(0,-1):s;}
 
 /* ---------- émission des primitives ---------- */
 /* Chaque fonction pousse des opérateurs PDF dans un tableau de lignes.
@@ -114,6 +118,12 @@ function mdWrap(txt,maxW,size){
   }
   if(cur)out.push(cur);
   return out.length?out:[String(txt)];
+}
+/* Largeur d'un texte en mm : la table d'Helvetica (dfLargeur, 29-draftsman.js),
+   celle de la fonte embarquée aussi ; à défaut, une estimation large. */
+function mdLargeur(s,size,bold){
+  if(typeof dfLargeur==="function")return dfLargeur(s,size,bold);
+  return String(s).length*size*0.6*25.4/72;
 }
 
 /* La fonte du document : la fonte simple embarquée (33-draftsman-export.js)
@@ -352,25 +362,36 @@ function masterDrawingPdf(fabFiles){
 
   section("Pattern");
   const trk=minTrack(), spc=minSpace(), hole=minDrill(), ann=minAnnRing();
-  twoCol([
+  const patG=[
     ["Minimum track / space",
      (trk>0?fmt(trk,2):"—")+" mm / "+(spc>0?fmt(spc,2):"—")+" mm"],
     ["Minimum hole",(hole>0?fmt(hole,2):"—")+" mm"],
     ["Minimum annular ring",(ann>0?fmt(ann,2):"—")+" mm"],
-    ["Hole wall copper","≥ 20 µm"],
-  ],[
+    ["Hole wall copper","≥ 20 µm"]];
+  need(MD_LH*1.2*patG.length);
+  const yPat=y, pagePat=L;
+  twoCol(patG,[
     ["Hole types","PTH and Non-PTH"],
     ["Via types","Through"+(viaCensus().blind?" , Blind":"")
       +(viaCensus().buried?" , Buried":"")],
     ["Via protection (IPC4761)",viaFinishLabel()],
   ]);
-  /* schéma de l'anneau, à droite : deux cercles concentriques */
+  /* Schéma de l'anneau : deux cercles concentriques, dans le blanc de la
+     colonne de gauche, entre ses valeurs (des cotes, courtes) et la colonne
+     de droite. Il était posé sur la valeur de « Via protection », qui
+     occupe toute la colonne de droite. Pas la place : pas de schéma, plutôt
+     qu'un chevauchement. */
   {
-    need(30);
-    const cx=MD_PW-MD_MR-22, cy=y-8;
-    mdCircle(L,cx,cy,9);
-    mdCircle(L,cx,cy,4.5);
-    mdText(L,"Annular ring",cx+12,cy-2,5,false,0.35);
+    const cw=(MD_PW-MD_ML-MD_MR)/2-5, xv=MD_ML+cw*0.42, droite=MD_ML+cw+10-3;
+    const r=6.5, lab="Annular ring";
+    let xg=0;
+    for(const [,v] of patG)for(const s of mdWrap(v,cw*0.55,7.5))xg=Math.max(xg,mdLargeur(s,7.5,false));
+    const cx=Math.max(xv+xg+3+r,droite-r-2), cy=yPat+(y-yPat)/2-3.5;
+    if(pagePat===L&&cx-r>=xv+xg+3&&cx+r<=droite&&mdLargeur(lab,5,false)<=2*r+4){
+      mdCircle(L,cx,cy,r);
+      mdCircle(L,cx,cy,r/2);
+      mdText(L,lab,cx-mdLargeur(lab,5,false)/2,cy+r+2.6,5,false,0.35);
+    }
   }
   y+=MD_LH*0.6;
 
@@ -558,18 +579,18 @@ function masterDrawingPdf(fabFiles){
       const role=roleLabel(r.i);
       stackRow([String(cuN),nm,"CONDUCTOR",
         "Copper "+ozLabel(cuT(r.i))+(role&&role!=="Signal"?" - "+role:""),
-        fmt(cuT(r.i)*1000,3)+" mm","±10%"],salt=!salt);
+        mdMm(cuT(r.i))+" mm","±10%"],salt=!salt);
       cuN++;
     }else if(r.kind==="di"){
       const d=diAt(r.i);
       stackRow(["","Dielectric "+(r.i+1),"DIELECTRIC",
         (d.mat||"FR-4")+" "+(d.k==="core"?"CORE":(d.k==="prepreg"?"PREPREG":"FILM"))
         +" εr "+fmt(d.er,2),
-        fmt(d.t,3)+" mm","±10%"],salt=!salt);
+        mdMm(d.t)+" mm","±10%"],salt=!salt);
     }else if(r.kind==="mask"){
       stackRow(["","Solder Mask "+(r.i?"Bottom":"Top"),"DIELECTRIC",
         "Solder Mask IPC-SM840 ("+maskC+")",
-        fmt(S.stack.maskT*1000,3)+" mm","±10%"],salt=!salt);
+        mdMm(S.stack.maskT)+" mm","±10%"],salt=!salt);
     }else{
       stackRow(["","Silk Screen "+(r.i?"Bottom":"Top"),"LEGEND",
         "Ink "+(S.stack.silkColor||"blanc"),"—","—"],salt=!salt);
@@ -596,7 +617,9 @@ function masterDrawingPdf(fabFiles){
   y+=MD_LH*0.4;
 
   section("Board outline drawing");
-  need(50);
+  /* Le cadre et la cote sous lui tiennent avant le cartouche, ou passent à
+     la page suivante : need(50) laissait un cadre de 64 mm mordre dessus. */
+  need(64+6);
   /* Le contour réel de la carte, mis à l'échelle dans un cadre : c'est le
      « master drawing » au sens propre — la forme que le fabricant découpe. */
   {
@@ -611,16 +634,24 @@ function masterDrawingPdf(fabFiles){
     const bw=x2-x1||1, bh=y2-y1||1;
     const k=Math.min((frameW-16)/bw,(frameH-16)/bh);
     const ox=fx+(frameW-bw*k)/2, oy=fy+(frameH-bh*k)/2;
+    /* La carte et la page ont toutes deux Y vers le bas : un sommet tombe
+       en oy + (y − y1)·k, sans retournement. Le « + bh·k » d'avant
+       descendait le contour d'une hauteur entière, hors du cadre et jusque
+       sur le cartouche. */
     L.push("q 0.6 G 0.5 w");
     for(const Q of [P].concat(boardCutouts()))
       for(let i=0;i<Q.length;i++){
         const a=Q[i], b=Q[(i+1)%Q.length];
-        L.push(mdX(ox+(a.x-x1)*k)+" "+mdY(oy+(a.y-y1)*k+bh*k)+" m "
-              +mdX(ox+(b.x-x1)*k)+" "+mdY(oy+(b.y-y1)*k+bh*k)+" l S");
+        L.push(mdX(ox+(a.x-x1)*k)+" "+mdY(oy+(a.y-y1)*k)+" m "
+              +mdX(ox+(b.x-x1)*k)+" "+mdY(oy+(b.y-y1)*k)+" l S");
       }
     L.push("Q");
-    mdText(L,fmt(bw,2)+" mm",ox+bw*k/2-6,fy+frameH+3,6,false,0.35);
-    mdText(L,fmt(bh,2)+" mm",fx-2,oy+bh*k/2,6,false,0.35);
+    /* les cotes, centrée sous le trait d'attache, et la hauteur qui finit à
+       gauche du sien : aucune ne le croise */
+    const wTxt=fmt(bw,2)+" mm";
+    mdText(L,wTxt,ox+bw*k/2-mdLargeur(wTxt,6,false)/2,fy+frameH+4,6,false,0.35);
+    const hTxt=fmt(bh,2)+" mm";
+    mdText(L,hTxt,fx-2.5-mdLargeur(hTxt,6,false),oy+bh*k/2+1,6,false,0.35);
     /* cotes : traits d'attache au-dessus et à gauche */
     mdLine(L,ox,fy+frameH+1.5,ox+bw*k,fy+frameH+1.5,0.35,0.2);
     mdLine(L,fx-1.5,oy,fx-1.5,oy+bh*k,0.35,0.2);
