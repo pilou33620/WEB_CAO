@@ -1044,6 +1044,37 @@
   .df-svg{display:block;margin:0 auto;box-shadow:0 6px 24px rgba(0,0,0,.45);background:#fff}
   .df-hit{fill:rgba(255,176,0,.22);stroke:#ff8a00;stroke-width:.35}
   .df-hit.on{fill:rgba(255,120,0,.35);stroke:#e8443a;stroke-width:.6}
+  /* outils de la feuille (34-draftsman-vues.js) : cotes, vues, détails. Le
+     calque garde des traits d'un pixel d'écran, quel que soit le zoom. */
+  .df-outils{
+    display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:5px 8px;
+    background:var(--panel2);border-bottom:1px solid var(--border);
+  }
+  .df-outil{
+    min-width:28px;height:24px;background:transparent;border:1px solid var(--border2);border-radius:5px;
+    color:var(--txt);font-size:13px;line-height:1;cursor:pointer;font-family:var(--ui);
+  }
+  .df-outil:hover{border-color:var(--blue)}
+  .df-outil.on{background:var(--blue-deep);border-color:var(--blue);color:#fff}
+  select.tbsel.df-ech{width:auto}
+  .df-msg{flex:1 1 220px;font-size:11px;color:var(--txt-dim);margin-left:6px}
+  .df-feuille:focus{outline:none}
+  .df-feuille:not([data-outil="sel"]) svg{cursor:crosshair}
+  .df-sur *{vector-effect:non-scaling-stroke}
+  .df-v{fill:none;stroke:rgba(63,160,234,.5);stroke-width:1;stroke-dasharray:4 3}
+  .df-v.on,.df-c.on{fill:rgba(63,160,234,.08);stroke:#3fa0ea;stroke-width:1.5;stroke-dasharray:none}
+  .df-fantome{fill:rgba(63,160,234,.12);stroke:#3fa0ea;stroke-width:1;stroke-dasharray:3 2}
+  .df-el{fill:none;stroke:#3fa0ea;stroke-width:1;stroke-dasharray:3 2}
+  .df-el.on{stroke-dasharray:none}
+  .df-acc{fill:rgba(232,68,58,.15);stroke:#e8443a;stroke-width:1.5}
+  .df-acc-t{font-family:var(--ui);font-size:2.6px;fill:#e8443a}
+  .df-orph{
+    display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;text-align:left;
+    background:transparent;border:1px solid var(--border2);border-radius:5px;padding:4px 6px;margin:3px 0;
+    color:#ff6b5f;cursor:pointer;font-family:var(--ui);
+  }
+  .df-orph b{font-weight:600;font-size:11.5px}
+  .df-orph span{font-size:10px;color:var(--txt-dim);font-family:var(--mono)}
   @media (max-width:760px){
     .df-corps{flex-direction:column}
     .df-cfg{width:auto;max-height:38vh;border-right:none;border-bottom:1px solid var(--border)}

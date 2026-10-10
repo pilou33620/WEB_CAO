@@ -450,6 +450,7 @@ function newDoc(){
   S.contraintes=cmNorm({classes:S.contraintes&&S.contraintes.classes,
                         matrice:S.contraintes&&S.contraintes.matrice});   // schéma compris : il sera relu
   S.variantes={liste:[],active:""};
+  if(typeof dfOublierCarte==="function")dfOublierCarte();   // cotes et détails des plans : la carte d'avant
   PCB_FICHIER="";
   clearSel();zoneCache.clear();touch();
   refreshPanels();draw();
